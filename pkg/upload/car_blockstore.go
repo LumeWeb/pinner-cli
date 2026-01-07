@@ -31,7 +31,6 @@ type LRUBlockstore struct {
 	limit  uint64
 	head   *lruNode
 	tail   *lruNode
-	cidMap map[cid.Cid]struct{} // Tracks all CIDs ever added (for metadata safety)
 }
 
 // NewLRUBlockstore creates a new LRU blockstore with the given size limit (in bytes).
@@ -40,7 +39,6 @@ type LRUBlockstore struct {
 func NewLRUBlockstore(sizeLimit uint64) *LRUBlockstore {
 	return &LRUBlockstore{
 		blocks: make(map[cid.Cid]*lruNode),
-		cidMap: make(map[cid.Cid]struct{}),
 		limit:  sizeLimit,
 	}
 }
@@ -59,9 +57,6 @@ func (b *LRUBlockstore) Put(_ context.Context, blk blocks.Block) error {
 		b.moveToFront(node)
 		return nil
 	}
-
-	// Track this CID for metadata safety (even if later evicted)
-	b.cidMap[c] = struct{}{}
 
 	for b.size+blockSize > b.limit && len(b.blocks) > 0 {
 		b.evictOne()
@@ -174,13 +169,17 @@ func (b *LRUBlockstore) PutMany(ctx context.Context, blocks []blocks.Block) erro
 }
 
 func (b *LRUBlockstore) AllKeysChan(_ context.Context) (<-chan cid.Cid, error) {
-	ch := make(chan cid.Cid, len(b.cidMap))
+	b.mu.RLock()
+	keys := make([]cid.Cid, 0, len(b.blocks))
+	for c := range b.blocks {
+		keys = append(keys, c)
+	}
+	b.mu.RUnlock()
+
+	ch := make(chan cid.Cid, len(keys))
 	go func() {
 		defer close(ch)
-		b.mu.RLock()
-		defer b.mu.RUnlock()
-		// Return all CIDs from the map (metadata safety - tracks all CIDs ever added)
-		for c := range b.cidMap {
+		for _, c := range keys {
 			ch <- c
 		}
 	}()

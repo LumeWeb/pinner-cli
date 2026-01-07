@@ -12,6 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const testAuthToken = "test-token"
+
 func TestIsRetryableError_NetworkError(t *testing.T) {
 	tests := []struct {
 		name string
@@ -79,7 +81,7 @@ func TestIsRetryableError_NetworkError(t *testing.T) {
 }
 
 func TestNewBoxoPinningClient(t *testing.T) {
-	client := NewBoxoPinningClient("https://api.example.com", "test-token")
+	client := NewBoxoPinningClient("https://api.example.com", testAuthToken)
 
 	require.NotNil(t, client)
 	boxoClient, ok := client.(*BoxoPinningClient)
@@ -90,7 +92,7 @@ func TestNewBoxoPinningClient(t *testing.T) {
 }
 
 func TestNewBoxoPinningClientWithMaxRetries(t *testing.T) {
-	client := NewBoxoPinningClient("https://api.example.com", "test-token", WithMaxRetries(5))
+	client := NewBoxoPinningClient("https://api.example.com", testAuthToken, WithMaxRetries(5))
 
 	require.NotNil(t, client)
 	boxoClient, ok := client.(*BoxoPinningClient)
@@ -103,7 +105,7 @@ func TestNewBoxoPinningClientWithMaxRetries(t *testing.T) {
 func TestNewBoxoPinningClientWithCustomConfig(t *testing.T) {
 	client := NewBoxoPinningClient(
 		"https://api.example.com",
-		"test-token",
+		testAuthToken,
 		WithMaxRetries(7),
 		WithMaxDelay(60*time.Second),
 		WithMaxJitter(10*time.Second),

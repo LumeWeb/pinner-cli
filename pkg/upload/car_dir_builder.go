@@ -201,7 +201,7 @@ func (b *CARBuilder) BuildSummary(ctx context.Context, filesystem fs.FS, wrapInD
 		if dirPaths[j] == ROOT {
 			return true
 		}
-		return pathDepth(dirPaths[j]) > pathDepth(dirPaths[i])
+		return pathDepth(dirPaths[i]) > pathDepth(dirPaths[j])
 	})
 
 	for _, path := range dirPaths {
@@ -414,6 +414,7 @@ func (b *CARBuilder) writeBlockToCAR(ctx context.Context, blockCID cid.Cid, w io
 		if err != nil {
 			return err
 		}
+		defer file.Close()
 		_, _, _, err = b.createUnixFSBlocks(ctx, file)
 	}
 	if err != nil {

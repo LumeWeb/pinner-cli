@@ -1,7 +1,6 @@
 package io
 
 import (
-	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -9,9 +8,7 @@ import (
 )
 
 // SingleFileFS is a filesystem implementation for a single file at the root.
-// It holds an os.File handle instead of buffering the entire file in memory.
 type SingleFileFS struct {
-	file     *os.File
 	filePath string
 	name     string
 	fileInfo fs.FileInfo
@@ -20,33 +17,20 @@ type SingleFileFS struct {
 // NewSingleFileFS creates a SingleFileFS from a file path.
 // The file will be mapped to the root of the filesystem with the given name.
 func NewSingleFileFS(filePath, name string) (*SingleFileFS, error) {
-	file, err := os.Open(filePath)
+	fileInfo, err := os.Stat(filePath)
 	if err != nil {
-		return nil, err
-	}
-
-	fileInfo, err := file.Stat()
-	if err != nil {
-		closeErr := file.Close()
-		if closeErr != nil {
-			return nil, fmt.Errorf("failed to stat file: %w, and failed to close file: %v", err, closeErr)
-		}
 		return nil, err
 	}
 
 	return &SingleFileFS{
-		file:     file,
 		filePath: filePath,
 		name:     name,
 		fileInfo: fileInfo,
 	}, nil
 }
 
-// Close closes the underlying file handle.
+// Close is a no-op as no persistent file handle is kept open.
 func (s *SingleFileFS) Close() error {
-	if s.file != nil {
-		return s.file.Close()
-	}
 	return nil
 }
 
@@ -65,15 +49,8 @@ func (s *SingleFileFS) Open(name string) (fs.File, error) {
 		return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrNotExist}
 	}
 
-	_, err := s.file.Seek(0, io.SeekStart)
-	if err != nil {
-		return nil, err
-	}
-
-	return &singleFileReader{
-		file: s.file,
-		info: s.fileInfo,
-	}, nil
+	// Each call to Open returns a new, independent file handle.
+	return os.Open(s.filePath)
 }
 
 // Stat returns a FileInfo describing the named file.

@@ -23,6 +23,11 @@ import (
 	portalsdkmocks "go.lumeweb.com/portal-sdk/mocks"
 )
 
+const (
+	configToken   = "sample-config-token"
+	overrideToken = "sample-override-token"
+)
+
 type uploadTestHelpers struct {
 	t             *testing.T
 	cfgMgr        *configmocks.MockManager
@@ -128,8 +133,8 @@ func TestUploadServiceDefault_WithAuthToken(t *testing.T) {
 		h := newUploadTestHelpers(t)
 		assert.Empty(t, h.service.authToken)
 
-		modifiedService := h.service.WithAuthToken("test-token")
-		assert.Equal(t, "test-token", h.service.authToken)
+		modifiedService := h.service.WithAuthToken(testAuthToken)
+		assert.Equal(t, testAuthToken, h.service.authToken)
 		assert.Same(t, h.service, modifiedService)
 	})
 }
@@ -153,7 +158,7 @@ func TestUploadServiceDefault_Upload(t *testing.T) {
 	t.Run("returns error for non-existent path", func(t *testing.T) {
 		h := newUploadTestHelpers(t)
 		h.cfgMgr.EXPECT().Config().Return(&config.Config{
-			AuthToken: "test-token",
+			AuthToken: testAuthToken,
 		})
 
 		// Create a fake filesystem that returns errors
@@ -166,7 +171,7 @@ func TestUploadServiceDefault_Upload(t *testing.T) {
 	t.Run("uploads directory successfully", func(t *testing.T) {
 		baseEndpoint, server := createMockServer(t, func(w http.ResponseWriter, r *http.Request) {
 			assert.Equal(t, "POST", r.Method)
-			assert.Equal(t, "Bearer test-token", r.Header.Get("Authorization"))
+			assert.Equal(t, "Bearer "+testAuthToken, r.Header.Get("Authorization"))
 			assert.Contains(t, r.Header.Get("Content-Type"), "multipart/form-data")
 
 			err := r.ParseMultipartForm(int64(DefaultUploadLimit))
@@ -195,7 +200,7 @@ func TestUploadServiceDefault_Upload(t *testing.T) {
 		h := newUploadTestHelpers(t)
 		tmpDir := h.createTestDirectory(map[string]string{"test.txt": "test content"})
 
-		h.setupUploadExpectations("test-token", baseEndpoint, uint64(DefaultUploadLimit), int64(100*1024*1024))
+		h.setupUploadExpectations(testAuthToken, baseEndpoint, uint64(DefaultUploadLimit), int64(100*1024*1024))
 
 		filesystem := os.DirFS(tmpDir)
 		cid, err := h.service.Upload(context.Background(), filesystem, "test-dir", false)
@@ -207,7 +212,7 @@ func TestUploadServiceDefault_Upload(t *testing.T) {
 	t.Run("uploads small file via CAR", func(t *testing.T) {
 		baseEndpoint, server := createMockServer(t, func(w http.ResponseWriter, r *http.Request) {
 			assert.Equal(t, "POST", r.Method)
-			assert.Equal(t, "Bearer test-token", r.Header.Get("Authorization"))
+			assert.Equal(t, "Bearer "+testAuthToken, r.Header.Get("Authorization"))
 			assert.Contains(t, r.Header.Get("Content-Type"), "multipart/form-data")
 
 			err := r.ParseMultipartForm(int64(DefaultUploadLimit))
@@ -228,7 +233,7 @@ func TestUploadServiceDefault_Upload(t *testing.T) {
 		h := newUploadTestHelpers(t)
 		tmpFile := h.createTestFile("test content")
 
-		h.setupUploadExpectations("test-token", baseEndpoint, DefaultUploadLimit, int64(DefaultUploadLimit))
+		h.setupUploadExpectations(testAuthToken, baseEndpoint, DefaultUploadLimit, int64(DefaultUploadLimit))
 
 		filesystem, err := internalio.NewSingleFileFS(tmpFile, "test.txt")
 		require.NoError(t, err)
@@ -248,7 +253,7 @@ func TestUploadServiceDefault_Upload(t *testing.T) {
 		tmpFile := h.createTestFile("test content")
 
 		h.accountClient.EXPECT().UploadLimit(mock.Anything).Return(int64(0), errors.New("api error"))
-		h.setupConfig("test-token", baseEndpoint, DefaultUploadLimit)
+		h.setupConfig(testAuthToken, baseEndpoint, DefaultUploadLimit)
 
 		filesystem, err := internalio.NewSingleFileFS(tmpFile, "test.txt")
 		require.NoError(t, err)
@@ -268,7 +273,7 @@ func TestUploadServiceDefault_Upload(t *testing.T) {
 		h := newUploadTestHelpers(t)
 		tmpFile := h.createTestFile("test content")
 
-		h.setupUploadExpectations("test-token", baseEndpoint, DefaultUploadLimit, int64(DefaultUploadLimit))
+		h.setupUploadExpectations(testAuthToken, baseEndpoint, DefaultUploadLimit, int64(DefaultUploadLimit))
 
 		filesystem, err := internalio.NewSingleFileFS(tmpFile, "test.txt")
 		require.NoError(t, err)
@@ -281,7 +286,7 @@ func TestUploadServiceDefault_Upload(t *testing.T) {
 	t.Run("respects auth token override", func(t *testing.T) {
 		baseEndpoint, server := createMockServer(t, func(w http.ResponseWriter, r *http.Request) {
 			authHeader := r.Header.Get("Authorization")
-			assert.Equal(t, "Bearer override-token", authHeader)
+			assert.Equal(t, "Bearer "+overrideToken, authHeader)
 			w.WriteHeader(http.StatusOK)
 		})
 		defer server.Close()
@@ -289,8 +294,8 @@ func TestUploadServiceDefault_Upload(t *testing.T) {
 		h := newUploadTestHelpers(t)
 		tmpFile := h.createTestFile("test content")
 
-		h.setupUploadExpectations("config-token", baseEndpoint, DefaultUploadLimit, int64(DefaultUploadLimit))
-		h.service.WithAuthToken("override-token")
+		h.setupUploadExpectations(configToken, baseEndpoint, DefaultUploadLimit, int64(DefaultUploadLimit))
+		h.service.WithAuthToken(overrideToken)
 
 		filesystem, err := internalio.NewSingleFileFS(tmpFile, "test.txt")
 		require.NoError(t, err)
@@ -324,7 +329,7 @@ func TestUploadServiceDefault_Upload_WaitForPin(t *testing.T) {
 		h := newUploadTestHelpers(t)
 		tmpFile := h.createTestFile("test content")
 
-		h.setupUploadExpectations("test-token", baseEndpoint, DefaultUploadLimit, int64(DefaultUploadLimit))
+		h.setupUploadExpectations(testAuthToken, baseEndpoint, DefaultUploadLimit, int64(DefaultUploadLimit))
 
 		filesystem, err := internalio.NewSingleFileFS(tmpFile, "test.txt")
 		require.NoError(t, err)
@@ -358,7 +363,7 @@ func TestUploadServiceDefaultIntegration(t *testing.T) {
 			"subdir/file2.txt": "content2",
 		})
 
-		h.setupUploadExpectations("test-token", baseEndpoint, DefaultUploadLimit, int64(DefaultUploadLimit))
+		h.setupUploadExpectations(testAuthToken, baseEndpoint, DefaultUploadLimit, int64(DefaultUploadLimit))
 
 		filesystem := os.DirFS(tmpDir)
 		cid, err := h.service.Upload(context.Background(), filesystem, "test-dir", false)
@@ -386,7 +391,7 @@ func TestUploadServiceDefaultIntegration(t *testing.T) {
 		h := newUploadTestHelpers(t)
 		tmpDir := h.t.TempDir()
 
-		h.setupUploadExpectations("test-token", baseEndpoint, DefaultUploadLimit, int64(DefaultUploadLimit))
+		h.setupUploadExpectations(testAuthToken, baseEndpoint, DefaultUploadLimit, int64(DefaultUploadLimit))
 
 		filesystem := os.DirFS(tmpDir)
 		cid, err := h.service.Upload(context.Background(), filesystem, "empty-dir", false)

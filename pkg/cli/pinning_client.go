@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/gammazero/workerpool"
@@ -404,6 +405,9 @@ func (s *PinningServiceDefault) PinBatch(ctx context.Context, cids []string, nam
 		Skipped:   make([]string, 0),
 	}
 
+	var mu sync.Mutex
+	var firstError error
+
 	// Create batch progress tracker if enabled and not in JSON/quiet mode
 	shouldShowProgress := opts.Progress && !s.output.IsJSON() && !s.output.IsQuiet()
 	var progress *BatchProgressTracker
@@ -427,6 +431,9 @@ func (s *PinningServiceDefault) PinBatch(ctx context.Context, cids []string, nam
 				progress.Increment()
 			}
 
+			mu.Lock()
+			defer mu.Unlock()
+
 			if err != nil {
 				if opts.ContinueOn {
 					result.Failed = append(result.Failed, OperationError{
@@ -434,6 +441,9 @@ func (s *PinningServiceDefault) PinBatch(ctx context.Context, cids []string, nam
 						Error: err.Error(),
 					})
 					return
+				}
+				if firstError == nil {
+					firstError = err
 				}
 				return
 			}
@@ -450,6 +460,10 @@ func (s *PinningServiceDefault) PinBatch(ctx context.Context, cids []string, nam
 
 	wp.StopWait()
 	result.Duration = time.Since(startTime)
+
+	if firstError != nil {
+		return result, firstError
+	}
 
 	return result, nil
 }
@@ -480,6 +494,9 @@ func (s *PinningServiceDefault) UnpinBatch(ctx context.Context, cids []string, o
 		Skipped:   make([]string, 0),
 	}
 
+	var mu sync.Mutex
+	var firstError error
+
 	// Create batch progress tracker if enabled and not in JSON/quiet mode
 	shouldShowProgress := opts.Progress && !s.output.IsJSON() && !s.output.IsQuiet()
 	var progress *BatchProgressTracker
@@ -503,6 +520,9 @@ func (s *PinningServiceDefault) UnpinBatch(ctx context.Context, cids []string, o
 				progress.Increment()
 			}
 
+			mu.Lock()
+			defer mu.Unlock()
+
 			if err != nil {
 				if opts.ContinueOn {
 					result.Failed = append(result.Failed, OperationError{
@@ -510,6 +530,9 @@ func (s *PinningServiceDefault) UnpinBatch(ctx context.Context, cids []string, o
 						Error: err.Error(),
 					})
 					return
+				}
+				if firstError == nil {
+					firstError = err
 				}
 				return
 			}
@@ -524,6 +547,10 @@ func (s *PinningServiceDefault) UnpinBatch(ctx context.Context, cids []string, o
 
 	wp.StopWait()
 	result.Duration = time.Since(startTime)
+
+	if firstError != nil {
+		return result, firstError
+	}
 
 	return result, nil
 }

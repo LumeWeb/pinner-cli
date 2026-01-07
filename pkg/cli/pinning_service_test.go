@@ -18,11 +18,13 @@ import (
 	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
 )
 
+const testAuthToken = "test-token"
+
 func TestNewPinningService(t *testing.T) {
 	t.Run("creates service with authenticated client when auth token exists", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
 		cfgMgr.EXPECT().Config().Maybe().Return(&config.Config{
-			AuthToken: "test-token",
+			AuthToken: testAuthToken,
 		})
 
 		output := NewOutputFormatter(false, false, false, false)
@@ -52,7 +54,7 @@ func TestPinningService_Pin(t *testing.T) {
 	t.Run("successfully pins CID", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
 		cfgMgr.EXPECT().Config().Maybe().Return(&config.Config{
-			AuthToken: "test-token",
+			AuthToken: testAuthToken,
 		})
 
 		client := climocks.NewMockPinningClient(t)
@@ -72,7 +74,7 @@ func TestPinningService_Pin(t *testing.T) {
 	t.Run("successfully pins CID with name", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
 		cfgMgr.EXPECT().Config().Maybe().Return(&config.Config{
-			AuthToken: "test-token",
+			AuthToken: testAuthToken,
 		})
 
 		client := climocks.NewMockPinningClient(t)
@@ -108,7 +110,7 @@ func TestPinningService_Pin(t *testing.T) {
 	t.Run("returns error for invalid CID", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
 		cfgMgr.EXPECT().Config().Maybe().Return(&config.Config{
-			AuthToken: "test-token",
+			AuthToken: testAuthToken,
 		})
 
 		client := climocks.NewMockPinningClient(t)
@@ -124,7 +126,7 @@ func TestPinningService_Pin(t *testing.T) {
 	t.Run("returns error when pinning fails", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
 		cfgMgr.EXPECT().Config().Maybe().Return(&config.Config{
-			AuthToken: "test-token",
+			AuthToken: testAuthToken,
 		})
 
 		client := climocks.NewMockPinningClient(t)
@@ -147,7 +149,7 @@ func TestPinningService_List(t *testing.T) {
 	t.Run("successfully lists pins", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
 		cfgMgr.EXPECT().Config().Maybe().Return(&config.Config{
-			AuthToken: "test-token",
+			AuthToken: testAuthToken,
 		})
 
 		client := climocks.NewMockPinningClient(t)
@@ -188,7 +190,7 @@ func TestPinningService_List(t *testing.T) {
 	t.Run("returns error when listing fails", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
 		cfgMgr.EXPECT().Config().Maybe().Return(&config.Config{
-			AuthToken: "test-token",
+			AuthToken: testAuthToken,
 		})
 
 		client := climocks.NewMockPinningClient(t)
@@ -211,7 +213,7 @@ func TestPinningService_Status(t *testing.T) {
 	t.Run("successfully gets pin status", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
 		cfgMgr.EXPECT().Config().Maybe().Return(&config.Config{
-			AuthToken: "test-token",
+			AuthToken: testAuthToken,
 		})
 
 		client := climocks.NewMockPinningClient(t)
@@ -252,7 +254,7 @@ func TestPinningService_Status(t *testing.T) {
 	t.Run("returns error for invalid CID", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
 		cfgMgr.EXPECT().Config().Maybe().Return(&config.Config{
-			AuthToken: "test-token",
+			AuthToken: testAuthToken,
 		})
 
 		client := climocks.NewMockPinningClient(t)
@@ -268,7 +270,7 @@ func TestPinningService_Status(t *testing.T) {
 	t.Run("returns error when pin not found", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
 		cfgMgr.EXPECT().Config().Maybe().Return(&config.Config{
-			AuthToken: "test-token",
+			AuthToken: testAuthToken,
 		})
 
 		client := climocks.NewMockPinningClient(t)
@@ -289,7 +291,7 @@ func TestPinningService_Status(t *testing.T) {
 	t.Run("returns error when status check fails", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
 		cfgMgr.EXPECT().Config().Maybe().Return(&config.Config{
-			AuthToken: "test-token",
+			AuthToken: testAuthToken,
 		})
 
 		client := climocks.NewMockPinningClient(t)
@@ -312,7 +314,7 @@ func TestPinningService_Unpin(t *testing.T) {
 	t.Run("successfully unpins CID", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
 		cfgMgr.EXPECT().Config().Maybe().Return(&config.Config{
-			AuthToken: "test-token",
+			AuthToken: testAuthToken,
 		})
 
 		client := climocks.NewMockPinningClient(t)
@@ -338,7 +340,7 @@ func TestPinningService_Unpin(t *testing.T) {
 	t.Run("returns early when confirm is false", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
 		cfgMgr.EXPECT().Config().Maybe().Return(&config.Config{
-			AuthToken: "test-token",
+			AuthToken: testAuthToken,
 		})
 
 		client := climocks.NewMockPinningClient(t)
@@ -371,7 +373,7 @@ func TestPinningService_Unpin(t *testing.T) {
 	t.Run("returns error for invalid CID", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
 		cfgMgr.EXPECT().Config().Maybe().Return(&config.Config{
-			AuthToken: "test-token",
+			AuthToken: testAuthToken,
 		})
 
 		client := climocks.NewMockPinningClient(t)
@@ -387,7 +389,7 @@ func TestPinningService_Unpin(t *testing.T) {
 	t.Run("returns error when pin not found", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
 		cfgMgr.EXPECT().Config().Maybe().Return(&config.Config{
-			AuthToken: "test-token",
+			AuthToken: testAuthToken,
 		})
 
 		client := climocks.NewMockPinningClient(t)
@@ -408,7 +410,7 @@ func TestPinningService_Unpin(t *testing.T) {
 	t.Run("returns error when unpinning fails", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
 		cfgMgr.EXPECT().Config().Maybe().Return(&config.Config{
-			AuthToken: "test-token",
+			AuthToken: testAuthToken,
 		})
 
 		client := climocks.NewMockPinningClient(t)
@@ -437,7 +439,7 @@ func TestPinningService_UpdateMetadata(t *testing.T) {
 	t.Run("successfully updates metadata", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
 		cfgMgr.EXPECT().Config().Maybe().Return(&config.Config{
-			AuthToken: "test-token",
+			AuthToken: testAuthToken,
 		})
 
 		client := climocks.NewMockPinningClient(t)
@@ -480,7 +482,7 @@ func TestPinningService_UpdateMetadata(t *testing.T) {
 	t.Run("returns error for invalid metadata pairs", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
 		cfgMgr.EXPECT().Config().Maybe().Return(&config.Config{
-			AuthToken: "test-token",
+			AuthToken: testAuthToken,
 		})
 
 		client := climocks.NewMockPinningClient(t)
@@ -496,7 +498,7 @@ func TestPinningService_UpdateMetadata(t *testing.T) {
 	t.Run("returns error for invalid CID", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
 		cfgMgr.EXPECT().Config().Maybe().Return(&config.Config{
-			AuthToken: "test-token",
+			AuthToken: testAuthToken,
 		})
 
 		client := climocks.NewMockPinningClient(t)
@@ -512,7 +514,7 @@ func TestPinningService_UpdateMetadata(t *testing.T) {
 	t.Run("returns error when pin not found", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
 		cfgMgr.EXPECT().Config().Maybe().Return(&config.Config{
-			AuthToken: "test-token",
+			AuthToken: testAuthToken,
 		})
 
 		client := climocks.NewMockPinningClient(t)
@@ -533,7 +535,7 @@ func TestPinningService_UpdateMetadata(t *testing.T) {
 	t.Run("returns error when update fails", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
 		cfgMgr.EXPECT().Config().Maybe().Return(&config.Config{
-			AuthToken: "test-token",
+			AuthToken: testAuthToken,
 		})
 
 		client := climocks.NewMockPinningClient(t)
@@ -659,7 +661,7 @@ func TestPinningService_watchPinStatus(t *testing.T) {
 	t.Run("successfully watches pin status", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
 		cfgMgr.EXPECT().Config().Maybe().Return(&config.Config{
-			AuthToken: "test-token",
+			AuthToken: testAuthToken,
 		}).Maybe()
 
 		client := climocks.NewMockPinningClient(t)
@@ -692,7 +694,7 @@ func TestPinningService_watchPinStatus(t *testing.T) {
 	t.Run("stops on context cancellation", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
 		cfgMgr.EXPECT().Config().Maybe().Return(&config.Config{
-			AuthToken: "test-token",
+			AuthToken: testAuthToken,
 		}).Maybe()
 
 		client := climocks.NewMockPinningClient(t)
