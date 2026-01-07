@@ -1,0 +1,298 @@
+package config
+
+import (
+	"net/url"
+	"strings"
+
+	z "github.com/Oudwins/zog"
+	"github.com/docker/go-units"
+	"go.lumeweb.com/configmanager"
+	"go.lumeweb.com/configmanager/source"
+)
+
+// Config holds the runtime configuration for the pinner CLI.
+type Config struct {
+	// AuthToken is the JWT token for API authentication.
+	AuthToken string `config:"auth_token" desc:"JWT authentication token for API access"`
+
+	// BaseEndpoint is the base URL for the Pinner service (e.g., https://pinner.xyz).
+	// Subdomains will be derived from this base endpoint (e.g., account.pinner.xyz, ipfs.pinner.xyz).
+	// If empty, defaults to the production endpoint.
+	BaseEndpoint string `config:"base_endpoint" desc:"Base URL for Pinner service (e.g., pinner.xyz)"`
+
+	// MaxRetries is the maximum number of retry attempts for failed operations.
+	MaxRetries int `config:"max_retries" desc:"Maximum retry attempts for failed operations (0-10)"`
+
+	// MemoryLimit is the memory limit in megabytes for CAR generation.
+	// This limits the amount of memory used during IPFS DAG construction.
+	MemoryLimit uint64 `config:"memory_limit" desc:"Memory limit in MB for CAR generation (1-10240)"`
+
+	// Secure indicates whether endpoints should use HTTPS. Defaults to true.
+	// When false, HTTP will be used instead of HTTPS.
+	Secure bool `config:"secure" desc:"Use HTTPS for endpoints (true/false)"`
+
+	// GatewayEndpoint is the URL for the IPFS gateway (e.g., https://dweb.link).
+	// If empty, defaults to the ipfs subdomain of the base endpoint.
+	GatewayEndpoint string `config:"gateway_endpoint" desc:"IPFS gateway URL (e.g., https://dweb.link)"`
+}
+
+// Config keys used throughout the package.
+const (
+	ConfigKeyAuthToken       = "auth_token"
+	ConfigKeyBaseEndpoint    = "base_endpoint"
+	ConfigKeyMaxRetries      = "max_retries"
+	ConfigKeySecure          = "secure"
+	ConfigKeyGatewayEndpoint = "gateway_endpoint"
+)
+
+// Subdomain constants for API endpoints.
+const (
+	SubdomainAccount = "account"
+	SubdomainIPFS    = "ipfs"
+)
+
+// Default endpoint constants.
+const (
+	DefaultBaseDomain = "pinner.xyz"
+	DefaultProtocol   = "https"
+)
+
+// Upload endpoint path constants.
+const (
+	UploadPath = "/api/upload"
+	TUSPath    = "/api/upload/tus"
+)
+
+// DefaultMemoryLimitMB is the default memory limit in megabytes for CAR generation.
+const DefaultMemoryLimitMB = 100
+
+var _ configmanager.ConfigSchemaProvider = (*Config)(nil)
+var _ source.ConfigDefaults = (*Config)(nil)
+
+// NewConfig creates a new Config instance with default values.
+func NewConfig() *Config {
+	return &Config{
+		MaxRetries: 3,
+	}
+}
+
+func (c *Config) Schema() z.ZogSchema {
+	return z.Struct(z.Shape{
+		"AuthToken": z.String().Optional(),
+		"BaseEndpoint": z.String().
+			Min(1).
+			Max(2048).
+			Optional(),
+		"MaxRetries": z.Int().
+			GTE(0).
+			LTE(10).
+			Optional(),
+		"MemoryLimit": z.UintLike[uint64]().
+			GTE(1).
+			LTE(10240).
+			Optional(),
+		"Secure": z.Bool().
+			Optional(),
+		"GatewayEndpoint": z.String().
+			Min(1).
+			Max(2048).
+			Optional(),
+	})
+}
+
+func (c *Config) Defaults() map[string]any {
+	return map[string]any{
+		"MaxRetries":  3,
+		"MemoryLimit": DefaultMemoryLimitMB,
+		"Secure":      true,
+	}
+}
+
+// IsAuthenticated checks if the client has valid authentication credentials.
+func (c *Config) IsAuthenticated() bool {
+	return c.AuthToken != ""
+}
+
+// GetBaseEndpoint returns the configured base endpoint, falling back to the default.
+func (c *Config) GetBaseEndpoint() string {
+	if c.BaseEndpoint != "" {
+		return c.BaseEndpoint
+	}
+	return buildEndpoint(DefaultProtocol, DefaultBaseDomain)
+}
+
+// GetBaseEndpointSecure returns the configured base endpoint using the secure flag.
+func (c *Config) GetBaseEndpointSecure() string {
+	if c.BaseEndpoint != "" {
+		// If BaseEndpoint is set, parse it and rebuild with the secure flag
+		_, domain := parseEndpoint(c.BaseEndpoint)
+		return buildEndpointWithSecure(domain, c.Secure)
+	}
+	return buildEndpointWithSecure(DefaultBaseDomain, c.Secure)
+}
+
+// GetAccountEndpoint returns the account API endpoint (account subdomain).
+func (c *Config) GetAccountEndpoint() string {
+	return getSubdomainEndpoint(c.GetBaseEndpoint(), SubdomainAccount)
+}
+
+// GetAccountEndpointSecure returns the account API endpoint using the secure flag.
+func (c *Config) GetAccountEndpointSecure() string {
+	return getSubdomainEndpointWithProtocol(c.GetBaseEndpoint(), SubdomainAccount, c.Secure)
+}
+
+// GetIPFSEndpoint returns the IPFS pinning API endpoint (ipfs subdomain).
+func (c *Config) GetIPFSEndpoint() string {
+	return getSubdomainEndpoint(c.GetBaseEndpoint(), SubdomainIPFS)
+}
+
+// GetIPFSEndpointSecure returns the IPFS pinning API endpoint using the secure flag.
+func (c *Config) GetIPFSEndpointSecure() string {
+	return getSubdomainEndpointWithProtocol(c.GetBaseEndpoint(), SubdomainIPFS, c.Secure)
+}
+
+// GetUploadEndpoint returns the upload API endpoint.
+func (c *Config) GetUploadEndpoint() string {
+	return getSubdomainEndpoint(c.GetBaseEndpoint(), SubdomainIPFS) + UploadPath
+}
+
+// GetUploadEndpointSecure returns the upload API endpoint using the secure flag.
+func (c *Config) GetUploadEndpointSecure() string {
+	return getSubdomainEndpointWithProtocol(c.GetBaseEndpoint(), SubdomainIPFS, c.Secure) + UploadPath
+}
+
+// GetTUSEndpoint returns the TUS upload API endpoint.
+func (c *Config) GetTUSEndpoint() string {
+	return getSubdomainEndpoint(c.GetBaseEndpoint(), SubdomainIPFS) + TUSPath
+}
+
+// GetTUSEndpointSecure returns the TUS upload API endpoint using the secure flag.
+func (c *Config) GetTUSEndpointSecure() string {
+	return getSubdomainEndpointWithProtocol(c.GetBaseEndpoint(), SubdomainIPFS, c.Secure) + TUSPath
+}
+
+// GetIPFSEndpointWithSecure returns the IPFS pinning API endpoint with a custom secure flag.
+func (c *Config) GetIPFSEndpointWithSecure(secure bool) string {
+	return getSubdomainEndpointWithProtocol(c.GetBaseEndpoint(), SubdomainIPFS, secure)
+}
+
+// GetGatewayEndpointWithSecure returns the IPFS gateway endpoint with a custom secure flag.
+func (c *Config) GetGatewayEndpointWithSecure(secure bool) string {
+	if c.GatewayEndpoint != "" {
+		return ensureGatewayPath(c.GatewayEndpoint)
+	}
+	return getSubdomainEndpointWithProtocol(c.GetBaseEndpoint(), SubdomainIPFS, secure) + "/ipfs/"
+}
+
+// GetUploadEndpointWithSecure returns the upload API endpoint with a custom secure flag.
+func (c *Config) GetUploadEndpointWithSecure(secure bool) string {
+	return getSubdomainEndpointWithProtocol(c.GetBaseEndpoint(), SubdomainIPFS, secure) + UploadPath
+}
+
+// GetTUSEndpointWithSecure returns the TUS upload API endpoint with a custom secure flag.
+func (c *Config) GetTUSEndpointWithSecure(secure bool) string {
+	return getSubdomainEndpointWithProtocol(c.GetBaseEndpoint(), SubdomainIPFS, secure) + TUSPath
+}
+
+// GetGatewayEndpoint returns the IPFS gateway endpoint.
+// If GatewayEndpoint is configured, it is used; otherwise, it falls back to the ipfs subdomain of the base endpoint.
+func (c *Config) GetGatewayEndpoint() string {
+	if c.GatewayEndpoint != "" {
+		return ensureGatewayPath(c.GatewayEndpoint)
+	}
+	return getSubdomainEndpoint(c.GetBaseEndpoint(), SubdomainIPFS) + "/ipfs/"
+}
+
+// GetGatewayEndpointSecure returns the IPFS gateway endpoint using the secure flag.
+// If GatewayEndpoint is configured, it is used; otherwise, it falls back to the ipfs subdomain of the base endpoint with the secure flag.
+func (c *Config) GetGatewayEndpointSecure() string {
+	if c.GatewayEndpoint != "" {
+		return ensureGatewayPath(c.GatewayEndpoint)
+	}
+	return getSubdomainEndpointWithProtocol(c.GetBaseEndpoint(), SubdomainIPFS, c.Secure) + "/ipfs/"
+}
+
+// ensureGatewayPath ensures the gateway URL ends with "/ipfs/".
+func ensureGatewayPath(gateway string) string {
+	if strings.HasSuffix(gateway, "/ipfs/") {
+		return gateway
+	}
+	gateway = strings.TrimSuffix(gateway, "/")
+	return gateway + "/ipfs/"
+}
+
+// GetMemoryLimitBytes returns the memory limit in bytes for CAR generation.
+// If MemoryLimit is not set, returns the default (100MB).
+func (c *Config) GetMemoryLimitBytes() uint64 {
+	if c.MemoryLimit == 0 {
+		return uint64(DefaultMemoryLimitMB) * units.MiB
+	}
+	return c.MemoryLimit * units.MiB
+}
+
+// GetAPIEndpoint returns the configured API endpoint (deprecated: use GetAccountEndpoint).
+// Maintained for backward compatibility.
+func (c *Config) GetAPIEndpoint() string {
+	return c.GetAccountEndpoint()
+}
+
+// parseEndpoint extracts protocol and domain from an endpoint URL.
+// Returns protocol (e.g., "https") and domain (e.g., "pinner.xyz").
+func parseEndpoint(endpoint string) (protocol, domain string) {
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		// If parsing fails, assume it's just a domain
+		return DefaultProtocol, endpoint
+	}
+	if u.Scheme == "" {
+		return DefaultProtocol, endpoint
+	}
+	return u.Scheme, u.Host
+}
+
+// buildEndpoint constructs a full URL from protocol and domain.
+func buildEndpoint(protocol, domain string) string {
+	if protocol == "" {
+		protocol = DefaultProtocol
+	}
+	return protocol + "://" + domain
+}
+
+// buildEndpointWithSecure constructs a full URL from domain, using secure or insecure protocol.
+func buildEndpointWithSecure(domain string, secure bool) string {
+	protocol := "https"
+	if !secure {
+		protocol = "http"
+	}
+	return buildEndpoint(protocol, domain)
+}
+
+// getSubdomainEndpoint constructs a subdomain URL from the base endpoint.
+func getSubdomainEndpoint(base, subdomain string) string {
+	protocol, _ := parseEndpoint(base)
+	secure := protocol == "https"
+	return getSubdomainEndpointWithProtocol(base, subdomain, secure)
+}
+
+// getSubdomainEndpointWithProtocol constructs a subdomain URL from the base endpoint, using http or https based on the secure flag.
+func getSubdomainEndpointWithProtocol(base, subdomain string, secure bool) string {
+	_, domain := parseEndpoint(base)
+
+	// Strip port from domain for localhost check
+	host := domain
+	port := ""
+	if u, err := url.Parse("http://" + domain); err == nil {
+		host = u.Hostname()
+		if u.Port() != "" {
+			port = ":" + u.Port()
+		}
+	}
+
+	// For localhost/127.0.0.1, preserve the original domain (no subdomain)
+	if host == "localhost" || host == "127.0.0.1" {
+		return buildEndpointWithSecure(host+port, secure)
+	}
+
+	// Add subdomain prefix
+	return buildEndpointWithSecure(subdomain+"."+host+port, secure)
+}

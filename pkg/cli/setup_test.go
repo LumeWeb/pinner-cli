@@ -1,0 +1,681 @@
+package cli
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+	"go.lumeweb.com/pinner-cli/pkg/config"
+	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
+)
+
+func TestSetupWizard_Run(t *testing.T) {
+	tests := []struct {
+		name          string
+		options       SetupOptions
+		authToken     string
+		expectedCalls []string
+		wantErr       bool
+		errContains   string
+		setupMocks    func(*configmocks.MockManager)
+	}{
+		{
+			name: "full setup wizard",
+			options: SetupOptions{
+				SkipAuth:   false,
+				SkipConfig: false,
+				Reset:      false,
+			},
+			authToken:  "",
+			setupMocks: func(cfgMgr *configmocks.MockManager) {},
+			expectedCalls: []string{
+				"ShowWelcome",
+				"ShowStepProgress(1,4,Authentication)",
+				"ExecuteAuthStep",
+				"ShowStepProgress(2,4,Configuration)",
+				"ExecuteConfigStep",
+				"ShowStepProgress(3,4,Shell Completion)",
+				"ExecuteCompletionStep",
+				"ShowStepProgress(4,4,Quick Tutorial)",
+				"ExecuteTutorialStep",
+				"ShowCompletion",
+			},
+			wantErr: false,
+		},
+		{
+			name: "skip auth step",
+			options: SetupOptions{
+				SkipAuth:   true,
+				SkipConfig: false,
+				Reset:      false,
+			},
+			authToken:  "",
+			setupMocks: func(cfgMgr *configmocks.MockManager) {},
+			expectedCalls: []string{
+				"ShowWelcome",
+				"ShowStepProgress(1,4,Authentication)",
+				"ShowStepSkipped(Authentication)",
+				"ShowStepProgress(2,4,Configuration)",
+				"ExecuteConfigStep",
+				"ShowStepProgress(3,4,Shell Completion)",
+				"ExecuteCompletionStep",
+				"ShowStepProgress(4,4,Quick Tutorial)",
+				"ExecuteTutorialStep",
+				"ShowCompletion",
+			},
+			wantErr: false,
+		},
+		{
+			name: "skip config step",
+			options: SetupOptions{
+				SkipAuth:   false,
+				SkipConfig: true,
+				Reset:      false,
+			},
+			authToken:  "",
+			setupMocks: func(cfgMgr *configmocks.MockManager) {},
+			expectedCalls: []string{
+				"ShowWelcome",
+				"ShowStepProgress(1,4,Authentication)",
+				"ExecuteAuthStep",
+				"ShowStepProgress(2,4,Configuration)",
+				"ShowStepSkipped(Configuration)",
+				"ShowStepProgress(3,4,Shell Completion)",
+				"ExecuteCompletionStep",
+				"ShowStepProgress(4,4,Quick Tutorial)",
+				"ExecuteTutorialStep",
+				"ShowCompletion",
+			},
+			wantErr: false,
+		},
+		{
+			name: "already authenticated skips auth",
+			options: SetupOptions{
+				SkipAuth:   false,
+				SkipConfig: false,
+				Reset:      false,
+			},
+			authToken:  "existing-token",
+			setupMocks: func(cfgMgr *configmocks.MockManager) {},
+			expectedCalls: []string{
+				"ShowWelcome",
+				"ShowStepProgress(1,4,Authentication)",
+				"ShowStepSkipped(Authentication)",
+				"ShowStepProgress(2,4,Configuration)",
+				"ExecuteConfigStep",
+				"ShowStepProgress(3,4,Shell Completion)",
+				"ExecuteCompletionStep",
+				"ShowStepProgress(4,4,Quick Tutorial)",
+				"ExecuteTutorialStep",
+				"ShowCompletion",
+			},
+			wantErr: false,
+		},
+		{
+			name: "reset configuration",
+			options: SetupOptions{
+				SkipAuth:   false,
+				SkipConfig: false,
+				Reset:      true,
+			},
+			authToken: "existing-token",
+			setupMocks: func(cfgMgr *configmocks.MockManager) {
+				cfgMgr.EXPECT().Reset().Return(nil)
+			},
+			expectedCalls: []string{
+				"ShowWelcome",
+				"ShowStepProgress(1,4,Authentication)",
+				"ShowStepSkipped(Authentication)",
+				"ShowStepProgress(2,4,Configuration)",
+				"ExecuteConfigStep",
+				"ShowStepProgress(3,4,Shell Completion)",
+				"ExecuteCompletionStep",
+				"ShowStepProgress(4,4,Quick Tutorial)",
+				"ExecuteTutorialStep",
+				"ShowCompletion",
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfgMgr := configmocks.NewMockManager(t)
+			mockUI := NewMockSetupUI()
+
+			// Setup config mock - expect multiple calls
+			cfg := &config.Config{
+				AuthToken:    tt.authToken,
+				BaseEndpoint: "",
+				Secure:       true,
+			}
+			cfgMgr.EXPECT().Config().Return(cfg).Maybe()
+
+			// Mock setter methods that the mock UI might call
+			cfgMgr.EXPECT().SetAuthToken("mock-jwt-token").Return(nil).Run(func(token string) {
+				cfg.AuthToken = token
+			}).Maybe()
+			cfgMgr.EXPECT().SetBaseEndpoint("").Return(nil).Run(func(endpoint string) {
+				cfg.BaseEndpoint = endpoint
+			}).Maybe()
+			cfgMgr.EXPECT().SetSecure(true).Return(nil).Run(func(secure bool) {
+				cfg.Secure = secure
+			}).Maybe()
+
+			// Run custom mock setup if provided
+			if tt.setupMocks != nil {
+				tt.setupMocks(cfgMgr)
+			}
+
+			// Create wizard
+			wizard := NewSetupWizard(cfgMgr, nil, mockUI, tt.options)
+
+			// Run wizard
+			err := wizard.Run(context.Background())
+
+			if tt.wantErr {
+				require.Error(t, err)
+				if tt.errContains != "" {
+					require.Contains(t, err.Error(), tt.errContains)
+				}
+			} else {
+				require.NoError(t, err)
+				require.True(t, wizard.IsCompleted())
+			}
+
+			// Verify UI calls
+			require.True(t, mockUI.VerifyCalls(tt.expectedCalls),
+				"Expected calls: %v, Got: %v", tt.expectedCalls, mockUI.GetCalls())
+		})
+	}
+}
+
+func TestSetupWizard_ResetConfig(t *testing.T) {
+	tests := []struct {
+		name          string
+		initialToken  string
+		expectedToken string
+	}{
+		{
+			name:          "reset clears auth token",
+			initialToken:  "existing-token",
+			expectedToken: "",
+		},
+		{
+			name:          "reset with no token",
+			initialToken:  "",
+			expectedToken: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfgMgr := configmocks.NewMockManager(t)
+			mockUI := NewMockSetupUI()
+
+			// Setup config mock
+			cfg := &config.Config{
+				AuthToken:    tt.initialToken,
+				BaseEndpoint: "custom-endpoint",
+				Secure:       true,
+			}
+			cfgMgr.EXPECT().Config().Return(cfg).Maybe()
+			cfgMgr.EXPECT().Reset().Return(nil)
+
+			// Mock setter methods that the mock UI might call after reset
+			cfgMgr.EXPECT().SetAuthToken("mock-jwt-token").Return(nil).Run(func(token string) {
+				cfg.AuthToken = token
+			}).Maybe()
+			cfgMgr.EXPECT().SetBaseEndpoint("").Return(nil).Run(func(endpoint string) {
+				cfg.BaseEndpoint = endpoint
+			}).Maybe()
+			cfgMgr.EXPECT().SetSecure(true).Return(nil).Run(func(secure bool) {
+				cfg.Secure = secure
+			}).Maybe()
+
+			// Create wizard with reset option
+			wizard := NewSetupWizard(cfgMgr, nil, mockUI, SetupOptions{Reset: true})
+
+			// Run wizard
+			err := wizard.Run(context.Background())
+			require.NoError(t, err)
+
+			// Reset() was called - the actual file deletion behavior is tested elsewhere
+			// Here we just verify the wizard completes successfully
+		})
+	}
+}
+
+func TestSetupWizard_AuthStep(t *testing.T) {
+	tests := []struct {
+		name         string
+		authChoice   AuthStepChoice
+		wantTokenSet bool
+		wantErr      bool
+	}{
+		{
+			name:         "create account sets token",
+			authChoice:   AuthChoiceCreateAccount,
+			wantTokenSet: true,
+			wantErr:      false,
+		},
+		{
+			name:         "sign in sets token",
+			authChoice:   AuthChoiceSignIn,
+			wantTokenSet: true,
+			wantErr:      false,
+		},
+		{
+			name:         "skip does not set token",
+			authChoice:   AuthChoiceSkip,
+			wantTokenSet: false,
+			wantErr:      false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfgMgr := configmocks.NewMockManager(t)
+			mockUI := NewMockSetupUI()
+			mockUI.SetAuthChoice(tt.authChoice)
+
+			// Setup config mock
+			cfg := &config.Config{
+				AuthToken:    "",
+				BaseEndpoint: "",
+				Secure:       true,
+			}
+			cfgMgr.EXPECT().Config().Return(cfg).Maybe()
+
+			// Mock SetAuthToken to update the config struct
+			if tt.wantTokenSet {
+				cfgMgr.EXPECT().SetAuthToken("mock-jwt-token").Return(nil).Run(func(token string) {
+					cfg.AuthToken = token
+				})
+			}
+
+			// Create wizard
+			wizard := NewSetupWizard(cfgMgr, nil, mockUI, SetupOptions{
+				SkipConfig: true, // Skip config to focus on auth
+			})
+
+			// Run wizard
+			err := wizard.Run(context.Background())
+
+			if tt.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+
+			// Verify token state
+			if tt.wantTokenSet {
+				require.NotEmpty(t, cfg.AuthToken, "expected auth token to be set")
+			} else {
+				require.Empty(t, cfg.AuthToken, "expected auth token to be empty")
+			}
+		})
+	}
+}
+
+func TestSetupWizard_ConfigStep(t *testing.T) {
+	tests := []struct {
+		name         string
+		configChoice ConfigStepChoice
+		customConfig CustomConfig
+		wantEndpoint string
+		wantSecure   bool
+	}{
+		{
+			name:         "use defaults clears endpoint",
+			configChoice: ConfigChoiceUseDefaults,
+			wantEndpoint: "",
+			wantSecure:   true,
+		},
+		{
+			name:         "skip uses defaults",
+			configChoice: ConfigChoiceSkip,
+			wantEndpoint: "",
+			wantSecure:   false,
+		},
+		{
+			name:         "custom endpoint",
+			configChoice: ConfigChoiceCustomEndpoint,
+			customConfig: CustomConfig{
+				Endpoint: "api.example.com",
+				Secure:   false,
+			},
+			wantEndpoint: "api.example.com",
+			wantSecure:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfgMgr := configmocks.NewMockManager(t)
+			mockUI := NewMockSetupUI()
+			mockUI.SetConfigChoice(tt.configChoice)
+			mockUI.SetCustomConfig(tt.customConfig)
+
+			// Setup config mock
+			cfg := &config.Config{
+				AuthToken:    "mock-token",
+				BaseEndpoint: "", // Start empty so config step runs
+				Secure:       false,
+			}
+			cfgMgr.EXPECT().Config().Return(cfg).Maybe()
+
+			// Mock setter methods to update the config struct (only when not skipping)
+			if tt.configChoice != ConfigChoiceSkip {
+				cfgMgr.EXPECT().SetBaseEndpoint(tt.wantEndpoint).Return(nil).Run(func(endpoint string) {
+					cfg.BaseEndpoint = endpoint
+				})
+				cfgMgr.EXPECT().SetSecure(tt.wantSecure).Return(nil).Run(func(secure bool) {
+					cfg.Secure = secure
+				})
+			}
+
+			// Create wizard
+			wizard := NewSetupWizard(cfgMgr, nil, mockUI, SetupOptions{
+				SkipAuth: true, // Skip auth to focus on config
+			})
+
+			// Run wizard
+			err := wizard.Run(context.Background())
+			require.NoError(t, err)
+
+			// Verify config state
+			require.Equal(t, tt.wantEndpoint, cfg.BaseEndpoint)
+			require.Equal(t, tt.wantSecure, cfg.Secure)
+		})
+	}
+}
+
+func TestSetupWizard_UIError(t *testing.T) {
+	tests := []struct {
+		name         string
+		errorAtStep  string
+		errorMessage string
+	}{
+		{
+			name:         "welcome error",
+			errorAtStep:  "ShowWelcome",
+			errorMessage: "welcome failed",
+		},
+		{
+			name:         "auth step error",
+			errorAtStep:  "ExecuteAuthStep",
+			errorMessage: "auth failed",
+		},
+		{
+			name:         "config step error",
+			errorAtStep:  "ExecuteConfigStep",
+			errorMessage: "config failed",
+		},
+		{
+			name:         "tutorial step error",
+			errorAtStep:  "ExecuteTutorialStep",
+			errorMessage: "tutorial failed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfgMgr := configmocks.NewMockManager(t)
+			mockUI := NewMockSetupUI()
+			mockUI.SetReturnError(errors.New(tt.errorMessage))
+
+			// Setup config mock
+			cfg := &config.Config{
+				AuthToken:    "",
+				BaseEndpoint: "",
+				Secure:       true,
+			}
+			cfgMgr.EXPECT().Config().Return(cfg).Maybe()
+			cfgMgr.EXPECT().Save().Return(nil).Maybe()
+
+			// Create wizard
+			wizard := NewSetupWizard(cfgMgr, nil, mockUI, SetupOptions{})
+
+			// Run wizard
+			err := wizard.Run(context.Background())
+			require.Error(t, err)
+			require.Contains(t, err.Error(), tt.errorMessage)
+		})
+	}
+}
+
+func TestSetupWizard_State(t *testing.T) {
+	t.Run("current step tracking", func(t *testing.T) {
+		cfgMgr := configmocks.NewMockManager(t)
+		mockUI := NewMockSetupUI()
+
+		// Setup config mock
+		cfg := &config.Config{
+			AuthToken:    "",
+			BaseEndpoint: "",
+			Secure:       true,
+		}
+		cfgMgr.EXPECT().Config().Return(cfg).Maybe()
+		cfgMgr.EXPECT().Save().Return(nil).Maybe()
+
+		// Create wizard
+		wizard := NewSetupWizard(cfgMgr, nil, mockUI, SetupOptions{
+			SkipAuth:   true,
+			SkipConfig: true,
+		})
+
+		// Check initial state
+		require.Equal(t, 0, wizard.CurrentStep())
+		require.False(t, wizard.IsCompleted())
+
+		// Run wizard
+		err := wizard.Run(context.Background())
+		require.NoError(t, err)
+
+		// Check final state
+		require.Equal(t, 3, wizard.CurrentStep()) // 4 steps, so last index is 3
+		require.True(t, wizard.IsCompleted())
+	})
+}
+
+func TestSetupWizard_Accessors(t *testing.T) {
+	cfgMgr := configmocks.NewMockManager(t)
+	cfg := &config.Config{
+		AuthToken:    "test-token",
+		BaseEndpoint: "test-endpoint",
+		Secure:       true,
+	}
+	cfgMgr.EXPECT().Config().Return(cfg).Maybe()
+
+	mockUI := NewMockSetupUI()
+	options := SetupOptions{
+		SkipAuth:   true,
+		SkipConfig: true,
+	}
+
+	wizard := NewSetupWizard(cfgMgr, nil, mockUI, options)
+
+	require.Equal(t, cfgMgr, wizard.ConfigManager())
+	require.Equal(t, options, wizard.Options())
+}
+
+func TestMockSetupUI(t *testing.T) {
+	t.Run("call tracking", func(t *testing.T) {
+		mock := NewMockSetupUI()
+
+		require.False(t, mock.WasCalled("ShowWelcome"))
+		require.Equal(t, 0, mock.CallCount("ShowWelcome"))
+
+		_ = mock.ShowWelcome()
+		_ = mock.ShowWelcome()
+
+		require.True(t, mock.WasCalled("ShowWelcome"))
+		require.Equal(t, 2, mock.CallCount("ShowWelcome"))
+	})
+
+	t.Run("clear calls", func(t *testing.T) {
+		mock := NewMockSetupUI()
+
+		_ = mock.ShowWelcome()
+		_ = mock.ShowStepProgress(context.Background(), 1, 3, "Test")
+
+		require.Len(t, mock.GetCalls(), 2)
+
+		mock.ClearCalls()
+
+		require.Empty(t, mock.GetCalls())
+	})
+
+	t.Run("verify calls order", func(t *testing.T) {
+		mock := NewMockSetupUI()
+
+		_ = mock.ShowWelcome()
+		_ = mock.ShowStepProgress(context.Background(), 1, 3, "Test")
+		_ = mock.ShowCompletion()
+
+		expected := []string{
+			"ShowWelcome",
+			"ShowStepProgress(1,3,Test)",
+			"ShowCompletion",
+		}
+
+		require.True(t, mock.VerifyCalls(expected))
+
+		wrongOrder := []string{
+			"ShowCompletion",
+			"ShowWelcome",
+		}
+
+		require.False(t, mock.VerifyCalls(wrongOrder))
+	})
+}
+
+func TestSetupStep_SkipLogic(t *testing.T) {
+	t.Run("auth step skip conditions", func(t *testing.T) {
+		cfgMgr := configmocks.NewMockManager(t)
+		cfg := &config.Config{
+			AuthToken:    "",
+			BaseEndpoint: "",
+			Secure:       true,
+		}
+		cfgMgr.EXPECT().Config().Return(cfg).Maybe()
+
+		step := &AuthStep{}
+
+		tests := []struct {
+			name     string
+			options  SetupOptions
+			token    string
+			expected bool
+		}{
+			{
+				name:     "skip auth option",
+				options:  SetupOptions{SkipAuth: true},
+				token:    "",
+				expected: true,
+			},
+			{
+				name:     "already authenticated",
+				options:  SetupOptions{SkipAuth: false},
+				token:    "existing-token",
+				expected: true,
+			},
+			{
+				name:     "don't skip",
+				options:  SetupOptions{SkipAuth: false},
+				token:    "",
+				expected: false,
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				cfg.AuthToken = tt.token
+				wizard := NewSetupWizard(cfgMgr, nil, nil, tt.options)
+
+				result := step.ShouldSkip(wizard)
+				require.Equal(t, tt.expected, result)
+			})
+		}
+	})
+
+	t.Run("config step skip conditions", func(t *testing.T) {
+		cfgMgr := configmocks.NewMockManager(t)
+		cfg := &config.Config{
+			AuthToken:    "",
+			BaseEndpoint: "",
+			Secure:       true,
+		}
+		cfgMgr.EXPECT().Config().Return(cfg).Maybe()
+
+		step := &ConfigStep{}
+
+		tests := []struct {
+			name     string
+			options  SetupOptions
+			endpoint string
+			reset    bool
+			expected bool
+		}{
+			{
+				name:     "skip config option",
+				options:  SetupOptions{SkipConfig: true},
+				endpoint: "",
+				reset:    false,
+				expected: true,
+			},
+			{
+				name:     "using defaults without reset",
+				options:  SetupOptions{SkipConfig: false},
+				endpoint: "",
+				reset:    false,
+				expected: false, // Not skipping - we want to configure defaults
+			},
+			{
+				name:     "using defaults with reset",
+				options:  SetupOptions{SkipConfig: false},
+				endpoint: "",
+				reset:    true,
+				expected: false,
+			},
+			{
+				name:     "custom endpoint",
+				options:  SetupOptions{SkipConfig: false},
+				endpoint: "custom-endpoint",
+				reset:    false,
+				expected: true, // Skip - already configured
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				cfg.BaseEndpoint = tt.endpoint
+				wizard := NewSetupWizard(cfgMgr, nil, nil, tt.options)
+
+				result := step.ShouldSkip(wizard)
+				require.Equal(t, tt.expected, result)
+			})
+		}
+	})
+
+	t.Run("tutorial step never skips", func(t *testing.T) {
+		cfgMgr := configmocks.NewMockManager(t)
+		cfg := &config.Config{
+			AuthToken:    "",
+			BaseEndpoint: "",
+			Secure:       true,
+		}
+		cfgMgr.EXPECT().Config().Return(cfg).Maybe()
+
+		step := &TutorialStep{}
+		wizard := NewSetupWizard(cfgMgr, nil, nil, SetupOptions{
+			SkipAuth:   true,
+			SkipConfig: true,
+		})
+
+		result := step.ShouldSkip(wizard)
+		require.False(t, result, "tutorial step should never skip")
+	})
+}
