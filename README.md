@@ -43,13 +43,13 @@ pinner auth
 pinner upload file.png
 
 # Pin an existing CID
-pinner pin QmHash
+pinner pin bafybeig77vqcdozl2wyk6z3cscaj5q5fggi53aoh64fewkdiri3cdauyn4
 
 # List your pins
 pinner list
 
 # Check pin status
-pinner status QmHash
+pinner status bafybeig77vqcdozl2wyk6z3cscaj5q5fggi53aoh64fewkdiri3cdauyn4
 ```
 
 ## Configuration
@@ -120,16 +120,16 @@ Pin an existing CID to the Pinner.xyz service.
 
 ```bash
 # Pin existing CID
-pinner pin QmHash
+pinner pin bafybeig77vqcdozl2wyk6z3cscaj5q5fggi53aoh64fewkdiri3cdauyn4
 
 # Pin with custom name
-pinner pin QmHash --name "My Pin"
+pinner pin bafybeig77vqcdozl2wyk6z3cscaj5q5fggi53aoh64fewkdiri3cdauyn4 --name "My Pin"
 
 # Pin and wait for completion
-pinner pin QmHash --wait
+pinner pin bafybeig77vqcdozl2wyk6z3cscaj5q5fggi53aoh64fewkdiri3cdauyn4 --wait
 
 # Pin with metadata
-pinner pin QmHash --name "Backup" --set "owner=derrick" --set "type=backup"
+pinner pin bafybeig77vqcdozl2wyk6z3cscaj5q5fggi53aoh64fewkdiri3cdauyn4 --name "Backup" --set "owner=derrick" --set "type=backup"
 ```
 
 ### List
@@ -156,13 +156,13 @@ Check the status of a pinned CID.
 
 ```bash
 # Check pin status
-pinner status QmHash
+pinner status bafybeig77vqcdozl2wyk6z3cscaj5q5fggi53aoh64fewkdiri3cdauyn4
 
 # Watch until settled
-pinner status QmHash --watch
+pinner status bafybeig77vqcdozl2wyk6z3cscaj5q5fggi53aoh64fewkdiri3cdauyn4 --watch
 
 # JSON output
-pinner status QmHash --json
+pinner status bafybeig77vqcdozl2wyk6z3cscaj5q5fggi53aoh64fewkdiri3cdauyn4 --json
 ```
 
 ### Unpin
@@ -171,13 +171,13 @@ Remove a CID from pinning.
 
 ```bash
 # Unpin (prompts for confirmation)
-pinner unpin QmHash
+pinner unpin bafybeig77vqcdozl2wyk6z3cscaj5q5fggi53aoh64fewkdiri3cdauyn4
 
 # Skip confirmation
-pinner unpin QmHash --confirm
+pinner unpin bafybeig77vqcdozl2wyk6z3cscaj5q5fggi53aoh64fewkdiri3cdauyn4 --confirm
 
 # JSON output
-pinner unpin QmHash --json
+pinner unpin bafybeig77vqcdozl2wyk6z3cscaj5q5fggi53aoh64fewkdiri3cdauyn4 --json
 ```
 
 ### Metadata
@@ -186,16 +186,16 @@ Manage metadata for pinned content.
 
 ```bash
 # Set metadata
-pinner metadata QmHash --set "owner=derrick" --set "type=backup"
+pinner metadata bafybeig77vqcdozl2wyk6z3cscaj5q5fggi53aoh64fewkdiri3cdauyn4 --set "owner=derrick" --set "type=backup"
 
 # Clear all metadata
-pinner metadata QmHash --clear
+pinner metadata bafybeig77vqcdozl2wyk6z3cscaj5q5fggi53aoh64fewkdiri3cdauyn4 --clear
 
 # Show current metadata
-pinner metadata QmHash
+pinner metadata bafybeig77vqcdozl2wyk6z3cscaj5q5fggi53aoh64fewkdiri3cdauyn4
 
 # JSON output
-pinner metadata QmHash --json
+pinner metadata bafybeig77vqcdozl2wyk6z3cscaj5q5fggi53aoh64fewkdiri3cdauyn4 --json
 ```
 
 ### Config
@@ -391,19 +391,17 @@ go test ./pkg/cli -run TestUpload
 
 ### Mock Generation
 
-The project uses [mockery](https://github.com/vektra/mockery) for generating mocks. Mockery is pre-installed in the development environment.
+The project uses [mockery](https://github.com/vektra/mockery) for generating mocks. See the [official documentation](https://vektra.github.io/mockery/latest/installation/) for installation instructions.
 
 ```bash
 # Generate all mocks
-$HOME/go/bin/mockery --all
+mockery
 
 # Generate mocks for specific interfaces
-$HOME/go/bin/mockery --name=PinningService
-$HOME/go/bin/mockery --name=UploadService
-$HOME/go/bin/mockery --name=AuthService
+mockery --name=PinningService
+mockery --name=UploadService
+mockery --name=AuthService
 ```
-
-**Note**: Never attempt to reinstall mockery via `go install`. It is already installed at `$HOME/go/bin/mockery`.
 
 ### Building
 

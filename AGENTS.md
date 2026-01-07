@@ -36,12 +36,19 @@ go test ./pkg/cli -run TestUpload
 ```
 
 ### Mock Generation
+
+The project uses [mockery](https://github.com/vektra/mockery) for generating mocks. See the [official documentation](https://vektra.github.io/mockery/latest/installation/) for installation instructions.
+
+#### Usage
+
 ```bash
-# Generate all mocks (mockery is pre-installed at $HOME/go/bin/mockery)
-$HOME/go/bin/mockery --all
+# Generate all mocks
+mockery
 
 # Generate mocks for specific interfaces
-$HOME/go/bin/mockery --name=PinningClient
+mockery --name=PinningService
+mockery --name=UploadService
+mockery --name=AuthService
 ```
 
 ### Running the CLI
@@ -128,10 +135,9 @@ Two implementations: `humanFormatter` and `jsonFormatter`, selected based on glo
 - `cliCommandWrapper` adapts `cli.Command` to `commandGetter`
 
 **Mockery Configuration**:
-- Mocks are generated using mockery (pre-installed at `$HOME/go/bin/mockery`)
+- Mocks are generated using mockery
 - Configuration in `.mockery.yaml` defines which interfaces to mock
 - Mocks are placed alongside source files or in `mocks/` subdirectories
-- Never attempt to reinstall mockery via `go install`
 
 **Build Information Injection**:
 - Version, commit, and build time are injected at build time via ldflags
@@ -154,4 +160,4 @@ All commands support these global flags:
 - `go.lumeweb.com/portal-sdk` - Portal SDK (local replace in go.mod)
 - `github.com/pterm/pterm` - Terminal UI for setup wizard
 - `github.com/stretchr/testify` - Testing framework
-- `github.com/vektra/mockery` - Mock generation (pre-installed)
+- `github.com/vektra/mockery` - Mock generation
