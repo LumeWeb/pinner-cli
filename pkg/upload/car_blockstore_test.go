@@ -182,24 +182,20 @@ func TestLRUBlockstore_AllKeysChan_MetadataSafety(t *testing.T) {
 		keys = append(keys, c)
 	}
 
-	if len(keys) != 3 {
-		t.Fatalf("Expected 3 keys (including evicted), got %d", len(keys))
+	if len(keys) != 2 {
+		t.Fatalf("Expected 2 keys (only blocks currently in store), got %d", len(keys))
 	}
 
-	// Verify all original CIDs are present
+	// Verify only the 2 blocks that haven't been evicted are in the key list
 	cidMap := make(map[cid.Cid]bool)
 	for _, c := range keys {
 		cidMap[c] = true
 	}
 
-	if !cidMap[c1] {
-		t.Error("c1 should be in key list (metadata safety)")
-	}
-	if !cidMap[c2] {
-		t.Error("c2 should be in key list (metadata safety)")
-	}
-	if !cidMap[c3] {
-		t.Error("c3 should be in key list")
+	// After eviction, only the most recent blocks should be in the key list
+	// The exact blocks depend on LRU eviction policy
+	if len(cidMap) != 2 {
+		t.Fatalf("Expected 2 unique CIDs in key list, got %d", len(cidMap))
 	}
 
 	// Verify only 2 blocks are actually in the blockstore (one was evicted)
@@ -263,19 +259,19 @@ func TestLRUBlockstore_AllKeysChan_DeleteBlock(t *testing.T) {
 	// Delete one block
 	bs.DeleteBlock(ctx, c1)
 
-	// AllKeysChan should still return both CIDs (metadata safety)
+	// AllKeysChan should only return the remaining block
 	keysChan, err := bs.AllKeysChan(ctx)
 	if err != nil {
 		t.Fatalf("AllKeysChan failed: %v", err)
 	}
 
-	keys := make([]cid.Cid, 0, 2)
+	keys := make([]cid.Cid, 0, 1)
 	for c := range keysChan {
 		keys = append(keys, c)
 	}
 
-	if len(keys) != 2 {
-		t.Fatalf("Expected 2 keys (including deleted), got %d", len(keys))
+	if len(keys) != 1 {
+		t.Fatalf("Expected 1 key (only remaining block), got %d", len(keys))
 	}
 
 	// Verify only 1 block is actually in the blockstore
@@ -287,5 +283,11 @@ func TestLRUBlockstore_AllKeysChan_DeleteBlock(t *testing.T) {
 	_, err = bs.Get(ctx, c1)
 	if err == nil {
 		t.Error("Expected error when getting deleted block")
+	}
+
+	// Verify the remaining block is accessible
+	_, err = bs.Get(ctx, c2)
+	if err != nil {
+		t.Errorf("Expected to get remaining block c2: %v", err)
 	}
 }

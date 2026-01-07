@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/ggwhite/go-masker"
-	"github.com/ipfs/boxo/pinning/remote/client"
+	go_pinning_service_http_client "github.com/ipfs/boxo/pinning/remote/client"
 	"github.com/pterm/pterm"
 	"github.com/samber/lo"
 )
@@ -285,20 +285,6 @@ func (j *jsonFormatter) MaskSensitive(value, key string) string {
 // Watch continuously monitors and displays updates for the provided data fetcher.
 func (j *jsonFormatter) Watch(ctx context.Context, fetcher func(context.Context) (any, error), formatter func(any) (string, []string, [][]string)) error {
 	return watchLoop(ctx, 2*time.Second, j, false, fetcher, formatter)
-}
-
-// allTerminal checks if all rows indicate terminal status.
-func (j *jsonFormatter) allTerminal(rows [][]string) bool {
-	for _, row := range rows {
-		if len(row) < 3 {
-			continue
-		}
-		status := row[2] // Assuming status is in the 3rd column
-		if strings.Contains(status, "queued") || strings.Contains(status, "pinning") {
-			return false
-		}
-	}
-	return true
 }
 
 // allTerminal checks if all rows indicate terminal status (not queued or pinning).

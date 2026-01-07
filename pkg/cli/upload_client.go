@@ -277,14 +277,24 @@ func (s *UploadServiceDefault) uploadViaPOST(ctx context.Context, rootCID cid.Ci
 	uploadEndpoint := s.configMgr.Config().GetUploadEndpointSecure()
 	authToken := s.getAuthToken()
 
-	if err := s.postUpload(ctx, uploadEndpoint, authToken, pr, writer.FormDataContentType()); err != nil {
-		return "", 0, WrapAuthError("Upload", err)
+	uploadErr := s.postUpload(ctx, uploadEndpoint, authToken, pr, writer.FormDataContentType())
+
+	// If the upload fails, the reading side of the pipe is abandoned.
+	// We must close the pipe writer to unblock the writing goroutine, allowing it to terminate gracefully.
+	if uploadErr != nil {
+		pw.CloseWithError(uploadErr)
 	}
 
-	// Wait for multipart writing to complete
+	// Always wait for the multipart writing goroutine to complete to prevent leaks.
 	res := <-resultChan
 	if res.err != nil {
+		// The writer goroutine failed, which is a more specific and critical error.
 		return "", 0, res.err
+	}
+
+	// If the upload itself failed, return that error now that we've cleaned up the goroutine.
+	if uploadErr != nil {
+		return "", 0, WrapAuthError("Upload", uploadErr)
 	}
 
 	s.output.PrintVerbosef("Uploaded CAR with root CID: %s", rootCID)

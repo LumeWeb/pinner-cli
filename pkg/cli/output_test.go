@@ -696,11 +696,11 @@ func TestMaskSensitive(t *testing.T) {
 		expected string
 	}{
 		{"empty value", "", "any_key", ""},
-		{"token key", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9", "auth_token", "eyJhbG****JIUzI1NiIsInR5cCI6IkpXVCJ9"},
-		{"auth key", "secret1234567890", "auth_key", "secret****567890"},
-		{"password key", "mypassword", "password", "mypass****"},
-		{"secret key", "mysecretvalue", "api_secret", "mysecr****lue"},
-		{"key key", "my_api_key_value", "api_key", "my_api****_value"},
+		{"token key", "a-sample-jwt-token-string", "auth_token", "a-samp****wt-token-string"},
+		{"auth key", "authkey1234567890", "auth_key", "authke****4567890"},
+		{"password key", "a-test-password", "password", "a-test****sword"},
+		{"secret key", "a-test-secret-value", "api_secret", "a-test****ret-value"},
+		{"key key", "a-sample-api-key-value", "api_key", "a-samp****pi-key-value"},
 		{"email key", "test@example.com", "email", "tes****@example.com"},
 		{"non-sensitive key", "regular_value", "name", "regular_value"},
 		{"case insensitive token", "value123", "AUTHTOKEN", "value1****"},
@@ -730,8 +730,8 @@ func TestMaskSensitiveUnmaskMode(t *testing.T) {
 		value string
 		key   string
 	}{
-		{"token with unmask", "my_secret_token_12345", "auth_token"},
-		{"password with unmask", "my_password", "password"},
+		{"token with unmask", "sample-token-for-testing-unmask", "auth_token"},
+		{"password with unmask", "sample-password-for-testing-unmask", "password"},
 		{"email with unmask", "test@example.com", "email"},
 	}
 

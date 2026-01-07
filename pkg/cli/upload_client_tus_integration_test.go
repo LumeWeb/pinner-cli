@@ -168,9 +168,11 @@ func setupTUSTest(t *testing.T, uploadLimit int64) *tusTestSetup {
 	serverURL, _ := url.Parse(server.URL)
 
 	// Setup config mock with TUS endpoint pointing to test server
+	t.Setenv("TEST_AUTH_TOKEN", testAuthToken)
+
 	cfgMgr := configmocks.NewMockManager(t)
 	cfg := &config.Config{
-		AuthToken:    "test-token",
+		AuthToken:    os.Getenv("TEST_AUTH_TOKEN"),
 		BaseEndpoint: serverURL.Hostname() + ":" + serverURL.Port(),
 		MemoryLimit:  100 * 1024 * 1024,
 		Secure:       false,

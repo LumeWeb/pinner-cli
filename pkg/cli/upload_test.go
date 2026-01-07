@@ -502,7 +502,7 @@ func TestUploadDryRun(t *testing.T) {
 					MemoryLimit:     100,
 					Secure:          true,
 					BaseEndpoint:    "pinner.xyz",
-					AuthToken:       "test-token",
+					AuthToken:       testAuthToken,
 					MaxRetries:      3,
 					GatewayEndpoint: "https://gateway.ipfs.io",
 				})
