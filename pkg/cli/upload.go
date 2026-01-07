@@ -1,0 +1,199 @@
+package cli
+
+import (
+	"context"
+	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"time"
+
+	"github.com/docker/go-units"
+	"github.com/urfave/cli/v3"
+	"go.lumeweb.com/pinner-cli/pkg/config"
+	internalio "go.lumeweb.com/pinner-cli/pkg/internal/io"
+)
+
+func newUploadCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "upload",
+		Usage: "Upload files/directories to IPFS",
+		Description: `Upload files or directories to IPFS via the Pinner.xyz service.
+Content is converted to CAR format before uploading.
+
+Examples:
+  pinner upload myfile.txt
+  pinner upload myfile.txt --name "my document"
+  pinner upload myfile.txt --wait
+  pinner upload /path/to/directory --name "project files"
+  pinner upload largefile.zip --memory-limit 500 --wait
+  pinner upload myfile.txt --dry-run
+
+  # Upload from stdin (pipe)
+  cat myfile.txt | pinner upload --name "my file"
+  echo "hello world" | pinner upload --name "greeting"
+  curl -s https://example.com/data | pinner upload --name "downloaded"
+
+The output includes:
+  - CID: Content identifier for your uploaded content
+  - Gateway URL: Public URL to access your content
+  - Size: File size in human-readable format
+  - Time: Upload duration`,
+		ArgsUsage: "[path]",
+		Flags: []cli.Flag{
+			NameFlag("Custom name for the pin"),
+			WaitFlag(),
+			MemoryLimitFlag(),
+			DryRunFlag(),
+		},
+		Metadata: WithTutorial(1, "Upload and pin a file", "pinner upload myfile.txt"),
+		Action: func(ctx context.Context, c *cli.Command) error {
+			output := NewOutputFormatter(c.Bool(FlagJSON), c.Bool(FlagVerbose), c.Bool(FlagQuiet), c.Bool(FlagUnmask))
+			return handleUpload(ctx, newCLICommandWrapper(c), output, defaultConfigManagerFactory, defaultUploadServiceFactory)
+		},
+	}
+}
+
+// UploadInput represents the resolved input source for an upload operation.
+type UploadInput struct {
+	Filesystem fs.FS
+	Name       string
+}
+
+// resolveUploadInput resolves the upload input source (file, directory, or stdin).
+// It detects if stdin is a pipe and creates an appropriate filesystem.
+func resolveUploadInput(path string, name string) (*UploadInput, error) {
+	if isStdinPipe() {
+		// stdin mode: path is ignored or used as name
+		if name == "" {
+			name = "stdin"
+		}
+		filesystem, err := internalio.NewStdinFS(name)
+		if err != nil {
+			return nil, err
+		}
+		return &UploadInput{Filesystem: filesystem, Name: name}, nil
+	}
+
+	// file/dir mode
+	if path == "" {
+		return nil, fmt.Errorf("%w. Usage: pinner upload <path>", ErrPathRequired)
+	}
+
+	fileInfo, err := os.Stat(path)
+	if err != nil {
+		return nil, WrapFileError("Cannot access file", path, err)
+	}
+
+	if fileInfo.IsDir() {
+		return &UploadInput{Filesystem: os.DirFS(path), Name: name}, nil
+	}
+
+	// single file
+	if name == "" {
+		name = filepath.Base(path)
+	}
+	filesystem, err := internalio.NewSingleFileFS(path, name)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create filesystem: %w", err)
+	}
+
+	return &UploadInput{Filesystem: filesystem, Name: name}, nil
+}
+
+// detectInputType returns a string describing the input type.
+func detectInputType(path string) string {
+	if isStdinPipe() {
+		return "stdin (pipe)"
+	}
+	if path == "" {
+		return "stdin"
+	}
+	fileInfo, err := os.Stat(path)
+	if err != nil {
+		return "unknown"
+	}
+	if fileInfo.IsDir() {
+		return "directory"
+	}
+	return "file"
+}
+
+// uploadCommandGetter defines the interface for getting upload command flags.
+type uploadCommandGetter interface {
+	Uint64(name string) uint64
+	String(name string) string
+	Bool(name string) bool
+	Args() cli.Args
+}
+
+func handleUpload(ctx context.Context, cmd uploadCommandGetter, output Output, cfgMgrFactory ConfigManagerFactory, uploadServiceFactory UploadServiceFactory) error {
+	cfgMgr, err := cfgMgrFactory()
+	if err != nil {
+		return err
+	}
+
+	// Set memory limit from flag (overrides config if provided, runtime only)
+	memoryLimit := cmd.Uint64(FlagMemoryLimit)
+	if memoryLimit == 0 {
+		memoryLimit = cfgMgr.Config().MemoryLimit
+	}
+
+	uploadService := uploadServiceFactory(cfgMgr, output, WithMemoryLimit(memoryLimit))
+
+	path := cmd.Args().First()
+	name := cmd.String(FlagName)
+	wait := cmd.Bool(FlagWait)
+	dryRun := cmd.Bool(FlagDryRun)
+
+	// Resolve input source (file/dir/stdin)
+	input, err := resolveUploadInput(path, name)
+	if err != nil {
+		return err
+	}
+
+	if dryRun {
+		options := make(map[string]string)
+		options[DryRunOptionInputType] = detectInputType(path)
+		if path != "" {
+			options[DryRunOptionPath] = path
+		} else {
+			options["Input"] = "stdin"
+		}
+		options[DryRunOptionName] = input.Name
+		options[DryRunOptionMemoryLimit] = fmt.Sprintf("%d MB", memoryLimit)
+		if wait {
+			options[DryRunOptionWait] = "yes"
+		}
+
+		RenderDryRun(output, DryRunPreview{
+			Operation: "upload operation",
+			Endpoint:  cfgMgr.Config().GetIPFSEndpointSecure(),
+			Options:   options,
+		})
+		return nil
+	}
+
+	result, err := uploadService.Upload(ctx, input.Filesystem, input.Name, wait)
+	if err != nil {
+		return err
+	}
+
+	if result != nil {
+		output.Printf("Uploaded CID: %s", result.CID)
+		gatewayURL := cfgMgr.Config().GetGatewayEndpointSecure() + result.CID
+		output.Printf("Gateway URL: %s", gatewayURL)
+		output.Printf("Size: %s", humanReadableSize(result.Size))
+		output.Printf("Time: %s", result.Duration.Round(time.Millisecond))
+	}
+
+	return nil
+}
+
+func defaultUploadServiceFactory(cfgMgr config.Manager, output Output, opts ...UploadServiceOption) UploadService {
+	return NewUploadService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpoint(), opts...)
+}
+
+func humanReadableSize(bytes int64) string {
+	return units.HumanSize(float64(bytes))
+}
