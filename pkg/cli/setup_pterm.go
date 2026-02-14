@@ -231,11 +231,8 @@ func (ui *PTermSetupUI) ExecuteConfigStep(ctx context.Context, wizard *SetupWiza
 
 	switch result {
 	case choices[0], choices[2]: // Use defaults or skip
-		err := wizard.ConfigManager().SetBaseEndpoint("")
-		if err != nil {
-			return fmt.Errorf("failed to set endpoint: %w", err)
-		}
-		err = wizard.ConfigManager().SetSecure(true)
+		// Don't set base_endpoint - keep default/empty
+		err := wizard.ConfigManager().SetSecure(true)
 		if err != nil {
 			return fmt.Errorf("failed to set secure: %w", err)
 		}
