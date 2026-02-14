@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/golang-jwt/jwt/v5"
 	"go.lumeweb.com/pinner-cli/pkg/config"
 	portalsdk "go.lumeweb.com/portal-sdk"
 )
@@ -46,6 +47,13 @@ type AuthService interface {
 
 	// DisableOTP disables two-factor authentication for the account.
 	DisableOTP(ctx context.Context, password string) error
+
+	// Status checks if the current auth token is valid.
+	Status(ctx context.Context) error
+
+	// GetAuthenticatedClient returns an authenticated account client.
+	// If the stored token is an API key JWT, it exchanges it for a login JWT.
+	GetAuthenticatedClient(ctx context.Context) (portalsdk.AccountAPI, error)
 }
 
 // AuthServiceOption configures an AuthService.
@@ -143,8 +151,8 @@ func (s *AuthServiceDefault) CompleteLogin(ctx context.Context, token, keyName s
 		return fmt.Errorf("failed to save API key: %w", err)
 	}
 
-	s.output.Print("Authentication successful!")
-	s.output.Printf("API key '%s' created and saved to config.", apiKey.Name)
+	// Output authentication success with JSON support
+	printAuthSuccess(s.output, s.configMgr, apiKey.Name, true)
 	return nil
 }
 
@@ -174,8 +182,8 @@ func (s *AuthServiceDefault) LoginWithOTP(ctx context.Context, intermediateJWT, 
 		return fmt.Errorf("failed to save API key: %w", err)
 	}
 
-	s.output.Print("Authentication successful!")
-	s.output.Printf("API key '%s' created and saved to config.", apiKey.Name)
+	// Output authentication success with JSON support
+	printAuthSuccess(s.output, s.configMgr, apiKey.Name, true)
 	return nil
 }
 
@@ -200,7 +208,8 @@ func (s *AuthServiceDefault) SaveToken(token string) error {
 		return fmt.Errorf("failed to save auth token: %w", err)
 	}
 
-	s.output.Print("Authentication successful! Token saved to config.")
+	// Output authentication success with JSON support (no API key created)
+	printAuthSuccess(s.output, s.configMgr, "", false)
 	return nil
 }
 
@@ -213,7 +222,12 @@ func (s *AuthServiceDefault) GetAPIEndpoint() string {
 func (s *AuthServiceDefault) EnableOTP(ctx context.Context, otpCode string) error {
 	s.output.PrintVerbosef("Using API endpoint: %s", s.apiEndpoint)
 
-	secret, err := s.accountClient.GenerateOTP(ctx)
+	client, err := s.GetAuthenticatedClient(ctx)
+	if err != nil {
+		return fmt.Errorf("authentication failed: %w", err)
+	}
+
+	secret, err := client.GenerateOTP(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to generate OTP secret: %w", err)
 	}
@@ -230,7 +244,7 @@ func (s *AuthServiceDefault) EnableOTP(ctx context.Context, otpCode string) erro
 		}
 	}
 
-	err = s.accountClient.VerifyOTP(ctx, otpCode)
+	err = client.VerifyOTP(ctx, otpCode)
 	if err != nil {
 		return fmt.Errorf("failed to verify OTP code: %w", err)
 	}
@@ -252,11 +266,144 @@ func (s *AuthServiceDefault) DisableOTP(ctx context.Context, password string) er
 		}
 	}
 
-	err := s.accountClient.DisableOTP(ctx, password)
+	client, err := s.GetAuthenticatedClient(ctx)
 	if err != nil {
+		return fmt.Errorf("authentication failed: %w", err)
+	}
+
+	if err := client.DisableOTP(ctx, password); err != nil {
 		return fmt.Errorf("failed to disable 2FA: %w", err)
 	}
 
 	s.output.Print("Two-factor authentication disabled successfully.")
 	return nil
+}
+
+// Status checks if the current auth token is valid.
+func (s *AuthServiceDefault) Status(ctx context.Context) error {
+	s.output.PrintVerbosef("Using API endpoint: %s", s.apiEndpoint)
+
+	client, err := s.GetAuthenticatedClient(ctx)
+	if err != nil {
+		return fmt.Errorf("authentication failed: %w", err)
+	}
+
+	if err := client.Ping(ctx); err != nil {
+		return fmt.Errorf("not authenticated: %w", err)
+	}
+
+	cfg := s.configMgr.Config()
+	portalURL := cfg.GetBaseEndpointSecure()
+
+	// Output authentication status with portal URL
+	printAuthStatus(s.output, portalURL)
+	return nil
+}
+
+// GetAuthenticatedClient returns an authenticated account client.
+// If the stored token is an API key JWT, it uses LoginWithAPIKey to exchange it for a login JWT.
+// If the stored token is a login JWT, it uses it directly.
+func (s *AuthServiceDefault) GetAuthenticatedClient(ctx context.Context) (portalsdk.AccountAPI, error) {
+	cfg := s.configMgr.Config()
+	token := cfg.AuthToken
+
+	if token == "" {
+		return nil, config.ErrNotAuthenticated
+	}
+
+	// Check if the token is an API key JWT by decoding its claims
+	purpose, err := getJWTPurpose(token)
+	if err != nil {
+		s.output.PrintVerbosef("Could not decode JWT to determine purpose, treating as login token: %v", err)
+		return s.clientFactory(s.apiEndpoint, token), nil
+	}
+
+	if purpose == "api" {
+		s.output.PrintVerbose("Detected API key JWT, exchanging for login token")
+		jwtToken, err := s.accountClient.LoginWithAPIKey(ctx, token)
+		if err != nil {
+			return nil, fmt.Errorf("failed to authenticate with API key: %w", err)
+		}
+		return s.clientFactory(s.apiEndpoint, jwtToken), nil
+	}
+
+	s.output.PrintVerbosef("Using JWT token for authentication (purpose: %s)", purpose)
+	return s.clientFactory(s.apiEndpoint, token), nil
+}
+
+// getJWTPurpose extracts the purpose from a JWT token's audience claim.
+// Returns the audience value or empty string if decoding fails.
+// API keys have audience="api", login tokens have audience="login".
+func getJWTPurpose(token string) (string, error) {
+	// Parse without verification to just read the claims
+	parser := jwt.NewParser(jwt.WithoutClaimsValidation())
+	parsedToken, _, err := parser.ParseUnverified(token, &jwt.RegisteredClaims{})
+	if err != nil {
+		return "", err
+	}
+
+	claims, ok := parsedToken.Claims.(*jwt.RegisteredClaims)
+	if !ok {
+		return "", fmt.Errorf("invalid claims type")
+	}
+
+	// Return the first audience value (we typically only have one)
+	if len(claims.Audience) > 0 {
+		return claims.Audience[0], nil
+	}
+
+	return "", nil
+}
+
+// printAuthSuccess outputs authentication success message with config path and portal URL.
+// Supports both human-readable and JSON output formats.
+func printAuthSuccess(output Output, configMgr config.Manager, apiKeyName string, apiKeyCreated bool) {
+	configPath := configMgr.ConfigPath()
+	portalURL := configMgr.Config().GetBaseEndpointSecure()
+
+	// For JSON output, provide a structured response
+	if output.IsJSON() {
+		result := map[string]any{
+			"status":     "authenticated",
+			"configPath": configPath,
+			"portalURL":  portalURL,
+		}
+		if apiKeyCreated {
+			result["apiKeyName"] = apiKeyName
+			result["message"] = fmt.Sprintf("Authentication successful! API key '%s' created and saved to config.", apiKeyName)
+		} else {
+			result["message"] = "Authentication successful! Token saved to config."
+		}
+		_ = output.PrintJSON(result)
+		return
+	}
+
+	// Human-readable output
+	output.Print("Authentication successful!")
+	if apiKeyCreated {
+		output.Printfln("API key '%s' created and saved to config.", apiKeyName)
+	} else {
+		output.Print("Token saved to config.")
+	}
+	output.Printfln("Config file: %s", configPath)
+	output.Printfln("Portal URL: %s", portalURL)
+}
+
+// printAuthStatus outputs authentication status with portal URL.
+// Supports both human-readable and JSON output formats.
+func printAuthStatus(output Output, portalURL string) {
+	// For JSON output, provide a structured response
+	if output.IsJSON() {
+		result := map[string]any{
+			"status":    "authenticated",
+			"portalURL": portalURL,
+			"message":   "Authentication status: authenticated",
+		}
+		_ = output.PrintJSON(result)
+		return
+	}
+
+	// Human-readable output
+	output.Print("Authentication status: authenticated")
+	output.Printfln("Portal: %s", portalURL)
 }

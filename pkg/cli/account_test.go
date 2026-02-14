@@ -9,6 +9,7 @@ import (
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/pkg/config"
 	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
+	portalsdk "go.lumeweb.com/portal-sdk"
 	portalsdkmocks "go.lumeweb.com/portal-sdk/mocks"
 )
 
@@ -230,6 +231,11 @@ func TestAuthService_EnableOTP(t *testing.T) {
 			prompter := NewMockAuthPrompter(t)
 			output := NewOutputFormatter(false, false, false, false)
 
+			// Mock Config() to return a config with a login JWT
+			cfg := config.NewConfig()
+			cfg.AuthToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdWQiOiJsb2dpbiIsInN1YiI6InVzZXIxMjMifQ.test"
+			cfgMgr.EXPECT().Config().Return(cfg)
+
 			if tt.setupMocks != nil {
 				tt.setupMocks(acc, prompter)
 			}
@@ -237,6 +243,9 @@ func TestAuthService_EnableOTP(t *testing.T) {
 			authService := NewAuthService(cfgMgr, output, "https://api.test.com",
 				WithAuthAccountClient(acc),
 				WithPrompter(prompter),
+				WithClientFactory(func(endpoint, jwt string) portalsdk.AccountAPI {
+					return acc
+				}),
 			)
 
 			err := authService.EnableOTP(context.Background(), tt.otp)
@@ -287,6 +296,11 @@ func TestAuthService_EnableOTP_Interactive(t *testing.T) {
 			prompter := NewMockAuthPrompter(t)
 			output := NewOutputFormatter(false, false, false, false)
 
+			// Mock Config() to return a config with a login JWT
+			cfg := config.NewConfig()
+			cfg.AuthToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdWQiOiJsb2dpbiIsInN1YiI6InVzZXIxMjMifQ.test"
+			cfgMgr.EXPECT().Config().Return(cfg)
+
 			if tt.setupMocks != nil {
 				tt.setupMocks(acc, prompter)
 			}
@@ -294,6 +308,9 @@ func TestAuthService_EnableOTP_Interactive(t *testing.T) {
 			authService := NewAuthService(cfgMgr, output, "https://api.test.com",
 				WithAuthAccountClient(acc),
 				WithPrompter(prompter),
+				WithClientFactory(func(endpoint, jwt string) portalsdk.AccountAPI {
+					return acc
+				}),
 			)
 
 			err := authService.EnableOTP(context.Background(), "")
@@ -344,12 +361,20 @@ func TestAuthService_DisableOTP(t *testing.T) {
 			acc := portalsdkmocks.NewMockAccountAPI(t)
 			output := NewOutputFormatter(false, false, false, false)
 
+			// Mock Config() to return a config with a login JWT
+			cfg := config.NewConfig()
+			cfg.AuthToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdWQiOiJsb2dpbiIsInN1YiI6InVzZXIxMjMifQ.test"
+			cfgMgr.EXPECT().Config().Return(cfg)
+
 			if tt.setupMocks != nil {
 				tt.setupMocks(acc, nil)
 			}
 
 			authService := NewAuthService(cfgMgr, output, "https://api.test.com",
 				WithAuthAccountClient(acc),
+				WithClientFactory(func(endpoint, jwt string) portalsdk.AccountAPI {
+					return acc
+				}),
 			)
 
 			err := authService.DisableOTP(context.Background(), tt.password)
@@ -398,6 +423,11 @@ func TestAuthService_DisableOTP_Interactive(t *testing.T) {
 			prompter := NewMockAuthPrompter(t)
 			output := NewOutputFormatter(false, false, false, false)
 
+			// Mock Config() to return a config with a login JWT (optional, for early exit cases)
+			cfg := config.NewConfig()
+			cfg.AuthToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdWQiOiJsb2dpbiIsInN1YiI6InVzZXIxMjMifQ.test"
+			cfgMgr.EXPECT().Config().Return(cfg).Maybe()
+
 			if tt.setupMocks != nil {
 				tt.setupMocks(acc, prompter)
 			}
@@ -405,6 +435,9 @@ func TestAuthService_DisableOTP_Interactive(t *testing.T) {
 			authService := NewAuthService(cfgMgr, output, "https://api.test.com",
 				WithAuthAccountClient(acc),
 				WithPrompter(prompter),
+				WithClientFactory(func(endpoint, jwt string) portalsdk.AccountAPI {
+					return acc
+				}),
 			)
 
 			err := authService.DisableOTP(context.Background(), "")

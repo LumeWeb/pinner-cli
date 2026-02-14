@@ -265,6 +265,68 @@ func (_c *MockAuthService_GetAPIEndpoint_Call) RunAndReturn(run func() string) *
 	return _c
 }
 
+// GetAuthenticatedClient provides a mock function for the type MockAuthService
+func (_mock *MockAuthService) GetAuthenticatedClient(ctx context.Context) (account.AccountAPI, error) {
+	ret := _mock.Called(ctx)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetAuthenticatedClient")
+	}
+
+	var r0 account.AccountAPI
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context) (account.AccountAPI, error)); ok {
+		return returnFunc(ctx)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context) account.AccountAPI); ok {
+		r0 = returnFunc(ctx)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(account.AccountAPI)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context) error); ok {
+		r1 = returnFunc(ctx)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockAuthService_GetAuthenticatedClient_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetAuthenticatedClient'
+type MockAuthService_GetAuthenticatedClient_Call struct {
+	*mock.Call
+}
+
+// GetAuthenticatedClient is a helper method to define mock.On call
+//   - ctx context.Context
+func (_e *MockAuthService_Expecter) GetAuthenticatedClient(ctx interface{}) *MockAuthService_GetAuthenticatedClient_Call {
+	return &MockAuthService_GetAuthenticatedClient_Call{Call: _e.mock.On("GetAuthenticatedClient", ctx)}
+}
+
+func (_c *MockAuthService_GetAuthenticatedClient_Call) Run(run func(ctx context.Context)) *MockAuthService_GetAuthenticatedClient_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockAuthService_GetAuthenticatedClient_Call) Return(accountAPI account.AccountAPI, err error) *MockAuthService_GetAuthenticatedClient_Call {
+	_c.Call.Return(accountAPI, err)
+	return _c
+}
+
+func (_c *MockAuthService_GetAuthenticatedClient_Call) RunAndReturn(run func(ctx context.Context) (account.AccountAPI, error)) *MockAuthService_GetAuthenticatedClient_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // LoginCheck provides a mock function for the type MockAuthService
 func (_mock *MockAuthService) LoginCheck(ctx context.Context, email string, password string) (*account.LoginResult, error) {
 	ret := _mock.Called(ctx, email, password)
@@ -536,6 +598,57 @@ func (_c *MockAuthService_SaveToken_Call) Return(err error) *MockAuthService_Sav
 }
 
 func (_c *MockAuthService_SaveToken_Call) RunAndReturn(run func(token string) error) *MockAuthService_SaveToken_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// Status provides a mock function for the type MockAuthService
+func (_mock *MockAuthService) Status(ctx context.Context) error {
+	ret := _mock.Called(ctx)
+
+	if len(ret) == 0 {
+		panic("no return value specified for Status")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context) error); ok {
+		r0 = returnFunc(ctx)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockAuthService_Status_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Status'
+type MockAuthService_Status_Call struct {
+	*mock.Call
+}
+
+// Status is a helper method to define mock.On call
+//   - ctx context.Context
+func (_e *MockAuthService_Expecter) Status(ctx interface{}) *MockAuthService_Status_Call {
+	return &MockAuthService_Status_Call{Call: _e.mock.On("Status", ctx)}
+}
+
+func (_c *MockAuthService_Status_Call) Run(run func(ctx context.Context)) *MockAuthService_Status_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockAuthService_Status_Call) Return(err error) *MockAuthService_Status_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockAuthService_Status_Call) RunAndReturn(run func(ctx context.Context) error) *MockAuthService_Status_Call {
 	_c.Call.Return(run)
 	return _c
 }
