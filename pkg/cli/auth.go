@@ -216,6 +216,9 @@ Examples:
 				Usage: "Overwrite existing auth token without confirmation",
 			},
 		},
+		Commands: []*cli.Command{
+			newAuthStatusCommand(),
+		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			output := NewOutputFormatter(
 				cmd.Bool(FlagJSON),
@@ -367,4 +370,43 @@ func defaultConfigManagerFactory() (config.Manager, error) {
 // defaultAuthServiceFactory creates an auth service with the given dependencies.
 func defaultAuthServiceFactory(cfgMgr config.Manager, output Output, apiEndpoint string) AuthService {
 	return NewAuthService(cfgMgr, output, apiEndpoint)
+}
+
+// newAuthStatusCommand creates the auth status subcommand.
+func newAuthStatusCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "status",
+		Usage: "Check authentication status",
+		Description: `Check if you are currently authenticated with Pinner.xyz.
+
+This command verifies that your stored auth token is valid by making a
+request to the Pinner.xyz API.
+
+Examples:
+  pinner auth status
+  pinner auth status --json
+  pinner auth status --verbose`,
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			output := NewOutputFormatter(
+				cmd.Bool(FlagJSON),
+				cmd.Bool(FlagVerbose),
+				cmd.Bool(FlagQuiet),
+				cmd.Bool(FlagUnmask),
+			)
+			return authStatus(ctx, cmd, output, defaultConfigManagerFactory, defaultAuthServiceFactory)
+		},
+	}
+}
+
+// authStatus checks if the user is authenticated.
+func authStatus(ctx context.Context, cmd *cli.Command, output Output, cfgMgrFactory ConfigManagerFactory, authServiceFactory AuthServiceFactory) error {
+	cfgMgr, err := cfgMgrFactory()
+	if err != nil {
+		return fmt.Errorf("failed to initialize config manager: %w", err)
+	}
+
+	apiEndpoint := cfgMgr.Config().GetAPIEndpoint()
+	authService := authServiceFactory(cfgMgr, output, apiEndpoint)
+
+	return authService.Status(ctx)
 }

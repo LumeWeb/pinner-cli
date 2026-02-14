@@ -104,6 +104,8 @@ func TestAuthService_CompleteLogin(t *testing.T) {
 			noCreateKey: false,
 			setupMocks: func(cfgMgr *configmocks.MockManager, acc *portalsdkmocks.MockAccountAPI) {
 				cfgMgr.EXPECT().SetAuthToken("test-api-key-token").Return(nil)
+				cfgMgr.EXPECT().ConfigPath().Return("/home/user/.config/pinner/config.yaml")
+				cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://pinner.xyz", Secure: true})
 			},
 			wantErr: false,
 		},
@@ -114,6 +116,8 @@ func TestAuthService_CompleteLogin(t *testing.T) {
 			noCreateKey: true,
 			setupMocks: func(cfgMgr *configmocks.MockManager, acc *portalsdkmocks.MockAccountAPI) {
 				cfgMgr.EXPECT().SetAuthToken("test-jwt-token").Return(nil)
+				cfgMgr.EXPECT().ConfigPath().Return("/home/user/.config/pinner/config.yaml")
+				cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://pinner.xyz", Secure: true})
 			},
 			wantErr: false,
 		},
@@ -195,6 +199,8 @@ func TestAuthService_SaveToken(t *testing.T) {
 			token: "test-jwt-token",
 			setupMocks: func(cfgMgr *configmocks.MockManager) {
 				cfgMgr.EXPECT().SetAuthToken("test-jwt-token").Return(nil)
+				cfgMgr.EXPECT().ConfigPath().Return("/home/user/.config/pinner/config.yaml")
+				cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://pinner.xyz", Secure: true})
 			},
 			wantErr: false,
 		},
@@ -240,6 +246,45 @@ func TestAuthService_GetAPIEndpoint(t *testing.T) {
 
 	authService := NewAuthService(cfgMgr, output, "https://api.test.com")
 	require.Equal(t, "https://api.test.com", authService.GetAPIEndpoint())
+}
+
+func TestAuthService_SaveToken_JSONOutput(t *testing.T) {
+	// Test JSON output for SaveToken
+	cfgMgr := configmocks.NewMockManager(t)
+	output := NewOutputFormatter(true, false, false, false)
+
+	cfgMgr.EXPECT().SetAuthToken("test-token").Return(nil)
+	cfgMgr.EXPECT().ConfigPath().Return("/home/user/.config/pinner/config.yaml")
+	cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://pinner.xyz", Secure: true})
+
+	authService := NewAuthService(cfgMgr, output, "https://api.test.com")
+
+	err := authService.SaveToken("test-token")
+	require.NoError(t, err)
+}
+
+func TestAuthService_CompleteLogin_JSONOutput(t *testing.T) {
+	// Test JSON output for CompleteLogin with API key creation
+	cfgMgr := configmocks.NewMockManager(t)
+	acc := portalsdkmocks.NewMockAccountAPI(t)
+	authAcc := portalsdkmocks.NewMockAccountAPI(t)
+	output := NewOutputFormatter(true, false, false, false)
+
+	cfgMgr.EXPECT().SetAuthToken("test-api-key-token").Return(nil)
+	cfgMgr.EXPECT().ConfigPath().Return("/home/user/.config/pinner/config.yaml")
+	cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://pinner.xyz", Secure: true})
+	authAcc.EXPECT().CreateAPIKey(context.Background(), "test-key").
+		Return(portalsdk.NewAPIKey("test-key", "test-api-key-token"), nil)
+
+	authService := NewAuthService(cfgMgr, output, "https://api.test.com",
+		WithAuthAccountClient(acc),
+		WithClientFactory(func(endpoint, jwt string) portalsdk.AccountAPI {
+			return authAcc
+		}),
+	)
+
+	err := authService.CompleteLogin(context.Background(), "test-jwt", "test-key", false)
+	require.NoError(t, err)
 }
 
 func TestNewAuthService(t *testing.T) {
@@ -564,6 +609,8 @@ func TestAuthService_LoginWithOTP(t *testing.T) {
 				acc.EXPECT().ValidateOTP(context.Background(), "intermediate-jwt-token", "123456").
 					Return("final-jwt-token", nil)
 				cfgMgr.EXPECT().SetAuthToken("test-api-key-token").Return(nil)
+				cfgMgr.EXPECT().ConfigPath().Return("/home/user/.config/pinner/config.yaml")
+				cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://pinner.xyz", Secure: true})
 			},
 			wantErr: false,
 		},
@@ -577,6 +624,8 @@ func TestAuthService_LoginWithOTP(t *testing.T) {
 				acc.EXPECT().ValidateOTP(context.Background(), "intermediate-jwt-token", "123456").
 					Return("final-jwt-token", nil)
 				cfgMgr.EXPECT().SetAuthToken("final-jwt-token").Return(nil)
+				cfgMgr.EXPECT().ConfigPath().Return("/home/user/.config/pinner/config.yaml")
+				cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://pinner.xyz", Secure: true})
 			},
 			wantErr: false,
 		},
