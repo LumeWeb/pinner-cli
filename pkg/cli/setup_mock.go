@@ -190,9 +190,7 @@ func (m *MockSetupUI) ExecuteConfigStep(ctx context.Context, wizard *SetupWizard
 	// Simulate config flow based on choice
 	switch m.ConfigChoice {
 	case ConfigChoiceUseDefaults:
-		if err := wizard.ConfigManager().SetBaseEndpoint(""); err != nil {
-			return fmt.Errorf("failed to set mock endpoint: %w", err)
-		}
+		// Don't set base_endpoint - keep default/empty
 		if err := wizard.ConfigManager().SetSecure(true); err != nil {
 			return fmt.Errorf("failed to set mock secure: %w", err)
 		}

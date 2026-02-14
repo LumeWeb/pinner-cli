@@ -366,11 +366,15 @@ func TestSetupWizard_ConfigStep(t *testing.T) {
 			}
 			cfgMgr.EXPECT().Config().Return(cfg).Maybe()
 
-			// Mock setter methods to update the config struct (only when not skipping)
-			if tt.configChoice != ConfigChoiceSkip {
+			// Mock setter methods to update the config struct
+			// Only set BaseEndpoint for custom config, not for defaults (which leave it unset)
+			if tt.configChoice == ConfigChoiceCustomEndpoint {
 				cfgMgr.EXPECT().SetBaseEndpoint(tt.wantEndpoint).Return(nil).Run(func(endpoint string) {
 					cfg.BaseEndpoint = endpoint
 				})
+			}
+			// SetSecure is called for UseDefaults and CustomEndpoint, but not for Skip
+			if tt.configChoice != ConfigChoiceSkip {
 				cfgMgr.EXPECT().SetSecure(tt.wantSecure).Return(nil).Run(func(secure bool) {
 					cfg.Secure = secure
 				})
