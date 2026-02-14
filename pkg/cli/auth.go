@@ -361,7 +361,14 @@ func interactiveLogin(ctx context.Context, authService AuthService, output Outpu
 // defaultConfigManagerFactory creates a config manager using the default config path.
 func defaultConfigManagerFactory() (config.Manager, error) {
 	configPath := config.DefaultConfigPath
-	return config.NewManager(configPath)
+	cfgMgr, err := config.NewManager(configPath)
+	if err != nil {
+		return nil, err
+	}
+	if err := cfgMgr.Load(); err != nil {
+		return nil, fmt.Errorf("failed to load config: %w", err)
+	}
+	return cfgMgr, nil
 }
 
 // defaultAuthServiceFactory creates an auth service with the given dependencies.

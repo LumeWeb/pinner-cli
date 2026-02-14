@@ -336,6 +336,50 @@ func (_c *MockManager_ConfigFile_Call) RunAndReturn(run func() string) *MockMana
 	return _c
 }
 
+// ConfigPath provides a mock function for the type MockManager
+func (_mock *MockManager) ConfigPath() string {
+	ret := _mock.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for ConfigPath")
+	}
+
+	var r0 string
+	if returnFunc, ok := ret.Get(0).(func() string); ok {
+		r0 = returnFunc()
+	} else {
+		r0 = ret.Get(0).(string)
+	}
+	return r0
+}
+
+// MockManager_ConfigPath_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ConfigPath'
+type MockManager_ConfigPath_Call struct {
+	*mock.Call
+}
+
+// ConfigPath is a helper method to define mock.On call
+func (_e *MockManager_Expecter) ConfigPath() *MockManager_ConfigPath_Call {
+	return &MockManager_ConfigPath_Call{Call: _e.mock.On("ConfigPath")}
+}
+
+func (_c *MockManager_ConfigPath_Call) Run(run func()) *MockManager_ConfigPath_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run()
+	})
+	return _c
+}
+
+func (_c *MockManager_ConfigPath_Call) Return(s string) *MockManager_ConfigPath_Call {
+	_c.Call.Return(s)
+	return _c
+}
+
+func (_c *MockManager_ConfigPath_Call) RunAndReturn(run func() string) *MockManager_ConfigPath_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Delete provides a mock function for the type MockManager
 func (_mock *MockManager) Delete(key string) {
 	_mock.Called(key)
@@ -631,13 +675,10 @@ func (_c *MockManager_FlagManager_Call) RunAndReturn(run func() configmanager.Fl
 
 // Get provides a mock function for the type MockManager
 func (_mock *MockManager) Get(key string, target ...any) (any, any, error) {
-	var tmpRet mock.Arguments
-	if len(target) > 0 {
-		tmpRet = _mock.Called(key, target)
-	} else {
-		tmpRet = _mock.Called(key)
-	}
-	ret := tmpRet
+	var _ca []interface{}
+	_ca = append(_ca, key)
+	_ca = append(_ca, target...)
+	ret := _mock.Called(_ca...)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Get")
@@ -691,9 +732,11 @@ func (_c *MockManager_Get_Call) Run(run func(key string, target ...any)) *MockMa
 			arg0 = args[0].(string)
 		}
 		var arg1 []any
-		var variadicArgs []any
-		if len(args) > 1 {
-			variadicArgs = args[1].([]any)
+		variadicArgs := make([]any, len(args)-1)
+		for i, a := range args[1:] {
+			if a != nil {
+				variadicArgs[i] = a.(any)
+			}
 		}
 		arg1 = variadicArgs
 		run(
@@ -1616,13 +1659,14 @@ func (_c *MockManager_LoadSource_Call) RunAndReturn(run func(src source.ConfigSo
 
 // Persist provides a mock function for the type MockManager
 func (_mock *MockManager) Persist(keyPrefix ...string) error {
-	var tmpRet mock.Arguments
-	if len(keyPrefix) > 0 {
-		tmpRet = _mock.Called(keyPrefix)
-	} else {
-		tmpRet = _mock.Called()
+	// string
+	_va := make([]interface{}, len(keyPrefix))
+	for _i := range keyPrefix {
+		_va[_i] = keyPrefix[_i]
 	}
-	ret := tmpRet
+	var _ca []interface{}
+	_ca = append(_ca, _va...)
+	ret := _mock.Called(_ca...)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Persist")
@@ -1652,9 +1696,11 @@ func (_e *MockManager_Expecter) Persist(keyPrefix ...interface{}) *MockManager_P
 func (_c *MockManager_Persist_Call) Run(run func(keyPrefix ...string)) *MockManager_Persist_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 []string
-		var variadicArgs []string
-		if len(args) > 0 {
-			variadicArgs = args[0].([]string)
+		variadicArgs := make([]string, len(args)-0)
+		for i, a := range args[0:] {
+			if a != nil {
+				variadicArgs[i] = a.(string)
+			}
 		}
 		arg0 = variadicArgs
 		run(
@@ -2474,13 +2520,14 @@ func (_c *MockManager_SetSecure_Call) RunAndReturn(run func(secure bool) error) 
 
 // SetupSync provides a mock function for the type MockManager
 func (_mock *MockManager) SetupSync(opts ...configmanager.ConfigOption) error {
-	var tmpRet mock.Arguments
-	if len(opts) > 0 {
-		tmpRet = _mock.Called(opts)
-	} else {
-		tmpRet = _mock.Called()
+	// configmanager.ConfigOption
+	_va := make([]interface{}, len(opts))
+	for _i := range opts {
+		_va[_i] = opts[_i]
 	}
-	ret := tmpRet
+	var _ca []interface{}
+	_ca = append(_ca, _va...)
+	ret := _mock.Called(_ca...)
 
 	if len(ret) == 0 {
 		panic("no return value specified for SetupSync")
@@ -2510,9 +2557,11 @@ func (_e *MockManager_Expecter) SetupSync(opts ...interface{}) *MockManager_Setu
 func (_c *MockManager_SetupSync_Call) Run(run func(opts ...configmanager.ConfigOption)) *MockManager_SetupSync_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 []configmanager.ConfigOption
-		var variadicArgs []configmanager.ConfigOption
-		if len(args) > 0 {
-			variadicArgs = args[0].([]configmanager.ConfigOption)
+		variadicArgs := make([]configmanager.ConfigOption, len(args)-0)
+		for i, a := range args[0:] {
+			if a != nil {
+				variadicArgs[i] = a.(configmanager.ConfigOption)
+			}
 		}
 		arg0 = variadicArgs
 		run(
@@ -2688,13 +2737,14 @@ func (_c *MockManager_UnregisterNamespace_Call) RunAndReturn(run func(namespace 
 
 // Validate provides a mock function for the type MockManager
 func (_mock *MockManager) Validate(keyPrefix ...string) error {
-	var tmpRet mock.Arguments
-	if len(keyPrefix) > 0 {
-		tmpRet = _mock.Called(keyPrefix)
-	} else {
-		tmpRet = _mock.Called()
+	// string
+	_va := make([]interface{}, len(keyPrefix))
+	for _i := range keyPrefix {
+		_va[_i] = keyPrefix[_i]
 	}
-	ret := tmpRet
+	var _ca []interface{}
+	_ca = append(_ca, _va...)
+	ret := _mock.Called(_ca...)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Validate")
@@ -2724,9 +2774,11 @@ func (_e *MockManager_Expecter) Validate(keyPrefix ...interface{}) *MockManager_
 func (_c *MockManager_Validate_Call) Run(run func(keyPrefix ...string)) *MockManager_Validate_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 []string
-		var variadicArgs []string
-		if len(args) > 0 {
-			variadicArgs = args[0].([]string)
+		variadicArgs := make([]string, len(args)-0)
+		for i, a := range args[0:] {
+			if a != nil {
+				variadicArgs[i] = a.(string)
+			}
 		}
 		arg0 = variadicArgs
 		run(

@@ -90,7 +90,7 @@ Pinner.xyz CLI is a Go-based command-line tool for pinning content to IPFS via t
 
 - **`pkg/config/`**: Configuration management.
   - Extends `go.lumeweb.com/configmanager` for CLI-specific config
-  - Default config location: `~/.config/lume/pinner.yaml`
+  - Default config location: `~/.config/pinner/config.yaml`
   - Methods for managing auth tokens, endpoints, retries, and secure flags
 
 - **`pkg/internal/io/`**: Filesystem abstractions.
