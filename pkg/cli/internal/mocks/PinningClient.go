@@ -41,13 +41,15 @@ func (_m *MockPinningClient) EXPECT() *MockPinningClient_Expecter {
 
 // Add provides a mock function for the type MockPinningClient
 func (_mock *MockPinningClient) Add(ctx context.Context, cid1 cid.Cid, opts ...go_pinning_service_http_client.AddOption) (go_pinning_service_http_client.PinStatusGetter, error) {
-	var tmpRet mock.Arguments
-	if len(opts) > 0 {
-		tmpRet = _mock.Called(ctx, cid1, opts)
-	} else {
-		tmpRet = _mock.Called(ctx, cid1)
+	// go_pinning_service_http_client.AddOption
+	_va := make([]interface{}, len(opts))
+	for _i := range opts {
+		_va[_i] = opts[_i]
 	}
-	ret := tmpRet
+	var _ca []interface{}
+	_ca = append(_ca, ctx, cid1)
+	_ca = append(_ca, _va...)
+	ret := _mock.Called(_ca...)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Add")
@@ -98,9 +100,11 @@ func (_c *MockPinningClient_Add_Call) Run(run func(ctx context.Context, cid1 cid
 			arg1 = args[1].(cid.Cid)
 		}
 		var arg2 []go_pinning_service_http_client.AddOption
-		var variadicArgs []go_pinning_service_http_client.AddOption
-		if len(args) > 2 {
-			variadicArgs = args[2].([]go_pinning_service_http_client.AddOption)
+		variadicArgs := make([]go_pinning_service_http_client.AddOption, len(args)-2)
+		for i, a := range args[2:] {
+			if a != nil {
+				variadicArgs[i] = a.(go_pinning_service_http_client.AddOption)
+			}
 		}
 		arg2 = variadicArgs
 		run(
@@ -249,13 +253,15 @@ func (_c *MockPinningClient_GetStatusByID_Call) RunAndReturn(run func(ctx contex
 
 // LsSync provides a mock function for the type MockPinningClient
 func (_mock *MockPinningClient) LsSync(ctx context.Context, opts ...go_pinning_service_http_client.LsOption) ([]go_pinning_service_http_client.PinStatusGetter, error) {
-	var tmpRet mock.Arguments
-	if len(opts) > 0 {
-		tmpRet = _mock.Called(ctx, opts)
-	} else {
-		tmpRet = _mock.Called(ctx)
+	// go_pinning_service_http_client.LsOption
+	_va := make([]interface{}, len(opts))
+	for _i := range opts {
+		_va[_i] = opts[_i]
 	}
-	ret := tmpRet
+	var _ca []interface{}
+	_ca = append(_ca, ctx)
+	_ca = append(_ca, _va...)
+	ret := _mock.Called(_ca...)
 
 	if len(ret) == 0 {
 		panic("no return value specified for LsSync")
@@ -301,9 +307,11 @@ func (_c *MockPinningClient_LsSync_Call) Run(run func(ctx context.Context, opts 
 			arg0 = args[0].(context.Context)
 		}
 		var arg1 []go_pinning_service_http_client.LsOption
-		var variadicArgs []go_pinning_service_http_client.LsOption
-		if len(args) > 1 {
-			variadicArgs = args[1].([]go_pinning_service_http_client.LsOption)
+		variadicArgs := make([]go_pinning_service_http_client.LsOption, len(args)-1)
+		for i, a := range args[1:] {
+			if a != nil {
+				variadicArgs[i] = a.(go_pinning_service_http_client.LsOption)
+			}
 		}
 		arg1 = variadicArgs
 		run(
@@ -326,13 +334,15 @@ func (_c *MockPinningClient_LsSync_Call) RunAndReturn(run func(ctx context.Conte
 
 // Replace provides a mock function for the type MockPinningClient
 func (_mock *MockPinningClient) Replace(ctx context.Context, pinID string, cid1 cid.Cid, opts ...go_pinning_service_http_client.AddOption) (go_pinning_service_http_client.PinStatusGetter, error) {
-	var tmpRet mock.Arguments
-	if len(opts) > 0 {
-		tmpRet = _mock.Called(ctx, pinID, cid1, opts)
-	} else {
-		tmpRet = _mock.Called(ctx, pinID, cid1)
+	// go_pinning_service_http_client.AddOption
+	_va := make([]interface{}, len(opts))
+	for _i := range opts {
+		_va[_i] = opts[_i]
 	}
-	ret := tmpRet
+	var _ca []interface{}
+	_ca = append(_ca, ctx, pinID, cid1)
+	_ca = append(_ca, _va...)
+	ret := _mock.Called(_ca...)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Replace")
@@ -388,9 +398,11 @@ func (_c *MockPinningClient_Replace_Call) Run(run func(ctx context.Context, pinI
 			arg2 = args[2].(cid.Cid)
 		}
 		var arg3 []go_pinning_service_http_client.AddOption
-		var variadicArgs []go_pinning_service_http_client.AddOption
-		if len(args) > 3 {
-			variadicArgs = args[3].([]go_pinning_service_http_client.AddOption)
+		variadicArgs := make([]go_pinning_service_http_client.AddOption, len(args)-3)
+		for i, a := range args[3:] {
+			if a != nil {
+				variadicArgs[i] = a.(go_pinning_service_http_client.AddOption)
+			}
 		}
 		arg3 = variadicArgs
 		run(
