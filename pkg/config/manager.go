@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"go.lumeweb.com/configmanager"
 	"go.lumeweb.com/configmanager/source"
@@ -16,18 +17,14 @@ var (
 	ErrNotAuthenticated = errors.New("not authenticated: no auth token configured")
 
 	// DefaultConfigPath is the default location for the config file.
-	DefaultConfigPath = "~/.config/lume/pinner.yaml"
-)
-
-const (
-	// ConfigKey is the key used for the main config namespace.
-	ConfigKey = "pinner"
+	DefaultConfigPath = "~/.config/pinner/config.yaml"
 )
 
 // Manager extends configmanager.Manager with CLI-specific configuration methods.
 type Manager interface {
 	configmanager.Manager
 	Config() *Config
+	ConfigPath() string
 	Load() error
 	Save() error
 	SetAuthToken(token string) error
@@ -68,18 +65,15 @@ func NewManager(configPath string) (Manager, error) {
 		return nil, fmt.Errorf("failed to check config file: %w", err)
 	}
 
-	_, err = os.Stat(configPath)
-	if err == nil {
-		fileSource := source.NewFileSource(configPath)
-		cm.RegisterSource(fileSource)
-	} else if !os.IsNotExist(err) {
-		return nil, fmt.Errorf("failed to check config file: %w", err)
-	}
+	// Always register the file source - it will create the file when Persist is called
+	fileSource := source.NewFileSource(configPath)
+	cm.RegisterSource(fileSource)
+	cm.RegisterNamespace(configmanager.ROOT_NS, fileSource)
 
 	defaultSource := source.NewDefaultConfigSource(cm)
 	cm.RegisterSource(defaultSource)
 
-	if err = cm.RegisterStruct("", &Config{}); err != nil {
+	if err = cm.RegisterStruct(configmanager.ROOT_NS, &Config{}); err != nil {
 		return nil, fmt.Errorf("failed to register config struct: %w", err)
 	}
 
@@ -91,22 +85,42 @@ func NewManager(configPath string) (Manager, error) {
 
 // Config returns the current Config instance by reading from the config manager.
 func (m *managerImpl) Config() *Config {
-	cfg := &Config{}
-	_, _, err := m.Manager.Get(ConfigKey, cfg)
+	_, decoded, err := m.Manager.Get(configmanager.ROOT_NS)
 	if err != nil {
 		return NewConfig()
 	}
-	return cfg
+	if decoded != nil {
+		if cfg, ok := decoded.(*Config); ok {
+			return cfg
+		}
+	}
+	return NewConfig()
 }
 
 // Load loads configuration from all registered sources.
+// If the config file doesn't exist, it continues with defaults (no error).
 func (m *managerImpl) Load() error {
-	return m.Manager.Load()
+	err := m.Manager.Load()
+	// If the file doesn't exist, just use defaults - not an error
+	if err != nil && isFileNotFoundError(err) {
+		return nil
+	}
+	return err
+}
+
+// isFileNotFoundError checks if an error is a "file not found" error.
+func isFileNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+	// Check for "no such file or directory" error
+	// This handles both direct os.ErrNotExist and wrapped errors
+	return os.IsNotExist(err) || strings.Contains(err.Error(), "no such file or directory")
 }
 
 // Save persists the current configuration to disk.
 func (m *managerImpl) Save() error {
-	return m.Manager.Persist(ConfigKey)
+	return m.Manager.Persist()
 }
 
 // SetAuthToken sets the authentication token in the config.
@@ -115,6 +129,11 @@ func (m *managerImpl) SetAuthToken(token string) error {
 		return fmt.Errorf("failed to set auth token: %w", err)
 	}
 	return m.Save()
+}
+
+// ConfigPath returns the actual (expanded) path to the config file.
+func (m *managerImpl) ConfigPath() string {
+	return m.configPath
 }
 
 // SetBaseEndpoint sets the base endpoint in the config.

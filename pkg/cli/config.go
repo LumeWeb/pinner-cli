@@ -70,10 +70,6 @@ func showAllConfig(output Output, cfgMgrFactory ConfigManagerFactory) error {
 		return fmt.Errorf("failed to initialize config manager: %w", err)
 	}
 
-	if err := cfgMgr.Load(); err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
-	}
-
 	headers := []string{"Key", "Value", "Description"}
 	rows := [][]string{}
 
@@ -120,10 +116,6 @@ func getConfig(cmd *cli.Command, output Output, cfgMgrFactory ConfigManagerFacto
 		return fmt.Errorf("failed to initialize config manager: %w", err)
 	}
 
-	if err := cfgMgr.Load(); err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
-	}
-
 	key := cmd.Args().Get(1)
 	if key == "" {
 		return fmt.Errorf("key is required for 'get' command. Run 'pinner config' to see all keys")
@@ -158,10 +150,6 @@ func setConfig(ctx context.Context, cmd *cli.Command, output Output, cfgMgrFacto
 	cfgMgr, err := cfgMgrFactory()
 	if err != nil {
 		return fmt.Errorf("failed to initialize config manager: %w", err)
-	}
-
-	if err := cfgMgr.Load(); err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
 	}
 
 	key := cmd.Args().Get(1)

@@ -54,7 +54,7 @@ pinner status bafybeig77vqcdozl2wyk6z3cscaj5q5fggi53aoh64fewkdiri3cdauyn4
 
 ## Configuration
 
-Config file location: `~/.config/lume/pinner.yaml`
+Config file location: `~/.config/pinner/config.yaml`
 
 ```yaml
 auth_token: your-jwt-token
@@ -434,7 +434,7 @@ go run ./cmd/pinner
 
 **Authentication token not found**
 - Ensure you've run `pinner auth` or set `PINNER_AUTH_TOKEN` environment variable
-- Check that `~/.config/lume/pinner.yaml` exists and contains a valid `auth_token`
+- Check that `~/.config/pinner/config.yaml` exists and contains a valid `auth_token`
 
 **Upload fails with timeout**
 - Increase retries in config: `pinner config set max_retries 5`
