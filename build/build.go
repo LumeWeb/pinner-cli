@@ -1,7 +1,7 @@
 package build
 
 var (
-	Version      string
+	Version      string = "dev"
 	GitCommit    string
 	GitBranch    string
 	BuildTime    string

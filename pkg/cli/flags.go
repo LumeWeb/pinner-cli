@@ -60,9 +60,8 @@ func GlobalFlags() []cli.Flag {
 			Usage: "Output JSON instead of human-readable",
 		},
 		&cli.BoolFlag{
-			Name:    FlagVerbose,
-			Aliases: []string{"v"},
-			Usage:   "Show detailed output",
+			Name:  FlagVerbose,
+			Usage: "Show detailed output",
 		},
 		&cli.BoolFlag{
 			Name:    FlagQuiet,
