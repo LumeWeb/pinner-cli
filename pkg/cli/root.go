@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/urfave/cli/v3"
+	"go.lumeweb.com/pinner-cli/build"
 )
 
 // Run executes the CLI application with the given context and arguments.
@@ -17,7 +18,7 @@ func NewRootCommand() *cli.Command {
 	return &cli.Command{
 		Name:                  "pinner",
 		Usage:                 "Simple IPFS Pinning CLI",
-		Version:               "0.1.0",
+		Version:               build.Version,
 		EnableShellCompletion: true,
 		Description: `A minimal, developer-focused CLI tool for pinning content to IPFS
 via the Pinner.xyz service.
