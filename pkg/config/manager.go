@@ -68,12 +68,12 @@ func NewManager(configPath string) (Manager, error) {
 	// Always register the file source - it will create the file when Persist is called
 	fileSource := source.NewFileSource(configPath)
 	cm.RegisterSource(fileSource)
-	cm.RegisterNamespace(configmanager.ROOT_NS, fileSource)
+	cm.RegisterNamespace("", fileSource)
 
 	defaultSource := source.NewDefaultConfigSource(cm)
 	cm.RegisterSource(defaultSource)
 
-	if err = cm.RegisterStruct(configmanager.ROOT_NS, &Config{}); err != nil {
+	if err = cm.RegisterStruct("", &Config{}); err != nil {
 		return nil, fmt.Errorf("failed to register config struct: %w", err)
 	}
 
@@ -85,7 +85,7 @@ func NewManager(configPath string) (Manager, error) {
 
 // Config returns the current Config instance by reading from the config manager.
 func (m *managerImpl) Config() *Config {
-	_, decoded, err := m.Manager.Get(configmanager.ROOT_NS)
+	_, decoded, err := m.Manager.Get("")
 	if err != nil {
 		return NewConfig()
 	}

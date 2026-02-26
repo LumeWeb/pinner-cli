@@ -171,6 +171,11 @@ func (c *Config) GetTUSEndpointSecure() string {
 	return getSubdomainEndpointWithProtocol(c.GetBaseEndpoint(), SubdomainIPFS, c.Secure) + TUSPath
 }
 
+// GetAccountEndpointWithSecure returns the account API endpoint with a custom secure flag.
+func (c *Config) GetAccountEndpointWithSecure(secure bool) string {
+	return getSubdomainEndpointWithProtocol(c.GetBaseEndpoint(), SubdomainAccount, secure)
+}
+
 // GetIPFSEndpointWithSecure returns the IPFS pinning API endpoint with a custom secure flag.
 func (c *Config) GetIPFSEndpointWithSecure(secure bool) string {
 	return getSubdomainEndpointWithProtocol(c.GetBaseEndpoint(), SubdomainIPFS, secure)

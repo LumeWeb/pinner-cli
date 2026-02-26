@@ -1,0 +1,2765 @@
+components:
+  schemas:
+    BlockMetaResponse:
+      additionalProperties: false
+      properties:
+        block_size:
+          type: integer
+        child_cid:
+          items:
+            type: string
+          type: array
+        name:
+          type: string
+        type:
+          type: integer
+      required:
+      - name
+      - type
+      - block_size
+      - child_cid
+      type: object
+    Component:
+      additionalProperties: false
+      type: object
+    ErrorResponse:
+      additionalProperties: false
+      properties:
+        error:
+          type: string
+      required:
+      - error
+      type: object
+    FileManagerItem:
+      additionalProperties: false
+      properties:
+        cid:
+          type: string
+        created:
+          format: date-time
+          type: string
+        depth:
+          type: integer
+        is_directory:
+          type: boolean
+        name:
+          type: string
+        path:
+          type: string
+        size:
+          type: integer
+        type:
+          type: integer
+        unpinnable:
+          type: boolean
+        updated:
+          format: date-time
+          type: string
+      required:
+      - path
+      - name
+      - type
+      - size
+      - is_directory
+      - depth
+      - created
+      - updated
+      - cid
+      - unpinnable
+      type: object
+    FileManagerItemResponse:
+      additionalProperties: false
+      properties:
+        data:
+          $ref: '#/components/schemas/FileManagerItem'
+        total:
+          type: integer
+      required:
+      - data
+      - total
+      type: object
+    GatewayWebsiteResponse:
+      additionalProperties: false
+      properties:
+        domain:
+          type: string
+        status:
+          type: string
+        target_hash:
+          type: string
+        target_type:
+          type: string
+      required:
+      - domain
+      - target_type
+      - target_hash
+      - status
+      type: object
+    GatewayWebsiteStatusResponse:
+      additionalProperties: false
+      properties:
+        domain:
+          type: string
+        is_broken:
+          type: boolean
+        last_checked:
+          type: string
+        status:
+          type: string
+      required:
+      - domain
+      - status
+      - is_broken
+      type: object
+    GetBlockMetaBatchRequest:
+      additionalProperties: false
+      properties:
+        cid:
+          items:
+            type: string
+          type: array
+      required:
+      - cid
+      type: object
+    IPNSKeyRequest:
+      additionalProperties: false
+      properties:
+        key:
+          type: string
+        name:
+          type: string
+      required:
+      - name
+      type: object
+    IPNSKeyResponse:
+      additionalProperties: false
+      properties:
+        created:
+          format: date-time
+          type: string
+        id:
+          type: integer
+        ipns_name:
+          type: string
+        name:
+          type: string
+        peer_id:
+          type: string
+      required:
+      - id
+      - name
+      - ipns_name
+      - peer_id
+      - created
+      type: object
+    IPNSPublishRequest:
+      additionalProperties: false
+      properties:
+        cid:
+          type: string
+        key_id:
+          type: integer
+        ttl:
+          type: string
+      required:
+      - key_id
+      - cid
+      type: object
+    IPNSPublishResponse:
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        published:
+          format: date-time
+          type: string
+        sequence:
+          type: integer
+        validity:
+          format: date-time
+          type: string
+        value:
+          type: string
+      required:
+      - name
+      - value
+      - sequence
+      - validity
+      - published
+      type: object
+    IPNSResolveResponse:
+      additionalProperties: false
+      properties:
+        expired:
+          type: boolean
+        expires:
+          format: date-time
+          type: string
+        name:
+          type: string
+        path:
+          type: string
+        sequence:
+          type: integer
+        value:
+          type: string
+      required:
+      - name
+      - value
+      - sequence
+      - path
+      - expired
+      - expires
+      type: object
+    InfoResponse:
+      additionalProperties: false
+      properties:
+        announcement_addresses:
+          items:
+            type: string
+          type: array
+        connection_addresses:
+          items:
+            type: string
+          type: array
+        peer_id:
+          type: string
+      required:
+      - peer_id
+      - announcement_addresses
+      - connection_addresses
+      type: object
+    Multiaddr:
+      items:
+        $ref: '#/components/schemas/Component'
+      type: array
+    PinRequest:
+      additionalProperties: false
+      properties:
+        cid:
+          type: string
+        meta:
+          additionalProperties:
+            type: string
+          type: object
+        name:
+          type: string
+        origins:
+          items:
+            type: string
+          type: array
+      required:
+      - cid
+      type: object
+    PinResultsResponse:
+      additionalProperties: false
+      properties:
+        count:
+          type: integer
+        results:
+          items:
+            $ref: '#/components/schemas/PinStatusResponse'
+          type: array
+      required:
+      - count
+      - results
+      type: object
+    PinStatusResponse:
+      additionalProperties: false
+      properties:
+        created:
+          format: date-time
+          type: string
+        delegates:
+          items:
+            $ref: '#/components/schemas/Multiaddr'
+          type: array
+        info:
+          additionalProperties:
+            type: string
+          type: object
+        pin:
+          $ref: '#/components/schemas/PinRequest'
+        requestid:
+          type: string
+        status:
+          type: string
+      required:
+      - requestid
+      - status
+      - created
+      - pin
+      - delegates
+      type: object
+    SSLStatusInfo:
+      additionalProperties: false
+      properties:
+        error:
+          type: string
+        issued_at:
+          format: date-time
+          type: string
+        last_updated_at:
+          format: date-time
+          type: string
+        status:
+          type: string
+      required:
+      - status
+      type: object
+    SSLStatusUpdateRequest:
+      additionalProperties: false
+      properties:
+        error:
+          type: string
+        status:
+          type: string
+        timestamp:
+          type: string
+      required:
+      - status
+      type: object
+    WebsiteItem:
+      additionalProperties: false
+      properties:
+        created:
+          format: date-time
+          type: string
+        domain:
+          type: string
+        expired:
+          type: boolean
+        id:
+          type: integer
+        last_checked_at:
+          format: date-time
+          type: string
+        ssl:
+          $ref: '#/components/schemas/SSLStatusInfo'
+        status:
+          type: string
+        target_hash:
+          type: string
+        target_type:
+          type: string
+        updated:
+          format: date-time
+          type: string
+        validation_expires_at:
+          format: date-time
+          type: string
+        validation_token:
+          type: string
+      required:
+      - id
+      - domain
+      - target_type
+      - target_hash
+      - status
+      - validation_token
+      - created
+      - updated
+      - expired
+      type: object
+    WebsiteItemResponse:
+      additionalProperties: false
+      properties:
+        data:
+          $ref: '#/components/schemas/WebsiteItem'
+        total:
+          type: integer
+      required:
+      - data
+      - total
+      type: object
+    WebsiteRequest:
+      additionalProperties: false
+      properties:
+        domain:
+          type: string
+        target_hash:
+          type: string
+        target_type:
+          type: string
+      required:
+      - domain
+      - target_type
+      - target_hash
+      type: object
+    WebsiteResponse:
+      additionalProperties: false
+      properties:
+        created:
+          format: date-time
+          type: string
+        domain:
+          type: string
+        expired:
+          type: boolean
+        id:
+          type: integer
+        last_checked_at:
+          format: date-time
+          type: string
+        ssl:
+          $ref: '#/components/schemas/SSLStatusInfo'
+        status:
+          type: string
+        target_hash:
+          type: string
+        target_type:
+          type: string
+        updated:
+          format: date-time
+          type: string
+        validation_expires_at:
+          format: date-time
+          type: string
+        validation_token:
+          type: string
+      required:
+      - id
+      - domain
+      - target_type
+      - target_hash
+      - status
+      - validation_token
+      - created
+      - updated
+      - expired
+      type: object
+    WebsiteValidateResponse:
+      additionalProperties: false
+      properties:
+        domain:
+          type: string
+        id:
+          type: integer
+        message:
+          type: string
+        valid:
+          type: boolean
+      required:
+      - id
+      - domain
+      - valid
+      - message
+      type: object
+info:
+  description: |2
+
+    ## About this spec
+
+    The IPFS Pinning Service API is intended to be an implementation-agnostic API:
+
+    - For use and implementation by pinning service providers
+
+    - For use in client mode by IPFS nodes and GUI-based applications
+
+
+    ### Document scope and intended audience
+
+    The intended audience of this document is **IPFS developers** building pinning service clients or servers compatible with this OpenAPI spec.
+    Your input and feedback are welcome and valuable as we develop this API spec. Please join the design discussion at [github.com/ipfs/pinning-services-api-spec](https://github.com/ipfs/pinning-services-api-spec).
+
+
+    **IPFS users** should see the tutorial at [docs.ipfs.io/how-to/work-with-pinning-services/](https://docs.ipfs.io/how-to/work-with-pinning-services/) instead.
+
+
+    ### Related resources
+
+    The latest version of this spec and additional resources can be found at:
+
+    - Specification: https://github.com/ipfs/pinning-services-api-spec/raw/main/ipfs-pinning-service.yaml
+
+    - Docs: https://ipfs.github.io/pinning-services-api-spec/
+
+    - Clients and services: https://github.com/ipfs/pinning-services-api-spec#adoption
+  title: IPFS Pinning Service API
+  version: v0.1.6-0.20260226005938-954a7aa30d86
+openapi: 3.0.0
+paths:
+  /api/block/meta/{cid}:
+    get:
+      description: Gets metadata for a block.
+      parameters:
+      - description: The CID of the block.
+        in: path
+        name: cid
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BlockMetaResponse'
+          description: Block metadata
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Internal server error
+      summary: Get block metadata
+      tags:
+      - ipfs
+  /api/block/meta/batch:
+    post:
+      description: Gets metadata for multiple blocks in a single request.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GetBlockMetaBatchRequest'
+        description: Batch request for block metadata
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Success
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Internal server error
+      summary: Get block metadata in batch
+      tags:
+      - ipfs
+  /api/files:
+    get:
+      description: List all pinned files with their metadata
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileManagerItemResponse'
+          description: Successful response
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Internal server error
+      summary: List pinned files
+      tags:
+      - file-manager
+  /api/files/breadcrumbs:
+    get:
+      description: Retrieve breadcrumb navigation elements for a given file path
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileManagerItemResponse'
+          description: Successful response
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Internal server error
+      summary: Get path breadcrumbs
+      tags:
+      - file-manager
+  /api/files/directory:
+    get:
+      description: List files and subdirectories within a specified parent directory
+        path
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileManagerItemResponse'
+          description: Successful response
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Internal server error
+      summary: List directory contents
+      tags:
+      - file-manager
+  /api/info:
+    get:
+      description: Gets information about the IPFS node.
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InfoResponse'
+          description: Node information
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Internal server error
+      summary: Get IPFS node info
+      tags:
+      - ipfs
+  /api/ipns/keys:
+    get:
+      description: Lists all IPNS keys for the current user.
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/IPNSKeyResponse'
+                type: array
+          description: List of IPNS keys
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Internal server error
+      summary: List IPNS keys
+      tags:
+      - ipns
+    post:
+      description: Creates a new IPNS key or imports an existing one. If 'key' is
+        provided, it imports; otherwise creates a new key.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IPNSKeyRequest'
+        description: IPNS key request
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Success
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IPNSKeyResponse'
+          description: IPNS key created
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Internal server error
+      summary: Create or import IPNS key
+      tags:
+      - ipns
+  /api/ipns/keys/{id}:
+    delete:
+      description: Deletes an IPNS key (soft delete). Cannot delete keys referenced
+        by active websites.
+      parameters:
+      - description: IPNS key ID
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Success
+        "204":
+          description: IPNS key deleted
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Internal server error
+      summary: Delete IPNS key
+      tags:
+      - ipns
+    get:
+      description: Retrieves details of a specific IPNS key.
+      parameters:
+      - description: IPNS key ID
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IPNSKeyResponse'
+          description: IPNS key details
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Internal server error
+      summary: Get IPNS key details
+      tags:
+      - ipns
+  /api/ipns/publish:
+    post:
+      description: Publishes a CID to an IPNS key.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IPNSPublishRequest'
+        description: IPNS publish request
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IPNSPublishResponse'
+          description: IPNS publish result
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Internal server error
+      summary: Publish CID to IPNS
+      tags:
+      - ipns
+  /api/ipns/republish:
+    post:
+      description: Manually triggers IPNS record republishing for all keys.
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Success
+        "202":
+          description: Republish triggered
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Internal server error
+      summary: Trigger IPNS republish
+      tags:
+      - ipns
+  /api/ipns/resolve/{name}:
+    get:
+      description: Resolves an IPNS name to its current CID.
+      parameters:
+      - description: IPNS name (peer ID)
+        in: path
+        name: name
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IPNSResolveResponse'
+          description: IPNS resolve result
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Internal server error
+      summary: Resolve IPNS name
+      tags:
+      - ipns
+  /api/pins:
+    get:
+      description: List all the pin objects, matching optional filters; when no filter
+        is provided, only successful pins are returned
+      parameters:
+      - description: Return results created (queued) after provided timestamp
+        in: query
+        name: after
+        schema:
+          type: string
+      - description: Return results created (queued) before provided timestamp
+        in: query
+        name: before
+        schema:
+          type: string
+      - description: Return pin objects responsible for pinning the specified CID(s)
+        in: query
+        name: cid
+        schema:
+          items:
+            type: string
+          type: array
+      - description: Max records to return
+        in: query
+        name: limit
+        schema:
+          type: integer
+      - description: Customize the text matching strategy
+        in: query
+        name: match
+        schema:
+          type: string
+      - description: Return pin objects that match specified metadata
+        in: query
+        name: meta
+        schema:
+          type: string
+      - description: Return pin objects with specified name
+        in: query
+        name: name
+        schema:
+          type: string
+      - description: Return pin objects for pins with the specified status
+        in: query
+        name: status
+        schema:
+          items:
+            type: string
+          type: array
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PinResultsResponse'
+          description: Successful response
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Internal server error
+      summary: List pin objects
+      tags:
+      - pins
+    post:
+      description: Add a new pin object for the current access token
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PinRequest'
+        description: Pin object
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Success
+        "202":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PinStatusResponse'
+          description: Successful response
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Internal server error
+      summary: Add pin object
+      tags:
+      - pins
+  /api/pins/{requestid}:
+    delete:
+      description: Remove a pin object
+      parameters:
+      - description: Unique identifier of a pin request
+        in: path
+        name: requestid
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Success
+        "202":
+          description: Successful response
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Internal server error
+      summary: Remove pin object
+      tags:
+      - pins
+    get:
+      description: Get a pin object and its status
+      parameters:
+      - description: Unique identifier of a pin request
+        in: path
+        name: requestid
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PinStatusResponse'
+          description: Successful response
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Internal server error
+      summary: Get pin object
+      tags:
+      - pins
+    post:
+      description: Replace an existing pin object
+      parameters:
+      - description: Unique identifier of a pin request
+        in: path
+        name: requestid
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PinRequest'
+        description: Pin object
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Success
+        "202":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PinStatusResponse'
+          description: Successful response
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Internal server error
+      summary: Replace pin object
+      tags:
+      - pins
+  /api/upload:
+    post:
+      description: Uploads a file to IPFS.
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              additionalProperties: false
+              properties:
+                file:
+                  format: binary
+                  type: string
+              required:
+              - file
+              type: object
+        description: File to upload
+        required: true
+      responses:
+        "200":
+          description: File uploaded successfully
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Internal server error
+      summary: Upload a file
+      tags:
+      - ipfs
+  /api/upload/tus:
+    options:
+      description: Retrieves information about the TUS server's supported versions,
+        extensions, and limits.
+      responses:
+        "200":
+          description: Success
+          headers:
+            Tus-Checksum-Algorithm:
+              description: Added by the checksum extension. The Tus-Checksum-Algorithm
+                response header MUST be a comma-separated list of the checksum algorithms
+                supported by the server.
+              schema:
+                type: string
+            Tus-Extension:
+              description: The Tus-Extension response header MUST be a comma-separated
+                list of the extensions supported by the Server. If no extensions are
+                supported, the Tus-Extension header MUST be omitted.
+              schema:
+                type: string
+            Tus-Max-Size:
+              description: The Tus-Max-Size response header MUST be a non-negative
+                integer indicating the maximum allowed size of an entire upload in
+                bytes. The Server SHOULD set this header if there is a known hard
+                limit.
+              schema:
+                type: string
+            Tus-Resumable:
+              description: Protocol version
+              schema:
+                type: string
+            Tus-Version:
+              description: The Tus-Version response header MUST be a comma-separated
+                list of protocol versions supported by the Server. The list MUST be
+                sorted by Server's preference where the first one is the most preferred
+                one.
+              schema:
+                type: string
+        "204":
+          description: Success
+          headers:
+            Tus-Checksum-Algorithm:
+              description: Added by the checksum extension. The Tus-Checksum-Algorithm
+                response header MUST be a comma-separated list of the checksum algorithms
+                supported by the server.
+              schema:
+                type: string
+            Tus-Extension:
+              description: The Tus-Extension response header MUST be a comma-separated
+                list of the extensions supported by the Server. If no extensions are
+                supported, the Tus-Extension header MUST be omitted.
+              schema:
+                type: string
+            Tus-Max-Size:
+              description: The Tus-Max-Size response header MUST be a non-negative
+                integer indicating the maximum allowed size of an entire upload in
+                bytes. The Server SHOULD set this header if there is a known hard
+                limit.
+              schema:
+                type: string
+            Tus-Resumable:
+              description: Protocol version
+              schema:
+                type: string
+            Tus-Version:
+              description: The Tus-Version response header MUST be a comma-separated
+                list of protocol versions supported by the Server. The list MUST be
+                sorted by Server's preference where the first one is the most preferred
+                one.
+              schema:
+                type: string
+        "401":
+          content:
+            application/json:
+              schema:
+                type: string
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                type: string
+          description: Forbidden
+      summary: Get TUS Server Capabilities
+      tags:
+      - TUS
+    post:
+      description: TUS protocol POST handler for /api/upload/tus
+      parameters:
+      - description: Must be 0 for creation extension. May be a positive number for
+          Creation With Upload extension.
+        in: header
+        name: Content-Length
+        schema:
+          type: integer
+      - in: header
+        name: Tus-Resumable
+        required: true
+        schema:
+          type: object
+      - description: Added by the Creation With Upload Extension in combination with
+          the checksum extension. Checksum of the included data.
+        in: header
+        name: Upload-Checksum
+        schema:
+          type: object
+      - description: Added by the Concatenation extension. Indicates whether the upload
+          is either a partial or final upload.
+        in: header
+        name: Upload-Concat
+        schema:
+          type: string
+      - description: Added by the Creation Defer Length extension. Indicates that
+          the size of the upload is not known currently.
+        in: header
+        name: Upload-Defer-Length
+        schema:
+          type: integer
+      - in: header
+        name: Upload-Length
+        required: true
+        schema:
+          type: object
+      - description: Added by the Creation extension. The Upload-Metadata request
+          and response header MUST consist of one or more comma-separated key-value
+          pairs. The key and value MUST be separated by a space. The key MUST NOT
+          contain spaces and commas and MUST NOT be empty. The key SHOULD be ASCII
+          encoded and the value MUST be Base64 encoded. All keys MUST be unique. The
+          value MAY be empty. In these cases, the space, which would normally separate
+          the key and the value, MAY be left out. Since metadata can contain arbitrary
+          binary values, Servers SHOULD carefully validate metadata values or sanitize
+          them before using them as header values to avoid header smuggling.
+        in: header
+        name: Upload-Metadata
+        schema:
+          type: string
+      - description: Added by the Creation With Upload Extension. Indicates the offset
+          of the included data.
+        in: header
+        name: Upload-Offset
+        schema:
+          type: object
+      requestBody:
+        content:
+          application/offset+octet-stream:
+            schema:
+              type: object
+        description: Remaining (possibly partial) content of the file. Required if
+          Content-Length > 0.
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Success
+        "201":
+          description: Created
+          headers:
+            Location:
+              description: Url of the created resource.
+              schema:
+                type: string
+            Tus-Resumable:
+              description: Protocol version
+              schema:
+                type: string
+            Upload-Expires:
+              description: Added by the expiration extension. The Upload-Expires response
+                header indicates the time after which the unfinished upload expires.
+                A Server MAY wish to remove incomplete uploads after a given period
+                of time to prevent abandoned uploads from taking up extra storage.
+                The Client SHOULD use this header to determine if an upload is still
+                valid before attempting to resume the upload. This header MUST be
+                included in every PATCH response if the upload is going to expire.
+                If the expiration is known at the creation, the Upload-Expires header
+                MUST be included in the response to the initial POST request. Its
+                value MAY change over time. If a Client does attempt to resume an
+                upload which has since been removed by the Server, the Server SHOULD
+                respond with the 404 Not Found or 410 Gone status. The latter one
+                SHOULD be used if the Server is keeping track of expired uploads.
+                In both cases the Client SHOULD start a new upload. The value of the
+                Upload-Expires header MUST be in RFC 7231 datetime format.
+              schema:
+                type: string
+            Upload-Offset:
+              description: The Upload-Offset request and response header indicates
+                a byte offset within a resource. The value MUST be a non-negative
+                integer.
+              schema:
+                type: string
+        "400":
+          description: Bad Request
+          headers:
+            Tus-Resumable:
+              description: Protocol version
+              schema:
+                type: string
+        "401":
+          content:
+            application/json:
+              schema:
+                type: string
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                type: string
+          description: Forbidden
+        "412":
+          description: Precondition Failed
+          headers:
+            Tus-Resumable:
+              description: Protocol version
+              schema:
+                type: string
+            Tus-Version:
+              description: The Tus-Version response header MUST be a comma-separated
+                list of protocol versions supported by the Server. The list MUST be
+                sorted by Server's preference where the first one is the most preferred
+                one.
+              schema:
+                type: string
+        "413":
+          description: Request Entity Too Large
+          headers:
+            Tus-Resumable:
+              description: Protocol version
+              schema:
+                type: string
+        "415":
+          description: Unsupported Media Type
+          headers:
+            Tus-Resumable:
+              description: Protocol version
+              schema:
+                type: string
+        "460":
+          description: Checksums mismatch
+          headers:
+            Tus-Resumable:
+              description: Protocol version
+              schema:
+                type: string
+      summary: TUS POST /api/upload/tus
+      tags:
+      - TUS
+  /api/upload/tus/{id}:
+    delete:
+      description: TUS protocol DELETE handler for /api/upload/tus/:id
+      parameters:
+      - description: The ID of the upload resource.
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      - in: header
+        name: Tus-Resumable
+        required: true
+        schema:
+          type: object
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Success
+        "204":
+          description: Upload was terminated
+          headers:
+            Tus-Resumable:
+              description: Protocol version
+              schema:
+                type: string
+        "401":
+          content:
+            application/json:
+              schema:
+                type: string
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                type: string
+          description: Forbidden
+        "412":
+          description: Precondition Failed
+          headers:
+            Tus-Resumable:
+              description: Protocol version
+              schema:
+                type: string
+            Tus-Version:
+              description: The Tus-Version response header MUST be a comma-separated
+                list of protocol versions supported by the Server. The list MUST be
+                sorted by Server's preference where the first one is the most preferred
+                one.
+              schema:
+                type: string
+      summary: TUS DELETE /api/upload/tus/:id
+      tags:
+      - TUS
+    head:
+      description: TUS protocol HEAD handler for /api/upload/tus/:id
+      parameters:
+      - description: The ID of the upload resource.
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      - in: header
+        name: Tus-Resumable
+        required: true
+        schema:
+          type: object
+      responses:
+        "200":
+          description: Returns offset
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+            Tus-Resumable:
+              description: Protocol version
+              schema:
+                type: string
+            Upload-Length:
+              description: The Upload-Length request and response header indicates
+                the size of the entire upload in bytes. The value MUST be a non-negative
+                integer. In the concatenation extension, the Client MUST NOT include
+                the Upload-Length header in the final upload creation
+              schema:
+                type: string
+            Upload-Offset:
+              description: The Upload-Offset request and response header indicates
+                a byte offset within a resource. The value MUST be a non-negative
+                integer.
+              schema:
+                type: string
+        "401":
+          content:
+            application/json:
+              schema:
+                type: string
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                type: string
+          description: Forbidden
+        "404":
+          description: Not Found
+          headers:
+            Tus-Resumable:
+              description: Protocol version
+              schema:
+                type: string
+        "410":
+          description: Gone
+          headers:
+            Tus-Resumable:
+              description: Protocol version
+              schema:
+                type: string
+        "412":
+          description: Precondition Failed
+          headers:
+            Tus-Resumable:
+              description: Protocol version
+              schema:
+                type: string
+            Tus-Version:
+              description: The Tus-Version response header MUST be a comma-separated
+                list of protocol versions supported by the Server. The list MUST be
+                sorted by Server's preference where the first one is the most preferred
+                one.
+              schema:
+                type: string
+      summary: TUS HEAD /api/upload/tus/:id
+      tags:
+      - TUS
+    options:
+      description: TUS protocol OPTIONS handler for /api/upload/tus/:id
+      parameters:
+      - description: The ID of the upload resource.
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: Success
+          headers:
+            Tus-Checksum-Algorithm:
+              description: Added by the checksum extension. The Tus-Checksum-Algorithm
+                response header MUST be a comma-separated list of the checksum algorithms
+                supported by the server.
+              schema:
+                type: string
+            Tus-Extension:
+              description: The Tus-Extension response header MUST be a comma-separated
+                list of the extensions supported by the Server. If no extensions are
+                supported, the Tus-Extension header MUST be omitted.
+              schema:
+                type: string
+            Tus-Max-Size:
+              description: The Tus-Max-Size response header MUST be a non-negative
+                integer indicating the maximum allowed size of an entire upload in
+                bytes. The Server SHOULD set this header if there is a known hard
+                limit.
+              schema:
+                type: string
+            Tus-Resumable:
+              description: Protocol version
+              schema:
+                type: string
+            Tus-Version:
+              description: The Tus-Version response header MUST be a comma-separated
+                list of protocol versions supported by the Server. The list MUST be
+                sorted by Server's preference where the first one is the most preferred
+                one.
+              schema:
+                type: string
+        "204":
+          description: Success
+          headers:
+            Tus-Checksum-Algorithm:
+              description: Added by the checksum extension. The Tus-Checksum-Algorithm
+                response header MUST be a comma-separated list of the checksum algorithms
+                supported by the server.
+              schema:
+                type: string
+            Tus-Extension:
+              description: The Tus-Extension response header MUST be a comma-separated
+                list of the extensions supported by the Server. If no extensions are
+                supported, the Tus-Extension header MUST be omitted.
+              schema:
+                type: string
+            Tus-Max-Size:
+              description: The Tus-Max-Size response header MUST be a non-negative
+                integer indicating the maximum allowed size of an entire upload in
+                bytes. The Server SHOULD set this header if there is a known hard
+                limit.
+              schema:
+                type: string
+            Tus-Resumable:
+              description: Protocol version
+              schema:
+                type: string
+            Tus-Version:
+              description: The Tus-Version response header MUST be a comma-separated
+                list of protocol versions supported by the Server. The list MUST be
+                sorted by Server's preference where the first one is the most preferred
+                one.
+              schema:
+                type: string
+        "401":
+          content:
+            application/json:
+              schema:
+                type: string
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                type: string
+          description: Forbidden
+      summary: TUS OPTIONS /api/upload/tus/:id
+      tags:
+      - TUS
+    patch:
+      description: TUS protocol PATCH handler for /api/upload/tus/:id
+      parameters:
+      - description: The ID of the upload resource.
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      - description: Length of the body of this request
+        in: header
+        name: Content-Length
+        required: true
+        schema:
+          type: integer
+      - in: header
+        name: Tus-Resumable
+        required: true
+        schema:
+          type: object
+      - description: Added by the checksum extension. Checksum of the current body
+          payload.
+        in: header
+        name: Upload-Checksum
+        schema:
+          type: object
+      - description: The offset at which the upload should be continued.
+        in: header
+        name: Upload-Offset
+        required: true
+        schema:
+          type: object
+      requestBody:
+        content:
+          application/offset+octet-stream:
+            schema:
+              type: object
+        description: Remaining (possibly partial) content of the file. Required if
+          Content-Length > 0.
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Success
+        "204":
+          description: Upload offset was updated
+          headers:
+            Tus-Resumable:
+              description: Protocol version
+              schema:
+                type: string
+            Upload-Expires:
+              description: Added by the expiration extension. The Upload-Expires response
+                header indicates the time after which the unfinished upload expires.
+                A Server MAY wish to remove incomplete uploads after a given period
+                of time to prevent abandoned uploads from taking up extra storage.
+                The Client SHOULD use this header to determine if an upload is still
+                valid before attempting to resume the upload. This header MUST be
+                included in every PATCH response if the upload is going to expire.
+                If the expiration is known at the creation, the Upload-Expires header
+                MUST be included in the response to the initial POST request. Its
+                value MAY change over time. If a Client does attempt to resume an
+                upload which has since been removed by the Server, the Server SHOULD
+                respond with the 404 Not Found or 410 Gone status. The latter one
+                SHOULD be used if the Server is keeping track of expired uploads.
+                In both cases the Client SHOULD start a new upload. The value of the
+                Upload-Expires header MUST be in RFC 7231 datetime format.
+              schema:
+                type: string
+            Upload-Offset:
+              description: The Upload-Offset request and response header indicates
+                a byte offset within a resource. The value MUST be a non-negative
+                integer.
+              schema:
+                type: string
+        "400":
+          description: Bad Request
+          headers:
+            Tus-Resumable:
+              description: Protocol version
+              schema:
+                type: string
+        "401":
+          content:
+            application/json:
+              schema:
+                type: string
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                type: string
+          description: Forbidden
+        "404":
+          description: Not Found
+          headers:
+            Tus-Resumable:
+              description: Protocol version
+              schema:
+                type: string
+        "409":
+          description: Conflict
+          headers:
+            Tus-Resumable:
+              description: Protocol version
+              schema:
+                type: string
+        "410":
+          description: Gone
+          headers:
+            Tus-Resumable:
+              description: Protocol version
+              schema:
+                type: string
+        "412":
+          description: Precondition Failed
+          headers:
+            Tus-Resumable:
+              description: Protocol version
+              schema:
+                type: string
+            Tus-Version:
+              description: The Tus-Version response header MUST be a comma-separated
+                list of protocol versions supported by the Server. The list MUST be
+                sorted by Server's preference where the first one is the most preferred
+                one.
+              schema:
+                type: string
+        "415":
+          description: Unsupported Media Type
+          headers:
+            Tus-Resumable:
+              description: Protocol version
+              schema:
+                type: string
+        "460":
+          description: Checksums mismatch
+          headers:
+            Tus-Resumable:
+              description: Protocol version
+              schema:
+                type: string
+      summary: TUS PATCH /api/upload/tus/:id
+      tags:
+      - TUS
+  /api/websites:
+    get:
+      description: Lists all websites for the current user with optional filtering.
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebsiteItemResponse'
+          description: List of websites
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Internal server error
+      summary: List websites
+      tags:
+      - websites
+    post:
+      description: Creates a new website configuration. Returns 410 Gone if target
+        is broken.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebsiteRequest'
+        description: Website request
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Success
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebsiteResponse'
+          description: Website created
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Internal server error
+      summary: Create website
+      tags:
+      - websites
+  /api/websites/{domain}/ssl-status:
+    get:
+      description: Retrieves SSL certificate status for a website domain. Public endpoint
+        for developers.
+      parameters:
+      - description: The domain name of the website
+        in: path
+        name: domain
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebsiteResponse'
+          description: SSL status
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad request - invalid domain
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Website not found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Internal server error
+      summary: Get SSL status
+      tags:
+      - websites
+  /api/websites/{id}:
+    delete:
+      description: Deletes a website configuration (soft delete).
+      parameters:
+      - description: Website ID
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Success
+        "204":
+          description: Website deleted
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Internal server error
+      summary: Delete website
+      tags:
+      - websites
+    get:
+      description: Retrieves details of a specific website. Returns 410 Gone if website
+        is broken.
+      parameters:
+      - description: Website ID
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebsiteResponse'
+          description: Website details
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Internal server error
+      summary: Get website
+      tags:
+      - websites
+    put:
+      description: Updates an existing website configuration.
+      parameters:
+      - description: Website ID
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebsiteRequest'
+        description: Website request
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebsiteResponse'
+          description: Website updated
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Internal server error
+      summary: Update website
+      tags:
+      - websites
+  /api/websites/{id}/validate:
+    post:
+      description: Triggers DNS TXT record validation for a website domain.
+      parameters:
+      - description: Website ID
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebsiteValidateResponse'
+          description: Validation result
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Internal server error
+      summary: Validate website DNS
+      tags:
+      - websites
+  /internal/websites/{domain}:
+    get:
+      description: Retrieves website configuration for gateway to serve content. Requires
+        X-Gateway-Secret header.
+      parameters:
+      - description: The domain name of the website
+        in: path
+        name: domain
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GatewayWebsiteResponse'
+          description: Website configuration
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Internal server error
+      summary: Get website configuration for gateway
+      tags:
+      - internal
+  /internal/websites/{domain}/ssl-status:
+    post:
+      description: Webhook endpoint for Caddy plugin to update SSL certificate status.
+        Requires X-Gateway-Secret header for authentication.
+      parameters:
+      - description: The domain name of the website
+        in: path
+        name: domain
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SSLStatusUpdateRequest'
+        description: SSL status update
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebsiteResponse'
+          description: SSL status updated
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad request - invalid domain or malformed request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized - missing or invalid X-Gateway-Secret header
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Website not found
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unprocessable entity - invalid status or timestamp format
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Internal server error
+      summary: Update SSL status
+      tags:
+      - internal
+      - webhooks
+  /internal/websites/{domain}/status:
+    get:
+      description: Retrieves website status information for gateway. Requires X-Gateway-Secret
+        header.
+      parameters:
+      - description: The domain name of the website
+        in: path
+        name: domain
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GatewayWebsiteStatusResponse'
+          description: Website status
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Internal server error
+      summary: Get website status for gateway
+      tags:
+      - internal
+  /ipfs/{cid}:
+    get:
+      description: Retrieves content from IPFS by CID.
+      parameters:
+      - description: The CID of the content.
+        in: path
+        name: cid
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Success
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Internal server error
+      summary: Get IPFS content
+      tags:
+      - ipfs
+    head:
+      description: Checks if content exists on IPFS by CID.
+      parameters:
+      - description: The CID of the content.
+        in: path
+        name: cid
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Success
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Internal server error
+      summary: Check IPFS content existence
+      tags:
+      - ipfs
+    options:
+      description: OPTIONS endpoint for IPFS content. CORS preflight requests are
+        handled by middleware; this handler serves as a fallback for non-preflight
+        OPTIONS requests.
+      parameters:
+      - description: The CID of the content.
+        in: path
+        name: cid
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Success
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Internal server error
+      summary: IPFS content OPTIONS
+      tags:
+      - ipfs
+servers:
+- url: /api

@@ -47,6 +47,13 @@ const (
 	FlagClear       = "clear"
 )
 
+// Websites flags
+const (
+	FlagDomain     = "domain"
+	FlagTargetHash = "target-hash"
+	FlagTargetType = "target-type"
+)
+
 // Connection/Config flags
 const (
 	FlagSecure = "secure"
@@ -180,6 +187,31 @@ func DryRunFlag() *cli.BoolFlag {
 	return &cli.BoolFlag{
 		Name:  FlagDryRun,
 		Usage: "Preview operations without making any changes",
+	}
+}
+
+// DomainFlag returns a flag for the website domain.
+func DomainFlag() *cli.StringFlag {
+	return &cli.StringFlag{
+		Name:  FlagDomain,
+		Usage: "Domain name for the website",
+	}
+}
+
+// TargetHashFlag returns a flag for the target CID.
+func TargetHashFlag() *cli.StringFlag {
+	return &cli.StringFlag{
+		Name:  FlagTargetHash,
+		Usage: "Target CID (IPFS hash) for the website",
+	}
+}
+
+// TargetTypeFlag returns a flag for the target type.
+func TargetTypeFlag() *cli.StringFlag {
+	return &cli.StringFlag{
+		Name:  FlagTargetType,
+		Usage: "Target type (ipfs, ipns, etc.)",
+		Value: "ipfs",
 	}
 }
 

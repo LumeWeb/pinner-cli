@@ -1,5 +1,5 @@
-package: "client"
-output: "pkg/account/client/client.gen.go"
+package: "ipfsclient"
+output: "pkg/ipfs/client/client.gen.go"
 generate:
   models: true
   client: true
