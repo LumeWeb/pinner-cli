@@ -81,43 +81,6 @@ func TestResolveUploadInput_Stdin(t *testing.T) {
 	}
 }
 
-// mockArgs implements cli.Args interface for testing
-type mockArgs struct {
-	args []string
-}
-
-func (m *mockArgs) Get(n int) string {
-	if n >= 0 && n < len(m.args) {
-		return m.args[n]
-	}
-	return ""
-}
-
-func (m *mockArgs) First() string {
-	return m.Get(0)
-}
-
-func (m *mockArgs) Tail() []string {
-	if len(m.args) <= 1 {
-		return []string{}
-	}
-	return m.args[1:]
-}
-
-func (m *mockArgs) Len() int {
-	return len(m.args)
-}
-
-func (m *mockArgs) Present() bool {
-	return len(m.args) > 0
-}
-
-func (m *mockArgs) Slice() []string {
-	result := make([]string, len(m.args))
-	copy(result, m.args)
-	return result
-}
-
 type mockUploadCommand struct {
 	path   string
 	name   string
