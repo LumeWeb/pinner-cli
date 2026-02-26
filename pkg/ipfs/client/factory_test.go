@@ -140,10 +140,8 @@ func TestFactoryConsistency(t *testing.T) {
 	ipnsService, err := NewIPNSServiceWithClient(httpClient, baseURL)
 	require.NoError(t, err)
 	assert.NotNil(t, ipnsService)
-	assert.IsType(t, &ipnsService{}, ipnsService)
 
 	websitesService, err := NewWebsitesServiceWithClient(httpClient, baseURL)
 	require.NoError(t, err)
 	assert.NotNil(t, websitesService)
-	assert.IsType(t, &websitesService{}, websitesService)
 }

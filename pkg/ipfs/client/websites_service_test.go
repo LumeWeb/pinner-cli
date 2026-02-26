@@ -12,12 +12,13 @@ import (
 
 // mockClientWithResponses is a mock implementation of ClientWithResponses for testing
 type mockClientWithResponses struct {
-	getApiWebsitesFunc           func(ctx context.Context) (*GetApiWebsitesResponse, error)
-	postApiWebsitesFunc          func(ctx context.Context, body PostApiWebsitesJSONRequestBody) (*PostApiWebsitesResponse, error)
-	getApiWebsitesIdFunc         func(ctx context.Context, id string) (*GetApiWebsitesIdResponse, error)
-	putApiWebsitesIdFunc         func(ctx context.Context, id string, body PutApiWebsitesIdJSONRequestBody) (*PutApiWebsitesIdResponse, error)
-	deleteApiWebsitesIdFunc      func(ctx context.Context, id string) (*DeleteApiWebsitesIdResponse, error)
-	postApiWebsitesIdValidateFunc func(ctx context.Context, id string) (*PostApiWebsitesIdValidateResponse, error)
+	getApiWebsitesFunc             func(ctx context.Context) (*GetApiWebsitesResponse, error)
+	postApiWebsitesFunc            func(ctx context.Context, body PostApiWebsitesJSONRequestBody) (*PostApiWebsitesResponse, error)
+	getApiWebsitesIdFunc           func(ctx context.Context, id string) (*GetApiWebsitesIdResponse, error)
+	putApiWebsitesIdFunc           func(ctx context.Context, id string, body PutApiWebsitesIdJSONRequestBody) (*PutApiWebsitesIdResponse, error)
+	deleteApiWebsitesIdFunc        func(ctx context.Context, id string) (*DeleteApiWebsitesIdResponse, error)
+	postApiWebsitesIdValidateFunc  func(ctx context.Context, id string) (*PostApiWebsitesIdValidateResponse, error)
+	getApiWebsitesDomainSslStatusFunc func(ctx context.Context, domain string) (*GetApiWebsitesDomainSslStatusResponse, error)
 }
 
 func (m *mockClientWithResponses) GetApiWebsitesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetApiWebsitesResponse, error) {
@@ -58,6 +59,13 @@ func (m *mockClientWithResponses) DeleteApiWebsitesIdWithResponse(ctx context.Co
 func (m *mockClientWithResponses) PostApiWebsitesIdValidateWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*PostApiWebsitesIdValidateResponse, error) {
 	if m.postApiWebsitesIdValidateFunc != nil {
 		return m.postApiWebsitesIdValidateFunc(ctx, id)
+	}
+	return nil, nil
+}
+
+func (m *mockClientWithResponses) GetApiWebsitesDomainSslStatusWithResponse(ctx context.Context, domain string, reqEditors ...RequestEditorFn) (*GetApiWebsitesDomainSslStatusResponse, error) {
+	if m.getApiWebsitesDomainSslStatusFunc != nil {
+		return m.getApiWebsitesDomainSslStatusFunc(ctx, domain)
 	}
 	return nil, nil
 }
