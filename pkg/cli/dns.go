@@ -3,12 +3,13 @@ package cli
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/mail"
 	"strings"
 
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/pkg/config"
-	"go.lumeweb.com/pinner-cli/pkg/ipfs/client"
+	ipfsclient "go.lumeweb.com/pinner-cli/pkg/ipfs/client"
 )
 
 func newDNSCommand() *cli.Command {
@@ -806,29 +807,19 @@ func validateDNSRecord(recordType, content string) error {
 }
 
 func isValidIPv4(ip string) bool {
-	parts := strings.Split(ip, ".")
-	if len(parts) != 4 {
+	parsedIP := net.ParseIP(ip)
+	if parsedIP == nil {
 		return false
 	}
-
-	for _, part := range parts {
-		num := 0
-		for _, c := range part {
-			if c < '0' || c > '9' {
-				return false
-			}
-			num = num*10 + int(c-'0')
-		}
-		if num < 0 || num > 255 {
-			return false
-		}
-	}
-
-	return true
+	return parsedIP.To4() != nil
 }
 
 func isValidIPv6(ip string) bool {
-	return true
+	parsedIP := net.ParseIP(ip)
+	if parsedIP == nil {
+		return false
+	}
+	return parsedIP.To4() == nil && parsedIP.To16() != nil
 }
 
 func isValidDomain(domain string) bool {
