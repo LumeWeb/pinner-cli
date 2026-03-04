@@ -26,10 +26,6 @@ func setupCommandContext(cmd *cli.Command) (config.Manager, Output, error) {
 // setupOutput creates the output formatter for command actions.
 // This reduces boilerplate code across command handlers that only need output.
 func setupOutput(cmd *cli.Command) Output {
-	return NewOutputFormatter(
-		cmd.Bool(FlagJSON),
-		cmd.Bool(FlagVerbose),
-		cmd.Bool(FlagQuiet),
-		cmd.Bool(FlagUnmask),
-	)
+	_, output, _ := setupCommandContext(cmd)
+	return output
 }
