@@ -48,7 +48,7 @@ The output includes:
 		},
 		Metadata: WithTutorial(1, "Upload and pin a file", "pinner upload myfile.txt"),
 		Action: func(ctx context.Context, c *cli.Command) error {
-			output := NewOutputFormatter(c.Bool(FlagJSON), c.Bool(FlagVerbose), c.Bool(FlagQuiet), c.Bool(FlagUnmask))
+			output := setupOutput(c)
 			return handleUpload(ctx, newCLICommandWrapper(c), output, defaultConfigManagerFactory, defaultUploadServiceFactory)
 		},
 	}

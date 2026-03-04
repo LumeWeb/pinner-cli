@@ -37,11 +37,9 @@ Common keys:
   memory_limit   - Memory limit for CAR generation in MB (default: 100)
   auth_token     - Authentication token (managed by 'pinner auth')`,
 		ArgsUsage: "[get <key> | set <key> <value>]",
-		Flags: []cli.Flag{
-			DryRunFlag(),
-		},
+			Flags: append(GlobalFlags(), DryRunFlag()),
 		Action: func(ctx context.Context, cmd *cli.Command) error {
-			output := NewOutputFormatter(cmd.Bool(FlagJSON), cmd.Bool(FlagVerbose), cmd.Bool(FlagQuiet), cmd.Bool(FlagUnmask))
+			output := setupOutput(cmd)
 			return configAction(ctx, cmd, output, defaultConfigManagerFactory)
 		},
 	}
