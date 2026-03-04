@@ -286,21 +286,27 @@ type mockIPNSResolveCommand struct {
 }
 
 func (m *mockIPNSResolveCommand) Args() cli.Args {
+	if m.ipnsName == "" {
+		return &mockArgs{}
+	}
 	return &mockArgs{[]string{m.ipnsName}}
 }
 
 // ipnsResolveWithService is a test helper that allows injecting a mock IPNSService
 func ipnsResolveWithService(ctx context.Context, cmd interface{ Args() cli.Args }, output Output, ipnsService IPNSService) error {
-	if err := ipnsService.RequireAuthenticated(); err != nil {
-		return err
-	}
-
 	args := cmd.Args()
 	if args.Len() == 0 {
 		return fmt.Errorf("IPNS name is required")
 	}
 
 	ipnsName := args.First()
+	if ipnsName == "" {
+		return fmt.Errorf("IPNS name is required")
+	}
+
+	if err := ipnsService.RequireAuthenticated(); err != nil {
+		return err
+	}
 
 	response, err := ipnsService.Resolve(ctx, ipnsName)
 	if err != nil {
@@ -575,21 +581,27 @@ func (m *mockIPNSGetCommand) String(name string) string {
 }
 
 func (m *mockIPNSGetCommand) Args() cli.Args {
+	if m.keyID == "" {
+		return &mockArgs{}
+	}
 	return &mockArgs{[]string{m.keyID}}
 }
 
 // ipnsKeysGetWithService is a test helper that allows injecting a mock IPNSService
 func ipnsKeysGetWithService(ctx context.Context, cmd interface{ Args() cli.Args }, output Output, ipnsService IPNSService) error {
-	if err := ipnsService.RequireAuthenticated(); err != nil {
-		return err
-	}
-
 	args := cmd.Args()
 	if args.Len() == 0 {
 		return fmt.Errorf("key ID is required")
 	}
 
 	keyID := args.First()
+	if keyID == "" {
+		return fmt.Errorf("key ID is required")
+	}
+
+	if err := ipnsService.RequireAuthenticated(); err != nil {
+		return err
+	}
 
 	key, err := ipnsService.GetKey(ctx, keyID)
 	if err != nil {
@@ -977,6 +989,9 @@ func (m *mockIPNSPublishCommand) String(name string) string {
 }
 
 func (m *mockIPNSPublishCommand) Args() cli.Args {
+	if m.cid == "" {
+		return &mockArgs{}
+	}
 	return &mockArgs{[]string{m.cid}}
 }
 
@@ -996,6 +1011,9 @@ func ipnsPublishWithService(ctx context.Context, cmd interface {
 	}
 
 	cid := args.First()
+	if cid == "" {
+		return fmt.Errorf("CID is required")
+	}
 
 	keyID := cmd.Int("key-id")
 	if keyID == 0 {

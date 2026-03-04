@@ -7,6 +7,7 @@ import (
 
 	"github.com/urfave/cli/v3"
 	ipfsclient "go.lumeweb.com/pinner-cli/pkg/ipfs/client"
+	"go.lumeweb.com/pinner-cli/pkg/config"
 )
 
 func newWebsitesCommand() *cli.Command {
@@ -53,12 +54,7 @@ Examples:
   pinner websites list
   pinner websites list --json`,
 		Action: func(ctx context.Context, cmd *cli.Command) error {
-			output := NewOutputFormatter(
-				cmd.Bool(FlagJSON),
-				cmd.Bool(FlagVerbose),
-				cmd.Bool(FlagQuiet),
-				cmd.Bool(FlagUnmask),
-			)
+			output := setupOutput(cmd)
 			return websitesList(ctx, cmd, output)
 		},
 	}
@@ -73,19 +69,17 @@ func newWebsitesCreateCommand() *cli.Command {
 Examples:
   pinner websites create --domain example.com --target-hash QmHash
   pinner websites create --domain example.com --target-hash QmHash --target-type ipfs
+  pinner websites create --domain example.com --target-hash QmHash --dns-hosting
   pinner websites create --domain example.com --target-hash QmHash --json`,
 		Flags: []cli.Flag{
 			DomainFlag(),
 			TargetHashFlag(),
 			TargetTypeFlag(),
+			DNSHostingFlag(),
+			NoDNSHostingFlag(),
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
-			output := NewOutputFormatter(
-				cmd.Bool(FlagJSON),
-				cmd.Bool(FlagVerbose),
-				cmd.Bool(FlagQuiet),
-				cmd.Bool(FlagUnmask),
-			)
+			output := setupOutput(cmd)
 			return websitesCreate(ctx, cmd, output)
 		},
 	}
@@ -102,12 +96,7 @@ Examples:
   pinner websites get 1 --json`,
 		ArgsUsage: "<id>",
 		Action: func(ctx context.Context, cmd *cli.Command) error {
-			output := NewOutputFormatter(
-				cmd.Bool(FlagJSON),
-				cmd.Bool(FlagVerbose),
-				cmd.Bool(FlagQuiet),
-				cmd.Bool(FlagUnmask),
-			)
+			output := setupOutput(cmd)
 			return websitesGet(ctx, cmd, output)
 		},
 	}
@@ -125,20 +114,19 @@ Examples:
   pinner websites update 1 --domain new-example.com
   pinner websites update 1 --target-hash QmNewHash
   pinner websites update 1 --domain new-example.com --target-hash QmNewHash --target-type ipfs
+  pinner websites update 1 --dns-hosting
+  pinner websites update 1 --no-dns-hosting
   pinner websites update 1 --json`,
 		ArgsUsage: "<id>",
 		Flags: []cli.Flag{
 			DomainFlag(),
 			TargetHashFlag(),
 			TargetTypeFlag(),
+			DNSHostingFlag(),
+			NoDNSHostingFlag(),
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
-			output := NewOutputFormatter(
-				cmd.Bool(FlagJSON),
-				cmd.Bool(FlagVerbose),
-				cmd.Bool(FlagQuiet),
-				cmd.Bool(FlagUnmask),
-			)
+			output := setupOutput(cmd)
 			return websitesUpdate(ctx, cmd, output)
 		},
 	}
@@ -246,14 +234,22 @@ func websitesUpdate(ctx context.Context, cmd *cli.Command, output Output) error 
 	domain := cmd.String(FlagDomain)
 	targetHash := cmd.String(FlagTargetHash)
 	targetType := cmd.String(FlagTargetType)
+	dnsHosting := cmd.Bool(FlagDNSHosting)
+	noDNSHosting := cmd.Bool(FlagNoDNSHosting)
 
-	if domain == "" && targetHash == "" && targetType == "" {
-		return fmt.Errorf("at least one field must be provided for update (domain, target-hash, or target-type)")
+	if domain == "" && targetHash == "" && targetType == "" && !dnsHosting && !noDNSHosting {
+		return fmt.Errorf("at least one field must be provided for update (domain, target-hash, target-type, or dns-hosting flags)")
 	}
 
 	updatedWebsite, err := websitesService.Update(ctx, id, domain, targetHash, targetType)
 	if err != nil {
 		return err
+	}
+
+	if dnsHosting {
+		if err := setupDNSHosting(ctx, cfgMgr, output, updatedWebsite.Domain, updatedWebsite.TargetHash); err != nil {
+			output.Printf("Warning: Failed to setup DNS hosting: %v", err)
+		}
 	}
 
 	if output.IsJSON() {
@@ -374,6 +370,14 @@ func websitesCreate(ctx context.Context, cmd *cli.Command, output Output) error 
 		return err
 	}
 
+	dnsHosting := cmd.Bool(FlagDNSHosting)
+
+	if dnsHosting {
+		if err := setupDNSHosting(ctx, cfgMgr, output, domain, targetHash); err != nil {
+			output.Printf("Warning: Failed to setup DNS hosting: %v", err)
+		}
+	}
+
 	if output.IsJSON() {
 		return output.PrintJSON(createdWebsite)
 	}
@@ -392,7 +396,70 @@ func websitesCreate(ctx context.Context, cmd *cli.Command, output Output) error 
 	}
 	output.PrintTable(headers, rows)
 
+	if dnsHosting {
+		output.Printf("\nDNS hosting enabled for this domain")
+		output.Printf("Next steps:")
+		output.Printf("  1. Validate nameserver delegation: pinner dns zones validate %s", domain)
+		output.Printf("  2. Validate website DNS records: pinner websites validate %d", createdWebsite.Id)
+	}
+
 	return nil
+}
+
+// setupDNSHosting creates a DNS zone and auto-created records for a website
+func setupDNSHosting(ctx context.Context, cfgMgr config.Manager, output Output, domain, targetHash string) error {
+	dnsService := defaultDNSServiceFactory(cfgMgr, output)
+
+	output.Printf("Setting up DNS hosting for %s...", domain)
+
+	zone, err := dnsService.CreateZone(ctx, domain, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create DNS zone: %w", err)
+	}
+
+	output.Printf("  ✓ Created DNS zone (ID: %d, Status: %s)", zone.Id, zone.Status)
+
+
+
+	validationToken := generateValidationToken()
+	ttl := 3600
+
+	records := []ipfsclient.RecordRequest{
+		{
+			Name:    "_dnslink." + domain,
+			Type:    "TXT",
+			Content: "/ipfs/" + targetHash,
+			Ttl:     &ttl,
+		},
+		{
+			Name:    domain,
+			Type:    "TXT",
+			Content: "lumeweb-verify=" + validationToken,
+			Ttl:     &ttl,
+		},
+		{
+			Name:    "www." + domain,
+			Type:    "CNAME",
+			Content: domain,
+			Ttl:     &ttl,
+		},
+	}
+
+	for _, record := range records {
+		created, err := dnsService.CreateRecord(ctx, domain, record)
+		if err != nil {
+			output.Printf("  ✗ Failed to create record %s %s: %v", record.Name, record.Type, err)
+			continue
+		}
+		output.Printf("  ✓ Created DNS record: %s %s", created.Name, created.Type)
+	}
+
+	return nil
+}
+
+// generateValidationToken generates a random validation token
+func generateValidationToken() string {
+	return fmt.Sprintf("%d", time.Now().UnixNano())
 }
 
 func newWebsitesDeleteCommand() *cli.Command {
@@ -406,12 +473,7 @@ Examples:
   pinner websites delete 1 --json`,
 		ArgsUsage: "<id>",
 		Action: func(ctx context.Context, cmd *cli.Command) error {
-			output := NewOutputFormatter(
-				cmd.Bool(FlagJSON),
-				cmd.Bool(FlagVerbose),
-				cmd.Bool(FlagQuiet),
-				cmd.Bool(FlagUnmask),
-			)
+			output := setupOutput(cmd)
 			return websitesDelete(ctx, cmd, output)
 		},
 	}
@@ -428,12 +490,7 @@ Examples:
   pinner websites validate 1 --json`,
 		ArgsUsage: "<id>",
 		Action: func(ctx context.Context, cmd *cli.Command) error {
-			output := NewOutputFormatter(
-				cmd.Bool(FlagJSON),
-				cmd.Bool(FlagVerbose),
-				cmd.Bool(FlagQuiet),
-				cmd.Bool(FlagUnmask),
-			)
+			output := setupOutput(cmd)
 			return websitesValidate(ctx, cmd, output)
 		},
 	}
@@ -519,18 +576,57 @@ func websitesValidate(ctx context.Context, cmd *cli.Command, output Output) erro
 		return err
 	}
 
+	dnsService := defaultDNSServiceFactory(cfgMgr, output)
+
+	records, err := dnsService.ListRecords(ctx, validationResult.Domain)
+	if err == nil {
+		output.Printf("\nDNS Records Check:")
+
+		requiredRecords := []struct {
+			name    string
+			rtype   string
+			present bool
+		}{
+			{"_dnslink." + validationResult.Domain, "TXT", false},
+			{validationResult.Domain, "TXT", false},
+			{"www." + validationResult.Domain, "CNAME", false},
+		}
+
+		for i := range requiredRecords {
+			for _, record := range records {
+				if record.Name == requiredRecords[i].name && record.Type == requiredRecords[i].rtype {
+					requiredRecords[i].present = true
+					break
+				}
+			}
+		}
+
+		for _, rr := range requiredRecords {
+			icon := "✗"
+			if rr.present {
+				icon = "✓"
+			}
+			output.Printf("  %s %s %s", icon, rr.name, rr.rtype)
+		}
+	}
+
 	if output.IsJSON() {
 		return output.PrintJSON(validationResult)
 	}
 
 	output.Printf("Website Validation Result")
 
+	statusIcon := "⏳"
+	if validationResult.Valid {
+		statusIcon = "✅"
+	}
+
 	headers := []string{"DOMAIN", "ID", "VALID", "MESSAGE"}
 	rows := [][]string{
 		{
 			validationResult.Domain,
 			fmt.Sprintf("%d", validationResult.Id),
-			fmt.Sprintf("%t", validationResult.Valid),
+			fmt.Sprintf("%s %t", statusIcon, validationResult.Valid),
 			validationResult.Message,
 		},
 	}

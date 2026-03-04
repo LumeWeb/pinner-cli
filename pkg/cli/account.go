@@ -51,7 +51,7 @@ After successful verification, 2FA will be required for all future logins.`,
 					},
 				},
 				Action: func(ctx context.Context, cmd *cli.Command) error {
-					output := NewOutputFormatter(cmd.Bool(FlagJSON), cmd.Bool(FlagVerbose), cmd.Bool(FlagQuiet), cmd.Bool(FlagUnmask))
+					output := setupOutput(cmd)
 					return accountOTPEnable(ctx, cmd, output, defaultConfigManagerFactory, defaultAuthServiceFactory)
 				},
 			},
@@ -75,7 +75,7 @@ WARNING: This reduces your account security. Consider re-enabling 2FA.`,
 					},
 				},
 				Action: func(ctx context.Context, cmd *cli.Command) error {
-					output := NewOutputFormatter(cmd.Bool(FlagJSON), cmd.Bool(FlagVerbose), cmd.Bool(FlagQuiet), cmd.Bool(FlagUnmask))
+					output := setupOutput(cmd)
 					return accountOTPDisable(ctx, cmd, output, defaultConfigManagerFactory, defaultAuthServiceFactory)
 				},
 			},

@@ -220,12 +220,7 @@ Examples:
 			newAuthStatusCommand(),
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
-			output := NewOutputFormatter(
-				cmd.Bool(FlagJSON),
-				cmd.Bool(FlagVerbose),
-				cmd.Bool(FlagQuiet),
-				cmd.Bool(FlagUnmask),
-			)
+			output := setupOutput(cmd)
 
 			args := cmd.Args()
 			if args.Len() > 0 {
@@ -394,12 +389,7 @@ Examples:
   pinner auth status --json
   pinner auth status --verbose`,
 		Action: func(ctx context.Context, cmd *cli.Command) error {
-			output := NewOutputFormatter(
-				cmd.Bool(FlagJSON),
-				cmd.Bool(FlagVerbose),
-				cmd.Bool(FlagQuiet),
-				cmd.Bool(FlagUnmask),
-			)
+			output := setupOutput(cmd)
 			return authStatus(ctx, cmd, output, defaultConfigManagerFactory, defaultAuthServiceFactory)
 		},
 	}

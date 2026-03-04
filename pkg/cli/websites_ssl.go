@@ -56,7 +56,7 @@ Examples:
 			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
-			output := NewOutputFormatter(cmd.Bool(FlagJSON), cmd.Bool(FlagVerbose), cmd.Bool(FlagQuiet), cmd.Bool(FlagUnmask))
+			output := setupOutput(cmd)
 			return websitesSSLStatus(ctx, cmd, output)
 		},
 	}
