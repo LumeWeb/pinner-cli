@@ -3,7 +3,6 @@ package ipfsclient
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/avast/retry-go/v4"
 )
@@ -73,18 +72,6 @@ type websitesService struct {
 // NewWebsitesService creates a new WebsitesService wrapping the generated client.
 func NewWebsitesService(client websitesClientWithResponsesInterface) WebsitesService {
 	return &websitesService{client: client}
-}
-
-// retryOptions returns standard retry configuration for API calls.
-func retryOptions(ctx context.Context) []retry.Option {
-	return []retry.Option{
-		retry.Attempts(3),
-		retry.LastErrorOnly(true),
-		retry.Context(ctx),
-		retry.DelayType(retry.BackOffDelay),
-		retry.MaxJitter(5 * time.Second),
-		retry.MaxDelay(30 * time.Second),
-	}
 }
 
 // formatErrorResponse formats an error response from the API.

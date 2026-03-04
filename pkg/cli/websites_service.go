@@ -51,6 +51,9 @@ func (s *websitesService) List(ctx context.Context) ([]ipfsclient.WebsiteItem, e
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
+	if s.client == nil {
+		return nil, ErrServiceUnavailable
+	}
 	return s.client.List(ctx)
 }
 

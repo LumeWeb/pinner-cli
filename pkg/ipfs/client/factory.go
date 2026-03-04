@@ -53,3 +53,28 @@ func NewWebsitesServiceWithClient(httpClient *http.Client, baseURL string) (Webs
 
 	return NewWebsitesService(client), nil
 }
+
+// NewDNSServiceWithClient creates a new DNSService with the provided HTTP client and base URL.
+// This factory function creates a ClientWithResponses instance configured with the given
+// HTTP client and base URL, then wraps it in a DNSService.
+//
+// Parameters:
+//   - httpClient: The HTTP client to use for API requests. If nil, a default client will be used.
+//   - baseURL: The base URL of the IPFS API server (e.g., "https://api.pinner.xyz").
+//
+// Returns:
+//   - DNSService: The configured DNS service instance.
+//   - error: An error if the client cannot be created.
+func NewDNSServiceWithClient(httpClient *http.Client, baseURL string) (DNSService, error) {
+	opts := []ClientOption{WithBaseURL(baseURL)}
+	if httpClient != nil {
+		opts = append(opts, WithHTTPClient(httpClient))
+	}
+
+	client, err := NewClientWithResponses("", opts...)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewDNSService(client), nil
+}

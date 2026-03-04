@@ -6,8 +6,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"go.lumeweb.com/pinner-cli/pkg/config"
-	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
 	ipfsclient "go.lumeweb.com/pinner-cli/pkg/ipfs/client"
 )
 
@@ -15,7 +13,7 @@ func TestWebsitesService_List(t *testing.T) {
 	tests := []struct {
 		name        string
 		authToken   string
-		setupMocks  func(*configmocks.MockManager, *mockWebsitesClient)
+		setupMocks  func(*mockWebsitesClient)
 		wantErr     bool
 		errContains string
 		wantWebsites []ipfsclient.WebsiteItem
@@ -23,11 +21,19 @@ func TestWebsitesService_List(t *testing.T) {
 		{
 			name:      "successful list websites",
 			authToken: "test-jwt-token",
-			setupMocks: func(cfg *configmocks.MockManager, svc *mockWebsitesClient) {
-				cfg.EXPECT().Config().Return(&config.Config{
-					AuthToken:    "test-jwt-token",
-					BaseEndpoint: "https://api.test.com",
-				})
+			setupMocks: func(svc *mockWebsitesClient) {
+				fixedTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+				svc.listFunc = func(ctx context.Context) ([]ipfsclient.WebsiteItem, error) {
+					return []ipfsclient.WebsiteItem{
+						{
+							Id:         1,
+							Domain:     "example.com",
+							TargetHash: "QmXxx",
+							Status:     "active",
+							Created:    fixedTime,
+						},
+					}, nil
+				}
 			},
 			wantErr: false,
 			wantWebsites: []ipfsclient.WebsiteItem{
@@ -36,18 +42,15 @@ func TestWebsitesService_List(t *testing.T) {
 					Domain:     "example.com",
 					TargetHash: "QmXxx",
 					Status:     "active",
-					Created:    time.Now(),
+					Created:    time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC),
 				},
 			},
 		},
 		{
 			name:      "not authenticated",
 			authToken: "",
-			setupMocks: func(cfg *configmocks.MockManager, svc *mockWebsitesClient) {
-				cfg.EXPECT().Config().Return(&config.Config{
-					AuthToken:    "",
-					BaseEndpoint: "https://api.test.com",
-				})
+			setupMocks: func(svc *mockWebsitesClient) {
+				// No setup needed - the test directly checks authentication
 			},
 			wantErr:     true,
 			errContains: "not authenticated",
@@ -56,15 +59,15 @@ func TestWebsitesService_List(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfgMgr := configmocks.NewMockManager(t)
 			mockSvc := &mockWebsitesClient{}
 
 			if tt.setupMocks != nil {
-				tt.setupMocks(cfgMgr, mockSvc)
+				tt.setupMocks(mockSvc)
 			}
 
 			svc := &websitesService{
-				cfgMgr:        cfgMgr,
+				client:        mockSvc,
+				cfgMgr:        nil,
 				authToken:     tt.authToken,
 				authenticated: tt.authToken != "",
 			}
@@ -153,6 +156,16 @@ func (m *mockWebsitesClient) Validate(ctx context.Context, id string) (*ipfsclie
 		Valid:   true,
 		Message: "Valid",
 	}, nil
+}
+
+func (m *mockWebsitesClient) GetSSLStatus(ctx context.Context, domain string) (*ipfsclient.WebsiteResponse, error) {
+	return (*ipfsclient.WebsiteResponse)(&ipfsclient.WebsiteItem{
+		Id:         1,
+		Domain:     domain,
+		TargetHash: "QmXxx",
+		Status:     "active",
+		Created:    time.Time{},
+	}), nil
 }
 
 func (m *mockWebsitesClient) RequireAuthenticated() error {
