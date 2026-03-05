@@ -141,12 +141,8 @@ func newDNSZonesDeleteCommand() *cli.Command {
 		Description: `Delete a DNS zone and all its records.
 
 Examples:
-  pinner dns zones delete 1
-  pinner dns zones delete 1 --force`,
+  pinner dns zones delete 1`,
 		ArgsUsage: "<id>",
-		Flags: []cli.Flag{
-			ForceFlag(),
-		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			cfgMgr, output, err := setupCommandContext(cmd)
 			if err != nil {

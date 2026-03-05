@@ -47,7 +47,7 @@ func NewDNSService(cfgMgr config.Manager, output Output, apiEndpoint string) DNS
 			cfgMgr:        cfgMgr,
 			output:        output,
 			authToken:     authToken,
-			authenticated: false,
+			authenticated: authToken != "",
 		}
 	}
 

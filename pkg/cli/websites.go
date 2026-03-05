@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"time"
 
@@ -459,7 +460,12 @@ func setupDNSHosting(ctx context.Context, cfgMgr config.Manager, output Output, 
 
 // generateValidationToken generates a random validation token
 func generateValidationToken() string {
-	return fmt.Sprintf("%d", time.Now().UnixNano())
+	b := make([]byte, 8)
+	_, err := rand.Read(b)
+	if err != nil {
+		return fmt.Sprintf("%d", time.Now().UnixNano())
+	}
+	return fmt.Sprintf("%x", b)
 }
 
 func newWebsitesDeleteCommand() *cli.Command {
