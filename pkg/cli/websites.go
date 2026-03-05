@@ -422,7 +422,10 @@ func setupDNSHosting(ctx context.Context, cfgMgr config.Manager, output Output, 
 
 
 
-	validationToken := generateValidationToken()
+	validationToken, err := generateValidationToken()
+	if err != nil {
+		return fmt.Errorf("failed to generate validation token: %w", err)
+	}
 	ttl := 3600
 
 	records := []ipfsclient.RecordRequest{
@@ -459,13 +462,13 @@ func setupDNSHosting(ctx context.Context, cfgMgr config.Manager, output Output, 
 }
 
 // generateValidationToken generates a random validation token
-func generateValidationToken() string {
+func generateValidationToken() (string, error) {
 	b := make([]byte, 8)
 	_, err := rand.Read(b)
 	if err != nil {
-		return fmt.Sprintf("%d", time.Now().UnixNano())
+		return "", fmt.Errorf("failed to generate validation token: %w", err)
 	}
-	return fmt.Sprintf("%x", b)
+	return fmt.Sprintf("%x", b), nil
 }
 
 func newWebsitesDeleteCommand() *cli.Command {
