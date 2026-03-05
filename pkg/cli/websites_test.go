@@ -896,6 +896,9 @@ func (m *mockWebsitesGetCommand) String(name string) string {
 }
 
 func (m *mockWebsitesGetCommand) Args() cli.Args {
+	if m.id == "" {
+		return &mockArgs{}
+	}
 	return &mockArgs{[]string{m.id}}
 }
 
@@ -921,6 +924,9 @@ func (m *mockWebsitesUpdateCommand) String(name string) string {
 }
 
 func (m *mockWebsitesUpdateCommand) Args() cli.Args {
+	if m.id == "" {
+		return &mockArgs{}
+	}
 	return &mockArgs{[]string{m.id}}
 }
 

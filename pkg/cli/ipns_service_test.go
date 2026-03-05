@@ -6,8 +6,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"go.lumeweb.com/pinner-cli/pkg/config"
-	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
 	ipfsclient "go.lumeweb.com/pinner-cli/pkg/ipfs/client"
 )
 
@@ -15,7 +13,7 @@ func TestIPNSService_ListKeys(t *testing.T) {
 	tests := []struct {
 		name        string
 		authToken   string
-		setupMocks  func(*configmocks.MockManager, *mockIPNSService)
+		setupMocks  func(*mockIPNSService)
 		wantErr     bool
 		errContains string
 		wantKeys    []ipfsclient.IPNSKeyResponse
@@ -23,11 +21,19 @@ func TestIPNSService_ListKeys(t *testing.T) {
 		{
 			name:      "successful list keys",
 			authToken: "test-jwt-token",
-			setupMocks: func(cfg *configmocks.MockManager, svc *mockIPNSService) {
-				cfg.EXPECT().Config().Return(&config.Config{
-					AuthToken:    "test-jwt-token",
-					BaseEndpoint: "https://api.test.com",
-				})
+			setupMocks: func(svc *mockIPNSService) {
+				fixedTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+				svc.listKeysFunc = func(ctx context.Context) ([]ipfsclient.IPNSKeyResponse, error) {
+					return []ipfsclient.IPNSKeyResponse{
+						{
+							Id:       1,
+							Name:     "my-key",
+							IpnsName: "k51qzi5uqu5djx...",
+							PeerId:   "12D3KooW...",
+							Created:  fixedTime,
+						},
+					}, nil
+				}
 			},
 			wantErr: false,
 			wantKeys: []ipfsclient.IPNSKeyResponse{
@@ -36,18 +42,15 @@ func TestIPNSService_ListKeys(t *testing.T) {
 					Name:     "my-key",
 					IpnsName: "k51qzi5uqu5djx...",
 					PeerId:   "12D3KooW...",
-					Created:  time.Now(),
+					Created:  time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC),
 				},
 			},
 		},
 		{
 			name:      "not authenticated",
 			authToken: "",
-			setupMocks: func(cfg *configmocks.MockManager, svc *mockIPNSService) {
-				cfg.EXPECT().Config().Return(&config.Config{
-					AuthToken:    "",
-					BaseEndpoint: "https://api.test.com",
-				})
+			setupMocks: func(svc *mockIPNSService) {
+				// No setup needed - the test directly checks authentication
 			},
 			wantErr:     true,
 			errContains: "not authenticated",
@@ -56,16 +59,15 @@ func TestIPNSService_ListKeys(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfgMgr := configmocks.NewMockManager(t)
 			mockSvc := &mockIPNSService{}
 
 			if tt.setupMocks != nil {
-				tt.setupMocks(cfgMgr, mockSvc)
+				tt.setupMocks(mockSvc)
 			}
 
 			svc := &ipnsService{
 				client:        mockSvc,
-				cfgMgr:        cfgMgr,
+				cfgMgr:        nil,
 				authToken:     tt.authToken,
 				authenticated: tt.authToken != "",
 			}

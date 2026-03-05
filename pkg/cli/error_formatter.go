@@ -47,6 +47,7 @@ var (
 	// Operation errors
 	ErrOperationFailed   = errors.New("operation failed")
 	ErrOperationNotFound = errors.New("operation not found")
+	ErrServiceUnavailable = errors.New("service unavailable")
 )
 
 // errorMessages maps error types to user-friendly messages.
@@ -91,6 +92,7 @@ var errorMessages = map[error]string{
 	portalsdk.ErrOperationTimeout: "Request timed out, please try again",
 	context.Canceled:              "Operation cancelled",
 	context.DeadlineExceeded:      "Request timed out, please try again",
+	ErrServiceUnavailable:         "Service unavailable. Please check your connection and try again",
 }
 
 // FormatError converts an error into a user-friendly message.

@@ -38,7 +38,7 @@ After confirmation, authenticate with:
 			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
-			output := NewOutputFormatter(cmd.Bool(FlagJSON), cmd.Bool(FlagVerbose), cmd.Bool(FlagQuiet), cmd.Bool(FlagUnmask))
+			output := setupOutput(cmd)
 			return confirmEmail(ctx, cmd, output, defaultConfigManagerFactory)
 		},
 	}

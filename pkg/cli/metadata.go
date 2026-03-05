@@ -32,7 +32,7 @@ Examples:
 			DryRunFlag(),
 		},
 		Action: func(ctx context.Context, c *cli.Command) error {
-			output := NewOutputFormatter(c.Bool(FlagJSON), c.Bool(FlagVerbose), c.Bool(FlagQuiet), c.Bool(FlagUnmask))
+			output := setupOutput(c)
 			return metadata(ctx, newCLICommandWrapper(c), output, defaultConfigManagerFactory, defaultPinningServiceFactory)
 		},
 	}

@@ -66,12 +66,7 @@ Examples:
   pinner ipns keys list
   pinner ipns keys list --json`,
 		Action: func(ctx context.Context, cmd *cli.Command) error {
-			output := NewOutputFormatter(
-				cmd.Bool(FlagJSON),
-				cmd.Bool(FlagVerbose),
-				cmd.Bool(FlagQuiet),
-				cmd.Bool(FlagUnmask),
-			)
+			output := setupOutput(cmd)
 			return ipnsKeysList(ctx, cmd, output)
 		},
 	}
@@ -97,12 +92,7 @@ Examples:
 			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
-			output := NewOutputFormatter(
-				cmd.Bool(FlagJSON),
-				cmd.Bool(FlagVerbose),
-				cmd.Bool(FlagQuiet),
-				cmd.Bool(FlagUnmask),
-			)
+			output := setupOutput(cmd)
 			return ipnsKeysCreate(ctx, cmd, output)
 		},
 	}
@@ -119,12 +109,7 @@ Examples:
   pinner ipns keys get k51qzi5uqu5djx... --json`,
 		ArgsUsage: "<key-id>",
 		Action: func(ctx context.Context, cmd *cli.Command) error {
-			output := NewOutputFormatter(
-				cmd.Bool(FlagJSON),
-				cmd.Bool(FlagVerbose),
-				cmd.Bool(FlagQuiet),
-				cmd.Bool(FlagUnmask),
-			)
+			output := setupOutput(cmd)
 			return ipnsKeysGet(ctx, cmd, output)
 		},
 	}
@@ -140,12 +125,7 @@ Examples:
   pinner ipns keys delete k51qzi5uqu5djx...`,
 		ArgsUsage: "<key-id>",
 		Action: func(ctx context.Context, cmd *cli.Command) error {
-			output := NewOutputFormatter(
-				cmd.Bool(FlagJSON),
-				cmd.Bool(FlagVerbose),
-				cmd.Bool(FlagQuiet),
-				cmd.Bool(FlagUnmask),
-			)
+			output := setupOutput(cmd)
 			return ipnsKeysDelete(ctx, cmd, output)
 		},
 	}
@@ -178,12 +158,7 @@ Examples:
 			WaitFlag(),
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
-			output := NewOutputFormatter(
-				cmd.Bool(FlagJSON),
-				cmd.Bool(FlagVerbose),
-				cmd.Bool(FlagQuiet),
-				cmd.Bool(FlagUnmask),
-			)
+			output := setupOutput(cmd)
 			return ipnsPublish(ctx, cmd, output)
 		},
 	}
@@ -201,12 +176,7 @@ Examples:
   pinner ipns resolve k51qzi5uqu5djx... --json`,
 		ArgsUsage: "<name>",
 		Action: func(ctx context.Context, cmd *cli.Command) error {
-			output := NewOutputFormatter(
-				cmd.Bool(FlagJSON),
-				cmd.Bool(FlagVerbose),
-				cmd.Bool(FlagQuiet),
-				cmd.Bool(FlagUnmask),
-			)
+			output := setupOutput(cmd)
 			return ipnsResolve(ctx, cmd, output)
 		},
 	}
@@ -507,6 +477,11 @@ func ipnsResolve(ctx context.Context, cmd *cli.Command, output Output) error {
 		return err
 	}
 
+	args := cmd.Args()
+	if args.Len() == 0 {
+		return fmt.Errorf("IPNS name is required")
+	}
+
 	var ipnsService IPNSService
 	authToken := GetAuthToken(cmd, cfgMgr)
 	secure := GetSecureSetting(cmd, cfgMgr)
@@ -518,11 +493,6 @@ func ipnsResolve(ctx context.Context, cmd *cli.Command, output Output) error {
 
 	if err := ipnsService.RequireAuthenticated(); err != nil {
 		return err
-	}
-
-	args := cmd.Args()
-	if args.Len() == 0 {
-		return fmt.Errorf("IPNS name is required")
 	}
 
 	ipnsName := args.First()

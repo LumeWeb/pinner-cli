@@ -49,9 +49,21 @@ const (
 
 // Websites flags
 const (
-	FlagDomain     = "domain"
-	FlagTargetHash = "target-hash"
-	FlagTargetType = "target-type"
+	FlagDomain      = "domain"
+	FlagTargetHash  = "target-hash"
+	FlagTargetType  = "target-type"
+	FlagDNSHosting  = "dns-hosting"
+	FlagNoDNSHosting = "no-dns-hosting"
+)
+
+// DNS flags
+const (
+	FlagZoneID      = "zone-id"
+	FlagNameservers = "nameservers"
+	FlagContent     = "content"
+	FlagType        = "type"
+	FlagTTL         = "ttl"
+	FlagDisabled    = "disabled"
 )
 
 // Connection/Config flags
@@ -67,8 +79,9 @@ func GlobalFlags() []cli.Flag {
 			Usage: "Output JSON instead of human-readable",
 		},
 		&cli.BoolFlag{
-			Name:  FlagVerbose,
-			Usage: "Show detailed output",
+			Name:    FlagVerbose,
+			Aliases: []string{"v"},
+			Usage:   "Show detailed output",
 		},
 		&cli.BoolFlag{
 			Name:    FlagQuiet,
@@ -190,6 +203,14 @@ func DryRunFlag() *cli.BoolFlag {
 	}
 }
 
+// ForceFlag returns a flag for forcing operations.
+func ForceFlag() *cli.BoolFlag {
+	return &cli.BoolFlag{
+		Name:  FlagForce,
+		Usage: "Force operation without confirmation",
+	}
+}
+
 // DomainFlag returns a flag for the website domain.
 func DomainFlag() *cli.StringFlag {
 	return &cli.StringFlag{
@@ -212,6 +233,71 @@ func TargetTypeFlag() *cli.StringFlag {
 		Name:  FlagTargetType,
 		Usage: "Target type (ipfs, ipns, etc.)",
 		Value: "ipfs",
+	}
+}
+
+// DNSHostingFlag returns a flag for enabling DNS hosting.
+func DNSHostingFlag() *cli.BoolFlag {
+	return &cli.BoolFlag{
+		Name:  FlagDNSHosting,
+		Usage: "Enable DNS hosting for this website",
+	}
+}
+
+// NoDNSHostingFlag returns a flag for disabling DNS hosting.
+func NoDNSHostingFlag() *cli.BoolFlag {
+	return &cli.BoolFlag{
+		Name:  FlagNoDNSHosting,
+		Usage: "Disable DNS hosting for this website",
+	}
+}
+
+// ZoneIDFlag returns a flag for the DNS zone ID.
+func ZoneIDFlag() *cli.StringFlag {
+	return &cli.StringFlag{
+		Name:  FlagZoneID,
+		Usage: "DNS zone ID",
+	}
+}
+
+// NameserversFlag returns a flag for custom nameservers.
+func NameserversFlag() *cli.StringFlag {
+	return &cli.StringFlag{
+		Name:  FlagNameservers,
+		Usage: "Comma-separated list of nameservers (e.g., ns1.example.com,ns2.example.com)",
+	}
+}
+
+// ContentFlag returns a flag for DNS record content.
+func ContentFlag() *cli.StringFlag {
+	return &cli.StringFlag{
+		Name:  FlagContent,
+		Usage: "DNS record content",
+	}
+}
+
+// TTLFlag returns a flag for DNS record TTL.
+func TTLFlag() *cli.UintFlag {
+	return &cli.UintFlag{
+		Name:  FlagTTL,
+		Usage: "DNS record TTL in seconds (default: 3600)",
+		Value: 3600,
+	}
+}
+
+// DisabledFlag returns a flag for disabling DNS records.
+func DisabledFlag() *cli.BoolFlag {
+	return &cli.BoolFlag{
+		Name:  FlagDisabled,
+		Usage: "Disable the DNS record",
+	}
+}
+
+// TypeFlag returns a flag for DNS record type.
+func TypeFlag() *cli.StringFlag {
+	return &cli.StringFlag{
+		Name:  FlagType,
+		Usage: "DNS record type (A, AAAA, CNAME, TXT, MX, NS, etc.)",
 	}
 }
 
