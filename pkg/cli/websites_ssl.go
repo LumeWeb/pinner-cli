@@ -7,7 +7,7 @@ import (
 
 	"github.com/urfave/cli/v3"
 
-	ipfsclient "go.lumeweb.com/pinner-cli/pkg/ipfs/client"
+	ipfs "go.lumeweb.com/ipfs-sdk"
 )
 
 // newWebsitesSSLCommand creates the SSL subcommand for websites.
@@ -96,7 +96,7 @@ func websitesSSLStatus(ctx context.Context, cmd *cli.Command, output Output) err
 				return websitesService.GetSSLStatus(ctx, domain)
 			},
 			func(data any) (string, []string, [][]string) {
-				website := data.(*ipfsclient.WebsiteResponse)
+				website := data.(*ipfs.WebsiteResponse)
 				title := fmt.Sprintf("SSL Status for %s - Last updated: %s", website.Domain, time.Now().Format("15:04:05"))
 
 				if website.Ssl == nil {

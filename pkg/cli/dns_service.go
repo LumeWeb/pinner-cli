@@ -3,9 +3,8 @@ package cli
 import (
 	"context"
 
-	"github.com/avast/retry-go/v4"
 	"go.lumeweb.com/pinner-cli/pkg/config"
-	ipfsclient "go.lumeweb.com/pinner-cli/pkg/ipfs/client"
+	ipfs "go.lumeweb.com/ipfs-sdk"
 )
 
 // DNSService defines the interface for DNS operations in the CLI.
@@ -13,24 +12,24 @@ type DNSService interface {
 	RequireAuthenticated() error
 
 	// Zone operations
-	CreateZone(ctx context.Context, domain string, nameservers []string) (*ipfsclient.ZoneResponse, error)
-	ListZones(ctx context.Context) ([]ipfsclient.ZoneListResponse, error)
-	GetZone(ctx context.Context, id string) (*ipfsclient.ZoneResponse, error)
+	CreateZone(ctx context.Context, domain string, nameservers []string) (*ipfs.ZoneResponse, error)
+	ListZones(ctx context.Context) ([]ipfs.ZoneListResponse, error)
+	GetZone(ctx context.Context, id string) (*ipfs.ZoneResponse, error)
 	DeleteZone(ctx context.Context, id string) error
 
 	// Record operations
-	CreateRecord(ctx context.Context, id string, record ipfsclient.RecordRequest) (*ipfsclient.RecordResponse, error)
-	ListRecords(ctx context.Context, id string) ([]ipfsclient.RecordResponse, error)
-	GetRecord(ctx context.Context, id string, name string, recordType string) (*ipfsclient.RecordResponse, error)
-	UpdateRecord(ctx context.Context, id string, name string, recordType string, record ipfsclient.RecordRequest) (*ipfsclient.RecordResponse, error)
+	CreateRecord(ctx context.Context, id string, record ipfs.RecordRequest) (*ipfs.RecordResponse, error)
+	ListRecords(ctx context.Context, id string) ([]ipfs.RecordResponse, error)
+	GetRecord(ctx context.Context, id string, name string, recordType string) (*ipfs.RecordResponse, error)
+	UpdateRecord(ctx context.Context, id string, name string, recordType string, record ipfs.RecordRequest) (*ipfs.RecordResponse, error)
 	DeleteRecord(ctx context.Context, id string, name string, recordType string) error
 }
 
-// dnsServiceCLI wraps the generated DNS service with CLI-specific functionality.
+// dnsServiceCLI wraps the SDK DNS service with CLI-specific functionality.
 type dnsServiceCLI struct {
-	service ipfsclient.DNSService
-	cfgMgr  config.Manager
-	output  Output
+	service       ipfs.DNSService
+	cfgMgr        config.Manager
+	output        Output
 	authToken     string
 	authenticated bool
 }
@@ -39,7 +38,7 @@ type dnsServiceCLI struct {
 func NewDNSService(cfgMgr config.Manager, output Output, apiEndpoint string) DNSService {
 	authToken := cfgMgr.Config().AuthToken
 
-	dnsClient, err := ipfsclient.NewDNSServiceWithClient(nil, apiEndpoint)
+	client, err := ipfs.NewClient(apiEndpoint, authToken)
 	if err != nil {
 		output.PrintError(err)
 		return &dnsServiceCLI{
@@ -47,12 +46,12 @@ func NewDNSService(cfgMgr config.Manager, output Output, apiEndpoint string) DNS
 			cfgMgr:        cfgMgr,
 			output:        output,
 			authToken:     authToken,
-			authenticated: authToken != "",
+			authenticated: false,
 		}
 	}
 
 	return &dnsServiceCLI{
-		service:       dnsClient,
+		service:       client.DNS(),
 		cfgMgr:        cfgMgr,
 		output:        output,
 		authToken:     authToken,
@@ -69,81 +68,36 @@ func (s *dnsServiceCLI) RequireAuthenticated() error {
 }
 
 // CreateZone creates a new DNS zone.
-func (s *dnsServiceCLI) CreateZone(ctx context.Context, domain string, nameservers []string) (*ipfsclient.ZoneResponse, error) {
+func (s *dnsServiceCLI) CreateZone(ctx context.Context, domain string, nameservers []string) (*ipfs.ZoneResponse, error) {
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
 	if s.service == nil {
 		return nil, ErrServiceUnavailable
 	}
-	var zone *ipfsclient.ZoneResponse
-	var err error
-
-	err = retry.Do(
-		func() error {
-			zone, err = s.service.CreateZone(ctx, domain, nameservers)
-			return err
-		},
-		ipfsclient.RetryOptions(ctx)...,
-	)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return zone, nil
+	return s.service.CreateZone(ctx, domain, nameservers)
 }
 
 // ListZones lists all DNS zones.
-func (s *dnsServiceCLI) ListZones(ctx context.Context) ([]ipfsclient.ZoneListResponse, error) {
+func (s *dnsServiceCLI) ListZones(ctx context.Context) ([]ipfs.ZoneListResponse, error) {
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
 	if s.service == nil {
 		return nil, ErrServiceUnavailable
 	}
-	var zones []ipfsclient.ZoneListResponse
-	var err error
-
-	err = retry.Do(
-		func() error {
-			zones, err = s.service.ListZones(ctx)
-			return err
-		},
-		ipfsclient.RetryOptions(ctx)...,
-	)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return zones, nil
+	return s.service.ListZones(ctx)
 }
 
 // GetZone retrieves a specific DNS zone.
-func (s *dnsServiceCLI) GetZone(ctx context.Context, id string) (*ipfsclient.ZoneResponse, error) {
+func (s *dnsServiceCLI) GetZone(ctx context.Context, id string) (*ipfs.ZoneResponse, error) {
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
 	if s.service == nil {
 		return nil, ErrServiceUnavailable
 	}
-	var zone *ipfsclient.ZoneResponse
-	var err error
-
-	err = retry.Do(
-		func() error {
-			zone, err = s.service.GetZone(ctx, id)
-			return err
-		},
-		ipfsclient.RetryOptions(ctx)...,
-	)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return zone, nil
+	return s.service.GetZone(ctx, id)
 }
 
 // DeleteZone deletes a DNS zone.
@@ -154,121 +108,51 @@ func (s *dnsServiceCLI) DeleteZone(ctx context.Context, id string) error {
 	if s.service == nil {
 		return ErrServiceUnavailable
 	}
-	var err error
-
-	err = retry.Do(
-		func() error {
-			err = s.service.DeleteZone(ctx, id)
-			return err
-		},
-		ipfsclient.RetryOptions(ctx)...,
-	)
-
-	return err
+	return s.service.DeleteZone(ctx, id)
 }
 
 // CreateRecord creates a new DNS record.
-func (s *dnsServiceCLI) CreateRecord(ctx context.Context, id string, record ipfsclient.RecordRequest) (*ipfsclient.RecordResponse, error) {
+func (s *dnsServiceCLI) CreateRecord(ctx context.Context, id string, record ipfs.RecordRequest) (*ipfs.RecordResponse, error) {
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
 	if s.service == nil {
 		return nil, ErrServiceUnavailable
 	}
-	var rec *ipfsclient.RecordResponse
-	var err error
-
-	err = retry.Do(
-		func() error {
-			rec, err = s.service.CreateRecord(ctx, id, record)
-			return err
-		},
-		ipfsclient.RetryOptions(ctx)...,
-	)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return rec, nil
+	return s.service.CreateRecord(ctx, id, record)
 }
 
 // ListRecords lists all DNS records for a zone.
-func (s *dnsServiceCLI) ListRecords(ctx context.Context, id string) ([]ipfsclient.RecordResponse, error) {
+func (s *dnsServiceCLI) ListRecords(ctx context.Context, id string) ([]ipfs.RecordResponse, error) {
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
 	if s.service == nil {
 		return nil, ErrServiceUnavailable
 	}
-	var records []ipfsclient.RecordResponse
-	var err error
-
-	err = retry.Do(
-		func() error {
-			records, err = s.service.ListRecords(ctx, id)
-			return err
-		},
-		ipfsclient.RetryOptions(ctx)...,
-	)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return records, nil
+	return s.service.ListRecords(ctx, id)
 }
 
 // GetRecord retrieves a specific DNS record.
-func (s *dnsServiceCLI) GetRecord(ctx context.Context, id string, name string, recordType string) (*ipfsclient.RecordResponse, error) {
+func (s *dnsServiceCLI) GetRecord(ctx context.Context, id string, name string, recordType string) (*ipfs.RecordResponse, error) {
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
 	if s.service == nil {
 		return nil, ErrServiceUnavailable
 	}
-	var record *ipfsclient.RecordResponse
-	var err error
-
-	err = retry.Do(
-		func() error {
-			record, err = s.service.GetRecord(ctx, id, name, recordType)
-			return err
-		},
-		ipfsclient.RetryOptions(ctx)...,
-	)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return record, nil
+	return s.service.GetRecord(ctx, id, name, recordType)
 }
 
 // UpdateRecord updates a DNS record.
-func (s *dnsServiceCLI) UpdateRecord(ctx context.Context, id string, name string, recordType string, record ipfsclient.RecordRequest) (*ipfsclient.RecordResponse, error) {
+func (s *dnsServiceCLI) UpdateRecord(ctx context.Context, id string, name string, recordType string, record ipfs.RecordRequest) (*ipfs.RecordResponse, error) {
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
 	if s.service == nil {
 		return nil, ErrServiceUnavailable
 	}
-	var rec *ipfsclient.RecordResponse
-	var err error
-
-	err = retry.Do(
-		func() error {
-			rec, err = s.service.UpdateRecord(ctx, id, name, recordType, record)
-			return err
-		},
-		ipfsclient.RetryOptions(ctx)...,
-	)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return rec, nil
+	return s.service.UpdateRecord(ctx, id, name, recordType, record)
 }
 
 // DeleteRecord deletes a DNS record.
@@ -279,17 +163,7 @@ func (s *dnsServiceCLI) DeleteRecord(ctx context.Context, id string, name string
 	if s.service == nil {
 		return ErrServiceUnavailable
 	}
-	var err error
-
-	err = retry.Do(
-		func() error {
-			err = s.service.DeleteRecord(ctx, id, name, recordType)
-			return err
-		},
-		ipfsclient.RetryOptions(ctx)...,
-	)
-
-	return err
+	return s.service.DeleteRecord(ctx, id, name, recordType)
 }
 
 // defaultDNSServiceFactory creates a default DNS service instance.
@@ -297,5 +171,3 @@ func defaultDNSServiceFactory(cfgMgr config.Manager, output Output) DNSService {
 	apiEndpoint := cfgMgr.Config().GetAPIEndpoint()
 	return NewDNSService(cfgMgr, output, apiEndpoint)
 }
-
-

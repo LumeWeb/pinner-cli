@@ -4,12 +4,12 @@ import (
 	"context"
 
 	"go.lumeweb.com/pinner-cli/pkg/config"
-	ipfsclient "go.lumeweb.com/pinner-cli/pkg/ipfs/client"
+	ipfs "go.lumeweb.com/ipfs-sdk"
 )
 
-// websitesService implements the WebsitesService interface using the ipfsclient.WebsitesService.
+// websitesService implements the WebsitesService interface using the ipfs.WebsitesService.
 type websitesService struct {
-	client        ipfsclient.WebsitesService
+	service       ipfs.WebsitesService
 	cfgMgr        config.Manager
 	authToken     string
 	authenticated bool
@@ -27,11 +27,11 @@ func defaultWebsitesServiceFactory(cfgMgr config.Manager, output Output) Website
 func NewWebsitesService(cfgMgr config.Manager, output Output, apiEndpoint string) WebsitesService {
 	authToken := cfgMgr.Config().AuthToken
 
-	websitesClient, err := ipfsclient.NewWebsitesServiceWithClient(nil, apiEndpoint)
+	client, err := ipfs.NewClient(apiEndpoint, authToken)
 	if err != nil {
 		output.PrintError(err)
 		return &websitesService{
-			client:        nil,
+			service:       nil,
 			cfgMgr:        cfgMgr,
 			authToken:     authToken,
 			authenticated: false,
@@ -39,7 +39,7 @@ func NewWebsitesService(cfgMgr config.Manager, output Output, apiEndpoint string
 	}
 
 	return &websitesService{
-		client:        websitesClient,
+		service:       client.Websites(),
 		cfgMgr:        cfgMgr,
 		authToken:     authToken,
 		authenticated: authToken != "",
@@ -47,50 +47,50 @@ func NewWebsitesService(cfgMgr config.Manager, output Output, apiEndpoint string
 }
 
 // List retrieves all websites for the authenticated user.
-func (s *websitesService) List(ctx context.Context) ([]ipfsclient.WebsiteItem, error) {
+func (s *websitesService) List(ctx context.Context) ([]ipfs.WebsiteItem, error) {
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	if s.client == nil {
+	if s.service == nil {
 		return nil, ErrServiceUnavailable
 	}
-	return s.client.List(ctx)
+	return s.service.List(ctx)
 }
 
 // Create creates a new website.
-func (s *websitesService) Create(ctx context.Context, domain, targetHash, targetType string) (*ipfsclient.WebsiteItem, error) {
+func (s *websitesService) Create(ctx context.Context, domain, targetHash, targetType string) (*ipfs.WebsiteItem, error) {
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	response, err := s.client.Create(ctx, domain, targetHash, targetType)
+	response, err := s.service.Create(ctx, domain, targetHash, targetType)
 	if err != nil {
 		return nil, err
 	}
-	return (*ipfsclient.WebsiteItem)(response), nil
+	return (*ipfs.WebsiteItem)(response), nil
 }
 
 // Get retrieves a specific website by its ID.
-func (s *websitesService) Get(ctx context.Context, id string) (*ipfsclient.WebsiteItem, error) {
+func (s *websitesService) Get(ctx context.Context, id string) (*ipfs.WebsiteItem, error) {
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	response, err := s.client.Get(ctx, id)
+	response, err := s.service.Get(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	return (*ipfsclient.WebsiteItem)(response), nil
+	return (*ipfs.WebsiteItem)(response), nil
 }
 
 // Update updates an existing website.
-func (s *websitesService) Update(ctx context.Context, id, domain, targetHash, targetType string) (*ipfsclient.WebsiteItem, error) {
+func (s *websitesService) Update(ctx context.Context, id, domain, targetHash, targetType string) (*ipfs.WebsiteItem, error) {
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	response, err := s.client.Update(ctx, id, domain, targetHash, targetType)
+	response, err := s.service.Update(ctx, id, domain, targetHash, targetType)
 	if err != nil {
 		return nil, err
 	}
-	return (*ipfsclient.WebsiteItem)(response), nil
+	return (*ipfs.WebsiteItem)(response), nil
 }
 
 // Delete removes a website by its ID.
@@ -98,23 +98,23 @@ func (s *websitesService) Delete(ctx context.Context, id string) error {
 	if err := s.RequireAuthenticated(); err != nil {
 		return err
 	}
-	return s.client.Delete(ctx, id)
+	return s.service.Delete(ctx, id)
 }
 
 // Validate validates a website.
-func (s *websitesService) Validate(ctx context.Context, id string) (*ipfsclient.WebsiteValidateResponse, error) {
+func (s *websitesService) Validate(ctx context.Context, id string) (*ipfs.WebsiteValidateResponse, error) {
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	return s.client.Validate(ctx, id)
+	return s.service.ValidateDNS(ctx, id)
 }
 
 // GetSSLStatus retrieves SSL certificate status for a website domain.
-func (s *websitesService) GetSSLStatus(ctx context.Context, domain string) (*ipfsclient.WebsiteResponse, error) {
+func (s *websitesService) GetSSLStatus(ctx context.Context, domain string) (*ipfs.WebsiteResponse, error) {
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	return s.client.GetSSLStatus(ctx, domain)
+	return s.service.GetSSLStatus(ctx, domain)
 }
 
 // RequireAuthenticated checks if the service is authenticated.

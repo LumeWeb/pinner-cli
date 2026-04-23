@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"testing"
@@ -9,29 +10,29 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
-	ipfsclient "go.lumeweb.com/pinner-cli/pkg/ipfs/client"
+	ipfs "go.lumeweb.com/ipfs-sdk"
 )
 
 // mockWebsitesServiceForCLI is a mock implementation of the CLI WebsitesService interface for testing
 type mockWebsitesServiceForCLI struct {
-	listFunc         func(ctx context.Context) ([]ipfsclient.WebsiteItem, error)
-	createFunc       func(ctx context.Context, domain, targetHash, targetType string) (*ipfsclient.WebsiteItem, error)
-	getFunc          func(ctx context.Context, id string) (*ipfsclient.WebsiteItem, error)
-	updateFunc       func(ctx context.Context, id, domain, targetHash, targetType string) (*ipfsclient.WebsiteItem, error)
+	listFunc         func(ctx context.Context) ([]ipfs.WebsiteItem, error)
+	createFunc       func(ctx context.Context, domain, targetHash, targetType string) (*ipfs.WebsiteItem, error)
+	getFunc          func(ctx context.Context, id string) (*ipfs.WebsiteItem, error)
+	updateFunc       func(ctx context.Context, id, domain, targetHash, targetType string) (*ipfs.WebsiteItem, error)
 	deleteFunc       func(ctx context.Context, id string) error
-	validateFunc     func(ctx context.Context, id string) (*ipfsclient.WebsiteValidateResponse, error)
-	getSSLStatusFunc func(ctx context.Context, domain string) (*ipfsclient.WebsiteResponse, error)
+	validateFunc     func(ctx context.Context, id string) (*ipfs.WebsiteValidateResponse, error)
+	getSSLStatusFunc func(ctx context.Context, domain string) (*ipfs.WebsiteResponse, error)
 }
 
 func (m *mockWebsitesServiceForCLI) RequireAuthenticated() error {
 	return nil
 }
 
-func (m *mockWebsitesServiceForCLI) List(ctx context.Context) ([]ipfsclient.WebsiteItem, error) {
+func (m *mockWebsitesServiceForCLI) List(ctx context.Context) ([]ipfs.WebsiteItem, error) {
 	if m.listFunc != nil {
 		return m.listFunc(ctx)
 	}
-	return []ipfsclient.WebsiteItem{
+	return []ipfs.WebsiteItem{
 		{
 			Id:         1,
 			Domain:     "example.com",
@@ -42,11 +43,11 @@ func (m *mockWebsitesServiceForCLI) List(ctx context.Context) ([]ipfsclient.Webs
 	}, nil
 }
 
-func (m *mockWebsitesServiceForCLI) Create(ctx context.Context, domain, targetHash, targetType string) (*ipfsclient.WebsiteItem, error) {
+func (m *mockWebsitesServiceForCLI) Create(ctx context.Context, domain, targetHash, targetType string) (*ipfs.WebsiteItem, error) {
 	if m.createFunc != nil {
 		return m.createFunc(ctx, domain, targetHash, targetType)
 	}
-	return &ipfsclient.WebsiteItem{
+	return &ipfs.WebsiteItem{
 		Id:         1,
 		Domain:     domain,
 		TargetHash: targetHash,
@@ -55,14 +56,14 @@ func (m *mockWebsitesServiceForCLI) Create(ctx context.Context, domain, targetHa
 	}, nil
 }
 
-func (m *mockWebsitesServiceForCLI) Get(ctx context.Context, id string) (*ipfsclient.WebsiteItem, error) {
+func (m *mockWebsitesServiceForCLI) Get(ctx context.Context, id string) (*ipfs.WebsiteItem, error) {
 	if m.getFunc != nil {
 		return m.getFunc(ctx, id)
 	}
 	return nil, nil
 }
 
-func (m *mockWebsitesServiceForCLI) Update(ctx context.Context, id, domain, targetHash, targetType string) (*ipfsclient.WebsiteItem, error) {
+func (m *mockWebsitesServiceForCLI) Update(ctx context.Context, id, domain, targetHash, targetType string) (*ipfs.WebsiteItem, error) {
 	if m.updateFunc != nil {
 		return m.updateFunc(ctx, id, domain, targetHash, targetType)
 	}
@@ -76,14 +77,14 @@ func (m *mockWebsitesServiceForCLI) Delete(ctx context.Context, id string) error
 	return nil
 }
 
-func (m *mockWebsitesServiceForCLI) Validate(ctx context.Context, id string) (*ipfsclient.WebsiteValidateResponse, error) {
+func (m *mockWebsitesServiceForCLI) Validate(ctx context.Context, id string) (*ipfs.WebsiteValidateResponse, error) {
 	if m.validateFunc != nil {
 		return m.validateFunc(ctx, id)
 	}
 	return nil, nil
 }
 
-func (m *mockWebsitesServiceForCLI) GetSSLStatus(ctx context.Context, domain string) (*ipfsclient.WebsiteResponse, error) {
+func (m *mockWebsitesServiceForCLI) GetSSLStatus(ctx context.Context, domain string) (*ipfs.WebsiteResponse, error) {
 	if m.getSSLStatusFunc != nil {
 		return m.getSSLStatusFunc(ctx, domain)
 	}
@@ -100,8 +101,8 @@ func TestWebsitesList(t *testing.T) {
 		{
 			name: "successful list websites",
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
-				svc.listFunc = func(ctx context.Context) ([]ipfsclient.WebsiteItem, error) {
-					return []ipfsclient.WebsiteItem{
+				svc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+					return []ipfs.WebsiteItem{
 						{
 							Id:         1,
 							Domain:     "example.com",
@@ -124,8 +125,8 @@ func TestWebsitesList(t *testing.T) {
 		{
 			name: "no websites found",
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
-				svc.listFunc = func(ctx context.Context) ([]ipfsclient.WebsiteItem, error) {
-					return []ipfsclient.WebsiteItem{}, nil
+				svc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+					return []ipfs.WebsiteItem{}, nil
 				}
 			},
 			wantErr: false,
@@ -133,7 +134,7 @@ func TestWebsitesList(t *testing.T) {
 		{
 			name: "service error",
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
-				svc.listFunc = func(ctx context.Context) ([]ipfsclient.WebsiteItem, error) {
+				svc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
 					return nil, errors.New("failed to list websites")
 				}
 			},
@@ -177,8 +178,8 @@ func TestWebsitesListJSON(t *testing.T) {
 		{
 			name: "successful list websites JSON output",
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
-				svc.listFunc = func(ctx context.Context) ([]ipfsclient.WebsiteItem, error) {
-					return []ipfsclient.WebsiteItem{
+				svc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+					return []ipfs.WebsiteItem{
 						{
 							Id:         1,
 							Domain:     "example.com",
@@ -276,8 +277,8 @@ func TestWebsitesCreate(t *testing.T) {
 			targetHash: "QmXxx",
 			targetType: "ipfs",
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
-				svc.createFunc = func(ctx context.Context, domain, targetHash, targetType string) (*ipfsclient.WebsiteItem, error) {
-					return &ipfsclient.WebsiteItem{
+				svc.createFunc = func(ctx context.Context, domain, targetHash, targetType string) (*ipfs.WebsiteItem, error) {
+					return &ipfs.WebsiteItem{
 						Id:         1,
 						Domain:     domain,
 						TargetHash: targetHash,
@@ -313,7 +314,7 @@ func TestWebsitesCreate(t *testing.T) {
 			targetHash: "QmXxx",
 			targetType: "ipfs",
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
-				svc.createFunc = func(ctx context.Context, domain, targetHash, targetType string) (*ipfsclient.WebsiteItem, error) {
+				svc.createFunc = func(ctx context.Context, domain, targetHash, targetType string) (*ipfs.WebsiteItem, error) {
 					return nil, errors.New("invalid domain")
 				}
 			},
@@ -326,8 +327,8 @@ func TestWebsitesCreate(t *testing.T) {
 			targetHash: "QmXxx",
 			targetType: "",
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
-				svc.createFunc = func(ctx context.Context, domain, targetHash, targetType string) (*ipfsclient.WebsiteItem, error) {
-					return &ipfsclient.WebsiteItem{
+				svc.createFunc = func(ctx context.Context, domain, targetHash, targetType string) (*ipfs.WebsiteItem, error) {
+					return &ipfs.WebsiteItem{
 						Id:         1,
 						Domain:     domain,
 						TargetHash: targetHash,
@@ -386,8 +387,8 @@ func TestWebsitesCreateJSON(t *testing.T) {
 			targetHash: "QmXxx",
 			targetType: "ipfs",
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
-				svc.createFunc = func(ctx context.Context, domain, targetHash, targetType string) (*ipfsclient.WebsiteItem, error) {
-					return &ipfsclient.WebsiteItem{
+				svc.createFunc = func(ctx context.Context, domain, targetHash, targetType string) (*ipfs.WebsiteItem, error) {
+					return &ipfs.WebsiteItem{
 						Id:         1,
 						Domain:     domain,
 						TargetHash: targetHash,
@@ -527,8 +528,8 @@ func TestWebsitesGet(t *testing.T) {
 		{
 			name: "successful get website",
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
-				svc.getFunc = func(ctx context.Context, id string) (*ipfsclient.WebsiteItem, error) {
-					return &ipfsclient.WebsiteItem{
+				svc.getFunc = func(ctx context.Context, id string) (*ipfs.WebsiteItem, error) {
+					return &ipfs.WebsiteItem{
 						Id:         1,
 						Domain:     "example.com",
 						TargetHash: "QmXxx",
@@ -544,8 +545,8 @@ func TestWebsitesGet(t *testing.T) {
 		{
 			name: "successful get website with string ID",
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
-				svc.getFunc = func(ctx context.Context, id string) (*ipfsclient.WebsiteItem, error) {
-					return &ipfsclient.WebsiteItem{
+				svc.getFunc = func(ctx context.Context, id string) (*ipfs.WebsiteItem, error) {
+					return &ipfs.WebsiteItem{
 						Id:         2,
 						Domain:     "test.com",
 						TargetHash: "QmYyy",
@@ -567,7 +568,7 @@ func TestWebsitesGet(t *testing.T) {
 		{
 			name: "service error",
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
-				svc.getFunc = func(ctx context.Context, id string) (*ipfsclient.WebsiteItem, error) {
+				svc.getFunc = func(ctx context.Context, id string) (*ipfs.WebsiteItem, error) {
 					return nil, errors.New("website not found")
 				}
 			},
@@ -611,8 +612,8 @@ func TestWebsitesGetJSON(t *testing.T) {
 		{
 			name: "successful get website JSON output",
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
-				svc.getFunc = func(ctx context.Context, id string) (*ipfsclient.WebsiteItem, error) {
-					return &ipfsclient.WebsiteItem{
+				svc.getFunc = func(ctx context.Context, id string) (*ipfs.WebsiteItem, error) {
+					return &ipfs.WebsiteItem{
 						Id:         1,
 						Domain:     "example.com",
 						TargetHash: "QmXxx",
@@ -667,8 +668,8 @@ func TestWebsitesUpdate(t *testing.T) {
 				targetType: "ipfs",
 			},
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
-				svc.updateFunc = func(ctx context.Context, id, domain, targetHash, targetType string) (*ipfsclient.WebsiteItem, error) {
-					return &ipfsclient.WebsiteItem{
+				svc.updateFunc = func(ctx context.Context, id, domain, targetHash, targetType string) (*ipfs.WebsiteItem, error) {
+					return &ipfs.WebsiteItem{
 						Id:         1,
 						Domain:     domain,
 						TargetHash: targetHash,
@@ -689,8 +690,8 @@ func TestWebsitesUpdate(t *testing.T) {
 				targetType: "",
 			},
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
-				svc.updateFunc = func(ctx context.Context, id, domain, targetHash, targetType string) (*ipfsclient.WebsiteItem, error) {
-					return &ipfsclient.WebsiteItem{
+				svc.updateFunc = func(ctx context.Context, id, domain, targetHash, targetType string) (*ipfs.WebsiteItem, error) {
+					return &ipfs.WebsiteItem{
 						Id:         1,
 						Domain:     domain,
 						TargetHash: "QmOriginalHash",
@@ -711,8 +712,8 @@ func TestWebsitesUpdate(t *testing.T) {
 				targetType: "",
 			},
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
-				svc.updateFunc = func(ctx context.Context, id, domain, targetHash, targetType string) (*ipfsclient.WebsiteItem, error) {
-					return &ipfsclient.WebsiteItem{
+				svc.updateFunc = func(ctx context.Context, id, domain, targetHash, targetType string) (*ipfs.WebsiteItem, error) {
+					return &ipfs.WebsiteItem{
 						Id:         1,
 						Domain:     "example.com",
 						TargetHash: targetHash,
@@ -757,7 +758,7 @@ func TestWebsitesUpdate(t *testing.T) {
 				targetType: "ipfs",
 			},
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
-				svc.updateFunc = func(ctx context.Context, id, domain, targetHash, targetType string) (*ipfsclient.WebsiteItem, error) {
+				svc.updateFunc = func(ctx context.Context, id, domain, targetHash, targetType string) (*ipfs.WebsiteItem, error) {
 					return nil, errors.New("website not found")
 				}
 			},
@@ -806,8 +807,8 @@ func TestWebsitesUpdateJSON(t *testing.T) {
 				targetType: "ipfs",
 			},
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
-				svc.updateFunc = func(ctx context.Context, id, domain, targetHash, targetType string) (*ipfsclient.WebsiteItem, error) {
-					return &ipfsclient.WebsiteItem{
+				svc.updateFunc = func(ctx context.Context, id, domain, targetHash, targetType string) (*ipfs.WebsiteItem, error) {
+					return &ipfs.WebsiteItem{
 						Id:         1,
 						Domain:     domain,
 						TargetHash: targetHash,
@@ -828,8 +829,8 @@ func TestWebsitesUpdateJSON(t *testing.T) {
 				targetType: "",
 			},
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
-				svc.updateFunc = func(ctx context.Context, id, domain, targetHash, targetType string) (*ipfsclient.WebsiteItem, error) {
-					return &ipfsclient.WebsiteItem{
+				svc.updateFunc = func(ctx context.Context, id, domain, targetHash, targetType string) (*ipfs.WebsiteItem, error) {
+					return &ipfs.WebsiteItem{
 						Id:         1,
 						Domain:     domain,
 						TargetHash: "QmOriginalHash",
@@ -1134,8 +1135,8 @@ func TestWebsitesValidate(t *testing.T) {
 		{
 			name: "successful validate website (valid)",
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
-				svc.validateFunc = func(ctx context.Context, id string) (*ipfsclient.WebsiteValidateResponse, error) {
-					return &ipfsclient.WebsiteValidateResponse{
+				svc.validateFunc = func(ctx context.Context, id string) (*ipfs.WebsiteValidateResponse, error) {
+					return &ipfs.WebsiteValidateResponse{
 						Domain:  "example.com",
 						Id:      1,
 						Message: "Website is valid",
@@ -1149,8 +1150,8 @@ func TestWebsitesValidate(t *testing.T) {
 		{
 			name: "successful validate website (invalid)",
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
-				svc.validateFunc = func(ctx context.Context, id string) (*ipfsclient.WebsiteValidateResponse, error) {
-					return &ipfsclient.WebsiteValidateResponse{
+				svc.validateFunc = func(ctx context.Context, id string) (*ipfs.WebsiteValidateResponse, error) {
+					return &ipfs.WebsiteValidateResponse{
 						Domain:  "example.com",
 						Id:      1,
 						Message: "DNS record not found",
@@ -1170,7 +1171,7 @@ func TestWebsitesValidate(t *testing.T) {
 		{
 			name: "service error",
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
-				svc.validateFunc = func(ctx context.Context, id string) (*ipfsclient.WebsiteValidateResponse, error) {
+				svc.validateFunc = func(ctx context.Context, id string) (*ipfs.WebsiteValidateResponse, error) {
 					return nil, errors.New("website not found")
 				}
 			},
@@ -1214,8 +1215,8 @@ func TestWebsitesValidateJSON(t *testing.T) {
 		{
 			name: "successful validate website JSON output (valid)",
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
-				svc.validateFunc = func(ctx context.Context, id string) (*ipfsclient.WebsiteValidateResponse, error) {
-					return &ipfsclient.WebsiteValidateResponse{
+				svc.validateFunc = func(ctx context.Context, id string) (*ipfs.WebsiteValidateResponse, error) {
+					return &ipfs.WebsiteValidateResponse{
 						Domain:  "example.com",
 						Id:      1,
 						Message: "Website is valid",
@@ -1229,8 +1230,8 @@ func TestWebsitesValidateJSON(t *testing.T) {
 		{
 			name: "successful validate website JSON output (invalid)",
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
-				svc.validateFunc = func(ctx context.Context, id string) (*ipfsclient.WebsiteValidateResponse, error) {
-					return &ipfsclient.WebsiteValidateResponse{
+				svc.validateFunc = func(ctx context.Context, id string) (*ipfs.WebsiteValidateResponse, error) {
+					return &ipfs.WebsiteValidateResponse{
 						Domain:  "example.com",
 						Id:      1,
 						Message: "DNS record not found",
@@ -1315,17 +1316,16 @@ func TestWebsitesSSLStatus(t *testing.T) {
 		{
 			name: "successful SSL status check",
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
-				svc.getSSLStatusFunc = func(ctx context.Context, domain string) (*ipfsclient.WebsiteResponse, error) {
-					issuedAt := now
-					lastUpdated := now.Add(24 * time.Hour)
-					return &ipfsclient.WebsiteResponse{
-						Domain: "example.com",
-						Ssl: &ipfsclient.SSLStatusInfo{
-							Status:        "active",
-							IssuedAt:      &issuedAt,
-							LastUpdatedAt: &lastUpdated,
-						},
-					}, nil
+				svc.getSSLStatusFunc = func(ctx context.Context, domain string) (*ipfs.WebsiteResponse, error) {
+					issuedAt := now.Format(time.RFC3339)
+					lastUpdated := now.Add(24 * time.Hour).Format(time.RFC3339)
+					var resp ipfs.WebsiteResponse
+					// ipfs.WebsiteResponse has unexported fields from oapi-codegen generation, so json.Unmarshal is used to construct it in tests
+					json.Unmarshal([]byte(fmt.Sprintf(
+						`{"domain":"example.com","ssl":{"status":"active","issued_at":"%s","last_updated_at":"%s"}}`,
+						issuedAt, lastUpdated,
+					)), &resp)
+					return &resp, nil
 				}
 			},
 			wantErr: false,
@@ -1333,15 +1333,11 @@ func TestWebsitesSSLStatus(t *testing.T) {
 		{
 			name: "SSL status with error",
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
-				svc.getSSLStatusFunc = func(ctx context.Context, domain string) (*ipfsclient.WebsiteResponse, error) {
-					errMsg := "certificate expired"
-					return &ipfsclient.WebsiteResponse{
-						Domain: "example.com",
-						Ssl: &ipfsclient.SSLStatusInfo{
-							Status: "error",
-							Error:  &errMsg,
-						},
-					}, nil
+				svc.getSSLStatusFunc = func(ctx context.Context, domain string) (*ipfs.WebsiteResponse, error) {
+					var resp ipfs.WebsiteResponse
+					// ipfs.WebsiteResponse has unexported fields from oapi-codegen generation, so json.Unmarshal is used to construct it in tests
+					json.Unmarshal([]byte(`{"domain":"example.com","ssl":{"status":"error","error":"certificate expired"}}`), &resp)
+					return &resp, nil
 				}
 			},
 			wantErr: false,
@@ -1349,8 +1345,8 @@ func TestWebsitesSSLStatus(t *testing.T) {
 		{
 			name: "SSL status no SSL info",
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
-				svc.getSSLStatusFunc = func(ctx context.Context, domain string) (*ipfsclient.WebsiteResponse, error) {
-					return &ipfsclient.WebsiteResponse{
+				svc.getSSLStatusFunc = func(ctx context.Context, domain string) (*ipfs.WebsiteResponse, error) {
+					return &ipfs.WebsiteResponse{
 						Domain: "example.com",
 						Ssl:    nil,
 					}, nil
@@ -1361,7 +1357,7 @@ func TestWebsitesSSLStatus(t *testing.T) {
 		{
 			name: "SSL status API error",
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
-				svc.getSSLStatusFunc = func(ctx context.Context, domain string) (*ipfsclient.WebsiteResponse, error) {
+				svc.getSSLStatusFunc = func(ctx context.Context, domain string) (*ipfs.WebsiteResponse, error) {
 					return nil, errors.New("API error")
 				}
 			},
