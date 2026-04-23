@@ -4,38 +4,36 @@ import (
 	"context"
 
 	"go.lumeweb.com/pinner-cli/pkg/config"
-	ipfsclient "go.lumeweb.com/pinner-cli/pkg/ipfs/client"
+	ipfs "go.lumeweb.com/ipfs-sdk"
 )
 
 // IPNSService defines the interface for IPNS operations in the CLI layer.
-// This is a wrapper around the ipfsipfsclient.IPNSService to enable testing and
-// dependency injection.
 type IPNSService interface {
 	// ListKeys retrieves all IPNS keys for the authenticated user.
-	ListKeys(ctx context.Context) ([]ipfsclient.IPNSKeyResponse, error)
+	ListKeys(ctx context.Context) ([]ipfs.IPNSKeyResponse, error)
 
 	// CreateKey generates a new IPNS key with the given name.
-	CreateKey(ctx context.Context, name string, key *string) (*ipfsclient.IPNSKeyResponse, error)
+	CreateKey(ctx context.Context, name string, key *string) (*ipfs.IPNSKeyResponse, error)
 
 	// GetKey retrieves a specific IPNS key by its ID.
-	GetKey(ctx context.Context, id string) (*ipfsclient.IPNSKeyResponse, error)
+	GetKey(ctx context.Context, id string) (*ipfs.IPNSKeyResponse, error)
 
 	// DeleteKey removes an IPNS key by its ID.
 	DeleteKey(ctx context.Context, id string) error
 
 	// Publish publishes a CID to an IPNS key.
-	Publish(ctx context.Context, cid string, keyId int, ttl *string) (*ipfsclient.IPNSPublishResponse, error)
+	Publish(ctx context.Context, cid string, keyId int, ttl *string) (*ipfs.IPNSPublishResponse, error)
 
 	// Resolve resolves an IPNS name to its target CID.
-	Resolve(ctx context.Context, name string) (*ipfsclient.IPNSResolveResponse, error)
+	Resolve(ctx context.Context, name string) (*ipfs.IPNSResolveResponse, error)
 
 	// RequireAuthenticated checks if the service is authenticated.
 	RequireAuthenticated() error
 }
 
-// ipnsService implements the IPNSService interface using the ipfsclient.IPNSService.
+// ipnsService implements the IPNSService interface using the ipfs.IPNSService.
 type ipnsService struct {
-	client        ipfsclient.IPNSService
+	service       ipfs.IPNSService
 	cfgMgr        config.Manager
 	authToken     string
 	authenticated bool
@@ -53,11 +51,11 @@ func defaultIPNSServiceFactory(cfgMgr config.Manager, output Output) IPNSService
 func NewIPNSService(cfgMgr config.Manager, output Output, apiEndpoint string) IPNSService {
 	authToken := cfgMgr.Config().AuthToken
 
-	ipnsClient, err := ipfsclient.NewIPNSServiceWithClient(nil, apiEndpoint)
+	client, err := ipfs.NewClient(apiEndpoint, authToken)
 	if err != nil {
 		output.PrintError(err)
 		return &ipnsService{
-			client:        nil,
+			service:       nil,
 			cfgMgr:        cfgMgr,
 			authToken:     authToken,
 			authenticated: false,
@@ -65,7 +63,7 @@ func NewIPNSService(cfgMgr config.Manager, output Output, apiEndpoint string) IP
 	}
 
 	return &ipnsService{
-		client:        ipnsClient,
+		service:       client.IPNS(),
 		cfgMgr:        cfgMgr,
 		authToken:     authToken,
 		authenticated: authToken != "",
@@ -73,27 +71,30 @@ func NewIPNSService(cfgMgr config.Manager, output Output, apiEndpoint string) IP
 }
 
 // ListKeys retrieves all IPNS keys for the authenticated user.
-func (s *ipnsService) ListKeys(ctx context.Context) ([]ipfsclient.IPNSKeyResponse, error) {
+func (s *ipnsService) ListKeys(ctx context.Context) ([]ipfs.IPNSKeyResponse, error) {
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	return s.client.ListKeys(ctx)
+	return s.service.ListKeys(ctx)
 }
 
 // CreateKey generates a new IPNS key with the given name.
-func (s *ipnsService) CreateKey(ctx context.Context, name string, key *string) (*ipfsclient.IPNSKeyResponse, error) {
+func (s *ipnsService) CreateKey(ctx context.Context, name string, key *string) (*ipfs.IPNSKeyResponse, error) {
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	return s.client.CreateKey(ctx, name, key)
+	if key != nil {
+		return s.service.CreateKey(ctx, name, ipfs.WithIPNSKey(*key))
+	}
+	return s.service.CreateKey(ctx, name)
 }
 
 // GetKey retrieves a specific IPNS key by its ID.
-func (s *ipnsService) GetKey(ctx context.Context, id string) (*ipfsclient.IPNSKeyResponse, error) {
+func (s *ipnsService) GetKey(ctx context.Context, id string) (*ipfs.IPNSKeyResponse, error) {
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	return s.client.GetKey(ctx, id)
+	return s.service.GetKey(ctx, id)
 }
 
 // DeleteKey removes an IPNS key by its ID.
@@ -101,23 +102,27 @@ func (s *ipnsService) DeleteKey(ctx context.Context, id string) error {
 	if err := s.RequireAuthenticated(); err != nil {
 		return err
 	}
-	return s.client.DeleteKey(ctx, id)
+	return s.service.DeleteKey(ctx, id)
 }
 
 // Publish publishes a CID to an IPNS key.
-func (s *ipnsService) Publish(ctx context.Context, cid string, keyId int, ttl *string) (*ipfsclient.IPNSPublishResponse, error) {
+func (s *ipnsService) Publish(ctx context.Context, cid string, keyId int, ttl *string) (*ipfs.IPNSPublishResponse, error) {
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	return s.client.Publish(ctx, cid, keyId, ttl)
+	if ttl != nil {
+		// Note: CLI interface takes (cid, keyId) but SDK Publish expects (keyId, cid)
+		return s.service.Publish(ctx, keyId, cid, ipfs.WithTTL(*ttl))
+	}
+	return s.service.Publish(ctx, keyId, cid)
 }
 
 // Resolve resolves an IPNS name to its target CID.
-func (s *ipnsService) Resolve(ctx context.Context, name string) (*ipfsclient.IPNSResolveResponse, error) {
+func (s *ipnsService) Resolve(ctx context.Context, name string) (*ipfs.IPNSResolveResponse, error) {
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	return s.client.Resolve(ctx, name)
+	return s.service.Resolve(ctx, name)
 }
 
 // RequireAuthenticated checks if the service is authenticated.

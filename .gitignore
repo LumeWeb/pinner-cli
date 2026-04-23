@@ -33,3 +33,6 @@ go.work.sum
 pkg/account/client/
 !pkg/account/client/mocks/
 .aider*
+*.md
+!AGENTS.md
+!README.md

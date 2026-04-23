@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/urfave/cli/v3"
-	ipfsclient "go.lumeweb.com/pinner-cli/pkg/ipfs/client"
+	ipfs "go.lumeweb.com/ipfs-sdk"
 	"go.lumeweb.com/pinner-cli/pkg/config"
 )
 
@@ -136,13 +136,13 @@ Examples:
 // WebsitesService defines the interface for website operations.
 type WebsitesService interface {
 	RequireAuthenticated() error
-	List(ctx context.Context) ([]ipfsclient.WebsiteItem, error)
-	Create(ctx context.Context, domain, targetHash, targetType string) (*ipfsclient.WebsiteItem, error)
-	Get(ctx context.Context, id string) (*ipfsclient.WebsiteItem, error)
-	Update(ctx context.Context, id, domain, targetHash, targetType string) (*ipfsclient.WebsiteItem, error)
+	List(ctx context.Context) ([]ipfs.WebsiteItem, error)
+	Create(ctx context.Context, domain, targetHash, targetType string) (*ipfs.WebsiteItem, error)
+	Get(ctx context.Context, id string) (*ipfs.WebsiteItem, error)
+	Update(ctx context.Context, id, domain, targetHash, targetType string) (*ipfs.WebsiteItem, error)
 	Delete(ctx context.Context, id string) error
-	Validate(ctx context.Context, id string) (*ipfsclient.WebsiteValidateResponse, error)
-	GetSSLStatus(ctx context.Context, domain string) (*ipfsclient.WebsiteResponse, error)
+	Validate(ctx context.Context, id string) (*ipfs.WebsiteValidateResponse, error)
+	GetSSLStatus(ctx context.Context, domain string) (*ipfs.WebsiteResponse, error)
 }
 
 func websitesList(ctx context.Context, cmd *cli.Command, output Output) error {
@@ -428,7 +428,7 @@ func setupDNSHosting(ctx context.Context, cfgMgr config.Manager, output Output, 
 	}
 	ttl := 3600
 
-	records := []ipfsclient.RecordRequest{
+	records := []ipfs.RecordRequest{
 		{
 			Name:    "_dnslink." + domain,
 			Type:    "TXT",

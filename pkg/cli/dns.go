@@ -9,7 +9,7 @@ import (
 
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/pkg/config"
-	ipfsclient "go.lumeweb.com/pinner-cli/pkg/ipfs/client"
+	ipfs "go.lumeweb.com/ipfs-sdk"
 )
 
 func newDNSCommand() *cli.Command {
@@ -511,7 +511,7 @@ func dnsRecordsList(ctx context.Context, cmd *cli.Command, output Output, cfgMgr
 
 		output.Printf("DNS Records:")
 		for _, record := range records {
-			output.Printf("  ID: %d", record.Id)
+			output.Printf("  Zone ID: %d", record.ZoneId)
 			output.Printf("  Name: %s", record.Name)
 			output.Printf("  Type: %s", record.Type)
 			output.Printf("  Content: %s", record.Content)
@@ -556,7 +556,7 @@ func dnsRecordsCreate(ctx context.Context, cmd *cli.Command, output Output, cfgM
 
 	disabled := cmd.Bool(FlagDisabled)
 
-	record := ipfsclient.RecordRequest{
+	record := ipfs.RecordRequest{
 		Name:     name,
 		Type:     recordType,
 		Content:  content,
@@ -588,7 +588,7 @@ func dnsRecordsCreate(ctx context.Context, cmd *cli.Command, output Output, cfgM
 		output.PrintJSON(created)
 	} else {
 		output.Printf("DNS record created successfully:")
-		output.Printf("  ID: %d", created.Id)
+		output.Printf("  Zone ID: %d", created.ZoneId)
 		output.Printf("  Name: %s", created.Name)
 		output.Printf("  Type: %s", created.Type)
 		output.Printf("  Content: %s", created.Content)
@@ -637,7 +637,7 @@ func dnsRecordsGet(ctx context.Context, cmd *cli.Command, output Output, cfgMgr 
 		output.PrintJSON(record)
 	} else {
 		output.Printf("DNS Record Details:")
-		output.Printf("  ID: %d", record.Id)
+		output.Printf("  Zone ID: %d", record.ZoneId)
 		output.Printf("  Name: %s", record.Name)
 		output.Printf("  Type: %s", record.Type)
 		output.Printf("  Content: %s", record.Content)
@@ -645,8 +645,6 @@ func dnsRecordsGet(ctx context.Context, cmd *cli.Command, output Output, cfgMgr 
 		if record.Disabled {
 			output.Printf("  Status: disabled")
 		}
-		output.Printf("  Created: %s", record.CreatedAt.Format("2006-01-02 15:04:05"))
-		output.Printf("  Updated: %s", record.UpdatedAt.Format("2006-01-02 15:04:05"))
 	}
 
 	return nil
@@ -682,7 +680,7 @@ func dnsRecordsUpdate(ctx context.Context, cmd *cli.Command, output Output, cfgM
 
 	disabled := cmd.Bool(FlagDisabled)
 
-	record := ipfsclient.RecordRequest{
+	record := ipfs.RecordRequest{
 		Name:     name,
 		Type:     recordType,
 		Content:  content,
@@ -714,7 +712,7 @@ func dnsRecordsUpdate(ctx context.Context, cmd *cli.Command, output Output, cfgM
 		output.PrintJSON(updated)
 	} else {
 		output.Printf("DNS record updated successfully:")
-		output.Printf("  ID: %d", updated.Id)
+		output.Printf("  Zone ID: %d", updated.ZoneId)
 		output.Printf("  Name: %s", updated.Name)
 		output.Printf("  Type: %s", updated.Type)
 		output.Printf("  Content: %s", updated.Content)

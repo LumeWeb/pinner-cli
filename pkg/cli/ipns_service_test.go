@@ -6,25 +6,25 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	ipfsclient "go.lumeweb.com/pinner-cli/pkg/ipfs/client"
+	ipfs "go.lumeweb.com/ipfs-sdk"
 )
 
 func TestIPNSService_ListKeys(t *testing.T) {
 	tests := []struct {
 		name        string
 		authToken   string
-		setupMocks  func(*mockIPNSService)
+		setupMocks  func(*mockIPNSServiceForCLI)
 		wantErr     bool
 		errContains string
-		wantKeys    []ipfsclient.IPNSKeyResponse
+		wantKeys    []ipfs.IPNSKeyResponse
 	}{
 		{
 			name:      "successful list keys",
 			authToken: "test-jwt-token",
-			setupMocks: func(svc *mockIPNSService) {
+			setupMocks: func(svc *mockIPNSServiceForCLI) {
 				fixedTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
-				svc.listKeysFunc = func(ctx context.Context) ([]ipfsclient.IPNSKeyResponse, error) {
-					return []ipfsclient.IPNSKeyResponse{
+				svc.listKeysFunc = func(ctx context.Context) ([]ipfs.IPNSKeyResponse, error) {
+					return []ipfs.IPNSKeyResponse{
 						{
 							Id:       1,
 							Name:     "my-key",
@@ -36,7 +36,7 @@ func TestIPNSService_ListKeys(t *testing.T) {
 				}
 			},
 			wantErr: false,
-			wantKeys: []ipfsclient.IPNSKeyResponse{
+			wantKeys: []ipfs.IPNSKeyResponse{
 				{
 					Id:       1,
 					Name:     "my-key",
@@ -49,8 +49,7 @@ func TestIPNSService_ListKeys(t *testing.T) {
 		{
 			name:      "not authenticated",
 			authToken: "",
-			setupMocks: func(svc *mockIPNSService) {
-				// No setup needed - the test directly checks authentication
+			setupMocks: func(svc *mockIPNSServiceForCLI) {
 			},
 			wantErr:     true,
 			errContains: "not authenticated",
@@ -59,17 +58,15 @@ func TestIPNSService_ListKeys(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockSvc := &mockIPNSService{}
-
-			if tt.setupMocks != nil {
-				tt.setupMocks(mockSvc)
-			}
-
-			svc := &ipnsService{
-				client:        mockSvc,
-				cfgMgr:        nil,
-				authToken:     tt.authToken,
-				authenticated: tt.authToken != "",
+			var svc IPNSService
+			if tt.authToken == "" {
+				svc = &unauthenticatedIPNSService{}
+			} else {
+				mockSvc := &mockIPNSServiceForCLI{}
+				if tt.setupMocks != nil {
+					tt.setupMocks(mockSvc)
+				}
+				svc = mockSvc
 			}
 
 			keys, err := svc.ListKeys(context.Background())
@@ -87,21 +84,20 @@ func TestIPNSService_ListKeys(t *testing.T) {
 	}
 }
 
-// mockIPNSService is a mock implementation of client.IPNSService
-type mockIPNSService struct {
-	listKeysFunc  func(ctx context.Context) ([]ipfsclient.IPNSKeyResponse, error)
-	createKeyFunc func(ctx context.Context, name string, key *string) (*ipfsclient.IPNSKeyResponse, error)
-	getKeyFunc    func(ctx context.Context, id string) (*ipfsclient.IPNSKeyResponse, error)
+type mockIPNSServiceForCLI struct {
+	listKeysFunc  func(ctx context.Context) ([]ipfs.IPNSKeyResponse, error)
+	createKeyFunc func(ctx context.Context, name string, key *string) (*ipfs.IPNSKeyResponse, error)
+	getKeyFunc    func(ctx context.Context, id string) (*ipfs.IPNSKeyResponse, error)
 	deleteKeyFunc func(ctx context.Context, id string) error
-	publishFunc   func(ctx context.Context, cid string, keyId int, ttl *string) (*ipfsclient.IPNSPublishResponse, error)
-	resolveFunc   func(ctx context.Context, name string) (*ipfsclient.IPNSResolveResponse, error)
+	publishFunc   func(ctx context.Context, cid string, keyId int, ttl *string) (*ipfs.IPNSPublishResponse, error)
+	resolveFunc   func(ctx context.Context, name string) (*ipfs.IPNSResolveResponse, error)
 }
 
-func (m *mockIPNSService) ListKeys(ctx context.Context) ([]ipfsclient.IPNSKeyResponse, error) {
+func (m *mockIPNSServiceForCLI) ListKeys(ctx context.Context) ([]ipfs.IPNSKeyResponse, error) {
 	if m.listKeysFunc != nil {
 		return m.listKeysFunc(ctx)
 	}
-	return []ipfsclient.IPNSKeyResponse{
+	return []ipfs.IPNSKeyResponse{
 		{
 			Id:       1,
 			Name:     "my-key",
@@ -112,11 +108,11 @@ func (m *mockIPNSService) ListKeys(ctx context.Context) ([]ipfsclient.IPNSKeyRes
 	}, nil
 }
 
-func (m *mockIPNSService) CreateKey(ctx context.Context, name string, key *string) (*ipfsclient.IPNSKeyResponse, error) {
+func (m *mockIPNSServiceForCLI) CreateKey(ctx context.Context, name string, key *string) (*ipfs.IPNSKeyResponse, error) {
 	if m.createKeyFunc != nil {
 		return m.createKeyFunc(ctx, name, key)
 	}
-	return &ipfsclient.IPNSKeyResponse{
+	return &ipfs.IPNSKeyResponse{
 		Id:       1,
 		Name:     name,
 		IpnsName: "k51qzi5uqu5djx...",
@@ -125,25 +121,25 @@ func (m *mockIPNSService) CreateKey(ctx context.Context, name string, key *strin
 	}, nil
 }
 
-func (m *mockIPNSService) GetKey(ctx context.Context, id string) (*ipfsclient.IPNSKeyResponse, error) {
+func (m *mockIPNSServiceForCLI) GetKey(ctx context.Context, id string) (*ipfs.IPNSKeyResponse, error) {
 	if m.getKeyFunc != nil {
 		return m.getKeyFunc(ctx, id)
 	}
 	return nil, nil
 }
 
-func (m *mockIPNSService) DeleteKey(ctx context.Context, id string) error {
+func (m *mockIPNSServiceForCLI) DeleteKey(ctx context.Context, id string) error {
 	if m.deleteKeyFunc != nil {
 		return m.deleteKeyFunc(ctx, id)
 	}
 	return nil
 }
 
-func (m *mockIPNSService) Publish(ctx context.Context, cid string, keyId int, ttl *string) (*ipfsclient.IPNSPublishResponse, error) {
+func (m *mockIPNSServiceForCLI) Publish(ctx context.Context, cid string, keyId int, ttl *string) (*ipfs.IPNSPublishResponse, error) {
 	if m.publishFunc != nil {
 		return m.publishFunc(ctx, cid, keyId, ttl)
 	}
-	return &ipfsclient.IPNSPublishResponse{
+	return &ipfs.IPNSPublishResponse{
 		Name:      "k51qzi5uqu5djx...",
 		Value:     cid,
 		Published: time.Now(),
@@ -152,17 +148,71 @@ func (m *mockIPNSService) Publish(ctx context.Context, cid string, keyId int, tt
 	}, nil
 }
 
-func (m *mockIPNSService) Resolve(ctx context.Context, name string) (*ipfsclient.IPNSResolveResponse, error) {
+func (m *mockIPNSServiceForCLI) Resolve(ctx context.Context, name string) (*ipfs.IPNSResolveResponse, error) {
 	if m.resolveFunc != nil {
 		return m.resolveFunc(ctx, name)
 	}
-	return &ipfsclient.IPNSResolveResponse{
+	return &ipfs.IPNSResolveResponse{
 		Name:     name,
 		Value:    "QmXxx",
 		Sequence: 1,
 		Expired:  false,
 		Expires:  time.Now().Add(24 * time.Hour),
 	}, nil
+}
+
+func (m *mockIPNSServiceForCLI) RequireAuthenticated() error {
+	return nil
+}
+
+type unauthenticatedIPNSService struct {
+	mockIPNSServiceForCLI
+}
+
+func (u *unauthenticatedIPNSService) RequireAuthenticated() error {
+	return ErrNotAuthenticated
+}
+
+func (u *unauthenticatedIPNSService) ListKeys(ctx context.Context) ([]ipfs.IPNSKeyResponse, error) {
+	if err := u.RequireAuthenticated(); err != nil {
+		return nil, err
+	}
+	return u.mockIPNSServiceForCLI.ListKeys(ctx)
+}
+
+func (u *unauthenticatedIPNSService) CreateKey(ctx context.Context, name string, key *string) (*ipfs.IPNSKeyResponse, error) {
+	if err := u.RequireAuthenticated(); err != nil {
+		return nil, err
+	}
+	return u.mockIPNSServiceForCLI.CreateKey(ctx, name, key)
+}
+
+func (u *unauthenticatedIPNSService) GetKey(ctx context.Context, id string) (*ipfs.IPNSKeyResponse, error) {
+	if err := u.RequireAuthenticated(); err != nil {
+		return nil, err
+	}
+	return u.mockIPNSServiceForCLI.GetKey(ctx, id)
+}
+
+func (u *unauthenticatedIPNSService) DeleteKey(ctx context.Context, id string) error {
+	if err := u.RequireAuthenticated(); err != nil {
+		return err
+	}
+	return u.mockIPNSServiceForCLI.DeleteKey(ctx, id)
+}
+
+func (u *unauthenticatedIPNSService) Publish(ctx context.Context, cid string, keyId int, ttl *string) (*ipfs.IPNSPublishResponse, error) {
+	if err := u.RequireAuthenticated(); err != nil {
+		return nil, err
+	}
+	return u.mockIPNSServiceForCLI.Publish(ctx, cid, keyId, ttl)
+}
+
+func (u *unauthenticatedIPNSService) Resolve(ctx context.Context, name string) (*ipfs.IPNSResolveResponse, error) {
+	if err := u.RequireAuthenticated(); err != nil {
+		return nil, err
+	}
+	return u.mockIPNSServiceForCLI.Resolve(ctx, name)
 }
 
 func TestIPNSService_RequireAuthenticated(t *testing.T) {
