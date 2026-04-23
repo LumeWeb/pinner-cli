@@ -140,7 +140,7 @@ func getConfig(cmd *cli.Command, output Output, cfgMgrFactory ConfigManagerFacto
 		displayValue = "(not set)"
 	}
 
-	output.Printf(displayValue)
+	output.Printf("%s", displayValue)
 	return nil
 }
 

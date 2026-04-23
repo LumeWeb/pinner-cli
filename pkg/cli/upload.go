@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/docker/go-units"
 	"github.com/urfave/cli/v3"
+	contentfs "go.lumeweb.com/ipfs-content/fs"
 	"go.lumeweb.com/pinner-cli/pkg/config"
 	internalio "go.lumeweb.com/pinner-cli/pkg/internal/io"
 )
@@ -58,6 +60,15 @@ The output includes:
 type UploadInput struct {
 	Filesystem fs.FS
 	Name       string
+	closer     io.Closer
+}
+
+// Close releases resources held by the UploadInput, such as open file handles.
+func (i *UploadInput) Close() error {
+	if i.closer != nil {
+		return i.closer.Close()
+	}
+	return nil
 }
 
 // resolveUploadInput resolves the upload input source (file, directory, or stdin).
@@ -93,12 +104,13 @@ func resolveUploadInput(path string, name string) (*UploadInput, error) {
 	if name == "" {
 		name = filepath.Base(path)
 	}
-	filesystem, err := internalio.NewSingleFileFS(path, name)
+	file, err := os.Open(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create filesystem: %w", err)
+		return nil, fmt.Errorf("failed to open file: %w", err)
 	}
+	filesystem := contentfs.NewSingleFileFS(file, name)
 
-	return &UploadInput{Filesystem: filesystem, Name: name}, nil
+	return &UploadInput{Filesystem: filesystem, Name: name, closer: file}, nil
 }
 
 // detectInputType returns a string describing the input type.
@@ -151,6 +163,7 @@ func handleUpload(ctx context.Context, cmd uploadCommandGetter, output Output, c
 	if err != nil {
 		return err
 	}
+	defer input.Close()
 
 	if dryRun {
 		options := make(map[string]string)

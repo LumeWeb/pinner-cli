@@ -13,9 +13,10 @@ import (
 	"github.com/bdragon300/tusgo"
 	"github.com/docker/go-units"
 	"github.com/ipfs/go-cid"
+	"go.lumeweb.com/ipfs-content/car"
+	"go.lumeweb.com/ipfs-content/unixfs"
 	"go.lumeweb.com/pinner-cli/pkg/cli/internal"
 	"go.lumeweb.com/pinner-cli/pkg/config"
-	"go.lumeweb.com/pinner-cli/pkg/upload"
 	portalsdk "go.lumeweb.com/portal-sdk"
 	"go.lumeweb.com/queryutil/filter"
 )
@@ -174,19 +175,19 @@ func (s *UploadServiceDefault) getUploadLimit(ctx context.Context) int64 {
 // uploadWithCAR generates a CAR and routes to POST or TUS based on size.
 func (s *UploadServiceDefault) uploadWithCAR(ctx context.Context, filesystem fs.FS, name string, maxMemory uint64, wrapInDir bool, wait bool) (string, int64, error) {
 	// Build tree summary first to get CID and calculate CAR size
-	bs, dagService := upload.NewDAGServiceWithMemoryLimit(maxMemory)
-	generator := upload.NewUnixFSNodeGenerator(
-		upload.WithUnixFSNodeDAGService(dagService),
-		upload.WithUnixFSNodeBlockstore(bs),
+	bs, dagService := car.NewDAGServiceWithMemoryLimit(maxMemory)
+	generator := unixfs.NewUnixFSNodeGenerator(
+		unixfs.WithUnixFSNodeDAGService(dagService),
+		unixfs.WithUnixFSNodeBlockstore(bs),
 	)
-	builder := upload.NewCARBuilder(bs, dagService, generator)
+	builder := car.NewCARBuilder(bs, dagService, generator)
 	summary, err := builder.BuildSummary(ctx, filesystem, wrapInDir)
 	if err != nil {
 		return "", 0, fmt.Errorf("Failed to prepare upload: %w. Try reducing --memory-limit if this is a large directory", err)
 	}
 
 	// Calculate CAR size to determine upload method
-	carSize, err := upload.CalculateCARSize(summary)
+	carSize, err := car.CalculateCARSize(summary)
 	if err != nil {
 		return "", 0, fmt.Errorf("Failed to calculate upload size: %w", err)
 	}
