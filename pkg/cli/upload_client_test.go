@@ -16,10 +16,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	contentfs "go.lumeweb.com/ipfs-content/fs"
 	"go.lumeweb.com/pinner-cli/pkg/config"
 	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
 	"go.lumeweb.com/pinner-cli/pkg/internal"
-	internalio "go.lumeweb.com/pinner-cli/pkg/internal/io"
 	portalsdkmocks "go.lumeweb.com/portal-sdk/mocks"
 )
 
@@ -147,8 +147,10 @@ func TestUploadServiceDefault_Upload(t *testing.T) {
 		})
 
 		tmpFile := h.createTestFile("test content")
-		filesystem, err := internalio.NewSingleFileFS(tmpFile, "test.txt")
+		f, err := os.Open(tmpFile)
 		require.NoError(t, err)
+		defer f.Close()
+		filesystem := contentfs.NewSingleFileFS(f, "test.txt")
 		_, err = h.service.Upload(context.Background(), filesystem, "test.txt", false)
 
 		require.Error(t, err)
@@ -235,8 +237,10 @@ func TestUploadServiceDefault_Upload(t *testing.T) {
 
 		h.setupUploadExpectations(testAuthToken, baseEndpoint, DefaultUploadLimit, int64(DefaultUploadLimit))
 
-		filesystem, err := internalio.NewSingleFileFS(tmpFile, "test.txt")
+		f, err := os.Open(tmpFile)
 		require.NoError(t, err)
+		defer f.Close()
+		filesystem := contentfs.NewSingleFileFS(f, "test.txt")
 		cid, err := h.service.Upload(context.Background(), filesystem, "test.txt", false)
 
 		require.NoError(t, err)
@@ -255,8 +259,10 @@ func TestUploadServiceDefault_Upload(t *testing.T) {
 		h.accountClient.EXPECT().UploadLimit(mock.Anything).Return(int64(0), errors.New("api error"))
 		h.setupConfig(testAuthToken, baseEndpoint, DefaultUploadLimit)
 
-		filesystem, err := internalio.NewSingleFileFS(tmpFile, "test.txt")
+		f, err := os.Open(tmpFile)
 		require.NoError(t, err)
+		defer f.Close()
+		filesystem := contentfs.NewSingleFileFS(f, "test.txt")
 		cid, err := h.service.Upload(context.Background(), filesystem, "test.txt", false)
 
 		require.NoError(t, err)
@@ -275,8 +281,10 @@ func TestUploadServiceDefault_Upload(t *testing.T) {
 
 		h.setupUploadExpectations(testAuthToken, baseEndpoint, DefaultUploadLimit, int64(DefaultUploadLimit))
 
-		filesystem, err := internalio.NewSingleFileFS(tmpFile, "test.txt")
+		f, err := os.Open(tmpFile)
 		require.NoError(t, err)
+		defer f.Close()
+		filesystem := contentfs.NewSingleFileFS(f, "test.txt")
 		_, err = h.service.Upload(context.Background(), filesystem, "test.txt", false)
 
 		require.Error(t, err)
@@ -297,8 +305,10 @@ func TestUploadServiceDefault_Upload(t *testing.T) {
 		h.setupUploadExpectations(configToken, baseEndpoint, DefaultUploadLimit, int64(DefaultUploadLimit))
 		h.service.WithAuthToken(overrideToken)
 
-		filesystem, err := internalio.NewSingleFileFS(tmpFile, "test.txt")
+		f, err := os.Open(tmpFile)
 		require.NoError(t, err)
+		defer f.Close()
+		filesystem := contentfs.NewSingleFileFS(f, "test.txt")
 		cid, err := h.service.Upload(context.Background(), filesystem, "test.txt", false)
 
 		require.NoError(t, err)
@@ -331,8 +341,10 @@ func TestUploadServiceDefault_Upload_WaitForPin(t *testing.T) {
 
 		h.setupUploadExpectations(testAuthToken, baseEndpoint, DefaultUploadLimit, int64(DefaultUploadLimit))
 
-		filesystem, err := internalio.NewSingleFileFS(tmpFile, "test.txt")
+		f, err := os.Open(tmpFile)
 		require.NoError(t, err)
+		defer f.Close()
+		filesystem := contentfs.NewSingleFileFS(f, "test.txt")
 		cid, err := h.service.Upload(context.Background(), filesystem, "test.txt", false)
 
 		require.NoError(t, err)

@@ -17,9 +17,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/tus/tusd/v2/pkg/handler"
 	"github.com/tus/tusd/v2/pkg/memorylocker"
+	contentfs "go.lumeweb.com/ipfs-content/fs"
 	"go.lumeweb.com/pinner-cli/pkg/config"
 	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
-	internalio "go.lumeweb.com/pinner-cli/pkg/internal/io"
 	portalsdkmocks "go.lumeweb.com/portal-sdk/mocks"
 )
 
@@ -225,8 +225,10 @@ func TestUploadServiceDefault_Upload_TUS_Integration(t *testing.T) {
 		testContent := "test content for TUS upload"
 		tmpFile := createTempTestFile(t, testContent)
 
-		filesystem, err := internalio.NewSingleFileFS(tmpFile, "test.txt")
+		f, err := os.Open(tmpFile)
 		require.NoError(t, err)
+		defer f.Close()
+		filesystem := contentfs.NewSingleFileFS(f, "test.txt")
 		cid, err := ts.service.Upload(context.Background(), filesystem, "test.txt", false)
 
 		require.NoError(t, err)
