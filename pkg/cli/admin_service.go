@@ -32,12 +32,12 @@ type BillingAdminServiceFactory func(cfgMgr config.Manager, output Output) Billi
 
 // defaultQuotaAdminServiceFactory creates a default QuotaAdminService instance.
 func defaultQuotaAdminServiceFactory(cfgMgr config.Manager, output Output) QuotaAdminService {
-	return NewQuotaAdminService(cfgMgr, output, cfgMgr.Config().GetAPIEndpoint())
+	return NewQuotaAdminService(cfgMgr, output, cfgMgr.Config().GetAdminEndpoint())
 }
 
 // defaultBillingAdminServiceFactory creates a default BillingAdminService instance.
 func defaultBillingAdminServiceFactory(cfgMgr config.Manager, output Output) BillingAdminService {
-	return NewBillingAdminService(cfgMgr, output, cfgMgr.Config().GetAPIEndpoint())
+	return NewBillingAdminService(cfgMgr, output, cfgMgr.Config().GetAdminEndpoint())
 }
 
 // NewQuotaAdminService creates a new QuotaAdminService instance.
