@@ -49,6 +49,7 @@ const (
 const (
 	SubdomainAccount = "account"
 	SubdomainIPFS    = "ipfs"
+	SubdomainAdmin   = "admin"
 )
 
 // Default endpoint constants.
@@ -197,6 +198,21 @@ func (c *Config) GetUploadEndpointWithSecure(secure bool) string {
 // GetTUSEndpointWithSecure returns the TUS upload API endpoint with a custom secure flag.
 func (c *Config) GetTUSEndpointWithSecure(secure bool) string {
 	return getSubdomainEndpointWithProtocol(c.GetBaseEndpoint(), SubdomainIPFS, secure) + TUSPath
+}
+
+// GetAdminEndpoint returns the admin API endpoint (admin subdomain).
+func (c *Config) GetAdminEndpoint() string {
+	return getSubdomainEndpoint(c.GetBaseEndpoint(), SubdomainAdmin)
+}
+
+// GetAdminEndpointSecure returns the admin API endpoint using the secure flag.
+func (c *Config) GetAdminEndpointSecure() string {
+	return getSubdomainEndpointWithProtocol(c.GetBaseEndpoint(), SubdomainAdmin, c.Secure)
+}
+
+// GetAdminEndpointWithSecure returns the admin API endpoint with a custom secure flag.
+func (c *Config) GetAdminEndpointWithSecure(secure bool) string {
+	return getSubdomainEndpointWithProtocol(c.GetBaseEndpoint(), SubdomainAdmin, secure)
 }
 
 // GetGatewayEndpoint returns the IPFS gateway endpoint.
