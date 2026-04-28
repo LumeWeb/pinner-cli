@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/urfave/cli/v3"
@@ -151,29 +152,34 @@ func formatMemoryLimit(limit uint64) string {
 }
 
 func printDoctorReport(report DoctorReport, output Output) {
-	output.Printfln("Version: %s", report.Version)
-	output.Printfln("OS: %s/%s", report.OS, report.Arch)
-	output.Printfln("Config: %s", report.Config.Path)
+	configStatus := "Not found (will use defaults)"
 	if report.Config.Exists {
-		output.Printfln("Config Status: Found")
-	} else {
-		output.Printfln("Config Status: Not found (will use defaults)")
+		configStatus = "Found"
 	}
-	output.Printfln("Endpoint: %s", report.Config.Endpoint)
-	output.Printfln("Memory limit: %s", report.Limits.Memory)
-	output.Printfln("Max retries: %d", report.Limits.MaxRetries)
 
+	authStatus := "Not authenticated (run 'pinner auth login')"
 	if report.Authentication.Authenticated {
-		output.Printfln("Authentication: Authenticated")
-	} else {
-		output.Printfln("Authentication: Not authenticated (run 'pinner auth login')")
+		authStatus = "Authenticated"
 	}
 
+	completionStatus := "Not configured (run 'pinner completion <shell>')"
 	if len(report.Completion.Configured) > 0 {
-		output.Printfln("Shell completion: Enabled (%s)", strings.Join(report.Completion.Configured, ", "))
-	} else {
-		output.Printfln("Shell completion: Not configured (run 'pinner completion <shell>')")
+		completionStatus = fmt.Sprintf("Enabled (%s)", strings.Join(report.Completion.Configured, ", "))
 	}
+
+	output.PrintFields(FieldGroup{
+		Fields: []Field{
+			{Label: "Version", Value: report.Version},
+			{Label: "OS", Value: fmt.Sprintf("%s/%s", report.OS, report.Arch)},
+			{Label: "Config", Value: report.Config.Path},
+			{Label: "Config Status", Value: configStatus},
+			{Label: "Endpoint", Value: report.Config.Endpoint},
+			{Label: "Memory limit", Value: report.Limits.Memory},
+			{Label: "Max retries", Value: strconv.FormatInt(int64(report.Limits.MaxRetries), 10)},
+			{Label: "Authentication", Value: authStatus},
+			{Label: "Shell completion", Value: completionStatus},
+		},
+	})
 }
 
 func expandPath(path string) (string, error) {

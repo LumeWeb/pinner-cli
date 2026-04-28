@@ -178,21 +178,24 @@ func billingCreditsGetAction(ctx context.Context, cmd billingCreditsGetCmdGetter
 		return output.PrintJSON(credit)
 	}
 
-	output.Printfln("Credit ID: %s", credit.Id.String())
-	output.Printfln("User ID: %d", credit.UserId)
-	output.Printfln("Amount: %s", credit.Amount.String())
-	output.Printfln("Type: %s", credit.Type)
-	output.Printfln("Direction: %s", credit.Direction)
-	output.Printfln("Created At: %s", credit.CreatedAt.Format(time.RFC3339))
+	fields := []Field{
+		{Label: "Credit ID", Value: credit.Id.String()},
+		{Label: "User ID", Value: strconv.FormatInt(int64(credit.UserId), 10)},
+		{Label: "Amount", Value: credit.Amount.String()},
+		{Label: "Type", Value: string(credit.Type)},
+		{Label: "Direction", Value: string(credit.Direction)},
+		{Label: "Created At", Value: credit.CreatedAt.Format(time.RFC3339)},
+	}
 	if credit.Description != nil && *credit.Description != "" {
-		output.Printfln("Description: %s", *credit.Description)
+		fields = append(fields, Field{Label: "Description", Value: *credit.Description})
 	}
 	if credit.ReferenceId != nil && *credit.ReferenceId != "" {
-		output.Printfln("Reference ID: %s", *credit.ReferenceId)
+		fields = append(fields, Field{Label: "Reference ID", Value: *credit.ReferenceId})
 	}
 	if credit.ReferenceType != nil && *credit.ReferenceType != "" {
-		output.Printfln("Reference Type: %s", *credit.ReferenceType)
+		fields = append(fields, Field{Label: "Reference Type", Value: *credit.ReferenceType})
 	}
+	output.PrintFields(FieldGroup{Fields: fields})
 	return nil
 }
 
@@ -293,11 +296,15 @@ func billingCreditsCreateAction(ctx context.Context, cmd billingCreditsCreateCmd
 		return output.PrintJSON(credit)
 	}
 
-	output.Printfln("Credit created successfully:")
-	output.Printfln("  ID: %s", credit.Id.String())
-	output.Printfln("  Amount: %s", credit.Amount.String())
-	output.Printfln("  Type: %s", credit.Type)
-	output.Printfln("  Direction: %s", credit.Direction)
+	output.PrintFields(FieldGroup{
+		Title: "Credit created successfully:",
+		Fields: []Field{
+			{Label: "ID", Value: credit.Id.String()},
+			{Label: "Amount", Value: credit.Amount.String()},
+			{Label: "Type", Value: string(credit.Type)},
+			{Label: "Direction", Value: string(credit.Direction)},
+		},
+	})
 	return nil
 }
 
@@ -507,8 +514,12 @@ func billingCreditsUserBalanceAction(ctx context.Context, cmd billingCreditsUser
 		return output.PrintJSON(balance)
 	}
 
-	output.Printfln("User Balance (%s):", userID)
-	output.Printfln("  Balance: %s", balance.Balance.String())
+	output.PrintFields(FieldGroup{
+		Title: fmt.Sprintf("User Balance (%s):", userID),
+		Fields: []Field{
+			{Label: "Balance", Value: balance.Balance.String()},
+		},
+	})
 	return nil
 }
 
