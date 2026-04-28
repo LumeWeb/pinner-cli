@@ -20,13 +20,14 @@ require (
 	github.com/multiformats/go-multiaddr v0.16.1
 	github.com/pterm/pterm v0.12.82
 	github.com/samber/lo v1.53.0
+	github.com/shopspring/decimal v1.4.0
 	github.com/stretchr/testify v1.11.1
 	github.com/tus/tusd/v2 v2.9.1
 	github.com/urfave/cli/v3 v3.6.1
 	go.lumeweb.com/configmanager v0.3.26
 	go.lumeweb.com/ipfs-content v0.1.15
 	go.lumeweb.com/ipfs-sdk v0.1.35
-	go.lumeweb.com/portal-sdk v0.1.43
+	go.lumeweb.com/portal-sdk v0.1.44
 	go.lumeweb.com/queryutil v0.3.15
 	golang.org/x/text v0.34.0
 )
@@ -140,7 +141,6 @@ require (
 	github.com/prometheus/procfs v0.17.0 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/rs/cors v1.11.1 // indirect
-	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
