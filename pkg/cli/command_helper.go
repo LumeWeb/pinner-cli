@@ -5,10 +5,14 @@ import (
 	"go.lumeweb.com/pinner-cli/pkg/config"
 )
 
+// configManagerFactory is the factory function used by setupCommandContext.
+// It can be overridden in tests to inject mock config managers.
+var configManagerFactory ConfigManagerFactory = defaultConfigManagerFactory
+
 // setupCommandContext creates the common configuration and output objects needed by command actions.
 // This reduces boilerplate code across command handlers.
 func setupCommandContext(cmd *cli.Command) (config.Manager, Output, error) {
-	cfgMgr, err := defaultConfigManagerFactory()
+	cfgMgr, err := configManagerFactory()
 	if err != nil {
 		return nil, nil, err
 	}

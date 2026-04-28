@@ -71,6 +71,23 @@ const (
 	FlagSecure = "secure"
 )
 
+// Admin command flags
+const (
+	FlagPlanID       = "plan-id"
+	FlagUserID       = "user-id"
+	FlagDescription  = "description"
+	FlagUploadLimit  = "upload-limit"
+	FlagDownloadLimit = "download-limit"
+	FlagStorageLimit = "storage-limit"
+	FlagAmount       = "amount"
+	FlagCurrency     = "currency"
+	FlagGatewayID    = "gateway-id"
+	FlagPosition     = "position"
+	FlagRetentionDays = "retention-days"
+	FlagSource       = "source"
+	FlagQuotaType    = "quota-type"
+)
+
 // GlobalFlags returns flags that are available to all commands.
 func GlobalFlags() []cli.Flag {
 	return []cli.Flag{

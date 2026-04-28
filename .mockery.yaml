@@ -20,6 +20,8 @@ packages:
       AuthService: {}
       PinningService: {}
       UploadService: {}
+      QuotaAdminService: {}
+      BillingAdminService: {}
   go.lumeweb.com/pinner-cli/pkg/cli/internal:
     config:
       dir: ./pkg/cli/internal/mocks

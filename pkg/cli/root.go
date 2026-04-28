@@ -59,6 +59,7 @@ For more help on any command: pinner <command> --help`,
 			newDNSCommand(),
 			newIPNSCommand(),
 			newWebsitesCommand(),
+			newAdminCommand(),
 		},
 		Flags: GlobalFlags(),
 		Action: func(ctx context.Context, cmd *cli.Command) error {

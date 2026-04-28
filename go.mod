@@ -26,7 +26,7 @@ require (
 	go.lumeweb.com/configmanager v0.3.26
 	go.lumeweb.com/ipfs-content v0.1.15
 	go.lumeweb.com/ipfs-sdk v0.1.35
-	go.lumeweb.com/portal-sdk v0.1.4
+	go.lumeweb.com/portal-sdk v0.1.43
 	go.lumeweb.com/queryutil v0.3.15
 	golang.org/x/text v0.34.0
 )
@@ -140,6 +140,7 @@ require (
 	github.com/prometheus/procfs v0.17.0 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/rs/cors v1.11.1 // indirect
+	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
