@@ -107,6 +107,103 @@ func TestBillingPricingPlansList(t *testing.T) {
 	}
 }
 
+func TestPricingPlanPeriodsCreate_PriceValidation(t *testing.T) {
+	tests := []struct {
+		name        string
+		cmd         *billingPricingPlanPeriodsCreateCmd
+		setupMocks  func(*configmocks.MockManager, *MockBillingAdminService)
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name: "zero price without allow-free rejected",
+			cmd: &billingPricingPlanPeriodsCreateCmd{
+				planID:      1,
+				price:       0,
+				cadence:     "monthly",
+				quotaPlanID: 1,
+				allowFree:   false,
+			},
+			setupMocks: func(cfgMgr *configmocks.MockManager, svc *MockBillingAdminService) {
+				svc.EXPECT().RequireAuthenticated().Return(nil)
+			},
+			wantErr:     true,
+			errContains: "--price must be greater than 0",
+		},
+		{
+			name: "zero price with allow-free accepted",
+			cmd: &billingPricingPlanPeriodsCreateCmd{
+				planID:      1,
+				price:       0,
+				cadence:     "monthly",
+				quotaPlanID: 1,
+				allowFree:   true,
+			},
+			setupMocks: func(cfgMgr *configmocks.MockManager, svc *MockBillingAdminService) {
+				svc.EXPECT().RequireAuthenticated().Return(nil)
+				svc.EXPECT().CreatePricingPlanPeriod(mock.Anything, mock.AnythingOfType("*admin.PricingPlanPeriodCreateRequest")).Return(&admin.PricingPlanPeriod{}, nil)
+			},
+			wantErr: false,
+		},
+		{
+			name: "positive price works without allow-free",
+			cmd: &billingPricingPlanPeriodsCreateCmd{
+				planID:      1,
+				price:       9.99,
+				cadence:     "monthly",
+				quotaPlanID: 1,
+				allowFree:   false,
+			},
+			setupMocks: func(cfgMgr *configmocks.MockManager, svc *MockBillingAdminService) {
+				svc.EXPECT().RequireAuthenticated().Return(nil)
+				svc.EXPECT().CreatePricingPlanPeriod(mock.Anything, mock.AnythingOfType("*admin.PricingPlanPeriodCreateRequest")).Return(&admin.PricingPlanPeriod{}, nil)
+			},
+			wantErr: false,
+		},
+		{
+			name: "negative price rejected",
+			cmd: &billingPricingPlanPeriodsCreateCmd{
+				planID:      1,
+				price:       -5.0,
+				cadence:     "monthly",
+				quotaPlanID: 1,
+				allowFree:   false,
+			},
+			setupMocks: func(cfgMgr *configmocks.MockManager, svc *MockBillingAdminService) {
+				svc.EXPECT().RequireAuthenticated().Return(nil)
+			},
+			wantErr:     true,
+			errContains: "--price must be greater than 0",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfgMgr := configmocks.NewMockManager(t)
+			service := NewMockBillingAdminService(t)
+
+			tt.setupMocks(cfgMgr, service)
+
+			output := NewOutputFormatter(false, false, false, false)
+
+			serviceFactory := func(cm config.Manager, out Output) BillingAdminService {
+				return service
+			}
+
+			err := billingPricingPlanPeriodsCreateAction(context.Background(), tt.cmd, output, cfgMgr, serviceFactory)
+
+			if tt.wantErr {
+				require.Error(t, err)
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
+				}
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
 // billingPricingPlansCreateCmd implements billingPricingPlansCreateCmdGetter
 type billingPricingPlansCreateCmd struct {
 	name        string
@@ -120,11 +217,11 @@ type billingPricingPlansCreateCmd struct {
 
 func (m *billingPricingPlansCreateCmd) String(name string) string {
 	switch name {
-	case "name":
+	case FlagName:
 		return m.name
-	case "currency":
+	case FlagCurrency:
 		return m.currency
-	case "description":
+	case FlagDescription:
 		return m.description
 	}
 	return ""
@@ -132,22 +229,51 @@ func (m *billingPricingPlansCreateCmd) String(name string) string {
 
 func (m *billingPricingPlansCreateCmd) Bool(name string) bool {
 	switch name {
-	case "is-active":
+	case FlagIsActive:
 		return m.isActive
-	case "is-public":
+	case FlagIsPublic:
 		return m.isPublic
 	}
 	return false
 }
 
 func (m *billingPricingPlansCreateCmd) Int(name string) int {
-	if name == "priceline-id" {
+	if name == FlagPricelineID {
 		return m.pricelineID
 	}
 	return 0
 }
 
 func (m *billingPricingPlansCreateCmd) IsSet(name string) bool {
+	if m.isSet == nil {
+		return false
+	}
+	return m.isSet[name]
+}
+
+func (m *billingPricingPlansUpdateCmd) String(name string) string {
+	switch name {
+	case FlagName:
+		return m.name
+	case FlagCurrency:
+		return m.currency
+	case FlagDescription:
+		return m.description
+	}
+	return ""
+}
+
+func (m *billingPricingPlansUpdateCmd) Bool(name string) bool {
+	switch name {
+	case FlagIsActive:
+		return m.isActive
+	case FlagIsPublic:
+		return m.isPublic
+	}
+	return false
+}
+
+func (m *billingPricingPlansUpdateCmd) IsSet(name string) bool {
 	if m.isSet == nil {
 		return false
 	}
@@ -231,35 +357,6 @@ type billingPricingPlansUpdateCmd struct {
 
 func (m *billingPricingPlansUpdateCmd) Args() cli.Args {
 	return m.args
-}
-
-func (m *billingPricingPlansUpdateCmd) String(name string) string {
-	switch name {
-	case "name":
-		return m.name
-	case "currency":
-		return m.currency
-	case "description":
-		return m.description
-	}
-	return ""
-}
-
-func (m *billingPricingPlansUpdateCmd) Bool(name string) bool {
-	switch name {
-	case "is-active":
-		return m.isActive
-	case "is-public":
-		return m.isPublic
-	}
-	return false
-}
-
-func (m *billingPricingPlansUpdateCmd) IsSet(name string) bool {
-	if m.isSet == nil {
-		return false
-	}
-	return m.isSet[name]
 }
 
 func TestBillingPricingPlansUpdate(t *testing.T) {
@@ -556,33 +653,41 @@ type billingPricingPlanPeriodsCreateCmd struct {
 	cadence     string
 	quotaPlanID int
 	rollingDays int
+	allowFree   bool
 	isSet       map[string]bool
 }
 
 func (m *billingPricingPlanPeriodsCreateCmd) Int(name string) int {
 	switch name {
-	case "plan-id":
+	case FlagPlanID:
 		return m.planID
-	case "quota-plan-id":
+	case FlagQuotaPlanID:
 		return m.quotaPlanID
-	case "rolling-days":
+	case FlagRollingDays:
 		return m.rollingDays
 	}
 	return 0
 }
 
 func (m *billingPricingPlanPeriodsCreateCmd) Float(name string) float64 {
-	if name == "price" {
+	if name == FlagPrice {
 		return m.price
 	}
 	return 0
 }
 
 func (m *billingPricingPlanPeriodsCreateCmd) String(name string) string {
-	if name == "cadence" {
+	if name == FlagCadence {
 		return m.cadence
 	}
 	return ""
+}
+
+func (m *billingPricingPlanPeriodsCreateCmd) Bool(name string) bool {
+	if name == FlagAllowFree {
+		return m.allowFree
+	}
+	return false
 }
 
 func (m *billingPricingPlanPeriodsCreateCmd) IsSet(name string) bool {
@@ -675,14 +780,14 @@ func (m *billingPricingPlanPeriodsUpdateCmd) Args() cli.Args {
 }
 
 func (m *billingPricingPlanPeriodsUpdateCmd) Float(name string) float64 {
-	if name == "price" {
+	if name == FlagPrice {
 		return m.price
 	}
 	return 0
 }
 
 func (m *billingPricingPlanPeriodsUpdateCmd) String(name string) string {
-	if name == "cadence" {
+	if name == FlagCadence {
 		return m.cadence
 	}
 	return ""
@@ -690,9 +795,9 @@ func (m *billingPricingPlanPeriodsUpdateCmd) String(name string) string {
 
 func (m *billingPricingPlanPeriodsUpdateCmd) Int(name string) int {
 	switch name {
-	case "quota-plan-id":
+	case FlagQuotaPlanID:
 		return m.quotaPlanID
-	case "rolling-days":
+	case FlagRollingDays:
 		return m.rollingDays
 	}
 	return 0

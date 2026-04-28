@@ -70,9 +70,10 @@ func TestNewBillingCommand(t *testing.T) {
 		cmd := newBillingCommand()
 
 		require.NotNil(t, cmd.Commands)
-		assert.Len(t, cmd.Commands, 5)
+		assert.Len(t, cmd.Commands, 6)
 
 		subcommandNames := getSubcommandNames(cmd.Commands)
+		assert.Contains(t, subcommandNames, "overview")
 		assert.Contains(t, subcommandNames, "credits")
 		assert.Contains(t, subcommandNames, "price-lines")
 		assert.Contains(t, subcommandNames, "pricing-plans")
@@ -111,13 +112,16 @@ func TestNewQuotaPlansCommand(t *testing.T) {
 		createCmd := findSubcommand(cmd.Commands, "create")
 		require.NotNil(t, createCmd)
 		require.NotNil(t, createCmd.Flags)
-		assert.Len(t, createCmd.Flags, 4)
+		assert.Len(t, createCmd.Flags, 7)
 
 		flagNames := getFlagNames(createCmd.Flags)
 		assert.Contains(t, flagNames, "name")
-		assert.Contains(t, flagNames, "upload")
-		assert.Contains(t, flagNames, "download")
-		assert.Contains(t, flagNames, "storage")
+		assert.Contains(t, flagNames, "description")
+		assert.Contains(t, flagNames, "upload-limit")
+		assert.Contains(t, flagNames, "download-limit")
+		assert.Contains(t, flagNames, "storage-limit")
+		assert.Contains(t, flagNames, "is-active")
+		assert.Contains(t, flagNames, "is-default")
 	})
 }
 
@@ -154,10 +158,10 @@ func TestNewQuotaAllowancesCommand(t *testing.T) {
 		flagNames := getFlagNames(createCmd.Flags)
 		assert.Contains(t, flagNames, "user-id")
 		assert.Contains(t, flagNames, "source")
-		assert.Contains(t, flagNames, "type")
-		assert.Contains(t, flagNames, "upload")
-		assert.Contains(t, flagNames, "download")
-		assert.Contains(t, flagNames, "storage")
+		assert.Contains(t, flagNames, "quota-type")
+		assert.Contains(t, flagNames, "upload-limit")
+		assert.Contains(t, flagNames, "download-limit")
+		assert.Contains(t, flagNames, "storage-limit")
 	})
 }
 

@@ -334,9 +334,9 @@ type billingSubscribersCancelCmd struct {
 
 func (m *billingSubscribersCancelCmd) String(name string) string {
 	switch name {
-	case "user-id":
+	case FlagUserID:
 		return m.userID
-	case "mode":
+	case FlagMode:
 		return m.mode
 	}
 	return ""
@@ -414,7 +414,7 @@ type billingSubscribersAbortCancelCmd struct {
 }
 
 func (m *billingSubscribersAbortCancelCmd) String(name string) string {
-	if name == "user-id" {
+	if name == FlagUserID {
 		return m.userID
 	}
 	return ""
@@ -489,14 +489,14 @@ type billingSubscribersChangePlanCmd struct {
 }
 
 func (m *billingSubscribersChangePlanCmd) String(name string) string {
-	if name == "user-id" {
+	if name == FlagUserID {
 		return m.userID
 	}
 	return ""
 }
 
 func (m *billingSubscribersChangePlanCmd) Int(name string) int {
-	if name == "period-id" {
+	if name == FlagPlanID {
 		return m.periodID
 	}
 	return 0
@@ -575,7 +575,7 @@ type billingSubscribersPauseCmd struct {
 }
 
 func (m *billingSubscribersPauseCmd) String(name string) string {
-	if name == "user-id" {
+	if name == FlagUserID {
 		return m.userID
 	}
 	return ""
@@ -649,7 +649,7 @@ type billingSubscribersResumeCmd struct {
 }
 
 func (m *billingSubscribersResumeCmd) String(name string) string {
-	if name == "user-id" {
+	if name == FlagUserID {
 		return m.userID
 	}
 	return ""

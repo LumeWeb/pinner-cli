@@ -12,7 +12,7 @@ import (
 
 func newBillingPricingPlansListCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "list",
+		Name:  CmdList,
 		Usage: "List all pricing plans",
 		Description: `List all billing pricing plans.
 
@@ -85,31 +85,31 @@ Examples:
   pinner admin billing pricing-plans create --name "Premium" --currency USD --is-public --json`,
 		Flags: []cli.Flag{
 			&cli.StringFlag{
-				Name:     "name",
+				Name:     FlagName,
 				Usage:    "Pricing plan name",
 				Required: true,
 			},
 			&cli.StringFlag{
-				Name:     "currency",
+				Name:     FlagCurrency,
 				Usage:    "Currency code (e.g., USD, EUR)",
 				Required: true,
 			},
 			&cli.StringFlag{
-				Name:  "description",
+				Name:  FlagDescription,
 				Usage: "Plan description",
 			},
 			&cli.BoolFlag{
-				Name:  "is-active",
+				Name:  FlagIsActive,
 				Usage: "Mark plan as active",
 				Value: true,
 			},
 			&cli.BoolFlag{
-				Name:  "is-public",
+				Name:  FlagIsPublic,
 				Usage: "Mark plan as public",
 				Value: false,
 			},
 			&cli.IntFlag{
-				Name:  "priceline-id",
+				Name:  FlagPricelineID,
 				Usage: "Associated price line ID",
 			},
 		},
@@ -138,16 +138,16 @@ func billingPricingPlansCreateAction(ctx context.Context, cmd billingPricingPlan
 	}
 
 	req := admin.PricingPlanCreateRequest{
-		Name:           cmd.String("name"),
-		Currency:       cmd.String("currency"),
-		IsActive:       cmd.Bool("is-active"),
-		IsPublic:       cmd.Bool("is-public"),
-		Description:    cmd.String("description"),
+		Name:           cmd.String(FlagName),
+		Currency:       cmd.String(FlagCurrency),
+		IsActive:       cmd.Bool(FlagIsActive),
+		IsPublic:       cmd.Bool(FlagIsPublic),
+		Description:    cmd.String(FlagDescription),
 		PricingPeriods: []admin.PricingPlanPeriod{},
 	}
 
-	if cmd.IsSet("priceline-id") {
-		pricelineId := cmd.Int("priceline-id")
+	if cmd.IsSet(FlagPricelineID) {
+		pricelineId := cmd.Int(FlagPricelineID)
 		req.PricelineId = &pricelineId
 	}
 
@@ -185,23 +185,23 @@ Examples:
 		ArgsUsage: "<id>",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
-				Name:  "name",
+				Name:  FlagName,
 				Usage: "Pricing plan name",
 			},
 			&cli.StringFlag{
-				Name:  "currency",
+				Name:  FlagCurrency,
 				Usage: "Currency code (e.g., USD, EUR)",
 			},
 			&cli.StringFlag{
-				Name:  "description",
+				Name:  FlagDescription,
 				Usage: "Plan description",
 			},
 			&cli.BoolFlag{
-				Name:  "is-active",
+				Name:  FlagIsActive,
 				Usage: "Mark plan as active",
 			},
 			&cli.BoolFlag{
-				Name:  "is-public",
+				Name:  FlagIsPublic,
 				Usage: "Mark plan as public",
 			},
 		},
@@ -237,20 +237,20 @@ func billingPricingPlansUpdateAction(ctx context.Context, cmd billingPricingPlan
 
 	req := admin.PricingPlanUpdateRequest{}
 
-	if cmd.IsSet("name") {
-		req.Name = cmd.String("name")
+	if cmd.IsSet(FlagName) {
+		req.Name = cmd.String(FlagName)
 	}
-	if cmd.IsSet("currency") {
-		req.Currency = cmd.String("currency")
+	if cmd.IsSet(FlagCurrency) {
+		req.Currency = cmd.String(FlagCurrency)
 	}
-	if cmd.IsSet("description") {
-		req.Description = cmd.String("description")
+	if cmd.IsSet(FlagDescription) {
+		req.Description = cmd.String(FlagDescription)
 	}
-	if cmd.IsSet("is-active") {
-		req.IsActive = cmd.Bool("is-active")
+	if cmd.IsSet(FlagIsActive) {
+		req.IsActive = cmd.Bool(FlagIsActive)
 	}
-	if cmd.IsSet("is-public") {
-		req.IsPublic = cmd.Bool("is-public")
+	if cmd.IsSet(FlagIsPublic) {
+		req.IsPublic = cmd.Bool(FlagIsPublic)
 	}
 
 	plan, err := service.UpdatePricingPlan(ctx, planID, &req)
@@ -458,28 +458,33 @@ Examples:
   pinner admin billing pricing-plan-periods create --plan-id 123 --price 99.99 --cadence yearly --quota-plan-id 1 --json`,
 		Flags: []cli.Flag{
 			&cli.IntFlag{
-				Name:     "plan-id",
+				Name:     FlagPlanID,
 				Usage:    "Pricing plan ID",
 				Required: true,
 			},
 			&cli.FloatFlag{
-				Name:     "price",
+				Name:     FlagPrice,
 				Usage:    "Price in USD",
 				Required: true,
 			},
 			&cli.StringFlag{
-				Name:     "cadence",
+				Name:     FlagCadence,
 				Usage:    "Cadence (e.g., monthly, yearly)",
 				Required: true,
 			},
 			&cli.IntFlag{
-				Name:     "quota-plan-id",
+				Name:     FlagQuotaPlanID,
 				Usage:    "Associated quota plan ID",
 				Required: true,
 			},
 			&cli.IntFlag{
-				Name:  "rolling-days",
+				Name:  FlagRollingDays,
 				Usage: "Rolling days (for rolling periods)",
+			},
+			&cli.BoolFlag{
+				Name:  FlagAllowFree,
+				Usage: "Allow $0 price (free plan)",
+				Value: false,
 			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
@@ -497,6 +502,7 @@ type billingPricingPlanPeriodsCreateCmdGetter interface {
 	Int(name string) int
 	Float(name string) float64
 	String(name string) string
+	Bool(name string) bool
 	IsSet(name string) bool
 }
 
@@ -506,15 +512,20 @@ func billingPricingPlanPeriodsCreateAction(ctx context.Context, cmd billingPrici
 		return err
 	}
 
-	req := admin.PricingPlanPeriodCreateRequest{
-		PricingPlanId: cmd.Int("plan-id"),
-		PriceUsd:      float32(cmd.Float("price")),
-		Cadence:       cmd.String("cadence"),
-		QuotaPlanId:   cmd.Int("quota-plan-id"),
+	price := cmd.Float(FlagPrice)
+	if price <= 0 && !cmd.Bool(FlagAllowFree) {
+		return fmt.Errorf("--price must be greater than 0 (use --allow-free for $0 plans)")
 	}
 
-	if cmd.IsSet("rolling-days") {
-		rollingDays := cmd.Int("rolling-days")
+	req := admin.PricingPlanPeriodCreateRequest{
+		PricingPlanId: cmd.Int(FlagPlanID),
+		PriceUsd:      float32(price),
+		Cadence:       cmd.String(FlagCadence),
+		QuotaPlanId:   cmd.Int(FlagQuotaPlanID),
+	}
+
+	if cmd.IsSet(FlagRollingDays) {
+		rollingDays := cmd.Int(FlagRollingDays)
 		req.RollingDays = &rollingDays
 	}
 
@@ -552,19 +563,19 @@ Examples:
 		ArgsUsage: "<id>",
 		Flags: []cli.Flag{
 			&cli.FloatFlag{
-				Name:  "price",
+				Name:  FlagPrice,
 				Usage: "Price in USD",
 			},
 			&cli.StringFlag{
-				Name:  "cadence",
+				Name:  FlagCadence,
 				Usage: "Cadence (e.g., monthly, yearly)",
 			},
 			&cli.IntFlag{
-				Name:  "quota-plan-id",
+				Name:  FlagQuotaPlanID,
 				Usage: "Associated quota plan ID",
 			},
 			&cli.IntFlag{
-				Name:  "rolling-days",
+				Name:  FlagRollingDays,
 				Usage: "Rolling days (for rolling periods)",
 			},
 		},
@@ -601,17 +612,17 @@ func billingPricingPlanPeriodsUpdateAction(ctx context.Context, cmd billingPrici
 
 	req := admin.PricingPlanPeriodUpdateRequest{}
 
-	if cmd.IsSet("price") {
-		req.PriceUsd = float32(cmd.Float("price"))
+	if cmd.IsSet(FlagPrice) {
+		req.PriceUsd = float32(cmd.Float(FlagPrice))
 	}
-	if cmd.IsSet("cadence") {
-		req.Cadence = cmd.String("cadence")
+	if cmd.IsSet(FlagCadence) {
+		req.Cadence = cmd.String(FlagCadence)
 	}
-	if cmd.IsSet("quota-plan-id") {
-		req.QuotaPlanId = cmd.Int("quota-plan-id")
+	if cmd.IsSet(FlagQuotaPlanID) {
+		req.QuotaPlanId = cmd.Int(FlagQuotaPlanID)
 	}
-	if cmd.IsSet("rolling-days") {
-		rollingDays := cmd.Int("rolling-days")
+	if cmd.IsSet(FlagRollingDays) {
+		rollingDays := cmd.Int(FlagRollingDays)
 		req.RollingDays = &rollingDays
 	}
 

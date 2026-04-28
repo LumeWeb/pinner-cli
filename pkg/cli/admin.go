@@ -86,6 +86,7 @@ Examples:
   pinner admin billing pricing-plans list
   pinner admin billing subscribers list`,
 		Commands: []*cli.Command{
+			newBillingOverviewCommand(),
 			newBillingCreditsCommand(),
 			newBillingPriceLinesCommand(),
 			newBillingPricingPlansCommand(),
@@ -97,7 +98,7 @@ Examples:
 
 func newQuotaPlansCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "plans",
+		Name:  CmdPlans,
 		Usage: "Manage quota plans",
 		Description: `List, create, update, and delete quota plans.
 
@@ -106,7 +107,7 @@ Examples:
   pinner admin quota plans get <plan-id>`,
 		Commands: []*cli.Command{
 			{
-				Name:  "list",
+				Name:  CmdList,
 				Usage: "List all quota plans",
 				Description: `List all available quota plans.
 
@@ -122,7 +123,7 @@ Examples:
 				},
 			},
 			{
-				Name:  "get",
+				Name:  CmdGet,
 				Usage: "Get a quota plan by ID",
 				Description: `Get details of a specific quota plan.
 
@@ -139,28 +140,44 @@ Examples:
 				},
 			},
 			{
-				Name:  "create",
+				Name:  CmdCreate,
 				Usage: "Create a new quota plan",
 				Description: `Create a new quota plan with specified limits.
 
 Examples:
-  pinner admin quota plans create --name "Pro" --upload 1000 --download 2000 --storage 5000`,
+  pinner admin quota plans create --name "Pro" --upload 1000 --download 2000 --storage 5000
+  pinner admin quota plans create --name "Free" --is-active --is-default
+  pinner admin quota plans create --name "Basic" --description "Basic tier" --is-active`,
 				Flags: []cli.Flag{
 					&cli.StringFlag{
-						Name:  "name",
+						Name:  FlagName,
 						Usage: "Plan name",
 					},
+					&cli.StringFlag{
+						Name:  FlagDescription,
+						Usage: "Plan description",
+					},
 					&cli.IntFlag{
-						Name:  "upload",
+						Name:  FlagUploadLimit,
 						Usage: "Upload limit (bytes)",
 					},
 					&cli.IntFlag{
-						Name:  "download",
+						Name:  FlagDownloadLimit,
 						Usage: "Download limit (bytes)",
 					},
 					&cli.IntFlag{
-						Name:  "storage",
+						Name:  FlagStorageLimit,
 						Usage: "Storage limit (bytes)",
+					},
+					&cli.BoolFlag{
+						Name:  FlagIsActive,
+						Usage: "Mark plan as active",
+						Value: false,
+					},
+					&cli.BoolFlag{
+						Name:  FlagIsDefault,
+						Usage: "Set as default plan for new users",
+						Value: false,
 					},
 				},
 				Action: func(ctx context.Context, cmd *cli.Command) error {
@@ -172,29 +189,42 @@ Examples:
 				},
 			},
 			{
-				Name:  "update",
+				Name:  CmdUpdate,
 				Usage: "Update a quota plan",
 				Description: `Update an existing quota plan.
 
 Examples:
-  pinner admin quota plans update <plan-id> --name "Updated Pro"`,
+  pinner admin quota plans update <plan-id> --name "Updated Pro"
+  pinner admin quota plans update <plan-id> --is-active --is-default`,
 				ArgsUsage: "<plan-id>",
 				Flags: []cli.Flag{
 					&cli.StringFlag{
-						Name:  "name",
+						Name:  FlagName,
 						Usage: "Plan name",
 					},
+					&cli.StringFlag{
+						Name:  FlagDescription,
+						Usage: "Plan description",
+					},
 					&cli.IntFlag{
-						Name:  "upload",
+						Name:  FlagUploadLimit,
 						Usage: "Upload limit (bytes)",
 					},
 					&cli.IntFlag{
-						Name:  "download",
+						Name:  FlagDownloadLimit,
 						Usage: "Download limit (bytes)",
 					},
 					&cli.IntFlag{
-						Name:  "storage",
+						Name:  FlagStorageLimit,
 						Usage: "Storage limit (bytes)",
+					},
+					&cli.BoolFlag{
+						Name:  FlagIsActive,
+						Usage: "Mark plan as active",
+					},
+					&cli.BoolFlag{
+						Name:  FlagIsDefault,
+						Usage: "Set as default plan for new users",
 					},
 				},
 				Action: func(ctx context.Context, cmd *cli.Command) error {
@@ -206,7 +236,7 @@ Examples:
 				},
 			},
 			{
-				Name:  "delete",
+				Name:  CmdDelete,
 				Usage: "Delete a quota plan",
 				Description: `Delete a quota plan by ID.
 
@@ -222,7 +252,7 @@ Examples:
 				},
 			},
 			{
-				Name:  "set-default",
+				Name:  CmdSetDefault,
 				Usage: "Set a quota plan as default",
 				Description: `Set a quota plan as the default for new users.
 
@@ -243,7 +273,7 @@ Examples:
 
 func newQuotaAllowancesCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "allowances",
+		Name:  CmdAllowances,
 		Usage: "Manage quota allowances",
 		Description: `List, create, update, and delete quota allowances.
 
@@ -252,7 +282,7 @@ Examples:
   pinner admin quota allowances create --user-id 123 --type bonus`,
 		Commands: []*cli.Command{
 			{
-				Name:  "list",
+				Name:  CmdList,
 				Usage: "List all quota allowances",
 				Description: `List all quota allowances.
 
@@ -268,7 +298,7 @@ Examples:
 				},
 			},
 			{
-				Name:  "create",
+				Name:  CmdCreate,
 				Usage: "Create a quota allowance",
 				Description: `Create a new quota allowance for a user.
 
@@ -276,27 +306,27 @@ Examples:
   pinner admin quota allowances create --user-id 123 --source admin --type bonus --upload 1000`,
 				Flags: []cli.Flag{
 					&cli.IntFlag{
-						Name:  "user-id",
+						Name:  FlagUserID,
 						Usage: "User ID",
 					},
 					&cli.StringFlag{
-						Name:  "source",
+						Name:  FlagSource,
 						Usage: "Allowance source",
 					},
 					&cli.StringFlag{
-						Name:  "type",
+						Name:  FlagQuotaType,
 						Usage: "Allowance type",
 					},
 					&cli.IntFlag{
-						Name:  "upload",
+						Name:  FlagUploadLimit,
 						Usage: "Upload allowance (bytes)",
 					},
 					&cli.IntFlag{
-						Name:  "download",
+						Name:  FlagDownloadLimit,
 						Usage: "Download allowance (bytes)",
 					},
 					&cli.IntFlag{
-						Name:  "storage",
+						Name:  FlagStorageLimit,
 						Usage: "Storage allowance (bytes)",
 					},
 				},
@@ -309,7 +339,7 @@ Examples:
 				},
 			},
 			{
-				Name:  "update",
+				Name:  CmdUpdate,
 				Usage: "Update a quota allowance",
 				Description: `Update an existing quota allowance.
 
@@ -318,27 +348,27 @@ Examples:
 				ArgsUsage: "<grant-id>",
 				Flags: []cli.Flag{
 					&cli.IntFlag{
-						Name:  "user-id",
+						Name:  FlagUserID,
 						Usage: "User ID",
 					},
 					&cli.StringFlag{
-						Name:  "source",
+						Name:  FlagSource,
 						Usage: "Allowance source",
 					},
 					&cli.StringFlag{
-						Name:  "type",
+						Name:  FlagQuotaType,
 						Usage: "Allowance type",
 					},
 					&cli.IntFlag{
-						Name:  "upload",
+						Name:  FlagUploadLimit,
 						Usage: "Upload allowance (bytes)",
 					},
 					&cli.IntFlag{
-						Name:  "download",
+						Name:  FlagDownloadLimit,
 						Usage: "Download allowance (bytes)",
 					},
 					&cli.IntFlag{
-						Name:  "storage",
+						Name:  FlagStorageLimit,
 						Usage: "Storage allowance (bytes)",
 					},
 				},
@@ -351,7 +381,7 @@ Examples:
 				},
 			},
 			{
-				Name:  "delete",
+				Name:  CmdDelete,
 				Usage: "Delete a quota allowance",
 				Description: `Delete a quota allowance by grant ID.
 
@@ -372,7 +402,7 @@ Examples:
 
 func newQuotaUserConfigsCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "user-configs",
+		Name:  CmdUserConfigs,
 		Usage: "Manage user quota configurations",
 		Description: `List and update user quota configurations.
 
@@ -381,7 +411,7 @@ Examples:
   pinner admin quota user-configs reset <user-id>`,
 		Commands: []*cli.Command{
 			{
-				Name:  "list",
+				Name:  CmdList,
 				Usage: "List all user quota configs",
 				Description: `List all user quota configurations.
 
@@ -397,7 +427,7 @@ Examples:
 				},
 			},
 			{
-				Name:  "reset",
+				Name:  CmdReset,
 				Usage: "Reset user plan to default",
 				Description: `Reset a user's quota plan to the default.
 
@@ -418,7 +448,7 @@ Examples:
 
 func newQuotaStatsCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "stats",
+		Name:  CmdStats,
 		Usage: "Get quota system statistics",
 		Description: `View quota system statistics.
 
@@ -437,7 +467,7 @@ Examples:
 
 func newQuotaReconcileCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "reconcile",
+		Name:  CmdReconcile,
 		Usage: "Reconcile quota data",
 		Description: `Reconcile quota data for all users or a specific user.
 
@@ -462,7 +492,7 @@ Examples:
 
 func newQuotaCleanupCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "cleanup",
+		Name:  CmdCleanup,
 		Usage: "Cleanup expired quota data",
 		Description: `Cleanup expired quota data older than the specified retention period.
 
@@ -487,7 +517,7 @@ Examples:
 
 func newBillingPricingPlansCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "pricing-plans",
+		Name:  CmdPricingPlans,
 		Usage: "Manage billing pricing plans",
 		Description: `List, create, update, and delete billing pricing plans.
 
@@ -503,7 +533,7 @@ func newBillingPricingPlansCommand() *cli.Command {
 
 func newBillingPricingPlanPeriodsCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "pricing-plan-periods",
+		Name:  CmdPricingPlanPeriods,
 		Usage: "Manage billing pricing plan periods",
 		Description: `List, create, update, and delete billing pricing plan periods.
 
@@ -520,7 +550,7 @@ func newBillingPricingPlanPeriodsCommand() *cli.Command {
 
 func newBillingSubscribersCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "subscribers",
+		Name:  CmdSubscribers,
 		Usage: "Manage billing subscribers",
 		Description: `List, manage, and modify billing subscribers.
 
