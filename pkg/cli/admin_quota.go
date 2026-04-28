@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -127,6 +128,7 @@ func quotaPlansGetAction(ctx context.Context, cmd quotaPlansGetCmdGetter, output
 type quotaPlansCreateCmdGetter interface {
 	String(string) string
 	Int(string) int
+	Bool(string) bool
 }
 
 // quotaPlansCreateAction creates a new quota plan
@@ -141,21 +143,28 @@ func quotaPlansCreateAction(ctx context.Context, cmd quotaPlansCreateCmdGetter, 
 	}
 
 	limits := admin.QuotaLimits{
-		UploadLimitBytes:   cmd.Int("upload"),
-		DownloadLimitBytes: cmd.Int("download"),
-		StorageLimitBytes:  cmd.Int("storage"),
+		UploadLimitBytes:   cmd.Int(FlagUploadLimit),
+		DownloadLimitBytes: cmd.Int(FlagDownloadLimit),
+		StorageLimitBytes:  cmd.Int(FlagStorageLimit),
 	}
 
 	plan := admin.NewQuotaPlan(
 		cmd.String("name"),
-		"",
+		cmd.String("description"),
 		limits,
 	)
-	plan.Description = cmd.String("description")
+	plan.IsActive = cmd.Bool(FlagIsActive)
 
 	created, err := quotaService.CreatePlan(ctx, plan)
 	if err != nil {
 		return err
+	}
+
+	if cmd.Bool(FlagIsDefault) {
+		if err := quotaService.SetDefaultPlan(ctx, fmt.Sprintf("%d", created.Id)); err != nil {
+			return fmt.Errorf("plan created but failed to set as default: %w", err)
+		}
+		created.IsDefault = true
 	}
 
 	if output.IsJSON() {
@@ -164,7 +173,11 @@ func quotaPlansCreateAction(ctx context.Context, cmd quotaPlansCreateCmdGetter, 
 
 	output.Printf("Quota plan created successfully")
 
-	headers := []string{"ID", "NAME", "DESCRIPTION", "UPLOAD", "DOWNLOAD", "STORAGE"}
+	headers := []string{"ID", "NAME", "DESCRIPTION", "UPLOAD", "DOWNLOAD", "STORAGE", "ACTIVE", "DEFAULT"}
+	isDefault := "No"
+	if created.IsDefault {
+		isDefault = "Yes"
+	}
 	rows := [][]string{
 		{
 			fmt.Sprintf("%d", created.Id),
@@ -173,6 +186,8 @@ func quotaPlansCreateAction(ctx context.Context, cmd quotaPlansCreateCmdGetter, 
 			formatBytes(created.UploadLimitBytes),
 			formatBytes(created.DownloadLimitBytes),
 			formatBytes(created.StorageLimitBytes),
+			fmt.Sprintf("%t", created.IsActive),
+			isDefault,
 		},
 	}
 	output.PrintTable(headers, rows)
@@ -185,6 +200,7 @@ type quotaPlansUpdateCmdGetter interface {
 	Args() cli.Args
 	String(string) string
 	Int(string) int
+	Bool(string) bool
 	IsSet(string) bool
 }
 
@@ -208,14 +224,14 @@ func quotaPlansUpdateAction(ctx context.Context, cmd quotaPlansUpdateCmdGetter, 
 
 	limits := admin.QuotaLimits{}
 
-	if cmd.IsSet("upload") {
-		limits.UploadLimitBytes = cmd.Int("upload")
+	if cmd.IsSet(FlagUploadLimit) {
+		limits.UploadLimitBytes = cmd.Int(FlagUploadLimit)
 	}
-	if cmd.IsSet("download") {
-		limits.DownloadLimitBytes = cmd.Int("download")
+	if cmd.IsSet(FlagDownloadLimit) {
+		limits.DownloadLimitBytes = cmd.Int(FlagDownloadLimit)
 	}
-	if cmd.IsSet("storage") {
-		limits.StorageLimitBytes = cmd.Int("storage")
+	if cmd.IsSet(FlagStorageLimit) {
+		limits.StorageLimitBytes = cmd.Int(FlagStorageLimit)
 	}
 
 	plan := admin.NewQuotaPlan(
@@ -224,9 +240,20 @@ func quotaPlansUpdateAction(ctx context.Context, cmd quotaPlansUpdateCmdGetter, 
 		limits,
 	)
 
+	if cmd.IsSet(FlagIsActive) {
+		plan.IsActive = cmd.Bool(FlagIsActive)
+	}
+
 	updated, err := quotaService.UpdatePlan(ctx, planID, plan)
 	if err != nil {
 		return err
+	}
+
+	if cmd.IsSet(FlagIsDefault) && cmd.Bool(FlagIsDefault) {
+		if err := quotaService.SetDefaultPlan(ctx, planID); err != nil {
+			return fmt.Errorf("plan updated but failed to set as default: %w", err)
+		}
+		updated.IsDefault = true
 	}
 
 	if output.IsJSON() {
@@ -235,7 +262,11 @@ func quotaPlansUpdateAction(ctx context.Context, cmd quotaPlansUpdateCmdGetter, 
 
 	output.Printf("Quota plan updated successfully")
 
-	headers := []string{"ID", "NAME", "DESCRIPTION", "UPLOAD", "DOWNLOAD", "STORAGE"}
+	headers := []string{"ID", "NAME", "DESCRIPTION", "UPLOAD", "DOWNLOAD", "STORAGE", "ACTIVE", "DEFAULT"}
+	isDefault := "No"
+	if updated.IsDefault {
+		isDefault = "Yes"
+	}
 	rows := [][]string{
 		{
 			fmt.Sprintf("%d", updated.Id),
@@ -244,6 +275,8 @@ func quotaPlansUpdateAction(ctx context.Context, cmd quotaPlansUpdateCmdGetter, 
 			formatBytes(updated.UploadLimitBytes),
 			formatBytes(updated.DownloadLimitBytes),
 			formatBytes(updated.StorageLimitBytes),
+			fmt.Sprintf("%t", updated.IsActive),
+			isDefault,
 		},
 	}
 	output.PrintTable(headers, rows)
@@ -312,6 +345,9 @@ func quotaPlansSetDefaultAction(ctx context.Context, cmd quotaPlansSetDefaultCmd
 	}
 
 	if err := quotaService.SetDefaultPlan(ctx, planID); err != nil {
+		if errors.Is(err, admin.ErrNotFound) {
+			return fmt.Errorf("plan %s not found (ensure the plan is active with: pinner admin quota plans update %s --is-active)", planID, planID)
+		}
 		return err
 	}
 

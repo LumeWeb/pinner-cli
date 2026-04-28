@@ -23,11 +23,11 @@ type mockBillingCreditsListCmd struct {
 
 func (m *mockBillingCreditsListCmd) String(name string) string {
 	switch name {
-	case "user-id":
+	case FlagUserID:
 		return m.userID
-	case "direction":
+	case FlagDirection:
 		return m.direction
-	case "type":
+	case FlagType:
 		return m.creditType
 	}
 	return ""
@@ -273,13 +273,13 @@ type mockBillingCreditsCreateCmd struct {}
 
 func (m *mockBillingCreditsCreateCmd) String(name string) string {
 	switch name {
-	case "user-id":
+	case FlagUserID:
 		return "123"
-	case "amount":
+	case FlagAmount:
 		return "100.00"
-	case "type":
+	case FlagType:
 		return "manual"
-	case "direction":
+	case FlagDirection:
 		return "credit"
 	}
 	return ""

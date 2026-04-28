@@ -13,7 +13,7 @@ import (
 
 func newBillingCreditsCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "credits",
+		Name:  CmdCredits,
 		Usage: "Manage billing credits",
 		Description: `Manage billing credits for users.
 
@@ -41,7 +41,7 @@ Examples:
 
 func newBillingCreditsListCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "list",
+		Name:  CmdList,
 		Usage: "List credits",
 		Description: `List all billing credits with optional filtering.
 
@@ -52,15 +52,15 @@ Examples:
   pinner admin billing credits list --type manual`,
 		Flags: []cli.Flag{
 			&cli.StringFlag{
-				Name:  "user-id",
+				Name:  FlagUserID,
 				Usage: "Filter by user ID",
 			},
 			&cli.StringFlag{
-				Name:  "direction",
+				Name:  FlagDirection,
 				Usage: "Filter by direction (credit, debit)",
 			},
 			&cli.StringFlag{
-				Name:  "type",
+				Name:  FlagType,
 				Usage: "Filter by type",
 			},
 		},
@@ -86,13 +86,13 @@ func billingCreditsListAction(ctx context.Context, cmd billingCreditsListCmdGett
 	}
 
 	params := &admin.GetApiBillingCreditsParams{}
-	if v := cmd.String("user-id"); v != "" {
+	if v := cmd.String(FlagUserID); v != "" {
 		params.FiltersUserIdEq = &v
 	}
-	if v := cmd.String("direction"); v != "" {
+	if v := cmd.String(FlagDirection); v != "" {
 		params.DirectionEq = &v
 	}
-	if v := cmd.String("type"); v != "" {
+	if v := cmd.String(FlagType); v != "" {
 		params.TypeEq = &v
 	}
 
@@ -134,7 +134,7 @@ func billingCreditsListAction(ctx context.Context, cmd billingCreditsListCmdGett
 
 func newBillingCreditsGetCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "get",
+		Name:  CmdGet,
 		Usage: "Get credit by ID",
 		Description: `Get details of a specific credit by its ID.
 
@@ -201,7 +201,7 @@ func billingCreditsGetAction(ctx context.Context, cmd billingCreditsGetCmdGetter
 
 func newBillingCreditsCreateCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "create",
+		Name:  CmdCreate,
 		Usage: "Create a new credit",
 		Description: `Create a new billing credit for a user.
 
@@ -211,27 +211,27 @@ Examples:
   pinner admin billing credits create --user-id 123 --amount 200.00 --type manual --direction debit --json`,
 		Flags: []cli.Flag{
 			&cli.StringFlag{
-				Name:     "user-id",
+				Name:     FlagUserID,
 				Usage:    "User ID to credit",
 				Required: true,
 			},
 			&cli.StringFlag{
-				Name:     "amount",
+				Name:     FlagAmount,
 				Usage:    "Credit amount (as decimal string)",
 				Required: true,
 			},
 			&cli.StringFlag{
-				Name:     "type",
+				Name:     FlagType,
 				Usage:    "Credit type (e.g., manual, promo, referral)",
 				Required: true,
 			},
 			&cli.StringFlag{
-				Name:     "direction",
+				Name:     FlagDirection,
 				Usage:    "Direction (credit or debit)",
 				Required: true,
 			},
 			&cli.StringFlag{
-				Name:  "description",
+				Name:  FlagDescription,
 				Usage: "Credit description",
 			},
 			&cli.StringFlag{
@@ -264,19 +264,19 @@ func billingCreditsCreateAction(ctx context.Context, cmd billingCreditsCreateCmd
 		return err
 	}
 
-	userID, err := strconv.Atoi(cmd.String("user-id"))
+	userID, err := strconv.Atoi(cmd.String(FlagUserID))
 	if err != nil {
 		return fmt.Errorf("invalid user ID: %w", err)
 	}
 
 	req := &admin.CreditCreateRequest{
 		UserId:    userID,
-		Amount:    cmd.String("amount"),
-		Type:      cmd.String("type"),
-		Direction: cmd.String("direction"),
+		Amount:    cmd.String(FlagAmount),
+		Type:      cmd.String(FlagType),
+		Direction: cmd.String(FlagDirection),
 	}
 
-	if v := cmd.String("description"); v != "" {
+	if v := cmd.String(FlagDescription); v != "" {
 		req.Description = &v
 	}
 	if v := cmd.String("reference-id"); v != "" {
@@ -310,7 +310,7 @@ func billingCreditsCreateAction(ctx context.Context, cmd billingCreditsCreateCmd
 
 func newBillingCreditsDeleteCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "delete",
+		Name:  CmdDelete,
 		Usage: "Delete (soft-delete) a credit",
 		Description: `Soft-delete a credit by its ID.
 
@@ -362,7 +362,7 @@ func billingCreditsDeleteAction(ctx context.Context, cmd billingCreditsDeleteCmd
 
 func newBillingCreditsRestoreCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "restore",
+		Name:  CmdRestore,
 		Usage: "Restore a deleted credit",
 		Description: `Restore a soft-deleted credit by its ID.
 
@@ -412,7 +412,7 @@ func billingCreditsRestoreAction(ctx context.Context, cmd billingCreditsRestoreC
 
 func newBillingCreditsPurgeCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "purge",
+		Name:  CmdPurge,
 		Usage: "Purge deleted credits",
 		Description: `Permanently delete soft-deleted credits older than specified duration.
 
@@ -422,7 +422,7 @@ Examples:
   pinner admin billing credits purge --older-than "7d" --json`,
 		Flags: []cli.Flag{
 			&cli.StringFlag{
-				Name:  "older-than",
+				Name:  FlagOlderThan,
 				Usage: "Delete credits deleted more than this duration ago (e.g., 30d, 1w, 24h)",
 				Value: "30d",
 			},
@@ -449,7 +449,7 @@ func billingCreditsPurgeAction(ctx context.Context, cmd billingCreditsPurgeCmdGe
 	}
 
 	req := &admin.CreditPurgeRequest{
-		OlderThan: cmd.String("older-than"),
+		OlderThan: cmd.String(FlagOlderThan),
 	}
 
 	count, err := service.PurgeCredits(ctx, req)
@@ -470,7 +470,7 @@ func billingCreditsPurgeAction(ctx context.Context, cmd billingCreditsPurgeCmdGe
 
 func newBillingCreditsUserBalanceCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "user-balance",
+		Name:  CmdUserBalance,
 		Usage: "Get user balance",
 		Description: `Get the current balance for a specific user.
 
@@ -525,7 +525,7 @@ func billingCreditsUserBalanceAction(ctx context.Context, cmd billingCreditsUser
 
 func newBillingCreditsUserDeletedCreditsCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "user-deleted-credits",
+		Name:  CmdUserDeletedCredits,
 		Usage: "Get deleted credits by user",
 		Description: `Get all soft-deleted credits for a specific user.
 
@@ -535,11 +535,11 @@ Examples:
 		ArgsUsage: "<user-id>",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
-				Name:  "direction",
+				Name:  FlagDirection,
 				Usage: "Filter by direction",
 			},
 			&cli.StringFlag{
-				Name:  "type",
+				Name:  FlagType,
 				Usage: "Filter by type",
 			},
 		},
@@ -571,10 +571,10 @@ func billingCreditsUserDeletedCreditsAction(ctx context.Context, cmd billingCred
 
 	userID := cmd.Args().First()
 	params := &admin.GetApiBillingUsersUserIdDeletedCreditsParams{}
-	if v := cmd.String("direction"); v != "" {
+	if v := cmd.String(FlagDirection); v != "" {
 		params.DirectionEq = &v
 	}
-	if v := cmd.String("type"); v != "" {
+	if v := cmd.String(FlagType); v != "" {
 		params.TypeEq = &v
 	}
 

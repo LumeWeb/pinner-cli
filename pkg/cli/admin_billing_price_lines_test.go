@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/pkg/config"
@@ -94,6 +97,103 @@ func TestBillingPriceLinesList(t *testing.T) {
 	}
 }
 
+func TestAddPlan_AutoPosition(t *testing.T) {
+	tests := []struct {
+		name          string
+		priceLineID   string
+		planID        string
+		position      int
+		isSetPosition bool
+		setupMocks    func(*configmocks.MockManager, *MockBillingAdminService)
+		wantErr       bool
+		errContains   string
+	}{
+		{
+			name:          "auto-position when position not set",
+			priceLineID:   "1",
+			planID:        "1",
+			isSetPosition: false,
+			setupMocks: func(cfgMgr *configmocks.MockManager, svc *MockBillingAdminService) {
+				svc.EXPECT().RequireAuthenticated().Return(nil)
+				svc.EXPECT().GetPriceLine(mock.Anything, "1").Return(&admin.PriceLineDetailResponse{
+					Plans: []*admin.PricingPlanItem{{}, {}},
+				}, nil)
+				svc.EXPECT().AddPlanToPriceLine(mock.Anything, "1", mock.AnythingOfType("*admin.AddPlanToPriceLineRequest")).Return(&admin.PriceLineDetailResponse{}, nil)
+			},
+			wantErr: false,
+		},
+		{
+			name:          "explicit position used when set",
+			priceLineID:   "1",
+			planID:        "1",
+			position:      1,
+			isSetPosition: true,
+			setupMocks: func(cfgMgr *configmocks.MockManager, svc *MockBillingAdminService) {
+				svc.EXPECT().RequireAuthenticated().Return(nil)
+				svc.EXPECT().AddPlanToPriceLine(mock.Anything, "1", mock.AnythingOfType("*admin.AddPlanToPriceLineRequest")).Return(&admin.PriceLineDetailResponse{}, nil)
+			},
+			wantErr: false,
+		},
+		{
+			name:          "auto-position fetch fails",
+			priceLineID:   "1",
+			planID:        "1",
+			isSetPosition: false,
+			setupMocks: func(cfgMgr *configmocks.MockManager, svc *MockBillingAdminService) {
+				svc.EXPECT().RequireAuthenticated().Return(nil)
+				svc.EXPECT().GetPriceLine(mock.Anything, "1").Return(nil, fmt.Errorf("%w: not found", admin.ErrNotFound))
+			},
+			wantErr:     true,
+			errContains: "failed to determine auto-position",
+		},
+		{
+			name:        "missing price line ID",
+			priceLineID: "",
+			planID:      "1",
+			setupMocks:  func(cfgMgr *configmocks.MockManager, svc *MockBillingAdminService) {},
+			wantErr:     true,
+			errContains: "price line ID is required",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfgMgr := configmocks.NewMockManager(t)
+			service := NewMockBillingAdminService(t)
+
+			tt.setupMocks(cfgMgr, service)
+
+			output := NewOutputFormatter(false, false, false, false)
+
+			serviceFactory := func(cm config.Manager, out Output) BillingAdminService {
+				return service
+			}
+
+			args := &mockArgs{}
+			if tt.priceLineID != "" {
+				args.args = []string{tt.priceLineID}
+			}
+			cmd := &billingPriceLinesAddPlanArgs{
+				args:          args,
+				planID:        tt.planID,
+				position:      tt.position,
+				isSetPosition: tt.isSetPosition,
+			}
+
+			err := billingPriceLinesAddPlanAction(context.Background(), cmd, output, cfgMgr, serviceFactory)
+
+			if tt.wantErr {
+				require.Error(t, err)
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
+				}
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
 // billingPriceLinesGetArgs implements billingPriceLinesGetCmdGetter
 type billingPriceLinesGetArgs struct {
 	args cli.Args
@@ -168,10 +268,15 @@ func TestBillingPriceLinesGet(t *testing.T) {
 
 // billingPriceLinesCreateCmd implements billingPriceLinesCreateCmdGetter
 type billingPriceLinesCreateCmd struct {
+	args        cli.Args
 	name        string
 	description string
 	isActive    bool
 	isDefault   bool
+}
+
+func (m *billingPriceLinesCreateCmd) Args() cli.Args {
+	return m.args
 }
 
 func (m *billingPriceLinesCreateCmd) String(name string) string {
@@ -448,21 +553,44 @@ func TestBillingPriceLinesDelete(t *testing.T) {
 
 // billingPriceLinesAddPlanArgs implements billingPriceLinesAddPlanCmdGetter
 type billingPriceLinesAddPlanArgs struct {
-	args cli.Args
+	args          cli.Args
+	planID        string
+	position      int
+	isSetPosition bool
 }
 
 func (m *billingPriceLinesAddPlanArgs) Args() cli.Args {
 	return m.args
 }
 
+func (m *billingPriceLinesAddPlanArgs) String(name string) string {
+	if name == "plan-id" {
+		return m.planID
+	}
+	return ""
+}
+
 func (m *billingPriceLinesAddPlanArgs) Int(name string) int {
 	switch name {
 	case "plan-id":
-		return 1
-	case "position":
+		if m.planID != "" {
+			v, _ := strconv.Atoi(m.planID)
+			return v
+		}
 		return 0
+	case "position":
+		return m.position
 	}
 	return 0
+}
+
+func (m *billingPriceLinesAddPlanArgs) IsSet(name string) bool {
+	switch name {
+	case "position":
+		return m.isSetPosition
+	default:
+		return false
+	}
 }
 
 func TestBillingPriceLinesAddPlan(t *testing.T) {
@@ -474,13 +602,13 @@ func TestBillingPriceLinesAddPlan(t *testing.T) {
 		errContains string
 	}{
 		{
-			name:        "successful add plan",
+			name:        "successful add plan with explicit position",
 			priceLineID: "1",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
 				service.EXPECT().AddPlanToPriceLine(context.Background(), "1", &admin.AddPlanToPriceLineRequest{
 					PlanId:   1,
-					Position: 0,
+					Position: 1,
 				}).Return(
 					&admin.PriceLineDetailResponse{},
 					nil,
@@ -511,7 +639,7 @@ func TestBillingPriceLinesAddPlan(t *testing.T) {
 			if tt.priceLineID != "" {
 				args.args = []string{tt.priceLineID}
 			}
-			cmd := &billingPriceLinesAddPlanArgs{args: args}
+			cmd := &billingPriceLinesAddPlanArgs{args: args, planID: "1", position: 1, isSetPosition: true}
 
 			serviceFactory := func(cm config.Manager, out Output) BillingAdminService {
 				return service
@@ -540,11 +668,11 @@ func (m *billingPriceLinesDeletePlanArgs) Args() cli.Args {
 	return m.args
 }
 
-func (m *billingPriceLinesDeletePlanArgs) Int(name string) int {
+func (m *billingPriceLinesDeletePlanArgs) String(name string) string {
 	if name == "plan-id" {
-		return 1
+		return "1"
 	}
-	return 0
+	return ""
 }
 
 func TestBillingPriceLinesDeletePlan(t *testing.T) {
@@ -614,6 +742,13 @@ type billingPriceLinesUpdatePlanPositionArgs struct {
 
 func (m *billingPriceLinesUpdatePlanPositionArgs) Args() cli.Args {
 	return m.args
+}
+
+func (m *billingPriceLinesUpdatePlanPositionArgs) String(name string) string {
+	if name == "plan-id" {
+		return "1"
+	}
+	return ""
 }
 
 func (m *billingPriceLinesUpdatePlanPositionArgs) Int(name string) int {

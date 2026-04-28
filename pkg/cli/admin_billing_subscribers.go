@@ -320,12 +320,12 @@ Examples:
   pinner admin billing subscribers cancel --user-id 123 --json`,
 		Flags: []cli.Flag{
 			&cli.StringFlag{
-				Name:     "user-id",
+				Name:     FlagUserID,
 				Usage:    "User ID",
 				Required: true,
 			},
 			&cli.StringFlag{
-				Name:  "mode",
+				Name:  FlagMode,
 				Usage: "Cancel mode: immediate, end_of_billing_period, etc.",
 				Value: "end_of_billing_period",
 			},
@@ -351,8 +351,8 @@ func billingSubscribersCancelAction(ctx context.Context, cmd billingSubscribersC
 		return err
 	}
 
-	userID := cmd.String("user-id")
-	mode := cmd.String("mode")
+	userID := cmd.String(FlagUserID)
+	mode := cmd.String(FlagMode)
 	req := &admin.CancelSubscriptionRequest{
 		Mode: &mode,
 	}
@@ -382,7 +382,7 @@ Examples:
   pinner admin billing subscribers abort-cancel --user-id 123 --json`,
 		Flags: []cli.Flag{
 			&cli.StringFlag{
-				Name:     "user-id",
+				Name:     FlagUserID,
 				Usage:    "User ID",
 				Required: true,
 			},
@@ -408,7 +408,7 @@ func billingSubscribersAbortCancelAction(ctx context.Context, cmd billingSubscri
 		return err
 	}
 
-	userID := cmd.String("user-id")
+	userID := cmd.String(FlagUserID)
 	result, err := service.AbortUserSubscriptionCancellation(ctx, userID)
 	if err != nil {
 		output.PrintError(err)
@@ -434,7 +434,7 @@ Examples:
   pinner admin billing subscribers change-plan --user-id 123 --period-id 1 --json`,
 		Flags: []cli.Flag{
 			&cli.StringFlag{
-				Name:     "user-id",
+				Name:     FlagUserID,
 				Usage:    "User ID",
 				Required: true,
 			},
@@ -466,9 +466,9 @@ func billingSubscribersChangePlanAction(ctx context.Context, cmd billingSubscrib
 		return err
 	}
 
-	userID := cmd.String("user-id")
+	userID := cmd.String(FlagUserID)
 	req := &admin.ChangePlanRequest{
-		PeriodId: cmd.Int("period-id"),
+		PeriodId: cmd.Int(FlagPlanID),
 	}
 
 	result, err := service.ChangeUserPlan(ctx, userID, req)
@@ -509,7 +509,7 @@ Examples:
   pinner admin billing subscribers pause --user-id 123 --json`,
 		Flags: []cli.Flag{
 			&cli.StringFlag{
-				Name:     "user-id",
+				Name:     FlagUserID,
 				Usage:    "User ID",
 				Required: true,
 			},
@@ -535,7 +535,7 @@ func billingSubscribersPauseAction(ctx context.Context, cmd billingSubscribersPa
 		return err
 	}
 
-	userID := cmd.String("user-id")
+	userID := cmd.String(FlagUserID)
 	result, err := service.PauseUserSubscription(ctx, userID)
 	if err != nil {
 		output.PrintError(err)
@@ -561,7 +561,7 @@ Examples:
   pinner admin billing subscribers resume --user-id 123 --json`,
 		Flags: []cli.Flag{
 			&cli.StringFlag{
-				Name:     "user-id",
+				Name:     FlagUserID,
 				Usage:    "User ID",
 				Required: true,
 			},
@@ -587,7 +587,7 @@ func billingSubscribersResumeAction(ctx context.Context, cmd billingSubscribersR
 		return err
 	}
 
-	userID := cmd.String("user-id")
+	userID := cmd.String(FlagUserID)
 	result, err := service.ResumeUserSubscription(ctx, userID)
 	if err != nil {
 		output.PrintError(err)

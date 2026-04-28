@@ -306,10 +306,10 @@ func TestQuotaPlansSetDefault(t *testing.T) {
 			jsonOutput: false,
 			setupMocks: func(cfgMgr *configmocks.MockManager, svc *MockQuotaAdminService) {
 				svc.EXPECT().RequireAuthenticated().Return(nil)
-				svc.EXPECT().SetDefaultPlan(mock.Anything, "999").Return(errors.New("plan not found"))
+				svc.EXPECT().SetDefaultPlan(mock.Anything, "999").Return(errors.New("plan 999 not found"))
 			},
 			wantErr:     true,
-			errContains: "plan not found",
+			errContains: "plan 999 not found",
 		},
 	}
 
