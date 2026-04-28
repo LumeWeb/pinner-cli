@@ -15,6 +15,106 @@ import (
 	"github.com/samber/lo"
 )
 
+// Field represents a labeled key-value pair for display.
+type Field struct {
+	Label string
+	Value string
+}
+
+// FieldGroup represents a titled collection of fields for structured display.
+type FieldGroup struct {
+	Title  string
+	Fields []Field
+}
+
+// CurrencyCode represents an ISO 4217 currency code.
+type CurrencyCode string
+
+// Currency constants for ISO 4217 codes.
+const (
+	USD CurrencyCode = "USD"
+)
+
+// JSON output type constants.
+const (
+	jsonTypeList       = "list"
+	jsonTypeTable      = "table"
+	jsonTypeFields     = "fields"
+	jsonTypeListGroup  = "list-group"
+	jsonTypeMessage    = "message"
+)
+
+// Currency represents a monetary amount with a currency code.
+type Currency struct {
+	Amount float64
+	Code   CurrencyCode // "USD", "EUR", etc.
+}
+
+// String formats the currency as "Amount Code" (e.g., "19.99 USD").
+func (c Currency) String() string {
+	return fmt.Sprintf("%.2f %s", c.Amount, c.Code)
+}
+
+// NewCurrency creates a new Currency with the given amount and code.
+func NewCurrency(amount float64, code CurrencyCode) Currency {
+	return Currency{Amount: amount, Code: code}
+}
+
+// FormatCurrency formats an amount with the given currency code.
+func FormatCurrency(amount float64, code CurrencyCode) string {
+	return NewCurrency(amount, code).String()
+}
+
+// FormatUSD formats a USD amount.
+func FormatUSD(amount float32) string {
+	return FormatCurrency(float64(amount), USD)
+}
+
+// jsonFieldGroup represents a titled FieldGroup for JSON serialization.
+type jsonFieldGroup struct {
+	Title  string            `json:"title"`
+	Type   string            `json:"type"`
+	Fields map[string]string `json:"fields"`
+}
+
+// jsonListGroup represents a ListGroup for JSON serialization.
+type jsonListGroup struct {
+	Title     string            `json:"title,omitempty"`
+	Type      string            `json:"type"`
+	Fields    map[string]string `json:"fields"`
+	Items     []string          `json:"items,omitempty"`
+	ItemCount int               `json:"item_count,omitempty"`
+	Footer    string            `json:"footer,omitempty"`
+}
+
+// jsonTable represents a table for JSON serialization.
+type jsonTable struct {
+	Type    string     `json:"type"`
+	Headers []string   `json:"headers"`
+	Rows    [][]string `json:"rows"`
+}
+
+// jsonList represents a list for JSON serialization.
+type jsonList struct {
+	Type  string   `json:"type"`
+	Items []string `json:"items"`
+}
+
+// jsonMessage represents a simple message for JSON serialization.
+type jsonMessage struct {
+	Message string `json:"message"`
+}
+
+// ListGroup represents a titled collection with fields and an optional item list.
+type ListGroup struct {
+	Title     string
+	Fields    []Field
+	Items     []string
+	ItemLabel string
+	MaxItems  int
+	Footer    string
+}
+
 // sensitiveKeywords contains keywords that indicate sensitive data should be masked.
 var sensitiveKeywords = []string{"token", "auth", "password", "secret", "key"}
 
@@ -64,6 +164,12 @@ type Output interface {
 
 	// MaskSensitive masks sensitive data like tokens, passwords, etc.
 	MaskSensitive(value, key string) string
+
+	// PrintFields renders a titled group of labeled fields.
+	PrintFields(group FieldGroup)
+
+	// PrintListGroup renders a titled group with fields and an optional item list.
+	PrintListGroup(group ListGroup)
 
 	// Watch continuously monitors and displays updates for the provided data fetcher.
 	// Returns when all items reach terminal status or context is cancelled.
@@ -204,6 +310,59 @@ func (h *humanFormatter) MaskSensitive(value, key string) string {
 	return maskSensitiveValue(value, key)
 }
 
+// PrintFields renders a titled group of labeled fields with human-readable formatting.
+func (h *humanFormatter) PrintFields(group FieldGroup) {
+	if h.config.quiet {
+		return
+	}
+
+	if group.Title != "" {
+		fmt.Fprintln(h.config.writer, group.Title)
+	}
+
+	for _, field := range group.Fields {
+		fmt.Fprintf(h.config.writer, "  %s: %s\n", field.Label, field.Value)
+	}
+}
+
+// PrintListGroup renders a titled group with fields and an optional item list.
+func (h *humanFormatter) PrintListGroup(group ListGroup) {
+	if h.config.quiet {
+		return
+	}
+
+	if group.Title != "" {
+		fmt.Fprintln(h.config.writer, group.Title)
+	}
+
+	for _, field := range group.Fields {
+		fmt.Fprintf(h.config.writer, "  %s: %s\n", field.Label, field.Value)
+	}
+
+	if len(group.Items) > 0 && group.ItemLabel != "" {
+		fmt.Fprintf(h.config.writer, "  %s: %d\n", group.ItemLabel, len(group.Items))
+	}
+
+	if len(group.Items) > 0 {
+		limit := group.MaxItems
+		if limit <= 0 {
+			limit = 10
+		}
+		for i, item := range group.Items {
+			if i >= limit {
+				fmt.Fprintf(h.config.writer, "    ... and %d more\n", len(group.Items)-limit)
+				break
+			}
+			fmt.Fprintf(h.config.writer, "    - %s\n", item)
+		}
+	}
+
+	if group.Footer != "" {
+		fmt.Fprintln(h.config.writer)
+		fmt.Fprintln(h.config.writer, group.Footer)
+	}
+}
+
 // Watch continuously monitors and displays updates for the provided data fetcher.
 func (h *humanFormatter) Watch(ctx context.Context, fetcher func(context.Context) (any, error), formatter func(any) (string, []string, [][]string)) error {
 	return watchLoop(ctx, 2*time.Second, h, true, fetcher, formatter)
@@ -217,8 +376,7 @@ type jsonFormatter struct {
 // Print prints a message as JSON to the output.
 func (j *jsonFormatter) Print(message string) {
 	if !j.config.quiet {
-		data := map[string]string{"message": message}
-		j.PrintJSON(data)
+		j.PrintJSON(jsonMessage{Message: message})
 	}
 }
 
@@ -226,8 +384,7 @@ func (j *jsonFormatter) Print(message string) {
 func (j *jsonFormatter) Printf(format string, args ...any) {
 	if !j.config.quiet {
 		message := fmt.Sprintf(format, args...)
-		data := map[string]string{"message": message}
-		j.PrintJSON(data)
+		j.PrintJSON(jsonMessage{Message: message})
 	}
 }
 
@@ -235,8 +392,7 @@ func (j *jsonFormatter) Printf(format string, args ...any) {
 func (j *jsonFormatter) Printfln(format string, args ...any) {
 	if !j.config.quiet {
 		message := fmt.Sprintf(format, args...)
-		data := map[string]string{"message": message}
-		j.PrintJSON(data)
+		j.PrintJSON(jsonMessage{Message: message})
 	}
 }
 
@@ -253,12 +409,11 @@ func (j *jsonFormatter) PrintTable(headers []string, rows [][]string) {
 		return
 	}
 
-	data := map[string]any{
-		"type":    "table",
-		"headers": headers,
-		"rows":    rows,
-	}
-	j.PrintJSON(data)
+	j.PrintJSON(jsonTable{
+		Type:    jsonTypeTable,
+		Headers: headers,
+		Rows:    rows,
+	})
 }
 
 // PrintList prints items as JSON (list format).
@@ -267,11 +422,10 @@ func (j *jsonFormatter) PrintList(items []string) {
 		return
 	}
 
-	data := map[string]any{
-		"type":  "list",
-		"items": items,
-	}
-	j.PrintJSON(data)
+	j.PrintJSON(jsonList{
+		Type:  jsonTypeList,
+		Items: items,
+	})
 }
 
 // MaskSensitive masks sensitive data based on the key name.
@@ -280,6 +434,62 @@ func (j *jsonFormatter) MaskSensitive(value, key string) string {
 		return value
 	}
 	return maskSensitiveValue(value, key)
+}
+
+// PrintFields renders a titled group of labeled fields as structured JSON.
+func (j *jsonFormatter) PrintFields(group FieldGroup) {
+	if j.config.quiet {
+		return
+	}
+
+	fields := make(map[string]string, len(group.Fields))
+	for _, field := range group.Fields {
+		fields[field.Label] = field.Value
+	}
+
+	if group.Title != "" {
+		j.PrintJSON(struct {
+			Title  string            `json:"title"`
+			Type   string            `json:"type"`
+			Fields map[string]string `json:"fields"`
+		}{
+			Title:  group.Title,
+			Type:   jsonTypeFields,
+			Fields: fields,
+		})
+	} else {
+		j.PrintJSON(fields)
+	}
+}
+
+// PrintListGroup renders a titled group with fields and an optional item list as structured JSON.
+func (j *jsonFormatter) PrintListGroup(group ListGroup) {
+	if j.config.quiet {
+		return
+	}
+
+	fields := make(map[string]string, len(group.Fields))
+	for _, field := range group.Fields {
+		fields[field.Label] = field.Value
+	}
+
+	result := jsonListGroup{
+		Type:   "list-group",
+		Fields: fields,
+		Items:  group.Items,
+	}
+
+	if group.Title != "" {
+		result.Title = group.Title
+	}
+	if group.Footer != "" {
+		result.Footer = group.Footer
+	}
+	if len(group.Items) > 0 && group.ItemLabel != "" {
+		result.ItemCount = len(group.Items)
+	}
+
+	j.PrintJSON(result)
 }
 
 // Watch continuously monitors and displays updates for the provided data fetcher.

@@ -147,15 +147,20 @@ func billingPriceLinesGetAction(ctx context.Context, cmd billingPriceLinesGetCmd
 		return output.PrintJSON(priceLine)
 	}
 
-	output.Printfln("Price Line ID: %d", priceLine.Id)
-	output.Printfln("Name: %s", priceLine.Name)
-	if priceLine.Description != "" {
-		output.Printfln("Description: %s", priceLine.Description)
+	fields := []Field{
+		{Label: "Price Line ID", Value: strconv.FormatInt(int64(priceLine.Id), 10)},
+		{Label: "Name", Value: priceLine.Name},
 	}
-	output.Printfln("Active: %t", priceLine.IsActive)
-	output.Printfln("Default: %t", priceLine.IsDefault)
-	output.Printfln("Created At: %s", priceLine.CreatedAt.Format("2006-01-02 15:04:05"))
-	output.Printfln("Updated At: %s", priceLine.UpdatedAt.Format("2006-01-02 15:04:05"))
+	if priceLine.Description != "" {
+		fields = append(fields, Field{Label: "Description", Value: priceLine.Description})
+	}
+	fields = append(fields,
+		Field{Label: "Active", Value: strconv.FormatBool(priceLine.IsActive)},
+		Field{Label: "Default", Value: strconv.FormatBool(priceLine.IsDefault)},
+		Field{Label: "Created At", Value: priceLine.CreatedAt.Format("2006-01-02 15:04:05")},
+		Field{Label: "Updated At", Value: priceLine.UpdatedAt.Format("2006-01-02 15:04:05")},
+	)
+	output.PrintFields(FieldGroup{Fields: fields})
 
 	if len(priceLine.Plans) > 0 {
 		output.Printfln("\nAssociated Plans:")
@@ -252,10 +257,14 @@ func billingPriceLinesCreateAction(ctx context.Context, cmd billingPriceLinesCre
 		return output.PrintJSON(priceLine)
 	}
 
-	output.Printfln("Price line created successfully:")
-	output.Printfln("  ID: %d", priceLine.Id)
-	output.Printfln("  Name: %s", priceLine.Name)
-	output.Printfln("  Active: %t", priceLine.IsActive)
+	output.PrintFields(FieldGroup{
+		Title: "Price line created successfully:",
+		Fields: []Field{
+			{Label: "ID", Value: strconv.FormatInt(int64(priceLine.Id), 10)},
+			{Label: "Name", Value: priceLine.Name},
+			{Label: "Active", Value: strconv.FormatBool(priceLine.IsActive)},
+		},
+	})
 	return nil
 }
 
@@ -342,10 +351,14 @@ func billingPriceLinesUpdateAction(ctx context.Context, cmd billingPriceLinesUpd
 		return output.PrintJSON(priceLine)
 	}
 
-	output.Printfln("Price line updated successfully:")
-	output.Printfln("  ID: %d", priceLine.Id)
-	output.Printfln("  Name: %s", priceLine.Name)
-	output.Printfln("  Active: %t", priceLine.IsActive)
+	output.PrintFields(FieldGroup{
+		Title: "Price line updated successfully:",
+		Fields: []Field{
+			{Label: "ID", Value: strconv.FormatInt(int64(priceLine.Id), 10)},
+			{Label: "Name", Value: priceLine.Name},
+			{Label: "Active", Value: strconv.FormatBool(priceLine.IsActive)},
+		},
+	})
 	return nil
 }
 

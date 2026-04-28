@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"strings"
 
@@ -103,27 +104,20 @@ func DryRunOption(key, value string) map[string]string {
 
 // RenderDryRun renders a dry-run preview in a consistent format.
 func RenderDryRun(output Output, preview DryRunPreview) {
-	output.Printfln("[DRY RUN] Preview of %s:", preview.Operation)
+	fields := []Field{}
 	if preview.Endpoint != "" {
-		output.Printfln("  Endpoint: %s", preview.Endpoint)
-	}
-	if preview.Items != nil && len(preview.Items) > 0 {
-		output.Printfln("  %s: %d", preview.ItemLabel, len(preview.Items))
-		limit := preview.MaxItems
-		if limit <= 0 {
-			limit = 10
-		}
-		for i, item := range preview.Items {
-			if i >= limit {
-				output.Printfln("    ... and %d more", len(preview.Items)-limit)
-				break
-			}
-			output.Printfln("    - %s", item)
-		}
+		fields = append(fields, Field{Label: "Endpoint", Value: preview.Endpoint})
 	}
 	for key, value := range preview.Options {
-		output.Printfln("  %s: %s", key, value)
+		fields = append(fields, Field{Label: key, Value: value})
 	}
-	output.Printfln("")
-	output.Printfln("[DRY RUN] No changes were made. Remove --dry-run to execute.")
+
+	output.PrintListGroup(ListGroup{
+		Title:     fmt.Sprintf("[DRY RUN] Preview of %s:", preview.Operation),
+		Fields:    fields,
+		Items:     preview.Items,
+		ItemLabel: preview.ItemLabel,
+		MaxItems:  preview.MaxItems,
+		Footer:    "[DRY RUN] No changes were made. Remove --dry-run to execute.",
+	})
 }

@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/pkg/config"
@@ -160,11 +161,15 @@ func billingPricingPlansCreateAction(ctx context.Context, cmd billingPricingPlan
 		return output.PrintJSON(plan)
 	}
 
-	output.Printfln("Pricing plan created successfully:")
-	output.Printfln("  ID: %d", plan.Id)
-	output.Printfln("  Name: %s", plan.Name)
-	output.Printfln("  Currency: %s", plan.Currency)
-	output.Printfln("  Active: %t", plan.IsActive)
+	output.PrintFields(FieldGroup{
+		Title: "Pricing plan created successfully:",
+		Fields: []Field{
+			{Label: "ID", Value: strconv.FormatInt(int64(plan.Id), 10)},
+			{Label: "Name", Value: plan.Name},
+			{Label: "Currency", Value: plan.Currency},
+			{Label: "Active", Value: strconv.FormatBool(plan.IsActive)},
+		},
+	})
 	return nil
 }
 
@@ -258,11 +263,15 @@ func billingPricingPlansUpdateAction(ctx context.Context, cmd billingPricingPlan
 		return output.PrintJSON(plan)
 	}
 
-	output.Printfln("Pricing plan updated successfully:")
-	output.Printfln("  ID: %d", plan.Id)
-	output.Printfln("  Name: %s", plan.Name)
-	output.Printfln("  Currency: %s", plan.Currency)
-	output.Printfln("  Active: %t", plan.IsActive)
+	output.PrintFields(FieldGroup{
+		Title: "Pricing plan updated successfully:",
+		Fields: []Field{
+			{Label: "ID", Value: strconv.FormatInt(int64(plan.Id), 10)},
+			{Label: "Name", Value: plan.Name},
+			{Label: "Currency", Value: plan.Currency},
+			{Label: "Active", Value: strconv.FormatBool(plan.IsActive)},
+		},
+	})
 	return nil
 }
 
@@ -519,11 +528,15 @@ func billingPricingPlanPeriodsCreateAction(ctx context.Context, cmd billingPrici
 		return output.PrintJSON(period)
 	}
 
-	output.Printfln("Pricing plan period created successfully:")
-	output.Printfln("  ID: %d", period.Id)
-	output.Printfln("  Plan ID: %d", period.PricingPlanId)
-	output.Printfln("  Price: %.2f USD", period.PriceUsd)
-	output.Printfln("  Cadence: %s", period.Cadence)
+	output.PrintFields(FieldGroup{
+		Title: "Pricing plan period created successfully:",
+		Fields: []Field{
+			{Label: "ID", Value: strconv.FormatInt(int64(period.Id), 10)},
+			{Label: "Plan ID", Value: strconv.FormatInt(int64(period.PricingPlanId), 10)},
+			{Label: "Price", Value: FormatUSD(period.PriceUsd)},
+			{Label: "Cadence", Value: string(period.Cadence)},
+		},
+	})
 	return nil
 }
 
@@ -612,11 +625,15 @@ func billingPricingPlanPeriodsUpdateAction(ctx context.Context, cmd billingPrici
 		return output.PrintJSON(period)
 	}
 
-	output.Printfln("Pricing plan period updated successfully:")
-	output.Printfln("  ID: %d", period.Id)
-	output.Printfln("  Plan ID: %d", period.PricingPlanId)
-	output.Printfln("  Price: %.2f USD", period.PriceUsd)
-	output.Printfln("  Cadence: %s", period.Cadence)
+	output.PrintFields(FieldGroup{
+		Title: "Pricing plan period updated successfully:",
+		Fields: []Field{
+			{Label: "ID", Value: strconv.FormatInt(int64(period.Id), 10)},
+			{Label: "Plan ID", Value: strconv.FormatInt(int64(period.PricingPlanId), 10)},
+			{Label: "Price", Value: FormatUSD(period.PriceUsd)},
+			{Label: "Cadence", Value: string(period.Cadence)},
+		},
+	})
 	return nil
 }
 

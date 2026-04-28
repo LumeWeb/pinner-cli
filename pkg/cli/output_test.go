@@ -578,6 +578,271 @@ func TestJSONFormatterPrintList(t *testing.T) {
 	})
 }
 
+func TestHumanFormatterPrintFields(t *testing.T) {
+	t.Run("prints title and fields", func(t *testing.T) {
+		var buf bytes.Buffer
+		formatter := &humanFormatter{
+			baseFormatter: baseFormatter{
+				config: outputConfig{
+					quiet:  false,
+					writer: &buf,
+				},
+			},
+		}
+
+		formatter.PrintFields(FieldGroup{
+			Title: "Credit created successfully:",
+			Fields: []Field{
+				{Label: "ID", Value: "abc-123"},
+				{Label: "Amount", Value: "100"},
+				{Label: "Type", Value: "grant"},
+			},
+		})
+
+		expected := "Credit created successfully:\n  ID: abc-123\n  Amount: 100\n  Type: grant\n"
+		assert.Equal(t, expected, buf.String())
+	})
+
+	t.Run("prints fields without title", func(t *testing.T) {
+		var buf bytes.Buffer
+		formatter := &humanFormatter{
+			baseFormatter: baseFormatter{
+				config: outputConfig{
+					quiet:  false,
+					writer: &buf,
+				},
+			},
+		}
+
+		formatter.PrintFields(FieldGroup{
+			Fields: []Field{
+				{Label: "Version", Value: "1.0.0"},
+				{Label: "OS", Value: "linux/amd64"},
+			},
+		})
+
+		expected := "  Version: 1.0.0\n  OS: linux/amd64\n"
+		assert.Equal(t, expected, buf.String())
+	})
+
+	t.Run("suppresses output when quiet", func(t *testing.T) {
+		var buf bytes.Buffer
+		formatter := &humanFormatter{
+			baseFormatter: baseFormatter{
+				config: outputConfig{
+					quiet:  true,
+					writer: &buf,
+				},
+			},
+		}
+
+		formatter.PrintFields(FieldGroup{
+			Title: "Title",
+			Fields: []Field{
+				{Label: "Key", Value: "value"},
+			},
+		})
+
+		assert.Empty(t, buf.String())
+	})
+}
+
+func TestJSONFormatterPrintFields(t *testing.T) {
+	t.Run("prints title and fields as JSON", func(t *testing.T) {
+		var buf bytes.Buffer
+		formatter := &jsonFormatter{
+			baseFormatter: baseFormatter{
+				config: outputConfig{
+					quiet:  false,
+					writer: &buf,
+				},
+			},
+		}
+
+		formatter.PrintFields(FieldGroup{
+			Title: "Credit created successfully:",
+			Fields: []Field{
+				{Label: "ID", Value: "abc-123"},
+				{Label: "Amount", Value: "100"},
+			},
+		})
+
+		var result struct {
+			Title  string            `json:"title"`
+			Type   string            `json:"type"`
+			Fields map[string]string `json:"fields"`
+		}
+		err := json.Unmarshal(buf.Bytes(), &result)
+		require.NoError(t, err)
+
+		assert.Equal(t, "Credit created successfully:", result.Title)
+		assert.Equal(t, "fields", result.Type)
+		assert.Equal(t, "abc-123", result.Fields["ID"])
+		assert.Equal(t, "100", result.Fields["Amount"])
+	})
+
+	t.Run("prints fields without title as flat JSON", func(t *testing.T) {
+		var buf bytes.Buffer
+		formatter := &jsonFormatter{
+			baseFormatter: baseFormatter{
+				config: outputConfig{
+					quiet:  false,
+					writer: &buf,
+				},
+			},
+		}
+
+		formatter.PrintFields(FieldGroup{
+			Fields: []Field{
+				{Label: "Version", Value: "1.0.0"},
+				{Label: "OS", Value: "linux/amd64"},
+			},
+		})
+
+		var result struct {
+			Version string `json:"Version"`
+			OS      string `json:"OS"`
+		}
+		err := json.Unmarshal(buf.Bytes(), &result)
+		require.NoError(t, err)
+
+		assert.Equal(t, "1.0.0", result.Version)
+		assert.Equal(t, "linux/amd64", result.OS)
+	})
+
+	t.Run("suppresses output when quiet", func(t *testing.T) {
+		var buf bytes.Buffer
+		formatter := &jsonFormatter{
+			baseFormatter: baseFormatter{
+				config: outputConfig{
+					quiet:  true,
+					writer: &buf,
+				},
+			},
+		}
+
+		formatter.PrintFields(FieldGroup{
+			Title: "Title",
+			Fields: []Field{
+				{Label: "Key", Value: "value"},
+			},
+		})
+
+		assert.Empty(t, buf.String())
+	})
+}
+
+func TestHumanFormatterPrintListGroup(t *testing.T) {
+	t.Run("prints title, fields, items with truncation", func(t *testing.T) {
+		var buf bytes.Buffer
+		formatter := &humanFormatter{
+			baseFormatter: baseFormatter{
+				config: outputConfig{
+					quiet:  false,
+					writer: &buf,
+				},
+			},
+		}
+
+		formatter.PrintListGroup(ListGroup{
+			Title:     "[DRY RUN] Preview of delete:",
+			Fields:    []Field{{Label: "Endpoint", Value: "/api/test"}},
+			ItemLabel: "Items",
+			Items:     []string{"item1", "item2", "item3", "item4"},
+			MaxItems:  2,
+			Footer:    "[DRY RUN] No changes made.",
+		})
+
+		result := buf.String()
+		assert.Contains(t, result, "[DRY RUN] Preview of delete:")
+		assert.Contains(t, result, "  Endpoint: /api/test")
+		assert.Contains(t, result, "  Items: 4")
+		assert.Contains(t, result, "    - item1")
+		assert.Contains(t, result, "    - item2")
+		assert.Contains(t, result, "    ... and 2 more")
+		assert.Contains(t, result, "[DRY RUN] No changes made.")
+	})
+
+	t.Run("suppresses output when quiet", func(t *testing.T) {
+		var buf bytes.Buffer
+		formatter := &humanFormatter{
+			baseFormatter: baseFormatter{
+				config: outputConfig{
+					quiet:  true,
+					writer: &buf,
+				},
+			},
+		}
+
+		formatter.PrintListGroup(ListGroup{
+			Title:  "Title",
+			Fields: []Field{{Label: "Key", Value: "value"}},
+		})
+
+		assert.Empty(t, buf.String())
+	})
+}
+
+func TestJSONFormatterPrintListGroup(t *testing.T) {
+	t.Run("renders as structured JSON", func(t *testing.T) {
+		var buf bytes.Buffer
+		formatter := &jsonFormatter{
+			baseFormatter: baseFormatter{
+				config: outputConfig{
+					quiet:  false,
+					writer: &buf,
+				},
+			},
+		}
+
+		formatter.PrintListGroup(ListGroup{
+			Title:     "[DRY RUN] Preview of delete:",
+			Fields:    []Field{{Label: "Endpoint", Value: "/api/test"}},
+			ItemLabel: "Items",
+			Items:     []string{"item1", "item2"},
+			Footer:    "[DRY RUN] No changes.",
+		})
+
+		var result struct {
+			Title     string            `json:"title"`
+			Type      string            `json:"type"`
+			Fields    map[string]string `json:"fields"`
+			Items     []string          `json:"items"`
+			ItemCount int               `json:"item_count"`
+			Footer    string            `json:"footer"`
+		}
+		err := json.Unmarshal(buf.Bytes(), &result)
+		require.NoError(t, err)
+
+		assert.Equal(t, "[DRY RUN] Preview of delete:", result.Title)
+		assert.Equal(t, "list-group", result.Type)
+		assert.Contains(t, result.Fields, "Endpoint")
+		assert.Equal(t, "/api/test", result.Fields["Endpoint"])
+		assert.Equal(t, 2, result.ItemCount)
+		assert.Equal(t, []string{"item1", "item2"}, result.Items)
+		assert.Equal(t, "[DRY RUN] No changes.", result.Footer)
+	})
+
+	t.Run("suppresses output when quiet", func(t *testing.T) {
+		var buf bytes.Buffer
+		formatter := &jsonFormatter{
+			baseFormatter: baseFormatter{
+				config: outputConfig{
+					quiet:  true,
+					writer: &buf,
+				},
+			},
+		}
+
+		formatter.PrintListGroup(ListGroup{
+			Title:  "Title",
+			Fields: []Field{{Label: "Key", Value: "value"}},
+		})
+
+		assert.Empty(t, buf.String())
+	})
+}
+
 func TestNewOutputFormatterCombinations(t *testing.T) {
 	testCases := []struct {
 		name          string

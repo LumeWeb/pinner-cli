@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/pkg/config"
@@ -120,36 +121,41 @@ func billingSubscribersGetAction(ctx context.Context, cmd billingSubscribersGetC
 		return output.PrintJSON(subscriber)
 	}
 
-	output.Printfln("Subscriber ID: %d", subscriber.Id)
-	output.Printfln("User ID: %d", subscriber.UserId)
-	output.Printfln("External ID: %s", subscriber.ExternalId)
-	output.Printfln("Gateway Type: %s", subscriber.GatewayType)
-	output.Printfln("Subscription ID: %s", subscriber.SubscriptionId)
-	output.Printfln("Active: %t", subscriber.IsActive)
+	fields := []Field{
+		{Label: "Subscriber ID", Value: strconv.FormatInt(int64(subscriber.Id), 10)},
+		{Label: "User ID", Value: strconv.FormatInt(int64(subscriber.UserId), 10)},
+		{Label: "External ID", Value: subscriber.ExternalId},
+		{Label: "Gateway Type", Value: string(subscriber.GatewayType)},
+		{Label: "Subscription ID", Value: subscriber.SubscriptionId},
+		{Label: "Active", Value: strconv.FormatBool(subscriber.IsActive)},
+	}
 
 	if subscriber.PaymentStatus != nil {
-		output.Printfln("Payment Status: %s", *subscriber.PaymentStatus)
+		fields = append(fields, Field{Label: "Payment Status", Value: string(*subscriber.PaymentStatus)})
 	}
 	if subscriber.PreviousPlanId != nil {
-		output.Printfln("Previous Plan ID: %d", *subscriber.PreviousPlanId)
+		fields = append(fields, Field{Label: "Previous Plan ID", Value: strconv.FormatInt(int64(*subscriber.PreviousPlanId), 10)})
 	}
 	if subscriber.PricingPlanPeriodId != nil {
-		output.Printfln("Plan Period ID: %d", *subscriber.PricingPlanPeriodId)
+		fields = append(fields, Field{Label: "Plan Period ID", Value: strconv.FormatInt(int64(*subscriber.PricingPlanPeriodId), 10)})
 	}
 	if subscriber.BillingPeriodStart != nil {
-		output.Printfln("Billing Period Start: %s", subscriber.BillingPeriodStart.Format("2006-01-02 15:04:05"))
+		fields = append(fields, Field{Label: "Billing Period Start", Value: subscriber.BillingPeriodStart.Format("2006-01-02 15:04:05")})
 	}
 	if subscriber.BillingPeriodEnd != nil {
-		output.Printfln("Billing Period End: %s", subscriber.BillingPeriodEnd.Format("2006-01-02 15:04:05"))
+		fields = append(fields, Field{Label: "Billing Period End", Value: subscriber.BillingPeriodEnd.Format("2006-01-02 15:04:05")})
 	}
 	if subscriber.CancelledAt != nil {
-		output.Printfln("Cancelled At: %s", subscriber.CancelledAt.Format("2006-01-02 15:04:05"))
+		fields = append(fields, Field{Label: "Cancelled At", Value: subscriber.CancelledAt.Format("2006-01-02 15:04:05")})
 	}
 	if subscriber.WillCancelAt != nil {
-		output.Printfln("Will Cancel At: %s", subscriber.WillCancelAt.Format("2006-01-02 15:04:05"))
+		fields = append(fields, Field{Label: "Will Cancel At", Value: subscriber.WillCancelAt.Format("2006-01-02 15:04:05")})
 	}
-	output.Printfln("Created At: %s", subscriber.CreatedAt.Format("2006-01-02 15:04:05"))
-	output.Printfln("Updated At: %s", subscriber.UpdatedAt.Format("2006-01-02 15:04:05"))
+	fields = append(fields,
+		Field{Label: "Created At", Value: subscriber.CreatedAt.Format("2006-01-02 15:04:05")},
+		Field{Label: "Updated At", Value: subscriber.UpdatedAt.Format("2006-01-02 15:04:05")},
+	)
+	output.PrintFields(FieldGroup{Fields: fields})
 
 	return nil
 }
@@ -361,14 +367,7 @@ func billingSubscribersCancelAction(ctx context.Context, cmd billingSubscribersC
 		return output.PrintJSON(result)
 	}
 
-	output.Printfln("Subscription cancelled")
-	output.Printfln("Action: %s", result.Action)
-	if result.ConfirmationMessage != nil {
-		output.Printfln("Confirmation: %s", *result.ConfirmationMessage)
-	}
-	if result.EffectiveTime != nil {
-		output.Printfln("Effective Time: %s", result.EffectiveTime.Format("2006-01-02 15:04:05"))
-	}
+	printSubscriptionActionResult(output, "Subscription cancelled", result)
 	return nil
 }
 
@@ -420,14 +419,7 @@ func billingSubscribersAbortCancelAction(ctx context.Context, cmd billingSubscri
 		return output.PrintJSON(result)
 	}
 
-	output.Printfln("Cancellation aborted")
-	output.Printfln("Action: %s", result.Action)
-	if result.ConfirmationMessage != nil {
-		output.Printfln("Confirmation: %s", *result.ConfirmationMessage)
-	}
-	if result.EffectiveTime != nil {
-		output.Printfln("Effective Time: %s", result.EffectiveTime.Format("2006-01-02 15:04:05"))
-	}
+	printSubscriptionActionResult(output, "Cancellation aborted", result)
 	return nil
 }
 
@@ -489,16 +481,20 @@ func billingSubscribersChangePlanAction(ctx context.Context, cmd billingSubscrib
 		return output.PrintJSON(result)
 	}
 
-	output.Printfln("Plan change initiated")
-	output.Printfln("Action: %s", result.Action)
+	fields := []Field{
+		{Label: "Action", Value: string(result.Action)},
+	}
 	if result.CheckoutLink != nil {
-		output.Printfln("Checkout Link: %s", *result.CheckoutLink)
+		fields = append(fields, Field{Label: "Checkout Link", Value: *result.CheckoutLink})
 	}
 	if result.EffectiveDate != nil {
-		output.Printfln("Effective: %s", result.EffectiveDate.Format("2006-01-02 15:04:05"))
+		fields = append(fields, Field{Label: "Effective", Value: result.EffectiveDate.Format("2006-01-02 15:04:05")})
 	}
-	output.Printfln("Charge Due: %s", result.ChargeDue)
-	output.Printfln("Credit Applied: %s", result.CreditApplied)
+	fields = append(fields,
+		Field{Label: "Charge Due", Value: result.ChargeDue.String()},
+		Field{Label: "Credit Applied", Value: result.CreditApplied.String()},
+	)
+	output.PrintFields(FieldGroup{Title: "Plan change initiated", Fields: fields})
 	return nil
 }
 
@@ -550,14 +546,7 @@ func billingSubscribersPauseAction(ctx context.Context, cmd billingSubscribersPa
 		return output.PrintJSON(result)
 	}
 
-	output.Printfln("Subscription paused")
-	output.Printfln("Action: %s", result.Action)
-	if result.ConfirmationMessage != nil {
-		output.Printfln("Confirmation: %s", *result.ConfirmationMessage)
-	}
-	if result.EffectiveTime != nil {
-		output.Printfln("Effective Time: %s", result.EffectiveTime.Format("2006-01-02 15:04:05"))
-	}
+	printSubscriptionActionResult(output, "Subscription paused", result)
 	return nil
 }
 
@@ -609,13 +598,19 @@ func billingSubscribersResumeAction(ctx context.Context, cmd billingSubscribersR
 		return output.PrintJSON(result)
 	}
 
-	output.Printfln("Subscription resumed")
-	output.Printfln("Action: %s", result.Action)
+	printSubscriptionActionResult(output, "Subscription resumed", result)
+	return nil
+}
+
+func printSubscriptionActionResult(output Output, title string, result *admin.ManagementResult) {
+	fields := []Field{
+		{Label: "Action", Value: string(result.Action)},
+	}
 	if result.ConfirmationMessage != nil {
-		output.Printfln("Confirmation: %s", *result.ConfirmationMessage)
+		fields = append(fields, Field{Label: "Confirmation", Value: *result.ConfirmationMessage})
 	}
 	if result.EffectiveTime != nil {
-		output.Printfln("Effective Time: %s", result.EffectiveTime.Format("2006-01-02 15:04:05"))
+		fields = append(fields, Field{Label: "Effective Time", Value: result.EffectiveTime.Format("2006-01-02 15:04:05")})
 	}
-	return nil
+	output.PrintFields(FieldGroup{Title: title, Fields: fields})
 }
