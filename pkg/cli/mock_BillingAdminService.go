@@ -1027,6 +1027,74 @@ func (_c *MockBillingAdminService_GetPriceLine_Call) RunAndReturn(run func(ctx c
 	return _c
 }
 
+// GetPricingPlan provides a mock function for the type MockBillingAdminService
+func (_mock *MockBillingAdminService) GetPricingPlan(ctx context.Context, planID string) (*admin.PricingPlan, error) {
+	ret := _mock.Called(ctx, planID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetPricingPlan")
+	}
+
+	var r0 *admin.PricingPlan
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) (*admin.PricingPlan, error)); ok {
+		return returnFunc(ctx, planID)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) *admin.PricingPlan); ok {
+		r0 = returnFunc(ctx, planID)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*admin.PricingPlan)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string) error); ok {
+		r1 = returnFunc(ctx, planID)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockBillingAdminService_GetPricingPlan_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetPricingPlan'
+type MockBillingAdminService_GetPricingPlan_Call struct {
+	*mock.Call
+}
+
+// GetPricingPlan is a helper method to define mock.On call
+//   - ctx context.Context
+//   - planID string
+func (_e *MockBillingAdminService_Expecter) GetPricingPlan(ctx interface{}, planID interface{}) *MockBillingAdminService_GetPricingPlan_Call {
+	return &MockBillingAdminService_GetPricingPlan_Call{Call: _e.mock.On("GetPricingPlan", ctx, planID)}
+}
+
+func (_c *MockBillingAdminService_GetPricingPlan_Call) Run(run func(ctx context.Context, planID string)) *MockBillingAdminService_GetPricingPlan_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockBillingAdminService_GetPricingPlan_Call) Return(pricingPlan *admin.PricingPlan, err error) *MockBillingAdminService_GetPricingPlan_Call {
+	_c.Call.Return(pricingPlan, err)
+	return _c
+}
+
+func (_c *MockBillingAdminService_GetPricingPlan_Call) RunAndReturn(run func(ctx context.Context, planID string) (*admin.PricingPlan, error)) *MockBillingAdminService_GetPricingPlan_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // GetPricingPlanPeriod provides a mock function for the type MockBillingAdminService
 func (_mock *MockBillingAdminService) GetPricingPlanPeriod(ctx context.Context, periodID string) (*admin.PricingPlanPeriod, error) {
 	ret := _mock.Called(ctx, periodID)

@@ -172,6 +172,7 @@ type BillingAdminService interface {
 
 	// Pricing plan operations
 	ListPricingPlans(ctx context.Context) ([]*admin.PricingPlanItem, int, error)
+	GetPricingPlan(ctx context.Context, planID string) (*admin.PricingPlan, error)
 	CreatePricingPlan(ctx context.Context, req *admin.PricingPlanCreateRequest) (*admin.PricingPlan, error)
 	UpdatePricingPlan(ctx context.Context, planID string, req *admin.PricingPlanUpdateRequest) (*admin.PricingPlan, error)
 	DeletePricingPlan(ctx context.Context, planID string) error
@@ -509,6 +510,13 @@ func (s *billingAdminService) DeletePriceLine(ctx context.Context, priceLineID s
 func (s *billingAdminService) ListPricingPlans(ctx context.Context) ([]*admin.PricingPlanItem, int, error) {
 	return with3(s, ctx, func(svc *admin.BillingService) ([]*admin.PricingPlanItem, int, error) {
 		return svc.ListPricingPlans(ctx)
+	})
+}
+
+// GetPricingPlan retrieves a pricing plan by ID.
+func (s *billingAdminService) GetPricingPlan(ctx context.Context, planID string) (*admin.PricingPlan, error) {
+	return with2(s, ctx, func(svc *admin.BillingService) (*admin.PricingPlan, error) {
+		return svc.GetPricingPlan(ctx, planID)
 	})
 }
 

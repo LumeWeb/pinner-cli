@@ -255,10 +255,11 @@ func TestNewBillingPricingPlansCommand(t *testing.T) {
 		cmd := newBillingPricingPlansCommand()
 
 		require.NotNil(t, cmd.Commands)
-		assert.Len(t, cmd.Commands, 4)
+		assert.Len(t, cmd.Commands, 5)
 
 		subcommandNames := getSubcommandNames(cmd.Commands)
 		assert.Contains(t, subcommandNames, "list")
+		assert.Contains(t, subcommandNames, "get")
 		assert.Contains(t, subcommandNames, "create")
 		assert.Contains(t, subcommandNames, "update")
 		assert.Contains(t, subcommandNames, "delete")

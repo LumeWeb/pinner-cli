@@ -524,6 +524,7 @@ func newBillingPricingPlansCommand() *cli.Command {
   pinner admin billing pricing-plans list`,
 		Commands: []*cli.Command{
 			newBillingPricingPlansListCommand(),
+			newBillingPricingPlansGetCommand(),
 			newBillingPricingPlansCreateCommand(),
 			newBillingPricingPlansUpdateCommand(),
 			newBillingPricingPlansDeleteCommand(),

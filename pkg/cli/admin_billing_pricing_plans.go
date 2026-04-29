@@ -73,6 +73,94 @@ func billingPricingPlansListAction(ctx context.Context, cmd billingPricingPlansL
 	return nil
 }
 
+func newBillingPricingPlansGetCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "get",
+		Usage: "Get pricing plan by ID",
+		Description: `Get details of a specific pricing plan.
+
+Arguments:
+  <plan-id>  The unique identifier of the pricing plan
+
+Examples:
+  pinner admin billing pricing-plans get 1
+  pinner admin billing pricing-plans get 5 --json`,
+		ArgsUsage: "<plan-id>",
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			cfgMgr, output, err := setupCommandContext(cmd)
+			if err != nil {
+				return err
+			}
+			return billingPricingPlansGetAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultBillingAdminServiceFactory)
+		},
+	}
+}
+
+// billingPricingPlansGetCmdGetter defines the interface for getting get command args.
+type billingPricingPlansGetCmdGetter interface {
+	Args() cli.Args
+}
+
+func billingPricingPlansGetAction(ctx context.Context, cmd billingPricingPlansGetCmdGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
+	if cmd.Args().Len() < 1 {
+		return fmt.Errorf("plan ID is required")
+	}
+
+	service := serviceFactory(cfgMgr, output)
+	if err := service.RequireAuthenticated(); err != nil {
+		return err
+	}
+
+	planID := cmd.Args().First()
+	plan, err := service.GetPricingPlan(ctx, planID)
+	if err != nil {
+		output.PrintError(err)
+		return err
+	}
+
+	if output.IsJSON() {
+		return output.PrintJSON(plan)
+	}
+
+	output.PrintFields(FieldGroup{
+		Title: "Pricing Plan Details:",
+		Fields: []Field{
+			{Label: "ID", Value: strconv.FormatInt(int64(plan.Id), 10)},
+			{Label: "Name", Value: plan.Name},
+			{Label: "Currency", Value: plan.Currency},
+			{Label: "Active", Value: strconv.FormatBool(plan.IsActive)},
+			{Label: "Public", Value: strconv.FormatBool(plan.IsPublic)},
+		},
+	})
+
+	if plan.Description != "" {
+		output.Printf("\n  Description: %s\n", plan.Description)
+	}
+
+	if len(plan.PricingPeriods) > 0 {
+		output.Printf("\n")
+		output.PrintFields(FieldGroup{
+			Title: fmt.Sprintf("Pricing Periods (%d):", len(plan.PricingPeriods)),
+		})
+		headers := []string{"ID", "Price", "Cadence", "Quota Plan ID", "Active"}
+		rows := make([][]string, len(plan.PricingPeriods))
+		for i, p := range plan.PricingPeriods {
+			quotaPlanID := strconv.FormatInt(int64(p.QuotaPlanId), 10)
+			rows[i] = []string{
+				fmt.Sprintf("%d", p.Id),
+				FormatUSD(p.PriceUsd),
+				p.Cadence,
+				quotaPlanID,
+				fmt.Sprintf("%t", p.IsActive),
+			}
+		}
+		output.PrintTable(headers, rows)
+	}
+
+	return nil
+}
+
+
 func newBillingPricingPlansCreateCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "create",
