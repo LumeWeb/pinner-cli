@@ -772,6 +772,7 @@ type billingPricingPlanPeriodsUpdateCmd struct {
 	cadence     string
 	quotaPlanID int
 	rollingDays int
+	allowFree   bool
 	isSet       map[string]bool
 }
 
@@ -803,6 +804,13 @@ func (m *billingPricingPlanPeriodsUpdateCmd) Int(name string) int {
 	return 0
 }
 
+func (m *billingPricingPlanPeriodsUpdateCmd) Bool(name string) bool {
+	if name == FlagAllowFree {
+		return m.allowFree
+	}
+	return false
+}
+
 func (m *billingPricingPlanPeriodsUpdateCmd) IsSet(name string) bool {
 	if m.isSet == nil {
 		return false
@@ -814,6 +822,9 @@ func TestBillingPricingPlanPeriodsUpdate(t *testing.T) {
 	tests := []struct {
 		name        string
 		periodID    string
+		price       float64
+		allowFree   bool
+		isSet       map[string]bool
 		setupMocks  func(*configmocks.MockManager, *MockBillingAdminService)
 		wantErr     bool
 		errContains string
@@ -821,12 +832,30 @@ func TestBillingPricingPlanPeriodsUpdate(t *testing.T) {
 		{
 			name:     "successful update",
 			periodID: "1",
+			price:    19.99,
+			isSet:    map[string]bool{"price": true},
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
 				service.EXPECT().UpdatePricingPlanPeriod(context.Background(), "1", &admin.PricingPlanPeriodUpdateRequest{
 					PriceUsd: 19.99,
 				}).Return(
 					unmarshalPricingPlanPeriodJSON(`{"id":1,"pricing_plan_id":1,"price_usd":19.99,"cadence":"monthly","is_active":true}`),
+					nil,
+				)
+			},
+			wantErr: false,
+		},
+		{
+			name:     "allow-free sets AllowFree on request",
+			periodID: "1",
+			price:    0,
+			allowFree: true,
+			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
+				service.EXPECT().RequireAuthenticated().Return(nil)
+				service.EXPECT().UpdatePricingPlanPeriod(context.Background(), "1", mock.MatchedBy(func(req *admin.PricingPlanPeriodUpdateRequest) bool {
+					return req.AllowFree != nil && *req.AllowFree == true && req.PriceUsd == 0
+				})).Return(
+					unmarshalPricingPlanPeriodJSON(`{"id":1,"pricing_plan_id":1,"price_usd":0,"cadence":"monthly","is_active":true}`),
 					nil,
 				)
 			},
@@ -856,11 +885,10 @@ func TestBillingPricingPlanPeriodsUpdate(t *testing.T) {
 				args.args = []string{tt.periodID}
 			}
 			cmd := &billingPricingPlanPeriodsUpdateCmd{
-				args:  args,
-				price: 19.99,
-				isSet: map[string]bool{
-					"price": true,
-				},
+				args:      args,
+				price:     tt.price,
+				allowFree: tt.allowFree,
+				isSet:     tt.isSet,
 			}
 
 			serviceFactory := func(cm config.Manager, out Output) BillingAdminService {

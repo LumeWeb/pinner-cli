@@ -757,8 +757,8 @@ go.lumeweb.com/portal-middleware v0.3.4 h1:A9/Ipo3giX449CCgbKGco97IqDxFG7Z1ppmM1
 go.lumeweb.com/portal-middleware v0.3.4/go.mod h1:3dHvOYXApc1b673I1UAoYBpyXg2c7ku4HqxXvef8dj8=
 go.lumeweb.com/portal-router v0.6.11 h1:0PTej57mtNcRpKZNukD0j0ZYp5ntbR7fl5g6DO+0mvk=
 go.lumeweb.com/portal-router v0.6.11/go.mod h1:4tb+XYa0GYiFVraMoossGgMBTN9z4U54v8SL+EOBvbs=
-go.lumeweb.com/portal-sdk v0.1.45 h1:qJmzmYGe6tBtXSrt2dSKRBpRCcGkHn77IdTp2gmnAvk=
-go.lumeweb.com/portal-sdk v0.1.45/go.mod h1:wyaYJmJAsaRlfapC3fa4nIKcvr2k2rS4H9pYCxWqZqA=
+go.lumeweb.com/portal-sdk v0.1.46 h1:W9igTNURIXHQ2yQ8jofoqbzTpwsaxSF4lRzviPLy31s=
+go.lumeweb.com/portal-sdk v0.1.46/go.mod h1:3y6Q0LYinGZlPAnkU0KuzkV9RXk/MUPe1o9wTDutqJE=
 go.lumeweb.com/queryutil v0.3.15 h1:R2l6GAAne8rCgh1rGy5HQ54zvs8JJw3gRLjhmkd8SHk=
 go.lumeweb.com/queryutil v0.3.15/go.mod h1:nLkIuXzugX8Ln24wsAbfTafvNmaTHLJhIUKWC1693G4=
 go.opencensus.io v0.21.0/go.mod h1:mSImk1erAIZhrmZN+AvHh14ztQfjbGwt4TtuofqLduU=
