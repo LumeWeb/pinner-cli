@@ -212,6 +212,12 @@ type billingPricingPlansCreateCmd struct {
 	isActive    bool
 	isPublic    bool
 	pricelineID int
+	// Period creation fields
+	price       float64
+	cadence     string
+	quotaPlanID int
+	rollingDays int
+	allowFree   bool
 	isSet       map[string]bool
 }
 
@@ -223,6 +229,8 @@ func (m *billingPricingPlansCreateCmd) String(name string) string {
 		return m.currency
 	case FlagDescription:
 		return m.description
+	case FlagCadence:
+		return m.cadence
 	}
 	return ""
 }
@@ -233,13 +241,27 @@ func (m *billingPricingPlansCreateCmd) Bool(name string) bool {
 		return m.isActive
 	case FlagIsPublic:
 		return m.isPublic
+	case FlagAllowFree:
+		return m.allowFree
 	}
 	return false
 }
 
 func (m *billingPricingPlansCreateCmd) Int(name string) int {
-	if name == FlagPricelineID {
+	switch name {
+	case FlagPricelineID:
 		return m.pricelineID
+	case FlagQuotaPlanID:
+		return m.quotaPlanID
+	case FlagRollingDays:
+		return m.rollingDays
+	}
+	return 0
+}
+
+func (m *billingPricingPlansCreateCmd) Float(name string) float64 {
+	if name == FlagPrice {
+		return m.price
 	}
 	return 0
 }
@@ -283,12 +305,18 @@ func (m *billingPricingPlansUpdateCmd) IsSet(name string) bool {
 func TestBillingPricingPlansCreate(t *testing.T) {
 	tests := []struct {
 		name        string
+		cmd         *billingPricingPlansCreateCmd
 		setupMocks  func(*configmocks.MockManager, *MockBillingAdminService)
 		wantErr     bool
 		errContains string
 	}{
 		{
 			name: "successful create",
+			cmd: &billingPricingPlansCreateCmd{
+				name:     "Pro Plan",
+				currency: "USD",
+				isActive: true,
+			},
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
 				service.EXPECT().CreatePricingPlan(context.Background(), mock.MatchedBy(func(req *admin.PricingPlanCreateRequest) bool {
@@ -302,11 +330,71 @@ func TestBillingPricingPlansCreate(t *testing.T) {
 		},
 		{
 			name: "returns error when not authenticated",
+			cmd: &billingPricingPlansCreateCmd{
+				name:     "Pro Plan",
+				currency: "USD",
+				isActive: true,
+			},
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(ErrNotAuthenticated)
 			},
 			wantErr:     true,
 			errContains: "not authenticated",
+		},
+		{
+			name: "successful create with period",
+			cmd: &billingPricingPlansCreateCmd{
+				name:        "Starter Plan",
+				currency:    "USD",
+				isActive:    true,
+				quotaPlanID: 1,
+				price:       9.99,
+				cadence:     "monthly",
+				isSet: map[string]bool{
+					FlagQuotaPlanID: true,
+					FlagPrice:       true,
+					FlagCadence:     true,
+				},
+			},
+			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
+				service.EXPECT().RequireAuthenticated().Return(nil)
+				service.EXPECT().CreatePricingPlan(context.Background(), mock.MatchedBy(func(req *admin.PricingPlanCreateRequest) bool {
+					return req.Name == "Starter Plan" && req.Currency == "USD" && req.IsActive == true
+				})).Return(
+					unmarshalPricingPlanJSON(`{"id":1,"name":"Starter Plan","currency":"USD","is_active":true}`),
+					nil,
+				)
+				service.EXPECT().CreatePricingPlanPeriod(context.Background(), mock.MatchedBy(func(req *admin.PricingPlanPeriodCreateRequest) bool {
+					return req.PricingPlanId == 1 && req.PriceUsd == 9.99 && req.Cadence == "monthly" && req.QuotaPlanId == 1
+				})).Return(
+					unmarshalPricingPlanPeriodJSON(`{"id":1,"pricing_plan_id":1,"price_usd":9.99,"cadence":"monthly","is_active":true}`),
+					nil,
+				)
+			},
+			wantErr: false,
+		},
+		{
+			name: "create plan only when quota-plan-id set but price missing",
+			cmd: &billingPricingPlansCreateCmd{
+				name:        "Partial Plan",
+				currency:    "USD",
+				isActive:    true,
+				quotaPlanID: 1,
+				isSet: map[string]bool{
+					FlagQuotaPlanID: true,
+				},
+			},
+			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
+				service.EXPECT().RequireAuthenticated().Return(nil)
+				service.EXPECT().CreatePricingPlan(context.Background(), mock.MatchedBy(func(req *admin.PricingPlanCreateRequest) bool {
+					return req.Name == "Partial Plan" && req.Currency == "USD"
+				})).Return(
+					unmarshalPricingPlanJSON(`{"id":1,"name":"Partial Plan","currency":"USD","is_active":true}`),
+					nil,
+				)
+				// Period creation skipped because price/cadence not set
+			},
+			wantErr: false,
 		},
 	}
 
@@ -324,13 +412,7 @@ func TestBillingPricingPlansCreate(t *testing.T) {
 				return service
 			}
 
-			cmd := &billingPricingPlansCreateCmd{
-				name:     "Pro Plan",
-				currency: "USD",
-				isActive: true,
-			}
-
-			err := billingPricingPlansCreateAction(context.Background(), cmd, output, cfgMgr, serviceFactory)
+			err := billingPricingPlansCreateAction(context.Background(), tt.cmd, output, cfgMgr, serviceFactory)
 
 			if tt.wantErr {
 				require.Error(t, err)
