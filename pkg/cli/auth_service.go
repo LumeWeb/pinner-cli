@@ -312,7 +312,7 @@ func (s *AuthServiceDefault) GetAuthenticatedClient(ctx context.Context) (portal
 	}
 
 	// Check if the token is an API key JWT by decoding its claims
-	purpose, err := getJWTPurpose(token)
+	purpose, err := GetJWTPurpose(token)
 	if err != nil {
 		s.output.PrintVerbosef("Could not decode JWT to determine purpose, treating as login token: %v", err)
 		return s.clientFactory(s.apiEndpoint, token), nil
@@ -331,10 +331,10 @@ func (s *AuthServiceDefault) GetAuthenticatedClient(ctx context.Context) (portal
 	return s.clientFactory(s.apiEndpoint, token), nil
 }
 
-// getJWTPurpose extracts the purpose from a JWT token's audience claim.
+// GetJWTPurpose extracts the purpose from a JWT token's audience claim.
 // Returns the audience value or empty string if decoding fails.
 // API keys have audience="api", login tokens have audience="login".
-func getJWTPurpose(token string) (string, error) {
+func GetJWTPurpose(token string) (string, error) {
 	// Parse without verification to just read the claims
 	parser := jwt.NewParser(jwt.WithoutClaimsValidation())
 	parsedToken, _, err := parser.ParseUnverified(token, &jwt.RegisteredClaims{})

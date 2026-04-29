@@ -156,7 +156,6 @@ func TestNewQuotaAdminService(t *testing.T) {
 
 			// Check authentication state
 			assert.Equal(t, tt.shouldBeAuth, qs.authenticated)
-			assert.Equal(t, tt.authToken, qs.authToken)
 		})
 	}
 }
@@ -204,7 +203,6 @@ func TestNewBillingAdminService(t *testing.T) {
 
 			// Check authentication state
 			assert.Equal(t, tt.shouldBeAuth, bs.authenticated)
-			assert.Equal(t, tt.authToken, bs.authToken)
 		})
 	}
 }
@@ -301,7 +299,7 @@ func TestBillingAdminService_RequireAuthenticated(t *testing.T) {
 	}
 }
 
-func TestQuotaAdminService_StoresConfigManagerReference(t *testing.T) {
+func TestQuotaAdminService_HasTokenProvider(t *testing.T) {
 	cfgMgr := configmocks.NewMockManager(t)
 	cfgMgr.EXPECT().Config().Return(&config.Config{
 		AuthToken:    adminTestAuthToken,
@@ -313,11 +311,10 @@ func TestQuotaAdminService_StoresConfigManagerReference(t *testing.T) {
 	service := NewQuotaAdminService(cfgMgr, output, "https://api.test.com")
 
 	qs := service.(*quotaAdminService)
-	assert.NotNil(t, qs.cfgMgr)
-	assert.Equal(t, cfgMgr, qs.cfgMgr)
+	assert.NotNil(t, qs.tokenProvider)
 }
 
-func TestBillingAdminService_StoresConfigManagerReference(t *testing.T) {
+func TestBillingAdminService_HasTokenProvider(t *testing.T) {
 	cfgMgr := configmocks.NewMockManager(t)
 	cfgMgr.EXPECT().Config().Return(&config.Config{
 		AuthToken:    adminTestAuthToken,
@@ -329,6 +326,5 @@ func TestBillingAdminService_StoresConfigManagerReference(t *testing.T) {
 	service := NewBillingAdminService(cfgMgr, output, "https://api.test.com")
 
 	bs := service.(*billingAdminService)
-	assert.NotNil(t, bs.cfgMgr)
-	assert.Equal(t, cfgMgr, bs.cfgMgr)
+	assert.NotNil(t, bs.tokenProvider)
 }

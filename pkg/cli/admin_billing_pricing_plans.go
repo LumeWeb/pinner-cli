@@ -529,6 +529,10 @@ func billingPricingPlanPeriodsCreateAction(ctx context.Context, cmd billingPrici
 		req.RollingDays = &rollingDays
 	}
 
+	if cmd.Bool(FlagAllowFree) {
+		req.AllowFree = new(true)
+	}
+
 	period, err := service.CreatePricingPlanPeriod(ctx, &req)
 	if err != nil {
 		output.PrintError(err)
@@ -578,6 +582,11 @@ Examples:
 				Name:  FlagRollingDays,
 				Usage: "Rolling days (for rolling periods)",
 			},
+			&cli.BoolFlag{
+				Name:  FlagAllowFree,
+				Usage: "Allow $0 price (free plan)",
+				Value: false,
+			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			cfgMgr, output, err := setupCommandContext(cmd)
@@ -595,6 +604,7 @@ type billingPricingPlanPeriodsUpdateCmdGetter interface {
 	Float(name string) float64
 	String(name string) string
 	Int(name string) int
+	Bool(name string) bool
 	IsSet(name string) bool
 }
 
@@ -624,6 +634,9 @@ func billingPricingPlanPeriodsUpdateAction(ctx context.Context, cmd billingPrici
 	if cmd.IsSet(FlagRollingDays) {
 		rollingDays := cmd.Int(FlagRollingDays)
 		req.RollingDays = &rollingDays
+	}
+	if cmd.Bool(FlagAllowFree) {
+		req.AllowFree = new(true)
 	}
 
 	period, err := service.UpdatePricingPlanPeriod(ctx, periodID, &req)

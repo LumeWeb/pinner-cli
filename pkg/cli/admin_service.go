@@ -2,26 +2,39 @@ package cli
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"go.lumeweb.com/pinner-cli/pkg/config"
 	"go.lumeweb.com/portal-sdk/admin"
 )
 
+// adminServiceBase contains fields and methods common to all admin services.
+type adminServiceBase struct {
+	tokenProvider *AdminTokenProvider
+	endpoint      string
+	authenticated bool
+	mu            sync.RWMutex
+}
+
+// RequireAuthenticated checks if the admin service is authenticated.
+func (b *adminServiceBase) RequireAuthenticated() error {
+	if !b.authenticated {
+		return ErrNotAuthenticated
+	}
+	return nil
+}
+
 // quotaAdminService implements the QuotaAdminService interface using the admin.QuotaService.
 type quotaAdminService struct {
-	service       *admin.QuotaService
-	cfgMgr        config.Manager
-	authToken     string
-	authenticated bool
+	*adminServiceBase
+	service *admin.QuotaService
 }
 
 // billingAdminService implements the BillingAdminService interface using the admin.BillingService.
 type billingAdminService struct {
-	service       *admin.BillingService
-	cfgMgr        config.Manager
-	authToken     string
-	authenticated bool
+	*adminServiceBase
+	service *admin.BillingService
 }
 
 // QuotaAdminServiceFactory creates a QuotaAdminService with dependencies.
@@ -40,39 +53,70 @@ func defaultBillingAdminServiceFactory(cfgMgr config.Manager, output Output) Bil
 	return NewBillingAdminService(cfgMgr, output, cfgMgr.Config().GetAdminEndpoint())
 }
 
+// newAdminServiceBase creates a new adminServiceBase with the shared fields.
+func newAdminServiceBase(cfgMgr config.Manager, endpoint string) *adminServiceBase {
+	authToken := cfgMgr.Config().AuthToken
+	return &adminServiceBase{
+		tokenProvider: NewAdminTokenProvider(cfgMgr),
+		endpoint:      endpoint,
+		authenticated: authToken != "",
+	}
+}
+
+type authedService[S any] interface {
+	RequireAuthenticated() error
+	getService(ctx context.Context) (S, error)
+}
+
+func with2[S any, T any](svc authedService[S], ctx context.Context, fn func(S) (T, error)) (T, error) {
+	var zero T
+	if err := svc.RequireAuthenticated(); err != nil {
+		return zero, err
+	}
+	s, err := svc.getService(ctx)
+	if err != nil {
+		return zero, err
+	}
+	return fn(s)
+}
+
+func with3[S any, T any](svc authedService[S], ctx context.Context, fn func(S) ([]T, int, error)) ([]T, int, error) {
+	if err := svc.RequireAuthenticated(); err != nil {
+		return nil, 0, err
+	}
+	s, err := svc.getService(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	return fn(s)
+}
+
+func with0[S any](svc authedService[S], ctx context.Context, fn func(S) error) error {
+	if err := svc.RequireAuthenticated(); err != nil {
+		return err
+	}
+	s, err := svc.getService(ctx)
+	if err != nil {
+		return err
+	}
+	return fn(s)
+}
+
 // NewQuotaAdminService creates a new QuotaAdminService instance.
 func NewQuotaAdminService(cfgMgr config.Manager, output Output, apiEndpoint string) QuotaAdminService {
-	authToken := cfgMgr.Config().AuthToken
-
-	client := admin.NewClient(
-		admin.WithEndpoint(apiEndpoint),
-		admin.WithJWT(authToken),
-	)
-
 	return &quotaAdminService{
-		service:       client.Quota(),
-		cfgMgr:        cfgMgr,
-		authToken:     authToken,
-		authenticated: authToken != "",
+		adminServiceBase: newAdminServiceBase(cfgMgr, apiEndpoint),
 	}
 }
 
 // NewBillingAdminService creates a new BillingAdminService instance.
 func NewBillingAdminService(cfgMgr config.Manager, output Output, apiEndpoint string) BillingAdminService {
-	authToken := cfgMgr.Config().AuthToken
-
-	client := admin.NewClient(
-		admin.WithEndpoint(apiEndpoint),
-		admin.WithJWT(authToken),
-	)
-
 	return &billingAdminService{
-		service:       client.Billing(),
-		cfgMgr:        cfgMgr,
-		authToken:     authToken,
-		authenticated: authToken != "",
+		adminServiceBase: newAdminServiceBase(cfgMgr, apiEndpoint),
 	}
 }
+
+
 
 // QuotaAdminService defines the interface for quota admin operations.
 type QuotaAdminService interface {
@@ -158,78 +202,71 @@ type BillingAdminService interface {
 	UpdatePlanPosition(ctx context.Context, priceLineID, planID string, req *admin.UpdatePlanPositionRequest) (*admin.PriceLineDetailResponse, error)
 }
 
-// RequireAuthenticated checks if the quota admin service is authenticated.
-func (s *quotaAdminService) RequireAuthenticated() error {
-	if !s.authenticated {
-		return ErrNotAuthenticated
+// getService returns the quota service, lazily initializing with token exchange if needed.
+func (s *quotaAdminService) getService(ctx context.Context) (*admin.QuotaService, error) {
+	s.mu.RLock()
+	if s.service != nil {
+		s.mu.RUnlock()
+		return s.service, nil
 	}
-	return nil
+	s.mu.RUnlock()
+
+	token, err := s.tokenProvider.GetLoginToken(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	client := admin.NewClient(
+		admin.WithEndpoint(s.endpoint),
+		admin.WithJWT(token),
+	)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.service = client.Quota()
+	return s.service, nil
 }
 
 // ListPlans lists all quota plans.
 func (s *quotaAdminService) ListPlans(ctx context.Context) ([]*admin.QuotaPlan, int, error) {
-	if err := s.RequireAuthenticated(); err != nil {
-		return nil, 0, err
-	}
-	if s.service == nil {
-		return nil, 0, ErrServiceUnavailable
-	}
-	return s.service.ListPlans(ctx)
+	return with3(s, ctx, func(svc *admin.QuotaService) ([]*admin.QuotaPlan, int, error) {
+		return svc.ListPlans(ctx)
+	})
 }
 
 // CreatePlan creates a new quota plan.
 func (s *quotaAdminService) CreatePlan(ctx context.Context, plan *admin.QuotaPlan) (*admin.QuotaPlan, error) {
-	if err := s.RequireAuthenticated(); err != nil {
-		return nil, err
-	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
-	}
-	return s.service.CreatePlan(ctx, plan)
+	return with2(s, ctx, func(svc *admin.QuotaService) (*admin.QuotaPlan, error) {
+		return svc.CreatePlan(ctx, plan)
+	})
 }
 
 // GetPlan retrieves a quota plan by ID.
 func (s *quotaAdminService) GetPlan(ctx context.Context, planID string) (*admin.QuotaPlan, error) {
-	if err := s.RequireAuthenticated(); err != nil {
-		return nil, err
-	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
-	}
-	return s.service.GetPlan(ctx, planID)
+	return with2(s, ctx, func(svc *admin.QuotaService) (*admin.QuotaPlan, error) {
+		return svc.GetPlan(ctx, planID)
+	})
 }
 
 // UpdatePlan updates an existing quota plan.
 func (s *quotaAdminService) UpdatePlan(ctx context.Context, planID string, plan *admin.QuotaPlan) (*admin.QuotaPlan, error) {
-	if err := s.RequireAuthenticated(); err != nil {
-		return nil, err
-	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
-	}
-	return s.service.UpdatePlan(ctx, planID, plan)
+	return with2(s, ctx, func(svc *admin.QuotaService) (*admin.QuotaPlan, error) {
+		return svc.UpdatePlan(ctx, planID, plan)
+	})
 }
 
 // DeletePlan deletes a quota plan.
 func (s *quotaAdminService) DeletePlan(ctx context.Context, planID string) error {
-	if err := s.RequireAuthenticated(); err != nil {
-		return err
-	}
-	if s.service == nil {
-		return ErrServiceUnavailable
-	}
-	return s.service.DeletePlan(ctx, planID)
+	return with0(s, ctx, func(svc *admin.QuotaService) error {
+		return svc.DeletePlan(ctx, planID)
+	})
 }
 
 // SetDefaultPlan sets a quota plan as the default for new users.
 func (s *quotaAdminService) SetDefaultPlan(ctx context.Context, planID string) error {
-	if err := s.RequireAuthenticated(); err != nil {
-		return err
-	}
-	if s.service == nil {
-		return ErrServiceUnavailable
-	}
-	return s.service.SetDefaultPlan(ctx, planID)
+	return with0(s, ctx, func(svc *admin.QuotaService) error {
+		return svc.SetDefaultPlan(ctx, planID)
+	})
 }
 
 // ListAllowances lists all quota allowances.
@@ -237,10 +274,11 @@ func (s *quotaAdminService) ListAllowances(ctx context.Context) ([]*admin.QuotaA
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, 0, err
 	}
-	if s.service == nil {
-		return nil, 0, ErrServiceUnavailable
+	svc, err := s.getService(ctx)
+	if err != nil {
+		return nil, 0, err
 	}
-	return s.service.ListAllowances(ctx)
+	return svc.ListAllowances(ctx)
 }
 
 // CreateAllowance creates a new quota allowance for a user.
@@ -248,10 +286,11 @@ func (s *quotaAdminService) CreateAllowance(ctx context.Context, userID int, sou
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
+	svc, err := s.getService(ctx)
+	if err != nil {
+		return nil, err
 	}
-	return s.service.CreateAllowance(ctx, userID, source, allowanceType, upload, download, storage, expiryDate)
+	return svc.CreateAllowance(ctx, userID, source, allowanceType, upload, download, storage, expiryDate)
 }
 
 // UpdateAllowance updates an existing quota allowance.
@@ -259,10 +298,11 @@ func (s *quotaAdminService) UpdateAllowance(ctx context.Context, grantID string,
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
+	svc, err := s.getService(ctx)
+	if err != nil {
+		return nil, err
 	}
-	return s.service.UpdateAllowance(ctx, grantID, userID, source, allowanceType, upload, download, storage, expiryDate)
+	return svc.UpdateAllowance(ctx, grantID, userID, source, allowanceType, upload, download, storage, expiryDate)
 }
 
 // DeleteAllowance deletes a quota allowance.
@@ -270,10 +310,11 @@ func (s *quotaAdminService) DeleteAllowance(ctx context.Context, grantID string)
 	if err := s.RequireAuthenticated(); err != nil {
 		return err
 	}
-	if s.service == nil {
-		return ErrServiceUnavailable
+	svc, err := s.getService(ctx)
+	if err != nil {
+		return err
 	}
-	return s.service.DeleteAllowance(ctx, grantID)
+	return svc.DeleteAllowance(ctx, grantID)
 }
 
 // GetStats retrieves system-wide quota statistics.
@@ -281,10 +322,11 @@ func (s *quotaAdminService) GetStats(ctx context.Context) (*admin.SystemStats, e
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
+	svc, err := s.getService(ctx)
+	if err != nil {
+		return nil, err
 	}
-	return s.service.GetStats(ctx)
+	return svc.GetStats(ctx)
 }
 
 // Reconcile performs quota reconciliation for users.
@@ -292,10 +334,11 @@ func (s *quotaAdminService) Reconcile(ctx context.Context, userID *int) (string,
 	if err := s.RequireAuthenticated(); err != nil {
 		return "", 0, err
 	}
-	if s.service == nil {
-		return "", 0, ErrServiceUnavailable
+	svc, err := s.getService(ctx)
+	if err != nil {
+		return "", 0, err
 	}
-	return s.service.Reconcile(ctx, userID)
+	return svc.Reconcile(ctx, userID)
 }
 
 // Cleanup performs quota cleanup based on retention policy.
@@ -303,10 +346,11 @@ func (s *quotaAdminService) Cleanup(ctx context.Context, retentionDays int) (int
 	if err := s.RequireAuthenticated(); err != nil {
 		return 0, err
 	}
-	if s.service == nil {
-		return 0, ErrServiceUnavailable
+	svc, err := s.getService(ctx)
+	if err != nil {
+		return 0, err
 	}
-	return s.service.Cleanup(ctx, retentionDays)
+	return svc.Cleanup(ctx, retentionDays)
 }
 
 // ListUserConfigs lists all user quota configurations with pagination.
@@ -314,10 +358,11 @@ func (s *quotaAdminService) ListUserConfigs(ctx context.Context) ([]*admin.UserQ
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, 0, err
 	}
-	if s.service == nil {
-		return nil, 0, ErrServiceUnavailable
+	svc, err := s.getService(ctx)
+	if err != nil {
+		return nil, 0, err
 	}
-	return s.service.ListUserConfigs(ctx)
+	return svc.ListUserConfigs(ctx)
 }
 
 // UpdateUserConfig updates a user's quota configuration.
@@ -325,10 +370,11 @@ func (s *quotaAdminService) UpdateUserConfig(ctx context.Context, userID int, co
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
+	svc, err := s.getService(ctx)
+	if err != nil {
+		return nil, err
 	}
-	return s.service.UpdateUserConfig(ctx, userID, config)
+	return svc.UpdateUserConfig(ctx, userID, config)
 }
 
 // ResetUserPlan removes a user's assigned quota plan (sets to NULL).
@@ -336,62 +382,64 @@ func (s *quotaAdminService) ResetUserPlan(ctx context.Context, userID int) error
 	if err := s.RequireAuthenticated(); err != nil {
 		return err
 	}
-	if s.service == nil {
-		return ErrServiceUnavailable
+	svc, err := s.getService(ctx)
+	if err != nil {
+		return err
 	}
-	return s.service.ResetUserPlan(ctx, userID)
+	return svc.ResetUserPlan(ctx, userID)
 }
 
-// RequireAuthenticated checks if the billing admin service is authenticated.
-func (s *billingAdminService) RequireAuthenticated() error {
-	if !s.authenticated {
-		return ErrNotAuthenticated
+// getService returns the billing service, lazily initializing with token exchange if needed.
+func (s *billingAdminService) getService(ctx context.Context) (*admin.BillingService, error) {
+	s.mu.RLock()
+	if s.service != nil {
+		s.mu.RUnlock()
+		return s.service, nil
 	}
-	return nil
+	s.mu.RUnlock()
+
+	token, err := s.tokenProvider.GetLoginToken(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	client := admin.NewClient(
+		admin.WithEndpoint(s.endpoint),
+		admin.WithJWT(token),
+	)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.service = client.Billing()
+	return s.service, nil
 }
 
 // ListCredits lists all credits with optional filtering.
 func (s *billingAdminService) ListCredits(ctx context.Context, params *admin.GetApiBillingCreditsParams) ([]*admin.CreditItem, int, error) {
-	if err := s.RequireAuthenticated(); err != nil {
-		return nil, 0, err
-	}
-	if s.service == nil {
-		return nil, 0, ErrServiceUnavailable
-	}
-	return s.service.ListCredits(ctx, params)
+	return with3(s, ctx, func(svc *admin.BillingService) ([]*admin.CreditItem, int, error) {
+		return svc.ListCredits(ctx, params)
+	})
 }
 
 // CreateCredit creates a new credit entry.
 func (s *billingAdminService) CreateCredit(ctx context.Context, req *admin.CreditCreateRequest) (*admin.Credit, error) {
-	if err := s.RequireAuthenticated(); err != nil {
-		return nil, err
-	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
-	}
-	return s.service.CreateCredit(ctx, req)
+	return with2(s, ctx, func(svc *admin.BillingService) (*admin.Credit, error) {
+		return svc.CreateCredit(ctx, req)
+	})
 }
 
 // GetCredit retrieves a credit by ID.
 func (s *billingAdminService) GetCredit(ctx context.Context, creditID string) (*admin.Credit, error) {
-	if err := s.RequireAuthenticated(); err != nil {
-		return nil, err
-	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
-	}
-	return s.service.GetCredit(ctx, creditID)
+	return with2(s, ctx, func(svc *admin.BillingService) (*admin.Credit, error) {
+		return svc.GetCredit(ctx, creditID)
+	})
 }
 
 // DeleteCredit soft deletes a credit by ID.
 func (s *billingAdminService) DeleteCredit(ctx context.Context, creditID string) error {
-	if err := s.RequireAuthenticated(); err != nil {
-		return err
-	}
-	if s.service == nil {
-		return ErrServiceUnavailable
-	}
-	return s.service.DeleteCredit(ctx, creditID)
+	return with0(s, ctx, func(svc *admin.BillingService) error {
+		return svc.DeleteCredit(ctx, creditID)
+	})
 }
 
 // RestoreCredit restores a soft-deleted credit by ID.
@@ -399,10 +447,11 @@ func (s *billingAdminService) RestoreCredit(ctx context.Context, creditID string
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
+	svc, err := s.getService(ctx)
+	if err != nil {
+		return nil, err
 	}
-	return s.service.RestoreCredit(ctx, creditID)
+	return svc.RestoreCredit(ctx, creditID)
 }
 
 // PurgeCredits permanently removes soft-deleted credits older than specified duration.
@@ -410,10 +459,11 @@ func (s *billingAdminService) PurgeCredits(ctx context.Context, req *admin.Credi
 	if err := s.RequireAuthenticated(); err != nil {
 		return 0, err
 	}
-	if s.service == nil {
-		return 0, ErrServiceUnavailable
+	svc, err := s.getService(ctx)
+	if err != nil {
+		return 0, err
 	}
-	return s.service.PurgeCredits(ctx, req)
+	return svc.PurgeCredits(ctx, req)
 }
 
 // GetUserBalance retrieves the current balance for a user.
@@ -421,10 +471,11 @@ func (s *billingAdminService) GetUserBalance(ctx context.Context, userID string)
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
+	svc, err := s.getService(ctx)
+	if err != nil {
+		return nil, err
 	}
-	return s.service.GetUserBalance(ctx, userID)
+	return svc.GetUserBalance(ctx, userID)
 }
 
 // GetUserDeletedCredits retrieves soft-deleted credits for a user.
@@ -432,10 +483,11 @@ func (s *billingAdminService) GetUserDeletedCredits(ctx context.Context, userID 
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, 0, err
 	}
-	if s.service == nil {
-		return nil, 0, ErrServiceUnavailable
+	svc, err := s.getService(ctx)
+	if err != nil {
+		return nil, 0, err
 	}
-	return s.service.GetUserDeletedCredits(ctx, userID, params)
+	return svc.GetUserDeletedCredits(ctx, userID, params)
 }
 
 // ListPriceLines lists all price lines.
@@ -443,10 +495,11 @@ func (s *billingAdminService) ListPriceLines(ctx context.Context) ([]*admin.Pric
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, 0, err
 	}
-	if s.service == nil {
-		return nil, 0, ErrServiceUnavailable
+	svc, err := s.getService(ctx)
+	if err != nil {
+		return nil, 0, err
 	}
-	return s.service.ListPriceLines(ctx)
+	return svc.ListPriceLines(ctx)
 }
 
 // CreatePriceLine creates a new price line.
@@ -454,10 +507,11 @@ func (s *billingAdminService) CreatePriceLine(ctx context.Context, req *admin.Pr
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
+	svc, err := s.getService(ctx)
+	if err != nil {
+		return nil, err
 	}
-	return s.service.CreatePriceLine(ctx, req)
+	return svc.CreatePriceLine(ctx, req)
 }
 
 // GetPriceLine retrieves a price line by ID with its associated plans.
@@ -465,10 +519,11 @@ func (s *billingAdminService) GetPriceLine(ctx context.Context, priceLineID stri
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
+	svc, err := s.getService(ctx)
+	if err != nil {
+		return nil, err
 	}
-	return s.service.GetPriceLine(ctx, priceLineID)
+	return svc.GetPriceLine(ctx, priceLineID)
 }
 
 // UpdatePriceLine updates an existing price line.
@@ -476,10 +531,11 @@ func (s *billingAdminService) UpdatePriceLine(ctx context.Context, priceLineID s
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
+	svc, err := s.getService(ctx)
+	if err != nil {
+		return nil, err
 	}
-	return s.service.UpdatePriceLine(ctx, priceLineID, req)
+	return svc.UpdatePriceLine(ctx, priceLineID, req)
 }
 
 // DeletePriceLine deletes a price line by ID.
@@ -487,10 +543,11 @@ func (s *billingAdminService) DeletePriceLine(ctx context.Context, priceLineID s
 	if err := s.RequireAuthenticated(); err != nil {
 		return err
 	}
-	if s.service == nil {
-		return ErrServiceUnavailable
+	svc, err := s.getService(ctx)
+	if err != nil {
+		return err
 	}
-	return s.service.DeletePriceLine(ctx, priceLineID)
+	return svc.DeletePriceLine(ctx, priceLineID)
 }
 
 // ListPricingPlans lists all pricing plans.
@@ -498,10 +555,11 @@ func (s *billingAdminService) ListPricingPlans(ctx context.Context) ([]*admin.Pr
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, 0, err
 	}
-	if s.service == nil {
-		return nil, 0, ErrServiceUnavailable
+	svc, err := s.getService(ctx)
+	if err != nil {
+		return nil, 0, err
 	}
-	return s.service.ListPricingPlans(ctx)
+	return svc.ListPricingPlans(ctx)
 }
 
 // CreatePricingPlan creates a new pricing plan.
