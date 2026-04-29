@@ -1059,3 +1059,159 @@ func TestBillingPricingPlanPeriodsDelete(t *testing.T) {
 		})
 	}
 }
+
+// Mock command getters for sync commands
+type mockBillingSyncCmd struct {
+	args cli.Args
+}
+
+func (m *mockBillingSyncCmd) Args() cli.Args {
+	return m.args
+}
+
+// mockBillingSyncAllCmd is an empty struct for sync-all command (no args needed)
+type mockBillingSyncAllCmd struct{}
+
+func TestBillingSyncPricingPlan(t *testing.T) {
+	tests := []struct {
+		name        string
+		planID      string
+		setupMocks  func(*configmocks.MockManager, *MockBillingAdminService)
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name:   "successful sync",
+			planID: "123",
+			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
+				service.EXPECT().RequireAuthenticated().Return(nil)
+				service.EXPECT().SyncPricingPlan(context.Background(), "123").Return(nil)
+			},
+			wantErr: false,
+		},
+		{
+			name:   "returns error when plan ID is missing",
+			planID: "",
+			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
+			},
+			wantErr:     true,
+			errContains: "plan ID is required",
+		},
+		{
+			name:   "returns error when not authenticated",
+			planID: "123",
+			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
+				service.EXPECT().RequireAuthenticated().Return(ErrNotAuthenticated)
+			},
+			wantErr:     true,
+			errContains: "not authenticated",
+		},
+		{
+			name:   "returns error when service fails",
+			planID: "123",
+			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
+				service.EXPECT().RequireAuthenticated().Return(nil)
+				service.EXPECT().SyncPricingPlan(context.Background(), "123").Return(errors.New("sync failed"))
+			},
+			wantErr:     true,
+			errContains: "sync failed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfgMgr := configmocks.NewMockManager(t)
+			service := NewMockBillingAdminService(t)
+			output := NewOutputFormatter(false, false, false, false)
+
+			if tt.setupMocks != nil {
+				tt.setupMocks(cfgMgr, service)
+			}
+
+			serviceFactory := func(cm config.Manager, out Output) BillingAdminService {
+				return service
+			}
+
+			args := &mockArgs{}
+			if tt.planID != "" {
+				args.args = []string{tt.planID}
+			}
+			cmd := &mockBillingSyncCmd{args: args}
+
+			err := billingSyncPricingPlanAction(context.Background(), cmd, output, cfgMgr, serviceFactory)
+
+			if tt.wantErr {
+				require.Error(t, err)
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
+				}
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestBillingSyncAllPricingPlans(t *testing.T) {
+	tests := []struct {
+		name        string
+		setupMocks  func(*configmocks.MockManager, *MockBillingAdminService)
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name: "successful sync all",
+			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
+				service.EXPECT().RequireAuthenticated().Return(nil)
+				service.EXPECT().SyncAllPricingPlans(context.Background()).Return(nil)
+			},
+			wantErr: false,
+		},
+		{
+			name: "returns error when not authenticated",
+			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
+				service.EXPECT().RequireAuthenticated().Return(ErrNotAuthenticated)
+			},
+			wantErr:     true,
+			errContains: "not authenticated",
+		},
+		{
+			name: "returns error when service fails",
+			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
+				service.EXPECT().RequireAuthenticated().Return(nil)
+				service.EXPECT().SyncAllPricingPlans(context.Background()).Return(errors.New("sync all failed"))
+			},
+			wantErr:     true,
+			errContains: "sync all failed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfgMgr := configmocks.NewMockManager(t)
+			service := NewMockBillingAdminService(t)
+			output := NewOutputFormatter(false, false, false, false)
+
+			if tt.setupMocks != nil {
+				tt.setupMocks(cfgMgr, service)
+			}
+
+			serviceFactory := func(cm config.Manager, out Output) BillingAdminService {
+				return service
+			}
+
+			cmd := &mockBillingSyncAllCmd{}
+
+			err := billingSyncAllPricingPlansAction(context.Background(), cmd, output, cfgMgr, serviceFactory)
+
+			if tt.wantErr {
+				require.Error(t, err)
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
+				}
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}

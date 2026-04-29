@@ -519,15 +519,20 @@ func newBillingPricingPlansCommand() *cli.Command {
 	return &cli.Command{
 		Name:  CmdPricingPlans,
 		Usage: "Manage billing pricing plans",
-		Description: `List, create, update, and delete billing pricing plans.
+		Description: `List, create, update, delete, and sync billing pricing plans.
 
-  pinner admin billing pricing-plans list`,
+Examples:
+  pinner admin billing pricing-plans list
+  pinner admin billing pricing-plans sync <plan-id>
+  pinner admin billing pricing-plans sync-all`,
 		Commands: []*cli.Command{
 			newBillingPricingPlansListCommand(),
 			newBillingPricingPlansGetCommand(),
 			newBillingPricingPlansCreateCommand(),
 			newBillingPricingPlansUpdateCommand(),
 			newBillingPricingPlansDeleteCommand(),
+			newBillingSyncCommand(),
+			newBillingSyncAllCommand(),
 		},
 	}
 }

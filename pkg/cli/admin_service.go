@@ -201,6 +201,10 @@ type BillingAdminService interface {
 	AddPlanToPriceLine(ctx context.Context, priceLineID string, req *admin.AddPlanToPriceLineRequest) (*admin.PriceLineDetailResponse, error)
 	DeletePlanFromPriceLine(ctx context.Context, priceLineID, planID string) error
 	UpdatePlanPosition(ctx context.Context, priceLineID, planID string, req *admin.UpdatePlanPositionRequest) (*admin.PriceLineDetailResponse, error)
+
+	// Sync operations
+	SyncPricingPlan(ctx context.Context, planID string) error
+	SyncAllPricingPlans(ctx context.Context) error
 }
 
 // getService returns the quota service, lazily initializing with token exchange if needed.
@@ -657,5 +661,19 @@ func (s *billingAdminService) DeletePlanFromPriceLine(ctx context.Context, price
 func (s *billingAdminService) UpdatePlanPosition(ctx context.Context, priceLineID, planID string, req *admin.UpdatePlanPositionRequest) (*admin.PriceLineDetailResponse, error) {
 	return with2(s, ctx, func(svc *admin.BillingService) (*admin.PriceLineDetailResponse, error) {
 		return svc.UpdatePlanPosition(ctx, priceLineID, planID, req)
+	})
+}
+
+// SyncPricingPlan triggers sync of a specific pricing plan with payment gateway.
+func (s *billingAdminService) SyncPricingPlan(ctx context.Context, planID string) error {
+	return with0(s, ctx, func(svc *admin.BillingService) error {
+		return svc.SyncPricingPlan(ctx, planID)
+	})
+}
+
+// SyncAllPricingPlans triggers sync of all pricing plans with payment gateways.
+func (s *billingAdminService) SyncAllPricingPlans(ctx context.Context) error {
+	return with0(s, ctx, func(svc *admin.BillingService) error {
+		return svc.SyncAllPricingPlans(ctx)
 	})
 }
