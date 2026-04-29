@@ -444,340 +444,210 @@ func (s *billingAdminService) DeleteCredit(ctx context.Context, creditID string)
 
 // RestoreCredit restores a soft-deleted credit by ID.
 func (s *billingAdminService) RestoreCredit(ctx context.Context, creditID string) (*admin.Credit, error) {
-	if err := s.RequireAuthenticated(); err != nil {
-		return nil, err
-	}
-	svc, err := s.getService(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return svc.RestoreCredit(ctx, creditID)
+	return with2(s, ctx, func(svc *admin.BillingService) (*admin.Credit, error) {
+		return svc.RestoreCredit(ctx, creditID)
+	})
 }
 
 // PurgeCredits permanently removes soft-deleted credits older than specified duration.
 func (s *billingAdminService) PurgeCredits(ctx context.Context, req *admin.CreditPurgeRequest) (int, error) {
-	if err := s.RequireAuthenticated(); err != nil {
-		return 0, err
-	}
-	svc, err := s.getService(ctx)
-	if err != nil {
-		return 0, err
-	}
-	return svc.PurgeCredits(ctx, req)
+	return with2(s, ctx, func(svc *admin.BillingService) (int, error) {
+		return svc.PurgeCredits(ctx, req)
+	})
 }
 
 // GetUserBalance retrieves the current balance for a user.
 func (s *billingAdminService) GetUserBalance(ctx context.Context, userID string) (*admin.UserBalance, error) {
-	if err := s.RequireAuthenticated(); err != nil {
-		return nil, err
-	}
-	svc, err := s.getService(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return svc.GetUserBalance(ctx, userID)
+	return with2(s, ctx, func(svc *admin.BillingService) (*admin.UserBalance, error) {
+		return svc.GetUserBalance(ctx, userID)
+	})
 }
 
 // GetUserDeletedCredits retrieves soft-deleted credits for a user.
 func (s *billingAdminService) GetUserDeletedCredits(ctx context.Context, userID string, params *admin.GetApiBillingUsersUserIdDeletedCreditsParams) ([]*admin.CreditItem, int, error) {
-	if err := s.RequireAuthenticated(); err != nil {
-		return nil, 0, err
-	}
-	svc, err := s.getService(ctx)
-	if err != nil {
-		return nil, 0, err
-	}
-	return svc.GetUserDeletedCredits(ctx, userID, params)
+	return with3(s, ctx, func(svc *admin.BillingService) ([]*admin.CreditItem, int, error) {
+		return svc.GetUserDeletedCredits(ctx, userID, params)
+	})
 }
 
 // ListPriceLines lists all price lines.
 func (s *billingAdminService) ListPriceLines(ctx context.Context) ([]*admin.PriceLine, int, error) {
-	if err := s.RequireAuthenticated(); err != nil {
-		return nil, 0, err
-	}
-	svc, err := s.getService(ctx)
-	if err != nil {
-		return nil, 0, err
-	}
-	return svc.ListPriceLines(ctx)
+	return with3(s, ctx, func(svc *admin.BillingService) ([]*admin.PriceLine, int, error) {
+		return svc.ListPriceLines(ctx)
+	})
 }
 
 // CreatePriceLine creates a new price line.
 func (s *billingAdminService) CreatePriceLine(ctx context.Context, req *admin.PriceLineCreateRequest) (*admin.PriceLine, error) {
-	if err := s.RequireAuthenticated(); err != nil {
-		return nil, err
-	}
-	svc, err := s.getService(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return svc.CreatePriceLine(ctx, req)
+	return with2(s, ctx, func(svc *admin.BillingService) (*admin.PriceLine, error) {
+		return svc.CreatePriceLine(ctx, req)
+	})
 }
 
 // GetPriceLine retrieves a price line by ID with its associated plans.
 func (s *billingAdminService) GetPriceLine(ctx context.Context, priceLineID string) (*admin.PriceLineDetailResponse, error) {
-	if err := s.RequireAuthenticated(); err != nil {
-		return nil, err
-	}
-	svc, err := s.getService(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return svc.GetPriceLine(ctx, priceLineID)
+	return with2(s, ctx, func(svc *admin.BillingService) (*admin.PriceLineDetailResponse, error) {
+		return svc.GetPriceLine(ctx, priceLineID)
+	})
 }
 
 // UpdatePriceLine updates an existing price line.
 func (s *billingAdminService) UpdatePriceLine(ctx context.Context, priceLineID string, req *admin.PriceLineUpdateRequest) (*admin.PriceLine, error) {
-	if err := s.RequireAuthenticated(); err != nil {
-		return nil, err
-	}
-	svc, err := s.getService(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return svc.UpdatePriceLine(ctx, priceLineID, req)
+	return with2(s, ctx, func(svc *admin.BillingService) (*admin.PriceLine, error) {
+		return svc.UpdatePriceLine(ctx, priceLineID, req)
+	})
 }
 
 // DeletePriceLine deletes a price line by ID.
 func (s *billingAdminService) DeletePriceLine(ctx context.Context, priceLineID string) error {
-	if err := s.RequireAuthenticated(); err != nil {
-		return err
-	}
-	svc, err := s.getService(ctx)
-	if err != nil {
-		return err
-	}
-	return svc.DeletePriceLine(ctx, priceLineID)
+	return with0(s, ctx, func(svc *admin.BillingService) error {
+		return svc.DeletePriceLine(ctx, priceLineID)
+	})
 }
 
 // ListPricingPlans lists all pricing plans.
 func (s *billingAdminService) ListPricingPlans(ctx context.Context) ([]*admin.PricingPlanItem, int, error) {
-	if err := s.RequireAuthenticated(); err != nil {
-		return nil, 0, err
-	}
-	svc, err := s.getService(ctx)
-	if err != nil {
-		return nil, 0, err
-	}
-	return svc.ListPricingPlans(ctx)
+	return with3(s, ctx, func(svc *admin.BillingService) ([]*admin.PricingPlanItem, int, error) {
+		return svc.ListPricingPlans(ctx)
+	})
 }
 
 // CreatePricingPlan creates a new pricing plan.
 func (s *billingAdminService) CreatePricingPlan(ctx context.Context, req *admin.PricingPlanCreateRequest) (*admin.PricingPlan, error) {
-	if err := s.RequireAuthenticated(); err != nil {
-		return nil, err
-	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
-	}
-	return s.service.CreatePricingPlan(ctx, req)
+	return with2(s, ctx, func(svc *admin.BillingService) (*admin.PricingPlan, error) {
+		return svc.CreatePricingPlan(ctx, req)
+	})
 }
 
 // UpdatePricingPlan updates an existing pricing plan.
 func (s *billingAdminService) UpdatePricingPlan(ctx context.Context, planID string, req *admin.PricingPlanUpdateRequest) (*admin.PricingPlan, error) {
-	if err := s.RequireAuthenticated(); err != nil {
-		return nil, err
-	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
-	}
-	return s.service.UpdatePricingPlan(ctx, planID, req)
+	return with2(s, ctx, func(svc *admin.BillingService) (*admin.PricingPlan, error) {
+		return svc.UpdatePricingPlan(ctx, planID, req)
+	})
 }
 
 // DeletePricingPlan deletes a pricing plan by ID.
 func (s *billingAdminService) DeletePricingPlan(ctx context.Context, planID string) error {
-	if err := s.RequireAuthenticated(); err != nil {
-		return err
-	}
-	if s.service == nil {
-		return ErrServiceUnavailable
-	}
-	return s.service.DeletePricingPlan(ctx, planID)
+	return with0(s, ctx, func(svc *admin.BillingService) error {
+		return svc.DeletePricingPlan(ctx, planID)
+	})
 }
 
 // ListPricingPlanPeriods lists all pricing plan periods.
 func (s *billingAdminService) ListPricingPlanPeriods(ctx context.Context) ([]*admin.PricingPlanPeriod, int, error) {
-	if err := s.RequireAuthenticated(); err != nil {
-		return nil, 0, err
-	}
-	if s.service == nil {
-		return nil, 0, ErrServiceUnavailable
-	}
-	return s.service.ListPricingPlanPeriods(ctx)
+	return with3(s, ctx, func(svc *admin.BillingService) ([]*admin.PricingPlanPeriod, int, error) {
+		return svc.ListPricingPlanPeriods(ctx)
+	})
 }
 
 // CreatePricingPlanPeriod creates a new pricing plan period.
 func (s *billingAdminService) CreatePricingPlanPeriod(ctx context.Context, req *admin.PricingPlanPeriodCreateRequest) (*admin.PricingPlanPeriod, error) {
-	if err := s.RequireAuthenticated(); err != nil {
-		return nil, err
-	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
-	}
-	return s.service.CreatePricingPlanPeriod(ctx, req)
+	return with2(s, ctx, func(svc *admin.BillingService) (*admin.PricingPlanPeriod, error) {
+		return svc.CreatePricingPlanPeriod(ctx, req)
+	})
 }
 
 // GetPricingPlanPeriod retrieves a pricing plan period by ID.
 func (s *billingAdminService) GetPricingPlanPeriod(ctx context.Context, periodID string) (*admin.PricingPlanPeriod, error) {
-	if err := s.RequireAuthenticated(); err != nil {
-		return nil, err
-	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
-	}
-	return s.service.GetPricingPlanPeriod(ctx, periodID)
+	return with2(s, ctx, func(svc *admin.BillingService) (*admin.PricingPlanPeriod, error) {
+		return svc.GetPricingPlanPeriod(ctx, periodID)
+	})
 }
 
 // UpdatePricingPlanPeriod updates an existing pricing plan period.
 func (s *billingAdminService) UpdatePricingPlanPeriod(ctx context.Context, periodID string, req *admin.PricingPlanPeriodUpdateRequest) (*admin.PricingPlanPeriod, error) {
-	if err := s.RequireAuthenticated(); err != nil {
-		return nil, err
-	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
-	}
-	return s.service.UpdatePricingPlanPeriod(ctx, periodID, req)
+	return with2(s, ctx, func(svc *admin.BillingService) (*admin.PricingPlanPeriod, error) {
+		return svc.UpdatePricingPlanPeriod(ctx, periodID, req)
+	})
 }
 
 // DeletePricingPlanPeriod deletes a pricing plan period by ID.
 func (s *billingAdminService) DeletePricingPlanPeriod(ctx context.Context, periodID string) error {
-	if err := s.RequireAuthenticated(); err != nil {
-		return err
-	}
-	if s.service == nil {
-		return ErrServiceUnavailable
-	}
-	return s.service.DeletePricingPlanPeriod(ctx, periodID)
+	return with0(s, ctx, func(svc *admin.BillingService) error {
+		return svc.DeletePricingPlanPeriod(ctx, periodID)
+	})
 }
 
 // ListSubscribers lists all subscribers across all gateways.
 func (s *billingAdminService) ListSubscribers(ctx context.Context) ([]*admin.Subscriber, int, error) {
-	if err := s.RequireAuthenticated(); err != nil {
-		return nil, 0, err
-	}
-	if s.service == nil {
-		return nil, 0, ErrServiceUnavailable
-	}
-	return s.service.ListSubscribers(ctx)
+	return with3(s, ctx, func(svc *admin.BillingService) ([]*admin.Subscriber, int, error) {
+		return svc.ListSubscribers(ctx)
+	})
 }
 
 // GetSubscriber retrieves a specific subscriber by ID.
 func (s *billingAdminService) GetSubscriber(ctx context.Context, subscriberID string) (*admin.Subscriber, error) {
-	if err := s.RequireAuthenticated(); err != nil {
-		return nil, err
-	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
-	}
-	return s.service.GetSubscriber(ctx, subscriberID)
+	return with2(s, ctx, func(svc *admin.BillingService) (*admin.Subscriber, error) {
+		return svc.GetSubscriber(ctx, subscriberID)
+	})
 }
 
 // ListGatewaySubscribers lists subscribers for a specific gateway.
 func (s *billingAdminService) ListGatewaySubscribers(ctx context.Context, gatewayID string) ([]*admin.Subscriber, int, error) {
-	if err := s.RequireAuthenticated(); err != nil {
-		return nil, 0, err
-	}
-	if s.service == nil {
-		return nil, 0, ErrServiceUnavailable
-	}
-	return s.service.ListGatewaySubscribers(ctx, gatewayID)
+	return with3(s, ctx, func(svc *admin.BillingService) ([]*admin.Subscriber, int, error) {
+		return svc.ListGatewaySubscribers(ctx, gatewayID)
+	})
 }
 
 // GetUserSubscribers retrieves subscribers for a specific user.
 func (s *billingAdminService) GetUserSubscribers(ctx context.Context, userID string) ([]*admin.Subscriber, int, error) {
-	if err := s.RequireAuthenticated(); err != nil {
-		return nil, 0, err
-	}
-	if s.service == nil {
-		return nil, 0, ErrServiceUnavailable
-	}
-	return s.service.GetUserSubscribers(ctx, userID)
+	return with3(s, ctx, func(svc *admin.BillingService) ([]*admin.Subscriber, int, error) {
+		return svc.GetUserSubscribers(ctx, userID)
+	})
 }
 
 // CancelUserSubscription cancels a user's subscription.
 func (s *billingAdminService) CancelUserSubscription(ctx context.Context, userID string, req *admin.CancelSubscriptionRequest) (*admin.ManagementResult, error) {
-	if err := s.RequireAuthenticated(); err != nil {
-		return nil, err
-	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
-	}
-	return s.service.CancelUserSubscription(ctx, userID, req)
+	return with2(s, ctx, func(svc *admin.BillingService) (*admin.ManagementResult, error) {
+		return svc.CancelUserSubscription(ctx, userID, req)
+	})
 }
 
 // AbortUserSubscriptionCancellation aborts a scheduled subscription cancellation.
 func (s *billingAdminService) AbortUserSubscriptionCancellation(ctx context.Context, userID string) (*admin.ManagementResult, error) {
-	if err := s.RequireAuthenticated(); err != nil {
-		return nil, err
-	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
-	}
-	return s.service.AbortUserSubscriptionCancellation(ctx, userID)
+	return with2(s, ctx, func(svc *admin.BillingService) (*admin.ManagementResult, error) {
+		return svc.AbortUserSubscriptionCancellation(ctx, userID)
+	})
 }
 
 // ChangeUserPlan changes a user's subscription plan.
 func (s *billingAdminService) ChangeUserPlan(ctx context.Context, userID string, req *admin.ChangePlanRequest) (*admin.PlanChangeResult, error) {
-	if err := s.RequireAuthenticated(); err != nil {
-		return nil, err
-	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
-	}
-	return s.service.ChangeUserPlan(ctx, userID, req)
+	return with2(s, ctx, func(svc *admin.BillingService) (*admin.PlanChangeResult, error) {
+		return svc.ChangeUserPlan(ctx, userID, req)
+	})
 }
 
 // PauseUserSubscription pauses a user's subscription.
 func (s *billingAdminService) PauseUserSubscription(ctx context.Context, userID string) (*admin.ManagementResult, error) {
-	if err := s.RequireAuthenticated(); err != nil {
-		return nil, err
-	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
-	}
-	return s.service.PauseUserSubscription(ctx, userID)
+	return with2(s, ctx, func(svc *admin.BillingService) (*admin.ManagementResult, error) {
+		return svc.PauseUserSubscription(ctx, userID)
+	})
 }
 
 // ResumeUserSubscription resumes a user's paused subscription.
 func (s *billingAdminService) ResumeUserSubscription(ctx context.Context, userID string) (*admin.ManagementResult, error) {
-	if err := s.RequireAuthenticated(); err != nil {
-		return nil, err
-	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
-	}
-	return s.service.ResumeUserSubscription(ctx, userID)
+	return with2(s, ctx, func(svc *admin.BillingService) (*admin.ManagementResult, error) {
+		return svc.ResumeUserSubscription(ctx, userID)
+	})
 }
 
 // AddPlanToPriceLine adds a pricing plan to a price line.
 func (s *billingAdminService) AddPlanToPriceLine(ctx context.Context, priceLineID string, req *admin.AddPlanToPriceLineRequest) (*admin.PriceLineDetailResponse, error) {
-	if err := s.RequireAuthenticated(); err != nil {
-		return nil, err
-	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
-	}
-	return s.service.AddPlanToPriceLine(ctx, priceLineID, req)
+	return with2(s, ctx, func(svc *admin.BillingService) (*admin.PriceLineDetailResponse, error) {
+		return svc.AddPlanToPriceLine(ctx, priceLineID, req)
+	})
 }
 
 // DeletePlanFromPriceLine removes a pricing plan from a price line.
 func (s *billingAdminService) DeletePlanFromPriceLine(ctx context.Context, priceLineID, planID string) error {
-	if err := s.RequireAuthenticated(); err != nil {
-		return err
-	}
-	if s.service == nil {
-		return ErrServiceUnavailable
-	}
-	return s.service.DeletePlanFromPriceLine(ctx, priceLineID, planID)
+	return with0(s, ctx, func(svc *admin.BillingService) error {
+		return svc.DeletePlanFromPriceLine(ctx, priceLineID, planID)
+	})
 }
 
 // UpdatePlanPosition updates the position of a plan in a price line.
 func (s *billingAdminService) UpdatePlanPosition(ctx context.Context, priceLineID, planID string, req *admin.UpdatePlanPositionRequest) (*admin.PriceLineDetailResponse, error) {
-	if err := s.RequireAuthenticated(); err != nil {
-		return nil, err
-	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
-	}
-	return s.service.UpdatePlanPosition(ctx, priceLineID, planID, req)
+	return with2(s, ctx, func(svc *admin.BillingService) (*admin.PriceLineDetailResponse, error) {
+		return svc.UpdatePlanPosition(ctx, priceLineID, planID, req)
+	})
 }
