@@ -27,7 +27,7 @@ require (
 	go.lumeweb.com/configmanager v0.3.26
 	go.lumeweb.com/ipfs-content v0.1.15
 	go.lumeweb.com/ipfs-sdk v0.1.35
-	go.lumeweb.com/portal-sdk v0.1.48
+	go.lumeweb.com/portal-sdk v0.1.49
 	go.lumeweb.com/queryutil v0.3.15
 	golang.org/x/text v0.34.0
 )

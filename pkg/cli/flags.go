@@ -139,6 +139,8 @@ const (
 	CmdStats              = "stats"
 	CmdReset              = "reset"
 	CmdAdmin              = "admin"
+	CmdSync               = "sync"
+	CmdSyncAll            = "sync-all"
 )
 
 // GlobalFlags returns flags that are available to all commands.

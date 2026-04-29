@@ -884,3 +884,107 @@ func billingPricingPlanPeriodsDeleteAction(ctx context.Context, cmd billingPrici
 	output.Printfln("Pricing plan period %s deleted successfully", periodID)
 	return nil
 }
+
+func newBillingSyncCommand() *cli.Command {
+	return &cli.Command{
+		Name:  CmdSync,
+		Usage: "Sync a pricing plan with payment gateway",
+		Description: `Trigger immediate synchronization of a specific pricing plan with the payment gateway.
+
+This command syncs a single pricing plan to ensure the payment gateway has the latest configuration.
+
+Arguments:
+  <plan-id>  The unique identifier of the pricing plan to sync
+
+Examples:
+  pinner admin billing pricing-plans sync <plan-id>
+  pinner admin billing pricing-plans sync 123 --json`,
+		ArgsUsage: "<plan-id>",
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			cfgMgr, output, err := setupCommandContext(cmd)
+			if err != nil {
+				return err
+			}
+			return billingSyncPricingPlanAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultBillingAdminServiceFactory)
+		},
+	}
+}
+
+// billingSyncPricingPlanCmdGetter defines the interface for getting sync command args.
+type billingSyncPricingPlanCmdGetter interface {
+	Args() cli.Args
+}
+
+func billingSyncPricingPlanAction(ctx context.Context, cmd billingSyncPricingPlanCmdGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
+	if cmd.Args().Len() < 1 {
+		return fmt.Errorf("plan ID is required")
+	}
+
+	service := serviceFactory(cfgMgr, output)
+	if err := service.RequireAuthenticated(); err != nil {
+		return err
+	}
+
+	planID := cmd.Args().First()
+	if err := service.SyncPricingPlan(ctx, planID); err != nil {
+		output.PrintError(err)
+		return err
+	}
+
+	if output.IsJSON() {
+		return output.PrintJSON(map[string]string{
+			"status":  "success",
+			"plan_id": planID,
+			"message": fmt.Sprintf("Pricing plan %s synced successfully", planID),
+		})
+	}
+
+	output.Printfln("Pricing plan %s synced successfully", planID)
+	return nil
+}
+
+func newBillingSyncAllCommand() *cli.Command {
+	return &cli.Command{
+		Name:  CmdSyncAll,
+		Usage: "Sync all pricing plans with payment gateways",
+		Description: `Trigger synchronization of all pricing plans with payment gateways.
+
+This command syncs all pricing plans to ensure the payment gateways have the latest configurations.
+
+Examples:
+  pinner admin billing pricing-plans sync-all
+  pinner admin billing pricing-plans sync-all --json`,
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			cfgMgr, output, err := setupCommandContext(cmd)
+			if err != nil {
+				return err
+			}
+			return billingSyncAllPricingPlansAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultBillingAdminServiceFactory)
+		},
+	}
+}
+
+// billingSyncAllPricingPlansCmdGetter is an empty interface for sync-all command (no args needed).
+type billingSyncAllPricingPlansCmdGetter interface{}
+
+func billingSyncAllPricingPlansAction(ctx context.Context, cmd billingSyncAllPricingPlansCmdGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
+	service := serviceFactory(cfgMgr, output)
+	if err := service.RequireAuthenticated(); err != nil {
+		return err
+	}
+
+	if err := service.SyncAllPricingPlans(ctx); err != nil {
+		output.PrintError(err)
+		return err
+	}
+
+	if output.IsJSON() {
+		return output.PrintJSON(map[string]string{
+			"status":  "success",
+			"message": "All pricing plans synced successfully",
+		})
+	}
+
+	output.Print("All pricing plans synced successfully")
+	return nil
+}

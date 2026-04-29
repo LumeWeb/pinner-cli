@@ -2187,6 +2187,114 @@ func (_c *MockBillingAdminService_ResumeUserSubscription_Call) RunAndReturn(run 
 	return _c
 }
 
+// SyncAllPricingPlans provides a mock function for the type MockBillingAdminService
+func (_mock *MockBillingAdminService) SyncAllPricingPlans(ctx context.Context) error {
+	ret := _mock.Called(ctx)
+
+	if len(ret) == 0 {
+		panic("no return value specified for SyncAllPricingPlans")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context) error); ok {
+		r0 = returnFunc(ctx)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockBillingAdminService_SyncAllPricingPlans_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SyncAllPricingPlans'
+type MockBillingAdminService_SyncAllPricingPlans_Call struct {
+	*mock.Call
+}
+
+// SyncAllPricingPlans is a helper method to define mock.On call
+//   - ctx context.Context
+func (_e *MockBillingAdminService_Expecter) SyncAllPricingPlans(ctx interface{}) *MockBillingAdminService_SyncAllPricingPlans_Call {
+	return &MockBillingAdminService_SyncAllPricingPlans_Call{Call: _e.mock.On("SyncAllPricingPlans", ctx)}
+}
+
+func (_c *MockBillingAdminService_SyncAllPricingPlans_Call) Run(run func(ctx context.Context)) *MockBillingAdminService_SyncAllPricingPlans_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockBillingAdminService_SyncAllPricingPlans_Call) Return(err error) *MockBillingAdminService_SyncAllPricingPlans_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockBillingAdminService_SyncAllPricingPlans_Call) RunAndReturn(run func(ctx context.Context) error) *MockBillingAdminService_SyncAllPricingPlans_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// SyncPricingPlan provides a mock function for the type MockBillingAdminService
+func (_mock *MockBillingAdminService) SyncPricingPlan(ctx context.Context, planID string) error {
+	ret := _mock.Called(ctx, planID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for SyncPricingPlan")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) error); ok {
+		r0 = returnFunc(ctx, planID)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockBillingAdminService_SyncPricingPlan_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SyncPricingPlan'
+type MockBillingAdminService_SyncPricingPlan_Call struct {
+	*mock.Call
+}
+
+// SyncPricingPlan is a helper method to define mock.On call
+//   - ctx context.Context
+//   - planID string
+func (_e *MockBillingAdminService_Expecter) SyncPricingPlan(ctx interface{}, planID interface{}) *MockBillingAdminService_SyncPricingPlan_Call {
+	return &MockBillingAdminService_SyncPricingPlan_Call{Call: _e.mock.On("SyncPricingPlan", ctx, planID)}
+}
+
+func (_c *MockBillingAdminService_SyncPricingPlan_Call) Run(run func(ctx context.Context, planID string)) *MockBillingAdminService_SyncPricingPlan_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockBillingAdminService_SyncPricingPlan_Call) Return(err error) *MockBillingAdminService_SyncPricingPlan_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockBillingAdminService_SyncPricingPlan_Call) RunAndReturn(run func(ctx context.Context, planID string) error) *MockBillingAdminService_SyncPricingPlan_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // UpdatePlanPosition provides a mock function for the type MockBillingAdminService
 func (_mock *MockBillingAdminService) UpdatePlanPosition(ctx context.Context, priceLineID string, planID string, req *admin.UpdatePlanPositionRequest) (*admin.PriceLineDetailResponse, error) {
 	ret := _mock.Called(ctx, priceLineID, planID, req)
