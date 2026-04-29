@@ -79,10 +79,20 @@ func newBillingPricingPlansCreateCommand() *cli.Command {
 		Usage: "Create a pricing plan",
 		Description: `Create a new billing pricing plan.
 
+Optionally create a pricing plan period in the same command by providing:
+  --quota-plan-id: Creates a period with the specified quota plan
+  --price: Required with --quota-plan-id, price in USD
+  --cadence: Required with --quota-plan-id, cadence (monthly, yearly, rolling)
+  --rolling-days: Optional, for rolling cadence only
+  --allow-free: Optional, allows $0 price
+
 Examples:
   pinner admin billing pricing-plans create --name "Pro Plan" --currency USD
   pinner admin billing pricing-plans create --name "Basic" --currency USD --description "Basic plan" --is-active
-  pinner admin billing pricing-plans create --name "Premium" --currency USD --is-public --json`,
+  pinner admin billing pricing-plans create --name "Premium" --currency USD --is-public --json
+  # Create plan with period in one command:
+  pinner admin billing pricing-plans create --name "Starter" --currency USD --quota-plan-id 1 --price 9.99 --cadence monthly
+  pinner admin billing pricing-plans create --name "Annual" --currency USD --quota-plan-id 2 --price 99.99 --cadence yearly`,
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:     FlagName,
@@ -112,6 +122,28 @@ Examples:
 				Name:  FlagPricelineID,
 				Usage: "Associated price line ID",
 			},
+			// Pricing plan period creation flags (for creating both in one step)
+			&cli.IntFlag{
+				Name:  FlagQuotaPlanID,
+				Usage: "Create a period: associated quota plan ID",
+			},
+			&cli.FloatFlag{
+				Name:  FlagPrice,
+				Usage: "Create a period: price in USD",
+			},
+			&cli.StringFlag{
+				Name:  FlagCadence,
+				Usage: "Create a period: cadence (e.g., monthly, yearly, rolling)",
+			},
+			&cli.IntFlag{
+				Name:  FlagRollingDays,
+				Usage: "Create a period: rolling days (for rolling cadence only)",
+			},
+			&cli.BoolFlag{
+				Name:  FlagAllowFree,
+				Usage: "Create a period: allow $0 price",
+				Value: false,
+			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			cfgMgr, output, err := setupCommandContext(cmd)
@@ -128,6 +160,7 @@ type billingPricingPlansCreateCmdGetter interface {
 	String(name string) string
 	Bool(name string) bool
 	Int(name string) int
+	Float(name string) float64
 	IsSet(name string) bool
 }
 
@@ -157,7 +190,44 @@ func billingPricingPlansCreateAction(ctx context.Context, cmd billingPricingPlan
 		return err
 	}
 
+	// Optionally create a pricing plan period if the required flags are set
+	var period *admin.PricingPlanPeriod
+	if cmd.IsSet(FlagQuotaPlanID) {
+		if !cmd.IsSet(FlagPrice) || !cmd.IsSet(FlagCadence) {
+			output.Printfln("\nWarning: --%s was set but --%s and/or --%s were not set. Period creation skipped.", FlagQuotaPlanID, FlagPrice, FlagCadence)
+		} else {
+			price := cmd.Float(FlagPrice)
+			if price <= 0 && !cmd.Bool(FlagAllowFree) {
+				output.Printfln("\nWarning: --%s must be greater than 0 (use --%s for $0 plans). Period creation skipped.", FlagPrice, FlagAllowFree)
+			} else {
+				periodReq := admin.PricingPlanPeriodCreateRequest{
+					PricingPlanId: int(plan.Id),
+					PriceUsd:      float32(price),
+					Cadence:       cmd.String(FlagCadence),
+					QuotaPlanId:   cmd.Int(FlagQuotaPlanID),
+				}
+				if cmd.IsSet(FlagRollingDays) {
+					rollingDays := cmd.Int(FlagRollingDays)
+					periodReq.RollingDays = &rollingDays
+				}
+				if cmd.Bool(FlagAllowFree) {
+					periodReq.AllowFree = new(true)
+				}
+				period, err = service.CreatePricingPlanPeriod(ctx, &periodReq)
+				if err != nil {
+					output.Printfln("\nWarning: Failed to create pricing plan period: %v", err)
+				}
+			}
+		}
+	}
+
 	if output.IsJSON() {
+		if period != nil {
+			return output.PrintJSON(map[string]any{
+				"plan":   plan,
+				"period": period,
+			})
+		}
 		return output.PrintJSON(plan)
 	}
 
@@ -170,6 +240,20 @@ func billingPricingPlansCreateAction(ctx context.Context, cmd billingPricingPlan
 			{Label: "Active", Value: strconv.FormatBool(plan.IsActive)},
 		},
 	})
+
+	if period != nil {
+		output.Printf("\n")
+		output.PrintFields(FieldGroup{
+			Title: "Pricing plan period created successfully:",
+			Fields: []Field{
+				{Label: "ID", Value: strconv.FormatInt(int64(period.Id), 10)},
+				{Label: "Plan ID", Value: strconv.FormatInt(int64(period.PricingPlanId), 10)},
+				{Label: "Price", Value: FormatUSD(period.PriceUsd)},
+				{Label: "Cadence", Value: string(period.Cadence)},
+			},
+		})
+	}
+
 	return nil
 }
 
