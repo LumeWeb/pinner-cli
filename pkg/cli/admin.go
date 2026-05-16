@@ -451,7 +451,7 @@ Examples:
 
 Examples:
   pinner admin quota user-configs update --user-id 1 --plan-id 19
-  pinner admin quota user-configs update --user-id 1 --plan-id 19 --enforcement-policy strict
+  pinner admin quota user-configs update --user-id 1 --plan-id 19 --enforcement-policy HARD_LIMITS
   pinner admin quota user-configs update --user-id 1 --upload-limit-bytes 5000 --download-limit-bytes 10000
   pinner admin quota user-configs update --user-id 1 --plan-id 19 --json`,
 				Flags: []cli.Flag{
@@ -465,7 +465,7 @@ Examples:
 					},
 					&cli.StringFlag{
 						Name:  FlagEnforcementPolicy,
-						Usage: "Enforcement policy (e.g. strict, relaxed)",
+						Usage: "Enforcement policy (HARD_LIMITS, UNLIMITED, ALLOWANCE, THRESHOLD)",
 					},
 					&cli.IntFlag{
 						Name:  FlagUploadLimit,
