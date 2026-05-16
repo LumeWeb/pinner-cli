@@ -337,7 +337,11 @@ func (s *PinningServiceDefault) waitForPinCompletion(ctx context.Context, reques
 			}
 
 			status := result.GetStatus()
-			s.output.Printfln("Current status: %s", status)
+			s.output.PrintFields(FieldGroup{
+				Fields: []Field{
+					{"Status", status.String()},
+				},
+			})
 
 			if status == go_pinning_service_http_client.StatusPinned {
 				s.output.Print("Pinning completed successfully")
@@ -353,7 +357,10 @@ func (s *PinningServiceDefault) waitForPinCompletion(ctx context.Context, reques
 
 // watchPinStatus continuously watches a pin's status.
 func (s *PinningServiceDefault) watchPinStatus(ctx context.Context, cidStr string) (*PinStatus, error) {
-	s.output.Printfln("Watching status for CID: %s (press Ctrl+C to stop)", cidStr)
+	s.output.PrintFields(FieldGroup{
+		Title:  fmt.Sprintf("Watching status for CID: %s", cidStr),
+		Fields: []Field{{"Instructions", "Press Ctrl+C to stop"}},
+	})
 
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
@@ -363,7 +370,16 @@ func (s *PinningServiceDefault) watchPinStatus(ctx context.Context, cidStr strin
 	for {
 		select {
 		case <-ctx.Done():
-			s.output.Print("\nStatus watch stopped")
+			if lastStatus != nil {
+				s.output.PrintFields(FieldGroup{
+					Title:  "Status watch stopped",
+					PadTop: 1,
+					Fields: []Field{
+						{"CID", lastStatus.CID},
+						{"Status", lastStatus.Status},
+					},
+				})
+			}
 			return lastStatus, nil
 		case <-ticker.C:
 			status, err := s.Status(ctx, cidStr, false)
@@ -372,8 +388,12 @@ func (s *PinningServiceDefault) watchPinStatus(ctx context.Context, cidStr strin
 			}
 
 			if lastStatus == nil || lastStatus.Status != status.Status {
-				s.output.Print("")
-				s.output.Printfln("Status: %s", status.Status)
+				s.output.PrintFields(FieldGroup{
+					PadTop: 1,
+					Fields: []Field{
+						{"Status", status.Status},
+					},
+				})
 				lastStatus = status
 			}
 		}
