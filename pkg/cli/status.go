@@ -105,7 +105,7 @@ func status(ctx context.Context, cmd statusCommandGetter, output Output, cfgMgrF
 		if len(pinStatus.Delegates) > 0 {
 			// Add delegates as list items
 			output.PrintTable(headers, rows)
-			output.Printf("\nDelegates:")
+			output.Printfln("\nDelegates:")
 			output.PrintList(pinStatus.Delegates)
 		} else {
 			output.PrintTable(headers, rows)
@@ -114,7 +114,7 @@ func status(ctx context.Context, cmd statusCommandGetter, output Output, cfgMgrF
 		return nil
 	}
 
-	output.Printf("Checking status for %d CID(s)", len(cids))
+	output.Printfln("Checking status for %d CID(s)", len(cids))
 
 	headers := []string{"CID", "STATUS", "CREATED"}
 	rows := make([][]string, 0, len(cids))

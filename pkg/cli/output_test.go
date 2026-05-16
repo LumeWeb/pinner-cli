@@ -599,7 +599,7 @@ func TestHumanFormatterPrintFields(t *testing.T) {
 			},
 		})
 
-		expected := "Credit created successfully:\n  ID: abc-123\n  Amount: 100\n  Type: grant\n"
+		expected := "Credit created successfully:\n  ID      abc-123\n  Amount  100\n  Type    grant\n"
 		assert.Equal(t, expected, buf.String())
 	})
 
@@ -621,7 +621,7 @@ func TestHumanFormatterPrintFields(t *testing.T) {
 			},
 		})
 
-		expected := "  Version: 1.0.0\n  OS: linux/amd64\n"
+		expected := "  Version  1.0.0\n  OS       linux/amd64\n"
 		assert.Equal(t, expected, buf.String())
 	})
 

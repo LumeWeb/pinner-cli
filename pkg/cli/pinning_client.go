@@ -234,7 +234,7 @@ func (s *PinningServiceDefault) Unpin(ctx context.Context, cidStr string, confir
 	s.output.PrintVerbosef("Using API endpoint: %s", s.apiEndpoint)
 
 	if !confirm {
-		s.output.Printf("Use --confirm to unpin CID: %s", cidStr)
+		s.output.Printfln("Use --confirm to unpin CID: %s", cidStr)
 		return NewUnpinResult(cidStr), nil
 	}
 
@@ -315,7 +315,7 @@ func (s *PinningServiceDefault) UpdateMetadata(ctx context.Context, cidStr strin
 		return fmt.Errorf("failed to update metadata: %w", err)
 	}
 
-	s.output.Printf("Updated metadata for CID: %s", cidStr)
+	s.output.Printfln("Updated metadata for CID: %s", cidStr)
 	return nil
 }
 
@@ -337,7 +337,7 @@ func (s *PinningServiceDefault) waitForPinCompletion(ctx context.Context, reques
 			}
 
 			status := result.GetStatus()
-			s.output.Printf("Current status: %s", status)
+			s.output.Printfln("Current status: %s", status)
 
 			if status == go_pinning_service_http_client.StatusPinned {
 				s.output.Print("Pinning completed successfully")
@@ -353,7 +353,7 @@ func (s *PinningServiceDefault) waitForPinCompletion(ctx context.Context, reques
 
 // watchPinStatus continuously watches a pin's status.
 func (s *PinningServiceDefault) watchPinStatus(ctx context.Context, cidStr string) (*PinStatus, error) {
-	s.output.Printf("Watching status for CID: %s (press Ctrl+C to stop)", cidStr)
+	s.output.Printfln("Watching status for CID: %s (press Ctrl+C to stop)", cidStr)
 
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
@@ -372,7 +372,7 @@ func (s *PinningServiceDefault) watchPinStatus(ctx context.Context, cidStr strin
 			}
 
 			if lastStatus == nil || lastStatus.Status != status.Status {
-				s.output.Printf("\nStatus: %s", status.Status)
+				s.output.Printfln("\nStatus: %s", status.Status)
 				lastStatus = status
 			}
 		}

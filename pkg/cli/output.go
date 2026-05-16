@@ -345,8 +345,15 @@ func (h *humanFormatter) PrintFields(group FieldGroup) {
 		fmt.Fprintln(h.config.writer, group.Title)
 	}
 
+	maxLabel := 0
 	for _, field := range group.Fields {
-		fmt.Fprintf(h.config.writer, "  %s: %s\n", field.Label, field.Value)
+		if len(field.Label) > maxLabel {
+			maxLabel = len(field.Label)
+		}
+	}
+
+	for _, field := range group.Fields {
+		fmt.Fprintf(h.config.writer, "  %-*s  %s\n", maxLabel, field.Label, field.Value)
 	}
 }
 
@@ -541,7 +548,7 @@ func watchLoop(ctx context.Context, interval time.Duration, output Output, human
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	output.Printf("Watching (Press Ctrl+C to stop)...\n")
+	output.Printfln("Watching (Press Ctrl+C to stop)...")
 
 	for {
 		select {
@@ -560,7 +567,7 @@ func watchLoop(ctx context.Context, interval time.Duration, output Output, human
 			title, headers, rows := formatter(data)
 
 			if humanFormat && title != "" {
-				output.Printf("%s\n", title)
+				output.Print(title)
 			}
 
 			if !humanFormat {
@@ -579,12 +586,12 @@ func watchLoop(ctx context.Context, interval time.Duration, output Output, human
 			}
 
 			if len(rows) == 0 {
-				output.Printf("No items found\n")
+				output.Printfln("No items found")
 				return nil
 			}
 
 			if allTerminal(rows) {
-				output.Printf("All items have reached terminal status\n")
+				output.Printfln("All items have reached terminal status")
 				return nil
 			}
 		}

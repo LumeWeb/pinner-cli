@@ -83,15 +83,20 @@ func billingPriceLinesListAction(ctx context.Context, cmd billingPriceLinesListC
 		return nil
 	}
 
-	output.Print("Price Lines:")
+	output.Printfln("Price Lines:")
 	for _, pl := range priceLines {
-		output.Printf("  ID: %d", pl.Id)
-		output.Printf("    Name: %s", pl.Name)
-		if pl.Description != "" {
-			output.Printf("    Description: %s", pl.Description)
+		fields := []Field{
+			{"ID", fmt.Sprintf("%d", pl.Id)},
+			{"Name", pl.Name},
 		}
-		output.Printf("    Active: %t", pl.IsActive)
-		output.Printf("    Default: %t", pl.IsDefault)
+		if pl.Description != "" {
+			fields = append(fields, Field{"Description", pl.Description})
+		}
+		fields = append(fields,
+			Field{"Active", fmt.Sprintf("%t", pl.IsActive)},
+			Field{"Default", fmt.Sprintf("%t", pl.IsDefault)},
+		)
+		output.PrintFields(FieldGroup{Fields: fields})
 	}
 
 	return nil
@@ -143,18 +148,23 @@ func billingPriceLinesGetAction(ctx context.Context, cmd billingPriceLinesGetCmd
 		return output.PrintJSON(priceLine)
 	}
 
-	output.Print("Price Line Details:")
-	output.Printf("  ID: %d", priceLine.Id)
-	output.Printf("  Name: %s", priceLine.Name)
-	if priceLine.Description != "" {
-		output.Printf("  Description: %s", priceLine.Description)
+	fields := []Field{
+		{"ID", fmt.Sprintf("%d", priceLine.Id)},
+		{"Name", priceLine.Name},
 	}
-	output.Printf("  Active: %t", priceLine.IsActive)
-	output.Printf("  Default: %t", priceLine.IsDefault)
+	if priceLine.Description != "" {
+		fields = append(fields, Field{"Description", priceLine.Description})
+	}
+	fields = append(fields,
+		Field{"Active", fmt.Sprintf("%t", priceLine.IsActive)},
+		Field{"Default", fmt.Sprintf("%t", priceLine.IsDefault)},
+	)
+
+	output.PrintFields(FieldGroup{Title: "Price Line Details:", Fields: fields})
 
 	output.Print("\n  Plans:")
 	for _, plan := range priceLine.Plans {
-		output.Printf("    - Plan ID: %d", plan.Id)
+		output.Printfln("    - Plan ID: %d", plan.Id)
 	}
 
 	return nil
@@ -233,14 +243,18 @@ func billingPriceLinesCreateAction(ctx context.Context, cmd billingPriceLinesCre
 		return output.PrintJSON(priceLine)
 	}
 
-	output.Print("Price line created successfully:")
-	output.Printf("  ID: %d", priceLine.Id)
-	output.Printf("  Name: %s", priceLine.Name)
-	if priceLine.Description != "" {
-		output.Printf("  Description: %s", priceLine.Description)
+	fields := []Field{
+		{"ID", fmt.Sprintf("%d", priceLine.Id)},
+		{"Name", priceLine.Name},
 	}
-	output.Printf("  Active: %t", priceLine.IsActive)
-	output.Printf("  Default: %t", priceLine.IsDefault)
+	if priceLine.Description != "" {
+		fields = append(fields, Field{"Description", priceLine.Description})
+	}
+	fields = append(fields,
+		Field{"Active", fmt.Sprintf("%t", priceLine.IsActive)},
+		Field{"Default", fmt.Sprintf("%t", priceLine.IsDefault)},
+	)
+	output.PrintFields(FieldGroup{Title: "Price line created successfully:", Fields: fields})
 
 	return nil
 }
@@ -331,14 +345,18 @@ func billingPriceLinesUpdateAction(ctx context.Context, cmd billingPriceLinesUpd
 		return output.PrintJSON(priceLine)
 	}
 
-	output.Print("Price line updated successfully:")
-	output.Printf("  ID: %d", priceLine.Id)
-	output.Printf("  Name: %s", priceLine.Name)
-	if priceLine.Description != "" {
-		output.Printf("  Description: %s", priceLine.Description)
+	fields := []Field{
+		{"ID", fmt.Sprintf("%d", priceLine.Id)},
+		{"Name", priceLine.Name},
 	}
-	output.Printf("  Active: %t", priceLine.IsActive)
-	output.Printf("  Default: %t", priceLine.IsDefault)
+	if priceLine.Description != "" {
+		fields = append(fields, Field{"Description", priceLine.Description})
+	}
+	fields = append(fields,
+		Field{"Active", fmt.Sprintf("%t", priceLine.IsActive)},
+		Field{"Default", fmt.Sprintf("%t", priceLine.IsDefault)},
+	)
+	output.PrintFields(FieldGroup{Title: "Price line updated successfully:", Fields: fields})
 
 	return nil
 }
@@ -485,9 +503,13 @@ func billingPriceLinesAddPlanAction(ctx context.Context, cmd billingPriceLinesAd
 	}
 
 	output.Print("Plan added to price line successfully")
-	output.Printf("  Price Line: %s", priceLineID)
-	output.Printf("  Plan ID: %d", planID)
-	output.Printf("  Position: %d", req.Position)
+	output.PrintFields(FieldGroup{
+		Fields: []Field{
+			{"Price Line", priceLineID},
+			{"Plan ID", fmt.Sprintf("%d", planID)},
+			{"Position", fmt.Sprintf("%d", req.Position)},
+		},
+	})
 
 	return nil
 }

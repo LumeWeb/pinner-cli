@@ -63,6 +63,6 @@ func confirmEmail(ctx context.Context, cmd *cli.Command, output Output, cfgMgrFa
 	}
 
 	output.Print("Email verified successfully!")
-	output.Printf("You can now authenticate with: pinner auth --email %s", email)
+	output.Printfln("You can now authenticate with: pinner auth --email %s", email)
 	return nil
 }

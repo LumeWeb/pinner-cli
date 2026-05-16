@@ -108,17 +108,21 @@ func billingOverviewAction(ctx context.Context, cmd billingOverviewCmdGetter, ou
 		})
 	}
 
-	output.Printf("Entity Relationships:")
-	output.Printf("  Quota Plan <── Pricing Plan Period ──> Pricing Plan")
-	output.Printf("                                               │")
-	output.Printf("                                          Price Line")
-	output.Printf("                                               │")
-	output.Printf("                                         (ordered list)")
-	output.Printf("")
-	output.Printf("  Quota Plans:         %d total (%d active)", quotaTotal, activeQuotaPlans)
-	output.Printf("  Price Lines:         %d total (%d active)", priceLinesTotal, activePriceLines)
-	output.Printf("  Pricing Plans:       %d total (%d active)", pricingPlansTotal, activePricingPlans)
-	output.Printf("  Plan Periods:        %d total", periodsTotal)
+	output.Printfln("Entity Relationships:")
+	output.Printfln("  Quota Plan <── Pricing Plan Period ──> Pricing Plan")
+	output.Printfln("                                               │")
+	output.Printfln("                                          Price Line")
+	output.Printfln("                                               │")
+	output.Printfln("                                         (ordered list)")
+	output.Print("")
+	output.PrintFields(FieldGroup{
+		Fields: []Field{
+			{"Quota Plans", fmt.Sprintf("%d total (%d active)", quotaTotal, activeQuotaPlans)},
+			{"Price Lines", fmt.Sprintf("%d total (%d active)", priceLinesTotal, activePriceLines)},
+			{"Pricing Plans", fmt.Sprintf("%d total (%d active)", pricingPlansTotal, activePricingPlans)},
+			{"Plan Periods", fmt.Sprintf("%d total", periodsTotal)},
+		},
+	})
 
 	_ = periods
 	return nil

@@ -197,7 +197,7 @@ func (s *AuthServiceDefault) Register(ctx context.Context, email, firstName, las
 	}
 
 	s.output.Print("Registration successful!")
-	s.output.Printf("A verification email has been sent to %s", email)
+	s.output.Printfln("A verification email has been sent to %s", email)
 	s.output.Print("Please check your email and confirm your account.")
 	return nil
 }
@@ -233,7 +233,7 @@ func (s *AuthServiceDefault) EnableOTP(ctx context.Context, otpCode string) erro
 	}
 
 	s.output.Print("Two-factor authentication setup")
-	s.output.Printf("Your OTP secret: %s", secret)
+	s.output.Printfln("Your OTP secret: %s", secret)
 	s.output.Print("Add this secret to your authenticator app (e.g., Google Authenticator, Authy)")
 
 	// If OTP code not provided, prompt for it

@@ -108,11 +108,11 @@ func list(ctx context.Context, cmd listCommandGetter, output Output, cfgMgrFacto
 	}
 
 	if len(pins) == 0 {
-		output.Printf("No pins found")
+		output.Printfln("No pins found")
 		return nil
 	}
 
-	output.Printf("Found %d pin(s)", len(pins))
+	output.Printfln("Found %d pin(s)", len(pins))
 
 	headers := []string{"CID", "NAME", "STATUS", "CREATED"}
 	rows := make([][]string, len(pins))

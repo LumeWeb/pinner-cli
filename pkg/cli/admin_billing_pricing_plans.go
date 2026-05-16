@@ -134,11 +134,11 @@ func billingPricingPlansGetAction(ctx context.Context, cmd billingPricingPlansGe
 	})
 
 	if plan.Description != "" {
-		output.Printf("\n  Description: %s\n", plan.Description)
+		output.Printfln("\n  Description: %s", plan.Description)
 	}
 
 	if len(plan.PricingPeriods) > 0 {
-		output.Printf("\n")
+		output.Print("")
 		output.PrintFields(FieldGroup{
 			Title: fmt.Sprintf("Pricing Periods (%d):", len(plan.PricingPeriods)),
 		})
@@ -330,7 +330,7 @@ func billingPricingPlansCreateAction(ctx context.Context, cmd billingPricingPlan
 	})
 
 	if period != nil {
-		output.Printf("\n")
+		output.Print("")
 		output.PrintFields(FieldGroup{
 			Title: "Pricing plan period created successfully:",
 			Fields: []Field{

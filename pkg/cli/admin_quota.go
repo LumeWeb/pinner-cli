@@ -43,7 +43,7 @@ func quotaPlansListAction(ctx context.Context, cmd quotaPlansListCmdGetter, outp
 		return output.PrintJSON(result)
 	}
 
-	output.Printf("Found %d quota plan(s)", total)
+	output.Printfln("Found %d quota plan(s)", total)
 
 	if len(plans) == 0 {
 		return nil
@@ -101,7 +101,7 @@ func quotaPlansGetAction(ctx context.Context, cmd quotaPlansGetCmdGetter, output
 		return output.PrintJSON(plan)
 	}
 
-	output.Printf("Quota Plan Details")
+	output.Printfln("Quota Plan Details")
 
 	headers := []string{"ID", "NAME", "DESCRIPTION", "UPLOAD", "DOWNLOAD", "STORAGE", "DEFAULT", "CREATED", "UPDATED"}
 	isDefault := "No"
@@ -179,7 +179,7 @@ func quotaPlansCreateAction(ctx context.Context, cmd quotaPlansCreateCmdGetter, 
 		return output.PrintJSON(created)
 	}
 
-	output.Printf("Quota plan created successfully")
+	output.Printfln("Quota plan created successfully")
 
 	headers := []string{"ID", "NAME", "DESCRIPTION", "UPLOAD", "DOWNLOAD", "STORAGE", "ACTIVE", "DEFAULT"}
 	isDefault := "No"
@@ -297,7 +297,7 @@ func quotaPlansUpdateAction(ctx context.Context, cmd quotaPlansUpdateCmdGetter, 
 		return output.PrintJSON(updated)
 	}
 
-	output.Printf("Quota plan updated successfully")
+	output.Printfln("Quota plan updated successfully")
 
 	headers := []string{"ID", "NAME", "DESCRIPTION", "UPLOAD", "DOWNLOAD", "STORAGE", "ACTIVE", "DEFAULT"}
 	isDefault := "No"
@@ -354,7 +354,7 @@ func quotaPlansDeleteAction(ctx context.Context, cmd quotaPlansDeleteCmdGetter, 
 		})
 	}
 
-	output.Printf("Plan %s deleted successfully", planID)
+	output.Printfln("Plan %s deleted successfully", planID)
 
 	return nil
 }
@@ -395,7 +395,7 @@ func quotaPlansSetDefaultAction(ctx context.Context, cmd quotaPlansSetDefaultCmd
 		})
 	}
 
-	output.Printf("Plan %s set as default", planID)
+	output.Printfln("Plan %s set as default", planID)
 
 	return nil
 }
@@ -428,7 +428,7 @@ func quotaAllowancesListAction(ctx context.Context, cmd quotaAllowancesListCmdGe
 		return output.PrintJSON(result)
 	}
 
-	output.Printf("Found %d quota allowance(s)", total)
+	output.Printfln("Found %d quota allowance(s)", total)
 
 	if len(allowances) == 0 {
 		return nil
@@ -507,7 +507,7 @@ func quotaAllowancesCreateAction(ctx context.Context, cmd quotaAllowancesCreateC
 		return output.PrintJSON(created)
 	}
 
-	output.Printf("Quota allowance created successfully")
+	output.Printfln("Quota allowance created successfully")
 
 	headers := []string{"ID", "USER ID", "SOURCE", "TYPE", "BYTES", "REMAINING"}
 	rows := [][]string{
@@ -605,7 +605,7 @@ func quotaAllowancesUpdateAction(ctx context.Context, cmd quotaAllowancesUpdateC
 		return output.PrintJSON(updated)
 	}
 
-	output.Printf("Quota allowance updated successfully")
+	output.Printfln("Quota allowance updated successfully")
 
 	headers := []string{"ID", "USER ID", "SOURCE", "TYPE", "BYTES", "REMAINING"}
 	rows := [][]string{
@@ -656,7 +656,7 @@ func quotaAllowancesDeleteAction(ctx context.Context, cmd quotaAllowancesDeleteC
 		})
 	}
 
-	output.Printf("Allowance %s deleted successfully", grantID)
+	output.Printfln("Allowance %s deleted successfully", grantID)
 
 	return nil
 }
@@ -685,14 +685,18 @@ func quotaStatsAction(ctx context.Context, cmd quotaStatsCmdGetter, output Outpu
 		return output.PrintJSON(stats)
 	}
 
-	output.Printf("Quota System Statistics")
-	output.Printf("Total Users: %d", stats.TotalUsers)
-	output.Printf("Active Users: %d", stats.ActiveUsers)
-	output.Printf("Total Plans: %d", stats.TotalPlans)
-	output.Printf("Active Plans: %d", stats.TotalActivePlans)
-	output.Printf("Total Grants: %d", stats.TotalGrants)
-	output.Printf("Active Grants: %d", stats.TotalActiveGrants)
-	output.Printf("Total Usage Bytes: %d", stats.TotalUsageBytes)
+	output.PrintFields(FieldGroup{
+		Title: "Quota System Statistics",
+		Fields: []Field{
+			{"Total Users", fmt.Sprintf("%d", stats.TotalUsers)},
+			{"Active Users", fmt.Sprintf("%d", stats.ActiveUsers)},
+			{"Total Plans", fmt.Sprintf("%d", stats.TotalPlans)},
+			{"Active Plans", fmt.Sprintf("%d", stats.TotalActivePlans)},
+			{"Total Grants", fmt.Sprintf("%d", stats.TotalGrants)},
+			{"Active Grants", fmt.Sprintf("%d", stats.TotalActiveGrants)},
+			{"Total Usage Bytes", fmt.Sprintf("%d", stats.TotalUsageBytes)},
+		},
+	})
 
 	return nil
 }
@@ -732,8 +736,8 @@ func quotaReconcileAction(ctx context.Context, cmd quotaReconcileCmdGetter, outp
 		})
 	}
 
-	output.Printf("Reconciliation complete: %s", message)
-	output.Printf("Affected records: %d", affected)
+	output.Printfln("Reconciliation complete: %s", message)
+	output.Printfln("Affected records: %d", affected)
 
 	return nil
 }
@@ -768,7 +772,7 @@ func quotaCleanupAction(ctx context.Context, cmd quotaCleanupCmdGetter, output O
 		})
 	}
 
-	output.Printf("Cleanup complete: %d records deleted (retention: %d days)", deleted, retentionDays)
+	output.Printfln("Cleanup complete: %d records deleted (retention: %d days)", deleted, retentionDays)
 
 	return nil
 }

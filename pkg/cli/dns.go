@@ -329,20 +329,23 @@ func dnsZonesList(ctx context.Context, cmd *cli.Command, output Output, cfgMgr c
 		output.PrintJSON(zones)
 	} else {
 		if len(zones) == 0 {
-			output.Printf("No DNS zones found")
+			output.Printfln("No DNS zones found")
 			return nil
 		}
 
-		output.Printf("DNS Zones:")
+		output.Printfln("DNS Zones:")
 		for _, zone := range zones {
-			output.Printf("  ID: %d", zone.Id)
-			output.Printf("  Domain: %s", zone.Domain)
-			output.Printf("  Status: %s", zone.Status)
-			if zone.PowerdnsZoneId != nil {
-				output.Printf("  PowerDNS Zone ID: %s", *zone.PowerdnsZoneId)
+			fields := []Field{
+				{"ID", fmt.Sprintf("%d", zone.Id)},
+				{"Domain", zone.Domain},
+				{"Status", zone.Status},
 			}
-			output.Printf("  Created: %s", zone.CreatedAt.Format("2006-01-02 15:04:05"))
-			output.Printf("")
+			if zone.PowerdnsZoneId != nil {
+				fields = append(fields, Field{"PowerDNS Zone ID", *zone.PowerdnsZoneId})
+			}
+			fields = append(fields, Field{"Created", zone.CreatedAt.Format("2006-01-02 15:04:05")})
+			output.PrintFields(FieldGroup{Fields: fields})
+			output.Print("")
 		}
 	}
 
@@ -385,13 +388,15 @@ func dnsZonesCreate(ctx context.Context, cmd *cli.Command, output Output, cfgMgr
 	if output.IsJSON() {
 		output.PrintJSON(zone)
 	} else {
-		output.Printf("DNS zone created successfully:")
-		output.Printf("  ID: %d", zone.Id)
-		output.Printf("  Domain: %s", zone.Domain)
-		output.Printf("  Status: %s", zone.Status)
-		if zone.PowerdnsZoneId != nil {
-			output.Printf("  PowerDNS Zone ID: %s", *zone.PowerdnsZoneId)
+		fields := []Field{
+			{"ID", fmt.Sprintf("%d", zone.Id)},
+			{"Domain", zone.Domain},
+			{"Status", zone.Status},
 		}
+		if zone.PowerdnsZoneId != nil {
+			fields = append(fields, Field{"PowerDNS Zone ID", *zone.PowerdnsZoneId})
+		}
+		output.PrintFields(FieldGroup{Title: "DNS zone created successfully:", Fields: fields})
 	}
 
 	return nil
@@ -427,15 +432,19 @@ func dnsZonesGet(ctx context.Context, cmd *cli.Command, output Output, cfgMgr co
 	if output.IsJSON() {
 		output.PrintJSON(zone)
 	} else {
-		output.Printf("DNS Zone Details:")
-		output.Printf("  ID: %d", zone.Id)
-		output.Printf("  Domain: %s", zone.Domain)
-		output.Printf("  Status: %s", zone.Status)
-		if zone.PowerdnsZoneId != nil {
-			output.Printf("  PowerDNS Zone ID: %s", *zone.PowerdnsZoneId)
+		fields := []Field{
+			{"ID", fmt.Sprintf("%d", zone.Id)},
+			{"Domain", zone.Domain},
+			{"Status", zone.Status},
 		}
-		output.Printf("  Created: %s", zone.CreatedAt.Format("2006-01-02 15:04:05"))
-		output.Printf("  Updated: %s", zone.UpdatedAt.Format("2006-01-02 15:04:05"))
+		if zone.PowerdnsZoneId != nil {
+			fields = append(fields, Field{"PowerDNS Zone ID", *zone.PowerdnsZoneId})
+		}
+		fields = append(fields,
+			Field{"Created", zone.CreatedAt.Format("2006-01-02 15:04:05")},
+			Field{"Updated", zone.UpdatedAt.Format("2006-01-02 15:04:05")},
+		)
+		output.PrintFields(FieldGroup{Title: "DNS Zone Details:", Fields: fields})
 	}
 
 	return nil
@@ -468,7 +477,7 @@ func dnsZonesDelete(ctx context.Context, cmd *cli.Command, output Output, cfgMgr
 		return fmt.Errorf("failed to delete zone: %w", err)
 	}
 
-	output.Printf("DNS zone deleted successfully")
+	output.Printfln("DNS zone deleted successfully")
 	return nil
 }
 
@@ -499,21 +508,24 @@ func dnsRecordsList(ctx context.Context, cmd *cli.Command, output Output, cfgMgr
 		output.PrintJSON(records)
 	} else {
 		if len(records) == 0 {
-			output.Printf("No DNS records found")
+			output.Printfln("No DNS records found")
 			return nil
 		}
 
-		output.Printf("DNS Records:")
+		output.Printfln("DNS Records:")
 		for _, record := range records {
-			output.Printf("  Zone ID: %d", record.ZoneId)
-			output.Printf("  Name: %s", record.Name)
-			output.Printf("  Type: %s", record.Type)
-			output.Printf("  Content: %s", record.Content)
-			output.Printf("  TTL: %d", record.Ttl)
-			if record.Disabled {
-				output.Printf("  Status: disabled")
+			fields := []Field{
+				{"Zone ID", fmt.Sprintf("%d", record.ZoneId)},
+				{"Name", record.Name},
+				{"Type", record.Type},
+				{"Content", record.Content},
+				{"TTL", fmt.Sprintf("%d", record.Ttl)},
 			}
-			output.Printf("")
+			if record.Disabled {
+				fields = append(fields, Field{"Status", "disabled"})
+			}
+			output.PrintFields(FieldGroup{Fields: fields})
+			output.Print("")
 		}
 	}
 
@@ -568,12 +580,16 @@ func dnsRecordsCreate(ctx context.Context, cmd *cli.Command, output Output, cfgM
 	if output.IsJSON() {
 		output.PrintJSON(created)
 	} else {
-		output.Printf("DNS record created successfully:")
-		output.Printf("  Zone ID: %d", created.ZoneId)
-		output.Printf("  Name: %s", created.Name)
-		output.Printf("  Type: %s", created.Type)
-		output.Printf("  Content: %s", created.Content)
-		output.Printf("  TTL: %d", created.Ttl)
+		output.PrintFields(FieldGroup{
+			Title: "DNS record created successfully:",
+			Fields: []Field{
+				{"Zone ID", fmt.Sprintf("%d", created.ZoneId)},
+				{"Name", created.Name},
+				{"Type", created.Type},
+				{"Content", created.Content},
+				{"TTL", fmt.Sprintf("%d", created.Ttl)},
+			},
+		})
 	}
 
 	return nil
@@ -607,15 +623,17 @@ func dnsRecordsGet(ctx context.Context, cmd *cli.Command, output Output, cfgMgr 
 	if output.IsJSON() {
 		output.PrintJSON(record)
 	} else {
-		output.Printf("DNS Record Details:")
-		output.Printf("  Zone ID: %d", record.ZoneId)
-		output.Printf("  Name: %s", record.Name)
-		output.Printf("  Type: %s", record.Type)
-		output.Printf("  Content: %s", record.Content)
-		output.Printf("  TTL: %d", record.Ttl)
-		if record.Disabled {
-			output.Printf("  Status: disabled")
+		fields := []Field{
+			{"Zone ID", fmt.Sprintf("%d", record.ZoneId)},
+			{"Name", record.Name},
+			{"Type", record.Type},
+			{"Content", record.Content},
+			{"TTL", fmt.Sprintf("%d", record.Ttl)},
 		}
+		if record.Disabled {
+			fields = append(fields, Field{"Status", "disabled"})
+		}
+		output.PrintFields(FieldGroup{Title: "DNS Record Details:", Fields: fields})
 	}
 
 	return nil
@@ -669,12 +687,16 @@ func dnsRecordsUpdate(ctx context.Context, cmd *cli.Command, output Output, cfgM
 	if output.IsJSON() {
 		output.PrintJSON(updated)
 	} else {
-		output.Printf("DNS record updated successfully:")
-		output.Printf("  Zone ID: %d", updated.ZoneId)
-		output.Printf("  Name: %s", updated.Name)
-		output.Printf("  Type: %s", updated.Type)
-		output.Printf("  Content: %s", updated.Content)
-		output.Printf("  TTL: %d", updated.Ttl)
+		output.PrintFields(FieldGroup{
+			Title: "DNS record updated successfully:",
+			Fields: []Field{
+				{"Zone ID", fmt.Sprintf("%d", updated.ZoneId)},
+				{"Name", updated.Name},
+				{"Type", updated.Type},
+				{"Content", updated.Content},
+				{"TTL", fmt.Sprintf("%d", updated.Ttl)},
+			},
+		})
 	}
 
 	return nil
@@ -705,7 +727,7 @@ func dnsRecordsDelete(ctx context.Context, cmd *cli.Command, output Output, cfgM
 		return fmt.Errorf("failed to delete record: %w", err)
 	}
 
-	output.Printf("DNS record deleted successfully")
+	output.Printfln("DNS record deleted successfully")
 	return nil
 }
 

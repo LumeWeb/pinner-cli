@@ -211,7 +211,7 @@ func ipnsKeysList(ctx context.Context, cmd *cli.Command, output Output) error {
 	}
 
 	if len(keys) == 0 {
-		output.Printf("No IPNS keys found")
+		output.Printfln("No IPNS keys found")
 		return nil
 	}
 
@@ -223,7 +223,7 @@ func ipnsKeysList(ctx context.Context, cmd *cli.Command, output Output) error {
 		return output.PrintJSON(result)
 	}
 
-	output.Printf("Found %d IPNS key(s)", len(keys))
+	output.Printfln("Found %d IPNS key(s)", len(keys))
 
 	headers := []string{"ID", "NAME", "IPNS NAME", "PEER ID", "CREATED"}
 	rows := make([][]string, len(keys))
@@ -283,7 +283,7 @@ func ipnsKeysCreate(ctx context.Context, cmd *cli.Command, output Output) error 
 		return output.PrintJSON(createdKey)
 	}
 
-	output.Printf("Successfully created IPNS key")
+	output.Printfln("Successfully created IPNS key")
 
 	headers := []string{"ID", "NAME", "IPNS NAME", "PEER ID", "CREATED"}
 	rows := [][]string{
@@ -338,7 +338,7 @@ func ipnsKeysGet(ctx context.Context, cmd *cli.Command, output Output) error {
 		return output.PrintJSON(key)
 	}
 
-	output.Printf("IPNS Key Details")
+	output.Printfln("IPNS Key Details")
 
 	headers := []string{"ID", "NAME", "IPNS NAME", "PEER ID", "CREATED"}
 	rows := [][]string{
@@ -396,7 +396,7 @@ func ipnsKeysDelete(ctx context.Context, cmd *cli.Command, output Output) error 
 		return output.PrintJSON(result)
 	}
 
-	output.Printf("IPNS key %s deleted successfully", keyID)
+	output.Printfln("IPNS key %s deleted successfully", keyID)
 
 	return nil
 }
@@ -450,7 +450,7 @@ func ipnsPublish(ctx context.Context, cmd *cli.Command, output Output) error {
 		return output.PrintJSON(response)
 	}
 
-	output.Printf("Published CID %s to IPNS name %s", response.Value, response.Name)
+	output.Printfln("Published CID %s to IPNS name %s", response.Value, response.Name)
 
 	headers := []string{"NAME", "VALUE", "PUBLISHED", "SEQUENCE", "VALIDITY"}
 	rows := [][]string{
@@ -505,7 +505,7 @@ func ipnsResolve(ctx context.Context, cmd *cli.Command, output Output) error {
 		return output.PrintJSON(response)
 	}
 
-	output.Printf("IPNS name %s resolves to CID %s", response.Name, response.Value)
+	output.Printfln("IPNS name %s resolves to CID %s", response.Name, response.Value)
 
 	headers := []string{"NAME", "CID", "SEQUENCE", "EXPIRED", "EXPIRES"}
 	rows := [][]string{
