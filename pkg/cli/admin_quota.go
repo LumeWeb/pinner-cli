@@ -473,7 +473,8 @@ func quotaAllowancesCreateAction(ctx context.Context, cmd quotaAllowancesCreateC
 		return err
 	}
 
-	if err := requireUpdateFields(cmd, FlagUserID); err != nil {
+	userID, err := requireSetInt(cmd, FlagUserID)
+	if err != nil {
 		return err
 	}
 
@@ -488,7 +489,7 @@ func quotaAllowancesCreateAction(ctx context.Context, cmd quotaAllowancesCreateC
 
 	created, err := quotaService.CreateAllowance(
 		ctx,
-		cmd.Int(FlagUserID),
+		userID,
 		cmd.String(FlagSource),
 		cmd.String(FlagQuotaType),
 		bytes,
@@ -891,14 +892,14 @@ func quotaUserConfigsUpdateAction(ctx context.Context, cmd quotaUserConfigsUpdat
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	if err := requireUpdateFields(cmd, FlagUserID, FlagPlanID); err != nil {
+	userID, err := requireSetInt(cmd, FlagUserID)
+	if err != nil {
 		return err
 	}
 
-	userID := cmd.Int(FlagUserID)
-	planID := cmd.Int(FlagPlanID)
-	if planID == 0 {
-		return fmt.Errorf("plan-id is required")
+	planID, err := requireSetInt(cmd, FlagPlanID)
+	if err != nil {
+		return err
 	}
 
 	quotaService := serviceFactory(cfgMgr, output)

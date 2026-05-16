@@ -52,3 +52,22 @@ func requireUpdateFields(cmd flagChecker, flags ...string) error {
 	}
 	return fmt.Errorf("at least one field must be provided for update (%s)", strings.Join(flags, ", "))
 }
+
+// intFlagChecker is satisfied by command getters that support IsSet and Int.
+type intFlagChecker interface {
+	IsSet(name string) bool
+	Int(name string) int
+}
+
+// requireSetInt checks that the named int flag is both set and non-zero.
+// IntFlag defaults to 0, so IsSet alone doesn't catch --flag 0.
+func requireSetInt(cmd intFlagChecker, name string) (int, error) {
+	if !cmd.IsSet(name) {
+		return 0, fmt.Errorf("--%s is required", name)
+	}
+	v := cmd.Int(name)
+	if v == 0 {
+		return 0, fmt.Errorf("--%s must be greater than zero", name)
+	}
+	return v, nil
+}
