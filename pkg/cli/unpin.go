@@ -128,7 +128,7 @@ func unpin(ctx context.Context, cmd unpinCommandGetter, output Output, cfgMgrFac
 			return err
 		}
 		if confirm {
-			output.Printf("Unpinned CID: %s", result.CID)
+			output.Printfln("Unpinned CID: %s", result.CID)
 		}
 		return nil
 	}
@@ -143,16 +143,7 @@ func unpin(ctx context.Context, cmd unpinCommandGetter, output Output, cfgMgrFac
 		return err
 	}
 
-	output.Printf("Batch operation completed in %s", result.Duration)
-	output.Printf("Total: %d | Succeeded: %d | Failed: %d | Skipped: %d",
-		result.Total, len(result.Succeeded), len(result.Failed), len(result.Skipped))
-
-	if len(result.Failed) > 0 {
-		output.Printf("\nFailed operations:")
-		for _, fail := range result.Failed {
-			output.Printf("  - %s: %s", fail.CID, fail.Error)
-		}
-	}
+	output.PrintBatchResult(result)
 
 	return nil
 }

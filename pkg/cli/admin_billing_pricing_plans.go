@@ -134,13 +134,13 @@ func billingPricingPlansGetAction(ctx context.Context, cmd billingPricingPlansGe
 	})
 
 	if plan.Description != "" {
-		output.Printf("\n  Description: %s\n", plan.Description)
+		output.Printfln("  Description: %s", plan.Description)
 	}
 
 	if len(plan.PricingPeriods) > 0 {
-		output.Printf("\n")
 		output.PrintFields(FieldGroup{
-			Title: fmt.Sprintf("Pricing Periods (%d):", len(plan.PricingPeriods)),
+			Title:  fmt.Sprintf("Pricing Periods (%d):", len(plan.PricingPeriods)),
+			PadTop: 1,
 		})
 		headers := []string{"ID", "Price", "Cadence", "Quota Plan ID", "Active"}
 		rows := make([][]string, len(plan.PricingPeriods))
@@ -282,11 +282,11 @@ func billingPricingPlansCreateAction(ctx context.Context, cmd billingPricingPlan
 	var period *admin.PricingPlanPeriod
 	if cmd.IsSet(FlagQuotaPlanID) {
 		if !cmd.IsSet(FlagPrice) || !cmd.IsSet(FlagCadence) {
-			output.Printfln("\nWarning: --%s was set but --%s and/or --%s were not set. Period creation skipped.", FlagQuotaPlanID, FlagPrice, FlagCadence)
+			output.Printfln("Warning: --%s was set but --%s and/or --%s were not set. Period creation skipped.", FlagQuotaPlanID, FlagPrice, FlagCadence)
 		} else {
 			price := cmd.Float(FlagPrice)
 			if price <= 0 && !cmd.Bool(FlagAllowFree) {
-				output.Printfln("\nWarning: --%s must be greater than 0 (use --%s for $0 plans). Period creation skipped.", FlagPrice, FlagAllowFree)
+				output.Printfln("Warning: --%s must be greater than 0 (use --%s for $0 plans). Period creation skipped.", FlagPrice, FlagAllowFree)
 			} else {
 				periodReq := admin.PricingPlanPeriodCreateRequest{
 					PricingPlanId: int(plan.Id),
@@ -303,7 +303,7 @@ func billingPricingPlansCreateAction(ctx context.Context, cmd billingPricingPlan
 				}
 				period, err = service.CreatePricingPlanPeriod(ctx, &periodReq)
 				if err != nil {
-					output.Printfln("\nWarning: Failed to create pricing plan period: %v", err)
+					output.Printfln("Warning: Failed to create pricing plan period: %v", err)
 				}
 			}
 		}
@@ -330,9 +330,9 @@ func billingPricingPlansCreateAction(ctx context.Context, cmd billingPricingPlan
 	})
 
 	if period != nil {
-		output.Printf("\n")
 		output.PrintFields(FieldGroup{
-			Title: "Pricing plan period created successfully:",
+			Title:  "Pricing plan period created successfully:",
+			PadTop: 1,
 			Fields: []Field{
 				{Label: "ID", Value: strconv.FormatInt(int64(period.Id), 10)},
 				{Label: "Plan ID", Value: strconv.FormatInt(int64(period.PricingPlanId), 10)},

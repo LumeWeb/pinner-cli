@@ -128,10 +128,10 @@ func websitesSSLStatus(ctx context.Context, cmd *cli.Command, output Output) err
 		return output.PrintJSON(website)
 	}
 
-	output.Printf("SSL Status for %s", website.Domain)
+	output.Printfln("SSL Status for %s", website.Domain)
 
 	if website.Ssl == nil {
-		output.Printf("  No SSL information available")
+		output.Printfln("  No SSL information available")
 		return nil
 	}
 

@@ -173,7 +173,7 @@ func websitesList(ctx context.Context, cmd *cli.Command, output Output) error {
 	}
 
 	if len(websites) == 0 {
-		output.Printf("No websites found")
+		output.Printfln("No websites found")
 		return nil
 	}
 
@@ -185,7 +185,7 @@ func websitesList(ctx context.Context, cmd *cli.Command, output Output) error {
 		return output.PrintJSON(result)
 	}
 
-	output.Printf("Found %d website(s)", len(websites))
+	output.Printfln("Found %d website(s)", len(websites))
 
 	headers := []string{"ID", "NAME", "CID", "STATUS", "CREATED"}
 	rows := make([][]string, len(websites))
@@ -248,15 +248,15 @@ func websitesUpdate(ctx context.Context, cmd *cli.Command, output Output) error 
 
 	if dnsHosting {
 		if err := setupDNSHosting(ctx, cfgMgr, output, updatedWebsite.Domain, updatedWebsite.TargetHash); err != nil {
-			output.Printf("Warning: Failed to setup DNS hosting: %v", err)
-		}
+		output.Printfln("Warning: Failed to setup DNS hosting: %v", err)
 	}
+}
 
 	if output.IsJSON() {
 		return output.PrintJSON(updatedWebsite)
 	}
 
-	output.Printf("Website updated successfully")
+	output.Printfln("Website updated successfully")
 
 	headers := []string{"ID", "NAME", "CID", "STATUS", "CREATED"}
 	rows := [][]string{
@@ -311,7 +311,7 @@ func websitesGet(ctx context.Context, cmd *cli.Command, output Output) error {
 		return output.PrintJSON(website)
 	}
 
-	output.Printf("Website Details")
+	output.Printfln("Website Details")
 
 	headers := []string{"ID", "NAME", "CID", "STATUS", "CREATED"}
 	rows := [][]string{
@@ -367,7 +367,7 @@ func websitesCreate(ctx context.Context, cmd *cli.Command, output Output) error 
 
 	if dnsHosting {
 		if err := setupDNSHosting(ctx, cfgMgr, output, domain, targetHash); err != nil {
-			output.Printf("Warning: Failed to setup DNS hosting: %v", err)
+			output.Printfln("Warning: Failed to setup DNS hosting: %v", err)
 		}
 	}
 
@@ -375,7 +375,7 @@ func websitesCreate(ctx context.Context, cmd *cli.Command, output Output) error 
 		return output.PrintJSON(createdWebsite)
 	}
 
-	output.Printf("Website created successfully")
+	output.Printfln("Website created successfully")
 
 	headers := []string{"ID", "NAME", "CID", "STATUS", "CREATED"}
 	rows := [][]string{
@@ -390,10 +390,11 @@ func websitesCreate(ctx context.Context, cmd *cli.Command, output Output) error 
 	output.PrintTable(headers, rows)
 
 	if dnsHosting {
-		output.Printf("\nDNS hosting enabled for this domain")
-		output.Printf("Next steps:")
-		output.Printf("  1. Validate nameserver delegation: pinner dns zones validate %s", domain)
-		output.Printf("  2. Validate website DNS records: pinner websites validate %d", createdWebsite.Id)
+		output.Printfln("")
+		output.Printfln("DNS hosting enabled for this domain")
+		output.Printfln("Next steps:")
+		output.Printfln("  1. Validate nameserver delegation: pinner dns zones validate %s", domain)
+		output.Printfln("  2. Validate website DNS records: pinner websites validate %d", createdWebsite.Id)
 	}
 
 	return nil
@@ -403,14 +404,14 @@ func websitesCreate(ctx context.Context, cmd *cli.Command, output Output) error 
 func setupDNSHosting(ctx context.Context, cfgMgr config.Manager, output Output, domain, targetHash string) error {
 	dnsService := defaultDNSServiceFactory(cfgMgr, output)
 
-	output.Printf("Setting up DNS hosting for %s...", domain)
+	output.Printfln("Setting up DNS hosting for %s...", domain)
 
 	zone, err := dnsService.CreateZone(ctx, domain, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create DNS zone: %w", err)
 	}
 
-	output.Printf("  ✓ Created DNS zone (ID: %d, Status: %s)", zone.Id, zone.Status)
+	output.Printfln("  ✓ Created DNS zone (ID: %d, Status: %s)", zone.Id, zone.Status)
 
 
 
@@ -444,10 +445,10 @@ func setupDNSHosting(ctx context.Context, cfgMgr config.Manager, output Output, 
 	for _, record := range records {
 		created, err := dnsService.CreateRecord(ctx, domain, record)
 		if err != nil {
-			output.Printf("  ✗ Failed to create record %s %s: %v", record.Name, record.Type, err)
+			output.Printfln("  ✗ Failed to create record %s %s: %v", record.Name, record.Type, err)
 			continue
 		}
-		output.Printf("  ✓ Created DNS record: %s %s", created.Name, created.Type)
+		output.Printfln("  ✓ Created DNS record: %s %s", created.Name, created.Type)
 	}
 
 	return nil
@@ -538,7 +539,7 @@ func websitesDelete(ctx context.Context, cmd *cli.Command, output Output) error 
 		return output.PrintJSON(result)
 	}
 
-	output.Printf("Website %s deleted successfully", id)
+	output.Printfln("Website %s deleted successfully", id)
 
 	return nil
 }
@@ -581,8 +582,6 @@ func websitesValidate(ctx context.Context, cmd *cli.Command, output Output) erro
 
 	records, err := dnsService.ListRecords(ctx, validationResult.Domain)
 	if err == nil {
-		output.Printf("\nDNS Records Check:")
-
 		requiredRecords := []struct {
 			name    string
 			rtype   string
@@ -602,20 +601,23 @@ func websitesValidate(ctx context.Context, cmd *cli.Command, output Output) erro
 			}
 		}
 
-		for _, rr := range requiredRecords {
-			icon := "✗"
+		headers := []string{"RECORD", "TYPE", "STATUS"}
+		rows := make([][]string, len(requiredRecords))
+		for i, rr := range requiredRecords {
+			status := "✗"
 			if rr.present {
-				icon = "✓"
+				status = "✓"
 			}
-			output.Printf("  %s %s %s", icon, rr.name, rr.rtype)
+			rows[i] = []string{rr.name, rr.rtype, status}
 		}
+		output.PrintTable(headers, rows)
 	}
 
 	if output.IsJSON() {
 		return output.PrintJSON(validationResult)
 	}
 
-	output.Printf("Website Validation Result")
+	output.Printfln("Website Validation Result")
 
 	statusIcon := "⏳"
 	if validationResult.Valid {

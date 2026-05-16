@@ -25,6 +25,7 @@ type Field struct {
 type FieldGroup struct {
 	Title  string
 	Fields []Field
+	PadTop int
 }
 
 // CurrencyCode represents an ISO 4217 currency code.
@@ -37,11 +38,12 @@ const (
 
 // JSON output type constants.
 const (
-	jsonTypeList       = "list"
-	jsonTypeTable      = "table"
-	jsonTypeFields     = "fields"
-	jsonTypeListGroup  = "list-group"
-	jsonTypeMessage    = "message"
+	jsonTypeList        = "list"
+	jsonTypeTable       = "table"
+	jsonTypeFields      = "fields"
+	jsonTypeListGroup   = "list-group"
+	jsonTypeMessage     = "message"
+	jsonTypeBatchResult = "batch_result"
 )
 
 // Currency represents a monetary amount with a currency code.
@@ -105,6 +107,23 @@ type jsonMessage struct {
 	Message string `json:"message"`
 }
 
+// jsonBatchError represents a failed operation in a batch result for JSON serialization.
+type jsonBatchError struct {
+	CID   string `json:"cid"`
+	Error string `json:"error"`
+}
+
+// jsonBatchResult represents a batch operation result for JSON serialization.
+type jsonBatchResult struct {
+	Type      string           `json:"type"`
+	Duration  string           `json:"duration"`
+	Total     int              `json:"total"`
+	Succeeded int              `json:"succeeded"`
+	Failed    int              `json:"failed"`
+	Skipped   int              `json:"skipped"`
+	Errors    []jsonBatchError `json:"errors,omitempty"`
+}
+
 // ListGroup represents a titled collection with fields and an optional item list.
 type ListGroup struct {
 	Title     string
@@ -113,6 +132,7 @@ type ListGroup struct {
 	ItemLabel string
 	MaxItems  int
 	Footer    string
+	PadTop    int
 }
 
 // sensitiveKeywords contains keywords that indicate sensitive data should be masked.
@@ -170,6 +190,9 @@ type Output interface {
 
 	// PrintListGroup renders a titled group with fields and an optional item list.
 	PrintListGroup(group ListGroup)
+
+	// PrintBatchResult renders a batch operation summary with structured output.
+	PrintBatchResult(result *BatchResult)
 
 	// Watch continuously monitors and displays updates for the provided data fetcher.
 	// Returns when all items reach terminal status or context is cancelled.
@@ -341,12 +364,23 @@ func (h *humanFormatter) PrintFields(group FieldGroup) {
 		return
 	}
 
+	for i := 0; i < group.PadTop; i++ {
+		fmt.Fprintln(h.config.writer)
+	}
+
 	if group.Title != "" {
 		fmt.Fprintln(h.config.writer, group.Title)
 	}
 
+	maxLabel := 0
 	for _, field := range group.Fields {
-		fmt.Fprintf(h.config.writer, "  %s: %s\n", field.Label, field.Value)
+		if len(field.Label) > maxLabel {
+			maxLabel = len(field.Label)
+		}
+	}
+
+	for _, field := range group.Fields {
+		fmt.Fprintf(h.config.writer, "  %-*s  %s\n", maxLabel, field.Label, field.Value)
 	}
 }
 
@@ -354,6 +388,10 @@ func (h *humanFormatter) PrintFields(group FieldGroup) {
 func (h *humanFormatter) PrintListGroup(group ListGroup) {
 	if h.config.quiet {
 		return
+	}
+
+	for i := 0; i < group.PadTop; i++ {
+		fmt.Fprintln(h.config.writer)
 	}
 
 	if group.Title != "" {
@@ -385,6 +423,33 @@ func (h *humanFormatter) PrintListGroup(group ListGroup) {
 	if group.Footer != "" {
 		fmt.Fprintln(h.config.writer)
 		fmt.Fprintln(h.config.writer, group.Footer)
+	}
+}
+
+// PrintBatchResult renders a batch operation summary with human-readable formatting.
+func (h *humanFormatter) PrintBatchResult(result *BatchResult) {
+	if h.config.quiet {
+		return
+	}
+
+	h.PrintFields(FieldGroup{
+		Fields: []Field{
+			{"Duration", result.Duration.Round(time.Millisecond).String()},
+			{"Total", fmt.Sprintf("%d", result.Total)},
+			{"Succeeded", fmt.Sprintf("%d", len(result.Succeeded))},
+			{"Failed", fmt.Sprintf("%d", len(result.Failed))},
+			{"Skipped", fmt.Sprintf("%d", len(result.Skipped))},
+		},
+	})
+
+	if len(result.Failed) > 0 {
+		fmt.Fprintln(h.config.writer)
+		headers := []string{"CID", "ERROR"}
+		rows := make([][]string, len(result.Failed))
+		for i, fail := range result.Failed {
+			rows[i] = []string{fail.CID, fail.Error}
+		}
+		h.PrintTable(headers, rows)
 	}
 }
 
@@ -517,6 +582,28 @@ func (j *jsonFormatter) PrintListGroup(group ListGroup) {
 	j.PrintJSON(result)
 }
 
+// PrintBatchResult renders a batch operation summary as structured JSON.
+func (j *jsonFormatter) PrintBatchResult(result *BatchResult) {
+	if j.config.quiet {
+		return
+	}
+
+	errors := make([]jsonBatchError, len(result.Failed))
+	for i, fail := range result.Failed {
+		errors[i] = jsonBatchError{CID: fail.CID, Error: fail.Error}
+	}
+
+	j.PrintJSON(jsonBatchResult{
+		Type:      jsonTypeBatchResult,
+		Duration:  result.Duration.Round(time.Millisecond).String(),
+		Total:     result.Total,
+		Succeeded: len(result.Succeeded),
+		Failed:    len(result.Failed),
+		Skipped:   len(result.Skipped),
+		Errors:    errors,
+	})
+}
+
 // Watch continuously monitors and displays updates for the provided data fetcher.
 func (j *jsonFormatter) Watch(ctx context.Context, fetcher func(context.Context) (any, error), formatter func(any) (string, []string, [][]string)) error {
 	return watchLoop(ctx, 2*time.Second, j, false, fetcher, formatter)
@@ -541,7 +628,7 @@ func watchLoop(ctx context.Context, interval time.Duration, output Output, human
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	output.Printf("Watching (Press Ctrl+C to stop)...\n")
+	output.Printfln("Watching (Press Ctrl+C to stop)...")
 
 	for {
 		select {
@@ -560,7 +647,7 @@ func watchLoop(ctx context.Context, interval time.Duration, output Output, human
 			title, headers, rows := formatter(data)
 
 			if humanFormat && title != "" {
-				output.Printf("%s\n", title)
+				output.Print(title)
 			}
 
 			if !humanFormat {
@@ -579,12 +666,12 @@ func watchLoop(ctx context.Context, interval time.Duration, output Output, human
 			}
 
 			if len(rows) == 0 {
-				output.Printf("No items found\n")
+				output.Printfln("No items found")
 				return nil
 			}
 
 			if allTerminal(rows) {
-				output.Printf("All items have reached terminal status\n")
+				output.Printfln("All items have reached terminal status")
 				return nil
 			}
 		}

@@ -193,11 +193,15 @@ func handleUpload(ctx context.Context, cmd uploadCommandGetter, output Output, c
 	}
 
 	if result != nil {
-		output.Printf("Uploaded CID: %s", result.CID)
 		gatewayURL := cfgMgr.Config().GetGatewayEndpointSecure() + result.CID
-		output.Printf("Gateway URL: %s", gatewayURL)
-		output.Printf("Size: %s", humanReadableSize(result.Size))
-		output.Printf("Time: %s", result.Duration.Round(time.Millisecond))
+		output.PrintFields(FieldGroup{
+			Fields: []Field{
+				{"CID", result.CID},
+				{"Gateway URL", gatewayURL},
+				{"Size", humanReadableSize(result.Size)},
+				{"Time", result.Duration.Round(time.Millisecond).String()},
+			},
+		})
 	}
 
 	return nil
