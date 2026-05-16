@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	ipfs "go.lumeweb.com/ipfs-sdk"
 	contentfs "go.lumeweb.com/ipfs-content/fs"
 	"go.lumeweb.com/pinner-cli/pkg/config"
 	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
@@ -87,11 +88,14 @@ func (h *uploadTestHelpers) createTestFile(content string) string {
 	return tmpFile.Name()
 }
 
-func createMockServer(t *testing.T, handler http.HandlerFunc) (string, *httptest.Server) {
-	server := httptest.NewServer(handler)
+// createUploadMockServer creates a test server that handles the SDK's /api/upload endpoint.
+// The SDK builds the upload URL as baseURL + "/api/upload", so the test server
+// must handle that path.
+func createUploadMockServer(t *testing.T, handler http.HandlerFunc) (string, *httptest.Server) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/upload", handler)
+	server := httptest.NewServer(mux)
 
-	// Use localhost instead of 127.0.0.1 to avoid DNS issues with subdomains
-	// The config now properly handles localhost and doesn't add subdomains to it
 	u, _ := url.Parse(server.URL)
 	baseEndpoint := "http://localhost:" + u.Port()
 
@@ -171,12 +175,12 @@ func TestUploadServiceDefault_Upload(t *testing.T) {
 	})
 
 	t.Run("uploads directory successfully", func(t *testing.T) {
-		baseEndpoint, server := createMockServer(t, func(w http.ResponseWriter, r *http.Request) {
+		baseEndpoint, server := createUploadMockServer(t, func(w http.ResponseWriter, r *http.Request) {
 			assert.Equal(t, "POST", r.Method)
 			assert.Equal(t, "Bearer "+testAuthToken, r.Header.Get("Authorization"))
 			assert.Contains(t, r.Header.Get("Content-Type"), "multipart/form-data")
 
-			err := r.ParseMultipartForm(int64(DefaultUploadLimit))
+			err := r.ParseMultipartForm(int64(ipfs.DefaultUploadLimit))
 			require.NoError(t, err)
 
 			file, _, err := r.FormFile("file")
@@ -202,22 +206,22 @@ func TestUploadServiceDefault_Upload(t *testing.T) {
 		h := newUploadTestHelpers(t)
 		tmpDir := h.createTestDirectory(map[string]string{"test.txt": "test content"})
 
-		h.setupUploadExpectations(testAuthToken, baseEndpoint, uint64(DefaultUploadLimit), int64(100*1024*1024))
+		h.setupUploadExpectations(testAuthToken, baseEndpoint, uint64(ipfs.DefaultUploadLimit), int64(100*1024*1024))
 
 		filesystem := os.DirFS(tmpDir)
-		cid, err := h.service.Upload(context.Background(), filesystem, "test-dir", false)
+		result, err := h.service.Upload(context.Background(), filesystem, "test-dir", false)
 
 		require.NoError(t, err)
-		assert.NotEmpty(t, cid)
+		assert.NotEmpty(t, result.CID)
 	})
 
 	t.Run("uploads small file via CAR", func(t *testing.T) {
-		baseEndpoint, server := createMockServer(t, func(w http.ResponseWriter, r *http.Request) {
+		baseEndpoint, server := createUploadMockServer(t, func(w http.ResponseWriter, r *http.Request) {
 			assert.Equal(t, "POST", r.Method)
 			assert.Equal(t, "Bearer "+testAuthToken, r.Header.Get("Authorization"))
 			assert.Contains(t, r.Header.Get("Content-Type"), "multipart/form-data")
 
-			err := r.ParseMultipartForm(int64(DefaultUploadLimit))
+			err := r.ParseMultipartForm(int64(ipfs.DefaultUploadLimit))
 			require.NoError(t, err)
 
 			file, _, err := r.FormFile("file")
@@ -235,20 +239,20 @@ func TestUploadServiceDefault_Upload(t *testing.T) {
 		h := newUploadTestHelpers(t)
 		tmpFile := h.createTestFile("test content")
 
-		h.setupUploadExpectations(testAuthToken, baseEndpoint, DefaultUploadLimit, int64(DefaultUploadLimit))
+		h.setupUploadExpectations(testAuthToken, baseEndpoint, ipfs.DefaultUploadLimit, int64(ipfs.DefaultUploadLimit))
 
 		f, err := os.Open(tmpFile)
 		require.NoError(t, err)
 		defer f.Close()
 		filesystem := contentfs.NewSingleFileFS(f, "test.txt")
-		cid, err := h.service.Upload(context.Background(), filesystem, "test.txt", false)
+		result, err := h.service.Upload(context.Background(), filesystem, "test.txt", false)
 
 		require.NoError(t, err)
-		assert.NotEmpty(t, cid)
+		assert.NotEmpty(t, result.CID)
 	})
 
 	t.Run("uses default upload limit when account client fails", func(t *testing.T) {
-		baseEndpoint, server := createMockServer(t, func(w http.ResponseWriter, r *http.Request) {
+		baseEndpoint, server := createUploadMockServer(t, func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		})
 		defer server.Close()
@@ -257,20 +261,20 @@ func TestUploadServiceDefault_Upload(t *testing.T) {
 		tmpFile := h.createTestFile("test content")
 
 		h.accountClient.EXPECT().UploadLimit(mock.Anything).Return(int64(0), errors.New("api error"))
-		h.setupConfig(testAuthToken, baseEndpoint, DefaultUploadLimit)
+		h.setupConfig(testAuthToken, baseEndpoint, ipfs.DefaultUploadLimit)
 
 		f, err := os.Open(tmpFile)
 		require.NoError(t, err)
 		defer f.Close()
 		filesystem := contentfs.NewSingleFileFS(f, "test.txt")
-		cid, err := h.service.Upload(context.Background(), filesystem, "test.txt", false)
+		result, err := h.service.Upload(context.Background(), filesystem, "test.txt", false)
 
 		require.NoError(t, err)
-		assert.NotEmpty(t, cid)
+		assert.NotEmpty(t, result.CID)
 	})
 
 	t.Run("returns error on upload failure", func(t *testing.T) {
-		baseEndpoint, server := createMockServer(t, func(w http.ResponseWriter, r *http.Request) {
+		baseEndpoint, server := createUploadMockServer(t, func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
 			w.Write([]byte("upload failed"))
 		})
@@ -279,7 +283,7 @@ func TestUploadServiceDefault_Upload(t *testing.T) {
 		h := newUploadTestHelpers(t)
 		tmpFile := h.createTestFile("test content")
 
-		h.setupUploadExpectations(testAuthToken, baseEndpoint, DefaultUploadLimit, int64(DefaultUploadLimit))
+		h.setupUploadExpectations(testAuthToken, baseEndpoint, ipfs.DefaultUploadLimit, int64(ipfs.DefaultUploadLimit))
 
 		f, err := os.Open(tmpFile)
 		require.NoError(t, err)
@@ -292,7 +296,7 @@ func TestUploadServiceDefault_Upload(t *testing.T) {
 	})
 
 	t.Run("respects auth token override", func(t *testing.T) {
-		baseEndpoint, server := createMockServer(t, func(w http.ResponseWriter, r *http.Request) {
+		baseEndpoint, server := createUploadMockServer(t, func(w http.ResponseWriter, r *http.Request) {
 			authHeader := r.Header.Get("Authorization")
 			assert.Equal(t, "Bearer "+overrideToken, authHeader)
 			w.WriteHeader(http.StatusOK)
@@ -302,17 +306,17 @@ func TestUploadServiceDefault_Upload(t *testing.T) {
 		h := newUploadTestHelpers(t)
 		tmpFile := h.createTestFile("test content")
 
-		h.setupUploadExpectations(configToken, baseEndpoint, DefaultUploadLimit, int64(DefaultUploadLimit))
+		h.setupUploadExpectations(configToken, baseEndpoint, ipfs.DefaultUploadLimit, int64(ipfs.DefaultUploadLimit))
 		h.service.WithAuthToken(overrideToken)
 
 		f, err := os.Open(tmpFile)
 		require.NoError(t, err)
 		defer f.Close()
 		filesystem := contentfs.NewSingleFileFS(f, "test.txt")
-		cid, err := h.service.Upload(context.Background(), filesystem, "test.txt", false)
+		result, err := h.service.Upload(context.Background(), filesystem, "test.txt", false)
 
 		require.NoError(t, err)
-		assert.NotEmpty(t, cid)
+		assert.NotEmpty(t, result.CID)
 	})
 }
 
@@ -331,7 +335,7 @@ func (e *errorFS) Stat(name string) (fs.FileInfo, error) {
 
 func TestUploadServiceDefault_Upload_WaitForPin(t *testing.T) {
 	t.Run("waits for pin successfully", func(t *testing.T) {
-		baseEndpoint, server := createMockServer(t, func(w http.ResponseWriter, r *http.Request) {
+		baseEndpoint, server := createUploadMockServer(t, func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		})
 		defer server.Close()
@@ -339,23 +343,23 @@ func TestUploadServiceDefault_Upload_WaitForPin(t *testing.T) {
 		h := newUploadTestHelpers(t)
 		tmpFile := h.createTestFile("test content")
 
-		h.setupUploadExpectations(testAuthToken, baseEndpoint, DefaultUploadLimit, int64(DefaultUploadLimit))
+		h.setupUploadExpectations(testAuthToken, baseEndpoint, ipfs.DefaultUploadLimit, int64(ipfs.DefaultUploadLimit))
 
 		f, err := os.Open(tmpFile)
 		require.NoError(t, err)
 		defer f.Close()
 		filesystem := contentfs.NewSingleFileFS(f, "test.txt")
-		cid, err := h.service.Upload(context.Background(), filesystem, "test.txt", false)
+		result, err := h.service.Upload(context.Background(), filesystem, "test.txt", false)
 
 		require.NoError(t, err)
-		assert.NotEmpty(t, cid)
+		assert.NotEmpty(t, result.CID)
 	})
 }
 
 func TestUploadServiceDefaultIntegration(t *testing.T) {
 	t.Run("handles complex directory structure", func(t *testing.T) {
-		baseEndpoint, server := createMockServer(t, func(w http.ResponseWriter, r *http.Request) {
-			err := r.ParseMultipartForm(int64(DefaultUploadLimit))
+		baseEndpoint, server := createUploadMockServer(t, func(w http.ResponseWriter, r *http.Request) {
+			err := r.ParseMultipartForm(int64(ipfs.DefaultUploadLimit))
 			require.NoError(t, err)
 
 			file, _, err := r.FormFile("file")
@@ -375,18 +379,18 @@ func TestUploadServiceDefaultIntegration(t *testing.T) {
 			"subdir/file2.txt": "content2",
 		})
 
-		h.setupUploadExpectations(testAuthToken, baseEndpoint, DefaultUploadLimit, int64(DefaultUploadLimit))
+		h.setupUploadExpectations(testAuthToken, baseEndpoint, ipfs.DefaultUploadLimit, int64(ipfs.DefaultUploadLimit))
 
 		filesystem := os.DirFS(tmpDir)
-		cid, err := h.service.Upload(context.Background(), filesystem, "test-dir", false)
+		result, err := h.service.Upload(context.Background(), filesystem, "test-dir", false)
 
 		require.NoError(t, err)
-		assert.NotEmpty(t, cid)
+		assert.NotEmpty(t, result.CID)
 	})
 
 	t.Run("handles empty directory", func(t *testing.T) {
-		baseEndpoint, server := createMockServer(t, func(w http.ResponseWriter, r *http.Request) {
-			err := r.ParseMultipartForm(int64(DefaultUploadLimit))
+		baseEndpoint, server := createUploadMockServer(t, func(w http.ResponseWriter, r *http.Request) {
+			err := r.ParseMultipartForm(int64(ipfs.DefaultUploadLimit))
 			require.NoError(t, err)
 
 			file, _, err := r.FormFile("file")
@@ -403,12 +407,12 @@ func TestUploadServiceDefaultIntegration(t *testing.T) {
 		h := newUploadTestHelpers(t)
 		tmpDir := h.t.TempDir()
 
-		h.setupUploadExpectations(testAuthToken, baseEndpoint, DefaultUploadLimit, int64(DefaultUploadLimit))
+		h.setupUploadExpectations(testAuthToken, baseEndpoint, ipfs.DefaultUploadLimit, int64(ipfs.DefaultUploadLimit))
 
 		filesystem := os.DirFS(tmpDir)
-		cid, err := h.service.Upload(context.Background(), filesystem, "empty-dir", false)
+		result, err := h.service.Upload(context.Background(), filesystem, "empty-dir", false)
 
 		require.NoError(t, err)
-		assert.NotEmpty(t, cid)
+		assert.NotEmpty(t, result.CID)
 	})
 }

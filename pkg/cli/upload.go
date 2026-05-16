@@ -151,7 +151,8 @@ func handleUpload(ctx context.Context, cmd uploadCommandGetter, output Output, c
 		memoryLimit = cfgMgr.Config().MemoryLimit
 	}
 
-	uploadService := uploadServiceFactory(cfgMgr, output, WithMemoryLimit(memoryLimit))
+	authService := NewAuthService(cfgMgr, output, cfgMgr.Config().GetAccountEndpointSecure())
+	uploadService := uploadServiceFactory(cfgMgr, output, WithMemoryLimit(memoryLimit), WithUploadAuthService(authService))
 
 	path := cmd.Args().First()
 	name := cmd.String(FlagName)
