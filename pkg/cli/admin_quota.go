@@ -129,6 +129,7 @@ type quotaPlansCreateCmdGetter interface {
 	String(string) string
 	Int(string) int
 	Bool(string) bool
+	IsSet(string) bool
 }
 
 // quotaPlansCreateAction creates a new quota plan
@@ -142,6 +143,10 @@ func quotaPlansCreateAction(ctx context.Context, cmd quotaPlansCreateCmdGetter, 
 		return err
 	}
 
+	if err := requireUpdateFields(cmd, FlagName); err != nil {
+		return err
+	}
+
 	limits := admin.QuotaLimits{
 		UploadLimitBytes:   cmd.Int(FlagUploadLimit),
 		DownloadLimitBytes: cmd.Int(FlagDownloadLimit),
@@ -150,8 +155,8 @@ func quotaPlansCreateAction(ctx context.Context, cmd quotaPlansCreateCmdGetter, 
 	}
 
 	plan := admin.NewQuotaPlan(
-		cmd.String("name"),
-		cmd.String("description"),
+		cmd.String(FlagName),
+		cmd.String(FlagDescription),
 		limits,
 	)
 	plan.IsActive = cmd.Bool(FlagIsActive)
@@ -222,6 +227,10 @@ func quotaPlansUpdateAction(ctx context.Context, cmd quotaPlansUpdateCmdGetter, 
 	}
 
 	planID := args.First()
+
+	if err := requireUpdateFields(cmd, FlagName, FlagDescription, FlagUploadLimit, FlagDownloadLimit, FlagStorageLimit, FlagWindowType, FlagIsActive, FlagIsDefault); err != nil {
+		return err
+	}
 
 	// Get existing plan first
 	existing, err := quotaService.GetPlan(ctx, planID)
@@ -464,20 +473,25 @@ func quotaAllowancesCreateAction(ctx context.Context, cmd quotaAllowancesCreateC
 		return err
 	}
 
+	userID, err := requireSetInt(cmd, FlagUserID)
+	if err != nil {
+		return err
+	}
+
 	var expiryDate time.Time
-	if cmd.IsSet("expiry") {
-		days := cmd.Int("expiry")
+	if cmd.IsSet(FlagExpiry) {
+		days := cmd.Int(FlagExpiry)
 		expiryDate = time.Now().AddDate(0, 0, days)
 	}
 
-	bytes := cmd.Int("upload")
-	bytesRemaining := cmd.Int("upload")
+	bytes := cmd.Int(FlagUploadLimit)
+	bytesRemaining := cmd.Int(FlagUploadLimit)
 
 	created, err := quotaService.CreateAllowance(
 		ctx,
-		cmd.Int("user-id"),
-		cmd.String("source"),
-		cmd.String("type"),
+		userID,
+		cmd.String(FlagSource),
+		cmd.String(FlagQuotaType),
 		bytes,
 		bytesRemaining,
 		0,
@@ -535,35 +549,39 @@ func quotaAllowancesUpdateAction(ctx context.Context, cmd quotaAllowancesUpdateC
 
 	grantID := args.First()
 
+	if err := requireUpdateFields(cmd, FlagUserID, FlagSource, FlagQuotaType, FlagUploadLimit, FlagDownloadLimit, FlagExpiry); err != nil {
+		return err
+	}
+
 	userID := 0
-	if cmd.IsSet("user-id") {
-		userID = cmd.Int("user-id")
+	if cmd.IsSet(FlagUserID) {
+		userID = cmd.Int(FlagUserID)
 	}
 
 	var expiryDate time.Time
-	if cmd.IsSet("expiry") {
-		days := cmd.Int("expiry")
+	if cmd.IsSet(FlagExpiry) {
+		days := cmd.Int(FlagExpiry)
 		expiryDate = time.Now().AddDate(0, 0, days)
 	}
 
 	source := ""
-	if cmd.IsSet("source") {
-		source = cmd.String("source")
+	if cmd.IsSet(FlagSource) {
+		source = cmd.String(FlagSource)
 	}
 
 	allowanceType := ""
-	if cmd.IsSet("type") {
-		allowanceType = cmd.String("type")
+	if cmd.IsSet(FlagQuotaType) {
+		allowanceType = cmd.String(FlagQuotaType)
 	}
 
 	bytes := 0
-	if cmd.IsSet("upload") {
-		bytes = cmd.Int("upload")
+	if cmd.IsSet(FlagUploadLimit) {
+		bytes = cmd.Int(FlagUploadLimit)
 	}
 
 	bytesRemaining := bytes
-	if cmd.IsSet("download") {
-		bytesRemaining = cmd.Int("download")
+	if cmd.IsSet(FlagDownloadLimit) {
+		bytesRemaining = cmd.Int(FlagDownloadLimit)
 	}
 
 	updated, err := quotaService.UpdateAllowance(
@@ -695,8 +713,8 @@ func quotaReconcileAction(ctx context.Context, cmd quotaReconcileCmdGetter, outp
 	}
 
 	var userID *int
-	if cmd.IsSet("user-id") {
-		id := cmd.Int("user-id")
+	if cmd.IsSet(FlagUserID) {
+		id := cmd.Int(FlagUserID)
 		userID = &id
 	}
 
@@ -734,7 +752,7 @@ func quotaCleanupAction(ctx context.Context, cmd quotaCleanupCmdGetter, output O
 		return err
 	}
 
-	retentionDays := cmd.Int("retention-days")
+	retentionDays := cmd.Int(FlagRetentionDays)
 
 	deleted, err := quotaService.Cleanup(ctx, retentionDays)
 	if err != nil {
@@ -866,6 +884,7 @@ func quotaUserConfigsResetAction(ctx context.Context, cmd quotaUserConfigsResetC
 // quotaUserConfigsUpdateCmdGetter interface for quota user configs update command
 type quotaUserConfigsUpdateCmdGetter interface {
 	Int(name string) int
+	IsSet(name string) bool
 }
 
 // quotaUserConfigsUpdateAction updates a user's quota config
@@ -873,14 +892,14 @@ func quotaUserConfigsUpdateAction(ctx context.Context, cmd quotaUserConfigsUpdat
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	userID := cmd.Int("user-id")
-	if userID == 0 {
-		return fmt.Errorf("user-id is required")
+	userID, err := requireSetInt(cmd, FlagUserID)
+	if err != nil {
+		return err
 	}
 
-	planID := cmd.Int("plan-id")
-	if planID == 0 {
-		return fmt.Errorf("plan-id is required")
+	planID, err := requireSetInt(cmd, FlagPlanID)
+	if err != nil {
+		return err
 	}
 
 	quotaService := serviceFactory(cfgMgr, output)
