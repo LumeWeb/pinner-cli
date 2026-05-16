@@ -4,12 +4,22 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/urfave/cli/v3"
 )
 
 // Sentinel constant for unset configuration values
 const ConfigValueNotSet = "(not set)"
+
+// ConfigEnvPrefix is the environment variable prefix for configuration keys.
+const ConfigEnvPrefix = "PINNER_"
+
+// configKeyToEnvVar converts a config key to its environment variable name.
+// e.g., "base_endpoint" → "PINNER_BASE_ENDPOINT"
+func configKeyToEnvVar(key string) string {
+	return ConfigEnvPrefix + strings.ToUpper(strings.ReplaceAll(key, "-", "_"))
+}
 
 func newConfigCommand() *cli.Command {
 	return &cli.Command{
@@ -29,6 +39,9 @@ Examples:
   pinner config set secure false
   pinner config set memory_limit 256
   pinner config set max_retries 5 --dry-run
+
+Configuration can also be set via environment variables with the PINNER_ prefix.
+For example, PINNER_BASE_ENDPOINT sets base_endpoint, PINNER_SECURE sets secure.
 
 Common keys:
   base_endpoint  - API endpoint (empty for default)
@@ -68,7 +81,7 @@ func showAllConfig(output Output, cfgMgrFactory ConfigManagerFactory) error {
 		return fmt.Errorf("failed to initialize config manager: %w", err)
 	}
 
-	headers := []string{"Key", "Value", "Description"}
+	headers := []string{"Key", "Value", "Env", "Description"}
 	rows := [][]string{}
 
 	descriptions := cfgMgr.GetAllDescriptions()
@@ -101,7 +114,9 @@ func showAllConfig(output Output, cfgMgrFactory ConfigManagerFactory) error {
 			description = "-"
 		}
 
-		rows = append(rows, []string{key, displayValue, description})
+		envVar := configKeyToEnvVar(key)
+
+		rows = append(rows, []string{key, displayValue, envVar, description})
 	}
 
 	output.PrintTable(headers, rows)
@@ -228,6 +243,6 @@ func setConfig(ctx context.Context, cmd *cli.Command, output Output, cfgMgrFacto
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
-	output.Printf("Config updated: %s = %v", key, value)
+	output.Printfln("Config updated: %s = %v", key, value)
 	return nil
 }
