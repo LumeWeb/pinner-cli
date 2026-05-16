@@ -664,10 +664,9 @@ func wrapLine(line string, width int) []string {
 		// Hard-wrap a word that exceeds the width by itself
 		for wordLen > width {
 			space := width - curLen
-			if curLen > 0 && space > 0 {
-				if curLen > 0 {
-					cur.WriteByte(' ')
-				}
+			if curLen > 0 && space > 1 {
+				cur.WriteByte(' ')
+				space--
 				cur.WriteString(word[:space])
 				result = append(result, cur.String())
 				cur.Reset()
