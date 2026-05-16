@@ -155,7 +155,7 @@ func TestNewQuotaAllowancesCommand(t *testing.T) {
 		createCmd := findSubcommand(cmd.Commands, "create")
 		require.NotNil(t, createCmd)
 		require.NotNil(t, createCmd.Flags)
-		assert.Len(t, createCmd.Flags, 6)
+		assert.Len(t, createCmd.Flags, 7)
 
 		flagNames := getFlagNames(createCmd.Flags)
 		assert.Contains(t, flagNames, "user-id")
@@ -164,6 +164,7 @@ func TestNewQuotaAllowancesCommand(t *testing.T) {
 		assert.Contains(t, flagNames, "upload-limit")
 		assert.Contains(t, flagNames, "download-limit")
 		assert.Contains(t, flagNames, "storage-limit")
+		assert.Contains(t, flagNames, "expiry")
 	})
 }
 

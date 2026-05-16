@@ -73,8 +73,8 @@ Examples:
   pinner websites create --domain example.com --target-hash QmHash --dns-hosting
   pinner websites create --domain example.com --target-hash QmHash --json`,
 		Flags: []cli.Flag{
-			DomainFlag(),
-			TargetHashFlag(),
+			RequiredDomainFlag(),
+			RequiredTargetHashFlag(),
 			TargetTypeFlag(),
 			DNSHostingFlag(),
 			NoDNSHostingFlag(),
@@ -235,12 +235,11 @@ func websitesUpdate(ctx context.Context, cmd *cli.Command, output Output) error 
 	domain := cmd.String(FlagDomain)
 	targetHash := cmd.String(FlagTargetHash)
 	targetType := cmd.String(FlagTargetType)
-	dnsHosting := cmd.Bool(FlagDNSHosting)
-	noDNSHosting := cmd.Bool(FlagNoDNSHosting)
-
-	if domain == "" && targetHash == "" && targetType == "" && !dnsHosting && !noDNSHosting {
-		return fmt.Errorf("at least one field must be provided for update (domain, target-hash, target-type, or dns-hosting flags)")
+	if err := requireUpdateFields(cmd, FlagDomain, FlagTargetHash, FlagTargetType, FlagDNSHosting, FlagNoDNSHosting); err != nil {
+		return err
 	}
+
+	dnsHosting := cmd.Bool(FlagDNSHosting)
 
 	updatedWebsite, err := websitesService.Update(ctx, id, domain, targetHash, targetType)
 	if err != nil {
@@ -352,14 +351,7 @@ func websitesCreate(ctx context.Context, cmd *cli.Command, output Output) error 
 	}
 
 	domain := cmd.String(FlagDomain)
-	if domain == "" {
-		return fmt.Errorf("domain is required")
-	}
-
 	targetHash := cmd.String(FlagTargetHash)
-	if targetHash == "" {
-		return fmt.Errorf("target hash is required")
-	}
 
 	targetType := cmd.String(FlagTargetType)
 	if targetType == "" {

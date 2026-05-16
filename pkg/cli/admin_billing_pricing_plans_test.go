@@ -932,6 +932,7 @@ func TestBillingPricingPlanPeriodsUpdate(t *testing.T) {
 			periodID: "1",
 			price:    0,
 			allowFree: true,
+			isSet:    map[string]bool{"allow-free": true},
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
 				service.EXPECT().UpdatePricingPlanPeriod(context.Background(), "1", mock.MatchedBy(func(req *admin.PricingPlanPeriodUpdateRequest) bool {

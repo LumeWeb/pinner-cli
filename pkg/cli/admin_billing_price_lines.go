@@ -303,6 +303,10 @@ func billingPriceLinesUpdateAction(ctx context.Context, cmd billingPriceLinesUpd
 
 	priceLineID := cmd.Args().First()
 
+	if err := requireUpdateFields(cmd, FlagName, FlagDescription, FlagIsActive, FlagIsDefault); err != nil {
+		return err
+	}
+
 	req := admin.PriceLineUpdateRequest{}
 	if cmd.IsSet(FlagName) {
 		req.Name = cmd.String(FlagName)

@@ -85,9 +85,8 @@ Examples:
   pinner ipns keys create my-key --json`,
 		ArgsUsage: "<name>",
 		Flags: []cli.Flag{
-			NameFlag("Custom name for the key"),
 			&cli.StringFlag{
-				Name:  "key",
+				Name:  FlagKey,
 				Usage: "Private key to import (optional, generates a new key if not provided)",
 			},
 		},
@@ -270,7 +269,7 @@ func ipnsKeysCreate(ctx context.Context, cmd *cli.Command, output Output) error 
 	}
 
 	var key *string
-	keyValue := cmd.String("key")
+	keyValue := cmd.String(FlagKey)
 	if keyValue != "" {
 		key = &keyValue
 	}

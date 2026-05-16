@@ -24,6 +24,7 @@ const (
 	FlagLastName    = "last-name"
 	FlagOTPCode     = "otp-code"
 	FlagKeyName     = "key-name"
+	FlagKey         = "key"
 	FlagNoCreateKey = "no-create-key"
 	FlagForce       = "force"
 	FlagToken       = "token"
@@ -100,6 +101,7 @@ const (
 	FlagOlderThan     = "older-than"
 	FlagForceDelete   = "force-delete"
 	FlagWindowType    = "window-type"
+	FlagExpiry        = "expiry"
 	FlagFeatures      = "features"
 )
 
@@ -183,6 +185,15 @@ func NameFlag(usage string) *cli.StringFlag {
 	return &cli.StringFlag{
 		Name:  FlagName,
 		Usage: usage,
+	}
+}
+
+// RequiredNameFlag returns a required flag for setting a name.
+func RequiredNameFlag(usage string) *cli.StringFlag {
+	return &cli.StringFlag{
+		Name:     FlagName,
+		Usage:    usage,
+		Required: true,
 	}
 }
 
@@ -296,11 +307,29 @@ func DomainFlag() *cli.StringFlag {
 	}
 }
 
+// RequiredDomainFlag returns a required flag for the website domain.
+func RequiredDomainFlag() *cli.StringFlag {
+	return &cli.StringFlag{
+		Name:     FlagDomain,
+		Usage:    "Domain name for the website",
+		Required: true,
+	}
+}
+
 // TargetHashFlag returns a flag for the target CID.
 func TargetHashFlag() *cli.StringFlag {
 	return &cli.StringFlag{
 		Name:  FlagTargetHash,
 		Usage: "Target CID (IPFS hash) for the website",
+	}
+}
+
+// RequiredTargetHashFlag returns a required flag for the target CID.
+func RequiredTargetHashFlag() *cli.StringFlag {
+	return &cli.StringFlag{
+		Name:     FlagTargetHash,
+		Usage:    "Target CID (IPFS hash) for the website",
+		Required: true,
 	}
 }
 
@@ -337,6 +366,15 @@ func ZoneIDFlag() *cli.StringFlag {
 	}
 }
 
+// RequiredZoneIDFlag returns a required flag for the DNS zone ID.
+func RequiredZoneIDFlag() *cli.StringFlag {
+	return &cli.StringFlag{
+		Name:     FlagZoneID,
+		Usage:    "DNS zone ID",
+		Required: true,
+	}
+}
+
 // NameserversFlag returns a flag for custom nameservers.
 func NameserversFlag() *cli.StringFlag {
 	return &cli.StringFlag{
@@ -350,6 +388,15 @@ func ContentFlag() *cli.StringFlag {
 	return &cli.StringFlag{
 		Name:  FlagContent,
 		Usage: "DNS record content",
+	}
+}
+
+// RequiredContentFlag returns a required flag for DNS record content.
+func RequiredContentFlag() *cli.StringFlag {
+	return &cli.StringFlag{
+		Name:     FlagContent,
+		Usage:    "DNS record content",
+		Required: true,
 	}
 }
 
@@ -375,6 +422,15 @@ func TypeFlag() *cli.StringFlag {
 	return &cli.StringFlag{
 		Name:  FlagType,
 		Usage: "DNS record type (A, AAAA, CNAME, TXT, MX, NS, etc.)",
+	}
+}
+
+// RequiredTypeFlag returns a required flag for DNS record type.
+func RequiredTypeFlag() *cli.StringFlag {
+	return &cli.StringFlag{
+		Name:     FlagType,
+		Usage:    "DNS record type (A, AAAA, CNAME, TXT, MX, NS, etc.)",
+		Required: true,
 	}
 }
 

@@ -42,6 +42,7 @@ Examples:
 type metadataCommandGetter interface {
 	StringSlice(name string) []string
 	Bool(name string) bool
+	IsSet(name string) bool
 	GetCID() string
 }
 
@@ -70,6 +71,10 @@ func metadata(ctx context.Context, cmd metadataCommandGetter, output Output, cfg
 	cid := cmd.GetCID()
 	if cid == "" {
 		return fmt.Errorf("cid is required")
+	}
+
+	if err := requireUpdateFields(cmd, FlagSet, FlagClear); err != nil {
+		return err
 	}
 
 	set := cmd.StringSlice(FlagSet)

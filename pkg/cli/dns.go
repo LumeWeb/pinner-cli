@@ -101,7 +101,7 @@ Examples:
   pinner dns zones create --domain example.com --nameservers ns1.example.com,ns2.example.com
   pinner dns zones create --domain example.com --json`,
 		Flags: []cli.Flag{
-			DomainFlag(),
+			RequiredDomainFlag(),
 			NameserversFlag(),
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
@@ -187,7 +187,7 @@ Examples:
   pinner dns records list --zone-id 1
   pinner dns records list --zone-id 1 --json`,
 		Flags: []cli.Flag{
-			ZoneIDFlag(),
+			RequiredZoneIDFlag(),
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			cfgMgr, output, err := setupCommandContext(cmd)
@@ -237,9 +237,9 @@ Examples:
   pinner dns records get --zone-id 1 --name www --type CNAME
   pinner dns records get --zone-id 1 --name www --type CNAME --json`,
 		Flags: []cli.Flag{
-			ZoneIDFlag(),
-			NameFlag("DNS record name"),
-			TypeFlag(),
+			RequiredZoneIDFlag(),
+			RequiredNameFlag("DNS record name"),
+			RequiredTypeFlag(),
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			cfgMgr, output, err := setupCommandContext(cmd)
@@ -262,9 +262,9 @@ Examples:
   pinner dns records update --zone-id 1 --name www --type CNAME --content new.example.com --ttl 7200
   pinner dns records update --zone-id 1 --name www --type CNAME --json`,
 		Flags: []cli.Flag{
-			ZoneIDFlag(),
-			NameFlag("DNS record name"),
-			TypeFlag(),
+			RequiredZoneIDFlag(),
+			RequiredNameFlag("DNS record name"),
+			RequiredTypeFlag(),
 			ContentFlag(),
 			TTLFlag(),
 			DisabledFlag(),
@@ -288,9 +288,9 @@ func newDNSRecordsDeleteCommand() *cli.Command {
 Examples:
   pinner dns records delete --zone-id 1 --name www --type CNAME`,
 		Flags: []cli.Flag{
-			ZoneIDFlag(),
-			NameFlag("DNS record name"),
-			TypeFlag(),
+			RequiredZoneIDFlag(),
+			RequiredNameFlag("DNS record name"),
+			RequiredTypeFlag(),
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			cfgMgr, output, err := setupCommandContext(cmd)
@@ -351,9 +351,6 @@ func dnsZonesList(ctx context.Context, cmd *cli.Command, output Output, cfgMgr c
 
 func dnsZonesCreate(ctx context.Context, cmd *cli.Command, output Output, cfgMgr config.Manager) error {
 	domain := cmd.String(FlagDomain)
-	if domain == "" {
-		return fmt.Errorf("--domain is required")
-	}
 
 	if err := validateDomain(domain); err != nil {
 		return err
@@ -477,9 +474,6 @@ func dnsZonesDelete(ctx context.Context, cmd *cli.Command, output Output, cfgMgr
 
 func dnsRecordsList(ctx context.Context, cmd *cli.Command, output Output, cfgMgr config.Manager) error {
 	zoneID := cmd.String(FlagZoneID)
-	if zoneID == "" {
-		return fmt.Errorf("--zone-id is required")
-	}
 
 	var dnsService DNSService
 
@@ -531,19 +525,6 @@ func dnsRecordsCreate(ctx context.Context, cmd *cli.Command, output Output, cfgM
 	name := cmd.String(FlagName)
 	recordType := cmd.String(FlagType)
 	content := cmd.String(FlagContent)
-
-	if zoneID == "" {
-		return fmt.Errorf("--zone-id is required")
-	}
-	if name == "" {
-		return fmt.Errorf("--name is required")
-	}
-	if recordType == "" {
-		return fmt.Errorf("--type is required")
-	}
-	if content == "" {
-		return fmt.Errorf("--content is required")
-	}
 
 	if err := validateDNSRecord(recordType, content); err != nil {
 		return err
@@ -603,16 +584,6 @@ func dnsRecordsGet(ctx context.Context, cmd *cli.Command, output Output, cfgMgr 
 	name := cmd.String(FlagName)
 	recordType := cmd.String(FlagType)
 
-	if zoneID == "" {
-		return fmt.Errorf("--zone-id is required")
-	}
-	if name == "" {
-		return fmt.Errorf("--name is required")
-	}
-	if recordType == "" {
-		return fmt.Errorf("--type is required")
-	}
-
 	var dnsService DNSService
 
 	authToken := GetAuthToken(cmd, cfgMgr)
@@ -655,19 +626,6 @@ func dnsRecordsUpdate(ctx context.Context, cmd *cli.Command, output Output, cfgM
 	name := cmd.String(FlagName)
 	recordType := cmd.String(FlagType)
 	content := cmd.String(FlagContent)
-
-	if zoneID == "" {
-		return fmt.Errorf("--zone-id is required")
-	}
-	if name == "" {
-		return fmt.Errorf("--name is required")
-	}
-	if recordType == "" {
-		return fmt.Errorf("--type is required")
-	}
-	if content == "" {
-		return fmt.Errorf("--content is required")
-	}
 
 	if err := validateDNSRecord(recordType, content); err != nil {
 		return err
@@ -726,16 +684,6 @@ func dnsRecordsDelete(ctx context.Context, cmd *cli.Command, output Output, cfgM
 	zoneID := cmd.String(FlagZoneID)
 	name := cmd.String(FlagName)
 	recordType := cmd.String(FlagType)
-
-	if zoneID == "" {
-		return fmt.Errorf("--zone-id is required")
-	}
-	if name == "" {
-		return fmt.Errorf("--name is required")
-	}
-	if recordType == "" {
-		return fmt.Errorf("--type is required")
-	}
 
 	var dnsService DNSService
 

@@ -338,6 +338,10 @@ Examples:
 						Name:  FlagStorageLimit,
 						Usage: "Storage allowance (bytes)",
 					},
+					&cli.IntFlag{
+						Name:  FlagExpiry,
+						Usage: "Expiry in days from now",
+					},
 				},
 				Action: func(ctx context.Context, cmd *cli.Command) error {
 					cfgMgr, output, err := setupCommandContext(cmd)
@@ -353,7 +357,7 @@ Examples:
 				Description: `Update an existing quota allowance.
 
 Examples:
-  pinner admin quota allowances update <grant-id> --upload 2000`,
+  pinner admin quota allowances update <grant-id> --upload-limit 2000`,
 				ArgsUsage: "<grant-id>",
 				Flags: []cli.Flag{
 					&cli.IntFlag{
@@ -379,6 +383,10 @@ Examples:
 					&cli.IntFlag{
 						Name:  FlagStorageLimit,
 						Usage: "Storage allowance (bytes)",
+					},
+					&cli.IntFlag{
+						Name:  FlagExpiry,
+						Usage: "Expiry in days from now",
 					},
 				},
 				Action: func(ctx context.Context, cmd *cli.Command) error {

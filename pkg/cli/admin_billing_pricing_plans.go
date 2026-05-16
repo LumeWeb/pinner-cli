@@ -407,6 +407,10 @@ func billingPricingPlansUpdateAction(ctx context.Context, cmd billingPricingPlan
 
 	planID := cmd.Args().First()
 
+	if err := requireUpdateFields(cmd, FlagName, FlagCurrency, FlagDescription, FlagIsActive, FlagIsPublic); err != nil {
+		return err
+	}
+
 	req := admin.PricingPlanUpdateRequest{}
 
 	if cmd.IsSet(FlagName) {
@@ -791,6 +795,10 @@ func billingPricingPlanPeriodsUpdateAction(ctx context.Context, cmd billingPrici
 	}
 
 	periodID := cmd.Args().First()
+
+	if err := requireUpdateFields(cmd, FlagPrice, FlagCadence, FlagQuotaPlanID, FlagRollingDays, FlagAllowFree); err != nil {
+		return err
+	}
 
 	req := admin.PricingPlanPeriodUpdateRequest{}
 

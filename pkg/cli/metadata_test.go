@@ -18,6 +18,7 @@ func TestMetadata(t *testing.T) {
 		cid              string
 		setFlags         []string
 		clearFlag        bool
+		isSet            map[string]bool
 		setupMocks       func(*configmocks.MockManager, *MockPinningService)
 		wantErr          bool
 		errContains      string
@@ -28,6 +29,7 @@ func TestMetadata(t *testing.T) {
 			cid:       "QmXxx",
 			setFlags:  []string{"key", "value"},
 			clearFlag: false,
+			isSet:     map[string]bool{FlagSet: true},
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPinningService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
 				service.EXPECT().UpdateMetadata(context.Background(), "QmXxx", []string{"key", "value"}, false).Return(nil)
@@ -39,6 +41,7 @@ func TestMetadata(t *testing.T) {
 			cid:       "QmXxx",
 			setFlags:  []string{"key1", "value1", "key2", "value2"},
 			clearFlag: false,
+			isSet:     map[string]bool{FlagSet: true},
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPinningService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
 				service.EXPECT().UpdateMetadata(context.Background(), "QmXxx", []string{"key1", "value1", "key2", "value2"}, false).Return(nil)
@@ -50,6 +53,7 @@ func TestMetadata(t *testing.T) {
 			cid:       "QmXxx",
 			setFlags:  []string{},
 			clearFlag: true,
+			isSet:     map[string]bool{FlagClear: true},
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPinningService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
 				service.EXPECT().UpdateMetadata(context.Background(), "QmXxx", []string{}, true).Return(nil)
@@ -61,6 +65,7 @@ func TestMetadata(t *testing.T) {
 			cid:              "QmXxx",
 			setFlags:         []string{"key", "value"},
 			clearFlag:        false,
+			isSet:            map[string]bool{FlagSet: true},
 			setupMocks:       func(cfgMgr *configmocks.MockManager, service *MockPinningService) {},
 			wantErr:          true,
 			errContains:      "config error",
@@ -71,6 +76,7 @@ func TestMetadata(t *testing.T) {
 			cid:       "QmXxx",
 			setFlags:  []string{"key", "value"},
 			clearFlag: false,
+			isSet:      map[string]bool{FlagSet: true},
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPinningService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
 				service.EXPECT().UpdateMetadata(context.Background(), "QmXxx", []string{"key", "value"}, false).Return(
@@ -85,6 +91,7 @@ func TestMetadata(t *testing.T) {
 			cid:       "invalid-cid",
 			setFlags:  []string{"key", "value"},
 			clearFlag: false,
+			isSet:      map[string]bool{FlagSet: true},
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPinningService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
 				service.EXPECT().UpdateMetadata(context.Background(), "invalid-cid", []string{"key", "value"}, false).Return(
@@ -99,6 +106,7 @@ func TestMetadata(t *testing.T) {
 			cid:       "QmXxx",
 			setFlags:  []string{"key", "value"},
 			clearFlag: false,
+			isSet:      map[string]bool{FlagSet: true},
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPinningService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
 				service.EXPECT().UpdateMetadata(context.Background(), "QmXxx", []string{"key", "value"}, false).Return(
@@ -113,6 +121,7 @@ func TestMetadata(t *testing.T) {
 			cid:       "QmXxx",
 			setFlags:  []string{"key"},
 			clearFlag: false,
+			isSet:      map[string]bool{FlagSet: true},
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPinningService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
 				service.EXPECT().UpdateMetadata(context.Background(), "QmXxx", []string{"key"}, false).Return(
@@ -138,6 +147,7 @@ func TestMetadata(t *testing.T) {
 				cid:   tt.cid,
 				set:   tt.setFlags,
 				clear: tt.clearFlag,
+				isSet: tt.isSet,
 			}
 
 			var cfgMgrFactory ConfigManagerFactory
@@ -192,9 +202,10 @@ func TestNewMetadataCommand(t *testing.T) {
 
 // mockMetadataCommand is a mock implementation of metadataCommandGetter for testing.
 type mockMetadataCommand struct {
-	cid   string
-	set   []string
-	clear bool
+	cid    string
+	set    []string
+	clear  bool
+	isSet  map[string]bool
 }
 
 func (m *mockMetadataCommand) GetCID() string {
@@ -217,4 +228,11 @@ func (m *mockMetadataCommand) Bool(name string) bool {
 	default:
 		return false
 	}
+}
+
+func (m *mockMetadataCommand) IsSet(name string) bool {
+	if m.isSet == nil {
+		return false
+	}
+	return m.isSet[name]
 }

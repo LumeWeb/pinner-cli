@@ -25,6 +25,7 @@ type mockQuotaPlansCreateCmd struct {
 	windowType  string
 	isActive    bool
 	isDefault   bool
+	isSetName   bool
 }
 
 func (m *mockQuotaPlansCreateCmd) String(s string) string {
@@ -59,6 +60,15 @@ func (m *mockQuotaPlansCreateCmd) Bool(s string) bool {
 		return m.isActive
 	case FlagIsDefault:
 		return m.isDefault
+	default:
+		return false
+	}
+}
+
+func (m *mockQuotaPlansCreateCmd) IsSet(s string) bool {
+	switch s {
+	case FlagName:
+		return m.isSetName
 	default:
 		return false
 	}
@@ -148,8 +158,9 @@ func TestQuotaPlansCreate(t *testing.T) {
 		{
 			name: "success with is-active flag",
 			cmd: &mockQuotaPlansCreateCmd{
-				name:     "Free",
-				isActive: true,
+				name:      "Free",
+				isSetName: true,
+				isActive:  true,
 			},
 			setupMocks: func(cfgMgr *configmocks.MockManager, svc *MockQuotaAdminService) {
 				svc.EXPECT().RequireAuthenticated().Return(nil)
@@ -161,6 +172,7 @@ func TestQuotaPlansCreate(t *testing.T) {
 			name: "success with is-active and is-default flags",
 			cmd: &mockQuotaPlansCreateCmd{
 				name:      "Free",
+				isSetName: true,
 				isActive:  true,
 				isDefault: true,
 			},
@@ -175,6 +187,7 @@ func TestQuotaPlansCreate(t *testing.T) {
 			name: "is-default fails but plan still created",
 			cmd: &mockQuotaPlansCreateCmd{
 				name:      "Free",
+				isSetName: true,
 				isActive:  true,
 				isDefault: true,
 			},
@@ -190,6 +203,7 @@ func TestQuotaPlansCreate(t *testing.T) {
 			name: "success with description",
 			cmd: &mockQuotaPlansCreateCmd{
 				name:        "Free",
+				isSetName:   true,
 				description: "Free tier plan",
 				isActive:    true,
 			},
@@ -202,7 +216,8 @@ func TestQuotaPlansCreate(t *testing.T) {
 		{
 			name: "not authenticated",
 			cmd: &mockQuotaPlansCreateCmd{
-				name: "Free",
+				name:      "Free",
+				isSetName: true,
 			},
 			setupMocks: func(cfgMgr *configmocks.MockManager, svc *MockQuotaAdminService) {
 				svc.EXPECT().RequireAuthenticated().Return(errors.New("authentication required"))
@@ -213,8 +228,9 @@ func TestQuotaPlansCreate(t *testing.T) {
 		{
 			name: "service error",
 			cmd: &mockQuotaPlansCreateCmd{
-				name:     "Free",
-				isActive: true,
+				name:      "Free",
+				isSetName: true,
+				isActive:  true,
 			},
 			setupMocks: func(cfgMgr *configmocks.MockManager, svc *MockQuotaAdminService) {
 				svc.EXPECT().RequireAuthenticated().Return(nil)
@@ -222,6 +238,15 @@ func TestQuotaPlansCreate(t *testing.T) {
 			},
 			wantErr:     true,
 			errContains: "api error",
+		},
+		{
+			name: "returns error when no fields provided for create",
+			cmd:  &mockQuotaPlansCreateCmd{},
+			setupMocks: func(cfgMgr *configmocks.MockManager, svc *MockQuotaAdminService) {
+				svc.EXPECT().RequireAuthenticated().Return(nil)
+			},
+			wantErr:     true,
+			errContains: "at least one field must be provided for update",
 		},
 	}
 
