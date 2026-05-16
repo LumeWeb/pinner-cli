@@ -452,7 +452,7 @@ Examples:
 Examples:
   pinner admin quota user-configs update --user-id 1 --plan-id 19
   pinner admin quota user-configs update --user-id 1 --plan-id 19 --enforcement-policy HARD_LIMITS
-  pinner admin quota user-configs update --user-id 1 --upload-limit-bytes 5000 --download-limit-bytes 10000
+  pinner admin quota user-configs update --user-id 1 --upload-limit 5000 --download-limit 10000
   pinner admin quota user-configs update --user-id 1 --plan-id 19 --json`,
 				Flags: []cli.Flag{
 					&cli.IntFlag{
