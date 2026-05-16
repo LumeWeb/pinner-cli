@@ -435,6 +435,7 @@ func (h *humanFormatter) PrintBatchResult(result *BatchResult) {
 	h.PrintFields(FieldGroup{
 		Fields: []Field{
 			{"Duration", result.Duration.Round(time.Millisecond).String()},
+			{"Total", fmt.Sprintf("%d", result.Total)},
 			{"Succeeded", fmt.Sprintf("%d", len(result.Succeeded))},
 			{"Failed", fmt.Sprintf("%d", len(result.Failed))},
 			{"Skipped", fmt.Sprintf("%d", len(result.Skipped))},
