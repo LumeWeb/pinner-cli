@@ -146,6 +146,7 @@ func quotaPlansCreateAction(ctx context.Context, cmd quotaPlansCreateCmdGetter, 
 		UploadLimitBytes:   cmd.Int(FlagUploadLimit),
 		DownloadLimitBytes: cmd.Int(FlagDownloadLimit),
 		StorageLimitBytes:  cmd.Int(FlagStorageLimit),
+		WindowType:         cmd.String(FlagWindowType),
 	}
 
 	plan := admin.NewQuotaPlan(
@@ -222,8 +223,24 @@ func quotaPlansUpdateAction(ctx context.Context, cmd quotaPlansUpdateCmdGetter, 
 
 	planID := args.First()
 
-	limits := admin.QuotaLimits{}
+	// Get existing plan first
+	existing, err := quotaService.GetPlan(ctx, planID)
+	if err != nil {
+		return fmt.Errorf("failed to get existing plan: %w", err)
+	}
 
+	// Start with existing values
+	limits := admin.QuotaLimits{
+		UploadLimitBytes:   existing.UploadLimitBytes,
+		DownloadLimitBytes: existing.DownloadLimitBytes,
+		StorageLimitBytes:  existing.StorageLimitBytes,
+		WindowType:         existing.WindowType,
+		WindowDuration:     existing.WindowDuration,
+		WindowStartHour:    existing.WindowStartHour,
+		WindowTimezone:     existing.WindowTimezone,
+	}
+
+	// Override with provided values
 	if cmd.IsSet(FlagUploadLimit) {
 		limits.UploadLimitBytes = cmd.Int(FlagUploadLimit)
 	}
@@ -233,12 +250,21 @@ func quotaPlansUpdateAction(ctx context.Context, cmd quotaPlansUpdateCmdGetter, 
 	if cmd.IsSet(FlagStorageLimit) {
 		limits.StorageLimitBytes = cmd.Int(FlagStorageLimit)
 	}
+	if cmd.IsSet(FlagWindowType) {
+		limits.WindowType = cmd.String(FlagWindowType)
+	}
 
-	plan := admin.NewQuotaPlan(
-		cmd.String("name"),
-		cmd.String("description"),
-		limits,
-	)
+	name := existing.Name
+	if cmd.IsSet(FlagName) {
+		name = cmd.String(FlagName)
+	}
+	description := existing.Description
+	if cmd.IsSet(FlagDescription) {
+		description = cmd.String(FlagDescription)
+	}
+
+	plan := admin.NewQuotaPlan(name, description, limits)
+	plan.IsActive = existing.IsActive
 
 	if cmd.IsSet(FlagIsActive) {
 		plan.IsActive = cmd.Bool(FlagIsActive)
@@ -834,6 +860,49 @@ func quotaUserConfigsResetAction(ctx context.Context, cmd quotaUserConfigsResetC
 
 	output.Printf("User %d config reset to default", userID)
 
+	return nil
+}
+
+// quotaUserConfigsUpdateCmdGetter interface for quota user configs update command
+type quotaUserConfigsUpdateCmdGetter interface {
+	Int(name string) int
+}
+
+// quotaUserConfigsUpdateAction updates a user's quota config
+func quotaUserConfigsUpdateAction(ctx context.Context, cmd quotaUserConfigsUpdateCmdGetter, output Output, cfgMgr config.Manager, serviceFactory QuotaAdminServiceFactory) error {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	userID := cmd.Int("user-id")
+	if userID == 0 {
+		return fmt.Errorf("user-id is required")
+	}
+
+	planID := cmd.Int("plan-id")
+	if planID == 0 {
+		return fmt.Errorf("plan-id is required")
+	}
+
+	quotaService := serviceFactory(cfgMgr, output)
+
+	if err := quotaService.RequireAuthenticated(); err != nil {
+		return err
+	}
+
+	config := &admin.UserQuotaConfigUpdate{
+		QuotaPlanId: &planID,
+	}
+
+	result, err := quotaService.UpdateUserConfig(ctx, userID, config)
+	if err != nil {
+		return err
+	}
+
+	if output.IsJSON() {
+		return output.PrintJSON(result)
+	}
+
+	output.Printf("User %d quota config updated", userID)
 	return nil
 }
 

@@ -22,6 +22,7 @@ type mockQuotaPlansCreateCmd struct {
 	upload      int
 	download    int
 	storage     int
+	windowType  string
 	isActive    bool
 	isDefault   bool
 }
@@ -32,6 +33,8 @@ func (m *mockQuotaPlansCreateCmd) String(s string) string {
 		return m.name
 	case FlagDescription:
 		return m.description
+	case FlagWindowType:
+		return m.windowType
 	default:
 		return ""
 	}
@@ -63,16 +66,18 @@ func (m *mockQuotaPlansCreateCmd) Bool(s string) bool {
 
 // mockQuotaPlansUpdateCmd implements quotaPlansUpdateCmdGetter
 type mockQuotaPlansUpdateCmd struct {
-	args         *mockArgs
-	name         string
-	description  string
-	upload       int
-	download     int
-	storage      int
-	isActive     bool
-	isDefault    bool
-	isSetActive  bool
-	isSetDefault bool
+	args            *mockArgs
+	name            string
+	description     string
+	upload          int
+	download        int
+	storage         int
+	windowType      string
+	isActive        bool
+	isDefault       bool
+	isSetActive     bool
+	isSetDefault    bool
+	isSetWindowType bool
 }
 
 func (m *mockQuotaPlansUpdateCmd) Args() cli.Args {
@@ -85,6 +90,8 @@ func (m *mockQuotaPlansUpdateCmd) String(s string) string {
 		return m.name
 	case FlagDescription:
 		return m.description
+	case FlagWindowType:
+		return m.windowType
 	default:
 		return ""
 	}
@@ -120,6 +127,8 @@ func (m *mockQuotaPlansUpdateCmd) IsSet(s string) bool {
 		return m.isSetActive
 	case FlagIsDefault:
 		return m.isSetDefault
+	case FlagWindowType:
+		return m.isSetWindowType
 	case FlagUploadLimit, FlagDownloadLimit, FlagStorageLimit:
 		return true
 	default:
@@ -328,6 +337,7 @@ func TestQuotaPlansUpdate(t *testing.T) {
 			},
 			setupMocks: func(cfgMgr *configmocks.MockManager, svc *MockQuotaAdminService) {
 				svc.EXPECT().RequireAuthenticated().Return(nil)
+				svc.EXPECT().GetPlan(mock.Anything, "2").Return(&admin.QuotaPlan{}, nil)
 				svc.EXPECT().UpdatePlan(mock.Anything, "2", mock.AnythingOfType("*admin.QuotaPlan")).Return(&admin.QuotaPlan{}, nil)
 			},
 			wantErr: false,
@@ -343,6 +353,7 @@ func TestQuotaPlansUpdate(t *testing.T) {
 			},
 			setupMocks: func(cfgMgr *configmocks.MockManager, svc *MockQuotaAdminService) {
 				svc.EXPECT().RequireAuthenticated().Return(nil)
+				svc.EXPECT().GetPlan(mock.Anything, "2").Return(&admin.QuotaPlan{}, nil)
 				svc.EXPECT().UpdatePlan(mock.Anything, "2", mock.AnythingOfType("*admin.QuotaPlan")).Return(&admin.QuotaPlan{}, nil)
 				svc.EXPECT().SetDefaultPlan(mock.Anything, "2").Return(nil)
 			},
@@ -368,6 +379,7 @@ func TestQuotaPlansUpdate(t *testing.T) {
 			},
 			setupMocks: func(cfgMgr *configmocks.MockManager, svc *MockQuotaAdminService) {
 				svc.EXPECT().RequireAuthenticated().Return(nil)
+				svc.EXPECT().GetPlan(mock.Anything, "2").Return(&admin.QuotaPlan{}, nil)
 				svc.EXPECT().UpdatePlan(mock.Anything, "2", mock.AnythingOfType("*admin.QuotaPlan")).Return(&admin.QuotaPlan{}, nil)
 				svc.EXPECT().SetDefaultPlan(mock.Anything, "2").Return(fmt.Errorf("%w: plan not found", admin.ErrNotFound))
 			},

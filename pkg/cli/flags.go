@@ -99,6 +99,8 @@ const (
 	FlagDirection     = "direction"
 	FlagOlderThan     = "older-than"
 	FlagForceDelete   = "force-delete"
+	FlagWindowType    = "window-type"
+	FlagFeatures      = "features"
 )
 
 // Admin command name constants
@@ -138,9 +140,12 @@ const (
 	CmdUserConfigs        = "user-configs"
 	CmdStats              = "stats"
 	CmdReset              = "reset"
+	CmdSync                = "sync"
+	CmdSyncAll             = "sync-all"
+	CmdBlock               = "block"
+	CmdUnblock             = "unblock"
+	CmdWebsites            = "websites"
 	CmdAdmin              = "admin"
-	CmdSync               = "sync"
-	CmdSyncAll            = "sync-all"
 )
 
 // GlobalFlags returns flags that are available to all commands.

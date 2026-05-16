@@ -27,7 +27,7 @@ require (
 	go.lumeweb.com/configmanager v0.3.26
 	go.lumeweb.com/ipfs-content v0.1.15
 	go.lumeweb.com/ipfs-sdk v0.1.35
-	go.lumeweb.com/portal-sdk v0.1.49
+	go.lumeweb.com/portal-sdk v0.1.54
 	go.lumeweb.com/queryutil v0.3.15
 	golang.org/x/text v0.34.0
 )
@@ -39,6 +39,7 @@ require (
 	github.com/Jorropo/jsync v1.0.1 // indirect
 	github.com/alecthomas/units v0.0.0-20240927000941-0f3dac36c52b // indirect
 	github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
+	github.com/apt304/sse-go v0.0.3 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/buger/jsonparser v1.1.1 // indirect

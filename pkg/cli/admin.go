@@ -35,6 +35,7 @@ Examples:
 		Commands: []*cli.Command{
 			newQuotaCommand(),
 			newBillingCommand(),
+			newAdminWebsitesCommand(),
 		},
 	}
 }
@@ -169,6 +170,10 @@ Examples:
 						Name:  FlagStorageLimit,
 						Usage: "Storage limit (bytes)",
 					},
+						&cli.StringFlag{
+							Name:  FlagWindowType,
+							Usage: "Window type (ROLLING, DAY, WEEK, MONTH, YEAR, LIFETIME)",
+						},
 					&cli.BoolFlag{
 						Name:  FlagIsActive,
 						Usage: "Mark plan as active",
@@ -218,6 +223,10 @@ Examples:
 						Name:  FlagStorageLimit,
 						Usage: "Storage limit (bytes)",
 					},
+						&cli.StringFlag{
+							Name:  FlagWindowType,
+							Usage: "Window type (ROLLING, DAY, WEEK, MONTH, YEAR, LIFETIME)",
+						},
 					&cli.BoolFlag{
 						Name:  FlagIsActive,
 						Usage: "Mark plan as active",
@@ -408,6 +417,7 @@ func newQuotaUserConfigsCommand() *cli.Command {
 
 Examples:
   pinner admin quota user-configs list
+  pinner admin quota user-configs update --user-id 1 --plan-id 19
   pinner admin quota user-configs reset <user-id>`,
 		Commands: []*cli.Command{
 			{
@@ -424,6 +434,32 @@ Examples:
 						return err
 					}
 					return quotaUserConfigsListAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultQuotaAdminServiceFactory)
+				},
+			},
+			{
+				Name:  CmdUpdate,
+				Usage: "Update a user quota config",
+				Description: `Update a user's quota configuration.
+
+Examples:
+  pinner admin quota user-configs update --user-id 1 --plan-id 19
+  pinner admin quota user-configs update --user-id 1 --plan-id 19 --json`,
+				Flags: []cli.Flag{
+					&cli.IntFlag{
+						Name:  "user-id",
+						Usage: "User ID",
+					},
+					&cli.IntFlag{
+						Name:  "plan-id",
+						Usage: "Quota plan ID to assign",
+					},
+				},
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					cfgMgr, output, err := setupCommandContext(cmd)
+					if err != nil {
+						return err
+					}
+					return quotaUserConfigsUpdateAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultQuotaAdminServiceFactory)
 				},
 			},
 			{
