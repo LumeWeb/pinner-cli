@@ -801,7 +801,7 @@ func quotaUserConfigsListAction(ctx context.Context, cmd quotaUserConfigsListCmd
 		return output.PrintJSON(result)
 	}
 
-	output.Printf("Found %d user config(s)", total)
+	output.Printfln("Found %d user config(s)", total)
 
 	if len(configs) == 0 {
 		return nil
@@ -878,7 +878,7 @@ func quotaUserConfigsResetAction(ctx context.Context, cmd quotaUserConfigsResetC
 		})
 	}
 
-	output.Printf("User %d config reset to default", userID)
+	output.Printfln("User %d config reset to default", userID)
 
 	return nil
 }
@@ -974,7 +974,7 @@ func quotaUserConfigsUpdateAction(ctx context.Context, cmd quotaUserConfigsUpdat
 		return output.PrintJSON(result)
 	}
 
-	output.Printf("User %d quota config updated", userID)
+	output.Printfln("User %d quota config updated", userID)
 	return nil
 }
 
