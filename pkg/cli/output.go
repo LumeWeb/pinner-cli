@@ -273,8 +273,33 @@ func (h *humanFormatter) PrintTable(headers []string, rows [][]string) {
 		return
 	}
 
+	// Word-wrap cell values so the table fits the terminal.
+	// Calculate a max column width based on terminal size.
+	maxColWidth := 50
+	if termWidth := pterm.GetTerminalWidth(); termWidth > 0 {
+		// Reserve space for box borders, separators, and padding
+		// Box: 2 chars each side + 2 padding = ~6, separators: ~3 per column
+		overhead := 6 + (len(headers)-1)*3
+		available := termWidth - overhead
+		if available > 20 {
+			// Give 40% to the widest column, rest distributed evenly
+			maxColWidth = available * 2 / (len(headers) + 1)
+			if maxColWidth < 20 {
+				maxColWidth = 20
+			}
+		}
+	}
+
+	wrappedRows := make([][]string, len(rows))
+	for i, row := range rows {
+		wrappedRows[i] = make([]string, len(row))
+		for j, cell := range row {
+			wrappedRows[i][j] = wordWrap(cell, maxColWidth)
+		}
+	}
+
 	tableData := pterm.TableData{headers}
-	for _, row := range rows {
+	for _, row := range wrappedRows {
 		tableData = append(tableData, row)
 	}
 
@@ -607,4 +632,76 @@ func NewOutputFormatter(json, verbose, quiet, unmask bool) Output {
 		return &jsonFormatter{baseFormatter: base}
 	}
 	return &humanFormatter{baseFormatter: base}
+}
+
+// wordWrap wraps text at the specified width, breaking at word boundaries.
+// Long words without break opportunities are hard-wrapped at the width limit.
+func wordWrap(text string, width int) string {
+	if width <= 0 {
+		return text
+	}
+
+	var lines []string
+	for _, line := range strings.Split(text, "\n") {
+		if len(line) <= width {
+			lines = append(lines, line)
+			continue
+		}
+		lines = append(lines, wrapLine(line, width)...)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// wrapLine wraps a single line at the given width.
+func wrapLine(line string, width int) []string {
+	var result []string
+	var cur strings.Builder
+	curLen := 0
+
+	for _, word := range strings.Fields(line) {
+		wordLen := len(word)
+
+		// Hard-wrap a word that exceeds the width by itself
+		for wordLen > width {
+			space := width - curLen
+			if curLen > 0 && space > 1 {
+				cur.WriteByte(' ')
+				space--
+				cur.WriteString(word[:space])
+				result = append(result, cur.String())
+				cur.Reset()
+				curLen = 0
+				word = word[space:]
+				wordLen = len(word)
+		} else {
+			if curLen > 0 {
+				result = append(result, cur.String())
+				cur.Reset()
+				curLen = 0
+			}
+			result = append(result, word[:width])
+			word = word[width:]
+			wordLen = len(word)
+		}
+		}
+
+		if curLen+wordLen+1 > width && curLen > 0 {
+			result = append(result, cur.String())
+			cur.Reset()
+			curLen = 0
+		}
+
+		if curLen > 0 {
+			cur.WriteByte(' ')
+			curLen++
+		}
+		cur.WriteString(word)
+		curLen += wordLen
+	}
+
+	if cur.Len() > 0 {
+		result = append(result, cur.String())
+	}
+
+	return result
 }

@@ -10,7 +10,6 @@ import (
 	"github.com/manifoldco/promptui"
 	"github.com/pterm/pterm"
 	"github.com/pterm/pterm/putils"
-	"go.lumeweb.com/pinner-cli/pkg/cli/internal"
 )
 
 // runSelect executes a select prompt and handles interrupts.
@@ -59,7 +58,7 @@ func (ui *PTermSetupUI) ShowWelcome() error {
 
 	pterm.Println()
 
-	_, err := internal.DefaultInteractiveContinue.Show()
+	_, err := pterm.DefaultInteractiveContinue.Show()
 	return err
 }
 
@@ -123,7 +122,7 @@ func (ui *PTermSetupUI) ExecuteAuthStep(ctx context.Context, wizard *SetupWizard
 		pterm.Info.Println("After creating your account, we'll help you sign in.")
 		pterm.Println()
 
-		if _, err := internal.DefaultInteractiveContinue.Show(); err != nil {
+		if _, err := pterm.DefaultInteractiveContinue.Show(); err != nil {
 			return err
 		}
 
@@ -135,7 +134,7 @@ func (ui *PTermSetupUI) ExecuteAuthStep(ctx context.Context, wizard *SetupWizard
 	case choices[2]: // Skip
 		pterm.Warning.Println("Skipping authentication. You can run 'pinner auth' later.")
 		pterm.Println()
-		_, err := internal.DefaultInteractiveContinue.Show()
+		_, err := pterm.DefaultInteractiveContinue.Show()
 		return err
 	}
 
@@ -297,7 +296,7 @@ func (ui *PTermSetupUI) ExecuteTutorialStep(_ *SetupWizard) error {
 	pterm.Printf("Documentation: %s\n", DocumentationURL)
 	pterm.Println()
 
-	_, err := internal.DefaultInteractiveContinue.Show()
+	_, err := pterm.DefaultInteractiveContinue.Show()
 	return err
 }
 
@@ -333,7 +332,7 @@ func (ui *PTermSetupUI) ExecuteCompletionStep(_ *SetupWizard) error {
 		pterm.Printf("To enable completion later, run: pinner completion <shell>\n")
 		pterm.Printf("  Example: pinner completion bash\n")
 		pterm.Println()
-		_, err := internal.DefaultInteractiveContinue.Show()
+		_, err := pterm.DefaultInteractiveContinue.Show()
 		return err
 	}
 
@@ -349,7 +348,7 @@ func (ui *PTermSetupUI) handleCompletionSetup() error {
 		pterm.Printf("To enable completion, run: pinner completion <shell>\n")
 		pterm.Printf("  Example: pinner completion bash\n")
 		pterm.Println()
-		_, err := internal.DefaultInteractiveContinue.Show()
+		_, err := pterm.DefaultInteractiveContinue.Show()
 		return err
 	}
 
@@ -367,7 +366,7 @@ func (ui *PTermSetupUI) handleCompletionSetup() error {
 		pterm.Printf("Detected shell: %s\n\n", shell)
 		pterm.Printf("To enable completion, run: pinner completion %s\n", shell)
 		pterm.Println()
-		_, err := internal.DefaultInteractiveContinue.Show()
+		_, err := pterm.DefaultInteractiveContinue.Show()
 		return err
 	}
 
@@ -378,7 +377,7 @@ func (ui *PTermSetupUI) handleCompletionSetup() error {
 	pterm.Printf("  echo '%s' >> %s\n", detector.InstallCommand(), detector.ConfigPath())
 	pterm.Println()
 
-	_, err = internal.DefaultInteractiveContinue.Show()
+	_, err = pterm.DefaultInteractiveContinue.Show()
 	return err
 }
 

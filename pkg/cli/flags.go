@@ -171,7 +171,7 @@ func GlobalFlags() []cli.Flag {
 		},
 		&cli.StringFlag{
 			Name:    FlagAuthToken,
-			Usage:   "Auth token to override config (env: PINNER_AUTH_TOKEN)",
+			Usage:   "Auth token to override config",
 			Sources: cli.EnvVars("PINNER_AUTH_TOKEN"),
 		},
 		SecureFlag(),
@@ -223,7 +223,7 @@ func StatusFlag() *cli.StringFlag {
 func MemoryLimitFlag() *cli.Uint64Flag {
 	return &cli.Uint64Flag{
 		Name:    FlagMemoryLimit,
-		Usage:   "Memory limit for CAR generation in megabytes (e.g., 100, 256, 1024)",
+		Usage:   "Memory limit for CAR generation in megabytes",
 		Value:   uint64(config.DefaultMemoryLimitMB),
 		Sources: cli.EnvVars("PINNER_MEMORY_LIMIT"),
 	}
@@ -233,7 +233,7 @@ func MemoryLimitFlag() *cli.Uint64Flag {
 func SecureFlag() *cli.BoolFlag {
 	return &cli.BoolFlag{
 		Name:    FlagSecure,
-		Usage:   "Use HTTPS for API connections (default: true)",
+		Usage:   "Use HTTPS for API connections",
 		Value:   true,
 		Sources: cli.EnvVars("PINNER_SECURE"),
 	}

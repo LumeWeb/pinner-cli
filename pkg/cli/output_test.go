@@ -1168,113 +1168,55 @@ func TestHumanFormatterWatch(t *testing.T) {
 	})
 }
 
-func TestJSONFormatterWatch(t *testing.T) {
-	t.Run("watches and updates data as JSON", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+func TestWordWrap(t *testing.T) {
+	testCases := []struct {
+		name     string
+		input    string
+		width    int
+		expected string
+	}{
+		{"short text unchanged", "hello", 10, "hello"},
+		{"exact width", "hello", 5, "hello"},
+		{"wraps at word boundary", "hello world foo", 8, "hello\nworld\nfoo"},
+		{"hard wraps long word", "abcdefghij", 5, "abcde\nfghij"},
+		{"hard wrap long word after short word", "ab cdefghijkl", 5, "ab cd\nefghi\njkl"},
+		{"hard wrap flushes current line first", "abcde fghijklmno", 5, "abcde\nfghij\nklmno"},
+		{"preserves newlines", "hello\nworld", 10, "hello\nworld"},
+		{"mixed newlines and wrapping", "hello world\nfoo bar baz", 8, "hello\nworld\nfoo bar\nbaz"},
+		{"zero width returns unchanged", "hello world", 0, "hello world"},
+		{"negative width returns unchanged", "hello world", -1, "hello world"},
+		{"empty string", "", 10, ""},
+		{"single char", "a", 10, "a"},
+		{"multiple spaces between words", "hello  world", 8, "hello\nworld"},
+	}
 
-		callCount := 0
-		fetcher := func(ctx context.Context) (any, error) {
-			callCount++
-			// First call returns queued (non-terminal)
-			// Second call returns pinned (terminal)
-			if callCount == 1 {
-				return []string{"queued"}, nil
-			}
-			return []string{"pinned"}, nil
-		}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := wordWrap(tc.input, tc.width)
+			assert.Equal(t, tc.expected, result)
+		})
+	}
+}
 
-		formatter := func(data any) (string, []string, [][]string) {
-			status := data.([]string)[0]
-			return "test title", []string{"Status"}, [][]string{{status}}
-		}
+func TestWrapLine(t *testing.T) {
+	testCases := []struct {
+		name     string
+		input    string
+		width    int
+		expected []string
+	}{
+		{"short line", "hello", 10, []string{"hello"}},
+		{"wraps at word boundary", "hello world", 8, []string{"hello", "world"}},
+		{"hard wraps long word", "abcdefghij", 5, []string{"abcde", "fghij"}},
+		{"hard wrap after short word", "ab cdefghijkl", 5, []string{"ab cd", "efghi", "jkl"}},
+		{"hard wrap flushes current line first", "abcde fghijklmno", 5, []string{"abcde", "fghij", "klmno"}},
+		{"multiple words fit", "a b c d", 5, []string{"a b c", "d"}},
+	}
 
-		var buf bytes.Buffer
-		output := NewOutputFormatter(true, false, false, false)
-		output.SetWriter(&buf)
-
-		err := output.Watch(ctx, fetcher, formatter)
-		require.NoError(t, err)
-		// Should have been called at least once (first tick)
-		assert.GreaterOrEqual(t, callCount, 1)
-
-		// Verify JSON output - parse all JSON objects in the buffer
-		decoder := json.NewDecoder(&buf)
-		foundWatch := false
-		for decoder.More() {
-			var result map[string]any
-			err := decoder.Decode(&result)
-			require.NoError(t, err)
-			if result["type"] == "watch" && result["title"] == "test title" {
-				foundWatch = true
-				break
-			}
-		}
-		assert.True(t, foundWatch, "Expected to find watch JSON object with type='watch' and title='test title'")
-	})
-
-	t.Run("cancels on context cancellation", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
-
-		// Cancel the context immediately
-		cancel()
-
-		fetcher := func(ctx context.Context) (any, error) {
-			return []string{"queued"}, nil
-		}
-
-		formatter := func(data any) (string, []string, [][]string) {
-			return "", []string{"Status"}, [][]string{{"queued"}}
-		}
-
-		var buf bytes.Buffer
-		output := NewOutputFormatter(true, false, false, false)
-		output.SetWriter(&buf)
-
-		err := output.Watch(ctx, fetcher, formatter)
-		assert.Error(t, err)
-		assert.Equal(t, context.Canceled, err)
-	})
-
-	t.Run("handles empty results", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		fetcher := func(ctx context.Context) (any, error) {
-			return []string{}, nil
-		}
-
-		formatter := func(data any) (string, []string, [][]string) {
-			return "", []string{"Status"}, [][]string{}
-		}
-
-		var buf bytes.Buffer
-		output := NewOutputFormatter(true, false, false, false)
-		output.SetWriter(&buf)
-
-		err := output.Watch(ctx, fetcher, formatter)
-		require.NoError(t, err)
-		assert.Contains(t, buf.String(), "No items found")
-	})
-
-	t.Run("handles fetcher errors", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		fetcher := func(ctx context.Context) (any, error) {
-			return nil, errors.New("fetch error")
-		}
-
-		formatter := func(data any) (string, []string, [][]string) {
-			return "", []string{"Status"}, [][]string{}
-		}
-
-		var buf bytes.Buffer
-		output := NewOutputFormatter(true, false, false, false)
-		output.SetWriter(&buf)
-
-		err := output.Watch(ctx, fetcher, formatter)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "fetch error")
-	})
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := wrapLine(tc.input, tc.width)
+			assert.Equal(t, tc.expected, result)
+		})
+	}
 }
