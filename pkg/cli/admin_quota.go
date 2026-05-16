@@ -884,6 +884,7 @@ func quotaUserConfigsResetAction(ctx context.Context, cmd quotaUserConfigsResetC
 // quotaUserConfigsUpdateCmdGetter interface for quota user configs update command
 type quotaUserConfigsUpdateCmdGetter interface {
 	Int(name string) int
+	String(name string) string
 	IsSet(name string) bool
 }
 
@@ -897,8 +898,7 @@ func quotaUserConfigsUpdateAction(ctx context.Context, cmd quotaUserConfigsUpdat
 		return err
 	}
 
-	planID, err := requireSetInt(cmd, FlagPlanID)
-	if err != nil {
+	if err := requireUpdateFields(cmd, FlagPlanID, FlagEnforcementPolicy, FlagUploadLimit, FlagDownloadLimit, FlagStorageLimit, FlagUploadThreshold, FlagDownloadThreshold, FlagStorageThreshold, FlagWindowDuration, FlagWindowStartHour, FlagWindowTimezone, FlagWindowType); err != nil {
 		return err
 	}
 
@@ -908,8 +908,55 @@ func quotaUserConfigsUpdateAction(ctx context.Context, cmd quotaUserConfigsUpdat
 		return err
 	}
 
-	config := &admin.UserQuotaConfigUpdate{
-		QuotaPlanId: &planID,
+	config := &admin.UserQuotaConfigUpdate{}
+
+	if cmd.IsSet(FlagPlanID) {
+		planID := cmd.Int(FlagPlanID)
+		config.QuotaPlanId = &planID
+	}
+	if cmd.IsSet(FlagEnforcementPolicy) {
+		policy := cmd.String(FlagEnforcementPolicy)
+		config.EnforcementPolicy = &policy
+	}
+	if cmd.IsSet(FlagUploadLimit) {
+		v := cmd.Int(FlagUploadLimit)
+		config.UploadLimitBytes = &v
+	}
+	if cmd.IsSet(FlagDownloadLimit) {
+		v := cmd.Int(FlagDownloadLimit)
+		config.DownloadLimitBytes = &v
+	}
+	if cmd.IsSet(FlagStorageLimit) {
+		v := cmd.Int(FlagStorageLimit)
+		config.StorageLimitBytes = &v
+	}
+	if cmd.IsSet(FlagUploadThreshold) {
+		v := cmd.Int(FlagUploadThreshold)
+		config.UploadThreshold = &v
+	}
+	if cmd.IsSet(FlagDownloadThreshold) {
+		v := cmd.Int(FlagDownloadThreshold)
+		config.DownloadThreshold = &v
+	}
+	if cmd.IsSet(FlagStorageThreshold) {
+		v := cmd.Int(FlagStorageThreshold)
+		config.StorageThreshold = &v
+	}
+	if cmd.IsSet(FlagWindowDuration) {
+		v := cmd.Int(FlagWindowDuration)
+		config.WindowDuration = &v
+	}
+	if cmd.IsSet(FlagWindowStartHour) {
+		v := cmd.Int(FlagWindowStartHour)
+		config.WindowStartHour = &v
+	}
+	if cmd.IsSet(FlagWindowTimezone) {
+		v := cmd.String(FlagWindowTimezone)
+		config.WindowTimezone = &v
+	}
+	if cmd.IsSet(FlagWindowType) {
+		v := cmd.String(FlagWindowType)
+		config.WindowType = &v
 	}
 
 	result, err := quotaService.UpdateUserConfig(ctx, userID, config)

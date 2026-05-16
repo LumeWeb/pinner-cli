@@ -100,9 +100,16 @@ const (
 	FlagDirection     = "direction"
 	FlagOlderThan     = "older-than"
 	FlagForceDelete   = "force-delete"
-	FlagWindowType    = "window-type"
-	FlagExpiry        = "expiry"
-	FlagFeatures      = "features"
+	FlagWindowType         = "window-type"
+	FlagExpiry             = "expiry"
+	FlagFeatures           = "features"
+	FlagEnforcementPolicy  = "enforcement-policy"
+	FlagUploadThreshold    = "upload-threshold"
+	FlagDownloadThreshold  = "download-threshold"
+	FlagStorageThreshold   = "storage-threshold"
+	FlagWindowDuration     = "window-duration"
+	FlagWindowStartHour    = "window-start-hour"
+	FlagWindowTimezone     = "window-timezone"
 )
 
 // Admin command name constants

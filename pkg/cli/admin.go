@@ -451,15 +451,61 @@ Examples:
 
 Examples:
   pinner admin quota user-configs update --user-id 1 --plan-id 19
+  pinner admin quota user-configs update --user-id 1 --plan-id 19 --enforcement-policy strict
+  pinner admin quota user-configs update --user-id 1 --upload-limit-bytes 5000 --download-limit-bytes 10000
   pinner admin quota user-configs update --user-id 1 --plan-id 19 --json`,
 				Flags: []cli.Flag{
 					&cli.IntFlag{
-						Name:  "user-id",
+						Name:  FlagUserID,
 						Usage: "User ID",
 					},
 					&cli.IntFlag{
-						Name:  "plan-id",
+						Name:  FlagPlanID,
 						Usage: "Quota plan ID to assign",
+					},
+					&cli.StringFlag{
+						Name:  FlagEnforcementPolicy,
+						Usage: "Enforcement policy (e.g. strict, relaxed)",
+					},
+					&cli.IntFlag{
+						Name:  FlagUploadLimit,
+						Usage: "Upload limit override (bytes)",
+					},
+					&cli.IntFlag{
+						Name:  FlagDownloadLimit,
+						Usage: "Download limit override (bytes)",
+					},
+					&cli.IntFlag{
+						Name:  FlagStorageLimit,
+						Usage: "Storage limit override (bytes)",
+					},
+					&cli.IntFlag{
+						Name:  FlagUploadThreshold,
+						Usage: "Upload threshold override (bytes)",
+					},
+					&cli.IntFlag{
+						Name:  FlagDownloadThreshold,
+						Usage: "Download threshold override (bytes)",
+					},
+					&cli.IntFlag{
+						Name:  FlagStorageThreshold,
+						Usage: "Storage threshold override (bytes)",
+					},
+					&cli.IntFlag{
+						Name:  FlagWindowDuration,
+						Usage: "Window duration override",
+					},
+					&cli.IntFlag{
+						Name:  FlagWindowStartHour,
+						Usage: "Window start hour override",
+					},
+					&cli.StringFlag{
+						Name:  FlagWindowTimezone,
+						Usage: "Window timezone override",
+					},
+					&cli.StringFlag{
+						Name:  FlagWindowType,
+						Usage: "Window type override (ROLLING, DAY, WEEK, MONTH, YEAR, LIFETIME)",
 					},
 				},
 				Action: func(ctx context.Context, cmd *cli.Command) error {
