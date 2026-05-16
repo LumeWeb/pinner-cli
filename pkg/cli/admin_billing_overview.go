@@ -114,8 +114,8 @@ func billingOverviewAction(ctx context.Context, cmd billingOverviewCmdGetter, ou
 	output.Printfln("                                          Price Line")
 	output.Printfln("                                               │")
 	output.Printfln("                                         (ordered list)")
-	output.Print("")
 	output.PrintFields(FieldGroup{
+		PadTop: 1,
 		Fields: []Field{
 			{"Quota Plans", fmt.Sprintf("%d total (%d active)", quotaTotal, activeQuotaPlans)},
 			{"Price Lines", fmt.Sprintf("%d total (%d active)", priceLinesTotal, activePriceLines)},

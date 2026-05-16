@@ -152,16 +152,7 @@ func pin(ctx context.Context, cmd pinCommandGetter, output Output, cfgMgrFactory
 		return err
 	}
 
-	output.Printfln("Batch operation completed in %s", result.Duration)
-	output.Printfln("Total: %d | Succeeded: %d | Failed: %d | Skipped: %d",
-		result.Total, len(result.Succeeded), len(result.Failed), len(result.Skipped))
-
-	if len(result.Failed) > 0 {
-		output.Printfln("\nFailed operations:")
-		for _, fail := range result.Failed {
-			output.Printfln("  - %s: %s", fail.CID, fail.Error)
-		}
-	}
+	output.PrintBatchResult(result)
 
 	return nil
 }

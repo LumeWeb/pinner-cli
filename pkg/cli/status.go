@@ -103,10 +103,12 @@ func status(ctx context.Context, cmd statusCommandGetter, output Output, cfgMgrF
 		}
 
 		if len(pinStatus.Delegates) > 0 {
-			// Add delegates as list items
 			output.PrintTable(headers, rows)
-			output.Printfln("\nDelegates:")
-			output.PrintList(pinStatus.Delegates)
+			output.PrintListGroup(ListGroup{
+				Title:  "Delegates:",
+				Items:   pinStatus.Delegates,
+				PadTop: 1,
+			})
 		} else {
 			output.PrintTable(headers, rows)
 		}

@@ -334,7 +334,7 @@ func dnsZonesList(ctx context.Context, cmd *cli.Command, output Output, cfgMgr c
 		}
 
 		output.Printfln("DNS Zones:")
-		for _, zone := range zones {
+		for i, zone := range zones {
 			fields := []Field{
 				{"ID", fmt.Sprintf("%d", zone.Id)},
 				{"Domain", zone.Domain},
@@ -344,8 +344,7 @@ func dnsZonesList(ctx context.Context, cmd *cli.Command, output Output, cfgMgr c
 				fields = append(fields, Field{"PowerDNS Zone ID", *zone.PowerdnsZoneId})
 			}
 			fields = append(fields, Field{"Created", zone.CreatedAt.Format("2006-01-02 15:04:05")})
-			output.PrintFields(FieldGroup{Fields: fields})
-			output.Print("")
+			output.PrintFields(FieldGroup{Fields: fields, PadTop: i})
 		}
 	}
 
@@ -513,7 +512,7 @@ func dnsRecordsList(ctx context.Context, cmd *cli.Command, output Output, cfgMgr
 		}
 
 		output.Printfln("DNS Records:")
-		for _, record := range records {
+		for i, record := range records {
 			fields := []Field{
 				{"Zone ID", fmt.Sprintf("%d", record.ZoneId)},
 				{"Name", record.Name},
@@ -524,8 +523,7 @@ func dnsRecordsList(ctx context.Context, cmd *cli.Command, output Output, cfgMgr
 			if record.Disabled {
 				fields = append(fields, Field{"Status", "disabled"})
 			}
-			output.PrintFields(FieldGroup{Fields: fields})
-			output.Print("")
+			output.PrintFields(FieldGroup{Fields: fields, PadTop: i})
 		}
 	}
 

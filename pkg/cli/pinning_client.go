@@ -372,7 +372,8 @@ func (s *PinningServiceDefault) watchPinStatus(ctx context.Context, cidStr strin
 			}
 
 			if lastStatus == nil || lastStatus.Status != status.Status {
-				s.output.Printfln("\nStatus: %s", status.Status)
+				s.output.Print("")
+				s.output.Printfln("Status: %s", status.Status)
 				lastStatus = status
 			}
 		}
