@@ -22,11 +22,12 @@ func TestNewAdminCommand(t *testing.T) {
 		cmd := newAdminCommand()
 
 		require.NotNil(t, cmd.Commands)
-		assert.Len(t, cmd.Commands, 2)
+		assert.Len(t, cmd.Commands, 3)
 
 		subcommandNames := getSubcommandNames(cmd.Commands)
 		assert.Contains(t, subcommandNames, "quota")
 		assert.Contains(t, subcommandNames, "billing")
+		assert.Contains(t, subcommandNames, "websites")
 	})
 }
 
@@ -112,7 +113,7 @@ func TestNewQuotaPlansCommand(t *testing.T) {
 		createCmd := findSubcommand(cmd.Commands, "create")
 		require.NotNil(t, createCmd)
 		require.NotNil(t, createCmd.Flags)
-		assert.Len(t, createCmd.Flags, 7)
+		assert.Len(t, createCmd.Flags, 8)
 
 		flagNames := getFlagNames(createCmd.Flags)
 		assert.Contains(t, flagNames, "name")
@@ -120,6 +121,7 @@ func TestNewQuotaPlansCommand(t *testing.T) {
 		assert.Contains(t, flagNames, "upload-limit")
 		assert.Contains(t, flagNames, "download-limit")
 		assert.Contains(t, flagNames, "storage-limit")
+		assert.Contains(t, flagNames, "window-type")
 		assert.Contains(t, flagNames, "is-active")
 		assert.Contains(t, flagNames, "is-default")
 	})
@@ -178,10 +180,11 @@ func TestNewQuotaUserConfigsCommand(t *testing.T) {
 		cmd := newQuotaUserConfigsCommand()
 
 		require.NotNil(t, cmd.Commands)
-		assert.Len(t, cmd.Commands, 2)
+		assert.Len(t, cmd.Commands, 3)
 
 		subcommandNames := getSubcommandNames(cmd.Commands)
 		assert.Contains(t, subcommandNames, "list")
+		assert.Contains(t, subcommandNames, "update")
 		assert.Contains(t, subcommandNames, "reset")
 	})
 }

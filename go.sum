@@ -72,6 +72,8 @@ github.com/andybalholm/brotli v1.2.0/go.mod h1:rzTDkvFWvIrjDXZHkuS16NPggd91W3kUS
 github.com/antihax/optional v1.0.0/go.mod h1:uupD/76wgC+ih3iEmQUL+0Ugr19nfwCT1kdvxnR2qWY=
 github.com/apapsch/go-jsonmerge/v2 v2.0.0 h1:axGnT1gRIfimI7gJifB699GoE/oq+F2MU7Dml6nw9rQ=
 github.com/apapsch/go-jsonmerge/v2 v2.0.0/go.mod h1:lvDnEdqiQrp0O42VQGgmlKpxL1AP2+08jFMw88y4klk=
+github.com/apt304/sse-go v0.0.3 h1:ADru/Utu51Dod1QtDEpbMiRtjvqmuaMC9Yk9lLMsEzY=
+github.com/apt304/sse-go v0.0.3/go.mod h1:lp6MWVDAeJKca5qO1zMq8fh4NiM4AoJ8ZQYHVzwV1ro=
 github.com/armon/circbuf v0.0.0-20150827004946-bbbad097214e/go.mod h1:3U/XgcO3hCbHZ8TKRvWD2dDTCfh9M9ya+I9JpbB7O8o=
 github.com/armon/go-metrics v0.0.0-20180917152333-f0300d1749da/go.mod h1:Q73ZrmVTwzkszR9V5SSuryQ31EELlFMUz1kKyl939pY=
 github.com/armon/go-radix v0.0.0-20180808171621-7fddfc383310/go.mod h1:ufUuZ+zHj4x4TnLV4JWEpy2hxWSpsRywHrMgIH9cCH8=
@@ -757,8 +759,8 @@ go.lumeweb.com/portal-middleware v0.3.4 h1:A9/Ipo3giX449CCgbKGco97IqDxFG7Z1ppmM1
 go.lumeweb.com/portal-middleware v0.3.4/go.mod h1:3dHvOYXApc1b673I1UAoYBpyXg2c7ku4HqxXvef8dj8=
 go.lumeweb.com/portal-router v0.6.11 h1:0PTej57mtNcRpKZNukD0j0ZYp5ntbR7fl5g6DO+0mvk=
 go.lumeweb.com/portal-router v0.6.11/go.mod h1:4tb+XYa0GYiFVraMoossGgMBTN9z4U54v8SL+EOBvbs=
-go.lumeweb.com/portal-sdk v0.1.49 h1:+hOfZDKvCMtVQByXBeKRTamHLT1FOjPQI093z5lrtZk=
-go.lumeweb.com/portal-sdk v0.1.49/go.mod h1:bzGAPH2PF8AhC801EZ8d3rbUGYhfnxX074ZXEYg1mJc=
+go.lumeweb.com/portal-sdk v0.1.54 h1:d8BV0nwrSE/PYEsKNiuQnDrZ4OnA671G/3luB2aacfM=
+go.lumeweb.com/portal-sdk v0.1.54/go.mod h1:ugnt6K26DX1omfbXNHdvL5rZ3451DW6UwWFVUTMWmmw=
 go.lumeweb.com/queryutil v0.3.15 h1:R2l6GAAne8rCgh1rGy5HQ54zvs8JJw3gRLjhmkd8SHk=
 go.lumeweb.com/queryutil v0.3.15/go.mod h1:nLkIuXzugX8Ln24wsAbfTafvNmaTHLJhIUKWC1693G4=
 go.opencensus.io v0.21.0/go.mod h1:mSImk1erAIZhrmZN+AvHh14ztQfjbGwt4TtuofqLduU=

@@ -37,11 +37,20 @@ type billingAdminService struct {
 	service *admin.BillingService
 }
 
+// websiteAdminService implements the WebsiteAdminService interface using the admin.WebsiteService.
+type websiteAdminService struct {
+	*adminServiceBase
+	service *admin.WebsiteService
+}
+
 // QuotaAdminServiceFactory creates a QuotaAdminService with dependencies.
 type QuotaAdminServiceFactory func(cfgMgr config.Manager, output Output) QuotaAdminService
 
 // BillingAdminServiceFactory creates a BillingAdminService with dependencies.
 type BillingAdminServiceFactory func(cfgMgr config.Manager, output Output) BillingAdminService
+
+// WebsiteAdminServiceFactory creates a WebsiteAdminService with dependencies.
+type WebsiteAdminServiceFactory func(cfgMgr config.Manager, output Output) WebsiteAdminService
 
 // defaultQuotaAdminServiceFactory creates a default QuotaAdminService instance.
 func defaultQuotaAdminServiceFactory(cfgMgr config.Manager, output Output) QuotaAdminService {
@@ -51,6 +60,11 @@ func defaultQuotaAdminServiceFactory(cfgMgr config.Manager, output Output) Quota
 // defaultBillingAdminServiceFactory creates a default BillingAdminService instance.
 func defaultBillingAdminServiceFactory(cfgMgr config.Manager, output Output) BillingAdminService {
 	return NewBillingAdminService(cfgMgr, output, cfgMgr.Config().GetAdminEndpoint())
+}
+
+// defaultWebsiteAdminServiceFactory creates a default WebsiteAdminService instance.
+func defaultWebsiteAdminServiceFactory(cfgMgr config.Manager, output Output) WebsiteAdminService {
+	return NewWebsiteAdminService(cfgMgr, output, cfgMgr.Config().GetAdminEndpoint())
 }
 
 // newAdminServiceBase creates a new adminServiceBase with the shared fields.
@@ -112,6 +126,13 @@ func NewQuotaAdminService(cfgMgr config.Manager, output Output, apiEndpoint stri
 // NewBillingAdminService creates a new BillingAdminService instance.
 func NewBillingAdminService(cfgMgr config.Manager, output Output, apiEndpoint string) BillingAdminService {
 	return &billingAdminService{
+		adminServiceBase: newAdminServiceBase(cfgMgr, apiEndpoint),
+	}
+}
+
+// NewWebsiteAdminService creates a new WebsiteAdminService instance.
+func NewWebsiteAdminService(cfgMgr config.Manager, output Output, apiEndpoint string) WebsiteAdminService {
+	return &websiteAdminService{
 		adminServiceBase: newAdminServiceBase(cfgMgr, apiEndpoint),
 	}
 }
@@ -205,6 +226,13 @@ type BillingAdminService interface {
 	// Sync operations
 	SyncPricingPlan(ctx context.Context, planID string) error
 	SyncAllPricingPlans(ctx context.Context) error
+}
+
+// WebsiteAdminService defines the interface for website admin operations.
+type WebsiteAdminService interface {
+	RequireAuthenticated() error
+	BlockWebsite(ctx context.Context, id string) (*admin.Website, error)
+	UnblockWebsite(ctx context.Context, id string) (*admin.Website, error)
 }
 
 // getService returns the quota service, lazily initializing with token exchange if needed.
@@ -675,5 +703,44 @@ func (s *billingAdminService) SyncPricingPlan(ctx context.Context, planID string
 func (s *billingAdminService) SyncAllPricingPlans(ctx context.Context) error {
 	return with0(s, ctx, func(svc *admin.BillingService) error {
 		return svc.SyncAllPricingPlans(ctx)
+	})
+}
+
+// getService returns the website service, lazily initializing with token exchange if needed.
+func (s *websiteAdminService) getService(ctx context.Context) (*admin.WebsiteService, error) {
+	s.mu.RLock()
+	if s.service != nil {
+		s.mu.RUnlock()
+		return s.service, nil
+	}
+	s.mu.RUnlock()
+
+	token, err := s.tokenProvider.GetLoginToken(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	client := admin.NewClient(
+		admin.WithEndpoint(s.endpoint),
+		admin.WithJWT(token),
+	)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.service = client.Website()
+	return s.service, nil
+}
+
+// BlockWebsite blocks a website by its ID.
+func (s *websiteAdminService) BlockWebsite(ctx context.Context, id string) (*admin.Website, error) {
+	return with2(s, ctx, func(svc *admin.WebsiteService) (*admin.Website, error) {
+		return svc.BlockWebsite(ctx, id)
+	})
+}
+
+// UnblockWebsite unblocks a website by its ID.
+func (s *websiteAdminService) UnblockWebsite(ctx context.Context, id string) (*admin.Website, error) {
+	return with2(s, ctx, func(svc *admin.WebsiteService) (*admin.Website, error) {
+		return svc.UnblockWebsite(ctx, id)
 	})
 }
