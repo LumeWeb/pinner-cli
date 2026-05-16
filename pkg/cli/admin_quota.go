@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/urfave/cli/v3"
@@ -916,6 +918,10 @@ func quotaUserConfigsUpdateAction(ctx context.Context, cmd quotaUserConfigsUpdat
 	}
 	if cmd.IsSet(FlagEnforcementPolicy) {
 		policy := cmd.String(FlagEnforcementPolicy)
+		validPolicies := []string{"HARD_LIMITS", "UNLIMITED", "ALLOWANCE", "THRESHOLD"}
+		if !slices.Contains(validPolicies, policy) {
+			return fmt.Errorf("invalid --%s value %q, must be one of: %s", FlagEnforcementPolicy, policy, strings.Join(validPolicies, ", "))
+		}
 		config.EnforcementPolicy = &policy
 	}
 	if cmd.IsSet(FlagUploadLimit) {
