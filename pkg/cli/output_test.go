@@ -1180,6 +1180,7 @@ func TestWordWrap(t *testing.T) {
 		{"wraps at word boundary", "hello world foo", 8, "hello\nworld\nfoo"},
 		{"hard wraps long word", "abcdefghij", 5, "abcde\nfghij"},
 		{"hard wrap long word after short word", "ab cdefghijkl", 5, "ab cd\nefghi\njkl"},
+		{"hard wrap flushes current line first", "abcde fghijklmno", 5, "abcde\nfghij\nklmno"},
 		{"preserves newlines", "hello\nworld", 10, "hello\nworld"},
 		{"mixed newlines and wrapping", "hello world\nfoo bar baz", 8, "hello\nworld\nfoo bar\nbaz"},
 		{"zero width returns unchanged", "hello world", 0, "hello world"},
@@ -1208,6 +1209,7 @@ func TestWrapLine(t *testing.T) {
 		{"wraps at word boundary", "hello world", 8, []string{"hello", "world"}},
 		{"hard wraps long word", "abcdefghij", 5, []string{"abcde", "fghij"}},
 		{"hard wrap after short word", "ab cdefghijkl", 5, []string{"ab cd", "efghi", "jkl"}},
+		{"hard wrap flushes current line first", "abcde fghijklmno", 5, []string{"abcde", "fghij", "klmno"}},
 		{"multiple words fit", "a b c d", 5, []string{"a b c", "d"}},
 	}
 
