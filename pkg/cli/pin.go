@@ -134,9 +134,13 @@ func pin(ctx context.Context, cmd pinCommandGetter, output Output, cfgMgrFactory
 		if err != nil {
 			return err
 		}
-		output.Printfln("Pinned CID: %s", result.CID)
-		output.Printfln("Request ID: %s", result.RequestID)
-		output.Printfln("Status: %s", result.Status)
+		output.PrintFields(FieldGroup{
+			Fields: []Field{
+				{"CID", result.CID},
+				{"Request ID", result.RequestID},
+				{"Status", result.Status},
+			},
+		})
 		return nil
 	}
 
