@@ -164,7 +164,7 @@ func TestRetryTransport_RoundTrip_TimeoutError(t *testing.T) {
 func TestRetryTransport_RoundTrip_DNSError(t *testing.T) {
 	mockTransport := &mockRoundTripper{
 		fn: func(req *http.Request) (*http.Response, error) {
-			return nil, &timeoutError{}
+			return nil, &net.DNSError{Err: "server failure", IsTemporary: true}
 		},
 	}
 

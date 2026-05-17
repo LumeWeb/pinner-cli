@@ -138,6 +138,10 @@ func isNetworkError(err error) bool {
 		if netErr.Timeout() {
 			return true
 		}
+		var dnsErr *net.DNSError
+		if errors.As(err, &dnsErr) && dnsErr.IsTemporary {
+			return true
+		}
 	}
 	return false
 }

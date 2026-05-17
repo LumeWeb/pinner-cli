@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"errors"
 	"net"
 	"net/url"
 	"time"
@@ -183,8 +184,14 @@ func isRetryableError(err error) bool {
 
 	// Check for network errors that are retryable
 	if netErr, ok := err.(net.Error); ok {
-		// Retry on timeout or temporary errors
-		return netErr.Timeout()
+		if netErr.Timeout() {
+			return true
+		}
+		var dnsErr *net.DNSError
+		if errors.As(err, &dnsErr) && dnsErr.IsTemporary {
+			return true
+		}
+		return false
 	}
 
 	// Check for URL errors (connection errors) - unwrap and check recursively
@@ -193,7 +200,8 @@ func isRetryableError(err error) bool {
 	}
 
 	// Check for DNS errors
-	if _, ok := err.(*net.DNSError); ok {
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) && dnsErr.IsTemporary {
 		return true
 	}
 

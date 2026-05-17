@@ -48,6 +48,11 @@ func TestIsRetryableError_NetworkError(t *testing.T) {
 		{
 			name: "DNS error with Temporary()",
 			err:  &net.DNSError{Err: "no such host", IsTemporary: true},
+			want: true,
+		},
+		{
+			name: "DNS error without Temporary()",
+			err:  &net.DNSError{Err: "no such host", IsTemporary: false},
 			want: false,
 		},
 		{
