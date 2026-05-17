@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/mail"
+	"strconv"
 	"strings"
 
 	"github.com/urfave/cli/v3"
@@ -67,6 +68,7 @@ Examples:
 			newDNSZonesCreateCommand(),
 			newDNSZonesGetCommand(),
 			newDNSZonesDeleteCommand(),
+			newDNSZonesValidateCommand(),
 		},
 	}
 }
@@ -149,6 +151,28 @@ Examples:
 				return err
 			}
 			return dnsZonesDelete(ctx, cmd, output, cfgMgr)
+		},
+	}
+}
+
+func newDNSZonesValidateCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "validate",
+		Usage: "Validate DNS zone nameserver delegation",
+		Description: `Validate that a DNS zone's nameservers are properly delegated.
+This checks that the domain's nameservers point to the expected Pinner.xyz nameservers.
+
+Examples:
+  pinner dns zones validate example.com
+  pinner dns zones validate 1
+  pinner dns zones validate example.com --json`,
+		ArgsUsage: "<domain-or-id>",
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			cfgMgr, output, err := setupCommandContext(cmd)
+			if err != nil {
+				return err
+			}
+			return dnsZonesValidate(ctx, cmd, output, cfgMgr)
 		},
 	}
 }
@@ -484,6 +508,93 @@ func dnsZonesDelete(ctx context.Context, cmd *cli.Command, output Output, cfgMgr
 
 	output.Printfln("DNS zone deleted successfully")
 	return nil
+}
+
+func dnsZonesValidate(ctx context.Context, cmd *cli.Command, output Output, cfgMgr config.Manager) error {
+	if cmd.NArg() < 1 {
+		return fmt.Errorf("domain or zone ID is required")
+	}
+
+	arg := cmd.Args().Get(0)
+
+	var dnsService DNSService
+
+	authToken := GetAuthToken(cmd, cfgMgr)
+	secure := GetSecureSetting(cmd, cfgMgr)
+
+	if authToken != "" {
+		dnsService = NewDNSService(cfgMgr, output, cfgMgr.Config().GetAccountEndpointWithSecure(secure))
+	} else {
+		dnsService = defaultDNSServiceFactory(cfgMgr, output)
+	}
+
+	if err := dnsService.RequireAuthenticated(); err != nil {
+		return err
+	}
+
+	zone, err := resolveZoneID(ctx, dnsService, arg)
+	if err != nil {
+		return fmt.Errorf("failed to find zone: %w", err)
+	}
+
+	result, err := dnsService.ValidateZone(ctx, fmt.Sprintf("%d", zone.Id))
+	if err != nil {
+		return fmt.Errorf("failed to validate zone: %w", err)
+	}
+
+	if output.IsJSON() {
+		return output.PrintJSON(result)
+	}
+
+	statusIcon := "⏳"
+	if result.Valid {
+		statusIcon = "✅"
+	}
+
+	output.Printfln("DNS Zone Validation for %s", zone.Domain)
+
+	output.PrintFields(FieldGroup{
+		Fields: []Field{
+			{"Valid", fmt.Sprintf("%s %t", statusIcon, result.Valid)},
+			{"Message", result.Message},
+			{"Checked At", result.CheckedAt.Format("2006-01-02 15:04:05")},
+		},
+	})
+
+	if !result.Valid {
+		output.Printfln("")
+		output.Printfln("Next steps:")
+		if result.Nameservers != nil && len(*result.Nameservers) > 0 {
+			output.Printfln("  Update your domain's nameservers at your registrar to:")
+			for _, ns := range *result.Nameservers {
+				output.Printfln("    - %s", ns)
+			}
+		} else {
+			output.Printfln("  Check that your domain's nameservers are properly delegated to Pinner.xyz")
+		}
+		output.Printfln("  Then re-run: pinner dns zones validate %s", zone.Domain)
+	}
+
+	return nil
+}
+
+func resolveZoneID(ctx context.Context, dnsService DNSService, arg string) (*ipfs.ZoneResponse, error) {
+	if id, err := strconv.Atoi(arg); err == nil {
+		return dnsService.GetZone(ctx, fmt.Sprintf("%d", id))
+	}
+
+	zones, err := dnsService.ListZones(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, z := range zones {
+		if z.Domain == arg {
+			return dnsService.GetZone(ctx, fmt.Sprintf("%d", z.Id))
+		}
+	}
+
+	return nil, fmt.Errorf("zone not found for domain %q", arg)
 }
 
 func dnsRecordsList(ctx context.Context, cmd *cli.Command, output Output, cfgMgr config.Manager) error {

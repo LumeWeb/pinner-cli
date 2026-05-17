@@ -16,6 +16,7 @@ type DNSService interface {
 	ListZones(ctx context.Context) ([]ipfs.ZoneListResponse, error)
 	GetZone(ctx context.Context, id string) (*ipfs.ZoneResponse, error)
 	DeleteZone(ctx context.Context, id string) error
+	ValidateZone(ctx context.Context, id string) (*ipfs.ValidationResponse, error)
 
 	// Record operations
 	CreateRecord(ctx context.Context, id string, record ipfs.RecordRequest) (*ipfs.RecordResponse, error)
@@ -109,6 +110,17 @@ func (s *dnsServiceCLI) DeleteZone(ctx context.Context, id string) error {
 		return ErrServiceUnavailable
 	}
 	return s.service.DeleteZone(ctx, id)
+}
+
+// ValidateZone validates a DNS zone's nameserver delegation.
+func (s *dnsServiceCLI) ValidateZone(ctx context.Context, id string) (*ipfs.ValidationResponse, error) {
+	if err := s.RequireAuthenticated(); err != nil {
+		return nil, err
+	}
+	if s.service == nil {
+		return nil, ErrServiceUnavailable
+	}
+	return s.service.ValidateZone(ctx, id)
 }
 
 // CreateRecord creates a new DNS record.
