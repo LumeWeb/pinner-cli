@@ -12,6 +12,7 @@ import (
 	"github.com/docker/go-units"
 	"github.com/urfave/cli/v3"
 	contentfs "go.lumeweb.com/ipfs-content/fs"
+	ipfs "go.lumeweb.com/ipfs-sdk"
 	"go.lumeweb.com/pinner-cli/pkg/config"
 	internalio "go.lumeweb.com/pinner-cli/pkg/internal/io"
 )
@@ -47,6 +48,9 @@ The output includes:
 			WaitFlag(),
 			MemoryLimitFlag(),
 			DryRunFlag(),
+			ChunkSizeFlag(),
+			ChunkerFlag(),
+			MaxLinksFlag(),
 		},
 		Metadata: WithTutorial(1, "Upload and pin a file", "pinner upload myfile.txt"),
 		Action: func(ctx context.Context, c *cli.Command) error {
@@ -134,6 +138,8 @@ func detectInputType(path string) string {
 // uploadCommandGetter defines the interface for getting upload command flags.
 type uploadCommandGetter interface {
 	Uint64(name string) uint64
+	Int64(name string) int64
+	Int(name string) int
 	String(name string) string
 	Bool(name string) bool
 	Args() cli.Args
@@ -152,7 +158,25 @@ func handleUpload(ctx context.Context, cmd uploadCommandGetter, output Output, c
 	}
 
 	authService := NewAuthService(cfgMgr, output, cfgMgr.Config().GetAccountEndpointSecure())
-	uploadService := uploadServiceFactory(cfgMgr, output, WithMemoryLimit(memoryLimit), WithUploadAuthService(authService))
+
+	var svcOpts []UploadServiceOption
+	svcOpts = append(svcOpts, WithMemoryLimit(memoryLimit), WithUploadAuthService(authService))
+
+	if chunkSize := cmd.Int64(FlagChunkSize); chunkSize > 0 {
+		svcOpts = append(svcOpts, WithChunkSize(chunkSize))
+	}
+	if chunker := cmd.String(FlagChunker); chunker != "" {
+		strategy, err := parseChunkerStrategy(chunker)
+		if err != nil {
+			return err
+		}
+		svcOpts = append(svcOpts, WithChunkerStrategy(strategy))
+	}
+	if maxLinks := cmd.Int(FlagMaxLinks); maxLinks > 0 {
+		svcOpts = append(svcOpts, WithMaxLinks(maxLinks))
+	}
+
+	uploadService := uploadServiceFactory(cfgMgr, output, svcOpts...)
 
 	path := cmd.Args().First()
 	name := cmd.String(FlagName)
@@ -178,6 +202,15 @@ func handleUpload(ctx context.Context, cmd uploadCommandGetter, output Output, c
 		options[DryRunOptionMemoryLimit] = fmt.Sprintf("%d MB", memoryLimit)
 		if wait {
 			options[DryRunOptionWait] = "yes"
+		}
+		if chunkSize := cmd.Int64(FlagChunkSize); chunkSize > 0 {
+			options[DryRunOptionChunkSize] = fmt.Sprintf("%d bytes", chunkSize)
+		}
+		if chunker := cmd.String(FlagChunker); chunker != "" {
+			options[DryRunOptionChunker] = chunker
+		}
+		if maxLinks := cmd.Int(FlagMaxLinks); maxLinks > 0 {
+			options[DryRunOptionMaxLinks] = fmt.Sprintf("%d", maxLinks)
 		}
 
 		RenderDryRun(output, DryRunPreview{
@@ -214,4 +247,15 @@ func defaultUploadServiceFactory(cfgMgr config.Manager, output Output, opts ...U
 
 func humanReadableSize(bytes int64) string {
 	return units.HumanSize(float64(bytes))
+}
+
+func parseChunkerStrategy(name string) (ipfs.ChunkerStrategy, error) {
+	switch name {
+	case "balanced":
+		return ipfs.BalancedLayout, nil
+	case "trickle":
+		return ipfs.TrickleLayout, nil
+	default:
+		return nil, fmt.Errorf("invalid chunker strategy %q: must be balanced or trickle", name)
+	}
 }

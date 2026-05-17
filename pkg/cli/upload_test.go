@@ -103,6 +103,14 @@ func (m *mockUploadCommand) Uint64(name string) uint64 {
 	return 0
 }
 
+func (m *mockUploadCommand) Int64(name string) int64 {
+	return 0
+}
+
+func (m *mockUploadCommand) Int(name string) int {
+	return 0
+}
+
 func (m *mockUploadCommand) String(name string) string {
 	switch name {
 	case FlagName:

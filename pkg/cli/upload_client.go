@@ -21,14 +21,17 @@ type UploadServiceConfig struct {
 
 // UploadServiceDefault provides upload operations using the ipfs-sdk UploadService.
 type UploadServiceDefault struct {
-	accountClient portalsdk.AccountAPI
-	authService   AuthService
-	configMgr     config.Manager
-	output        Output
-	apiEndpoint   string
-	authToken     string
-	memoryLimit   uint64
-	config        UploadServiceConfig
+	accountClient   portalsdk.AccountAPI
+	authService     AuthService
+	configMgr       config.Manager
+	output          Output
+	apiEndpoint     string
+	authToken       string
+	memoryLimit     uint64
+	chunkSize       int64
+	chunkerStrategy ipfs.ChunkerStrategy
+	maxLinks        int
+	config          UploadServiceConfig
 }
 
 // UploadServiceOption is a function that configures an UploadService.
@@ -87,6 +90,27 @@ func WithMemoryLimit(limit uint64) UploadServiceOption {
 	}
 }
 
+// WithChunkSize sets the chunk size in bytes for UnixFS file splitting.
+func WithChunkSize(size int64) UploadServiceOption {
+	return func(s *UploadServiceDefault) {
+		s.chunkSize = size
+	}
+}
+
+// WithChunkerStrategy sets the DAG layout strategy for UnixFS node generation.
+func WithChunkerStrategy(strategy ipfs.ChunkerStrategy) UploadServiceOption {
+	return func(s *UploadServiceDefault) {
+		s.chunkerStrategy = strategy
+	}
+}
+
+// WithMaxLinks sets the maximum number of links per DAG node.
+func WithMaxLinks(max int) UploadServiceOption {
+	return func(s *UploadServiceDefault) {
+		s.maxLinks = max
+	}
+}
+
 // RequireAuthenticated checks if the service is authenticated and returns an error if not.
 func (s *UploadServiceDefault) RequireAuthenticated() error {
 	authToken := s.getAuthToken()
@@ -133,8 +157,11 @@ func (s *UploadServiceDefault) Upload(ctx context.Context, filesystem fs.FS, nam
 	}
 
 	opts := &ipfs.UploadOptions{
-		MemoryLimit: memoryLimit,
-		UploadLimit: uploadLimit,
+		MemoryLimit:    memoryLimit,
+		UploadLimit:    uploadLimit,
+		ChunkSize:      s.chunkSize,
+		ChunkerStrategy: s.chunkerStrategy,
+		MaxLinks:       s.maxLinks,
 	}
 
 	// Create SDK upload service using the configured IPFS endpoint
