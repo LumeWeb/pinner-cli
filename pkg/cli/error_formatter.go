@@ -30,9 +30,10 @@ var (
 	ErrPermissionDenied  = errors.New("permission denied")
 
 	// Pinning errors
-	ErrPinNotFound   = errors.New("pin not found")
-	ErrPinningFailed = errors.New("pinning failed")
-	ErrStatusCheck   = errors.New("failed to check pin status")
+	ErrPinNotFound    = errors.New("pin not found")
+	ErrPinningFailed  = errors.New("pinning failed")
+	ErrStatusCheck    = errors.New("failed to check pin status")
+	ErrUnpinAllAborted = errors.New("unpin-all aborted")
 
 	// Upload errors
 	ErrUploadFailed      = errors.New("upload failed")
@@ -105,9 +106,10 @@ var errorMessages = map[error]string{
 	ErrPermissionDenied:  "Permission denied",
 
 	// Pinning errors
-	ErrPinNotFound:   "Pin not found",
-	ErrPinningFailed: "Pinning operation failed",
-	ErrStatusCheck:   "Failed to check pin status",
+	ErrPinNotFound:    "Pin not found",
+	ErrPinningFailed:  "Pinning operation failed",
+	ErrStatusCheck:    "Failed to check pin status",
+	ErrUnpinAllAborted: "Unpin-all operation aborted",
 
 	// Upload errors
 	ErrUploadFailed:      "Upload failed",

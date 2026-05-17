@@ -469,6 +469,80 @@ func (_c *MockPinningService_Unpin_Call) RunAndReturn(run func(ctx context.Conte
 	return _c
 }
 
+// UnpinAll provides a mock function for the type MockPinningService
+func (_mock *MockPinningService) UnpinAll(ctx context.Context, statusFilter string, opts BatchOptions) (*BatchResult, error) {
+	ret := _mock.Called(ctx, statusFilter, opts)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UnpinAll")
+	}
+
+	var r0 *BatchResult
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, BatchOptions) (*BatchResult, error)); ok {
+		return returnFunc(ctx, statusFilter, opts)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, BatchOptions) *BatchResult); ok {
+		r0 = returnFunc(ctx, statusFilter, opts)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*BatchResult)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, BatchOptions) error); ok {
+		r1 = returnFunc(ctx, statusFilter, opts)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockPinningService_UnpinAll_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UnpinAll'
+type MockPinningService_UnpinAll_Call struct {
+	*mock.Call
+}
+
+// UnpinAll is a helper method to define mock.On call
+//   - ctx context.Context
+//   - statusFilter string
+//   - opts BatchOptions
+func (_e *MockPinningService_Expecter) UnpinAll(ctx interface{}, statusFilter interface{}, opts interface{}) *MockPinningService_UnpinAll_Call {
+	return &MockPinningService_UnpinAll_Call{Call: _e.mock.On("UnpinAll", ctx, statusFilter, opts)}
+}
+
+func (_c *MockPinningService_UnpinAll_Call) Run(run func(ctx context.Context, statusFilter string, opts BatchOptions)) *MockPinningService_UnpinAll_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 BatchOptions
+		if args[2] != nil {
+			arg2 = args[2].(BatchOptions)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockPinningService_UnpinAll_Call) Return(batchResult *BatchResult, err error) *MockPinningService_UnpinAll_Call {
+	_c.Call.Return(batchResult, err)
+	return _c
+}
+
+func (_c *MockPinningService_UnpinAll_Call) RunAndReturn(run func(ctx context.Context, statusFilter string, opts BatchOptions) (*BatchResult, error)) *MockPinningService_UnpinAll_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // UnpinBatch provides a mock function for the type MockPinningService
 func (_mock *MockPinningService) UnpinBatch(ctx context.Context, cids []string, opts BatchOptions) (*BatchResult, error) {
 	ret := _mock.Called(ctx, cids, opts)

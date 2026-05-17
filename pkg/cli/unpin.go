@@ -11,9 +11,8 @@ import (
 func newUnpinCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "unpin",
-		Usage: "Remove a pin",
-		Description: `Remove a pin by its CID. Prompts for confirmation by default.
-Multiple CIDs can be provided as arguments, read from a file using --file, or piped from stdin.
+		Usage: "Remove pins",
+		Description: `Remove pins by CID or remove all pins.
 
 Examples:
   pinner unpin QmHash
@@ -21,7 +20,9 @@ Examples:
   pinner unpin QmHash1 QmHash2 QmHash3 --confirm
   pinner unpin --file cids.txt --confirm
   pinner unpin --file cids.txt --confirm --parallel 5 --continue
-  pinner unpin QmHash --dry-run`,
+  pinner unpin QmHash --dry-run
+  pinner unpin all --confirm
+  pinner unpin all --confirm --status failed --dry-run`,
 		ArgsUsage: "<cid...>",
 		Flags: []cli.Flag{
 			ConfirmFlag(),
@@ -29,6 +30,9 @@ Examples:
 			ParallelFlag(),
 			ContinueFlag(),
 			DryRunFlag(),
+		},
+		Commands: []*cli.Command{
+			newUnpinAllCommand(),
 		},
 		Metadata: WithTutorial(5, "Unpin content", fmt.Sprintf("pinner unpin %s", abbreviateCID(TutorialCID))),
 		Action: func(ctx context.Context, c *cli.Command) error {

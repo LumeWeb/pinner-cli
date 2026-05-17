@@ -104,6 +104,9 @@ type PinningService interface {
 	// Unpin multiple CIDs in batch
 	UnpinBatch(ctx context.Context, cids []string, opts BatchOptions) (*BatchResult, error)
 
+	// UnpinAll unpins all pins, optionally filtered by status
+	UnpinAll(ctx context.Context, statusFilter string, opts BatchOptions) (*BatchResult, error)
+
 	// Update metadata for a pin
 	UpdateMetadata(ctx context.Context, cid string, set []string, clear bool) error
 
