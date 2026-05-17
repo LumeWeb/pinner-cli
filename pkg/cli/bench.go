@@ -191,7 +191,7 @@ func bench(ctx context.Context, cmd benchCommandGetter, output Output, cfgMgrFac
 		svcOpts = append(svcOpts, WithMaxLinks(maxLinks))
 	}
 
-	uploadService := NewUploadService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpoint(), svcOpts...)
+	uploadService := NewUploadService(cfgMgr, output, svcOpts...)
 
 	accountClient, err := authService.GetAuthenticatedClient(ctx)
 	if err != nil {

@@ -242,7 +242,7 @@ func handleUpload(ctx context.Context, cmd uploadCommandGetter, output Output, c
 }
 
 func defaultUploadServiceFactory(cfgMgr config.Manager, output Output, opts ...UploadServiceOption) UploadService {
-	return NewUploadService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpoint(), opts...)
+	return NewUploadService(cfgMgr, output, opts...)
 }
 
 func humanReadableSize(bytes int64) string {
