@@ -141,6 +141,17 @@ func (s *websitesService) GetSSLStatus(ctx context.Context, domain string) (*ipf
 	return s.service.GetSSLStatus(ctx, domain)
 }
 
+// GetConfig retrieves the website hosting configuration including the gateway domain.
+func (s *websitesService) GetConfig(ctx context.Context) (*ipfs.WebsiteConfigResponse, error) {
+	if err := s.RequireAuthenticated(); err != nil {
+		return nil, err
+	}
+	if s.service == nil {
+		return nil, ErrServiceUnavailable
+	}
+	return s.service.GetConfig(ctx)
+}
+
 // RequireAuthenticated checks if the service is authenticated.
 func (s *websitesService) RequireAuthenticated() error {
 	if !s.authenticated {
