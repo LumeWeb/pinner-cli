@@ -227,6 +227,9 @@ func bench(ctx context.Context, cmd benchCommandGetter, output Output, cfgMgrFac
 	if opts.Depth < 0 {
 		return fmt.Errorf("depth must be non-negative")
 	}
+	if opts.PollInterval <= 0 {
+		return fmt.Errorf("poll-interval must be positive")
+	}
 
 	// Dry run
 	if opts.DryRun {
