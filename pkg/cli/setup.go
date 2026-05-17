@@ -90,11 +90,12 @@ func runSetupWizardWithFactories(
 		ui = NewPTermSetupUI(output)
 	}
 
-	wizard := NewSetupWizard(cfgMgr, authService, ui, SetupOptions{
+	w := NewSetupWizard(cfgMgr, authService, ui, SetupOptions{
 		SkipAuth:   skipAuth,
 		SkipConfig: skipConfig,
 		Reset:      reset,
 	})
 
-	return wizard.Run(ctx)
+	_, err = w.Run(ctx)
+	return err
 }

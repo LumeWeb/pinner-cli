@@ -2,20 +2,14 @@ package cli
 
 import (
 	"context"
+
+	"go.lumeweb.com/pinner-cli/pkg/cli/wizard"
 )
 
 // SetupUI defines the interface for setup wizard UI interactions.
 // This allows for easy testing by providing mock implementations.
 type SetupUI interface {
-	// Welcome screen
-	ShowWelcome() error
-
-	// Progress tracking
-	ShowStepProgress(ctx context.Context, current, total int, stepName string) error
-	ShowStepSkipped(ctx context.Context, stepName string) error
-
-	// Completion
-	ShowCompletion() error
+	wizard.UI
 
 	// Step execution
 	ExecuteAuthStep(ctx context.Context, wizard *SetupWizard) error

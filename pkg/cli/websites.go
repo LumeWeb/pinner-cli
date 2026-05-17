@@ -14,8 +14,9 @@ import (
 
 func newWebsitesCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "websites",
-		Usage: "Manage websites",
+		Name:    "websites",
+		Aliases: []string{"website"},
+		Usage:   "Manage websites",
 		Description: `Manage websites for your IPFS content. Websites allow you to associate
 domain names with IPFS hashes, making your content accessible through custom domains.
 
@@ -43,6 +44,7 @@ Examples:
 			newWebsitesValidateCommand(),
 			newWebsitesSSLCommand(),
 			newWebsitesConfigCommand(),
+			newWebsitesWizardCommand(),
 		},
 	}
 }
@@ -534,36 +536,41 @@ func websitesCreate(ctx context.Context, cmd *cli.Command, output Output) error 
 	output.Printfln("")
 	output.Printfln("Validation token: %s", createdWebsite.ValidationToken)
 	output.Printfln("")
-	output.Printfln("Next steps:")
-	hasGateway := createdWebsite.GatewayDomain != nil && *createdWebsite.GatewayDomain != ""
-	if createdWebsite.DnsHostingEnabled {
-		output.Printfln("  1. Point your domain's nameservers to Pinner (see: pinner dns zones validate %s)", createdWebsite.Domain)
-		output.Printfln("  2. Add a TXT record at your registrar to verify ownership:")
-		output.Printfln("     %s  TXT  lumeweb-verify=%s", createdWebsite.Domain, createdWebsite.ValidationToken)
-		output.Printfln("  3. Validate: pinner websites validate %s", createdWebsite.Domain)
-		if hasGateway {
-			output.Printfln("  4. Add a CNAME record pointing to the gateway")
-			output.PrintTable([]string{"NAME", "TYPE", "VALUE"}, [][]string{
-				{createdWebsite.Domain, "CNAME", *createdWebsite.GatewayDomain},
-			})
-		}
-	} else {
-		output.Printfln("  1. Add a TXT record at your registrar to verify ownership:")
-		output.Printfln("     %s  TXT  lumeweb-verify=%s", createdWebsite.Domain, createdWebsite.ValidationToken)
-		output.Printfln("  2. Add a DNSLink TXT record:")
-		output.Printfln("     _dnslink.%s  TXT  dnslink=/%s/%s", createdWebsite.Domain, createdWebsite.TargetType, createdWebsite.TargetHash)
-		output.Printfln("  3. Validate: pinner websites validate %s", createdWebsite.Domain)
-		if hasGateway {
-			output.Printfln("  4. Add a CNAME record pointing to the gateway")
-			output.PrintTable([]string{"NAME", "TYPE", "VALUE"}, [][]string{
-				{createdWebsite.Domain, "CNAME", *createdWebsite.GatewayDomain},
-			})
-		}
+
+	showDNSRecordInstructions(output, createdWebsite)
+
+	output.Printfln("")
+	output.Printfln("Validate: pinner websites validate %s", createdWebsite.Domain)
+
+	if !createdWebsite.DnsHostingEnabled {
 		output.Printfln("")
 		output.Printfln("  Tip: Use --dns-hosting to have Pinner manage DNS for you")
 	}
 
 	return nil
+}
+
+// showDNSRecordInstructions displays the DNS records a user needs to add for their website.
+func showDNSRecordInstructions(output Output, website *ipfs.WebsiteItem) {
+	if website == nil {
+		return
+	}
+
+	output.Printfln("Required DNS records:")
+
+	records := [][]string{
+		{website.Domain, "TXT", "lumeweb-verify=" + website.ValidationToken},
+	}
+
+	if !website.DnsHostingEnabled {
+		records = append(records, []string{"_dnslink." + website.Domain, "TXT", "dnslink=/" + website.TargetType + "/" + website.TargetHash})
+	}
+
+	if website.GatewayDomain != nil && *website.GatewayDomain != "" {
+		records = append(records, []string{website.Domain, "CNAME", *website.GatewayDomain})
+	}
+
+	output.PrintTable([]string{"NAME", "TYPE", "VALUE"}, records)
 }
 
 // setupDNSHosting creates a DNS zone and auto-created records for a website
@@ -733,6 +740,10 @@ func websitesValidate(ctx context.Context, cmd *cli.Command, output Output) erro
 		websitesService = defaultWebsitesServiceFactory(cfgMgr, output)
 	}
 
+	return doWebsitesValidate(ctx, cmd, output, websitesService)
+}
+
+func doWebsitesValidate(ctx context.Context, cmd interface{ Args() cli.Args }, output Output, websitesService WebsitesService) error {
 	if err := websitesService.RequireAuthenticated(); err != nil {
 		return err
 	}
@@ -749,48 +760,40 @@ func websitesValidate(ctx context.Context, cmd *cli.Command, output Output) erro
 		return err
 	}
 
-	validationResult, err := websitesService.Validate(ctx, id)
-	if err != nil {
-		return err
-	}
+	validationResult, validateErr := websitesService.Validate(ctx, id)
 
-	dnsService := defaultDNSServiceFactory(cfgMgr, output)
-
-	records, err := dnsService.ListRecords(ctx, validationResult.Domain)
-	if err == nil {
-		requiredRecords := []struct {
-			name    string
-			rtype   string
-			present bool
-		}{
-			{"_dnslink." + validationResult.Domain, "TXT", false},
-			{validationResult.Domain, "TXT", false},
-			{"www." + validationResult.Domain, "CNAME", false},
-		}
-
-		for i := range requiredRecords {
-			for _, record := range records {
-				if record.Name == requiredRecords[i].name && record.Type == requiredRecords[i].rtype {
-					requiredRecords[i].present = true
-					break
-				}
-			}
-		}
-
-		headers := []string{"RECORD", "TYPE", "STATUS"}
-		rows := make([][]string, len(requiredRecords))
-		for i, rr := range requiredRecords {
-			status := "✗"
-			if rr.present {
-				status = "✓"
-			}
-			rows[i] = []string{rr.name, rr.rtype, status}
-		}
-		output.PrintTable(headers, rows)
-	}
+	website, _ := resolveAndGetWebsite(ctx, websitesService, arg)
 
 	if output.IsJSON() {
-		return output.PrintJSON(validationResult)
+		result := map[string]any{
+			"domain": arg,
+			"id":     id,
+		}
+
+		if validateErr != nil {
+			result["valid"] = false
+			result["error"] = validateErr.Error()
+		} else {
+			result["valid"] = validationResult.Valid
+			result["message"] = validationResult.Message
+		}
+
+		if website != nil {
+			result["required_records"] = buildRequiredRecords(website)
+		}
+
+		return output.PrintJSON(result)
+	}
+
+	if validateErr != nil {
+		output.Printfln("Validation failed: %s", validateErr)
+		output.Printfln("")
+		if website != nil {
+			showDNSRecordInstructions(output, website)
+		}
+		output.Printfln("")
+		output.Printfln("Re-validate after adding the records: pinner websites validate %s", arg)
+		return nil
 	}
 
 	output.Printfln("Website Validation Result")
@@ -811,14 +814,43 @@ func websitesValidate(ctx context.Context, cmd *cli.Command, output Output) erro
 
 	if !validationResult.Valid {
 		output.Printfln("")
-		output.Printfln("Next steps:")
-		output.Printfln("  1. Make sure you have added the required DNS records to your domain")
-		output.Printfln("  2. Check DNS record status above — missing records are marked with ✗")
-		output.Printfln("  3. Re-validate after making changes: pinner websites validate %d", validationResult.Id)
-		output.Printfln("  4. View website details: pinner websites get %d", validationResult.Id)
+		if website != nil {
+			showDNSRecordInstructions(output, website)
+		} else {
+			output.Printfln("Make sure you have added the required DNS records to your domain")
+			output.Printfln("View website details: pinner websites get %s", arg)
+		}
+		output.Printfln("")
+		output.Printfln("Re-validate: pinner websites validate %s", arg)
 	}
 
 	return nil
+}
+
+// buildRequiredRecords returns the DNS records a user needs to add for their website.
+func buildRequiredRecords(website *ipfs.WebsiteItem) []map[string]string {
+	if website == nil {
+		return nil
+	}
+
+	records := []map[string]string{
+		{"name": website.Domain, "type": "TXT", "value": "lumeweb-verify=" + website.ValidationToken},
+	}
+
+	if !website.DnsHostingEnabled {
+		records = append(records, map[string]string{
+			"name": "_dnslink." + website.Domain, "type": "TXT",
+			"value": "dnslink=/" + website.TargetType + "/" + website.TargetHash,
+		})
+	}
+
+	if website.GatewayDomain != nil && *website.GatewayDomain != "" {
+		records = append(records, map[string]string{
+			"name": website.Domain, "type": "CNAME", "value": *website.GatewayDomain,
+		})
+	}
+
+	return records
 }
 
 func newWebsitesConfigCommand() *cli.Command {

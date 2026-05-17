@@ -1,0 +1,56 @@
+package wizard
+
+import (
+	"context"
+
+	"github.com/pterm/pterm"
+)
+
+type PTermUI struct {
+	WelcomeText    string
+	CompletionText string
+}
+
+func NewPTermUI(welcomeText, completionText string) *PTermUI {
+	return &PTermUI{
+		WelcomeText:    welcomeText,
+		CompletionText: completionText,
+	}
+}
+
+func (p *PTermUI) ShowWelcome() error {
+	pterm.DefaultHeader.WithFullWidth().Println(p.WelcomeText)
+	pterm.Println()
+	if p.WelcomeText != "" {
+		pterm.DefaultParagraph.Println(p.WelcomeText)
+		pterm.Println()
+	}
+	_, err := pterm.DefaultInteractiveContinue.Show()
+	return err
+}
+
+func (p *PTermUI) ShowStepProgress(_ context.Context, current, total int, stepName string) error {
+	pterm.DefaultSection.Printf("Step %d of %d: %s\n", current, total, stepName)
+	return nil
+}
+
+func (p *PTermUI) ShowStepSkipped(_ context.Context, stepName string) error {
+	pterm.Info.Printf("Skipped: %s (already configured)\n", stepName)
+	return nil
+}
+
+func (p *PTermUI) ShowStepRetrying(_ context.Context, stepName string) error {
+	pterm.Info.Printf("Retrying: %s\n", stepName)
+	return nil
+}
+
+func (p *PTermUI) ShowCompletion() error {
+	pterm.Println()
+	text := p.CompletionText
+	if text == "" {
+		text = "✓ Completed successfully!"
+	}
+	box := pterm.DefaultBox.Sprintln(text)
+	pterm.DefaultCenter.Println(box)
+	return nil
+}

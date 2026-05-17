@@ -10,6 +10,7 @@ import (
 	"github.com/manifoldco/promptui"
 	"github.com/pterm/pterm"
 	"github.com/pterm/pterm/putils"
+	"go.lumeweb.com/pinner-cli/pkg/cli/wizard"
 )
 
 // runSelect executes a select prompt and handles interrupts.
@@ -26,13 +27,15 @@ func runSelect(prompt *promptui.Select) (int, string, error) {
 // PTermSetupUI implements SetupUI using PTerm for display.
 // This is the production UI layer - tests use mocks.
 type PTermSetupUI struct {
+	*wizard.PTermUI
 	output Output
 }
 
 // NewPTermSetupUI creates a new PTerm-based UI.
 func NewPTermSetupUI(output Output) *PTermSetupUI {
 	return &PTermSetupUI{
-		output: output,
+		PTermUI: wizard.NewPTermUI("", ""),
+		output:  output,
 	}
 }
 
@@ -60,18 +63,6 @@ func (ui *PTermSetupUI) ShowWelcome() error {
 
 	_, err := pterm.DefaultInteractiveContinue.Show()
 	return err
-}
-
-// ShowStepProgress displays progress for the current step.
-func (ui *PTermSetupUI) ShowStepProgress(ctx context.Context, current, total int, stepName string) error {
-	pterm.DefaultSection.Printf("Step %d of %d: %s\n", current, total, stepName)
-	return nil
-}
-
-// ShowStepSkipped indicates a step was skipped.
-func (ui *PTermSetupUI) ShowStepSkipped(ctx context.Context, stepName string) error {
-	pterm.Info.Printf("Skipped: %s (already configured)\n", stepName)
-	return nil
 }
 
 // ShowCompletion displays the completion message.

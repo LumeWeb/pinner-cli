@@ -172,7 +172,7 @@ func TestSetupWizard_Run(t *testing.T) {
 			wizard := NewSetupWizard(cfgMgr, nil, mockUI, tt.options)
 
 			// Run wizard
-			err := wizard.Run(context.Background())
+			result, err := wizard.Run(context.Background())
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -181,7 +181,7 @@ func TestSetupWizard_Run(t *testing.T) {
 				}
 			} else {
 				require.NoError(t, err)
-				require.True(t, wizard.IsCompleted())
+				require.True(t, result.Completed)
 			}
 
 			// Verify UI calls
@@ -238,7 +238,7 @@ func TestSetupWizard_ResetConfig(t *testing.T) {
 			wizard := NewSetupWizard(cfgMgr, nil, mockUI, SetupOptions{Reset: true})
 
 			// Run wizard
-			err := wizard.Run(context.Background())
+			_, err := wizard.Run(context.Background())
 			require.NoError(t, err)
 
 			// Reset() was called - the actual file deletion behavior is tested elsewhere
@@ -301,7 +301,7 @@ func TestSetupWizard_AuthStep(t *testing.T) {
 			})
 
 			// Run wizard
-			err := wizard.Run(context.Background())
+			_, err := wizard.Run(context.Background())
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -386,7 +386,7 @@ func TestSetupWizard_ConfigStep(t *testing.T) {
 			})
 
 			// Run wizard
-			err := wizard.Run(context.Background())
+			_, err := wizard.Run(context.Background())
 			require.NoError(t, err)
 
 			// Verify config state
@@ -443,45 +443,11 @@ func TestSetupWizard_UIError(t *testing.T) {
 			wizard := NewSetupWizard(cfgMgr, nil, mockUI, SetupOptions{})
 
 			// Run wizard
-			err := wizard.Run(context.Background())
+			_, err := wizard.Run(context.Background())
 			require.Error(t, err)
 			require.Contains(t, err.Error(), tt.errorMessage)
 		})
 	}
-}
-
-func TestSetupWizard_State(t *testing.T) {
-	t.Run("current step tracking", func(t *testing.T) {
-		cfgMgr := configmocks.NewMockManager(t)
-		mockUI := NewMockSetupUI()
-
-		// Setup config mock
-		cfg := &config.Config{
-			AuthToken:    "",
-			BaseEndpoint: "",
-			Secure:       true,
-		}
-		cfgMgr.EXPECT().Config().Return(cfg).Maybe()
-		cfgMgr.EXPECT().Save().Return(nil).Maybe()
-
-		// Create wizard
-		wizard := NewSetupWizard(cfgMgr, nil, mockUI, SetupOptions{
-			SkipAuth:   true,
-			SkipConfig: true,
-		})
-
-		// Check initial state
-		require.Equal(t, 0, wizard.CurrentStep())
-		require.False(t, wizard.IsCompleted())
-
-		// Run wizard
-		err := wizard.Run(context.Background())
-		require.NoError(t, err)
-
-		// Check final state
-		require.Equal(t, 3, wizard.CurrentStep()) // 4 steps, so last index is 3
-		require.True(t, wizard.IsCompleted())
-	})
 }
 
 func TestSetupWizard_Accessors(t *testing.T) {
@@ -554,132 +520,15 @@ func TestMockSetupUI(t *testing.T) {
 
 		require.False(t, mock.VerifyCalls(wrongOrder))
 	})
-}
 
-func TestSetupStep_SkipLogic(t *testing.T) {
-	t.Run("auth step skip conditions", func(t *testing.T) {
-		cfgMgr := configmocks.NewMockManager(t)
-		cfg := &config.Config{
-			AuthToken:    "",
-			BaseEndpoint: "",
-			Secure:       true,
-		}
-		cfgMgr.EXPECT().Config().Return(cfg).Maybe()
+	t.Run("step-specific calls tracked in unified Calls", func(t *testing.T) {
+		mock := NewMockSetupUI()
 
-		step := &AuthStep{}
+		_ = mock.ShowWelcome()
+		_ = mock.ExecuteAuthStep(context.Background(), nil)
 
-		tests := []struct {
-			name     string
-			options  SetupOptions
-			token    string
-			expected bool
-		}{
-			{
-				name:     "skip auth option",
-				options:  SetupOptions{SkipAuth: true},
-				token:    "",
-				expected: true,
-			},
-			{
-				name:     "already authenticated",
-				options:  SetupOptions{SkipAuth: false},
-				token:    "existing-token",
-				expected: true,
-			},
-			{
-				name:     "don't skip",
-				options:  SetupOptions{SkipAuth: false},
-				token:    "",
-				expected: false,
-			},
-		}
-
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				cfg.AuthToken = tt.token
-				wizard := NewSetupWizard(cfgMgr, nil, nil, tt.options)
-
-				result := step.ShouldSkip(wizard)
-				require.Equal(t, tt.expected, result)
-			})
-		}
-	})
-
-	t.Run("config step skip conditions", func(t *testing.T) {
-		cfgMgr := configmocks.NewMockManager(t)
-		cfg := &config.Config{
-			AuthToken:    "",
-			BaseEndpoint: "",
-			Secure:       true,
-		}
-		cfgMgr.EXPECT().Config().Return(cfg).Maybe()
-
-		step := &ConfigStep{}
-
-		tests := []struct {
-			name     string
-			options  SetupOptions
-			endpoint string
-			reset    bool
-			expected bool
-		}{
-			{
-				name:     "skip config option",
-				options:  SetupOptions{SkipConfig: true},
-				endpoint: "",
-				reset:    false,
-				expected: true,
-			},
-			{
-				name:     "using defaults without reset",
-				options:  SetupOptions{SkipConfig: false},
-				endpoint: "",
-				reset:    false,
-				expected: false, // Not skipping - we want to configure defaults
-			},
-			{
-				name:     "using defaults with reset",
-				options:  SetupOptions{SkipConfig: false},
-				endpoint: "",
-				reset:    true,
-				expected: false,
-			},
-			{
-				name:     "custom endpoint",
-				options:  SetupOptions{SkipConfig: false},
-				endpoint: "custom-endpoint",
-				reset:    false,
-				expected: true, // Skip - already configured
-			},
-		}
-
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				cfg.BaseEndpoint = tt.endpoint
-				wizard := NewSetupWizard(cfgMgr, nil, nil, tt.options)
-
-				result := step.ShouldSkip(wizard)
-				require.Equal(t, tt.expected, result)
-			})
-		}
-	})
-
-	t.Run("tutorial step never skips", func(t *testing.T) {
-		cfgMgr := configmocks.NewMockManager(t)
-		cfg := &config.Config{
-			AuthToken:    "",
-			BaseEndpoint: "",
-			Secure:       true,
-		}
-		cfgMgr.EXPECT().Config().Return(cfg).Maybe()
-
-		step := &TutorialStep{}
-		wizard := NewSetupWizard(cfgMgr, nil, nil, SetupOptions{
-			SkipAuth:   true,
-			SkipConfig: true,
-		})
-
-		result := step.ShouldSkip(wizard)
-		require.False(t, result, "tutorial step should never skip")
+		calls := mock.GetCalls()
+		require.Equal(t, "ShowWelcome", calls[0])
+		require.Equal(t, "ExecuteAuthStep", calls[1])
 	})
 }

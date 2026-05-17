@@ -1224,15 +1224,14 @@ func TestWebsitesValidate(t *testing.T) {
 			errContains: "website ID or domain is required",
 		},
 		{
-			name: "service error",
+			name: "service error shows instructions",
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
 				svc.validateFunc = func(ctx context.Context, id string) (*ipfs.WebsiteValidateResponse, error) {
 					return nil, errors.New("website not found")
 				}
 			},
-			cmd:         &mockWebsitesGetCommand{id: "1"},
-			wantErr:     true,
-			errContains: "website not found",
+			cmd:     &mockWebsitesGetCommand{id: "1"},
+			wantErr: false,
 		},
 	}
 
@@ -1324,43 +1323,7 @@ func TestWebsitesValidateJSON(t *testing.T) {
 
 // websitesValidateWithService is a test helper that allows injecting a mock WebsitesService
 func websitesValidateWithService(ctx context.Context, cmd interface{ Args() cli.Args }, output Output, websitesService WebsitesService) error {
-	if err := websitesService.RequireAuthenticated(); err != nil {
-		return err
-	}
-
-	args := cmd.Args()
-	if args.Len() == 0 {
-		return fmt.Errorf("website ID or domain is required")
-	}
-
-	id := args.First()
-
-	validationResult, err := websitesService.Validate(ctx, id)
-	if err != nil {
-		return err
-	}
-
-	if output.IsJSON() {
-		return output.PrintJSON(validationResult)
-	}
-
-	output.Printf("Website Validation Result")
-
-	statusIcon := "⏳"
-	if validationResult.Valid {
-		statusIcon = "✅"
-	}
-
-	output.PrintFields(FieldGroup{
-		Fields: []Field{
-			{"Domain", validationResult.Domain},
-			{"ID", fmt.Sprintf("%d", validationResult.Id)},
-			{"Valid", fmt.Sprintf("%s %t", statusIcon, validationResult.Valid)},
-			{"Message", validationResult.Message},
-		},
-	})
-
-	return nil
+	return doWebsitesValidate(ctx, cmd, output, websitesService)
 }
 
 func TestWebsitesSSLStatus(t *testing.T) {
