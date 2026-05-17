@@ -67,7 +67,7 @@ func (s *StatusServiceDefault) Status(ctx context.Context, cid string, watch boo
 
 	opResult, opErr := s.lookupOperation(ctx, cid)
 	if opErr != nil {
-		return nil, nil, err
+		return nil, nil, opErr
 	}
 
 	return nil, opResult, nil
