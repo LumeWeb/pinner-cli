@@ -16,6 +16,7 @@ type DNSService interface {
 	ListZones(ctx context.Context) ([]ipfs.ZoneListResponse, error)
 	GetZone(ctx context.Context, id string) (*ipfs.ZoneResponse, error)
 	DeleteZone(ctx context.Context, id string) error
+	ValidateZone(ctx context.Context, id string) (*ipfs.ValidationResponse, error)
 
 	// Record operations
 	CreateRecord(ctx context.Context, id string, record ipfs.RecordRequest) (*ipfs.RecordResponse, error)
@@ -111,6 +112,17 @@ func (s *dnsServiceCLI) DeleteZone(ctx context.Context, id string) error {
 	return s.service.DeleteZone(ctx, id)
 }
 
+// ValidateZone validates a DNS zone's nameserver delegation.
+func (s *dnsServiceCLI) ValidateZone(ctx context.Context, id string) (*ipfs.ValidationResponse, error) {
+	if err := s.RequireAuthenticated(); err != nil {
+		return nil, err
+	}
+	if s.service == nil {
+		return nil, ErrServiceUnavailable
+	}
+	return s.service.ValidateZone(ctx, id)
+}
+
 // CreateRecord creates a new DNS record.
 func (s *dnsServiceCLI) CreateRecord(ctx context.Context, id string, record ipfs.RecordRequest) (*ipfs.RecordResponse, error) {
 	if err := s.RequireAuthenticated(); err != nil {
@@ -168,6 +180,6 @@ func (s *dnsServiceCLI) DeleteRecord(ctx context.Context, id string, name string
 
 // defaultDNSServiceFactory creates a default DNS service instance.
 func defaultDNSServiceFactory(cfgMgr config.Manager, output Output) DNSService {
-	apiEndpoint := cfgMgr.Config().GetIPFSEndpoint()
+	apiEndpoint := cfgMgr.Config().GetIPFSEndpointSecure()
 	return NewDNSService(cfgMgr, output, apiEndpoint)
 }

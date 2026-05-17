@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/urfave/cli/v3"
@@ -28,11 +29,11 @@ Website operations include:
 
 Examples:
   pinner websites list
-  pinner websites create --domain example.com --target-hash QmHash
-  pinner websites get 1
-  pinner websites update 1 --domain new-example.com --target-hash QmNewHash
-  pinner websites delete 1
-  pinner websites validate 1`,
+  pinner websites create example.com --cid QmHash
+  pinner websites get example.com
+  pinner websites update example.com --cid QmNewHash
+  pinner websites delete example.com
+  pinner websites validate example.com`,
 		Commands: []*cli.Command{
 			newWebsitesListCommand(),
 			newWebsitesCreateCommand(),
@@ -68,13 +69,13 @@ func newWebsitesCreateCommand() *cli.Command {
 		Description: `Create a new website with the specified domain and target CID.
 
 Examples:
-  pinner websites create --domain example.com --target-hash QmHash
-  pinner websites create --domain example.com --target-hash QmHash --target-type ipfs
-  pinner websites create --domain example.com --target-hash QmHash --dns-hosting
-  pinner websites create --domain example.com --target-hash QmHash --json`,
+  pinner websites create example.com --cid QmHash
+  pinner websites create example.com --cid QmHash --target-type ipfs
+  pinner websites create example.com --cid QmHash --dns-hosting
+  pinner websites create example.com --cid QmHash --json`,
+		ArgsUsage: "<domain>",
 		Flags: []cli.Flag{
-			RequiredDomainFlag(),
-			RequiredTargetHashFlag(),
+			RequiredCIDFlag(),
 			TargetTypeFlag(),
 			DNSHostingFlag(),
 			NoDNSHostingFlag(),
@@ -89,13 +90,13 @@ Examples:
 func newWebsitesGetCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "get",
-		Usage: "Get a website by ID",
-		Description: `Get details of a specific website by its ID.
+		Usage: "Get website details",
+		Description: `Get details of a specific website by domain.
 
 Examples:
-  pinner websites get 1
-  pinner websites get 1 --json`,
-		ArgsUsage: "<id>",
+  pinner websites get example.com
+  pinner websites get example.com --json`,
+		ArgsUsage: "<domain>",
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			output := setupOutput(cmd)
 			return websitesGet(ctx, cmd, output)
@@ -107,21 +108,20 @@ func newWebsitesUpdateCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "update",
 		Usage: "Update a website",
-		Description: `Update an existing website with new domain, target CID, or target type.
+		Description: `Update an existing website with new CID, target type, or domain rename.
 
 At least one of the optional fields must be provided to update the website.
 
 Examples:
-  pinner websites update 1 --domain new-example.com
-  pinner websites update 1 --target-hash QmNewHash
-  pinner websites update 1 --domain new-example.com --target-hash QmNewHash --target-type ipfs
-  pinner websites update 1 --dns-hosting
-  pinner websites update 1 --no-dns-hosting
-  pinner websites update 1 --json`,
-		ArgsUsage: "<id>",
+  pinner websites update example.com --cid QmNewHash
+  pinner websites update example.com --cid QmNewHash --target-type ipfs
+  pinner websites update example.com --dns-hosting
+  pinner websites update example.com --no-dns-hosting
+  pinner websites update example.com --json`,
+		ArgsUsage: "<domain>",
 		Flags: []cli.Flag{
 			DomainFlag(),
-			TargetHashFlag(),
+			CIDFlag(),
 			TargetTypeFlag(),
 			DNSHostingFlag(),
 			NoDNSHostingFlag(),
@@ -138,8 +138,10 @@ type WebsitesService interface {
 	RequireAuthenticated() error
 	List(ctx context.Context) ([]ipfs.WebsiteItem, error)
 	Create(ctx context.Context, domain, targetHash, targetType string) (*ipfs.WebsiteItem, error)
+	CreateWithOptions(ctx context.Context, req ipfs.WebsiteRequest) (*ipfs.WebsiteItem, error)
 	Get(ctx context.Context, id string) (*ipfs.WebsiteItem, error)
 	Update(ctx context.Context, id, domain, targetHash, targetType string) (*ipfs.WebsiteItem, error)
+	UpdateWithOptions(ctx context.Context, id string, req ipfs.WebsiteRequest) (*ipfs.WebsiteItem, error)
 	Delete(ctx context.Context, id string) error
 	Validate(ctx context.Context, id string) (*ipfs.WebsiteValidateResponse, error)
 	GetSSLStatus(ctx context.Context, domain string) (*ipfs.WebsiteResponse, error)
@@ -187,20 +189,59 @@ func websitesList(ctx context.Context, cmd *cli.Command, output Output) error {
 
 	output.Printfln("Found %d website(s)", len(websites))
 
-	headers := []string{"ID", "NAME", "CID", "STATUS", "CREATED"}
+	headers := []string{"ID", "NAME", "CID", "STATUS", "DNS", "VALIDATION", "CREATED"}
 	rows := make([][]string, len(websites))
 	for i, website := range websites {
+		validation := "valid"
+		if website.Expired {
+			validation = "expired"
+		} else if website.ValidationToken != "" {
+			validation = website.ValidationToken
+		}
 		rows[i] = []string{
 			fmt.Sprintf("%d", website.Id),
 			website.Domain,
 			website.TargetHash,
 			website.Status,
+			fmt.Sprintf("%t", website.DnsHostingEnabled),
+			validation,
 			website.Created.Format("2006-01-02 15:04:05"),
 		}
 	}
 	output.PrintTable(headers, rows)
 
 	return nil
+}
+
+// resolveWebsiteID resolves an ID or domain argument to a numeric website ID string.
+// If arg is numeric, it's returned as-is. Otherwise, it searches by domain via List.
+func resolveWebsiteID(ctx context.Context, websitesService WebsitesService, arg string) (string, error) {
+	if _, err := strconv.Atoi(arg); err == nil {
+		return arg, nil
+	}
+
+	websites, err := websitesService.List(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to look up website by domain: %w", err)
+	}
+
+	for _, w := range websites {
+		if w.Domain == arg {
+			return fmt.Sprintf("%d", w.Id), nil
+		}
+	}
+
+	return "", fmt.Errorf("website not found for domain %q", arg)
+}
+
+// resolveAndGetWebsite resolves a website by ID or domain name.
+// If arg is a numeric ID, it fetches directly. Otherwise, it searches by domain.
+func resolveAndGetWebsite(ctx context.Context, websitesService WebsitesService, arg string) (*ipfs.WebsiteItem, error) {
+	id, err := resolveWebsiteID(ctx, websitesService, arg)
+	if err != nil {
+		return nil, err
+	}
+	return websitesService.Get(ctx, id)
 }
 
 func websitesUpdate(ctx context.Context, cmd *cli.Command, output Output) error {
@@ -227,30 +268,47 @@ func websitesUpdate(ctx context.Context, cmd *cli.Command, output Output) error 
 
 	args := cmd.Args()
 	if args.Len() == 0 {
-		return fmt.Errorf("website ID is required")
+		return fmt.Errorf("website ID or domain is required")
 	}
 
-	id := args.First()
+	arg := args.First()
 
-	domain := cmd.String(FlagDomain)
-	targetHash := cmd.String(FlagTargetHash)
-	targetType := cmd.String(FlagTargetType)
-	if err := requireUpdateFields(cmd, FlagDomain, FlagTargetHash, FlagTargetType, FlagDNSHosting, FlagNoDNSHosting); err != nil {
-		return err
-	}
-
-	dnsHosting := cmd.Bool(FlagDNSHosting)
-
-	updatedWebsite, err := websitesService.Update(ctx, id, domain, targetHash, targetType)
+	id, err := resolveWebsiteID(ctx, websitesService, arg)
 	if err != nil {
 		return err
 	}
 
-	if dnsHosting {
-		if err := setupDNSHosting(ctx, cfgMgr, output, updatedWebsite.Domain, updatedWebsite.TargetHash); err != nil {
-		output.Printfln("Warning: Failed to setup DNS hosting: %v", err)
+	domain := cmd.String(FlagDomain)
+	cid := cmd.String(FlagCID)
+	targetType := cmd.String(FlagTargetType)
+	if err := requireUpdateFields(cmd, FlagDomain, FlagCID, FlagTargetType, FlagDNSHosting, FlagNoDNSHosting); err != nil {
+		return err
 	}
-}
+
+	req := ipfs.WebsiteRequest{
+		Domain:      domain,
+		TargetHash:  cid,
+		TargetType:  targetType,
+	}
+
+	if cmd.IsSet(FlagDNSHosting) {
+		v := cmd.Bool(FlagDNSHosting)
+		req.DnsHostingEnabled = &v
+	} else if cmd.IsSet(FlagNoDNSHosting) {
+		v := false
+		req.DnsHostingEnabled = &v
+	}
+
+	updatedWebsite, err := websitesService.UpdateWithOptions(ctx, id, req)
+	if err != nil {
+		return err
+	}
+
+	if updatedWebsite.DnsHostingEnabled {
+		if err := setupDNSHosting(ctx, cfgMgr, output, updatedWebsite.Domain, updatedWebsite.TargetHash); err != nil {
+			output.Printfln("Warning: Failed to setup DNS hosting: %v", err)
+		}
+	}
 
 	if output.IsJSON() {
 		return output.PrintJSON(updatedWebsite)
@@ -258,17 +316,24 @@ func websitesUpdate(ctx context.Context, cmd *cli.Command, output Output) error 
 
 	output.Printfln("Website updated successfully")
 
-	headers := []string{"ID", "NAME", "CID", "STATUS", "CREATED"}
-	rows := [][]string{
-		{
-			fmt.Sprintf("%d", updatedWebsite.Id),
-			updatedWebsite.Domain,
-			updatedWebsite.TargetHash,
-			updatedWebsite.Status,
-			updatedWebsite.Created.Format("2006-01-02 15:04:05"),
+	output.PrintFields(FieldGroup{
+		Fields: []Field{
+			{"ID", fmt.Sprintf("%d", updatedWebsite.Id)},
+			{"Domain", updatedWebsite.Domain},
+			{"CID", updatedWebsite.TargetHash},
+			{"Target Type", updatedWebsite.TargetType},
+			{"Status", updatedWebsite.Status},
+			{"DNS Hosting", fmt.Sprintf("%t", updatedWebsite.DnsHostingEnabled)},
+			{"Expired", fmt.Sprintf("%t", updatedWebsite.Expired)},
+			{"Created", updatedWebsite.Created.Format("2006-01-02 15:04:05")},
 		},
+	})
+
+	if updatedWebsite.Expired {
+		output.Printfln("")
+		output.Printfln("⚠ This website's validation has expired.")
+		output.Printfln("  Re-validate: pinner websites validate %d", updatedWebsite.Id)
 	}
-	output.PrintTable(headers, rows)
 
 	return nil
 }
@@ -297,12 +362,12 @@ func websitesGet(ctx context.Context, cmd *cli.Command, output Output) error {
 
 	args := cmd.Args()
 	if args.Len() == 0 {
-		return fmt.Errorf("website ID is required")
+		return fmt.Errorf("website ID or domain is required")
 	}
 
-	id := args.First()
+	arg := args.First()
 
-	website, err := websitesService.Get(ctx, id)
+	website, err := resolveAndGetWebsite(ctx, websitesService, arg)
 	if err != nil {
 		return err
 	}
@@ -313,17 +378,34 @@ func websitesGet(ctx context.Context, cmd *cli.Command, output Output) error {
 
 	output.Printfln("Website Details")
 
-	headers := []string{"ID", "NAME", "CID", "STATUS", "CREATED"}
-	rows := [][]string{
-		{
-			fmt.Sprintf("%d", website.Id),
-			website.Domain,
-			website.TargetHash,
-			website.Status,
-			website.Created.Format("2006-01-02 15:04:05"),
-		},
+	fields := []Field{
+		{"ID", fmt.Sprintf("%d", website.Id)},
+		{"Domain", website.Domain},
+		{"CID", website.TargetHash},
+		{"Target Type", website.TargetType},
+		{"Status", website.Status},
+		{"DNS Hosting", fmt.Sprintf("%t", website.DnsHostingEnabled)},
+		{"Expired", fmt.Sprintf("%t", website.Expired)},
+		{"Validation Token", website.ValidationToken},
 	}
-	output.PrintTable(headers, rows)
+
+	if website.ValidationExpiresAt != nil {
+		fields = append(fields, Field{"Token Expires", website.ValidationExpiresAt.Format("2006-01-02 15:04:05")})
+	}
+
+	if website.DnsZoneId != nil {
+		fields = append(fields, Field{"DNS Zone ID", fmt.Sprintf("%d", *website.DnsZoneId)})
+	}
+
+	fields = append(fields, Field{"Created", website.Created.Format("2006-01-02 15:04:05")})
+
+	output.PrintFields(FieldGroup{Fields: fields})
+
+	if website.Expired {
+		output.Printfln("")
+		output.Printfln("⚠ This website's validation has expired.")
+		output.Printfln("  Re-validate: pinner websites validate %d", website.Id)
+	}
 
 	return nil
 }
@@ -350,23 +432,40 @@ func websitesCreate(ctx context.Context, cmd *cli.Command, output Output) error 
 		return err
 	}
 
-	domain := cmd.String(FlagDomain)
-	targetHash := cmd.String(FlagTargetHash)
+	args := cmd.Args()
+	if args.Len() == 0 {
+		return fmt.Errorf("domain is required")
+	}
+
+	domain := args.First()
+	cid := cmd.String(FlagCID)
 
 	targetType := cmd.String(FlagTargetType)
 	if targetType == "" {
 		targetType = "ipfs"
 	}
 
-	createdWebsite, err := websitesService.Create(ctx, domain, targetHash, targetType)
+	req := ipfs.WebsiteRequest{
+		Domain:       domain,
+		TargetHash:  cid,
+		TargetType:  targetType,
+	}
+
+	if cmd.IsSet(FlagDNSHosting) {
+		dnsHosting := cmd.Bool(FlagDNSHosting)
+		req.DnsHostingEnabled = &dnsHosting
+	} else if cmd.IsSet(FlagNoDNSHosting) {
+		dnsHosting := false
+		req.DnsHostingEnabled = &dnsHosting
+	}
+
+	createdWebsite, err := websitesService.CreateWithOptions(ctx, req)
 	if err != nil {
 		return err
 	}
 
-	dnsHosting := cmd.Bool(FlagDNSHosting)
-
-	if dnsHosting {
-		if err := setupDNSHosting(ctx, cfgMgr, output, domain, targetHash); err != nil {
+	if createdWebsite.DnsHostingEnabled {
+		if err := setupDNSHosting(ctx, cfgMgr, output, createdWebsite.Domain, createdWebsite.TargetHash); err != nil {
 			output.Printfln("Warning: Failed to setup DNS hosting: %v", err)
 		}
 	}
@@ -377,24 +476,36 @@ func websitesCreate(ctx context.Context, cmd *cli.Command, output Output) error 
 
 	output.Printfln("Website created successfully")
 
-	headers := []string{"ID", "NAME", "CID", "STATUS", "CREATED"}
-	rows := [][]string{
-		{
-			fmt.Sprintf("%d", createdWebsite.Id),
-			createdWebsite.Domain,
-			createdWebsite.TargetHash,
-			createdWebsite.Status,
-			createdWebsite.Created.Format("2006-01-02 15:04:05"),
+	output.PrintFields(FieldGroup{
+		Fields: []Field{
+			{"ID", fmt.Sprintf("%d", createdWebsite.Id)},
+			{"Domain", createdWebsite.Domain},
+			{"CID", createdWebsite.TargetHash},
+			{"Target Type", createdWebsite.TargetType},
+			{"Status", createdWebsite.Status},
+			{"DNS Hosting", fmt.Sprintf("%t", createdWebsite.DnsHostingEnabled)},
+			{"Expired", fmt.Sprintf("%t", createdWebsite.Expired)},
+			{"Created", createdWebsite.Created.Format("2006-01-02 15:04:05")},
 		},
-	}
-	output.PrintTable(headers, rows)
+	})
 
-	if dnsHosting {
+	output.Printfln("")
+	output.Printfln("Validation token: %s", createdWebsite.ValidationToken)
+	output.Printfln("")
+	output.Printfln("Next steps:")
+	if createdWebsite.DnsHostingEnabled {
+		output.Printfln("  1. Point your domain's nameservers to Pinner (see: pinner dns zones validate %s)", createdWebsite.Domain)
+		output.Printfln("  2. Add a TXT record at your registrar to verify ownership:")
+		output.Printfln("     %s  TXT  lumeweb-verify=%s", createdWebsite.Domain, createdWebsite.ValidationToken)
+		output.Printfln("  3. Validate: pinner websites validate %s", createdWebsite.Domain)
+	} else {
+		output.Printfln("  1. Add a TXT record at your registrar to verify ownership:")
+		output.Printfln("     %s  TXT  lumeweb-verify=%s", createdWebsite.Domain, createdWebsite.ValidationToken)
+		output.Printfln("  2. Add a DNSLink TXT record:")
+		output.Printfln("     _dnslink.%s  TXT  dnslink=/%s/%s", createdWebsite.Domain, createdWebsite.TargetType, createdWebsite.TargetHash)
+		output.Printfln("  3. Validate: pinner websites validate %s", createdWebsite.Domain)
 		output.Printfln("")
-		output.Printfln("DNS hosting enabled for this domain")
-		output.Printfln("Next steps:")
-		output.Printfln("  1. Validate nameserver delegation: pinner dns zones validate %s", domain)
-		output.Printfln("  2. Validate website DNS records: pinner websites validate %d", createdWebsite.Id)
+		output.Printfln("  Tip: Use --dns-hosting to have Pinner manage DNS for you")
 	}
 
 	return nil
@@ -468,12 +579,12 @@ func newWebsitesDeleteCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "delete",
 		Usage: "Delete a website",
-		Description: `Delete a website by its ID. This operation is irreversible.
+		Description: `Delete a website by domain. This operation is irreversible.
 
 Examples:
-  pinner websites delete 1
-  pinner websites delete 1 --json`,
-		ArgsUsage: "<id>",
+  pinner websites delete example.com
+  pinner websites delete example.com --json`,
+		ArgsUsage: "<domain>",
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			output := setupOutput(cmd)
 			return websitesDelete(ctx, cmd, output)
@@ -485,12 +596,12 @@ func newWebsitesValidateCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "validate",
 		Usage: "Validate a website",
-		Description: `Validate a website by its ID to check if the domain is properly configured.
+		Description: `Validate a website by domain to check if DNS is properly configured.
 
 Examples:
-  pinner websites validate 1
-  pinner websites validate 1 --json`,
-		ArgsUsage: "<id>",
+  pinner websites validate example.com
+  pinner websites validate example.com --json`,
+		ArgsUsage: "<domain>",
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			output := setupOutput(cmd)
 			return websitesValidate(ctx, cmd, output)
@@ -522,10 +633,15 @@ func websitesDelete(ctx context.Context, cmd *cli.Command, output Output) error 
 
 	args := cmd.Args()
 	if args.Len() == 0 {
-		return fmt.Errorf("website ID is required")
+		return fmt.Errorf("website ID or domain is required")
 	}
 
-	id := args.First()
+	arg := args.First()
+
+	id, err := resolveWebsiteID(ctx, websitesService, arg)
+	if err != nil {
+		return err
+	}
 
 	if err := websitesService.Delete(ctx, id); err != nil {
 		return err
@@ -534,12 +650,12 @@ func websitesDelete(ctx context.Context, cmd *cli.Command, output Output) error 
 	if output.IsJSON() {
 		result := map[string]any{
 			"success": true,
-			"message": fmt.Sprintf("Website %s deleted successfully", id),
+			"message": fmt.Sprintf("Website %s deleted successfully", arg),
 		}
 		return output.PrintJSON(result)
 	}
 
-	output.Printfln("Website %s deleted successfully", id)
+	output.Printfln("Website %s deleted successfully", arg)
 
 	return nil
 }
@@ -568,10 +684,15 @@ func websitesValidate(ctx context.Context, cmd *cli.Command, output Output) erro
 
 	args := cmd.Args()
 	if args.Len() == 0 {
-		return fmt.Errorf("website ID is required")
+		return fmt.Errorf("website ID or domain is required")
 	}
 
-	id := args.First()
+	arg := args.First()
+
+	id, err := resolveWebsiteID(ctx, websitesService, arg)
+	if err != nil {
+		return err
+	}
 
 	validationResult, err := websitesService.Validate(ctx, id)
 	if err != nil {
@@ -624,16 +745,23 @@ func websitesValidate(ctx context.Context, cmd *cli.Command, output Output) erro
 		statusIcon = "✅"
 	}
 
-	headers := []string{"DOMAIN", "ID", "VALID", "MESSAGE"}
-	rows := [][]string{
-		{
-			validationResult.Domain,
-			fmt.Sprintf("%d", validationResult.Id),
-			fmt.Sprintf("%s %t", statusIcon, validationResult.Valid),
-			validationResult.Message,
+	output.PrintFields(FieldGroup{
+		Fields: []Field{
+			{"Domain", validationResult.Domain},
+			{"ID", fmt.Sprintf("%d", validationResult.Id)},
+			{"Valid", fmt.Sprintf("%s %t", statusIcon, validationResult.Valid)},
+			{"Message", validationResult.Message},
 		},
+	})
+
+	if !validationResult.Valid {
+		output.Printfln("")
+		output.Printfln("Next steps:")
+		output.Printfln("  1. Make sure you have added the required DNS records to your domain")
+		output.Printfln("  2. Check DNS record status above — missing records are marked with ✗")
+		output.Printfln("  3. Re-validate after making changes: pinner websites validate %d", validationResult.Id)
+		output.Printfln("  4. View website details: pinner websites get %d", validationResult.Id)
 	}
-	output.PrintTable(headers, rows)
 
 	return nil
 }

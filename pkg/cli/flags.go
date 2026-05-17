@@ -58,10 +58,11 @@ const (
 
 // Websites flags
 const (
-	FlagDomain      = "domain"
-	FlagTargetHash  = "target-hash"
-	FlagTargetType  = "target-type"
-	FlagDNSHosting  = "dns-hosting"
+	FlagDomain       = "domain"
+	FlagCID          = "cid"
+	FlagTargetHash   = "target-hash"
+	FlagTargetType   = "target-type"
+	FlagDNSHosting   = "dns-hosting"
 	FlagNoDNSHosting = "no-dns-hosting"
 )
 
@@ -356,6 +357,7 @@ func RequiredDomainFlag() *cli.StringFlag {
 }
 
 // TargetHashFlag returns a flag for the target CID.
+// Deprecated: Use CIDFlag instead.
 func TargetHashFlag() *cli.StringFlag {
 	return &cli.StringFlag{
 		Name:  FlagTargetHash,
@@ -364,10 +366,28 @@ func TargetHashFlag() *cli.StringFlag {
 }
 
 // RequiredTargetHashFlag returns a required flag for the target CID.
+// Deprecated: Use RequiredCIDFlag instead.
 func RequiredTargetHashFlag() *cli.StringFlag {
 	return &cli.StringFlag{
 		Name:     FlagTargetHash,
 		Usage:    "Target CID (IPFS hash) for the website",
+		Required: true,
+	}
+}
+
+// CIDFlag returns a flag for the target CID.
+func CIDFlag() *cli.StringFlag {
+	return &cli.StringFlag{
+		Name:  FlagCID,
+		Usage: "CID (Content Identifier) for the website",
+	}
+}
+
+// RequiredCIDFlag returns a required flag for the target CID.
+func RequiredCIDFlag() *cli.StringFlag {
+	return &cli.StringFlag{
+		Name:     FlagCID,
+		Usage:    "CID (Content Identifier) for the website",
 		Required: true,
 	}
 }
