@@ -15,8 +15,10 @@ import (
 
 // UploadServiceConfig holds configuration options for UploadService.
 type UploadServiceConfig struct {
-	HTTPClient    *http.Client
-	AccountClient portalsdk.AccountAPI
+	HTTPClient       *http.Client
+	AccountClient    portalsdk.AccountAPI
+	IPFSEndpoint     string
+	AccountEndpoint  string
 }
 
 // UploadServiceDefault provides upload operations using the ipfs-sdk UploadService.
@@ -25,7 +27,8 @@ type UploadServiceDefault struct {
 	authService     AuthService
 	configMgr       config.Manager
 	output          Output
-	apiEndpoint     string
+	ipfsEndpoint    string
+	accountEndpoint string
 	authToken       string
 	memoryLimit     uint64
 	chunkSize       int64
@@ -60,19 +63,44 @@ func WithUploadAuthService(authSvc AuthService) UploadServiceOption {
 	}
 }
 
+// WithAccountEndpoint sets a custom account API endpoint for auth/operations calls.
+func WithAccountEndpoint(endpoint string) UploadServiceOption {
+	return func(s *UploadServiceDefault) {
+		s.config.AccountEndpoint = endpoint
+	}
+}
+
+// WithIPFSEndpoint sets a custom IPFS endpoint for upload calls.
+func WithIPFSEndpoint(endpoint string) UploadServiceOption {
+	return func(s *UploadServiceDefault) {
+		s.config.IPFSEndpoint = endpoint
+	}
+}
+
 // NewUploadService creates a new UploadService with the given dependencies.
-func NewUploadService(cfgMgr config.Manager, output Output, apiEndpoint string, opts ...UploadServiceOption) UploadService {
+func NewUploadService(cfgMgr config.Manager, output Output, opts ...UploadServiceOption) UploadService {
+	cfg := cfgMgr.Config()
 	s := &UploadServiceDefault{
-		accountClient: portalsdk.NewClient(portalsdk.WithEndpoint(apiEndpoint)),
-		configMgr:     cfgMgr,
-		output:        output,
-		apiEndpoint:   apiEndpoint,
+		accountClient:   portalsdk.NewClient(portalsdk.WithEndpoint(cfg.GetAPIEndpoint())),
+		accountEndpoint: cfg.GetAPIEndpoint(),
+		ipfsEndpoint:    cfg.GetIPFSEndpointSecure(),
+		configMgr:       cfgMgr,
+		output:          output,
 	}
 	for _, opt := range opts {
 		opt(s)
 	}
 	if s.config.AccountClient != nil {
 		s.accountClient = s.config.AccountClient
+	}
+	if s.config.AccountEndpoint != "" {
+		s.accountEndpoint = s.config.AccountEndpoint
+		if s.config.AccountClient == nil {
+			s.accountClient = portalsdk.NewClient(portalsdk.WithEndpoint(s.accountEndpoint))
+		}
+	}
+	if s.config.IPFSEndpoint != "" {
+		s.ipfsEndpoint = s.config.IPFSEndpoint
 	}
 	return s
 }
@@ -136,7 +164,7 @@ func (s *UploadServiceDefault) Upload(ctx context.Context, filesystem fs.FS, nam
 		return nil, err
 	}
 
-	s.output.PrintVerbosef("Using API endpoint: %s", s.configMgr.Config().GetIPFSEndpointSecure())
+	s.output.PrintVerbosef("Using IPFS endpoint: %s", s.ipfsEndpoint)
 
 	// Resolve the auth token — exchange API key JWT for login JWT if needed
 	authToken, err := s.resolveAuthToken(ctx)
@@ -165,8 +193,7 @@ func (s *UploadServiceDefault) Upload(ctx context.Context, filesystem fs.FS, nam
 	}
 
 	// Create SDK upload service using the configured IPFS endpoint
-	ipfsEndpoint := s.configMgr.Config().GetIPFSEndpointSecure()
-	sdkUpload, err := ipfs.NewUploadService(ipfsEndpoint, authToken)
+	sdkUpload, err := ipfs.NewUploadService(s.ipfsEndpoint, authToken)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create upload service: %w", err)
 	}
@@ -231,7 +258,7 @@ func (s *UploadServiceDefault) wrapUploadError(err error) error {
 
 // waitForPin waits for a file to be pinned by querying operations by CID.
 func (s *UploadServiceDefault) waitForPin(ctx context.Context, rootCID string, authToken string) error {
-	accountClient := portalsdk.NewClient(portalsdk.WithEndpoint(s.apiEndpoint), portalsdk.WithJWT(authToken))
+	accountClient := portalsdk.NewClient(portalsdk.WithEndpoint(s.accountEndpoint), portalsdk.WithJWT(authToken))
 
 	operations, err := accountClient.ListOperations(ctx, portalsdk.WithFilters(filter.FieldEqual("cid", rootCID)))
 	if err != nil {

@@ -244,7 +244,7 @@ func TestBenchService_RequireAuthenticated(t *testing.T) {
 
 		output := NewOutputFormatter(false, false, false, false)
 		pinningService := NewPinningService(cfgMgr, output, "https://api.test.com")
-		uploadService := NewUploadService(cfgMgr, output, "https://api.test.com")
+		uploadService := NewUploadService(cfgMgr, output)
 
 		svc := NewBenchService(cfgMgr, output, uploadService, pinningService, portalsdkmocks.NewMockAccountAPI(t))
 		err := svc.RequireAuthenticated()
@@ -261,7 +261,7 @@ func TestBenchService_Run_NotAuthenticated(t *testing.T) {
 
 		output := NewOutputFormatter(false, false, false, false)
 		pinningService := NewPinningService(cfgMgr, output, "https://api.test.com")
-		uploadService := NewUploadService(cfgMgr, output, "https://api.test.com")
+		uploadService := NewUploadService(cfgMgr, output)
 
 		svc := NewBenchService(cfgMgr, output, uploadService, pinningService, portalsdkmocks.NewMockAccountAPI(t))
 		_, err := svc.Run(context.Background(), BenchOptions{

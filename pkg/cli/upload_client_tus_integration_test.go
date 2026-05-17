@@ -185,7 +185,7 @@ func setupTUSTest(t *testing.T, uploadLimit int64) *tusTestSetup {
 	accClient.EXPECT().UploadLimit(mock.Anything).Return(uploadLimit, nil)
 
 	output := NewOutputFormatter(false, false, false, false)
-	service := NewUploadService(cfgMgr, output, "https://api.test.com", WithUploadAccountClient(accClient))
+	service := NewUploadService(cfgMgr, output, WithUploadAccountClient(accClient))
 
 	return &tusTestSetup{
 		server:       server,

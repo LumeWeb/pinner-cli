@@ -43,7 +43,6 @@ func newUploadTestHelpers(t *testing.T) *uploadTestHelpers {
 	output := NewOutputFormatter(false, false, false, false)
 	accountClient := portalsdkmocks.NewMockAccountAPI(t)
 
-	// Set up default config expectation for MaxRetries
 	cfg := &config.Config{
 		MaxRetries: 3,
 	}
@@ -51,7 +50,7 @@ func newUploadTestHelpers(t *testing.T) *uploadTestHelpers {
 
 	opts := []UploadServiceOption{WithUploadAccountClient(accountClient)}
 
-	service := NewUploadService(cfgMgr, output, "https://api.test.com", opts...)
+	service := NewUploadService(cfgMgr, output, opts...)
 	return &uploadTestHelpers{
 		t:             t,
 		cfgMgr:        cfgMgr,
@@ -69,6 +68,7 @@ func (h *uploadTestHelpers) setupConfig(authToken, baseEndpoint string, memoryLi
 	h.cfg.Secure = false
 	h.cfg.MaxRetries = 3
 	h.cfgMgr.EXPECT().Config().Return(h.cfg).Maybe()
+	h.service.ipfsEndpoint = baseEndpoint
 }
 
 func (h *uploadTestHelpers) setupUploadExpectations(authToken, baseEndpoint string, memoryLimit uint64, uploadLimit int64) {
@@ -119,7 +119,6 @@ func (h *uploadTestHelpers) createTestDirectory(files map[string]string) string 
 func TestNewUploadService(t *testing.T) {
 	t.Run("creates service with dependencies", func(t *testing.T) {
 		h := newUploadTestHelpers(t)
-		apiEndpoint := "https://api.test.com"
 
 		h.setupConfig("", "", 0)
 
@@ -127,7 +126,6 @@ func TestNewUploadService(t *testing.T) {
 		assert.NotNil(t, h.service.accountClient)
 		assert.Equal(t, h.cfgMgr, h.service.configMgr)
 		assert.Equal(t, h.output, h.service.output)
-		assert.Equal(t, apiEndpoint, h.service.apiEndpoint)
 		assert.Empty(t, h.service.authToken)
 	})
 }
