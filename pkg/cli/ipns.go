@@ -196,7 +196,7 @@ func ipnsKeysList(ctx context.Context, cmd *cli.Command, output Output) error {
 	authToken := GetAuthToken(cmd, cfgMgr)
 	secure := GetSecureSetting(cmd, cfgMgr)
 	if authToken != "" {
-		ipnsService = NewIPNSService(cfgMgr, output, cfgMgr.Config().GetAccountEndpointWithSecure(secure))
+		ipnsService = NewIPNSService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure))
 	} else {
 		ipnsService = defaultIPNSServiceFactory(cfgMgr, output)
 	}
@@ -254,7 +254,7 @@ func ipnsKeysCreate(ctx context.Context, cmd *cli.Command, output Output) error 
 	authToken := GetAuthToken(cmd, cfgMgr)
 	secure := GetSecureSetting(cmd, cfgMgr)
 	if authToken != "" {
-		ipnsService = NewIPNSService(cfgMgr, output, cfgMgr.Config().GetAccountEndpointWithSecure(secure))
+		ipnsService = NewIPNSService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure))
 	} else {
 		ipnsService = defaultIPNSServiceFactory(cfgMgr, output)
 	}
@@ -313,7 +313,7 @@ func ipnsKeysGet(ctx context.Context, cmd *cli.Command, output Output) error {
 	authToken := GetAuthToken(cmd, cfgMgr)
 	secure := GetSecureSetting(cmd, cfgMgr)
 	if authToken != "" {
-		ipnsService = NewIPNSService(cfgMgr, output, cfgMgr.Config().GetAccountEndpointWithSecure(secure))
+		ipnsService = NewIPNSService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure))
 	} else {
 		ipnsService = defaultIPNSServiceFactory(cfgMgr, output)
 	}
@@ -368,7 +368,7 @@ func ipnsKeysDelete(ctx context.Context, cmd *cli.Command, output Output) error 
 	authToken := GetAuthToken(cmd, cfgMgr)
 	secure := GetSecureSetting(cmd, cfgMgr)
 	if authToken != "" {
-		ipnsService = NewIPNSService(cfgMgr, output, cfgMgr.Config().GetAccountEndpointWithSecure(secure))
+		ipnsService = NewIPNSService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure))
 	} else {
 		ipnsService = defaultIPNSServiceFactory(cfgMgr, output)
 	}
@@ -414,7 +414,7 @@ func ipnsPublish(ctx context.Context, cmd *cli.Command, output Output) error {
 	authToken := GetAuthToken(cmd, cfgMgr)
 	secure := GetSecureSetting(cmd, cfgMgr)
 	if authToken != "" {
-		ipnsService = NewIPNSService(cfgMgr, output, cfgMgr.Config().GetAccountEndpointWithSecure(secure))
+		ipnsService = NewIPNSService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure))
 	} else {
 		ipnsService = defaultIPNSServiceFactory(cfgMgr, output)
 	}
@@ -485,7 +485,7 @@ func ipnsResolve(ctx context.Context, cmd *cli.Command, output Output) error {
 	authToken := GetAuthToken(cmd, cfgMgr)
 	secure := GetSecureSetting(cmd, cfgMgr)
 	if authToken != "" {
-		ipnsService = NewIPNSService(cfgMgr, output, cfgMgr.Config().GetAccountEndpointWithSecure(secure))
+		ipnsService = NewIPNSService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure))
 	} else {
 		ipnsService = defaultIPNSServiceFactory(cfgMgr, output)
 	}

@@ -311,7 +311,7 @@ func dnsZonesList(ctx context.Context, cmd *cli.Command, output Output, cfgMgr c
 	secure := GetSecureSetting(cmd, cfgMgr)
 
 	if authToken != "" {
-		dnsService = NewDNSService(cfgMgr, output, cfgMgr.Config().GetAccountEndpointWithSecure(secure))
+		dnsService = NewDNSService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure))
 	} else {
 		dnsService = defaultDNSServiceFactory(cfgMgr, output)
 	}
@@ -372,7 +372,7 @@ func dnsZonesCreate(ctx context.Context, cmd *cli.Command, output Output, cfgMgr
 	secure := GetSecureSetting(cmd, cfgMgr)
 
 	if authToken != "" {
-		dnsService = NewDNSService(cfgMgr, output, cfgMgr.Config().GetAccountEndpointWithSecure(secure))
+		dnsService = NewDNSService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure))
 	} else {
 		dnsService = defaultDNSServiceFactory(cfgMgr, output)
 	}
@@ -418,7 +418,7 @@ func dnsZonesGet(ctx context.Context, cmd *cli.Command, output Output, cfgMgr co
 	secure := GetSecureSetting(cmd, cfgMgr)
 
 	if authToken != "" {
-		dnsService = NewDNSService(cfgMgr, output, cfgMgr.Config().GetAccountEndpointWithSecure(secure))
+		dnsService = NewDNSService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure))
 	} else {
 		dnsService = defaultDNSServiceFactory(cfgMgr, output)
 	}
@@ -468,7 +468,7 @@ func dnsZonesDelete(ctx context.Context, cmd *cli.Command, output Output, cfgMgr
 	secure := GetSecureSetting(cmd, cfgMgr)
 
 	if authToken != "" {
-		dnsService = NewDNSService(cfgMgr, output, cfgMgr.Config().GetAccountEndpointWithSecure(secure))
+		dnsService = NewDNSService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure))
 	} else {
 		dnsService = defaultDNSServiceFactory(cfgMgr, output)
 	}
@@ -495,7 +495,7 @@ func dnsRecordsList(ctx context.Context, cmd *cli.Command, output Output, cfgMgr
 	secure := GetSecureSetting(cmd, cfgMgr)
 
 	if authToken != "" {
-		dnsService = NewDNSService(cfgMgr, output, cfgMgr.Config().GetAccountEndpointWithSecure(secure))
+		dnsService = NewDNSService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure))
 	} else {
 		dnsService = defaultDNSServiceFactory(cfgMgr, output)
 	}
@@ -569,7 +569,7 @@ func dnsRecordsCreate(ctx context.Context, cmd *cli.Command, output Output, cfgM
 	secure := GetSecureSetting(cmd, cfgMgr)
 
 	if authToken != "" {
-		dnsService = NewDNSService(cfgMgr, output, cfgMgr.Config().GetAccountEndpointWithSecure(secure))
+		dnsService = NewDNSService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure))
 	} else {
 		dnsService = defaultDNSServiceFactory(cfgMgr, output)
 	}
@@ -614,7 +614,7 @@ func dnsRecordsGet(ctx context.Context, cmd *cli.Command, output Output, cfgMgr 
 	secure := GetSecureSetting(cmd, cfgMgr)
 
 	if authToken != "" {
-		dnsService = NewDNSService(cfgMgr, output, cfgMgr.Config().GetAccountEndpointWithSecure(secure))
+		dnsService = NewDNSService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure))
 	} else {
 		dnsService = defaultDNSServiceFactory(cfgMgr, output)
 	}
@@ -680,7 +680,7 @@ func dnsRecordsUpdate(ctx context.Context, cmd *cli.Command, output Output, cfgM
 	secure := GetSecureSetting(cmd, cfgMgr)
 
 	if authToken != "" {
-		dnsService = NewDNSService(cfgMgr, output, cfgMgr.Config().GetAccountEndpointWithSecure(secure))
+		dnsService = NewDNSService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure))
 	} else {
 		dnsService = defaultDNSServiceFactory(cfgMgr, output)
 	}
@@ -725,7 +725,7 @@ func dnsRecordsDelete(ctx context.Context, cmd *cli.Command, output Output, cfgM
 	secure := GetSecureSetting(cmd, cfgMgr)
 
 	if authToken != "" {
-		dnsService = NewDNSService(cfgMgr, output, cfgMgr.Config().GetAccountEndpointWithSecure(secure))
+		dnsService = NewDNSService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure))
 	} else {
 		dnsService = defaultDNSServiceFactory(cfgMgr, output)
 	}

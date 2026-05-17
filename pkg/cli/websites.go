@@ -158,7 +158,7 @@ func websitesList(ctx context.Context, cmd *cli.Command, output Output) error {
 	authToken := GetAuthToken(cmd, cfgMgr)
 	secure := GetSecureSetting(cmd, cfgMgr)
 	if authToken != "" {
-		websitesService = NewWebsitesService(cfgMgr, output, cfgMgr.Config().GetAccountEndpointWithSecure(secure))
+		websitesService = NewWebsitesService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure))
 	} else {
 		websitesService = defaultWebsitesServiceFactory(cfgMgr, output)
 	}
@@ -216,7 +216,7 @@ func websitesUpdate(ctx context.Context, cmd *cli.Command, output Output) error 
 	authToken := GetAuthToken(cmd, cfgMgr)
 	secure := GetSecureSetting(cmd, cfgMgr)
 	if authToken != "" {
-		websitesService = NewWebsitesService(cfgMgr, output, cfgMgr.Config().GetAccountEndpointWithSecure(secure))
+		websitesService = NewWebsitesService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure))
 	} else {
 		websitesService = defaultWebsitesServiceFactory(cfgMgr, output)
 	}
@@ -286,7 +286,7 @@ func websitesGet(ctx context.Context, cmd *cli.Command, output Output) error {
 	authToken := GetAuthToken(cmd, cfgMgr)
 	secure := GetSecureSetting(cmd, cfgMgr)
 	if authToken != "" {
-		websitesService = NewWebsitesService(cfgMgr, output, cfgMgr.Config().GetAccountEndpointWithSecure(secure))
+		websitesService = NewWebsitesService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure))
 	} else {
 		websitesService = defaultWebsitesServiceFactory(cfgMgr, output)
 	}
@@ -341,7 +341,7 @@ func websitesCreate(ctx context.Context, cmd *cli.Command, output Output) error 
 	authToken := GetAuthToken(cmd, cfgMgr)
 	secure := GetSecureSetting(cmd, cfgMgr)
 	if authToken != "" {
-		websitesService = NewWebsitesService(cfgMgr, output, cfgMgr.Config().GetAccountEndpointWithSecure(secure))
+		websitesService = NewWebsitesService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure))
 	} else {
 		websitesService = defaultWebsitesServiceFactory(cfgMgr, output)
 	}
@@ -511,7 +511,7 @@ func websitesDelete(ctx context.Context, cmd *cli.Command, output Output) error 
 	authToken := GetAuthToken(cmd, cfgMgr)
 	secure := GetSecureSetting(cmd, cfgMgr)
 	if authToken != "" {
-		websitesService = NewWebsitesService(cfgMgr, output, cfgMgr.Config().GetAccountEndpointWithSecure(secure))
+		websitesService = NewWebsitesService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure))
 	} else {
 		websitesService = defaultWebsitesServiceFactory(cfgMgr, output)
 	}
@@ -557,7 +557,7 @@ func websitesValidate(ctx context.Context, cmd *cli.Command, output Output) erro
 	authToken := GetAuthToken(cmd, cfgMgr)
 	secure := GetSecureSetting(cmd, cfgMgr)
 	if authToken != "" {
-		websitesService = NewWebsitesService(cfgMgr, output, cfgMgr.Config().GetAccountEndpointWithSecure(secure))
+		websitesService = NewWebsitesService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure))
 	} else {
 		websitesService = defaultWebsitesServiceFactory(cfgMgr, output)
 	}

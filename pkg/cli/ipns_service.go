@@ -44,7 +44,7 @@ type IPNSServiceFactory func(cfgMgr config.Manager, output Output) IPNSService
 
 // defaultIPNSServiceFactory creates a default IPNSService instance.
 func defaultIPNSServiceFactory(cfgMgr config.Manager, output Output) IPNSService {
-	return NewIPNSService(cfgMgr, output, cfgMgr.Config().GetAPIEndpoint())
+	return NewIPNSService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpoint())
 }
 
 // NewIPNSService creates a new IPNSService instance.

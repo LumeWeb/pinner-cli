@@ -168,6 +168,6 @@ func (s *dnsServiceCLI) DeleteRecord(ctx context.Context, id string, name string
 
 // defaultDNSServiceFactory creates a default DNS service instance.
 func defaultDNSServiceFactory(cfgMgr config.Manager, output Output) DNSService {
-	apiEndpoint := cfgMgr.Config().GetAPIEndpoint()
+	apiEndpoint := cfgMgr.Config().GetIPFSEndpoint()
 	return NewDNSService(cfgMgr, output, apiEndpoint)
 }

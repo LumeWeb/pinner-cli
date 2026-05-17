@@ -20,7 +20,7 @@ type WebsitesServiceFactory func(cfgMgr config.Manager, output Output) WebsitesS
 
 // defaultWebsitesServiceFactory creates a default WebsitesService instance.
 func defaultWebsitesServiceFactory(cfgMgr config.Manager, output Output) WebsitesService {
-	return NewWebsitesService(cfgMgr, output, cfgMgr.Config().GetAPIEndpoint())
+	return NewWebsitesService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpoint())
 }
 
 // NewWebsitesService creates a new WebsitesService instance.
