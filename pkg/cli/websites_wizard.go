@@ -143,10 +143,6 @@ func (w *WebsitesWizard) executeDNSSetup(ctx context.Context) error {
 
 	w.output.Printfln("  ✓ Created DNS zone (ID: %d, Status: %s)", zone.Id, zone.Status)
 
-	validationToken, err := generateValidationToken()
-	if err != nil {
-		return fmt.Errorf("failed to generate validation token: %w", err)
-	}
 	ttl := 3600
 
 	records := []ipfs.RecordRequest{
@@ -159,7 +155,7 @@ func (w *WebsitesWizard) executeDNSSetup(ctx context.Context) error {
 		{
 			Name:    domain,
 			Type:    "TXT",
-			Content: "lumeweb-verify=" + validationToken,
+			Content: "lumeweb-verify=" + website.ValidationToken,
 			Ttl:     &ttl,
 		},
 		{

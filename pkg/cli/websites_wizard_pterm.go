@@ -207,7 +207,7 @@ func (ui *PTermWebsitesUI) ExecuteDNSModeStep(_ context.Context, w *WebsitesWiza
 // On first call it shows the required DNS records. Each call attempts validation.
 // If validation fails, it sets ValidateRetry=true on the wizard so the framework
 // re-executes this step. If the user skips, it sets ValidateRetry=false.
-func (ui *PTermWebsitesUI) ExecuteValidateStep(_ context.Context, w *WebsitesWizard) error {
+func (ui *PTermWebsitesUI) ExecuteValidateStep(ctx context.Context, w *WebsitesWizard) error {
 	website := w.Website()
 	if website == nil {
 		return fmt.Errorf("website not created yet")
@@ -232,7 +232,7 @@ func (ui *PTermWebsitesUI) ExecuteValidateStep(_ context.Context, w *WebsitesWiz
 		return nil
 	}
 
-	if err := w.executeValidate(context.Background()); err != nil {
+	if err := w.executeValidate(ctx); err != nil {
 		pterm.Warning.Printf("Validation check failed: %v\n", err)
 		pterm.Println()
 		w.SetValidateRetry(true)

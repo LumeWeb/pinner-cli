@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"crypto/rand"
 	"fmt"
 	"strconv"
 	"time"
@@ -314,7 +313,7 @@ func websitesUpdate(ctx context.Context, cmd *cli.Command, output Output) error 
 	}
 
 	if updatedWebsite.DnsHostingEnabled {
-		if err := setupDNSHosting(ctx, cfgMgr, output, updatedWebsite.Domain, updatedWebsite.TargetHash); err != nil {
+		if err := setupDNSHosting(ctx, cfgMgr, output, updatedWebsite); err != nil {
 			output.Printfln("Warning: Failed to setup DNS hosting: %v", err)
 		}
 	}
@@ -502,7 +501,7 @@ func websitesCreate(ctx context.Context, cmd *cli.Command, output Output) error 
 	}
 
 	if createdWebsite.DnsHostingEnabled {
-		if err := setupDNSHosting(ctx, cfgMgr, output, createdWebsite.Domain, createdWebsite.TargetHash); err != nil {
+		if err := setupDNSHosting(ctx, cfgMgr, output, createdWebsite); err != nil {
 			output.Printfln("Warning: Failed to setup DNS hosting: %v", err)
 		}
 	}
@@ -574,8 +573,11 @@ func showDNSRecordInstructions(output Output, website *ipfs.WebsiteItem) {
 }
 
 // setupDNSHosting creates a DNS zone and auto-created records for a website
-func setupDNSHosting(ctx context.Context, cfgMgr config.Manager, output Output, domain, targetHash string) error {
+func setupDNSHosting(ctx context.Context, cfgMgr config.Manager, output Output, website *ipfs.WebsiteItem) error {
 	dnsService := defaultDNSServiceFactory(cfgMgr, output)
+
+	domain := website.Domain
+	targetHash := website.TargetHash
 
 	output.Printfln("Setting up DNS hosting for %s...", domain)
 
@@ -586,12 +588,6 @@ func setupDNSHosting(ctx context.Context, cfgMgr config.Manager, output Output, 
 
 	output.Printfln("  ✓ Created DNS zone (ID: %d, Status: %s)", zone.Id, zone.Status)
 
-
-
-	validationToken, err := generateValidationToken()
-	if err != nil {
-		return fmt.Errorf("failed to generate validation token: %w", err)
-	}
 	ttl := 3600
 
 	records := []ipfs.RecordRequest{
@@ -604,7 +600,7 @@ func setupDNSHosting(ctx context.Context, cfgMgr config.Manager, output Output, 
 		{
 			Name:    domain,
 			Type:    "TXT",
-			Content: "lumeweb-verify=" + validationToken,
+			Content: "lumeweb-verify=" + website.ValidationToken,
 			Ttl:     &ttl,
 		},
 		{
@@ -625,16 +621,6 @@ func setupDNSHosting(ctx context.Context, cfgMgr config.Manager, output Output, 
 	}
 
 	return nil
-}
-
-// generateValidationToken generates a random validation token
-func generateValidationToken() (string, error) {
-	b := make([]byte, 8)
-	_, err := rand.Read(b)
-	if err != nil {
-		return "", fmt.Errorf("failed to generate validation token: %w", err)
-	}
-	return fmt.Sprintf("%x", b), nil
 }
 
 func newWebsitesDeleteCommand() *cli.Command {
