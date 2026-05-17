@@ -55,7 +55,7 @@ The output includes:
 		Metadata: WithTutorial(1, "Upload and pin a file", "pinner upload myfile.txt"),
 		Action: func(ctx context.Context, c *cli.Command) error {
 			output := setupOutput(c)
-			return handleUpload(ctx, newCLICommandWrapper(c), output, defaultConfigManagerFactory, defaultUploadServiceFactory)
+			return handleUpload(ctx, newCLICommandWrapper(c), output, defaultConfigManagerFactory, defaultUploadServiceFactory, defaultPinningServiceFactory)
 		},
 	}
 }
@@ -145,7 +145,7 @@ type uploadCommandGetter interface {
 	Args() cli.Args
 }
 
-func handleUpload(ctx context.Context, cmd uploadCommandGetter, output Output, cfgMgrFactory ConfigManagerFactory, uploadServiceFactory UploadServiceFactory) error {
+func handleUpload(ctx context.Context, cmd uploadCommandGetter, output Output, cfgMgrFactory ConfigManagerFactory, uploadServiceFactory UploadServiceFactory, pinningServiceFactory PinningServiceFactory) error {
 	cfgMgr, err := cfgMgrFactory()
 	if err != nil {
 		return err
@@ -176,11 +176,16 @@ func handleUpload(ctx context.Context, cmd uploadCommandGetter, output Output, c
 		svcOpts = append(svcOpts, WithMaxLinks(maxLinks))
 	}
 
+	wait := cmd.Bool(FlagWait)
+
+	if wait {
+		svcOpts = append(svcOpts, WithUploadPinningService(pinningServiceFactory(cfgMgr, output)))
+	}
+
 	uploadService := uploadServiceFactory(cfgMgr, output, svcOpts...)
 
 	path := cmd.Args().First()
 	name := cmd.String(FlagName)
-	wait := cmd.Bool(FlagWait)
 	dryRun := cmd.Bool(FlagDryRun)
 
 	// Resolve input source (file/dir/stdin)
