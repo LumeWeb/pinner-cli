@@ -42,6 +42,7 @@ Examples:
 			newWebsitesDeleteCommand(),
 			newWebsitesValidateCommand(),
 			newWebsitesSSLCommand(),
+			newWebsitesConfigCommand(),
 		},
 	}
 }
@@ -145,6 +146,7 @@ type WebsitesService interface {
 	Delete(ctx context.Context, id string) error
 	Validate(ctx context.Context, id string) (*ipfs.WebsiteValidateResponse, error)
 	GetSSLStatus(ctx context.Context, domain string) (*ipfs.WebsiteResponse, error)
+	GetConfig(ctx context.Context) (*ipfs.WebsiteConfigResponse, error)
 }
 
 func websitesList(ctx context.Context, cmd *cli.Command, output Output) error {
@@ -189,7 +191,7 @@ func websitesList(ctx context.Context, cmd *cli.Command, output Output) error {
 
 	output.Printfln("Found %d website(s)", len(websites))
 
-	headers := []string{"ID", "NAME", "CID", "STATUS", "DNS", "VALIDATION", "CREATED"}
+	headers := []string{"ID", "NAME", "CID", "STATUS", "DNS", "GATEWAY", "VALIDATION", "CREATED"}
 	rows := make([][]string, len(websites))
 	for i, website := range websites {
 		validation := "valid"
@@ -198,12 +200,17 @@ func websitesList(ctx context.Context, cmd *cli.Command, output Output) error {
 		} else if website.ValidationToken != "" {
 			validation = website.ValidationToken
 		}
+		gateway := ""
+		if website.GatewayDomain != nil {
+			gateway = *website.GatewayDomain
+		}
 		rows[i] = []string{
 			fmt.Sprintf("%d", website.Id),
 			website.Domain,
 			website.TargetHash,
 			website.Status,
 			fmt.Sprintf("%t", website.DnsHostingEnabled),
+			gateway,
 			validation,
 			website.Created.Format("2006-01-02 15:04:05"),
 		}
@@ -329,6 +336,22 @@ func websitesUpdate(ctx context.Context, cmd *cli.Command, output Output) error 
 		},
 	})
 
+	if updatedWebsite.GatewayDomain != nil {
+		output.PrintFields(FieldGroup{
+			Fields: []Field{
+				{"Gateway", *updatedWebsite.GatewayDomain},
+			},
+		})
+	}
+
+	if updatedWebsite.GatewayDomain != nil && *updatedWebsite.GatewayDomain != "" {
+		output.Printfln("")
+		output.Printfln("CNAME record to point your domain to the gateway:")
+		output.PrintTable([]string{"NAME", "TYPE", "VALUE"}, [][]string{
+			{updatedWebsite.Domain, "CNAME", *updatedWebsite.GatewayDomain},
+		})
+	}
+
 	if updatedWebsite.Expired {
 		output.Printfln("")
 		output.Printfln("⚠ This website's validation has expired.")
@@ -389,6 +412,10 @@ func websitesGet(ctx context.Context, cmd *cli.Command, output Output) error {
 		{"Validation Token", website.ValidationToken},
 	}
 
+	if website.GatewayDomain != nil {
+		fields = append(fields, Field{"Gateway", *website.GatewayDomain})
+	}
+
 	if website.ValidationExpiresAt != nil {
 		fields = append(fields, Field{"Token Expires", website.ValidationExpiresAt.Format("2006-01-02 15:04:05")})
 	}
@@ -400,6 +427,14 @@ func websitesGet(ctx context.Context, cmd *cli.Command, output Output) error {
 	fields = append(fields, Field{"Created", website.Created.Format("2006-01-02 15:04:05")})
 
 	output.PrintFields(FieldGroup{Fields: fields})
+
+	if website.GatewayDomain != nil && *website.GatewayDomain != "" {
+		output.Printfln("")
+		output.Printfln("CNAME record to point your domain to the gateway:")
+		output.PrintTable([]string{"NAME", "TYPE", "VALUE"}, [][]string{
+			{website.Domain, "CNAME", *website.GatewayDomain},
+		})
+	}
 
 	if website.Expired {
 		output.Printfln("")
@@ -485,25 +520,45 @@ func websitesCreate(ctx context.Context, cmd *cli.Command, output Output) error 
 			{"Status", createdWebsite.Status},
 			{"DNS Hosting", fmt.Sprintf("%t", createdWebsite.DnsHostingEnabled)},
 			{"Expired", fmt.Sprintf("%t", createdWebsite.Expired)},
-			{"Created", createdWebsite.Created.Format("2006-01-02 15:04:05")},
 		},
 	})
+
+	if createdWebsite.GatewayDomain != nil {
+		output.PrintFields(FieldGroup{
+			Fields: []Field{
+				{"Gateway", *createdWebsite.GatewayDomain},
+			},
+		})
+	}
 
 	output.Printfln("")
 	output.Printfln("Validation token: %s", createdWebsite.ValidationToken)
 	output.Printfln("")
 	output.Printfln("Next steps:")
+	hasGateway := createdWebsite.GatewayDomain != nil && *createdWebsite.GatewayDomain != ""
 	if createdWebsite.DnsHostingEnabled {
 		output.Printfln("  1. Point your domain's nameservers to Pinner (see: pinner dns zones validate %s)", createdWebsite.Domain)
 		output.Printfln("  2. Add a TXT record at your registrar to verify ownership:")
 		output.Printfln("     %s  TXT  lumeweb-verify=%s", createdWebsite.Domain, createdWebsite.ValidationToken)
 		output.Printfln("  3. Validate: pinner websites validate %s", createdWebsite.Domain)
+		if hasGateway {
+			output.Printfln("  4. Add a CNAME record pointing to the gateway")
+			output.PrintTable([]string{"NAME", "TYPE", "VALUE"}, [][]string{
+				{createdWebsite.Domain, "CNAME", *createdWebsite.GatewayDomain},
+			})
+		}
 	} else {
 		output.Printfln("  1. Add a TXT record at your registrar to verify ownership:")
 		output.Printfln("     %s  TXT  lumeweb-verify=%s", createdWebsite.Domain, createdWebsite.ValidationToken)
 		output.Printfln("  2. Add a DNSLink TXT record:")
 		output.Printfln("     _dnslink.%s  TXT  dnslink=/%s/%s", createdWebsite.Domain, createdWebsite.TargetType, createdWebsite.TargetHash)
 		output.Printfln("  3. Validate: pinner websites validate %s", createdWebsite.Domain)
+		if hasGateway {
+			output.Printfln("  4. Add a CNAME record pointing to the gateway")
+			output.PrintTable([]string{"NAME", "TYPE", "VALUE"}, [][]string{
+				{createdWebsite.Domain, "CNAME", *createdWebsite.GatewayDomain},
+			})
+		}
 		output.Printfln("")
 		output.Printfln("  Tip: Use --dns-hosting to have Pinner manage DNS for you")
 	}
@@ -761,6 +816,75 @@ func websitesValidate(ctx context.Context, cmd *cli.Command, output Output) erro
 		output.Printfln("  2. Check DNS record status above — missing records are marked with ✗")
 		output.Printfln("  3. Re-validate after making changes: pinner websites validate %d", validationResult.Id)
 		output.Printfln("  4. View website details: pinner websites get %d", validationResult.Id)
+	}
+
+	return nil
+}
+
+func newWebsitesConfigCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "config",
+		Usage: "Show website hosting configuration",
+		Description: `Show the website hosting configuration including the gateway domain.
+
+Use this to find the gateway domain for setting up CNAME records with your DNS provider.
+
+Examples:
+  pinner websites config
+  pinner websites config --json`,
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			output := setupOutput(cmd)
+			return websitesConfig(ctx, cmd, output)
+		},
+	}
+}
+
+func websitesConfig(ctx context.Context, cmd *cli.Command, output Output) error {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	cfgMgr, err := defaultConfigManagerFactory()
+	if err != nil {
+		return err
+	}
+
+	var websitesService WebsitesService
+	authToken := GetAuthToken(cmd, cfgMgr)
+	secure := GetSecureSetting(cmd, cfgMgr)
+	if authToken != "" {
+		websitesService = NewWebsitesService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure))
+	} else {
+		websitesService = defaultWebsitesServiceFactory(cfgMgr, output)
+	}
+
+	if err := websitesService.RequireAuthenticated(); err != nil {
+		return err
+	}
+
+	config, err := websitesService.GetConfig(ctx)
+	if err != nil {
+		return err
+	}
+
+	if output.IsJSON() {
+		return output.PrintJSON(config)
+	}
+
+	output.Printfln("Website Hosting Configuration")
+
+	if config.GatewayDomain != nil && *config.GatewayDomain != "" {
+		output.PrintFields(FieldGroup{
+			Fields: []Field{
+				{"Gateway Domain", *config.GatewayDomain},
+			},
+		})
+		output.Printfln("")
+		output.Printfln("CNAME record to point your domain to the gateway:")
+		output.PrintTable([]string{"NAME", "TYPE", "VALUE"}, [][]string{
+			{"<your-domain>", "CNAME", *config.GatewayDomain},
+		})
+	} else {
+		output.Printfln("  No gateway domain configured")
 	}
 
 	return nil

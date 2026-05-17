@@ -22,6 +22,7 @@ type mockWebsitesServiceForCLI struct {
 	deleteFunc       func(ctx context.Context, id string) error
 	validateFunc     func(ctx context.Context, id string) (*ipfs.WebsiteValidateResponse, error)
 	getSSLStatusFunc func(ctx context.Context, domain string) (*ipfs.WebsiteResponse, error)
+	getConfigFunc    func(ctx context.Context) (*ipfs.WebsiteConfigResponse, error)
 }
 
 func (m *mockWebsitesServiceForCLI) RequireAuthenticated() error {
@@ -108,6 +109,13 @@ func (m *mockWebsitesServiceForCLI) Validate(ctx context.Context, id string) (*i
 func (m *mockWebsitesServiceForCLI) GetSSLStatus(ctx context.Context, domain string) (*ipfs.WebsiteResponse, error) {
 	if m.getSSLStatusFunc != nil {
 		return m.getSSLStatusFunc(ctx, domain)
+	}
+	return nil, nil
+}
+
+func (m *mockWebsitesServiceForCLI) GetConfig(ctx context.Context) (*ipfs.WebsiteConfigResponse, error) {
+	if m.getConfigFunc != nil {
+		return m.getConfigFunc(ctx)
 	}
 	return nil, nil
 }
@@ -266,7 +274,7 @@ func websitesListWithService(ctx context.Context, cmd *cli.Command, output Outpu
 
 	output.Printf("Found %d website(s)", len(websites))
 
-	headers := []string{"ID", "NAME", "CID", "STATUS", "DNS", "VALIDATION", "CREATED"}
+	headers := []string{"ID", "NAME", "CID", "STATUS", "DNS", "GATEWAY", "VALIDATION", "CREATED"}
 	rows := make([][]string, len(websites))
 	for i, website := range websites {
 		validation := "valid"
@@ -275,12 +283,17 @@ func websitesListWithService(ctx context.Context, cmd *cli.Command, output Outpu
 		} else if website.ValidationToken != "" {
 			validation = website.ValidationToken
 		}
+		gateway := ""
+		if website.GatewayDomain != nil {
+			gateway = *website.GatewayDomain
+		}
 		rows[i] = []string{
 			fmt.Sprintf("%d", website.Id),
 			website.Domain,
 			website.TargetHash,
 			website.Status,
 			fmt.Sprintf("%t", website.DnsHostingEnabled),
+			gateway,
 			validation,
 			website.Created.Format("2006-01-02 15:04:05"),
 		}
@@ -1485,6 +1498,147 @@ func websitesSSLStatusWithService(ctx context.Context, cmd interface{ Args() cli
 	}
 
 	output.PrintTable(headers, rows)
+
+	return nil
+}
+
+func TestWebsitesConfig(t *testing.T) {
+	tests := []struct {
+		name        string
+		setupMocks  func(*mockWebsitesServiceForCLI)
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name: "successful config with gateway domain",
+			setupMocks: func(svc *mockWebsitesServiceForCLI) {
+				svc.getConfigFunc = func(ctx context.Context) (*ipfs.WebsiteConfigResponse, error) {
+					gateway := "gw.pinner.xyz"
+					return &ipfs.WebsiteConfigResponse{
+						GatewayDomain: &gateway,
+					}, nil
+				}
+			},
+			wantErr: false,
+		},
+		{
+			name: "config with no gateway domain",
+			setupMocks: func(svc *mockWebsitesServiceForCLI) {
+				svc.getConfigFunc = func(ctx context.Context) (*ipfs.WebsiteConfigResponse, error) {
+					return &ipfs.WebsiteConfigResponse{}, nil
+				}
+			},
+			wantErr: false,
+		},
+		{
+			name: "service error",
+			setupMocks: func(svc *mockWebsitesServiceForCLI) {
+				svc.getConfigFunc = func(ctx context.Context) (*ipfs.WebsiteConfigResponse, error) {
+					return nil, errors.New("failed to get config")
+				}
+			},
+			wantErr:     true,
+			errContains: "failed to get config",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockSvc := &mockWebsitesServiceForCLI{}
+			output := NewOutputFormatter(false, false, false, false)
+
+			if tt.setupMocks != nil {
+				tt.setupMocks(mockSvc)
+			}
+
+			err := websitesConfigWithService(context.Background(), output, mockSvc)
+
+			if tt.wantErr {
+				require.Error(t, err)
+				if tt.errContains != "" {
+					require.Contains(t, err.Error(), tt.errContains)
+				}
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestWebsitesConfigJSON(t *testing.T) {
+	tests := []struct {
+		name        string
+		setupMocks  func(*mockWebsitesServiceForCLI)
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name: "successful config JSON output",
+			setupMocks: func(svc *mockWebsitesServiceForCLI) {
+				svc.getConfigFunc = func(ctx context.Context) (*ipfs.WebsiteConfigResponse, error) {
+					gateway := "gw.pinner.xyz"
+					return &ipfs.WebsiteConfigResponse{
+						GatewayDomain: &gateway,
+					}, nil
+				}
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockSvc := &mockWebsitesServiceForCLI{}
+			output := NewOutputFormatter(true, false, false, false)
+
+			if tt.setupMocks != nil {
+				tt.setupMocks(mockSvc)
+			}
+
+			err := websitesConfigWithService(context.Background(), output, mockSvc)
+
+			if tt.wantErr {
+				require.Error(t, err)
+				if tt.errContains != "" {
+					require.Contains(t, err.Error(), tt.errContains)
+				}
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func websitesConfigWithService(ctx context.Context, output Output, websitesService WebsitesService) error {
+	if err := websitesService.RequireAuthenticated(); err != nil {
+		return err
+	}
+
+	config, err := websitesService.GetConfig(ctx)
+	if err != nil {
+		return err
+	}
+
+	if output.IsJSON() {
+		return output.PrintJSON(config)
+	}
+
+	output.Printf("Website Hosting Configuration")
+
+	if config.GatewayDomain != nil && *config.GatewayDomain != "" {
+		output.PrintFields(FieldGroup{
+			Fields: []Field{
+				{"Gateway Domain", *config.GatewayDomain},
+			},
+		})
+		output.Printf("")
+		output.Printf("CNAME record to point your domain to the gateway:")
+		output.PrintTable([]string{"NAME", "TYPE", "VALUE"}, [][]string{
+			{"<your-domain>", "CNAME", *config.GatewayDomain},
+		})
+	} else {
+		output.Printf("  No gateway domain configured")
+	}
 
 	return nil
 }
