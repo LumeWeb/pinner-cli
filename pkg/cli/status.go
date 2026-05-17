@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/urfave/cli/v3"
-	portalsdk "go.lumeweb.com/portal-sdk"
 	"go.lumeweb.com/pinner-cli/pkg/config"
 )
 
@@ -55,8 +54,8 @@ type statusCommandGetter interface {
 	GetCID() string
 }
 
-func defaultStatusServiceFactory(cfgMgr config.Manager, output Output, pinningService PinningService, accountClient portalsdk.AccountAPI) StatusService {
-	return NewStatusService(cfgMgr, output, pinningService, accountClient)
+func defaultStatusServiceFactory(cfgMgr config.Manager, output Output, pinningService PinningService, authService AuthService) StatusService {
+	return NewStatusService(cfgMgr, output, pinningService, authService)
 }
 
 func status(ctx context.Context, cmd statusCommandGetter, output Output, cfgMgrFactory ConfigManagerFactory, pinningServiceFactory PinningServiceFactory, statusServiceFactory StatusServiceFactory) error {
@@ -88,8 +87,8 @@ func status(ctx context.Context, cmd statusCommandGetter, output Output, cfgMgrF
 
 	watch := cmd.Bool("watch")
 
-	accountClient := portalsdk.NewClient(portalsdk.WithEndpoint(cfgMgr.Config().GetAPIEndpoint()))
-	statusService := statusServiceFactory(cfgMgr, output, pinningService, accountClient)
+	authService := NewAuthService(cfgMgr, output, cfgMgr.Config().GetAPIEndpoint())
+	statusService := statusServiceFactory(cfgMgr, output, pinningService, authService)
 
 	var cids []string
 	if isStdinPipe() {

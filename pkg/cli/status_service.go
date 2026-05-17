@@ -25,19 +25,26 @@ func WithStatusPinningService(ps PinningService) StatusServiceOption {
 	}
 }
 
-type StatusServiceFactory func(cfgMgr config.Manager, output Output, pinningService PinningService, accountClient portalsdk.AccountAPI) StatusService
+func WithStatusAuthService(as AuthService) StatusServiceOption {
+	return func(s *StatusServiceDefault) {
+		s.authService = as
+	}
+}
+
+type StatusServiceFactory func(cfgMgr config.Manager, output Output, pinningService PinningService, authService AuthService) StatusService
 
 type StatusServiceDefault struct {
 	pinningService PinningService
 	accountClient  portalsdk.AccountAPI
+	authService    AuthService
 	configMgr      config.Manager
 	output         Output
 }
 
-func NewStatusService(cfgMgr config.Manager, output Output, pinningService PinningService, accountClient portalsdk.AccountAPI, opts ...StatusServiceOption) StatusService {
+func NewStatusService(cfgMgr config.Manager, output Output, pinningService PinningService, authService AuthService, opts ...StatusServiceOption) StatusService {
 	s := &StatusServiceDefault{
 		pinningService: pinningService,
-		accountClient:  accountClient,
+		authService:    authService,
 		configMgr:      cfgMgr,
 		output:         output,
 	}
@@ -73,14 +80,33 @@ func (s *StatusServiceDefault) Status(ctx context.Context, cid string, watch boo
 	return nil, opResult, nil
 }
 
-func (s *StatusServiceDefault) lookupOperation(ctx context.Context, cid string) (*OperationStatusResult, error) {
-	if s.accountClient == nil {
+func (s *StatusServiceDefault) resolveAccountClient(ctx context.Context) (portalsdk.AccountAPI, error) {
+	if s.accountClient != nil {
+		return s.accountClient, nil
+	}
+
+	if s.authService == nil {
 		return nil, ErrPinNotFound
+	}
+
+	client, err := s.authService.GetAuthenticatedClient(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to authenticate for operation lookup: %w", err)
+	}
+
+	s.accountClient = client
+	return client, nil
+}
+
+func (s *StatusServiceDefault) lookupOperation(ctx context.Context, cid string) (*OperationStatusResult, error) {
+	client, err := s.resolveAccountClient(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	s.output.PrintVerbosef("Pin not found, checking account operations for CID %s", cid)
 
-	operations, err := s.accountClient.ListOperations(ctx, portalsdk.WithFilters(filter.FieldEqual("cid", cid)))
+	operations, err := client.ListOperations(ctx, portalsdk.WithFilters(filter.FieldEqual("cid", cid)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to lookup operations: %w", err)
 	}

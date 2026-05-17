@@ -10,7 +10,6 @@ import (
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/pkg/config"
 	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
-	portalsdk "go.lumeweb.com/portal-sdk"
 )
 
 func TestStatus(t *testing.T) {
@@ -212,7 +211,7 @@ func TestStatus(t *testing.T) {
 				return pinningSvc
 			}
 
-			statusServiceFactory := func(cm config.Manager, out Output, ps PinningService, acc portalsdk.AccountAPI) StatusService {
+			statusServiceFactory := func(cm config.Manager, out Output, ps PinningService, as AuthService) StatusService {
 				return statusSvc
 			}
 
