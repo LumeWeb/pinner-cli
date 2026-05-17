@@ -2,10 +2,12 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
 	"os"
+	"strings"
 
 	portalsdk "go.lumeweb.com/portal-sdk"
 )
@@ -48,7 +50,42 @@ var (
 	ErrOperationFailed   = errors.New("operation failed")
 	ErrOperationNotFound = errors.New("operation not found")
 	ErrServiceUnavailable = errors.New("service unavailable")
+
+	// Benchmark errors
+	ErrBenchmarkFailed = errors.New("benchmark failed")
 )
+
+// HTTPError represents an HTTP error response with structured detail.
+type HTTPError struct {
+	StatusCode int
+	Body       string
+}
+
+func (e *HTTPError) Error() string {
+	return fmt.Sprintf("HTTP %d: %s", e.StatusCode, e.Body)
+}
+
+// NewHTTPError creates an HTTPError with the response body trimmed and
+// JSON error fields extracted into a readable message.
+func NewHTTPError(statusCode int, body string) *HTTPError {
+	return &HTTPError{
+		StatusCode: statusCode,
+		Body:       extractErrorMessage(strings.TrimSpace(body)),
+	}
+}
+
+// extractErrorMessage attempts to extract a human-readable message from an HTTP response body.
+// If the body is JSON with an "error" field, it returns that field's value.
+// Otherwise, it returns the body as-is.
+func extractErrorMessage(body string) string {
+	var parsed struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(body), &parsed); err == nil && parsed.Error != "" {
+		return parsed.Error
+	}
+	return body
+}
 
 // errorMessages maps error types to user-friendly messages.
 var errorMessages = map[error]string{
@@ -136,10 +173,6 @@ func isNetworkError(err error) bool {
 	var netErr net.Error
 	if errors.As(err, &netErr) {
 		if netErr.Timeout() {
-			return true
-		}
-		var dnsErr *net.DNSError
-		if errors.As(err, &dnsErr) && dnsErr.IsTemporary {
 			return true
 		}
 	}

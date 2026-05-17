@@ -54,6 +54,9 @@ type AuthService interface {
 	// GetAuthenticatedClient returns an authenticated account client.
 	// If the stored token is an API key JWT, it exchanges it for a login JWT.
 	GetAuthenticatedClient(ctx context.Context) (portalsdk.AccountAPI, error)
+
+	// GetLoginToken returns a login JWT token, exchanging an API key if needed.
+	GetLoginToken(ctx context.Context) (string, error)
 }
 
 // AuthServiceOption configures an AuthService.
@@ -329,6 +332,33 @@ func (s *AuthServiceDefault) GetAuthenticatedClient(ctx context.Context) (portal
 
 	s.output.PrintVerbosef("Using JWT token for authentication (purpose: %s)", purpose)
 	return s.clientFactory(s.apiEndpoint, token), nil
+}
+
+// GetLoginToken returns a login JWT token, exchanging an API key JWT if needed.
+func (s *AuthServiceDefault) GetLoginToken(ctx context.Context) (string, error) {
+	cfg := s.configMgr.Config()
+	token := cfg.AuthToken
+
+	if token == "" {
+		return "", config.ErrNotAuthenticated
+	}
+
+	purpose, err := GetJWTPurpose(token)
+	if err != nil {
+		s.output.PrintVerbosef("Could not decode JWT to determine purpose, treating as login token: %v", err)
+		return token, nil
+	}
+
+	if purpose == "api" {
+		s.output.PrintVerbose("Detected API key JWT, exchanging for login token")
+		jwtToken, err := s.accountClient.LoginWithAPIKey(ctx, token)
+		if err != nil {
+			return "", fmt.Errorf("failed to authenticate with API key: %w", err)
+		}
+		return jwtToken, nil
+	}
+
+	return token, nil
 }
 
 // GetJWTPurpose extracts the purpose from a JWT token's audience claim.
