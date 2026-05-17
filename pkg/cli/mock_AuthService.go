@@ -327,6 +327,66 @@ func (_c *MockAuthService_GetAuthenticatedClient_Call) RunAndReturn(run func(ctx
 	return _c
 }
 
+// GetLoginToken provides a mock function for the type MockAuthService
+func (_mock *MockAuthService) GetLoginToken(ctx context.Context) (string, error) {
+	ret := _mock.Called(ctx)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetLoginToken")
+	}
+
+	var r0 string
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context) (string, error)); ok {
+		return returnFunc(ctx)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context) string); ok {
+		r0 = returnFunc(ctx)
+	} else {
+		r0 = ret.Get(0).(string)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context) error); ok {
+		r1 = returnFunc(ctx)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockAuthService_GetLoginToken_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetLoginToken'
+type MockAuthService_GetLoginToken_Call struct {
+	*mock.Call
+}
+
+// GetLoginToken is a helper method to define mock.On call
+//   - ctx context.Context
+func (_e *MockAuthService_Expecter) GetLoginToken(ctx interface{}) *MockAuthService_GetLoginToken_Call {
+	return &MockAuthService_GetLoginToken_Call{Call: _e.mock.On("GetLoginToken", ctx)}
+}
+
+func (_c *MockAuthService_GetLoginToken_Call) Run(run func(ctx context.Context)) *MockAuthService_GetLoginToken_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockAuthService_GetLoginToken_Call) Return(s string, err error) *MockAuthService_GetLoginToken_Call {
+	_c.Call.Return(s, err)
+	return _c
+}
+
+func (_c *MockAuthService_GetLoginToken_Call) RunAndReturn(run func(ctx context.Context) (string, error)) *MockAuthService_GetLoginToken_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // LoginCheck provides a mock function for the type MockAuthService
 func (_mock *MockAuthService) LoginCheck(ctx context.Context, email string, password string) (*account.LoginResult, error) {
 	ret := _mock.Called(ctx, email, password)
