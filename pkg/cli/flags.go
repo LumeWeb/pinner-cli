@@ -48,6 +48,13 @@ const (
 	FlagClear       = "clear"
 )
 
+// Upload CAR builder flags
+const (
+	FlagChunkSize = "chunk-size"
+	FlagChunker   = "chunker"
+	FlagMaxLinks  = "max-links"
+)
+
 // Websites flags
 const (
 	FlagDomain      = "domain"
@@ -295,6 +302,30 @@ func DryRunFlag() *cli.BoolFlag {
 	return &cli.BoolFlag{
 		Name:  FlagDryRun,
 		Usage: "Preview operations without making any changes",
+	}
+}
+
+// ChunkSizeFlag returns a flag for setting the UnixFS chunk size in bytes.
+func ChunkSizeFlag() *cli.Int64Flag {
+	return &cli.Int64Flag{
+		Name:  FlagChunkSize,
+		Usage: "Chunk size in bytes for UnixFS file splitting (default: 1048576)",
+	}
+}
+
+// ChunkerFlag returns a flag for setting the DAG layout strategy.
+func ChunkerFlag() *cli.StringFlag {
+	return &cli.StringFlag{
+		Name:  FlagChunker,
+		Usage: "DAG layout strategy: balanced (default) or trickle",
+	}
+}
+
+// MaxLinksFlag returns a flag for setting the max links per DAG node.
+func MaxLinksFlag() *cli.IntFlag {
+	return &cli.IntFlag{
+		Name:  FlagMaxLinks,
+		Usage: "Maximum number of links per DAG node (default: 174)",
 	}
 }
 

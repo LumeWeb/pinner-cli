@@ -3,10 +3,8 @@ module go.lumeweb.com/pinner-cli
 go 1.26.0
 
 require (
-	atomicgo.dev/keyboard v0.2.9
 	github.com/Oudwins/zog v0.22.0
 	github.com/avast/retry-go/v4 v4.7.0
-	github.com/bdragon300/tusgo v0.1.3-0.20250807091306-5a1233754936
 	github.com/docker/go-units v0.5.0
 	github.com/gammazero/workerpool v1.2.1
 	github.com/ggwhite/go-masker v1.1.0
@@ -25,15 +23,15 @@ require (
 	github.com/tus/tusd/v2 v2.9.1
 	github.com/urfave/cli/v3 v3.6.1
 	go.lumeweb.com/configmanager v0.3.26
-	go.lumeweb.com/ipfs-content v0.1.15
-	go.lumeweb.com/ipfs-sdk v0.1.35
+	go.lumeweb.com/ipfs-content v0.1.17
+	go.lumeweb.com/ipfs-sdk v0.1.36
 	go.lumeweb.com/portal-sdk v0.1.54
 	go.lumeweb.com/queryutil v0.3.15
-	golang.org/x/text v0.34.0
 )
 
 require (
 	atomicgo.dev/cursor v0.2.0 // indirect
+	atomicgo.dev/keyboard v0.2.9 // indirect
 	atomicgo.dev/schedule v0.1.0 // indirect
 	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/Jorropo/jsync v1.0.1 // indirect
@@ -41,6 +39,7 @@ require (
 	github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
 	github.com/apt304/sse-go v0.0.3 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
+	github.com/bdragon300/tusgo v0.1.3-0.20250807091306-5a1233754936 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/buger/jsonparser v1.1.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
@@ -181,6 +180,7 @@ require (
 	golang.org/x/sync v0.19.0 // indirect
 	golang.org/x/sys v0.41.0 // indirect
 	golang.org/x/term v0.40.0 // indirect
+	golang.org/x/text v0.34.0 // indirect
 	golang.org/x/tools v0.42.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	gonum.org/v1/gonum v0.17.0 // indirect
