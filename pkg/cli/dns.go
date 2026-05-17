@@ -523,7 +523,7 @@ func dnsZonesValidate(ctx context.Context, cmd *cli.Command, output Output, cfgM
 	secure := GetSecureSetting(cmd, cfgMgr)
 
 	if authToken != "" {
-		dnsService = NewDNSService(cfgMgr, output, cfgMgr.Config().GetAccountEndpointWithSecure(secure))
+		dnsService = NewDNSService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure))
 	} else {
 		dnsService = defaultDNSServiceFactory(cfgMgr, output)
 	}
