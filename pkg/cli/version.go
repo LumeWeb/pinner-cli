@@ -27,12 +27,12 @@ func printVersion(cmd *cli.Command) {
 		jsonOutput, err := info.JSON()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error generating JSON: %v\n", err)
-			fmt.Fprintln(os.Stdout, info.String())
+			_, _ = fmt.Fprintln(os.Stdout, info.String())
 			return
 		}
-		fmt.Fprintln(os.Stdout, jsonOutput)
+		_, _ = fmt.Fprintln(os.Stdout, jsonOutput)
 		return
 	}
 
-	fmt.Fprintln(os.Stdout, info.String())
+	_, _ = fmt.Fprintln(os.Stdout, info.String())
 }

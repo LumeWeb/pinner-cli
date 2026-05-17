@@ -113,7 +113,9 @@ func doctor(ctx context.Context, cmd *cli.Command, output Output, cfgMgrFactory 
 	}
 
 	if cmd.Bool("json") {
-		output.PrintJSON(report)
+		if err := output.PrintJSON(report); err != nil {
+			return err
+		}
 		return nil
 	}
 

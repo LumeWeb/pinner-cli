@@ -67,9 +67,9 @@ func BuildTutorialCommandsTable(rootCmd *cli.Command) ([]string, [][]string) {
 	for i, tc := range commands {
 		desc := tc.Metadata.Description
 		if desc == "" {
-			desc = tc.Command.Description
+			desc = tc.Description
 		}
-		rows[i] = []string{tc.Command.Name, tc.Command.Usage, desc}
+		rows[i] = []string{tc.Name, tc.Usage, desc}
 	}
 
 	return headers, rows
@@ -84,7 +84,7 @@ func BuildTutorialExamplesTable(rootCmd *cli.Command) ([]string, [][]string) {
 	for i, tc := range commands {
 		example := tc.Metadata.Example
 		if example == "" {
-			example = "pinner " + tc.Command.Name
+			example = "pinner " + tc.Name
 		}
 		rows[i] = []string{example}
 	}

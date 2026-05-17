@@ -35,20 +35,18 @@ func (m *mockBillingCreditsListCmd) String(name string) string {
 
 func unmarshalCreditItemJSON(data string) *admin.CreditItem {
 	var item admin.CreditItem
-	json.Unmarshal([]byte(data), &item)
+	if err := json.Unmarshal([]byte(data), &item); err != nil {
+		panic(err)
+	}
 	return &item
 }
 
 func unmarshalCreditJSON(data string) *admin.Credit {
 	var credit admin.Credit
-	json.Unmarshal([]byte(data), &credit)
+	if err := json.Unmarshal([]byte(data), &credit); err != nil {
+		panic(err)
+	}
 	return &credit
-}
-
-func unmarshalUserBalanceJSON(data string) *admin.UserBalance {
-	var balance admin.UserBalance
-	json.Unmarshal([]byte(data), &balance)
-	return &balance
 }
 
 func TestBillingCreditsList(t *testing.T) {

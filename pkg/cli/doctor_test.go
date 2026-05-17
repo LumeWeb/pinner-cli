@@ -426,15 +426,15 @@ func TestPowerShellCompletionDetector(t *testing.T) {
 
 			// Clean up PROFILE env
 			oldProfile := os.Getenv("PROFILE")
-			defer os.Setenv("PROFILE", oldProfile)
+			defer func() { _ = os.Setenv("PROFILE", oldProfile) }()
 
 			if tt.profile != "" {
-				os.Setenv("PROFILE", tt.profile)
+				_ = os.Setenv("PROFILE", tt.profile)
 				err := os.WriteFile(tt.profile, []byte(tt.content), 0644)
 				require.NoError(t, err)
-				defer os.Remove(tt.profile)
+				defer func() { _ = os.Remove(tt.profile) }()
 			} else {
-				os.Unsetenv("PROFILE")
+				_ = os.Unsetenv("PROFILE")
 			}
 
 			detector := &PowerShellCompletionDetector{}
@@ -487,8 +487,8 @@ func TestCheckCompletion(t *testing.T) {
 
 		// Set home to temp dir
 		oldHome := os.Getenv("HOME")
-		defer os.Setenv("HOME", oldHome)
-		os.Setenv("HOME", tmpDir)
+		defer func() { _ = os.Setenv("HOME", oldHome) }()
+		_ = os.Setenv("HOME", tmpDir)
 
 		info := checkCompletion()
 		require.False(t, info.Enabled)
@@ -510,8 +510,8 @@ func TestCheckCompletion(t *testing.T) {
 
 		// Set home to temp dir
 		oldHome := os.Getenv("HOME")
-		defer os.Setenv("HOME", oldHome)
-		os.Setenv("HOME", tmpDir)
+		defer func() { _ = os.Setenv("HOME", oldHome) }()
+		_ = os.Setenv("HOME", tmpDir)
 
 		info := checkCompletion()
 		require.True(t, info.Enabled)
@@ -538,8 +538,8 @@ func TestCheckCompletion(t *testing.T) {
 
 		// Set home to temp dir
 		oldHome := os.Getenv("HOME")
-		defer os.Setenv("HOME", oldHome)
-		os.Setenv("HOME", tmpDir)
+		defer func() { _ = os.Setenv("HOME", oldHome) }()
+		_ = os.Setenv("HOME", tmpDir)
 
 		info := checkCompletion()
 		require.True(t, info.Enabled)

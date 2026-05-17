@@ -326,7 +326,9 @@ func dnsZonesList(ctx context.Context, cmd *cli.Command, output Output, cfgMgr c
 	}
 
 	if output.IsJSON() {
-		output.PrintJSON(zones)
+		if err := output.PrintJSON(zones); err != nil {
+			return err
+		}
 	} else {
 		if len(zones) == 0 {
 			output.Printfln("No DNS zones found")
@@ -385,7 +387,9 @@ func dnsZonesCreate(ctx context.Context, cmd *cli.Command, output Output, cfgMgr
 	}
 
 	if output.IsJSON() {
-		output.PrintJSON(zone)
+		if err := output.PrintJSON(zone); err != nil {
+			return err
+		}
 	} else {
 		fields := []Field{
 			{"ID", fmt.Sprintf("%d", zone.Id)},
@@ -429,7 +433,9 @@ func dnsZonesGet(ctx context.Context, cmd *cli.Command, output Output, cfgMgr co
 	}
 
 	if output.IsJSON() {
-		output.PrintJSON(zone)
+		if err := output.PrintJSON(zone); err != nil {
+			return err
+		}
 	} else {
 		fields := []Field{
 			{"ID", fmt.Sprintf("%d", zone.Id)},
@@ -504,7 +510,9 @@ func dnsRecordsList(ctx context.Context, cmd *cli.Command, output Output, cfgMgr
 	}
 
 	if output.IsJSON() {
-		output.PrintJSON(records)
+		if err := output.PrintJSON(records); err != nil {
+			return err
+		}
 	} else {
 		if len(records) == 0 {
 			output.Printfln("No DNS records found")
@@ -576,7 +584,9 @@ func dnsRecordsCreate(ctx context.Context, cmd *cli.Command, output Output, cfgM
 	}
 
 	if output.IsJSON() {
-		output.PrintJSON(created)
+		if err := output.PrintJSON(created); err != nil {
+			return err
+		}
 	} else {
 		output.PrintFields(FieldGroup{
 			Title: "DNS record created successfully:",
@@ -619,7 +629,9 @@ func dnsRecordsGet(ctx context.Context, cmd *cli.Command, output Output, cfgMgr 
 	}
 
 	if output.IsJSON() {
-		output.PrintJSON(record)
+		if err := output.PrintJSON(record); err != nil {
+			return err
+		}
 	} else {
 		fields := []Field{
 			{"Zone ID", fmt.Sprintf("%d", record.ZoneId)},
@@ -683,7 +695,9 @@ func dnsRecordsUpdate(ctx context.Context, cmd *cli.Command, output Output, cfgM
 	}
 
 	if output.IsJSON() {
-		output.PrintJSON(updated)
+		if err := output.PrintJSON(updated); err != nil {
+			return err
+		}
 	} else {
 		output.PrintFields(FieldGroup{
 			Title: "DNS record updated successfully:",

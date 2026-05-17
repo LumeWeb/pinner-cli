@@ -97,8 +97,8 @@ func TestReadLinesFromStdin(t *testing.T) {
 
 		// Write to stdin in goroutine
 		go func() {
-			defer w.Close()
-			w.WriteString("QmHash1\nQmHash2\nQmHash3\n")
+			defer func() { _ = w.Close() }()
+			_, _ = w.WriteString("QmHash1\nQmHash2\nQmHash3\n")
 		}()
 
 		lines, err := readLinesFromStdin()
@@ -116,8 +116,8 @@ func TestReadLinesFromStdin(t *testing.T) {
 		os.Stdin = r
 
 		go func() {
-			defer w.Close()
-			w.WriteString("QmHash1\n# Comment\nQmHash2\n")
+			defer func() { _ = w.Close() }()
+			_, _ = w.WriteString("QmHash1\n# Comment\nQmHash2\n")
 		}()
 
 		lines, err := readLinesFromStdin()

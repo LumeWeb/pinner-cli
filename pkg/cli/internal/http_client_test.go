@@ -162,10 +162,9 @@ func TestRetryTransport_RoundTrip_TimeoutError(t *testing.T) {
 }
 
 func TestRetryTransport_RoundTrip_DNSError(t *testing.T) {
-	// Create a transport that returns a temporary error (retryable)
 	mockTransport := &mockRoundTripper{
 		fn: func(req *http.Request) (*http.Response, error) {
-			return nil, &temporaryError{}
+			return nil, &net.DNSError{Err: "server failure", IsTemporary: true}
 		},
 	}
 
@@ -178,7 +177,6 @@ func TestRetryTransport_RoundTrip_DNSError(t *testing.T) {
 	req, err := http.NewRequest("GET", "http://example.com/test", nil)
 	require.NoError(t, err)
 
-	// Should retry on temporary errors
 	resp, err := transport.RoundTrip(req)
 	require.Error(t, err)
 	assert.Nil(t, resp)

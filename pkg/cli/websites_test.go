@@ -1321,10 +1321,12 @@ func TestWebsitesSSLStatus(t *testing.T) {
 					lastUpdated := now.Add(24 * time.Hour).Format(time.RFC3339)
 					var resp ipfs.WebsiteResponse
 					// ipfs.WebsiteResponse has unexported fields from oapi-codegen generation, so json.Unmarshal is used to construct it in tests
-					json.Unmarshal([]byte(fmt.Sprintf(
+					if err := json.Unmarshal([]byte(fmt.Sprintf(
 						`{"domain":"example.com","ssl":{"status":"active","issued_at":"%s","last_updated_at":"%s"}}`,
 						issuedAt, lastUpdated,
-					)), &resp)
+					)), &resp); err != nil {
+						panic(err)
+					}
 					return &resp, nil
 				}
 			},
@@ -1336,7 +1338,9 @@ func TestWebsitesSSLStatus(t *testing.T) {
 				svc.getSSLStatusFunc = func(ctx context.Context, domain string) (*ipfs.WebsiteResponse, error) {
 					var resp ipfs.WebsiteResponse
 					// ipfs.WebsiteResponse has unexported fields from oapi-codegen generation, so json.Unmarshal is used to construct it in tests
-					json.Unmarshal([]byte(`{"domain":"example.com","ssl":{"status":"error","error":"certificate expired"}}`), &resp)
+					if err := json.Unmarshal([]byte(`{"domain":"example.com","ssl":{"status":"error","error":"certificate expired"}}`), &resp); err != nil {
+						panic(err)
+					}
 					return &resp, nil
 				}
 			},

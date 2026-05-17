@@ -153,7 +153,7 @@ func TestUploadServiceDefault_Upload(t *testing.T) {
 		tmpFile := h.createTestFile("test content")
 		f, err := os.Open(tmpFile)
 		require.NoError(t, err)
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		filesystem := contentfs.NewSingleFileFS(f, "test.txt")
 		_, err = h.service.Upload(context.Background(), filesystem, "test.txt", false)
 
@@ -199,7 +199,7 @@ func TestUploadServiceDefault_Upload(t *testing.T) {
 
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(`{"CID":"bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"}`))
+			_, _ = w.Write([]byte(`{"CID":"bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"}`))
 		})
 		defer server.Close()
 
@@ -243,7 +243,7 @@ func TestUploadServiceDefault_Upload(t *testing.T) {
 
 		f, err := os.Open(tmpFile)
 		require.NoError(t, err)
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		filesystem := contentfs.NewSingleFileFS(f, "test.txt")
 		result, err := h.service.Upload(context.Background(), filesystem, "test.txt", false)
 
@@ -265,7 +265,7 @@ func TestUploadServiceDefault_Upload(t *testing.T) {
 
 		f, err := os.Open(tmpFile)
 		require.NoError(t, err)
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		filesystem := contentfs.NewSingleFileFS(f, "test.txt")
 		result, err := h.service.Upload(context.Background(), filesystem, "test.txt", false)
 
@@ -276,7 +276,7 @@ func TestUploadServiceDefault_Upload(t *testing.T) {
 	t.Run("returns error on upload failure", func(t *testing.T) {
 		baseEndpoint, server := createUploadMockServer(t, func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte("upload failed"))
+			_, _ = w.Write([]byte("upload failed"))
 		})
 		defer server.Close()
 
@@ -287,7 +287,7 @@ func TestUploadServiceDefault_Upload(t *testing.T) {
 
 		f, err := os.Open(tmpFile)
 		require.NoError(t, err)
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		filesystem := contentfs.NewSingleFileFS(f, "test.txt")
 		_, err = h.service.Upload(context.Background(), filesystem, "test.txt", false)
 
@@ -311,7 +311,7 @@ func TestUploadServiceDefault_Upload(t *testing.T) {
 
 		f, err := os.Open(tmpFile)
 		require.NoError(t, err)
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		filesystem := contentfs.NewSingleFileFS(f, "test.txt")
 		result, err := h.service.Upload(context.Background(), filesystem, "test.txt", false)
 
@@ -347,7 +347,7 @@ func TestUploadServiceDefault_Upload_WaitForPin(t *testing.T) {
 
 		f, err := os.Open(tmpFile)
 		require.NoError(t, err)
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		filesystem := contentfs.NewSingleFileFS(f, "test.txt")
 		result, err := h.service.Upload(context.Background(), filesystem, "test.txt", false)
 

@@ -146,7 +146,6 @@ func TestNewStatusCommand(t *testing.T) {
 type mockStatusCommand struct {
 	cid       string
 	watch     bool
-	stdinCIDs []string
 }
 
 func (m *mockStatusCommand) GetCID() string {

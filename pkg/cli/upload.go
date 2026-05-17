@@ -188,7 +188,7 @@ func handleUpload(ctx context.Context, cmd uploadCommandGetter, output Output, c
 	if err != nil {
 		return err
 	}
-	defer input.Close()
+	defer func() { _ = input.Close() }()
 
 	if dryRun {
 		options := make(map[string]string)

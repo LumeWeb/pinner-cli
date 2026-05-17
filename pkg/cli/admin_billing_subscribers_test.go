@@ -17,7 +17,9 @@ import (
 
 func unmarshalSubscriberJSON(data string) *admin.Subscriber {
 	var item admin.Subscriber
-	json.Unmarshal([]byte(data), &item)
+	if err := json.Unmarshal([]byte(data), &item); err != nil {
+		panic(err)
+	}
 	return &item
 }
 

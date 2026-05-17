@@ -85,7 +85,7 @@ func NewManager(configPath string) (Manager, error) {
 
 // Config returns the current Config instance by reading from the config manager.
 func (m *managerImpl) Config() *Config {
-	_, decoded, err := m.Manager.Get("")
+	_, decoded, err := m.Manager.Get("") //nolint:staticcheck // explicit to avoid recursion via Manager interface
 	if err != nil {
 		return NewConfig()
 	}
@@ -120,12 +120,12 @@ func isFileNotFoundError(err error) bool {
 
 // Save persists the current configuration to disk.
 func (m *managerImpl) Save() error {
-	return m.Manager.Persist()
+	return m.Manager.Persist() //nolint:staticcheck // explicit to avoid recursion
 }
 
 // SetAuthToken sets the authentication token in the config.
 func (m *managerImpl) SetAuthToken(token string) error {
-	if err := m.Manager.Set(context.Background(), ConfigKeyAuthToken, token); err != nil {
+	if err := m.Manager.Set(context.Background(), ConfigKeyAuthToken, token); err != nil { //nolint:staticcheck // explicit to avoid recursion
 		return fmt.Errorf("failed to set auth token: %w", err)
 	}
 	return m.Save()
@@ -138,7 +138,7 @@ func (m *managerImpl) ConfigPath() string {
 
 // SetBaseEndpoint sets the base endpoint in the config.
 func (m *managerImpl) SetBaseEndpoint(endpoint string) error {
-	if err := m.Manager.Set(context.Background(), ConfigKeyBaseEndpoint, endpoint); err != nil {
+	if err := m.Manager.Set(context.Background(), ConfigKeyBaseEndpoint, endpoint); err != nil { //nolint:staticcheck // explicit to avoid recursion
 		return fmt.Errorf("failed to set base endpoint: %w", err)
 	}
 	return m.Save()
@@ -152,7 +152,7 @@ func (m *managerImpl) SetAPIEndpoint(endpoint string) error {
 
 // SetMaxRetries sets the maximum retry count.
 func (m *managerImpl) SetMaxRetries(retries int) error {
-	if err := m.Manager.Set(context.Background(), ConfigKeyMaxRetries, retries); err != nil {
+	if err := m.Manager.Set(context.Background(), ConfigKeyMaxRetries, retries); err != nil { //nolint:staticcheck // explicit to avoid recursion
 		return fmt.Errorf("failed to set max retries: %w", err)
 	}
 	return m.Save()
@@ -160,7 +160,7 @@ func (m *managerImpl) SetMaxRetries(retries int) error {
 
 // SetSecure sets the secure flag for HTTPS connections.
 func (m *managerImpl) SetSecure(secure bool) error {
-	if err := m.Manager.Set(context.Background(), ConfigKeySecure, secure); err != nil {
+	if err := m.Manager.Set(context.Background(), ConfigKeySecure, secure); err != nil { //nolint:staticcheck // explicit to avoid recursion
 		return fmt.Errorf("failed to set secure: %w", err)
 	}
 	return m.Save()

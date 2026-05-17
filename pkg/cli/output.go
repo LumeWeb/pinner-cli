@@ -72,13 +72,6 @@ func FormatUSD(amount float32) string {
 	return FormatCurrency(float64(amount), USD)
 }
 
-// jsonFieldGroup represents a titled FieldGroup for JSON serialization.
-type jsonFieldGroup struct {
-	Title  string            `json:"title"`
-	Type   string            `json:"type"`
-	Fields map[string]string `json:"fields"`
-}
-
 // jsonListGroup represents a ListGroup for JSON serialization.
 type jsonListGroup struct {
 	Title     string            `json:"title,omitempty"`
@@ -246,14 +239,14 @@ func (b *baseFormatter) PrintError(err error) {
 // PrintVerbose prints a message only if verbose mode is enabled and not in JSON mode.
 func (b *baseFormatter) PrintVerbose(message string) {
 	if b.config.verbose && !b.config.quiet && !b.config.json {
-		fmt.Fprintf(b.config.writer, "[verbose] %s\n", message)
+		_, _ = fmt.Fprintf(b.config.writer, "[verbose] %s\n", message)
 	}
 }
 
 // PrintVerbosef formats and prints a message only if verbose mode is enabled and not in JSON mode.
 func (b *baseFormatter) PrintVerbosef(format string, args ...any) {
 	if b.config.verbose && !b.config.quiet && !b.config.json {
-		fmt.Fprintf(b.config.writer, "[verbose] "+format+"\n", args...)
+		_, _ = fmt.Fprintf(b.config.writer, "[verbose] "+format+"\n", args...)
 	}
 }
 
@@ -265,21 +258,21 @@ type humanFormatter struct {
 // Print prints a message to the output.
 func (h *humanFormatter) Print(message string) {
 	if !h.config.quiet {
-		fmt.Fprintln(h.config.writer, message)
+		_, _ = fmt.Fprintln(h.config.writer, message)
 	}
 }
 
 // Printf formats and prints a message to the output.
 func (h *humanFormatter) Printf(format string, args ...any) {
 	if !h.config.quiet {
-		fmt.Fprintf(h.config.writer, format, args...)
+		_, _ = fmt.Fprintf(h.config.writer, format, args...)
 	}
 }
 
 // Printfln formats and prints a message to the output with a newline.
 func (h *humanFormatter) Printfln(format string, args ...any) {
 	if !h.config.quiet {
-		fmt.Fprintf(h.config.writer, format+"\n", args...)
+		_, _ = fmt.Fprintf(h.config.writer, format+"\n", args...)
 	}
 }
 
@@ -326,7 +319,7 @@ func (h *humanFormatter) PrintTable(headers []string, rows [][]string) {
 		tableData = append(tableData, row)
 	}
 
-	pterm.DefaultTable.
+	_ = pterm.DefaultTable.
 		WithHasHeader().
 		WithBoxed().
 		WithWriter(h.config.writer).
@@ -347,7 +340,7 @@ func (h *humanFormatter) PrintList(items []string) {
 		}
 	})
 
-	pterm.DefaultBulletList.WithItems(bulletItems).WithWriter(h.config.writer).Render()
+	_ = pterm.DefaultBulletList.WithItems(bulletItems).WithWriter(h.config.writer).Render()
 }
 
 // MaskSensitive masks sensitive data based on the key name.
@@ -365,11 +358,11 @@ func (h *humanFormatter) PrintFields(group FieldGroup) {
 	}
 
 	for i := 0; i < group.PadTop; i++ {
-		fmt.Fprintln(h.config.writer)
+		_, _ = fmt.Fprintln(h.config.writer)
 	}
 
 	if group.Title != "" {
-		fmt.Fprintln(h.config.writer, group.Title)
+		_, _ = fmt.Fprintln(h.config.writer, group.Title)
 	}
 
 	maxLabel := 0
@@ -380,7 +373,7 @@ func (h *humanFormatter) PrintFields(group FieldGroup) {
 	}
 
 	for _, field := range group.Fields {
-		fmt.Fprintf(h.config.writer, "  %-*s  %s\n", maxLabel, field.Label, field.Value)
+		_, _ = fmt.Fprintf(h.config.writer, "  %-*s  %s\n", maxLabel, field.Label, field.Value)
 	}
 }
 
@@ -391,19 +384,19 @@ func (h *humanFormatter) PrintListGroup(group ListGroup) {
 	}
 
 	for i := 0; i < group.PadTop; i++ {
-		fmt.Fprintln(h.config.writer)
+		_, _ = fmt.Fprintln(h.config.writer)
 	}
 
 	if group.Title != "" {
-		fmt.Fprintln(h.config.writer, group.Title)
+		_, _ = fmt.Fprintln(h.config.writer, group.Title)
 	}
 
 	for _, field := range group.Fields {
-		fmt.Fprintf(h.config.writer, "  %s: %s\n", field.Label, field.Value)
+		_, _ = fmt.Fprintf(h.config.writer, "  %s: %s\n", field.Label, field.Value)
 	}
 
 	if len(group.Items) > 0 && group.ItemLabel != "" {
-		fmt.Fprintf(h.config.writer, "  %s: %d\n", group.ItemLabel, len(group.Items))
+		_, _ = fmt.Fprintf(h.config.writer, "  %s: %d\n", group.ItemLabel, len(group.Items))
 	}
 
 	if len(group.Items) > 0 {
@@ -413,16 +406,16 @@ func (h *humanFormatter) PrintListGroup(group ListGroup) {
 		}
 		for i, item := range group.Items {
 			if i >= limit {
-				fmt.Fprintf(h.config.writer, "    ... and %d more\n", len(group.Items)-limit)
+				_, _ = fmt.Fprintf(h.config.writer, "    ... and %d more\n", len(group.Items)-limit)
 				break
 			}
-			fmt.Fprintf(h.config.writer, "    - %s\n", item)
+			_, _ = fmt.Fprintf(h.config.writer, "    - %s\n", item)
 		}
 	}
 
 	if group.Footer != "" {
-		fmt.Fprintln(h.config.writer)
-		fmt.Fprintln(h.config.writer, group.Footer)
+		_, _ = fmt.Fprintln(h.config.writer)
+		_, _ = fmt.Fprintln(h.config.writer, group.Footer)
 	}
 }
 
@@ -443,7 +436,7 @@ func (h *humanFormatter) PrintBatchResult(result *BatchResult) {
 	})
 
 	if len(result.Failed) > 0 {
-		fmt.Fprintln(h.config.writer)
+		_, _ = fmt.Fprintln(h.config.writer)
 		headers := []string{"CID", "ERROR"}
 		rows := make([][]string, len(result.Failed))
 		for i, fail := range result.Failed {
@@ -466,7 +459,7 @@ type jsonFormatter struct {
 // Print prints a message as JSON to the output.
 func (j *jsonFormatter) Print(message string) {
 	if !j.config.quiet {
-		j.PrintJSON(jsonMessage{Message: message})
+		_ = j.PrintJSON(jsonMessage{Message: message})
 	}
 }
 
@@ -474,7 +467,7 @@ func (j *jsonFormatter) Print(message string) {
 func (j *jsonFormatter) Printf(format string, args ...any) {
 	if !j.config.quiet {
 		message := fmt.Sprintf(format, args...)
-		j.PrintJSON(jsonMessage{Message: message})
+		_ = j.PrintJSON(jsonMessage{Message: message})
 	}
 }
 
@@ -482,7 +475,7 @@ func (j *jsonFormatter) Printf(format string, args ...any) {
 func (j *jsonFormatter) Printfln(format string, args ...any) {
 	if !j.config.quiet {
 		message := fmt.Sprintf(format, args...)
-		j.PrintJSON(jsonMessage{Message: message})
+		_ = j.PrintJSON(jsonMessage{Message: message})
 	}
 }
 
@@ -499,7 +492,7 @@ func (j *jsonFormatter) PrintTable(headers []string, rows [][]string) {
 		return
 	}
 
-	j.PrintJSON(jsonTable{
+	_ = j.PrintJSON(jsonTable{
 		Type:    jsonTypeTable,
 		Headers: headers,
 		Rows:    rows,
@@ -512,7 +505,7 @@ func (j *jsonFormatter) PrintList(items []string) {
 		return
 	}
 
-	j.PrintJSON(jsonList{
+	_ = j.PrintJSON(jsonList{
 		Type:  jsonTypeList,
 		Items: items,
 	})
@@ -538,7 +531,7 @@ func (j *jsonFormatter) PrintFields(group FieldGroup) {
 	}
 
 	if group.Title != "" {
-		j.PrintJSON(struct {
+		_ = j.PrintJSON(struct {
 			Title  string            `json:"title"`
 			Type   string            `json:"type"`
 			Fields map[string]string `json:"fields"`
@@ -548,7 +541,7 @@ func (j *jsonFormatter) PrintFields(group FieldGroup) {
 			Fields: fields,
 		})
 	} else {
-		j.PrintJSON(fields)
+		_ = j.PrintJSON(fields)
 	}
 }
 
@@ -579,7 +572,7 @@ func (j *jsonFormatter) PrintListGroup(group ListGroup) {
 		result.ItemCount = len(group.Items)
 	}
 
-	j.PrintJSON(result)
+	_ = j.PrintJSON(result)
 }
 
 // PrintBatchResult renders a batch operation summary as structured JSON.
@@ -590,10 +583,10 @@ func (j *jsonFormatter) PrintBatchResult(result *BatchResult) {
 
 	errors := make([]jsonBatchError, len(result.Failed))
 	for i, fail := range result.Failed {
-		errors[i] = jsonBatchError{CID: fail.CID, Error: fail.Error}
+		errors[i] = jsonBatchError(fail)
 	}
 
-	j.PrintJSON(jsonBatchResult{
+	_ = j.PrintJSON(jsonBatchResult{
 		Type:      jsonTypeBatchResult,
 		Duration:  result.Duration.Round(time.Millisecond).String(),
 		Total:     result.Total,
