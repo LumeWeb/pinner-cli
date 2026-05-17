@@ -66,9 +66,10 @@ func configAction(ctx context.Context, cmd *cli.Command, output Output, cfgMgrFa
 	}
 
 	action := args.Get(0)
-	if action == "get" {
+	switch action {
+	case "get":
 		return getConfig(cmd, output, cfgMgrFactory)
-	} else if action == "set" {
+	case "set":
 		return setConfig(ctx, cmd, output, cfgMgrFactory)
 	}
 

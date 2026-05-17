@@ -17,19 +17,25 @@ import (
 
 func unmarshalPricingPlanItemJSON(data string) *admin.PricingPlanItem {
 	var item admin.PricingPlanItem
-	json.Unmarshal([]byte(data), &item)
+	if err := json.Unmarshal([]byte(data), &item); err != nil {
+		panic(err)
+	}
 	return &item
 }
 
 func unmarshalPricingPlanJSON(data string) *admin.PricingPlan {
 	var item admin.PricingPlan
-	json.Unmarshal([]byte(data), &item)
+	if err := json.Unmarshal([]byte(data), &item); err != nil {
+		panic(err)
+	}
 	return &item
 }
 
 func unmarshalPricingPlanPeriodJSON(data string) *admin.PricingPlanPeriod {
 	var item admin.PricingPlanPeriod
-	json.Unmarshal([]byte(data), &item)
+	if err := json.Unmarshal([]byte(data), &item); err != nil {
+		panic(err)
+	}
 	return &item
 }
 
@@ -730,7 +736,6 @@ func TestBillingPricingPlanPeriodsGet(t *testing.T) {
 // billingPricingPlanPeriodsCreateCmd implements billingPricingPlanPeriodsCreateCmdGetter
 type billingPricingPlanPeriodsCreateCmd struct {
 	planID      int
-	planIDStr   string
 	price       float64
 	cadence     string
 	quotaPlanID int

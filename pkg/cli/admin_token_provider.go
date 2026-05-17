@@ -15,10 +15,9 @@ type AdminTokenProvider struct {
 	cfgMgr     config.Manager
 	apiEndpoint string
 	adminEndpoint string
-	baseToken  string      // original token
-	loginToken string      // exchanged login token
+	baseToken  string
+	loginToken string
 	mu         sync.RWMutex
-	once       sync.Once
 }
 
 // NewAdminTokenProvider creates a new AdminTokenProvider.

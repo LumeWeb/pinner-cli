@@ -19,7 +19,9 @@ import (
 
 func unmarshalPriceLineJSON(data string) *admin.PriceLine {
 	var item admin.PriceLine
-	json.Unmarshal([]byte(data), &item)
+	if err := json.Unmarshal([]byte(data), &item); err != nil {
+		panic(err)
+	}
 	return &item
 }
 

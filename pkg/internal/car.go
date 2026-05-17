@@ -19,7 +19,7 @@ func GetCarRoots(reader io.Reader, inspect bool) ([]cid.Cid, error) {
 	if err != nil {
 		return cidUndefSlice, err
 	}
-	defer carReader.Close()
+	defer func() { _ = carReader.Close() }()
 
 	if inspect {
 		_, err = carReader.Inspect(true)

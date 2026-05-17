@@ -210,7 +210,7 @@ func (ts *tusTestSetup) cleanup() {
 func createTempTestFile(t *testing.T, content string) string {
 	tmpFile, err := os.CreateTemp("", "test-*.txt")
 	require.NoError(t, err)
-	t.Cleanup(func() { os.Remove(tmpFile.Name()) })
+	t.Cleanup(func() { _ = os.Remove(tmpFile.Name()) })
 	_, err = tmpFile.WriteString(content)
 	require.NoError(t, err)
 	require.NoError(t, tmpFile.Close())
@@ -227,7 +227,7 @@ func TestUploadServiceDefault_Upload_TUS_Integration(t *testing.T) {
 
 		f, err := os.Open(tmpFile)
 		require.NoError(t, err)
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		filesystem := contentfs.NewSingleFileFS(f, "test.txt")
 		cid, err := ts.service.Upload(context.Background(), filesystem, "test.txt", false)
 

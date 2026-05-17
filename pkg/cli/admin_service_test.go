@@ -54,10 +54,6 @@ func TestDefaultQuotaAdminServiceFactory(t *testing.T) {
 			service := defaultQuotaAdminServiceFactory(cfgMgr, output)
 
 			assert.NotNil(t, service)
-
-			// Verify it implements the interface
-			_, ok := service.(QuotaAdminService)
-			require.True(t, ok)
 		})
 	}
 }
@@ -105,10 +101,6 @@ func TestDefaultBillingAdminServiceFactory(t *testing.T) {
 			service := defaultBillingAdminServiceFactory(cfgMgr, output)
 
 			assert.NotNil(t, service)
-
-			// Verify it implements the interface
-			_, ok := service.(BillingAdminService)
-			require.True(t, ok)
 		})
 	}
 }
@@ -145,10 +137,6 @@ func TestNewQuotaAdminService(t *testing.T) {
 			service := NewQuotaAdminService(cfgMgr, output, tt.apiEndpoint)
 
 			assert.NotNil(t, service)
-
-			// Verify it implements the interface
-			_, ok := service.(QuotaAdminService)
-			require.True(t, ok)
 
 			// Verify the service is of the expected type
 			qs, ok := service.(*quotaAdminService)
@@ -192,10 +180,6 @@ func TestNewBillingAdminService(t *testing.T) {
 			service := NewBillingAdminService(cfgMgr, output, tt.apiEndpoint)
 
 			assert.NotNil(t, service)
-
-			// Verify it implements the interface
-			_, ok := service.(BillingAdminService)
-			require.True(t, ok)
 
 			// Verify the service is of the expected type
 			bs, ok := service.(*billingAdminService)

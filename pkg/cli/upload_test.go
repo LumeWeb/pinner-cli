@@ -55,12 +55,12 @@ func TestResolveUploadInput_Stdin(t *testing.T) {
 			os.Stdin = r
 
 			go func() {
-				w.WriteString(tt.input)
-				w.Close()
+				_, _ = w.WriteString(tt.input)
+				_ = w.Close()
 			}()
 
 			defer func() {
-				r.Close()
+				_ = r.Close()
 				os.Stdin = oldStdin
 			}()
 
@@ -270,12 +270,12 @@ func TestStdinFS(t *testing.T) {
 			os.Stdin = r
 
 			go func() {
-				w.Write(tt.content)
-				w.Close()
+				_, _ = w.Write(tt.content)
+				_ = w.Close()
 			}()
 
 			defer func() {
-				r.Close()
+				_ = r.Close()
 				os.Stdin = oldStdin
 			}()
 
@@ -291,7 +291,7 @@ func TestStdinFS(t *testing.T) {
 				if err != nil {
 					t.Fatalf("failed to open file: %v", err)
 				}
-				defer file.Close()
+				defer func() { _ = file.Close() }()
 
 				content, err := fs.ReadFile(filesystem, "testfile")
 				if err != nil {
@@ -315,12 +315,12 @@ func TestStdinFS_ReadDir(t *testing.T) {
 	os.Stdin = r
 
 	go func() {
-		w.Write(testContent)
-		w.Close()
+		_, _ = w.Write(testContent)
+		_ = w.Close()
 	}()
 
 	defer func() {
-		r.Close()
+		_ = r.Close()
 		os.Stdin = oldStdin
 	}()
 
@@ -353,12 +353,12 @@ func TestStdinFS_Stat(t *testing.T) {
 	os.Stdin = r
 
 	go func() {
-		w.Write(testContent)
-		w.Close()
+		_, _ = w.Write(testContent)
+		_ = w.Close()
 	}()
 
 	defer func() {
-		r.Close()
+		_ = r.Close()
 		os.Stdin = oldStdin
 	}()
 

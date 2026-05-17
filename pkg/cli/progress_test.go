@@ -38,7 +38,7 @@ func TestProgressWriter_Read(t *testing.T) {
 
 			if tt.enabled {
 				require.NoError(t, pw.Start())
-				defer pw.Stop()
+				defer func() { _ = pw.Stop() }()
 			}
 
 			buf := make([]byte, 100)
@@ -57,7 +57,7 @@ func TestProgressWriter_ReadMultiple(t *testing.T) {
 	pw := NewProgressWriter(reader, int64(len(data)), true, "Test")
 
 	require.NoError(t, pw.Start())
-	defer pw.Stop()
+	defer func() { _ = pw.Stop() }()
 
 	buf1 := make([]byte, 10)
 	n1, err := pw.Read(buf1)
@@ -131,7 +131,7 @@ func TestBatchProgressTracker_Increment(t *testing.T) {
 
 			if tt.enabled {
 				require.NoError(t, bt.Start())
-				defer bt.Stop()
+				defer func() { _ = bt.Stop() }()
 			}
 
 			for i := 0; i < tt.increments; i++ {
@@ -241,7 +241,7 @@ func TestProgressWriter_PipedOutput(t *testing.T) {
 	pw := NewProgressWriter(reader, int64(len(data)), true, "Test")
 
 	// Restore stdout after creating progress writer
-	w.Close()
+	_ = w.Close()
 	os.Stdout = oldStdout
 
 	// Progress should be disabled when output is piped

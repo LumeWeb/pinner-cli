@@ -90,7 +90,7 @@ func (t *retryTransport) isRetryableError(err error) bool {
 	// Check for network errors that are retryable
 	if netErr, ok := err.(net.Error); ok {
 		// Retry on timeout or temporary errors
-		return netErr.Timeout() || netErr.Temporary()
+		return netErr.Timeout()
 	}
 
 	// Check for URL errors (connection errors) - unwrap and check recursively

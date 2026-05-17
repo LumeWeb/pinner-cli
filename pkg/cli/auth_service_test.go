@@ -293,10 +293,6 @@ func TestNewAuthService(t *testing.T) {
 
 	authService := NewAuthService(cfgMgr, output, "https://api.test.com")
 
-	// Verify it implements the interface
-	_, ok := authService.(AuthService)
-	require.True(t, ok)
-
 	// Verify it has the correct endpoint
 	require.Equal(t, "https://api.test.com", authService.GetAPIEndpoint())
 }
@@ -520,10 +516,11 @@ func TestAuthLogin(t *testing.T) {
 
 			// Setup mock prompter for semi-interactive cases
 			var prompter *MockAuthPrompter
-			if tt.name == "semi-interactive login with password prompt" {
+			switch tt.name {
+			case "semi-interactive login with password prompt":
 				prompter = NewMockAuthPrompter(t)
 				prompter.EXPECT().PromptPassword().Return("prompted-password", nil)
-			} else if tt.name == "semi-interactive login with OTP prompt" {
+			case "semi-interactive login with OTP prompt":
 				prompter = NewMockAuthPrompter(t)
 				prompter.EXPECT().PromptOTP().Return("123456", nil)
 			}

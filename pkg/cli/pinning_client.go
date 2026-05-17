@@ -107,7 +107,7 @@ func NewPinningService(cfgMgr config.Manager, output Output, apiEndpoint string,
 // RequireAuthenticated checks if the service is authenticated and returns an error if not.
 func (s *PinningServiceDefault) RequireAuthenticated() error {
 	if s.pinningClient == nil {
-		return fmt.Errorf("Not authenticated: please run 'pinner auth login' first or provide --auth-token: %w", ErrNotAuthenticated)
+		return fmt.Errorf("not authenticated: please run 'pinner auth login' first or provide --auth-token: %w", ErrNotAuthenticated)
 	}
 	return nil
 }
@@ -122,7 +122,7 @@ func (s *PinningServiceDefault) Pin(ctx context.Context, cidStr, name string, wa
 
 	parsedCid, err := cid.Decode(cidStr)
 	if err != nil {
-		return nil, fmt.Errorf("Invalid CID: %w", ErrInvalidCID)
+		return nil, fmt.Errorf("invalid CID: %w", ErrInvalidCID)
 	}
 
 	opts := []go_pinning_service_http_client.AddOption{}
@@ -192,7 +192,7 @@ func (s *PinningServiceDefault) Status(ctx context.Context, cidStr string, watch
 
 	parsedCid, err := cid.Decode(cidStr)
 	if err != nil {
-		return nil, fmt.Errorf("Invalid CID: %w", ErrInvalidCID)
+		return nil, fmt.Errorf("invalid CID: %w", ErrInvalidCID)
 	}
 
 	results, err := s.pinningClient.LsSync(ctx, go_pinning_service_http_client.PinOpts.FilterCIDs(parsedCid))
@@ -240,7 +240,7 @@ func (s *PinningServiceDefault) Unpin(ctx context.Context, cidStr string, confir
 
 	parsedCid, err := cid.Decode(cidStr)
 	if err != nil {
-		return nil, fmt.Errorf("Invalid CID: %w", ErrInvalidCID)
+		return nil, fmt.Errorf("invalid CID: %w", ErrInvalidCID)
 	}
 
 	results, err := s.pinningClient.LsSync(ctx, go_pinning_service_http_client.PinOpts.FilterCIDs(parsedCid))
@@ -437,7 +437,7 @@ func (s *PinningServiceDefault) PinBatch(ctx context.Context, cids []string, nam
 		if err := progress.Start(); err != nil {
 			return nil, err
 		}
-		defer progress.Stop()
+		defer func() { _ = progress.Stop() }()
 	}
 
 	wp := workerpool.New(parallel)
@@ -526,7 +526,7 @@ func (s *PinningServiceDefault) UnpinBatch(ctx context.Context, cids []string, o
 		if err := progress.Start(); err != nil {
 			return nil, err
 		}
-		defer progress.Stop()
+		defer func() { _ = progress.Stop() }()
 	}
 
 	wp := workerpool.New(parallel)
