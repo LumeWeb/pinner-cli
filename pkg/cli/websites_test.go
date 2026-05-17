@@ -56,6 +56,20 @@ func (m *mockWebsitesServiceForCLI) Create(ctx context.Context, domain, cid, tar
 	}, nil
 }
 
+func (m *mockWebsitesServiceForCLI) CreateWithOptions(ctx context.Context, req ipfs.WebsiteRequest) (*ipfs.WebsiteItem, error) {
+	if m.createFunc != nil {
+		return m.createFunc(ctx, req.Domain, req.TargetHash, req.TargetType)
+	}
+	return &ipfs.WebsiteItem{
+		Id:         1,
+		Domain:     req.Domain,
+		TargetHash: req.TargetHash,
+		TargetType: req.TargetType,
+		Status:     "active",
+		Created:    time.Now(),
+	}, nil
+}
+
 func (m *mockWebsitesServiceForCLI) Get(ctx context.Context, id string) (*ipfs.WebsiteItem, error) {
 	if m.getFunc != nil {
 		return m.getFunc(ctx, id)
@@ -66,6 +80,13 @@ func (m *mockWebsitesServiceForCLI) Get(ctx context.Context, id string) (*ipfs.W
 func (m *mockWebsitesServiceForCLI) Update(ctx context.Context, id, domain, cid, targetType string) (*ipfs.WebsiteItem, error) {
 	if m.updateFunc != nil {
 		return m.updateFunc(ctx, id, domain, cid, targetType)
+	}
+	return nil, nil
+}
+
+func (m *mockWebsitesServiceForCLI) UpdateWithOptions(ctx context.Context, id string, req ipfs.WebsiteRequest) (*ipfs.WebsiteItem, error) {
+	if m.updateFunc != nil {
+		return m.updateFunc(ctx, id, req.Domain, req.TargetHash, req.TargetType)
 	}
 	return nil, nil
 }

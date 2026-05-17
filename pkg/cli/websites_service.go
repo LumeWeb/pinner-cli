@@ -69,6 +69,18 @@ func (s *websitesService) Create(ctx context.Context, domain, targetHash, target
 	return (*ipfs.WebsiteItem)(response), nil
 }
 
+// CreateWithOptions creates a new website with full request options.
+func (s *websitesService) CreateWithOptions(ctx context.Context, req ipfs.WebsiteRequest) (*ipfs.WebsiteItem, error) {
+	if err := s.RequireAuthenticated(); err != nil {
+		return nil, err
+	}
+	response, err := s.service.CreateWithOptions(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return (*ipfs.WebsiteItem)(response), nil
+}
+
 // Get retrieves a specific website by its ID.
 func (s *websitesService) Get(ctx context.Context, id string) (*ipfs.WebsiteItem, error) {
 	if err := s.RequireAuthenticated(); err != nil {
@@ -87,6 +99,18 @@ func (s *websitesService) Update(ctx context.Context, id, domain, targetHash, ta
 		return nil, err
 	}
 	response, err := s.service.Update(ctx, id, domain, targetHash, targetType)
+	if err != nil {
+		return nil, err
+	}
+	return (*ipfs.WebsiteItem)(response), nil
+}
+
+// UpdateWithOptions updates an existing website with full request options.
+func (s *websitesService) UpdateWithOptions(ctx context.Context, id string, req ipfs.WebsiteRequest) (*ipfs.WebsiteItem, error) {
+	if err := s.RequireAuthenticated(); err != nil {
+		return nil, err
+	}
+	response, err := s.service.UpdateWithOptions(ctx, id, req)
 	if err != nil {
 		return nil, err
 	}

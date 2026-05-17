@@ -138,8 +138,10 @@ type WebsitesService interface {
 	RequireAuthenticated() error
 	List(ctx context.Context) ([]ipfs.WebsiteItem, error)
 	Create(ctx context.Context, domain, targetHash, targetType string) (*ipfs.WebsiteItem, error)
+	CreateWithOptions(ctx context.Context, req ipfs.WebsiteRequest) (*ipfs.WebsiteItem, error)
 	Get(ctx context.Context, id string) (*ipfs.WebsiteItem, error)
 	Update(ctx context.Context, id, domain, targetHash, targetType string) (*ipfs.WebsiteItem, error)
+	UpdateWithOptions(ctx context.Context, id string, req ipfs.WebsiteRequest) (*ipfs.WebsiteItem, error)
 	Delete(ctx context.Context, id string) error
 	Validate(ctx context.Context, id string) (*ipfs.WebsiteValidateResponse, error)
 	GetSSLStatus(ctx context.Context, domain string) (*ipfs.WebsiteResponse, error)
@@ -283,18 +285,30 @@ func websitesUpdate(ctx context.Context, cmd *cli.Command, output Output) error 
 		return err
 	}
 
-	dnsHosting := cmd.Bool(FlagDNSHosting)
+	req := ipfs.WebsiteRequest{
+		Domain:      domain,
+		TargetHash:  cid,
+		TargetType:  targetType,
+	}
 
-	updatedWebsite, err := websitesService.Update(ctx, id, domain, cid, targetType)
+	if cmd.IsSet(FlagDNSHosting) {
+		v := cmd.Bool(FlagDNSHosting)
+		req.DnsHostingEnabled = &v
+	} else if cmd.IsSet(FlagNoDNSHosting) {
+		v := false
+		req.DnsHostingEnabled = &v
+	}
+
+	updatedWebsite, err := websitesService.UpdateWithOptions(ctx, id, req)
 	if err != nil {
 		return err
 	}
 
-	if dnsHosting {
+	if updatedWebsite.DnsHostingEnabled {
 		if err := setupDNSHosting(ctx, cfgMgr, output, updatedWebsite.Domain, updatedWebsite.TargetHash); err != nil {
-		output.Printfln("Warning: Failed to setup DNS hosting: %v", err)
+			output.Printfln("Warning: Failed to setup DNS hosting: %v", err)
+		}
 	}
-}
 
 	if output.IsJSON() {
 		return output.PrintJSON(updatedWebsite)
@@ -431,15 +445,27 @@ func websitesCreate(ctx context.Context, cmd *cli.Command, output Output) error 
 		targetType = "ipfs"
 	}
 
-	createdWebsite, err := websitesService.Create(ctx, domain, cid, targetType)
+	req := ipfs.WebsiteRequest{
+		Domain:       domain,
+		TargetHash:  cid,
+		TargetType:  targetType,
+	}
+
+	if cmd.IsSet(FlagDNSHosting) {
+		dnsHosting := cmd.Bool(FlagDNSHosting)
+		req.DnsHostingEnabled = &dnsHosting
+	} else if cmd.IsSet(FlagNoDNSHosting) {
+		dnsHosting := false
+		req.DnsHostingEnabled = &dnsHosting
+	}
+
+	createdWebsite, err := websitesService.CreateWithOptions(ctx, req)
 	if err != nil {
 		return err
 	}
 
-	dnsHosting := cmd.Bool(FlagDNSHosting)
-
-	if dnsHosting {
-		if err := setupDNSHosting(ctx, cfgMgr, output, domain, cid); err != nil {
+	if createdWebsite.DnsHostingEnabled {
+		if err := setupDNSHosting(ctx, cfgMgr, output, createdWebsite.Domain, createdWebsite.TargetHash); err != nil {
 			output.Printfln("Warning: Failed to setup DNS hosting: %v", err)
 		}
 	}
@@ -468,16 +494,16 @@ func websitesCreate(ctx context.Context, cmd *cli.Command, output Output) error 
 	output.Printfln("")
 	output.Printfln("Next steps:")
 	if createdWebsite.DnsHostingEnabled {
-		output.Printfln("  1. Add a TXT record to your domain at your registrar:")
+		output.Printfln("  1. Point your domain's nameservers to Pinner (see: pinner dns zones validate %s)", createdWebsite.Domain)
+		output.Printfln("  2. Add a TXT record at your registrar to verify ownership:")
 		output.Printfln("     %s  TXT  lumeweb-verify=%s", createdWebsite.Domain, createdWebsite.ValidationToken)
-		output.Printfln("  2. Validate nameserver delegation: pinner dns zones validate %s", createdWebsite.Domain)
-		output.Printfln("  3. Validate website DNS records: pinner websites validate %d", createdWebsite.Id)
+		output.Printfln("  3. Validate: pinner websites validate %s", createdWebsite.Domain)
 	} else {
-		output.Printfln("  1. Add a TXT record to your domain at your registrar:")
+		output.Printfln("  1. Add a TXT record at your registrar to verify ownership:")
 		output.Printfln("     %s  TXT  lumeweb-verify=%s", createdWebsite.Domain, createdWebsite.ValidationToken)
 		output.Printfln("  2. Add a DNSLink TXT record:")
-		output.Printfln("     _dnslink.%s  TXT  dnslink=/ipfs/%s", createdWebsite.Domain, createdWebsite.TargetHash)
-		output.Printfln("  3. Validate website: pinner websites validate %d", createdWebsite.Id)
+		output.Printfln("     _dnslink.%s  TXT  dnslink=/%s/%s", createdWebsite.Domain, createdWebsite.TargetType, createdWebsite.TargetHash)
+		output.Printfln("  3. Validate: pinner websites validate %s", createdWebsite.Domain)
 		output.Printfln("")
 		output.Printfln("  Tip: Use --dns-hosting to have Pinner manage DNS for you")
 	}
