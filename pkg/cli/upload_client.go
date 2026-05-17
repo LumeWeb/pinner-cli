@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/avast/retry-go/v4"
 	ipfs "go.lumeweb.com/ipfs-sdk"
 	"go.lumeweb.com/pinner-cli/pkg/config"
 	portalsdk "go.lumeweb.com/portal-sdk"
@@ -25,6 +26,7 @@ type UploadServiceConfig struct {
 type UploadServiceDefault struct {
 	accountClient   portalsdk.AccountAPI
 	authService     AuthService
+	pinningService  PinningService
 	configMgr       config.Manager
 	output          Output
 	ipfsEndpoint    string
@@ -60,6 +62,13 @@ func WithUploadAccountClient(client portalsdk.AccountAPI) UploadServiceOption {
 func WithUploadAuthService(authSvc AuthService) UploadServiceOption {
 	return func(s *UploadServiceDefault) {
 		s.authService = authSvc
+	}
+}
+
+// WithUploadPinningService sets the pinning service for verifying pin status after upload.
+func WithUploadPinningService(ps PinningService) UploadServiceOption {
+	return func(s *UploadServiceDefault) {
+		s.pinningService = ps
 	}
 }
 
@@ -209,7 +218,7 @@ func (s *UploadServiceDefault) Upload(ctx context.Context, filesystem fs.FS, nam
 	// Handle post-upload wait for pin
 	if wait && sdkResult.CID != "" {
 		if err := s.waitForPin(ctx, sdkResult.CID, authToken); err != nil {
-			s.output.PrintVerbosef("Warning: failed to wait for pin: %v", err)
+			return nil, err
 		}
 	}
 
@@ -256,7 +265,8 @@ func (s *UploadServiceDefault) wrapUploadError(err error) error {
 	return WrapAuthError("Upload", err)
 }
 
-// waitForPin waits for a file to be pinned by querying operations by CID.
+// waitForPin waits for a file to be pinned by first waiting for the account
+// operation to complete, then verifying the pin exists in the pinning API.
 func (s *UploadServiceDefault) waitForPin(ctx context.Context, rootCID string, authToken string) error {
 	accountClient := portalsdk.NewClient(portalsdk.WithEndpoint(s.accountEndpoint), portalsdk.WithJWT(authToken))
 
@@ -272,6 +282,31 @@ func (s *UploadServiceDefault) waitForPin(ctx context.Context, rootCID string, a
 	_, err = accountClient.WaitForOperation(ctx, int64(operations[0].Id))
 	if err != nil {
 		return fmt.Errorf("Pin operation failed for CID %s: %w. Check 'pinner status %s'", rootCID, err, rootCID)
+	}
+
+	if s.pinningService != nil {
+		s.output.PrintVerbosef("Account operation completed, verifying pin status for CID %s", rootCID)
+		err := retry.Do(func() error {
+			status, err := s.pinningService.Status(ctx, rootCID, false)
+			if err != nil {
+				return err
+			}
+			if status.Status != "pinned" {
+				return fmt.Errorf("pin status is %s, expected pinned", status.Status)
+			}
+			return nil
+		},
+			retry.Context(ctx),
+			retry.Attempts(10),
+			retry.Delay(2*time.Second),
+			retry.DelayType(retry.BackOffDelay),
+			retry.MaxDelay(30*time.Second),
+			retry.LastErrorOnly(true),
+		)
+		if err != nil {
+			return fmt.Errorf("Pin verification failed for CID %s: %w. Check 'pinner status %s'", rootCID, err, rootCID)
+		}
+		s.output.PrintVerbosef("Pin verified for CID %s", rootCID)
 	}
 
 	return nil

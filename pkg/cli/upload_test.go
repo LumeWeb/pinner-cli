@@ -484,7 +484,11 @@ func TestUploadDryRun(t *testing.T) {
 				return service
 			}
 
-			err := handleUpload(context.Background(), cmd, output, cfgMgrFactory, uploadServiceFactory)
+			pinningServiceFactory := func(cfgMgr config.Manager, output Output) PinningService {
+				return NewMockPinningService(t)
+			}
+
+			err := handleUpload(context.Background(), cmd, output, cfgMgrFactory, uploadServiceFactory, pinningServiceFactory)
 
 			if tt.wantErr {
 				require.Error(t, err)
