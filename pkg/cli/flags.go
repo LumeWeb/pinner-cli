@@ -46,6 +46,7 @@ const (
 	FlagDryRun      = "dry-run"
 	FlagSet         = "set"
 	FlagClear       = "clear"
+	FlagYes         = "yes"
 )
 
 // Upload CAR builder flags

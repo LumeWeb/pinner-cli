@@ -230,7 +230,6 @@ func TestNewUnpinCommand(t *testing.T) {
 		assert.Equal(t, "unpin", cmd.Name)
 		assert.Equal(t, "<cid...>", cmd.ArgsUsage)
 
-		// Check flags
 		flags := cmd.Flags
 		assert.Len(t, flags, 5)
 
@@ -249,6 +248,9 @@ func TestNewUnpinCommand(t *testing.T) {
 		continueFlag, ok := flags[3].(*cli.BoolFlag)
 		require.True(t, ok)
 		assert.Equal(t, "continue", continueFlag.Name)
+
+		assert.Len(t, cmd.Commands, 1)
+		assert.Equal(t, "all", cmd.Commands[0].Name)
 	})
 }
 

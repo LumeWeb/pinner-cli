@@ -518,7 +518,6 @@ func (s *PinningServiceDefault) UnpinBatch(ctx context.Context, cids []string, o
 	var mu sync.Mutex
 	var firstError error
 
-	// Create batch progress tracker if enabled and not in JSON/quiet mode
 	shouldShowProgress := opts.Progress && !s.output.IsJSON() && !s.output.IsQuiet()
 	var progress *BatchProgressTracker
 	if shouldShowProgress {
@@ -574,4 +573,29 @@ func (s *PinningServiceDefault) UnpinBatch(ctx context.Context, cids []string, o
 	}
 
 	return result, nil
+}
+
+func (s *PinningServiceDefault) UnpinAll(ctx context.Context, statusFilter string, opts BatchOptions) (*BatchResult, error) {
+	if err := s.RequireAuthenticated(); err != nil {
+		return nil, err
+	}
+
+	s.output.PrintVerbosef("Using API endpoint: %s", s.apiEndpoint)
+
+	pins, err := s.List(ctx, "", 0, statusFilter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list pins for unpin-all: %w", err)
+	}
+
+	if len(pins) == 0 {
+		s.output.Printfln("No pins found")
+		return &BatchResult{}, nil
+	}
+
+	cids := make([]string, len(pins))
+	for i, pin := range pins {
+		cids[i] = pin.CID
+	}
+
+	return s.UnpinBatch(ctx, cids, opts)
 }
