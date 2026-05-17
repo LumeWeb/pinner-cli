@@ -81,7 +81,7 @@ func websitesSSLStatus(ctx context.Context, cmd *cli.Command, output Output) err
 	authToken := GetAuthToken(cmd, cfgMgr)
 	secure := GetSecureSetting(cmd, cfgMgr)
 	if authToken != "" {
-		websitesService = NewWebsitesService(cfgMgr, output, cfgMgr.Config().GetAccountEndpointWithSecure(secure))
+		websitesService = NewWebsitesService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure))
 	} else {
 		websitesService = defaultWebsitesServiceFactory(cfgMgr, output)
 	}
