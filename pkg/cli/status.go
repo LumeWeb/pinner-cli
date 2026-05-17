@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	"github.com/urfave/cli/v3"
+	portalsdk "go.lumeweb.com/portal-sdk"
+	"go.lumeweb.com/pinner-cli/pkg/config"
 )
 
 func newStatusCommand() *cli.Command {
@@ -12,6 +14,7 @@ func newStatusCommand() *cli.Command {
 		Name:  "status",
 		Usage: "Get pin status for CID",
 		Description: `Check the status of a pin to see if it has been completed.
+If the pin is not found, account operations are checked as a fallback.
 
 Examples:
   pinner status QmHash
@@ -24,7 +27,14 @@ Status values:
   queued   - Pin is queued for processing
   pinning  - Pin is being processed
   pinned   - Pin is successfully pinned
-  failed   - Pin failed to pin`,
+  failed   - Pin failed to pin
+
+Operation status values (shown when pin is not found):
+  pending   - Operation is queued
+  running   - Operation is in progress
+  completed - Operation finished successfully
+  failed    - Operation failed
+  error     - Operation encountered an error`,
 		ArgsUsage: "<cid>",
 		Flags: []cli.Flag{
 			&cli.BoolFlag{
@@ -35,18 +45,21 @@ Status values:
 		Metadata: WithTutorial(4, "Check pin status", fmt.Sprintf("pinner status %s", abbreviateCID(TutorialCID))),
 		Action: func(ctx context.Context, c *cli.Command) error {
 			output := setupOutput(c)
-			return status(ctx, newCLICommandWrapper(c), output, defaultConfigManagerFactory, defaultPinningServiceFactory)
+			return status(ctx, newCLICommandWrapper(c), output, defaultConfigManagerFactory, defaultPinningServiceFactory, defaultStatusServiceFactory)
 		},
 	}
 }
 
-// statusCommandGetter defines the interface for getting status command flags.
 type statusCommandGetter interface {
 	Bool(name string) bool
 	GetCID() string
 }
 
-func status(ctx context.Context, cmd statusCommandGetter, output Output, cfgMgrFactory ConfigManagerFactory, pinningServiceFactory PinningServiceFactory) error {
+func defaultStatusServiceFactory(cfgMgr config.Manager, output Output, pinningService PinningService, accountClient portalsdk.AccountAPI) StatusService {
+	return NewStatusService(cfgMgr, output, pinningService, accountClient)
+}
+
+func status(ctx context.Context, cmd statusCommandGetter, output Output, cfgMgrFactory ConfigManagerFactory, pinningServiceFactory PinningServiceFactory, statusServiceFactory StatusServiceFactory) error {
 	cfgMgr, err := cfgMgrFactory()
 	if err != nil {
 		return err
@@ -75,6 +88,9 @@ func status(ctx context.Context, cmd statusCommandGetter, output Output, cfgMgrF
 
 	watch := cmd.Bool("watch")
 
+	accountClient := portalsdk.NewClient(portalsdk.WithEndpoint(cfgMgr.Config().GetAPIEndpoint()))
+	statusService := statusServiceFactory(cfgMgr, output, pinningService, accountClient)
+
 	var cids []string
 	if isStdinPipe() {
 		var err error
@@ -90,45 +106,79 @@ func status(ctx context.Context, cmd statusCommandGetter, output Output, cfgMgrF
 	}
 
 	if len(cids) == 1 {
-		pinStatus, err := pinningService.Status(ctx, cids[0], watch)
+		pinStatus, opStatus, err := statusService.Status(ctx, cids[0], watch)
 		if err != nil {
 			return err
 		}
 
-		headers := []string{"Property", "Value"}
-		rows := [][]string{
-			{"CID", pinStatus.CID},
-			{"Status", pinStatus.Status},
-			{"Created", pinStatus.Created},
+		if pinStatus != nil {
+			return renderPinStatus(output, pinStatus)
 		}
 
-		if len(pinStatus.Delegates) > 0 {
-			output.PrintTable(headers, rows)
-			output.PrintListGroup(ListGroup{
-				Title:  "Delegates:",
-				Items:   pinStatus.Delegates,
-				PadTop: 1,
-			})
-		} else {
-			output.PrintTable(headers, rows)
-		}
-
-		return nil
+		return renderOperationStatus(output, opStatus)
 	}
 
 	output.Printfln("Checking status for %d CID(s)", len(cids))
 
-	headers := []string{"CID", "STATUS", "CREATED"}
+	headers := []string{"CID", "STATUS", "SOURCE", "CREATED"}
 	rows := make([][]string, 0, len(cids))
 
 	for _, cid := range cids {
-		pinStatus, err := pinningService.Status(ctx, cid, false)
+		pinStatus, opStatus, err := statusService.Status(ctx, cid, false)
 		if err != nil {
-			rows = append(rows, []string{cid, fmt.Sprintf("Error: %v", err), ""})
+			rows = append(rows, []string{cid, fmt.Sprintf("Error: %v", err), "", ""})
 			continue
 		}
 
-		rows = append(rows, []string{pinStatus.CID, formatStatusWithColor(pinStatus.Status), pinStatus.Created})
+		if pinStatus != nil {
+			rows = append(rows, []string{pinStatus.CID, formatStatusWithColor(pinStatus.Status), "pin", pinStatus.Created})
+		} else if opStatus != nil {
+			rows = append(rows, []string{opStatus.CID, formatStatusWithColor(opStatus.Status), "operation", opStatus.StartedAt})
+		}
+	}
+
+	output.PrintTable(headers, rows)
+	return nil
+}
+
+func renderPinStatus(output Output, pinStatus *PinStatus) error {
+	headers := []string{"Property", "Value"}
+	rows := [][]string{
+		{"CID", pinStatus.CID},
+		{"Status", pinStatus.Status},
+		{"Created", pinStatus.Created},
+	}
+
+	if len(pinStatus.Delegates) > 0 {
+		output.PrintTable(headers, rows)
+		output.PrintListGroup(ListGroup{
+			Title:  "Delegates:",
+			Items:   pinStatus.Delegates,
+			PadTop: 1,
+		})
+	} else {
+		output.PrintTable(headers, rows)
+	}
+
+	return nil
+}
+
+func renderOperationStatus(output Output, op *OperationStatusResult) error {
+	headers := []string{"Property", "Value"}
+	rows := [][]string{
+		{"CID", op.CID},
+		{"Status", op.StatusDisplayName},
+		{"Operation", op.OperationDisplayName},
+		{"Protocol", op.ProtocolDisplayName},
+		{"Progress", fmt.Sprintf("%.0f%%", op.ProgressPercent)},
+		{"Started", op.StartedAt},
+	}
+
+	if op.StatusMessage != "" {
+		rows = append(rows, []string{"Message", op.StatusMessage})
+	}
+	if op.Error != "" {
+		rows = append(rows, []string{"Error", op.Error})
 	}
 
 	output.PrintTable(headers, rows)

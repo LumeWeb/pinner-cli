@@ -24,6 +24,24 @@ type PinStatus struct {
 	Created   string
 }
 
+// OperationStatusResult represents the status of an account operation.
+type OperationStatusResult struct {
+	ID                    int
+	Operation             string
+	OperationDisplayName string
+	Protocol              string
+	ProtocolDisplayName  string
+	Status                string
+	StatusDisplayName     string
+	StatusMessage         string
+	CID                   string
+	ProgressPercent       float32
+	StartedAt             string
+	UpdatedAt             string
+	Error                 string
+	Source                string
+}
+
 // PinResult represents the result of a pin operation
 type PinResult struct {
 	CID       string
@@ -88,6 +106,15 @@ type PinningService interface {
 
 	// Update metadata for a pin
 	UpdateMetadata(ctx context.Context, cid string, set []string, clear bool) error
+
+	// RequireAuthenticated checks if the service is authenticated.
+	RequireAuthenticated() error
+}
+
+// StatusService defines the interface for checking CID status with pin and operation fallback.
+type StatusService interface {
+	// Status checks pin status, falling back to account operations if pin not found
+	Status(ctx context.Context, cid string, watch bool) (*PinStatus, *OperationStatusResult, error)
 
 	// RequireAuthenticated checks if the service is authenticated.
 	RequireAuthenticated() error
