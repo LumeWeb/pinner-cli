@@ -36,3 +36,4 @@ pkg/account/client/
 *.md
 !AGENTS.md
 !README.md
+pinner
