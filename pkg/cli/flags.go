@@ -47,6 +47,8 @@ const (
 	FlagSet         = "set"
 	FlagClear       = "clear"
 	FlagYes         = "yes"
+	FlagOperation   = "operation"
+	FlagProtocol    = "protocol"
 )
 
 // Upload CAR builder flags
