@@ -2,15 +2,24 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
+	mock "github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.lumeweb.com/pinner-cli/pkg/config"
 	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
 	portalsdk "go.lumeweb.com/portal-sdk"
 	portalsdkmocks "go.lumeweb.com/portal-sdk/mocks"
 )
+
+func newAPIKeyWithUUID(name, uuidStr string) *portalsdk.APIKey {
+	data, _ := json.Marshal(map[string]string{"name": name, "token": "", "uuid": uuidStr})
+	var key portalsdk.APIKey
+	_ = json.Unmarshal(data, &key)
+	return &key
+}
 
 func TestAuthService_LoginCheck(t *testing.T) {
 	tests := []struct {
@@ -92,7 +101,7 @@ func TestAuthService_CompleteLogin(t *testing.T) {
 		token            string
 		keyName          string
 		noCreateKey      bool
-		setupMocks       func(*configmocks.MockManager, *portalsdkmocks.MockAccountAPI)
+		setupMocks       func(*configmocks.MockManager, *portalsdkmocks.MockAccountAPI, *portalsdkmocks.MockAccountAPI)
 		wantErr          bool
 		errContains      string
 		failCreateAPIKey bool
@@ -102,10 +111,30 @@ func TestAuthService_CompleteLogin(t *testing.T) {
 			token:       "test-jwt-token",
 			keyName:     "test-key",
 			noCreateKey: false,
-			setupMocks: func(cfgMgr *configmocks.MockManager, acc *portalsdkmocks.MockAccountAPI) {
+			setupMocks: func(cfgMgr *configmocks.MockManager, acc *portalsdkmocks.MockAccountAPI, authAcc *portalsdkmocks.MockAccountAPI) {
 				cfgMgr.EXPECT().SetAuthToken("test-api-key-token").Return(nil)
 				cfgMgr.EXPECT().ConfigPath().Return("/home/user/.config/pinner/config.yaml")
 				cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://pinner.xyz", Secure: true})
+				authAcc.EXPECT().ListAPIKeys(context.Background(), mock.Anything).Return(nil, 0, nil)
+				authAcc.EXPECT().CreateAPIKey(context.Background(), "test-key").
+					Return(portalsdk.NewAPIKey("test-key", "test-api-key-token"), nil)
+			},
+			wantErr: false,
+		},
+		{
+			name:        "successful completion with existing key replaced",
+			token:       "test-jwt-token",
+			keyName:     "test-key",
+			noCreateKey: false,
+			setupMocks: func(cfgMgr *configmocks.MockManager, acc *portalsdkmocks.MockAccountAPI, authAcc *portalsdkmocks.MockAccountAPI) {
+				cfgMgr.EXPECT().SetAuthToken("new-api-key-token").Return(nil)
+				cfgMgr.EXPECT().ConfigPath().Return("/home/user/.config/pinner/config.yaml")
+				cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://pinner.xyz", Secure: true})
+				authAcc.EXPECT().ListAPIKeys(context.Background(), mock.Anything).
+					Return([]*portalsdk.APIKey{newAPIKeyWithUUID("test-key", "00000000-0000-0000-0000-000000000001")}, 1, nil)
+				authAcc.EXPECT().DeleteAPIKey(context.Background(), "00000000-0000-0000-0000-000000000001").Return(nil)
+				authAcc.EXPECT().CreateAPIKey(context.Background(), "test-key").
+					Return(portalsdk.NewAPIKey("test-key", "new-api-key-token"), nil)
 			},
 			wantErr: false,
 		},
@@ -114,7 +143,7 @@ func TestAuthService_CompleteLogin(t *testing.T) {
 			token:       "test-jwt-token",
 			keyName:     "test-key",
 			noCreateKey: true,
-			setupMocks: func(cfgMgr *configmocks.MockManager, acc *portalsdkmocks.MockAccountAPI) {
+			setupMocks: func(cfgMgr *configmocks.MockManager, acc *portalsdkmocks.MockAccountAPI, authAcc *portalsdkmocks.MockAccountAPI) {
 				cfgMgr.EXPECT().SetAuthToken("test-jwt-token").Return(nil)
 				cfgMgr.EXPECT().ConfigPath().Return("/home/user/.config/pinner/config.yaml")
 				cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://pinner.xyz", Secure: true})
@@ -126,7 +155,7 @@ func TestAuthService_CompleteLogin(t *testing.T) {
 			token:       "test-jwt-token",
 			keyName:     "test-key",
 			noCreateKey: true,
-			setupMocks: func(cfgMgr *configmocks.MockManager, acc *portalsdkmocks.MockAccountAPI) {
+			setupMocks: func(cfgMgr *configmocks.MockManager, acc *portalsdkmocks.MockAccountAPI, authAcc *portalsdkmocks.MockAccountAPI) {
 				cfgMgr.EXPECT().SetAuthToken("test-jwt-token").
 					Return(errors.New("config write failed"))
 			},
@@ -138,10 +167,36 @@ func TestAuthService_CompleteLogin(t *testing.T) {
 			token:            "test-jwt-token",
 			keyName:          "test-key",
 			noCreateKey:      false,
-			setupMocks:       func(cfgMgr *configmocks.MockManager, acc *portalsdkmocks.MockAccountAPI) {},
+			setupMocks:       func(cfgMgr *configmocks.MockManager, acc *portalsdkmocks.MockAccountAPI, authAcc *portalsdkmocks.MockAccountAPI) {},
 			wantErr:          true,
 			errContains:      "failed to create API key",
 			failCreateAPIKey: true,
+		},
+		{
+			name:        "list API keys fails",
+			token:       "test-jwt-token",
+			keyName:     "test-key",
+			noCreateKey: false,
+			setupMocks: func(cfgMgr *configmocks.MockManager, acc *portalsdkmocks.MockAccountAPI, authAcc *portalsdkmocks.MockAccountAPI) {
+				authAcc.EXPECT().ListAPIKeys(context.Background(), mock.Anything).
+					Return(nil, 0, errors.New("network error"))
+			},
+			wantErr:     true,
+			errContains: "failed to list existing API keys",
+		},
+		{
+			name:        "delete existing API key fails",
+			token:       "test-jwt-token",
+			keyName:     "test-key",
+			noCreateKey: false,
+			setupMocks: func(cfgMgr *configmocks.MockManager, acc *portalsdkmocks.MockAccountAPI, authAcc *portalsdkmocks.MockAccountAPI) {
+				authAcc.EXPECT().ListAPIKeys(context.Background(), mock.Anything).
+					Return([]*portalsdk.APIKey{newAPIKeyWithUUID("test-key", "00000000-0000-0000-0000-000000000001")}, 1, nil)
+				authAcc.EXPECT().DeleteAPIKey(context.Background(), "00000000-0000-0000-0000-000000000001").
+					Return(errors.New("delete failed"))
+			},
+			wantErr:     true,
+			errContains: "failed to delete existing API key",
 		},
 	}
 
@@ -153,21 +208,18 @@ func TestAuthService_CompleteLogin(t *testing.T) {
 			output := NewOutputFormatter(false, false, false, false)
 
 			if tt.setupMocks != nil {
-				tt.setupMocks(cfgMgr, acc)
+				tt.setupMocks(cfgMgr, acc, authAcc)
 			}
 
-			// Use client factory to return the authenticated client
+			if !tt.noCreateKey && tt.failCreateAPIKey {
+				authAcc.EXPECT().ListAPIKeys(context.Background(), mock.Anything).Return(nil, 0, nil)
+				authAcc.EXPECT().CreateAPIKey(context.Background(), tt.keyName).
+					Return(nil, errors.New("API key creation failed"))
+			}
+
 			authService := NewAuthService(cfgMgr, output, "https://api.test.com",
 				WithAuthAccountClient(acc),
 				WithClientFactory(func(endpoint, jwt string) portalsdk.AccountAPI {
-					// Setup authenticated client expectations for API key creation
-					if !tt.noCreateKey && !tt.wantErr && !tt.failCreateAPIKey {
-						authAcc.EXPECT().CreateAPIKey(context.Background(), tt.keyName).
-							Return(portalsdk.NewAPIKey(tt.keyName, "test-api-key-token"), nil)
-					} else if !tt.noCreateKey && tt.failCreateAPIKey {
-						authAcc.EXPECT().CreateAPIKey(context.Background(), tt.keyName).
-							Return(nil, errors.New("API key creation failed"))
-					}
 					return authAcc
 				}),
 			)
@@ -264,7 +316,6 @@ func TestAuthService_SaveToken_JSONOutput(t *testing.T) {
 }
 
 func TestAuthService_CompleteLogin_JSONOutput(t *testing.T) {
-	// Test JSON output for CompleteLogin with API key creation
 	cfgMgr := configmocks.NewMockManager(t)
 	acc := portalsdkmocks.NewMockAccountAPI(t)
 	authAcc := portalsdkmocks.NewMockAccountAPI(t)
@@ -273,6 +324,7 @@ func TestAuthService_CompleteLogin_JSONOutput(t *testing.T) {
 	cfgMgr.EXPECT().SetAuthToken("test-api-key-token").Return(nil)
 	cfgMgr.EXPECT().ConfigPath().Return("/home/user/.config/pinner/config.yaml")
 	cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://pinner.xyz", Secure: true})
+	authAcc.EXPECT().ListAPIKeys(context.Background(), mock.Anything).Return(nil, 0, nil)
 	authAcc.EXPECT().CreateAPIKey(context.Background(), "test-key").
 		Return(portalsdk.NewAPIKey("test-key", "test-api-key-token"), nil)
 
@@ -591,7 +643,7 @@ func TestAuthService_LoginWithOTP(t *testing.T) {
 		otp              string
 		keyName          string
 		noCreateKey      bool
-		setupMocks       func(*configmocks.MockManager, *portalsdkmocks.MockAccountAPI)
+		setupMocks       func(*configmocks.MockManager, *portalsdkmocks.MockAccountAPI, *portalsdkmocks.MockAccountAPI)
 		wantErr          bool
 		errContains      string
 		failCreateAPIKey bool
@@ -602,12 +654,15 @@ func TestAuthService_LoginWithOTP(t *testing.T) {
 			otp:             "123456",
 			keyName:         "test-key",
 			noCreateKey:     false,
-			setupMocks: func(cfgMgr *configmocks.MockManager, acc *portalsdkmocks.MockAccountAPI) {
+			setupMocks: func(cfgMgr *configmocks.MockManager, acc *portalsdkmocks.MockAccountAPI, authAcc *portalsdkmocks.MockAccountAPI) {
 				acc.EXPECT().ValidateOTP(context.Background(), "intermediate-jwt-token", "123456").
 					Return("final-jwt-token", nil)
 				cfgMgr.EXPECT().SetAuthToken("test-api-key-token").Return(nil)
 				cfgMgr.EXPECT().ConfigPath().Return("/home/user/.config/pinner/config.yaml")
 				cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://pinner.xyz", Secure: true})
+				authAcc.EXPECT().ListAPIKeys(context.Background(), mock.Anything).Return(nil, 0, nil)
+				authAcc.EXPECT().CreateAPIKey(context.Background(), "test-key").
+					Return(portalsdk.NewAPIKey("test-key", "test-api-key-token"), nil)
 			},
 			wantErr: false,
 		},
@@ -617,7 +672,7 @@ func TestAuthService_LoginWithOTP(t *testing.T) {
 			otp:             "123456",
 			keyName:         "test-key",
 			noCreateKey:     true,
-			setupMocks: func(cfgMgr *configmocks.MockManager, acc *portalsdkmocks.MockAccountAPI) {
+			setupMocks: func(cfgMgr *configmocks.MockManager, acc *portalsdkmocks.MockAccountAPI, authAcc *portalsdkmocks.MockAccountAPI) {
 				acc.EXPECT().ValidateOTP(context.Background(), "intermediate-jwt-token", "123456").
 					Return("final-jwt-token", nil)
 				cfgMgr.EXPECT().SetAuthToken("final-jwt-token").Return(nil)
@@ -632,7 +687,7 @@ func TestAuthService_LoginWithOTP(t *testing.T) {
 			otp:             "000000",
 			keyName:         "test-key",
 			noCreateKey:     false,
-			setupMocks: func(cfgMgr *configmocks.MockManager, acc *portalsdkmocks.MockAccountAPI) {
+			setupMocks: func(cfgMgr *configmocks.MockManager, acc *portalsdkmocks.MockAccountAPI, authAcc *portalsdkmocks.MockAccountAPI) {
 				acc.EXPECT().ValidateOTP(context.Background(), "intermediate-jwt-token", "000000").
 					Return("", errors.New("invalid OTP code"))
 			},
@@ -645,7 +700,7 @@ func TestAuthService_LoginWithOTP(t *testing.T) {
 			otp:             "123456",
 			keyName:         "test-key",
 			noCreateKey:     true,
-			setupMocks: func(cfgMgr *configmocks.MockManager, acc *portalsdkmocks.MockAccountAPI) {
+			setupMocks: func(cfgMgr *configmocks.MockManager, acc *portalsdkmocks.MockAccountAPI, authAcc *portalsdkmocks.MockAccountAPI) {
 				acc.EXPECT().ValidateOTP(context.Background(), "intermediate-jwt-token", "123456").
 					Return("final-jwt-token", nil)
 				cfgMgr.EXPECT().SetAuthToken("final-jwt-token").
@@ -664,21 +719,18 @@ func TestAuthService_LoginWithOTP(t *testing.T) {
 			output := NewOutputFormatter(false, false, false, false)
 
 			if tt.setupMocks != nil {
-				tt.setupMocks(cfgMgr, acc)
+				tt.setupMocks(cfgMgr, acc, authAcc)
 			}
 
-			// Use client factory to return the authenticated client
+			if !tt.noCreateKey && tt.failCreateAPIKey {
+				authAcc.EXPECT().ListAPIKeys(context.Background(), mock.Anything).Return(nil, 0, nil)
+				authAcc.EXPECT().CreateAPIKey(context.Background(), tt.keyName).
+					Return(nil, errors.New("API key creation failed"))
+			}
+
 			authService := NewAuthService(cfgMgr, output, "https://api.test.com",
 				WithAuthAccountClient(acc),
 				WithClientFactory(func(endpoint, jwt string) portalsdk.AccountAPI {
-					// Setup authenticated client expectations for API key creation
-					if !tt.noCreateKey && !tt.wantErr && !tt.failCreateAPIKey {
-						authAcc.EXPECT().CreateAPIKey(context.Background(), tt.keyName).
-							Return(portalsdk.NewAPIKey(tt.keyName, "test-api-key-token"), nil)
-					} else if !tt.noCreateKey && tt.failCreateAPIKey {
-						authAcc.EXPECT().CreateAPIKey(context.Background(), tt.keyName).
-							Return(nil, errors.New("API key creation failed"))
-					}
 					return authAcc
 				}),
 			)

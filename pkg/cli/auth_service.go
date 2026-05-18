@@ -138,23 +138,19 @@ func (s *AuthServiceDefault) LoginCheck(ctx context.Context, email, password str
 // CompleteLogin completes authentication with a final JWT token.
 func (s *AuthServiceDefault) CompleteLogin(ctx context.Context, token, keyName string, noCreateKey bool) error {
 	if noCreateKey {
-		// Save JWT directly without creating API key
 		return s.SaveToken(token)
 	}
 
-	// Create API key with authenticated client
 	authClient := s.clientFactory(s.apiEndpoint, token)
-	apiKey, err := authClient.CreateAPIKey(ctx, keyName)
+	apiKey, err := s.createOrReplaceAPIKey(ctx, authClient, keyName)
 	if err != nil {
-		return fmt.Errorf("failed to create API key: %w", err)
+		return err
 	}
 
-	// Save API key to config
 	if err := s.configMgr.SetAuthToken(apiKey.Token); err != nil {
 		return fmt.Errorf("failed to save API key: %w", err)
 	}
 
-	// Output authentication success with JSON support
 	printAuthSuccess(s.output, s.configMgr, apiKey.Name, true)
 	return nil
 }
@@ -169,25 +165,45 @@ func (s *AuthServiceDefault) LoginWithOTP(ctx context.Context, intermediateJWT, 
 	}
 
 	if noCreateKey {
-		// Save JWT directly without creating API key
 		return s.SaveToken(finalToken)
 	}
 
-	// Create API key with authenticated client
 	authClient := s.clientFactory(s.apiEndpoint, finalToken)
-	apiKey, err := authClient.CreateAPIKey(ctx, keyName)
+	apiKey, err := s.createOrReplaceAPIKey(ctx, authClient, keyName)
 	if err != nil {
-		return fmt.Errorf("failed to create API key: %w", err)
+		return err
 	}
 
-	// Save API key to config
 	if err := s.configMgr.SetAuthToken(apiKey.Token); err != nil {
 		return fmt.Errorf("failed to save API key: %w", err)
 	}
 
-	// Output authentication success with JSON support
 	printAuthSuccess(s.output, s.configMgr, apiKey.Name, true)
 	return nil
+}
+
+// createOrReplaceAPIKey deletes any existing API key with the same name, then creates a new one.
+func (s *AuthServiceDefault) createOrReplaceAPIKey(ctx context.Context, client portalsdk.AccountAPI, keyName string) (*portalsdk.APIKey, error) {
+	keys, _, err := client.ListAPIKeys(ctx, portalsdk.WithSearch(keyName))
+	if err != nil {
+		return nil, fmt.Errorf("failed to list existing API keys: %w", err)
+	}
+
+	for _, key := range keys {
+		if key.Name == keyName {
+			if delErr := client.DeleteAPIKey(ctx, key.Uuid.String()); delErr != nil {
+				return nil, fmt.Errorf("failed to delete existing API key '%s': %w", key.Name, delErr)
+			}
+			s.output.PrintVerbosef("Deleted existing API key '%s' (%s)", key.Name, key.Uuid)
+		}
+	}
+
+	apiKey, err := client.CreateAPIKey(ctx, keyName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create API key: %w", err)
+	}
+
+	return apiKey, nil
 }
 
 // Register creates a new user account.
