@@ -98,9 +98,9 @@ func unpinAll(ctx context.Context, cmd unpinAllCommandGetter, output Output, cfg
 	}
 
 	if dryRun {
-		cids := make([]string, len(pins))
+		items := make([]string, len(pins))
 		for i, pin := range pins {
-			cids[i] = pin.CID
+			items[i] = pin.RequestID
 		}
 		options := map[string]string{
 			DryRunOptionConfirm: "no (using --confirm)",
@@ -123,8 +123,8 @@ func unpinAll(ctx context.Context, cmd unpinAllCommandGetter, output Output, cfg
 		RenderDryRun(output, DryRunPreview{
 			Operation: fmt.Sprintf("unpin-all (%d pins)", len(pins)),
 			Endpoint:  cfgMgr.Config().GetIPFSEndpoint(),
-			Items:     cids,
-			ItemLabel: "CIDs to unpin",
+			Items:     items,
+			ItemLabel: "Request IDs to unpin",
 			Options:   options,
 		})
 		return nil

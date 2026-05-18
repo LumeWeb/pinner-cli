@@ -191,6 +191,7 @@ func TestPinningService_List(t *testing.T) {
 		assert.Len(t, pins, 1)
 		assert.Equal(t, "QmUNLLsPACCz1vLxQVkXqqLX5R1X345qqfHbsf67hvA3Nn", pins[0].CID)
 		assert.Equal(t, "test-name", pins[0].Name)
+		assert.Equal(t, "req-123", pins[0].RequestID)
 	})
 
 	t.Run("returns error when not authenticated", func(t *testing.T) {

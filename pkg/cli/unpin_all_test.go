@@ -42,8 +42,8 @@ func TestUnpinAll(t *testing.T) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
 				service.EXPECT().List(context.Background(), "", 0, "").Return(
 					[]Pin{
-						{CID: "QmXxx1", Name: "test1", Status: "pinned"},
-						{CID: "QmXxx2", Name: "test2", Status: "pinned"},
+						{CID: "QmXxx1", Name: "test1", Status: "pinned", RequestID: "req-1"},
+						{CID: "QmXxx2", Name: "test2", Status: "pinned", RequestID: "req-2"},
 					},
 					nil,
 				)
@@ -69,7 +69,7 @@ func TestUnpinAll(t *testing.T) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
 				service.EXPECT().List(context.Background(), "", 0, "failed").Return(
 					[]Pin{
-						{CID: "QmFailed1", Name: "failed1", Status: "failed"},
+						{CID: "QmFailed1", Name: "failed1", Status: "failed", RequestID: "req-f1"},
 					},
 					nil,
 				)
@@ -108,7 +108,7 @@ func TestUnpinAll(t *testing.T) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
 				service.EXPECT().List(context.Background(), "", 0, "").Return(
 					[]Pin{
-						{CID: "QmXxx1", Name: "test1", Status: "pinned"},
+						{CID: "QmXxx1", Name: "test1", Status: "pinned", RequestID: "req-1"},
 					},
 					nil,
 				)
@@ -137,7 +137,7 @@ func TestUnpinAll(t *testing.T) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
 				service.EXPECT().List(context.Background(), "", 0, "").Return(
 					[]Pin{
-						{CID: "QmXxx1", Name: "test1", Status: "pinned"},
+						{CID: "QmXxx1", Name: "test1", Status: "pinned", RequestID: "req-1"},
 					},
 					nil,
 				)
@@ -179,9 +179,9 @@ func TestUnpinAll(t *testing.T) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
 				service.EXPECT().List(context.Background(), "", 0, "").Return(
 					[]Pin{
-						{CID: "QmXxx1", Name: "test1", Status: "pinned"},
-						{CID: "QmXxx2", Name: "test2", Status: "pinned"},
-						{CID: "QmXxx3", Name: "test3", Status: "pinned"},
+						{CID: "QmXxx1", Name: "test1", Status: "pinned", RequestID: "req-1"},
+						{CID: "QmXxx2", Name: "test2", Status: "pinned", RequestID: "req-2"},
+						{CID: "QmXxx3", Name: "test3", Status: "pinned", RequestID: "req-3"},
 					},
 					nil,
 				)
