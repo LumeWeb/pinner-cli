@@ -657,6 +657,9 @@ func (s *PinningServiceDefault) UnpinAll(ctx context.Context, statusFilter strin
 		p := pin
 		wp.Submit(func() {
 			err := s.pinningClient.DeleteByID(ctx, p.RequestID)
+			if err != nil {
+				err = WrapAuthError("Unpin", err)
+			}
 
 			if progress != nil {
 				progress.Increment()
