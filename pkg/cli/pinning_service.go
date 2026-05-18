@@ -9,11 +9,12 @@ import (
 
 // Pin represents a pinned item
 type Pin struct {
-	CID      string
-	Name     string
-	Status   string
-	Created  string
-	Metadata map[string]string
+	CID       string
+	Name      string
+	Status    string
+	Created   string
+	RequestID string
+	Metadata  map[string]string
 }
 
 // PinStatus represents the status of a pin

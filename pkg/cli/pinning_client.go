@@ -201,11 +201,12 @@ func (s *PinningServiceDefault) List(ctx context.Context, nameFilter string, lim
 	pins := lo.Map(results, func(r go_pinning_service_http_client.PinStatusGetter, _ int) Pin {
 		pin := r.GetPin()
 		return Pin{
-			CID:      pin.GetCid().String(),
-			Name:     pin.GetName(),
-			Status:   r.GetStatus().String(),
-			Created:  r.GetCreated().Format(time.DateTime),
-			Metadata: pin.GetMeta(),
+			CID:       pin.GetCid().String(),
+			Name:      pin.GetName(),
+			Status:    r.GetStatus().String(),
+			Created:   r.GetCreated().Format(time.DateTime),
+			RequestID: r.GetRequestId(),
+			Metadata:  pin.GetMeta(),
 		}
 	})
 
@@ -622,10 +623,75 @@ func (s *PinningServiceDefault) UnpinAll(ctx context.Context, statusFilter strin
 		return &BatchResult{}, nil
 	}
 
-	cids := make([]string, len(pins))
-	for i, pin := range pins {
-		cids[i] = pin.CID
+	parallel := opts.Parallel
+	if parallel <= 0 {
+		parallel = 1
 	}
 
-	return s.UnpinBatch(ctx, cids, opts)
+	startTime := time.Now()
+
+	result := &BatchResult{
+		Total:     len(pins),
+		Succeeded: make([]OperationResult, 0, len(pins)),
+		Failed:    make([]OperationError, 0),
+		Skipped:   make([]string, 0),
+	}
+
+	var mu sync.Mutex
+	var firstError error
+
+	shouldShowProgress := opts.Progress && !s.output.IsJSON() && !s.output.IsQuiet()
+	var progress *BatchProgressTracker
+	if shouldShowProgress {
+		progress = NewBatchProgressTracker(len(pins), true, "Unpinning pins")
+		if err := progress.Start(); err != nil {
+			return nil, err
+		}
+		defer func() { _ = progress.Stop() }()
+	}
+
+	wp := workerpool.New(parallel)
+	defer wp.Stop()
+
+	for _, pin := range pins {
+		p := pin
+		wp.Submit(func() {
+			err := s.pinningClient.DeleteByID(ctx, p.RequestID)
+
+			if progress != nil {
+				progress.Increment()
+			}
+
+			mu.Lock()
+			defer mu.Unlock()
+
+			if err != nil {
+				if opts.ContinueOn {
+					result.Failed = append(result.Failed, OperationError{
+						CID:   p.CID,
+						Error: err.Error(),
+					})
+					return
+				}
+				if firstError == nil {
+					firstError = err
+				}
+				return
+			}
+
+			result.Succeeded = append(result.Succeeded, OperationResult{
+				CID:       p.CID,
+				RequestID: p.RequestID,
+			})
+		})
+	}
+
+	wp.StopWait()
+	result.Duration = time.Since(startTime)
+
+	if firstError != nil {
+		return result, firstError
+	}
+
+	return result, nil
 }
