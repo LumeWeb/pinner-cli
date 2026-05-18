@@ -1,6 +1,7 @@
 package config
 
 import (
+	"net"
 	"net/url"
 	"strings"
 
@@ -262,10 +263,14 @@ func (c *Config) GetAPIEndpoint() string {
 func parseEndpoint(endpoint string) (protocol, domain string) {
 	u, err := url.Parse(endpoint)
 	if err != nil {
-		// If parsing fails, assume it's just a domain
 		return DefaultProtocol, endpoint
 	}
 	if u.Scheme == "" {
+		return DefaultProtocol, endpoint
+	}
+	// Handle host:port without scheme (e.g. "localhost:8080" parses as scheme="localhost", host="")
+	// url.Parse treats "localhost:8080" as scheme=localhost with empty host
+	if u.Host == "" && u.Opaque != "" {
 		return DefaultProtocol, endpoint
 	}
 	return u.Scheme, u.Host
@@ -299,7 +304,7 @@ func getSubdomainEndpoint(base, subdomain string) string {
 func getSubdomainEndpointWithProtocol(base, subdomain string, secure bool) string {
 	_, domain := parseEndpoint(base)
 
-	// Strip port from domain for localhost check
+	// Strip port from domain for subdomain construction
 	host := domain
 	port := ""
 	if u, err := url.Parse("http://" + domain); err == nil {
@@ -309,11 +314,11 @@ func getSubdomainEndpointWithProtocol(base, subdomain string, secure bool) strin
 		}
 	}
 
-	// For localhost/127.0.0.1, preserve the original domain (no subdomain)
-	if host == "localhost" || host == "127.0.0.1" {
+	// For bare IPs (e.g. 127.0.0.1), subdomains are not resolvable — use the IP directly.
+	// For localhost, subdomains are valid (e.g. account.localhost, ipfs.localhost).
+	if net.ParseIP(host) != nil {
 		return buildEndpointWithSecure(host+port, secure)
 	}
 
-	// Add subdomain prefix
 	return buildEndpointWithSecure(subdomain+"."+host+port, secure)
 }
