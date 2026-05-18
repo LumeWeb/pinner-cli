@@ -186,15 +186,15 @@ func (s *AuthServiceDefault) LoginWithOTP(ctx context.Context, intermediateJWT, 
 func (s *AuthServiceDefault) createOrReplaceAPIKey(ctx context.Context, client portalsdk.AccountAPI, keyName string) (*portalsdk.APIKey, error) {
 	keys, _, err := client.ListAPIKeys(ctx, portalsdk.WithSearch(keyName))
 	if err != nil {
-		s.output.PrintVerbosef("Failed to list existing API keys: %v", err)
+		return nil, fmt.Errorf("failed to list existing API keys: %w", err)
 	}
 
 	for _, key := range keys {
 		if key.Name == keyName {
-			s.output.PrintVerbosef("Deleting existing API key '%s' (%s)", key.Name, key.Uuid)
 			if delErr := client.DeleteAPIKey(ctx, key.Uuid.String()); delErr != nil {
-				s.output.PrintVerbosef("Failed to delete existing API key: %v", delErr)
+				return nil, fmt.Errorf("failed to delete existing API key '%s': %w", key.Name, delErr)
 			}
+			s.output.PrintVerbosef("Deleted existing API key '%s' (%s)", key.Name, key.Uuid)
 		}
 	}
 

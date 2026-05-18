@@ -172,6 +172,32 @@ func TestAuthService_CompleteLogin(t *testing.T) {
 			errContains:      "failed to create API key",
 			failCreateAPIKey: true,
 		},
+		{
+			name:        "list API keys fails",
+			token:       "test-jwt-token",
+			keyName:     "test-key",
+			noCreateKey: false,
+			setupMocks: func(cfgMgr *configmocks.MockManager, acc *portalsdkmocks.MockAccountAPI, authAcc *portalsdkmocks.MockAccountAPI) {
+				authAcc.EXPECT().ListAPIKeys(context.Background(), mock.Anything).
+					Return(nil, 0, errors.New("network error"))
+			},
+			wantErr:     true,
+			errContains: "failed to list existing API keys",
+		},
+		{
+			name:        "delete existing API key fails",
+			token:       "test-jwt-token",
+			keyName:     "test-key",
+			noCreateKey: false,
+			setupMocks: func(cfgMgr *configmocks.MockManager, acc *portalsdkmocks.MockAccountAPI, authAcc *portalsdkmocks.MockAccountAPI) {
+				authAcc.EXPECT().ListAPIKeys(context.Background(), mock.Anything).
+					Return([]*portalsdk.APIKey{newAPIKeyWithUUID("test-key", "00000000-0000-0000-0000-000000000001")}, 1, nil)
+				authAcc.EXPECT().DeleteAPIKey(context.Background(), "00000000-0000-0000-0000-000000000001").
+					Return(errors.New("delete failed"))
+			},
+			wantErr:     true,
+			errContains: "failed to delete existing API key",
+		},
 	}
 
 	for _, tt := range tests {
