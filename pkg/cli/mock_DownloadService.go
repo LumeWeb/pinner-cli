@@ -39,8 +39,8 @@ func (_m *MockDownloadService) EXPECT() *MockDownloadService_Expecter {
 }
 
 // Cat provides a mock function for the type MockDownloadService
-func (_mock *MockDownloadService) Cat(ctx context.Context, cidStr string) (io.ReadCloser, error) {
-	ret := _mock.Called(ctx, cidStr)
+func (_mock *MockDownloadService) Cat(ctx context.Context, ipfsPath string) (io.ReadCloser, error) {
+	ret := _mock.Called(ctx, ipfsPath)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Cat")
@@ -49,17 +49,17 @@ func (_mock *MockDownloadService) Cat(ctx context.Context, cidStr string) (io.Re
 	var r0 io.ReadCloser
 	var r1 error
 	if returnFunc, ok := ret.Get(0).(func(context.Context, string) (io.ReadCloser, error)); ok {
-		return returnFunc(ctx, cidStr)
+		return returnFunc(ctx, ipfsPath)
 	}
 	if returnFunc, ok := ret.Get(0).(func(context.Context, string) io.ReadCloser); ok {
-		r0 = returnFunc(ctx, cidStr)
+		r0 = returnFunc(ctx, ipfsPath)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(io.ReadCloser)
 		}
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, string) error); ok {
-		r1 = returnFunc(ctx, cidStr)
+		r1 = returnFunc(ctx, ipfsPath)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -73,12 +73,12 @@ type MockDownloadService_Cat_Call struct {
 
 // Cat is a helper method to define mock.On call
 //   - ctx context.Context
-//   - cidStr string
-func (_e *MockDownloadService_Expecter) Cat(ctx interface{}, cidStr interface{}) *MockDownloadService_Cat_Call {
-	return &MockDownloadService_Cat_Call{Call: _e.mock.On("Cat", ctx, cidStr)}
+//   - ipfsPath string
+func (_e *MockDownloadService_Expecter) Cat(ctx interface{}, ipfsPath interface{}) *MockDownloadService_Cat_Call {
+	return &MockDownloadService_Cat_Call{Call: _e.mock.On("Cat", ctx, ipfsPath)}
 }
 
-func (_c *MockDownloadService_Cat_Call) Run(run func(ctx context.Context, cidStr string)) *MockDownloadService_Cat_Call {
+func (_c *MockDownloadService_Cat_Call) Run(run func(ctx context.Context, ipfsPath string)) *MockDownloadService_Cat_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -101,14 +101,14 @@ func (_c *MockDownloadService_Cat_Call) Return(readCloser io.ReadCloser, err err
 	return _c
 }
 
-func (_c *MockDownloadService_Cat_Call) RunAndReturn(run func(ctx context.Context, cidStr string) (io.ReadCloser, error)) *MockDownloadService_Cat_Call {
+func (_c *MockDownloadService_Cat_Call) RunAndReturn(run func(ctx context.Context, ipfsPath string) (io.ReadCloser, error)) *MockDownloadService_Cat_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // Download provides a mock function for the type MockDownloadService
-func (_mock *MockDownloadService) Download(ctx context.Context, cidStr string, outputPath string, force bool) (*DownloadResult, error) {
-	ret := _mock.Called(ctx, cidStr, outputPath, force)
+func (_mock *MockDownloadService) Download(ctx context.Context, ipfsPath string, outputPath string, force bool) (*DownloadResult, error) {
+	ret := _mock.Called(ctx, ipfsPath, outputPath, force)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Download")
@@ -117,17 +117,17 @@ func (_mock *MockDownloadService) Download(ctx context.Context, cidStr string, o
 	var r0 *DownloadResult
 	var r1 error
 	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, bool) (*DownloadResult, error)); ok {
-		return returnFunc(ctx, cidStr, outputPath, force)
+		return returnFunc(ctx, ipfsPath, outputPath, force)
 	}
 	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, bool) *DownloadResult); ok {
-		r0 = returnFunc(ctx, cidStr, outputPath, force)
+		r0 = returnFunc(ctx, ipfsPath, outputPath, force)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(*DownloadResult)
 		}
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, string, string, bool) error); ok {
-		r1 = returnFunc(ctx, cidStr, outputPath, force)
+		r1 = returnFunc(ctx, ipfsPath, outputPath, force)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -141,14 +141,14 @@ type MockDownloadService_Download_Call struct {
 
 // Download is a helper method to define mock.On call
 //   - ctx context.Context
-//   - cidStr string
+//   - ipfsPath string
 //   - outputPath string
 //   - force bool
-func (_e *MockDownloadService_Expecter) Download(ctx interface{}, cidStr interface{}, outputPath interface{}, force interface{}) *MockDownloadService_Download_Call {
-	return &MockDownloadService_Download_Call{Call: _e.mock.On("Download", ctx, cidStr, outputPath, force)}
+func (_e *MockDownloadService_Expecter) Download(ctx interface{}, ipfsPath interface{}, outputPath interface{}, force interface{}) *MockDownloadService_Download_Call {
+	return &MockDownloadService_Download_Call{Call: _e.mock.On("Download", ctx, ipfsPath, outputPath, force)}
 }
 
-func (_c *MockDownloadService_Download_Call) Run(run func(ctx context.Context, cidStr string, outputPath string, force bool)) *MockDownloadService_Download_Call {
+func (_c *MockDownloadService_Download_Call) Run(run func(ctx context.Context, ipfsPath string, outputPath string, force bool)) *MockDownloadService_Download_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -181,14 +181,14 @@ func (_c *MockDownloadService_Download_Call) Return(downloadResult *DownloadResu
 	return _c
 }
 
-func (_c *MockDownloadService_Download_Call) RunAndReturn(run func(ctx context.Context, cidStr string, outputPath string, force bool) (*DownloadResult, error)) *MockDownloadService_Download_Call {
+func (_c *MockDownloadService_Download_Call) RunAndReturn(run func(ctx context.Context, ipfsPath string, outputPath string, force bool) (*DownloadResult, error)) *MockDownloadService_Download_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // FileSize provides a mock function for the type MockDownloadService
-func (_mock *MockDownloadService) FileSize(ctx context.Context, cidStr string) (int64, error) {
-	ret := _mock.Called(ctx, cidStr)
+func (_mock *MockDownloadService) FileSize(ctx context.Context, ipfsPath string) (int64, error) {
+	ret := _mock.Called(ctx, ipfsPath)
 
 	if len(ret) == 0 {
 		panic("no return value specified for FileSize")
@@ -197,15 +197,15 @@ func (_mock *MockDownloadService) FileSize(ctx context.Context, cidStr string) (
 	var r0 int64
 	var r1 error
 	if returnFunc, ok := ret.Get(0).(func(context.Context, string) (int64, error)); ok {
-		return returnFunc(ctx, cidStr)
+		return returnFunc(ctx, ipfsPath)
 	}
 	if returnFunc, ok := ret.Get(0).(func(context.Context, string) int64); ok {
-		r0 = returnFunc(ctx, cidStr)
+		r0 = returnFunc(ctx, ipfsPath)
 	} else {
 		r0 = ret.Get(0).(int64)
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, string) error); ok {
-		r1 = returnFunc(ctx, cidStr)
+		r1 = returnFunc(ctx, ipfsPath)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -219,12 +219,12 @@ type MockDownloadService_FileSize_Call struct {
 
 // FileSize is a helper method to define mock.On call
 //   - ctx context.Context
-//   - cidStr string
-func (_e *MockDownloadService_Expecter) FileSize(ctx interface{}, cidStr interface{}) *MockDownloadService_FileSize_Call {
-	return &MockDownloadService_FileSize_Call{Call: _e.mock.On("FileSize", ctx, cidStr)}
+//   - ipfsPath string
+func (_e *MockDownloadService_Expecter) FileSize(ctx interface{}, ipfsPath interface{}) *MockDownloadService_FileSize_Call {
+	return &MockDownloadService_FileSize_Call{Call: _e.mock.On("FileSize", ctx, ipfsPath)}
 }
 
-func (_c *MockDownloadService_FileSize_Call) Run(run func(ctx context.Context, cidStr string)) *MockDownloadService_FileSize_Call {
+func (_c *MockDownloadService_FileSize_Call) Run(run func(ctx context.Context, ipfsPath string)) *MockDownloadService_FileSize_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -247,14 +247,14 @@ func (_c *MockDownloadService_FileSize_Call) Return(n int64, err error) *MockDow
 	return _c
 }
 
-func (_c *MockDownloadService_FileSize_Call) RunAndReturn(run func(ctx context.Context, cidStr string) (int64, error)) *MockDownloadService_FileSize_Call {
+func (_c *MockDownloadService_FileSize_Call) RunAndReturn(run func(ctx context.Context, ipfsPath string) (int64, error)) *MockDownloadService_FileSize_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // ListDirectory provides a mock function for the type MockDownloadService
-func (_mock *MockDownloadService) ListDirectory(ctx context.Context, cidStr string) ([]DirEntry, error) {
-	ret := _mock.Called(ctx, cidStr)
+func (_mock *MockDownloadService) ListDirectory(ctx context.Context, ipfsPath string) ([]DirEntry, error) {
+	ret := _mock.Called(ctx, ipfsPath)
 
 	if len(ret) == 0 {
 		panic("no return value specified for ListDirectory")
@@ -263,17 +263,17 @@ func (_mock *MockDownloadService) ListDirectory(ctx context.Context, cidStr stri
 	var r0 []DirEntry
 	var r1 error
 	if returnFunc, ok := ret.Get(0).(func(context.Context, string) ([]DirEntry, error)); ok {
-		return returnFunc(ctx, cidStr)
+		return returnFunc(ctx, ipfsPath)
 	}
 	if returnFunc, ok := ret.Get(0).(func(context.Context, string) []DirEntry); ok {
-		r0 = returnFunc(ctx, cidStr)
+		r0 = returnFunc(ctx, ipfsPath)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]DirEntry)
 		}
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, string) error); ok {
-		r1 = returnFunc(ctx, cidStr)
+		r1 = returnFunc(ctx, ipfsPath)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -287,12 +287,12 @@ type MockDownloadService_ListDirectory_Call struct {
 
 // ListDirectory is a helper method to define mock.On call
 //   - ctx context.Context
-//   - cidStr string
-func (_e *MockDownloadService_Expecter) ListDirectory(ctx interface{}, cidStr interface{}) *MockDownloadService_ListDirectory_Call {
-	return &MockDownloadService_ListDirectory_Call{Call: _e.mock.On("ListDirectory", ctx, cidStr)}
+//   - ipfsPath string
+func (_e *MockDownloadService_Expecter) ListDirectory(ctx interface{}, ipfsPath interface{}) *MockDownloadService_ListDirectory_Call {
+	return &MockDownloadService_ListDirectory_Call{Call: _e.mock.On("ListDirectory", ctx, ipfsPath)}
 }
 
-func (_c *MockDownloadService_ListDirectory_Call) Run(run func(ctx context.Context, cidStr string)) *MockDownloadService_ListDirectory_Call {
+func (_c *MockDownloadService_ListDirectory_Call) Run(run func(ctx context.Context, ipfsPath string)) *MockDownloadService_ListDirectory_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -315,7 +315,7 @@ func (_c *MockDownloadService_ListDirectory_Call) Return(dirEntrys []DirEntry, e
 	return _c
 }
 
-func (_c *MockDownloadService_ListDirectory_Call) RunAndReturn(run func(ctx context.Context, cidStr string) ([]DirEntry, error)) *MockDownloadService_ListDirectory_Call {
+func (_c *MockDownloadService_ListDirectory_Call) RunAndReturn(run func(ctx context.Context, ipfsPath string) ([]DirEntry, error)) *MockDownloadService_ListDirectory_Call {
 	_c.Call.Return(run)
 	return _c
 }

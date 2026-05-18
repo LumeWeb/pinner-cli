@@ -1,0 +1,289 @@
+package cli
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"go.lumeweb.com/pinner-cli/pkg/config"
+	portalsdk "go.lumeweb.com/portal-sdk"
+	"go.lumeweb.com/queryutil"
+	"go.lumeweb.com/queryutil/filter"
+)
+
+type OperationListItem struct {
+	ID                    int
+	Operation             string
+	OperationDisplayName string
+	Protocol              string
+	ProtocolDisplayName   string
+	Status                string
+	StatusDisplayName    string
+	StatusMessage         string
+	CID                   string
+	ProgressPercent       float32
+	StartedAt             string
+	UpdatedAt             string
+	Error                 string
+	CurrentStep           *int
+	TotalSteps            *int
+}
+
+type OperationDetail struct {
+	ID                    int
+	Operation             string
+	OperationDisplayName string
+	Protocol              string
+	ProtocolDisplayName   string
+	Status                string
+	StatusDisplayName    string
+	StatusMessage         string
+	CID                   string
+	ProgressPercent       float32
+	StartedAt             string
+	UpdatedAt             string
+	Error                 string
+	CurrentStep           *int
+	TotalSteps            *int
+}
+
+type OperationsListResult struct {
+	Operations []OperationListItem
+	Total      int
+}
+
+type OperationsService interface {
+	List(ctx context.Context, opts OperationsListOptions) (*OperationsListResult, error)
+	Get(ctx context.Context, id int64) (*OperationDetail, error)
+	Watch(ctx context.Context, id int64) (*OperationDetail, error)
+	RequireAuthenticated() error
+}
+
+type OperationsListOptions struct {
+	StatusFilter string
+	OperationFilter string
+	ProtocolFilter string
+	CIDFilter    string
+	Limit        int
+	Offset       int
+}
+
+type OperationsServiceOption func(*OperationsServiceDefault)
+
+func WithOperationsAccountClient(client portalsdk.AccountAPI) OperationsServiceOption {
+	return func(s *OperationsServiceDefault) {
+		s.accountClient = client
+	}
+}
+
+func WithOperationsAuthService(as AuthService) OperationsServiceOption {
+	return func(s *OperationsServiceDefault) {
+		s.authService = as
+	}
+}
+
+type OperationsServiceFactory func(cfgMgr config.Manager, output Output, authService AuthService) OperationsService
+
+type OperationsServiceDefault struct {
+	accountClient portalsdk.AccountAPI
+	authService   AuthService
+	configMgr     config.Manager
+	output        Output
+}
+
+func NewOperationsService(cfgMgr config.Manager, output Output, authService AuthService, opts ...OperationsServiceOption) OperationsService {
+	s := &OperationsServiceDefault{
+		authService: authService,
+		configMgr:   cfgMgr,
+		output:      output,
+	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
+}
+
+func (s *OperationsServiceDefault) RequireAuthenticated() error {
+	if s.accountClient != nil {
+		return nil
+	}
+	if s.authService == nil {
+		return ErrNotAuthenticated
+	}
+	_, err := s.resolveAccountClient(context.Background())
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *OperationsServiceDefault) resolveAccountClient(ctx context.Context) (portalsdk.AccountAPI, error) {
+	if s.accountClient != nil {
+		return s.accountClient, nil
+	}
+
+	if s.authService == nil {
+		return nil, ErrNotAuthenticated
+	}
+
+	client, err := s.authService.GetAuthenticatedClient(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to authenticate: %w", err)
+	}
+
+	s.accountClient = client
+	return client, nil
+}
+
+func (s *OperationsServiceDefault) List(ctx context.Context, opts OperationsListOptions) (*OperationsListResult, error) {
+	client, err := s.resolveAccountClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var listOpts []portalsdk.ListOption
+
+	var filters []queryutil.CrudFilter
+	if opts.StatusFilter != "" {
+		filters = append(filters, filter.FieldEqual("status", opts.StatusFilter))
+	}
+	if opts.OperationFilter != "" {
+		filters = append(filters, filter.FieldEqual("operation", opts.OperationFilter))
+	}
+	if opts.ProtocolFilter != "" {
+		filters = append(filters, filter.FieldEqual("protocol", opts.ProtocolFilter))
+	}
+	if opts.CIDFilter != "" {
+		filters = append(filters, filter.FieldEqual("cid", opts.CIDFilter))
+	}
+	if len(filters) > 0 {
+		listOpts = append(listOpts, portalsdk.WithFilters(filters...))
+	}
+
+	if opts.Limit > 0 || opts.Offset > 0 {
+		end := 0
+		if opts.Limit > 0 {
+			end = opts.Offset + opts.Limit
+		}
+		listOpts = append(listOpts, portalsdk.WithPagination(&queryutil.Pagination{
+			Start: opts.Offset,
+			End:   end,
+		}))
+	}
+
+	operations, err := client.ListOperations(ctx, listOpts...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list operations: %w", err)
+	}
+
+	result := &OperationsListResult{
+		Operations: make([]OperationListItem, 0, len(operations)),
+		Total:      len(operations),
+	}
+
+	for _, op := range operations {
+		item := OperationListItem{
+			ID:                    op.Id,
+			Operation:             op.Operation,
+			OperationDisplayName:  op.OperationDisplayName,
+			Protocol:              op.Protocol,
+			ProtocolDisplayName:   op.ProtocolDisplayName,
+			Status:                op.Status,
+			StatusDisplayName:     op.StatusDisplayName,
+			StatusMessage:         op.StatusMessage,
+			ProgressPercent:       op.ProgressPercent,
+			StartedAt:             op.StartedAt.Format(time.DateTime),
+			UpdatedAt:             op.UpdatedAt.Format(time.DateTime),
+			CurrentStep:           op.CurrentStep,
+			TotalSteps:            op.TotalSteps,
+		}
+
+		if op.Cid != nil {
+			item.CID = *op.Cid
+		}
+		if op.Error != nil {
+			item.Error = *op.Error
+		}
+
+		result.Operations = append(result.Operations, item)
+	}
+
+	return result, nil
+}
+
+func (s *OperationsServiceDefault) Get(ctx context.Context, id int64) (*OperationDetail, error) {
+	client, err := s.resolveAccountClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	op, err := client.GetOperation(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get operation %d: %w", id, err)
+	}
+
+	detail := &OperationDetail{
+		ID:                    op.Id,
+		Operation:             op.Operation,
+		OperationDisplayName:  op.OperationDisplayName,
+		Protocol:              op.Protocol,
+		ProtocolDisplayName:   op.ProtocolDisplayName,
+		Status:                op.Status,
+		StatusDisplayName:     op.StatusDisplayName,
+		StatusMessage:         op.StatusMessage,
+		ProgressPercent:       op.ProgressPercent,
+		StartedAt:             op.StartedAt.Format(time.RFC3339),
+		UpdatedAt:             op.UpdatedAt.Format(time.RFC3339),
+		CurrentStep:           op.CurrentStep,
+		TotalSteps:            op.TotalSteps,
+	}
+
+	if op.Cid != nil {
+		detail.CID = *op.Cid
+	}
+	if op.Error != nil && *op.Error != "" {
+		detail.Error = *op.Error
+	}
+
+	return detail, nil
+}
+
+func (s *OperationsServiceDefault) Watch(ctx context.Context, id int64) (*OperationDetail, error) {
+	client, err := s.resolveAccountClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	op, err := client.WaitForOperation(ctx, id,
+		portalsdk.WithPollInterval(2*time.Second),
+		portalsdk.WithPollTimeout(5*time.Minute),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to wait for operation %d: %w", id, err)
+	}
+
+	detail := &OperationDetail{
+		ID:                    op.Id,
+		Operation:             op.Operation,
+		OperationDisplayName:  op.OperationDisplayName,
+		Protocol:              op.Protocol,
+		ProtocolDisplayName:   op.ProtocolDisplayName,
+		Status:                op.Status,
+		StatusDisplayName:     op.StatusDisplayName,
+		StatusMessage:         op.StatusMessage,
+		ProgressPercent:       op.ProgressPercent,
+		StartedAt:             op.StartedAt.Format(time.RFC3339),
+		UpdatedAt:             op.UpdatedAt.Format(time.RFC3339),
+		CurrentStep:           op.CurrentStep,
+		TotalSteps:            op.TotalSteps,
+	}
+
+	if op.Cid != nil {
+		detail.CID = *op.Cid
+	}
+	if op.Error != nil && *op.Error != "" {
+		detail.Error = *op.Error
+	}
+
+	return detail, nil
+}
