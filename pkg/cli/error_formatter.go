@@ -39,6 +39,9 @@ var (
 	ErrUploadFailed      = errors.New("upload failed")
 	ErrUploadInterrupted = errors.New("upload interrupted")
 
+	// Download errors
+	ErrDownloadFailed = errors.New("download failed")
+
 	// Network errors
 	ErrNetworkTimeout   = errors.New("network timeout")
 	ErrConnectionFailed = errors.New("connection failed")
@@ -114,6 +117,9 @@ var errorMessages = map[error]string{
 	// Upload errors
 	ErrUploadFailed:      "Upload failed",
 	ErrUploadInterrupted: "Upload interrupted. Try again to resume",
+
+	// Download errors
+	ErrDownloadFailed: "Download failed",
 
 	// Network errors
 	ErrNetworkTimeout:   "Network timeout. Check your connection",

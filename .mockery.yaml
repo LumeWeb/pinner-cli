@@ -20,6 +20,7 @@ packages:
       AuthService: {}
       PinningService: {}
       UploadService: {}
+      DownloadService: {}
       QuotaAdminService: {}
       BillingAdminService: {}
       WebsiteAdminService: {}

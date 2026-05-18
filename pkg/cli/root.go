@@ -26,6 +26,9 @@ via the Pinner.xyz service.
 Common workflows:
   First-time setup:      pinner setup
   Quick upload & pin:    pinner upload myfile.txt
+  Stream content:        pinner cat QmHash
+  Download content:      pinner download QmHash
+  List directory:        pinner ls QmHash
   Pin existing CID:      pinner pin QmHash --name "my file"
   List your pins:        pinner list
   Check pin status:      pinner status QmHash
@@ -49,6 +52,9 @@ For more help on any command: pinner <command> --help`,
 			newConfirmEmailCommand(),
 			newAccountCommand(),
 			newUploadCommand(),
+			newDownloadCommand(),
+			newCatCommand(),
+			newLsCommand(),
 			newPinCommand(),
 			newListCommand(),
 			newStatusCommand(),
