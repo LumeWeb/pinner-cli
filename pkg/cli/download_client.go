@@ -205,13 +205,15 @@ func (s *DownloadServiceDefault) Download(ctx context.Context, ipfsPathStr strin
 	if err != nil {
 		return nil, fmt.Errorf("failed to create output file: %w", err)
 	}
-	defer func() { _ = f.Close() }()
 
 	var written int64
 	written, err = io.Copy(f, reader)
 	if err != nil {
+		_ = f.Close()
+		_ = os.Remove(outputPath)
 		return nil, fmt.Errorf("failed to write file: %w", err)
 	}
+	_ = f.Close()
 
 	duration := time.Since(startTime)
 
