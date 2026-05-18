@@ -118,7 +118,7 @@ func (c *Config) IsAuthenticated() bool {
 // GetBaseEndpoint returns the configured base endpoint, falling back to the default.
 func (c *Config) GetBaseEndpoint() string {
 	if c.BaseEndpoint != "" {
-		return c.BaseEndpoint
+		return ensureScheme(c.BaseEndpoint, c.Secure)
 	}
 	return buildEndpoint(DefaultProtocol, DefaultBaseDomain)
 }
@@ -258,6 +258,24 @@ func (c *Config) GetAPIEndpoint() string {
 	return c.GetAccountEndpoint()
 }
 
+// ensureScheme prepends a scheme to an endpoint if it doesn't have one.
+// url.Parse treats "localhost:8080" as scheme=localhost with empty host,
+// so we detect that case by checking Opaque and host validity.
+func ensureScheme(endpoint string, secure bool) string {
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		return endpoint
+	}
+	if u.Scheme != "" && u.Host != "" {
+		return endpoint
+	}
+	protocol := "http"
+	if secure {
+		protocol = "https"
+	}
+	return protocol + "://" + endpoint
+}
+
 // parseEndpoint extracts protocol and domain from an endpoint URL.
 // Returns protocol (e.g., "https") and domain (e.g., "pinner.xyz").
 func parseEndpoint(endpoint string) (protocol, domain string) {
@@ -268,9 +286,7 @@ func parseEndpoint(endpoint string) (protocol, domain string) {
 	if u.Scheme == "" {
 		return DefaultProtocol, endpoint
 	}
-	// Handle host:port without scheme (e.g. "localhost:8080" parses as scheme="localhost", host="")
-	// url.Parse treats "localhost:8080" as scheme=localhost with empty host
-	if u.Host == "" && u.Opaque != "" {
+	if u.Host == "" {
 		return DefaultProtocol, endpoint
 	}
 	return u.Scheme, u.Host

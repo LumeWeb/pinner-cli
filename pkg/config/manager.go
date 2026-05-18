@@ -70,7 +70,7 @@ func NewManager(configPath string) (Manager, error) {
 	cm.RegisterSource(fileSource)
 	cm.RegisterNamespace("", fileSource)
 
-	defaultSource := source.NewDefaultConfigSource(cm)
+	defaultSource := source.NewDefaultConfigSource(cm, source.WithDefaultSourceGlobal())
 	cm.RegisterSource(defaultSource)
 
 	if err = cm.RegisterStruct("", &Config{}); err != nil {
