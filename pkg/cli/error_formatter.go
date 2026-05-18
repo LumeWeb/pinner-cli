@@ -190,7 +190,7 @@ func WrapAuthError(operation string, err error) error {
 		return nil
 	}
 
-	if errors.Is(err, portalsdk.ErrUnauthorized) {
+	if isBoxoAuthError(err) || errors.Is(err, portalsdk.ErrUnauthorized) {
 		return fmt.Errorf("%s failed - authentication expired or invalid. Run 'pinner auth login' to re-authenticate: %w", operation, ErrNotAuthenticated)
 	}
 
