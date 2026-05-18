@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -141,7 +142,28 @@ func TestPinningService_Pin(t *testing.T) {
 
 		_, err := service.Pin(context.Background(), "QmUNLLsPACCz1vLxQVkXqqLX5R1X345qqfHbsf67hvA3Nn", "", false)
 		require.Error(t, err)
-		assert.True(t, errors.Is(err, ErrPinningFailed))
+		assert.Contains(t, err.Error(), "Pin failed")
+	})
+
+	t.Run("returns auth error when pin gets 401", func(t *testing.T) {
+		cfgMgr := configmocks.NewMockManager(t)
+		cfgMgr.EXPECT().Config().Maybe().Return(&config.Config{
+			AuthToken: testAuthToken,
+		})
+
+		client := climocks.NewMockPinningClient(t)
+
+		client.EXPECT().Add(context.Background(), testCID).Return(
+			nil,
+			fmt.Errorf("remote pinning service returned http error 401: unauthorized"),
+		)
+
+		output := NewOutputFormatter(false, false, false, false)
+		service := NewPinningService(cfgMgr, output, "https://api.test.com", WithPinningClient(client))
+
+		_, err := service.Pin(context.Background(), "QmUNLLsPACCz1vLxQVkXqqLX5R1X345qqfHbsf67hvA3Nn", "", false)
+		require.Error(t, err)
+		assert.True(t, errors.Is(err, ErrNotAuthenticated))
 	})
 }
 
@@ -205,7 +227,28 @@ func TestPinningService_List(t *testing.T) {
 
 		_, err := service.List(context.Background(), "", 0, "")
 		require.Error(t, err)
-		assert.True(t, errors.Is(err, ErrPinningFailed))
+		assert.Contains(t, err.Error(), "List pins failed")
+	})
+
+	t.Run("returns auth error when listing gets 401", func(t *testing.T) {
+		cfgMgr := configmocks.NewMockManager(t)
+		cfgMgr.EXPECT().Config().Maybe().Return(&config.Config{
+			AuthToken: testAuthToken,
+		})
+
+		client := climocks.NewMockPinningClient(t)
+
+		client.EXPECT().LsSync(context.Background(), mock.Anything, mock.Anything).Return(
+			nil,
+			fmt.Errorf("remote pinning service returned http error 401: unauthorized"),
+		)
+
+		output := NewOutputFormatter(false, false, false, false)
+		service := NewPinningService(cfgMgr, output, "https://api.test.com", WithPinningClient(client))
+
+		_, err := service.List(context.Background(), "", 0, "")
+		require.Error(t, err)
+		assert.True(t, errors.Is(err, ErrNotAuthenticated))
 	})
 }
 
@@ -307,6 +350,27 @@ func TestPinningService_Status(t *testing.T) {
 		_, err := service.Status(context.Background(), "QmUNLLsPACCz1vLxQVkXqqLX5R1X345qqfHbsf67hvA3Nn", false)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "Get pin status failed")
+	})
+
+	t.Run("returns error when status check fails with auth error", func(t *testing.T) {
+		cfgMgr := configmocks.NewMockManager(t)
+		cfgMgr.EXPECT().Config().Maybe().Return(&config.Config{
+			AuthToken: testAuthToken,
+		})
+
+		client := climocks.NewMockPinningClient(t)
+
+		client.EXPECT().LsSync(context.Background(), mock.Anything).Return(
+			nil,
+			fmt.Errorf("remote pinning service returned http error 401: unauthorized"),
+		)
+
+		output := NewOutputFormatter(false, false, false, false)
+		service := NewPinningService(cfgMgr, output, "https://api.test.com", WithPinningClient(client))
+
+		_, err := service.Status(context.Background(), "QmUNLLsPACCz1vLxQVkXqqLX5R1X345qqfHbsf67hvA3Nn", false)
+		require.Error(t, err)
+		assert.True(t, errors.Is(err, ErrNotAuthenticated))
 	})
 }
 
@@ -557,7 +621,7 @@ func TestPinningService_UpdateMetadata(t *testing.T) {
 
 		err := service.UpdateMetadata(context.Background(), "QmUNLLsPACCz1vLxQVkXqqLX5R1X345qqfHbsf67hvA3Nn", []string{"key", "value"}, false)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to update metadata")
+		assert.Contains(t, err.Error(), "Update metadata failed")
 	})
 }
 
@@ -653,7 +717,7 @@ func TestPinningService_waitForPinCompletion(t *testing.T) {
 
 		err := service.waitForPinCompletion(context.Background(), "req-123")
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to check pin status")
+		assert.Contains(t, err.Error(), "Check pin status failed")
 	})
 }
 

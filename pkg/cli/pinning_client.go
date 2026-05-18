@@ -2,7 +2,9 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"regexp"
 	"sync"
 	"time"
 
@@ -10,10 +12,13 @@ import (
 	"github.com/ipfs/boxo/pinning/remote/client"
 	"github.com/ipfs/go-cid"
 	"github.com/multiformats/go-multiaddr"
+	portalsdk "go.lumeweb.com/portal-sdk"
 	"github.com/samber/lo"
 	"go.lumeweb.com/pinner-cli/pkg/cli/internal"
 	"go.lumeweb.com/pinner-cli/pkg/config"
 )
+
+var boxoAuthRe = regexp.MustCompile(`http error 40[13]`)
 
 // WrapNetworkError wraps errors with network troubleshooting hints.
 func WrapNetworkError(operation string, err error) error {
@@ -21,6 +26,31 @@ func WrapNetworkError(operation string, err error) error {
 		return nil
 	}
 	return fmt.Errorf("%s failed: %w. Check your internet connection and API endpoint", operation, err)
+}
+
+// isBoxoAuthError checks if an error is a 401 from the boxo pinning client.
+// Boxo returns errors like "remote pinning service returned http error 401: ...".
+func isBoxoAuthError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, portalsdk.ErrUnauthorized) {
+		return true
+	}
+	return boxoAuthRe.MatchString(err.Error())
+}
+
+// wrapPinningError wraps errors from pinning operations with proper auth detection.
+// If the error is a 401, it wraps with ErrNotAuthenticated for clear messaging.
+// Otherwise, it wraps the original error.
+func wrapPinningError(operation string, err error, wrapErr error) error {
+	if err == nil {
+		return nil
+	}
+	if isBoxoAuthError(err) {
+		return fmt.Errorf("%s failed - authentication expired or invalid. Run 'pinner auth login' to re-authenticate: %w", operation, ErrNotAuthenticated)
+	}
+	return fmt.Errorf("%s failed: %w", operation, err)
 }
 
 // PinningServiceOption configures a PinningService.
@@ -132,7 +162,7 @@ func (s *PinningServiceDefault) Pin(ctx context.Context, cidStr, name string, wa
 
 	result, err := s.pinningClient.Add(ctx, parsedCid, opts...)
 	if err != nil {
-		return nil, fmt.Errorf("Pin failed: %w", ErrPinningFailed)
+		return nil, wrapPinningError("Pin", err, ErrPinningFailed)
 	}
 
 	if wait {
@@ -165,7 +195,7 @@ func (s *PinningServiceDefault) List(ctx context.Context, nameFilter string, lim
 
 	results, err := s.pinningClient.LsSync(ctx, opts...)
 	if err != nil {
-		return nil, fmt.Errorf("List pins failed: %w", ErrPinningFailed)
+		return nil, wrapPinningError("List pins", err, ErrPinningFailed)
 	}
 
 	pins := lo.Map(results, func(r go_pinning_service_http_client.PinStatusGetter, _ int) Pin {
@@ -280,7 +310,7 @@ func (s *PinningServiceDefault) UpdateMetadata(ctx context.Context, cidStr strin
 
 	results, err := s.pinningClient.LsSync(ctx, go_pinning_service_http_client.PinOpts.FilterCIDs(parsedCid))
 	if err != nil {
-		return fmt.Errorf("failed to find pin: %w", err)
+		return WrapAuthError("Find pin", err)
 	}
 
 	if len(results) == 0 {
@@ -312,7 +342,7 @@ func (s *PinningServiceDefault) UpdateMetadata(ctx context.Context, cidStr strin
 
 	_, err = s.pinningClient.Replace(ctx, requestID, parsedCid, opts...)
 	if err != nil {
-		return fmt.Errorf("failed to update metadata: %w", err)
+		return WrapAuthError("Update metadata", err)
 	}
 
 	s.output.Printfln("Updated metadata for CID: %s", cidStr)
@@ -333,7 +363,7 @@ func (s *PinningServiceDefault) waitForPinCompletion(ctx context.Context, reques
 		case <-ticker.C:
 			result, err := s.pinningClient.GetStatusByID(ctx, requestID)
 			if err != nil {
-				return fmt.Errorf("%w: %v", ErrStatusCheck, err)
+				return WrapAuthError("Check pin status", err)
 			}
 
 			status := result.GetStatus()
@@ -584,7 +614,7 @@ func (s *PinningServiceDefault) UnpinAll(ctx context.Context, statusFilter strin
 
 	pins, err := s.List(ctx, "", 0, statusFilter)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list pins for unpin-all: %w", err)
+		return nil, err
 	}
 
 	if len(pins) == 0 {
