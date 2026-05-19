@@ -290,7 +290,10 @@ func (ui *PTermWebsitesUI) executeManagedDNSValidation(ctx context.Context, w *W
 				return lastErr
 			}
 			vr := w.ValidationResult()
-			if vr == nil || !vr.Valid {
+			if vr == nil {
+				return fmt.Errorf("validation result unavailable")
+			}
+			if !vr.Valid {
 				return fmt.Errorf("validation incomplete: %s", vr.Message)
 			}
 			return nil
@@ -332,6 +335,9 @@ func (ui *PTermWebsitesUI) executeManagedDNSValidation(ctx context.Context, w *W
 				{"Message", vr.Message},
 			},
 		})
+	} else {
+		pterm.Warning.Println("Validation incomplete")
+		pterm.Println()
 	}
 	w.SetValidateRetry(false)
 	return nil
