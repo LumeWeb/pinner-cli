@@ -70,7 +70,6 @@ const (
 
 // DNS flags
 const (
-	FlagZoneID      = "zone-id"
 	FlagNameservers = "nameservers"
 	FlagContent     = "content"
 	FlagType        = "type"
@@ -416,23 +415,6 @@ func NoDNSHostingFlag() *cli.BoolFlag {
 	return &cli.BoolFlag{
 		Name:  FlagNoDNSHosting,
 		Usage: "Disable DNS hosting for this website",
-	}
-}
-
-// ZoneIDFlag returns a flag for the DNS zone ID.
-func ZoneIDFlag() *cli.StringFlag {
-	return &cli.StringFlag{
-		Name:  FlagZoneID,
-		Usage: "DNS zone ID",
-	}
-}
-
-// RequiredZoneIDFlag returns a required flag for the DNS zone ID.
-func RequiredZoneIDFlag() *cli.StringFlag {
-	return &cli.StringFlag{
-		Name:     FlagZoneID,
-		Usage:    "DNS zone ID",
-		Required: true,
 	}
 }
 
