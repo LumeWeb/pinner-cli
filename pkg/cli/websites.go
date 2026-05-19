@@ -295,14 +295,20 @@ func websitesUpdate(ctx context.Context, cmd *cli.Command, output Output) error 
 
 	req := ipfs.WebsiteUpdateRequest{}
 
-	if domain != "" {
+	if cmd.IsSet(FlagDomain) {
 		req.Domain = &domain
 	}
-	if cid != "" {
+	if cmd.IsSet(FlagCID) {
 		req.TargetHash = &cid
 	}
-	if targetType != "" {
+	if cmd.IsSet(FlagTargetType) {
 		req.TargetType = &targetType
+	}
+
+	if req.TargetType != nil || req.TargetHash != nil {
+		if req.TargetType == nil || req.TargetHash == nil {
+			return fmt.Errorf("--target-type and --cid must both be provided")
+		}
 	}
 
 	if cmd.IsSet(FlagDNSHosting) {
