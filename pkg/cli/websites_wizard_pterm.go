@@ -136,6 +136,39 @@ func (ui *PTermWebsitesUI) ExecuteContentSourceStep(_ context.Context, w *Websit
 	return nil
 }
 
+// ExecuteTargetTypeStep handles the target type selection step.
+func (ui *PTermWebsitesUI) ExecuteTargetTypeStep(_ context.Context, w *WebsitesWizard) error {
+	pterm.Info.Println("Target type")
+	pterm.Println()
+
+	choices := []string{
+		"IPFS (content-addressed, immutable)",
+		"IPNS (mutable name, updates automatically)",
+	}
+
+	prompt := promptui.Select{
+		Label: "What type of content link do you want to use?",
+		Items:  choices,
+	}
+
+	idx, _, err := runSelect(&prompt)
+	if err != nil {
+		return fmt.Errorf("prompt failed: %w", err)
+	}
+
+	pterm.Println()
+
+	if idx == 0 {
+		w.SetTargetType("ipfs")
+		pterm.Success.Println("Target type set to IPFS")
+	} else {
+		w.SetTargetType("ipns")
+		pterm.Success.Println("Target type set to IPNS")
+	}
+
+	return nil
+}
+
 // ExecuteDomainStep handles the domain name step.
 func (ui *PTermWebsitesUI) ExecuteDomainStep(_ context.Context, w *WebsitesWizard) error {
 	pterm.Info.Println("Domain name")
@@ -288,9 +321,14 @@ func (ui *PTermWebsitesUI) showRequiredRecords(w *WebsitesWizard) {
 		pterm.Info.Println("You need to add the following DNS records at your registrar:")
 		pterm.Println()
 
+		targetType := website.TargetType
+		if targetType == "" {
+			targetType = "ipfs"
+		}
+
 		records := [][]string{
 			{website.Domain, "TXT", "lumeweb-verify=" + website.ValidationToken},
-			{"_dnslink." + website.Domain, "TXT", "dnslink=/ipfs/" + website.TargetHash},
+			{"_dnslink." + website.Domain, "TXT", "dnslink=/" + targetType + "/" + website.TargetHash},
 		}
 
 		if website.GatewayDomain != nil && *website.GatewayDomain != "" {

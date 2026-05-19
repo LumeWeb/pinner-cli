@@ -87,9 +87,10 @@ func TestWebsitesWizard_Run(t *testing.T) {
 
 		require.NoError(t, err)
 		require.True(t, result.Completed)
-		require.Equal(t, 7, result.StepsTotal)
+		require.Equal(t, 8, result.StepsTotal)
 		require.Equal(t, "QmTestHash123", w.CID())
 		require.Equal(t, "example.com", w.Domain())
+		require.Equal(t, "ipfs", w.TargetType())
 		require.True(t, w.DNSHosting())
 		require.NotNil(t, w.Website())
 		require.Equal(t, "example.com", w.Website().Domain)
@@ -122,6 +123,62 @@ func TestWebsitesWizard_Run(t *testing.T) {
 		require.Equal(t, "mysite.io", w.Domain())
 		require.False(t, w.DNSHosting())
 		require.NotNil(t, w.Website())
+	})
+
+	t.Run("full wizard with IPNS target type", func(t *testing.T) {
+		cfgMgr := configmocks.NewMockManager(t)
+		mockUI := NewMockWebsitesUI()
+		mockUI.SetContentChoice(ContentChoiceCID)
+		mockUI.SetCIDInput("k51qzi5uqu5djuc6y3wj6zk7hj7mj7o0xqx3r9rp9w8i3xrhil3ci1e1hz8w6m")
+		mockUI.SetTargetChoice(TargetTypeIPNS)
+		mockUI.SetDomainInput("myipns.site")
+		mockUI.SetDNSChoice(DNSModeSelfManaged)
+
+		cfg := &config.Config{
+			AuthToken: "test-token",
+			Secure:    true,
+		}
+		cfgMgr.EXPECT().Config().Return(cfg).Maybe()
+
+		mockWebsitesSvc := &mockWebsitesServiceForCLI{}
+		mockDNSSvc := &mockWebsitesWizardDNSService{}
+
+		w := NewWebsitesWizard(mockWebsitesSvc, mockDNSSvc, cfgMgr, mockUI, NewOutputFormatter(false, false, false, false))
+
+		result, err := w.Run(context.Background())
+
+		require.NoError(t, err)
+		require.True(t, result.Completed)
+		require.Equal(t, "ipns", w.TargetType())
+		require.True(t, mockUI.TargetTypeExecuted)
+		require.NotNil(t, w.Website())
+	})
+
+	t.Run("default target type is ipfs", func(t *testing.T) {
+		cfgMgr := configmocks.NewMockManager(t)
+		mockUI := NewMockWebsitesUI()
+		mockUI.SetContentChoice(ContentChoiceCID)
+		mockUI.SetCIDInput("QmTestHash")
+		mockUI.SetDomainInput("example.com")
+		mockUI.SetDNSChoice(DNSModeSelfManaged)
+
+		cfg := &config.Config{
+			AuthToken: "test-token",
+			Secure:    true,
+		}
+		cfgMgr.EXPECT().Config().Return(cfg).Maybe()
+
+		mockWebsitesSvc := &mockWebsitesServiceForCLI{}
+		mockDNSSvc := &mockWebsitesWizardDNSService{}
+
+		w := NewWebsitesWizard(mockWebsitesSvc, mockDNSSvc, cfgMgr, mockUI, NewOutputFormatter(false, false, false, false))
+
+		result, err := w.Run(context.Background())
+
+		require.NoError(t, err)
+		require.True(t, result.Completed)
+		require.Equal(t, "ipfs", w.TargetType())
+		require.True(t, mockUI.TargetTypeExecuted)
 	})
 
 	t.Run("skip auth step when already authenticated", func(t *testing.T) {
@@ -404,11 +461,13 @@ func TestWebsitesWizard_Setters(t *testing.T) {
 
 	require.Equal(t, "", w.CID())
 	require.Equal(t, "", w.Domain())
+	require.Equal(t, "", w.TargetType())
 	require.False(t, w.DNSHosting())
 	require.Nil(t, w.Website())
 
 	w.SetCID("QmTestHash")
 	w.SetDomain("example.com")
+	w.SetTargetType("ipns")
 	w.SetDNSHosting(true)
 	w.SetWebsite(&ipfs.WebsiteItem{
 		Id:         1,
@@ -418,6 +477,7 @@ func TestWebsitesWizard_Setters(t *testing.T) {
 
 	require.Equal(t, "QmTestHash", w.CID())
 	require.Equal(t, "example.com", w.Domain())
+	require.Equal(t, "ipns", w.TargetType())
 	require.True(t, w.DNSHosting())
 	require.NotNil(t, w.Website())
 	require.Equal(t, "example.com", w.Website().Domain)
@@ -447,6 +507,7 @@ func TestWebsitesWizard_StepCalls(t *testing.T) {
 		require.NoError(t, err)
 
 		require.True(t, mockUI.ContentSourceExecuted)
+		require.True(t, mockUI.TargetTypeExecuted)
 		require.True(t, mockUI.DomainExecuted)
 		require.True(t, mockUI.DNSModeExecuted)
 	})
@@ -464,6 +525,10 @@ func TestWebsitesWizard_UIError(t *testing.T) {
 		{
 			name:   "content source error",
 			errMsg: "content source failed",
+		},
+		{
+			name:   "target type error",
+			errMsg: "target type failed",
 		},
 		{
 			name:   "domain error",
@@ -539,6 +604,7 @@ func TestMockWebsitesUI(t *testing.T) {
 		_ = mock.ShowWelcome()
 		_ = mock.ExecuteAuthCheckStep(context.Background(), nil)
 		_ = mock.ExecuteContentSourceStep(context.Background(), nil)
+		_ = mock.ExecuteTargetTypeStep(context.Background(), nil)
 		_ = mock.ExecuteDomainStep(context.Background(), nil)
 		_ = mock.ExecuteDNSModeStep(context.Background(), nil)
 		_ = mock.ExecuteValidateStep(context.Background(), nil)
@@ -547,8 +613,9 @@ func TestMockWebsitesUI(t *testing.T) {
 		require.Equal(t, "ShowWelcome", calls[0])
 		require.Equal(t, "ExecuteAuthCheckStep", calls[1])
 		require.Equal(t, "ExecuteContentSourceStep", calls[2])
-		require.Equal(t, "ExecuteDomainStep", calls[3])
-		require.Equal(t, "ExecuteDNSModeStep", calls[4])
-		require.Equal(t, "ExecuteValidateStep", calls[5])
+		require.Equal(t, "ExecuteTargetTypeStep", calls[3])
+		require.Equal(t, "ExecuteDomainStep", calls[4])
+		require.Equal(t, "ExecuteDNSModeStep", calls[5])
+		require.Equal(t, "ExecuteValidateStep", calls[6])
 	})
 }

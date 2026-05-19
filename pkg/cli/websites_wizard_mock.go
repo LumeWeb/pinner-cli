@@ -15,11 +15,12 @@ type MockWebsitesUI struct {
 	mu sync.Mutex
 
 	// Track execution choices
-	ContentChoice ContentSourceChoice
-	DNSChoice    DNSModeChoice
-	CIDInput     string
-	DomainInput  string
-	PromptError  error
+	ContentChoice  ContentSourceChoice
+	DNSChoice     DNSModeChoice
+	TargetChoice  TargetTypeChoice
+	CIDInput      string
+	DomainInput   string
+	PromptError   error
 
 	// Control behavior
 	ContinueError error
@@ -27,6 +28,7 @@ type MockWebsitesUI struct {
 	// Track state
 	AuthCheckExecuted      bool
 	ContentSourceExecuted  bool
+	TargetTypeExecuted     bool
 	DomainExecuted         bool
 	DNSModeExecuted        bool
 	ValidateExecuted       bool
@@ -56,6 +58,13 @@ func (m *MockWebsitesUI) SetDNSChoice(choice DNSModeChoice) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.DNSChoice = choice
+}
+
+// SetTargetChoice sets the mock's target type choice response.
+func (m *MockWebsitesUI) SetTargetChoice(choice TargetTypeChoice) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.TargetChoice = choice
 }
 
 // SetCIDInput sets the mock's CID input response.
@@ -119,6 +128,31 @@ func (m *MockWebsitesUI) ExecuteContentSourceStep(_ context.Context, w *Websites
 		}
 	case ContentChoiceExit:
 		return fmt.Errorf("content upload required")
+	}
+
+	return nil
+}
+
+// ExecuteTargetTypeStep implements WebsitesUI.
+func (m *MockWebsitesUI) ExecuteTargetTypeStep(_ context.Context, w *WebsitesWizard) error {
+	m.RecordCall("ExecuteTargetTypeStep")
+	m.mu.Lock()
+	m.TargetTypeExecuted = true
+	retErr := m.ReturnError
+	if retErr != nil {
+		m.ReturnError = nil
+		m.mu.Unlock()
+		return retErr
+	}
+	m.mu.Unlock()
+
+	if w != nil {
+		switch m.TargetChoice {
+		case TargetTypeIPNS:
+			w.SetTargetType("ipns")
+		default:
+			w.SetTargetType("ipfs")
+		}
 	}
 
 	return nil
