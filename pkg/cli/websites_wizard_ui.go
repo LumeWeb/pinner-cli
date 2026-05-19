@@ -13,6 +13,7 @@ type WebsitesUI interface {
 	// Step execution
 	ExecuteAuthCheckStep(ctx context.Context, w *WebsitesWizard) error
 	ExecuteContentSourceStep(ctx context.Context, w *WebsitesWizard) error
+	ExecuteTargetTypeStep(ctx context.Context, w *WebsitesWizard) error
 	ExecuteDomainStep(ctx context.Context, w *WebsitesWizard) error
 	ExecuteDNSModeStep(ctx context.Context, w *WebsitesWizard) error
 	ExecuteValidateStep(ctx context.Context, w *WebsitesWizard) error
@@ -32,4 +33,12 @@ type DNSModeChoice int
 const (
 	DNSModeSelfManaged  DNSModeChoice = iota // User manages DNS themselves
 	DNSModePinnerManaged                     // Pinner manages DNS
+)
+
+// TargetTypeChoice represents user's choice for the target type step.
+type TargetTypeChoice int
+
+const (
+	TargetTypeIPFS TargetTypeChoice = iota // IPFS content addressing (default)
+	TargetTypeIPNS                          // IPNS mutable name
 )

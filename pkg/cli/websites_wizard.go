@@ -20,6 +20,7 @@ type WebsitesWizard struct {
 
 	cid              string
 	domain           string
+	targetType       string
 	dnsHosting       bool
 	website          *ipfs.WebsiteItem
 	validationResult *ipfs.WebsiteValidateResponse
@@ -67,6 +68,12 @@ func (w *WebsitesWizard) getSteps() []wizard.Step[*WebsitesWizard] {
 			},
 		},
 		wizard.StepFunc[*WebsitesWizard]{
+			Name_: "Target Type",
+			ExecuteFunc: func(ctx context.Context, w *WebsitesWizard) error {
+				return w.ui.ExecuteTargetTypeStep(ctx, w)
+			},
+		},
+		wizard.StepFunc[*WebsitesWizard]{
 			Name_: "Domain",
 			ExecuteFunc: func(ctx context.Context, w *WebsitesWizard) error {
 				return w.ui.ExecuteDomainStep(ctx, w)
@@ -108,10 +115,14 @@ func (w *WebsitesWizard) getSteps() []wizard.Step[*WebsitesWizard] {
 // executeCreateWebsite creates the website using the accumulated state.
 func (w *WebsitesWizard) executeCreateWebsite(ctx context.Context) error {
 	dnsHosting := w.DNSHosting()
+	targetType := w.TargetType()
+	if targetType == "" {
+		targetType = "ipfs"
+	}
 	req := ipfs.WebsiteRequest{
 		Domain:      w.Domain(),
 		TargetHash:  w.CID(),
-		TargetType:  "ipfs",
+		TargetType:  targetType,
 		DnsHostingEnabled: &dnsHosting,
 	}
 
@@ -133,6 +144,10 @@ func (w *WebsitesWizard) executeDNSSetup(ctx context.Context) error {
 
 	domain := website.Domain
 	targetHash := website.TargetHash
+	targetType := website.TargetType
+	if targetType == "" {
+		targetType = "ipfs"
+	}
 
 	w.output.Printfln("Setting up DNS hosting for %s...", domain)
 
@@ -149,7 +164,7 @@ func (w *WebsitesWizard) executeDNSSetup(ctx context.Context) error {
 		{
 			Name:    "_dnslink." + domain,
 			Type:    "TXT",
-			Content: "/ipfs/" + targetHash,
+			Content: "/" + targetType + "/" + targetHash,
 			Ttl:     &ttl,
 		},
 		{
@@ -206,6 +221,9 @@ func (w *WebsitesWizard) Domain() string { return w.domain }
 // DNSHosting returns whether DNS hosting is enabled.
 func (w *WebsitesWizard) DNSHosting() bool { return w.dnsHosting }
 
+// TargetType returns the target type (ipfs or ipns).
+func (w *WebsitesWizard) TargetType() string { return w.targetType }
+
 // Website returns the created website.
 func (w *WebsitesWizard) Website() *ipfs.WebsiteItem { return w.website }
 
@@ -238,6 +256,9 @@ func (w *WebsitesWizard) SetDomain(domain string) { w.domain = domain }
 // SetDNSHosting sets whether DNS hosting is enabled.
 func (w *WebsitesWizard) SetDNSHosting(enabled bool) { w.dnsHosting = enabled }
 
+// SetTargetType sets the target type (ipfs or ipns).
+func (w *WebsitesWizard) SetTargetType(targetType string) { w.targetType = targetType }
+
 // SetWebsite sets the created website.
 func (w *WebsitesWizard) SetWebsite(website *ipfs.WebsiteItem) { w.website = website }
 
@@ -261,11 +282,12 @@ func newWebsitesWizardCommand() *cli.Command {
 The wizard will guide you through:
   1. Authentication check
   2. Content source (CID or upload)
-  3. Domain name
-  4. DNS mode (Pinner-managed or self-managed)
-  5. Website creation
-  6. DNS setup (if Pinner-managed)
-  7. Validation
+  3. Target type (IPFS or IPNS)
+  4. Domain name
+  5. DNS mode (Pinner-managed or self-managed)
+  6. Website creation
+  7. DNS setup (if Pinner-managed)
+  8. Validation
 
 Examples:
   pinner websites wizard`,
