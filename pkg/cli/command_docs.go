@@ -6,7 +6,7 @@ import (
 
 const (
 	// DocumentationURL is the URL for the Pinner CLI documentation.
-	DocumentationURL = "https://docs.lumeweb.com"
+	DocumentationURL = "https://docs.pinner.xyz"
 
 	// TutorialCID is a sample v1 CID for use in tutorial examples.
 	TutorialCID = "bafybeie7m2fsbt6sjtn7tymyb6sim7iiyz6szl4ethtn7anzx4frzfzipu"
