@@ -143,7 +143,7 @@ type WebsitesService interface {
 	CreateWithOptions(ctx context.Context, req ipfs.WebsiteRequest) (*ipfs.WebsiteItem, error)
 	Get(ctx context.Context, id string) (*ipfs.WebsiteItem, error)
 	Update(ctx context.Context, id, domain, targetHash, targetType string) (*ipfs.WebsiteItem, error)
-	UpdateWithOptions(ctx context.Context, id string, req ipfs.WebsiteRequest) (*ipfs.WebsiteItem, error)
+	UpdateWithOptions(ctx context.Context, id string, req ipfs.WebsiteUpdateRequest) (*ipfs.WebsiteItem, error)
 	Delete(ctx context.Context, id string) error
 	Validate(ctx context.Context, id string) (*ipfs.WebsiteValidateResponse, error)
 	GetSSLStatus(ctx context.Context, domain string) (*ipfs.WebsiteResponse, error)
@@ -293,10 +293,23 @@ func websitesUpdate(ctx context.Context, cmd *cli.Command, output Output) error 
 		return err
 	}
 
-	req := ipfs.WebsiteRequest{
-		Domain:      domain,
-		TargetHash:  cid,
-		TargetType:  targetType,
+	req := ipfs.WebsiteUpdateRequest{}
+
+	if cmd.IsSet(FlagDomain) {
+		req.Domain = &domain
+	}
+	if cmd.IsSet(FlagCID) {
+		req.TargetHash = &cid
+	}
+	if cmd.IsSet(FlagTargetType) {
+		req.TargetType = &targetType
+	}
+
+	if req.TargetHash != nil && req.TargetType == nil {
+		return fmt.Errorf("--target-type is required when --cid is provided")
+	}
+	if req.TargetType != nil && req.TargetHash == nil {
+		return fmt.Errorf("--cid is required when --target-type is provided")
 	}
 
 	if cmd.IsSet(FlagDNSHosting) {

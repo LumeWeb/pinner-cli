@@ -106,7 +106,7 @@ func (s *websitesService) Update(ctx context.Context, id, domain, targetHash, ta
 }
 
 // UpdateWithOptions updates an existing website with full request options.
-func (s *websitesService) UpdateWithOptions(ctx context.Context, id string, req ipfs.WebsiteRequest) (*ipfs.WebsiteItem, error) {
+func (s *websitesService) UpdateWithOptions(ctx context.Context, id string, req ipfs.WebsiteUpdateRequest) (*ipfs.WebsiteItem, error) {
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}

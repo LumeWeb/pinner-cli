@@ -85,9 +85,21 @@ func (m *mockWebsitesServiceForCLI) Update(ctx context.Context, id, domain, cid,
 	return nil, nil
 }
 
-func (m *mockWebsitesServiceForCLI) UpdateWithOptions(ctx context.Context, id string, req ipfs.WebsiteRequest) (*ipfs.WebsiteItem, error) {
+func (m *mockWebsitesServiceForCLI) UpdateWithOptions(ctx context.Context, id string, req ipfs.WebsiteUpdateRequest) (*ipfs.WebsiteItem, error) {
 	if m.updateFunc != nil {
-		return m.updateFunc(ctx, id, req.Domain, req.TargetHash, req.TargetType)
+		domain := ""
+		if req.Domain != nil {
+			domain = *req.Domain
+		}
+		targetHash := ""
+		if req.TargetHash != nil {
+			targetHash = *req.TargetHash
+		}
+		targetType := ""
+		if req.TargetType != nil {
+			targetType = *req.TargetType
+		}
+		return m.updateFunc(ctx, id, domain, targetHash, targetType)
 	}
 	return nil, nil
 }
