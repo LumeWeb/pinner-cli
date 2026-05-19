@@ -36,11 +36,11 @@ Record operations:
 Examples:
   pinner dns zones list
   pinner dns zones create --domain example.com
-  pinner dns zones get 1
-  pinner dns zones delete 1
-  pinner dns records list --zone-id 1
-  pinner dns records create --zone-id 1 --name www --type CNAME --content example.com
-  pinner dns records delete --zone-id 1 --name www --type CNAME`,
+  pinner dns zones get example.com
+  pinner dns zones delete example.com
+  pinner dns records list example.com
+  pinner dns records create example.com --name www --type CNAME --content example.com
+  pinner dns records delete example.com --name www --type CNAME`,
 		Commands: []*cli.Command{
 			newDNSZonesCommand(),
 			newDNSRecordsCommand(),
@@ -61,8 +61,8 @@ Examples:
   pinner dns zones list --status active
   pinner dns zones create --domain example.com
   pinner dns zones create --domain example.com --nameservers ns1.example.com,ns2.example.com
-  pinner dns zones get 1
-  pinner dns zones delete 1`,
+  pinner dns zones get example.com
+  pinner dns zones delete example.com`,
 		Commands: []*cli.Command{
 			newDNSZonesListCommand(),
 			newDNSZonesCreateCommand(),
@@ -119,13 +119,13 @@ Examples:
 func newDNSZonesGetCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "get",
-		Usage: "Get a DNS zone by ID",
-		Description: `Get details of a specific DNS zone by its ID.
+		Usage: "Get a DNS zone by domain",
+		Description: `Get details of a specific DNS zone by domain name or ID.
 
 Examples:
-  pinner dns zones get 1
-  pinner dns zones get 1 --json`,
-		ArgsUsage: "<id>",
+  pinner dns zones get example.com
+  pinner dns zones get example.com --json`,
+		ArgsUsage: "<domain>",
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			cfgMgr, output, err := setupCommandContext(cmd)
 			if err != nil {
@@ -140,11 +140,11 @@ func newDNSZonesDeleteCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "delete",
 		Usage: "Delete a DNS zone",
-		Description: `Delete a DNS zone and all its records.
+		Description: `Delete a DNS zone and all its records by domain name or ID.
 
 Examples:
-  pinner dns zones delete 1`,
-		ArgsUsage: "<id>",
+  pinner dns zones delete example.com`,
+		ArgsUsage: "<domain>",
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			cfgMgr, output, err := setupCommandContext(cmd)
 			if err != nil {
@@ -164,9 +164,8 @@ This checks that the domain's nameservers point to the expected Pinner.xyz names
 
 Examples:
   pinner dns zones validate example.com
-  pinner dns zones validate 1
   pinner dns zones validate example.com --json`,
-		ArgsUsage: "<domain-or-id>",
+		ArgsUsage: "<domain>",
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			cfgMgr, output, err := setupCommandContext(cmd)
 			if err != nil {
@@ -186,11 +185,11 @@ func newDNSRecordsCommand() *cli.Command {
 		Description: `Manage DNS records for zones.
 
 Examples:
-  pinner dns records list --zone-id 1
-  pinner dns records create --zone-id 1 --name www --type CNAME --content example.com
-  pinner dns records get --zone-id 1 --name www --type CNAME
-  pinner dns records update --zone-id 1 --name www --type CNAME --content new.example.com
-  pinner dns records delete --zone-id 1 --name www --type CNAME`,
+  pinner dns records list example.com
+  pinner dns records create example.com --name www --type CNAME --content example.com
+  pinner dns records get example.com --name www --type CNAME
+  pinner dns records update example.com --name www --type CNAME --content new.example.com
+  pinner dns records delete example.com --name www --type CNAME`,
 		Commands: []*cli.Command{
 			newDNSRecordsListCommand(),
 			newDNSRecordsCreateCommand(),
@@ -205,14 +204,12 @@ func newDNSRecordsListCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "list",
 		Usage: "List DNS records for a zone",
-		Description: `List all DNS records for a specific zone.
+		Description: `List all DNS records for a specific zone by domain name or ID.
 
 Examples:
-  pinner dns records list --zone-id 1
-  pinner dns records list --zone-id 1 --json`,
-		Flags: []cli.Flag{
-			RequiredZoneIDFlag(),
-		},
+  pinner dns records list example.com
+  pinner dns records list example.com --json`,
+		ArgsUsage: "<domain>",
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			cfgMgr, output, err := setupCommandContext(cmd)
 			if err != nil {
@@ -230,11 +227,11 @@ func newDNSRecordsCreateCommand() *cli.Command {
 		Description: `Create a new DNS record in a zone.
 
 Examples:
-  pinner dns records create --zone-id 1 --name www --type CNAME --content example.com
-  pinner dns records create --zone-id 1 --name _dnslink --type TXT --content "/ipfs/QmHash" --ttl 3600
-  pinner dns records create --zone-id 1 --name @ --type A --content 192.168.1.1 --json`,
+  pinner dns records create example.com --name www --type CNAME --content example.com
+  pinner dns records create example.com --name _dnslink --type TXT --content "/ipfs/QmHash" --ttl 3600
+  pinner dns records create example.com --name @ --type A --content 192.168.1.1 --json`,
+		ArgsUsage: "<domain>",
 		Flags: []cli.Flag{
-			ZoneIDFlag(),
 			NameFlag("DNS record name"),
 			TypeFlag(),
 			ContentFlag(),
@@ -258,10 +255,10 @@ func newDNSRecordsGetCommand() *cli.Command {
 		Description: `Get details of a specific DNS record.
 
 Examples:
-  pinner dns records get --zone-id 1 --name www --type CNAME
-  pinner dns records get --zone-id 1 --name www --type CNAME --json`,
+  pinner dns records get example.com --name www --type CNAME
+  pinner dns records get example.com --name www --type CNAME --json`,
+		ArgsUsage: "<domain>",
 		Flags: []cli.Flag{
-			RequiredZoneIDFlag(),
 			RequiredNameFlag("DNS record name"),
 			RequiredTypeFlag(),
 		},
@@ -282,11 +279,11 @@ func newDNSRecordsUpdateCommand() *cli.Command {
 		Description: `Update an existing DNS record.
 
 Examples:
-  pinner dns records update --zone-id 1 --name www --type CNAME --content new.example.com
-  pinner dns records update --zone-id 1 --name www --type CNAME --content new.example.com --ttl 7200
-  pinner dns records update --zone-id 1 --name www --type CNAME --json`,
+  pinner dns records update example.com --name www --type CNAME --content new.example.com
+  pinner dns records update example.com --name www --type CNAME --content new.example.com --ttl 7200
+  pinner dns records update example.com --name www --type CNAME --json`,
+		ArgsUsage: "<domain>",
 		Flags: []cli.Flag{
-			RequiredZoneIDFlag(),
 			RequiredNameFlag("DNS record name"),
 			RequiredTypeFlag(),
 			ContentFlag(),
@@ -310,9 +307,9 @@ func newDNSRecordsDeleteCommand() *cli.Command {
 		Description: `Delete a DNS record from a zone.
 
 Examples:
-  pinner dns records delete --zone-id 1 --name www --type CNAME`,
+  pinner dns records delete example.com --name www --type CNAME`,
+		ArgsUsage: "<domain>",
 		Flags: []cli.Flag{
-			RequiredZoneIDFlag(),
 			RequiredNameFlag("DNS record name"),
 			RequiredTypeFlag(),
 		},
@@ -430,11 +427,12 @@ func dnsZonesCreate(ctx context.Context, cmd *cli.Command, output Output, cfgMgr
 }
 
 func dnsZonesGet(ctx context.Context, cmd *cli.Command, output Output, cfgMgr config.Manager) error {
-	if cmd.NArg() < 1 {
-		return fmt.Errorf("zone ID is required")
+	args := cmd.Args()
+	if args.Len() == 0 {
+		return fmt.Errorf("domain or zone ID is required")
 	}
 
-	id := cmd.Args().Get(0)
+	arg := args.First()
 
 	var dnsService DNSService
 
@@ -451,9 +449,9 @@ func dnsZonesGet(ctx context.Context, cmd *cli.Command, output Output, cfgMgr co
 		return err
 	}
 
-	zone, err := dnsService.GetZone(ctx, id)
+	zone, err := resolveZoneByArg(ctx, dnsService, arg)
 	if err != nil {
-		return fmt.Errorf("failed to get zone: %w", err)
+		return err
 	}
 
 	if output.IsJSON() {
@@ -480,11 +478,12 @@ func dnsZonesGet(ctx context.Context, cmd *cli.Command, output Output, cfgMgr co
 }
 
 func dnsZonesDelete(ctx context.Context, cmd *cli.Command, output Output, cfgMgr config.Manager) error {
-	if cmd.NArg() < 1 {
-		return fmt.Errorf("zone ID is required")
+	args := cmd.Args()
+	if args.Len() == 0 {
+		return fmt.Errorf("domain or zone ID is required")
 	}
 
-	id := cmd.Args().Get(0)
+	arg := args.First()
 
 	var dnsService DNSService
 
@@ -501,21 +500,27 @@ func dnsZonesDelete(ctx context.Context, cmd *cli.Command, output Output, cfgMgr
 		return err
 	}
 
-	err := dnsService.DeleteZone(ctx, id)
+	id, err := resolveZoneID(ctx, dnsService, arg)
+	if err != nil {
+		return err
+	}
+
+	err = dnsService.DeleteZone(ctx, id)
 	if err != nil {
 		return fmt.Errorf("failed to delete zone: %w", err)
 	}
 
-	output.Printfln("DNS zone deleted successfully")
+	output.Printfln("DNS zone %s deleted successfully", arg)
 	return nil
 }
 
 func dnsZonesValidate(ctx context.Context, cmd *cli.Command, output Output, cfgMgr config.Manager) error {
-	if cmd.NArg() < 1 {
+	args := cmd.Args()
+	if args.Len() == 0 {
 		return fmt.Errorf("domain or zone ID is required")
 	}
 
-	arg := cmd.Args().Get(0)
+	arg := args.First()
 
 	var dnsService DNSService
 
@@ -532,9 +537,9 @@ func dnsZonesValidate(ctx context.Context, cmd *cli.Command, output Output, cfgM
 		return err
 	}
 
-	zone, err := resolveZoneID(ctx, dnsService, arg)
+	zone, err := resolveZoneByArg(ctx, dnsService, arg)
 	if err != nil {
-		return fmt.Errorf("failed to find zone: %w", err)
+		return err
 	}
 
 	result, err := dnsService.ValidateZone(ctx, fmt.Sprintf("%d", zone.Id))
@@ -578,27 +583,13 @@ func dnsZonesValidate(ctx context.Context, cmd *cli.Command, output Output, cfgM
 	return nil
 }
 
-func resolveZoneID(ctx context.Context, dnsService DNSService, arg string) (*ipfs.ZoneResponse, error) {
-	if id, err := strconv.Atoi(arg); err == nil {
-		return dnsService.GetZone(ctx, fmt.Sprintf("%d", id))
-	}
-
-	zones, err := dnsService.ListZones(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, z := range zones {
-		if z.Domain == arg {
-			return dnsService.GetZone(ctx, fmt.Sprintf("%d", z.Id))
-		}
-	}
-
-	return nil, fmt.Errorf("zone not found for domain %q", arg)
-}
-
 func dnsRecordsList(ctx context.Context, cmd *cli.Command, output Output, cfgMgr config.Manager) error {
-	zoneID := cmd.String(FlagZoneID)
+	args := cmd.Args()
+	if args.Len() == 0 {
+		return fmt.Errorf("domain or zone ID is required")
+	}
+
+	arg := args.First()
 
 	var dnsService DNSService
 
@@ -612,6 +603,11 @@ func dnsRecordsList(ctx context.Context, cmd *cli.Command, output Output, cfgMgr
 	}
 
 	if err := dnsService.RequireAuthenticated(); err != nil {
+		return err
+	}
+
+	zoneID, err := resolveZoneID(ctx, dnsService, arg)
+	if err != nil {
 		return err
 	}
 
@@ -650,7 +646,12 @@ func dnsRecordsList(ctx context.Context, cmd *cli.Command, output Output, cfgMgr
 }
 
 func dnsRecordsCreate(ctx context.Context, cmd *cli.Command, output Output, cfgMgr config.Manager) error {
-	zoneID := cmd.String(FlagZoneID)
+	args := cmd.Args()
+	if args.Len() == 0 {
+		return fmt.Errorf("domain or zone ID is required")
+	}
+
+	arg := args.First()
 	name := cmd.String(FlagName)
 	recordType := cmd.String(FlagType)
 	content := cmd.String(FlagContent)
@@ -689,6 +690,11 @@ func dnsRecordsCreate(ctx context.Context, cmd *cli.Command, output Output, cfgM
 		return err
 	}
 
+	zoneID, err := resolveZoneID(ctx, dnsService, arg)
+	if err != nil {
+		return err
+	}
+
 	created, err := dnsService.CreateRecord(ctx, zoneID, record)
 	if err != nil {
 		return fmt.Errorf("failed to create record: %w", err)
@@ -715,7 +721,12 @@ func dnsRecordsCreate(ctx context.Context, cmd *cli.Command, output Output, cfgM
 }
 
 func dnsRecordsGet(ctx context.Context, cmd *cli.Command, output Output, cfgMgr config.Manager) error {
-	zoneID := cmd.String(FlagZoneID)
+	args := cmd.Args()
+	if args.Len() == 0 {
+		return fmt.Errorf("domain or zone ID is required")
+	}
+
+	arg := args.First()
 	name := cmd.String(FlagName)
 	recordType := cmd.String(FlagType)
 
@@ -731,6 +742,11 @@ func dnsRecordsGet(ctx context.Context, cmd *cli.Command, output Output, cfgMgr 
 	}
 
 	if err := dnsService.RequireAuthenticated(); err != nil {
+		return err
+	}
+
+	zoneID, err := resolveZoneID(ctx, dnsService, arg)
+	if err != nil {
 		return err
 	}
 
@@ -761,7 +777,12 @@ func dnsRecordsGet(ctx context.Context, cmd *cli.Command, output Output, cfgMgr 
 }
 
 func dnsRecordsUpdate(ctx context.Context, cmd *cli.Command, output Output, cfgMgr config.Manager) error {
-	zoneID := cmd.String(FlagZoneID)
+	args := cmd.Args()
+	if args.Len() == 0 {
+		return fmt.Errorf("domain or zone ID is required")
+	}
+
+	arg := args.First()
 	name := cmd.String(FlagName)
 	recordType := cmd.String(FlagType)
 	content := cmd.String(FlagContent)
@@ -800,6 +821,11 @@ func dnsRecordsUpdate(ctx context.Context, cmd *cli.Command, output Output, cfgM
 		return err
 	}
 
+	zoneID, err := resolveZoneID(ctx, dnsService, arg)
+	if err != nil {
+		return err
+	}
+
 	updated, err := dnsService.UpdateRecord(ctx, zoneID, name, recordType, record)
 	if err != nil {
 		return fmt.Errorf("failed to update record: %w", err)
@@ -826,7 +852,12 @@ func dnsRecordsUpdate(ctx context.Context, cmd *cli.Command, output Output, cfgM
 }
 
 func dnsRecordsDelete(ctx context.Context, cmd *cli.Command, output Output, cfgMgr config.Manager) error {
-	zoneID := cmd.String(FlagZoneID)
+	args := cmd.Args()
+	if args.Len() == 0 {
+		return fmt.Errorf("domain or zone ID is required")
+	}
+
+	arg := args.First()
 	name := cmd.String(FlagName)
 	recordType := cmd.String(FlagType)
 
@@ -845,7 +876,12 @@ func dnsRecordsDelete(ctx context.Context, cmd *cli.Command, output Output, cfgM
 		return err
 	}
 
-	err := dnsService.DeleteRecord(ctx, zoneID, name, recordType)
+	zoneID, err := resolveZoneID(ctx, dnsService, arg)
+	if err != nil {
+		return err
+	}
+
+	err = dnsService.DeleteRecord(ctx, zoneID, name, recordType)
 	if err != nil {
 		return fmt.Errorf("failed to delete record: %w", err)
 	}
@@ -854,7 +890,37 @@ func dnsRecordsDelete(ctx context.Context, cmd *cli.Command, output Output, cfgM
 	return nil
 }
 
-// ===== HELPER FUNCTIONS =====
+// ===== HELPERS =====
+
+// resolveZoneID resolves a domain name or numeric ID to a zone ID string.
+// If arg is numeric, it's returned as-is. Otherwise, it searches by domain via ListZones.
+func resolveZoneID(ctx context.Context, dnsService DNSService, arg string) (string, error) {
+	if _, err := strconv.Atoi(arg); err == nil {
+		return arg, nil
+	}
+
+	zones, err := dnsService.ListZones(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to look up zone by domain: %w", err)
+	}
+
+	for _, z := range zones {
+		if z.Domain == arg {
+			return fmt.Sprintf("%d", z.Id), nil
+		}
+	}
+
+	return "", fmt.Errorf("zone not found for domain %q", arg)
+}
+
+// resolveZoneByArg resolves a domain name or numeric ID to a full ZoneResponse.
+func resolveZoneByArg(ctx context.Context, dnsService DNSService, arg string) (*ipfs.ZoneResponse, error) {
+	id, err := resolveZoneID(ctx, dnsService, arg)
+	if err != nil {
+		return nil, err
+	}
+	return dnsService.GetZone(ctx, id)
+}
 
 func validateDomain(domain string) error {
 	if domain == "" {
