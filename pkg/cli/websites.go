@@ -114,9 +114,17 @@ func newWebsitesUpdateCommand() *cli.Command {
 
 At least one of the optional fields must be provided to update the website.
 
+When --target-type is set to "ipns" without --cid, the website will be converted
+from IPFS to IPNS targeting (an IPNS key is auto-created and the current CID is
+published to it).
+
+When --target-type is "ipns" and --cid is a regular IPFS CID (not a peer ID),
+an IPNS key is auto-created and that CID is published to it.
+
 Examples:
-  pinner websites update example.com --cid QmNewHash
   pinner websites update example.com --cid QmNewHash --target-type ipfs
+  pinner websites update example.com --target-type ipns
+  pinner websites update example.com --cid QmNewHash --target-type ipns
   pinner websites update example.com --dns-hosting
   pinner websites update example.com --no-dns-hosting
   pinner websites update example.com --json`,
@@ -307,9 +315,6 @@ func websitesUpdate(ctx context.Context, cmd *cli.Command, output Output) error 
 
 	if req.TargetHash != nil && req.TargetType == nil {
 		return fmt.Errorf("--target-type is required when --cid is provided")
-	}
-	if req.TargetType != nil && req.TargetHash == nil {
-		return fmt.Errorf("--cid is required when --target-type is provided")
 	}
 
 	if cmd.IsSet(FlagDNSHosting) {
