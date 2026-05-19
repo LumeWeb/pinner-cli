@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/urfave/cli/v3"
 	ipfs "go.lumeweb.com/ipfs-sdk"
-	"go.lumeweb.com/pinner-cli/pkg/config"
 )
 
 func newWebsitesCommand() *cli.Command {
@@ -325,12 +325,6 @@ func websitesUpdate(ctx context.Context, cmd *cli.Command, output Output) error 
 		return err
 	}
 
-	if updatedWebsite.DnsHostingEnabled {
-		if err := setupDNSHosting(ctx, cfgMgr, output, updatedWebsite); err != nil {
-			output.Printfln("Warning: Failed to setup DNS hosting: %v", err)
-		}
-	}
-
 	if output.IsJSON() {
 		return output.PrintJSON(updatedWebsite)
 	}
@@ -358,13 +352,9 @@ func websitesUpdate(ctx context.Context, cmd *cli.Command, output Output) error 
 		})
 	}
 
-	if updatedWebsite.GatewayDomain != nil && *updatedWebsite.GatewayDomain != "" {
-		output.Printfln("")
-		output.Printfln("CNAME record to point your domain to the gateway:")
-		output.PrintTable([]string{"NAME", "TYPE", "VALUE"}, [][]string{
-			{updatedWebsite.Domain, "CNAME", *updatedWebsite.GatewayDomain},
-		})
-	}
+	nameservers := getNameservers(ctx, websitesService)
+	output.Printfln("")
+	showDNSRecordInstructions(output, updatedWebsite, nameservers)
 
 	if updatedWebsite.Expired {
 		output.Printfln("")
@@ -442,13 +432,9 @@ func websitesGet(ctx context.Context, cmd *cli.Command, output Output) error {
 
 	output.PrintFields(FieldGroup{Fields: fields})
 
-	if website.GatewayDomain != nil && *website.GatewayDomain != "" {
-		output.Printfln("")
-		output.Printfln("CNAME record to point your domain to the gateway:")
-		output.PrintTable([]string{"NAME", "TYPE", "VALUE"}, [][]string{
-			{website.Domain, "CNAME", *website.GatewayDomain},
-		})
-	}
+	nameservers := getNameservers(ctx, websitesService)
+	output.Printfln("")
+	showDNSRecordInstructions(output, website, nameservers)
 
 	if website.Expired {
 		output.Printfln("")
@@ -513,12 +499,6 @@ func websitesCreate(ctx context.Context, cmd *cli.Command, output Output) error 
 		return err
 	}
 
-	if createdWebsite.DnsHostingEnabled {
-		if err := setupDNSHosting(ctx, cfgMgr, output, createdWebsite); err != nil {
-			output.Printfln("Warning: Failed to setup DNS hosting: %v", err)
-		}
-	}
-
 	if output.IsJSON() {
 		return output.PrintJSON(createdWebsite)
 	}
@@ -549,7 +529,8 @@ func websitesCreate(ctx context.Context, cmd *cli.Command, output Output) error 
 	output.Printfln("Validation token: %s", createdWebsite.ValidationToken)
 	output.Printfln("")
 
-	showDNSRecordInstructions(output, createdWebsite)
+	nameservers := getNameservers(ctx, websitesService)
+	showDNSRecordInstructions(output, createdWebsite, nameservers)
 
 	output.Printfln("")
 	output.Printfln("Validate: pinner websites validate %s", createdWebsite.Domain)
@@ -562,20 +543,56 @@ func websitesCreate(ctx context.Context, cmd *cli.Command, output Output) error 
 	return nil
 }
 
+// getNameservers fetches the nameservers from the website hosting config.
+func getNameservers(ctx context.Context, websitesService WebsitesService) []string {
+	cfg, err := websitesService.GetConfig(ctx)
+	if err != nil || cfg == nil || cfg.Nameservers == nil {
+		return nil
+	}
+	return *cfg.Nameservers
+}
+
 // showDNSRecordInstructions displays the DNS records a user needs to add for their website.
-func showDNSRecordInstructions(output Output, website *ipfs.WebsiteItem) {
+func showDNSRecordInstructions(output Output, website *ipfs.WebsiteItem, nameservers []string) {
 	if website == nil {
 		return
 	}
 
+	if website.DnsHostingEnabled {
+		showDNSHostingInstructions(output, website, nameservers)
+		output.Printfln("Then validate: pinner dns zones validate %s", website.Domain)
+		return
+	}
+
+	showSelfManagedDNSInstructions(output, website)
+}
+
+// showDNSHostingInstructions displays NS delegation instructions when DNS hosting is enabled.
+func showDNSHostingInstructions(output Output, website *ipfs.WebsiteItem, nameservers []string) {
+	output.Printfln("DNS hosting is enabled — Pinner manages your DNS records.")
+	output.Printfln("Update your domain's nameservers at your registrar:")
+
+	if len(nameservers) > 0 {
+		rows := make([][]string, len(nameservers))
+		for i, ns := range nameservers {
+			rows[i] = []string{website.Domain, "NS", ns}
+		}
+		output.PrintTable([]string{"NAME", "TYPE", "VALUE"}, rows)
+	} else {
+		output.Printfln("  Use: pinner websites config")
+		output.Printfln("  To find the required nameservers.")
+	}
+
+	output.Printfln("")
+}
+
+// showSelfManagedDNSInstructions displays required DNS records for self-managed DNS.
+func showSelfManagedDNSInstructions(output Output, website *ipfs.WebsiteItem) {
 	output.Printfln("Required DNS records:")
 
 	records := [][]string{
 		{website.Domain, "TXT", "lumeweb-verify=" + website.ValidationToken},
-	}
-
-	if !website.DnsHostingEnabled {
-		records = append(records, []string{"_dnslink." + website.Domain, "TXT", "dnslink=/" + website.TargetType + "/" + website.TargetHash})
+		{"_dnslink." + website.Domain, "TXT", "dnslink=/" + website.TargetType + "/" + website.TargetHash},
 	}
 
 	if website.GatewayDomain != nil && *website.GatewayDomain != "" {
@@ -585,55 +602,25 @@ func showDNSRecordInstructions(output Output, website *ipfs.WebsiteItem) {
 	output.PrintTable([]string{"NAME", "TYPE", "VALUE"}, records)
 }
 
-// setupDNSHosting creates a DNS zone and auto-created records for a website
-func setupDNSHosting(ctx context.Context, cfgMgr config.Manager, output Output, website *ipfs.WebsiteItem) error {
-	dnsService := defaultDNSServiceFactory(cfgMgr, output)
-
-	domain := website.Domain
-	targetHash := website.TargetHash
-
-	output.Printfln("Setting up DNS hosting for %s...", domain)
-
-	zone, err := dnsService.CreateZone(ctx, domain, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create DNS zone: %w", err)
+// showConfigDNSRecords displays DNS record tables from the website hosting config.
+func showConfigDNSRecords(output Output, config *ipfs.WebsiteConfigResponse) {
+	if config.GatewayDomain != nil && *config.GatewayDomain != "" {
+		output.Printfln("")
+		output.Printfln("CNAME record to point your domain to the gateway:")
+		output.PrintTable([]string{"NAME", "TYPE", "VALUE"}, [][]string{
+			{"<your-domain>", "CNAME", *config.GatewayDomain},
+		})
 	}
 
-	output.Printfln("  ✓ Created DNS zone (ID: %d, Status: %s)", zone.Id, zone.Status)
-
-	ttl := 3600
-
-	records := []ipfs.RecordRequest{
-		{
-			Name:    "_dnslink." + domain,
-			Type:    "TXT",
-			Content: "/ipfs/" + targetHash,
-			Ttl:     &ttl,
-		},
-		{
-			Name:    domain,
-			Type:    "TXT",
-			Content: "lumeweb-verify=" + website.ValidationToken,
-			Ttl:     &ttl,
-		},
-		{
-			Name:    "www." + domain,
-			Type:    "CNAME",
-			Content: domain,
-			Ttl:     &ttl,
-		},
-	}
-
-	for _, record := range records {
-		created, err := dnsService.CreateRecord(ctx, domain, record)
-		if err != nil {
-			output.Printfln("  ✗ Failed to create record %s %s: %v", record.Name, record.Type, err)
-			continue
+	if config.Nameservers != nil && len(*config.Nameservers) > 0 {
+		output.Printfln("")
+		output.Printfln("NS records for DNS hosting (delegate your domain's nameservers):")
+		rows := make([][]string, len(*config.Nameservers))
+		for i, ns := range *config.Nameservers {
+			rows[i] = []string{"<your-domain>", "NS", ns}
 		}
-		output.Printfln("  ✓ Created DNS record: %s %s", created.Name, created.Type)
+		output.PrintTable([]string{"NAME", "TYPE", "VALUE"}, rows)
 	}
-
-	return nil
 }
 
 func newWebsitesDeleteCommand() *cli.Command {
@@ -778,7 +765,8 @@ func doWebsitesValidate(ctx context.Context, cmd interface{ Args() cli.Args }, o
 		}
 
 		if website != nil {
-			result["required_records"] = buildRequiredRecords(website)
+			nameservers := getNameservers(ctx, websitesService)
+			result["required_records"] = buildRequiredRecords(website, nameservers)
 		}
 
 		return output.PrintJSON(result)
@@ -788,7 +776,8 @@ func doWebsitesValidate(ctx context.Context, cmd interface{ Args() cli.Args }, o
 		output.Printfln("Validation failed: %s", validateErr)
 		output.Printfln("")
 		if website != nil {
-			showDNSRecordInstructions(output, website)
+			nameservers := getNameservers(ctx, websitesService)
+			showDNSRecordInstructions(output, website, nameservers)
 		}
 		output.Printfln("")
 		output.Printfln("Re-validate after adding the records: pinner websites validate %s", arg)
@@ -814,7 +803,8 @@ func doWebsitesValidate(ctx context.Context, cmd interface{ Args() cli.Args }, o
 	if !validationResult.Valid {
 		output.Printfln("")
 		if website != nil {
-			showDNSRecordInstructions(output, website)
+			nameservers := getNameservers(ctx, websitesService)
+			showDNSRecordInstructions(output, website, nameservers)
 		} else {
 			output.Printfln("Make sure you have added the required DNS records to your domain")
 			output.Printfln("View website details: pinner websites get %s", arg)
@@ -827,20 +817,24 @@ func doWebsitesValidate(ctx context.Context, cmd interface{ Args() cli.Args }, o
 }
 
 // buildRequiredRecords returns the DNS records a user needs to add for their website.
-func buildRequiredRecords(website *ipfs.WebsiteItem) []map[string]string {
+func buildRequiredRecords(website *ipfs.WebsiteItem, nameservers []string) []map[string]string {
 	if website == nil {
 		return nil
 	}
 
-	records := []map[string]string{
-		{"name": website.Domain, "type": "TXT", "value": "lumeweb-verify=" + website.ValidationToken},
+	if website.DnsHostingEnabled {
+		records := []map[string]string{}
+		for _, ns := range nameservers {
+			records = append(records, map[string]string{
+				"name": website.Domain, "type": "NS", "value": ns,
+			})
+		}
+		return records
 	}
 
-	if !website.DnsHostingEnabled {
-		records = append(records, map[string]string{
-			"name": "_dnslink." + website.Domain, "type": "TXT",
-			"value": "dnslink=/" + website.TargetType + "/" + website.TargetHash,
-		})
+	records := []map[string]string{
+		{"name": website.Domain, "type": "TXT", "value": "lumeweb-verify=" + website.ValidationToken},
+		{"name": "_dnslink." + website.Domain, "type": "TXT", "value": "dnslink=/" + website.TargetType + "/" + website.TargetHash},
 	}
 
 	if website.GatewayDomain != nil && *website.GatewayDomain != "" {
@@ -903,19 +897,21 @@ func websitesConfig(ctx context.Context, cmd *cli.Command, output Output) error 
 
 	output.Printfln("Website Hosting Configuration")
 
+	fields := []Field{}
 	if config.GatewayDomain != nil && *config.GatewayDomain != "" {
-		output.PrintFields(FieldGroup{
-			Fields: []Field{
-				{"Gateway Domain", *config.GatewayDomain},
-			},
-		})
-		output.Printfln("")
-		output.Printfln("CNAME record to point your domain to the gateway:")
-		output.PrintTable([]string{"NAME", "TYPE", "VALUE"}, [][]string{
-			{"<your-domain>", "CNAME", *config.GatewayDomain},
-		})
-	} else {
-		output.Printfln("  No gateway domain configured")
+		fields = append(fields, Field{"Gateway Domain", *config.GatewayDomain})
+	}
+	if config.Nameservers != nil && len(*config.Nameservers) > 0 {
+		fields = append(fields, Field{"Nameservers", strings.Join(*config.Nameservers, ", ")})
+	}
+	if len(fields) > 0 {
+		output.PrintFields(FieldGroup{Fields: fields})
+	}
+
+	showConfigDNSRecords(output, config)
+
+	if len(fields) == 0 {
+		output.Printfln("  No gateway domain or nameservers configured")
 	}
 
 	return nil
