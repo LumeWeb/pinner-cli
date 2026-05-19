@@ -11,58 +11,6 @@ import (
 	ipfs "go.lumeweb.com/ipfs-sdk"
 )
 
-// mockWebsitesWizardDNSService is a minimal mock DNSService for wizard tests.
-type mockWebsitesWizardDNSService struct {
-	createZoneFunc   func(ctx context.Context, domain string, nameservers []string) (*ipfs.ZoneResponse, error)
-	createRecordFunc func(ctx context.Context, id string, record ipfs.RecordRequest) (*ipfs.RecordResponse, error)
-}
-
-func (m *mockWebsitesWizardDNSService) RequireAuthenticated() error { return nil }
-
-func (m *mockWebsitesWizardDNSService) CreateZone(ctx context.Context, domain string, nameservers []string) (*ipfs.ZoneResponse, error) {
-	if m.createZoneFunc != nil {
-		return m.createZoneFunc(ctx, domain, nameservers)
-	}
-	return &ipfs.ZoneResponse{Id: 1, Domain: domain, Status: "active"}, nil
-}
-
-func (m *mockWebsitesWizardDNSService) ListZones(_ context.Context) ([]ipfs.ZoneListResponse, error) {
-	return nil, nil
-}
-
-func (m *mockWebsitesWizardDNSService) GetZone(_ context.Context, _ string) (*ipfs.ZoneResponse, error) {
-	return nil, nil
-}
-
-func (m *mockWebsitesWizardDNSService) DeleteZone(_ context.Context, _ string) error { return nil }
-
-func (m *mockWebsitesWizardDNSService) ValidateZone(_ context.Context, _ string) (*ipfs.ValidationResponse, error) {
-	return nil, nil
-}
-
-func (m *mockWebsitesWizardDNSService) CreateRecord(ctx context.Context, id string, record ipfs.RecordRequest) (*ipfs.RecordResponse, error) {
-	if m.createRecordFunc != nil {
-		return m.createRecordFunc(ctx, id, record)
-	}
-	return &ipfs.RecordResponse{ZoneId: 1, Name: record.Name, Type: record.Type, Content: record.Content}, nil
-}
-
-func (m *mockWebsitesWizardDNSService) ListRecords(_ context.Context, _ string) ([]ipfs.RecordResponse, error) {
-	return nil, nil
-}
-
-func (m *mockWebsitesWizardDNSService) GetRecord(_ context.Context, _, _, _ string) (*ipfs.RecordResponse, error) {
-	return nil, nil
-}
-
-func (m *mockWebsitesWizardDNSService) UpdateRecord(_ context.Context, _, _, _ string, _ ipfs.RecordRequest) (*ipfs.RecordResponse, error) {
-	return nil, nil
-}
-
-func (m *mockWebsitesWizardDNSService) DeleteRecord(_ context.Context, _, _, _ string) error {
-	return nil
-}
-
 func TestWebsitesWizard_Run(t *testing.T) {
 	t.Run("full wizard with pinner-managed DNS", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
@@ -79,9 +27,8 @@ func TestWebsitesWizard_Run(t *testing.T) {
 		cfgMgr.EXPECT().Config().Return(cfg).Maybe()
 
 		mockWebsitesSvc := &mockWebsitesServiceForCLI{}
-		mockDNSSvc := &mockWebsitesWizardDNSService{}
 
-		w := NewWebsitesWizard(mockWebsitesSvc, mockDNSSvc, cfgMgr, mockUI, NewOutputFormatter(false, false, false, false))
+		w := NewWebsitesWizard(mockWebsitesSvc, cfgMgr, mockUI, NewOutputFormatter(false, false, false, false))
 
 		result, err := w.Run(context.Background())
 
@@ -111,9 +58,8 @@ func TestWebsitesWizard_Run(t *testing.T) {
 		cfgMgr.EXPECT().Config().Return(cfg).Maybe()
 
 		mockWebsitesSvc := &mockWebsitesServiceForCLI{}
-		mockDNSSvc := &mockWebsitesWizardDNSService{}
 
-		w := NewWebsitesWizard(mockWebsitesSvc, mockDNSSvc, cfgMgr, mockUI, NewOutputFormatter(false, false, false, false))
+		w := NewWebsitesWizard(mockWebsitesSvc, cfgMgr, mockUI, NewOutputFormatter(false, false, false, false))
 
 		result, err := w.Run(context.Background())
 
@@ -141,9 +87,8 @@ func TestWebsitesWizard_Run(t *testing.T) {
 		cfgMgr.EXPECT().Config().Return(cfg).Maybe()
 
 		mockWebsitesSvc := &mockWebsitesServiceForCLI{}
-		mockDNSSvc := &mockWebsitesWizardDNSService{}
 
-		w := NewWebsitesWizard(mockWebsitesSvc, mockDNSSvc, cfgMgr, mockUI, NewOutputFormatter(false, false, false, false))
+		w := NewWebsitesWizard(mockWebsitesSvc, cfgMgr, mockUI, NewOutputFormatter(false, false, false, false))
 
 		result, err := w.Run(context.Background())
 
@@ -169,9 +114,8 @@ func TestWebsitesWizard_Run(t *testing.T) {
 		cfgMgr.EXPECT().Config().Return(cfg).Maybe()
 
 		mockWebsitesSvc := &mockWebsitesServiceForCLI{}
-		mockDNSSvc := &mockWebsitesWizardDNSService{}
 
-		w := NewWebsitesWizard(mockWebsitesSvc, mockDNSSvc, cfgMgr, mockUI, NewOutputFormatter(false, false, false, false))
+		w := NewWebsitesWizard(mockWebsitesSvc, cfgMgr, mockUI, NewOutputFormatter(false, false, false, false))
 
 		result, err := w.Run(context.Background())
 
@@ -196,9 +140,8 @@ func TestWebsitesWizard_Run(t *testing.T) {
 		cfgMgr.EXPECT().Config().Return(cfg).Maybe()
 
 		mockWebsitesSvc := &mockWebsitesServiceForCLI{}
-		mockDNSSvc := &mockWebsitesWizardDNSService{}
 
-		w := NewWebsitesWizard(mockWebsitesSvc, mockDNSSvc, cfgMgr, mockUI, NewOutputFormatter(false, false, false, false))
+		w := NewWebsitesWizard(mockWebsitesSvc, cfgMgr, mockUI, NewOutputFormatter(false, false, false, false))
 
 		result, err := w.Run(context.Background())
 
@@ -219,9 +162,8 @@ func TestWebsitesWizard_Run(t *testing.T) {
 		cfgMgr.EXPECT().Config().Return(cfg).Maybe()
 
 		mockWebsitesSvc := &mockWebsitesServiceForCLI{}
-		mockDNSSvc := &mockWebsitesWizardDNSService{}
 
-		w := NewWebsitesWizard(mockWebsitesSvc, mockDNSSvc, cfgMgr, mockUI, NewOutputFormatter(false, false, false, false))
+		w := NewWebsitesWizard(mockWebsitesSvc, cfgMgr, mockUI, NewOutputFormatter(false, false, false, false))
 
 		_, err := w.Run(context.Background())
 
@@ -241,9 +183,8 @@ func TestWebsitesWizard_Run(t *testing.T) {
 		cfgMgr.EXPECT().Config().Return(cfg).Maybe()
 
 		mockWebsitesSvc := &mockWebsitesServiceForCLI{}
-		mockDNSSvc := &mockWebsitesWizardDNSService{}
 
-		w := NewWebsitesWizard(mockWebsitesSvc, mockDNSSvc, cfgMgr, mockUI, NewOutputFormatter(false, false, false, false))
+		w := NewWebsitesWizard(mockWebsitesSvc, cfgMgr, mockUI, NewOutputFormatter(false, false, false, false))
 
 		_, err := w.Run(context.Background())
 
@@ -266,9 +207,8 @@ func TestWebsitesWizard_Run(t *testing.T) {
 		cfgMgr.EXPECT().Config().Return(cfg).Maybe()
 
 		mockWebsitesSvc := &mockWebsitesServiceForCLI{}
-		mockDNSSvc := &mockWebsitesWizardDNSService{}
 
-		w := NewWebsitesWizard(mockWebsitesSvc, mockDNSSvc, cfgMgr, mockUI, NewOutputFormatter(false, false, false, false))
+		w := NewWebsitesWizard(mockWebsitesSvc, cfgMgr, mockUI, NewOutputFormatter(false, false, false, false))
 
 		result, err := w.Run(context.Background())
 
@@ -296,9 +236,8 @@ func TestWebsitesWizard_Run(t *testing.T) {
 				return nil, errors.New("create failed")
 			},
 		}
-		mockDNSSvc := &mockWebsitesWizardDNSService{}
 
-		w := NewWebsitesWizard(mockWebsitesSvc, mockDNSSvc, cfgMgr, mockUI, NewOutputFormatter(false, false, false, false))
+		w := NewWebsitesWizard(mockWebsitesSvc, cfgMgr, mockUI, NewOutputFormatter(false, false, false, false))
 
 		_, err := w.Run(context.Background())
 
@@ -330,9 +269,8 @@ func TestWebsitesWizard_Run(t *testing.T) {
 				}, nil
 			},
 		}
-		mockDNSSvc := &mockWebsitesWizardDNSService{}
 
-		w := NewWebsitesWizard(mockWebsitesSvc, mockDNSSvc, cfgMgr, mockUI, NewOutputFormatter(false, false, false, false))
+		w := NewWebsitesWizard(mockWebsitesSvc, cfgMgr, mockUI, NewOutputFormatter(false, false, false, false))
 
 		result, err := w.Run(context.Background())
 
@@ -367,9 +305,8 @@ func TestWebsitesWizard_Run(t *testing.T) {
 				}, nil
 			},
 		}
-		mockDNSSvc := &mockWebsitesWizardDNSService{}
 
-		w := NewWebsitesWizard(mockWebsitesSvc, mockDNSSvc, cfgMgr, mockUI, NewOutputFormatter(false, false, false, false))
+		w := NewWebsitesWizard(mockWebsitesSvc, cfgMgr, mockUI, NewOutputFormatter(false, false, false, false))
 
 		result, err := w.Run(context.Background())
 
@@ -409,9 +346,8 @@ func TestWebsitesWizard_Run(t *testing.T) {
 				}, nil
 			},
 		}
-		mockDNSSvc := &mockWebsitesWizardDNSService{}
 
-		w := NewWebsitesWizard(mockWebsitesSvc, mockDNSSvc, cfgMgr, mockUI, NewOutputFormatter(false, false, false, false))
+		w := NewWebsitesWizard(mockWebsitesSvc, cfgMgr, mockUI, NewOutputFormatter(false, false, false, false))
 
 		result, err := w.Run(context.Background())
 
@@ -435,14 +371,12 @@ func TestWebsitesWizard_Accessors(t *testing.T) {
 	mockUI := NewMockWebsitesUI()
 	output := NewOutputFormatter(false, false, false, false)
 	mockWebsitesSvc := &mockWebsitesServiceForCLI{}
-	mockDNSSvc := &mockWebsitesWizardDNSService{}
 
-	w := NewWebsitesWizard(mockWebsitesSvc, mockDNSSvc, cfgMgr, mockUI, output)
+	w := NewWebsitesWizard(mockWebsitesSvc, cfgMgr, mockUI, output)
 
 	require.Equal(t, cfgMgr, w.ConfigManager())
 	require.Equal(t, output, w.Output())
 	require.Equal(t, mockWebsitesSvc, w.WebsitesService())
-	require.Equal(t, mockDNSSvc, w.DNSService())
 }
 
 func TestWebsitesWizard_Setters(t *testing.T) {
@@ -455,9 +389,8 @@ func TestWebsitesWizard_Setters(t *testing.T) {
 
 	mockUI := NewMockWebsitesUI()
 	mockWebsitesSvc := &mockWebsitesServiceForCLI{}
-	mockDNSSvc := &mockWebsitesWizardDNSService{}
 
-	w := NewWebsitesWizard(mockWebsitesSvc, mockDNSSvc, cfgMgr, mockUI, NewOutputFormatter(false, false, false, false))
+	w := NewWebsitesWizard(mockWebsitesSvc, cfgMgr, mockUI, NewOutputFormatter(false, false, false, false))
 
 	require.Equal(t, "", w.CID())
 	require.Equal(t, "", w.Domain())
@@ -499,9 +432,8 @@ func TestWebsitesWizard_StepCalls(t *testing.T) {
 		cfgMgr.EXPECT().Config().Return(cfg).Maybe()
 
 		mockWebsitesSvc := &mockWebsitesServiceForCLI{}
-		mockDNSSvc := &mockWebsitesWizardDNSService{}
 
-		w := NewWebsitesWizard(mockWebsitesSvc, mockDNSSvc, cfgMgr, mockUI, NewOutputFormatter(false, false, false, false))
+		w := NewWebsitesWizard(mockWebsitesSvc, cfgMgr, mockUI, NewOutputFormatter(false, false, false, false))
 
 		_, err := w.Run(context.Background())
 		require.NoError(t, err)
@@ -553,9 +485,8 @@ func TestWebsitesWizard_UIError(t *testing.T) {
 			cfgMgr.EXPECT().Config().Return(cfg).Maybe()
 
 			mockWebsitesSvc := &mockWebsitesServiceForCLI{}
-			mockDNSSvc := &mockWebsitesWizardDNSService{}
 
-			w := NewWebsitesWizard(mockWebsitesSvc, mockDNSSvc, cfgMgr, mockUI, NewOutputFormatter(false, false, false, false))
+			w := NewWebsitesWizard(mockWebsitesSvc, cfgMgr, mockUI, NewOutputFormatter(false, false, false, false))
 
 			_, err := w.Run(context.Background())
 			require.Error(t, err)
@@ -576,8 +507,7 @@ func TestMockWebsitesUI(t *testing.T) {
 		cfgMgr.EXPECT().Config().Return(cfg).Maybe()
 
 		mockWebsitesSvc := &mockWebsitesServiceForCLI{}
-		mockDNSSvc := &mockWebsitesWizardDNSService{}
-		w := NewWebsitesWizard(mockWebsitesSvc, mockDNSSvc, cfgMgr, mock, NewOutputFormatter(false, false, false, false))
+		w := NewWebsitesWizard(mockWebsitesSvc, cfgMgr, mock, NewOutputFormatter(false, false, false, false))
 
 		_ = mock.ExecuteAuthCheckStep(context.Background(), w)
 

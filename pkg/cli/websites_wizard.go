@@ -13,7 +13,6 @@ import (
 // WebsitesWizard manages the website creation wizard.
 type WebsitesWizard struct {
 	websitesService WebsitesService
-	dnsService      DNSService
 	cfgMgr          config.Manager
 	ui              WebsitesUI
 	output          Output
@@ -30,14 +29,12 @@ type WebsitesWizard struct {
 // NewWebsitesWizard creates a new websites wizard.
 func NewWebsitesWizard(
 	websitesService WebsitesService,
-	dnsService DNSService,
 	cfgMgr config.Manager,
 	ui WebsitesUI,
 	output Output,
 ) *WebsitesWizard {
 	return &WebsitesWizard{
 		websitesService: websitesService,
-		dnsService:      dnsService,
 		cfgMgr:          cfgMgr,
 		ui:              ui,
 		output:          output,
@@ -135,60 +132,17 @@ func (w *WebsitesWizard) executeCreateWebsite(ctx context.Context) error {
 	return nil
 }
 
-// executeDNSSetup sets up DNS hosting for the website.
+// executeDNSSetup informs the user about NS delegation for DNS hosting.
+// The server creates the DNS zone and records automatically when the website
+// is created with DnsHostingEnabled=true, so no manual record creation is needed.
 func (w *WebsitesWizard) executeDNSSetup(ctx context.Context) error {
 	website := w.Website()
 	if website == nil {
 		return fmt.Errorf("website not created yet")
 	}
 
-	domain := website.Domain
-	targetHash := website.TargetHash
-	targetType := website.TargetType
-	if targetType == "" {
-		targetType = "ipfs"
-	}
-
-	w.output.Printfln("Setting up DNS hosting for %s...", domain)
-
-	zone, err := w.dnsService.CreateZone(ctx, domain, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create DNS zone: %w", err)
-	}
-
-	w.output.Printfln("  ✓ Created DNS zone (ID: %d, Status: %s)", zone.Id, zone.Status)
-
-	ttl := 3600
-
-	records := []ipfs.RecordRequest{
-		{
-			Name:    "_dnslink." + domain,
-			Type:    "TXT",
-			Content: "/" + targetType + "/" + targetHash,
-			Ttl:     &ttl,
-		},
-		{
-			Name:    domain,
-			Type:    "TXT",
-			Content: "lumeweb-verify=" + website.ValidationToken,
-			Ttl:     &ttl,
-		},
-		{
-			Name:    "www." + domain,
-			Type:    "CNAME",
-			Content: domain,
-			Ttl:     &ttl,
-		},
-	}
-
-	for _, record := range records {
-		created, err := w.dnsService.CreateRecord(ctx, domain, record)
-		if err != nil {
-			w.output.Printfln("  ✗ Failed to create record %s %s: %v", record.Name, record.Type, err)
-			continue
-		}
-		w.output.Printfln("  ✓ Created DNS record: %s %s", created.Name, created.Type)
-	}
+	nameservers := getNameservers(ctx, w.websitesService)
+	showDNSHostingInstructions(w.output, website, nameservers)
 
 	return nil
 }
@@ -235,9 +189,6 @@ func (w *WebsitesWizard) ValidateRetry() bool { return w.validateRetry }
 
 // WebsitesService returns the websites service.
 func (w *WebsitesWizard) WebsitesService() WebsitesService { return w.websitesService }
-
-// DNSService returns the DNS service.
-func (w *WebsitesWizard) DNSService() DNSService { return w.dnsService }
 
 // ConfigManager returns the config manager.
 func (w *WebsitesWizard) ConfigManager() config.Manager { return w.cfgMgr }
@@ -314,11 +265,10 @@ func runWebsitesWizard(ctx context.Context, cmd *cli.Command, output Output) err
 		websitesService = defaultWebsitesServiceFactory(cfgMgr, output)
 	}
 
-	dnsService := defaultDNSServiceFactory(cfgMgr, output)
-
 	ui := NewPTermWebsitesUI(output)
 
-	w := NewWebsitesWizard(websitesService, dnsService, cfgMgr, ui, output)
+	w := NewWebsitesWizard(websitesService, cfgMgr, ui, output)
+	ui.SetWizard(w)
 
 	result, err := w.Run(ctx)
 	if err != nil {
@@ -329,7 +279,6 @@ func runWebsitesWizard(ctx context.Context, cmd *cli.Command, output Output) err
 		website := w.Website()
 		if website != nil {
 			output.Printfln("")
-			output.Printfln("Website created successfully!")
 			output.PrintFields(FieldGroup{
 				Fields: []Field{
 					{"ID", fmt.Sprintf("%d", website.Id)},
@@ -338,24 +287,6 @@ func runWebsitesWizard(ctx context.Context, cmd *cli.Command, output Output) err
 					{"DNS Hosting", fmt.Sprintf("%t", website.DnsHostingEnabled)},
 				},
 			})
-
-			if website.GatewayDomain != nil && *website.GatewayDomain != "" {
-				output.Printfln("")
-				output.Printfln("CNAME record to point your domain to the gateway:")
-				output.PrintTable([]string{"NAME", "TYPE", "VALUE"}, [][]string{
-					{website.Domain, "CNAME", *website.GatewayDomain},
-				})
-			}
-
-			vr := w.ValidationResult()
-			if vr != nil && vr.Valid {
-				output.Printfln("")
-				output.Printfln("Website is validated and ready to go!")
-			} else if vr != nil && !vr.Valid {
-				output.Printfln("")
-				output.Printfln("Validation incomplete: %s", vr.Message)
-				output.Printfln("  Re-validate: pinner websites validate %s", website.Domain)
-			}
 		}
 	}
 
