@@ -306,7 +306,7 @@ func websitesUpdate(ctx context.Context, cmd *cli.Command, output Output) error 
 	}
 
 	if req.TargetHash != nil && req.TargetType == nil {
-		req.TargetType = &targetType
+		return fmt.Errorf("--target-type is required when --cid is provided")
 	}
 	if req.TargetType != nil && req.TargetHash == nil {
 		return fmt.Errorf("--cid is required when --target-type is provided")
