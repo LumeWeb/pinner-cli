@@ -305,10 +305,11 @@ func websitesUpdate(ctx context.Context, cmd *cli.Command, output Output) error 
 		req.TargetType = &targetType
 	}
 
-	if req.TargetType != nil || req.TargetHash != nil {
-		if req.TargetType == nil || req.TargetHash == nil {
-			return fmt.Errorf("--target-type and --cid must both be provided")
-		}
+	if req.TargetHash != nil && req.TargetType == nil {
+		req.TargetType = &targetType
+	}
+	if req.TargetType != nil && req.TargetHash == nil {
+		return fmt.Errorf("--cid is required when --target-type is provided")
 	}
 
 	if cmd.IsSet(FlagDNSHosting) {
