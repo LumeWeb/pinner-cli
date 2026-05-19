@@ -39,6 +39,7 @@ Examples:
 			newWebsitesCreateCommand(),
 			newWebsitesGetCommand(),
 			newWebsitesUpdateCommand(),
+			newWebsitesEnableIPNSCommand(),
 			newWebsitesDeleteCommand(),
 			newWebsitesValidateCommand(),
 			newWebsitesSSLCommand(),
@@ -158,13 +159,13 @@ type WebsitesService interface {
 	GetConfig(ctx context.Context) (*ipfs.WebsiteConfigResponse, error)
 }
 
-func websitesList(ctx context.Context, cmd *cli.Command, output Output) error {
+func initWebsitesService(ctx context.Context, cmd *cli.Command, output Output) (context.Context, context.CancelFunc, WebsitesService, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
 
 	cfgMgr, err := defaultConfigManagerFactory()
 	if err != nil {
-		return err
+		cancel()
+		return ctx, func() {}, nil, err
 	}
 
 	var websitesService WebsitesService
@@ -177,8 +178,53 @@ func websitesList(ctx context.Context, cmd *cli.Command, output Output) error {
 	}
 
 	if err := websitesService.RequireAuthenticated(); err != nil {
+		cancel()
+		return ctx, func() {}, nil, err
+	}
+
+	return ctx, cancel, websitesService, nil
+}
+
+func resolveRequiredArg(ctx context.Context, websitesService WebsitesService, cmd *cli.Command) (string, error) {
+	args := cmd.Args()
+	if args.Len() == 0 {
+		return "", fmt.Errorf("website ID or domain is required")
+	}
+
+	return resolveWebsiteID(ctx, websitesService, args.First())
+}
+
+func printWebsiteUpdateResult(output Output, website *ipfs.WebsiteItem, message string) {
+	output.Printf("%s\n", message)
+
+	fields := []Field{
+		{"ID", fmt.Sprintf("%d", website.Id)},
+		{"Domain", website.Domain},
+		{"CID", website.TargetHash},
+		{"Target Type", website.TargetType},
+		{"Status", website.Status},
+		{"DNS Hosting", fmt.Sprintf("%t", website.DnsHostingEnabled)},
+		{"Expired", fmt.Sprintf("%t", website.Expired)},
+		{"Created", website.Created.Format("2006-01-02 15:04:05")},
+	}
+
+	output.PrintFields(FieldGroup{Fields: fields})
+
+	if website.GatewayDomain != nil {
+		output.PrintFields(FieldGroup{
+			Fields: []Field{
+				{"Gateway", *website.GatewayDomain},
+			},
+		})
+	}
+}
+
+func websitesList(ctx context.Context, cmd *cli.Command, output Output) error {
+	ctx, cancel, websitesService, err := initWebsitesService(ctx, cmd, output)
+	if err != nil {
 		return err
 	}
+	defer cancel()
 
 	websites, err := websitesService.List(ctx)
 	if err != nil {
@@ -261,35 +307,13 @@ func resolveAndGetWebsite(ctx context.Context, websitesService WebsitesService, 
 }
 
 func websitesUpdate(ctx context.Context, cmd *cli.Command, output Output) error {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
-	cfgMgr, err := defaultConfigManagerFactory()
+	ctx, cancel, websitesService, err := initWebsitesService(ctx, cmd, output)
 	if err != nil {
 		return err
 	}
+	defer cancel()
 
-	var websitesService WebsitesService
-	authToken := GetAuthToken(cmd, cfgMgr)
-	secure := GetSecureSetting(cmd, cfgMgr)
-	if authToken != "" {
-		websitesService = NewWebsitesService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure))
-	} else {
-		websitesService = defaultWebsitesServiceFactory(cfgMgr, output)
-	}
-
-	if err := websitesService.RequireAuthenticated(); err != nil {
-		return err
-	}
-
-	args := cmd.Args()
-	if args.Len() == 0 {
-		return fmt.Errorf("website ID or domain is required")
-	}
-
-	arg := args.First()
-
-	id, err := resolveWebsiteID(ctx, websitesService, arg)
+	id, err := resolveRequiredArg(ctx, websitesService, cmd)
 	if err != nil {
 		return err
 	}
@@ -334,28 +358,7 @@ func websitesUpdate(ctx context.Context, cmd *cli.Command, output Output) error 
 		return output.PrintJSON(updatedWebsite)
 	}
 
-	output.Printfln("Website updated successfully")
-
-	output.PrintFields(FieldGroup{
-		Fields: []Field{
-			{"ID", fmt.Sprintf("%d", updatedWebsite.Id)},
-			{"Domain", updatedWebsite.Domain},
-			{"CID", updatedWebsite.TargetHash},
-			{"Target Type", updatedWebsite.TargetType},
-			{"Status", updatedWebsite.Status},
-			{"DNS Hosting", fmt.Sprintf("%t", updatedWebsite.DnsHostingEnabled)},
-			{"Expired", fmt.Sprintf("%t", updatedWebsite.Expired)},
-			{"Created", updatedWebsite.Created.Format("2006-01-02 15:04:05")},
-		},
-	})
-
-	if updatedWebsite.GatewayDomain != nil {
-		output.PrintFields(FieldGroup{
-			Fields: []Field{
-				{"Gateway", *updatedWebsite.GatewayDomain},
-			},
-		})
-	}
+	printWebsiteUpdateResult(output, updatedWebsite, "Website updated successfully")
 
 	nameservers := getNameservers(ctx, websitesService)
 	output.Printfln("")
@@ -370,36 +373,82 @@ func websitesUpdate(ctx context.Context, cmd *cli.Command, output Output) error 
 	return nil
 }
 
-func websitesGet(ctx context.Context, cmd *cli.Command, output Output) error {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+func newWebsitesEnableIPNSCommand() *cli.Command {
+	return &cli.Command{
+		Name:    "enable-ipns",
+		Aliases: []string{"ipns"},
+		Usage:   "Enable IPNS targeting for a website",
+		Description: `Convert a website from IPFS to IPNS targeting.
+
+An IPNS key will be auto-created and the current CID will be published to it.
+This enables content-addressed updates without changing the domain's DNS records.
+
+If --cid is provided, the IPNS key will publish that CID instead of the current one.
+
+Examples:
+  pinner websites enable-ipns example.com
+  pinner websites enable-ipns example.com --cid QmNewHash
+  pinner websites enable-ipns example.com --json`,
+		ArgsUsage: "<domain>",
+		Flags: []cli.Flag{
+			CIDFlag(),
+		},
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			output := setupOutput(cmd)
+			return websitesEnableIPNS(ctx, cmd, output)
+		},
+	}
+}
+
+func websitesEnableIPNS(ctx context.Context, cmd *cli.Command, output Output) error {
+	ctx, cancel, websitesService, err := initWebsitesService(ctx, cmd, output)
+	if err != nil {
+		return err
+	}
 	defer cancel()
 
-	cfgMgr, err := defaultConfigManagerFactory()
+	id, err := resolveRequiredArg(ctx, websitesService, cmd)
 	if err != nil {
 		return err
 	}
 
-	var websitesService WebsitesService
-	authToken := GetAuthToken(cmd, cfgMgr)
-	secure := GetSecureSetting(cmd, cfgMgr)
-	if authToken != "" {
-		websitesService = NewWebsitesService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure))
-	} else {
-		websitesService = defaultWebsitesServiceFactory(cfgMgr, output)
+	ipnsType := "ipns"
+	req := ipfs.WebsiteUpdateRequest{
+		TargetType: &ipnsType,
 	}
 
-	if err := websitesService.RequireAuthenticated(); err != nil {
+	if cmd.IsSet(FlagCID) {
+		cid := cmd.String(FlagCID)
+		req.TargetHash = &cid
+	}
+
+	updatedWebsite, err := websitesService.UpdateWithOptions(ctx, id, req)
+	if err != nil {
 		return err
 	}
 
-	args := cmd.Args()
-	if args.Len() == 0 {
-		return fmt.Errorf("website ID or domain is required")
+	if output.IsJSON() {
+		return output.PrintJSON(updatedWebsite)
 	}
 
-	arg := args.First()
+	printWebsiteUpdateResult(output, updatedWebsite, "IPNS enabled for website")
 
-	website, err := resolveAndGetWebsite(ctx, websitesService, arg)
+	return nil
+}
+
+func websitesGet(ctx context.Context, cmd *cli.Command, output Output) error {
+	ctx, cancel, websitesService, err := initWebsitesService(ctx, cmd, output)
+	if err != nil {
+		return err
+	}
+	defer cancel()
+
+	id, err := resolveRequiredArg(ctx, websitesService, cmd)
+	if err != nil {
+		return err
+	}
+
+	website, err := websitesService.Get(ctx, id)
 	if err != nil {
 		return err
 	}
@@ -451,26 +500,11 @@ func websitesGet(ctx context.Context, cmd *cli.Command, output Output) error {
 }
 
 func websitesCreate(ctx context.Context, cmd *cli.Command, output Output) error {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
-	cfgMgr, err := defaultConfigManagerFactory()
+	ctx, cancel, websitesService, err := initWebsitesService(ctx, cmd, output)
 	if err != nil {
 		return err
 	}
-
-	var websitesService WebsitesService
-	authToken := GetAuthToken(cmd, cfgMgr)
-	secure := GetSecureSetting(cmd, cfgMgr)
-	if authToken != "" {
-		websitesService = NewWebsitesService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure))
-	} else {
-		websitesService = defaultWebsitesServiceFactory(cfgMgr, output)
-	}
-
-	if err := websitesService.RequireAuthenticated(); err != nil {
-		return err
-	}
+	defer cancel()
 
 	args := cmd.Args()
 	if args.Len() == 0 {
@@ -663,35 +697,13 @@ Examples:
 }
 
 func websitesDelete(ctx context.Context, cmd *cli.Command, output Output) error {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
-	cfgMgr, err := defaultConfigManagerFactory()
+	ctx, cancel, websitesService, err := initWebsitesService(ctx, cmd, output)
 	if err != nil {
 		return err
 	}
+	defer cancel()
 
-	var websitesService WebsitesService
-	authToken := GetAuthToken(cmd, cfgMgr)
-	secure := GetSecureSetting(cmd, cfgMgr)
-	if authToken != "" {
-		websitesService = NewWebsitesService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure))
-	} else {
-		websitesService = defaultWebsitesServiceFactory(cfgMgr, output)
-	}
-
-	if err := websitesService.RequireAuthenticated(); err != nil {
-		return err
-	}
-
-	args := cmd.Args()
-	if args.Len() == 0 {
-		return fmt.Errorf("website ID or domain is required")
-	}
-
-	arg := args.First()
-
-	id, err := resolveWebsiteID(ctx, websitesService, arg)
+	id, err := resolveRequiredArg(ctx, websitesService, cmd)
 	if err != nil {
 		return err
 	}
@@ -703,33 +715,22 @@ func websitesDelete(ctx context.Context, cmd *cli.Command, output Output) error 
 	if output.IsJSON() {
 		result := map[string]any{
 			"success": true,
-			"message": fmt.Sprintf("Website %s deleted successfully", arg),
+			"message": fmt.Sprintf("Website %s deleted successfully", id),
 		}
 		return output.PrintJSON(result)
 	}
 
-	output.Printfln("Website %s deleted successfully", arg)
+	output.Printfln("Website deleted successfully")
 
 	return nil
 }
 
 func websitesValidate(ctx context.Context, cmd *cli.Command, output Output) error {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
-	cfgMgr, err := defaultConfigManagerFactory()
+	ctx, cancel, websitesService, err := initWebsitesService(ctx, cmd, output)
 	if err != nil {
 		return err
 	}
-
-	var websitesService WebsitesService
-	authToken := GetAuthToken(cmd, cfgMgr)
-	secure := GetSecureSetting(cmd, cfgMgr)
-	if authToken != "" {
-		websitesService = NewWebsitesService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure))
-	} else {
-		websitesService = defaultWebsitesServiceFactory(cfgMgr, output)
-	}
+	defer cancel()
 
 	return doWebsitesValidate(ctx, cmd, output, websitesService)
 }
@@ -870,22 +871,11 @@ Examples:
 }
 
 func websitesConfig(ctx context.Context, cmd *cli.Command, output Output) error {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
-	cfgMgr, err := defaultConfigManagerFactory()
+	ctx, cancel, websitesService, err := initWebsitesService(ctx, cmd, output)
 	if err != nil {
 		return err
 	}
-
-	var websitesService WebsitesService
-	authToken := GetAuthToken(cmd, cfgMgr)
-	secure := GetSecureSetting(cmd, cfgMgr)
-	if authToken != "" {
-		websitesService = NewWebsitesService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure))
-	} else {
-		websitesService = defaultWebsitesServiceFactory(cfgMgr, output)
-	}
+	defer cancel()
 
 	if err := websitesService.RequireAuthenticated(); err != nil {
 		return err

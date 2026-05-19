@@ -15,14 +15,15 @@ import (
 
 // mockWebsitesServiceForCLI is a mock implementation of the CLI WebsitesService interface for testing
 type mockWebsitesServiceForCLI struct {
-	listFunc         func(ctx context.Context) ([]ipfs.WebsiteItem, error)
-	createFunc       func(ctx context.Context, domain, cid, targetType string) (*ipfs.WebsiteItem, error)
-	getFunc          func(ctx context.Context, id string) (*ipfs.WebsiteItem, error)
-	updateFunc       func(ctx context.Context, id, domain, cid, targetType string) (*ipfs.WebsiteItem, error)
-	deleteFunc       func(ctx context.Context, id string) error
-	validateFunc     func(ctx context.Context, id string) (*ipfs.WebsiteValidateResponse, error)
-	getSSLStatusFunc func(ctx context.Context, domain string) (*ipfs.WebsiteResponse, error)
-	getConfigFunc    func(ctx context.Context) (*ipfs.WebsiteConfigResponse, error)
+	listFunc              func(ctx context.Context) ([]ipfs.WebsiteItem, error)
+	createFunc            func(ctx context.Context, domain, cid, targetType string) (*ipfs.WebsiteItem, error)
+	getFunc               func(ctx context.Context, id string) (*ipfs.WebsiteItem, error)
+	updateFunc            func(ctx context.Context, id, domain, cid, targetType string) (*ipfs.WebsiteItem, error)
+	updateWithOptionsFunc func(ctx context.Context, id string, req ipfs.WebsiteUpdateRequest) (*ipfs.WebsiteItem, error)
+	deleteFunc            func(ctx context.Context, id string) error
+	validateFunc          func(ctx context.Context, id string) (*ipfs.WebsiteValidateResponse, error)
+	getSSLStatusFunc      func(ctx context.Context, domain string) (*ipfs.WebsiteResponse, error)
+	getConfigFunc         func(ctx context.Context) (*ipfs.WebsiteConfigResponse, error)
 }
 
 func (m *mockWebsitesServiceForCLI) RequireAuthenticated() error {
@@ -86,6 +87,9 @@ func (m *mockWebsitesServiceForCLI) Update(ctx context.Context, id, domain, cid,
 }
 
 func (m *mockWebsitesServiceForCLI) UpdateWithOptions(ctx context.Context, id string, req ipfs.WebsiteUpdateRequest) (*ipfs.WebsiteItem, error) {
+	if m.updateWithOptionsFunc != nil {
+		return m.updateWithOptionsFunc(ctx, id, req)
+	}
 	if m.updateFunc != nil {
 		domain := ""
 		if req.Domain != nil {
@@ -1614,6 +1618,189 @@ func websitesConfigWithService(ctx context.Context, output Output, websitesServi
 	} else {
 		output.Printf("  No gateway domain configured")
 	}
+
+	return nil
+}
+
+// mockEnableIPNSCommand is a mock for testing enable-ipns
+type mockEnableIPNSCommand struct {
+	id  string
+	cid string
+}
+
+func (m *mockEnableIPNSCommand) IsSet(name string) bool {
+	switch name {
+	case FlagCID:
+		return m.cid != ""
+	default:
+		return false
+	}
+}
+
+func (m *mockEnableIPNSCommand) String(name string) string {
+	switch name {
+	case FlagCID:
+		return m.cid
+	default:
+		return ""
+	}
+}
+
+func (m *mockEnableIPNSCommand) Args() cli.Args {
+	if m.id == "" {
+		return &mockArgs{}
+	}
+	return &mockArgs{[]string{m.id}}
+}
+
+func (m *mockEnableIPNSCommand) Bool(name string) bool {
+	return false
+}
+
+func (m *mockEnableIPNSCommand) Int(name string) int {
+	return 0
+}
+
+func TestWebsitesEnableIPNS(t *testing.T) {
+	tests := []struct {
+		name        string
+		cmd         *mockEnableIPNSCommand
+		setupMocks  func(*mockWebsitesServiceForCLI)
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name: "enable ipns without cid",
+			cmd: &mockEnableIPNSCommand{
+				id: "1",
+			},
+			setupMocks: func(svc *mockWebsitesServiceForCLI) {
+				svc.updateWithOptionsFunc = func(ctx context.Context, id string, req ipfs.WebsiteUpdateRequest) (*ipfs.WebsiteItem, error) {
+					require.NotNil(t, req.TargetType)
+					require.Equal(t, "ipns", *req.TargetType)
+					require.Nil(t, req.TargetHash)
+					return &ipfs.WebsiteItem{
+						Id:         1,
+						Domain:     "example.com",
+						TargetHash: "12D3KooWTestPeerID",
+						TargetType: "ipns",
+						Status:     "active",
+						Created:    time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC),
+					}, nil
+				}
+			},
+			wantErr: false,
+		},
+		{
+			name: "enable ipns with cid",
+			cmd: &mockEnableIPNSCommand{
+				id:  "1",
+				cid: "QmNewHash",
+			},
+			setupMocks: func(svc *mockWebsitesServiceForCLI) {
+				svc.updateWithOptionsFunc = func(ctx context.Context, id string, req ipfs.WebsiteUpdateRequest) (*ipfs.WebsiteItem, error) {
+					require.NotNil(t, req.TargetType)
+					require.Equal(t, "ipns", *req.TargetType)
+					require.NotNil(t, req.TargetHash)
+					require.Equal(t, "QmNewHash", *req.TargetHash)
+					return &ipfs.WebsiteItem{
+						Id:         1,
+						Domain:     "example.com",
+						TargetHash: "12D3KooWTestPeerID",
+						TargetType: "ipns",
+						Status:     "active",
+						Created:    time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC),
+					}, nil
+				}
+			},
+			wantErr: false,
+		},
+		{
+			name: "missing website id",
+			cmd: &mockEnableIPNSCommand{
+				id: "",
+			},
+			setupMocks:  func(svc *mockWebsitesServiceForCLI) {},
+			wantErr:     true,
+			errContains: "website ID or domain is required",
+		},
+		{
+			name: "service error",
+			cmd: &mockEnableIPNSCommand{
+				id: "1",
+			},
+			setupMocks: func(svc *mockWebsitesServiceForCLI) {
+				svc.updateWithOptionsFunc = func(ctx context.Context, id string, req ipfs.WebsiteUpdateRequest) (*ipfs.WebsiteItem, error) {
+					return nil, errors.New("website not found")
+				}
+			},
+			wantErr:     true,
+			errContains: "website not found",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockSvc := &mockWebsitesServiceForCLI{}
+			output := NewOutputFormatter(false, false, false, false)
+
+			if tt.setupMocks != nil {
+				tt.setupMocks(mockSvc)
+			}
+
+			err := websitesEnableIPNSWithService(context.Background(), tt.cmd, output, mockSvc)
+
+			if tt.wantErr {
+				require.Error(t, err)
+				if tt.errContains != "" {
+					require.Contains(t, err.Error(), tt.errContains)
+				}
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func websitesEnableIPNSWithService(ctx context.Context, cmd interface {
+	Args() cli.Args
+	IsSet(name string) bool
+	String(name string) string
+}, output Output, websitesService WebsitesService) error {
+	if err := websitesService.RequireAuthenticated(); err != nil {
+		return err
+	}
+
+	args := cmd.Args()
+	if args.Len() == 0 {
+		return fmt.Errorf("website ID or domain is required")
+	}
+
+	id, err := resolveWebsiteID(ctx, websitesService, args.First())
+	if err != nil {
+		return err
+	}
+
+	ipnsType := "ipns"
+	req := ipfs.WebsiteUpdateRequest{
+		TargetType: &ipnsType,
+	}
+
+	if cmd.IsSet(FlagCID) {
+		cid := cmd.String(FlagCID)
+		req.TargetHash = &cid
+	}
+
+	updatedWebsite, err := websitesService.UpdateWithOptions(ctx, id, req)
+	if err != nil {
+		return err
+	}
+
+	if output.IsJSON() {
+		return output.PrintJSON(updatedWebsite)
+	}
+
+	printWebsiteUpdateResult(output, updatedWebsite, "IPNS enabled for website")
 
 	return nil
 }
