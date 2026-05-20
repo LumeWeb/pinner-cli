@@ -18,18 +18,26 @@ publish content under a stable name that can be updated to point to new CIDs.
 IPNS operations include:
   - Managing IPNS keys (create, list, get, delete)
   - Publishing CIDs to IPNS names
+  - Republishing IPNS records
   - Resolving IPNS names to their target CIDs
+
+Key names can be used interchangeably with numeric IDs. For example:
+  pinner ipns keys get my-key
+is equivalent to:
+  pinner ipns keys get 1
 
 Examples:
   pinner ipns keys list
   pinner ipns keys create my-key
-  pinner ipns keys get k51qzi5uqu5djx...
-  pinner ipns keys delete k51qzi5uqu5djx...
-  pinner ipns publish QmHash --key-id 123
+  pinner ipns keys get my-key
+  pinner ipns keys delete my-key
+  pinner ipns publish QmHash --key-name my-key
+  pinner ipns republish my-key
   pinner ipns resolve k51qzi5uqu5djx...`,
 		Commands: []*cli.Command{
 			newIPNSKeysCommand(),
 			newIPNSPublishCommand(),
+			newIPNSRepublishCommand(),
 			newIPNSResolveCommand(),
 		},
 	}
@@ -42,11 +50,13 @@ func newIPNSKeysCommand() *cli.Command {
 		Description: `Manage your IPNS keys. Keys are used to publish content under stable
 IPNS names that can be updated to point to new CIDs.
 
+Key names can be used interchangeably with numeric IDs.
+
 Examples:
   pinner ipns keys list
   pinner ipns keys create my-key
-  pinner ipns keys get k51qzi5uqu5djx...
-  pinner ipns keys delete k51qzi5uqu5djx...`,
+  pinner ipns keys get my-key
+  pinner ipns keys delete my-key`,
 		Commands: []*cli.Command{
 			newIPNSKeysListCommand(),
 			newIPNSKeysCreateCommand(),
@@ -101,12 +111,13 @@ func newIPNSKeysGetCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "get",
 		Usage: "Get details of a specific IPNS key",
-		Description: `Get details of a specific IPNS key by its ID.
+		Description: `Get details of a specific IPNS key by its name or ID.
 
 Examples:
-  pinner ipns keys get k51qzi5uqu5djx...
-  pinner ipns keys get k51qzi5uqu5djx... --json`,
-		ArgsUsage: "<key-id>",
+  pinner ipns keys get my-key
+  pinner ipns keys get 1
+  pinner ipns keys get my-key --json`,
+		ArgsUsage: "<key-name-or-id>",
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			output := setupOutput(cmd)
 			return ipnsKeysGet(ctx, cmd, output)
@@ -118,11 +129,12 @@ func newIPNSKeysDeleteCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "delete",
 		Usage: "Delete an IPNS key",
-		Description: `Delete an IPNS key by its ID. This operation is irreversible.
+		Description: `Delete an IPNS key by its name or ID. This operation is irreversible.
 
 Examples:
-  pinner ipns keys delete k51qzi5uqu5djx...`,
-		ArgsUsage: "<key-id>",
+  pinner ipns keys delete my-key
+  pinner ipns keys delete 1`,
+		ArgsUsage: "<key-name-or-id>",
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			output := setupOutput(cmd)
 			return ipnsKeysDelete(ctx, cmd, output)
@@ -137,16 +149,18 @@ func newIPNSPublishCommand() *cli.Command {
 		Description: `Publish a CID to an IPNS key, making it resolvable via the IPNS name.
 After publishing, the IPNS name will resolve to the specified CID.
 
+The key can be specified by name or numeric ID.
+
 Examples:
-  pinner ipns publish QmHash --key-id 123
-  pinner ipns publish QmHash --key-id 123 --ttl 24h
-  pinner ipns publish QmHash --key-id 123 --json`,
+  pinner ipns publish QmHash --key-name my-key
+  pinner ipns publish QmHash --key-name my-key --ttl 24h
+  pinner ipns publish QmHash --key-name 1 --json`,
 		ArgsUsage: "<cid>",
 		Flags: []cli.Flag{
-			&cli.IntFlag{
-				Name:     "key-id",
+			&cli.StringFlag{
+				Name:     "key-name",
 				Aliases:  []string{"k"},
-				Usage:    "ID of the IPNS key to publish to",
+				Usage:    "Name or ID of the IPNS key to publish to",
 				Required: true,
 			},
 			&cli.StringFlag{
@@ -159,6 +173,27 @@ Examples:
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			output := setupOutput(cmd)
 			return ipnsPublish(ctx, cmd, output)
+		},
+	}
+}
+
+func newIPNSRepublishCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "republish",
+		Usage: "Republish an IPNS record for a key",
+		Description: `Republish the IPNS record for a specific key. This refreshes the record
+on the network, extending its validity.
+
+The key can be specified by name or numeric ID.
+
+Examples:
+  pinner ipns republish my-key
+  pinner ipns republish 1
+  pinner ipns republish my-key --json`,
+		ArgsUsage: "<key-name-or-id>",
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			output := setupOutput(cmd)
+			return ipnsRepublish(ctx, cmd, output)
 		},
 	}
 }
@@ -181,15 +216,13 @@ Examples:
 	}
 }
 
-// Stub handlers for IPNS commands - to be implemented in subsequent tasks
-
-func ipnsKeysList(ctx context.Context, cmd *cli.Command, output Output) error {
+func initIPNSService(ctx context.Context, cmd *cli.Command, output Output) (context.Context, context.CancelFunc, IPNSService, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
 
 	cfgMgr, err := defaultConfigManagerFactory()
 	if err != nil {
-		return err
+		cancel()
+		return ctx, func() {}, nil, err
 	}
 
 	var ipnsService IPNSService
@@ -202,8 +235,23 @@ func ipnsKeysList(ctx context.Context, cmd *cli.Command, output Output) error {
 	}
 
 	if err := ipnsService.RequireAuthenticated(); err != nil {
+		cancel()
+		return ctx, func() {}, nil, err
+	}
+
+	return ctx, cancel, ipnsService, nil
+}
+
+func resolveIPNSKeyArg(ctx context.Context, ipnsService IPNSService, arg string) (string, error) {
+	return resolveIPNSKeyIDToString(ctx, ipnsService, arg)
+}
+
+func ipnsKeysList(ctx context.Context, cmd *cli.Command, output Output) error {
+	ctx, cancel, ipnsService, err := initIPNSService(ctx, cmd, output)
+	if err != nil {
 		return err
 	}
+	defer cancel()
 
 	keys, err := ipnsService.ListKeys(ctx)
 	if err != nil {
@@ -242,26 +290,11 @@ func ipnsKeysList(ctx context.Context, cmd *cli.Command, output Output) error {
 }
 
 func ipnsKeysCreate(ctx context.Context, cmd *cli.Command, output Output) error {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
-	cfgMgr, err := defaultConfigManagerFactory()
+	ctx, cancel, ipnsService, err := initIPNSService(ctx, cmd, output)
 	if err != nil {
 		return err
 	}
-
-	var ipnsService IPNSService
-	authToken := GetAuthToken(cmd, cfgMgr)
-	secure := GetSecureSetting(cmd, cfgMgr)
-	if authToken != "" {
-		ipnsService = NewIPNSService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure))
-	} else {
-		ipnsService = defaultIPNSServiceFactory(cfgMgr, output)
-	}
-
-	if err := ipnsService.RequireAuthenticated(); err != nil {
-		return err
-	}
+	defer cancel()
 
 	name := cmd.String(FlagName)
 	if name == "" {
@@ -301,33 +334,22 @@ func ipnsKeysCreate(ctx context.Context, cmd *cli.Command, output Output) error 
 }
 
 func ipnsKeysGet(ctx context.Context, cmd *cli.Command, output Output) error {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
-	cfgMgr, err := defaultConfigManagerFactory()
+	ctx, cancel, ipnsService, err := initIPNSService(ctx, cmd, output)
 	if err != nil {
 		return err
 	}
-
-	var ipnsService IPNSService
-	authToken := GetAuthToken(cmd, cfgMgr)
-	secure := GetSecureSetting(cmd, cfgMgr)
-	if authToken != "" {
-		ipnsService = NewIPNSService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure))
-	} else {
-		ipnsService = defaultIPNSServiceFactory(cfgMgr, output)
-	}
-
-	if err := ipnsService.RequireAuthenticated(); err != nil {
-		return err
-	}
+	defer cancel()
 
 	args := cmd.Args()
 	if args.Len() == 0 {
-		return fmt.Errorf("key ID is required")
+		return fmt.Errorf("key name or ID is required")
 	}
 
-	keyID := args.First()
+	keyArg := args.First()
+	keyID, err := resolveIPNSKeyArg(ctx, ipnsService, keyArg)
+	if err != nil {
+		return err
+	}
 
 	key, err := ipnsService.GetKey(ctx, keyID)
 	if err != nil {
@@ -356,33 +378,22 @@ func ipnsKeysGet(ctx context.Context, cmd *cli.Command, output Output) error {
 }
 
 func ipnsKeysDelete(ctx context.Context, cmd *cli.Command, output Output) error {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
-	cfgMgr, err := defaultConfigManagerFactory()
+	ctx, cancel, ipnsService, err := initIPNSService(ctx, cmd, output)
 	if err != nil {
 		return err
 	}
-
-	var ipnsService IPNSService
-	authToken := GetAuthToken(cmd, cfgMgr)
-	secure := GetSecureSetting(cmd, cfgMgr)
-	if authToken != "" {
-		ipnsService = NewIPNSService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure))
-	} else {
-		ipnsService = defaultIPNSServiceFactory(cfgMgr, output)
-	}
-
-	if err := ipnsService.RequireAuthenticated(); err != nil {
-		return err
-	}
+	defer cancel()
 
 	args := cmd.Args()
 	if args.Len() == 0 {
-		return fmt.Errorf("key ID is required")
+		return fmt.Errorf("key name or ID is required")
 	}
 
-	keyID := args.First()
+	keyArg := args.First()
+	keyID, err := resolveIPNSKeyArg(ctx, ipnsService, keyArg)
+	if err != nil {
+		return err
+	}
 
 	if err := ipnsService.DeleteKey(ctx, keyID); err != nil {
 		return err
@@ -391,37 +402,22 @@ func ipnsKeysDelete(ctx context.Context, cmd *cli.Command, output Output) error 
 	if output.IsJSON() {
 		result := map[string]any{
 			"success": true,
-			"message": fmt.Sprintf("IPNS key %s deleted successfully", keyID),
+			"message": fmt.Sprintf("IPNS key %s deleted successfully", keyArg),
 		}
 		return output.PrintJSON(result)
 	}
 
-	output.Printfln("IPNS key %s deleted successfully", keyID)
+	output.Printfln("IPNS key %s deleted successfully", keyArg)
 
 	return nil
 }
 
 func ipnsPublish(ctx context.Context, cmd *cli.Command, output Output) error {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
-	cfgMgr, err := defaultConfigManagerFactory()
+	ctx, cancel, ipnsService, err := initIPNSService(ctx, cmd, output)
 	if err != nil {
 		return err
 	}
-
-	var ipnsService IPNSService
-	authToken := GetAuthToken(cmd, cfgMgr)
-	secure := GetSecureSetting(cmd, cfgMgr)
-	if authToken != "" {
-		ipnsService = NewIPNSService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure))
-	} else {
-		ipnsService = defaultIPNSServiceFactory(cfgMgr, output)
-	}
-
-	if err := ipnsService.RequireAuthenticated(); err != nil {
-		return err
-	}
+	defer cancel()
 
 	args := cmd.Args()
 	if args.Len() == 0 {
@@ -430,9 +426,9 @@ func ipnsPublish(ctx context.Context, cmd *cli.Command, output Output) error {
 
 	cid := args.First()
 
-	keyID := cmd.Int("key-id")
-	if keyID == 0 {
-		return fmt.Errorf("key-id is required")
+	keyName := cmd.String("key-name")
+	if keyName == "" {
+		return fmt.Errorf("key-name is required")
 	}
 
 	var ttl *string
@@ -441,7 +437,7 @@ func ipnsPublish(ctx context.Context, cmd *cli.Command, output Output) error {
 		ttl = &ttlValue
 	}
 
-	response, err := ipnsService.Publish(ctx, cid, keyID, ttl)
+	response, err := ipnsService.Publish(ctx, cid, keyName, ttl)
 	if err != nil {
 		return err
 	}
@@ -467,31 +463,44 @@ func ipnsPublish(ctx context.Context, cmd *cli.Command, output Output) error {
 	return nil
 }
 
-func ipnsResolve(ctx context.Context, cmd *cli.Command, output Output) error {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+func ipnsRepublish(ctx context.Context, cmd *cli.Command, output Output) error {
+	ctx, cancel, ipnsService, err := initIPNSService(ctx, cmd, output)
+	if err != nil {
+		return err
+	}
 	defer cancel()
 
-	cfgMgr, err := defaultConfigManagerFactory()
+	args := cmd.Args()
+	if args.Len() == 0 {
+		return fmt.Errorf("key name or ID is required")
+	}
+
+	keyArg := args.First()
+
+	response, err := ipnsService.Republish(ctx, keyArg)
 	if err != nil {
 		return err
 	}
 
+	if output.IsJSON() {
+		return output.PrintJSON(response)
+	}
+
+	output.Printfln("Republished IPNS key %s: %s (%d record(s))", keyArg, response.Message, response.Count)
+
+	return nil
+}
+
+func ipnsResolve(ctx context.Context, cmd *cli.Command, output Output) error {
+	ctx, cancel, ipnsService, err := initIPNSService(ctx, cmd, output)
+	if err != nil {
+		return err
+	}
+	defer cancel()
+
 	args := cmd.Args()
 	if args.Len() == 0 {
 		return fmt.Errorf("IPNS name is required")
-	}
-
-	var ipnsService IPNSService
-	authToken := GetAuthToken(cmd, cfgMgr)
-	secure := GetSecureSetting(cmd, cfgMgr)
-	if authToken != "" {
-		ipnsService = NewIPNSService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure))
-	} else {
-		ipnsService = defaultIPNSServiceFactory(cfgMgr, output)
-	}
-
-	if err := ipnsService.RequireAuthenticated(); err != nil {
-		return err
 	}
 
 	ipnsName := args.First()
@@ -520,4 +529,12 @@ func ipnsResolve(ctx context.Context, cmd *cli.Command, output Output) error {
 	output.PrintTable(headers, rows)
 
 	return nil
+}
+
+func resolveIPNSKeyIDToString(ctx context.Context, ipnsService IPNSService, arg string) (string, error) {
+	id, err := resolveIPNSKeyID(ctx, ipnsService, arg)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%d", id), nil
 }

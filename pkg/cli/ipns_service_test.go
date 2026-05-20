@@ -85,12 +85,13 @@ func TestIPNSService_ListKeys(t *testing.T) {
 }
 
 type mockIPNSServiceForCLI struct {
-	listKeysFunc  func(ctx context.Context) ([]ipfs.IPNSKeyResponse, error)
-	createKeyFunc func(ctx context.Context, name string, key *string) (*ipfs.IPNSKeyResponse, error)
-	getKeyFunc    func(ctx context.Context, id string) (*ipfs.IPNSKeyResponse, error)
-	deleteKeyFunc func(ctx context.Context, id string) error
-	publishFunc   func(ctx context.Context, cid string, keyId int, ttl *string) (*ipfs.IPNSPublishResponse, error)
-	resolveFunc   func(ctx context.Context, name string) (*ipfs.IPNSResolveResponse, error)
+	listKeysFunc   func(ctx context.Context) ([]ipfs.IPNSKeyResponse, error)
+	createKeyFunc  func(ctx context.Context, name string, key *string) (*ipfs.IPNSKeyResponse, error)
+	getKeyFunc     func(ctx context.Context, id string) (*ipfs.IPNSKeyResponse, error)
+	deleteKeyFunc  func(ctx context.Context, id string) error
+	publishFunc    func(ctx context.Context, cid string, keyName string, ttl *string) (*ipfs.IPNSPublishResponse, error)
+	republishFunc  func(ctx context.Context, keyName string) (*ipfs.IPNSRepublishResponse, error)
+	resolveFunc    func(ctx context.Context, name string) (*ipfs.IPNSResolveResponse, error)
 }
 
 func (m *mockIPNSServiceForCLI) ListKeys(ctx context.Context) ([]ipfs.IPNSKeyResponse, error) {
@@ -135,9 +136,9 @@ func (m *mockIPNSServiceForCLI) DeleteKey(ctx context.Context, id string) error 
 	return nil
 }
 
-func (m *mockIPNSServiceForCLI) Publish(ctx context.Context, cid string, keyId int, ttl *string) (*ipfs.IPNSPublishResponse, error) {
+func (m *mockIPNSServiceForCLI) Publish(ctx context.Context, cid string, keyName string, ttl *string) (*ipfs.IPNSPublishResponse, error) {
 	if m.publishFunc != nil {
-		return m.publishFunc(ctx, cid, keyId, ttl)
+		return m.publishFunc(ctx, cid, keyName, ttl)
 	}
 	return &ipfs.IPNSPublishResponse{
 		Name:      "k51qzi5uqu5djx...",
@@ -145,6 +146,16 @@ func (m *mockIPNSServiceForCLI) Publish(ctx context.Context, cid string, keyId i
 		Published: time.Now(),
 		Sequence:  1,
 		Validity:  time.Now().Add(24 * time.Hour),
+	}, nil
+}
+
+func (m *mockIPNSServiceForCLI) Republish(ctx context.Context, keyName string) (*ipfs.IPNSRepublishResponse, error) {
+	if m.republishFunc != nil {
+		return m.republishFunc(ctx, keyName)
+	}
+	return &ipfs.IPNSRepublishResponse{
+		Count:   1,
+		Message: "republished successfully",
 	}, nil
 }
 
@@ -201,11 +212,18 @@ func (u *unauthenticatedIPNSService) DeleteKey(ctx context.Context, id string) e
 	return u.mockIPNSServiceForCLI.DeleteKey(ctx, id)
 }
 
-func (u *unauthenticatedIPNSService) Publish(ctx context.Context, cid string, keyId int, ttl *string) (*ipfs.IPNSPublishResponse, error) {
+func (u *unauthenticatedIPNSService) Publish(ctx context.Context, cid string, keyName string, ttl *string) (*ipfs.IPNSPublishResponse, error) {
 	if err := u.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	return u.mockIPNSServiceForCLI.Publish(ctx, cid, keyId, ttl)
+	return u.mockIPNSServiceForCLI.Publish(ctx, cid, keyName, ttl)
+}
+
+func (u *unauthenticatedIPNSService) Republish(ctx context.Context, keyName string) (*ipfs.IPNSRepublishResponse, error) {
+	if err := u.RequireAuthenticated(); err != nil {
+		return nil, err
+	}
+	return u.mockIPNSServiceForCLI.Republish(ctx, keyName)
 }
 
 func (u *unauthenticatedIPNSService) Resolve(ctx context.Context, name string) (*ipfs.IPNSResolveResponse, error) {
