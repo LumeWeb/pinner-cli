@@ -204,8 +204,11 @@ func printWebsiteUpdateResult(output Output, website *ipfs.WebsiteItem, message 
 		{"Target Type", website.TargetType},
 		{"Status", website.Status},
 		{"DNS Hosting", fmt.Sprintf("%t", website.DnsHostingEnabled)},
-		{"Expired", fmt.Sprintf("%t", website.Expired)},
 		{"Created", website.Created.Format("2006-01-02 15:04:05")},
+	}
+
+	if website.Status != "active" {
+		fields = append(fields, Field{"Token Expired", fmt.Sprintf("%t", website.Expired)})
 	}
 
 	output.PrintFields(FieldGroup{Fields: fields})
@@ -249,8 +252,10 @@ func websitesList(ctx context.Context, cmd *cli.Command, output Output) error {
 	headers := []string{"ID", "NAME", "CID", "STATUS", "DNS", "GATEWAY", "VALIDATION", "CREATED"}
 	rows := make([][]string, len(websites))
 	for i, website := range websites {
-		validation := "valid"
-		if website.Expired {
+		validation := ""
+		if website.Status == "active" {
+			validation = "validated"
+		} else if website.Expired {
 			validation = "expired"
 		} else if website.ValidationToken != "" {
 			validation = website.ValidationToken
@@ -466,16 +471,20 @@ func websitesGet(ctx context.Context, cmd *cli.Command, output Output) error {
 		{"Target Type", website.TargetType},
 		{"Status", website.Status},
 		{"DNS Hosting", fmt.Sprintf("%t", website.DnsHostingEnabled)},
-		{"Expired", fmt.Sprintf("%t", website.Expired)},
-		{"Validation Token", website.ValidationToken},
+	}
+
+	if website.Status != "active" {
+		fields = append(fields,
+			Field{"Token Expired", fmt.Sprintf("%t", website.Expired)},
+			Field{"Validation Token", website.ValidationToken},
+		)
+		if website.ValidationExpiresAt != nil {
+			fields = append(fields, Field{"Token Expires", website.ValidationExpiresAt.Format("2006-01-02 15:04:05")})
+		}
 	}
 
 	if website.GatewayDomain != nil {
 		fields = append(fields, Field{"Gateway", *website.GatewayDomain})
-	}
-
-	if website.ValidationExpiresAt != nil {
-		fields = append(fields, Field{"Token Expires", website.ValidationExpiresAt.Format("2006-01-02 15:04:05")})
 	}
 
 	if website.DnsZoneId != nil {
@@ -490,10 +499,10 @@ func websitesGet(ctx context.Context, cmd *cli.Command, output Output) error {
 	output.Printfln("")
 	showDNSRecordInstructions(output, website, nameservers)
 
-	if website.Expired {
+	if website.Expired && website.Status != "active" {
 		output.Printfln("")
-		output.Printfln("⚠ This website's validation has expired.")
-		output.Printfln("  Re-validate: pinner websites validate %d", website.Id)
+		output.Printfln("⚠ Validation token has expired. Re-validate to generate a new token:")
+		output.Printfln("  pinner websites validate %d", website.Id)
 	}
 
 	return nil
@@ -768,6 +777,7 @@ func doWebsitesValidate(ctx context.Context, cmd interface{ Args() cli.Args }, o
 		} else {
 			result["valid"] = validationResult.Valid
 			result["message"] = validationResult.Message
+			result["reason"] = validationResult.Reason
 		}
 
 		if website != nil {
@@ -779,47 +789,58 @@ func doWebsitesValidate(ctx context.Context, cmd interface{ Args() cli.Args }, o
 	}
 
 	if validateErr != nil {
-		output.Printfln("Validation failed: %s", validateErr)
-		output.Printfln("")
-		if website != nil {
-			nameservers := getNameservers(ctx, websitesService)
-			showDNSRecordInstructions(output, website, nameservers)
-		}
-		output.Printfln("")
-		output.Printfln("Re-validate after adding the records: pinner websites validate %s", arg)
+		output.Printfln("Validation failed: %s", validateErr.Error())
 		return nil
 	}
 
-	output.Printfln("Website Validation Result")
-
-	statusIcon := "⏳"
-	if validationResult.Valid {
-		statusIcon = "✅"
+	switch ipfs.WebsiteValidationReasonOf(validationResult) {
+	case ipfs.WebsiteValidationReasonTokenExpired:
+		output.Printfln("Validation token has expired — a new token has been generated.")
+		showValidationInstructions(ctx, output, website, websitesService, arg)
+		return nil
+	case ipfs.WebsiteValidationReasonDNSMissing, ipfs.WebsiteValidationReasonTokenMissing, ipfs.WebsiteValidationReasonDNSMismatch:
+		printValidationResult(output, validationResult)
+		showValidationInstructions(ctx, output, website, websitesService, arg)
+		return nil
 	}
 
-	output.PrintFields(FieldGroup{
-		Fields: []Field{
-			{"Domain", validationResult.Domain},
-			{"ID", fmt.Sprintf("%d", validationResult.Id)},
-			{"Valid", fmt.Sprintf("%s %t", statusIcon, validationResult.Valid)},
-			{"Message", validationResult.Message},
-		},
-	})
+	printValidationResult(output, validationResult)
 
 	if !validationResult.Valid {
-		output.Printfln("")
-		if website != nil {
-			nameservers := getNameservers(ctx, websitesService)
-			showDNSRecordInstructions(output, website, nameservers)
-		} else {
-			output.Printfln("Make sure you have added the required DNS records to your domain")
-			output.Printfln("View website details: pinner websites get %s", arg)
-		}
-		output.Printfln("")
-		output.Printfln("Re-validate: pinner websites validate %s", arg)
+		showValidationInstructions(ctx, output, website, websitesService, arg)
 	}
 
 	return nil
+}
+
+func printValidationResult(output Output, result *ipfs.WebsiteValidateResponse) {
+	statusIcon := "⏳"
+	if result.Valid {
+		statusIcon = "✅"
+	}
+
+	output.Printfln("Website Validation Result")
+	output.PrintFields(FieldGroup{
+		Fields: []Field{
+			{"Domain", result.Domain},
+			{"ID", fmt.Sprintf("%d", result.Id)},
+			{"Valid", fmt.Sprintf("%s %t", statusIcon, result.Valid)},
+			{"Message", result.Message},
+		},
+	})
+}
+
+func showValidationInstructions(ctx context.Context, output Output, website *ipfs.WebsiteItem, websitesService WebsitesService, arg string) {
+	output.Printfln("")
+	if website != nil {
+		nameservers := getNameservers(ctx, websitesService)
+		showDNSRecordInstructions(output, website, nameservers)
+	} else {
+		output.Printfln("Make sure you have added the required DNS records to your domain")
+		output.Printfln("View website details: pinner websites get %s", arg)
+	}
+	output.Printfln("")
+	output.Printfln("Re-validate: pinner websites validate %s", arg)
 }
 
 // buildRequiredRecords returns the DNS records a user needs to add for their website.
