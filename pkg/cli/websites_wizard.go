@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/pterm/pterm"
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/pkg/cli/wizard"
 	"go.lumeweb.com/pinner-cli/pkg/config"
@@ -90,9 +91,6 @@ func (w *WebsitesWizard) getSteps() []wizard.Step[*WebsitesWizard] {
 		},
 		wizard.StepFunc[*WebsitesWizard]{
 			Name_: "DNS Setup",
-			SkipFunc: func(w *WebsitesWizard) bool {
-				return !w.DNSHosting()
-			},
 			ExecuteFunc: func(ctx context.Context, w *WebsitesWizard) error {
 				return w.executeDNSSetup(ctx)
 			},
@@ -123,26 +121,35 @@ func (w *WebsitesWizard) executeCreateWebsite(ctx context.Context) error {
 		DnsHostingEnabled: &dnsHosting,
 	}
 
+	spinner, _ := pterm.DefaultSpinner.Start("Creating website...")
 	website, err := w.websitesService.CreateWithOptions(ctx, req)
+	spinner.Stop()
+
 	if err != nil {
+		pterm.Error.Printf("Failed to create website: %v\n", err)
 		return err
 	}
 
 	w.SetWebsite(website)
+	pterm.Success.Println("Website created successfully!")
 	return nil
 }
 
-// executeDNSSetup informs the user about NS delegation for DNS hosting.
-// The server creates the DNS zone and records automatically when the website
-// is created with DnsHostingEnabled=true, so no manual record creation is needed.
+// executeDNSSetup informs the user about DNS configuration.
+// For managed DNS, it shows NS delegation instructions.
+// For self-managed DNS, it shows the required DNS records the user must add.
 func (w *WebsitesWizard) executeDNSSetup(ctx context.Context) error {
 	website := w.Website()
 	if website == nil {
 		return fmt.Errorf("website not created yet")
 	}
 
-	nameservers := getNameservers(ctx, w.websitesService)
-	showDNSHostingInstructions(w.output, website, nameservers)
+	if w.DNSHosting() {
+		nameservers := getNameservers(ctx, w.websitesService)
+		showDNSHostingInstructions(w.output, website, nameservers)
+	} else {
+		showSelfManagedDNSInstructions(w.output, website)
+	}
 
 	return nil
 }
@@ -237,7 +244,7 @@ The wizard will guide you through:
   4. Domain name
   5. DNS mode (Pinner-managed or self-managed)
   6. Website creation
-  7. DNS setup (if Pinner-managed)
+  7. DNS setup
   8. Validation
 
 Examples:

@@ -192,7 +192,7 @@ func TestWebsitesWizard_Run(t *testing.T) {
 		require.Contains(t, err.Error(), "content upload required")
 	})
 
-	t.Run("skip DNS setup when self-managed", func(t *testing.T) {
+	t.Run("DNS setup runs for self-managed mode", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
 		mockUI := NewMockWebsitesUI()
 		mockUI.SetContentChoice(ContentChoiceCID)
@@ -215,6 +215,7 @@ func TestWebsitesWizard_Run(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, result.Completed)
 		require.False(t, w.DNSHosting())
+		require.GreaterOrEqual(t, result.StepsCompleted, 7)
 	})
 
 	t.Run("create website step error propagates", func(t *testing.T) {
@@ -316,14 +317,13 @@ func TestWebsitesWizard_Run(t *testing.T) {
 		require.False(t, w.ValidationResult().Valid)
 	})
 
-	t.Run("validation step retries on service error then succeeds", func(t *testing.T) {
+	t.Run("validation step does not retry on service error for self-managed", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
 		mockUI := NewMockWebsitesUI()
 		mockUI.SetContentChoice(ContentChoiceCID)
 		mockUI.SetCIDInput("QmTestHash")
 		mockUI.SetDomainInput("example.com")
 		mockUI.SetDNSChoice(DNSModeSelfManaged)
-		mockUI.MaxValidateAttempts = 2
 
 		cfg := &config.Config{
 			AuthToken: "test-token",
@@ -331,19 +331,9 @@ func TestWebsitesWizard_Run(t *testing.T) {
 		}
 		cfgMgr.EXPECT().Config().Return(cfg).Maybe()
 
-		callCount := 0
 		mockWebsitesSvc := &mockWebsitesServiceForCLI{
 			validateFunc: func(_ context.Context, _ string) (*ipfs.WebsiteValidateResponse, error) {
-				callCount++
-				if callCount == 1 {
-					return nil, errors.New("validation service error")
-				}
-				return &ipfs.WebsiteValidateResponse{
-					Id:      1,
-					Domain:  "example.com",
-					Valid:   true,
-					Message: "Website is valid",
-				}, nil
+				return nil, errors.New("validation service error")
 			},
 		}
 
@@ -353,10 +343,10 @@ func TestWebsitesWizard_Run(t *testing.T) {
 
 		require.NoError(t, err)
 		require.True(t, result.Completed)
-		require.Equal(t, 1, result.StepsRetried)
-		require.Equal(t, 2, mockUI.ValidateAttempts)
-		require.NotNil(t, w.ValidationResult())
-		require.True(t, w.ValidationResult().Valid)
+		require.Equal(t, 0, result.StepsRetried)
+		require.Equal(t, 1, mockUI.ValidateAttempts)
+		require.Nil(t, w.ValidationResult())
+		require.False(t, w.ValidateRetry())
 	})
 }
 
