@@ -257,6 +257,18 @@ func (ui *PTermWebsitesUI) ExecuteDNSModeStep(_ context.Context, w *WebsitesWiza
 	return nil
 }
 
+func (ui *PTermWebsitesUI) ExecuteCreateWebsiteStep(ctx context.Context, w *WebsitesWizard) error {
+	spinner, _ := pterm.DefaultSpinner.Start("Creating website...")
+
+	if err := w.executeCreateWebsite(ctx); err != nil {
+		spinner.Fail("Failed to create website")
+		return err
+	}
+
+	spinner.Success("Website created successfully!")
+	return nil
+}
+
 // ExecuteValidateStep handles the validation step.
 // For managed DNS, it retries with exponential backoff and a spinner since the
 // server may need time to create DNS records. For self-managed DNS, it prompts

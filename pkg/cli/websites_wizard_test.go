@@ -527,6 +527,7 @@ func TestMockWebsitesUI(t *testing.T) {
 		_ = mock.ExecuteTargetTypeStep(context.Background(), nil)
 		_ = mock.ExecuteDomainStep(context.Background(), nil)
 		_ = mock.ExecuteDNSModeStep(context.Background(), nil)
+		_ = mock.ExecuteCreateWebsiteStep(context.Background(), nil)
 		_ = mock.ExecuteValidateStep(context.Background(), nil)
 
 		calls := mock.GetCalls()
@@ -536,6 +537,7 @@ func TestMockWebsitesUI(t *testing.T) {
 		require.Equal(t, "ExecuteTargetTypeStep", calls[3])
 		require.Equal(t, "ExecuteDomainStep", calls[4])
 		require.Equal(t, "ExecuteDNSModeStep", calls[5])
-		require.Equal(t, "ExecuteValidateStep", calls[6])
+		require.Equal(t, "ExecuteCreateWebsiteStep", calls[6])
+		require.Equal(t, "ExecuteValidateStep", calls[7])
 	})
 }

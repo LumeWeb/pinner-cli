@@ -198,6 +198,23 @@ func (m *MockWebsitesUI) ExecuteDNSModeStep(_ context.Context, w *WebsitesWizard
 	return nil
 }
 
+func (m *MockWebsitesUI) ExecuteCreateWebsiteStep(_ context.Context, w *WebsitesWizard) error {
+	m.RecordCall("ExecuteCreateWebsiteStep")
+	m.mu.Lock()
+	retErr := m.ReturnError
+	if retErr != nil {
+		m.ReturnError = nil
+		m.mu.Unlock()
+		return retErr
+	}
+	m.mu.Unlock()
+
+	if w != nil {
+		return w.executeCreateWebsite(context.Background())
+	}
+	return nil
+}
+
 // ExecuteValidateStep implements WebsitesUI.
 func (m *MockWebsitesUI) ExecuteValidateStep(_ context.Context, w *WebsitesWizard) error {
 	m.RecordCall("ExecuteValidateStep")

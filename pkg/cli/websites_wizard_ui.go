@@ -16,6 +16,7 @@ type WebsitesUI interface {
 	ExecuteTargetTypeStep(ctx context.Context, w *WebsitesWizard) error
 	ExecuteDomainStep(ctx context.Context, w *WebsitesWizard) error
 	ExecuteDNSModeStep(ctx context.Context, w *WebsitesWizard) error
+	ExecuteCreateWebsiteStep(ctx context.Context, w *WebsitesWizard) error
 	ExecuteValidateStep(ctx context.Context, w *WebsitesWizard) error
 }
 

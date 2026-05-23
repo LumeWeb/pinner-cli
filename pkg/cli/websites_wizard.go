@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/pterm/pterm"
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/pkg/cli/wizard"
 	"go.lumeweb.com/pinner-cli/pkg/config"
@@ -86,7 +85,7 @@ func (w *WebsitesWizard) getSteps() []wizard.Step[*WebsitesWizard] {
 		wizard.StepFunc[*WebsitesWizard]{
 			Name_: "Create Website",
 			ExecuteFunc: func(ctx context.Context, w *WebsitesWizard) error {
-				return w.executeCreateWebsite(ctx)
+				return w.ui.ExecuteCreateWebsiteStep(ctx, w)
 			},
 		},
 		wizard.StepFunc[*WebsitesWizard]{
@@ -121,17 +120,12 @@ func (w *WebsitesWizard) executeCreateWebsite(ctx context.Context) error {
 		DnsHostingEnabled: &dnsHosting,
 	}
 
-	spinner, _ := pterm.DefaultSpinner.Start("Creating website...")
 	website, err := w.websitesService.CreateWithOptions(ctx, req)
-	spinner.Stop()
-
 	if err != nil {
-		pterm.Error.Printf("Failed to create website: %v\n", err)
 		return err
 	}
 
 	w.SetWebsite(website)
-	pterm.Success.Println("Website created successfully!")
 	return nil
 }
 
