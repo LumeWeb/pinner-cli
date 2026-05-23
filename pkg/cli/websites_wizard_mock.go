@@ -33,10 +33,6 @@ type MockWebsitesUI struct {
 	DNSModeExecuted        bool
 	ValidateExecuted       bool
 	ValidateAttempts       int
-
-	// MaxValidateAttempts controls how many times validation will be retried before
-	// giving up (simulating the user adding records). Default 0 means no retry.
-	MaxValidateAttempts int
 }
 
 // NewMockWebsitesUI creates a new mock websites UI.
@@ -202,14 +198,29 @@ func (m *MockWebsitesUI) ExecuteDNSModeStep(_ context.Context, w *WebsitesWizard
 	return nil
 }
 
+func (m *MockWebsitesUI) ExecuteCreateWebsiteStep(_ context.Context, w *WebsitesWizard) error {
+	m.RecordCall("ExecuteCreateWebsiteStep")
+	m.mu.Lock()
+	retErr := m.ReturnError
+	if retErr != nil {
+		m.ReturnError = nil
+		m.mu.Unlock()
+		return retErr
+	}
+	m.mu.Unlock()
+
+	if w != nil {
+		return w.executeCreateWebsite(context.Background())
+	}
+	return nil
+}
+
 // ExecuteValidateStep implements WebsitesUI.
 func (m *MockWebsitesUI) ExecuteValidateStep(_ context.Context, w *WebsitesWizard) error {
 	m.RecordCall("ExecuteValidateStep")
 	m.mu.Lock()
 	m.ValidateExecuted = true
 	m.ValidateAttempts++
-	attempt := m.ValidateAttempts
-	maxAttempts := m.MaxValidateAttempts
 	retErr := m.ReturnError
 	if retErr != nil {
 		m.ReturnError = nil
@@ -222,17 +233,7 @@ func (m *MockWebsitesUI) ExecuteValidateStep(_ context.Context, w *WebsitesWizar
 		return nil
 	}
 
-	if err := w.executeValidate(context.Background()); err != nil {
-		w.SetValidateRetry(attempt < maxAttempts)
-		return nil
-	}
-
-	vr := w.ValidationResult()
-	if vr != nil && vr.Valid {
-		w.SetValidateRetry(false)
-		return nil
-	}
-
-	w.SetValidateRetry(attempt < maxAttempts)
+	_ = w.executeValidate(context.Background())
+	w.SetValidateRetry(false)
 	return nil
 }

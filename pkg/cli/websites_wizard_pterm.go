@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/avast/retry-go/v4"
@@ -71,6 +70,9 @@ func (ui *PTermWebsitesUI) ShowCompletion() error {
 			msg += "DNS records are managed by Pinner. Update your nameservers at your\n" +
 				"registrar, then validate once they propagate:\n" +
 				"  pinner dns zones validate <domain>\n\n"
+		} else {
+			msg += "Add the DNS records shown above at your registrar, then validate:\n" +
+				"  pinner websites validate <domain>\n\n"
 		}
 	}
 	msg += "Next steps:\n" +
@@ -255,6 +257,18 @@ func (ui *PTermWebsitesUI) ExecuteDNSModeStep(_ context.Context, w *WebsitesWiza
 	return nil
 }
 
+func (ui *PTermWebsitesUI) ExecuteCreateWebsiteStep(ctx context.Context, w *WebsitesWizard) error {
+	spinner, _ := pterm.DefaultSpinner.Start("Creating website...")
+
+	if err := w.executeCreateWebsite(ctx); err != nil {
+		spinner.Fail("Failed to create website")
+		return err
+	}
+
+	spinner.Success("Website created successfully!")
+	return nil
+}
+
 // ExecuteValidateStep handles the validation step.
 // For managed DNS, it retries with exponential backoff and a spinner since the
 // server may need time to create DNS records. For self-managed DNS, it prompts
@@ -343,97 +357,15 @@ func (ui *PTermWebsitesUI) executeManagedDNSValidation(ctx context.Context, w *W
 	return nil
 }
 
-// executeSelfManagedValidation prompts the user to add DNS records before validating.
-func (ui *PTermWebsitesUI) executeSelfManagedValidation(ctx context.Context, w *WebsitesWizard) error {
+// executeSelfManagedValidation shows a "validate later" message.
+// For self-managed DNS, the user hasn't added records yet, so calling the
+// API would always fail. The DNS records were already shown in the Setup step.
+func (ui *PTermWebsitesUI) executeSelfManagedValidation(_ context.Context, w *WebsitesWizard) error {
 	website := w.Website()
 
-	if !w.ValidateRetry() {
-		ui.showRequiredRecords(w)
-	}
-
-	pterm.Info.Println("Press Enter when records are ready, or type 'x' to skip...")
+	pterm.Info.Printf("Add your DNS records and validate later: pinner websites validate %s\n", website.Domain)
 	pterm.Println()
 
-	result, err := pterm.DefaultInteractiveTextInput.Show()
-	if err != nil {
-		return fmt.Errorf("prompt failed: %w", err)
-	}
-
-	if strings.TrimSpace(result) == "x" {
-		w.SetValidateRetry(false)
-		pterm.Info.Printf("You can validate later: pinner websites validate %s\n", website.Domain)
-		pterm.Println()
-		return nil
-	}
-
-	if err := w.executeValidate(ctx); err != nil {
-		pterm.Warning.Printf("Validation check failed: %v\n", err)
-		pterm.Println()
-		w.SetValidateRetry(true)
-		return nil
-	}
-
-	vr := w.ValidationResult()
-	if vr != nil && vr.Valid {
-		pterm.Success.Println("Website validated successfully!")
-		pterm.Println()
-		ui.output.PrintFields(FieldGroup{
-			Fields: []Field{
-				{"Domain", vr.Domain},
-				{"Valid", fmt.Sprintf("%t", vr.Valid)},
-				{"Message", vr.Message},
-			},
-		})
-		w.SetValidateRetry(false)
-		return nil
-	}
-
-	if vr != nil {
-		pterm.Warning.Println("Validation incomplete")
-		pterm.Println()
-		ui.output.PrintFields(FieldGroup{
-			Fields: []Field{
-				{"Domain", vr.Domain},
-				{"Message", vr.Message},
-			},
-		})
-		pterm.Println()
-	}
-
-	w.SetValidateRetry(true)
+	w.SetValidateRetry(false)
 	return nil
-}
-
-// showRequiredRecords displays the DNS records the user needs to add.
-// When DNS hosting is managed by Pinner, no manual records are needed —
-// the server creates the verification TXT and dnslink records automatically.
-// The user only needs to point their domain's nameservers (shown in DNS Setup step).
-func (ui *PTermWebsitesUI) showRequiredRecords(w *WebsitesWizard) {
-	website := w.Website()
-
-	pterm.Info.Println("Validating website configuration...")
-	pterm.Println()
-
-	if !w.DNSHosting() {
-		pterm.Info.Println("You need to add the following DNS records at your registrar:")
-		pterm.Println()
-
-		targetType := website.TargetType
-		if targetType == "" {
-			targetType = "ipfs"
-		}
-
-		records := [][]string{
-			{website.Domain, "TXT", "lumeweb-verify=" + website.ValidationToken},
-			{"_dnslink." + website.Domain, "TXT", "dnslink=/" + targetType + "/" + website.TargetHash},
-		}
-
-		if website.GatewayDomain != nil && *website.GatewayDomain != "" {
-			records = append(records, []string{website.Domain, "CNAME", *website.GatewayDomain})
-		}
-
-		ui.output.PrintTable([]string{"NAME", "TYPE", "VALUE"}, records)
-	}
-
-	pterm.Println()
 }
