@@ -11,6 +11,16 @@ import (
 	ipfs "go.lumeweb.com/ipfs-sdk"
 )
 
+// stripValidationPrefix strips the "key=" prefix from a validation token value.
+// The API returns the full DNS TXT record value (e.g. "lumeweb-verify=abc123"),
+// but for English display we only want the token portion.
+func stripValidationPrefix(token string) string {
+	if idx := strings.Index(token, "="); idx >= 0 {
+		return token[idx+1:]
+	}
+	return token
+}
+
 func newWebsitesCommand() *cli.Command {
 	return &cli.Command{
 		Name:    "websites",
@@ -258,7 +268,7 @@ func websitesList(ctx context.Context, cmd *cli.Command, output Output) error {
 		} else if website.Expired {
 			validation = "expired"
 		} else if website.ValidationToken != "" {
-			validation = website.ValidationToken
+			validation = stripValidationPrefix(website.ValidationToken)
 		}
 		gateway := ""
 		if website.GatewayDomain != nil {
@@ -476,7 +486,7 @@ func websitesGet(ctx context.Context, cmd *cli.Command, output Output) error {
 	if website.Status != "active" {
 		fields = append(fields,
 			Field{"Token Expired", fmt.Sprintf("%t", website.Expired)},
-			Field{"Validation Token", website.ValidationToken},
+			Field{"Validation Token", stripValidationPrefix(website.ValidationToken)},
 		)
 		if website.ValidationExpiresAt != nil {
 			fields = append(fields, Field{"Token Expires", website.ValidationExpiresAt.Format("2006-01-02 15:04:05")})
@@ -574,7 +584,7 @@ func websitesCreate(ctx context.Context, cmd *cli.Command, output Output) error 
 	}
 
 	output.Printfln("")
-	output.Printfln("Validation token: %s", createdWebsite.ValidationToken)
+	output.Printfln("Validation token: %s", stripValidationPrefix(createdWebsite.ValidationToken))
 	output.Printfln("")
 
 	nameservers := getNameservers(ctx, websitesService)
@@ -638,8 +648,13 @@ func showDNSHostingInstructions(output Output, website *ipfs.WebsiteItem, namese
 func showSelfManagedDNSInstructions(output Output, website *ipfs.WebsiteItem) {
 	output.Printfln("Required DNS records:")
 
+	validationHost := website.Domain
+	if website.ValidationRecordHost != nil && *website.ValidationRecordHost != "" {
+		validationHost = *website.ValidationRecordHost
+	}
+
 	records := [][]string{
-		{website.Domain, "TXT", "lumeweb-verify=" + website.ValidationToken},
+		{validationHost, "TXT", website.ValidationToken},
 		{"_dnslink." + website.Domain, "TXT", "dnslink=/" + website.TargetType + "/" + website.TargetHash},
 	}
 
@@ -859,8 +874,13 @@ func buildRequiredRecords(website *ipfs.WebsiteItem, nameservers []string) []map
 		return records
 	}
 
+	validationHost := website.Domain
+	if website.ValidationRecordHost != nil && *website.ValidationRecordHost != "" {
+		validationHost = *website.ValidationRecordHost
+	}
+
 	records := []map[string]string{
-		{"name": website.Domain, "type": "TXT", "value": "lumeweb-verify=" + website.ValidationToken},
+		{"name": validationHost, "type": "TXT", "value": website.ValidationToken},
 		{"name": "_dnslink." + website.Domain, "type": "TXT", "value": "dnslink=/" + website.TargetType + "/" + website.TargetHash},
 	}
 

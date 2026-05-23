@@ -296,8 +296,8 @@ func websitesListWithService(ctx context.Context, cmd *cli.Command, output Outpu
 		validation := "valid"
 		if website.Expired {
 			validation = "expired"
-		} else if website.ValidationToken != "" {
-			validation = website.ValidationToken
+	} else if website.ValidationToken != "" {
+		validation = stripValidationPrefix(website.ValidationToken)
 		}
 		gateway := ""
 		if website.GatewayDomain != nil {
@@ -569,7 +569,7 @@ func websitesGetWithService(ctx context.Context, cmd interface{ Args() cli.Args 
 		{"Status", website.Status},
 		{"DNS Hosting", fmt.Sprintf("%t", website.DnsHostingEnabled)},
 		{"Expired", fmt.Sprintf("%t", website.Expired)},
-		{"Validation Token", website.ValidationToken},
+		{"Validation Token", stripValidationPrefix(website.ValidationToken)},
 	}
 
 	if website.ValidationExpiresAt != nil {
