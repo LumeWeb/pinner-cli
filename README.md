@@ -1,9 +1,9 @@
 # Pinner.xyz CLI
 
-[![Go Version](https://img.shields.io/badge/Go-1.25.5-00ADD8?style=flat&logo=go)](https://golang.org)
+[![Go Version](https://img.shields.io/badge/Go-1.26.0-00ADD8?style=flat&logo=go)](https://golang.org)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A minimal, developer-focused CLI tool for pinning content to IPFS via the Pinner.xyz service.
+A developer-focused CLI for pinning content to IPFS, managing websites, DNS, and IPNS via the Pinner.xyz service.
 
 ## Principles
 
@@ -50,6 +50,15 @@ pinner list
 
 # Check pin status
 pinner status bafybeig77vqcdozl2wyk6z3cscaj5q5fggi53aoh64fewkdiri3cdauyn4
+
+# Create a website
+pinner websites create example.com --cid bafybeig...
+
+# Manage DNS
+pinner dns zones create --domain example.com
+
+# Publish to IPNS
+pinner ipns publish bafybeig... --key-name my-key
 ```
 
 ## Configuration
@@ -58,16 +67,28 @@ Config file location: `~/.config/pinner/config.yaml`
 
 ```yaml
 auth_token: your-jwt-token
-api_endpoint: https://api.lumeweb.com
+base_endpoint: pinner.xyz
 max_retries: 3
+memory_limit: 100
 secure: true
+gateway_endpoint: ""
 ```
 
 ### Environment Variables
 
+All config keys can be set via `PINNER_<UPPERCASE_KEY>` environment variables.
+
 | Variable | Description |
 |----------|-------------|
 | `PINNER_AUTH_TOKEN` | Override auth token for the current session |
+| `PINNER_BASE_ENDPOINT` | Override API base endpoint |
+| `PINNER_MAX_RETRIES` | Maximum retry attempts for failed operations |
+| `PINNER_MEMORY_LIMIT` | Memory limit in MB for CAR generation |
+| `PINNER_SECURE` | Use HTTPS for endpoints |
+| `PINNER_GATEWAY_ENDPOINT` | IPFS gateway URL |
+| `PINNER_EMAIL` | Email for `auth` command |
+| `PINNER_PASSWORD` | Password for `auth` and `account otp disable` commands |
+| `PINNER_OTP` | OTP code for `auth` command |
 
 ## Commands
 
@@ -77,14 +98,50 @@ secure: true
 # Authenticate with JWT token
 pinner auth <jwt-token>
 
-# Or authenticate interactively
+# Authenticate interactively (prompts for email/password)
 pinner auth
 
+# Authenticate with flags
+pinner auth --email user@example.com --password secret
+
+# Authenticate with OTP
+pinner auth --email user@example.com --otp-code 123456
+
+# Authenticate with API key options
+pinner auth --key-name "my-key" --no-create-key
+
+# Force re-authentication
+pinner auth --force
+
+# Check authentication status
+pinner auth status
+```
+
+### Account
+
+```bash
 # Show current account info
 pinner account
 
-# Confirm email (if required)
-pinner confirm-email <token>
+# Enable two-factor authentication
+pinner account otp enable --otp <code>
+
+# Disable two-factor authentication
+pinner account otp disable --password <password>
+```
+
+### Register
+
+```bash
+# Create a new account
+pinner register --email user@example.com --first-name John --last-name Doe --password secret
+```
+
+### Confirm Email
+
+```bash
+# Confirm email address
+pinner confirm-email --email user@example.com --token <confirmation-token>
 ```
 
 ### Upload
@@ -107,29 +164,90 @@ pinner upload file.png --wait
 # Upload from stdin (pipe)
 cat file.txt | pinner upload --name "piped-file"
 
-# Upload multiple files
-pinner upload file1.png file2.jpg file3.pdf
+# Dry run (show what would be uploaded)
+pinner upload file.png --dry-run
+
+# Customize CAR generation
+pinner upload file.png --memory-limit 512 --chunk-size 1048576 --chunker size-262144 --max-links 174
 
 # JSON output for automation
 pinner upload file.png --json
 ```
 
-### Pin
-
-Pin an existing CID to the Pinner.xyz service.
+### Download
 
 ```bash
-# Pin existing CID
+# Download content to a file
+pinner download bafybeig... -o output.bin
+
+# Download a specific path from a directory CID
+pinner download bafybeig.../path/to/file.txt -o file.txt
+
+# Force overwrite existing file
+pinner download bafybeig... -o output.bin --force
+
+# Dry run (show what would be downloaded)
+pinner download bafybeig... --dry-run
+```
+
+### Cat
+
+Stream IPFS content directly to stdout.
+
+```bash
+# Stream content to stdout
+pinner cat bafybeig...
+
+# Stream a specific file from a directory CID
+pinner cat bafybeig.../path/to/file.txt
+
+# Pipe to another command
+pinner cat bafybeig... | gzip > archive.gz
+```
+
+### Ls
+
+List contents of an IPFS directory.
+
+```bash
+# List directory contents
+pinner ls bafybeig...
+
+# List a nested directory
+pinner ls bafybeig.../subdir
+
+# Limit results
+pinner ls bafybeig... --limit 50
+```
+
+### Pin
+
+Pin existing content by CID.
+
+```bash
+# Pin a single CID
 pinner pin bafybeig77vqcdozl2wyk6z3cscaj5q5fggi53aoh64fewkdiri3cdauyn4
 
 # Pin with custom name
-pinner pin bafybeig77vqcdozl2wyk6z3cscaj5q5fggi53aoh64fewkdiri3cdauyn4 --name "My Pin"
+pinner pin bafybeig... --name "My Pin"
 
 # Pin and wait for completion
-pinner pin bafybeig77vqcdozl2wyk6z3cscaj5q5fggi53aoh64fewkdiri3cdauyn4 --wait
+pinner pin bafybeig... --wait
 
-# Pin with metadata
-pinner pin bafybeig77vqcdozl2wyk6z3cscaj5q5fggi53aoh64fewkdiri3cdauyn4 --name "Backup" --set "owner=derrick" --set "type=backup"
+# Pin multiple CIDs at once
+pinner pin cid1 cid2 cid3 --name "Batch"
+
+# Pin CIDs from a file (one per line)
+pinner pin --file cids.txt --name "Batch"
+
+# Pin in parallel
+pinner pin --file cids.txt --parallel 3
+
+# Pin with metadata (use metadata command to set key-value pairs)
+pinner pin bafybeig... --name "Backup"
+
+# Dry run
+pinner pin bafybeig... --dry-run
 ```
 
 ### List
@@ -137,7 +255,7 @@ pinner pin bafybeig77vqcdozl2wyk6z3cscaj5q5fggi53aoh64fewkdiri3cdauyn4 --name "B
 List your pinned content.
 
 ```bash
-# List recent pins
+# List recent pins (default: 10)
 pinner list
 
 # Filter by name
@@ -145,6 +263,12 @@ pinner list --name "My Pin"
 
 # Limit results
 pinner list --limit 20
+
+# Filter by status
+pinner list --status pinned
+
+# Watch for changes
+pinner list --watch
 
 # JSON output
 pinner list --json
@@ -167,17 +291,35 @@ pinner status bafybeig77vqcdozl2wyk6z3cscaj5q5fggi53aoh64fewkdiri3cdauyn4 --json
 
 ### Unpin
 
-Remove a CID from pinning.
+Remove pins.
 
 ```bash
 # Unpin (prompts for confirmation)
 pinner unpin bafybeig77vqcdozl2wyk6z3cscaj5q5fggi53aoh64fewkdiri3cdauyn4
 
 # Skip confirmation
-pinner unpin bafybeig77vqcdozl2wyk6z3cscaj5q5fggi53aoh64fewkdiri3cdauyn4 --confirm
+pinner unpin bafybeig... --confirm
+
+# Unpin multiple CIDs
+pinner unpin cid1 cid2 cid3 --confirm
+
+# Unpin CIDs from a file
+pinner unpin --file cids.txt --confirm
+
+# Unpin in parallel
+pinner unpin --file cids.txt --parallel 3
+
+# Unpin all pins
+pinner unpin all --yes
+
+# Unpin all with status filter
+pinner unpin all --status failed --yes
+
+# Dry run
+pinner unpin bafybeig... --dry-run
 
 # JSON output
-pinner unpin bafybeig77vqcdozl2wyk6z3cscaj5q5fggi53aoh64fewkdiri3cdauyn4 --json
+pinner unpin bafybeig... --json
 ```
 
 ### Metadata
@@ -185,17 +327,191 @@ pinner unpin bafybeig77vqcdozl2wyk6z3cscaj5q5fggi53aoh64fewkdiri3cdauyn4 --json
 Manage metadata for pinned content.
 
 ```bash
-# Set metadata
-pinner metadata bafybeig77vqcdozl2wyk6z3cscaj5q5fggi53aoh64fewkdiri3cdauyn4 --set "owner=derrick" --set "type=backup"
-
-# Clear all metadata
-pinner metadata bafybeig77vqcdozl2wyk6z3cscaj5q5fggi53aoh64fewkdiri3cdauyn4 --clear
-
 # Show current metadata
 pinner metadata bafybeig77vqcdozl2wyk6z3cscaj5q5fggi53aoh64fewkdiri3cdauyn4
 
+# Set metadata
+pinner metadata bafybeig... --set "owner=derrick" --set "type=backup"
+
+# Clear all metadata
+pinner metadata bafybeig... --clear
+
+# Dry run
+pinner metadata bafybeig... --set "owner=derrick" --dry-run
+
 # JSON output
-pinner metadata bafybeig77vqcdozl2wyk6z3cscaj5q5fggi53aoh64fewkdiri3cdauyn4 --json
+pinner metadata bafybeig... --json
+```
+
+### Operations
+
+List and inspect account operations.
+
+```bash
+# List operations
+pinner operations list
+
+# Filter operations
+pinner operations list --status pending --operation upload --limit 20
+
+# Watch operations
+pinner operations list --watch
+
+# Get details of a specific operation
+pinner operations get <operation-id>
+
+# Watch an operation until complete
+pinner operations get <operation-id> --watch
+```
+
+### DNS
+
+Manage DNS zones and records.
+
+```bash
+# List all DNS zones
+pinner dns zones list
+
+# Create a DNS zone
+pinner dns zones create --domain example.com
+
+# Create with custom nameservers
+pinner dns zones create --domain example.com --nameservers ns1.example.com,ns2.example.com
+
+# Get a DNS zone
+pinner dns zones get example.com
+
+# Validate zone nameserver delegation
+pinner dns zones validate example.com
+
+# Delete a DNS zone
+pinner dns zones delete example.com
+
+# List DNS records for a zone
+pinner dns records list example.com
+
+# Create a DNS record
+pinner dns records create example.com --name www --type A --content "1.2.3.4" --ttl 3600
+
+# Get a DNS record
+pinner dns records get example.com --name www --type A
+
+# Update a DNS record
+pinner dns records update example.com --name www --type A --content "5.6.7.8"
+
+# Delete a DNS record
+pinner dns records delete example.com --name www --type A
+```
+
+### IPNS
+
+Manage IPNS keys and records.
+
+```bash
+# List all IPNS keys
+pinner ipns keys list
+
+# Create a new IPNS key
+pinner ipns keys create my-key
+
+# Create with existing key
+pinner ipns keys create my-key --key <base64-key>
+
+# Get details of a specific key
+pinner ipns keys get my-key
+
+# Delete an IPNS key
+pinner ipns keys delete my-key
+
+# Publish a CID to an IPNS key
+pinner ipns publish bafybeig... --key-name my-key
+
+# Publish with custom TTL
+pinner ipns publish bafybeig... --key-name my-key --ttl 1h
+
+# Publish and wait for completion
+pinner ipns publish bafybeig... --key-name my-key --wait
+
+# Republish an IPNS record
+pinner ipns republish my-key
+
+# Resolve an IPNS name to its target CID
+pinner ipns resolve k51qzi5uqu5dg4vh...
+```
+
+### Websites
+
+Manage IPFS-hosted websites.
+
+```bash
+# List all websites
+pinner websites list
+
+# Create a website
+pinner websites create example.com --cid bafybeig...
+
+# Create with DNS hosting
+pinner websites create example.com --cid bafybeig... --dns-hosting
+
+# Get website details
+pinner websites get example.com
+
+# Update a website
+pinner websites update example.com --cid bafybeig...
+
+# Enable IPNS targeting
+pinner websites enable-ipns example.com --cid bafybeig...
+
+# Delete a website
+pinner websites delete example.com
+
+# Validate a website
+pinner websites validate example.com
+
+# Check SSL certificate status
+pinner websites ssl status example.com
+
+# Watch SSL provisioning
+pinner websites ssl status example.com --watch
+
+# Show website hosting configuration
+pinner websites config
+
+# Interactive website creation wizard
+pinner websites wizard
+```
+
+### Bench
+
+Benchmark upload and pinning performance.
+
+```bash
+# Run default benchmark (1MB, 1 file)
+pinner bench
+
+# Benchmark with custom size
+pinner bench --size 10MB
+
+# Benchmark multiple files
+pinner bench --files 10 --depth 2
+
+# Run multiple iterations
+pinner bench --iterations 3
+
+# Parallel uploads
+pinner bench --parallel 3
+
+# Keep benchmark artifacts
+pinner bench --no-cleanup
+
+# Customize CAR generation and polling
+pinner bench --memory-limit 512 --chunk-size 1048576 --chunker size-262144 --max-links 174 --poll-interval 1s
+
+# Dry run (show what would be benchmarked)
+pinner bench --dry-run
+
+# Benchmark a specific path
+pinner bench ./my-folder
 ```
 
 ### Config
@@ -210,10 +526,10 @@ pinner config
 pinner config get auth_token
 
 # Set value
-pinner config set api_endpoint https://custom.endpoint.com
+pinner config set base_endpoint custom.endpoint.com
 
-# Reset to defaults
-pinner config reset
+# Dry run (preview change without saving)
+pinner config set base_endpoint custom.endpoint.com --dry-run
 ```
 
 ### Setup
@@ -224,15 +540,24 @@ Interactive setup wizard for initial configuration.
 # Run setup wizard
 pinner setup
 
-# Re-run setup (overwrites existing config)
-pinner setup --force
+# Skip authentication step
+pinner setup --skip-auth
+
+# Skip configuration step
+pinner setup --skip-config
+
+# Reset existing config
+pinner setup --reset
+
+# Non-interactive mode
+pinner setup --non-interactive
 ```
 
 The setup wizard guides you through:
 - Authentication with the Pinner.xyz service
-- Configuration of API endpoints
+- API endpoint configuration
 - Shell completion setup
-- Configuration file creation
+- Quick tutorial
 
 ### Doctor
 
@@ -242,11 +567,11 @@ Diagnose configuration and environment issues.
 # Run diagnostics
 pinner doctor
 
-# Check specific components
-pinner doctor --config
-pinner doctor --auth
-pinner doctor --completion
+# JSON output
+pinner doctor --json
 ```
+
+Displays: version, OS/arch, config path and status, endpoint, memory limit, max retries, auth status, and shell completion status.
 
 ## Shell Completion
 
@@ -300,74 +625,112 @@ pinner completion pwsh | Invoke-Expression
 | `--verbose, -v` | Show detailed output |
 | `--quiet, -q` | Suppress non-error output |
 | `--unmask` | Show sensitive data (tokens, passwords) unmasked |
-| `--auth-token` | Override auth token (also reads from `PINNER_AUTH_TOKEN` env var) |
-| `--secure` | Use HTTPS instead of HTTP for endpoints |
+| `--auth-token` | Override auth token (env: `PINNER_AUTH_TOKEN`) |
+| `--secure` | Use HTTPS instead of HTTP for endpoints (default: true, env: `PINNER_SECURE`) |
+| `--version, -V` | Show version |
 | `--help, -h` | Show help |
 
 ## Architecture
 
 ### Project Structure
 
+Primary source files shown (test files, mocks, and supporting implementations omitted for clarity).
+
 ```
 pinner-cli/
-├── cmd/pinner/              # CLI entry point
-│   └── main.go              # Main application entry
+├── cmd/pinner/                    # CLI entry point
+│   └── main.go                    # Main application entry
 ├── pkg/
-│   ├── cli/                 # Primary CLI command implementations
-│   │   ├── auth.go          # Authentication commands
-│   │   ├── upload.go        # Upload commands
-│   │   ├── pin.go           # Pin commands
-│   │   ├── list.go          # List commands
-│   │   ├── status.go        # Status checking
-│   │   ├── unpin.go         # Unpin commands
-│   │   ├── metadata.go      # Metadata management
-│   │   ├── config.go        # Configuration commands
-│   │   ├── doctor.go        # Diagnostics
-│   │   ├── setup.go         # Setup wizard
-│   │   ├── flags.go         # Global flags definition
-│   │   ├── register.go      # Command registration
-│   │   ├── output.go        # Output formatting
-│   │   ├── progress.go      # Progress display
-│   │   ├── auth_service.go  # Auth service interface
-│   │   ├── pinning_service.go # Pinning service interface
-│   │   ├── upload_service.go # Upload service interface
-│   │   └── internal/        # Internal implementations
-│   ├── upload/              # CAR file generation and upload
-│   │   ├── car.go           # CAR generation functions
-│   │   ├── car_blockstore.go # LRU blockstore
-│   │   ├── car_dir_builder.go # Two-pass CAR generation
-│   │   └── unixfs_generator.go # UnixFS DAG node generation
-│   ├── config/              # Configuration management
-│   │   └── config.go        # Extends configmanager
-│   └── internal/io/         # Filesystem abstractions
-│       ├── stdinfs.go       # stdin fs implementation
-│       └── singlefilefs.go  # Single file fs implementation
-├── build/                   # Build-time information
-│   ├── build.go             # Build variables
-│   └── build_info.go        # BuildInfo interface and struct
-├── mocks/                   # Generated mocks
-├── .mockery.yaml            # Mockery configuration
-├── go.mod                   # Go module definition
-└── README.md                # This file
+│   ├── cli/                       # Primary CLI command implementations
+│   │   ├── auth.go                # Authentication commands
+│   │   ├── account.go             # Account and OTP management
+│   │   ├── register.go            # Account registration
+│   │   ├── confirm_email.go       # Email confirmation
+│   │   ├── upload.go              # Upload commands
+│   │   ├── download.go            # Download, cat, ls commands
+│   │   ├── pin.go                 # Pin commands
+│   │   ├── list.go                # List commands
+│   │   ├── status.go              # Status checking
+│   │   ├── unpin.go / unpin_all.go # Unpin commands
+│   │   ├── metadata.go            # Metadata management
+│   │   ├── operations.go          # Operations list/get
+│   │   ├── dns.go                 # DNS zone/record management
+│   │   ├── ipns.go                # IPNS key/publish/resolve
+│   │   ├── websites.go           # Website management
+│   │   ├── websites_ssl.go        # SSL status
+│   │   ├── websites_wizard.go     # Interactive website wizard
+│   │   ├── bench.go               # Benchmarking
+│   │   ├── config.go              # Configuration commands
+│   │   ├── doctor.go              # Diagnostics
+│   │   ├── setup.go / setup_wizard.go / setup_pterm.go # Setup wizard
+│   │   ├── admin.go               # Admin commands (quota, billing, websites)
+│   │   ├── version.go             # Version display
+│   │   ├── flags.go               # Global flags definition
+│   │   ├── register.go            # Command registration
+│   │   ├── root.go                # Root command
+│   │   ├── output.go              # Output formatting (human + JSON)
+│   │   ├── progress.go            # Progress display
+│   │   ├── error_formatter.go     # Structured error formatting
+│   │   ├── sources.go             # Flag/env/config source resolution
+│   │   ├── *_service.go           # Service interface definitions
+│   │   ├── wizard/                # Generic Go-generics wizard framework
+│   │   └── internal/              # Internal implementations
+│   │       ├── pinning_client.go       # PinningClient interface (boxo wrapper)
+│   │       ├── pinning_client_boxo.go  # BoxoPinningClient with retry logic
+│   │       └── http_client.go          # Retry HTTP transport
+│   ├── config/                    # Configuration management
+│   │   ├── core.go                # Config struct, keys, defaults, endpoints
+│   │   └── manager.go            # Manager interface (extends configmanager)
+│   └── internal/
+│       ├── car.go                 # CAR file root reading
+│       └── io/
+│           └── stdinfs.go         # stdin fs implementation
+├── build/                         # Build-time information
+│   ├── build.go                   # Build variables (Version, GitCommit, etc.)
+│   └── build_info.go              # BuildInfo interface and struct
+├── mocks/                         # Generated mocks
+├── .mockery.yaml                  # Mockery configuration
+├── go.mod                         # Go module definition
+└── README.md                      # This file
 ```
 
 ### Key Components
 
-**Service Layer Pattern**: Each major feature has a service interface with default implementation:
-- `PinningService` - Pin/unpin/list/status operations
-- `UploadService` - Upload files/directories to IPFS
-- `AuthService` - Authentication and account operations
-- `Manager` - Configuration management
+**Service Layer Pattern**: Each major feature has a service interface with default implementation, enabling dependency injection for testing:
 
-**Output Formatting**: The `Output` interface provides methods for formatted output with both human-readable and JSON implementations.
+| Interface | Description |
+|-----------|-------------|
+| `PinningService` | Pin/unpin/list/status/batch operations on existing CIDs |
+| `StatusService` | Extended status checking with operation tracking |
+| `UploadService` | Upload files/directories to IPFS |
+| `AuthService` | Authentication, registration, OTP, token management |
+| `DownloadService` | Download, cat, and directory listing from IPFS |
+| `BenchService` | Benchmark upload and pinning performance |
+| `OperationsService` | List and inspect account operations |
+| `DNSService` | DNS zone and record CRUD operations |
+| `IPNSService` | IPNS key management, publish, republish, resolve |
+| `WebsitesService` | Website CRUD, SSL status, config |
+| `QuotaAdminService` | Admin quota plans, allowances, user configs, stats |
+| `BillingAdminService` | Admin credits, price lines, pricing plans, subscribers |
+| `WebsiteAdminService` | Admin website block/unblock |
 
-**CAR Generation Flow**: Files are converted to CARv1 format using a two-pass generation process with LRU blockstore for memory efficiency.
+**Output Formatting**: The `Output` interface provides methods for formatted output (`Print`, `Printf`, `PrintTable`, `PrintJSON`, etc.) with both human-readable and JSON implementations, selected by the `--json` flag.
+
+**Wizard Framework**: `pkg/cli/wizard/` provides a generic Go-generics wizard framework (`Step[S any]`, `Run[S]()`) used by the websites and setup wizards. Each step defines `Name()`, `ShouldSkip()`, `Execute()`, and `ShouldRetry()`.
+
+**Error Formatting**: `BenchError`, `HTTPError`, and `FormatError` provide structured error types with JSON-safe output (human-readable via `FormatError`, raw structured data for `--json`).
+
+**CAR Generation**: Upload uses IPFS boxo libraries for DAG building and CAR format handling. CAR root reading is in `pkg/internal/car.go`.
+
+**CLI Command Pattern**: Each command has a `newXxxCommand()` function returning a `cli.Command`. Commands use `commandGetter` interface for flag access and factory functions for dependency injection.
+
+**Build Information**: Version, commit, and build time are injected at build time via ldflags. `build.Default` provides access throughout the application.
 
 ## Development
 
 ### Prerequisites
 
-- Go 1.25.5 or later
+- Go 1.26.0 or later
 - Make (optional, for building)
 
 ### Running Tests
@@ -465,7 +828,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
-
 
 ## Acknowledgments
 

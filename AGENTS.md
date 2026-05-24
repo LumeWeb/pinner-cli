@@ -63,40 +63,35 @@ go run ./cmd/pinner
 ## High-Level Architecture
 
 ### Project Overview
-Pinner.xyz CLI is a Go-based command-line tool for pinning content to IPFS via the Pinner.xyz service. It uses a layered architecture with clear separation of concerns between CLI presentation, business logic, and external service integration.
+Pinner.xyz CLI is a Go-based command-line tool for managing IPFS content via the Pinner.xyz service. Beyond pinning, it supports website hosting, DNS management, IPNS publishing, downloading, benchmarking, and admin operations. It uses a layered architecture with clear separation of concerns between CLI presentation, business logic, and external service integration.
 
 ### Core Directories
 
 - **`cmd/pinner/`**: Entry point for the CLI application. Minimal main.go that delegates to `pkg/cli.Run()`.
 
 - **`pkg/cli/`**: Primary CLI command implementations and orchestration logic.
-  - Contains all command handlers: `auth.go`, `upload.go`, `pin.go`, `list.go`, `status.go`, `unpin.go`, `metadata.go`, `config.go`, `doctor.go`, `setup.go`
-  - Defines service interfaces: `PinningService`, `UploadService`, `AuthService`
+  - Contains all command handlers: `auth.go`, `account.go`, `register.go`, `confirm_email.go`, `upload.go`, `download.go`, `pin.go`, `list.go`, `status.go`, `unpin.go`, `metadata.go`, `operations.go`, `dns.go`, `ipns.go`, `websites.go`, `bench.go`, `config.go`, `doctor.go`, `setup.go`, `admin.go`
+  - Defines service interfaces: `PinningService`, `StatusService`, `UploadService`, `AuthService`, `DownloadService`, `BenchService`, `OperationsService`, `DNSService`, `IPNSService`, `WebsitesService`, `QuotaAdminService`, `BillingAdminService`, `WebsiteAdminService`, `AdminTokenProvider`
   - Output formatting system with human-readable and JSON modes
   - Global flags and command registration in `flags.go` and `register.go`
   - Shell completion support for bash, zsh, fish, and PowerShell
+  - Generic wizard framework in `wizard/` using Go generics (`Step[S any]`, `Run[S]()`)
+  - Structured error types: `BenchError`, `HTTPError`, `FormatError`
 
 - **`pkg/cli/internal/`**: Internal implementations of service interfaces.
   - `PinningClient` interface wraps boxo's remote pinning client
-  - `PinningClientBoxo` provides the actual implementation with retry logic
+  - `BoxoPinningClient` provides the actual implementation with retry logic
   - HTTP client with configurable retry behavior
 
-- **`pkg/upload/`**: CAR file generation and upload logic.
-  - `car.go` - Main CAR generation functions: `StreamCAR`, `StreamCARWithSize`
-  - `car_blockstore.go` - LRU blockstore for memory-constrained operations
-  - `car_dir_builder.go` - Two-pass CAR generation (summary then write)
-  - `unixfs_generator.go` - UnixFS DAG node generation from files
-  - Uses IPFS boxo libraries for DAG building and CAR format handling
+- **`pkg/internal/`**: Internal shared utilities.
+  - `car.go` - CAR file root reading (`GetCarRoots`)
+  - `io/stdinfs.go` - Implements `fs.FS` for stdin (pipe) input
 
 - **`pkg/config/`**: Configuration management.
   - Extends `go.lumeweb.com/configmanager` for CLI-specific config
   - Default config location: `~/.config/pinner/config.yaml`
+  - Config keys: `auth_token`, `base_endpoint`, `max_retries`, `memory_limit`, `secure`, `gateway_endpoint`
   - Methods for managing auth tokens, endpoints, retries, and secure flags
-
-- **`pkg/internal/io/`**: Filesystem abstractions.
-  - `stdinfs.go` - Implements `fs.FS` for stdin (pipe) input
-  - `singlefilefs.go` - Implements `fs.FS` for single files
-  - Enables uniform handling of files, directories, and piped data
 
 - **`build/`**: Build-time information.
   - `build.go` - Variables populated at build time via ldflags
@@ -105,9 +100,19 @@ Pinner.xyz CLI is a Go-based command-line tool for pinning content to IPFS via t
 ### Key Interfaces and Patterns
 
 **Service Layer Pattern**: Each major feature has a service interface with default implementation:
-- `PinningService` - Pin/unpin/list/status operations on existing CIDs
+- `PinningService` - Pin/unpin/list/status/batch operations on existing CIDs
+- `StatusService` - Extended status checking with operation tracking
 - `UploadService` - Upload files/directories to IPFS
-- `AuthService` - Authentication and account operations
+- `AuthService` - Authentication, registration, OTP, token management
+- `DownloadService` - Download, cat, and directory listing from IPFS
+- `BenchService` - Benchmark upload and pinning performance
+- `OperationsService` - List and inspect account operations
+- `DNSService` - DNS zone and record CRUD operations
+- `IPNSService` - IPNS key management, publish, republish, resolve
+- `WebsitesService` - Website CRUD, SSL status, config
+- `QuotaAdminService` - Admin quota plans, allowances, user configs, stats
+- `BillingAdminService` - Admin credits, price lines, pricing plans, subscribers
+- `WebsiteAdminService` - Admin website block/unblock
 - `Manager` - Configuration management
 
 These interfaces enable dependency injection for testing. Factory functions create service instances (`defaultPinningServiceFactory`, `defaultUploadServiceFactory`, etc.).
@@ -122,11 +127,9 @@ These interfaces enable dependency injection for testing. Factory functions crea
 Two implementations: `humanFormatter` and `jsonFormatter`, selected based on global `--json` flag.
 
 **CAR Generation Flow**:
-1. Input is resolved to an `fs.FS` (file, directory, or stdin)
-2. `UnixFSNodeGenerator` creates DAG nodes from the filesystem
-3. `CARBuilder` performs two-pass generation (summary then write)
-4. LRU blockstore limits memory usage during generation
-5. Result is a CARv1 file with root CID
+1. Upload uses IPFS boxo libraries for DAG building and CAR format handling
+2. CAR root reading via `GetCarRoots` in `pkg/internal/car.go`
+3. Memory usage limited by `--memory-limit` flag (default: 100MB)
 
 **CLI Command Pattern**:
 - Each command has a `newXxxCommand()` function returning a `cli.Command`
