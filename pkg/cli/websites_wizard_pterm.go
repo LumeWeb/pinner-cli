@@ -62,6 +62,7 @@ func (ui *PTermWebsitesUI) ShowCompletion() error {
 	validated := vr != nil && vr.Valid
 
 	msg := "✓ Website wizard completed!\n\n"
+	domain := ui.wizard.Domain()
 	if validated {
 		msg += "Your website has been created and validated.\n\n"
 	} else {
@@ -69,15 +70,15 @@ func (ui *PTermWebsitesUI) ShowCompletion() error {
 		if ui.wizard.DNSHosting() {
 			msg += "DNS records are managed by Pinner. Update your nameservers at your\n" +
 				"registrar, then validate once they propagate:\n" +
-				"  pinner dns zones validate <domain>\n\n"
+				fmt.Sprintf("  pinner dns zones validate %s\n\n", domain)
 		} else {
 			msg += "Add the DNS records shown above at your registrar, then validate:\n" +
-				"  pinner websites validate <domain>\n\n"
+				fmt.Sprintf("  pinner websites validate %s\n\n", domain)
 		}
 	}
 	msg += "Next steps:\n" +
-		"  • View details: pinner websites get <domain>\n" +
-		"  • Update: pinner websites update <domain> --cid <new-cid>\n\n" +
+		fmt.Sprintf("  • View details: pinner websites get %s\n", domain) +
+		fmt.Sprintf("  • Update: pinner websites update %s --cid <new-cid>\n\n", domain) +
 		"Need help? Visit " + DocumentationURL
 
 	pterm.Println()

@@ -259,7 +259,7 @@ func websitesList(ctx context.Context, cmd *cli.Command, output Output) error {
 
 	output.Printfln("Found %d website(s)", len(websites))
 
-	headers := []string{"ID", "NAME", "CID", "STATUS", "DNS", "GATEWAY", "VALIDATION", "CREATED"}
+	headers := []string{"ID", "NAME", "CID", "RESOLVED CID", "STATUS", "DNS", "GATEWAY", "VALIDATION", "CREATED"}
 	rows := make([][]string, len(websites))
 	for i, website := range websites {
 		validation := ""
@@ -274,10 +274,15 @@ func websitesList(ctx context.Context, cmd *cli.Command, output Output) error {
 		if website.GatewayDomain != nil {
 			gateway = *website.GatewayDomain
 		}
+		resolvedCID := "-"
+		if website.ActiveCid != nil {
+			resolvedCID = *website.ActiveCid
+		}
 		rows[i] = []string{
 			fmt.Sprintf("%d", website.Id),
 			website.Domain,
 			website.TargetHash,
+			resolvedCID,
 			website.Status,
 			fmt.Sprintf("%t", website.DnsHostingEnabled),
 			gateway,
@@ -481,6 +486,10 @@ func websitesGet(ctx context.Context, cmd *cli.Command, output Output) error {
 		{"Target Type", website.TargetType},
 		{"Status", website.Status},
 		{"DNS Hosting", fmt.Sprintf("%t", website.DnsHostingEnabled)},
+	}
+
+	if website.ActiveCid != nil {
+		fields = append(fields, Field{"Resolved CID", *website.ActiveCid})
 	}
 
 	if website.Status != "active" {
