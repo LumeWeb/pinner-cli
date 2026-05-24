@@ -273,14 +273,19 @@ func ipnsKeysList(ctx context.Context, cmd *cli.Command, output Output) error {
 
 	output.Printfln("Found %d IPNS key(s)", len(keys))
 
-	headers := []string{"ID", "NAME", "IPNS NAME", "PEER ID", "CREATED"}
+	headers := []string{"ID", "NAME", "IPNS NAME", "PEER ID", "CID", "CREATED"}
 	rows := make([][]string, len(keys))
 	for i, key := range keys {
+		value := "-"
+		if key.Value != nil {
+			value = *key.Value
+		}
 		rows[i] = []string{
 			fmt.Sprintf("%d", key.Id),
 			key.Name,
 			key.IpnsName,
 			key.PeerId,
+			value,
 			key.Created.Format("2006-01-02 15:04:05"),
 		}
 	}
@@ -318,13 +323,19 @@ func ipnsKeysCreate(ctx context.Context, cmd *cli.Command, output Output) error 
 
 	output.Printfln("Successfully created IPNS key")
 
-	headers := []string{"ID", "NAME", "IPNS NAME", "PEER ID", "CREATED"}
+	value := "-"
+	if createdKey.Value != nil {
+		value = *createdKey.Value
+	}
+
+	headers := []string{"ID", "NAME", "IPNS NAME", "PEER ID", "CID", "CREATED"}
 	rows := [][]string{
 		{
 			fmt.Sprintf("%d", createdKey.Id),
 			createdKey.Name,
 			createdKey.IpnsName,
 			createdKey.PeerId,
+			value,
 			createdKey.Created.Format("2006-01-02 15:04:05"),
 		},
 	}
@@ -362,13 +373,19 @@ func ipnsKeysGet(ctx context.Context, cmd *cli.Command, output Output) error {
 
 	output.Printfln("IPNS Key Details")
 
-	headers := []string{"ID", "NAME", "IPNS NAME", "PEER ID", "CREATED"}
+	value := "-"
+	if key.Value != nil {
+		value = *key.Value
+	}
+
+	headers := []string{"ID", "NAME", "IPNS NAME", "PEER ID", "CID", "CREATED"}
 	rows := [][]string{
 		{
 			fmt.Sprintf("%d", key.Id),
 			key.Name,
 			key.IpnsName,
 			key.PeerId,
+			value,
 			key.Created.Format("2006-01-02 15:04:05"),
 		},
 	}
