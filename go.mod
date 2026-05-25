@@ -1,4 +1,4 @@
-module go.lumeweb.com/pinner-cli // v0.2.0
+module go.lumeweb.com/pinner-cli // v0.0.0
 
 go 1.26.0
 
