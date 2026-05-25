@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+
+	"golang.org/x/sys/unix"
 )
 
 func availableMemory() int64 {
@@ -14,7 +16,11 @@ func availableMemory() int64 {
 		return 0
 	}
 
-	var pageSize int64
+	pageSize, err := unix.SysctlUint32("hw.pagesize")
+	if err != nil {
+		return 0
+	}
+
 	var freePages, inactivePages int64
 
 	for line := range strings.SplitSeq(string(out), "\n") {
@@ -31,8 +37,6 @@ func availableMemory() int64 {
 		}
 
 		switch key {
-		case "Mach Virtual Memory Statistics: (page size of":
-			pageSize = val
 		case "Pages free":
 			freePages = val
 		case "Pages inactive":
@@ -40,9 +44,5 @@ func availableMemory() int64 {
 		}
 	}
 
-	if pageSize <= 0 {
-		pageSize = 16384
-	}
-
-	return (freePages + inactivePages) * pageSize
+	return (freePages + inactivePages) * int64(pageSize)
 }
