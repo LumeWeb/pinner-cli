@@ -1,0 +1,81 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+
+version: 2
+
+project_name: pinner-cli
+
+before:
+    hooks:
+        - sh -c "mkdir -p completions && go run ./cmd/pinner completion bash > completions/pinner.bash"
+        - sh -c "go run ./cmd/pinner completion zsh > completions/pinner.zsh"
+        - sh -c "go run ./cmd/pinner completion fish > completions/pinner.fish"
+
+builds:
+    - id: pinner-cli
+      main: ./cmd/pinner
+      binary: pinner
+      env:
+          - CGO_ENABLED=0
+      goos:
+          - linux
+          - darwin
+          - windows
+      goarch:
+          - amd64
+          - arm64
+      flags:
+          - -trimpath
+      ldflags:
+          - -s -w
+          - -X 'go.lumeweb.com/pinner-cli/build.Version={{.Version}}'
+          - -X 'go.lumeweb.com/pinner-cli/build.GitCommit={{.Commit}}'
+          - -X 'go.lumeweb.com/pinner-cli/build.GitBranch={{.Branch}}'
+          - -X 'go.lumeweb.com/pinner-cli/build.BuildTime={{.CommitDate}}'
+          - -X 'go.lumeweb.com/pinner-cli/build.GoVersion={{.Env.GO_VERSION}}'
+          - -X 'go.lumeweb.com/pinner-cli/build.Platform={{.Os}}'
+          - -X 'go.lumeweb.com/pinner-cli/build.Architecture={{.Arch}}'
+      mod_timestamp: "{{.CommitTimestamp}}"
+
+archives:
+    - formats: [tar.gz]
+      format_overrides:
+          - goos: windows
+            formats: [zip]
+      name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+      files:
+          - LICENSE
+          - README.md
+          - completions/*
+
+checksum:
+    name_template: checksums.txt
+
+changelog:
+    disable: true
+
+release:
+    github:
+        owner: LumeWeb
+        name: pinner-cli
+    mode: keep-existing
+    prerelease: auto
+
+nfpms:
+    - id: pinner-cli
+      package_name: pinner-cli
+      vendor: Pinner.xyz
+      homepage: https://pinner.xyz
+      description: "CLI for pinning content to IPFS, and deploying websites via Pinner.xyz"
+      license: MIT
+      maintainer: "Pinner <support@pinner.xyz>"
+      formats:
+          - deb
+          - rpm
+      bindir: /usr/bin
+      contents:
+          - src: ./completions/pinner.bash
+            dst: /usr/share/bash-completion/completions/pinner
+          - src: ./completions/pinner.zsh
+            dst: /usr/share/zsh/site-functions/_pinner
+          - src: ./completions/pinner.fish
+            dst: /usr/share/fish/vendor_completions.d/pinner.fish
