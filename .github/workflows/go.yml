@@ -27,6 +27,14 @@ jobs:
     - name: Build
       run: go build -v ./...
 
+    - name: Install GoReleaser
+      uses: goreleaser/goreleaser-action@v7
+      with:
+        install-only: true
+
+    - name: Validate GoReleaser config
+      run: goreleaser check
+
     - name: Test
       run: go test -v -race -coverprofile=coverage.out -covermode=atomic ./... && go test ./...
 
