@@ -195,10 +195,6 @@ func accountAPIKeysDelete(ctx context.Context, cmd *cli.Command, output Output, 
 
 	force := cmd.Bool(FlagForce)
 
-	if err := svc.DeleteAPIKey(ctx, idOrName, force); err != nil {
-		return err
-	}
-
 	currentUUID := svc.GetCurrentAPIKeyUUID()
 	resolvedID := idOrName
 	if currentUUID != "" && !isUUIDString(idOrName) {
@@ -213,6 +209,10 @@ func accountAPIKeysDelete(ctx context.Context, cmd *cli.Command, output Output, 
 		}
 	}
 	isCurrentKey := currentUUID != "" && currentUUID == resolvedID
+
+	if err := svc.DeleteAPIKey(ctx, idOrName, force); err != nil {
+		return err
+	}
 
 	if output.IsJSON() {
 		result := map[string]any{
