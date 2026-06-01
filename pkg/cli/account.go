@@ -20,6 +20,7 @@ Examples:
   pinner account otp disable --password mypassword`,
 		Commands: []*cli.Command{
 			newAccountOTPCommand(),
+			newAccountAPIKeysCommand(),
 		},
 	}
 }
