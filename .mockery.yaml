@@ -26,6 +26,7 @@ packages:
       WebsiteAdminService: {}
       StatusService: {}
       OperationsService: {}
+      APIKeyService: {}
   go.lumeweb.com/pinner-cli/pkg/cli/internal:
     config:
       dir: ./pkg/cli/internal/mocks

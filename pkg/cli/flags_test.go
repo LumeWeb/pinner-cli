@@ -589,7 +589,7 @@ func TestCommandTree(t *testing.T) {
 	}
 	require.NotNil(t, accountCmd, "account command should exist")
 
-	accountSubcommands := []string{"otp"}
+	accountSubcommands := []string{"otp", "api-keys"}
 	for _, subcommandName := range accountSubcommands {
 		var found bool
 		for _, subCmd := range accountCmd.Commands {

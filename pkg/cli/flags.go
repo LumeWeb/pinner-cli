@@ -48,6 +48,7 @@ const (
 	FlagClear       = "clear"
 	FlagYes         = "yes"
 	FlagOperation   = "operation"
+	FlagSearch      = "search"
 	FlagProtocol    = "protocol"
 )
 
