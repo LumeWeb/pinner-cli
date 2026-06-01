@@ -200,7 +200,19 @@ func accountAPIKeysDelete(ctx context.Context, cmd *cli.Command, output Output, 
 	}
 
 	currentUUID := svc.GetCurrentAPIKeyUUID()
-	isCurrentKey := currentUUID != "" && (currentUUID == idOrName || isUUIDString(idOrName) && currentUUID == idOrName)
+	resolvedID := idOrName
+	if currentUUID != "" && !isUUIDString(idOrName) {
+		keys, _, listErr := svc.ListAPIKeys(ctx, idOrName)
+		if listErr == nil {
+			for _, key := range keys {
+				if key.Name == idOrName {
+					resolvedID = key.Uuid.String()
+					break
+				}
+			}
+		}
+	}
+	isCurrentKey := currentUUID != "" && currentUUID == resolvedID
 
 	if output.IsJSON() {
 		result := map[string]any{
