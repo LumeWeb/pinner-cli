@@ -10,7 +10,7 @@ func newAdminCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "admin",
 		Usage: "Administrative operations",
-		Description: `Administrative operations for quota management and billing.
+		Description: `Administrative operations for quota management, billing, and profiling.
 
 These commands require administrative privileges and are intended for system administrators.
 
@@ -27,15 +27,23 @@ Billing operations include:
   - Manage price lines and pricing plans
   - Manage subscribers and subscriptions
 
+Profiling operations include:
+  - Access Go runtime pprof profiles (heap, cpu, goroutine, etc.)
+  - Configure block and mutex profiling rates
+  - View profiling status
+
 Examples:
   pinner admin quota plans list
   pinner admin quota allowances list
   pinner admin billing credits list
-  pinner admin billing subscribers list`,
+  pinner admin billing subscribers list
+  pinner admin pprof status
+  pinner admin pprof heap > heap.prof`,
 		Commands: []*cli.Command{
 			newQuotaCommand(),
 			newBillingCommand(),
 			newAdminWebsitesCommand(),
+			newAdminPprofCommand(),
 		},
 	}
 }

@@ -165,7 +165,20 @@ const (
 	CmdBlock               = "block"
 	CmdUnblock             = "unblock"
 	CmdWebsites            = "websites"
-	CmdAdmin              = "admin"
+	CmdAdmin               = "admin"
+	CmdPprof               = "pprof"
+	CmdSetBlockRate        = "set-block-rate"
+	CmdSetMutexFraction    = "set-mutex-fraction"
+	CmdIndex               = "index"
+	CmdCmdline             = "cmdline"
+	CmdGoroutine           = "goroutine"
+	CmdHeap                = "heap"
+	CmdMutex               = "mutex"
+	CmdCPU                 = "cpu"
+	CmdSymbol              = "symbol"
+	CmdThreadcreate        = "threadcreate"
+	CmdTrace               = "trace"
+	CmdStatus              = "status"
 )
 
 // GlobalFlags returns flags that are available to all commands.

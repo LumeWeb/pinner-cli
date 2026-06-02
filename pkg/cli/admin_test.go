@@ -15,19 +15,20 @@ func TestNewAdminCommand(t *testing.T) {
 		assert.Equal(t, "admin", cmd.Name)
 		assert.Equal(t, "Administrative operations", cmd.Usage)
 		assert.NotEmpty(t, cmd.Description)
-		assert.Contains(t, cmd.Description, "Administrative operations for quota management and billing")
+		assert.Contains(t, cmd.Description, "Administrative operations for quota management, billing, and profiling")
 	})
 
 	t.Run("has quota and billing subcommands", func(t *testing.T) {
 		cmd := newAdminCommand()
 
 		require.NotNil(t, cmd.Commands)
-		assert.Len(t, cmd.Commands, 3)
+		assert.Len(t, cmd.Commands, 4)
 
 		subcommandNames := getSubcommandNames(cmd.Commands)
 		assert.Contains(t, subcommandNames, "quota")
 		assert.Contains(t, subcommandNames, "billing")
 		assert.Contains(t, subcommandNames, "websites")
+		assert.Contains(t, subcommandNames, "pprof")
 	})
 }
 

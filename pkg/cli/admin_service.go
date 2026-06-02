@@ -43,6 +43,12 @@ type websiteAdminService struct {
 	service *admin.WebsiteService
 }
 
+// profilingAdminService implements the ProfilingAdminService interface using the admin.ProfilingService.
+type profilingAdminService struct {
+	*adminServiceBase
+	service *admin.ProfilingService
+}
+
 // QuotaAdminServiceFactory creates a QuotaAdminService with dependencies.
 type QuotaAdminServiceFactory func(cfgMgr config.Manager, output Output) QuotaAdminService
 
@@ -51,6 +57,9 @@ type BillingAdminServiceFactory func(cfgMgr config.Manager, output Output) Billi
 
 // WebsiteAdminServiceFactory creates a WebsiteAdminService with dependencies.
 type WebsiteAdminServiceFactory func(cfgMgr config.Manager, output Output) WebsiteAdminService
+
+// ProfilingAdminServiceFactory creates a ProfilingAdminService with dependencies.
+type ProfilingAdminServiceFactory func(cfgMgr config.Manager, output Output) ProfilingAdminService
 
 // defaultQuotaAdminServiceFactory creates a default QuotaAdminService instance.
 func defaultQuotaAdminServiceFactory(cfgMgr config.Manager, output Output) QuotaAdminService {
@@ -65,6 +74,11 @@ func defaultBillingAdminServiceFactory(cfgMgr config.Manager, output Output) Bil
 // defaultWebsiteAdminServiceFactory creates a default WebsiteAdminService instance.
 func defaultWebsiteAdminServiceFactory(cfgMgr config.Manager, output Output) WebsiteAdminService {
 	return NewWebsiteAdminService(cfgMgr, output, cfgMgr.Config().GetAdminEndpoint())
+}
+
+// defaultProfilingAdminServiceFactory creates a default ProfilingAdminService instance.
+func defaultProfilingAdminServiceFactory(cfgMgr config.Manager, output Output) ProfilingAdminService {
+	return NewProfilingAdminService(cfgMgr, output, cfgMgr.Config().GetAdminEndpoint())
 }
 
 // newAdminServiceBase creates a new adminServiceBase with the shared fields.
@@ -133,6 +147,13 @@ func NewBillingAdminService(cfgMgr config.Manager, output Output, apiEndpoint st
 // NewWebsiteAdminService creates a new WebsiteAdminService instance.
 func NewWebsiteAdminService(cfgMgr config.Manager, output Output, apiEndpoint string) WebsiteAdminService {
 	return &websiteAdminService{
+		adminServiceBase: newAdminServiceBase(cfgMgr, apiEndpoint),
+	}
+}
+
+// NewProfilingAdminService creates a new ProfilingAdminService instance.
+func NewProfilingAdminService(cfgMgr config.Manager, output Output, apiEndpoint string) ProfilingAdminService {
+	return &profilingAdminService{
 		adminServiceBase: newAdminServiceBase(cfgMgr, apiEndpoint),
 	}
 }
@@ -233,6 +254,24 @@ type WebsiteAdminService interface {
 	RequireAuthenticated() error
 	BlockWebsite(ctx context.Context, id string) (*admin.Website, error)
 	UnblockWebsite(ctx context.Context, id string) (*admin.Website, error)
+}
+
+// ProfilingAdminService defines the interface for profiling admin operations.
+type ProfilingAdminService interface {
+	RequireAuthenticated() error
+	GetProfileIndex(ctx context.Context) ([]byte, error)
+	GetBlockProfile(ctx context.Context) ([]byte, error)
+	SetBlockProfileRate(ctx context.Context, rate int) error
+	GetCmdline(ctx context.Context) ([]byte, error)
+	GetGoroutineProfile(ctx context.Context) ([]byte, error)
+	GetHeapProfile(ctx context.Context) ([]byte, error)
+	GetMutexProfile(ctx context.Context) ([]byte, error)
+	SetMutexProfileFraction(ctx context.Context, fraction int) error
+	GetCPUProfile(ctx context.Context) ([]byte, error)
+	GetStatus(ctx context.Context) (*admin.ProfilingStatus, error)
+	GetSymbol(ctx context.Context) ([]byte, error)
+	GetThreadcreate(ctx context.Context) ([]byte, error)
+	GetTrace(ctx context.Context) ([]byte, error)
 }
 
 // getService returns the quota service, lazily initializing with token exchange if needed.
@@ -742,5 +781,108 @@ func (s *websiteAdminService) BlockWebsite(ctx context.Context, id string) (*adm
 func (s *websiteAdminService) UnblockWebsite(ctx context.Context, id string) (*admin.Website, error) {
 	return with2(s, ctx, func(svc *admin.WebsiteService) (*admin.Website, error) {
 		return svc.UnblockWebsite(ctx, id)
+	})
+}
+
+// getService returns the profiling service, lazily initializing with token exchange if needed.
+func (s *profilingAdminService) getService(ctx context.Context) (*admin.ProfilingService, error) {
+	s.mu.RLock()
+	if s.service != nil {
+		s.mu.RUnlock()
+		return s.service, nil
+	}
+	s.mu.RUnlock()
+
+	token, err := s.tokenProvider.GetLoginToken(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	client := admin.NewClient(
+		admin.WithEndpoint(s.endpoint),
+		admin.WithJWT(token),
+	)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.service = client.Profiling()
+	return s.service, nil
+}
+
+func (s *profilingAdminService) GetProfileIndex(ctx context.Context) ([]byte, error) {
+	return with2(s, ctx, func(svc *admin.ProfilingService) ([]byte, error) {
+		return svc.GetProfileIndex(ctx)
+	})
+}
+
+func (s *profilingAdminService) GetBlockProfile(ctx context.Context) ([]byte, error) {
+	return with2(s, ctx, func(svc *admin.ProfilingService) ([]byte, error) {
+		return svc.GetBlockProfile(ctx)
+	})
+}
+
+func (s *profilingAdminService) SetBlockProfileRate(ctx context.Context, rate int) error {
+	return with0(s, ctx, func(svc *admin.ProfilingService) error {
+		return svc.SetBlockProfileRate(ctx, rate)
+	})
+}
+
+func (s *profilingAdminService) GetCmdline(ctx context.Context) ([]byte, error) {
+	return with2(s, ctx, func(svc *admin.ProfilingService) ([]byte, error) {
+		return svc.GetCmdline(ctx)
+	})
+}
+
+func (s *profilingAdminService) GetGoroutineProfile(ctx context.Context) ([]byte, error) {
+	return with2(s, ctx, func(svc *admin.ProfilingService) ([]byte, error) {
+		return svc.GetGoroutineProfile(ctx)
+	})
+}
+
+func (s *profilingAdminService) GetHeapProfile(ctx context.Context) ([]byte, error) {
+	return with2(s, ctx, func(svc *admin.ProfilingService) ([]byte, error) {
+		return svc.GetHeapProfile(ctx)
+	})
+}
+
+func (s *profilingAdminService) GetMutexProfile(ctx context.Context) ([]byte, error) {
+	return with2(s, ctx, func(svc *admin.ProfilingService) ([]byte, error) {
+		return svc.GetMutexProfile(ctx)
+	})
+}
+
+func (s *profilingAdminService) SetMutexProfileFraction(ctx context.Context, fraction int) error {
+	return with0(s, ctx, func(svc *admin.ProfilingService) error {
+		return svc.SetMutexProfileFraction(ctx, fraction)
+	})
+}
+
+func (s *profilingAdminService) GetCPUProfile(ctx context.Context) ([]byte, error) {
+	return with2(s, ctx, func(svc *admin.ProfilingService) ([]byte, error) {
+		return svc.GetCPUProfile(ctx)
+	})
+}
+
+func (s *profilingAdminService) GetStatus(ctx context.Context) (*admin.ProfilingStatus, error) {
+	return with2(s, ctx, func(svc *admin.ProfilingService) (*admin.ProfilingStatus, error) {
+		return svc.GetStatus(ctx)
+	})
+}
+
+func (s *profilingAdminService) GetSymbol(ctx context.Context) ([]byte, error) {
+	return with2(s, ctx, func(svc *admin.ProfilingService) ([]byte, error) {
+		return svc.GetSymbol(ctx)
+	})
+}
+
+func (s *profilingAdminService) GetThreadcreate(ctx context.Context) ([]byte, error) {
+	return with2(s, ctx, func(svc *admin.ProfilingService) ([]byte, error) {
+		return svc.GetThreadcreate(ctx)
+	})
+}
+
+func (s *profilingAdminService) GetTrace(ctx context.Context) ([]byte, error) {
+	return with2(s, ctx, func(svc *admin.ProfilingService) ([]byte, error) {
+		return svc.GetTrace(ctx)
 	})
 }
