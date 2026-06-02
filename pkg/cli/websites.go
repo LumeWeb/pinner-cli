@@ -214,11 +214,16 @@ func printWebsiteUpdateResult(output Output, website *ipfs.WebsiteItem, message 
 		{"Target Type", website.TargetType},
 		{"Status", website.Status},
 		{"DNS Hosting", fmt.Sprintf("%t", website.DnsHostingEnabled)},
+		{"Subdomain", fmt.Sprintf("%t", website.IsSubdomain)},
 		{"Created", website.Created.Format("2006-01-02 15:04:05")},
 	}
 
 	if website.Status != "active" {
 		fields = append(fields, Field{"Token Expired", fmt.Sprintf("%t", website.Expired)})
+	}
+
+	if website.IpnsKeyId != nil {
+		fields = append(fields, Field{"IPNS Key ID", fmt.Sprintf("%d", *website.IpnsKeyId)})
 	}
 
 	output.PrintFields(FieldGroup{Fields: fields})
@@ -259,7 +264,7 @@ func websitesList(ctx context.Context, cmd *cli.Command, output Output) error {
 
 	output.Printfln("Found %d website(s)", len(websites))
 
-	headers := []string{"ID", "NAME", "CID", "RESOLVED CID", "STATUS", "DNS", "GATEWAY", "VALIDATION", "CREATED"}
+	headers := []string{"ID", "NAME", "CID", "RESOLVED CID", "STATUS", "DNS", "SUBDOMAIN", "GATEWAY", "VALIDATION", "CREATED"}
 	rows := make([][]string, len(websites))
 	for i, website := range websites {
 		validation := ""
@@ -285,6 +290,7 @@ func websitesList(ctx context.Context, cmd *cli.Command, output Output) error {
 			resolvedCID,
 			website.Status,
 			fmt.Sprintf("%t", website.DnsHostingEnabled),
+			fmt.Sprintf("%t", website.IsSubdomain),
 			gateway,
 			validation,
 			website.Created.Format("2006-01-02 15:04:05"),
@@ -486,6 +492,7 @@ func websitesGet(ctx context.Context, cmd *cli.Command, output Output) error {
 		{"Target Type", website.TargetType},
 		{"Status", website.Status},
 		{"DNS Hosting", fmt.Sprintf("%t", website.DnsHostingEnabled)},
+		{"Subdomain", fmt.Sprintf("%t", website.IsSubdomain)},
 	}
 
 	if website.ActiveCid != nil {
@@ -506,8 +513,16 @@ func websitesGet(ctx context.Context, cmd *cli.Command, output Output) error {
 		fields = append(fields, Field{"Gateway", *website.GatewayDomain})
 	}
 
+	if website.IpnsKeyId != nil {
+		fields = append(fields, Field{"IPNS Key ID", fmt.Sprintf("%d", *website.IpnsKeyId)})
+	}
+
 	if website.DnsZoneId != nil {
 		fields = append(fields, Field{"DNS Zone ID", fmt.Sprintf("%d", *website.DnsZoneId)})
+	}
+
+	if website.ValidationRecordHost != nil && *website.ValidationRecordHost != "" {
+		fields = append(fields, Field{"Validation Host", *website.ValidationRecordHost})
 	}
 
 	fields = append(fields, Field{"Created", website.Created.Format("2006-01-02 15:04:05")})
@@ -572,17 +587,22 @@ func websitesCreate(ctx context.Context, cmd *cli.Command, output Output) error 
 
 	output.Printfln("Website created successfully")
 
-	output.PrintFields(FieldGroup{
-		Fields: []Field{
-			{"ID", fmt.Sprintf("%d", createdWebsite.Id)},
-			{"Domain", createdWebsite.Domain},
-			{"CID", createdWebsite.TargetHash},
-			{"Target Type", createdWebsite.TargetType},
-			{"Status", createdWebsite.Status},
-			{"DNS Hosting", fmt.Sprintf("%t", createdWebsite.DnsHostingEnabled)},
-			{"Expired", fmt.Sprintf("%t", createdWebsite.Expired)},
-		},
-	})
+	fields := []Field{
+		{"ID", fmt.Sprintf("%d", createdWebsite.Id)},
+		{"Domain", createdWebsite.Domain},
+		{"CID", createdWebsite.TargetHash},
+		{"Target Type", createdWebsite.TargetType},
+		{"Status", createdWebsite.Status},
+		{"DNS Hosting", fmt.Sprintf("%t", createdWebsite.DnsHostingEnabled)},
+		{"Subdomain", fmt.Sprintf("%t", createdWebsite.IsSubdomain)},
+		{"Expired", fmt.Sprintf("%t", createdWebsite.Expired)},
+	}
+
+	if createdWebsite.IpnsKeyId != nil {
+		fields = append(fields, Field{"IPNS Key ID", fmt.Sprintf("%d", *createdWebsite.IpnsKeyId)})
+	}
+
+	output.PrintFields(FieldGroup{Fields: fields})
 
 	if createdWebsite.GatewayDomain != nil {
 		output.PrintFields(FieldGroup{
