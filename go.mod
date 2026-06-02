@@ -25,8 +25,9 @@ require (
 	go.lumeweb.com/configmanager v0.3.26
 	go.lumeweb.com/ipfs-content v0.1.17
 	go.lumeweb.com/ipfs-sdk v0.1.48
-	go.lumeweb.com/portal-sdk v0.1.54
+	go.lumeweb.com/portal-sdk v0.1.55
 	go.lumeweb.com/queryutil v0.3.15
+	golang.org/x/sys v0.41.0
 )
 
 require (
@@ -178,7 +179,6 @@ require (
 	golang.org/x/net v0.50.0 // indirect
 	golang.org/x/oauth2 v0.35.0 // indirect
 	golang.org/x/sync v0.19.0 // indirect
-	golang.org/x/sys v0.41.0 // indirect
 	golang.org/x/term v0.40.0 // indirect
 	golang.org/x/text v0.34.0 // indirect
 	golang.org/x/tools v0.42.0 // indirect
