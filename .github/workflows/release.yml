@@ -49,4 +49,12 @@ jobs:
           version: "~> v2"
           args: release --clean
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PAT }}
+
+      - name: Dispatch version update to get.pinner.xyz
+        uses: peter-evans/repository-dispatch@v4
+        with:
+          token: ${{ secrets.PAT }}
+          repository: LumeWeb/get.pinner.xyz
+          event-type: pinner-cli-release
+          client-payload: '{"version": "${{ github.ref_name }}"}'

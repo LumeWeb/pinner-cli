@@ -79,3 +79,48 @@ nfpms:
             dst: /usr/share/zsh/site-functions/_pinner
           - src: ./completions/pinner.fish
             dst: /usr/share/fish/vendor_completions.d/pinner.fish
+
+homebrew_casks:
+    - name: pinner
+      repository:
+          owner: LumeWeb
+          name: homebrew-tap
+      homepage: https://pinner.xyz
+      description: "CLI for pinning content to IPFS, and deploying websites via Pinner.xyz"
+      license: MIT
+      binaries:
+          - pinner
+      completions:
+          bash: completions/pinner.bash
+          zsh: completions/pinner.zsh
+          fish: completions/pinner.fish
+
+winget:
+    - name: Cli
+      publisher: Pinner
+      package_identifier: Pinner.Cli
+      license: MIT
+      copyright: Copyright (c) Pinner.xyz
+      homepage: https://pinner.xyz
+      short_description: "CLI for pinning content to IPFS"
+      repository:
+          owner: LumeWeb
+          name: winget-pkgs
+          branch: "pinner-cli-{{.Version}}"
+          pull_request:
+              enabled: true
+              draft: true
+              base:
+                  owner: microsoft
+                  name: winget-pkgs
+                  branch: master
+      path: manifests/p/Pinner/Cli/{{.Version}}
+
+scoops:
+    - name: pinner
+      repository:
+          owner: LumeWeb
+          name: scoop-bucket
+      homepage: https://pinner.xyz
+      description: "CLI for pinning content to IPFS, and deploying websites via Pinner.xyz"
+      license: MIT
