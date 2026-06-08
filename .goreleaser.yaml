@@ -80,7 +80,7 @@ nfpms:
           - src: ./completions/pinner.fish
             dst: /usr/share/fish/vendor_completions.d/pinner.fish
 
-homebrew_casks:
+homebrew_taps:
     - name: pinner
       repository:
           owner: LumeWeb
@@ -88,8 +88,8 @@ homebrew_casks:
       homepage: https://pinner.xyz
       description: "CLI for pinning content to IPFS, and deploying websites via Pinner.xyz"
       license: MIT
-      binaries:
-          - pinner
+      install: |
+          bin.install "pinner"
       completions:
           bash: completions/pinner.bash
           zsh: completions/pinner.zsh
