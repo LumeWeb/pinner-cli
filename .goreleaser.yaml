@@ -80,7 +80,7 @@ nfpms:
           - src: ./completions/pinner.fish
             dst: /usr/share/fish/vendor_completions.d/pinner.fish
 
-homebrew_taps:
+brews:
     - name: pinner
       repository:
           owner: LumeWeb
