@@ -41,7 +41,8 @@ Examples:
 }
 
 func pinsAdd(ctx context.Context, cmd *cliCommandWrapper, output Output, cfgMgrFactory ConfigManagerFactory, pinningServiceFactory PinningServiceFactory) error {
-	if err := pin(ctx, cmd, output, cfgMgrFactory, pinningServiceFactory); err != nil {
+	cids, err := pin(ctx, cmd, output, cfgMgrFactory, pinningServiceFactory)
+	if err != nil {
 		return err
 	}
 
@@ -54,14 +55,13 @@ func pinsAdd(ctx context.Context, cmd *cliCommandWrapper, output Output, cfgMgrF
 		return nil
 	}
 
+	if len(cids) == 0 {
+		return nil
+	}
+
 	meta, err := parseMetaPairs(metaPairs)
 	if err != nil {
 		return err
-	}
-
-	cids := cmd.Args().Slice()
-	if len(cids) == 0 {
-		return nil
 	}
 
 	cfgMgr, err := cfgMgrFactory()

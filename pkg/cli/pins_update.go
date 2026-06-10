@@ -48,11 +48,13 @@ func pinsUpdate(ctx context.Context, cmd pinsUpdateCommandGetter, output Output,
 		return err
 	}
 
+	var secure bool
 	var pinningService PinningService
 	if c, ok := cmd.(*cliCommandWrapper); ok {
 		authToken := GetAuthToken(c.Command, cfgMgr)
+		secure = GetSecureSetting(c.Command, cfgMgr)
 		if authToken != "" {
-			pinningService = NewPinningService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpoint(), WithAuthToken(authToken))
+			pinningService = NewPinningService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure), WithAuthToken(authToken))
 		} else {
 			pinningService = pinningServiceFactory(cfgMgr, output)
 		}
@@ -105,7 +107,7 @@ func pinsUpdate(ctx context.Context, cmd pinsUpdateCommandGetter, output Output,
 
 		RenderDryRun(output, DryRunPreview{
 			Operation: "pin update",
-			Endpoint:  cfgMgr.Config().GetIPFSEndpoint(),
+			Endpoint:  cfgMgr.Config().GetIPFSEndpointWithSecure(secure),
 			Options:   options,
 		})
 		return nil

@@ -251,9 +251,20 @@ func handleUpload(ctx context.Context, cmd uploadCommandGetter, output Output, c
 			if err != nil {
 				return fmt.Errorf("upload succeeded but metadata flag invalid: %w", err)
 			}
-			pinningService := pinningServiceFactory(cfgMgr, output)
+			var metaPinningService PinningService
+			if c, ok := cmd.(*cliCommandWrapper); ok {
+				authToken := GetAuthToken(c.Command, cfgMgr)
+				secure := GetSecureSetting(c.Command, cfgMgr)
+				if authToken != "" {
+					metaPinningService = NewPinningService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure), WithAuthToken(authToken))
+				} else {
+					metaPinningService = pinningServiceFactory(cfgMgr, output)
+				}
+			} else {
+				metaPinningService = pinningServiceFactory(cfgMgr, output)
+			}
 			slice := metaMapToSlice(meta)
-			if err := pinningService.UpdateMetadata(ctx, result.CID, slice, false); err != nil {
+			if err := metaPinningService.UpdateMetadata(ctx, result.CID, slice, false); err != nil {
 				return fmt.Errorf("upload succeeded but metadata update failed: %w", err)
 			}
 		}

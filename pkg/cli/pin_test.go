@@ -99,7 +99,7 @@ func TestPinDryRun(t *testing.T) {
 				return service
 			}
 
-			err := pin(context.Background(), cmd, output, cfgMgrFactory, pinningServiceFactory)
+			_, err := pin(context.Background(), cmd, output, cfgMgrFactory, pinningServiceFactory)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -243,7 +243,7 @@ func TestPin(t *testing.T) {
 				return service
 			}
 
-			err := pin(context.Background(), cmd, output, cfgMgrFactory, pinningServiceFactory)
+			_, err := pin(context.Background(), cmd, output, cfgMgrFactory, pinningServiceFactory)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -324,7 +324,7 @@ func TestPinBatch(t *testing.T) {
 				return service
 			}
 
-			err := pin(context.Background(), cmd, output, cfgMgrFactory, pinningServiceFactory)
+			_, err := pin(context.Background(), cmd, output, cfgMgrFactory, pinningServiceFactory)
 
 			if tt.wantErr {
 				require.Error(t, err)
