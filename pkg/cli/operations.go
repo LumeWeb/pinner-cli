@@ -13,8 +13,9 @@ import (
 
 func newOperationsCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "operations",
-		Usage: "List and inspect account operations",
+		Name:     "operations",
+		Category: "Management",
+		Usage:    "List and inspect account operations",
 		Description: `View and monitor account operations such as uploads, pins, and other processing tasks.
 
 Operations track server-side processing of your requests. Each operation has a status:

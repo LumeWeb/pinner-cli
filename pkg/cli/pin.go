@@ -11,24 +11,26 @@ import (
 
 func newPinCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "pin",
-		Usage: "Pin existing content by CID",
+		Name:     "pin",
+		Category: "Pinning",
+		Usage:    "Pin existing content by CID (see: pinner pins add)",
 		Description: `Pin content that is already on IPFS by providing its CID.
 Multiple CIDs can be provided as arguments, read from a file using --file, or piped from stdin.
 
 Examples:
   pinner pin QmHash
   pinner pin QmHash --name "my file"
-  pinner pin QmHash --wait
+  pinner pin QmHash --no-wait
   pinner pin QmHash1 QmHash2 QmHash3 --parallel 5
   pinner pin --file cids.txt
   echo "QmHash" | pinner pin
-  pinner pin --file cids.txt --continue --parallel 10 --wait
+  pinner pin --file cids.txt --continue --parallel 10
   pinner pin QmHash --dry-run`,
 		ArgsUsage: "<cid...>",
 		Flags: []cli.Flag{
 			NameFlag("Custom name for the pin"),
-			WaitFlag(),
+			NoWaitFlag(),
+			WaitFlagHidden(),
 			FileFlag(),
 			ParallelFlag(),
 			ContinueFlag(),
@@ -74,7 +76,7 @@ func pin(ctx context.Context, cmd pinCommandGetter, output Output, cfgMgrFactory
 	}
 
 	name := cmd.String(FlagName)
-	wait := cmd.Bool(FlagWait)
+	wait := !cmd.Bool(FlagNoWait)
 	filePath := cmd.String(FlagFile)
 	parallel := cmd.Int(FlagParallel)
 	continueOn := cmd.Bool(FlagContinue)
@@ -109,8 +111,8 @@ func pin(ctx context.Context, cmd pinCommandGetter, output Output, cfgMgrFactory
 		if name != "" {
 			options[DryRunOptionName] = name
 		}
-		if wait {
-			options[DryRunOptionWait] = "yes"
+		if !wait {
+			options[DryRunOptionNoWait] = "yes"
 		}
 		if parallel > 1 && len(cids) > 1 {
 			options[DryRunOptionParallel] = fmt.Sprintf("%d", parallel)

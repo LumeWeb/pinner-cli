@@ -111,6 +111,12 @@ type PinningService interface {
 	// Update metadata for a pin
 	UpdateMetadata(ctx context.Context, cid string, set []string, clear bool) error
 
+	// UpdatePin updates name and/or metadata for a pin.
+	// name: new name (empty = no change)
+	// meta: metadata key-value pairs to set (alternating key, value)
+	// clearMeta: if true, clears all existing metadata before applying meta
+	UpdatePin(ctx context.Context, cid string, name string, meta []string, clearMeta bool) error
+
 	// RequireAuthenticated checks if the service is authenticated.
 	RequireAuthenticated() error
 }

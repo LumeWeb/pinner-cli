@@ -9,8 +9,9 @@ import (
 
 func newRegisterCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "register",
-		Usage: "Create a new account",
+		Name:     "register",
+		Category: "Setup",
+		Usage:    "Create a new account",
 		Description: `Register a new user account on Pinner.xyz.
 
 After registration, you will need to confirm your email address using the

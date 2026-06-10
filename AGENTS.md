@@ -70,7 +70,7 @@ Pinner.xyz CLI is a Go-based command-line tool for managing IPFS content via the
 - **`cmd/pinner/`**: Entry point for the CLI application. Minimal main.go that delegates to `pkg/cli.Run()`.
 
 - **`pkg/cli/`**: Primary CLI command implementations and orchestration logic.
-  - Contains all command handlers: `auth.go`, `account.go`, `register.go`, `confirm_email.go`, `upload.go`, `download.go`, `pin.go`, `list.go`, `status.go`, `unpin.go`, `metadata.go`, `operations.go`, `dns.go`, `ipns.go`, `websites.go`, `bench.go`, `config.go`, `doctor.go`, `setup.go`, `admin.go`
+  - Contains all command handlers: `auth.go`, `account.go`, `account_api_keys.go`, `register.go`, `confirm_email.go`, `upload.go`, `download.go`, `pin.go`, `pins.go` + `pins_*.go` (add/ls/rm/status/update), `list.go`, `status.go`, `unpin.go`, `unpin_all.go`, `metadata.go` (removed command), `meta.go` (metadata flag helpers), `operations.go`, `dns.go`, `ipns.go`, `websites.go`, `bench.go`, `config.go`, `doctor.go`, `setup.go`, `admin.go`, `version.go`, `root.go`
   - Defines service interfaces: `PinningService`, `StatusService`, `UploadService`, `AuthService`, `DownloadService`, `BenchService`, `OperationsService`, `DNSService`, `IPNSService`, `WebsitesService`, `QuotaAdminService`, `BillingAdminService`, `WebsiteAdminService`, `AdminTokenProvider`
   - Output formatting system with human-readable and JSON modes
   - Global flags and command registration in `flags.go` and `register.go`
@@ -100,7 +100,7 @@ Pinner.xyz CLI is a Go-based command-line tool for managing IPFS content via the
 ### Key Interfaces and Patterns
 
 **Service Layer Pattern**: Each major feature has a service interface with default implementation:
-- `PinningService` - Pin/unpin/list/status/batch operations on existing CIDs
+- `PinningService` - Pin/unpin/list/status/batch/update operations on existing CIDs
 - `StatusService` - Extended status checking with operation tracking
 - `UploadService` - Upload files/directories to IPFS
 - `AuthService` - Authentication, registration, OTP, token management
@@ -136,6 +136,8 @@ Two implementations: `humanFormatter` and `jsonFormatter`, selected based on glo
 - Commands use `commandGetter` interface for flag access (enables testing)
 - Command handlers accept factory functions for dependency injection
 - `cliCommandWrapper` adapts `cli.Command` to `commandGetter`
+- The `pins` command group (`pins add/rm/ls/status/update`) is the canonical interface; `pin`, `unpin`, `list`, `status` are first-class root shortcuts
+- Help categories (Setup, Content, Pinning, Management, System, Admin) are set via urfave/cli `Category` field
 
 **Mockery Configuration**:
 - Mocks are generated using mockery
@@ -147,6 +149,14 @@ Two implementations: `humanFormatter` and `jsonFormatter`, selected based on glo
 - `build.Default` provides access to build info throughout the application
 - Used in diagnostics (`pinner doctor`) and version display
 
+**Command Structure**:
+- `pins` is the canonical command group with subcommands: `add`, `rm`, `ls`, `status`, `update`
+- Root shortcuts (`pin`, `unpin`, `list`, `status`) delegate to pins subcommands — first-class, no deprecation
+- `metadata` command removed; `pins update` replaces it (hidden error command with suggestion)
+- Upload and pins add wait by default for pinning to complete; `--no-wait` to detach
+- `--meta key=value` flag on pins add and upload for metadata at pin creation time
+- `--force` consolidates `--confirm`/`--yes` as the primary skip-confirmation flag
+
 ### Global Flags
 All commands support these global flags:
 - `--json` - Output JSON instead of human-readable text
@@ -154,7 +164,7 @@ All commands support these global flags:
 - `--quiet, -q` - Suppress non-error output
 - `--unmask` - Show sensitive data (tokens, passwords) unmasked
 - `--auth-token` - Override auth token (also reads from `PINNER_AUTH_TOKEN` env var)
-- `--secure` - Use HTTPS instead of HTTP for endpoints
+- `--secure` - Use HTTPS instead of HTTP for endpoints (default: true, env: `PINNER_SECURE`)
 
 ### Dependencies
 - `github.com/urfave/cli/v3` - CLI framework

@@ -73,6 +73,7 @@ func readLinesFromStdin() ([]string, error) {
 const (
 	DryRunOptionName            = "Name"
 	DryRunOptionWait            = "Wait for completion"
+	DryRunOptionNoWait          = "No wait (fire and forget)"
 	DryRunOptionParallel        = "Parallel operations"
 	DryRunOptionContinueOnError = "Continue on error"
 	DryRunOptionConfirm         = "Confirmation required"

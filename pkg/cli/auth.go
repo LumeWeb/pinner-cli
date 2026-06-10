@@ -160,8 +160,9 @@ func (p *promptuiPrompter) PromptOTP() (string, error) {
 
 func newAuthCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "auth",
-		Usage: "Authenticate with Pinner.xyz",
+		Name:     "auth",
+		Category: "Setup",
+		Usage:    "Authenticate with Pinner.xyz",
 		Description: `Authenticate with the Pinner.xyz service.
 
 Ways to authenticate:

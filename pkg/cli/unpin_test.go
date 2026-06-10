@@ -231,21 +231,26 @@ func TestNewUnpinCommand(t *testing.T) {
 		assert.Equal(t, "<cid...>", cmd.ArgsUsage)
 
 		flags := cmd.Flags
-		assert.Len(t, flags, 5)
+		assert.Len(t, flags, 6)
 
-		confirmFlag, ok := flags[0].(*cli.BoolFlag)
+		forceFlag, ok := flags[0].(*cli.BoolFlag)
+		require.True(t, ok)
+		assert.Equal(t, "force", forceFlag.Name)
+
+		confirmFlag, ok := flags[1].(*cli.BoolFlag)
 		require.True(t, ok)
 		assert.Equal(t, "confirm", confirmFlag.Name)
+		assert.True(t, confirmFlag.Hidden)
 
-		fileFlag, ok := flags[1].(*cli.StringFlag)
+		fileFlag, ok := flags[2].(*cli.StringFlag)
 		require.True(t, ok)
 		assert.Equal(t, "file", fileFlag.Name)
 
-		parallelFlag, ok := flags[2].(*cli.IntFlag)
+		parallelFlag, ok := flags[3].(*cli.IntFlag)
 		require.True(t, ok)
 		assert.Equal(t, "parallel", parallelFlag.Name)
 
-		continueFlag, ok := flags[3].(*cli.BoolFlag)
+		continueFlag, ok := flags[4].(*cli.BoolFlag)
 		require.True(t, ok)
 		assert.Equal(t, "continue", continueFlag.Name)
 
@@ -287,6 +292,8 @@ func (m *mockUnpinCommand) Int(name string) int {
 
 func (m *mockUnpinCommand) Bool(name string) bool {
 	switch name {
+	case FlagForce:
+		return m.confirm
 	case FlagConfirm:
 		return m.confirm
 	case FlagContinue:

@@ -23,8 +23,9 @@ func configKeyToEnvVar(key string) string {
 
 func newConfigCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "config",
-		Usage: "View/set configuration",
+		Name:     "config",
+		Category: "System",
+		Usage:    "View/set configuration",
 		Description: `View or modify CLI configuration settings.
 
 Usage:

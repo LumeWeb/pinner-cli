@@ -52,8 +52,9 @@ type CompletionInfo struct {
 
 func newDoctorCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "doctor",
-		Usage: "Display diagnostic information for troubleshooting",
+		Name:     "doctor",
+		Category: "System",
+		Usage:    "Display diagnostic information for troubleshooting",
 		Description: `Show diagnostic information about your pinner CLI environment,
 including version, OS details, configuration location, and limits.
 

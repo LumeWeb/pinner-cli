@@ -10,8 +10,9 @@ import (
 
 func newStatusCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "status",
-		Usage: "Get pin status for CID",
+		Name:     "status",
+		Category: "Pinning",
+		Usage:    "Get pin status for CID (see: pinner pins status)",
 		Description: `Check the status of a pin to see if it has been completed.
 If the pin is not found, account operations are checked as a fallback.
 

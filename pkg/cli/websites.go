@@ -23,9 +23,10 @@ func stripValidationPrefix(token string) string {
 
 func newWebsitesCommand() *cli.Command {
 	return &cli.Command{
-		Name:    "websites",
-		Aliases: []string{"website"},
-		Usage:   "Manage websites",
+		Name:     "websites",
+		Category: "Management",
+		Aliases:  []string{"website"},
+		Usage:    "Manage websites",
 		Description: `Manage websites for your IPFS content. Websites allow you to associate
 domain names with IPFS hashes, making your content accessible through custom domains.
 

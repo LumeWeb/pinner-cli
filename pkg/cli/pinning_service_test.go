@@ -622,7 +622,7 @@ func TestPinningService_UpdateMetadata(t *testing.T) {
 
 		err := service.UpdateMetadata(context.Background(), "QmUNLLsPACCz1vLxQVkXqqLX5R1X345qqfHbsf67hvA3Nn", []string{"key", "value"}, false)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "Update metadata failed")
+		assert.Contains(t, err.Error(), "Update pin failed")
 	})
 }
 

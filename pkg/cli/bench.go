@@ -21,8 +21,9 @@ const (
 
 func newBenchCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "bench",
-		Usage: "Benchmark upload and pinning performance",
+		Name:     "bench",
+		Category: "System",
+		Usage:    "Benchmark upload and pinning performance",
 		Description: `Run a benchmark by uploading random data (or a specified path) and
 tracking each stage of the pipeline: generate, upload, queued, pinning, pinned.
 

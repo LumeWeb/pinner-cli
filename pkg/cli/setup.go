@@ -10,8 +10,9 @@ import (
 // newSetupCommand creates and returns the setup command.
 func newSetupCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "setup",
-		Usage: "Interactive first-time setup wizard",
+		Name:     "setup",
+		Category: "Setup",
+		Usage:    "Interactive first-time setup wizard",
 		Description: `Run the interactive setup wizard to configure
 your Pinner.xyz CLI environment. This wizard will guide you
 through authentication and configuration.

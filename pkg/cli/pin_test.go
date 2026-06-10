@@ -80,7 +80,6 @@ func TestPinDryRun(t *testing.T) {
 				cmd = &mockPinCommand{
 					cid:        tt.cid,
 					name:       "test-name",
-					wait:       true,
 					parallel:   5,
 					continueOn: true,
 					dryRun:     tt.dryRunFlag,
@@ -119,43 +118,17 @@ func TestPin(t *testing.T) {
 		name             string
 		cid              string
 		nameFlag         string
-		waitFlag         bool
+		noWaitFlag       bool
 		setupMocks       func(*configmocks.MockManager, *MockPinningService)
 		wantErr          bool
 		errContains      string
 		cfgMgrFactoryErr bool
 	}{
 		{
-			name:     "successful pin operation",
-			cid:      "QmXxx",
-			nameFlag: "",
-			waitFlag: false,
-			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPinningService) {
-				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().Pin(context.Background(), "QmXxx", "", false).Return(
-					&PinResult{CID: "QmXxx", RequestID: "req-123", Status: "queued"}, nil,
-				)
-			},
-			wantErr: false,
-		},
-		{
-			name:     "successful pin with name",
-			cid:      "QmXxx",
-			nameFlag: "test-name",
-			waitFlag: false,
-			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPinningService) {
-				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().Pin(context.Background(), "QmXxx", "test-name", false).Return(
-					&PinResult{CID: "QmXxx", RequestID: "req-123", Status: "queued"}, nil,
-				)
-			},
-			wantErr: false,
-		},
-		{
-			name:     "successful pin with wait",
-			cid:      "QmXxx",
-			nameFlag: "",
-			waitFlag: true,
+			name:       "successful pin operation",
+			cid:        "QmXxx",
+			nameFlag:   "",
+			noWaitFlag: false,
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPinningService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
 				service.EXPECT().Pin(context.Background(), "QmXxx", "", true).Return(
@@ -165,10 +138,36 @@ func TestPin(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:     "returns error when CID is missing",
-			cid:      "",
-			nameFlag: "",
-			waitFlag: false,
+			name:       "successful pin with name",
+			cid:        "QmXxx",
+			nameFlag:   "test-name",
+			noWaitFlag: false,
+			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPinningService) {
+				service.EXPECT().RequireAuthenticated().Return(nil)
+				service.EXPECT().Pin(context.Background(), "QmXxx", "test-name", true).Return(
+					&PinResult{CID: "QmXxx", RequestID: "req-123", Status: "pinned"}, nil,
+				)
+			},
+			wantErr: false,
+		},
+		{
+			name:       "successful pin with no-wait",
+			cid:        "QmXxx",
+			nameFlag:   "",
+			noWaitFlag: true,
+			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPinningService) {
+				service.EXPECT().RequireAuthenticated().Return(nil)
+				service.EXPECT().Pin(context.Background(), "QmXxx", "", false).Return(
+					&PinResult{CID: "QmXxx", RequestID: "req-123", Status: "queued"}, nil,
+				)
+			},
+			wantErr: false,
+		},
+		{
+			name:       "returns error when CID is missing",
+			cid:        "",
+			nameFlag:   "",
+			noWaitFlag: false,
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPinningService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
 			},
@@ -177,10 +176,10 @@ func TestPin(t *testing.T) {
 			cfgMgrFactoryErr: false,
 		},
 		{
-			name:     "returns error when no CIDs provided for batch",
-			cid:      "",
-			nameFlag: "",
-			waitFlag: false,
+			name:       "returns error when no CIDs provided for batch",
+			cid:        "",
+			nameFlag:   "",
+			noWaitFlag: false,
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPinningService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
 			},
@@ -191,20 +190,20 @@ func TestPin(t *testing.T) {
 			name:             "returns error when config manager factory fails",
 			cid:              "QmXxx",
 			nameFlag:         "",
-			waitFlag:         false,
+			noWaitFlag:       false,
 			setupMocks:       func(cfgMgr *configmocks.MockManager, service *MockPinningService) {},
 			wantErr:          true,
 			errContains:      "config error",
 			cfgMgrFactoryErr: true,
 		},
 		{
-			name:     "returns error when pinning fails",
-			cid:      "QmXxx",
-			nameFlag: "",
-			waitFlag: false,
+			name:       "returns error when pinning fails",
+			cid:        "QmXxx",
+			nameFlag:   "",
+			noWaitFlag: false,
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPinningService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().Pin(context.Background(), "QmXxx", "", false).Return(
+				service.EXPECT().Pin(context.Background(), "QmXxx", "", true).Return(
 					nil, errors.New("pinning failed"),
 				)
 			},
@@ -224,9 +223,9 @@ func TestPin(t *testing.T) {
 			}
 
 			cmd := &mockPinCommand{
-				cid:  tt.cid,
-				name: tt.nameFlag,
-				wait: tt.waitFlag,
+				cid:    tt.cid,
+				name:   tt.nameFlag,
+				noWait: tt.noWaitFlag,
 			}
 
 			var cfgMgrFactory ConfigManagerFactory
@@ -277,7 +276,7 @@ func TestPinBatch(t *testing.T) {
 				service.EXPECT().PinBatch(context.Background(), []string{"QmXxx1", "QmXxx2", "QmXxx3"}, "", BatchOptions{
 					Parallel:   2,
 					ContinueOn: false,
-					Wait:       false,
+					Wait:       true,
 					Progress:   true,
 				}).Return(&BatchResult{
 					Total:     3,
@@ -348,25 +347,30 @@ func TestNewPinCommand(t *testing.T) {
 
 		// Check flags
 		flags := cmd.Flags
-		assert.Len(t, flags, 6)
+		assert.Len(t, flags, 7)
 
 		nameFlag, ok := flags[0].(*cli.StringFlag)
 		require.True(t, ok)
 		assert.Equal(t, "name", nameFlag.Name)
 
-		waitFlag, ok := flags[1].(*cli.BoolFlag)
+		noWaitFlag, ok := flags[1].(*cli.BoolFlag)
+		require.True(t, ok)
+		assert.Equal(t, "no-wait", noWaitFlag.Name)
+
+		waitFlag, ok := flags[2].(*cli.BoolFlag)
 		require.True(t, ok)
 		assert.Equal(t, "wait", waitFlag.Name)
+		assert.True(t, waitFlag.Hidden)
 
-		fileFlag, ok := flags[2].(*cli.StringFlag)
+		fileFlag, ok := flags[3].(*cli.StringFlag)
 		require.True(t, ok)
 		assert.Equal(t, "file", fileFlag.Name)
 
-		parallelFlag, ok := flags[3].(*cli.IntFlag)
+		parallelFlag, ok := flags[4].(*cli.IntFlag)
 		require.True(t, ok)
 		assert.Equal(t, "parallel", parallelFlag.Name)
 
-		continueFlag, ok := flags[4].(*cli.BoolFlag)
+		continueFlag, ok := flags[5].(*cli.BoolFlag)
 		require.True(t, ok)
 		assert.Equal(t, "continue", continueFlag.Name)
 	})
@@ -376,7 +380,7 @@ func TestNewPinCommand(t *testing.T) {
 type mockPinCommand struct {
 	cid        string
 	name       string
-	wait       bool
+	noWait     bool
 	file       string
 	parallel   int
 	continueOn bool
@@ -409,8 +413,8 @@ func (m *mockPinCommand) Int(name string) int {
 
 func (m *mockPinCommand) Bool(name string) bool {
 	switch name {
-	case FlagWait:
-		return m.wait
+	case FlagNoWait:
+		return m.noWait
 	case FlagContinue:
 		return m.continueOn
 	case FlagDryRun:

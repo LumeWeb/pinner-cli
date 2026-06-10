@@ -43,13 +43,13 @@ pinner auth
 pinner upload file.png
 
 # Pin an existing CID
-pinner pin bafybeig77vqcdozl2wyk6z3cscaj5q5fggi53aoh64fewkdiri3cdauyn4
+pinner pins add bafybeig77vqcdozl2wyk6z3cscaj5q5fggi53aoh64fewkdiri3cdauyn4
 
 # List your pins
-pinner list
+pinner pins ls
 
 # Check pin status
-pinner status bafybeig77vqcdozl2wyk6z3cscaj5q5fggi53aoh64fewkdiri3cdauyn4
+pinner pins status bafybeig77vqcdozl2wyk6z3cscaj5q5fggi53aoh64fewkdiri3cdauyn4
 
 # Create a website
 pinner websites create example.com --cid bafybeig...
@@ -158,8 +158,8 @@ pinner upload ./my-folder
 # Upload with custom name
 pinner upload file.png --name "My File"
 
-# Upload and wait for completion
-pinner upload file.png --wait
+# Upload without waiting for pinning to complete
+pinner upload file.png --no-wait
 
 # Upload from stdin (pipe)
 cat file.txt | pinner upload --name "piped-file"
@@ -220,9 +220,68 @@ pinner ls bafybeig.../subdir
 pinner ls bafybeig... --limit 50
 ```
 
+### Pins
+
+Manage pinned content with subcommands. This is the canonical command group for pinning operations.
+
+```bash
+# Add a pin
+pinner pins add bafybeig77vqcdozl2wyk6z3cscaj5q5fggi53aoh64fewkdiri3cdauyn4
+
+# Add with custom name
+pinner pins add bafybeig... --name "My Pin"
+
+# Add without waiting for completion
+pinner pins add bafybeig... --no-wait
+
+# Add with metadata
+pinner pins add bafybeig... --meta owner=alice --meta env=prod
+
+# Add multiple CIDs at once
+pinner pins add cid1 cid2 cid3 --name "Batch"
+
+# Add CIDs from a file (one per line)
+pinner pins add --file cids.txt --name "Batch"
+
+# Add in parallel
+pinner pins add --file cids.txt --parallel 3
+
+# List pins
+pinner pins ls
+
+# List with filters
+pinner pins ls --status pinned --limit 20
+
+# Check pin status
+pinner pins status bafybeig...
+
+# Update pin name and metadata
+pinner pins update bafybeig... --name "Renamed" --meta owner=bob
+
+# Clear all metadata
+pinner pins update bafybeig... --clear-meta
+
+# Remove a pin
+pinner pins rm bafybeig... --force
+
+# Remove multiple pins
+pinner pins rm cid1 cid2 cid3 --force
+
+# Remove all pins (requires --force)
+pinner pins rm --all --force
+
+# Remove all failed pins
+pinner pins rm --all --status failed --force
+
+# Dry run
+pinner pins add bafybeig... --dry-run
+```
+
+**Note**: `pin`, `list`, `status`, and `unpin` are aliases for `pins add`, `pins ls`, `pins status`, and `pins rm` respectively. They work identically and are not deprecated.
+
 ### Pin
 
-Pin existing content by CID.
+Pin existing content by CID. Alias for `pinner pins add`.
 
 ```bash
 # Pin a single CID
@@ -231,8 +290,8 @@ pinner pin bafybeig77vqcdozl2wyk6z3cscaj5q5fggi53aoh64fewkdiri3cdauyn4
 # Pin with custom name
 pinner pin bafybeig... --name "My Pin"
 
-# Pin and wait for completion
-pinner pin bafybeig... --wait
+# Pin without waiting for completion
+pinner pin bafybeig... --no-wait
 
 # Pin multiple CIDs at once
 pinner pin cid1 cid2 cid3 --name "Batch"
@@ -243,16 +302,13 @@ pinner pin --file cids.txt --name "Batch"
 # Pin in parallel
 pinner pin --file cids.txt --parallel 3
 
-# Pin with metadata (use metadata command to set key-value pairs)
-pinner pin bafybeig... --name "Backup"
-
 # Dry run
 pinner pin bafybeig... --dry-run
 ```
 
 ### List
 
-List your pinned content.
+List your pinned content. Alias for `pinner pins ls`.
 
 ```bash
 # List recent pins (default: 10)
@@ -276,7 +332,7 @@ pinner list --json
 
 ### Status
 
-Check the status of a pinned CID.
+Check the status of a pinned CID. Alias for `pinner pins status`.
 
 ```bash
 # Check pin status
@@ -291,29 +347,29 @@ pinner status bafybeig77vqcdozl2wyk6z3cscaj5q5fggi53aoh64fewkdiri3cdauyn4 --json
 
 ### Unpin
 
-Remove pins.
+Remove pins. Alias for `pinner pins rm`.
 
 ```bash
 # Unpin (prompts for confirmation)
 pinner unpin bafybeig77vqcdozl2wyk6z3cscaj5q5fggi53aoh64fewkdiri3cdauyn4
 
 # Skip confirmation
-pinner unpin bafybeig... --confirm
+pinner unpin bafybeig... --force
 
 # Unpin multiple CIDs
-pinner unpin cid1 cid2 cid3 --confirm
+pinner unpin cid1 cid2 cid3 --force
 
 # Unpin CIDs from a file
-pinner unpin --file cids.txt --confirm
+pinner unpin --file cids.txt --force
 
 # Unpin in parallel
 pinner unpin --file cids.txt --parallel 3
 
 # Unpin all pins
-pinner unpin all --yes
+pinner unpin all --force
 
 # Unpin all with status filter
-pinner unpin all --status failed --yes
+pinner unpin all --status failed --force
 
 # Dry run
 pinner unpin bafybeig... --dry-run
@@ -324,24 +380,20 @@ pinner unpin bafybeig... --json
 
 ### Metadata
 
-Manage metadata for pinned content.
+The `metadata` command has been removed. Use `pinner pins update` to manage pin metadata instead.
 
 ```bash
-# Show current metadata
-pinner metadata bafybeig77vqcdozl2wyk6z3cscaj5q5fggi53aoh64fewkdiri3cdauyn4
-
-# Set metadata
-pinner metadata bafybeig... --set "owner=derrick" --set "type=backup"
+# Update metadata for a pin
+pinner pins update bafybeig... --meta owner=derrick --meta type=backup
 
 # Clear all metadata
-pinner metadata bafybeig... --clear
+pinner pins update bafybeig... --clear-meta
 
-# Dry run
-pinner metadata bafybeig... --set "owner=derrick" --dry-run
-
-# JSON output
-pinner metadata bafybeig... --json
+# Rename and update metadata
+pinner pins update bafybeig... --name "Backup" --meta type=archive
 ```
+
+If you run `pinner metadata`, the CLI returns an error suggesting `pinner pins update`.
 
 ### Operations
 
@@ -630,6 +682,21 @@ pinner completion pwsh | Invoke-Expression
 | `--version, -V` | Show version |
 | `--help, -h` | Show help |
 
+## Help Categories
+
+Commands are organized into categories in the help output:
+
+| Category | Commands |
+|----------|----------|
+| **Setup** | `setup`, `auth`, `register`, `confirm-email` |
+| **Content** | `upload`, `download`, `cat`, `ls` |
+| **Pinning** | `pins`, `pin`, `list`, `status`, `unpin`, `metadata` |
+| **Management** | `websites`, `dns`, `ipns`, `operations` |
+| **System** | `config`, `doctor`, `bench` |
+| **Admin** | `admin` |
+
+Use `pinner --help` to see the full command list organized by category.
+
 ## Architecture
 
 ### Project Structure
@@ -648,11 +715,12 @@ pinner-cli/
 │   │   ├── confirm_email.go       # Email confirmation
 │   │   ├── upload.go              # Upload commands
 │   │   ├── download.go            # Download, cat, ls commands
-│   │   ├── pin.go                 # Pin commands
-│   │   ├── list.go                # List commands
-│   │   ├── status.go              # Status checking
-│   │   ├── unpin.go / unpin_all.go # Unpin commands
-│   │   ├── metadata.go            # Metadata management
+│   │   ├── pin.go                 # Pin command (alias for pins add)
+│   │   ├── pins.go / pins_*.go    # Pins command group (add, rm, ls, status, update)
+│   │   ├── list.go                # List command (alias for pins ls)
+│   │   ├── status.go              # Status command (alias for pins status)
+│   │   ├── unpin.go / unpin_all.go # Unpin command (alias for pins rm)
+│   │   ├── metadata.go            # Removed command (error with suggestion)
 │   │   ├── operations.go          # Operations list/get
 │   │   ├── dns.go                 # DNS zone/record management
 │   │   ├── ipns.go                # IPNS key/publish/resolve

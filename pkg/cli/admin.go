@@ -8,8 +8,9 @@ import (
 
 func newAdminCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "admin",
-		Usage: "Administrative operations",
+		Name:     "admin",
+		Category: "Admin",
+		Usage:    "Administrative operations",
 		Description: `Administrative operations for quota management, billing, and profiling.
 
 These commands require administrative privileges and are intended for system administrators.
