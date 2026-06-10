@@ -24,8 +24,9 @@ func OutputFlag() *cli.StringFlag {
 
 func newDownloadCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "download",
-		Usage: "Download pinned content from IPFS to a file",
+		Name:     "download",
+		Category: "Content",
+		Usage:    "Download pinned content from IPFS to a file",
 		Description: `Download content from IPFS by CID and save it to the local filesystem.
 Supports CID paths (e.g., CID/path/to/file) to download a specific file from a directory.
 
@@ -61,8 +62,9 @@ The output includes:
 
 func newCatCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "cat",
-		Usage: "Stream IPFS content to stdout",
+		Name:     "cat",
+		Category: "Content",
+		Usage:    "Stream IPFS content to stdout",
 		Description: `Stream the contents of an IPFS CID to stdout.
 Supports CID paths (e.g., CID/path/to/file) to cat a specific file from a directory.
 
@@ -86,8 +88,9 @@ Use --verbose or redirect stderr for progress info.`,
 
 func newLsCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "ls",
-		Usage: "List contents of an IPFS directory",
+		Name:     "ls",
+		Category: "Content",
+		Usage:    "List contents of an IPFS directory",
 		Description: `List the contents of a directory pinned on IPFS by CID.
 Shows file names, types, and sizes for each entry.
 Supports CID paths (e.g., CID/path/to/dir) to list nested directories.

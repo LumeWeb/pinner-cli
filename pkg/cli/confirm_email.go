@@ -10,8 +10,9 @@ import (
 
 func newConfirmEmailCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "confirm-email",
-		Usage: "Confirm your email address",
+		Name:     "confirm-email",
+		Category: "Setup",
+		Usage:    "Confirm your email address",
 		Description: `Confirm your email address using the verification token sent to your email.
 
 After registering with 'pinner register', you will receive an email with a

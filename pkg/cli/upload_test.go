@@ -84,7 +84,7 @@ func TestResolveUploadInput_Stdin(t *testing.T) {
 type mockUploadCommand struct {
 	path   string
 	name   string
-	wait   bool
+	noWait bool
 	dryRun bool
 	args   []string
 }
@@ -122,8 +122,8 @@ func (m *mockUploadCommand) String(name string) string {
 
 func (m *mockUploadCommand) Bool(name string) bool {
 	switch name {
-	case FlagWait:
-		return m.wait
+	case FlagNoWait:
+		return m.noWait
 	case FlagDryRun:
 		return m.dryRun
 	case FlagSecure:
@@ -131,6 +131,10 @@ func (m *mockUploadCommand) Bool(name string) bool {
 	default:
 		return false
 	}
+}
+
+func (m *mockUploadCommand) StringSlice(name string) []string {
+	return nil
 }
 
 func (m *mockUploadCommand) IsSet(name string) bool {
@@ -455,7 +459,7 @@ func TestUploadDryRun(t *testing.T) {
 			cmd := &mockUploadCommand{
 				path:   filepath.Join(tmpDir, tt.path),
 				name:   "",
-				wait:   false,
+				noWait: false,
 				dryRun: tt.dryRunFlag,
 			}
 
@@ -464,7 +468,7 @@ func TestUploadDryRun(t *testing.T) {
 			}
 
 			if tt.name == "dry run with wait flag" {
-				cmd.wait = true
+				cmd.noWait = false
 			}
 
 			cfgMgrFactory := func() (config.Manager, error) {

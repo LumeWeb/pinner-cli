@@ -30,14 +30,16 @@ Examples:
   pinner unpin all --confirm --yes
   pinner unpin all --confirm --status queued --dry-run`,
 		Flags: []cli.Flag{
+			ForceFlag(),
 			ConfirmFlag(),
 			StatusFlag(),
 			ParallelFlag(),
 			ContinueFlag(),
 			DryRunFlag(),
 			&cli.BoolFlag{
-				Name:  FlagYes,
-				Usage: "Accept the safety prompt non-interactively (requires --confirm)",
+				Name:   FlagYes,
+				Usage:  "Accept the safety prompt non-interactively (requires --confirm)",
+				Hidden: true,
 			},
 		},
 		Action: func(ctx context.Context, c *cli.Command) error {
@@ -54,9 +56,9 @@ type unpinAllCommandGetter interface {
 }
 
 func unpinAll(ctx context.Context, cmd unpinAllCommandGetter, output Output, cfgMgrFactory ConfigManagerFactory, pinningServiceFactory PinningServiceFactory) error {
-	confirm := cmd.Bool(FlagConfirm)
+	confirm := cmd.Bool(FlagForce) || cmd.Bool(FlagConfirm)
 	if !confirm {
-		output.Printfln("Use --confirm to unpin all pins. This is a destructive operation.")
+		output.Printfln("Use --force to unpin all pins. This is a destructive operation.")
 		return nil
 	}
 
@@ -85,7 +87,7 @@ func unpinAll(ctx context.Context, cmd unpinAllCommandGetter, output Output, cfg
 	parallel := cmd.Int(FlagParallel)
 	continueOn := cmd.Bool(FlagContinue)
 	dryRun := cmd.Bool(FlagDryRun)
-	yes := cmd.Bool(FlagYes)
+	yes := cmd.Bool(FlagForce) || cmd.Bool(FlagYes)
 
 	pins, err := pinningService.List(ctx, "", 0, statusFilter)
 	if err != nil {

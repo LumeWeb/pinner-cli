@@ -9,8 +9,9 @@ import (
 
 func newAccountCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "account",
-		Usage: "Manage account settings",
+		Name:     "account",
+		Category: "Setup",
+		Usage:    "Manage account settings",
 		Description: `Manage your Pinner.xyz account settings including 2FA configuration.
 
 Examples:

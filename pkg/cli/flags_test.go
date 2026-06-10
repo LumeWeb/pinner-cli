@@ -112,15 +112,6 @@ func TestCommandFlagsVerification(t *testing.T) {
 			},
 		},
 		{
-			name:          "metadata command",
-			commandName:   "metadata",
-			requiredFlags: []string{},
-			optionalFlags: []string{
-				"set",
-				"clear",
-			},
-		},
-		{
 			name:          "config command",
 			commandName:   "config",
 			requiredFlags: []string{},
@@ -232,13 +223,6 @@ func TestCommandArgsVerification(t *testing.T) {
 			maxArgs:     -1,
 		},
 		{
-			name:        "metadata command",
-			commandName: "metadata",
-			argsUsage:   "<cid>",
-			minArgs:     1,
-			maxArgs:     1,
-		},
-		{
 			name:        "config command",
 			commandName: "config",
 			argsUsage:   "[get <key> | set <key> <value>]",
@@ -281,7 +265,6 @@ func TestCommandDescriptions(t *testing.T) {
 		"list",
 		"status",
 		"unpin",
-		"metadata",
 		"config",
 	}
 
@@ -319,7 +302,6 @@ func TestCommandRegistration(t *testing.T) {
 		"list",
 		"status",
 		"unpin",
-		"metadata",
 		"config",
 	}
 
@@ -489,7 +471,6 @@ func TestOutputFormatterIntegration(t *testing.T) {
 		{"list command", "list"},
 		{"status command", "status"},
 		{"unpin command", "unpin"},
-		{"metadata command", "metadata"},
 		{"config command", "config"},
 	}
 
@@ -566,7 +547,6 @@ func TestCommandTree(t *testing.T) {
 		"list",
 		"status",
 		"unpin",
-		"metadata",
 		"config",
 	}
 

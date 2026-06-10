@@ -19,17 +19,18 @@ import (
 
 func newUploadCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "upload",
-		Usage: "Upload files/directories to IPFS",
+		Name:     "upload",
+		Category: "Content",
+		Usage:    "Upload files/directories to IPFS",
 		Description: `Upload files or directories to IPFS via the Pinner.xyz service.
 Content is converted to CAR format before uploading.
 
 Examples:
   pinner upload myfile.txt
   pinner upload myfile.txt --name "my document"
-  pinner upload myfile.txt --wait
+  pinner upload myfile.txt --no-wait
   pinner upload /path/to/directory --name "project files"
-  pinner upload largefile.zip --memory-limit 500 --wait
+  pinner upload largefile.zip --memory-limit 500
   pinner upload myfile.txt --dry-run
 
   # Upload from stdin (pipe)
@@ -45,12 +46,14 @@ The output includes:
 		ArgsUsage: "[path]",
 		Flags: []cli.Flag{
 			NameFlag("Custom name for the pin"),
-			WaitFlag(),
+			NoWaitFlag(),
+			WaitFlagHidden(),
 			MemoryLimitFlag(),
 			DryRunFlag(),
 			ChunkSizeFlag(),
 			ChunkerFlag(),
 			MaxLinksFlag(),
+			MetaFlag(),
 		},
 		Metadata: WithTutorial(1, "Upload and pin a file", "pinner upload myfile.txt"),
 		Action: func(ctx context.Context, c *cli.Command) error {
@@ -142,6 +145,7 @@ type uploadCommandGetter interface {
 	Int(name string) int
 	String(name string) string
 	Bool(name string) bool
+	StringSlice(name string) []string
 	Args() cli.Args
 }
 
@@ -176,7 +180,7 @@ func handleUpload(ctx context.Context, cmd uploadCommandGetter, output Output, c
 		svcOpts = append(svcOpts, WithMaxLinks(maxLinks))
 	}
 
-	wait := cmd.Bool(FlagWait)
+	wait := !cmd.Bool(FlagNoWait)
 
 	if wait {
 		svcOpts = append(svcOpts, WithUploadPinningService(pinningServiceFactory(cfgMgr, output)))
@@ -205,8 +209,8 @@ func handleUpload(ctx context.Context, cmd uploadCommandGetter, output Output, c
 		}
 		options[DryRunOptionName] = input.Name
 		options[DryRunOptionMemoryLimit] = fmt.Sprintf("%d MB", memoryLimit)
-		if wait {
-			options[DryRunOptionWait] = "yes"
+		if !wait {
+			options[DryRunOptionNoWait] = "yes"
 		}
 		if chunkSize := cmd.Int64(FlagChunkSize); chunkSize > 0 {
 			options[DryRunOptionChunkSize] = fmt.Sprintf("%d bytes", chunkSize)
@@ -241,6 +245,29 @@ func handleUpload(ctx context.Context, cmd uploadCommandGetter, output Output, c
 				{"Time", result.Duration.Round(time.Millisecond).String()},
 			},
 		})
+
+		if metaPairs := cmd.StringSlice(FlagMeta); len(metaPairs) > 0 {
+			meta, err := parseMetaPairs(metaPairs)
+			if err != nil {
+				return fmt.Errorf("upload succeeded but metadata flag invalid: %w", err)
+			}
+			var metaPinningService PinningService
+			if c, ok := cmd.(*cliCommandWrapper); ok {
+				authToken := GetAuthToken(c.Command, cfgMgr)
+				secure := GetSecureSetting(c.Command, cfgMgr)
+				if authToken != "" {
+					metaPinningService = NewPinningService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure), WithAuthToken(authToken))
+				} else {
+					metaPinningService = pinningServiceFactory(cfgMgr, output)
+				}
+			} else {
+				metaPinningService = pinningServiceFactory(cfgMgr, output)
+			}
+			slice := metaMapToSlice(meta)
+			if err := metaPinningService.UpdateMetadata(ctx, result.CID, slice, false); err != nil {
+				return fmt.Errorf("upload succeeded but metadata update failed: %w", err)
+			}
+		}
 	}
 
 	return nil

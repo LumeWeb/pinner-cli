@@ -11,24 +11,26 @@ import (
 
 func newPinCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "pin",
-		Usage: "Pin existing content by CID",
+		Name:     "pin",
+		Category: "Pinning",
+		Usage:    "Pin existing content by CID (see: pinner pins add)",
 		Description: `Pin content that is already on IPFS by providing its CID.
 Multiple CIDs can be provided as arguments, read from a file using --file, or piped from stdin.
 
 Examples:
   pinner pin QmHash
   pinner pin QmHash --name "my file"
-  pinner pin QmHash --wait
+  pinner pin QmHash --no-wait
   pinner pin QmHash1 QmHash2 QmHash3 --parallel 5
   pinner pin --file cids.txt
   echo "QmHash" | pinner pin
-  pinner pin --file cids.txt --continue --parallel 10 --wait
+  pinner pin --file cids.txt --continue --parallel 10
   pinner pin QmHash --dry-run`,
 		ArgsUsage: "<cid...>",
 		Flags: []cli.Flag{
 			NameFlag("Custom name for the pin"),
-			WaitFlag(),
+			NoWaitFlag(),
+			WaitFlagHidden(),
 			FileFlag(),
 			ParallelFlag(),
 			ContinueFlag(),
@@ -37,7 +39,8 @@ Examples:
 		Metadata: WithTutorial(2, "Pin by CID", fmt.Sprintf("pinner pin %s", abbreviateCID(TutorialCID))),
 		Action: func(ctx context.Context, c *cli.Command) error {
 			output := setupOutput(c)
-			return pin(ctx, newCLICommandWrapper(c), output, defaultConfigManagerFactory, defaultPinningServiceFactory)
+			_, err := pin(ctx, newCLICommandWrapper(c), output, defaultConfigManagerFactory, defaultPinningServiceFactory)
+			return err
 		},
 	}
 }
@@ -50,10 +53,10 @@ type pinCommandGetter interface {
 	GetCID() string
 }
 
-func pin(ctx context.Context, cmd pinCommandGetter, output Output, cfgMgrFactory ConfigManagerFactory, pinningServiceFactory PinningServiceFactory) error {
+func pin(ctx context.Context, cmd pinCommandGetter, output Output, cfgMgrFactory ConfigManagerFactory, pinningServiceFactory PinningServiceFactory) ([]string, error) {
 	cfgMgr, err := cfgMgrFactory()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	var pinningService PinningService
@@ -70,11 +73,11 @@ func pin(ctx context.Context, cmd pinCommandGetter, output Output, cfgMgrFactory
 	}
 
 	if err := pinningService.RequireAuthenticated(); err != nil {
-		return err
+		return nil, err
 	}
 
 	name := cmd.String(FlagName)
-	wait := cmd.Bool(FlagWait)
+	wait := !cmd.Bool(FlagNoWait)
 	filePath := cmd.String(FlagFile)
 	parallel := cmd.Int(FlagParallel)
 	continueOn := cmd.Bool(FlagContinue)
@@ -85,23 +88,23 @@ func pin(ctx context.Context, cmd pinCommandGetter, output Output, cfgMgrFactory
 	if isStdinPipe() {
 		cids, err = readLinesFromStdin()
 		if err != nil {
-			return fmt.Errorf("failed to read CIDs from stdin: %w", err)
+			return nil, fmt.Errorf("failed to read CIDs from stdin: %w", err)
 		}
 	} else if filePath != "" {
 		cids, err = readCIDsFromFile(filePath)
 		if err != nil {
-			return fmt.Errorf("failed to read CIDs from file: %w", err)
+			return nil, fmt.Errorf("failed to read CIDs from file: %w", err)
 		}
 	} else {
 		cid := cmd.GetCID()
 		if cid == "" {
-			return fmt.Errorf("cid is required or provide --file or pipe from stdin")
+			return nil, fmt.Errorf("cid is required or provide --file or pipe from stdin")
 		}
 		cids = strings.Fields(cid)
 	}
 
 	if len(cids) == 0 {
-		return fmt.Errorf("no CIDs provided")
+		return nil, fmt.Errorf("no CIDs provided")
 	}
 
 	if dryRun {
@@ -109,8 +112,8 @@ func pin(ctx context.Context, cmd pinCommandGetter, output Output, cfgMgrFactory
 		if name != "" {
 			options[DryRunOptionName] = name
 		}
-		if wait {
-			options[DryRunOptionWait] = "yes"
+		if !wait {
+			options[DryRunOptionNoWait] = "yes"
 		}
 		if parallel > 1 && len(cids) > 1 {
 			options[DryRunOptionParallel] = fmt.Sprintf("%d", parallel)
@@ -126,13 +129,13 @@ func pin(ctx context.Context, cmd pinCommandGetter, output Output, cfgMgrFactory
 			ItemLabel: "CIDs to pin",
 			Options:   options,
 		})
-		return nil
+		return cids, nil
 	}
 
 	if len(cids) == 1 {
 		result, err := pinningService.Pin(ctx, cids[0], name, wait)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		output.PrintFields(FieldGroup{
 			Fields: []Field{
@@ -141,7 +144,7 @@ func pin(ctx context.Context, cmd pinCommandGetter, output Output, cfgMgrFactory
 				{"Status", result.Status},
 			},
 		})
-		return nil
+		return []string{cids[0]}, nil
 	}
 
 	batchOpts := BatchOptions{
@@ -153,12 +156,12 @@ func pin(ctx context.Context, cmd pinCommandGetter, output Output, cfgMgrFactory
 
 	result, err := pinningService.PinBatch(ctx, cids, name, batchOpts)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	output.PrintBatchResult(result)
 
-	return nil
+	return cids, nil
 }
 
 func defaultPinningServiceFactory(cfgMgr config.Manager, output Output) PinningService {

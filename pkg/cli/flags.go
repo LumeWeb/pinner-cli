@@ -35,6 +35,7 @@ const (
 const (
 	FlagName        = "name"
 	FlagWait        = "wait"
+	FlagNoWait      = "no-wait"
 	FlagConfirm     = "confirm"
 	FlagLimit       = "limit"
 	FlagMemoryLimit = "memory-limit"
@@ -47,9 +48,10 @@ const (
 	FlagSet         = "set"
 	FlagClear       = "clear"
 	FlagYes         = "yes"
-	FlagOperation   = "operation"
-	FlagSearch      = "search"
-	FlagProtocol    = "protocol"
+	FlagAll          = "all"
+	FlagOperation    = "operation"
+	FlagSearch       = "search"
+	FlagProtocol     = "protocol"
 )
 
 // Upload CAR builder flags
@@ -76,6 +78,12 @@ const (
 	FlagType        = "type"
 	FlagTTL         = "ttl"
 	FlagDisabled    = "disabled"
+)
+
+// Metadata flags
+const (
+	FlagMeta      = "meta"
+	FlagClearMeta = "clear-meta"
 )
 
 // Connection/Config flags
@@ -229,6 +237,8 @@ func RequiredNameFlag(usage string) *cli.StringFlag {
 }
 
 // WaitFlag returns a flag for waiting for operation completion.
+// Deprecated: Use NoWaitFlag for upload/pin commands. WaitFlag is kept for
+// IPNS publish which uses opt-in wait semantics.
 func WaitFlag() *cli.BoolFlag {
 	return &cli.BoolFlag{
 		Name:  FlagWait,
@@ -236,11 +246,31 @@ func WaitFlag() *cli.BoolFlag {
 	}
 }
 
-// ConfirmFlag returns a flag to skip confirmation prompts.
+// NoWaitFlag returns a flag for skipping the wait for operation completion.
+// By default, upload and pin commands wait for pinning to complete.
+// Use --no-wait to return immediately after submitting the request.
+func NoWaitFlag() *cli.BoolFlag {
+	return &cli.BoolFlag{
+		Name:  FlagNoWait,
+		Usage: "Return immediately without waiting for pinning to complete",
+	}
+}
+
+// WaitFlagHidden returns a hidden --wait flag for backward compatibility.
+// Waiting is now the default behavior, so this flag is a no-op.
+func WaitFlagHidden() *cli.BoolFlag {
+	return &cli.BoolFlag{
+		Name:   FlagWait,
+		Usage:  "Wait for operation to complete (default behavior, flag is a no-op)",
+		Hidden: true,
+	}
+}
+
 func ConfirmFlag() *cli.BoolFlag {
 	return &cli.BoolFlag{
-		Name:  FlagConfirm,
-		Usage: "Skip confirmation prompts and proceed immediately",
+		Name:   FlagConfirm,
+		Usage:  "Skip confirmation prompts and proceed immediately",
+		Hidden: true,
 	}
 }
 
@@ -517,6 +547,22 @@ func GetSecureSetting(cmd *cli.Command, cfgMgr config.Manager) bool {
 
 	// Use config default
 	return cfgMgr.Config().Secure
+}
+
+// MetaFlag returns a flag for setting metadata as key=value pairs.
+func MetaFlag() *cli.StringSliceFlag {
+	return &cli.StringSliceFlag{
+		Name:  FlagMeta,
+		Usage: "Set metadata as key=value (repeatable)",
+	}
+}
+
+// ClearMetaFlag returns a flag for clearing all metadata.
+func ClearMetaFlag() *cli.BoolFlag {
+	return &cli.BoolFlag{
+		Name:  FlagClearMeta,
+		Usage: "Clear all metadata",
+	}
 }
 
 // ApplySecureConfig applies secure flag configuration to the config manager and persists it.

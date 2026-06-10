@@ -10,8 +10,9 @@ import (
 
 func newUnpinCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "unpin",
-		Usage: "Remove pins",
+		Name:     "unpin",
+		Category: "Pinning",
+		Usage:    "Remove pins (see: pinner pins rm)",
 		Description: `Remove pins by CID or remove all pins.
 
 Examples:
@@ -25,6 +26,7 @@ Examples:
   pinner unpin all --confirm --status failed --dry-run`,
 		ArgsUsage: "<cid...>",
 		Flags: []cli.Flag{
+			ForceFlag(),
 			ConfirmFlag(),
 			FileFlag(),
 			ParallelFlag(),
@@ -72,7 +74,7 @@ func unpin(ctx context.Context, cmd unpinCommandGetter, output Output, cfgMgrFac
 		return err
 	}
 
-	confirm := cmd.Bool(FlagConfirm)
+	confirm := cmd.Bool(FlagForce) || cmd.Bool(FlagConfirm)
 	filePath := cmd.String(FlagFile)
 	parallel := cmd.Int(FlagParallel)
 	continueOn := cmd.Bool(FlagContinue)

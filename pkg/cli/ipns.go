@@ -10,8 +10,9 @@ import (
 
 func newIPNSCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "ipns",
-		Usage: "Manage IPNS (InterPlanetary Name System) keys and records",
+		Name:     "ipns",
+		Category: "Management",
+		Usage:    "Manage IPNS (InterPlanetary Name System) keys and records",
 		Description: `IPNS provides a mutable address scheme for IPFS content, allowing you to
 publish content under a stable name that can be updated to point to new CIDs.
 

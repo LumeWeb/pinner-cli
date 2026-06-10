@@ -10,8 +10,9 @@ import (
 
 func newListCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "list",
-		Usage: "List pinned content",
+		Name:     "list",
+		Category: "Pinning",
+		Usage:    "List pinned content (see: pinner pins ls)",
 		Description: `List your pinned content with optional filtering.
 
 Examples:

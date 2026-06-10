@@ -15,8 +15,9 @@ import (
 
 func newDNSCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "dns",
-		Usage: "Manage DNS zones and records",
+		Name:     "dns",
+		Category: "Management",
+		Usage:    "Manage DNS zones and records",
 		Description: `Manage DNS zones and records for your domains. DNS hosting allows you to
 control DNS configuration for IPFS-hosted websites.
 

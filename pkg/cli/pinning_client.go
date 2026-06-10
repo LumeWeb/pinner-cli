@@ -294,6 +294,11 @@ func (s *PinningServiceDefault) Unpin(ctx context.Context, cidStr string, confir
 
 // UpdateMetadata updates metadata for a pin.
 func (s *PinningServiceDefault) UpdateMetadata(ctx context.Context, cidStr string, set []string, clear bool) error {
+	return s.UpdatePin(ctx, cidStr, "", set, clear)
+}
+
+// UpdatePin updates name and/or metadata for a pin.
+func (s *PinningServiceDefault) UpdatePin(ctx context.Context, cidStr string, name string, set []string, clear bool) error {
 	if err := s.RequireAuthenticated(); err != nil {
 		return err
 	}
@@ -337,16 +342,25 @@ func (s *PinningServiceDefault) UpdateMetadata(ctx context.Context, cidStr strin
 	}
 
 	opts := []go_pinning_service_http_client.AddOption{}
+	if name != "" {
+		opts = append(opts, go_pinning_service_http_client.PinOpts.WithName(name))
+	}
 	if len(meta) > 0 {
 		opts = append(opts, go_pinning_service_http_client.PinOpts.AddMeta(meta))
 	}
 
 	_, err = s.pinningClient.Replace(ctx, requestID, parsedCid, opts...)
 	if err != nil {
-		return WrapAuthError("Update metadata", err)
+		return WrapAuthError("Update pin", err)
 	}
 
-	s.output.Printfln("Updated metadata for CID: %s", cidStr)
+	if name != "" && len(set) > 0 {
+		s.output.Printfln("Updated name and metadata for CID: %s", cidStr)
+	} else if name != "" {
+		s.output.Printfln("Updated name for CID: %s", cidStr)
+	} else {
+		s.output.Printfln("Updated metadata for CID: %s", cidStr)
+	}
 	return nil
 }
 
