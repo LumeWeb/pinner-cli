@@ -177,7 +177,7 @@ func TestPinsUpdate(t *testing.T) {
 
 		service := NewMockPinningService(t)
 		service.EXPECT().RequireAuthenticated().Return(nil)
-		service.EXPECT().UpdatePin(mock.Anything, "QmTest", "", []string{"env=prod"}, false).Return(nil)
+		service.EXPECT().UpdatePin(mock.Anything, "QmTest", "", []string{"env", "prod"}, false).Return(nil)
 
 		cmd := &mockPinsUpdateCommandGetter{
 			cid:   "QmTest",
@@ -231,7 +231,7 @@ func TestPinsUpdate(t *testing.T) {
 
 		service := NewMockPinningService(t)
 		service.EXPECT().RequireAuthenticated().Return(nil)
-		service.EXPECT().UpdatePin(mock.Anything, "QmTest", "", []string{"fresh=start"}, true).Return(nil)
+		service.EXPECT().UpdatePin(mock.Anything, "QmTest", "", []string{"fresh", "start"}, true).Return(nil)
 
 		cmd := &mockPinsUpdateCommandGetter{
 			cid:       "QmTest",
@@ -259,7 +259,7 @@ func TestPinsUpdate(t *testing.T) {
 
 		service := NewMockPinningService(t)
 		service.EXPECT().RequireAuthenticated().Return(nil)
-		service.EXPECT().UpdatePin(mock.Anything, "QmTest", "renamed", []string{"env=prod"}, false).Return(nil)
+		service.EXPECT().UpdatePin(mock.Anything, "QmTest", "renamed", []string{"env", "prod"}, false).Return(nil)
 
 		cmd := &mockPinsUpdateCommandGetter{
 			cid:   "QmTest",

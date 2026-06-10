@@ -78,8 +78,11 @@ func pinsUpdate(ctx context.Context, cmd pinsUpdateCommandGetter, output Output,
 	clearMeta := cmd.Bool(FlagClearMeta)
 	dryRun := cmd.Bool(FlagDryRun)
 
+	var parsedMeta map[string]string
 	if len(metaPairs) > 0 {
-		if _, err := parseMetaPairs(metaPairs); err != nil {
+		var err error
+		parsedMeta, err = parseMetaPairs(metaPairs)
+		if err != nil {
 			return err
 		}
 	}
@@ -93,10 +96,9 @@ func pinsUpdate(ctx context.Context, cmd pinsUpdateCommandGetter, output Output,
 		if clearMeta {
 			options["Clear metadata"] = "true"
 		}
-		if len(metaPairs) > 0 {
-			options["Metadata pairs"] = fmt.Sprintf("%d", len(metaPairs))
-			parsed, _ := parseMetaPairs(metaPairs)
-			for k, v := range parsed {
+		if len(parsedMeta) > 0 {
+			options["Metadata pairs"] = fmt.Sprintf("%d", len(parsedMeta))
+			for k, v := range parsedMeta {
 				options["  "+k] = v
 			}
 		}
@@ -109,5 +111,9 @@ func pinsUpdate(ctx context.Context, cmd pinsUpdateCommandGetter, output Output,
 		return nil
 	}
 
-	return pinningService.UpdatePin(ctx, cid, name, metaPairs, clearMeta)
+	var metaSlice []string
+	if len(parsedMeta) > 0 {
+		metaSlice = metaMapToSlice(parsedMeta)
+	}
+	return pinningService.UpdatePin(ctx, cid, name, metaSlice, clearMeta)
 }

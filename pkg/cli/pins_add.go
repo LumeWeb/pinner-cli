@@ -45,6 +45,10 @@ func pinsAdd(ctx context.Context, cmd *cliCommandWrapper, output Output, cfgMgrF
 		return err
 	}
 
+	if cmd.Bool(FlagDryRun) {
+		return nil
+	}
+
 	metaPairs := cmd.StringSlice(FlagMeta)
 	if len(metaPairs) == 0 {
 		return nil
@@ -55,8 +59,8 @@ func pinsAdd(ctx context.Context, cmd *cliCommandWrapper, output Output, cfgMgrF
 		return err
 	}
 
-	cid := cmd.GetCID()
-	if cid == "" {
+	cids := cmd.Args().Slice()
+	if len(cids) == 0 {
 		return nil
 	}
 
@@ -79,9 +83,11 @@ func pinsAdd(ctx context.Context, cmd *cliCommandWrapper, output Output, cfgMgrF
 	}
 
 	slice := metaMapToSlice(meta)
-	if err := pinningService.UpdateMetadata(ctx, cid, slice, false); err != nil {
-		return fmt.Errorf("pin succeeded but metadata update failed: %w", err)
+	var lastErr error
+	for _, cid := range cids {
+		if err := pinningService.UpdateMetadata(ctx, cid, slice, false); err != nil {
+			lastErr = fmt.Errorf("pin succeeded but metadata update failed for CID %s: %w", cid, err)
+		}
 	}
-
-	return nil
+	return lastErr
 }
