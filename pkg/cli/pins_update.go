@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/urfave/cli/v3"
+	"go.lumeweb.com/pinner-cli/pkg/config"
 )
 
 func newPinsUpdateCommand() *cli.Command {
@@ -28,36 +29,25 @@ Examples:
 		},
 		Action: func(ctx context.Context, c *cli.Command) error {
 			output := setupOutput(c)
-			return pinsUpdate(ctx, newCLICommandWrapper(c), output, defaultConfigManagerFactory, defaultPinningServiceFactory)
+			cfgMgr, err := defaultConfigManagerFactory()
+			if err != nil {
+				return err
+			}
+			authToken := GetAuthToken(c, cfgMgr)
+			secure := GetSecureSetting(c, cfgMgr)
+			return pinsUpdate(ctx, newCLICommandWrapper(c), output, cfgMgr, authToken, secure, defaultPinningServiceFactory)
 		},
 	}
 }
 
-// pinsUpdateCommandGetter defines the interface for getting pins update command flags.
-type pinsUpdateCommandGetter interface {
-	String(name string) string
+func pinsUpdate(ctx context.Context, cmd interface {
+	cidGetter
+	flagGetterWithIsSet
 	StringSlice(name string) []string
-	Bool(name string) bool
-	IsSet(name string) bool
-	GetCID() string
-}
-
-func pinsUpdate(ctx context.Context, cmd pinsUpdateCommandGetter, output Output, cfgMgrFactory ConfigManagerFactory, pinningServiceFactory PinningServiceFactory) error {
-	cfgMgr, err := cfgMgrFactory()
-	if err != nil {
-		return err
-	}
-
-	var secure bool
+}, output Output, cfgMgr config.Manager, authToken string, secure bool, pinningServiceFactory PinningServiceFactory) error {
 	var pinningService PinningService
-	if c, ok := cmd.(*cliCommandWrapper); ok {
-		authToken := GetAuthToken(c.Command, cfgMgr)
-		secure = GetSecureSetting(c.Command, cfgMgr)
-		if authToken != "" {
-			pinningService = NewPinningService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure), WithAuthToken(authToken))
-		} else {
-			pinningService = pinningServiceFactory(cfgMgr, output)
-		}
+	if authToken != "" {
+		pinningService = NewPinningService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure), WithAuthToken(authToken))
 	} else {
 		pinningService = pinningServiceFactory(cfgMgr, output)
 	}

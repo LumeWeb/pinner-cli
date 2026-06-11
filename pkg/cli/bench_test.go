@@ -2,13 +2,15 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/urfave/cli/v3"
+	portalsdk "go.lumeweb.com/portal-sdk"
 	portalsdkmocks "go.lumeweb.com/portal-sdk/mocks"
 	"go.lumeweb.com/pinner-cli/pkg/config"
 	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
@@ -60,6 +62,240 @@ func TestBenchFilePath(t *testing.T) {
 	}
 }
 
+type mockBenchServiceForCLI struct {
+	runFunc                func(ctx context.Context, opts BenchOptions) (*BenchResult, error)
+	requireAuthenticatedFn func() error
+}
+
+func (m *mockBenchServiceForCLI) Run(ctx context.Context, opts BenchOptions) (*BenchResult, error) {
+	if m.runFunc != nil {
+		return m.runFunc(ctx, opts)
+	}
+	return &BenchResult{}, nil
+}
+
+func (m *mockBenchServiceForCLI) RequireAuthenticated() error {
+	if m.requireAuthenticatedFn != nil {
+		return m.requireAuthenticatedFn()
+	}
+	return nil
+}
+
+func setupBenchHandlerTest(t *testing.T) (*mockBenchServiceForCLI, *configmocks.MockManager) {
+	t.Helper()
+
+	mockSvc := &mockBenchServiceForCLI{}
+	cfgMgr := configmocks.NewMockManager(t)
+	cfgMgr.EXPECT().Config().Maybe().Return(&config.Config{
+		BaseEndpoint: "pinner.xyz",
+		Secure:       true,
+		AuthToken:    "test-token",
+		MemoryLimit:  100,
+	}).Maybe()
+
+	origBenchFactory := defaultBenchServiceFactory
+	origAuthFactory := benchAuthServiceFactory
+	t.Cleanup(func() {
+		defaultBenchServiceFactory = origBenchFactory
+		benchAuthServiceFactory = origAuthFactory
+	})
+
+	mockAuthSvc := NewMockAuthService(t)
+	mockAuthSvc.EXPECT().GetAuthenticatedClient(mock.Anything).Maybe().Return(portalsdkmocks.NewMockAccountAPI(t), nil)
+
+	benchAuthServiceFactory = func(cfgMgr config.Manager, output Output, apiEndpoint string) AuthService {
+		return mockAuthSvc
+	}
+
+	defaultBenchServiceFactory = func(cfgMgr config.Manager, output Output, uploadService UploadService, pinningService PinningService, accountClient portalsdk.AccountAPI) BenchService {
+		return mockSvc
+	}
+
+	return mockSvc, cfgMgr
+}
+
+func defaultBenchCmd() *mockCommand {
+	return newMockCommand().
+		withString(FlagBenchSize, "1MB").
+		withInt(FlagBenchFiles, 1).
+		withInt(FlagBenchDepth, 0).
+		withInt(FlagBenchIterations, 1).
+		withInt(FlagParallel, 1).
+		withBool(FlagBenchNoCleanup, false).
+		withDuration(FlagBenchPollInterval, 500*time.Millisecond).
+		withUint64(FlagMemoryLimit, 100).
+		withBool(FlagDryRun, false)
+}
+
+func TestBenchHandler_Success(t *testing.T) {
+	mockSvc, cfgMgr := setupBenchHandlerTest(t)
+	mockSvc.runFunc = func(ctx context.Context, opts BenchOptions) (*BenchResult, error) {
+		assert.Equal(t, int64(1048576), opts.SizeBytes)
+		assert.Equal(t, 1, opts.Files)
+		assert.Equal(t, 1, opts.Iterations)
+		return &BenchResult{
+			Input:      BenchInput{Type: "random", Size: 1048576, Files: 1},
+			Iterations: []BenchIteration{{Number: 1, CID: "QmTest", Size: 1048576, Total: 100 * time.Millisecond}},
+			Summary:    BenchSummary{TotalDuration: 100 * time.Millisecond, UploadDuration: 100 * time.Millisecond},
+		}, nil
+	}
+
+	output := newTestOutput()
+	cmd := defaultBenchCmd()
+	err := bench(context.Background(), cmd, output, cfgMgr, "test-token", true)
+	require.NoError(t, err)
+}
+
+func TestBenchHandler_InvalidSize(t *testing.T) {
+	_, cfgMgr := setupBenchHandlerTest(t)
+
+	output := newTestOutput()
+	cmd := defaultBenchCmd().withString(FlagBenchSize, "notasize")
+	err := bench(context.Background(), cmd, output, cfgMgr, "test-token", true)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid size")
+}
+
+func TestBenchHandler_ZeroSizeNoPath(t *testing.T) {
+	_, cfgMgr := setupBenchHandlerTest(t)
+
+	output := newTestOutput()
+	cmd := defaultBenchCmd().withString(FlagBenchSize, "0B")
+	err := bench(context.Background(), cmd, output, cfgMgr, "test-token", true)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "size must be positive or provide a path")
+}
+
+func TestBenchHandler_ZeroFiles(t *testing.T) {
+	_, cfgMgr := setupBenchHandlerTest(t)
+
+	output := newTestOutput()
+	cmd := defaultBenchCmd().withInt(FlagBenchFiles, 0)
+	err := bench(context.Background(), cmd, output, cfgMgr, "test-token", true)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "files must be at least 1")
+}
+
+func TestBenchHandler_ZeroIterations(t *testing.T) {
+	_, cfgMgr := setupBenchHandlerTest(t)
+
+	output := newTestOutput()
+	cmd := defaultBenchCmd().withInt(FlagBenchIterations, 0)
+	err := bench(context.Background(), cmd, output, cfgMgr, "test-token", true)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "iterations must be at least 1")
+}
+
+func TestBenchHandler_NegativeDepth(t *testing.T) {
+	_, cfgMgr := setupBenchHandlerTest(t)
+
+	output := newTestOutput()
+	cmd := defaultBenchCmd().withInt(FlagBenchDepth, -1)
+	err := bench(context.Background(), cmd, output, cfgMgr, "test-token", true)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "depth must be non-negative")
+}
+
+func TestBenchHandler_ZeroPollInterval(t *testing.T) {
+	_, cfgMgr := setupBenchHandlerTest(t)
+
+	output := newTestOutput()
+	cmd := defaultBenchCmd().withDuration(FlagBenchPollInterval, 0)
+	err := bench(context.Background(), cmd, output, cfgMgr, "test-token", true)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "poll-interval must be positive")
+}
+
+func TestBenchHandler_DryRun(t *testing.T) {
+	_, cfgMgr := setupBenchHandlerTest(t)
+
+	output := newTestOutput()
+	cmd := defaultBenchCmd().withBool(FlagDryRun, true)
+	err := bench(context.Background(), cmd, output, cfgMgr, "test-token", true)
+	require.NoError(t, err)
+}
+
+func TestBenchHandler_DryRunWithPath(t *testing.T) {
+	_, cfgMgr := setupBenchHandlerTest(t)
+
+	output := newTestOutput()
+	cmd := defaultBenchCmd().withBool(FlagDryRun, true).withArgs("./testdata")
+	err := bench(context.Background(), cmd, output, cfgMgr, "test-token", true)
+	require.NoError(t, err)
+}
+
+func TestBenchHandler_ServiceError(t *testing.T) {
+	mockSvc, cfgMgr := setupBenchHandlerTest(t)
+	mockSvc.runFunc = func(ctx context.Context, opts BenchOptions) (*BenchResult, error) {
+		return nil, errors.New("benchmark failed")
+	}
+
+	output := newTestOutput()
+	cmd := defaultBenchCmd()
+	err := bench(context.Background(), cmd, output, cfgMgr, "test-token", true)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "benchmark failed")
+}
+
+func TestBenchHandler_AuthError(t *testing.T) {
+	cfgMgr := configmocks.NewMockManager(t)
+	cfgMgr.EXPECT().Config().Maybe().Return(&config.Config{
+		BaseEndpoint: "pinner.xyz",
+		Secure:       true,
+		AuthToken:    "test-token",
+		MemoryLimit:  100,
+	}).Maybe()
+
+	origAuthFactory := benchAuthServiceFactory
+	t.Cleanup(func() { benchAuthServiceFactory = origAuthFactory })
+
+	mockAuthSvc := NewMockAuthService(t)
+	mockAuthSvc.EXPECT().GetAuthenticatedClient(mock.Anything).Return(nil, errors.New("auth failed"))
+
+	benchAuthServiceFactory = func(cfgMgr config.Manager, output Output, apiEndpoint string) AuthService {
+		return mockAuthSvc
+	}
+
+	output := newTestOutput()
+	cmd := defaultBenchCmd()
+	err := bench(context.Background(), cmd, output, cfgMgr, "test-token", true)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to authenticate for operation polling")
+}
+
+func TestBenchHandler_JSONOutput(t *testing.T) {
+	mockSvc, cfgMgr := setupBenchHandlerTest(t)
+	mockSvc.runFunc = func(ctx context.Context, opts BenchOptions) (*BenchResult, error) {
+		return &BenchResult{
+			Input:      BenchInput{Type: "random", Size: 1048576, Files: 1},
+			Iterations: []BenchIteration{{Number: 1, CID: "QmTest", Size: 1048576, Total: 100 * time.Millisecond}},
+			Summary:    BenchSummary{TotalDuration: 100 * time.Millisecond, UploadDuration: 100 * time.Millisecond},
+		}, nil
+	}
+
+	output := NewOutputFormatter(true, false, false, false)
+	cmd := defaultBenchCmd()
+	err := bench(context.Background(), cmd, output, cfgMgr, "test-token", true)
+	require.NoError(t, err)
+}
+
+func TestBenchHandler_WithPath(t *testing.T) {
+	mockSvc, cfgMgr := setupBenchHandlerTest(t)
+	mockSvc.runFunc = func(ctx context.Context, opts BenchOptions) (*BenchResult, error) {
+		assert.Equal(t, "./testdata", opts.Path)
+		return &BenchResult{
+			Input:      BenchInput{Type: "path", Path: "./testdata"},
+			Iterations: []BenchIteration{{Number: 1, CID: "QmTest", Size: 1024, Total: 50 * time.Millisecond}},
+			Summary:    BenchSummary{TotalDuration: 50 * time.Millisecond, UploadDuration: 50 * time.Millisecond},
+		}, nil
+	}
+
+	output := newTestOutput()
+	cmd := defaultBenchCmd().withString(FlagBenchSize, "0B").withArgs("./testdata")
+	err := bench(context.Background(), cmd, output, cfgMgr, "test-token", true)
+	require.NoError(t, err)
+}
+
 func TestGenerateRandomData(t *testing.T) {
 	t.Run("single file", func(t *testing.T) {
 		opts := BenchOptions{
@@ -94,18 +330,15 @@ func TestGenerateRandomData(t *testing.T) {
 	})
 
 	t.Run("disk fallback for large data", func(t *testing.T) {
-		// Use a size larger than available memory to force disk path
-		avail := availableMemory()
-		if avail <= 0 {
-			t.Skip("cannot detect available memory")
-		}
+		// Test the disk fallback path directly with a small size to avoid
+		// filling the disk on systems with large amounts of RAM.
 		opts := BenchOptions{
-			SizeBytes: avail + 1, // just over available memory
+			SizeBytes: 1024, // 1KB — small size, but we're testing the disk path directly
 			Files:     1,
 			Depth:     0,
 		}
 
-		fsys, name, cleanup, err := generateRandomData(opts)
+		fsys, name, cleanup, err := generateRandomDataDisk(opts)
 		require.NoError(t, err)
 		assert.Equal(t, "bench", name)
 		assert.NotNil(t, fsys)
@@ -242,7 +475,7 @@ func TestBenchService_RequireAuthenticated(t *testing.T) {
 			AuthToken: "",
 		})
 
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		pinningService := NewPinningService(cfgMgr, output, "https://api.test.com")
 		uploadService := NewUploadService(cfgMgr, output)
 
@@ -259,7 +492,7 @@ func TestBenchService_Run_NotAuthenticated(t *testing.T) {
 			AuthToken: "",
 		})
 
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		pinningService := NewPinningService(cfgMgr, output, "https://api.test.com")
 		uploadService := NewUploadService(cfgMgr, output)
 
@@ -273,95 +506,7 @@ func TestBenchService_Run_NotAuthenticated(t *testing.T) {
 	})
 }
 
-// mockBenchCommand is a test mock for benchCommandGetter.
-type mockBenchCommand struct {
-	size            string
-	files           int
-	depth           int
-	iterations      int
-	parallel        int
-	noCleanup       bool
-	pollInterval    time.Duration
-	memoryLimit     uint64
-	dryRun          bool
-	path            string
-	chunkSize       int64
-	chunkerStrategy string
-	maxLinks        int
-}
 
-func (m *mockBenchCommand) String(name string) string {
-	switch name {
-	case FlagBenchSize:
-		return m.size
-	case FlagChunker:
-		return m.chunkerStrategy
-	default:
-		return ""
-	}
-}
-
-func (m *mockBenchCommand) Int(name string) int {
-	switch name {
-	case FlagBenchFiles:
-		return m.files
-	case FlagBenchDepth:
-		return m.depth
-	case FlagBenchIterations:
-		return m.iterations
-	case FlagParallel:
-		return m.parallel
-	case FlagMaxLinks:
-		return m.maxLinks
-	default:
-		return 0
-	}
-}
-
-func (m *mockBenchCommand) Int64(name string) int64 {
-	switch name {
-	case FlagChunkSize:
-		return m.chunkSize
-	default:
-		return 0
-	}
-}
-
-func (m *mockBenchCommand) Bool(name string) bool {
-	switch name {
-	case FlagBenchNoCleanup:
-		return m.noCleanup
-	case FlagDryRun:
-		return m.dryRun
-	default:
-		return false
-	}
-}
-
-func (m *mockBenchCommand) Uint64(name string) uint64 {
-	switch name {
-	case FlagMemoryLimit:
-		return m.memoryLimit
-	default:
-		return 0
-	}
-}
-
-func (m *mockBenchCommand) Duration(name string) time.Duration {
-	switch name {
-	case FlagBenchPollInterval:
-		return m.pollInterval
-	default:
-		return 0
-	}
-}
-
-func (m *mockBenchCommand) Args() cli.Args {
-	return &mockArgs{args: []string{m.path}}
-}
-
-// Ensure mock types satisfy interfaces at compile time.
-var _ benchCommandGetter = (*mockBenchCommand)(nil)
 
 func TestFormatBenchResult(t *testing.T) {
 	t.Run("single iteration with random data", func(t *testing.T) {
@@ -399,7 +544,7 @@ func TestFormatBenchResult(t *testing.T) {
 		}
 
 		// Just verify it doesn't panic and produces output
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		formatBenchResult(output, result)
 	})
 
@@ -438,7 +583,7 @@ func TestFormatBenchResult(t *testing.T) {
 			},
 		}
 
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		formatBenchResult(output, result)
 	})
 }
@@ -485,5 +630,243 @@ func TestNewBenchError(t *testing.T) {
 		assert.Equal(t, "upload failed", benchErr.Message)
 		assert.Equal(t, 500, benchErr.Detail["http_status"])
 		assert.Equal(t, "internal server error", benchErr.Detail["body"])
+	})
+}
+
+func TestIsUnrecoverableError(t *testing.T) {
+	t.Run("ErrUnauthorized is unrecoverable", func(t *testing.T) {
+		assert.True(t, isUnrecoverableError(portalsdk.ErrUnauthorized))
+	})
+
+	t.Run("ErrForbidden is unrecoverable", func(t *testing.T) {
+		assert.True(t, isUnrecoverableError(portalsdk.ErrForbidden))
+	})
+
+	t.Run("wrapped ErrUnauthorized is unrecoverable", func(t *testing.T) {
+		err := fmt.Errorf("request failed: %w", portalsdk.ErrUnauthorized)
+		assert.True(t, isUnrecoverableError(err))
+	})
+
+	t.Run("wrapped ErrForbidden is unrecoverable", func(t *testing.T) {
+		err := fmt.Errorf("access denied: %w", portalsdk.ErrForbidden)
+		assert.True(t, isUnrecoverableError(err))
+	})
+
+	t.Run("generic error is recoverable", func(t *testing.T) {
+		assert.False(t, isUnrecoverableError(errors.New("something went wrong")))
+	})
+
+	t.Run("HTTPError 500 is recoverable", func(t *testing.T) {
+		assert.False(t, isUnrecoverableError(NewHTTPError(500, "internal server error")))
+	})
+
+	t.Run("HTTPError 401 is recoverable (not a sentinel error)", func(t *testing.T) {
+		assert.False(t, isUnrecoverableError(NewHTTPError(401, "unauthorized")))
+	})
+
+	t.Run("nil error is recoverable", func(t *testing.T) {
+		assert.False(t, isUnrecoverableError(nil))
+	})
+}
+
+func TestBenchError_String(t *testing.T) {
+	err := &BenchError{Message: "test error message"}
+	assert.Equal(t, "test error message", err.String())
+}
+
+func TestBenchServiceDefault_RunIteration(t *testing.T) {
+	ctx := context.Background()
+
+	newCompletedOp := func(id int) *portalsdk.Operation {
+		op := &portalsdk.Operation{}
+		op.Id = id
+		op.Status = string(portalsdk.OperationStatusCompleted)
+		op.Operation = "Pin"
+		op.Protocol = "IPFS"
+		op.ProgressPercent = 100
+		op.StartedAt = time.Now()
+		op.UpdatedAt = time.Now()
+		return op
+	}
+
+	t.Run("successful upload and pin", func(t *testing.T) {
+		uploadSvc := NewMockUploadService(t)
+		pinningSvc := NewMockPinningService(t)
+		accountAPI := portalsdkmocks.NewMockAccountAPI(t)
+		cfgMgr := configmocks.NewMockManager(t)
+		output := newTestOutput()
+
+		uploadSvc.EXPECT().Upload(mock.Anything, mock.Anything, mock.Anything, false).
+			Return(&UploadResult{CID: "QmTestCID", Size: 1024}, nil)
+
+		accountAPI.EXPECT().ListOperations(mock.Anything, mock.Anything).
+			Return([]*portalsdk.Operation{newCompletedOp(1)}, nil)
+		accountAPI.EXPECT().GetOperation(mock.Anything, int64(1)).
+			Return(newCompletedOp(1), nil)
+
+		svc := &BenchServiceDefault{
+			configMgr:      cfgMgr,
+			output:         output,
+			uploadService:  uploadSvc,
+			pinningService: pinningSvc,
+			accountClient:  accountAPI,
+		}
+
+		opts := BenchOptions{
+			SizeBytes:   1024,
+			Files:       1,
+			Iterations:  1,
+			PollInterval: 100 * time.Millisecond,
+		}
+
+		iter := svc.runIteration(ctx, opts, 0)
+		assert.Equal(t, 1, iter.Number)
+		assert.Equal(t, "QmTestCID", iter.CID)
+		assert.Equal(t, int64(1024), iter.Size)
+		assert.Nil(t, iter.Error)
+		assert.Greater(t, iter.Total, time.Duration(0))
+
+		stageNames := make([]string, len(iter.Stages))
+		for i, s := range iter.Stages {
+			stageNames[i] = s.Name
+		}
+		assert.Contains(t, stageNames, "generate")
+		assert.Contains(t, stageNames, "upload")
+	})
+
+	t.Run("upload failure returns error", func(t *testing.T) {
+		uploadSvc := NewMockUploadService(t)
+		pinningSvc := NewMockPinningService(t)
+		accountAPI := portalsdkmocks.NewMockAccountAPI(t)
+		cfgMgr := configmocks.NewMockManager(t)
+		output := newTestOutput()
+
+		uploadSvc.EXPECT().Upload(mock.Anything, mock.Anything, mock.Anything, false).
+			Return(nil, errors.New("network error"))
+
+		svc := &BenchServiceDefault{
+			configMgr:      cfgMgr,
+			output:         output,
+			uploadService:  uploadSvc,
+			pinningService: pinningSvc,
+			accountClient:  accountAPI,
+		}
+
+		opts := BenchOptions{
+			SizeBytes:   1024,
+			Files:       1,
+			Iterations:  1,
+			PollInterval: 100 * time.Millisecond,
+		}
+
+		iter := svc.runIteration(ctx, opts, 0)
+		assert.Equal(t, 1, iter.Number)
+		assert.Empty(t, iter.CID)
+		assert.NotNil(t, iter.Error)
+		assert.Equal(t, "network error", iter.Error.Message)
+		assert.NotNil(t, iter.err)
+
+		stageNames := make([]string, len(iter.Stages))
+		for i, s := range iter.Stages {
+			stageNames[i] = s.Name
+		}
+		assert.Contains(t, stageNames, "generate")
+		assert.Contains(t, stageNames, "upload")
+	})
+
+	t.Run("upload failure with HTTPError has structured detail", func(t *testing.T) {
+		uploadSvc := NewMockUploadService(t)
+		pinningSvc := NewMockPinningService(t)
+		accountAPI := portalsdkmocks.NewMockAccountAPI(t)
+		cfgMgr := configmocks.NewMockManager(t)
+		output := newTestOutput()
+
+		httpErr := NewHTTPError(429, "rate limit exceeded")
+		uploadSvc.EXPECT().Upload(mock.Anything, mock.Anything, mock.Anything, false).
+			Return(nil, httpErr)
+
+		svc := &BenchServiceDefault{
+			configMgr:      cfgMgr,
+			output:         output,
+			uploadService:  uploadSvc,
+			pinningService: pinningSvc,
+			accountClient:  accountAPI,
+		}
+
+		opts := BenchOptions{
+			SizeBytes:   1024,
+			Files:       1,
+			Iterations:  1,
+			PollInterval: 100 * time.Millisecond,
+		}
+
+		iter := svc.runIteration(ctx, opts, 0)
+		assert.NotNil(t, iter.Error)
+		assert.Equal(t, "upload failed", iter.Error.Message)
+		assert.Equal(t, 429, iter.Error.Detail["http_status"])
+	})
+
+	t.Run("upload failure with auth error is unrecoverable", func(t *testing.T) {
+		uploadSvc := NewMockUploadService(t)
+		pinningSvc := NewMockPinningService(t)
+		accountAPI := portalsdkmocks.NewMockAccountAPI(t)
+		cfgMgr := configmocks.NewMockManager(t)
+		output := newTestOutput()
+
+		uploadSvc.EXPECT().Upload(mock.Anything, mock.Anything, mock.Anything, false).
+			Return(nil, portalsdk.ErrUnauthorized)
+
+		svc := &BenchServiceDefault{
+			configMgr:      cfgMgr,
+			output:         output,
+			uploadService:  uploadSvc,
+			pinningService: pinningSvc,
+			accountClient:  accountAPI,
+		}
+
+		opts := BenchOptions{
+			SizeBytes:   1024,
+			Files:       1,
+			Iterations:  1,
+			PollInterval: 100 * time.Millisecond,
+		}
+
+		iter := svc.runIteration(ctx, opts, 0)
+		assert.NotNil(t, iter.Error)
+		assert.True(t, isUnrecoverableError(iter.err))
+	})
+
+	t.Run("iteration number is 1-indexed", func(t *testing.T) {
+		uploadSvc := NewMockUploadService(t)
+		pinningSvc := NewMockPinningService(t)
+		accountAPI := portalsdkmocks.NewMockAccountAPI(t)
+		cfgMgr := configmocks.NewMockManager(t)
+		output := newTestOutput()
+
+		uploadSvc.EXPECT().Upload(mock.Anything, mock.Anything, mock.Anything, false).
+			Return(&UploadResult{CID: "QmTestCID", Size: 1024}, nil)
+
+		accountAPI.EXPECT().ListOperations(mock.Anything, mock.Anything).
+			Return([]*portalsdk.Operation{newCompletedOp(1)}, nil)
+		accountAPI.EXPECT().GetOperation(mock.Anything, int64(1)).
+			Return(newCompletedOp(1), nil)
+
+		svc := &BenchServiceDefault{
+			configMgr:      cfgMgr,
+			output:         output,
+			uploadService:  uploadSvc,
+			pinningService: pinningSvc,
+			accountClient:  accountAPI,
+		}
+
+		opts := BenchOptions{
+			SizeBytes:   1024,
+			Files:       1,
+			Iterations:  1,
+			PollInterval: 100 * time.Millisecond,
+		}
+
+		iter := svc.runIteration(ctx, opts, 4)
+		assert.Equal(t, 5, iter.Number)
 	})
 }

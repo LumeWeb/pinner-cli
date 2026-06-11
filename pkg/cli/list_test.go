@@ -14,13 +14,12 @@ import (
 
 func TestList(t *testing.T) {
 	tests := []struct {
-		name             string
-		nameFilter       string
-		limit            int
-		setupMocks       func(*configmocks.MockManager, *MockPinningService)
-		wantErr          bool
-		errContains      string
-		cfgMgrFactoryErr bool
+		name        string
+		nameFilter  string
+		limit       int
+		setupMocks  func(*configmocks.MockManager, *MockPinningService)
+		wantErr     bool
+		errContains string
 	}{
 		{
 			name:       "successful list operation",
@@ -81,15 +80,6 @@ func TestList(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:             "returns error when config manager factory fails",
-			nameFilter:       "",
-			limit:            0,
-			setupMocks:       func(cfgMgr *configmocks.MockManager, service *MockPinningService) {},
-			wantErr:          true,
-			errContains:      "config error",
-			cfgMgrFactoryErr: true,
-		},
-		{
 			name:       "returns error when list fails",
 			nameFilter: "",
 			limit:      0,
@@ -122,35 +112,23 @@ func TestList(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfgMgr := configmocks.NewMockManager(t)
+			cfgMgr := newTestConfigMgr(t)
 			service := NewMockPinningService(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(cfgMgr, service)
 			}
 
-			cmd := &mockListCommand{
-				nameFilter: tt.nameFilter,
-				limit:      tt.limit,
-			}
-
-			var cfgMgrFactory ConfigManagerFactory
-			if tt.cfgMgrFactoryErr {
-				cfgMgrFactory = func() (config.Manager, error) {
-					return nil, errors.New("config error")
-				}
-			} else {
-				cfgMgrFactory = func() (config.Manager, error) {
-					return cfgMgr, nil
-				}
-			}
+			cmd := newMockCommand().
+				withString(FlagName, tt.nameFilter).
+				withInt(FlagLimit, tt.limit)
 
 			pinningServiceFactory := func(cm config.Manager, out Output) PinningService {
 				return service
 			}
 
-			err := list(context.Background(), cmd, output, cfgMgrFactory, pinningServiceFactory)
+			err := list(context.Background(), cmd, output, cfgMgr, "", false, pinningServiceFactory)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -170,7 +148,6 @@ func TestNewListCommand(t *testing.T) {
 
 		assert.Equal(t, "list", cmd.Name)
 
-		// Check flags
 		flags := cmd.Flags
 		assert.Len(t, flags, 4)
 
@@ -192,30 +169,47 @@ func TestNewListCommand(t *testing.T) {
 	})
 }
 
-// mockListCommand is a mock implementation of listCommandGetter for testing.
-type mockListCommand struct {
-	nameFilter string
-	limit      int
-}
+func TestList_WithStatusFilter(t *testing.T) {
+	cfgMgr := newTestConfigMgr(t)
+	service := NewMockPinningService(t)
+	output := newTestOutput()
 
-func (m *mockListCommand) String(name string) string {
-	switch name {
-	case FlagName:
-		return m.nameFilter
-	default:
-		return ""
+	service.EXPECT().RequireAuthenticated().Return(nil)
+	service.EXPECT().List(context.Background(), "", 10, "pinned").Return(
+		[]Pin{
+			{CID: "QmXxx", Name: "test", Status: "pinned", Created: "2024-01-01T00:00:00Z"},
+		},
+		nil,
+	)
+
+	cmd := newMockCommand().
+		withInt(FlagLimit, 10).
+		withString(FlagStatus, "pinned")
+
+	pinningServiceFactory := func(cm config.Manager, out Output) PinningService {
+		return service
 	}
+
+	err := list(context.Background(), cmd, output, cfgMgr, "", false, pinningServiceFactory)
+	require.NoError(t, err)
 }
 
-func (m *mockListCommand) Int(name string) int {
-	switch name {
-	case FlagLimit:
-		return m.limit
-	default:
-		return 0
+func TestList_RequireAuthFails(t *testing.T) {
+	cfgMgr := newTestConfigMgr(t)
+	service := NewMockPinningService(t)
+	output := newTestOutput()
+
+	service.EXPECT().RequireAuthenticated().Return(errors.New("not authenticated"))
+
+	cmd := newMockCommand()
+
+	pinningServiceFactory := func(cm config.Manager, out Output) PinningService {
+		return service
 	}
+
+	err := list(context.Background(), cmd, output, cfgMgr, "", false, pinningServiceFactory)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not authenticated")
 }
 
-func (m *mockListCommand) Bool(name string) bool {
-	return false
-}
+

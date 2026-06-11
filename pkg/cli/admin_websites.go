@@ -39,16 +39,12 @@ Examples:
 			if err != nil {
 				return err
 			}
-			return adminWebsitesBlockAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultWebsiteAdminServiceFactory)
+			return adminWebsitesBlockAction(ctx, cmd, output, cfgMgr, defaultWebsiteAdminServiceFactory)
 		},
 	}
 }
 
-type adminWebsitesBlockCmdGetter interface {
-	Args() cli.Args
-}
-
-func adminWebsitesBlockAction(ctx context.Context, cmd adminWebsitesBlockCmdGetter, output Output, cfgMgr config.Manager, serviceFactory WebsiteAdminServiceFactory) error {
+func adminWebsitesBlockAction(ctx context.Context, cmd argsGetter, output Output, cfgMgr config.Manager, serviceFactory WebsiteAdminServiceFactory) error {
 	if cmd.Args().Len() < 1 {
 		return fmt.Errorf("website ID is required")
 	}
@@ -88,16 +84,12 @@ Examples:
 			if err != nil {
 				return err
 			}
-			return adminWebsitesUnblockAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultWebsiteAdminServiceFactory)
+			return adminWebsitesUnblockAction(ctx, cmd, output, cfgMgr, defaultWebsiteAdminServiceFactory)
 		},
 	}
 }
 
-type adminWebsitesUnblockCmdGetter interface {
-	Args() cli.Args
-}
-
-func adminWebsitesUnblockAction(ctx context.Context, cmd adminWebsitesUnblockCmdGetter, output Output, cfgMgr config.Manager, serviceFactory WebsiteAdminServiceFactory) error {
+func adminWebsitesUnblockAction(ctx context.Context, cmd argsGetter, output Output, cfgMgr config.Manager, serviceFactory WebsiteAdminServiceFactory) error {
 	if cmd.Args().Len() < 1 {
 		return fmt.Errorf("website ID is required")
 	}

@@ -36,7 +36,7 @@ func makeOperation(id int, cid string, status string, opName string, protocol st
 func TestStatusServiceDefault_Status(t *testing.T) {
 	t.Run("returns pin status when pin is found", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		pinningSvc := NewMockPinningService(t)
 
 		pinningSvc.EXPECT().RequireAuthenticated().Return(nil)
@@ -56,7 +56,7 @@ func TestStatusServiceDefault_Status(t *testing.T) {
 
 	t.Run("falls back to operation when pin not found", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		pinningSvc := NewMockPinningService(t)
 		authSvc := NewMockAuthService(t)
 		accountClient := portalsdkmocks.NewMockAccountAPI(t)
@@ -92,7 +92,7 @@ func TestStatusServiceDefault_Status(t *testing.T) {
 
 	t.Run("returns pin not found when no operation exists either", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		pinningSvc := NewMockPinningService(t)
 		authSvc := NewMockAuthService(t)
 		accountClient := portalsdkmocks.NewMockAccountAPI(t)
@@ -120,7 +120,7 @@ func TestStatusServiceDefault_Status(t *testing.T) {
 
 	t.Run("returns pin not found when auth service is nil", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		pinningSvc := NewMockPinningService(t)
 
 		pinningSvc.EXPECT().RequireAuthenticated().Return(nil)
@@ -139,7 +139,7 @@ func TestStatusServiceDefault_Status(t *testing.T) {
 
 	t.Run("returns error when pin status fails with non-ErrPinNotFound error", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		pinningSvc := NewMockPinningService(t)
 
 		pinningSvc.EXPECT().RequireAuthenticated().Return(nil)
@@ -158,7 +158,7 @@ func TestStatusServiceDefault_Status(t *testing.T) {
 
 	t.Run("populates error field from operation", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		pinningSvc := NewMockPinningService(t)
 		authSvc := NewMockAuthService(t)
 		accountClient := portalsdkmocks.NewMockAccountAPI(t)
@@ -195,7 +195,7 @@ func TestStatusServiceDefault_Status(t *testing.T) {
 
 	t.Run("returns error when auth service fails to get authenticated client", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		pinningSvc := NewMockPinningService(t)
 		authSvc := NewMockAuthService(t)
 
@@ -217,7 +217,7 @@ func TestStatusServiceDefault_Status(t *testing.T) {
 
 	t.Run("reuses account client on subsequent lookups", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		pinningSvc := NewMockPinningService(t)
 		authSvc := NewMockAuthService(t)
 		accountClient := portalsdkmocks.NewMockAccountAPI(t)
@@ -269,7 +269,7 @@ func TestStatusServiceDefault_Status(t *testing.T) {
 
 	t.Run("uses pre-injected account client when available", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		pinningSvc := NewMockPinningService(t)
 		accountClient := portalsdkmocks.NewMockAccountAPI(t)
 

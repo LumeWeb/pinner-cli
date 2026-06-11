@@ -23,6 +23,11 @@ type MockSetupUI struct {
 
 	ContinueError error
 
+	SelectResult int
+	SelectString string
+	SelectErr    error
+	ContinueErr  error
+
 	AuthExecuted   bool
 	ConfigExecuted bool
 	TutorialExecuted bool
@@ -173,4 +178,12 @@ func (m *MockSetupUI) ExecuteCompletionStep(_ *SetupWizard) error {
 	}
 
 	return nil
+}
+
+func (m *MockSetupUI) Select(label string, items []string) (int, string, error) {
+	return m.SelectResult, m.SelectString, m.SelectErr
+}
+
+func (m *MockSetupUI) Continue() error {
+	return m.ContinueErr
 }

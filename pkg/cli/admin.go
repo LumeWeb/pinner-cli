@@ -129,7 +129,7 @@ Examples:
 					if err != nil {
 						return err
 					}
-					return quotaPlansListAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultQuotaAdminServiceFactory)
+					return quotaPlansListAction(ctx, output, cfgMgr, defaultQuotaAdminServiceFactory)
 				},
 			},
 			{
@@ -146,7 +146,7 @@ Examples:
 					if err != nil {
 						return err
 					}
-					return quotaPlansGetAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultQuotaAdminServiceFactory)
+					return quotaPlansGetAction(ctx, cmd, output, cfgMgr, defaultQuotaAdminServiceFactory)
 				},
 			},
 			{
@@ -199,7 +199,7 @@ Examples:
 					if err != nil {
 						return err
 					}
-					return quotaPlansCreateAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultQuotaAdminServiceFactory)
+					return quotaPlansCreateAction(ctx, cmd, output, cfgMgr, defaultQuotaAdminServiceFactory)
 				},
 			},
 			{
@@ -250,7 +250,7 @@ Examples:
 					if err != nil {
 						return err
 					}
-					return quotaPlansUpdateAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultQuotaAdminServiceFactory)
+					return quotaPlansUpdateAction(ctx, cmd, output, cfgMgr, defaultQuotaAdminServiceFactory)
 				},
 			},
 			{
@@ -266,7 +266,7 @@ Examples:
 					if err != nil {
 						return err
 					}
-					return quotaPlansDeleteAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultQuotaAdminServiceFactory)
+					return quotaPlansDeleteAction(ctx, cmd, output, cfgMgr, defaultQuotaAdminServiceFactory)
 				},
 			},
 			{
@@ -282,7 +282,7 @@ Examples:
 					if err != nil {
 						return err
 					}
-					return quotaPlansSetDefaultAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultQuotaAdminServiceFactory)
+					return quotaPlansSetDefaultAction(ctx, cmd, output, cfgMgr, defaultQuotaAdminServiceFactory)
 				},
 			},
 		},
@@ -312,7 +312,7 @@ Examples:
 					if err != nil {
 						return err
 					}
-					return quotaAllowancesListAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultQuotaAdminServiceFactory)
+					return quotaAllowancesListAction(ctx, output, cfgMgr, defaultQuotaAdminServiceFactory)
 				},
 			},
 			{
@@ -357,7 +357,7 @@ Examples:
 					if err != nil {
 						return err
 					}
-					return quotaAllowancesCreateAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultQuotaAdminServiceFactory)
+					return quotaAllowancesCreateAction(ctx, cmd, output, cfgMgr, defaultQuotaAdminServiceFactory)
 				},
 			},
 			{
@@ -403,7 +403,7 @@ Examples:
 					if err != nil {
 						return err
 					}
-					return quotaAllowancesUpdateAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultQuotaAdminServiceFactory)
+					return quotaAllowancesUpdateAction(ctx, cmd, output, cfgMgr, defaultQuotaAdminServiceFactory)
 				},
 			},
 			{
@@ -419,7 +419,7 @@ Examples:
 					if err != nil {
 						return err
 					}
-					return quotaAllowancesDeleteAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultQuotaAdminServiceFactory)
+					return quotaAllowancesDeleteAction(ctx, cmd, output, cfgMgr, defaultQuotaAdminServiceFactory)
 				},
 			},
 		},
@@ -450,7 +450,7 @@ Examples:
 					if err != nil {
 						return err
 					}
-					return quotaUserConfigsListAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultQuotaAdminServiceFactory)
+					return quotaUserConfigsListAction(ctx, output, cfgMgr, defaultQuotaAdminServiceFactory)
 				},
 			},
 			{
@@ -522,7 +522,7 @@ Examples:
 					if err != nil {
 						return err
 					}
-					return quotaUserConfigsUpdateAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultQuotaAdminServiceFactory)
+					return quotaUserConfigsUpdateAction(ctx, cmd, output, cfgMgr, defaultQuotaAdminServiceFactory)
 				},
 			},
 			{
@@ -538,7 +538,7 @@ Examples:
 					if err != nil {
 						return err
 					}
-					return quotaUserConfigsResetAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultQuotaAdminServiceFactory)
+					return quotaUserConfigsResetAction(ctx, cmd, output, cfgMgr, defaultQuotaAdminServiceFactory)
 				},
 			},
 		},
@@ -559,7 +559,7 @@ Examples:
 			if err != nil {
 				return err
 			}
-			return quotaStatsAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultQuotaAdminServiceFactory)
+			return quotaStatsAction(ctx, output, cfgMgr, defaultQuotaAdminServiceFactory)
 		},
 	}
 }
@@ -584,7 +584,7 @@ Examples:
 			if err != nil {
 				return err
 			}
-			return quotaReconcileAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultQuotaAdminServiceFactory)
+			return quotaReconcileAction(ctx, cmd, output, cfgMgr, defaultQuotaAdminServiceFactory)
 		},
 	}
 }
@@ -609,7 +609,7 @@ Examples:
 			if err != nil {
 				return err
 			}
-			return quotaCleanupAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultQuotaAdminServiceFactory)
+			return quotaCleanupAction(ctx, cmd, output, cfgMgr, defaultQuotaAdminServiceFactory)
 		},
 	}
 }

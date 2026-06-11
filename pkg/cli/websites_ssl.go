@@ -6,11 +6,11 @@ import (
 	"time"
 
 	"github.com/urfave/cli/v3"
+	"go.lumeweb.com/pinner-cli/pkg/config"
 
 	ipfs "go.lumeweb.com/ipfs-sdk"
 )
 
-// newWebsitesSSLCommand creates the SSL subcommand for websites.
 func newWebsitesSSLCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "ssl",
@@ -31,7 +31,6 @@ Examples:
 	}
 }
 
-// newWebsitesSSLStatusCommand creates the SSL status command.
 func newWebsitesSSLStatusCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "status",
@@ -55,15 +54,13 @@ Examples:
 				Usage: "Watch for SSL status changes",
 			},
 		},
-		Action: func(ctx context.Context, cmd *cli.Command) error {
-			output := setupOutput(cmd)
-			return websitesSSLStatus(ctx, cmd, output)
-		},
+		Action: withContext(func(ctx context.Context, cc *commandContext) error {
+			return websitesSSLStatus(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken)
+		}),
 	}
 }
 
-// websitesSSLStatus retrieves and displays SSL certificate status for a website.
-func websitesSSLStatus(ctx context.Context, cmd *cli.Command, output Output) error {
+func websitesSSLStatus(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string) error {
 	args := cmd.Args()
 	if args.Len() == 0 {
 		return fmt.Errorf("domain is required")
@@ -72,21 +69,8 @@ func websitesSSLStatus(ctx context.Context, cmd *cli.Command, output Output) err
 	domain := args.First()
 	watch := cmd.Bool("watch")
 
-	cfgMgr, err := defaultConfigManagerFactory()
+	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken)
 	if err != nil {
-		return fmt.Errorf("failed to get config: %w", err)
-	}
-
-	var websitesService WebsitesService
-	authToken := GetAuthToken(cmd, cfgMgr)
-	secure := GetSecureSetting(cmd, cfgMgr)
-	if authToken != "" {
-		websitesService = NewWebsitesService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure))
-	} else {
-		websitesService = defaultWebsitesServiceFactory(cfgMgr, output)
-	}
-
-	if err := websitesService.RequireAuthenticated(); err != nil {
 		return err
 	}
 
@@ -151,7 +135,6 @@ func websitesSSLStatus(ctx context.Context, cmd *cli.Command, output Output) err
 	return nil
 }
 
-// formatTimePtr formats a time pointer to a human-readable string.
 func formatTimePtr(t *time.Time) string {
 	if t == nil {
 		return "N/A"

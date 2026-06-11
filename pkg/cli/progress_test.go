@@ -254,3 +254,33 @@ func TestProgressWriter_PipedOutput(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, len(data), n)
 }
+
+func TestProgressWriterStartStop(t *testing.T) {
+	t.Run("start and stop with disabled progress", func(t *testing.T) {
+		data := []byte("hello")
+		pw := NewProgressWriter(bytes.NewReader(data), 0, true, "test")
+		assert.False(t, pw.enabled)
+
+		err := pw.Start()
+		assert.NoError(t, err)
+
+		err = pw.Stop()
+		assert.NoError(t, err)
+	})
+}
+
+func TestBatchProgressTrackerStartStop(t *testing.T) {
+	t.Run("start and stop with disabled progress", func(t *testing.T) {
+		bt := NewBatchProgressTracker(0, true, "test")
+		assert.False(t, bt.enabled)
+
+		err := bt.Start()
+		assert.NoError(t, err)
+
+		bt.Increment()
+		assert.Equal(t, 1, bt.completed)
+
+		err = bt.Stop()
+		assert.NoError(t, err)
+	})
+}

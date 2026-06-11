@@ -1,9 +1,14 @@
 package cli
 
 import (
+	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.lumeweb.com/pinner-cli/pkg/config"
+	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
 )
 
 func TestConfigKeyToEnvVar(t *testing.T) {
@@ -27,4 +32,298 @@ func TestConfigKeyToEnvVar(t *testing.T) {
 			assert.Equal(t, tc.expected, result)
 		})
 	}
+}
+
+func TestNewConfigCommand(t *testing.T) {
+	cmd := newConfigCommand()
+
+	assert.Equal(t, "config", cmd.Name)
+	assert.Equal(t, "System", cmd.Category)
+	assert.NotEmpty(t, cmd.Usage)
+	assert.NotNil(t, cmd.Action)
+}
+
+func TestShowAllConfigError(t *testing.T) {
+	output := newTestOutput()
+	cfgMgrFactory := func() (config.Manager, error) {
+		return nil, errors.New("config error")
+	}
+
+	err := showAllConfig(output, cfgMgrFactory)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to initialize config manager")
+}
+
+func TestShowAllConfigWithBoolValue(t *testing.T) {
+	cfgMgr := configmocks.NewMockManager(t)
+	output := newTestOutput()
+
+	cfgMgr.EXPECT().GetAllDescriptions().Return(map[string]string{"secure": "Use HTTPS"})
+	cfgMgr.EXPECT().All().Return(map[string]any{"secure": true})
+
+	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
+
+	err := showAllConfig(output, cfgMgrFactory)
+	require.NoError(t, err)
+}
+
+func TestShowAllConfigWithIntValue(t *testing.T) {
+	cfgMgr := configmocks.NewMockManager(t)
+	output := newTestOutput()
+
+	cfgMgr.EXPECT().GetAllDescriptions().Return(map[string]string{"max_retries": "Max retries"})
+	cfgMgr.EXPECT().All().Return(map[string]any{"max_retries": 3})
+
+	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
+
+	err := showAllConfig(output, cfgMgrFactory)
+	require.NoError(t, err)
+}
+
+func TestShowAllConfigWithEmptyDescription(t *testing.T) {
+	cfgMgr := configmocks.NewMockManager(t)
+	output := newTestOutput()
+
+	cfgMgr.EXPECT().GetAllDescriptions().Return(map[string]string{"custom_key": ""})
+	cfgMgr.EXPECT().All().Return(map[string]any{"custom_key": "value"})
+
+	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
+
+	err := showAllConfig(output, cfgMgrFactory)
+	require.NoError(t, err)
+}
+
+func TestShowAllConfigWithNotSetValue(t *testing.T) {
+	cfgMgr := configmocks.NewMockManager(t)
+	output := newTestOutput()
+
+	cfgMgr.EXPECT().GetAllDescriptions().Return(map[string]string{"auth_token": "Auth token"})
+	cfgMgr.EXPECT().All().Return(map[string]any{})
+
+	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
+
+	err := showAllConfig(output, cfgMgrFactory)
+	require.NoError(t, err)
+}
+
+func TestGetConfigError(t *testing.T) {
+	output := newTestOutput()
+	cfgMgrFactory := func() (config.Manager, error) {
+		return nil, errors.New("config error")
+	}
+
+	cmd := newMockCommand().withArgs("get", "auth_token")
+	err := getConfig(cmd, output, cfgMgrFactory)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to initialize config manager")
+}
+
+func TestSetConfigError(t *testing.T) {
+	output := newTestOutput()
+	cfgMgrFactory := func() (config.Manager, error) {
+		return nil, errors.New("config error")
+	}
+
+	cmd := newMockCommand().withArgs("set", "base_endpoint", "test.com")
+	err := setConfig(context.Background(), cmd, output, cfgMgrFactory)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to initialize config manager")
+}
+
+func TestConfigActionNoArgs(t *testing.T) {
+	cfgMgr := configmocks.NewMockManager(t)
+	output := newTestOutput()
+
+	cfgMgr.EXPECT().GetAllDescriptions().Return(map[string]string{"secure": "Use HTTPS"})
+	cfgMgr.EXPECT().All().Return(map[string]any{"secure": true})
+
+	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
+	cmd := newMockCommand()
+
+	err := configAction(context.Background(), cmd, output, cfgMgrFactory)
+	require.NoError(t, err)
+}
+
+func TestConfigActionGetSubcommand(t *testing.T) {
+	cfgMgr := configmocks.NewMockManager(t)
+	output := newTestOutput()
+
+	cfgMgr.EXPECT().Get("auth_token").Return("my-token", true, nil)
+
+	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
+	cmd := newMockCommand().withArgs("get", "auth_token")
+
+	err := configAction(context.Background(), cmd, output, cfgMgrFactory)
+	require.NoError(t, err)
+}
+
+func TestConfigActionSetSubcommand(t *testing.T) {
+	cfgMgr := configmocks.NewMockManager(t)
+	output := newTestOutput()
+
+	cfgMgr.EXPECT().Exists("max_retries").Return(true)
+	cfgMgr.EXPECT().Get("max_retries").Return(3, true, nil)
+	cfgMgr.EXPECT().Set(context.Background(), "max_retries", int64(5)).Return(nil)
+	cfgMgr.EXPECT().Persist().Return(nil)
+
+	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
+	cmd := newMockCommand().withArgs("set", "max_retries", "5")
+
+	err := configAction(context.Background(), cmd, output, cfgMgrFactory)
+	require.NoError(t, err)
+}
+
+func TestConfigActionInvalidAction(t *testing.T) {
+	output := newTestOutput()
+	cfgMgrFactory := func() (config.Manager, error) {
+		return nil, errors.New("should not be called")
+	}
+	cmd := newMockCommand().withArgs("delete")
+
+	err := configAction(context.Background(), cmd, output, cfgMgrFactory)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid action: delete")
+}
+
+func TestGetConfigMissingKey(t *testing.T) {
+	cfgMgr := configmocks.NewMockManager(t)
+	output := newTestOutput()
+
+	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
+	cmd := newMockCommand().withArgs("get")
+
+	err := getConfig(cmd, output, cfgMgrFactory)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "key is required")
+}
+
+func TestGetConfigSuccess(t *testing.T) {
+	cfgMgr := configmocks.NewMockManager(t)
+	output := newTestOutput()
+
+	cfgMgr.EXPECT().Get("base_endpoint").Return("pinner.xyz", true, nil)
+
+	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
+	cmd := newMockCommand().withArgs("get", "base_endpoint")
+
+	err := getConfig(cmd, output, cfgMgrFactory)
+	require.NoError(t, err)
+}
+
+func TestGetConfigGetFails(t *testing.T) {
+	cfgMgr := configmocks.NewMockManager(t)
+	output := newTestOutput()
+
+	cfgMgr.EXPECT().Get("unknown_key").Return(nil, false, errors.New("not found"))
+
+	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
+	cmd := newMockCommand().withArgs("get", "unknown_key")
+
+	err := getConfig(cmd, output, cfgMgrFactory)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to get config key")
+}
+
+func TestSetConfigMissingKeyOrValue(t *testing.T) {
+	cfgMgr := configmocks.NewMockManager(t)
+	output := newTestOutput()
+
+	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
+	cmd := newMockCommand().withArgs("set", "key")
+
+	err := setConfig(context.Background(), cmd, output, cfgMgrFactory)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "key and value are required")
+}
+
+func TestSetConfigNewKey(t *testing.T) {
+	cfgMgr := configmocks.NewMockManager(t)
+	output := newTestOutput()
+
+	cfgMgr.EXPECT().Exists("custom_key").Return(false)
+	cfgMgr.EXPECT().Set(context.Background(), "custom_key", "custom_value").Return(nil)
+	cfgMgr.EXPECT().Persist().Return(nil)
+
+	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
+	cmd := newMockCommand().withArgs("set", "custom_key", "custom_value")
+
+	err := setConfig(context.Background(), cmd, output, cfgMgrFactory)
+	require.NoError(t, err)
+}
+
+func TestSetConfigBoolValue(t *testing.T) {
+	cfgMgr := configmocks.NewMockManager(t)
+	output := newTestOutput()
+
+	cfgMgr.EXPECT().Exists("secure").Return(true)
+	cfgMgr.EXPECT().Get("secure").Return(true, true, nil)
+	cfgMgr.EXPECT().Set(context.Background(), "secure", false).Return(nil)
+	cfgMgr.EXPECT().Persist().Return(nil)
+
+	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
+	cmd := newMockCommand().withArgs("set", "secure", "false")
+
+	err := setConfig(context.Background(), cmd, output, cfgMgrFactory)
+	require.NoError(t, err)
+}
+
+func TestSetConfigInvalidBoolValue(t *testing.T) {
+	cfgMgr := configmocks.NewMockManager(t)
+	output := newTestOutput()
+
+	cfgMgr.EXPECT().Exists("secure").Return(true)
+	cfgMgr.EXPECT().Get("secure").Return(true, true, nil)
+
+	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
+	cmd := newMockCommand().withArgs("set", "secure", "notabool")
+
+	err := setConfig(context.Background(), cmd, output, cfgMgrFactory)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "must be true or false")
+}
+
+func TestSetConfigInvalidIntValue(t *testing.T) {
+	cfgMgr := configmocks.NewMockManager(t)
+	output := newTestOutput()
+
+	cfgMgr.EXPECT().Exists("max_retries").Return(true)
+	cfgMgr.EXPECT().Get("max_retries").Return(3, true, nil)
+
+	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
+	cmd := newMockCommand().withArgs("set", "max_retries", "notanint")
+
+	err := setConfig(context.Background(), cmd, output, cfgMgrFactory)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "must be an integer")
+}
+
+func TestSetConfigDryRun(t *testing.T) {
+	cfgMgr := configmocks.NewMockManager(t)
+	output := newTestOutput()
+
+	cfgMgr.EXPECT().Exists("max_retries").Return(true)
+	cfgMgr.EXPECT().Get("max_retries").Return(3, true, nil)
+	cfgMgr.EXPECT().GetDescription("max_retries").Return("Max retries")
+
+	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
+	cmd := newMockCommand().withArgs("set", "max_retries", "5").withBool(FlagDryRun, true)
+
+	err := setConfig(context.Background(), cmd, output, cfgMgrFactory)
+	require.NoError(t, err)
+}
+
+func TestSetConfigPersistFails(t *testing.T) {
+	cfgMgr := configmocks.NewMockManager(t)
+	output := newTestOutput()
+
+	cfgMgr.EXPECT().Exists("custom_key").Return(false)
+	cfgMgr.EXPECT().Set(context.Background(), "custom_key", "value").Return(nil)
+	cfgMgr.EXPECT().Persist().Return(errors.New("disk full"))
+
+	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
+	cmd := newMockCommand().withArgs("set", "custom_key", "value")
+
+	err := setConfig(context.Background(), cmd, output, cfgMgrFactory)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to save config")
 }

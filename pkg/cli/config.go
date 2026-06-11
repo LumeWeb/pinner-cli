@@ -52,14 +52,14 @@ Common keys:
   auth_token     - Authentication token (managed by 'pinner auth')`,
 		ArgsUsage: "[get <key> | set <key> <value>]",
 			Flags: append(GlobalFlags(), DryRunFlag()),
-		Action: func(ctx context.Context, cmd *cli.Command) error {
-			output := setupOutput(cmd)
-			return configAction(ctx, cmd, output, defaultConfigManagerFactory)
+		Action: func(ctx context.Context, c *cli.Command) error {
+			output := setupOutput(c)
+			return configAction(ctx, newCLICommandWrapper(c), output, defaultConfigManagerFactory)
 		},
 	}
 }
 
-func configAction(ctx context.Context, cmd *cli.Command, output Output, cfgMgrFactory ConfigManagerFactory) error {
+func configAction(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgrFactory ConfigManagerFactory) error {
 	args := cmd.Args()
 
 	if args.Len() == 0 {
@@ -125,7 +125,7 @@ func showAllConfig(output Output, cfgMgrFactory ConfigManagerFactory) error {
 	return nil
 }
 
-func getConfig(cmd *cli.Command, output Output, cfgMgrFactory ConfigManagerFactory) error {
+func getConfig(cmd argsGetter, output Output, cfgMgrFactory ConfigManagerFactory) error {
 	cfgMgr, err := cfgMgrFactory()
 	if err != nil {
 		return fmt.Errorf("failed to initialize config manager: %w", err)
@@ -161,7 +161,7 @@ func getConfig(cmd *cli.Command, output Output, cfgMgrFactory ConfigManagerFacto
 	return nil
 }
 
-func setConfig(ctx context.Context, cmd *cli.Command, output Output, cfgMgrFactory ConfigManagerFactory) error {
+func setConfig(ctx context.Context, cmd argsFlagGetterWithBool, output Output, cfgMgrFactory ConfigManagerFactory) error {
 	cfgMgr, err := cfgMgrFactory()
 	if err != nil {
 		return fmt.Errorf("failed to initialize config manager: %w", err)

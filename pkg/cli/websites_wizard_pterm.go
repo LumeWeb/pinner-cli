@@ -15,6 +15,9 @@ import (
 // PTermWebsitesUI implements WebsitesUI using PTerm for display.
 type PTermWebsitesUI struct {
 	*wizard.PTermUI
+	*PTermSelectPrompter
+	*PTermContinuePrompter
+	*PTermSpinner
 	output Output
 	wizard *WebsitesWizard
 }
@@ -22,8 +25,11 @@ type PTermWebsitesUI struct {
 // NewPTermWebsitesUI creates a new PTerm-based websites UI.
 func NewPTermWebsitesUI(output Output) *PTermWebsitesUI {
 	return &PTermWebsitesUI{
-		PTermUI: wizard.NewPTermUI("", ""),
-		output:  output,
+		PTermUI:               wizard.NewPTermUI("", ""),
+		PTermSelectPrompter:   &PTermSelectPrompter{},
+		PTermContinuePrompter: &PTermContinuePrompter{},
+		PTermSpinner:          &PTermSpinner{},
+		output:                output,
 	}
 }
 
@@ -52,8 +58,7 @@ func (ui *PTermWebsitesUI) ShowWelcome() error {
 
 	pterm.Println()
 
-	_, err := pterm.DefaultInteractiveContinue.Show()
-	return err
+	return ui.Continue()
 }
 
 // ShowCompletion displays the completion message.
@@ -114,12 +119,7 @@ func (ui *PTermWebsitesUI) ExecuteContentSourceStep(_ context.Context, w *Websit
 		"No, I need to upload content first",
 	}
 
-	prompt := promptui.Select{
-		Label: "Have you already uploaded content to IPFS?",
-		Items: choices,
-	}
-
-	idx, _, err := runSelect(&prompt)
+	idx, _, err := ui.Select("Have you already uploaded content to IPFS?", choices)
 	if err != nil {
 		return fmt.Errorf("prompt failed: %w", err)
 	}
@@ -168,12 +168,7 @@ func (ui *PTermWebsitesUI) ExecuteTargetTypeStep(_ context.Context, w *WebsitesW
 		"IPNS (mutable name, updates automatically)",
 	}
 
-	prompt := promptui.Select{
-		Label: "What type of content link do you want to use?",
-		Items:  choices,
-	}
-
-	idx, _, err := runSelect(&prompt)
+	idx, _, err := ui.Select("What type of content link do you want to use?", choices)
 	if err != nil {
 		return fmt.Errorf("prompt failed: %w", err)
 	}
@@ -230,12 +225,7 @@ func (ui *PTermWebsitesUI) ExecuteDNSModeStep(_ context.Context, w *WebsitesWiza
 		"I'll manage DNS myself",
 	}
 
-	prompt := promptui.Select{
-		Label: "How would you like to manage DNS for this website?",
-		Items: choices,
-	}
-
-	idx, _, err := runSelect(&prompt)
+	idx, _, err := ui.Select("How would you like to manage DNS for this website?", choices)
 	if err != nil {
 		return fmt.Errorf("prompt failed: %w", err)
 	}
@@ -259,14 +249,16 @@ func (ui *PTermWebsitesUI) ExecuteDNSModeStep(_ context.Context, w *WebsitesWiza
 }
 
 func (ui *PTermWebsitesUI) ExecuteCreateWebsiteStep(ctx context.Context, w *WebsitesWizard) error {
-	spinner, _ := pterm.DefaultSpinner.Start("Creating website...")
+	if err := ui.Start("Creating website..."); err != nil {
+		return fmt.Errorf("failed to start spinner: %w", err)
+	}
 
 	if err := w.executeCreateWebsite(ctx); err != nil {
-		spinner.Fail("Failed to create website")
+		ui.Fail("Failed to create website")
 		return err
 	}
 
-	spinner.Success("Website created successfully!")
+	ui.Success("Website created successfully!")
 	return nil
 }
 
@@ -295,7 +287,9 @@ func (ui *PTermWebsitesUI) executeManagedDNSValidation(ctx context.Context, w *W
 	pterm.Info.Println("Validating website configuration...")
 	pterm.Println()
 
-	spinner, _ := pterm.DefaultSpinner.Start("Waiting for DNS records to propagate...")
+	if err := ui.Start("Waiting for DNS records to propagate..."); err != nil {
+		return fmt.Errorf("failed to start spinner: %w", err)
+	}
 
 	var lastErr error
 	err := retry.Do(
@@ -323,7 +317,7 @@ func (ui *PTermWebsitesUI) executeManagedDNSValidation(ctx context.Context, w *W
 			pterm.Debug.Printf("Validation attempt %d failed: %v\n", n+1, err)
 		}),
 	)
-	spinner.Stop()
+	ui.Stop()
 
 	if err != nil {
 		if lastErr != nil {

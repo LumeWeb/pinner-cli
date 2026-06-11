@@ -6,6 +6,7 @@ import (
 
 	"github.com/urfave/cli/v3"
 	portalsdk "go.lumeweb.com/portal-sdk"
+	"go.lumeweb.com/pinner-cli/pkg/config"
 )
 
 func newAccountAPIKeysCommand() *cli.Command {
@@ -41,7 +42,12 @@ Use --search to filter keys by name.`,
 				},
 				Action: func(ctx context.Context, cmd *cli.Command) error {
 					output := setupOutput(cmd)
-					return accountAPIKeysList(ctx, cmd, output, defaultConfigManagerFactory, defaultAuthServiceFactory, defaultAPIKeyServiceFactory)
+					cfgMgr, err := defaultConfigManagerFactory()
+					if err != nil {
+						return err
+					}
+					authToken := GetAuthToken(cmd, cfgMgr)
+					return accountAPIKeysList(ctx, newCLICommandWrapper(cmd), output, cfgMgr, authToken, defaultAuthServiceFactory, defaultAPIKeyServiceFactory)
 				},
 			},
 			{
@@ -58,7 +64,12 @@ This key can be used with:
   PINNER_AUTH_TOKEN=<token> pinner <command>`,
 				Action: func(ctx context.Context, cmd *cli.Command) error {
 					output := setupOutput(cmd)
-					return accountAPIKeysCreate(ctx, cmd, output, defaultConfigManagerFactory, defaultAuthServiceFactory, defaultAPIKeyServiceFactory)
+					cfgMgr, err := defaultConfigManagerFactory()
+					if err != nil {
+						return err
+					}
+					authToken := GetAuthToken(cmd, cfgMgr)
+					return accountAPIKeysCreate(ctx, newCLICommandWrapper(cmd), output, cfgMgr, authToken, defaultAuthServiceFactory, defaultAPIKeyServiceFactory)
 				},
 			},
 			{
@@ -79,21 +90,20 @@ current key, you must re-authenticate with 'pinner auth'.`,
 				},
 				Action: func(ctx context.Context, cmd *cli.Command) error {
 					output := setupOutput(cmd)
-					return accountAPIKeysDelete(ctx, cmd, output, defaultConfigManagerFactory, defaultAuthServiceFactory, defaultAPIKeyServiceFactory)
+					cfgMgr, err := defaultConfigManagerFactory()
+					if err != nil {
+						return err
+					}
+					authToken := GetAuthToken(cmd, cfgMgr)
+					return accountAPIKeysDelete(ctx, newCLICommandWrapper(cmd), output, cfgMgr, authToken, defaultAuthServiceFactory, defaultAPIKeyServiceFactory)
 				},
 			},
 		},
 	}
 }
 
-func accountAPIKeysList(ctx context.Context, cmd *cli.Command, output Output, cfgMgrFactory ConfigManagerFactory, authServiceFactory AuthServiceFactory, svcFactory APIKeyServiceFactory) error {
-	cfgMgr, err := cfgMgrFactory()
-	if err != nil {
-		return fmt.Errorf("failed to initialize config manager: %w", err)
-	}
-
+func accountAPIKeysList(ctx context.Context, cmd flagGetter, output Output, cfgMgr config.Manager, authToken string, authServiceFactory AuthServiceFactory, svcFactory APIKeyServiceFactory) error {
 	apiEndpoint := cfgMgr.Config().GetAPIEndpoint()
-	authToken := GetAuthToken(cmd, cfgMgr)
 	authService := authServiceFactory(cfgMgr, output, apiEndpoint)
 	svc := svcFactory(authService, authToken)
 
@@ -136,14 +146,8 @@ func accountAPIKeysList(ctx context.Context, cmd *cli.Command, output Output, cf
 	return nil
 }
 
-func accountAPIKeysCreate(ctx context.Context, cmd *cli.Command, output Output, cfgMgrFactory ConfigManagerFactory, authServiceFactory AuthServiceFactory, svcFactory APIKeyServiceFactory) error {
-	cfgMgr, err := cfgMgrFactory()
-	if err != nil {
-		return fmt.Errorf("failed to initialize config manager: %w", err)
-	}
-
+func accountAPIKeysCreate(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr config.Manager, authToken string, authServiceFactory AuthServiceFactory, svcFactory APIKeyServiceFactory) error {
 	apiEndpoint := cfgMgr.Config().GetAPIEndpoint()
-	authToken := GetAuthToken(cmd, cfgMgr)
 	authService := authServiceFactory(cfgMgr, output, apiEndpoint)
 	svc := svcFactory(authService, authToken)
 
@@ -177,14 +181,8 @@ func accountAPIKeysCreate(ctx context.Context, cmd *cli.Command, output Output, 
 	return nil
 }
 
-func accountAPIKeysDelete(ctx context.Context, cmd *cli.Command, output Output, cfgMgrFactory ConfigManagerFactory, authServiceFactory AuthServiceFactory, svcFactory APIKeyServiceFactory) error {
-	cfgMgr, err := cfgMgrFactory()
-	if err != nil {
-		return fmt.Errorf("failed to initialize config manager: %w", err)
-	}
-
+func accountAPIKeysDelete(ctx context.Context, cmd argsFlagGetterWithBool, output Output, cfgMgr config.Manager, authToken string, authServiceFactory AuthServiceFactory, svcFactory APIKeyServiceFactory) error {
 	apiEndpoint := cfgMgr.Config().GetAPIEndpoint()
-	authToken := GetAuthToken(cmd, cfgMgr)
 	authService := authServiceFactory(cfgMgr, output, apiEndpoint)
 	svc := svcFactory(authService, authToken)
 

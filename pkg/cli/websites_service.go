@@ -9,41 +9,80 @@ import (
 
 // websitesService implements the WebsitesService interface using the ipfs.WebsitesService.
 type websitesService struct {
-	service       ipfs.WebsitesService
-	cfgMgr        config.Manager
-	authToken     string
-	authenticated bool
+	ipfsServiceBase
+	service ipfs.WebsitesService
+	client  *ipfs.Client
+}
+
+// WebsitesServiceOption is a function that configures a websitesService.
+type WebsitesServiceOption func(*websitesService)
+
+// WithWebsitesAuthToken sets an auth token override that takes precedence over config.
+func WithWebsitesAuthToken(token string) WebsitesServiceOption {
+	return func(s *websitesService) {
+		withAuthToken(token)(&s.ipfsServiceBase)
+	}
+}
+
+// WithWebsitesClient sets a pre-configured ipfs.Client, bypassing the default ipfs.NewClient() call.
+func WithWebsitesClient(client *ipfs.Client) WebsitesServiceOption {
+	return func(s *websitesService) {
+		s.client = client
+	}
 }
 
 // WebsitesServiceFactory creates a WebsitesService with dependencies.
-type WebsitesServiceFactory func(cfgMgr config.Manager, output Output) WebsitesService
+type WebsitesServiceFactory func(cfgMgr config.Manager, output Output, opts ...WebsitesServiceOption) WebsitesService
+
+// websitesServiceFactory is the factory function used by newAuthenticatedWebsitesService.
+// It can be overridden in tests to inject mock services.
+var websitesServiceFactory WebsitesServiceFactory = defaultWebsitesServiceFactory
 
 // defaultWebsitesServiceFactory creates a default WebsitesService instance.
-func defaultWebsitesServiceFactory(cfgMgr config.Manager, output Output) WebsitesService {
-	return NewWebsitesService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointSecure())
+func defaultWebsitesServiceFactory(cfgMgr config.Manager, output Output, opts ...WebsitesServiceOption) WebsitesService {
+	return NewWebsitesService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointSecure(), opts...)
+}
+
+// newAuthenticatedWebsitesService creates a WebsitesService with authentication.
+// It returns an error if the user is not authenticated.
+func newAuthenticatedWebsitesService(cfgMgr config.Manager, output Output, authToken string) (WebsitesService, error) {
+	var svcOpts []WebsitesServiceOption
+	if authToken != "" {
+		svcOpts = append(svcOpts, WithWebsitesAuthToken(authToken))
+	}
+	websitesService := websitesServiceFactory(cfgMgr, output, svcOpts...)
+	if err := websitesService.RequireAuthenticated(); err != nil {
+		return nil, err
+	}
+	return websitesService, nil
 }
 
 // NewWebsitesService creates a new WebsitesService instance.
-func NewWebsitesService(cfgMgr config.Manager, output Output, apiEndpoint string) WebsitesService {
+func NewWebsitesService(cfgMgr config.Manager, output Output, apiEndpoint string, opts ...WebsitesServiceOption) WebsitesService {
 	authToken := cfgMgr.Config().AuthToken
 
-	client, err := ipfs.NewClient(apiEndpoint, authToken)
-	if err != nil {
-		output.PrintError(err)
-		return &websitesService{
-			service:       nil,
-			cfgMgr:        cfgMgr,
-			authToken:     authToken,
-			authenticated: false,
-		}
+	s := &websitesService{
+		ipfsServiceBase: ipfsServiceBase{
+			cfgMgr:    cfgMgr,
+			authToken: authToken,
+		},
+	}
+	for _, opt := range opts {
+		opt(s)
 	}
 
-	return &websitesService{
-		service:       client.Websites(),
-		cfgMgr:        cfgMgr,
-		authToken:     authToken,
-		authenticated: authToken != "",
+	if s.client != nil {
+		s.service = s.client.Websites()
+	} else {
+		client, err := ipfs.NewClient(apiEndpoint, authToken)
+		if err != nil {
+			output.PrintError(err)
+			s.service = nil
+			return s
+		}
+		s.service = client.Websites()
 	}
+	return s
 }
 
 // List retrieves all websites for the authenticated user.
@@ -152,10 +191,4 @@ func (s *websitesService) GetConfig(ctx context.Context) (*ipfs.WebsiteConfigRes
 	return s.service.GetConfig(ctx)
 }
 
-// RequireAuthenticated checks if the service is authenticated.
-func (s *websitesService) RequireAuthenticated() error {
-	if !s.authenticated {
-		return ErrNotAuthenticated
-	}
-	return nil
-}
+

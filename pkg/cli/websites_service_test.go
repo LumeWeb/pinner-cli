@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
+	"go.lumeweb.com/pinner-cli/pkg/config"
 	ipfs "go.lumeweb.com/ipfs-sdk"
 )
 
@@ -115,4 +117,73 @@ func TestWebsitesService_RequireAuthenticated(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestWebsitesService_AuthTokenOverride(t *testing.T) {
+	t.Run("override token takes precedence over empty config token", func(t *testing.T) {
+		cfgMgr := configmocks.NewMockManager(t)
+		cfgMgr.EXPECT().Config().Return(&config.Config{
+			AuthToken: "",
+		}).Maybe()
+
+		svc := &websitesService{
+			ipfsServiceBase: ipfsServiceBase{
+				cfgMgr:    cfgMgr,
+				authToken: "override-token",
+			},
+		}
+
+		err := svc.RequireAuthenticated()
+		require.NoError(t, err)
+	})
+
+	t.Run("override token takes precedence over config token", func(t *testing.T) {
+		cfgMgr := configmocks.NewMockManager(t)
+		cfgMgr.EXPECT().Config().Return(&config.Config{
+			AuthToken: "config-token",
+		}).Maybe()
+
+		svc := &websitesService{
+			ipfsServiceBase: ipfsServiceBase{
+				cfgMgr:    cfgMgr,
+				authToken: "override-token",
+			},
+		}
+
+		require.Equal(t, "override-token", svc.getAuthToken())
+	})
+
+	t.Run("falls back to config token when override is empty", func(t *testing.T) {
+		cfgMgr := configmocks.NewMockManager(t)
+		cfgMgr.EXPECT().Config().Return(&config.Config{
+			AuthToken: "config-token",
+		}).Maybe()
+
+		svc := &websitesService{
+			ipfsServiceBase: ipfsServiceBase{
+				cfgMgr:    cfgMgr,
+				authToken: "",
+			},
+		}
+
+		require.Equal(t, "config-token", svc.getAuthToken())
+	})
+
+	t.Run("WithWebsitesAuthToken functional option sets override", func(t *testing.T) {
+		cfgMgr := configmocks.NewMockManager(t)
+		cfgMgr.EXPECT().Config().Return(&config.Config{
+			AuthToken: "",
+		}).Maybe()
+
+		svc := &websitesService{
+			ipfsServiceBase: ipfsServiceBase{
+				cfgMgr: cfgMgr,
+			},
+		}
+		WithWebsitesAuthToken("override-token")(svc)
+
+		require.Equal(t, "override-token", svc.getAuthToken())
+		err := svc.RequireAuthenticated()
+		require.NoError(t, err)
+	})
 }

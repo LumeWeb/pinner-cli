@@ -28,7 +28,7 @@ func TestWebsitesWizard_Run(t *testing.T) {
 
 		mockWebsitesSvc := &mockWebsitesServiceForCLI{}
 
-		w := NewWebsitesWizard(mockWebsitesSvc, cfgMgr, mockUI, NewOutputFormatter(false, false, false, false))
+		w := NewWebsitesWizard(mockWebsitesSvc, cfgMgr, mockUI, newTestOutput())
 
 		result, err := w.Run(context.Background())
 
@@ -59,7 +59,7 @@ func TestWebsitesWizard_Run(t *testing.T) {
 
 		mockWebsitesSvc := &mockWebsitesServiceForCLI{}
 
-		w := NewWebsitesWizard(mockWebsitesSvc, cfgMgr, mockUI, NewOutputFormatter(false, false, false, false))
+		w := NewWebsitesWizard(mockWebsitesSvc, cfgMgr, mockUI, newTestOutput())
 
 		result, err := w.Run(context.Background())
 
@@ -88,7 +88,7 @@ func TestWebsitesWizard_Run(t *testing.T) {
 
 		mockWebsitesSvc := &mockWebsitesServiceForCLI{}
 
-		w := NewWebsitesWizard(mockWebsitesSvc, cfgMgr, mockUI, NewOutputFormatter(false, false, false, false))
+		w := NewWebsitesWizard(mockWebsitesSvc, cfgMgr, mockUI, newTestOutput())
 
 		result, err := w.Run(context.Background())
 
@@ -115,7 +115,7 @@ func TestWebsitesWizard_Run(t *testing.T) {
 
 		mockWebsitesSvc := &mockWebsitesServiceForCLI{}
 
-		w := NewWebsitesWizard(mockWebsitesSvc, cfgMgr, mockUI, NewOutputFormatter(false, false, false, false))
+		w := NewWebsitesWizard(mockWebsitesSvc, cfgMgr, mockUI, newTestOutput())
 
 		result, err := w.Run(context.Background())
 
@@ -141,7 +141,7 @@ func TestWebsitesWizard_Run(t *testing.T) {
 
 		mockWebsitesSvc := &mockWebsitesServiceForCLI{}
 
-		w := NewWebsitesWizard(mockWebsitesSvc, cfgMgr, mockUI, NewOutputFormatter(false, false, false, false))
+		w := NewWebsitesWizard(mockWebsitesSvc, cfgMgr, mockUI, newTestOutput())
 
 		result, err := w.Run(context.Background())
 
@@ -163,7 +163,7 @@ func TestWebsitesWizard_Run(t *testing.T) {
 
 		mockWebsitesSvc := &mockWebsitesServiceForCLI{}
 
-		w := NewWebsitesWizard(mockWebsitesSvc, cfgMgr, mockUI, NewOutputFormatter(false, false, false, false))
+		w := NewWebsitesWizard(mockWebsitesSvc, cfgMgr, mockUI, newTestOutput())
 
 		_, err := w.Run(context.Background())
 
@@ -184,7 +184,7 @@ func TestWebsitesWizard_Run(t *testing.T) {
 
 		mockWebsitesSvc := &mockWebsitesServiceForCLI{}
 
-		w := NewWebsitesWizard(mockWebsitesSvc, cfgMgr, mockUI, NewOutputFormatter(false, false, false, false))
+		w := NewWebsitesWizard(mockWebsitesSvc, cfgMgr, mockUI, newTestOutput())
 
 		_, err := w.Run(context.Background())
 
@@ -208,7 +208,7 @@ func TestWebsitesWizard_Run(t *testing.T) {
 
 		mockWebsitesSvc := &mockWebsitesServiceForCLI{}
 
-		w := NewWebsitesWizard(mockWebsitesSvc, cfgMgr, mockUI, NewOutputFormatter(false, false, false, false))
+		w := NewWebsitesWizard(mockWebsitesSvc, cfgMgr, mockUI, newTestOutput())
 
 		result, err := w.Run(context.Background())
 
@@ -238,7 +238,7 @@ func TestWebsitesWizard_Run(t *testing.T) {
 			},
 		}
 
-		w := NewWebsitesWizard(mockWebsitesSvc, cfgMgr, mockUI, NewOutputFormatter(false, false, false, false))
+		w := NewWebsitesWizard(mockWebsitesSvc, cfgMgr, mockUI, newTestOutput())
 
 		_, err := w.Run(context.Background())
 
@@ -271,7 +271,7 @@ func TestWebsitesWizard_Run(t *testing.T) {
 			},
 		}
 
-		w := NewWebsitesWizard(mockWebsitesSvc, cfgMgr, mockUI, NewOutputFormatter(false, false, false, false))
+		w := NewWebsitesWizard(mockWebsitesSvc, cfgMgr, mockUI, newTestOutput())
 
 		result, err := w.Run(context.Background())
 
@@ -307,7 +307,7 @@ func TestWebsitesWizard_Run(t *testing.T) {
 			},
 		}
 
-		w := NewWebsitesWizard(mockWebsitesSvc, cfgMgr, mockUI, NewOutputFormatter(false, false, false, false))
+		w := NewWebsitesWizard(mockWebsitesSvc, cfgMgr, mockUI, newTestOutput())
 
 		result, err := w.Run(context.Background())
 
@@ -337,7 +337,7 @@ func TestWebsitesWizard_Run(t *testing.T) {
 			},
 		}
 
-		w := NewWebsitesWizard(mockWebsitesSvc, cfgMgr, mockUI, NewOutputFormatter(false, false, false, false))
+		w := NewWebsitesWizard(mockWebsitesSvc, cfgMgr, mockUI, newTestOutput())
 
 		result, err := w.Run(context.Background())
 
@@ -359,7 +359,7 @@ func TestWebsitesWizard_Accessors(t *testing.T) {
 	cfgMgr.EXPECT().Config().Return(cfg).Maybe()
 
 	mockUI := NewMockWebsitesUI()
-	output := NewOutputFormatter(false, false, false, false)
+	output := newTestOutput()
 	mockWebsitesSvc := &mockWebsitesServiceForCLI{}
 
 	w := NewWebsitesWizard(mockWebsitesSvc, cfgMgr, mockUI, output)
@@ -380,7 +380,7 @@ func TestWebsitesWizard_Setters(t *testing.T) {
 	mockUI := NewMockWebsitesUI()
 	mockWebsitesSvc := &mockWebsitesServiceForCLI{}
 
-	w := NewWebsitesWizard(mockWebsitesSvc, cfgMgr, mockUI, NewOutputFormatter(false, false, false, false))
+	w := NewWebsitesWizard(mockWebsitesSvc, cfgMgr, mockUI, newTestOutput())
 
 	require.Equal(t, "", w.CID())
 	require.Equal(t, "", w.Domain())
@@ -423,7 +423,7 @@ func TestWebsitesWizard_StepCalls(t *testing.T) {
 
 		mockWebsitesSvc := &mockWebsitesServiceForCLI{}
 
-		w := NewWebsitesWizard(mockWebsitesSvc, cfgMgr, mockUI, NewOutputFormatter(false, false, false, false))
+		w := NewWebsitesWizard(mockWebsitesSvc, cfgMgr, mockUI, newTestOutput())
 
 		_, err := w.Run(context.Background())
 		require.NoError(t, err)
@@ -476,7 +476,7 @@ func TestWebsitesWizard_UIError(t *testing.T) {
 
 			mockWebsitesSvc := &mockWebsitesServiceForCLI{}
 
-			w := NewWebsitesWizard(mockWebsitesSvc, cfgMgr, mockUI, NewOutputFormatter(false, false, false, false))
+			w := NewWebsitesWizard(mockWebsitesSvc, cfgMgr, mockUI, newTestOutput())
 
 			_, err := w.Run(context.Background())
 			require.Error(t, err)
@@ -497,7 +497,7 @@ func TestMockWebsitesUI(t *testing.T) {
 		cfgMgr.EXPECT().Config().Return(cfg).Maybe()
 
 		mockWebsitesSvc := &mockWebsitesServiceForCLI{}
-		w := NewWebsitesWizard(mockWebsitesSvc, cfgMgr, mock, NewOutputFormatter(false, false, false, false))
+		w := NewWebsitesWizard(mockWebsitesSvc, cfgMgr, mock, newTestOutput())
 
 		_ = mock.ExecuteAuthCheckStep(context.Background(), w)
 

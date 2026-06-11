@@ -14,17 +14,16 @@ import (
 
 func TestUnpinAll(t *testing.T) {
 	tests := []struct {
-		name             string
-		confirm          bool
-		yes              bool
-		dryRun           bool
-		statusFilter     string
-		parallel         int
-		continueOn       bool
-		setupMocks       func(*configmocks.MockManager, *MockPinningService)
-		wantErr          bool
-		errContains      string
-		cfgMgrFactoryErr bool
+		name         string
+		confirm      bool
+		yes          bool
+		dryRun       bool
+		statusFilter string
+		parallel     int
+		continueOn   bool
+		setupMocks   func(*configmocks.MockManager, *MockPinningService)
+		wantErr      bool
+		errContains  string
 	}{
 		{
 			name:    "requires --confirm flag",
@@ -151,15 +150,6 @@ func TestUnpinAll(t *testing.T) {
 			errContains: "unpin-all failed",
 		},
 		{
-			name:             "returns error when config manager factory fails",
-			confirm:          true,
-			yes:              true,
-			setupMocks:       func(cfgMgr *configmocks.MockManager, service *MockPinningService) {},
-			wantErr:          true,
-			errContains:      "config error",
-			cfgMgrFactoryErr: true,
-		},
-		{
 			name:    "returns error when not authenticated",
 			confirm: true,
 			yes:     true,
@@ -204,37 +194,27 @@ func TestUnpinAll(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			service := NewMockPinningService(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(cfgMgr, service)
 			}
 
-			cmd := &mockUnpinAllCommand{
-				confirm:      tt.confirm,
-				yes:          tt.yes,
-				dryRun:       tt.dryRun,
-				statusFilter: tt.statusFilter,
-				parallel:     tt.parallel,
-				continueOn:   tt.continueOn,
-			}
-
-			var cfgMgrFactory ConfigManagerFactory
-			if tt.cfgMgrFactoryErr {
-				cfgMgrFactory = func() (config.Manager, error) {
-					return nil, errors.New("config error")
-				}
-			} else {
-				cfgMgrFactory = func() (config.Manager, error) {
-					return cfgMgr, nil
-				}
-			}
+			cmd := newMockCommand().
+				withBool(FlagForce, tt.confirm || tt.yes).
+				withBool(FlagConfirm, tt.confirm).
+				withBool(FlagYes, tt.yes).
+				withBool(FlagDryRun, tt.dryRun).
+				withString(FlagStatus, tt.statusFilter).
+				withInt(FlagParallel, tt.parallel).
+				withBool(FlagContinue, tt.continueOn)
 
 			pinningServiceFactory := func(cm config.Manager, out Output) PinningService {
 				return service
 			}
 
-			err := unpinAll(context.Background(), cmd, output, cfgMgrFactory, pinningServiceFactory)
+			prompter := &MockConfirmPrompter{}
+			err := unpinAll(context.Background(), cmd, output, cfgMgr, "", pinningServiceFactory, prompter)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -246,6 +226,117 @@ func TestUnpinAll(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestUnpinAllConfirmPrompt(t *testing.T) {
+	t.Run("mismatch_aborts", func(t *testing.T) {
+		cfgMgr := configmocks.NewMockManager(t)
+		service := NewMockPinningService(t)
+		output := newTestOutput()
+
+		service.EXPECT().RequireAuthenticated().Return(nil)
+		service.EXPECT().List(context.Background(), "", 0, "").Return(
+			[]Pin{
+				{CID: "QmXxx1", Name: "test1", Status: "pinned", RequestID: "req-1"},
+				{CID: "QmXxx2", Name: "test2", Status: "pinned", RequestID: "req-2"},
+			},
+			nil,
+		)
+
+		cmd := newMockCommand().
+			withBool(FlagForce, false).
+			withBool(FlagConfirm, true).
+			withBool(FlagYes, false).
+			withBool(FlagDryRun, false).
+			withString(FlagStatus, "").
+			withInt(FlagParallel, 0).
+			withBool(FlagContinue, false)
+
+		pinningServiceFactory := func(cm config.Manager, out Output) PinningService {
+			return service
+		}
+
+		prompter := &MockConfirmPrompter{ConfirmResult: "wrong"}
+		err := unpinAll(context.Background(), cmd, output, cfgMgr, "", pinningServiceFactory, prompter)
+
+		assert.ErrorIs(t, err, ErrUnpinAllAborted)
+	})
+
+	t.Run("match_proceeds", func(t *testing.T) {
+		cfgMgr := configmocks.NewMockManager(t)
+		service := NewMockPinningService(t)
+		output := newTestOutput()
+
+		service.EXPECT().RequireAuthenticated().Return(nil)
+		service.EXPECT().List(context.Background(), "", 0, "").Return(
+			[]Pin{
+				{CID: "QmXxx1", Name: "test1", Status: "pinned", RequestID: "req-1"},
+				{CID: "QmXxx2", Name: "test2", Status: "pinned", RequestID: "req-2"},
+			},
+			nil,
+		)
+		service.EXPECT().UnpinAll(context.Background(), "", BatchOptions{
+			Parallel:   0,
+			ContinueOn: false,
+			Progress:   true,
+		}).Return(&BatchResult{
+			Total:     2,
+			Succeeded: []OperationResult{{CID: "QmXxx1"}, {CID: "QmXxx2"}},
+			Failed:    []OperationError{},
+			Skipped:   []string{},
+		}, nil)
+
+		cmd := newMockCommand().
+			withBool(FlagForce, false).
+			withBool(FlagConfirm, true).
+			withBool(FlagYes, false).
+			withBool(FlagDryRun, false).
+			withString(FlagStatus, "").
+			withInt(FlagParallel, 0).
+			withBool(FlagContinue, false)
+
+		pinningServiceFactory := func(cm config.Manager, out Output) PinningService {
+			return service
+		}
+
+		prompter := &MockConfirmPrompter{ConfirmResult: "2"}
+		err := unpinAll(context.Background(), cmd, output, cfgMgr, "", pinningServiceFactory, prompter)
+
+		assert.NoError(t, err)
+	})
+
+	t.Run("interrupt_aborts", func(t *testing.T) {
+		cfgMgr := configmocks.NewMockManager(t)
+		service := NewMockPinningService(t)
+		output := newTestOutput()
+
+		service.EXPECT().RequireAuthenticated().Return(nil)
+		service.EXPECT().List(context.Background(), "", 0, "").Return(
+			[]Pin{
+				{CID: "QmXxx1", Name: "test1", Status: "pinned", RequestID: "req-1"},
+				{CID: "QmXxx2", Name: "test2", Status: "pinned", RequestID: "req-2"},
+			},
+			nil,
+		)
+
+		cmd := newMockCommand().
+			withBool(FlagForce, false).
+			withBool(FlagConfirm, true).
+			withBool(FlagYes, false).
+			withBool(FlagDryRun, false).
+			withString(FlagStatus, "").
+			withInt(FlagParallel, 0).
+			withBool(FlagContinue, false)
+
+		pinningServiceFactory := func(cm config.Manager, out Output) PinningService {
+			return service
+		}
+
+		prompter := &MockConfirmPrompter{ConfirmErr: ErrUnpinAllAborted}
+		err := unpinAll(context.Background(), cmd, output, cfgMgr, "", pinningServiceFactory, prompter)
+
+		assert.ErrorIs(t, err, ErrUnpinAllAborted)
+	})
 }
 
 func TestNewUnpinAllCommand(t *testing.T) {
@@ -289,46 +380,4 @@ func TestNewUnpinAllCommand(t *testing.T) {
 	})
 }
 
-type mockUnpinAllCommand struct {
-	confirm      bool
-	yes          bool
-	dryRun       bool
-	statusFilter string
-	parallel     int
-	continueOn   bool
-}
 
-func (m *mockUnpinAllCommand) String(name string) string {
-	switch name {
-	case FlagStatus:
-		return m.statusFilter
-	default:
-		return ""
-	}
-}
-
-func (m *mockUnpinAllCommand) Int(name string) int {
-	switch name {
-	case FlagParallel:
-		return m.parallel
-	default:
-		return 0
-	}
-}
-
-func (m *mockUnpinAllCommand) Bool(name string) bool {
-	switch name {
-	case FlagForce:
-		return m.confirm || m.yes
-	case FlagConfirm:
-		return m.confirm
-	case FlagYes:
-		return m.yes
-	case FlagDryRun:
-		return m.dryRun
-	case FlagContinue:
-		return m.continueOn
-	default:
-		return false
-	}
-}

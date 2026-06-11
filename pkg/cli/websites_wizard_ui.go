@@ -9,6 +9,9 @@ import (
 // WebsitesUI defines the interface for websites wizard UI interactions.
 type WebsitesUI interface {
 	wizard.UI
+	SelectPrompter
+	ContinuePrompter
+	Spinner
 
 	// Step execution
 	ExecuteAuthCheckStep(ctx context.Context, w *WebsitesWizard) error

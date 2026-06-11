@@ -102,18 +102,11 @@ Examples:
 	}
 }
 
-type operationsCommandGetter interface {
-	String(name string) string
-	Int(name string) int
-	Bool(name string) bool
-	Args() cli.Args
-}
-
 func defaultOperationsServiceFactory(cfgMgr config.Manager, output Output, authService AuthService) OperationsService {
 	return NewOperationsService(cfgMgr, output, authService)
 }
 
-func operationsList(ctx context.Context, cmd operationsCommandGetter, output Output, cfgMgrFactory ConfigManagerFactory, authServiceFactory AuthServiceFactory, serviceFactory OperationsServiceFactory) error {
+func operationsList(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgrFactory ConfigManagerFactory, authServiceFactory AuthServiceFactory, serviceFactory OperationsServiceFactory) error {
 	cfgMgr, err := cfgMgrFactory()
 	if err != nil {
 		return err
@@ -170,7 +163,7 @@ func operationsList(ctx context.Context, cmd operationsCommandGetter, output Out
 	return nil
 }
 
-func operationsGet(ctx context.Context, cmd operationsCommandGetter, output Output, cfgMgrFactory ConfigManagerFactory, authServiceFactory AuthServiceFactory, serviceFactory OperationsServiceFactory) error {
+func operationsGet(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgrFactory ConfigManagerFactory, authServiceFactory AuthServiceFactory, serviceFactory OperationsServiceFactory) error {
 	cfgMgr, err := cfgMgrFactory()
 	if err != nil {
 		return err

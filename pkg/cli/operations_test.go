@@ -20,7 +20,7 @@ import (
 func TestOperationsServiceDefault_List(t *testing.T) {
 	t.Run("returns operations from account client", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		accountClient := portalsdkmocks.NewMockAccountAPI(t)
 
 		now := time.Now()
@@ -47,7 +47,7 @@ func TestOperationsServiceDefault_List(t *testing.T) {
 
 	t.Run("returns multiple operations", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		accountClient := portalsdkmocks.NewMockAccountAPI(t)
 
 		now := time.Now()
@@ -75,7 +75,7 @@ func TestOperationsServiceDefault_List(t *testing.T) {
 
 	t.Run("returns error when not authenticated", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 
 		svc := NewOperationsService(cfgMgr, output, nil)
 
@@ -86,7 +86,7 @@ func TestOperationsServiceDefault_List(t *testing.T) {
 
 	t.Run("returns error when list operations fails", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		accountClient := portalsdkmocks.NewMockAccountAPI(t)
 
 		accountClient.EXPECT().ListOperations(
@@ -103,7 +103,7 @@ func TestOperationsServiceDefault_List(t *testing.T) {
 
 	t.Run("populates error field from operation", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		accountClient := portalsdkmocks.NewMockAccountAPI(t)
 
 		now := time.Now()
@@ -129,7 +129,7 @@ func TestOperationsServiceDefault_List(t *testing.T) {
 
 	t.Run("resolves account client via auth service", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		authSvc := NewMockAuthService(t)
 		accountClient := portalsdkmocks.NewMockAccountAPI(t)
 
@@ -155,7 +155,7 @@ func TestOperationsServiceDefault_List(t *testing.T) {
 
 	t.Run("reuses account client on subsequent calls", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		authSvc := NewMockAuthService(t)
 		accountClient := portalsdkmocks.NewMockAccountAPI(t)
 
@@ -196,7 +196,7 @@ func TestOperationsServiceDefault_List(t *testing.T) {
 func TestOperationsServiceDefault_Get(t *testing.T) {
 	t.Run("returns operation detail from account client", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		accountClient := portalsdkmocks.NewMockAccountAPI(t)
 
 		now := time.Now()
@@ -219,7 +219,7 @@ func TestOperationsServiceDefault_Get(t *testing.T) {
 
 	t.Run("returns operation with error detail", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		accountClient := portalsdkmocks.NewMockAccountAPI(t)
 
 		now := time.Now()
@@ -238,7 +238,7 @@ func TestOperationsServiceDefault_Get(t *testing.T) {
 
 	t.Run("returns error when get operation fails", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		accountClient := portalsdkmocks.NewMockAccountAPI(t)
 
 		accountClient.EXPECT().GetOperation(context.Background(), int64(404)).Return(
@@ -254,7 +254,7 @@ func TestOperationsServiceDefault_Get(t *testing.T) {
 
 	t.Run("returns error when not authenticated", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 
 		svc := NewOperationsService(cfgMgr, output, nil)
 
@@ -267,7 +267,7 @@ func TestOperationsServiceDefault_Get(t *testing.T) {
 func TestOperationsServiceDefault_RequireAuthenticated(t *testing.T) {
 	t.Run("returns error when auth service is nil", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 
 		svc := NewOperationsService(cfgMgr, output, nil)
 
@@ -278,7 +278,7 @@ func TestOperationsServiceDefault_RequireAuthenticated(t *testing.T) {
 
 	t.Run("returns error when auth client resolution fails", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		authSvc := NewMockAuthService(t)
 
 		authSvc.EXPECT().GetAuthenticatedClient(context.Background()).Return(nil, errors.New("auth failed"))
@@ -291,7 +291,7 @@ func TestOperationsServiceDefault_RequireAuthenticated(t *testing.T) {
 
 	t.Run("returns nil when authenticated", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		accountClient := portalsdkmocks.NewMockAccountAPI(t)
 
 		svc := NewOperationsService(cfgMgr, output, nil, WithOperationsAccountClient(accountClient))
@@ -304,7 +304,7 @@ func TestOperationsServiceDefault_RequireAuthenticated(t *testing.T) {
 func TestOperationsServiceDefault_Watch(t *testing.T) {
 	t.Run("returns settled operation from WaitForOperation", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		accountClient := portalsdkmocks.NewMockAccountAPI(t)
 
 		now := time.Now()
@@ -330,7 +330,7 @@ func TestOperationsServiceDefault_Watch(t *testing.T) {
 
 	t.Run("returns error when WaitForOperation fails", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		accountClient := portalsdkmocks.NewMockAccountAPI(t)
 
 		accountClient.EXPECT().WaitForOperation(
@@ -373,7 +373,7 @@ func TestFormatOperationStatusWithColor(t *testing.T) {
 func TestOperationsListOptions_Filters(t *testing.T) {
 	t.Run("applies status filter", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		accountClient := portalsdkmocks.NewMockAccountAPI(t)
 
 		now := time.Now()
@@ -398,7 +398,7 @@ func TestOperationsListOptions_Filters(t *testing.T) {
 
 func TestRenderOperationDetail(t *testing.T) {
 	t.Run("renders operation with steps", func(t *testing.T) {
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		currentStep := 2
 		totalSteps := 5
 		op := &OperationDetail{
@@ -422,7 +422,7 @@ func TestRenderOperationDetail(t *testing.T) {
 	})
 
 	t.Run("renders operation with error and message", func(t *testing.T) {
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		op := &OperationDetail{
 			ID:                    2,
 			CID:                   "QmErr",
@@ -444,7 +444,7 @@ func TestRenderOperationDetail(t *testing.T) {
 	})
 
 	t.Run("renders minimal operation", func(t *testing.T) {
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		op := &OperationDetail{
 			ID:                    3,
 			CID:                   "",
@@ -467,7 +467,7 @@ func TestRenderOperationDetail(t *testing.T) {
 func TestOperationsServiceDefault_CIDPointer(t *testing.T) {
 	t.Run("handles nil CID pointer from operation", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		accountClient := portalsdkmocks.NewMockAccountAPI(t)
 
 		now := time.Now()
@@ -531,68 +531,12 @@ func TestNewOperationsGetCommand(t *testing.T) {
 	})
 }
 
-type mockOperationsCommand struct {
-	status    string
-	operation string
-	protocol  string
-	cid       string
-	limit     int
-	watch     bool
-	args      []string
-}
 
-func (m *mockOperationsCommand) String(name string) string {
-	switch name {
-	case FlagStatus:
-		return m.status
-	case FlagOperation:
-		return m.operation
-	case FlagProtocol:
-		return m.protocol
-	case FlagCID:
-		return m.cid
-	default:
-		return ""
-	}
-}
-
-func (m *mockOperationsCommand) Int(name string) int {
-	switch name {
-	case FlagLimit:
-		return m.limit
-	default:
-		return 0
-	}
-}
-
-func (m *mockOperationsCommand) Bool(name string) bool {
-	switch name {
-	case FlagWatch:
-		return m.watch
-	default:
-		return false
-	}
-}
-
-func (m *mockOperationsCommand) Args() cli.Args {
-	return &mockArgs{args: m.args}
-}
-
-func setupMockCfgMgr(t *testing.T) *configmocks.MockManager {
-	t.Helper()
-	cfgMgr := configmocks.NewMockManager(t)
-	cfgMgr.EXPECT().Config().Return(&config.Config{
-		Secure:       true,
-		BaseEndpoint: "pinner.xyz",
-		AuthToken:    "test-token",
-	}).Maybe()
-	return cfgMgr
-}
 
 func TestOperationsList(t *testing.T) {
 	t.Run("successful list with results", func(t *testing.T) {
-		cfgMgr := setupMockCfgMgr(t)
-		output := NewOutputFormatter(false, false, false, false)
+		cfgMgr := newTestConfigMgr(t)
+		output := newTestOutput()
 		opsSvc := NewMockOperationsService(t)
 
 		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
@@ -609,7 +553,7 @@ func TestOperationsList(t *testing.T) {
 			Total: 1,
 		}, nil)
 
-		cmd := &mockOperationsCommand{}
+		cmd := newMockCommand()
 
 		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
 		authSvcFactory := func(cm config.Manager, out Output, endpoint string) AuthService { return nil }
@@ -620,8 +564,8 @@ func TestOperationsList(t *testing.T) {
 	})
 
 	t.Run("successful list with empty results", func(t *testing.T) {
-		cfgMgr := setupMockCfgMgr(t)
-		output := NewOutputFormatter(false, false, false, false)
+		cfgMgr := newTestConfigMgr(t)
+		output := newTestOutput()
 		opsSvc := NewMockOperationsService(t)
 
 		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
@@ -630,7 +574,7 @@ func TestOperationsList(t *testing.T) {
 			Total:      0,
 		}, nil)
 
-		cmd := &mockOperationsCommand{}
+		cmd := newMockCommand()
 
 		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
 		authSvcFactory := func(cm config.Manager, out Output, endpoint string) AuthService { return nil }
@@ -641,13 +585,13 @@ func TestOperationsList(t *testing.T) {
 	})
 
 	t.Run("returns error when not authenticated", func(t *testing.T) {
-		cfgMgr := setupMockCfgMgr(t)
-		output := NewOutputFormatter(false, false, false, false)
+		cfgMgr := newTestConfigMgr(t)
+		output := newTestOutput()
 		opsSvc := NewMockOperationsService(t)
 
 		opsSvc.EXPECT().RequireAuthenticated().Return(ErrNotAuthenticated)
 
-		cmd := &mockOperationsCommand{}
+		cmd := newMockCommand()
 
 		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
 		authSvcFactory := func(cm config.Manager, out Output, endpoint string) AuthService { return nil }
@@ -659,14 +603,14 @@ func TestOperationsList(t *testing.T) {
 	})
 
 	t.Run("returns error when list fails", func(t *testing.T) {
-		cfgMgr := setupMockCfgMgr(t)
-		output := NewOutputFormatter(false, false, false, false)
+		cfgMgr := newTestConfigMgr(t)
+		output := newTestOutput()
 		opsSvc := NewMockOperationsService(t)
 
 		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
 		opsSvc.EXPECT().List(context.Background(), OperationsListOptions{}).Return(nil, errors.New("server error"))
 
-		cmd := &mockOperationsCommand{}
+		cmd := newMockCommand()
 
 		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
 		authSvcFactory := func(cm config.Manager, out Output, endpoint string) AuthService { return nil }
@@ -678,8 +622,8 @@ func TestOperationsList(t *testing.T) {
 	})
 
 	t.Run("passes filters to service", func(t *testing.T) {
-		cfgMgr := setupMockCfgMgr(t)
-		output := NewOutputFormatter(false, false, false, false)
+		cfgMgr := newTestConfigMgr(t)
+		output := newTestOutput()
 		opsSvc := NewMockOperationsService(t)
 
 		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
@@ -694,13 +638,12 @@ func TestOperationsList(t *testing.T) {
 			Total:      0,
 		}, nil)
 
-		cmd := &mockOperationsCommand{
-			status:    "running",
-			operation: "upload",
-			protocol:  "ipfs",
-			cid:       "QmTest",
-			limit:     5,
-		}
+		cmd := newMockCommand().
+			withString(FlagStatus, "running").
+			withString(FlagOperation, "upload").
+			withString(FlagProtocol, "ipfs").
+			withString(FlagCID, "QmTest").
+			withInt(FlagLimit, 5)
 
 		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
 		authSvcFactory := func(cm config.Manager, out Output, endpoint string) AuthService { return nil }
@@ -711,8 +654,8 @@ func TestOperationsList(t *testing.T) {
 	})
 
 	t.Run("returns error when cfgMgr factory fails", func(t *testing.T) {
-		output := NewOutputFormatter(false, false, false, false)
-		cmd := &mockOperationsCommand{}
+		output := newTestOutput()
+		cmd := newMockCommand()
 
 		cfgMgrFactory := func() (config.Manager, error) { return nil, errors.New("config error") }
 		authSvcFactory := func(cm config.Manager, out Output, endpoint string) AuthService { return nil }
@@ -726,8 +669,8 @@ func TestOperationsList(t *testing.T) {
 
 func TestOperationsGet(t *testing.T) {
 	t.Run("successful get operation", func(t *testing.T) {
-		cfgMgr := setupMockCfgMgr(t)
-		output := NewOutputFormatter(false, false, false, false)
+		cfgMgr := newTestConfigMgr(t)
+		output := newTestOutput()
 		opsSvc := NewMockOperationsService(t)
 
 		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
@@ -745,7 +688,7 @@ func TestOperationsGet(t *testing.T) {
 			UpdatedAt:             "2024-01-01T00:00:00Z",
 		}, nil)
 
-		cmd := &mockOperationsCommand{args: []string{"42"}}
+		cmd := newMockCommand().withArgs("42")
 
 		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
 		authSvcFactory := func(cm config.Manager, out Output, endpoint string) AuthService { return nil }
@@ -756,13 +699,13 @@ func TestOperationsGet(t *testing.T) {
 	})
 
 	t.Run("returns error when no operation ID provided", func(t *testing.T) {
-		cfgMgr := setupMockCfgMgr(t)
-		output := NewOutputFormatter(false, false, false, false)
+		cfgMgr := newTestConfigMgr(t)
+		output := newTestOutput()
 		opsSvc := NewMockOperationsService(t)
 
 		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
 
-		cmd := &mockOperationsCommand{args: []string{}}
+		cmd := newMockCommand()
 
 		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
 		authSvcFactory := func(cm config.Manager, out Output, endpoint string) AuthService { return nil }
@@ -774,13 +717,13 @@ func TestOperationsGet(t *testing.T) {
 	})
 
 	t.Run("returns error for invalid operation ID", func(t *testing.T) {
-		cfgMgr := setupMockCfgMgr(t)
-		output := NewOutputFormatter(false, false, false, false)
+		cfgMgr := newTestConfigMgr(t)
+		output := newTestOutput()
 		opsSvc := NewMockOperationsService(t)
 
 		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
 
-		cmd := &mockOperationsCommand{args: []string{"not-a-number"}}
+		cmd := newMockCommand().withArgs("not-a-number")
 
 		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
 		authSvcFactory := func(cm config.Manager, out Output, endpoint string) AuthService { return nil }
@@ -792,14 +735,14 @@ func TestOperationsGet(t *testing.T) {
 	})
 
 	t.Run("returns error when get fails", func(t *testing.T) {
-		cfgMgr := setupMockCfgMgr(t)
-		output := NewOutputFormatter(false, false, false, false)
+		cfgMgr := newTestConfigMgr(t)
+		output := newTestOutput()
 		opsSvc := NewMockOperationsService(t)
 
 		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
 		opsSvc.EXPECT().Get(context.Background(), int64(999)).Return(nil, fmt.Errorf("not found"))
 
-		cmd := &mockOperationsCommand{args: []string{"999"}}
+		cmd := newMockCommand().withArgs("999")
 
 		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
 		authSvcFactory := func(cm config.Manager, out Output, endpoint string) AuthService { return nil }
@@ -811,13 +754,13 @@ func TestOperationsGet(t *testing.T) {
 	})
 
 	t.Run("returns error when not authenticated", func(t *testing.T) {
-		cfgMgr := setupMockCfgMgr(t)
-		output := NewOutputFormatter(false, false, false, false)
+		cfgMgr := newTestConfigMgr(t)
+		output := newTestOutput()
 		opsSvc := NewMockOperationsService(t)
 
 		opsSvc.EXPECT().RequireAuthenticated().Return(ErrNotAuthenticated)
 
-		cmd := &mockOperationsCommand{args: []string{"1"}}
+		cmd := newMockCommand().withArgs("1")
 
 		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
 		authSvcFactory := func(cm config.Manager, out Output, endpoint string) AuthService { return nil }
@@ -829,8 +772,8 @@ func TestOperationsGet(t *testing.T) {
 	})
 
 	t.Run("returns error when cfgMgr factory fails", func(t *testing.T) {
-		output := NewOutputFormatter(false, false, false, false)
-		cmd := &mockOperationsCommand{args: []string{"1"}}
+		output := newTestOutput()
+		cmd := newMockCommand().withArgs("1")
 
 		cfgMgrFactory := func() (config.Manager, error) { return nil, errors.New("config error") }
 		authSvcFactory := func(cm config.Manager, out Output, endpoint string) AuthService { return nil }
@@ -893,5 +836,274 @@ func TestBuildOperationRows(t *testing.T) {
 		assert.Equal(t, "1", rows[0][0])
 		assert.Equal(t, "Pin", rows[0][1])
 		assert.Equal(t, "IPFS", rows[0][2])
+	})
+}
+
+func TestWatchOperationsList(t *testing.T) {
+	t.Run("exits cleanly when context cancelled after initial list", func(t *testing.T) {
+		opsSvc := NewMockOperationsService(t)
+		output := newTestOutput()
+
+		opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{}).Return(&OperationsListResult{
+			Operations: []OperationListItem{
+				{ID: 1, CID: "QmTest", Status: "running", Operation: "upload", OperationDisplayName: "Upload", Protocol: "ipfs", ProtocolDisplayName: "IPFS", ProgressPercent: 50, StartedAt: "2024-01-01"},
+			},
+			Total: 1,
+		}, nil)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		// Cancel context shortly after the initial list call completes,
+		// so the ticker loop picks up ctx.Done() before the 2s ticker fires.
+		go func() {
+			time.Sleep(100 * time.Millisecond)
+			cancel()
+		}()
+
+		err := watchOperationsList(ctx, opsSvc, output, OperationsListOptions{})
+		assert.ErrorIs(t, err, context.Canceled)
+	})
+
+	t.Run("returns error when initial list fails", func(t *testing.T) {
+		opsSvc := NewMockOperationsService(t)
+		output := newTestOutput()
+
+		opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{}).Return(nil, errors.New("server error"))
+
+		err := watchOperationsList(context.Background(), opsSvc, output, OperationsListOptions{})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "server error")
+	})
+
+	t.Run("exits when all operations are settled on initial list", func(t *testing.T) {
+		opsSvc := NewMockOperationsService(t)
+		output := newTestOutput()
+
+		opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{}).Return(&OperationsListResult{
+			Operations: []OperationListItem{
+				{ID: 1, CID: "QmTest", Status: "completed", Operation: "pin", OperationDisplayName: "Pin", Protocol: "ipfs", ProtocolDisplayName: "IPFS", ProgressPercent: 100, StartedAt: "2024-01-01"},
+			},
+			Total: 1,
+		}, nil)
+
+		err := watchOperationsList(context.Background(), opsSvc, output, OperationsListOptions{})
+		require.NoError(t, err)
+	})
+
+	t.Run("returns error when list fails during ticker loop", func(t *testing.T) {
+		opsSvc := NewMockOperationsService(t)
+		output := newTestOutput()
+
+		callCount := 0
+		opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{}).RunAndReturn(
+			func(ctx context.Context, opts OperationsListOptions) (*OperationsListResult, error) {
+				callCount++
+				if callCount == 1 {
+					return &OperationsListResult{
+						Operations: []OperationListItem{
+							{ID: 1, CID: "QmTest", Status: "running", Operation: "upload", OperationDisplayName: "Upload", Protocol: "ipfs", ProtocolDisplayName: "IPFS", ProgressPercent: 50, StartedAt: "2024-01-01"},
+						},
+						Total: 1,
+					}, nil
+				}
+				return nil, errors.New("network error")
+			},
+		)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		err := watchOperationsList(ctx, opsSvc, output, OperationsListOptions{})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "network error")
+	})
+
+	t.Run("exits when ticker loop finds empty operations", func(t *testing.T) {
+		opsSvc := NewMockOperationsService(t)
+		output := newTestOutput()
+
+		callCount := 0
+		opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{}).RunAndReturn(
+			func(ctx context.Context, opts OperationsListOptions) (*OperationsListResult, error) {
+				callCount++
+				if callCount == 1 {
+					return &OperationsListResult{
+						Operations: []OperationListItem{
+							{ID: 1, CID: "QmTest", Status: "running", Operation: "upload", OperationDisplayName: "Upload", Protocol: "ipfs", ProtocolDisplayName: "IPFS", ProgressPercent: 50, StartedAt: "2024-01-01"},
+						},
+						Total: 1,
+					}, nil
+				}
+				return &OperationsListResult{
+					Operations: []OperationListItem{},
+					Total:      0,
+				}, nil
+			},
+		)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		err := watchOperationsList(ctx, opsSvc, output, OperationsListOptions{})
+		require.NoError(t, err)
+	})
+
+	t.Run("exits when ticker loop finds all operations settled", func(t *testing.T) {
+		opsSvc := NewMockOperationsService(t)
+		output := newTestOutput()
+
+		callCount := 0
+		opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{}).RunAndReturn(
+			func(ctx context.Context, opts OperationsListOptions) (*OperationsListResult, error) {
+				callCount++
+				if callCount == 1 {
+					return &OperationsListResult{
+						Operations: []OperationListItem{
+							{ID: 1, CID: "QmTest", Status: "running", Operation: "upload", OperationDisplayName: "Upload", Protocol: "ipfs", ProtocolDisplayName: "IPFS", ProgressPercent: 50, StartedAt: "2024-01-01"},
+						},
+						Total: 1,
+					}, nil
+				}
+				return &OperationsListResult{
+					Operations: []OperationListItem{
+						{ID: 1, CID: "QmTest", Status: "completed", Operation: "upload", OperationDisplayName: "Upload", Protocol: "ipfs", ProtocolDisplayName: "IPFS", ProgressPercent: 100, StartedAt: "2024-01-01"},
+					},
+					Total: 1,
+				}, nil
+			},
+		)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		err := watchOperationsList(ctx, opsSvc, output, OperationsListOptions{})
+		require.NoError(t, err)
+	})
+}
+
+func TestWatchOperation(t *testing.T) {
+	t.Run("exits cleanly when context cancelled", func(t *testing.T) {
+		opsSvc := NewMockOperationsService(t)
+		output := newTestOutput()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		// Cancel quickly so the ticker loop exits via ctx.Done()
+		go func() {
+			time.Sleep(100 * time.Millisecond)
+			cancel()
+		}()
+
+		err := watchOperation(ctx, opsSvc, output, 42)
+		require.NoError(t, err)
+	})
+
+	t.Run("exits when operation is complete on first ticker check", func(t *testing.T) {
+		opsSvc := NewMockOperationsService(t)
+		output := newTestOutput()
+
+		opsSvc.EXPECT().Get(mock.Anything, int64(7)).Return(&OperationDetail{
+			ID:                    7,
+			CID:                   "QmDone",
+			Status:                "completed",
+			StatusDisplayName:     "Completed",
+			Operation:             "pin",
+			OperationDisplayName:  "Pin",
+			Protocol:              "ipfs",
+			ProtocolDisplayName:   "IPFS",
+			ProgressPercent:       100,
+			StartedAt:             "2024-01-01T00:00:00Z",
+			UpdatedAt:             "2024-01-01T00:01:00Z",
+		}, nil)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		err := watchOperation(ctx, opsSvc, output, 7)
+		require.NoError(t, err)
+	})
+
+	t.Run("returns error when get fails during ticker loop", func(t *testing.T) {
+		opsSvc := NewMockOperationsService(t)
+		output := newTestOutput()
+
+		opsSvc.EXPECT().Get(mock.Anything, int64(99)).Return(nil, errors.New("not found"))
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		err := watchOperation(ctx, opsSvc, output, 99)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not found")
+	})
+
+	t.Run("exits when operation reaches failed status", func(t *testing.T) {
+		opsSvc := NewMockOperationsService(t)
+		output := newTestOutput()
+
+		opsSvc.EXPECT().Get(mock.Anything, int64(5)).Return(&OperationDetail{
+			ID:                    5,
+			CID:                   "QmFail",
+			Status:                "failed",
+			StatusDisplayName:     "Failed",
+			Operation:             "upload",
+			OperationDisplayName:  "Upload",
+			Protocol:              "ipfs",
+			ProtocolDisplayName:   "IPFS",
+			ProgressPercent:       30,
+			StartedAt:             "2024-01-01T00:00:00Z",
+			UpdatedAt:             "2024-01-01T00:01:00Z",
+			Error:                 "disk full",
+		}, nil)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		err := watchOperation(ctx, opsSvc, output, 5)
+		require.NoError(t, err)
+	})
+
+	t.Run("detects status change between checks", func(t *testing.T) {
+		opsSvc := NewMockOperationsService(t)
+		output := newTestOutput()
+
+		callCount := 0
+		opsSvc.EXPECT().Get(mock.Anything, int64(10)).RunAndReturn(
+			func(ctx context.Context, id int64) (*OperationDetail, error) {
+				callCount++
+				if callCount == 1 {
+					return &OperationDetail{
+						ID:                    10,
+						CID:                   "QmProgress",
+						Status:                "running",
+						StatusDisplayName:     "Running",
+						Operation:             "upload",
+						OperationDisplayName:  "Upload",
+						Protocol:              "ipfs",
+						ProtocolDisplayName:   "IPFS",
+						ProgressPercent:       50,
+						StartedAt:             "2024-01-01T00:00:00Z",
+						UpdatedAt:             "2024-01-01T00:01:00Z",
+					}, nil
+				}
+				return &OperationDetail{
+					ID:                    10,
+					CID:                   "QmProgress",
+					Status:                "completed",
+					StatusDisplayName:     "Completed",
+					Operation:             "upload",
+					OperationDisplayName:  "Upload",
+					Protocol:              "ipfs",
+					ProtocolDisplayName:   "IPFS",
+					ProgressPercent:       100,
+					StartedAt:             "2024-01-01T00:00:00Z",
+					UpdatedAt:             "2024-01-01T00:02:00Z",
+				}, nil
+			},
+		)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		err := watchOperation(ctx, opsSvc, output, 10)
+		require.NoError(t, err)
 	})
 }

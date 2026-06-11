@@ -5,13 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/pkg/config"
 	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
 	"go.lumeweb.com/portal-sdk/admin"
@@ -73,7 +71,7 @@ func TestBillingPriceLinesList(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			service := NewMockBillingAdminService(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(cfgMgr, service)
@@ -83,7 +81,7 @@ func TestBillingPriceLinesList(t *testing.T) {
 				return service
 			}
 
-			var cmd billingPriceLinesListCmdGetter
+			cmd := newMockCommand()
 
 			err := billingPriceLinesListAction(context.Background(), cmd, output, cfgMgr, serviceFactory)
 
@@ -165,21 +163,20 @@ func TestAddPlan_AutoPosition(t *testing.T) {
 
 			tt.setupMocks(cfgMgr, service)
 
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			serviceFactory := func(cm config.Manager, out Output) BillingAdminService {
 				return service
 			}
 
-			args := &mockArgs{}
+			cmd := newMockCommand()
 			if tt.priceLineID != "" {
-				args.args = []string{tt.priceLineID}
+				cmd = cmd.withArgs(tt.priceLineID)
 			}
-			cmd := &billingPriceLinesAddPlanArgs{
-				args:          args,
-				planID:        tt.planID,
-				position:      tt.position,
-				isSetPosition: tt.isSetPosition,
+			cmd = cmd.withString("plan-id", tt.planID)
+			if tt.isSetPosition {
+				cmd = cmd.withInt("position", tt.position)
+				cmd = cmd.withIsSet("position", true)
 			}
 
 			err := billingPriceLinesAddPlanAction(context.Background(), cmd, output, cfgMgr, serviceFactory)
@@ -196,22 +193,13 @@ func TestAddPlan_AutoPosition(t *testing.T) {
 	}
 }
 
-// billingPriceLinesGetArgs implements billingPriceLinesGetCmdGetter
-type billingPriceLinesGetArgs struct {
-	args cli.Args
-}
-
-func (m *billingPriceLinesGetArgs) Args() cli.Args {
-	return m.args
-}
-
 func TestBillingPriceLinesGet(t *testing.T) {
 	tests := []struct {
-		name         string
-		priceLineID  string
-		setupMocks   func(*configmocks.MockManager, *MockBillingAdminService)
-		wantErr      bool
-		errContains  string
+		name        string
+		priceLineID string
+		setupMocks  func(*configmocks.MockManager, *MockBillingAdminService)
+		wantErr     bool
+		errContains string
 	}{
 		{
 			name:        "successful get",
@@ -238,17 +226,16 @@ func TestBillingPriceLinesGet(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			service := NewMockBillingAdminService(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(cfgMgr, service)
 			}
 
-			args := &mockArgs{}
+			cmd := newMockCommand()
 			if tt.priceLineID != "" {
-				args.args = []string{tt.priceLineID}
+				cmd = cmd.withArgs(tt.priceLineID)
 			}
-			cmd := &billingPriceLinesGetArgs{args: args}
 
 			serviceFactory := func(cm config.Manager, out Output) BillingAdminService {
 				return service
@@ -266,39 +253,6 @@ func TestBillingPriceLinesGet(t *testing.T) {
 			}
 		})
 	}
-}
-
-// billingPriceLinesCreateCmd implements billingPriceLinesCreateCmdGetter
-type billingPriceLinesCreateCmd struct {
-	args        cli.Args
-	name        string
-	description string
-	isActive    bool
-	isDefault   bool
-}
-
-func (m *billingPriceLinesCreateCmd) Args() cli.Args {
-	return m.args
-}
-
-func (m *billingPriceLinesCreateCmd) String(name string) string {
-	switch name {
-	case "name":
-		return m.name
-	case "description":
-		return m.description
-	}
-	return ""
-}
-
-func (m *billingPriceLinesCreateCmd) Bool(name string) bool {
-	switch name {
-	case "is-active":
-		return m.isActive
-	case "is-default":
-		return m.isDefault
-	}
-	return false
 }
 
 func TestBillingPriceLinesCreate(t *testing.T) {
@@ -338,7 +292,7 @@ func TestBillingPriceLinesCreate(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			service := NewMockBillingAdminService(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(cfgMgr, service)
@@ -348,12 +302,11 @@ func TestBillingPriceLinesCreate(t *testing.T) {
 				return service
 			}
 
-			cmd := &billingPriceLinesCreateCmd{
-				name:        "Storage",
-				description: "Storage pricing",
-				isActive:    true,
-				isDefault:   false,
-			}
+			cmd := newMockCommand().
+				withString("name", "Storage").
+				withString("description", "Storage pricing").
+				withBool("is-active", true).
+				withBool("is-default", false)
 
 			err := billingPriceLinesCreateAction(context.Background(), cmd, output, cfgMgr, serviceFactory)
 
@@ -367,47 +320,6 @@ func TestBillingPriceLinesCreate(t *testing.T) {
 			}
 		})
 	}
-}
-
-// billingPriceLinesUpdateCmd implements billingPriceLinesUpdateCmdGetter
-type billingPriceLinesUpdateCmd struct {
-	args        cli.Args
-	name        string
-	description string
-	isActive    bool
-	isDefault   bool
-	isSet       map[string]bool
-}
-
-func (m *billingPriceLinesUpdateCmd) Args() cli.Args {
-	return m.args
-}
-
-func (m *billingPriceLinesUpdateCmd) String(name string) string {
-	switch name {
-	case "name":
-		return m.name
-	case "description":
-		return m.description
-	}
-	return ""
-}
-
-func (m *billingPriceLinesUpdateCmd) Bool(name string) bool {
-	switch name {
-	case "is-active":
-		return m.isActive
-	case "is-default":
-		return m.isDefault
-	}
-	return false
-}
-
-func (m *billingPriceLinesUpdateCmd) IsSet(name string) bool {
-	if m.isSet == nil {
-		return false
-	}
-	return m.isSet[name]
 }
 
 func TestBillingPriceLinesUpdate(t *testing.T) {
@@ -446,25 +358,21 @@ func TestBillingPriceLinesUpdate(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			service := NewMockBillingAdminService(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(cfgMgr, service)
 			}
 
-			args := &mockArgs{}
+			cmd := newMockCommand()
 			if tt.priceLineID != "" {
-				args.args = []string{tt.priceLineID}
+				cmd = cmd.withArgs(tt.priceLineID)
 			}
-			cmd := &billingPriceLinesUpdateCmd{
-				args:        args,
-				name:        "Updated Storage",
-				description: "Updated description",
-				isSet: map[string]bool{
-					"name":        true,
-					"description": true,
-				},
-			}
+			cmd = cmd.
+				withString("name", "Updated Storage").
+				withString("description", "Updated description").
+				withIsSet("name", true).
+				withIsSet("description", true)
 
 			serviceFactory := func(cm config.Manager, out Output) BillingAdminService {
 				return service
@@ -482,15 +390,6 @@ func TestBillingPriceLinesUpdate(t *testing.T) {
 			}
 		})
 	}
-}
-
-// billingPriceLinesDeleteArgs implements billingPriceLinesDeleteCmdGetter
-type billingPriceLinesDeleteArgs struct {
-	args cli.Args
-}
-
-func (m *billingPriceLinesDeleteArgs) Args() cli.Args {
-	return m.args
 }
 
 func TestBillingPriceLinesDelete(t *testing.T) {
@@ -523,17 +422,16 @@ func TestBillingPriceLinesDelete(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			service := NewMockBillingAdminService(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(cfgMgr, service)
 			}
 
-			args := &mockArgs{}
+			cmd := newMockCommand()
 			if tt.priceLineID != "" {
-				args.args = []string{tt.priceLineID}
+				cmd = cmd.withArgs(tt.priceLineID)
 			}
-			cmd := &billingPriceLinesDeleteArgs{args: args}
 
 			serviceFactory := func(cm config.Manager, out Output) BillingAdminService {
 				return service
@@ -550,48 +448,6 @@ func TestBillingPriceLinesDelete(t *testing.T) {
 				require.NoError(t, err)
 			}
 		})
-	}
-}
-
-// billingPriceLinesAddPlanArgs implements billingPriceLinesAddPlanCmdGetter
-type billingPriceLinesAddPlanArgs struct {
-	args          cli.Args
-	planID        string
-	position      int
-	isSetPosition bool
-}
-
-func (m *billingPriceLinesAddPlanArgs) Args() cli.Args {
-	return m.args
-}
-
-func (m *billingPriceLinesAddPlanArgs) String(name string) string {
-	if name == "plan-id" {
-		return m.planID
-	}
-	return ""
-}
-
-func (m *billingPriceLinesAddPlanArgs) Int(name string) int {
-	switch name {
-	case "plan-id":
-		if m.planID != "" {
-			v, _ := strconv.Atoi(m.planID)
-			return v
-		}
-		return 0
-	case "position":
-		return m.position
-	}
-	return 0
-}
-
-func (m *billingPriceLinesAddPlanArgs) IsSet(name string) bool {
-	switch name {
-	case "position":
-		return m.isSetPosition
-	default:
-		return false
 	}
 }
 
@@ -631,17 +487,20 @@ func TestBillingPriceLinesAddPlan(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			service := NewMockBillingAdminService(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(cfgMgr, service)
 			}
 
-			args := &mockArgs{}
+			cmd := newMockCommand()
 			if tt.priceLineID != "" {
-				args.args = []string{tt.priceLineID}
+				cmd = cmd.withArgs(tt.priceLineID)
 			}
-			cmd := &billingPriceLinesAddPlanArgs{args: args, planID: "1", position: 1, isSetPosition: true}
+			cmd = cmd.
+				withString("plan-id", "1").
+				withInt("position", 1).
+				withIsSet("position", true)
 
 			serviceFactory := func(cm config.Manager, out Output) BillingAdminService {
 				return service
@@ -659,22 +518,6 @@ func TestBillingPriceLinesAddPlan(t *testing.T) {
 			}
 		})
 	}
-}
-
-// billingPriceLinesDeletePlanArgs implements billingPriceLinesDeletePlanCmdGetter
-type billingPriceLinesDeletePlanArgs struct {
-	args cli.Args
-}
-
-func (m *billingPriceLinesDeletePlanArgs) Args() cli.Args {
-	return m.args
-}
-
-func (m *billingPriceLinesDeletePlanArgs) String(name string) string {
-	if name == "plan-id" {
-		return "1"
-	}
-	return ""
 }
 
 func TestBillingPriceLinesDeletePlan(t *testing.T) {
@@ -707,17 +550,17 @@ func TestBillingPriceLinesDeletePlan(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			service := NewMockBillingAdminService(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(cfgMgr, service)
 			}
 
-			args := &mockArgs{}
+			cmd := newMockCommand()
 			if tt.priceLineID != "" {
-				args.args = []string{tt.priceLineID}
+				cmd = cmd.withArgs(tt.priceLineID)
 			}
-			cmd := &billingPriceLinesDeletePlanArgs{args: args}
+			cmd = cmd.withString("plan-id", "1")
 
 			serviceFactory := func(cm config.Manager, out Output) BillingAdminService {
 				return service
@@ -735,32 +578,6 @@ func TestBillingPriceLinesDeletePlan(t *testing.T) {
 			}
 		})
 	}
-}
-
-// billingPriceLinesUpdatePlanPositionArgs implements billingPriceLinesUpdatePlanPositionCmdGetter
-type billingPriceLinesUpdatePlanPositionArgs struct {
-	args cli.Args
-}
-
-func (m *billingPriceLinesUpdatePlanPositionArgs) Args() cli.Args {
-	return m.args
-}
-
-func (m *billingPriceLinesUpdatePlanPositionArgs) String(name string) string {
-	if name == "plan-id" {
-		return "1"
-	}
-	return ""
-}
-
-func (m *billingPriceLinesUpdatePlanPositionArgs) Int(name string) int {
-	switch name {
-	case "plan-id":
-		return 1
-	case "position":
-		return 2
-	}
-	return 0
 }
 
 func TestBillingPriceLinesUpdatePlanPosition(t *testing.T) {
@@ -795,17 +612,19 @@ func TestBillingPriceLinesUpdatePlanPosition(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			service := NewMockBillingAdminService(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(cfgMgr, service)
 			}
 
-			args := &mockArgs{}
+			cmd := newMockCommand()
 			if tt.priceLineID != "" {
-				args.args = []string{tt.priceLineID}
+				cmd = cmd.withArgs(tt.priceLineID)
 			}
-			cmd := &billingPriceLinesUpdatePlanPositionArgs{args: args}
+			cmd = cmd.
+				withString("plan-id", "1").
+				withInt("position", 2)
 
 			serviceFactory := func(cm config.Manager, out Output) BillingAdminService {
 				return service

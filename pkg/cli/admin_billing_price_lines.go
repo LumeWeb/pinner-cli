@@ -52,17 +52,12 @@ Examples:
 			if err != nil {
 				return err
 			}
-			return billingPriceLinesListAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultBillingAdminServiceFactory)
+			return billingPriceLinesListAction(ctx, cmd, output, cfgMgr, defaultBillingAdminServiceFactory)
 		},
 	}
 }
 
-// billingPriceLinesListCmdGetter defines the interface for getting list command args and flags.
-type billingPriceLinesListCmdGetter interface {
-	Args() cli.Args
-}
-
-func billingPriceLinesListAction(ctx context.Context, cmd billingPriceLinesListCmdGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
+func billingPriceLinesListAction(ctx context.Context, cmd argsGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
 	service := serviceFactory(cfgMgr, output)
 	if err := service.RequireAuthenticated(); err != nil {
 		return err
@@ -117,17 +112,12 @@ Examples:
 			if err != nil {
 				return err
 			}
-			return billingPriceLinesGetAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultBillingAdminServiceFactory)
+			return billingPriceLinesGetAction(ctx, cmd, output, cfgMgr, defaultBillingAdminServiceFactory)
 		},
 	}
 }
 
-// billingPriceLinesGetCmdGetter defines the interface for getting get command args and flags.
-type billingPriceLinesGetCmdGetter interface {
-	Args() cli.Args
-}
-
-func billingPriceLinesGetAction(ctx context.Context, cmd billingPriceLinesGetCmdGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
+func billingPriceLinesGetAction(ctx context.Context, cmd argsGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
 	if cmd.Args().Len() < 1 {
 		return fmt.Errorf("price line ID is required")
 	}
@@ -205,19 +195,12 @@ Examples:
 			if err != nil {
 				return err
 			}
-			return billingPriceLinesCreateAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultBillingAdminServiceFactory)
+			return billingPriceLinesCreateAction(ctx, cmd, output, cfgMgr, defaultBillingAdminServiceFactory)
 		},
 	}
 }
 
-// billingPriceLinesCreateCmdGetter defines the interface for getting create command args and flags.
-type billingPriceLinesCreateCmdGetter interface {
-	Args() cli.Args
-	String(name string) string
-	Bool(name string) bool
-}
-
-func billingPriceLinesCreateAction(ctx context.Context, cmd billingPriceLinesCreateCmdGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
+func billingPriceLinesCreateAction(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
 	service := serviceFactory(cfgMgr, output)
 	if err := service.RequireAuthenticated(); err != nil {
 		return err
@@ -292,20 +275,15 @@ Examples:
 			if err != nil {
 				return err
 			}
-			return billingPriceLinesUpdateAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultBillingAdminServiceFactory)
+			return billingPriceLinesUpdateAction(ctx, cmd, output, cfgMgr, defaultBillingAdminServiceFactory)
 		},
 	}
 }
 
-// billingPriceLinesUpdateCmdGetter defines the interface for getting update command args and flags.
-type billingPriceLinesUpdateCmdGetter interface {
-	Args() cli.Args
-	String(name string) string
-	Bool(name string) bool
-	IsSet(name string) bool
-}
-
-func billingPriceLinesUpdateAction(ctx context.Context, cmd billingPriceLinesUpdateCmdGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
+func billingPriceLinesUpdateAction(ctx context.Context, cmd interface {
+	argsGetter
+	flagGetterWithIsSet
+}, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
 	if cmd.Args().Len() < 1 {
 		return fmt.Errorf("price line ID is required")
 	}
@@ -376,17 +354,12 @@ Examples:
 			if err != nil {
 				return err
 			}
-			return billingPriceLinesDeleteAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultBillingAdminServiceFactory)
+			return billingPriceLinesDeleteAction(ctx, cmd, output, cfgMgr, defaultBillingAdminServiceFactory)
 		},
 	}
 }
 
-// billingPriceLinesDeleteCmdGetter defines the interface for getting delete command args and flags.
-type billingPriceLinesDeleteCmdGetter interface {
-	Args() cli.Args
-}
-
-func billingPriceLinesDeleteAction(ctx context.Context, cmd billingPriceLinesDeleteCmdGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
+func billingPriceLinesDeleteAction(ctx context.Context, cmd argsGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
 	if cmd.Args().Len() < 1 {
 		return fmt.Errorf("price line ID is required")
 	}
@@ -439,20 +412,15 @@ Examples:
 			if err != nil {
 				return err
 			}
-			return billingPriceLinesAddPlanAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultBillingAdminServiceFactory)
+			return billingPriceLinesAddPlanAction(ctx, cmd, output, cfgMgr, defaultBillingAdminServiceFactory)
 		},
 	}
 }
 
-// billingPriceLinesAddPlanCmdGetter defines the interface for getting add-plan command args and flags.
-type billingPriceLinesAddPlanCmdGetter interface {
-	Args() cli.Args
-	String(name string) string
-	Int(name string) int
-	IsSet(name string) bool
-}
-
-func billingPriceLinesAddPlanAction(ctx context.Context, cmd billingPriceLinesAddPlanCmdGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
+func billingPriceLinesAddPlanAction(ctx context.Context, cmd interface {
+	argsGetter
+	flagGetterWithIsSet
+}, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
 	if cmd.Args().Len() < 1 {
 		return fmt.Errorf("price line ID is required")
 	}
@@ -536,18 +504,12 @@ Examples:
 			if err != nil {
 				return err
 			}
-			return billingPriceLinesDeletePlanAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultBillingAdminServiceFactory)
+			return billingPriceLinesDeletePlanAction(ctx, cmd, output, cfgMgr, defaultBillingAdminServiceFactory)
 		},
 	}
 }
 
-// billingPriceLinesDeletePlanCmdGetter defines the interface for getting delete-plan command args and flags.
-type billingPriceLinesDeletePlanCmdGetter interface {
-	Args() cli.Args
-	String(name string) string
-}
-
-func billingPriceLinesDeletePlanAction(ctx context.Context, cmd billingPriceLinesDeletePlanCmdGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
+func billingPriceLinesDeletePlanAction(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
 	if cmd.Args().Len() < 1 {
 		return fmt.Errorf("price line ID is required")
 	}
@@ -599,19 +561,12 @@ Examples:
 			if err != nil {
 				return err
 			}
-			return billingPriceLinesUpdatePlanPositionAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultBillingAdminServiceFactory)
+			return billingPriceLinesUpdatePlanPositionAction(ctx, cmd, output, cfgMgr, defaultBillingAdminServiceFactory)
 		},
 	}
 }
 
-// billingPriceLinesUpdatePlanPositionCmdGetter defines the interface for getting update-plan-position command args and flags.
-type billingPriceLinesUpdatePlanPositionCmdGetter interface {
-	Args() cli.Args
-	String(name string) string
-	Int(name string) int
-}
-
-func billingPriceLinesUpdatePlanPositionAction(ctx context.Context, cmd billingPriceLinesUpdatePlanPositionCmdGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
+func billingPriceLinesUpdatePlanPositionAction(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
 	if cmd.Args().Len() < 1 {
 		return fmt.Errorf("price line ID is required")
 	}

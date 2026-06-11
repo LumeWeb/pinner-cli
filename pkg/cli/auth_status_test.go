@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/manifoldco/promptui"
 	"github.com/stretchr/testify/require"
-	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/pkg/config"
 	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
 	portalsdk "go.lumeweb.com/portal-sdk"
@@ -60,7 +60,7 @@ func TestAuthStatus(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			authService := NewMockAuthService(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			var cfgMgrFactory ConfigManagerFactory
 			if tt.name == "config manager factory fails" {
@@ -81,9 +81,7 @@ func TestAuthStatus(t *testing.T) {
 				tt.setupMocks(cfgMgr, authService)
 			}
 
-			cmd := &cli.Command{}
-
-			err := authStatus(context.Background(), cmd, output, cfgMgrFactory, authServiceFactory)
+			err := authStatus(context.Background(), output, cfgMgrFactory, authServiceFactory)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -135,7 +133,7 @@ func TestAuthService_Status(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			acc := portalsdkmocks.NewMockAccountAPI(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			// Mock Config() to return a config with a login JWT and portal URL
 			cfg := config.NewConfig()
@@ -297,9 +295,7 @@ func TestAuthStatusCommand(t *testing.T) {
 				tt.setupMocks(cfgMgr, authService)
 			}
 
-			cmd := &cli.Command{}
-
-			err := authStatus(context.Background(), cmd, output, cfgMgrFactory, authServiceFactory)
+			err := authStatus(context.Background(), output, cfgMgrFactory, authServiceFactory)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -311,4 +307,179 @@ func TestAuthStatusCommand(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestHandleInterrupt(t *testing.T) {
+	t.Run("returns cancelled error for interrupt", func(t *testing.T) {
+		err := handleInterrupt(promptui.ErrInterrupt)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "cancelled")
+	})
+
+	t.Run("returns original error for non-interrupt", func(t *testing.T) {
+		origErr := errors.New("some error")
+		err := handleInterrupt(origErr)
+		require.Error(t, err)
+		require.Equal(t, origErr, err)
+	})
+
+	t.Run("returns nil for nil", func(t *testing.T) {
+		err := handleInterrupt(nil)
+		require.NoError(t, err)
+	})
+}
+
+func TestAuthLogin_MockCommand_WithEmailPassword(t *testing.T) {
+	authService := NewMockAuthService(t)
+	cfgMgr := newTestConfigMgr(t)
+	output := newTestOutput()
+
+	authService.EXPECT().LoginCheck(context.Background(), "user@example.com", "secret").
+		Return(&portalsdk.LoginResult{Token: "jwt-token", OTPRequired: false}, nil)
+	authService.EXPECT().CompleteLogin(context.Background(), "jwt-token", "cli-generated", false).Return(nil)
+
+	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
+	authServiceFactory := func(cm config.Manager, out Output, apiEndpoint string) AuthService {
+		return authService
+	}
+
+	cmd := newMockCommand().
+		withString("email", "user@example.com").
+		withString("password", "secret").
+		withString("key-name", "cli-generated").
+		withBool("no-create-key", false).
+		withBool("force", false)
+
+	err := authLoginWithFactories(context.Background(), cmd, output, cfgMgrFactory, authServiceFactory, nil)
+	require.NoError(t, err)
+}
+
+func TestAuthLogin_MockCommand_WithOTPFlow(t *testing.T) {
+	authService := NewMockAuthService(t)
+	cfgMgr := newTestConfigMgr(t)
+	output := newTestOutput()
+
+	authService.EXPECT().LoginCheck(context.Background(), "user@example.com", "secret").
+		Return(&portalsdk.LoginResult{IntermediateJWT: "intermediate-jwt", OTPRequired: true}, nil)
+	authService.EXPECT().LoginWithOTP(context.Background(), "intermediate-jwt", "123456", "cli-generated", false).Return(nil)
+
+	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
+	authServiceFactory := func(cm config.Manager, out Output, apiEndpoint string) AuthService {
+		return authService
+	}
+
+	cmd := newMockCommand().
+		withString("email", "user@example.com").
+		withString("password", "secret").
+		withString("otp-code", "123456").
+		withString("key-name", "cli-generated").
+		withBool("no-create-key", false).
+		withBool("force", false)
+
+	err := authLoginWithFactories(context.Background(), cmd, output, cfgMgrFactory, authServiceFactory, nil)
+	require.NoError(t, err)
+}
+
+func TestAuthLogin_MockCommand_LoginCheckError(t *testing.T) {
+	authService := NewMockAuthService(t)
+	cfgMgr := newTestConfigMgr(t)
+	output := newTestOutput()
+
+	authService.EXPECT().LoginCheck(context.Background(), "user@example.com", "wrong").
+		Return(nil, errors.New("invalid credentials"))
+
+	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
+	authServiceFactory := func(cm config.Manager, out Output, apiEndpoint string) AuthService {
+		return authService
+	}
+
+	cmd := newMockCommand().
+		withString("email", "user@example.com").
+		withString("password", "wrong").
+		withString("key-name", "cli-generated").
+		withBool("no-create-key", false).
+		withBool("force", false)
+
+	err := authLoginWithFactories(context.Background(), cmd, output, cfgMgrFactory, authServiceFactory, nil)
+	require.Error(t, err)
+}
+
+func TestAuthLogin_MockCommand_ConfigError(t *testing.T) {
+	output := newTestOutput()
+
+	cmd := newMockCommand().
+		withString("email", "user@example.com").
+		withString("password", "secret")
+
+	err := authLoginWithFactories(context.Background(), cmd, output, failingConfigMgrFactory(),
+		func(cm config.Manager, out Output, apiEndpoint string) AuthService { return nil }, nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to initialize config manager")
+}
+
+func TestAuthLogin_MockCommand_NoCreateKey(t *testing.T) {
+	authService := NewMockAuthService(t)
+	cfgMgr := newTestConfigMgr(t)
+	output := newTestOutput()
+
+	authService.EXPECT().LoginCheck(context.Background(), "user@example.com", "secret").
+		Return(&portalsdk.LoginResult{Token: "jwt-token", OTPRequired: false}, nil)
+	authService.EXPECT().CompleteLogin(context.Background(), "jwt-token", "cli-generated", true).Return(nil)
+
+	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
+	authServiceFactory := func(cm config.Manager, out Output, apiEndpoint string) AuthService {
+		return authService
+	}
+
+	cmd := newMockCommand().
+		withString("email", "user@example.com").
+		withString("password", "secret").
+		withString("key-name", "cli-generated").
+		withBool("no-create-key", true).
+		withBool("force", false)
+
+	err := authLoginWithFactories(context.Background(), cmd, output, cfgMgrFactory, authServiceFactory, nil)
+	require.NoError(t, err)
+}
+
+func TestSaveAuthTokenWithFactories_Success(t *testing.T) {
+	authService := NewMockAuthService(t)
+	cfgMgr := newTestConfigMgr(t)
+	output := newTestOutput()
+
+	authService.EXPECT().SaveToken("my-jwt-token").Return(nil)
+
+	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
+	authServiceFactory := func(cm config.Manager, out Output, apiEndpoint string) AuthService {
+		return authService
+	}
+
+	err := saveAuthTokenWithFactories(output, "my-jwt-token", cfgMgrFactory, authServiceFactory)
+	require.NoError(t, err)
+}
+
+func TestSaveAuthTokenWithFactories_ConfigError(t *testing.T) {
+	output := newTestOutput()
+
+	err := saveAuthTokenWithFactories(output, "my-jwt-token", failingConfigMgrFactory(),
+		func(cm config.Manager, out Output, apiEndpoint string) AuthService { return nil })
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to initialize config manager")
+}
+
+func TestSaveAuthTokenWithFactories_SaveError(t *testing.T) {
+	authService := NewMockAuthService(t)
+	cfgMgr := newTestConfigMgr(t)
+	output := newTestOutput()
+
+	authService.EXPECT().SaveToken("bad-token").Return(errors.New("invalid token format"))
+
+	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
+	authServiceFactory := func(cm config.Manager, out Output, apiEndpoint string) AuthService {
+		return authService
+	}
+
+	err := saveAuthTokenWithFactories(output, "bad-token", cfgMgrFactory, authServiceFactory)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid token format")
 }

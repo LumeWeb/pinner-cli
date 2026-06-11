@@ -40,8 +40,8 @@ func TestIntegration_AliasEquivalence_PinAndPinsAdd(t *testing.T) {
 	pinCmd := newPinCommand()
 	pinsAddCmd := newPinsAddCommand()
 
-	pinFlags := getFlagNames(pinCmd.Flags)
-	pinsAddFlags := getFlagNames(pinsAddCmd.Flags)
+	pinFlags := getFlagNames(pinCmd)
+	pinsAddFlags := getFlagNames(pinsAddCmd)
 
 	// Both must have --name and --no-wait
 	for _, required := range []string{FlagName, FlagNoWait} {
@@ -65,8 +65,8 @@ func TestIntegration_AliasEquivalence_UnpinAndPinsRm(t *testing.T) {
 	unpinCmd := newUnpinCommand()
 	pinsRmCmd := newPinsRmCommand()
 
-	unpinFlags := getFlagNames(unpinCmd.Flags)
-	pinsRmFlags := getFlagNames(pinsRmCmd.Flags)
+	unpinFlags := getFlagNames(unpinCmd)
+	pinsRmFlags := getFlagNames(pinsRmCmd)
 
 	// Both must have --force and --confirm
 	for _, required := range []string{FlagForce, FlagConfirm} {
@@ -91,8 +91,8 @@ func TestIntegration_AliasEquivalence_ListAndPinsLs(t *testing.T) {
 	listCmd := newListCommand()
 	pinsLsCmd := newPinsLsCommand()
 
-	listFlags := getFlagNames(listCmd.Flags)
-	pinsLsFlags := getFlagNames(pinsLsCmd.Flags)
+	listFlags := getFlagNames(listCmd)
+	pinsLsFlags := getFlagNames(pinsLsCmd)
 
 	// Both must have --name, --limit, --status, --watch
 	for _, required := range []string{FlagName, FlagLimit, FlagStatus, FlagWatch} {
@@ -107,8 +107,8 @@ func TestIntegration_AliasEquivalence_StatusAndPinsStatus(t *testing.T) {
 	statusCmd := newStatusCommand()
 	pinsStatusCmd := newPinsStatusCommand()
 
-	statusFlags := getFlagNames(statusCmd.Flags)
-	pinsStatusFlags := getFlagNames(pinsStatusCmd.Flags)
+	statusFlags := getFlagNames(statusCmd)
+	pinsStatusFlags := getFlagNames(pinsStatusCmd)
 
 	// Both must have --watch
 	assert.Contains(t, statusFlags, "watch", "status command should have --watch flag")
@@ -175,7 +175,7 @@ func TestIntegration_MetaFlagOnCreationAndUpdate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			flagNames := getFlagNames(tt.cmd.Flags)
+			flagNames := getFlagNames(tt.cmd)
 			if tt.hasMeta {
 				assert.Contains(t, flagNames, FlagMeta, "%s should have --meta flag", tt.name)
 			} else {
@@ -188,7 +188,7 @@ func TestIntegration_MetaFlagOnCreationAndUpdate(t *testing.T) {
 // TestIntegration_ClearMetaOnUpdate verifies that pins update has --clear-meta flag.
 func TestIntegration_ClearMetaOnUpdate(t *testing.T) {
 	cmd := newPinsUpdateCommand()
-	flagNames := getFlagNames(cmd.Flags)
+	flagNames := getFlagNames(cmd)
 
 	assert.Contains(t, flagNames, FlagClearMeta, "pins update should have --clear-meta flag")
 	assert.Contains(t, flagNames, FlagName, "pins update should have --name flag")
@@ -209,7 +209,7 @@ func TestIntegration_ForceFlagOnDestructiveCommands(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			flagNames := getFlagNames(tt.cmd.Flags)
+			flagNames := getFlagNames(tt.cmd)
 			assert.Contains(t, flagNames, FlagForce, "%s should have --force flag", tt.name)
 		})
 	}
@@ -284,7 +284,7 @@ func TestIntegration_PinsSubcommands(t *testing.T) {
 	assert.Len(t, cmd.Commands, 5, "pins should have exactly 5 subcommands")
 
 	expected := []string{"add", "rm", "ls", "status", "update"}
-	names := getSubcommandNames(cmd.Commands)
+	names := getSubcommandNames(cmd)
 
 	for _, name := range expected {
 		assert.Contains(t, names, name, "pins should have %q subcommand", name)
@@ -294,7 +294,7 @@ func TestIntegration_PinsSubcommands(t *testing.T) {
 // TestIntegration_PinsRmFlags verifies that pins rm has --all, --force, --status flags.
 func TestIntegration_PinsRmFlags(t *testing.T) {
 	cmd := newPinsRmCommand()
-	flagNames := getFlagNames(cmd.Flags)
+	flagNames := getFlagNames(cmd)
 
 	assert.Contains(t, flagNames, FlagAll, "pins rm should have --all flag")
 	assert.Contains(t, flagNames, FlagForce, "pins rm should have --force flag")
@@ -308,7 +308,7 @@ func TestIntegration_PinsRmFlags(t *testing.T) {
 // --clear-meta, and --dry-run flags.
 func TestIntegration_PinsUpdateFlags(t *testing.T) {
 	cmd := newPinsUpdateCommand()
-	flagNames := getFlagNames(cmd.Flags)
+	flagNames := getFlagNames(cmd)
 
 	assert.Contains(t, flagNames, FlagName, "pins update should have --name flag")
 	assert.Contains(t, flagNames, FlagMeta, "pins update should have --meta flag")
@@ -364,7 +364,7 @@ func TestIntegration_ShellCompletion(t *testing.T) {
 // TestIntegration_UploadHasNoWait verifies that upload command has --no-wait flag.
 func TestIntegration_UploadHasNoWait(t *testing.T) {
 	cmd := newUploadCommand()
-	flagNames := getFlagNames(cmd.Flags)
+	flagNames := getFlagNames(cmd)
 
 	assert.Contains(t, flagNames, FlagNoWait, "upload should have --no-wait flag")
 	assert.Contains(t, flagNames, FlagMeta, "upload should have --meta flag")

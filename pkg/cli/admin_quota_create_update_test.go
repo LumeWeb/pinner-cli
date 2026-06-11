@@ -9,159 +9,25 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/pkg/config"
 	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
 	"go.lumeweb.com/portal-sdk/admin"
 )
 
-// mockQuotaPlansCreateCmd implements quotaPlansCreateCmdGetter
-type mockQuotaPlansCreateCmd struct {
-	name        string
-	description string
-	upload      int
-	download    int
-	storage     int
-	windowType  string
-	isActive    bool
-	isDefault   bool
-	isSetName   bool
-}
-
-func (m *mockQuotaPlansCreateCmd) String(s string) string {
-	switch s {
-	case FlagName:
-		return m.name
-	case FlagDescription:
-		return m.description
-	case FlagWindowType:
-		return m.windowType
-	default:
-		return ""
-	}
-}
-
-func (m *mockQuotaPlansCreateCmd) Int(s string) int {
-	switch s {
-	case FlagUploadLimit:
-		return m.upload
-	case FlagDownloadLimit:
-		return m.download
-	case FlagStorageLimit:
-		return m.storage
-	default:
-		return 0
-	}
-}
-
-func (m *mockQuotaPlansCreateCmd) Bool(s string) bool {
-	switch s {
-	case FlagIsActive:
-		return m.isActive
-	case FlagIsDefault:
-		return m.isDefault
-	default:
-		return false
-	}
-}
-
-func (m *mockQuotaPlansCreateCmd) IsSet(s string) bool {
-	switch s {
-	case FlagName:
-		return m.isSetName
-	default:
-		return false
-	}
-}
-
-// mockQuotaPlansUpdateCmd implements quotaPlansUpdateCmdGetter
-type mockQuotaPlansUpdateCmd struct {
-	args            *mockArgs
-	name            string
-	description     string
-	upload          int
-	download        int
-	storage         int
-	windowType      string
-	isActive        bool
-	isDefault       bool
-	isSetActive     bool
-	isSetDefault    bool
-	isSetWindowType bool
-}
-
-func (m *mockQuotaPlansUpdateCmd) Args() cli.Args {
-	return m.args
-}
-
-func (m *mockQuotaPlansUpdateCmd) String(s string) string {
-	switch s {
-	case FlagName:
-		return m.name
-	case FlagDescription:
-		return m.description
-	case FlagWindowType:
-		return m.windowType
-	default:
-		return ""
-	}
-}
-
-func (m *mockQuotaPlansUpdateCmd) Int(s string) int {
-	switch s {
-	case FlagUploadLimit:
-		return m.upload
-	case FlagDownloadLimit:
-		return m.download
-	case FlagStorageLimit:
-		return m.storage
-	default:
-		return 0
-	}
-}
-
-func (m *mockQuotaPlansUpdateCmd) Bool(s string) bool {
-	switch s {
-	case FlagIsActive:
-		return m.isActive
-	case FlagIsDefault:
-		return m.isDefault
-	default:
-		return false
-	}
-}
-
-func (m *mockQuotaPlansUpdateCmd) IsSet(s string) bool {
-	switch s {
-	case FlagIsActive:
-		return m.isSetActive
-	case FlagIsDefault:
-		return m.isSetDefault
-	case FlagWindowType:
-		return m.isSetWindowType
-	case FlagUploadLimit, FlagDownloadLimit, FlagStorageLimit:
-		return true
-	default:
-		return false
-	}
-}
-
 func TestQuotaPlansCreate(t *testing.T) {
 	tests := []struct {
 		name        string
-		cmd         *mockQuotaPlansCreateCmd
-		jsonOutput  bool
+		cmd         *mockCommand
 		setupMocks  func(*configmocks.MockManager, *MockQuotaAdminService)
 		wantErr     bool
 		errContains string
 	}{
 		{
 			name: "success with is-active flag",
-			cmd: &mockQuotaPlansCreateCmd{
-				name:      "Free",
-				isSetName: true,
-				isActive:  true,
-			},
+			cmd: newMockCommand().
+				withString(FlagName, "Free").
+				withIsSet(FlagName, true).
+				withBool(FlagIsActive, true),
 			setupMocks: func(cfgMgr *configmocks.MockManager, svc *MockQuotaAdminService) {
 				svc.EXPECT().RequireAuthenticated().Return(nil)
 				svc.EXPECT().CreatePlan(mock.Anything, mock.AnythingOfType("*admin.QuotaPlan")).Return(&admin.QuotaPlan{}, nil)
@@ -170,12 +36,11 @@ func TestQuotaPlansCreate(t *testing.T) {
 		},
 		{
 			name: "success with is-active and is-default flags",
-			cmd: &mockQuotaPlansCreateCmd{
-				name:      "Free",
-				isSetName: true,
-				isActive:  true,
-				isDefault: true,
-			},
+			cmd: newMockCommand().
+				withString(FlagName, "Free").
+				withIsSet(FlagName, true).
+				withBool(FlagIsActive, true).
+				withBool(FlagIsDefault, true),
 			setupMocks: func(cfgMgr *configmocks.MockManager, svc *MockQuotaAdminService) {
 				svc.EXPECT().RequireAuthenticated().Return(nil)
 				svc.EXPECT().CreatePlan(mock.Anything, mock.AnythingOfType("*admin.QuotaPlan")).Return(&admin.QuotaPlan{}, nil)
@@ -185,12 +50,11 @@ func TestQuotaPlansCreate(t *testing.T) {
 		},
 		{
 			name: "is-default fails but plan still created",
-			cmd: &mockQuotaPlansCreateCmd{
-				name:      "Free",
-				isSetName: true,
-				isActive:  true,
-				isDefault: true,
-			},
+			cmd: newMockCommand().
+				withString(FlagName, "Free").
+				withIsSet(FlagName, true).
+				withBool(FlagIsActive, true).
+				withBool(FlagIsDefault, true),
 			setupMocks: func(cfgMgr *configmocks.MockManager, svc *MockQuotaAdminService) {
 				svc.EXPECT().RequireAuthenticated().Return(nil)
 				svc.EXPECT().CreatePlan(mock.Anything, mock.AnythingOfType("*admin.QuotaPlan")).Return(&admin.QuotaPlan{}, nil)
@@ -201,12 +65,11 @@ func TestQuotaPlansCreate(t *testing.T) {
 		},
 		{
 			name: "success with description",
-			cmd: &mockQuotaPlansCreateCmd{
-				name:        "Free",
-				isSetName:   true,
-				description: "Free tier plan",
-				isActive:    true,
-			},
+			cmd: newMockCommand().
+				withString(FlagName, "Free").
+				withIsSet(FlagName, true).
+				withString(FlagDescription, "Free tier plan").
+				withBool(FlagIsActive, true),
 			setupMocks: func(cfgMgr *configmocks.MockManager, svc *MockQuotaAdminService) {
 				svc.EXPECT().RequireAuthenticated().Return(nil)
 				svc.EXPECT().CreatePlan(mock.Anything, mock.AnythingOfType("*admin.QuotaPlan")).Return(&admin.QuotaPlan{}, nil)
@@ -215,10 +78,9 @@ func TestQuotaPlansCreate(t *testing.T) {
 		},
 		{
 			name: "not authenticated",
-			cmd: &mockQuotaPlansCreateCmd{
-				name:      "Free",
-				isSetName: true,
-			},
+			cmd: newMockCommand().
+				withString(FlagName, "Free").
+				withIsSet(FlagName, true),
 			setupMocks: func(cfgMgr *configmocks.MockManager, svc *MockQuotaAdminService) {
 				svc.EXPECT().RequireAuthenticated().Return(errors.New("authentication required"))
 			},
@@ -227,11 +89,10 @@ func TestQuotaPlansCreate(t *testing.T) {
 		},
 		{
 			name: "service error",
-			cmd: &mockQuotaPlansCreateCmd{
-				name:      "Free",
-				isSetName: true,
-				isActive:  true,
-			},
+			cmd: newMockCommand().
+				withString(FlagName, "Free").
+				withIsSet(FlagName, true).
+				withBool(FlagIsActive, true),
 			setupMocks: func(cfgMgr *configmocks.MockManager, svc *MockQuotaAdminService) {
 				svc.EXPECT().RequireAuthenticated().Return(nil)
 				svc.EXPECT().CreatePlan(mock.Anything, mock.AnythingOfType("*admin.QuotaPlan")).Return(nil, errors.New("api error"))
@@ -241,7 +102,7 @@ func TestQuotaPlansCreate(t *testing.T) {
 		},
 		{
 			name: "returns error when no fields provided for create",
-			cmd:  &mockQuotaPlansCreateCmd{},
+			cmd: newMockCommand(),
 			setupMocks: func(cfgMgr *configmocks.MockManager, svc *MockQuotaAdminService) {
 				svc.EXPECT().RequireAuthenticated().Return(nil)
 			},
@@ -257,7 +118,7 @@ func TestQuotaPlansCreate(t *testing.T) {
 
 			tt.setupMocks(cfgMgr, service)
 
-			output := NewOutputFormatter(tt.jsonOutput, false, false, false)
+			output := newTestOutput()
 
 			serviceFactory := func(cm config.Manager, out Output) QuotaAdminService {
 				return service
@@ -277,89 +138,21 @@ func TestQuotaPlansCreate(t *testing.T) {
 	}
 }
 
-func TestQuotaPlansSetDefault_Enhanced(t *testing.T) {
-	tests := []struct {
-		name        string
-		args        []string
-		setupMocks  func(*configmocks.MockManager, *MockQuotaAdminService)
-		wantErr     bool
-		errContains string
-	}{
-		{
-			name: "success",
-			args: []string{"2"},
-			setupMocks: func(cfgMgr *configmocks.MockManager, svc *MockQuotaAdminService) {
-				svc.EXPECT().RequireAuthenticated().Return(nil)
-				svc.EXPECT().SetDefaultPlan(mock.Anything, "2").Return(nil)
-			},
-			wantErr: false,
-		},
-		{
-			name: "plan not found with helpful error",
-			args: []string{"3"},
-			setupMocks: func(cfgMgr *configmocks.MockManager, svc *MockQuotaAdminService) {
-				svc.EXPECT().RequireAuthenticated().Return(nil)
-				svc.EXPECT().SetDefaultPlan(mock.Anything, "3").Return(fmt.Errorf("%w: plan not found", admin.ErrNotFound))
-			},
-			wantErr:     true,
-			errContains: "ensure the plan is active",
-		},
-		{
-			name: "other error passes through",
-			args: []string{"2"},
-			setupMocks: func(cfgMgr *configmocks.MockManager, svc *MockQuotaAdminService) {
-				svc.EXPECT().RequireAuthenticated().Return(nil)
-				svc.EXPECT().SetDefaultPlan(mock.Anything, "2").Return(errors.New("server error"))
-			},
-			wantErr:     true,
-			errContains: "server error",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cfgMgr := configmocks.NewMockManager(t)
-			service := NewMockQuotaAdminService(t)
-
-			tt.setupMocks(cfgMgr, service)
-
-			output := NewOutputFormatter(false, false, false, false)
-
-			serviceFactory := func(cm config.Manager, out Output) QuotaAdminService {
-				return service
-			}
-
-			cmd := &mockQuotaPlansGetCmd{args: &mockArgs{args: tt.args}}
-			err := quotaPlansSetDefaultAction(context.Background(), cmd, output, cfgMgr, serviceFactory)
-
-			if tt.wantErr {
-				require.Error(t, err)
-				if tt.errContains != "" {
-					assert.Contains(t, err.Error(), tt.errContains)
-				}
-			} else {
-				require.NoError(t, err)
-			}
-		})
-	}
-}
-
 func TestQuotaPlansUpdate(t *testing.T) {
 	tests := []struct {
 		name        string
-		cmd         *mockQuotaPlansUpdateCmd
-		jsonOutput  bool
+		planID      string
+		cmd         *mockCommand
 		setupMocks  func(*configmocks.MockManager, *MockQuotaAdminService)
 		wantErr     bool
 		errContains string
 	}{
 		{
-			name: "success with is-active flag",
-			cmd: &mockQuotaPlansUpdateCmd{
-				args:        &mockArgs{args: []string{"2"}},
-				isActive:    true,
-				isSetActive: true,
-			},
+			name:   "success with is-active flag",
+			planID: "2",
+			cmd: newMockCommand().
+				withBool(FlagIsActive, true).
+				withIsSet(FlagIsActive, true),
 			setupMocks: func(cfgMgr *configmocks.MockManager, svc *MockQuotaAdminService) {
 				svc.EXPECT().RequireAuthenticated().Return(nil)
 				svc.EXPECT().GetPlan(mock.Anything, "2").Return(&admin.QuotaPlan{}, nil)
@@ -368,14 +161,13 @@ func TestQuotaPlansUpdate(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "success with is-active and is-default flags",
-			cmd: &mockQuotaPlansUpdateCmd{
-				args:         &mockArgs{args: []string{"2"}},
-				isActive:     true,
-				isDefault:    true,
-				isSetActive:  true,
-				isSetDefault: true,
-			},
+			name:   "success with is-active and is-default flags",
+			planID: "2",
+			cmd: newMockCommand().
+				withBool(FlagIsActive, true).
+				withIsSet(FlagIsActive, true).
+				withBool(FlagIsDefault, true).
+				withIsSet(FlagIsDefault, true),
 			setupMocks: func(cfgMgr *configmocks.MockManager, svc *MockQuotaAdminService) {
 				svc.EXPECT().RequireAuthenticated().Return(nil)
 				svc.EXPECT().GetPlan(mock.Anything, "2").Return(&admin.QuotaPlan{}, nil)
@@ -385,10 +177,9 @@ func TestQuotaPlansUpdate(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "missing plan ID",
-			cmd: &mockQuotaPlansUpdateCmd{
-				args: &mockArgs{args: []string{}},
-			},
+			name:   "missing plan ID",
+			planID: "",
+			cmd:   newMockCommand(),
 			setupMocks: func(cfgMgr *configmocks.MockManager, svc *MockQuotaAdminService) {
 				svc.EXPECT().RequireAuthenticated().Return(nil)
 			},
@@ -396,12 +187,11 @@ func TestQuotaPlansUpdate(t *testing.T) {
 			errContains: "plan ID is required",
 		},
 		{
-			name: "is-default fails but update succeeds",
-			cmd: &mockQuotaPlansUpdateCmd{
-				args:         &mockArgs{args: []string{"2"}},
-				isDefault:    true,
-				isSetDefault: true,
-			},
+			name:   "is-default fails but update succeeds",
+			planID: "2",
+			cmd: newMockCommand().
+				withBool(FlagIsDefault, true).
+				withIsSet(FlagIsDefault, true),
 			setupMocks: func(cfgMgr *configmocks.MockManager, svc *MockQuotaAdminService) {
 				svc.EXPECT().RequireAuthenticated().Return(nil)
 				svc.EXPECT().GetPlan(mock.Anything, "2").Return(&admin.QuotaPlan{}, nil)
@@ -420,13 +210,18 @@ func TestQuotaPlansUpdate(t *testing.T) {
 
 			tt.setupMocks(cfgMgr, service)
 
-			output := NewOutputFormatter(tt.jsonOutput, false, false, false)
+			output := newTestOutput()
 
 			serviceFactory := func(cm config.Manager, out Output) QuotaAdminService {
 				return service
 			}
 
-			err := quotaPlansUpdateAction(context.Background(), tt.cmd, output, cfgMgr, serviceFactory)
+			cmd := tt.cmd
+			if tt.planID != "" {
+				cmd = cmd.withArgs(tt.planID)
+			}
+
+			err := quotaPlansUpdateAction(context.Background(), cmd, output, cfgMgr, serviceFactory)
 
 			if tt.wantErr {
 				require.Error(t, err)

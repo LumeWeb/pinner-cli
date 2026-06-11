@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/urfave/cli/v3"
+	"go.lumeweb.com/pinner-cli/pkg/config"
 )
 
 func newListCommand() *cli.Command {
@@ -32,34 +33,22 @@ Examples:
 		},
 		Metadata: WithTutorial(3, "List all pins", "pinner list --name my-pin"),
 		Action: func(ctx context.Context, c *cli.Command) error {
-			output := NewOutputFormatter(c.Bool(FlagJSON), c.Bool(FlagVerbose), c.Bool(FlagQuiet), c.Bool(FlagUnmask))
-			return list(ctx, c, output, defaultConfigManagerFactory, defaultPinningServiceFactory)
+			output := setupOutput(c)
+			cfgMgr, err := defaultConfigManagerFactory()
+			if err != nil {
+				return err
+			}
+			authToken := GetAuthToken(c, cfgMgr)
+			secure := GetSecureSetting(c, cfgMgr)
+			return list(ctx, newCLICommandWrapper(c), output, cfgMgr, authToken, secure, defaultPinningServiceFactory)
 		},
 	}
 }
 
-// listCommandGetter defines the interface for getting list command flags.
-type listCommandGetter interface {
-	String(name string) string
-	Int(name string) int
-	Bool(name string) bool
-}
-
-func list(ctx context.Context, cmd listCommandGetter, output Output, cfgMgrFactory ConfigManagerFactory, pinningServiceFactory PinningServiceFactory) error {
-	cfgMgr, err := cfgMgrFactory()
-	if err != nil {
-		return err
-	}
-
+func list(ctx context.Context, cmd flagGetterWithInt, output Output, cfgMgr config.Manager, authToken string, secure bool, pinningServiceFactory PinningServiceFactory) error {
 	var pinningService PinningService
-	if c, ok := cmd.(*cli.Command); ok {
-		secure := GetSecureSetting(c, cfgMgr)
-		authToken := GetAuthToken(c, cfgMgr)
-		if authToken != "" {
-			pinningService = NewPinningService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure), WithAuthToken(authToken))
-		} else {
-			pinningService = pinningServiceFactory(cfgMgr, output)
-		}
+	if authToken != "" {
+		pinningService = NewPinningService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure), WithAuthToken(authToken))
 	} else {
 		pinningService = pinningServiceFactory(cfgMgr, output)
 	}

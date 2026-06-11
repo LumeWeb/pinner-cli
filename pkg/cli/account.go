@@ -54,7 +54,7 @@ After successful verification, 2FA will be required for all future logins.`,
 				},
 				Action: func(ctx context.Context, cmd *cli.Command) error {
 					output := setupOutput(cmd)
-					return accountOTPEnable(ctx, cmd, output, defaultConfigManagerFactory, defaultAuthServiceFactory)
+					return accountOTPEnable(ctx, newCLICommandWrapper(cmd), output, defaultConfigManagerFactory, defaultAuthServiceFactory)
 				},
 			},
 			{
@@ -78,14 +78,14 @@ WARNING: This reduces your account security. Consider re-enabling 2FA.`,
 				},
 				Action: func(ctx context.Context, cmd *cli.Command) error {
 					output := setupOutput(cmd)
-					return accountOTPDisable(ctx, cmd, output, defaultConfigManagerFactory, defaultAuthServiceFactory)
+					return accountOTPDisable(ctx, newCLICommandWrapper(cmd), output, defaultConfigManagerFactory, defaultAuthServiceFactory)
 				},
 			},
 		},
 	}
 }
 
-func accountOTPEnable(ctx context.Context, cmd *cli.Command, output Output, cfgMgrFactory ConfigManagerFactory, authServiceFactory AuthServiceFactory) error {
+func accountOTPEnable(ctx context.Context, cmd flagGetter, output Output, cfgMgrFactory ConfigManagerFactory, authServiceFactory AuthServiceFactory) error {
 	cfgMgr, err := cfgMgrFactory()
 	if err != nil {
 		return fmt.Errorf("failed to initialize config manager: %w", err)
@@ -99,7 +99,7 @@ func accountOTPEnable(ctx context.Context, cmd *cli.Command, output Output, cfgM
 	return authService.EnableOTP(ctx, otpCode)
 }
 
-func accountOTPDisable(ctx context.Context, cmd *cli.Command, output Output, cfgMgrFactory ConfigManagerFactory, authServiceFactory AuthServiceFactory) error {
+func accountOTPDisable(ctx context.Context, cmd flagGetter, output Output, cfgMgrFactory ConfigManagerFactory, authServiceFactory AuthServiceFactory) error {
 	cfgMgr, err := cfgMgrFactory()
 	if err != nil {
 		return fmt.Errorf("failed to initialize config manager: %w", err)

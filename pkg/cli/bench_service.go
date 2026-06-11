@@ -126,6 +126,8 @@ type BenchService interface {
 // BenchServiceFactory creates a BenchService with dependencies.
 type BenchServiceFactory func(cfgMgr config.Manager, output Output, uploadService UploadService, pinningService PinningService, accountClient portalsdk.AccountAPI) BenchService
 
+var defaultBenchServiceFactory BenchServiceFactory = NewBenchService
+
 // BenchServiceDefault provides benchmark operations.
 type BenchServiceDefault struct {
 	configMgr      config.Manager

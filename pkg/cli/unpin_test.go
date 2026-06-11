@@ -14,13 +14,12 @@ import (
 
 func TestUnpin(t *testing.T) {
 	tests := []struct {
-		name             string
-		cid              string
-		confirmFlag      bool
-		setupMocks       func(*configmocks.MockManager, *MockPinningService)
-		wantErr          bool
-		errContains      string
-		cfgMgrFactoryErr bool
+		name        string
+		cid         string
+		confirmFlag bool
+		setupMocks  func(*configmocks.MockManager, *MockPinningService)
+		wantErr     bool
+		errContains string
 	}{
 		{
 			name:        "successful unpin operation",
@@ -45,15 +44,6 @@ func TestUnpin(t *testing.T) {
 				)
 			},
 			wantErr: false,
-		},
-		{
-			name:             "returns error when config manager factory fails",
-			cid:              "QmXxx",
-			confirmFlag:      true,
-			setupMocks:       func(cfgMgr *configmocks.MockManager, service *MockPinningService) {},
-			wantErr:          true,
-			errContains:      "config error",
-			cfgMgrFactoryErr: true,
 		},
 		{
 			name:        "returns error when unpin fails",
@@ -100,33 +90,22 @@ func TestUnpin(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			service := NewMockPinningService(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(cfgMgr, service)
 			}
 
-			cmd := &mockUnpinCommand{
-				cid:     tt.cid,
-				confirm: tt.confirmFlag,
-			}
-
-			var cfgMgrFactory ConfigManagerFactory
-			if tt.cfgMgrFactoryErr {
-				cfgMgrFactory = func() (config.Manager, error) {
-					return nil, errors.New("config error")
-				}
-			} else {
-				cfgMgrFactory = func() (config.Manager, error) {
-					return cfgMgr, nil
-				}
-			}
+			cmd := newMockCommand().
+				withCID(tt.cid).
+				withBool(FlagForce, tt.confirmFlag).
+				withBool(FlagConfirm, tt.confirmFlag)
 
 			pinningServiceFactory := func(cm config.Manager, out Output) PinningService {
 				return service
 			}
 
-			err := unpin(context.Background(), cmd, output, cfgMgrFactory, pinningServiceFactory)
+			err := unpin(context.Background(), cmd, output, cfgMgr, "", pinningServiceFactory)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -188,28 +167,25 @@ func TestUnpinBatch(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			service := NewMockPinningService(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(cfgMgr, service)
 			}
 
-			cmd := &mockUnpinCommand{
-				cid:        tt.cids,
-				confirm:    tt.confirm,
-				parallel:   tt.parallel,
-				continueOn: tt.continueOn,
-			}
+			cmd := newMockCommand().
+				withCID(tt.cids).
+				withBool(FlagForce, tt.confirm).
+				withBool(FlagConfirm, tt.confirm).
+				withInt(FlagParallel, tt.parallel).
+				withBool(FlagContinue, tt.continueOn)
 
-			cfgMgrFactory := func() (config.Manager, error) {
-				return cfgMgr, nil
-			}
 
 			pinningServiceFactory := func(cm config.Manager, out Output) PinningService {
 				return service
 			}
 
-			err := unpin(context.Background(), cmd, output, cfgMgrFactory, pinningServiceFactory)
+			err := unpin(context.Background(), cmd, output, cfgMgr, "", pinningServiceFactory)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -259,46 +235,4 @@ func TestNewUnpinCommand(t *testing.T) {
 	})
 }
 
-// mockUnpinCommand is a mock implementation of unpinCommandGetter for testing.
-type mockUnpinCommand struct {
-	cid        string
-	confirm    bool
-	file       string
-	parallel   int
-	continueOn bool
-}
 
-func (m *mockUnpinCommand) GetCID() string {
-	return m.cid
-}
-
-func (m *mockUnpinCommand) String(name string) string {
-	switch name {
-	case FlagFile:
-		return m.file
-	default:
-		return ""
-	}
-}
-
-func (m *mockUnpinCommand) Int(name string) int {
-	switch name {
-	case FlagParallel:
-		return m.parallel
-	default:
-		return 0
-	}
-}
-
-func (m *mockUnpinCommand) Bool(name string) bool {
-	switch name {
-	case FlagForce:
-		return m.confirm
-	case FlagConfirm:
-		return m.confirm
-	case FlagContinue:
-		return m.continueOn
-	default:
-		return false
-	}
-}

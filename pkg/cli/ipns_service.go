@@ -21,38 +21,77 @@ type IPNSService interface {
 }
 
 type ipnsService struct {
-	service       ipfs.IPNSService
-	cfgMgr        config.Manager
-	authToken     string
-	authenticated bool
+	ipfsServiceBase
+	service ipfs.IPNSService
+	client  *ipfs.Client
 }
 
-type IPNSServiceFactory func(cfgMgr config.Manager, output Output) IPNSService
+// IPNSServiceOption is a function that configures an ipnsService.
+type IPNSServiceOption func(*ipnsService)
 
-func defaultIPNSServiceFactory(cfgMgr config.Manager, output Output) IPNSService {
-	return NewIPNSService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointSecure())
+// WithIPNSAuthToken sets an auth token override that takes precedence over config.
+func WithIPNSAuthToken(token string) IPNSServiceOption {
+	return func(s *ipnsService) {
+		withAuthToken(token)(&s.ipfsServiceBase)
+	}
 }
 
-func NewIPNSService(cfgMgr config.Manager, output Output, apiEndpoint string) IPNSService {
+// WithIPNSClient sets a pre-configured ipfs.Client, bypassing the default ipfs.NewClient() call.
+func WithIPNSClient(client *ipfs.Client) IPNSServiceOption {
+	return func(s *ipnsService) {
+		s.client = client
+	}
+}
+
+type IPNSServiceFactory func(cfgMgr config.Manager, output Output, opts ...IPNSServiceOption) IPNSService
+
+func defaultIPNSServiceFactory(cfgMgr config.Manager, output Output, opts ...IPNSServiceOption) IPNSService {
+	return NewIPNSService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointSecure(), opts...)
+}
+
+type ipnsServiceFactoryFunc func(cfgMgr config.Manager, output Output, opts ...IPNSServiceOption) IPNSService
+
+var ipnsServiceFactory ipnsServiceFactoryFunc = defaultIPNSServiceFactory
+
+// newAuthenticatedIPNSService creates an IPNSService with authentication.
+// It returns an error if the user is not authenticated.
+func newAuthenticatedIPNSService(cfgMgr config.Manager, output Output, authToken string) (IPNSService, error) {
+	var svcOpts []IPNSServiceOption
+	if authToken != "" {
+		svcOpts = append(svcOpts, WithIPNSAuthToken(authToken))
+	}
+	ipnsService := ipnsServiceFactory(cfgMgr, output, svcOpts...)
+	if err := ipnsService.RequireAuthenticated(); err != nil {
+		return nil, err
+	}
+	return ipnsService, nil
+}
+
+func NewIPNSService(cfgMgr config.Manager, output Output, apiEndpoint string, opts ...IPNSServiceOption) IPNSService {
 	authToken := cfgMgr.Config().AuthToken
 
-	client, err := ipfs.NewClient(apiEndpoint, authToken)
-	if err != nil {
-		output.PrintError(err)
-		return &ipnsService{
-			service:       nil,
-			cfgMgr:        cfgMgr,
-			authToken:     authToken,
-			authenticated: false,
-		}
+	s := &ipnsService{
+		ipfsServiceBase: ipfsServiceBase{
+			cfgMgr:    cfgMgr,
+			authToken: authToken,
+		},
+	}
+	for _, opt := range opts {
+		opt(s)
 	}
 
-	return &ipnsService{
-		service:       client.IPNS(),
-		cfgMgr:        cfgMgr,
-		authToken:     authToken,
-		authenticated: authToken != "",
+	if s.client != nil {
+		s.service = s.client.IPNS()
+	} else {
+		client, err := ipfs.NewClient(apiEndpoint, authToken)
+		if err != nil {
+			output.PrintError(err)
+			s.service = nil
+			return s
+		}
+		s.service = client.IPNS()
 	}
+	return s
 }
 
 func (s *ipnsService) ListKeys(ctx context.Context) ([]ipfs.IPNSKeyResponse, error) {
@@ -120,13 +159,6 @@ func (s *ipnsService) Resolve(ctx context.Context, name string) (*ipfs.IPNSResol
 		return nil, err
 	}
 	return s.service.Resolve(ctx, name)
-}
-
-func (s *ipnsService) RequireAuthenticated() error {
-	if !s.authenticated {
-		return ErrNotAuthenticated
-	}
-	return nil
 }
 
 func resolveIPNSKeyID(ctx context.Context, svc IPNSService, arg string) (int, error) {

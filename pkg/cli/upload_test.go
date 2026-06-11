@@ -10,9 +10,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/pkg/config"
-	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
 	"go.lumeweb.com/pinner-cli/pkg/internal/io"
 )
 
@@ -81,65 +79,7 @@ func TestResolveUploadInput_Stdin(t *testing.T) {
 	}
 }
 
-type mockUploadCommand struct {
-	path   string
-	name   string
-	noWait bool
-	dryRun bool
-	args   []string
-}
 
-func (m *mockUploadCommand) Args() cli.Args {
-	if m.args == nil {
-		m.args = []string{m.path}
-	}
-	return &mockArgs{m.args}
-}
-
-func (m *mockUploadCommand) Uint64(name string) uint64 {
-	if name == FlagMemoryLimit {
-		return 100
-	}
-	return 0
-}
-
-func (m *mockUploadCommand) Int64(name string) int64 {
-	return 0
-}
-
-func (m *mockUploadCommand) Int(name string) int {
-	return 0
-}
-
-func (m *mockUploadCommand) String(name string) string {
-	switch name {
-	case FlagName:
-		return m.name
-	default:
-		return ""
-	}
-}
-
-func (m *mockUploadCommand) Bool(name string) bool {
-	switch name {
-	case FlagNoWait:
-		return m.noWait
-	case FlagDryRun:
-		return m.dryRun
-	case FlagSecure:
-		return true
-	default:
-		return false
-	}
-}
-
-func (m *mockUploadCommand) StringSlice(name string) []string {
-	return nil
-}
-
-func (m *mockUploadCommand) IsSet(name string) bool {
-	return false
-}
 
 func TestResolveUploadInput_File(t *testing.T) {
 	// Create a temp file
@@ -450,38 +390,27 @@ func TestUploadDryRun(t *testing.T) {
 			}
 
 			service := NewMockUploadService(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
+			cfgMgr := newTestConfigMgr(t)
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(service)
 			}
 
-			cmd := &mockUploadCommand{
-				path:   filepath.Join(tmpDir, tt.path),
-				name:   "",
-				noWait: false,
-				dryRun: tt.dryRunFlag,
-			}
+			cmd := newMockCommand().
+				withArgs(filepath.Join(tmpDir, tt.path)).
+				withString(FlagName, "").
+				withBool(FlagNoWait, false).
+				withBool(FlagDryRun, tt.dryRunFlag).
+				withUint64(FlagMemoryLimit, 100).
+				withBool(FlagSecure, true)
 
 			if tt.name == "dry run with custom name" {
-				cmd.name = "custom-name"
+				cmd = cmd.withString(FlagName, "custom-name")
 			}
 
 			if tt.name == "dry run with wait flag" {
-				cmd.noWait = false
-			}
-
-			cfgMgrFactory := func() (config.Manager, error) {
-				cfgMgr := configmocks.NewMockManager(t)
-				cfgMgr.EXPECT().Config().Return(&config.Config{
-					MemoryLimit:     100,
-					Secure:          true,
-					BaseEndpoint:    "pinner.xyz",
-					AuthToken:       testAuthToken,
-					MaxRetries:      3,
-					GatewayEndpoint: "https://gateway.ipfs.io",
-				})
-				return cfgMgr, nil
+				cmd = cmd.withBool(FlagNoWait, false)
 			}
 
 			uploadServiceFactory := func(cfgMgr config.Manager, output Output, opts ...UploadServiceOption) UploadService {
@@ -492,7 +421,7 @@ func TestUploadDryRun(t *testing.T) {
 				return NewMockPinningService(t)
 			}
 
-			err := handleUpload(context.Background(), cmd, output, cfgMgrFactory, uploadServiceFactory, pinningServiceFactory)
+			err := handleUpload(context.Background(), cmd, output, cfgMgr, "test-token", true, uploadServiceFactory, pinningServiceFactory)
 
 			if tt.wantErr {
 				require.Error(t, err)

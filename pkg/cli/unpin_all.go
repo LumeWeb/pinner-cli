@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/manifoldco/promptui"
 	"github.com/urfave/cli/v3"
+	"go.lumeweb.com/pinner-cli/pkg/config"
 )
 
 func newUnpinAllCommand() *cli.Command {
@@ -44,37 +44,27 @@ Examples:
 		},
 		Action: func(ctx context.Context, c *cli.Command) error {
 			output := setupOutput(c)
-			return unpinAll(ctx, newCLICommandWrapper(c), output, defaultConfigManagerFactory, defaultPinningServiceFactory)
+			cfgMgr, err := defaultConfigManagerFactory()
+			if err != nil {
+				return err
+			}
+			authToken := GetAuthToken(c, cfgMgr)
+			prompter := &PTermConfirmPrompter{}
+			return unpinAll(ctx, newCLICommandWrapper(c), output, cfgMgr, authToken, defaultPinningServiceFactory, prompter)
 		},
 	}
 }
 
-type unpinAllCommandGetter interface {
-	String(name string) string
-	Int(name string) int
-	Bool(name string) bool
-}
-
-func unpinAll(ctx context.Context, cmd unpinAllCommandGetter, output Output, cfgMgrFactory ConfigManagerFactory, pinningServiceFactory PinningServiceFactory) error {
+func unpinAll(ctx context.Context, cmd flagGetterWithInt, output Output, cfgMgr config.Manager, authToken string, pinningServiceFactory PinningServiceFactory, prompter ConfirmPrompter) error {
 	confirm := cmd.Bool(FlagForce) || cmd.Bool(FlagConfirm)
 	if !confirm {
 		output.Printfln("Use --force to unpin all pins. This is a destructive operation.")
 		return nil
 	}
 
-	cfgMgr, err := cfgMgrFactory()
-	if err != nil {
-		return err
-	}
-
 	var pinningService PinningService
-	if c, ok := cmd.(*cliCommandWrapper); ok {
-		authToken := GetAuthToken(c.Command, cfgMgr)
-		if authToken != "" {
-			pinningService = NewPinningService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpoint(), WithAuthToken(authToken))
-		} else {
-			pinningService = pinningServiceFactory(cfgMgr, output)
-		}
+	if authToken != "" {
+		pinningService = NewPinningService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpoint(), WithAuthToken(authToken))
 	} else {
 		pinningService = pinningServiceFactory(cfgMgr, output)
 	}
@@ -134,21 +124,12 @@ func unpinAll(ctx context.Context, cmd unpinAllCommandGetter, output Output, cfg
 
 	if !yes {
 		expected := strconv.Itoa(len(pins))
-		prompt := promptui.Prompt{
-			Label: fmt.Sprintf("Type %s to confirm unpinning all %d pins", expected, len(pins)),
-			Validate: func(input string) error {
-				if input != expected {
-					return fmt.Errorf("must type %s to confirm", expected)
-				}
-				return nil
-			},
-		}
-		result, err := prompt.Run()
+		result, err := prompter.Confirm(
+			fmt.Sprintf("Type %s to confirm unpinning all %d pins", expected, len(pins)),
+			expected,
+		)
 		if err != nil {
-			if err == promptui.ErrInterrupt {
-				return ErrUnpinAllAborted
-			}
-			return fmt.Errorf("safety prompt failed: %w", err)
+			return ErrUnpinAllAborted
 		}
 		if result != expected {
 			return ErrUnpinAllAborted

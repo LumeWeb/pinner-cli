@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/pkg/config"
@@ -103,7 +104,7 @@ func TestDoctor(t *testing.T) {
 				}
 			}
 
-			err := doctor(context.Background(), cmd, output, cfgMgrFactory)
+			err := doctor(context.Background(), newCLICommandWrapper(cmd), output, cfgMgrFactory)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -273,7 +274,6 @@ func TestBashCompletionDetector(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Skip shell tests that don't match the current OS
 			if tt.skipIfNotUnix && runtime.GOOS == "windows" {
 				t.Skip("Skipping Unix-specific test on Windows")
 			}
@@ -289,6 +289,13 @@ func TestBashCompletionDetector(t *testing.T) {
 			require.Equal(t, tt.wantConfigured, configured)
 		})
 	}
+}
+
+func TestBashCompletionDetector_Accessors(t *testing.T) {
+	d := &BashCompletionDetector{homeDir: "/home/user"}
+	require.Equal(t, "bash", d.Name())
+	require.Equal(t, "source <(pinner completion bash)", d.InstallCommand())
+	require.Equal(t, "/home/user/.bashrc", d.ConfigPath())
 }
 
 func TestZshCompletionDetector(t *testing.T) {
@@ -320,7 +327,6 @@ func TestZshCompletionDetector(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Skip shell tests that don't match the current OS
 			if tt.skipIfNotUnix && runtime.GOOS == "windows" {
 				t.Skip("Skipping Unix-specific test on Windows")
 			}
@@ -336,6 +342,13 @@ func TestZshCompletionDetector(t *testing.T) {
 			require.Equal(t, tt.wantConfigured, configured)
 		})
 	}
+}
+
+func TestZshCompletionDetector_Accessors(t *testing.T) {
+	d := &ZshCompletionDetector{homeDir: "/home/user"}
+	require.Equal(t, "zsh", d.Name())
+	require.Equal(t, "source <(pinner completion zsh)", d.InstallCommand())
+	require.Equal(t, "/home/user/.zshrc", d.ConfigPath())
 }
 
 func TestFishCompletionDetector(t *testing.T) {
@@ -366,7 +379,6 @@ func TestFishCompletionDetector(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Skip shell tests that don't match the current OS
 			if tt.skipIfNotUnix && runtime.GOOS == "windows" {
 				t.Skip("Skipping Unix-specific test on Windows")
 			}
@@ -388,6 +400,20 @@ func TestFishCompletionDetector(t *testing.T) {
 			require.Equal(t, tt.wantConfigured, configured)
 		})
 	}
+}
+
+func TestFishCompletionDetector_Accessors(t *testing.T) {
+	d := &FishCompletionDetector{homeDir: "/home/user"}
+	require.Equal(t, "fish", d.Name())
+	require.Contains(t, d.InstallCommand(), "pinner completion fish")
+	require.Contains(t, d.ConfigPath(), "pinner.fish")
+}
+
+func TestPowerShellCompletionDetector_Accessors(t *testing.T) {
+	d := &PowerShellCompletionDetector{}
+	require.Equal(t, "pwsh", d.Name())
+	require.Contains(t, d.InstallCommand(), "pinner completion pwsh")
+	require.Equal(t, "$PROFILE", d.ConfigPath())
 }
 
 func TestPowerShellCompletionDetector(t *testing.T) {
@@ -546,4 +572,97 @@ func TestCheckCompletion(t *testing.T) {
 		require.Contains(t, info.Configured, "bash")
 		require.Contains(t, info.Configured, "zsh")
 	})
+}
+
+func TestPowerShellIsConfigured(t *testing.T) {
+	t.Run("returns false on non-windows", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("skipping on windows")
+		}
+		d := &PowerShellCompletionDetector{}
+		configured, err := d.IsConfigured()
+		require.NoError(t, err)
+		assert.False(t, configured)
+	})
+}
+
+func TestDoctor_MockCommand_Success(t *testing.T) {
+	cfgMgr := configmocks.NewMockManager(t)
+	cfgMgr.EXPECT().Config().Return(&config.Config{
+		Secure:       true,
+		BaseEndpoint: "pinner.xyz",
+		AuthToken:    "test-token",
+		MaxRetries:   3,
+		MemoryLimit:  256,
+	})
+	output := newTestOutput()
+
+	cmd := newMockCommand()
+	err := doctor(context.Background(), cmd, output, func() (config.Manager, error) {
+		return cfgMgr, nil
+	})
+	require.NoError(t, err)
+}
+
+func TestDoctor_MockCommand_JSONOutput(t *testing.T) {
+	cfgMgr := configmocks.NewMockManager(t)
+	cfgMgr.EXPECT().Config().Return(&config.Config{
+		Secure:       false,
+		BaseEndpoint: "api.example.com",
+		AuthToken:    "",
+		MaxRetries:   5,
+		MemoryLimit:  512,
+	})
+	output := NewOutputFormatter(true, false, false, false)
+
+	cmd := newMockCommand().withBool("json", true)
+	err := doctor(context.Background(), cmd, output, func() (config.Manager, error) {
+		return cfgMgr, nil
+	})
+	require.NoError(t, err)
+}
+
+func TestDoctor_MockCommand_ConfigError(t *testing.T) {
+	output := newTestOutput()
+
+	cmd := newMockCommand()
+	err := doctor(context.Background(), cmd, output, failingConfigMgrFactory())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to create config manager")
+}
+
+func TestDoctor_MockCommand_DefaultEndpoint(t *testing.T) {
+	cfgMgr := configmocks.NewMockManager(t)
+	cfgMgr.EXPECT().Config().Return(&config.Config{
+		Secure:       true,
+		BaseEndpoint: "",
+		AuthToken:    "",
+		MaxRetries:   3,
+		MemoryLimit:  0,
+	})
+	output := newTestOutput()
+
+	cmd := newMockCommand()
+	err := doctor(context.Background(), cmd, output, func() (config.Manager, error) {
+		return cfgMgr, nil
+	})
+	require.NoError(t, err)
+}
+
+func TestDoctor_MockCommand_Authenticated(t *testing.T) {
+	cfgMgr := configmocks.NewMockManager(t)
+	cfgMgr.EXPECT().Config().Return(&config.Config{
+		Secure:       true,
+		BaseEndpoint: "pinner.xyz",
+		AuthToken:    "my-jwt-token",
+		MaxRetries:   3,
+		MemoryLimit:  100,
+	})
+	output := newTestOutput()
+
+	cmd := newMockCommand()
+	err := doctor(context.Background(), cmd, output, func() (config.Manager, error) {
+		return cfgMgr, nil
+	})
+	require.NoError(t, err)
 }

@@ -603,3 +603,96 @@ func TestCommandTree(t *testing.T) {
 		assert.True(t, found, "otp subcommand %s should exist", subcommandName)
 	}
 }
+
+func TestGetAuthToken(t *testing.T) {
+	t.Run("returns flag value when set", func(t *testing.T) {
+		cfgMgr := newTestConfigMgr(t)
+		cmd := &cli.Command{}
+		cmd.Flags = []cli.Flag{&cli.StringFlag{Name: FlagAuthToken}}
+		_ = cmd.Set(FlagAuthToken, "flag-token")
+		result := GetAuthToken(cmd, cfgMgr)
+		assert.Equal(t, "flag-token", result)
+	})
+
+	t.Run("returns config value when flag not set", func(t *testing.T) {
+		cfgMgr := newTestConfigMgr(t)
+		cmd := &cli.Command{}
+		cmd.Flags = []cli.Flag{&cli.StringFlag{Name: FlagAuthToken}}
+		result := GetAuthToken(cmd, cfgMgr)
+		assert.Equal(t, "test-token", result)
+	})
+
+	t.Run("returns config value when cmd is nil", func(t *testing.T) {
+		cfgMgr := newTestConfigMgr(t)
+		result := GetAuthToken(nil, cfgMgr)
+		assert.Equal(t, "test-token", result)
+	})
+}
+
+func TestGetSecureSetting(t *testing.T) {
+	t.Run("returns config value when cmd is nil", func(t *testing.T) {
+		cfgMgr := newTestConfigMgr(t)
+		result := GetSecureSetting(nil, cfgMgr)
+		assert.True(t, result)
+	})
+
+	t.Run("returns flag value when explicitly set", func(t *testing.T) {
+		cfgMgr := newTestConfigMgr(t)
+		cmd := &cli.Command{}
+		cmd.Flags = []cli.Flag{&cli.BoolFlag{Name: FlagSecure}}
+		_ = cmd.Set(FlagSecure, "false")
+		result := GetSecureSetting(cmd, cfgMgr)
+		assert.False(t, result)
+	})
+
+	t.Run("returns config default when flag not set", func(t *testing.T) {
+		cfgMgr := newTestConfigMgr(t)
+		cmd := &cli.Command{}
+		cmd.Flags = []cli.Flag{&cli.BoolFlag{Name: FlagSecure}}
+		result := GetSecureSetting(cmd, cfgMgr)
+		assert.True(t, result)
+	})
+}
+
+func TestApplySecureConfig(t *testing.T) {
+	t.Run("returns config value when cmd is nil", func(t *testing.T) {
+		cfgMgr := newTestConfigMgr(t)
+		result := ApplySecureConfig(nil, cfgMgr)
+		assert.True(t, result)
+	})
+
+	t.Run("applies and returns flag value when set", func(t *testing.T) {
+		cfgMgr := newTestConfigMgr(t)
+		cfgMgr.EXPECT().SetSecure(false).Return(nil)
+		cmd := &cli.Command{}
+		cmd.Flags = []cli.Flag{&cli.BoolFlag{Name: FlagSecure}}
+		_ = cmd.Set(FlagSecure, "false")
+		result := ApplySecureConfig(cmd, cfgMgr)
+		assert.False(t, result)
+	})
+
+	t.Run("returns config default when flag not set", func(t *testing.T) {
+		cfgMgr := newTestConfigMgr(t)
+		cmd := &cli.Command{}
+		cmd.Flags = []cli.Flag{&cli.BoolFlag{Name: FlagSecure}}
+		result := ApplySecureConfig(cmd, cfgMgr)
+		assert.True(t, result)
+	})
+}
+
+func TestTargetHashFlag(t *testing.T) {
+	flag := TargetHashFlag()
+	assert.Equal(t, FlagTargetHash, flag.Name)
+}
+
+func TestRequiredTargetHashFlag(t *testing.T) {
+	flag := RequiredTargetHashFlag()
+	assert.Equal(t, FlagTargetHash, flag.Name)
+	assert.True(t, flag.Required)
+}
+
+func TestRequiredContentFlag(t *testing.T) {
+	flag := RequiredContentFlag()
+	assert.Equal(t, FlagContent, flag.Name)
+	assert.True(t, flag.Required)
+}

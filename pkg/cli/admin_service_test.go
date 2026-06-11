@@ -50,7 +50,7 @@ func TestDefaultQuotaAdminServiceFactory(t *testing.T) {
 				tt.setupMocks(cfgMgr)
 			}
 
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 			service := defaultQuotaAdminServiceFactory(cfgMgr, output)
 
 			assert.NotNil(t, service)
@@ -97,7 +97,7 @@ func TestDefaultBillingAdminServiceFactory(t *testing.T) {
 				tt.setupMocks(cfgMgr)
 			}
 
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 			service := defaultBillingAdminServiceFactory(cfgMgr, output)
 
 			assert.NotNil(t, service)
@@ -133,7 +133,7 @@ func TestNewQuotaAdminService(t *testing.T) {
 				AuthToken: tt.authToken,
 			})
 
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 			service := NewQuotaAdminService(cfgMgr, output, tt.apiEndpoint)
 
 			assert.NotNil(t, service)
@@ -176,7 +176,7 @@ func TestNewBillingAdminService(t *testing.T) {
 				AuthToken: tt.authToken,
 			})
 
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 			service := NewBillingAdminService(cfgMgr, output, tt.apiEndpoint)
 
 			assert.NotNil(t, service)
@@ -220,7 +220,7 @@ func TestQuotaAdminService_RequireAuthenticated(t *testing.T) {
 				Secure:       true,
 			})
 
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 			service := NewQuotaAdminService(cfgMgr, output, "https://api.test.com")
 
 			err := service.RequireAuthenticated()
@@ -266,7 +266,7 @@ func TestBillingAdminService_RequireAuthenticated(t *testing.T) {
 				Secure:       true,
 			})
 
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 			service := NewBillingAdminService(cfgMgr, output, "https://api.test.com")
 
 			err := service.RequireAuthenticated()
@@ -291,7 +291,7 @@ func TestQuotaAdminService_HasTokenProvider(t *testing.T) {
 		Secure:       true,
 	})
 
-	output := NewOutputFormatter(false, false, false, false)
+	output := newTestOutput()
 	service := NewQuotaAdminService(cfgMgr, output, "https://api.test.com")
 
 	qs := service.(*quotaAdminService)
@@ -306,7 +306,7 @@ func TestBillingAdminService_HasTokenProvider(t *testing.T) {
 		Secure:       true,
 	})
 
-	output := NewOutputFormatter(false, false, false, false)
+	output := newTestOutput()
 	service := NewBillingAdminService(cfgMgr, output, "https://api.test.com")
 
 	bs := service.(*billingAdminService)

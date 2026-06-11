@@ -6,7 +6,9 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/golang-jwt/jwt/v5"
 	mock "github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.lumeweb.com/pinner-cli/pkg/config"
 	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
@@ -70,7 +72,7 @@ func TestAuthService_LoginCheck(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			acc := portalsdkmocks.NewMockAccountAPI(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(acc)
@@ -205,7 +207,7 @@ func TestAuthService_CompleteLogin(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			acc := portalsdkmocks.NewMockAccountAPI(t)
 			authAcc := portalsdkmocks.NewMockAccountAPI(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(cfgMgr, acc, authAcc)
@@ -271,7 +273,7 @@ func TestAuthService_SaveToken(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(cfgMgr)
@@ -294,7 +296,7 @@ func TestAuthService_SaveToken(t *testing.T) {
 
 func TestAuthService_GetAPIEndpoint(t *testing.T) {
 	cfgMgr := configmocks.NewMockManager(t)
-	output := NewOutputFormatter(false, false, false, false)
+	output := newTestOutput()
 
 	authService := NewAuthService(cfgMgr, output, "https://api.test.com")
 	require.Equal(t, "https://api.test.com", authService.GetAPIEndpoint())
@@ -341,7 +343,7 @@ func TestAuthService_CompleteLogin_JSONOutput(t *testing.T) {
 
 func TestNewAuthService(t *testing.T) {
 	cfgMgr := configmocks.NewMockManager(t)
-	output := NewOutputFormatter(false, false, false, false)
+	output := newTestOutput()
 
 	authService := NewAuthService(cfgMgr, output, "https://api.test.com")
 
@@ -431,7 +433,7 @@ func TestInteractiveLogin(t *testing.T) {
 				tt.setupMocks(prompter, authService)
 			}
 
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 			err := interactiveLogin(context.Background(), authService, output, tt.keyName, tt.noCreateKey, tt.force, prompter)
 
 			if tt.wantErr {
@@ -538,16 +540,15 @@ func TestAuthLogin(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			authService := NewMockAuthService(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			// Create a mock cli.Command
-			cmd := &mockCommand{
-				email:       tt.email,
-				password:    tt.password,
-				keyName:     tt.keyName,
-				noCreateKey: tt.noCreateKey,
-				force:       tt.force,
-			}
+			cmd := newMockCommand().
+				withString(FlagEmail, tt.email).
+				withString(FlagPassword, tt.password).
+				withString(FlagKeyName, tt.keyName).
+				withBool(FlagNoCreateKey, tt.noCreateKey).
+				withBool(FlagForce, tt.force)
 
 			// Setup config manager factory
 			var cfgMgrFactory ConfigManagerFactory
@@ -600,41 +601,7 @@ func TestAuthLogin(t *testing.T) {
 	}
 }
 
-// mockCommand is a mock implementation of commandGetter for testing.
-type mockCommand struct {
-	email       string
-	password    string
-	otpCode     string
-	keyName     string
-	noCreateKey bool
-	force       bool
-}
 
-func (m *mockCommand) String(name string) string {
-	switch name {
-	case FlagEmail:
-		return m.email
-	case FlagPassword:
-		return m.password
-	case FlagOTPCode:
-		return m.otpCode
-	case FlagKeyName:
-		return m.keyName
-	default:
-		return ""
-	}
-}
-
-func (m *mockCommand) Bool(name string) bool {
-	switch name {
-	case FlagNoCreateKey:
-		return m.noCreateKey
-	case FlagForce:
-		return m.force
-	default:
-		return false
-	}
-}
 
 func TestAuthService_LoginWithOTP(t *testing.T) {
 	tests := []struct {
@@ -716,7 +683,7 @@ func TestAuthService_LoginWithOTP(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			acc := portalsdkmocks.NewMockAccountAPI(t)
 			authAcc := portalsdkmocks.NewMockAccountAPI(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(cfgMgr, acc, authAcc)
@@ -789,7 +756,7 @@ func TestSaveAuthToken(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			authService := NewMockAuthService(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			// Setup config manager factory
 			var cfgMgrFactory ConfigManagerFactory
@@ -824,4 +791,200 @@ func TestSaveAuthToken(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestAuthServiceDefault_Register(t *testing.T) {
+	tests := []struct {
+		name        string
+		email       string
+		firstName   string
+		lastName    string
+		password    string
+		setupMocks  func(*portalsdkmocks.MockAccountAPI)
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name:      "successful registration",
+			email:     "test@example.com",
+			firstName: "John",
+			lastName:  "Doe",
+			password:  "password123",
+			setupMocks: func(acc *portalsdkmocks.MockAccountAPI) {
+				acc.EXPECT().Register(context.Background(), "test@example.com", "John", "Doe", "password123").
+					Return(nil)
+			},
+			wantErr: false,
+		},
+		{
+			name:      "registration fails with service error",
+			email:     "test@example.com",
+			firstName: "John",
+			lastName:  "Doe",
+			password:  "password123",
+			setupMocks: func(acc *portalsdkmocks.MockAccountAPI) {
+				acc.EXPECT().Register(context.Background(), "test@example.com", "John", "Doe", "password123").
+					Return(portalsdk.ErrUnauthorized)
+			},
+			wantErr:     true,
+			errContains: "registration failed",
+		},
+		{
+			name:      "registration fails with network error",
+			email:     "test@example.com",
+			firstName: "Jane",
+			lastName:  "Smith",
+			password:  "secret",
+			setupMocks: func(acc *portalsdkmocks.MockAccountAPI) {
+				acc.EXPECT().Register(context.Background(), "test@example.com", "Jane", "Smith", "secret").
+					Return(errors.New("connection refused"))
+			},
+			wantErr:     true,
+			errContains: "registration failed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfgMgr := configmocks.NewMockManager(t)
+			acc := portalsdkmocks.NewMockAccountAPI(t)
+			output := newTestOutput()
+
+			if tt.setupMocks != nil {
+				tt.setupMocks(acc)
+			}
+
+			authService := NewAuthService(cfgMgr, output, "https://api.test.com",
+				WithAuthAccountClient(acc),
+			)
+
+			err := authService.Register(context.Background(), tt.email, tt.firstName, tt.lastName, tt.password)
+
+			if tt.wantErr {
+				require.Error(t, err)
+				if tt.errContains != "" {
+					require.Contains(t, err.Error(), tt.errContains)
+				}
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestAuthServiceDefault_GetLoginToken(t *testing.T) {
+	// Helper to create a signed JWT with a given audience (purpose)
+	makeJWT := func(audience string) string {
+		claims := jwt.RegisteredClaims{
+			Audience: []string{audience},
+		}
+		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+		signed, err := token.SignedString([]byte("test-secret"))
+		require.NoError(t, err)
+		return signed
+	}
+
+	tests := []struct {
+		name        string
+		setupMocks  func(*configmocks.MockManager, *portalsdkmocks.MockAccountAPI)
+		wantErr     bool
+		errContains string
+		wantToken   string
+	}{
+		{
+			name: "login JWT returned directly",
+			setupMocks: func(cfgMgr *configmocks.MockManager, acc *portalsdkmocks.MockAccountAPI) {
+				loginJWT := makeJWT("login")
+				cfgMgr.EXPECT().Config().Return(&config.Config{AuthToken: loginJWT})
+			},
+			wantErr:   false,
+			wantToken: makeJWT("login"),
+		},
+		{
+			name: "API key JWT exchanged for login token",
+			setupMocks: func(cfgMgr *configmocks.MockManager, acc *portalsdkmocks.MockAccountAPI) {
+				apiKeyJWT := makeJWT("api")
+				loginJWT := makeJWT("login")
+				cfgMgr.EXPECT().Config().Return(&config.Config{AuthToken: apiKeyJWT})
+				acc.EXPECT().LoginWithAPIKey(context.Background(), apiKeyJWT).
+					Return(loginJWT, nil)
+			},
+			wantErr:   false,
+			wantToken: makeJWT("login"),
+		},
+		{
+			name: "empty token returns not authenticated",
+			setupMocks: func(cfgMgr *configmocks.MockManager, acc *portalsdkmocks.MockAccountAPI) {
+				cfgMgr.EXPECT().Config().Return(&config.Config{AuthToken: ""})
+			},
+			wantErr:     true,
+			errContains: "not authenticated",
+		},
+		{
+			name: "invalid JWT treated as login token",
+			setupMocks: func(cfgMgr *configmocks.MockManager, acc *portalsdkmocks.MockAccountAPI) {
+				cfgMgr.EXPECT().Config().Return(&config.Config{AuthToken: "not-a-valid-jwt"})
+			},
+			wantErr:   false,
+			wantToken: "not-a-valid-jwt",
+		},
+		{
+			name: "API key exchange fails",
+			setupMocks: func(cfgMgr *configmocks.MockManager, acc *portalsdkmocks.MockAccountAPI) {
+				apiKeyJWT := makeJWT("api")
+				cfgMgr.EXPECT().Config().Return(&config.Config{AuthToken: apiKeyJWT})
+				acc.EXPECT().LoginWithAPIKey(context.Background(), apiKeyJWT).
+					Return("", errors.New("API key expired"))
+			},
+			wantErr:     true,
+			errContains: "failed to authenticate with API key",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfgMgr := configmocks.NewMockManager(t)
+			acc := portalsdkmocks.NewMockAccountAPI(t)
+			output := newTestOutput()
+
+			if tt.setupMocks != nil {
+				tt.setupMocks(cfgMgr, acc)
+			}
+
+			authService := NewAuthService(cfgMgr, output, "https://api.test.com",
+				WithAuthAccountClient(acc),
+			)
+
+			token, err := authService.GetLoginToken(context.Background())
+
+			if tt.wantErr {
+				require.Error(t, err)
+				if tt.errContains != "" {
+					require.Contains(t, err.Error(), tt.errContains)
+				}
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, tt.wantToken, token)
+			}
+		})
+	}
+}
+
+func TestGetJWTPurpose(t *testing.T) {
+	t.Run("invalid token returns error", func(t *testing.T) {
+		_, err := GetJWTPurpose("not-a-jwt")
+		require.Error(t, err)
+	})
+
+	t.Run("token with no audience returns empty", func(t *testing.T) {
+		claims := jwt.RegisteredClaims{
+			Subject: "test",
+		}
+		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+		signed, err := token.SignedString([]byte("secret"))
+		require.NoError(t, err)
+		purpose, err := GetJWTPurpose(signed)
+		require.NoError(t, err)
+		assert.Equal(t, "", purpose)
+	})
 }

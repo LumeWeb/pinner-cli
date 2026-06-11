@@ -14,7 +14,6 @@ type MockWebsitesUI struct {
 
 	mu sync.Mutex
 
-	// Track execution choices
 	ContentChoice  ContentSourceChoice
 	DNSChoice     DNSModeChoice
 	TargetChoice  TargetTypeChoice
@@ -22,10 +21,17 @@ type MockWebsitesUI struct {
 	DomainInput   string
 	PromptError   error
 
-	// Control behavior
 	ContinueError error
 
-	// Track state
+	SelectResult int
+	SelectString string
+	SelectErr    error
+	ContinueErr  error
+
+	StartErr  error
+	StopErr   error
+	Messages  []string
+
 	AuthCheckExecuted      bool
 	ContentSourceExecuted  bool
 	TargetTypeExecuted     bool
@@ -236,4 +242,34 @@ func (m *MockWebsitesUI) ExecuteValidateStep(_ context.Context, w *WebsitesWizar
 	_ = w.executeValidate(context.Background())
 	w.SetValidateRetry(false)
 	return nil
+}
+
+func (m *MockWebsitesUI) Select(label string, items []string) (int, string, error) {
+	return m.SelectResult, m.SelectString, m.SelectErr
+}
+
+func (m *MockWebsitesUI) Continue() error {
+	return m.ContinueErr
+}
+
+func (m *MockWebsitesUI) Start(message string) error {
+	m.Messages = append(m.Messages, "start:"+message)
+	return m.StartErr
+}
+
+func (m *MockWebsitesUI) UpdateText(message string) {
+	m.Messages = append(m.Messages, "update:"+message)
+}
+
+func (m *MockWebsitesUI) Success(message string) {
+	m.Messages = append(m.Messages, "success:"+message)
+}
+
+func (m *MockWebsitesUI) Fail(message string) {
+	m.Messages = append(m.Messages, "fail:"+message)
+}
+
+func (m *MockWebsitesUI) Stop() error {
+	m.Messages = append(m.Messages, "stop")
+	return m.StopErr
 }

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -70,4 +71,45 @@ func requireSetInt(cmd intFlagChecker, name string) (int, error) {
 		return 0, fmt.Errorf("--%s must be greater than zero", name)
 	}
 	return v, nil
+}
+
+// commandContext carries all resolved dependencies for a command handler.
+// It replaces the repeated setupCommandContext + GetAuthToken + GetSecureSetting + newCLICommandWrapper pattern.
+type commandContext struct {
+	Cmd       commandGetter
+	Output    Output
+	CfgMgr    config.Manager
+	AuthToken string
+	Secure    bool
+}
+
+// newCommandContext creates a commandContext from a *cli.Command.
+// It resolves output, config, auth token, and secure settings in one call.
+func newCommandContext(c *cli.Command) (*commandContext, error) {
+	cfgMgr, output, err := setupCommandContext(c)
+	if err != nil {
+		return nil, err
+	}
+	authToken := GetAuthToken(c, cfgMgr)
+	secure := GetSecureSetting(c, cfgMgr)
+	cmd := newCLICommandWrapper(c)
+	return &commandContext{
+		Cmd:       cmd,
+		Output:    output,
+		CfgMgr:    cfgMgr,
+		AuthToken: authToken,
+		Secure:    secure,
+	}, nil
+}
+
+// withContext wraps a handler that takes *commandContext into a cli.ActionFunc.
+// This is the DRY mechanism for Action closures — replaces 5-line boilerplate with 2-3 lines.
+func withContext(handler func(ctx context.Context, cc *commandContext) error) cli.ActionFunc {
+	return func(ctx context.Context, c *cli.Command) error {
+		cc, err := newCommandContext(c)
+		if err != nil {
+			return err
+		}
+		return handler(ctx, cc)
+	}
 }

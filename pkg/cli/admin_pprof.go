@@ -59,7 +59,7 @@ Examples:
 			if err != nil {
 				return err
 			}
-			return adminPprofByteAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultProfilingAdminServiceFactory,
+			return adminPprofByteAction(ctx, cmd, output, cfgMgr, defaultProfilingAdminServiceFactory,
 				func(svc ProfilingAdminService, ctx context.Context) ([]byte, error) {
 					return svc.GetProfileIndex(ctx)
 				})
@@ -80,7 +80,7 @@ Examples:
 			if err != nil {
 				return err
 			}
-			return adminPprofByteAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultProfilingAdminServiceFactory,
+			return adminPprofByteAction(ctx, cmd, output, cfgMgr, defaultProfilingAdminServiceFactory,
 				func(svc ProfilingAdminService, ctx context.Context) ([]byte, error) {
 					return svc.GetBlockProfile(ctx)
 				})
@@ -103,7 +103,7 @@ Examples:
 			if err != nil {
 				return err
 			}
-			return adminPprofSetRateAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultProfilingAdminServiceFactory, "block profile rate",
+			return adminPprofSetRateAction(ctx, cmd, output, cfgMgr, defaultProfilingAdminServiceFactory, "block profile rate",
 				func(svc ProfilingAdminService, ctx context.Context, rate int) error {
 					return svc.SetBlockProfileRate(ctx, rate)
 				})
@@ -124,7 +124,7 @@ Examples:
 			if err != nil {
 				return err
 			}
-			return adminPprofByteAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultProfilingAdminServiceFactory,
+			return adminPprofByteAction(ctx, cmd, output, cfgMgr, defaultProfilingAdminServiceFactory,
 				func(svc ProfilingAdminService, ctx context.Context) ([]byte, error) {
 					return svc.GetCmdline(ctx)
 				})
@@ -145,7 +145,7 @@ Examples:
 			if err != nil {
 				return err
 			}
-			return adminPprofByteAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultProfilingAdminServiceFactory,
+			return adminPprofByteAction(ctx, cmd, output, cfgMgr, defaultProfilingAdminServiceFactory,
 				func(svc ProfilingAdminService, ctx context.Context) ([]byte, error) {
 					return svc.GetGoroutineProfile(ctx)
 				})
@@ -166,7 +166,7 @@ Examples:
 			if err != nil {
 				return err
 			}
-			return adminPprofByteAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultProfilingAdminServiceFactory,
+			return adminPprofByteAction(ctx, cmd, output, cfgMgr, defaultProfilingAdminServiceFactory,
 				func(svc ProfilingAdminService, ctx context.Context) ([]byte, error) {
 					return svc.GetHeapProfile(ctx)
 				})
@@ -187,7 +187,7 @@ Examples:
 			if err != nil {
 				return err
 			}
-			return adminPprofByteAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultProfilingAdminServiceFactory,
+			return adminPprofByteAction(ctx, cmd, output, cfgMgr, defaultProfilingAdminServiceFactory,
 				func(svc ProfilingAdminService, ctx context.Context) ([]byte, error) {
 					return svc.GetMutexProfile(ctx)
 				})
@@ -210,7 +210,7 @@ Examples:
 			if err != nil {
 				return err
 			}
-			return adminPprofSetRateAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultProfilingAdminServiceFactory, "mutex profile fraction",
+			return adminPprofSetRateAction(ctx, cmd, output, cfgMgr, defaultProfilingAdminServiceFactory, "mutex profile fraction",
 				func(svc ProfilingAdminService, ctx context.Context, rate int) error {
 					return svc.SetMutexProfileFraction(ctx, rate)
 				})
@@ -231,7 +231,7 @@ Examples:
 			if err != nil {
 				return err
 			}
-			return adminPprofByteAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultProfilingAdminServiceFactory,
+			return adminPprofByteAction(ctx, cmd, output, cfgMgr, defaultProfilingAdminServiceFactory,
 				func(svc ProfilingAdminService, ctx context.Context) ([]byte, error) {
 					return svc.GetCPUProfile(ctx)
 				})
@@ -253,7 +253,7 @@ Examples:
 			if err != nil {
 				return err
 			}
-			return adminPprofStatusAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultProfilingAdminServiceFactory)
+			return adminPprofStatusAction(ctx, cmd, output, cfgMgr, defaultProfilingAdminServiceFactory)
 		},
 	}
 }
@@ -271,7 +271,7 @@ Examples:
 			if err != nil {
 				return err
 			}
-			return adminPprofByteAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultProfilingAdminServiceFactory,
+			return adminPprofByteAction(ctx, cmd, output, cfgMgr, defaultProfilingAdminServiceFactory,
 				func(svc ProfilingAdminService, ctx context.Context) ([]byte, error) {
 					return svc.GetSymbol(ctx)
 				})
@@ -292,7 +292,7 @@ Examples:
 			if err != nil {
 				return err
 			}
-			return adminPprofByteAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultProfilingAdminServiceFactory,
+			return adminPprofByteAction(ctx, cmd, output, cfgMgr, defaultProfilingAdminServiceFactory,
 				func(svc ProfilingAdminService, ctx context.Context) ([]byte, error) {
 					return svc.GetThreadcreate(ctx)
 				})
@@ -313,7 +313,7 @@ Examples:
 			if err != nil {
 				return err
 			}
-			return adminPprofByteAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultProfilingAdminServiceFactory,
+			return adminPprofByteAction(ctx, cmd, output, cfgMgr, defaultProfilingAdminServiceFactory,
 				func(svc ProfilingAdminService, ctx context.Context) ([]byte, error) {
 					return svc.GetTrace(ctx)
 				})
@@ -321,11 +321,7 @@ Examples:
 	}
 }
 
-type adminPprofCmdGetter interface {
-	Args() cli.Args
-}
-
-func adminPprofByteAction(ctx context.Context, cmd adminPprofCmdGetter, output Output, cfgMgr config.Manager, serviceFactory ProfilingAdminServiceFactory, fn func(ProfilingAdminService, context.Context) ([]byte, error)) error {
+func adminPprofByteAction(ctx context.Context, cmd argsGetter, output Output, cfgMgr config.Manager, serviceFactory ProfilingAdminServiceFactory, fn func(ProfilingAdminService, context.Context) ([]byte, error)) error {
 	service := serviceFactory(cfgMgr, output)
 	if err := service.RequireAuthenticated(); err != nil {
 		return err
@@ -346,7 +342,7 @@ func adminPprofByteAction(ctx context.Context, cmd adminPprofCmdGetter, output O
 	return err
 }
 
-func adminPprofSetRateAction(ctx context.Context, cmd adminPprofCmdGetter, output Output, cfgMgr config.Manager, serviceFactory ProfilingAdminServiceFactory, label string, fn func(ProfilingAdminService, context.Context, int) error) error {
+func adminPprofSetRateAction(ctx context.Context, cmd argsGetter, output Output, cfgMgr config.Manager, serviceFactory ProfilingAdminServiceFactory, label string, fn func(ProfilingAdminService, context.Context, int) error) error {
 	if cmd.Args().Len() < 1 {
 		return fmt.Errorf("%s value is required", label)
 	}
@@ -374,7 +370,7 @@ func adminPprofSetRateAction(ctx context.Context, cmd adminPprofCmdGetter, outpu
 	return nil
 }
 
-func adminPprofStatusAction(ctx context.Context, cmd adminPprofCmdGetter, output Output, cfgMgr config.Manager, serviceFactory ProfilingAdminServiceFactory) error {
+func adminPprofStatusAction(ctx context.Context, cmd argsGetter, output Output, cfgMgr config.Manager, serviceFactory ProfilingAdminServiceFactory) error {
 	service := serviceFactory(cfgMgr, output)
 	if err := service.RequireAuthenticated(); err != nil {
 		return err

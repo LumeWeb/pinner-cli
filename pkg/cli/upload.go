@@ -58,7 +58,13 @@ The output includes:
 		Metadata: WithTutorial(1, "Upload and pin a file", "pinner upload myfile.txt"),
 		Action: func(ctx context.Context, c *cli.Command) error {
 			output := setupOutput(c)
-			return handleUpload(ctx, newCLICommandWrapper(c), output, defaultConfigManagerFactory, defaultUploadServiceFactory, defaultPinningServiceFactory)
+			cfgMgr, err := defaultConfigManagerFactory()
+			if err != nil {
+				return err
+			}
+			authToken := GetAuthToken(c, cfgMgr)
+			secure := GetSecureSetting(c, cfgMgr)
+			return handleUpload(ctx, newCLICommandWrapper(c), output, cfgMgr, authToken, secure, defaultUploadServiceFactory, defaultPinningServiceFactory)
 		},
 	}
 }
@@ -138,23 +144,12 @@ func detectInputType(path string) string {
 	return "file"
 }
 
-// uploadCommandGetter defines the interface for getting upload command flags.
-type uploadCommandGetter interface {
+func handleUpload(ctx context.Context, cmd interface {
+	argsFlagGetter
 	Uint64(name string) uint64
 	Int64(name string) int64
-	Int(name string) int
-	String(name string) string
-	Bool(name string) bool
 	StringSlice(name string) []string
-	Args() cli.Args
-}
-
-func handleUpload(ctx context.Context, cmd uploadCommandGetter, output Output, cfgMgrFactory ConfigManagerFactory, uploadServiceFactory UploadServiceFactory, pinningServiceFactory PinningServiceFactory) error {
-	cfgMgr, err := cfgMgrFactory()
-	if err != nil {
-		return err
-	}
-
+}, output Output, cfgMgr config.Manager, authToken string, secure bool, uploadServiceFactory UploadServiceFactory, pinningServiceFactory PinningServiceFactory) error {
 	// Set memory limit from flag (overrides config if provided, runtime only)
 	memoryLimit := cmd.Uint64(FlagMemoryLimit)
 	if memoryLimit == 0 {
@@ -252,14 +247,8 @@ func handleUpload(ctx context.Context, cmd uploadCommandGetter, output Output, c
 				return fmt.Errorf("upload succeeded but metadata flag invalid: %w", err)
 			}
 			var metaPinningService PinningService
-			if c, ok := cmd.(*cliCommandWrapper); ok {
-				authToken := GetAuthToken(c.Command, cfgMgr)
-				secure := GetSecureSetting(c.Command, cfgMgr)
-				if authToken != "" {
-					metaPinningService = NewPinningService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure), WithAuthToken(authToken))
-				} else {
-					metaPinningService = pinningServiceFactory(cfgMgr, output)
-				}
+			if authToken != "" {
+				metaPinningService = NewPinningService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure), WithAuthToken(authToken))
 			} else {
 				metaPinningService = pinningServiceFactory(cfgMgr, output)
 			}

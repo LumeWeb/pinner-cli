@@ -21,6 +21,10 @@ func init() {
 }
 
 func printVersion(cmd *cli.Command) {
+	showVersion(newCLICommandWrapper(cmd))
+}
+
+func showVersion(cmd flagGetter) {
 	info := build.GetInfo()
 
 	if cmd.Bool(FlagJSON) {

@@ -184,7 +184,7 @@ func setupTUSTest(t *testing.T, uploadLimit int64) *tusTestSetup {
 	accClient := portalsdkmocks.NewMockAccountAPI(t)
 	accClient.EXPECT().UploadLimit(mock.Anything).Return(uploadLimit, nil)
 
-	output := NewOutputFormatter(false, false, false, false)
+	output := newTestOutput()
 	service := NewUploadService(cfgMgr, output, WithUploadAccountClient(accClient))
 
 	return &tusTestSetup{

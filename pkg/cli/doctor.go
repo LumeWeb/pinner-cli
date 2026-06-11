@@ -79,12 +79,12 @@ Use this command when:
 		Metadata: WithTutorial(6, "Show diagnostic info", "pinner doctor"),
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			output := NewOutputFormatter(cmd.Bool("json"), false, false, false)
-			return doctor(ctx, cmd, output, defaultConfigManagerFactory)
+			return doctor(ctx, newCLICommandWrapper(cmd), output, defaultConfigManagerFactory)
 		},
 	}
 }
 
-func doctor(ctx context.Context, cmd *cli.Command, output Output, cfgMgrFactory ConfigManagerFactory) error {
+func doctor(ctx context.Context, cmd flagGetter, output Output, cfgMgrFactory ConfigManagerFactory) error {
 	cfgMgr, err := cfgMgrFactory()
 	if err != nil {
 		return fmt.Errorf("failed to create config manager: %w", err)

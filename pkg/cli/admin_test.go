@@ -24,7 +24,7 @@ func TestNewAdminCommand(t *testing.T) {
 		require.NotNil(t, cmd.Commands)
 		assert.Len(t, cmd.Commands, 4)
 
-		subcommandNames := getSubcommandNames(cmd.Commands)
+		subcommandNames := getSubcommandNames(cmd)
 		assert.Contains(t, subcommandNames, "quota")
 		assert.Contains(t, subcommandNames, "billing")
 		assert.Contains(t, subcommandNames, "websites")
@@ -48,7 +48,7 @@ func TestNewQuotaCommand(t *testing.T) {
 		require.NotNil(t, cmd.Commands)
 		assert.Len(t, cmd.Commands, 6)
 
-		subcommandNames := getSubcommandNames(cmd.Commands)
+		subcommandNames := getSubcommandNames(cmd)
 		assert.Contains(t, subcommandNames, "plans")
 		assert.Contains(t, subcommandNames, "allowances")
 		assert.Contains(t, subcommandNames, "user-configs")
@@ -74,7 +74,7 @@ func TestNewBillingCommand(t *testing.T) {
 		require.NotNil(t, cmd.Commands)
 		assert.Len(t, cmd.Commands, 6)
 
-		subcommandNames := getSubcommandNames(cmd.Commands)
+		subcommandNames := getSubcommandNames(cmd)
 		assert.Contains(t, subcommandNames, "overview")
 		assert.Contains(t, subcommandNames, "credits")
 		assert.Contains(t, subcommandNames, "price-lines")
@@ -99,7 +99,7 @@ func TestNewQuotaPlansCommand(t *testing.T) {
 		require.NotNil(t, cmd.Commands)
 		assert.Len(t, cmd.Commands, 6)
 
-		subcommandNames := getSubcommandNames(cmd.Commands)
+		subcommandNames := getSubcommandNames(cmd)
 		assert.Contains(t, subcommandNames, "list")
 		assert.Contains(t, subcommandNames, "get")
 		assert.Contains(t, subcommandNames, "create")
@@ -116,7 +116,7 @@ func TestNewQuotaPlansCommand(t *testing.T) {
 		require.NotNil(t, createCmd.Flags)
 		assert.Len(t, createCmd.Flags, 8)
 
-		flagNames := getFlagNames(createCmd.Flags)
+		flagNames := getFlagNames(createCmd)
 		assert.Contains(t, flagNames, "name")
 		assert.Contains(t, flagNames, "description")
 		assert.Contains(t, flagNames, "upload-limit")
@@ -143,7 +143,7 @@ func TestNewQuotaAllowancesCommand(t *testing.T) {
 		require.NotNil(t, cmd.Commands)
 		assert.Len(t, cmd.Commands, 4)
 
-		subcommandNames := getSubcommandNames(cmd.Commands)
+		subcommandNames := getSubcommandNames(cmd)
 		assert.Contains(t, subcommandNames, "list")
 		assert.Contains(t, subcommandNames, "create")
 		assert.Contains(t, subcommandNames, "update")
@@ -158,7 +158,7 @@ func TestNewQuotaAllowancesCommand(t *testing.T) {
 		require.NotNil(t, createCmd.Flags)
 		assert.Len(t, createCmd.Flags, 7)
 
-		flagNames := getFlagNames(createCmd.Flags)
+		flagNames := getFlagNames(createCmd)
 		assert.Contains(t, flagNames, "user-id")
 		assert.Contains(t, flagNames, "source")
 		assert.Contains(t, flagNames, "quota-type")
@@ -184,7 +184,7 @@ func TestNewQuotaUserConfigsCommand(t *testing.T) {
 		require.NotNil(t, cmd.Commands)
 		assert.Len(t, cmd.Commands, 3)
 
-		subcommandNames := getSubcommandNames(cmd.Commands)
+		subcommandNames := getSubcommandNames(cmd)
 		assert.Contains(t, subcommandNames, "list")
 		assert.Contains(t, subcommandNames, "update")
 		assert.Contains(t, subcommandNames, "reset")
@@ -262,7 +262,7 @@ func TestNewBillingPricingPlansCommand(t *testing.T) {
 		require.NotNil(t, cmd.Commands)
 		assert.Len(t, cmd.Commands, 7)
 
-		subcommandNames := getSubcommandNames(cmd.Commands)
+		subcommandNames := getSubcommandNames(cmd)
 		assert.Contains(t, subcommandNames, "list")
 		assert.Contains(t, subcommandNames, "get")
 		assert.Contains(t, subcommandNames, "create")
@@ -288,7 +288,7 @@ func TestNewBillingPricingPlanPeriodsCommand(t *testing.T) {
 		require.NotNil(t, cmd.Commands)
 		assert.Len(t, cmd.Commands, 5)
 
-		subcommandNames := getSubcommandNames(cmd.Commands)
+		subcommandNames := getSubcommandNames(cmd)
 		assert.Contains(t, subcommandNames, "list")
 		assert.Contains(t, subcommandNames, "get")
 		assert.Contains(t, subcommandNames, "create")
@@ -312,7 +312,7 @@ func TestNewBillingSubscribersCommand(t *testing.T) {
 		require.NotNil(t, cmd.Commands)
 		assert.Len(t, cmd.Commands, 9)
 
-		subcommandNames := getSubcommandNames(cmd.Commands)
+		subcommandNames := getSubcommandNames(cmd)
 		assert.Contains(t, subcommandNames, "list")
 		assert.Contains(t, subcommandNames, "get")
 		assert.Contains(t, subcommandNames, "list-gateway")
@@ -326,22 +326,6 @@ func TestNewBillingSubscribersCommand(t *testing.T) {
 }
 
 // Helper functions
-
-func getSubcommandNames(commands []*cli.Command) []string {
-	names := make([]string, len(commands))
-	for i, cmd := range commands {
-		names[i] = cmd.Name
-	}
-	return names
-}
-
-func getFlagNames(flags []cli.Flag) []string {
-	names := make([]string, len(flags))
-	for i, flag := range flags {
-		names[i] = flag.Names()[0]
-	}
-	return names
-}
 
 func findSubcommand(commands []*cli.Command, name string) *cli.Command {
 	for _, cmd := range commands {

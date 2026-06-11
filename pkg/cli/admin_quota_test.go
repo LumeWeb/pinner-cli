@@ -3,25 +3,16 @@ package cli
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/pkg/config"
 	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
 	"go.lumeweb.com/portal-sdk/admin"
 )
-
-// Mock command getters for quota tests
-type mockQuotaPlansGetCmd struct {
-	args cli.Args
-}
-
-func (m *mockQuotaPlansGetCmd) Args() cli.Args {
-	return m.args
-}
 
 func TestQuotaPlansList(t *testing.T) {
 	tests := []struct {
@@ -92,8 +83,13 @@ func TestQuotaPlansList(t *testing.T) {
 			}
 			defer func() { quotaAdminServiceFactory = savedFactory }()
 
-			// Use an empty struct that implements quotaPlansListCmdGetter
-			err := quotaPlansListAction(context.Background(), struct{}{}, NewOutputFormatter(tt.jsonOutput, false, false, false), cfgMgr, quotaAdminServiceFactory)
+			output := newTestOutput()
+			if tt.jsonOutput {
+				output = NewOutputFormatter(true, false, false, false)
+
+			}
+
+			err := quotaPlansListAction(context.Background(), output, cfgMgr, quotaAdminServiceFactory)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -180,13 +176,17 @@ func TestQuotaPlansGet(t *testing.T) {
 			}
 			defer func() { quotaAdminServiceFactory = savedFactory }()
 
-			args := &mockArgs{}
+			cmd := newMockCommand()
 			if len(tt.args) > 0 {
-				args.args = tt.args
+				cmd = cmd.withArgs(tt.args...)
 			}
-			cmd := &mockQuotaPlansGetCmd{args: args}
 
-			err := quotaPlansGetAction(context.Background(), cmd, NewOutputFormatter(tt.jsonOutput, false, false, false), cfgMgr, quotaAdminServiceFactory)
+			output := newTestOutput()
+			if tt.jsonOutput {
+				output = NewOutputFormatter(true, false, false, false)
+			}
+
+			err := quotaPlansGetAction(context.Background(), cmd, output, cfgMgr, quotaAdminServiceFactory)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -253,13 +253,17 @@ func TestQuotaPlansDelete(t *testing.T) {
 			}
 			defer func() { quotaAdminServiceFactory = savedFactory }()
 
-			args := &mockArgs{}
+			cmd := newMockCommand()
 			if len(tt.args) > 0 {
-				args.args = tt.args
+				cmd = cmd.withArgs(tt.args...)
 			}
-			cmd := &mockQuotaPlansGetCmd{args: args}
 
-			err := quotaPlansDeleteAction(context.Background(), cmd, NewOutputFormatter(tt.jsonOutput, false, false, false), cfgMgr, quotaAdminServiceFactory)
+			output := newTestOutput()
+			if tt.jsonOutput {
+				output = NewOutputFormatter(true, false, false, false)
+			}
+
+			err := quotaPlansDeleteAction(context.Background(), cmd, output, cfgMgr, quotaAdminServiceFactory)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -326,13 +330,17 @@ func TestQuotaPlansSetDefault(t *testing.T) {
 			}
 			defer func() { quotaAdminServiceFactory = savedFactory }()
 
-			args := &mockArgs{}
+			cmd := newMockCommand()
 			if len(tt.args) > 0 {
-				args.args = tt.args
+				cmd = cmd.withArgs(tt.args...)
 			}
-			cmd := &mockQuotaPlansGetCmd{args: args}
 
-			err := quotaPlansSetDefaultAction(context.Background(), cmd, NewOutputFormatter(tt.jsonOutput, false, false, false), cfgMgr, quotaAdminServiceFactory)
+			output := newTestOutput()
+			if tt.jsonOutput {
+				output = NewOutputFormatter(true, false, false, false)
+			}
+
+			err := quotaPlansSetDefaultAction(context.Background(), cmd, output, cfgMgr, quotaAdminServiceFactory)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -397,7 +405,12 @@ func TestQuotaAllowancesList(t *testing.T) {
 			}
 			defer func() { quotaAdminServiceFactory = savedFactory }()
 
-			err := quotaAllowancesListAction(context.Background(), struct{}{}, NewOutputFormatter(tt.jsonOutput, false, false, false), cfgMgr, quotaAdminServiceFactory)
+			output := newTestOutput()
+			if tt.jsonOutput {
+				output = NewOutputFormatter(true, false, false, false)
+			}
+
+			err := quotaAllowancesListAction(context.Background(), output, cfgMgr, quotaAdminServiceFactory)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -464,13 +477,17 @@ func TestQuotaAllowancesDelete(t *testing.T) {
 			}
 			defer func() { quotaAdminServiceFactory = savedFactory }()
 
-			args := &mockArgs{}
+			cmd := newMockCommand()
 			if len(tt.args) > 0 {
-				args.args = tt.args
+				cmd = cmd.withArgs(tt.args...)
 			}
-			cmd := &mockQuotaPlansGetCmd{args: args}
 
-			err := quotaAllowancesDeleteAction(context.Background(), cmd, NewOutputFormatter(tt.jsonOutput, false, false, false), cfgMgr, quotaAdminServiceFactory)
+			output := newTestOutput()
+			if tt.jsonOutput {
+				output = NewOutputFormatter(true, false, false, false)
+			}
+
+			err := quotaAllowancesDeleteAction(context.Background(), cmd, output, cfgMgr, quotaAdminServiceFactory)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -535,7 +552,12 @@ func TestQuotaStats(t *testing.T) {
 			}
 			defer func() { quotaAdminServiceFactory = savedFactory }()
 
-			err := quotaStatsAction(context.Background(), struct{}{}, NewOutputFormatter(tt.jsonOutput, false, false, false), cfgMgr, quotaAdminServiceFactory)
+			output := newTestOutput()
+			if tt.jsonOutput {
+				output = NewOutputFormatter(true, false, false, false)
+			}
+
+			err := quotaStatsAction(context.Background(), output, cfgMgr, quotaAdminServiceFactory)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -551,12 +573,12 @@ func TestQuotaStats(t *testing.T) {
 
 func TestQuotaCleanup(t *testing.T) {
 	tests := []struct {
-		name           string
-		retentionDays  int64
-		jsonOutput     bool
-		setupMocks     func(*configmocks.MockManager, *MockQuotaAdminService)
-		wantErr        bool
-		errContains    string
+		name          string
+		retentionDays int64
+		jsonOutput    bool
+		setupMocks    func(*configmocks.MockManager, *MockQuotaAdminService)
+		wantErr       bool
+		errContains   string
 	}{
 		{
 			name:          "success",
@@ -594,9 +616,14 @@ func TestQuotaCleanup(t *testing.T) {
 			}
 			defer func() { quotaAdminServiceFactory = savedFactory }()
 
-			cmdWrapper := &cleanupCmdMock{retentionDays: int(tt.retentionDays)}
+			cmd := newMockCommand().withInt("retention-days", int(tt.retentionDays))
 
-			err := quotaCleanupAction(context.Background(), cmdWrapper, NewOutputFormatter(tt.jsonOutput, false, false, false), cfgMgr, quotaAdminServiceFactory)
+			output := newTestOutput()
+			if tt.jsonOutput {
+				output = NewOutputFormatter(true, false, false, false)
+			}
+
+			err := quotaCleanupAction(context.Background(), cmd, output, cfgMgr, quotaAdminServiceFactory)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -608,17 +635,6 @@ func TestQuotaCleanup(t *testing.T) {
 			}
 		})
 	}
-}
-
-type cleanupCmdMock struct {
-	retentionDays int
-}
-
-func (c *cleanupCmdMock) Int(name string) int {
-	if name == "retention-days" {
-		return c.retentionDays
-	}
-	return 0
 }
 
 func TestQuotaUserConfigsList(t *testing.T) {
@@ -672,7 +688,12 @@ func TestQuotaUserConfigsList(t *testing.T) {
 			}
 			defer func() { quotaAdminServiceFactory = savedFactory }()
 
-			err := quotaUserConfigsListAction(context.Background(), struct{}{}, NewOutputFormatter(tt.jsonOutput, false, false, false), cfgMgr, quotaAdminServiceFactory)
+			output := newTestOutput()
+			if tt.jsonOutput {
+				output = NewOutputFormatter(true, false, false, false)
+			}
+
+			err := quotaUserConfigsListAction(context.Background(), output, cfgMgr, quotaAdminServiceFactory)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -747,13 +768,17 @@ func TestQuotaUserConfigsReset(t *testing.T) {
 			}
 			defer func() { quotaAdminServiceFactory = savedFactory }()
 
-			args := &mockArgs{}
+			cmd := newMockCommand()
 			if len(tt.args) > 0 {
-				args.args = tt.args
+				cmd = cmd.withArgs(tt.args...)
 			}
-			cmd := &mockQuotaPlansGetCmd{args: args}
 
-			err := quotaUserConfigsResetAction(context.Background(), cmd, NewOutputFormatter(tt.jsonOutput, false, false, false), cfgMgr, quotaAdminServiceFactory)
+			output := newTestOutput()
+			if tt.jsonOutput {
+				output = NewOutputFormatter(true, false, false, false)
+			}
+
+			err := quotaUserConfigsResetAction(context.Background(), cmd, output, cfgMgr, quotaAdminServiceFactory)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -763,6 +788,100 @@ func TestQuotaUserConfigsReset(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 			}
+		})
+	}
+}
+
+func TestQuotaPlansSetDefault_Enhanced(t *testing.T) {
+	tests := []struct {
+		name        string
+		args        []string
+		setupMocks  func(*configmocks.MockManager, *MockQuotaAdminService)
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name: "success",
+			args: []string{"2"},
+			setupMocks: func(cfgMgr *configmocks.MockManager, svc *MockQuotaAdminService) {
+				svc.EXPECT().RequireAuthenticated().Return(nil)
+				svc.EXPECT().SetDefaultPlan(mock.Anything, "2").Return(nil)
+			},
+			wantErr: false,
+		},
+		{
+			name: "plan not found with helpful error",
+			args: []string{"3"},
+			setupMocks: func(cfgMgr *configmocks.MockManager, svc *MockQuotaAdminService) {
+				svc.EXPECT().RequireAuthenticated().Return(nil)
+				svc.EXPECT().SetDefaultPlan(mock.Anything, "3").Return(fmt.Errorf("%w: plan not found", admin.ErrNotFound))
+			},
+			wantErr:     true,
+			errContains: "ensure the plan is active",
+		},
+		{
+			name: "other error passes through",
+			args: []string{"2"},
+			setupMocks: func(cfgMgr *configmocks.MockManager, svc *MockQuotaAdminService) {
+				svc.EXPECT().RequireAuthenticated().Return(nil)
+				svc.EXPECT().SetDefaultPlan(mock.Anything, "2").Return(errors.New("server error"))
+			},
+			wantErr:     true,
+			errContains: "server error",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfgMgr := configmocks.NewMockManager(t)
+			service := NewMockQuotaAdminService(t)
+
+			tt.setupMocks(cfgMgr, service)
+
+			output := newTestOutput()
+
+			serviceFactory := func(cm config.Manager, out Output) QuotaAdminService {
+				return service
+			}
+
+			cmd := newMockCommand()
+			if len(tt.args) > 0 {
+				cmd = cmd.withArgs(tt.args...)
+			}
+
+			err := quotaPlansSetDefaultAction(context.Background(), cmd, output, cfgMgr, serviceFactory)
+
+			if tt.wantErr {
+				require.Error(t, err)
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
+				}
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestFormatBytes(t *testing.T) {
+	tests := []struct {
+		input    int
+		expected string
+	}{
+		{-1, "unlimited"},
+		{0, "0 B"},
+		{512, "512 B"},
+		{1024, "1.00 KB"},
+		{1536, "1.50 KB"},
+		{1048576, "1.00 MB"},
+		{1073741824, "1.00 GB"},
+		{1099511627776, "1.00 TB"},
+	}
+
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("%d_bytes", tt.input), func(t *testing.T) {
+			result := formatBytes(tt.input)
+			assert.Equal(t, tt.expected, result)
 		})
 	}
 }

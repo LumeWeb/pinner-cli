@@ -28,44 +28,56 @@ type DNSService interface {
 
 // dnsServiceCLI wraps the SDK DNS service with CLI-specific functionality.
 type dnsServiceCLI struct {
-	service       ipfs.DNSService
-	cfgMgr        config.Manager
-	output        Output
-	authToken     string
-	authenticated bool
+	ipfsServiceBase
+	service ipfs.DNSService
+	output  Output
+	client  *ipfs.Client // injected client (nil = create default)
+}
+
+// DNSServiceOption is a function that configures a dnsServiceCLI.
+type DNSServiceOption func(*dnsServiceCLI)
+
+// WithDNSAuthToken sets an auth token override that takes precedence over config.
+func WithDNSAuthToken(token string) DNSServiceOption {
+	return func(s *dnsServiceCLI) {
+		withAuthToken(token)(&s.ipfsServiceBase)
+	}
+}
+
+// WithDNSClient sets a pre-configured ipfs.Client, bypassing the default ipfs.NewClient() call.
+func WithDNSClient(client *ipfs.Client) DNSServiceOption {
+	return func(s *dnsServiceCLI) {
+		s.client = client
+	}
 }
 
 // NewDNSService creates a new DNSService instance with the provided configuration.
-func NewDNSService(cfgMgr config.Manager, output Output, apiEndpoint string) DNSService {
+func NewDNSService(cfgMgr config.Manager, output Output, apiEndpoint string, opts ...DNSServiceOption) DNSService {
 	authToken := cfgMgr.Config().AuthToken
 
-	client, err := ipfs.NewClient(apiEndpoint, authToken)
-	if err != nil {
-		output.PrintError(err)
-		return &dnsServiceCLI{
-			service:       nil,
-			cfgMgr:        cfgMgr,
-			output:        output,
-			authToken:     authToken,
-			authenticated: false,
+	s := &dnsServiceCLI{
+		ipfsServiceBase: ipfsServiceBase{
+			cfgMgr:    cfgMgr,
+			authToken: authToken,
+		},
+		output: output,
+	}
+	for _, opt := range opts {
+		opt(s)
+	}
+
+	if s.client != nil {
+		s.service = s.client.DNS()
+	} else {
+		client, err := ipfs.NewClient(apiEndpoint, authToken)
+		if err != nil {
+			output.PrintError(err)
+			s.service = nil
+			return s
 		}
+		s.service = client.DNS()
 	}
-
-	return &dnsServiceCLI{
-		service:       client.DNS(),
-		cfgMgr:        cfgMgr,
-		output:        output,
-		authToken:     authToken,
-		authenticated: authToken != "",
-	}
-}
-
-// RequireAuthenticated checks if the user is authenticated.
-func (s *dnsServiceCLI) RequireAuthenticated() error {
-	if !s.authenticated {
-		return ErrNotAuthenticated
-	}
-	return nil
+	return s
 }
 
 // CreateZone creates a new DNS zone.
@@ -178,8 +190,23 @@ func (s *dnsServiceCLI) DeleteRecord(ctx context.Context, id string, name string
 	return s.service.DeleteRecord(ctx, id, name, recordType)
 }
 
-// defaultDNSServiceFactory creates a default DNS service instance.
-func defaultDNSServiceFactory(cfgMgr config.Manager, output Output) DNSService {
+type dnsServiceFactoryFunc func(cfgMgr config.Manager, output Output, opts ...DNSServiceOption) DNSService
+
+var dnsServiceFactory dnsServiceFactoryFunc = defaultDNSServiceFactory
+
+func defaultDNSServiceFactory(cfgMgr config.Manager, output Output, opts ...DNSServiceOption) DNSService {
 	apiEndpoint := cfgMgr.Config().GetIPFSEndpointSecure()
-	return NewDNSService(cfgMgr, output, apiEndpoint)
+	return NewDNSService(cfgMgr, output, apiEndpoint, opts...)
+}
+
+func newAuthenticatedDNSService(cfgMgr config.Manager, output Output, authToken string) (DNSService, error) {
+	var svcOpts []DNSServiceOption
+	if authToken != "" {
+		svcOpts = append(svcOpts, WithDNSAuthToken(authToken))
+	}
+	dnsService := dnsServiceFactory(cfgMgr, output, svcOpts...)
+	if err := dnsService.RequireAuthenticated(); err != nil {
+		return nil, err
+	}
+	return dnsService, nil
 }
