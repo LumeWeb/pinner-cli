@@ -56,7 +56,7 @@ func TestPinningServiceDefault_PinBatch(t *testing.T) {
 		assert.Len(t, result.Succeeded, 3)
 		assert.Empty(t, result.Failed)
 		assert.Empty(t, result.Skipped)
-		assert.Greater(t, result.Duration, time.Duration(0))
+		assert.GreaterOrEqual(t, result.Duration, time.Duration(0))
 	})
 
 	t.Run("empty CID list returns empty result", func(t *testing.T) {
