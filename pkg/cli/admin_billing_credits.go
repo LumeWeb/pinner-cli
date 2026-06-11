@@ -75,6 +75,8 @@ Examples:
 }
 
 func billingCreditsListAction(ctx context.Context, cmd flagGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+	defer cancel()
 	service := serviceFactory(cfgMgr, output)
 	if err := service.RequireAuthenticated(); err != nil {
 		return err
@@ -148,6 +150,8 @@ Examples:
 }
 
 func billingCreditsGetAction(ctx context.Context, cmd argsGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+	defer cancel()
 	if cmd.Args().Len() < 1 {
 		return fmt.Errorf("credit ID is required")
 	}
@@ -244,6 +248,8 @@ Examples:
 }
 
 func billingCreditsCreateAction(ctx context.Context, cmd flagGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+	defer cancel()
 	service := serviceFactory(cfgMgr, output)
 	if err := service.RequireAuthenticated(); err != nil {
 		return err
@@ -314,6 +320,8 @@ Examples:
 }
 
 func billingCreditsDeleteAction(ctx context.Context, cmd argsGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+	defer cancel()
 	if cmd.Args().Len() < 1 {
 		return fmt.Errorf("credit ID is required")
 	}
@@ -361,6 +369,8 @@ Examples:
 }
 
 func billingCreditsRestoreAction(ctx context.Context, cmd argsGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+	defer cancel()
 	if cmd.Args().Len() < 1 {
 		return fmt.Errorf("credit ID is required")
 	}
@@ -413,6 +423,8 @@ Examples:
 }
 
 func billingCreditsPurgeAction(ctx context.Context, cmd flagGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+	defer cancel()
 	service := serviceFactory(cfgMgr, output)
 	if err := service.RequireAuthenticated(); err != nil {
 		return err
@@ -459,6 +471,8 @@ Examples:
 }
 
 func billingCreditsUserBalanceAction(ctx context.Context, cmd argsGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+	defer cancel()
 	if cmd.Args().Len() < 1 {
 		return fmt.Errorf("user ID is required")
 	}
@@ -519,6 +533,8 @@ Examples:
 }
 
 func billingCreditsUserDeletedCreditsAction(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+	defer cancel()
 	if cmd.Args().Len() < 1 {
 		return fmt.Errorf("user ID is required")
 	}

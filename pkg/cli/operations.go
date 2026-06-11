@@ -112,6 +112,9 @@ func operationsList(ctx context.Context, cmd argsFlagGetter, output Output, cfgM
 		return err
 	}
 
+	setupCtx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+	defer cancel()
+
 	authService := authServiceFactory(cfgMgr, output, cfgMgr.Config().GetAPIEndpoint())
 	service := serviceFactory(cfgMgr, output, authService)
 
@@ -133,7 +136,7 @@ func operationsList(ctx context.Context, cmd argsFlagGetter, output Output, cfgM
 		return watchOperationsList(ctx, service, output, opts)
 	}
 
-	result, err := service.List(ctx, opts)
+	result, err := service.List(setupCtx, opts)
 	if err != nil {
 		return err
 	}
@@ -169,6 +172,9 @@ func operationsGet(ctx context.Context, cmd argsFlagGetter, output Output, cfgMg
 		return err
 	}
 
+	setupCtx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+	defer cancel()
+
 	authService := authServiceFactory(cfgMgr, output, cfgMgr.Config().GetAPIEndpoint())
 	service := serviceFactory(cfgMgr, output, authService)
 
@@ -192,7 +198,7 @@ func operationsGet(ctx context.Context, cmd argsFlagGetter, output Output, cfgMg
 		return watchOperation(ctx, service, output, id)
 	}
 
-	op, err := service.Get(ctx, id)
+	op, err := service.Get(setupCtx, id)
 	if err != nil {
 		return err
 	}

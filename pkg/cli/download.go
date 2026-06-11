@@ -133,6 +133,9 @@ Examples:
 }
 
 func handleDownload(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr config.Manager, authToken string, secure bool, downloadServiceFactory DownloadServiceFactory) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetUploadTimeout())
+	defer cancel()
+
 	authService := NewAuthService(cfgMgr, output, cfgMgr.Config().GetAccountEndpointSecure())
 
 	var svcOpts []DownloadServiceOption
@@ -212,6 +215,9 @@ func handleDownload(ctx context.Context, cmd argsFlagGetter, output Output, cfgM
 }
 
 func handleCat(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr config.Manager, authToken string, secure bool, downloadServiceFactory DownloadServiceFactory) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetUploadTimeout())
+	defer cancel()
+
 	authService := NewAuthService(cfgMgr, output, cfgMgr.Config().GetAccountEndpointSecure())
 
 	var svcOpts []DownloadServiceOption
@@ -243,6 +249,9 @@ func handleCat(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr co
 }
 
 func handleLs(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr config.Manager, authToken string, secure bool, downloadServiceFactory DownloadServiceFactory) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+	defer cancel()
+
 	authService := NewAuthService(cfgMgr, output, cfgMgr.Config().GetAccountEndpointSecure())
 
 	var svcOpts []DownloadServiceOption

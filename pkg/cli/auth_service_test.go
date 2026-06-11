@@ -38,7 +38,7 @@ func TestAuthService_LoginCheck(t *testing.T) {
 			email:    "test@example.com",
 			password: "password",
 			setupMocks: func(acc *portalsdkmocks.MockAccountAPI) {
-				acc.EXPECT().Login(context.Background(), "test@example.com", "password").
+				acc.EXPECT().Login(mock.Anything, "test@example.com", "password").
 					Return(portalsdk.NewLoginResult("test-jwt-token", false, ""), nil)
 			},
 			wantErr:     false,
@@ -49,7 +49,7 @@ func TestAuthService_LoginCheck(t *testing.T) {
 			email:    "test@example.com",
 			password: "password",
 			setupMocks: func(acc *portalsdkmocks.MockAccountAPI) {
-				acc.EXPECT().Login(context.Background(), "test@example.com", "password").
+				acc.EXPECT().Login(mock.Anything, "test@example.com", "password").
 					Return(portalsdk.NewLoginResult("intermediate-jwt", true, "intermediate-jwt"), nil)
 			},
 			wantErr:     false,
@@ -60,7 +60,7 @@ func TestAuthService_LoginCheck(t *testing.T) {
 			email:    "test@example.com",
 			password: "wrong-password",
 			setupMocks: func(acc *portalsdkmocks.MockAccountAPI) {
-				acc.EXPECT().Login(context.Background(), "test@example.com", "wrong-password").
+				acc.EXPECT().Login(mock.Anything, "test@example.com", "wrong-password").
 					Return(nil, portalsdk.ErrUnauthorized)
 			},
 			wantErr:     true,
@@ -117,8 +117,8 @@ func TestAuthService_CompleteLogin(t *testing.T) {
 				cfgMgr.EXPECT().SetAuthToken("test-api-key-token").Return(nil)
 				cfgMgr.EXPECT().ConfigPath().Return("/home/user/.config/pinner/config.yaml")
 				cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://pinner.xyz", Secure: true})
-				authAcc.EXPECT().ListAPIKeys(context.Background(), mock.Anything).Return(nil, 0, nil)
-				authAcc.EXPECT().CreateAPIKey(context.Background(), "test-key").
+				authAcc.EXPECT().ListAPIKeys(mock.Anything, mock.Anything).Return(nil, 0, nil)
+				authAcc.EXPECT().CreateAPIKey(mock.Anything, "test-key").
 					Return(portalsdk.NewAPIKey("test-key", "test-api-key-token"), nil)
 			},
 			wantErr: false,
@@ -132,10 +132,10 @@ func TestAuthService_CompleteLogin(t *testing.T) {
 				cfgMgr.EXPECT().SetAuthToken("new-api-key-token").Return(nil)
 				cfgMgr.EXPECT().ConfigPath().Return("/home/user/.config/pinner/config.yaml")
 				cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://pinner.xyz", Secure: true})
-				authAcc.EXPECT().ListAPIKeys(context.Background(), mock.Anything).
+				authAcc.EXPECT().ListAPIKeys(mock.Anything, mock.Anything).
 					Return([]*portalsdk.APIKey{newAPIKeyWithUUID("test-key", "00000000-0000-0000-0000-000000000001")}, 1, nil)
-				authAcc.EXPECT().DeleteAPIKey(context.Background(), "00000000-0000-0000-0000-000000000001").Return(nil)
-				authAcc.EXPECT().CreateAPIKey(context.Background(), "test-key").
+				authAcc.EXPECT().DeleteAPIKey(mock.Anything, "00000000-0000-0000-0000-000000000001").Return(nil)
+				authAcc.EXPECT().CreateAPIKey(mock.Anything, "test-key").
 					Return(portalsdk.NewAPIKey("test-key", "new-api-key-token"), nil)
 			},
 			wantErr: false,
@@ -180,7 +180,7 @@ func TestAuthService_CompleteLogin(t *testing.T) {
 			keyName:     "test-key",
 			noCreateKey: false,
 			setupMocks: func(cfgMgr *configmocks.MockManager, acc *portalsdkmocks.MockAccountAPI, authAcc *portalsdkmocks.MockAccountAPI) {
-				authAcc.EXPECT().ListAPIKeys(context.Background(), mock.Anything).
+				authAcc.EXPECT().ListAPIKeys(mock.Anything, mock.Anything).
 					Return(nil, 0, errors.New("network error"))
 			},
 			wantErr:     true,
@@ -192,9 +192,9 @@ func TestAuthService_CompleteLogin(t *testing.T) {
 			keyName:     "test-key",
 			noCreateKey: false,
 			setupMocks: func(cfgMgr *configmocks.MockManager, acc *portalsdkmocks.MockAccountAPI, authAcc *portalsdkmocks.MockAccountAPI) {
-				authAcc.EXPECT().ListAPIKeys(context.Background(), mock.Anything).
+				authAcc.EXPECT().ListAPIKeys(mock.Anything, mock.Anything).
 					Return([]*portalsdk.APIKey{newAPIKeyWithUUID("test-key", "00000000-0000-0000-0000-000000000001")}, 1, nil)
-				authAcc.EXPECT().DeleteAPIKey(context.Background(), "00000000-0000-0000-0000-000000000001").
+				authAcc.EXPECT().DeleteAPIKey(mock.Anything, "00000000-0000-0000-0000-000000000001").
 					Return(errors.New("delete failed"))
 			},
 			wantErr:     true,
@@ -214,8 +214,8 @@ func TestAuthService_CompleteLogin(t *testing.T) {
 			}
 
 			if !tt.noCreateKey && tt.failCreateAPIKey {
-				authAcc.EXPECT().ListAPIKeys(context.Background(), mock.Anything).Return(nil, 0, nil)
-				authAcc.EXPECT().CreateAPIKey(context.Background(), tt.keyName).
+				authAcc.EXPECT().ListAPIKeys(mock.Anything, mock.Anything).Return(nil, 0, nil)
+				authAcc.EXPECT().CreateAPIKey(mock.Anything, tt.keyName).
 					Return(nil, errors.New("API key creation failed"))
 			}
 
@@ -326,8 +326,8 @@ func TestAuthService_CompleteLogin_JSONOutput(t *testing.T) {
 	cfgMgr.EXPECT().SetAuthToken("test-api-key-token").Return(nil)
 	cfgMgr.EXPECT().ConfigPath().Return("/home/user/.config/pinner/config.yaml")
 	cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://pinner.xyz", Secure: true})
-	authAcc.EXPECT().ListAPIKeys(context.Background(), mock.Anything).Return(nil, 0, nil)
-	authAcc.EXPECT().CreateAPIKey(context.Background(), "test-key").
+	authAcc.EXPECT().ListAPIKeys(mock.Anything, mock.Anything).Return(nil, 0, nil)
+	authAcc.EXPECT().CreateAPIKey(mock.Anything, "test-key").
 		Return(portalsdk.NewAPIKey("test-key", "test-api-key-token"), nil)
 
 	authService := NewAuthService(cfgMgr, output, "https://api.test.com",
@@ -373,9 +373,9 @@ func TestInteractiveLogin(t *testing.T) {
 			setupMocks: func(prompter *MockAuthPrompter, authService *MockAuthService) {
 				prompter.EXPECT().PromptEmail().Return("test@example.com", nil)
 				prompter.EXPECT().PromptPassword().Return("password", nil)
-				authService.EXPECT().LoginCheck(context.Background(), "test@example.com", "password").
+				authService.EXPECT().LoginCheck(mock.Anything, "test@example.com", "password").
 					Return(portalsdk.NewLoginResult("test-jwt-token", false, ""), nil)
-				authService.EXPECT().CompleteLogin(context.Background(), "test-jwt-token", "test-key", false).
+				authService.EXPECT().CompleteLogin(mock.Anything, "test-jwt-token", "test-key", false).
 					Return(nil)
 			},
 			wantErr: false,
@@ -417,7 +417,7 @@ func TestInteractiveLogin(t *testing.T) {
 			setupMocks: func(prompter *MockAuthPrompter, authService *MockAuthService) {
 				prompter.EXPECT().PromptEmail().Return("test@example.com", nil)
 				prompter.EXPECT().PromptPassword().Return("wrong-password", nil)
-				authService.EXPECT().LoginCheck(context.Background(), "test@example.com", "wrong-password").
+				authService.EXPECT().LoginCheck(mock.Anything, "test@example.com", "wrong-password").
 					Return(nil, portalsdk.ErrUnauthorized)
 			},
 			wantErr: true,
@@ -469,9 +469,9 @@ func TestAuthLogin(t *testing.T) {
 			force:       false,
 			setupMocks: func(cfgMgr *configmocks.MockManager, authService *MockAuthService) {
 				cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://test.com"})
-				authService.EXPECT().LoginCheck(context.Background(), "test@example.com", "password").
+				authService.EXPECT().LoginCheck(mock.Anything, "test@example.com", "password").
 					Return(portalsdk.NewLoginResult("test-jwt-token", false, ""), nil)
-				authService.EXPECT().CompleteLogin(context.Background(), "test-jwt-token", "test-key", false).
+				authService.EXPECT().CompleteLogin(mock.Anything, "test-jwt-token", "test-key", false).
 					Return(nil)
 			},
 			wantErr: false,
@@ -485,9 +485,9 @@ func TestAuthLogin(t *testing.T) {
 			force:       false,
 			setupMocks: func(cfgMgr *configmocks.MockManager, authService *MockAuthService) {
 				cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://test.com"})
-				authService.EXPECT().LoginCheck(context.Background(), "test@example.com", "prompted-password").
+				authService.EXPECT().LoginCheck(mock.Anything, "test@example.com", "prompted-password").
 					Return(portalsdk.NewLoginResult("test-jwt-token", false, ""), nil)
-				authService.EXPECT().CompleteLogin(context.Background(), "test-jwt-token", "test-key", false).
+				authService.EXPECT().CompleteLogin(mock.Anything, "test-jwt-token", "test-key", false).
 					Return(nil)
 			},
 			wantErr: false,
@@ -501,9 +501,9 @@ func TestAuthLogin(t *testing.T) {
 			force:       false,
 			setupMocks: func(cfgMgr *configmocks.MockManager, authService *MockAuthService) {
 				cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://test.com"})
-				authService.EXPECT().LoginCheck(context.Background(), "test@example.com", "password").
+				authService.EXPECT().LoginCheck(mock.Anything, "test@example.com", "password").
 					Return(portalsdk.NewLoginResult("", true, "intermediate-jwt"), nil)
-				authService.EXPECT().LoginWithOTP(context.Background(), "intermediate-jwt", "123456", "test-key", false).
+				authService.EXPECT().LoginWithOTP(mock.Anything, "intermediate-jwt", "123456", "test-key", false).
 					Return(nil)
 			},
 			wantErr: false,
@@ -518,7 +518,7 @@ func TestAuthLogin(t *testing.T) {
 			force:       false,
 			setupMocks: func(cfgMgr *configmocks.MockManager, authService *MockAuthService) {
 				cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://test.com"})
-				authService.EXPECT().LoginCheck(context.Background(), "test@example.com", "wrong-password").
+				authService.EXPECT().LoginCheck(mock.Anything, "test@example.com", "wrong-password").
 					Return(nil, portalsdk.ErrUnauthorized)
 			},
 			wantErr: true,
@@ -622,13 +622,13 @@ func TestAuthService_LoginWithOTP(t *testing.T) {
 			keyName:         "test-key",
 			noCreateKey:     false,
 			setupMocks: func(cfgMgr *configmocks.MockManager, acc *portalsdkmocks.MockAccountAPI, authAcc *portalsdkmocks.MockAccountAPI) {
-				acc.EXPECT().ValidateOTP(context.Background(), "intermediate-jwt-token", "123456").
+				acc.EXPECT().ValidateOTP(mock.Anything, "intermediate-jwt-token", "123456").
 					Return("final-jwt-token", nil)
 				cfgMgr.EXPECT().SetAuthToken("test-api-key-token").Return(nil)
 				cfgMgr.EXPECT().ConfigPath().Return("/home/user/.config/pinner/config.yaml")
 				cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://pinner.xyz", Secure: true})
-				authAcc.EXPECT().ListAPIKeys(context.Background(), mock.Anything).Return(nil, 0, nil)
-				authAcc.EXPECT().CreateAPIKey(context.Background(), "test-key").
+				authAcc.EXPECT().ListAPIKeys(mock.Anything, mock.Anything).Return(nil, 0, nil)
+				authAcc.EXPECT().CreateAPIKey(mock.Anything, "test-key").
 					Return(portalsdk.NewAPIKey("test-key", "test-api-key-token"), nil)
 			},
 			wantErr: false,
@@ -640,7 +640,7 @@ func TestAuthService_LoginWithOTP(t *testing.T) {
 			keyName:         "test-key",
 			noCreateKey:     true,
 			setupMocks: func(cfgMgr *configmocks.MockManager, acc *portalsdkmocks.MockAccountAPI, authAcc *portalsdkmocks.MockAccountAPI) {
-				acc.EXPECT().ValidateOTP(context.Background(), "intermediate-jwt-token", "123456").
+				acc.EXPECT().ValidateOTP(mock.Anything, "intermediate-jwt-token", "123456").
 					Return("final-jwt-token", nil)
 				cfgMgr.EXPECT().SetAuthToken("final-jwt-token").Return(nil)
 				cfgMgr.EXPECT().ConfigPath().Return("/home/user/.config/pinner/config.yaml")
@@ -655,7 +655,7 @@ func TestAuthService_LoginWithOTP(t *testing.T) {
 			keyName:         "test-key",
 			noCreateKey:     false,
 			setupMocks: func(cfgMgr *configmocks.MockManager, acc *portalsdkmocks.MockAccountAPI, authAcc *portalsdkmocks.MockAccountAPI) {
-				acc.EXPECT().ValidateOTP(context.Background(), "intermediate-jwt-token", "000000").
+				acc.EXPECT().ValidateOTP(mock.Anything, "intermediate-jwt-token", "000000").
 					Return("", errors.New("invalid OTP code"))
 			},
 			wantErr:     true,
@@ -668,7 +668,7 @@ func TestAuthService_LoginWithOTP(t *testing.T) {
 			keyName:         "test-key",
 			noCreateKey:     true,
 			setupMocks: func(cfgMgr *configmocks.MockManager, acc *portalsdkmocks.MockAccountAPI, authAcc *portalsdkmocks.MockAccountAPI) {
-				acc.EXPECT().ValidateOTP(context.Background(), "intermediate-jwt-token", "123456").
+				acc.EXPECT().ValidateOTP(mock.Anything, "intermediate-jwt-token", "123456").
 					Return("final-jwt-token", nil)
 				cfgMgr.EXPECT().SetAuthToken("final-jwt-token").
 					Return(errors.New("config write failed"))
@@ -690,8 +690,8 @@ func TestAuthService_LoginWithOTP(t *testing.T) {
 			}
 
 			if !tt.noCreateKey && tt.failCreateAPIKey {
-				authAcc.EXPECT().ListAPIKeys(context.Background(), mock.Anything).Return(nil, 0, nil)
-				authAcc.EXPECT().CreateAPIKey(context.Background(), tt.keyName).
+				authAcc.EXPECT().ListAPIKeys(mock.Anything, mock.Anything).Return(nil, 0, nil)
+				authAcc.EXPECT().CreateAPIKey(mock.Anything, tt.keyName).
 					Return(nil, errors.New("API key creation failed"))
 			}
 
@@ -811,7 +811,7 @@ func TestAuthServiceDefault_Register(t *testing.T) {
 			lastName:  "Doe",
 			password:  "password123",
 			setupMocks: func(acc *portalsdkmocks.MockAccountAPI) {
-				acc.EXPECT().Register(context.Background(), "test@example.com", "John", "Doe", "password123").
+				acc.EXPECT().Register(mock.Anything, "test@example.com", "John", "Doe", "password123").
 					Return(nil)
 			},
 			wantErr: false,
@@ -823,7 +823,7 @@ func TestAuthServiceDefault_Register(t *testing.T) {
 			lastName:  "Doe",
 			password:  "password123",
 			setupMocks: func(acc *portalsdkmocks.MockAccountAPI) {
-				acc.EXPECT().Register(context.Background(), "test@example.com", "John", "Doe", "password123").
+				acc.EXPECT().Register(mock.Anything, "test@example.com", "John", "Doe", "password123").
 					Return(portalsdk.ErrUnauthorized)
 			},
 			wantErr:     true,
@@ -836,7 +836,7 @@ func TestAuthServiceDefault_Register(t *testing.T) {
 			lastName:  "Smith",
 			password:  "secret",
 			setupMocks: func(acc *portalsdkmocks.MockAccountAPI) {
-				acc.EXPECT().Register(context.Background(), "test@example.com", "Jane", "Smith", "secret").
+				acc.EXPECT().Register(mock.Anything, "test@example.com", "Jane", "Smith", "secret").
 					Return(errors.New("connection refused"))
 			},
 			wantErr:     true,
@@ -906,7 +906,7 @@ func TestAuthServiceDefault_GetLoginToken(t *testing.T) {
 				apiKeyJWT := makeJWT("api")
 				loginJWT := makeJWT("login")
 				cfgMgr.EXPECT().Config().Return(&config.Config{AuthToken: apiKeyJWT})
-				acc.EXPECT().LoginWithAPIKey(context.Background(), apiKeyJWT).
+				acc.EXPECT().LoginWithAPIKey(mock.Anything, apiKeyJWT).
 					Return(loginJWT, nil)
 			},
 			wantErr:   false,
@@ -933,7 +933,7 @@ func TestAuthServiceDefault_GetLoginToken(t *testing.T) {
 			setupMocks: func(cfgMgr *configmocks.MockManager, acc *portalsdkmocks.MockAccountAPI) {
 				apiKeyJWT := makeJWT("api")
 				cfgMgr.EXPECT().Config().Return(&config.Config{AuthToken: apiKeyJWT})
-				acc.EXPECT().LoginWithAPIKey(context.Background(), apiKeyJWT).
+				acc.EXPECT().LoginWithAPIKey(mock.Anything, apiKeyJWT).
 					Return("", errors.New("API key expired"))
 			},
 			wantErr:     true,

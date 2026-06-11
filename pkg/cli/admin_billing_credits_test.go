@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.lumeweb.com/pinner-cli/pkg/config"
 	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
@@ -40,7 +41,7 @@ func TestBillingCreditsList(t *testing.T) {
 			name: "successful list",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().ListCredits(context.Background(), &admin.GetApiBillingCreditsParams{}).Return(
+				service.EXPECT().ListCredits(mock.Anything, &admin.GetApiBillingCreditsParams{}).Return(
 					[]*admin.CreditItem{
 						unmarshalCreditItemJSON(`{"id":"123e4567-e89b-12d3-a456-426614174000","user_id":123,"amount":"100.00","type":"manual","direction":"credit"}`),
 					},
@@ -62,7 +63,7 @@ func TestBillingCreditsList(t *testing.T) {
 			name: "returns error when service fails",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().ListCredits(context.Background(), &admin.GetApiBillingCreditsParams{}).Return(
+				service.EXPECT().ListCredits(mock.Anything, &admin.GetApiBillingCreditsParams{}).Return(
 					nil,
 					0,
 					errors.New("service error"),
@@ -76,6 +77,7 @@ func TestBillingCreditsList(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
+			cfgMgr.EXPECT().Config().Return(&config.Config{}).Maybe()
 			service := NewMockBillingAdminService(t)
 			output := newTestOutput()
 
@@ -116,7 +118,7 @@ func TestBillingCreditsGet(t *testing.T) {
 			creditID: "123e4567-e89b-12d3-a456-426614174000",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().GetCredit(context.Background(), "123e4567-e89b-12d3-a456-426614174000").Return(
+				service.EXPECT().GetCredit(mock.Anything, "123e4567-e89b-12d3-a456-426614174000").Return(
 					unmarshalCreditJSON(`{"id":"123e4567-e89b-12d3-a456-426614174000","user_id":123,"amount":"100.00","type":"manual","direction":"credit"}`),
 					nil,
 				)
@@ -144,6 +146,7 @@ func TestBillingCreditsGet(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
+			cfgMgr.EXPECT().Config().Return(&config.Config{}).Maybe()
 			service := NewMockBillingAdminService(t)
 			output := newTestOutput()
 
@@ -187,7 +190,7 @@ func TestBillingCreditsDelete(t *testing.T) {
 			creditID: "123e4567-e89b-12d3-a456-426614174000",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().DeleteCredit(context.Background(), "123e4567-e89b-12d3-a456-426614174000").Return(nil)
+				service.EXPECT().DeleteCredit(mock.Anything, "123e4567-e89b-12d3-a456-426614174000").Return(nil)
 			},
 			wantErr: false,
 		},
@@ -212,7 +215,7 @@ func TestBillingCreditsDelete(t *testing.T) {
 			creditID: "123e4567-e89b-12d3-a456-426614174000",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().DeleteCredit(context.Background(), "123e4567-e89b-12d3-a456-426614174000").Return(errors.New("service error"))
+				service.EXPECT().DeleteCredit(mock.Anything, "123e4567-e89b-12d3-a456-426614174000").Return(errors.New("service error"))
 			},
 			wantErr:     true,
 			errContains: "service error",
@@ -222,6 +225,7 @@ func TestBillingCreditsDelete(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
+			cfgMgr.EXPECT().Config().Return(&config.Config{}).Maybe()
 			service := NewMockBillingAdminService(t)
 			output := newTestOutput()
 
@@ -265,7 +269,7 @@ func TestBillingCreditsRestore(t *testing.T) {
 			creditID: "123e4567-e89b-12d3-a456-426614174000",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().RestoreCredit(context.Background(), "123e4567-e89b-12d3-a456-426614174000").Return(
+				service.EXPECT().RestoreCredit(mock.Anything, "123e4567-e89b-12d3-a456-426614174000").Return(
 					unmarshalCreditJSON(`{"id":"123e4567-e89b-12d3-a456-426614174000","user_id":123,"amount":"100.00","type":"manual","direction":"credit"}`),
 					nil,
 				)
@@ -293,7 +297,7 @@ func TestBillingCreditsRestore(t *testing.T) {
 			creditID: "123e4567-e89b-12d3-a456-426614174000",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().RestoreCredit(context.Background(), "123e4567-e89b-12d3-a456-426614174000").Return(
+				service.EXPECT().RestoreCredit(mock.Anything, "123e4567-e89b-12d3-a456-426614174000").Return(
 					nil,
 					errors.New("service error"),
 				)
@@ -306,6 +310,7 @@ func TestBillingCreditsRestore(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
+			cfgMgr.EXPECT().Config().Return(&config.Config{}).Maybe()
 			service := NewMockBillingAdminService(t)
 			output := newTestOutput()
 
@@ -347,7 +352,7 @@ func TestBillingCreditsPurge(t *testing.T) {
 			name: "successful purge",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().PurgeCredits(context.Background(), &admin.CreditPurgeRequest{
+				service.EXPECT().PurgeCredits(mock.Anything, &admin.CreditPurgeRequest{
 					OlderThan: "30d",
 				}).Return(5, nil)
 			},
@@ -365,7 +370,7 @@ func TestBillingCreditsPurge(t *testing.T) {
 			name: "returns error when service fails",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().PurgeCredits(context.Background(), &admin.CreditPurgeRequest{
+				service.EXPECT().PurgeCredits(mock.Anything, &admin.CreditPurgeRequest{
 					OlderThan: "30d",
 				}).Return(0, errors.New("service error"))
 			},
@@ -377,6 +382,7 @@ func TestBillingCreditsPurge(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
+			cfgMgr.EXPECT().Config().Return(&config.Config{}).Maybe()
 			service := NewMockBillingAdminService(t)
 			output := newTestOutput()
 
@@ -417,7 +423,7 @@ func TestBillingCreditsUserBalance(t *testing.T) {
 			userID: "123",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().GetUserBalance(context.Background(), "123").Return(
+				service.EXPECT().GetUserBalance(mock.Anything, "123").Return(
 					&admin.UserBalance{},
 					nil,
 				)
@@ -445,7 +451,7 @@ func TestBillingCreditsUserBalance(t *testing.T) {
 			userID: "123",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().GetUserBalance(context.Background(), "123").Return(
+				service.EXPECT().GetUserBalance(mock.Anything, "123").Return(
 					nil,
 					errors.New("service error"),
 				)
@@ -458,6 +464,7 @@ func TestBillingCreditsUserBalance(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
+			cfgMgr.EXPECT().Config().Return(&config.Config{}).Maybe()
 			service := NewMockBillingAdminService(t)
 			output := newTestOutput()
 
@@ -501,7 +508,7 @@ func TestBillingCreditsUserDeletedCredits(t *testing.T) {
 			userID: "123",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().GetUserDeletedCredits(context.Background(), "123", &admin.GetApiBillingUsersUserIdDeletedCreditsParams{}).Return(
+				service.EXPECT().GetUserDeletedCredits(mock.Anything, "123", &admin.GetApiBillingUsersUserIdDeletedCreditsParams{}).Return(
 					[]*admin.CreditItem{
 						unmarshalCreditItemJSON(`{"id":"123e4567-e89b-12d3-a456-426614174000","user_id":123,"amount":"100.00","type":"manual","direction":"credit"}`),
 					},
@@ -532,7 +539,7 @@ func TestBillingCreditsUserDeletedCredits(t *testing.T) {
 			userID: "123",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().GetUserDeletedCredits(context.Background(), "123", &admin.GetApiBillingUsersUserIdDeletedCreditsParams{}).Return(
+				service.EXPECT().GetUserDeletedCredits(mock.Anything, "123", &admin.GetApiBillingUsersUserIdDeletedCreditsParams{}).Return(
 					nil,
 					0,
 					errors.New("service error"),
@@ -546,6 +553,7 @@ func TestBillingCreditsUserDeletedCredits(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
+			cfgMgr.EXPECT().Config().Return(&config.Config{}).Maybe()
 			service := NewMockBillingAdminService(t)
 			output := newTestOutput()
 
@@ -587,7 +595,7 @@ func TestBillingCreditsCreate(t *testing.T) {
 			name: "successful create",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().CreateCredit(context.Background(), &admin.CreditCreateRequest{
+				service.EXPECT().CreateCredit(mock.Anything, &admin.CreditCreateRequest{
 					UserId:    123,
 					Amount:    "100.00",
 					Type:      "manual",
@@ -612,6 +620,7 @@ func TestBillingCreditsCreate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
+			cfgMgr.EXPECT().Config().Return(&config.Config{}).Maybe()
 			service := NewMockBillingAdminService(t)
 			output := newTestOutput()
 

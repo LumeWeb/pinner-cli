@@ -150,6 +150,9 @@ func handleUpload(ctx context.Context, cmd interface {
 	Int64(name string) int64
 	StringSlice(name string) []string
 }, output Output, cfgMgr config.Manager, authToken string, secure bool, uploadServiceFactory UploadServiceFactory, pinningServiceFactory PinningServiceFactory) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetUploadTimeout())
+	defer cancel()
+
 	// Set memory limit from flag (overrides config if provided, runtime only)
 	memoryLimit := cmd.Uint64(FlagMemoryLimit)
 	if memoryLimit == 0 {

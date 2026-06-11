@@ -40,7 +40,7 @@ func TestStatusServiceDefault_Status(t *testing.T) {
 		pinningSvc := NewMockPinningService(t)
 
 		pinningSvc.EXPECT().RequireAuthenticated().Return(nil)
-		pinningSvc.EXPECT().Status(context.Background(), "QmXxx", false).Return(
+		pinningSvc.EXPECT().Status(mock.Anything, "QmXxx", false).Return(
 			&PinStatus{CID: "QmXxx", Status: "pinned", Created: "2024-01-01"},
 			nil,
 		)
@@ -62,11 +62,11 @@ func TestStatusServiceDefault_Status(t *testing.T) {
 		accountClient := portalsdkmocks.NewMockAccountAPI(t)
 
 		pinningSvc.EXPECT().RequireAuthenticated().Return(nil)
-		pinningSvc.EXPECT().Status(context.Background(), "QmYyy", false).Return(
+		pinningSvc.EXPECT().Status(mock.Anything, "QmYyy", false).Return(
 			nil, fmt.Errorf("pin not found: %w", ErrPinNotFound),
 		)
 
-		authSvc.EXPECT().GetAuthenticatedClient(context.Background()).Return(accountClient, nil)
+		authSvc.EXPECT().GetAuthenticatedClient(mock.Anything).Return(accountClient, nil)
 
 		now := time.Now()
 		accountClient.EXPECT().ListOperations(
@@ -98,11 +98,11 @@ func TestStatusServiceDefault_Status(t *testing.T) {
 		accountClient := portalsdkmocks.NewMockAccountAPI(t)
 
 		pinningSvc.EXPECT().RequireAuthenticated().Return(nil)
-		pinningSvc.EXPECT().Status(context.Background(), "QmMissing", false).Return(
+		pinningSvc.EXPECT().Status(mock.Anything, "QmMissing", false).Return(
 			nil, fmt.Errorf("pin not found: %w", ErrPinNotFound),
 		)
 
-		authSvc.EXPECT().GetAuthenticatedClient(context.Background()).Return(accountClient, nil)
+		authSvc.EXPECT().GetAuthenticatedClient(mock.Anything).Return(accountClient, nil)
 
 		accountClient.EXPECT().ListOperations(
 			mock.Anything,
@@ -124,7 +124,7 @@ func TestStatusServiceDefault_Status(t *testing.T) {
 		pinningSvc := NewMockPinningService(t)
 
 		pinningSvc.EXPECT().RequireAuthenticated().Return(nil)
-		pinningSvc.EXPECT().Status(context.Background(), "QmMissing", false).Return(
+		pinningSvc.EXPECT().Status(mock.Anything, "QmMissing", false).Return(
 			nil, fmt.Errorf("pin not found: %w", ErrPinNotFound),
 		)
 
@@ -143,7 +143,7 @@ func TestStatusServiceDefault_Status(t *testing.T) {
 		pinningSvc := NewMockPinningService(t)
 
 		pinningSvc.EXPECT().RequireAuthenticated().Return(nil)
-		pinningSvc.EXPECT().Status(context.Background(), "QmXxx", false).Return(
+		pinningSvc.EXPECT().Status(mock.Anything, "QmXxx", false).Return(
 			nil, errors.New("network error"),
 		)
 
@@ -164,11 +164,11 @@ func TestStatusServiceDefault_Status(t *testing.T) {
 		accountClient := portalsdkmocks.NewMockAccountAPI(t)
 
 		pinningSvc.EXPECT().RequireAuthenticated().Return(nil)
-		pinningSvc.EXPECT().Status(context.Background(), "QmFailed", false).Return(
+		pinningSvc.EXPECT().Status(mock.Anything, "QmFailed", false).Return(
 			nil, fmt.Errorf("pin not found: %w", ErrPinNotFound),
 		)
 
-		authSvc.EXPECT().GetAuthenticatedClient(context.Background()).Return(accountClient, nil)
+		authSvc.EXPECT().GetAuthenticatedClient(mock.Anything).Return(accountClient, nil)
 
 		errMsg := "upload failed: insufficient quota"
 		now := time.Now()
@@ -200,11 +200,11 @@ func TestStatusServiceDefault_Status(t *testing.T) {
 		authSvc := NewMockAuthService(t)
 
 		pinningSvc.EXPECT().RequireAuthenticated().Return(nil)
-		pinningSvc.EXPECT().Status(context.Background(), "QmXxx", false).Return(
+		pinningSvc.EXPECT().Status(mock.Anything, "QmXxx", false).Return(
 			nil, fmt.Errorf("pin not found: %w", ErrPinNotFound),
 		)
 
-		authSvc.EXPECT().GetAuthenticatedClient(context.Background()).Return(nil, errors.New("auth failed"))
+		authSvc.EXPECT().GetAuthenticatedClient(mock.Anything).Return(nil, errors.New("auth failed"))
 
 		svc := NewStatusService(cfgMgr, output, pinningSvc, authSvc)
 		pinStatus, opStatus, err := svc.Status(context.Background(), "QmXxx", false)
@@ -223,14 +223,14 @@ func TestStatusServiceDefault_Status(t *testing.T) {
 		accountClient := portalsdkmocks.NewMockAccountAPI(t)
 
 		pinningSvc.EXPECT().RequireAuthenticated().Return(nil).Twice()
-		pinningSvc.EXPECT().Status(context.Background(), "QmA", false).Return(
+		pinningSvc.EXPECT().Status(mock.Anything, "QmA", false).Return(
 			nil, fmt.Errorf("pin not found: %w", ErrPinNotFound),
 		)
-		pinningSvc.EXPECT().Status(context.Background(), "QmB", false).Return(
+		pinningSvc.EXPECT().Status(mock.Anything, "QmB", false).Return(
 			nil, fmt.Errorf("pin not found: %w", ErrPinNotFound),
 		)
 
-		authSvc.EXPECT().GetAuthenticatedClient(context.Background()).Return(accountClient, nil).Once()
+		authSvc.EXPECT().GetAuthenticatedClient(mock.Anything).Return(accountClient, nil).Once()
 
 		cidA := "QmA"
 		cidB := "QmB"
@@ -274,7 +274,7 @@ func TestStatusServiceDefault_Status(t *testing.T) {
 		accountClient := portalsdkmocks.NewMockAccountAPI(t)
 
 		pinningSvc.EXPECT().RequireAuthenticated().Return(nil)
-		pinningSvc.EXPECT().Status(context.Background(), "QmYyy", false).Return(
+		pinningSvc.EXPECT().Status(mock.Anything, "QmYyy", false).Return(
 			nil, fmt.Errorf("pin not found: %w", ErrPinNotFound),
 		)
 

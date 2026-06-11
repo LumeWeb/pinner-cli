@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.lumeweb.com/pinner-cli/pkg/config"
 	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
@@ -163,7 +164,7 @@ func TestConfigActionSetSubcommand(t *testing.T) {
 
 	cfgMgr.EXPECT().Exists("max_retries").Return(true)
 	cfgMgr.EXPECT().Get("max_retries").Return(3, true, nil)
-	cfgMgr.EXPECT().Set(context.Background(), "max_retries", int64(5)).Return(nil)
+	cfgMgr.EXPECT().Set(mock.Anything, "max_retries", int64(5)).Return(nil)
 	cfgMgr.EXPECT().Persist().Return(nil)
 
 	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
@@ -241,7 +242,7 @@ func TestSetConfigNewKey(t *testing.T) {
 	output := newTestOutput()
 
 	cfgMgr.EXPECT().Exists("custom_key").Return(false)
-	cfgMgr.EXPECT().Set(context.Background(), "custom_key", "custom_value").Return(nil)
+	cfgMgr.EXPECT().Set(mock.Anything, "custom_key", "custom_value").Return(nil)
 	cfgMgr.EXPECT().Persist().Return(nil)
 
 	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
@@ -257,7 +258,7 @@ func TestSetConfigBoolValue(t *testing.T) {
 
 	cfgMgr.EXPECT().Exists("secure").Return(true)
 	cfgMgr.EXPECT().Get("secure").Return(true, true, nil)
-	cfgMgr.EXPECT().Set(context.Background(), "secure", false).Return(nil)
+	cfgMgr.EXPECT().Set(mock.Anything, "secure", false).Return(nil)
 	cfgMgr.EXPECT().Persist().Return(nil)
 
 	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
@@ -317,7 +318,7 @@ func TestSetConfigPersistFails(t *testing.T) {
 	output := newTestOutput()
 
 	cfgMgr.EXPECT().Exists("custom_key").Return(false)
-	cfgMgr.EXPECT().Set(context.Background(), "custom_key", "value").Return(nil)
+	cfgMgr.EXPECT().Set(mock.Anything, "custom_key", "value").Return(nil)
 	cfgMgr.EXPECT().Persist().Return(errors.New("disk full"))
 
 	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }

@@ -287,6 +287,9 @@ Examples:
 // ===== HANDLERS =====
 
 func dnsZonesList(ctx context.Context, cmd dnsCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+	defer cancel()
+
 	dnsService, err := newAuthenticatedDNSService(cfgMgr, output, authToken, secure)
 	if err != nil {
 		return err
@@ -326,6 +329,9 @@ func dnsZonesList(ctx context.Context, cmd dnsCommandGetter, output Output, cfgM
 }
 
 func dnsZonesCreate(ctx context.Context, cmd dnsCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+	defer cancel()
+
 	domain := cmd.String(FlagDomain)
 
 	if err := validateDomain(domain); err != nil {
@@ -368,6 +374,9 @@ func dnsZonesCreate(ctx context.Context, cmd dnsCommandGetter, output Output, cf
 }
 
 func dnsZonesGet(ctx context.Context, cmd dnsCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+	defer cancel()
+
 	args := cmd.Args()
 	if args.Len() == 0 {
 		return fmt.Errorf("domain or zone ID is required")
@@ -409,6 +418,9 @@ func dnsZonesGet(ctx context.Context, cmd dnsCommandGetter, output Output, cfgMg
 }
 
 func dnsZonesDelete(ctx context.Context, cmd dnsCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+	defer cancel()
+
 	args := cmd.Args()
 	if args.Len() == 0 {
 		return fmt.Errorf("domain or zone ID is required")
@@ -436,6 +448,9 @@ func dnsZonesDelete(ctx context.Context, cmd dnsCommandGetter, output Output, cf
 }
 
 func dnsZonesValidate(ctx context.Context, cmd dnsCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+	defer cancel()
+
 	args := cmd.Args()
 	if args.Len() == 0 {
 		return fmt.Errorf("domain or zone ID is required")
@@ -495,6 +510,9 @@ func dnsZonesValidate(ctx context.Context, cmd dnsCommandGetter, output Output, 
 }
 
 func dnsRecordsList(ctx context.Context, cmd dnsCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+	defer cancel()
+
 	args := cmd.Args()
 	if args.Len() == 0 {
 		return fmt.Errorf("domain or zone ID is required")
@@ -547,6 +565,9 @@ func dnsRecordsList(ctx context.Context, cmd dnsCommandGetter, output Output, cf
 }
 
 func dnsRecordsCreate(ctx context.Context, cmd dnsCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+	defer cancel()
+
 	args := cmd.Args()
 	if args.Len() == 0 {
 		return fmt.Errorf("domain or zone ID is required")
@@ -612,6 +633,9 @@ func dnsRecordsCreate(ctx context.Context, cmd dnsCommandGetter, output Output, 
 }
 
 func dnsRecordsGet(ctx context.Context, cmd dnsCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+	defer cancel()
+
 	args := cmd.Args()
 	if args.Len() == 0 {
 		return fmt.Errorf("domain or zone ID is required")
@@ -658,6 +682,9 @@ func dnsRecordsGet(ctx context.Context, cmd dnsCommandGetter, output Output, cfg
 }
 
 func dnsRecordsUpdate(ctx context.Context, cmd dnsCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+	defer cancel()
+
 	args := cmd.Args()
 	if args.Len() == 0 {
 		return fmt.Errorf("domain or zone ID is required")
@@ -723,6 +750,9 @@ func dnsRecordsUpdate(ctx context.Context, cmd dnsCommandGetter, output Output, 
 }
 
 func dnsRecordsDelete(ctx context.Context, cmd dnsCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+	defer cancel()
+
 	args := cmd.Args()
 	if args.Len() == 0 {
 		return fmt.Errorf("domain or zone ID is required")

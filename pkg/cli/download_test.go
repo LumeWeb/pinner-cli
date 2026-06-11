@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.lumeweb.com/pinner-cli/pkg/config"
 	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
@@ -107,7 +108,7 @@ func TestHandleDownload_Success(t *testing.T) {
 	output := newTestOutput()
 	service := NewMockDownloadService(t)
 	service.EXPECT().RequireAuthenticated().Return(nil)
-	service.EXPECT().Download(context.Background(), "QmXxx", "", false).Return(&DownloadResult{
+	service.EXPECT().Download(mock.Anything, "QmXxx", "", false).Return(&DownloadResult{
 		CID:      "QmXxx",
 		Path:     "QmXxx",
 		Size:     1024,
@@ -147,7 +148,7 @@ func TestHandleDownload_FileExists_NoForce(t *testing.T) {
 	output := newTestOutput()
 	service := NewMockDownloadService(t)
 	service.EXPECT().RequireAuthenticated().Return(nil)
-	service.EXPECT().Download(context.Background(), "QmXxx", "", false).Return(nil, errors.New("file already exists"))
+	service.EXPECT().Download(mock.Anything, "QmXxx", "", false).Return(nil, errors.New("file already exists"))
 
 	cmd := newMockCommand().withArgs("QmXxx")
 
@@ -166,7 +167,7 @@ func TestHandleDownload_WithForce(t *testing.T) {
 	output := newTestOutput()
 	service := NewMockDownloadService(t)
 	service.EXPECT().RequireAuthenticated().Return(nil)
-	service.EXPECT().Download(context.Background(), "QmXxx", "existing.txt", true).Return(&DownloadResult{
+	service.EXPECT().Download(mock.Anything, "QmXxx", "existing.txt", true).Return(&DownloadResult{
 		CID:      "QmXxx",
 		Path:     "existing.txt",
 		Size:     512,
@@ -192,7 +193,7 @@ func TestHandleCat_Success(t *testing.T) {
 	output := NewOutputFormatter(false, true, true, false)
 	service := NewMockDownloadService(t)
 	service.EXPECT().RequireAuthenticated().Return(nil)
-	service.EXPECT().Cat(context.Background(), "QmXxx").Return(io.NopCloser(strings.NewReader("hello world")), nil)
+	service.EXPECT().Cat(mock.Anything, "QmXxx").Return(io.NopCloser(strings.NewReader("hello world")), nil)
 
 	cmd := newMockCommand().withArgs("QmXxx")
 
@@ -243,7 +244,7 @@ func TestHandleLs_Success(t *testing.T) {
 	output := newTestOutput()
 	service := NewMockDownloadService(t)
 	service.EXPECT().RequireAuthenticated().Return(nil)
-	service.EXPECT().ListDirectory(context.Background(), "QmXxx").Return([]DirEntry{
+	service.EXPECT().ListDirectory(mock.Anything, "QmXxx").Return([]DirEntry{
 		{Name: "file1.txt", Size: 100, Type: "file"},
 		{Name: "subdir", Size: -1, Type: "directory"},
 	}, nil)
@@ -264,7 +265,7 @@ func TestHandleLs_EmptyDirectory(t *testing.T) {
 	output := newTestOutput()
 	service := NewMockDownloadService(t)
 	service.EXPECT().RequireAuthenticated().Return(nil)
-	service.EXPECT().ListDirectory(context.Background(), "QmXxx").Return([]DirEntry{}, nil)
+	service.EXPECT().ListDirectory(mock.Anything, "QmXxx").Return([]DirEntry{}, nil)
 
 	cmd := newMockCommand().withArgs("QmXxx").withInt(FlagLimit, 10)
 
@@ -298,7 +299,7 @@ func TestHandleLs_WithLimit(t *testing.T) {
 	output := newTestOutput()
 	service := NewMockDownloadService(t)
 	service.EXPECT().RequireAuthenticated().Return(nil)
-	service.EXPECT().ListDirectory(context.Background(), "QmXxx").Return([]DirEntry{
+	service.EXPECT().ListDirectory(mock.Anything, "QmXxx").Return([]DirEntry{
 		{Name: "file1.txt", Size: 100, Type: "file"},
 		{Name: "file2.txt", Size: 200, Type: "file"},
 		{Name: "file3.txt", Size: 300, Type: "file"},

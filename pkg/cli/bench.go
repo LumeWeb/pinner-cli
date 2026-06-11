@@ -148,6 +148,9 @@ func bench(ctx context.Context, cmd interface {
 	Uint64(name string) uint64
 	Duration(name string) time.Duration
 }, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetUploadTimeout())
+	defer cancel()
+
 	// Parse size flag
 	sizeStr := cmd.String(FlagBenchSize)
 	sizeBytes, err := units.RAMInBytes(sizeStr)

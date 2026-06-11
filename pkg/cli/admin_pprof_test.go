@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.lumeweb.com/pinner-cli/pkg/config"
 	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
@@ -24,7 +25,7 @@ func TestAdminPprofByteAction(t *testing.T) {
 			name: "successful byte profile",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockProfilingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().GetHeapProfile(context.Background()).Return([]byte("heap-data"), nil)
+				service.EXPECT().GetHeapProfile(mock.Anything).Return([]byte("heap-data"), nil)
 			},
 			fn: func(svc ProfilingAdminService, ctx context.Context) ([]byte, error) {
 				return svc.GetHeapProfile(ctx)
@@ -46,7 +47,7 @@ func TestAdminPprofByteAction(t *testing.T) {
 			name: "returns error when service fails",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockProfilingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().GetHeapProfile(context.Background()).Return(nil, errors.New("profile fetch failed"))
+				service.EXPECT().GetHeapProfile(mock.Anything).Return(nil, errors.New("profile fetch failed"))
 			},
 			fn: func(svc ProfilingAdminService, ctx context.Context) ([]byte, error) {
 				return svc.GetHeapProfile(ctx)
@@ -59,6 +60,7 @@ func TestAdminPprofByteAction(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
+			cfgMgr.EXPECT().Config().Return(&config.Config{}).Maybe()
 			service := NewMockProfilingAdminService(t)
 			output := newTestOutput()
 
@@ -102,7 +104,7 @@ func TestAdminPprofSetRateAction(t *testing.T) {
 			label: "block profile rate",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockProfilingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().SetBlockProfileRate(context.Background(), 1).Return(nil)
+				service.EXPECT().SetBlockProfileRate(mock.Anything, 1).Return(nil)
 			},
 			fn: func(svc ProfilingAdminService, ctx context.Context, rate int) error {
 				return svc.SetBlockProfileRate(ctx, rate)
@@ -115,7 +117,7 @@ func TestAdminPprofSetRateAction(t *testing.T) {
 			label: "mutex profile fraction",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockProfilingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().SetMutexProfileFraction(context.Background(), 100).Return(nil)
+				service.EXPECT().SetMutexProfileFraction(mock.Anything, 100).Return(nil)
 			},
 			fn: func(svc ProfilingAdminService, ctx context.Context, rate int) error {
 				return svc.SetMutexProfileFraction(ctx, rate)
@@ -159,7 +161,7 @@ func TestAdminPprofSetRateAction(t *testing.T) {
 			label: "block profile rate",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockProfilingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().SetBlockProfileRate(context.Background(), 1).Return(errors.New("set rate failed"))
+				service.EXPECT().SetBlockProfileRate(mock.Anything, 1).Return(errors.New("set rate failed"))
 			},
 			fn: func(svc ProfilingAdminService, ctx context.Context, rate int) error {
 				return svc.SetBlockProfileRate(ctx, rate)
@@ -172,6 +174,7 @@ func TestAdminPprofSetRateAction(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
+			cfgMgr.EXPECT().Config().Return(&config.Config{}).Maybe()
 			service := NewMockProfilingAdminService(t)
 			output := newTestOutput()
 
@@ -213,7 +216,7 @@ func TestAdminPprofStatusAction(t *testing.T) {
 			name: "successful status",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockProfilingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().GetStatus(context.Background()).Return(&admin.ProfilingStatus{}, nil)
+				service.EXPECT().GetStatus(mock.Anything).Return(&admin.ProfilingStatus{}, nil)
 			},
 			wantErr: false,
 		},
@@ -229,7 +232,7 @@ func TestAdminPprofStatusAction(t *testing.T) {
 			name: "returns error when service fails",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockProfilingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().GetStatus(context.Background()).Return(nil, errors.New("status fetch failed"))
+				service.EXPECT().GetStatus(mock.Anything).Return(nil, errors.New("status fetch failed"))
 			},
 			wantErr:     true,
 			errContains: "status fetch failed",
@@ -239,6 +242,7 @@ func TestAdminPprofStatusAction(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
+			cfgMgr.EXPECT().Config().Return(&config.Config{}).Maybe()
 			service := NewMockProfilingAdminService(t)
 			output := newTestOutput()
 

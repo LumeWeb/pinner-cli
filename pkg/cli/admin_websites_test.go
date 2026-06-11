@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/pkg/config"
@@ -26,7 +27,7 @@ func TestAdminWebsitesBlock(t *testing.T) {
 			websiteID: "1",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockWebsiteAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().BlockWebsite(context.Background(), "1").Return(&admin.Website{}, nil)
+				service.EXPECT().BlockWebsite(mock.Anything, "1").Return(&admin.Website{}, nil)
 			},
 			wantErr: false,
 		},
@@ -51,7 +52,7 @@ func TestAdminWebsitesBlock(t *testing.T) {
 			websiteID: "1",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockWebsiteAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().BlockWebsite(context.Background(), "1").Return(nil, errors.New("block failed"))
+				service.EXPECT().BlockWebsite(mock.Anything, "1").Return(nil, errors.New("block failed"))
 			},
 			wantErr:     true,
 			errContains: "block failed",
@@ -61,6 +62,7 @@ func TestAdminWebsitesBlock(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
+			cfgMgr.EXPECT().Config().Return(&config.Config{}).Maybe()
 			service := NewMockWebsiteAdminService(t)
 			output := newTestOutput()
 
@@ -113,7 +115,7 @@ func TestAdminWebsitesUnblock(t *testing.T) {
 			websiteID: "1",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockWebsiteAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().UnblockWebsite(context.Background(), "1").Return(&admin.Website{}, nil)
+				service.EXPECT().UnblockWebsite(mock.Anything, "1").Return(&admin.Website{}, nil)
 			},
 			wantErr: false,
 		},
@@ -138,7 +140,7 @@ func TestAdminWebsitesUnblock(t *testing.T) {
 			websiteID: "1",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockWebsiteAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().UnblockWebsite(context.Background(), "1").Return(nil, errors.New("unblock failed"))
+				service.EXPECT().UnblockWebsite(mock.Anything, "1").Return(nil, errors.New("unblock failed"))
 			},
 			wantErr:     true,
 			errContains: "unblock failed",
@@ -148,6 +150,7 @@ func TestAdminWebsitesUnblock(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
+			cfgMgr.EXPECT().Config().Return(&config.Config{}).Maybe()
 			service := NewMockWebsiteAdminService(t)
 			output := newTestOutput()
 

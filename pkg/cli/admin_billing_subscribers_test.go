@@ -8,6 +8,7 @@ import (
 
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.lumeweb.com/pinner-cli/pkg/config"
 	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
@@ -33,7 +34,7 @@ func TestBillingSubscribersList(t *testing.T) {
 			name: "successful list",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().ListSubscribers(context.Background()).Return(
+				service.EXPECT().ListSubscribers(mock.Anything).Return(
 					[]*admin.Subscriber{
 						{
 							Id:             1,
@@ -62,7 +63,7 @@ func TestBillingSubscribersList(t *testing.T) {
 			name: "returns error when service fails",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().ListSubscribers(context.Background()).Return(
+				service.EXPECT().ListSubscribers(mock.Anything).Return(
 					nil,
 					0,
 					errors.New("service error"),
@@ -76,6 +77,7 @@ func TestBillingSubscribersList(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
+			cfgMgr.EXPECT().Config().Return(&config.Config{}).Maybe()
 			service := NewMockBillingAdminService(t)
 			output := newTestOutput()
 
@@ -114,7 +116,7 @@ func TestBillingSubscribersGet(t *testing.T) {
 			subscriberID: "1",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().GetSubscriber(context.Background(), "1").Return(
+				service.EXPECT().GetSubscriber(mock.Anything, "1").Return(
 					unmarshalSubscriberJSON(`{"id":1,"user_id":123,"external_id":"ext-123","gateway_type":"stripe","subscription_id":"sub-123","is_active":true}`),
 					nil,
 				)
@@ -133,6 +135,7 @@ func TestBillingSubscribersGet(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
+			cfgMgr.EXPECT().Config().Return(&config.Config{}).Maybe()
 			service := NewMockBillingAdminService(t)
 			output := newTestOutput()
 
@@ -176,7 +179,7 @@ func TestBillingSubscribersListGateway(t *testing.T) {
 			gatewayID: "stripe",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().ListGatewaySubscribers(context.Background(), "stripe").Return(
+				service.EXPECT().ListGatewaySubscribers(mock.Anything, "stripe").Return(
 					[]*admin.Subscriber{
 						unmarshalSubscriberJSON(`{"id":1,"user_id":123,"external_id":"ext-123","gateway_type":"stripe","subscription_id":"sub-123","is_active":true}`),
 					},
@@ -198,6 +201,7 @@ func TestBillingSubscribersListGateway(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
+			cfgMgr.EXPECT().Config().Return(&config.Config{}).Maybe()
 			service := NewMockBillingAdminService(t)
 			output := newTestOutput()
 
@@ -241,7 +245,7 @@ func TestBillingSubscribersListUser(t *testing.T) {
 			userID: "123",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().GetUserSubscribers(context.Background(), "123").Return(
+				service.EXPECT().GetUserSubscribers(mock.Anything, "123").Return(
 					[]*admin.Subscriber{
 						unmarshalSubscriberJSON(`{"id":1,"user_id":123,"external_id":"ext-123","gateway_type":"stripe","subscription_id":"sub-123","is_active":true}`),
 					},
@@ -263,6 +267,7 @@ func TestBillingSubscribersListUser(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
+			cfgMgr.EXPECT().Config().Return(&config.Config{}).Maybe()
 			service := NewMockBillingAdminService(t)
 			output := newTestOutput()
 
@@ -305,7 +310,7 @@ func TestBillingSubscribersCancel(t *testing.T) {
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
 				mode := "end_of_billing_period"
-				service.EXPECT().CancelUserSubscription(context.Background(), "123", &admin.CancelSubscriptionRequest{
+				service.EXPECT().CancelUserSubscription(mock.Anything, "123", &admin.CancelSubscriptionRequest{
 					Mode: &mode,
 				}).Return(
 					&admin.ManagementResult{
@@ -329,6 +334,7 @@ func TestBillingSubscribersCancel(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
+			cfgMgr.EXPECT().Config().Return(&config.Config{}).Maybe()
 			service := NewMockBillingAdminService(t)
 			output := newTestOutput()
 
@@ -369,7 +375,7 @@ func TestBillingSubscribersAbortCancel(t *testing.T) {
 			name: "successful abort cancel",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().AbortUserSubscriptionCancellation(context.Background(), "123").Return(
+				service.EXPECT().AbortUserSubscriptionCancellation(mock.Anything, "123").Return(
 					&admin.ManagementResult{
 						Action: "abort_cancel",
 					},
@@ -391,6 +397,7 @@ func TestBillingSubscribersAbortCancel(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
+			cfgMgr.EXPECT().Config().Return(&config.Config{}).Maybe()
 			service := NewMockBillingAdminService(t)
 			output := newTestOutput()
 
@@ -429,7 +436,7 @@ func TestBillingSubscribersChangePlan(t *testing.T) {
 			name: "successful change plan",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().ChangeUserPlan(context.Background(), "123", &admin.ChangePlanRequest{
+				service.EXPECT().ChangeUserPlan(mock.Anything, "123", &admin.ChangePlanRequest{
 					PeriodId: 1,
 				}).Return(
 					&admin.PlanChangeResult{
@@ -455,6 +462,7 @@ func TestBillingSubscribersChangePlan(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
+			cfgMgr.EXPECT().Config().Return(&config.Config{}).Maybe()
 			service := NewMockBillingAdminService(t)
 			output := newTestOutput()
 
@@ -495,7 +503,7 @@ func TestBillingSubscribersPause(t *testing.T) {
 			name: "successful pause",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().PauseUserSubscription(context.Background(), "123").Return(
+				service.EXPECT().PauseUserSubscription(mock.Anything, "123").Return(
 					&admin.ManagementResult{
 						Action: "pause",
 					},
@@ -517,6 +525,7 @@ func TestBillingSubscribersPause(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
+			cfgMgr.EXPECT().Config().Return(&config.Config{}).Maybe()
 			service := NewMockBillingAdminService(t)
 			output := newTestOutput()
 
@@ -555,7 +564,7 @@ func TestBillingSubscribersResume(t *testing.T) {
 			name: "successful resume",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().ResumeUserSubscription(context.Background(), "123").Return(
+				service.EXPECT().ResumeUserSubscription(mock.Anything, "123").Return(
 					&admin.ManagementResult{
 						Action: "resume",
 					},
@@ -577,6 +586,7 @@ func TestBillingSubscribersResume(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
+			cfgMgr.EXPECT().Config().Return(&config.Config{}).Maybe()
 			service := NewMockBillingAdminService(t)
 			output := newTestOutput()
 

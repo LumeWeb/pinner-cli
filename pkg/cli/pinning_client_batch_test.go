@@ -40,7 +40,7 @@ func TestPinningServiceDefault_PinBatch(t *testing.T) {
 
 		for _, c := range []cid.Cid{batchCID1, batchCID2, batchCID3} {
 			mockResult := NewMockPinStatusGetter(t, c, "batch-pin", go_pinning_service_http_client.StatusPinned)
-			client.EXPECT().Add(context.Background(), c, mock.Anything).Return(mockResult, nil)
+			client.EXPECT().Add(mock.Anything, c, mock.Anything).Return(mockResult, nil)
 		}
 
 		service := newAuthenticatedBatchService(t, client)
@@ -73,14 +73,14 @@ func TestPinningServiceDefault_PinBatch(t *testing.T) {
 		client := climocks.NewMockPinningClient(t)
 
 		mockResult1 := NewMockPinStatusGetter(t, batchCID1, "", go_pinning_service_http_client.StatusPinned)
-		client.EXPECT().Add(context.Background(), batchCID1, mock.Anything).Return(mockResult1, nil)
+		client.EXPECT().Add(mock.Anything, batchCID1, mock.Anything).Return(mockResult1, nil)
 
-		client.EXPECT().Add(context.Background(), batchCID2, mock.Anything).Return(
+		client.EXPECT().Add(mock.Anything, batchCID2, mock.Anything).Return(
 			nil, errors.New("pin failed for cid2"),
 		)
 
 		mockResult3 := NewMockPinStatusGetter(t, batchCID3, "", go_pinning_service_http_client.StatusPinned)
-		client.EXPECT().Add(context.Background(), batchCID3, mock.Anything).Return(mockResult3, nil)
+		client.EXPECT().Add(mock.Anything, batchCID3, mock.Anything).Return(mockResult3, nil)
 
 		service := newAuthenticatedBatchService(t, client)
 
@@ -102,14 +102,14 @@ func TestPinningServiceDefault_PinBatch(t *testing.T) {
 		client := climocks.NewMockPinningClient(t)
 
 		mockResult1 := NewMockPinStatusGetter(t, batchCID1, "", go_pinning_service_http_client.StatusPinned)
-		client.EXPECT().Add(context.Background(), batchCID1, mock.Anything).Return(mockResult1, nil)
+		client.EXPECT().Add(mock.Anything, batchCID1, mock.Anything).Return(mockResult1, nil)
 
-		client.EXPECT().Add(context.Background(), batchCID2, mock.Anything).Return(
+		client.EXPECT().Add(mock.Anything, batchCID2, mock.Anything).Return(
 			nil, errors.New("pin failed for cid2"),
 		)
 
 		mockResult3 := NewMockPinStatusGetter(t, batchCID3, "", go_pinning_service_http_client.StatusPinned)
-		client.EXPECT().Add(context.Background(), batchCID3, mock.Anything).Return(mockResult3, nil)
+		client.EXPECT().Add(mock.Anything, batchCID3, mock.Anything).Return(mockResult3, nil)
 
 		service := newAuthenticatedBatchService(t, client)
 
@@ -151,7 +151,7 @@ func TestPinningServiceDefault_PinBatch(t *testing.T) {
 		client := climocks.NewMockPinningClient(t)
 
 		mockResult := NewMockPinStatusGetter(t, batchCID1, "", go_pinning_service_http_client.StatusPinned)
-		client.EXPECT().Add(context.Background(), batchCID1, mock.Anything).Return(mockResult, nil)
+		client.EXPECT().Add(mock.Anything, batchCID1, mock.Anything).Return(mockResult, nil)
 
 		service := newAuthenticatedBatchService(t, client)
 
@@ -190,10 +190,10 @@ func TestPinningServiceDefault_UnpinBatch(t *testing.T) {
 		for _, c := range []cid.Cid{batchCID1, batchCID2, batchCID3} {
 			mockPin := NewMockPin(t, c, "")
 			mockResult := NewMockPinStatusGetterWithPin(t, mockPin, go_pinning_service_http_client.StatusPinned)
-			client.EXPECT().LsSync(context.Background(), mock.Anything).Return(
+			client.EXPECT().LsSync(mock.Anything, mock.Anything).Return(
 				[]go_pinning_service_http_client.PinStatusGetter{mockResult}, nil,
 			)
-			client.EXPECT().DeleteByID(context.Background(), mock.Anything).Return(nil)
+			client.EXPECT().DeleteByID(mock.Anything, mock.Anything).Return(nil)
 		}
 
 		service := newAuthenticatedBatchService(t, client)
@@ -228,7 +228,7 @@ func TestPinningServiceDefault_UnpinBatch(t *testing.T) {
 		mockResult3 := NewMockPinStatusGetterWithPin(t, mockPin3, go_pinning_service_http_client.StatusPinned)
 
 		lsCallCount := atomic.Int32{}
-		client.EXPECT().LsSync(context.Background(), mock.Anything).RunAndReturn(
+		client.EXPECT().LsSync(mock.Anything, mock.Anything).RunAndReturn(
 			func(ctx context.Context, opts ...go_pinning_service_http_client.LsOption) ([]go_pinning_service_http_client.PinStatusGetter, error) {
 				n := lsCallCount.Add(1)
 				switch n {
@@ -245,7 +245,7 @@ func TestPinningServiceDefault_UnpinBatch(t *testing.T) {
 		).Times(3)
 
 		deleteCallCount := atomic.Int32{}
-		client.EXPECT().DeleteByID(context.Background(), mock.Anything).RunAndReturn(
+		client.EXPECT().DeleteByID(mock.Anything, mock.Anything).RunAndReturn(
 			func(ctx context.Context, id string) error {
 				n := deleteCallCount.Add(1)
 				if n == 1 {
@@ -278,7 +278,7 @@ func TestPinningServiceDefault_UnpinBatch(t *testing.T) {
 		mockResult3 := NewMockPinStatusGetterWithPin(t, mockPin3, go_pinning_service_http_client.StatusPinned)
 
 		lsCallCount := atomic.Int32{}
-		client.EXPECT().LsSync(context.Background(), mock.Anything).RunAndReturn(
+		client.EXPECT().LsSync(mock.Anything, mock.Anything).RunAndReturn(
 			func(ctx context.Context, opts ...go_pinning_service_http_client.LsOption) ([]go_pinning_service_http_client.PinStatusGetter, error) {
 				n := lsCallCount.Add(1)
 				switch n {
@@ -294,7 +294,7 @@ func TestPinningServiceDefault_UnpinBatch(t *testing.T) {
 			},
 		).Times(3)
 
-		client.EXPECT().DeleteByID(context.Background(), mock.Anything).Return(nil).Times(2)
+		client.EXPECT().DeleteByID(mock.Anything, mock.Anything).Return(nil).Times(2)
 
 		service := newAuthenticatedBatchService(t, client)
 
@@ -347,10 +347,10 @@ func TestPinningServiceDefault_UnpinAll(t *testing.T) {
 			}
 			pins[i] = &mockPinStatusGetter{pin: p}
 		}
-		client.EXPECT().LsSync(context.Background(), mock.Anything).Return(pins, nil)
+		client.EXPECT().LsSync(mock.Anything, mock.Anything).Return(pins, nil)
 
 		for range cids {
-			client.EXPECT().DeleteByID(context.Background(), mock.Anything).Return(nil)
+			client.EXPECT().DeleteByID(mock.Anything, mock.Anything).Return(nil)
 		}
 
 		service := newAuthenticatedBatchService(t, client)
@@ -366,7 +366,7 @@ func TestPinningServiceDefault_UnpinAll(t *testing.T) {
 	t.Run("empty list returns empty result", func(t *testing.T) {
 		client := climocks.NewMockPinningClient(t)
 
-		client.EXPECT().LsSync(context.Background(), mock.Anything).Return(
+		client.EXPECT().LsSync(mock.Anything, mock.Anything).Return(
 			[]go_pinning_service_http_client.PinStatusGetter{}, nil,
 		)
 
@@ -381,7 +381,7 @@ func TestPinningServiceDefault_UnpinAll(t *testing.T) {
 	t.Run("returns error when list fails", func(t *testing.T) {
 		client := climocks.NewMockPinningClient(t)
 
-		client.EXPECT().LsSync(context.Background(), mock.Anything).Return(
+		client.EXPECT().LsSync(mock.Anything, mock.Anything).Return(
 			nil, errors.New("list service error"),
 		)
 
@@ -427,10 +427,10 @@ func TestPinningServiceDefault_UnpinAll(t *testing.T) {
 			}
 			pins[i] = &mockPinStatusGetter{pin: p}
 		}
-		client.EXPECT().LsSync(context.Background(), mock.Anything).Return(pins, nil)
+		client.EXPECT().LsSync(mock.Anything, mock.Anything).Return(pins, nil)
 
 		var deleteCallCount atomic.Int32
-		client.EXPECT().DeleteByID(context.Background(), mock.Anything).RunAndReturn(
+		client.EXPECT().DeleteByID(mock.Anything, mock.Anything).RunAndReturn(
 			func(ctx context.Context, id string) error {
 				n := deleteCallCount.Add(1)
 				if n == 2 {
@@ -469,10 +469,10 @@ func TestPinningServiceDefault_UnpinAll(t *testing.T) {
 			}
 			pins[i] = &mockPinStatusGetter{pin: p}
 		}
-		client.EXPECT().LsSync(context.Background(), mock.Anything).Return(pins, nil)
+		client.EXPECT().LsSync(mock.Anything, mock.Anything).Return(pins, nil)
 
 		var callCount atomic.Int32
-		client.EXPECT().DeleteByID(context.Background(), mock.Anything).RunAndReturn(
+		client.EXPECT().DeleteByID(mock.Anything, mock.Anything).RunAndReturn(
 			func(ctx context.Context, id string) error {
 				n := callCount.Add(1)
 				if n == 1 {
@@ -506,10 +506,10 @@ func TestPinningServiceDefault_UnpinAll(t *testing.T) {
 			created:   time.Now(),
 			origins:   []string{},
 		}
-		client.EXPECT().LsSync(context.Background(), mock.Anything).Return(
+		client.EXPECT().LsSync(mock.Anything, mock.Anything).Return(
 			[]go_pinning_service_http_client.PinStatusGetter{&mockPinStatusGetter{pin: p}}, nil,
 		)
-		client.EXPECT().DeleteByID(context.Background(), mock.Anything).Return(nil)
+		client.EXPECT().DeleteByID(mock.Anything, mock.Anything).Return(nil)
 
 		service := newAuthenticatedBatchService(t, client)
 

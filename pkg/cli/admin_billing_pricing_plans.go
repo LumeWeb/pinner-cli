@@ -30,6 +30,8 @@ Examples:
 }
 
 func billingPricingPlansListAction(ctx context.Context, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+	defer cancel()
 	service := serviceFactory(cfgMgr, output)
 	if err := service.RequireAuthenticated(); err != nil {
 		return err
@@ -94,6 +96,8 @@ Examples:
 }
 
 func billingPricingPlansGetAction(ctx context.Context, cmd argsGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+	defer cancel()
 	if cmd.Args().Len() < 1 {
 		return fmt.Errorf("plan ID is required")
 	}
@@ -239,6 +243,8 @@ func billingPricingPlansCreateAction(ctx context.Context, cmd interface {
 	flagGetterWithIsSet
 	Float(name string) float64
 }, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+	defer cancel()
 	service := serviceFactory(cfgMgr, output)
 	if err := service.RequireAuthenticated(); err != nil {
 		return err
@@ -377,6 +383,8 @@ func billingPricingPlansUpdateAction(ctx context.Context, cmd interface {
 	argsGetter
 	flagGetterWithIsSet
 }, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+	defer cancel()
 	if cmd.Args().Len() < 1 {
 		return fmt.Errorf("pricing plan ID is required")
 	}
@@ -453,6 +461,8 @@ Examples:
 }
 
 func billingPricingPlansDeleteAction(ctx context.Context, cmd argsGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+	defer cancel()
 	if cmd.Args().Len() < 1 {
 		return fmt.Errorf("pricing plan ID is required")
 	}
@@ -499,6 +509,8 @@ Examples:
 }
 
 func billingPricingPlanPeriodsListAction(ctx context.Context, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+	defer cancel()
 	service := serviceFactory(cfgMgr, output)
 	if err := service.RequireAuthenticated(); err != nil {
 		return err
@@ -556,6 +568,8 @@ Examples:
 }
 
 func billingPricingPlanPeriodsGetAction(ctx context.Context, cmd argsGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+	defer cancel()
 	if cmd.Args().Len() < 1 {
 		return fmt.Errorf("period ID is required")
 	}
@@ -645,6 +659,8 @@ func billingPricingPlanPeriodsCreateAction(ctx context.Context, cmd interface {
 	flagGetterWithIsSet
 	Float(name string) float64
 }, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+	defer cancel()
 	service := serviceFactory(cfgMgr, output)
 	if err := service.RequireAuthenticated(); err != nil {
 		return err
@@ -741,6 +757,8 @@ func billingPricingPlanPeriodsUpdateAction(ctx context.Context, cmd interface {
 	flagGetterWithIsSet
 	Float(name string) float64
 }, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+	defer cancel()
 	if cmd.Args().Len() < 1 {
 		return fmt.Errorf("period ID is required")
 	}
@@ -818,6 +836,8 @@ Examples:
 }
 
 func billingPricingPlanPeriodsDeleteAction(ctx context.Context, cmd argsGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+	defer cancel()
 	if cmd.Args().Len() < 1 {
 		return fmt.Errorf("period ID is required")
 	}
@@ -870,6 +890,8 @@ Examples:
 }
 
 func billingSyncPricingPlanAction(ctx context.Context, cmd argsGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetSyncTimeout())
+	defer cancel()
 	if cmd.Args().Len() < 1 {
 		return fmt.Errorf("plan ID is required")
 	}
@@ -919,6 +941,8 @@ Examples:
 }
 
 func billingSyncAllPricingPlansAction(ctx context.Context, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetSyncTimeout())
+	defer cancel()
 	service := serviceFactory(cfgMgr, output)
 	if err := service.RequireAuthenticated(); err != nil {
 		return err

@@ -10,6 +10,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.lumeweb.com/pinner-cli/pkg/config"
 	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
@@ -176,7 +177,7 @@ func TestDownloadService_resolveAuthToken(t *testing.T) {
 	t.Run("exchanges API key JWT for login token", func(t *testing.T) {
 		apiKeyJWT := makeJWTWithAudience("api")
 		mockAccountAPI := portalsdkmocks.NewMockAccountAPI(t)
-		mockAccountAPI.EXPECT().LoginWithAPIKey(context.Background(), apiKeyJWT).Return("login-jwt", nil)
+		mockAccountAPI.EXPECT().LoginWithAPIKey(mock.Anything, apiKeyJWT).Return("login-jwt", nil)
 
 		svc := newDownloadSvc(t, apiKeyJWT, WithDownloadAuthService(NewMockAuthService(t)))
 		svc.accountClient = mockAccountAPI
@@ -206,7 +207,7 @@ func TestDownloadService_resolveAuthToken(t *testing.T) {
 	t.Run("returns error when API key exchange fails", func(t *testing.T) {
 		apiKeyJWT := makeJWTWithAudience("api")
 		mockAccountAPI := portalsdkmocks.NewMockAccountAPI(t)
-		mockAccountAPI.EXPECT().LoginWithAPIKey(context.Background(), apiKeyJWT).Return("", portalsdk.ErrUnauthorized)
+		mockAccountAPI.EXPECT().LoginWithAPIKey(mock.Anything, apiKeyJWT).Return("", portalsdk.ErrUnauthorized)
 
 		svc := newDownloadSvc(t, apiKeyJWT, WithDownloadAuthService(NewMockAuthService(t)))
 		svc.accountClient = mockAccountAPI
@@ -376,7 +377,7 @@ func TestDownloadService_newSDKDownloadService(t *testing.T) {
 	t.Run("error when resolveAuthToken fails", func(t *testing.T) {
 		apiKeyJWT := makeJWTWithAudience("api")
 		mockAccountAPI := portalsdkmocks.NewMockAccountAPI(t)
-		mockAccountAPI.EXPECT().LoginWithAPIKey(context.Background(), apiKeyJWT).Return("", portalsdk.ErrUnauthorized)
+		mockAccountAPI.EXPECT().LoginWithAPIKey(mock.Anything, apiKeyJWT).Return("", portalsdk.ErrUnauthorized)
 
 		svc := newDownloadSvc(t, apiKeyJWT, WithDownloadAuthService(NewMockAuthService(t)))
 		svc.accountClient = mockAccountAPI

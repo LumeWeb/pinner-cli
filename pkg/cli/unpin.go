@@ -52,6 +52,9 @@ Examples:
 }
 
 func unpin(ctx context.Context, cmd cidFlagGetter, output Output, cfgMgr config.Manager, authToken string, secure bool, pinningServiceFactory PinningServiceFactory) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+	defer cancel()
+
 	var pinningService PinningService
 	if authToken != "" {
 		pinningService = NewPinningService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure), WithAuthToken(authToken))

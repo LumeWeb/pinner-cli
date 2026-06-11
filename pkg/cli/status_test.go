@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/pkg/config"
@@ -33,7 +34,7 @@ func TestStatus(t *testing.T) {
 					AuthToken:    "test-token",
 				})
 				pinSvc.EXPECT().RequireAuthenticated().Return(nil)
-				statusSvc.EXPECT().Status(context.Background(), "QmXxx", false).Return(
+				statusSvc.EXPECT().Status(mock.Anything, "QmXxx", false).Return(
 					&PinStatus{
 						CID:     "QmXxx",
 						Status:  "pinned",
@@ -56,7 +57,7 @@ func TestStatus(t *testing.T) {
 					AuthToken:    "test-token",
 				})
 				pinSvc.EXPECT().RequireAuthenticated().Return(nil)
-				statusSvc.EXPECT().Status(context.Background(), "QmXxx", true).Return(
+				statusSvc.EXPECT().Status(mock.Anything, "QmXxx", true).Return(
 					&PinStatus{
 						CID:     "QmXxx",
 						Status:  "pinned",
@@ -79,7 +80,7 @@ func TestStatus(t *testing.T) {
 					AuthToken:    "test-token",
 				})
 				pinSvc.EXPECT().RequireAuthenticated().Return(nil)
-				statusSvc.EXPECT().Status(context.Background(), "QmYyy", false).Return(
+				statusSvc.EXPECT().Status(mock.Anything, "QmYyy", false).Return(
 					nil,
 					&OperationStatusResult{
 						CID:                   "QmYyy",
@@ -109,7 +110,7 @@ func TestStatus(t *testing.T) {
 					AuthToken:    "test-token",
 				})
 				pinSvc.EXPECT().RequireAuthenticated().Return(nil)
-				statusSvc.EXPECT().Status(context.Background(), "QmZzz", false).Return(
+				statusSvc.EXPECT().Status(mock.Anything, "QmZzz", false).Return(
 					nil,
 					&OperationStatusResult{
 						CID:                   "QmZzz",
@@ -140,7 +141,7 @@ func TestStatus(t *testing.T) {
 					AuthToken:    "test-token",
 				})
 				pinSvc.EXPECT().RequireAuthenticated().Return(nil)
-				statusSvc.EXPECT().Status(context.Background(), "QmXxx", false).Return(
+				statusSvc.EXPECT().Status(mock.Anything, "QmXxx", false).Return(
 					nil,
 					nil,
 					errors.New("status check failed"),
@@ -160,7 +161,7 @@ func TestStatus(t *testing.T) {
 					AuthToken:    "test-token",
 				})
 				pinSvc.EXPECT().RequireAuthenticated().Return(nil)
-				statusSvc.EXPECT().Status(context.Background(), "QmMissing", false).Return(
+				statusSvc.EXPECT().Status(mock.Anything, "QmMissing", false).Return(
 					nil,
 					nil,
 					ErrPinNotFound,

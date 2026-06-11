@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/pkg/config"
@@ -26,8 +27,14 @@ func TestUnpin(t *testing.T) {
 			cid:         "QmXxx",
 			confirmFlag: true,
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPinningService) {
+				cfgMgr.EXPECT().Config().Return(&config.Config{
+					Secure:       true,
+					BaseEndpoint: "pinner.xyz",
+					AuthToken:    "test-token",
+					MaxRetries:   3,
+				}).Maybe()
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().Unpin(context.Background(), "QmXxx", true).Return(
+				service.EXPECT().Unpin(mock.Anything, "QmXxx", true).Return(
 					&UnpinResult{CID: "QmXxx"}, nil,
 				)
 			},
@@ -38,8 +45,14 @@ func TestUnpin(t *testing.T) {
 			cid:         "QmXxx",
 			confirmFlag: false,
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPinningService) {
+				cfgMgr.EXPECT().Config().Return(&config.Config{
+					Secure:       true,
+					BaseEndpoint: "pinner.xyz",
+					AuthToken:    "test-token",
+					MaxRetries:   3,
+				}).Maybe()
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().Unpin(context.Background(), "QmXxx", false).Return(
+				service.EXPECT().Unpin(mock.Anything, "QmXxx", false).Return(
 					&UnpinResult{CID: "QmXxx"}, nil,
 				)
 			},
@@ -50,8 +63,14 @@ func TestUnpin(t *testing.T) {
 			cid:         "QmXxx",
 			confirmFlag: true,
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPinningService) {
+				cfgMgr.EXPECT().Config().Return(&config.Config{
+					Secure:       true,
+					BaseEndpoint: "pinner.xyz",
+					AuthToken:    "test-token",
+					MaxRetries:   3,
+				}).Maybe()
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().Unpin(context.Background(), "QmXxx", true).Return(
+				service.EXPECT().Unpin(mock.Anything, "QmXxx", true).Return(
 					nil, errors.New("unpin failed"),
 				)
 			},
@@ -63,8 +82,14 @@ func TestUnpin(t *testing.T) {
 			cid:         "invalid-cid",
 			confirmFlag: true,
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPinningService) {
+				cfgMgr.EXPECT().Config().Return(&config.Config{
+					Secure:       true,
+					BaseEndpoint: "pinner.xyz",
+					AuthToken:    "test-token",
+					MaxRetries:   3,
+				}).Maybe()
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().Unpin(context.Background(), "invalid-cid", true).Return(
+				service.EXPECT().Unpin(mock.Anything, "invalid-cid", true).Return(
 					nil, errors.New("invalid CID: invalid cid"),
 				)
 			},
@@ -76,8 +101,14 @@ func TestUnpin(t *testing.T) {
 			cid:         "QmXxx",
 			confirmFlag: true,
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPinningService) {
+				cfgMgr.EXPECT().Config().Return(&config.Config{
+					Secure:       true,
+					BaseEndpoint: "pinner.xyz",
+					AuthToken:    "test-token",
+					MaxRetries:   3,
+				}).Maybe()
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().Unpin(context.Background(), "QmXxx", true).Return(
+				service.EXPECT().Unpin(mock.Anything, "QmXxx", true).Return(
 					nil, errors.New("pin not found: QmXxx"),
 				)
 			},
@@ -136,8 +167,14 @@ func TestUnpinBatch(t *testing.T) {
 			confirm:  true,
 			parallel: 3,
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPinningService) {
+				cfgMgr.EXPECT().Config().Return(&config.Config{
+					Secure:       true,
+					BaseEndpoint: "pinner.xyz",
+					AuthToken:    "test-token",
+					MaxRetries:   3,
+				}).Maybe()
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().UnpinBatch(context.Background(), []string{"QmXxx1", "QmXxx2", "QmXxx3"}, BatchOptions{
+				service.EXPECT().UnpinBatch(mock.Anything, []string{"QmXxx1", "QmXxx2", "QmXxx3"}, BatchOptions{
 					Parallel:   3,
 					ContinueOn: false,
 				}).Return(&BatchResult{
@@ -156,6 +193,12 @@ func TestUnpinBatch(t *testing.T) {
 			confirm:  true,
 			parallel: 1,
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPinningService) {
+				cfgMgr.EXPECT().Config().Return(&config.Config{
+					Secure:       true,
+					BaseEndpoint: "pinner.xyz",
+					AuthToken:    "test-token",
+					MaxRetries:   3,
+				}).Maybe()
 				service.EXPECT().RequireAuthenticated().Return(nil)
 			},
 			wantErr:     true,

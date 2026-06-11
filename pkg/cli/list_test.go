@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/pkg/config"
@@ -27,7 +28,7 @@ func TestList(t *testing.T) {
 			limit:      0,
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPinningService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().List(context.Background(), "", 0, "").Return(
+				service.EXPECT().List(mock.Anything, "", 0, "").Return(
 					[]Pin{
 						{CID: "QmXxx", Name: "test-name", Status: "pinned", Created: "2024-01-01T00:00:00Z", Metadata: map[string]string{}},
 					},
@@ -42,7 +43,7 @@ func TestList(t *testing.T) {
 			limit:      0,
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPinningService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().List(context.Background(), "test-name", 0, "").Return(
+				service.EXPECT().List(mock.Anything, "test-name", 0, "").Return(
 					[]Pin{
 						{CID: "QmXxx", Name: "test-name", Status: "pinned", Created: "2024-01-01T00:00:00Z", Metadata: map[string]string{}},
 					},
@@ -57,7 +58,7 @@ func TestList(t *testing.T) {
 			limit:      10,
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPinningService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().List(context.Background(), "", 10, "").Return(
+				service.EXPECT().List(mock.Anything, "", 10, "").Return(
 					[]Pin{
 						{CID: "QmXxx", Name: "test-name", Status: "pinned", Created: "2024-01-01T00:00:00Z", Metadata: map[string]string{}},
 					},
@@ -72,7 +73,7 @@ func TestList(t *testing.T) {
 			limit:      0,
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPinningService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().List(context.Background(), "", 0, "").Return(
+				service.EXPECT().List(mock.Anything, "", 0, "").Return(
 					[]Pin{},
 					nil,
 				)
@@ -85,7 +86,7 @@ func TestList(t *testing.T) {
 			limit:      0,
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPinningService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().List(context.Background(), "", 0, "").Return(
+				service.EXPECT().List(mock.Anything, "", 0, "").Return(
 					nil,
 					errors.New("list failed"),
 				)
@@ -99,7 +100,7 @@ func TestList(t *testing.T) {
 			limit:      0,
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPinningService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().List(context.Background(), "backup", 0, "").Return(
+				service.EXPECT().List(mock.Anything, "backup", 0, "").Return(
 					[]Pin{
 						{CID: "QmXxx", Name: "backup-file", Status: "pinned", Created: "2024-01-01T00:00:00Z", Metadata: map[string]string{}},
 					},
@@ -175,7 +176,7 @@ func TestList_WithStatusFilter(t *testing.T) {
 	output := newTestOutput()
 
 	service.EXPECT().RequireAuthenticated().Return(nil)
-	service.EXPECT().List(context.Background(), "", 10, "pinned").Return(
+	service.EXPECT().List(mock.Anything, "", 10, "pinned").Return(
 		[]Pin{
 			{CID: "QmXxx", Name: "test", Status: "pinned", Created: "2024-01-01T00:00:00Z"},
 		},

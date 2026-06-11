@@ -4,6 +4,7 @@ import (
 	"net"
 	"net/url"
 	"strings"
+	"time"
 
 	z "github.com/Oudwins/zog"
 	"github.com/docker/go-units"
@@ -35,6 +36,12 @@ type Config struct {
 	// GatewayEndpoint is the URL for the IPFS gateway (e.g., https://dweb.link).
 	// If empty, defaults to the ipfs subdomain of the base endpoint.
 	GatewayEndpoint string `config:"gateway_endpoint" desc:"IPFS gateway URL (e.g., https://dweb.link)"`
+
+	DefaultTimeout time.Duration `config:"default_timeout" desc:"Default timeout for API operations (e.g., 30s, 1m)"`
+
+	UploadTimeout time.Duration `config:"upload_timeout" desc:"Timeout for upload/download/benchmark operations (e.g., 5m, 10m)"`
+
+	SyncTimeout time.Duration `config:"sync_timeout" desc:"Timeout for reconciliation/cleanup/sync operations (e.g., 1m, 2m)"`
 }
 
 // Config keys used throughout the package.
@@ -44,6 +51,18 @@ const (
 	ConfigKeyMaxRetries      = "max_retries"
 	ConfigKeySecure          = "secure"
 	ConfigKeyGatewayEndpoint = "gateway_endpoint"
+)
+
+const (
+	ConfigKeyDefaultTimeout = "default_timeout"
+	ConfigKeyUploadTimeout  = "upload_timeout"
+	ConfigKeySyncTimeout    = "sync_timeout"
+)
+
+const (
+	DefaultTimeoutSeconds       = 30
+	DefaultUploadTimeoutSeconds = 300
+	DefaultSyncTimeoutSeconds   = 60
 )
 
 // Subdomain constants for API endpoints.
@@ -99,15 +118,42 @@ func (c *Config) Schema() z.ZogSchema {
 			Min(1).
 			Max(2048).
 			Optional(),
+		"DefaultTimeout": z.Int().GTE(1).LTE(3600).Optional(),
+		"UploadTimeout":  z.Int().GTE(1).LTE(3600).Optional(),
+		"SyncTimeout":    z.Int().GTE(1).LTE(3600).Optional(),
 	})
 }
 
 func (c *Config) Defaults() map[string]any {
 	return map[string]any{
-		"MaxRetries":  3,
-		"MemoryLimit": DefaultMemoryLimitMB,
-		"Secure":      true,
+		"MaxRetries":     3,
+		"MemoryLimit":    DefaultMemoryLimitMB,
+		"Secure":         true,
+		"DefaultTimeout": time.Duration(DefaultTimeoutSeconds) * time.Second,
+		"UploadTimeout":  time.Duration(DefaultUploadTimeoutSeconds) * time.Second,
+		"SyncTimeout":    time.Duration(DefaultSyncTimeoutSeconds) * time.Second,
 	}
+}
+
+func (c *Config) GetDefaultTimeout() time.Duration {
+	if c.DefaultTimeout > 0 {
+		return c.DefaultTimeout
+	}
+	return time.Duration(DefaultTimeoutSeconds) * time.Second
+}
+
+func (c *Config) GetUploadTimeout() time.Duration {
+	if c.UploadTimeout > 0 {
+		return c.UploadTimeout
+	}
+	return time.Duration(DefaultUploadTimeoutSeconds) * time.Second
+}
+
+func (c *Config) GetSyncTimeout() time.Duration {
+	if c.SyncTimeout > 0 {
+		return c.SyncTimeout
+	}
+	return time.Duration(DefaultSyncTimeoutSeconds) * time.Second
 }
 
 // IsAuthenticated checks if the client has valid authentication credentials.

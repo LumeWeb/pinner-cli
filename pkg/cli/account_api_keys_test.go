@@ -45,7 +45,7 @@ func TestAPIKeyService_ListAPIKeys(t *testing.T) {
 			name:   "list all keys",
 			search: "",
 			setupAcc: func(acc *portalsdkmocks.MockAccountAPI) {
-				acc.EXPECT().ListAPIKeys(context.Background(), mock.Anything).
+				acc.EXPECT().ListAPIKeys(mock.Anything, mock.Anything).
 					Return([]*portalsdk.APIKey{
 						newTestAPIKey("key1", "00000000-0000-0000-0000-000000000001"),
 						newTestAPIKey("key2", "00000000-0000-0000-0000-000000000002"),
@@ -57,7 +57,7 @@ func TestAPIKeyService_ListAPIKeys(t *testing.T) {
 			name:   "list with search",
 			search: "my-key",
 			setupAcc: func(acc *portalsdkmocks.MockAccountAPI) {
-				acc.EXPECT().ListAPIKeys(context.Background(), mock.Anything).
+				acc.EXPECT().ListAPIKeys(mock.Anything, mock.Anything).
 					Return([]*portalsdk.APIKey{
 						newTestAPIKey("my-key", "00000000-0000-0000-0000-000000000003"),
 					}, 1, nil)
@@ -68,7 +68,7 @@ func TestAPIKeyService_ListAPIKeys(t *testing.T) {
 			name:   "empty list",
 			search: "",
 			setupAcc: func(acc *portalsdkmocks.MockAccountAPI) {
-				acc.EXPECT().ListAPIKeys(context.Background(), mock.Anything).
+				acc.EXPECT().ListAPIKeys(mock.Anything, mock.Anything).
 					Return([]*portalsdk.APIKey{}, 0, nil)
 			},
 			wantCount: 0,
@@ -77,7 +77,7 @@ func TestAPIKeyService_ListAPIKeys(t *testing.T) {
 			name:   "api error",
 			search: "",
 			setupAcc: func(acc *portalsdkmocks.MockAccountAPI) {
-				acc.EXPECT().ListAPIKeys(context.Background(), mock.Anything).
+				acc.EXPECT().ListAPIKeys(mock.Anything, mock.Anything).
 					Return(nil, 0, fmt.Errorf("server error"))
 			},
 			wantErr:     true,
@@ -115,7 +115,7 @@ func TestAPIKeyService_CreateAPIKey(t *testing.T) {
 			name:    "successful create",
 			keyName: "new-key",
 			setupAcc: func(acc *portalsdkmocks.MockAccountAPI) {
-				acc.EXPECT().CreateAPIKey(context.Background(), "new-key").
+				acc.EXPECT().CreateAPIKey(mock.Anything, "new-key").
 					Return(portalsdk.NewAPIKey("new-key", "new-key-token"), nil)
 			},
 		},
@@ -123,7 +123,7 @@ func TestAPIKeyService_CreateAPIKey(t *testing.T) {
 			name:    "create fails",
 			keyName: "bad-key",
 			setupAcc: func(acc *portalsdkmocks.MockAccountAPI) {
-				acc.EXPECT().CreateAPIKey(context.Background(), "bad-key").
+				acc.EXPECT().CreateAPIKey(mock.Anything, "bad-key").
 					Return(nil, fmt.Errorf("duplicate key name"))
 			},
 			wantErr:     true,
@@ -166,7 +166,7 @@ func TestAPIKeyService_DeleteAPIKey(t *testing.T) {
 			force:     false,
 			authToken: makeAPIKeyJWT("other-uuid", "api"),
 			setupAcc: func(acc *portalsdkmocks.MockAccountAPI) {
-				acc.EXPECT().DeleteAPIKey(context.Background(), uuidStr).Return(nil)
+				acc.EXPECT().DeleteAPIKey(mock.Anything, uuidStr).Return(nil)
 			},
 		},
 		{
@@ -175,9 +175,9 @@ func TestAPIKeyService_DeleteAPIKey(t *testing.T) {
 			force:     false,
 			authToken: makeAPIKeyJWT("other-uuid", "api"),
 			setupAcc: func(acc *portalsdkmocks.MockAccountAPI) {
-				acc.EXPECT().ListAPIKeys(context.Background(), mock.Anything).
+				acc.EXPECT().ListAPIKeys(mock.Anything, mock.Anything).
 					Return([]*portalsdk.APIKey{newTestAPIKey("my-key", uuidStr)}, 1, nil)
-				acc.EXPECT().DeleteAPIKey(context.Background(), uuidStr).Return(nil)
+				acc.EXPECT().DeleteAPIKey(mock.Anything, uuidStr).Return(nil)
 			},
 		},
 		{
@@ -195,7 +195,7 @@ func TestAPIKeyService_DeleteAPIKey(t *testing.T) {
 			force:     true,
 			authToken: makeAPIKeyJWT(uuidStr, "api"),
 			setupAcc: func(acc *portalsdkmocks.MockAccountAPI) {
-				acc.EXPECT().DeleteAPIKey(context.Background(), uuidStr).Return(nil)
+				acc.EXPECT().DeleteAPIKey(mock.Anything, uuidStr).Return(nil)
 			},
 		},
 		{
@@ -204,7 +204,7 @@ func TestAPIKeyService_DeleteAPIKey(t *testing.T) {
 			force:     false,
 			authToken: makeAPIKeyJWT("", "login"),
 			setupAcc: func(acc *portalsdkmocks.MockAccountAPI) {
-				acc.EXPECT().DeleteAPIKey(context.Background(), uuidStr).Return(nil)
+				acc.EXPECT().DeleteAPIKey(mock.Anything, uuidStr).Return(nil)
 			},
 		},
 		{
@@ -213,7 +213,7 @@ func TestAPIKeyService_DeleteAPIKey(t *testing.T) {
 			force:     false,
 			authToken: "test-token",
 			setupAcc: func(acc *portalsdkmocks.MockAccountAPI) {
-				acc.EXPECT().ListAPIKeys(context.Background(), mock.Anything).
+				acc.EXPECT().ListAPIKeys(mock.Anything, mock.Anything).
 					Return([]*portalsdk.APIKey{}, 0, nil)
 			},
 			wantErr:     true,
@@ -225,7 +225,7 @@ func TestAPIKeyService_DeleteAPIKey(t *testing.T) {
 			force:     false,
 			authToken: "test-token",
 			setupAcc: func(acc *portalsdkmocks.MockAccountAPI) {
-				acc.EXPECT().DeleteAPIKey(context.Background(), uuidStr).
+				acc.EXPECT().DeleteAPIKey(mock.Anything, uuidStr).
 					Return(fmt.Errorf("server error"))
 			},
 			wantErr:     true,

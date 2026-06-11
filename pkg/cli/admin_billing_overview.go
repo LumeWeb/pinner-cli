@@ -30,6 +30,8 @@ Examples:
 }
 
 func billingOverviewAction(ctx context.Context, output Output, cfgMgr config.Manager, billingFactory BillingAdminServiceFactory, quotaFactory QuotaAdminServiceFactory) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+	defer cancel()
 	billingService := billingFactory(cfgMgr, output)
 	if err := billingService.RequireAuthenticated(); err != nil {
 		return err
