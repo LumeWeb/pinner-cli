@@ -17,21 +17,27 @@ jobs:
           - os: ubuntu-latest
             goos: linux
             goarch: amd64
+            race: true
           - os: ubuntu-latest
             goos: linux
             goarch: arm64
+            race: false
           - os: macos-13
             goos: darwin
             goarch: amd64
+            race: true
           - os: macos-latest
             goos: darwin
             goarch: arm64
+            race: true
           - os: windows-latest
             goos: windows
             goarch: amd64
+            race: true
           - os: windows-latest
             goos: windows
             goarch: arm64
+            race: false
 
     runs-on: ${{ matrix.os }}
     name: build (${{ matrix.goos }}/${{ matrix.goarch }})
@@ -59,7 +65,7 @@ jobs:
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
-        run: go test -v -race -count=1 ./...
+        run: go test -v -count=1 ${{ matrix.race && '-race' || '' }} ./...
 
   lint:
     runs-on: ubuntu-latest
