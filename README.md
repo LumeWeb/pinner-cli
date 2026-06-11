@@ -21,7 +21,7 @@ Download the latest binary from the [releases page](https://github.com/lumeweb/p
 ### From go install
 
 ```bash
-go install github.com/lumeweb/pinner-cli/cmd/pinner@latest
+go install go.lumeweb.com/pinner-cli/cmd/pinner@latest
 ```
 
 ### From Source
