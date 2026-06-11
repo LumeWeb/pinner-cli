@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	portalsdk "go.lumeweb.com/portal-sdk"
 	portalsdkmocks "go.lumeweb.com/portal-sdk/mocks"
+	"go.lumeweb.com/pinner-cli/pkg/config"
 )
 
 func newTestAPIKey(name, uuidStr string) *portalsdk.APIKey {
@@ -324,6 +325,276 @@ func TestIsUUIDString(t *testing.T) {
 			require.Equal(t, tt.want, isUUIDString(tt.input))
 		})
 	}
+}
+
+func TestNewAccountAPIKeysCommand(t *testing.T) {
+	cmd := newAccountAPIKeysCommand()
+	require.Equal(t, "api-keys", cmd.Name)
+	require.Contains(t, cmd.Aliases, "apikey")
+	require.Contains(t, cmd.Aliases, "api-key")
+	require.Len(t, cmd.Commands, 3)
+}
+
+type mockAPIKeyServiceForCLI struct {
+	listFunc        func(ctx context.Context, search string) ([]*portalsdk.APIKey, int, error)
+	createFunc      func(ctx context.Context, name string) (*portalsdk.APIKey, error)
+	deleteFunc      func(ctx context.Context, idOrName string, force bool) error
+	currentUUIDFunc func() string
+	requireAuthErr  error
+}
+
+func (m *mockAPIKeyServiceForCLI) ListAPIKeys(ctx context.Context, search string) ([]*portalsdk.APIKey, int, error) {
+	if m.listFunc != nil {
+		return m.listFunc(ctx, search)
+	}
+	return nil, 0, nil
+}
+
+func (m *mockAPIKeyServiceForCLI) CreateAPIKey(ctx context.Context, name string) (*portalsdk.APIKey, error) {
+	if m.createFunc != nil {
+		return m.createFunc(ctx, name)
+	}
+	return nil, nil
+}
+
+func (m *mockAPIKeyServiceForCLI) DeleteAPIKey(ctx context.Context, idOrName string, force bool) error {
+	if m.deleteFunc != nil {
+		return m.deleteFunc(ctx, idOrName, force)
+	}
+	return nil
+}
+
+func (m *mockAPIKeyServiceForCLI) GetCurrentAPIKeyUUID() string {
+	if m.currentUUIDFunc != nil {
+		return m.currentUUIDFunc()
+	}
+	return ""
+}
+
+func (m *mockAPIKeyServiceForCLI) RequireAuthenticated() error {
+	return m.requireAuthErr
+}
+
+func setupAPIKeyHandlerTest(t *testing.T) (*mockAPIKeyServiceForCLI, config.Manager) {
+	t.Helper()
+	mockSvc := &mockAPIKeyServiceForCLI{}
+	cfgMgr := newTestConfigMgr(t)
+	return mockSvc, cfgMgr
+}
+
+func TestAccountAPIKeysList_Success(t *testing.T) {
+	mockSvc, cfgMgr := setupAPIKeyHandlerTest(t)
+	mockSvc.listFunc = func(ctx context.Context, search string) ([]*portalsdk.APIKey, int, error) {
+		return []*portalsdk.APIKey{
+			newTestAPIKey("my-key", "00000000-0000-0000-0000-000000000001"),
+		}, 1, nil
+	}
+
+	output := newTestOutput()
+	cmd := newMockCommand()
+	err := accountAPIKeysList(context.Background(), cmd, output, cfgMgr, "test-token",
+		func(cm config.Manager, out Output, apiEndpoint string) AuthService {
+			return NewMockAuthService(t)
+		},
+		func(authService AuthService, authToken string) APIKeyService {
+			return mockSvc
+		},
+	)
+	require.NoError(t, err)
+}
+
+func TestAccountAPIKeysList_Empty(t *testing.T) {
+	mockSvc, cfgMgr := setupAPIKeyHandlerTest(t)
+	mockSvc.listFunc = func(ctx context.Context, search string) ([]*portalsdk.APIKey, int, error) {
+		return []*portalsdk.APIKey{}, 0, nil
+	}
+
+	output := newTestOutput()
+	cmd := newMockCommand()
+	err := accountAPIKeysList(context.Background(), cmd, output, cfgMgr, "test-token",
+		func(cm config.Manager, out Output, apiEndpoint string) AuthService {
+			return NewMockAuthService(t)
+		},
+		func(authService AuthService, authToken string) APIKeyService {
+			return mockSvc
+		},
+	)
+	require.NoError(t, err)
+}
+
+func TestAccountAPIKeysList_WithSearch(t *testing.T) {
+	mockSvc, cfgMgr := setupAPIKeyHandlerTest(t)
+	mockSvc.listFunc = func(ctx context.Context, search string) ([]*portalsdk.APIKey, int, error) {
+		require.Equal(t, "my-key", search)
+		return []*portalsdk.APIKey{}, 0, nil
+	}
+
+	output := newTestOutput()
+	cmd := newMockCommand().withString(FlagSearch, "my-key")
+	err := accountAPIKeysList(context.Background(), cmd, output, cfgMgr, "test-token",
+		func(cm config.Manager, out Output, apiEndpoint string) AuthService {
+			return NewMockAuthService(t)
+		},
+		func(authService AuthService, authToken string) APIKeyService {
+			return mockSvc
+		},
+	)
+	require.NoError(t, err)
+}
+
+func TestAccountAPIKeysList_ServiceError(t *testing.T) {
+	mockSvc, cfgMgr := setupAPIKeyHandlerTest(t)
+	mockSvc.listFunc = func(ctx context.Context, search string) ([]*portalsdk.APIKey, int, error) {
+		return nil, 0, fmt.Errorf("server error")
+	}
+
+	output := newTestOutput()
+	cmd := newMockCommand()
+	err := accountAPIKeysList(context.Background(), cmd, output, cfgMgr, "test-token",
+		func(cm config.Manager, out Output, apiEndpoint string) AuthService {
+			return NewMockAuthService(t)
+		},
+		func(authService AuthService, authToken string) APIKeyService {
+			return mockSvc
+		},
+	)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to list API keys")
+}
+
+func TestAccountAPIKeysCreate_Success(t *testing.T) {
+	mockSvc, cfgMgr := setupAPIKeyHandlerTest(t)
+	mockSvc.createFunc = func(ctx context.Context, name string) (*portalsdk.APIKey, error) {
+		require.Equal(t, "my-new-key", name)
+		return portalsdk.NewAPIKey("my-new-key", "generated-token"), nil
+	}
+
+	output := newTestOutput()
+	cmd := newMockCommand().withArgs("my-new-key")
+	err := accountAPIKeysCreate(context.Background(), cmd, output, cfgMgr, "test-token",
+		func(cm config.Manager, out Output, apiEndpoint string) AuthService {
+			return NewMockAuthService(t)
+		},
+		func(authService AuthService, authToken string) APIKeyService {
+			return mockSvc
+		},
+	)
+	require.NoError(t, err)
+}
+
+func TestAccountAPIKeysCreate_MissingName(t *testing.T) {
+	_, cfgMgr := setupAPIKeyHandlerTest(t)
+
+	output := newTestOutput()
+	cmd := newMockCommand()
+	err := accountAPIKeysCreate(context.Background(), cmd, output, cfgMgr, "test-token",
+		func(cm config.Manager, out Output, apiEndpoint string) AuthService {
+			return NewMockAuthService(t)
+		},
+		func(authService AuthService, authToken string) APIKeyService {
+			return &mockAPIKeyServiceForCLI{}
+		},
+	)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "API key name is required")
+}
+
+func TestAccountAPIKeysCreate_ServiceError(t *testing.T) {
+	mockSvc, cfgMgr := setupAPIKeyHandlerTest(t)
+	mockSvc.createFunc = func(ctx context.Context, name string) (*portalsdk.APIKey, error) {
+		return nil, fmt.Errorf("duplicate key name")
+	}
+
+	output := newTestOutput()
+	cmd := newMockCommand().withArgs("dup-key")
+	err := accountAPIKeysCreate(context.Background(), cmd, output, cfgMgr, "test-token",
+		func(cm config.Manager, out Output, apiEndpoint string) AuthService {
+			return NewMockAuthService(t)
+		},
+		func(authService AuthService, authToken string) APIKeyService {
+			return mockSvc
+		},
+	)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to create API key")
+}
+
+func TestAccountAPIKeysDelete_Success(t *testing.T) {
+	mockSvc, cfgMgr := setupAPIKeyHandlerTest(t)
+	mockSvc.deleteFunc = func(ctx context.Context, idOrName string, force bool) error {
+		require.Equal(t, "00000000-0000-0000-0000-000000000001", idOrName)
+		require.False(t, force)
+		return nil
+	}
+
+	output := newTestOutput()
+	cmd := newMockCommand().withArgs("00000000-0000-0000-0000-000000000001")
+	err := accountAPIKeysDelete(context.Background(), cmd, output, cfgMgr, "test-token",
+		func(cm config.Manager, out Output, apiEndpoint string) AuthService {
+			return NewMockAuthService(t)
+		},
+		func(authService AuthService, authToken string) APIKeyService {
+			return mockSvc
+		},
+	)
+	require.NoError(t, err)
+}
+
+func TestAccountAPIKeysDelete_MissingArg(t *testing.T) {
+	_, cfgMgr := setupAPIKeyHandlerTest(t)
+
+	output := newTestOutput()
+	cmd := newMockCommand()
+	err := accountAPIKeysDelete(context.Background(), cmd, output, cfgMgr, "test-token",
+		func(cm config.Manager, out Output, apiEndpoint string) AuthService {
+			return NewMockAuthService(t)
+		},
+		func(authService AuthService, authToken string) APIKeyService {
+			return &mockAPIKeyServiceForCLI{}
+		},
+	)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "API key UUID or name is required")
+}
+
+func TestAccountAPIKeysDelete_ServiceError(t *testing.T) {
+	mockSvc, cfgMgr := setupAPIKeyHandlerTest(t)
+	mockSvc.deleteFunc = func(ctx context.Context, idOrName string, force bool) error {
+		return fmt.Errorf("not found")
+	}
+
+	output := newTestOutput()
+	cmd := newMockCommand().withArgs("nonexistent").withBool(FlagForce, true)
+	err := accountAPIKeysDelete(context.Background(), cmd, output, cfgMgr, "test-token",
+		func(cm config.Manager, out Output, apiEndpoint string) AuthService {
+			return NewMockAuthService(t)
+		},
+		func(authService AuthService, authToken string) APIKeyService {
+			return mockSvc
+		},
+	)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "not found")
+}
+
+func TestAccountAPIKeysDelete_WithForce(t *testing.T) {
+	mockSvc, cfgMgr := setupAPIKeyHandlerTest(t)
+	mockSvc.deleteFunc = func(ctx context.Context, idOrName string, force bool) error {
+		require.True(t, force)
+		return nil
+	}
+
+	output := newTestOutput()
+	cmd := newMockCommand().withArgs("my-key").withBool(FlagForce, true)
+	err := accountAPIKeysDelete(context.Background(), cmd, output, cfgMgr, "test-token",
+		func(cm config.Manager, out Output, apiEndpoint string) AuthService {
+			return NewMockAuthService(t)
+		},
+		func(authService AuthService, authToken string) APIKeyService {
+			return mockSvc
+		},
+	)
+	require.NoError(t, err)
 }
 
 // makeAPIKeyJWT creates a minimal JWT string with the given subject and audience.

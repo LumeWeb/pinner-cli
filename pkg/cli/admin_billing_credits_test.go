@@ -8,30 +8,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/pkg/config"
 	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
 	"go.lumeweb.com/portal-sdk/admin"
 )
-
-// Mock command getters for billing credits tests
-type mockBillingCreditsListCmd struct {
-	userID     string
-	direction  string
-	creditType string
-}
-
-func (m *mockBillingCreditsListCmd) String(name string) string {
-	switch name {
-	case FlagUserID:
-		return m.userID
-	case FlagDirection:
-		return m.direction
-	case FlagType:
-		return m.creditType
-	}
-	return ""
-}
 
 func unmarshalCreditItemJSON(data string) *admin.CreditItem {
 	var item admin.CreditItem
@@ -97,7 +77,7 @@ func TestBillingCreditsList(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			service := NewMockBillingAdminService(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(cfgMgr, service)
@@ -107,7 +87,7 @@ func TestBillingCreditsList(t *testing.T) {
 				return service
 			}
 
-			cmd := &mockBillingCreditsListCmd{}
+			cmd := newMockCommand()
 
 			err := billingCreditsListAction(context.Background(), cmd, output, cfgMgr, serviceFactory)
 
@@ -121,15 +101,6 @@ func TestBillingCreditsList(t *testing.T) {
 			}
 		})
 	}
-}
-
-// mockBillingCreditsGetCmd implements billingCreditsGetCmdGetter
-type mockBillingCreditsGetCmd struct {
-	args cli.Args
-}
-
-func (m *mockBillingCreditsGetCmd) Args() cli.Args {
-	return m.args
 }
 
 func TestBillingCreditsGet(t *testing.T) {
@@ -174,23 +145,424 @@ func TestBillingCreditsGet(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			service := NewMockBillingAdminService(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(cfgMgr, service)
 			}
 
-			args := &mockArgs{}
+			cmd := newMockCommand()
 			if tt.creditID != "" {
-				args.args = []string{tt.creditID}
+				cmd = cmd.withArgs(tt.creditID)
 			}
-			cmd := &mockBillingCreditsGetCmd{args: args}
 
 			serviceFactory := func(cm config.Manager, out Output) BillingAdminService {
 				return service
 			}
 
 			err := billingCreditsGetAction(context.Background(), cmd, output, cfgMgr, serviceFactory)
+
+			if tt.wantErr {
+				require.Error(t, err)
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
+				}
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestBillingCreditsDelete(t *testing.T) {
+	tests := []struct {
+		name        string
+		creditID    string
+		setupMocks  func(*configmocks.MockManager, *MockBillingAdminService)
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name:     "successful delete",
+			creditID: "123e4567-e89b-12d3-a456-426614174000",
+			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
+				service.EXPECT().RequireAuthenticated().Return(nil)
+				service.EXPECT().DeleteCredit(context.Background(), "123e4567-e89b-12d3-a456-426614174000").Return(nil)
+			},
+			wantErr: false,
+		},
+		{
+			name:        "returns error when credit ID is missing",
+			creditID:    "",
+			setupMocks:  func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {},
+			wantErr:     true,
+			errContains: "credit ID is required",
+		},
+		{
+			name:     "returns error when not authenticated",
+			creditID: "123e4567-e89b-12d3-a456-426614174000",
+			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
+				service.EXPECT().RequireAuthenticated().Return(ErrNotAuthenticated)
+			},
+			wantErr:     true,
+			errContains: "not authenticated",
+		},
+		{
+			name:     "returns error when service fails",
+			creditID: "123e4567-e89b-12d3-a456-426614174000",
+			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
+				service.EXPECT().RequireAuthenticated().Return(nil)
+				service.EXPECT().DeleteCredit(context.Background(), "123e4567-e89b-12d3-a456-426614174000").Return(errors.New("service error"))
+			},
+			wantErr:     true,
+			errContains: "service error",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfgMgr := configmocks.NewMockManager(t)
+			service := NewMockBillingAdminService(t)
+			output := newTestOutput()
+
+			if tt.setupMocks != nil {
+				tt.setupMocks(cfgMgr, service)
+			}
+
+			serviceFactory := func(cm config.Manager, out Output) BillingAdminService {
+				return service
+			}
+
+			cmd := newMockCommand()
+			if tt.creditID != "" {
+				cmd = cmd.withArgs(tt.creditID)
+			}
+
+			err := billingCreditsDeleteAction(context.Background(), cmd, output, cfgMgr, serviceFactory)
+
+			if tt.wantErr {
+				require.Error(t, err)
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
+				}
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestBillingCreditsRestore(t *testing.T) {
+	tests := []struct {
+		name        string
+		creditID    string
+		setupMocks  func(*configmocks.MockManager, *MockBillingAdminService)
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name:     "successful restore",
+			creditID: "123e4567-e89b-12d3-a456-426614174000",
+			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
+				service.EXPECT().RequireAuthenticated().Return(nil)
+				service.EXPECT().RestoreCredit(context.Background(), "123e4567-e89b-12d3-a456-426614174000").Return(
+					unmarshalCreditJSON(`{"id":"123e4567-e89b-12d3-a456-426614174000","user_id":123,"amount":"100.00","type":"manual","direction":"credit"}`),
+					nil,
+				)
+			},
+			wantErr: false,
+		},
+		{
+			name:        "returns error when credit ID is missing",
+			creditID:    "",
+			setupMocks:  func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {},
+			wantErr:     true,
+			errContains: "credit ID is required",
+		},
+		{
+			name:     "returns error when not authenticated",
+			creditID: "123e4567-e89b-12d3-a456-426614174000",
+			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
+				service.EXPECT().RequireAuthenticated().Return(ErrNotAuthenticated)
+			},
+			wantErr:     true,
+			errContains: "not authenticated",
+		},
+		{
+			name:     "returns error when service fails",
+			creditID: "123e4567-e89b-12d3-a456-426614174000",
+			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
+				service.EXPECT().RequireAuthenticated().Return(nil)
+				service.EXPECT().RestoreCredit(context.Background(), "123e4567-e89b-12d3-a456-426614174000").Return(
+					nil,
+					errors.New("service error"),
+				)
+			},
+			wantErr:     true,
+			errContains: "service error",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfgMgr := configmocks.NewMockManager(t)
+			service := NewMockBillingAdminService(t)
+			output := newTestOutput()
+
+			if tt.setupMocks != nil {
+				tt.setupMocks(cfgMgr, service)
+			}
+
+			serviceFactory := func(cm config.Manager, out Output) BillingAdminService {
+				return service
+			}
+
+			cmd := newMockCommand()
+			if tt.creditID != "" {
+				cmd = cmd.withArgs(tt.creditID)
+			}
+
+			err := billingCreditsRestoreAction(context.Background(), cmd, output, cfgMgr, serviceFactory)
+
+			if tt.wantErr {
+				require.Error(t, err)
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
+				}
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestBillingCreditsPurge(t *testing.T) {
+	tests := []struct {
+		name        string
+		setupMocks  func(*configmocks.MockManager, *MockBillingAdminService)
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name: "successful purge",
+			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
+				service.EXPECT().RequireAuthenticated().Return(nil)
+				service.EXPECT().PurgeCredits(context.Background(), &admin.CreditPurgeRequest{
+					OlderThan: "30d",
+				}).Return(5, nil)
+			},
+			wantErr: false,
+		},
+		{
+			name: "returns error when not authenticated",
+			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
+				service.EXPECT().RequireAuthenticated().Return(ErrNotAuthenticated)
+			},
+			wantErr:     true,
+			errContains: "not authenticated",
+		},
+		{
+			name: "returns error when service fails",
+			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
+				service.EXPECT().RequireAuthenticated().Return(nil)
+				service.EXPECT().PurgeCredits(context.Background(), &admin.CreditPurgeRequest{
+					OlderThan: "30d",
+				}).Return(0, errors.New("service error"))
+			},
+			wantErr:     true,
+			errContains: "service error",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfgMgr := configmocks.NewMockManager(t)
+			service := NewMockBillingAdminService(t)
+			output := newTestOutput()
+
+			if tt.setupMocks != nil {
+				tt.setupMocks(cfgMgr, service)
+			}
+
+			serviceFactory := func(cm config.Manager, out Output) BillingAdminService {
+				return service
+			}
+
+			cmd := newMockCommand().withString(FlagOlderThan, "30d")
+
+			err := billingCreditsPurgeAction(context.Background(), cmd, output, cfgMgr, serviceFactory)
+
+			if tt.wantErr {
+				require.Error(t, err)
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
+				}
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestBillingCreditsUserBalance(t *testing.T) {
+	tests := []struct {
+		name        string
+		userID      string
+		setupMocks  func(*configmocks.MockManager, *MockBillingAdminService)
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name:   "successful user balance",
+			userID: "123",
+			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
+				service.EXPECT().RequireAuthenticated().Return(nil)
+				service.EXPECT().GetUserBalance(context.Background(), "123").Return(
+					&admin.UserBalance{},
+					nil,
+				)
+			},
+			wantErr: false,
+		},
+		{
+			name:        "returns error when user ID is missing",
+			userID:      "",
+			setupMocks:  func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {},
+			wantErr:     true,
+			errContains: "user ID is required",
+		},
+		{
+			name:   "returns error when not authenticated",
+			userID: "123",
+			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
+				service.EXPECT().RequireAuthenticated().Return(ErrNotAuthenticated)
+			},
+			wantErr:     true,
+			errContains: "not authenticated",
+		},
+		{
+			name:   "returns error when service fails",
+			userID: "123",
+			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
+				service.EXPECT().RequireAuthenticated().Return(nil)
+				service.EXPECT().GetUserBalance(context.Background(), "123").Return(
+					nil,
+					errors.New("service error"),
+				)
+			},
+			wantErr:     true,
+			errContains: "service error",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfgMgr := configmocks.NewMockManager(t)
+			service := NewMockBillingAdminService(t)
+			output := newTestOutput()
+
+			if tt.setupMocks != nil {
+				tt.setupMocks(cfgMgr, service)
+			}
+
+			serviceFactory := func(cm config.Manager, out Output) BillingAdminService {
+				return service
+			}
+
+			cmd := newMockCommand()
+			if tt.userID != "" {
+				cmd = cmd.withArgs(tt.userID)
+			}
+
+			err := billingCreditsUserBalanceAction(context.Background(), cmd, output, cfgMgr, serviceFactory)
+
+			if tt.wantErr {
+				require.Error(t, err)
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
+				}
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestBillingCreditsUserDeletedCredits(t *testing.T) {
+	tests := []struct {
+		name        string
+		userID      string
+		setupMocks  func(*configmocks.MockManager, *MockBillingAdminService)
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name:   "successful user deleted credits",
+			userID: "123",
+			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
+				service.EXPECT().RequireAuthenticated().Return(nil)
+				service.EXPECT().GetUserDeletedCredits(context.Background(), "123", &admin.GetApiBillingUsersUserIdDeletedCreditsParams{}).Return(
+					[]*admin.CreditItem{
+						unmarshalCreditItemJSON(`{"id":"123e4567-e89b-12d3-a456-426614174000","user_id":123,"amount":"100.00","type":"manual","direction":"credit"}`),
+					},
+					1,
+					nil,
+				)
+			},
+			wantErr: false,
+		},
+		{
+			name:        "returns error when user ID is missing",
+			userID:      "",
+			setupMocks:  func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {},
+			wantErr:     true,
+			errContains: "user ID is required",
+		},
+		{
+			name:   "returns error when not authenticated",
+			userID: "123",
+			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
+				service.EXPECT().RequireAuthenticated().Return(ErrNotAuthenticated)
+			},
+			wantErr:     true,
+			errContains: "not authenticated",
+		},
+		{
+			name:   "returns error when service fails",
+			userID: "123",
+			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
+				service.EXPECT().RequireAuthenticated().Return(nil)
+				service.EXPECT().GetUserDeletedCredits(context.Background(), "123", &admin.GetApiBillingUsersUserIdDeletedCreditsParams{}).Return(
+					nil,
+					0,
+					errors.New("service error"),
+				)
+			},
+			wantErr:     true,
+			errContains: "service error",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfgMgr := configmocks.NewMockManager(t)
+			service := NewMockBillingAdminService(t)
+			output := newTestOutput()
+
+			if tt.setupMocks != nil {
+				tt.setupMocks(cfgMgr, service)
+			}
+
+			serviceFactory := func(cm config.Manager, out Output) BillingAdminService {
+				return service
+			}
+
+			cmd := newMockCommand()
+			if tt.userID != "" {
+				cmd = cmd.withArgs(tt.userID)
+			}
+
+			err := billingCreditsUserDeletedCreditsAction(context.Background(), cmd, output, cfgMgr, serviceFactory)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -241,7 +613,7 @@ func TestBillingCreditsCreate(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			service := NewMockBillingAdminService(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(cfgMgr, service)
@@ -251,7 +623,11 @@ func TestBillingCreditsCreate(t *testing.T) {
 				return service
 			}
 
-			cmd := &mockBillingCreditsCreateCmd{}
+			cmd := newMockCommand().
+				withString(FlagUserID, "123").
+				withString(FlagAmount, "100.00").
+				withString(FlagType, "manual").
+				withString(FlagDirection, "credit")
 
 			err := billingCreditsCreateAction(context.Background(), cmd, output, cfgMgr, serviceFactory)
 
@@ -266,26 +642,3 @@ func TestBillingCreditsCreate(t *testing.T) {
 		})
 	}
 }
-
-type mockBillingCreditsCreateCmd struct {}
-
-func (m *mockBillingCreditsCreateCmd) String(name string) string {
-	switch name {
-	case FlagUserID:
-		return "123"
-	case FlagAmount:
-		return "100.00"
-	case FlagType:
-		return "manual"
-	case FlagDirection:
-		return "credit"
-	}
-	return ""
-}
-
-// Ensure mockBillingCreditsListCmd implements the interface
-var _ billingCreditsListCmdGetter = (*mockBillingCreditsListCmd)(nil)
-// Ensure mockBillingCreditsCreateCmd implements the interface
-var _ billingCreditsCreateCmdGetter = (*mockBillingCreditsCreateCmd)(nil)
-// Ensure mockBillingCreditsGetCmd implements the interface
-var _ billingCreditsGetCmdGetter = (*mockBillingCreditsGetCmd)(nil)

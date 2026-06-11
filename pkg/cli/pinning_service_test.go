@@ -28,7 +28,7 @@ func TestNewPinningService(t *testing.T) {
 			AuthToken: testAuthToken,
 		})
 
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		service := NewPinningService(cfgMgr, output, "https://api.test.com")
 
 		assert.IsType(t, &PinningServiceDefault{}, service)
@@ -42,7 +42,7 @@ func TestNewPinningService(t *testing.T) {
 			AuthToken: "",
 		})
 
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		service := NewPinningService(cfgMgr, output, "https://api.test.com")
 
 		assert.IsType(t, &PinningServiceDefault{}, service)
@@ -63,7 +63,7 @@ func TestPinningService_Pin(t *testing.T) {
 		mockResult := NewMockPinStatusGetter(t, testCID, "", go_pinning_service_http_client.StatusPinned)
 		client.EXPECT().Add(context.Background(), testCID, mock.Anything).Return(mockResult, nil)
 
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		service := NewPinningService(cfgMgr, output, "https://api.test.com", WithPinningClient(client))
 
 		result, err := service.Pin(context.Background(), "QmUNLLsPACCz1vLxQVkXqqLX5R1X345qqfHbsf67hvA3Nn", "", false)
@@ -83,7 +83,7 @@ func TestPinningService_Pin(t *testing.T) {
 		mockResult := NewMockPinResult(t, "req-123", go_pinning_service_http_client.StatusPinned)
 		client.EXPECT().Add(context.Background(), testCID, mock.Anything).Return(mockResult, nil)
 
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		service := NewPinningService(cfgMgr, output, "https://api.test.com", WithPinningClient(client))
 
 		result, err := service.Pin(context.Background(), "QmUNLLsPACCz1vLxQVkXqqLX5R1X345qqfHbsf67hvA3Nn", "test-name", false)
@@ -94,7 +94,7 @@ func TestPinningService_Pin(t *testing.T) {
 
 	t.Run("returns error when not authenticated", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 
 		service := &PinningServiceDefault{
 			pinningClient: nil,
@@ -115,7 +115,7 @@ func TestPinningService_Pin(t *testing.T) {
 		})
 
 		client := climocks.NewMockPinningClient(t)
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 
 		service := NewPinningService(cfgMgr, output, "https://api.test.com", WithPinningClient(client))
 
@@ -137,7 +137,7 @@ func TestPinningService_Pin(t *testing.T) {
 			errors.New("pinning service error"),
 		)
 
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		service := NewPinningService(cfgMgr, output, "https://api.test.com", WithPinningClient(client))
 
 		_, err := service.Pin(context.Background(), "QmUNLLsPACCz1vLxQVkXqqLX5R1X345qqfHbsf67hvA3Nn", "", false)
@@ -158,7 +158,7 @@ func TestPinningService_Pin(t *testing.T) {
 			fmt.Errorf("remote pinning service returned http error 401: unauthorized"),
 		)
 
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		service := NewPinningService(cfgMgr, output, "https://api.test.com", WithPinningClient(client))
 
 		_, err := service.Pin(context.Background(), "QmUNLLsPACCz1vLxQVkXqqLX5R1X345qqfHbsf67hvA3Nn", "", false)
@@ -183,7 +183,7 @@ func TestPinningService_List(t *testing.T) {
 			nil,
 		)
 
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		service := NewPinningService(cfgMgr, output, "https://api.test.com", WithPinningClient(client))
 
 		pins, err := service.List(context.Background(), "", 0, "")
@@ -196,7 +196,7 @@ func TestPinningService_List(t *testing.T) {
 
 	t.Run("returns error when not authenticated", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 
 		service := &PinningServiceDefault{
 			pinningClient: nil,
@@ -223,7 +223,7 @@ func TestPinningService_List(t *testing.T) {
 			errors.New("list service error"),
 		)
 
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		service := NewPinningService(cfgMgr, output, "https://api.test.com", WithPinningClient(client))
 
 		_, err := service.List(context.Background(), "", 0, "")
@@ -244,7 +244,7 @@ func TestPinningService_List(t *testing.T) {
 			fmt.Errorf("remote pinning service returned http error 401: unauthorized"),
 		)
 
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		service := NewPinningService(cfgMgr, output, "https://api.test.com", WithPinningClient(client))
 
 		_, err := service.List(context.Background(), "", 0, "")
@@ -270,7 +270,7 @@ func TestPinningService_Status(t *testing.T) {
 			nil,
 		)
 
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		service := NewPinningService(cfgMgr, output, "https://api.test.com", WithPinningClient(client))
 
 		status, err := service.Status(context.Background(), "QmUNLLsPACCz1vLxQVkXqqLX5R1X345qqfHbsf67hvA3Nn", false)
@@ -281,7 +281,7 @@ func TestPinningService_Status(t *testing.T) {
 
 	t.Run("returns error when not authenticated", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 
 		service := &PinningServiceDefault{
 			pinningClient: nil,
@@ -302,7 +302,7 @@ func TestPinningService_Status(t *testing.T) {
 		})
 
 		client := climocks.NewMockPinningClient(t)
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 
 		service := NewPinningService(cfgMgr, output, "https://api.test.com", WithPinningClient(client))
 
@@ -324,7 +324,7 @@ func TestPinningService_Status(t *testing.T) {
 			nil,
 		)
 
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		service := NewPinningService(cfgMgr, output, "https://api.test.com", WithPinningClient(client))
 
 		_, err := service.Status(context.Background(), "QmUNLLsPACCz1vLxQVkXqqLX5R1X345qqfHbsf67hvA3Nn", false)
@@ -345,7 +345,7 @@ func TestPinningService_Status(t *testing.T) {
 			errors.New("status check error"),
 		)
 
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		service := NewPinningService(cfgMgr, output, "https://api.test.com", WithPinningClient(client))
 
 		_, err := service.Status(context.Background(), "QmUNLLsPACCz1vLxQVkXqqLX5R1X345qqfHbsf67hvA3Nn", false)
@@ -366,7 +366,7 @@ func TestPinningService_Status(t *testing.T) {
 			fmt.Errorf("remote pinning service returned http error 401: unauthorized"),
 		)
 
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		service := NewPinningService(cfgMgr, output, "https://api.test.com", WithPinningClient(client))
 
 		_, err := service.Status(context.Background(), "QmUNLLsPACCz1vLxQVkXqqLX5R1X345qqfHbsf67hvA3Nn", false)
@@ -393,7 +393,7 @@ func TestPinningService_Unpin(t *testing.T) {
 		)
 		client.EXPECT().DeleteByID(context.Background(), "req-123").Return(nil)
 
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		service := NewPinningService(cfgMgr, output, "https://api.test.com", WithPinningClient(client))
 
 		result, err := service.Unpin(context.Background(), "QmUNLLsPACCz1vLxQVkXqqLX5R1X345qqfHbsf67hvA3Nn", true)
@@ -409,7 +409,7 @@ func TestPinningService_Unpin(t *testing.T) {
 		})
 
 		client := climocks.NewMockPinningClient(t)
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 
 		service := NewPinningService(cfgMgr, output, "https://api.test.com", WithPinningClient(client))
 
@@ -421,7 +421,7 @@ func TestPinningService_Unpin(t *testing.T) {
 
 	t.Run("returns error when not authenticated", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 
 		service := &PinningServiceDefault{
 			pinningClient: nil,
@@ -442,7 +442,7 @@ func TestPinningService_Unpin(t *testing.T) {
 		})
 
 		client := climocks.NewMockPinningClient(t)
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 
 		service := NewPinningService(cfgMgr, output, "https://api.test.com", WithPinningClient(client))
 
@@ -464,7 +464,7 @@ func TestPinningService_Unpin(t *testing.T) {
 			nil,
 		)
 
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		service := NewPinningService(cfgMgr, output, "https://api.test.com", WithPinningClient(client))
 
 		_, err := service.Unpin(context.Background(), "QmUNLLsPACCz1vLxQVkXqqLX5R1X345qqfHbsf67hvA3Nn", true)
@@ -491,7 +491,7 @@ func TestPinningService_Unpin(t *testing.T) {
 			errors.New("unpin service error"),
 		)
 
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		service := NewPinningService(cfgMgr, output, "https://api.test.com", WithPinningClient(client))
 
 		_, err := service.Unpin(context.Background(), "QmUNLLsPACCz1vLxQVkXqqLX5R1X345qqfHbsf67hvA3Nn", true)
@@ -521,7 +521,7 @@ func TestPinningService_UpdateMetadata(t *testing.T) {
 			nil,
 		)
 
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		service := NewPinningService(cfgMgr, output, "https://api.test.com", WithPinningClient(client))
 
 		err := service.UpdateMetadata(context.Background(), "QmUNLLsPACCz1vLxQVkXqqLX5R1X345qqfHbsf67hvA3Nn", []string{"key", "value"}, false)
@@ -530,7 +530,7 @@ func TestPinningService_UpdateMetadata(t *testing.T) {
 
 	t.Run("returns error when not authenticated", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 
 		service := &PinningServiceDefault{
 			pinningClient: nil,
@@ -551,7 +551,7 @@ func TestPinningService_UpdateMetadata(t *testing.T) {
 		})
 
 		client := climocks.NewMockPinningClient(t)
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 
 		service := NewPinningService(cfgMgr, output, "https://api.test.com", WithPinningClient(client))
 
@@ -567,7 +567,7 @@ func TestPinningService_UpdateMetadata(t *testing.T) {
 		})
 
 		client := climocks.NewMockPinningClient(t)
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 
 		service := NewPinningService(cfgMgr, output, "https://api.test.com", WithPinningClient(client))
 
@@ -589,7 +589,7 @@ func TestPinningService_UpdateMetadata(t *testing.T) {
 			nil,
 		)
 
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		service := NewPinningService(cfgMgr, output, "https://api.test.com", WithPinningClient(client))
 
 		err := service.UpdateMetadata(context.Background(), "QmUNLLsPACCz1vLxQVkXqqLX5R1X345qqfHbsf67hvA3Nn", []string{"key", "value"}, false)
@@ -617,7 +617,7 @@ func TestPinningService_UpdateMetadata(t *testing.T) {
 			errors.New("update service error"),
 		)
 
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		service := NewPinningService(cfgMgr, output, "https://api.test.com", WithPinningClient(client))
 
 		err := service.UpdateMetadata(context.Background(), "QmUNLLsPACCz1vLxQVkXqqLX5R1X345qqfHbsf67hvA3Nn", []string{"key", "value"}, false)
@@ -630,7 +630,7 @@ func TestPinningService_waitForPinCompletion(t *testing.T) {
 	t.Run("successfully waits for pin completion", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
 		client := climocks.NewMockPinningClient(t)
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 
 		callCount := 0
 
@@ -661,7 +661,7 @@ func TestPinningService_waitForPinCompletion(t *testing.T) {
 	t.Run("returns error on context cancellation", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
 		client := climocks.NewMockPinningClient(t)
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 
 		service := &PinningServiceDefault{
 			pinningClient: client,
@@ -680,7 +680,7 @@ func TestPinningService_waitForPinCompletion(t *testing.T) {
 	t.Run("returns error when pinning fails", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
 		client := climocks.NewMockPinningClient(t)
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 
 		client.EXPECT().GetStatusByID(mock.Anything, "req-123").Return(
 			NewMockPinStatusGetter(t, testCID, "", go_pinning_service_http_client.StatusFailed),
@@ -702,7 +702,7 @@ func TestPinningService_waitForPinCompletion(t *testing.T) {
 	t.Run("returns error when status check fails", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
 		client := climocks.NewMockPinningClient(t)
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 
 		client.EXPECT().GetStatusByID(mock.Anything, "req-123").Return(
 			nil,
@@ -739,7 +739,7 @@ func TestPinningService_watchPinStatus(t *testing.T) {
 			nil,
 		).Maybe()
 
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		service := NewPinningService(cfgMgr, output, "https://api.test.com", WithPinningClient(client))
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -772,7 +772,7 @@ func TestPinningService_watchPinStatus(t *testing.T) {
 			nil,
 		).Maybe()
 
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		service := NewPinningService(cfgMgr, output, "https://api.test.com", WithPinningClient(client))
 
 		ctx, cancel := context.WithCancel(context.Background())

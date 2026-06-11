@@ -36,10 +36,17 @@ Examples:
 		},
 		Action: func(ctx context.Context, c *cli.Command) error {
 			output := setupOutput(c)
-			if c.Bool(FlagAll) {
-				return unpinAll(ctx, newCLICommandWrapper(c), output, defaultConfigManagerFactory, defaultPinningServiceFactory)
+			cfgMgr, err := defaultConfigManagerFactory()
+			if err != nil {
+				return err
 			}
-			return unpin(ctx, newCLICommandWrapper(c), output, defaultConfigManagerFactory, defaultPinningServiceFactory)
+			authToken := GetAuthToken(c, cfgMgr)
+			secure := GetSecureSetting(c, cfgMgr)
+			if c.Bool(FlagAll) {
+				prompter := &PTermConfirmPrompter{}
+				return unpinAll(ctx, newCLICommandWrapper(c), output, cfgMgr, authToken, secure, defaultPinningServiceFactory, prompter)
+			}
+			return unpin(ctx, newCLICommandWrapper(c), output, cfgMgr, authToken, secure, defaultPinningServiceFactory)
 		},
 	}
 }

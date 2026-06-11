@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -40,7 +41,7 @@ type uploadTestHelpers struct {
 
 func newUploadTestHelpers(t *testing.T) *uploadTestHelpers {
 	cfgMgr := configmocks.NewMockManager(t)
-	output := NewOutputFormatter(false, false, false, false)
+	output := newTestOutput()
 	accountClient := portalsdkmocks.NewMockAccountAPI(t)
 
 	cfg := &config.Config{
@@ -352,6 +353,194 @@ func TestUploadServiceDefault_Upload_WaitForPin(t *testing.T) {
 		require.NoError(t, err)
 		assert.NotEmpty(t, result.CID)
 	})
+}
+
+func TestUploadServiceDefault_RequireAuthenticated(t *testing.T) {
+	t.Run("returns nil when auth token is available", func(t *testing.T) {
+		h := newUploadTestHelpers(t)
+		h.cfg.AuthToken = configToken
+		h.cfgMgr.EXPECT().Config().Return(h.cfg)
+
+		err := h.service.RequireAuthenticated()
+		assert.NoError(t, err)
+	})
+
+	t.Run("returns error when no auth token", func(t *testing.T) {
+		h := newUploadTestHelpers(t)
+		h.cfg.AuthToken = ""
+		h.cfgMgr.EXPECT().Config().Return(h.cfg)
+
+		err := h.service.RequireAuthenticated()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not authenticated")
+	})
+
+	t.Run("returns nil when override token is set", func(t *testing.T) {
+		h := newUploadTestHelpers(t)
+		h.cfg.AuthToken = ""
+		h.service.WithAuthToken(overrideToken)
+		h.cfgMgr.EXPECT().Config().Return(h.cfg)
+
+		err := h.service.RequireAuthenticated()
+		assert.NoError(t, err)
+	})
+}
+
+func TestUploadServiceDefault_getAuthToken(t *testing.T) {
+	t.Run("returns override token when set", func(t *testing.T) {
+		h := newUploadTestHelpers(t)
+		h.cfg.AuthToken = configToken
+		h.service.WithAuthToken(overrideToken)
+		h.cfgMgr.EXPECT().Config().Return(h.cfg)
+
+		token := h.service.getAuthToken()
+		assert.Equal(t, overrideToken, token)
+	})
+
+	t.Run("falls back to config token when no override", func(t *testing.T) {
+		h := newUploadTestHelpers(t)
+		h.cfg.AuthToken = configToken
+		h.cfgMgr.EXPECT().Config().Return(h.cfg)
+
+		token := h.service.getAuthToken()
+		assert.Equal(t, configToken, token)
+	})
+
+	t.Run("returns empty when neither available", func(t *testing.T) {
+		h := newUploadTestHelpers(t)
+		h.cfg.AuthToken = ""
+		h.cfgMgr.EXPECT().Config().Return(h.cfg)
+
+		token := h.service.getAuthToken()
+		assert.Empty(t, token)
+	})
+}
+
+func TestUploadServiceDefault_resolveAuthToken(t *testing.T) {
+	t.Run("returns config token when no auth service", func(t *testing.T) {
+		h := newUploadTestHelpers(t)
+		h.cfg.AuthToken = configToken
+		h.cfgMgr.EXPECT().Config().Return(h.cfg)
+
+		token, err := h.service.resolveAuthToken(context.Background())
+		require.NoError(t, err)
+		assert.Equal(t, configToken, token)
+	})
+
+	t.Run("returns raw token when JWT decode fails", func(t *testing.T) {
+		h := newUploadTestHelpers(t)
+		h.service.authService = NewMockAuthService(t)
+		h.cfg.AuthToken = "not-a-jwt"
+		h.cfgMgr.EXPECT().Config().Return(h.cfg)
+
+		token, err := h.service.resolveAuthToken(context.Background())
+		require.NoError(t, err)
+		assert.Equal(t, "not-a-jwt", token)
+	})
+
+	t.Run("exchanges API key JWT for login JWT", func(t *testing.T) {
+		h := newUploadTestHelpers(t)
+		h.service.authService = NewMockAuthService(t)
+
+		apiKeyJWT := createUploadTestJWT(t, "api")
+		loginJWT := "login-jwt-token"
+
+		h.cfg.AuthToken = apiKeyJWT
+		h.cfgMgr.EXPECT().Config().Return(h.cfg)
+		h.accountClient.EXPECT().LoginWithAPIKey(mock.Anything, apiKeyJWT).Return(loginJWT, nil)
+
+		token, err := h.service.resolveAuthToken(context.Background())
+		require.NoError(t, err)
+		assert.Equal(t, loginJWT, token)
+	})
+
+	t.Run("returns error when API key exchange fails", func(t *testing.T) {
+		h := newUploadTestHelpers(t)
+		h.service.authService = NewMockAuthService(t)
+
+		apiKeyJWT := createUploadTestJWT(t, "api")
+		h.cfg.AuthToken = apiKeyJWT
+		h.cfgMgr.EXPECT().Config().Return(h.cfg)
+		h.accountClient.EXPECT().LoginWithAPIKey(mock.Anything, apiKeyJWT).Return("", errors.New("exchange failed"))
+
+		token, err := h.service.resolveAuthToken(context.Background())
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to exchange API key")
+		assert.Empty(t, token)
+	})
+
+	t.Run("returns login JWT as-is when purpose is login", func(t *testing.T) {
+		h := newUploadTestHelpers(t)
+		h.service.authService = NewMockAuthService(t)
+
+		loginJWT := createUploadTestJWT(t, "login")
+		h.cfg.AuthToken = loginJWT
+		h.cfgMgr.EXPECT().Config().Return(h.cfg)
+
+		token, err := h.service.resolveAuthToken(context.Background())
+		require.NoError(t, err)
+		assert.Equal(t, loginJWT, token)
+	})
+}
+
+func TestUploadServiceDefault_wrapUploadError(t *testing.T) {
+	t.Run("returns nil for nil error", func(t *testing.T) {
+		h := newUploadTestHelpers(t)
+		result := h.service.wrapUploadError(nil)
+		assert.Nil(t, result)
+	})
+
+	t.Run("wraps error with Upload context", func(t *testing.T) {
+		h := newUploadTestHelpers(t)
+		innerErr := errors.New("something went wrong")
+		result := h.service.wrapUploadError(innerErr)
+		require.Error(t, result)
+		assert.Contains(t, result.Error(), "Upload failed")
+		assert.True(t, errors.Is(result, innerErr))
+	})
+}
+
+func TestUploadServiceDefault_waitForPin(t *testing.T) {
+	t.Run("returns error when account endpoint unreachable", func(t *testing.T) {
+		h := newUploadTestHelpers(t)
+		h.cfgMgr.EXPECT().Config().Return(h.cfg)
+
+		err := h.service.waitForPin(context.Background(), "bafybeigtest", "test-token")
+		require.Error(t, err)
+	})
+
+	t.Run("returns error when no operations found for CID", func(t *testing.T) {
+		h := newUploadTestHelpers(t)
+
+		mux := http.NewServeMux()
+		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"data":[],"total":0}`))
+		})
+		server := httptest.NewServer(mux)
+		defer server.Close()
+
+		u, _ := url.Parse(server.URL)
+		h.service.accountEndpoint = "http://localhost:" + u.Port()
+
+		err := h.service.waitForPin(context.Background(), "bafybeigtest", "test-token")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "operation not found")
+	})
+}
+
+func createUploadTestJWT(t *testing.T, audience string) string {
+	t.Helper()
+	claims := &jwt.RegisteredClaims{
+		Audience: jwt.ClaimStrings{audience},
+		Issuer:   "test-issuer",
+		Subject:  "test-subject",
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	signed, err := token.SignedString([]byte("test-secret"))
+	require.NoError(t, err)
+	return signed
 }
 
 func TestUploadServiceDefaultIntegration(t *testing.T) {

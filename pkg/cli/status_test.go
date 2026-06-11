@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"testing"
@@ -14,13 +15,12 @@ import (
 
 func TestStatus(t *testing.T) {
 	tests := []struct {
-		name             string
-		cid              string
-		watchFlag        bool
-		setupMocks       func(*configmocks.MockManager, *MockPinningService, *MockStatusService)
-		wantErr          bool
-		errContains      string
-		cfgMgrFactoryErr bool
+		name        string
+		cid         string
+		watchFlag   bool
+		setupMocks  func(*configmocks.MockManager, *MockPinningService, *MockStatusService)
+		wantErr     bool
+		errContains string
 	}{
 		{
 			name:      "successful pin status check",
@@ -130,15 +130,6 @@ func TestStatus(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:             "returns error when config manager factory fails",
-			cid:              "QmXxx",
-			watchFlag:        false,
-			setupMocks:       func(cfgMgr *configmocks.MockManager, pinSvc *MockPinningService, statusSvc *MockStatusService) {},
-			wantErr:          true,
-			errContains:      "config error",
-			cfgMgrFactoryErr: true,
-		},
-		{
 			name:      "returns error when status check fails",
 			cid:       "QmXxx",
 			watchFlag: false,
@@ -185,29 +176,17 @@ func TestStatus(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			pinningSvc := NewMockPinningService(t)
 			statusSvc := NewMockStatusService(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(cfgMgr, pinningSvc, statusSvc)
 			}
 
-			cmd := &mockStatusCommand{
-				cid:   tt.cid,
-				watch: tt.watchFlag,
-			}
+			cmd := newMockCommand().
+				withCID(tt.cid).
+				withBool(FlagWatch, tt.watchFlag)
 
-			var cfgMgrFactory ConfigManagerFactory
-			if tt.cfgMgrFactoryErr {
-				cfgMgrFactory = func() (config.Manager, error) {
-					return nil, errors.New("config error")
-				}
-			} else {
-				cfgMgrFactory = func() (config.Manager, error) {
-					return cfgMgr, nil
-				}
-			}
-
-			pinningServiceFactory := func(cm config.Manager, out Output) PinningService {
+			pinningServiceFactory := func(cm config.Manager, out Output, _ bool) PinningService {
 				return pinningSvc
 			}
 
@@ -215,7 +194,7 @@ func TestStatus(t *testing.T) {
 				return statusSvc
 			}
 
-			err := status(context.Background(), cmd, output, cfgMgrFactory, pinningServiceFactory, statusServiceFactory)
+			err := status(context.Background(), cmd, output, cfgMgr, "", true, PinningServiceFactory(pinningServiceFactory), statusServiceFactory)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -245,20 +224,142 @@ func TestNewStatusCommand(t *testing.T) {
 	})
 }
 
-type mockStatusCommand struct {
-	cid   string
-	watch bool
+func TestRenderPinStatus(t *testing.T) {
+	t.Run("renders pin status without delegates", func(t *testing.T) {
+		var buf bytes.Buffer
+		output := newTestOutput()
+		output.SetWriter(&buf)
+
+		pinStatus := &PinStatus{
+			CID:     "QmXxx",
+			Status:  "pinned",
+			Created: "2024-01-01T00:00:00Z",
+		}
+
+		err := renderPinStatus(output, pinStatus)
+		require.NoError(t, err)
+
+		result := buf.String()
+		assert.Contains(t, result, "QmXxx")
+		assert.Contains(t, result, "pinned")
+		assert.Contains(t, result, "2024-01-01T00:00:00Z")
+	})
+
+	t.Run("renders pin status with delegates", func(t *testing.T) {
+		var buf bytes.Buffer
+		output := newTestOutput()
+		output.SetWriter(&buf)
+
+		pinStatus := &PinStatus{
+			CID:       "QmXxx",
+			Status:    "pinned",
+			Created:   "2024-01-01T00:00:00Z",
+			Delegates: []string{"delegate1", "delegate2"},
+		}
+
+		err := renderPinStatus(output, pinStatus)
+		require.NoError(t, err)
+
+		result := buf.String()
+		assert.Contains(t, result, "QmXxx")
+		assert.Contains(t, result, "Delegates:")
+		assert.Contains(t, result, "delegate1")
+		assert.Contains(t, result, "delegate2")
+	})
+
+	t.Run("renders pin status as JSON", func(t *testing.T) {
+		var buf bytes.Buffer
+		output := NewOutputFormatter(true, false, false, false)
+		output.SetWriter(&buf)
+
+		pinStatus := &PinStatus{
+			CID:     "QmXxx",
+			Status:  "pinned",
+			Created: "2024-01-01T00:00:00Z",
+		}
+
+		err := renderPinStatus(output, pinStatus)
+		require.NoError(t, err)
+
+		result := buf.String()
+		assert.Contains(t, result, `"CID"`)
+		assert.Contains(t, result, `"QmXxx"`)
+		assert.Contains(t, result, `"pinned"`)
+	})
 }
 
-func (m *mockStatusCommand) GetCID() string {
-	return m.cid
+func TestRenderOperationStatus(t *testing.T) {
+	t.Run("renders operation status", func(t *testing.T) {
+		var buf bytes.Buffer
+		output := newTestOutput()
+		output.SetWriter(&buf)
+
+		op := &OperationStatusResult{
+			CID:                  "QmYyy",
+			StatusDisplayName:    "Completed",
+			OperationDisplayName: "Pin",
+			ProtocolDisplayName:  "IPFS",
+			ProgressPercent:      100,
+			StartedAt:            "2024-01-01T00:00:00Z",
+		}
+
+		err := renderOperationStatus(output, op)
+		require.NoError(t, err)
+
+		result := buf.String()
+		assert.Contains(t, result, "QmYyy")
+		assert.Contains(t, result, "Completed")
+		assert.Contains(t, result, "Pin")
+		assert.Contains(t, result, "IPFS")
+		assert.Contains(t, result, "100%")
+		assert.Contains(t, result, "2024-01-01T00:00:00Z")
+	})
+
+	t.Run("renders operation status with message and error", func(t *testing.T) {
+		var buf bytes.Buffer
+		output := newTestOutput()
+		output.SetWriter(&buf)
+
+		op := &OperationStatusResult{
+			CID:                  "QmZzz",
+			StatusDisplayName:    "Failed",
+			OperationDisplayName: "Pin",
+			ProtocolDisplayName:  "IPFS",
+			ProgressPercent:      50,
+			StartedAt:            "2024-01-01T00:00:00Z",
+			StatusMessage:        "processing stalled",
+			Error:                "upload failed",
+		}
+
+		err := renderOperationStatus(output, op)
+		require.NoError(t, err)
+
+		result := buf.String()
+		assert.Contains(t, result, "processing stalled")
+		assert.Contains(t, result, "upload failed")
+	})
+
+	t.Run("renders operation status as JSON", func(t *testing.T) {
+		var buf bytes.Buffer
+		output := NewOutputFormatter(true, false, false, false)
+		output.SetWriter(&buf)
+
+		op := &OperationStatusResult{
+			CID:                  "QmYyy",
+			StatusDisplayName:    "Completed",
+			OperationDisplayName: "Pin",
+			ProtocolDisplayName:  "IPFS",
+			ProgressPercent:      100,
+			StartedAt:            "2024-01-01T00:00:00Z",
+		}
+
+		err := renderOperationStatus(output, op)
+		require.NoError(t, err)
+
+		result := buf.String()
+		assert.Contains(t, result, `"CID"`)
+		assert.Contains(t, result, `"QmYyy"`)
+		assert.Contains(t, result, `"Completed"`)
+	})
 }
 
-func (m *mockStatusCommand) Bool(name string) bool {
-	switch name {
-	case FlagWatch:
-		return m.watch
-	default:
-		return false
-	}
-}

@@ -9,7 +9,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/pkg/config"
 	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
 	"go.lumeweb.com/portal-sdk/admin"
@@ -37,6 +36,123 @@ func unmarshalPricingPlanPeriodJSON(data string) *admin.PricingPlanPeriod {
 		panic(err)
 	}
 	return &item
+}
+
+func TestBillingPricingPlansGet(t *testing.T) {
+	tests := []struct {
+		name        string
+		planID      string
+		jsonOutput  bool
+		setupMocks  func(*configmocks.MockManager, *MockBillingAdminService)
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name:   "successful get",
+			planID: "1",
+			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
+				service.EXPECT().RequireAuthenticated().Return(nil)
+				service.EXPECT().GetPricingPlan(context.Background(), "1").Return(
+					unmarshalPricingPlanJSON(`{"id":1,"name":"Pro Plan","currency":"USD","is_active":true,"is_public":true,"description":"A test plan"}`),
+					nil,
+				)
+			},
+			wantErr: false,
+		},
+		{
+			name:       "successful get with json output",
+			planID:     "1",
+			jsonOutput: true,
+			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
+				service.EXPECT().RequireAuthenticated().Return(nil)
+				service.EXPECT().GetPricingPlan(context.Background(), "1").Return(
+					unmarshalPricingPlanJSON(`{"id":1,"name":"Pro Plan","currency":"USD","is_active":true,"is_public":true}`),
+					nil,
+				)
+			},
+			wantErr: false,
+		},
+		{
+			name:   "successful get with pricing periods",
+			planID: "1",
+			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
+				service.EXPECT().RequireAuthenticated().Return(nil)
+				service.EXPECT().GetPricingPlan(context.Background(), "1").Return(
+					unmarshalPricingPlanJSON(`{"id":1,"name":"Pro Plan","currency":"USD","is_active":true,"is_public":true,"pricing_periods":[{"id":1,"pricing_plan_id":1,"price_usd":9.99,"cadence":"monthly","quota_plan_id":1,"is_active":true}]}`),
+					nil,
+				)
+			},
+			wantErr: false,
+		},
+		{
+			name:   "returns error when plan ID is missing",
+			planID: "",
+			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
+			},
+			wantErr:     true,
+			errContains: "plan ID is required",
+		},
+		{
+			name:   "returns error when not authenticated",
+			planID: "1",
+			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
+				service.EXPECT().RequireAuthenticated().Return(ErrNotAuthenticated)
+			},
+			wantErr:     true,
+			errContains: "not authenticated",
+		},
+		{
+			name:   "returns error when service fails",
+			planID: "1",
+			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
+				service.EXPECT().RequireAuthenticated().Return(nil)
+				service.EXPECT().GetPricingPlan(context.Background(), "1").Return(
+					nil,
+					errors.New("service error"),
+				)
+			},
+			wantErr:     true,
+			errContains: "service error",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfgMgr := configmocks.NewMockManager(t)
+			service := NewMockBillingAdminService(t)
+
+			var output Output
+			if tt.jsonOutput {
+				output = NewOutputFormatter(true, false, false, false)
+			} else {
+				output = newTestOutput()
+			}
+
+			if tt.setupMocks != nil {
+				tt.setupMocks(cfgMgr, service)
+			}
+
+			cmd := newMockCommand()
+			if tt.planID != "" {
+				cmd = cmd.withArgs(tt.planID)
+			}
+
+			serviceFactory := func(cm config.Manager, out Output) BillingAdminService {
+				return service
+			}
+
+			err := billingPricingPlansGetAction(context.Background(), cmd, output, cfgMgr, serviceFactory)
+
+			if tt.wantErr {
+				require.Error(t, err)
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
+				}
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
 }
 
 func TestBillingPricingPlansList(t *testing.T) {
@@ -87,7 +203,7 @@ func TestBillingPricingPlansList(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			service := NewMockBillingAdminService(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(cfgMgr, service)
@@ -97,9 +213,7 @@ func TestBillingPricingPlansList(t *testing.T) {
 				return service
 			}
 
-			var cmd billingPricingPlansListCmdGetter
-
-			err := billingPricingPlansListAction(context.Background(), cmd, output, cfgMgr, serviceFactory)
+			err := billingPricingPlansListAction(context.Background(), output, cfgMgr, serviceFactory)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -116,20 +230,19 @@ func TestBillingPricingPlansList(t *testing.T) {
 func TestPricingPlanPeriodsCreate_PriceValidation(t *testing.T) {
 	tests := []struct {
 		name        string
-		cmd         *billingPricingPlanPeriodsCreateCmd
+		cmd         *mockCommand
 		setupMocks  func(*configmocks.MockManager, *MockBillingAdminService)
 		wantErr     bool
 		errContains string
 	}{
 		{
 			name: "zero price without allow-free rejected",
-			cmd: &billingPricingPlanPeriodsCreateCmd{
-				planID:      1,
-				price:       0,
-				cadence:     "monthly",
-				quotaPlanID: 1,
-				allowFree:   false,
-			},
+			cmd: newMockCommand().
+				withInt(FlagPlanID, 1).
+				withFloat(FlagPrice, 0).
+				withString(FlagCadence, "monthly").
+				withInt(FlagQuotaPlanID, 1).
+				withBool(FlagAllowFree, false),
 			setupMocks: func(cfgMgr *configmocks.MockManager, svc *MockBillingAdminService) {
 				svc.EXPECT().RequireAuthenticated().Return(nil)
 			},
@@ -138,13 +251,12 @@ func TestPricingPlanPeriodsCreate_PriceValidation(t *testing.T) {
 		},
 		{
 			name: "zero price with allow-free accepted",
-			cmd: &billingPricingPlanPeriodsCreateCmd{
-				planID:      1,
-				price:       0,
-				cadence:     "monthly",
-				quotaPlanID: 1,
-				allowFree:   true,
-			},
+			cmd: newMockCommand().
+				withInt(FlagPlanID, 1).
+				withFloat(FlagPrice, 0).
+				withString(FlagCadence, "monthly").
+				withInt(FlagQuotaPlanID, 1).
+				withBool(FlagAllowFree, true),
 			setupMocks: func(cfgMgr *configmocks.MockManager, svc *MockBillingAdminService) {
 				svc.EXPECT().RequireAuthenticated().Return(nil)
 				svc.EXPECT().CreatePricingPlanPeriod(mock.Anything, mock.AnythingOfType("*admin.PricingPlanPeriodCreateRequest")).Return(&admin.PricingPlanPeriod{}, nil)
@@ -153,13 +265,12 @@ func TestPricingPlanPeriodsCreate_PriceValidation(t *testing.T) {
 		},
 		{
 			name: "positive price works without allow-free",
-			cmd: &billingPricingPlanPeriodsCreateCmd{
-				planID:      1,
-				price:       9.99,
-				cadence:     "monthly",
-				quotaPlanID: 1,
-				allowFree:   false,
-			},
+			cmd: newMockCommand().
+				withInt(FlagPlanID, 1).
+				withFloat(FlagPrice, 9.99).
+				withString(FlagCadence, "monthly").
+				withInt(FlagQuotaPlanID, 1).
+				withBool(FlagAllowFree, false),
 			setupMocks: func(cfgMgr *configmocks.MockManager, svc *MockBillingAdminService) {
 				svc.EXPECT().RequireAuthenticated().Return(nil)
 				svc.EXPECT().CreatePricingPlanPeriod(mock.Anything, mock.AnythingOfType("*admin.PricingPlanPeriodCreateRequest")).Return(&admin.PricingPlanPeriod{}, nil)
@@ -168,13 +279,12 @@ func TestPricingPlanPeriodsCreate_PriceValidation(t *testing.T) {
 		},
 		{
 			name: "negative price rejected",
-			cmd: &billingPricingPlanPeriodsCreateCmd{
-				planID:      1,
-				price:       -5.0,
-				cadence:     "monthly",
-				quotaPlanID: 1,
-				allowFree:   false,
-			},
+			cmd: newMockCommand().
+				withInt(FlagPlanID, 1).
+				withFloat(FlagPrice, -5.0).
+				withString(FlagCadence, "monthly").
+				withInt(FlagQuotaPlanID, 1).
+				withBool(FlagAllowFree, false),
 			setupMocks: func(cfgMgr *configmocks.MockManager, svc *MockBillingAdminService) {
 				svc.EXPECT().RequireAuthenticated().Return(nil)
 			},
@@ -190,7 +300,7 @@ func TestPricingPlanPeriodsCreate_PriceValidation(t *testing.T) {
 
 			tt.setupMocks(cfgMgr, service)
 
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			serviceFactory := func(cm config.Manager, out Output) BillingAdminService {
 				return service
@@ -210,119 +320,20 @@ func TestPricingPlanPeriodsCreate_PriceValidation(t *testing.T) {
 	}
 }
 
-// billingPricingPlansCreateCmd implements billingPricingPlansCreateCmdGetter
-type billingPricingPlansCreateCmd struct {
-	name        string
-	currency    string
-	description string
-	isActive    bool
-	isPublic    bool
-	pricelineID int
-	// Period creation fields
-	price       float64
-	cadence     string
-	quotaPlanID int
-	rollingDays int
-	allowFree   bool
-	isSet       map[string]bool
-}
-
-func (m *billingPricingPlansCreateCmd) String(name string) string {
-	switch name {
-	case FlagName:
-		return m.name
-	case FlagCurrency:
-		return m.currency
-	case FlagDescription:
-		return m.description
-	case FlagCadence:
-		return m.cadence
-	}
-	return ""
-}
-
-func (m *billingPricingPlansCreateCmd) Bool(name string) bool {
-	switch name {
-	case FlagIsActive:
-		return m.isActive
-	case FlagIsPublic:
-		return m.isPublic
-	case FlagAllowFree:
-		return m.allowFree
-	}
-	return false
-}
-
-func (m *billingPricingPlansCreateCmd) Int(name string) int {
-	switch name {
-	case FlagPricelineID:
-		return m.pricelineID
-	case FlagQuotaPlanID:
-		return m.quotaPlanID
-	case FlagRollingDays:
-		return m.rollingDays
-	}
-	return 0
-}
-
-func (m *billingPricingPlansCreateCmd) Float(name string) float64 {
-	if name == FlagPrice {
-		return m.price
-	}
-	return 0
-}
-
-func (m *billingPricingPlansCreateCmd) IsSet(name string) bool {
-	if m.isSet == nil {
-		return false
-	}
-	return m.isSet[name]
-}
-
-func (m *billingPricingPlansUpdateCmd) String(name string) string {
-	switch name {
-	case FlagName:
-		return m.name
-	case FlagCurrency:
-		return m.currency
-	case FlagDescription:
-		return m.description
-	}
-	return ""
-}
-
-func (m *billingPricingPlansUpdateCmd) Bool(name string) bool {
-	switch name {
-	case FlagIsActive:
-		return m.isActive
-	case FlagIsPublic:
-		return m.isPublic
-	}
-	return false
-}
-
-func (m *billingPricingPlansUpdateCmd) IsSet(name string) bool {
-	if m.isSet == nil {
-		return false
-	}
-	return m.isSet[name]
-}
-
 func TestBillingPricingPlansCreate(t *testing.T) {
 	tests := []struct {
 		name        string
-		cmd         *billingPricingPlansCreateCmd
+		cmd         *mockCommand
 		setupMocks  func(*configmocks.MockManager, *MockBillingAdminService)
 		wantErr     bool
 		errContains string
 	}{
 		{
 			name: "successful create",
-			cmd: &billingPricingPlansCreateCmd{
-				name:     "Pro Plan",
-				currency: "USD",
-				isActive: true,
-			},
+			cmd: newMockCommand().
+				withString(FlagName, "Pro Plan").
+				withString(FlagCurrency, "USD").
+				withBool(FlagIsActive, true),
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
 				service.EXPECT().CreatePricingPlan(context.Background(), mock.MatchedBy(func(req *admin.PricingPlanCreateRequest) bool {
@@ -336,11 +347,10 @@ func TestBillingPricingPlansCreate(t *testing.T) {
 		},
 		{
 			name: "returns error when not authenticated",
-			cmd: &billingPricingPlansCreateCmd{
-				name:     "Pro Plan",
-				currency: "USD",
-				isActive: true,
-			},
+			cmd: newMockCommand().
+				withString(FlagName, "Pro Plan").
+				withString(FlagCurrency, "USD").
+				withBool(FlagIsActive, true),
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(ErrNotAuthenticated)
 			},
@@ -349,19 +359,16 @@ func TestBillingPricingPlansCreate(t *testing.T) {
 		},
 		{
 			name: "successful create with period",
-			cmd: &billingPricingPlansCreateCmd{
-				name:        "Starter Plan",
-				currency:    "USD",
-				isActive:    true,
-				quotaPlanID: 1,
-				price:       9.99,
-				cadence:     "monthly",
-				isSet: map[string]bool{
-					FlagQuotaPlanID: true,
-					FlagPrice:       true,
-					FlagCadence:     true,
-				},
-			},
+			cmd: newMockCommand().
+				withString(FlagName, "Starter Plan").
+				withString(FlagCurrency, "USD").
+				withBool(FlagIsActive, true).
+				withInt(FlagQuotaPlanID, 1).
+				withFloat(FlagPrice, 9.99).
+				withString(FlagCadence, "monthly").
+				withIsSet(FlagQuotaPlanID, true).
+				withIsSet(FlagPrice, true).
+				withIsSet(FlagCadence, true),
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
 				service.EXPECT().CreatePricingPlan(context.Background(), mock.MatchedBy(func(req *admin.PricingPlanCreateRequest) bool {
@@ -381,15 +388,12 @@ func TestBillingPricingPlansCreate(t *testing.T) {
 		},
 		{
 			name: "create plan only when quota-plan-id set but price missing",
-			cmd: &billingPricingPlansCreateCmd{
-				name:        "Partial Plan",
-				currency:    "USD",
-				isActive:    true,
-				quotaPlanID: 1,
-				isSet: map[string]bool{
-					FlagQuotaPlanID: true,
-				},
-			},
+			cmd: newMockCommand().
+				withString(FlagName, "Partial Plan").
+				withString(FlagCurrency, "USD").
+				withBool(FlagIsActive, true).
+				withInt(FlagQuotaPlanID, 1).
+				withIsSet(FlagQuotaPlanID, true),
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
 				service.EXPECT().CreatePricingPlan(context.Background(), mock.MatchedBy(func(req *admin.PricingPlanCreateRequest) bool {
@@ -398,7 +402,6 @@ func TestBillingPricingPlansCreate(t *testing.T) {
 					unmarshalPricingPlanJSON(`{"id":1,"name":"Partial Plan","currency":"USD","is_active":true}`),
 					nil,
 				)
-				// Period creation skipped because price/cadence not set
 			},
 			wantErr: false,
 		},
@@ -408,7 +411,7 @@ func TestBillingPricingPlansCreate(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			service := NewMockBillingAdminService(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(cfgMgr, service)
@@ -430,21 +433,6 @@ func TestBillingPricingPlansCreate(t *testing.T) {
 			}
 		})
 	}
-}
-
-// billingPricingPlansUpdateCmd implements billingPricingPlansUpdateCmdGetter
-type billingPricingPlansUpdateCmd struct {
-	args        cli.Args
-	name        string
-	currency    string
-	description string
-	isActive    bool
-	isPublic    bool
-	isSet       map[string]bool
-}
-
-func (m *billingPricingPlansUpdateCmd) Args() cli.Args {
-	return m.args
 }
 
 func TestBillingPricingPlansUpdate(t *testing.T) {
@@ -482,23 +470,19 @@ func TestBillingPricingPlansUpdate(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			service := NewMockBillingAdminService(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(cfgMgr, service)
 			}
 
-			args := &mockArgs{}
+			cmd := newMockCommand()
 			if tt.planID != "" {
-				args.args = []string{tt.planID}
+				cmd = cmd.withArgs(tt.planID)
 			}
-			cmd := &billingPricingPlansUpdateCmd{
-				args: args,
-				name: "Updated Plan",
-				isSet: map[string]bool{
-					"name": true,
-				},
-			}
+			cmd = cmd.
+				withString(FlagName, "Updated Plan").
+				withIsSet(FlagName, true)
 
 			serviceFactory := func(cm config.Manager, out Output) BillingAdminService {
 				return service
@@ -516,15 +500,6 @@ func TestBillingPricingPlansUpdate(t *testing.T) {
 			}
 		})
 	}
-}
-
-// billingPricingPlansDeleteArgs implements billingPricingPlansDeleteCmdGetter
-type billingPricingPlansDeleteArgs struct {
-	args cli.Args
-}
-
-func (m *billingPricingPlansDeleteArgs) Args() cli.Args {
-	return m.args
 }
 
 func TestBillingPricingPlansDelete(t *testing.T) {
@@ -557,17 +532,16 @@ func TestBillingPricingPlansDelete(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			service := NewMockBillingAdminService(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(cfgMgr, service)
 			}
 
-			args := &mockArgs{}
+			cmd := newMockCommand()
 			if tt.planID != "" {
-				args.args = []string{tt.planID}
+				cmd = cmd.withArgs(tt.planID)
 			}
-			cmd := &billingPricingPlansDeleteArgs{args: args}
 
 			serviceFactory := func(cm config.Manager, out Output) BillingAdminService {
 				return service
@@ -635,7 +609,7 @@ func TestBillingPricingPlanPeriodsList(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			service := NewMockBillingAdminService(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(cfgMgr, service)
@@ -645,9 +619,7 @@ func TestBillingPricingPlanPeriodsList(t *testing.T) {
 				return service
 			}
 
-			var cmd billingPricingPlanPeriodsListCmdGetter
-
-			err := billingPricingPlanPeriodsListAction(context.Background(), cmd, output, cfgMgr, serviceFactory)
+			err := billingPricingPlanPeriodsListAction(context.Background(), output, cfgMgr, serviceFactory)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -659,15 +631,6 @@ func TestBillingPricingPlanPeriodsList(t *testing.T) {
 			}
 		})
 	}
-}
-
-// billingPricingPlanPeriodsGetArgs implements billingPricingPlanPeriodsGetCmdGetter
-type billingPricingPlanPeriodsGetArgs struct {
-	args cli.Args
-}
-
-func (m *billingPricingPlanPeriodsGetArgs) Args() cli.Args {
-	return m.args
 }
 
 func TestBillingPricingPlanPeriodsGet(t *testing.T) {
@@ -703,17 +666,16 @@ func TestBillingPricingPlanPeriodsGet(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			service := NewMockBillingAdminService(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(cfgMgr, service)
 			}
 
-			args := &mockArgs{}
+			cmd := newMockCommand()
 			if tt.periodID != "" {
-				args.args = []string{tt.periodID}
+				cmd = cmd.withArgs(tt.periodID)
 			}
-			cmd := &billingPricingPlanPeriodsGetArgs{args: args}
 
 			serviceFactory := func(cm config.Manager, out Output) BillingAdminService {
 				return service
@@ -731,57 +693,6 @@ func TestBillingPricingPlanPeriodsGet(t *testing.T) {
 			}
 		})
 	}
-}
-
-// billingPricingPlanPeriodsCreateCmd implements billingPricingPlanPeriodsCreateCmdGetter
-type billingPricingPlanPeriodsCreateCmd struct {
-	planID      int
-	price       float64
-	cadence     string
-	quotaPlanID int
-	rollingDays int
-	allowFree   bool
-	isSet       map[string]bool
-}
-
-func (m *billingPricingPlanPeriodsCreateCmd) Int(name string) int {
-	switch name {
-	case FlagPlanID:
-		return m.planID
-	case FlagQuotaPlanID:
-		return m.quotaPlanID
-	case FlagRollingDays:
-		return m.rollingDays
-	}
-	return 0
-}
-
-func (m *billingPricingPlanPeriodsCreateCmd) Float(name string) float64 {
-	if name == FlagPrice {
-		return m.price
-	}
-	return 0
-}
-
-func (m *billingPricingPlanPeriodsCreateCmd) String(name string) string {
-	if name == FlagCadence {
-		return m.cadence
-	}
-	return ""
-}
-
-func (m *billingPricingPlanPeriodsCreateCmd) Bool(name string) bool {
-	if name == FlagAllowFree {
-		return m.allowFree
-	}
-	return false
-}
-
-func (m *billingPricingPlanPeriodsCreateCmd) IsSet(name string) bool {
-	if m.isSet == nil {
-		return false
-	}
-	return m.isSet[name]
 }
 
 func TestBillingPricingPlanPeriodsCreate(t *testing.T) {
@@ -821,7 +732,7 @@ func TestBillingPricingPlanPeriodsCreate(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			service := NewMockBillingAdminService(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(cfgMgr, service)
@@ -831,12 +742,11 @@ func TestBillingPricingPlanPeriodsCreate(t *testing.T) {
 				return service
 			}
 
-			cmd := &billingPricingPlanPeriodsCreateCmd{
-				planID:      1,
-				price:       9.99,
-				cadence:     "monthly",
-				quotaPlanID: 1,
-			}
+			cmd := newMockCommand().
+				withInt(FlagPlanID, 1).
+				withFloat(FlagPrice, 9.99).
+				withString(FlagCadence, "monthly").
+				withInt(FlagQuotaPlanID, 1)
 
 			err := billingPricingPlanPeriodsCreateAction(context.Background(), cmd, output, cfgMgr, serviceFactory)
 
@@ -850,59 +760,6 @@ func TestBillingPricingPlanPeriodsCreate(t *testing.T) {
 			}
 		})
 	}
-}
-
-// billingPricingPlanPeriodsUpdateCmd implements billingPricingPlanPeriodsUpdateCmdGetter
-type billingPricingPlanPeriodsUpdateCmd struct {
-	args        cli.Args
-	price       float64
-	cadence     string
-	quotaPlanID int
-	rollingDays int
-	allowFree   bool
-	isSet       map[string]bool
-}
-
-func (m *billingPricingPlanPeriodsUpdateCmd) Args() cli.Args {
-	return m.args
-}
-
-func (m *billingPricingPlanPeriodsUpdateCmd) Float(name string) float64 {
-	if name == FlagPrice {
-		return m.price
-	}
-	return 0
-}
-
-func (m *billingPricingPlanPeriodsUpdateCmd) String(name string) string {
-	if name == FlagCadence {
-		return m.cadence
-	}
-	return ""
-}
-
-func (m *billingPricingPlanPeriodsUpdateCmd) Int(name string) int {
-	switch name {
-	case FlagQuotaPlanID:
-		return m.quotaPlanID
-	case FlagRollingDays:
-		return m.rollingDays
-	}
-	return 0
-}
-
-func (m *billingPricingPlanPeriodsUpdateCmd) Bool(name string) bool {
-	if name == FlagAllowFree {
-		return m.allowFree
-	}
-	return false
-}
-
-func (m *billingPricingPlanPeriodsUpdateCmd) IsSet(name string) bool {
-	if m.isSet == nil {
-		return false
-	}
-	return m.isSet[name]
 }
 
 func TestBillingPricingPlanPeriodsUpdate(t *testing.T) {
@@ -933,11 +790,11 @@ func TestBillingPricingPlanPeriodsUpdate(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:     "allow-free sets AllowFree on request",
-			periodID: "1",
-			price:    0,
+			name:      "allow-free sets AllowFree on request",
+			periodID:  "1",
+			price:     0,
 			allowFree: true,
-			isSet:    map[string]bool{"allow-free": true},
+			isSet:     map[string]bool{"allow-free": true},
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
 				service.EXPECT().UpdatePricingPlanPeriod(context.Background(), "1", mock.MatchedBy(func(req *admin.PricingPlanPeriodUpdateRequest) bool {
@@ -962,21 +819,21 @@ func TestBillingPricingPlanPeriodsUpdate(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			service := NewMockBillingAdminService(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(cfgMgr, service)
 			}
 
-			args := &mockArgs{}
+			cmd := newMockCommand()
 			if tt.periodID != "" {
-				args.args = []string{tt.periodID}
+				cmd = cmd.withArgs(tt.periodID)
 			}
-			cmd := &billingPricingPlanPeriodsUpdateCmd{
-				args:      args,
-				price:     tt.price,
-				allowFree: tt.allowFree,
-				isSet:     tt.isSet,
+			cmd = cmd.
+				withFloat(FlagPrice, tt.price).
+				withBool(FlagAllowFree, tt.allowFree)
+			for k, v := range tt.isSet {
+				cmd = cmd.withIsSet(k, v)
 			}
 
 			serviceFactory := func(cm config.Manager, out Output) BillingAdminService {
@@ -995,15 +852,6 @@ func TestBillingPricingPlanPeriodsUpdate(t *testing.T) {
 			}
 		})
 	}
-}
-
-// billingPricingPlanPeriodsDeleteArgs implements billingPricingPlanPeriodsDeleteCmdGetter
-type billingPricingPlanPeriodsDeleteArgs struct {
-	args cli.Args
-}
-
-func (m *billingPricingPlanPeriodsDeleteArgs) Args() cli.Args {
-	return m.args
 }
 
 func TestBillingPricingPlanPeriodsDelete(t *testing.T) {
@@ -1036,17 +884,16 @@ func TestBillingPricingPlanPeriodsDelete(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			service := NewMockBillingAdminService(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(cfgMgr, service)
 			}
 
-			args := &mockArgs{}
+			cmd := newMockCommand()
 			if tt.periodID != "" {
-				args.args = []string{tt.periodID}
+				cmd = cmd.withArgs(tt.periodID)
 			}
-			cmd := &billingPricingPlanPeriodsDeleteArgs{args: args}
 
 			serviceFactory := func(cm config.Manager, out Output) BillingAdminService {
 				return service
@@ -1065,18 +912,6 @@ func TestBillingPricingPlanPeriodsDelete(t *testing.T) {
 		})
 	}
 }
-
-// Mock command getters for sync commands
-type mockBillingSyncCmd struct {
-	args cli.Args
-}
-
-func (m *mockBillingSyncCmd) Args() cli.Args {
-	return m.args
-}
-
-// mockBillingSyncAllCmd is an empty struct for sync-all command (no args needed)
-type mockBillingSyncAllCmd struct{}
 
 func TestBillingSyncPricingPlan(t *testing.T) {
 	tests := []struct {
@@ -1128,7 +963,7 @@ func TestBillingSyncPricingPlan(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			service := NewMockBillingAdminService(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(cfgMgr, service)
@@ -1138,11 +973,10 @@ func TestBillingSyncPricingPlan(t *testing.T) {
 				return service
 			}
 
-			args := &mockArgs{}
+			cmd := newMockCommand()
 			if tt.planID != "" {
-				args.args = []string{tt.planID}
+				cmd = cmd.withArgs(tt.planID)
 			}
-			cmd := &mockBillingSyncCmd{args: args}
 
 			err := billingSyncPricingPlanAction(context.Background(), cmd, output, cfgMgr, serviceFactory)
 
@@ -1196,7 +1030,7 @@ func TestBillingSyncAllPricingPlans(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			service := NewMockBillingAdminService(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(cfgMgr, service)
@@ -1206,9 +1040,7 @@ func TestBillingSyncAllPricingPlans(t *testing.T) {
 				return service
 			}
 
-			cmd := &mockBillingSyncAllCmd{}
-
-			err := billingSyncAllPricingPlansAction(context.Background(), cmd, output, cfgMgr, serviceFactory)
+			err := billingSyncAllPricingPlansAction(context.Background(), output, cfgMgr, serviceFactory)
 
 			if tt.wantErr {
 				require.Error(t, err)

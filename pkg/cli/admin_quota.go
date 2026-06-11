@@ -8,19 +8,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/pkg/config"
 	"go.lumeweb.com/portal-sdk/admin"
 )
 
 var quotaAdminServiceFactory QuotaAdminServiceFactory = defaultQuotaAdminServiceFactory
 
-// quotaPlansListCmdGetter interface for quota plans list command
-type quotaPlansListCmdGetter interface {
-}
-
-// quotaPlansListAction lists all quota plans
-func quotaPlansListAction(ctx context.Context, cmd quotaPlansListCmdGetter, output Output, cfgMgr config.Manager, serviceFactory QuotaAdminServiceFactory) error {
+func quotaPlansListAction(ctx context.Context, output Output, cfgMgr config.Manager, serviceFactory QuotaAdminServiceFactory) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
@@ -70,13 +64,8 @@ func quotaPlansListAction(ctx context.Context, cmd quotaPlansListCmdGetter, outp
 	return nil
 }
 
-// quotaPlansGetCmdGetter interface for quota plans get command
-type quotaPlansGetCmdGetter interface {
-	Args() cli.Args
-}
-
 // quotaPlansGetAction gets a quota plan by ID
-func quotaPlansGetAction(ctx context.Context, cmd quotaPlansGetCmdGetter, output Output, cfgMgr config.Manager, serviceFactory QuotaAdminServiceFactory) error {
+func quotaPlansGetAction(ctx context.Context, cmd argsGetter, output Output, cfgMgr config.Manager, serviceFactory QuotaAdminServiceFactory) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
@@ -126,16 +115,8 @@ func quotaPlansGetAction(ctx context.Context, cmd quotaPlansGetCmdGetter, output
 	return nil
 }
 
-// quotaPlansCreateCmdGetter interface for quota plans create command
-type quotaPlansCreateCmdGetter interface {
-	String(string) string
-	Int(string) int
-	Bool(string) bool
-	IsSet(string) bool
-}
-
 // quotaPlansCreateAction creates a new quota plan
-func quotaPlansCreateAction(ctx context.Context, cmd quotaPlansCreateCmdGetter, output Output, cfgMgr config.Manager, serviceFactory QuotaAdminServiceFactory) error {
+func quotaPlansCreateAction(ctx context.Context, cmd flagGetterWithIsSet, output Output, cfgMgr config.Manager, serviceFactory QuotaAdminServiceFactory) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
@@ -203,17 +184,11 @@ func quotaPlansCreateAction(ctx context.Context, cmd quotaPlansCreateCmdGetter, 
 	return nil
 }
 
-// quotaPlansUpdateCmdGetter interface for quota plans update command
-type quotaPlansUpdateCmdGetter interface {
-	Args() cli.Args
-	String(string) string
-	Int(string) int
-	Bool(string) bool
-	IsSet(string) bool
-}
-
 // quotaPlansUpdateAction updates a quota plan
-func quotaPlansUpdateAction(ctx context.Context, cmd quotaPlansUpdateCmdGetter, output Output, cfgMgr config.Manager, serviceFactory QuotaAdminServiceFactory) error {
+func quotaPlansUpdateAction(ctx context.Context, cmd interface {
+	argsGetter
+	flagGetterWithIsSet
+}, output Output, cfgMgr config.Manager, serviceFactory QuotaAdminServiceFactory) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
@@ -321,13 +296,8 @@ func quotaPlansUpdateAction(ctx context.Context, cmd quotaPlansUpdateCmdGetter, 
 	return nil
 }
 
-// quotaPlansDeleteCmdGetter interface for quota plans delete command
-type quotaPlansDeleteCmdGetter interface {
-	Args() cli.Args
-}
-
 // quotaPlansDeleteAction deletes a quota plan
-func quotaPlansDeleteAction(ctx context.Context, cmd quotaPlansDeleteCmdGetter, output Output, cfgMgr config.Manager, serviceFactory QuotaAdminServiceFactory) error {
+func quotaPlansDeleteAction(ctx context.Context, cmd argsGetter, output Output, cfgMgr config.Manager, serviceFactory QuotaAdminServiceFactory) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
@@ -359,13 +329,8 @@ func quotaPlansDeleteAction(ctx context.Context, cmd quotaPlansDeleteCmdGetter, 
 	return nil
 }
 
-// quotaPlansSetDefaultCmdGetter interface for quota plans set-default command
-type quotaPlansSetDefaultCmdGetter interface {
-	Args() cli.Args
-}
-
 // quotaPlansSetDefaultAction sets a quota plan as default
-func quotaPlansSetDefaultAction(ctx context.Context, cmd quotaPlansSetDefaultCmdGetter, output Output, cfgMgr config.Manager, serviceFactory QuotaAdminServiceFactory) error {
+func quotaPlansSetDefaultAction(ctx context.Context, cmd argsGetter, output Output, cfgMgr config.Manager, serviceFactory QuotaAdminServiceFactory) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
@@ -400,12 +365,8 @@ func quotaPlansSetDefaultAction(ctx context.Context, cmd quotaPlansSetDefaultCmd
 	return nil
 }
 
-// quotaAllowancesListCmdGetter interface for quota allowances list command
-type quotaAllowancesListCmdGetter interface {
-}
-
 // quotaAllowancesListAction lists all quota allowances
-func quotaAllowancesListAction(ctx context.Context, cmd quotaAllowancesListCmdGetter, output Output, cfgMgr config.Manager, serviceFactory QuotaAdminServiceFactory) error {
+func quotaAllowancesListAction(ctx context.Context, output Output, cfgMgr config.Manager, serviceFactory QuotaAdminServiceFactory) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
@@ -457,15 +418,8 @@ func quotaAllowancesListAction(ctx context.Context, cmd quotaAllowancesListCmdGe
 	return nil
 }
 
-// quotaAllowancesCreateCmdGetter interface for quota allowances create command
-type quotaAllowancesCreateCmdGetter interface {
-	Int(string) int
-	String(string) string
-	IsSet(string) bool
-}
-
 // quotaAllowancesCreateAction creates a quota allowance
-func quotaAllowancesCreateAction(ctx context.Context, cmd quotaAllowancesCreateCmdGetter, output Output, cfgMgr config.Manager, serviceFactory QuotaAdminServiceFactory) error {
+func quotaAllowancesCreateAction(ctx context.Context, cmd flagGetterWithIsSet, output Output, cfgMgr config.Manager, serviceFactory QuotaAdminServiceFactory) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
@@ -525,16 +479,11 @@ func quotaAllowancesCreateAction(ctx context.Context, cmd quotaAllowancesCreateC
 	return nil
 }
 
-// quotaAllowancesUpdateCmdGetter interface for quota allowances update command
-type quotaAllowancesUpdateCmdGetter interface {
-	Args() cli.Args
-	Int(string) int
-	String(string) string
-	IsSet(string) bool
-}
-
 // quotaAllowancesUpdateAction updates a quota allowance
-func quotaAllowancesUpdateAction(ctx context.Context, cmd quotaAllowancesUpdateCmdGetter, output Output, cfgMgr config.Manager, serviceFactory QuotaAdminServiceFactory) error {
+func quotaAllowancesUpdateAction(ctx context.Context, cmd interface {
+	argsGetter
+	flagGetterWithIsSet
+}, output Output, cfgMgr config.Manager, serviceFactory QuotaAdminServiceFactory) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
@@ -623,13 +572,8 @@ func quotaAllowancesUpdateAction(ctx context.Context, cmd quotaAllowancesUpdateC
 	return nil
 }
 
-// quotaAllowancesDeleteCmdGetter interface for quota allowances delete command
-type quotaAllowancesDeleteCmdGetter interface {
-	Args() cli.Args
-}
-
 // quotaAllowancesDeleteAction deletes a quota allowance
-func quotaAllowancesDeleteAction(ctx context.Context, cmd quotaAllowancesDeleteCmdGetter, output Output, cfgMgr config.Manager, serviceFactory QuotaAdminServiceFactory) error {
+func quotaAllowancesDeleteAction(ctx context.Context, cmd argsGetter, output Output, cfgMgr config.Manager, serviceFactory QuotaAdminServiceFactory) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
@@ -661,12 +605,8 @@ func quotaAllowancesDeleteAction(ctx context.Context, cmd quotaAllowancesDeleteC
 	return nil
 }
 
-// quotaStatsCmdGetter interface for quota stats command
-type quotaStatsCmdGetter interface {
-}
-
 // quotaStatsAction gets quota system statistics
-func quotaStatsAction(ctx context.Context, cmd quotaStatsCmdGetter, output Output, cfgMgr config.Manager, serviceFactory QuotaAdminServiceFactory) error {
+func quotaStatsAction(ctx context.Context, output Output, cfgMgr config.Manager, serviceFactory QuotaAdminServiceFactory) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
@@ -701,14 +641,8 @@ func quotaStatsAction(ctx context.Context, cmd quotaStatsCmdGetter, output Outpu
 	return nil
 }
 
-// quotaReconcileCmdGetter interface for quota reconcile command
-type quotaReconcileCmdGetter interface {
-	Int(string) int
-	IsSet(string) bool
-}
-
 // quotaReconcileAction reconciles quota data
-func quotaReconcileAction(ctx context.Context, cmd quotaReconcileCmdGetter, output Output, cfgMgr config.Manager, serviceFactory QuotaAdminServiceFactory) error {
+func quotaReconcileAction(ctx context.Context, cmd flagGetterWithIsSet, output Output, cfgMgr config.Manager, serviceFactory QuotaAdminServiceFactory) error {
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
@@ -742,13 +676,8 @@ func quotaReconcileAction(ctx context.Context, cmd quotaReconcileCmdGetter, outp
 	return nil
 }
 
-// quotaCleanupCmdGetter interface for quota cleanup command
-type quotaCleanupCmdGetter interface {
-	Int(string) int
-}
-
 // quotaCleanupAction cleans up expired quota data
-func quotaCleanupAction(ctx context.Context, cmd quotaCleanupCmdGetter, output Output, cfgMgr config.Manager, serviceFactory QuotaAdminServiceFactory) error {
+func quotaCleanupAction(ctx context.Context, cmd flagGetterWithInt, output Output, cfgMgr config.Manager, serviceFactory QuotaAdminServiceFactory) error {
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
@@ -777,12 +706,8 @@ func quotaCleanupAction(ctx context.Context, cmd quotaCleanupCmdGetter, output O
 	return nil
 }
 
-// quotaUserConfigsListCmdGetter interface for quota user configs list command
-type quotaUserConfigsListCmdGetter interface {
-}
-
 // quotaUserConfigsListAction lists all user quota configs
-func quotaUserConfigsListAction(ctx context.Context, cmd quotaUserConfigsListCmdGetter, output Output, cfgMgr config.Manager, serviceFactory QuotaAdminServiceFactory) error {
+func quotaUserConfigsListAction(ctx context.Context, output Output, cfgMgr config.Manager, serviceFactory QuotaAdminServiceFactory) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
@@ -844,13 +769,8 @@ func quotaUserConfigsListAction(ctx context.Context, cmd quotaUserConfigsListCmd
 	return nil
 }
 
-// quotaUserConfigsResetCmdGetter interface for quota user configs reset command
-type quotaUserConfigsResetCmdGetter interface {
-	Args() cli.Args
-}
-
 // quotaUserConfigsResetAction resets a user's quota config to default
-func quotaUserConfigsResetAction(ctx context.Context, cmd quotaUserConfigsResetCmdGetter, output Output, cfgMgr config.Manager, serviceFactory QuotaAdminServiceFactory) error {
+func quotaUserConfigsResetAction(ctx context.Context, cmd argsGetter, output Output, cfgMgr config.Manager, serviceFactory QuotaAdminServiceFactory) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
@@ -887,15 +807,8 @@ func quotaUserConfigsResetAction(ctx context.Context, cmd quotaUserConfigsResetC
 	return nil
 }
 
-// quotaUserConfigsUpdateCmdGetter interface for quota user configs update command
-type quotaUserConfigsUpdateCmdGetter interface {
-	Int(name string) int
-	String(name string) string
-	IsSet(name string) bool
-}
-
 // quotaUserConfigsUpdateAction updates a user's quota config
-func quotaUserConfigsUpdateAction(ctx context.Context, cmd quotaUserConfigsUpdateCmdGetter, output Output, cfgMgr config.Manager, serviceFactory QuotaAdminServiceFactory) error {
+func quotaUserConfigsUpdateAction(ctx context.Context, cmd flagGetterWithIsSet, output Output, cfgMgr config.Manager, serviceFactory QuotaAdminServiceFactory) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 

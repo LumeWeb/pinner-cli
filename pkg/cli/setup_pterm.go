@@ -7,35 +7,27 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/manifoldco/promptui"
 	"github.com/pterm/pterm"
 	"github.com/pterm/pterm/putils"
 	"go.lumeweb.com/pinner-cli/pkg/cli/wizard"
 )
 
-// runSelect executes a select prompt and handles interrupts.
-// Returns the index, selected item, or error.
-func runSelect(prompt *promptui.Select) (int, string, error) {
-	idx, result, err := prompt.Run()
-	if err == promptui.ErrInterrupt {
-		cleanupTerminal()
-		return 0, "", fmt.Errorf("setup cancelled")
-	}
-	return idx, result, err
-}
-
 // PTermSetupUI implements SetupUI using PTerm for display.
 // This is the production UI layer - tests use mocks.
 type PTermSetupUI struct {
 	*wizard.PTermUI
+	*PTermSelectPrompter
+	*PTermContinuePrompter
 	output Output
 }
 
 // NewPTermSetupUI creates a new PTerm-based UI.
 func NewPTermSetupUI(output Output) *PTermSetupUI {
 	return &PTermSetupUI{
-		PTermUI: wizard.NewPTermUI("", ""),
-		output:  output,
+		PTermUI:               wizard.NewPTermUI("", ""),
+		PTermSelectPrompter:   &PTermSelectPrompter{},
+		PTermContinuePrompter: &PTermContinuePrompter{},
+		output:                output,
 	}
 }
 
@@ -61,8 +53,7 @@ func (ui *PTermSetupUI) ShowWelcome() error {
 
 	pterm.Println()
 
-	_, err := pterm.DefaultInteractiveContinue.Show()
-	return err
+	return ui.Continue()
 }
 
 // ShowCompletion displays the completion message.
@@ -76,7 +67,7 @@ func (ui *PTermSetupUI) ShowCompletion() error {
 			"  • Run 'pinner pin <cid>' to pin by CID\n" +
 			"  • Run 'pinner list' to view your pins\n" +
 			"  • Run 'pinner --help' for more commands\n\n" +
-			"Need help? Visit " + DocumentationURL,
+			"Need help? visit " + DocumentationURL,
 	)
 	pterm.DefaultCenter.Println(successBox)
 	return nil
@@ -94,12 +85,7 @@ func (ui *PTermSetupUI) ExecuteAuthStep(ctx context.Context, wizard *SetupWizard
 		"Skip (configure later with 'pinner auth')",
 	}
 
-	prompt := promptui.Select{
-		Label: "What would you like to do?",
-		Items: choices,
-	}
-
-	_, result, err := runSelect(&prompt)
+	_, result, err := ui.Select("What would you like to do?", choices)
 	if err != nil {
 		return fmt.Errorf("prompt failed: %w", err)
 	}
@@ -113,7 +99,7 @@ func (ui *PTermSetupUI) ExecuteAuthStep(ctx context.Context, wizard *SetupWizard
 		pterm.Info.Println("After creating your account, we'll help you sign in.")
 		pterm.Println()
 
-		if _, err := pterm.DefaultInteractiveContinue.Show(); err != nil {
+		if err := ui.Continue(); err != nil {
 			return err
 		}
 
@@ -125,8 +111,7 @@ func (ui *PTermSetupUI) ExecuteAuthStep(ctx context.Context, wizard *SetupWizard
 	case choices[2]: // Skip
 		pterm.Warning.Println("Skipping authentication. You can run 'pinner auth' later.")
 		pterm.Println()
-		_, err := pterm.DefaultInteractiveContinue.Show()
-		return err
+		return ui.Continue()
 	}
 
 	return fmt.Errorf("invalid choice")
@@ -151,8 +136,8 @@ func (ui *PTermSetupUI) handleSignIn(ctx context.Context, wizard *SetupWizard) e
 
 	pterm.Println()
 
-	spinner, err := pterm.DefaultSpinner.Start("Authenticating...")
-	if err != nil {
+	spinner := &PTermSpinner{}
+	if err := spinner.Start("Authenticating..."); err != nil {
 		return fmt.Errorf("failed to start spinner: %w", err)
 	}
 
@@ -207,12 +192,7 @@ func (ui *PTermSetupUI) ExecuteConfigStep(ctx context.Context, wizard *SetupWiza
 		"Skip (use defaults)",
 	}
 
-	prompt := promptui.Select{
-		Label: "What would you like to do?",
-		Items: choices,
-	}
-
-	_, result, err := runSelect(&prompt)
+	_, result, err := ui.Select("What would you like to do?", choices)
 	if err != nil {
 		return fmt.Errorf("prompt failed: %w", err)
 	}
@@ -244,11 +224,7 @@ func (ui *PTermSetupUI) handleCustomConfig(wizard *SetupWizard) error {
 		return fmt.Errorf("endpoint prompt failed: %w", err)
 	}
 
-	securePrompt := promptui.Select{
-		Label: "Use HTTPS?",
-		Items: []string{"Yes", "No"},
-	}
-	_, secureChoice, err := runSelect(&securePrompt)
+	_, secureChoice, err := ui.Select("Use HTTPS?", []string{"Yes", "No"})
 	if err != nil {
 		return fmt.Errorf("secure prompt failed: %w", err)
 	}
@@ -287,8 +263,7 @@ func (ui *PTermSetupUI) ExecuteTutorialStep(_ *SetupWizard) error {
 	pterm.Printf("Documentation: %s\n", DocumentationURL)
 	pterm.Println()
 
-	_, err := pterm.DefaultInteractiveContinue.Show()
-	return err
+	return ui.Continue()
 }
 
 // ExecuteCompletionStep offers to set up shell completion.
@@ -301,12 +276,7 @@ func (ui *PTermSetupUI) ExecuteCompletionStep(_ *SetupWizard) error {
 		"Skip (I'll set it up later with 'pinner completion')",
 	}
 
-	prompt := promptui.Select{
-		Label: "Would you like to enable shell completion?",
-		Items: choices,
-	}
-
-	_, result, err := runSelect(&prompt)
+	_, result, err := ui.Select("Would you like to enable shell completion?", choices)
 	if err != nil {
 		return fmt.Errorf("prompt failed: %w", err)
 	}
@@ -323,8 +293,7 @@ func (ui *PTermSetupUI) ExecuteCompletionStep(_ *SetupWizard) error {
 		pterm.Printf("To enable completion later, run: pinner completion <shell>\n")
 		pterm.Printf("  Example: pinner completion bash\n")
 		pterm.Println()
-		_, err := pterm.DefaultInteractiveContinue.Show()
-		return err
+		return ui.Continue()
 	}
 
 	return fmt.Errorf("invalid choice")
@@ -339,8 +308,7 @@ func (ui *PTermSetupUI) handleCompletionSetup() error {
 		pterm.Printf("To enable completion, run: pinner completion <shell>\n")
 		pterm.Printf("  Example: pinner completion bash\n")
 		pterm.Println()
-		_, err := pterm.DefaultInteractiveContinue.Show()
-		return err
+		return ui.Continue()
 	}
 
 	shell := detectShell()
@@ -357,8 +325,7 @@ func (ui *PTermSetupUI) handleCompletionSetup() error {
 		pterm.Printf("Detected shell: %s\n\n", shell)
 		pterm.Printf("To enable completion, run: pinner completion %s\n", shell)
 		pterm.Println()
-		_, err := pterm.DefaultInteractiveContinue.Show()
-		return err
+		return ui.Continue()
 	}
 
 	pterm.Printf("Detected shell: %s\n\n", detector.Name())
@@ -368,8 +335,7 @@ func (ui *PTermSetupUI) handleCompletionSetup() error {
 	pterm.Printf("  echo '%s' >> %s\n", detector.InstallCommand(), detector.ConfigPath())
 	pterm.Println()
 
-	_, err = pterm.DefaultInteractiveContinue.Show()
-	return err
+	return ui.Continue()
 }
 
 // detectShell attempts to detect the current shell.

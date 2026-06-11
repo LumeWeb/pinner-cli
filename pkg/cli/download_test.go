@@ -10,55 +10,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/pkg/config"
 	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
 )
-
-type mockDownloadCommand struct {
-	cid       string
-	output    string
-	force     bool
-	dryRun    bool
-	limit     int
-	args      []string
-}
-
-func (m *mockDownloadCommand) Args() cli.Args {
-	if m.args == nil {
-		m.args = []string{m.cid}
-	}
-	return &mockArgs{m.args}
-}
-
-func (m *mockDownloadCommand) String(name string) string {
-	switch name {
-	case FlagOutput:
-		return m.output
-	default:
-		return ""
-	}
-}
-
-func (m *mockDownloadCommand) Int(name string) int {
-	switch name {
-	case FlagLimit:
-		return m.limit
-	default:
-		return 0
-	}
-}
-
-func (m *mockDownloadCommand) Bool(name string) bool {
-	switch name {
-	case FlagForce:
-		return m.force
-	case FlagDryRun:
-		return m.dryRun
-	default:
-		return false
-	}
-}
 
 func testDownloadConfigMgr(t *testing.T) *configmocks.MockManager {
 	t.Helper()
@@ -108,24 +62,20 @@ func TestHandleDownload_DryRun(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := testDownloadConfigMgr(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
-			cmd := &mockDownloadCommand{
-				cid:    tt.cid,
-				output: tt.output,
-				force:  tt.force,
-				dryRun: true,
-			}
+			cmd := newMockCommand().
+				withArgs(tt.cid).
+				withString(FlagOutput, tt.output).
+				withBool(FlagForce, tt.force).
+				withBool(FlagDryRun, true)
 
-			cfgMgrFactory := func() (config.Manager, error) {
-				return cfgMgr, nil
-			}
 
 			downloadServiceFactory := func(cfgMgr config.Manager, output Output, opts ...DownloadServiceOption) DownloadService {
 				return NewMockDownloadService(t)
 			}
 
-			err := handleDownload(context.Background(), cmd, output, cfgMgrFactory, downloadServiceFactory)
+			err := handleDownload(context.Background(), cmd, output, cfgMgr, "test-token", true, DownloadServiceFactory(downloadServiceFactory))
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -138,26 +88,23 @@ func TestHandleDownload_DryRun(t *testing.T) {
 
 func TestHandleDownload_RequiresCID(t *testing.T) {
 	cfgMgr := testDownloadConfigMgr(t)
-	output := NewOutputFormatter(false, false, false, false)
+	output := newTestOutput()
 
-	cmd := &mockDownloadCommand{cid: ""}
+	cmd := newMockCommand()
 
-	cfgMgrFactory := func() (config.Manager, error) {
-		return cfgMgr, nil
-	}
 
 	downloadServiceFactory := func(cfgMgr config.Manager, output Output, opts ...DownloadServiceOption) DownloadService {
 		return NewMockDownloadService(t)
 	}
 
-	err := handleDownload(context.Background(), cmd, output, cfgMgrFactory, downloadServiceFactory)
+	err := handleDownload(context.Background(), cmd, output, cfgMgr, "test-token", true, DownloadServiceFactory(downloadServiceFactory))
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrCIDRequired))
 }
 
 func TestHandleDownload_Success(t *testing.T) {
 	cfgMgr := testDownloadConfigMgr(t)
-	output := NewOutputFormatter(false, false, false, false)
+	output := newTestOutput()
 	service := NewMockDownloadService(t)
 	service.EXPECT().RequireAuthenticated().Return(nil)
 	service.EXPECT().Download(context.Background(), "QmXxx", "", false).Return(&DownloadResult{
@@ -167,65 +114,56 @@ func TestHandleDownload_Success(t *testing.T) {
 		Duration: 100 * time.Millisecond,
 	}, nil)
 
-	cmd := &mockDownloadCommand{cid: "QmXxx"}
+	cmd := newMockCommand().withArgs("QmXxx")
 
-	cfgMgrFactory := func() (config.Manager, error) {
-		return cfgMgr, nil
-	}
 
 	downloadServiceFactory := func(cfgMgr config.Manager, output Output, opts ...DownloadServiceOption) DownloadService {
 		return service
 	}
 
-	err := handleDownload(context.Background(), cmd, output, cfgMgrFactory, downloadServiceFactory)
+	err := handleDownload(context.Background(), cmd, output, cfgMgr, "test-token", true, DownloadServiceFactory(downloadServiceFactory))
 	require.NoError(t, err)
 }
 
 func TestHandleDownload_NotAuthenticated(t *testing.T) {
 	cfgMgr := testDownloadConfigMgr(t)
-	output := NewOutputFormatter(false, false, false, false)
+	output := newTestOutput()
 	service := NewMockDownloadService(t)
 	service.EXPECT().RequireAuthenticated().Return(errors.New("not authenticated"))
 
-	cmd := &mockDownloadCommand{cid: "QmXxx"}
+	cmd := newMockCommand().withArgs("QmXxx")
 
-	cfgMgrFactory := func() (config.Manager, error) {
-		return cfgMgr, nil
-	}
 
 	downloadServiceFactory := func(cfgMgr config.Manager, output Output, opts ...DownloadServiceOption) DownloadService {
 		return service
 	}
 
-	err := handleDownload(context.Background(), cmd, output, cfgMgrFactory, downloadServiceFactory)
+	err := handleDownload(context.Background(), cmd, output, cfgMgr, "test-token", true, DownloadServiceFactory(downloadServiceFactory))
 	require.Error(t, err)
 }
 
 func TestHandleDownload_FileExists_NoForce(t *testing.T) {
 	cfgMgr := testDownloadConfigMgr(t)
-	output := NewOutputFormatter(false, false, false, false)
+	output := newTestOutput()
 	service := NewMockDownloadService(t)
 	service.EXPECT().RequireAuthenticated().Return(nil)
 	service.EXPECT().Download(context.Background(), "QmXxx", "", false).Return(nil, errors.New("file already exists"))
 
-	cmd := &mockDownloadCommand{cid: "QmXxx"}
+	cmd := newMockCommand().withArgs("QmXxx")
 
-	cfgMgrFactory := func() (config.Manager, error) {
-		return cfgMgr, nil
-	}
 
 	downloadServiceFactory := func(cfgMgr config.Manager, output Output, opts ...DownloadServiceOption) DownloadService {
 		return service
 	}
 
-	err := handleDownload(context.Background(), cmd, output, cfgMgrFactory, downloadServiceFactory)
+	err := handleDownload(context.Background(), cmd, output, cfgMgr, "test-token", true, DownloadServiceFactory(downloadServiceFactory))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "file already exists")
 }
 
 func TestHandleDownload_WithForce(t *testing.T) {
 	cfgMgr := testDownloadConfigMgr(t)
-	output := NewOutputFormatter(false, false, false, false)
+	output := newTestOutput()
 	service := NewMockDownloadService(t)
 	service.EXPECT().RequireAuthenticated().Return(nil)
 	service.EXPECT().Download(context.Background(), "QmXxx", "existing.txt", true).Return(&DownloadResult{
@@ -235,17 +173,17 @@ func TestHandleDownload_WithForce(t *testing.T) {
 		Duration: 50 * time.Millisecond,
 	}, nil)
 
-	cmd := &mockDownloadCommand{cid: "QmXxx", output: "existing.txt", force: true}
+	cmd := newMockCommand().
+		withArgs("QmXxx").
+		withString(FlagOutput, "existing.txt").
+		withBool(FlagForce, true)
 
-	cfgMgrFactory := func() (config.Manager, error) {
-		return cfgMgr, nil
-	}
 
 	downloadServiceFactory := func(cfgMgr config.Manager, output Output, opts ...DownloadServiceOption) DownloadService {
 		return service
 	}
 
-	err := handleDownload(context.Background(), cmd, output, cfgMgrFactory, downloadServiceFactory)
+	err := handleDownload(context.Background(), cmd, output, cfgMgr, "test-token", true, DownloadServiceFactory(downloadServiceFactory))
 	require.NoError(t, err)
 }
 
@@ -256,62 +194,53 @@ func TestHandleCat_Success(t *testing.T) {
 	service.EXPECT().RequireAuthenticated().Return(nil)
 	service.EXPECT().Cat(context.Background(), "QmXxx").Return(io.NopCloser(strings.NewReader("hello world")), nil)
 
-	cmd := &mockDownloadCommand{cid: "QmXxx"}
+	cmd := newMockCommand().withArgs("QmXxx")
 
-	cfgMgrFactory := func() (config.Manager, error) {
-		return cfgMgr, nil
-	}
 
 	downloadServiceFactory := func(cfgMgr config.Manager, output Output, opts ...DownloadServiceOption) DownloadService {
 		return service
 	}
 
-	err := handleCat(context.Background(), cmd, output, cfgMgrFactory, downloadServiceFactory)
+	err := handleCat(context.Background(), cmd, output, cfgMgr, "test-token", true, DownloadServiceFactory(downloadServiceFactory))
 	require.NoError(t, err)
 }
 
 func TestHandleCat_RequiresCID(t *testing.T) {
 	cfgMgr := testDownloadConfigMgr(t)
-	output := NewOutputFormatter(false, false, false, false)
+	output := newTestOutput()
 
-	cmd := &mockDownloadCommand{cid: ""}
+	cmd := newMockCommand()
 
-	cfgMgrFactory := func() (config.Manager, error) {
-		return cfgMgr, nil
-	}
 
 	downloadServiceFactory := func(cfgMgr config.Manager, output Output, opts ...DownloadServiceOption) DownloadService {
 		return NewMockDownloadService(t)
 	}
 
-	err := handleCat(context.Background(), cmd, output, cfgMgrFactory, downloadServiceFactory)
+	err := handleCat(context.Background(), cmd, output, cfgMgr, "test-token", true, DownloadServiceFactory(downloadServiceFactory))
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrCIDRequired))
 }
 
 func TestHandleCat_NotAuthenticated(t *testing.T) {
 	cfgMgr := testDownloadConfigMgr(t)
-	output := NewOutputFormatter(false, false, false, false)
+	output := newTestOutput()
 	service := NewMockDownloadService(t)
 	service.EXPECT().RequireAuthenticated().Return(errors.New("not authenticated"))
 
-	cmd := &mockDownloadCommand{cid: "QmXxx"}
+	cmd := newMockCommand().withArgs("QmXxx")
 
-	cfgMgrFactory := func() (config.Manager, error) {
-		return cfgMgr, nil
-	}
 
 	downloadServiceFactory := func(cfgMgr config.Manager, output Output, opts ...DownloadServiceOption) DownloadService {
 		return service
 	}
 
-	err := handleCat(context.Background(), cmd, output, cfgMgrFactory, downloadServiceFactory)
+	err := handleCat(context.Background(), cmd, output, cfgMgr, "test-token", true, DownloadServiceFactory(downloadServiceFactory))
 	require.Error(t, err)
 }
 
 func TestHandleLs_Success(t *testing.T) {
 	cfgMgr := testDownloadConfigMgr(t)
-	output := NewOutputFormatter(false, false, false, false)
+	output := newTestOutput()
 	service := NewMockDownloadService(t)
 	service.EXPECT().RequireAuthenticated().Return(nil)
 	service.EXPECT().ListDirectory(context.Background(), "QmXxx").Return([]DirEntry{
@@ -319,63 +248,54 @@ func TestHandleLs_Success(t *testing.T) {
 		{Name: "subdir", Size: -1, Type: "directory"},
 	}, nil)
 
-	cmd := &mockDownloadCommand{cid: "QmXxx", limit: 10}
+	cmd := newMockCommand().withArgs("QmXxx").withInt(FlagLimit, 10)
 
-	cfgMgrFactory := func() (config.Manager, error) {
-		return cfgMgr, nil
-	}
 
 	downloadServiceFactory := func(cfgMgr config.Manager, output Output, opts ...DownloadServiceOption) DownloadService {
 		return service
 	}
 
-	err := handleLs(context.Background(), cmd, output, cfgMgrFactory, downloadServiceFactory)
+	err := handleLs(context.Background(), cmd, output, cfgMgr, "test-token", true, DownloadServiceFactory(downloadServiceFactory))
 	require.NoError(t, err)
 }
 
 func TestHandleLs_EmptyDirectory(t *testing.T) {
 	cfgMgr := testDownloadConfigMgr(t)
-	output := NewOutputFormatter(false, false, false, false)
+	output := newTestOutput()
 	service := NewMockDownloadService(t)
 	service.EXPECT().RequireAuthenticated().Return(nil)
 	service.EXPECT().ListDirectory(context.Background(), "QmXxx").Return([]DirEntry{}, nil)
 
-	cmd := &mockDownloadCommand{cid: "QmXxx", limit: 10}
+	cmd := newMockCommand().withArgs("QmXxx").withInt(FlagLimit, 10)
 
-	cfgMgrFactory := func() (config.Manager, error) {
-		return cfgMgr, nil
-	}
 
 	downloadServiceFactory := func(cfgMgr config.Manager, output Output, opts ...DownloadServiceOption) DownloadService {
 		return service
 	}
 
-	err := handleLs(context.Background(), cmd, output, cfgMgrFactory, downloadServiceFactory)
+	err := handleLs(context.Background(), cmd, output, cfgMgr, "test-token", true, DownloadServiceFactory(downloadServiceFactory))
 	require.NoError(t, err)
 }
 
 func TestHandleLs_RequiresCID(t *testing.T) {
 	cfgMgr := testDownloadConfigMgr(t)
-	output := NewOutputFormatter(false, false, false, false)
+	output := newTestOutput()
 
-	cmd := &mockDownloadCommand{cid: "", limit: 10}
+	cmd := newMockCommand().withInt(FlagLimit, 10)
 
-	cfgMgrFactory := func() (config.Manager, error) {
-		return cfgMgr, nil
-	}
 
 	downloadServiceFactory := func(cfgMgr config.Manager, output Output, opts ...DownloadServiceOption) DownloadService {
 		return NewMockDownloadService(t)
 	}
 
-	err := handleLs(context.Background(), cmd, output, cfgMgrFactory, downloadServiceFactory)
+	err := handleLs(context.Background(), cmd, output, cfgMgr, "test-token", true, DownloadServiceFactory(downloadServiceFactory))
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrCIDRequired))
 }
 
 func TestHandleLs_WithLimit(t *testing.T) {
 	cfgMgr := testDownloadConfigMgr(t)
-	output := NewOutputFormatter(false, false, false, false)
+	output := newTestOutput()
 	service := NewMockDownloadService(t)
 	service.EXPECT().RequireAuthenticated().Return(nil)
 	service.EXPECT().ListDirectory(context.Background(), "QmXxx").Return([]DirEntry{
@@ -384,17 +304,14 @@ func TestHandleLs_WithLimit(t *testing.T) {
 		{Name: "file3.txt", Size: 300, Type: "file"},
 	}, nil)
 
-	cmd := &mockDownloadCommand{cid: "QmXxx", limit: 2}
+	cmd := newMockCommand().withArgs("QmXxx").withInt(FlagLimit, 2)
 
-	cfgMgrFactory := func() (config.Manager, error) {
-		return cfgMgr, nil
-	}
 
 	downloadServiceFactory := func(cfgMgr config.Manager, output Output, opts ...DownloadServiceOption) DownloadService {
 		return service
 	}
 
-	err := handleLs(context.Background(), cmd, output, cfgMgrFactory, downloadServiceFactory)
+	err := handleLs(context.Background(), cmd, output, cfgMgr, "test-token", true, DownloadServiceFactory(downloadServiceFactory))
 	require.NoError(t, err)
 }
 
@@ -452,7 +369,7 @@ func TestDefaultDownloadServiceFactory(t *testing.T) {
 			Secure:       true,
 		})
 
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 
 		service := defaultDownloadServiceFactory(cfgMgr, output)
 

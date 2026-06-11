@@ -51,6 +51,12 @@ func WithDownloadAuthToken(token string) DownloadServiceOption {
 	}
 }
 
+func WithDownloadIPFSEndpoint(endpoint string) DownloadServiceOption {
+	return func(s *DownloadServiceDefault) {
+		s.ipfsEndpoint = endpoint
+	}
+}
+
 func defaultDownloadServiceFactory(cfgMgr config.Manager, output Output, opts ...DownloadServiceOption) DownloadService {
 	return NewDownloadService(cfgMgr, output, opts...)
 }

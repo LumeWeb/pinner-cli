@@ -131,4 +131,4 @@ type StatusService interface {
 }
 
 // PinningServiceFactory creates a PinningService with dependencies
-type PinningServiceFactory func(cfgMgr config.Manager, output Output) PinningService
+type PinningServiceFactory func(cfgMgr config.Manager, output Output, secure bool) PinningService

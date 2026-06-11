@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/urfave/cli/v3"
+	"go.lumeweb.com/pinner-cli/pkg/config"
 )
 
 const (
@@ -55,7 +56,13 @@ The output includes:
 		Metadata: WithTutorial(7, "Download pinned content", fmt.Sprintf("pinner download %s", abbreviateCID(TutorialCID))),
 		Action: func(ctx context.Context, c *cli.Command) error {
 			output := setupOutput(c)
-			return handleDownload(ctx, newCLICommandWrapper(c), output, defaultConfigManagerFactory, defaultDownloadServiceFactory)
+			cfgMgr, err := defaultConfigManagerFactory()
+			if err != nil {
+				return err
+			}
+			authToken := GetAuthToken(c, cfgMgr)
+			secure := GetSecureSetting(c, cfgMgr)
+			return handleDownload(ctx, newCLICommandWrapper(c), output, cfgMgr, authToken, secure, defaultDownloadServiceFactory)
 		},
 	}
 }
@@ -81,7 +88,13 @@ Use --verbose or redirect stderr for progress info.`,
 		Flags:     []cli.Flag{},
 		Action: func(ctx context.Context, c *cli.Command) error {
 			output := setupOutput(c)
-			return handleCat(ctx, newCLICommandWrapper(c), output, defaultConfigManagerFactory, defaultDownloadServiceFactory)
+			cfgMgr, err := defaultConfigManagerFactory()
+			if err != nil {
+				return err
+			}
+			authToken := GetAuthToken(c, cfgMgr)
+			secure := GetSecureSetting(c, cfgMgr)
+			return handleCat(ctx, newCLICommandWrapper(c), output, cfgMgr, authToken, secure, defaultDownloadServiceFactory)
 		},
 	}
 }
@@ -108,34 +121,25 @@ Examples:
 		},
 		Action: func(ctx context.Context, c *cli.Command) error {
 			output := setupOutput(c)
-			return handleLs(ctx, newCLICommandWrapper(c), output, defaultConfigManagerFactory, defaultDownloadServiceFactory)
+			cfgMgr, err := defaultConfigManagerFactory()
+			if err != nil {
+				return err
+			}
+			authToken := GetAuthToken(c, cfgMgr)
+			secure := GetSecureSetting(c, cfgMgr)
+			return handleLs(ctx, newCLICommandWrapper(c), output, cfgMgr, authToken, secure, defaultDownloadServiceFactory)
 		},
 	}
 }
 
-type downloadCommandGetter interface {
-	String(name string) string
-	Int(name string) int
-	Bool(name string) bool
-	Args() cli.Args
-}
-
-func handleDownload(ctx context.Context, cmd downloadCommandGetter, output Output, cfgMgrFactory ConfigManagerFactory, downloadServiceFactory DownloadServiceFactory) error {
-	cfgMgr, err := cfgMgrFactory()
-	if err != nil {
-		return err
-	}
-
+func handleDownload(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr config.Manager, authToken string, secure bool, downloadServiceFactory DownloadServiceFactory) error {
 	authService := NewAuthService(cfgMgr, output, cfgMgr.Config().GetAccountEndpointSecure())
 
 	var svcOpts []DownloadServiceOption
-	svcOpts = append(svcOpts, WithDownloadAuthService(authService))
+	svcOpts = append(svcOpts, WithDownloadAuthService(authService), WithDownloadIPFSEndpoint(cfgMgr.Config().GetIPFSEndpointWithSecure(secure)))
 
-	if c, ok := cmd.(*cliCommandWrapper); ok {
-		authToken := GetAuthToken(c.Command, cfgMgr)
-		if authToken != "" {
-			svcOpts = append(svcOpts, WithDownloadAuthToken(authToken))
-		}
+	if authToken != "" {
+		svcOpts = append(svcOpts, WithDownloadAuthToken(authToken))
 	}
 
 	cidStr := cmd.Args().First()
@@ -159,7 +163,7 @@ func handleDownload(ctx context.Context, cmd downloadCommandGetter, output Outpu
 
 		RenderDryRun(output, DryRunPreview{
 			Operation: "download operation",
-			Endpoint:  cfgMgr.Config().GetIPFSEndpointSecure(),
+			Endpoint:  cfgMgr.Config().GetIPFSEndpointWithSecure(secure),
 			Options:   options,
 		})
 		return nil
@@ -207,22 +211,14 @@ func handleDownload(ctx context.Context, cmd downloadCommandGetter, output Outpu
 	return nil
 }
 
-func handleCat(ctx context.Context, cmd downloadCommandGetter, output Output, cfgMgrFactory ConfigManagerFactory, downloadServiceFactory DownloadServiceFactory) error {
-	cfgMgr, err := cfgMgrFactory()
-	if err != nil {
-		return err
-	}
-
+func handleCat(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr config.Manager, authToken string, secure bool, downloadServiceFactory DownloadServiceFactory) error {
 	authService := NewAuthService(cfgMgr, output, cfgMgr.Config().GetAccountEndpointSecure())
 
 	var svcOpts []DownloadServiceOption
-	svcOpts = append(svcOpts, WithDownloadAuthService(authService))
+	svcOpts = append(svcOpts, WithDownloadAuthService(authService), WithDownloadIPFSEndpoint(cfgMgr.Config().GetIPFSEndpointWithSecure(secure)))
 
-	if c, ok := cmd.(*cliCommandWrapper); ok {
-		authToken := GetAuthToken(c.Command, cfgMgr)
-		if authToken != "" {
-			svcOpts = append(svcOpts, WithDownloadAuthToken(authToken))
-		}
+	if authToken != "" {
+		svcOpts = append(svcOpts, WithDownloadAuthToken(authToken))
 	}
 
 	cidStr := cmd.Args().First()
@@ -246,22 +242,14 @@ func handleCat(ctx context.Context, cmd downloadCommandGetter, output Output, cf
 	return err
 }
 
-func handleLs(ctx context.Context, cmd downloadCommandGetter, output Output, cfgMgrFactory ConfigManagerFactory, downloadServiceFactory DownloadServiceFactory) error {
-	cfgMgr, err := cfgMgrFactory()
-	if err != nil {
-		return err
-	}
-
+func handleLs(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr config.Manager, authToken string, secure bool, downloadServiceFactory DownloadServiceFactory) error {
 	authService := NewAuthService(cfgMgr, output, cfgMgr.Config().GetAccountEndpointSecure())
 
 	var svcOpts []DownloadServiceOption
-	svcOpts = append(svcOpts, WithDownloadAuthService(authService))
+	svcOpts = append(svcOpts, WithDownloadAuthService(authService), WithDownloadIPFSEndpoint(cfgMgr.Config().GetIPFSEndpointWithSecure(secure)))
 
-	if c, ok := cmd.(*cliCommandWrapper); ok {
-		authToken := GetAuthToken(c.Command, cfgMgr)
-		if authToken != "" {
-			svcOpts = append(svcOpts, WithDownloadAuthToken(authToken))
-		}
+	if authToken != "" {
+		svcOpts = append(svcOpts, WithDownloadAuthToken(authToken))
 	}
 
 	cidStr := cmd.Args().First()

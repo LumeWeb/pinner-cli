@@ -7,6 +7,7 @@ import (
 
 	"github.com/docker/go-units"
 	"github.com/urfave/cli/v3"
+	"go.lumeweb.com/pinner-cli/pkg/config"
 )
 
 // Bench flag constants
@@ -71,7 +72,13 @@ min/max/avg/median statistics across all iterations.`,
 		},
 		Action: func(ctx context.Context, c *cli.Command) error {
 			output := setupOutput(c)
-			return bench(ctx, newCLICommandWrapper(c), output, defaultConfigManagerFactory)
+			cfgMgr, err := defaultConfigManagerFactory()
+			if err != nil {
+				return err
+			}
+			authToken := GetAuthToken(c, cfgMgr)
+			secure := GetSecureSetting(c, cfgMgr)
+			return bench(ctx, newCLICommandWrapper(c), output, cfgMgr, authToken, secure)
 		},
 	}
 }
@@ -129,23 +136,18 @@ func BenchPollIntervalFlag() *cli.DurationFlag {
 	}
 }
 
-// benchCommandGetter defines the interface for getting bench command flags.
-type benchCommandGetter interface {
-	String(name string) string
-	Int(name string) int
-	Int64(name string) int64
-	Bool(name string) bool
-	Uint64(name string) uint64
-	Duration(name string) time.Duration
-	Args() cli.Args
+type benchAuthServiceFactoryFunc func(cfgMgr config.Manager, output Output, apiEndpoint string) AuthService
+
+var benchAuthServiceFactory benchAuthServiceFactoryFunc = func(cfgMgr config.Manager, output Output, apiEndpoint string) AuthService {
+	return NewAuthService(cfgMgr, output, apiEndpoint)
 }
 
-func bench(ctx context.Context, cmd benchCommandGetter, output Output, cfgMgrFactory ConfigManagerFactory) error {
-	cfgMgr, err := cfgMgrFactory()
-	if err != nil {
-		return err
-	}
-
+func bench(ctx context.Context, cmd interface {
+	argsFlagGetter
+	Int64(name string) int64
+	Uint64(name string) uint64
+	Duration(name string) time.Duration
+}, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
 	// Parse size flag
 	sizeStr := cmd.String(FlagBenchSize)
 	sizeBytes, err := units.RAMInBytes(sizeStr)
@@ -161,19 +163,13 @@ func bench(ctx context.Context, cmd benchCommandGetter, output Output, cfgMgrFac
 
 	// Create services
 	var pinningService PinningService
-	if c, ok := cmd.(*cliCommandWrapper); ok {
-		secure := GetSecureSetting(c.Command, cfgMgr)
-		authToken := GetAuthToken(c.Command, cfgMgr)
-		if authToken != "" {
-			pinningService = NewPinningService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure), WithAuthToken(authToken))
-		} else {
-			pinningService = NewPinningService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure))
-		}
+	if authToken != "" {
+		pinningService = NewPinningService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure), WithAuthToken(authToken))
 	} else {
-		pinningService = NewPinningService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointSecure())
+		pinningService = NewPinningService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure))
 	}
 
-	authService := NewAuthService(cfgMgr, output, cfgMgr.Config().GetAccountEndpointSecure())
+	authService := benchAuthServiceFactory(cfgMgr, output, cfgMgr.Config().GetAccountEndpointSecure())
 
 	var svcOpts []UploadServiceOption
 	svcOpts = append(svcOpts, WithMemoryLimit(memoryLimit), WithUploadAuthService(authService))
@@ -265,13 +261,13 @@ func bench(ctx context.Context, cmd benchCommandGetter, output Output, cfgMgrFac
 
 		RenderDryRun(output, DryRunPreview{
 			Operation: "benchmark",
-			Endpoint:  cfgMgr.Config().GetIPFSEndpointSecure(),
+			Endpoint:  cfgMgr.Config().GetIPFSEndpointWithSecure(secure),
 			Options:   options,
 		})
 		return nil
 	}
 
-	benchService := NewBenchService(cfgMgr, output, uploadService, pinningService, accountClient)
+	benchService := defaultBenchServiceFactory(cfgMgr, output, uploadService, pinningService, accountClient)
 
 	result, err := benchService.Run(ctx, opts)
 	if err != nil {

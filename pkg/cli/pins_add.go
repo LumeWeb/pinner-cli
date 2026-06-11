@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/urfave/cli/v3"
+	"go.lumeweb.com/pinner-cli/pkg/config"
 )
 
 func newPinsAddCommand() *cli.Command {
@@ -35,13 +36,23 @@ Examples:
 		},
 		Action: func(ctx context.Context, c *cli.Command) error {
 			output := setupOutput(c)
-			return pinsAdd(ctx, newCLICommandWrapper(c), output, defaultConfigManagerFactory, defaultPinningServiceFactory)
+			cfgMgr, err := defaultConfigManagerFactory()
+			if err != nil {
+				return err
+			}
+			authToken := GetAuthToken(c, cfgMgr)
+			secure := GetSecureSetting(c, cfgMgr)
+			return pinsAdd(ctx, newCLICommandWrapper(c), output, cfgMgr, authToken, secure, defaultPinningServiceFactory)
 		},
 	}
 }
 
-func pinsAdd(ctx context.Context, cmd *cliCommandWrapper, output Output, cfgMgrFactory ConfigManagerFactory, pinningServiceFactory PinningServiceFactory) error {
-	cids, err := pin(ctx, cmd, output, cfgMgrFactory, pinningServiceFactory)
+func pinsAdd(ctx context.Context, cmd interface {
+	cidGetter
+	flagGetterWithIsSet
+	StringSlice(name string) []string
+}, output Output, cfgMgr config.Manager, authToken string, secure bool, pinningServiceFactory PinningServiceFactory) error {
+	cids, err := pin(ctx, cmd, output, cfgMgr, authToken, secure, pinningServiceFactory)
 	if err != nil {
 		return err
 	}
@@ -64,18 +75,11 @@ func pinsAdd(ctx context.Context, cmd *cliCommandWrapper, output Output, cfgMgrF
 		return err
 	}
 
-	cfgMgr, err := cfgMgrFactory()
-	if err != nil {
-		return err
-	}
-
 	var pinningService PinningService
-	authToken := GetAuthToken(cmd.Command, cfgMgr)
-	secure := GetSecureSetting(cmd.Command, cfgMgr)
 	if authToken != "" {
 		pinningService = NewPinningService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure), WithAuthToken(authToken))
 	} else {
-		pinningService = pinningServiceFactory(cfgMgr, output)
+		pinningService = pinningServiceFactory(cfgMgr, output, secure)
 	}
 
 	if err := pinningService.RequireAuthenticated(); err != nil {

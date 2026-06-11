@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"time"
+
 	"github.com/urfave/cli/v3"
 )
 
@@ -33,6 +35,14 @@ func (w *cliCommandWrapper) Uint64(name string) uint64 {
 	return w.Command.Uint64(name)
 }
 
+func (w *cliCommandWrapper) Uint(name string) uint {
+	return w.Command.Uint(name)
+}
+
+func (w *cliCommandWrapper) Duration(name string) time.Duration {
+	return w.Command.Duration(name)
+}
+
 func (w *cliCommandWrapper) Args() cli.Args {
 	return w.Command.Args()
 }
@@ -41,3 +51,6 @@ func (w *cliCommandWrapper) Args() cli.Args {
 func newCLICommandWrapper(c *cli.Command) *cliCommandWrapper {
 	return &cliCommandWrapper{c}
 }
+
+// Compile-time interface satisfaction check.
+var _ commandGetter = (*cliCommandWrapper)(nil)

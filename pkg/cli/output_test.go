@@ -7,6 +7,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ggwhite/go-masker"
 	"github.com/stretchr/testify/assert"
@@ -15,7 +16,7 @@ import (
 
 func TestNewOutputFormatter(t *testing.T) {
 	t.Run("returns humanFormatter when json is false", func(t *testing.T) {
-		formatter := NewOutputFormatter(false, false, false, false)
+		formatter := newTestOutput()
 		assert.IsType(t, &humanFormatter{}, formatter)
 	})
 
@@ -907,7 +908,7 @@ func TestNewOutputFormatterCombinations(t *testing.T) {
 func TestOutputFormatterSetWriter(t *testing.T) {
 	t.Run("set writer for human formatter", func(t *testing.T) {
 		var buf bytes.Buffer
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		output.SetWriter(&buf)
 
 		output.Print("test")
@@ -951,7 +952,7 @@ func TestMaskToken(t *testing.T) {
 }
 
 func TestMaskSensitive(t *testing.T) {
-	humanFormatter := NewOutputFormatter(false, false, false, false).(*humanFormatter)
+	humanFormatter := newTestOutput().(*humanFormatter)
 	jsonFormatter := NewOutputFormatter(true, false, false, false).(*jsonFormatter)
 
 	testCases := []struct {
@@ -1093,7 +1094,7 @@ func TestHumanFormatterWatch(t *testing.T) {
 		}
 
 		var buf bytes.Buffer
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		output.SetWriter(&buf)
 
 		err := output.Watch(ctx, fetcher, formatter)
@@ -1117,7 +1118,7 @@ func TestHumanFormatterWatch(t *testing.T) {
 		}
 
 		var buf bytes.Buffer
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		output.SetWriter(&buf)
 
 		err := output.Watch(ctx, fetcher, formatter)
@@ -1138,7 +1139,7 @@ func TestHumanFormatterWatch(t *testing.T) {
 		}
 
 		var buf bytes.Buffer
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		output.SetWriter(&buf)
 
 		err := output.Watch(ctx, fetcher, formatter)
@@ -1159,7 +1160,7 @@ func TestHumanFormatterWatch(t *testing.T) {
 		}
 
 		var buf bytes.Buffer
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		output.SetWriter(&buf)
 
 		err := output.Watch(ctx, fetcher, formatter)
@@ -1219,4 +1220,94 @@ func TestWrapLine(t *testing.T) {
 			assert.Equal(t, tc.expected, result)
 		})
 	}
+}
+
+func TestJsonFormatterPrintBatchResult(t *testing.T) {
+	t.Run("prints batch result as JSON", func(t *testing.T) {
+		var buf bytes.Buffer
+		output := NewOutputFormatter(true, false, false, false)
+		output.SetWriter(&buf)
+
+		result := &BatchResult{
+			Total:     3,
+			Succeeded: []OperationResult{{CID: "QmA", RequestID: "r1", Status: "pinned"}},
+			Failed:    []OperationError{{CID: "QmB", Error: "timeout"}},
+			Skipped:   []string{"QmC"},
+			Duration:  5 * time.Second,
+		}
+
+		output.PrintBatchResult(result)
+
+		var parsed map[string]any
+		err := json.Unmarshal(buf.Bytes(), &parsed)
+		require.NoError(t, err)
+		assert.Equal(t, float64(3), parsed["total"])
+		assert.Equal(t, float64(1), parsed["succeeded"])
+		assert.Equal(t, float64(1), parsed["failed"])
+		assert.Equal(t, float64(1), parsed["skipped"])
+	})
+
+	t.Run("quiet mode suppresses output", func(t *testing.T) {
+		var buf bytes.Buffer
+		output := NewOutputFormatter(true, false, true, false)
+		output.SetWriter(&buf)
+
+		result := &BatchResult{Total: 1, Succeeded: []OperationResult{{CID: "QmA"}}}
+		output.PrintBatchResult(result)
+
+		assert.Empty(t, buf.String())
+	})
+}
+
+func TestHumanFormatterPrintBatchResult(t *testing.T) {
+	t.Run("prints batch result with failures", func(t *testing.T) {
+		var buf bytes.Buffer
+		output := NewOutputFormatter(false, false, false, false)
+		output.SetWriter(&buf)
+
+		result := &BatchResult{
+			Total:     2,
+			Succeeded: []OperationResult{{CID: "QmA", RequestID: "r1", Status: "pinned"}},
+			Failed:    []OperationError{{CID: "QmB", Error: "timeout"}},
+			Skipped:   []string{},
+			Duration:  5 * time.Second,
+		}
+
+		output.PrintBatchResult(result)
+
+		assert.Contains(t, buf.String(), "QmB")
+		assert.Contains(t, buf.String(), "timeout")
+	})
+
+	t.Run("quiet mode suppresses output", func(t *testing.T) {
+		var buf bytes.Buffer
+		output := NewOutputFormatter(false, false, true, false)
+		output.SetWriter(&buf)
+
+		result := &BatchResult{Total: 1, Succeeded: []OperationResult{{CID: "QmA"}}}
+		output.PrintBatchResult(result)
+
+		assert.Empty(t, buf.String())
+	})
+}
+
+func TestJsonFormatterWatch(t *testing.T) {
+	t.Run("watch with cancelled context returns immediately", func(t *testing.T) {
+		var buf bytes.Buffer
+		output := NewOutputFormatter(true, false, false, false)
+		output.SetWriter(&buf)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		err := output.Watch(ctx,
+			func(ctx context.Context) (any, error) {
+				return []Pin{{CID: "QmA", Status: "pinned"}}, nil
+			},
+			func(data any) (string, []string, [][]string) {
+				return "test", []string{"CID"}, [][]string{{"QmA"}}
+			},
+		)
+		assert.Error(t, err)
+	})
 }

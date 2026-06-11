@@ -69,37 +69,32 @@ func TestPinDryRun(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			service := NewMockPinningService(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(cfgMgr, service)
 			}
 
-			var cmd pinCommandGetter
+			cmd := newMockCommand()
 			if tt.name == "dry run with options" {
-				cmd = &mockPinCommand{
-					cid:        tt.cid,
-					name:       "test-name",
-					parallel:   5,
-					continueOn: true,
-					dryRun:     tt.dryRunFlag,
-				}
+				cmd = newMockCommand().
+					withCID(tt.cid).
+					withString(FlagName, "test-name").
+					withInt(FlagParallel, 5).
+					withBool(FlagContinue, true).
+					withBool(FlagDryRun, tt.dryRunFlag)
 			} else {
-				cmd = &mockPinCommand{
-					cid:    tt.cid,
-					dryRun: tt.dryRunFlag,
-				}
+				cmd = newMockCommand().
+					withCID(tt.cid).
+					withBool(FlagDryRun, tt.dryRunFlag)
 			}
 
-			cfgMgrFactory := func() (config.Manager, error) {
-				return cfgMgr, nil
-			}
 
-			pinningServiceFactory := func(cfgMgr config.Manager, output Output) PinningService {
+			pinningServiceFactory := func(cfgMgr config.Manager, output Output, _ bool) PinningService {
 				return service
 			}
 
-			_, err := pin(context.Background(), cmd, output, cfgMgrFactory, pinningServiceFactory)
+			_, err := pin(context.Background(), cmd, output, cfgMgr, "", true, pinningServiceFactory)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -122,7 +117,6 @@ func TestPin(t *testing.T) {
 		setupMocks       func(*configmocks.MockManager, *MockPinningService)
 		wantErr          bool
 		errContains      string
-		cfgMgrFactoryErr bool
 	}{
 		{
 			name:       "successful pin operation",
@@ -173,7 +167,6 @@ func TestPin(t *testing.T) {
 			},
 			wantErr:          true,
 			errContains:      "cid is required",
-			cfgMgrFactoryErr: false,
 		},
 		{
 			name:       "returns error when no CIDs provided for batch",
@@ -185,16 +178,6 @@ func TestPin(t *testing.T) {
 			},
 			wantErr:     true,
 			errContains: "cid is required",
-		},
-		{
-			name:             "returns error when config manager factory fails",
-			cid:              "QmXxx",
-			nameFlag:         "",
-			noWaitFlag:       false,
-			setupMocks:       func(cfgMgr *configmocks.MockManager, service *MockPinningService) {},
-			wantErr:          true,
-			errContains:      "config error",
-			cfgMgrFactoryErr: true,
 		},
 		{
 			name:       "returns error when pinning fails",
@@ -216,34 +199,22 @@ func TestPin(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			service := NewMockPinningService(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(cfgMgr, service)
 			}
 
-			cmd := &mockPinCommand{
-				cid:    tt.cid,
-				name:   tt.nameFlag,
-				noWait: tt.noWaitFlag,
-			}
+			cmd := newMockCommand().
+				withCID(tt.cid).
+				withString(FlagName, tt.nameFlag).
+				withBool(FlagNoWait, tt.noWaitFlag)
 
-			var cfgMgrFactory ConfigManagerFactory
-			if tt.cfgMgrFactoryErr {
-				cfgMgrFactory = func() (config.Manager, error) {
-					return nil, errors.New("config error")
-				}
-			} else {
-				cfgMgrFactory = func() (config.Manager, error) {
-					return cfgMgr, nil
-				}
-			}
-
-			pinningServiceFactory := func(cm config.Manager, out Output) PinningService {
+			pinningServiceFactory := func(cm config.Manager, out Output, _ bool) PinningService {
 				return service
 			}
 
-			_, err := pin(context.Background(), cmd, output, cfgMgrFactory, pinningServiceFactory)
+			_, err := pin(context.Background(), cmd, output, cfgMgr, "", true, pinningServiceFactory)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -304,27 +275,23 @@ func TestPinBatch(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			service := NewMockPinningService(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(cfgMgr, service)
 			}
 
-			cmd := &mockPinCommand{
-				cid:        tt.cids,
-				parallel:   tt.parallel,
-				continueOn: tt.continueOn,
-			}
+			cmd := newMockCommand().
+				withCID(tt.cids).
+				withInt(FlagParallel, tt.parallel).
+				withBool(FlagContinue, tt.continueOn)
 
-			cfgMgrFactory := func() (config.Manager, error) {
-				return cfgMgr, nil
-			}
 
-			pinningServiceFactory := func(cm config.Manager, out Output) PinningService {
+			pinningServiceFactory := func(cm config.Manager, out Output, _ bool) PinningService {
 				return service
 			}
 
-			_, err := pin(context.Background(), cmd, output, cfgMgrFactory, pinningServiceFactory)
+			_, err := pin(context.Background(), cmd, output, cfgMgr, "", true, pinningServiceFactory)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -376,53 +343,7 @@ func TestNewPinCommand(t *testing.T) {
 	})
 }
 
-// mockPinCommand is a mock implementation of commandGetter for testing.
-type mockPinCommand struct {
-	cid        string
-	name       string
-	noWait     bool
-	file       string
-	parallel   int
-	continueOn bool
-	dryRun     bool
-}
 
-func (m *mockPinCommand) GetCID() string {
-	return m.cid
-}
-
-func (m *mockPinCommand) String(name string) string {
-	switch name {
-	case FlagName:
-		return m.name
-	case FlagFile:
-		return m.file
-	default:
-		return ""
-	}
-}
-
-func (m *mockPinCommand) Int(name string) int {
-	switch name {
-	case FlagParallel:
-		return m.parallel
-	default:
-		return 0
-	}
-}
-
-func (m *mockPinCommand) Bool(name string) bool {
-	switch name {
-	case FlagNoWait:
-		return m.noWait
-	case FlagContinue:
-		return m.continueOn
-	case FlagDryRun:
-		return m.dryRun
-	default:
-		return false
-	}
-}
 
 func TestDefaultPinningServiceFactory(t *testing.T) {
 	t.Run("creates pinning service with correct dependencies", func(t *testing.T) {
@@ -433,9 +354,9 @@ func TestDefaultPinningServiceFactory(t *testing.T) {
 			Secure:       true,
 		})
 
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 
-		service := defaultPinningServiceFactory(cfgMgr, output)
+		service := defaultPinningServiceFactory(cfgMgr, output, true)
 
 		assert.IsType(t, &PinningServiceDefault{}, service)
 		ps := service.(*PinningServiceDefault)

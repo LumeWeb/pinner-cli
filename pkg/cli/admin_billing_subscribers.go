@@ -24,15 +24,12 @@ Examples:
 			if err != nil {
 				return err
 			}
-			return billingSubscribersListAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultBillingAdminServiceFactory)
+			return billingSubscribersListAction(ctx, output, cfgMgr, defaultBillingAdminServiceFactory)
 		},
 	}
 }
 
-// billingSubscribersListCmdGetter is an empty interface for list command (no args/flags needed)
-type billingSubscribersListCmdGetter interface{}
-
-func billingSubscribersListAction(ctx context.Context, cmd billingSubscribersListCmdGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
+func billingSubscribersListAction(ctx context.Context, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
 	service := serviceFactory(cfgMgr, output)
 	if err := service.RequireAuthenticated(); err != nil {
 		return err
@@ -90,17 +87,12 @@ Examples:
 			if err != nil {
 				return err
 			}
-			return billingSubscribersGetAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultBillingAdminServiceFactory)
+			return billingSubscribersGetAction(ctx, cmd, output, cfgMgr, defaultBillingAdminServiceFactory)
 		},
 	}
 }
 
-// billingSubscribersGetCmdGetter defines the interface for getting get command args.
-type billingSubscribersGetCmdGetter interface {
-	Args() cli.Args
-}
-
-func billingSubscribersGetAction(ctx context.Context, cmd billingSubscribersGetCmdGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
+func billingSubscribersGetAction(ctx context.Context, cmd argsGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
 	if cmd.Args().Len() < 1 {
 		return fmt.Errorf("subscriber ID is required")
 	}
@@ -175,17 +167,12 @@ Examples:
 			if err != nil {
 				return err
 			}
-			return billingSubscribersListGatewayAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultBillingAdminServiceFactory)
+			return billingSubscribersListGatewayAction(ctx, cmd, output, cfgMgr, defaultBillingAdminServiceFactory)
 		},
 	}
 }
 
-// billingSubscribersListGatewayCmdGetter defines the interface for getting list-gateway command args.
-type billingSubscribersListGatewayCmdGetter interface {
-	Args() cli.Args
-}
-
-func billingSubscribersListGatewayAction(ctx context.Context, cmd billingSubscribersListGatewayCmdGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
+func billingSubscribersListGatewayAction(ctx context.Context, cmd argsGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
 	if cmd.Args().Len() < 1 {
 		return fmt.Errorf("gateway ID is required")
 	}
@@ -249,17 +236,12 @@ Examples:
 			if err != nil {
 				return err
 			}
-			return billingSubscribersListUserAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultBillingAdminServiceFactory)
+			return billingSubscribersListUserAction(ctx, cmd, output, cfgMgr, defaultBillingAdminServiceFactory)
 		},
 	}
 }
 
-// billingSubscribersListUserCmdGetter defines the interface for getting list-user command args.
-type billingSubscribersListUserCmdGetter interface {
-	Args() cli.Args
-}
-
-func billingSubscribersListUserAction(ctx context.Context, cmd billingSubscribersListUserCmdGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
+func billingSubscribersListUserAction(ctx context.Context, cmd argsGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
 	if cmd.Args().Len() < 1 {
 		return fmt.Errorf("user ID is required")
 	}
@@ -335,17 +317,12 @@ Examples:
 			if err != nil {
 				return err
 			}
-			return billingSubscribersCancelAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultBillingAdminServiceFactory)
+			return billingSubscribersCancelAction(ctx, cmd, output, cfgMgr, defaultBillingAdminServiceFactory)
 		},
 	}
 }
 
-// billingSubscribersCancelCmdGetter defines the interface for getting cancel command flags.
-type billingSubscribersCancelCmdGetter interface {
-	String(name string) string
-}
-
-func billingSubscribersCancelAction(ctx context.Context, cmd billingSubscribersCancelCmdGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
+func billingSubscribersCancelAction(ctx context.Context, cmd flagGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
 	service := serviceFactory(cfgMgr, output)
 	if err := service.RequireAuthenticated(); err != nil {
 		return err
@@ -392,17 +369,12 @@ Examples:
 			if err != nil {
 				return err
 			}
-			return billingSubscribersAbortCancelAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultBillingAdminServiceFactory)
+			return billingSubscribersAbortCancelAction(ctx, cmd, output, cfgMgr, defaultBillingAdminServiceFactory)
 		},
 	}
 }
 
-// billingSubscribersAbortCancelCmdGetter defines the interface for getting abort-cancel command flags.
-type billingSubscribersAbortCancelCmdGetter interface {
-	String(name string) string
-}
-
-func billingSubscribersAbortCancelAction(ctx context.Context, cmd billingSubscribersAbortCancelCmdGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
+func billingSubscribersAbortCancelAction(ctx context.Context, cmd flagGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
 	service := serviceFactory(cfgMgr, output)
 	if err := service.RequireAuthenticated(); err != nil {
 		return err
@@ -449,18 +421,12 @@ Examples:
 			if err != nil {
 				return err
 			}
-			return billingSubscribersChangePlanAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultBillingAdminServiceFactory)
+			return billingSubscribersChangePlanAction(ctx, cmd, output, cfgMgr, defaultBillingAdminServiceFactory)
 		},
 	}
 }
 
-// billingSubscribersChangePlanCmdGetter defines the interface for getting change-plan command flags.
-type billingSubscribersChangePlanCmdGetter interface {
-	String(name string) string
-	Int(name string) int
-}
-
-func billingSubscribersChangePlanAction(ctx context.Context, cmd billingSubscribersChangePlanCmdGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
+func billingSubscribersChangePlanAction(ctx context.Context, cmd flagGetterWithInt, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
 	service := serviceFactory(cfgMgr, output)
 	if err := service.RequireAuthenticated(); err != nil {
 		return err
@@ -519,17 +485,12 @@ Examples:
 			if err != nil {
 				return err
 			}
-			return billingSubscribersPauseAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultBillingAdminServiceFactory)
+			return billingSubscribersPauseAction(ctx, cmd, output, cfgMgr, defaultBillingAdminServiceFactory)
 		},
 	}
 }
 
-// billingSubscribersPauseCmdGetter defines the interface for getting pause command flags.
-type billingSubscribersPauseCmdGetter interface {
-	String(name string) string
-}
-
-func billingSubscribersPauseAction(ctx context.Context, cmd billingSubscribersPauseCmdGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
+func billingSubscribersPauseAction(ctx context.Context, cmd flagGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
 	service := serviceFactory(cfgMgr, output)
 	if err := service.RequireAuthenticated(); err != nil {
 		return err
@@ -571,17 +532,12 @@ Examples:
 			if err != nil {
 				return err
 			}
-			return billingSubscribersResumeAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultBillingAdminServiceFactory)
+			return billingSubscribersResumeAction(ctx, cmd, output, cfgMgr, defaultBillingAdminServiceFactory)
 		},
 	}
 }
 
-// billingSubscribersResumeCmdGetter defines the interface for getting resume command flags.
-type billingSubscribersResumeCmdGetter interface {
-	String(name string) string
-}
-
-func billingSubscribersResumeAction(ctx context.Context, cmd billingSubscribersResumeCmdGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
+func billingSubscribersResumeAction(ctx context.Context, cmd flagGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
 	service := serviceFactory(cfgMgr, output)
 	if err := service.RequireAuthenticated(); err != nil {
 		return err

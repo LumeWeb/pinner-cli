@@ -50,12 +50,12 @@ Examples:
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			output := setupOutput(cmd)
-			return register(ctx, cmd, output, defaultConfigManagerFactory, defaultAuthServiceFactory)
+			return register(ctx, newCLICommandWrapper(cmd), output, defaultConfigManagerFactory, defaultAuthServiceFactory)
 		},
 	}
 }
 
-func register(ctx context.Context, cmd *cli.Command, output Output, cfgMgrFactory ConfigManagerFactory, authServiceFactory AuthServiceFactory) error {
+func register(ctx context.Context, cmd flagGetter, output Output, cfgMgrFactory ConfigManagerFactory, authServiceFactory AuthServiceFactory) error {
 	email := cmd.String(FlagEmail)
 	firstName := cmd.String(FlagFirstName)
 	lastName := cmd.String(FlagLastName)

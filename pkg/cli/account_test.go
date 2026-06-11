@@ -54,7 +54,7 @@ func TestAccountOTPEnable(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			authService := NewMockAuthService(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			var cfgMgrFactory ConfigManagerFactory
 			if tt.name == "config manager factory fails" {
@@ -85,7 +85,7 @@ func TestAccountOTPEnable(t *testing.T) {
 				}
 			}
 
-			err := accountOTPEnable(context.Background(), cmd, output, cfgMgrFactory, authServiceFactory)
+			err := accountOTPEnable(context.Background(), newCLICommandWrapper(cmd), output, cfgMgrFactory, authServiceFactory)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -139,7 +139,7 @@ func TestAccountOTPDisable(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			authService := NewMockAuthService(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			var cfgMgrFactory ConfigManagerFactory
 			if tt.name == "config manager factory fails" {
@@ -170,7 +170,7 @@ func TestAccountOTPDisable(t *testing.T) {
 				}
 			}
 
-			err := accountOTPDisable(context.Background(), cmd, output, cfgMgrFactory, authServiceFactory)
+			err := accountOTPDisable(context.Background(), newCLICommandWrapper(cmd), output, cfgMgrFactory, authServiceFactory)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -229,7 +229,7 @@ func TestAuthService_EnableOTP(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			acc := portalsdkmocks.NewMockAccountAPI(t)
 			prompter := NewMockAuthPrompter(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			// Mock Config() to return a config with a login JWT
 			cfg := config.NewConfig()
@@ -294,7 +294,7 @@ func TestAuthService_EnableOTP_Interactive(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			acc := portalsdkmocks.NewMockAccountAPI(t)
 			prompter := NewMockAuthPrompter(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			// Mock Config() to return a config with a login JWT
 			cfg := config.NewConfig()
@@ -359,7 +359,7 @@ func TestAuthService_DisableOTP(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			acc := portalsdkmocks.NewMockAccountAPI(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			// Mock Config() to return a config with a login JWT
 			cfg := config.NewConfig()
@@ -389,6 +389,134 @@ func TestAuthService_DisableOTP(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestAccountOTPEnable_MockCommand_Success(t *testing.T) {
+	authService := NewMockAuthService(t)
+	cfgMgr := newTestConfigMgr(t)
+	output := newTestOutput()
+
+	authService.EXPECT().EnableOTP(context.Background(), "123456").Return(nil)
+
+	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
+	authServiceFactory := func(cm config.Manager, out Output, apiEndpoint string) AuthService {
+		return authService
+	}
+
+	cmd := newMockCommand().withString(FlagOTP, "123456")
+	err := accountOTPEnable(context.Background(), cmd, output, cfgMgrFactory, authServiceFactory)
+	require.NoError(t, err)
+}
+
+func TestAccountOTPEnable_MockCommand_NoOTP(t *testing.T) {
+	authService := NewMockAuthService(t)
+	cfgMgr := newTestConfigMgr(t)
+	output := newTestOutput()
+
+	authService.EXPECT().EnableOTP(context.Background(), "").Return(nil)
+
+	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
+	authServiceFactory := func(cm config.Manager, out Output, apiEndpoint string) AuthService {
+		return authService
+	}
+
+	cmd := newMockCommand()
+	err := accountOTPEnable(context.Background(), cmd, output, cfgMgrFactory, authServiceFactory)
+	require.NoError(t, err)
+}
+
+func TestAccountOTPEnable_MockCommand_ServiceError(t *testing.T) {
+	authService := NewMockAuthService(t)
+	cfgMgr := newTestConfigMgr(t)
+	output := newTestOutput()
+
+	authService.EXPECT().EnableOTP(context.Background(), "000000").
+		Return(errors.New("invalid OTP code"))
+
+	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
+	authServiceFactory := func(cm config.Manager, out Output, apiEndpoint string) AuthService {
+		return authService
+	}
+
+	cmd := newMockCommand().withString(FlagOTP, "000000")
+	err := accountOTPEnable(context.Background(), cmd, output, cfgMgrFactory, authServiceFactory)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid OTP code")
+}
+
+func TestAccountOTPEnable_MockCommand_ConfigError(t *testing.T) {
+	output := newTestOutput()
+
+	cmd := newMockCommand().withString(FlagOTP, "123456")
+	err := accountOTPEnable(context.Background(), cmd, output, failingConfigMgrFactory(), func(cm config.Manager, out Output, apiEndpoint string) AuthService {
+		return nil
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to initialize config manager")
+}
+
+func TestAccountOTPDisable_MockCommand_Success(t *testing.T) {
+	authService := NewMockAuthService(t)
+	cfgMgr := newTestConfigMgr(t)
+	output := newTestOutput()
+
+	authService.EXPECT().DisableOTP(context.Background(), "mypassword").Return(nil)
+
+	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
+	authServiceFactory := func(cm config.Manager, out Output, apiEndpoint string) AuthService {
+		return authService
+	}
+
+	cmd := newMockCommand().withString("password", "mypassword")
+	err := accountOTPDisable(context.Background(), cmd, output, cfgMgrFactory, authServiceFactory)
+	require.NoError(t, err)
+}
+
+func TestAccountOTPDisable_MockCommand_EmptyPassword(t *testing.T) {
+	authService := NewMockAuthService(t)
+	cfgMgr := newTestConfigMgr(t)
+	output := newTestOutput()
+
+	authService.EXPECT().DisableOTP(context.Background(), "").Return(nil)
+
+	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
+	authServiceFactory := func(cm config.Manager, out Output, apiEndpoint string) AuthService {
+		return authService
+	}
+
+	cmd := newMockCommand()
+	err := accountOTPDisable(context.Background(), cmd, output, cfgMgrFactory, authServiceFactory)
+	require.NoError(t, err)
+}
+
+func TestAccountOTPDisable_MockCommand_ServiceError(t *testing.T) {
+	authService := NewMockAuthService(t)
+	cfgMgr := newTestConfigMgr(t)
+	output := newTestOutput()
+
+	authService.EXPECT().DisableOTP(context.Background(), "wrong").
+		Return(errors.New("invalid password"))
+
+	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
+	authServiceFactory := func(cm config.Manager, out Output, apiEndpoint string) AuthService {
+		return authService
+	}
+
+	cmd := newMockCommand().withString("password", "wrong")
+	err := accountOTPDisable(context.Background(), cmd, output, cfgMgrFactory, authServiceFactory)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid password")
+}
+
+func TestAccountOTPDisable_MockCommand_ConfigError(t *testing.T) {
+	output := newTestOutput()
+
+	cmd := newMockCommand().withString("password", "test")
+	err := accountOTPDisable(context.Background(), cmd, output, failingConfigMgrFactory(), func(cm config.Manager, out Output, apiEndpoint string) AuthService {
+		return nil
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to initialize config manager")
 }
 
 func TestAuthService_DisableOTP_Interactive(t *testing.T) {
@@ -421,7 +549,7 @@ func TestAuthService_DisableOTP_Interactive(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			acc := portalsdkmocks.NewMockAccountAPI(t)
 			prompter := NewMockAuthPrompter(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			// Mock Config() to return a config with a login JWT (optional, for early exit cases)
 			cfg := config.NewConfig()

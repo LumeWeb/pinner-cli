@@ -53,7 +53,7 @@ Examples:
 // runSetupCommand is the testable entry point for setup.
 func runSetupWizard(
 	ctx context.Context,
-	cmd commandGetter,
+	cmd flagGetter,
 	output Output,
 	cfgMgrFactory ConfigManagerFactory,
 	authServiceFactory AuthServiceFactory,
@@ -64,7 +64,7 @@ func runSetupWizard(
 // runSetupWizardWithFactories is the testable implementation with dependency injection.
 func runSetupWizardWithFactories(
 	ctx context.Context,
-	cmd commandGetter,
+	cmd flagGetter,
 	output Output,
 	cfgMgrFactory ConfigManagerFactory,
 	authServiceFactory AuthServiceFactory,

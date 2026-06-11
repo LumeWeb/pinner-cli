@@ -14,24 +14,35 @@ A developer-focused CLI for pinning content to IPFS, managing websites, DNS, and
 
 ## Installation
 
+### From Releases
+
+Download the latest binary from the [releases page](https://github.com/lumeweb/pinner-cli/releases).
+
+### From go install
+
+```bash
+go install github.com/lumeweb/pinner-cli/cmd/pinner@latest
+```
+
 ### From Source
 
 ```bash
-# Build for current platform
+# Build with version info from git (recommended)
+make build
+
+# Or install to $GOPATH/bin
+make install
+
+# Build without make
 go build -o pinner ./cmd/pinner
 
 # Cross-compile for different platforms
 GOOS=linux GOARCH=amd64 go build -o pinner-linux-amd64 ./cmd/pinner
 GOOS=darwin GOARCH=arm64 go build -o pinner-darwin-arm64 ./cmd/pinner
 GOOS=windows GOARCH=amd64 go build -o pinner-windows-amd64.exe ./cmd/pinner
-
-# Build with version info
-go build -ldflags="-X 'build.Version=1.0.0' -X 'build.GitCommit=abc123'" -o pinner ./cmd/pinner
 ```
 
-### From Pre-built Binaries
-
-Download the latest release from the [releases page](https://github.com/lumeweb/pinner-cli/releases).
+The Makefile injects git commit, branch, version, build time, and platform info via ldflags.
 
 ## Quick Start
 
@@ -277,7 +288,7 @@ pinner pins rm --all --status failed --force
 pinner pins add bafybeig... --dry-run
 ```
 
-**Note**: `pin`, `list`, `status`, and `unpin` are aliases for `pins add`, `pins ls`, `pins status`, and `pins rm` respectively. They work identically and are not deprecated.
+**Note**: `pin`, `list`, `status`, and `unpin` are first-class shortcuts for `pins add`, `pins ls`, `pins status`, and `pins rm` respectively — use whichever you prefer.
 
 ### Pin
 
@@ -837,16 +848,16 @@ mockery --name=AuthService
 ### Building
 
 ```bash
-# Build for current platform
+# Build with version info (recommended)
+make build
+
+# Build without make
 go build -o pinner ./cmd/pinner
 
 # Cross-compile for different platforms
 GOOS=linux GOARCH=amd64 go build -o pinner-linux-amd64 ./cmd/pinner
 GOOS=darwin GOARCH=arm64 go build -o pinner-darwin-arm64 ./cmd/pinner
 GOOS=windows GOARCH=amd64 go build -o pinner-windows-amd64.exe ./cmd/pinner
-
-# Build with version info
-go build -ldflags="-X 'build.Version=1.0.0' -X 'build.GitCommit=abc123'" -o pinner ./cmd/pinner
 ```
 
 ### Running the CLI

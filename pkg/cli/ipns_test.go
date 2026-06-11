@@ -3,1174 +3,454 @@ package cli
 import (
 	"context"
 	"errors"
-	"fmt"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/urfave/cli/v3"
 	ipfs "go.lumeweb.com/ipfs-sdk"
+	"go.lumeweb.com/pinner-cli/pkg/config"
+	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
 )
 
-func TestIPNSKeysList(t *testing.T) {
-	tests := []struct {
-		name        string
-		setupMocks  func(*mockIPNSServiceForCLI)
-		wantErr     bool
-		errContains string
-	}{
-		{
-			name: "successful list keys",
-			setupMocks: func(svc *mockIPNSServiceForCLI) {
-				svc.listKeysFunc = func(ctx context.Context) ([]ipfs.IPNSKeyResponse, error) {
-					return []ipfs.IPNSKeyResponse{
-						{
-							Id:       1,
-							Name:     "my-key",
-							IpnsName: "k51qzi5uqu5djx123",
-							PeerId:   "12D3KooWABC123",
-							Created:  time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC),
-						},
-						{
-							Id:       2,
-							Name:     "another-key",
-							IpnsName: "k51qzi5uqu5djx456",
-							PeerId:   "12D3KooWDEF456",
-							Created:  time.Date(2024, 1, 2, 12, 0, 0, 0, time.UTC),
-						},
-					}, nil
-				}
-			},
-			wantErr: false,
-		},
-		{
-			name: "no keys found",
-			setupMocks: func(svc *mockIPNSServiceForCLI) {
-				svc.listKeysFunc = func(ctx context.Context) ([]ipfs.IPNSKeyResponse, error) {
-					return []ipfs.IPNSKeyResponse{}, nil
-				}
-			},
-			wantErr: false,
-		},
-		{
-			name: "service error",
-			setupMocks: func(svc *mockIPNSServiceForCLI) {
-				svc.listKeysFunc = func(ctx context.Context) ([]ipfs.IPNSKeyResponse, error) {
-					return nil, errors.New("failed to list keys")
-				}
-			},
-			wantErr:     true,
-			errContains: "failed to list keys",
-		},
+func setupIPNSHandlerTest(t *testing.T) (*mockIPNSServiceForCLI, *configmocks.MockManager) {
+	t.Helper()
+	mockSvc := &mockIPNSServiceForCLI{}
+	cfgMgr := configmocks.NewMockManager(t)
+	cfgMgr.EXPECT().Config().Return(&config.Config{
+		BaseEndpoint: "pinner.xyz",
+		Secure:       true,
+		AuthToken:    "test-token",
+	}).Maybe()
+
+	origFactory := ipnsServiceFactory
+	t.Cleanup(func() { ipnsServiceFactory = origFactory })
+	ipnsServiceFactory = func(config.Manager, Output, bool, ...IPNSServiceOption) IPNSService {
+		return mockSvc
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			mockSvc := &mockIPNSServiceForCLI{}
-			output := NewOutputFormatter(false, false, false, false)
-
-			if tt.setupMocks != nil {
-				tt.setupMocks(mockSvc)
-			}
-
-			cmd := &cli.Command{}
-
-			err := ipnsKeysListWithService(context.Background(), cmd, output, mockSvc)
-
-			if tt.wantErr {
-				require.Error(t, err)
-				if tt.errContains != "" {
-					require.Contains(t, err.Error(), tt.errContains)
-				}
-			} else {
-				require.NoError(t, err)
-			}
-		})
-	}
+	return mockSvc, cfgMgr
 }
 
-func ipnsKeysListWithService(ctx context.Context, cmd *cli.Command, output Output, ipnsService IPNSService) error {
-	if err := ipnsService.RequireAuthenticated(); err != nil {
-		return err
+// ===== ipnsKeysList =====
+
+func TestIpnsKeysList_Success(t *testing.T) {
+	mockSvc, cfgMgr := setupIPNSHandlerTest(t)
+	now := time.Now()
+	mockSvc.listKeysFunc = func(ctx context.Context) ([]ipfs.IPNSKeyResponse, error) {
+		return []ipfs.IPNSKeyResponse{
+			{Id: 1, Name: "my-key", IpnsName: "k51qzi5uqu5djx123", PeerId: "12D3KooWABC123", Created: now},
+			{Id: 2, Name: "another-key", IpnsName: "k51qzi5uqu5djx456", PeerId: "12D3KooWDEF456", Created: now},
+		}, nil
 	}
 
-	keys, err := ipnsService.ListKeys(ctx)
-	if err != nil {
-		return err
+	output := newTestOutput()
+	cmd := newMockCommand()
+	err := ipnsKeysList(context.Background(), cmd, output, cfgMgr, "test-token", true)
+	require.NoError(t, err)
+}
+
+func TestIpnsKeysList_Empty(t *testing.T) {
+	mockSvc, cfgMgr := setupIPNSHandlerTest(t)
+	mockSvc.listKeysFunc = func(ctx context.Context) ([]ipfs.IPNSKeyResponse, error) {
+		return []ipfs.IPNSKeyResponse{}, nil
 	}
 
-	if len(keys) == 0 {
-		output.Printf("No IPNS keys found")
+	output := newTestOutput()
+	cmd := newMockCommand()
+	err := ipnsKeysList(context.Background(), cmd, output, cfgMgr, "test-token", true)
+	require.NoError(t, err)
+}
+
+func TestIpnsKeysList_ServiceError(t *testing.T) {
+	mockSvc, cfgMgr := setupIPNSHandlerTest(t)
+	mockSvc.listKeysFunc = func(ctx context.Context) ([]ipfs.IPNSKeyResponse, error) {
+		return nil, errors.New("server error")
+	}
+
+	output := newTestOutput()
+	cmd := newMockCommand()
+	err := ipnsKeysList(context.Background(), cmd, output, cfgMgr, "test-token", true)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "server error")
+}
+
+func TestIpnsKeysList_Unauthenticated(t *testing.T) {
+	mockSvc, cfgMgr := setupIPNSHandlerTest(t)
+	mockSvc.requireAuthenticatedErr = ErrNotAuthenticated
+
+	output := newTestOutput()
+	cmd := newMockCommand()
+	err := ipnsKeysList(context.Background(), cmd, output, cfgMgr, "", true)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrNotAuthenticated))
+}
+
+// ===== ipnsKeysCreate =====
+
+func TestIpnsKeysCreate_Success(t *testing.T) {
+	mockSvc, cfgMgr := setupIPNSHandlerTest(t)
+	now := time.Now()
+	mockSvc.createKeyFunc = func(ctx context.Context, name string, key *string) (*ipfs.IPNSKeyResponse, error) {
+		assert.Equal(t, "my-key", name)
+		assert.Nil(t, key)
+		return &ipfs.IPNSKeyResponse{Id: 1, Name: "my-key", IpnsName: "k51qzi5uqu5djx123", PeerId: "12D3KooWABC123", Created: now}, nil
+	}
+
+	output := newTestOutput()
+	cmd := newMockCommand().withString(FlagName, "my-key")
+	err := ipnsKeysCreate(context.Background(), cmd, output, cfgMgr, "test-token", true)
+	require.NoError(t, err)
+}
+
+func TestIpnsKeysCreate_WithKeyImport(t *testing.T) {
+	mockSvc, cfgMgr := setupIPNSHandlerTest(t)
+	now := time.Now()
+	mockSvc.createKeyFunc = func(ctx context.Context, name string, key *string) (*ipfs.IPNSKeyResponse, error) {
+		assert.Equal(t, "imported-key", name)
+		require.NotNil(t, key)
+		assert.Equal(t, "base64keydata", *key)
+		return &ipfs.IPNSKeyResponse{Id: 2, Name: "imported-key", IpnsName: "k51qzi5uqu5djx789", PeerId: "12D3KooWGHI789", Created: now}, nil
+	}
+
+	output := newTestOutput()
+	cmd := newMockCommand().withString(FlagName, "imported-key").withString(FlagKey, "base64keydata")
+	err := ipnsKeysCreate(context.Background(), cmd, output, cfgMgr, "test-token", true)
+	require.NoError(t, err)
+}
+
+func TestIpnsKeysCreate_MissingName(t *testing.T) {
+	_, cfgMgr := setupIPNSHandlerTest(t)
+
+	output := newTestOutput()
+	cmd := newMockCommand().withString(FlagName, "")
+	err := ipnsKeysCreate(context.Background(), cmd, output, cfgMgr, "test-token", true)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "name is required")
+}
+
+func TestIpnsKeysCreate_ServiceError(t *testing.T) {
+	mockSvc, cfgMgr := setupIPNSHandlerTest(t)
+	mockSvc.createKeyFunc = func(ctx context.Context, name string, key *string) (*ipfs.IPNSKeyResponse, error) {
+		return nil, errors.New("conflict")
+	}
+
+	output := newTestOutput()
+	cmd := newMockCommand().withString(FlagName, "my-key")
+	err := ipnsKeysCreate(context.Background(), cmd, output, cfgMgr, "test-token", true)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "conflict")
+}
+
+// ===== ipnsKeysGet =====
+
+func TestIpnsKeysGet_Success(t *testing.T) {
+	mockSvc, cfgMgr := setupIPNSHandlerTest(t)
+	now := time.Now()
+	mockSvc.getKeyFunc = func(ctx context.Context, id string) (*ipfs.IPNSKeyResponse, error) {
+		assert.Equal(t, "1", id)
+		return &ipfs.IPNSKeyResponse{Id: 1, Name: "my-key", IpnsName: "k51qzi5uqu5djx123", PeerId: "12D3KooWABC123", Created: now}, nil
+	}
+
+	output := newTestOutput()
+	cmd := newMockCommand().withArgs("1")
+	err := ipnsKeysGet(context.Background(), cmd, output, cfgMgr, "test-token", true)
+	require.NoError(t, err)
+}
+
+func TestIpnsKeysGet_ByName(t *testing.T) {
+	mockSvc, cfgMgr := setupIPNSHandlerTest(t)
+	now := time.Now()
+	mockSvc.listKeysFunc = func(ctx context.Context) ([]ipfs.IPNSKeyResponse, error) {
+		return []ipfs.IPNSKeyResponse{{Id: 2, Name: "my-key", IpnsName: "k51qzi5uqu5djx456", PeerId: "12D3KooWDEF456", Created: now}}, nil
+	}
+	mockSvc.getKeyFunc = func(ctx context.Context, id string) (*ipfs.IPNSKeyResponse, error) {
+		assert.Equal(t, "2", id)
+		return &ipfs.IPNSKeyResponse{Id: 2, Name: "my-key", IpnsName: "k51qzi5uqu5djx456", PeerId: "12D3KooWDEF456", Created: now}, nil
+	}
+
+	output := newTestOutput()
+	cmd := newMockCommand().withArgs("my-key")
+	err := ipnsKeysGet(context.Background(), cmd, output, cfgMgr, "test-token", true)
+	require.NoError(t, err)
+}
+
+func TestIpnsKeysGet_MissingArg(t *testing.T) {
+	_, cfgMgr := setupIPNSHandlerTest(t)
+
+	output := newTestOutput()
+	cmd := newMockCommand()
+	err := ipnsKeysGet(context.Background(), cmd, output, cfgMgr, "test-token", true)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "key name or ID is required")
+}
+
+func TestIpnsKeysGet_NotFound(t *testing.T) {
+	mockSvc, cfgMgr := setupIPNSHandlerTest(t)
+	mockSvc.getKeyFunc = func(ctx context.Context, id string) (*ipfs.IPNSKeyResponse, error) {
+		return nil, errors.New("key not found")
+	}
+
+	output := newTestOutput()
+	cmd := newMockCommand().withArgs("999")
+	err := ipnsKeysGet(context.Background(), cmd, output, cfgMgr, "test-token", true)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "key not found")
+}
+
+// ===== ipnsKeysDelete =====
+
+func TestIpnsKeysDelete_Success(t *testing.T) {
+	mockSvc, cfgMgr := setupIPNSHandlerTest(t)
+	mockSvc.deleteKeyFunc = func(ctx context.Context, id string) error {
+		assert.Equal(t, "1", id)
 		return nil
 	}
 
-	output.Printf("Found %d IPNS key(s)", len(keys))
-
-	headers := []string{"ID", "NAME", "IPNS NAME", "PEER ID", "CREATED"}
-	rows := make([][]string, len(keys))
-	for i, key := range keys {
-		rows[i] = []string{
-			fmt.Sprintf("%d", key.Id),
-			key.Name,
-			key.IpnsName,
-			key.PeerId,
-			key.Created.Format("2006-01-02 15:04:05"),
-		}
-	}
-	output.PrintTable(headers, rows)
-
-	return nil
+	output := newTestOutput()
+	cmd := newMockCommand().withArgs("1")
+	err := ipnsKeysDelete(context.Background(), cmd, output, cfgMgr, "test-token", true)
+	require.NoError(t, err)
 }
 
-func TestIPNSResolve(t *testing.T) {
-	tests := []struct {
-		name        string
-		setupMocks  func(*mockIPNSServiceForCLI)
-		cmd         *mockIPNSResolveCommand
-		wantErr     bool
-		errContains string
-	}{
-		{
-			name: "successful resolve",
-			setupMocks: func(svc *mockIPNSServiceForCLI) {
-				svc.resolveFunc = func(ctx context.Context, name string) (*ipfs.IPNSResolveResponse, error) {
-					return &ipfs.IPNSResolveResponse{
-						Name:     "k51qzi5uqu5djx123",
-						Value:    "QmXxx",
-						Sequence: 1,
-						Expired:  false,
-						Expires:  time.Date(2024, 1, 2, 12, 0, 0, 0, time.UTC),
-					}, nil
-				}
-			},
-			cmd:     &mockIPNSResolveCommand{ipnsName: "k51qzi5uqu5djx123"},
-			wantErr: false,
-		},
-		{
-			name: "successful resolve with expired record",
-			setupMocks: func(svc *mockIPNSServiceForCLI) {
-				svc.resolveFunc = func(ctx context.Context, name string) (*ipfs.IPNSResolveResponse, error) {
-					return &ipfs.IPNSResolveResponse{
-						Name:     "k51qzi5uqu5djx456",
-						Value:    "QmYyy",
-						Sequence: 2,
-						Expired:  true,
-						Expires:  time.Date(2023, 12, 31, 23, 59, 59, 0, time.UTC),
-					}, nil
-				}
-			},
-			cmd:     &mockIPNSResolveCommand{ipnsName: "k51qzi5uqu5djx456"},
-			wantErr: false,
-		},
-		{
-			name:        "missing IPNS name",
-			cmd:         &mockIPNSResolveCommand{ipnsName: ""},
-			wantErr:     true,
-			errContains: "IPNS name is required",
-		},
-		{
-			name: "service error - invalid IPNS name",
-			setupMocks: func(svc *mockIPNSServiceForCLI) {
-				svc.resolveFunc = func(ctx context.Context, name string) (*ipfs.IPNSResolveResponse, error) {
-					return nil, errors.New("invalid IPNS name format")
-				}
-			},
-			cmd:         &mockIPNSResolveCommand{ipnsName: "invalid"},
-			wantErr:     true,
-			errContains: "invalid IPNS name format",
-		},
-		{
-			name: "service error - IPNS name not found",
-			setupMocks: func(svc *mockIPNSServiceForCLI) {
-				svc.resolveFunc = func(ctx context.Context, name string) (*ipfs.IPNSResolveResponse, error) {
-					return nil, errors.New("IPNS name not found")
-				}
-			},
-			cmd:         &mockIPNSResolveCommand{ipnsName: "k51qzi5uqu5djx999"},
-			wantErr:     true,
-			errContains: "IPNS name not found",
-		},
+func TestIpnsKeysDelete_ByName(t *testing.T) {
+	mockSvc, cfgMgr := setupIPNSHandlerTest(t)
+	now := time.Now()
+	mockSvc.listKeysFunc = func(ctx context.Context) ([]ipfs.IPNSKeyResponse, error) {
+		return []ipfs.IPNSKeyResponse{{Id: 3, Name: "my-key", IpnsName: "k51qzi5uqu5djx456", PeerId: "12D3KooWDEF456", Created: now}}, nil
+	}
+	mockSvc.deleteKeyFunc = func(ctx context.Context, id string) error {
+		assert.Equal(t, "3", id)
+		return nil
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			mockSvc := &mockIPNSServiceForCLI{}
-			output := NewOutputFormatter(false, false, false, false)
-
-			if tt.setupMocks != nil {
-				tt.setupMocks(mockSvc)
-			}
-
-			err := ipnsResolveWithService(context.Background(), tt.cmd, output, mockSvc)
-
-			if tt.wantErr {
-				require.Error(t, err)
-				if tt.errContains != "" {
-					require.Contains(t, err.Error(), tt.errContains)
-				}
-			} else {
-				require.NoError(t, err)
-			}
-		})
-	}
+	output := newTestOutput()
+	cmd := newMockCommand().withArgs("my-key")
+	err := ipnsKeysDelete(context.Background(), cmd, output, cfgMgr, "test-token", true)
+	require.NoError(t, err)
 }
 
-func TestIPNSResolveJSON(t *testing.T) {
-	tests := []struct {
-		name        string
-		setupMocks  func(*mockIPNSServiceForCLI)
-		cmd         *mockIPNSResolveCommand
-		wantErr     bool
-		errContains string
-	}{
-		{
-			name: "successful resolve JSON output",
-			setupMocks: func(svc *mockIPNSServiceForCLI) {
-				svc.resolveFunc = func(ctx context.Context, name string) (*ipfs.IPNSResolveResponse, error) {
-					return &ipfs.IPNSResolveResponse{
-						Name:     "k51qzi5uqu5djx123",
-						Value:    "QmXxx",
-						Sequence: 1,
-						Expired:  false,
-						Expires:  time.Date(2024, 1, 2, 12, 0, 0, 0, time.UTC),
-					}, nil
-				}
-			},
-			cmd:     &mockIPNSResolveCommand{ipnsName: "k51qzi5uqu5djx123"},
-			wantErr: false,
-		},
-	}
+func TestIpnsKeysDelete_MissingArg(t *testing.T) {
+	_, cfgMgr := setupIPNSHandlerTest(t)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			mockSvc := &mockIPNSServiceForCLI{}
-			output := NewOutputFormatter(true, false, false, false)
-
-			if tt.setupMocks != nil {
-				tt.setupMocks(mockSvc)
-			}
-
-			err := ipnsResolveWithService(context.Background(), tt.cmd, output, mockSvc)
-
-			if tt.wantErr {
-				require.Error(t, err)
-				if tt.errContains != "" {
-					require.Contains(t, err.Error(), tt.errContains)
-				}
-			} else {
-				require.NoError(t, err)
-			}
-		})
-	}
+	output := newTestOutput()
+	cmd := newMockCommand()
+	err := ipnsKeysDelete(context.Background(), cmd, output, cfgMgr, "test-token", true)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "key name or ID is required")
 }
 
-type mockIPNSResolveCommand struct {
-	ipnsName string
+func TestIpnsKeysDelete_NotFound(t *testing.T) {
+	mockSvc, cfgMgr := setupIPNSHandlerTest(t)
+	mockSvc.deleteKeyFunc = func(ctx context.Context, id string) error {
+		return errors.New("key not found")
+	}
+
+	output := newTestOutput()
+	cmd := newMockCommand().withArgs("999")
+	err := ipnsKeysDelete(context.Background(), cmd, output, cfgMgr, "test-token", true)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "key not found")
 }
 
-func (m *mockIPNSResolveCommand) Args() cli.Args {
-	if m.ipnsName == "" {
-		return &mockArgs{}
+// ===== ipnsPublish =====
+
+func TestIpnsPublish_Success(t *testing.T) {
+	mockSvc, cfgMgr := setupIPNSHandlerTest(t)
+	now := time.Now()
+	mockSvc.publishFunc = func(ctx context.Context, cid string, keyName string, ttl *string) (*ipfs.IPNSPublishResponse, error) {
+		assert.Equal(t, "QmXxx", cid)
+		assert.Equal(t, "1", keyName)
+		assert.Nil(t, ttl)
+		return &ipfs.IPNSPublishResponse{Name: "k51qzi5uqu5djx123", Value: "QmXxx", Published: now, Sequence: 1, Validity: now.Add(24 * time.Hour)}, nil
 	}
-	return &mockArgs{[]string{m.ipnsName}}
+
+	output := newTestOutput()
+	cmd := newMockCommand().withArgs("QmXxx").withString("key-name", "1")
+	err := ipnsPublish(context.Background(), cmd, output, cfgMgr, "test-token", true)
+	require.NoError(t, err)
 }
 
-func ipnsResolveWithService(ctx context.Context, cmd interface{ Args() cli.Args }, output Output, ipnsService IPNSService) error {
-	args := cmd.Args()
-	if args.Len() == 0 {
-		return fmt.Errorf("IPNS name is required")
+func TestIpnsPublish_WithTTL(t *testing.T) {
+	mockSvc, cfgMgr := setupIPNSHandlerTest(t)
+	now := time.Now()
+	mockSvc.publishFunc = func(ctx context.Context, cid string, keyName string, ttl *string) (*ipfs.IPNSPublishResponse, error) {
+		require.NotNil(t, ttl)
+		assert.Equal(t, "24h", *ttl)
+		return &ipfs.IPNSPublishResponse{Name: "k51qzi5uqu5djx123", Value: "QmYyy", Published: now, Sequence: 2, Validity: now.Add(24 * time.Hour)}, nil
 	}
 
-	ipnsName := args.First()
-	if ipnsName == "" {
-		return fmt.Errorf("IPNS name is required")
-	}
-
-	if err := ipnsService.RequireAuthenticated(); err != nil {
-		return err
-	}
-
-	response, err := ipnsService.Resolve(ctx, ipnsName)
-	if err != nil {
-		return err
-	}
-
-	if output.IsJSON() {
-		return output.PrintJSON(response)
-	}
-
-	output.Printf("IPNS name %s resolves to CID %s", response.Name, response.Value)
-
-	headers := []string{"NAME", "CID", "SEQUENCE", "EXPIRED", "EXPIRES"}
-	rows := [][]string{
-		{
-			response.Name,
-			response.Value,
-			fmt.Sprintf("%d", response.Sequence),
-			fmt.Sprintf("%t", response.Expired),
-			response.Expires.Format("2006-01-02 15:04:05"),
-		},
-	}
-	output.PrintTable(headers, rows)
-
-	return nil
+	output := newTestOutput()
+	cmd := newMockCommand().withArgs("QmYyy").withString("key-name", "1").withString("ttl", "24h")
+	err := ipnsPublish(context.Background(), cmd, output, cfgMgr, "test-token", true)
+	require.NoError(t, err)
 }
 
-func TestIPNSKeysCreate(t *testing.T) {
-	tests := []struct {
-		name        string
-		setupMocks  func(*mockIPNSServiceForCLI)
-		cmd         *mockIPNSCreateCommand
-		wantErr     bool
-		errContains string
-	}{
-		{
-			name: "successful create key",
-			setupMocks: func(svc *mockIPNSServiceForCLI) {
-				svc.createKeyFunc = func(ctx context.Context, name string, key *string) (*ipfs.IPNSKeyResponse, error) {
-					return &ipfs.IPNSKeyResponse{
-						Id:       1,
-						Name:     name,
-						IpnsName: "k51qzi5uqu5djx123",
-						PeerId:   "12D3KooWABC123",
-						Created:  time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC),
-					}, nil
-				}
-			},
-			wantErr: false,
-		},
-		{
-			name: "successful create key with import",
-			setupMocks: func(svc *mockIPNSServiceForCLI) {
-				svc.createKeyFunc = func(ctx context.Context, name string, key *string) (*ipfs.IPNSKeyResponse, error) {
-					return &ipfs.IPNSKeyResponse{
-						Id:       2,
-						Name:     name,
-						IpnsName: "k51qzi5uqu5djx456",
-						PeerId:   "12D3KooWDEF456",
-						Created:  time.Date(2024, 1, 2, 12, 0, 0, 0, time.UTC),
-					}, nil
-				}
-			},
-			wantErr: false,
-		},
-		{
-			name:        "missing name",
-			cmd:         &mockIPNSCreateCommand{name: ""},
-			wantErr:     true,
-			errContains: "name is required",
-		},
-		{
-			name: "service error",
-			setupMocks: func(svc *mockIPNSServiceForCLI) {
-				svc.createKeyFunc = func(ctx context.Context, name string, key *string) (*ipfs.IPNSKeyResponse, error) {
-					return nil, errors.New("failed to create key")
-				}
-			},
-			cmd:         &mockIPNSCreateCommand{name: "my-key"},
-			wantErr:     true,
-			errContains: "failed to create key",
-		},
-	}
+func TestIpnsPublish_MissingCID(t *testing.T) {
+	_, cfgMgr := setupIPNSHandlerTest(t)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			mockSvc := &mockIPNSServiceForCLI{}
-			output := NewOutputFormatter(false, false, false, false)
-
-			if tt.setupMocks != nil {
-				tt.setupMocks(mockSvc)
-			}
-
-			cmd := tt.cmd
-			if cmd == nil {
-				cmd = &mockIPNSCreateCommand{name: "my-key"}
-			}
-
-			err := ipnsKeysCreateWithService(context.Background(), cmd, output, mockSvc)
-
-			if tt.wantErr {
-				require.Error(t, err)
-				if tt.errContains != "" {
-					require.Contains(t, err.Error(), tt.errContains)
-				}
-			} else {
-				require.NoError(t, err)
-			}
-		})
-	}
+	output := newTestOutput()
+	cmd := newMockCommand().withString("key-name", "my-key")
+	err := ipnsPublish(context.Background(), cmd, output, cfgMgr, "test-token", true)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "CID is required")
 }
 
-type mockIPNSCreateCommand struct {
-	name string
-	key  string
+func TestIpnsPublish_MissingKeyName(t *testing.T) {
+	_, cfgMgr := setupIPNSHandlerTest(t)
+
+	output := newTestOutput()
+	cmd := newMockCommand().withArgs("QmXxx").withString("key-name", "")
+	err := ipnsPublish(context.Background(), cmd, output, cfgMgr, "test-token", true)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "key-name is required")
 }
 
-func (m *mockIPNSCreateCommand) String(name string) string {
-	switch name {
-	case FlagName:
-		return m.name
-	case "key":
-		return m.key
-	default:
-		return ""
+func TestIpnsPublish_ServiceError(t *testing.T) {
+	mockSvc, cfgMgr := setupIPNSHandlerTest(t)
+	mockSvc.publishFunc = func(ctx context.Context, cid string, keyName string, ttl *string) (*ipfs.IPNSPublishResponse, error) {
+		return nil, errors.New("invalid CID format")
 	}
+
+	output := newTestOutput()
+	cmd := newMockCommand().withArgs("invalid").withString("key-name", "1")
+	err := ipnsPublish(context.Background(), cmd, output, cfgMgr, "test-token", true)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid CID format")
 }
 
-func ipnsKeysCreateWithService(ctx context.Context, cmd interface{ String(name string) string }, output Output, ipnsService IPNSService) error {
-	if err := ipnsService.RequireAuthenticated(); err != nil {
-		return err
+// ===== ipnsRepublish =====
+
+func TestIpnsRepublish_Success(t *testing.T) {
+	mockSvc, cfgMgr := setupIPNSHandlerTest(t)
+	mockSvc.republishFunc = func(ctx context.Context, keyName string) (*ipfs.IPNSRepublishResponse, error) {
+		assert.Equal(t, "my-key", keyName)
+		return &ipfs.IPNSRepublishResponse{Count: 1, Message: "republished successfully"}, nil
 	}
 
-	name := cmd.String(FlagName)
-	if name == "" {
-		return fmt.Errorf("name is required")
-	}
-
-	var key *string
-	keyValue := cmd.String("key")
-	if keyValue != "" {
-		key = &keyValue
-	}
-
-	createdKey, err := ipnsService.CreateKey(ctx, name, key)
-	if err != nil {
-		return err
-	}
-
-	if output.IsJSON() {
-		return output.PrintJSON(createdKey)
-	}
-
-	output.Printf("Successfully created IPNS key")
-
-	headers := []string{"ID", "NAME", "IPNS NAME", "PEER ID", "CREATED"}
-	rows := [][]string{
-		{
-			fmt.Sprintf("%d", createdKey.Id),
-			createdKey.Name,
-			createdKey.IpnsName,
-			createdKey.PeerId,
-			createdKey.Created.Format("2006-01-02 15:04:05"),
-		},
-	}
-	output.PrintTable(headers, rows)
-
-	return nil
+	output := newTestOutput()
+	cmd := newMockCommand().withArgs("my-key")
+	err := ipnsRepublish(context.Background(), cmd, output, cfgMgr, "test-token", true)
+	require.NoError(t, err)
 }
 
-func TestIPNSKeysGet(t *testing.T) {
-	tests := []struct {
-		name        string
-		setupMocks  func(*mockIPNSServiceForCLI)
-		cmd         *mockIPNSGetCommand
-		wantErr     bool
-		errContains string
-	}{
-		{
-			name: "successful get key by numeric ID",
-			setupMocks: func(svc *mockIPNSServiceForCLI) {
-				svc.getKeyFunc = func(ctx context.Context, id string) (*ipfs.IPNSKeyResponse, error) {
-					return &ipfs.IPNSKeyResponse{
-						Id:       1,
-						Name:     "my-key",
-						IpnsName: "k51qzi5uqu5djx123",
-						PeerId:   "12D3KooWABC123",
-						Created:  time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC),
-					}, nil
-				}
-			},
-			cmd:     &mockIPNSGetCommand{keyArg: "1"},
-			wantErr: false,
-		},
-		{
-			name: "successful get key by name",
-			setupMocks: func(svc *mockIPNSServiceForCLI) {
-				svc.getKeyFunc = func(ctx context.Context, id string) (*ipfs.IPNSKeyResponse, error) {
-					return &ipfs.IPNSKeyResponse{
-						Id:       2,
-						Name:     "another-key",
-						IpnsName: "k51qzi5uqu5djx456",
-						PeerId:   "12D3KooWDEF456",
-						Created:  time.Date(2024, 1, 2, 12, 0, 0, 0, time.UTC),
-					}, nil
-				}
-				svc.listKeysFunc = func(ctx context.Context) ([]ipfs.IPNSKeyResponse, error) {
-					return []ipfs.IPNSKeyResponse{
-						{Id: 2, Name: "another-key", IpnsName: "k51qzi5uqu5djx456", PeerId: "12D3KooWDEF456", Created: time.Date(2024, 1, 2, 12, 0, 0, 0, time.UTC)},
-					}, nil
-				}
-			},
-			cmd:     &mockIPNSGetCommand{keyArg: "another-key"},
-			wantErr: false,
-		},
-		{
-			name:        "missing key arg",
-			cmd:         &mockIPNSGetCommand{keyArg: ""},
-			wantErr:     true,
-			errContains: "key name or ID is required",
-		},
-		{
-			name: "service error",
-			setupMocks: func(svc *mockIPNSServiceForCLI) {
-				svc.getKeyFunc = func(ctx context.Context, id string) (*ipfs.IPNSKeyResponse, error) {
-					return nil, errors.New("failed to get key")
-				}
-			},
-			cmd:         &mockIPNSGetCommand{keyArg: "1"},
-			wantErr:     true,
-			errContains: "failed to get key",
-		},
-	}
+func TestIpnsRepublish_MissingArg(t *testing.T) {
+	_, cfgMgr := setupIPNSHandlerTest(t)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			mockSvc := &mockIPNSServiceForCLI{}
-			output := NewOutputFormatter(false, false, false, false)
-
-			if tt.setupMocks != nil {
-				tt.setupMocks(mockSvc)
-			}
-
-			err := ipnsKeysGetWithService(context.Background(), tt.cmd, output, mockSvc)
-
-			if tt.wantErr {
-				require.Error(t, err)
-				if tt.errContains != "" {
-					require.Contains(t, err.Error(), tt.errContains)
-				}
-			} else {
-				require.NoError(t, err)
-			}
-		})
-	}
+	output := newTestOutput()
+	cmd := newMockCommand()
+	err := ipnsRepublish(context.Background(), cmd, output, cfgMgr, "test-token", true)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "key name or ID is required")
 }
 
-type mockIPNSGetCommand struct {
-	keyArg string
+func TestIpnsRepublish_ServiceError(t *testing.T) {
+	mockSvc, cfgMgr := setupIPNSHandlerTest(t)
+	mockSvc.republishFunc = func(ctx context.Context, keyName string) (*ipfs.IPNSRepublishResponse, error) {
+		return nil, errors.New("republish failed")
+	}
+
+	output := newTestOutput()
+	cmd := newMockCommand().withArgs("my-key")
+	err := ipnsRepublish(context.Background(), cmd, output, cfgMgr, "test-token", true)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "republish failed")
 }
 
-func (m *mockIPNSGetCommand) String(name string) string {
-	return ""
+// ===== ipnsResolve =====
+
+func TestIpnsResolve_Success(t *testing.T) {
+	mockSvc, cfgMgr := setupIPNSHandlerTest(t)
+	mockSvc.resolveFunc = func(ctx context.Context, name string) (*ipfs.IPNSResolveResponse, error) {
+		assert.Equal(t, "k51qzi5uqu5djx123", name)
+		return &ipfs.IPNSResolveResponse{
+			Name:     "k51qzi5uqu5djx123",
+			Value:    "QmXxx",
+			Sequence: 1,
+			Expired:  false,
+			Expires:  time.Date(2024, 1, 2, 12, 0, 0, 0, time.UTC),
+		}, nil
+	}
+
+	output := newTestOutput()
+	cmd := newMockCommand().withArgs("k51qzi5uqu5djx123")
+	err := ipnsResolve(context.Background(), cmd, output, cfgMgr, "test-token", true)
+	require.NoError(t, err)
 }
 
-func (m *mockIPNSGetCommand) Args() cli.Args {
-	if m.keyArg == "" {
-		return &mockArgs{}
-	}
-	return &mockArgs{[]string{m.keyArg}}
+func TestIpnsResolve_MissingArg(t *testing.T) {
+	_, cfgMgr := setupIPNSHandlerTest(t)
+
+	output := newTestOutput()
+	cmd := newMockCommand()
+	err := ipnsResolve(context.Background(), cmd, output, cfgMgr, "test-token", true)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "IPNS name is required")
 }
 
-func ipnsKeysGetWithService(ctx context.Context, cmd interface{ Args() cli.Args }, output Output, ipnsService IPNSService) error {
-	args := cmd.Args()
-	if args.Len() == 0 {
-		return fmt.Errorf("key name or ID is required")
+func TestIpnsResolve_NotFound(t *testing.T) {
+	mockSvc, cfgMgr := setupIPNSHandlerTest(t)
+	mockSvc.resolveFunc = func(ctx context.Context, name string) (*ipfs.IPNSResolveResponse, error) {
+		return nil, errors.New("IPNS name not found")
 	}
 
-	keyArg := args.First()
-	if keyArg == "" {
-		return fmt.Errorf("key name or ID is required")
-	}
-
-	if err := ipnsService.RequireAuthenticated(); err != nil {
-		return err
-	}
-
-	keyID, err := resolveIPNSKeyIDToString(ctx, ipnsService, keyArg)
-	if err != nil {
-		return err
-	}
-
-	key, err := ipnsService.GetKey(ctx, keyID)
-	if err != nil {
-		return err
-	}
-
-	if output.IsJSON() {
-		return output.PrintJSON(key)
-	}
-
-	output.Printf("IPNS Key Details")
-
-	headers := []string{"ID", "NAME", "IPNS NAME", "PEER ID", "CREATED"}
-	rows := [][]string{
-		{
-			fmt.Sprintf("%d", key.Id),
-			key.Name,
-			key.IpnsName,
-			key.PeerId,
-			key.Created.Format("2006-01-02 15:04:05"),
-		},
-	}
-	output.PrintTable(headers, rows)
-
-	return nil
+	output := newTestOutput()
+	cmd := newMockCommand().withArgs("k51qzi5uqu5djx999")
+	err := ipnsResolve(context.Background(), cmd, output, cfgMgr, "test-token", true)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "IPNS name not found")
 }
 
-func TestIPNSKeysDelete(t *testing.T) {
-	tests := []struct {
-		name        string
-		setupMocks  func(*mockIPNSServiceForCLI)
-		cmd         *mockIPNSGetCommand
-		wantErr     bool
-		errContains string
-	}{
-		{
-			name: "successful delete key by ID",
-			setupMocks: func(svc *mockIPNSServiceForCLI) {
-				svc.deleteKeyFunc = func(ctx context.Context, id string) error {
-					return nil
-				}
-			},
-			cmd:     &mockIPNSGetCommand{keyArg: "1"},
-			wantErr: false,
-		},
-		{
-			name: "successful delete key by name",
-			setupMocks: func(svc *mockIPNSServiceForCLI) {
-				svc.deleteKeyFunc = func(ctx context.Context, id string) error {
-					return nil
-				}
-				svc.listKeysFunc = func(ctx context.Context) ([]ipfs.IPNSKeyResponse, error) {
-					return []ipfs.IPNSKeyResponse{
-						{Id: 2, Name: "my-key", IpnsName: "k51qzi5uqu5djx456", PeerId: "12D3KooWDEF456", Created: time.Date(2024, 1, 2, 12, 0, 0, 0, time.UTC)},
-					}, nil
-				}
-			},
-			cmd:     &mockIPNSGetCommand{keyArg: "my-key"},
-			wantErr: false,
-		},
-		{
-			name:        "missing key arg",
-			cmd:         &mockIPNSGetCommand{keyArg: ""},
-			wantErr:     true,
-			errContains: "key name or ID is required",
-		},
-		{
-			name: "service error",
-			setupMocks: func(svc *mockIPNSServiceForCLI) {
-				svc.deleteKeyFunc = func(ctx context.Context, id string) error {
-					return errors.New("failed to delete key")
-				}
-			},
-			cmd:         &mockIPNSGetCommand{keyArg: "1"},
-			wantErr:     true,
-			errContains: "failed to delete key",
-		},
+// ===== resolveIPNSKeyID (helper function) =====
+
+func TestResolveIPNSKeyID_ByName(t *testing.T) {
+	mockSvc := &mockIPNSServiceForCLI{}
+	mockSvc.listKeysFunc = func(ctx context.Context) ([]ipfs.IPNSKeyResponse, error) {
+		return []ipfs.IPNSKeyResponse{
+			{Id: 7, Name: "my-key"},
+			{Id: 8, Name: "other-key"},
+		}, nil
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			mockSvc := &mockIPNSServiceForCLI{}
-			output := NewOutputFormatter(false, false, false, false)
-
-			if tt.setupMocks != nil {
-				tt.setupMocks(mockSvc)
-			}
-
-			err := ipnsKeysDeleteWithService(context.Background(), tt.cmd, output, mockSvc)
-
-			if tt.wantErr {
-				require.Error(t, err)
-				if tt.errContains != "" {
-					require.Contains(t, err.Error(), tt.errContains)
-				}
-			} else {
-				require.NoError(t, err)
-			}
-		})
-	}
+	id, err := resolveIPNSKeyID(context.Background(), mockSvc, "my-key")
+	require.NoError(t, err)
+	assert.Equal(t, 7, id)
 }
 
-func TestIPNSKeysDeleteJSON(t *testing.T) {
-	tests := []struct {
-		name        string
-		setupMocks  func(*mockIPNSServiceForCLI)
-		cmd         *mockIPNSGetCommand
-		wantErr     bool
-		errContains string
-	}{
-		{
-			name: "successful delete key JSON output",
-			setupMocks: func(svc *mockIPNSServiceForCLI) {
-				svc.deleteKeyFunc = func(ctx context.Context, id string) error {
-					return nil
-				}
-			},
-			cmd:     &mockIPNSGetCommand{keyArg: "1"},
-			wantErr: false,
-		},
+func TestResolveIPNSKeyID_NotFound(t *testing.T) {
+	mockSvc := &mockIPNSServiceForCLI{}
+	mockSvc.listKeysFunc = func(ctx context.Context) ([]ipfs.IPNSKeyResponse, error) {
+		return []ipfs.IPNSKeyResponse{}, nil
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			mockSvc := &mockIPNSServiceForCLI{}
-			output := NewOutputFormatter(true, false, false, false)
-
-			if tt.setupMocks != nil {
-				tt.setupMocks(mockSvc)
-			}
-
-			err := ipnsKeysDeleteWithService(context.Background(), tt.cmd, output, mockSvc)
-
-			if tt.wantErr {
-				require.Error(t, err)
-				if tt.errContains != "" {
-					require.Contains(t, err.Error(), tt.errContains)
-				}
-			} else {
-				require.NoError(t, err)
-			}
-		})
-	}
+	_, err := resolveIPNSKeyID(context.Background(), mockSvc, "missing-key")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "IPNS key not found for name")
 }
 
-func ipnsKeysDeleteWithService(ctx context.Context, cmd interface{ Args() cli.Args }, output Output, ipnsService IPNSService) error {
-	if err := ipnsService.RequireAuthenticated(); err != nil {
-		return err
+func TestResolveIPNSKeyID_ListError(t *testing.T) {
+	mockSvc := &mockIPNSServiceForCLI{}
+	mockSvc.listKeysFunc = func(ctx context.Context) ([]ipfs.IPNSKeyResponse, error) {
+		return nil, errors.New("service down")
 	}
-
-	args := cmd.Args()
-	if args.Len() == 0 {
-		return fmt.Errorf("key name or ID is required")
-	}
-
-	keyArg := args.First()
-
-	keyID, err := resolveIPNSKeyIDToString(ctx, ipnsService, keyArg)
-	if err != nil {
-		return err
-	}
-
-	if err := ipnsService.DeleteKey(ctx, keyID); err != nil {
-		return err
-	}
-
-	if output.IsJSON() {
-		result := map[string]any{
-			"success": true,
-			"message": fmt.Sprintf("IPNS key %s deleted successfully", keyArg),
-		}
-		return output.PrintJSON(result)
-	}
-
-	output.Printf("IPNS key %s deleted successfully", keyArg)
-
-	return nil
+	_, err := resolveIPNSKeyID(context.Background(), mockSvc, "my-key")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to look up IPNS key by name")
 }
 
-func TestIPNSPublish(t *testing.T) {
-	tests := []struct {
-		name        string
-		setupMocks  func(*mockIPNSServiceForCLI)
-		cmd         *mockIPNSPublishCommand
-		wantErr     bool
-		errContains string
-	}{
-		{
-			name: "successful publish with key name",
-			setupMocks: func(svc *mockIPNSServiceForCLI) {
-				svc.publishFunc = func(ctx context.Context, cid string, keyName string, ttl *string) (*ipfs.IPNSPublishResponse, error) {
-					return &ipfs.IPNSPublishResponse{
-						Name:      "k51qzi5uqu5djx123",
-						Value:     "QmXxx",
-						Published: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC),
-						Sequence:  1,
-						Validity:  time.Date(2024, 1, 2, 12, 0, 0, 0, time.UTC),
-					}, nil
-				}
-			},
-			cmd: &mockIPNSPublishCommand{
-				cid:     "QmXxx",
-				keyName: "my-key",
-				ttl:     "",
-			},
-			wantErr: false,
-		},
-		{
-			name: "successful publish with TTL",
-			setupMocks: func(svc *mockIPNSServiceForCLI) {
-				svc.publishFunc = func(ctx context.Context, cid string, keyName string, ttl *string) (*ipfs.IPNSPublishResponse, error) {
-					return &ipfs.IPNSPublishResponse{
-						Name:      "k51qzi5uqu5djx456",
-						Value:     "QmYyy",
-						Published: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC),
-						Sequence:  2,
-						Validity:  time.Date(2024, 1, 8, 12, 0, 0, 0, time.UTC),
-					}, nil
-				}
-			},
-			cmd: &mockIPNSPublishCommand{
-				cid:     "QmYyy",
-				keyName: "another-key",
-				ttl:     "24h",
-			},
-			wantErr: false,
-		},
-		{
-			name: "missing CID",
-			cmd: &mockIPNSPublishCommand{
-				cid:     "",
-				keyName: "my-key",
-			},
-			wantErr:     true,
-			errContains: "CID is required",
-		},
-		{
-			name: "missing key name",
-			cmd: &mockIPNSPublishCommand{
-				cid:     "QmXxx",
-				keyName: "",
-			},
-			wantErr:     true,
-			errContains: "key-name is required",
-		},
-		{
-			name: "service error - invalid CID",
-			setupMocks: func(svc *mockIPNSServiceForCLI) {
-				svc.publishFunc = func(ctx context.Context, cid string, keyName string, ttl *string) (*ipfs.IPNSPublishResponse, error) {
-					return nil, errors.New("invalid CID format")
-				}
-			},
-			cmd: &mockIPNSPublishCommand{
-				cid:     "invalid",
-				keyName: "my-key",
-			},
-			wantErr:     true,
-			errContains: "invalid CID format",
-		},
-		{
-			name: "service error - key not found",
-			setupMocks: func(svc *mockIPNSServiceForCLI) {
-				svc.publishFunc = func(ctx context.Context, cid string, keyName string, ttl *string) (*ipfs.IPNSPublishResponse, error) {
-					return nil, errors.New("key not found")
-				}
-			},
-			cmd: &mockIPNSPublishCommand{
-				cid:     "QmXxx",
-				keyName: "nonexistent",
-			},
-			wantErr:     true,
-			errContains: "key not found",
-		},
-	}
+// ===== resolveIPNSKeyIDToString (helper function) =====
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			mockSvc := &mockIPNSServiceForCLI{}
-			output := NewOutputFormatter(false, false, false, false)
-
-			if tt.setupMocks != nil {
-				tt.setupMocks(mockSvc)
-			}
-
-			err := ipnsPublishWithService(context.Background(), tt.cmd, output, mockSvc)
-
-			if tt.wantErr {
-				require.Error(t, err)
-				if tt.errContains != "" {
-					require.Contains(t, err.Error(), tt.errContains)
-				}
-			} else {
-				require.NoError(t, err)
-			}
-		})
-	}
+func TestResolveIPNSKeyIDToString_NumericID(t *testing.T) {
+	mockSvc := &mockIPNSServiceForCLI{}
+	id, err := resolveIPNSKeyIDToString(context.Background(), mockSvc, "42")
+	require.NoError(t, err)
+	assert.Equal(t, "42", id)
 }
 
-func TestIPNSPublishJSON(t *testing.T) {
-	tests := []struct {
-		name        string
-		setupMocks  func(*mockIPNSServiceForCLI)
-		cmd         *mockIPNSPublishCommand
-		wantErr     bool
-		errContains string
-	}{
-		{
-			name: "successful publish JSON output",
-			setupMocks: func(svc *mockIPNSServiceForCLI) {
-				svc.publishFunc = func(ctx context.Context, cid string, keyName string, ttl *string) (*ipfs.IPNSPublishResponse, error) {
-					return &ipfs.IPNSPublishResponse{
-						Name:      "k51qzi5uqu5djx123",
-						Value:     "QmXxx",
-						Published: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC),
-						Sequence:  1,
-						Validity:  time.Date(2024, 1, 2, 12, 0, 0, 0, time.UTC),
-					}, nil
-				}
-			},
-			cmd: &mockIPNSPublishCommand{
-				cid:     "QmXxx",
-				keyName: "my-key",
-			},
-			wantErr: false,
-		},
+func TestResolveIPNSKeyIDToString_ByName(t *testing.T) {
+	mockSvc := &mockIPNSServiceForCLI{}
+	mockSvc.listKeysFunc = func(ctx context.Context) ([]ipfs.IPNSKeyResponse, error) {
+		return []ipfs.IPNSKeyResponse{{Id: 7, Name: "my-key"}}, nil
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			mockSvc := &mockIPNSServiceForCLI{}
-			output := NewOutputFormatter(true, false, false, false)
-
-			if tt.setupMocks != nil {
-				tt.setupMocks(mockSvc)
-			}
-
-			err := ipnsPublishWithService(context.Background(), tt.cmd, output, mockSvc)
-
-			if tt.wantErr {
-				require.Error(t, err)
-				if tt.errContains != "" {
-					require.Contains(t, err.Error(), tt.errContains)
-				}
-			} else {
-				require.NoError(t, err)
-			}
-		})
-	}
+	id, err := resolveIPNSKeyIDToString(context.Background(), mockSvc, "my-key")
+	require.NoError(t, err)
+	assert.Equal(t, "7", id)
 }
-
-type mockIPNSPublishCommand struct {
-	cid     string
-	keyName string
-	ttl     string
-}
-
-func (m *mockIPNSPublishCommand) Int(name string) int {
-	return 0
-}
-
-func (m *mockIPNSPublishCommand) String(name string) string {
-	switch name {
-	case "key-name":
-		return m.keyName
-	case "ttl":
-		return m.ttl
-	default:
-		return ""
-	}
-}
-
-func (m *mockIPNSPublishCommand) Args() cli.Args {
-	if m.cid == "" {
-		return &mockArgs{}
-	}
-	return &mockArgs{[]string{m.cid}}
-}
-
-func ipnsPublishWithService(ctx context.Context, cmd interface {
-	Int(name string) int
-	String(name string) string
-	Args() cli.Args
-}, output Output, ipnsService IPNSService) error {
-	if err := ipnsService.RequireAuthenticated(); err != nil {
-		return err
-	}
-
-	args := cmd.Args()
-	if args.Len() == 0 {
-		return fmt.Errorf("CID is required")
-	}
-
-	cid := args.First()
-	if cid == "" {
-		return fmt.Errorf("CID is required")
-	}
-
-	keyName := cmd.String("key-name")
-	if keyName == "" {
-		return fmt.Errorf("key-name is required")
-	}
-
-	var ttl *string
-	ttlValue := cmd.String("ttl")
-	if ttlValue != "" {
-		ttl = &ttlValue
-	}
-
-	response, err := ipnsService.Publish(ctx, cid, keyName, ttl)
-	if err != nil {
-		return err
-	}
-
-	if output.IsJSON() {
-		return output.PrintJSON(response)
-	}
-
-	output.Printf("Published CID %s to IPNS name %s", response.Value, response.Name)
-
-	headers := []string{"NAME", "VALUE", "PUBLISHED", "SEQUENCE", "VALIDITY"}
-	rows := [][]string{
-		{
-			response.Name,
-			response.Value,
-			response.Published.Format("2006-01-02 15:04:05"),
-			fmt.Sprintf("%d", response.Sequence),
-			response.Validity.Format("2006-01-02 15:04:05"),
-		},
-	}
-	output.PrintTable(headers, rows)
-
-	return nil
-}
-
-func TestIPNSRepublish(t *testing.T) {
-	tests := []struct {
-		name        string
-		setupMocks  func(*mockIPNSServiceForCLI)
-		cmd         *mockIPNSRepublishCommand
-		wantErr     bool
-		errContains string
-	}{
-		{
-			name: "successful republish by name",
-			setupMocks: func(svc *mockIPNSServiceForCLI) {
-				svc.republishFunc = func(ctx context.Context, keyName string) (*ipfs.IPNSRepublishResponse, error) {
-					return &ipfs.IPNSRepublishResponse{
-						Count:   1,
-						Message: "republished successfully",
-					}, nil
-				}
-			},
-			cmd:     &mockIPNSRepublishCommand{keyArg: "my-key"},
-			wantErr: false,
-		},
-		{
-			name: "successful republish by ID",
-			setupMocks: func(svc *mockIPNSServiceForCLI) {
-				svc.republishFunc = func(ctx context.Context, keyName string) (*ipfs.IPNSRepublishResponse, error) {
-					return &ipfs.IPNSRepublishResponse{
-						Count:   1,
-						Message: "republished successfully",
-					}, nil
-				}
-			},
-			cmd:     &mockIPNSRepublishCommand{keyArg: "1"},
-			wantErr: false,
-		},
-		{
-			name:        "missing key arg",
-			cmd:         &mockIPNSRepublishCommand{keyArg: ""},
-			wantErr:     true,
-			errContains: "key name or ID is required",
-		},
-		{
-			name: "service error",
-			setupMocks: func(svc *mockIPNSServiceForCLI) {
-				svc.republishFunc = func(ctx context.Context, keyName string) (*ipfs.IPNSRepublishResponse, error) {
-					return nil, errors.New("republish failed")
-				}
-			},
-			cmd:         &mockIPNSRepublishCommand{keyArg: "my-key"},
-			wantErr:     true,
-			errContains: "republish failed",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			mockSvc := &mockIPNSServiceForCLI{}
-			output := NewOutputFormatter(false, false, false, false)
-
-			if tt.setupMocks != nil {
-				tt.setupMocks(mockSvc)
-			}
-
-			err := ipnsRepublishWithService(context.Background(), tt.cmd, output, mockSvc)
-
-			if tt.wantErr {
-				require.Error(t, err)
-				if tt.errContains != "" {
-					require.Contains(t, err.Error(), tt.errContains)
-				}
-			} else {
-				require.NoError(t, err)
-			}
-		})
-	}
-}
-
-func TestIPNSRepublishJSON(t *testing.T) {
-	tests := []struct {
-		name        string
-		setupMocks  func(*mockIPNSServiceForCLI)
-		cmd         *mockIPNSRepublishCommand
-		wantErr     bool
-		errContains string
-	}{
-		{
-			name: "successful republish JSON output",
-			setupMocks: func(svc *mockIPNSServiceForCLI) {
-				svc.republishFunc = func(ctx context.Context, keyName string) (*ipfs.IPNSRepublishResponse, error) {
-					return &ipfs.IPNSRepublishResponse{
-						Count:   1,
-						Message: "republished successfully",
-					}, nil
-				}
-			},
-			cmd:     &mockIPNSRepublishCommand{keyArg: "my-key"},
-			wantErr: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			mockSvc := &mockIPNSServiceForCLI{}
-			output := NewOutputFormatter(true, false, false, false)
-
-			if tt.setupMocks != nil {
-				tt.setupMocks(mockSvc)
-			}
-
-			err := ipnsRepublishWithService(context.Background(), tt.cmd, output, mockSvc)
-
-			if tt.wantErr {
-				require.Error(t, err)
-				if tt.errContains != "" {
-					require.Contains(t, err.Error(), tt.errContains)
-				}
-			} else {
-				require.NoError(t, err)
-			}
-		})
-	}
-}
-
-type mockIPNSRepublishCommand struct {
-	keyArg string
-}
-
-func (m *mockIPNSRepublishCommand) Args() cli.Args {
-	if m.keyArg == "" {
-		return &mockArgs{}
-	}
-	return &mockArgs{[]string{m.keyArg}}
-}
-
-func ipnsRepublishWithService(ctx context.Context, cmd interface{ Args() cli.Args }, output Output, ipnsService IPNSService) error {
-	if err := ipnsService.RequireAuthenticated(); err != nil {
-		return err
-	}
-
-	args := cmd.Args()
-	if args.Len() == 0 {
-		return fmt.Errorf("key name or ID is required")
-	}
-
-	keyArg := args.First()
-
-	response, err := ipnsService.Republish(ctx, keyArg)
-	if err != nil {
-		return err
-	}
-
-	if output.IsJSON() {
-		return output.PrintJSON(response)
-	}
-
-	output.Printf("Republished IPNS key %s: %s (%d record(s))", keyArg, response.Message, response.Count)
-
-	return nil
-}
-
-

@@ -42,12 +42,6 @@ func runPrompt(fn func() (string, error)) (string, error) {
 	return result, nil
 }
 
-// commandGetter defines the interface for getting command flags and arguments.
-type commandGetter interface {
-	String(name string) string
-	Bool(name string) bool
-}
-
 // AuthPrompter defines the interface for interactive user input.
 type AuthPrompter interface {
 	// PromptEmail prompts for and validates an email address.
@@ -258,13 +252,13 @@ type ConfigManagerFactory func() (config.Manager, error)
 type AuthServiceFactory func(cfgMgr config.Manager, output Output, apiEndpoint string) AuthService
 
 // authLogin handles authentication with interactive, semi-interactive, and non-interactive modes.
-func authLogin(ctx context.Context, cmd commandGetter, output Output, cfgMgrFactory ConfigManagerFactory, authServiceFactory AuthServiceFactory) error {
+func authLogin(ctx context.Context, cmd flagGetter, output Output, cfgMgrFactory ConfigManagerFactory, authServiceFactory AuthServiceFactory) error {
 	return authLoginWithFactories(ctx, cmd, output, cfgMgrFactory, authServiceFactory, nil)
 }
 
 // authLoginWithFactories is the testable implementation of authLogin with prompter injection.
 // The factories and prompter allow dependency injection for testing.
-func authLoginWithFactories(ctx context.Context, cmd commandGetter, output Output, cfgMgrFactory ConfigManagerFactory, authServiceFactory AuthServiceFactory, prompter AuthPrompter) error {
+func authLoginWithFactories(ctx context.Context, cmd flagGetter, output Output, cfgMgrFactory ConfigManagerFactory, authServiceFactory AuthServiceFactory, prompter AuthPrompter) error {
 	email := cmd.String("email")
 	password := cmd.String("password")
 	otpCode := cmd.String("otp-code")
@@ -391,13 +385,13 @@ Examples:
   pinner auth status --verbose`,
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			output := setupOutput(cmd)
-			return authStatus(ctx, cmd, output, defaultConfigManagerFactory, defaultAuthServiceFactory)
+			return authStatus(ctx, output, defaultConfigManagerFactory, defaultAuthServiceFactory)
 		},
 	}
 }
 
 // authStatus checks if the user is authenticated.
-func authStatus(ctx context.Context, cmd *cli.Command, output Output, cfgMgrFactory ConfigManagerFactory, authServiceFactory AuthServiceFactory) error {
+func authStatus(ctx context.Context, output Output, cfgMgrFactory ConfigManagerFactory, authServiceFactory AuthServiceFactory) error {
 	cfgMgr, err := cfgMgrFactory()
 	if err != nil {
 		return fmt.Errorf("failed to initialize config manager: %w", err)

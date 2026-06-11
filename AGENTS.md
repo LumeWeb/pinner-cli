@@ -5,16 +5,19 @@ This file provides guidance to various AI agents when working with code in this 
 
 ### Building
 ```bash
-# Build for current platform
+# Build with version info (recommended)
+make build
+
+# Or install to $GOPATH/bin
+make install
+
+# Build without make
 go build -o pinner ./cmd/pinner
 
 # Cross-compile for different platforms
 GOOS=linux GOARCH=amd64 go build -o pinner-linux-amd64 ./cmd/pinner
 GOOS=darwin GOARCH=arm64 go build -o pinner-darwin-arm64 ./cmd/pinner
 GOOS=windows GOARCH=amd64 go build -o pinner-windows-amd64.exe ./cmd/pinner
-
-# Build with version info
-go build -ldflags="-X 'build.Version=1.0.0' -X 'build.GitCommit=abc123'" -o pinner ./cmd/pinner
 ```
 
 ### Testing

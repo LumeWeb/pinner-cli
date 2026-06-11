@@ -45,36 +45,30 @@ Operation status values (shown when pin is not found):
 		Metadata: WithTutorial(4, "Check pin status", fmt.Sprintf("pinner status %s", abbreviateCID(TutorialCID))),
 		Action: func(ctx context.Context, c *cli.Command) error {
 			output := setupOutput(c)
-			return status(ctx, newCLICommandWrapper(c), output, defaultConfigManagerFactory, defaultPinningServiceFactory, defaultStatusServiceFactory)
+			cfgMgr, err := defaultConfigManagerFactory()
+			if err != nil {
+				return err
+			}
+			authToken := GetAuthToken(c, cfgMgr)
+			secure := GetSecureSetting(c, cfgMgr)
+			return status(ctx, newCLICommandWrapper(c), output, cfgMgr, authToken, secure, defaultPinningServiceFactory, defaultStatusServiceFactory)
 		},
 	}
-}
-
-type statusCommandGetter interface {
-	Bool(name string) bool
-	GetCID() string
 }
 
 func defaultStatusServiceFactory(cfgMgr config.Manager, output Output, pinningService PinningService, authService AuthService) StatusService {
 	return NewStatusService(cfgMgr, output, pinningService, authService)
 }
 
-func status(ctx context.Context, cmd statusCommandGetter, output Output, cfgMgrFactory ConfigManagerFactory, pinningServiceFactory PinningServiceFactory, statusServiceFactory StatusServiceFactory) error {
-	cfgMgr, err := cfgMgrFactory()
-	if err != nil {
-		return err
-	}
-
+func status(ctx context.Context, cmd interface {
+	cidGetter
+	Bool(name string) bool
+}, output Output, cfgMgr config.Manager, authToken string, secure bool, pinningServiceFactory PinningServiceFactory, statusServiceFactory StatusServiceFactory) error {
 	var pinningService PinningService
-	if c, ok := cmd.(*cliCommandWrapper); ok {
-		authToken := GetAuthToken(c.Command, cfgMgr)
-		if authToken != "" {
-			pinningService = NewPinningService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpoint(), WithAuthToken(authToken))
-		} else {
-			pinningService = pinningServiceFactory(cfgMgr, output)
-		}
+	if authToken != "" {
+		pinningService = NewPinningService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure), WithAuthToken(authToken))
 	} else {
-		pinningService = pinningServiceFactory(cfgMgr, output)
+		pinningService = pinningServiceFactory(cfgMgr, output, secure)
 	}
 
 	if err := pinningService.RequireAuthenticated(); err != nil {

@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/urfave/cli/v3"
+	"go.lumeweb.com/pinner-cli/pkg/config"
 	ipfs "go.lumeweb.com/ipfs-sdk"
 )
 
@@ -69,10 +69,9 @@ func newWebsitesListCommand() *cli.Command {
 Examples:
   pinner websites list
   pinner websites list --json`,
-		Action: func(ctx context.Context, cmd *cli.Command) error {
-			output := setupOutput(cmd)
-			return websitesList(ctx, cmd, output)
-		},
+		Action: withContext(func(ctx context.Context, cc *commandContext) error {
+			return websitesList(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
+		}),
 	}
 }
 
@@ -94,10 +93,9 @@ Examples:
 			DNSHostingFlag(),
 			NoDNSHostingFlag(),
 		},
-		Action: func(ctx context.Context, cmd *cli.Command) error {
-			output := setupOutput(cmd)
-			return websitesCreate(ctx, cmd, output)
-		},
+		Action: withContext(func(ctx context.Context, cc *commandContext) error {
+			return websitesCreate(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
+		}),
 	}
 }
 
@@ -111,10 +109,9 @@ Examples:
   pinner websites get example.com
   pinner websites get example.com --json`,
 		ArgsUsage: "<domain>",
-		Action: func(ctx context.Context, cmd *cli.Command) error {
-			output := setupOutput(cmd)
-			return websitesGet(ctx, cmd, output)
-		},
+		Action: withContext(func(ctx context.Context, cc *commandContext) error {
+			return websitesGet(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
+		}),
 	}
 }
 
@@ -148,10 +145,9 @@ Examples:
 			DNSHostingFlag(),
 			NoDNSHostingFlag(),
 		},
-		Action: func(ctx context.Context, cmd *cli.Command) error {
-			output := setupOutput(cmd)
-			return websitesUpdate(ctx, cmd, output)
-		},
+		Action: withContext(func(ctx context.Context, cc *commandContext) error {
+			return websitesUpdate(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
+		}),
 	}
 }
 
@@ -170,33 +166,7 @@ type WebsitesService interface {
 	GetConfig(ctx context.Context) (*ipfs.WebsiteConfigResponse, error)
 }
 
-func initWebsitesService(ctx context.Context, cmd *cli.Command, output Output) (context.Context, context.CancelFunc, WebsitesService, error) {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-
-	cfgMgr, err := defaultConfigManagerFactory()
-	if err != nil {
-		cancel()
-		return ctx, func() {}, nil, err
-	}
-
-	var websitesService WebsitesService
-	authToken := GetAuthToken(cmd, cfgMgr)
-	secure := GetSecureSetting(cmd, cfgMgr)
-	if authToken != "" {
-		websitesService = NewWebsitesService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure))
-	} else {
-		websitesService = defaultWebsitesServiceFactory(cfgMgr, output)
-	}
-
-	if err := websitesService.RequireAuthenticated(); err != nil {
-		cancel()
-		return ctx, func() {}, nil, err
-	}
-
-	return ctx, cancel, websitesService, nil
-}
-
-func resolveRequiredArg(ctx context.Context, websitesService WebsitesService, cmd *cli.Command) (string, error) {
+func resolveRequiredArg(ctx context.Context, websitesService WebsitesService, cmd websitesCommandGetter) (string, error) {
 	args := cmd.Args()
 	if args.Len() == 0 {
 		return "", fmt.Errorf("website ID or domain is required")
@@ -238,12 +208,11 @@ func printWebsiteUpdateResult(output Output, website *ipfs.WebsiteItem, message 
 	}
 }
 
-func websitesList(ctx context.Context, cmd *cli.Command, output Output) error {
-	ctx, cancel, websitesService, err := initWebsitesService(ctx, cmd, output)
+func websitesList(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
+	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken, secure)
 	if err != nil {
 		return err
 	}
-	defer cancel()
 
 	websites, err := websitesService.List(ctx)
 	if err != nil {
@@ -333,12 +302,11 @@ func resolveAndGetWebsite(ctx context.Context, websitesService WebsitesService, 
 	return websitesService.Get(ctx, id)
 }
 
-func websitesUpdate(ctx context.Context, cmd *cli.Command, output Output) error {
-	ctx, cancel, websitesService, err := initWebsitesService(ctx, cmd, output)
+func websitesUpdate(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
+	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken, secure)
 	if err != nil {
 		return err
 	}
-	defer cancel()
 
 	id, err := resolveRequiredArg(ctx, websitesService, cmd)
 	if err != nil {
@@ -420,19 +388,17 @@ Examples:
 		Flags: []cli.Flag{
 			CIDFlag(),
 		},
-		Action: func(ctx context.Context, cmd *cli.Command) error {
-			output := setupOutput(cmd)
-			return websitesEnableIPNS(ctx, cmd, output)
-		},
+		Action: withContext(func(ctx context.Context, cc *commandContext) error {
+			return websitesEnableIPNS(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
+		}),
 	}
 }
 
-func websitesEnableIPNS(ctx context.Context, cmd *cli.Command, output Output) error {
-	ctx, cancel, websitesService, err := initWebsitesService(ctx, cmd, output)
+func websitesEnableIPNS(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
+	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken, secure)
 	if err != nil {
 		return err
 	}
-	defer cancel()
 
 	id, err := resolveRequiredArg(ctx, websitesService, cmd)
 	if err != nil {
@@ -463,12 +429,11 @@ func websitesEnableIPNS(ctx context.Context, cmd *cli.Command, output Output) er
 	return nil
 }
 
-func websitesGet(ctx context.Context, cmd *cli.Command, output Output) error {
-	ctx, cancel, websitesService, err := initWebsitesService(ctx, cmd, output)
+func websitesGet(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
+	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken, secure)
 	if err != nil {
 		return err
 	}
-	defer cancel()
 
 	id, err := resolveRequiredArg(ctx, websitesService, cmd)
 	if err != nil {
@@ -543,12 +508,11 @@ func websitesGet(ctx context.Context, cmd *cli.Command, output Output) error {
 	return nil
 }
 
-func websitesCreate(ctx context.Context, cmd *cli.Command, output Output) error {
-	ctx, cancel, websitesService, err := initWebsitesService(ctx, cmd, output)
+func websitesCreate(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
+	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken, secure)
 	if err != nil {
 		return err
 	}
-	defer cancel()
 
 	args := cmd.Args()
 	if args.Len() == 0 {
@@ -726,10 +690,9 @@ Examples:
   pinner websites delete example.com
   pinner websites delete example.com --json`,
 		ArgsUsage: "<domain>",
-		Action: func(ctx context.Context, cmd *cli.Command) error {
-			output := setupOutput(cmd)
-			return websitesDelete(ctx, cmd, output)
-		},
+		Action: withContext(func(ctx context.Context, cc *commandContext) error {
+			return websitesDelete(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
+		}),
 	}
 }
 
@@ -743,19 +706,17 @@ Examples:
   pinner websites validate example.com
   pinner websites validate example.com --json`,
 		ArgsUsage: "<domain>",
-		Action: func(ctx context.Context, cmd *cli.Command) error {
-			output := setupOutput(cmd)
-			return websitesValidate(ctx, cmd, output)
-		},
+		Action: withContext(func(ctx context.Context, cc *commandContext) error {
+			return websitesValidate(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
+		}),
 	}
 }
 
-func websitesDelete(ctx context.Context, cmd *cli.Command, output Output) error {
-	ctx, cancel, websitesService, err := initWebsitesService(ctx, cmd, output)
+func websitesDelete(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
+	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken, secure)
 	if err != nil {
 		return err
 	}
-	defer cancel()
 
 	id, err := resolveRequiredArg(ctx, websitesService, cmd)
 	if err != nil {
@@ -779,21 +740,16 @@ func websitesDelete(ctx context.Context, cmd *cli.Command, output Output) error 
 	return nil
 }
 
-func websitesValidate(ctx context.Context, cmd *cli.Command, output Output) error {
-	ctx, cancel, websitesService, err := initWebsitesService(ctx, cmd, output)
+func websitesValidate(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
+	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken, secure)
 	if err != nil {
 		return err
 	}
-	defer cancel()
 
 	return doWebsitesValidate(ctx, cmd, output, websitesService)
 }
 
-func doWebsitesValidate(ctx context.Context, cmd interface{ Args() cli.Args }, output Output, websitesService WebsitesService) error {
-	if err := websitesService.RequireAuthenticated(); err != nil {
-		return err
-	}
-
+func doWebsitesValidate(ctx context.Context, cmd websitesCommandGetter, output Output, websitesService WebsitesService) error {
 	args := cmd.Args()
 	if args.Len() == 0 {
 		return fmt.Errorf("website ID or domain is required")
@@ -934,21 +890,15 @@ Use this to find the gateway domain for setting up CNAME records with your DNS p
 Examples:
   pinner websites config
   pinner websites config --json`,
-		Action: func(ctx context.Context, cmd *cli.Command) error {
-			output := setupOutput(cmd)
-			return websitesConfig(ctx, cmd, output)
-		},
+		Action: withContext(func(ctx context.Context, cc *commandContext) error {
+			return websitesConfig(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
+		}),
 	}
 }
 
-func websitesConfig(ctx context.Context, cmd *cli.Command, output Output) error {
-	ctx, cancel, websitesService, err := initWebsitesService(ctx, cmd, output)
+func websitesConfig(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
+	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken, secure)
 	if err != nil {
-		return err
-	}
-	defer cancel()
-
-	if err := websitesService.RequireAuthenticated(); err != nil {
 		return err
 	}
 

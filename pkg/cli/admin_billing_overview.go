@@ -24,15 +24,12 @@ Examples:
 			if err != nil {
 				return err
 			}
-			return billingOverviewAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultBillingAdminServiceFactory, defaultQuotaAdminServiceFactory)
+			return billingOverviewAction(ctx, output, cfgMgr, defaultBillingAdminServiceFactory, defaultQuotaAdminServiceFactory)
 		},
 	}
 }
 
-// billingOverviewCmdGetter defines the interface for the overview command.
-type billingOverviewCmdGetter interface{}
-
-func billingOverviewAction(ctx context.Context, cmd billingOverviewCmdGetter, output Output, cfgMgr config.Manager, billingFactory BillingAdminServiceFactory, quotaFactory QuotaAdminServiceFactory) error {
+func billingOverviewAction(ctx context.Context, output Output, cfgMgr config.Manager, billingFactory BillingAdminServiceFactory, quotaFactory QuotaAdminServiceFactory) error {
 	billingService := billingFactory(cfgMgr, output)
 	if err := billingService.RequireAuthenticated(); err != nil {
 		return err

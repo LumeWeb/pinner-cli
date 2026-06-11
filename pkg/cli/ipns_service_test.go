@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
+	"go.lumeweb.com/pinner-cli/pkg/config"
 	ipfs "go.lumeweb.com/ipfs-sdk"
 )
 
@@ -85,13 +87,14 @@ func TestIPNSService_ListKeys(t *testing.T) {
 }
 
 type mockIPNSServiceForCLI struct {
-	listKeysFunc   func(ctx context.Context) ([]ipfs.IPNSKeyResponse, error)
-	createKeyFunc  func(ctx context.Context, name string, key *string) (*ipfs.IPNSKeyResponse, error)
-	getKeyFunc     func(ctx context.Context, id string) (*ipfs.IPNSKeyResponse, error)
-	deleteKeyFunc  func(ctx context.Context, id string) error
-	publishFunc    func(ctx context.Context, cid string, keyName string, ttl *string) (*ipfs.IPNSPublishResponse, error)
-	republishFunc  func(ctx context.Context, keyName string) (*ipfs.IPNSRepublishResponse, error)
-	resolveFunc    func(ctx context.Context, name string) (*ipfs.IPNSResolveResponse, error)
+	requireAuthenticatedErr error
+	listKeysFunc            func(ctx context.Context) ([]ipfs.IPNSKeyResponse, error)
+	createKeyFunc           func(ctx context.Context, name string, key *string) (*ipfs.IPNSKeyResponse, error)
+	getKeyFunc              func(ctx context.Context, id string) (*ipfs.IPNSKeyResponse, error)
+	deleteKeyFunc           func(ctx context.Context, id string) error
+	publishFunc             func(ctx context.Context, cid string, keyName string, ttl *string) (*ipfs.IPNSPublishResponse, error)
+	republishFunc           func(ctx context.Context, keyName string) (*ipfs.IPNSRepublishResponse, error)
+	resolveFunc             func(ctx context.Context, name string) (*ipfs.IPNSResolveResponse, error)
 }
 
 func (m *mockIPNSServiceForCLI) ListKeys(ctx context.Context) ([]ipfs.IPNSKeyResponse, error) {
@@ -173,7 +176,7 @@ func (m *mockIPNSServiceForCLI) Resolve(ctx context.Context, name string) (*ipfs
 }
 
 func (m *mockIPNSServiceForCLI) RequireAuthenticated() error {
-	return nil
+	return m.requireAuthenticatedErr
 }
 
 type unauthenticatedIPNSService struct {
@@ -235,28 +238,36 @@ func (u *unauthenticatedIPNSService) Resolve(ctx context.Context, name string) (
 
 func TestIPNSService_RequireAuthenticated(t *testing.T) {
 	tests := []struct {
-		name          string
-		authenticated bool
-		wantErr       bool
-		errContains   string
+		name        string
+		authToken   string
+		wantErr     bool
+		errContains string
 	}{
 		{
-			name:          "authenticated",
-			authenticated: true,
-			wantErr:       false,
+			name:      "authenticated",
+			authToken: "test-token",
+			wantErr:   false,
 		},
 		{
-			name:          "not authenticated",
-			authenticated: false,
-			wantErr:       true,
-			errContains:   "not authenticated",
+			name:        "not authenticated",
+			authToken:   "",
+			wantErr:     true,
+			errContains: "not authenticated",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			cfgMgr := configmocks.NewMockManager(t)
+			cfgMgr.EXPECT().Config().Return(&config.Config{
+				AuthToken: "",
+			}).Maybe()
+
 			svc := &ipnsService{
-				authenticated: tt.authenticated,
+				ipfsServiceBase: ipfsServiceBase{
+					authToken: tt.authToken,
+					cfgMgr:    cfgMgr,
+				},
 			}
 
 			err := svc.RequireAuthenticated()
@@ -271,4 +282,73 @@ func TestIPNSService_RequireAuthenticated(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestIPNSService_AuthTokenOverride(t *testing.T) {
+	t.Run("override token takes precedence over empty config token", func(t *testing.T) {
+		cfgMgr := configmocks.NewMockManager(t)
+		cfgMgr.EXPECT().Config().Return(&config.Config{
+			AuthToken: "",
+		}).Maybe()
+
+		svc := &ipnsService{
+			ipfsServiceBase: ipfsServiceBase{
+				cfgMgr:    cfgMgr,
+				authToken: "override-token",
+			},
+		}
+
+		err := svc.RequireAuthenticated()
+		require.NoError(t, err)
+	})
+
+	t.Run("override token takes precedence over config token", func(t *testing.T) {
+		cfgMgr := configmocks.NewMockManager(t)
+		cfgMgr.EXPECT().Config().Return(&config.Config{
+			AuthToken: "config-token",
+		}).Maybe()
+
+		svc := &ipnsService{
+			ipfsServiceBase: ipfsServiceBase{
+				cfgMgr:    cfgMgr,
+				authToken: "override-token",
+			},
+		}
+
+		require.Equal(t, "override-token", svc.getAuthToken())
+	})
+
+	t.Run("falls back to config token when override is empty", func(t *testing.T) {
+		cfgMgr := configmocks.NewMockManager(t)
+		cfgMgr.EXPECT().Config().Return(&config.Config{
+			AuthToken: "config-token",
+		}).Maybe()
+
+		svc := &ipnsService{
+			ipfsServiceBase: ipfsServiceBase{
+				cfgMgr:    cfgMgr,
+				authToken: "",
+			},
+		}
+
+		require.Equal(t, "config-token", svc.getAuthToken())
+	})
+
+	t.Run("WithIPNSAuthToken functional option sets override", func(t *testing.T) {
+		cfgMgr := configmocks.NewMockManager(t)
+		cfgMgr.EXPECT().Config().Return(&config.Config{
+			AuthToken: "",
+		}).Maybe()
+
+		svc := &ipnsService{
+			ipfsServiceBase: ipfsServiceBase{
+				cfgMgr: cfgMgr,
+			},
+		}
+		WithIPNSAuthToken("override-token")(svc)
+
+		require.Equal(t, "override-token", svc.getAuthToken())
+		err := svc.RequireAuthenticated()
+		require.NoError(t, err)
+	})
 }

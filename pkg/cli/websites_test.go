@@ -191,7 +191,7 @@ func TestWebsitesList(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockSvc := &mockWebsitesServiceForCLI{}
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(mockSvc)
@@ -403,17 +403,13 @@ func TestWebsitesCreate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockSvc := &mockWebsitesServiceForCLI{}
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(mockSvc)
 			}
 
-			cmd := &mockWebsitesCreateCommand{
-				domain:     tt.domain,
-				cid:        tt.cid,
-				targetType: tt.targetType,
-			}
+			cmd := newMockCommand().withString(FlagDomain, tt.domain).withString(FlagCID, tt.cid).withString(FlagTargetType, tt.targetType)
 
 			err := websitesCreateWithService(context.Background(), cmd, output, mockSvc)
 
@@ -469,11 +465,7 @@ func TestWebsitesCreateJSON(t *testing.T) {
 				tt.setupMocks(mockSvc)
 			}
 
-			cmd := &mockWebsitesCreateCommand{
-				domain:     tt.domain,
-				cid:        tt.cid,
-				targetType: tt.targetType,
-			}
+			cmd := newMockCommand().withString(FlagDomain, tt.domain).withString(FlagCID, tt.cid).withString(FlagTargetType, tt.targetType)
 
 			err := websitesCreateWithService(context.Background(), cmd, output, mockSvc)
 
@@ -544,11 +536,10 @@ func websitesGetWithService(ctx context.Context, cmd interface{ Args() cli.Args 
 	}
 
 	args := cmd.Args()
-	if args.Len() == 0 {
+	id := args.First()
+	if id == "" {
 		return fmt.Errorf("website ID or domain is required")
 	}
-
-	id := args.First()
 
 	website, err := websitesService.Get(ctx, id)
 	if err != nil {
@@ -591,7 +582,7 @@ func TestWebsitesGet(t *testing.T) {
 	tests := []struct {
 		name        string
 		setupMocks  func(*mockWebsitesServiceForCLI)
-		cmd         *mockWebsitesGetCommand
+		cmd         *mockCommand
 		wantErr     bool
 		errContains string
 	}{
@@ -609,7 +600,7 @@ func TestWebsitesGet(t *testing.T) {
 					}, nil
 				}
 			},
-			cmd:     &mockWebsitesGetCommand{id: "1"},
+			cmd:     newMockCommand().withArgs("1"),
 			wantErr: false,
 		},
 		{
@@ -626,12 +617,12 @@ func TestWebsitesGet(t *testing.T) {
 					}, nil
 				}
 			},
-			cmd:     &mockWebsitesGetCommand{id: "2"},
+			cmd:     newMockCommand().withArgs("2"),
 			wantErr: false,
 		},
 		{
 			name:        "missing website ID",
-			cmd:         &mockWebsitesGetCommand{id: ""},
+			cmd:         newMockCommand().withArgs(""),
 			wantErr:     true,
 			errContains: "website ID or domain is required",
 		},
@@ -642,7 +633,7 @@ func TestWebsitesGet(t *testing.T) {
 					return nil, errors.New("website not found")
 				}
 			},
-			cmd:         &mockWebsitesGetCommand{id: "1"},
+			cmd:         newMockCommand().withArgs("1"),
 			wantErr:     true,
 			errContains: "website not found",
 		},
@@ -651,7 +642,7 @@ func TestWebsitesGet(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockSvc := &mockWebsitesServiceForCLI{}
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(mockSvc)
@@ -675,7 +666,7 @@ func TestWebsitesGetJSON(t *testing.T) {
 	tests := []struct {
 		name        string
 		setupMocks  func(*mockWebsitesServiceForCLI)
-		cmd         *mockWebsitesGetCommand
+		cmd         *mockCommand
 		wantErr     bool
 		errContains string
 	}{
@@ -693,7 +684,7 @@ func TestWebsitesGetJSON(t *testing.T) {
 					}, nil
 				}
 			},
-			cmd:     &mockWebsitesGetCommand{id: "1"},
+			cmd:     newMockCommand().withArgs("1"),
 			wantErr: false,
 		},
 	}
@@ -724,19 +715,15 @@ func TestWebsitesGetJSON(t *testing.T) {
 func TestWebsitesUpdate(t *testing.T) {
 	tests := []struct {
 		name        string
-		cmd         *mockWebsitesUpdateCommand
+		cmd         *mockCommand
 		setupMocks  func(*mockWebsitesServiceForCLI)
 		wantErr     bool
 		errContains string
 	}{
 		{
 			name: "successful update with all parameters",
-			cmd: &mockWebsitesUpdateCommand{
-				id:         "1",
-				domain:     "new-example.com",
-				cid: "QmNewHash",
-				targetType: "ipfs",
-			},
+			cmd: newMockCommand().withArgs("1").withString(FlagDomain, "new-example.com").withString(FlagCID, "QmNewHash").withString(FlagTargetType, "ipfs",
+			),
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
 				svc.updateFunc = func(ctx context.Context, id, domain, cid, targetType string) (*ipfs.WebsiteItem, error) {
 					return &ipfs.WebsiteItem{
@@ -753,12 +740,8 @@ func TestWebsitesUpdate(t *testing.T) {
 		},
 		{
 			name: "successful update with domain only",
-			cmd: &mockWebsitesUpdateCommand{
-				id:         "1",
-				domain:     "new-domain.com",
-				cid: "",
-				targetType: "",
-			},
+			cmd: newMockCommand().withArgs("1").withString(FlagDomain, "new-domain.com").withString(FlagCID, "").withString(FlagTargetType, "",
+			),
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
 				svc.updateFunc = func(ctx context.Context, id, domain, cid, targetType string) (*ipfs.WebsiteItem, error) {
 					return &ipfs.WebsiteItem{
@@ -775,12 +758,8 @@ func TestWebsitesUpdate(t *testing.T) {
 		},
 		{
 			name: "successful update with cid only",
-			cmd: &mockWebsitesUpdateCommand{
-				id:         "1",
-				domain:     "",
-				cid: "QmNewHash",
-				targetType: "",
-			},
+			cmd: newMockCommand().withArgs("1").withString(FlagDomain, "").withString(FlagCID, "QmNewHash").withString(FlagTargetType, "",
+			),
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
 				svc.updateFunc = func(ctx context.Context, id, domain, cid, targetType string) (*ipfs.WebsiteItem, error) {
 					return &ipfs.WebsiteItem{
@@ -797,36 +776,24 @@ func TestWebsitesUpdate(t *testing.T) {
 		},
 		{
 			name: "missing website ID",
-			cmd: &mockWebsitesUpdateCommand{
-				id:         "",
-				domain:     "new-example.com",
-				cid: "QmNewHash",
-				targetType: "ipfs",
-			},
+			cmd: newMockCommand().withArgs("").withString(FlagDomain, "new-example.com").withString(FlagCID, "QmNewHash").withString(FlagTargetType, "ipfs",
+			),
 			setupMocks:  func(svc *mockWebsitesServiceForCLI) {},
 			wantErr:     true,
 			errContains: "website ID or domain is required",
 		},
 		{
 			name: "missing update fields (all empty)",
-			cmd: &mockWebsitesUpdateCommand{
-				id:         "1",
-				domain:     "",
-				cid: "",
-				targetType: "",
-			},
+			cmd: newMockCommand().withArgs("1").withString(FlagDomain, "").withString(FlagCID, "").withString(FlagTargetType, "",
+			),
 			setupMocks:  func(svc *mockWebsitesServiceForCLI) {},
 			wantErr:     true,
 			errContains: "at least one field must be provided for update",
 		},
 		{
 			name: "service error",
-			cmd: &mockWebsitesUpdateCommand{
-				id:         "1",
-				domain:     "new-example.com",
-				cid: "QmNewHash",
-				targetType: "ipfs",
-			},
+			cmd: newMockCommand().withArgs("1").withString(FlagDomain, "new-example.com").withString(FlagCID, "QmNewHash").withString(FlagTargetType, "ipfs",
+			),
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
 				svc.updateFunc = func(ctx context.Context, id, domain, cid, targetType string) (*ipfs.WebsiteItem, error) {
 					return nil, errors.New("website not found")
@@ -840,7 +807,7 @@ func TestWebsitesUpdate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockSvc := &mockWebsitesServiceForCLI{}
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(mockSvc)
@@ -863,19 +830,15 @@ func TestWebsitesUpdate(t *testing.T) {
 func TestWebsitesUpdateJSON(t *testing.T) {
 	tests := []struct {
 		name        string
-		cmd         *mockWebsitesUpdateCommand
+		cmd         *mockCommand
 		setupMocks  func(*mockWebsitesServiceForCLI)
 		wantErr     bool
 		errContains string
 	}{
 		{
 			name: "successful update with JSON output",
-			cmd: &mockWebsitesUpdateCommand{
-				id:         "1",
-				domain:     "new-example.com",
-				cid: "QmNewHash",
-				targetType: "ipfs",
-			},
+			cmd: newMockCommand().withArgs("1").withString(FlagDomain, "new-example.com").withString(FlagCID, "QmNewHash").withString(FlagTargetType, "ipfs",
+			),
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
 				svc.updateFunc = func(ctx context.Context, id, domain, cid, targetType string) (*ipfs.WebsiteItem, error) {
 					return &ipfs.WebsiteItem{
@@ -892,12 +855,8 @@ func TestWebsitesUpdateJSON(t *testing.T) {
 		},
 		{
 			name: "successful update partial parameters with JSON output",
-			cmd: &mockWebsitesUpdateCommand{
-				id:         "1",
-				domain:     "new-domain.com",
-				cid: "",
-				targetType: "",
-			},
+			cmd: newMockCommand().withArgs("1").withString(FlagDomain, "new-domain.com").withString(FlagCID, "").withString(FlagTargetType, "",
+			),
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
 				svc.updateFunc = func(ctx context.Context, id, domain, cid, targetType string) (*ipfs.WebsiteItem, error) {
 					return &ipfs.WebsiteItem{
@@ -937,69 +896,6 @@ func TestWebsitesUpdateJSON(t *testing.T) {
 	}
 }
 
-// mockWebsitesCreateCommand is a mock implementation of commandGetter for testing.
-type mockWebsitesCreateCommand struct {
-	domain string
-	cid    string
-	targetType string
-}
-
-func (m *mockWebsitesCreateCommand) String(name string) string {
-	switch name {
-	case FlagDomain:
-		return m.domain
-	case FlagCID:
-		return m.cid
-	case FlagTargetType:
-		return m.targetType
-	default:
-		return ""
-	}
-}
-
-// mockWebsitesGetCommand is a mock implementation of commandGetter for testing.
-type mockWebsitesGetCommand struct {
-	id string
-}
-
-func (m *mockWebsitesGetCommand) String(name string) string {
-	return ""
-}
-
-func (m *mockWebsitesGetCommand) Args() cli.Args {
-	if m.id == "" {
-		return &mockArgs{}
-	}
-	return &mockArgs{[]string{m.id}}
-}
-
-// mockWebsitesUpdateCommand is a mock implementation of commandGetter for testing.
-type mockWebsitesUpdateCommand struct {
-	id         string
-	domain     string
-	cid        string
-	targetType string
-}
-
-func (m *mockWebsitesUpdateCommand) String(name string) string {
-	switch name {
-	case FlagDomain:
-		return m.domain
-	case FlagCID:
-		return m.cid
-	case FlagTargetType:
-		return m.targetType
-	default:
-		return ""
-	}
-}
-
-func (m *mockWebsitesUpdateCommand) Args() cli.Args {
-	if m.id == "" {
-		return &mockArgs{}
-	}
-	return &mockArgs{[]string{m.id}}
-}
 
 // websitesUpdateWithService is a test helper that allows injecting a mock WebsitesService
 func websitesUpdateWithService(ctx context.Context, cmd interface {
@@ -1011,11 +907,10 @@ func websitesUpdateWithService(ctx context.Context, cmd interface {
 	}
 
 	args := cmd.Args()
-	if args.Len() == 0 {
+	id := args.First()
+	if id == "" {
 		return fmt.Errorf("website ID or domain is required")
 	}
-
-	id := args.First()
 
 	domain := cmd.String(FlagDomain)
 	cid := cmd.String(FlagCID)
@@ -1056,7 +951,7 @@ func TestWebsitesDelete(t *testing.T) {
 	tests := []struct {
 		name        string
 		setupMocks  func(*mockWebsitesServiceForCLI)
-		cmd         *mockWebsitesGetCommand
+		cmd         *mockCommand
 		wantErr     bool
 		errContains string
 	}{
@@ -1067,7 +962,7 @@ func TestWebsitesDelete(t *testing.T) {
 					return nil
 				}
 			},
-			cmd:     &mockWebsitesGetCommand{id: "1"},
+			cmd:     newMockCommand().withArgs("1"),
 			wantErr: false,
 		},
 		{
@@ -1077,12 +972,12 @@ func TestWebsitesDelete(t *testing.T) {
 					return nil
 				}
 			},
-			cmd:     &mockWebsitesGetCommand{id: "2"},
+			cmd:     newMockCommand().withArgs("2"),
 			wantErr: false,
 		},
 		{
 			name:        "missing website ID",
-			cmd:         &mockWebsitesGetCommand{id: ""},
+			cmd:         newMockCommand().withArgs(""),
 			wantErr:     true,
 			errContains: "website ID or domain is required",
 		},
@@ -1093,7 +988,7 @@ func TestWebsitesDelete(t *testing.T) {
 					return errors.New("website not found")
 				}
 			},
-			cmd:         &mockWebsitesGetCommand{id: "1"},
+			cmd:         newMockCommand().withArgs("1"),
 			wantErr:     true,
 			errContains: "website not found",
 		},
@@ -1102,7 +997,7 @@ func TestWebsitesDelete(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockSvc := &mockWebsitesServiceForCLI{}
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(mockSvc)
@@ -1126,7 +1021,7 @@ func TestWebsitesDeleteJSON(t *testing.T) {
 	tests := []struct {
 		name        string
 		setupMocks  func(*mockWebsitesServiceForCLI)
-		cmd         *mockWebsitesGetCommand
+		cmd         *mockCommand
 		wantErr     bool
 		errContains string
 	}{
@@ -1137,7 +1032,7 @@ func TestWebsitesDeleteJSON(t *testing.T) {
 					return nil
 				}
 			},
-			cmd:     &mockWebsitesGetCommand{id: "1"},
+			cmd:     newMockCommand().withArgs("1"),
 			wantErr: false,
 		},
 	}
@@ -1172,11 +1067,10 @@ func websitesDeleteWithService(ctx context.Context, cmd interface{ Args() cli.Ar
 	}
 
 	args := cmd.Args()
-	if args.Len() == 0 {
+	id := args.First()
+	if id == "" {
 		return fmt.Errorf("website ID or domain is required")
 	}
-
-	id := args.First()
 
 	if err := websitesService.Delete(ctx, id); err != nil {
 		return err
@@ -1199,7 +1093,7 @@ func TestWebsitesValidate(t *testing.T) {
 	tests := []struct {
 		name        string
 		setupMocks  func(*mockWebsitesServiceForCLI)
-		cmd         *mockWebsitesGetCommand
+		cmd         *mockCommand
 		wantErr     bool
 		errContains string
 	}{
@@ -1215,7 +1109,7 @@ func TestWebsitesValidate(t *testing.T) {
 					}, nil
 				}
 			},
-			cmd:     &mockWebsitesGetCommand{id: "1"},
+			cmd:     newMockCommand().withArgs("1"),
 			wantErr: false,
 		},
 		{
@@ -1230,12 +1124,12 @@ func TestWebsitesValidate(t *testing.T) {
 					}, nil
 				}
 			},
-			cmd:     &mockWebsitesGetCommand{id: "1"},
+			cmd:     newMockCommand().withArgs("1"),
 			wantErr: false,
 		},
 		{
 			name:        "missing website ID",
-			cmd:         &mockWebsitesGetCommand{id: ""},
+			cmd:         newMockCommand().withArgs(),
 			wantErr:     true,
 			errContains: "website ID or domain is required",
 		},
@@ -1246,7 +1140,7 @@ func TestWebsitesValidate(t *testing.T) {
 					return nil, errors.New("website not found")
 				}
 			},
-			cmd:     &mockWebsitesGetCommand{id: "1"},
+			cmd:     newMockCommand().withArgs("1"),
 			wantErr: false,
 		},
 	}
@@ -1254,7 +1148,7 @@ func TestWebsitesValidate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockSvc := &mockWebsitesServiceForCLI{}
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(mockSvc)
@@ -1278,7 +1172,7 @@ func TestWebsitesValidateJSON(t *testing.T) {
 	tests := []struct {
 		name        string
 		setupMocks  func(*mockWebsitesServiceForCLI)
-		cmd         *mockWebsitesGetCommand
+		cmd         *mockCommand
 		wantErr     bool
 		errContains string
 	}{
@@ -1294,7 +1188,7 @@ func TestWebsitesValidateJSON(t *testing.T) {
 					}, nil
 				}
 			},
-			cmd:     &mockWebsitesGetCommand{id: "1"},
+			cmd:     newMockCommand().withArgs("1"),
 			wantErr: false,
 		},
 		{
@@ -1309,7 +1203,7 @@ func TestWebsitesValidateJSON(t *testing.T) {
 					}, nil
 				}
 			},
-			cmd:     &mockWebsitesGetCommand{id: "1"},
+			cmd:     newMockCommand().withArgs("1"),
 			wantErr: false,
 		},
 	}
@@ -1338,7 +1232,7 @@ func TestWebsitesValidateJSON(t *testing.T) {
 }
 
 // websitesValidateWithService is a test helper that allows injecting a mock WebsitesService
-func websitesValidateWithService(ctx context.Context, cmd interface{ Args() cli.Args }, output Output, websitesService WebsitesService) error {
+func websitesValidateWithService(ctx context.Context, cmd websitesCommandGetter, output Output, websitesService WebsitesService) error {
 	return doWebsitesValidate(ctx, cmd, output, websitesService)
 }
 
@@ -1410,13 +1304,13 @@ func TestWebsitesSSLStatus(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockSvc := &mockWebsitesServiceForCLI{}
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(mockSvc)
 			}
 
-			cmd := &mockSSLStatusCommand{domain: "example.com"}
+			cmd := newMockCommand().withArgs("example.com")
 			err := websitesSSLStatusWithService(context.Background(), cmd, output, mockSvc)
 
 			if tt.wantErr {
@@ -1431,23 +1325,14 @@ func TestWebsitesSSLStatus(t *testing.T) {
 	}
 }
 
-// mockSSLStatusCommand is a mock command for testing SSL status
-type mockSSLStatusCommand struct {
-	domain string
-}
-
-func (m *mockSSLStatusCommand) Args() cli.Args {
-	return &mockArgs{[]string{m.domain}}
-}
 
 // websitesSSLStatusWithService is a test helper that allows injecting a mock WebsitesService
-func websitesSSLStatusWithService(ctx context.Context, cmd interface{ Args() cli.Args }, output Output, websitesService WebsitesService) error {
+func websitesSSLStatusWithService(ctx context.Context, cmd websitesCommandGetter, output Output, websitesService WebsitesService) error {
 	args := cmd.Args()
-	if args.Len() == 0 {
+	domain := args.First()
+	if domain == "" {
 		return fmt.Errorf("domain is required")
 	}
-
-	domain := args.First()
 
 	website, err := websitesService.GetSSLStatus(ctx, domain)
 	if err != nil {
@@ -1524,7 +1409,7 @@ func TestWebsitesConfig(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockSvc := &mockWebsitesServiceForCLI{}
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(mockSvc)
@@ -1622,58 +1507,18 @@ func websitesConfigWithService(ctx context.Context, output Output, websitesServi
 	return nil
 }
 
-// mockEnableIPNSCommand is a mock for testing enable-ipns
-type mockEnableIPNSCommand struct {
-	id  string
-	cid string
-}
-
-func (m *mockEnableIPNSCommand) IsSet(name string) bool {
-	switch name {
-	case FlagCID:
-		return m.cid != ""
-	default:
-		return false
-	}
-}
-
-func (m *mockEnableIPNSCommand) String(name string) string {
-	switch name {
-	case FlagCID:
-		return m.cid
-	default:
-		return ""
-	}
-}
-
-func (m *mockEnableIPNSCommand) Args() cli.Args {
-	if m.id == "" {
-		return &mockArgs{}
-	}
-	return &mockArgs{[]string{m.id}}
-}
-
-func (m *mockEnableIPNSCommand) Bool(name string) bool {
-	return false
-}
-
-func (m *mockEnableIPNSCommand) Int(name string) int {
-	return 0
-}
 
 func TestWebsitesEnableIPNS(t *testing.T) {
 	tests := []struct {
 		name        string
-		cmd         *mockEnableIPNSCommand
+		cmd         *mockCommand
 		setupMocks  func(*mockWebsitesServiceForCLI)
 		wantErr     bool
 		errContains string
 	}{
 		{
 			name: "enable ipns without cid",
-			cmd: &mockEnableIPNSCommand{
-				id: "1",
-			},
+			cmd: newMockCommand().withArgs("1"),
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
 				svc.updateWithOptionsFunc = func(ctx context.Context, id string, req ipfs.WebsiteUpdateRequest) (*ipfs.WebsiteItem, error) {
 					require.NotNil(t, req.TargetType)
@@ -1693,10 +1538,7 @@ func TestWebsitesEnableIPNS(t *testing.T) {
 		},
 		{
 			name: "enable ipns with cid",
-			cmd: &mockEnableIPNSCommand{
-				id:  "1",
-				cid: "QmNewHash",
-			},
+			cmd: newMockCommand().withArgs("1").withString(FlagCID, "QmNewHash").withIsSet(FlagCID, true),
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
 				svc.updateWithOptionsFunc = func(ctx context.Context, id string, req ipfs.WebsiteUpdateRequest) (*ipfs.WebsiteItem, error) {
 					require.NotNil(t, req.TargetType)
@@ -1717,18 +1559,14 @@ func TestWebsitesEnableIPNS(t *testing.T) {
 		},
 		{
 			name: "missing website id",
-			cmd: &mockEnableIPNSCommand{
-				id: "",
-			},
+			cmd: newMockCommand().withArgs(""),
 			setupMocks:  func(svc *mockWebsitesServiceForCLI) {},
 			wantErr:     true,
 			errContains: "website ID or domain is required",
 		},
 		{
 			name: "service error",
-			cmd: &mockEnableIPNSCommand{
-				id: "1",
-			},
+			cmd: newMockCommand().withArgs("1"),
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
 				svc.updateWithOptionsFunc = func(ctx context.Context, id string, req ipfs.WebsiteUpdateRequest) (*ipfs.WebsiteItem, error) {
 					return nil, errors.New("website not found")
@@ -1742,7 +1580,7 @@ func TestWebsitesEnableIPNS(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockSvc := &mockWebsitesServiceForCLI{}
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(mockSvc)
@@ -1772,11 +1610,12 @@ func websitesEnableIPNSWithService(ctx context.Context, cmd interface {
 	}
 
 	args := cmd.Args()
-	if args.Len() == 0 {
+	idArg := args.First()
+	if idArg == "" {
 		return fmt.Errorf("website ID or domain is required")
 	}
 
-	id, err := resolveWebsiteID(ctx, websitesService, args.First())
+	id, err := resolveWebsiteID(ctx, websitesService, idArg)
 	if err != nil {
 		return err
 	}
@@ -1803,4 +1642,190 @@ func websitesEnableIPNSWithService(ctx context.Context, cmd interface {
 	printWebsiteUpdateResult(output, updatedWebsite, "IPNS enabled for website")
 
 	return nil
+}
+
+func TestStripValidationPrefix(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"lumeweb-verify=abc123", "abc123"},
+		{"key=value", "value"},
+		{"no-prefix", "no-prefix"},
+		{"=", ""},
+		{"a=b=c", "b=c"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			result := stripValidationPrefix(tt.input)
+			require.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestResolveWebsiteID(t *testing.T) {
+	t.Run("numeric ID returned as-is", func(t *testing.T) {
+		mockSvc := &mockWebsitesServiceForCLI{}
+		id, err := resolveWebsiteID(context.Background(), mockSvc, "42")
+		require.NoError(t, err)
+		require.Equal(t, "42", id)
+	})
+
+	t.Run("domain resolved via list", func(t *testing.T) {
+		mockSvc := &mockWebsitesServiceForCLI{}
+		mockSvc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+			return []ipfs.WebsiteItem{
+				{Id: 7, Domain: "example.com"},
+				{Id: 8, Domain: "other.com"},
+			}, nil
+		}
+		id, err := resolveWebsiteID(context.Background(), mockSvc, "example.com")
+		require.NoError(t, err)
+		require.Equal(t, "7", id)
+	})
+
+	t.Run("domain not found", func(t *testing.T) {
+		mockSvc := &mockWebsitesServiceForCLI{}
+		mockSvc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+			return []ipfs.WebsiteItem{}, nil
+		}
+		_, err := resolveWebsiteID(context.Background(), mockSvc, "missing.com")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "website not found for domain")
+	})
+
+	t.Run("list service error", func(t *testing.T) {
+		mockSvc := &mockWebsitesServiceForCLI{}
+		mockSvc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+			return nil, errors.New("service down")
+		}
+		_, err := resolveWebsiteID(context.Background(), mockSvc, "example.com")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to look up website by domain")
+	})
+}
+
+func TestResolveAndGetWebsite(t *testing.T) {
+	t.Run("numeric ID fetches directly", func(t *testing.T) {
+		mockSvc := &mockWebsitesServiceForCLI{}
+		mockSvc.getFunc = func(ctx context.Context, id string) (*ipfs.WebsiteItem, error) {
+			return &ipfs.WebsiteItem{Id: 42, Domain: "example.com"}, nil
+		}
+		website, err := resolveAndGetWebsite(context.Background(), mockSvc, "42")
+		require.NoError(t, err)
+		require.Equal(t, 42, website.Id)
+	})
+
+	t.Run("domain resolves then fetches", func(t *testing.T) {
+		mockSvc := &mockWebsitesServiceForCLI{}
+		mockSvc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+			return []ipfs.WebsiteItem{{Id: 7, Domain: "example.com"}}, nil
+		}
+		mockSvc.getFunc = func(ctx context.Context, id string) (*ipfs.WebsiteItem, error) {
+			return &ipfs.WebsiteItem{Id: 7, Domain: "example.com"}, nil
+		}
+		website, err := resolveAndGetWebsite(context.Background(), mockSvc, "example.com")
+		require.NoError(t, err)
+		require.Equal(t, 7, website.Id)
+	})
+
+	t.Run("domain not found returns error", func(t *testing.T) {
+		mockSvc := &mockWebsitesServiceForCLI{}
+		mockSvc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+			return []ipfs.WebsiteItem{}, nil
+		}
+		_, err := resolveAndGetWebsite(context.Background(), mockSvc, "missing.com")
+		require.Error(t, err)
+	})
+}
+
+func TestPrintWebsiteUpdateResult(t *testing.T) {
+	t.Run("active website without gateway", func(t *testing.T) {
+		output := newTestOutput()
+		website := &ipfs.WebsiteItem{
+			Id:         1,
+			Domain:     "example.com",
+			TargetHash: "QmXxx",
+			TargetType: "ipfs",
+			Status:     "active",
+			Created:    time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC),
+		}
+		printWebsiteUpdateResult(output, website, "Website updated")
+	})
+
+	t.Run("inactive website shows token expired", func(t *testing.T) {
+		output := newTestOutput()
+		website := &ipfs.WebsiteItem{
+			Id:         1,
+			Domain:     "example.com",
+			TargetHash: "QmXxx",
+			TargetType: "ipfs",
+			Status:     "pending",
+			Expired:    true,
+			Created:    time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC),
+		}
+		printWebsiteUpdateResult(output, website, "Website updated")
+	})
+
+	t.Run("website with gateway domain", func(t *testing.T) {
+		output := newTestOutput()
+		gateway := "gw.pinner.xyz"
+		ipnsKeyID := 5
+		website := &ipfs.WebsiteItem{
+			Id:             1,
+			Domain:         "example.com",
+			TargetHash:     "QmXxx",
+			TargetType:     "ipfs",
+			Status:         "active",
+			GatewayDomain:  &gateway,
+			IpnsKeyId:      &ipnsKeyID,
+			Created:        time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC),
+		}
+		printWebsiteUpdateResult(output, website, "IPNS enabled")
+	})
+}
+
+func TestShowDNSRecordInstructions(t *testing.T) {
+	t.Run("nil website returns early", func(t *testing.T) {
+		output := newTestOutput()
+		showDNSRecordInstructions(output, nil, nil)
+	})
+
+	t.Run("dns hosting enabled", func(t *testing.T) {
+		output := newTestOutput()
+		website := &ipfs.WebsiteItem{
+			Domain:             "example.com",
+			DnsHostingEnabled:  true,
+		}
+		showDNSRecordInstructions(output, website, []string{"ns1.pinner.xyz", "ns2.pinner.xyz"})
+	})
+
+	t.Run("self-managed dns", func(t *testing.T) {
+		output := newTestOutput()
+		website := &ipfs.WebsiteItem{
+			Domain:         "example.com",
+			TargetHash:     "QmXxx",
+			TargetType:     "ipfs",
+			ValidationToken: "lumeweb-verify=abc123",
+		}
+		showDNSRecordInstructions(output, website, nil)
+	})
+}
+
+func TestShowConfigDNSRecords(t *testing.T) {
+	t.Run("with gateway domain", func(t *testing.T) {
+		output := newTestOutput()
+		gateway := "gw.pinner.xyz"
+		config := &ipfs.WebsiteConfigResponse{
+			GatewayDomain: &gateway,
+		}
+		showConfigDNSRecords(output, config)
+	})
+
+	t.Run("without gateway domain", func(t *testing.T) {
+		output := newTestOutput()
+		config := &ipfs.WebsiteConfigResponse{}
+		showConfigDNSRecords(output, config)
+	})
 }

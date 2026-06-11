@@ -69,17 +69,12 @@ Examples:
 			if err != nil {
 				return err
 			}
-			return billingCreditsListAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultBillingAdminServiceFactory)
+			return billingCreditsListAction(ctx, cmd, output, cfgMgr, defaultBillingAdminServiceFactory)
 		},
 	}
 }
 
-// billingCreditsListCmdGetter defines the interface for getting list command flags.
-type billingCreditsListCmdGetter interface {
-	String(name string) string
-}
-
-func billingCreditsListAction(ctx context.Context, cmd billingCreditsListCmdGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
+func billingCreditsListAction(ctx context.Context, cmd flagGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
 	service := serviceFactory(cfgMgr, output)
 	if err := service.RequireAuthenticated(); err != nil {
 		return err
@@ -147,17 +142,12 @@ Examples:
 			if err != nil {
 				return err
 			}
-			return billingCreditsGetAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultBillingAdminServiceFactory)
+			return billingCreditsGetAction(ctx, cmd, output, cfgMgr, defaultBillingAdminServiceFactory)
 		},
 	}
 }
 
-// billingCreditsGetCmdGetter defines the interface for getting get command args.
-type billingCreditsGetCmdGetter interface {
-	Args() cli.Args
-}
-
-func billingCreditsGetAction(ctx context.Context, cmd billingCreditsGetCmdGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
+func billingCreditsGetAction(ctx context.Context, cmd argsGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
 	if cmd.Args().Len() < 1 {
 		return fmt.Errorf("credit ID is required")
 	}
@@ -248,17 +238,12 @@ Examples:
 			if err != nil {
 				return err
 			}
-			return billingCreditsCreateAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultBillingAdminServiceFactory)
+			return billingCreditsCreateAction(ctx, cmd, output, cfgMgr, defaultBillingAdminServiceFactory)
 		},
 	}
 }
 
-// billingCreditsCreateCmdGetter defines the interface for getting create command flags.
-type billingCreditsCreateCmdGetter interface {
-	String(name string) string
-}
-
-func billingCreditsCreateAction(ctx context.Context, cmd billingCreditsCreateCmdGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
+func billingCreditsCreateAction(ctx context.Context, cmd flagGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
 	service := serviceFactory(cfgMgr, output)
 	if err := service.RequireAuthenticated(); err != nil {
 		return err
@@ -323,17 +308,12 @@ Examples:
 			if err != nil {
 				return err
 			}
-			return billingCreditsDeleteAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultBillingAdminServiceFactory)
+			return billingCreditsDeleteAction(ctx, cmd, output, cfgMgr, defaultBillingAdminServiceFactory)
 		},
 	}
 }
 
-// billingCreditsDeleteCmdGetter defines the interface for getting delete command args.
-type billingCreditsDeleteCmdGetter interface {
-	Args() cli.Args
-}
-
-func billingCreditsDeleteAction(ctx context.Context, cmd billingCreditsDeleteCmdGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
+func billingCreditsDeleteAction(ctx context.Context, cmd argsGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
 	if cmd.Args().Len() < 1 {
 		return fmt.Errorf("credit ID is required")
 	}
@@ -375,17 +355,12 @@ Examples:
 			if err != nil {
 				return err
 			}
-			return billingCreditsRestoreAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultBillingAdminServiceFactory)
+			return billingCreditsRestoreAction(ctx, cmd, output, cfgMgr, defaultBillingAdminServiceFactory)
 		},
 	}
 }
 
-// billingCreditsRestoreCmdGetter defines the interface for getting restore command args.
-type billingCreditsRestoreCmdGetter interface {
-	Args() cli.Args
-}
-
-func billingCreditsRestoreAction(ctx context.Context, cmd billingCreditsRestoreCmdGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
+func billingCreditsRestoreAction(ctx context.Context, cmd argsGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
 	if cmd.Args().Len() < 1 {
 		return fmt.Errorf("credit ID is required")
 	}
@@ -432,17 +407,12 @@ Examples:
 			if err != nil {
 				return err
 			}
-			return billingCreditsPurgeAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultBillingAdminServiceFactory)
+			return billingCreditsPurgeAction(ctx, cmd, output, cfgMgr, defaultBillingAdminServiceFactory)
 		},
 	}
 }
 
-// billingCreditsPurgeCmdGetter defines the interface for getting purge command flags.
-type billingCreditsPurgeCmdGetter interface {
-	String(name string) string
-}
-
-func billingCreditsPurgeAction(ctx context.Context, cmd billingCreditsPurgeCmdGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
+func billingCreditsPurgeAction(ctx context.Context, cmd flagGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
 	service := serviceFactory(cfgMgr, output)
 	if err := service.RequireAuthenticated(); err != nil {
 		return err
@@ -483,17 +453,12 @@ Examples:
 			if err != nil {
 				return err
 			}
-			return billingCreditsUserBalanceAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultBillingAdminServiceFactory)
+			return billingCreditsUserBalanceAction(ctx, cmd, output, cfgMgr, defaultBillingAdminServiceFactory)
 		},
 	}
 }
 
-// billingCreditsUserBalanceCmdGetter defines the interface for getting user-balance command args.
-type billingCreditsUserBalanceCmdGetter interface {
-	Args() cli.Args
-}
-
-func billingCreditsUserBalanceAction(ctx context.Context, cmd billingCreditsUserBalanceCmdGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
+func billingCreditsUserBalanceAction(ctx context.Context, cmd argsGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
 	if cmd.Args().Len() < 1 {
 		return fmt.Errorf("user ID is required")
 	}
@@ -548,18 +513,12 @@ Examples:
 			if err != nil {
 				return err
 			}
-			return billingCreditsUserDeletedCreditsAction(ctx, newCLICommandWrapper(cmd), output, cfgMgr, defaultBillingAdminServiceFactory)
+			return billingCreditsUserDeletedCreditsAction(ctx, cmd, output, cfgMgr, defaultBillingAdminServiceFactory)
 		},
 	}
 }
 
-// billingCreditsUserDeletedCreditsCmdGetter defines the interface for getting user-deleted-credits command args and flags.
-type billingCreditsUserDeletedCreditsCmdGetter interface {
-	Args() cli.Args
-	String(name string) string
-}
-
-func billingCreditsUserDeletedCreditsAction(ctx context.Context, cmd billingCreditsUserDeletedCreditsCmdGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
+func billingCreditsUserDeletedCreditsAction(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
 	if cmd.Args().Len() < 1 {
 		return fmt.Errorf("user ID is required")
 	}

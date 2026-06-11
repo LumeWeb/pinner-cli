@@ -9,7 +9,6 @@ import (
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/pkg/config"
 	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
 	"go.lumeweb.com/portal-sdk/admin"
@@ -22,8 +21,6 @@ func unmarshalSubscriberJSON(data string) *admin.Subscriber {
 	}
 	return &item
 }
-
-
 
 func TestBillingSubscribersList(t *testing.T) {
 	tests := []struct {
@@ -80,7 +77,7 @@ func TestBillingSubscribersList(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			service := NewMockBillingAdminService(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(cfgMgr, service)
@@ -90,9 +87,7 @@ func TestBillingSubscribersList(t *testing.T) {
 				return service
 			}
 
-			var cmd billingSubscribersListCmdGetter
-
-			err := billingSubscribersListAction(context.Background(), cmd, output, cfgMgr, serviceFactory)
+			err := billingSubscribersListAction(context.Background(), output, cfgMgr, serviceFactory)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -104,15 +99,6 @@ func TestBillingSubscribersList(t *testing.T) {
 			}
 		})
 	}
-}
-
-// billingSubscribersGetArgs implements billingSubscribersGetCmdGetter
-type billingSubscribersGetArgs struct {
-	args cli.Args
-}
-
-func (m *billingSubscribersGetArgs) Args() cli.Args {
-	return m.args
 }
 
 func TestBillingSubscribersGet(t *testing.T) {
@@ -148,17 +134,16 @@ func TestBillingSubscribersGet(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			service := NewMockBillingAdminService(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(cfgMgr, service)
 			}
 
-			args := &mockArgs{}
+			cmd := newMockCommand()
 			if tt.subscriberID != "" {
-				args.args = []string{tt.subscriberID}
+				cmd = cmd.withArgs(tt.subscriberID)
 			}
-			cmd := &billingSubscribersGetArgs{args: args}
 
 			serviceFactory := func(cm config.Manager, out Output) BillingAdminService {
 				return service
@@ -176,15 +161,6 @@ func TestBillingSubscribersGet(t *testing.T) {
 			}
 		})
 	}
-}
-
-// billingSubscribersListGatewayArgs implements billingSubscribersListGatewayCmdGetter
-type billingSubscribersListGatewayArgs struct {
-	args cli.Args
-}
-
-func (m *billingSubscribersListGatewayArgs) Args() cli.Args {
-	return m.args
 }
 
 func TestBillingSubscribersListGateway(t *testing.T) {
@@ -223,17 +199,16 @@ func TestBillingSubscribersListGateway(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			service := NewMockBillingAdminService(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(cfgMgr, service)
 			}
 
-			args := &mockArgs{}
+			cmd := newMockCommand()
 			if tt.gatewayID != "" {
-				args.args = []string{tt.gatewayID}
+				cmd = cmd.withArgs(tt.gatewayID)
 			}
-			cmd := &billingSubscribersListGatewayArgs{args: args}
 
 			serviceFactory := func(cm config.Manager, out Output) BillingAdminService {
 				return service
@@ -251,15 +226,6 @@ func TestBillingSubscribersListGateway(t *testing.T) {
 			}
 		})
 	}
-}
-
-// billingSubscribersListUserArgs implements billingSubscribersListUserCmdGetter
-type billingSubscribersListUserArgs struct {
-	args cli.Args
-}
-
-func (m *billingSubscribersListUserArgs) Args() cli.Args {
-	return m.args
 }
 
 func TestBillingSubscribersListUser(t *testing.T) {
@@ -298,17 +264,16 @@ func TestBillingSubscribersListUser(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			service := NewMockBillingAdminService(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(cfgMgr, service)
 			}
 
-			args := &mockArgs{}
+			cmd := newMockCommand()
 			if tt.userID != "" {
-				args.args = []string{tt.userID}
+				cmd = cmd.withArgs(tt.userID)
 			}
-			cmd := &billingSubscribersListUserArgs{args: args}
 
 			serviceFactory := func(cm config.Manager, out Output) BillingAdminService {
 				return service
@@ -326,22 +291,6 @@ func TestBillingSubscribersListUser(t *testing.T) {
 			}
 		})
 	}
-}
-
-// billingSubscribersCancelCmd implements billingSubscribersCancelCmdGetter
-type billingSubscribersCancelCmd struct {
-	userID string
-	mode   string
-}
-
-func (m *billingSubscribersCancelCmd) String(name string) string {
-	switch name {
-	case FlagUserID:
-		return m.userID
-	case FlagMode:
-		return m.mode
-	}
-	return ""
 }
 
 func TestBillingSubscribersCancel(t *testing.T) {
@@ -381,7 +330,7 @@ func TestBillingSubscribersCancel(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			service := NewMockBillingAdminService(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(cfgMgr, service)
@@ -391,10 +340,9 @@ func TestBillingSubscribersCancel(t *testing.T) {
 				return service
 			}
 
-			cmd := &billingSubscribersCancelCmd{
-				userID: "123",
-				mode:   "end_of_billing_period",
-			}
+			cmd := newMockCommand().
+				withString(FlagUserID, "123").
+				withString(FlagMode, "end_of_billing_period")
 
 			err := billingSubscribersCancelAction(context.Background(), cmd, output, cfgMgr, serviceFactory)
 
@@ -408,18 +356,6 @@ func TestBillingSubscribersCancel(t *testing.T) {
 			}
 		})
 	}
-}
-
-// billingSubscribersAbortCancelCmd implements billingSubscribersAbortCancelCmdGetter
-type billingSubscribersAbortCancelCmd struct {
-	userID string
-}
-
-func (m *billingSubscribersAbortCancelCmd) String(name string) string {
-	if name == FlagUserID {
-		return m.userID
-	}
-	return ""
 }
 
 func TestBillingSubscribersAbortCancel(t *testing.T) {
@@ -456,7 +392,7 @@ func TestBillingSubscribersAbortCancel(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			service := NewMockBillingAdminService(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(cfgMgr, service)
@@ -466,9 +402,7 @@ func TestBillingSubscribersAbortCancel(t *testing.T) {
 				return service
 			}
 
-			cmd := &billingSubscribersAbortCancelCmd{
-				userID: "123",
-			}
+			cmd := newMockCommand().withString(FlagUserID, "123")
 
 			err := billingSubscribersAbortCancelAction(context.Background(), cmd, output, cfgMgr, serviceFactory)
 
@@ -482,26 +416,6 @@ func TestBillingSubscribersAbortCancel(t *testing.T) {
 			}
 		})
 	}
-}
-
-// billingSubscribersChangePlanCmd implements billingSubscribersChangePlanCmdGetter
-type billingSubscribersChangePlanCmd struct {
-	userID   string
-	periodID int
-}
-
-func (m *billingSubscribersChangePlanCmd) String(name string) string {
-	if name == FlagUserID {
-		return m.userID
-	}
-	return ""
-}
-
-func (m *billingSubscribersChangePlanCmd) Int(name string) int {
-	if name == FlagPlanID {
-		return m.periodID
-	}
-	return 0
 }
 
 func TestBillingSubscribersChangePlan(t *testing.T) {
@@ -542,7 +456,7 @@ func TestBillingSubscribersChangePlan(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			service := NewMockBillingAdminService(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(cfgMgr, service)
@@ -552,10 +466,9 @@ func TestBillingSubscribersChangePlan(t *testing.T) {
 				return service
 			}
 
-			cmd := &billingSubscribersChangePlanCmd{
-				userID:   "123",
-				periodID: 1,
-			}
+			cmd := newMockCommand().
+				withString(FlagUserID, "123").
+				withInt(FlagPlanID, 1)
 
 			err := billingSubscribersChangePlanAction(context.Background(), cmd, output, cfgMgr, serviceFactory)
 
@@ -569,18 +482,6 @@ func TestBillingSubscribersChangePlan(t *testing.T) {
 			}
 		})
 	}
-}
-
-// billingSubscribersPauseCmd implements billingSubscribersPauseCmdGetter
-type billingSubscribersPauseCmd struct {
-	userID string
-}
-
-func (m *billingSubscribersPauseCmd) String(name string) string {
-	if name == FlagUserID {
-		return m.userID
-	}
-	return ""
 }
 
 func TestBillingSubscribersPause(t *testing.T) {
@@ -617,7 +518,7 @@ func TestBillingSubscribersPause(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			service := NewMockBillingAdminService(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(cfgMgr, service)
@@ -627,9 +528,7 @@ func TestBillingSubscribersPause(t *testing.T) {
 				return service
 			}
 
-			cmd := &billingSubscribersPauseCmd{
-				userID: "123",
-			}
+			cmd := newMockCommand().withString(FlagUserID, "123")
 
 			err := billingSubscribersPauseAction(context.Background(), cmd, output, cfgMgr, serviceFactory)
 
@@ -643,18 +542,6 @@ func TestBillingSubscribersPause(t *testing.T) {
 			}
 		})
 	}
-}
-
-// billingSubscribersResumeCmd implements billingSubscribersResumeCmdGetter
-type billingSubscribersResumeCmd struct {
-	userID string
-}
-
-func (m *billingSubscribersResumeCmd) String(name string) string {
-	if name == FlagUserID {
-		return m.userID
-	}
-	return ""
 }
 
 func TestBillingSubscribersResume(t *testing.T) {
@@ -691,7 +578,7 @@ func TestBillingSubscribersResume(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			service := NewMockBillingAdminService(t)
-			output := NewOutputFormatter(false, false, false, false)
+			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(cfgMgr, service)
@@ -701,9 +588,7 @@ func TestBillingSubscribersResume(t *testing.T) {
 				return service
 			}
 
-			cmd := &billingSubscribersResumeCmd{
-				userID: "123",
-			}
+			cmd := newMockCommand().withString(FlagUserID, "123")
 
 			err := billingSubscribersResumeAction(context.Background(), cmd, output, cfgMgr, serviceFactory)
 

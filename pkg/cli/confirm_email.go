@@ -40,12 +40,12 @@ After confirmation, authenticate with:
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			output := setupOutput(cmd)
-			return confirmEmail(ctx, cmd, output, defaultConfigManagerFactory)
+			return confirmEmail(ctx, newCLICommandWrapper(cmd), output, defaultConfigManagerFactory)
 		},
 	}
 }
 
-func confirmEmail(ctx context.Context, cmd *cli.Command, output Output, cfgMgrFactory ConfigManagerFactory) error {
+func confirmEmail(ctx context.Context, cmd flagGetter, output Output, cfgMgrFactory ConfigManagerFactory) error {
 	email := cmd.String(FlagEmail)
 	token := cmd.String(FlagToken)
 

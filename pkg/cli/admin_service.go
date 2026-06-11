@@ -130,6 +130,17 @@ func with0[S any](svc authedService[S], ctx context.Context, fn func(S) error) e
 	return fn(s)
 }
 
+func with2i[S any](svc authedService[S], ctx context.Context, fn func(S) (int, error)) (int, error) {
+	if err := svc.RequireAuthenticated(); err != nil {
+		return 0, err
+	}
+	s, err := svc.getService(ctx)
+	if err != nil {
+		return 0, err
+	}
+	return fn(s)
+}
+
 // NewQuotaAdminService creates a new QuotaAdminService instance.
 func NewQuotaAdminService(cfgMgr config.Manager, output Output, apiEndpoint string) QuotaAdminService {
 	return &quotaAdminService{
@@ -343,65 +354,41 @@ func (s *quotaAdminService) SetDefaultPlan(ctx context.Context, planID string) e
 
 // ListAllowances lists all quota allowances.
 func (s *quotaAdminService) ListAllowances(ctx context.Context) ([]*admin.QuotaAllowance, int, error) {
-	if err := s.RequireAuthenticated(); err != nil {
-		return nil, 0, err
-	}
-	svc, err := s.getService(ctx)
-	if err != nil {
-		return nil, 0, err
-	}
-	return svc.ListAllowances(ctx)
+	return with3(s, ctx, func(svc *admin.QuotaService) ([]*admin.QuotaAllowance, int, error) {
+		return svc.ListAllowances(ctx)
+	})
 }
 
 // CreateAllowance creates a new quota allowance for a user.
 func (s *quotaAdminService) CreateAllowance(ctx context.Context, userID int, source, allowanceType string, upload, download, storage int, expiryDate time.Time) (*admin.QuotaAllowance, error) {
-	if err := s.RequireAuthenticated(); err != nil {
-		return nil, err
-	}
-	svc, err := s.getService(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return svc.CreateAllowance(ctx, userID, source, allowanceType, upload, download, storage, expiryDate)
+	return with2(s, ctx, func(svc *admin.QuotaService) (*admin.QuotaAllowance, error) {
+		return svc.CreateAllowance(ctx, userID, source, allowanceType, upload, download, storage, expiryDate)
+	})
 }
 
 // UpdateAllowance updates an existing quota allowance.
 func (s *quotaAdminService) UpdateAllowance(ctx context.Context, grantID string, userID int, source, allowanceType string, upload, download, storage int, expiryDate time.Time) (*admin.QuotaAllowance, error) {
-	if err := s.RequireAuthenticated(); err != nil {
-		return nil, err
-	}
-	svc, err := s.getService(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return svc.UpdateAllowance(ctx, grantID, userID, source, allowanceType, upload, download, storage, expiryDate)
+	return with2(s, ctx, func(svc *admin.QuotaService) (*admin.QuotaAllowance, error) {
+		return svc.UpdateAllowance(ctx, grantID, userID, source, allowanceType, upload, download, storage, expiryDate)
+	})
 }
 
 // DeleteAllowance deletes a quota allowance.
 func (s *quotaAdminService) DeleteAllowance(ctx context.Context, grantID string) error {
-	if err := s.RequireAuthenticated(); err != nil {
-		return err
-	}
-	svc, err := s.getService(ctx)
-	if err != nil {
-		return err
-	}
-	return svc.DeleteAllowance(ctx, grantID)
+	return with0(s, ctx, func(svc *admin.QuotaService) error {
+		return svc.DeleteAllowance(ctx, grantID)
+	})
 }
 
 // GetStats retrieves system-wide quota statistics.
 func (s *quotaAdminService) GetStats(ctx context.Context) (*admin.SystemStats, error) {
-	if err := s.RequireAuthenticated(); err != nil {
-		return nil, err
-	}
-	svc, err := s.getService(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return svc.GetStats(ctx)
+	return with2(s, ctx, func(svc *admin.QuotaService) (*admin.SystemStats, error) {
+		return svc.GetStats(ctx)
+	})
 }
 
 // Reconcile performs quota reconciliation for users.
+// NOTE: Reconcile returns (string, int, error) which doesn't fit with0/with2/with3/with2i.
 func (s *quotaAdminService) Reconcile(ctx context.Context, userID *int) (string, int, error) {
 	if err := s.RequireAuthenticated(); err != nil {
 		return "", 0, err
@@ -415,50 +402,30 @@ func (s *quotaAdminService) Reconcile(ctx context.Context, userID *int) (string,
 
 // Cleanup performs quota cleanup based on retention policy.
 func (s *quotaAdminService) Cleanup(ctx context.Context, retentionDays int) (int, error) {
-	if err := s.RequireAuthenticated(); err != nil {
-		return 0, err
-	}
-	svc, err := s.getService(ctx)
-	if err != nil {
-		return 0, err
-	}
-	return svc.Cleanup(ctx, retentionDays)
+	return with2i(s, ctx, func(svc *admin.QuotaService) (int, error) {
+		return svc.Cleanup(ctx, retentionDays)
+	})
 }
 
 // ListUserConfigs lists all user quota configurations with pagination.
 func (s *quotaAdminService) ListUserConfigs(ctx context.Context) ([]*admin.UserQuotaConfig, int, error) {
-	if err := s.RequireAuthenticated(); err != nil {
-		return nil, 0, err
-	}
-	svc, err := s.getService(ctx)
-	if err != nil {
-		return nil, 0, err
-	}
-	return svc.ListUserConfigs(ctx)
+	return with3(s, ctx, func(svc *admin.QuotaService) ([]*admin.UserQuotaConfig, int, error) {
+		return svc.ListUserConfigs(ctx)
+	})
 }
 
 // UpdateUserConfig updates a user's quota configuration.
 func (s *quotaAdminService) UpdateUserConfig(ctx context.Context, userID int, config *admin.UserQuotaConfigUpdate) (*admin.UserQuotaConfig, error) {
-	if err := s.RequireAuthenticated(); err != nil {
-		return nil, err
-	}
-	svc, err := s.getService(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return svc.UpdateUserConfig(ctx, userID, config)
+	return with2(s, ctx, func(svc *admin.QuotaService) (*admin.UserQuotaConfig, error) {
+		return svc.UpdateUserConfig(ctx, userID, config)
+	})
 }
 
 // ResetUserPlan removes a user's assigned quota plan (sets to NULL).
 func (s *quotaAdminService) ResetUserPlan(ctx context.Context, userID int) error {
-	if err := s.RequireAuthenticated(); err != nil {
-		return err
-	}
-	svc, err := s.getService(ctx)
-	if err != nil {
-		return err
-	}
-	return svc.ResetUserPlan(ctx, userID)
+	return with0(s, ctx, func(svc *admin.QuotaService) error {
+		return svc.ResetUserPlan(ctx, userID)
+	})
 }
 
 // getService returns the billing service, lazily initializing with token exchange if needed.

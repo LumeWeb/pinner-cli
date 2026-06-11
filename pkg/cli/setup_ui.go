@@ -10,6 +10,8 @@ import (
 // This allows for easy testing by providing mock implementations.
 type SetupUI interface {
 	wizard.UI
+	SelectPrompter
+	ContinuePrompter
 
 	// Step execution
 	ExecuteAuthStep(ctx context.Context, wizard *SetupWizard) error

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/urfave/cli/v3"
+	"go.lumeweb.com/pinner-cli/pkg/config"
 )
 
 func newUnpinCommand() *cli.Command {
@@ -39,35 +40,23 @@ Examples:
 		Metadata: WithTutorial(5, "Unpin content", fmt.Sprintf("pinner unpin %s", abbreviateCID(TutorialCID))),
 		Action: func(ctx context.Context, c *cli.Command) error {
 			output := setupOutput(c)
-			return unpin(ctx, newCLICommandWrapper(c), output, defaultConfigManagerFactory, defaultPinningServiceFactory)
+			cfgMgr, err := defaultConfigManagerFactory()
+			if err != nil {
+				return err
+			}
+			authToken := GetAuthToken(c, cfgMgr)
+			secure := GetSecureSetting(c, cfgMgr)
+			return unpin(ctx, newCLICommandWrapper(c), output, cfgMgr, authToken, secure, defaultPinningServiceFactory)
 		},
 	}
 }
 
-// unpinCommandGetter defines the interface for getting unpin command flags.
-type unpinCommandGetter interface {
-	String(name string) string
-	Int(name string) int
-	Bool(name string) bool
-	GetCID() string
-}
-
-func unpin(ctx context.Context, cmd unpinCommandGetter, output Output, cfgMgrFactory ConfigManagerFactory, pinningServiceFactory PinningServiceFactory) error {
-	cfgMgr, err := cfgMgrFactory()
-	if err != nil {
-		return err
-	}
-
+func unpin(ctx context.Context, cmd cidFlagGetter, output Output, cfgMgr config.Manager, authToken string, secure bool, pinningServiceFactory PinningServiceFactory) error {
 	var pinningService PinningService
-	if c, ok := cmd.(*cliCommandWrapper); ok {
-		authToken := GetAuthToken(c.Command, cfgMgr)
-		if authToken != "" {
-			pinningService = NewPinningService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpoint(), WithAuthToken(authToken))
-		} else {
-			pinningService = pinningServiceFactory(cfgMgr, output)
-		}
+	if authToken != "" {
+		pinningService = NewPinningService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure), WithAuthToken(authToken))
 	} else {
-		pinningService = pinningServiceFactory(cfgMgr, output)
+		pinningService = pinningServiceFactory(cfgMgr, output, secure)
 	}
 
 	if err := pinningService.RequireAuthenticated(); err != nil {
@@ -81,6 +70,7 @@ func unpin(ctx context.Context, cmd unpinCommandGetter, output Output, cfgMgrFac
 	dryRun := cmd.Bool(FlagDryRun)
 
 	var cids []string
+	var err error
 
 	if isStdinPipe() {
 		cids, err = readLinesFromStdin()
@@ -120,7 +110,7 @@ func unpin(ctx context.Context, cmd unpinCommandGetter, output Output, cfgMgrFac
 
 		RenderDryRun(output, DryRunPreview{
 			Operation: "unpin operations",
-			Endpoint:  cfgMgr.Config().GetIPFSEndpoint(),
+			Endpoint:  cfgMgr.Config().GetIPFSEndpointWithSecure(secure),
 			Items:     cids,
 			ItemLabel: "CIDs to unpin",
 			Options:   options,

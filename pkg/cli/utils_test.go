@@ -229,10 +229,45 @@ func TestOperationError(t *testing.T) {
 	})
 }
 
+func TestFormatStatusWithColor(t *testing.T) {
+	t.Run("colors pinned status", func(t *testing.T) {
+		result := formatStatusWithColor("pinned")
+		assert.NotEmpty(t, result)
+	})
+
+	t.Run("colors queued status", func(t *testing.T) {
+		result := formatStatusWithColor("queued")
+		assert.NotEmpty(t, result)
+	})
+
+	t.Run("colors pinning status", func(t *testing.T) {
+		result := formatStatusWithColor("pinning")
+		assert.NotEmpty(t, result)
+	})
+
+	t.Run("colors failed status", func(t *testing.T) {
+		result := formatStatusWithColor("failed")
+		assert.NotEmpty(t, result)
+	})
+
+	t.Run("returns unknown status unchanged", func(t *testing.T) {
+		result := formatStatusWithColor("unknown")
+		assert.Equal(t, "unknown", result)
+	})
+}
+
+func TestDryRunOption(t *testing.T) {
+	t.Run("creates option entry", func(t *testing.T) {
+		opt := DryRunOption("key", "value")
+		require.Len(t, opt, 1)
+		assert.Equal(t, "value", opt["key"])
+	})
+}
+
 func TestRenderDryRun(t *testing.T) {
 	t.Run("renders dry run with items", func(t *testing.T) {
 		var buf bytes.Buffer
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		output.SetWriter(&buf)
 
 		RenderDryRun(output, DryRunPreview{
@@ -262,7 +297,7 @@ func TestRenderDryRun(t *testing.T) {
 
 	t.Run("renders dry run with truncated items", func(t *testing.T) {
 		var buf bytes.Buffer
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		output.SetWriter(&buf)
 
 		items := make([]string, 15)
@@ -284,7 +319,7 @@ func TestRenderDryRun(t *testing.T) {
 
 	t.Run("renders dry run without items", func(t *testing.T) {
 		var buf bytes.Buffer
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		output.SetWriter(&buf)
 
 		RenderDryRun(output, DryRunPreview{
@@ -302,7 +337,7 @@ func TestRenderDryRun(t *testing.T) {
 
 	t.Run("renders dry run with custom max items", func(t *testing.T) {
 		var buf bytes.Buffer
-		output := NewOutputFormatter(false, false, false, false)
+		output := newTestOutput()
 		output.SetWriter(&buf)
 
 		RenderDryRun(output, DryRunPreview{

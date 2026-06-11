@@ -471,6 +471,38 @@ func TestSetupWizard_Accessors(t *testing.T) {
 	require.Equal(t, options, wizard.Options())
 }
 
+func TestSetupWizard_NonInteractive(t *testing.T) {
+	cfgMgr := configmocks.NewMockManager(t)
+	cfg := &config.Config{AuthToken: "token"}
+	cfgMgr.EXPECT().Config().Return(cfg).Maybe()
+
+	output := newTestOutput()
+	cmd := &mockCommand{boolFields: map[string]bool{"non-interactive": true}}
+
+	err := runSetupWizardWithFactories(context.Background(), cmd, output, func() (config.Manager, error) {
+		return cfgMgr, nil
+	}, nil, nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "interactive mode")
+}
+
+func TestSetupWizard_ConfigError(t *testing.T) {
+	output := newTestOutput()
+	cmd := &mockCommand{boolFields: map[string]bool{}}
+
+	err := runSetupWizardWithFactories(context.Background(), cmd, output, failingConfigMgrFactory(), nil, nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to initialize config manager")
+}
+
+func TestNewSetupCommand(t *testing.T) {
+	cmd := newSetupCommand()
+	require.Equal(t, "setup", cmd.Name)
+	require.Equal(t, "Setup", cmd.Category)
+	require.NotNil(t, cmd.Action)
+	require.NotEmpty(t, cmd.Flags)
+}
+
 func TestMockSetupUI(t *testing.T) {
 	t.Run("call tracking", func(t *testing.T) {
 		mock := NewMockSetupUI()
