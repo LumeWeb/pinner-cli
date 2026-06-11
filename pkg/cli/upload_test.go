@@ -82,7 +82,6 @@ func TestResolveUploadInput_Stdin(t *testing.T) {
 
 
 func TestResolveUploadInput_File(t *testing.T) {
-	// Create a temp file
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "test.txt")
 	testContent := []byte("test content")
@@ -130,6 +129,9 @@ func TestResolveUploadInput_File(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			input, err := resolveUploadInput(tt.path, tt.nameArg)
+			if input != nil {
+				defer input.Close()
+			}
 			if (err != nil) != tt.wantErr {
 				t.Errorf("resolveUploadInput() error = %v, wantErr %v", err, tt.wantErr)
 				return

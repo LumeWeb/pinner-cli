@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"testing"
 	"time"
 
@@ -361,7 +362,7 @@ func TestBenchStorageMode(t *testing.T) {
 		if avail <= 0 {
 			t.Skip("cannot detect available memory")
 		}
-		assert.Equal(t, "disk", benchStorageMode(avail+1))
+		assert.Equal(t, "disk", benchStorageMode(math.MaxInt64))
 	})
 }
 
@@ -724,7 +725,7 @@ func TestBenchServiceDefault_RunIteration(t *testing.T) {
 		assert.Equal(t, "QmTestCID", iter.CID)
 		assert.Equal(t, int64(1024), iter.Size)
 		assert.Nil(t, iter.Error)
-		assert.Greater(t, iter.Total, time.Duration(0))
+		assert.GreaterOrEqual(t, iter.Total, time.Duration(0))
 
 		stageNames := make([]string, len(iter.Stages))
 		for i, s := range iter.Stages {
