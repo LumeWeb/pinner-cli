@@ -45,22 +45,22 @@ func WithIPNSClient(client *ipfs.Client) IPNSServiceOption {
 
 type IPNSServiceFactory func(cfgMgr config.Manager, output Output, opts ...IPNSServiceOption) IPNSService
 
-func defaultIPNSServiceFactory(cfgMgr config.Manager, output Output, opts ...IPNSServiceOption) IPNSService {
-	return NewIPNSService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointSecure(), opts...)
+func defaultIPNSServiceFactory(cfgMgr config.Manager, output Output, secure bool, opts ...IPNSServiceOption) IPNSService {
+	return NewIPNSService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure), opts...)
 }
 
-type ipnsServiceFactoryFunc func(cfgMgr config.Manager, output Output, opts ...IPNSServiceOption) IPNSService
+type ipnsServiceFactoryFunc func(cfgMgr config.Manager, output Output, secure bool, opts ...IPNSServiceOption) IPNSService
 
 var ipnsServiceFactory ipnsServiceFactoryFunc = defaultIPNSServiceFactory
 
 // newAuthenticatedIPNSService creates an IPNSService with authentication.
 // It returns an error if the user is not authenticated.
-func newAuthenticatedIPNSService(cfgMgr config.Manager, output Output, authToken string) (IPNSService, error) {
+func newAuthenticatedIPNSService(cfgMgr config.Manager, output Output, authToken string, secure bool) (IPNSService, error) {
 	var svcOpts []IPNSServiceOption
 	if authToken != "" {
 		svcOpts = append(svcOpts, WithIPNSAuthToken(authToken))
 	}
-	ipnsService := ipnsServiceFactory(cfgMgr, output, svcOpts...)
+	ipnsService := ipnsServiceFactory(cfgMgr, output, secure, svcOpts...)
 	if err := ipnsService.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
@@ -98,12 +98,18 @@ func (s *ipnsService) ListKeys(ctx context.Context) ([]ipfs.IPNSKeyResponse, err
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
+	if s.service == nil {
+		return nil, ErrServiceUnavailable
+	}
 	return s.service.ListKeys(ctx)
 }
 
 func (s *ipnsService) CreateKey(ctx context.Context, name string, key *string) (*ipfs.IPNSKeyResponse, error) {
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
+	}
+	if s.service == nil {
+		return nil, ErrServiceUnavailable
 	}
 	if key != nil {
 		return s.service.CreateKey(ctx, name, ipfs.WithIPNSKey(*key))
@@ -115,6 +121,9 @@ func (s *ipnsService) GetKey(ctx context.Context, id string) (*ipfs.IPNSKeyRespo
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
+	if s.service == nil {
+		return nil, ErrServiceUnavailable
+	}
 	return s.service.GetKey(ctx, id)
 }
 
@@ -122,12 +131,18 @@ func (s *ipnsService) DeleteKey(ctx context.Context, id string) error {
 	if err := s.RequireAuthenticated(); err != nil {
 		return err
 	}
+	if s.service == nil {
+		return ErrServiceUnavailable
+	}
 	return s.service.DeleteKey(ctx, id)
 }
 
 func (s *ipnsService) Publish(ctx context.Context, cid string, keyName string, ttl *string) (*ipfs.IPNSPublishResponse, error) {
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
+	}
+	if s.service == nil {
+		return nil, ErrServiceUnavailable
 	}
 
 	keyID, err := resolveIPNSKeyID(ctx, s, keyName)
@@ -145,6 +160,9 @@ func (s *ipnsService) Republish(ctx context.Context, keyName string) (*ipfs.IPNS
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
+	if s.service == nil {
+		return nil, ErrServiceUnavailable
+	}
 
 	keyID, err := resolveIPNSKeyID(ctx, s, keyName)
 	if err != nil {
@@ -157,6 +175,9 @@ func (s *ipnsService) Republish(ctx context.Context, keyName string) (*ipfs.IPNS
 func (s *ipnsService) Resolve(ctx context.Context, name string) (*ipfs.IPNSResolveResponse, error) {
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
+	}
+	if s.service == nil {
+		return nil, ErrServiceUnavailable
 	}
 	return s.service.Resolve(ctx, name)
 }

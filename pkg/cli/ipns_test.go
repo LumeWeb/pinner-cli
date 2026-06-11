@@ -25,7 +25,7 @@ func setupIPNSHandlerTest(t *testing.T) (*mockIPNSServiceForCLI, *configmocks.Mo
 
 	origFactory := ipnsServiceFactory
 	t.Cleanup(func() { ipnsServiceFactory = origFactory })
-	ipnsServiceFactory = func(config.Manager, Output, ...IPNSServiceOption) IPNSService {
+	ipnsServiceFactory = func(config.Manager, Output, bool, ...IPNSServiceOption) IPNSService {
 		return mockSvc
 	}
 
@@ -46,7 +46,7 @@ func TestIpnsKeysList_Success(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand()
-	err := ipnsKeysList(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := ipnsKeysList(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -58,7 +58,7 @@ func TestIpnsKeysList_Empty(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand()
-	err := ipnsKeysList(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := ipnsKeysList(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -70,7 +70,7 @@ func TestIpnsKeysList_ServiceError(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand()
-	err := ipnsKeysList(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := ipnsKeysList(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "server error")
 }
@@ -81,7 +81,7 @@ func TestIpnsKeysList_Unauthenticated(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand()
-	err := ipnsKeysList(context.Background(), cmd, output, cfgMgr, "")
+	err := ipnsKeysList(context.Background(), cmd, output, cfgMgr, "", true)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrNotAuthenticated))
 }
@@ -99,7 +99,7 @@ func TestIpnsKeysCreate_Success(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withString(FlagName, "my-key")
-	err := ipnsKeysCreate(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := ipnsKeysCreate(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -115,7 +115,7 @@ func TestIpnsKeysCreate_WithKeyImport(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withString(FlagName, "imported-key").withString(FlagKey, "base64keydata")
-	err := ipnsKeysCreate(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := ipnsKeysCreate(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -124,7 +124,7 @@ func TestIpnsKeysCreate_MissingName(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withString(FlagName, "")
-	err := ipnsKeysCreate(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := ipnsKeysCreate(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "name is required")
 }
@@ -137,7 +137,7 @@ func TestIpnsKeysCreate_ServiceError(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withString(FlagName, "my-key")
-	err := ipnsKeysCreate(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := ipnsKeysCreate(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "conflict")
 }
@@ -154,7 +154,7 @@ func TestIpnsKeysGet_Success(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("1")
-	err := ipnsKeysGet(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := ipnsKeysGet(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -171,7 +171,7 @@ func TestIpnsKeysGet_ByName(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("my-key")
-	err := ipnsKeysGet(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := ipnsKeysGet(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -180,7 +180,7 @@ func TestIpnsKeysGet_MissingArg(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand()
-	err := ipnsKeysGet(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := ipnsKeysGet(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "key name or ID is required")
 }
@@ -193,7 +193,7 @@ func TestIpnsKeysGet_NotFound(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("999")
-	err := ipnsKeysGet(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := ipnsKeysGet(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "key not found")
 }
@@ -209,7 +209,7 @@ func TestIpnsKeysDelete_Success(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("1")
-	err := ipnsKeysDelete(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := ipnsKeysDelete(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -226,7 +226,7 @@ func TestIpnsKeysDelete_ByName(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("my-key")
-	err := ipnsKeysDelete(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := ipnsKeysDelete(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -235,7 +235,7 @@ func TestIpnsKeysDelete_MissingArg(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand()
-	err := ipnsKeysDelete(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := ipnsKeysDelete(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "key name or ID is required")
 }
@@ -248,7 +248,7 @@ func TestIpnsKeysDelete_NotFound(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("999")
-	err := ipnsKeysDelete(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := ipnsKeysDelete(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "key not found")
 }
@@ -267,7 +267,7 @@ func TestIpnsPublish_Success(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("QmXxx").withString("key-name", "1")
-	err := ipnsPublish(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := ipnsPublish(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -282,7 +282,7 @@ func TestIpnsPublish_WithTTL(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("QmYyy").withString("key-name", "1").withString("ttl", "24h")
-	err := ipnsPublish(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := ipnsPublish(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -291,7 +291,7 @@ func TestIpnsPublish_MissingCID(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withString("key-name", "my-key")
-	err := ipnsPublish(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := ipnsPublish(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "CID is required")
 }
@@ -301,7 +301,7 @@ func TestIpnsPublish_MissingKeyName(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("QmXxx").withString("key-name", "")
-	err := ipnsPublish(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := ipnsPublish(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "key-name is required")
 }
@@ -314,7 +314,7 @@ func TestIpnsPublish_ServiceError(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("invalid").withString("key-name", "1")
-	err := ipnsPublish(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := ipnsPublish(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid CID format")
 }
@@ -330,7 +330,7 @@ func TestIpnsRepublish_Success(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("my-key")
-	err := ipnsRepublish(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := ipnsRepublish(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -339,7 +339,7 @@ func TestIpnsRepublish_MissingArg(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand()
-	err := ipnsRepublish(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := ipnsRepublish(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "key name or ID is required")
 }
@@ -352,7 +352,7 @@ func TestIpnsRepublish_ServiceError(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("my-key")
-	err := ipnsRepublish(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := ipnsRepublish(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "republish failed")
 }
@@ -374,7 +374,7 @@ func TestIpnsResolve_Success(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("k51qzi5uqu5djx123")
-	err := ipnsResolve(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := ipnsResolve(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -383,7 +383,7 @@ func TestIpnsResolve_MissingArg(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand()
-	err := ipnsResolve(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := ipnsResolve(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "IPNS name is required")
 }
@@ -396,7 +396,7 @@ func TestIpnsResolve_NotFound(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("k51qzi5uqu5djx999")
-	err := ipnsResolve(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := ipnsResolve(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "IPNS name not found")
 }

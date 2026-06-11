@@ -49,13 +49,14 @@ Examples:
 				return err
 			}
 			authToken := GetAuthToken(c, cfgMgr)
+			secure := GetSecureSetting(c, cfgMgr)
 			prompter := &PTermConfirmPrompter{}
-			return unpinAll(ctx, newCLICommandWrapper(c), output, cfgMgr, authToken, defaultPinningServiceFactory, prompter)
+			return unpinAll(ctx, newCLICommandWrapper(c), output, cfgMgr, authToken, secure, defaultPinningServiceFactory, prompter)
 		},
 	}
 }
 
-func unpinAll(ctx context.Context, cmd flagGetterWithInt, output Output, cfgMgr config.Manager, authToken string, pinningServiceFactory PinningServiceFactory, prompter ConfirmPrompter) error {
+func unpinAll(ctx context.Context, cmd flagGetterWithInt, output Output, cfgMgr config.Manager, authToken string, secure bool, pinningServiceFactory PinningServiceFactory, prompter ConfirmPrompter) error {
 	confirm := cmd.Bool(FlagForce) || cmd.Bool(FlagConfirm)
 	if !confirm {
 		output.Printfln("Use --force to unpin all pins. This is a destructive operation.")
@@ -64,9 +65,9 @@ func unpinAll(ctx context.Context, cmd flagGetterWithInt, output Output, cfgMgr 
 
 	var pinningService PinningService
 	if authToken != "" {
-		pinningService = NewPinningService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpoint(), WithAuthToken(authToken))
+		pinningService = NewPinningService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure), WithAuthToken(authToken))
 	} else {
-		pinningService = pinningServiceFactory(cfgMgr, output)
+		pinningService = pinningServiceFactory(cfgMgr, output, secure)
 	}
 
 	if err := pinningService.RequireAuthenticated(); err != nil {
@@ -114,7 +115,7 @@ func unpinAll(ctx context.Context, cmd flagGetterWithInt, output Output, cfgMgr 
 
 		RenderDryRun(output, DryRunPreview{
 			Operation: fmt.Sprintf("unpin-all (%d pins)", len(pins)),
-			Endpoint:  cfgMgr.Config().GetIPFSEndpoint(),
+			Endpoint:  cfgMgr.Config().GetIPFSEndpointWithSecure(secure),
 			Items:     items,
 			ItemLabel: "Request IDs to unpin",
 			Options:   options,

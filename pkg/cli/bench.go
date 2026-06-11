@@ -261,7 +261,7 @@ func bench(ctx context.Context, cmd interface {
 
 		RenderDryRun(output, DryRunPreview{
 			Operation: "benchmark",
-			Endpoint:  cfgMgr.Config().GetIPFSEndpointSecure(),
+			Endpoint:  cfgMgr.Config().GetIPFSEndpointWithSecure(secure),
 			Options:   options,
 		})
 		return nil

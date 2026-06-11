@@ -45,17 +45,18 @@ Examples:
 				return err
 			}
 			authToken := GetAuthToken(c, cfgMgr)
-			return unpin(ctx, newCLICommandWrapper(c), output, cfgMgr, authToken, defaultPinningServiceFactory)
+			secure := GetSecureSetting(c, cfgMgr)
+			return unpin(ctx, newCLICommandWrapper(c), output, cfgMgr, authToken, secure, defaultPinningServiceFactory)
 		},
 	}
 }
 
-func unpin(ctx context.Context, cmd cidFlagGetter, output Output, cfgMgr config.Manager, authToken string, pinningServiceFactory PinningServiceFactory) error {
+func unpin(ctx context.Context, cmd cidFlagGetter, output Output, cfgMgr config.Manager, authToken string, secure bool, pinningServiceFactory PinningServiceFactory) error {
 	var pinningService PinningService
 	if authToken != "" {
-		pinningService = NewPinningService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpoint(), WithAuthToken(authToken))
+		pinningService = NewPinningService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure), WithAuthToken(authToken))
 	} else {
-		pinningService = pinningServiceFactory(cfgMgr, output)
+		pinningService = pinningServiceFactory(cfgMgr, output, secure)
 	}
 
 	if err := pinningService.RequireAuthenticated(); err != nil {
@@ -109,7 +110,7 @@ func unpin(ctx context.Context, cmd cidFlagGetter, output Output, cfgMgr config.
 
 		RenderDryRun(output, DryRunPreview{
 			Operation: "unpin operations",
-			Endpoint:  cfgMgr.Config().GetIPFSEndpoint(),
+			Endpoint:  cfgMgr.Config().GetIPFSEndpointWithSecure(secure),
 			Items:     cids,
 			ItemLabel: "CIDs to unpin",
 			Options:   options,

@@ -41,11 +41,12 @@ Examples:
 				return err
 			}
 			authToken := GetAuthToken(c, cfgMgr)
+			secure := GetSecureSetting(c, cfgMgr)
 			if c.Bool(FlagAll) {
 				prompter := &PTermConfirmPrompter{}
-				return unpinAll(ctx, newCLICommandWrapper(c), output, cfgMgr, authToken, defaultPinningServiceFactory, prompter)
+				return unpinAll(ctx, newCLICommandWrapper(c), output, cfgMgr, authToken, secure, defaultPinningServiceFactory, prompter)
 			}
-			return unpin(ctx, newCLICommandWrapper(c), output, cfgMgr, authToken, defaultPinningServiceFactory)
+			return unpin(ctx, newCLICommandWrapper(c), output, cfgMgr, authToken, secure, defaultPinningServiceFactory)
 		},
 	}
 }

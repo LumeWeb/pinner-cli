@@ -55,12 +55,12 @@ Examples:
 			},
 		},
 		Action: withContext(func(ctx context.Context, cc *commandContext) error {
-			return websitesSSLStatus(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken)
+			return websitesSSLStatus(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
 		}),
 	}
 }
 
-func websitesSSLStatus(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string) error {
+func websitesSSLStatus(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
 	args := cmd.Args()
 	if args.Len() == 0 {
 		return fmt.Errorf("domain is required")
@@ -69,7 +69,7 @@ func websitesSSLStatus(ctx context.Context, cmd websitesCommandGetter, output Ou
 	domain := args.First()
 	watch := cmd.Bool("watch")
 
-	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken)
+	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken, secure)
 	if err != nil {
 		return err
 	}

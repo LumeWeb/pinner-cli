@@ -101,11 +101,11 @@ func TestUnpin(t *testing.T) {
 				withBool(FlagForce, tt.confirmFlag).
 				withBool(FlagConfirm, tt.confirmFlag)
 
-			pinningServiceFactory := func(cm config.Manager, out Output) PinningService {
+			pinningServiceFactory := func(cm config.Manager, out Output, _ bool) PinningService {
 				return service
 			}
 
-			err := unpin(context.Background(), cmd, output, cfgMgr, "", pinningServiceFactory)
+			err := unpin(context.Background(), cmd, output, cfgMgr, "", true, PinningServiceFactory(pinningServiceFactory))
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -181,11 +181,11 @@ func TestUnpinBatch(t *testing.T) {
 				withBool(FlagContinue, tt.continueOn)
 
 
-			pinningServiceFactory := func(cm config.Manager, out Output) PinningService {
+			pinningServiceFactory := func(cm config.Manager, out Output, _ bool) PinningService {
 				return service
 			}
 
-			err := unpin(context.Background(), cmd, output, cfgMgr, "", pinningServiceFactory)
+			err := unpin(context.Background(), cmd, output, cfgMgr, "", true, PinningServiceFactory(pinningServiceFactory))
 
 			if tt.wantErr {
 				require.Error(t, err)

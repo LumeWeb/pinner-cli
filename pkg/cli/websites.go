@@ -70,7 +70,7 @@ Examples:
   pinner websites list
   pinner websites list --json`,
 		Action: withContext(func(ctx context.Context, cc *commandContext) error {
-			return websitesList(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken)
+			return websitesList(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
 		}),
 	}
 }
@@ -94,7 +94,7 @@ Examples:
 			NoDNSHostingFlag(),
 		},
 		Action: withContext(func(ctx context.Context, cc *commandContext) error {
-			return websitesCreate(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken)
+			return websitesCreate(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
 		}),
 	}
 }
@@ -110,7 +110,7 @@ Examples:
   pinner websites get example.com --json`,
 		ArgsUsage: "<domain>",
 		Action: withContext(func(ctx context.Context, cc *commandContext) error {
-			return websitesGet(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken)
+			return websitesGet(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
 		}),
 	}
 }
@@ -146,7 +146,7 @@ Examples:
 			NoDNSHostingFlag(),
 		},
 		Action: withContext(func(ctx context.Context, cc *commandContext) error {
-			return websitesUpdate(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken)
+			return websitesUpdate(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
 		}),
 	}
 }
@@ -208,8 +208,8 @@ func printWebsiteUpdateResult(output Output, website *ipfs.WebsiteItem, message 
 	}
 }
 
-func websitesList(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string) error {
-	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken)
+func websitesList(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
+	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -302,8 +302,8 @@ func resolveAndGetWebsite(ctx context.Context, websitesService WebsitesService, 
 	return websitesService.Get(ctx, id)
 }
 
-func websitesUpdate(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string) error {
-	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken)
+func websitesUpdate(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
+	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -389,13 +389,13 @@ Examples:
 			CIDFlag(),
 		},
 		Action: withContext(func(ctx context.Context, cc *commandContext) error {
-			return websitesEnableIPNS(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken)
+			return websitesEnableIPNS(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
 		}),
 	}
 }
 
-func websitesEnableIPNS(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string) error {
-	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken)
+func websitesEnableIPNS(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
+	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -429,8 +429,8 @@ func websitesEnableIPNS(ctx context.Context, cmd websitesCommandGetter, output O
 	return nil
 }
 
-func websitesGet(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string) error {
-	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken)
+func websitesGet(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
+	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -508,8 +508,8 @@ func websitesGet(ctx context.Context, cmd websitesCommandGetter, output Output, 
 	return nil
 }
 
-func websitesCreate(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string) error {
-	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken)
+func websitesCreate(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
+	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -691,7 +691,7 @@ Examples:
   pinner websites delete example.com --json`,
 		ArgsUsage: "<domain>",
 		Action: withContext(func(ctx context.Context, cc *commandContext) error {
-			return websitesDelete(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken)
+			return websitesDelete(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
 		}),
 	}
 }
@@ -707,13 +707,13 @@ Examples:
   pinner websites validate example.com --json`,
 		ArgsUsage: "<domain>",
 		Action: withContext(func(ctx context.Context, cc *commandContext) error {
-			return websitesValidate(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken)
+			return websitesValidate(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
 		}),
 	}
 }
 
-func websitesDelete(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string) error {
-	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken)
+func websitesDelete(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
+	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -740,8 +740,8 @@ func websitesDelete(ctx context.Context, cmd websitesCommandGetter, output Outpu
 	return nil
 }
 
-func websitesValidate(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string) error {
-	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken)
+func websitesValidate(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
+	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -891,13 +891,13 @@ Examples:
   pinner websites config
   pinner websites config --json`,
 		Action: withContext(func(ctx context.Context, cc *commandContext) error {
-			return websitesConfig(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken)
+			return websitesConfig(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
 		}),
 	}
 }
 
-func websitesConfig(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string) error {
-	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken)
+func websitesConfig(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
+	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken, secure)
 	if err != nil {
 		return err
 	}

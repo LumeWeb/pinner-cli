@@ -178,7 +178,7 @@ func handleUpload(ctx context.Context, cmd interface {
 	wait := !cmd.Bool(FlagNoWait)
 
 	if wait {
-		svcOpts = append(svcOpts, WithUploadPinningService(pinningServiceFactory(cfgMgr, output)))
+		svcOpts = append(svcOpts, WithUploadPinningService(pinningServiceFactory(cfgMgr, output, secure)))
 	}
 
 	uploadService := uploadServiceFactory(cfgMgr, output, svcOpts...)
@@ -219,7 +219,7 @@ func handleUpload(ctx context.Context, cmd interface {
 
 		RenderDryRun(output, DryRunPreview{
 			Operation: "upload operation",
-			Endpoint:  cfgMgr.Config().GetIPFSEndpointSecure(),
+			Endpoint:  cfgMgr.Config().GetIPFSEndpointWithSecure(secure),
 			Options:   options,
 		})
 		return nil
@@ -250,7 +250,7 @@ func handleUpload(ctx context.Context, cmd interface {
 			if authToken != "" {
 				metaPinningService = NewPinningService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure), WithAuthToken(authToken))
 			} else {
-				metaPinningService = pinningServiceFactory(cfgMgr, output)
+				metaPinningService = pinningServiceFactory(cfgMgr, output, secure)
 			}
 			slice := metaMapToSlice(meta)
 			if err := metaPinningService.UpdateMetadata(ctx, result.CID, slice, false); err != nil {

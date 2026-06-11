@@ -31,7 +31,8 @@ Examples:
 				return err
 			}
 			authToken := GetAuthToken(c, cfgMgr)
-			return status(ctx, newCLICommandWrapper(c), output, cfgMgr, authToken, defaultPinningServiceFactory, defaultStatusServiceFactory)
+			secure := GetSecureSetting(c, cfgMgr)
+			return status(ctx, newCLICommandWrapper(c), output, cfgMgr, authToken, secure, defaultPinningServiceFactory, defaultStatusServiceFactory)
 		},
 	}
 }

@@ -209,12 +209,12 @@ func TestUnpinAll(t *testing.T) {
 				withInt(FlagParallel, tt.parallel).
 				withBool(FlagContinue, tt.continueOn)
 
-			pinningServiceFactory := func(cm config.Manager, out Output) PinningService {
+			pinningServiceFactory := func(cm config.Manager, out Output, _ bool) PinningService {
 				return service
 			}
 
 			prompter := &MockConfirmPrompter{}
-			err := unpinAll(context.Background(), cmd, output, cfgMgr, "", pinningServiceFactory, prompter)
+			err := unpinAll(context.Background(), cmd, output, cfgMgr, "", true, PinningServiceFactory(pinningServiceFactory), prompter)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -252,12 +252,12 @@ func TestUnpinAllConfirmPrompt(t *testing.T) {
 			withInt(FlagParallel, 0).
 			withBool(FlagContinue, false)
 
-		pinningServiceFactory := func(cm config.Manager, out Output) PinningService {
+		pinningServiceFactory := func(cm config.Manager, out Output, _ bool) PinningService {
 			return service
 		}
 
 		prompter := &MockConfirmPrompter{ConfirmResult: "wrong"}
-		err := unpinAll(context.Background(), cmd, output, cfgMgr, "", pinningServiceFactory, prompter)
+		err := unpinAll(context.Background(), cmd, output, cfgMgr, "", true, PinningServiceFactory(pinningServiceFactory), prompter)
 
 		assert.ErrorIs(t, err, ErrUnpinAllAborted)
 	})
@@ -295,12 +295,12 @@ func TestUnpinAllConfirmPrompt(t *testing.T) {
 			withInt(FlagParallel, 0).
 			withBool(FlagContinue, false)
 
-		pinningServiceFactory := func(cm config.Manager, out Output) PinningService {
+		pinningServiceFactory := func(cm config.Manager, out Output, _ bool) PinningService {
 			return service
 		}
 
 		prompter := &MockConfirmPrompter{ConfirmResult: "2"}
-		err := unpinAll(context.Background(), cmd, output, cfgMgr, "", pinningServiceFactory, prompter)
+		err := unpinAll(context.Background(), cmd, output, cfgMgr, "", true, PinningServiceFactory(pinningServiceFactory), prompter)
 
 		assert.NoError(t, err)
 	})
@@ -328,12 +328,12 @@ func TestUnpinAllConfirmPrompt(t *testing.T) {
 			withInt(FlagParallel, 0).
 			withBool(FlagContinue, false)
 
-		pinningServiceFactory := func(cm config.Manager, out Output) PinningService {
+		pinningServiceFactory := func(cm config.Manager, out Output, _ bool) PinningService {
 			return service
 		}
 
 		prompter := &MockConfirmPrompter{ConfirmErr: ErrUnpinAllAborted}
-		err := unpinAll(context.Background(), cmd, output, cfgMgr, "", pinningServiceFactory, prompter)
+		err := unpinAll(context.Background(), cmd, output, cfgMgr, "", true, PinningServiceFactory(pinningServiceFactory), prompter)
 
 		assert.ErrorIs(t, err, ErrUnpinAllAborted)
 	})

@@ -75,7 +75,7 @@ func TestHandleDownload_DryRun(t *testing.T) {
 				return NewMockDownloadService(t)
 			}
 
-			err := handleDownload(context.Background(), cmd, output, cfgMgr, "test-token", downloadServiceFactory)
+			err := handleDownload(context.Background(), cmd, output, cfgMgr, "test-token", true, DownloadServiceFactory(downloadServiceFactory))
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -97,7 +97,7 @@ func TestHandleDownload_RequiresCID(t *testing.T) {
 		return NewMockDownloadService(t)
 	}
 
-	err := handleDownload(context.Background(), cmd, output, cfgMgr, "test-token", downloadServiceFactory)
+	err := handleDownload(context.Background(), cmd, output, cfgMgr, "test-token", true, DownloadServiceFactory(downloadServiceFactory))
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrCIDRequired))
 }
@@ -121,7 +121,7 @@ func TestHandleDownload_Success(t *testing.T) {
 		return service
 	}
 
-	err := handleDownload(context.Background(), cmd, output, cfgMgr, "test-token", downloadServiceFactory)
+	err := handleDownload(context.Background(), cmd, output, cfgMgr, "test-token", true, DownloadServiceFactory(downloadServiceFactory))
 	require.NoError(t, err)
 }
 
@@ -138,7 +138,7 @@ func TestHandleDownload_NotAuthenticated(t *testing.T) {
 		return service
 	}
 
-	err := handleDownload(context.Background(), cmd, output, cfgMgr, "test-token", downloadServiceFactory)
+	err := handleDownload(context.Background(), cmd, output, cfgMgr, "test-token", true, DownloadServiceFactory(downloadServiceFactory))
 	require.Error(t, err)
 }
 
@@ -156,7 +156,7 @@ func TestHandleDownload_FileExists_NoForce(t *testing.T) {
 		return service
 	}
 
-	err := handleDownload(context.Background(), cmd, output, cfgMgr, "test-token", downloadServiceFactory)
+	err := handleDownload(context.Background(), cmd, output, cfgMgr, "test-token", true, DownloadServiceFactory(downloadServiceFactory))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "file already exists")
 }
@@ -183,7 +183,7 @@ func TestHandleDownload_WithForce(t *testing.T) {
 		return service
 	}
 
-	err := handleDownload(context.Background(), cmd, output, cfgMgr, "test-token", downloadServiceFactory)
+	err := handleDownload(context.Background(), cmd, output, cfgMgr, "test-token", true, DownloadServiceFactory(downloadServiceFactory))
 	require.NoError(t, err)
 }
 
@@ -201,7 +201,7 @@ func TestHandleCat_Success(t *testing.T) {
 		return service
 	}
 
-	err := handleCat(context.Background(), cmd, output, cfgMgr, "test-token", downloadServiceFactory)
+	err := handleCat(context.Background(), cmd, output, cfgMgr, "test-token", true, DownloadServiceFactory(downloadServiceFactory))
 	require.NoError(t, err)
 }
 
@@ -216,7 +216,7 @@ func TestHandleCat_RequiresCID(t *testing.T) {
 		return NewMockDownloadService(t)
 	}
 
-	err := handleCat(context.Background(), cmd, output, cfgMgr, "test-token", downloadServiceFactory)
+	err := handleCat(context.Background(), cmd, output, cfgMgr, "test-token", true, DownloadServiceFactory(downloadServiceFactory))
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrCIDRequired))
 }
@@ -234,7 +234,7 @@ func TestHandleCat_NotAuthenticated(t *testing.T) {
 		return service
 	}
 
-	err := handleCat(context.Background(), cmd, output, cfgMgr, "test-token", downloadServiceFactory)
+	err := handleCat(context.Background(), cmd, output, cfgMgr, "test-token", true, DownloadServiceFactory(downloadServiceFactory))
 	require.Error(t, err)
 }
 
@@ -255,7 +255,7 @@ func TestHandleLs_Success(t *testing.T) {
 		return service
 	}
 
-	err := handleLs(context.Background(), cmd, output, cfgMgr, "test-token", downloadServiceFactory)
+	err := handleLs(context.Background(), cmd, output, cfgMgr, "test-token", true, DownloadServiceFactory(downloadServiceFactory))
 	require.NoError(t, err)
 }
 
@@ -273,7 +273,7 @@ func TestHandleLs_EmptyDirectory(t *testing.T) {
 		return service
 	}
 
-	err := handleLs(context.Background(), cmd, output, cfgMgr, "test-token", downloadServiceFactory)
+	err := handleLs(context.Background(), cmd, output, cfgMgr, "test-token", true, DownloadServiceFactory(downloadServiceFactory))
 	require.NoError(t, err)
 }
 
@@ -288,7 +288,7 @@ func TestHandleLs_RequiresCID(t *testing.T) {
 		return NewMockDownloadService(t)
 	}
 
-	err := handleLs(context.Background(), cmd, output, cfgMgr, "test-token", downloadServiceFactory)
+	err := handleLs(context.Background(), cmd, output, cfgMgr, "test-token", true, DownloadServiceFactory(downloadServiceFactory))
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrCIDRequired))
 }
@@ -311,7 +311,7 @@ func TestHandleLs_WithLimit(t *testing.T) {
 		return service
 	}
 
-	err := handleLs(context.Background(), cmd, output, cfgMgr, "test-token", downloadServiceFactory)
+	err := handleLs(context.Background(), cmd, output, cfgMgr, "test-token", true, DownloadServiceFactory(downloadServiceFactory))
 	require.NoError(t, err)
 }
 

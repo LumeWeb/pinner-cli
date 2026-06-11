@@ -190,21 +190,21 @@ func (s *dnsServiceCLI) DeleteRecord(ctx context.Context, id string, name string
 	return s.service.DeleteRecord(ctx, id, name, recordType)
 }
 
-type dnsServiceFactoryFunc func(cfgMgr config.Manager, output Output, opts ...DNSServiceOption) DNSService
+type dnsServiceFactoryFunc func(cfgMgr config.Manager, output Output, secure bool, opts ...DNSServiceOption) DNSService
 
 var dnsServiceFactory dnsServiceFactoryFunc = defaultDNSServiceFactory
 
-func defaultDNSServiceFactory(cfgMgr config.Manager, output Output, opts ...DNSServiceOption) DNSService {
-	apiEndpoint := cfgMgr.Config().GetIPFSEndpointSecure()
+func defaultDNSServiceFactory(cfgMgr config.Manager, output Output, secure bool, opts ...DNSServiceOption) DNSService {
+	apiEndpoint := cfgMgr.Config().GetIPFSEndpointWithSecure(secure)
 	return NewDNSService(cfgMgr, output, apiEndpoint, opts...)
 }
 
-func newAuthenticatedDNSService(cfgMgr config.Manager, output Output, authToken string) (DNSService, error) {
+func newAuthenticatedDNSService(cfgMgr config.Manager, output Output, authToken string, secure bool) (DNSService, error) {
 	var svcOpts []DNSServiceOption
 	if authToken != "" {
 		svcOpts = append(svcOpts, WithDNSAuthToken(authToken))
 	}
-	dnsService := dnsServiceFactory(cfgMgr, output, svcOpts...)
+	dnsService := dnsServiceFactory(cfgMgr, output, secure, svcOpts...)
 	if err := dnsService.RequireAuthenticated(); err != nil {
 		return nil, err
 	}

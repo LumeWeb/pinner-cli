@@ -113,7 +113,7 @@ func setupDNSHandlerTest(t *testing.T) (*mockDNSServiceForCLI, *configmocks.Mock
 
 	origFactory := dnsServiceFactory
 	t.Cleanup(func() { dnsServiceFactory = origFactory })
-	dnsServiceFactory = func(config.Manager, Output, ...DNSServiceOption) DNSService {
+	dnsServiceFactory = func(config.Manager, Output, bool, ...DNSServiceOption) DNSService {
 		return mockSvc
 	}
 
@@ -134,7 +134,7 @@ func TestDnsZonesList_Success(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand()
-	err := dnsZonesList(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := dnsZonesList(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -146,7 +146,7 @@ func TestDnsZonesList_Empty(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand()
-	err := dnsZonesList(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := dnsZonesList(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -158,7 +158,7 @@ func TestDnsZonesList_ServiceError(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand()
-	err := dnsZonesList(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := dnsZonesList(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to list zones")
 }
@@ -169,7 +169,7 @@ func TestDnsZonesList_Unauthenticated(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand()
-	err := dnsZonesList(context.Background(), cmd, output, cfgMgr, "")
+	err := dnsZonesList(context.Background(), cmd, output, cfgMgr, "", true)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrNotAuthenticated))
 }
@@ -187,7 +187,7 @@ func TestDnsZonesCreate_Success(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withString(FlagDomain, "example.com")
-	err := dnsZonesCreate(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := dnsZonesCreate(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -204,7 +204,7 @@ func TestDnsZonesCreate_WithNameservers(t *testing.T) {
 	cmd := newMockCommand().
 		withString(FlagDomain, "example.com").
 		withString(FlagNameservers, "ns1.example.com,ns2.example.com")
-	err := dnsZonesCreate(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := dnsZonesCreate(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -213,7 +213,7 @@ func TestDnsZonesCreate_EmptyDomain(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withString(FlagDomain, "")
-	err := dnsZonesCreate(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := dnsZonesCreate(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "domain cannot be empty")
 }
@@ -223,7 +223,7 @@ func TestDnsZonesCreate_InvalidDomain(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withString(FlagDomain, "a..b")
-	err := dnsZonesCreate(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := dnsZonesCreate(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid domain format")
 }
@@ -236,7 +236,7 @@ func TestDnsZonesCreate_ServiceError(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withString(FlagDomain, "example.com")
-	err := dnsZonesCreate(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := dnsZonesCreate(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to create zone")
 }
@@ -256,7 +256,7 @@ func TestDnsZonesGet_Success(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("example.com")
-	err := dnsZonesGet(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := dnsZonesGet(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -270,7 +270,7 @@ func TestDnsZonesGet_NumericID(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("42")
-	err := dnsZonesGet(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := dnsZonesGet(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -279,7 +279,7 @@ func TestDnsZonesGet_MissingArg(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand()
-	err := dnsZonesGet(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := dnsZonesGet(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "domain or zone ID is required")
 }
@@ -292,7 +292,7 @@ func TestDnsZonesGet_ZoneNotFound(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("nonexistent.com")
-	err := dnsZonesGet(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := dnsZonesGet(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "zone not found")
 }
@@ -305,7 +305,7 @@ func TestDnsZonesGet_ServiceError(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("1")
-	err := dnsZonesGet(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := dnsZonesGet(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "server error")
 }
@@ -325,7 +325,7 @@ func TestDnsZonesDelete_Success(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("example.com")
-	err := dnsZonesDelete(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := dnsZonesDelete(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -338,7 +338,7 @@ func TestDnsZonesDelete_NumericID(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("42")
-	err := dnsZonesDelete(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := dnsZonesDelete(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -347,7 +347,7 @@ func TestDnsZonesDelete_MissingArg(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand()
-	err := dnsZonesDelete(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := dnsZonesDelete(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "domain or zone ID is required")
 }
@@ -360,7 +360,7 @@ func TestDnsZonesDelete_ZoneNotFound(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("nonexistent.com")
-	err := dnsZonesDelete(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := dnsZonesDelete(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "zone not found")
 }
@@ -373,7 +373,7 @@ func TestDnsZonesDelete_ServiceError(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("1")
-	err := dnsZonesDelete(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := dnsZonesDelete(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to delete zone")
 }
@@ -396,7 +396,7 @@ func TestDnsZonesValidate_Success(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("example.com")
-	err := dnsZonesValidate(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := dnsZonesValidate(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -416,7 +416,7 @@ func TestDnsZonesValidate_ValidationFailure(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("example.com")
-	err := dnsZonesValidate(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := dnsZonesValidate(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err) // validation failure is not an error, it's a result
 }
 
@@ -425,7 +425,7 @@ func TestDnsZonesValidate_MissingArg(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand()
-	err := dnsZonesValidate(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := dnsZonesValidate(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "domain or zone ID is required")
 }
@@ -442,7 +442,7 @@ func TestDnsZonesValidate_ServiceError(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("1")
-	err := dnsZonesValidate(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := dnsZonesValidate(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to validate zone")
 }
@@ -461,7 +461,7 @@ func TestDnsRecordsList_Success(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("1")
-	err := dnsRecordsList(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := dnsRecordsList(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -473,7 +473,7 @@ func TestDnsRecordsList_Empty(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("1")
-	err := dnsRecordsList(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := dnsRecordsList(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -482,7 +482,7 @@ func TestDnsRecordsList_MissingArg(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand()
-	err := dnsRecordsList(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := dnsRecordsList(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "domain or zone ID is required")
 }
@@ -495,7 +495,7 @@ func TestDnsRecordsList_ServiceError(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("1")
-	err := dnsRecordsList(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := dnsRecordsList(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to list records")
 }
@@ -513,7 +513,7 @@ func TestDnsRecordsList_DomainArg(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("example.com")
-	err := dnsRecordsList(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := dnsRecordsList(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -535,7 +535,7 @@ func TestDnsRecordsCreate_Success(t *testing.T) {
 		withString(FlagName, "www").
 		withString(FlagType, "CNAME").
 		withString(FlagContent, "example.com")
-	err := dnsRecordsCreate(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := dnsRecordsCreate(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -553,7 +553,7 @@ func TestDnsRecordsCreate_ARecord(t *testing.T) {
 		withString(FlagName, "@").
 		withString(FlagType, "A").
 		withString(FlagContent, "1.2.3.4")
-	err := dnsRecordsCreate(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := dnsRecordsCreate(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -565,7 +565,7 @@ func TestDnsRecordsCreate_MissingArg(t *testing.T) {
 		withString(FlagName, "www").
 		withString(FlagType, "CNAME").
 		withString(FlagContent, "example.com")
-	err := dnsRecordsCreate(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := dnsRecordsCreate(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "domain or zone ID is required")
 }
@@ -579,7 +579,7 @@ func TestDnsRecordsCreate_InvalidRecordType(t *testing.T) {
 		withString(FlagName, "www").
 		withString(FlagType, "INVALID").
 		withString(FlagContent, "example.com")
-	err := dnsRecordsCreate(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := dnsRecordsCreate(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unsupported record type")
 }
@@ -593,7 +593,7 @@ func TestDnsRecordsCreate_InvalidARecordContent(t *testing.T) {
 		withString(FlagName, "www").
 		withString(FlagType, "A").
 		withString(FlagContent, "not-an-ip")
-	err := dnsRecordsCreate(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := dnsRecordsCreate(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid IPv4 address")
 }
@@ -610,7 +610,7 @@ func TestDnsRecordsCreate_ServiceError(t *testing.T) {
 		withString(FlagName, "www").
 		withString(FlagType, "CNAME").
 		withString(FlagContent, "example.com")
-	err := dnsRecordsCreate(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := dnsRecordsCreate(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to create record")
 }
@@ -629,7 +629,7 @@ func TestDnsRecordsCreate_DefaultTTL(t *testing.T) {
 		withString(FlagName, "www").
 		withString(FlagType, "CNAME").
 		withString(FlagContent, "example.com")
-	err := dnsRecordsCreate(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := dnsRecordsCreate(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -648,7 +648,7 @@ func TestDnsRecordsCreate_CustomTTL(t *testing.T) {
 		withString(FlagType, "CNAME").
 		withString(FlagContent, "example.com").
 		withUint(FlagTTL, 7200)
-	err := dnsRecordsCreate(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := dnsRecordsCreate(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -668,7 +668,7 @@ func TestDnsRecordsGet_Success(t *testing.T) {
 		withArgs("1").
 		withString(FlagName, "www").
 		withString(FlagType, "CNAME")
-	err := dnsRecordsGet(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := dnsRecordsGet(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -679,7 +679,7 @@ func TestDnsRecordsGet_MissingArg(t *testing.T) {
 	cmd := newMockCommand().
 		withString(FlagName, "www").
 		withString(FlagType, "CNAME")
-	err := dnsRecordsGet(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := dnsRecordsGet(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "domain or zone ID is required")
 }
@@ -695,7 +695,7 @@ func TestDnsRecordsGet_NotFound(t *testing.T) {
 		withArgs("1").
 		withString(FlagName, "nonexistent").
 		withString(FlagType, "A")
-	err := dnsRecordsGet(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := dnsRecordsGet(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to get record")
 }
@@ -718,7 +718,7 @@ func TestDnsRecordsUpdate_Success(t *testing.T) {
 		withString(FlagName, "www").
 		withString(FlagType, "CNAME").
 		withString(FlagContent, "new.example.com")
-	err := dnsRecordsUpdate(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := dnsRecordsUpdate(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -730,7 +730,7 @@ func TestDnsRecordsUpdate_MissingArg(t *testing.T) {
 		withString(FlagName, "www").
 		withString(FlagType, "CNAME").
 		withString(FlagContent, "new.example.com")
-	err := dnsRecordsUpdate(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := dnsRecordsUpdate(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "domain or zone ID is required")
 }
@@ -744,7 +744,7 @@ func TestDnsRecordsUpdate_InvalidRecordType(t *testing.T) {
 		withString(FlagName, "www").
 		withString(FlagType, "BOGUS").
 		withString(FlagContent, "example.com")
-	err := dnsRecordsUpdate(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := dnsRecordsUpdate(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unsupported record type")
 }
@@ -761,7 +761,7 @@ func TestDnsRecordsUpdate_ServiceError(t *testing.T) {
 		withString(FlagName, "www").
 		withString(FlagType, "CNAME").
 		withString(FlagContent, "new.example.com")
-	err := dnsRecordsUpdate(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := dnsRecordsUpdate(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to update record")
 }
@@ -779,7 +779,7 @@ func TestDnsRecordsUpdate_ARecordWithValidIP(t *testing.T) {
 		withString(FlagName, "@").
 		withString(FlagType, "A").
 		withString(FlagContent, "5.6.7.8")
-	err := dnsRecordsUpdate(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := dnsRecordsUpdate(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -799,7 +799,7 @@ func TestDnsRecordsDelete_Success(t *testing.T) {
 		withArgs("1").
 		withString(FlagName, "www").
 		withString(FlagType, "CNAME")
-	err := dnsRecordsDelete(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := dnsRecordsDelete(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -810,7 +810,7 @@ func TestDnsRecordsDelete_MissingArg(t *testing.T) {
 	cmd := newMockCommand().
 		withString(FlagName, "www").
 		withString(FlagType, "CNAME")
-	err := dnsRecordsDelete(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := dnsRecordsDelete(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "domain or zone ID is required")
 }
@@ -826,7 +826,7 @@ func TestDnsRecordsDelete_ServiceError(t *testing.T) {
 		withArgs("1").
 		withString(FlagName, "www").
 		withString(FlagType, "CNAME")
-	err := dnsRecordsDelete(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := dnsRecordsDelete(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to delete record")
 }

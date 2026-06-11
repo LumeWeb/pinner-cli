@@ -78,7 +78,7 @@ Examples:
   pinner ipns keys list
   pinner ipns keys list --json`,
 		Action: withContext(func(ctx context.Context, cc *commandContext) error {
-			return ipnsKeysList(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken)
+			return ipnsKeysList(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
 		}),
 	}
 }
@@ -102,7 +102,7 @@ Examples:
 			},
 		},
 		Action: withContext(func(ctx context.Context, cc *commandContext) error {
-			return ipnsKeysCreate(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken)
+			return ipnsKeysCreate(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
 		}),
 	}
 }
@@ -119,7 +119,7 @@ Examples:
   pinner ipns keys get my-key --json`,
 		ArgsUsage: "<key-name-or-id>",
 		Action: withContext(func(ctx context.Context, cc *commandContext) error {
-			return ipnsKeysGet(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken)
+			return ipnsKeysGet(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
 		}),
 	}
 }
@@ -135,7 +135,7 @@ Examples:
   pinner ipns keys delete 1`,
 		ArgsUsage: "<key-name-or-id>",
 		Action: withContext(func(ctx context.Context, cc *commandContext) error {
-			return ipnsKeysDelete(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken)
+			return ipnsKeysDelete(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
 		}),
 	}
 }
@@ -169,7 +169,7 @@ Examples:
 			WaitFlag(),
 		},
 		Action: withContext(func(ctx context.Context, cc *commandContext) error {
-			return ipnsPublish(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken)
+			return ipnsPublish(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
 		}),
 	}
 }
@@ -189,7 +189,7 @@ Examples:
   pinner ipns republish my-key --json`,
 		ArgsUsage: "<key-name-or-id>",
 		Action: withContext(func(ctx context.Context, cc *commandContext) error {
-			return ipnsRepublish(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken)
+			return ipnsRepublish(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
 		}),
 	}
 }
@@ -206,7 +206,7 @@ Examples:
   pinner ipns resolve k51qzi5uqu5djx... --json`,
 		ArgsUsage: "<name>",
 		Action: withContext(func(ctx context.Context, cc *commandContext) error {
-			return ipnsResolve(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken)
+			return ipnsResolve(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
 		}),
 	}
 }
@@ -215,11 +215,11 @@ func resolveIPNSKeyArg(ctx context.Context, ipnsService IPNSService, arg string)
 	return resolveIPNSKeyIDToString(ctx, ipnsService, arg)
 }
 
-func ipnsKeysList(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr config.Manager, authToken string) error {
+func ipnsKeysList(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	ipnsService, err := newAuthenticatedIPNSService(cfgMgr, output, authToken)
+	ipnsService, err := newAuthenticatedIPNSService(cfgMgr, output, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -265,11 +265,11 @@ func ipnsKeysList(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr
 	return nil
 }
 
-func ipnsKeysCreate(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr config.Manager, authToken string) error {
+func ipnsKeysCreate(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	ipnsService, err := newAuthenticatedIPNSService(cfgMgr, output, authToken)
+	ipnsService, err := newAuthenticatedIPNSService(cfgMgr, output, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -317,11 +317,11 @@ func ipnsKeysCreate(ctx context.Context, cmd argsFlagGetter, output Output, cfgM
 	return nil
 }
 
-func ipnsKeysGet(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr config.Manager, authToken string) error {
+func ipnsKeysGet(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	ipnsService, err := newAuthenticatedIPNSService(cfgMgr, output, authToken)
+	ipnsService, err := newAuthenticatedIPNSService(cfgMgr, output, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -369,11 +369,11 @@ func ipnsKeysGet(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr 
 	return nil
 }
 
-func ipnsKeysDelete(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr config.Manager, authToken string) error {
+func ipnsKeysDelete(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	ipnsService, err := newAuthenticatedIPNSService(cfgMgr, output, authToken)
+	ipnsService, err := newAuthenticatedIPNSService(cfgMgr, output, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -406,11 +406,11 @@ func ipnsKeysDelete(ctx context.Context, cmd argsFlagGetter, output Output, cfgM
 	return nil
 }
 
-func ipnsPublish(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr config.Manager, authToken string) error {
+func ipnsPublish(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	ipnsService, err := newAuthenticatedIPNSService(cfgMgr, output, authToken)
+	ipnsService, err := newAuthenticatedIPNSService(cfgMgr, output, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -459,11 +459,11 @@ func ipnsPublish(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr 
 	return nil
 }
 
-func ipnsRepublish(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr config.Manager, authToken string) error {
+func ipnsRepublish(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	ipnsService, err := newAuthenticatedIPNSService(cfgMgr, output, authToken)
+	ipnsService, err := newAuthenticatedIPNSService(cfgMgr, output, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -489,11 +489,11 @@ func ipnsRepublish(ctx context.Context, cmd argsFlagGetter, output Output, cfgMg
 	return nil
 }
 
-func ipnsResolve(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr config.Manager, authToken string) error {
+func ipnsResolve(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	ipnsService, err := newAuthenticatedIPNSService(cfgMgr, output, authToken)
+	ipnsService, err := newAuthenticatedIPNSService(cfgMgr, output, authToken, secure)
 	if err != nil {
 		return err
 	}

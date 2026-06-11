@@ -259,12 +259,13 @@ func runWebsitesWizard(ctx context.Context, cmd *cli.Command, output Output) err
 
 	var websitesService WebsitesService
 	authToken := GetAuthToken(cmd, cfgMgr)
+	secure := GetSecureSetting(cmd, cfgMgr)
 
 	var svcOpts []WebsitesServiceOption
 	if authToken != "" {
 		svcOpts = append(svcOpts, WithWebsitesAuthToken(authToken))
 	}
-	websitesService = defaultWebsitesServiceFactory(cfgMgr, output, svcOpts...)
+	websitesService = defaultWebsitesServiceFactory(cfgMgr, output, secure, svcOpts...)
 
 	ui := NewPTermWebsitesUI(output)
 

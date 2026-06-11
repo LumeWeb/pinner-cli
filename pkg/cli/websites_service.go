@@ -32,25 +32,25 @@ func WithWebsitesClient(client *ipfs.Client) WebsitesServiceOption {
 }
 
 // WebsitesServiceFactory creates a WebsitesService with dependencies.
-type WebsitesServiceFactory func(cfgMgr config.Manager, output Output, opts ...WebsitesServiceOption) WebsitesService
+type WebsitesServiceFactory func(cfgMgr config.Manager, output Output, secure bool, opts ...WebsitesServiceOption) WebsitesService
 
 // websitesServiceFactory is the factory function used by newAuthenticatedWebsitesService.
 // It can be overridden in tests to inject mock services.
 var websitesServiceFactory WebsitesServiceFactory = defaultWebsitesServiceFactory
 
 // defaultWebsitesServiceFactory creates a default WebsitesService instance.
-func defaultWebsitesServiceFactory(cfgMgr config.Manager, output Output, opts ...WebsitesServiceOption) WebsitesService {
-	return NewWebsitesService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointSecure(), opts...)
+func defaultWebsitesServiceFactory(cfgMgr config.Manager, output Output, secure bool, opts ...WebsitesServiceOption) WebsitesService {
+	return NewWebsitesService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure), opts...)
 }
 
 // newAuthenticatedWebsitesService creates a WebsitesService with authentication.
 // It returns an error if the user is not authenticated.
-func newAuthenticatedWebsitesService(cfgMgr config.Manager, output Output, authToken string) (WebsitesService, error) {
+func newAuthenticatedWebsitesService(cfgMgr config.Manager, output Output, authToken string, secure bool) (WebsitesService, error) {
 	var svcOpts []WebsitesServiceOption
 	if authToken != "" {
 		svcOpts = append(svcOpts, WithWebsitesAuthToken(authToken))
 	}
-	websitesService := websitesServiceFactory(cfgMgr, output, svcOpts...)
+	websitesService := websitesServiceFactory(cfgMgr, output, secure, svcOpts...)
 	if err := websitesService.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
@@ -101,6 +101,9 @@ func (s *websitesService) Create(ctx context.Context, domain, targetHash, target
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
+	if s.service == nil {
+		return nil, ErrServiceUnavailable
+	}
 	response, err := s.service.Create(ctx, domain, targetHash, targetType)
 	if err != nil {
 		return nil, err
@@ -112,6 +115,9 @@ func (s *websitesService) Create(ctx context.Context, domain, targetHash, target
 func (s *websitesService) CreateWithOptions(ctx context.Context, req ipfs.WebsiteRequest) (*ipfs.WebsiteItem, error) {
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
+	}
+	if s.service == nil {
+		return nil, ErrServiceUnavailable
 	}
 	response, err := s.service.CreateWithOptions(ctx, req)
 	if err != nil {
@@ -125,6 +131,9 @@ func (s *websitesService) Get(ctx context.Context, id string) (*ipfs.WebsiteItem
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
+	if s.service == nil {
+		return nil, ErrServiceUnavailable
+	}
 	response, err := s.service.Get(ctx, id)
 	if err != nil {
 		return nil, err
@@ -136,6 +145,9 @@ func (s *websitesService) Get(ctx context.Context, id string) (*ipfs.WebsiteItem
 func (s *websitesService) Update(ctx context.Context, id, domain, targetHash, targetType string) (*ipfs.WebsiteItem, error) {
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
+	}
+	if s.service == nil {
+		return nil, ErrServiceUnavailable
 	}
 	response, err := s.service.Update(ctx, id, domain, targetHash, targetType)
 	if err != nil {
@@ -149,6 +161,9 @@ func (s *websitesService) UpdateWithOptions(ctx context.Context, id string, req 
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
+	if s.service == nil {
+		return nil, ErrServiceUnavailable
+	}
 	response, err := s.service.UpdateWithOptions(ctx, id, req)
 	if err != nil {
 		return nil, err
@@ -161,6 +176,9 @@ func (s *websitesService) Delete(ctx context.Context, id string) error {
 	if err := s.RequireAuthenticated(); err != nil {
 		return err
 	}
+	if s.service == nil {
+		return ErrServiceUnavailable
+	}
 	return s.service.Delete(ctx, id)
 }
 
@@ -169,6 +187,9 @@ func (s *websitesService) Validate(ctx context.Context, id string) (*ipfs.Websit
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
+	if s.service == nil {
+		return nil, ErrServiceUnavailable
+	}
 	return s.service.ValidateDNS(ctx, id)
 }
 
@@ -176,6 +197,9 @@ func (s *websitesService) Validate(ctx context.Context, id string) (*ipfs.Websit
 func (s *websitesService) GetSSLStatus(ctx context.Context, domain string) (*ipfs.WebsiteResponse, error) {
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
+	}
+	if s.service == nil {
+		return nil, ErrServiceUnavailable
 	}
 	return s.service.GetSSLStatus(ctx, domain)
 }

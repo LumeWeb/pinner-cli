@@ -61,7 +61,8 @@ The output includes:
 				return err
 			}
 			authToken := GetAuthToken(c, cfgMgr)
-			return handleDownload(ctx, newCLICommandWrapper(c), output, cfgMgr, authToken, defaultDownloadServiceFactory)
+			secure := GetSecureSetting(c, cfgMgr)
+			return handleDownload(ctx, newCLICommandWrapper(c), output, cfgMgr, authToken, secure, defaultDownloadServiceFactory)
 		},
 	}
 }
@@ -92,7 +93,8 @@ Use --verbose or redirect stderr for progress info.`,
 				return err
 			}
 			authToken := GetAuthToken(c, cfgMgr)
-			return handleCat(ctx, newCLICommandWrapper(c), output, cfgMgr, authToken, defaultDownloadServiceFactory)
+			secure := GetSecureSetting(c, cfgMgr)
+			return handleCat(ctx, newCLICommandWrapper(c), output, cfgMgr, authToken, secure, defaultDownloadServiceFactory)
 		},
 	}
 }
@@ -124,16 +126,17 @@ Examples:
 				return err
 			}
 			authToken := GetAuthToken(c, cfgMgr)
-			return handleLs(ctx, newCLICommandWrapper(c), output, cfgMgr, authToken, defaultDownloadServiceFactory)
+			secure := GetSecureSetting(c, cfgMgr)
+			return handleLs(ctx, newCLICommandWrapper(c), output, cfgMgr, authToken, secure, defaultDownloadServiceFactory)
 		},
 	}
 }
 
-func handleDownload(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr config.Manager, authToken string, downloadServiceFactory DownloadServiceFactory) error {
+func handleDownload(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr config.Manager, authToken string, secure bool, downloadServiceFactory DownloadServiceFactory) error {
 	authService := NewAuthService(cfgMgr, output, cfgMgr.Config().GetAccountEndpointSecure())
 
 	var svcOpts []DownloadServiceOption
-	svcOpts = append(svcOpts, WithDownloadAuthService(authService))
+	svcOpts = append(svcOpts, WithDownloadAuthService(authService), WithDownloadIPFSEndpoint(cfgMgr.Config().GetIPFSEndpointWithSecure(secure)))
 
 	if authToken != "" {
 		svcOpts = append(svcOpts, WithDownloadAuthToken(authToken))
@@ -160,7 +163,7 @@ func handleDownload(ctx context.Context, cmd argsFlagGetter, output Output, cfgM
 
 		RenderDryRun(output, DryRunPreview{
 			Operation: "download operation",
-			Endpoint:  cfgMgr.Config().GetIPFSEndpointSecure(),
+			Endpoint:  cfgMgr.Config().GetIPFSEndpointWithSecure(secure),
 			Options:   options,
 		})
 		return nil
@@ -208,11 +211,11 @@ func handleDownload(ctx context.Context, cmd argsFlagGetter, output Output, cfgM
 	return nil
 }
 
-func handleCat(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr config.Manager, authToken string, downloadServiceFactory DownloadServiceFactory) error {
+func handleCat(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr config.Manager, authToken string, secure bool, downloadServiceFactory DownloadServiceFactory) error {
 	authService := NewAuthService(cfgMgr, output, cfgMgr.Config().GetAccountEndpointSecure())
 
 	var svcOpts []DownloadServiceOption
-	svcOpts = append(svcOpts, WithDownloadAuthService(authService))
+	svcOpts = append(svcOpts, WithDownloadAuthService(authService), WithDownloadIPFSEndpoint(cfgMgr.Config().GetIPFSEndpointWithSecure(secure)))
 
 	if authToken != "" {
 		svcOpts = append(svcOpts, WithDownloadAuthToken(authToken))
@@ -239,11 +242,11 @@ func handleCat(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr co
 	return err
 }
 
-func handleLs(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr config.Manager, authToken string, downloadServiceFactory DownloadServiceFactory) error {
+func handleLs(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr config.Manager, authToken string, secure bool, downloadServiceFactory DownloadServiceFactory) error {
 	authService := NewAuthService(cfgMgr, output, cfgMgr.Config().GetAccountEndpointSecure())
 
 	var svcOpts []DownloadServiceOption
-	svcOpts = append(svcOpts, WithDownloadAuthService(authService))
+	svcOpts = append(svcOpts, WithDownloadAuthService(authService), WithDownloadIPFSEndpoint(cfgMgr.Config().GetIPFSEndpointWithSecure(secure)))
 
 	if authToken != "" {
 		svcOpts = append(svcOpts, WithDownloadAuthToken(authToken))

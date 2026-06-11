@@ -186,7 +186,7 @@ func TestStatus(t *testing.T) {
 				withCID(tt.cid).
 				withBool(FlagWatch, tt.watchFlag)
 
-			pinningServiceFactory := func(cm config.Manager, out Output) PinningService {
+			pinningServiceFactory := func(cm config.Manager, out Output, _ bool) PinningService {
 				return pinningSvc
 			}
 
@@ -194,7 +194,7 @@ func TestStatus(t *testing.T) {
 				return statusSvc
 			}
 
-			err := status(context.Background(), cmd, output, cfgMgr, "", pinningServiceFactory, statusServiceFactory)
+			err := status(context.Background(), cmd, output, cfgMgr, "", true, PinningServiceFactory(pinningServiceFactory), statusServiceFactory)
 
 			if tt.wantErr {
 				require.Error(t, err)

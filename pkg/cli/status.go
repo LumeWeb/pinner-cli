@@ -50,7 +50,8 @@ Operation status values (shown when pin is not found):
 				return err
 			}
 			authToken := GetAuthToken(c, cfgMgr)
-			return status(ctx, newCLICommandWrapper(c), output, cfgMgr, authToken, defaultPinningServiceFactory, defaultStatusServiceFactory)
+			secure := GetSecureSetting(c, cfgMgr)
+			return status(ctx, newCLICommandWrapper(c), output, cfgMgr, authToken, secure, defaultPinningServiceFactory, defaultStatusServiceFactory)
 		},
 	}
 }
@@ -62,12 +63,12 @@ func defaultStatusServiceFactory(cfgMgr config.Manager, output Output, pinningSe
 func status(ctx context.Context, cmd interface {
 	cidGetter
 	Bool(name string) bool
-}, output Output, cfgMgr config.Manager, authToken string, pinningServiceFactory PinningServiceFactory, statusServiceFactory StatusServiceFactory) error {
+}, output Output, cfgMgr config.Manager, authToken string, secure bool, pinningServiceFactory PinningServiceFactory, statusServiceFactory StatusServiceFactory) error {
 	var pinningService PinningService
 	if authToken != "" {
-		pinningService = NewPinningService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpoint(), WithAuthToken(authToken))
+		pinningService = NewPinningService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure), WithAuthToken(authToken))
 	} else {
-		pinningService = pinningServiceFactory(cfgMgr, output)
+		pinningService = pinningServiceFactory(cfgMgr, output, secure)
 	}
 
 	if err := pinningService.RequireAuthenticated(); err != nil {

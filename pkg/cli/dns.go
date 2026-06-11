@@ -84,7 +84,7 @@ Examples:
   pinner dns zones list
   pinner dns zones list --json`,
 		Action: withContext(func(ctx context.Context, cc *commandContext) error {
-			return dnsZonesList(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken)
+			return dnsZonesList(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
 		}),
 	}
 }
@@ -104,7 +104,7 @@ Examples:
 			NameserversFlag(),
 		},
 		Action: withContext(func(ctx context.Context, cc *commandContext) error {
-			return dnsZonesCreate(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken)
+			return dnsZonesCreate(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
 		}),
 	}
 }
@@ -120,7 +120,7 @@ Examples:
   pinner dns zones get example.com --json`,
 		ArgsUsage: "<domain>",
 		Action: withContext(func(ctx context.Context, cc *commandContext) error {
-			return dnsZonesGet(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken)
+			return dnsZonesGet(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
 		}),
 	}
 }
@@ -135,7 +135,7 @@ Examples:
   pinner dns zones delete example.com`,
 		ArgsUsage: "<domain>",
 		Action: withContext(func(ctx context.Context, cc *commandContext) error {
-			return dnsZonesDelete(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken)
+			return dnsZonesDelete(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
 		}),
 	}
 }
@@ -152,7 +152,7 @@ Examples:
   pinner dns zones validate example.com --json`,
 		ArgsUsage: "<domain>",
 		Action: withContext(func(ctx context.Context, cc *commandContext) error {
-			return dnsZonesValidate(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken)
+			return dnsZonesValidate(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
 		}),
 	}
 }
@@ -192,7 +192,7 @@ Examples:
   pinner dns records list example.com --json`,
 		ArgsUsage: "<domain>",
 		Action: withContext(func(ctx context.Context, cc *commandContext) error {
-			return dnsRecordsList(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken)
+			return dnsRecordsList(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
 		}),
 	}
 }
@@ -216,7 +216,7 @@ Examples:
 			DisabledFlag(),
 		},
 		Action: withContext(func(ctx context.Context, cc *commandContext) error {
-			return dnsRecordsCreate(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken)
+			return dnsRecordsCreate(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
 		}),
 	}
 }
@@ -236,7 +236,7 @@ Examples:
 			RequiredTypeFlag(),
 		},
 		Action: withContext(func(ctx context.Context, cc *commandContext) error {
-			return dnsRecordsGet(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken)
+			return dnsRecordsGet(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
 		}),
 	}
 }
@@ -260,7 +260,7 @@ Examples:
 			DisabledFlag(),
 		},
 		Action: withContext(func(ctx context.Context, cc *commandContext) error {
-			return dnsRecordsUpdate(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken)
+			return dnsRecordsUpdate(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
 		}),
 	}
 }
@@ -279,15 +279,15 @@ Examples:
 			RequiredTypeFlag(),
 		},
 		Action: withContext(func(ctx context.Context, cc *commandContext) error {
-			return dnsRecordsDelete(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken)
+			return dnsRecordsDelete(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
 		}),
 	}
 }
 
 // ===== HANDLERS =====
 
-func dnsZonesList(ctx context.Context, cmd dnsCommandGetter, output Output, cfgMgr config.Manager, authToken string) error {
-	dnsService, err := newAuthenticatedDNSService(cfgMgr, output, authToken)
+func dnsZonesList(ctx context.Context, cmd dnsCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
+	dnsService, err := newAuthenticatedDNSService(cfgMgr, output, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -325,7 +325,7 @@ func dnsZonesList(ctx context.Context, cmd dnsCommandGetter, output Output, cfgM
 	return nil
 }
 
-func dnsZonesCreate(ctx context.Context, cmd dnsCommandGetter, output Output, cfgMgr config.Manager, authToken string) error {
+func dnsZonesCreate(ctx context.Context, cmd dnsCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
 	domain := cmd.String(FlagDomain)
 
 	if err := validateDomain(domain); err != nil {
@@ -338,7 +338,7 @@ func dnsZonesCreate(ctx context.Context, cmd dnsCommandGetter, output Output, cf
 		nameservers = parseCommaSeparated(nameserversStr)
 	}
 
-	dnsService, err := newAuthenticatedDNSService(cfgMgr, output, authToken)
+	dnsService, err := newAuthenticatedDNSService(cfgMgr, output, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -367,7 +367,7 @@ func dnsZonesCreate(ctx context.Context, cmd dnsCommandGetter, output Output, cf
 	return nil
 }
 
-func dnsZonesGet(ctx context.Context, cmd dnsCommandGetter, output Output, cfgMgr config.Manager, authToken string) error {
+func dnsZonesGet(ctx context.Context, cmd dnsCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
 	args := cmd.Args()
 	if args.Len() == 0 {
 		return fmt.Errorf("domain or zone ID is required")
@@ -375,7 +375,7 @@ func dnsZonesGet(ctx context.Context, cmd dnsCommandGetter, output Output, cfgMg
 
 	arg := args.First()
 
-	dnsService, err := newAuthenticatedDNSService(cfgMgr, output, authToken)
+	dnsService, err := newAuthenticatedDNSService(cfgMgr, output, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -408,7 +408,7 @@ func dnsZonesGet(ctx context.Context, cmd dnsCommandGetter, output Output, cfgMg
 	return nil
 }
 
-func dnsZonesDelete(ctx context.Context, cmd dnsCommandGetter, output Output, cfgMgr config.Manager, authToken string) error {
+func dnsZonesDelete(ctx context.Context, cmd dnsCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
 	args := cmd.Args()
 	if args.Len() == 0 {
 		return fmt.Errorf("domain or zone ID is required")
@@ -416,7 +416,7 @@ func dnsZonesDelete(ctx context.Context, cmd dnsCommandGetter, output Output, cf
 
 	arg := args.First()
 
-	dnsService, err := newAuthenticatedDNSService(cfgMgr, output, authToken)
+	dnsService, err := newAuthenticatedDNSService(cfgMgr, output, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -435,7 +435,7 @@ func dnsZonesDelete(ctx context.Context, cmd dnsCommandGetter, output Output, cf
 	return nil
 }
 
-func dnsZonesValidate(ctx context.Context, cmd dnsCommandGetter, output Output, cfgMgr config.Manager, authToken string) error {
+func dnsZonesValidate(ctx context.Context, cmd dnsCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
 	args := cmd.Args()
 	if args.Len() == 0 {
 		return fmt.Errorf("domain or zone ID is required")
@@ -443,7 +443,7 @@ func dnsZonesValidate(ctx context.Context, cmd dnsCommandGetter, output Output, 
 
 	arg := args.First()
 
-	dnsService, err := newAuthenticatedDNSService(cfgMgr, output, authToken)
+	dnsService, err := newAuthenticatedDNSService(cfgMgr, output, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -494,7 +494,7 @@ func dnsZonesValidate(ctx context.Context, cmd dnsCommandGetter, output Output, 
 	return nil
 }
 
-func dnsRecordsList(ctx context.Context, cmd dnsCommandGetter, output Output, cfgMgr config.Manager, authToken string) error {
+func dnsRecordsList(ctx context.Context, cmd dnsCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
 	args := cmd.Args()
 	if args.Len() == 0 {
 		return fmt.Errorf("domain or zone ID is required")
@@ -502,7 +502,7 @@ func dnsRecordsList(ctx context.Context, cmd dnsCommandGetter, output Output, cf
 
 	arg := args.First()
 
-	dnsService, err := newAuthenticatedDNSService(cfgMgr, output, authToken)
+	dnsService, err := newAuthenticatedDNSService(cfgMgr, output, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -546,7 +546,7 @@ func dnsRecordsList(ctx context.Context, cmd dnsCommandGetter, output Output, cf
 	return nil
 }
 
-func dnsRecordsCreate(ctx context.Context, cmd dnsCommandGetter, output Output, cfgMgr config.Manager, authToken string) error {
+func dnsRecordsCreate(ctx context.Context, cmd dnsCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
 	args := cmd.Args()
 	if args.Len() == 0 {
 		return fmt.Errorf("domain or zone ID is required")
@@ -576,7 +576,7 @@ func dnsRecordsCreate(ctx context.Context, cmd dnsCommandGetter, output Output, 
 		Disabled: &disabled,
 	}
 
-	dnsService, err := newAuthenticatedDNSService(cfgMgr, output, authToken)
+	dnsService, err := newAuthenticatedDNSService(cfgMgr, output, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -611,7 +611,7 @@ func dnsRecordsCreate(ctx context.Context, cmd dnsCommandGetter, output Output, 
 	return nil
 }
 
-func dnsRecordsGet(ctx context.Context, cmd dnsCommandGetter, output Output, cfgMgr config.Manager, authToken string) error {
+func dnsRecordsGet(ctx context.Context, cmd dnsCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
 	args := cmd.Args()
 	if args.Len() == 0 {
 		return fmt.Errorf("domain or zone ID is required")
@@ -621,7 +621,7 @@ func dnsRecordsGet(ctx context.Context, cmd dnsCommandGetter, output Output, cfg
 	name := cmd.String(FlagName)
 	recordType := cmd.String(FlagType)
 
-	dnsService, err := newAuthenticatedDNSService(cfgMgr, output, authToken)
+	dnsService, err := newAuthenticatedDNSService(cfgMgr, output, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -657,7 +657,7 @@ func dnsRecordsGet(ctx context.Context, cmd dnsCommandGetter, output Output, cfg
 	return nil
 }
 
-func dnsRecordsUpdate(ctx context.Context, cmd dnsCommandGetter, output Output, cfgMgr config.Manager, authToken string) error {
+func dnsRecordsUpdate(ctx context.Context, cmd dnsCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
 	args := cmd.Args()
 	if args.Len() == 0 {
 		return fmt.Errorf("domain or zone ID is required")
@@ -687,7 +687,7 @@ func dnsRecordsUpdate(ctx context.Context, cmd dnsCommandGetter, output Output, 
 		Disabled: &disabled,
 	}
 
-	dnsService, err := newAuthenticatedDNSService(cfgMgr, output, authToken)
+	dnsService, err := newAuthenticatedDNSService(cfgMgr, output, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -722,7 +722,7 @@ func dnsRecordsUpdate(ctx context.Context, cmd dnsCommandGetter, output Output, 
 	return nil
 }
 
-func dnsRecordsDelete(ctx context.Context, cmd dnsCommandGetter, output Output, cfgMgr config.Manager, authToken string) error {
+func dnsRecordsDelete(ctx context.Context, cmd dnsCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
 	args := cmd.Args()
 	if args.Len() == 0 {
 		return fmt.Errorf("domain or zone ID is required")
@@ -732,7 +732,7 @@ func dnsRecordsDelete(ctx context.Context, cmd dnsCommandGetter, output Output, 
 	name := cmd.String(FlagName)
 	recordType := cmd.String(FlagType)
 
-	dnsService, err := newAuthenticatedDNSService(cfgMgr, output, authToken)
+	dnsService, err := newAuthenticatedDNSService(cfgMgr, output, authToken, secure)
 	if err != nil {
 		return err
 	}

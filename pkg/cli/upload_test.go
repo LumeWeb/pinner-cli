@@ -417,7 +417,7 @@ func TestUploadDryRun(t *testing.T) {
 				return service
 			}
 
-			pinningServiceFactory := func(cfgMgr config.Manager, output Output) PinningService {
+			pinningServiceFactory := func(cfgMgr config.Manager, output Output, _ bool) PinningService {
 				return NewMockPinningService(t)
 			}
 

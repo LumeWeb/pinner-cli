@@ -118,7 +118,7 @@ func setupWebsitesHandlerTest(t *testing.T) (*mockWebsitesHandlerService, *confi
 
 	origFactory := websitesServiceFactory
 	t.Cleanup(func() { websitesServiceFactory = origFactory })
-	websitesServiceFactory = func(config.Manager, Output, ...WebsitesServiceOption) WebsitesService {
+	websitesServiceFactory = func(config.Manager, Output, bool, ...WebsitesServiceOption) WebsitesService {
 		return mockSvc
 	}
 
@@ -139,7 +139,7 @@ func TestWebsitesListHandler_Success(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand()
-	err := websitesList(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := websitesList(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -151,7 +151,7 @@ func TestWebsitesListHandler_Empty(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand()
-	err := websitesList(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := websitesList(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -163,7 +163,7 @@ func TestWebsitesListHandler_ServiceError(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand()
-	err := websitesList(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := websitesList(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "server error")
 }
@@ -174,7 +174,7 @@ func TestWebsitesListHandler_Unauthenticated(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand()
-	err := websitesList(context.Background(), cmd, output, cfgMgr, "")
+	err := websitesList(context.Background(), cmd, output, cfgMgr, "", true)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrNotAuthenticated))
 }
@@ -196,7 +196,7 @@ func TestWebsitesCreateHandler_Success(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("example.com").withString(FlagCID, "QmXxx")
-	err := websitesCreate(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := websitesCreate(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -205,7 +205,7 @@ func TestWebsitesCreateHandler_MissingDomain(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withString(FlagCID, "QmXxx")
-	err := websitesCreate(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := websitesCreate(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "domain is required")
 }
@@ -225,7 +225,7 @@ func TestWebsitesCreateHandler_WithDNSHosting(t *testing.T) {
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("example.com").withString(FlagCID, "QmXxx").
 		withBool(FlagDNSHosting, true).withIsSet(FlagDNSHosting, true)
-	err := websitesCreate(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := websitesCreate(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -244,7 +244,7 @@ func TestWebsitesCreateHandler_WithNoDNSHosting(t *testing.T) {
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("example.com").withString(FlagCID, "QmXxx").
 		withBool(FlagNoDNSHosting, true).withIsSet(FlagNoDNSHosting, true)
-	err := websitesCreate(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := websitesCreate(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -256,7 +256,7 @@ func TestWebsitesCreateHandler_ServiceError(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("example.com").withString(FlagCID, "QmXxx")
-	err := websitesCreate(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := websitesCreate(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "conflict")
 }
@@ -274,7 +274,7 @@ func TestWebsitesCreateHandler_DefaultTargetType(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("example.com").withString(FlagCID, "QmXxx")
-	err := websitesCreate(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := websitesCreate(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -293,7 +293,7 @@ func TestWebsitesGetHandler_Success(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("1")
-	err := websitesGet(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := websitesGet(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -313,7 +313,7 @@ func TestWebsitesGetHandler_DomainArg(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("example.com")
-	err := websitesGet(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := websitesGet(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -322,7 +322,7 @@ func TestWebsitesGetHandler_MissingArg(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand()
-	err := websitesGet(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := websitesGet(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "website ID or domain is required")
 }
@@ -335,7 +335,7 @@ func TestWebsitesGetHandler_NotFound(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("999")
-	err := websitesGet(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := websitesGet(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "website not found")
 }
@@ -348,7 +348,7 @@ func TestWebsitesGetHandler_DomainNotFound(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("nonexistent.com")
-	err := websitesGet(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := websitesGet(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "website not found for domain")
 }
@@ -374,7 +374,7 @@ func TestWebsitesUpdateHandler_Success(t *testing.T) {
 	cmd := newMockCommand().withArgs("1").
 		withString(FlagCID, "QmNewHash").withIsSet(FlagCID, true).
 		withString(FlagTargetType, "ipfs").withIsSet(FlagTargetType, true)
-	err := websitesUpdate(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := websitesUpdate(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -383,7 +383,7 @@ func TestWebsitesUpdateHandler_NoUpdateFields(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("1")
-	err := websitesUpdate(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := websitesUpdate(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "at least one field must be provided for update")
 }
@@ -394,7 +394,7 @@ func TestWebsitesUpdateHandler_CIDWithoutTargetType(t *testing.T) {
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("1").
 		withString(FlagCID, "QmNewHash").withIsSet(FlagCID, true)
-	err := websitesUpdate(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := websitesUpdate(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "--target-type is required when --cid is provided")
 }
@@ -414,7 +414,7 @@ func TestWebsitesUpdateHandler_DNSHostingEnabled(t *testing.T) {
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("1").
 		withBool(FlagDNSHosting, true).withIsSet(FlagDNSHosting, true)
-	err := websitesUpdate(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := websitesUpdate(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -433,7 +433,7 @@ func TestWebsitesUpdateHandler_DNSHostingDisabled(t *testing.T) {
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("1").
 		withBool(FlagNoDNSHosting, true).withIsSet(FlagNoDNSHosting, true)
-	err := websitesUpdate(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := websitesUpdate(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -447,7 +447,7 @@ func TestWebsitesUpdateHandler_ServiceError(t *testing.T) {
 	cmd := newMockCommand().withArgs("1").
 		withString(FlagCID, "QmNewHash").withIsSet(FlagCID, true).
 		withString(FlagTargetType, "ipfs").withIsSet(FlagTargetType, true)
-	err := websitesUpdate(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := websitesUpdate(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "update failed")
 }
@@ -457,7 +457,7 @@ func TestWebsitesUpdateHandler_MissingArg(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand()
-	err := websitesUpdate(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := websitesUpdate(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "website ID or domain is required")
 }
@@ -480,7 +480,7 @@ func TestWebsitesEnableIPNSHandler_Success(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("1")
-	err := websitesEnableIPNS(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := websitesEnableIPNS(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -500,7 +500,7 @@ func TestWebsitesEnableIPNSHandler_WithCID(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("1").withString(FlagCID, "QmNewHash").withIsSet(FlagCID, true)
-	err := websitesEnableIPNS(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := websitesEnableIPNS(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -509,7 +509,7 @@ func TestWebsitesEnableIPNSHandler_MissingArg(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand()
-	err := websitesEnableIPNS(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := websitesEnableIPNS(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "website ID or domain is required")
 }
@@ -522,7 +522,7 @@ func TestWebsitesEnableIPNSHandler_ServiceError(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("1")
-	err := websitesEnableIPNS(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := websitesEnableIPNS(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not found")
 }
@@ -538,7 +538,7 @@ func TestWebsitesDeleteHandler_Success(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("1")
-	err := websitesDelete(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := websitesDelete(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -555,7 +555,7 @@ func TestWebsitesDeleteHandler_DomainArg(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("example.com")
-	err := websitesDelete(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := websitesDelete(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -564,7 +564,7 @@ func TestWebsitesDeleteHandler_MissingArg(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand()
-	err := websitesDelete(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := websitesDelete(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "website ID or domain is required")
 }
@@ -577,7 +577,7 @@ func TestWebsitesDeleteHandler_NotFound(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("999")
-	err := websitesDelete(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := websitesDelete(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "website not found")
 }
@@ -590,7 +590,7 @@ func TestWebsitesDeleteHandler_DomainNotFound(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("nonexistent.com")
-	err := websitesDelete(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := websitesDelete(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "website not found for domain")
 }
@@ -611,7 +611,7 @@ func TestWebsitesValidateHandler_Success(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("1")
-	err := websitesValidate(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := websitesValidate(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -628,7 +628,7 @@ func TestWebsitesValidateHandler_ValidationFailure(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("1")
-	err := websitesValidate(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := websitesValidate(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -637,7 +637,7 @@ func TestWebsitesValidateHandler_MissingArg(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand()
-	err := websitesValidate(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := websitesValidate(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "website ID or domain is required")
 }
@@ -660,7 +660,7 @@ func TestWebsitesValidateHandler_DomainArg(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("example.com")
-	err := websitesValidate(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := websitesValidate(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -685,7 +685,7 @@ func TestWebsitesSSLStatusHandler_Success(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("example.com")
-	err := websitesSSLStatus(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := websitesSSLStatus(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -694,7 +694,7 @@ func TestWebsitesSSLStatusHandler_MissingDomain(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand()
-	err := websitesSSLStatus(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := websitesSSLStatus(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "domain is required")
 }
@@ -707,7 +707,7 @@ func TestWebsitesSSLStatusHandler_NoSSLInfo(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("example.com")
-	err := websitesSSLStatus(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := websitesSSLStatus(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -719,7 +719,7 @@ func TestWebsitesSSLStatusHandler_ServiceError(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("example.com")
-	err := websitesSSLStatus(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := websitesSSLStatus(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "API error")
 }
@@ -730,7 +730,7 @@ func TestWebsitesSSLStatusHandler_Unauthenticated(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("example.com")
-	err := websitesSSLStatus(context.Background(), cmd, output, cfgMgr, "")
+	err := websitesSSLStatus(context.Background(), cmd, output, cfgMgr, "", true)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrNotAuthenticated))
 }
@@ -750,7 +750,7 @@ func TestWebsitesConfigHandler_Success(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand()
-	err := websitesConfig(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := websitesConfig(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -762,7 +762,7 @@ func TestWebsitesConfigHandler_NoSites(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand()
-	err := websitesConfig(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := websitesConfig(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.NoError(t, err)
 }
 
@@ -774,7 +774,7 @@ func TestWebsitesConfigHandler_ServiceError(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand()
-	err := websitesConfig(context.Background(), cmd, output, cfgMgr, "test-token")
+	err := websitesConfig(context.Background(), cmd, output, cfgMgr, "test-token", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to get config")
 }
@@ -785,7 +785,7 @@ func TestWebsitesConfigHandler_Unauthenticated(t *testing.T) {
 
 	output := newTestOutput()
 	cmd := newMockCommand()
-	err := websitesConfig(context.Background(), cmd, output, cfgMgr, "")
+	err := websitesConfig(context.Background(), cmd, output, cfgMgr, "", true)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrNotAuthenticated))
 }

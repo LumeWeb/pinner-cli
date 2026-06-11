@@ -90,7 +90,7 @@ func TestPinDryRun(t *testing.T) {
 			}
 
 
-			pinningServiceFactory := func(cfgMgr config.Manager, output Output) PinningService {
+			pinningServiceFactory := func(cfgMgr config.Manager, output Output, _ bool) PinningService {
 				return service
 			}
 
@@ -210,7 +210,7 @@ func TestPin(t *testing.T) {
 				withString(FlagName, tt.nameFlag).
 				withBool(FlagNoWait, tt.noWaitFlag)
 
-			pinningServiceFactory := func(cm config.Manager, out Output) PinningService {
+			pinningServiceFactory := func(cm config.Manager, out Output, _ bool) PinningService {
 				return service
 			}
 
@@ -287,7 +287,7 @@ func TestPinBatch(t *testing.T) {
 				withBool(FlagContinue, tt.continueOn)
 
 
-			pinningServiceFactory := func(cm config.Manager, out Output) PinningService {
+			pinningServiceFactory := func(cm config.Manager, out Output, _ bool) PinningService {
 				return service
 			}
 
@@ -356,7 +356,7 @@ func TestDefaultPinningServiceFactory(t *testing.T) {
 
 		output := newTestOutput()
 
-		service := defaultPinningServiceFactory(cfgMgr, output)
+		service := defaultPinningServiceFactory(cfgMgr, output, true)
 
 		assert.IsType(t, &PinningServiceDefault{}, service)
 		ps := service.(*PinningServiceDefault)

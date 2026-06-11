@@ -56,7 +56,7 @@ func pin(ctx context.Context, cmd cidFlagGetter, output Output, cfgMgr config.Ma
 	if authToken != "" {
 		pinningService = NewPinningService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure), WithAuthToken(authToken))
 	} else {
-		pinningService = pinningServiceFactory(cfgMgr, output)
+		pinningService = pinningServiceFactory(cfgMgr, output, secure)
 	}
 
 	if err := pinningService.RequireAuthenticated(); err != nil {
@@ -112,7 +112,7 @@ func pin(ctx context.Context, cmd cidFlagGetter, output Output, cfgMgr config.Ma
 
 		RenderDryRun(output, DryRunPreview{
 			Operation: "pinning operations",
-			Endpoint:  cfgMgr.Config().GetIPFSEndpointSecure(),
+			Endpoint:  cfgMgr.Config().GetIPFSEndpointWithSecure(secure),
 			Items:     cids,
 			ItemLabel: "CIDs to pin",
 			Options:   options,
@@ -152,6 +152,6 @@ func pin(ctx context.Context, cmd cidFlagGetter, output Output, cfgMgr config.Ma
 	return cids, nil
 }
 
-func defaultPinningServiceFactory(cfgMgr config.Manager, output Output) PinningService {
-	return NewPinningService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointSecure())
+func defaultPinningServiceFactory(cfgMgr config.Manager, output Output, secure bool) PinningService {
+	return NewPinningService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure))
 }
