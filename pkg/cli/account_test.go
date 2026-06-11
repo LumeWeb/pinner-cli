@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/mock"
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/pkg/config"
 	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
@@ -26,7 +27,7 @@ func TestAccountOTPEnable(t *testing.T) {
 			otp:  "123456",
 			setupMocks: func(cfgMgr *configmocks.MockManager, authService *MockAuthService) {
 				cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://api.test.com"})
-				authService.EXPECT().EnableOTP(context.Background(), "123456").Return(nil)
+				authService.EXPECT().EnableOTP(mock.Anything, "123456").Return(nil)
 			},
 			wantErr: false,
 		},
@@ -42,7 +43,7 @@ func TestAccountOTPEnable(t *testing.T) {
 			otp:  "000000",
 			setupMocks: func(cfgMgr *configmocks.MockManager, authService *MockAuthService) {
 				cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://api.test.com"})
-				authService.EXPECT().EnableOTP(context.Background(), "000000").
+				authService.EXPECT().EnableOTP(mock.Anything, "000000").
 					Return(errors.New("invalid OTP code"))
 			},
 			wantErr:     true,
@@ -112,7 +113,7 @@ func TestAccountOTPDisable(t *testing.T) {
 			password: "password",
 			setupMocks: func(cfgMgr *configmocks.MockManager, authService *MockAuthService) {
 				cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://api.test.com"})
-				authService.EXPECT().DisableOTP(context.Background(), "password").Return(nil)
+				authService.EXPECT().DisableOTP(mock.Anything, "password").Return(nil)
 			},
 			wantErr: false,
 		},
@@ -127,7 +128,7 @@ func TestAccountOTPDisable(t *testing.T) {
 			password: "wrong-password",
 			setupMocks: func(cfgMgr *configmocks.MockManager, authService *MockAuthService) {
 				cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://api.test.com"})
-				authService.EXPECT().DisableOTP(context.Background(), "wrong-password").
+				authService.EXPECT().DisableOTP(mock.Anything, "wrong-password").
 					Return(errors.New("invalid password"))
 			},
 			wantErr:     true,
@@ -196,8 +197,8 @@ func TestAuthService_EnableOTP(t *testing.T) {
 			name: "successful enable with provided OTP",
 			otp:  "123456",
 			setupMocks: func(acc *portalsdkmocks.MockAccountAPI, prompter *MockAuthPrompter) {
-				acc.EXPECT().GenerateOTP(context.Background()).Return("JBSWY3DPEHPK3PXP", nil)
-				acc.EXPECT().VerifyOTP(context.Background(), "123456").Return(nil)
+				acc.EXPECT().GenerateOTP(mock.Anything).Return("JBSWY3DPEHPK3PXP", nil)
+				acc.EXPECT().VerifyOTP(mock.Anything, "123456").Return(nil)
 			},
 			wantErr: false,
 		},
@@ -205,7 +206,7 @@ func TestAuthService_EnableOTP(t *testing.T) {
 			name: "generate OTP fails",
 			otp:  "123456",
 			setupMocks: func(acc *portalsdkmocks.MockAccountAPI, prompter *MockAuthPrompter) {
-				acc.EXPECT().GenerateOTP(context.Background()).
+				acc.EXPECT().GenerateOTP(mock.Anything).
 					Return("", errors.New("authentication required"))
 			},
 			wantErr:     true,
@@ -215,8 +216,8 @@ func TestAuthService_EnableOTP(t *testing.T) {
 			name: "verify OTP fails",
 			otp:  "000000",
 			setupMocks: func(acc *portalsdkmocks.MockAccountAPI, prompter *MockAuthPrompter) {
-				acc.EXPECT().GenerateOTP(context.Background()).Return("JBSWY3DPEHPK3PXP", nil)
-				acc.EXPECT().VerifyOTP(context.Background(), "000000").
+				acc.EXPECT().GenerateOTP(mock.Anything).Return("JBSWY3DPEHPK3PXP", nil)
+				acc.EXPECT().VerifyOTP(mock.Anything, "000000").
 					Return(errors.New("invalid OTP code"))
 			},
 			wantErr:     true,
@@ -273,15 +274,15 @@ func TestAuthService_EnableOTP_Interactive(t *testing.T) {
 			name: "successful enable with prompted OTP",
 			setupMocks: func(acc *portalsdkmocks.MockAccountAPI, prompter *MockAuthPrompter) {
 				prompter.EXPECT().PromptOTP().Return("123456", nil)
-				acc.EXPECT().GenerateOTP(context.Background()).Return("JBSWY3DPEHPK3PXP", nil)
-				acc.EXPECT().VerifyOTP(context.Background(), "123456").Return(nil)
+				acc.EXPECT().GenerateOTP(mock.Anything).Return("JBSWY3DPEHPK3PXP", nil)
+				acc.EXPECT().VerifyOTP(mock.Anything, "123456").Return(nil)
 			},
 			wantErr: false,
 		},
 		{
 			name: "OTP prompt fails",
 			setupMocks: func(acc *portalsdkmocks.MockAccountAPI, prompter *MockAuthPrompter) {
-				acc.EXPECT().GenerateOTP(context.Background()).Return("JBSWY3DPEHPK3PXP", nil)
+				acc.EXPECT().GenerateOTP(mock.Anything).Return("JBSWY3DPEHPK3PXP", nil)
 				prompter.EXPECT().PromptOTP().Return("", errors.New("user cancelled"))
 			},
 			wantErr:     true,
@@ -339,7 +340,7 @@ func TestAuthService_DisableOTP(t *testing.T) {
 			name:     "successful disable with provided password",
 			password: "password",
 			setupMocks: func(acc *portalsdkmocks.MockAccountAPI, prompter *MockAuthPrompter) {
-				acc.EXPECT().DisableOTP(context.Background(), "password").Return(nil)
+				acc.EXPECT().DisableOTP(mock.Anything, "password").Return(nil)
 			},
 			wantErr: false,
 		},
@@ -347,7 +348,7 @@ func TestAuthService_DisableOTP(t *testing.T) {
 			name:     "disable fails",
 			password: "wrong-password",
 			setupMocks: func(acc *portalsdkmocks.MockAccountAPI, prompter *MockAuthPrompter) {
-				acc.EXPECT().DisableOTP(context.Background(), "wrong-password").
+				acc.EXPECT().DisableOTP(mock.Anything, "wrong-password").
 					Return(errors.New("invalid password"))
 			},
 			wantErr:     true,
@@ -396,7 +397,7 @@ func TestAccountOTPEnable_MockCommand_Success(t *testing.T) {
 	cfgMgr := newTestConfigMgr(t)
 	output := newTestOutput()
 
-	authService.EXPECT().EnableOTP(context.Background(), "123456").Return(nil)
+	authService.EXPECT().EnableOTP(mock.Anything, "123456").Return(nil)
 
 	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
 	authServiceFactory := func(cm config.Manager, out Output, apiEndpoint string) AuthService {
@@ -413,7 +414,7 @@ func TestAccountOTPEnable_MockCommand_NoOTP(t *testing.T) {
 	cfgMgr := newTestConfigMgr(t)
 	output := newTestOutput()
 
-	authService.EXPECT().EnableOTP(context.Background(), "").Return(nil)
+	authService.EXPECT().EnableOTP(mock.Anything, "").Return(nil)
 
 	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
 	authServiceFactory := func(cm config.Manager, out Output, apiEndpoint string) AuthService {
@@ -430,7 +431,7 @@ func TestAccountOTPEnable_MockCommand_ServiceError(t *testing.T) {
 	cfgMgr := newTestConfigMgr(t)
 	output := newTestOutput()
 
-	authService.EXPECT().EnableOTP(context.Background(), "000000").
+	authService.EXPECT().EnableOTP(mock.Anything, "000000").
 		Return(errors.New("invalid OTP code"))
 
 	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
@@ -460,7 +461,7 @@ func TestAccountOTPDisable_MockCommand_Success(t *testing.T) {
 	cfgMgr := newTestConfigMgr(t)
 	output := newTestOutput()
 
-	authService.EXPECT().DisableOTP(context.Background(), "mypassword").Return(nil)
+	authService.EXPECT().DisableOTP(mock.Anything, "mypassword").Return(nil)
 
 	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
 	authServiceFactory := func(cm config.Manager, out Output, apiEndpoint string) AuthService {
@@ -477,7 +478,7 @@ func TestAccountOTPDisable_MockCommand_EmptyPassword(t *testing.T) {
 	cfgMgr := newTestConfigMgr(t)
 	output := newTestOutput()
 
-	authService.EXPECT().DisableOTP(context.Background(), "").Return(nil)
+	authService.EXPECT().DisableOTP(mock.Anything, "").Return(nil)
 
 	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
 	authServiceFactory := func(cm config.Manager, out Output, apiEndpoint string) AuthService {
@@ -494,7 +495,7 @@ func TestAccountOTPDisable_MockCommand_ServiceError(t *testing.T) {
 	cfgMgr := newTestConfigMgr(t)
 	output := newTestOutput()
 
-	authService.EXPECT().DisableOTP(context.Background(), "wrong").
+	authService.EXPECT().DisableOTP(mock.Anything, "wrong").
 		Return(errors.New("invalid password"))
 
 	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
@@ -530,7 +531,7 @@ func TestAuthService_DisableOTP_Interactive(t *testing.T) {
 			name: "successful disable with prompted password",
 			setupMocks: func(acc *portalsdkmocks.MockAccountAPI, prompter *MockAuthPrompter) {
 				prompter.EXPECT().Password("Password").Return("password", nil)
-				acc.EXPECT().DisableOTP(context.Background(), "password").Return(nil)
+				acc.EXPECT().DisableOTP(mock.Anything, "password").Return(nil)
 			},
 			wantErr: false,
 		},

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.lumeweb.com/pinner-cli/pkg/config"
 	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
@@ -34,7 +35,7 @@ func TestBillingOverview(t *testing.T) {
 			jsonOutput: false,
 			setupMocks: func(cfgMgr *configmocks.MockManager, billingSvc *MockBillingAdminService, quotaSvc *MockQuotaAdminService) {
 				billingSvc.EXPECT().RequireAuthenticated().Return(nil)
-				quotaSvc.EXPECT().ListPlans(context.Background()).Return(
+				quotaSvc.EXPECT().ListPlans(mock.Anything).Return(
 					[]*admin.QuotaPlan{
 						unmarshalQuotaPlanJSON(`{"id":1,"name":"Free","is_active":true}`),
 						unmarshalQuotaPlanJSON(`{"id":2,"name":"Pro","is_active":false}`),
@@ -42,21 +43,21 @@ func TestBillingOverview(t *testing.T) {
 					2,
 					nil,
 				)
-				billingSvc.EXPECT().ListPriceLines(context.Background()).Return(
+				billingSvc.EXPECT().ListPriceLines(mock.Anything).Return(
 					[]*admin.PriceLine{
 						unmarshalPriceLineJSON(`{"id":1,"name":"Storage","is_active":true}`),
 					},
 					1,
 					nil,
 				)
-				billingSvc.EXPECT().ListPricingPlans(context.Background()).Return(
+				billingSvc.EXPECT().ListPricingPlans(mock.Anything).Return(
 					[]*admin.PricingPlanItem{
 						unmarshalPricingPlanItemJSON(`{"id":1,"name":"Monthly","is_active":true}`),
 					},
 					1,
 					nil,
 				)
-				billingSvc.EXPECT().ListPricingPlanPeriods(context.Background()).Return(
+				billingSvc.EXPECT().ListPricingPlanPeriods(mock.Anything).Return(
 					[]*admin.PricingPlanPeriod{
 						unmarshalPricingPlanPeriodJSON(`{"id":1,"pricing_plan_id":1,"quota_plan_id":1}`),
 					},
@@ -71,22 +72,22 @@ func TestBillingOverview(t *testing.T) {
 			jsonOutput: true,
 			setupMocks: func(cfgMgr *configmocks.MockManager, billingSvc *MockBillingAdminService, quotaSvc *MockQuotaAdminService) {
 				billingSvc.EXPECT().RequireAuthenticated().Return(nil)
-				quotaSvc.EXPECT().ListPlans(context.Background()).Return(
+				quotaSvc.EXPECT().ListPlans(mock.Anything).Return(
 					[]*admin.QuotaPlan{},
 					0,
 					nil,
 				)
-				billingSvc.EXPECT().ListPriceLines(context.Background()).Return(
+				billingSvc.EXPECT().ListPriceLines(mock.Anything).Return(
 					[]*admin.PriceLine{},
 					0,
 					nil,
 				)
-				billingSvc.EXPECT().ListPricingPlans(context.Background()).Return(
+				billingSvc.EXPECT().ListPricingPlans(mock.Anything).Return(
 					[]*admin.PricingPlanItem{},
 					0,
 					nil,
 				)
-				billingSvc.EXPECT().ListPricingPlanPeriods(context.Background()).Return(
+				billingSvc.EXPECT().ListPricingPlanPeriods(mock.Anything).Return(
 					[]*admin.PricingPlanPeriod{},
 					0,
 					nil,
@@ -108,7 +109,7 @@ func TestBillingOverview(t *testing.T) {
 			jsonOutput: false,
 			setupMocks: func(cfgMgr *configmocks.MockManager, billingSvc *MockBillingAdminService, quotaSvc *MockQuotaAdminService) {
 				billingSvc.EXPECT().RequireAuthenticated().Return(nil)
-				quotaSvc.EXPECT().ListPlans(context.Background()).Return(
+				quotaSvc.EXPECT().ListPlans(mock.Anything).Return(
 					nil,
 					0,
 					errors.New("quota api error"),
@@ -122,12 +123,12 @@ func TestBillingOverview(t *testing.T) {
 			jsonOutput: false,
 			setupMocks: func(cfgMgr *configmocks.MockManager, billingSvc *MockBillingAdminService, quotaSvc *MockQuotaAdminService) {
 				billingSvc.EXPECT().RequireAuthenticated().Return(nil)
-				quotaSvc.EXPECT().ListPlans(context.Background()).Return(
+				quotaSvc.EXPECT().ListPlans(mock.Anything).Return(
 					[]*admin.QuotaPlan{},
 					0,
 					nil,
 				)
-				billingSvc.EXPECT().ListPriceLines(context.Background()).Return(
+				billingSvc.EXPECT().ListPriceLines(mock.Anything).Return(
 					nil,
 					0,
 					errors.New("price lines api error"),
@@ -141,17 +142,17 @@ func TestBillingOverview(t *testing.T) {
 			jsonOutput: false,
 			setupMocks: func(cfgMgr *configmocks.MockManager, billingSvc *MockBillingAdminService, quotaSvc *MockQuotaAdminService) {
 				billingSvc.EXPECT().RequireAuthenticated().Return(nil)
-				quotaSvc.EXPECT().ListPlans(context.Background()).Return(
+				quotaSvc.EXPECT().ListPlans(mock.Anything).Return(
 					[]*admin.QuotaPlan{},
 					0,
 					nil,
 				)
-				billingSvc.EXPECT().ListPriceLines(context.Background()).Return(
+				billingSvc.EXPECT().ListPriceLines(mock.Anything).Return(
 					[]*admin.PriceLine{},
 					0,
 					nil,
 				)
-				billingSvc.EXPECT().ListPricingPlans(context.Background()).Return(
+				billingSvc.EXPECT().ListPricingPlans(mock.Anything).Return(
 					nil,
 					0,
 					errors.New("pricing plans api error"),
@@ -165,22 +166,22 @@ func TestBillingOverview(t *testing.T) {
 			jsonOutput: false,
 			setupMocks: func(cfgMgr *configmocks.MockManager, billingSvc *MockBillingAdminService, quotaSvc *MockQuotaAdminService) {
 				billingSvc.EXPECT().RequireAuthenticated().Return(nil)
-				quotaSvc.EXPECT().ListPlans(context.Background()).Return(
+				quotaSvc.EXPECT().ListPlans(mock.Anything).Return(
 					[]*admin.QuotaPlan{},
 					0,
 					nil,
 				)
-				billingSvc.EXPECT().ListPriceLines(context.Background()).Return(
+				billingSvc.EXPECT().ListPriceLines(mock.Anything).Return(
 					[]*admin.PriceLine{},
 					0,
 					nil,
 				)
-				billingSvc.EXPECT().ListPricingPlans(context.Background()).Return(
+				billingSvc.EXPECT().ListPricingPlans(mock.Anything).Return(
 					[]*admin.PricingPlanItem{},
 					0,
 					nil,
 				)
-				billingSvc.EXPECT().ListPricingPlanPeriods(context.Background()).Return(
+				billingSvc.EXPECT().ListPricingPlanPeriods(mock.Anything).Return(
 					nil,
 					0,
 					errors.New("periods api error"),
@@ -194,6 +195,7 @@ func TestBillingOverview(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
+			cfgMgr.EXPECT().Config().Return(&config.Config{}).Maybe()
 			billingSvc := NewMockBillingAdminService(t)
 			quotaSvc := NewMockQuotaAdminService(t)
 			output := newTestOutput()

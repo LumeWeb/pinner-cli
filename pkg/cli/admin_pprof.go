@@ -322,6 +322,9 @@ Examples:
 }
 
 func adminPprofByteAction(ctx context.Context, cmd argsGetter, output Output, cfgMgr config.Manager, serviceFactory ProfilingAdminServiceFactory, fn func(ProfilingAdminService, context.Context) ([]byte, error)) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetSyncTimeout())
+	defer cancel()
+
 	service := serviceFactory(cfgMgr, output)
 	if err := service.RequireAuthenticated(); err != nil {
 		return err
@@ -343,6 +346,9 @@ func adminPprofByteAction(ctx context.Context, cmd argsGetter, output Output, cf
 }
 
 func adminPprofSetRateAction(ctx context.Context, cmd argsGetter, output Output, cfgMgr config.Manager, serviceFactory ProfilingAdminServiceFactory, label string, fn func(ProfilingAdminService, context.Context, int) error) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetSyncTimeout())
+	defer cancel()
+
 	if cmd.Args().Len() < 1 {
 		return fmt.Errorf("%s value is required", label)
 	}
@@ -371,6 +377,9 @@ func adminPprofSetRateAction(ctx context.Context, cmd argsGetter, output Output,
 }
 
 func adminPprofStatusAction(ctx context.Context, cmd argsGetter, output Output, cfgMgr config.Manager, serviceFactory ProfilingAdminServiceFactory) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetSyncTimeout())
+	defer cancel()
+
 	service := serviceFactory(cfgMgr, output)
 	if err := service.RequireAuthenticated(); err != nil {
 		return err

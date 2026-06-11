@@ -133,7 +133,7 @@ func TestOperationsServiceDefault_List(t *testing.T) {
 		authSvc := NewMockAuthService(t)
 		accountClient := portalsdkmocks.NewMockAccountAPI(t)
 
-		authSvc.EXPECT().GetAuthenticatedClient(context.Background()).Return(accountClient, nil)
+		authSvc.EXPECT().GetAuthenticatedClient(mock.Anything).Return(accountClient, nil)
 
 		now := time.Now()
 		accountClient.EXPECT().ListOperations(
@@ -159,7 +159,7 @@ func TestOperationsServiceDefault_List(t *testing.T) {
 		authSvc := NewMockAuthService(t)
 		accountClient := portalsdkmocks.NewMockAccountAPI(t)
 
-		authSvc.EXPECT().GetAuthenticatedClient(context.Background()).Return(accountClient, nil).Once()
+		authSvc.EXPECT().GetAuthenticatedClient(mock.Anything).Return(accountClient, nil).Once()
 
 		now := time.Now()
 		accountClient.EXPECT().ListOperations(
@@ -201,7 +201,7 @@ func TestOperationsServiceDefault_Get(t *testing.T) {
 
 		now := time.Now()
 		cid := "QmDetail"
-		accountClient.EXPECT().GetOperation(context.Background(), int64(42)).Return(
+		accountClient.EXPECT().GetOperation(mock.Anything, int64(42)).Return(
 			makeOperation(42, cid, "running", "Upload", "IPFS", 75, now, nil, "processing"),
 			nil,
 		)
@@ -224,7 +224,7 @@ func TestOperationsServiceDefault_Get(t *testing.T) {
 
 		now := time.Now()
 		errMsg := "disk full"
-		accountClient.EXPECT().GetOperation(context.Background(), int64(99)).Return(
+		accountClient.EXPECT().GetOperation(mock.Anything, int64(99)).Return(
 			makeOperation(99, "QmErr", "failed", "Upload", "IPFS", 30, now, &errMsg, "upload failed"),
 			nil,
 		)
@@ -241,7 +241,7 @@ func TestOperationsServiceDefault_Get(t *testing.T) {
 		output := newTestOutput()
 		accountClient := portalsdkmocks.NewMockAccountAPI(t)
 
-		accountClient.EXPECT().GetOperation(context.Background(), int64(404)).Return(
+		accountClient.EXPECT().GetOperation(mock.Anything, int64(404)).Return(
 			nil, errors.New("not found"),
 		)
 
@@ -281,7 +281,7 @@ func TestOperationsServiceDefault_RequireAuthenticated(t *testing.T) {
 		output := newTestOutput()
 		authSvc := NewMockAuthService(t)
 
-		authSvc.EXPECT().GetAuthenticatedClient(context.Background()).Return(nil, errors.New("auth failed"))
+		authSvc.EXPECT().GetAuthenticatedClient(mock.Anything).Return(nil, errors.New("auth failed"))
 
 		svc := NewOperationsService(cfgMgr, output, authSvc)
 
@@ -474,7 +474,7 @@ func TestOperationsServiceDefault_CIDPointer(t *testing.T) {
 		op := makeOperation(1, "QmTest", "completed", "Pin", "IPFS", 100, now, nil, "")
 		op.Cid = nil
 
-		accountClient.EXPECT().GetOperation(context.Background(), int64(1)).Return(op, nil)
+		accountClient.EXPECT().GetOperation(mock.Anything, int64(1)).Return(op, nil)
 
 		svc := NewOperationsService(cfgMgr, output, nil, WithOperationsAccountClient(accountClient))
 
@@ -540,7 +540,7 @@ func TestOperationsList(t *testing.T) {
 		opsSvc := NewMockOperationsService(t)
 
 		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
-		opsSvc.EXPECT().List(context.Background(), OperationsListOptions{
+		opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{
 			StatusFilter:    "",
 			OperationFilter: "",
 			ProtocolFilter:  "",
@@ -569,7 +569,7 @@ func TestOperationsList(t *testing.T) {
 		opsSvc := NewMockOperationsService(t)
 
 		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
-		opsSvc.EXPECT().List(context.Background(), OperationsListOptions{}).Return(&OperationsListResult{
+		opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{}).Return(&OperationsListResult{
 			Operations: []OperationListItem{},
 			Total:      0,
 		}, nil)
@@ -608,7 +608,7 @@ func TestOperationsList(t *testing.T) {
 		opsSvc := NewMockOperationsService(t)
 
 		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
-		opsSvc.EXPECT().List(context.Background(), OperationsListOptions{}).Return(nil, errors.New("server error"))
+		opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{}).Return(nil, errors.New("server error"))
 
 		cmd := newMockCommand()
 
@@ -627,7 +627,7 @@ func TestOperationsList(t *testing.T) {
 		opsSvc := NewMockOperationsService(t)
 
 		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
-		opsSvc.EXPECT().List(context.Background(), OperationsListOptions{
+		opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{
 			StatusFilter:    "running",
 			OperationFilter: "upload",
 			ProtocolFilter:  "ipfs",
@@ -674,7 +674,7 @@ func TestOperationsGet(t *testing.T) {
 		opsSvc := NewMockOperationsService(t)
 
 		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
-		opsSvc.EXPECT().Get(context.Background(), int64(42)).Return(&OperationDetail{
+		opsSvc.EXPECT().Get(mock.Anything, int64(42)).Return(&OperationDetail{
 			ID:                    42,
 			CID:                   "QmTest",
 			Status:                "completed",
@@ -740,7 +740,7 @@ func TestOperationsGet(t *testing.T) {
 		opsSvc := NewMockOperationsService(t)
 
 		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
-		opsSvc.EXPECT().Get(context.Background(), int64(999)).Return(nil, fmt.Errorf("not found"))
+		opsSvc.EXPECT().Get(mock.Anything, int64(999)).Return(nil, fmt.Errorf("not found"))
 
 		cmd := newMockCommand().withArgs("999")
 

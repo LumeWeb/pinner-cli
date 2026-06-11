@@ -45,6 +45,9 @@ Examples:
 }
 
 func adminWebsitesBlockAction(ctx context.Context, cmd argsGetter, output Output, cfgMgr config.Manager, serviceFactory WebsiteAdminServiceFactory) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+	defer cancel()
+
 	if cmd.Args().Len() < 1 {
 		return fmt.Errorf("website ID is required")
 	}
@@ -90,6 +93,9 @@ Examples:
 }
 
 func adminWebsitesUnblockAction(ctx context.Context, cmd argsGetter, output Output, cfgMgr config.Manager, serviceFactory WebsiteAdminServiceFactory) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+	defer cancel()
+
 	if cmd.Args().Len() < 1 {
 		return fmt.Errorf("website ID is required")
 	}

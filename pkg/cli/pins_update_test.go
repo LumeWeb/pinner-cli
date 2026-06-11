@@ -21,6 +21,12 @@ func TestPinsUpdate(t *testing.T) {
 
 		output := newTestOutput()
 		cfgMgr := configmocks.NewMockManager(t)
+		cfgMgr.EXPECT().Config().Return(&config.Config{
+			Secure:       true,
+			BaseEndpoint: "pinner.xyz",
+			AuthToken:    "test-token",
+			MaxRetries:   3,
+		}).Maybe()
 		pinningServiceFactory := func(cm config.Manager, out Output, _ bool) PinningService {
 			return service
 		}
@@ -39,6 +45,12 @@ func TestPinsUpdate(t *testing.T) {
 
 		output := newTestOutput()
 		cfgMgr := configmocks.NewMockManager(t)
+		cfgMgr.EXPECT().Config().Return(&config.Config{
+			Secure:       true,
+			BaseEndpoint: "pinner.xyz",
+			AuthToken:    "test-token",
+			MaxRetries:   3,
+		}).Maybe()
 		pinningServiceFactory := func(cm config.Manager, out Output, _ bool) PinningService {
 			return service
 		}
@@ -59,6 +71,12 @@ func TestPinsUpdate(t *testing.T) {
 
 		output := newTestOutput()
 		cfgMgr := configmocks.NewMockManager(t)
+		cfgMgr.EXPECT().Config().Return(&config.Config{
+			Secure:       true,
+			BaseEndpoint: "pinner.xyz",
+			AuthToken:    "test-token",
+			MaxRetries:   3,
+		}).Maybe()
 		pinningServiceFactory := func(cm config.Manager, out Output, _ bool) PinningService {
 			return service
 		}

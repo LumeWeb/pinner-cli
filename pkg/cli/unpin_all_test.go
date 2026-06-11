@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/pkg/config"
@@ -29,6 +30,12 @@ func TestUnpinAll(t *testing.T) {
 			name:    "requires --confirm flag",
 			confirm: false,
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPinningService) {
+				cfgMgr.EXPECT().Config().Return(&config.Config{
+					Secure:       true,
+					BaseEndpoint: "pinner.xyz",
+					AuthToken:    "test-token",
+					MaxRetries:   3,
+				}).Maybe()
 			},
 			wantErr: false,
 		},
@@ -38,15 +45,21 @@ func TestUnpinAll(t *testing.T) {
 			yes:          true,
 			statusFilter: "",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPinningService) {
+				cfgMgr.EXPECT().Config().Return(&config.Config{
+					Secure:       true,
+					BaseEndpoint: "pinner.xyz",
+					AuthToken:    "test-token",
+					MaxRetries:   3,
+				}).Maybe()
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().List(context.Background(), "", 0, "").Return(
+				service.EXPECT().List(mock.Anything, "", 0, "").Return(
 					[]Pin{
 						{CID: "QmXxx1", Name: "test1", Status: "pinned", RequestID: "req-1"},
 						{CID: "QmXxx2", Name: "test2", Status: "pinned", RequestID: "req-2"},
 					},
 					nil,
 				)
-				service.EXPECT().UnpinAll(context.Background(), "", BatchOptions{
+				service.EXPECT().UnpinAll(mock.Anything, "", BatchOptions{
 					Parallel:   0,
 					ContinueOn: false,
 					Progress:   true,
@@ -65,14 +78,20 @@ func TestUnpinAll(t *testing.T) {
 			yes:          true,
 			statusFilter: "failed",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPinningService) {
+				cfgMgr.EXPECT().Config().Return(&config.Config{
+					Secure:       true,
+					BaseEndpoint: "pinner.xyz",
+					AuthToken:    "test-token",
+					MaxRetries:   3,
+				}).Maybe()
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().List(context.Background(), "", 0, "failed").Return(
+				service.EXPECT().List(mock.Anything, "", 0, "failed").Return(
 					[]Pin{
 						{CID: "QmFailed1", Name: "failed1", Status: "failed", RequestID: "req-f1"},
 					},
 					nil,
 				)
-				service.EXPECT().UnpinAll(context.Background(), "failed", BatchOptions{
+				service.EXPECT().UnpinAll(mock.Anything, "failed", BatchOptions{
 					Parallel:   0,
 					ContinueOn: false,
 					Progress:   true,
@@ -90,8 +109,14 @@ func TestUnpinAll(t *testing.T) {
 			confirm: true,
 			yes:     true,
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPinningService) {
+				cfgMgr.EXPECT().Config().Return(&config.Config{
+					Secure:       true,
+					BaseEndpoint: "pinner.xyz",
+					AuthToken:    "test-token",
+					MaxRetries:   3,
+				}).Maybe()
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().List(context.Background(), "", 0, "").Return(
+				service.EXPECT().List(mock.Anything, "", 0, "").Return(
 					[]Pin{},
 					nil,
 				)
@@ -105,7 +130,7 @@ func TestUnpinAll(t *testing.T) {
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPinningService) {
 				cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://pinner.xyz", Secure: true}).Maybe()
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().List(context.Background(), "", 0, "").Return(
+				service.EXPECT().List(mock.Anything, "", 0, "").Return(
 					[]Pin{
 						{CID: "QmXxx1", Name: "test1", Status: "pinned", RequestID: "req-1"},
 					},
@@ -119,8 +144,14 @@ func TestUnpinAll(t *testing.T) {
 			confirm: true,
 			yes:     true,
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPinningService) {
+				cfgMgr.EXPECT().Config().Return(&config.Config{
+					Secure:       true,
+					BaseEndpoint: "pinner.xyz",
+					AuthToken:    "test-token",
+					MaxRetries:   3,
+				}).Maybe()
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().List(context.Background(), "", 0, "").Return(
+				service.EXPECT().List(mock.Anything, "", 0, "").Return(
 					nil,
 					errors.New("list failed"),
 				)
@@ -133,14 +164,20 @@ func TestUnpinAll(t *testing.T) {
 			confirm: true,
 			yes:     true,
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPinningService) {
+				cfgMgr.EXPECT().Config().Return(&config.Config{
+					Secure:       true,
+					BaseEndpoint: "pinner.xyz",
+					AuthToken:    "test-token",
+					MaxRetries:   3,
+				}).Maybe()
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().List(context.Background(), "", 0, "").Return(
+				service.EXPECT().List(mock.Anything, "", 0, "").Return(
 					[]Pin{
 						{CID: "QmXxx1", Name: "test1", Status: "pinned", RequestID: "req-1"},
 					},
 					nil,
 				)
-				service.EXPECT().UnpinAll(context.Background(), "", BatchOptions{
+				service.EXPECT().UnpinAll(mock.Anything, "", BatchOptions{
 					Parallel:   0,
 					ContinueOn: false,
 					Progress:   true,
@@ -154,6 +191,12 @@ func TestUnpinAll(t *testing.T) {
 			confirm: true,
 			yes:     true,
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPinningService) {
+				cfgMgr.EXPECT().Config().Return(&config.Config{
+					Secure:       true,
+					BaseEndpoint: "pinner.xyz",
+					AuthToken:    "test-token",
+					MaxRetries:   3,
+				}).Maybe()
 				service.EXPECT().RequireAuthenticated().Return(ErrNotAuthenticated)
 			},
 			wantErr:     true,
@@ -166,8 +209,14 @@ func TestUnpinAll(t *testing.T) {
 			parallel:   5,
 			continueOn: true,
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPinningService) {
+				cfgMgr.EXPECT().Config().Return(&config.Config{
+					Secure:       true,
+					BaseEndpoint: "pinner.xyz",
+					AuthToken:    "test-token",
+					MaxRetries:   3,
+				}).Maybe()
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().List(context.Background(), "", 0, "").Return(
+				service.EXPECT().List(mock.Anything, "", 0, "").Return(
 					[]Pin{
 						{CID: "QmXxx1", Name: "test1", Status: "pinned", RequestID: "req-1"},
 						{CID: "QmXxx2", Name: "test2", Status: "pinned", RequestID: "req-2"},
@@ -175,7 +224,7 @@ func TestUnpinAll(t *testing.T) {
 					},
 					nil,
 				)
-				service.EXPECT().UnpinAll(context.Background(), "", BatchOptions{
+				service.EXPECT().UnpinAll(mock.Anything, "", BatchOptions{
 					Parallel:   5,
 					ContinueOn: true,
 					Progress:   true,
@@ -231,11 +280,17 @@ func TestUnpinAll(t *testing.T) {
 func TestUnpinAllConfirmPrompt(t *testing.T) {
 	t.Run("mismatch_aborts", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
+		cfgMgr.EXPECT().Config().Return(&config.Config{
+			Secure:       true,
+			BaseEndpoint: "pinner.xyz",
+			AuthToken:    "test-token",
+			MaxRetries:   3,
+		}).Maybe()
 		service := NewMockPinningService(t)
 		output := newTestOutput()
 
 		service.EXPECT().RequireAuthenticated().Return(nil)
-		service.EXPECT().List(context.Background(), "", 0, "").Return(
+		service.EXPECT().List(mock.Anything, "", 0, "").Return(
 			[]Pin{
 				{CID: "QmXxx1", Name: "test1", Status: "pinned", RequestID: "req-1"},
 				{CID: "QmXxx2", Name: "test2", Status: "pinned", RequestID: "req-2"},
@@ -264,18 +319,24 @@ func TestUnpinAllConfirmPrompt(t *testing.T) {
 
 	t.Run("match_proceeds", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
+		cfgMgr.EXPECT().Config().Return(&config.Config{
+			Secure:       true,
+			BaseEndpoint: "pinner.xyz",
+			AuthToken:    "test-token",
+			MaxRetries:   3,
+		}).Maybe()
 		service := NewMockPinningService(t)
 		output := newTestOutput()
 
 		service.EXPECT().RequireAuthenticated().Return(nil)
-		service.EXPECT().List(context.Background(), "", 0, "").Return(
+		service.EXPECT().List(mock.Anything, "", 0, "").Return(
 			[]Pin{
 				{CID: "QmXxx1", Name: "test1", Status: "pinned", RequestID: "req-1"},
 				{CID: "QmXxx2", Name: "test2", Status: "pinned", RequestID: "req-2"},
 			},
 			nil,
 		)
-		service.EXPECT().UnpinAll(context.Background(), "", BatchOptions{
+		service.EXPECT().UnpinAll(mock.Anything, "", BatchOptions{
 			Parallel:   0,
 			ContinueOn: false,
 			Progress:   true,
@@ -307,11 +368,17 @@ func TestUnpinAllConfirmPrompt(t *testing.T) {
 
 	t.Run("interrupt_aborts", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
+		cfgMgr.EXPECT().Config().Return(&config.Config{
+			Secure:       true,
+			BaseEndpoint: "pinner.xyz",
+			AuthToken:    "test-token",
+			MaxRetries:   3,
+		}).Maybe()
 		service := NewMockPinningService(t)
 		output := newTestOutput()
 
 		service.EXPECT().RequireAuthenticated().Return(nil)
-		service.EXPECT().List(context.Background(), "", 0, "").Return(
+		service.EXPECT().List(mock.Anything, "", 0, "").Return(
 			[]Pin{
 				{CID: "QmXxx1", Name: "test1", Status: "pinned", RequestID: "req-1"},
 				{CID: "QmXxx2", Name: "test2", Status: "pinned", RequestID: "req-2"},

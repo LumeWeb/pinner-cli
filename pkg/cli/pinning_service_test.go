@@ -61,7 +61,7 @@ func TestPinningService_Pin(t *testing.T) {
 		client := climocks.NewMockPinningClient(t)
 
 		mockResult := NewMockPinStatusGetter(t, testCID, "", go_pinning_service_http_client.StatusPinned)
-		client.EXPECT().Add(context.Background(), testCID, mock.Anything).Return(mockResult, nil)
+		client.EXPECT().Add(mock.Anything, testCID, mock.Anything).Return(mockResult, nil)
 
 		output := newTestOutput()
 		service := NewPinningService(cfgMgr, output, "https://api.test.com", WithPinningClient(client))
@@ -81,7 +81,7 @@ func TestPinningService_Pin(t *testing.T) {
 		client := climocks.NewMockPinningClient(t)
 
 		mockResult := NewMockPinResult(t, "req-123", go_pinning_service_http_client.StatusPinned)
-		client.EXPECT().Add(context.Background(), testCID, mock.Anything).Return(mockResult, nil)
+		client.EXPECT().Add(mock.Anything, testCID, mock.Anything).Return(mockResult, nil)
 
 		output := newTestOutput()
 		service := NewPinningService(cfgMgr, output, "https://api.test.com", WithPinningClient(client))
@@ -132,7 +132,7 @@ func TestPinningService_Pin(t *testing.T) {
 
 		client := climocks.NewMockPinningClient(t)
 
-		client.EXPECT().Add(context.Background(), testCID).Return(
+		client.EXPECT().Add(mock.Anything, testCID).Return(
 			nil,
 			errors.New("pinning service error"),
 		)
@@ -153,7 +153,7 @@ func TestPinningService_Pin(t *testing.T) {
 
 		client := climocks.NewMockPinningClient(t)
 
-		client.EXPECT().Add(context.Background(), testCID).Return(
+		client.EXPECT().Add(mock.Anything, testCID).Return(
 			nil,
 			fmt.Errorf("remote pinning service returned http error 401: unauthorized"),
 		)
@@ -178,7 +178,7 @@ func TestPinningService_List(t *testing.T) {
 
 		mockPin := NewMockPinStatusGetter(t, testCID, "test-name", go_pinning_service_http_client.StatusPinned)
 
-		client.EXPECT().LsSync(context.Background(), mock.Anything, mock.Anything).Return(
+		client.EXPECT().LsSync(mock.Anything, mock.Anything, mock.Anything).Return(
 			[]go_pinning_service_http_client.PinStatusGetter{mockPin},
 			nil,
 		)
@@ -218,7 +218,7 @@ func TestPinningService_List(t *testing.T) {
 
 		client := climocks.NewMockPinningClient(t)
 
-		client.EXPECT().LsSync(context.Background(), mock.Anything, mock.Anything).Return(
+		client.EXPECT().LsSync(mock.Anything, mock.Anything, mock.Anything).Return(
 			nil,
 			errors.New("list service error"),
 		)
@@ -239,7 +239,7 @@ func TestPinningService_List(t *testing.T) {
 
 		client := climocks.NewMockPinningClient(t)
 
-		client.EXPECT().LsSync(context.Background(), mock.Anything, mock.Anything).Return(
+		client.EXPECT().LsSync(mock.Anything, mock.Anything, mock.Anything).Return(
 			nil,
 			fmt.Errorf("remote pinning service returned http error 401: unauthorized"),
 		)
@@ -265,7 +265,7 @@ func TestPinningService_Status(t *testing.T) {
 		mockPin := NewMockPin(t, testCID, "test-name")
 		mockResult := NewMockPinStatusGetterWithPin(t, mockPin, go_pinning_service_http_client.StatusPinned)
 
-		client.EXPECT().LsSync(context.Background(), mock.Anything).Return(
+		client.EXPECT().LsSync(mock.Anything, mock.Anything).Return(
 			[]go_pinning_service_http_client.PinStatusGetter{mockResult},
 			nil,
 		)
@@ -319,7 +319,7 @@ func TestPinningService_Status(t *testing.T) {
 
 		client := climocks.NewMockPinningClient(t)
 
-		client.EXPECT().LsSync(context.Background(), mock.Anything).Return(
+		client.EXPECT().LsSync(mock.Anything, mock.Anything).Return(
 			[]go_pinning_service_http_client.PinStatusGetter{},
 			nil,
 		)
@@ -340,7 +340,7 @@ func TestPinningService_Status(t *testing.T) {
 
 		client := climocks.NewMockPinningClient(t)
 
-		client.EXPECT().LsSync(context.Background(), mock.Anything).Return(
+		client.EXPECT().LsSync(mock.Anything, mock.Anything).Return(
 			nil,
 			errors.New("status check error"),
 		)
@@ -361,7 +361,7 @@ func TestPinningService_Status(t *testing.T) {
 
 		client := climocks.NewMockPinningClient(t)
 
-		client.EXPECT().LsSync(context.Background(), mock.Anything).Return(
+		client.EXPECT().LsSync(mock.Anything, mock.Anything).Return(
 			nil,
 			fmt.Errorf("remote pinning service returned http error 401: unauthorized"),
 		)
@@ -387,11 +387,11 @@ func TestPinningService_Unpin(t *testing.T) {
 		mockPin := NewMockPin(t, testCID, "test-name")
 		mockResult := NewMockPinStatusGetterWithPin(t, mockPin, go_pinning_service_http_client.StatusPinned)
 
-		client.EXPECT().LsSync(context.Background(), mock.Anything).Return(
+		client.EXPECT().LsSync(mock.Anything, mock.Anything).Return(
 			[]go_pinning_service_http_client.PinStatusGetter{mockResult},
 			nil,
 		)
-		client.EXPECT().DeleteByID(context.Background(), "req-123").Return(nil)
+		client.EXPECT().DeleteByID(mock.Anything, "req-123").Return(nil)
 
 		output := newTestOutput()
 		service := NewPinningService(cfgMgr, output, "https://api.test.com", WithPinningClient(client))
@@ -459,7 +459,7 @@ func TestPinningService_Unpin(t *testing.T) {
 
 		client := climocks.NewMockPinningClient(t)
 
-		client.EXPECT().LsSync(context.Background(), mock.Anything).Return(
+		client.EXPECT().LsSync(mock.Anything, mock.Anything).Return(
 			[]go_pinning_service_http_client.PinStatusGetter{},
 			nil,
 		)
@@ -483,11 +483,11 @@ func TestPinningService_Unpin(t *testing.T) {
 		mockPin := NewMockPin(t, testCID, "test-name")
 		mockResult := NewMockPinStatusGetterWithPin(t, mockPin, go_pinning_service_http_client.StatusPinned)
 
-		client.EXPECT().LsSync(context.Background(), mock.Anything).Return(
+		client.EXPECT().LsSync(mock.Anything, mock.Anything).Return(
 			[]go_pinning_service_http_client.PinStatusGetter{mockResult},
 			nil,
 		)
-		client.EXPECT().DeleteByID(context.Background(), "req-123").Return(
+		client.EXPECT().DeleteByID(mock.Anything, "req-123").Return(
 			errors.New("unpin service error"),
 		)
 
@@ -512,11 +512,11 @@ func TestPinningService_UpdateMetadata(t *testing.T) {
 		mockPin := NewMockPin(t, testCID, "test-name")
 		mockResult := NewMockPinStatusGetterWithPin(t, mockPin, go_pinning_service_http_client.StatusPinned)
 
-		client.EXPECT().LsSync(context.Background(), mock.Anything).Return(
+		client.EXPECT().LsSync(mock.Anything, mock.Anything).Return(
 			[]go_pinning_service_http_client.PinStatusGetter{mockResult},
 			nil,
 		)
-		client.EXPECT().Replace(context.Background(), "req-123", testCID, mock.Anything).Return(
+		client.EXPECT().Replace(mock.Anything, "req-123", testCID, mock.Anything).Return(
 			nil,
 			nil,
 		)
@@ -584,7 +584,7 @@ func TestPinningService_UpdateMetadata(t *testing.T) {
 
 		client := climocks.NewMockPinningClient(t)
 
-		client.EXPECT().LsSync(context.Background(), mock.Anything).Return(
+		client.EXPECT().LsSync(mock.Anything, mock.Anything).Return(
 			[]go_pinning_service_http_client.PinStatusGetter{},
 			nil,
 		)
@@ -608,11 +608,11 @@ func TestPinningService_UpdateMetadata(t *testing.T) {
 		mockPin := NewMockPin(t, testCID, "test-name")
 		mockResult := NewMockPinStatusGetterWithPin(t, mockPin, go_pinning_service_http_client.StatusPinned)
 
-		client.EXPECT().LsSync(context.Background(), mock.Anything).Return(
+		client.EXPECT().LsSync(mock.Anything, mock.Anything).Return(
 			[]go_pinning_service_http_client.PinStatusGetter{mockResult},
 			nil,
 		)
-		client.EXPECT().Replace(context.Background(), "req-123", testCID, mock.Anything).Return(
+		client.EXPECT().Replace(mock.Anything, "req-123", testCID, mock.Anything).Return(
 			nil,
 			errors.New("update service error"),
 		)

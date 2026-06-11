@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/pkg/config"
@@ -36,7 +37,7 @@ func TestRegisterAllFlagsProvided(t *testing.T) {
 	authService := NewMockAuthService(t)
 	output := newTestOutput()
 
-	authService.EXPECT().Register(context.Background(), "user@example.com", "John", "Doe", "secret123").Return(nil)
+	authService.EXPECT().Register(mock.Anything, "user@example.com", "John", "Doe", "secret123").Return(nil)
 
 	cmd := &cli.Command{
 		Flags: []cli.Flag{
@@ -84,7 +85,7 @@ func TestRegisterAuthServiceError(t *testing.T) {
 	authService := NewMockAuthService(t)
 	output := newTestOutput()
 
-	authService.EXPECT().Register(context.Background(), "user@example.com", "John", "Doe", "secret123").
+	authService.EXPECT().Register(mock.Anything, "user@example.com", "John", "Doe", "secret123").
 		Return(errors.New("registration failed"))
 
 	cmd := &cli.Command{

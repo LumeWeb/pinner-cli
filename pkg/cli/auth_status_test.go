@@ -7,6 +7,7 @@ import (
 
 	"github.com/manifoldco/promptui"
 	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/mock"
 	"go.lumeweb.com/pinner-cli/pkg/config"
 	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
 	portalsdk "go.lumeweb.com/portal-sdk"
@@ -24,7 +25,7 @@ func TestAuthStatus(t *testing.T) {
 			name: "successful status check - authenticated",
 			setupMocks: func(cfgMgr *configmocks.MockManager, authService *MockAuthService) {
 				cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://api.test.com"})
-				authService.EXPECT().Status(context.Background()).Return(nil)
+				authService.EXPECT().Status(mock.Anything).Return(nil)
 			},
 			wantErr: false,
 		},
@@ -32,7 +33,7 @@ func TestAuthStatus(t *testing.T) {
 			name: "not authenticated",
 			setupMocks: func(cfgMgr *configmocks.MockManager, authService *MockAuthService) {
 				cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://api.test.com"})
-				authService.EXPECT().Status(context.Background()).
+				authService.EXPECT().Status(mock.Anything).
 					Return(errors.New("not authenticated: unauthorized"))
 			},
 			wantErr:     true,
@@ -48,7 +49,7 @@ func TestAuthStatus(t *testing.T) {
 			name: "connection error",
 			setupMocks: func(cfgMgr *configmocks.MockManager, authService *MockAuthService) {
 				cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://api.test.com"})
-				authService.EXPECT().Status(context.Background()).
+				authService.EXPECT().Status(mock.Anything).
 					Return(errors.New("connection refused"))
 			},
 			wantErr:     true,
@@ -105,14 +106,14 @@ func TestAuthService_Status(t *testing.T) {
 		{
 			name: "successful ping - authenticated",
 			setupMocks: func(acc *portalsdkmocks.MockAccountAPI) {
-				acc.EXPECT().Ping(context.Background()).Return(nil)
+				acc.EXPECT().Ping(mock.Anything).Return(nil)
 			},
 			wantErr: false,
 		},
 		{
 			name: "ping fails with unauthorized error",
 			setupMocks: func(acc *portalsdkmocks.MockAccountAPI) {
-				acc.EXPECT().Ping(context.Background()).
+				acc.EXPECT().Ping(mock.Anything).
 					Return(errors.New("unauthorized: authentication required"))
 			},
 			wantErr:     true,
@@ -121,7 +122,7 @@ func TestAuthService_Status(t *testing.T) {
 		{
 			name: "ping fails with generic error",
 			setupMocks: func(acc *portalsdkmocks.MockAccountAPI) {
-				acc.EXPECT().Ping(context.Background()).
+				acc.EXPECT().Ping(mock.Anything).
 					Return(errors.New("network error"))
 			},
 			wantErr:     true,
@@ -181,7 +182,7 @@ func TestAuthService_Status_JSONOutput(t *testing.T) {
 	cfg.Secure = true
 	cfgMgr.EXPECT().Config().Return(cfg)
 
-	acc.EXPECT().Ping(context.Background()).Return(nil)
+	acc.EXPECT().Ping(mock.Anything).Return(nil)
 
 	authService := NewAuthService(cfgMgr, output, "https://api.test.com",
 		WithAuthAccountClient(acc),
@@ -207,7 +208,7 @@ func TestAuthService_Status_VerboseOutput(t *testing.T) {
 	cfg.Secure = true
 	cfgMgr.EXPECT().Config().Return(cfg)
 
-	acc.EXPECT().Ping(context.Background()).Return(nil)
+	acc.EXPECT().Ping(mock.Anything).Return(nil)
 
 	authService := NewAuthService(cfgMgr, output, "https://api.test.com",
 		WithAuthAccountClient(acc),
@@ -238,7 +239,7 @@ func TestAuthStatusCommand(t *testing.T) {
 			},
 			setupMocks: func(cfgMgr *configmocks.MockManager, authService *MockAuthService) {
 				cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://api.test.com"})
-				authService.EXPECT().Status(context.Background()).Return(nil)
+				authService.EXPECT().Status(mock.Anything).Return(nil)
 			},
 			wantErr: false,
 		},
@@ -252,7 +253,7 @@ func TestAuthStatusCommand(t *testing.T) {
 			},
 			setupMocks: func(cfgMgr *configmocks.MockManager, authService *MockAuthService) {
 				cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://api.test.com"})
-				authService.EXPECT().Status(context.Background()).Return(nil)
+				authService.EXPECT().Status(mock.Anything).Return(nil)
 			},
 			wantErr: false,
 		},
@@ -266,7 +267,7 @@ func TestAuthStatusCommand(t *testing.T) {
 			},
 			setupMocks: func(cfgMgr *configmocks.MockManager, authService *MockAuthService) {
 				cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://api.test.com"})
-				authService.EXPECT().Status(context.Background()).Return(nil)
+				authService.EXPECT().Status(mock.Anything).Return(nil)
 			},
 			wantErr: false,
 		},
@@ -334,9 +335,9 @@ func TestAuthLogin_MockCommand_WithEmailPassword(t *testing.T) {
 	cfgMgr := newTestConfigMgr(t)
 	output := newTestOutput()
 
-	authService.EXPECT().LoginCheck(context.Background(), "user@example.com", "secret").
+	authService.EXPECT().LoginCheck(mock.Anything, "user@example.com", "secret").
 		Return(&portalsdk.LoginResult{Token: "jwt-token", OTPRequired: false}, nil)
-	authService.EXPECT().CompleteLogin(context.Background(), "jwt-token", "cli-generated", false).Return(nil)
+	authService.EXPECT().CompleteLogin(mock.Anything, "jwt-token", "cli-generated", false).Return(nil)
 
 	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
 	authServiceFactory := func(cm config.Manager, out Output, apiEndpoint string) AuthService {
@@ -359,9 +360,9 @@ func TestAuthLogin_MockCommand_WithOTPFlow(t *testing.T) {
 	cfgMgr := newTestConfigMgr(t)
 	output := newTestOutput()
 
-	authService.EXPECT().LoginCheck(context.Background(), "user@example.com", "secret").
+	authService.EXPECT().LoginCheck(mock.Anything, "user@example.com", "secret").
 		Return(&portalsdk.LoginResult{IntermediateJWT: "intermediate-jwt", OTPRequired: true}, nil)
-	authService.EXPECT().LoginWithOTP(context.Background(), "intermediate-jwt", "123456", "cli-generated", false).Return(nil)
+	authService.EXPECT().LoginWithOTP(mock.Anything, "intermediate-jwt", "123456", "cli-generated", false).Return(nil)
 
 	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
 	authServiceFactory := func(cm config.Manager, out Output, apiEndpoint string) AuthService {
@@ -385,7 +386,7 @@ func TestAuthLogin_MockCommand_LoginCheckError(t *testing.T) {
 	cfgMgr := newTestConfigMgr(t)
 	output := newTestOutput()
 
-	authService.EXPECT().LoginCheck(context.Background(), "user@example.com", "wrong").
+	authService.EXPECT().LoginCheck(mock.Anything, "user@example.com", "wrong").
 		Return(nil, errors.New("invalid credentials"))
 
 	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
@@ -422,9 +423,9 @@ func TestAuthLogin_MockCommand_NoCreateKey(t *testing.T) {
 	cfgMgr := newTestConfigMgr(t)
 	output := newTestOutput()
 
-	authService.EXPECT().LoginCheck(context.Background(), "user@example.com", "secret").
+	authService.EXPECT().LoginCheck(mock.Anything, "user@example.com", "secret").
 		Return(&portalsdk.LoginResult{Token: "jwt-token", OTPRequired: false}, nil)
-	authService.EXPECT().CompleteLogin(context.Background(), "jwt-token", "cli-generated", true).Return(nil)
+	authService.EXPECT().CompleteLogin(mock.Anything, "jwt-token", "cli-generated", true).Return(nil)
 
 	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
 	authServiceFactory := func(cm config.Manager, out Output, apiEndpoint string) AuthService {

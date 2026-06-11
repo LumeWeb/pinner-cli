@@ -52,7 +52,7 @@ func TestBillingPricingPlansGet(t *testing.T) {
 			planID: "1",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().GetPricingPlan(context.Background(), "1").Return(
+				service.EXPECT().GetPricingPlan(mock.Anything, "1").Return(
 					unmarshalPricingPlanJSON(`{"id":1,"name":"Pro Plan","currency":"USD","is_active":true,"is_public":true,"description":"A test plan"}`),
 					nil,
 				)
@@ -65,7 +65,7 @@ func TestBillingPricingPlansGet(t *testing.T) {
 			jsonOutput: true,
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().GetPricingPlan(context.Background(), "1").Return(
+				service.EXPECT().GetPricingPlan(mock.Anything, "1").Return(
 					unmarshalPricingPlanJSON(`{"id":1,"name":"Pro Plan","currency":"USD","is_active":true,"is_public":true}`),
 					nil,
 				)
@@ -77,7 +77,7 @@ func TestBillingPricingPlansGet(t *testing.T) {
 			planID: "1",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().GetPricingPlan(context.Background(), "1").Return(
+				service.EXPECT().GetPricingPlan(mock.Anything, "1").Return(
 					unmarshalPricingPlanJSON(`{"id":1,"name":"Pro Plan","currency":"USD","is_active":true,"is_public":true,"pricing_periods":[{"id":1,"pricing_plan_id":1,"price_usd":9.99,"cadence":"monthly","quota_plan_id":1,"is_active":true}]}`),
 					nil,
 				)
@@ -106,7 +106,7 @@ func TestBillingPricingPlansGet(t *testing.T) {
 			planID: "1",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().GetPricingPlan(context.Background(), "1").Return(
+				service.EXPECT().GetPricingPlan(mock.Anything, "1").Return(
 					nil,
 					errors.New("service error"),
 				)
@@ -119,6 +119,7 @@ func TestBillingPricingPlansGet(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
+			cfgMgr.EXPECT().Config().Return(&config.Config{}).Maybe()
 			service := NewMockBillingAdminService(t)
 
 			var output Output
@@ -166,7 +167,7 @@ func TestBillingPricingPlansList(t *testing.T) {
 			name: "successful list",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().ListPricingPlans(context.Background()).Return(
+				service.EXPECT().ListPricingPlans(mock.Anything).Return(
 					[]*admin.PricingPlanItem{
 						unmarshalPricingPlanItemJSON(`{"id":1,"name":"Pro Plan","currency":"USD","is_active":true}`),
 					},
@@ -188,7 +189,7 @@ func TestBillingPricingPlansList(t *testing.T) {
 			name: "returns error when service fails",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().ListPricingPlans(context.Background()).Return(
+				service.EXPECT().ListPricingPlans(mock.Anything).Return(
 					nil,
 					0,
 					errors.New("service error"),
@@ -202,6 +203,7 @@ func TestBillingPricingPlansList(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
+			cfgMgr.EXPECT().Config().Return(&config.Config{}).Maybe()
 			service := NewMockBillingAdminService(t)
 			output := newTestOutput()
 
@@ -296,6 +298,7 @@ func TestPricingPlanPeriodsCreate_PriceValidation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
+			cfgMgr.EXPECT().Config().Return(&config.Config{}).Maybe()
 			service := NewMockBillingAdminService(t)
 
 			tt.setupMocks(cfgMgr, service)
@@ -336,7 +339,7 @@ func TestBillingPricingPlansCreate(t *testing.T) {
 				withBool(FlagIsActive, true),
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().CreatePricingPlan(context.Background(), mock.MatchedBy(func(req *admin.PricingPlanCreateRequest) bool {
+				service.EXPECT().CreatePricingPlan(mock.Anything, mock.MatchedBy(func(req *admin.PricingPlanCreateRequest) bool {
 					return req.Name == "Pro Plan" && req.Currency == "USD" && req.IsActive == true
 				})).Return(
 					unmarshalPricingPlanJSON(`{"id":1,"name":"Pro Plan","currency":"USD","is_active":true}`),
@@ -371,13 +374,13 @@ func TestBillingPricingPlansCreate(t *testing.T) {
 				withIsSet(FlagCadence, true),
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().CreatePricingPlan(context.Background(), mock.MatchedBy(func(req *admin.PricingPlanCreateRequest) bool {
+				service.EXPECT().CreatePricingPlan(mock.Anything, mock.MatchedBy(func(req *admin.PricingPlanCreateRequest) bool {
 					return req.Name == "Starter Plan" && req.Currency == "USD" && req.IsActive == true
 				})).Return(
 					unmarshalPricingPlanJSON(`{"id":1,"name":"Starter Plan","currency":"USD","is_active":true}`),
 					nil,
 				)
-				service.EXPECT().CreatePricingPlanPeriod(context.Background(), mock.MatchedBy(func(req *admin.PricingPlanPeriodCreateRequest) bool {
+				service.EXPECT().CreatePricingPlanPeriod(mock.Anything, mock.MatchedBy(func(req *admin.PricingPlanPeriodCreateRequest) bool {
 					return req.PricingPlanId == 1 && req.PriceUsd == 9.99 && req.Cadence == "monthly" && req.QuotaPlanId == 1
 				})).Return(
 					unmarshalPricingPlanPeriodJSON(`{"id":1,"pricing_plan_id":1,"price_usd":9.99,"cadence":"monthly","is_active":true}`),
@@ -396,7 +399,7 @@ func TestBillingPricingPlansCreate(t *testing.T) {
 				withIsSet(FlagQuotaPlanID, true),
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().CreatePricingPlan(context.Background(), mock.MatchedBy(func(req *admin.PricingPlanCreateRequest) bool {
+				service.EXPECT().CreatePricingPlan(mock.Anything, mock.MatchedBy(func(req *admin.PricingPlanCreateRequest) bool {
 					return req.Name == "Partial Plan" && req.Currency == "USD"
 				})).Return(
 					unmarshalPricingPlanJSON(`{"id":1,"name":"Partial Plan","currency":"USD","is_active":true}`),
@@ -410,6 +413,7 @@ func TestBillingPricingPlansCreate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
+			cfgMgr.EXPECT().Config().Return(&config.Config{}).Maybe()
 			service := NewMockBillingAdminService(t)
 			output := newTestOutput()
 
@@ -448,7 +452,7 @@ func TestBillingPricingPlansUpdate(t *testing.T) {
 			planID: "1",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().UpdatePricingPlan(context.Background(), "1", &admin.PricingPlanUpdateRequest{
+				service.EXPECT().UpdatePricingPlan(mock.Anything, "1", &admin.PricingPlanUpdateRequest{
 					Name: "Updated Plan",
 				}).Return(
 					unmarshalPricingPlanJSON(`{"id":1,"name":"Updated Plan","currency":"USD","is_active":true}`),
@@ -469,6 +473,7 @@ func TestBillingPricingPlansUpdate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
+			cfgMgr.EXPECT().Config().Return(&config.Config{}).Maybe()
 			service := NewMockBillingAdminService(t)
 			output := newTestOutput()
 
@@ -515,7 +520,7 @@ func TestBillingPricingPlansDelete(t *testing.T) {
 			planID: "1",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().DeletePricingPlan(context.Background(), "1").Return(nil)
+				service.EXPECT().DeletePricingPlan(mock.Anything, "1").Return(nil)
 			},
 			wantErr: false,
 		},
@@ -531,6 +536,7 @@ func TestBillingPricingPlansDelete(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
+			cfgMgr.EXPECT().Config().Return(&config.Config{}).Maybe()
 			service := NewMockBillingAdminService(t)
 			output := newTestOutput()
 
@@ -572,7 +578,7 @@ func TestBillingPricingPlanPeriodsList(t *testing.T) {
 			name: "successful list",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().ListPricingPlanPeriods(context.Background()).Return(
+				service.EXPECT().ListPricingPlanPeriods(mock.Anything).Return(
 					[]*admin.PricingPlanPeriod{
 						unmarshalPricingPlanPeriodJSON(`{"id":1,"pricing_plan_id":1,"price_usd":9.99,"cadence":"monthly","is_active":true}`),
 					},
@@ -594,7 +600,7 @@ func TestBillingPricingPlanPeriodsList(t *testing.T) {
 			name: "returns error when service fails",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().ListPricingPlanPeriods(context.Background()).Return(
+				service.EXPECT().ListPricingPlanPeriods(mock.Anything).Return(
 					nil,
 					0,
 					errors.New("service error"),
@@ -608,6 +614,7 @@ func TestBillingPricingPlanPeriodsList(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
+			cfgMgr.EXPECT().Config().Return(&config.Config{}).Maybe()
 			service := NewMockBillingAdminService(t)
 			output := newTestOutput()
 
@@ -646,7 +653,7 @@ func TestBillingPricingPlanPeriodsGet(t *testing.T) {
 			periodID: "1",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().GetPricingPlanPeriod(context.Background(), "1").Return(
+				service.EXPECT().GetPricingPlanPeriod(mock.Anything, "1").Return(
 					unmarshalPricingPlanPeriodJSON(`{"id":1,"pricing_plan_id":1,"price_usd":9.99,"cadence":"monthly","is_active":true}`),
 					nil,
 				)
@@ -665,6 +672,7 @@ func TestBillingPricingPlanPeriodsGet(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
+			cfgMgr.EXPECT().Config().Return(&config.Config{}).Maybe()
 			service := NewMockBillingAdminService(t)
 			output := newTestOutput()
 
@@ -706,7 +714,7 @@ func TestBillingPricingPlanPeriodsCreate(t *testing.T) {
 			name: "successful create",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().CreatePricingPlanPeriod(context.Background(), &admin.PricingPlanPeriodCreateRequest{
+				service.EXPECT().CreatePricingPlanPeriod(mock.Anything, &admin.PricingPlanPeriodCreateRequest{
 					PricingPlanId: 1,
 					PriceUsd:      9.99,
 					Cadence:       "monthly",
@@ -731,6 +739,7 @@ func TestBillingPricingPlanPeriodsCreate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
+			cfgMgr.EXPECT().Config().Return(&config.Config{}).Maybe()
 			service := NewMockBillingAdminService(t)
 			output := newTestOutput()
 
@@ -780,7 +789,7 @@ func TestBillingPricingPlanPeriodsUpdate(t *testing.T) {
 			isSet:    map[string]bool{"price": true},
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().UpdatePricingPlanPeriod(context.Background(), "1", &admin.PricingPlanPeriodUpdateRequest{
+				service.EXPECT().UpdatePricingPlanPeriod(mock.Anything, "1", &admin.PricingPlanPeriodUpdateRequest{
 					PriceUsd: 19.99,
 				}).Return(
 					unmarshalPricingPlanPeriodJSON(`{"id":1,"pricing_plan_id":1,"price_usd":19.99,"cadence":"monthly","is_active":true}`),
@@ -797,7 +806,7 @@ func TestBillingPricingPlanPeriodsUpdate(t *testing.T) {
 			isSet:     map[string]bool{"allow-free": true},
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().UpdatePricingPlanPeriod(context.Background(), "1", mock.MatchedBy(func(req *admin.PricingPlanPeriodUpdateRequest) bool {
+				service.EXPECT().UpdatePricingPlanPeriod(mock.Anything, "1", mock.MatchedBy(func(req *admin.PricingPlanPeriodUpdateRequest) bool {
 					return req.AllowFree != nil && *req.AllowFree == true && req.PriceUsd == 0
 				})).Return(
 					unmarshalPricingPlanPeriodJSON(`{"id":1,"pricing_plan_id":1,"price_usd":0,"cadence":"monthly","is_active":true}`),
@@ -818,6 +827,7 @@ func TestBillingPricingPlanPeriodsUpdate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
+			cfgMgr.EXPECT().Config().Return(&config.Config{}).Maybe()
 			service := NewMockBillingAdminService(t)
 			output := newTestOutput()
 
@@ -867,7 +877,7 @@ func TestBillingPricingPlanPeriodsDelete(t *testing.T) {
 			periodID: "1",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().DeletePricingPlanPeriod(context.Background(), "1").Return(nil)
+				service.EXPECT().DeletePricingPlanPeriod(mock.Anything, "1").Return(nil)
 			},
 			wantErr: false,
 		},
@@ -883,6 +893,7 @@ func TestBillingPricingPlanPeriodsDelete(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
+			cfgMgr.EXPECT().Config().Return(&config.Config{}).Maybe()
 			service := NewMockBillingAdminService(t)
 			output := newTestOutput()
 
@@ -926,7 +937,7 @@ func TestBillingSyncPricingPlan(t *testing.T) {
 			planID: "123",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().SyncPricingPlan(context.Background(), "123").Return(nil)
+				service.EXPECT().SyncPricingPlan(mock.Anything, "123").Return(nil)
 			},
 			wantErr: false,
 		},
@@ -952,7 +963,7 @@ func TestBillingSyncPricingPlan(t *testing.T) {
 			planID: "123",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().SyncPricingPlan(context.Background(), "123").Return(errors.New("sync failed"))
+				service.EXPECT().SyncPricingPlan(mock.Anything, "123").Return(errors.New("sync failed"))
 			},
 			wantErr:     true,
 			errContains: "sync failed",
@@ -962,6 +973,7 @@ func TestBillingSyncPricingPlan(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
+			cfgMgr.EXPECT().Config().Return(&config.Config{}).Maybe()
 			service := NewMockBillingAdminService(t)
 			output := newTestOutput()
 
@@ -1003,7 +1015,7 @@ func TestBillingSyncAllPricingPlans(t *testing.T) {
 			name: "successful sync all",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().SyncAllPricingPlans(context.Background()).Return(nil)
+				service.EXPECT().SyncAllPricingPlans(mock.Anything).Return(nil)
 			},
 			wantErr: false,
 		},
@@ -1019,7 +1031,7 @@ func TestBillingSyncAllPricingPlans(t *testing.T) {
 			name: "returns error when service fails",
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().SyncAllPricingPlans(context.Background()).Return(errors.New("sync all failed"))
+				service.EXPECT().SyncAllPricingPlans(mock.Anything).Return(errors.New("sync all failed"))
 			},
 			wantErr:     true,
 			errContains: "sync all failed",
@@ -1029,6 +1041,7 @@ func TestBillingSyncAllPricingPlans(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
+			cfgMgr.EXPECT().Config().Return(&config.Config{}).Maybe()
 			service := NewMockBillingAdminService(t)
 			output := newTestOutput()
 

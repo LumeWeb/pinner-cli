@@ -64,6 +64,9 @@ func status(ctx context.Context, cmd interface {
 	cidGetter
 	Bool(name string) bool
 }, output Output, cfgMgr config.Manager, authToken string, secure bool, pinningServiceFactory PinningServiceFactory, statusServiceFactory StatusServiceFactory) error {
+	setupCtx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+	defer cancel()
+
 	var pinningService PinningService
 	if authToken != "" {
 		pinningService = NewPinningService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure), WithAuthToken(authToken))
@@ -118,7 +121,7 @@ func status(ctx context.Context, cmd interface {
 	rows := make([][]string, 0, len(cids))
 
 	for _, cid := range cids {
-		pinStatus, opStatus, err := statusService.Status(ctx, cid, false)
+		pinStatus, opStatus, err := statusService.Status(setupCtx, cid, false)
 		if err != nil {
 			rows = append(rows, []string{cid, fmt.Sprintf("Error: %v", err), "", ""})
 			continue

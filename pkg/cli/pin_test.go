@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/pkg/config"
@@ -124,8 +125,14 @@ func TestPin(t *testing.T) {
 			nameFlag:   "",
 			noWaitFlag: false,
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPinningService) {
+				cfgMgr.EXPECT().Config().Return(&config.Config{
+					Secure:       true,
+					BaseEndpoint: "pinner.xyz",
+					AuthToken:    "test-token",
+					MaxRetries:   3,
+				}).Maybe()
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().Pin(context.Background(), "QmXxx", "", true).Return(
+				service.EXPECT().Pin(mock.Anything, "QmXxx", "", true).Return(
 					&PinResult{CID: "QmXxx", RequestID: "req-123", Status: "pinned"}, nil,
 				)
 			},
@@ -137,8 +144,14 @@ func TestPin(t *testing.T) {
 			nameFlag:   "test-name",
 			noWaitFlag: false,
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPinningService) {
+				cfgMgr.EXPECT().Config().Return(&config.Config{
+					Secure:       true,
+					BaseEndpoint: "pinner.xyz",
+					AuthToken:    "test-token",
+					MaxRetries:   3,
+				}).Maybe()
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().Pin(context.Background(), "QmXxx", "test-name", true).Return(
+				service.EXPECT().Pin(mock.Anything, "QmXxx", "test-name", true).Return(
 					&PinResult{CID: "QmXxx", RequestID: "req-123", Status: "pinned"}, nil,
 				)
 			},
@@ -150,8 +163,14 @@ func TestPin(t *testing.T) {
 			nameFlag:   "",
 			noWaitFlag: true,
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPinningService) {
+				cfgMgr.EXPECT().Config().Return(&config.Config{
+					Secure:       true,
+					BaseEndpoint: "pinner.xyz",
+					AuthToken:    "test-token",
+					MaxRetries:   3,
+				}).Maybe()
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().Pin(context.Background(), "QmXxx", "", false).Return(
+				service.EXPECT().Pin(mock.Anything, "QmXxx", "", false).Return(
 					&PinResult{CID: "QmXxx", RequestID: "req-123", Status: "queued"}, nil,
 				)
 			},
@@ -163,6 +182,12 @@ func TestPin(t *testing.T) {
 			nameFlag:   "",
 			noWaitFlag: false,
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPinningService) {
+				cfgMgr.EXPECT().Config().Return(&config.Config{
+					Secure:       true,
+					BaseEndpoint: "pinner.xyz",
+					AuthToken:    "test-token",
+					MaxRetries:   3,
+				}).Maybe()
 				service.EXPECT().RequireAuthenticated().Return(nil)
 			},
 			wantErr:          true,
@@ -174,6 +199,12 @@ func TestPin(t *testing.T) {
 			nameFlag:   "",
 			noWaitFlag: false,
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPinningService) {
+				cfgMgr.EXPECT().Config().Return(&config.Config{
+					Secure:       true,
+					BaseEndpoint: "pinner.xyz",
+					AuthToken:    "test-token",
+					MaxRetries:   3,
+				}).Maybe()
 				service.EXPECT().RequireAuthenticated().Return(nil)
 			},
 			wantErr:     true,
@@ -185,8 +216,14 @@ func TestPin(t *testing.T) {
 			nameFlag:   "",
 			noWaitFlag: false,
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPinningService) {
+				cfgMgr.EXPECT().Config().Return(&config.Config{
+					Secure:       true,
+					BaseEndpoint: "pinner.xyz",
+					AuthToken:    "test-token",
+					MaxRetries:   3,
+				}).Maybe()
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().Pin(context.Background(), "QmXxx", "", true).Return(
+				service.EXPECT().Pin(mock.Anything, "QmXxx", "", true).Return(
 					nil, errors.New("pinning failed"),
 				)
 			},
@@ -243,8 +280,14 @@ func TestPinBatch(t *testing.T) {
 			cids:     "QmXxx1 QmXxx2 QmXxx3",
 			parallel: 2,
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPinningService) {
+				cfgMgr.EXPECT().Config().Return(&config.Config{
+					Secure:       true,
+					BaseEndpoint: "pinner.xyz",
+					AuthToken:    "test-token",
+					MaxRetries:   3,
+				}).Maybe()
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().PinBatch(context.Background(), []string{"QmXxx1", "QmXxx2", "QmXxx3"}, "", BatchOptions{
+				service.EXPECT().PinBatch(mock.Anything, []string{"QmXxx1", "QmXxx2", "QmXxx3"}, "", BatchOptions{
 					Parallel:   2,
 					ContinueOn: false,
 					Wait:       true,
@@ -264,6 +307,12 @@ func TestPinBatch(t *testing.T) {
 			cids:     "",
 			parallel: 1,
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPinningService) {
+				cfgMgr.EXPECT().Config().Return(&config.Config{
+					Secure:       true,
+					BaseEndpoint: "pinner.xyz",
+					AuthToken:    "test-token",
+					MaxRetries:   3,
+				}).Maybe()
 				service.EXPECT().RequireAuthenticated().Return(nil)
 			},
 			wantErr:     true,

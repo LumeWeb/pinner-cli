@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.lumeweb.com/pinner-cli/pkg/config"
 	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
@@ -56,11 +57,17 @@ func TestPinsAdd_DryRun(t *testing.T) {
 
 func TestPinsAdd_NoMeta(t *testing.T) {
 	cfgMgr := configmocks.NewMockManager(t)
+	cfgMgr.EXPECT().Config().Return(&config.Config{
+		Secure:       true,
+		BaseEndpoint: "pinner.xyz",
+		AuthToken:    "test-token",
+		MaxRetries:   3,
+	}).Maybe()
 	service := NewMockPinningService(t)
 	output := newTestOutput()
 
 	service.EXPECT().RequireAuthenticated().Return(nil)
-	service.EXPECT().Pin(context.Background(), "QmXxx", "", true).Return(
+	service.EXPECT().Pin(mock.Anything, "QmXxx", "", true).Return(
 		&PinResult{CID: "QmXxx", RequestID: "req-1", Status: "pinned"}, nil,
 	)
 
@@ -76,17 +83,23 @@ func TestPinsAdd_NoMeta(t *testing.T) {
 
 func TestPinsAdd_WithMetadata(t *testing.T) {
 	cfgMgr := configmocks.NewMockManager(t)
+	cfgMgr.EXPECT().Config().Return(&config.Config{
+		Secure:       true,
+		BaseEndpoint: "pinner.xyz",
+		AuthToken:    "test-token",
+		MaxRetries:   3,
+	}).Maybe()
 	service := NewMockPinningService(t)
 	output := newTestOutput()
 
 	// pin() calls factory + RequireAuthenticated + Pin
 	service.EXPECT().RequireAuthenticated().Return(nil)
-	service.EXPECT().Pin(context.Background(), "QmXxx", "", true).Return(
+	service.EXPECT().Pin(mock.Anything, "QmXxx", "", true).Return(
 		&PinResult{CID: "QmXxx", RequestID: "req-1", Status: "pinned"}, nil,
 	)
 	// pinsAdd metadata path calls factory + RequireAuthenticated + UpdateMetadata
 	service.EXPECT().RequireAuthenticated().Return(nil)
-	service.EXPECT().UpdateMetadata(context.Background(), "QmXxx", []string{"owner", "alice"}, false).Return(nil)
+	service.EXPECT().UpdateMetadata(mock.Anything, "QmXxx", []string{"owner", "alice"}, false).Return(nil)
 
 	cmd := newMockCommand().
 		withCID("QmXxx").
@@ -102,11 +115,17 @@ func TestPinsAdd_WithMetadata(t *testing.T) {
 
 func TestPinsAdd_PinError(t *testing.T) {
 	cfgMgr := configmocks.NewMockManager(t)
+	cfgMgr.EXPECT().Config().Return(&config.Config{
+		Secure:       true,
+		BaseEndpoint: "pinner.xyz",
+		AuthToken:    "test-token",
+		MaxRetries:   3,
+	}).Maybe()
 	service := NewMockPinningService(t)
 	output := newTestOutput()
 
 	service.EXPECT().RequireAuthenticated().Return(nil)
-	service.EXPECT().Pin(context.Background(), "QmXxx", "", true).Return(
+	service.EXPECT().Pin(mock.Anything, "QmXxx", "", true).Return(
 		nil, errors.New("pinning failed"),
 	)
 
@@ -123,15 +142,21 @@ func TestPinsAdd_PinError(t *testing.T) {
 
 func TestPinsAdd_MetadataUpdateError(t *testing.T) {
 	cfgMgr := configmocks.NewMockManager(t)
+	cfgMgr.EXPECT().Config().Return(&config.Config{
+		Secure:       true,
+		BaseEndpoint: "pinner.xyz",
+		AuthToken:    "test-token",
+		MaxRetries:   3,
+	}).Maybe()
 	service := NewMockPinningService(t)
 	output := newTestOutput()
 
 	service.EXPECT().RequireAuthenticated().Return(nil)
-	service.EXPECT().Pin(context.Background(), "QmXxx", "", true).Return(
+	service.EXPECT().Pin(mock.Anything, "QmXxx", "", true).Return(
 		&PinResult{CID: "QmXxx", RequestID: "req-1", Status: "pinned"}, nil,
 	)
 	service.EXPECT().RequireAuthenticated().Return(nil)
-	service.EXPECT().UpdateMetadata(context.Background(), "QmXxx", []string{"owner", "alice"}, false).Return(errors.New("metadata update failed"))
+	service.EXPECT().UpdateMetadata(mock.Anything, "QmXxx", []string{"owner", "alice"}, false).Return(errors.New("metadata update failed"))
 
 	cmd := newMockCommand().
 		withCID("QmXxx").
@@ -148,11 +173,17 @@ func TestPinsAdd_MetadataUpdateError(t *testing.T) {
 
 func TestPinsAdd_InvalidMetaFormat(t *testing.T) {
 	cfgMgr := configmocks.NewMockManager(t)
+	cfgMgr.EXPECT().Config().Return(&config.Config{
+		Secure:       true,
+		BaseEndpoint: "pinner.xyz",
+		AuthToken:    "test-token",
+		MaxRetries:   3,
+	}).Maybe()
 	service := NewMockPinningService(t)
 	output := newTestOutput()
 
 	service.EXPECT().RequireAuthenticated().Return(nil)
-	service.EXPECT().Pin(context.Background(), "QmXxx", "", true).Return(
+	service.EXPECT().Pin(mock.Anything, "QmXxx", "", true).Return(
 		&PinResult{CID: "QmXxx", RequestID: "req-1", Status: "pinned"}, nil,
 	)
 

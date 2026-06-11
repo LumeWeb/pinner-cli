@@ -209,6 +209,8 @@ func printWebsiteUpdateResult(output Output, website *ipfs.WebsiteItem, message 
 }
 
 func websitesList(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+	defer cancel()
 	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken, secure)
 	if err != nil {
 		return err
@@ -303,6 +305,8 @@ func resolveAndGetWebsite(ctx context.Context, websitesService WebsitesService, 
 }
 
 func websitesUpdate(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+	defer cancel()
 	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken, secure)
 	if err != nil {
 		return err
@@ -395,6 +399,8 @@ Examples:
 }
 
 func websitesEnableIPNS(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+	defer cancel()
 	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken, secure)
 	if err != nil {
 		return err
@@ -430,6 +436,8 @@ func websitesEnableIPNS(ctx context.Context, cmd websitesCommandGetter, output O
 }
 
 func websitesGet(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+	defer cancel()
 	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken, secure)
 	if err != nil {
 		return err
@@ -509,6 +517,8 @@ func websitesGet(ctx context.Context, cmd websitesCommandGetter, output Output, 
 }
 
 func websitesCreate(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+	defer cancel()
 	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken, secure)
 	if err != nil {
 		return err
@@ -713,6 +723,8 @@ Examples:
 }
 
 func websitesDelete(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+	defer cancel()
 	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken, secure)
 	if err != nil {
 		return err
@@ -741,6 +753,8 @@ func websitesDelete(ctx context.Context, cmd websitesCommandGetter, output Outpu
 }
 
 func websitesValidate(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+	defer cancel()
 	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken, secure)
 	if err != nil {
 		return err
@@ -897,6 +911,8 @@ Examples:
 }
 
 func websitesConfig(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+	defer cancel()
 	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken, secure)
 	if err != nil {
 		return err

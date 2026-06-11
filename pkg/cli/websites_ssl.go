@@ -61,6 +61,8 @@ Examples:
 }
 
 func websitesSSLStatus(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
+	setupCtx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+	defer cancel()
 	args := cmd.Args()
 	if args.Len() == 0 {
 		return fmt.Errorf("domain is required")
@@ -103,7 +105,7 @@ func websitesSSLStatus(ctx context.Context, cmd websitesCommandGetter, output Ou
 		)
 	}
 
-	website, err := websitesService.GetSSLStatus(ctx, domain)
+	website, err := websitesService.GetSSLStatus(setupCtx, domain)
 	if err != nil {
 		return err
 	}

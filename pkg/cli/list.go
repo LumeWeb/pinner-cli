@@ -46,6 +46,9 @@ Examples:
 }
 
 func list(ctx context.Context, cmd flagGetterWithInt, output Output, cfgMgr config.Manager, authToken string, secure bool, pinningServiceFactory PinningServiceFactory) error {
+	setupCtx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+	defer cancel()
+
 	var pinningService PinningService
 	if authToken != "" {
 		pinningService = NewPinningService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure), WithAuthToken(authToken))
@@ -92,7 +95,7 @@ func list(ctx context.Context, cmd flagGetterWithInt, output Output, cfgMgr conf
 		)
 	}
 
-	pins, err := pinningService.List(ctx, nameFilter, limit, statusFilter)
+	pins, err := pinningService.List(setupCtx, nameFilter, limit, statusFilter)
 	if err != nil {
 		return err
 	}

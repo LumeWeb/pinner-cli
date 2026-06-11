@@ -57,6 +57,9 @@ Examples:
 }
 
 func unpinAll(ctx context.Context, cmd flagGetterWithInt, output Output, cfgMgr config.Manager, authToken string, secure bool, pinningServiceFactory PinningServiceFactory, prompter ConfirmPrompter) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetSyncTimeout())
+	defer cancel()
+
 	confirm := cmd.Bool(FlagForce) || cmd.Bool(FlagConfirm)
 	if !confirm {
 		output.Printfln("Use --force to unpin all pins. This is a destructive operation.")
