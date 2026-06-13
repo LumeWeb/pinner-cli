@@ -13,14 +13,14 @@ func newStatusCommand() *cli.Command {
 		Name:     "status",
 		Category: "Pinning",
 		Usage:    "Get pin status for CID (see: pinner pins status)",
-		Description: `Check the status of a pin to see if it has been completed.
+		Description: `Shortcut for 'pinner pins status'. Check whether a pin has completed.
 If the pin is not found, account operations are checked as a fallback.
 
 Examples:
-  pinner status QmHash
-  pinner status QmHash --watch
-  pinner status QmHash --json
-  echo "QmHash" | pinner status
+  pinner status bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e
+  pinner status bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --watch
+  pinner status bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --json
+  echo "bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e" | pinner status
   cat cids.txt | pinner status
 
 Status values:

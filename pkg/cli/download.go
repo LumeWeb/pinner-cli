@@ -35,12 +35,12 @@ For streaming content to stdout, use 'pinner cat' instead.
 For listing directory contents, use 'pinner ls' instead.
 
 Examples:
-  pinner download QmHash
-  pinner download QmHash/subdir/file.txt
-  pinner download QmHash -o myfile.txt
-  pinner download QmHash -o /path/to/dir/
-  pinner download QmHash -o existing.txt --force
-  pinner download QmHash --dry-run
+  pinner download bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e
+  pinner download bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e/subdir/file.txt
+  pinner download bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e -o myfile.txt
+  pinner download bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e -o /path/to/dir/
+  pinner download bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e -o existing.txt --force
+  pinner download bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --dry-run
 
 The output includes:
   - CID: Content identifier of the downloaded file
@@ -76,11 +76,11 @@ func newCatCommand() *cli.Command {
 Supports CID paths (e.g., CID/path/to/file) to cat a specific file from a directory.
 
 Examples:
-  pinner cat QmHash
-  pinner cat QmHash/path/to/file.txt
-  pinner cat QmHash > output.txt
-  pinner cat QmHash | jq .
-  pinner cat QmHash | gzip > data.gz
+  pinner cat bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e
+  pinner cat bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e/path/to/file.txt
+  pinner cat bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e > output.txt
+  pinner cat bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e | jq .
+  pinner cat bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e | gzip > data.gz
 
 Note: This command outputs raw content to stdout.
 Use --verbose or redirect stderr for progress info.`,
@@ -111,10 +111,10 @@ Supports CID paths (e.g., CID/path/to/dir) to list nested directories.
 If the path targets a file, shows file metadata instead of erroring.
 
 Examples:
-  pinner ls QmHash
-  pinner ls QmHash --json
-  pinner ls QmHash --limit 5
-  pinner ls QmHash/subdir`,
+  pinner ls bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e
+  pinner ls bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --json
+  pinner ls bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --limit 5
+  pinner ls bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e/subdir`,
 		ArgsUsage: "<cid>[/<path>]",
 		Flags: []cli.Flag{
 			LimitFlag(),

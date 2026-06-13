@@ -26,18 +26,18 @@ via the Pinner.xyz service.
 Common workflows:
   First-time setup:      pinner setup
   Quick upload & pin:    pinner upload myfile.txt
-  Stream content:        pinner cat QmHash
-  Download content:      pinner download QmHash
-  List directory:        pinner ls QmHash
-  Pin existing CID:      pinner pin QmHash --name "my file"
+  Stream content:        pinner cat bafybeig...td7e
+  Download content:      pinner download bafybeig...td7e
+  List directory:        pinner ls bafybeig...td7e
+  Pin existing CID:      pinner pin bafybeig...td7e --name "my file"
   List your pins:        pinner list
-  Check pin status:      pinner status QmHash
-  Remove a pin:          pinner unpin QmHash --confirm
+  Check pin status:      pinner status bafybeig...td7e
+  Remove a pin:          pinner unpin bafybeig...td7e --force
 
 Batch operations:
-  Pin multiple CIDs:     pinner pin QmHash1 QmHash2 QmHash3 --parallel 5
+  Pin multiple CIDs:     pinner pin bafybeig...abc bafybeig...def bafybeig...ghi --parallel 5
   Pin from file:        pinner pin --file cids.txt --wait
-  Unpin multiple:       pinner unpin --file cids.txt --confirm
+  Unpin multiple:       pinner unpin --file cids.txt --force
 
 Authentication:
   Login:                pinner auth --email user@example.com

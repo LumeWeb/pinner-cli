@@ -15,7 +15,7 @@ func newIPNSCommand() *cli.Command {
 		Category: "Management",
 		Usage:    "Manage IPNS (InterPlanetary Name System) keys and records",
 		Description: `IPNS provides a mutable address scheme for IPFS content, allowing you to
-publish content under a stable name that can be updated to point to new CIDs.
+publish content under a stable name that you can update to point to new CIDs.
 
 IPNS operations include:
   - Managing IPNS keys (create, list, get, delete)
@@ -23,7 +23,7 @@ IPNS operations include:
   - Republishing IPNS records
   - Resolving IPNS names to their target CIDs
 
-Key names can be used interchangeably with numeric IDs. For example:
+Key names and numeric IDs are interchangeable. For example:
   pinner ipns keys get my-key
 is equivalent to:
   pinner ipns keys get 1
@@ -33,7 +33,7 @@ Examples:
   pinner ipns keys create my-key
   pinner ipns keys get my-key
   pinner ipns keys delete my-key
-  pinner ipns publish QmHash --key-name my-key
+  pinner ipns publish bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --key-name my-key
   pinner ipns republish my-key
   pinner ipns resolve k51qzi5uqu5djx...`,
 		Commands: []*cli.Command{
@@ -50,9 +50,9 @@ func newIPNSKeysCommand() *cli.Command {
 		Name:  "keys",
 		Usage: "Manage IPNS keys",
 		Description: `Manage your IPNS keys. Keys are used to publish content under stable
-IPNS names that can be updated to point to new CIDs.
+IPNS names that you can update to point to new CIDs.
 
-Key names can be used interchangeably with numeric IDs.
+Key names and numeric IDs are interchangeable.
 
 Examples:
   pinner ipns keys list
@@ -87,7 +87,7 @@ func newIPNSKeysCreateCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "create",
 		Usage: "Create a new IPNS key",
-		Description: `Create a new IPNS key with the given name. The key can be used to
+		Description: `Create a new IPNS key with the given name. Use the key to
 publish content under a stable IPNS name.
 
 Examples:
@@ -147,12 +147,12 @@ func newIPNSPublishCommand() *cli.Command {
 		Description: `Publish a CID to an IPNS key, making it resolvable via the IPNS name.
 After publishing, the IPNS name will resolve to the specified CID.
 
-The key can be specified by name or numeric ID.
+Specify the key by name or numeric ID.
 
 Examples:
-  pinner ipns publish QmHash --key-name my-key
-  pinner ipns publish QmHash --key-name my-key --ttl 24h
-  pinner ipns publish QmHash --key-name 1 --json`,
+  pinner ipns publish bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --key-name my-key
+  pinner ipns publish bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --key-name my-key --ttl 24h
+  pinner ipns publish bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --key-name 1 --json`,
 		ArgsUsage: "<cid>",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
@@ -181,7 +181,7 @@ func newIPNSRepublishCommand() *cli.Command {
 		Description: `Republish the IPNS record for a specific key. This refreshes the record
 on the network, extending its validity.
 
-The key can be specified by name or numeric ID.
+Specify the key by name or numeric ID.
 
 Examples:
   pinner ipns republish my-key

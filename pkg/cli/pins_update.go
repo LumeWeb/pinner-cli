@@ -12,14 +12,15 @@ func newPinsUpdateCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "update",
 		Usage: "Update pin name and metadata",
-		Description: `Update name and/or metadata for a pin.
+		Description: `Update name and/or metadata for a pin. Metadata is a set of
+key-value pairs (e.g., owner=alice, env=prod) that help you organize and filter pins.
 
 Examples:
-  pinner pins update QmHash --name "renamed"
-  pinner pins update QmHash --meta owner=alice --meta env=prod
-  pinner pins update QmHash --clear-meta
-  pinner pins update QmHash --clear-meta --meta fresh=start
-  pinner pins update QmHash --name "renamed" --meta env=prod`,
+  pinner pins update bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --name "renamed"
+  pinner pins update bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --meta owner=alice --meta env=prod
+  pinner pins update bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --clear-meta
+  pinner pins update bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --clear-meta --meta fresh=start
+  pinner pins update bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --name "renamed" --meta env=prod`,
 		ArgsUsage: "<cid>",
 		Flags: []cli.Flag{
 			NameFlag("Rename the pin"),

@@ -16,19 +16,19 @@ func newUnpinAllCommand() *cli.Command {
 		Description: `Remove all pinned content. This is a destructive operation with safety guards.
 
 This command requires two explicit confirmations:
-1. The --confirm flag to acknowledge the destructive nature
+1. The --force flag to acknowledge the destructive nature
 2. An interactive prompt requiring you to type the exact number of pins
 
 For non-interactive use (scripts, CI), use --yes to accept the safety prompt.
---confirm is always required regardless of --yes.
+--force is always required regardless of --yes.
 
 Examples:
-  pinner unpin all --confirm
-  pinner unpin all --confirm --status failed
-  pinner unpin all --confirm --parallel 5 --continue
-  pinner unpin all --confirm --dry-run
-  pinner unpin all --confirm --yes
-  pinner unpin all --confirm --status queued --dry-run`,
+  pinner unpin all --force
+  pinner unpin all --force --status failed
+  pinner unpin all --force --parallel 5 --continue
+  pinner unpin all --force --dry-run
+  pinner unpin all --force --yes
+  pinner unpin all --force --status queued --dry-run`,
 		Flags: []cli.Flag{
 			ForceFlag(),
 			ConfirmFlag(),
@@ -38,7 +38,7 @@ Examples:
 			DryRunFlag(),
 			&cli.BoolFlag{
 				Name:   FlagYes,
-				Usage:  "Accept the safety prompt non-interactively (requires --confirm)",
+				Usage:  "Accept the safety prompt non-interactively (requires --force)",
 				Hidden: true,
 			},
 		},
@@ -99,7 +99,7 @@ func unpinAll(ctx context.Context, cmd flagGetterWithInt, output Output, cfgMgr 
 			items[i] = pin.RequestID
 		}
 		options := map[string]string{
-			DryRunOptionConfirm: "no (using --confirm)",
+			DryRunOptionConfirm: "no (using --force)",
 		}
 		if statusFilter != "" {
 			options["Status filter"] = statusFilter

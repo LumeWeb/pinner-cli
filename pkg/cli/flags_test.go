@@ -162,7 +162,7 @@ func TestCommandArgsVerification(t *testing.T) {
 		{
 			name:        "auth command",
 			commandName: "auth",
-			argsUsage:   "[jwt-token]",
+			argsUsage:   "[token]",
 			minArgs:     0,
 			maxArgs:     1,
 		},

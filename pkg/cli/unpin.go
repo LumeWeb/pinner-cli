@@ -14,17 +14,17 @@ func newUnpinCommand() *cli.Command {
 		Name:     "unpin",
 		Category: "Pinning",
 		Usage:    "Remove pins (see: pinner pins rm)",
-		Description: `Remove pins by CID or remove all pins.
+		Description: `Shortcut for 'pinner pins rm'. Remove pins by CID or remove all pins.
 
 Examples:
-  pinner unpin QmHash
-  pinner unpin QmHash --confirm
-  pinner unpin QmHash1 QmHash2 QmHash3 --confirm
-  pinner unpin --file cids.txt --confirm
-  pinner unpin --file cids.txt --confirm --parallel 5 --continue
-  pinner unpin QmHash --dry-run
-  pinner unpin all --confirm
-  pinner unpin all --confirm --status failed --dry-run`,
+  pinner unpin bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e
+  pinner unpin bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --force
+  pinner unpin bafybeig...abc bafybeig...def bafybeig...ghi --force
+  pinner unpin --file cids.txt --force
+  pinner unpin --file cids.txt --force --parallel 5 --continue
+  pinner unpin bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --dry-run
+  pinner unpin all --force
+  pinner unpin all --force --status failed --dry-run`,
 		ArgsUsage: "<cid...>",
 		Flags: []cli.Flag{
 			ForceFlag(),
@@ -106,7 +106,7 @@ func unpin(ctx context.Context, cmd cidFlagGetter, output Output, cfgMgr config.
 			options[DryRunOptionContinueOnError] = "yes"
 		}
 		if confirm {
-			options[DryRunOptionConfirm] = "no (using --confirm)"
+			options[DryRunOptionConfirm] = "no (using --force)"
 		} else {
 			options[DryRunOptionConfirm] = "yes"
 		}

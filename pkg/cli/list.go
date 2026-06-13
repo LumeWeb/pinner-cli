@@ -14,7 +14,7 @@ func newListCommand() *cli.Command {
 		Name:     "list",
 		Category: "Pinning",
 		Usage:    "List pinned content (see: pinner pins ls)",
-		Description: `List your pinned content with optional filtering.
+		Description: `Shortcut for 'pinner pins ls'. List your pinned content with optional filtering.
 
 Examples:
   pinner list

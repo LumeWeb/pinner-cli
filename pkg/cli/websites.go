@@ -28,7 +28,7 @@ func newWebsitesCommand() *cli.Command {
 		Aliases:  []string{"website"},
 		Usage:    "Manage websites",
 		Description: `Manage websites for your IPFS content. Websites allow you to associate
-domain names with IPFS hashes, making your content accessible through custom domains.
+domain names with CIDs, making your content accessible through custom domains.
 
 Website operations include:
   - List all websites
@@ -40,9 +40,9 @@ Website operations include:
 
 Examples:
   pinner websites list
-  pinner websites create example.com --cid QmHash
+  pinner websites create example.com --cid bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e
   pinner websites get example.com
-  pinner websites update example.com --cid QmNewHash
+  pinner websites update example.com --cid bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e
   pinner websites delete example.com
   pinner websites validate example.com`,
 		Commands: []*cli.Command{
@@ -82,10 +82,10 @@ func newWebsitesCreateCommand() *cli.Command {
 		Description: `Create a new website with the specified domain and target CID.
 
 Examples:
-  pinner websites create example.com --cid QmHash
-  pinner websites create example.com --cid QmHash --target-type ipfs
-  pinner websites create example.com --cid QmHash --dns-hosting
-  pinner websites create example.com --cid QmHash --json`,
+  pinner websites create example.com --cid bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e
+  pinner websites create example.com --cid bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --target-type ipfs
+  pinner websites create example.com --cid bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --dns-hosting
+  pinner websites create example.com --cid bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --json`,
 		ArgsUsage: "<domain>",
 		Flags: []cli.Flag{
 			RequiredCIDFlag(),
@@ -131,9 +131,9 @@ When --target-type is "ipns" and --cid is a regular IPFS CID (not a peer ID),
 an IPNS key is auto-created and that CID is published to it.
 
 Examples:
-  pinner websites update example.com --cid QmNewHash --target-type ipfs
+  pinner websites update example.com --cid bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --target-type ipfs
   pinner websites update example.com --target-type ipns
-  pinner websites update example.com --cid QmNewHash --target-type ipns
+  pinner websites update example.com --cid bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --target-type ipns
   pinner websites update example.com --dns-hosting
   pinner websites update example.com --no-dns-hosting
   pinner websites update example.com --json`,
@@ -386,7 +386,7 @@ If --cid is provided, the IPNS key will publish that CID instead of the current 
 
 Examples:
   pinner websites enable-ipns example.com
-  pinner websites enable-ipns example.com --cid QmNewHash
+  pinner websites enable-ipns example.com --cid bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e
   pinner websites enable-ipns example.com --json`,
 		ArgsUsage: "<domain>",
 		Flags: []cli.Flag{
