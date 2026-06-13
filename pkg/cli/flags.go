@@ -406,7 +406,7 @@ func RequiredDomainFlag() *cli.StringFlag {
 func TargetHashFlag() *cli.StringFlag {
 	return &cli.StringFlag{
 		Name:  FlagTargetHash,
-		Usage: "Target CID (IPFS hash) for the website",
+		Usage: "Target CID for the website",
 	}
 }
 
@@ -415,7 +415,7 @@ func TargetHashFlag() *cli.StringFlag {
 func RequiredTargetHashFlag() *cli.StringFlag {
 	return &cli.StringFlag{
 		Name:     FlagTargetHash,
-		Usage:    "Target CID (IPFS hash) for the website",
+		Usage:    "Target CID for the website",
 		Required: true,
 	}
 }
@@ -424,7 +424,7 @@ func RequiredTargetHashFlag() *cli.StringFlag {
 func CIDFlag() *cli.StringFlag {
 	return &cli.StringFlag{
 		Name:  FlagCID,
-		Usage: "CID (Content Identifier) for the website",
+		Usage: "CID for the website",
 	}
 }
 
@@ -432,7 +432,7 @@ func CIDFlag() *cli.StringFlag {
 func RequiredCIDFlag() *cli.StringFlag {
 	return &cli.StringFlag{
 		Name:     FlagCID,
-		Usage:    "CID (Content Identifier) for the website",
+		Usage:    "CID for the website",
 		Required: true,
 	}
 }

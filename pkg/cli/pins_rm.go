@@ -13,11 +13,11 @@ func newPinsRmCommand() *cli.Command {
 		Description: `Remove a pin by its CID, or remove all pins with --all.
 
 Examples:
-  pinner pins rm QmHash
-  pinner pins rm QmHash --confirm
-  pinner pins rm QmHash1 QmHash2 QmHash3 --confirm
-  pinner pins rm --file cids.txt --confirm
-  pinner pins rm QmHash --dry-run
+  pinner pins rm bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e
+  pinner pins rm bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --force
+  pinner pins rm bafybeig...abc bafybeig...def bafybeig...ghi --force
+  pinner pins rm --file cids.txt --force
+  pinner pins rm bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --dry-run
   pinner pins rm --all --force
   pinner pins rm --all --status failed --force`,
 		ArgsUsage: "<cid...>",

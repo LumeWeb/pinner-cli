@@ -13,12 +13,12 @@ func newPinsCommand() *cli.Command {
 removing, listing, checking status, and updating pin metadata.
 
 Examples:
-  pinner pins add QmHash --name "my file"
-  pinner pins add QmHash --meta owner=alice --meta env=prod
-  pinner pins rm QmHash --confirm
+  pinner pins add bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --name "my file"
+  pinner pins add bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --meta owner=alice --meta env=prod
+  pinner pins rm bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --force
   pinner pins ls --status pinned
-  pinner pins status QmHash
-  pinner pins update QmHash --meta owner=bob`,
+  pinner pins status bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e
+  pinner pins update bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --meta owner=bob`,
 		Commands: []*cli.Command{
 			newPinsAddCommand(),
 			newPinsRmCommand(),

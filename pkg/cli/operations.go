@@ -28,7 +28,7 @@ Operations track server-side processing of your requests. Each operation has a s
 Examples:
   pinner operations list
   pinner operations list --status running
-  pinner operations list --cid QmHash --limit 20
+  pinner operations list --cid bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --limit 20
   pinner operations get 42
   pinner operations get 42 --watch`,
 		Commands: []*cli.Command{
@@ -43,13 +43,14 @@ func newOperationsListCommand() *cli.Command {
 		Name:  "list",
 		Usage: "List account operations",
 		Description: `List your account operations with optional filtering.
+Operations track server-side processing of your requests (uploads, pins, etc.).
 
 Examples:
   pinner operations list
   pinner operations list --status running
   pinner operations list --operation upload
   pinner operations list --protocol ipfs
-  pinner operations list --cid QmHash
+  pinner operations list --cid bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e
   pinner operations list --limit 20
   pinner operations list --watch`,
 		Flags: []cli.Flag{

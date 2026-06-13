@@ -14,18 +14,18 @@ func newPinCommand() *cli.Command {
 		Name:     "pin",
 		Category: "Pinning",
 		Usage:    "Pin existing content by CID (see: pinner pins add)",
-		Description: `Pin content that is already on IPFS by providing its CID.
+		Description: `Shortcut for 'pinner pins add'. Pin existing IPFS content by CID.
 Multiple CIDs can be provided as arguments, read from a file using --file, or piped from stdin.
 
 Examples:
-  pinner pin QmHash
-  pinner pin QmHash --name "my file"
-  pinner pin QmHash --no-wait
-  pinner pin QmHash1 QmHash2 QmHash3 --parallel 5
+  pinner pin bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e
+  pinner pin bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --name "my file"
+  pinner pin bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --no-wait
+  pinner pin bafybeig...abc bafybeig...def bafybeig...ghi --parallel 5
   pinner pin --file cids.txt
-  echo "QmHash" | pinner pin
+  echo "bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e" | pinner pin
   pinner pin --file cids.txt --continue --parallel 10
-  pinner pin QmHash --dry-run`,
+  pinner pin bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --dry-run`,
 		ArgsUsage: "<cid...>",
 		Flags: []cli.Flag{
 			NameFlag("Custom name for the pin"),

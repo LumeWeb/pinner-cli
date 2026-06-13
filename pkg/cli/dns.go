@@ -113,7 +113,7 @@ func newDNSZonesGetCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "get",
 		Usage: "Get a DNS zone by domain",
-		Description: `Get details of a specific DNS zone by domain name or ID.
+		Description: `Get details of a specific DNS zone.
 
 Examples:
   pinner dns zones get example.com
@@ -129,7 +129,7 @@ func newDNSZonesDeleteCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "delete",
 		Usage: "Delete a DNS zone",
-		Description: `Delete a DNS zone and all its records by domain name or ID.
+		Description: `Delete a DNS zone and all its records.
 
 Examples:
   pinner dns zones delete example.com`,
@@ -185,7 +185,7 @@ func newDNSRecordsListCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "list",
 		Usage: "List DNS records for a zone",
-		Description: `List all DNS records for a specific zone by domain name or ID.
+		Description: `List all DNS records for a specific zone.
 
 Examples:
   pinner dns records list example.com
@@ -201,11 +201,11 @@ func newDNSRecordsCreateCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "create",
 		Usage: "Create a DNS record",
-		Description: `Create a new DNS record in a zone.
+		Description: `Create a DNS record in the specified zone.
 
 Examples:
   pinner dns records create example.com --name www --type CNAME --content example.com
-  pinner dns records create example.com --name _dnslink --type TXT --content "/ipfs/QmHash" --ttl 3600
+  pinner dns records create example.com --name _dnslink --type TXT --content "/ipfs/bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e" --ttl 3600
   pinner dns records create example.com --name @ --type A --content 192.168.1.1 --json`,
 		ArgsUsage: "<domain>",
 		Flags: []cli.Flag{

@@ -160,11 +160,11 @@ func newAuthCommand() *cli.Command {
 		Description: `Authenticate with the Pinner.xyz service.
 
 Ways to authenticate:
-  1. Provide JWT token directly: pinner auth <jwt-token>
+  1. Provide an auth token directly: pinner auth <token>
   2. Interactive login: pinner auth (prompts for all inputs)
   3. Semi-interactive: pinner auth --email user@example.com (prompts for password and OTP if needed)
-  4. Non-interactive: PINNER_EMAIL=x PINNER_PASSWORD=y pinner auth
-  5. Non-interactive with 2FA: PINNER_EMAIL=x PINNER_PASSWORD=y PINNER_OTP=123456 pinner auth
+  4. Non-interactive: PINNER_EMAIL=x PINNER_PASSWORD=*** pinner auth
+  5. Non-interactive with 2FA: PINNER_EMAIL=x PINNER_PASSWORD=*** PINNER_OTP=123456 pinner auth
   6. Secure non-interactive: echo "pass" | pinner auth --email user@example.com
 
 Examples:
@@ -173,7 +173,7 @@ Examples:
   pinner auth --email user@example.com --password mypass --otp-code 123456
   PINNER_EMAIL=user@example.com PINNER_PASSWORD=mypass pinner auth
   echo "mypass" | pinner auth --email user@example.com --key-name "my-laptop"`,
-		ArgsUsage: "[jwt-token]",
+		ArgsUsage: "[token]",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:    FlagEmail,
@@ -204,7 +204,7 @@ Examples:
 			},
 			&cli.BoolFlag{
 				Name:  FlagNoCreateKey,
-				Usage: "Skip API key creation, save JWT directly",
+				Usage: "Skip API key creation, save token directly",
 			},
 			&cli.BoolFlag{
 				Name:  FlagForce,

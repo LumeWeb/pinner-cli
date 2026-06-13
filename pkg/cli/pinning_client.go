@@ -265,7 +265,7 @@ func (s *PinningServiceDefault) Unpin(ctx context.Context, cidStr string, confir
 	s.output.PrintVerbosef("Using API endpoint: %s", s.apiEndpoint)
 
 	if !confirm {
-		s.output.Printfln("Use --confirm to unpin CID: %s", cidStr)
+		s.output.Printfln("Use --force to unpin CID: %s", cidStr)
 		return NewUnpinResult(cidStr), nil
 	}
 

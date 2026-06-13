@@ -16,13 +16,13 @@ func newPinsAddCommand() *cli.Command {
 Optionally set metadata key-value pairs at pin time using --meta.
 
 Examples:
-  pinner pins add QmHash
-  pinner pins add QmHash --name "my file"
-  pinner pins add QmHash --no-wait
-  pinner pins add QmHash --meta owner=alice --meta env=prod
-  pinner pins add QmHash1 QmHash2 QmHash3 --parallel 5
+  pinner pins add bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e
+  pinner pins add bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --name "my file"
+  pinner pins add bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --no-wait
+  pinner pins add bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --meta owner=alice --meta env=prod
+  pinner pins add bafybeig...abc bafybeig...def bafybeig...ghi --parallel 5
   pinner pins add --file cids.txt
-  pinner pins add QmHash --dry-run`,
+  pinner pins add bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --dry-run`,
 		ArgsUsage: "<cid...>",
 		Flags: []cli.Flag{
 			NameFlag("Custom name for the pin"),
