@@ -3,6 +3,7 @@ module go.lumeweb.com/pinner-cli // v0.1.0
 go 1.26.0
 
 require (
+	github.com/LumeWeb/cli-docs v0.0.0-20260613190900-4a7a99d4f66c
 	github.com/Oudwins/zog v0.22.0
 	github.com/avast/retry-go/v4 v4.7.0
 	github.com/docker/go-units v0.5.0
@@ -148,7 +149,6 @@ require (
 	github.com/spf13/cast v1.10.0 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/ucarion/urlpath v0.0.0-20200424170820-7ccc79b76bbb // indirect
-	github.com/urfave/cli-docs/v3 v3.1.1-0.20251022123016-72b87d11c482 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasttemplate v1.2.2 // indirect
 	github.com/whyrusleeping/base32 v0.0.0-20170828182744-c30ac30633cc // indirect

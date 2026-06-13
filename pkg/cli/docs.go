@@ -4,14 +4,14 @@ import (
 	"context"
 	"os"
 
-	docs "github.com/urfave/cli-docs/v3"
+	docs "github.com/LumeWeb/cli-docs"
 	"github.com/urfave/cli/v3"
 )
 
 func newDocsCommand() *cli.Command {
 	return &cli.Command{
 		Name:     "generate-docs",
-		Usage:    "Generate CLI documentation in markdown or man format",
+		Usage:    "Generate CLI documentation in markdown, man, or JSON format",
 		Category: "System",
 		Commands: []*cli.Command{
 			{
@@ -60,6 +60,28 @@ func newDocsCommand() *cli.Command {
 						return os.WriteFile(out, []byte(man), 0o644)
 					}
 					_, err = cmd.Root().Writer.Write([]byte(man))
+					return err
+				},
+			},
+			{
+				Name:  "json",
+				Usage: "Generate JSON documentation",
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:    "output",
+						Aliases: []string{"o"},
+						Usage:   "Output file (default: stdout)",
+					},
+				},
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					j, err := docs.ToJSON(NewRootCommand())
+					if err != nil {
+						return err
+					}
+					if out := cmd.String("output"); out != "" {
+						return os.WriteFile(out, j, 0o644)
+					}
+					_, err = cmd.Root().Writer.Write(j)
 					return err
 				},
 			},
