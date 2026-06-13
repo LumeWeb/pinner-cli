@@ -9,6 +9,7 @@ before:
         - sh -c "mkdir -p completions && go run ./cmd/pinner completion bash > completions/pinner.bash"
         - sh -c "go run ./cmd/pinner completion zsh > completions/pinner.zsh"
         - sh -c "go run ./cmd/pinner completion fish > completions/pinner.fish"
+        - sh -c "mkdir -p manpages && go run ./cmd/pinner generate-docs man -o manpages/pinner.1"
 
 builds:
     - id: pinner-cli
@@ -46,6 +47,7 @@ archives:
           - LICENSE
           - README.md
           - completions/*
+          - manpages/*
 
 checksum:
     name_template: checksums.txt
@@ -79,6 +81,8 @@ nfpms:
             dst: /usr/share/zsh/site-functions/_pinner
           - src: ./completions/pinner.fish
             dst: /usr/share/fish/vendor_completions.d/pinner.fish
+          - src: ./manpages/pinner.1
+            dst: /usr/share/man/man1/pinner.1
 
 homebrew_casks:
     - name: pinner

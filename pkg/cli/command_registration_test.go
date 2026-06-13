@@ -80,6 +80,7 @@ func TestCommandRegistration_RootSubcommands(t *testing.T) {
 		"ipns",
 		"websites",
 		"admin",
+		"generate-docs",
 	}
 
 	names := commandNames(root.Commands)
