@@ -67,6 +67,8 @@ func TestCommandRegistration_RootSubcommands(t *testing.T) {
 		"cat",
 		"ls",
 		"pin",
+		"point",
+		"unpoint",
 		"pins",
 		"list",
 		"status",
@@ -125,6 +127,8 @@ func TestCommandRegistration_Categories(t *testing.T) {
 		"config":        "System",
 		"doctor":        "System",
 		"bench":         "System",
+		"point":         "Management",
+		"unpoint":       "Management",
 		"admin":         "Admin",
 	}
 
