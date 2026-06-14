@@ -3,13 +3,19 @@ package cli
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/pkg/config"
 	ipfs "go.lumeweb.com/ipfs-sdk"
 )
 
-const ipnsSchemePrefix = "ipns://"
+const (
+	ipnsSchemePrefix = "ipns://"
+	ethSuffix         = ".eth"
+	ethLimoFmt       = "https://%s.eth.limo"
+	ipfsGatewayFmt   = "https://%s.ipns.inbrowser.link"
+)
 
 func newPointCommand() *cli.Command {
 	return &cli.Command{
@@ -112,23 +118,33 @@ func pointWithServices(ctx context.Context, name, cid string, ipnsService IPNSSe
 	contenthash := ipnsSchemePrefix + key.IpnsName
 
 	if output.IsJSON() {
-		return output.PrintJSON(map[string]any{
+		result := map[string]any{
 			"name":        name,
 			"cid":         cid,
 			"ipns_name":   key.IpnsName,
 			"contenthash": contenthash,
 			"created":     isNew,
-		})
+		}
+		if verifyURL := resolveVerifyURL(name, key.IpnsName); verifyURL != "" {
+			result["verify_url"] = verifyURL
+		}
+		return output.PrintJSON(result)
 	}
 
-	output.Printfln("Domain pointed successfully")
-
-	output.PrintFields(FieldGroup{Fields: []Field{
+	output.PrintFields(FieldGroup{Title: "IPNS key published", Fields: []Field{
 		{"Name", name},
 		{"CID", cid},
 		{"IPNS Name", key.IpnsName},
 		{"Contenthash", contenthash},
 	}})
+
+	nextFields := []Field{
+		{"Set contenthash", contenthash},
+	}
+	if verifyURL := resolveVerifyURL(name, key.IpnsName); verifyURL != "" {
+		nextFields = append(nextFields, Field{"Verify", verifyURL})
+	}
+	output.PrintFields(FieldGroup{Title: "Next steps", Fields: nextFields})
 
 	return nil
 }
@@ -167,9 +183,7 @@ func unpointWithServices(ctx context.Context, name string, ipnsService IPNSServi
 		})
 	}
 
-	output.Printfln("Domain unpointed successfully")
-
-	output.PrintFields(FieldGroup{Fields: []Field{
+	output.PrintFields(FieldGroup{Title: "IPNS key removed", Fields: []Field{
 		{"Name", name},
 		{"IPNS Name", found.IpnsName},
 	}})
@@ -195,4 +209,11 @@ func resolveOrCreateIPNSKey(ctx context.Context, ipnsService IPNSService, name s
 	}
 
 	return nil, false, fmt.Errorf("IPNS key %q not found and creation failed: %w", name, createErr)
+}
+
+func resolveVerifyURL(name, ipnsName string) string {
+	if strings.HasSuffix(strings.ToLower(name), ethSuffix) {
+		return fmt.Sprintf(ethLimoFmt, name[:len(name)-len(ethSuffix)])
+	}
+	return fmt.Sprintf(ipfsGatewayFmt, ipnsName)
 }
