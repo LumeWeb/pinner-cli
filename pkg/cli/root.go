@@ -34,6 +34,10 @@ Common workflows:
   Check pin status:      pinner status bafybeig...td7e
   Remove a pin:          pinner unpin bafybeig...td7e --force
 
+Onchain domains:
+  Point a domain:       pinner point vitalik.eth --cid bafybeig...td7e
+  Remove pointing:      pinner unpoint vitalik.eth
+
 Batch operations:
   Pin multiple CIDs:     pinner pin bafybeig...abc bafybeig...def bafybeig...ghi --parallel 5
   Pin from file:        pinner pin --file cids.txt --wait
