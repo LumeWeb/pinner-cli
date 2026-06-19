@@ -104,7 +104,7 @@ winget:
       publisher: Pinner
       package_identifier: Pinner.Cli
       license: MIT
-      copyright: Copyright (c) Pinner.xyz
+      copyright: Copyright (c) Hammer Technologies LLC
       homepage: https://pinner.xyz
       short_description: "CLI for pinning content to IPFS"
       repository:
