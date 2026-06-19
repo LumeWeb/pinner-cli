@@ -25,7 +25,7 @@ require (
 	github.com/urfave/cli/v3 v3.6.1
 	go.lumeweb.com/configmanager v0.3.26
 	go.lumeweb.com/ipfs-content v0.1.17
-	go.lumeweb.com/ipfs-sdk v0.1.48
+	go.lumeweb.com/ipfs-sdk v0.1.50
 	go.lumeweb.com/portal-sdk v0.1.55
 	go.lumeweb.com/queryutil v0.3.15
 	golang.org/x/sys v0.41.0
