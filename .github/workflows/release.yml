@@ -31,8 +31,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.PAT }}
 
-      - name: Fetch tags
-        run: git fetch --tags origin
+      - name: Set RELEASE_VERSION
+        run: echo "RELEASE_VERSION=$(grep '^module' go.mod | awk -F'// ' '{print $2}')" >> $GITHUB_ENV
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -57,4 +57,4 @@ jobs:
           token: ${{ secrets.PAT }}
           repository: LumeWeb/get.pinner.xyz
           event-type: pinner-cli-release
-          client-payload: '{"version": "${{ github.ref_name }}"}'
+          client-payload: '{"version": "${{ env.RELEASE_VERSION }}"}'
