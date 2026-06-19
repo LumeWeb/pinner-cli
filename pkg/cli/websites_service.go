@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 
 	"go.lumeweb.com/pinner-cli/pkg/config"
 	ipfs "go.lumeweb.com/ipfs-sdk"
@@ -127,6 +128,9 @@ func (s *websitesService) CreateWithOptions(ctx context.Context, req ipfs.Websit
 }
 
 // Get retrieves a specific website by its ID.
+// When the website is in a broken state, the API returns 410 Gone with the
+// website data in the body. In that case, both the result and ErrGone are
+// returned so the caller can display the data while still knowing the state.
 func (s *websitesService) Get(ctx context.Context, id string) (*ipfs.WebsiteItem, error) {
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
@@ -136,6 +140,9 @@ func (s *websitesService) Get(ctx context.Context, id string) (*ipfs.WebsiteItem
 	}
 	response, err := s.service.Get(ctx, id)
 	if err != nil {
+		if errors.Is(err, ipfs.ErrGone) && response != nil {
+			return (*ipfs.WebsiteItem)(response), err
+		}
 		return nil, err
 	}
 	return (*ipfs.WebsiteItem)(response), nil

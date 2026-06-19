@@ -543,7 +543,9 @@ func websitesGetWithService(ctx context.Context, cmd interface{ Args() cli.Args 
 
 	website, err := websitesService.Get(ctx, id)
 	if err != nil {
-		return err
+		if !errors.Is(err, ipfs.ErrGone) || website == nil {
+			return err
+		}
 	}
 
 	if output.IsJSON() {
@@ -637,6 +639,34 @@ func TestWebsitesGet(t *testing.T) {
 			wantErr:     true,
 			errContains: "website not found",
 		},
+		{
+			name: "broken website returns data with ErrGone",
+			setupMocks: func(svc *mockWebsitesServiceForCLI) {
+				svc.getFunc = func(ctx context.Context, id string) (*ipfs.WebsiteItem, error) {
+					return &ipfs.WebsiteItem{
+						Id:         4,
+						Domain:     "get.pinner.xyz",
+						TargetHash: "12D3KooWA3wFZ8CSBqfotedCZbBY5T37Aj7Kvj6K8h9MCJVkH5x6",
+						TargetType: "ipns",
+						Status:     "broken",
+						Created:    time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC),
+					}, ipfs.ErrGone
+				}
+			},
+			cmd:     newMockCommand().withArgs("4"),
+			wantErr: false,
+		},
+		{
+			name: "ErrGone with nil result still errors",
+			setupMocks: func(svc *mockWebsitesServiceForCLI) {
+				svc.getFunc = func(ctx context.Context, id string) (*ipfs.WebsiteItem, error) {
+					return nil, ipfs.ErrGone
+				}
+			},
+			cmd:         newMockCommand().withArgs("1"),
+			wantErr:     true,
+			errContains: "gone",
+		},
 	}
 
 	for _, tt := range tests {
@@ -685,6 +715,23 @@ func TestWebsitesGetJSON(t *testing.T) {
 				}
 			},
 			cmd:     newMockCommand().withArgs("1"),
+			wantErr: false,
+		},
+		{
+			name: "broken website JSON output with ErrGone",
+			setupMocks: func(svc *mockWebsitesServiceForCLI) {
+				svc.getFunc = func(ctx context.Context, id string) (*ipfs.WebsiteItem, error) {
+					return &ipfs.WebsiteItem{
+						Id:         4,
+						Domain:     "get.pinner.xyz",
+						TargetHash: "12D3KooWA3wFZ8CSBqfotedCZbBY5T37Aj7Kvj6K8h9MCJVkH5x6",
+						TargetType: "ipns",
+						Status:     "broken",
+						Created:    time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC),
+					}, ipfs.ErrGone
+				}
+			},
+			cmd:     newMockCommand().withArgs("4"),
 			wantErr: false,
 		},
 	}

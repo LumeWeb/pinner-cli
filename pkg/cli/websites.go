@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -450,7 +451,9 @@ func websitesGet(ctx context.Context, cmd websitesCommandGetter, output Output, 
 
 	website, err := websitesService.Get(ctx, id)
 	if err != nil {
-		return err
+		if !errors.Is(err, ipfs.ErrGone) || website == nil {
+			return err
+		}
 	}
 
 	if output.IsJSON() {
