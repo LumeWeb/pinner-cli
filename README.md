@@ -14,15 +14,59 @@ A developer-focused CLI for pinning content to IPFS, managing websites, DNS, and
 
 ## Installation
 
-### From Releases
+### Universal Installer
 
-Download the latest binary from the [releases page](https://github.com/lumeweb/pinner-cli/releases).
-
-### From go install
+**macOS / Linux:**
 
 ```bash
-go install go.lumeweb.com/pinner-cli/cmd/pinner@latest
+curl -fsSL https://get.pinner.xyz | sh
 ```
+
+**Windows (PowerShell):**
+
+```powershell
+irm https://get.pinner.xyz/install.ps1 | iex
+```
+
+The installer detects your package manager and uses it automatically. On macOS it prefers Homebrew; on Linux it tries `dpkg` then `rpm` before falling back to a binary download. On Windows it tries winget, then Scoop, then falls back to a binary download. All methods verify SHA256 checksums.
+
+### Other Install Methods
+
+The universal installer handles most cases. Use these when you need more control.
+
+| Method | Command |
+|--------|---------|
+| Homebrew | `brew install lumeweb/tap/pinner` |
+| winget | `winget install Pinner.Cli` |
+| Scoop | `scoop bucket add lumeweb https://github.com/LumeWeb/scoop-bucket` then `scoop install pinner` |
+| Debian/Ubuntu | `sudo dpkg -i pinner-cli_VERSION_linux_amd64.deb` |
+| Fedora/RHEL | `sudo rpm -i pinner-cli_VERSION_linux_amd64.rpm` |
+| Go | `go install go.lumeweb.com/pinner-cli/cmd/pinner@latest` |
+| Binary | Download from [GitHub Releases](https://github.com/LumeWeb/pinner-cli/releases) |
+
+#### Installer Flags
+
+**macOS / Linux** (`install.sh`):
+
+| Flag | Description |
+|------|-------------|
+| `--system` | Install to `/usr/local/bin` (requires sudo if not writable) |
+| `--bin-dir DIR` | Install to a custom directory |
+| `--arch ARCH` | Override detected architecture (`amd64` or `arm64`) |
+| `--base-url URL` | Override download base URL (for testing) |
+| `--no-pkg` | Skip package manager detection, use binary install |
+| `--uninstall` | Remove the Pinner CLI |
+| `--debug` | Enable verbose output |
+
+**Windows** (`install.ps1`):
+
+| Flag | Description |
+|------|-------------|
+| `-System` | Install to Program Files (requires admin) |
+| `-NoPkg` | Skip winget/scoop detection |
+| `-CI` | Enable CI mode (also activated by `CI=true` env var) |
+| `-Uninstall` | Remove the Pinner CLI |
+| `-Debug` | Enable verbose output |
 
 ### From Source
 
