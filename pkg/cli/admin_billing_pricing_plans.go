@@ -164,8 +164,9 @@ func billingPricingPlansGetAction(ctx context.Context, cmd argsGetter, output Ou
 
 func newBillingPricingPlansCreateCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "create",
-		Usage: "Create a pricing plan",
+		Name:                        "create",
+		DisableSliceFlagSeparator:   true,
+		Usage:                       "Create a pricing plan",
 		Description: `Create a new billing pricing plan.
 
 Optionally create a pricing plan period in the same command by providing:
@@ -351,8 +352,9 @@ func billingPricingPlansCreateAction(ctx context.Context, cmd interface {
 
 func newBillingPricingPlansUpdateCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "update",
-		Usage: "Update a pricing plan",
+		Name:                      "update",
+		DisableSliceFlagSeparator: true,
+		Usage:                     "Update a pricing plan",
 		Description: `Update an existing billing pricing plan.
 
 Examples:

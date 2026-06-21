@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/pkg/config"
 	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
 	"go.lumeweb.com/portal-sdk/admin"
@@ -501,9 +502,9 @@ func TestBillingPricingPlansUpdate(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:   "returns error when plan ID is missing",
-			planID: "",
-			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {},
+			name:        "returns error when plan ID is missing",
+			planID:      "",
+			setupMocks:  func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {},
 			wantErr:     true,
 			errContains: "plan ID is required",
 		},
@@ -601,9 +602,9 @@ func TestBillingPricingPlansDelete(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:   "returns error when plan ID is missing",
-			planID: "",
-			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {},
+			name:        "returns error when plan ID is missing",
+			planID:      "",
+			setupMocks:  func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {},
 			wantErr:     true,
 			errContains: "plan ID is required",
 		},
@@ -737,9 +738,9 @@ func TestBillingPricingPlanPeriodsGet(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:     "returns error when period ID is missing",
-			periodID: "",
-			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {},
+			name:        "returns error when period ID is missing",
+			periodID:    "",
+			setupMocks:  func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {},
 			wantErr:     true,
 			errContains: "period ID is required",
 		},
@@ -892,9 +893,9 @@ func TestBillingPricingPlanPeriodsUpdate(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:     "returns error when period ID is missing",
-			periodID: "",
-			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {},
+			name:        "returns error when period ID is missing",
+			periodID:    "",
+			setupMocks:  func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {},
 			wantErr:     true,
 			errContains: "period ID is required",
 		},
@@ -958,9 +959,9 @@ func TestBillingPricingPlanPeriodsDelete(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:     "returns error when period ID is missing",
-			periodID: "",
-			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {},
+			name:        "returns error when period ID is missing",
+			periodID:    "",
+			setupMocks:  func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {},
 			wantErr:     true,
 			errContains: "period ID is required",
 		},
@@ -1141,4 +1142,50 @@ func TestBillingSyncAllPricingPlans(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestPricingPlansCreate_FeaturesCommaSplitting verifies that the
+// DisableSliceFlagSeparator setting on the create command prevents
+// urfave/cli from splitting feature strings that contain commas into
+// separate entries. Each --features flag should produce exactly one
+// entry, even if the value itself contains commas.
+func TestPricingPlansCreate_FeaturesCommaSplitting(t *testing.T) {
+	cmd := newBillingPricingPlansCreateCommand()
+	cmd.Action = func(ctx context.Context, c *cli.Command) error {
+		features := c.StringSlice(FlagFeatures)
+		assert.Equal(t, []string{
+			"Pin files, host a personal site, or back up data",
+			"No bandwidth tricks",
+		}, features)
+		return nil
+	}
+
+	err := cmd.Run(context.Background(), []string{
+		"create",
+		"--name", "Starter",
+		"--currency", "USD",
+		"--features", "Pin files, host a personal site, or back up data",
+		"--features", "No bandwidth tricks",
+	})
+	require.NoError(t, err)
+}
+
+// TestPricingPlansUpdate_FeaturesCommaSplitting does the same for update.
+func TestPricingPlansUpdate_FeaturesCommaSplitting(t *testing.T) {
+	cmd := newBillingPricingPlansUpdateCommand()
+	cmd.Action = func(ctx context.Context, c *cli.Command) error {
+		features := c.StringSlice(FlagFeatures)
+		assert.Equal(t, []string{
+			"Pin files, host a personal site, or back up data",
+			"No bandwidth tricks",
+		}, features)
+		return nil
+	}
+
+	err := cmd.Run(context.Background(), []string{
+		"update", "1",
+		"--features", "Pin files, host a personal site, or back up data",
+		"--features", "No bandwidth tricks",
+	})
+	require.NoError(t, err)
 }
