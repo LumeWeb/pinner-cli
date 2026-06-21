@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/pkg/config"
@@ -133,6 +134,10 @@ func billingPricingPlansGetAction(ctx context.Context, cmd argsGetter, output Ou
 		output.Printfln("  Description: %s", plan.Description)
 	}
 
+	if len(plan.Features) > 0 {
+		output.Printfln("  Features: %s", strings.Join(plan.Features, ", "))
+	}
+
 	if len(plan.PricingPeriods) > 0 {
 		output.PrintFields(FieldGroup{
 			Title:  fmt.Sprintf("Pricing Periods (%d):", len(plan.PricingPeriods)),
@@ -174,6 +179,7 @@ Examples:
   pinner admin billing pricing-plans create --name "Pro Plan" --currency USD
   pinner admin billing pricing-plans create --name "Basic" --currency USD --description "Basic plan" --is-active
   pinner admin billing pricing-plans create --name "Premium" --currency USD --is-public --json
+  pinner admin billing pricing-plans create --name "Pro" --currency USD --features "IPFS pinning" --features "Website hosting"
   # Create plan with period in one command:
   pinner admin billing pricing-plans create --name "Starter" --currency USD --quota-plan-id 1 --price 9.99 --cadence monthly
   pinner admin billing pricing-plans create --name "Annual" --currency USD --quota-plan-id 2 --price 99.99 --cadence yearly`,
@@ -201,6 +207,10 @@ Examples:
 				Name:  FlagIsPublic,
 				Usage: "Mark plan as public",
 				Value: false,
+			},
+			&cli.StringSliceFlag{
+				Name:  FlagFeatures,
+				Usage: "Features included in the plan (can be specified multiple times)",
 			},
 			&cli.IntFlag{
 				Name:  FlagPricelineID,
@@ -242,6 +252,7 @@ Examples:
 func billingPricingPlansCreateAction(ctx context.Context, cmd interface {
 	flagGetterWithIsSet
 	Float(name string) float64
+	StringSlice(name string) []string
 }, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
 	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
 	defer cancel()
@@ -256,6 +267,7 @@ func billingPricingPlansCreateAction(ctx context.Context, cmd interface {
 		IsActive:       cmd.Bool(FlagIsActive),
 		IsPublic:       cmd.Bool(FlagIsPublic),
 		Description:    cmd.String(FlagDescription),
+		Features:       cmd.StringSlice(FlagFeatures),
 		PricingPeriods: []admin.PricingPlanPeriod{},
 	}
 
@@ -345,7 +357,8 @@ func newBillingPricingPlansUpdateCommand() *cli.Command {
 
 Examples:
   pinner admin billing pricing-plans update <id> --name "Updated Pro"
-  pinner admin billing pricing-plans update <id> --description "New desc" --is-active false --json`,
+  pinner admin billing pricing-plans update <id> --description "New desc" --is-active false --json
+  pinner admin billing pricing-plans update <id> --features "IPFS pinning" --features "Website hosting"`,
 		ArgsUsage: "<id>",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
@@ -368,6 +381,10 @@ Examples:
 				Name:  FlagIsPublic,
 				Usage: "Mark plan as public",
 			},
+			&cli.StringSliceFlag{
+				Name:  FlagFeatures,
+				Usage: "Features included in the plan (can be specified multiple times). Replaces existing features.",
+			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			cfgMgr, output, err := setupCommandContext(cmd)
@@ -382,6 +399,7 @@ Examples:
 func billingPricingPlansUpdateAction(ctx context.Context, cmd interface {
 	argsGetter
 	flagGetterWithIsSet
+	StringSlice(name string) []string
 }, output Output, cfgMgr config.Manager, serviceFactory BillingAdminServiceFactory) error {
 	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
 	defer cancel()
@@ -396,7 +414,7 @@ func billingPricingPlansUpdateAction(ctx context.Context, cmd interface {
 
 	planID := cmd.Args().First()
 
-	if err := requireUpdateFields(cmd, FlagName, FlagCurrency, FlagDescription, FlagIsActive, FlagIsPublic); err != nil {
+	if err := requireUpdateFields(cmd, FlagName, FlagCurrency, FlagDescription, FlagIsActive, FlagIsPublic, FlagFeatures); err != nil {
 		return err
 	}
 
@@ -416,6 +434,9 @@ func billingPricingPlansUpdateAction(ctx context.Context, cmd interface {
 	}
 	if cmd.IsSet(FlagIsPublic) {
 		req.IsPublic = cmd.Bool(FlagIsPublic)
+	}
+	if cmd.IsSet(FlagFeatures) {
+		req.Features = cmd.StringSlice(FlagFeatures)
 	}
 
 	plan, err := service.UpdatePricingPlan(ctx, planID, &req)

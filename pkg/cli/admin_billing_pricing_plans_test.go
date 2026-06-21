@@ -408,6 +408,45 @@ func TestBillingPricingPlansCreate(t *testing.T) {
 			},
 			wantErr: false,
 		},
+		{
+			name: "successful create with features",
+			cmd: newMockCommand().
+				withString(FlagName, "Pro Plan").
+				withString(FlagCurrency, "USD").
+				withBool(FlagIsActive, true).
+				withStringSlice(FlagFeatures, []string{"IPFS pinning", "Website hosting", "S3-compatible storage"}),
+			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
+				service.EXPECT().RequireAuthenticated().Return(nil)
+				service.EXPECT().CreatePricingPlan(mock.Anything, mock.MatchedBy(func(req *admin.PricingPlanCreateRequest) bool {
+					return req.Name == "Pro Plan" && req.Currency == "USD" &&
+						len(req.Features) == 3 &&
+						req.Features[0] == "IPFS pinning" &&
+						req.Features[1] == "Website hosting" &&
+						req.Features[2] == "S3-compatible storage"
+				})).Return(
+					unmarshalPricingPlanJSON(`{"id":1,"name":"Pro Plan","currency":"USD","is_active":true,"features":["IPFS pinning","Website hosting","S3-compatible storage"]}`),
+					nil,
+				)
+			},
+			wantErr: false,
+		},
+		{
+			name: "create without features sets nil slice",
+			cmd: newMockCommand().
+				withString(FlagName, "Basic Plan").
+				withString(FlagCurrency, "USD").
+				withBool(FlagIsActive, true),
+			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
+				service.EXPECT().RequireAuthenticated().Return(nil)
+				service.EXPECT().CreatePricingPlan(mock.Anything, mock.MatchedBy(func(req *admin.PricingPlanCreateRequest) bool {
+					return req.Name == "Basic Plan" && len(req.Features) == 0
+				})).Return(
+					unmarshalPricingPlanJSON(`{"id":1,"name":"Basic Plan","currency":"USD","is_active":true}`),
+					nil,
+				)
+			},
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -468,6 +507,36 @@ func TestBillingPricingPlansUpdate(t *testing.T) {
 			wantErr:     true,
 			errContains: "plan ID is required",
 		},
+		{
+			name:   "successful update with features",
+			planID: "1",
+			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
+				service.EXPECT().RequireAuthenticated().Return(nil)
+				service.EXPECT().UpdatePricingPlan(mock.Anything, "1", mock.MatchedBy(func(req *admin.PricingPlanUpdateRequest) bool {
+					return len(req.Features) == 2 &&
+						req.Features[0] == "IPFS pinning" &&
+						req.Features[1] == "Zero-knowledge encryption"
+				})).Return(
+					unmarshalPricingPlanJSON(`{"id":1,"name":"Pro Plan","currency":"USD","is_active":true,"features":["IPFS pinning","Zero-knowledge encryption"]}`),
+					nil,
+				)
+			},
+			wantErr: false,
+		},
+		{
+			name:   "update without features flag does not set features",
+			planID: "1",
+			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {
+				service.EXPECT().RequireAuthenticated().Return(nil)
+				service.EXPECT().UpdatePricingPlan(mock.Anything, "1", mock.MatchedBy(func(req *admin.PricingPlanUpdateRequest) bool {
+					return req.Features == nil && req.Name == "Updated Plan"
+				})).Return(
+					unmarshalPricingPlanJSON(`{"id":1,"name":"Updated Plan","currency":"USD","is_active":true}`),
+					nil,
+				)
+			},
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -488,6 +557,13 @@ func TestBillingPricingPlansUpdate(t *testing.T) {
 			cmd = cmd.
 				withString(FlagName, "Updated Plan").
 				withIsSet(FlagName, true)
+
+			// Add features for the features-specific test cases
+			if tt.name == "successful update with features" {
+				cmd = cmd.
+					withStringSlice(FlagFeatures, []string{"IPFS pinning", "Zero-knowledge encryption"}).
+					withIsSet(FlagFeatures, true)
+			}
 
 			serviceFactory := func(cm config.Manager, out Output) BillingAdminService {
 				return service
