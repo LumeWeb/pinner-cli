@@ -101,6 +101,7 @@ homebrew_casks:
 
 winget:
     - name: Cli
+      package_name: Pinner CLI
       publisher: Pinner
       package_identifier: Pinner.Cli
       license: MIT
