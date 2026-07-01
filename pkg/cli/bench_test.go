@@ -701,7 +701,7 @@ func TestBenchServiceDefault_RunIteration(t *testing.T) {
 			Return(&UploadResult{CID: "QmTestCID", Size: 1024}, nil)
 
 		accountAPI.EXPECT().ListOperations(mock.Anything, mock.Anything).
-			Return([]*portalsdk.Operation{newCompletedOp(1)}, nil)
+			Return([]*portalsdk.Operation{newCompletedOp(1)}, 0, nil)
 		accountAPI.EXPECT().GetOperation(mock.Anything, int64(1)).
 			Return(newCompletedOp(1), nil)
 
@@ -848,7 +848,7 @@ func TestBenchServiceDefault_RunIteration(t *testing.T) {
 			Return(&UploadResult{CID: "QmTestCID", Size: 1024}, nil)
 
 		accountAPI.EXPECT().ListOperations(mock.Anything, mock.Anything).
-			Return([]*portalsdk.Operation{newCompletedOp(1)}, nil)
+			Return([]*portalsdk.Operation{newCompletedOp(1)}, 0, nil)
 		accountAPI.EXPECT().GetOperation(mock.Anything, int64(1)).
 			Return(newCompletedOp(1), nil)
 

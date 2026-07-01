@@ -270,7 +270,7 @@ func (s *UploadServiceDefault) wrapUploadError(err error) error {
 func (s *UploadServiceDefault) waitForPin(ctx context.Context, rootCID string, authToken string) error {
 	accountClient := portalsdk.NewClient(portalsdk.WithEndpoint(s.accountEndpoint), portalsdk.WithJWT(authToken))
 
-	operations, err := accountClient.ListOperations(ctx, portalsdk.WithFilters(filter.FieldEqual("cid", rootCID)))
+	operations, _, err := accountClient.ListOperations(ctx, portalsdk.WithFilters(filter.FieldEqual("cid", rootCID)))
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrOperationFailed, err)
 	}

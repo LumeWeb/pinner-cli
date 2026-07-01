@@ -28,9 +28,9 @@ Operations track server-side processing of your requests. Each operation has a s
 Examples:
   pinner operations list
   pinner operations list --status running
-  pinner operations list --cid bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --limit 20
-  pinner operations get 42
-  pinner operations get 42 --watch`,
+  pinner operations list --cid bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e
+  pinner operations list --page 2 --page-size 20
+  pinner operations list --watch`,
 		Commands: []*cli.Command{
 			newOperationsListCommand(),
 			newOperationsGetCommand(),
@@ -53,7 +53,7 @@ Examples:
   pinner operations list --protocol ipfs
   pinner operations list --cid bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e
   pinner operations list --sort started:asc
-  pinner operations list --limit 20
+  pinner operations list --page 2 --page-size 20
   pinner operations list --watch`,
 		Flags: []cli.Flag{
 			&cli.StringFlag{
@@ -77,7 +77,8 @@ Examples:
 				Usage: "Sort results (format: field:order, e.g., id:desc, started:asc). Multiple sorts comma-separated",
 				Value: "id:desc",
 			},
-			LimitFlag(),
+			PageFlag(),
+			PageSizeFlag(),
 			WatchFlag(),
 		},
 		Action: func(ctx context.Context, c *cli.Command) error {
@@ -130,13 +131,23 @@ func operationsList(ctx context.Context, cmd argsFlagGetter, output Output, cfgM
 		return err
 	}
 
+	page := cmd.Int(FlagPage)
+	if page < 1 {
+		page = 1
+	}
+	pageSize := cmd.Int(FlagPageSize)
+	if pageSize < 1 {
+		pageSize = 10
+	}
+
 	opts := OperationsListOptions{
 		StatusFilter:     cmd.String(FlagStatus),
 		OperationFilter:  cmd.String(FlagOperation),
 		ProtocolFilter:   cmd.String(FlagProtocol),
 		CIDFilter:        cmd.String(FlagCID),
 		Sort:            cmd.String(FlagSort),
-		Limit:            cmd.Int(FlagLimit),
+		Page:             page,
+		PageSize:         pageSize,
 	}
 
 	if err := validateOperationStatus(opts.StatusFilter); err != nil {
@@ -159,7 +170,9 @@ func operationsList(ctx context.Context, cmd argsFlagGetter, output Output, cfgM
 		return nil
 	}
 
-	output.Printfln("Found %d operation(s)", result.Total)
+	start := (opts.Page-1)*opts.PageSize + 1
+	end := start + len(result.Operations) - 1
+	output.Printfln("Showing %d-%d of %d operation(s)", start, end, result.Total)
 
 	headers := []string{"ID", "OPERATION", "PROTOCOL", "STATUS", "CID", "PROGRESS", "STARTED"}
 	rows := make([][]string, len(result.Operations))

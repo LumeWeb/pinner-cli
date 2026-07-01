@@ -39,6 +39,8 @@ const (
 	FlagConfirm     = "confirm"
 	FlagLimit       = "limit"
 	FlagMemoryLimit = "memory-limit"
+	FlagPage        = "page"
+	FlagPageSize    = "page-size"
 	FlagStatus      = "status"
 	FlagWatch       = "watch"
 	FlagFile        = "file"
@@ -280,6 +282,24 @@ func LimitFlag() *cli.IntFlag {
 	return &cli.IntFlag{
 		Name:  FlagLimit,
 		Usage: "Maximum number of results to return",
+		Value: 10,
+	}
+}
+
+// PageFlag returns a flag for pagination page number (1-based).
+func PageFlag() *cli.IntFlag {
+	return &cli.IntFlag{
+		Name:  FlagPage,
+		Usage: "Page number (1-based)",
+		Value: 1,
+	}
+}
+
+// PageSizeFlag returns a flag for pagination page size.
+func PageSizeFlag() *cli.IntFlag {
+	return &cli.IntFlag{
+		Name:  FlagPageSize,
+		Usage: "Number of results per page",
 		Value: 10,
 	}
 }

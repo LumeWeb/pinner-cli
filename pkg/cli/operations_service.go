@@ -66,8 +66,8 @@ type OperationsListOptions struct {
 	ProtocolFilter string
 	CIDFilter      string
 	Sort           string
-	Limit          int
-	Offset         int
+	Page           int
+	PageSize       int
 }
 
 type OperationsServiceOption func(*OperationsServiceDefault)
@@ -169,25 +169,27 @@ func (s *OperationsServiceDefault) List(ctx context.Context, opts OperationsList
 		}
 	}
 
-	if opts.Limit > 0 || opts.Offset > 0 {
-		end := 0
-		if opts.Limit > 0 {
-			end = opts.Offset + opts.Limit
+	if opts.PageSize > 0 {
+		page := opts.Page
+		if page < 1 {
+			page = 1
 		}
+		start := (page - 1) * opts.PageSize
 		listOpts = append(listOpts, portalsdk.WithPagination(&queryutil.Pagination{
-			Start: opts.Offset,
-			End:   end,
+			Start:    start,
+			End:      start + opts.PageSize,
+			PageSize: opts.PageSize,
 		}))
 	}
 
-	operations, err := client.ListOperations(ctx, listOpts...)
+	operations, total, err := client.ListOperations(ctx, listOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list operations: %w", err)
 	}
 
 	result := &OperationsListResult{
 		Operations: make([]OperationListItem, 0, len(operations)),
-		Total:      len(operations),
+		Total:      total,
 	}
 
 	for _, op := range operations {

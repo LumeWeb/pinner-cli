@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -33,6 +34,7 @@ func TestOperationsServiceDefault_List(t *testing.T) {
 			[]*portalsdk.Operation{
 				makeOperation(1, cid, "completed", "Pin", "IPFS", 100, now, nil, ""),
 			},
+			0,
 			nil,
 		)
 
@@ -62,6 +64,7 @@ func TestOperationsServiceDefault_List(t *testing.T) {
 				makeOperation(1, cid1, "completed", "Pin", "IPFS", 100, now, nil, ""),
 				makeOperation(2, cid2, "running", "Upload", "IPFS", 50, now, nil, "processing"),
 			},
+			0,
 			nil,
 		)
 
@@ -93,7 +96,7 @@ func TestOperationsServiceDefault_List(t *testing.T) {
 		accountClient.EXPECT().ListOperations(
 			mock.Anything,
 			mock.Anything,
-		).Return(nil, errors.New("server error"))
+		).Return(nil, 0, errors.New("server error"))
 
 		svc := NewOperationsService(cfgMgr, output, nil, WithOperationsAccountClient(accountClient))
 
@@ -116,6 +119,7 @@ func TestOperationsServiceDefault_List(t *testing.T) {
 			[]*portalsdk.Operation{
 				makeOperation(3, "QmFailed", "failed", "Upload", "IPFS", 50, now, &errMsg, "upload failed"),
 			},
+			0,
 			nil,
 		)
 
@@ -144,6 +148,7 @@ func TestOperationsServiceDefault_List(t *testing.T) {
 			[]*portalsdk.Operation{
 				makeOperation(1, "QmAuth", "completed", "Pin", "IPFS", 100, now, nil, ""),
 			},
+			0,
 			nil,
 		)
 
@@ -170,6 +175,7 @@ func TestOperationsServiceDefault_List(t *testing.T) {
 			[]*portalsdk.Operation{
 				makeOperation(1, "QmA", "completed", "Pin", "IPFS", 100, now, nil, ""),
 			},
+			0,
 			nil,
 		).Once()
 		accountClient.EXPECT().ListOperations(
@@ -179,6 +185,7 @@ func TestOperationsServiceDefault_List(t *testing.T) {
 			[]*portalsdk.Operation{
 				makeOperation(2, "QmB", "running", "Upload", "IPFS", 50, now, nil, ""),
 			},
+			0,
 			nil,
 		).Once()
 
@@ -385,6 +392,7 @@ func TestOperationsListOptions_Filters(t *testing.T) {
 			[]*portalsdk.Operation{
 				makeOperation(1, "QmRunning", "running", "Upload", "IPFS", 50, now, nil, ""),
 			},
+			0,
 			nil,
 		)
 
@@ -519,7 +527,8 @@ func TestNewOperationsListCommand(t *testing.T) {
 		assert.True(t, flagNames[FlagProtocol])
 		assert.True(t, flagNames[FlagCID])
 		assert.True(t, flagNames[FlagSort])
-		assert.True(t, flagNames[FlagLimit])
+		assert.True(t, flagNames[FlagPage])
+		assert.True(t, flagNames[FlagPageSize])
 		assert.True(t, flagNames[FlagWatch])
 	})
 }
@@ -545,7 +554,8 @@ func TestOperationsList(t *testing.T) {
 			OperationFilter: "",
 			ProtocolFilter:  "",
 			CIDFilter:       "",
-			Limit:           0,
+			Page:            1,
+			PageSize:        10,
 		}).Return(&OperationsListResult{
 			Operations: []OperationListItem{
 				{ID: 1, CID: "QmTest", Status: "completed", Operation: "pin", OperationDisplayName: "Pin", Protocol: "ipfs", ProtocolDisplayName: "IPFS", ProgressPercent: 100, StartedAt: "2024-01-01"},
@@ -569,7 +579,7 @@ func TestOperationsList(t *testing.T) {
 		opsSvc := NewMockOperationsService(t)
 
 		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
-		opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{}).Return(&OperationsListResult{
+		opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{Page: 1, PageSize: 10}).Return(&OperationsListResult{
 			Operations: []OperationListItem{},
 			Total:      0,
 		}, nil)
@@ -608,7 +618,7 @@ func TestOperationsList(t *testing.T) {
 		opsSvc := NewMockOperationsService(t)
 
 		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
-		opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{}).Return(nil, errors.New("server error"))
+		opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{Page: 1, PageSize: 10}).Return(nil, errors.New("server error"))
 
 		cmd := newMockCommand()
 
@@ -632,7 +642,8 @@ func TestOperationsList(t *testing.T) {
 			OperationFilter: "upload",
 			ProtocolFilter:  "ipfs",
 			CIDFilter:       "QmTest",
-			Limit:           5,
+			Page:            1,
+			PageSize:        5,
 		}).Return(&OperationsListResult{
 			Operations: []OperationListItem{},
 			Total:      0,
@@ -643,7 +654,7 @@ func TestOperationsList(t *testing.T) {
 			withString(FlagOperation, "upload").
 			withString(FlagProtocol, "ipfs").
 			withString(FlagCID, "QmTest").
-			withInt(FlagLimit, 5)
+			withInt(FlagPageSize, 5)
 
 		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
 		authSvcFactory := func(cm config.Manager, out Output, endpoint string) AuthService { return nil }
@@ -1205,8 +1216,9 @@ func TestOperationsList_SortFlag(t *testing.T) {
 
 		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
 		opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{
-			Sort:  "id:desc",
-			Limit: 0,
+			Sort:     "id:desc",
+			Page:      1,
+			PageSize:  10,
 		}).Return(&OperationsListResult{
 			Operations: []OperationListItem{},
 			Total:      0,
@@ -1230,8 +1242,9 @@ func TestOperationsList_SortFlag(t *testing.T) {
 
 		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
 		opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{
-			Sort:  "started:asc",
-			Limit: 0,
+			Sort:     "started:asc",
+			Page:      1,
+			PageSize:  10,
 		}).Return(&OperationsListResult{
 			Operations: []OperationListItem{},
 			Total:      0,
@@ -1277,7 +1290,8 @@ func TestOperationsList_StatusValidation(t *testing.T) {
 		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
 		opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{
 			StatusFilter: "running",
-			Limit:        0,
+			Page:          1,
+			PageSize:      10,
 		}).Return(&OperationsListResult{
 			Operations: []OperationListItem{},
 			Total:      0,
@@ -1292,5 +1306,66 @@ func TestOperationsList_StatusValidation(t *testing.T) {
 
 		err := operationsList(context.Background(), cmd, output, cfgMgrFactory, authSvcFactory, svcFactory)
 		require.NoError(t, err)
+	})
+}
+
+func TestOperationsList_Pagination(t *testing.T) {
+	t.Run("passes page and page-size to service", func(t *testing.T) {
+		cfgMgr := newTestConfigMgr(t)
+		output := newTestOutput()
+		opsSvc := NewMockOperationsService(t)
+
+		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
+		opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{
+			Page:     3,
+			PageSize: 20,
+		}).Return(&OperationsListResult{
+			Operations: []OperationListItem{
+				{ID: 21, CID: "Qm21", Status: "completed", Operation: "pin", OperationDisplayName: "Pin", Protocol: "ipfs", ProtocolDisplayName: "IPFS", ProgressPercent: 100, StartedAt: "2024-01-01"},
+			},
+			Total: 50,
+		}, nil)
+
+		cmd := newMockCommand().
+			withInt(FlagPage, 3).
+			withInt(FlagPageSize, 20)
+
+		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
+		authSvcFactory := func(cm config.Manager, out Output, endpoint string) AuthService { return nil }
+		svcFactory := func(cm config.Manager, out Output, as AuthService) OperationsService { return opsSvc }
+
+		err := operationsList(context.Background(), cmd, output, cfgMgrFactory, authSvcFactory, svcFactory)
+		require.NoError(t, err)
+	})
+
+	t.Run("shows showing X-Y of Z in output", func(t *testing.T) {
+		cfgMgr := newTestConfigMgr(t)
+		output := newTestOutput()
+		var buf bytes.Buffer
+		output.SetWriter(&buf)
+		opsSvc := NewMockOperationsService(t)
+
+		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
+		opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{
+			Page:     2,
+			PageSize: 10,
+		}).Return(&OperationsListResult{
+			Operations: []OperationListItem{
+				{ID: 11, CID: "Qm11", Status: "completed", Operation: "pin", OperationDisplayName: "Pin", Protocol: "ipfs", ProtocolDisplayName: "IPFS", ProgressPercent: 100, StartedAt: "2024-01-01"},
+				{ID: 12, CID: "Qm12", Status: "completed", Operation: "pin", OperationDisplayName: "Pin", Protocol: "ipfs", ProtocolDisplayName: "IPFS", ProgressPercent: 100, StartedAt: "2024-01-01"},
+			},
+			Total: 25,
+		}, nil)
+
+		cmd := newMockCommand().
+			withInt(FlagPage, 2)
+
+		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
+		authSvcFactory := func(cm config.Manager, out Output, endpoint string) AuthService { return nil }
+		svcFactory := func(cm config.Manager, out Output, as AuthService) OperationsService { return opsSvc }
+
+		err := operationsList(context.Background(), cmd, output, cfgMgrFactory, authSvcFactory, svcFactory)
+		require.NoError(t, err)
+		assert.Contains(t, buf.String(), "Showing 11-12 of 25 operation(s)")
 	})
 }
