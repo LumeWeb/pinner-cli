@@ -360,7 +360,7 @@ func (s *BenchServiceDefault) pollOperationStages(ctx context.Context, cid strin
 	// Find the operation for this CID with retry (operation may not be visible immediately)
 	s.output.PrintVerbosef("  Bench: looking up operation for CID %s", cid)
 	err := retry.Do(func() error {
-		operations, err := s.accountClient.ListOperations(ctx, portalsdk.WithFilters(filter.FieldEqual("cid", cid)))
+		operations, _, err := s.accountClient.ListOperations(ctx, portalsdk.WithFilters(filter.FieldEqual("cid", cid)))
 		if err != nil {
 			if isUnrecoverableError(err) {
 				return retry.Unrecoverable(err)

@@ -106,7 +106,7 @@ func (s *StatusServiceDefault) lookupOperation(ctx context.Context, cid string) 
 
 	s.output.PrintVerbosef("Pin not found, checking account operations for CID %s", cid)
 
-	operations, err := client.ListOperations(ctx, portalsdk.WithFilters(filter.FieldEqual("cid", cid)))
+	operations, _, err := client.ListOperations(ctx, portalsdk.WithFilters(filter.FieldEqual("cid", cid)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to lookup operations: %w", err)
 	}

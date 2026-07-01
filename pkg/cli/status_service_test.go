@@ -76,6 +76,7 @@ func TestStatusServiceDefault_Status(t *testing.T) {
 			[]*portalsdk.Operation{
 				makeOperation(1, "QmYyy", "completed", "Pin", "IPFS", 100, now, nil, ""),
 			},
+			0,
 			nil,
 		)
 
@@ -107,7 +108,7 @@ func TestStatusServiceDefault_Status(t *testing.T) {
 		accountClient.EXPECT().ListOperations(
 			mock.Anything,
 			mock.Anything,
-		).Return([]*portalsdk.Operation{}, nil)
+		).Return([]*portalsdk.Operation{}, 0, nil)
 
 		svc := NewStatusService(cfgMgr, output, pinningSvc, authSvc)
 		pinStatus, opStatus, err := svc.Status(context.Background(), "QmMissing", false)
@@ -179,6 +180,7 @@ func TestStatusServiceDefault_Status(t *testing.T) {
 			[]*portalsdk.Operation{
 				makeOperation(2, "QmFailed", "failed", "Pin", "IPFS", 50, now, &errMsg, "operation failed"),
 			},
+			0,
 			nil,
 		)
 
@@ -242,6 +244,7 @@ func TestStatusServiceDefault_Status(t *testing.T) {
 			[]*portalsdk.Operation{
 				makeOperation(1, cidA, "completed", "Pin", "IPFS", 100, now, nil, ""),
 			},
+			0,
 			nil,
 		).Once()
 		accountClient.EXPECT().ListOperations(
@@ -251,6 +254,7 @@ func TestStatusServiceDefault_Status(t *testing.T) {
 			[]*portalsdk.Operation{
 				makeOperation(2, cidB, "running", "Pin", "IPFS", 50, now, nil, ""),
 			},
+			0,
 			nil,
 		).Once()
 
@@ -286,6 +290,7 @@ func TestStatusServiceDefault_Status(t *testing.T) {
 			[]*portalsdk.Operation{
 				makeOperation(1, "QmYyy", "completed", "Pin", "IPFS", 100, now, nil, ""),
 			},
+			0,
 			nil,
 		)
 
