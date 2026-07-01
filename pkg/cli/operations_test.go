@@ -15,6 +15,7 @@ import (
 	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
 	portalsdk "go.lumeweb.com/portal-sdk"
 	portalsdkmocks "go.lumeweb.com/portal-sdk/mocks"
+	"go.lumeweb.com/queryutil"
 )
 
 func TestOperationsServiceDefault_List(t *testing.T) {
@@ -402,19 +403,19 @@ func TestRenderOperationDetail(t *testing.T) {
 		currentStep := 2
 		totalSteps := 5
 		op := &OperationDetail{
-			ID:                    1,
-			CID:                   "QmTest",
-			Status:                "running",
-			StatusDisplayName:     "Running",
-			Operation:             "upload",
-			OperationDisplayName:  "Upload",
-			Protocol:              "ipfs",
-			ProtocolDisplayName:   "IPFS",
-			ProgressPercent:       40,
-			StartedAt:             "2024-01-01T00:00:00Z",
-			UpdatedAt:             "2024-01-01T00:01:00Z",
-			CurrentStep:           &currentStep,
-			TotalSteps:            &totalSteps,
+			ID:                   1,
+			CID:                  "QmTest",
+			Status:               "running",
+			StatusDisplayName:    "Running",
+			Operation:            "upload",
+			OperationDisplayName: "Upload",
+			Protocol:             "ipfs",
+			ProtocolDisplayName:  "IPFS",
+			ProgressPercent:      40,
+			StartedAt:            "2024-01-01T00:00:00Z",
+			UpdatedAt:            "2024-01-01T00:01:00Z",
+			CurrentStep:          &currentStep,
+			TotalSteps:           &totalSteps,
 		}
 
 		err := renderOperationDetail(output, op)
@@ -424,19 +425,19 @@ func TestRenderOperationDetail(t *testing.T) {
 	t.Run("renders operation with error and message", func(t *testing.T) {
 		output := newTestOutput()
 		op := &OperationDetail{
-			ID:                    2,
-			CID:                   "QmErr",
-			Status:                "failed",
-			StatusDisplayName:     "Failed",
-			Operation:             "upload",
-			OperationDisplayName:  "Upload",
-			Protocol:              "ipfs",
-			ProtocolDisplayName:   "IPFS",
-			ProgressPercent:       50,
-			StartedAt:             "2024-01-01T00:00:00Z",
-			UpdatedAt:             "2024-01-01T00:01:00Z",
-			StatusMessage:         "upload failed",
-			Error:                 "insufficient quota",
+			ID:                   2,
+			CID:                  "QmErr",
+			Status:               "failed",
+			StatusDisplayName:    "Failed",
+			Operation:            "upload",
+			OperationDisplayName: "Upload",
+			Protocol:             "ipfs",
+			ProtocolDisplayName:  "IPFS",
+			ProgressPercent:      50,
+			StartedAt:            "2024-01-01T00:00:00Z",
+			UpdatedAt:            "2024-01-01T00:01:00Z",
+			StatusMessage:        "upload failed",
+			Error:                "insufficient quota",
 		}
 
 		err := renderOperationDetail(output, op)
@@ -446,17 +447,17 @@ func TestRenderOperationDetail(t *testing.T) {
 	t.Run("renders minimal operation", func(t *testing.T) {
 		output := newTestOutput()
 		op := &OperationDetail{
-			ID:                    3,
-			CID:                   "",
-			Status:                "pending",
-			StatusDisplayName:     "Pending",
-			Operation:             "pin",
-			OperationDisplayName:  "Pin",
-			Protocol:              "ipfs",
-			ProtocolDisplayName:   "IPFS",
-			ProgressPercent:       0,
-			StartedAt:             "2024-01-01T00:00:00Z",
-			UpdatedAt:             "2024-01-01T00:00:00Z",
+			ID:                   3,
+			CID:                  "",
+			Status:               "pending",
+			StatusDisplayName:    "Pending",
+			Operation:            "pin",
+			OperationDisplayName: "Pin",
+			Protocol:             "ipfs",
+			ProtocolDisplayName:  "IPFS",
+			ProgressPercent:      0,
+			StartedAt:            "2024-01-01T00:00:00Z",
+			UpdatedAt:            "2024-01-01T00:00:00Z",
 		}
 
 		err := renderOperationDetail(output, op)
@@ -517,6 +518,7 @@ func TestNewOperationsListCommand(t *testing.T) {
 		assert.True(t, flagNames[FlagOperation])
 		assert.True(t, flagNames[FlagProtocol])
 		assert.True(t, flagNames[FlagCID])
+		assert.True(t, flagNames[FlagSort])
 		assert.True(t, flagNames[FlagLimit])
 		assert.True(t, flagNames[FlagWatch])
 	})
@@ -530,8 +532,6 @@ func TestNewOperationsGetCommand(t *testing.T) {
 		assert.Equal(t, "<operation-id>", cmd.ArgsUsage)
 	})
 }
-
-
 
 func TestOperationsList(t *testing.T) {
 	t.Run("successful list with results", func(t *testing.T) {
@@ -675,17 +675,17 @@ func TestOperationsGet(t *testing.T) {
 
 		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
 		opsSvc.EXPECT().Get(mock.Anything, int64(42)).Return(&OperationDetail{
-			ID:                    42,
-			CID:                   "QmTest",
-			Status:                "completed",
-			StatusDisplayName:     "Completed",
-			Operation:             "pin",
-			OperationDisplayName:  "Pin",
-			Protocol:              "ipfs",
-			ProtocolDisplayName:   "IPFS",
-			ProgressPercent:       100,
-			StartedAt:             "2024-01-01T00:00:00Z",
-			UpdatedAt:             "2024-01-01T00:00:00Z",
+			ID:                   42,
+			CID:                  "QmTest",
+			Status:               "completed",
+			StatusDisplayName:    "Completed",
+			Operation:            "pin",
+			OperationDisplayName: "Pin",
+			Protocol:             "ipfs",
+			ProtocolDisplayName:  "IPFS",
+			ProgressPercent:      100,
+			StartedAt:            "2024-01-01T00:00:00Z",
+			UpdatedAt:            "2024-01-01T00:00:00Z",
 		}, nil)
 
 		cmd := newMockCommand().withArgs("42")
@@ -1001,17 +1001,17 @@ func TestWatchOperation(t *testing.T) {
 		output := newTestOutput()
 
 		opsSvc.EXPECT().Get(mock.Anything, int64(7)).Return(&OperationDetail{
-			ID:                    7,
-			CID:                   "QmDone",
-			Status:                "completed",
-			StatusDisplayName:     "Completed",
-			Operation:             "pin",
-			OperationDisplayName:  "Pin",
-			Protocol:              "ipfs",
-			ProtocolDisplayName:   "IPFS",
-			ProgressPercent:       100,
-			StartedAt:             "2024-01-01T00:00:00Z",
-			UpdatedAt:             "2024-01-01T00:01:00Z",
+			ID:                   7,
+			CID:                  "QmDone",
+			Status:               "completed",
+			StatusDisplayName:    "Completed",
+			Operation:            "pin",
+			OperationDisplayName: "Pin",
+			Protocol:             "ipfs",
+			ProtocolDisplayName:  "IPFS",
+			ProgressPercent:      100,
+			StartedAt:            "2024-01-01T00:00:00Z",
+			UpdatedAt:            "2024-01-01T00:01:00Z",
 		}, nil)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -1040,18 +1040,18 @@ func TestWatchOperation(t *testing.T) {
 		output := newTestOutput()
 
 		opsSvc.EXPECT().Get(mock.Anything, int64(5)).Return(&OperationDetail{
-			ID:                    5,
-			CID:                   "QmFail",
-			Status:                "failed",
-			StatusDisplayName:     "Failed",
-			Operation:             "upload",
-			OperationDisplayName:  "Upload",
-			Protocol:              "ipfs",
-			ProtocolDisplayName:   "IPFS",
-			ProgressPercent:       30,
-			StartedAt:             "2024-01-01T00:00:00Z",
-			UpdatedAt:             "2024-01-01T00:01:00Z",
-			Error:                 "disk full",
+			ID:                   5,
+			CID:                  "QmFail",
+			Status:               "failed",
+			StatusDisplayName:    "Failed",
+			Operation:            "upload",
+			OperationDisplayName: "Upload",
+			Protocol:             "ipfs",
+			ProtocolDisplayName:  "IPFS",
+			ProgressPercent:      30,
+			StartedAt:            "2024-01-01T00:00:00Z",
+			UpdatedAt:            "2024-01-01T00:01:00Z",
+			Error:                "disk full",
 		}, nil)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -1071,31 +1071,31 @@ func TestWatchOperation(t *testing.T) {
 				callCount++
 				if callCount == 1 {
 					return &OperationDetail{
-						ID:                    10,
-						CID:                   "QmProgress",
-						Status:                "running",
-						StatusDisplayName:     "Running",
-						Operation:             "upload",
-						OperationDisplayName:  "Upload",
-						Protocol:              "ipfs",
-						ProtocolDisplayName:   "IPFS",
-						ProgressPercent:       50,
-						StartedAt:             "2024-01-01T00:00:00Z",
-						UpdatedAt:             "2024-01-01T00:01:00Z",
+						ID:                   10,
+						CID:                  "QmProgress",
+						Status:               "running",
+						StatusDisplayName:    "Running",
+						Operation:            "upload",
+						OperationDisplayName: "Upload",
+						Protocol:             "ipfs",
+						ProtocolDisplayName:  "IPFS",
+						ProgressPercent:      50,
+						StartedAt:            "2024-01-01T00:00:00Z",
+						UpdatedAt:            "2024-01-01T00:01:00Z",
 					}, nil
 				}
 				return &OperationDetail{
-					ID:                    10,
-					CID:                   "QmProgress",
-					Status:                "completed",
-					StatusDisplayName:     "Completed",
-					Operation:             "upload",
-					OperationDisplayName:  "Upload",
-					Protocol:              "ipfs",
-					ProtocolDisplayName:   "IPFS",
-					ProgressPercent:       100,
-					StartedAt:             "2024-01-01T00:00:00Z",
-					UpdatedAt:             "2024-01-01T00:02:00Z",
+					ID:                   10,
+					CID:                  "QmProgress",
+					Status:               "completed",
+					StatusDisplayName:    "Completed",
+					Operation:            "upload",
+					OperationDisplayName: "Upload",
+					Protocol:             "ipfs",
+					ProtocolDisplayName:  "IPFS",
+					ProgressPercent:      100,
+					StartedAt:            "2024-01-01T00:00:00Z",
+					UpdatedAt:            "2024-01-01T00:02:00Z",
 				}, nil
 			},
 		)
@@ -1104,6 +1104,193 @@ func TestWatchOperation(t *testing.T) {
 		defer cancel()
 
 		err := watchOperation(ctx, opsSvc, output, 10)
+		require.NoError(t, err)
+	})
+}
+
+func TestParseSortOptions(t *testing.T) {
+	t.Run("single field default desc", func(t *testing.T) {
+		sorts := parseSortOptions("id")
+		require.Len(t, sorts, 1)
+		assert.Equal(t, "id", sorts[0].Field)
+		assert.Equal(t, queryutil.OrderDesc, sorts[0].Order)
+	})
+
+	t.Run("field with explicit asc", func(t *testing.T) {
+		sorts := parseSortOptions("started:asc")
+		require.Len(t, sorts, 1)
+		assert.Equal(t, "started", sorts[0].Field)
+		assert.Equal(t, queryutil.OrderAsc, sorts[0].Order)
+	})
+
+	t.Run("field with explicit desc", func(t *testing.T) {
+		sorts := parseSortOptions("id:desc")
+		require.Len(t, sorts, 1)
+		assert.Equal(t, "id", sorts[0].Field)
+		assert.Equal(t, queryutil.OrderDesc, sorts[0].Order)
+	})
+
+	t.Run("multiple sorts comma-separated", func(t *testing.T) {
+		sorts := parseSortOptions("status:asc,id:desc")
+		require.Len(t, sorts, 2)
+		assert.Equal(t, "status", sorts[0].Field)
+		assert.Equal(t, queryutil.OrderAsc, sorts[0].Order)
+		assert.Equal(t, "id", sorts[1].Field)
+		assert.Equal(t, queryutil.OrderDesc, sorts[1].Order)
+	})
+
+	t.Run("empty string returns nil", func(t *testing.T) {
+		sorts := parseSortOptions("")
+		assert.Nil(t, sorts)
+	})
+
+	t.Run("whitespace trimmed", func(t *testing.T) {
+		sorts := parseSortOptions("  id : desc  ")
+		require.Len(t, sorts, 1)
+		assert.Equal(t, "id", sorts[0].Field)
+		assert.Equal(t, queryutil.OrderDesc, sorts[0].Order)
+	})
+
+	t.Run("invalid order defaults to desc", func(t *testing.T) {
+		sorts := parseSortOptions("id:invalid")
+		require.Len(t, sorts, 1)
+		assert.Equal(t, "id", sorts[0].Field)
+		assert.Equal(t, queryutil.OrderDesc, sorts[0].Order)
+	})
+}
+
+func TestValidateOperationStatus(t *testing.T) {
+	t.Run("empty status is valid", func(t *testing.T) {
+		assert.NoError(t, validateOperationStatus(""))
+	})
+
+	t.Run("pending is valid", func(t *testing.T) {
+		assert.NoError(t, validateOperationStatus("pending"))
+	})
+
+	t.Run("running is valid", func(t *testing.T) {
+		assert.NoError(t, validateOperationStatus("running"))
+	})
+
+	t.Run("completed is valid", func(t *testing.T) {
+		assert.NoError(t, validateOperationStatus("completed"))
+	})
+
+	t.Run("failed is valid", func(t *testing.T) {
+		assert.NoError(t, validateOperationStatus("failed"))
+	})
+
+	t.Run("error is valid", func(t *testing.T) {
+		assert.NoError(t, validateOperationStatus("error"))
+	})
+
+	t.Run("invalid status returns error", func(t *testing.T) {
+		err := validateOperationStatus("invalid")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid status")
+		assert.Contains(t, err.Error(), "pending, running, completed, failed, error")
+	})
+
+	t.Run("case sensitive", func(t *testing.T) {
+		err := validateOperationStatus("Running")
+		require.Error(t, err)
+	})
+}
+
+func TestOperationsList_SortFlag(t *testing.T) {
+	t.Run("passes sort to service", func(t *testing.T) {
+		cfgMgr := newTestConfigMgr(t)
+		output := newTestOutput()
+		opsSvc := NewMockOperationsService(t)
+
+		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
+		opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{
+			Sort:  "id:desc",
+			Limit: 0,
+		}).Return(&OperationsListResult{
+			Operations: []OperationListItem{},
+			Total:      0,
+		}, nil)
+
+		cmd := newMockCommand().
+			withString(FlagSort, "id:desc")
+
+		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
+		authSvcFactory := func(cm config.Manager, out Output, endpoint string) AuthService { return nil }
+		svcFactory := func(cm config.Manager, out Output, as AuthService) OperationsService { return opsSvc }
+
+		err := operationsList(context.Background(), cmd, output, cfgMgrFactory, authSvcFactory, svcFactory)
+		require.NoError(t, err)
+	})
+
+	t.Run("passes custom sort to service", func(t *testing.T) {
+		cfgMgr := newTestConfigMgr(t)
+		output := newTestOutput()
+		opsSvc := NewMockOperationsService(t)
+
+		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
+		opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{
+			Sort:  "started:asc",
+			Limit: 0,
+		}).Return(&OperationsListResult{
+			Operations: []OperationListItem{},
+			Total:      0,
+		}, nil)
+
+		cmd := newMockCommand().
+			withString(FlagSort, "started:asc")
+
+		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
+		authSvcFactory := func(cm config.Manager, out Output, endpoint string) AuthService { return nil }
+		svcFactory := func(cm config.Manager, out Output, as AuthService) OperationsService { return opsSvc }
+
+		err := operationsList(context.Background(), cmd, output, cfgMgrFactory, authSvcFactory, svcFactory)
+		require.NoError(t, err)
+	})
+}
+
+func TestOperationsList_StatusValidation(t *testing.T) {
+	t.Run("rejects invalid status", func(t *testing.T) {
+		cfgMgr := newTestConfigMgr(t)
+		output := newTestOutput()
+		opsSvc := NewMockOperationsService(t)
+
+		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
+
+		cmd := newMockCommand().
+			withString(FlagStatus, "invalid")
+
+		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
+		authSvcFactory := func(cm config.Manager, out Output, endpoint string) AuthService { return nil }
+		svcFactory := func(cm config.Manager, out Output, as AuthService) OperationsService { return opsSvc }
+
+		err := operationsList(context.Background(), cmd, output, cfgMgrFactory, authSvcFactory, svcFactory)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid status")
+	})
+
+	t.Run("accepts valid status", func(t *testing.T) {
+		cfgMgr := newTestConfigMgr(t)
+		output := newTestOutput()
+		opsSvc := NewMockOperationsService(t)
+
+		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
+		opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{
+			StatusFilter: "running",
+			Limit:        0,
+		}).Return(&OperationsListResult{
+			Operations: []OperationListItem{},
+			Total:      0,
+		}, nil)
+
+		cmd := newMockCommand().
+			withString(FlagStatus, "running")
+
+		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
+		authSvcFactory := func(cm config.Manager, out Output, endpoint string) AuthService { return nil }
+		svcFactory := func(cm config.Manager, out Output, as AuthService) OperationsService { return opsSvc }
+
+		err := operationsList(context.Background(), cmd, output, cfgMgrFactory, authSvcFactory, svcFactory)
 		require.NoError(t, err)
 	})
 }

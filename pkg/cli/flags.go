@@ -52,6 +52,7 @@ const (
 	FlagOperation    = "operation"
 	FlagSearch       = "search"
 	FlagProtocol     = "protocol"
+	FlagSort         = "sort"
 )
 
 // Upload CAR builder flags
