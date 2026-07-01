@@ -44,6 +44,7 @@ func newOperationsListCommand() *cli.Command {
 		Usage: "List account operations",
 		Description: `List your account operations with optional filtering.
 Operations track server-side processing of your requests (uploads, pins, etc.).
+Results are sorted by newest first (id:desc) by default.
 
 Examples:
   pinner operations list
@@ -51,6 +52,7 @@ Examples:
   pinner operations list --operation upload
   pinner operations list --protocol ipfs
   pinner operations list --cid bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e
+  pinner operations list --sort started:asc
   pinner operations list --limit 20
   pinner operations list --watch`,
 		Flags: []cli.Flag{
@@ -69,6 +71,11 @@ Examples:
 			&cli.StringFlag{
 				Name:  FlagCID,
 				Usage: "Filter by CID",
+			},
+			&cli.StringFlag{
+				Name:  FlagSort,
+				Usage: "Sort results (format: field:order, e.g., id:desc, started:asc). Multiple sorts comma-separated",
+				Value: "id:desc",
 			},
 			LimitFlag(),
 			WatchFlag(),
@@ -128,7 +135,12 @@ func operationsList(ctx context.Context, cmd argsFlagGetter, output Output, cfgM
 		OperationFilter:  cmd.String(FlagOperation),
 		ProtocolFilter:   cmd.String(FlagProtocol),
 		CIDFilter:        cmd.String(FlagCID),
+		Sort:            cmd.String(FlagSort),
 		Limit:            cmd.Int(FlagLimit),
+	}
+
+	if err := validateOperationStatus(opts.StatusFilter); err != nil {
+		return err
 	}
 
 	watch := cmd.Bool(FlagWatch)

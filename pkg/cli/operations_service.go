@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"go.lumeweb.com/pinner-cli/pkg/config"
@@ -60,12 +61,13 @@ type OperationsService interface {
 }
 
 type OperationsListOptions struct {
-	StatusFilter string
+	StatusFilter    string
 	OperationFilter string
 	ProtocolFilter string
-	CIDFilter    string
-	Limit        int
-	Offset       int
+	CIDFilter      string
+	Sort           string
+	Limit          int
+	Offset         int
 }
 
 type OperationsServiceOption func(*OperationsServiceDefault)
@@ -160,6 +162,13 @@ func (s *OperationsServiceDefault) List(ctx context.Context, opts OperationsList
 		listOpts = append(listOpts, portalsdk.WithFilters(filters...))
 	}
 
+	if opts.Sort != "" {
+		sorts := parseSortOptions(opts.Sort)
+		if len(sorts) > 0 {
+			listOpts = append(listOpts, portalsdk.WithSorts(sorts...))
+		}
+	}
+
 	if opts.Limit > 0 || opts.Offset > 0 {
 		end := 0
 		if opts.Limit > 0 {
@@ -246,6 +255,48 @@ func (s *OperationsServiceDefault) Get(ctx context.Context, id int64) (*Operatio
 	}
 
 	return detail, nil
+}
+
+var validOperationStatuses = map[portalsdk.OperationStatus]bool{
+	portalsdk.OperationStatusPending:   true,
+	portalsdk.OperationStatusRunning:   true,
+	portalsdk.OperationStatusCompleted: true,
+	portalsdk.OperationStatusFailed:    true,
+	portalsdk.OperationStatusError:     true,
+}
+
+func validateOperationStatus(status string) error {
+	if status == "" {
+		return nil
+	}
+	if !validOperationStatuses[portalsdk.OperationStatus(status)] {
+		return fmt.Errorf("invalid status %q: must be one of pending, running, completed, failed, error", status)
+	}
+	return nil
+}
+
+func parseSortOptions(sortStr string) []queryutil.Sort {
+	var sorts []queryutil.Sort
+	for _, part := range strings.Split(sortStr, ",") {
+		field := strings.TrimSpace(part)
+		if field == "" {
+			continue
+		}
+		order := queryutil.OrderDesc
+
+		if idx := strings.Index(part, ":"); idx > 0 {
+			field = strings.TrimSpace(part[:idx])
+			orderStr := strings.ToLower(strings.TrimSpace(part[idx+1:]))
+			if orderStr == "asc" {
+				order = queryutil.OrderAsc
+			} else if orderStr == "desc" {
+				order = queryutil.OrderDesc
+			}
+		}
+
+		sorts = append(sorts, queryutil.Sort{Field: field, Order: order})
+	}
+	return sorts
 }
 
 func (s *OperationsServiceDefault) Watch(ctx context.Context, id int64) (*OperationDetail, error) {
