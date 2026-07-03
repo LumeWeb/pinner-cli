@@ -32,8 +32,8 @@ type BenchStage struct {
 
 // BenchError represents a structured error for JSON serialization.
 type BenchError struct {
-	Message string            `json:"message"`
-	Detail  map[string]any    `json:"detail,omitempty"`
+	Message string         `json:"message"`
+	Detail  map[string]any `json:"detail,omitempty"`
 }
 
 // String returns the message for human-readable output.
@@ -43,12 +43,12 @@ func (e *BenchError) String() string {
 
 // BenchIteration tracks all stages for a single upload iteration.
 type BenchIteration struct {
-	Number  int           `json:"iteration"`
-	CID     string        `json:"cid,omitempty"`
-	Size    int64         `json:"size"`
-	Stages  []BenchStage  `json:"stages"`
-	Error   *BenchError   `json:"error,omitempty"`
-	Total   time.Duration `json:"total"`
+	Number int           `json:"iteration"`
+	CID    string        `json:"cid,omitempty"`
+	Size   int64         `json:"size"`
+	Stages []BenchStage  `json:"stages"`
+	Error  *BenchError   `json:"error,omitempty"`
+	Total  time.Duration `json:"total"`
 
 	err error // original error for formatted output (not serialized)
 }
@@ -68,8 +68,8 @@ type BenchCleanupFailure struct {
 
 // BenchInput describes the benchmark input configuration.
 type BenchInput struct {
-	Type    string `json:"type"`              // "random" or "path"
-	Size    int64  `json:"size"`              // total bytes
+	Type    string `json:"type"` // "random" or "path"
+	Size    int64  `json:"size"` // total bytes
 	Files   int    `json:"files"`
 	Depth   int    `json:"depth"`
 	Path    string `json:"path,omitempty"`
@@ -78,9 +78,9 @@ type BenchInput struct {
 
 // BenchSummary contains aggregated statistics across iterations.
 type BenchSummary struct {
-	TotalDuration   time.Duration       `json:"total_duration"`
-	UploadDuration  time.Duration       `json:"upload_duration"`
-	CleanupDuration time.Duration       `json:"cleanup_duration"`
+	TotalDuration   time.Duration         `json:"total_duration"`
+	UploadDuration  time.Duration         `json:"upload_duration"`
+	CleanupDuration time.Duration         `json:"cleanup_duration"`
 	Stages          map[string]StageStats `json:"stages"`
 }
 

@@ -22,7 +22,7 @@ type mockWebsitesHandlerService struct {
 	createWithOptionsFunc   func(ctx context.Context, req ipfs.WebsiteRequest) (*ipfs.WebsiteItem, error)
 	getFunc                 func(ctx context.Context, id string) (*ipfs.WebsiteItem, error)
 	updateFunc              func(ctx context.Context, id, domain, cid, targetType string) (*ipfs.WebsiteItem, error)
-	updateWithOptionsFunc  func(ctx context.Context, id string, req ipfs.WebsiteUpdateRequest) (*ipfs.WebsiteItem, error)
+	updateWithOptionsFunc   func(ctx context.Context, id string, req ipfs.WebsiteUpdateRequest) (*ipfs.WebsiteItem, error)
 	deleteFunc              func(ctx context.Context, id string) error
 	validateFunc            func(ctx context.Context, id string) (*ipfs.WebsiteValidateResponse, error)
 	getSSLStatusFunc        func(ctx context.Context, domain string) (*ipfs.WebsiteResponse, error)

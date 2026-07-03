@@ -83,9 +83,9 @@ func billingOverviewAction(ctx context.Context, output Output, cfgMgr config.Man
 	if output.IsJSON() {
 		return output.PrintJSON(map[string]any{
 			"entity_relationships": map[string]string{
-				"quota_plan":          "<-- pricing_plan_period --> pricing_plan",
-				"pricing_plan":        "--> price_line",
-				"price_line":          "--> (ordered list of pricing_plans)",
+				"quota_plan":   "<-- pricing_plan_period --> pricing_plan",
+				"pricing_plan": "--> price_line",
+				"price_line":   "--> (ordered list of pricing_plans)",
 			},
 			"counts": map[string]any{
 				"quota_plans": map[string]any{

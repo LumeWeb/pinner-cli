@@ -150,7 +150,7 @@ func renderPinStatus(output Output, pinStatus *PinStatus) error {
 		output.PrintTable(headers, rows)
 		output.PrintListGroup(ListGroup{
 			Title:  "Delegates:",
-			Items:   pinStatus.Delegates,
+			Items:  pinStatus.Delegates,
 			PadTop: 1,
 		})
 	} else {

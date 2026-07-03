@@ -12,10 +12,10 @@ import (
 	"github.com/ipfs/boxo/pinning/remote/client"
 	"github.com/ipfs/go-cid"
 	"github.com/multiformats/go-multiaddr"
-	portalsdk "go.lumeweb.com/portal-sdk"
 	"github.com/samber/lo"
 	"go.lumeweb.com/pinner-cli/pkg/cli/internal"
 	"go.lumeweb.com/pinner-cli/pkg/config"
+	portalsdk "go.lumeweb.com/portal-sdk"
 )
 
 var boxoAuthRe = regexp.MustCompile(`http error 40[13]`)

@@ -13,15 +13,15 @@ type Step[S any] interface {
 }
 
 type StepFunc[S any] struct {
-	Name_      string
-	SkipFunc   func(state S) bool
+	Name_       string
+	SkipFunc    func(state S) bool
 	ExecuteFunc func(ctx context.Context, state S) error
-	RetryFunc  func(state S) bool
+	RetryFunc   func(state S) bool
 }
 
-func (sf StepFunc[S]) Name() string                                { return sf.Name_ }
-func (sf StepFunc[S]) ShouldSkip(state S) bool                     { return sf.SkipFunc != nil && sf.SkipFunc(state) }
-func (sf StepFunc[S]) ShouldRetry(state S) bool                    { return sf.RetryFunc != nil && sf.RetryFunc(state) }
+func (sf StepFunc[S]) Name() string             { return sf.Name_ }
+func (sf StepFunc[S]) ShouldSkip(state S) bool  { return sf.SkipFunc != nil && sf.SkipFunc(state) }
+func (sf StepFunc[S]) ShouldRetry(state S) bool { return sf.RetryFunc != nil && sf.RetryFunc(state) }
 func (sf StepFunc[S]) Execute(ctx context.Context, state S) error {
 	if sf.ExecuteFunc == nil {
 		return fmt.Errorf("step '%s' has no execute function", sf.Name_)

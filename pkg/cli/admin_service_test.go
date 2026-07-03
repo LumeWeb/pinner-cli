@@ -107,10 +107,10 @@ func TestDefaultBillingAdminServiceFactory(t *testing.T) {
 
 func TestNewQuotaAdminService(t *testing.T) {
 	tests := []struct {
-		name           string
-		authToken      string
-		apiEndpoint    string
-		shouldBeAuth   bool
+		name         string
+		authToken    string
+		apiEndpoint  string
+		shouldBeAuth bool
 	}{
 		{
 			name:         "creates authenticated service with auth token",
@@ -150,10 +150,10 @@ func TestNewQuotaAdminService(t *testing.T) {
 
 func TestNewBillingAdminService(t *testing.T) {
 	tests := []struct {
-		name           string
-		authToken      string
-		apiEndpoint    string
-		shouldBeAuth   bool
+		name         string
+		authToken    string
+		apiEndpoint  string
+		shouldBeAuth bool
 	}{
 		{
 			name:         "creates authenticated service with auth token",

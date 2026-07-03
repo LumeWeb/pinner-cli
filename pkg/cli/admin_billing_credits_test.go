@@ -126,9 +126,9 @@ func TestBillingCreditsGet(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:     "returns error when credit ID is missing",
-			creditID: "",
-			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {},
+			name:        "returns error when credit ID is missing",
+			creditID:    "",
+			setupMocks:  func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {},
 			wantErr:     true,
 			errContains: "credit ID is required",
 		},

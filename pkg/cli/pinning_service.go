@@ -27,20 +27,20 @@ type PinStatus struct {
 
 // OperationStatusResult represents the status of an account operation.
 type OperationStatusResult struct {
-	ID                    int
-	Operation             string
+	ID                   int
+	Operation            string
 	OperationDisplayName string
-	Protocol              string
+	Protocol             string
 	ProtocolDisplayName  string
-	Status                string
-	StatusDisplayName     string
-	StatusMessage         string
-	CID                   string
-	ProgressPercent       float32
-	StartedAt             string
-	UpdatedAt             string
-	Error                 string
-	Source                string
+	Status               string
+	StatusDisplayName    string
+	StatusMessage        string
+	CID                  string
+	ProgressPercent      float32
+	StartedAt            string
+	UpdatedAt            string
+	Error                string
+	Source               string
 }
 
 // PinResult represents the result of a pin operation

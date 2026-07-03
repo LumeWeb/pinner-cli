@@ -77,9 +77,9 @@ func TestQuotaAllowancesCreate(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:        "missing user-id flag",
-			cmd:         newMockCommand(),
-			jsonOutput:  false,
+			name:       "missing user-id flag",
+			cmd:        newMockCommand(),
+			jsonOutput: false,
 			setupMocks: func(cfgMgr *configmocks.MockManager, svc *MockQuotaAdminService) {
 				svc.EXPECT().RequireAuthenticated().Return(nil)
 			},
@@ -198,9 +198,9 @@ func TestQuotaAllowancesUpdate(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:        "missing grant ID",
-			cmd:         newMockCommand(),
-			jsonOutput:  false,
+			name:       "missing grant ID",
+			cmd:        newMockCommand(),
+			jsonOutput: false,
 			setupMocks: func(cfgMgr *configmocks.MockManager, svc *MockQuotaAdminService) {
 				svc.EXPECT().RequireAuthenticated().Return(nil)
 			},

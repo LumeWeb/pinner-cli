@@ -223,7 +223,6 @@ func TestUnpinBatch(t *testing.T) {
 				withInt(FlagParallel, tt.parallel).
 				withBool(FlagContinue, tt.continueOn)
 
-
 			pinningServiceFactory := func(cm config.Manager, out Output, _ bool) PinningService {
 				return service
 			}
@@ -277,5 +276,3 @@ func TestNewUnpinCommand(t *testing.T) {
 		assert.Equal(t, "all", cmd.Commands[0].Name)
 	})
 }
-
-

@@ -13,39 +13,39 @@ import (
 )
 
 type OperationListItem struct {
-	ID                    int
-	Operation             string
+	ID                   int
+	Operation            string
 	OperationDisplayName string
-	Protocol              string
-	ProtocolDisplayName   string
-	Status                string
+	Protocol             string
+	ProtocolDisplayName  string
+	Status               string
 	StatusDisplayName    string
-	StatusMessage         string
-	CID                   string
-	ProgressPercent       float32
-	StartedAt             string
-	UpdatedAt             string
-	Error                 string
-	CurrentStep           *int
-	TotalSteps            *int
+	StatusMessage        string
+	CID                  string
+	ProgressPercent      float32
+	StartedAt            string
+	UpdatedAt            string
+	Error                string
+	CurrentStep          *int
+	TotalSteps           *int
 }
 
 type OperationDetail struct {
-	ID                    int
-	Operation             string
+	ID                   int
+	Operation            string
 	OperationDisplayName string
-	Protocol              string
-	ProtocolDisplayName   string
-	Status                string
+	Protocol             string
+	ProtocolDisplayName  string
+	Status               string
 	StatusDisplayName    string
-	StatusMessage         string
-	CID                   string
-	ProgressPercent       float32
-	StartedAt             string
-	UpdatedAt             string
-	Error                 string
-	CurrentStep           *int
-	TotalSteps            *int
+	StatusMessage        string
+	CID                  string
+	ProgressPercent      float32
+	StartedAt            string
+	UpdatedAt            string
+	Error                string
+	CurrentStep          *int
+	TotalSteps           *int
 }
 
 type OperationsListResult struct {
@@ -63,11 +63,11 @@ type OperationsService interface {
 type OperationsListOptions struct {
 	StatusFilter    string
 	OperationFilter string
-	ProtocolFilter string
-	CIDFilter      string
-	Sort           string
-	Page           int
-	PageSize       int
+	ProtocolFilter  string
+	CIDFilter       string
+	Sort            string
+	Page            int
+	PageSize        int
 }
 
 type OperationsServiceOption func(*OperationsServiceDefault)
@@ -194,19 +194,19 @@ func (s *OperationsServiceDefault) List(ctx context.Context, opts OperationsList
 
 	for _, op := range operations {
 		item := OperationListItem{
-			ID:                    op.Id,
-			Operation:             op.Operation,
-			OperationDisplayName:  op.OperationDisplayName,
-			Protocol:              op.Protocol,
-			ProtocolDisplayName:   op.ProtocolDisplayName,
-			Status:                op.Status,
-			StatusDisplayName:     op.StatusDisplayName,
-			StatusMessage:         op.StatusMessage,
-			ProgressPercent:       op.ProgressPercent,
-			StartedAt:             op.StartedAt.Format(time.DateTime),
-			UpdatedAt:             op.UpdatedAt.Format(time.DateTime),
-			CurrentStep:           op.CurrentStep,
-			TotalSteps:            op.TotalSteps,
+			ID:                   op.Id,
+			Operation:            op.Operation,
+			OperationDisplayName: op.OperationDisplayName,
+			Protocol:             op.Protocol,
+			ProtocolDisplayName:  op.ProtocolDisplayName,
+			Status:               op.Status,
+			StatusDisplayName:    op.StatusDisplayName,
+			StatusMessage:        op.StatusMessage,
+			ProgressPercent:      op.ProgressPercent,
+			StartedAt:            op.StartedAt.Format(time.DateTime),
+			UpdatedAt:            op.UpdatedAt.Format(time.DateTime),
+			CurrentStep:          op.CurrentStep,
+			TotalSteps:           op.TotalSteps,
 		}
 
 		if op.Cid != nil {
@@ -234,19 +234,19 @@ func (s *OperationsServiceDefault) Get(ctx context.Context, id int64) (*Operatio
 	}
 
 	detail := &OperationDetail{
-		ID:                    op.Id,
-		Operation:             op.Operation,
-		OperationDisplayName:  op.OperationDisplayName,
-		Protocol:              op.Protocol,
-		ProtocolDisplayName:   op.ProtocolDisplayName,
-		Status:                op.Status,
-		StatusDisplayName:     op.StatusDisplayName,
-		StatusMessage:         op.StatusMessage,
-		ProgressPercent:       op.ProgressPercent,
-		StartedAt:             op.StartedAt.Format(time.RFC3339),
-		UpdatedAt:             op.UpdatedAt.Format(time.RFC3339),
-		CurrentStep:           op.CurrentStep,
-		TotalSteps:            op.TotalSteps,
+		ID:                   op.Id,
+		Operation:            op.Operation,
+		OperationDisplayName: op.OperationDisplayName,
+		Protocol:             op.Protocol,
+		ProtocolDisplayName:  op.ProtocolDisplayName,
+		Status:               op.Status,
+		StatusDisplayName:    op.StatusDisplayName,
+		StatusMessage:        op.StatusMessage,
+		ProgressPercent:      op.ProgressPercent,
+		StartedAt:            op.StartedAt.Format(time.RFC3339),
+		UpdatedAt:            op.UpdatedAt.Format(time.RFC3339),
+		CurrentStep:          op.CurrentStep,
+		TotalSteps:           op.TotalSteps,
 	}
 
 	if op.Cid != nil {
@@ -316,19 +316,19 @@ func (s *OperationsServiceDefault) Watch(ctx context.Context, id int64) (*Operat
 	}
 
 	detail := &OperationDetail{
-		ID:                    op.Id,
-		Operation:             op.Operation,
-		OperationDisplayName:  op.OperationDisplayName,
-		Protocol:              op.Protocol,
-		ProtocolDisplayName:   op.ProtocolDisplayName,
-		Status:                op.Status,
-		StatusDisplayName:     op.StatusDisplayName,
-		StatusMessage:         op.StatusMessage,
-		ProgressPercent:       op.ProgressPercent,
-		StartedAt:             op.StartedAt.Format(time.RFC3339),
-		UpdatedAt:             op.UpdatedAt.Format(time.RFC3339),
-		CurrentStep:           op.CurrentStep,
-		TotalSteps:            op.TotalSteps,
+		ID:                   op.Id,
+		Operation:            op.Operation,
+		OperationDisplayName: op.OperationDisplayName,
+		Protocol:             op.Protocol,
+		ProtocolDisplayName:  op.ProtocolDisplayName,
+		Status:               op.Status,
+		StatusDisplayName:    op.StatusDisplayName,
+		StatusMessage:        op.StatusMessage,
+		ProgressPercent:      op.ProgressPercent,
+		StartedAt:            op.StartedAt.Format(time.RFC3339),
+		UpdatedAt:            op.UpdatedAt.Format(time.RFC3339),
+		CurrentStep:          op.CurrentStep,
+		TotalSteps:           op.TotalSteps,
 	}
 
 	if op.Cid != nil {

@@ -79,8 +79,6 @@ func TestResolveUploadInput_Stdin(t *testing.T) {
 	}
 }
 
-
-
 func TestResolveUploadInput_File(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "test.txt")

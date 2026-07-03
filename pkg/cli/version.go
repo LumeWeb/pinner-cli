@@ -11,7 +11,7 @@ import (
 func init() {
 	// Set custom version printer
 	cli.VersionPrinter = printVersion
-	
+
 	// Set custom version flag with short alias
 	cli.VersionFlag = &cli.BoolFlag{
 		Name:    "version",

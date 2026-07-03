@@ -1217,8 +1217,8 @@ func TestOperationsList_SortFlag(t *testing.T) {
 		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
 		opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{
 			Sort:     "id:desc",
-			Page:      1,
-			PageSize:  10,
+			Page:     1,
+			PageSize: 10,
 		}).Return(&OperationsListResult{
 			Operations: []OperationListItem{},
 			Total:      0,
@@ -1243,8 +1243,8 @@ func TestOperationsList_SortFlag(t *testing.T) {
 		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
 		opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{
 			Sort:     "started:asc",
-			Page:      1,
-			PageSize:  10,
+			Page:     1,
+			PageSize: 10,
 		}).Return(&OperationsListResult{
 			Operations: []OperationListItem{},
 			Total:      0,
@@ -1290,8 +1290,8 @@ func TestOperationsList_StatusValidation(t *testing.T) {
 		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
 		opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{
 			StatusFilter: "running",
-			Page:          1,
-			PageSize:      10,
+			Page:         1,
+			PageSize:     10,
 		}).Return(&OperationsListResult{
 			Operations: []OperationListItem{},
 			Total:      0,

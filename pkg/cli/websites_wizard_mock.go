@@ -14,7 +14,7 @@ type MockWebsitesUI struct {
 
 	mu sync.Mutex
 
-	ContentChoice  ContentSourceChoice
+	ContentChoice ContentSourceChoice
 	DNSChoice     DNSModeChoice
 	TargetChoice  TargetTypeChoice
 	CIDInput      string
@@ -28,17 +28,17 @@ type MockWebsitesUI struct {
 	SelectErr    error
 	ContinueErr  error
 
-	StartErr  error
-	StopErr   error
-	Messages  []string
+	StartErr error
+	StopErr  error
+	Messages []string
 
-	AuthCheckExecuted      bool
-	ContentSourceExecuted  bool
-	TargetTypeExecuted     bool
-	DomainExecuted         bool
-	DNSModeExecuted        bool
-	ValidateExecuted       bool
-	ValidateAttempts       int
+	AuthCheckExecuted     bool
+	ContentSourceExecuted bool
+	TargetTypeExecuted    bool
+	DomainExecuted        bool
+	DNSModeExecuted       bool
+	ValidateExecuted      bool
+	ValidateAttempts      int
 }
 
 // NewMockWebsitesUI creates a new mock websites UI.

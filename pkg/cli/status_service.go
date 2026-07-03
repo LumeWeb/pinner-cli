@@ -117,18 +117,18 @@ func (s *StatusServiceDefault) lookupOperation(ctx context.Context, cid string) 
 
 	op := operations[0]
 	result := &OperationStatusResult{
-		ID:                    op.Id,
-		Operation:             op.Operation,
-		OperationDisplayName:  op.OperationDisplayName,
-		Protocol:              op.Protocol,
-		ProtocolDisplayName:   op.ProtocolDisplayName,
-		Status:                op.Status,
-		StatusDisplayName:     op.StatusDisplayName,
-		StatusMessage:         op.StatusMessage,
-		ProgressPercent:       op.ProgressPercent,
-		StartedAt:             op.StartedAt.Format(time.RFC3339),
-		UpdatedAt:             op.UpdatedAt.Format(time.RFC3339),
-		Source:                "operation",
+		ID:                   op.Id,
+		Operation:            op.Operation,
+		OperationDisplayName: op.OperationDisplayName,
+		Protocol:             op.Protocol,
+		ProtocolDisplayName:  op.ProtocolDisplayName,
+		Status:               op.Status,
+		StatusDisplayName:    op.StatusDisplayName,
+		StatusMessage:        op.StatusMessage,
+		ProgressPercent:      op.ProgressPercent,
+		StartedAt:            op.StartedAt.Format(time.RFC3339),
+		UpdatedAt:            op.UpdatedAt.Format(time.RFC3339),
+		Source:               "operation",
 	}
 
 	if op.Cid != nil {

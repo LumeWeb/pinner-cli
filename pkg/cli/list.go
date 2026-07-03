@@ -82,7 +82,7 @@ func list(ctx context.Context, cmd flagGetterWithInt, output Output, cfgMgr conf
 			},
 			func(data any) (string, []string, [][]string) {
 				pins := data.([]Pin)
-					title := fmt.Sprintf("Found %d pin(s) - Last updated: %s", len(pins), time.Now().Format("15:04:05"))
+				title := fmt.Sprintf("Found %d pin(s) - Last updated: %s", len(pins), time.Now().Format("15:04:05"))
 
 				headers := []string{"CID", "NAME", "STATUS", "CREATED"}
 				rows := make([][]string, len(pins))

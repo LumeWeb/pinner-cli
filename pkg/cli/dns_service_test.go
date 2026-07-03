@@ -4,8 +4,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
 	"go.lumeweb.com/pinner-cli/pkg/config"
+	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
 )
 
 func TestDNSService_RequireAuthenticated(t *testing.T) {

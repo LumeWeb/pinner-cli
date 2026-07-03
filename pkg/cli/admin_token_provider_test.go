@@ -41,7 +41,7 @@ func TestAdminTokenProvider_GetLoginToken_NonAPIKeyJWT(t *testing.T) {
 	cfgMgr.EXPECT().Config().Return(&config.Config{AuthToken: "token"}).Maybe()
 
 	provider := &AdminTokenProvider{
-		cfgMgr:    cfgMgr,
+		cfgMgr:      cfgMgr,
 		apiEndpoint: "http://localhost:8080",
 	}
 

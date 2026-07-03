@@ -190,9 +190,9 @@ func TestBillingSubscribersListGateway(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:      "returns error when gateway ID is missing",
-			gatewayID: "",
-			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {},
+			name:        "returns error when gateway ID is missing",
+			gatewayID:   "",
+			setupMocks:  func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {},
 			wantErr:     true,
 			errContains: "gateway ID is required",
 		},
@@ -256,9 +256,9 @@ func TestBillingSubscribersListUser(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:   "returns error when user ID is missing",
-			userID: "",
-			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {},
+			name:        "returns error when user ID is missing",
+			userID:      "",
+			setupMocks:  func(cfgMgr *configmocks.MockManager, service *MockBillingAdminService) {},
 			wantErr:     true,
 			errContains: "user ID is required",
 		},
@@ -440,8 +440,8 @@ func TestBillingSubscribersChangePlan(t *testing.T) {
 					PeriodId: 1,
 				}).Return(
 					&admin.PlanChangeResult{
-						Action:       "change_plan",
-						ChargeDue:    decimal.RequireFromString("0.00"),
+						Action:        "change_plan",
+						ChargeDue:     decimal.RequireFromString("0.00"),
 						CreditApplied: decimal.RequireFromString("0.00"),
 					},
 					nil,

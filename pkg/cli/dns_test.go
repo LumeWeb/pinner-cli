@@ -17,14 +17,14 @@ type mockDNSServiceForCLI struct {
 	requireAuthenticatedErr error
 	listZonesFunc           func(ctx context.Context) ([]ipfs.ZoneListResponse, error)
 	createZoneFunc          func(ctx context.Context, domain string, nameservers []string) (*ipfs.ZoneResponse, error)
-	getZoneFunc            func(ctx context.Context, id string) (*ipfs.ZoneResponse, error)
-	deleteZoneFunc         func(ctx context.Context, id string) error
-	validateZoneFunc       func(ctx context.Context, id string) (*ipfs.ValidationResponse, error)
-	createRecordFunc       func(ctx context.Context, id string, record ipfs.RecordRequest) (*ipfs.RecordResponse, error)
-	listRecordsFunc        func(ctx context.Context, id string) ([]ipfs.RecordResponse, error)
-	getRecordFunc          func(ctx context.Context, id string, name string, recordType string) (*ipfs.RecordResponse, error)
-	updateRecordFunc       func(ctx context.Context, id string, name string, recordType string, record ipfs.RecordRequest) (*ipfs.RecordResponse, error)
-	deleteRecordFunc       func(ctx context.Context, id string, name string, recordType string) error
+	getZoneFunc             func(ctx context.Context, id string) (*ipfs.ZoneResponse, error)
+	deleteZoneFunc          func(ctx context.Context, id string) error
+	validateZoneFunc        func(ctx context.Context, id string) (*ipfs.ValidationResponse, error)
+	createRecordFunc        func(ctx context.Context, id string, record ipfs.RecordRequest) (*ipfs.RecordResponse, error)
+	listRecordsFunc         func(ctx context.Context, id string) ([]ipfs.RecordResponse, error)
+	getRecordFunc           func(ctx context.Context, id string, name string, recordType string) (*ipfs.RecordResponse, error)
+	updateRecordFunc        func(ctx context.Context, id string, name string, recordType string, record ipfs.RecordRequest) (*ipfs.RecordResponse, error)
+	deleteRecordFunc        func(ctx context.Context, id string, name string, recordType string) error
 }
 
 func (m *mockDNSServiceForCLI) RequireAuthenticated() error {

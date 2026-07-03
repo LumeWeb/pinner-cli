@@ -169,8 +169,6 @@ func NewProfilingAdminService(cfgMgr config.Manager, output Output, apiEndpoint 
 	}
 }
 
-
-
 // QuotaAdminService defines the interface for quota admin operations.
 type QuotaAdminService interface {
 	RequireAuthenticated() error

@@ -28,15 +28,15 @@ type ContentSourceChoice int
 
 const (
 	ContentChoiceCID  ContentSourceChoice = iota // User has a CID
-	ContentChoiceExit                             // User needs to upload first
+	ContentChoiceExit                            // User needs to upload first
 )
 
 // DNSModeChoice represents user's choice for the DNS mode step.
 type DNSModeChoice int
 
 const (
-	DNSModeSelfManaged  DNSModeChoice = iota // User manages DNS themselves
-	DNSModePinnerManaged                     // Pinner manages DNS
+	DNSModeSelfManaged   DNSModeChoice = iota // User manages DNS themselves
+	DNSModePinnerManaged                      // Pinner manages DNS
 )
 
 // TargetTypeChoice represents user's choice for the target type step.
@@ -44,5 +44,5 @@ type TargetTypeChoice int
 
 const (
 	TargetTypeIPFS TargetTypeChoice = iota // IPFS content addressing (default)
-	TargetTypeIPNS                          // IPNS mutable name
+	TargetTypeIPNS                         // IPNS mutable name
 )

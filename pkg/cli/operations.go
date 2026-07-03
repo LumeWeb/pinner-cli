@@ -6,9 +6,9 @@ import (
 	"time"
 
 	"github.com/pterm/pterm"
-	portalsdk "go.lumeweb.com/portal-sdk"
-	"go.lumeweb.com/pinner-cli/pkg/config"
 	"github.com/urfave/cli/v3"
+	"go.lumeweb.com/pinner-cli/pkg/config"
+	portalsdk "go.lumeweb.com/portal-sdk"
 )
 
 func newOperationsCommand() *cli.Command {
@@ -141,13 +141,13 @@ func operationsList(ctx context.Context, cmd argsFlagGetter, output Output, cfgM
 	}
 
 	opts := OperationsListOptions{
-		StatusFilter:     cmd.String(FlagStatus),
-		OperationFilter:  cmd.String(FlagOperation),
-		ProtocolFilter:   cmd.String(FlagProtocol),
-		CIDFilter:        cmd.String(FlagCID),
+		StatusFilter:    cmd.String(FlagStatus),
+		OperationFilter: cmd.String(FlagOperation),
+		ProtocolFilter:  cmd.String(FlagProtocol),
+		CIDFilter:       cmd.String(FlagCID),
 		Sort:            cmd.String(FlagSort),
-		Page:             page,
-		PageSize:         pageSize,
+		Page:            page,
+		PageSize:        pageSize,
 	}
 
 	if err := validateOperationStatus(opts.StatusFilter); err != nil {

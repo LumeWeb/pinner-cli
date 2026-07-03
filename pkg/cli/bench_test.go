@@ -11,10 +11,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	portalsdk "go.lumeweb.com/portal-sdk"
-	portalsdkmocks "go.lumeweb.com/portal-sdk/mocks"
 	"go.lumeweb.com/pinner-cli/pkg/config"
 	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
+	portalsdk "go.lumeweb.com/portal-sdk"
+	portalsdkmocks "go.lumeweb.com/portal-sdk/mocks"
 )
 
 func TestBenchFilePath(t *testing.T) {
@@ -507,8 +507,6 @@ func TestBenchService_Run_NotAuthenticated(t *testing.T) {
 	})
 }
 
-
-
 func TestFormatBenchResult(t *testing.T) {
 	t.Run("single iteration with random data", func(t *testing.T) {
 		result := &BenchResult{
@@ -714,9 +712,9 @@ func TestBenchServiceDefault_RunIteration(t *testing.T) {
 		}
 
 		opts := BenchOptions{
-			SizeBytes:   1024,
-			Files:       1,
-			Iterations:  1,
+			SizeBytes:    1024,
+			Files:        1,
+			Iterations:   1,
 			PollInterval: 100 * time.Millisecond,
 		}
 
@@ -754,9 +752,9 @@ func TestBenchServiceDefault_RunIteration(t *testing.T) {
 		}
 
 		opts := BenchOptions{
-			SizeBytes:   1024,
-			Files:       1,
-			Iterations:  1,
+			SizeBytes:    1024,
+			Files:        1,
+			Iterations:   1,
 			PollInterval: 100 * time.Millisecond,
 		}
 
@@ -795,9 +793,9 @@ func TestBenchServiceDefault_RunIteration(t *testing.T) {
 		}
 
 		opts := BenchOptions{
-			SizeBytes:   1024,
-			Files:       1,
-			Iterations:  1,
+			SizeBytes:    1024,
+			Files:        1,
+			Iterations:   1,
 			PollInterval: 100 * time.Millisecond,
 		}
 
@@ -826,9 +824,9 @@ func TestBenchServiceDefault_RunIteration(t *testing.T) {
 		}
 
 		opts := BenchOptions{
-			SizeBytes:   1024,
-			Files:       1,
-			Iterations:  1,
+			SizeBytes:    1024,
+			Files:        1,
+			Iterations:   1,
 			PollInterval: 100 * time.Millisecond,
 		}
 
@@ -861,9 +859,9 @@ func TestBenchServiceDefault_RunIteration(t *testing.T) {
 		}
 
 		opts := BenchOptions{
-			SizeBytes:   1024,
-			Files:       1,
-			Iterations:  1,
+			SizeBytes:    1024,
+			Files:        1,
+			Iterations:   1,
 			PollInterval: 100 * time.Millisecond,
 		}
 

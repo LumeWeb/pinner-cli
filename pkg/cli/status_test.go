@@ -83,16 +83,16 @@ func TestStatus(t *testing.T) {
 				statusSvc.EXPECT().Status(mock.Anything, "QmYyy", false).Return(
 					nil,
 					&OperationStatusResult{
-						CID:                   "QmYyy",
-						Status:                "completed",
-						StatusDisplayName:     "Completed",
-						Operation:             "pin",
-						OperationDisplayName:  "Pin",
-						Protocol:              "ipfs",
-						ProtocolDisplayName:   "IPFS",
-						ProgressPercent:       100,
-						StartedAt:             "2024-01-01T00:00:00Z",
-						Source:                "operation",
+						CID:                  "QmYyy",
+						Status:               "completed",
+						StatusDisplayName:    "Completed",
+						Operation:            "pin",
+						OperationDisplayName: "Pin",
+						Protocol:             "ipfs",
+						ProtocolDisplayName:  "IPFS",
+						ProgressPercent:      100,
+						StartedAt:            "2024-01-01T00:00:00Z",
+						Source:               "operation",
 					},
 					nil,
 				)
@@ -113,17 +113,17 @@ func TestStatus(t *testing.T) {
 				statusSvc.EXPECT().Status(mock.Anything, "QmZzz", false).Return(
 					nil,
 					&OperationStatusResult{
-						CID:                   "QmZzz",
-						Status:                "failed",
-						StatusDisplayName:     "Failed",
-						Operation:             "pin",
-						OperationDisplayName:  "Pin",
-						Protocol:              "ipfs",
-						ProtocolDisplayName:   "IPFS",
-						ProgressPercent:       50,
-						StartedAt:             "2024-01-01T00:00:00Z",
-						Error:                 "upload failed",
-						Source:                "operation",
+						CID:                  "QmZzz",
+						Status:               "failed",
+						StatusDisplayName:    "Failed",
+						Operation:            "pin",
+						OperationDisplayName: "Pin",
+						Protocol:             "ipfs",
+						ProtocolDisplayName:  "IPFS",
+						ProgressPercent:      50,
+						StartedAt:            "2024-01-01T00:00:00Z",
+						Error:                "upload failed",
+						Source:               "operation",
 					},
 					nil,
 				)
@@ -363,4 +363,3 @@ func TestRenderOperationStatus(t *testing.T) {
 		assert.Contains(t, result, `"Completed"`)
 	})
 }
-
