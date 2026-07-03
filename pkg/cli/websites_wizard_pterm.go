@@ -137,10 +137,7 @@ func (ui *PTermWebsitesUI) ExecuteContentSourceStep(_ context.Context, w *Websit
 	promptCID := promptui.Prompt{
 		Label: "Enter the CID (Content Identifier)",
 		Validate: func(input string) error {
-			if input == "" {
-				return fmt.Errorf("CID cannot be empty")
-			}
-			return nil
+			return validateCID(input)
 		},
 	}
 
