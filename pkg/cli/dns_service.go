@@ -3,8 +3,8 @@ package cli
 import (
 	"context"
 
-	"go.lumeweb.com/pinner-cli/pkg/config"
 	ipfs "go.lumeweb.com/ipfs-sdk"
+	"go.lumeweb.com/pinner-cli/pkg/config"
 )
 
 // DNSService defines the interface for DNS operations in the CLI.

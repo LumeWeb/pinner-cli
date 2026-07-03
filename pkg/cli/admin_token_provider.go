@@ -12,12 +12,12 @@ import (
 // AdminTokenProvider handles token exchange for admin services.
 // It detects API-purpose tokens and exchanges them for login-purpose tokens as needed.
 type AdminTokenProvider struct {
-	cfgMgr     config.Manager
-	apiEndpoint string
+	cfgMgr        config.Manager
+	apiEndpoint   string
 	adminEndpoint string
-	baseToken  string
-	loginToken string
-	mu         sync.RWMutex
+	baseToken     string
+	loginToken    string
+	mu            sync.RWMutex
 }
 
 // NewAdminTokenProvider creates a new AdminTokenProvider.

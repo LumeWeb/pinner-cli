@@ -6,13 +6,13 @@ import (
 	"strings"
 
 	"github.com/urfave/cli/v3"
-	"go.lumeweb.com/pinner-cli/pkg/config"
 	ipfs "go.lumeweb.com/ipfs-sdk"
+	"go.lumeweb.com/pinner-cli/pkg/config"
 )
 
 const (
 	ipnsSchemePrefix = "ipns://"
-	ethSuffix         = ".eth"
+	ethSuffix        = ".eth"
 	ethLimoFmt       = "https://%s.eth.limo"
 	ipfsGatewayFmt   = "https://%s.ipns.inbrowser.link"
 )
@@ -177,9 +177,9 @@ func unpointWithServices(ctx context.Context, name string, ipnsService IPNSServi
 
 	if output.IsJSON() {
 		return output.PrintJSON(map[string]any{
-			"name":       name,
-			"ipns_name":  found.IpnsName,
-			"deleted":    true,
+			"name":      name,
+			"ipns_name": found.IpnsName,
+			"deleted":   true,
 		})
 	}
 

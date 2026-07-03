@@ -16,10 +16,10 @@ import (
 
 // UploadServiceConfig holds configuration options for UploadService.
 type UploadServiceConfig struct {
-	HTTPClient       *http.Client
-	AccountClient    portalsdk.AccountAPI
-	IPFSEndpoint     string
-	AccountEndpoint  string
+	HTTPClient      *http.Client
+	AccountClient   portalsdk.AccountAPI
+	IPFSEndpoint    string
+	AccountEndpoint string
 }
 
 // UploadServiceDefault provides upload operations using the ipfs-sdk UploadService.
@@ -194,11 +194,11 @@ func (s *UploadServiceDefault) Upload(ctx context.Context, filesystem fs.FS, nam
 	}
 
 	opts := &ipfs.UploadOptions{
-		MemoryLimit:    memoryLimit,
-		UploadLimit:    uploadLimit,
-		ChunkSize:      s.chunkSize,
+		MemoryLimit:     memoryLimit,
+		UploadLimit:     uploadLimit,
+		ChunkSize:       s.chunkSize,
 		ChunkerStrategy: s.chunkerStrategy,
-		MaxLinks:       s.maxLinks,
+		MaxLinks:        s.maxLinks,
 	}
 
 	// Create SDK upload service using the configured IPFS endpoint

@@ -30,11 +30,11 @@ func testDownloadConfigMgr(t *testing.T) *configmocks.MockManager {
 
 func TestHandleDownload_DryRun(t *testing.T) {
 	tests := []struct {
-		name     string
-		cid      string
-		output   string
-		force    bool
-		wantErr  bool
+		name    string
+		cid     string
+		output  string
+		force   bool
+		wantErr bool
 	}{
 		{
 			name:    "dry run with CID",
@@ -71,7 +71,6 @@ func TestHandleDownload_DryRun(t *testing.T) {
 				withBool(FlagForce, tt.force).
 				withBool(FlagDryRun, true)
 
-
 			downloadServiceFactory := func(cfgMgr config.Manager, output Output, opts ...DownloadServiceOption) DownloadService {
 				return NewMockDownloadService(t)
 			}
@@ -92,7 +91,6 @@ func TestHandleDownload_RequiresCID(t *testing.T) {
 	output := newTestOutput()
 
 	cmd := newMockCommand()
-
 
 	downloadServiceFactory := func(cfgMgr config.Manager, output Output, opts ...DownloadServiceOption) DownloadService {
 		return NewMockDownloadService(t)
@@ -117,7 +115,6 @@ func TestHandleDownload_Success(t *testing.T) {
 
 	cmd := newMockCommand().withArgs("QmXxx")
 
-
 	downloadServiceFactory := func(cfgMgr config.Manager, output Output, opts ...DownloadServiceOption) DownloadService {
 		return service
 	}
@@ -133,7 +130,6 @@ func TestHandleDownload_NotAuthenticated(t *testing.T) {
 	service.EXPECT().RequireAuthenticated().Return(errors.New("not authenticated"))
 
 	cmd := newMockCommand().withArgs("QmXxx")
-
 
 	downloadServiceFactory := func(cfgMgr config.Manager, output Output, opts ...DownloadServiceOption) DownloadService {
 		return service
@@ -151,7 +147,6 @@ func TestHandleDownload_FileExists_NoForce(t *testing.T) {
 	service.EXPECT().Download(mock.Anything, "QmXxx", "", false).Return(nil, errors.New("file already exists"))
 
 	cmd := newMockCommand().withArgs("QmXxx")
-
 
 	downloadServiceFactory := func(cfgMgr config.Manager, output Output, opts ...DownloadServiceOption) DownloadService {
 		return service
@@ -179,7 +174,6 @@ func TestHandleDownload_WithForce(t *testing.T) {
 		withString(FlagOutput, "existing.txt").
 		withBool(FlagForce, true)
 
-
 	downloadServiceFactory := func(cfgMgr config.Manager, output Output, opts ...DownloadServiceOption) DownloadService {
 		return service
 	}
@@ -197,7 +191,6 @@ func TestHandleCat_Success(t *testing.T) {
 
 	cmd := newMockCommand().withArgs("QmXxx")
 
-
 	downloadServiceFactory := func(cfgMgr config.Manager, output Output, opts ...DownloadServiceOption) DownloadService {
 		return service
 	}
@@ -211,7 +204,6 @@ func TestHandleCat_RequiresCID(t *testing.T) {
 	output := newTestOutput()
 
 	cmd := newMockCommand()
-
 
 	downloadServiceFactory := func(cfgMgr config.Manager, output Output, opts ...DownloadServiceOption) DownloadService {
 		return NewMockDownloadService(t)
@@ -229,7 +221,6 @@ func TestHandleCat_NotAuthenticated(t *testing.T) {
 	service.EXPECT().RequireAuthenticated().Return(errors.New("not authenticated"))
 
 	cmd := newMockCommand().withArgs("QmXxx")
-
 
 	downloadServiceFactory := func(cfgMgr config.Manager, output Output, opts ...DownloadServiceOption) DownloadService {
 		return service
@@ -251,7 +242,6 @@ func TestHandleLs_Success(t *testing.T) {
 
 	cmd := newMockCommand().withArgs("QmXxx").withInt(FlagLimit, 10)
 
-
 	downloadServiceFactory := func(cfgMgr config.Manager, output Output, opts ...DownloadServiceOption) DownloadService {
 		return service
 	}
@@ -269,7 +259,6 @@ func TestHandleLs_EmptyDirectory(t *testing.T) {
 
 	cmd := newMockCommand().withArgs("QmXxx").withInt(FlagLimit, 10)
 
-
 	downloadServiceFactory := func(cfgMgr config.Manager, output Output, opts ...DownloadServiceOption) DownloadService {
 		return service
 	}
@@ -283,7 +272,6 @@ func TestHandleLs_RequiresCID(t *testing.T) {
 	output := newTestOutput()
 
 	cmd := newMockCommand().withInt(FlagLimit, 10)
-
 
 	downloadServiceFactory := func(cfgMgr config.Manager, output Output, opts ...DownloadServiceOption) DownloadService {
 		return NewMockDownloadService(t)
@@ -306,7 +294,6 @@ func TestHandleLs_WithLimit(t *testing.T) {
 	}, nil)
 
 	cmd := newMockCommand().withArgs("QmXxx").withInt(FlagLimit, 2)
-
 
 	downloadServiceFactory := func(cfgMgr config.Manager, output Output, opts ...DownloadServiceOption) DownloadService {
 		return service

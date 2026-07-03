@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	"github.com/urfave/cli/v3"
-	portalsdk "go.lumeweb.com/portal-sdk"
 	"go.lumeweb.com/pinner-cli/pkg/config"
+	portalsdk "go.lumeweb.com/portal-sdk"
 )
 
 func newAccountAPIKeysCommand() *cli.Command {

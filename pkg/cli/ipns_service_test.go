@@ -6,9 +6,9 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
-	"go.lumeweb.com/pinner-cli/pkg/config"
 	ipfs "go.lumeweb.com/ipfs-sdk"
+	"go.lumeweb.com/pinner-cli/pkg/config"
+	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
 )
 
 func TestIPNSService_ListKeys(t *testing.T) {

@@ -9,9 +9,9 @@ import (
 
 	mock "github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.lumeweb.com/pinner-cli/pkg/config"
 	portalsdk "go.lumeweb.com/portal-sdk"
 	portalsdkmocks "go.lumeweb.com/portal-sdk/mocks"
-	"go.lumeweb.com/pinner-cli/pkg/config"
 )
 
 func newTestAPIKey(name, uuidStr string) *portalsdk.APIKey {
@@ -267,7 +267,7 @@ func TestAPIKeyService_GetCurrentAPIKeyUUID(t *testing.T) {
 		{
 			name:      "api key jwt returns subject",
 			authToken: makeAPIKeyJWT("test-uuid-123", "api"),
-			wantUUID: "test-uuid-123",
+			wantUUID:  "test-uuid-123",
 		},
 		{
 			name:      "login jwt returns empty",

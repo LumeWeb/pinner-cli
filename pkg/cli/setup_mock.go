@@ -28,8 +28,8 @@ type MockSetupUI struct {
 	SelectErr    error
 	ContinueErr  error
 
-	AuthExecuted   bool
-	ConfigExecuted bool
+	AuthExecuted     bool
+	ConfigExecuted   bool
 	TutorialExecuted bool
 
 	EndpointSet string

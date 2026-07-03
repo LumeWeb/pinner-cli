@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/golang-jwt/jwt/v5"
-	mock "github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/assert"
+	mock "github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.lumeweb.com/pinner-cli/pkg/config"
 	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
@@ -165,11 +165,12 @@ func TestAuthService_CompleteLogin(t *testing.T) {
 			errContains: "failed to save auth token",
 		},
 		{
-			name:             "API key creation fails",
-			token:            "test-jwt-token",
-			keyName:          "test-key",
-			noCreateKey:      false,
-			setupMocks:       func(cfgMgr *configmocks.MockManager, acc *portalsdkmocks.MockAccountAPI, authAcc *portalsdkmocks.MockAccountAPI) {},
+			name:        "API key creation fails",
+			token:       "test-jwt-token",
+			keyName:     "test-key",
+			noCreateKey: false,
+			setupMocks: func(cfgMgr *configmocks.MockManager, acc *portalsdkmocks.MockAccountAPI, authAcc *portalsdkmocks.MockAccountAPI) {
+			},
 			wantErr:          true,
 			errContains:      "failed to create API key",
 			failCreateAPIKey: true,
@@ -600,8 +601,6 @@ func TestAuthLogin(t *testing.T) {
 		})
 	}
 }
-
-
 
 func TestAuthService_LoginWithOTP(t *testing.T) {
 	tests := []struct {

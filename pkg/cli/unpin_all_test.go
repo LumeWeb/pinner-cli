@@ -446,5 +446,3 @@ func TestNewUnpinAllCommand(t *testing.T) {
 		assert.True(t, yesFlag.Hidden)
 	})
 }
-
-

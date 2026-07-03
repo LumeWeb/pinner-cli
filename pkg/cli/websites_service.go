@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"go.lumeweb.com/pinner-cli/pkg/config"
 	ipfs "go.lumeweb.com/ipfs-sdk"
+	"go.lumeweb.com/pinner-cli/pkg/config"
 )
 
 // websitesService implements the WebsitesService interface using the ipfs.WebsitesService.
@@ -221,5 +221,3 @@ func (s *websitesService) GetConfig(ctx context.Context) (*ipfs.WebsiteConfigRes
 	}
 	return s.service.GetConfig(ctx)
 }
-
-

@@ -263,19 +263,19 @@ func (m *mockCommand) GetCID() string {
 
 // Compile-time interface satisfaction checks
 var (
-	_ flagGetter            = (*mockCommand)(nil)
-	_ flagGetterWithInt     = (*mockCommand)(nil)
-	_ flagGetterWithIsSet   = (*mockCommand)(nil)
-	_ flagGetterWithUint    = (*mockCommand)(nil)
+	_ flagGetter             = (*mockCommand)(nil)
+	_ flagGetterWithInt      = (*mockCommand)(nil)
+	_ flagGetterWithIsSet    = (*mockCommand)(nil)
+	_ flagGetterWithUint     = (*mockCommand)(nil)
 	_ flagGetterWithDuration = (*mockCommand)(nil)
 	_ commandGetter          = (*mockCommand)(nil)
 	_ argsGetter             = (*mockCommand)(nil)
-	_ cidGetter             = (*mockCommand)(nil)
-	_ argsFlagGetter        = (*mockCommand)(nil)
-	_ cidFlagGetter         = (*mockCommand)(nil)
-	_ dnsCommandGetter      = (*mockCommand)(nil)
-	_ benchCommandGetter    = (*mockCommand)(nil)
-	_ websitesCommandGetter = (*mockCommand)(nil)
+	_ cidGetter              = (*mockCommand)(nil)
+	_ argsFlagGetter         = (*mockCommand)(nil)
+	_ cidFlagGetter          = (*mockCommand)(nil)
+	_ dnsCommandGetter       = (*mockCommand)(nil)
+	_ benchCommandGetter     = (*mockCommand)(nil)
+	_ websitesCommandGetter  = (*mockCommand)(nil)
 )
 
 // newTestOutput creates a human-readable Output for testing.

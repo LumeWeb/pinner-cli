@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"github.com/urfave/cli/v3"
-	"go.lumeweb.com/pinner-cli/pkg/config"
 	ipfs "go.lumeweb.com/ipfs-sdk"
+	"go.lumeweb.com/pinner-cli/pkg/config"
 )
 
 // stripValidationPrefix strips the "key=" prefix from a validation token value.
@@ -541,9 +541,9 @@ func websitesCreate(ctx context.Context, cmd websitesCommandGetter, output Outpu
 	}
 
 	req := ipfs.WebsiteRequest{
-		Domain:       domain,
-		TargetHash:  cid,
-		TargetType:  targetType,
+		Domain:     domain,
+		TargetHash: cid,
+		TargetType: targetType,
 	}
 
 	if cmd.IsSet(FlagDNSHosting) {

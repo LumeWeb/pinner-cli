@@ -5,9 +5,9 @@ import (
 	"fmt"
 
 	"github.com/urfave/cli/v3"
+	ipfs "go.lumeweb.com/ipfs-sdk"
 	"go.lumeweb.com/pinner-cli/pkg/cli/wizard"
 	"go.lumeweb.com/pinner-cli/pkg/config"
-	ipfs "go.lumeweb.com/ipfs-sdk"
 )
 
 // WebsitesWizard manages the website creation wizard.
@@ -114,9 +114,9 @@ func (w *WebsitesWizard) executeCreateWebsite(ctx context.Context) error {
 		targetType = "ipfs"
 	}
 	req := ipfs.WebsiteRequest{
-		Domain:      w.Domain(),
-		TargetHash:  w.CID(),
-		TargetType:  targetType,
+		Domain:            w.Domain(),
+		TargetHash:        w.CID(),
+		TargetType:        targetType,
 		DnsHostingEnabled: &dnsHosting,
 	}
 

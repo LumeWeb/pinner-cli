@@ -102,7 +102,7 @@ func TestQuotaPlansCreate(t *testing.T) {
 		},
 		{
 			name: "returns error when no fields provided for create",
-			cmd: newMockCommand(),
+			cmd:  newMockCommand(),
 			setupMocks: func(cfgMgr *configmocks.MockManager, svc *MockQuotaAdminService) {
 				svc.EXPECT().RequireAuthenticated().Return(nil)
 			},
@@ -179,7 +179,7 @@ func TestQuotaPlansUpdate(t *testing.T) {
 		{
 			name:   "missing plan ID",
 			planID: "",
-			cmd:   newMockCommand(),
+			cmd:    newMockCommand(),
 			setupMocks: func(cfgMgr *configmocks.MockManager, svc *MockQuotaAdminService) {
 				svc.EXPECT().RequireAuthenticated().Return(nil)
 			},

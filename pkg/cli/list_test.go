@@ -212,5 +212,3 @@ func TestList_RequireAuthFails(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not authenticated")
 }
-
-

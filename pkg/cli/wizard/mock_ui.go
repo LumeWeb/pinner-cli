@@ -7,10 +7,10 @@ import (
 )
 
 type MockUI struct {
-	mu             sync.Mutex
-	Calls          []string
-	ReturnError    error
-	WelcomeShown   bool
+	mu              sync.Mutex
+	Calls           []string
+	ReturnError     error
+	WelcomeShown    bool
 	CompletionShown bool
 }
 

@@ -179,10 +179,10 @@ Examples:
 						Name:  FlagStorageLimit,
 						Usage: "Storage limit (bytes)",
 					},
-						&cli.StringFlag{
-							Name:  FlagWindowType,
-							Usage: "Window type (ROLLING, DAY, WEEK, MONTH, YEAR, LIFETIME)",
-						},
+					&cli.StringFlag{
+						Name:  FlagWindowType,
+						Usage: "Window type (ROLLING, DAY, WEEK, MONTH, YEAR, LIFETIME)",
+					},
 					&cli.BoolFlag{
 						Name:  FlagIsActive,
 						Usage: "Mark plan as active",
@@ -232,10 +232,10 @@ Examples:
 						Name:  FlagStorageLimit,
 						Usage: "Storage limit (bytes)",
 					},
-						&cli.StringFlag{
-							Name:  FlagWindowType,
-							Usage: "Window type (ROLLING, DAY, WEEK, MONTH, YEAR, LIFETIME)",
-						},
+					&cli.StringFlag{
+						Name:  FlagWindowType,
+						Usage: "Window type (ROLLING, DAY, WEEK, MONTH, YEAR, LIFETIME)",
+					},
 					&cli.BoolFlag{
 						Name:  FlagIsActive,
 						Usage: "Mark plan as active",

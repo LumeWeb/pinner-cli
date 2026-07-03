@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strconv"
 
-	"go.lumeweb.com/pinner-cli/pkg/config"
 	ipfs "go.lumeweb.com/ipfs-sdk"
+	"go.lumeweb.com/pinner-cli/pkg/config"
 )
 
 type IPNSService interface {

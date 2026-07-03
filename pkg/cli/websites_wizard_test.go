@@ -6,9 +6,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	ipfs "go.lumeweb.com/ipfs-sdk"
 	"go.lumeweb.com/pinner-cli/pkg/config"
 	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
-	ipfs "go.lumeweb.com/ipfs-sdk"
 )
 
 func TestWebsitesWizard_Run(t *testing.T) {
@@ -437,8 +437,8 @@ func TestWebsitesWizard_StepCalls(t *testing.T) {
 
 func TestWebsitesWizard_UIError(t *testing.T) {
 	tests := []struct {
-		name        string
-		errMsg      string
+		name   string
+		errMsg string
 	}{
 		{
 			name:   "welcome error",

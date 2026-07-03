@@ -753,16 +753,16 @@ func wrapLine(line string, width int) []string {
 				curLen = 0
 				word = word[space:]
 				wordLen = len(word)
-		} else {
-			if curLen > 0 {
-				result = append(result, cur.String())
-				cur.Reset()
-				curLen = 0
+			} else {
+				if curLen > 0 {
+					result = append(result, cur.String())
+					cur.Reset()
+					curLen = 0
+				}
+				result = append(result, word[:width])
+				word = word[width:]
+				wordLen = len(word)
 			}
-			result = append(result, word[:width])
-			word = word[width:]
-			wordLen = len(word)
-		}
 		}
 
 		if curLen+wordLen+1 > width && curLen > 0 {

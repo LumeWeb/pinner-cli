@@ -90,7 +90,6 @@ func TestPinDryRun(t *testing.T) {
 					withBool(FlagDryRun, tt.dryRunFlag)
 			}
 
-
 			pinningServiceFactory := func(cfgMgr config.Manager, output Output, _ bool) PinningService {
 				return service
 			}
@@ -111,13 +110,13 @@ func TestPinDryRun(t *testing.T) {
 
 func TestPin(t *testing.T) {
 	tests := []struct {
-		name             string
-		cid              string
-		nameFlag         string
-		noWaitFlag       bool
-		setupMocks       func(*configmocks.MockManager, *MockPinningService)
-		wantErr          bool
-		errContains      string
+		name        string
+		cid         string
+		nameFlag    string
+		noWaitFlag  bool
+		setupMocks  func(*configmocks.MockManager, *MockPinningService)
+		wantErr     bool
+		errContains string
 	}{
 		{
 			name:       "successful pin operation",
@@ -190,8 +189,8 @@ func TestPin(t *testing.T) {
 				}).Maybe()
 				service.EXPECT().RequireAuthenticated().Return(nil)
 			},
-			wantErr:          true,
-			errContains:      "cid is required",
+			wantErr:     true,
+			errContains: "cid is required",
 		},
 		{
 			name:       "returns error when no CIDs provided for batch",
@@ -335,7 +334,6 @@ func TestPinBatch(t *testing.T) {
 				withInt(FlagParallel, tt.parallel).
 				withBool(FlagContinue, tt.continueOn)
 
-
 			pinningServiceFactory := func(cm config.Manager, out Output, _ bool) PinningService {
 				return service
 			}
@@ -391,8 +389,6 @@ func TestNewPinCommand(t *testing.T) {
 		assert.Equal(t, "continue", continueFlag.Name)
 	})
 }
-
-
 
 func TestDefaultPinningServiceFactory(t *testing.T) {
 	t.Run("creates pinning service with correct dependencies", func(t *testing.T) {
