@@ -276,8 +276,20 @@ func (s *UploadServiceDefault) wrapUploadError(err error) error {
 func (s *UploadServiceDefault) waitForPin(ctx context.Context, rootCID string, authToken string) error {
 	accountClient := portalsdk.NewClient(portalsdk.WithEndpoint(s.accountEndpoint), portalsdk.WithJWT(authToken))
 
-	pinCtx, cancel := context.WithTimeout(context.Background(), s.configMgr.Config().GetUploadTimeout())
+	// Create a fresh context with its own timeout, decoupled from the upload's
+	// context deadline (which may be mostly consumed by the upload itself).
+	// Propagate user-initiated cancellation (Ctrl+C/SIGINT) but not the
+	// parent's deadline expiry, so pin polling gets its own full timeout.
+	pinCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	go func() {
+		<-ctx.Done()
+		if ctx.Err() == context.Canceled {
+			cancel()
+		}
+	}()
+	pinCtx, timeoutCancel := context.WithTimeout(pinCtx, s.configMgr.Config().GetUploadTimeout())
+	defer timeoutCancel()
 
 	operations, _, err := accountClient.ListOperations(pinCtx, portalsdk.WithFilters(filter.FieldEqual("cid", rootCID)))
 	if err != nil {

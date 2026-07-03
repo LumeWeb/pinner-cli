@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
@@ -532,7 +533,7 @@ func TestUploadServiceDefault_waitForPin(t *testing.T) {
 		assert.Contains(t, err.Error(), "operation not found")
 	})
 
-	t.Run("uses fresh context for pin polling when parent context is cancelled", func(t *testing.T) {
+	t.Run("uses fresh timeout for pin polling when parent context deadline is expired", func(t *testing.T) {
 		h := newUploadTestHelpers(t)
 
 		var pollCount int32
@@ -542,7 +543,7 @@ func TestUploadServiceDefault_waitForPin(t *testing.T) {
 
 			// Single operation poll: GET /api/operations/{id}
 			if parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/operations/"), "/"); len(parts) == 1 && parts[0] != "" && r.URL.Path != "/api/operations" {
-				pollCount++
+				atomic.AddInt32(&pollCount, 1)
 				status := "completed"
 				if atomic.LoadInt32(&pollCount) < 3 {
 					status = "pending"
@@ -560,15 +561,50 @@ func TestUploadServiceDefault_waitForPin(t *testing.T) {
 		u, _ := url.Parse(server.URL)
 		h.service.accountEndpoint = "http://localhost:" + u.Port()
 
-		// Cancel the parent context immediately — the fix should use a fresh
-		// context for pin polling, so this should NOT prevent the operation
-		// from being polled to completion.
-		ctx, cancel := context.WithCancel(context.Background())
-		cancel()
+		// Parent context with a short remaining deadline (50ms), simulating
+		// the upload having consumed most of the timeout. The fix creates a
+		// fresh timeout for pin polling, so polling should complete even though
+		// the parent deadline expires during polling.
+		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+		defer cancel()
 
 		err := h.service.waitForPin(ctx, "bafybeigtest", "test-token")
 		require.NoError(t, err)
 		assert.GreaterOrEqual(t, atomic.LoadInt32(&pollCount), int32(1))
+	})
+
+	t.Run("propagates user cancellation to pin polling", func(t *testing.T) {
+		h := newUploadTestHelpers(t)
+
+		mux := http.NewServeMux()
+		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+
+			// Single operation poll: always pending (never completes)
+			if parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/operations/"), "/"); len(parts) == 1 && parts[0] != "" && r.URL.Path != "/api/operations" {
+				_, _ = w.Write([]byte(`{"id":1,"status":"pending","operation":"pin","protocol":"ipfs","progress_percent":0,"operation_display_name":"Pin","protocol_display_name":"IPFS","status_display_name":"Pending","status_message":"","started_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"}`))
+				return
+			}
+
+			_, _ = w.Write([]byte(`{"data":[{"id":1,"status":"pending","operation":"pin","protocol":"ipfs","progress_percent":0,"operation_display_name":"Pin","protocol_display_name":"IPFS","status_display_name":"Pending","status_message":"","started_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"}],"total":1}`))
+		})
+		server := httptest.NewServer(mux)
+		defer server.Close()
+
+		u, _ := url.Parse(server.URL)
+		h.service.accountEndpoint = "http://localhost:" + u.Port()
+
+		// Cancel the parent context (simulating Ctrl+C) while polling is in
+		// progress. Pin polling should abort with an error.
+		ctx, cancel := context.WithCancel(context.Background())
+
+		go func() {
+			time.Sleep(100 * time.Millisecond)
+			cancel()
+		}()
+
+		err := h.service.waitForPin(ctx, "bafybeigtest", "test-token")
+		require.Error(t, err)
 	})
 }
 
