@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"net/http"
@@ -11,6 +12,8 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -527,6 +530,45 @@ func TestUploadServiceDefault_waitForPin(t *testing.T) {
 		err := h.service.waitForPin(context.Background(), "bafybeigtest", "test-token")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "operation not found")
+	})
+
+	t.Run("uses fresh context for pin polling when parent context is cancelled", func(t *testing.T) {
+		h := newUploadTestHelpers(t)
+
+		var pollCount int32
+		mux := http.NewServeMux()
+		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+
+			// Single operation poll: GET /api/operations/{id}
+			if parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/operations/"), "/"); len(parts) == 1 && parts[0] != "" && r.URL.Path != "/api/operations" {
+				pollCount++
+				status := "completed"
+				if atomic.LoadInt32(&pollCount) < 3 {
+					status = "pending"
+				}
+				_, _ = fmt.Fprintf(w, `{"id":1,"status":"%s","operation":"pin","protocol":"ipfs","progress_percent":100,"operation_display_name":"Pin","protocol_display_name":"IPFS","status_display_name":"%s","status_message":"","started_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"}`, status, status)
+				return
+			}
+
+			// Default: operations list response
+			_, _ = w.Write([]byte(`{"data":[{"id":1,"status":"pending","operation":"pin","protocol":"ipfs","progress_percent":0,"operation_display_name":"Pin","protocol_display_name":"IPFS","status_display_name":"Pending","status_message":"","started_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"}],"total":1}`))
+		})
+		server := httptest.NewServer(mux)
+		defer server.Close()
+
+		u, _ := url.Parse(server.URL)
+		h.service.accountEndpoint = "http://localhost:" + u.Port()
+
+		// Cancel the parent context immediately — the fix should use a fresh
+		// context for pin polling, so this should NOT prevent the operation
+		// from being polled to completion.
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		err := h.service.waitForPin(ctx, "bafybeigtest", "test-token")
+		require.NoError(t, err)
+		assert.GreaterOrEqual(t, atomic.LoadInt32(&pollCount), int32(1))
 	})
 }
 

@@ -267,10 +267,19 @@ func (s *UploadServiceDefault) wrapUploadError(err error) error {
 
 // waitForPin waits for a file to be pinned by first waiting for the account
 // operation to complete, then verifying the pin exists in the pinning API.
+//
+// The pin wait uses a fresh context with the upload timeout, decoupled from
+// the upload's context deadline. This is necessary because pin processing on
+// the server (DAG block downloads from renterd) can take longer than the
+// upload itself, and the upload context may have already consumed most of
+// its deadline by the time pinning starts.
 func (s *UploadServiceDefault) waitForPin(ctx context.Context, rootCID string, authToken string) error {
 	accountClient := portalsdk.NewClient(portalsdk.WithEndpoint(s.accountEndpoint), portalsdk.WithJWT(authToken))
 
-	operations, _, err := accountClient.ListOperations(ctx, portalsdk.WithFilters(filter.FieldEqual("cid", rootCID)))
+	pinCtx, cancel := context.WithTimeout(context.Background(), s.configMgr.Config().GetUploadTimeout())
+	defer cancel()
+
+	operations, _, err := accountClient.ListOperations(pinCtx, portalsdk.WithFilters(filter.FieldEqual("cid", rootCID)))
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrOperationFailed, err)
 	}
@@ -279,7 +288,10 @@ func (s *UploadServiceDefault) waitForPin(ctx context.Context, rootCID string, a
 		return fmt.Errorf("%w for CID %s. Check 'pinner status %s'", ErrOperationNotFound, rootCID, rootCID)
 	}
 
-	_, err = accountClient.WaitForOperation(ctx, int64(operations[0].Id))
+	_, err = accountClient.WaitForOperation(pinCtx, int64(operations[0].Id),
+		portalsdk.WithPollInterval(2*time.Second),
+		portalsdk.WithPollTimeout(s.configMgr.Config().GetUploadTimeout()),
+	)
 	if err != nil {
 		return fmt.Errorf("Pin operation failed for CID %s: %w. Check 'pinner status %s'", rootCID, err, rootCID)
 	}
@@ -287,7 +299,7 @@ func (s *UploadServiceDefault) waitForPin(ctx context.Context, rootCID string, a
 	if s.pinningService != nil {
 		s.output.PrintVerbosef("Account operation completed, verifying pin status for CID %s", rootCID)
 		err := retry.Do(func() error {
-			status, err := s.pinningService.Status(ctx, rootCID, false)
+			status, err := s.pinningService.Status(pinCtx, rootCID, false)
 			if err != nil {
 				return err
 			}
@@ -296,7 +308,7 @@ func (s *UploadServiceDefault) waitForPin(ctx context.Context, rootCID string, a
 			}
 			return nil
 		},
-			retry.Context(ctx),
+			retry.Context(pinCtx),
 			retry.Attempts(10),
 			retry.Delay(2*time.Second),
 			retry.DelayType(retry.BackOffDelay),
