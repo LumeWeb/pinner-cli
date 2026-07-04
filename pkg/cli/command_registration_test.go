@@ -83,6 +83,7 @@ func TestCommandRegistration_RootSubcommands(t *testing.T) {
 		"websites",
 		"admin",
 		"generate-docs",
+		"mcp",
 	}
 
 	names := commandNames(root.Commands)

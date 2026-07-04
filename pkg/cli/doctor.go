@@ -79,6 +79,7 @@ Use this command when:
 		Metadata: WithTutorial(6, "Show diagnostic info", "pinner doctor"),
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			output := NewOutputFormatter(cmd.Bool("json"), false, false, false)
+			output.SetWriter(cmd.Root().Writer)
 			return doctor(ctx, newCLICommandWrapper(cmd), output, defaultConfigManagerFactory)
 		},
 	}

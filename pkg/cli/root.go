@@ -2,9 +2,11 @@ package cli
 
 import (
 	"context"
+	"io"
 
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/build"
+	mcpadapter "go.lumeweb.com/pinner-cli/pkg/internal/mcp"
 )
 
 // Run executes the CLI application with the given context and arguments.
@@ -15,7 +17,7 @@ func Run(ctx context.Context, args []string) error {
 
 // NewRootCommand creates and returns the root CLI command.
 func NewRootCommand() *cli.Command {
-	return &cli.Command{
+	root := &cli.Command{
 		Name:                  "pinner",
 		Usage:                 "Simple IPFS Pinning CLI",
 		Version:               build.Version,
@@ -82,4 +84,68 @@ For more help on any command: pinner <command> --help`,
 			return cli.ShowRootCommandHelp(cmd)
 		},
 	}
+
+	// Register the MCP server command with a reference to root for in-process tool execution.
+	var resourceFactory mcpadapter.ResourceProvidersFactory
+	root.Commands = append(root.Commands, mcpadapter.MCPCommand(root,
+		func() (mcpadapter.WebsitesWizardDeps, mcpadapter.SetupWizardDeps, error) {
+			cfgMgr, err := configManagerFactory()
+			if err != nil {
+				return mcpadapter.WebsitesWizardDeps{}, mcpadapter.SetupWizardDeps{}, err
+			}
+
+			// Build a minimal output formatter for service construction.
+			// Use io.Discard so service-side writes don't corrupt the MCP JSON-RPC stream.
+			output := NewOutputFormatter(false, false, false, false)
+			output.SetWriter(io.Discard)
+
+			authToken := cfgMgr.Config().AuthToken
+			secure := cfgMgr.Config().Secure
+			// Build websites service without RequireAuthenticated — the setup wizard
+			// must be reachable for unauthenticated users, and the websites wizard's
+			// auth_check step enforces authentication at runtime.
+			var svcOpts []WebsitesServiceOption
+			if authToken != "" {
+				svcOpts = append(svcOpts, WithWebsitesAuthToken(authToken))
+			}
+			websitesSvc := websitesServiceFactory(cfgMgr, output, secure, svcOpts...)
+			authSvc := defaultAuthServiceFactory(cfgMgr, output, cfgMgr.Config().BaseEndpoint)
+
+			// Wire the resource factory with the services we just built.
+			// Capture cfgMgr (not a config snapshot) so resource reads see latest state.
+			resourceFactory = func(store *mcpadapter.SessionStore) mcpadapter.ResourceProviders {
+				return mcpadapter.ResourceProviders{
+					Account:  &accountStatusAdapter{cfgMgr: cfgMgr, auth: authSvc},
+					Websites: &websitesResourceAdapter{ws: websitesSvc},
+				}
+			}
+
+			wDeps := mcpadapter.WebsitesWizardDeps{
+				CfgMgr:          cfgMgr,
+				WebsitesService: websitesSvc,
+				WebsitesFactory: func() mcpadapter.WebsitesWizardState {
+					return NewWebsitesWizard(websitesSvc, cfgMgr, nil, output)
+				},
+			}
+			sDeps := mcpadapter.SetupWizardDeps{
+				CfgMgr:      cfgMgr,
+				AuthService: authSvc,
+				SetupFactory: func() mcpadapter.SetupWizardState {
+					return NewSetupWizard(cfgMgr, authSvc, nil, SetupOptions{})
+				},
+			}
+			return wDeps, sDeps, nil
+		},
+		func(store *mcpadapter.SessionStore) mcpadapter.ResourceProviders {
+			if resourceFactory != nil {
+				provs := resourceFactory(store)
+				provs.Sessions = store
+				return provs
+			}
+			return mcpadapter.ResourceProviders{Sessions: store}
+		},
+		mcpadapter.WithPrompts(),
+	))
+
+	return root
 }

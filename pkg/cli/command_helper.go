@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/urfave/cli/v3"
@@ -34,7 +35,13 @@ func setupCommandContext(cmd *cli.Command) (config.Manager, Output, error) {
 // setupOutput creates the output formatter for command actions.
 // This reduces boilerplate code across command handlers that only need output.
 func setupOutput(cmd *cli.Command) Output {
-	_, output, _ := setupCommandContext(cmd)
+	_, output, err := setupCommandContext(cmd)
+	if err != nil || output == nil {
+		fallback := NewOutputFormatter(false, false, false, false)
+		fallback.SetWriter(io.Discard)
+		return fallback
+	}
+	output.SetWriter(cmd.Root().Writer)
 	return output
 }
 

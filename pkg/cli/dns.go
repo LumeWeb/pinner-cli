@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"github.com/urfave/cli/v3"
-	"go.lumeweb.com/pinner-cli/pkg/config"
 	ipfs "go.lumeweb.com/ipfs-sdk"
+	"go.lumeweb.com/pinner-cli/pkg/config"
 )
 
 func newDNSCommand() *cli.Command {
@@ -811,6 +811,13 @@ func resolveZoneByArg(ctx context.Context, dnsService DNSService, arg string) (*
 		return nil, err
 	}
 	return dnsService.GetZone(ctx, id)
+}
+
+func validateCID(cid string) error {
+	if cid == "" {
+		return fmt.Errorf("CID cannot be empty")
+	}
+	return nil
 }
 
 func validateDomain(domain string) error {
