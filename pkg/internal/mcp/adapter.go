@@ -38,8 +38,9 @@ func MCPCommand(root *cli.Command, wizardFactory WizardDepsFactory, resourceFact
 	hasRootAction := root.Action != nil
 
 	return &cli.Command{
-		Name:  "mcp",
-		Usage: "Serve commands as MCP server on stdio",
+		Name:     "mcp",
+		Category: "System",
+		Usage:    "Serve commands as MCP server on stdio",
 		Description: `Starts a Model Context Protocol server that exposes CLI
 subcommands as MCP tools. An MCP client (e.g. an AI agent) can discover
 available tools, their flags, and invoke them.
