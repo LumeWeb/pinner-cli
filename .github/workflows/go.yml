@@ -81,6 +81,9 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
+      - name: Export Go version
+        run: echo "GO_VERSION=$(go version | awk '{print $3}' | sed 's/go//')" >> $GITHUB_ENV
+
       - name: Install GoReleaser
         uses: goreleaser/goreleaser-action@v7
         with:
