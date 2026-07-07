@@ -113,9 +113,19 @@ func isFileNotFoundError(err error) bool {
 	if err == nil {
 		return false
 	}
-	// Check for "no such file or directory" error
-	// This handles both direct os.ErrNotExist and wrapped errors
-	return os.IsNotExist(err) || strings.Contains(err.Error(), "no such file or directory")
+	// errors.Is walks the full Unwrap chain, which os.IsNotExist does not
+	// do reliably through fmt.Errorf("%w") wrapping from the configmanager
+	// library. This fixes file-not-found handling on Windows where the
+	// underlying error string is locale-specific.
+	if errors.Is(err, os.ErrNotExist) {
+		return true
+	}
+	// Fallback: match OS-specific error strings for errors that don't
+	// implement Unwrap (e.g. from third-party libraries that use
+	// fmt.Errorf without %w).
+	msg := err.Error()
+	return strings.Contains(msg, "no such file or directory") ||
+		strings.Contains(msg, "The system cannot find the file specified")
 }
 
 // Save persists the current configuration to disk.
