@@ -173,7 +173,7 @@ func MCPServer(root *cli.Command, hasRootAction bool, prefix ...string) (*server
 			default:
 				return nil, fmt.Errorf("unsupported argument type for %q: %T", key, val)
 			}
-			}
+		}
 		sensitiveFlags := map[string]bool{
 			"--password": true, "--auth-token": true, "--token": true, "--secret": true,
 			"--api-key": true, "--key": true, "--passphrase": true, "--private-key": true,
@@ -200,9 +200,30 @@ func MCPServer(root *cli.Command, hasRootAction bool, prefix ...string) (*server
 		rootCopy := *root
 		rootCopy.Writer = &stdout
 		rootCopy.ErrWriter = &stderr
+		// Create a fresh context for the in-process command run.
+		//
+		// The outer root.Run() (from "pinner mcp") stores the original root
+		// command in the context via an unexported commandContextKey. If we
+		// pass that context through to rootCopy.Run(), urfave/cli v3 sets
+		// rootCopy.parent to the original root — making Root() resolve to
+		// the original root (whose Writer is os.Stdout) instead of rootCopy
+		// (whose Writer is our buffer). This causes command output to leak
+		// to the real stdout, corrupting the MCP JSON-RPC stream.
+		//
+		// Since commandContextKey is unexported, we create a bare context
+		// and propagate only cancellation from the parent.
+		runCtx, cancel := context.WithCancel(context.Background())
+		go func() {
+			select {
+			case <-ctx.Done():
+				cancel()
+			case <-runCtx.Done():
+			}
+		}()
 		runMu.Lock()
-		runErr := rootCopy.Run(ctx, runArgs)
+		runErr := rootCopy.Run(runCtx, runArgs)
 		runMu.Unlock()
+		cancel()
 
 		if runErr != nil {
 			msg := stderr.String()
