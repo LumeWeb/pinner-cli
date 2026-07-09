@@ -48,7 +48,7 @@ func wrapPinningError(operation string, err error, wrapErr error) error {
 		return nil
 	}
 	if isBoxoAuthError(err) {
-		return fmt.Errorf("%s failed - authentication expired or invalid. Run 'pinner auth login' to re-authenticate: %w", operation, ErrNotAuthenticated)
+		return fmt.Errorf("%s failed - authentication expired or invalid. Run 'pinner auth' to re-authenticate: %w", operation, ErrNotAuthenticated)
 	}
 	return fmt.Errorf("%s failed: %w", operation, err)
 }
@@ -137,7 +137,7 @@ func NewPinningService(cfgMgr config.Manager, output Output, apiEndpoint string,
 // RequireAuthenticated checks if the service is authenticated and returns an error if not.
 func (s *PinningServiceDefault) RequireAuthenticated() error {
 	if s.pinningClient == nil {
-		return fmt.Errorf("not authenticated: please run 'pinner auth login' first or provide --auth-token: %w", ErrNotAuthenticated)
+		return fmt.Errorf("not authenticated: please run 'pinner auth' first or provide --auth-token: %w", ErrNotAuthenticated)
 	}
 	return nil
 }

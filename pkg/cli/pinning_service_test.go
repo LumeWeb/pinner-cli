@@ -105,7 +105,7 @@ func TestPinningService_Pin(t *testing.T) {
 
 		_, err := service.Pin(context.Background(), "QmUNLLsPACCz1vLxQVkXqqLX5R1X345qqfHbsf67hvA3Nn", "", false)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "please run 'pinner auth login' first")
+		assert.Contains(t, err.Error(), "please run 'pinner auth' first")
 	})
 
 	t.Run("returns error for invalid CID", func(t *testing.T) {
@@ -432,7 +432,7 @@ func TestPinningService_Unpin(t *testing.T) {
 
 		_, err := service.Unpin(context.Background(), "QmUNLLsPACCz1vLxQVkXqqLX5R1X345qqfHbsf67hvA3Nn", true)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "please run 'pinner auth login' first")
+		assert.Contains(t, err.Error(), "please run 'pinner auth' first")
 	})
 
 	t.Run("returns error for invalid CID", func(t *testing.T) {
@@ -541,7 +541,7 @@ func TestPinningService_UpdateMetadata(t *testing.T) {
 
 		err := service.UpdateMetadata(context.Background(), "QmUNLLsPACCz1vLxQVkXqqLX5R1X345qqfHbsf67hvA3Nn", []string{"key", "value"}, false)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "please run 'pinner auth login' first")
+		assert.Contains(t, err.Error(), "please run 'pinner auth' first")
 	})
 
 	t.Run("returns error for invalid metadata pairs", func(t *testing.T) {

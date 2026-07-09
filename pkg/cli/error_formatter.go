@@ -94,8 +94,8 @@ func extractErrorMessage(body string) string {
 // errorMessages maps error types to user-friendly messages.
 var errorMessages = map[error]string{
 	// Authentication errors
-	ErrNotAuthenticated:       "Not authenticated. Run 'pinner auth login' first",
-	portalsdk.ErrUnauthorized: "Authentication expired or invalid. Run 'pinner auth login' to re-authenticate",
+	ErrNotAuthenticated:       "Not authenticated. Run 'pinner auth' first",
+	portalsdk.ErrUnauthorized: "Authentication expired or invalid. Run 'pinner auth' to re-authenticate",
 
 	// Input validation errors
 	ErrPathRequired:   "Path is required. Usage: pinner upload <path>",
@@ -197,7 +197,7 @@ func WrapAuthError(operation string, err error) error {
 	}
 
 	if isBoxoAuthError(err) || errors.Is(err, portalsdk.ErrUnauthorized) {
-		return fmt.Errorf("%s failed - authentication expired or invalid. Run 'pinner auth login' to re-authenticate: %w", operation, ErrNotAuthenticated)
+		return fmt.Errorf("%s failed - authentication expired or invalid. Run 'pinner auth' to re-authenticate: %w", operation, ErrNotAuthenticated)
 	}
 
 	return fmt.Errorf("%s failed: %w", operation, err)
