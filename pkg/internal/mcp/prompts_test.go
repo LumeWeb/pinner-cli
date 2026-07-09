@@ -25,7 +25,7 @@ func buildServerWithPrompts(t *testing.T) *client.Client {
 		Version: "1.0.0",
 		Action:  func(context.Context, *cli.Command) error { return nil },
 	}
-	srv, err := mcpadapter.MCPServerWithOpts(root, true, nil,
+	srv, _, err := mcpadapter.MCPServerWithOpts(root, true, nil,
 		mcpadapter.WithPrompts(),
 	)
 	require.NoError(t, err)
