@@ -2,9 +2,14 @@ package wizard
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/pterm/pterm"
 )
+
+// NonInteractive disables all interactive prompts in the wizard package.
+// Set by the parent cli package when --agent mode is active.
+var NonInteractive bool
 
 type PTermUI struct {
 	WelcomeText    string
@@ -24,6 +29,9 @@ func (p *PTermUI) ShowWelcome() error {
 	if p.WelcomeText != "" {
 		pterm.DefaultParagraph.Println(p.WelcomeText)
 		pterm.Println()
+	}
+	if NonInteractive {
+		return fmt.Errorf("interactive prompt requested in non-interactive mode")
 	}
 	_, err := pterm.DefaultInteractiveContinue.Show()
 	return err

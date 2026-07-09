@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/urfave/cli/v3"
+	"go.lumeweb.com/pinner-cli/pkg/cli/wizard"
 	"go.lumeweb.com/pinner-cli/pkg/config"
 )
 
@@ -24,6 +25,14 @@ func setupCommandContext(cmd *cli.Command) (config.Manager, Output, error) {
 
 	// --agent implies --json (structured output, no ANSI colors).
 	jsonOutput := cmd.Bool(FlagJSON) || cmd.Bool(FlagAgent)
+
+	// --agent enables non-interactive mode: prompts return errors instead
+	// of blocking on stdin. This prevents MCP/CI invocations from hanging
+	// when a command requires interactive input that wasn't provided via flags.
+	if cmd.Bool(FlagAgent) {
+		SetAgentMode(true)
+		wizard.NonInteractive = true
+	}
 
 	output := NewOutputFormatter(
 		jsonOutput,
