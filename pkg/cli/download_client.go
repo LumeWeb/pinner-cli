@@ -44,7 +44,7 @@ func NewDownloadService(cfgMgr config.Manager, output Output, opts ...DownloadSe
 func (s *DownloadServiceDefault) RequireAuthenticated() error {
 	authToken := s.getAuthToken()
 	if authToken == "" {
-		return fmt.Errorf("not authenticated: please run 'pinner auth login' first or provide --auth-token")
+		return fmt.Errorf("not authenticated: please run 'pinner auth' first or provide --auth-token")
 	}
 	return nil
 }

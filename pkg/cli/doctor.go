@@ -162,7 +162,7 @@ func printDoctorReport(report DoctorReport, output Output) {
 		configStatus = "Found"
 	}
 
-	authStatus := "Not authenticated (run 'pinner auth login')"
+	authStatus := "Not authenticated (run 'pinner auth')"
 	if report.Authentication.Authenticated {
 		authStatus = "Authenticated"
 	}
