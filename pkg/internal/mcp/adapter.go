@@ -156,6 +156,13 @@ func MCPServer(root *cli.Command, hasRootAction bool, prefix ...string) (*server
 			return nil, fmt.Errorf("cannot invoke MCP from within MCP")
 		}
 
+		// Force agent mode for all MCP tool invocations: structured JSON output,
+		// no ANSI colors, no interactive prompts. Only inject if the root
+		// command recognizes the flag (production CLI has it as a global flag).
+		if rootHasFlag(root, "agent") && !slices.Contains(args, "--agent") {
+			args = append(args, "--agent")
+		}
+
 		for key, val := range request.GetArguments() {
 			if key == "_args" {
 				if arr, ok := val.([]any); ok {
@@ -276,6 +283,22 @@ func MCPServer(root *cli.Command, hasRootAction bool, prefix ...string) (*server
 // Extended from the original upstream which only handled String, Bool, and
 // numeric types. Added: FloatFlag (via the numeric generic), DurationFlag,
 // StringSliceFlag, and filtering of the "version" flag.
+// rootHasFlag checks whether the root command or any of its persistent/global
+// flags include a flag with the given name.
+func rootHasFlag(root *cli.Command, name string) bool {
+	for _, f := range root.Flags {
+		if f.Names() != nil {
+			for _, n := range f.Names() {
+				if n == name {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// FlagsToTools converts urfave/cli flags to MCP tool property options.
 func FlagsToTools(flags []cli.Flag) ([]mcp.ToolOption, error) {
 	var opts []mcp.ToolOption
 	for _, flag := range flags {

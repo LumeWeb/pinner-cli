@@ -13,6 +13,7 @@ const (
 	FlagVerbose = "verbose"
 	FlagQuiet   = "quiet"
 	FlagUnmask  = "unmask"
+	FlagAgent   = "agent"
 )
 
 // Authentication flags
@@ -212,6 +213,10 @@ func GlobalFlags() []cli.Flag {
 		&cli.BoolFlag{
 			Name:  FlagUnmask,
 			Usage: "Show sensitive data (tokens, passwords, secrets) unmasked",
+		},
+		&cli.BoolFlag{
+			Name:  FlagAgent,
+			Usage: "Agent mode: force JSON output and disable interactive prompts (for MCP/CI)",
 		},
 		&cli.StringFlag{
 			Name:    FlagAuthToken,
