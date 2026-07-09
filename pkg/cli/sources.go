@@ -21,7 +21,13 @@ func (s *StdinSource) GoString() string {
 
 // Lookup reads from stdin and returns the value.
 // Returns empty string and false if stdin is empty or not a pipe.
+// In agent mode (MCP/CI), stdin is the JSON-RPC transport — reading from
+// it would steal data from the MCP server. Always return false in agent mode.
 func (s *StdinSource) Lookup() (string, bool) {
+	if IsAgentMode() {
+		return "", false
+	}
+
 	// Check if stdin is a pipe or redirected (not a terminal)
 	info, err := os.Stdin.Stat()
 	if err != nil {
