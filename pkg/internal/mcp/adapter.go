@@ -160,9 +160,9 @@ func MCPServer(root *cli.Command, hasRootAction bool, prefix ...string) (*server
 		}
 
 		// Force agent mode for all MCP tool invocations: structured JSON output,
-		// no ANSI colors, no interactive prompts. Only inject if the root
-		// command recognizes the flag (production CLI has it as a global flag).
-		if rootHasFlag(root, "agent") && !slices.Contains(args, "--agent") {
+		// no ANSI colors, no interactive prompts. This is unconditional — every
+		// command invoked through MCP must run in agent mode.
+		if !slices.Contains(args, "--agent") {
 			args = append(args, "--agent")
 		}
 
@@ -298,21 +298,6 @@ const mcpInstructions = `This server uses progressive disclosure. The tools/list
 Always search first — do not guess tool names. The catalog has 60+ tools across core, admin, and wizard categories.
 
 Some tools accept "_args" (an array of positional strings) in their arguments. Check describe_tool output for the _args property and its description to see what positional values are expected.`
-
-// rootHasFlag checks whether the root command or any of its persistent/global
-// flags include a flag with the given name.
-func rootHasFlag(root *cli.Command, name string) bool {
-	for _, f := range root.Flags {
-		if f.Names() != nil {
-			for _, n := range f.Names() {
-				if n == name {
-					return true
-				}
-			}
-		}
-	}
-	return false
-}
 
 // FlagsToTools converts urfave/cli flags to MCP tool property options.
 func FlagsToTools(flags []cli.Flag) ([]mcp.ToolOption, error) {
