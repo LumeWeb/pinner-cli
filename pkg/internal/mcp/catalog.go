@@ -214,6 +214,20 @@ func (c *ToolCatalog) RegisterFromCommand(root *cli.Command, hasRootAction bool,
 			toolName := strings.Join(loc, ToolDelimiter)
 			tool := mcp.NewTool(toolName, toolOpts...)
 
+			// If the command has positional args, add an _args property
+			// to the schema so MCP clients know they can pass positionals
+			// via the _args array field.
+			if cmd.ArgsUsage != "" {
+				if tool.InputSchema.Properties == nil {
+					tool.InputSchema.Properties = make(map[string]any)
+				}
+				tool.InputSchema.Properties["_args"] = map[string]any{
+					"type":        "array",
+					"items":       map[string]any{"type": "string"},
+					"description": "Positional arguments: " + cmd.ArgsUsage,
+				}
+			}
+
 			schemaBytes, err := json.Marshal(tool.InputSchema)
 			if err != nil {
 				return fmt.Errorf("failed to marshal input schema for %s: %w", toolName, err)

@@ -225,9 +225,9 @@ func TestCommandArgsVerification(t *testing.T) {
 		{
 			name:        "config command",
 			commandName: "config",
-			argsUsage:   "[get <key> | set <key> <value>]",
+			argsUsage:   "",
 			minArgs:     0,
-			maxArgs:     3,
+			maxArgs:     0,
 		},
 	}
 

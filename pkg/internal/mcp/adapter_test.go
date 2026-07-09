@@ -513,3 +513,117 @@ func TestDescribeTool_VersionFlagSkipped(t *testing.T) {
 	_, hasVersion := props["version"]
 	assert.False(t, hasVersion, "version flag should be skipped")
 }
+
+func TestInvoketool_PositionalArgs(t *testing.T) {
+	t.Parallel()
+
+	root := &cli.Command{
+		Name: "test",
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			fmt.Fprintf(cmd.Root().Writer, "args=%v", cmd.Args().Slice())
+			return nil
+		},
+	}
+	c, _ := setupTestServer(t, root, true)
+
+	result := invokeTool(t, c, "test", map[string]any{
+		"_args": []any{"hello", "world"},
+	})
+	assert.Equal(t, "args=[hello world]", result)
+}
+
+func TestInvoketool_PositionalArgsWithFlags(t *testing.T) {
+	t.Parallel()
+
+	root := &cli.Command{
+		Name: "test",
+		Flags: []cli.Flag{
+			&cli.StringFlag{Name: "mode"},
+		},
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			fmt.Fprintf(cmd.Root().Writer, "mode=%s args=%v", cmd.String("mode"), cmd.Args().Slice())
+			return nil
+		},
+	}
+	c, _ := setupTestServer(t, root, true)
+
+	result := invokeTool(t, c, "test", map[string]any{
+		"mode":  "fast",
+		"_args": []any{"file1", "file2"},
+	})
+	assert.Equal(t, "mode=fast args=[file1 file2]", result)
+}
+
+func TestInvoketool_PositionalArgsEmpty(t *testing.T) {
+	t.Parallel()
+
+	root := &cli.Command{
+		Name: "test",
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			fmt.Fprintf(cmd.Root().Writer, "count=%d", cmd.Args().Len())
+			return nil
+		},
+	}
+	c, _ := setupTestServer(t, root, true)
+
+	result := invokeTool(t, c, "test", map[string]any{})
+	assert.Equal(t, "count=0", result)
+}
+
+func TestInvoketool_PositionalArgsNonString(t *testing.T) {
+	t.Parallel()
+
+	root := &cli.Command{
+		Name:   "test",
+		Action: func(context.Context, *cli.Command) error { return nil },
+	}
+	c, _ := setupTestServer(t, root, true)
+
+	req := mcp.CallToolRequest{}
+	req.Params.Name = "invoke_tool"
+	req.Params.Arguments = map[string]any{
+		"name":      "test",
+		"arguments": map[string]any{"_args": []any{123}},
+	}
+	result, err := c.CallTool(t.Context(), req)
+	require.NoError(t, err)
+	require.True(t, result.IsError)
+}
+
+func TestDescribeTool_ArgsUsageAddsArgsToSchema(t *testing.T) {
+	t.Parallel()
+
+	root := &cli.Command{
+		Name:      "test",
+		ArgsUsage: "<key> <value>",
+		Action:    func(context.Context, *cli.Command) error { return nil },
+	}
+	c, _ := setupTestServer(t, root, true)
+
+	detail := describeTool(t, c, "test")
+	schema := detail["inputSchema"].(map[string]any)
+	props := schema["properties"].(map[string]any)
+
+	argsProp, exists := props["_args"]
+	require.True(t, exists, "schema should include _args property when ArgsUsage is set")
+	argsMap := argsProp.(map[string]any)
+	assert.Equal(t, "array", argsMap["type"])
+	assert.Contains(t, argsMap["description"].(string), "<key> <value>")
+}
+
+func TestDescribeTool_NoArgsUsageNoArgsInSchema(t *testing.T) {
+	t.Parallel()
+
+	root := &cli.Command{
+		Name:   "test",
+		Action: func(context.Context, *cli.Command) error { return nil },
+	}
+	c, _ := setupTestServer(t, root, true)
+
+	detail := describeTool(t, c, "test")
+	schema := detail["inputSchema"].(map[string]any)
+	props := schema["properties"].(map[string]any)
+
+	_, exists := props["_args"]
+	assert.False(t, exists, "schema should not include _args when ArgsUsage is empty")
+}
