@@ -589,3 +589,41 @@ func TestInvoketool_PositionalArgsNonString(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, result.IsError)
 }
+
+func TestDescribeTool_ArgsUsageAddsArgsToSchema(t *testing.T) {
+	t.Parallel()
+
+	root := &cli.Command{
+		Name:      "test",
+		ArgsUsage: "<key> <value>",
+		Action:    func(context.Context, *cli.Command) error { return nil },
+	}
+	c, _ := setupTestServer(t, root, true)
+
+	detail := describeTool(t, c, "test")
+	schema := detail["inputSchema"].(map[string]any)
+	props := schema["properties"].(map[string]any)
+
+	argsProp, exists := props["_args"]
+	require.True(t, exists, "schema should include _args property when ArgsUsage is set")
+	argsMap := argsProp.(map[string]any)
+	assert.Equal(t, "array", argsMap["type"])
+	assert.Contains(t, argsMap["description"].(string), "<key> <value>")
+}
+
+func TestDescribeTool_NoArgsUsageNoArgsInSchema(t *testing.T) {
+	t.Parallel()
+
+	root := &cli.Command{
+		Name:   "test",
+		Action: func(context.Context, *cli.Command) error { return nil },
+	}
+	c, _ := setupTestServer(t, root, true)
+
+	detail := describeTool(t, c, "test")
+	schema := detail["inputSchema"].(map[string]any)
+	props := schema["properties"].(map[string]any)
+
+	_, exists := props["_args"]
+	assert.False(t, exists, "schema should not include _args when ArgsUsage is empty")
+}
