@@ -132,7 +132,10 @@ func MCPServerWithOpts(root *cli.Command, hasRootAction bool, prefix []string, o
 // describe_tool, invoke_tool). This implements server-side progressive
 // disclosure.
 func MCPServer(root *cli.Command, hasRootAction bool, prefix ...string) (*server.MCPServer, *ToolCatalog, error) {
-	srv := server.NewMCPServer(root.Name, root.Version, server.WithToolCapabilities(true))
+	srv := server.NewMCPServer(root.Name, root.Version,
+		server.WithToolCapabilities(true),
+		server.WithInstructions(mcpInstructions),
+	)
 
 	catalog := NewToolCatalog()
 
@@ -283,6 +286,19 @@ func MCPServer(root *cli.Command, hasRootAction bool, prefix ...string) (*server
 // Extended from the original upstream which only handled String, Bool, and
 // numeric types. Added: FloatFlag (via the numeric generic), DurationFlag,
 // StringSliceFlag, and filtering of the "version" flag.
+// mcpInstructions is sent to MCP clients in the initialize response. It guides
+// agents through the progressive disclosure flow so they know to search before
+// invoking, and understand how _args works for positional CLI arguments.
+const mcpInstructions = `This server uses progressive disclosure. The tools/list response only shows 3 meta-tools. To use a tool:
+
+1. search_tools({ "query": "..." }) — Find tools by keyword. Returns name, description, and category.
+2. describe_tool({ "name": "..." }) — Get the full input schema for a tool, including required parameters.
+3. invoke_tool({ "name": "...", "arguments": { ... } }) — Execute a tool.
+
+Always search first — do not guess tool names. The catalog has 60+ tools across core, admin, and wizard categories.
+
+Some tools accept "_args" (an array of positional strings) in their arguments. Check describe_tool output for the _args property and its description to see what positional values are expected.`
+
 // rootHasFlag checks whether the root command or any of its persistent/global
 // flags include a flag with the given name.
 func rootHasFlag(root *cli.Command, name string) bool {

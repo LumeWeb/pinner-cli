@@ -167,6 +167,8 @@ Ways to authenticate:
   5. Non-interactive with 2FA: PINNER_EMAIL=x PINNER_PASSWORD=*** PINNER_OTP=123456 pinner auth
   6. Secure non-interactive: echo "pass" | pinner auth --email user@example.com
 
+Check auth status: pinner auth status
+
 Examples:
   pinner auth eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
   pinner auth --email user@example.com
