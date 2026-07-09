@@ -141,7 +141,7 @@ func (ui *PTermWebsitesUI) ExecuteContentSourceStep(_ context.Context, w *Websit
 		},
 	}
 
-	cid, err := promptCID.Run()
+	cid, err := runPrompt(promptCID.Run)
 	if err != nil {
 		if err == promptui.ErrInterrupt {
 			cleanupTerminal()
@@ -198,7 +198,7 @@ func (ui *PTermWebsitesUI) ExecuteDomainStep(_ context.Context, w *WebsitesWizar
 		},
 	}
 
-	domain, err := promptDomain.Run()
+	domain, err := runPrompt(promptDomain.Run)
 	if err != nil {
 		if err == promptui.ErrInterrupt {
 			cleanupTerminal()

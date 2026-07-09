@@ -11,6 +11,9 @@ import (
 type PTermSelectPrompter struct{}
 
 func (p *PTermSelectPrompter) Select(label string, items []string) (int, string, error) {
+	if agentMode {
+		return 0, "", ErrNonInteractive
+	}
 	prompt := promptui.Select{
 		Label: label,
 		Items: items,
@@ -26,6 +29,9 @@ func (p *PTermSelectPrompter) Select(label string, items []string) (int, string,
 type PTermContinuePrompter struct{}
 
 func (p *PTermContinuePrompter) Continue() error {
+	if agentMode {
+		return ErrNonInteractive
+	}
 	_, err := pterm.DefaultInteractiveContinue.Show()
 	return err
 }
@@ -78,6 +84,9 @@ func (s *PTermSpinner) Stop() error {
 type PTermConfirmPrompter struct{}
 
 func (p *PTermConfirmPrompter) Confirm(label string, expected string) (string, error) {
+	if agentMode {
+		return "", ErrNonInteractive
+	}
 	prompt := promptui.Prompt{
 		Label: label,
 		Validate: func(input string) error {
