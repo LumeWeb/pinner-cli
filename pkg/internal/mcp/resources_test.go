@@ -32,7 +32,7 @@ func (m *mockAccountProvider) IsAuthenticated() bool                  { return m
 func (m *mockAccountProvider) AuthStatus(_ context.Context) error     { return m.authErr }
 func (m *mockAccountProvider) APIKey() string                         { return m.apiKeyHint }
 func (m *mockAccountProvider) Quota(_ context.Context) map[string]any { return m.quota }
-func (m *mockAccountProvider) ConfigSummary() map[string]any         { return m.cfgSummary }
+func (m *mockAccountProvider) ConfigSummary() map[string]any          { return m.cfgSummary }
 
 type mockWebsitesProvider struct {
 	website  *ipfs.WebsiteItem
@@ -69,7 +69,7 @@ func buildServerWithResources(t *testing.T, provs mcpadapter.ResourceProviders) 
 		Version: "1.0.0",
 		Action:  func(context.Context, *cli.Command) error { return nil },
 	}
-	srv, err := mcpadapter.MCPServerWithOpts(root, true, nil)
+	srv, _, err := mcpadapter.MCPServerWithOpts(root, true, nil)
 	require.NoError(t, err)
 	mcpadapter.RegisterResources(srv, provs)
 
@@ -556,7 +556,7 @@ func TestResources_NoProviders_OmitsResourceCapability(t *testing.T) {
 		Version: "1.0.0",
 		Action:  func(context.Context, *cli.Command) error { return nil },
 	}
-	srv, err := mcpadapter.MCPServerWithOpts(root, true, nil, nil)
+	srv, _, err := mcpadapter.MCPServerWithOpts(root, true, nil, nil)
 	require.NoError(t, err)
 
 	// Initialize via in-process client to check capabilities.

@@ -9,7 +9,6 @@ import (
 	"github.com/invopop/jsonschema"
 	"github.com/looplab/fsm"
 	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcp-go/server"
 	ipfs "go.lumeweb.com/ipfs-sdk"
 	"go.lumeweb.com/pinner-cli/pkg/config"
 	portalsdk "go.lumeweb.com/portal-sdk"
@@ -685,25 +684,55 @@ func buildStepResponse(sess *Session) StepResponse {
 // RegisterWizardTools registers the websites_wizard_start, websites_wizard_step,
 // setup_wizard_start, and setup_wizard_step MCP tools on the given server.
 // The session store is shared between start and step tools.
-func RegisterWizardTools(srv *server.MCPServer, store *SessionStore, wDeps WebsitesWizardDeps, sDeps SetupWizardDeps) {
-	registerWebsitesWizardTools(srv, store, wDeps)
-	registerSetupWizardTools(srv, store, sDeps)
+// toolToEntry converts an mcp.Tool and its handler into a ToolEntry suitable
+// for adding to the catalog. The tool's input schema is marshaled to JSON
+// for storage.
+func toolToEntry(name, description string, category ToolCategory, tool mcp.Tool, handler ToolHandler) (*ToolEntry, error) {
+	schemaBytes, err := json.Marshal(tool.InputSchema)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal input schema for %s: %w", name, err)
+	}
+	return &ToolEntry{
+		Name:        name,
+		Description: description,
+		Category:    category,
+		InputSchema: schemaBytes,
+		Handler:     handler,
+	}, nil
+}
+
+func RegisterWizardTools(catalog *ToolCatalog, store *SessionStore, wDeps WebsitesWizardDeps, sDeps SetupWizardDeps) error {
+	if err := registerWebsitesWizardTools(catalog, store, wDeps); err != nil {
+		return fmt.Errorf("failed to register websites wizard tools: %w", err)
+	}
+	if err := registerSetupWizardTools(catalog, store, sDeps); err != nil {
+		return fmt.Errorf("failed to register setup wizard tools: %w", err)
+	}
+	return nil
 }
 
 // registerWebsitesWizardTools registers the websites wizard start and step tools.
-func registerWebsitesWizardTools(srv *server.MCPServer, store *SessionStore, deps WebsitesWizardDeps) {
+func registerWebsitesWizardTools(catalog *ToolCatalog, store *SessionStore, deps WebsitesWizardDeps) error {
 	startTool := mcp.NewTool("websites_wizard_start",
 		mcp.WithDescription("Start a new websites creation wizard session. Returns a session_id "+
 			"and the first step to complete (auth_check). No arguments required."),
 	)
-	srv.AddTool(startTool, func(ctx context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	startHandler := func(ctx context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		sess, err := NewWebsitesSession(store, deps)
 		if err != nil {
 			return errorStepResult("", fmt.Sprintf("failed to create session: %v", err)), nil
 		}
 		resp := buildStepResponse(sess)
 		return marshalStepResult(resp)
-	})
+	}
+	entry, err := toolToEntry("websites_wizard_start",
+		"Start a new websites creation wizard session. Returns a session_id "+
+			"and the first step to complete (auth_check). No arguments required.",
+		CategoryWizard, startTool, startHandler)
+	if err != nil {
+		return fmt.Errorf("failed to create catalog entry for websites_wizard_start: %w", err)
+	}
+	catalog.Add(entry)
 
 	stepTool := mcp.NewTool("websites_wizard_step",
 		mcp.WithDescription("Advance a websites wizard session by one step. Provide the session_id "+
@@ -717,7 +746,7 @@ func registerWebsitesWizardTools(srv *server.MCPServer, store *SessionStore, dep
 			mcp.Description("Step input matching the next_step_schema from the previous response"),
 		),
 	)
-	srv.AddTool(stepTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	stepHandler := func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 		sessionID, _ := args["session_id"].(string)
 		if sessionID == "" {
@@ -746,7 +775,7 @@ func registerWebsitesWizardTools(srv *server.MCPServer, store *SessionStore, dep
 			// Return the error but include the current state for retry.
 			resp := buildStepResponse(sess)
 			resp.Error = err.Error()
-			resp.Message = fmt.Sprintf("step '%s' failed — the session remains in state '%s', you may retry",
+			resp.Message = fmt.Sprintf("step '%s' failed the session remains in state '%s', you may retry",
 				resp.CurrentStep, resp.CurrentStep)
 			return marshalStepResult(resp)
 		}
@@ -756,23 +785,42 @@ func registerWebsitesWizardTools(srv *server.MCPServer, store *SessionStore, dep
 			resp.Message = "Websites wizard completed successfully."
 		}
 		return marshalStepResult(resp)
-	})
+	}
+	entry, err = toolToEntry("websites_wizard_step",
+		"Advance a websites wizard session by one step. Provide the session_id "+
+			"from websites_wizard_start and the input matching the next_step_schema returned by "+
+			"the previous step.",
+		CategoryWizard, stepTool, stepHandler)
+	if err != nil {
+		return fmt.Errorf("failed to create catalog entry for websites_wizard_step: %w", err)
+	}
+	catalog.Add(entry)
+
+	return nil
 }
 
 // registerSetupWizardTools registers the setup wizard start and step tools.
-func registerSetupWizardTools(srv *server.MCPServer, store *SessionStore, deps SetupWizardDeps) {
+func registerSetupWizardTools(catalog *ToolCatalog, store *SessionStore, deps SetupWizardDeps) error {
 	startTool := mcp.NewTool("setup_wizard_start",
 		mcp.WithDescription("Start a new setup wizard session. Returns a session_id "+
 			"and the first step to complete (auth). No arguments required."),
 	)
-	srv.AddTool(startTool, func(ctx context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	startHandler := func(ctx context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		sess, err := NewSetupSession(store, deps)
 		if err != nil {
 			return errorStepResult("", fmt.Sprintf("failed to create session: %v", err)), nil
 		}
 		resp := buildStepResponse(sess)
 		return marshalStepResult(resp)
-	})
+	}
+	entry, err := toolToEntry("setup_wizard_start",
+		"Start a new setup wizard session. Returns a session_id "+
+			"and the first step to complete (auth). No arguments required.",
+		CategoryWizard, startTool, startHandler)
+	if err != nil {
+		return fmt.Errorf("failed to create catalog entry for setup_wizard_start: %w", err)
+	}
+	catalog.Add(entry)
 
 	stepTool := mcp.NewTool("setup_wizard_step",
 		mcp.WithDescription("Advance a setup wizard session by one step. Provide the session_id "+
@@ -786,7 +834,7 @@ func registerSetupWizardTools(srv *server.MCPServer, store *SessionStore, deps S
 			mcp.Description("Step input matching the next_step_schema from the previous response"),
 		),
 	)
-	srv.AddTool(stepTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	stepHandler := func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 		sessionID, _ := args["session_id"].(string)
 		if sessionID == "" {
@@ -812,7 +860,7 @@ func registerSetupWizardTools(srv *server.MCPServer, store *SessionStore, deps S
 		if err := AdvanceSession(ctx, sess, input); err != nil {
 			resp := buildStepResponse(sess)
 			resp.Error = err.Error()
-			resp.Message = fmt.Sprintf("step '%s' failed — the session remains in state '%s', you may retry",
+			resp.Message = fmt.Sprintf("step '%s' failed the session remains in state '%s', you may retry",
 				resp.CurrentStep, resp.CurrentStep)
 			return marshalStepResult(resp)
 		}
@@ -822,7 +870,18 @@ func registerSetupWizardTools(srv *server.MCPServer, store *SessionStore, deps S
 			resp.Message = "Setup wizard completed successfully."
 		}
 		return marshalStepResult(resp)
-	})
+	}
+	entry, err = toolToEntry("setup_wizard_step",
+		"Advance a setup wizard session by one step. Provide the session_id "+
+			"from setup_wizard_start and the input matching the next_step_schema returned by "+
+			"the previous step.",
+		CategoryWizard, stepTool, stepHandler)
+	if err != nil {
+		return fmt.Errorf("failed to create catalog entry for setup_wizard_step: %w", err)
+	}
+	catalog.Add(entry)
+
+	return nil
 }
 
 // --- Result helpers ---

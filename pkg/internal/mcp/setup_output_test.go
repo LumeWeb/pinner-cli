@@ -79,20 +79,21 @@ func TestMCPCommandServer_OutputNotLeaked_WithStaleCommandContext(t *testing.T) 
 	require.NotNil(t, capturedCtx, "context should be captured from first Run")
 
 	// Step 2: Create the MCP server from the already-initialized root.
-	srv, err := mcpadapter.MCPServer(root, false)
+	srv, catalog, err := mcpadapter.MCPServer(root, false)
 	require.NoError(t, err)
+	_ = srv // meta-tools not needed for this test; we invoke via catalog
 
-	// Step 3: Call the tool handler directly with the captured context.
-	// This simulates what happens in the real MCP stdio server: the ctx
-	// comes from Listen(ctx, ...), which is the Action's context containing
-	// the stale commandContextKey.
-	tool := srv.GetTool("pinner_auth_status")
-	require.NotNil(t, tool, "tool should be registered")
+	// Step 3: Call the catalog handler directly with the captured context.
+	// This simulates what happens when invoke_tool dispatches to the tool's
+	// handler — the ctx comes from Listen(ctx, ...), which is the Action's
+	// context containing the stale commandContextKey.
+	entry, ok := catalog.Get("pinner_auth_status")
+	require.True(t, ok, "tool should be in catalog")
 
 	req := mcp.CallToolRequest{}
 	req.Params.Name = "pinner_auth_status"
 
-	result, err := tool.Handler(capturedCtx, req)
+	result, err := entry.Handler(capturedCtx, req)
 	require.NoError(t, err)
 	require.Len(t, result.Content, 1)
 

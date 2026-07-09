@@ -50,33 +50,39 @@ directly — no subprocess fork. Commands are exposed faithfully —
 agent-friendly behavior is the responsibility of each command, not this
 adapter.`,
 		Action: func(ctx context.Context, _ *cli.Command) error {
-			log.Debug("building MCP server", zap.String("app", root.Name))
+			log.Debug("building MCP server with progressive disclosure", zap.String("app", root.Name))
 
-			// Build wizard deps at Action time — config/services are
-			// available now but not at command construction time.
 			store := NewSessionStore()
-			var wizardOpts []MCPServerOption
+
+			srv, catalog, err := MCPServerWithOpts(root, hasRootAction, nil, opts...)
+			if err != nil {
+				return err
+			}
+
+			// Register wizard tools into the catalog instead of directly
+			// on the server. The meta-tools expose them through discovery.
 			if wizardFactory != nil {
 				wDeps, sDeps, err := wizardFactory()
 				if err != nil {
 					return fmt.Errorf("failed to build wizard dependencies: %w", err)
 				}
-				wizardOpts = append(wizardOpts, WithWizardTools(store, wDeps, sDeps))
+				if err := RegisterWizardTools(catalog, store, wDeps, sDeps); err != nil {
+					return fmt.Errorf("failed to register wizard tools: %w", err)
+				}
 			}
 
 			if resourceFactory != nil {
 				provs := resourceFactory(store)
 				provs.Sessions = store
-				wizardOpts = append(wizardOpts, func(srv *server.MCPServer) {
-					RegisterResources(srv, provs)
-				})
+				RegisterResources(srv, provs)
 			}
 
+			// Register the 3 meta-tools (search_tools, describe_tool,
+			// invoke_tool). These are the only tools visible via tools/list.
+			// The real catalog is accessible only through these meta-tools.
+			RegisterMetaTools(srv, catalog)
+
 			log.Debug("serving MCP server")
-			srv, err := MCPServerWithOpts(root, hasRootAction, nil, append(opts, wizardOpts...)...)
-			if err != nil {
-				return err
-			}
 			s := server.NewStdioServer(srv)
 			return s.Listen(ctx, os.Stdin, os.Stdout)
 		},
@@ -101,32 +107,34 @@ func WithPrompts() MCPServerOption {
 // and services are available. Called inside the MCP command's Action.
 type WizardDepsFactory func() (WebsitesWizardDeps, SetupWizardDeps, error)
 
-// WithWizardTools registers the websites and setup wizard MCP tools on the server.
-func WithWizardTools(store *SessionStore, wDeps WebsitesWizardDeps, sDeps SetupWizardDeps) MCPServerOption {
-	return func(srv *server.MCPServer) {
-		RegisterWizardTools(srv, store, wDeps, sDeps)
-	}
-}
-
-// MCPServerWithOpts builds the MCP server from a urfave/cli command tree and
-// applies the given options (resources, prompts, etc.).
-func MCPServerWithOpts(root *cli.Command, hasRootAction bool, prefix []string, opts ...MCPServerOption) (*server.MCPServer, error) {
-	srv, err := MCPServer(root, hasRootAction, prefix...)
+// MCPServerWithOpts builds the MCP server from a urfave/cli command tree,
+// populates a ToolCatalog with all commands (instead of registering them
+// directly on the server), and applies the given options.
+//
+// The returned catalog is empty of wizard tools — the caller should add
+// wizard tools via RegisterWizardTools before calling RegisterMetaTools.
+func MCPServerWithOpts(root *cli.Command, hasRootAction bool, prefix []string, opts ...MCPServerOption) (*server.MCPServer, *ToolCatalog, error) {
+	srv, catalog, err := MCPServer(root, hasRootAction, prefix...)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	for _, opt := range opts {
 		if opt != nil {
 			opt(srv)
 		}
 	}
-	return srv, nil
+	return srv, catalog, nil
 }
 
 // MCPServer builds an MCP server from a urfave/cli/v3 command tree.
-// It registers non-hidden commands with actions as MCP tools.
-func MCPServer(root *cli.Command, hasRootAction bool, prefix ...string) (*server.MCPServer, error) {
+// Instead of registering commands as individual MCP tools, it populates a
+// ToolCatalog that is accessible only through the meta-tools (search_tools,
+// describe_tool, invoke_tool). This implements server-side progressive
+// disclosure.
+func MCPServer(root *cli.Command, hasRootAction bool, prefix ...string) (*server.MCPServer, *ToolCatalog, error) {
 	srv := server.NewMCPServer(root.Name, root.Version, server.WithToolCapabilities(true))
+
+	catalog := NewToolCatalog()
 
 	// runMu serializes root.Run calls. A shallow copy of root gives each
 	// invocation isolated Writer/ErrWriter, but subcommand flag state is shared
@@ -239,45 +247,15 @@ func MCPServer(root *cli.Command, hasRootAction bool, prefix ...string) (*server
 		return &mcp.CallToolResult{Content: []mcp.Content{mcp.NewTextContent(stdout.String())}}, nil
 	}
 
-	var register func(cmd *cli.Command, prefix ...string) error
-	register = func(cmd *cli.Command, prefix ...string) error {
-		if cmd.Name == "mcp" || cmd.Name == "help" {
-			return nil
-		}
-
-		loc := append(prefix, cmd.Name)
-		if !cmd.Hidden && cmd.Action != nil && (len(prefix) > 0 || hasRootAction) {
-			log.Debug("registering command", zap.Strings("loc", loc))
-			toolOpts, err := FlagsToTools(cmd.Flags)
-			if err != nil {
-				return fmt.Errorf("failed to convert flags to tools %s: %w", loc, err)
-			}
-
-			var desc string
-			if cmd.Description != "" {
-				desc = cmd.Description
-			} else {
-				desc = cmd.Usage
-			}
-
-			toolOpts = append(toolOpts, mcp.WithDescription(desc))
-			toolName := strings.Join(loc, ToolDelimiter)
-			t := mcp.NewTool(toolName, toolOpts...)
-
-			srv.AddTool(t, toolHandler)
-		}
-		for _, sub := range cmd.Commands {
-			if err := register(sub, loc...); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-	if err := register(root); err != nil {
-		return nil, err
+	// Populate the catalog from the command tree. All commands are stored
+	// internally — they are NOT registered on the MCP server. The meta-tools
+	// (search_tools, describe_tool, invoke_tool) provide the discovery and
+	// invocation interface.
+	if err := catalog.RegisterFromCommand(root, hasRootAction, prefix, toolHandler); err != nil {
+		return nil, nil, err
 	}
 
-	return srv, nil
+	return srv, catalog, nil
 }
 
 // FlagsToTools converts urfave/cli flags into MCP tool property options.
