@@ -40,10 +40,29 @@ func TestMCPCommand(t *testing.T) {
 	assert.NotEmpty(t, cmd.Usage)
 }
 
+// ensureAgentFlag adds a --agent bool flag to the root command if it
+// doesn't already have one. This mirrors production GlobalFlags() and
+// prevents "flag provided but not defined" errors in test commands.
+func ensureAgentFlag(root *cli.Command) {
+	for _, f := range root.Flags {
+		for _, n := range f.Names() {
+			if n == "agent" {
+				return
+			}
+		}
+	}
+	root.Flags = append(root.Flags, &cli.BoolFlag{Name: "agent"})
+}
+
 // setupTestServer builds an MCP server with progressive disclosure from a
 // command tree, initializes a client, and returns the ready client.
 func setupTestServer(t *testing.T, root *cli.Command, hasRootAction bool) (*client.Client, *mcpadapter.ToolCatalog) {
 	t.Helper()
+
+	// Ensure the agent flag exists on the root command so unconditional
+	// --agent injection doesn't cause "flag provided but not defined" errors.
+	ensureAgentFlag(root)
+
 	srv, catalog, err := mcpadapter.MCPServer(root, hasRootAction)
 	require.NoError(t, err)
 
@@ -650,25 +669,54 @@ func TestInvokeTool_AgentFlagInjected(t *testing.T) {
 	assert.Equal(t, "agent=true", result)
 }
 
-// TestInvokeTool_AgentFlagNotInjectedForCommandsWithoutFlag verifies that
-// --agent is NOT injected when the root command doesn't define an "agent" flag.
-// This prevents "flag provided but not defined" errors in test commands and
-// any command tree that hasn't adopted the --agent flag yet.
-func TestInvokeTool_AgentFlagNotInjectedForCommandsWithoutFlag(t *testing.T) {
+// TestInvokeTool_AgentFlagAlwaysInjected verifies that --agent is injected
+// unconditionally for every MCP tool invocation, even when the root command
+// doesn't explicitly define an "agent" flag in its schema. In production,
+// GlobalFlags() includes FlagAgent; the ensureAgentFlag test helper mirrors
+// this. This prevents interactive prompts and ANSI colors in MCP output.
+func TestInvokeTool_AgentFlagAlwaysInjected(t *testing.T) {
 	t.Parallel()
 
 	root := &cli.Command{
 		Name: "test",
+		// No "agent" flag defined here — ensureAgentFlag adds it.
 		Action: func(ctx context.Context, cmd *cli.Command) error {
-			// If --agent were injected without the flag being defined,
-			// urfave/cli would return "flag provided but not defined" and
-			// this action would never execute.
-			fmt.Fprint(cmd.Root().Writer, "ok")
+			fmt.Fprintf(cmd.Root().Writer, "agent=%v", cmd.Bool("agent"))
 			return nil
 		},
 	}
 	c, _ := setupTestServer(t, root, true)
 
 	result := invokeTool(t, c, "test", map[string]any{})
-	assert.Equal(t, "ok", result)
+	assert.Equal(t, "agent=true", result)
+}
+
+// TestInvokeTool_AgentFlagInjectedForSubcommand verifies that --agent is
+// injected when invoking a subcommand, not just the root command. This is
+// the regression test for the bug where register (a subcommand without its
+// own agent flag definition) would hang on interactive prompts because
+// --agent was gated by rootHasFlag which checked root-level flags only.
+func TestInvokeTool_AgentFlagInjectedForSubcommand(t *testing.T) {
+	t.Parallel()
+
+	root := &cli.Command{
+		Name: "test",
+		Commands: []*cli.Command{
+			{
+				Name: "register",
+				// No "agent" flag on subcommand — inherited from root.
+				Flags: []cli.Flag{
+					&cli.StringFlag{Name: "email"},
+				},
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					fmt.Fprintf(cmd.Root().Writer, "agent=%v", cmd.Bool("agent"))
+					return nil
+				},
+			},
+		},
+	}
+	c, _ := setupTestServer(t, root, false)
+
+	result := invokeTool(t, c, "test_register", map[string]any{})
+	assert.Equal(t, "agent=true", result)
 }

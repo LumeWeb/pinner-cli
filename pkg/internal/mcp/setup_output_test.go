@@ -48,6 +48,9 @@ func TestMCPCommandServer_OutputNotLeaked_WithStaleCommandContext(t *testing.T) 
 
 	root := &cli.Command{
 		Name: "pinner",
+		Flags: []cli.Flag{
+			&cli.BoolFlag{Name: "agent"},
+		},
 		Commands: []*cli.Command{
 			{
 				Name: "auth",
