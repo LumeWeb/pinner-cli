@@ -22,8 +22,11 @@ func setupCommandContext(cmd *cli.Command) (config.Manager, Output, error) {
 		return nil, nil, err
 	}
 
+	// --agent implies --json (structured output, no ANSI colors).
+	jsonOutput := cmd.Bool(FlagJSON) || cmd.Bool(FlagAgent)
+
 	output := NewOutputFormatter(
-		cmd.Bool(FlagJSON),
+		jsonOutput,
 		cmd.Bool(FlagVerbose),
 		cmd.Bool(FlagQuiet),
 		cmd.Bool(FlagUnmask),

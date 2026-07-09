@@ -627,3 +627,48 @@ func TestDescribeTool_NoArgsUsageNoArgsInSchema(t *testing.T) {
 	_, exists := props["_args"]
 	assert.False(t, exists, "schema should not include _args when ArgsUsage is empty")
 }
+
+// TestInvokeTool_AgentFlagInjected verifies that the MCP toolHandler injects
+// --agent into every tool invocation so the CLI runs in agent mode (JSON output,
+// no ANSI colors, no interactive prompts).
+func TestInvokeTool_AgentFlagInjected(t *testing.T) {
+	t.Parallel()
+
+	root := &cli.Command{
+		Name: "test",
+		Flags: []cli.Flag{
+			&cli.BoolFlag{Name: "agent"},
+		},
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			fmt.Fprintf(cmd.Root().Writer, "agent=%v", cmd.Bool("agent"))
+			return nil
+		},
+	}
+	c, _ := setupTestServer(t, root, true)
+
+	result := invokeTool(t, c, "test", map[string]any{})
+	assert.Equal(t, "agent=true", result)
+}
+
+// TestInvokeTool_AgentFlagNotInjectedForCommandsWithoutFlag verifies that
+// --agent is NOT injected when the root command doesn't define an "agent" flag.
+// This prevents "flag provided but not defined" errors in test commands and
+// any command tree that hasn't adopted the --agent flag yet.
+func TestInvokeTool_AgentFlagNotInjectedForCommandsWithoutFlag(t *testing.T) {
+	t.Parallel()
+
+	root := &cli.Command{
+		Name: "test",
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			// If --agent were injected without the flag being defined,
+			// urfave/cli would return "flag provided but not defined" and
+			// this action would never execute.
+			fmt.Fprint(cmd.Root().Writer, "ok")
+			return nil
+		},
+	}
+	c, _ := setupTestServer(t, root, true)
+
+	result := invokeTool(t, c, "test", map[string]any{})
+	assert.Equal(t, "ok", result)
+}
