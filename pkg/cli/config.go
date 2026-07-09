@@ -50,31 +50,82 @@ Common keys:
   max_retries    - Maximum retry attempts (default: 3)
   memory_limit   - Memory limit for CAR generation in MB (default: 100)
   auth_token     - Authentication token (managed by 'pinner auth')`,
-		ArgsUsage: "[get <key> | set <key> <value>]",
-		Flags:     append(GlobalFlags(), DryRunFlag()),
+		Flags: GlobalFlags(),
 		Action: func(ctx context.Context, c *cli.Command) error {
 			output := setupOutput(c)
-			return configAction(ctx, newCLICommandWrapper(c), output, defaultConfigManagerFactory)
+			return showAllConfig(output, defaultConfigManagerFactory)
+		},
+		Commands: []*cli.Command{
+			newConfigGetCommand(),
+			newConfigSetCommand(),
 		},
 	}
 }
 
-func configAction(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgrFactory ConfigManagerFactory) error {
-	args := cmd.Args()
+func newConfigGetCommand() *cli.Command {
+	return &cli.Command{
+		Name:     "get",
+		Category: "System",
+		Usage:    "Get a configuration value",
+		Description: `Get a specific configuration value.
 
-	if args.Len() == 0 {
-		return showAllConfig(output, cfgMgrFactory)
+Usage:
+  pinner config get <key>
+
+Examples:
+  pinner config get base_endpoint
+  pinner config get secure
+
+Configuration can also be set via environment variables with the PINNER_ prefix.
+For example, PINNER_BASE_ENDPOINT sets base_endpoint, PINNER_SECURE sets secure.
+
+Common keys:
+  base_endpoint  - API endpoint (empty for default)
+  secure         - Use HTTPS (true/false)
+  max_retries    - Maximum retry attempts (default: 3)
+  memory_limit   - Memory limit for CAR generation in MB (default: 100)
+  auth_token     - Authentication token (managed by 'pinner auth')`,
+		ArgsUsage: "<key>",
+		Flags:     GlobalFlags(),
+		Action: func(ctx context.Context, c *cli.Command) error {
+			output := setupOutput(c)
+			return getConfig(newCLICommandWrapper(c), output, defaultConfigManagerFactory)
+		},
 	}
+}
 
-	action := args.Get(0)
-	switch action {
-	case "get":
-		return getConfig(cmd, output, cfgMgrFactory)
-	case "set":
-		return setConfig(ctx, cmd, output, cfgMgrFactory)
+func newConfigSetCommand() *cli.Command {
+	return &cli.Command{
+		Name:     "set",
+		Category: "System",
+		Usage:    "Set a configuration value",
+		Description: `Set a specific configuration value.
+
+Usage:
+  pinner config set <key> <value>
+
+Examples:
+  pinner config set max_retries 5
+  pinner config set secure false
+  pinner config set memory_limit 256
+  pinner config set max_retries 5 --dry-run
+
+Configuration can also be set via environment variables with the PINNER_ prefix.
+For example, PINNER_BASE_ENDPOINT sets base_endpoint, PINNER_SECURE sets secure.
+
+Common keys:
+  base_endpoint  - API endpoint (empty for default)
+  secure         - Use HTTPS (true/false)
+  max_retries    - Maximum retry attempts (default: 3)
+  memory_limit   - Memory limit for CAR generation in MB (default: 100)
+  auth_token     - Authentication token (managed by 'pinner auth')`,
+		ArgsUsage: "<key> <value>",
+		Flags:     append(GlobalFlags(), DryRunFlag()),
+		Action: func(ctx context.Context, c *cli.Command) error {
+			output := setupOutput(c)
+			return setConfig(ctx, newCLICommandWrapper(c), output, defaultConfigManagerFactory)
+		},
 	}
-
-	return fmt.Errorf("invalid action: %s (use 'get' or 'set')", action)
 }
 
 func showAllConfig(output Output, cfgMgrFactory ConfigManagerFactory) error {
@@ -131,7 +182,7 @@ func getConfig(cmd argsGetter, output Output, cfgMgrFactory ConfigManagerFactory
 		return fmt.Errorf("failed to initialize config manager: %w", err)
 	}
 
-	key := cmd.Args().Get(1)
+	key := cmd.Args().Get(0)
 	if key == "" {
 		return fmt.Errorf("key is required for 'get' command. Run 'pinner config' to see all keys")
 	}
@@ -167,8 +218,8 @@ func setConfig(ctx context.Context, cmd argsFlagGetterWithBool, output Output, c
 		return fmt.Errorf("failed to initialize config manager: %w", err)
 	}
 
-	key := cmd.Args().Get(1)
-	valueStr := cmd.Args().Get(2)
+	key := cmd.Args().Get(0)
+	valueStr := cmd.Args().Get(1)
 	dryRun := cmd.Bool(FlagDryRun)
 
 	if key == "" || valueStr == "" {

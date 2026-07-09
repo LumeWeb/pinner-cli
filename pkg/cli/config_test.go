@@ -42,6 +42,9 @@ func TestNewConfigCommand(t *testing.T) {
 	assert.Equal(t, "System", cmd.Category)
 	assert.NotEmpty(t, cmd.Usage)
 	assert.NotNil(t, cmd.Action)
+	assert.Len(t, cmd.Commands, 2)
+	assert.Equal(t, "get", cmd.Commands[0].Name)
+	assert.Equal(t, "set", cmd.Commands[1].Name)
 }
 
 func TestShowAllConfigError(t *testing.T) {
@@ -113,7 +116,7 @@ func TestGetConfigError(t *testing.T) {
 		return nil, errors.New("config error")
 	}
 
-	cmd := newMockCommand().withArgs("get", "auth_token")
+	cmd := newMockCommand().withArgs("auth_token")
 	err := getConfig(cmd, output, cfgMgrFactory)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to initialize config manager")
@@ -125,65 +128,10 @@ func TestSetConfigError(t *testing.T) {
 		return nil, errors.New("config error")
 	}
 
-	cmd := newMockCommand().withArgs("set", "base_endpoint", "test.com")
+	cmd := newMockCommand().withArgs("base_endpoint", "test.com")
 	err := setConfig(context.Background(), cmd, output, cfgMgrFactory)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to initialize config manager")
-}
-
-func TestConfigActionNoArgs(t *testing.T) {
-	cfgMgr := configmocks.NewMockManager(t)
-	output := newTestOutput()
-
-	cfgMgr.EXPECT().GetAllDescriptions().Return(map[string]string{"secure": "Use HTTPS"})
-	cfgMgr.EXPECT().All().Return(map[string]any{"secure": true})
-
-	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-	cmd := newMockCommand()
-
-	err := configAction(context.Background(), cmd, output, cfgMgrFactory)
-	require.NoError(t, err)
-}
-
-func TestConfigActionGetSubcommand(t *testing.T) {
-	cfgMgr := configmocks.NewMockManager(t)
-	output := newTestOutput()
-
-	cfgMgr.EXPECT().Get("auth_token").Return("my-token", true, nil)
-
-	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-	cmd := newMockCommand().withArgs("get", "auth_token")
-
-	err := configAction(context.Background(), cmd, output, cfgMgrFactory)
-	require.NoError(t, err)
-}
-
-func TestConfigActionSetSubcommand(t *testing.T) {
-	cfgMgr := configmocks.NewMockManager(t)
-	output := newTestOutput()
-
-	cfgMgr.EXPECT().Exists("max_retries").Return(true)
-	cfgMgr.EXPECT().Get("max_retries").Return(3, true, nil)
-	cfgMgr.EXPECT().Set(mock.Anything, "max_retries", int64(5)).Return(nil)
-	cfgMgr.EXPECT().Persist().Return(nil)
-
-	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-	cmd := newMockCommand().withArgs("set", "max_retries", "5")
-
-	err := configAction(context.Background(), cmd, output, cfgMgrFactory)
-	require.NoError(t, err)
-}
-
-func TestConfigActionInvalidAction(t *testing.T) {
-	output := newTestOutput()
-	cfgMgrFactory := func() (config.Manager, error) {
-		return nil, errors.New("should not be called")
-	}
-	cmd := newMockCommand().withArgs("delete")
-
-	err := configAction(context.Background(), cmd, output, cfgMgrFactory)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid action: delete")
 }
 
 func TestGetConfigMissingKey(t *testing.T) {
@@ -191,7 +139,7 @@ func TestGetConfigMissingKey(t *testing.T) {
 	output := newTestOutput()
 
 	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-	cmd := newMockCommand().withArgs("get")
+	cmd := newMockCommand()
 
 	err := getConfig(cmd, output, cfgMgrFactory)
 	require.Error(t, err)
@@ -205,7 +153,7 @@ func TestGetConfigSuccess(t *testing.T) {
 	cfgMgr.EXPECT().Get("base_endpoint").Return("pinner.xyz", true, nil)
 
 	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-	cmd := newMockCommand().withArgs("get", "base_endpoint")
+	cmd := newMockCommand().withArgs("base_endpoint")
 
 	err := getConfig(cmd, output, cfgMgrFactory)
 	require.NoError(t, err)
@@ -218,7 +166,7 @@ func TestGetConfigGetFails(t *testing.T) {
 	cfgMgr.EXPECT().Get("unknown_key").Return(nil, false, errors.New("not found"))
 
 	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-	cmd := newMockCommand().withArgs("get", "unknown_key")
+	cmd := newMockCommand().withArgs("unknown_key")
 
 	err := getConfig(cmd, output, cfgMgrFactory)
 	require.Error(t, err)
@@ -230,7 +178,7 @@ func TestSetConfigMissingKeyOrValue(t *testing.T) {
 	output := newTestOutput()
 
 	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-	cmd := newMockCommand().withArgs("set", "key")
+	cmd := newMockCommand().withArgs("key")
 
 	err := setConfig(context.Background(), cmd, output, cfgMgrFactory)
 	require.Error(t, err)
@@ -246,7 +194,7 @@ func TestSetConfigNewKey(t *testing.T) {
 	cfgMgr.EXPECT().Persist().Return(nil)
 
 	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-	cmd := newMockCommand().withArgs("set", "custom_key", "custom_value")
+	cmd := newMockCommand().withArgs("custom_key", "custom_value")
 
 	err := setConfig(context.Background(), cmd, output, cfgMgrFactory)
 	require.NoError(t, err)
@@ -262,7 +210,7 @@ func TestSetConfigBoolValue(t *testing.T) {
 	cfgMgr.EXPECT().Persist().Return(nil)
 
 	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-	cmd := newMockCommand().withArgs("set", "secure", "false")
+	cmd := newMockCommand().withArgs("secure", "false")
 
 	err := setConfig(context.Background(), cmd, output, cfgMgrFactory)
 	require.NoError(t, err)
@@ -276,7 +224,7 @@ func TestSetConfigInvalidBoolValue(t *testing.T) {
 	cfgMgr.EXPECT().Get("secure").Return(true, true, nil)
 
 	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-	cmd := newMockCommand().withArgs("set", "secure", "notabool")
+	cmd := newMockCommand().withArgs("secure", "notabool")
 
 	err := setConfig(context.Background(), cmd, output, cfgMgrFactory)
 	require.Error(t, err)
@@ -291,7 +239,7 @@ func TestSetConfigInvalidIntValue(t *testing.T) {
 	cfgMgr.EXPECT().Get("max_retries").Return(3, true, nil)
 
 	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-	cmd := newMockCommand().withArgs("set", "max_retries", "notanint")
+	cmd := newMockCommand().withArgs("max_retries", "notanint")
 
 	err := setConfig(context.Background(), cmd, output, cfgMgrFactory)
 	require.Error(t, err)
@@ -307,7 +255,7 @@ func TestSetConfigDryRun(t *testing.T) {
 	cfgMgr.EXPECT().GetDescription("max_retries").Return("Max retries")
 
 	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-	cmd := newMockCommand().withArgs("set", "max_retries", "5").withBool(FlagDryRun, true)
+	cmd := newMockCommand().withArgs("max_retries", "5").withBool(FlagDryRun, true)
 
 	err := setConfig(context.Background(), cmd, output, cfgMgrFactory)
 	require.NoError(t, err)
@@ -322,7 +270,7 @@ func TestSetConfigPersistFails(t *testing.T) {
 	cfgMgr.EXPECT().Persist().Return(errors.New("disk full"))
 
 	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-	cmd := newMockCommand().withArgs("set", "custom_key", "value")
+	cmd := newMockCommand().withArgs("custom_key", "value")
 
 	err := setConfig(context.Background(), cmd, output, cfgMgrFactory)
 	require.Error(t, err)

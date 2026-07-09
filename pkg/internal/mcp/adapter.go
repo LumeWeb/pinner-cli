@@ -157,6 +157,18 @@ func MCPServer(root *cli.Command, hasRootAction bool, prefix ...string) (*server
 		}
 
 		for key, val := range request.GetArguments() {
+			if key == "_args" {
+				if arr, ok := val.([]any); ok {
+					for _, a := range arr {
+						if s, ok := a.(string); ok {
+							args = append(args, s)
+						} else {
+							return nil, fmt.Errorf("_args entries must be strings, got %T", a)
+						}
+					}
+				}
+				continue
+			}
 			k := fmt.Sprintf("--%s", key)
 			switch v := val.(type) {
 			case string:
