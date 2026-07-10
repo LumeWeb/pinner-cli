@@ -75,6 +75,10 @@ func quotaPlansGetAction(ctx context.Context, cmd argsGetter, output Output, cfg
 	}
 	planID := args.First()
 
+	if err := validateNumericID(planID, "plan ID"); err != nil {
+		return err
+	}
+
 	quotaService := serviceFactory(cfgMgr, output)
 
 	if err := quotaService.RequireAuthenticated(); err != nil {
@@ -134,8 +138,14 @@ func quotaPlansCreateAction(ctx context.Context, cmd flagGetterWithIsSet, output
 		UploadLimitBytes:   cmd.Int(FlagUploadLimit),
 		DownloadLimitBytes: cmd.Int(FlagDownloadLimit),
 		StorageLimitBytes:  cmd.Int(FlagStorageLimit),
-		WindowType:         cmd.String(FlagWindowType),
 	}
+
+	// Default window type to LIFETIME if not specified
+	windowType := cmd.String(FlagWindowType)
+	if windowType == "" {
+		windowType = "LIFETIME"
+	}
+	limits.WindowType = windowType
 
 	plan := admin.NewQuotaPlan(
 		cmd.String(FlagName),
@@ -204,6 +214,10 @@ func quotaPlansUpdateAction(ctx context.Context, cmd interface {
 	}
 
 	planID := args.First()
+
+	if err := validateNumericID(planID, "plan ID"); err != nil {
+		return err
+	}
 
 	if err := requireUpdateFields(cmd, FlagName, FlagDescription, FlagUploadLimit, FlagDownloadLimit, FlagStorageLimit, FlagWindowType, FlagIsActive, FlagIsDefault); err != nil {
 		return err
@@ -307,6 +321,10 @@ func quotaPlansDeleteAction(ctx context.Context, cmd argsGetter, output Output, 
 	}
 	planID := args.First()
 
+	if err := validateNumericID(planID, "plan ID"); err != nil {
+		return err
+	}
+
 	quotaService := serviceFactory(cfgMgr, output)
 
 	if err := quotaService.RequireAuthenticated(); err != nil {
@@ -339,6 +357,10 @@ func quotaPlansSetDefaultAction(ctx context.Context, cmd argsGetter, output Outp
 		return fmt.Errorf("plan ID is required")
 	}
 	planID := args.First()
+
+	if err := validateNumericID(planID, "plan ID"); err != nil {
+		return err
+	}
 
 	quotaService := serviceFactory(cfgMgr, output)
 
@@ -500,6 +522,10 @@ func quotaAllowancesUpdateAction(ctx context.Context, cmd interface {
 
 	grantID := args.First()
 
+	if err := validateNumericID(grantID, "grant ID"); err != nil {
+		return err
+	}
+
 	if err := requireUpdateFields(cmd, FlagUserID, FlagSource, FlagQuotaType, FlagUploadLimit, FlagDownloadLimit, FlagExpiry); err != nil {
 		return err
 	}
@@ -582,6 +608,10 @@ func quotaAllowancesDeleteAction(ctx context.Context, cmd argsGetter, output Out
 		return fmt.Errorf("grant ID is required")
 	}
 	grantID := args.First()
+
+	if err := validateNumericID(grantID, "grant ID"); err != nil {
+		return err
+	}
 
 	quotaService := serviceFactory(cfgMgr, output)
 
@@ -892,6 +922,19 @@ func quotaUserConfigsUpdateAction(ctx context.Context, cmd flagGetterWithIsSet, 
 	}
 
 	output.Printfln("User %d quota config updated", userID)
+	return nil
+}
+
+// validateNumericID validates that the given string is a positive integer.
+// Returns a descriptive error if it is not.
+func validateNumericID(id, label string) error {
+	var n int
+	if _, err := fmt.Sscanf(id, "%d", &n); err != nil {
+		return fmt.Errorf("invalid %s %q: must be a positive integer", label, id)
+	}
+	if n <= 0 {
+		return fmt.Errorf("invalid %s %q: must be a positive integer", label, id)
+	}
 	return nil
 }
 
