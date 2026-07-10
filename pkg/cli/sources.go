@@ -3,6 +3,7 @@ package cli
 import (
 	"io"
 	"os"
+	"strings"
 )
 
 // StdinSource is a ValueSource that reads from stdin.
@@ -47,7 +48,7 @@ func (s *StdinSource) Lookup() (string, bool) {
 	}
 
 	// Trim whitespace and return
-	value := string(data)
+	value := strings.TrimSpace(string(data))
 	if value == "" {
 		return "", false
 	}
