@@ -155,9 +155,9 @@ Examples:
 				Description: `Create a new quota plan with specified limits.
 
 Examples:
-  pinner admin quota plans create --name "Pro" --upload 1000 --download 2000 --storage 5000
-  pinner admin quota plans create --name "Free" --is-active --is-default
-  pinner admin quota plans create --name "Basic" --description "Basic tier" --is-active`,
+  pinner admin quota plans create --name "Pro" --upload-limit 1000 --download-limit 2000 --storage-limit 5000 --window-type LIFETIME
+  pinner admin quota plans create --name "Free" --is-active --is-default --window-type LIFETIME
+  pinner admin quota plans create --name "Basic" --description "Basic tier" --is-active --window-type MONTH`,
 				Flags: []cli.Flag{
 					&cli.StringFlag{
 						Name:  FlagName,
@@ -181,7 +181,7 @@ Examples:
 					},
 					&cli.StringFlag{
 						Name:  FlagWindowType,
-						Usage: "Window type (ROLLING, DAY, WEEK, MONTH, YEAR, LIFETIME)",
+						Usage: "Window type (ROLLING, DAY, WEEK, MONTH, YEAR, LIFETIME) (default: LIFETIME)",
 					},
 					&cli.BoolFlag{
 						Name:  FlagIsActive,
@@ -321,7 +321,7 @@ Examples:
 				Description: `Create a new quota allowance for a user.
 
 Examples:
-  pinner admin quota allowances create --user-id 123 --source admin --type bonus --upload 1000`,
+  pinner admin quota allowances create --user-id 123 --source admin --quota-type bonus --upload-limit 1000`,
 				Flags: []cli.Flag{
 					&cli.IntFlag{
 						Name:  FlagUserID,

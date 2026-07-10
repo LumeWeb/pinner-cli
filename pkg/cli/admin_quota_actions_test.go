@@ -162,14 +162,14 @@ func TestQuotaAllowancesUpdate(t *testing.T) {
 		{
 			name: "success with upload-limit",
 			cmd: newMockCommand().
-				withArgs("grant-123").
+				withArgs("123").
 				withInt(FlagUploadLimit, 2048).
 				withIsSet(FlagUploadLimit, true),
 			jsonOutput: false,
 			setupMocks: func(cfgMgr *configmocks.MockManager, svc *MockQuotaAdminService) {
 				svc.EXPECT().RequireAuthenticated().Return(nil)
 				svc.EXPECT().UpdateAllowance(
-					mock.Anything, "grant-123", 0, "", "", 2048, 2048, 0, time.Time{},
+					mock.Anything, "123", 0, "", "", 2048, 2048, 0, time.Time{},
 				).Return(&admin.QuotaAllowance{}, nil)
 			},
 			wantErr: false,
@@ -177,7 +177,7 @@ func TestQuotaAllowancesUpdate(t *testing.T) {
 		{
 			name: "success with multiple fields",
 			cmd: newMockCommand().
-				withArgs("grant-456").
+				withArgs("456").
 				withInt(FlagUserID, 7).
 				withIsSet(FlagUserID, true).
 				withString(FlagSource, "admin").
@@ -192,7 +192,7 @@ func TestQuotaAllowancesUpdate(t *testing.T) {
 			setupMocks: func(cfgMgr *configmocks.MockManager, svc *MockQuotaAdminService) {
 				svc.EXPECT().RequireAuthenticated().Return(nil)
 				svc.EXPECT().UpdateAllowance(
-					mock.Anything, "grant-456", 7, "admin", "monthly", 4096, 8192, 0, time.Time{},
+					mock.Anything, "456", 7, "admin", "monthly", 4096, 8192, 0, time.Time{},
 				).Return(&admin.QuotaAllowance{}, nil)
 			},
 			wantErr: false,
@@ -210,7 +210,7 @@ func TestQuotaAllowancesUpdate(t *testing.T) {
 		{
 			name: "no update fields provided",
 			cmd: newMockCommand().
-				withArgs("grant-789"),
+				withArgs("789"),
 			jsonOutput: false,
 			setupMocks: func(cfgMgr *configmocks.MockManager, svc *MockQuotaAdminService) {
 				svc.EXPECT().RequireAuthenticated().Return(nil)
@@ -221,7 +221,7 @@ func TestQuotaAllowancesUpdate(t *testing.T) {
 		{
 			name: "not authenticated",
 			cmd: newMockCommand().
-				withArgs("grant-1").
+				withArgs("1").
 				withInt(FlagUploadLimit, 1024).
 				withIsSet(FlagUploadLimit, true),
 			jsonOutput: false,
@@ -234,14 +234,14 @@ func TestQuotaAllowancesUpdate(t *testing.T) {
 		{
 			name: "service error",
 			cmd: newMockCommand().
-				withArgs("grant-1").
+				withArgs("1").
 				withInt(FlagUploadLimit, 1024).
 				withIsSet(FlagUploadLimit, true),
 			jsonOutput: false,
 			setupMocks: func(cfgMgr *configmocks.MockManager, svc *MockQuotaAdminService) {
 				svc.EXPECT().RequireAuthenticated().Return(nil)
 				svc.EXPECT().UpdateAllowance(
-					mock.Anything, "grant-1", 0, "", "", 1024, 1024, 0, time.Time{},
+					mock.Anything, "1", 0, "", "", 1024, 1024, 0, time.Time{},
 				).Return(nil, errors.New("allowance not found"))
 			},
 			wantErr:     true,

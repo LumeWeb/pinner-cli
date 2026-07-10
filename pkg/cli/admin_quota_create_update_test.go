@@ -201,6 +201,18 @@ func TestQuotaPlansUpdate(t *testing.T) {
 			wantErr:     true,
 			errContains: "failed to set as default",
 		},
+		{
+			name:   "invalid non-numeric plan ID",
+			planID: "update",
+			cmd: newMockCommand().
+				withBool(FlagIsActive, true).
+				withIsSet(FlagIsActive, true),
+			setupMocks: func(cfgMgr *configmocks.MockManager, svc *MockQuotaAdminService) {
+				svc.EXPECT().RequireAuthenticated().Return(nil)
+			},
+			wantErr:     true,
+			errContains: "invalid plan ID \"update\": must be a positive integer",
+		},
 	}
 
 	for _, tt := range tests {
