@@ -23,6 +23,24 @@ func newAPIKeyWithUUID(name, uuidStr string) *portalsdk.APIKey {
 	return &key
 }
 
+// testJWTSigningKey is a fixed HMAC key for generating test JWT fixtures.
+// This value never leaves the test process and does not protect any real data.
+var testJWTSigningKey = []byte("test-hmac-key-for-fixtures")
+
+// generateTestJWT creates a signed JWT for testing with the given audience and subject.
+func generateTestJWT(audience, subject string) string {
+	claims := jwt.RegisteredClaims{
+		Audience: jwt.ClaimStrings{audience},
+		Subject:  subject,
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	signed, err := token.SignedString(testJWTSigningKey)
+	if err != nil {
+		panic("failed to sign test JWT: " + err.Error())
+	}
+	return signed
+}
+
 func TestAuthService_LoginCheck(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -116,7 +134,7 @@ func TestAuthService_CompleteLogin(t *testing.T) {
 			setupMocks: func(cfgMgr *configmocks.MockManager, acc *portalsdkmocks.MockAccountAPI, authAcc *portalsdkmocks.MockAccountAPI) {
 				cfgMgr.EXPECT().SetAuthToken("test-api-key-token").Return(nil)
 				cfgMgr.EXPECT().ConfigPath().Return("/home/user/.config/pinner/config.yaml")
-				cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://pinner.xyz", Secure: true})
+				cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://pinner.xyz", Secure: true}).Maybe()
 				authAcc.EXPECT().ListAPIKeys(mock.Anything, mock.Anything).Return(nil, 0, nil)
 				authAcc.EXPECT().CreateAPIKey(mock.Anything, "test-key").
 					Return(portalsdk.NewAPIKey("test-key", "test-api-key-token"), nil)
@@ -129,14 +147,14 @@ func TestAuthService_CompleteLogin(t *testing.T) {
 			keyName:     "test-key",
 			noCreateKey: false,
 			setupMocks: func(cfgMgr *configmocks.MockManager, acc *portalsdkmocks.MockAccountAPI, authAcc *portalsdkmocks.MockAccountAPI) {
-				cfgMgr.EXPECT().SetAuthToken("new-api-key-token").Return(nil)
+				cfgMgr.EXPECT().SetAuthToken("new-api-key-value").Return(nil)
 				cfgMgr.EXPECT().ConfigPath().Return("/home/user/.config/pinner/config.yaml")
-				cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://pinner.xyz", Secure: true})
+				cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://pinner.xyz", Secure: true}).Maybe()
 				authAcc.EXPECT().ListAPIKeys(mock.Anything, mock.Anything).
 					Return([]*portalsdk.APIKey{newAPIKeyWithUUID("test-key", "00000000-0000-0000-0000-000000000001")}, 1, nil)
 				authAcc.EXPECT().DeleteAPIKey(mock.Anything, "00000000-0000-0000-0000-000000000001").Return(nil)
 				authAcc.EXPECT().CreateAPIKey(mock.Anything, "test-key").
-					Return(portalsdk.NewAPIKey("test-key", "new-api-key-token"), nil)
+					Return(portalsdk.NewAPIKey("test-key", "new-api-key-value"), nil)
 			},
 			wantErr: false,
 		},
@@ -148,7 +166,7 @@ func TestAuthService_CompleteLogin(t *testing.T) {
 			setupMocks: func(cfgMgr *configmocks.MockManager, acc *portalsdkmocks.MockAccountAPI, authAcc *portalsdkmocks.MockAccountAPI) {
 				cfgMgr.EXPECT().SetAuthToken("test-jwt-token").Return(nil)
 				cfgMgr.EXPECT().ConfigPath().Return("/home/user/.config/pinner/config.yaml")
-				cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://pinner.xyz", Secure: true})
+				cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://pinner.xyz", Secure: true}).Maybe()
 			},
 			wantErr: false,
 		},
@@ -170,6 +188,7 @@ func TestAuthService_CompleteLogin(t *testing.T) {
 			keyName:     "test-key",
 			noCreateKey: false,
 			setupMocks: func(cfgMgr *configmocks.MockManager, acc *portalsdkmocks.MockAccountAPI, authAcc *portalsdkmocks.MockAccountAPI) {
+				cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://pinner.xyz", Secure: true}).Maybe()
 			},
 			wantErr:          true,
 			errContains:      "failed to create API key",
@@ -181,6 +200,7 @@ func TestAuthService_CompleteLogin(t *testing.T) {
 			keyName:     "test-key",
 			noCreateKey: false,
 			setupMocks: func(cfgMgr *configmocks.MockManager, acc *portalsdkmocks.MockAccountAPI, authAcc *portalsdkmocks.MockAccountAPI) {
+				cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://pinner.xyz", Secure: true}).Maybe()
 				authAcc.EXPECT().ListAPIKeys(mock.Anything, mock.Anything).
 					Return(nil, 0, errors.New("network error"))
 			},
@@ -193,6 +213,7 @@ func TestAuthService_CompleteLogin(t *testing.T) {
 			keyName:     "test-key",
 			noCreateKey: false,
 			setupMocks: func(cfgMgr *configmocks.MockManager, acc *portalsdkmocks.MockAccountAPI, authAcc *portalsdkmocks.MockAccountAPI) {
+				cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://pinner.xyz", Secure: true}).Maybe()
 				authAcc.EXPECT().ListAPIKeys(mock.Anything, mock.Anything).
 					Return([]*portalsdk.APIKey{newAPIKeyWithUUID("test-key", "00000000-0000-0000-0000-000000000001")}, 1, nil)
 				authAcc.EXPECT().DeleteAPIKey(mock.Anything, "00000000-0000-0000-0000-000000000001").
@@ -200,6 +221,65 @@ func TestAuthService_CompleteLogin(t *testing.T) {
 			},
 			wantErr:     true,
 			errContains: "failed to delete existing API key",
+		},
+		{
+			name:        "reuse existing API key for same account",
+			token:       generateTestJWT("login", "user-123"),
+			keyName:     "test-key",
+			noCreateKey: false,
+			setupMocks: func(cfgMgr *configmocks.MockManager, acc *portalsdkmocks.MockAccountAPI, authAcc *portalsdkmocks.MockAccountAPI) {
+				storedAPIKeyJWT := generateTestJWT("api", "user-123")
+				cfgMgr.EXPECT().Config().Return(&config.Config{
+					BaseEndpoint: "https://pinner.xyz",
+					Secure:       true,
+					AuthToken:    storedAPIKeyJWT,
+				}).Maybe()
+				cfgMgr.EXPECT().ConfigPath().Return("/home/user/.config/pinner/config.yaml")
+				// Ping should succeed since the key is valid
+				authAcc.EXPECT().Ping(mock.Anything).Return(nil)
+			},
+			wantErr: false,
+		},
+		{
+			name:        "create new key when stored key belongs to different account",
+			token:       generateTestJWT("login", "user-456"),
+			keyName:     "test-key",
+			noCreateKey: false,
+			setupMocks: func(cfgMgr *configmocks.MockManager, acc *portalsdkmocks.MockAccountAPI, authAcc *portalsdkmocks.MockAccountAPI) {
+				storedAPIKeyJWT := generateTestJWT("api", "user-123")
+				cfgMgr.EXPECT().Config().Return(&config.Config{
+					BaseEndpoint: "https://pinner.xyz",
+					Secure:       true,
+					AuthToken:    storedAPIKeyJWT,
+				}).Maybe()
+				cfgMgr.EXPECT().SetAuthToken(mock.Anything).Return(nil)
+				cfgMgr.EXPECT().ConfigPath().Return("/home/user/.config/pinner/config.yaml")
+				authAcc.EXPECT().ListAPIKeys(mock.Anything, mock.Anything).Return(nil, 0, nil)
+				authAcc.EXPECT().CreateAPIKey(mock.Anything, "test-key").
+					Return(portalsdk.NewAPIKey("test-key", "new-api-key-value"), nil)
+			},
+			wantErr: false,
+		},
+		{
+			name:        "create new key when stored key ping fails",
+			token:       generateTestJWT("login", "user-123"),
+			keyName:     "test-key",
+			noCreateKey: false,
+			setupMocks: func(cfgMgr *configmocks.MockManager, acc *portalsdkmocks.MockAccountAPI, authAcc *portalsdkmocks.MockAccountAPI) {
+				storedAPIKeyJWT := generateTestJWT("api", "user-123")
+				cfgMgr.EXPECT().Config().Return(&config.Config{
+					BaseEndpoint: "https://pinner.xyz",
+					Secure:       true,
+					AuthToken:    storedAPIKeyJWT,
+				}).Maybe()
+				cfgMgr.EXPECT().SetAuthToken(mock.Anything).Return(nil)
+				cfgMgr.EXPECT().ConfigPath().Return("/home/user/.config/pinner/config.yaml")
+				authAcc.EXPECT().Ping(mock.Anything).Return(errors.New("unauthorized"))
+				authAcc.EXPECT().ListAPIKeys(mock.Anything, mock.Anything).Return(nil, 0, nil)
+				authAcc.EXPECT().CreateAPIKey(mock.Anything, "test-key").
+					Return(portalsdk.NewAPIKey("test-key", "new-api-key-value"), nil)
+			},
+			wantErr: false,
 		},
 	}
 
@@ -255,7 +335,7 @@ func TestAuthService_SaveToken(t *testing.T) {
 			setupMocks: func(cfgMgr *configmocks.MockManager) {
 				cfgMgr.EXPECT().SetAuthToken("test-jwt-token").Return(nil)
 				cfgMgr.EXPECT().ConfigPath().Return("/home/user/.config/pinner/config.yaml")
-				cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://pinner.xyz", Secure: true})
+				cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://pinner.xyz", Secure: true}).Maybe()
 			},
 			wantErr: false,
 		},
@@ -310,7 +390,7 @@ func TestAuthService_SaveToken_JSONOutput(t *testing.T) {
 
 	cfgMgr.EXPECT().SetAuthToken("test-token").Return(nil)
 	cfgMgr.EXPECT().ConfigPath().Return("/home/user/.config/pinner/config.yaml")
-	cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://pinner.xyz", Secure: true})
+	cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://pinner.xyz", Secure: true}).Maybe()
 
 	authService := NewAuthService(cfgMgr, output, "https://api.test.com")
 
@@ -326,7 +406,7 @@ func TestAuthService_CompleteLogin_JSONOutput(t *testing.T) {
 
 	cfgMgr.EXPECT().SetAuthToken("test-api-key-token").Return(nil)
 	cfgMgr.EXPECT().ConfigPath().Return("/home/user/.config/pinner/config.yaml")
-	cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://pinner.xyz", Secure: true})
+	cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://pinner.xyz", Secure: true}).Maybe()
 	authAcc.EXPECT().ListAPIKeys(mock.Anything, mock.Anything).Return(nil, 0, nil)
 	authAcc.EXPECT().CreateAPIKey(mock.Anything, "test-key").
 		Return(portalsdk.NewAPIKey("test-key", "test-api-key-token"), nil)

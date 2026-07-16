@@ -141,6 +141,12 @@ func (s *AuthServiceDefault) CompleteLogin(ctx context.Context, token, keyName s
 		return s.SaveToken(token)
 	}
 
+	// Check if we can reuse an existing API key for the same account
+	if s.canReuseAPIKey(ctx, token) {
+		printAuthSuccess(s.output, s.configMgr, "", apiKeyReused)
+		return nil
+	}
+
 	authClient := s.clientFactory(s.apiEndpoint, token)
 	apiKey, err := s.createOrReplaceAPIKey(ctx, authClient, keyName)
 	if err != nil {
@@ -151,7 +157,7 @@ func (s *AuthServiceDefault) CompleteLogin(ctx context.Context, token, keyName s
 		return fmt.Errorf("failed to save API key: %w", err)
 	}
 
-	printAuthSuccess(s.output, s.configMgr, apiKey.Name, true)
+	printAuthSuccess(s.output, s.configMgr, apiKey.Name, apiKeyCreated)
 	return nil
 }
 
@@ -168,6 +174,12 @@ func (s *AuthServiceDefault) LoginWithOTP(ctx context.Context, intermediateJWT, 
 		return s.SaveToken(finalToken)
 	}
 
+	// Check if we can reuse an existing API key for the same account
+	if s.canReuseAPIKey(ctx, finalToken) {
+		printAuthSuccess(s.output, s.configMgr, "", apiKeyReused)
+		return nil
+	}
+
 	authClient := s.clientFactory(s.apiEndpoint, finalToken)
 	apiKey, err := s.createOrReplaceAPIKey(ctx, authClient, keyName)
 	if err != nil {
@@ -178,8 +190,69 @@ func (s *AuthServiceDefault) LoginWithOTP(ctx context.Context, intermediateJWT, 
 		return fmt.Errorf("failed to save API key: %w", err)
 	}
 
-	printAuthSuccess(s.output, s.configMgr, apiKey.Name, true)
+	printAuthSuccess(s.output, s.configMgr, apiKey.Name, apiKeyCreated)
 	return nil
+}
+
+// canReuseAPIKey checks whether the stored API key belongs to the same account
+// as the given login JWT and is still valid. Returns true if the existing key
+// can be reused (same user ID + ping succeeds), false otherwise.
+func (s *AuthServiceDefault) canReuseAPIKey(ctx context.Context, loginJWT string) bool {
+	cfg := s.configMgr.Config()
+	storedToken := cfg.AuthToken
+	if storedToken == "" {
+		return false
+	}
+
+	// The stored token must be an API key JWT
+	storedPurpose, err := GetJWTPurpose(storedToken)
+	if err != nil || storedPurpose != "api" {
+		return false
+	}
+
+	// Extract user ID (subject) from both tokens
+	loginSub, err := GetJWTSubject(loginJWT)
+	if err != nil || loginSub == "" {
+		s.output.PrintVerbosef("Could not extract user ID from login JWT: %v", err)
+		return false
+	}
+
+	storedSub, err := GetJWTSubject(storedToken)
+	if err != nil || storedSub == "" {
+		s.output.PrintVerbosef("Could not extract user ID from stored API key JWT: %v", err)
+		return false
+	}
+
+	// Different user ID means different account — cannot reuse
+	if loginSub != storedSub {
+		s.output.PrintVerbosef("Stored API key belongs to different account (user %s vs %s), creating new key", storedSub, loginSub)
+		return false
+	}
+
+	// Same account — verify the key still works by pinging the API
+	authClient := s.clientFactory(s.apiEndpoint, storedToken)
+	if err := authClient.Ping(ctx); err != nil {
+		s.output.PrintVerbosef("Stored API key is no longer valid: %v", err)
+		return false
+	}
+
+	return true
+}
+
+// GetJWTSubject extracts the subject (user ID) from a JWT token.
+func GetJWTSubject(token string) (string, error) {
+	parser := jwt.NewParser(jwt.WithoutClaimsValidation())
+	parsedToken, _, err := parser.ParseUnverified(token, &jwt.RegisteredClaims{})
+	if err != nil {
+		return "", err
+	}
+
+	claims, ok := parsedToken.Claims.(*jwt.RegisteredClaims)
+	if !ok {
+		return "", fmt.Errorf("invalid claims type")
+	}
+
+	return claims.Subject, nil
 }
 
 // createOrReplaceAPIKey deletes any existing API key with the same name, then creates a new one.
@@ -228,7 +301,7 @@ func (s *AuthServiceDefault) SaveToken(token string) error {
 	}
 
 	// Output authentication success with JSON support (no API key created)
-	printAuthSuccess(s.output, s.configMgr, "", false)
+	printAuthSuccess(s.output, s.configMgr, "", apiKeyNone)
 	return nil
 }
 
@@ -401,9 +474,18 @@ func GetJWTPurpose(token string) (string, error) {
 	return "", nil
 }
 
+// apiKeyStatus describes what happened with the API key during auth.
+type apiKeyStatus int
+
+const (
+	apiKeyNone    apiKeyStatus = iota // no API key (token saved directly)
+	apiKeyCreated                     // new API key created
+	apiKeyReused                      // existing API key reused
+)
+
 // printAuthSuccess outputs authentication success message with config path and portal URL.
 // Supports both human-readable and JSON output formats.
-func printAuthSuccess(output Output, configMgr config.Manager, apiKeyName string, apiKeyCreated bool) {
+func printAuthSuccess(output Output, configMgr config.Manager, apiKeyName string, status apiKeyStatus) {
 	configPath := configMgr.ConfigPath()
 	portalURL := configMgr.Config().GetBaseEndpointSecure()
 
@@ -414,10 +496,18 @@ func printAuthSuccess(output Output, configMgr config.Manager, apiKeyName string
 			"configPath": configPath,
 			"portalURL":  portalURL,
 		}
-		if apiKeyCreated {
+		switch status {
+		case apiKeyCreated:
 			result["apiKeyName"] = apiKeyName
 			result["message"] = fmt.Sprintf("Authentication successful! API key '%s' created and saved to config.", apiKeyName)
-		} else {
+		case apiKeyReused:
+			if apiKeyName != "" {
+				result["apiKeyName"] = apiKeyName
+				result["message"] = fmt.Sprintf("Authentication successful! Reusing existing API key '%s'.", apiKeyName)
+			} else {
+				result["message"] = "Authentication successful! Reusing existing API key."
+			}
+		default:
 			result["message"] = "Authentication successful! Token saved to config."
 		}
 		_ = output.PrintJSON(result)
@@ -426,9 +516,16 @@ func printAuthSuccess(output Output, configMgr config.Manager, apiKeyName string
 
 	// Human-readable output
 	output.Print("Authentication successful!")
-	if apiKeyCreated {
+	switch status {
+	case apiKeyCreated:
 		output.Printfln("API key '%s' created and saved to config.", apiKeyName)
-	} else {
+	case apiKeyReused:
+		if apiKeyName != "" {
+			output.Printfln("Reusing existing API key '%s'.", apiKeyName)
+		} else {
+			output.Print("Reusing existing API key.")
+		}
+	default:
 		output.Print("Token saved to config.")
 	}
 	output.Printfln("Config file: %s", configPath)

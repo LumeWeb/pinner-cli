@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/mail"
+	"strings"
 
 	"github.com/manifoldco/promptui"
 	"github.com/urfave/cli/v3"
@@ -193,6 +194,7 @@ Ways to authenticate:
   6. Secure non-interactive: echo "pass" | pinner auth --email user@example.com
 
 Check auth status: pinner auth status
+Logout:           pinner auth logout
 
 Examples:
   pinner auth eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
@@ -240,6 +242,7 @@ Examples:
 		},
 		Commands: []*cli.Command{
 			newAuthStatusCommand(),
+			newAuthLogoutCommand(),
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			output := setupOutput(cmd)
@@ -247,6 +250,9 @@ Examples:
 			args := cmd.Args()
 			if args.Len() > 0 {
 				jwtToken := args.Get(0)
+				if err := validateJWTFormat(jwtToken); err != nil {
+					return fmt.Errorf("invalid token: %w", err)
+				}
 				return saveAuthToken(output, jwtToken)
 			}
 
@@ -257,6 +263,23 @@ Examples:
 
 func saveAuthToken(output Output, token string) error {
 	return saveAuthTokenWithFactories(output, token, defaultConfigManagerFactory, defaultAuthServiceFactory)
+}
+
+// validateJWTFormat performs a basic structural check on a JWT token.
+// A JWT has three base64url-encoded segments separated by dots: header.payload.signature.
+// This does not verify the signature — it only catches obviously non-JWT strings
+// like subcommands typed by mistake (e.g., "register").
+func validateJWTFormat(token string) error {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return fmt.Errorf("token must have 3 parts separated by dots")
+	}
+	for i, part := range parts {
+		if part == "" {
+			return fmt.Errorf("token part %d is empty", i+1)
+		}
+	}
+	return nil
 }
 
 // saveAuthTokenWithFactories is the testable implementation of saveAuthToken.
@@ -428,4 +451,61 @@ func authStatus(ctx context.Context, output Output, cfgMgrFactory ConfigManagerF
 	authService := authServiceFactory(cfgMgr, output, apiEndpoint)
 
 	return authService.Status(ctx)
+}
+
+func newAuthLogoutCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "logout",
+		Usage: "Clear stored authentication token",
+		Description: `Remove your stored auth token from the local config.
+
+This does not revoke API keys on the server — it only clears the local
+credential so the CLI no longer authenticates.
+
+Examples:
+  pinner auth logout
+  pinner auth logout --json`,
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			output := setupOutput(cmd)
+			return authLogout(ctx, output, defaultConfigManagerFactory)
+		},
+	}
+}
+
+// authLogout clears the stored auth token from config.
+func authLogout(_ context.Context, output Output, cfgMgrFactory ConfigManagerFactory) error {
+	cfgMgr, err := cfgMgrFactory()
+	if err != nil {
+		return fmt.Errorf("failed to initialize config manager: %w", err)
+	}
+
+	if !cfgMgr.Config().IsAuthenticated() {
+		if output.IsJSON() {
+			_ = output.PrintJSON(map[string]any{
+				"status":  "not_authenticated",
+				"message": "Not authenticated: no auth token configured",
+			})
+			return nil
+		}
+		output.Print("Not authenticated: no auth token configured")
+		return nil
+	}
+
+	configPath := cfgMgr.ConfigPath()
+	if err := cfgMgr.SetAuthToken(""); err != nil {
+		return fmt.Errorf("failed to clear auth token: %w", err)
+	}
+
+	if output.IsJSON() {
+		_ = output.PrintJSON(map[string]any{
+			"status":     "logged_out",
+			"configPath": configPath,
+			"message":    "Logged out: auth token cleared",
+		})
+		return nil
+	}
+
+	output.Print("Logged out: auth token cleared")
+	output.Printfln("Config file: %s", configPath)
+	return nil
 }
