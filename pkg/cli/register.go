@@ -21,11 +21,15 @@ Examples:
   # Interactive mode (prompts for all required fields)
   pinner register
 
+  # Non-interactive with positional email
+  pinner register user@example.com --first-name John --last-name Doe
+
   # Non-interactive with flags
   pinner register --email user@example.com --first-name John --last-name Doe
 
   # Mix: provide email, prompt for other fields
-  pinner register --email user@example.com`,
+  pinner register user@example.com`,
+		ArgsUsage: "[email]",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:    FlagEmail,
@@ -55,8 +59,12 @@ Examples:
 	}
 }
 
-func register(ctx context.Context, cmd flagGetter, output Output, cfgMgrFactory ConfigManagerFactory, authServiceFactory AuthServiceFactory) error {
+func register(ctx context.Context, cmd argsFlagGetterWithBool, output Output, cfgMgrFactory ConfigManagerFactory, authServiceFactory AuthServiceFactory) error {
 	email := cmd.String(FlagEmail)
+	// Fall back to positional arg if --email flag is not set: pinner register user@example.com
+	if email == "" && cmd.Args().Len() > 0 {
+		email = cmd.Args().First()
+	}
 	firstName := cmd.String(FlagFirstName)
 	lastName := cmd.String(FlagLastName)
 	password := cmd.String(FlagPassword)

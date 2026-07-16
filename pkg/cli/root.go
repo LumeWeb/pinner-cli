@@ -47,6 +47,7 @@ Batch operations:
 
 Authentication:
   Login:                pinner auth --email user@example.com
+  Logout:               pinner auth logout
   Register account:     pinner register
   Check diagnostics:    pinner doctor
 
