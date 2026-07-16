@@ -43,8 +43,22 @@ func (w *cliCommandWrapper) Duration(name string) time.Duration {
 	return w.Command.Duration(name)
 }
 
+// emptyArgs is a nil-safe cli.Args implementation with no arguments.
+type emptyArgs struct{}
+
+func (emptyArgs) Get(int) string  { return "" }
+func (emptyArgs) First() string   { return "" }
+func (emptyArgs) Tail() []string  { return nil }
+func (emptyArgs) Len() int        { return 0 }
+func (emptyArgs) Present() bool   { return false }
+func (emptyArgs) Slice() []string { return nil }
+
 func (w *cliCommandWrapper) Args() cli.Args {
-	return w.Command.Args()
+	args := w.Command.Args()
+	if args == nil {
+		return emptyArgs{}
+	}
+	return args
 }
 
 // newCLICommandWrapper creates a new cliCommandWrapper from a *cli.Command.
