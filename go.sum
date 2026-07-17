@@ -773,6 +773,8 @@ go.lumeweb.com/ipfs-content v0.1.17 h1:q8OvyyLemdHhnZbBtDu2TXadG/LtL2i+d70bhzDJD
 go.lumeweb.com/ipfs-content v0.1.17/go.mod h1:7A9SuJDpHLZ78zz9dbrWNPfD8oZ9na4BWULXsPq+smY=
 go.lumeweb.com/ipfs-sdk v0.1.50 h1:Neyilaw5qzvq+QTFqdGKt+J156WY7Z1V/g5ey84l4d0=
 go.lumeweb.com/ipfs-sdk v0.1.50/go.mod h1:2YPJZ5qlvJ9mUif/2r7i6KYAD9tVbfa2d2vesSdqqAg=
+go.lumeweb.com/ipfs-sdk v0.1.53 h1:6Yy6fyRGLpsd0RGPVJjC4eWLhM8LsjXCW1ADNIast9M=
+go.lumeweb.com/ipfs-sdk v0.1.53/go.mod h1:35gLpx1/AYAor/qcBPei7/Mqr/BUHp04JkordZ4IuCs=
 go.lumeweb.com/portal v0.4.2-0.20251225165008-2bdb358c492d h1:8CS/LtrLQYsPhQGqmmKSXH7wNtpg/VfKA2gdnFh2gf8=
 go.lumeweb.com/portal v0.4.2-0.20251225165008-2bdb358c492d/go.mod h1:JV4koLIz/pzCp30Zx2P/VaTV81Dn1YCsgz9o3UDODzk=
 go.lumeweb.com/portal-middleware v0.3.4 h1:A9/Ipo3giX449CCgbKGco97IqDxFG7Z1ppmM1IQBeDQ=
