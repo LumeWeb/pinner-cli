@@ -205,16 +205,17 @@ func newDNSRecordsCreateCommand() *cli.Command {
 
 Examples:
   pinner dns records create example.com --name www --type CNAME --content example.com
+  pinner dns records create example.com --type TXT --content "google-site-verification=..."
   pinner dns records create example.com --name _dnslink --type TXT --content "/ipfs/bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e" --ttl 3600
   pinner dns records create example.com --name @ --type A --content 192.168.1.1 --json`,
 		ArgsUsage: "<domain>",
 		Flags: []cli.Flag{
-			NameFlag("DNS record name"),
-			TypeFlag(),
-			ContentFlag(),
-			TTLFlag(),
-			DisabledFlag(),
-		},
+				OptionalNameFlag("DNS record name"),
+				TypeFlag(),
+				ContentFlag(),
+				TTLFlag(),
+				DisabledFlag(),
+			},
 		Action: withContext(func(ctx context.Context, cc *commandContext) error {
 			return dnsRecordsCreate(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
 		}),

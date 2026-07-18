@@ -244,6 +244,14 @@ func RequiredNameFlag(usage string) *cli.StringFlag {
 	}
 }
 
+// OptionalNameFlag returns an optional flag for setting a name.
+func OptionalNameFlag(usage string) *cli.StringFlag {
+	return &cli.StringFlag{
+		Name:  FlagName,
+		Usage: usage,
+	}
+}
+
 // WaitFlag returns a flag for waiting for operation completion.
 // Deprecated: Use NoWaitFlag for upload/pin commands. WaitFlag is kept for
 // IPNS publish which uses opt-in wait semantics.
