@@ -203,14 +203,33 @@ func newDNSRecordsCreateCommand() *cli.Command {
 		Usage: "Create a DNS record",
 		Description: `Create a DNS record in the specified zone.
 
+The --name flag is optional. If omitted (or set to @), the record is created
+at the apex (root) of the domain. For subdomains, use just the subdomain
+name without the domain (e.g. 'www', not 'www.example.com').
+
+Record types:
+  A     → IPv4 address (e.g. 192.168.1.1)
+  AAAA  → IPv6 address (e.g. 2001:db8::1)
+  CNAME → Domain name alias (e.g. verify.bing.com)
+  MX    → Mail server (e.g. mail.example.com)
+  NS    → Name server (e.g. ns1.example.com)
+  TXT   → Text value (e.g. verification tokens, SPF records)
+
 Examples:
+  # Apex record (root domain)
+  pinner dns records create example.com --type CNAME --content verify.bing.com
+
+  # Subdomain record
   pinner dns records create example.com --name www --type CNAME --content example.com
-  pinner dns records create example.com --type TXT --content "google-site-verification=..."
-  pinner dns records create example.com --name _dnslink --type TXT --content "/ipfs/bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e" --ttl 3600
-  pinner dns records create example.com --name @ --type A --content 192.168.1.1 --json`,
+
+  # TXT verification record for a subdomain
+  pinner dns records create example.com --name 65e1e2471bd2ee6879cba19982316e6b --type CNAME --content verify.bing.com
+
+  # DNSLink for IPFS website hosting
+  pinner dns records create example.com --name _dnslink --type TXT --content "/ipfs/bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e" --ttl 3600`,
 		ArgsUsage: "<domain>",
 		Flags: []cli.Flag{
-				OptionalNameFlag("DNS record name"),
+				OptionalNameFlag("DNS record name (omit for apex, or use @)"),
 				TypeFlag(),
 				ContentFlag(),
 				TTLFlag(),
@@ -583,6 +602,10 @@ func dnsRecordsCreate(ctx context.Context, cmd dnsCommandGetter, output Output, 
 		return err
 	}
 
+	if err := validateDNSRecordName(name); err != nil {
+		return err
+	}
+
 	ttlVal := int(cmd.Uint(FlagTTL))
 	if ttlVal == 0 {
 		ttlVal = 3600
@@ -697,6 +720,10 @@ func dnsRecordsUpdate(ctx context.Context, cmd dnsCommandGetter, output Output, 
 	content := cmd.String(FlagContent)
 
 	if err := validateDNSRecord(recordType, content); err != nil {
+		return err
+	}
+
+	if err := validateDNSRecordName(name); err != nil {
 		return err
 	}
 
@@ -891,6 +918,19 @@ func isValidDomain(domain string) bool {
 	}
 
 	return true
+}
+
+// validateDNSRecordName validates a DNS record name before sending to the API.
+// @ is only valid as the sole character (apex shorthand).
+func validateDNSRecordName(name string) error {
+	name = strings.TrimSuffix(name, ".")
+	if name == "" || name == "@" {
+		return nil
+	}
+	if strings.Contains(name, "@") {
+		return fmt.Errorf("invalid DNS record name: \"@\" must be used alone for apex records; did you mean to omit --name or use --name @?")
+	}
+	return nil
 }
 
 func parseCommaSeparated(input string) []string {
