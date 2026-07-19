@@ -34,6 +34,16 @@ jobs:
       - name: Set RELEASE_VERSION
         run: echo "RELEASE_VERSION=$(grep '^module' go.mod | awk -F'// ' '{print $2}')" >> $GITHUB_ENV
 
+      - name: Create and push version tag
+        run: |
+          VERSION="${RELEASE_VERSION}"
+          if [ -z "$VERSION" ]; then
+            echo "Error: RELEASE_VERSION is empty" >&2
+            exit 1
+          fi
+          git tag -f "${VERSION}"
+          git push origin -f "${VERSION}"
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
