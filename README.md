@@ -666,6 +666,43 @@ The setup wizard guides you through:
 - Shell completion setup
 - Quick tutorial
 
+### MCP
+
+Serve the CLI as a Model Context Protocol (MCP) server over stdio. Exposes all CLI subcommands as discoverable MCP tools for AI agents and other MCP clients.
+
+```bash
+# Start the MCP server (stdio transport)
+pinner mcp
+```
+
+When running under an MCP client, the server exposes three meta-tools for progressive disclosure:
+
+| Meta-tool | Purpose |
+|-----------|---------|
+| `search_tools` | Search the internal tool catalog by keyword or category (`core`, `admin`, `wizard`) |
+| `describe_tool` | Get the full JSON Schema input definition for a specific tool |
+| `invoke_tool` | Execute a tool by name with arguments |
+
+**Wizard tools** (website onboarding, setup) are also available through the meta-tools. They use FSM-based sessions with a 30-minute TTL and a 100-session limit.
+
+**MCP resources** provide live data without invocation:
+
+| Resource URI | Data |
+|--------------|------|
+| `pinner://account/status` | Authentication state, quota summary, config |
+| `pinner://websites/{domain}/dns-requirements` | Required DNS records and nameservers |
+| `pinner://websites/{id}/validation-status` | Live validation result for a website |
+| `pinner://wizard/{session_id}/state` | Current step, completion status, next schema |
+
+**MCP prompts** guide agents through deterministic workflows:
+
+| Prompt | Description |
+|--------|-------------|
+| `website-onboarding` | Step-by-step website creation wizard with optional pre-filled arguments (`domain`, `content_source`, `target_type`, `dns_mode`) |
+| `setup` | Initial configuration and authentication wizard |
+
+Commands invoked through MCP run in-process (no subprocess fork). The `--agent` flag is injected automatically, forcing JSON output and disabling interactive prompts.
+
 ### Doctor
 
 Diagnose configuration and environment issues.
@@ -747,7 +784,7 @@ Commands are organized into categories in the help output:
 | **Content** | `upload`, `download`, `cat`, `ls` |
 | **Pinning** | `pins`, `pin`, `list`, `status`, `unpin`, `metadata` |
 | **Management** | `websites`, `dns`, `ipns`, `operations` |
-| **System** | `config`, `doctor`, `bench` |
+| **System** | `config`, `doctor`, `bench`, `mcp` |
 | **Admin** | `admin` |
 
 Use `pinner --help` to see the full command list organized by category.
@@ -808,6 +845,14 @@ pinner-cli/
 │       ├── car.go                 # CAR file root reading
 │       └── io/
 │           └── stdinfs.go         # stdin fs implementation
+├── pkg/internal/mcp/              # MCP adapter (MCPCommand, sessions, resources, prompts)
+│   ├── adapter.go                 # MCPCommand build and stdio serving
+│   ├── catalog.go                 # Tool catalog with progressive disclosure
+│   ├── meta_tools.go             # search_tools, describe_tool, invoke_tool
+│   ├── session.go                # FSM-based wizard session store
+│   ├── wizard.go                 # Website and setup wizard MCP tools
+│   ├── resources.go              # pinner:// resource handlers
+│   └── prompts.go                # MCP prompt templates
 ├── build/                         # Build-time information
 │   ├── build.go                   # Build variables (Version, GitCommit, etc.)
 │   └── build_info.go              # BuildInfo interface and struct
@@ -836,6 +881,8 @@ pinner-cli/
 | `QuotaAdminService` | Admin quota plans, allowances, user configs, stats |
 | `BillingAdminService` | Admin credits, price lines, pricing plans, subscribers |
 | `WebsiteAdminService` | Admin website block/unblock |
+
+**MCP Adapter**: `pkg/internal/mcp/` adapts the urfave/cli command tree into an MCP server (`mcp.MCPCommand`). It exposes subcommands as MCP tools via progressive disclosure (only `search_tools`, `describe_tool`, `invoke_tool` are visible in `tools/list`). Tool invocation is in-process — no subprocess fork. The adapter injects `--agent` automatically for all invocations. Wizard sessions are FSM-based with TTL cleanup. Resources and prompts are registered via `ResourceProvidersFactory` and `WithPrompts()`.
 
 **Output Formatting**: The `Output` interface provides methods for formatted output (`Print`, `Printf`, `PrintTable`, `PrintJSON`, etc.) with both human-readable and JSON implementations, selected by the `--json` flag.
 
