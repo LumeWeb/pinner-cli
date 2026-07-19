@@ -86,6 +86,17 @@ Pinner.xyz CLI is a Go-based command-line tool for managing IPFS content via the
   - `BoxoPinningClient` provides the actual implementation with retry logic
   - HTTP client with configurable retry behavior
 
+- **`pkg/internal/mcp/`**: MCP adapter for exposing the CLI as a Model Context Protocol server.
+  - `MCPCommand()` returns a `*cli.Command` that serves the command tree over stdio
+  - `adapter.go` - in-process command execution, tool schema extraction from urfave flags
+  - `catalog.go` - `ToolCatalog` with progressive disclosure (tools accessible only through meta-tools)
+  - `meta_tools.go` - `search_tools`, `describe_tool`, `invoke_tool`
+  - `session.go` - FSM-based wizard sessions with TTL (`DefaultSessionTTL = 30m`, `DefaultMaxSessions = 100`)
+  - `wizard.go` - website and setup wizard MCP tools (`websites_wizard_start`, `websites_wizard_step`, `setup_wizard_start`, `setup_wizard_step`)
+  - `resources.go` - `pinner://` resource handlers (`account/status`, `websites/{domain}/dns-requirements`, `websites/{id}/validation-status`, `wizard/{session_id}/state`)
+  - `prompts.go` - MCP prompt templates (`website-onboarding`, `setup`)
+  - `interfaces.go` - breaks import cycles between `pkg/cli` and `pkg/internal/mcp`
+
 - **`pkg/internal/`**: Internal shared utilities.
   - `car.go` - CAR file root reading (`GetCarRoots`)
   - `io/stdinfs.go` - Implements `fs.FS` for stdin (pipe) input
@@ -129,6 +140,15 @@ These interfaces enable dependency injection for testing. Factory functions crea
 
 Two implementations: `humanFormatter` and `jsonFormatter`, selected based on global `--json` flag.
 
+**MCP Adapter Pattern**: The MCP adapter (`pkg/internal/mcp/`) exposes the CLI command tree as an MCP server over stdio. Key design decisions:
+- In-process execution: tool invocations run the command tree directly, no subprocess fork
+- Progressive disclosure: only `search_tools`, `describe_tool`, and `invoke_tool` are visible in `tools/list`; the full catalog is internal
+- Automatic `--agent` injection: all tool invocations receive `--agent`, forcing JSON output and disabling interactive prompts
+- Wizard sessions: FSM-based with `SessionStore` enforcing TTL (`30m`) and max capacity (`100`)
+- Resources: live data exposed via `pinner://` URIs (`account/status`, `websites/{domain}/dns-requirements`, etc.)
+- Prompts: deterministic workflow guides (`website-onboarding`, `setup`) with optional pre-filled arguments
+- Import cycle broken via `interfaces.go` — `WizardDepsFactory` and `ResourceProvidersFactory` are defined in `pkg/internal/mcp`, concrete implementations live in `pkg/cli`
+
 **CAR Generation Flow**:
 1. Upload uses IPFS boxo libraries for DAG building and CAR format handling
 2. CAR root reading via `GetCarRoots` in `pkg/internal/car.go`
@@ -141,6 +161,7 @@ Two implementations: `humanFormatter` and `jsonFormatter`, selected based on glo
 - `cliCommandWrapper` adapts `cli.Command` to `commandGetter`
 - The `pins` command group (`pins add/rm/ls/status/update`) is the canonical interface; `pin`, `unpin`, `list`, `status` are first-class root shortcuts
 - Help categories (Setup, Content, Pinning, Management, System, Admin) are set via urfave/cli `Category` field
+- `mcp` command is registered in `root.go` via `mcpadapter.MCPCommand()` with wizard and resource factories
 
 **Mockery Configuration**:
 - Mocks are generated using mockery
