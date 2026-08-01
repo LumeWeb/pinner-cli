@@ -79,7 +79,7 @@ func NewDAGService(cfgMgr config.Manager, output Output, apiEndpoint string, opt
 	if s.client != nil {
 		s.service = s.client.DAG()
 	} else {
-		client, err := ipfs.NewClient(apiEndpoint, authToken)
+		client, err := ipfs.NewClient(apiEndpoint, s.getAuthToken())
 		if err != nil {
 			output.PrintError(err)
 			s.service = nil
