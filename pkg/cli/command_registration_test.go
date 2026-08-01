@@ -81,6 +81,8 @@ func TestCommandRegistration_RootSubcommands(t *testing.T) {
 		"dns",
 		"ipns",
 		"websites",
+		"dag",
+		"export",
 		"admin",
 		"generate-docs",
 		"mcp",
