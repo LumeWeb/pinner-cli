@@ -83,7 +83,7 @@ func NewIPNSService(cfgMgr config.Manager, output Output, apiEndpoint string, op
 	if s.client != nil {
 		s.service = s.client.IPNS()
 	} else {
-		client, err := ipfs.NewClient(apiEndpoint, authToken)
+		client, err := ipfs.NewClient(apiEndpoint, s.getAuthToken())
 		if err != nil {
 			output.PrintError(err)
 			s.service = nil

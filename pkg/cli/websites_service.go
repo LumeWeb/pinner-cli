@@ -75,7 +75,7 @@ func NewWebsitesService(cfgMgr config.Manager, output Output, apiEndpoint string
 	if s.client != nil {
 		s.service = s.client.Websites()
 	} else {
-		client, err := ipfs.NewClient(apiEndpoint, authToken)
+		client, err := ipfs.NewClient(apiEndpoint, s.getAuthToken())
 		if err != nil {
 			output.PrintError(err)
 			s.service = nil
