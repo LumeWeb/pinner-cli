@@ -29,7 +29,7 @@ require (
 	go.lumeweb.com/configmanager v0.3.26
 	go.lumeweb.com/ipfs-content v0.1.17
 	go.lumeweb.com/ipfs-sdk v0.1.60
-	go.lumeweb.com/portal-sdk v0.1.63-0.20260801065922-409f0d5af354
+	go.lumeweb.com/portal-sdk v0.1.63
 	go.lumeweb.com/queryutil v0.3.17
 	go.uber.org/zap v1.27.1
 	golang.org/x/sys v0.41.0
