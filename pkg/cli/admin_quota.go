@@ -427,8 +427,8 @@ func quotaAllowancesListAction(ctx context.Context, output Output, cfgMgr config
 		rows[i] = []string{
 			fmt.Sprintf("%d", a.Id),
 			fmt.Sprintf("%d", a.UserId),
-			a.Source,
-			a.Type,
+			string(a.Source),
+			string(a.Type),
 			formatBytes(a.Bytes),
 			formatBytes(a.BytesRemaining),
 			formatBytes(a.BytesUsed),
@@ -490,8 +490,8 @@ func quotaAllowancesCreateAction(ctx context.Context, cmd flagGetterWithIsSet, o
 		{
 			fmt.Sprintf("%d", created.Id),
 			fmt.Sprintf("%d", created.UserId),
-			created.Source,
-			created.Type,
+			string(created.Source),
+			string(created.Type),
 			formatBytes(created.Bytes),
 			formatBytes(created.BytesRemaining),
 		},
@@ -587,8 +587,8 @@ func quotaAllowancesUpdateAction(ctx context.Context, cmd interface {
 		{
 			fmt.Sprintf("%d", updated.Id),
 			fmt.Sprintf("%d", updated.UserId),
-			updated.Source,
-			updated.Type,
+			string(updated.Source),
+			string(updated.Type),
 			formatBytes(updated.Bytes),
 			formatBytes(updated.BytesRemaining),
 		},
@@ -864,9 +864,9 @@ func quotaUserConfigsUpdateAction(ctx context.Context, cmd flagGetterWithIsSet, 
 		config.QuotaPlanId = &planID
 	}
 	if cmd.IsSet(FlagEnforcementPolicy) {
-		policy := cmd.String(FlagEnforcementPolicy)
+		policy := admin.UserQuotaConfigUpdateEnforcementPolicy(cmd.String(FlagEnforcementPolicy))
 		validPolicies := []string{"HARD_LIMITS", "UNLIMITED", "ALLOWANCE", "THRESHOLD"}
-		if !slices.Contains(validPolicies, policy) {
+		if !slices.Contains(validPolicies, string(policy)) {
 			return fmt.Errorf("invalid --%s value %q, must be one of: %s", FlagEnforcementPolicy, policy, strings.Join(validPolicies, ", "))
 		}
 		config.EnforcementPolicy = &policy
