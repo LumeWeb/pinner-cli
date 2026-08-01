@@ -24,6 +24,10 @@ type mockWebsitesServiceForCLI struct {
 	validateFunc          func(ctx context.Context, id string) (*ipfs.WebsiteValidateResponse, error)
 	getSSLStatusFunc      func(ctx context.Context, domain string) (*ipfs.WebsiteResponse, error)
 	getConfigFunc         func(ctx context.Context) (*ipfs.WebsiteConfigResponse, error)
+	ListDomainsFn         func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error)
+	BindDomainFn          func(ctx context.Context, websiteID string, req ipfs.DomainRequest) (*ipfs.DomainResponse, error)
+	UnbindDomainFn        func(ctx context.Context, websiteID string, domainID string) error
+	VerifyDomainFn        func(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainResponse, error)
 }
 
 func (m *mockWebsitesServiceForCLI) RequireAuthenticated() error {
@@ -132,6 +136,34 @@ func (m *mockWebsitesServiceForCLI) GetSSLStatus(ctx context.Context, domain str
 func (m *mockWebsitesServiceForCLI) GetConfig(ctx context.Context) (*ipfs.WebsiteConfigResponse, error) {
 	if m.getConfigFunc != nil {
 		return m.getConfigFunc(ctx)
+	}
+	return nil, nil
+}
+
+func (m *mockWebsitesServiceForCLI) ListDomains(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
+	if m.ListDomainsFn != nil {
+		return m.ListDomainsFn(ctx, websiteID)
+	}
+	return nil, nil
+}
+
+func (m *mockWebsitesServiceForCLI) BindDomain(ctx context.Context, websiteID string, req ipfs.DomainRequest) (*ipfs.DomainResponse, error) {
+	if m.BindDomainFn != nil {
+		return m.BindDomainFn(ctx, websiteID, req)
+	}
+	return nil, nil
+}
+
+func (m *mockWebsitesServiceForCLI) UnbindDomain(ctx context.Context, websiteID string, domainID string) error {
+	if m.UnbindDomainFn != nil {
+		return m.UnbindDomainFn(ctx, websiteID, domainID)
+	}
+	return nil
+}
+
+func (m *mockWebsitesServiceForCLI) VerifyDomain(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainResponse, error) {
+	if m.VerifyDomainFn != nil {
+		return m.VerifyDomainFn(ctx, websiteID, domainID)
 	}
 	return nil, nil
 }

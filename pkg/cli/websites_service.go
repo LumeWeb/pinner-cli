@@ -75,7 +75,7 @@ func NewWebsitesService(cfgMgr config.Manager, output Output, apiEndpoint string
 	if s.client != nil {
 		s.service = s.client.Websites()
 	} else {
-		client, err := ipfs.NewClient(apiEndpoint, authToken)
+		client, err := ipfs.NewClient(apiEndpoint, s.getAuthToken())
 		if err != nil {
 			output.PrintError(err)
 			s.service = nil
@@ -220,4 +220,48 @@ func (s *websitesService) GetConfig(ctx context.Context) (*ipfs.WebsiteConfigRes
 		return nil, ErrServiceUnavailable
 	}
 	return s.service.GetConfig(ctx)
+}
+
+// ListDomains lists all domains bound to a website.
+func (s *websitesService) ListDomains(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
+	if err := s.RequireAuthenticated(); err != nil {
+		return nil, err
+	}
+	if s.service == nil {
+		return nil, ErrServiceUnavailable
+	}
+	return s.service.ListDomains(ctx, websiteID)
+}
+
+// BindDomain binds a domain to a website under a specific namespace (icann or hns).
+func (s *websitesService) BindDomain(ctx context.Context, websiteID string, req ipfs.DomainRequest) (*ipfs.DomainResponse, error) {
+	if err := s.RequireAuthenticated(); err != nil {
+		return nil, err
+	}
+	if s.service == nil {
+		return nil, ErrServiceUnavailable
+	}
+	return s.service.BindDomain(ctx, websiteID, req)
+}
+
+// UnbindDomain removes a domain binding from a website.
+func (s *websitesService) UnbindDomain(ctx context.Context, websiteID string, domainID string) error {
+	if err := s.RequireAuthenticated(); err != nil {
+		return err
+	}
+	if s.service == nil {
+		return ErrServiceUnavailable
+	}
+	return s.service.UnbindDomain(ctx, websiteID, domainID)
+}
+
+// VerifyDomain triggers verification of domain delegation.
+func (s *websitesService) VerifyDomain(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainResponse, error) {
+	if err := s.RequireAuthenticated(); err != nil {
+		return nil, err
+	}
+	if s.service == nil {
+		return nil, ErrServiceUnavailable
+	}
+	return s.service.VerifyDomain(ctx, websiteID, domainID)
 }

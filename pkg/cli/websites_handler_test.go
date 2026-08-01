@@ -106,6 +106,22 @@ func (m *mockWebsitesHandlerService) GetConfig(ctx context.Context) (*ipfs.Websi
 	return nil, nil
 }
 
+func (m *mockWebsitesHandlerService) ListDomains(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
+	return nil, nil
+}
+
+func (m *mockWebsitesHandlerService) BindDomain(ctx context.Context, websiteID string, req ipfs.DomainRequest) (*ipfs.DomainResponse, error) {
+	return nil, nil
+}
+
+func (m *mockWebsitesHandlerService) UnbindDomain(ctx context.Context, websiteID string, domainID string) error {
+	return nil
+}
+
+func (m *mockWebsitesHandlerService) VerifyDomain(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainResponse, error) {
+	return nil, nil
+}
+
 func setupWebsitesHandlerTest(t *testing.T) (*mockWebsitesHandlerService, *configmocks.MockManager) {
 	t.Helper()
 	mockSvc := &mockWebsitesHandlerService{}

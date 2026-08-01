@@ -57,6 +57,7 @@ Examples:
 			newWebsitesSSLCommand(),
 			newWebsitesConfigCommand(),
 			newWebsitesWizardCommand(),
+			newWebsitesDomainsCommand(),
 		},
 	}
 }
@@ -165,6 +166,12 @@ type WebsitesService interface {
 	Validate(ctx context.Context, id string) (*ipfs.WebsiteValidateResponse, error)
 	GetSSLStatus(ctx context.Context, domain string) (*ipfs.WebsiteResponse, error)
 	GetConfig(ctx context.Context) (*ipfs.WebsiteConfigResponse, error)
+
+	// Domain binding
+	ListDomains(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error)
+	BindDomain(ctx context.Context, websiteID string, req ipfs.DomainRequest) (*ipfs.DomainResponse, error)
+	UnbindDomain(ctx context.Context, websiteID string, domainID string) error
+	VerifyDomain(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainResponse, error)
 }
 
 func resolveRequiredArg(ctx context.Context, websitesService WebsitesService, cmd websitesCommandGetter) (string, error) {
@@ -287,7 +294,7 @@ func resolveWebsiteID(ctx context.Context, websitesService WebsitesService, arg 
 	}
 
 	for _, w := range websites {
-		if w.Domain == arg {
+		if strings.EqualFold(w.Domain, arg) {
 			return fmt.Sprintf("%d", w.Id), nil
 		}
 	}
