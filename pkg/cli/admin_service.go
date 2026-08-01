@@ -297,10 +297,13 @@ func (s *quotaAdminService) getService(ctx context.Context) (*admin.QuotaService
 		return nil, err
 	}
 
-	client := admin.NewClient(
+		client, err := admin.NewClient(
 		admin.WithEndpoint(s.endpoint),
 		admin.WithJWT(token),
 	)
+	if err != nil {
+		return nil, err
+	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -440,10 +443,13 @@ func (s *billingAdminService) getService(ctx context.Context) (*admin.BillingSer
 		return nil, err
 	}
 
-	client := admin.NewClient(
+		client, err := admin.NewClient(
 		admin.WithEndpoint(s.endpoint),
 		admin.WithJWT(token),
 	)
+	if err != nil {
+		return nil, err
+	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -724,10 +730,13 @@ func (s *websiteAdminService) getService(ctx context.Context) (*admin.WebsiteSer
 		return nil, err
 	}
 
-	client := admin.NewClient(
+		client, err := admin.NewClient(
 		admin.WithEndpoint(s.endpoint),
 		admin.WithJWT(token),
 	)
+	if err != nil {
+		return nil, err
+	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -763,10 +772,13 @@ func (s *profilingAdminService) getService(ctx context.Context) (*admin.Profilin
 		return nil, err
 	}
 
-	client := admin.NewClient(
+		client, err := admin.NewClient(
 		admin.WithEndpoint(s.endpoint),
 		admin.WithJWT(token),
 	)
+	if err != nil {
+		return nil, err
+	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
