@@ -5,12 +5,20 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/pressly/goose/v3"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
 
-// OpenDB opens (or creates) the vault SQLite database with gorm.
+// gooseVersionTable is the goose version-tracking table for the vault schema.
+// It is scoped to the vault's own SQLite cache and named distinct from any
+// other SQLite database this CLI may open.
+const gooseVersionTable = "goose_vault_version"
+
+// OpenDB opens (or creates) the vault SQLite database and applies any pending
+// schema migrations with goose. gorm remains the ORM for all runtime queries;
+// goose owns schema (DDL) so future changes are versioned SQL migrations.
 func OpenDB(dbPath string) (*gorm.DB, error) {
 	if dbPath == "" {
 		return nil, fmt.Errorf("dbPath must not be empty")
@@ -27,16 +35,37 @@ func OpenDB(dbPath string) (*gorm.DB, error) {
 		return nil, fmt.Errorf("failed to open vault database: %w", err)
 	}
 
-	// Auto-migrate models
-	if err := db.AutoMigrate(&Directory{}, &File{}, &SyncDownCursor{}); err != nil {
+	// Apply schema migrations with goose (embedded SQL migrations).
+	if err := migrate(db); err != nil {
 		return nil, fmt.Errorf("failed to migrate vault database: %w", err)
 	}
 
-	// Add composite unique index for files (name, directory_id).
-	// gorm doesn't support composite unique in struct tags — use COALESCE to handle NULL FK.
-	if err := db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_files_name_dir ON files(name, COALESCE(directory_id, 0))").Error; err != nil {
-		return nil, fmt.Errorf("failed to create unique index: %w", err)
+	return db, nil
+}
+
+// migrate runs the embedded goose migrations on the vault database.
+func migrate(db *gorm.DB) error {
+	sqlDb, err := db.DB()
+	if err != nil {
+		return fmt.Errorf("failed to get sql.DB handle: %w", err)
 	}
 
-	return db, nil
+	fsys, err := vaultMigrationsFS()
+	if err != nil {
+		return fmt.Errorf("failed to load embedded migrations: %w", err)
+	}
+
+	goose.SetBaseFS(fsys)
+	goose.SetTableName(gooseVersionTable)
+	defer goose.SetBaseFS(nil) // hygiene: clear the global between opens
+
+	if err := goose.SetDialect("sqlite3"); err != nil {
+		return fmt.Errorf("failed to select goose dialect: %w", err)
+	}
+
+	if err := goose.Up(sqlDb, "."); err != nil {
+		return fmt.Errorf("failed to run schema migrations: %w", err)
+	}
+
+	return nil
 }
