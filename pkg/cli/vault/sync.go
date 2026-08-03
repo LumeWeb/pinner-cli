@@ -2,13 +2,27 @@ package vault
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
 	"go.sia.tech/indexd/slabs"
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
+
+// maxCollisionRetries bounds how many consecutive syncs a rename collision (a
+// rename that would violate the unique (name, directory_id) index) is retried
+// before it is treated as PERMANENT and advanced past. A collision can be
+// transient (the colliding record is renamed/deleted remotely shortly after) —
+// which is worth retrying — but it can also be permanent (two remotes converge
+// on the same name). Without this cap, a permanently-conflicting rename would
+// hold the cursor forever, stalling the batch and erroring the rebuild after
+// its stall budget instead of progressing. After this many retries we declare
+// the collision permanent and advance past it (the rename is dropped), matching
+// the create branch's treatment of duplicate object names.
+const maxCollisionRetries = 5
 
 // isUniqueConflict reports whether err is a SQLite unique-constraint
 // violation. Used by Sync so a duplicate root-name insert skips the event
@@ -18,6 +32,36 @@ func isUniqueConflict(err error) bool {
 		return false
 	}
 	return strings.HasPrefix(err.Error(), "UNIQUE constraint")
+}
+
+// collisionRetries decodes the persisted per-object-key collision retry counts.
+// A nil/empty value decodes to an empty map.
+func collisionRetries(cr datatypes.JSON) (map[string]int, error) {
+	if len(cr) == 0 {
+		return map[string]int{}, nil
+	}
+	var m map[string]int
+	if err := json.Unmarshal(cr, &m); err != nil {
+		return map[string]int{}, fmt.Errorf("failed to parse collision retry state: %w", err)
+	}
+	if m == nil {
+		m = map[string]int{}
+	}
+	return m, nil
+}
+
+// marshalCollisionRetries encodes the per-object collision retry counts for
+// persistence. An empty map encodes to nil so no retry state lingers when
+// there is nothing pending.
+func marshalCollisionRetries(m map[string]int) (datatypes.JSON, error) {
+	if len(m) == 0 {
+		return nil, nil
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		return nil, fmt.Errorf("failed to serialize collision retry state: %w", err)
+	}
+	return datatypes.JSON(b), nil
 }
 
 // Sync pulls changes from the indexer into the local cache.
@@ -36,6 +80,12 @@ func (s *vaultService) Sync(ctx context.Context) (int, error) {
 		if err != nil {
 			return 0, fmt.Errorf("failed to parse sync cursor: %w", err)
 		}
+	}
+
+	// Load the persisted per-object collision retry counts (bounded retry).
+	collisionRetryCounts, err := collisionRetries(cursorRecord.CollisionRetries)
+	if err != nil {
+		return 0, err
 	}
 
 	// Fetch events
@@ -73,6 +123,10 @@ func (s *vaultService) Sync(ctx context.Context) (int, error) {
 	// interleaved retry, not be reclassified as a fresh leading skip (which
 	// would drop it permanently before its metadata resolves).
 	seenProcessed := cursorRecord.PendingSkip
+	// collided records whether any rename collision was handled this batch, so
+	// the persisted per-object retry map is written back even when it becomes
+	// empty after a permanent collision is dropped.
+	collided := false
 	for i, ev := range events {
 		if ev.Deleted {
 			// Remove file by object key. A failed delete must not advance the
@@ -168,25 +222,33 @@ func (s *vaultService) Sync(ctx context.Context) (int, error) {
 			existing.UpdatedAt = ev.UpdatedAt
 			if err := s.db.Save(&existing).Error; err != nil {
 				// A remote rename can collide the (name, directory_id) unique
-				// index against another existing record (e.g. a remote is
-				// mid-rename, or the colliding record will itself be
-				// renamed/deleted shortly). Unlike the create branch — where a
-				// duplicate object is already tracked under another key and
-				// advancing is correct — a rename collision is potentially
-				// TRANSIENT: advancing the cursor here would permanently drop
-				// the rename, leaving the local record at a stale name that
-				// diverges from remote until a full cache rebuild.
-				//
-				// Treat it like an interleaved transient skip: stop the cursor
-				// before this event and carry a pending flag so the next sync
-				// retries it (once the colliding record is renamed/deleted
-				// remotely, or the conflict otherwise resolves). A persistent
-				// collision is bounded by the rebuild stall detector rather
-				// than silently dropped.
+				// index against another existing record. A collision may be
+				// TRANSIENT (the colliding record is renamed/deleted remotely
+				// shortly after) — worth retrying so the local record does not
+				// diverge from remote at a stale name — but it may also be
+				// PERMANENT (two remotes genuinely converge on the same name).
+				// Bound the retry per object key: after maxCollisionRetries
+				// consecutive syncs the collision is declared permanent and the
+				// conflicting rename is advanced past (dropped), so the rest of
+				// the batch still progresses instead of stalling forever.
 				if isUniqueConflict(err) {
-					if firstSkipped < 0 {
-						firstSkipped = i
+					collided = true
+					key := ev.Key.String()
+					if collisionRetryCounts[key] < maxCollisionRetries {
+						// Transient (so far): stop the cursor before this event
+						// and retry next sync.
+						collisionRetryCounts[key] = collisionRetryCounts[key] + 1
+						if firstSkipped < 0 {
+							firstSkipped = i
+						}
+						continue
 					}
+					// Permanent: advance past the conflicting rename, keeping the
+					// existing (stale) local name, and clear its retry state so
+					// a genuinely-later rename of this object is retried afresh.
+					delete(collisionRetryCounts, key)
+					lastProcessed = i
+					seenProcessed = true
 					continue
 				}
 				return count, fmt.Errorf("failed to update file record: %w", err)
@@ -212,6 +274,18 @@ func (s *vaultService) Sync(ctx context.Context) (int, error) {
 	// interleaved skip remains, clear the pending flag.
 	pendingSkip := firstSkipped >= 0
 
+	// Persist the per-object collision retry counts whenever a collision was
+	// handled this batch (retried as transient, or declared permanent and
+	// cleared). Writing it back here covers all save branches below, including
+	// the case where the retry map becomes empty after a permanent drop.
+	if collided {
+		collisionJSON, cerr := marshalCollisionRetries(collisionRetryCounts)
+		if cerr != nil {
+			return count, cerr
+		}
+		cursorRecord.CollisionRetries = collisionJSON
+	}
+
 	// Update cursor to the last successfully-processed event (capped before
 	// any interleaved skipped event, or advanced past a leading skip), not
 	// the last event in the batch, so skipped events are revisited on the
@@ -229,9 +303,10 @@ func (s *vaultService) Sync(ctx context.Context) (int, error) {
 
 		if cursorRecord.ID == 0 {
 			cursorRecord = SyncDownCursor{
-				Cursor:      cursorJSON,
-				PendingSkip: pendingSkip,
-				UpdatedAt:   time.Now(),
+				Cursor:           cursorJSON,
+				PendingSkip:      pendingSkip,
+				CollisionRetries: cursorRecord.CollisionRetries,
+				UpdatedAt:        time.Now(),
 			}
 			s.db.Create(&cursorRecord)
 		} else {
@@ -248,9 +323,10 @@ func (s *vaultService) Sync(ctx context.Context) (int, error) {
 		// flag so the retry intent survives across this batch.
 		if cursorRecord.ID == 0 {
 			cursorRecord = SyncDownCursor{
-				Cursor:      cursorRecord.Cursor,
-				PendingSkip: true,
-				UpdatedAt:   time.Now(),
+				Cursor:           cursorRecord.Cursor,
+				PendingSkip:      true,
+				CollisionRetries: cursorRecord.CollisionRetries,
+				UpdatedAt:        time.Now(),
 			}
 			s.db.Create(&cursorRecord)
 		} else {
