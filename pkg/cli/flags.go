@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"os"
+
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/pkg/config"
 )
@@ -415,6 +417,36 @@ func ForceFlag() *cli.BoolFlag {
 	return &cli.BoolFlag{
 		Name:  FlagForce,
 		Usage: "Force operation without confirmation",
+	}
+}
+
+// VaultExpiryFlag returns a flag for setting vault share link expiry.
+func VaultExpiryFlag() *cli.StringFlag {
+	return &cli.StringFlag{
+		Name:  FlagExpiry,
+		Usage: "Share link expiry duration (e.g., 7d, 30d, 1h, 0 for never)",
+		Value: defaultExpiry(),
+	}
+}
+
+// defaultExpiry returns the default expiry duration, overridable via PINNER_EXPIRY_DEFAULT env var.
+func defaultExpiry() string {
+	if v := os.Getenv("PINNER_EXPIRY_DEFAULT"); v != "" {
+		return v
+	}
+	return "7d"
+}
+
+// FlagProfile is the vault profile selection flag name.
+const FlagProfile = "profile"
+
+// ProfileFlag returns a vault-scoped flag for selecting which vault profile to operate on.
+func ProfileFlag() *cli.StringFlag {
+	return &cli.StringFlag{
+		Name:    FlagProfile,
+		Aliases: []string{"p"},
+		Usage:   "Vault profile name (selects which vault to operate on)",
+		Sources: cli.EnvVars("PINNER_PROFILE"),
 	}
 }
 

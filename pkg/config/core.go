@@ -262,6 +262,12 @@ func (c *Config) GetAdminEndpointWithSecure(secure bool) string {
 	return getSubdomainEndpointWithProtocol(c.GetBaseEndpoint(), SubdomainAdmin, secure)
 }
 
+// GetSiaIndexerURL returns the Sia indexer URL derived from the portal domain.
+// Convention: sia.{portal_domain} (e.g., https://sia.pinner.xyz).
+func (c *Config) GetSiaIndexerURL() string {
+	return getSubdomainEndpoint(c.GetBaseEndpoint(), "sia")
+}
+
 // GetGatewayEndpoint returns the IPFS gateway endpoint.
 // If GatewayEndpoint is configured, it is used; otherwise, it falls back to the ipfs subdomain of the base endpoint.
 func (c *Config) GetGatewayEndpoint() string {

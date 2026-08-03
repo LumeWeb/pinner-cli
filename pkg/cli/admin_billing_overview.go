@@ -54,7 +54,7 @@ func billingOverviewAction(ctx context.Context, output Output, cfgMgr config.Man
 		return fmt.Errorf("failed to list pricing plans: %w", err)
 	}
 
-	periods, periodsTotal, err := billingService.ListPricingPlanPeriods(ctx)
+	_, periodsTotal, err := billingService.ListPricingPlanPeriods(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to list pricing plan periods: %w", err)
 	}
@@ -123,6 +123,5 @@ func billingOverviewAction(ctx context.Context, output Output, cfgMgr config.Man
 		},
 	})
 
-	_ = periods
 	return nil
 }

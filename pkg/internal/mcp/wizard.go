@@ -458,7 +458,6 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []StepDef {
 						return fmt.Errorf("invalid input: %w", err)
 					}
 				}
-				_ = in // The retry flag is informational; validation always runs.
 
 				website := w.Website()
 				if website == nil {
@@ -588,7 +587,6 @@ func buildSetupSteps(deps SetupWizardDeps) []StepDef {
 					}
 				}
 				// Shell completion is informational for MCP agents.
-				_ = in
 				return nil
 			},
 			Schema: func(_ *Session) *jsonschema.Schema {

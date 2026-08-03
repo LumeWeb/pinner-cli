@@ -51,6 +51,18 @@ Authentication:
   Register account:     pinner register
   Check diagnostics:    pinner doctor
 
+Vault (Sia storage):
+  Create vault:        pinner vault create --profile <name>
+  Restore vault:       pinner vault restore --profile <name>
+  Upload a file:       pinner vault cp ./file.txt vault:/docs/file.txt
+  Download a file:     pinner vault cp vault:/docs/file.txt ./
+  List files:          pinner vault ls vault:/docs
+  Stream content:      pinner vault cat vault:/docs/file.txt
+  Verify integrity:    pinner vault verify vault:/docs/file.txt
+  Share a file:        pinner vault share vault:/docs/file.txt
+  Vault status:        pinner vault status
+  Profiles:            pinner vault profile list
+
 For more help on any command: pinner <command> --help`,
 		Commands: []*cli.Command{
 			newSetupCommand(),
@@ -81,6 +93,7 @@ For more help on any command: pinner <command> --help`,
 			newExportCommand(),
 			newAdminCommand(),
 			newDocsCommand(),
+			newVaultCommand(),
 		},
 		Flags: GlobalFlags(),
 		Action: func(ctx context.Context, cmd *cli.Command) error {
@@ -120,6 +133,7 @@ For more help on any command: pinner <command> --help`,
 				return mcpadapter.ResourceProviders{
 					Account:  &accountStatusAdapter{cfgMgr: cfgMgr, auth: authSvc},
 					Websites: &websitesResourceAdapter{ws: websitesSvc},
+					Vault:    &vaultStatusAdapter{cfgMgr: cfgMgr},
 				}
 			}
 

@@ -85,6 +85,7 @@ func TestCommandRegistration_RootSubcommands(t *testing.T) {
 		"export",
 		"admin",
 		"generate-docs",
+		"vault",
 		"mcp",
 	}
 
@@ -133,6 +134,7 @@ func TestCommandRegistration_Categories(t *testing.T) {
 		"point":         "Management",
 		"unpoint":       "Management",
 		"admin":         "Admin",
+		"vault":          "Vault",
 	}
 
 	for name, expectedCat := range expectedCategories {

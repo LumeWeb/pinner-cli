@@ -17,8 +17,34 @@ var (
 	ErrNotAuthenticated = errors.New("not authenticated: no auth token configured")
 
 	// DefaultConfigPath is the default location for the config file.
-	DefaultConfigPath = "~/.config/pinner/config.yaml"
+	// Resolved at init time via resolveDefaultConfigPath() to be cross-platform:
+	//   Linux:   ~/.config/pinner/config.yaml
+	//   macOS:   ~/Library/Application Support/pinner/config.yaml
+	//   Windows: %AppData%\pinner\config.yaml
+	//
+	// BC: If ~/.config/pinner/config.yaml exists on a non-Linux platform, it
+	// is still used (legacy path takes priority).
+	DefaultConfigPath = resolveDefaultConfigPath()
 )
+
+// resolveDefaultConfigPath determines the config file path using the OS-native
+// config directory, with backward compatibility for the legacy ~/.config path.
+func resolveDefaultConfigPath() string {
+	// BC: check legacy Linux path first on all platforms
+	if home, err := os.UserHomeDir(); err == nil {
+		legacy := filepath.Join(home, ".config", "pinner", "config.yaml")
+		if _, err := os.Stat(legacy); err == nil {
+			return legacy
+		}
+	}
+	// Cross-platform: use OS-native config dir
+	dir, err := os.UserConfigDir()
+	if err != nil || dir == "" {
+		home, _ := os.UserHomeDir()
+		dir = filepath.Join(home, ".config")
+	}
+	return filepath.Join(dir, "pinner", "config.yaml")
+}
 
 // Manager extends configmanager.Manager with CLI-specific configuration methods.
 type Manager interface {
