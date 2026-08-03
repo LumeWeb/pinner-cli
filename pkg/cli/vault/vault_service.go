@@ -13,10 +13,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"go.sia.tech/core/types"
 	"go.sia.tech/indexd/api/app"
 	"go.sia.tech/indexd/slabs"
 	"go.sia.tech/siastorage"
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
 
@@ -136,9 +138,22 @@ func (s *vaultService) Put(ctx context.Context, r io.Reader, size int64, vaultPa
 	// Detect media type
 	mediaType := mime.TypeByExtension(filepath.Ext(vp.Name))
 
+	// Resolve the file's stable identity. Overwriting an existing path keeps
+	// the current file's UUID (it is the same logical file, new content); a
+	// brand-new path gets a fresh UUID. Identity is never the name, so two
+	// distinct objects sharing a name are still tracked separately.
+	fileID := ""
+	if current, err := s.findCurrentFile(vp.Name, dirID); err == nil {
+		fileID = current.UUID
+	}
+	if fileID == "" {
+		fileID = uuid.NewString()
+	}
+
 	// Build file metadata
 	now := time.Now().UTC().Format(time.RFC3339)
 	fileMeta := FileMetadata{
+		ID:        fileID,
 		Name:      vp.Name,
 		MediaType: mediaType,
 		Size:      size,
@@ -174,23 +189,12 @@ func (s *vaultService) Put(ctx context.Context, r io.Reader, size int64, vaultPa
 
 	objectKey := obj.ID()
 
-	// Store in local DB
-	// Load the prior record (same name+dirID) before we overwrite
-	var prior File
-	q := s.db.Where("name = ?", vp.Name)
-	if dirID == nil {
-		q = q.Where("directory_id IS NULL")
-	} else {
-		q = q.Where("directory_id = ?", dirID)
-	}
-	hasPrior := q.First(&prior).Error == nil
-
-	// Within a transaction, delete the prior DB row (to free the unique
-	// constraint) and insert the new record. If the insert fails, the
-	// transaction rolls back, preserving the prior row so the path stays
-	// tracked locally instead of vanishing (a vanished record would only be
-	// recoverable via sync, which loses the directory placement).
+	// Store in local DB, keyed by UUID. If we overwrote an existing path, the
+	// file's UUID row already exists — update it (same identity, new content).
+	// If not, insert a new row. Either way only this file's row is touched;
+	// other objects sharing the name are not conflated.
 	record := &File{
+		UUID:          fileID,
 		Name:          vp.Name,
 		DirectoryID:   dirID,
 		ObjectKey:     objectKey.String(),
@@ -201,46 +205,43 @@ func (s *vaultService) Put(ctx context.Context, r io.Reader, size int64, vaultPa
 		UpdatedAt:     time.Now().UTC(),
 	}
 
-	txErr := s.db.Transaction(func(tx *gorm.DB) error {
-		if dirID == nil {
-			if err := tx.Where("name = ? AND directory_id IS NULL", vp.Name).Delete(&File{}).Error; err != nil {
-				return err
-			}
-		} else {
-			if err := tx.Where("name = ? AND directory_id = ?", vp.Name, dirID).Delete(&File{}).Error; err != nil {
-				return err
-			}
+	// Capture the prior object key (if this is an overwrite) BEFORE we update
+	// the row, so we can best-effort clean up the orphaned prior content after.
+	priorObjectKey := ""
+	var prior File
+	switch s.db.Where("uuid = ?", fileID).First(&prior).Error {
+	case nil:
+		priorObjectKey = prior.ObjectKey
+		// Update the existing UUID row (overwrite).
+		prior.ObjectKey = record.ObjectKey
+		prior.Size = record.Size
+		prior.MediaType = record.MediaType
+		prior.ContentDigest = record.ContentDigest
+		prior.Metadata = datatypes.JSON{}
+		prior.UpdatedAt = record.UpdatedAt
+		prior.DeletedAt = nil // resurrect if it was tombstoned
+		if err := s.db.Save(&prior).Error; err != nil {
+			return nil, fmt.Errorf("failed to update file record: %w", err)
 		}
-		return tx.Create(record).Error
-	})
-	if txErr != nil {
-		// Upload succeeded but DB write failed — object is on indexer but not
-		// tracked locally. The transaction rolled back, so any prior local
-		// record is preserved.
-		return nil, fmt.Errorf("failed to store file record: %w (run 'pinner vault sync' to recover)", txErr)
+		record = &prior
+	case gorm.ErrRecordNotFound:
+		if err := s.db.Create(record).Error; err != nil {
+			return nil, fmt.Errorf("failed to create file record: %w", err)
+		}
+	default:
+		return nil, fmt.Errorf("failed to query existing file: %w", err)
 	}
 
-	// New record committed — now safe to delete the prior object from the indexer.
-	// Guard against deleting the just-pinned object when identical content yields the same ID.
-	if hasPrior && prior.ObjectKey != objectKey.String() {
-		priorHash, err := parseHash256(prior.ObjectKey)
-		if err != nil {
-			// Record already committed; the orphaned prior object is harmless
-			// and can be reclaimed later. Don't fail the Put — the new file
-			// is already saved and pinned.
-			_ = err
-		} else {
-			// Skip the indexer delete when another path still references this
-			// object. Sia object IDs are content-addressed, so identical
-			// content at different paths shares one object; deleting it would
-			// orphan every other local record pointing at it.
+	// Best-effort cleanup of a prior object that is no longer referenced by any
+	// LIVE local row (only when the overwritten UUID row had different content).
+	if priorObjectKey != "" && priorObjectKey != objectKey.String() {
+		priorHash, perr := parseHash256(priorObjectKey)
+		if perr == nil {
 			var refs int64
-			s.db.Model(&File{}).Where("object_key = ?", prior.ObjectKey).Count(&refs)
+			s.db.Model(&File{}).Where("object_key = ? AND deleted_at IS NULL", priorObjectKey).Count(&refs)
 			if refs == 0 {
 				if delErr := s.sdk.DeleteObject(ctx, priorHash); delErr != nil {
-					// Record already committed; the orphaned prior object is harmless
-					// and can be reclaimed later. Non-fatal — the put succeeded.
-					_ = delErr
+					_ = delErr // non-fatal; orphaned content can be reclaimed later
 				}
 			}
 		}
@@ -262,14 +263,10 @@ func (s *vaultService) Get(ctx context.Context, vaultPath string, w io.Writer) e
 	}
 
 	var record File
-	q := s.db.Where("name = ?", vp.Name)
-	if dirID == nil {
-		q = q.Where("directory_id IS NULL")
-	} else {
-		q = q.Where("directory_id = ?", dirID)
-	}
-	if err := q.First(&record).Error; err != nil {
+	if f, err := s.findCurrentFile(vp.Name, dirID); err != nil {
 		return fmt.Errorf("file not found: %s", vaultPath)
+	} else {
+		record = f
 	}
 
 	objHash, err := parseHash256(record.ObjectKey)
@@ -337,14 +334,24 @@ func (s *vaultService) List(ctx context.Context, vaultPath string) ([]ListItem, 
 		}
 	}
 
-	// List files in this directory
+	// List files in this directory. Names are non-unique, so show only the
+	// current winner per (name, dir) — the same row a path-based read resolves —
+	// to keep the filesystem view clean. Other same-name rows still exist in
+	// the DB (not lost) but aren't surfaced as duplicate path entries.
 	var files []File
 	if dirID == nil {
-		s.db.Where("directory_id IS NULL").Find(&files)
+		s.db.Where("directory_id IS NULL AND deleted_at IS NULL").
+			Order("updated_at DESC, id DESC").Find(&files)
 	} else {
-		s.db.Where("directory_id = ?", dirID).Find(&files)
+		s.db.Where("directory_id = ? AND deleted_at IS NULL", dirID).
+			Order("updated_at DESC, id DESC").Find(&files)
 	}
+	seenNames := make(map[string]struct{})
 	for _, f := range files {
+		if _, dup := seenNames[f.Name]; dup {
+			continue // only the newest row for this name is current
+		}
+		seenNames[f.Name] = struct{}{}
 		items = append(items, ListItem{
 			Name:      f.Name,
 			Type:      "file",
@@ -387,14 +394,10 @@ func (s *vaultService) Stat(ctx context.Context, vaultPath string) (*StatResult,
 	}
 
 	var record File
-	q := s.db.Where("name = ?", vp.Name)
-	if dirID == nil {
-		q = q.Where("directory_id IS NULL")
-	} else {
-		q = q.Where("directory_id = ?", dirID)
-	}
-	if err := q.First(&record).Error; err != nil {
+	if f, err := s.findCurrentFile(vp.Name, dirID); err != nil {
 		return nil, fmt.Errorf("%w: %s", ErrNotFound, vaultPath)
+	} else {
+		record = f
 	}
 
 	return &StatResult{
@@ -428,14 +431,10 @@ func (s *vaultService) Verify(ctx context.Context, vaultPath string) (*VerifyRes
 	}
 
 	var record File
-	q := s.db.Where("name = ?", vp.Name)
-	if dirID == nil {
-		q = q.Where("directory_id IS NULL")
-	} else {
-		q = q.Where("directory_id = ?", dirID)
-	}
-	if err := q.First(&record).Error; err != nil {
+	if f, err := s.findCurrentFile(vp.Name, dirID); err != nil {
 		return nil, fmt.Errorf("file not found: %s", vaultPath)
+	} else {
+		record = f
 	}
 
 	result := &VerifyResult{
@@ -498,24 +497,22 @@ func (s *vaultService) Remove(ctx context.Context, vaultPath string) error {
 	}
 
 	var record File
-	q := s.db.Where("name = ?", vp.Name)
-	if dirID == nil {
-		q = q.Where("directory_id IS NULL")
-	} else {
-		q = q.Where("directory_id = ?", dirID)
-	}
-	if err := q.First(&record).Error; err != nil {
+	if f, err := s.findCurrentFile(vp.Name, dirID); err != nil {
 		return fmt.Errorf("file not found: %s", vaultPath)
+	} else {
+		record = f
 	}
 
-	// Determine whether another path shares this content-addressed object.
+	// Determine whether another LIVE path shares this content-addressed object.
 	// Sia object IDs are content-addressed, so identical content at different
-	// paths shares one object; if another local record still references this
-	// object key, deleting it from the indexer would orphan that other path.
-	// Only delete the indexer object when this is the last local reference.
+	// paths shares one object; if another live local record still references
+	// this object key, deleting it from the indexer would orphan that other
+	// path. Tombstoned (soft-deleted) rows no longer reference it, so only live
+	// rows are counted. Only delete the indexer object when this is the last
+	// live reference.
 	var shared int64
 	s.db.Model(&File{}).
-		Where("object_key = ? AND id <> ?", record.ObjectKey, record.ID).
+		Where("object_key = ? AND id <> ? AND deleted_at IS NULL", record.ObjectKey, record.ID).
 		Count(&shared)
 
 	objHash, err := parseHash256(record.ObjectKey)
@@ -523,11 +520,14 @@ func (s *vaultService) Remove(ctx context.Context, vaultPath string) error {
 		return fmt.Errorf("failed to parse object key: %w", err)
 	}
 
-	// Delete the local DB row FIRST so the path disappears atomically and the
-	// create-before-destroy invariant (mirroring Put) holds: if this fails, we
-	// return before touching the indexer, so the local record never points at a
-	// deleted remote object.
-	if err := s.db.Delete(&record).Error; err != nil {
+	// Tombstone (soft-delete) the local DB row FIRST so the path disappears
+	// atomically and the create-before-destroy invariant (mirroring Put) holds:
+	// if this fails, we return before touching the indexer, so the local record
+	// never points at a deleted remote object. Soft-delete (deleted_at) rather
+	// than hard-delete keeps a record recoverable if it is re-uploaded.
+	now := time.Now().UTC()
+	if err := s.db.Model(&File{}).Where("id = ?", record.ID).
+		Update("deleted_at", now).Error; err != nil {
 		return fmt.Errorf("failed to delete file record: %w", err)
 	}
 
@@ -564,14 +564,10 @@ func (s *vaultService) Share(ctx context.Context, vaultPath string, validUntil t
 	}
 
 	var record File
-	q := s.db.Where("name = ?", vp.Name)
-	if dirID == nil {
-		q = q.Where("directory_id IS NULL")
-	} else {
-		q = q.Where("directory_id = ?", dirID)
-	}
-	if err := q.First(&record).Error; err != nil {
+	if f, err := s.findCurrentFile(vp.Name, dirID); err != nil {
 		return "", fmt.Errorf("file not found: %s", vaultPath)
+	} else {
+		record = f
 	}
 
 	objHash, err := parseHash256(record.ObjectKey)
@@ -649,6 +645,23 @@ func (s *vaultService) getDirectoryID(path string) (*uint, error) {
 	}
 	id := dir.ID
 	return &id, nil
+}
+
+// findCurrentFile resolves the current (winner) live file for a (name, dir).
+// Names are non-unique, so multiple rows may share a name; the "current" row is
+// the newest by (updated_at DESC, id DESC) — the same tiebreak the reference
+// apps use. Tombstoned (soft-deleted) rows are excluded so a removed file is
+// no longer resolvable by path. Returns gorm.ErrRecordNotFound if none exists.
+func (s *vaultService) findCurrentFile(name string, dirID *uint) (File, error) {
+	var f File
+	q := s.db.Where("name = ? AND deleted_at IS NULL", name)
+	if dirID == nil {
+		q = q.Where("directory_id IS NULL")
+	} else {
+		q = q.Where("directory_id = ?", dirID)
+	}
+	err := q.Order("updated_at DESC, id DESC").First(&f).Error
+	return f, err
 }
 
 // parseHash256 parses a hex-encoded Hash256 string.

@@ -28,7 +28,10 @@ func OpenDB(dbPath string) (*gorm.DB, error) {
 		return nil, fmt.Errorf("failed to create vault db directory: %w", err)
 	}
 
-	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{
+	// Enable foreign-key enforcement per connection. go-sqlite3 applies DSN
+	// pragmas to every new pooled connection; without this the files.directory_id
+	// FOREIGN KEY would be declarative-only and unenforced.
+	db, err := gorm.Open(sqlite.Open(dbPath+"?_foreign_keys=on"), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
 	})
 	if err != nil {

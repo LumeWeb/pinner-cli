@@ -3,22 +3,11 @@ package vault
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"go.sia.tech/indexd/slabs"
 	"gorm.io/gorm"
 )
-
-// isUniqueConflict reports whether err is a SQLite unique-constraint
-// violation. Used by Sync so a duplicate root-name insert skips the event
-// instead of aborting the whole loop.
-func isUniqueConflict(err error) bool {
-	if err == nil {
-		return false
-	}
-	return strings.HasPrefix(err.Error(), "UNIQUE constraint")
-}
 
 // Sync pulls changes from the indexer into the local cache.
 func (s *vaultService) Sync(ctx context.Context) (int, error) {
@@ -75,13 +64,16 @@ func (s *vaultService) Sync(ctx context.Context) (int, error) {
 	seenProcessed := cursorRecord.PendingSkip
 	for i, ev := range events {
 		if ev.Deleted {
-			// Remove file by object key. A failed delete must not advance the
-			// cursor: otherwise the stale local record would be permanently
-			// orphaned (still visible in ls/stat although removed remotely)
-			// and never re-processed. Return the error so the batch is aborted
-			// and retried from before this event.
-			if err := s.db.Where("object_key = ?", ev.Key.String()).Delete(&File{}).Error; err != nil {
-				return count, fmt.Errorf("failed to delete file record: %w", err)
+			// Soft-delete (tombstone) any local row(s) pointing at this object by
+			// content key. Setting deleted_at (rather than hard-deleting) keeps
+			// the record recoverable if the object is re-uploaded out of order,
+			// and lets a later sync resurrect it without a full rebuild. A
+			// failed tombstone must not advance the cursor: otherwise a stale
+			// local record would stay live (still visible in ls/stat although
+			// removed remotely) and never be re-processed.
+			if err := s.db.Model(&File{}).Where("object_key = ?", ev.Key.String()).
+				Update("deleted_at", time.Now().UTC()).Error; err != nil {
+				return count, fmt.Errorf("failed to tombstone file record: %w", err)
 			}
 			lastProcessed = i
 			seenProcessed = true
@@ -123,16 +115,28 @@ func (s *vaultService) Sync(ctx context.Context) (int, error) {
 			}
 			continue
 		}
-		// Find existing by object key
+		// Resolve the file's stable identity. New clients stamp a UUID into the
+		// object metadata; for legacy objects that lack one we derive a stable
+		// ID from the content key so the same object maps to the same row across
+		// syncs (never a random UUID that would duplicate rows on each run).
+		fileID := fileMeta.ID
+		if fileID == "" {
+			fileID = "obj-" + ev.Key.String()
+		}
+
+		// Find existing by stable identity (UUID). Identity is NOT the name:
+		// two distinct content-addressed objects may share a name, and both
+		// must be tracked. A rename is a metadata update on the same UUID row
+		// and never collides, so no unique-index conflict handling is needed.
 		var existing File
-		result := s.db.Where("object_key = ?", ev.Key.String()).First(&existing)
+		result := s.db.Where("uuid = ?", fileID).First(&existing)
 		if result.Error == gorm.ErrRecordNotFound {
-			// New file from another client — place in root for MVP
-			// (we can't determine its directory without path metadata)
+			// New object not yet tracked — create its own row keyed by UUID.
 			now := time.Now().UTC()
 			existing = File{
+				UUID:          fileID,
 				Name:          fileMeta.Name,
-				DirectoryID:  nil,
+				DirectoryID:   nil, // new remote objects start at root for MVP
 				ObjectKey:     ev.Key.String(),
 				Size:          fileMeta.Size,
 				MediaType:     fileMeta.MediaType,
@@ -141,18 +145,6 @@ func (s *vaultService) Sync(ctx context.Context) (int, error) {
 				UpdatedAt:     now,
 			}
 			if err := s.db.Create(&existing).Error; err != nil {
-				// A duplicate name at root (from a different source
-				// object) hits the unique index. Skip it rather than
-				// aborting the remaining events — the local record
-				// already reflects the first-seen file. A re-try would
-				// only hit the same conflict, so this counts as
-				// processed (the file is already tracked under another
-				// object key).
-				if isUniqueConflict(err) {
-					lastProcessed = i
-					seenProcessed = true
-					continue
-				}
 				return count, fmt.Errorf("failed to create file record: %w", err)
 			}
 			lastProcessed = i
@@ -160,27 +152,21 @@ func (s *vaultService) Sync(ctx context.Context) (int, error) {
 		} else if result.Error != nil {
 			return count, fmt.Errorf("failed to query existing file: %w", result.Error)
 		} else {
-			// Update existing record with fresh metadata
+			// Update existing record with fresh metadata (including renames:
+			// same UUID row, new name — never a name collision).
 			existing.Name = fileMeta.Name
+			existing.ObjectKey = ev.Key.String()
 			existing.Size = fileMeta.Size
 			existing.MediaType = fileMeta.MediaType
 			existing.ContentDigest = fileMeta.ContentDigest
 			existing.UpdatedAt = ev.UpdatedAt
+			// Resurrect a previously-tombstoned object if it re-appears (e.g.
+			// an out-of-order delete/re-upload), so the record becomes live
+			// again without a full rebuild.
+			if existing.DeletedAt != nil {
+				existing.DeletedAt = nil
+			}
 			if err := s.db.Save(&existing).Error; err != nil {
-				// A remote metadata update can collide the (name, directory_id)
-				// unique index against another existing record (two different
-				// contents converging on one name). This is a rare, deterministic
-				// local-artifact edge case: names are application metadata on
-				// content-addressed Sia objects. Match the create branch (which
-				// treats a duplicate name as an already-tracked record): advance
-				// past the conflicting update and keep the existing (first-seen)
-				// local record. No retry state is needed — the batch progresses;
-				// a full cache rebuild reconciles any divergence.
-				if isUniqueConflict(err) {
-					lastProcessed = i
-					seenProcessed = true
-					continue
-				}
 				return count, fmt.Errorf("failed to update file record: %w", err)
 			}
 			lastProcessed = i

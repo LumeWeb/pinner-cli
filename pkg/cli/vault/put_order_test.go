@@ -101,6 +101,7 @@ func TestPut_CreateBeforeDestroyOrder(t *testing.T) {
 	// Manually insert a prior record with a known ObjectKey (64-char hex)
 	priorKey := "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
 	prior := File{
+		UUID:          "uuid-prior",
 		Name:          "report.pdf",
 		DirectoryID:   dirID,
 		ObjectKey:     priorKey,
@@ -149,6 +150,7 @@ func TestPut_CreateBeforeDestroyOrder(t *testing.T) {
 	sameKey := rec.ObjectKey
 
 	prior2 := File{
+		UUID:          "uuid-prior2",
 		Name:          "doc2.pdf",
 		DirectoryID:   dirID,
 		ObjectKey:     sameKey,
@@ -252,6 +254,7 @@ func TestPut_DeleteObjectNonFatal(t *testing.T) {
 		t.Fatalf("getOrCreateDirectory failed: %v", err)
 	}
 	prior := File{
+		UUID:          "uuid-del-nonfatal",
 		Name:          "report.pdf",
 		DirectoryID:   dirID,
 		ObjectKey:     "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
@@ -339,12 +342,13 @@ func TestRemove_SkipsIndexerDeleteWhenSharedObject(t *testing.T) {
 
 	// Two paths sharing the same object key (content-addressed dedup).
 	sharedObjectKey := "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
-	for _, name := range []string{"a.txt", "b.txt"} {
+	for i, name := range []string{"a.txt", "b.txt"} {
 		if err := db.Create(&File{
-			Name:         name,
-			DirectoryID:  dirID,
-			ObjectKey:    sharedObjectKey,
-			Size:         3,
+			UUID:          fmt.Sprintf("uuid-shared-%d", i),
+			Name:          name,
+			DirectoryID:   dirID,
+			ObjectKey:     sharedObjectKey,
+			Size:          3,
 			ContentDigest: "digest",
 		}).Error; err != nil {
 			t.Fatalf("create %s: %v", name, err)
@@ -355,7 +359,7 @@ func TestRemove_SkipsIndexerDeleteWhenSharedObject(t *testing.T) {
 	svc := &vaultService{db: db, sdk: fake, appKey: types.PrivateKey{}}
 
 	// Remove the first path — the object is still referenced by b.txt, so the
-	// indexer delete must be skipped (only the local row is removed).
+	// indexer delete must be skipped (only the local row is tombstoned).
 	if err := svc.Remove(ctx, "vault:/docs/a.txt"); err != nil {
 		t.Fatalf("Remove a.txt: %v", err)
 	}
@@ -363,9 +367,9 @@ func TestRemove_SkipsIndexerDeleteWhenSharedObject(t *testing.T) {
 		t.Errorf("Remove(a.txt) called DeleteObject %d time(s); want 0 (object still referenced by b.txt)", len(fake.deleted))
 	}
 	var aCount int64
-	db.Model(&File{}).Where("name = ?", "a.txt").Count(&aCount)
+	db.Model(&File{}).Where("name = ? AND deleted_at IS NULL", "a.txt").Count(&aCount)
 	if aCount != 0 {
-		t.Errorf("a.txt local record should be removed, got %d", aCount)
+		t.Errorf("a.txt should be tombstoned (no live record), got %d live rows", aCount)
 	}
 
 	// Remove the last reference — the indexer delete must now happen.
@@ -401,7 +405,7 @@ func TestRemove_IndexerCleanupFailureIsNonFatal(t *testing.T) {
 	}
 	objectKey := "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
 	if err := db.Create(&File{
-		Name: "only.txt", DirectoryID: dirID, ObjectKey: objectKey,
+		UUID: "uuid-only", Name: "only.txt", DirectoryID: dirID, ObjectKey: objectKey,
 		Size: 3, ContentDigest: "digest",
 	}).Error; err != nil {
 		t.Fatalf("create: %v", err)
@@ -415,11 +419,11 @@ func TestRemove_IndexerCleanupFailureIsNonFatal(t *testing.T) {
 	if err := svc.Remove(ctx, "vault:/docs/only.txt"); err != nil {
 		t.Fatalf("Remove should be non-fatal even when indexer cleanup fails; got: %v", err)
 	}
-	// The local row must be gone.
+	// The local row must no longer be live (tombstoned), not hard-deleted.
 	var count int64
-	db.Model(&File{}).Where("name = ?", "only.txt").Count(&count)
+	db.Model(&File{}).Where("name = ? AND deleted_at IS NULL", "only.txt").Count(&count)
 	if count != 0 {
-		t.Errorf("local record should be removed despite indexer cleanup failure, got %d rows", count)
+		t.Errorf("local record should be tombstoned despite indexer cleanup failure, got %d live rows", count)
 	}
 	// The indexer delete WAS attempted (best-effort) and its failure ignored.
 	if len(fake.deleted) != 1 {

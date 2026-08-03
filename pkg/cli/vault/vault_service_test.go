@@ -3,6 +3,7 @@ package vault
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
@@ -24,10 +25,18 @@ func (f *fakeEvents) ObjectEvents(_ context.Context, _ slabs.Cursor, _ int) ([]s
 }
 
 // testObjectEvent builds an ObjectEvent with a distinct key and the given
-// root file name in its metadata.
+// root file name in its metadata, stamped with a stable UUID derived from the
+// key so each event maps to its own identity (matching how real objects carry
+// their file UUID in metadata).
 func testObjectEvent(keyByte byte, name string) siastorage.ObjectEvent {
 	key := types.Hash256{keyByte}
-	meta := FileMetadata{Name: name, Size: 10, ContentDigest: "d", CreatedAt: time.Now().UTC().Format(time.RFC3339)}
+	meta := FileMetadata{
+		ID:            "uuid-" + fmt.Sprintf("%02x", keyByte),
+		Name:          name,
+		Size:          10,
+		ContentDigest: "d",
+		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
+	}
 	raw, _ := meta.JSON()
 	obj := siastorage.NewEmptyObject()
 	obj.UpdateMetadata(raw)
@@ -110,6 +119,7 @@ func TestStat_DirectorySizeIsZero(t *testing.T) {
 	now := time.Now().UTC()
 	for i := 0; i < 5; i++ {
 		file := File{
+			UUID:          "uuid-" + string(rune('A'+i)),
 			Name:          "file" + string(rune('0'+i)) + ".pdf",
 			DirectoryID:   dirID,
 			ObjectKey:     "abcdef1234567890abcdef1234567890abcdef1234567890abcdef123456789" + string(rune('0'+i)),
@@ -194,6 +204,7 @@ func TestSync_UpdatesMetadataFields(t *testing.T) {
 	oldKey := types.Hash256{0x01}
 	oldKeyHex := oldKey.String()
 	staleFile := File{
+		UUID:          "uuid-stale",
 		Name:          "old-name.txt",
 		ObjectKey:     oldKeyHex,
 		Size:          100,
@@ -206,10 +217,10 @@ func TestSync_UpdatesMetadataFields(t *testing.T) {
 		t.Fatalf("create stale file: %v", err)
 	}
 
-	// Simulate what sync.go's update branch does: find by object_key, then
-	// copy all fields from fileMeta before Save.
+	// Simulate what sync.go's update branch does: find by identity (UUID),
+	// then copy all fields from fileMeta before Save.
 	var existing File
-	result := db.Where("object_key = ?", oldKeyHex).First(&existing)
+	result := db.Where("uuid = ?", "uuid-stale").First(&existing)
 	if result.Error != nil {
 		t.Fatalf("find existing: %v", result.Error)
 	}
@@ -226,7 +237,7 @@ func TestSync_UpdatesMetadataFields(t *testing.T) {
 
 	// Reload and verify all fields are updated
 	var reloaded File
-	if err := db.Where("object_key = ?", oldKeyHex).First(&reloaded).Error; err != nil {
+	if err := db.Where("uuid = ?", "uuid-stale").First(&reloaded).Error; err != nil {
 		t.Fatalf("reload: %v", err)
 	}
 
@@ -274,8 +285,8 @@ func TestList_BareDirectoryPath(t *testing.T) {
 	now := time.Now().UTC()
 	rok := "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890a1"
 	dk := "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890b2"
-	db.Create(&File{Name: "root.txt", DirectoryID: nil, ObjectKey: rok, Size: 1, ContentDigest: "r", CreatedAt: now, UpdatedAt: now})
-	db.Create(&File{Name: "doc.pdf", DirectoryID: dirID, ObjectKey: dk, Size: 2, ContentDigest: "d", CreatedAt: now, UpdatedAt: now})
+	db.Create(&File{UUID: "uuid-root", Name: "root.txt", DirectoryID: nil, ObjectKey: rok, Size: 1, ContentDigest: "r", CreatedAt: now, UpdatedAt: now})
+	db.Create(&File{UUID: "uuid-doc", Name: "doc.pdf", DirectoryID: dirID, ObjectKey: dk, Size: 2, ContentDigest: "d", CreatedAt: now, UpdatedAt: now})
 
 	// List the bare path "vault:/docs" (no trailing slash).
 	items, err := svc.List(ctx, "vault:/docs")
@@ -302,10 +313,11 @@ func TestList_BareDirectoryPath(t *testing.T) {
 	}
 }
 
-// TestSync_SkipsDuplicateRootName verifies Sync does not abort the whole loop
-// when two remote objects share the same name at root (which violates the
-// composite unique index). The duplicate is skipped and sync continues.
-func TestSync_SkipsDuplicateRootName(t *testing.T) {
+// TestSync_PersistsSameNameObjects verifies Sync records BOTH distinct objects
+// that share a name at root. Identity is the UUID, not the name, so a second
+// object with the same name is a separate row — it is never dropped (the
+// data-loss the old unique (name, dir) index caused).
+func TestSync_PersistsSameNameObjects(t *testing.T) {
 	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "vault.db")
 	db, err := OpenDB(dbPath)
@@ -331,23 +343,23 @@ func TestSync_SkipsDuplicateRootName(t *testing.T) {
 	}
 
 	if _, err := svc.Sync(ctx); err != nil {
-		t.Fatalf("Sync should skip duplicate root-name rather than abort: %v", err)
+		t.Fatalf("Sync should record both same-name objects rather than abort: %v", err)
 	}
 
-	// Exactly one of the duplicate names should be recorded locally.
+	// BOTH distinct objects are tracked (distinct UUIDs), so both persist.
 	var count int64
 	db.Model(&File{}).Where("name = ? AND directory_id IS NULL", "dup.txt").Count(&count)
-	if count != 1 {
-		t.Errorf("expected 1 root record for dup.txt after sync, got %d", count)
+	if count != 2 {
+		t.Errorf("expected 2 root records for dup.txt (both objects persist), got %d", count)
 	}
 }
 
-// TestSync_DropsConflictingNameUpdate verifies that a synced metadata update
-// which would collide the (name, directory_id) unique index against another
-// existing record is dropped deterministically — Sync advances past it and keeps
-// the first-seen record — matching the create branch. The batch progresses; a
-// full cache rebuild reconciles any divergence.
-func TestSync_DropsConflictingNameUpdate(t *testing.T) {
+// TestSync_UpdatesRenameOnSameRow verifies a metadata update that renames an
+// object just updates that object's own row (same UUID, new name) — there is
+// no unique (name, directory_id) collision to drop or retry, so a rename is a
+// plain row update and both the renamed object and any other same-name object
+// coexist.
+func TestSync_UpdatesRenameOnSameRow(t *testing.T) {
 	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "vault.db")
 	db, err := OpenDB(dbPath)
@@ -363,31 +375,31 @@ func TestSync_DropsConflictingNameUpdate(t *testing.T) {
 	now := time.Now().UTC()
 	keyA := types.Hash256{0x01}
 	keyB := types.Hash256{0x02}
-	// Two existing root records. A synced update renames key A to "b.txt",
-	// which collides with key B's root name on the unique (name, directory_id)
-	// index.
-	if err := db.Create(&File{Name: "a.txt", DirectoryID: nil, ObjectKey: keyA.String(), Size: 1, ContentDigest: "a", CreatedAt: now, UpdatedAt: now}).Error; err != nil {
+	// Two existing root records with distinct UUIDs: "a.txt" (uuid-01) and
+	// "b.txt" (uuid-02).
+	if err := db.Create(&File{UUID: "uuid-01", Name: "a.txt", DirectoryID: nil, ObjectKey: keyA.String(), Size: 1, ContentDigest: "a", CreatedAt: now, UpdatedAt: now}).Error; err != nil {
 		t.Fatalf("create a.txt: %v", err)
 	}
-	if err := db.Create(&File{Name: "b.txt", DirectoryID: nil, ObjectKey: keyB.String(), Size: 2, ContentDigest: "b", CreatedAt: now, UpdatedAt: now}).Error; err != nil {
+	if err := db.Create(&File{UUID: "uuid-02", Name: "b.txt", DirectoryID: nil, ObjectKey: keyB.String(), Size: 2, ContentDigest: "b", CreatedAt: now, UpdatedAt: now}).Error; err != nil {
 		t.Fatalf("create b.txt: %v", err)
 	}
 
 	svc := &vaultService{db: db, sdk: &fakeEvents{fakeSDK: fakeSDK{t: t}}, appKey: types.PrivateKey{}}
+	// A synced update renames uuid-01's object from "a.txt" to "b.txt" (the key
+	// event's metadata UUID is uuid-01). This updates uuid-01's row name to
+	// "b.txt"; uuid-02's separate "b.txt" row is untouched. No drop, no error.
 	svc.sdk.(*fakeEvents).events = []siastorage.ObjectEvent{
-		testObjectEvent(0x01, "b.txt"), // conflicting rename
+		testObjectEvent(0x01, "b.txt"), // uuid-01 renamed to b.txt
+	}
+	if _, err := svc.Sync(ctx); err != nil {
+		t.Fatalf("Sync should apply a rename as a same-row update; got: %v", err)
 	}
 
-	// Sync must not error; the conflicting rename is dropped (both first-seen
-	// records are retained) and the batch advances.
-	if _, err := svc.Sync(ctx); err != nil {
-		t.Fatalf("Sync should drop a conflicting name update rather than error; got: %v", err)
-	}
 	var aCount, bCount int64
 	db.Model(&File{}).Where("name = ?", "a.txt").Count(&aCount)
 	db.Model(&File{}).Where("name = ?", "b.txt").Count(&bCount)
-	if aCount != 1 || bCount != 1 {
-		t.Errorf("conflicting name update should be dropped, keeping first-seen records (a=%d b=%d, want 1/1)", aCount, bCount)
+	if aCount != 0 || bCount != 2 {
+		t.Errorf("rename should move uuid-01 to b.txt keeping both same-name rows (a=%d b=%d, want 0/2)", aCount, bCount)
 	}
 }
 
@@ -651,6 +663,7 @@ func TestVerify_TransientObjectErrorSurfaces(t *testing.T) {
 	// A valid 64-char hex object key so parseHash256 succeeds.
 	objKey := "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
 	if err := db.Create(&File{
+		UUID:          "uuid-v",
 		Name:          "v.txt",
 		ObjectKey:     objKey,
 		Size:          1,

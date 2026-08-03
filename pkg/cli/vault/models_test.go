@@ -39,6 +39,7 @@ func TestOpenDB(t *testing.T) {
 
 	// Verify we can insert a file
 	file := File{
+		UUID:          "uuid-1",
 		Name:          "report.pdf",
 		DirectoryID:   &dir.ID,
 		ObjectKey:     "abcdef0123456789",
@@ -53,16 +54,32 @@ func TestOpenDB(t *testing.T) {
 		t.Fatal("expected non-zero file ID")
 	}
 
-	// Verify the composite unique index works — duplicate (name, directory_id) should fail
+	// Identity is the UUID: a second row with the SAME name (but a different
+	// UUID) must SUCCEED — two distinct content-addressed objects can share a
+	// name and both stay visible (no data loss).
 	dup := File{
+		UUID:          "uuid-2",
 		Name:          "report.pdf",
 		DirectoryID:   &dir.ID,
 		ObjectKey:     "different",
 		Size:          2048,
 		ContentDigest: "sha256:different",
 	}
-	if err := db.Create(&dup).Error; err == nil {
-		t.Fatal("expected duplicate (name, directory_id) to fail")
+	if err := db.Create(&dup).Error; err != nil {
+		t.Fatalf("expected same name in same dir (different UUID) to succeed: %v", err)
+	}
+
+	// A duplicate UUID (same identity) must FAIL — it is the true key.
+	dupUUID := File{
+		UUID:          "uuid-1",
+		Name:          "other.pdf",
+		DirectoryID:   &dir.ID,
+		ObjectKey:     "dup-uuid",
+		Size:          4096,
+		ContentDigest: "sha256:dupuuid",
+	}
+	if err := db.Create(&dupUUID).Error; err == nil {
+		t.Fatal("expected duplicate UUID to fail")
 	}
 
 	// Same name in different directory should succeed
@@ -71,6 +88,7 @@ func TestOpenDB(t *testing.T) {
 		t.Fatalf("failed to create second directory: %v", err)
 	}
 	file2 := File{
+		UUID:          "uuid-3",
 		Name:          "report.pdf",
 		DirectoryID:   &dir2.ID,
 		ObjectKey:     "ghijklmn",
@@ -83,6 +101,7 @@ func TestOpenDB(t *testing.T) {
 
 	// Same name in root (NULL directory) should succeed
 	file3 := File{
+		UUID:          "uuid-4",
 		Name:          "report.pdf",
 		DirectoryID:   nil,
 		ObjectKey:     "rootobj",
@@ -91,18 +110,6 @@ func TestOpenDB(t *testing.T) {
 	}
 	if err := db.Create(&file3).Error; err != nil {
 		t.Fatalf("expected same name in root to succeed: %v", err)
-	}
-
-	// Duplicate in root should fail
-	dupRoot := File{
-		Name:          "report.pdf",
-		DirectoryID:   nil,
-		ObjectKey:     "duproot",
-		Size:          128,
-		ContentDigest: "sha256:dup",
-	}
-	if err := db.Create(&dupRoot).Error; err == nil {
-		t.Fatal("expected duplicate (name, NULL dir) to fail")
 	}
 }
 
