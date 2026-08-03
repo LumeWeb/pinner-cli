@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -158,5 +159,53 @@ func TestIsFileNotFoundError_DetectsWrappedAndPlatformErrors(t *testing.T) {
 				t.Errorf("isFileNotFoundError() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+// TestResolveDefaultConfigPath verifies the cross-platform config path resolution.
+func TestResolveDefaultConfigPath(t *testing.T) {
+	t.Run("returns non-empty path", func(t *testing.T) {
+		p := resolveDefaultConfigPath()
+		if p == "" {
+			t.Fatal("expected non-empty config path")
+		}
+		if filepath.Base(p) != "config.yaml" {
+			t.Fatalf("expected base name config.yaml, got %q", filepath.Base(p))
+		}
+	})
+
+	t.Run("path contains pinner segment", func(t *testing.T) {
+		p := resolveDefaultConfigPath()
+		dir := filepath.Dir(p)
+		if filepath.Base(dir) != "pinner" {
+			t.Fatalf("expected parent dir to be 'pinner', got %q", filepath.Base(dir))
+		}
+	})
+
+	t.Run("expandPath handles ~ prefix", func(t *testing.T) {
+		// expandPath is still used for --config overrides with ~ prefix
+		home, err := os.UserHomeDir()
+		if err != nil {
+			t.Skip("cannot determine home dir")
+		}
+		got := expandPath("~/test/path")
+		if got != filepath.Join(home, "/test/path") {
+			t.Errorf("expandPath(~/test/path) = %q, want %q", got, filepath.Join(home, "/test/path"))
+		}
+	})
+
+	t.Run("expandPath passes through non-tilde paths", func(t *testing.T) {
+		got := expandPath("/absolute/path")
+		if got != "/absolute/path" {
+			t.Errorf("expandPath(/absolute/path) = %q, want /absolute/path", got)
+		}
+	})
+}
+
+// TestDefaultConfigPath_NoTilde verifies that DefaultConfigPath is already
+// resolved (no ~ prefix) since it's computed at init time.
+func TestDefaultConfigPath_NoTilde(t *testing.T) {
+	if strings.HasPrefix(DefaultConfigPath, "~") {
+		t.Fatalf("DefaultConfigPath should be resolved, got %q (starts with ~)", DefaultConfigPath)
 	}
 }

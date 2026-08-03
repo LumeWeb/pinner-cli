@@ -1,0 +1,394 @@
+package vault
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
+	"time"
+
+	"go.sia.tech/indexd/slabs"
+	"gorm.io/datatypes"
+	"gorm.io/gorm"
+)
+
+// isLiveNameConflict reports whether err is the SQLite unique-constraint
+// violation fired by idx_files_live_name_dir — the partial unique index that
+// atomically allows at most one LIVE file per (name, directory). Put uses this
+// to detect that a concurrent writer won a path and to re-resolve rather than
+// insert a duplicate live row.
+func isLiveNameConflict(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "idx_files_live_name_dir") &&
+		strings.Contains(err.Error(), "UNIQUE")
+}
+
+// isDirNameConflict reports whether err is the SQLite unique-constraint
+// violation fired on directories.path (the unique INDEX idx_directories_path).
+// go-sqlite3 reports column-level UNIQUE constraints as "UNIQUE constraint
+// failed: directories.path" (columns, not the index name), so we match on that.
+// getOrCreateDirectory uses it to detect that a concurrent writer created the
+// same directory between its check and insert, and re-resolves instead of
+// failing the whole op (the same conflict semantics Put uses for files).
+func isDirNameConflict(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "UNIQUE constraint failed: directories.path")
+}
+
+// Sync pulls changes from the indexer into the local cache.
+func (s *vaultService) Sync(ctx context.Context) (int, error) {
+	// Load cursor
+	var cursorRecord SyncDownCursor
+	result := s.db.First(&cursorRecord)
+	if result.Error != nil && result.Error != gorm.ErrRecordNotFound {
+		return 0, fmt.Errorf("failed to load sync cursor: %w", result.Error)
+	}
+
+	var cursor slabs.Cursor
+	if cursorRecord.Cursor != "" {
+		var err error
+		cursor, err = unmarshalCursor(cursorRecord.Cursor)
+		if err != nil {
+			return 0, fmt.Errorf("failed to parse sync cursor: %w", err)
+		}
+	}
+
+	// Fetch events
+	events, err := s.sdk.ObjectEvents(ctx, cursor, 100)
+	if err != nil {
+		return 0, fmt.Errorf("failed to fetch object events: %w", err)
+	}
+
+	count := len(events)
+	// Index of the last event that was passed (deleted, recorded/updated, or
+	// a passable no-op), the index of the FIRST transient skip that is
+	// INTERLEAVED (a real object with empty/unparsable metadata following a
+	// processed event), and whether any event was actually processed (deleted
+	// or recorded/updated).
+	//
+	// Interleaved transient skips must NOT be passed over: if the cursor
+	// advances past them they would be permanently invisible in the local
+	// cache because the next fetch starts after the cursor. So the cursor
+	// stops at (firstSkipped-1) so interleaved skips are retried next sync.
+	//
+	// A LEADING transient skip (empty/unparsable metadata before any processed
+	// event) is unresolvable for the moment and there is nothing before it to
+	// stop the cursor at; retrying it would livelock the whole batch. It is
+	// therefore treated as a passable no-op the cursor advances past (like a
+	// nil-Object event), so later events — including any interleaved skip —
+	// are still handled correctly.
+	//
+	// A nil-Object, non-deletion event is always a passable no-op: it has no
+	// object and is not a deletion, so there is never any metadata to resolve.
+	lastProcessed := -1
+	firstSkipped := -1
+	// Seed seenProcessed from a pending interleaved skip carried over from the
+	// previous batch: if the cursor was stopped before such a skip, the same
+	// skip reappearing at the head of THIS batch must stay classified as an
+	// interleaved retry, not be reclassified as a fresh leading skip (which
+	// would drop it permanently before its metadata resolves).
+	seenProcessed := cursorRecord.PendingSkip
+	for i, ev := range events {
+		if ev.Deleted {
+			// Soft-delete the local row(s) this delete event refers to. Setting
+			// deleted_at (rather than hard-deleting) keeps the record
+			// recoverable if the object is re-uploaded out of order, and lets a
+			// later sync resurrect it without a full rebuild. A failed
+			// tombstone must not advance the cursor: otherwise a stale local
+			// record would stay live (still visible in ls/stat although removed
+			// remotely) and never be re-processed.
+			//
+			// An object-key delete means the content-addressed object no longer
+			// exists remotely, so EVERY live current alias referencing it is
+			// gone — tombstone them all. Historical versions (is_current=0) and
+			// already-tombstoned rows are preserved. When the delete event
+			// carries file metadata with a per-file UUID, disambiguate to that
+			// exact row first so a shared (deduplicated) key clears only the
+			// deleted file, not unrelated live aliases.
+			now := time.Now().UTC()
+			if ev.Object != nil {
+				if rawMeta := ev.Object.Metadata(); len(rawMeta) > 0 {
+					if m, merr := ParseFileMetadata(rawMeta); merr == nil && m.ID != "" {
+						// The metadata names a specific file: tombstone exactly that
+						// row. If no live current row matches that UUID (e.g. a
+						// legacy object, or a bare content-address carryover), fall
+						// through to the object_key-based tombstone below.
+						res := s.db.Model(&File{}).
+							Where("uuid = ? AND is_current = 1", m.ID).
+							Update("deleted_at", now)
+						if res.Error != nil {
+							return count, fmt.Errorf("failed to tombstone file record: %w", res.Error)
+						}
+						if res.RowsAffected > 0 {
+							lastProcessed = i
+							seenProcessed = true
+							continue
+						}
+					}
+				}
+			}
+			if err := s.db.Model(&File{}).
+				Where("object_key = ? AND is_current = 1 AND deleted_at IS NULL", ev.Key.String()).
+				Update("deleted_at", now).Error; err != nil {
+				return count, fmt.Errorf("failed to tombstone file record: %w", err)
+			}
+			lastProcessed = i
+			seenProcessed = true
+			continue
+		}
+		if ev.Object == nil {
+			// No object and not a deletion — a passable no-op that can never
+			// yield file content. Advance the cursor past it instead of
+			// stalling the batch on an unresolvable leading skip. seenProcessed
+			// must be set (mirroring the deleted branch) so a LATER real object
+			// with empty metadata is classified as an interleaved skip to be
+			// retried — not as a leading skip that would be dropped permanently.
+			lastProcessed = i
+			seenProcessed = true
+			continue
+		}
+		// Parse metadata from unsealed object
+		rawMeta := ev.Object.Metadata()
+		if len(rawMeta) == 0 {
+			// Real object but no metadata yet — transient.
+			if seenProcessed {
+				// Interleaved after a processed event: stop the cursor before
+				// it so it is retried once metadata appears.
+				if firstSkipped < 0 {
+					firstSkipped = i
+				}
+			} else {
+				// Leading before any processed event: unresolvable for now,
+				// pass over it so the batch makes forward progress.
+				lastProcessed = i
+			}
+			continue
+		}
+		fileMeta, err := ParseFileMetadata(rawMeta)
+		if err != nil {
+			// Real object with unparsable metadata — transient.
+			if seenProcessed {
+				if firstSkipped < 0 {
+					firstSkipped = i
+				}
+			} else {
+				lastProcessed = i
+			}
+			continue
+		}
+		// Resolve the file's stable identity. New clients stamp a UUID into the
+		// object metadata; for legacy objects that lack one we derive a stable
+		// ID from the content key so the same object maps to the same row across
+		// syncs (never a random UUID that would duplicate rows on each run).
+		fileID := fileMeta.ID
+		if fileID == "" {
+			fileID = "obj-" + ev.Key.String()
+		}
+
+		// Resolve the object's target directory from its metadata so files
+		// uploaded to a nested path on one device sync into the same directory
+		// hierarchy on another (root = nil). resolveVaultDirectory uses the
+		// service DB (not the tx), so it must run before the transaction opens.
+		dirID, err := resolveVaultDirectory(s.db, fileMeta.Directory)
+		if err != nil {
+			return count, fmt.Errorf("failed to resolve directory for %s: %w", ev.Key.String(), err)
+		}
+
+		// Find existing by stable identity (UUID). Identity is NOT the name:
+		// two distinct content-addressed objects may share a name, and both
+		// are tracked as separate rows (only one is the "current" winner for
+		// its (name, dir); the others persist as historical rows). A rename is
+		// a metadata update on the same UUID row.
+		//
+		// The write and the is_current promotion happen atomically so the
+		// partial unique index idx_files_live_name_dir keeps exactly one current
+		// live winner per path even as sync applies out-of-order events.
+		txErr := s.db.Transaction(func(tx *gorm.DB) error {
+			var existing File
+			result := tx.Where("uuid = ?", fileID).First(&existing)
+			if result.Error == gorm.ErrRecordNotFound {
+				// New object not yet tracked — create its own row keyed by UUID,
+				// placed at root for MVP. It starts non-current so a second
+				// distinct object with the same name is a separate (historical)
+				// row that coexists without violating idx_files_live_name_dir;
+				// promoteCurrent below then makes THIS object the new winner and
+				// demotes the prior one. No distinct object is ever dropped.
+				now := time.Now().UTC()
+				var metaJSON datatypes.JSON
+				if fileMeta.Metadata != nil {
+					// Persist the user metadata carried in the object's
+					// FileMetadata on the newly-created row, mirroring
+					// upsertFromMeta and Put so Stat returns it immediately on a
+					// fresh-cache sync rather than only after an overwrite.
+					if b, jerr := json.Marshal(fileMeta.Metadata); jerr == nil {
+						metaJSON = datatypes.JSON(b)
+					}
+				}
+				existing = File{
+					UUID:          fileID,
+					Name:          fileMeta.Name,
+					DirectoryID:   dirID, // resolved from object metadata (root = nil)
+					IsCurrent:     false,
+					ObjectKey:     ev.Key.String(),
+					Size:          fileMeta.Size,
+					MediaType:     fileMeta.MediaType,
+					ContentDigest: fileMeta.ContentDigest,
+					Metadata:      metaJSON,
+					CreatedAt:     now,
+					UpdatedAt:     now,
+				}
+				if err := tx.Create(&existing).Error; err != nil {
+					return err
+				}
+			} else if result.Error != nil {
+				return result.Error
+			} else {
+				if err := upsertFromMeta(tx, &existing, fileMeta, ev.Key.String(), ev.UpdatedAt, dirID); err != nil {
+					return err
+				}
+			}
+			return promoteCurrent(tx, existing.Name, existing.DirectoryID, existing.ID)
+		})
+		if txErr != nil {
+			return count, fmt.Errorf("failed to record sync event: %w", txErr)
+		}
+		lastProcessed = i
+		seenProcessed = true
+	}
+
+	// If a skip is interleaved before the last processed event, stop at the
+	// skip so it is retried, rather than the cursor jumping past it to a
+	// later processed event. Leading skips need no special handling here:
+	// they were advanced past as passable during the loop, so the cursor
+	// stops at the last processed event before the first INTERLEAVED skip
+	// without ever jumping to the end of the batch.
+	//
+	// A carried-over PENDING skip at the head (index 0) with processed events
+	// after it is the degenerate case: a transient skip that has not resolved
+	// is retried (stall the cursor) so its metadata can appear on a later
+	// batch. But a skip that never resolves (e.g. an object written by an
+	// old/crashed client) would otherwise rewind lastProcessed to -1 on every
+	// sync and stall the cursor for ALL later events indefinitely. We bound
+	// the retries (maxPendingSkipRetries): after enough consecutive
+	// unresolved re-appearances we advance past it and clear the pending
+	// flag, degrading it to a droppable skip so the stream keeps moving.
+	dropStuckSkip := firstSkipped == 0 && cursorRecord.PendingSkip &&
+		cursorRecord.PendingSkipCount >= maxPendingSkipRetries
+	if (firstSkipped >= 0 && firstSkipped <= lastProcessed) && !dropStuckSkip {
+		lastProcessed = firstSkipped - 1
+	}
+	// A stuck skip that sits ALONE at the head (no processed event after it,
+	// so lastProcessed == -1) still needs to be dropped: advance past it so the
+	// cursor moves instead of holding forever and resetting the retry counter.
+	if dropStuckSkip && lastProcessed < 0 {
+		lastProcessed = firstSkipped
+	}
+
+	// An interleaved transient skip that is still present in this batch (and
+	// unresolved) must be carried as pending so the next batch keeps treating
+	// it as an interleaved retry rather than a droppable leading skip. If no
+	// interleaved skip remains — or we dropped a stuck pending head skip —
+	// clear the pending flag.
+	pendingSkip := firstSkipped >= 0 && !dropStuckSkip
+
+	// Count consecutive re-appearances of the same unresolved pending skip so a
+	// permanently-stuck skip can eventually be dropped; reset once it clears.
+	skipCount := uint(0)
+	if pendingSkip && cursorRecord.PendingSkip {
+		skipCount = cursorRecord.PendingSkipCount + 1
+	}
+
+	// Update cursor to the last successfully-processed event (capped before
+	// any interleaved skipped event, or advanced past a leading skip), not
+	// the last event in the batch, so skipped events are revisited on the
+	// next sync.
+	if lastProcessed >= 0 {
+		last := events[lastProcessed]
+		newCursor := cursor
+		newCursor.After = last.UpdatedAt
+		newCursor.Key = last.Key
+
+		cursorJSON, err := marshalCursor(newCursor)
+		if err != nil {
+			return count, fmt.Errorf("failed to serialize cursor: %w", err)
+		}
+
+		if cursorRecord.ID == 0 {
+			cursorRecord = SyncDownCursor{
+				Cursor:          cursorJSON,
+				PendingSkip:     pendingSkip,
+				PendingSkipCount: skipCount,
+				UpdatedAt:       time.Now(),
+			}
+			if err := s.db.Create(&cursorRecord).Error; err != nil {
+				return count, fmt.Errorf("failed to persist sync cursor: %w", err)
+			}
+		} else {
+			cursorRecord.Cursor = cursorJSON
+			cursorRecord.PendingSkip = pendingSkip
+			cursorRecord.PendingSkipCount = skipCount
+			cursorRecord.UpdatedAt = time.Now()
+			if err := s.db.Save(&cursorRecord).Error; err != nil {
+				return count, fmt.Errorf("failed to persist sync cursor: %w", err)
+			}
+		}
+	} else if firstSkipped >= 0 {
+		// lastProcessed < 0 while an interleaved skip is present means the
+		// retried skip is at the head of the batch with nothing before it to
+		// rewind to (seeded from a carried-over pending skip). Do not advance
+		// the cursor — wait for the skip to resolve — but persist the pending
+		// flag (and retry count) so the retry intent survives across batches
+		// and a stuck skip can still be dropped after maxPendingSkipRetries
+		// (the drop case advances lastProcessed above and never reaches here).
+		if cursorRecord.ID == 0 {
+			cursorRecord = SyncDownCursor{
+				Cursor:          cursorRecord.Cursor,
+				PendingSkip:     true,
+				PendingSkipCount: skipCount,
+				UpdatedAt:       time.Now(),
+			}
+			if err := s.db.Create(&cursorRecord).Error; err != nil {
+				return count, fmt.Errorf("failed to persist sync cursor: %w", err)
+			}
+		} else {
+			cursorRecord.PendingSkip = true
+			cursorRecord.PendingSkipCount = skipCount
+			cursorRecord.UpdatedAt = time.Now()
+			if err := s.db.Save(&cursorRecord).Error; err != nil {
+				return count, fmt.Errorf("failed to persist sync cursor: %w", err)
+			}
+		}
+	} else if cursorRecord.PendingSkip {
+		// Nothing was processed and no interleaved skip is present this batch
+		// (e.g. an empty batch, or the carried-over pending object was removed
+		// without a delete event). Clear the stale flag so it does not keep
+		// reclassifying a genuinely-leading transient skip as an interleaved
+		// retry, which would stall sync indefinitely.
+		cursorRecord.PendingSkip = false
+		cursorRecord.PendingSkipCount = 0
+		cursorRecord.UpdatedAt = time.Now()
+		if err := s.db.Save(&cursorRecord).Error; err != nil {
+			return count, fmt.Errorf("failed to persist sync cursor: %w", err)
+		}
+	}
+
+	return lastProcessed + 1, nil
+}
+
+// SyncCursor returns the persisted sync cursor token (the raw JSON string), or
+// "" if none has been saved yet. Used to detect when a Sync-loop stops making
+// forward progress: Sync returns the number of events actually applied
+// (lastProcessed+1), which is 0 when the cursor is held before an unresolved
+// transient-metadata skip, so callers can compare cursor tokens across
+// iterations to confirm the stream is still advancing.
+func (s *vaultService) SyncCursor() string {
+	var cursorRecord SyncDownCursor
+	if err := s.db.First(&cursorRecord).Error; err != nil {
+		return ""
+	}
+	return cursorRecord.Cursor
+}

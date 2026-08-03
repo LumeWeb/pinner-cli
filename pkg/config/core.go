@@ -71,6 +71,7 @@ const (
 	SubdomainIPFS    = "ipfs"
 	SubdomainAdmin   = "admin"
 	SubdomainMeta    = "meta"
+	SubdomainSia     = "sia"
 )
 
 // Default endpoint constants.
@@ -266,6 +267,14 @@ func (c *Config) GetAdminEndpointSecure() string {
 // GetAdminEndpointWithSecure returns the admin API endpoint with a custom secure flag.
 func (c *Config) GetAdminEndpointWithSecure(secure bool) string {
 	return getSubdomainEndpointWithProtocol(c.GetBaseEndpoint(), SubdomainAdmin, secure)
+}
+
+// GetSiaIndexerURL returns the Sia indexer URL derived from the portal domain.
+// Convention: sia.{portal_domain} (e.g., https://sia.pinner.xyz). The scheme
+// honors Config.Secure so a Secure:false (e.g. local http) indexer resolves to
+// http:// rather than being hardcoded to https.
+func (c *Config) GetSiaIndexerURL() string {
+	return getSubdomainEndpointWithProtocol(c.GetBaseEndpoint(), SubdomainSia, c.Secure)
 }
 
 // GetGatewayEndpoint returns the IPFS gateway endpoint.
