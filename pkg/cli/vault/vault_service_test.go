@@ -345,10 +345,8 @@ func TestSync_SkipsDuplicateRootName(t *testing.T) {
 // TestSync_DropsConflictingNameUpdate verifies that a synced metadata update
 // which would collide the (name, directory_id) unique index against another
 // existing record is dropped deterministically — Sync advances past it and keeps
-// the first-seen record — matching the create branch and the reference Sia apps
-// (s3d, pinner-cloud), which treat a name collision as an ordinary overwrite /
-// non-identity conflict rather than a retryable condition. No retry state, no
-// stall: the batch progresses.
+// the first-seen record — matching the create branch. The batch progresses; a
+// full cache rebuild reconciles any divergence.
 func TestSync_DropsConflictingNameUpdate(t *testing.T) {
 	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "vault.db")
@@ -367,7 +365,7 @@ func TestSync_DropsConflictingNameUpdate(t *testing.T) {
 	keyB := types.Hash256{0x02}
 	// Two existing root records. A synced update renames key A to "b.txt",
 	// which collides with key B's root name on the unique (name, directory_id)
-	// index. This mirrors the create-branch duplicate-name case.
+	// index.
 	if err := db.Create(&File{Name: "a.txt", DirectoryID: nil, ObjectKey: keyA.String(), Size: 1, ContentDigest: "a", CreatedAt: now, UpdatedAt: now}).Error; err != nil {
 		t.Fatalf("create a.txt: %v", err)
 	}

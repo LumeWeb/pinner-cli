@@ -171,14 +171,11 @@ func (s *vaultService) Sync(ctx context.Context) (int, error) {
 				// unique index against another existing record (two different
 				// contents converging on one name). This is a rare, deterministic
 				// local-artifact edge case: names are application metadata on
-				// content-addressed Sia objects, and neither the storage SDK nor
-				// the reference apps (s3d, pinner-cloud) special-case it — the
-				// S3/object model treats a name reuse as an ordinary overwrite,
-				// and duplicate names are not an identity conflict. Match the
-				// create branch (which drops a duplicate name): advance past the
-				// conflicting update and keep the existing (first-seen) local
-				// record. No retry state is needed — the batch progresses and a
-				// full cache rebuild reconciles any divergence.
+				// content-addressed Sia objects. Match the create branch (which
+				// treats a duplicate name as an already-tracked record): advance
+				// past the conflicting update and keep the existing (first-seen)
+				// local record. No retry state is needed — the batch progresses;
+				// a full cache rebuild reconciles any divergence.
 				if isUniqueConflict(err) {
 					lastProcessed = i
 					seenProcessed = true
