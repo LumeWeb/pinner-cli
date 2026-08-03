@@ -342,13 +342,14 @@ func TestSync_SkipsDuplicateRootName(t *testing.T) {
 	}
 }
 
-// TestSync_SkipsConflictingRenameNoOp verifies that a remote RENAME that would
-// collide the (name, directory_id) unique index against another existing record
-// is NOT permanently dropped (which would let the local record diverge from
-// remote at a stale name). The first sync stops the cursor before the conflict
-// (retry); once the colliding record is removed, a re-sync applies the rename.
-// This exercises the update branch's isUniqueConflict guard.
-func TestSync_SkipsConflictingRenameNoOp(t *testing.T) {
+// TestSync_DropsConflictingNameUpdate verifies that a synced metadata update
+// which would collide the (name, directory_id) unique index against another
+// existing record is dropped deterministically — Sync advances past it and keeps
+// the first-seen record — matching the create branch and the reference Sia apps
+// (s3d, pinner-cloud), which treat a name collision as an ordinary overwrite /
+// non-identity conflict rather than a retryable condition. No retry state, no
+// stall: the batch progresses.
+func TestSync_DropsConflictingNameUpdate(t *testing.T) {
 	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "vault.db")
 	db, err := OpenDB(dbPath)
@@ -364,8 +365,9 @@ func TestSync_SkipsConflictingRenameNoOp(t *testing.T) {
 	now := time.Now().UTC()
 	keyA := types.Hash256{0x01}
 	keyB := types.Hash256{0x02}
-	// Two existing root records. Event for key A renames it to "b.txt",
-	// colliding with key B's root name on the unique (name, directory_id) index.
+	// Two existing root records. A synced update renames key A to "b.txt",
+	// which collides with key B's root name on the unique (name, directory_id)
+	// index. This mirrors the create-branch duplicate-name case.
 	if err := db.Create(&File{Name: "a.txt", DirectoryID: nil, ObjectKey: keyA.String(), Size: 1, ContentDigest: "a", CreatedAt: now, UpdatedAt: now}).Error; err != nil {
 		t.Fatalf("create a.txt: %v", err)
 	}
@@ -374,96 +376,20 @@ func TestSync_SkipsConflictingRenameNoOp(t *testing.T) {
 	}
 
 	svc := &vaultService{db: db, sdk: &fakeEvents{fakeSDK: fakeSDK{t: t}}, appKey: types.PrivateKey{}}
-
-	// 1) Conflicting rename present: Sync must NOT error, and must NOT apply the
-	//    colliding rename (cursor stops before it for a retry, not a drop).
 	svc.sdk.(*fakeEvents).events = []siastorage.ObjectEvent{
-		testObjectEvent(0x01, "b.txt"),
+		testObjectEvent(0x01, "b.txt"), // conflicting rename
 	}
+
+	// Sync must not error; the conflicting rename is dropped (both first-seen
+	// records are retained) and the batch advances.
 	if _, err := svc.Sync(ctx); err != nil {
-		t.Fatalf("Sync should not error on a conflicting rename; got: %v", err)
+		t.Fatalf("Sync should drop a conflicting name update rather than error; got: %v", err)
 	}
 	var aCount, bCount int64
 	db.Model(&File{}).Where("name = ?", "a.txt").Count(&aCount)
 	db.Model(&File{}).Where("name = ?", "b.txt").Count(&bCount)
 	if aCount != 1 || bCount != 1 {
-		t.Errorf("conflicting rename must not be applied on first sync (a=%d b=%d, want 1/1)", aCount, bCount)
-	}
-
-	// 2) The collision is TRANSIENT — the colliding record is removed remotely,
-	//    so the colliding event disappears from the stream and the rename can
-	//    now apply. This proves the earlier conflict was retried, not dropped.
-	if err := db.Where("object_key = ?", keyB.String()).Delete(&File{}).Error; err != nil {
-		t.Fatalf("remove colliding b.txt: %v", err)
-	}
-	// A fresh event batch (the rename is still pending on the remote).
-	svc.sdk.(*fakeEvents).events = []siastorage.ObjectEvent{
-		testObjectEvent(0x01, "b.txt"),
-	}
-	if _, err := svc.Sync(ctx); err != nil {
-		t.Fatalf("Sync should apply the rename once the collision resolves; got: %v", err)
-	}
-	db.Model(&File{}).Where("name = ?", "a.txt").Count(&aCount)
-	if aCount != 0 {
-		t.Errorf("a.txt should now be renamed (collision resolved); got %d rows still named a.txt", aCount)
-	}
-}
-
-// TestSync_PermanentCollisionAdvancesAfterRetryBudget verifies that a rename
-// collision that persists across syncs (two remotes PERMANENTLY converge on the
-// same (name, directory_id)) is retried up to maxCollisionRetries times and then
-// declared permanent and advanced past — so the batch still progresses instead of
-// stalling forever (which previously would hold the cursor and error the rebuild
-// after its stall budget).
-func TestSync_PermanentCollisionAdvancesAfterRetryBudget(t *testing.T) {
-	ctx := context.Background()
-	dbPath := filepath.Join(t.TempDir(), "vault.db")
-	db, err := OpenDB(dbPath)
-	if err != nil {
-		t.Fatalf("OpenDB failed: %v", err)
-	}
-	defer func() {
-		if sqlDB, err := db.DB(); err == nil {
-			sqlDB.Close()
-		}
-	}()
-
-	now := time.Now().UTC()
-	keyA := types.Hash256{0x01}
-	keyB := types.Hash256{0x02}
-	// Two root records that permanently collide when A is renamed to B's name.
-	if err := db.Create(&File{Name: "a.txt", DirectoryID: nil, ObjectKey: keyA.String(), Size: 1, ContentDigest: "a", CreatedAt: now, UpdatedAt: now}).Error; err != nil {
-		t.Fatalf("create a.txt: %v", err)
-	}
-	if err := db.Create(&File{Name: "b.txt", DirectoryID: nil, ObjectKey: keyB.String(), Size: 2, ContentDigest: "b", CreatedAt: now, UpdatedAt: now}).Error; err != nil {
-		t.Fatalf("create b.txt: %v", err)
-	}
-
-	svc := &vaultService{db: db, sdk: &fakeEvents{fakeSDK: fakeSDK{t: t}}, appKey: types.PrivateKey{}}
-	// The colliding rename is present on EVERY sync (permanent collision).
-	events := []siastorage.ObjectEvent{testObjectEvent(0x01, "b.txt")}
-	svc.sdk.(*fakeEvents).events = events
-
-	// Retry (retried each sync, cursor should be held) then fall back to
-	// advancing past the permanent collision: Sync must never error AND must
-	// eventually progress past the conflict (the colliding record b.txt stays,
-	// a.txt is NOT dropped/renamed, but the batch no longer stalls).
-	for i := 0; i < maxCollisionRetries; i++ {
-		if _, err := svc.Sync(ctx); err != nil {
-			t.Fatalf("Sync %d should retry (no error) on a transient-window collision; got: %v", i, err)
-		}
-	}
-	// After the budget is exhausted the collision is treated as permanent: the
-	// conflicting rename is dropped and the batch advances. Assert a.txt still
-	// exists (unchanged) and Sync still returns nil — no stall.
-	if _, err := svc.Sync(ctx); err != nil {
-		t.Fatalf("Sync should advance past a permanent collision (no error): %v", err)
-	}
-	var aCount, bCount int64
-	db.Model(&File{}).Where("name = ?", "a.txt").Count(&aCount)
-	db.Model(&File{}).Where("name = ?", "b.txt").Count(&bCount)
-	if aCount != 1 || bCount != 1 {
-		t.Errorf("permanent collision should drop the rename and keep both records (a=%d b=%d, want 1/1)", aCount, bCount)
+		t.Errorf("conflicting name update should be dropped, keeping first-seen records (a=%d b=%d, want 1/1)", aCount, bCount)
 	}
 }
 
