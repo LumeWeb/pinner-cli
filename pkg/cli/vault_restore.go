@@ -88,7 +88,7 @@ The flow:
 			if c.Bool(FlagAgent) {
 				output.PrintJSON(vaultRestoreApprovalResponse{
 					Profile:  profileName,
-					NextStep: "Re-run: pinner vault restore --profile " + profileName + " --seed-stdin < <seed_path> (presents the single browser approval)",
+					NextStep: "Re-run: pinner vault restore --profile " + profileName + " --seed-stdin < " + vault.SeedPath(profileName) + " (presents the single browser approval)",
 				})
 				// The JSON handoff (with next_step) is the complete deliverable
 				// of this invocation; return nil so exit code is 0 and the

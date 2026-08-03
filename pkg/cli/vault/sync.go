@@ -167,6 +167,19 @@ func (s *vaultService) Sync(ctx context.Context) (int, error) {
 			existing.ContentDigest = fileMeta.ContentDigest
 			existing.UpdatedAt = ev.UpdatedAt
 			if err := s.db.Save(&existing).Error; err != nil {
+				// A remote rename can collide the (name, directory_id) unique
+				// index against another existing record (e.g. two remotes
+				// converging on the same name, or the same object re-created
+				// under a colliding name). Treat it like the create branch: the
+				// conflicting rename cannot be applied against the local index,
+				// so skip it as a no-op rather than aborting the whole batch
+				// and leaving the cursor unadvanced. A retry would only hit the
+				// same conflict.
+				if isUniqueConflict(err) {
+					lastProcessed = i
+					seenProcessed = true
+					continue
+				}
 				return count, fmt.Errorf("failed to update file record: %w", err)
 			}
 			lastProcessed = i

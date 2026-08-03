@@ -342,6 +342,61 @@ func TestSync_SkipsDuplicateRootName(t *testing.T) {
 	}
 }
 
+// TestSync_SkipsConflictingRenameNoOp verifies that a remote RENAME that would
+// collide the (name, directory_id) unique index against another existing record
+// is skipped as a no-op rather than aborting the whole batch (which would leave
+// the cursor unadvanced and stall the rebuild). This exercises the update
+// branch's isUniqueConflict guard, mirroring the create branch.
+func TestSync_SkipsConflictingRenameNoOp(t *testing.T) {
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "vault.db")
+	db, err := OpenDB(dbPath)
+	if err != nil {
+		t.Fatalf("OpenDB failed: %v", err)
+	}
+	defer func() {
+		if sqlDB, err := db.DB(); err == nil {
+			sqlDB.Close()
+		}
+	}()
+
+	now := time.Now().UTC()
+	keyA := types.Hash256{0x01}
+	keyB := types.Hash256{0x02}
+	// Two existing root records. Event for key A renames it to "b.txt",
+	// colliding with key B's root name on the unique (name, directory_id) index.
+	if err := db.Create(&File{Name: "a.txt", DirectoryID: nil, ObjectKey: keyA.String(), Size: 1, ContentDigest: "a", CreatedAt: now, UpdatedAt: now}).Error; err != nil {
+		t.Fatalf("create a.txt: %v", err)
+	}
+	if err := db.Create(&File{Name: "b.txt", DirectoryID: nil, ObjectKey: keyB.String(), Size: 2, ContentDigest: "b", CreatedAt: now, UpdatedAt: now}).Error; err != nil {
+		t.Fatalf("create b.txt: %v", err)
+	}
+
+	// Event stream: key A is renamed (by a remote) to the colliding name.
+	fe := &fakeEvents{fakeSDK: fakeSDK{t: t}}
+	fe.events = []siastorage.ObjectEvent{
+		testObjectEvent(0x01, "b.txt"),
+	}
+
+	svc := &vaultService{db: db, sdk: fe, appKey: types.PrivateKey{}}
+
+	if _, err := svc.Sync(ctx); err != nil {
+		t.Fatalf("Sync should skip a conflicting rename (no-op) rather than abort; got: %v", err)
+	}
+
+	// The conflicting rename must NOT have been applied; both original records
+	// survive untouched (a.txt still exists, b.txt still exists).
+	var aCount, bCount int64
+	db.Model(&File{}).Where("name = ?", "a.txt").Count(&aCount)
+	db.Model(&File{}).Where("name = ?", "b.txt").Count(&bCount)
+	if aCount != 1 {
+		t.Errorf("a.txt should be unchanged (rename collided and was skipped); got %d rows", aCount)
+	}
+	if bCount != 1 {
+		t.Errorf("b.txt should be untouched; got %d rows", bCount)
+	}
+}
+
 // TestSync_CursorNotAdvancedPastSkipped verifies the sync cursor is advanced
 // only to the last successfully-processed event, not to the end of the batch.
 // A transient skip (a real object with empty metadata) after a processed event
