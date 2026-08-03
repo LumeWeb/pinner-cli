@@ -168,16 +168,25 @@ func (s *vaultService) Sync(ctx context.Context) (int, error) {
 			existing.UpdatedAt = ev.UpdatedAt
 			if err := s.db.Save(&existing).Error; err != nil {
 				// A remote rename can collide the (name, directory_id) unique
-				// index against another existing record (e.g. two remotes
-				// converging on the same name, or the same object re-created
-				// under a colliding name). Treat it like the create branch: the
-				// conflicting rename cannot be applied against the local index,
-				// so skip it as a no-op rather than aborting the whole batch
-				// and leaving the cursor unadvanced. A retry would only hit the
-				// same conflict.
+				// index against another existing record (e.g. a remote is
+				// mid-rename, or the colliding record will itself be
+				// renamed/deleted shortly). Unlike the create branch — where a
+				// duplicate object is already tracked under another key and
+				// advancing is correct — a rename collision is potentially
+				// TRANSIENT: advancing the cursor here would permanently drop
+				// the rename, leaving the local record at a stale name that
+				// diverges from remote until a full cache rebuild.
+				//
+				// Treat it like an interleaved transient skip: stop the cursor
+				// before this event and carry a pending flag so the next sync
+				// retries it (once the colliding record is renamed/deleted
+				// remotely, or the conflict otherwise resolves). A persistent
+				// collision is bounded by the rebuild stall detector rather
+				// than silently dropped.
 				if isUniqueConflict(err) {
-					lastProcessed = i
-					seenProcessed = true
+					if firstSkipped < 0 {
+						firstSkipped = i
+					}
 					continue
 				}
 				return count, fmt.Errorf("failed to update file record: %w", err)
