@@ -30,6 +30,7 @@ func vaultServiceForCommand(c *cli.Command) (vault.VaultService, string, error) 
 	return svc, profileName, err
 }
 
+
 func newVaultCommand() *cli.Command {
 	return &cli.Command{
 		Name:     "vault",
@@ -64,6 +65,7 @@ Stdout contains data or JSON results; progress goes to stderr.`,
 		Commands: []*cli.Command{
 			newVaultCreateCommand(),
 			newVaultRestoreCommand(),
+			newVaultLoginCommand(),
 		},
 	}
 }
