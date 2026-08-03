@@ -28,15 +28,28 @@ func OpenDB(dbPath string) (*gorm.DB, error) {
 		return nil, fmt.Errorf("failed to create vault db directory: %w", err)
 	}
 
-	// Enable foreign-key enforcement per connection. go-sqlite3 applies DSN
-	// pragmas to every new pooled connection; without this the files.directory_id
-	// FOREIGN KEY would be declarative-only and unenforced.
-	db, err := gorm.Open(sqlite.Open(dbPath+"?_foreign_keys=on"), &gorm.Config{
+	// Enable foreign-key enforcement and a busy timeout per connection.
+	// go-sqlite3 applies DSN pragmas to every new pooled connection; without the
+	// foreign_keys pragma the files.directory_id FOREIGN KEY would be
+	// declarative-only and unenforced, and without busy_timeout concurrent
+	// writers would fail with "database is locked" instead of waiting.
+	db, err := gorm.Open(sqlite.Open(dbPath+"?_foreign_keys=on&_busy_timeout=5000"), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to open vault database: %w", err)
 	}
+
+	// Serialize all DB access through a single connection. This is the correct
+	// configuration for a single-user local SQLite vault: it guarantees our
+	// write-transactions (Put, Sync) never contend with each other, so the
+	// "database is locked" race two concurrent writers could otherwise hit is
+	// impossible — the partial-unique-index enforcement in Put can rely on that.
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get sql.DB handle: %w", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
 
 	// Apply schema migrations with goose (embedded SQL migrations).
 	if err := migrate(db); err != nil {

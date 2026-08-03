@@ -3,11 +3,25 @@ package vault
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"go.sia.tech/indexd/slabs"
 	"gorm.io/gorm"
 )
+
+// isLiveNameConflict reports whether err is the SQLite unique-constraint
+// violation fired by idx_files_live_name_dir — the partial unique index that
+// atomically allows at most one LIVE file per (name, directory). Put uses this
+// to detect that a concurrent writer won a path and to re-resolve rather than
+// insert a duplicate live row.
+func isLiveNameConflict(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "idx_files_live_name_dir") &&
+		strings.Contains(err.Error(), "UNIQUE")
+}
 
 // Sync pulls changes from the indexer into the local cache.
 func (s *vaultService) Sync(ctx context.Context) (int, error) {
@@ -126,52 +140,53 @@ func (s *vaultService) Sync(ctx context.Context) (int, error) {
 
 		// Find existing by stable identity (UUID). Identity is NOT the name:
 		// two distinct content-addressed objects may share a name, and both
-		// must be tracked. A rename is a metadata update on the same UUID row
-		// and never collides, so no unique-index conflict handling is needed.
-		var existing File
-		result := s.db.Where("uuid = ?", fileID).First(&existing)
-		if result.Error == gorm.ErrRecordNotFound {
-			// New object not yet tracked — create its own row keyed by UUID.
-			now := time.Now().UTC()
-			existing = File{
-				UUID:          fileID,
-				Name:          fileMeta.Name,
-				DirectoryID:   nil, // new remote objects start at root for MVP
-				ObjectKey:     ev.Key.String(),
-				Size:          fileMeta.Size,
-				MediaType:     fileMeta.MediaType,
-				ContentDigest: fileMeta.ContentDigest,
-				CreatedAt:     now,
-				UpdatedAt:     now,
+		// are tracked as separate rows (only one is the "current" winner for
+		// its (name, dir); the others persist as historical rows). A rename is
+		// a metadata update on the same UUID row.
+		//
+		// The write and the is_current promotion happen atomically so the
+		// partial unique index idx_files_live_name_dir keeps exactly one current
+		// live winner per path even as sync applies out-of-order events.
+		txErr := s.db.Transaction(func(tx *gorm.DB) error {
+			var existing File
+			result := tx.Where("uuid = ?", fileID).First(&existing)
+			if result.Error == gorm.ErrRecordNotFound {
+				// New object not yet tracked — create its own row keyed by UUID,
+				// placed at root for MVP. It starts non-current so a second
+				// distinct object with the same name is a separate (historical)
+				// row that coexists without violating idx_files_live_name_dir;
+				// promoteCurrent below then makes THIS object the new winner and
+				// demotes the prior one. No distinct object is ever dropped.
+				now := time.Now().UTC()
+				existing = File{
+					UUID:          fileID,
+					Name:          fileMeta.Name,
+					DirectoryID:   nil, // new remote objects start at root for MVP
+					IsCurrent:     false,
+					ObjectKey:     ev.Key.String(),
+					Size:          fileMeta.Size,
+					MediaType:     fileMeta.MediaType,
+					ContentDigest: fileMeta.ContentDigest,
+					CreatedAt:     now,
+					UpdatedAt:     now,
+				}
+				if err := tx.Create(&existing).Error; err != nil {
+					return err
+				}
+			} else if result.Error != nil {
+				return result.Error
+			} else {
+				if err := upsertFromMeta(tx, &existing, fileMeta, ev.Key.String(), ev.UpdatedAt); err != nil {
+					return err
+				}
 			}
-			if err := s.db.Create(&existing).Error; err != nil {
-				return count, fmt.Errorf("failed to create file record: %w", err)
-			}
-			lastProcessed = i
-			seenProcessed = true
-		} else if result.Error != nil {
-			return count, fmt.Errorf("failed to query existing file: %w", result.Error)
-		} else {
-			// Update existing record with fresh metadata (including renames:
-			// same UUID row, new name — never a name collision).
-			existing.Name = fileMeta.Name
-			existing.ObjectKey = ev.Key.String()
-			existing.Size = fileMeta.Size
-			existing.MediaType = fileMeta.MediaType
-			existing.ContentDigest = fileMeta.ContentDigest
-			existing.UpdatedAt = ev.UpdatedAt
-			// Resurrect a previously-tombstoned object if it re-appears (e.g.
-			// an out-of-order delete/re-upload), so the record becomes live
-			// again without a full rebuild.
-			if existing.DeletedAt != nil {
-				existing.DeletedAt = nil
-			}
-			if err := s.db.Save(&existing).Error; err != nil {
-				return count, fmt.Errorf("failed to update file record: %w", err)
-			}
-			lastProcessed = i
-			seenProcessed = true
+			return promoteCurrent(tx, existing.Name, existing.DirectoryID, existing.ID)
+		})
+		if txErr != nil {
+			return count, fmt.Errorf("failed to record sync event: %w", txErr)
 		}
+		lastProcessed = i
+		seenProcessed = true
 	}
 
 	// If a skip is interleaved before the last processed event, stop at the

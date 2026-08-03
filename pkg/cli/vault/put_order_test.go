@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -104,6 +105,7 @@ func TestPut_CreateBeforeDestroyOrder(t *testing.T) {
 		UUID:          "uuid-prior",
 		Name:          "report.pdf",
 		DirectoryID:   dirID,
+		IsCurrent:     true,
 		ObjectKey:     priorKey,
 		Size:          100,
 		ContentDigest: "olddigest",
@@ -153,6 +155,7 @@ func TestPut_CreateBeforeDestroyOrder(t *testing.T) {
 		UUID:          "uuid-prior2",
 		Name:          "doc2.pdf",
 		DirectoryID:   dirID,
+		IsCurrent:     true,
 		ObjectKey:     sameKey,
 		Size:          200,
 		ContentDigest: "same",
@@ -257,6 +260,7 @@ func TestPut_DeleteObjectNonFatal(t *testing.T) {
 		UUID:          "uuid-del-nonfatal",
 		Name:          "report.pdf",
 		DirectoryID:   dirID,
+		IsCurrent:     true,
 		ObjectKey:     "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
 		Size:          100,
 		ContentDigest: "old",
@@ -274,6 +278,57 @@ func TestPut_DeleteObjectNonFatal(t *testing.T) {
 	// Verify DeleteObject was called (attempted cleanup)
 	if len(fake.deleted) != 1 {
 		t.Errorf("expected 1 DeleteObject call, got %d", len(fake.deleted))
+	}
+}
+
+// TestPut_ConcurrentSamePath verifies that two concurrent Put calls to the SAME
+// new path converge on exactly ONE live row (the partial unique index
+// idx_files_live_name_dir fails the second insert atomically, and the loser
+// re-resolves the winner's row instead of inserting a duplicate). This is the
+// regression guard for the race where two writers pass the pre-insert read and
+// both insert.
+func TestPut_ConcurrentSamePath(t *testing.T) {
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "vault.db")
+	db, err := OpenDB(dbPath)
+	if err != nil {
+		t.Fatalf("OpenDB failed: %v", err)
+	}
+	defer func() {
+		if sqlDB, err := db.DB(); err == nil {
+			sqlDB.Close()
+		}
+	}()
+
+	const path = "vault:/concurrent.txt"
+	var wg sync.WaitGroup
+	errs := make([]error, 2)
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			// Each writer uses its own fake SDK (their mutable fields are not
+			// shared) to avoid a data race in -race runs; the production DB
+			// path is what we're exercising.
+			f := &fakeSDK{t: t}
+			s := &vaultService{db: db, sdk: f, appKey: types.PrivateKey{}}
+			data := bytes.NewReader([]byte("payload"))
+			_, errs[idx] = s.Put(ctx, data, int64(data.Len()), path, nil)
+		}(i)
+	}
+	wg.Wait()
+	for i, e := range errs {
+		if e != nil {
+			t.Fatalf("concurrent Put %d failed: %v", i, e)
+		}
+	}
+
+	// Exactly one LIVE row (and one current row) must exist for the path.
+	var live, current int64
+	db.Model(&File{}).Where("name = ? AND directory_id IS NULL AND deleted_at IS NULL", "concurrent.txt").Count(&live)
+	db.Model(&File{}).Where("name = ? AND directory_id IS NULL AND is_current = 1 AND deleted_at IS NULL", "concurrent.txt").Count(&current)
+	if live != 1 || current != 1 {
+		t.Errorf("concurrent Put to same path left live=%d current=%d rows; want 1/1", live, current)
 	}
 }
 
@@ -347,6 +402,7 @@ func TestRemove_SkipsIndexerDeleteWhenSharedObject(t *testing.T) {
 			UUID:          fmt.Sprintf("uuid-shared-%d", i),
 			Name:          name,
 			DirectoryID:   dirID,
+			IsCurrent:     true,
 			ObjectKey:     sharedObjectKey,
 			Size:          3,
 			ContentDigest: "digest",
@@ -405,7 +461,7 @@ func TestRemove_IndexerCleanupFailureIsNonFatal(t *testing.T) {
 	}
 	objectKey := "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
 	if err := db.Create(&File{
-		UUID: "uuid-only", Name: "only.txt", DirectoryID: dirID, ObjectKey: objectKey,
+		UUID: "uuid-only", Name: "only.txt", DirectoryID: dirID, IsCurrent: true, ObjectKey: objectKey,
 		Size: 3, ContentDigest: "digest",
 	}).Error; err != nil {
 		t.Fatalf("create: %v", err)

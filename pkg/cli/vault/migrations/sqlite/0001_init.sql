@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS `files`
     `media_type`     text,
     `content_digest` text    NOT NULL,
     `metadata`       JSON,
+    `is_current`     integer NOT NULL DEFAULT 0, -- 1 = the live winner for its (name, dir)
     `deleted_at`     datetime,               -- tombstone (soft delete); NULL = live
     `created_at`     datetime NOT NULL,
     `updated_at`     datetime NOT NULL,
@@ -43,10 +44,23 @@ CREATE INDEX IF NOT EXISTS `idx_files_object_key` ON `files`(`object_key`);
 -- Navigation: list files in a directory.
 CREATE INDEX IF NOT EXISTS `idx_files_directory_id` ON `files`(`directory_id`);
 
--- "Current file per (name, directory)" display rule. Intentionally NON-unique:
--- this groups the rows that share a name/dir and lets the app pick the current
--- winner (updated_at DESC, id DESC) without ever dropping a distinct object.
-CREATE INDEX IF NOT EXISTS `idx_files_name_dir` ON `files`(`name`, COALESCE(`directory_id`, 0));
+-- Live rows only (dedupe/pick current): at most one row per (name, dir) that is
+-- BOTH live and current. Non-current rows (older versions of the same path) and
+-- tombstoned (soft-deleted) rows are excluded, so distinct historical records
+-- persist without ever violating uniqueness.
+CREATE INDEX IF NOT EXISTS `idx_files_live_current_name_dir`
+    ON `files`(`name`, COALESCE(`directory_id`, 0))
+    WHERE `is_current` = 1 AND `deleted_at` IS NULL;
+
+-- Atomic writer guarantee: at most ONE CURRENT LIVE file per (name, directory).
+-- This restores the enforcement the old unique (name, directory_id) index gave
+-- Put, now scoped so a concurrent second Put to the same new path fails
+-- atomically (the old behavior) instead of both writers inserting a duplicate
+-- live row. Because it is scoped to is_current=1 AND deleted_at IS NULL,
+-- historical versions and tombstoned rows coexist without violating it.
+CREATE UNIQUE INDEX IF NOT EXISTS `idx_files_live_name_dir`
+    ON `files`(`name`, COALESCE(`directory_id`, 0))
+    WHERE `is_current` = 1 AND `deleted_at` IS NULL;
 
 -- Sync-down cursor: the indexer event cursor for incremental sync.
 CREATE TABLE IF NOT EXISTS `sync_down_cursors`

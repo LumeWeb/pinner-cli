@@ -189,48 +189,89 @@ func (s *vaultService) Put(ctx context.Context, r io.Reader, size int64, vaultPa
 
 	objectKey := obj.ID()
 
-	// Store in local DB, keyed by UUID. If we overwrote an existing path, the
-	// file's UUID row already exists — update it (same identity, new content).
-	// If not, insert a new row. Either way only this file's row is touched;
-	// other objects sharing the name are not conflated.
-	record := &File{
+	// Store in local DB, keyed by UUID, and promote this file as the single
+	// winner for its (name, dir) path — atomically. Overwriting an existing
+	// path keeps its UUID (same logical file, new content); a brand-new path
+	// gets a fresh UUID. The DB write and the is_current promotion happen in
+	// one transaction so the partial unique index idx_files_live_name_dir
+	// enforces at most one current live row per path.
+
+	// Capture the prior object key (if this is an overwrite) BEFORE we write,
+	// so we can best-effort clean up the orphaned prior content after.
+	priorObjectKey := ""
+	var record *File
+	nowTs := time.Now().UTC()
+	rec := File{
 		UUID:          fileID,
 		Name:          vp.Name,
 		DirectoryID:   dirID,
+		IsCurrent:     true,
 		ObjectKey:     objectKey.String(),
 		Size:          size,
 		MediaType:     mediaType,
 		ContentDigest: contentDigest,
-		CreatedAt:     time.Now().UTC(),
-		UpdatedAt:     time.Now().UTC(),
+		CreatedAt:     nowTs,
+		UpdatedAt:     nowTs,
 	}
 
-	// Capture the prior object key (if this is an overwrite) BEFORE we update
-	// the row, so we can best-effort clean up the orphaned prior content after.
-	priorObjectKey := ""
-	var prior File
-	switch s.db.Where("uuid = ?", fileID).First(&prior).Error {
-	case nil:
-		priorObjectKey = prior.ObjectKey
-		// Update the existing UUID row (overwrite).
-		prior.ObjectKey = record.ObjectKey
-		prior.Size = record.Size
-		prior.MediaType = record.MediaType
-		prior.ContentDigest = record.ContentDigest
-		prior.Metadata = datatypes.JSON{}
-		prior.UpdatedAt = record.UpdatedAt
-		prior.DeletedAt = nil // resurrect if it was tombstoned
-		if err := s.db.Save(&prior).Error; err != nil {
-			return nil, fmt.Errorf("failed to update file record: %w", err)
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		var prior File
+		switch tx.Where("uuid = ?", fileID).First(&prior).Error {
+		case nil:
+			priorObjectKey = prior.ObjectKey
+			// Update the existing UUID row (overwrite). Mark it current; the
+			// promotion below demotes any other live current row in the group.
+			prior.ObjectKey = rec.ObjectKey
+			prior.Size = rec.Size
+			prior.MediaType = rec.MediaType
+			prior.ContentDigest = rec.ContentDigest
+			prior.Metadata = datatypes.JSON{}
+			prior.IsCurrent = true
+			prior.UpdatedAt = rec.UpdatedAt
+			prior.DeletedAt = nil // resurrect if it was tombstoned
+			if err := tx.Save(&prior).Error; err != nil {
+				return err
+			}
+			rec = prior
+		case gorm.ErrRecordNotFound:
+			if err := tx.Create(&rec).Error; err != nil {
+				// A concurrent writer can win the (name, directory) path between
+				// our findCurrentFile read above and this insert, tripping the
+				// partial unique index. That's not fatal: re-resolve the winner
+				// and adopt its UUID (update that row with our new content) so
+				// both writers converge on a single live row and neither is lost.
+				if isLiveNameConflict(err) {
+					var current File
+					q := tx.Where("name = ? AND deleted_at IS NULL", vp.Name)
+					if dirID == nil {
+						q = q.Where("directory_id IS NULL")
+					} else {
+						q = q.Where("directory_id = ?", dirID)
+					}
+					if cerr := q.Order("updated_at DESC, id DESC").First(&current).Error; cerr == nil {
+						priorObjectKey = current.ObjectKey
+						rec = current
+						rec.ObjectKey = objectKey.String()
+						rec.Size = size
+						rec.MediaType = mediaType
+						rec.ContentDigest = contentDigest
+						rec.IsCurrent = true
+						rec.UpdatedAt = nowTs
+						rec.DeletedAt = nil
+						return tx.Save(&rec).Error
+					}
+				}
+				return err
+			}
+		default:
+			return fmt.Errorf("failed to query existing file by uuid %q", fileID)
 		}
-		record = &prior
-	case gorm.ErrRecordNotFound:
-		if err := s.db.Create(record).Error; err != nil {
-			return nil, fmt.Errorf("failed to create file record: %w", err)
-		}
-	default:
-		return nil, fmt.Errorf("failed to query existing file: %w", err)
+		return promoteCurrent(tx, vp.Name, dirID, rec.ID)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to store file record: %w", err)
 	}
+	record = &rec
 
 	// Best-effort cleanup of a prior object that is no longer referenced by any
 	// LIVE local row (only when the overwritten UUID row had different content).
@@ -334,24 +375,20 @@ func (s *vaultService) List(ctx context.Context, vaultPath string) ([]ListItem, 
 		}
 	}
 
-	// List files in this directory. Names are non-unique, so show only the
-	// current winner per (name, dir) — the same row a path-based read resolves —
-	// to keep the filesystem view clean. Other same-name rows still exist in
-	// the DB (not lost) but aren't surfaced as duplicate path entries.
+	// List files in this directory. Names are non-unique, but exactly one row
+	// per (name, dir) is the current winner (is_current=1, enforced by the
+	// partial unique index), so listing current+live rows yields one entry per
+	// file path. Historical versions (is_current=0) and tombstoned rows are not
+	// surfaced as path entries.
 	var files []File
 	if dirID == nil {
-		s.db.Where("directory_id IS NULL AND deleted_at IS NULL").
+		s.db.Where("directory_id IS NULL AND is_current = 1 AND deleted_at IS NULL").
 			Order("updated_at DESC, id DESC").Find(&files)
 	} else {
-		s.db.Where("directory_id = ? AND deleted_at IS NULL", dirID).
+		s.db.Where("directory_id = ? AND is_current = 1 AND deleted_at IS NULL", dirID).
 			Order("updated_at DESC, id DESC").Find(&files)
 	}
-	seenNames := make(map[string]struct{})
 	for _, f := range files {
-		if _, dup := seenNames[f.Name]; dup {
-			continue // only the newest row for this name is current
-		}
-		seenNames[f.Name] = struct{}{}
 		items = append(items, ListItem{
 			Name:      f.Name,
 			Type:      "file",
@@ -647,21 +684,66 @@ func (s *vaultService) getDirectoryID(path string) (*uint, error) {
 	return &id, nil
 }
 
+// upsertFromMeta applies a synced object's metadata to an existing row (update
+// in place, including renames — same UUID row, new name — and resurrection of a
+// previously-tombstoned object that re-appears). Marked current; the caller
+// promotes it as the (name, dir) winner.
+func upsertFromMeta(tx *gorm.DB, existing *File, meta FileMetadata, objectKey string, updatedAt time.Time) error {
+	existing.Name = meta.Name
+	existing.ObjectKey = objectKey
+	existing.Size = meta.Size
+	existing.MediaType = meta.MediaType
+	existing.ContentDigest = meta.ContentDigest
+	existing.UpdatedAt = updatedAt
+	// Drop is_current before the save: the row may be switching (name, dir) groups
+	// via a rename, and saving it as current in a new group it doesn't own yet
+	// would transiently violate idx_files_live_name_dir. promoteCurrent (the
+	// caller) demotes the group's existing winner and re-promotes this row
+	// atomically afterward.
+	existing.IsCurrent = false
+	if existing.DeletedAt != nil {
+		existing.DeletedAt = nil // resurrect: object re-appeared after a tombstone
+	}
+	return tx.Save(existing).Error
+}
+
 // findCurrentFile resolves the current (winner) live file for a (name, dir).
-// Names are non-unique, so multiple rows may share a name; the "current" row is
-// the newest by (updated_at DESC, id DESC) — the same tiebreak the reference
-// apps use. Tombstoned (soft-deleted) rows are excluded so a removed file is
-// no longer resolvable by path. Returns gorm.ErrRecordNotFound if none exists.
+// Exactly one row per (name, dir) has is_current=1 (enforced by the partial
+// unique index idx_files_live_name_dir). Tombstoned (soft-deleted) rows are
+// never current, so a removed file is no longer resolvable by path. Returns
+// gorm.ErrRecordNotFound if none exists.
 func (s *vaultService) findCurrentFile(name string, dirID *uint) (File, error) {
 	var f File
-	q := s.db.Where("name = ? AND deleted_at IS NULL", name)
+	q := s.db.Where("name = ? AND is_current = 1 AND deleted_at IS NULL", name)
 	if dirID == nil {
 		q = q.Where("directory_id IS NULL")
 	} else {
 		q = q.Where("directory_id = ?", dirID)
 	}
-	err := q.Order("updated_at DESC, id DESC").First(&f).Error
+	err := q.First(&f).Error
 	return f, err
+}
+
+// promoteCurrent makes targetID the single winner for its (name, dir) group
+// within a transaction: it demotes any other live current row in that group and
+// promotes targetID. This is the write-side counterpart to findCurrentFile and
+// mirrors the reference apps' recalculateCurrentForGroup. It must be called on
+// the same *gorm.DB (transaction) that wrote targetID so the promotion and the
+// write are atomic.
+func promoteCurrent(tx *gorm.DB, name string, dirID *uint, targetID uint) error {
+	q := tx.Model(&File{}).Where("name = ? AND is_current = 1 AND deleted_at IS NULL", name)
+	if dirID == nil {
+		q = q.Where("directory_id IS NULL")
+	} else {
+		q = q.Where("directory_id = ?", dirID)
+	}
+	// Demote every other live current row in the group first (this produces the
+	// unique-index vacancy that promoting targetID fills).
+	if err := q.Update("is_current", false).Error; err != nil {
+		return err
+	}
+	return tx.Model(&File{}).Where("id = ? AND deleted_at IS NULL", targetID).
+		Update("is_current", true).Error
 }
 
 // parseHash256 parses a hex-encoded Hash256 string.

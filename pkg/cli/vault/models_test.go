@@ -37,11 +37,12 @@ func TestOpenDB(t *testing.T) {
 		t.Fatal("expected non-zero directory ID")
 	}
 
-	// Verify we can insert a file
+	// Verify we can insert a file (first row in its (name, dir) group is current).
 	file := File{
 		UUID:          "uuid-1",
 		Name:          "report.pdf",
 		DirectoryID:   &dir.ID,
+		IsCurrent:     true,
 		ObjectKey:     "abcdef0123456789",
 		Size:          1024,
 		MediaType:     "application/pdf",
@@ -54,19 +55,36 @@ func TestOpenDB(t *testing.T) {
 		t.Fatal("expected non-zero file ID")
 	}
 
-	// Identity is the UUID: a second row with the SAME name (but a different
-	// UUID) must SUCCEED — two distinct content-addressed objects can share a
-	// name and both stay visible (no data loss).
-	dup := File{
+	// DUplicate/current-live row: identity is the UUID, but at most one
+	// current LIVE row per (name, dir) exists (enforced by idx_files_live_name_dir).
+	// Inserting a second current row for the same path must FAIL — this is the
+	// atomic writer guarantee against concurrent Puts.
+	dupCurrent := File{
 		UUID:          "uuid-2",
 		Name:          "report.pdf",
 		DirectoryID:   &dir.ID,
+		IsCurrent:     true,
 		ObjectKey:     "different",
 		Size:          2048,
 		ContentDigest: "sha256:different",
 	}
-	if err := db.Create(&dup).Error; err != nil {
-		t.Fatalf("expected same name in same dir (different UUID) to succeed: %v", err)
+	if err := db.Create(&dupCurrent).Error; err == nil {
+		t.Fatal("expected a second current row for the same (name, dir) to fail (idx_files_live_name_dir)")
+	}
+
+	// A NON-current historical row with the same name/current-path MUST succeed:
+	// distinct objects/versions coexist without violating uniqueness.
+	hist := File{
+		UUID:          "uuid-2",
+		Name:          "report.pdf",
+		DirectoryID:   &dir.ID,
+		IsCurrent:     false,
+		ObjectKey:     "different",
+		Size:          2048,
+		ContentDigest: "sha256:different",
+	}
+	if err := db.Create(&hist).Error; err != nil {
+		t.Fatalf("expected a non-current historical row with same name to succeed: %v", err)
 	}
 
 	// A duplicate UUID (same identity) must FAIL — it is the true key.
@@ -74,6 +92,7 @@ func TestOpenDB(t *testing.T) {
 		UUID:          "uuid-1",
 		Name:          "other.pdf",
 		DirectoryID:   &dir.ID,
+		IsCurrent:     true,
 		ObjectKey:     "dup-uuid",
 		Size:          4096,
 		ContentDigest: "sha256:dupuuid",
@@ -82,7 +101,8 @@ func TestOpenDB(t *testing.T) {
 		t.Fatal("expected duplicate UUID to fail")
 	}
 
-	// Same name in different directory should succeed
+	// Same name in a DIFFERENT directory should succeed (distinct (name, dir)
+	// groups each allow one current row).
 	dir2 := Directory{Path: "/other", SortKey: "other"}
 	if err := db.Create(&dir2).Error; err != nil {
 		t.Fatalf("failed to create second directory: %v", err)
@@ -91,6 +111,7 @@ func TestOpenDB(t *testing.T) {
 		UUID:          "uuid-3",
 		Name:          "report.pdf",
 		DirectoryID:   &dir2.ID,
+		IsCurrent:     true,
 		ObjectKey:     "ghijklmn",
 		Size:          512,
 		ContentDigest: "sha256:other",
@@ -99,11 +120,12 @@ func TestOpenDB(t *testing.T) {
 		t.Fatalf("expected same name in different dir to succeed: %v", err)
 	}
 
-	// Same name in root (NULL directory) should succeed
+	// Same name in root (NULL directory) should succeed (different group).
 	file3 := File{
 		UUID:          "uuid-4",
 		Name:          "report.pdf",
 		DirectoryID:   nil,
+		IsCurrent:     true,
 		ObjectKey:     "rootobj",
 		Size:          256,
 		ContentDigest: "sha256:root",

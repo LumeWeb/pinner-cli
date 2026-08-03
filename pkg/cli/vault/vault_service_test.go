@@ -122,6 +122,7 @@ func TestStat_DirectorySizeIsZero(t *testing.T) {
 			UUID:          "uuid-" + string(rune('A'+i)),
 			Name:          "file" + string(rune('0'+i)) + ".pdf",
 			DirectoryID:   dirID,
+			IsCurrent:     true,
 			ObjectKey:     "abcdef1234567890abcdef1234567890abcdef1234567890abcdef123456789" + string(rune('0'+i)),
 			Size:          1024,
 			MediaType:     "application/pdf",
@@ -206,6 +207,8 @@ func TestSync_UpdatesMetadataFields(t *testing.T) {
 	staleFile := File{
 		UUID:          "uuid-stale",
 		Name:          "old-name.txt",
+		DirectoryID:   nil,
+		IsCurrent:     true,
 		ObjectKey:     oldKeyHex,
 		Size:          100,
 		MediaType:     "text/plain",
@@ -285,8 +288,8 @@ func TestList_BareDirectoryPath(t *testing.T) {
 	now := time.Now().UTC()
 	rok := "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890a1"
 	dk := "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890b2"
-	db.Create(&File{UUID: "uuid-root", Name: "root.txt", DirectoryID: nil, ObjectKey: rok, Size: 1, ContentDigest: "r", CreatedAt: now, UpdatedAt: now})
-	db.Create(&File{UUID: "uuid-doc", Name: "doc.pdf", DirectoryID: dirID, ObjectKey: dk, Size: 2, ContentDigest: "d", CreatedAt: now, UpdatedAt: now})
+	db.Create(&File{UUID: "uuid-root", Name: "root.txt", DirectoryID: nil, IsCurrent: true, ObjectKey: rok, Size: 1, ContentDigest: "r", CreatedAt: now, UpdatedAt: now})
+	db.Create(&File{UUID: "uuid-doc", Name: "doc.pdf", DirectoryID: dirID, IsCurrent: true, ObjectKey: dk, Size: 2, ContentDigest: "d", CreatedAt: now, UpdatedAt: now})
 
 	// List the bare path "vault:/docs" (no trailing slash).
 	items, err := svc.List(ctx, "vault:/docs")
@@ -377,10 +380,10 @@ func TestSync_UpdatesRenameOnSameRow(t *testing.T) {
 	keyB := types.Hash256{0x02}
 	// Two existing root records with distinct UUIDs: "a.txt" (uuid-01) and
 	// "b.txt" (uuid-02).
-	if err := db.Create(&File{UUID: "uuid-01", Name: "a.txt", DirectoryID: nil, ObjectKey: keyA.String(), Size: 1, ContentDigest: "a", CreatedAt: now, UpdatedAt: now}).Error; err != nil {
+	if err := db.Create(&File{UUID: "uuid-01", Name: "a.txt", DirectoryID: nil, IsCurrent: true, ObjectKey: keyA.String(), Size: 1, ContentDigest: "a", CreatedAt: now, UpdatedAt: now}).Error; err != nil {
 		t.Fatalf("create a.txt: %v", err)
 	}
-	if err := db.Create(&File{UUID: "uuid-02", Name: "b.txt", DirectoryID: nil, ObjectKey: keyB.String(), Size: 2, ContentDigest: "b", CreatedAt: now, UpdatedAt: now}).Error; err != nil {
+	if err := db.Create(&File{UUID: "uuid-02", Name: "b.txt", DirectoryID: nil, IsCurrent: true, ObjectKey: keyB.String(), Size: 2, ContentDigest: "b", CreatedAt: now, UpdatedAt: now}).Error; err != nil {
 		t.Fatalf("create b.txt: %v", err)
 	}
 
@@ -665,6 +668,8 @@ func TestVerify_TransientObjectErrorSurfaces(t *testing.T) {
 	if err := db.Create(&File{
 		UUID:          "uuid-v",
 		Name:          "v.txt",
+		DirectoryID:   nil,
+		IsCurrent:     true,
 		ObjectKey:     objKey,
 		Size:          1,
 		ContentDigest: "d",

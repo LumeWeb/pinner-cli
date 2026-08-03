@@ -24,6 +24,7 @@ type File struct {
 	UUID          string         `gorm:"uniqueIndex"` // stable identity, from metadata
 	Name          string         // e.g., "report.pdf" (non-unique)
 	DirectoryID   *uint          // FK to directories, NULL = root
+	IsCurrent     bool           `gorm:"default:false"` // 1 = the live winner for its (name, dir)
 	ObjectKey     string         // Sia object ID (hex of types.Hash256)
 	Size          int64
 	MediaType     string         // MIME type
