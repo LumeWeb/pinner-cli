@@ -61,6 +61,9 @@ Paths use the vault:/ scheme. Local paths work as normal.
 Stdout contains data or JSON results; progress goes to stderr.`,
 		// Command registrations are added incrementally by the per-command vault
 		// PRs, so this skeleton builds/merges before any subcommand exists.
-		Commands: []*cli.Command{},
+		Commands: []*cli.Command{
+			newVaultCreateCommand(),
+			newVaultRestoreCommand(),
+		},
 	}
 }

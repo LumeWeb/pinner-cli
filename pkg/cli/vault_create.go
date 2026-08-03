@@ -1,0 +1,259 @@
+package cli
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/urfave/cli/v3"
+	"go.lumeweb.com/pinner-cli/pkg/cli/vault"
+)
+
+// staleSeedWarningAfter is how old a pending recovery seed must be before
+// `vault create --agent` warns that it has lingered. It is purely a WARNING
+// threshold — the seed (which guards vault data) is never auto-deleted; the
+// user decides whether to complete the restore or remove the plaintext master
+// key. Configurable via PINNER_VAULT_SEED_STALE_WARN (duration string, e.g.
+// "168h" = 7 days).
+var staleSeedWarningAfter = func() time.Duration {
+	if v := os.Getenv("PINNER_VAULT_SEED_STALE_WARN"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			return d
+		}
+	}
+	return 7 * 24 * time.Hour // default: 7 days
+}()
+
+func newVaultCreateCommand() *cli.Command {
+	return &cli.Command{
+		Name:      "create",
+		Usage:     "Create a new vault",
+		ArgsUsage: "[--profile <name>]",
+		Description: `Creates a new vault identity and configures it locally under the given profile name.
+
+This generates a new recovery seed, connects to the Sia indexer via browser
+approval, and stores the device credential locally.
+
+The recovery seed is displayed ONCE and must be saved securely.`,
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:  "device-name",
+				Usage: "Name for this device (defaults to hostname)",
+			},
+			&cli.BoolFlag{
+				Name:  "no-sync",
+				Usage: "Skip initial sync after creation",
+			},
+		},
+		Action: func(ctx context.Context, c *cli.Command) error {
+			output := setupOutput(c)
+
+			profileName, err := vault.ResolveProfile(c.String(FlagProfile))
+			if err != nil {
+				// An explicit --profile that failed validation must surface the
+				// error rather than silently falling into the interactive
+				// prompt (which would block on stdin in CI/agent/non-TTY
+				// contexts). Only prompt when no profile was provided.
+				if c.String(FlagProfile) != "" {
+					return err
+				}
+				// No --profile and no profiles exist yet — prompt for a name
+				output.Printfln("Enter a name for this vault profile:")
+				fmt.Fscanln(os.Stdin, &profileName)
+				if profileName == "" {
+					return fmt.Errorf("profile name is required")
+				}
+				if err := vault.ValidateProfileName(profileName); err != nil {
+					return fmt.Errorf("invalid profile name: %w", err)
+				}
+			}
+
+			// Check if profile already exists
+			reg, err := vault.LoadRegistry()
+			if err != nil {
+				return fmt.Errorf("failed to load registry: %w", err)
+			}
+			if _, exists := reg.Profiles[profileName]; exists {
+				return fmt.Errorf("profile %q already exists. Use 'pinner vault login --profile %s' or choose a different name", profileName, profileName)
+			}
+
+			// Guard against overwriting a prior pending seed. Agent-mode
+			// create returns before registration completes, so the
+			// profile-exists check above won't catch a repeat run if the
+			// registry was deleted or corrupted.
+			if c.Bool(FlagAgent) {
+				seedPath := vault.SeedPath(profileName)
+				if _, err := os.Stat(seedPath); err == nil {
+					// The seed guards irreplaceable vault DATA, not money — so
+					// we never auto-delete a stale one (that would destroy the
+					// user's only path back into their content). Instead, warn
+					// if it has lingered beyond the normal handoff horizon so
+					// the user can decide to complete or remove it.
+					if vault.SeedIsStale(profileName, staleSeedWarningAfter) {
+						output.Printfln("Warning: a pending recovery seed for profile %q is %s old (stale). Complete it with restore, or remove %s to dispose of the plaintext master key.", profileName, staleSeedWarningAfter, seedPath)
+					}
+					return fmt.Errorf("a pending recovery seed already exists for profile %q; run 'pinner vault restore --profile %s --seed-stdin < %s' to complete it, or remove %s to start over", profileName, profileName, seedPath, seedPath)
+				}
+			}
+
+			cfgMgr, err := configManagerFactory()
+			if err != nil {
+				return err
+			}
+			indexerURL := cfgMgr.Config().GetSiaIndexerURL()
+
+			output.Printfln("Creating vault profile %q...", profileName)
+
+			var approvalURL string
+			var mnemonic string
+
+			if c.Bool(FlagAgent) {
+				// Agent mode: generate the seed only. Do NOT issue a live
+				// connection/approval request here — restore drives the single
+				// browser approval, and issuing one now would orphan an
+				// approval and force a duplicate on the --seed-stdin run.
+				mnemonic = vault.NewSeedPhrase()
+			} else {
+				// 1. Generate a new mnemonic and start approval flow
+				var err error
+				approvalURL, mnemonic, err = vault.RequestNewConnection(ctx, indexerURL)
+				if err != nil {
+					return fmt.Errorf("failed to request connection: %w", err)
+				}
+			}
+
+			if c.Bool(FlagAgent) {
+				// Write the mnemonic to a 0600 file so it never appears in
+				// stdout, logs, or the agent's context window.
+				seedPath := vault.SeedPath(profileName)
+				seedDir := filepath.Dir(seedPath)
+				if err := os.MkdirAll(seedDir, 0700); err != nil {
+					return fmt.Errorf("failed to create seed directory: %w", err)
+				}
+				if err := os.WriteFile(seedPath, []byte(mnemonic+"\n"), 0600); err != nil {
+					return fmt.Errorf("failed to save recovery seed: %w", err)
+				}
+
+				// Record the profile as "pending" in the registry so a
+				// repeat `vault create --agent` hits the profile-exists guard
+				// above rather than silently overwriting the seed.
+				reg.Profiles[profileName] = vault.ProfileConfig{
+					VaultID:    "",
+					CachePath:  vault.ProfileDBPath(profileName),
+					AppKeyRef:  vault.ProfileStatePath(profileName),
+					DeviceName: c.String("device-name"),
+				}
+				if reg.Default == "" {
+					reg.Default = profileName
+				}
+				if err := vault.SaveRegistry(reg); err != nil {
+					return fmt.Errorf("failed to save registry: %w", err)
+				}
+
+				// Do NOT include approval_url — restore issues its own
+				// connection request and owns the single browser approval.
+				// Create's only job in agent mode is to generate the seed.
+				output.PrintJSON(vaultCreateApprovalResponse{
+					Profile:  profileName,
+					SeedPath: seedPath,
+					NextStep: fmt.Sprintf("Run: pinner vault restore --profile %s --seed-stdin < %s (restore drives the single browser approval)", profileName, seedPath),
+				})
+				// The JSON handoff (with next_step instructing the restore) IS
+				// the complete deliverable of this invocation — the operation
+				// did not fail, it handed off to restore. Return nil so the
+				// exit code is 0 and MCP/CI consumers receive the stdout JSON
+				// (next_step) instead of a non-zero exit / discarded output.
+				return nil
+			}
+
+			output.Printfln("Open this URL in your browser to approve:")
+			output.Printfln("  %s", approvalURL)
+			output.Printfln("Waiting for approval...")
+
+			// 3. Wait for approval and register
+			appKeyHex, err := vault.WaitForApprovalAndRegister(ctx, indexerURL, mnemonic)
+			if err != nil {
+				return fmt.Errorf("approval failed: %w", err)
+			}
+
+			// 4. Derive vault ID
+			vaultID := vault.VaultID(appKeyHex)
+
+			// 5. Generate device ID and name
+			deviceID := uuid.NewString()
+			deviceName := c.String("device-name")
+			if deviceName == "" {
+				hostname, _ := os.Hostname()
+				deviceName = hostname
+			}
+
+			// 6. Create profile state
+			state := &vault.ProfileState{
+				AppKey:    appKeyHex,
+				DeviceID:  deviceID,
+				CreatedAt: time.Now().UTC().Format(time.RFC3339),
+			}
+			if err := vault.SaveProfileState(profileName, state); err != nil {
+				return fmt.Errorf("failed to save profile state: %w", err)
+			}
+
+			// 7. Initialize SQLite DB
+			dbPath := vault.ProfileDBPath(profileName)
+			db, err := vault.OpenDB(dbPath)
+			if err != nil {
+				return fmt.Errorf("failed to initialize vault database: %w", err)
+			}
+			if sqlDB, err := db.DB(); err == nil {
+				sqlDB.Close()
+			}
+
+			// 8. Add profile to registry
+			reg.Profiles[profileName] = vault.ProfileConfig{
+				VaultID:    vaultID,
+				CachePath:  dbPath,
+				AppKeyRef:  vault.ProfileStatePath(profileName),
+				DeviceName: deviceName,
+			}
+			if reg.Default == "" {
+				reg.Default = profileName
+			}
+			if err := vault.SaveRegistry(reg); err != nil {
+				return fmt.Errorf("failed to save registry: %w", err)
+			}
+
+			// 9. Initial sync (unless --no-sync)
+			if !c.Bool("no-sync") {
+				output.Printfln("Syncing from indexer...")
+				svc, err := vaultServiceFactory(profileName, indexerURL)
+				if err != nil {
+					output.Printfln("Warning: sync skipped (%v)", err)
+				} else {
+					count, err := svc.Sync(ctx)
+					if err != nil {
+						output.Printfln("Warning: sync failed (%v)", err)
+					} else {
+						output.Printfln("Synced %d changes.", count)
+					}
+					svc.Close()
+				}
+			}
+
+			// 10. Display recovery seed
+			output.Printfln("")
+			output.Printfln("Recovery phrase:")
+			output.Printfln("  %s", mnemonic)
+			output.Printfln("")
+			output.Printfln("This phrase controls access to the vault.")
+			output.Printfln("Pinner cannot recover it. Save it securely.")
+			output.Printfln("")
+			output.Printfln("Vault created.")
+			output.Printfln("Vault ID: %s", vaultID)
+			output.Printfln("Device registered: %s", deviceName)
+			output.Printfln("Cache initialized at %s", dbPath)
+			return nil
+		},
+	}
+}
