@@ -19,7 +19,8 @@ func newWebsitesDomainsCommand() *cli.Command {
 		Description: `Manage domain bindings for a website. A website can have multiple domains
 bound to it across ICANN and HNS namespaces.
 
-All commands accept either the website's numeric ID or its primary domain name.
+ARGUMENT ORDER: <website> is the FIRST argument (a website's numeric ID or its
+primary domain name), and the domain being acted on is the SECOND argument.
 
 Examples:
   pinner websites domains list example.com
@@ -27,6 +28,10 @@ Examples:
   pinner websites domains add example.com mydomain --namespace hns
   pinner websites domains rm example.com staging.example.com
   pinner websites domains verify example.com staging.example.com`,
+
+		// Note: the first argument selects the WEBSITE, the second is the DOMAIN.
+		// Domain names accept a properly-terminated FQDN (e.g. "mydomain.") and
+		// match the stored bare name case-insensitively.
 		Commands: []*cli.Command{
 			newWebsitesDomainsListCommand(),
 			newWebsitesDomainsAddCommand(),
@@ -136,9 +141,13 @@ func resolveDomainID(ctx context.Context, websitesService WebsitesService, websi
 		return "", fmt.Errorf("failed to look up domain: %w", err)
 	}
 
-	// Match by name first (case-insensitive — DNS names are case-insensitive)
+	// Match by name first (case-insensitive — DNS names are case-insensitive).
+	// Tolerate a single trailing dot on either side so users can pass a
+	// properly-terminated FQDN (e.g. "lumeweb.") and still match the stored
+	// bare name (e.g. "lumeweb").
+	normArg := strings.TrimSuffix(domainArg, ".")
 	for _, d := range domains {
-		if strings.EqualFold(d.Domain, domainArg) {
+		if strings.EqualFold(strings.TrimSuffix(d.Domain, "."), normArg) {
 			return strconv.Itoa(d.Id), nil
 		}
 	}
