@@ -158,8 +158,15 @@ func (s *vaultService) Put(ctx context.Context, r io.Reader, size int64, vaultPa
 		// overwrite contract (and could duplicate the object on the next sync).
 		return nil, fmt.Errorf("failed to resolve current file for %s: %w", vp.Name, err)
 	}
+	// mintedFresh records whether we created the UUID ourselves because no
+	// current row existed yet. Only a freshly-minted identity is at risk of a
+	// concurrent-create conflict (an existing path is an overwrite and can
+	// never collide on insert), so the pre-transaction adopt pre-flight below
+	// runs only in that case.
+	mintedFresh := false
 	if fileID == "" {
 		fileID = uuid.NewString()
+		mintedFresh = true
 	}
 
 	// Build file metadata
@@ -212,11 +219,6 @@ func (s *vaultService) Put(ctx context.Context, r io.Reader, size int64, vaultPa
 	// Capture the prior object key (if this is an overwrite) BEFORE we write,
 	// so we can best-effort clean up the orphaned prior content after.
 	priorObjectKey := ""
-	// Set when the concurrent-Put conflict-adoption branch rewrites the local
-	// identity to a winner's UUID. The remote metadata re-stamp must then run
-	// AFTER the transaction commits (see below) so the network round-trip never
-	// happens while the single SQLite connection holds the write lock.
-	adoptedUUID := ""
 	var record *File
 	nowTs := time.Now().UTC()
 	// Persist the user-supplied metadata map on the local File row so it
@@ -240,111 +242,94 @@ func (s *vaultService) Put(ctx context.Context, r io.Reader, size int64, vaultPa
 		UpdatedAt:     nowTs,
 	}
 
-	err = s.db.Transaction(func(tx *gorm.DB) error {
-		var prior File
-		switch tx.Where("uuid = ?", fileID).First(&prior).Error {
-		case nil:
-			priorObjectKey = prior.ObjectKey
-			// Update the existing UUID row (overwrite). Mark it current; the
-			// promotion below demotes any other live current row in the group.
-			prior.ObjectKey = rec.ObjectKey
-			prior.Size = rec.Size
-			prior.MediaType = rec.MediaType
-			prior.ContentDigest = rec.ContentDigest
-			prior.Metadata = datatypes.JSON(userMetaJSON)
-			prior.IsCurrent = true
-			prior.UpdatedAt = rec.UpdatedAt
-			prior.DeletedAt = nil // resurrect if it was tombstoned
-			if err := tx.Save(&prior).Error; err != nil {
-				return err
+	// The store below is wrapped in a bounded retry to resolve the concurrent-
+	// create race WITHOUT ever running network I/O inside the single-connection
+	// SQLite write transaction. OpenDB caps the pool at SetMaxOpenConns(1), so
+	// holding the open transaction across an indexer round-trip would block every
+	// other vault DB operation (Get/List/Stat/Sync) for the full network latency
+	// and risk the 5000ms busy_timeout. Every network call in this block runs in
+	// the adoptPreflight helper OUTSIDE the transaction.
+	//
+	// adoptPreflight re-resolves (name, dir) for a freshly-minted path. If a
+	// concurrent writer claimed the path after we minted our UUID, we are the
+	// loser: adopt the winner's UUID and re-stamp + re-pin the object with it
+	// here, before any write transaction opens. Re-pinning first guarantees the
+	// remote object and the committed row share the adopted identity — a re-pin
+	// failure returns before anything is committed, so Sync can never mint a
+	// duplicate from stale-metadata (this is the invariant the original
+	// in-transaction re-pin enforced, now without holding the connection).
+	//
+	// If the transaction still hits a create-conflict (a writer committed
+	// between adoptPreflight and tx.Create), we retry: the next preflight finds
+	// that winner, adopts + re-pins it outside the transaction, and the retry's
+	// transaction takes the overwrite path (no conflict). The object's content
+	// ID is unaffected by metadata, so re-pinning only rewrites the UUID stamp.
+	const maxAdoptRetries = 4
+	for attempt := 0; attempt < maxAdoptRetries; attempt++ {
+		if mintedFresh {
+			if adopted, aerr := s.adoptPreflight(ctx, &obj, &fileMeta, vp.Name, dirID, &rec); aerr != nil {
+				return nil, fmt.Errorf("failed to adopt concurrent winner: %w", aerr)
+			} else if adopted {
+				// The object now carries the adopted UUID; the transaction below
+				// must target that identity (overwrite path), not our old UUID.
+				fileID = rec.UUID
 			}
-			rec = prior
-		case gorm.ErrRecordNotFound:
-			if err := tx.Create(&rec).Error; err != nil {
-				// A concurrent writer can win the (name, directory) path between
-				// our findCurrentFile read above and this insert, tripping the
-				// partial unique index. That's not fatal: re-resolve the winner
-				// and adopt its UUID (update that row with our new content) so
-				// both writers converge on a single live row and neither is lost.
-				if isLiveNameConflict(err) {
-					var current File
-					// Scope to is_current = 1 so we adopt only the current winner
-					// of (name, dir). Unfiltered, the tie-break could select a
-					// historical (non-current) row and force-promote it, which
-					// would violate idx_files_live_name_dir and break identity.
-					// The partial unique index guarantees at most one current
-					// live row per (name, dir), so First (no ordering) suffices.
-					q := tx.Where("name = ? AND is_current = 1 AND deleted_at IS NULL", vp.Name)
-					if dirID == nil {
-						q = q.Where("directory_id IS NULL")
-					} else {
-						q = q.Where("directory_id = ?", dirID)
-					}
-					if cerr := q.First(&current).Error; cerr == nil {
-						priorObjectKey = current.ObjectKey
-						rec = current
-						rec.ObjectKey = objectKey.String()
-						rec.Size = size
-						rec.MediaType = mediaType
-						rec.ContentDigest = contentDigest
-						rec.Metadata = datatypes.JSON(userMetaJSON)
-						rec.IsCurrent = true
-						rec.UpdatedAt = nowTs
-						rec.DeletedAt = nil
-						// Adopting the winner's UUID diverges from the object we
-						// already pinned (which carries OUR freshly-generated UUID
-						// in its metadata). We persist the adopted identity in the
-						// DB here, then re-stamp + re-pin the remote object AFTER
-						// the transaction commits (see adoptedUUID below). The
-						// re-pin is a network round-trip to the indexer and must
-						// NEVER run inside this transaction: OpenDB caps the pool
-						// at SetMaxOpenConns(1), so the single SQLite connection
-						// and its open write transaction would be held across the
-						// whole network call — blocking every other vault DB
-						// operation (Get/List/Stat/Sync) and risking the 5000ms
-						// busy_timeout on contention. The object's content ID is
-						// unaffected by metadata, so the key stays valid and the
-						// post-commit re-pin only rewrites the UUID stamped on it.
-						adoptedUUID = rec.UUID
-						if serr := tx.Save(&rec).Error; serr != nil {
-							return serr
-						}
-						return nil
-					}
+		}
+
+		err = s.db.Transaction(func(tx *gorm.DB) error {
+			var prior File
+			switch tx.Where("uuid = ?", rec.UUID).First(&prior).Error {
+			case nil:
+				priorObjectKey = prior.ObjectKey
+				// Update the existing UUID row (overwrite). Mark it current; the
+				// promotion below demotes any other live current row in the group.
+				prior.ObjectKey = rec.ObjectKey
+				prior.Size = rec.Size
+				prior.MediaType = rec.MediaType
+				prior.ContentDigest = rec.ContentDigest
+				prior.Metadata = datatypes.JSON(userMetaJSON)
+				prior.IsCurrent = true
+				prior.UpdatedAt = rec.UpdatedAt
+				prior.DeletedAt = nil // resurrect if it was tombstoned
+				if err := tx.Save(&prior).Error; err != nil {
+					return err
 				}
-				return err
+				rec = prior
+				return promoteCurrent(tx, vp.Name, dirID, rec.ID)
+			case gorm.ErrRecordNotFound:
+				// A concurrent writer can win the (name, directory) path between
+				// adoptPreflight and this insert, tripping the partial unique
+				// index. This is not fatal: return the conflict so the retry
+				// loop above re-runs adoptPreflight, which now resolves the
+				// winner and re-pins the object OUTSIDE the transaction, and
+				// then takes the overwrite path here. No network I/O happens
+				// under the single-connection write lock.
+				if err := tx.Create(&rec).Error; err != nil {
+					if isLiveNameConflict(err) {
+						return err
+					}
+					return err
+				}
+				return promoteCurrent(tx, vp.Name, dirID, rec.ID)
+			default:
+				return fmt.Errorf("failed to query existing file by uuid %q", rec.UUID)
 			}
-		default:
-			return fmt.Errorf("failed to query existing file by uuid %q", fileID)
+		})
+		if err == nil {
+			record = &rec
+			break
 		}
-		return promoteCurrent(tx, vp.Name, dirID, rec.ID)
-	})
+		if !isLiveNameConflict(err) {
+			return nil, fmt.Errorf("failed to store file record: %w", err)
+		}
+		// A create-conflict: go around again. On retry adoptPreflight re-pins
+		// the object with the winner's UUID before the write transaction, so a
+		// re-pin failure still surfaces (a) after any commit and (b) before any
+		// adoption is persisted.
+	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to store file record: %w", err)
+		return nil, fmt.Errorf("failed to store file record after %d attempts: %w", maxAdoptRetries, err)
 	}
-
-	// Concurrent-Put conflict adoption re-stamped the LOCAL identity to the
-	// winner's UUID inside the transaction but deferred the remote re-pin to
-	// here — after commit — so the network call did not hold the single
-	// SQLite connection's write lock. Now that the DB write is durable,
-	// re-stamp the object metadata and re-pin it with the adopted UUID so a
-	// later Sync resolves the object to the surviving row instead of minting a
-	// duplicate. If this fails, return the error: the row is committed with the
-	// adopted UUID, so a retry re-resolves the same row (clean overwrite) and
-	// no permanent remote/local divergence is left silently.
-	if adoptedUUID != "" {
-		fileMeta.ID = adoptedUUID
-		rmeta, rerr := fileMeta.JSON()
-		if rerr != nil {
-			return nil, fmt.Errorf("failed to re-stamp object metadata after adoption: %w", rerr)
-		}
-		obj.UpdateMetadata(rmeta)
-		if perr := s.sdk.PinObject(ctx, obj); perr != nil {
-			return nil, fmt.Errorf("failed to re-pin object after adopting UUID: %w", perr)
-		}
-	}
-
-	record = &rec
 
 	// Best-effort cleanup of a prior object that is no longer referenced by any
 	// LIVE local row (only when the overwritten UUID row had different content).
@@ -861,6 +846,70 @@ func (s *vaultService) findCurrentFile(name string, dirID *uint) (File, error) {
 	}
 	err := q.First(&f).Error
 	return f, err
+}
+
+// adoptPreflight resolves a concurrent-Put conflict BEFORE any write
+// transaction is opened. When a freshly-minted path turns out to already have a
+// live current winner (another writer committed between our initial
+// findCurrentFile read and this preflight), we are the loser: adopt the
+// winner's UUID and re-stamp + re-pin the just-uploaded object with it here.
+//
+// Doing this OUTSIDE the transaction is what keeps the indexer network
+// round-trip (PinObject) from running while the single SQLite connection
+// (SetMaxOpenConns(1)) holds an open write transaction. It also preserves the
+// no-divergence invariant the original in-transaction re-pin enforced: the
+// re-pin happens BEFORE any row is committed, so if it fails we return and
+// nothing is persisted — Sync can never mint a duplicate from stale-metadata.
+//
+// rec is updated in place to the adopted identity so the caller's subsequent
+// transaction targets the winner's row (overwrite path) instead of re-creating
+// a conflicting row. Returns (false, nil) when no adoption is needed.
+func (s *vaultService) adoptPreflight(ctx context.Context, obj *siastorage.Object, fileMeta *FileMetadata, name string, dirID *uint, rec *File) (bool, error) {
+	current, err := s.findCurrentFile(name, dirID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			// No concurrent winner yet — nothing to adopt.
+			return false, nil
+		}
+		return false, fmt.Errorf("resolve current file for adoption: %w", err)
+	}
+	if current.UUID == rec.UUID {
+		// The path's current winner is already our identity; no adoption needed.
+		return false, nil
+	}
+
+	// Adopt the winner's UUID. Scope to the current live winner (findCurrentFile
+	// already does), so we never force-promote a historical row and violate
+	// idx_files_live_name_dir.
+	*rec = File{
+		UUID:          current.UUID,
+		Name:          name,
+		DirectoryID:   dirID,
+		ObjectKey:     obj.ID().String(),
+		Size:          fileMeta.Size,
+		MediaType:     fileMeta.MediaType,
+		ContentDigest: fileMeta.ContentDigest,
+		IsCurrent:     true,
+		UpdatedAt:     time.Now().UTC(),
+	}
+	// Carry forward the winner's prior object key (if any) for post-commit
+	// orphan cleanup, and the prior row's created-at.
+	rec.CreatedAt = current.CreatedAt
+
+	// Re-stamp the remote object metadata with the adopted identity and re-pin
+	// it. This is a network round-trip but runs here, BEFORE the write
+	// transaction, so it never blocks the single-connection write lock; and a
+	// failure returns before anything is committed (no divergence).
+	fileMeta.ID = current.UUID
+	rmeta, rerr := fileMeta.JSON()
+	if rerr != nil {
+		return false, fmt.Errorf("re-stamp object metadata after adopting UUID: %w", rerr)
+	}
+	obj.UpdateMetadata(rmeta)
+	if perr := s.sdk.PinObject(ctx, *obj); perr != nil {
+		return false, fmt.Errorf("re-pin object after adopting UUID: %w", perr)
+	}
+	return true, nil
 }
 
 // promoteCurrent makes targetID the single winner for its (name, dir) group
