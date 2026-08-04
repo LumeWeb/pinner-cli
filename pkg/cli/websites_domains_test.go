@@ -423,6 +423,28 @@ func TestWebsitesDomainsVerify(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "successful verify by name with trailing dots",
+			setupMocks: func(svc *mockWebsitesServiceForCLI) {
+				svc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+					return []ipfs.WebsiteItem{
+						{Id: 1, Domain: "example.com"},
+					}, nil
+				}
+				svc.ListDomainsFn = func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
+					return []ipfs.DomainResponse{
+						{Id: 2, Domain: "mydomain.hns", Namespace: "hns"},
+					}, nil
+				}
+				svc.VerifyDomainFn = func(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainResponse, error) {
+					return &ipfs.DomainResponse{
+						Id: 2, Domain: "mydomain.hns", Namespace: "hns", ZoneName: nil,
+					}, nil
+				}
+			},
+			cmd:     newMockCommand().withArgs("example.com.", "mydomain.hns."),
+			wantErr: false,
+		},
+		{
 			name: "domain name not found",
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
 				svc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {

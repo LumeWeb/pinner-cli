@@ -9,6 +9,7 @@ import (
 
 	"github.com/urfave/cli/v3"
 	ipfs "go.lumeweb.com/ipfs-sdk"
+	"go.lumeweb.com/ipfs-sdk/dnsname"
 	"go.lumeweb.com/pinner-cli/pkg/config"
 )
 
@@ -294,7 +295,7 @@ func resolveWebsiteID(ctx context.Context, websitesService WebsitesService, arg 
 	}
 
 	for _, w := range websites {
-		if strings.EqualFold(w.Domain, arg) {
+		if dnsname.Equal(w.Domain, arg) {
 			return fmt.Sprintf("%d", w.Id), nil
 		}
 	}

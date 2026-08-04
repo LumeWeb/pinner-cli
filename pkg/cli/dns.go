@@ -10,6 +10,7 @@ import (
 
 	"github.com/urfave/cli/v3"
 	ipfs "go.lumeweb.com/ipfs-sdk"
+	"go.lumeweb.com/ipfs-sdk/dnsname"
 	"go.lumeweb.com/pinner-cli/pkg/config"
 )
 
@@ -909,7 +910,7 @@ func isValidDomain(domain string) bool {
 	// A single trailing dot denotes an absolute/FQDN name and is valid
 	// (e.g. "ns1.example.com."). The terminating dot is the DNS root
 	// separator, not an empty label. Strip it before validating labels.
-	trimmed := strings.TrimSuffix(domain, ".")
+	trimmed := dnsname.TrimDot(domain)
 	if trimmed == "" {
 		return false
 	}
@@ -931,7 +932,7 @@ func isValidDomain(domain string) bool {
 // validateDNSRecordName validates a DNS record name before sending to the API.
 // @ is only valid as the sole character (apex shorthand).
 func validateDNSRecordName(name string) error {
-	name = strings.TrimSuffix(name, ".")
+	name = dnsname.TrimDot(name)
 	if name == "" || name == "@" {
 		return nil
 	}

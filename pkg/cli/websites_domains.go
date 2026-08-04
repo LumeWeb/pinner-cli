@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 	"strconv"
-	"strings"
 
 	"github.com/urfave/cli/v3"
 	ipfs "go.lumeweb.com/ipfs-sdk"
+	"go.lumeweb.com/ipfs-sdk/dnsname"
 	"go.lumeweb.com/pinner-cli/pkg/config"
 )
 
@@ -136,9 +136,10 @@ func resolveDomainID(ctx context.Context, websitesService WebsitesService, websi
 		return "", fmt.Errorf("failed to look up domain: %w", err)
 	}
 
-	// Match by name first (case-insensitive — DNS names are case-insensitive)
+	// Match by name first (case-insensitive and tolerant of a trailing
+	// dot — DNS names are case-insensitive and bare/FQDN forms are equal).
 	for _, d := range domains {
-		if strings.EqualFold(d.Domain, domainArg) {
+		if dnsname.Equal(d.Domain, domainArg) {
 			return strconv.Itoa(d.Id), nil
 		}
 	}
