@@ -568,17 +568,22 @@ func websitesDomainsListWithService(ctx context.Context, cmd websitesCommandGett
 
 	output.Printfln("Found %d domain(s) for website %s", len(domains), websiteID)
 
-	headers := []string{"ID", "DOMAIN", "NAMESPACE", "ZONE NAME"}
+	headers := []string{"ID", "DOMAIN", "NAMESPACE", "STATUS", "ZONE NAME"}
 	rows := make([][]string, len(domains))
 	for i, d := range domains {
 		zoneName := ""
 		if d.ZoneName != nil {
 			zoneName = *d.ZoneName
 		}
+		status := ""
+		if d.Status != nil {
+			status = *d.Status
+		}
 		rows[i] = []string{
 			strconv.Itoa(d.Id),
 			d.Domain,
 			d.Namespace,
+			status,
 			zoneName,
 		}
 	}
@@ -628,11 +633,16 @@ func websitesDomainsAddWithService(ctx context.Context, cmd websitesCommandGette
 	if result.ZoneName != nil {
 		zoneName = *result.ZoneName
 	}
+	status := ""
+	if result.Status != nil {
+		status = *result.Status
+	}
 	output.PrintFields(FieldGroup{
 		Fields: []Field{
 			{"ID", strconv.Itoa(result.Id)},
 			{"Domain", result.Domain},
 			{"Namespace", result.Namespace},
+			{"Status", status},
 			{"Zone Name", zoneName},
 		},
 	})
@@ -713,11 +723,16 @@ func websitesDomainsVerifyWithService(ctx context.Context, cmd websitesCommandGe
 	if result.ZoneName != nil {
 		zoneName = *result.ZoneName
 	}
+	status := ""
+	if result.Status != nil {
+		status = *result.Status
+	}
 	output.PrintFields(FieldGroup{
 		Fields: []Field{
 			{"ID", strconv.Itoa(result.Id)},
 			{"Domain", result.Domain},
 			{"Namespace", result.Namespace},
+			{"Status", status},
 			{"Zone Name", zoneName},
 		},
 	})
