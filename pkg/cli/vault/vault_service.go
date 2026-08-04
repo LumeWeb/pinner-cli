@@ -212,6 +212,11 @@ func (s *vaultService) Put(ctx context.Context, r io.Reader, size int64, vaultPa
 	// Capture the prior object key (if this is an overwrite) BEFORE we write,
 	// so we can best-effort clean up the orphaned prior content after.
 	priorObjectKey := ""
+	// Set when the concurrent-Put conflict-adoption branch rewrites the local
+	// identity to a winner's UUID. The remote metadata re-stamp must then run
+	// AFTER the transaction commits (see below) so the network round-trip never
+	// happens while the single SQLite connection holds the write lock.
+	adoptedUUID := ""
 	var record *File
 	nowTs := time.Now().UTC()
 	// Persist the user-supplied metadata map on the local File row so it
@@ -288,21 +293,19 @@ func (s *vaultService) Put(ctx context.Context, r io.Reader, size int64, vaultPa
 						rec.DeletedAt = nil
 						// Adopting the winner's UUID diverges from the object we
 						// already pinned (which carries OUR freshly-generated UUID
-						// in its metadata). Re-pin the object with the adopted
-						// UUID BEFORE saving the row so a re-pin failure rolls back
-						// the transaction — the DB row and the remote object must
-						// never be committed with different identities, or a later
-						// Sync would duplicate the row. The object's content ID is
-						// unaffected by metadata, so the key stays valid.
-						fileMeta.ID = rec.UUID
-						if rmeta, rerr := fileMeta.JSON(); rerr != nil {
-							return fmt.Errorf("failed to re-stamp object metadata: %w", rerr)
-						} else {
-							obj.UpdateMetadata(rmeta)
-						}
-						if perr := s.sdk.PinObject(ctx, obj); perr != nil {
-							return fmt.Errorf("failed to re-pin object after adopting UUID: %w", perr)
-						}
+						// in its metadata). We persist the adopted identity in the
+						// DB here, then re-stamp + re-pin the remote object AFTER
+						// the transaction commits (see adoptedUUID below). The
+						// re-pin is a network round-trip to the indexer and must
+						// NEVER run inside this transaction: OpenDB caps the pool
+						// at SetMaxOpenConns(1), so the single SQLite connection
+						// and its open write transaction would be held across the
+						// whole network call — blocking every other vault DB
+						// operation (Get/List/Stat/Sync) and risking the 5000ms
+						// busy_timeout on contention. The object's content ID is
+						// unaffected by metadata, so the key stays valid and the
+						// post-commit re-pin only rewrites the UUID stamped on it.
+						adoptedUUID = rec.UUID
 						if serr := tx.Save(&rec).Error; serr != nil {
 							return serr
 						}
@@ -319,6 +322,28 @@ func (s *vaultService) Put(ctx context.Context, r io.Reader, size int64, vaultPa
 	if err != nil {
 		return nil, fmt.Errorf("failed to store file record: %w", err)
 	}
+
+	// Concurrent-Put conflict adoption re-stamped the LOCAL identity to the
+	// winner's UUID inside the transaction but deferred the remote re-pin to
+	// here — after commit — so the network call did not hold the single
+	// SQLite connection's write lock. Now that the DB write is durable,
+	// re-stamp the object metadata and re-pin it with the adopted UUID so a
+	// later Sync resolves the object to the surviving row instead of minting a
+	// duplicate. If this fails, return the error: the row is committed with the
+	// adopted UUID, so a retry re-resolves the same row (clean overwrite) and
+	// no permanent remote/local divergence is left silently.
+	if adoptedUUID != "" {
+		fileMeta.ID = adoptedUUID
+		rmeta, rerr := fileMeta.JSON()
+		if rerr != nil {
+			return nil, fmt.Errorf("failed to re-stamp object metadata after adoption: %w", rerr)
+		}
+		obj.UpdateMetadata(rmeta)
+		if perr := s.sdk.PinObject(ctx, obj); perr != nil {
+			return nil, fmt.Errorf("failed to re-pin object after adopting UUID: %w", perr)
+		}
+	}
+
 	record = &rec
 
 	// Best-effort cleanup of a prior object that is no longer referenced by any
