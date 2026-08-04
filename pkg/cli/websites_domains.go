@@ -19,7 +19,8 @@ func newWebsitesDomainsCommand() *cli.Command {
 		Description: `Manage domain bindings for a website. A website can have multiple domains
 bound to it across ICANN and HNS namespaces.
 
-All commands accept either the website's numeric ID or its primary domain name.
+ARGUMENT ORDER: <website> is the FIRST argument (a website's numeric ID or its
+primary domain name), and the domain being acted on is the SECOND argument.
 
 Examples:
   pinner websites domains list example.com
@@ -27,6 +28,10 @@ Examples:
   pinner websites domains add example.com mydomain --namespace hns
   pinner websites domains rm example.com staging.example.com
   pinner websites domains verify example.com staging.example.com`,
+
+		// Note: the first argument selects the WEBSITE, the second is the DOMAIN.
+		// Domain names accept a properly-terminated FQDN (e.g. "mydomain.") and
+		// match the stored bare name case-insensitively.
 		Commands: []*cli.Command{
 			newWebsitesDomainsListCommand(),
 			newWebsitesDomainsAddCommand(),

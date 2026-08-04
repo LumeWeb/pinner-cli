@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	ipfs "go.lumeweb.com/ipfs-sdk"
 )
@@ -738,4 +739,49 @@ func websitesDomainsVerifyWithService(ctx context.Context, cmd websitesCommandGe
 	})
 
 	return nil
+}
+
+func TestResolveDomainID(t *testing.T) {
+	mkSvc := func(domains []ipfs.DomainResponse) *mockWebsitesServiceForCLI {
+		svc := &mockWebsitesServiceForCLI{}
+		svc.ListDomainsFn = func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
+			return domains, nil
+		}
+		return svc
+	}
+
+	domains := []ipfs.DomainResponse{
+		{Id: 1, Domain: "lumeweb", Namespace: "hns"},
+		{Id: 2, Domain: "example.com", Namespace: "icann"},
+	}
+
+	tests := []struct {
+		name      string
+		arg       string
+		want      string
+		wantErr   bool
+		errPrefix string
+	}{
+		{"exact name", "lumeweb", "1", false, ""},
+		{"trailing dot arg matches bare stored name", "lumeweb.", "1", false, ""},
+		{"case insensitive", "LUMEWEB", "1", false, ""},
+		{"case insensitive trailing dot", "LUMEWEB.", "1", false, ""},
+		{"icann domain", "example.com.", "2", false, ""},
+		{"numeric id", "2", "2", false, ""},
+		{"not found", "nonexistent", "", true, "not found"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := mkSvc(domains)
+			got, err := resolveDomainID(context.Background(), svc, "1", tt.arg)
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errPrefix)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
 }
