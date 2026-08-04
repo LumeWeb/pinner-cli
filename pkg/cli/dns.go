@@ -229,12 +229,12 @@ Examples:
   pinner dns records create example.com --name _dnslink --type TXT --content "/ipfs/bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e" --ttl 3600`,
 		ArgsUsage: "<domain>",
 		Flags: []cli.Flag{
-				OptionalNameFlag("DNS record name (omit for apex, or use @)"),
-				TypeFlag(),
-				ContentFlag(),
-				TTLFlag(),
-				DisabledFlag(),
-			},
+			OptionalNameFlag("DNS record name (omit for apex, or use @)"),
+			TypeFlag(),
+			ContentFlag(),
+			TTLFlag(),
+			DisabledFlag(),
+		},
 		Action: withContext(func(ctx context.Context, cc *commandContext) error {
 			return dnsRecordsCreate(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
 		}),
@@ -906,7 +906,15 @@ func isValidDomain(domain string) bool {
 		return false
 	}
 
-	parts := strings.Split(domain, ".")
+	// A single trailing dot denotes an absolute/FQDN name and is valid
+	// (e.g. "ns1.example.com."). The terminating dot is the DNS root
+	// separator, not an empty label. Strip it before validating labels.
+	trimmed := strings.TrimSuffix(domain, ".")
+	if trimmed == "" {
+		return false
+	}
+
+	parts := strings.Split(trimmed, ".")
 	if len(parts) < 2 {
 		return false
 	}

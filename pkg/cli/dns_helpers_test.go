@@ -56,12 +56,15 @@ func TestIsValidDomain(t *testing.T) {
 		expected bool
 	}{
 		{"example.com", true},
+		{"example.com.", true}, // trailing dot = absolute FQDN, valid
 		{"sub.example.com", true},
+		{"sub.example.com.", true},
 		{"a.b.c.d", true},
 		{"", false},
 		{"single", false},
 		{".com", false},
-		{"example.", false},
+		{"example.", false}, // bare label + dot, not a valid FQDN
+		{".", false},        // bare root, not valid record content
 	}
 
 	for _, tt := range tests {
@@ -97,9 +100,12 @@ func TestValidateDNSRecord(t *testing.T) {
 		{"valid AAAA record", "AAAA", "::1", false, ""},
 		{"invalid AAAA record", "AAAA", "1.2.3.4", true, "invalid IPv6"},
 		{"valid CNAME record", "CNAME", "example.com", false, ""},
+		{"valid CNAME trailing dot", "CNAME", "example.com.", false, ""},
 		{"invalid CNAME record", "CNAME", "single", true, "invalid domain"},
 		{"valid MX record", "MX", "mail.example.com", false, ""},
+		{"valid MX trailing dot", "MX", "mail.example.com.", false, ""},
 		{"valid NS record", "NS", "ns1.example.com", false, ""},
+		{"valid NS trailing dot", "NS", "ns1.example.com.", false, ""},
 		{"valid TXT record", "TXT", "some text", false, ""},
 		{"TXT too long", "TXT", string(make([]byte, 256)), true, "too long"},
 		{"unsupported type", "SRV", "whatever", true, "unsupported record type"},
