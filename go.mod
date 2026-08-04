@@ -28,8 +28,8 @@ require (
 	github.com/urfave/cli/v3 v3.6.1
 	go.lumeweb.com/configmanager v0.3.26
 	go.lumeweb.com/ipfs-content v0.1.17
-	go.lumeweb.com/ipfs-sdk v0.1.60
-	go.lumeweb.com/portal-sdk v0.1.63
+	go.lumeweb.com/ipfs-sdk v0.1.61
+	go.lumeweb.com/portal-sdk v0.1.64
 	go.lumeweb.com/queryutil v0.3.17
 	go.uber.org/zap v1.27.1
 	golang.org/x/sys v0.41.0

@@ -70,6 +70,7 @@ const (
 	SubdomainAccount = "account"
 	SubdomainIPFS    = "ipfs"
 	SubdomainAdmin   = "admin"
+	SubdomainMeta    = "meta"
 )
 
 // Default endpoint constants.
@@ -227,6 +228,11 @@ func (c *Config) GetAccountEndpointWithSecure(secure bool) string {
 // GetIPFSEndpointWithSecure returns the IPFS pinning API endpoint with a custom secure flag.
 func (c *Config) GetIPFSEndpointWithSecure(secure bool) string {
 	return getSubdomainEndpointWithProtocol(c.GetBaseEndpoint(), SubdomainIPFS, secure)
+}
+
+// GetMetaEndpointWithSecure returns the meta API endpoint (meta subdomain) with a custom secure flag.
+func (c *Config) GetMetaEndpointWithSecure(secure bool) string {
+	return getSubdomainEndpointWithProtocol(c.GetBaseEndpoint(), SubdomainMeta, secure)
 }
 
 // GetGatewayEndpointWithSecure returns the IPFS gateway endpoint with a custom secure flag.
