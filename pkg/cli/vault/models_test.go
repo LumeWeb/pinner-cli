@@ -3,6 +3,7 @@ package vault
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -158,8 +159,12 @@ func TestOpenDB_RestrictsFilePermissions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat vault.db: %v", err)
 	}
-	if perm := info.Mode().Perm(); perm != 0600 {
-		t.Errorf("vault.db permissions = %o, want 0600 (must not inherit world-readable umask)", perm)
+	// Unix enforces strict 0600 on the SQLite cache; Windows has no Unix file
+	// modes (Mode().Perm() reports 0666 regardless), so the check is Unix-only.
+	if runtime.GOOS != "windows" {
+		if perm := info.Mode().Perm(); perm != 0600 {
+			t.Errorf("vault.db permissions = %o, want 0600 (must not inherit world-readable umask)", perm)
+		}
 	}
 }
 

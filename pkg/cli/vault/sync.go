@@ -86,12 +86,17 @@ func (s *vaultService) Sync(ctx context.Context) (int, error) {
 	// object and is not a deletion, so there is never any metadata to resolve.
 	lastProcessed := -1
 	firstSkipped := -1
-	// Seed seenProcessed from a pending interleaved skip carried over from the
-	// previous batch: if the cursor was stopped before such a skip, the same
-	// skip reappearing at the head of THIS batch must stay classified as an
-	// interleaved retry, not be reclassified as a fresh leading skip (which
-	// would drop it permanently before its metadata resolves).
-	seenProcessed := cursorRecord.PendingSkip
+	// seenProcessed is set to true once a real (file-producing) event has been
+	// processed in this batch, so a later transient skip is correctly classified
+	// as an INTERLEAVED retry (cursor held, metadata re-polled) rather than a
+	// fresh leading skip (dropped). It is NOT seeded from the previous batch's
+	// PendingSkip flag: a carried-over pending skip only justifies retrying the
+	// SAME skip, identified by its object key. Seeding the whole batch would
+	// misclassify a DIFFERENT fresh leading skip at the head as a retry and
+	// stall the cursor. The carryover is instead checked per-skip by key (see
+	// the transient branches below).
+	seenProcessed := false
+	carriedPending := cursorRecord.PendingSkip
 	for i, ev := range events {
 		if ev.Deleted {
 			// Soft-delete the local row(s) this delete event refers to. Setting
@@ -153,17 +158,23 @@ func (s *vaultService) Sync(ctx context.Context) (int, error) {
 		}
 		// Parse metadata from unsealed object
 		rawMeta := ev.Object.Metadata()
+		// isCarried is true when this specific skip is the pending skip carried
+		// over from the previous batch (matching by object key). Only such a skip —
+		// not a fresh leading skip that happens to sit at the head — may be retried
+		// as an interleaved skip so its metadata can resolve on a later batch.
+		isCarried := carriedPending && ev.Key.String() == cursorRecord.PendingSkipKey
 		if len(rawMeta) == 0 {
 			// Real object but no metadata yet — transient.
-			if seenProcessed {
-				// Interleaved after a processed event: stop the cursor before
-				// it so it is retried once metadata appears.
+			if seenProcessed || isCarried {
+				// Interleaved after a processed event, or the carried-over pending
+				// retry: stop the cursor so it is retried once metadata appears.
 				if firstSkipped < 0 {
 					firstSkipped = i
 				}
 			} else {
-				// Leading before any processed event: unresolvable for now,
-				// pass over it so the batch makes forward progress.
+				// Leading before any processed event (and not the carried retry):
+				// unresolvable for now, pass over it so the batch makes forward
+				// progress.
 				lastProcessed = i
 			}
 			continue
@@ -171,7 +182,7 @@ func (s *vaultService) Sync(ctx context.Context) (int, error) {
 		fileMeta, err := ParseFileMetadata(rawMeta)
 		if err != nil {
 			// Real object with unparsable metadata — transient.
-			if seenProcessed {
+			if seenProcessed || isCarried {
 				if firstSkipped < 0 {
 					firstSkipped = i
 				}
@@ -302,6 +313,14 @@ func (s *vaultService) Sync(ctx context.Context) (int, error) {
 		skipCount = cursorRecord.PendingSkipCount + 1
 	}
 
+	// The object key of the pending skip being carried forward. Persisted so a
+	// later batch can match the head skip against it (see isCarried) and only
+	// retry the SAME skip rather than misclassifying a fresh leading skip.
+	pendingSkipKey := ""
+	if pendingSkip {
+		pendingSkipKey = events[firstSkipped].Key.String()
+	}
+
 	// Update cursor to the last successfully-processed event (capped before
 	// any interleaved skipped event, or advanced past a leading skip), not
 	// the last event in the batch, so skipped events are revisited on the
@@ -321,6 +340,7 @@ func (s *vaultService) Sync(ctx context.Context) (int, error) {
 			cursorRecord = SyncDownCursor{
 				Cursor:          cursorJSON,
 				PendingSkip:     pendingSkip,
+				PendingSkipKey:  pendingSkipKey,
 				PendingSkipCount: skipCount,
 				UpdatedAt:       time.Now(),
 			}
@@ -330,6 +350,7 @@ func (s *vaultService) Sync(ctx context.Context) (int, error) {
 		} else {
 			cursorRecord.Cursor = cursorJSON
 			cursorRecord.PendingSkip = pendingSkip
+			cursorRecord.PendingSkipKey = pendingSkipKey
 			cursorRecord.PendingSkipCount = skipCount
 			cursorRecord.UpdatedAt = time.Now()
 			if err := s.db.Save(&cursorRecord).Error; err != nil {
@@ -348,6 +369,7 @@ func (s *vaultService) Sync(ctx context.Context) (int, error) {
 			cursorRecord = SyncDownCursor{
 				Cursor:          cursorRecord.Cursor,
 				PendingSkip:     true,
+				PendingSkipKey:  pendingSkipKey,
 				PendingSkipCount: skipCount,
 				UpdatedAt:       time.Now(),
 			}
@@ -356,6 +378,7 @@ func (s *vaultService) Sync(ctx context.Context) (int, error) {
 			}
 		} else {
 			cursorRecord.PendingSkip = true
+			cursorRecord.PendingSkipKey = pendingSkipKey
 			cursorRecord.PendingSkipCount = skipCount
 			cursorRecord.UpdatedAt = time.Now()
 			if err := s.db.Save(&cursorRecord).Error; err != nil {
@@ -369,6 +392,7 @@ func (s *vaultService) Sync(ctx context.Context) (int, error) {
 		// reclassifying a genuinely-leading transient skip as an interleaved
 		// retry, which would stall sync indefinitely.
 		cursorRecord.PendingSkip = false
+		cursorRecord.PendingSkipKey = ""
 		cursorRecord.PendingSkipCount = 0
 		cursorRecord.UpdatedAt = time.Now()
 		if err := s.db.Save(&cursorRecord).Error; err != nil {

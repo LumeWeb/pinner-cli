@@ -68,6 +68,7 @@ CREATE TABLE IF NOT EXISTS `sync_down_cursors`
     `id`                 integer PRIMARY KEY AUTOINCREMENT,
     `cursor`             text,
     `pending_skip`       numeric,
+    `pending_skip_key`   text,
     `pending_skip_count` integer NOT NULL DEFAULT 0,
     `updated_at`         datetime
 );

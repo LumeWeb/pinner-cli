@@ -25,12 +25,13 @@ import (
 // objectKey (the zero hash of an empty slab list).
 type fakeSDK struct {
 	t            *testing.T
-	deleted      []string // object keys passed to DeleteObject
-	uploadCalled bool
-	pinCalled    bool
-	delErr       error         // error to return from DeleteObject (nil = success)
-	objErr       error         // error to return from Object (nil = success)
-	pinnedMeta   []byte        // metadata attached to the most recently pinned object
+	deleted       []string // object keys passed to DeleteObject
+	uploadCalled  bool
+	pinCalled     bool
+	downloadCalled bool // whether Download was invoked
+	delErr        error         // error to return from DeleteObject (nil = success)
+	objErr        error         // error to return from Object (nil = success)
+	pinnedMeta    []byte        // metadata attached to the most recently pinned object
 }
 
 func (f *fakeSDK) Account(_ context.Context) (app.AccountResponse, error) {
@@ -61,6 +62,7 @@ func (f *fakeSDK) ObjectEvents(_ context.Context, _ slabs.Cursor, _ int) ([]sias
 	return nil, nil
 }
 func (f *fakeSDK) Download(_ siastorage.Object, _ ...siastorage.DownloadOption) (io.ReadCloser, error) {
+	f.downloadCalled = true
 	return io.NopCloser(bytes.NewReader(nil)), nil
 }
 func (f *fakeSDK) DeleteObject(_ context.Context, key types.Hash256) error {

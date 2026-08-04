@@ -38,8 +38,20 @@ type VaultService interface {
 	// Cat streams file content to the writer (same as Get but optimized for stdout).
 	Cat(ctx context.Context, vaultPath string, w io.Writer) error
 
-	// Verify checks content integrity: SHA-256 digest + object existence on indexer.
+	// Verify checks content integrity: object existence on the indexer and a
+	// digest match. It is deliberately SHALLOW — it compares the stored
+	// digest in the object's metadata against the local row's ContentDigest
+	// WITHOUT downloading the full file content, so it is cheap even for
+	// large encrypted files. Use VerifyDeep for a true full-content
+	// re-hash.
 	Verify(ctx context.Context, vaultPath string) (*VerifyResult, error)
+
+	// VerifyDeep is like Verify but additionally downloads the full object
+	// content and recomputes SHA-256, so DigestMatch reflects actual bytes
+	// on the indexer rather than the metadata-declared digest. This transfers
+	// the entire file over the network; use it only when a true integrity
+	// check is required.
+	VerifyDeep(ctx context.Context, vaultPath string) (*VerifyResult, error)
 
 	// Remove deletes a file from the vault (local DB + indexer).
 	Remove(ctx context.Context, vaultPath string) error

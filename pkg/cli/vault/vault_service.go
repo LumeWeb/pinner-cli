@@ -540,21 +540,73 @@ func (s *vaultService) Cat(ctx context.Context, vaultPath string, w io.Writer) e
 	return s.Get(ctx, vaultPath, w)
 }
 
-// Verify checks content integrity: SHA-256 digest + object existence on indexer.
+// Verify checks content integrity: object existence on the indexer and a
+// digest match. It is deliberately SHALLOW — it compares the stored digest in
+// the object's metadata against the local row's ContentDigest WITHOUT
+// downloading the full file content, so it is cheap even for large encrypted
+// files. Use VerifyDeep for a true full-content re-hash.
 func (s *vaultService) Verify(ctx context.Context, vaultPath string) (*VerifyResult, error) {
+	res, obj, exists, err := s.resolveVerifyObject(ctx, vaultPath)
+	if err != nil || !exists {
+		return res, err
+	}
+	// Shallow integrity: trust the digest the object's metadata declares, and
+	// compare it to the local row's ContentDigest. No content download.
+	objDigest := ""
+	if rawMeta := obj.Metadata(); len(rawMeta) > 0 {
+		if m, merr := ParseFileMetadata(rawMeta); merr == nil {
+			objDigest = m.ContentDigest
+		}
+	}
+	res.DigestMatch = objDigest != "" && objDigest == res.ContentDigest
+	return res, nil
+}
+
+// VerifyDeep is like Verify, but additionally downloads the full object content
+// and recomputes SHA-256 so DigestMatch reflects actual bytes on the indexer
+// rather than the metadata-declared digest. This transfers the entire file over
+// the network; use it only when a true integrity check is required.
+func (s *vaultService) VerifyDeep(ctx context.Context, vaultPath string) (*VerifyResult, error) {
+	res, obj, exists, err := s.resolveVerifyObject(ctx, vaultPath)
+	if err != nil || !exists {
+		return res, err
+	}
+
+	reader, err := s.sdk.Download(obj)
+	if err != nil {
+		return nil, fmt.Errorf("failed to download for verification: %w", err)
+	}
+	defer reader.Close()
+
+	hasher := sha256.New()
+	if _, err := io.Copy(hasher, reader); err != nil {
+		return nil, fmt.Errorf("failed to read content for verification: %w", err)
+	}
+	computedDigest := hex.EncodeToString(hasher.Sum(nil))
+	res.DigestMatch = computedDigest == res.ContentDigest
+	return res, nil
+}
+
+// resolveVerifyObject resolves the file record and its indexer object. It
+// returns a populated *VerifyResult (with ObjectExists set), the raw
+// siastorage.Object for callers that need to download content (VerifyDeep), and
+// an exists flag. On a genuine NotFound it returns (result with
+// ObjectExists=false, zero object, false, nil); any other error is returned as
+// (nil, zero object, false, err).
+func (s *vaultService) resolveVerifyObject(ctx context.Context, vaultPath string) (*VerifyResult, siastorage.Object, bool, error) {
 	vp, err := ParseVaultPath(vaultPath)
 	if err != nil {
-		return nil, err
+		return nil, siastorage.Object{}, false, err
 	}
 
 	dirID, err := s.getDirectoryID(vp.Directory)
 	if err != nil {
-		return nil, fmt.Errorf("file not found: %s", vaultPath)
+		return nil, siastorage.Object{}, false, fmt.Errorf("file not found: %s", vaultPath)
 	}
 
 	var record File
 	if f, err := s.findCurrentFile(vp.Name, dirID); err != nil {
-		return nil, fmt.Errorf("file not found: %s", vaultPath)
+		return nil, siastorage.Object{}, false, fmt.Errorf("file not found: %s", vaultPath)
 	} else {
 		record = f
 	}
@@ -565,10 +617,9 @@ func (s *vaultService) Verify(ctx context.Context, vaultPath string) (*VerifyRes
 		ObjectID:      record.ObjectKey,
 	}
 
-	// Check object exists on indexer
 	objHash, err := parseHash256(record.ObjectKey)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse object key: %w", err)
+		return nil, siastorage.Object{}, false, fmt.Errorf("failed to parse object key: %w", err)
 	}
 	// Check object exists on indexer. Only a genuine NotFound should report
 	// ObjectExists=false; any other (transient indexer/network) error must
@@ -579,31 +630,12 @@ func (s *vaultService) Verify(ctx context.Context, vaultPath string) (*VerifyRes
 		if errors.Is(err, slabs.ErrObjectNotFound) {
 			result.ObjectExists = false
 			result.DigestMatch = false
-			return result, nil
+			return result, siastorage.Object{}, false, nil
 		}
-		return nil, fmt.Errorf("failed to fetch object from indexer: %w", err)
+		return nil, siastorage.Object{}, false, fmt.Errorf("failed to fetch object from indexer: %w", err)
 	}
 	result.ObjectExists = true
-
-	// Download object and recompute SHA-256 to verify content integrity
-	if result.ObjectExists {
-		reader, err := s.sdk.Download(obj)
-		if err != nil {
-			return nil, fmt.Errorf("failed to download for verification: %w", err)
-		}
-		defer reader.Close()
-
-		hasher := sha256.New()
-		if _, err := io.Copy(hasher, reader); err != nil {
-			return nil, fmt.Errorf("failed to read content for verification: %w", err)
-		}
-		computedDigest := hex.EncodeToString(hasher.Sum(nil))
-		result.DigestMatch = computedDigest == record.ContentDigest
-	} else {
-		result.DigestMatch = false
-	}
-
-	return result, nil
+	return result, obj, true, nil
 }
 
 // Remove deletes a file from the vault (local DB + indexer).

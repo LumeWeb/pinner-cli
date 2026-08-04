@@ -797,6 +797,64 @@ func TestVerify_TransientObjectErrorSurfaces(t *testing.T) {
 	}
 }
 
+// TestVerify_ShallowDoesNotDownload regression: Verify must be SHALLOW — it
+// computes DigestMatch from the object's metadata-declared digest without
+// downloading the full file content, so it stays cheap for large encrypted
+// files. VerifyDeep is the only path that downloads and recomputes SHA-256.
+func TestVerify_ShallowDoesNotDownload(t *testing.T) {
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "vault.db")
+	db, err := OpenDB(dbPath)
+	if err != nil {
+		t.Fatalf("OpenDB failed: %v", err)
+	}
+	defer func() {
+		if sqlDB, err := db.DB(); err == nil {
+			sqlDB.Close()
+		}
+	}()
+
+	objKey := "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+	now := time.Now().UTC()
+	if err := db.Create(&File{
+		UUID:          "uuid-v1",
+		Name:          "v1.txt",
+		DirectoryID:   nil,
+		IsCurrent:     true,
+		ObjectKey:     objKey,
+		Size:          1,
+		ContentDigest: "d",
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}).Error; err != nil {
+		t.Fatalf("create file: %v", err)
+	}
+
+	sdk := &fakeSDK{t: t}
+	svc := &vaultService{db: db, sdk: sdk, appKey: types.PrivateKey{}}
+
+	// Shallow Verify reports the object exists and computes DigestMatch from
+	// the object metadata WITHOUT a full content download.
+	res, err := svc.Verify(ctx, "vault:/v1.txt")
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	if !res.ObjectExists {
+		t.Error("ObjectExists = false, want true")
+	}
+	if sdk.downloadCalled {
+		t.Error("Verify must NOT download the full object content (it is shallow)")
+	}
+
+	// VerifyDeep is the explicit deep path: it downloads and recomputes.
+	if _, err := svc.VerifyDeep(ctx, "vault:/v1.txt"); err != nil {
+		t.Fatalf("VerifyDeep: %v", err)
+	}
+	if !sdk.downloadCalled {
+		t.Error("VerifyDeep must download the object content to recompute SHA-256")
+	}
+}
+
 // TestSync_LeadingThenInterleavedSkipStopsAtInterleaved verifies that when a
 // batch has BOTH a leading transient skip and a later interleaved transient
 // skip ([skip, processed, skip, processed]), the cursor advances past the
@@ -1661,6 +1719,76 @@ func TestSync_ReturnsAppliedCount(t *testing.T) {
 	}
 	if n != 1 {
 		t.Errorf("Sync returned %d applied events, want 1 (interleaved skip holds the cursor; batch size was 2)", n)
+	}
+}
+
+// TestSync_ResolvedCarriedSkipDropsFreshLeadingSkip regression: when a
+// carried-over pending skip RESOLVES in a batch, and a DIFFERENT fresh
+// transient skip appears at the head, the fresh skip must be treated as a
+// dropped leading skip — NOT as an interleaved retry. The old code seeded
+// seenProcessed from the previous batch's PendingSkip flag, so the whole batch
+// falsely believed something was already processed, misclassifying the new
+// leading skip as a retry (firstSkipped=0) and stalling the cursor for up to
+// maxPendingSkipRetries batches.
+func TestSync_ResolvedCarriedSkipDropsFreshLeadingSkip(t *testing.T) {
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "vault.db")
+	db, err := OpenDB(dbPath)
+	if err != nil {
+		t.Fatalf("OpenDB failed: %v", err)
+	}
+	defer func() {
+		if sqlDB, err := db.DB(); err == nil {
+			sqlDB.Close()
+		}
+	}()
+
+	fe := &fakeEvents{fakeSDK: fakeSDK{t: t}}
+	svc := &vaultService{db: db, sdk: fe, appKey: types.PrivateKey{}}
+
+	// Batch 1: an interleaved transient skip (0x02) after a processed event.
+	// The cursor stops before it and PendingSkip (with PendingSkipKey=0x02) is
+	// persisted.
+	fe.events = []siastorage.ObjectEvent{
+		testObjectEvent(0x01, "a.txt"),
+		testTransientSkippedEvent(0x02),
+	}
+	if _, err := svc.Sync(ctx); err != nil {
+		t.Fatalf("sync batch 1: %v", err)
+	}
+	var rec SyncDownCursor
+	if err := db.First(&rec).Error; err != nil {
+		t.Fatalf("batch 1: no cursor record: %v", err)
+	}
+	if !rec.PendingSkip || rec.PendingSkipKey == "" {
+		t.Fatal("batch 1: expected PendingSkip=true with a non-empty PendingSkipKey")
+	}
+
+	// Batch 2: the carried-over skip (0x02) has RESOLVED into a real file
+	// b.txt, while a DIFFERENT transient skip (0xAA) appears at the head. 0xAA
+	// is a fresh leading skip and must be dropped, NOT stalled as a retry, so
+	// the cursor advances past it and b.txt is recorded.
+	fe.events = []siastorage.ObjectEvent{
+		testTransientSkippedEvent(0xAA),
+		testObjectEvent(0x02, "b.txt"),
+	}
+	n, err := svc.Sync(ctx)
+	if err != nil {
+		t.Fatalf("sync batch 2: %v", err)
+	}
+	var bCnt, aCnt int64
+	db.Model(&File{}).Where("name = ?", "b.txt").Count(&bCnt)
+	db.Model(&File{}).Where("name = ?", "a.txt").Count(&aCnt)
+	if bCnt != 1 {
+		t.Errorf("batch 2: expected b.txt (resolved carried skip) recorded, got %d", bCnt)
+	}
+	if aCnt != 1 {
+		t.Errorf("batch 2: expected a.txt (batch 1 file) recorded, got %d", aCnt)
+	}
+	// Both events must be applied: the fresh leading skip (0xAA) dropped, so
+	// nothing was held back and the cursor advanced past both events.
+	if n != 2 {
+		t.Errorf("batch 2: Sync applied %d events, want 2 (fresh leading skip must be dropped, not stalled)", n)
 	}
 }
 

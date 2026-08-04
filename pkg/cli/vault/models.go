@@ -46,6 +46,13 @@ type SyncDownCursor struct {
 	// retry rather than a fresh leading skip (which would be dropped). Cleared
 	// once the skip resolves or is no longer present.
 	PendingSkip bool
+	// PendingSkipKey is the object key of the carried-over pending skip. Stored
+	// alongside PendingSkip so a later batch can tell whether the skip at the
+	// head of the batch IS the same pending skip (retry it as interleaved) or a
+	// DIFFERENT fresh leading skip (drop it). Without this, a carried-over
+	// pending skip that resolves while a new leading skip appears at the head
+	// would misclassify the new skip as a retry and stall the cursor.
+	PendingSkipKey string
 	// PendingSkipCount counts how many consecutive sync batches the same
 	// carried-over pending skip has reappeared unresolved. Once it exceeds
 	// maxPendingSkipRetries the skip is treated as permanently unresolvable

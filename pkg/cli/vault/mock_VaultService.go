@@ -790,6 +790,74 @@ func (_c *MockVaultService_Verify_Call) RunAndReturn(run func(ctx context.Contex
 	return _c
 }
 
+// VerifyDeep provides a mock function for the type MockVaultService
+func (_mock *MockVaultService) VerifyDeep(ctx context.Context, vaultPath string) (*VerifyResult, error) {
+	ret := _mock.Called(ctx, vaultPath)
+
+	if len(ret) == 0 {
+		panic("no return value specified for VerifyDeep")
+	}
+
+	var r0 *VerifyResult
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) (*VerifyResult, error)); ok {
+		return returnFunc(ctx, vaultPath)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) *VerifyResult); ok {
+		r0 = returnFunc(ctx, vaultPath)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*VerifyResult)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string) error); ok {
+		r1 = returnFunc(ctx, vaultPath)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockVaultService_VerifyDeep_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'VerifyDeep'
+type MockVaultService_VerifyDeep_Call struct {
+	*mock.Call
+}
+
+// VerifyDeep is a helper method to define mock.On call
+//   - ctx context.Context
+//   - vaultPath string
+func (_e *MockVaultService_Expecter) VerifyDeep(ctx interface{}, vaultPath interface{}) *MockVaultService_VerifyDeep_Call {
+	return &MockVaultService_VerifyDeep_Call{Call: _e.mock.On("VerifyDeep", ctx, vaultPath)}
+}
+
+func (_c *MockVaultService_VerifyDeep_Call) Run(run func(ctx context.Context, vaultPath string)) *MockVaultService_VerifyDeep_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockVaultService_VerifyDeep_Call) Return(verifyResult *VerifyResult, err error) *MockVaultService_VerifyDeep_Call {
+	_c.Call.Return(verifyResult, err)
+	return _c
+}
+
+func (_c *MockVaultService_VerifyDeep_Call) RunAndReturn(run func(ctx context.Context, vaultPath string) (*VerifyResult, error)) *MockVaultService_VerifyDeep_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // SyncCursor provides a mock function for the type MockVaultService
 func (_mock *MockVaultService) SyncCursor() string {
 	ret := _mock.Called()
