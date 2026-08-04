@@ -68,6 +68,8 @@ const (
 // Websites flags
 const (
 	FlagDomain       = "domain"
+	FlagRenameTo     = "rename-to"
+	FlagWebsite      = "website"
 	FlagCID          = "cid"
 	FlagTargetHash   = "target-hash"
 	FlagTargetType   = "target-type"
@@ -432,6 +434,27 @@ func RequiredDomainFlag() *cli.StringFlag {
 		Name:     FlagDomain,
 		Usage:    "Domain name for the website",
 		Required: true,
+	}
+}
+
+// RenameDomainFlag returns a flag for renaming a website to a new domain.
+// It pairs with the positional <domain> selector on `websites update`, which
+// selects the website; this flag is the rename target.
+func RenameDomainFlag() *cli.StringFlag {
+	return &cli.StringFlag{
+		Name:  FlagRenameTo,
+		Usage: "New domain to rename the website to",
+	}
+}
+
+// WebsiteFlag returns a flag for selecting the parent website (id or domain).
+// Used by `websites domains` subcommands to identify the website the domain
+// binding belongs to, disambiguating it from the domain being acted on.
+func WebsiteFlag() *cli.StringFlag {
+	return &cli.StringFlag{
+		Name:    FlagWebsite,
+		Aliases: []string{"w"},
+		Usage:   "Website (id or domain) the domain binding belongs to",
 	}
 }
 

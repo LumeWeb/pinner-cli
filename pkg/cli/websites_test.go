@@ -801,7 +801,7 @@ func TestWebsitesUpdate(t *testing.T) {
 	}{
 		{
 			name: "successful update with all parameters",
-			cmd:  newMockCommand().withArgs("1").withString(FlagDomain, "new-example.com").withString(FlagCID, "QmNewHash").withString(FlagTargetType, "ipfs"),
+			cmd:  newMockCommand().withArgs("1").withString(FlagRenameTo, "new-example.com").withString(FlagCID, "QmNewHash").withString(FlagTargetType, "ipfs"),
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
 				svc.updateFunc = func(ctx context.Context, id, domain, cid, targetType string) (*ipfs.WebsiteItem, error) {
 					return &ipfs.WebsiteItem{
@@ -818,7 +818,7 @@ func TestWebsitesUpdate(t *testing.T) {
 		},
 		{
 			name: "successful update with domain only",
-			cmd:  newMockCommand().withArgs("1").withString(FlagDomain, "new-domain.com").withString(FlagCID, "").withString(FlagTargetType, ""),
+			cmd:  newMockCommand().withArgs("1").withString(FlagRenameTo, "new-domain.com").withString(FlagCID, "").withString(FlagTargetType, ""),
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
 				svc.updateFunc = func(ctx context.Context, id, domain, cid, targetType string) (*ipfs.WebsiteItem, error) {
 					return &ipfs.WebsiteItem{
@@ -835,7 +835,7 @@ func TestWebsitesUpdate(t *testing.T) {
 		},
 		{
 			name: "successful update with cid only",
-			cmd:  newMockCommand().withArgs("1").withString(FlagDomain, "").withString(FlagCID, "QmNewHash").withString(FlagTargetType, ""),
+			cmd:  newMockCommand().withArgs("1").withString(FlagRenameTo, "").withString(FlagCID, "QmNewHash").withString(FlagTargetType, ""),
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
 				svc.updateFunc = func(ctx context.Context, id, domain, cid, targetType string) (*ipfs.WebsiteItem, error) {
 					return &ipfs.WebsiteItem{
@@ -852,21 +852,21 @@ func TestWebsitesUpdate(t *testing.T) {
 		},
 		{
 			name:        "missing website ID",
-			cmd:         newMockCommand().withArgs("").withString(FlagDomain, "new-example.com").withString(FlagCID, "QmNewHash").withString(FlagTargetType, "ipfs"),
+			cmd:         newMockCommand().withArgs("").withString(FlagRenameTo, "new-example.com").withString(FlagCID, "QmNewHash").withString(FlagTargetType, "ipfs"),
 			setupMocks:  func(svc *mockWebsitesServiceForCLI) {},
 			wantErr:     true,
 			errContains: "website ID or domain is required",
 		},
 		{
 			name:        "missing update fields (all empty)",
-			cmd:         newMockCommand().withArgs("1").withString(FlagDomain, "").withString(FlagCID, "").withString(FlagTargetType, ""),
+			cmd:         newMockCommand().withArgs("1").withString(FlagRenameTo, "").withString(FlagCID, "").withString(FlagTargetType, ""),
 			setupMocks:  func(svc *mockWebsitesServiceForCLI) {},
 			wantErr:     true,
 			errContains: "at least one field must be provided for update",
 		},
 		{
 			name: "service error",
-			cmd:  newMockCommand().withArgs("1").withString(FlagDomain, "new-example.com").withString(FlagCID, "QmNewHash").withString(FlagTargetType, "ipfs"),
+			cmd:  newMockCommand().withArgs("1").withString(FlagRenameTo, "new-example.com").withString(FlagCID, "QmNewHash").withString(FlagTargetType, "ipfs"),
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
 				svc.updateFunc = func(ctx context.Context, id, domain, cid, targetType string) (*ipfs.WebsiteItem, error) {
 					return nil, errors.New("website not found")
@@ -910,7 +910,7 @@ func TestWebsitesUpdateJSON(t *testing.T) {
 	}{
 		{
 			name: "successful update with JSON output",
-			cmd:  newMockCommand().withArgs("1").withString(FlagDomain, "new-example.com").withString(FlagCID, "QmNewHash").withString(FlagTargetType, "ipfs"),
+			cmd:  newMockCommand().withArgs("1").withString(FlagRenameTo, "new-example.com").withString(FlagCID, "QmNewHash").withString(FlagTargetType, "ipfs"),
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
 				svc.updateFunc = func(ctx context.Context, id, domain, cid, targetType string) (*ipfs.WebsiteItem, error) {
 					return &ipfs.WebsiteItem{
@@ -927,7 +927,7 @@ func TestWebsitesUpdateJSON(t *testing.T) {
 		},
 		{
 			name: "successful update partial parameters with JSON output",
-			cmd:  newMockCommand().withArgs("1").withString(FlagDomain, "new-domain.com").withString(FlagCID, "").withString(FlagTargetType, ""),
+			cmd:  newMockCommand().withArgs("1").withString(FlagRenameTo, "new-domain.com").withString(FlagCID, "").withString(FlagTargetType, ""),
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
 				svc.updateFunc = func(ctx context.Context, id, domain, cid, targetType string) (*ipfs.WebsiteItem, error) {
 					return &ipfs.WebsiteItem{
@@ -982,12 +982,12 @@ func websitesUpdateWithService(ctx context.Context, cmd interface {
 		return fmt.Errorf("website ID or domain is required")
 	}
 
-	domain := cmd.String(FlagDomain)
+	domain := cmd.String(FlagRenameTo)
 	cid := cmd.String(FlagCID)
 	targetType := cmd.String(FlagTargetType)
 
 	if domain == "" && cid == "" && targetType == "" {
-		return fmt.Errorf("at least one field must be provided for update (domain, cid, or target-type)")
+		return fmt.Errorf("at least one field must be provided for update (rename-to, cid, or target-type)")
 	}
 
 	updatedWebsite, err := websitesService.Update(ctx, id, domain, cid, targetType)

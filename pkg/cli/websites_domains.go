@@ -63,8 +63,9 @@ func newWebsitesDomainsAddCommand() *cli.Command {
 	return &cli.Command{
 		Name:      "add",
 		Usage:     "Bind a domain to a website",
-		ArgsUsage: "<website-id-or-domain> <domain>",
+		ArgsUsage: "[<website-id-or-domain>] <domain>",
 		Flags: []cli.Flag{
+			WebsiteFlag(),
 			&cli.StringFlag{
 				Name:    "namespace",
 				Usage:   "Domain namespace: icann or hns",
@@ -81,8 +82,12 @@ The namespace determines which DNS system manages the domain:
 The domain should be the bare name without a TLD suffix (e.g. 'mydomain'
 not 'mydomain.hns'). The namespace flag determines how it's registered.
 
+The website is selected by the --website flag, or the first positional
+argument if --website is omitted.
+
 Examples:
   pinner websites domains add example.com staging.example.com
+  pinner websites domains add --website example.com staging.example.com
   pinner websites domains add example.com mydomain --namespace hns
   pinner websites domains add 123 staging.example.com --json`,
 		Action: withContext(func(ctx context.Context, cc *commandContext) error {
@@ -96,14 +101,21 @@ func newWebsitesDomainsRmCommand() *cli.Command {
 		Name:      "remove",
 		Aliases:   []string{"rm"},
 		Usage:     "Remove a domain binding from a website",
-		ArgsUsage: "<website-id-or-domain> <domain>",
+		ArgsUsage: "[<website-id-or-domain>] <domain>",
+		Flags: []cli.Flag{
+			WebsiteFlag(),
+		},
 		Description: `Removes a domain binding from a website.
 
 The domain argument can be either the domain name (e.g. staging.example.com)
 or its numeric ID. Domain names are resolved automatically.
 
+The website is selected by the --website flag, or the first positional
+argument if --website is omitted.
+
 Examples:
   pinner websites domains rm example.com staging.example.com
+  pinner websites domains rm --website example.com staging.example.com
   pinner websites domains rm 123 staging.example.com
   pinner websites domains rm example.com 42`,
 		Action: withContext(func(ctx context.Context, cc *commandContext) error {
@@ -116,18 +128,64 @@ func newWebsitesDomainsVerifyCommand() *cli.Command {
 	return &cli.Command{
 		Name:      "verify",
 		Usage:     "Trigger domain verification",
-		ArgsUsage: "<website-id-or-domain> <domain>",
+		ArgsUsage: "[<website-id-or-domain>] <domain>",
+		Flags: []cli.Flag{
+			WebsiteFlag(),
+		},
 		Description: `Triggers verification of a domain binding.
 
 The domain argument can be either the domain name (e.g. staging.example.com)
 or its numeric ID. Domain names are resolved automatically.
 
+The website is selected by the --website flag, or the first positional
+argument if --website is omitted.
+
 Examples:
   pinner websites domains verify example.com staging.example.com
+  pinner websites domains verify --website example.com staging.example.com
   pinner websites domains verify 123 staging.example.com --json`,
 		Action: withContext(func(ctx context.Context, cc *commandContext) error {
 			return websitesDomainsVerify(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
 		}),
+	}
+}
+
+// resolveDomainCommandTarget resolves the website and domain arguments for the
+// `websites domains` add/remove/verify commands.
+//
+// The website can be supplied via the --website flag or the first positional
+// argument. When --website is given, the only positional is the domain.
+//
+// commandName is the subcommand name (add/rm/verify) used in usage errors.
+func resolveDomainCommandTarget(ctx context.Context, websitesService WebsitesService, cmd websitesCommandGetter, commandName string) (websiteID string, domainArg string, err error) {
+	args := cmd.Args()
+	flagWebsite := cmd.String(FlagWebsite)
+
+	usage := fmt.Sprintf("usage: pinner websites domains %s [<website-id-or-domain>] <domain>", commandName)
+
+	switch {
+	case flagWebsite != "" && args.Len() > 1:
+		return "", "", fmt.Errorf("website provided both as --website flag and positional argument; use one form")
+	case flagWebsite != "":
+		if args.Len() < 1 {
+			return "", "", fmt.Errorf("domain argument is required (%s)", usage)
+		}
+		websiteID, err = resolveWebsiteID(ctx, websitesService, flagWebsite)
+		if err != nil {
+			return "", "", err
+		}
+		domainArg = args.First()
+		return websiteID, domainArg, nil
+	default:
+		if args.Len() < 2 {
+			return "", "", fmt.Errorf("domain argument is required (%s)", usage)
+		}
+		websiteID, err = resolveWebsiteID(ctx, websitesService, args.First())
+		if err != nil {
+			return "", "", err
+		}
+		domainArg = args.Get(1)
+		return websiteID, domainArg, nil
 	}
 }
 
@@ -223,22 +281,16 @@ func websitesDomainsAdd(ctx context.Context, cmd websitesCommandGetter, output O
 	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
 	defer cancel()
 
-	args := cmd.Args()
-	if args.Len() < 2 {
-		return fmt.Errorf("usage: pinner websites domains add <website-id-or-domain> <domain>")
-	}
-
 	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken, secure)
 	if err != nil {
 		return err
 	}
 
-	websiteID, err := resolveWebsiteID(ctx, websitesService, args.First())
+	websiteID, domain, err := resolveDomainCommandTarget(ctx, websitesService, cmd, "add")
 	if err != nil {
 		return err
 	}
 
-	domain := args.Get(1)
 	namespace := cmd.String("namespace")
 	if namespace != "icann" && namespace != "hns" {
 		return fmt.Errorf("invalid namespace %q: must be 'icann' or 'hns'", namespace)
@@ -284,22 +336,16 @@ func websitesDomainsRm(ctx context.Context, cmd websitesCommandGetter, output Ou
 	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
 	defer cancel()
 
-	args := cmd.Args()
-	if args.Len() < 2 {
-		return fmt.Errorf("usage: pinner websites domains rm <website-id-or-domain> <domain>")
-	}
-
 	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken, secure)
 	if err != nil {
 		return err
 	}
 
-	websiteID, err := resolveWebsiteID(ctx, websitesService, args.First())
+	websiteID, domainArg, err := resolveDomainCommandTarget(ctx, websitesService, cmd, "rm")
 	if err != nil {
 		return err
 	}
 
-	domainArg := args.Get(1)
 	domainID, err := resolveDomainID(ctx, websitesService, websiteID, domainArg)
 	if err != nil {
 		return err
@@ -324,22 +370,16 @@ func websitesDomainsVerify(ctx context.Context, cmd websitesCommandGetter, outpu
 	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
 	defer cancel()
 
-	args := cmd.Args()
-	if args.Len() < 2 {
-		return fmt.Errorf("usage: pinner websites domains verify <website-id-or-domain> <domain>")
-	}
-
 	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken, secure)
 	if err != nil {
 		return err
 	}
 
-	websiteID, err := resolveWebsiteID(ctx, websitesService, args.First())
+	websiteID, domainArg, err := resolveDomainCommandTarget(ctx, websitesService, cmd, "verify")
 	if err != nil {
 		return err
 	}
 
-	domainArg := args.Get(1)
 	domainID, err := resolveDomainID(ctx, websitesService, websiteID, domainArg)
 	if err != nil {
 		return err

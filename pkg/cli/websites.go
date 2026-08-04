@@ -133,16 +133,19 @@ published to it).
 When --target-type is "ipns" and --cid is a regular IPFS CID (not a peer ID),
 an IPNS key is auto-created and that CID is published to it.
 
+The positional <domain> selects the website to update. Use --rename-to to give
+it a new domain.
+
 Examples:
   pinner websites update example.com --cid bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --target-type ipfs
   pinner websites update example.com --target-type ipns
-  pinner websites update example.com --cid bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --target-type ipns
+  pinner websites update example.com --rename-to newdomain.com
   pinner websites update example.com --dns-hosting
   pinner websites update example.com --no-dns-hosting
   pinner websites update example.com --json`,
 		ArgsUsage: "<domain>",
 		Flags: []cli.Flag{
-			DomainFlag(),
+			RenameDomainFlag(),
 			CIDFlag(),
 			TargetTypeFlag(),
 			DNSHostingFlag(),
@@ -326,16 +329,16 @@ func websitesUpdate(ctx context.Context, cmd websitesCommandGetter, output Outpu
 		return err
 	}
 
-	domain := cmd.String(FlagDomain)
+	domain := cmd.String(FlagRenameTo)
 	cid := cmd.String(FlagCID)
 	targetType := cmd.String(FlagTargetType)
-	if err := requireUpdateFields(cmd, FlagDomain, FlagCID, FlagTargetType, FlagDNSHosting, FlagNoDNSHosting); err != nil {
+	if err := requireUpdateFields(cmd, FlagRenameTo, FlagCID, FlagTargetType, FlagDNSHosting, FlagNoDNSHosting); err != nil {
 		return err
 	}
 
 	req := ipfs.WebsiteUpdateRequest{}
 
-	if cmd.IsSet(FlagDomain) {
+	if cmd.IsSet(FlagRenameTo) {
 		req.Domain = &domain
 	}
 	if cmd.IsSet(FlagCID) {
