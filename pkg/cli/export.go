@@ -6,21 +6,21 @@ import (
 	"strconv"
 
 	"github.com/urfave/cli/v3"
-	ipfs "go.lumeweb.com/ipfs-sdk"
+	meta "go.lumeweb.com/portal-sdk/meta"
 	"go.lumeweb.com/pinner-cli/pkg/config"
 )
 
 // ExportService defines the interface for meta export operations.
 type ExportService interface {
 	RequireAuthenticated() error
-	ExportDAG(ctx context.Context, cid string) (*ipfs.DAGExportResponse, error)
-	ExportSiaObject(ctx context.Context, cid string) (*ipfs.CIDExportResponse, error)
+	ExportDAG(ctx context.Context, cid string) (*meta.DAGExport, error)
+	ExportSiaObject(ctx context.Context, cid string) (*meta.SiaObject, error)
 }
 
 type exportService struct {
 	ipfsServiceBase
-	service ipfs.MetaService
-	client  *ipfs.Client
+	cid    *meta.CIDService
+	client *meta.MetaClient
 }
 
 // ExportServiceOption is a function that configures an exportService.
@@ -33,8 +33,8 @@ func WithExportAuthToken(token string) ExportServiceOption {
 	}
 }
 
-// WithExportClient sets a pre-configured ipfs.Client, bypassing the default ipfs.NewClient() call.
-func WithExportClient(client *ipfs.Client) ExportServiceOption {
+// WithExportMetaClient sets a pre-configured meta client, bypassing the default meta.NewClient() call.
+func WithExportMetaClient(client *meta.MetaClient) ExportServiceOption {
 	return func(s *exportService) {
 		s.client = client
 	}
@@ -43,7 +43,7 @@ func WithExportClient(client *ipfs.Client) ExportServiceOption {
 type ExportServiceFactory func(cfgMgr config.Manager, output Output, secure bool, opts ...ExportServiceOption) ExportService
 
 func defaultExportServiceFactory(cfgMgr config.Manager, output Output, secure bool, opts ...ExportServiceOption) ExportService {
-	return NewExportService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure), opts...)
+	return NewExportService(cfgMgr, output, cfgMgr.Config().GetMetaEndpointWithSecure(secure), opts...)
 }
 
 type exportServiceFactoryFunc func(cfgMgr config.Manager, output Output, secure bool, opts ...ExportServiceOption) ExportService
@@ -76,38 +76,36 @@ func NewExportService(cfgMgr config.Manager, output Output, apiEndpoint string, 
 		opt(s)
 	}
 
-	if s.client != nil {
-		s.service = s.client.Meta()
-	} else {
-		client, err := ipfs.NewClient(apiEndpoint, s.getAuthToken())
+	if s.client == nil {
+		client, err := meta.NewClient(meta.WithEndpoint(apiEndpoint), meta.WithJWT(s.getAuthToken()))
 		if err != nil {
 			output.PrintError(err)
-			s.service = nil
 			return s
 		}
-		s.service = client.Meta()
+		s.client = client
 	}
+	s.cid = s.client.CID()
 	return s
 }
 
-func (s *exportService) ExportDAG(ctx context.Context, cid string) (*ipfs.DAGExportResponse, error) {
+func (s *exportService) ExportDAG(ctx context.Context, cid string) (*meta.DAGExport, error) {
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	if s.service == nil {
+	if s.cid == nil {
 		return nil, ErrServiceUnavailable
 	}
-	return s.service.ExportDAG(ctx, cid)
+	return s.cid.GetDAG(ctx, cid)
 }
 
-func (s *exportService) ExportSiaObject(ctx context.Context, cid string) (*ipfs.CIDExportResponse, error) {
+func (s *exportService) ExportSiaObject(ctx context.Context, cid string) (*meta.SiaObject, error) {
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	if s.service == nil {
+	if s.cid == nil {
 		return nil, ErrServiceUnavailable
 	}
-	return s.service.ExportSiaObject(ctx, cid)
+	return s.cid.GetSiaObject(ctx, cid)
 }
 
 func newExportCommand() *cli.Command {
@@ -219,7 +217,7 @@ func exportDAG(ctx context.Context, cmd commandGetter, output Output, cfgMgr con
 		}
 		rows[i] = []string{
 			block.Cid,
-			strconv.FormatUint(block.Size, 10),
+			strconv.Itoa(block.Size),
 			strconv.Itoa(len(block.Links)),
 			hasSia,
 		}
@@ -258,17 +256,19 @@ func exportSiaObject(ctx context.Context, cmd commandGetter, output Output, cfgM
 	output.Printfln("Created: %s", result.CreatedAt)
 	output.Printfln("Updated: %s", result.UpdatedAt)
 
-	if result.SharedObject != nil {
-		output.Printfln("")
-		output.Printfln("Shared Object:")
-		output.Printfln("  Data Key: %v", result.SharedObject.DataKey)
-		output.Printfln("  Slabs: %d", len(result.SharedObject.Slabs))
-		for i, slab := range result.SharedObject.Slabs {
-			output.Printfln("    [%d] Version: %d, Min Shards: %d, Sectors: %d, Offset: %d, Length: %d",
-				i, slab.Version, slab.MinShards, len(slab.Sectors), slab.Offset, slab.Length)
-		}
-	} else {
+	so := result.SharedObject
+	if len(so.Slabs) == 0 {
 		output.Printfln("No Sia shared object available for this CID")
+		return nil
+	}
+
+	output.Printfln("")
+	output.Printfln("Shared Object:")
+	output.Printfln("  Data Key: %v", so.DataKey)
+	output.Printfln("  Slabs: %d", len(so.Slabs))
+	for i, slab := range so.Slabs {
+		output.Printfln("    [%d] Version: %d, Min Shards: %d, Sectors: %d, Offset: %d, Length: %d",
+			i, slab.Version, slab.MinShards, len(slab.Sectors), slab.Offset, slab.Length)
 	}
 
 	return nil

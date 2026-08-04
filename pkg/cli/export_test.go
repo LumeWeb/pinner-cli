@@ -7,28 +7,28 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	ipfs "go.lumeweb.com/ipfs-sdk"
+	meta "go.lumeweb.com/portal-sdk/meta"
 )
 
 // mockExportServiceForCLI is a mock implementation of the CLI ExportService interface for testing
 type mockExportServiceForCLI struct {
 	requireAuthenticatedErr error
-	exportDAGFunc            func(ctx context.Context, cid string) (*ipfs.DAGExportResponse, error)
-	exportSiaObjectFunc      func(ctx context.Context, cid string) (*ipfs.CIDExportResponse, error)
+	exportDAGFunc           func(ctx context.Context, cid string) (*meta.DAGExport, error)
+	exportSiaObjectFunc     func(ctx context.Context, cid string) (*meta.SiaObject, error)
 }
 
 func (m *mockExportServiceForCLI) RequireAuthenticated() error {
 	return m.requireAuthenticatedErr
 }
 
-func (m *mockExportServiceForCLI) ExportDAG(ctx context.Context, cid string) (*ipfs.DAGExportResponse, error) {
+func (m *mockExportServiceForCLI) ExportDAG(ctx context.Context, cid string) (*meta.DAGExport, error) {
 	if m.exportDAGFunc != nil {
 		return m.exportDAGFunc(ctx, cid)
 	}
 	return nil, nil
 }
 
-func (m *mockExportServiceForCLI) ExportSiaObject(ctx context.Context, cid string) (*ipfs.CIDExportResponse, error) {
+func (m *mockExportServiceForCLI) ExportSiaObject(ctx context.Context, cid string) (*meta.SiaObject, error) {
 	if m.exportSiaObjectFunc != nil {
 		return m.exportSiaObjectFunc(ctx, cid)
 	}
@@ -46,14 +46,16 @@ func TestExportDAG(t *testing.T) {
 		{
 			name: "successful export dag",
 			setupMocks: func(svc *mockExportServiceForCLI) {
-				svc.exportDAGFunc = func(ctx context.Context, cid string) (*ipfs.DAGExportResponse, error) {
-					return &ipfs.DAGExportResponse{
-						RootCid:        "bafyroot",
-						TotalBlocks:    2,
-						TotalSizeBytes: 384,
-						Blocks: []ipfs.DAGBlock{
-							{Cid: "bafyroot", Size: 256, Links: []ipfs.DAGLink{{Cid: "bafychild", Index: 0}}},
-							{Cid: "bafychild", Size: 128, Links: []ipfs.DAGLink{}},
+				svc.exportDAGFunc = func(ctx context.Context, cid string) (*meta.DAGExport, error) {
+					return &meta.DAGExport{
+						DAGExportResponse: meta.DAGExportResponse{
+							RootCid:        "bafyroot",
+							TotalBlocks:    2,
+							TotalSizeBytes: 384,
+							Blocks: []meta.DAGBlock{
+								{Cid: "bafyroot", Size: 256, Links: []meta.DAGLink{{Cid: "bafychild", Index: 0}}},
+								{Cid: "bafychild", Size: 128, Links: []meta.DAGLink{}},
+							},
 						},
 					}, nil
 				}
@@ -64,12 +66,14 @@ func TestExportDAG(t *testing.T) {
 		{
 			name: "successful export dag with no blocks",
 			setupMocks: func(svc *mockExportServiceForCLI) {
-				svc.exportDAGFunc = func(ctx context.Context, cid string) (*ipfs.DAGExportResponse, error) {
-					return &ipfs.DAGExportResponse{
-						RootCid:        "bafyroot",
-						TotalBlocks:    0,
-						TotalSizeBytes: 0,
-						Blocks:         []ipfs.DAGBlock{},
+				svc.exportDAGFunc = func(ctx context.Context, cid string) (*meta.DAGExport, error) {
+					return &meta.DAGExport{
+						DAGExportResponse: meta.DAGExportResponse{
+							RootCid:        "bafyroot",
+							TotalBlocks:    0,
+							TotalSizeBytes: 0,
+							Blocks:         []meta.DAGBlock{},
+						},
 					}, nil
 				}
 			},
@@ -85,7 +89,7 @@ func TestExportDAG(t *testing.T) {
 		{
 			name: "service error",
 			setupMocks: func(svc *mockExportServiceForCLI) {
-				svc.exportDAGFunc = func(ctx context.Context, cid string) (*ipfs.DAGExportResponse, error) {
+				svc.exportDAGFunc = func(ctx context.Context, cid string) (*meta.DAGExport, error) {
 					return nil, errors.New("cid not found")
 				}
 			},
@@ -120,13 +124,15 @@ func TestExportDAG(t *testing.T) {
 
 func TestExportDAGJSON(t *testing.T) {
 	mockSvc := &mockExportServiceForCLI{}
-	mockSvc.exportDAGFunc = func(ctx context.Context, cid string) (*ipfs.DAGExportResponse, error) {
-		return &ipfs.DAGExportResponse{
-			RootCid:        "bafyroot",
-			TotalBlocks:    1,
-			TotalSizeBytes: 256,
-			Blocks: []ipfs.DAGBlock{
-				{Cid: "bafyroot", Size: 256, Links: []ipfs.DAGLink{{Cid: "bafychild", Index: 0}}},
+	mockSvc.exportDAGFunc = func(ctx context.Context, cid string) (*meta.DAGExport, error) {
+		return &meta.DAGExport{
+			DAGExportResponse: meta.DAGExportResponse{
+				RootCid:        "bafyroot",
+				TotalBlocks:    1,
+				TotalSizeBytes: 256,
+				Blocks: []meta.DAGBlock{
+					{Cid: "bafyroot", Size: 256, Links: []meta.DAGLink{{Cid: "bafychild", Index: 0}}},
+				},
 			},
 		}, nil
 	}
@@ -149,16 +155,18 @@ func TestExportSiaObject(t *testing.T) {
 		{
 			name: "successful export sia object",
 			setupMocks: func(svc *mockExportServiceForCLI) {
-				svc.exportSiaObjectFunc = func(ctx context.Context, cid string) (*ipfs.CIDExportResponse, error) {
-					return &ipfs.CIDExportResponse{
-						Cid:       "bafybeieffnocaq7t4w4daagvydl32igft5oziyyaebqr6vx6rb3fwh2ab4",
-						SizeBytes: 1024,
-						SharedObject: &ipfs.SharedObject{
-							Slabs:   []ipfs.SlabSlice{{Version: 1, MinShards: 3, Offset: 0, Length: 1024}},
-							DataKey: []int{0xAB},
+				svc.exportSiaObjectFunc = func(ctx context.Context, cid string) (*meta.SiaObject, error) {
+					return &meta.SiaObject{
+						CIDExportResponse: meta.CIDExportResponse{
+							Cid:       "bafybeieffnocaq7t4w4daagvydl32igft5oziyyaebqr6vx6rb3fwh2ab4",
+							SizeBytes: 1024,
+							SharedObject: meta.SharedObject{
+								Slabs:   []meta.SlabSlice{{Version: 1, MinShards: 3, Offset: 0, Length: 1024}},
+								DataKey: []int{0xAB},
+							},
+							CreatedAt: "2026-01-01T00:00:00Z",
+							UpdatedAt: "2026-01-02T00:00:00Z",
 						},
-						CreatedAt: "2026-01-01T00:00:00Z",
-						UpdatedAt: "2026-01-02T00:00:00Z",
 					}, nil
 				}
 			},
@@ -168,13 +176,15 @@ func TestExportSiaObject(t *testing.T) {
 		{
 			name: "no shared object available",
 			setupMocks: func(svc *mockExportServiceForCLI) {
-				svc.exportSiaObjectFunc = func(ctx context.Context, cid string) (*ipfs.CIDExportResponse, error) {
-					return &ipfs.CIDExportResponse{
-						Cid:          "bafyempty",
-						SizeBytes:    0,
-						SharedObject: nil,
-						CreatedAt:    "2026-01-01T00:00:00Z",
-						UpdatedAt:    "2026-01-01T00:00:00Z",
+				svc.exportSiaObjectFunc = func(ctx context.Context, cid string) (*meta.SiaObject, error) {
+					return &meta.SiaObject{
+						CIDExportResponse: meta.CIDExportResponse{
+							Cid:          "bafyempty",
+							SizeBytes:    0,
+							SharedObject: meta.SharedObject{},
+							CreatedAt:    "2026-01-01T00:00:00Z",
+							UpdatedAt:    "2026-01-01T00:00:00Z",
+						},
 					}, nil
 				}
 			},
@@ -190,7 +200,7 @@ func TestExportSiaObject(t *testing.T) {
 		{
 			name: "service error",
 			setupMocks: func(svc *mockExportServiceForCLI) {
-				svc.exportSiaObjectFunc = func(ctx context.Context, cid string) (*ipfs.CIDExportResponse, error) {
+				svc.exportSiaObjectFunc = func(ctx context.Context, cid string) (*meta.SiaObject, error) {
 					return nil, errors.New("object not ready")
 				}
 			},
@@ -225,16 +235,18 @@ func TestExportSiaObject(t *testing.T) {
 
 func TestExportSiaObjectJSON(t *testing.T) {
 	mockSvc := &mockExportServiceForCLI{}
-	mockSvc.exportSiaObjectFunc = func(ctx context.Context, cid string) (*ipfs.CIDExportResponse, error) {
-		return &ipfs.CIDExportResponse{
-			Cid:       "bafybeieffnocaq7t4w4daagvydl32igft5oziyyaebqr6vx6rb3fwh2ab4",
-			SizeBytes: 1024,
-			SharedObject: &ipfs.SharedObject{
-				Slabs:   []ipfs.SlabSlice{{Version: 1, MinShards: 3, Offset: 0, Length: 1024}},
-				DataKey: []int{0xAB},
+	mockSvc.exportSiaObjectFunc = func(ctx context.Context, cid string) (*meta.SiaObject, error) {
+		return &meta.SiaObject{
+			CIDExportResponse: meta.CIDExportResponse{
+				Cid:       "bafybeieffnocaq7t4w4daagvydl32igft5oziyyaebqr6vx6rb3fwh2ab4",
+				SizeBytes: 1024,
+				SharedObject: meta.SharedObject{
+					Slabs:   []meta.SlabSlice{{Version: 1, MinShards: 3, Offset: 0, Length: 1024}},
+					DataKey: []int{0xAB},
+				},
+				CreatedAt: "2026-01-01T00:00:00Z",
+				UpdatedAt: "2026-01-02T00:00:00Z",
 			},
-			CreatedAt: "2026-01-01T00:00:00Z",
-			UpdatedAt: "2026-01-02T00:00:00Z",
 		}, nil
 	}
 
@@ -283,7 +295,7 @@ func exportDAGWithService(ctx context.Context, cmd commandGetter, output Output,
 		}
 		rows[i] = []string{
 			block.Cid,
-			strconv.FormatUint(block.Size, 10),
+			strconv.Itoa(block.Size),
 			strconv.Itoa(len(block.Links)),
 			hasSia,
 		}
@@ -319,17 +331,19 @@ func exportSiaObjectWithService(ctx context.Context, cmd commandGetter, output O
 	output.Printfln("Created: %s", result.CreatedAt)
 	output.Printfln("Updated: %s", result.UpdatedAt)
 
-	if result.SharedObject != nil {
-		output.Printfln("")
-		output.Printfln("Shared Object:")
-		output.Printfln("  Data Key: %v", result.SharedObject.DataKey)
-		output.Printfln("  Slabs: %d", len(result.SharedObject.Slabs))
-		for i, slab := range result.SharedObject.Slabs {
-			output.Printfln("    [%d] Version: %d, Min Shards: %d, Sectors: %d, Offset: %d, Length: %d",
-				i, slab.Version, slab.MinShards, len(slab.Sectors), slab.Offset, slab.Length)
-		}
-	} else {
+	so := result.SharedObject
+	if len(so.Slabs) == 0 {
 		output.Printfln("No Sia shared object available for this CID")
+		return nil
+	}
+
+	output.Printfln("")
+	output.Printfln("Shared Object:")
+	output.Printfln("  Data Key: %v", so.DataKey)
+	output.Printfln("  Slabs: %d", len(so.Slabs))
+	for i, slab := range so.Slabs {
+		output.Printfln("    [%d] Version: %d, Min Shards: %d, Sectors: %d, Offset: %d, Length: %d",
+			i, slab.Version, slab.MinShards, len(slab.Sectors), slab.Offset, slab.Length)
 	}
 
 	return nil
