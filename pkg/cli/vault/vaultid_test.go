@@ -31,17 +31,17 @@ func TestVaultID_DerivationFormat(t *testing.T) {
 }
 
 func TestVaultID_InvalidKey(t *testing.T) {
-	id := VaultID("not-hex")
-	if id != "vault:unknown" {
-		t.Fatalf("expected vault:unknown, got %q", id)
+	// A malformed key must yield an ABSENT identity (empty), never a shared
+	// "vault:unknown" sentinel that would conflate distinct malformed vaults.
+	if id := VaultID("not-hex"); id != "" {
+		t.Fatalf("expected empty identity for invalid key, got %q", id)
 	}
 }
 
 func TestVaultID_ShortKey(t *testing.T) {
 	// 32 bytes (16 hex chars) — valid hex but too short for ed25519 private key
-	id := VaultID("a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4")
-	if id != "vault:unknown" {
-		t.Fatalf("expected vault:unknown for short key, got %q", id)
+	if id := VaultID("a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"); id != "" {
+		t.Fatalf("expected empty identity for short key, got %q", id)
 	}
 }
 

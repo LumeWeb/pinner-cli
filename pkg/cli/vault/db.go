@@ -45,7 +45,9 @@ func OpenDB(dbPath string) (*gorm.DB, error) {
 	// create the file with the OS-default umask (e.g. 0644 on umask 022),
 	// leaking plaintext vault metadata — file names, sizes, media types — to
 	// other local users.
-	restrictFilePermissions(dbPath)
+	if err := restrictFilePermissions(dbPath); err != nil {
+		return nil, fmt.Errorf("failed to restrict vault database permissions: %w", err)
+	}
 
 	// Serialize all DB access through a single connection. This is the correct
 	// configuration for a single-user local SQLite vault: it guarantees our

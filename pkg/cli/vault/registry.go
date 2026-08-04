@@ -14,8 +14,11 @@ import (
 )
 
 // restrictFilePermissions sets the file to 0600 on Unix (no-op on Windows).
-func restrictFilePermissions(path string) {
-	os.Chmod(path, 0600)
+// It returns an error so a failed chmod (e.g. a filesystem that rejects the
+// mode) is surfaced instead of silently leaving the sensitive file at a
+// permissive umask mode.
+func restrictFilePermissions(path string) error {
+	return os.Chmod(path, 0600)
 }
 
 // ProfileConfig is one entry in the vault registry.
@@ -122,7 +125,9 @@ func SaveRegistry(r *VaultRegistry) error {
 	if err := os.Rename(tmpPath, path); err != nil {
 		return fmt.Errorf("failed to rename registry file: %w", err)
 	}
-	restrictFilePermissions(path)
+	if err := restrictFilePermissions(path); err != nil {
+		return fmt.Errorf("failed to restrict registry permissions: %w", err)
+	}
 	return nil
 }
 
@@ -216,7 +221,9 @@ func SaveProfileState(profileName string, state *ProfileState) error {
 	if err := os.Rename(tmpPath, path); err != nil {
 		return fmt.Errorf("failed to rename state file: %w", err)
 	}
-	restrictFilePermissions(path)
+	if err := restrictFilePermissions(path); err != nil {
+		return fmt.Errorf("failed to restrict state permissions: %w", err)
+	}
 	return nil
 }
 
@@ -298,14 +305,16 @@ func ValidateProfileName(name string) error {
 // Format: "vault:<hex>" (first 16 bytes / 128 bits of the SHA-256 of the public
 // key). 128 bits is used, not a 48-bit truncation, so two distinct vaults are
 // not confused or falsely detected as already-configured in the restore dedup
-// check.
+// check. Returns "" (absent identity) when the app key cannot be decoded into
+// a valid public key — never a shared sentinel, so distinct malformed keys
+// are not conflated as the same vault.
 func VaultID(appKeyHex string) string {
 	pubKey, err := DecodeAppKey(appKeyHex)
 	if err != nil {
-		return "vault:unknown"
+		return ""
 	}
 	if len(pubKey) < 64 {
-		return "vault:unknown"
+		return ""
 	}
 	pub := pubKey.PublicKey()
 	h := sha256.Sum256(pub[:])
@@ -323,7 +332,7 @@ func ProfileVaultID(profileName string) (string, bool) {
 		return "", false
 	}
 	id := VaultID(state.AppKey)
-	if id == "vault:unknown" {
+	if id == "" {
 		return "", false
 	}
 	return id, true

@@ -435,8 +435,10 @@ func (s *vaultService) List(ctx context.Context, vaultPath string) ([]ListItem, 
 	// a single-level child, not a deeper descendant. This keeps memory bounded
 	// to the immediate children instead of loading the entire subtree on every
 	// listing and pruning it in Go.
-	s.db.Where("path LIKE ? ESCAPE '\\' AND path != ? AND instr(substr(path, length(?) + 1), '/') = 0",
-		likePattern, dirPath, prefix).Find(&dirs)
+	if err := s.db.Where("path LIKE ? ESCAPE '\\' AND path != ? AND instr(substr(path, length(?) + 1), '/') = 0",
+		likePattern, dirPath, prefix).Find(&dirs).Error; err != nil {
+		return nil, fmt.Errorf("failed to list subdirectories of %s: %w", dirPath, err)
+	}
 	for _, d := range dirs {
 		items = append(items, ListItem{
 			Name:      strings.TrimPrefix(d.Path, prefix),
@@ -451,12 +453,16 @@ func (s *vaultService) List(ctx context.Context, vaultPath string) ([]ListItem, 
 	// file path. Historical versions (is_current=0) and tombstoned rows are not
 	// surfaced as path entries.
 	var files []File
+	var fileErr error
 	if dirID == nil {
-		s.db.Where("directory_id IS NULL AND is_current = 1 AND deleted_at IS NULL").
-			Order("updated_at DESC, id DESC").Find(&files)
+		fileErr = s.db.Where("directory_id IS NULL AND is_current = 1 AND deleted_at IS NULL").
+			Order("updated_at DESC, id DESC").Find(&files).Error
 	} else {
-		s.db.Where("directory_id = ? AND is_current = 1 AND deleted_at IS NULL", dirID).
-			Order("updated_at DESC, id DESC").Find(&files)
+		fileErr = s.db.Where("directory_id = ? AND is_current = 1 AND deleted_at IS NULL", dirID).
+			Order("updated_at DESC, id DESC").Find(&files).Error
+	}
+	if fileErr != nil {
+		return nil, fmt.Errorf("failed to list files of %s: %w", dirPath, fileErr)
 	}
 	for _, f := range files {
 		items = append(items, ListItem{
