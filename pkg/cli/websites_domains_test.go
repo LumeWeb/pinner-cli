@@ -144,6 +144,35 @@ func TestWebsitesDomainsAdd(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "successful add domain with --website flag",
+			setupMocks: func(svc *mockWebsitesServiceForCLI) {
+				zoneName := "example.com."
+				svc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+					return []ipfs.WebsiteItem{
+						{Id: 1, Domain: "example.com"},
+					}, nil
+				}
+				svc.BindDomainFn = func(ctx context.Context, websiteID string, req ipfs.DomainRequest) (*ipfs.DomainResponse, error) {
+					return &ipfs.DomainResponse{
+						Id: 1, Domain: "mydomain.com", Namespace: "icann", ZoneName: &zoneName,
+					}, nil
+				}
+			},
+			cmd:     newMockCommand().withString(FlagWebsite, "example.com").withArgs("mydomain.com").withString("namespace", "icann"),
+			wantErr: false,
+		},
+		{
+			name: "both --website flag and positional website errors",
+			setupMocks: func(svc *mockWebsitesServiceForCLI) {
+				svc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+					return nil, nil
+				}
+			},
+			cmd:         newMockCommand().withString(FlagWebsite, "example.com").withArgs("example.com", "mydomain.com"),
+			wantErr:     true,
+			errContains: "both as --website flag and positional",
+		},
+		{
 			name: "successful add domain with hns namespace",
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
 				svc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
@@ -309,6 +338,26 @@ func TestWebsitesDomainsRm(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "successful remove domain by domain name with --website flag",
+			setupMocks: func(svc *mockWebsitesServiceForCLI) {
+				svc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+					return []ipfs.WebsiteItem{
+						{Id: 1, Domain: "example.com"},
+					}, nil
+				}
+				svc.ListDomainsFn = func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
+					return []ipfs.DomainResponse{
+						{Id: 42, Domain: "staging.example.com", Namespace: "icann"},
+					}, nil
+				}
+				svc.UnbindDomainFn = func(ctx context.Context, websiteID string, domainID string) error {
+					return nil
+				}
+			},
+			cmd:     newMockCommand().withString(FlagWebsite, "example.com").withArgs("staging.example.com"),
+			wantErr: false,
+		},
+		{
 			name: "domain name not found",
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
 				svc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
@@ -421,6 +470,28 @@ func TestWebsitesDomainsVerify(t *testing.T) {
 				}
 			},
 			cmd:     newMockCommand().withArgs("example.com", "mydomain.hns"),
+			wantErr: false,
+		},
+		{
+			name: "successful verify by name with --website flag",
+			setupMocks: func(svc *mockWebsitesServiceForCLI) {
+				svc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+					return []ipfs.WebsiteItem{
+						{Id: 1, Domain: "example.com"},
+					}, nil
+				}
+				svc.ListDomainsFn = func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
+					return []ipfs.DomainResponse{
+						{Id: 2, Domain: "mydomain.hns", Namespace: "hns"},
+					}, nil
+				}
+				svc.VerifyDomainFn = func(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainResponse, error) {
+					return &ipfs.DomainResponse{
+						Id: 2, Domain: "mydomain.hns", Namespace: "hns", ZoneName: nil,
+					}, nil
+				}
+			},
+			cmd:     newMockCommand().withString(FlagWebsite, "example.com").withArgs("mydomain.hns"),
 			wantErr: false,
 		},
 		{
@@ -599,17 +670,11 @@ func websitesDomainsAddWithService(ctx context.Context, cmd websitesCommandGette
 		return err
 	}
 
-	args := cmd.Args()
-	if args.Len() < 2 {
-		return fmt.Errorf("usage: pinner websites domains add <website-id-or-domain> <domain>")
-	}
-
-	websiteID, err := resolveWebsiteID(ctx, websitesService, args.First())
+	websiteID, domain, err := resolveDomainCommandTarget(ctx, websitesService, cmd, "add")
 	if err != nil {
 		return err
 	}
 
-	domain := args.Get(1)
 	namespace := cmd.String("namespace")
 	if namespace != "icann" && namespace != "hns" {
 		return fmt.Errorf("invalid namespace %q: must be 'icann' or 'hns'", namespace)
@@ -657,17 +722,11 @@ func websitesDomainsRmWithService(ctx context.Context, cmd websitesCommandGetter
 		return err
 	}
 
-	args := cmd.Args()
-	if args.Len() < 2 {
-		return fmt.Errorf("usage: pinner websites domains rm <website-id-or-domain> <domain>")
-	}
-
-	websiteID, err := resolveWebsiteID(ctx, websitesService, args.First())
+	websiteID, domainArg, err := resolveDomainCommandTarget(ctx, websitesService, cmd, "rm")
 	if err != nil {
 		return err
 	}
 
-	domainArg := args.Get(1)
 	domainID, err := resolveDomainID(ctx, websitesService, websiteID, domainArg)
 	if err != nil {
 		return err
@@ -694,17 +753,11 @@ func websitesDomainsVerifyWithService(ctx context.Context, cmd websitesCommandGe
 		return err
 	}
 
-	args := cmd.Args()
-	if args.Len() < 2 {
-		return fmt.Errorf("usage: pinner websites domains verify <website-id-or-domain> <domain>")
-	}
-
-	websiteID, err := resolveWebsiteID(ctx, websitesService, args.First())
+	websiteID, domainArg, err := resolveDomainCommandTarget(ctx, websitesService, cmd, "verify")
 	if err != nil {
 		return err
 	}
 
-	domainArg := args.Get(1)
 	domainID, err := resolveDomainID(ctx, websitesService, websiteID, domainArg)
 	if err != nil {
 		return err
