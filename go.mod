@@ -29,6 +29,7 @@ require (
 	go.lumeweb.com/configmanager v0.3.26
 	go.lumeweb.com/ipfs-content v0.1.17
 	go.lumeweb.com/ipfs-sdk v0.1.61
+	go.lumeweb.com/ipfs-sdk/dnsname v0.1.64
 	go.lumeweb.com/portal-sdk v0.1.64
 	go.lumeweb.com/queryutil v0.3.17
 	go.uber.org/zap v1.27.1
