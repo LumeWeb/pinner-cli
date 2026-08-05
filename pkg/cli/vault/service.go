@@ -15,9 +15,6 @@ var ErrNotFound = errors.New("vault object not found")
 
 // VaultService is the interface for vault operations.
 type VaultService interface {
-	// Init initializes the local vault database.
-	Init(ctx context.Context) error
-
 	// CheckReady verifies that the indexer has finished propagating the
 	// account registration. Returns an error with a clear message if not.
 	CheckReady(ctx context.Context) error
@@ -61,12 +58,6 @@ type VaultService interface {
 
 	// Sync pulls changes from the indexer into the local cache.
 	Sync(ctx context.Context) (int, error) // returns number of events processed
-
-	// SyncCursor returns the persisted sync cursor token ("" if none saved).
-	// Used by Sync-loops to detect when the cursor stops advancing (Sync can
-	// return the full batch size while holding the cursor before an unresolved
-	// transient-metadata skip).
-	SyncCursor() string
 
 	// Close releases resources.
 	Close() error

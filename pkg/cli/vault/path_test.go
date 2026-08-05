@@ -92,18 +92,3 @@ func TestNormalizeShareURL(t *testing.T) {
 		}
 	}
 }
-
-func TestDenormalizeShareURL(t *testing.T) {
-	tests := []struct {
-		input string
-		want  string
-	}{
-		{"sia://sia.example.com/share/abc#key123", "https://sia.example.com/share/abc#key123"},
-		{"https://sia.example.com/share/abc", "https://sia.example.com/share/abc"},
-	}
-	for _, tt := range tests {
-		if got := DenormalizeShareURL(tt.input); got != tt.want {
-			t.Errorf("DenormalizeShareURL(%q) = %q, want %q", tt.input, got, tt.want)
-		}
-	}
-}

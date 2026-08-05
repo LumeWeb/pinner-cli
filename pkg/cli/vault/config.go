@@ -26,8 +26,3 @@ func DecodeAppKey(hexKey string) (types.PrivateKey, error) {
 func NormalizeShareURL(rawURL string) string {
 	return strings.Replace(rawURL, "https://", "sia://", 1)
 }
-
-// DenormalizeShareURL converts a sia:// share URL back to https://.
-func DenormalizeShareURL(sharedURL string) string {
-	return strings.Replace(sharedURL, "sia://", "https://", 1)
-}

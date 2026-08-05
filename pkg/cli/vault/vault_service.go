@@ -103,15 +103,6 @@ func NewVaultServiceForProfile(profileName string, indexerURL string) (VaultServ
 	}, nil
 }
 
-// Init initializes the local vault database.
-func (s *vaultService) Init(ctx context.Context) error {
-	var count int64
-	if err := s.db.Model(&File{}).Count(&count).Error; err != nil {
-		return fmt.Errorf("vault db check failed: %w", err)
-	}
-	return nil
-}
-
 // CheckReady verifies the indexer has propagated the account registration.
 // Right after login, the indexer needs a moment to propagate on the network.
 // This returns a clear error so the user knows to wait and retry.
@@ -305,9 +296,6 @@ func (s *vaultService) Put(ctx context.Context, r io.Reader, size int64, vaultPa
 				// then takes the overwrite path here. No network I/O happens
 				// under the single-connection write lock.
 				if err := tx.Create(&rec).Error; err != nil {
-					if isLiveNameConflict(err) {
-						return err
-					}
 					return err
 				}
 				return promoteCurrent(tx, vp.Name, dirID, rec.ID)
@@ -356,16 +344,9 @@ func (s *vaultService) Get(ctx context.Context, vaultPath string, w io.Writer) e
 		return err
 	}
 
-	dirID, err := s.getDirectoryID(vp.Directory)
+	record, err := s.resolveFile(vp)
 	if err != nil {
-		return fmt.Errorf("directory not found: %w", err)
-	}
-
-	var record File
-	if f, err := s.findCurrentFile(vp.Name, dirID); err != nil {
-		return fmt.Errorf("file not found: %s", vaultPath)
-	} else {
-		record = f
+		return err
 	}
 
 	objHash, err := parseHash256(record.ObjectKey)
@@ -605,16 +586,9 @@ func (s *vaultService) resolveVerifyObject(ctx context.Context, vaultPath string
 		return nil, siastorage.Object{}, false, err
 	}
 
-	dirID, err := s.getDirectoryID(vp.Directory)
+	record, err := s.resolveFile(vp)
 	if err != nil {
-		return nil, siastorage.Object{}, false, fmt.Errorf("file not found: %s", vaultPath)
-	}
-
-	var record File
-	if f, err := s.findCurrentFile(vp.Name, dirID); err != nil {
-		return nil, siastorage.Object{}, false, fmt.Errorf("file not found: %s", vaultPath)
-	} else {
-		record = f
+		return nil, siastorage.Object{}, false, err
 	}
 
 	result := &VerifyResult{
@@ -651,16 +625,9 @@ func (s *vaultService) Remove(ctx context.Context, vaultPath string) error {
 		return err
 	}
 
-	dirID, err := s.getDirectoryID(vp.Directory)
+	record, err := s.resolveFile(vp)
 	if err != nil {
-		return fmt.Errorf("file not found: %s", vaultPath)
-	}
-
-	var record File
-	if f, err := s.findCurrentFile(vp.Name, dirID); err != nil {
-		return fmt.Errorf("file not found: %s", vaultPath)
-	} else {
-		record = f
+		return err
 	}
 
 	objHash, err := parseHash256(record.ObjectKey)
@@ -730,16 +697,9 @@ func (s *vaultService) Share(ctx context.Context, vaultPath string, validUntil t
 		return "", err
 	}
 
-	dirID, err := s.getDirectoryID(vp.Directory)
+	record, err := s.resolveFile(vp)
 	if err != nil {
-		return "", fmt.Errorf("file not found: %s", vaultPath)
-	}
-
-	var record File
-	if f, err := s.findCurrentFile(vp.Name, dirID); err != nil {
-		return "", fmt.Errorf("file not found: %s", vaultPath)
-	} else {
-		record = f
+		return "", err
 	}
 
 	objHash, err := parseHash256(record.ObjectKey)
@@ -884,6 +844,24 @@ func (s *vaultService) findCurrentFile(name string, dirID *uint) (File, error) {
 	}
 	err := q.First(&f).Error
 	return f, err
+}
+
+// resolveFile resolves a vault path to its current live File record. It parses
+// the path, resolves (or confirms) the parent directory, and loads the current
+// non-tombstoned file row for that name. A missing directory or missing file
+// both yield an ErrNotFound-wrapped error so callers can distinguish
+// not-found via errors.Is. Used by Get, Verify, Remove, and Share, which all
+// previously duplicated this resolve sequence inline.
+func (s *vaultService) resolveFile(vp *VaultPath) (File, error) {
+	dirID, err := s.getDirectoryID(vp.Directory)
+	if err != nil {
+		return File{}, fmt.Errorf("%w: %s", ErrNotFound, vp.Raw)
+	}
+	f, err := s.findCurrentFile(vp.Name, dirID)
+	if err != nil {
+		return File{}, fmt.Errorf("%w: %s", ErrNotFound, vp.Raw)
+	}
+	return f, nil
 }
 
 // adoptPreflight resolves a concurrent-Put conflict BEFORE any write

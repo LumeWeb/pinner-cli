@@ -255,14 +255,8 @@ func (s *vaultService) Sync(ctx context.Context) (int, error) {
 	return applied, nil
 }
 
-// SyncCursor returns the persisted sync cursor token (the raw JSON string), or
-// "" if none has been saved yet. Callers that loop over Sync can compare it
-// across iterations to confirm the cursor is advancing.
-func (s *vaultService) SyncCursor() string {
-	var cursorRecord SyncDownCursor
-	if err := s.db.First(&cursorRecord).Error; err != nil {
-		return ""
-	}
-	return cursorRecord.Cursor
-}
+// Sync's internal cursor persistence. The persisted SyncDownCursor token is
+// only consumed internally by Sync; callers that need to confirm forward
+// progress (e.g. cache rebuild) compare the cursor across iterations via the
+// SyncDownCursor row.
 

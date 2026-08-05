@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"go.sia.tech/core/types"
 	"go.sia.tech/siastorage"
 )
 
@@ -103,6 +102,3 @@ func WaitForApprovalAndRegister(ctx context.Context, indexerURL, mnemonic string
 	appKey := sdk.AppKey()
 	return fmt.Sprintf("%x", []byte(appKey)), nil
 }
-
-// noopSDK returns a minimal SDK for type compatibility.
-var _ types.PrivateKey = types.PrivateKey{}
