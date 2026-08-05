@@ -225,7 +225,7 @@ The flow:
 					output.Printfln("Warning: sync skipped (%v)", err)
 					cacheState = "error"
 				} else {
-					count, err := svc.Sync(ctx)
+					count, _, err := svc.Sync(ctx)
 					if err != nil {
 						output.Printfln("Warning: sync failed (%v)", err)
 						cacheState = "error"

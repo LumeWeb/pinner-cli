@@ -48,12 +48,12 @@ func isDirNameConflict(err error) bool {
 // re-tick once the uploading device finishes stamping metadata, because the
 // store is an idempotent upsert keyed by the per-file UUID. It deliberately
 // does NOT stall or retry skips — the engine relies on periodic re-runs.
-func (s *vaultService) Sync(ctx context.Context) (int, error) {
+func (s *vaultService) Sync(ctx context.Context) (applied int, full bool, err error) {
 	// Load cursor
 	var cursorRecord SyncDownCursor
 	result := s.db.First(&cursorRecord)
 	if result.Error != nil && result.Error != gorm.ErrRecordNotFound {
-		return 0, fmt.Errorf("failed to load sync cursor: %w", result.Error)
+		return 0, false, fmt.Errorf("failed to load sync cursor: %w", result.Error)
 	}
 
 	var cursor slabs.Cursor
@@ -61,19 +61,25 @@ func (s *vaultService) Sync(ctx context.Context) (int, error) {
 		var err error
 		cursor, err = unmarshalCursor(cursorRecord.Cursor)
 		if err != nil {
-			return 0, fmt.Errorf("failed to parse sync cursor: %w", err)
+			return 0, false, fmt.Errorf("failed to parse sync cursor: %w", err)
 		}
 	}
 
 	// Fetch events
 	events, err := s.sdk.ObjectEvents(ctx, cursor, 100)
 	if err != nil {
-		return 0, fmt.Errorf("failed to fetch object events: %w", err)
+		return 0, false, fmt.Errorf("failed to fetch object events: %w", err)
 	}
+
+	// A full batch means there may be more events behind the cursor; callers
+	// use this to decide whether to loop. The applied count alone is
+	// insufficient: a batch that is entirely skips returns 0 applied but still
+	// advances the cursor past real events.
+	full = len(events) == 100
 
 	// Apply each event idempotently. applied counts the events actually
 	// written to the local store (deleted/tombstoned or recorded/updated).
-	applied := 0
+	applied = 0
 	for _, ev := range events {
 		if ev.Deleted {
 			// Soft-delete the local row(s) this delete event refers to. Setting
@@ -100,7 +106,7 @@ func (s *vaultService) Sync(ctx context.Context) (int, error) {
 							Where("uuid = ? AND is_current = 1", m.ID).
 							Update("deleted_at", now)
 						if res.Error != nil {
-							return applied, fmt.Errorf("failed to tombstone file record: %w", res.Error)
+							return applied, full, fmt.Errorf("failed to tombstone file record: %w", res.Error)
 						}
 						if res.RowsAffected > 0 {
 							applied++
@@ -112,7 +118,7 @@ func (s *vaultService) Sync(ctx context.Context) (int, error) {
 			if err := s.db.Model(&File{}).
 				Where("object_key = ? AND is_current = 1 AND deleted_at IS NULL", ev.Key.String()).
 				Update("deleted_at", now).Error; err != nil {
-				return applied, fmt.Errorf("failed to tombstone file record: %w", err)
+				return applied, full, fmt.Errorf("failed to tombstone file record: %w", err)
 			}
 			applied++
 			continue
@@ -149,7 +155,7 @@ func (s *vaultService) Sync(ctx context.Context) (int, error) {
 		// service DB (not the tx), so it must run before the transaction opens.
 		dirID, err := resolveVaultDirectory(s.db, fileMeta.Directory)
 		if err != nil {
-			return applied, fmt.Errorf("failed to resolve directory for %s: %w", ev.Key.String(), err)
+			return applied, full, fmt.Errorf("failed to resolve directory for %s: %w", ev.Key.String(), err)
 		}
 
 		// Find existing by stable identity (UUID). Identity is NOT the name:
@@ -216,7 +222,7 @@ func (s *vaultService) Sync(ctx context.Context) (int, error) {
 			return promoteCurrent(tx, existing.Name, existing.DirectoryID, existing.ID)
 		})
 		if txErr != nil {
-			return applied, fmt.Errorf("failed to record sync event: %w", txErr)
+			return applied, full, fmt.Errorf("failed to record sync event: %w", txErr)
 		}
 		applied++
 	}
@@ -232,7 +238,7 @@ func (s *vaultService) Sync(ctx context.Context) (int, error) {
 
 		cursorJSON, err := marshalCursor(newCursor)
 		if err != nil {
-			return applied, fmt.Errorf("failed to serialize cursor: %w", err)
+			return applied, full, fmt.Errorf("failed to serialize cursor: %w", err)
 		}
 
 		if cursorRecord.ID == 0 {
@@ -241,18 +247,18 @@ func (s *vaultService) Sync(ctx context.Context) (int, error) {
 				UpdatedAt: time.Now(),
 			}
 			if err := s.db.Create(&cursorRecord).Error; err != nil {
-				return applied, fmt.Errorf("failed to persist sync cursor: %w", err)
+				return applied, full, fmt.Errorf("failed to persist sync cursor: %w", err)
 			}
 		} else {
 			cursorRecord.Cursor = cursorJSON
 			cursorRecord.UpdatedAt = time.Now()
 			if err := s.db.Save(&cursorRecord).Error; err != nil {
-				return applied, fmt.Errorf("failed to persist sync cursor: %w", err)
+				return applied, full, fmt.Errorf("failed to persist sync cursor: %w", err)
 			}
 		}
 	}
 
-	return applied, nil
+	return applied, full, nil
 }
 
 // Sync's internal cursor persistence. The persisted SyncDownCursor token is

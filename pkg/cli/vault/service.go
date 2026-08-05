@@ -56,8 +56,14 @@ type VaultService interface {
 	// Share generates a time-limited sia:// share URL for a file.
 	Share(ctx context.Context, vaultPath string, validUntil time.Time) (string, error)
 
-	// Sync pulls changes from the indexer into the local cache.
-	Sync(ctx context.Context) (int, error) // returns number of events processed
+	// Sync pulls changes from the indexer into the local cache. It processes
+	// up to one batch of events (100) per call and always advances the cursor
+	// to the last event fetched. It returns the number of events applied to
+	// the local store, and whether the fetched batch was full (i.e. there may
+	// be more events to pull). full is the correct signal for loop-and-rerun
+	// callers; applied alone is 0 when every event in a full batch was skipped
+	// (cursor still advanced past them).
+	Sync(ctx context.Context) (applied int, full bool, err error)
 
 	// Close releases resources.
 	Close() error

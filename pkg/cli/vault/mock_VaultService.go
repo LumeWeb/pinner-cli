@@ -65,7 +65,7 @@ type MockVaultService_Cat_Call struct {
 //   - ctx context.Context
 //   - vaultPath string
 //   - w io.Writer
-func (_e *MockVaultService_Expecter) Cat(ctx interface{}, vaultPath interface{}, w interface{}) *MockVaultService_Cat_Call {
+func (_e *MockVaultService_Expecter) Cat(ctx any, vaultPath any, w any) *MockVaultService_Cat_Call {
 	return &MockVaultService_Cat_Call{Call: _e.mock.On("Cat", ctx, vaultPath, w)}
 }
 
@@ -126,7 +126,7 @@ type MockVaultService_CheckReady_Call struct {
 
 // CheckReady is a helper method to define mock.On call
 //   - ctx context.Context
-func (_e *MockVaultService_Expecter) CheckReady(ctx interface{}) *MockVaultService_CheckReady_Call {
+func (_e *MockVaultService_Expecter) CheckReady(ctx any) *MockVaultService_CheckReady_Call {
 	return &MockVaultService_CheckReady_Call{Call: _e.mock.On("CheckReady", ctx)}
 }
 
@@ -223,7 +223,7 @@ type MockVaultService_Get_Call struct {
 //   - ctx context.Context
 //   - vaultPath string
 //   - w io.Writer
-func (_e *MockVaultService_Expecter) Get(ctx interface{}, vaultPath interface{}, w interface{}) *MockVaultService_Get_Call {
+func (_e *MockVaultService_Expecter) Get(ctx any, vaultPath any, w any) *MockVaultService_Get_Call {
 	return &MockVaultService_Get_Call{Call: _e.mock.On("Get", ctx, vaultPath, w)}
 }
 
@@ -256,57 +256,6 @@ func (_c *MockVaultService_Get_Call) Return(err error) *MockVaultService_Get_Cal
 }
 
 func (_c *MockVaultService_Get_Call) RunAndReturn(run func(ctx context.Context, vaultPath string, w io.Writer) error) *MockVaultService_Get_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
-// Init provides a mock function for the type MockVaultService
-func (_mock *MockVaultService) Init(ctx context.Context) error {
-	ret := _mock.Called(ctx)
-
-	if len(ret) == 0 {
-		panic("no return value specified for Init")
-	}
-
-	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context) error); ok {
-		r0 = returnFunc(ctx)
-	} else {
-		r0 = ret.Error(0)
-	}
-	return r0
-}
-
-// MockVaultService_Init_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Init'
-type MockVaultService_Init_Call struct {
-	*mock.Call
-}
-
-// Init is a helper method to define mock.On call
-//   - ctx context.Context
-func (_e *MockVaultService_Expecter) Init(ctx interface{}) *MockVaultService_Init_Call {
-	return &MockVaultService_Init_Call{Call: _e.mock.On("Init", ctx)}
-}
-
-func (_c *MockVaultService_Init_Call) Run(run func(ctx context.Context)) *MockVaultService_Init_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 context.Context
-		if args[0] != nil {
-			arg0 = args[0].(context.Context)
-		}
-		run(
-			arg0,
-		)
-	})
-	return _c
-}
-
-func (_c *MockVaultService_Init_Call) Return(err error) *MockVaultService_Init_Call {
-	_c.Call.Return(err)
-	return _c
-}
-
-func (_c *MockVaultService_Init_Call) RunAndReturn(run func(ctx context.Context) error) *MockVaultService_Init_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -347,7 +296,7 @@ type MockVaultService_List_Call struct {
 // List is a helper method to define mock.On call
 //   - ctx context.Context
 //   - vaultPath string
-func (_e *MockVaultService_Expecter) List(ctx interface{}, vaultPath interface{}) *MockVaultService_List_Call {
+func (_e *MockVaultService_Expecter) List(ctx any, vaultPath any) *MockVaultService_List_Call {
 	return &MockVaultService_List_Call{Call: _e.mock.On("List", ctx, vaultPath)}
 }
 
@@ -418,7 +367,7 @@ type MockVaultService_Put_Call struct {
 //   - size int64
 //   - vaultPath string
 //   - metadata map[string]any
-func (_e *MockVaultService_Expecter) Put(ctx interface{}, r interface{}, size interface{}, vaultPath interface{}, metadata interface{}) *MockVaultService_Put_Call {
+func (_e *MockVaultService_Expecter) Put(ctx any, r any, size any, vaultPath any, metadata any) *MockVaultService_Put_Call {
 	return &MockVaultService_Put_Call{Call: _e.mock.On("Put", ctx, r, size, vaultPath, metadata)}
 }
 
@@ -490,7 +439,7 @@ type MockVaultService_Remove_Call struct {
 // Remove is a helper method to define mock.On call
 //   - ctx context.Context
 //   - vaultPath string
-func (_e *MockVaultService_Expecter) Remove(ctx interface{}, vaultPath interface{}) *MockVaultService_Remove_Call {
+func (_e *MockVaultService_Expecter) Remove(ctx any, vaultPath any) *MockVaultService_Remove_Call {
 	return &MockVaultService_Remove_Call{Call: _e.mock.On("Remove", ctx, vaultPath)}
 }
 
@@ -557,7 +506,7 @@ type MockVaultService_Share_Call struct {
 //   - ctx context.Context
 //   - vaultPath string
 //   - validUntil time.Time
-func (_e *MockVaultService_Expecter) Share(ctx interface{}, vaultPath interface{}, validUntil interface{}) *MockVaultService_Share_Call {
+func (_e *MockVaultService_Expecter) Share(ctx any, vaultPath any, validUntil any) *MockVaultService_Share_Call {
 	return &MockVaultService_Share_Call{Call: _e.mock.On("Share", ctx, vaultPath, validUntil)}
 }
 
@@ -630,7 +579,7 @@ type MockVaultService_Stat_Call struct {
 // Stat is a helper method to define mock.On call
 //   - ctx context.Context
 //   - vaultPath string
-func (_e *MockVaultService_Expecter) Stat(ctx interface{}, vaultPath interface{}) *MockVaultService_Stat_Call {
+func (_e *MockVaultService_Expecter) Stat(ctx any, vaultPath any) *MockVaultService_Stat_Call {
 	return &MockVaultService_Stat_Call{Call: _e.mock.On("Stat", ctx, vaultPath)}
 }
 
@@ -663,7 +612,7 @@ func (_c *MockVaultService_Stat_Call) RunAndReturn(run func(ctx context.Context,
 }
 
 // Sync provides a mock function for the type MockVaultService
-func (_mock *MockVaultService) Sync(ctx context.Context) (int, error) {
+func (_mock *MockVaultService) Sync(ctx context.Context) (int, bool, error) {
 	ret := _mock.Called(ctx)
 
 	if len(ret) == 0 {
@@ -671,8 +620,9 @@ func (_mock *MockVaultService) Sync(ctx context.Context) (int, error) {
 	}
 
 	var r0 int
-	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context) (int, error)); ok {
+	var r1 bool
+	var r2 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context) (int, bool, error)); ok {
 		return returnFunc(ctx)
 	}
 	if returnFunc, ok := ret.Get(0).(func(context.Context) int); ok {
@@ -680,12 +630,17 @@ func (_mock *MockVaultService) Sync(ctx context.Context) (int, error) {
 	} else {
 		r0 = ret.Get(0).(int)
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context) error); ok {
+	if returnFunc, ok := ret.Get(1).(func(context.Context) bool); ok {
 		r1 = returnFunc(ctx)
 	} else {
-		r1 = ret.Error(1)
+		r1 = ret.Get(1).(bool)
 	}
-	return r0, r1
+	if returnFunc, ok := ret.Get(2).(func(context.Context) error); ok {
+		r2 = returnFunc(ctx)
+	} else {
+		r2 = ret.Error(2)
+	}
+	return r0, r1, r2
 }
 
 // MockVaultService_Sync_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Sync'
@@ -695,7 +650,7 @@ type MockVaultService_Sync_Call struct {
 
 // Sync is a helper method to define mock.On call
 //   - ctx context.Context
-func (_e *MockVaultService_Expecter) Sync(ctx interface{}) *MockVaultService_Sync_Call {
+func (_e *MockVaultService_Expecter) Sync(ctx any) *MockVaultService_Sync_Call {
 	return &MockVaultService_Sync_Call{Call: _e.mock.On("Sync", ctx)}
 }
 
@@ -712,12 +667,12 @@ func (_c *MockVaultService_Sync_Call) Run(run func(ctx context.Context)) *MockVa
 	return _c
 }
 
-func (_c *MockVaultService_Sync_Call) Return(n int, err error) *MockVaultService_Sync_Call {
-	_c.Call.Return(n, err)
+func (_c *MockVaultService_Sync_Call) Return(applied int, full bool, err error) *MockVaultService_Sync_Call {
+	_c.Call.Return(applied, full, err)
 	return _c
 }
 
-func (_c *MockVaultService_Sync_Call) RunAndReturn(run func(ctx context.Context) (int, error)) *MockVaultService_Sync_Call {
+func (_c *MockVaultService_Sync_Call) RunAndReturn(run func(ctx context.Context) (int, bool, error)) *MockVaultService_Sync_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -758,7 +713,7 @@ type MockVaultService_Verify_Call struct {
 // Verify is a helper method to define mock.On call
 //   - ctx context.Context
 //   - vaultPath string
-func (_e *MockVaultService_Expecter) Verify(ctx interface{}, vaultPath interface{}) *MockVaultService_Verify_Call {
+func (_e *MockVaultService_Expecter) Verify(ctx any, vaultPath any) *MockVaultService_Verify_Call {
 	return &MockVaultService_Verify_Call{Call: _e.mock.On("Verify", ctx, vaultPath)}
 }
 
@@ -826,7 +781,7 @@ type MockVaultService_VerifyDeep_Call struct {
 // VerifyDeep is a helper method to define mock.On call
 //   - ctx context.Context
 //   - vaultPath string
-func (_e *MockVaultService_Expecter) VerifyDeep(ctx interface{}, vaultPath interface{}) *MockVaultService_VerifyDeep_Call {
+func (_e *MockVaultService_Expecter) VerifyDeep(ctx any, vaultPath any) *MockVaultService_VerifyDeep_Call {
 	return &MockVaultService_VerifyDeep_Call{Call: _e.mock.On("VerifyDeep", ctx, vaultPath)}
 }
 
@@ -854,50 +809,6 @@ func (_c *MockVaultService_VerifyDeep_Call) Return(verifyResult *VerifyResult, e
 }
 
 func (_c *MockVaultService_VerifyDeep_Call) RunAndReturn(run func(ctx context.Context, vaultPath string) (*VerifyResult, error)) *MockVaultService_VerifyDeep_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
-// SyncCursor provides a mock function for the type MockVaultService
-func (_mock *MockVaultService) SyncCursor() string {
-	ret := _mock.Called()
-
-	if len(ret) == 0 {
-		panic("no return value specified for SyncCursor")
-	}
-
-	var r0 string
-	if returnFunc, ok := ret.Get(0).(func() string); ok {
-		r0 = returnFunc()
-	} else {
-		r0 = ret.Get(0).(string)
-	}
-	return r0
-}
-
-// MockVaultService_SyncCursor_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SyncCursor'
-type MockVaultService_SyncCursor_Call struct {
-	*mock.Call
-}
-
-// SyncCursor is a helper method to define mock.On call
-func (_e *MockVaultService_Expecter) SyncCursor() *MockVaultService_SyncCursor_Call {
-	return &MockVaultService_SyncCursor_Call{Call: _e.mock.On("SyncCursor")}
-}
-
-func (_c *MockVaultService_SyncCursor_Call) Run(run func()) *MockVaultService_SyncCursor_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		run()
-	})
-	return _c
-}
-
-func (_c *MockVaultService_SyncCursor_Call) Return(cursor string) *MockVaultService_SyncCursor_Call {
-	_c.Call.Return(cursor)
-	return _c
-}
-
-func (_c *MockVaultService_SyncCursor_Call) RunAndReturn(run func() string) *MockVaultService_SyncCursor_Call {
 	_c.Call.Return(run)
 	return _c
 }
