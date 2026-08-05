@@ -22,8 +22,18 @@ Run this after logging in on a new machine or to pick up changes from other devi
 			}
 			defer svc.Close()
 
-			output.Printfln("Syncing from indexer...")
+			if !output.IsJSON() {
+				output.Printfln("Syncing from indexer...")
+			}
+			// Sync fetches in batches of 100; loop until it reports 0 events
+			// processed so the cache converges even when >100 changes
+			// accumulate. Re-runs are safe per the cursor semantics.
 			count, err := svc.Sync(ctx)
+			for err == nil && count > 0 {
+				var n int
+				n, err = svc.Sync(ctx)
+				count += n
+			}
 			if err != nil {
 				return err
 			}
