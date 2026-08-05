@@ -288,6 +288,39 @@ func TestDomainAddWizard_Run(t *testing.T) {
 		require.Equal(t, 1, mockUI.VerifyAttempts)
 	})
 
+	t.Run("verify step tolerates nil result from VerifyDomain", func(t *testing.T) {
+		cfgMgr := configmocks.NewMockManager(t)
+		mockUI := NewMockDomainsUI()
+		mockUI.SetWebsiteSelectIndex(0)
+		mockUI.SetDomainInput("staging.example.com")
+		mockUI.SetNamespaceChoice(DomainNamespaceICANNChoice)
+
+		cfg := &config.Config{AuthToken: "test-token", Secure: true}
+		cfgMgr.EXPECT().Config().Return(cfg).Maybe()
+
+		status := "active"
+		mockWebsitesSvc := &mockWebsitesServiceForCLI{
+			BindDomainFn: func(_ context.Context, _ string, _ ipfs.DomainRequest) (*ipfs.DomainResponse, error) {
+				return &ipfs.DomainResponse{Id: 1, Domain: "s.com", Namespace: "icann", Status: &status}, nil
+			},
+			GetDomainDNSRequirementsFn: func(_ context.Context, _, _ string) (*ipfs.DomainResponse, error) {
+				return &ipfs.DomainResponse{Id: 1, Domain: "s.com", Namespace: "icann", Status: &status}, nil
+			},
+			VerifyDomainFn: func(_ context.Context, _, _ string) (*ipfs.DomainResponse, error) {
+				return nil, nil
+			},
+		}
+
+		w := NewDomainAddWizard(mockWebsitesSvc, cfgMgr, mockUI, newTestOutput())
+
+		// Must complete without panicking on the nil verify result.
+		res, err := w.Run(context.Background())
+
+		require.NoError(t, err)
+		require.True(t, res.Completed)
+		require.True(t, mockUI.VerifyExecuted)
+	})
+
 	t.Run("step-specific UI calls tracked", func(t *testing.T) {
 		mock := NewMockDomainsUI()
 

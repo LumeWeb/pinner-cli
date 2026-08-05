@@ -261,6 +261,12 @@ func (ui *PTermDomainsUI) ExecuteVerifyStep(ctx context.Context, w *DomainAddWiz
 		return nil
 	}
 
+	// VerifyDomain may return (nil, nil); fall back to the requested domain so
+	// the retry/give-up message below never dereferences a nil result.
+	if result == nil {
+		result = &ipfs.DomainResponse{Domain: w.Domain(), Namespace: w.Namespace()}
+	}
+
 	w.SetVerifyAttempts(w.VerifyAttempts() + 1)
 	if w.VerifyAttempts() >= maxVerifyAttempts {
 		pterm.Warning.Println("Validation is not yet complete. It may take time for DNS to propagate.")
