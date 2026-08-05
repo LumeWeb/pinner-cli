@@ -56,6 +56,7 @@ Share a file:       pinner vault share vault:/reports/report.pdf
 Sync from indexer:  pinner vault sync
 Manage profiles:    pinner vault profile list
 Rebuild cache:      pinner vault cache rebuild
+Forget a profile:   pinner vault forget --profile <name>
 
 Paths use the vault:/ scheme. Local paths work as normal.
 Stdout contains data or JSON results; progress goes to stderr.`,
@@ -76,6 +77,7 @@ Stdout contains data or JSON results; progress goes to stderr.`,
 			newVaultProfileCommand(),
 			newVaultStatusCommand(),
 			newVaultCacheCommand(),
+			newVaultForgetCommand(),
 		},
 	}
 }

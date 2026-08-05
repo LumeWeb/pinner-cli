@@ -146,16 +146,12 @@ The recovery seed is displayed ONCE and must be saved securely.`,
 				// Record the profile as "pending" in the registry so a
 				// repeat `vault create --agent` hits the profile-exists guard
 				// above rather than silently overwriting the seed.
-				reg.Profiles[profileName] = vault.ProfileConfig{
+				if err := vault.AddProfile(profileName, vault.ProfileConfig{
 					VaultID:    "",
 					CachePath:  vault.ProfileDBPath(profileName),
 					AppKeyRef:  vault.ProfileStatePath(profileName),
 					DeviceName: c.String("device-name"),
-				}
-				if reg.Default == "" {
-					reg.Default = profileName
-				}
-				if err := vault.SaveRegistry(reg); err != nil {
+				}); err != nil {
 					return fmt.Errorf("failed to save registry: %w", err)
 				}
 
@@ -216,17 +212,13 @@ The recovery seed is displayed ONCE and must be saved securely.`,
 				sqlDB.Close()
 			}
 
-			// 8. Add profile to registry
-			reg.Profiles[profileName] = vault.ProfileConfig{
+			// 8. Add profile to registry (serialized, atomic)
+			if err := vault.AddProfile(profileName, vault.ProfileConfig{
 				VaultID:    vaultID,
 				CachePath:  dbPath,
 				AppKeyRef:  vault.ProfileStatePath(profileName),
 				DeviceName: deviceName,
-			}
-			if reg.Default == "" {
-				reg.Default = profileName
-			}
-			if err := vault.SaveRegistry(reg); err != nil {
+			}); err != nil {
 				return fmt.Errorf("failed to save registry: %w", err)
 			}
 

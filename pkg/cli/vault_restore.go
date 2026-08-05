@@ -201,17 +201,13 @@ The flow:
 				sqlDB.Close()
 			}
 
-			// Add profile to registry
-			reg.Profiles[profileName] = vault.ProfileConfig{
+			// Add profile to registry (serialized, atomic)
+			if err := vault.AddProfile(profileName, vault.ProfileConfig{
 				VaultID:    vaultID,
 				CachePath:  dbPath,
 				AppKeyRef:  vault.ProfileStatePath(profileName),
 				DeviceName: deviceName,
-			}
-			if reg.Default == "" {
-				reg.Default = profileName
-			}
-			if err := vault.SaveRegistry(reg); err != nil {
+			}); err != nil {
 				return fmt.Errorf("failed to save registry: %w", err)
 			}
 

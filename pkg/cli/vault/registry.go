@@ -227,17 +227,101 @@ func SaveProfileState(profileName string, state *ProfileState) error {
 	return nil
 }
 
+// AddProfile atomically adds or replaces a profile in the registry, setting it
+// as the default if no default is configured. It serializes with every other
+// registry writer (RemoveProfile, SetDefaultProfile) via lockRegistry() and
+// re-reads the freshest snapshot under the lock, so a concurrent profile
+// mutation is never clobbered by a stale snapshot.
+func AddProfile(profileName string, cfg ProfileConfig) error {
+	if err := ValidateProfileName(profileName); err != nil {
+		return err
+	}
+
+	unlock, err := lockRegistry()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
+	reg, err := LoadRegistry() // freshest snapshot under the lock
+	if err != nil {
+		return err
+	}
+	reg.Profiles[profileName] = cfg
+	if reg.Default == "" {
+		reg.Default = profileName
+	}
+	if err := SaveRegistry(reg); err != nil {
+		return fmt.Errorf("failed to save registry: %w", err)
+	}
+	return nil
+}
+
+// RemoveProfile forgets a profile: it removes the entry from the registry
+// (persisted first) and deletes the profile's local data directory (state,
+// cache DB, recovery seed). It is irreversible. The returned profile was fully
+// removed from the registry even if the data-dir cleanup reports an error.
+func RemoveProfile(profileName string) error {
+	if err := ValidateProfileName(profileName); err != nil {
+		return err
+	}
+
+	// Serialize with every other registry writer (create/restore/set-default)
+	// so the delete applies to the freshest snapshot and cannot clobber a
+	// concurrently created/renamed profile. RemoveProfile is the first
+	// destructive writer to delete profile data, so it cannot rely on the
+	// lock-free last-writer-wins reasoning scoped to default-only mutations.
+	unlock, err := lockRegistry()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
+	reg, err := LoadRegistry() // re-read under the lock for the freshest snapshot
+	if err != nil {
+		return err
+	}
+	if _, ok := reg.Profiles[profileName]; !ok {
+		return fmt.Errorf("profile %q not found", profileName)
+	}
+
+	// Commit the logical removal first: once the registry no longer lists the
+	// profile, it is forgotten even if disk cleanup below partially fails.
+	delete(reg.Profiles, profileName)
+	if reg.Default == profileName {
+		reg.Default = ""
+	}
+	if err := SaveRegistry(reg); err != nil {
+		return fmt.Errorf("failed to save registry after forgetting profile: %w", err)
+	}
+
+	// Delete the profile's local state/cache/seed directory (best effort-fail
+	// surfaced, but the profile is already gone from the registry).
+	if err := os.RemoveAll(ProfileDir(profileName)); err != nil {
+		return fmt.Errorf("profile %q removed from registry but failed to remove its data directory: %w", profileName, err)
+	}
+	return nil
+}
+
 // SetDefaultProfile sets the profile used by default when --profile and
 // PINNER_PROFILE are both absent. The profile must already exist in the
 // registry; the setting persists to vaults.yaml.
 //
 // The write is atomic (SaveRegistry uses temp-file + rename), so a concurrent
 // writer never leaves a corrupt or partial registry. Like every other registry
-// writer (vault create, vault restore), this performs a read-modify-write
-// without an exclusive file lock; two simultaneous calls select a profile by
-// last-writer-wins, which is benign because this command only ever mutates the
-// intended "default" value, never profile data.
+// writer (vault create, vault restore, vault forget), this performs a
+// read-modify-write — here serialized via lockRegistry() so a concurrent
+// mutation (create/restore/remove) is never clobbered.
 func SetDefaultProfile(profileName string) error {
+	// Serialize with every other registry writer (create/restore/remove) so a
+	// concurrent profile mutation is never clobbered. Reads the freshest
+	// snapshot under the lock before mutating the default.
+	unlock, err := lockRegistry()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
 	reg, err := LoadRegistry()
 	if err != nil {
 		return err
