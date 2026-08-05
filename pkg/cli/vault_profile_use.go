@@ -13,11 +13,13 @@ func newVaultProfileUseCommand() *cli.Command {
 		Name:      "use",
 		Usage:     "Set the default profile for pinner vault commands",
 		ArgsUsage: "<name>",
-		Description: `Sets the profile used by default when --profile is not given.
+		Description: `Sets the profile used by default when neither --profile nor
+the PINNER_PROFILE env var selects one.
 
 After setting a default, commands like 'pinner vault login' or 'pinner vault cp'
-resolve to this profile without needing --profile on each call. Overrides the
-PINNER_PROFILE env var.`,
+resolve to this profile without needing --profile on each call. Note that an
+explicit --profile flag or the PINNER_PROFILE env var still take precedence
+over the configured default.`,
 		Action: func(ctx context.Context, c *cli.Command) error {
 			output := setupOutput(c)
 

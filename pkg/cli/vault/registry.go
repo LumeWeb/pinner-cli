@@ -230,6 +230,13 @@ func SaveProfileState(profileName string, state *ProfileState) error {
 // SetDefaultProfile sets the profile used by default when --profile and
 // PINNER_PROFILE are both absent. The profile must already exist in the
 // registry; the setting persists to vaults.yaml.
+//
+// The write is atomic (SaveRegistry uses temp-file + rename), so a concurrent
+// writer never leaves a corrupt or partial registry. Like every other registry
+// writer (vault create, vault restore), this performs a read-modify-write
+// without an exclusive file lock; two simultaneous calls select a profile by
+// last-writer-wins, which is benign because this command only ever mutates the
+// intended "default" value, never profile data.
 func SetDefaultProfile(profileName string) error {
 	reg, err := LoadRegistry()
 	if err != nil {
