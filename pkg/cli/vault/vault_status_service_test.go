@@ -64,6 +64,42 @@ func statusService(t *testing.T, sdk sdkClient) *vaultService {
 	return &vaultService{sdk: sdk, db: db, appKey: types.PrivateKey{}}
 }
 
+// recordingCloseSDK wraps an sdkClient and fails if Close() is invoked more
+// than once. It proves vaultService.Close() is idempotent and does not
+// re-invoke sdk.Close() on a second call.
+type recordingCloseSDK struct {
+	sdkClient
+	closeCalls int
+	t          *testing.T
+}
+
+func (r *recordingCloseSDK) Close() error {
+	r.closeCalls++
+	if r.closeCalls > 1 {
+		r.t.Errorf("sdk.Close() invoked %d times; vaultService.Close() must be idempotent", r.closeCalls)
+	}
+	return nil
+}
+
+// TestClose_Idempotent verifies a second vaultService.Close() does not re-close
+// the SDK or the DB handle (the double-close the cache sync-error path triggers
+// with an explicit close plus a deferred close).
+func TestClose_Idempotent(t *testing.T) {
+	rec := &recordingCloseSDK{sdkClient: &statusFakeSDK{}, t: t}
+	svc := statusService(t, rec)
+
+	if err := svc.Close(); err != nil {
+		t.Fatalf("first Close: %v", err)
+	}
+	// Second Close (the deferred one) must be a safe no-op, not a re-close.
+	if err := svc.Close(); err != nil {
+		t.Fatalf("second Close: %v", err)
+	}
+	if rec.closeCalls != 1 {
+		t.Fatalf("sdk.Close() called %d times, want exactly 1", rec.closeCalls)
+	}
+}
+
 // TestStatus_RemoteReachable verifies a successful account probe yields real
 // live remote + storage data and local cache counts.
 func TestStatus_RemoteReachable(t *testing.T) {

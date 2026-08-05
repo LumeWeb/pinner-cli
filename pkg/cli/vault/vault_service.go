@@ -767,16 +767,22 @@ func (s *vaultService) Status(ctx context.Context) (*StatusResult, error) {
 	return res, nil
 }
 
-// Close releases resources.
+// Close releases resources. It is idempotent: fields are nil'ed after being
+// closed, so a second call (e.g. an explicit close followed by a deferred
+// close) is a no-op rather than re-invoking sdk.Close() on an already-closed
+// SDK (which may error or panic).
 func (s *vaultService) Close() error {
 	var dbErr error
 	if s.db != nil {
 		if sqlDB, err := s.db.DB(); err == nil {
 			dbErr = sqlDB.Close()
 		}
+		s.db = nil
 	}
 	if s.sdk != nil {
-		if err := s.sdk.Close(); err != nil {
+		err := s.sdk.Close()
+		s.sdk = nil
+		if err != nil {
 			return errors.Join(err, dbErr)
 		}
 	}
