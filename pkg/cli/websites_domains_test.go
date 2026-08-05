@@ -958,11 +958,18 @@ func websitesDomainsDNSRequirementsWithService(ctx context.Context, cmd websites
 		return fmt.Errorf("no DNS requirements returned for domain %s", domainID)
 	}
 
+	// Mirrors websitesDomainsDNSRequirements: read DNS hosting (managed) from
+	// the website API.
+	managed := false
+	if website, gErr := websitesService.Get(ctx, websiteID); gErr == nil && website != nil {
+		managed = website.DnsHostingEnabled
+	}
+
 	if output.IsJSON() {
 		return output.PrintJSON(result)
 	}
 
-	renderDomainDelegation(output, result)
+	renderDomainDelegation(output, result, managed)
 	return nil
 }
 
@@ -1162,7 +1169,7 @@ func TestRenderDomainDelegation(t *testing.T) {
 		output := newTestOutput()
 		renderDomainDelegation(output, &ipfs.DomainResponse{
 			Id: 1, Domain: "mydomain.hns", Namespace: "hns", Status: strPtr("delegated"),
-		})
+		}, false)
 		// exercises the nil-delegation branch without asserting exact text
 	})
 
@@ -1181,7 +1188,7 @@ func TestRenderDomainDelegation(t *testing.T) {
 					{Type: "TLSA", Value: strPtr("_443._tcp.mydomain. 3 1 1 <sha256>")},
 				},
 			},
-		})
+		}, false)
 		// exercises the non-nil typed-helper path
 	})
 
@@ -1198,7 +1205,7 @@ func TestRenderDomainDelegation(t *testing.T) {
 					{Type: "NS", Value: strPtr("hns-626f7578e5.rec.ns1.lumeweb")},
 				},
 			},
-		})
+		}, false)
 		// In inline mode the authoritative side is served automatically via
 		// synthetic nameserver names — it is not user-configured.
 	})
@@ -1211,7 +1218,7 @@ func TestRenderDomainDelegation(t *testing.T) {
 				Nameservers:  &[]string{"ns1.example.com", "ns2.example.com"},
 				Instructions: strPtr("Configure these NS records at your registrar for mydomain.com"),
 			},
-		})
+		}, false)
 		// exercises the icann driver path (registrar wording, nameservers list)
 	})
 
@@ -1228,7 +1235,7 @@ func TestRenderDomainDelegation(t *testing.T) {
 					{Type: "TLSA", Value: strPtr("_443._tcp.mydomain.eth. 3 1 1 <sha256>")},
 				},
 			},
-		})
+		}, false)
 		// exercises the generic fallback path for an unrecognized namespace
 	})
 
@@ -1250,7 +1257,7 @@ func TestRenderDomainDelegation(t *testing.T) {
 					{Type: "DS", Value: strPtr(dsValue)},
 				},
 			},
-		})
+		}, false)
 		out := buf.String()
 		// The DS record is communicated once, as a parent record in the
 		// parent-records table — not re-decoded into a redundant block.
@@ -1266,5 +1273,32 @@ func TestRenderDomainDelegation(t *testing.T) {
 		assert.Contains(t, out, "ns1.pinner.xyz")
 		assert.Contains(t, out, "ns2.pinner.xyz")
 		assert.NotContains(t, out, "ns1.pinner.xyz,ns2.pinner.xyz")
+	})
+
+	t.Run("managed HNS does not ask the user to configure their own authoritative DNS", func(t *testing.T) {
+		var buf bytes.Buffer
+		output := NewOutputFormatter(false, false, false, false)
+		output.SetWriter(&buf)
+		renderDomainDelegation(output, &ipfs.DomainResponse{
+			Id: 1, Domain: "mydomain.hns", Namespace: "hns", Status: strPtr("delegated"),
+			Delegation: &ipfs.DNSDelegation{
+				Mode: strPtr("delegated"),
+				ParentRecords: &[]ipfs.DNSDelegationRecord{
+					{Type: "NS", Value: strPtr("ns1.lumeweb,ns2.lumeweb")},
+					{Type: "DS", Value: strPtr("mydomain. 3600 IN DS 12345 13 2 <digest>")},
+				},
+				AuthoritativeRecords: &[]ipfs.DNSDelegationRecord{
+					{Type: "NS", Value: strPtr("ns1.lumeweb\nns2.lumeweb")},
+					{Type: "TLSA", Value: strPtr("_443._tcp.mydomain. 3 1 1 <sha256>")},
+				},
+			},
+		}, true)
+		out := buf.String()
+		// Managed DNS: the platform is authoritative, so the user only publishes
+		// the parent records. No instruction to point their own DNS server.
+		assert.Contains(t, out, "Parent records (publish in your HNS wallet")
+		assert.Contains(t, out, "hosted by Pinner")
+		assert.NotContains(t, out, "configure on your nameserver")
+		assert.NotContains(t, out, "configure on your DNS server")
 	})
 }

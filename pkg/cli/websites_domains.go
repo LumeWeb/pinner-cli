@@ -537,19 +537,32 @@ func websitesDomainsDNSRequirements(ctx context.Context, cmd websitesCommandGett
 		return fmt.Errorf("no DNS requirements returned for domain %s", domainID)
 	}
 
+	// DNS hosting enabled on the website means the platform is authoritative
+	// for the zone (managed) and serves the authoritative records itself, so
+	// the user only publishes the parent records. Read it from the website
+	// API. If the fetch fails, fall back to unmanaged (current behavior)
+	// rather than erroring the command.
+	managed := false
+	if website, gErr := websitesService.Get(ctx, websiteID); gErr == nil && website != nil {
+		managed = website.DnsHostingEnabled
+	}
+
 	if output.IsJSON() {
 		return output.PrintJSON(result)
 	}
 
-	renderDomainDelegation(output, result)
+	renderDomainDelegation(output, result, managed)
 	return nil
 }
 
 // renderDomainDelegation prints the DNS delegation bundle the server computes
 // for a domain. Rendering is driver-based: the namespace selects a
 // context-specific driver (HNS, ICANN, ...) with a neutral generic fallback,
-// mirroring the server's per-namespace DomainProvider design.
-func renderDomainDelegation(output Output, result *ipfs.DomainResponse) {
+// mirroring the server's per-namespace DomainProvider design. managed (DNS
+// hosting enabled on the website) flags whether the platform serves the
+// authoritative records, so drivers don't tell managed users to configure
+// their own authoritative DNS server.
+func renderDomainDelegation(output Output, result *ipfs.DomainResponse, managed bool) {
 	output.Printfln("DNS requirements for %s", result.Domain)
 
 	status := ""
@@ -569,5 +582,5 @@ func renderDomainDelegation(output Output, result *ipfs.DomainResponse) {
 		return
 	}
 
-	defaultDelegationDriver.Render(output, result)
+	defaultDelegationDriver.Render(output, result, managed)
 }

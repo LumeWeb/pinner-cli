@@ -170,7 +170,16 @@ func (w *DomainAddWizard) executeDelegationSetup(ctx context.Context) error {
 		return nil
 	}
 
-	renderDomainDelegation(w.output, delegResult)
+	// DNS hosting enabled on the website means the platform is authoritative
+	// for the zone (managed) and serves the authoritative records itself, so
+	// the user only publishes the parent records. Fall back to unmanaged if
+	// the website cannot be fetched.
+	managed := false
+	if website, gErr := w.websitesService.Get(ctx, w.WebsiteID()); gErr == nil && website != nil {
+		managed = website.DnsHostingEnabled
+	}
+
+	renderDomainDelegation(w.output, delegResult, managed)
 	return nil
 }
 
