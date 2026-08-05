@@ -220,6 +220,9 @@ func resolveDomainArg(cmd websitesCommandGetter, commandName string) (string, er
 	if args.Len() == 0 {
 		return "", fmt.Errorf("domain argument is required (usage: pinner websites domains %s <domain>)", commandName)
 	}
+	if args.Len() > 1 {
+		return "", fmt.Errorf("unexpected extra argument %q (usage: pinner websites domains %s <domain>)", args.Get(1), commandName)
+	}
 	return args.First(), nil
 }
 
@@ -248,9 +251,10 @@ func resolveDomainBinding(ctx context.Context, websitesService WebsitesService, 
 		wID := fmt.Sprintf("%d", w.Id)
 		domains, lerr := websitesService.ListDomains(ctx, wID)
 		if lerr != nil {
-			// A website without domain bindings may error on list; skip it and
-			// keep scanning the remaining websites.
-			continue
+			// A failure to list a website's bindings must surface rather than
+			// being masked as "not found": otherwise a website with the same
+			// numeric ID could resolve silently to the wrong binding.
+			return "", "", fmt.Errorf("failed to look up domain on website %s: %w", wID, lerr)
 		}
 		for _, d := range domains {
 			if dnsname.Equal(d.Domain, domainArg) {

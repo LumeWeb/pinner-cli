@@ -401,6 +401,12 @@ func TestWebsitesDomainsRm(t *testing.T) {
 			wantErr:     true,
 			errContains: "domain argument is required",
 		},
+		{
+			name:        "extra positional args rejected",
+			cmd:         newMockCommand().withArgs("example.com", "staging.example.com"),
+			wantErr:     true,
+			errContains: "unexpected extra argument",
+		},
 	}
 
 	for _, tt := range tests {
@@ -455,6 +461,25 @@ func TestResolveDomainBindingNumericNamePriority(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "2", websiteID)
 	require.Equal(t, "7", domainID)
+}
+
+func TestResolveDomainBindingSurfacesListErrors(t *testing.T) {
+	// Regression for Kody finding: a ListDomains failure on any website must
+	// surface (wrapped) rather than being swallowed as "not found", so the
+	// command can't silently resolve to an unrelated binding.
+	mockSvc := &mockWebsitesServiceForCLI{}
+	mockSvc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+		return []ipfs.WebsiteItem{{Id: 1, Domain: "example.com"}}, nil
+	}
+	wantErr := errors.New("boom")
+	mockSvc.ListDomainsFn = func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
+		return nil, wantErr
+	}
+
+	_, _, err := resolveDomainBinding(context.Background(), mockSvc, "staging.example.com")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to look up domain on website")
+	require.ErrorIs(t, err, wantErr)
 }
 
 func TestWebsitesDomainsRmJSON(t *testing.T) {
