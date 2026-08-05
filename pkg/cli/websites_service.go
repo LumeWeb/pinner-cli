@@ -265,3 +265,15 @@ func (s *websitesService) VerifyDomain(ctx context.Context, websiteID string, do
 	}
 	return s.service.VerifyDomain(ctx, websiteID, domainID)
 }
+
+// GetDomainDNSRequirements returns the DNS records (DS/NS/GLUE/TLSA parent +
+// authoritative) a user must publish to complete delegation for a bound domain.
+func (s *websitesService) GetDomainDNSRequirements(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainResponse, error) {
+	if err := s.RequireAuthenticated(); err != nil {
+		return nil, err
+	}
+	if s.service == nil {
+		return nil, ErrServiceUnavailable
+	}
+	return s.service.GetDomainDNSRequirements(ctx, websiteID, domainID)
+}

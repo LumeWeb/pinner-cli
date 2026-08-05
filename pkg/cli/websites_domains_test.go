@@ -838,3 +838,288 @@ func TestResolveDomainID(t *testing.T) {
 		})
 	}
 }
+
+// websitesDomainsDNSRequirementsWithService is a test helper that allows
+// injecting a mock WebsitesService. Mirrors websitesDomainsDNSRequirements.
+func websitesDomainsDNSRequirementsWithService(ctx context.Context, cmd websitesCommandGetter, output Output, websitesService WebsitesService) error {
+	if err := websitesService.RequireAuthenticated(); err != nil {
+		return err
+	}
+
+	websiteID, domainArg, err := resolveDomainCommandTarget(ctx, websitesService, cmd, "dns-requirements")
+	if err != nil {
+		return err
+	}
+
+	domainID, err := resolveDomainID(ctx, websitesService, websiteID, domainArg)
+	if err != nil {
+		return err
+	}
+
+	result, err := websitesService.GetDomainDNSRequirements(ctx, websiteID, domainID)
+	if err != nil {
+		return err
+	}
+	if result == nil {
+		return fmt.Errorf("no DNS requirements returned for domain %s", domainID)
+	}
+
+	if output.IsJSON() {
+		return output.PrintJSON(result)
+	}
+
+	renderDomainDelegation(output, result)
+	return nil
+}
+
+func TestWebsitesDomainsDNSRequirements(t *testing.T) {
+	tests := []struct {
+		name        string
+		setupMocks  func(*mockWebsitesServiceForCLI)
+		cmd         *mockCommand
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name: "successful dns-requirements without delegation",
+			setupMocks: func(svc *mockWebsitesServiceForCLI) {
+				svc.ListDomainsFn = func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
+					return []ipfs.DomainResponse{
+						{Id: 2, Domain: "mydomain.hns", Namespace: "hns"},
+					}, nil
+				}
+				svc.GetDomainDNSRequirementsFn = func(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainResponse, error) {
+					return &ipfs.DomainResponse{
+						Id: 2, Domain: "mydomain.hns", Namespace: "hns", Status: strPtr("delegated"),
+					}, nil
+				}
+			},
+			cmd:     newMockCommand().withArgs("1", "2"),
+			wantErr: false,
+		},
+		{
+			name: "successful dns-requirements with delegation records",
+			setupMocks: func(svc *mockWebsitesServiceForCLI) {
+				svc.ListDomainsFn = func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
+					return []ipfs.DomainResponse{
+						{Id: 2, Domain: "mydomain.hns", Namespace: "hns"},
+					}, nil
+				}
+				svc.GetDomainDNSRequirementsFn = func(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainResponse, error) {
+					return &ipfs.DomainResponse{
+						Id: 2, Domain: "mydomain.hns", Namespace: "hns", Status: strPtr("delegated"),
+						Delegation: &ipfs.DNSDelegation{
+							Mode:         strPtr("delegated"),
+							Ds:           strPtr("mydomain. 3600 IN DS 12345 13 2 <digest>"),
+							Instructions: strPtr("Publish parent records in your HNS wallet."),
+							ParentRecords: &[]ipfs.DNSDelegationRecord{
+								{Type: "NS", Value: strPtr("ns1.lumeweb,ns2.lumeweb")},
+								{Type: "DS", Value: strPtr("mydomain. 3600 IN DS 12345 13 2 <digest>")},
+							},
+							AuthoritativeRecords: &[]ipfs.DNSDelegationRecord{
+								{Type: "NS", Value: strPtr("ns1.lumeweb\nns2.lumeweb")},
+								{Type: "TLSA", Value: strPtr("_443._tcp.mydomain. 3 1 1 <sha256>")},
+							},
+						},
+					}, nil
+				}
+			},
+			cmd:     newMockCommand().withArgs("1", "2"),
+			wantErr: false,
+		},
+		{
+			name: "successful by name with --website flag",
+			setupMocks: func(svc *mockWebsitesServiceForCLI) {
+				svc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+					return []ipfs.WebsiteItem{{Id: 1, Domain: "example.com"}}, nil
+				}
+				svc.ListDomainsFn = func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
+					return []ipfs.DomainResponse{
+						{Id: 2, Domain: "mydomain.hns", Namespace: "hns"},
+					}, nil
+				}
+				svc.GetDomainDNSRequirementsFn = func(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainResponse, error) {
+					return &ipfs.DomainResponse{Id: 2, Domain: "mydomain.hns", Namespace: "hns"}, nil
+				}
+			},
+			cmd:     newMockCommand().withString(FlagWebsite, "example.com").withArgs("mydomain.hns"),
+			wantErr: false,
+		},
+		{
+			name: "domain name not found",
+			setupMocks: func(svc *mockWebsitesServiceForCLI) {
+				svc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+					return []ipfs.WebsiteItem{{Id: 1, Domain: "example.com"}}, nil
+				}
+				svc.ListDomainsFn = func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
+					return []ipfs.DomainResponse{
+						{Id: 2, Domain: "mydomain.hns", Namespace: "hns"},
+					}, nil
+				}
+			},
+			cmd:         newMockCommand().withArgs("example.com", "unknown.example.com"),
+			wantErr:     true,
+			errContains: `domain "unknown.example.com" not found for website`,
+		},
+		{
+			name:        "missing args",
+			cmd:         newMockCommand().withArgs("1"),
+			wantErr:     true,
+			errContains: "usage: pinner websites domains dns-requirements",
+		},
+		{
+			name: "service error",
+			setupMocks: func(svc *mockWebsitesServiceForCLI) {
+				svc.ListDomainsFn = func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
+					return []ipfs.DomainResponse{
+						{Id: 42, Domain: "mydomain.com", Namespace: "icann"},
+					}, nil
+				}
+				svc.GetDomainDNSRequirementsFn = func(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainResponse, error) {
+					return nil, errors.New("fetch failed")
+				}
+			},
+			cmd:         newMockCommand().withArgs("1", "42"),
+			wantErr:     true,
+			errContains: "fetch failed",
+		},
+		{
+			name: "nil result without error is guarded",
+			setupMocks: func(svc *mockWebsitesServiceForCLI) {
+				svc.ListDomainsFn = func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
+					return []ipfs.DomainResponse{
+						{Id: 42, Domain: "mydomain.com", Namespace: "icann"},
+					}, nil
+				}
+				svc.GetDomainDNSRequirementsFn = func(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainResponse, error) {
+					return nil, nil
+				}
+			},
+			cmd:         newMockCommand().withArgs("1", "42"),
+			wantErr:     true,
+			errContains: "no DNS requirements returned for domain",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockSvc := &mockWebsitesServiceForCLI{}
+			output := newTestOutput()
+
+			if tt.setupMocks != nil {
+				tt.setupMocks(mockSvc)
+			}
+
+			err := websitesDomainsDNSRequirementsWithService(context.Background(), tt.cmd, output, mockSvc)
+
+			if tt.wantErr {
+				require.Error(t, err)
+				if tt.errContains != "" {
+					require.Contains(t, err.Error(), tt.errContains)
+				}
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestWebsitesDomainsDNSRequirementsJSON(t *testing.T) {
+	mockSvc := &mockWebsitesServiceForCLI{}
+	mockSvc.ListDomainsFn = func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
+		return []ipfs.DomainResponse{
+			{Id: 1, Domain: "mydomain.hns", Namespace: "hns"},
+		}, nil
+	}
+	mockSvc.GetDomainDNSRequirementsFn = func(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainResponse, error) {
+		return &ipfs.DomainResponse{
+			Id: 1, Domain: "mydomain.hns", Namespace: "hns", Status: strPtr("delegated"),
+			Delegation: &ipfs.DNSDelegation{
+				Mode: strPtr("delegated"),
+				Ds:   strPtr("mydomain. 3600 IN DS 12345 13 2 <digest>"),
+			},
+		}, nil
+	}
+
+	output := NewOutputFormatter(true, false, false, false)
+	cmd := newMockCommand().withArgs("1", "1")
+
+	err := websitesDomainsDNSRequirementsWithService(context.Background(), cmd, output, mockSvc)
+	require.NoError(t, err)
+}
+
+func TestRenderDomainDelegation(t *testing.T) {
+	t.Run("renders no delegation message when nil", func(t *testing.T) {
+		output := newTestOutput()
+		renderDomainDelegation(output, &ipfs.DomainResponse{
+			Id: 1, Domain: "mydomain.hns", Namespace: "hns", Status: strPtr("delegated"),
+		})
+		// exercises the nil-delegation branch without asserting exact text
+	})
+
+	t.Run("renders records with typed helper", func(t *testing.T) {
+		output := newTestOutput()
+		renderDomainDelegation(output, &ipfs.DomainResponse{
+			Id: 1, Domain: "mydomain.hns", Namespace: "hns", Status: strPtr("delegated"),
+			Delegation: &ipfs.DNSDelegation{
+				Mode:         strPtr("delegated"),
+				Ds:           strPtr("mydomain. 3600 IN DS 12345 13 2 <digest>"),
+				Instructions: strPtr("Publish parent records in your HNS wallet."),
+				ParentRecords: &[]ipfs.DNSDelegationRecord{
+					{Type: "NS", Value: strPtr("ns1.lumeweb,ns2.lumeweb")},
+				},
+				AuthoritativeRecords: &[]ipfs.DNSDelegationRecord{
+					{Type: "TLSA", Value: strPtr("_443._tcp.mydomain. 3 1 1 <sha256>")},
+				},
+			},
+		})
+		// exercises the non-nil typed-helper path
+	})
+
+	t.Run("inline mode labels authoritative records via synthetic nameservers", func(t *testing.T) {
+		output := newTestOutput()
+		renderDomainDelegation(output, &ipfs.DomainResponse{
+			Id: 1, Domain: "mydomain.hns", Namespace: "hns", Status: strPtr("delegated"),
+			Delegation: &ipfs.DNSDelegation{
+				Mode: strPtr("inline"),
+				ParentRecords: &[]ipfs.DNSDelegationRecord{
+					{Type: "SYNTH4", Value: strPtr("hns-626f7578e5.rec.ns1.lumeweb")},
+				},
+				AuthoritativeRecords: &[]ipfs.DNSDelegationRecord{
+					{Type: "NS", Value: strPtr("hns-626f7578e5.rec.ns1.lumeweb")},
+				},
+			},
+		})
+		// In inline mode the authoritative side is served automatically via
+		// synthetic nameserver names — it is not user-configured.
+	})
+
+	t.Run("icann driver renders registrar wording and nameservers", func(t *testing.T) {
+		output := newTestOutput()
+		renderDomainDelegation(output, &ipfs.DomainResponse{
+			Id: 1, Domain: "mydomain.com", Namespace: "icann", Status: strPtr("delegated"),
+			Delegation: &ipfs.DNSDelegation{
+				Nameservers:  &[]string{"ns1.example.com", "ns2.example.com"},
+				Instructions: strPtr("Configure these NS records at your registrar for mydomain.com"),
+			},
+		})
+		// exercises the icann driver path (registrar wording, nameservers list)
+	})
+
+	t.Run("unknown namespace falls back to generic driver", func(t *testing.T) {
+		output := newTestOutput()
+		renderDomainDelegation(output, &ipfs.DomainResponse{
+			Id: 1, Domain: "mydomain.eth", Namespace: "ens", Status: strPtr("delegated"),
+			Delegation: &ipfs.DNSDelegation{
+				Mode: strPtr("delegated"),
+				ParentRecords: &[]ipfs.DNSDelegationRecord{
+					{Type: "NS", Value: strPtr("ns1.lumeweb")},
+				},
+				AuthoritativeRecords: &[]ipfs.DNSDelegationRecord{
+					{Type: "TLSA", Value: strPtr("_443._tcp.mydomain.eth. 3 1 1 <sha256>")},
+				},
+			},
+		})
+		// exercises the generic fallback path for an unrecognized namespace
+	})
+}

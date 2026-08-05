@@ -37,6 +37,7 @@ Examples:
 			newWebsitesDomainsAddCommand(),
 			newWebsitesDomainsRmCommand(),
 			newWebsitesDomainsVerifyCommand(),
+			newWebsitesDomainsDNSRequirementsCommand(),
 		},
 	}
 }
@@ -146,6 +147,36 @@ Examples:
   pinner websites domains verify 123 staging.example.com --json`,
 		Action: withContext(func(ctx context.Context, cc *commandContext) error {
 			return websitesDomainsVerify(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
+		}),
+	}
+}
+
+func newWebsitesDomainsDNSRequirementsCommand() *cli.Command {
+	return &cli.Command{
+		Name:      "dns-requirements",
+		Usage:     "Show the DNS records needed to complete domain delegation",
+		ArgsUsage: "[<website-id-or-domain>] <domain>",
+		Flags: []cli.Flag{
+			WebsiteFlag(),
+		},
+		Description: `Shows the DNS records a user must publish to complete delegation for a domain.
+
+For HNS namespaces this is the delegation bundle the backend generates: parent
+records (NS/GLUE/DS) to publish in the HNS wallet and authoritative records
+(NS/TLSA) to configure on the nameserver.
+
+The domain argument can be either the domain name (e.g. staging.example.com)
+or its numeric ID. Domain names are resolved automatically.
+
+The website is selected by the --website flag, or the first positional
+argument if --website is omitted.
+
+Examples:
+  pinner websites domains dns-requirements example.com mydomain
+  pinner websites domains dns-requirements --website example.com mydomain
+  pinner websites domains dns-requirements 123 staging.example.com --json`,
+		Action: withContext(func(ctx context.Context, cc *commandContext) error {
+			return websitesDomainsDNSRequirements(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
 		}),
 	}
 }
@@ -414,4 +445,66 @@ func websitesDomainsVerify(ctx context.Context, cmd websitesCommandGetter, outpu
 	})
 
 	return nil
+}
+
+func websitesDomainsDNSRequirements(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+	defer cancel()
+
+	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken, secure)
+	if err != nil {
+		return err
+	}
+
+	websiteID, domainArg, err := resolveDomainCommandTarget(ctx, websitesService, cmd, "dns-requirements")
+	if err != nil {
+		return err
+	}
+
+	domainID, err := resolveDomainID(ctx, websitesService, websiteID, domainArg)
+	if err != nil {
+		return err
+	}
+
+	result, err := websitesService.GetDomainDNSRequirements(ctx, websiteID, domainID)
+	if err != nil {
+		return err
+	}
+	if result == nil {
+		return fmt.Errorf("no DNS requirements returned for domain %s", domainID)
+	}
+
+	if output.IsJSON() {
+		return output.PrintJSON(result)
+	}
+
+	renderDomainDelegation(output, result)
+	return nil
+}
+
+// renderDomainDelegation prints the DNS delegation bundle the server computes
+// for a domain. Rendering is driver-based: the namespace selects a
+// context-specific driver (HNS, ICANN, ...) with a neutral generic fallback,
+// mirroring the server's per-namespace DomainProvider design.
+func renderDomainDelegation(output Output, result *ipfs.DomainResponse) {
+	output.Printfln("DNS requirements for %s", result.Domain)
+
+	status := ""
+	if result.Status != nil {
+		status = *result.Status
+	}
+	output.PrintFields(FieldGroup{
+		Fields: []Field{
+			{"Domain", result.Domain},
+			{"Namespace", result.Namespace},
+			{"Status", status},
+		},
+	})
+
+	if result.Delegation == nil {
+		output.Printfln("No delegation records are available for %s.", result.Domain)
+		return
+	}
+
+	defaultDelegationDriver.Render(output, result)
 }
