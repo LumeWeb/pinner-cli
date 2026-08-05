@@ -417,3 +417,69 @@ func TestDomainAddWizard_UIError(t *testing.T) {
 		})
 	}
 }
+
+// TestDomainWizardPTermExecuteVerifyStep exercises the real pterm UI verify
+// step to prove a nil VerifyDomain response does not count as a successful
+// verification (the verify gate must not be bypassed by a stale bind status).
+func TestDomainWizardPTermExecuteVerifyStep(t *testing.T) {
+	newOutput := newTestOutput()
+
+	t.Run("nil verify response routes to not-yet-valid retry", func(t *testing.T) {
+		cfgMgr := configmocks.NewMockManager(t)
+		cfg := &config.Config{AuthToken: "test-token", Secure: true}
+		cfgMgr.EXPECT().Config().Return(cfg).Maybe()
+
+		// BindDomain returns a valid "active" status, but VerifyDomain returns
+		// (nil, nil) — a stale bind status must NOT be treated as verified.
+		active := "active"
+		mockWebsitesSvc := &mockWebsitesServiceForCLI{
+			BindDomainFn: func(_ context.Context, _ string, _ ipfs.DomainRequest) (*ipfs.DomainResponse, error) {
+				return &ipfs.DomainResponse{Id: 1, Domain: "s.com", Namespace: "icann", Status: &active}, nil
+			},
+			VerifyDomainFn: func(_ context.Context, _, _ string) (*ipfs.DomainResponse, error) {
+				return nil, nil
+			},
+		}
+
+		ui := NewPTermDomainsUI(newOutput)
+		w := NewDomainAddWizard(mockWebsitesSvc, cfgMgr, ui, newOutput)
+		ui.SetWizard(w)
+		w.SetResult(&ipfs.DomainResponse{Id: 1, Domain: "s.com", Namespace: "icann", Status: &active})
+
+		err := ui.ExecuteVerifyStep(context.Background(), w)
+
+		require.NoError(t, err)
+		// Verification did not succeed, so it must request a retry, not report success.
+		require.True(t, w.VerifyRetry())
+		// The bound domain must be preserved for display.
+		require.NotNil(t, w.Result())
+		require.Equal(t, "s.com", w.Result().Domain)
+	})
+
+	t.Run("valid verify response reports success", func(t *testing.T) {
+		cfgMgr := configmocks.NewMockManager(t)
+		cfg := &config.Config{AuthToken: "test-token", Secure: true}
+		cfgMgr.EXPECT().Config().Return(cfg).Maybe()
+
+		active := "active"
+		mockWebsitesSvc := &mockWebsitesServiceForCLI{
+			BindDomainFn: func(_ context.Context, _ string, _ ipfs.DomainRequest) (*ipfs.DomainResponse, error) {
+				return &ipfs.DomainResponse{Id: 1, Domain: "s.com", Namespace: "icann", Status: &active}, nil
+			},
+			VerifyDomainFn: func(_ context.Context, _, _ string) (*ipfs.DomainResponse, error) {
+				return &ipfs.DomainResponse{Id: 1, Domain: "s.com", Namespace: "icann", Status: &active}, nil
+			},
+		}
+
+		ui := NewPTermDomainsUI(newOutput)
+		w := NewDomainAddWizard(mockWebsitesSvc, cfgMgr, ui, newOutput)
+		ui.SetWizard(w)
+		w.SetResult(&ipfs.DomainResponse{Id: 1, Domain: "s.com", Namespace: "icann", Status: &active})
+
+		err := ui.ExecuteVerifyStep(context.Background(), w)
+
+		require.NoError(t, err)
+		// Successful verification must not request a retry.
+		require.False(t, w.VerifyRetry())
+	})
+}

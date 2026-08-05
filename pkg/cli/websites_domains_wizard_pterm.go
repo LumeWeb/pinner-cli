@@ -8,6 +8,7 @@ import (
 	"github.com/manifoldco/promptui"
 	"github.com/pterm/pterm"
 	"github.com/pterm/pterm/putils"
+	"github.com/samber/lo"
 	ipfs "go.lumeweb.com/ipfs-sdk"
 	"go.lumeweb.com/pinner-cli/pkg/cli/wizard"
 )
@@ -240,12 +241,18 @@ func (ui *PTermDomainsUI) ExecuteVerifyStep(ctx context.Context, w *DomainAddWiz
 		return err
 	}
 
+	// Validity is determined from the actual VerifyDomain response, not the
+	// bound result: a nil verify result means verification has not succeeded
+	// yet, so a stale bind-time status must not count as a successful verify.
+	verifyResult := w.VerifyResult()
+	valid := verifyResult != nil && domainStatusIsValid(lo.FromPtr(verifyResult.Status))
+
+	// The bound (or verified) result is used for display only.
 	result := w.Result()
 	status := ""
 	if result != nil && result.Status != nil {
 		status = *result.Status
 	}
-	valid := domainStatusIsValid(status)
 
 	if valid {
 		pterm.Success.Println("Domain validated successfully!")
@@ -261,8 +268,9 @@ func (ui *PTermDomainsUI) ExecuteVerifyStep(ctx context.Context, w *DomainAddWiz
 		return nil
 	}
 
-	// VerifyDomain may return (nil, nil); fall back to the requested domain so
-	// the retry/give-up message below never dereferences a nil result.
+	// VerifyDomain may return a nil response before DNS propagation; keep the
+	// bound domain for display so the retry/give-up message below never
+	// dereferences a nil result.
 	if result == nil {
 		result = &ipfs.DomainResponse{Domain: w.Domain(), Namespace: w.Namespace()}
 	}

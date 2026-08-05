@@ -30,6 +30,11 @@ type DomainAddWizard struct {
 	namespace     string
 	result        *ipfs.DomainResponse
 
+	// verifyResult is the raw response from the most recent VerifyDomain call.
+	// It is nil when verification has not yet returned a non-nil response,
+	// which means the domain is not yet validated (the bound `result` is kept
+	// for display only and must not be treated as a successful verification).
+	verifyResult   *ipfs.DomainResponse
 	verifyRetry    bool
 	verifyAttempts int
 }
@@ -170,9 +175,10 @@ func (w *DomainAddWizard) executeDelegationSetup(ctx context.Context) error {
 }
 
 // executeVerify runs domain verification and sets the resulting status.
-// A nil (or nil, nil) verification response must not clobber the bound
-// domain result, so the result is only overwritten when verification
-// returns a non-nil response.
+// The raw VerifyDomain response is stored in verifyResult (which is nil when
+// verification has not yet returned a non-nil response, meaning the domain is
+// not yet validated). The bound `result` is preserved for display and is never
+// clobbered by a nil verification response.
 func (w *DomainAddWizard) executeVerify(ctx context.Context) error {
 	result := w.Result()
 	if result == nil {
@@ -185,6 +191,7 @@ func (w *DomainAddWizard) executeVerify(ctx context.Context) error {
 		return err
 	}
 
+	w.SetVerifyResult(verifyResult)
 	if verifyResult != nil {
 		w.SetResult(verifyResult)
 	}
@@ -210,6 +217,11 @@ func (w *DomainAddWizard) Namespace() string { return w.namespace }
 
 // Result returns the bound domain response.
 func (w *DomainAddWizard) Result() *ipfs.DomainResponse { return w.result }
+
+// VerifyResult returns the raw response from the most recent VerifyDomain
+// call. It is nil when verification has not yet returned a non-nil response,
+// indicating the domain is not yet validated.
+func (w *DomainAddWizard) VerifyResult() *ipfs.DomainResponse { return w.verifyResult }
 
 // VerifyRetry returns whether the validation step should be retried.
 func (w *DomainAddWizard) VerifyRetry() bool { return w.verifyRetry }
@@ -245,6 +257,12 @@ func (w *DomainAddWizard) SetNamespace(namespace string) { w.namespace = namespa
 
 // SetResult sets the bound domain response.
 func (w *DomainAddWizard) SetResult(result *ipfs.DomainResponse) { w.result = result }
+
+// SetVerifyResult sets the raw verification response from VerifyDomain.
+// A nil value means verification has not yet returned a non-nil response.
+func (w *DomainAddWizard) SetVerifyResult(verifyResult *ipfs.DomainResponse) {
+	w.verifyResult = verifyResult
+}
 
 // SetVerifyRetry sets whether the validation step should be retried.
 func (w *DomainAddWizard) SetVerifyRetry(retry bool) { w.verifyRetry = retry }
