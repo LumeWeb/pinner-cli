@@ -236,6 +236,14 @@ func resolveDomainBinding(ctx context.Context, websitesService WebsitesService, 
 		return "", "", fmt.Errorf("failed to list websites: %w", err)
 	}
 
+	// Match by domain name first across all websites, then fall back to a
+	// numeric ID match. Two passes (rather than a single OR) keep name
+	// matching priority: it protects namespaces like HNS where a domain name
+	// can itself be numeric (e.g. "123"), so an unrelated binding with ID
+	// "123" can't shadow a real domain named "123" depending on iteration
+	// order.
+	var idMatchWebsite, idMatchDomain string
+
 	for _, w := range websites {
 		wID := fmt.Sprintf("%d", w.Id)
 		domains, lerr := websitesService.ListDomains(ctx, wID)
@@ -245,10 +253,17 @@ func resolveDomainBinding(ctx context.Context, websitesService WebsitesService, 
 			continue
 		}
 		for _, d := range domains {
-			if dnsname.Equal(d.Domain, domainArg) || fmt.Sprintf("%d", d.Id) == domainArg {
+			if dnsname.Equal(d.Domain, domainArg) {
 				return wID, fmt.Sprintf("%d", d.Id), nil
 			}
+			if idMatchDomain == "" && fmt.Sprintf("%d", d.Id) == domainArg {
+				idMatchWebsite, idMatchDomain = wID, fmt.Sprintf("%d", d.Id)
+			}
 		}
+	}
+
+	if idMatchDomain != "" {
+		return idMatchWebsite, idMatchDomain, nil
 	}
 
 	return "", "", fmt.Errorf("domain %q not found bound to any website", domainArg)

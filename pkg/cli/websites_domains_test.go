@@ -426,6 +426,37 @@ func TestWebsitesDomainsRm(t *testing.T) {
 	}
 }
 
+func TestResolveDomainBindingNumericNamePriority(t *testing.T) {
+	// Regression for Kody finding: name matching must take priority over
+	// numeric ID matching. A website that appears earlier in iteration with a
+	// binding whose numeric ID is "123" must NOT shadow a later website that
+	// has a domain literally named "123" (valid in namespaces like HNS).
+	mockSvc := &mockWebsitesServiceForCLI{}
+	mockSvc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+		return []ipfs.WebsiteItem{
+			{Id: 1, Domain: "earlier.com"},
+			{Id: 2, Domain: "later.com"},
+		}, nil
+	}
+	mockSvc.ListDomainsFn = func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
+		switch websiteID {
+		case "1":
+			// Earlier website: a binding with numeric ID "123" but a
+			// non-numeric name. If ID matching short-circuits here, "rm 123"
+			// would wrongly target this.
+			return []ipfs.DomainResponse{{Id: 123, Domain: "alpha.hns", Namespace: "hns"}}, nil
+		case "2":
+			return []ipfs.DomainResponse{{Id: 7, Domain: "123", Namespace: "hns"}}, nil
+		}
+		return nil, nil
+	}
+
+	websiteID, domainID, err := resolveDomainBinding(context.Background(), mockSvc, "123")
+	require.NoError(t, err)
+	require.Equal(t, "2", websiteID)
+	require.Equal(t, "7", domainID)
+}
+
 func TestWebsitesDomainsRmJSON(t *testing.T) {
 	mockSvc := &mockWebsitesServiceForCLI{}
 	mockSvc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
