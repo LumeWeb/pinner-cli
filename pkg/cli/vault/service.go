@@ -65,6 +65,11 @@ type VaultService interface {
 	// (cursor still advanced past them).
 	Sync(ctx context.Context) (applied int, full bool, err error)
 
+	// Status reports live vault health and usage: indexer reachability and
+	// storage usage (probed via the remote account), local cache index size,
+	// total indexed bytes, and the last successful sync time.
+	Status(ctx context.Context) (*StatusResult, error)
+
 	// Close releases resources.
 	Close() error
 }
@@ -100,4 +105,30 @@ type VerifyResult struct {
 	DigestMatch   bool   `json:"digest_match"`
 	ObjectExists  bool   `json:"object_exists"`
 	ObjectID      string `json:"object_id"`
+}
+
+// StatusResult is the output of Status. Remote fields reflect a live probe of
+// the indexer account endpoint; they are never inferred from local state.
+type StatusResult struct {
+	// Unlocked is whether a local session/decryption key is present.
+	Unlocked bool `json:"unlocked"`
+	// RemoteReachable is true only when the indexer account probe succeeded.
+	RemoteReachable bool `json:"remote_reachable"`
+	// RemoteReady is whether the indexer reports the registration as fully
+	// propagated (only meaningful when RemoteReachable is true).
+	RemoteReady bool `json:"remote_ready"`
+	// RemoteError holds the probe error, if the remote was unreachable.
+	RemoteError string `json:"remote_error,omitempty"`
+	// Storage usage reported by the indexer account endpoint (bytes).
+	StorageUsed      uint64 `json:"storage_used"`
+	StorageLimit     uint64 `json:"storage_limit"`
+	RemainingStorage uint64 `json:"remaining_storage"`
+	// Local cache index health.
+	CacheState     string `json:"cache_state"` // "missing" | "healthy"
+	ObjectsIndexed int64  `json:"objects_indexed"`
+	// TotalBytes is the sum of live file sizes in the local index.
+	TotalBytes int64 `json:"total_bytes"`
+	// LastSyncTime is the RFC3339 time the sync cursor was last persisted, or
+	// empty if the profile has never synced.
+	LastSyncTime string `json:"last_sync_time,omitempty"`
 }

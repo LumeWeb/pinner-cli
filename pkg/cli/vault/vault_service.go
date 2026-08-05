@@ -474,10 +474,10 @@ func (s *vaultService) Stat(ctx context.Context, vaultPath string) (*StatResult,
 			return nil, fmt.Errorf("%w: %s", ErrNotFound, vaultPath)
 		}
 		return &StatResult{
-			Type:  "dir",
-			Name:  filepath.Base(vp.Directory),
-			Path:  vaultPath,
-			Size:  0,
+			Type: "dir",
+			Name: filepath.Base(vp.Directory),
+			Path: vaultPath,
+			Size: 0,
 		}, nil
 	}
 
@@ -712,6 +712,59 @@ func (s *vaultService) Share(ctx context.Context, vaultPath string, validUntil t
 	}
 
 	return NormalizeShareURL(shareURL), nil
+}
+
+// Status reports live vault health and usage. Remote fields come from a real
+// probe of the indexer account endpoint (never inferred from local state);
+// local fields come from the local index cache.
+func (s *vaultService) Status(ctx context.Context) (*StatusResult, error) {
+	res := &StatusResult{
+		// A service instance is only constructed with a decryption key loaded,
+		// so an unlocked local session is implied by reaching this code.
+		Unlocked:   true,
+		CacheState: "missing",
+	}
+
+	// Remote: probe the indexer account endpoint. Success proves reachability;
+	// any error means the remote is unreachable and the reason is captured.
+	account, err := s.sdk.Account(ctx)
+	if err != nil {
+		res.RemoteError = err.Error()
+	} else {
+		res.RemoteReachable = true
+		res.RemoteReady = account.Ready
+		res.StorageUsed = account.PinnedSize
+		res.StorageLimit = account.MaxPinnedData
+		if account.RemainingStorage <= account.MaxPinnedData {
+			res.RemainingStorage = account.RemainingStorage
+		}
+	}
+
+	// Local: read the index cache. A DB opened by the constructor exists, so a
+	// profile that has synced reports counts; a fresh profile reports 0.
+	var objects int64
+	if err := s.db.Model(&File{}).
+		Where("is_current = 1 AND deleted_at IS NULL").
+		Count(&objects).Error; err == nil {
+		res.ObjectsIndexed = objects
+		res.CacheState = "healthy"
+	}
+	var totalBytes int64
+	if err := s.db.Model(&File{}).
+		Where("is_current = 1 AND deleted_at IS NULL").
+		Select("COALESCE(SUM(size), 0)").
+		Scan(&totalBytes).Error; err != nil {
+		totalBytes = 0
+	}
+	res.TotalBytes = totalBytes
+
+	// Last sync time from the most recent cursor row.
+	var cursor SyncDownCursor
+	if err := s.db.Order("updated_at DESC").First(&cursor).Error; err == nil && !cursor.UpdatedAt.IsZero() {
+		res.LastSyncTime = cursor.UpdatedAt.UTC().Format(time.RFC3339)
+	}
+
+	return res, nil
 }
 
 // Close releases resources.
