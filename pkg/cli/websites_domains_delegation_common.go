@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"strings"
+
 	"github.com/samber/lo"
 	ipfs "go.lumeweb.com/ipfs-sdk"
 )
@@ -25,13 +27,33 @@ func renderDelegationMode(output Output, d *ipfs.DNSDelegation) {
 }
 
 // renderDelegationDS prints the DS record when present.
-func renderDelegationDS(output Output, d *ipfs.DNSDelegation) {
+//
+// The Ds field is a DS record string whose leading tokens vary by source (some
+// include owner/TTL/class, e.g. "mydomain. 3600 IN DS ...", others are
+// briefer). A DS record's rdata is always the final four fields
+// <key tag> <algorithm> <digest type> <digest>, so they are rendered as a
+// labeled table. The table uses non-splitting wrap so a long digest stays on
+// one line and remains copyable. label describes where the value is pasted
+// (e.g. the HNS wallet vs a registrar).
+func renderDelegationDS(output Output, d *ipfs.DNSDelegation, label string) {
 	if d.Ds == nil || *d.Ds == "" {
 		return
 	}
 	output.Printfln("")
-	output.Printfln("DS record:")
-	output.Printfln("  DS %s", *d.Ds)
+	output.Printfln("DS record (paste %s):", label)
+	tokens := strings.Fields(*d.Ds)
+	if len(tokens) < 4 {
+		// Not parseable as DS rdata; show the raw value in a single column.
+		output.PrintTableUnwrapped([]string{"DS RECORD"}, [][]string{{*d.Ds}})
+		return
+	}
+	keyTag := tokens[len(tokens)-4]
+	algorithm := tokens[len(tokens)-3]
+	digestType := tokens[len(tokens)-2]
+	digest := tokens[len(tokens)-1]
+	output.PrintTableUnwrapped([]string{"KEY TAG", "ALGORITHM", "DIGEST TYPE", "DIGEST"}, [][]string{
+		{keyTag, algorithm, digestType, digest},
+	})
 }
 
 // renderDelegationNameservers prints the nameservers shortcut when present.
