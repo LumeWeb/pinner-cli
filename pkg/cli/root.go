@@ -91,10 +91,10 @@ For more help on any command: pinner <command> --help`,
 	// Register the MCP server command with a reference to root for in-process tool execution.
 	var resourceFactory mcpadapter.ResourceProvidersFactory
 	root.Commands = append(root.Commands, mcpadapter.MCPCommand(root,
-		func() (mcpadapter.WebsitesWizardDeps, mcpadapter.SetupWizardDeps, error) {
+		func() (mcpadapter.WebsitesWizardDeps, mcpadapter.SetupWizardDeps, mcpadapter.DomainWizardDeps, error) {
 			cfgMgr, err := configManagerFactory()
 			if err != nil {
-				return mcpadapter.WebsitesWizardDeps{}, mcpadapter.SetupWizardDeps{}, err
+				return mcpadapter.WebsitesWizardDeps{}, mcpadapter.SetupWizardDeps{}, mcpadapter.DomainWizardDeps{}, err
 			}
 
 			// Build a minimal output formatter for service construction.
@@ -138,7 +138,14 @@ For more help on any command: pinner <command> --help`,
 					return NewSetupWizard(cfgMgr, authSvc, nil, SetupOptions{})
 				},
 			}
-			return wDeps, sDeps, nil
+			dDeps := mcpadapter.DomainWizardDeps{
+				CfgMgr:          cfgMgr,
+				WebsitesService: websitesSvc,
+				DomainFactory: func() mcpadapter.DomainWizardState {
+					return NewDomainAddWizard(websitesSvc, cfgMgr, nil, output)
+				},
+			}
+			return wDeps, sDeps, dDeps, nil
 		},
 		func(store *mcpadapter.SessionStore) mcpadapter.ResourceProviders {
 			if resourceFactory != nil {

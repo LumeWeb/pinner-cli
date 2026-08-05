@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strconv"
 
 	"github.com/invopop/jsonschema"
 	"github.com/looplab/fsm"
@@ -42,6 +43,32 @@ const (
 	EventWebsitesDNSSet    = "dns_setup_done"
 	EventWebsitesValidated = "validate_done"
 	EventWebsitesAbort     = "abort"
+)
+
+// Domain wizard FSM states.
+const (
+	StateDomainInit            = "domain_init"
+	StateDomainAuthCheck       = "domain_auth_check"
+	StateDomainWebsite         = "domain_website"
+	StateDomainName            = "domain_name"
+	StateDomainNamespace       = "domain_namespace"
+	StateDomainBind            = "domain_bind"
+	StateDomainDelegationSetup = "domain_delegation_setup"
+	StateDomainVerify          = "domain_verify"
+	StateDomainComplete        = "domain_complete"
+)
+
+// Domain wizard FSM events.
+const (
+	EventDomainStart      = "domain_start"
+	EventDomainAuthOK     = "domain_auth_ok"
+	EventDomainWebsite    = "domain_website_done"
+	EventDomainName       = "domain_name_done"
+	EventDomainNamespace  = "domain_namespace_done"
+	EventDomainBound      = "domain_bound"
+	EventDomainDelegation = "domain_delegation_done"
+	EventDomainVerified   = "domain_verified"
+	EventDomainAbort      = "domain_abort"
 )
 
 // Setup wizard FSM states.
@@ -166,6 +193,44 @@ type ValidateInput struct {
 	Retry bool `json:"retry,omitempty" jsonschema:"description=Set to true to retry validation (useful when DNS propagation is pending)"`
 }
 
+// NamespaceValue specifies the domain namespace for a domain binding.
+type NamespaceValue string
+
+const (
+	NamespaceICANN NamespaceValue = "icann"
+	NamespaceHNS   NamespaceValue = "hns"
+)
+
+// Valid reports whether the namespace is a recognized value.
+func (n NamespaceValue) Valid() bool {
+	return n == NamespaceICANN || n == NamespaceHNS
+}
+
+// WebsiteInput is the input for the website selection step.
+type WebsiteInput struct {
+	WebsiteID string `json:"website_id" jsonschema:"description=The numeric ID of the website to bind the domain to"`
+}
+
+// DomainNameInput is the input for the domain name step.
+type DomainNameInput struct {
+	Domain string `json:"domain" jsonschema:"description=The domain name to bind (e.g. mydomain or staging.example.com)"`
+}
+
+// NamespaceInput is the input for the namespace step.
+type NamespaceInput struct {
+	Namespace NamespaceValue `json:"namespace" jsonschema:"enum=icann,enum=hns,description=The domain namespace: icann (traditional) or hns (Handshake)"`
+}
+
+// BindInput is the input for the bind domain step (explicit confirmation).
+type BindInput struct {
+	Confirm bool `json:"confirm" jsonschema:"description=Must be true to confirm binding the domain (irreversible operation)"`
+}
+
+// DomainVerifyInput is the input for the domain verify step.
+type DomainVerifyInput struct {
+	Retry bool `json:"retry,omitempty" jsonschema:"description=Set to true to retry verification (useful when DNS propagation is pending)"`
+}
+
 // SetupAuthInput is the input for the setup auth step.
 type SetupAuthInput struct {
 	Choice   AuthStepChoiceValue `json:"choice" jsonschema:"enum=create_account,enum=sign_in,enum=skip,description=Whether to create a new account, sign in, or skip auth"`
@@ -262,6 +327,28 @@ func setupFSMEvents() []fsm.EventDesc {
 		{Name: EventSetupAbort, Src: []string{StateSetupCompletion}, Dst: StateSetupComplete},
 		{Name: EventSetupTutDone, Src: []string{StateSetupTutorial}, Dst: StateSetupComplete},
 		{Name: EventSetupAbort, Src: []string{StateSetupTutorial}, Dst: StateSetupComplete},
+	}
+}
+
+// domainFSMEvents returns the event descriptors for the domain wizard FSM.
+func domainFSMEvents() []fsm.EventDesc {
+	return []fsm.EventDesc{
+		{Name: EventDomainStart, Src: []string{StateDomainInit}, Dst: StateDomainAuthCheck},
+		{Name: EventDomainAbort, Src: []string{StateDomainInit}, Dst: StateDomainComplete},
+		{Name: EventDomainAuthOK, Src: []string{StateDomainAuthCheck}, Dst: StateDomainWebsite},
+		{Name: EventDomainAbort, Src: []string{StateDomainAuthCheck}, Dst: StateDomainComplete},
+		{Name: EventDomainWebsite, Src: []string{StateDomainWebsite}, Dst: StateDomainName},
+		{Name: EventDomainAbort, Src: []string{StateDomainWebsite}, Dst: StateDomainComplete},
+		{Name: EventDomainName, Src: []string{StateDomainName}, Dst: StateDomainNamespace},
+		{Name: EventDomainAbort, Src: []string{StateDomainName}, Dst: StateDomainComplete},
+		{Name: EventDomainNamespace, Src: []string{StateDomainNamespace}, Dst: StateDomainBind},
+		{Name: EventDomainAbort, Src: []string{StateDomainNamespace}, Dst: StateDomainComplete},
+		{Name: EventDomainBound, Src: []string{StateDomainBind}, Dst: StateDomainDelegationSetup},
+		{Name: EventDomainAbort, Src: []string{StateDomainBind}, Dst: StateDomainComplete},
+		{Name: EventDomainDelegation, Src: []string{StateDomainDelegationSetup}, Dst: StateDomainVerify},
+		{Name: EventDomainAbort, Src: []string{StateDomainDelegationSetup}, Dst: StateDomainComplete},
+		{Name: EventDomainVerified, Src: []string{StateDomainVerify}, Dst: StateDomainComplete},
+		{Name: EventDomainAbort, Src: []string{StateDomainVerify}, Dst: StateDomainComplete},
 	}
 }
 
@@ -481,6 +568,192 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []StepDef {
 	}
 }
 
+// --- Domain wizard step definitions ---
+
+// DomainWizardDeps holds the dependencies needed to build and run the
+// domain addition wizard session steps.
+type DomainWizardDeps struct {
+	CfgMgr          config.Manager
+	WebsitesService WebsitesService
+	DomainFactory   DomainWizardFactory
+}
+
+// buildDomainSteps returns the StepDef slice for the domain addition wizard.
+// Each step's handler decodes JSON input, validates it, and mutates the
+// DomainWizardState state stored in the session.
+func buildDomainSteps(deps DomainWizardDeps) []StepDef {
+	return []StepDef{
+		{
+			Name:  StateDomainAuthCheck,
+			Event: EventDomainAuthOK,
+			Handler: func(ctx context.Context, sess *Session, _ json.RawMessage) error {
+				if deps.CfgMgr.Config().AuthToken == "" {
+					return fmt.Errorf("authentication required: run 'pinner auth' or set --auth-token")
+				}
+				return nil
+			},
+			Schema: func(_ *Session) *jsonschema.Schema {
+				return schemaFor[NoInput]()
+			},
+		},
+		{
+			Name:  StateDomainWebsite,
+			Event: EventDomainWebsite,
+			Handler: func(ctx context.Context, sess *Session, input json.RawMessage) error {
+				w := sess.State().(DomainWizardState)
+				var in WebsiteInput
+				if err := json.Unmarshal(input, &in); err != nil {
+					return fmt.Errorf("invalid input: %w", err)
+				}
+				if in.WebsiteID == "" {
+					return fmt.Errorf("website_id cannot be empty")
+				}
+
+				websites, err := deps.WebsitesService.List(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to load websites: %w", err)
+				}
+				matched := false
+				for _, ws := range websites {
+					if fmt.Sprintf("%d", ws.Id) == in.WebsiteID {
+						w.SetWebsiteID(in.WebsiteID)
+						w.SetWebsiteDomain(ws.Domain)
+						matched = true
+						break
+					}
+				}
+				if !matched {
+					return fmt.Errorf("website with ID %q not found; list available websites with 'pinner websites list'", in.WebsiteID)
+				}
+				return nil
+			},
+			Schema: func(_ *Session) *jsonschema.Schema {
+				return schemaFor[WebsiteInput]()
+			},
+		},
+		{
+			Name:  StateDomainName,
+			Event: EventDomainName,
+			Handler: func(_ context.Context, sess *Session, input json.RawMessage) error {
+				w := sess.State().(DomainWizardState)
+				var in DomainNameInput
+				if err := json.Unmarshal(input, &in); err != nil {
+					return fmt.Errorf("invalid input: %w", err)
+				}
+				if in.Domain == "" {
+					return fmt.Errorf("domain cannot be empty")
+				}
+				w.SetDomain(in.Domain)
+				return nil
+			},
+			Schema: func(_ *Session) *jsonschema.Schema {
+				return schemaFor[DomainNameInput]()
+			},
+		},
+		{
+			Name:  StateDomainNamespace,
+			Event: EventDomainNamespace,
+			Handler: func(_ context.Context, sess *Session, input json.RawMessage) error {
+				w := sess.State().(DomainWizardState)
+				var in NamespaceInput
+				if err := json.Unmarshal(input, &in); err != nil {
+					return fmt.Errorf("invalid input: %w", err)
+				}
+				if !in.Namespace.Valid() {
+					return fmt.Errorf("invalid namespace: %s (expected \"icann\" or \"hns\")", in.Namespace)
+				}
+				w.SetNamespace(string(in.Namespace))
+				return nil
+			},
+			Schema: func(_ *Session) *jsonschema.Schema {
+				return schemaFor[NamespaceInput]()
+			},
+		},
+		{
+			Name:  StateDomainBind,
+			Event: EventDomainBound,
+			Handler: func(ctx context.Context, sess *Session, input json.RawMessage) error {
+				w := sess.State().(DomainWizardState)
+				var in BindInput
+				if err := json.Unmarshal(input, &in); err != nil {
+					return fmt.Errorf("invalid input: %w", err)
+				}
+				if !in.Confirm {
+					return fmt.Errorf("confirmation required: set confirm=true to bind the domain")
+				}
+				if w.Domain() == "" {
+					return fmt.Errorf("domain name not set")
+				}
+				if w.Namespace() == "" {
+					return fmt.Errorf("namespace not set")
+				}
+
+				req := ipfs.DomainRequest{
+					Domain:    w.Domain(),
+					Namespace: w.Namespace(),
+				}
+				domainResp, err := deps.WebsitesService.BindDomain(ctx, w.WebsiteID(), req)
+				if err != nil {
+					return fmt.Errorf("domain binding failed: %w", err)
+				}
+				w.SetResult(domainResp)
+				return nil
+			},
+			Schema: func(_ *Session) *jsonschema.Schema {
+				return schemaFor[BindInput]()
+			},
+		},
+		{
+			Name:  StateDomainDelegationSetup,
+			Event: EventDomainDelegation,
+			Handler: func(ctx context.Context, sess *Session, _ json.RawMessage) error {
+				w := sess.State().(DomainWizardState)
+				if w.Result() == nil {
+					return fmt.Errorf("domain not bound yet")
+				}
+				// Fetch delegation requirements so the service confirms the binding is
+				// resolvable; rendering is informational and omitted from the MCP flow.
+				domainID := strconv.Itoa(int(w.Result().Id))
+				if _, err := deps.WebsitesService.GetDomainDNSRequirements(ctx, w.WebsiteID(), domainID); err != nil {
+					return fmt.Errorf("failed to fetch delegation requirements: %w", err)
+				}
+				return nil
+			},
+			Schema: func(_ *Session) *jsonschema.Schema {
+				return schemaFor[NoInput]()
+			},
+		},
+		{
+			Name:  StateDomainVerify,
+			Event: EventDomainVerified,
+			Handler: func(ctx context.Context, sess *Session, input json.RawMessage) error {
+				w := sess.State().(DomainWizardState)
+				var in DomainVerifyInput
+				if len(input) > 0 && string(input) != "null" {
+					if err := json.Unmarshal(input, &in); err != nil {
+						return fmt.Errorf("invalid input: %w", err)
+					}
+				}
+				_ = in // The retry flag is informational; verification always runs.
+
+				if w.Result() == nil {
+					return fmt.Errorf("domain not bound yet")
+				}
+				domainID := strconv.Itoa(int(w.Result().Id))
+				verified, err := deps.WebsitesService.VerifyDomain(ctx, w.WebsiteID(), domainID)
+				if err != nil {
+					return fmt.Errorf("domain verification failed: %w", err)
+				}
+				w.SetResult(verified)
+				return nil
+			},
+			Schema: func(_ *Session) *jsonschema.Schema {
+				return schemaFor[DomainVerifyInput]()
+			},
+		},
+	}
+}
+
 // --- Setup wizard step definitions ---
 
 // SetupWizardDeps holds the dependencies needed to build and run the
@@ -649,6 +922,26 @@ func NewSetupSession(store *SessionStore, deps SetupWizardDeps) (*Session, error
 	return sess, nil
 }
 
+// NewDomainSession creates a new domain addition wizard session, with the
+// FSM and step definitions wired up. The returned session is stored in the
+// given SessionStore.
+func NewDomainSession(store *SessionStore, deps DomainWizardDeps) (*Session, error) {
+	wizard := deps.DomainFactory()
+	steps := buildDomainSteps(deps)
+	fsmInst := fsm.NewFSM(StateDomainInit, domainFSMEvents(), nil)
+	sess, err := store.Create(wizard, fsmInst, steps)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := fsmInst.Event(context.Background(), EventDomainStart); err != nil {
+		store.Delete(sess.ID)
+		return nil, fmt.Errorf("failed to start wizard: %w", err)
+	}
+
+	return sess, nil
+}
+
 // --- Response builder ---
 
 // buildStepResponse constructs a StepResponse from the current session state.
@@ -658,7 +951,7 @@ func buildStepResponse(sess *Session) StepResponse {
 		CurrentStep: sess.FSM.Current(),
 	}
 
-	if sess.FSM.Current() == StateWebsitesComplete || sess.FSM.Current() == StateSetupComplete {
+	if sess.FSM.Current() == StateWebsitesComplete || sess.FSM.Current() == StateSetupComplete || sess.FSM.Current() == StateDomainComplete {
 		resp.Complete = true
 		resp.NextStep = ""
 		return resp
@@ -701,13 +994,101 @@ func toolToEntry(name, description string, category ToolCategory, tool mcp.Tool,
 	}, nil
 }
 
-func RegisterWizardTools(catalog *ToolCatalog, store *SessionStore, wDeps WebsitesWizardDeps, sDeps SetupWizardDeps) error {
+func RegisterWizardTools(catalog *ToolCatalog, store *SessionStore, wDeps WebsitesWizardDeps, sDeps SetupWizardDeps, dDeps DomainWizardDeps) error {
 	if err := registerWebsitesWizardTools(catalog, store, wDeps); err != nil {
 		return fmt.Errorf("failed to register websites wizard tools: %w", err)
 	}
 	if err := registerSetupWizardTools(catalog, store, sDeps); err != nil {
 		return fmt.Errorf("failed to register setup wizard tools: %w", err)
 	}
+	if err := registerDomainWizardTools(catalog, store, dDeps); err != nil {
+		return fmt.Errorf("failed to register domain wizard tools: %w", err)
+	}
+	return nil
+}
+
+// registerDomainWizardTools registers the domain wizard start and step tools.
+func registerDomainWizardTools(catalog *ToolCatalog, store *SessionStore, deps DomainWizardDeps) error {
+	startTool := mcp.NewTool("domains_wizard_start",
+		mcp.WithDescription("Start a new domain addition wizard session. Returns a session_id "+
+			"and the first step to complete (auth_check). No arguments required."),
+	)
+	startHandler := func(ctx context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		sess, err := NewDomainSession(store, deps)
+		if err != nil {
+			return errorStepResult("", fmt.Sprintf("failed to create session: %v", err)), nil
+		}
+		resp := buildStepResponse(sess)
+		return marshalStepResult(resp)
+	}
+	entry, err := toolToEntry("domains_wizard_start",
+		"Start a new domain addition wizard session. Returns a session_id "+
+			"and the first step to complete (auth_check). No arguments required.",
+		CategoryWizard, startTool, startHandler)
+	if err != nil {
+		return fmt.Errorf("failed to create catalog entry for domains_wizard_start: %w", err)
+	}
+	catalog.Add(entry)
+
+	stepTool := mcp.NewTool("domains_wizard_step",
+		mcp.WithDescription("Advance a domain addition wizard session by one step. Provide the session_id "+
+			"from domains_wizard_start and the input matching the next_step_schema returned by "+
+			"the previous step."),
+		mcp.WithString("session_id",
+			mcp.Required(),
+			mcp.Description("Wizard session ID returned by domains_wizard_start"),
+		),
+		mcp.WithObject("input",
+			mcp.Description("Step input matching the next_step_schema from the previous response"),
+		),
+	)
+	stepHandler := func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		sessionID, _ := args["session_id"].(string)
+		if sessionID == "" {
+			return errorStepResult("", "session_id is required"), nil
+		}
+
+		sess, err := store.Get(sessionID)
+		if err != nil {
+			return errorStepResult(sessionID, err.Error()), nil
+		}
+
+		var input json.RawMessage
+		if raw, ok := args["input"]; ok && raw != nil {
+			input, err = json.Marshal(raw)
+			if err != nil {
+				return errorStepResult(sessionID, fmt.Sprintf("failed to encode input: %v", err)), nil
+			}
+		}
+		if input == nil {
+			input = json.RawMessage(`{}`)
+		}
+
+		if err := AdvanceSession(ctx, sess, input); err != nil {
+			resp := buildStepResponse(sess)
+			resp.Error = err.Error()
+			resp.Message = fmt.Sprintf("step '%s' failed the session remains in state '%s', you may retry",
+				resp.CurrentStep, resp.CurrentStep)
+			return marshalStepResult(resp)
+		}
+
+		resp := buildStepResponse(sess)
+		if resp.Complete {
+			resp.Message = "Domains wizard completed successfully."
+		}
+		return marshalStepResult(resp)
+	}
+	entry, err = toolToEntry("domains_wizard_step",
+		"Advance a domain addition wizard session by one step. Provide the session_id "+
+			"from domains_wizard_start and the input matching the next_step_schema returned by "+
+			"the previous step.",
+		CategoryWizard, stepTool, stepHandler)
+	if err != nil {
+		return fmt.Errorf("failed to create catalog entry for domains_wizard_step: %w", err)
+	}
+	catalog.Add(entry)
+
 	return nil
 }
 

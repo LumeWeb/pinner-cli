@@ -38,6 +38,7 @@ Examples:
 			newWebsitesDomainsRmCommand(),
 			newWebsitesDomainsVerifyCommand(),
 			newWebsitesDomainsDNSRequirementsCommand(),
+			newWebsitesDomainsWizardCommand(),
 		},
 	}
 }

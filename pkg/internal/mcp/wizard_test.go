@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	ipfs "go.lumeweb.com/ipfs-sdk"
@@ -16,7 +17,6 @@ import (
 
 	mcpadapter "go.lumeweb.com/pinner-cli/pkg/internal/mcp"
 )
-
 
 // --- Test wizard state ---
 
@@ -60,6 +60,31 @@ func testSetupFactory() mcpadapter.SetupWizardState {
 	return &testSetupWizard{}
 }
 
+// testDomainWizard implements mcpadapter.DomainWizardState for tests.
+type testDomainWizard struct {
+	websiteID     string
+	websiteDomain string
+	domain        string
+	namespace     string
+	result        *ipfs.DomainResponse
+}
+
+func (w *testDomainWizard) WebsiteID() string                { return w.websiteID }
+func (w *testDomainWizard) SetWebsiteID(v string)            { w.websiteID = v }
+func (w *testDomainWizard) WebsiteDomain() string            { return w.websiteDomain }
+func (w *testDomainWizard) SetWebsiteDomain(v string)        { w.websiteDomain = v }
+func (w *testDomainWizard) Domain() string                   { return w.domain }
+func (w *testDomainWizard) SetDomain(v string)               { w.domain = v }
+func (w *testDomainWizard) Namespace() string                { return w.namespace }
+func (w *testDomainWizard) SetNamespace(v string)            { w.namespace = v }
+func (w *testDomainWizard) Result() *ipfs.DomainResponse     { return w.result }
+func (w *testDomainWizard) SetResult(v *ipfs.DomainResponse) { w.result = v }
+
+// testDomainFactory creates a testDomainWizard.
+func testDomainFactory() mcpadapter.DomainWizardState {
+	return &testDomainWizard{}
+}
+
 // webservFactory returns a WebsitesWizardDeps with the test factory set.
 func webservFactory(deps mcpadapter.WebsitesWizardDeps) mcpadapter.WebsitesWizardDeps {
 	deps.WebsitesFactory = testWebsitesFactory
@@ -73,13 +98,17 @@ type mockWebsitesSvc struct {
 	createFunc     func(ctx context.Context, req ipfs.WebsiteRequest) (*ipfs.WebsiteItem, error)
 	validateFunc   func(ctx context.Context, id string) (*ipfs.WebsiteValidateResponse, error)
 	getConfigFunc  func(ctx context.Context) (*ipfs.WebsiteConfigResponse, error)
+	listFunc       func(ctx context.Context) ([]ipfs.WebsiteItem, error)
 	createCallReq  *ipfs.WebsiteRequest
 	validateCallID string
 }
 
 func (m *mockWebsitesSvc) RequireAuthenticated() error { return nil }
 
-func (m *mockWebsitesSvc) List(_ context.Context) ([]ipfs.WebsiteItem, error) {
+func (m *mockWebsitesSvc) List(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+	if m.listFunc != nil {
+		return m.listFunc(ctx)
+	}
 	return nil, nil
 }
 
@@ -126,6 +155,33 @@ func (m *mockWebsitesSvc) GetConfig(ctx context.Context) (*ipfs.WebsiteConfigRes
 		return m.getConfigFunc(ctx)
 	}
 	return nil, nil
+}
+
+func (m *mockWebsitesSvc) BindDomain(_ context.Context, websiteID string, req ipfs.DomainRequest) (*ipfs.DomainResponse, error) {
+	return &ipfs.DomainResponse{
+		Id:        1,
+		Domain:    req.Domain,
+		Namespace: req.Namespace,
+		Status:    lo.ToPtr("pending"),
+	}, nil
+}
+
+func (m *mockWebsitesSvc) GetDomainDNSRequirements(_ context.Context, _, _ string) (*ipfs.DomainResponse, error) {
+	return &ipfs.DomainResponse{
+		Id:        1,
+		Domain:    "example.com",
+		Namespace: "icann",
+		Status:    lo.ToPtr("active"),
+	}, nil
+}
+
+func (m *mockWebsitesSvc) VerifyDomain(_ context.Context, _, _ string) (*ipfs.DomainResponse, error) {
+	return &ipfs.DomainResponse{
+		Id:        1,
+		Domain:    "example.com",
+		Namespace: "icann",
+		Status:    lo.ToPtr("active"),
+	}, nil
 }
 
 // mockAuthService implements cli.AuthService for setup wizard tests.
