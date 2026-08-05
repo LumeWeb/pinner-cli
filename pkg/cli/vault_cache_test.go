@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -159,5 +160,63 @@ func TestVaultCacheRebuild_LoopsOnFull(t *testing.T) {
 	}
 	if !bytes.Contains(buf.Bytes(), []byte("5 changes synced")) {
 		t.Fatalf("expected summed count 5, got:\n%s", buf.String())
+	}
+}
+
+// TestVaultCacheRebuild_RestoresOnFailure asserts that when the service cannot
+// be recreated (e.g. missing app key), the moved-aside cache is restored so the
+// user's prior index is not destroyed.
+func TestVaultCacheRebuild_RestoresOnFailure(t *testing.T) {
+	home, err := os.MkdirTemp("", "vault-cache-rebuild-restore")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(home) })
+	overrideHome(t, home)
+
+	if err := vault.SaveRegistry(&vault.VaultRegistry{
+		Default: "personal",
+		Profiles: map[string]vault.ProfileConfig{
+			"personal": {VaultID: "vault:aaa"},
+		},
+	}); err != nil {
+		t.Fatalf("seed registry: %v", err)
+	}
+
+	// Seed an existing cache DB.
+	dbPath := vault.ProfileDBPath("personal")
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0700); err != nil {
+		t.Fatalf("mkdir db dir: %v", err)
+	}
+	if err := os.WriteFile(dbPath, []byte("existing-cache"), 0600); err != nil {
+		t.Fatalf("write fake db: %v", err)
+	}
+
+	orig := vaultServiceFactory
+	t.Cleanup(func() { vaultServiceFactory = orig })
+	// Service recreation fails — the rebuild must roll back, not orphan the DB.
+	vaultServiceFactory = func(profileName, indexerURL string) (vault.VaultService, error) {
+		return nil, errors.New("missing app key")
+	}
+
+	root := NewRootCommand()
+	var buf bytes.Buffer
+	root.Writer = &buf
+	err = root.Run(context.Background(), []string{"pinner", "vault", "cache", "rebuild"})
+	if err == nil {
+		t.Fatalf("expected rebuild to fail when service recreation fails")
+	}
+
+	// The original cache must be restored at its original path.
+	data, rerr := os.ReadFile(dbPath)
+	if rerr != nil {
+		t.Fatalf("original cache was not restored (read err=%v)", rerr)
+	}
+	if string(data) != "existing-cache" {
+		t.Fatalf("restored cache content mismatch: %q", string(data))
+	}
+	// No stale .old file should remain.
+	if _, rerr := os.Stat(dbPath + ".old"); !os.IsNotExist(rerr) {
+		t.Fatalf("stale .old cache left behind after restore (stat err=%v)", rerr)
 	}
 }

@@ -24,9 +24,9 @@ is rederived. Use this to repair a corrupted or stale local cache.`,
 					output := setupOutput(c)
 
 					// Resolve + verify the profile WITHOUT opening the service,
-					// so we can delete its DB file before the service (re)creates
+					// so we can move its DB aside before the service (re)creates
 					// a fresh one (avoids holding an open handle to a file we
-					// then delete, which fails on Windows).
+					// then replace, which fails on Windows).
 					profileName, err := vault.ResolveProfile(c.String(FlagProfile))
 					if err != nil {
 						return err
@@ -39,25 +39,36 @@ is rederived. Use this to repair a corrupted or stale local cache.`,
 						return fmt.Errorf("profile %q not found", profileName)
 					}
 
-					// Discard the existing index so the cursor resets and the
-					// rebuild re-syncs the ENTIRE object stream. The service
-					// factory recreates an empty DB (and fresh cursor) on open.
+					// Move the existing index aside (don't delete it) so the
+					// cursor resets and the rebuild re-syncs the ENTIRE object
+					// stream. Rename is reversible: if the service cannot be
+					// recreated below (bad config, missing state/app key), we
+					// restore the old cache instead of destroying it.
 					dbPath := vault.ProfileDBPath(profileName)
-					if err := os.Remove(dbPath); err != nil && !os.IsNotExist(err) {
-						return fmt.Errorf("failed to remove old cache: %w", err)
+					oldPath := dbPath + ".old"
+					moved := false
+					if err := os.Rename(dbPath, oldPath); err == nil {
+						moved = true
+					} else if !os.IsNotExist(err) {
+						return fmt.Errorf("failed to set aside old cache: %w", err)
 					}
 
 					if !output.IsJSON() {
 						output.Printfln("Rebuilding cache for profile %q...", profileName)
 					}
 
-					// Open the service; it recreates the DB and starts from a
-					// fresh cursor. Sync fetches one batch of 100 per call and
+					// Open the service; it recreates an empty DB and starts from
+					// a fresh cursor. Sync fetches one batch of 100 per call and
 					// reports whether that batch was full; loop while full so the
 					// rebuild drains ALL remote objects (the cursor advances even
-					// across all-skip batches).
+					// across all-skip batches). If recreation fails (e.g. no app
+					// key), restore the moved-aside cache so the prior index is
+					// not lost.
 					svc, _, err := vaultServiceForCommand(c)
 					if err != nil {
+						if moved {
+							_ = os.Rename(oldPath, dbPath)
+						}
 						return fmt.Errorf("failed to recreate cache: %w", err)
 					}
 					defer svc.Close()
@@ -70,6 +81,11 @@ is rederived. Use this to repair a corrupted or stale local cache.`,
 					}
 					if err != nil {
 						return fmt.Errorf("sync during rebuild failed: %w", err)
+					}
+
+					// Rebuild succeeded; discard the rolled-aside old cache.
+					if moved {
+						_ = os.Remove(oldPath)
 					}
 
 					if output.IsJSON() {
