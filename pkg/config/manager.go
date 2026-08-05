@@ -17,8 +17,51 @@ var (
 	ErrNotAuthenticated = errors.New("not authenticated: no auth token configured")
 
 	// DefaultConfigPath is the default location for the config file.
-	DefaultConfigPath = "~/.config/pinner/config.yaml"
+	// Resolved at init time via resolveDefaultConfigPath() to be cross-platform:
+	//   Linux:   ~/.config/pinner/config.yaml
+	//   macOS:   ~/Library/Application Support/pinner/config.yaml
+	//   Windows: %AppData%\pinner\config.yaml
+	//
+	// BC: If ~/.config/pinner/config.yaml exists on a non-Linux platform, it
+	// is still used (legacy path takes priority).
+	DefaultConfigPath = resolveDefaultConfigPath()
 )
+
+const (
+	// configDirName is the application sub-directory under the user config dir.
+	configDirName = "pinner"
+	// configFileName is the config file name within the config directory.
+	configFileName = "config.yaml"
+	// legacyConfigSubdir is the legacy ~/.config path segment kept for BC.
+	legacyConfigSubdir = ".config"
+)
+
+// resolveDefaultConfigPath determines the config file path using the OS-native
+// config directory, with backward compatibility for the legacy ~/.config path.
+// It returns an empty string when no user config or home directory is
+// resolvable, letting callers fail fast instead of silently using a
+// CWD-relative path.
+func resolveDefaultConfigPath() string {
+	// BC: check legacy Linux path first on all platforms
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		legacy := filepath.Join(home, legacyConfigSubdir, configDirName, configFileName)
+		if _, err := os.Stat(legacy); err == nil {
+			return legacy
+		}
+	}
+	// Cross-platform: use OS-native config dir
+	dir, err := os.UserConfigDir()
+	if err != nil || dir == "" {
+		home, herr := os.UserHomeDir()
+		if herr != nil || home == "" {
+			// No home/config dir resolvable — return empty so callers can
+			// fail fast instead of silently using a CWD-relative path.
+			return ""
+		}
+		dir = filepath.Join(home, legacyConfigSubdir)
+	}
+	return filepath.Join(dir, configDirName, configFileName)
+}
 
 // Manager extends configmanager.Manager with CLI-specific configuration methods.
 type Manager interface {
@@ -46,6 +89,9 @@ type managerImpl struct {
 func NewManager(configPath string) (Manager, error) {
 	if configPath == "" {
 		configPath = DefaultConfigPath
+	}
+	if configPath == "" {
+		return nil, fmt.Errorf("cannot determine config path: no user config or home directory resolvable")
 	}
 
 	configPath = expandPath(configPath)
