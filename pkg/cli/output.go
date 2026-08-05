@@ -172,11 +172,6 @@ type Output interface {
 	// PrintTable prints data as a formatted table.
 	PrintTable(headers []string, rows [][]string)
 
-	// PrintTableUnwrapped prints data as a formatted table that does not
-	// hard-split long unbroken values (e.g. a DS digest) across lines,
-	// keeping each value intact and copyable.
-	PrintTableUnwrapped(headers []string, rows [][]string)
-
 	// PrintList prints items as a bulleted list.
 	PrintList(items []string)
 
@@ -290,18 +285,6 @@ func (h *humanFormatter) PrintJSON(data any) error {
 
 // PrintTable prints data as a formatted table.
 func (h *humanFormatter) PrintTable(headers []string, rows [][]string) {
-	h.renderTable(headers, rows, wordWrap)
-}
-
-// PrintTableUnwrapped prints data as a formatted table that does not
-// hard-split long unbroken values (e.g. a DS digest) across lines, keeping
-// each value intact and copyable.
-func (h *humanFormatter) PrintTableUnwrapped(headers []string, rows [][]string) {
-	h.renderTable(headers, rows, wordWrapNoSplit)
-}
-
-// renderTable renders a table, wrapping each cell with the given wrap func.
-func (h *humanFormatter) renderTable(headers []string, rows [][]string, wrap func(string, int) string) {
 	if h.config.quiet {
 		return
 	}
@@ -327,7 +310,7 @@ func (h *humanFormatter) renderTable(headers []string, rows [][]string, wrap fun
 	for i, row := range rows {
 		wrappedRows[i] = make([]string, len(row))
 		for j, cell := range row {
-			wrappedRows[i][j] = wrap(cell, maxColWidth)
+			wrappedRows[i][j] = wordWrap(cell, maxColWidth)
 		}
 	}
 
@@ -514,13 +497,6 @@ func (j *jsonFormatter) PrintTable(headers []string, rows [][]string) {
 		Headers: headers,
 		Rows:    rows,
 	})
-}
-
-// PrintTableUnwrapped prints a table as JSON. JSON rows are not wrapped, so
-// values (e.g. a DS digest) appear verbatim and copyable; this matches
-// PrintTable exactly.
-func (j *jsonFormatter) PrintTableUnwrapped(headers []string, rows [][]string) {
-	j.PrintTable(headers, rows)
 }
 
 // PrintList prints items as JSON (list format).
@@ -754,59 +730,6 @@ func wordWrap(text string, width int) string {
 		lines = append(lines, wrapLine(line, width)...)
 	}
 	return strings.Join(lines, "\n")
-}
-
-// wordWrapNoSplit wraps text at the specified width, breaking only between
-// words (on whitespace). A single unbroken token longer than the width is
-// left intact on its own line rather than split mid-token, so values like a
-// DS digest remain copyable.
-func wordWrapNoSplit(text string, width int) string {
-	if width <= 0 {
-		return text
-	}
-
-	var lines []string
-	for _, line := range strings.Split(text, "\n") {
-		if len(line) <= width {
-			lines = append(lines, line)
-			continue
-		}
-		lines = append(lines, wrapLineNoSplit(line, width)...)
-	}
-	return strings.Join(lines, "\n")
-}
-
-// wrapLineNoSplit wraps a single line at the given width, breaking only
-// between words. A single unbroken token longer than the width is emitted
-// whole on its own line (never split mid-token).
-func wrapLineNoSplit(line string, width int) []string {
-	var result []string
-	var cur strings.Builder
-	curLen := 0
-
-	for _, word := range strings.Fields(line) {
-		wordLen := len(word)
-
-		// Flush the current line before a word that would overflow it.
-		if curLen > 0 && curLen+wordLen+1 > width {
-			result = append(result, cur.String())
-			cur.Reset()
-			curLen = 0
-		}
-
-		if curLen > 0 {
-			cur.WriteByte(' ')
-			curLen++
-		}
-		cur.WriteString(word)
-		curLen += wordLen
-	}
-
-	if cur.Len() > 0 {
-		result = append(result, cur.String())
-	}
-
-	return result
 }
 
 // wrapLine wraps a single line at the given width.

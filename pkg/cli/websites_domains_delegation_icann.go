@@ -12,7 +12,6 @@ func (i *icannDelegationDriver) Render(output Output, result *ipfs.DomainRespons
 	d := result.Delegation
 	renderDelegationInstructions(output, d)
 	printDelegationRecords(output, "Parent records (configure at your registrar)", d.ParentRecords)
-	renderDelegationDS(output, d, "at your registrar")
 	printDelegationRecords(output, "Authoritative records", d.AuthoritativeRecords)
 	renderDelegationNameservers(output, d)
 }

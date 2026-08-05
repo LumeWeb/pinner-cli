@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -1231,46 +1232,32 @@ func TestRenderDomainDelegation(t *testing.T) {
 		// exercises the generic fallback path for an unrecognized namespace
 	})
 
-	t.Run("DS record renders as a labeled table with intact digest", func(t *testing.T) {
+	t.Run("DS appears once in parent records and comma-joined NS is split", func(t *testing.T) {
 		var buf bytes.Buffer
 		output := NewOutputFormatter(false, false, false, false)
 		output.SetWriter(&buf)
-		digest := "c35938688953467518f2a9c613b8a32da647595912a67fa9cf47e41b593831d5"
+		dsValue := "lumeweb DS 44451 13 2 c359"
 		renderDomainDelegation(output, &ipfs.DomainResponse{
 			Id: 1, Domain: "lumeweb", Namespace: "hns", Status: strPtr("delegated"),
 			Delegation: &ipfs.DNSDelegation{
 				Mode: strPtr("delegated"),
-				Ds:   strPtr("lumeweb DS 44451 13 2 " + digest),
+				Ds:   strPtr(dsValue),
+				ParentRecords: &[]ipfs.DNSDelegationRecord{
+					{Type: "NS", Value: strPtr("ns1.pinner.xyz,ns2.pinner.xyz")},
+					{Type: "DS", Value: strPtr(dsValue)},
+				},
 			},
 		})
 		out := buf.String()
-		// Uses driver-aware copy label.
-		assert.Contains(t, out, "DS record (paste into your HNS wallet):")
-		// Labeled columns.
-		assert.Contains(t, out, "KEY TAG")
-		assert.Contains(t, out, "ALGORITHM")
-		assert.Contains(t, out, "DIGEST TYPE")
-		assert.Contains(t, out, "44451")
-		assert.Contains(t, out, "13")
-		// The digest must remain intact on one line (never hard-split), so it
-		// can be selected and copied whole.
-		assert.Contains(t, out, digest)
-	})
-
-	t.Run("DS record tolerates zone-file format with ttl and class", func(t *testing.T) {
-		var buf bytes.Buffer
-		output := NewOutputFormatter(false, false, false, false)
-		output.SetWriter(&buf)
-		renderDomainDelegation(output, &ipfs.DomainResponse{
-			Id: 1, Domain: "mydomain.com", Namespace: "icann", Status: strPtr("delegated"),
-			Delegation: &ipfs.DNSDelegation{
-				Mode: strPtr("delegated"),
-				Ds:   strPtr("mydomain. 3600 IN DS 12345 13 2 <digest>"),
-			},
-		})
-		out := buf.String()
-		assert.Contains(t, out, "DS record (paste at your registrar):")
-		assert.Contains(t, out, "12345")
-		assert.Contains(t, out, "KEY TAG")
+		// The DS record is communicated once, as a parent record in the
+		// parent-records table — not re-decoded into a redundant block.
+		assert.Equal(t, 1, strings.Count(out, dsValue))
+		assert.NotContains(t, out, "DS record (paste")
+		assert.NotContains(t, out, "KEY TAG")
+		// Comma-joined nameservers are split so each is visible/copyable,
+		// matching how the wizard communicates nameservers.
+		assert.Contains(t, out, "ns1.pinner.xyz")
+		assert.Contains(t, out, "ns2.pinner.xyz")
+		assert.NotContains(t, out, "ns1.pinner.xyz,ns2.pinner.xyz")
 	})
 }
