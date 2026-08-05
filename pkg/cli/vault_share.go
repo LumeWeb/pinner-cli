@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -70,9 +71,10 @@ func newVaultShareCommand() *cli.Command {
 					Expires:  validUntil.Format(time.RFC3339),
 				})
 			} else {
-				// stdout: the share URL for piping/clipboard
+				// stdout: only the share URL for piping/clipboard; the expiry
+				// status goes to stderr so `vault share f | pbcopy` stays clean.
 				fmt.Println(shareURL)
-				output.Printfln("Share link expires: %s", validUntil.Format(time.RFC3339))
+				fmt.Fprintf(os.Stderr, "Share link expires: %s\n", validUntil.Format(time.RFC3339))
 			}
 			return nil
 		},
