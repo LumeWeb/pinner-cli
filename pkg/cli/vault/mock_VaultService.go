@@ -611,6 +611,68 @@ func (_c *MockVaultService_Stat_Call) RunAndReturn(run func(ctx context.Context,
 	return _c
 }
 
+// Status provides a mock function for the type MockVaultService
+func (_mock *MockVaultService) Status(ctx context.Context) (*StatusResult, error) {
+	ret := _mock.Called(ctx)
+
+	if len(ret) == 0 {
+		panic("no return value specified for Status")
+	}
+
+	var r0 *StatusResult
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context) (*StatusResult, error)); ok {
+		return returnFunc(ctx)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context) *StatusResult); ok {
+		r0 = returnFunc(ctx)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*StatusResult)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context) error); ok {
+		r1 = returnFunc(ctx)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockVaultService_Status_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Status'
+type MockVaultService_Status_Call struct {
+	*mock.Call
+}
+
+// Status is a helper method to define mock.On call
+//   - ctx context.Context
+func (_e *MockVaultService_Expecter) Status(ctx any) *MockVaultService_Status_Call {
+	return &MockVaultService_Status_Call{Call: _e.mock.On("Status", ctx)}
+}
+
+func (_c *MockVaultService_Status_Call) Run(run func(ctx context.Context)) *MockVaultService_Status_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockVaultService_Status_Call) Return(statusResult *StatusResult, err error) *MockVaultService_Status_Call {
+	_c.Call.Return(statusResult, err)
+	return _c
+}
+
+func (_c *MockVaultService_Status_Call) RunAndReturn(run func(ctx context.Context) (*StatusResult, error)) *MockVaultService_Status_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Sync provides a mock function for the type MockVaultService
 func (_mock *MockVaultService) Sync(ctx context.Context) (int, bool, error) {
 	ret := _mock.Called(ctx)
