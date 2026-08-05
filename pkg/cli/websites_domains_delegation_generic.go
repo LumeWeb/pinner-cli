@@ -13,7 +13,6 @@ func (g *genericDelegationDriver) Render(output Output, result *ipfs.DomainRespo
 	renderDelegationInstructions(output, result.Delegation)
 	renderDelegationMode(output, result.Delegation)
 	printDelegationRecords(output, "Parent records", result.Delegation.ParentRecords)
-	renderDelegationDS(output, result.Delegation, "with your DNS provider")
 	printDelegationRecords(output, "Authoritative records", result.Delegation.AuthoritativeRecords)
 	renderDelegationNameservers(output, result.Delegation)
 }
