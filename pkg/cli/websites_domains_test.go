@@ -1229,8 +1229,10 @@ func TestRenderDomainDelegation(t *testing.T) {
 		// exercises the non-nil typed-helper path
 	})
 
-	t.Run("inline mode labels authoritative records via synthetic nameservers", func(t *testing.T) {
-		output := newTestOutput()
+	t.Run("inline mode omits authoritative records", func(t *testing.T) {
+		var buf bytes.Buffer
+		output := NewOutputFormatter(false, false, false, false)
+		output.SetWriter(&buf)
 		renderDomainDelegation(output, &ipfs.DomainResponse{
 			Id: 1, Domain: "mydomain.hns", Namespace: "hns", Status: strPtr("delegated"),
 			Delegation: &ipfs.DNSDelegation{
@@ -1243,8 +1245,33 @@ func TestRenderDomainDelegation(t *testing.T) {
 				},
 			},
 		}, false)
-		// In inline mode the authoritative side is served automatically via
-		// synthetic nameserver names — it is not user-configured.
+		out := buf.String()
+		// In inline mode the authoritative side is served via Pinner's
+		// synthetic nameservers — it is not user-configured, so it is omitted.
+		assert.Contains(t, out, "synthetic nameservers")
+		assert.Contains(t, out, "SYNTH4")
+		assert.NotContains(t, out, "Authoritative records")
+	})
+
+	t.Run("inline managed domain never shows authoritative records", func(t *testing.T) {
+		var buf bytes.Buffer
+		output := NewOutputFormatter(false, false, false, false)
+		output.SetWriter(&buf)
+		renderDomainDelegation(output, &ipfs.DomainResponse{
+			Id: 1, Domain: "mydomain.hns", Namespace: "hns", Status: strPtr("delegated"),
+			Delegation: &ipfs.DNSDelegation{
+				Mode: strPtr("inline"),
+				ParentRecords: &[]ipfs.DNSDelegationRecord{
+					{Type: "SYNTH4", Value: strPtr("hns-626f7578e5.rec.ns1.lumeweb")},
+				},
+				AuthoritativeRecords: &[]ipfs.DNSDelegationRecord{
+					{Type: "NS", Value: strPtr("hns-626f7578e5.rec.ns1.lumeweb")},
+				},
+			},
+		}, true)
+		out := buf.String()
+		assert.Contains(t, out, "synthetic nameservers")
+		assert.NotContains(t, out, "Authoritative records")
 	})
 
 	t.Run("icann driver renders registrar wording and nameservers", func(t *testing.T) {
