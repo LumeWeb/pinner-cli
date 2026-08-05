@@ -84,8 +84,12 @@ The flow:
 			// the seed-carrying re-run so only a single connection request is
 			// ever issued (otherwise the first run orphan-approves and forces
 			// a duplicate approval on the --seed-stdin run). Return before
-			// reading a mnemonic or touching the network.
-			if c.Bool(FlagAgent) {
+			// reading a mnemonic or touching the network — BUT only when no
+			// seed is supplied on this invocation. `--agent` is a global
+			// MCP/CI flag, so a re-run that DOES carry --seed-stdin still has
+			// it set; returning here again would loop forever instead of
+			// completing the restore.
+			if c.Bool(FlagAgent) && !c.Bool("seed-stdin") {
 				output.PrintJSON(vaultRestoreApprovalResponse{
 					Profile:  profileName,
 					NextStep: "Re-run: pinner vault restore --profile " + profileName + " --seed-stdin < " + vault.SeedPath(profileName) + " (presents the single browser approval)",
