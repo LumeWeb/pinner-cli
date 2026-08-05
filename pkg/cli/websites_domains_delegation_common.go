@@ -3,28 +3,8 @@ package cli
 import (
 	"strings"
 
-	"github.com/samber/lo"
 	ipfs "go.lumeweb.com/ipfs-sdk"
 )
-
-// renderDelegationInstructions prints the provider-authored, namespace-aware
-// guidance verbatim.
-func renderDelegationInstructions(output Output, d *ipfs.DNSDelegation) {
-	if d.Instructions == nil || *d.Instructions == "" {
-		return
-	}
-	output.Printfln("")
-	output.Printfln("Instructions:")
-	output.Printfln("%s", *d.Instructions)
-}
-
-// renderDelegationMode prints the delegation mode when present.
-func renderDelegationMode(output Output, d *ipfs.DNSDelegation) {
-	if mode := lo.FromPtr(d.Mode); mode != "" {
-		output.Printfln("")
-		output.Printfln("Delegation mode: %s", mode)
-	}
-}
 
 // renderDelegationNameservers prints the nameservers shortcut when present.
 func renderDelegationNameservers(output Output, d *ipfs.DNSDelegation) {

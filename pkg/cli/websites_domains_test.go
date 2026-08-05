@@ -962,7 +962,8 @@ func websitesDomainsDNSRequirementsWithService(ctx context.Context, cmd websites
 		return output.PrintJSON(result)
 	}
 
-	renderDomainDelegation(output, result)
+	managed := isWebsiteDNSManaged(ctx, websitesService, websiteID)
+	renderDomainDelegation(output, result, managed)
 	return nil
 }
 
@@ -1157,12 +1158,55 @@ func TestWebsitesDomainsDNSRequirementsJSON(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestWebsitesDomainsDNSRequirementsUsesManagedSignal(t *testing.T) {
+	// The handler must read the website's dns_hosting_enabled (via Get) and
+	// omit the authoritative records when Pinner manages the DNS.
+	mockSvc := &mockWebsitesServiceForCLI{}
+	mockSvc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+		return []ipfs.WebsiteItem{{Id: 1, Domain: "example.com"}}, nil
+	}
+	mockSvc.ListDomainsFn = func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
+		return []ipfs.DomainResponse{
+			{Id: 2, Domain: "mydomain.hns", Namespace: "hns"},
+		}, nil
+	}
+	mockSvc.getFunc = func(ctx context.Context, id string) (*ipfs.WebsiteItem, error) {
+		return &ipfs.WebsiteItem{Id: 1, Domain: "example.com", DnsHostingEnabled: true}, nil
+	}
+	mockSvc.GetDomainDNSRequirementsFn = func(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainResponse, error) {
+		return &ipfs.DomainResponse{
+			Id: 2, Domain: "mydomain.hns", Namespace: "hns", Status: strPtr("delegated"),
+			Delegation: &ipfs.DNSDelegation{
+				Mode: strPtr("delegated"),
+				ParentRecords: &[]ipfs.DNSDelegationRecord{
+					{Type: "NS", Value: strPtr("ns1.pinner.xyz")},
+				},
+				AuthoritativeRecords: &[]ipfs.DNSDelegationRecord{
+					{Type: "NS", Value: strPtr("nsx.pinner.xyz")},
+				},
+			},
+		}, nil
+	}
+
+	var buf bytes.Buffer
+	output := NewOutputFormatter(false, false, false, false)
+	output.SetWriter(&buf)
+	cmd := newMockCommand().withArgs("mydomain.hns")
+	err := websitesDomainsDNSRequirementsWithService(context.Background(), cmd, output, mockSvc)
+	require.NoError(t, err)
+
+	out := buf.String()
+	assert.Contains(t, out, "Pinner manages your DNS")
+	assert.NotContains(t, out, "Authoritative records")
+	assert.NotContains(t, out, "nsx.pinner.xyz")
+}
+
 func TestRenderDomainDelegation(t *testing.T) {
 	t.Run("renders no delegation message when nil", func(t *testing.T) {
 		output := newTestOutput()
 		renderDomainDelegation(output, &ipfs.DomainResponse{
 			Id: 1, Domain: "mydomain.hns", Namespace: "hns", Status: strPtr("delegated"),
-		})
+		}, false)
 		// exercises the nil-delegation branch without asserting exact text
 	})
 
@@ -1181,12 +1225,14 @@ func TestRenderDomainDelegation(t *testing.T) {
 					{Type: "TLSA", Value: strPtr("_443._tcp.mydomain. 3 1 1 <sha256>")},
 				},
 			},
-		})
+		}, false)
 		// exercises the non-nil typed-helper path
 	})
 
-	t.Run("inline mode labels authoritative records via synthetic nameservers", func(t *testing.T) {
-		output := newTestOutput()
+	t.Run("inline mode omits authoritative records", func(t *testing.T) {
+		var buf bytes.Buffer
+		output := NewOutputFormatter(false, false, false, false)
+		output.SetWriter(&buf)
 		renderDomainDelegation(output, &ipfs.DomainResponse{
 			Id: 1, Domain: "mydomain.hns", Namespace: "hns", Status: strPtr("delegated"),
 			Delegation: &ipfs.DNSDelegation{
@@ -1198,9 +1244,34 @@ func TestRenderDomainDelegation(t *testing.T) {
 					{Type: "NS", Value: strPtr("hns-626f7578e5.rec.ns1.lumeweb")},
 				},
 			},
-		})
-		// In inline mode the authoritative side is served automatically via
-		// synthetic nameserver names — it is not user-configured.
+		}, false)
+		out := buf.String()
+		// In inline mode the authoritative side is served via Pinner's
+		// synthetic nameservers — it is not user-configured, so it is omitted.
+		assert.Contains(t, out, "synthetic nameservers")
+		assert.Contains(t, out, "SYNTH4")
+		assert.NotContains(t, out, "Authoritative records")
+	})
+
+	t.Run("inline managed domain never shows authoritative records", func(t *testing.T) {
+		var buf bytes.Buffer
+		output := NewOutputFormatter(false, false, false, false)
+		output.SetWriter(&buf)
+		renderDomainDelegation(output, &ipfs.DomainResponse{
+			Id: 1, Domain: "mydomain.hns", Namespace: "hns", Status: strPtr("delegated"),
+			Delegation: &ipfs.DNSDelegation{
+				Mode: strPtr("inline"),
+				ParentRecords: &[]ipfs.DNSDelegationRecord{
+					{Type: "SYNTH4", Value: strPtr("hns-626f7578e5.rec.ns1.lumeweb")},
+				},
+				AuthoritativeRecords: &[]ipfs.DNSDelegationRecord{
+					{Type: "NS", Value: strPtr("hns-626f7578e5.rec.ns1.lumeweb")},
+				},
+			},
+		}, true)
+		out := buf.String()
+		assert.Contains(t, out, "synthetic nameservers")
+		assert.NotContains(t, out, "Authoritative records")
 	})
 
 	t.Run("icann driver renders registrar wording and nameservers", func(t *testing.T) {
@@ -1211,7 +1282,7 @@ func TestRenderDomainDelegation(t *testing.T) {
 				Nameservers:  &[]string{"ns1.example.com", "ns2.example.com"},
 				Instructions: strPtr("Configure these NS records at your registrar for mydomain.com"),
 			},
-		})
+		}, false)
 		// exercises the icann driver path (registrar wording, nameservers list)
 	})
 
@@ -1228,7 +1299,7 @@ func TestRenderDomainDelegation(t *testing.T) {
 					{Type: "TLSA", Value: strPtr("_443._tcp.mydomain.eth. 3 1 1 <sha256>")},
 				},
 			},
-		})
+		}, false)
 		// exercises the generic fallback path for an unrecognized namespace
 	})
 
@@ -1250,7 +1321,7 @@ func TestRenderDomainDelegation(t *testing.T) {
 					{Type: "DS", Value: strPtr(dsValue)},
 				},
 			},
-		})
+		}, false)
 		out := buf.String()
 		// The DS record is communicated once, as a parent record in the
 		// parent-records table — not re-decoded into a redundant block.
@@ -1266,5 +1337,79 @@ func TestRenderDomainDelegation(t *testing.T) {
 		assert.Contains(t, out, "ns1.pinner.xyz")
 		assert.Contains(t, out, "ns2.pinner.xyz")
 		assert.NotContains(t, out, "ns1.pinner.xyz,ns2.pinner.xyz")
+	})
+
+	t.Run("managed hns omits authoritative records", func(t *testing.T) {
+		var buf bytes.Buffer
+		output := NewOutputFormatter(false, false, false, false)
+		output.SetWriter(&buf)
+		renderDomainDelegation(output, &ipfs.DomainResponse{
+			Id: 1, Domain: "mydomain.hns", Namespace: "hns", Status: strPtr("delegated"),
+			Delegation: &ipfs.DNSDelegation{
+				Mode: strPtr("delegated"),
+				ParentRecords: &[]ipfs.DNSDelegationRecord{
+					{Type: "NS", Value: strPtr("ns1.pinner.xyz")},
+					{Type: "DS", Value: strPtr("44451 13 2 c359")},
+				},
+				AuthoritativeRecords: &[]ipfs.DNSDelegationRecord{
+					{Type: "NS", Value: strPtr("nsx.pinner.xyz")},
+				},
+			},
+		}, true)
+		out := buf.String()
+		// Pinner manages DNS, so only the parent records (for the HNS wallet)
+		// are shown; the authoritative side is handled for the user.
+		assert.Contains(t, out, "Pinner manages your DNS")
+		assert.Contains(t, out, "Parent records (publish in your HNS wallet)")
+		assert.Contains(t, out, "44451 13 2 c359")
+		assert.NotContains(t, out, "Authoritative records")
+		assert.NotContains(t, out, "nsx.pinner.xyz")
+		// The server's free-form instructions prose is never echoed.
+		assert.NotContains(t, out, "parent_records")
+		assert.NotContains(t, out, "optional GLUE")
+	})
+
+	t.Run("managed icann omits authoritative records", func(t *testing.T) {
+		var buf bytes.Buffer
+		output := NewOutputFormatter(false, false, false, false)
+		output.SetWriter(&buf)
+		renderDomainDelegation(output, &ipfs.DomainResponse{
+			Id: 1, Domain: "mydomain.com", Namespace: "icann", Status: strPtr("delegated"),
+			Delegation: &ipfs.DNSDelegation{
+				ParentRecords: &[]ipfs.DNSDelegationRecord{
+					{Type: "NS", Value: strPtr("ns1.pinner.xyz")},
+				},
+				AuthoritativeRecords: &[]ipfs.DNSDelegationRecord{
+					{Type: "TLSA", Value: strPtr("_443._tcp.mydomain.com. 3 1 1 <sha256>")},
+				},
+			},
+		}, true)
+		out := buf.String()
+		assert.Contains(t, out, "Point your registrar's nameservers")
+		assert.Contains(t, out, "Pinner manages your DNS")
+		assert.NotContains(t, out, "Authoritative records")
+		assert.NotContains(t, out, "TLSA")
+	})
+
+	t.Run("self-managed hns shows authoritative records", func(t *testing.T) {
+		var buf bytes.Buffer
+		output := NewOutputFormatter(false, false, false, false)
+		output.SetWriter(&buf)
+		renderDomainDelegation(output, &ipfs.DomainResponse{
+			Id: 1, Domain: "mydomain.hns", Namespace: "hns", Status: strPtr("delegated"),
+			Delegation: &ipfs.DNSDelegation{
+				Mode: strPtr("delegated"),
+				ParentRecords: &[]ipfs.DNSDelegationRecord{
+					{Type: "NS", Value: strPtr("ns1.lumeweb")},
+				},
+				AuthoritativeRecords: &[]ipfs.DNSDelegationRecord{
+					{Type: "NS", Value: strPtr("ns.eigen.lumeweb")},
+				},
+			},
+		}, false)
+		out := buf.String()
+		assert.Contains(t, out, "point your own DNS server")
+		assert.Contains(t, out, "Authoritative records (configure on your DNS server)")
+		assert.Contains(t, out, "ns.eigen.lumeweb")
 	})
 }
