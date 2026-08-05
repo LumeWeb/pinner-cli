@@ -80,23 +80,23 @@ The recovery seed is displayed ONCE and must be saved securely.`,
 				return fmt.Errorf("profile %q already exists. Use 'pinner vault login --profile %s' or choose a different name", profileName, profileName)
 			}
 
-			// Guard against overwriting a prior pending seed. Agent-mode
-			// create returns before registration completes, so the
-			// profile-exists check above won't catch a repeat run if the
-			// registry was deleted or corrupted.
-			if c.Bool(FlagAgent) {
-				seedPath := vault.SeedPath(profileName)
-				if _, err := os.Stat(seedPath); err == nil {
-					// The seed guards irreplaceable vault DATA, not money — so
-					// we never auto-delete a stale one (that would destroy the
-					// user's only path back into their content). Instead, warn
-					// if it has lingered beyond the normal handoff horizon so
-					// the user can decide to complete or remove it.
-					if vault.SeedIsStale(profileName, staleSeedWarningAfter) {
-						output.Printfln("Warning: a pending recovery seed for profile %q is %s old (stale). Complete it with restore, or remove %s to dispose of the plaintext master key.", profileName, staleSeedWarningAfter, seedPath)
-					}
-					return fmt.Errorf("a pending recovery seed already exists for profile %q; run 'pinner vault restore --profile %s --seed-stdin < %s' to complete it, or remove %s to start over", profileName, profileName, seedPath, seedPath)
+			// Guard against overwriting a prior pending seed. Applies to BOTH
+			// agent and interactive create: a pending seed file (e.g. a prior
+			// `create --agent` that generated a seed but was never restored)
+			// is the user's only path back into that vault, and the seed
+			// write below runs for both modes — overwriting it would destroy
+			// the recovery path.
+			seedPath := vault.SeedPath(profileName)
+			if _, err := os.Stat(seedPath); err == nil {
+				// The seed guards irreplaceable vault DATA, not money — so
+				// we never auto-delete a stale one (that would destroy the
+				// user's only path back into their content). Instead, warn
+				// if it has lingered beyond the normal handoff horizon so
+				// the user can decide to complete or remove it.
+				if vault.SeedIsStale(profileName, staleSeedWarningAfter) {
+					output.Printfln("Warning: a pending recovery seed for profile %q is %s old (stale). Complete it with restore, or remove %s to dispose of the plaintext master key.", profileName, staleSeedWarningAfter, seedPath)
 				}
+				return fmt.Errorf("a pending recovery seed already exists for profile %q; run 'pinner vault restore --profile %s --seed-stdin < %s' to complete it, or remove %s to start over", profileName, profileName, seedPath, seedPath)
 			}
 
 			cfgMgr, err := configManagerFactory()
@@ -133,10 +133,7 @@ The recovery seed is displayed ONCE and must be saved securely.`,
 			// one-time seed must already be safe on disk — otherwise a re-run
 			// generates a different mnemonic and orphans the first vault
 			// unrecoverably. The seed file is also the recovery path for
-			// agent-mode restores from this device. It is written only when no
-			// pending seed already exists (guarded above from Agent, and a
-			// fresh profile here otherwise).
-			seedPath := vault.SeedPath(profileName)
+			// agent-mode restores from this device.
 			seedDir := filepath.Dir(seedPath)
 			if err := os.MkdirAll(seedDir, 0700); err != nil {
 				return fmt.Errorf("failed to create seed directory: %w", err)
