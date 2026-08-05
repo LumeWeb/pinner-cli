@@ -246,15 +246,20 @@ func resolveDomainBinding(ctx context.Context, websitesService WebsitesService, 
 	// "123" can't shadow a real domain named "123" depending on iteration
 	// order.
 	var idMatchWebsite, idMatchDomain string
+	var deferredErr error
 
 	for _, w := range websites {
 		wID := fmt.Sprintf("%d", w.Id)
 		domains, lerr := websitesService.ListDomains(ctx, wID)
 		if lerr != nil {
-			// A failure to list a website's bindings must surface rather than
-			// being masked as "not found": otherwise a website with the same
-			// numeric ID could resolve silently to the wrong binding.
-			return "", "", fmt.Errorf("failed to look up domain on website %s: %w", wID, lerr)
+			// Defer the listing error rather than aborting the scan: a
+			// transient failure on an unrelated website must not make an
+			// unambiguously name-matched domain unresolvable. It only blocks
+			// the numeric-ID fallback, which is otherwise ambiguous.
+			if deferredErr == nil {
+				deferredErr = fmt.Errorf("failed to look up domain on website %s: %w", wID, lerr)
+			}
+			continue
 		}
 		for _, d := range domains {
 			if dnsname.Equal(d.Domain, domainArg) {
@@ -266,8 +271,13 @@ func resolveDomainBinding(ctx context.Context, websitesService WebsitesService, 
 		}
 	}
 
-	if idMatchDomain != "" {
+	// Only fall back to a numeric ID match on a clean scan; a deferred
+	// listing error could have hidden a conflicting binding.
+	if idMatchDomain != "" && deferredErr == nil {
 		return idMatchWebsite, idMatchDomain, nil
+	}
+	if deferredErr != nil {
+		return "", "", deferredErr
 	}
 
 	return "", "", fmt.Errorf("domain %q not found bound to any website", domainArg)

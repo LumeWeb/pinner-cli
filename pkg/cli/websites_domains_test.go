@@ -463,10 +463,37 @@ func TestResolveDomainBindingNumericNamePriority(t *testing.T) {
 	require.Equal(t, "7", domainID)
 }
 
+func TestResolveDomainBindingDeferredListErrors(t *testing.T) {
+	// A ListDomains failure is deferred, not fatal: a website that fails to
+	// list must not block an unambiguously name-matched domain on a later
+	// website from resolving.
+	mockSvc := &mockWebsitesServiceForCLI{}
+	mockSvc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+		return []ipfs.WebsiteItem{
+			{Id: 1, Domain: "broken.com"},
+			{Id: 2, Domain: "good.com"},
+		}, nil
+	}
+	mockSvc.ListDomainsFn = func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
+		switch websiteID {
+		case "1":
+			return nil, errors.New("boom")
+		case "2":
+			return []ipfs.DomainResponse{{Id: 7, Domain: "staging.example.com", Namespace: "icann"}}, nil
+		}
+		return nil, nil
+	}
+
+	websiteID, domainID, err := resolveDomainBinding(context.Background(), mockSvc, "staging.example.com")
+	require.NoError(t, err)
+	require.Equal(t, "2", websiteID)
+	require.Equal(t, "7", domainID)
+}
+
 func TestResolveDomainBindingSurfacesListErrors(t *testing.T) {
-	// Regression for Kody finding: a ListDomains failure on any website must
-	// surface (wrapped) rather than being swallowed as "not found", so the
-	// command can't silently resolve to an unrelated binding.
+	// A ListDomains failure surfaces (wrapped) only when no name match is
+	// found and no clean numeric-ID fallback exists — otherwise the error
+	// would be silently masked as "not found".
 	mockSvc := &mockWebsitesServiceForCLI{}
 	mockSvc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
 		return []ipfs.WebsiteItem{{Id: 1, Domain: "example.com"}}, nil
