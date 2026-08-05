@@ -120,6 +120,7 @@ For more help on any command: pinner <command> --help`,
 				return mcpadapter.ResourceProviders{
 					Account:  &accountStatusAdapter{cfgMgr: cfgMgr, auth: authSvc},
 					Websites: &websitesResourceAdapter{ws: websitesSvc},
+					Vault:    &vaultStatusAdapter{cfgMgr: cfgMgr},
 				}
 			}
 

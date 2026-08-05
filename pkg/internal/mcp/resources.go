@@ -15,6 +15,7 @@ import (
 const (
 	ResourceScheme       = "pinner://"
 	AccountStatusURI     = "pinner://account/status"
+	VaultStatusURI       = "pinner://vault/status"
 	DNSRequirementsTmpl  = "pinner://websites/{domain}/dns-requirements"
 	ValidationStatusTmpl = "pinner://websites/{id}/validation-status"
 	WizardStateTmpl      = "pinner://wizard/{session_id}/state"
@@ -93,12 +94,29 @@ type WebsitesResourceProvider interface {
 	GetConfig(ctx context.Context) (*ipfs.WebsiteConfigResponse, error)
 }
 
+// VaultStatusProvider supplies the data shown in pinner://vault/status.
+// It abstracts vault state so resource handlers can be tested without a
+// live Sia connection.
+type VaultStatusProvider interface {
+	// IsInitialized reports whether the local vault database exists.
+	IsInitialized() bool
+	// IsSiaConfigured reports whether a Sia app key is configured.
+	IsSiaConfigured() bool
+	// IndexerURL returns the derived Sia indexer URL.
+	IndexerURL() string
+	// FileCount returns the number of files in the local vault cache.
+	FileCount(ctx context.Context) (int64, error)
+	// AccountBalance returns the Sia account balance, or 0 if unavailable.
+	AccountBalance(ctx context.Context) (float64, error)
+}
+
 // ResourceProviders bundles the dependencies that RegisterResources needs.
 // The session store is *SessionStore from this package; the other two are
 // injected interfaces so the resource handlers can call live APIs or mocks.
 type ResourceProviders struct {
 	Account  AccountStatusProvider
 	Websites WebsitesResourceProvider
+	Vault    VaultStatusProvider
 	Sessions *SessionStore
 }
 
@@ -120,6 +138,16 @@ func RegisterResources(srv *server.MCPServer, provs ResourceProviders) {
 			mcp.WithMIMEType("application/json"),
 		),
 		accountStatusHandler(provs.Account),
+	)
+
+	srv.AddResource(
+		mcp.NewResource(
+			VaultStatusURI,
+			"vault-status",
+			mcp.WithResourceDescription("Vault state: initialization, Sia connection, file count, and account balance"),
+			mcp.WithMIMEType("application/json"),
+		),
+		vaultStatusHandler(provs.Vault),
 	)
 
 	srv.AddResourceTemplate(
@@ -225,6 +253,42 @@ func accountStatusHandler(acct AccountStatusProvider) server.ResourceHandlerFunc
 		}
 		return []mcp.ResourceContents{
 			mcp.TextResourceContents{URI: AccountStatusURI, MIMEType: "application/json", Text: string(raw)},
+		}, nil
+	}
+}
+
+// vaultStatusHandler builds the vault status resource response.
+func vaultStatusHandler(prov VaultStatusProvider) server.ResourceHandlerFunc {
+	return func(ctx context.Context, _ mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
+		status := map[string]any{
+			"initialized":   false,
+			"sia_configured": false,
+		}
+
+		if prov != nil {
+			status["initialized"] = prov.IsInitialized()
+			status["sia_configured"] = prov.IsSiaConfigured()
+			status["indexer_url"] = prov.IndexerURL()
+
+			if prov.IsInitialized() {
+				if count, err := prov.FileCount(ctx); err == nil {
+					status["file_count"] = count
+				}
+			}
+
+			if prov.IsSiaConfigured() {
+				if balance, err := prov.AccountBalance(ctx); err == nil {
+					status["account_balance"] = balance
+				}
+			}
+		}
+
+		raw, err := json.MarshalIndent(status, "", "  ")
+		if err != nil {
+			return nil, fmt.Errorf("marshal vault status: %w", err)
+		}
+		return []mcp.ResourceContents{
+			mcp.TextResourceContents{URI: VaultStatusURI, MIMEType: "application/json", Text: string(raw)},
 		}, nil
 	}
 }
