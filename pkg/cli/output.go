@@ -310,6 +310,14 @@ func (h *humanFormatter) PrintTable(headers []string, rows [][]string) {
 	for i, row := range rows {
 		wrappedRows[i] = make([]string, len(row))
 		for j, cell := range row {
+			// Keep a DS record's value whole (never hard-wrapped mid-token):
+			// the digest is a single opaque value the user must copy exactly,
+			// and splitting it across lines breaks that. The table cell widens
+			// to fit it.
+			if row[0] == "DS" && j == 1 {
+				wrappedRows[i][j] = cell
+				continue
+			}
 			wrappedRows[i][j] = wordWrap(cell, maxColWidth)
 		}
 	}

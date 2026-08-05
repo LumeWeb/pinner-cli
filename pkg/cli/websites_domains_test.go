@@ -1232,11 +1232,14 @@ func TestRenderDomainDelegation(t *testing.T) {
 		// exercises the generic fallback path for an unrecognized namespace
 	})
 
-	t.Run("DS appears once in parent records and comma-joined NS is split", func(t *testing.T) {
+	t.Run("DS appears once in parent records and stays contiguous, comma-joined NS is split", func(t *testing.T) {
 		var buf bytes.Buffer
 		output := NewOutputFormatter(false, false, false, false)
 		output.SetWriter(&buf)
-		dsValue := "lumeweb DS 44451 13 2 c359"
+		// A full-length SHA-256 digest (64 hex chars) that exceeds the table's
+		// default wrap width — it must render contiguous so it stays copyable.
+		digest := "c35938688953467518f2a9c613b8a32da647595912a67fa9cf47e41b593831d5"
+		dsValue := "lumeweb DS 44451 13 2 " + digest
 		renderDomainDelegation(output, &ipfs.DomainResponse{
 			Id: 1, Domain: "lumeweb", Namespace: "hns", Status: strPtr("delegated"),
 			Delegation: &ipfs.DNSDelegation{
@@ -1254,6 +1257,10 @@ func TestRenderDomainDelegation(t *testing.T) {
 		assert.Equal(t, 1, strings.Count(out, dsValue))
 		assert.NotContains(t, out, "DS record (paste")
 		assert.NotContains(t, out, "KEY TAG")
+		// The digest is never hard-wrapped mid-value: the full string appears
+		// intact and contiguous so it can be selected and copied whole.
+		assert.Contains(t, out, dsValue)
+		assert.Equal(t, 1, strings.Count(out, digest))
 		// Comma-joined nameservers are split so each is visible/copyable,
 		// matching how the wizard communicates nameservers.
 		assert.Contains(t, out, "ns1.pinner.xyz")
