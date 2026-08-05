@@ -122,6 +122,10 @@ func (m *mockWebsitesHandlerService) VerifyDomain(ctx context.Context, websiteID
 	return nil, nil
 }
 
+func (m *mockWebsitesHandlerService) GetDomainDNSRequirements(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainResponse, error) {
+	return nil, nil
+}
+
 func setupWebsitesHandlerTest(t *testing.T) (*mockWebsitesHandlerService, *configmocks.MockManager) {
 	t.Helper()
 	mockSvc := &mockWebsitesHandlerService{}
