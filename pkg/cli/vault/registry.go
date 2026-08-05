@@ -227,6 +227,41 @@ func SaveProfileState(profileName string, state *ProfileState) error {
 	return nil
 }
 
+// RemoveProfile forgets a profile: it removes the entry from the registry
+// (persisted first) and deletes the profile's local data directory (state,
+// cache DB, recovery seed). It is irreversible. The returned profile was fully
+// removed from the registry even if the data-dir cleanup reports an error.
+func RemoveProfile(profileName string) error {
+	if err := ValidateProfileName(profileName); err != nil {
+		return err
+	}
+
+	reg, err := LoadRegistry()
+	if err != nil {
+		return err
+	}
+	if _, ok := reg.Profiles[profileName]; !ok {
+		return fmt.Errorf("profile %q not found", profileName)
+	}
+
+	// Commit the logical removal first: once the registry no longer lists the
+	// profile, it is forgotten even if disk cleanup below partially fails.
+	delete(reg.Profiles, profileName)
+	if reg.Default == profileName {
+		reg.Default = ""
+	}
+	if err := SaveRegistry(reg); err != nil {
+		return fmt.Errorf("failed to save registry after forgetting profile: %w", err)
+	}
+
+	// Delete the profile's local state/cache/seed directory (best effort-fail
+	// surfaced, but the profile is already gone from the registry).
+	if err := os.RemoveAll(ProfileDir(profileName)); err != nil {
+		return fmt.Errorf("profile %q removed from registry but failed to remove its data directory: %w", profileName, err)
+	}
+	return nil
+}
+
 // SetDefaultProfile sets the profile used by default when --profile and
 // PINNER_PROFILE are both absent. The profile must already exist in the
 // registry; the setting persists to vaults.yaml.
