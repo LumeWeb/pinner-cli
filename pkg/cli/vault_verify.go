@@ -16,8 +16,7 @@ func newVaultVerifyCommand() *cli.Command {
 
 Verifies:
   1. SHA-256 digest is recorded
-  2. Object exists on the Sia indexer
-  3. Object ID matches stored record`,
+  2. Object exists on the Sia indexer`,
 		Action: func(ctx context.Context, c *cli.Command) error {
 			output := setupOutput(c)
 			vaultPath := c.Args().First()

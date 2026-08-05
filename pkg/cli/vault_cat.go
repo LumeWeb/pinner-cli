@@ -27,6 +27,13 @@ Progress and metadata go to stderr.`,
 			}
 			defer svc.Close()
 
+			cfgMgr, err := configManagerFactory()
+			if err != nil {
+				return err
+			}
+			ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetUploadTimeout())
+			defer cancel()
+
 			// Stream directly to stdout — data goes to stdout, progress to stderr
 			if err := svc.Cat(ctx, vaultPath, os.Stdout); err != nil {
 				return err
