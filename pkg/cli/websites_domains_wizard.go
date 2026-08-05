@@ -170,6 +170,9 @@ func (w *DomainAddWizard) executeDelegationSetup(ctx context.Context) error {
 }
 
 // executeVerify runs domain verification and sets the resulting status.
+// A nil (or nil, nil) verification response must not clobber the bound
+// domain result, so the result is only overwritten when verification
+// returns a non-nil response.
 func (w *DomainAddWizard) executeVerify(ctx context.Context) error {
 	result := w.Result()
 	if result == nil {
@@ -182,7 +185,9 @@ func (w *DomainAddWizard) executeVerify(ctx context.Context) error {
 		return err
 	}
 
-	w.SetResult(verifyResult)
+	if verifyResult != nil {
+		w.SetResult(verifyResult)
+	}
 	return nil
 }
 

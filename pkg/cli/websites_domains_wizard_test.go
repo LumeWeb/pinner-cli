@@ -313,12 +313,16 @@ func TestDomainAddWizard_Run(t *testing.T) {
 
 		w := NewDomainAddWizard(mockWebsitesSvc, cfgMgr, mockUI, newTestOutput())
 
-		// Must complete without panicking on the nil verify result.
+		// Must complete without panicking on the nil verify result, and the
+		// previously bound domain must not be clobbered (executeVerify must
+		// only SetResult when verification returns non-nil).
 		res, err := w.Run(context.Background())
 
 		require.NoError(t, err)
 		require.True(t, res.Completed)
 		require.True(t, mockUI.VerifyExecuted)
+		require.NotNil(t, w.Result())
+		require.Equal(t, "s.com", w.Result().Domain)
 	})
 
 	t.Run("step-specific UI calls tracked", func(t *testing.T) {

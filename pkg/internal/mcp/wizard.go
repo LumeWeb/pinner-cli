@@ -744,7 +744,10 @@ func buildDomainSteps(deps DomainWizardDeps) []StepDef {
 				if err != nil {
 					return fmt.Errorf("domain verification failed: %w", err)
 				}
-				w.SetResult(verified)
+				// A nil verification response must not clobber the bound result.
+				if verified != nil {
+					w.SetResult(verified)
+				}
 				return nil
 			},
 			Schema: func(_ *Session) *jsonschema.Schema {
