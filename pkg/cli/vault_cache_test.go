@@ -81,9 +81,10 @@ func TestVaultCacheClear_RemovesDB(t *testing.T) {
 // cacheSyncStub is a VaultService whose Sync drives the passed counter and
 // full flag sequence so the rebuild loop can be exercised deterministically.
 type cacheSyncStub struct {
-	full []bool // per-call full results
-	n    []int  // per-call applied counts
-	i    int
+	full    []bool // per-call full results
+	n       []int  // per-call applied counts
+	syncErr error  // if set, Sync returns this error
+	i       int
 }
 
 func (s *cacheSyncStub) CheckReady(context.Context) error { return nil }
@@ -109,6 +110,9 @@ func (s *cacheSyncStub) Share(context.Context, string, time.Time) (string, error
 	return "", nil
 }
 func (s *cacheSyncStub) Sync(context.Context) (int, bool, error) {
+	if s.syncErr != nil {
+		return 0, false, s.syncErr
+	}
 	i := s.i
 	s.i++
 	return s.n[i], s.full[i], nil
@@ -218,5 +222,63 @@ func TestVaultCacheRebuild_RestoresOnFailure(t *testing.T) {
 	// No stale .old file should remain.
 	if _, rerr := os.Stat(dbPath + ".old"); !os.IsNotExist(rerr) {
 		t.Fatalf("stale .old cache left behind after restore (stat err=%v)", rerr)
+	}
+}
+
+// TestVaultCacheRebuild_RestoresOnSyncError asserts that a sync failure during
+// rebuild restores the moved-aside prior cache instead of leaving an empty
+// fresh DB at dbPath and stranding the good cache at .old.
+func TestVaultCacheRebuild_RestoresOnSyncError(t *testing.T) {
+	home, err := os.MkdirTemp("", "vault-cache-rebuild-syncerr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(home) })
+	overrideHome(t, home)
+
+	if err := vault.SaveRegistry(&vault.VaultRegistry{
+		Default: "personal",
+		Profiles: map[string]vault.ProfileConfig{
+			"personal": {VaultID: "vault:aaa"},
+		},
+	}); err != nil {
+		t.Fatalf("seed registry: %v", err)
+	}
+
+	// Seed an existing complete cache DB.
+	dbPath := vault.ProfileDBPath("personal")
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0700); err != nil {
+		t.Fatalf("mkdir db dir: %v", err)
+	}
+	if err := os.WriteFile(dbPath, []byte("complete-cache"), 0600); err != nil {
+		t.Fatalf("write fake db: %v", err)
+	}
+
+	orig := vaultServiceFactory
+	t.Cleanup(func() { vaultServiceFactory = orig })
+	// Service recreates fine, but the first sync hits a transient network error.
+	vaultServiceFactory = func(profileName, indexerURL string) (vault.VaultService, error) {
+		return &cacheSyncStub{syncErr: errors.New("indexer unreachable")}, nil
+	}
+
+	root := NewRootCommand()
+	var buf bytes.Buffer
+	root.Writer = &buf
+	err = root.Run(context.Background(), []string{"pinner", "vault", "cache", "rebuild"})
+	if err == nil {
+		t.Fatalf("expected rebuild to fail when sync fails")
+	}
+
+	// The prior complete cache must be restored (the fresh DB replaced).
+	data, rerr := os.ReadFile(dbPath)
+	if rerr != nil {
+		t.Fatalf("original cache was not restored on sync failure (read err=%v)", rerr)
+	}
+	if string(data) != "complete-cache" {
+		t.Fatalf("restored cache content mismatch on sync failure: %q", string(data))
+	}
+	// No stale .old file should remain after rollback.
+	if _, rerr := os.Stat(dbPath + ".old"); !os.IsNotExist(rerr) {
+		t.Fatalf("stale .old cache left behind after sync-failure restore (stat err=%v)", rerr)
 	}
 }

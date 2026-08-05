@@ -80,6 +80,14 @@ is rederived. Use this to repair a corrupted or stale local cache.`,
 						count += n
 					}
 					if err != nil {
+						// A sync failure leaves a fresh (possibly empty) cache at
+						// dbPath; restore the moved-aside prior cache so a
+						// transient indexer/network failure doesn't replace a
+						// working index with an empty one.
+						if moved {
+							_ = os.Remove(dbPath)
+							_ = os.Rename(oldPath, dbPath)
+						}
 						return fmt.Errorf("sync during rebuild failed: %w", err)
 					}
 
