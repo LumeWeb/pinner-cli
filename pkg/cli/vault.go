@@ -70,6 +70,7 @@ Stdout contains data or JSON results; progress goes to stderr.`,
 			newVaultStatCommand(),
 			newVaultCatCommand(),
 			newVaultVerifyCommand(),
+			newVaultRmCommand(),
 			newVaultProfileCommand(),
 		},
 	}
