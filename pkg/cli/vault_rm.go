@@ -3,8 +3,10 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/urfave/cli/v3"
+	"go.lumeweb.com/pinner-cli/pkg/cli/wizard"
 )
 
 func newVaultRmCommand() *cli.Command {
@@ -14,7 +16,8 @@ func newVaultRmCommand() *cli.Command {
 		ArgsUsage: "vault:/path/to/file",
 		Description: `Removes a file from both the local vault database and the Sia indexer.
 
-Use --force to skip confirmation.`,
+Use --force to skip confirmation. --agent is not treated as consent;
+deleting in non-interactive mode always requires --force.`,
 		Flags: []cli.Flag{
 			ForceFlag(),
 		},
@@ -25,11 +28,14 @@ Use --force to skip confirmation.`,
 				return fmt.Errorf("vault path required")
 			}
 
-			if !c.Bool(FlagForce) && !c.Bool(FlagAgent) {
+			if !c.Bool(FlagForce) {
+				if wizard.NonInteractive {
+					return fmt.Errorf("deletion requires --force in non-interactive (agent) mode")
+				}
 				// Confirmation prompt
 				output.Printfln("Delete %s? (y/N)", vaultPath)
 				var resp string
-				fmt.Scanln(&resp)
+				fmt.Fscanln(os.Stdin, &resp)
 				if resp != "y" && resp != "Y" {
 					output.Printfln("Cancelled.")
 					return nil
