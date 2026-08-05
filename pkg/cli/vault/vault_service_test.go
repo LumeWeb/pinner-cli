@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -1711,6 +1712,42 @@ func TestList_DBErrorIsPropagated(t *testing.T) {
 	}
 	if _, err := svc.List(ctx, "vault:/docs"); err == nil {
 		t.Fatal("expected List to propagate the DB error, got nil (error was swallowed as empty)")
+	}
+}
+
+// TestResolveFile_DBErrorNotNotFound regression: the resolveFile helper must
+// only classify a genuinely-missing path as ErrNotFound. A real DB/transient
+// failure during directory lookup must be surfaced as a distinct error, so a
+// caller's overwrite-guard (errors.Is(err, ErrNotFound) == free path) never
+// treats a DB outage as if the path were merely missing.
+func TestResolveFile_DBErrorNotNotFound(t *testing.T) {
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "vault.db")
+	db, err := OpenDB(dbPath)
+	if err != nil {
+		t.Fatalf("OpenDB failed: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("db.DB(): %v", err)
+	}
+	defer sqlDB.Close()
+
+	// Create a directory so the path resolves past "missing" semantics.
+	svc := &vaultService{db: db, sdk: &fakeSDK{t: t}, appKey: types.PrivateKey{}}
+	if _, err := svc.getOrCreateDirectory("/docs"); err != nil {
+		t.Fatalf("getOrCreateDirectory: %v", err)
+	}
+
+	// Close the connection: getDirectoryID now fails with a real DB error,
+	// which resolveFile (via Get) must NOT reclassify as ErrNotFound.
+	if err := sqlDB.Close(); err != nil {
+		t.Fatalf("close db: %v", err)
+	}
+	if err := svc.Get(ctx, "vault:/docs/x.txt", io.Discard); err == nil {
+		t.Fatal("expected Get to propagate the DB error, got nil")
+	} else if errors.Is(err, ErrNotFound) {
+		t.Fatalf("Get returned ErrNotFound for a DB outage, want a distinct DB error: %v", err)
 	}
 }
 

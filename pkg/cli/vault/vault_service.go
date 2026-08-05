@@ -848,18 +848,26 @@ func (s *vaultService) findCurrentFile(name string, dirID *uint) (File, error) {
 
 // resolveFile resolves a vault path to its current live File record. It parses
 // the path, resolves (or confirms) the parent directory, and loads the current
-// non-tombstoned file row for that name. A missing directory or missing file
-// both yield an ErrNotFound-wrapped error so callers can distinguish
-// not-found via errors.Is. Used by Get, Verify, Remove, and Share, which all
-// previously duplicated this resolve sequence inline.
+// non-tombstoned file row for that name. A genuinely-missing directory or
+// missing file yields an ErrNotFound-wrapped error (distinguishable via
+// errors.Is); any genuine DB/transient failure is returned as a distinct,
+// non-ErrNotFound error so callers never mistake a DB outage for a free path.
+// Used by Get, Verify, Remove, and Share, which all previously duplicated this
+// resolve sequence inline.
 func (s *vaultService) resolveFile(vp *VaultPath) (File, error) {
 	dirID, err := s.getDirectoryID(vp.Directory)
 	if err != nil {
-		return File{}, fmt.Errorf("%w: %s", ErrNotFound, vp.Raw)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return File{}, fmt.Errorf("%w: %s", ErrNotFound, vp.Raw)
+		}
+		return File{}, fmt.Errorf("failed to resolve directory %q: %w", vp.Directory, err)
 	}
 	f, err := s.findCurrentFile(vp.Name, dirID)
 	if err != nil {
-		return File{}, fmt.Errorf("%w: %s", ErrNotFound, vp.Raw)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return File{}, fmt.Errorf("%w: %s", ErrNotFound, vp.Raw)
+		}
+		return File{}, fmt.Errorf("failed to resolve file %q: %w", vp.Raw, err)
 	}
 	return f, nil
 }
