@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"io"
+	"os"
 	"time"
 
 	"github.com/pterm/pterm"
@@ -23,32 +24,45 @@ type progressWriter struct {
 // newProgressWriter creates a progress-tracking writer.
 // total is the expected byte count (0 for unknown).
 // label is the prefix shown on the progress bar (e.g. "Downloading").
+// The bar is only rendered on a terminal and is written to stderr; on
+// non-interactive/piped runs it is skipped entirely so redirected stdout
+// stays clean.
 func newProgressWriter(w io.Writer, total int64, label string) *progressWriter {
-	bar, _ := pterm.DefaultProgressbar.
-		WithTotal(int(total)).
-		WithTitle(label).
-		WithRemoveWhenDone(true).
-		Start()
-	return &progressWriter{
+	pw := &progressWriter{
 		writer:  w,
-		bar:     bar,
 		start:   time.Now(),
 		total:   total,
 		lastUpd: time.Now(),
 	}
+	if !isTerminal() {
+		return pw
+	}
+	bar, _ := pterm.DefaultProgressbar.
+		WithTotal(int(total)).
+		WithTitle(label).
+		WithRemoveWhenDone(true).
+		WithWriter(os.Stderr).
+		Start()
+	pw.bar = bar
+	return pw
 }
 
 func (pw *progressWriter) Write(p []byte) (int, error) {
 	n, err := pw.writer.Write(p)
 	if n > 0 {
 		pw.written += int64(n)
-		pw.bar.Add(n)
+		if pw.bar != nil {
+			pw.bar.Add(n)
+		}
 		pw.updateTitle()
 	}
 	return n, err
 }
 
 func (pw *progressWriter) updateTitle() {
+	if pw.bar == nil {
+		return
+	}
 	now := time.Now()
 	if now.Sub(pw.lastUpd) < 100*time.Millisecond {
 		return
@@ -83,31 +97,41 @@ type progressReader struct {
 }
 
 func newProgressReader(r io.Reader, total int64, label string) *progressReader {
+	pr := &progressReader{
+		reader:   r,
+		start:    time.Now(),
+		total:    total,
+		lastUpd:  time.Now(),
+	}
+	if !isTerminal() {
+		return pr
+	}
 	bar, _ := pterm.DefaultProgressbar.
 		WithTotal(int(total)).
 		WithTitle(label).
 		WithRemoveWhenDone(true).
+		WithWriter(os.Stderr).
 		Start()
-	return &progressReader{
-		reader:  r,
-		bar:     bar,
-		start:   time.Now(),
-		total:   total,
-		lastUpd: time.Now(),
-	}
+	pr.bar = bar
+	return pr
 }
 
 func (pr *progressReader) Read(p []byte) (int, error) {
 	n, err := pr.reader.Read(p)
 	if n > 0 {
 		pr.read += int64(n)
-		pr.bar.Add(n)
+		if pr.bar != nil {
+			pr.bar.Add(n)
+		}
 		pr.updateTitle()
 	}
 	return n, err
 }
 
 func (pr *progressReader) updateTitle() {
+	if pr.bar == nil {
+		return
+	}
 	now := time.Now()
 	if now.Sub(pr.lastUpd) < 100*time.Millisecond {
 		return

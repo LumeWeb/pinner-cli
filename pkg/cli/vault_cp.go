@@ -139,8 +139,15 @@ func vaultUpload(ctx context.Context, c *cli.Command, output Output, localPath, 
 }
 
 func vaultDownload(ctx context.Context, c *cli.Command, output Output, vaultPath, localPath string) error {
-	// Expand directory destinations: ./ → ./<filename from vault>
+	// Expand directory destinations: ./ → ./<filename from vault>, and a
+	// plain existing directory → <dir>/<filename from vault>.
 	if localPath == "." || strings.HasSuffix(localPath, "/") {
+		vp, err := vault.ParseVaultPath(vaultPath)
+		if err != nil {
+			return fmt.Errorf("invalid vault path: %w", err)
+		}
+		localPath = filepath.Join(localPath, vp.Name)
+	} else if fi, err := os.Stat(localPath); err == nil && fi.IsDir() {
 		vp, err := vault.ParseVaultPath(vaultPath)
 		if err != nil {
 			return fmt.Errorf("invalid vault path: %w", err)
