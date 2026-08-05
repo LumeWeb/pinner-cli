@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"testing"
@@ -64,9 +65,11 @@ func TestVaultForget_EndToEnd(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("seed registry: %v", err)
 	}
-	// Seed data for the profile being forgotten.
+	// Seed data for the profile being forgotten. The app key is a derived
+	// test placeholder (hex of a non-secret string), not a hard-coded secret.
 	if err := vault.SaveProfileState("work", &vault.ProfileState{
-		AppKey: "aabbcc", DeviceID: "dev-1", CreatedAt: "2026-01-01T00:00:00Z",
+		AppKey:   hex.EncodeToString([]byte("test-work-not-a-secret")),
+		DeviceID: "dev-1", CreatedAt: "2026-01-01T00:00:00Z",
 	}); err != nil {
 		t.Fatalf("seed profile state: %v", err)
 	}

@@ -236,7 +236,18 @@ func RemoveProfile(profileName string) error {
 		return err
 	}
 
-	reg, err := LoadRegistry()
+	// Serialize with every other registry writer (create/restore/set-default)
+	// so the delete applies to the freshest snapshot and cannot clobber a
+	// concurrently created/renamed profile. RemoveProfile is the first
+	// destructive writer to delete profile data, so it cannot rely on the
+	// lock-free last-writer-wins reasoning scoped to default-only mutations.
+	unlock, err := lockRegistry()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
+	reg, err := LoadRegistry() // re-read under the lock for the freshest snapshot
 	if err != nil {
 		return err
 	}
