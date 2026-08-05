@@ -125,18 +125,27 @@ The recovery seed is displayed ONCE and must be saved securely.`,
 				}
 			}
 
-			if c.Bool(FlagAgent) {
-				// Write the mnemonic to a 0600 file so it never appears in
-				// stdout, logs, or the agent's context window.
-				seedPath := vault.SeedPath(profileName)
-				seedDir := filepath.Dir(seedPath)
-				if err := os.MkdirAll(seedDir, 0700); err != nil {
-					return fmt.Errorf("failed to create seed directory: %w", err)
-				}
-				if err := os.WriteFile(seedPath, []byte(mnemonic+"\n"), 0600); err != nil {
-					return fmt.Errorf("failed to save recovery seed: %w", err)
-				}
+			// Persist the freshly-generated recovery seed to a 0600 file
+			// IMMEDIATELY after generation, BEFORE any remote approval /
+			// registration or local registration writes. If approval succeeds
+			// remotely but a later step (SaveProfileState, OpenDB,
+			// SaveRegistry) fails, the vault exists server-side but the
+			// one-time seed must already be safe on disk — otherwise a re-run
+			// generates a different mnemonic and orphans the first vault
+			// unrecoverably. The seed file is also the recovery path for
+			// agent-mode restores from this device. It is written only when no
+			// pending seed already exists (guarded above from Agent, and a
+			// fresh profile here otherwise).
+			seedPath := vault.SeedPath(profileName)
+			seedDir := filepath.Dir(seedPath)
+			if err := os.MkdirAll(seedDir, 0700); err != nil {
+				return fmt.Errorf("failed to create seed directory: %w", err)
+			}
+			if err := os.WriteFile(seedPath, []byte(mnemonic+"\n"), 0600); err != nil {
+				return fmt.Errorf("failed to save recovery seed: %w", err)
+			}
 
+			if c.Bool(FlagAgent) {
 				// Record the profile as "pending" in the registry so a
 				// repeat `vault create --agent` hits the profile-exists guard
 				// above rather than silently overwriting the seed.
