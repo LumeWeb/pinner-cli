@@ -260,8 +260,13 @@ The recovery seed is displayed ONCE and must be saved securely.`,
 			// survive a mid-flow failure) but must not linger on disk now
 			// that the vault is created and the phrase has been shown to the
 			// user. In agent mode the seed file is intentionally left for the
-			// restore command to consume after it runs.
-			_ = os.Remove(vault.SeedPath(profileName))
+			// restore command to consume after it runs. If removal fails,
+			// surface it — the plaintext master mnemonic lingering on disk is
+			// a security concern the user must act on, even though the vault
+			// itself is already created.
+			if err := os.Remove(vault.SeedPath(profileName)); err != nil {
+				output.Printfln("Warning: could not remove the recovery seed file at %s (%v). Remove it manually to avoid leaving your plaintext master mnemonic on disk.", vault.SeedPath(profileName), err)
+			}
 			output.Printfln("Vault created.")
 			output.Printfln("Vault ID: %s", vaultID)
 			output.Printfln("Device registered: %s", deviceName)
