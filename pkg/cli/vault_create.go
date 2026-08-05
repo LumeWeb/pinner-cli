@@ -258,6 +258,13 @@ The recovery seed is displayed ONCE and must be saved securely.`,
 			output.Printfln("This phrase controls access to the vault.")
 			output.Printfln("Pinner cannot recover it. Save it securely.")
 			output.Printfln("")
+			// Consume the seed file on successful interactive create: the
+			// plaintext master recovery mnemonic was persisted early (to
+			// survive a mid-flow failure) but must not linger on disk now
+			// that the vault is created and the phrase has been shown to the
+			// user. In agent mode the seed file is intentionally left for the
+			// restore command to consume after it runs.
+			_ = os.Remove(vault.SeedPath(profileName))
 			output.Printfln("Vault created.")
 			output.Printfln("Vault ID: %s", vaultID)
 			output.Printfln("Device registered: %s", deviceName)
