@@ -518,3 +518,77 @@ func TestSaveProfileState_FilePermissions(t *testing.T) {
 		t.Errorf("state file permissions = %o, want 0600", info.Mode().Perm())
 	}
 }
+
+func TestSetDefaultProfile_Persists(t *testing.T) {
+	_, cleanup := withTempHomeDir(t)
+	defer cleanup()
+
+	reg := &VaultRegistry{
+		Profiles: map[string]ProfileConfig{
+			"personal": {VaultID: "vault:aaa"},
+			"work":     {VaultID: "vault:bbb"},
+		},
+	}
+	if err := SaveRegistry(reg); err != nil {
+		t.Fatalf("SaveRegistry failed: %v", err)
+	}
+
+	if err := SetDefaultProfile("work"); err != nil {
+		t.Fatalf("SetDefaultProfile failed: %v", err)
+	}
+
+	loaded, err := LoadRegistry()
+	if err != nil {
+		t.Fatalf("LoadRegistry failed: %v", err)
+	}
+	if loaded.Default != "work" {
+		t.Errorf("Default = %q, want %q", loaded.Default, "work")
+	}
+}
+
+func TestSetDefaultProfile_ResolveUsesDefault(t *testing.T) {
+	_, cleanup := withTempHomeDir(t)
+	defer cleanup()
+
+	reg := &VaultRegistry{
+		Profiles: map[string]ProfileConfig{
+			"personal": {VaultID: "vault:aaa"},
+			"work":     {VaultID: "vault:bbb"},
+		},
+	}
+	if err := SaveRegistry(reg); err != nil {
+		t.Fatalf("SaveRegistry failed: %v", err)
+	}
+
+	if err := SetDefaultProfile("work"); err != nil {
+		t.Fatalf("SetDefaultProfile failed: %v", err)
+	}
+
+	// With no --profile and no PINNER_PROFILE, ResolveProfile should pick the
+	// default we just set.
+	got, err := ResolveProfile("")
+	if err != nil {
+		t.Fatalf("ResolveProfile failed: %v", err)
+	}
+	if got != "work" {
+		t.Errorf("ResolveProfile = %q, want %q", got, "work")
+	}
+}
+
+func TestSetDefaultProfile_MissingProfile(t *testing.T) {
+	_, cleanup := withTempHomeDir(t)
+	defer cleanup()
+
+	reg := &VaultRegistry{
+		Profiles: map[string]ProfileConfig{
+			"personal": {VaultID: "vault:aaa"},
+		},
+	}
+	if err := SaveRegistry(reg); err != nil {
+		t.Fatalf("SaveRegistry failed: %v", err)
+	}
+
+	if err := SetDefaultProfile("does-not-exist"); err == nil {
+		t.Fatal("expected error for setting default to a non-existent profile")
+	}
+}
