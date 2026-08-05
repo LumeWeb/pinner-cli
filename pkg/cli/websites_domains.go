@@ -541,15 +541,33 @@ func websitesDomainsDNSRequirements(ctx context.Context, cmd websitesCommandGett
 		return output.PrintJSON(result)
 	}
 
-	renderDomainDelegation(output, result)
+	// Determine whether Pinner manages this website's DNS (authoritative side
+	// served by Pinner), so the renderer can omit authoritative records the
+	// user does not need to configure.
+	managed := isWebsiteDNSManaged(ctx, websitesService, websiteID)
+
+	renderDomainDelegation(output, result, managed)
 	return nil
+}
+
+// isWebsiteDNSManaged reports whether Pinner manages DNS for the given website
+// (the authoritative side is served by Pinner). A fetch failure is treated as
+// not-managed so dns-requirements still renders, just without the omission.
+func isWebsiteDNSManaged(ctx context.Context, svc WebsitesService, websiteID string) bool {
+	website, err := svc.Get(ctx, websiteID)
+	if err != nil || website == nil {
+		return false
+	}
+	return website.DnsHostingEnabled
 }
 
 // renderDomainDelegation prints the DNS delegation bundle the server computes
 // for a domain. Rendering is driver-based: the namespace selects a
 // context-specific driver (HNS, ICANN, ...) with a neutral generic fallback,
-// mirroring the server's per-namespace DomainProvider design.
-func renderDomainDelegation(output Output, result *ipfs.DomainResponse) {
+// mirroring the server's per-namespace DomainProvider design. managed indicates
+// whether Pinner manages the domain's DNS, so drivers can omit authoritative
+// records the user does not need to configure.
+func renderDomainDelegation(output Output, result *ipfs.DomainResponse, managed bool) {
 	output.Printfln("DNS requirements for %s", result.Domain)
 
 	status := ""
@@ -569,5 +587,5 @@ func renderDomainDelegation(output Output, result *ipfs.DomainResponse) {
 		return
 	}
 
-	defaultDelegationDriver.Render(output, result)
+	defaultDelegationDriver.Render(output, result, managed)
 }

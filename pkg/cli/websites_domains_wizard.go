@@ -170,7 +170,18 @@ func (w *DomainAddWizard) executeDelegationSetup(ctx context.Context) error {
 		return nil
 	}
 
-	renderDomainDelegation(w.output, delegResult)
+	// Whether Pinner manages this website's DNS, derived from the cached
+	// website list fetched during the selection step.
+	managed := false
+	wID := w.WebsiteID()
+	for _, ws := range w.websites {
+		if fmt.Sprintf("%d", ws.Id) == wID {
+			managed = ws.DnsHostingEnabled
+			break
+		}
+	}
+
+	renderDomainDelegation(w.output, delegResult, managed)
 	return nil
 }
 
