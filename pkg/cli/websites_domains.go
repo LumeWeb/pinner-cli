@@ -19,19 +19,17 @@ func newWebsitesDomainsCommand() *cli.Command {
 		Description: `Manage domain bindings for a website. A website can have multiple domains
 bound to it across ICANN and HNS namespaces.
 
-ARGUMENT ORDER: <website> is the FIRST argument (a website's numeric ID or its
-primary domain name), and the domain being acted on is the SECOND argument.
+Commands that act on an existing binding (remove, verify, dns-requirements)
+take only the domain, since a domain belongs to exactly one website. 'add'
+takes a domain and optionally the website to bind it to.
 
 Examples:
   pinner websites domains list example.com
-  pinner websites domains add example.com staging.example.com
-  pinner websites domains add example.com mydomain --namespace hns
-  pinner websites domains rm example.com staging.example.com
-  pinner websites domains verify example.com staging.example.com`,
+  pinner websites domains add staging.example.com
+  pinner websites domains rm staging.example.com
+  pinner websites domains verify staging.example.com
+  pinner websites domains dns-requirements mydomain`,
 
-		// Note: the first argument selects the WEBSITE, the second is the DOMAIN.
-		// Domain names accept a properly-terminated FQDN (e.g. "mydomain.") and
-		// match the stored bare name case-insensitively.
 		Commands: []*cli.Command{
 			newWebsitesDomainsListCommand(),
 			newWebsitesDomainsAddCommand(),
@@ -84,13 +82,13 @@ The namespace determines which DNS system manages the domain:
 The domain should be the bare name without a TLD suffix (e.g. 'mydomain'
 not 'mydomain.hns'). The namespace flag determines how it's registered.
 
-The website is selected by the --website flag, or the first positional
-argument if --website is omitted.
+The website is selected by the --website flag, the first positional
+argument, or automatically when there is exactly one website.
 
 Examples:
+  pinner websites domains add staging.example.com
   pinner websites domains add example.com staging.example.com
-  pinner websites domains add --website example.com staging.example.com
-  pinner websites domains add example.com mydomain --namespace hns
+  pinner websites domains add mydomain --namespace hns
   pinner websites domains add 123 staging.example.com --json`,
 		Action: withContext(func(ctx context.Context, cc *commandContext) error {
 			return websitesDomainsAdd(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
@@ -102,24 +100,18 @@ func newWebsitesDomainsRmCommand() *cli.Command {
 	return &cli.Command{
 		Name:      "remove",
 		Aliases:   []string{"rm"},
-		Usage:     "Remove a domain binding from a website",
-		ArgsUsage: "[<website-id-or-domain>] <domain>",
-		Flags: []cli.Flag{
-			WebsiteFlag(),
-		},
-		Description: `Removes a domain binding from a website.
+		Usage:     "Remove a domain binding from its website",
+		ArgsUsage: "<domain>",
+		Description: `Removes a domain binding. The domain belongs to exactly one website,
+which is resolved automatically.
 
 The domain argument can be either the domain name (e.g. staging.example.com)
-or its numeric ID. Domain names are resolved automatically.
-
-The website is selected by the --website flag, or the first positional
-argument if --website is omitted.
+or its numeric binding ID.
 
 Examples:
-  pinner websites domains rm example.com staging.example.com
-  pinner websites domains rm --website example.com staging.example.com
-  pinner websites domains rm 123 staging.example.com
-  pinner websites domains rm example.com 42`,
+  pinner websites domains rm staging.example.com
+  pinner websites domains rm 42`,
+
 		Action: withContext(func(ctx context.Context, cc *commandContext) error {
 			return websitesDomainsRm(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
 		}),
@@ -130,22 +122,16 @@ func newWebsitesDomainsVerifyCommand() *cli.Command {
 	return &cli.Command{
 		Name:      "verify",
 		Usage:     "Trigger domain verification",
-		ArgsUsage: "[<website-id-or-domain>] <domain>",
-		Flags: []cli.Flag{
-			WebsiteFlag(),
-		},
-		Description: `Triggers verification of a domain binding.
+		ArgsUsage: "<domain>",
+		Description: `Triggers verification of a domain binding. The domain belongs to
+exactly one website, which is resolved automatically.
 
 The domain argument can be either the domain name (e.g. staging.example.com)
-or its numeric ID. Domain names are resolved automatically.
-
-The website is selected by the --website flag, or the first positional
-argument if --website is omitted.
+or its numeric binding ID.
 
 Examples:
-  pinner websites domains verify example.com staging.example.com
-  pinner websites domains verify --website example.com staging.example.com
-  pinner websites domains verify 123 staging.example.com --json`,
+  pinner websites domains verify staging.example.com
+  pinner websites domains verify 42 --json`,
 		Action: withContext(func(ctx context.Context, cc *commandContext) error {
 			return websitesDomainsVerify(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
 		}),
@@ -156,44 +142,38 @@ func newWebsitesDomainsDNSRequirementsCommand() *cli.Command {
 	return &cli.Command{
 		Name:      "dns-requirements",
 		Usage:     "Show the DNS records needed to complete domain delegation",
-		ArgsUsage: "[<website-id-or-domain>] <domain>",
-		Flags: []cli.Flag{
-			WebsiteFlag(),
-		},
+		ArgsUsage: "<domain>",
 		Description: `Shows the DNS records a user must publish to complete delegation for a domain.
+The domain belongs to exactly one website, which is resolved automatically.
 
 For HNS namespaces this is the delegation bundle the backend generates: parent
 records (NS/GLUE/DS) to publish in the HNS wallet and authoritative records
 (NS/TLSA) to configure on the nameserver.
 
 The domain argument can be either the domain name (e.g. staging.example.com)
-or its numeric ID. Domain names are resolved automatically.
-
-The website is selected by the --website flag, or the first positional
-argument if --website is omitted.
+or its numeric binding ID.
 
 Examples:
-  pinner websites domains dns-requirements example.com mydomain
-  pinner websites domains dns-requirements --website example.com mydomain
-  pinner websites domains dns-requirements 123 staging.example.com --json`,
+  pinner websites domains dns-requirements mydomain
+  pinner websites domains dns-requirements 42 --json`,
 		Action: withContext(func(ctx context.Context, cc *commandContext) error {
 			return websitesDomainsDNSRequirements(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
 		}),
 	}
 }
 
-// resolveDomainCommandTarget resolves the website and domain arguments for the
-// `websites domains` add/remove/verify commands.
+// resolveAddTarget resolves the website and domain arguments for the
+// `websites domains add` command.
 //
-// The website can be supplied via the --website flag or the first positional
-// argument. When --website is given, the only positional is the domain.
-//
-// commandName is the subcommand name (add/rm/verify) used in usage errors.
-func resolveDomainCommandTarget(ctx context.Context, websitesService WebsitesService, cmd websitesCommandGetter, commandName string) (websiteID string, domainArg string, err error) {
+// The website may be supplied via the --website flag or the first positional
+// argument. When neither is given and the user supplies only a single <domain>,
+// the website is auto-selected — but only when there is exactly one website;
+// with multiple websites an error asks the caller to name the target.
+func resolveAddTarget(ctx context.Context, websitesService WebsitesService, cmd websitesCommandGetter) (websiteID string, domain string, err error) {
 	args := cmd.Args()
 	flagWebsite := cmd.String(FlagWebsite)
 
-	usage := fmt.Sprintf("usage: pinner websites domains %s [<website-id-or-domain>] <domain>", commandName)
+	usage := "usage: pinner websites domains add [<website-id-or-domain>] <domain>"
 
 	switch {
 	case flagWebsite != "" && args.Len() > 1:
@@ -206,19 +186,101 @@ func resolveDomainCommandTarget(ctx context.Context, websitesService WebsitesSer
 		if err != nil {
 			return "", "", err
 		}
-		domainArg = args.First()
-		return websiteID, domainArg, nil
-	default:
-		if args.Len() < 2 {
-			return "", "", fmt.Errorf("domain argument is required (%s)", usage)
+		return websiteID, args.First(), nil
+	case args.Len() == 0:
+		return "", "", fmt.Errorf("domain argument is required (%s)", usage)
+	case args.Len() == 1:
+		// Single <domain> and no website: auto-select when there's exactly one.
+		websites, err := websitesService.List(ctx)
+		if err != nil {
+			return "", "", fmt.Errorf("failed to list websites: %w", err)
 		}
+		switch len(websites) {
+		case 0:
+			return "", "", fmt.Errorf("no websites found; create a website first")
+		case 1:
+			return fmt.Sprintf("%d", websites[0].Id), args.First(), nil
+		default:
+			return "", "", fmt.Errorf("multiple websites found (%d); specify which website to add the domain to (%s)", len(websites), usage)
+		}
+	default:
 		websiteID, err = resolveWebsiteID(ctx, websitesService, args.First())
 		if err != nil {
 			return "", "", err
 		}
-		domainArg = args.Get(1)
-		return websiteID, domainArg, nil
+		return websiteID, args.Get(1), nil
 	}
+}
+
+// resolveDomainArg returns the single <domain> argument for the
+// existing-binding commands (rm/verify/dns-requirements), erroring when it
+// is missing.
+func resolveDomainArg(cmd websitesCommandGetter, commandName string) (string, error) {
+	args := cmd.Args()
+	if args.Len() == 0 {
+		return "", fmt.Errorf("domain argument is required (usage: pinner websites domains %s <domain>)", commandName)
+	}
+	if args.Len() > 1 {
+		return "", fmt.Errorf("unexpected extra argument %q (usage: pinner websites domains %s <domain>)", args.Get(1), commandName)
+	}
+	return args.First(), nil
+}
+
+// resolveDomainBinding resolves a single <domain> argument to its owning
+// website and domain ID for the rm/verify/dns-requirements commands.
+//
+// A domain binding is unique across websites, so naming the website is
+// redundant. This scans the user's website domain bindings to find the
+// owning website, matching by domain name first and numeric domain ID second,
+// and returns that website's ID together with the binding's domain ID.
+func resolveDomainBinding(ctx context.Context, websitesService WebsitesService, domainArg string) (websiteID string, domainID string, err error) {
+	websites, err := websitesService.List(ctx)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to list websites: %w", err)
+	}
+
+	// Match by domain name first across all websites, then fall back to a
+	// numeric ID match. Two passes (rather than a single OR) keep name
+	// matching priority: it protects namespaces like HNS where a domain name
+	// can itself be numeric (e.g. "123"), so an unrelated binding with ID
+	// "123" can't shadow a real domain named "123" depending on iteration
+	// order.
+	var idMatchWebsite, idMatchDomain string
+	var deferredErr error
+
+	for _, w := range websites {
+		wID := fmt.Sprintf("%d", w.Id)
+		domains, lerr := websitesService.ListDomains(ctx, wID)
+		if lerr != nil {
+			// Defer the listing error rather than aborting the scan: a
+			// transient failure on an unrelated website must not make an
+			// unambiguously name-matched domain unresolvable. It only blocks
+			// the numeric-ID fallback, which is otherwise ambiguous.
+			if deferredErr == nil {
+				deferredErr = fmt.Errorf("failed to look up domain on website %s: %w", wID, lerr)
+			}
+			continue
+		}
+		for _, d := range domains {
+			if dnsname.Equal(d.Domain, domainArg) {
+				return wID, fmt.Sprintf("%d", d.Id), nil
+			}
+			if idMatchDomain == "" && fmt.Sprintf("%d", d.Id) == domainArg {
+				idMatchWebsite, idMatchDomain = wID, fmt.Sprintf("%d", d.Id)
+			}
+		}
+	}
+
+	// Only fall back to a numeric ID match on a clean scan; a deferred
+	// listing error could have hidden a conflicting binding.
+	if idMatchDomain != "" && deferredErr == nil {
+		return idMatchWebsite, idMatchDomain, nil
+	}
+	if deferredErr != nil {
+		return "", "", deferredErr
+	}
+
+	return "", "", fmt.Errorf("domain %q not found bound to any website", domainArg)
 }
 
 // resolveDomainID resolves a domain argument to its numeric ID.
@@ -318,7 +380,7 @@ func websitesDomainsAdd(ctx context.Context, cmd websitesCommandGetter, output O
 		return err
 	}
 
-	websiteID, domain, err := resolveDomainCommandTarget(ctx, websitesService, cmd, "add")
+	websiteID, domain, err := resolveAddTarget(ctx, websitesService, cmd)
 	if err != nil {
 		return err
 	}
@@ -373,12 +435,12 @@ func websitesDomainsRm(ctx context.Context, cmd websitesCommandGetter, output Ou
 		return err
 	}
 
-	websiteID, domainArg, err := resolveDomainCommandTarget(ctx, websitesService, cmd, "rm")
+	domainArg, err := resolveDomainArg(cmd, "rm")
 	if err != nil {
 		return err
 	}
 
-	domainID, err := resolveDomainID(ctx, websitesService, websiteID, domainArg)
+	websiteID, domainID, err := resolveDomainBinding(ctx, websitesService, domainArg)
 	if err != nil {
 		return err
 	}
@@ -407,12 +469,12 @@ func websitesDomainsVerify(ctx context.Context, cmd websitesCommandGetter, outpu
 		return err
 	}
 
-	websiteID, domainArg, err := resolveDomainCommandTarget(ctx, websitesService, cmd, "verify")
+	domainArg, err := resolveDomainArg(cmd, "verify")
 	if err != nil {
 		return err
 	}
 
-	domainID, err := resolveDomainID(ctx, websitesService, websiteID, domainArg)
+	websiteID, domainID, err := resolveDomainBinding(ctx, websitesService, domainArg)
 	if err != nil {
 		return err
 	}
@@ -457,12 +519,12 @@ func websitesDomainsDNSRequirements(ctx context.Context, cmd websitesCommandGett
 		return err
 	}
 
-	websiteID, domainArg, err := resolveDomainCommandTarget(ctx, websitesService, cmd, "dns-requirements")
+	domainArg, err := resolveDomainArg(cmd, "dns-requirements")
 	if err != nil {
 		return err
 	}
 
-	domainID, err := resolveDomainID(ctx, websitesService, websiteID, domainArg)
+	websiteID, domainID, err := resolveDomainBinding(ctx, websitesService, domainArg)
 	if err != nil {
 		return err
 	}

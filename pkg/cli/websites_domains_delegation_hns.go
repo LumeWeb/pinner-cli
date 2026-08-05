@@ -14,7 +14,7 @@ func (h *hnsDelegationDriver) Render(output Output, result *ipfs.DomainResponse)
 	renderDelegationInstructions(output, d)
 	renderDelegationMode(output, d)
 	printDelegationRecords(output, "Parent records (publish in your HNS wallet / resource)", d.ParentRecords)
-	renderDelegationDS(output, d)
+	renderDelegationDS(output, d, "into your HNS wallet")
 
 	// Authoritative records are only self-managed in delegated mode; in inline
 	// mode they are served via synthetic nameserver names.

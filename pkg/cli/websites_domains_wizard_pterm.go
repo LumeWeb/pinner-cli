@@ -79,10 +79,8 @@ func (ui *PTermDomainsUI) ShowCompletion() error {
 		msg += "  • Namespace:" + domain.Namespace + "\n"
 		msg += "  • Status:   " + status + "\n\n"
 		msg += "Next steps:\n"
-		msg += "  • View delegation: pinner websites domains dns-requirements " +
-			ui.wizard.WebsiteDomain() + " " + domain.Domain + "\n"
-		msg += "  • Verify: pinner websites domains verify " +
-			ui.wizard.WebsiteDomain() + " " + domain.Domain + "\n\n"
+		msg += "  • View delegation: pinner websites domains dns-requirements " + domain.Domain + "\n"
+		msg += "  • Verify: pinner websites domains verify " + domain.Domain + "\n\n"
 	} else {
 		msg += "No domain binding was recorded.\n\n"
 	}
@@ -279,8 +277,8 @@ func (ui *PTermDomainsUI) ExecuteVerifyStep(ctx context.Context, w *DomainAddWiz
 	if w.VerifyAttempts() >= maxVerifyAttempts {
 		pterm.Warning.Println("Validation is not yet complete. It may take time for DNS to propagate.")
 		pterm.Println()
-		pterm.Info.Printf("You can retry later: pinner websites domains verify %s %s\n",
-			w.WebsiteDomain(), result.Domain)
+		pterm.Info.Printf("You can retry later: pinner websites domains verify %s\n",
+			result.Domain)
 		w.SetVerifyRetry(false)
 		return nil
 	}

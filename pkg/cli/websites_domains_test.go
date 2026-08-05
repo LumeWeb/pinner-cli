@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -203,15 +204,48 @@ func TestWebsitesDomainsAdd(t *testing.T) {
 			errContains: `invalid namespace "invalid"`,
 		},
 		{
-			name: "missing args",
+			name: "single domain auto-selects sole website",
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
 				svc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
 					return []ipfs.WebsiteItem{
 						{Id: 1, Domain: "example.com"},
 					}, nil
 				}
+				svc.BindDomainFn = func(ctx context.Context, websiteID string, req ipfs.DomainRequest) (*ipfs.DomainResponse, error) {
+					return &ipfs.DomainResponse{Id: 1, Domain: req.Domain, Namespace: req.Namespace}, nil
+				}
 			},
-			cmd:         newMockCommand().withArgs("example.com"),
+			cmd:     newMockCommand().withArgs("mydomain.com").withString("namespace", "icann"),
+			wantErr: false,
+		},
+		{
+			name: "single domain with multiple websites requires website",
+			setupMocks: func(svc *mockWebsitesServiceForCLI) {
+				svc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+					return []ipfs.WebsiteItem{
+						{Id: 1, Domain: "example.com"},
+						{Id: 2, Domain: "other.com"},
+					}, nil
+				}
+			},
+			cmd:         newMockCommand().withArgs("mydomain.com").withString("namespace", "icann"),
+			wantErr:     true,
+			errContains: "multiple websites found",
+		},
+		{
+			name: "no websites",
+			setupMocks: func(svc *mockWebsitesServiceForCLI) {
+				svc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+					return nil, nil
+				}
+			},
+			cmd:         newMockCommand().withArgs("mydomain.com"),
+			wantErr:     true,
+			errContains: "no websites found",
+		},
+		{
+			name:        "missing args",
+			cmd:         newMockCommand(),
 			wantErr:     true,
 			errContains: "usage: pinner websites domains add",
 		},
@@ -288,6 +322,9 @@ func TestWebsitesDomainsRm(t *testing.T) {
 		{
 			name: "successful remove domain by numeric ID",
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
+				svc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+					return []ipfs.WebsiteItem{{Id: 1, Domain: "example.com"}}, nil
+				}
 				svc.ListDomainsFn = func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
 					return []ipfs.DomainResponse{
 						{Id: 42, Domain: "staging.example.com", Namespace: "icann"},
@@ -297,13 +334,16 @@ func TestWebsitesDomainsRm(t *testing.T) {
 					return nil
 				}
 			},
-			cmd:     newMockCommand().withArgs("1", strconv.Itoa(42)),
+			cmd:     newMockCommand().withArgs(strconv.Itoa(42)),
 			wantErr: false,
 		},
 
 		{
 			name: "service error",
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
+				svc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+					return []ipfs.WebsiteItem{{Id: 1, Domain: "example.com"}}, nil
+				}
 				svc.ListDomainsFn = func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
 					return []ipfs.DomainResponse{
 						{Id: 99, Domain: "staging.example.com", Namespace: "icann"},
@@ -313,7 +353,7 @@ func TestWebsitesDomainsRm(t *testing.T) {
 					return errors.New("domain not found")
 				}
 			},
-			cmd:         newMockCommand().withArgs("1", strconv.Itoa(99)),
+			cmd:         newMockCommand().withArgs(strconv.Itoa(99)),
 			wantErr:     true,
 			errContains: "domain not found",
 		},
@@ -334,27 +374,7 @@ func TestWebsitesDomainsRm(t *testing.T) {
 					return nil
 				}
 			},
-			cmd:     newMockCommand().withArgs("example.com", "staging.example.com"),
-			wantErr: false,
-		},
-		{
-			name: "successful remove domain by domain name with --website flag",
-			setupMocks: func(svc *mockWebsitesServiceForCLI) {
-				svc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
-					return []ipfs.WebsiteItem{
-						{Id: 1, Domain: "example.com"},
-					}, nil
-				}
-				svc.ListDomainsFn = func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
-					return []ipfs.DomainResponse{
-						{Id: 42, Domain: "staging.example.com", Namespace: "icann"},
-					}, nil
-				}
-				svc.UnbindDomainFn = func(ctx context.Context, websiteID string, domainID string) error {
-					return nil
-				}
-			},
-			cmd:     newMockCommand().withString(FlagWebsite, "example.com").withArgs("staging.example.com"),
+			cmd:     newMockCommand().withArgs("staging.example.com"),
 			wantErr: false,
 		},
 		{
@@ -371,15 +391,21 @@ func TestWebsitesDomainsRm(t *testing.T) {
 					}, nil
 				}
 			},
-			cmd:         newMockCommand().withArgs("example.com", "missing.example.com"),
+			cmd:         newMockCommand().withArgs("missing.example.com"),
 			wantErr:     true,
-			errContains: `domain "missing.example.com" not found for website`,
+			errContains: `domain "missing.example.com" not found bound to any website`,
 		},
 		{
-			name:        "missing args",
-			cmd:         newMockCommand().withArgs("1"),
+			name:        "missing arg",
+			cmd:         newMockCommand(),
 			wantErr:     true,
-			errContains: "usage: pinner websites domains rm",
+			errContains: "domain argument is required",
+		},
+		{
+			name:        "extra positional args rejected",
+			cmd:         newMockCommand().withArgs("example.com", "staging.example.com"),
+			wantErr:     true,
+			errContains: "unexpected extra argument",
 		},
 	}
 
@@ -406,8 +432,88 @@ func TestWebsitesDomainsRm(t *testing.T) {
 	}
 }
 
+func TestResolveDomainBindingNumericNamePriority(t *testing.T) {
+	// Regression for Kody finding: name matching must take priority over
+	// numeric ID matching. A website that appears earlier in iteration with a
+	// binding whose numeric ID is "123" must NOT shadow a later website that
+	// has a domain literally named "123" (valid in namespaces like HNS).
+	mockSvc := &mockWebsitesServiceForCLI{}
+	mockSvc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+		return []ipfs.WebsiteItem{
+			{Id: 1, Domain: "earlier.com"},
+			{Id: 2, Domain: "later.com"},
+		}, nil
+	}
+	mockSvc.ListDomainsFn = func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
+		switch websiteID {
+		case "1":
+			// Earlier website: a binding with numeric ID "123" but a
+			// non-numeric name. If ID matching short-circuits here, "rm 123"
+			// would wrongly target this.
+			return []ipfs.DomainResponse{{Id: 123, Domain: "alpha.hns", Namespace: "hns"}}, nil
+		case "2":
+			return []ipfs.DomainResponse{{Id: 7, Domain: "123", Namespace: "hns"}}, nil
+		}
+		return nil, nil
+	}
+
+	websiteID, domainID, err := resolveDomainBinding(context.Background(), mockSvc, "123")
+	require.NoError(t, err)
+	require.Equal(t, "2", websiteID)
+	require.Equal(t, "7", domainID)
+}
+
+func TestResolveDomainBindingDeferredListErrors(t *testing.T) {
+	// A ListDomains failure is deferred, not fatal: a website that fails to
+	// list must not block an unambiguously name-matched domain on a later
+	// website from resolving.
+	mockSvc := &mockWebsitesServiceForCLI{}
+	mockSvc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+		return []ipfs.WebsiteItem{
+			{Id: 1, Domain: "broken.com"},
+			{Id: 2, Domain: "good.com"},
+		}, nil
+	}
+	mockSvc.ListDomainsFn = func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
+		switch websiteID {
+		case "1":
+			return nil, errors.New("boom")
+		case "2":
+			return []ipfs.DomainResponse{{Id: 7, Domain: "staging.example.com", Namespace: "icann"}}, nil
+		}
+		return nil, nil
+	}
+
+	websiteID, domainID, err := resolveDomainBinding(context.Background(), mockSvc, "staging.example.com")
+	require.NoError(t, err)
+	require.Equal(t, "2", websiteID)
+	require.Equal(t, "7", domainID)
+}
+
+func TestResolveDomainBindingSurfacesListErrors(t *testing.T) {
+	// A ListDomains failure surfaces (wrapped) only when no name match is
+	// found and no clean numeric-ID fallback exists — otherwise the error
+	// would be silently masked as "not found".
+	mockSvc := &mockWebsitesServiceForCLI{}
+	mockSvc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+		return []ipfs.WebsiteItem{{Id: 1, Domain: "example.com"}}, nil
+	}
+	wantErr := errors.New("boom")
+	mockSvc.ListDomainsFn = func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
+		return nil, wantErr
+	}
+
+	_, _, err := resolveDomainBinding(context.Background(), mockSvc, "staging.example.com")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to look up domain on website")
+	require.ErrorIs(t, err, wantErr)
+}
+
 func TestWebsitesDomainsRmJSON(t *testing.T) {
 	mockSvc := &mockWebsitesServiceForCLI{}
+	mockSvc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+		return []ipfs.WebsiteItem{{Id: 1, Domain: "example.com"}}, nil
+	}
 	mockSvc.ListDomainsFn = func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
 		return []ipfs.DomainResponse{
 			{Id: 42, Domain: "staging.example.com", Namespace: "icann"},
@@ -418,7 +524,7 @@ func TestWebsitesDomainsRmJSON(t *testing.T) {
 	}
 
 	output := NewOutputFormatter(true, false, false, false)
-	cmd := newMockCommand().withArgs("1", "42")
+	cmd := newMockCommand().withArgs("staging.example.com")
 
 	err := websitesDomainsRmWithService(context.Background(), cmd, output, mockSvc)
 	require.NoError(t, err)
@@ -436,6 +542,9 @@ func TestWebsitesDomainsVerify(t *testing.T) {
 			name: "successful verify domain",
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
 				zoneName := "example.com."
+				svc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+					return []ipfs.WebsiteItem{{Id: 1, Domain: "example.com"}}, nil
+				}
 				svc.ListDomainsFn = func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
 					return []ipfs.DomainResponse{
 						{Id: 1, Domain: "mydomain.com", Namespace: "icann"},
@@ -447,11 +556,11 @@ func TestWebsitesDomainsVerify(t *testing.T) {
 					}, nil
 				}
 			},
-			cmd:     newMockCommand().withArgs("1", "1"),
+			cmd:     newMockCommand().withArgs("mydomain.com"),
 			wantErr: false,
 		},
 		{
-			name: "successful verify domain by name",
+			name: "successful verify domain by name with trailing dot",
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
 				svc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
 					return []ipfs.WebsiteItem{
@@ -469,11 +578,11 @@ func TestWebsitesDomainsVerify(t *testing.T) {
 					}, nil
 				}
 			},
-			cmd:     newMockCommand().withArgs("example.com", "mydomain.hns"),
+			cmd:     newMockCommand().withArgs("mydomain.hns."),
 			wantErr: false,
 		},
 		{
-			name: "successful verify by name with --website flag",
+			name: "successful verify by numeric binding id",
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
 				svc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
 					return []ipfs.WebsiteItem{
@@ -491,29 +600,7 @@ func TestWebsitesDomainsVerify(t *testing.T) {
 					}, nil
 				}
 			},
-			cmd:     newMockCommand().withString(FlagWebsite, "example.com").withArgs("mydomain.hns"),
-			wantErr: false,
-		},
-		{
-			name: "successful verify by name with trailing dots",
-			setupMocks: func(svc *mockWebsitesServiceForCLI) {
-				svc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
-					return []ipfs.WebsiteItem{
-						{Id: 1, Domain: "example.com"},
-					}, nil
-				}
-				svc.ListDomainsFn = func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
-					return []ipfs.DomainResponse{
-						{Id: 2, Domain: "mydomain.hns", Namespace: "hns"},
-					}, nil
-				}
-				svc.VerifyDomainFn = func(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainResponse, error) {
-					return &ipfs.DomainResponse{
-						Id: 2, Domain: "mydomain.hns", Namespace: "hns", ZoneName: nil,
-					}, nil
-				}
-			},
-			cmd:     newMockCommand().withArgs("example.com.", "mydomain.hns."),
+			cmd:     newMockCommand().withArgs("2"),
 			wantErr: false,
 		},
 		{
@@ -530,19 +617,22 @@ func TestWebsitesDomainsVerify(t *testing.T) {
 					}, nil
 				}
 			},
-			cmd:         newMockCommand().withArgs("example.com", "unknown.example.com"),
+			cmd:         newMockCommand().withArgs("unknown.example.com"),
 			wantErr:     true,
-			errContains: `domain "unknown.example.com" not found for website`,
+			errContains: `domain "unknown.example.com" not found bound to any website`,
 		},
 		{
-			name:        "missing args",
-			cmd:         newMockCommand().withArgs("1"),
+			name:        "missing arg",
+			cmd:         newMockCommand(),
 			wantErr:     true,
-			errContains: "usage: pinner websites domains verify",
+			errContains: "domain argument is required",
 		},
 		{
 			name: "service error",
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
+				svc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+					return []ipfs.WebsiteItem{{Id: 1, Domain: "example.com"}}, nil
+				}
 				svc.ListDomainsFn = func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
 					return []ipfs.DomainResponse{
 						{Id: 42, Domain: "mydomain.com", Namespace: "icann"},
@@ -552,7 +642,7 @@ func TestWebsitesDomainsVerify(t *testing.T) {
 					return nil, errors.New("verify failed")
 				}
 			},
-			cmd:         newMockCommand().withArgs("1", "42"),
+			cmd:         newMockCommand().withArgs("mydomain.com"),
 			wantErr:     true,
 			errContains: "verify failed",
 		},
@@ -584,6 +674,9 @@ func TestWebsitesDomainsVerify(t *testing.T) {
 func TestWebsitesDomainsVerifyJSON(t *testing.T) {
 	zoneName := "example.com."
 	mockSvc := &mockWebsitesServiceForCLI{}
+	mockSvc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+		return []ipfs.WebsiteItem{{Id: 1, Domain: "example.com"}}, nil
+	}
 	mockSvc.ListDomainsFn = func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
 		return []ipfs.DomainResponse{
 			{Id: 1, Domain: "mydomain.com", Namespace: "icann"},
@@ -596,7 +689,7 @@ func TestWebsitesDomainsVerifyJSON(t *testing.T) {
 	}
 
 	output := NewOutputFormatter(true, false, false, false)
-	cmd := newMockCommand().withArgs("1", "1")
+	cmd := newMockCommand().withArgs("mydomain.com")
 
 	err := websitesDomainsVerifyWithService(context.Background(), cmd, output, mockSvc)
 	require.NoError(t, err)
@@ -670,7 +763,7 @@ func websitesDomainsAddWithService(ctx context.Context, cmd websitesCommandGette
 		return err
 	}
 
-	websiteID, domain, err := resolveDomainCommandTarget(ctx, websitesService, cmd, "add")
+	websiteID, domain, err := resolveAddTarget(ctx, websitesService, cmd)
 	if err != nil {
 		return err
 	}
@@ -722,12 +815,12 @@ func websitesDomainsRmWithService(ctx context.Context, cmd websitesCommandGetter
 		return err
 	}
 
-	websiteID, domainArg, err := resolveDomainCommandTarget(ctx, websitesService, cmd, "rm")
+	domainArg, err := resolveDomainArg(cmd, "rm")
 	if err != nil {
 		return err
 	}
 
-	domainID, err := resolveDomainID(ctx, websitesService, websiteID, domainArg)
+	websiteID, domainID, err := resolveDomainBinding(ctx, websitesService, domainArg)
 	if err != nil {
 		return err
 	}
@@ -753,12 +846,12 @@ func websitesDomainsVerifyWithService(ctx context.Context, cmd websitesCommandGe
 		return err
 	}
 
-	websiteID, domainArg, err := resolveDomainCommandTarget(ctx, websitesService, cmd, "verify")
+	domainArg, err := resolveDomainArg(cmd, "verify")
 	if err != nil {
 		return err
 	}
 
-	domainID, err := resolveDomainID(ctx, websitesService, websiteID, domainArg)
+	websiteID, domainID, err := resolveDomainBinding(ctx, websitesService, domainArg)
 	if err != nil {
 		return err
 	}
@@ -846,12 +939,12 @@ func websitesDomainsDNSRequirementsWithService(ctx context.Context, cmd websites
 		return err
 	}
 
-	websiteID, domainArg, err := resolveDomainCommandTarget(ctx, websitesService, cmd, "dns-requirements")
+	domainArg, err := resolveDomainArg(cmd, "dns-requirements")
 	if err != nil {
 		return err
 	}
 
-	domainID, err := resolveDomainID(ctx, websitesService, websiteID, domainArg)
+	websiteID, domainID, err := resolveDomainBinding(ctx, websitesService, domainArg)
 	if err != nil {
 		return err
 	}
@@ -883,6 +976,9 @@ func TestWebsitesDomainsDNSRequirements(t *testing.T) {
 		{
 			name: "successful dns-requirements without delegation",
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
+				svc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+					return []ipfs.WebsiteItem{{Id: 1, Domain: "example.com"}}, nil
+				}
 				svc.ListDomainsFn = func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
 					return []ipfs.DomainResponse{
 						{Id: 2, Domain: "mydomain.hns", Namespace: "hns"},
@@ -894,12 +990,15 @@ func TestWebsitesDomainsDNSRequirements(t *testing.T) {
 					}, nil
 				}
 			},
-			cmd:     newMockCommand().withArgs("1", "2"),
+			cmd:     newMockCommand().withArgs("mydomain.hns"),
 			wantErr: false,
 		},
 		{
 			name: "successful dns-requirements with delegation records",
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
+				svc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+					return []ipfs.WebsiteItem{{Id: 1, Domain: "example.com"}}, nil
+				}
 				svc.ListDomainsFn = func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
 					return []ipfs.DomainResponse{
 						{Id: 2, Domain: "mydomain.hns", Namespace: "hns"},
@@ -924,11 +1023,11 @@ func TestWebsitesDomainsDNSRequirements(t *testing.T) {
 					}, nil
 				}
 			},
-			cmd:     newMockCommand().withArgs("1", "2"),
+			cmd:     newMockCommand().withArgs("mydomain.hns"),
 			wantErr: false,
 		},
 		{
-			name: "successful by name with --website flag",
+			name: "successful by numeric binding id",
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
 				svc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
 					return []ipfs.WebsiteItem{{Id: 1, Domain: "example.com"}}, nil
@@ -942,7 +1041,7 @@ func TestWebsitesDomainsDNSRequirements(t *testing.T) {
 					return &ipfs.DomainResponse{Id: 2, Domain: "mydomain.hns", Namespace: "hns"}, nil
 				}
 			},
-			cmd:     newMockCommand().withString(FlagWebsite, "example.com").withArgs("mydomain.hns"),
+			cmd:     newMockCommand().withArgs("2"),
 			wantErr: false,
 		},
 		{
@@ -957,19 +1056,22 @@ func TestWebsitesDomainsDNSRequirements(t *testing.T) {
 					}, nil
 				}
 			},
-			cmd:         newMockCommand().withArgs("example.com", "unknown.example.com"),
+			cmd:         newMockCommand().withArgs("unknown.example.com"),
 			wantErr:     true,
-			errContains: `domain "unknown.example.com" not found for website`,
+			errContains: `domain "unknown.example.com" not found bound to any website`,
 		},
 		{
-			name:        "missing args",
-			cmd:         newMockCommand().withArgs("1"),
+			name:        "missing arg",
+			cmd:         newMockCommand(),
 			wantErr:     true,
-			errContains: "usage: pinner websites domains dns-requirements",
+			errContains: "domain argument is required",
 		},
 		{
 			name: "service error",
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
+				svc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+					return []ipfs.WebsiteItem{{Id: 1, Domain: "example.com"}}, nil
+				}
 				svc.ListDomainsFn = func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
 					return []ipfs.DomainResponse{
 						{Id: 42, Domain: "mydomain.com", Namespace: "icann"},
@@ -979,13 +1081,16 @@ func TestWebsitesDomainsDNSRequirements(t *testing.T) {
 					return nil, errors.New("fetch failed")
 				}
 			},
-			cmd:         newMockCommand().withArgs("1", "42"),
+			cmd:         newMockCommand().withArgs("mydomain.com"),
 			wantErr:     true,
 			errContains: "fetch failed",
 		},
 		{
 			name: "nil result without error is guarded",
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
+				svc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+					return []ipfs.WebsiteItem{{Id: 1, Domain: "example.com"}}, nil
+				}
 				svc.ListDomainsFn = func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
 					return []ipfs.DomainResponse{
 						{Id: 42, Domain: "mydomain.com", Namespace: "icann"},
@@ -995,7 +1100,7 @@ func TestWebsitesDomainsDNSRequirements(t *testing.T) {
 					return nil, nil
 				}
 			},
-			cmd:         newMockCommand().withArgs("1", "42"),
+			cmd:         newMockCommand().withArgs("mydomain.com"),
 			wantErr:     true,
 			errContains: "no DNS requirements returned for domain",
 		},
@@ -1026,6 +1131,9 @@ func TestWebsitesDomainsDNSRequirements(t *testing.T) {
 
 func TestWebsitesDomainsDNSRequirementsJSON(t *testing.T) {
 	mockSvc := &mockWebsitesServiceForCLI{}
+	mockSvc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+		return []ipfs.WebsiteItem{{Id: 1, Domain: "example.com"}}, nil
+	}
 	mockSvc.ListDomainsFn = func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
 		return []ipfs.DomainResponse{
 			{Id: 1, Domain: "mydomain.hns", Namespace: "hns"},
@@ -1042,7 +1150,7 @@ func TestWebsitesDomainsDNSRequirementsJSON(t *testing.T) {
 	}
 
 	output := NewOutputFormatter(true, false, false, false)
-	cmd := newMockCommand().withArgs("1", "1")
+	cmd := newMockCommand().withArgs("mydomain.hns")
 
 	err := websitesDomainsDNSRequirementsWithService(context.Background(), cmd, output, mockSvc)
 	require.NoError(t, err)
@@ -1121,5 +1229,48 @@ func TestRenderDomainDelegation(t *testing.T) {
 			},
 		})
 		// exercises the generic fallback path for an unrecognized namespace
+	})
+
+	t.Run("DS record renders as a labeled table with intact digest", func(t *testing.T) {
+		var buf bytes.Buffer
+		output := NewOutputFormatter(false, false, false, false)
+		output.SetWriter(&buf)
+		digest := "c35938688953467518f2a9c613b8a32da647595912a67fa9cf47e41b593831d5"
+		renderDomainDelegation(output, &ipfs.DomainResponse{
+			Id: 1, Domain: "lumeweb", Namespace: "hns", Status: strPtr("delegated"),
+			Delegation: &ipfs.DNSDelegation{
+				Mode: strPtr("delegated"),
+				Ds:   strPtr("lumeweb DS 44451 13 2 " + digest),
+			},
+		})
+		out := buf.String()
+		// Uses driver-aware copy label.
+		assert.Contains(t, out, "DS record (paste into your HNS wallet):")
+		// Labeled columns.
+		assert.Contains(t, out, "KEY TAG")
+		assert.Contains(t, out, "ALGORITHM")
+		assert.Contains(t, out, "DIGEST TYPE")
+		assert.Contains(t, out, "44451")
+		assert.Contains(t, out, "13")
+		// The digest must remain intact on one line (never hard-split), so it
+		// can be selected and copied whole.
+		assert.Contains(t, out, digest)
+	})
+
+	t.Run("DS record tolerates zone-file format with ttl and class", func(t *testing.T) {
+		var buf bytes.Buffer
+		output := NewOutputFormatter(false, false, false, false)
+		output.SetWriter(&buf)
+		renderDomainDelegation(output, &ipfs.DomainResponse{
+			Id: 1, Domain: "mydomain.com", Namespace: "icann", Status: strPtr("delegated"),
+			Delegation: &ipfs.DNSDelegation{
+				Mode: strPtr("delegated"),
+				Ds:   strPtr("mydomain. 3600 IN DS 12345 13 2 <digest>"),
+			},
+		})
+		out := buf.String()
+		assert.Contains(t, out, "DS record (paste at your registrar):")
+		assert.Contains(t, out, "12345")
+		assert.Contains(t, out, "KEY TAG")
 	})
 }
