@@ -227,6 +227,24 @@ func SaveProfileState(profileName string, state *ProfileState) error {
 	return nil
 }
 
+// SetDefaultProfile sets the profile used by default when --profile and
+// PINNER_PROFILE are both absent. The profile must already exist in the
+// registry; the setting persists to vaults.yaml.
+func SetDefaultProfile(profileName string) error {
+	reg, err := LoadRegistry()
+	if err != nil {
+		return err
+	}
+	if _, ok := reg.Profiles[profileName]; !ok {
+		return fmt.Errorf("profile %q not found", profileName)
+	}
+	reg.Default = profileName
+	if err := SaveRegistry(reg); err != nil {
+		return fmt.Errorf("failed to save default profile: %w", err)
+	}
+	return nil
+}
+
 // ResolveProfile resolves the active profile name from flag, env, or default.
 // Selection order:
 //  1. flagValue (explicit --profile)

@@ -81,6 +81,7 @@ For more help on any command: pinner <command> --help`,
 			newExportCommand(),
 			newAdminCommand(),
 			newDocsCommand(),
+			newVaultCommand(),
 		},
 		Flags: GlobalFlags(),
 		Action: func(ctx context.Context, cmd *cli.Command) error {
