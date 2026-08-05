@@ -83,7 +83,11 @@ is rederived. Use this to repair a corrupted or stale local cache.`,
 						// A sync failure leaves a fresh (possibly empty) cache at
 						// dbPath; restore the moved-aside prior cache so a
 						// transient indexer/network failure doesn't replace a
-						// working index with an empty one.
+						// working index with an empty one. Close the fresh
+						// service handle FIRST: on Windows a file with an open
+						// handle cannot be removed or renamed (the deferred
+						// Close at function return would be too late).
+						_ = svc.Close()
 						if moved {
 							_ = os.Remove(dbPath)
 							_ = os.Rename(oldPath, dbPath)
