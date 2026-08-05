@@ -11,6 +11,10 @@ import (
 type WebsitesService interface {
 	CreateWithOptions(ctx context.Context, req ipfs.WebsiteRequest) (*ipfs.WebsiteItem, error)
 	Validate(ctx context.Context, id string) (*ipfs.WebsiteValidateResponse, error)
+	List(ctx context.Context) ([]ipfs.WebsiteItem, error)
+	BindDomain(ctx context.Context, websiteID string, req ipfs.DomainRequest) (*ipfs.DomainResponse, error)
+	GetDomainDNSRequirements(ctx context.Context, websiteID, domainID string) (*ipfs.DomainResponse, error)
+	VerifyDomain(ctx context.Context, websiteID, domainID string) (*ipfs.DomainResponse, error)
 }
 
 // AuthService is the subset of cli.AuthService used by the MCP wizard.
@@ -47,6 +51,24 @@ type SetupWizardState interface {
 // WebsitesWizardFactory creates a new websites wizard state instance.
 // The factory is a closure that captures its own dependencies.
 type WebsitesWizardFactory func() WebsitesWizardState
+
+// DomainWizardState is the interface for the domain addition wizard state object.
+type DomainWizardState interface {
+	WebsiteID() string
+	SetWebsiteID(string)
+	WebsiteDomain() string
+	SetWebsiteDomain(string)
+	Domain() string
+	SetDomain(string)
+	Namespace() string
+	SetNamespace(string)
+	Result() *ipfs.DomainResponse
+	SetResult(*ipfs.DomainResponse)
+}
+
+// DomainWizardFactory creates a new domain wizard state instance.
+// The factory is a closure that captures its own dependencies.
+type DomainWizardFactory func() DomainWizardState
 
 // SetupWizardFactory creates a new setup wizard state instance.
 // The factory is a closure that captures its own dependencies.

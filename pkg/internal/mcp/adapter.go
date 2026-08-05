@@ -62,11 +62,11 @@ adapter.`,
 			// Register wizard tools into the catalog instead of directly
 			// on the server. The meta-tools expose them through discovery.
 			if wizardFactory != nil {
-				wDeps, sDeps, err := wizardFactory()
+				wDeps, sDeps, dDeps, err := wizardFactory()
 				if err != nil {
 					return fmt.Errorf("failed to build wizard dependencies: %w", err)
 				}
-				if err := RegisterWizardTools(catalog, store, wDeps, sDeps); err != nil {
+				if err := RegisterWizardTools(catalog, store, wDeps, sDeps, dDeps); err != nil {
 					return fmt.Errorf("failed to register wizard tools: %w", err)
 				}
 			}
@@ -105,7 +105,7 @@ func WithPrompts() MCPServerOption {
 
 // WizardDepsFactory builds wizard dependencies at Action time, when config
 // and services are available. Called inside the MCP command's Action.
-type WizardDepsFactory func() (WebsitesWizardDeps, SetupWizardDeps, error)
+type WizardDepsFactory func() (WebsitesWizardDeps, SetupWizardDeps, DomainWizardDeps, error)
 
 // MCPServerWithOpts builds the MCP server from a urfave/cli command tree,
 // populates a ToolCatalog with all commands (instead of registering them
