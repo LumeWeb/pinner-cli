@@ -71,10 +71,14 @@ func newVaultShareCommand() *cli.Command {
 					Expires:  validUntil.Format(time.RFC3339),
 				})
 			} else {
-				// stdout: only the share URL for piping/clipboard; the expiry
-				// status goes to stderr so `vault share f | pbcopy` stays clean.
+				// stdout: only the share URL for piping/clipboard. The expiry
+				// status goes to stderr (honoring --quiet) so
+				// `vault share f | pbcopy` stays clean and quiet-mode output
+				// is fully suppressed.
 				fmt.Println(shareURL)
-				fmt.Fprintf(os.Stderr, "Share link expires: %s\n", validUntil.Format(time.RFC3339))
+				if !c.Bool(FlagQuiet) {
+					fmt.Fprintf(os.Stderr, "Share link expires: %s\n", validUntil.Format(time.RFC3339))
+				}
 			}
 			return nil
 		},
