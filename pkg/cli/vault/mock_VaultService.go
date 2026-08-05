@@ -663,7 +663,7 @@ func (_c *MockVaultService_Stat_Call) RunAndReturn(run func(ctx context.Context,
 }
 
 // Sync provides a mock function for the type MockVaultService
-func (_mock *MockVaultService) Sync(ctx context.Context) (int, error) {
+func (_mock *MockVaultService) Sync(ctx context.Context) (int, bool, error) {
 	ret := _mock.Called(ctx)
 
 	if len(ret) == 0 {
@@ -671,8 +671,9 @@ func (_mock *MockVaultService) Sync(ctx context.Context) (int, error) {
 	}
 
 	var r0 int
-	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context) (int, error)); ok {
+	var r1 bool
+	var r2 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context) (int, bool, error)); ok {
 		return returnFunc(ctx)
 	}
 	if returnFunc, ok := ret.Get(0).(func(context.Context) int); ok {
@@ -680,12 +681,19 @@ func (_mock *MockVaultService) Sync(ctx context.Context) (int, error) {
 	} else {
 		r0 = ret.Get(0).(int)
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context) error); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context) bool); ok {
 		r1 = returnFunc(ctx)
 	} else {
-		r1 = ret.Error(1)
+		if ret.Get(1) != nil {
+			r1 = ret.Get(1).(bool)
+		}
 	}
-	return r0, r1
+	if returnFunc, ok := ret.Get(0).(func(context.Context) error); ok {
+		r2 = returnFunc(ctx)
+	} else {
+		r2 = ret.Error(2)
+	}
+	return r0, r1, r2
 }
 
 // MockVaultService_Sync_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Sync'
@@ -712,12 +720,12 @@ func (_c *MockVaultService_Sync_Call) Run(run func(ctx context.Context)) *MockVa
 	return _c
 }
 
-func (_c *MockVaultService_Sync_Call) Return(n int, err error) *MockVaultService_Sync_Call {
-	_c.Call.Return(n, err)
+func (_c *MockVaultService_Sync_Call) Return(n int, full bool, err error) *MockVaultService_Sync_Call {
+	_c.Call.Return(n, full, err)
 	return _c
 }
 
-func (_c *MockVaultService_Sync_Call) RunAndReturn(run func(ctx context.Context) (int, error)) *MockVaultService_Sync_Call {
+func (_c *MockVaultService_Sync_Call) RunAndReturn(run func(ctx context.Context) (int, bool, error)) *MockVaultService_Sync_Call {
 	_c.Call.Return(run)
 	return _c
 }

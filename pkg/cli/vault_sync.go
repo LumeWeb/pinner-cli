@@ -25,13 +25,15 @@ Run this after logging in on a new machine or to pick up changes from other devi
 			if !output.IsJSON() {
 				output.Printfln("Syncing from indexer...")
 			}
-			// Sync fetches in batches of 100; loop until it reports 0 events
-			// processed so the cache converges even when >100 changes
-			// accumulate. Re-runs are safe per the cursor semantics.
-			count, err := svc.Sync(ctx)
-			for err == nil && count > 0 {
+			// Sync fetches one batch of 100 per call and reports whether the
+			// batch was full. Loop while the last batch was full so the cache
+			// converges even when >100 changes accumulate. We cannot loop on
+			// the applied count: a batch that is entirely skips returns 0
+			// applied but still advances the cursor past real events.
+			count, full, err := svc.Sync(ctx)
+			for err == nil && full {
 				var n int
-				n, err = svc.Sync(ctx)
+				n, full, err = svc.Sync(ctx)
 				count += n
 			}
 			if err != nil {

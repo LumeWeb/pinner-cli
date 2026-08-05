@@ -171,7 +171,7 @@ func TestVaultRoundTrip(t *testing.T) {
 
 	// 8. Sync
 	t.Run("sync", func(t *testing.T) {
-		count, err := svc.Sync(ctx)
+		count, _, err := svc.Sync(ctx)
 		if err != nil {
 			t.Fatalf("Sync failed: %v", err)
 		}

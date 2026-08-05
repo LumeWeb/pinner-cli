@@ -237,7 +237,7 @@ The recovery seed is displayed ONCE and must be saved securely.`,
 				if err != nil {
 					output.Printfln("Warning: sync skipped (%v)", err)
 				} else {
-					count, err := svc.Sync(ctx)
+					count, _, err := svc.Sync(ctx)
 					if err != nil {
 						output.Printfln("Warning: sync failed (%v)", err)
 					} else {

@@ -446,7 +446,7 @@ func TestSync_PersistsSameNameObjects(t *testing.T) {
 		appKey: types.PrivateKey{},
 	}
 
-	if _, err := svc.Sync(ctx); err != nil {
+	if _, _, err := svc.Sync(ctx); err != nil {
 		t.Fatalf("Sync should record both same-name objects rather than abort: %v", err)
 	}
 
@@ -495,7 +495,7 @@ func TestSync_UpdatesRenameOnSameRow(t *testing.T) {
 	svc.sdk.(*fakeEvents).events = []siastorage.ObjectEvent{
 		testObjectEvent(0x01, "b.txt"), // uuid-01 renamed to b.txt
 	}
-	if _, err := svc.Sync(ctx); err != nil {
+	if _, _, err := svc.Sync(ctx); err != nil {
 		t.Fatalf("Sync should apply a rename as a same-row update; got: %v", err)
 	}
 
@@ -545,7 +545,7 @@ func TestSync_CursorNotAdvancedPastSkipped(t *testing.T) {
 		appKey: types.PrivateKey{},
 	}
 
-	n, err := svc.Sync(ctx)
+	n, _, err := svc.Sync(ctx)
 	if err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
@@ -621,7 +621,7 @@ func TestSync_CursorStopsAtInterleavedSkip(t *testing.T) {
 		appKey: types.PrivateKey{},
 	}
 
-	n, err := svc.Sync(ctx)
+	n, _, err := svc.Sync(ctx)
 	if err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
@@ -695,7 +695,7 @@ func TestSync_LeadingNilObjectDoesNotStall(t *testing.T) {
 		appKey: types.PrivateKey{},
 	}
 
-	if _, err := svc.Sync(ctx); err != nil {
+	if _, _, err := svc.Sync(ctx); err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
 
@@ -756,7 +756,7 @@ func TestSync_LeadingTransientSkipMakesProgress(t *testing.T) {
 		appKey: types.PrivateKey{},
 	}
 
-	if _, err := svc.Sync(ctx); err != nil {
+	if _, _, err := svc.Sync(ctx); err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
 
@@ -923,7 +923,7 @@ func TestSync_LeadingThenInterleavedSkipStopsAtInterleaved(t *testing.T) {
 		appKey: types.PrivateKey{},
 	}
 
-	n, err := svc.Sync(ctx)
+	n, _, err := svc.Sync(ctx)
 	if err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
@@ -1005,7 +1005,7 @@ func TestSync_SkippedObjectResolvesOnReTick(t *testing.T) {
 		testObjectEvent(0x01, "a.txt"),
 		testTransientSkippedEvent(0x02),
 	}
-	if _, err := svc.Sync(ctx); err != nil {
+	if _, _, err := svc.Sync(ctx); err != nil {
 		t.Fatalf("sync batch 1: %v", err)
 	}
 	c1, c1raw := readCursorKey(t)
@@ -1019,7 +1019,7 @@ func TestSync_SkippedObjectResolvesOnReTick(t *testing.T) {
 		testTransientSkippedEvent(0x02),
 		testObjectEvent(0x03, "c.txt"),
 	}
-	if _, err := svc.Sync(ctx); err != nil {
+	if _, _, err := svc.Sync(ctx); err != nil {
 		t.Fatalf("sync batch 2: %v", err)
 	}
 	var cnt int64
@@ -1041,7 +1041,7 @@ func TestSync_SkippedObjectResolvesOnReTick(t *testing.T) {
 		testObjectEvent(0x02, "b.txt"),
 		testObjectEvent(0x04, "d.txt"),
 	}
-	if _, err := svc.Sync(ctx); err != nil {
+	if _, _, err := svc.Sync(ctx); err != nil {
 		t.Fatalf("sync batch 3: %v", err)
 	}
 	db.Model(&File{}).Where("name = ?", "b.txt").Count(&cnt)
@@ -1082,7 +1082,7 @@ func TestSync_SkipsAlwaysAdvanceCursor(t *testing.T) {
 		testObjectEvent(0x01, "a.txt"),
 		testTransientSkippedEvent(0x02),
 	}
-	if _, err := svc.Sync(ctx); err != nil {
+	if _, _, err := svc.Sync(ctx); err != nil {
 		t.Fatalf("sync batch 1: %v", err)
 	}
 	var rec SyncDownCursor
@@ -1095,7 +1095,7 @@ func TestSync_SkipsAlwaysAdvanceCursor(t *testing.T) {
 	// Batch 2: empty. No events, so no writes occur and the persisted cursor is
 	// left unchanged (there is no stale pending state holding anything).
 	fe.events = nil
-	if _, err := svc.Sync(ctx); err != nil {
+	if _, _, err := svc.Sync(ctx); err != nil {
 		t.Fatalf("sync batch 2 (empty): %v", err)
 	}
 	if err := db.First(&rec).Error; err != nil {
@@ -1112,7 +1112,7 @@ func TestSync_SkipsAlwaysAdvanceCursor(t *testing.T) {
 		testTransientSkippedEvent(0x05),
 		testObjectEvent(0x06, "d.txt"),
 	}
-	if _, err := svc.Sync(ctx); err != nil {
+	if _, _, err := svc.Sync(ctx); err != nil {
 		t.Fatalf("sync batch 3: %v", err)
 	}
 	var cnt int64
@@ -1267,7 +1267,7 @@ func TestSync_PlacesRemoteObjectInMetadataDirectory(t *testing.T) {
 		testObjectEventInDir(0x10, "report.pdf", "/reports/2024"),
 		testObjectEventInDir(0x11, "root.txt", ""), // no directory => root
 	}
-	if _, err := svc.Sync(ctx); err != nil {
+	if _, _, err := svc.Sync(ctx); err != nil {
 		t.Fatalf("sync: %v", err)
 	}
 
@@ -1320,7 +1320,7 @@ func TestSync_NeverResolvingSkipDoesNotStall(t *testing.T) {
 		testObjectEvent(0x20, "a.txt"),
 		testTransientSkippedEvent(0x21),
 	}
-	if _, err := svc.Sync(ctx); err != nil {
+	if _, _, err := svc.Sync(ctx); err != nil {
 		t.Fatalf("batch 1: %v", err)
 	}
 
@@ -1331,7 +1331,7 @@ func TestSync_NeverResolvingSkipDoesNotStall(t *testing.T) {
 		testTransientSkippedEvent(0x21),
 		testObjectEvent(0x22, "c.txt"),
 	}
-	if _, err := svc.Sync(ctx); err != nil {
+	if _, _, err := svc.Sync(ctx); err != nil {
 		t.Fatalf("sync re-tick: %v", err)
 	}
 
@@ -1388,7 +1388,7 @@ func TestSync_LoneSkipAdvancesCursor(t *testing.T) {
 	fe.events = []siastorage.ObjectEvent{
 		testTransientSkippedEvent(0x31),
 	}
-	if n, err := svc.Sync(ctx); err != nil {
+	if n, _, err := svc.Sync(ctx); err != nil {
 		t.Fatalf("sync: %v", err)
 	} else if n != 0 {
 		t.Errorf("Sync applied %d events for a lone skip, want 0", n)
@@ -1414,7 +1414,7 @@ func TestSync_LoneSkipAdvancesCursor(t *testing.T) {
 
 	// Re-running the identical batch yields the same applied count (still 0)
 	// but must not error or grow the File table — proving re-fetch is harmless.
-	if _, err := svc.Sync(ctx); err != nil {
+	if _, _, err := svc.Sync(ctx); err != nil {
 		t.Fatalf("re-sync: %v", err)
 	}
 	db.Model(&File{}).Count(&total)
@@ -1531,7 +1531,7 @@ func TestSync_NilObjectThenTransientSkip(t *testing.T) {
 		{Key: types.Hash256{0x10}, Object: nil, UpdatedAt: time.Now().UTC()},
 		testTransientSkippedEvent(0x20),
 	}
-	n, err := svc.Sync(ctx)
+	n, _, err := svc.Sync(ctx)
 	if err != nil {
 		t.Fatalf("sync batch 1: %v", err)
 	}
@@ -1555,7 +1555,7 @@ func TestSync_NilObjectThenTransientSkip(t *testing.T) {
 	fe.events = []siastorage.ObjectEvent{
 		testObjectEvent(0x20, "resolved.txt"),
 	}
-	if _, err := svc.Sync(ctx); err != nil {
+	if _, _, err := svc.Sync(ctx); err != nil {
 		t.Fatalf("sync batch 2: %v", err)
 	}
 	var cnt int64
@@ -1613,7 +1613,7 @@ func TestSync_DeleteEvent(t *testing.T) {
 		fe.events = []siastorage.ObjectEvent{
 			{Key: delKey, Deleted: true, UpdatedAt: time.Now().UTC()},
 		}
-		if _, err := svc.Sync(ctx); err != nil {
+		if _, _, err := svc.Sync(ctx); err != nil {
 			t.Fatalf("sync (shared delete): %v", err)
 		}
 		var liveCurrent int64
@@ -1668,7 +1668,7 @@ func TestSync_DeleteEvent(t *testing.T) {
 		fe.events = []siastorage.ObjectEvent{
 			{Key: delKey, Object: &obj, Deleted: true, UpdatedAt: time.Now().UTC()},
 		}
-		if _, err := svc.Sync(ctx); err != nil {
+		if _, _, err := svc.Sync(ctx); err != nil {
 			t.Fatalf("sync (uuid delete): %v", err)
 		}
 		var aLive, bLive int64
@@ -1820,7 +1820,7 @@ func TestSync_ReturnsAppliedCount(t *testing.T) {
 		testObjectEvent(0x01, "a.txt"),
 		testTransientSkippedEvent(0x02),
 	}
-	n, err := svc.Sync(ctx)
+	n, _, err := svc.Sync(ctx)
 	if err != nil {
 		t.Fatalf("sync: %v", err)
 	}
@@ -1857,7 +1857,7 @@ func TestSync_ResolvedCarriedSkipDropsFreshLeadingSkip(t *testing.T) {
 		testObjectEvent(0x01, "a.txt"),
 		testTransientSkippedEvent(0x02),
 	}
-	if _, err := svc.Sync(ctx); err != nil {
+	if _, _, err := svc.Sync(ctx); err != nil {
 		t.Fatalf("sync batch 1: %v", err)
 	}
 
@@ -1869,7 +1869,7 @@ func TestSync_ResolvedCarriedSkipDropsFreshLeadingSkip(t *testing.T) {
 		testTransientSkippedEvent(0xAA),
 		testObjectEvent(0x02, "b.txt"),
 	}
-	n, err := svc.Sync(ctx)
+	n, _, err := svc.Sync(ctx)
 	if err != nil {
 		t.Fatalf("sync batch 2: %v", err)
 	}
@@ -1943,7 +1943,7 @@ func TestSync_NewObjectPersistsUserMetadata(t *testing.T) {
 	obj.UpdateMetadata(raw)
 	fe.events = []siastorage.ObjectEvent{{Key: key, Object: &obj, UpdatedAt: time.Now().UTC()}}
 
-	if _, err := svc.Sync(ctx); err != nil {
+	if _, _, err := svc.Sync(ctx); err != nil {
 		t.Fatalf("sync: %v", err)
 	}
 
@@ -2003,7 +2003,7 @@ func TestSync_DeleteEvent_UUIDMissFallsBackToKey(t *testing.T) {
 	fe.events = []siastorage.ObjectEvent{
 		{Key: delKey, Object: &obj, Deleted: true, UpdatedAt: time.Now().UTC()},
 	}
-	if _, err := svc.Sync(ctx); err != nil {
+	if _, _, err := svc.Sync(ctx); err != nil {
 		t.Fatalf("sync: %v", err)
 	}
 
