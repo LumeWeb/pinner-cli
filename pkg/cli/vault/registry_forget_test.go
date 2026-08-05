@@ -190,3 +190,55 @@ func TestRemoveProfile_LostUpdateGuard(t *testing.T) {
 		t.Fatalf("profile data dir not removed (stat err=%v)", err)
 	}
 }
+
+// TestAddProfile_LockGuard verifies every registry writer (not just remove)
+// serializes through the registry lock: while the lock is held, an AddProfile
+// (as create/restore use) must block rather than clobber a concurrent writer.
+func TestAddProfile_LockGuard(t *testing.T) {
+	home := t.TempDir()
+	overrideVaultHome(t, home)
+
+	if err := SaveRegistry(&VaultRegistry{
+		Profiles: map[string]ProfileConfig{"personal": {VaultID: "vault:aaa"}},
+	}); err != nil {
+		t.Fatalf("seed registry: %v", err)
+	}
+
+	unlock, err := lockRegistry()
+	if err != nil {
+		t.Fatalf("acquire lock: %v", err)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- AddProfile("work", ProfileConfig{VaultID: "vault:bbb"})
+	}()
+
+	select {
+	case err := <-done:
+		t.Fatalf("AddProfile completed while lock held (err=%v); expected it to block", err)
+	case <-time.After(150 * time.Millisecond):
+		// Correctly blocked on the lock.
+	}
+
+	unlock()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("AddProfile after lock release: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("AddProfile did not resume after lock release")
+	}
+
+	reg, err := LoadRegistry()
+	if err != nil {
+		t.Fatalf("load registry: %v", err)
+	}
+	if _, ok := reg.Profiles["work"]; !ok {
+		t.Fatalf("profile 'work' not present after AddProfile")
+	}
+	if _, ok := reg.Profiles["personal"]; !ok {
+		t.Fatalf("profile 'personal' clobbered by concurrent AddProfile")
+	}
+}
