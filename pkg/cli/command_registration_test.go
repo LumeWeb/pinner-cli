@@ -85,6 +85,7 @@ func TestCommandRegistration_RootSubcommands(t *testing.T) {
 		"export",
 		"admin",
 		"generate-docs",
+		"vault",
 		"mcp",
 	}
 
