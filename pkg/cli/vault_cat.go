@@ -31,7 +31,7 @@ Progress and metadata go to stderr.`,
 			if err != nil {
 				return err
 			}
-			ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+			ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetUploadTimeout())
 			defer cancel()
 
 			// Stream directly to stdout — data goes to stdout, progress to stderr
