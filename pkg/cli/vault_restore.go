@@ -74,7 +74,7 @@ The flow:
 			}
 			if existing, exists := reg.Profiles[profileName]; exists {
 				if existing.VaultID != "" {
-					return fmt.Errorf("profile %q already exists. Use 'pinner vault login --profile %s' instead", profileName, profileName)
+					return fmt.Errorf("profile %q already exists. Use 'pinner vault status --profile %s' to check it, or choose a different name", profileName, profileName)
 				}
 				// Pending profile from `vault create --agent` — restore
 				// will complete it. Fall through.

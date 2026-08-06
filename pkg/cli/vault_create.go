@@ -77,7 +77,7 @@ The recovery seed is displayed ONCE and must be saved securely.`,
 				return fmt.Errorf("failed to load registry: %w", err)
 			}
 			if _, exists := reg.Profiles[profileName]; exists {
-				return fmt.Errorf("profile %q already exists. Use 'pinner vault login --profile %s' or choose a different name", profileName, profileName)
+				return fmt.Errorf("profile %q already exists. Use 'pinner vault status --profile %s' to check it, or choose a different name", profileName, profileName)
 			}
 
 			// Guard against overwriting a prior pending seed. Applies to BOTH
