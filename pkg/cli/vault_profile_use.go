@@ -16,7 +16,7 @@ func newVaultProfileUseCommand() *cli.Command {
 		Description: `Sets the profile used by default when neither --profile nor
 the PINNER_PROFILE env var selects one.
 
-After setting a default, commands like 'pinner vault login' or 'pinner vault cp'
+After setting a default, commands like 'pinner vault status' or 'pinner vault cp'
 resolve to this profile without needing --profile on each call. Note that an
 explicit --profile flag or the PINNER_PROFILE env var still take precedence
 over the configured default.`,

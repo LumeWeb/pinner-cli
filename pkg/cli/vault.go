@@ -43,7 +43,6 @@ Files are encrypted client-side, erasure-coded, and distributed across Sia hosts
 
 Create a vault:     pinner vault create --profile <name>
 Restore a vault:    pinner vault restore --profile <name>
-Login:              pinner vault login
 Vault status:       pinner vault status
 Upload a file:      pinner vault cp ./report.pdf vault:/reports/report.pdf
 Download a file:    pinner vault cp vault:/reports/report.pdf ./
@@ -65,7 +64,6 @@ Stdout contains data or JSON results; progress goes to stderr.`,
 		Commands: []*cli.Command{
 			newVaultCreateCommand(),
 			newVaultRestoreCommand(),
-			newVaultLoginCommand(),
 			newVaultLsCommand(),
 			newVaultStatCommand(),
 			newVaultCatCommand(),

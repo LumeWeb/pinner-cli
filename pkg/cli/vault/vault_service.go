@@ -68,7 +68,7 @@ func NewVaultServiceForProfile(profileName string, indexerURL string) (VaultServ
 		return nil, fmt.Errorf("failed to load profile state: %w", err)
 	}
 	if state.AppKey == "" {
-		return nil, fmt.Errorf("profile %q has no app key. Run 'pinner vault login --profile %s' first", profileName, profileName)
+		return nil, fmt.Errorf("profile %q has no app key. Provision it with 'pinner vault create --profile %s' or 'pinner vault restore --profile %s'", profileName, profileName, profileName)
 	}
 
 	appKey, err := DecodeAppKey(state.AppKey)

@@ -53,6 +53,45 @@ func countCommands(cmd *cli.Command) int {
 	return count
 }
 
+func TestCommandRegistration_VaultHasNoLogin(t *testing.T) {
+	root := NewRootCommand()
+	vaultCmd := findCommand(root.Commands, "vault")
+	require.NotNil(t, vaultCmd, "vault command should exist")
+
+	// login was removed as redundant with status (both verify the Sia
+	// connection; status is the superset). Guard against reintroduction.
+	assert.Nil(t, findCommand(vaultCmd.Commands, "login"),
+		"vault login must not exist; use 'vault status' to verify a connection")
+
+	// status must be present to own connection verification.
+	assert.NotNil(t, findCommand(vaultCmd.Commands, "status"),
+		"vault status should exist to own connection verification")
+}
+
+func TestCommandRegistration_VaultSubcommands(t *testing.T) {
+	root := NewRootCommand()
+	vaultCmd := findCommand(root.Commands, "vault")
+	require.NotNil(t, vaultCmd, "vault command should exist")
+
+	expectedVaultSubs := []string{
+		"create", "restore", "ls", "stat", "cat", "verify", "rm",
+		"cp", "share", "sync", "profile", "status", "cache", "forget",
+	}
+	names := commandNames(vaultCmd.Commands)
+	nameSet := make(map[string]bool, len(names))
+	for _, n := range names {
+		nameSet[n] = true
+	}
+
+	for _, expected := range expectedVaultSubs {
+		assert.True(t, nameSet[expected], "vault should have subcommand %q", expected)
+	}
+	// Exact count — no unexpected commands (no login, no logout).
+	assert.Len(t, vaultCmd.Commands, len(expectedVaultSubs),
+		"vault should have exactly %d subcommands, got %d: %v",
+		len(expectedVaultSubs), len(vaultCmd.Commands), names)
+}
+
 func TestCommandRegistration_RootSubcommands(t *testing.T) {
 	root := NewRootCommand()
 
