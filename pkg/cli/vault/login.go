@@ -7,19 +7,55 @@ import (
 	"go.sia.tech/siastorage"
 )
 
-// RestoreConnection restores a Sia connection from a mnemonic.
-// Returns the hex-encoded app key.
-func RestoreConnection(ctx context.Context, indexerURL, mnemonic string) (string, error) {
-	appID := AppID()
-	metadata := siastorage.AppMetadata{
-		ID:          appID,
+// Connection drives a single Sia connection-approval flow. It wraps one
+// *siastorage.Builder for the entire Request -> WaitForApproval -> Register
+// sequence. The SDK stores the pending request, ephemeral key, and approval
+// status on the Builder instance itself, so Request and Wait/Register MUST run
+// on the same builder — spawning a fresh builder for the wait (as the previous
+// split helpers did) left registerResp nil and WaitForApproval failed with
+// "no connection request", orphaning the browser approval.
+type Connection struct {
+	builder  *siastorage.Builder
+	mnemonic string
+}
+
+// NewConnection creates a connection flow for the given indexer and mnemonic.
+// The mnemonic is used to derive the app key during WaitAndRegister.
+func NewConnection(indexerURL, mnemonic string) *Connection {
+	return &Connection{
+		builder:  siastorage.NewBuilder(indexerURL, appMetadata(indexerURL)),
+		mnemonic: mnemonic,
+	}
+}
+
+func appMetadata(indexerURL string) siastorage.AppMetadata {
+	return siastorage.AppMetadata{
+		ID:          AppID(),
 		Name:        "Pinner CLI Vault",
 		Description: "Private encrypted file storage via Sia",
 		ServiceURL:  indexerURL,
 	}
+}
 
-	builder := siastorage.NewBuilder(indexerURL, metadata)
-	sdk, err := builder.Register(ctx, mnemonic)
+// Request issues the connection request on the shared builder and returns the
+// URL the user must visit to approve. Call WaitAndRegister (on the same
+// Connection) afterward to complete the flow.
+func (c *Connection) Request(ctx context.Context) (string, error) {
+	approvalURL, err := c.builder.RequestConnection(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to request connection: %w", err)
+	}
+	return approvalURL, nil
+}
+
+// WaitAndRegister waits for browser approval of the connection request and then
+// registers the app key derived from the mnemonic. Returns the hex-encoded app
+// key. It must be called on the same Connection that issued Request.
+func (c *Connection) WaitAndRegister(ctx context.Context) (string, error) {
+	if err := c.builder.WaitForApproval(ctx); err != nil {
+		return "", fmt.Errorf("approval wait failed: %w", err)
+	}
+	sdk, err := c.builder.Register(ctx, c.mnemonic)
 	if err != nil {
 		return "", fmt.Errorf("failed to register: %w", err)
 	}
@@ -34,71 +70,4 @@ func RestoreConnection(ctx context.Context, indexerURL, mnemonic string) (string
 // browser approval to restore.
 func NewSeedPhrase() string {
 	return siastorage.NewSeedPhrase()
-}
-
-// RequestNewConnection initiates a new Sia connection.
-// Returns the approval URL and mnemonic.
-func RequestNewConnection(ctx context.Context, indexerURL string) (string, string, error) {
-	appID := AppID()
-	mnemonic := siastorage.NewSeedPhrase()
-	metadata := siastorage.AppMetadata{
-		ID:          appID,
-		Name:        "Pinner CLI Vault",
-		Description: "Private encrypted file storage via Sia",
-		ServiceURL:  indexerURL,
-	}
-
-	builder := siastorage.NewBuilder(indexerURL, metadata)
-	approvalURL, err := builder.RequestConnection(ctx)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to request connection: %w", err)
-	}
-
-	return approvalURL, mnemonic, nil
-}
-
-// RequestConnectionOnly initiates a connection request without generating a new mnemonic.
-// Used by restore — the mnemonic is provided by the user.
-func RequestConnectionOnly(ctx context.Context, indexerURL string) (string, error) {
-	appID := AppID()
-	metadata := siastorage.AppMetadata{
-		ID:          appID,
-		Name:        "Pinner CLI Vault",
-		Description: "Private encrypted file storage via Sia",
-		ServiceURL:  indexerURL,
-	}
-
-	builder := siastorage.NewBuilder(indexerURL, metadata)
-	approvalURL, err := builder.RequestConnection(ctx)
-	if err != nil {
-		return "", fmt.Errorf("failed to request connection: %w", err)
-	}
-
-	return approvalURL, nil
-}
-
-// WaitForApprovalAndRegister waits for browser approval, then registers.
-// Returns the hex-encoded app key.
-func WaitForApprovalAndRegister(ctx context.Context, indexerURL, mnemonic string) (string, error) {
-	appID := AppID()
-	metadata := siastorage.AppMetadata{
-		ID:          appID,
-		Name:        "Pinner CLI Vault",
-		Description: "Private encrypted file storage via Sia",
-		ServiceURL:  indexerURL,
-	}
-
-	builder := siastorage.NewBuilder(indexerURL, metadata)
-	if err := builder.WaitForApproval(ctx); err != nil {
-		return "", fmt.Errorf("approval wait failed: %w", err)
-	}
-
-	sdk, err := builder.Register(ctx, mnemonic)
-	if err != nil {
-		return "", fmt.Errorf("failed to register: %w", err)
-	}
-	defer sdk.Close()
-
-	appKey := sdk.AppKey()
-	return fmt.Sprintf("%x", []byte(appKey)), nil
 }

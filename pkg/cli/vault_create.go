@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/manifoldco/promptui"
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/pkg/cli/vault"
 )
@@ -60,14 +61,22 @@ The recovery seed is displayed ONCE and must be saved securely.`,
 				if c.String(FlagProfile) != "" {
 					return err
 				}
-				// No --profile and no profiles exist yet — prompt for a name
-				output.Printfln("Enter a name for this vault profile:")
-				fmt.Fscanln(os.Stdin, &profileName)
-				if profileName == "" {
-					return fmt.Errorf("profile name is required")
+				// No --profile and no profiles exist yet — prompt for a name.
+				// Use promptui (matching the auth flow) so the prompt renders
+				// inline and reads cleanly instead of the raw input echoing on
+				// its own line.
+				prompt := promptui.Prompt{
+					Label: "Vault profile name",
+					Validate: func(input string) error {
+						if input == "" {
+							return fmt.Errorf("profile name is required")
+						}
+						return vault.ValidateProfileName(input)
+					},
 				}
-				if err := vault.ValidateProfileName(profileName); err != nil {
-					return fmt.Errorf("invalid profile name: %w", err)
+				profileName, err = prompt.Run()
+				if err != nil {
+					return handleInterrupt(err)
 				}
 			}
 
@@ -108,18 +117,16 @@ The recovery seed is displayed ONCE and must be saved securely.`,
 			output.Printfln("Creating vault profile %q...", profileName)
 
 			var approvalURL string
-			var mnemonic string
+			mnemonic := vault.NewSeedPhrase()
+			var conn *vault.Connection
 
-			if c.Bool(FlagAgent) {
-				// Agent mode: generate the seed only. Do NOT issue a live
-				// connection/approval request here — restore drives the single
-				// browser approval, and issuing one now would orphan an
-				// approval and force a duplicate on the --seed-stdin run.
-				mnemonic = vault.NewSeedPhrase()
-			} else {
-				// 1. Generate a new mnemonic and start approval flow
-				var err error
-				approvalURL, mnemonic, err = vault.RequestNewConnection(ctx, indexerURL)
+			if !c.Bool(FlagAgent) {
+				// 1. Generate a new mnemonic and start approval flow on a
+				// single builder shared with the wait/register below (the SDK
+				// requires Request and WaitForApproval/Register on the same
+				// builder — a fresh builder would lose the pending request).
+				conn = vault.NewConnection(indexerURL, mnemonic)
+				approvalURL, err = conn.Request(ctx)
 				if err != nil {
 					return fmt.Errorf("failed to request connection: %w", err)
 				}
@@ -175,8 +182,9 @@ The recovery seed is displayed ONCE and must be saved securely.`,
 			output.Printfln("  %s", approvalURL)
 			output.Printfln("Waiting for approval...")
 
-			// 3. Wait for approval and register
-			appKeyHex, err := vault.WaitForApprovalAndRegister(ctx, indexerURL, mnemonic)
+			// 3. Wait for approval and register on the same builder that
+			// issued the connection request (conn is non-nil in non-agent mode).
+			appKeyHex, err := conn.WaitAndRegister(ctx)
 			if err != nil {
 				return fmt.Errorf("approval failed: %w", err)
 			}

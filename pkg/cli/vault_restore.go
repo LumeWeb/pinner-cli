@@ -128,8 +128,12 @@ The flow:
 
 			output.Printfln("Restoring vault profile %q...", profileName)
 
-			// Start approval flow (new device needs browser approval)
-			approvalURL, err := vault.RequestConnectionOnly(ctx, indexerURL)
+			// Start approval flow (new device needs browser approval). Build a
+			// single Connection shared with the wait/register below — the SDK
+			// requires Request and WaitForApproval/Register on the same
+			// builder, or the pending request is lost.
+			conn := vault.NewConnection(indexerURL, mnemonic)
+			approvalURL, err := conn.Request(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to request connection: %w", err)
 			}
@@ -138,8 +142,8 @@ The flow:
 			output.Printfln("  %s", approvalURL)
 			output.Printfln("Waiting for approval...")
 
-			// Wait for approval and register with mnemonic
-			appKeyHex, err := vault.WaitForApprovalAndRegister(ctx, indexerURL, mnemonic)
+			// Wait for approval and register with mnemonic on the same builder.
+			appKeyHex, err := conn.WaitAndRegister(ctx)
 			if err != nil {
 				return fmt.Errorf("approval/registration failed: %w", err)
 			}
