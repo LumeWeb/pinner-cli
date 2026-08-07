@@ -859,6 +859,182 @@ func TestWebsitesDomainsDANERepublishJSON(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestWebsitesDomainsUpdate(t *testing.T) {
+	tests := []struct {
+		name        string
+		setupMocks  func(*mockWebsitesServiceForCLI)
+		cmd         *mockCommand
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name: "successful update dns-hosted",
+			setupMocks: func(svc *mockWebsitesServiceForCLI) {
+				svc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+					return []ipfs.WebsiteItem{{Id: 1, Domain: "example.com"}}, nil
+				}
+				svc.ListDomainsFn = func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
+					return []ipfs.DomainResponse{
+						{Id: 1, Domain: "mydomain.com", Namespace: "icann"},
+					}, nil
+				}
+				svc.UpdateDomainFn = func(ctx context.Context, websiteID string, domainID string, req ipfs.DomainUpdateRequest) (*ipfs.DomainResponse, error) {
+					return &ipfs.DomainResponse{
+						Id: 1, Domain: "mydomain.com", Namespace: "icann", DnsHostingEnabled: boolPtr(true),
+					}, nil
+				}
+			},
+			cmd: newMockCommand().withArgs("mydomain.com").
+				withBool("dns-hosted", true).withIsSet("dns-hosted", true),
+			wantErr: false,
+		},
+		{
+			name: "successful update primary",
+			setupMocks: func(svc *mockWebsitesServiceForCLI) {
+				svc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+					return []ipfs.WebsiteItem{{Id: 1, Domain: "example.com"}}, nil
+				}
+				svc.ListDomainsFn = func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
+					return []ipfs.DomainResponse{
+						{Id: 1, Domain: "mydomain.com", Namespace: "icann"},
+					}, nil
+				}
+				svc.UpdateDomainFn = func(ctx context.Context, websiteID string, domainID string, req ipfs.DomainUpdateRequest) (*ipfs.DomainResponse, error) {
+					require.NotNil(t, req.Primary)
+					require.True(t, *req.Primary)
+					require.Nil(t, req.DnsHostingEnabled)
+					return &ipfs.DomainResponse{Id: 1, Domain: "mydomain.com", Namespace: "icann"}, nil
+				}
+			},
+			cmd: newMockCommand().withArgs("mydomain.com").
+				withBool("primary", true).withIsSet("primary", true),
+			wantErr: false,
+		},
+		{
+			name: "successful update by numeric binding id",
+			setupMocks: func(svc *mockWebsitesServiceForCLI) {
+				svc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+					return []ipfs.WebsiteItem{{Id: 1, Domain: "example.com"}}, nil
+				}
+				svc.ListDomainsFn = func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
+					return []ipfs.DomainResponse{
+						{Id: 2, Domain: "mydomain.hns", Namespace: "hns"},
+					}, nil
+				}
+				svc.UpdateDomainFn = func(ctx context.Context, websiteID string, domainID string, req ipfs.DomainUpdateRequest) (*ipfs.DomainResponse, error) {
+					return &ipfs.DomainResponse{
+						Id: 2, Domain: "mydomain.hns", Namespace: "hns", DnsHostingEnabled: boolPtr(false),
+					}, nil
+				}
+			},
+			cmd: newMockCommand().withArgs("2").
+				withBool("dns-hosted", false).withIsSet("dns-hosted", true),
+			wantErr: false,
+		},
+		{
+			name: "error when no flags set",
+			setupMocks: func(svc *mockWebsitesServiceForCLI) {
+				svc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+					return []ipfs.WebsiteItem{{Id: 1, Domain: "example.com"}}, nil
+				}
+				svc.ListDomainsFn = func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
+					return []ipfs.DomainResponse{
+						{Id: 1, Domain: "mydomain.com", Namespace: "icann"},
+					}, nil
+				}
+			},
+			cmd:         newMockCommand().withArgs("mydomain.com"),
+			wantErr:     true,
+			errContains: "at least one of --dns-hosted or --primary",
+		},
+		{
+			name: "error on sdk failure",
+			setupMocks: func(svc *mockWebsitesServiceForCLI) {
+				svc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+					return []ipfs.WebsiteItem{{Id: 1, Domain: "example.com"}}, nil
+				}
+				svc.ListDomainsFn = func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
+					return []ipfs.DomainResponse{
+						{Id: 1, Domain: "mydomain.com", Namespace: "icann"},
+					}, nil
+				}
+				svc.UpdateDomainFn = func(ctx context.Context, websiteID string, domainID string, req ipfs.DomainUpdateRequest) (*ipfs.DomainResponse, error) {
+					return nil, errors.New("update failed")
+				}
+			},
+			cmd: newMockCommand().withArgs("mydomain.com").
+				withBool("dns-hosted", true).withIsSet("dns-hosted", true),
+			wantErr:     true,
+			errContains: "update failed",
+		},
+		{
+			name: "error when domain not found",
+			setupMocks: func(svc *mockWebsitesServiceForCLI) {
+				svc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+					return []ipfs.WebsiteItem{{Id: 1, Domain: "example.com"}}, nil
+				}
+				svc.ListDomainsFn = func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
+					return []ipfs.DomainResponse{{Id: 1, Domain: "other.com", Namespace: "icann"}}, nil
+				}
+			},
+			cmd: newMockCommand().withArgs("mydomain.com").
+				withBool("dns-hosted", true).withIsSet("dns-hosted", true),
+			wantErr:     true,
+			errContains: "not found",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockSvc := &mockWebsitesServiceForCLI{}
+			if tt.setupMocks != nil {
+				tt.setupMocks(mockSvc)
+			}
+
+			output := NewOutputFormatter(false, false, false, false)
+			err := websitesDomainsUpdateWithService(context.Background(), tt.cmd, output, mockSvc)
+
+			if tt.wantErr {
+				require.Error(t, err)
+				if tt.errContains != "" {
+					require.Contains(t, err.Error(), tt.errContains)
+				}
+				return
+			}
+
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestWebsitesDomainsUpdateJSON(t *testing.T) {
+	mockSvc := &mockWebsitesServiceForCLI{}
+	mockSvc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+		return []ipfs.WebsiteItem{{Id: 1, Domain: "example.com"}}, nil
+	}
+	mockSvc.ListDomainsFn = func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
+		return []ipfs.DomainResponse{
+			{Id: 1, Domain: "mydomain.com", Namespace: "icann"},
+		}, nil
+	}
+	mockSvc.UpdateDomainFn = func(ctx context.Context, websiteID string, domainID string, req ipfs.DomainUpdateRequest) (*ipfs.DomainResponse, error) {
+		return &ipfs.DomainResponse{
+			Id: 1, Domain: "mydomain.com", Namespace: "icann", DnsHostingEnabled: boolPtr(true),
+		}, nil
+	}
+
+	output := NewOutputFormatter(true, false, false, false)
+	cmd := newMockCommand().withArgs("mydomain.com").
+		withBool("dns-hosted", true).withIsSet("dns-hosted", true)
+
+	err := websitesDomainsUpdateWithService(context.Background(), cmd, output, mockSvc)
+	require.NoError(t, err)
+}
+
+func boolPtr(b bool) *bool {
+	return &b
+}
+
 // websitesDomainsDANERepublishWithService is a test helper that allows injecting
 // a mock WebsitesService.
 func websitesDomainsDANERepublishWithService(ctx context.Context, cmd websitesCommandGetter, output Output, websitesService WebsitesService) error {
