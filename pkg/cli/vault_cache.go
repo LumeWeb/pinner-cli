@@ -41,7 +41,7 @@ is rederived. Use this to repair a corrupted or stale local cache.`,
 
 					// Move the existing index aside (don't delete it) so the
 					// cursor resets and the rebuild re-syncs the ENTIRE object
-					// stream. Rename is reversible: if the service cannot be
+					// Rename is reversible: if the service cannot be
 					// recreated below (bad config, missing state/app key), we
 					// restore the old cache instead of destroying it.
 					dbPath := vault.ProfileDBPath(profileName)
@@ -51,6 +51,21 @@ is rederived. Use this to repair a corrupted or stale local cache.`,
 						moved = true
 					} else if !os.IsNotExist(err) {
 						return fmt.Errorf("failed to set aside old cache: %w", err)
+					}
+
+					// The service's ordinary open (OpenDBNoMigrate) never runs
+					// schema migrations; it assumes an already-provisioned
+					// cache. Rebuild creates a brand-new empty cache, so
+					// migrate it explicitly before the service opens it, or the
+					// tables the sync would write into won't exist.
+					if db, err := vault.OpenDB(dbPath); err != nil {
+						if moved {
+							_ = os.Remove(dbPath)
+							_ = os.Rename(oldPath, dbPath)
+						}
+						return fmt.Errorf("failed to initialize rebuild cache: %w", err)
+					} else if sqlDB, err := db.DB(); err == nil {
+						sqlDB.Close()
 					}
 
 					if !output.IsJSON() {
