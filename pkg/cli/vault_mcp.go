@@ -84,7 +84,7 @@ func (a *vaultStatusAdapter) FileCount(ctx context.Context) (int64, error) {
 		return 0, nil
 	}
 
-	db, err := vault.OpenDB(vault.ProfileDBPath(name))
+	db, err := vault.OpenDBNoMigrate(vault.ProfileDBPath(name))
 	if err != nil {
 		return 0, err
 	}

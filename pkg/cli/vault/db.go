@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/pressly/goose/v3"
 	"gorm.io/driver/sqlite"
@@ -16,21 +17,28 @@ import (
 // other SQLite database this CLI may open.
 const gooseVersionTable = "goose_vault_version"
 
-// silentGooseLogger is a no-op goose.Logger. goose otherwise logs every
-// migration and re-check to stderr with timestamps ("OK 0001_init.sql",
-// "successfully migrated", "no migrations to run"), which would leak raw
-// internal lines into the CLI's polished step output. Commands surface the
-// real progress themselves ("Setting up database..."), so goose's own output
-// is silenced here.
-type silentGooseLogger struct{}
-
-func (silentGooseLogger) Fatalf(string, ...any) {}
-func (silentGooseLogger) Printf(string, ...any) {}
-
-// OpenDB opens (or creates) the vault SQLite database and applies any pending
+// OpenDB opens (or creates) the vault SQLite database, then applies any pending
 // schema migrations with goose. gorm remains the ORM for all runtime queries;
 // goose owns schema (DDL) so future changes are versioned SQL migrations.
+//
+// Migrations are a schema-maintenance operation, so OpenDB is only used at the
+// boundaries that (re)create or upgrade the schema: create, restore, and cache
+// rebuild. Ordinary commands open the cache without migrating via
+// OpenDBNoMigrate — running goose's version check on every `ls`/`stat`/`cat`
+// is unnecessary work on a read-only hot path.
 func OpenDB(dbPath string) (*gorm.DB, error) {
+	return openDB(dbPath, true)
+}
+
+// OpenDBNoMigrate opens the vault SQLite cache without running goose
+// migrations. Used by the per-command service path, which never changes the
+// schema. The schema is guaranteed present because the profile's cache was
+// created by create/restore/cache rebuild (all of which migrate).
+func OpenDBNoMigrate(dbPath string) (*gorm.DB, error) {
+	return openDB(dbPath, false)
+}
+
+func openDB(dbPath string, applyMigrations bool) (*gorm.DB, error) {
 	if dbPath == "" {
 		return nil, fmt.Errorf("dbPath must not be empty")
 	}
@@ -71,16 +79,33 @@ func OpenDB(dbPath string) (*gorm.DB, error) {
 	}
 	sqlDB.SetMaxOpenConns(1)
 
-	// Apply schema migrations with goose (embedded SQL migrations).
-	if err := migrate(db); err != nil {
-		return nil, fmt.Errorf("failed to migrate vault database: %w", err)
+	// Apply schema migrations with goose (embedded SQL migrations) only at
+	// schema-maintenance boundaries.
+	if applyMigrations {
+		if err := migrate(db); err != nil {
+			return nil, fmt.Errorf("failed to migrate vault database: %w", err)
+		}
 	}
 
 	return db, nil
 }
 
 // migrate runs the embedded goose migrations on the vault database.
+//
+// goose's API mutates package-global state: SetBaseFS, SetTableName,
+// SetDialect, and Up all read/write a single shared baseFS/dialect underneath
+// (github.com/pressly/goose/v3 keeps these as package-level vars). Two migrate
+// calls therefore race when run concurrently — e.g. one goroutine's deferred
+// SetBaseFS(nil) clearing the FS while another's Up is mid-migration. That is a
+// genuine bug if two profiles ever migrate at once, and the race detector
+// catches it when parallel tests each open+migrate their own DB. Serialize the
+// whole sequence with one mutex so the Set*+Up+cleanup block is atomic.
+var migrateMu sync.Mutex
+
 func migrate(db *gorm.DB) error {
+	migrateMu.Lock()
+	defer migrateMu.Unlock()
+
 	sqlDb, err := db.DB()
 	if err != nil {
 		return fmt.Errorf("failed to get sql.DB handle: %w", err)
@@ -93,11 +118,6 @@ func migrate(db *gorm.DB) error {
 
 	goose.SetBaseFS(fsys)
 	goose.SetTableName(gooseVersionTable)
-	// Silence goose's stderr logging (timestamped "OK <migration>",
-	// "successfully migrated", "no migrations to run"). The vault is the only
-	// goose user in this CLI and its output is redundant with the command's
-	// own step lines, so it is always silenced at the package level.
-	goose.SetLogger(silentGooseLogger{})
 	defer goose.SetBaseFS(nil) // hygiene: clear the global between opens
 
 	if err := goose.SetDialect("sqlite3"); err != nil {

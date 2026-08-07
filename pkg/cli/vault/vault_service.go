@@ -90,7 +90,11 @@ func NewVaultServiceForProfile(profileName string, indexerURL string) (VaultServ
 		return nil, fmt.Errorf("failed to create Sia SDK: %w", err)
 	}
 
-	db, err := OpenDB(ProfileDBPath(profileName))
+	// Open the cache WITHOUT running goose migrations. Migrations are applied
+	// at schema-maintenance boundaries (create/restore/cache rebuild); every
+	// command here is a read of an already-provisioned cache, so re-running the
+	// goose version check on each ls/stat/cat is wasted work.
+	db, err := OpenDBNoMigrate(ProfileDBPath(profileName))
 	if err != nil {
 		sdk.Close()
 		return nil, err
