@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/pressly/goose/v3"
 	"gorm.io/driver/sqlite"
@@ -90,7 +91,21 @@ func openDB(dbPath string, applyMigrations bool) (*gorm.DB, error) {
 }
 
 // migrate runs the embedded goose migrations on the vault database.
+//
+// goose's API mutates package-global state: SetBaseFS, SetTableName,
+// SetDialect, and Up all read/write a single shared baseFS/dialect underneath
+// (github.com/pressly/goose/v3 keeps these as package-level vars). Two migrate
+// calls therefore race when run concurrently — e.g. one goroutine's deferred
+// SetBaseFS(nil) clearing the FS while another's Up is mid-migration. That is a
+// genuine bug if two profiles ever migrate at once, and the race detector
+// catches it when parallel tests each open+migrate their own DB. Serialize the
+// whole sequence with one mutex so the Set*+Up+cleanup block is atomic.
+var migrateMu sync.Mutex
+
 func migrate(db *gorm.DB) error {
+	migrateMu.Lock()
+	defer migrateMu.Unlock()
+
 	sqlDb, err := db.DB()
 	if err != nil {
 		return fmt.Errorf("failed to get sql.DB handle: %w", err)
