@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -117,6 +118,37 @@ func TestRequiresToken(t *testing.T) {
 	// No token, no env, no config file: token required.
 	t.Setenv("NGROK_CONFIG", filepath.Join(dir, "missing.yml"))
 	require.True(t, NewNgrokTunnel("", "").RequiresToken())
+}
+
+func TestRequiresTokenDefaultConfigPath(t *testing.T) {
+	// Exercise the default config-file branch (no NGROK_CONFIG override) by
+	// pointing the OS config/home dir at a temp dir. The path assembled below
+	// must match the per-OS default RequiresToken probes.
+	t.Setenv("NGROK_CONFIG", "")
+	t.Setenv("NGROK_AUTHTOKEN", "")
+
+	var base, cfg string
+	if runtime.GOOS == "windows" {
+		base = t.TempDir()
+		t.Setenv("LOCALAPPDATA", base)
+		cfg = filepath.Join(base, "ngrok", "ngrok.yml")
+	} else {
+		base = t.TempDir()
+		t.Setenv("HOME", base)
+		if runtime.GOOS == "darwin" {
+			cfg = filepath.Join(base, "Library", "Application Support", "ngrok", "ngrok.yml")
+		} else {
+			cfg = filepath.Join(base, ".config", "ngrok", "ngrok.yml")
+		}
+	}
+
+	// No config file present yet: token required.
+	require.True(t, NewNgrokTunnel("", "").RequiresToken())
+
+	// Write the config file at the default location: token no longer required.
+	require.NoError(t, os.MkdirAll(filepath.Dir(cfg), 0o700))
+	require.NoError(t, os.WriteFile(cfg, []byte("agent:\n  authtoken: x\n"), 0o600))
+	require.False(t, NewNgrokTunnel("", "").RequiresToken())
 }
 
 func TestURLForOrigin(t *testing.T) {

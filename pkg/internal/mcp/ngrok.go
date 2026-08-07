@@ -61,11 +61,14 @@ func (n *ngrokTunnel) RequiresToken() bool {
 	}
 	switch runtime.GOOS {
 	case "windows":
-		base, err := os.UserConfigDir()
-		if err != nil {
+		// ngrok stores its config under %LOCALAPPDATA%\ngrok\ngrok.yml, not
+		// %APPDATA%\Roaming (os.UserConfigDir), so read LOCALAPPDATA to match
+		// where `ngrok config add-authtoken` actually writes.
+		base := os.Getenv("LOCALAPPDATA")
+		if base == "" {
 			return true
 		}
-		_, err = os.Stat(filepath.Join(base, "ngrok", "ngrok.yml"))
+		_, err := os.Stat(filepath.Join(base, "ngrok", "ngrok.yml"))
 		return err != nil
 	case "darwin":
 		home, err := os.UserHomeDir()
