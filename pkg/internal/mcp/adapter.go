@@ -312,16 +312,12 @@ func beforeAuthorization(secret string, next http.Handler) http.Handler {
 		return next
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		const prefix = "Bearer "
-		auth := r.Header.Get("Authorization")
-		if len(auth) == len(prefix)+len(secret) &&
-			strings.HasPrefix(auth, prefix) &&
-			subtle.ConstantTimeCompare([]byte(auth[len(prefix):]), []byte(secret)) == 1 {
+		tok := bearerToken(r)
+		if tok != "" && subtle.ConstantTimeCompare([]byte(tok), []byte(secret)) == 1 {
 			next.ServeHTTP(w, r)
 			return
 		}
-		w.Header().Set("WWW-Authenticate", `Bearer realm="pinner-mcp"`)
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		deny(w, `Bearer realm="pinner-mcp"`)
 	})
 }
 

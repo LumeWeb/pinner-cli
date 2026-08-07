@@ -265,11 +265,12 @@ func (o *oauthServer) newCode(clientID string) string {
 }
 
 // validToken reports whether the given bearer token is one this AS issued
-// and has not expired.
+// and has not expired. It does a single-map lookup only; full-map cleanup of
+// expired entries is deferred to the periodic sweep (see sweep/reapLocked) so
+// per-request cost stays O(1) and does not serialize on the mutex.
 func (o *oauthServer) validToken(tok string) bool {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	o.reapLocked()
 	exp, ok := o.tokens[tok]
 	if ok && time.Now().After(exp) {
 		delete(o.tokens, tok)
@@ -289,11 +290,18 @@ func (o *oauthServer) protectMCP(mcpPath string, next http.Handler) http.Handler
 			next.ServeHTTP(w, r)
 			return
 		}
-		w.Header().Set("WWW-Authenticate", fmt.Sprintf(
+		deny(w, fmt.Sprintf(
 			`Bearer resource_metadata="%s/.well-known/oauth-protected-resource", error="invalid_token", error_description="OAuth authorization required"`,
 			o.baseURL))
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid_token", "error_description": "OAuth authorization required"})
 	})
+}
+
+// deny writes an HTTP 401 with a WWW-Authenticate challenge. It is shared by
+// the OAuth resource-server path (protectMCP) and the static-bearer path
+// (beforeAuthorization) so both reject unauthorized access the same way.
+func deny(w http.ResponseWriter, authenticate string) {
+	w.Header().Set("WWW-Authenticate", authenticate)
+	writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid_token", "error_description": "unauthorized"})
 }
 
 func bearerToken(r *http.Request) string {

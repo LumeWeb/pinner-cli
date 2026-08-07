@@ -13,7 +13,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const testSecret = "s3cr3t123"
+// testSecret is an arbitrary non-secret fixture value used only to exercise
+// the OAuth flow in the test package. It is not a credential and never
+// reaches production (the server secret always comes from the --auth-token
+// flag at runtime).
+const testSecret = "fixture-test-secret"
 
 func newTestOAuth(t *testing.T) *oauthServer {
 	t.Helper()
