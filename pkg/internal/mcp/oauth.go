@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -31,20 +32,70 @@ type oauthServer struct {
 	baseURL string
 
 	// authorization codes, one-time use
-	codes map[string]string // code -> clientID
+	codes map[string]expiring // code -> clientID + expiry
 	// access tokens issued to authenticated clients
 	tokens   map[string]time.Time // token -> expiry
 	tokenTTL time.Duration
+	codeTTL  time.Duration
+	// done stops the background reaper.
+	done      chan struct{}
+	closeOnce sync.Once
+}
+
+// expiring is a code entry with its issuance expiry so codes can be reaped.
+type expiring struct {
+	clientID string
+	expiry   time.Time
 }
 
 func newOAuthServer(secret, baseURL string) *oauthServer {
-	return &oauthServer{
+	o := &oauthServer{
 		secret:   []byte(secret),
 		issuer:   baseURL,
 		baseURL:  baseURL,
-		codes:    make(map[string]string),
+		codes:    make(map[string]expiring),
 		tokens:   make(map[string]time.Time),
 		tokenTTL: time.Hour,
+		codeTTL:  10 * time.Minute,
+		done:     make(chan struct{}),
+	}
+	// Periodic reaper so long-running public tunnels do not grow the maps
+	// without bound as clients rotate and codes go unredeemed.
+	go o.sweep()
+	return o
+}
+
+// Stop terminates the background reaper. It is safe to call multiple times.
+func (o *oauthServer) Stop() {
+	o.closeOnce.Do(func() { close(o.done) })
+}
+
+// sweep periodically drops expired tokens and codes.
+func (o *oauthServer) sweep() {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			o.reapLocked()
+		case <-o.done:
+			return
+		}
+	}
+}
+
+// reapLocked removes expired tokens and codes. Caller must hold o.mu.
+func (o *oauthServer) reapLocked() {
+	now := time.Now()
+	for tok, exp := range o.tokens {
+		if now.After(exp) {
+			delete(o.tokens, tok)
+		}
+	}
+	for code, e := range o.codes {
+		if now.After(e.expiry) {
+			delete(o.codes, code)
+		}
 	}
 }
 
@@ -121,6 +172,13 @@ func (o *oauthServer) authorizePOST(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing client_id or redirect_uri", http.StatusBadRequest)
 		return
 	}
+	// Reject cross-host redirects. Without a client registry, only loopback
+	// callback URIs are allowed so an attacker cannot lure the resource owner
+	// into submitting the secret and exfiltrate the code to their own host.
+	if !allowedRedirect(redirectURI) {
+		http.Error(w, "redirect_uri must be a loopback callback", http.StatusBadRequest)
+		return
+	}
 
 	code := o.newCode(clientID)
 	sep := "?"
@@ -129,6 +187,27 @@ func (o *oauthServer) authorizePOST(w http.ResponseWriter, r *http.Request) {
 	}
 	loc := fmt.Sprintf("%s%scode=%s&state=%s", redirectURI, sep, code, state)
 	http.Redirect(w, r, loc, http.StatusFound)
+}
+
+// allowedRedirect reports whether redirect_uri is a loopback callback that a
+// public OAuth client (MCP desktop/mobile) is legitimately allowed to use.
+// Only http(s) with a loopback host is accepted; any cross-origin host is
+// rejected, which is what prevents code exfiltration in the absence of a
+// client registry.
+func allowedRedirect(redirectURI string) bool {
+	u, err := url.Parse(redirectURI)
+	if err != nil {
+		return false
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return false
+	}
+	host := u.Hostname()
+	switch host {
+	case "localhost", "127.0.0.1", "::1":
+		return true
+	}
+	return false
 }
 
 // tokenHandler exchanges an authorization code for an access token.
@@ -149,10 +228,14 @@ func (o *oauthServer) tokenHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	o.mu.Lock()
-	_, ok := o.codes[code]
+	entry, ok := o.codes[code]
 	if ok {
 		delete(o.codes, code) // one-time use
+		if time.Now().After(entry.expiry) {
+			ok = false // expired
+		}
 	}
+	o.reapLocked()
 	o.mu.Unlock()
 	if !ok {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_grant"})
@@ -175,21 +258,23 @@ func (o *oauthServer) tokenHandler(w http.ResponseWriter, r *http.Request) {
 func (o *oauthServer) newCode(clientID string) string {
 	code := newToken(24)
 	o.mu.Lock()
-	o.codes[code] = clientID
+	o.codes[code] = expiring{clientID: clientID, expiry: time.Now().Add(o.codeTTL)}
+	o.reapLocked()
 	o.mu.Unlock()
 	return code
 }
 
 // validToken reports whether the given bearer token is one this AS issued
-// and has not expired. Non-blocking read of the token store.
+// and has not expired.
 func (o *oauthServer) validToken(tok string) bool {
 	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.reapLocked()
 	exp, ok := o.tokens[tok]
 	if ok && time.Now().After(exp) {
 		delete(o.tokens, tok)
 		ok = false
 	}
-	o.mu.Unlock()
 	return ok
 }
 

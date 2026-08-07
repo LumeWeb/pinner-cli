@@ -11,6 +11,7 @@ package mcp
 import (
 	"bytes"
 	"context"
+	"crypto/subtle"
 	"fmt"
 	"net"
 	"net/http"
@@ -89,7 +90,11 @@ adapter.`,
 			},
 			&cli.StringFlag{
 				Name:  "auth-token",
-				Usage: "Shared secret used for authorization. In OAuth mode the resource owner enters it on the login page to authorize a client; in loopback mode it is accepted directly as a Bearer token. REQUIRED when --tunnel is set: the tunnel exposes the endpoint publicly and it executes tools in-process",
+				Usage: "Shared secret used to authorize the MCP endpoint. In OAuth mode (--oauth) the resource owner enters it on the login page as a password; otherwise it is accepted directly as a Bearer token. REQUIRED when --tunnel is set: the tunnel exposes the endpoint publicly and it executes tools in-process",
+			},
+			&cli.BoolFlag{
+				Name:  "oauth",
+				Usage: "Enable the OAuth 2.1 handshake (authorize/token/discovery endpoints). Without this, --auth-token is accepted directly as a Bearer token. Use --oauth to let OAuth-expecting MCP clients (ChatGPT, Claude.ai, Copilot, Vertex) authorize",
 			},
 			&cli.StringFlag{
 				Name:  "public-url",
@@ -150,6 +155,7 @@ func serveHTTP(ctx context.Context, srv *server.MCPServer, cmd *cli.Command) err
 	token := cmd.String("token")
 	authToken := cmd.String("auth-token")
 	publicURL := cmd.String("public-url")
+	enableOAuth := cmd.Bool("oauth")
 
 	// Bind a concrete local address up front. Port 0 asks the OS for an
 	// available ephemeral port.
@@ -181,16 +187,18 @@ func serveHTTP(ctx context.Context, srv *server.MCPServer, cmd *cli.Command) err
 		tunnel = tpl
 	}
 
-	// Authorization is active whenever a shared secret is provided. When the
-	// server is exposed publicly (tunnel or explicit public URL), default to
-	// the full OAuth handshake so OAuth-expecting MCP clients can authorize;
-	// the resource owner proves control of the secret on the login page.
+	// OAuth is explicitly enabled with --oauth and requires a shared secret
+	// to authenticate the login page. Without --oauth, any --auth-token is
+	// accepted directly as a Bearer token.
 	baseURL := publicURL
 	if baseURL == "" {
 		baseURL = "http://" + localAddr
 	}
 	var oauth *oauthServer
-	if authToken != "" {
+	if enableOAuth {
+		if authToken == "" {
+			return fmt.Errorf("--oauth requires --auth-token: the login page authenticates with the shared secret")
+		}
 		oauth = newOAuthServer(authToken, baseURL)
 	}
 
@@ -199,8 +207,15 @@ func serveHTTP(ctx context.Context, srv *server.MCPServer, cmd *cli.Command) err
 	// the tunnel before any client connects.
 	mux := http.NewServeMux()
 	var mcpHandler http.Handler = server.NewStreamableHTTPServer(srv)
-	if oauth != nil {
+	switch {
+	case oauth != nil:
+		// OAuth handshake: /mcp only accepts tokens issued through the flow.
 		mcpHandler = oauth.protectMCP("/mcp", mcpHandler)
+	case authToken != "":
+		// Static bearer: accept the shared secret directly as a Bearer token.
+		mcpHandler = beforeAuthorization(authToken, mcpHandler)
+	default:
+		// No secret configured: unauthenticated.
 	}
 	mux.Handle("/mcp", mcpHandler)
 	if oauth != nil {
@@ -234,6 +249,9 @@ func serveHTTP(ctx context.Context, srv *server.MCPServer, cmd *cli.Command) err
 	shutdown := func(ctx context.Context) {
 		shCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
+		if oauth != nil {
+			oauth.Stop()
+		}
 		if tunnel != nil {
 			_ = tunnel.Stop(shCtx)
 		}
@@ -282,6 +300,29 @@ func serveHTTP(ctx context.Context, srv *server.MCPServer, cmd *cli.Command) err
 	}
 	shutdown(context.Background())
 	return nil
+}
+
+// beforeAuthorization wraps an http.Handler with a static bearer-token check
+// used for loopback-only serving: requests must carry an Authorization header
+// equal to "Bearer <secret>". The comparison is constant-time. The raw secret
+// is only accepted directly in loopback mode; public exposure uses the OAuth
+// handshake instead.
+func beforeAuthorization(secret string, next http.Handler) http.Handler {
+	if secret == "" {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		const prefix = "Bearer "
+		auth := r.Header.Get("Authorization")
+		if len(auth) == len(prefix)+len(secret) &&
+			strings.HasPrefix(auth, prefix) &&
+			subtle.ConstantTimeCompare([]byte(auth[len(prefix):]), []byte(secret)) == 1 {
+			next.ServeHTTP(w, r)
+			return
+		}
+		w.Header().Set("WWW-Authenticate", `Bearer realm="pinner-mcp"`)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	})
 }
 
 // tunnelFor returns a Tunnel for the named provider, or nil if provider is
