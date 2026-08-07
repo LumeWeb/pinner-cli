@@ -492,6 +492,11 @@ func websitesDomainsVerify(ctx context.Context, cmd websitesCommandGetter, outpu
 
 	result, err := websitesService.VerifyDomain(ctx, websiteID, domainID)
 	if err != nil {
+		// Render actionable next steps on failure (not just the error), unless
+		// the user asked for JSON (machine output).
+		if !output.IsJSON() {
+			renderDNSSelfServiceGuidance(output, err)
+		}
 		return err
 	}
 	if result == nil {
@@ -511,15 +516,23 @@ func websitesDomainsVerify(ctx context.Context, cmd websitesCommandGetter, outpu
 	if result.Status != nil {
 		status = *result.Status
 	}
-	output.PrintFields(FieldGroup{
-		Fields: []Field{
-			{"ID", strconv.Itoa(result.Id)},
-			{"Domain", result.Domain},
-			{"Namespace", result.Namespace},
-			{"Status", status},
-			{"Zone Name", zoneName},
-		},
-	})
+	fields := []Field{
+		{"ID", strconv.Itoa(result.Id)},
+		{"Domain", result.Domain},
+		{"Namespace", result.Namespace},
+		{"Status", status},
+		{"Zone Name", zoneName},
+	}
+	// Surface the explicit DNSSEC state (enabled/disabled/error) + reason from
+	// the delegation bundle so a managed zone whose DS is missing or in error
+	// is immediately diagnosable rather than a bare status.
+	if result.Delegation != nil && result.Delegation.Dnssec != nil {
+		fields = append(fields, Field{"DNSSEC", *result.Delegation.Dnssec})
+		if result.Delegation.DnssecError != nil && *result.Delegation.DnssecError != "" {
+			fields = append(fields, Field{"DNSSEC Error", *result.Delegation.DnssecError})
+		}
+	}
+	output.PrintFields(FieldGroup{Fields: fields})
 
 	return nil
 }
@@ -578,13 +591,20 @@ func renderDomainDelegation(output Output, result *ipfs.DomainResponse, managed 
 	if result.Status != nil {
 		status = *result.Status
 	}
-	output.PrintFields(FieldGroup{
-		Fields: []Field{
-			{"Domain", result.Domain},
-			{"Namespace", result.Namespace},
-			{"Status", status},
-		},
-	})
+	fields := []Field{
+		{"Domain", result.Domain},
+		{"Namespace", result.Namespace},
+		{"Status", status},
+	}
+	// Surface the explicit DNSSEC state (enabled/disabled/error) + reason so an
+	// absent DS on a managed namespace is diagnosable, not a silent gap.
+	if result.Delegation != nil && result.Delegation.Dnssec != nil {
+		fields = append(fields, Field{"DNSSEC", *result.Delegation.Dnssec})
+		if result.Delegation.DnssecError != nil && *result.Delegation.DnssecError != "" {
+			fields = append(fields, Field{"DNSSEC Error", *result.Delegation.DnssecError})
+		}
+	}
+	output.PrintFields(FieldGroup{Fields: fields})
 
 	if result.Delegation == nil {
 		output.Printfln("No delegation records are available for %s.", result.Domain)
