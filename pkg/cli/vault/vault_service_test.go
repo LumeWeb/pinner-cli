@@ -366,6 +366,50 @@ func TestList_BareDirectoryPath(t *testing.T) {
 	}
 }
 
+// TestList_ReadOnly_NoSDKBuilt locks in the lazy-SDK guarantee: a read-only
+// command (List) must work from the local SQLite cache alone, with a service
+// whose SDK was never constructed (s.sdk == nil). Constructing the Sia SDK
+// hits the network (CheckAppAuth + refreshHosts against the indexer), so a
+// local-cache-only `ls` must never pay that cost or fail when the indexer is
+// unreachable.
+func TestList_ReadOnly_NoSDKBuilt(t *testing.T) {
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "vault.db")
+	db, err := OpenDB(dbPath)
+	if err != nil {
+		t.Fatalf("OpenDB failed: %v", err)
+	}
+	defer func() {
+		if sqlDB, err := db.DB(); err == nil {
+			sqlDB.Close()
+		}
+	}()
+
+	// NOTE: sdk is intentionally left nil. The previous (pre-lazy) behaviour
+	// constructed the SDK eagerly in NewVaultServiceForProfile, which fails
+	// fast when the indexer is unreachable. With lazy construction, a service
+	// whose SDK is nil must still serve read-only commands.
+	svc := &vaultService{
+		db:     db,
+		sdk:    nil,
+		appKey: types.PrivateKey{},
+	}
+
+	now := time.Now().UTC()
+	rok := "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890a1"
+	if err := db.Create(&File{UUID: "uuid-root", Name: "root.txt", DirectoryID: nil, IsCurrent: true, ObjectKey: rok, Size: 1, ContentDigest: "r", CreatedAt: now, UpdatedAt: now}).Error; err != nil {
+		t.Fatalf("create file: %v", err)
+	}
+
+	items, err := svc.List(ctx, "vault:/")
+	if err != nil {
+		t.Fatalf("List with nil SDK must succeed from local cache, got: %v", err)
+	}
+	if len(items) != 1 || items[0].Name != "root.txt" {
+		t.Errorf("List returned %+v, want [root.txt] from local cache only", items)
+	}
+}
+
 // TestList_FilePath_ResolvesParent regression: listing a concrete FILE path
 // (e.g. vault:/docs/report.pdf) must list that file's PARENT directory
 // (vault:/docs), not attempt to look up the full path as a directory and
