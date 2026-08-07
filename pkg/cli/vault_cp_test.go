@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -20,6 +21,7 @@ type cpFakeVaultService struct {
 	content  []byte // bytes served by Get
 	getPaths []string
 	putPaths []string
+	onGet    func(io.Writer) // optional hook invoked during Get (for perms asserts)
 }
 
 func (s *cpFakeVaultService) CheckReady(context.Context) error { return nil }
@@ -33,6 +35,9 @@ func (s *cpFakeVaultService) Put(_ context.Context, r io.Reader, _ int64, path s
 }
 func (s *cpFakeVaultService) Get(_ context.Context, path string, w io.Writer) error {
 	s.getPaths = append(s.getPaths, path)
+	if s.onGet != nil {
+		s.onGet(w)
+	}
 	_, err := w.Write(s.content)
 	return err
 }
@@ -100,10 +105,45 @@ func cpCmdHarness(t *testing.T, srcSvc, dstSvc *cpFakeVaultService, args ...stri
 
 // TestVaultCpCommand_VaultToVault asserts that cp between two vaults (which may
 // be different profiles) reads from the source profile's service and writes to
-// the destination profile's service, preserving the transferred bytes.
+// the destination profile's service, preserving the transferred bytes, and that
+// the decrypted plaintext is buffered in a private (0700 dir / 0600 file) temp
+// location rather than exposed in shared /tmp.
 func TestVaultCpCommand_VaultToVault(t *testing.T) {
 	srcSvc := &cpFakeVaultService{label: "work", content: []byte("hello-from-work")}
 	dstSvc := &cpFakeVaultService{label: "personal"}
+
+	// Assert on the raw temp file while it still exists (before the copy's
+	// deferred RemoveAll runs): it must live in a private 0700 "vault-cp-"
+	// directory and the file must be 0600, so decrypted plaintext is never
+	// readable by other local users in shared /tmp. This runs inside Get before
+	// the writer is populated, so only the location/permissions are checked.
+	srcSvc.onGet = func(w io.Writer) {
+		tf, ok := w.(*os.File)
+		if !ok {
+			t.Logf("source writer is %T (not *os.File); skipping perm assert", w)
+			return
+		}
+		dir := filepath.Dir(tf.Name())
+		di, err := os.Stat(dir)
+		if err != nil {
+			t.Fatalf("stat temp dir: %v", err)
+		}
+		if !strings.HasPrefix(di.Name(), "vault-cp-") {
+			t.Errorf("temp dir = %q, want a private vault-cp-* dir", di.Name())
+		}
+		if perm := di.Mode().Perm(); perm != 0o700 {
+			t.Errorf("temp dir mode = %v, want 0700", perm)
+		}
+		fi, err := tf.Stat()
+		if err != nil {
+			t.Fatalf("stat temp file: %v", err)
+		}
+		if perm := fi.Mode().Perm(); perm != 0o600 {
+			t.Errorf("temp file mode = %v, want 0600", perm)
+		}
+	}
+
+	t.Cleanup(func() { srcSvc.onGet = nil })
 
 	buf, err := cpCmdHarness(t, srcSvc, dstSvc,
 		"vault://work/docs/a.txt", "vault:/docs/b.txt", "--json")

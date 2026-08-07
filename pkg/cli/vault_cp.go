@@ -16,11 +16,15 @@ import (
 )
 
 // createVaultDownloadTemp creates a uniquely-named temp file in dir for a
-// vault download. It opens with O_CREATE|O_EXCL and mode 0666 so the kernel
-// applies the process umask atomically at open (as os.Create would), honoring
-// a restrictive umask (e.g. 077) with no syscall.Umask mutation, no TOCTOU
-// race, and no post-hoc chmod. O_EXCL plus a random name prevents symlink
-// following and reuse of a stale temp from a crashed prior run.
+// vault download/copy. It opens with O_CREATE|O_EXCL and mode 0600 so the
+// kernel applies the process umask atomically at open (as os.Create would),
+// honoring a restrictive umask (e.g. 077) with no syscall.Umask mutation, no
+// TOCTOU race, and no post-hoc chmod. O_EXCL plus a random name prevents
+// symlink following and reuse of a stale temp from a crashed prior run. The
+// 0600 mode also guarantees a vault's decrypted plaintext is never readable by
+// other local users, even in a shared temp directory (the download path writes
+// beside the destination, the vault↔vault copy writes into a private os.TempDir
+// subdirectory).
 func createVaultDownloadTemp(dir string) (*os.File, error) {
 	for i := 0; i < 10000; i++ {
 		var b [8]byte
@@ -28,7 +32,7 @@ func createVaultDownloadTemp(dir string) (*os.File, error) {
 			return nil, err
 		}
 		name := filepath.Join(dir, ".vault-download-"+hex.EncodeToString(b[:])+".tmp")
-		f, err := os.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o666)
+		f, err := os.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 		if err == nil {
 			return f, nil
 		}
@@ -277,15 +281,21 @@ func vaultVaultCopy(ctx context.Context, c *cli.Command, output Output, srcEp, d
 	}
 	defer dstSvc.Close()
 
-	// Buffer the source in a temp file so Get→Put can stream without holding
-	// the whole object in memory.
-	tmpDir := os.TempDir()
+	// Buffer the source in a temp file inside a private directory so the
+	// Get→Put copy can stream without holding the whole object in memory and
+	// without ever exposing decrypted plaintext to other local users. The
+	// directory is created with mode 0700 and removed (with the file) on exit;
+	// the file itself is additionally opened at 0600.
+	tmpDir, err := os.MkdirTemp("", "vault-cp-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmpDir)
 	f, err := createVaultDownloadTemp(tmpDir)
 	if err != nil {
 		return err
 	}
 	tmp := f.Name()
-	defer os.Remove(tmp)
 
 	if err := srcSvc.Get(ctx, srcEp.vaultPath, f); err != nil {
 		f.Close()
