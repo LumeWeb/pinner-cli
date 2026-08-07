@@ -11,12 +11,16 @@ package mcp
 import (
 	"bytes"
 	"context"
+	"crypto/subtle"
 	"fmt"
+	"net"
+	"net/http"
 	"os"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -45,11 +49,51 @@ func MCPCommand(root *cli.Command, wizardFactory WizardDepsFactory, resourceFact
 subcommands as MCP tools. An MCP client (e.g. an AI agent) can discover
 available tools, their flags, and invoke them.
 
+By default the server speaks MCP over stdio. Pass --http to serve over the
+streamable-HTTP transport instead, optionally behind a public tunnel.
+
 Tool invocations are executed in-process by running the command tree
 directly; no subprocess fork. Commands are exposed faithfully;
 agent-friendly behavior is the responsibility of each command, not this
 adapter.`,
-		Action: func(ctx context.Context, _ *cli.Command) error {
+		Flags: []cli.Flag{
+			&cli.BoolFlag{
+				Name:  "http",
+				Value: false,
+				Usage: "Serve over the streamable-HTTP transport instead of stdio (endpoint /mcp)",
+			},
+			&cli.StringFlag{
+				Name:  "host",
+				Value: "127.0.0.1",
+				Usage: "Local bind host for the HTTP transport",
+			},
+			&cli.IntFlag{
+				Name:  "port",
+				Value: 0,
+				Usage: "Local bind port for the HTTP transport (0 picks a free port)",
+			},
+			&cli.StringFlag{
+				Name:  "tunnel",
+				Usage: "Public tunnel provider: ngrok or cloudflared (cloudflared requires a custom domain)",
+			},
+			&cli.StringFlag{
+				Name:  "domain",
+				Usage: "Custom domain for the tunnel (required for cloudflared, optional for ngrok on paid accounts)",
+			},
+			&cli.StringFlag{
+				Name:  "token",
+				Usage: "Tunnel provider account token (e.g. ngrok authtoken). May also be set via the provider env var or config file",
+			},
+			&cli.StringFlag{
+				Name:  "tunnel-name",
+				Usage: "Cloudflare tunnel resource name (default: pinner-mcp)",
+			},
+			&cli.StringFlag{
+				Name:  "auth-token",
+				Usage: "Bearer token required to reach the MCP HTTP endpoint. REQUIRED when --tunnel is set: the tunnel exposes the endpoint publicly and it executes tools in-process",
+			},
+		},
+		Action: func(ctx context.Context, cmd *cli.Command) error {
 			log.Debug("building MCP server with progressive disclosure", zap.String("app", root.Name))
 
 			store := NewSessionStore()
@@ -82,10 +126,168 @@ adapter.`,
 			// The real catalog is accessible only through these meta-tools.
 			RegisterMetaTools(srv, catalog)
 
-			log.Debug("serving MCP server")
-			s := server.NewStdioServer(srv)
-			return s.Listen(ctx, os.Stdin, os.Stdout)
+			if !cmd.Bool("http") {
+				log.Debug("serving MCP server over stdio")
+				s := server.NewStdioServer(srv)
+				return s.Listen(ctx, os.Stdin, os.Stdout)
+			}
+
+			return serveHTTP(ctx, srv, cmd)
 		},
+	}
+}
+
+// serveHTTP serves an MCP server over the streamable-HTTP transport, binding
+// to the local address derived from the --host/--port flags. When --tunnel is
+// set, it starts and manages the selected tunnel so a remote MCP client can
+// reach the server over a public URL, then blocks until ctx is cancelled.
+func serveHTTP(ctx context.Context, srv *server.MCPServer, cmd *cli.Command) error {
+	provider := cmd.String("tunnel")
+	domain := cmd.String("domain")
+	token := cmd.String("token")
+	authToken := cmd.String("auth-token")
+
+	// Bind a concrete local address up front. Port 0 asks the OS for an
+	// available ephemeral port.
+	host := cmd.String("host")
+	port := cmd.Int("port")
+	listener, err := net.Listen("tcp", net.JoinHostPort(host, strconv.Itoa(port)))
+	if err != nil {
+		return fmt.Errorf("failed to bind MCP HTTP server on %s:%d: %w", host, port, err)
+	}
+	defer listener.Close()
+	localAddr := listener.Addr().String()
+
+	var tunnel Tunnel
+	if provider != "" {
+		tpl, err := tunnelFor(provider, domain, token, cmd.String("tunnel-name"))
+		if err != nil {
+			return err
+		}
+		if tpl.RequiresToken() {
+			return fmt.Errorf("%s tunnel requires an account token: pass --token or set the provider token (see --help)", provider)
+		}
+		// Exposing the endpoint through a public tunnel makes the MCP HTTP
+		// endpoint reachable by anyone who learns the URL. The server
+		// executes catalog CLI tools in-process, so require an explicit
+		// bearer token before exposing it.
+		if authToken == "" {
+			return fmt.Errorf("--tunnel requires --auth-token: the public endpoint executes tools without authentication")
+		}
+		tunnel = tpl
+	}
+
+	// Serve the streamable-HTTP handler over our own http.Server bound to
+	// the pre-created listener so the ephemeral port is stable and known to
+	// the tunnel before any client connects.
+	mux := http.NewServeMux()
+	mcpHandler := beforeAuthorization(authToken, server.NewStreamableHTTPServer(srv))
+	mux.Handle("/mcp", mcpHandler)
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" {
+			http.NotFound(w, r)
+			return
+		}
+		fmt.Fprintln(w, "pinner MCP server. Point your MCP client at /mcp")
+	})
+	httpSrv := &http.Server{
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+
+	shutdown := func(ctx context.Context) {
+		shCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		if tunnel != nil {
+			_ = tunnel.Stop(shCtx)
+		}
+		_ = httpSrv.Shutdown(shCtx)
+	}
+
+	log.Debug("serving MCP server over streamable-HTTP", zap.String("addr", localAddr))
+
+	errc := make(chan error, 2)
+	go func() {
+		if err := httpSrv.Serve(listener); err != nil && err != http.ErrServerClosed {
+			errc <- fmt.Errorf("MCP HTTP server: %w", err)
+		}
+	}()
+
+	if tunnel != nil {
+		if err := tunnel.Start(ctx, localAddr); err != nil {
+			shutdown(context.Background())
+			return err
+		}
+		url, err := tunnel.URL()
+		if err != nil {
+			shutdown(context.Background())
+			return err
+		}
+		fmt.Printf("MCP server URL: %s/mcp\n", strings.TrimRight(url, "/"))
+		fmt.Println("Endpoint is authenticated with the --auth-token bearer token")
+	} else {
+		fmt.Printf("MCP server listening on http://%s (endpoint /mcp)\n", localAddr)
+		if authToken != "" {
+			fmt.Println("Endpoint is authenticated with the --auth-token bearer token")
+		}
+	}
+	fmt.Println("Press Ctrl+C to stop")
+
+	select {
+	case err := <-errc:
+		shutdown(context.Background())
+		return err
+	case <-ctx.Done():
+	}
+	shutdown(context.Background())
+	return nil
+}
+
+// beforeAuthorization wraps an http.Handler with a bearer-token check. When
+// token is empty, the handler is returned unchanged (no auth required, used
+// for loopback-only serving). When token is non-empty, requests without a
+// matching "Authorization: Bearer <token>" header are rejected with 401.
+func beforeAuthorization(token string, next http.Handler) http.Handler {
+	if token == "" {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if bearerMatches(r, token) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		w.Header().Set("WWW-Authenticate", `Bearer realm="pinner-mcp"`)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	})
+}
+
+// bearerMatches reports whether the request carries an Authorization header
+// equal to "Bearer <token>". The comparison is constant-time to avoid leaking
+// the token length over timing.
+func bearerMatches(r *http.Request, token string) bool {
+	const prefix = "Bearer "
+	auth := r.Header.Get("Authorization")
+	if len(auth) != len(prefix)+len(token) {
+		return false
+	}
+	if auth[:len(prefix)] != prefix {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(auth[len(prefix):]), []byte(token)) == 1
+}
+
+// tunnelFor returns a Tunnel for the named provider, or nil if provider is
+// empty (no tunnel).
+func tunnelFor(provider, domain, token, name string) (Tunnel, error) {
+	switch provider {
+	case "":
+		return nil, nil
+	case "ngrok":
+		return NewNgrokTunnel(domain, token), nil
+	case "cloudflared":
+		return NewCloudflaredTunnel(domain, name), nil
+	default:
+		return nil, fmt.Errorf("unknown tunnel provider %q (supported: ngrok, cloudflared)", provider)
 	}
 }
 
