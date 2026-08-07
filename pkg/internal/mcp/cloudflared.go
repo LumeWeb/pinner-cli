@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -30,10 +29,12 @@ type cloudflaredTunnel struct {
 	domain string
 	name   string
 	cmd    *exec.Cmd
-	// done carries the result of the single cmd.Wait() call so both the
-	// readiness probe and Stop can observe process exit without calling
-	// Wait() twice.
-	done chan error
+	// done is closed by the single cmd.Wait() goroutine when the cloudflared
+	// process has been reaped. It is a broadcast exit signal: any number of
+	// readers (the readiness probe and Stop) can observe closure with a
+	// non-blocking select, so both see the authoritative reap without the
+	// PID-reuse race of kill(0) or the drain conflict of a value channel.
+	done chan struct{}
 }
 
 // NewCloudflaredTunnel returns a tunnel backed by a Cloudflare named tunnel
@@ -67,9 +68,9 @@ func (c *cloudflaredTunnel) URL() (string, error) {
 }
 
 // Stop implements Tunnel. It sends an interrupt to the cloudflared process,
-// escalating to SIGKILL if it does not exit within the context deadline. The
-// done channel is owned solely by Stop and the single cmd.Wait() goroutine,
-// so it is never drained elsewhere and can always be awaited here.
+// escalating to SIGKILL if it does not exit within the context deadline. Exit
+// is observed via closure of the done channel (the reaped signal), which any
+// number of readers can observe without draining.
 func (c *cloudflaredTunnel) Stop(ctx context.Context) error {
 	c.mu.Lock()
 	cmd := c.cmd
@@ -79,17 +80,11 @@ func (c *cloudflaredTunnel) Stop(ctx context.Context) error {
 		return nil
 	}
 
-	// If the process is already gone (natural exit reaped by the Wait
-	// goroutine), there is nothing to stop. Return promptly rather than
-	// signaling a dead PID or waiting on done.
-	if !processAlive(cmd) {
-		return nil
-	}
-
 	_ = cmd.Process.Signal(os.Interrupt)
 
 	// Bound the graceful wait so a child that ignores SIGINT is escalated
-	// to SIGKILL instead of being left running.
+	// to SIGKILL instead of being left running. If the process already
+	// exited (done closed), this returns immediately.
 	if done != nil {
 		select {
 		case <-done:
@@ -134,10 +129,11 @@ func (c *cloudflaredTunnel) Start(ctx context.Context, localAddr string) error {
 		return fmt.Errorf("failed to start cloudflared: %w", err)
 	}
 
-	// One process may Wait; feed the result to a shared channel so both the
-	// readiness probe and Stop observe an exit without a second Wait.
-	done := make(chan error, 1)
-	go func() { done <- cmd.Wait() }()
+	// One process may Wait; close the done channel when it is reaped so both
+	// the readiness probe and Stop observe the exit via closure (broadcast,
+	// non-draining, no second Wait).
+	done := make(chan struct{})
+	go func() { _ = cmd.Wait(); close(done) }()
 
 	c.mu.Lock()
 	c.cmd = cmd
@@ -160,15 +156,14 @@ func (c *cloudflaredTunnel) Start(ctx context.Context, localAddr string) error {
 }
 
 // waitReady polls the public URL until it responds over the tunnel, the
-// cloudflared process exits, or the deadline expires. It does NOT read the
-// done channel: that channel is owned solely by Stop (and the single
-// cmd.Wait() goroutine), so waitReady probes liveness with signal 0 instead
-// to avoid draining the value Stop awaits.
+// cloudflared process exits (done closes), or the deadline expires. done is a
+// closed-on-reap signal visible to any reader, so observing it here never
+// drains or races it for Stop.
 func (c *cloudflaredTunnel) waitReady(ctx context.Context, publicURL string) error {
 	deadline := time.Now().Add(30 * time.Second)
 	client := &http.Client{Timeout: 3 * time.Second}
 	for {
-		if !processAlive(c.cmd) {
+		if c.exited() {
 			return fmt.Errorf("cloudflared exited before the tunnel became ready")
 		}
 		if ctx.Err() != nil {
@@ -188,13 +183,16 @@ func (c *cloudflaredTunnel) waitReady(ctx context.Context, publicURL string) err
 	}
 }
 
-// processAlive reports whether the process is still running using signal 0,
-// which probes existence without delivering a signal or reaping the child.
-func processAlive(cmd *exec.Cmd) bool {
-	if cmd == nil || cmd.Process == nil {
+// exited reports whether the cloudflared process has been reaped, as signaled
+// by closure of the done channel. Non-blocking and non-draining, safe for any
+// number of concurrent readers.
+func (c *cloudflaredTunnel) exited() bool {
+	select {
+	case <-c.done:
+		return true
+	default:
 		return false
 	}
-	return cmd.Process.Signal(syscall.Signal(0)) == nil
 }
 
 // urlForOrigin normalizes a host:port local address into the http:// URL that

@@ -142,33 +142,35 @@ func TestURLForOrigin(t *testing.T) {
 	require.Error(t, err)
 }
 
-// TestCloudflaredStopAfterDrainedDone reproduces the deadlock from code
-// review: waitReady observes a premature exit and drains the done channel,
-// so a subsequent Stop must not block forever waiting on a value that will
-// never arrive.
-func TestCloudflaredStopAfterDrainedDone(t *testing.T) {
+// TestCloudflaredStopAfterExit guards the exit-detection path: once the
+// cloudflared process has been reaped (done closed), a subsequent Stop must
+// return promptly instead of blocking, and waitReady must observe the exit
+// rather than spinning to its deadline.
+func TestCloudflaredStopAfterExit(t *testing.T) {
 	// Spawn a short-lived child we can real-reap.
 	cmd := exec.Command("sh", "-c", "exit 0")
 	require.NoError(t, cmd.Start())
 
-	done := make(chan error, 1)
-	go func() { done <- cmd.Wait() }()
+	done := make(chan struct{})
+	go func() { _ = cmd.Wait(); close(done) }()
 
-	// Drain done, mirroring what waitReady does when it detects the process
-	// already exited. The process is now reaped.
-	<-done
-
-	c := &cloudflaredTunnel{
-		cmd:  cmd,
-		done: done,
+	// Wait for the reap to land so the tunnel is in the exited state.
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("child was not reaped in time")
 	}
 
-	// Stop must return promptly instead of blocking on the drained channel.
+	c := &cloudflaredTunnel{cmd: cmd, done: done}
+
+	// waitReady must fail fast with the exit error, not time out.
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
+	err := c.waitReady(ctx, "https://exited.invalid")
+	assert.ErrorContains(t, err, "exited before the tunnel became ready")
 
+	// Stop must return promptly instead of blocking on the closed channel.
 	started := time.Now()
-	err := c.Stop(ctx)
-	assert.NoError(t, err)
-	assert.Less(t, time.Since(started), 3*time.Second, "Stop blocked on a drained done channel")
+	assert.NoError(t, c.Stop(ctx))
+	assert.Less(t, time.Since(started), 3*time.Second, "Stop blocked after process exit")
 }
