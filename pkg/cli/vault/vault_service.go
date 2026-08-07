@@ -51,22 +51,30 @@ type vaultService struct {
 	indexerURL string
 	metadata   siastorage.AppMetadata
 
-	sdkOnce sync.Once
-	sdk     sdkClient
-	sdkErr  error
+	sdkMu  sync.Mutex // guards sdk, sdkErr, closed (fast-path read, lazy build, Close)
+	sdk    sdkClient
+	sdkErr error
+	closed bool
 }
 
 // ensureSDK returns the Sia SDK, building it (and hitting the network) only on
 // first use. Tests that inject a fake SDK directly (s.sdk != nil) get it back
-// unchanged; production services build the real SDK lazily.
+// unchanged; production services build the real SDK lazily. All access to
+// sdk/sdkErr/closed is serialized through sdkMu so a concurrent Close() can
+// never race an in-flight lazy build (or leak the SDK built after it). Once the
+// service is Closed, ensureSDK returns ErrVaultClosed rather than lazily
+// rebuilding a fresh SDK on a disposed service.
 func (s *vaultService) ensureSDK() (sdkClient, error) {
+	s.sdkMu.Lock()
+	defer s.sdkMu.Unlock()
+	if s.closed {
+		return nil, ErrVaultClosed
+	}
 	if s.sdk != nil {
 		return s.sdk, nil
 	}
-	s.sdkOnce.Do(func() {
-		builder := siastorage.NewBuilder(s.indexerURL, s.metadata)
-		s.sdk, s.sdkErr = builder.SDK(s.appKey)
-	})
+	builder := siastorage.NewBuilder(s.indexerURL, s.metadata)
+	s.sdk, s.sdkErr = builder.SDK(s.appKey)
 	return s.sdk, s.sdkErr
 }
 
@@ -839,10 +847,20 @@ func (s *vaultService) Close() error {
 		}
 		s.db = nil
 	}
-	if s.sdk != nil {
-		err := s.sdk.Close()
-		s.sdk = nil
-		if err != nil {
+	// Release the SDK under the same lock that guards ensureSDK, so a Close()
+	// that races an in-flight lazy build waits for it and then closes the SDK
+	// it produced (previously it could observe sdk==nil and leak the SDK built
+	// right after). Mark the service closed so a subsequent ensureSDK returns
+	// ErrVaultClosed instead of lazily rebuilding a fresh SDK on a disposed
+	// service.
+	s.sdkMu.Lock()
+	sdk := s.sdk
+	s.sdk = nil
+	s.closed = true
+	s.sdkMu.Unlock()
+
+	if sdk != nil {
+		if err := sdk.Close(); err != nil {
 			return errors.Join(err, dbErr)
 		}
 	}

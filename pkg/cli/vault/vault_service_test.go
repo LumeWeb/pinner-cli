@@ -410,6 +410,59 @@ func TestList_ReadOnly_NoSDKBuilt(t *testing.T) {
 	}
 }
 
+// TestEnsureSDK_Close_RaceFree locks in the fix for a data race flagged by
+// Kody review: ensureSDK's fast-path read of s.sdk and Close()'s read/write
+// used to be unsynchronized, so a concurrent Close() racing ensureSDK could
+// observe a torn sdkClient (or, for the lazy-build path, leak the SDK built
+// after Close observed nil). All access to sdk/sdkErr must go through sdkMu.
+// Run under -race to catch regressions. The fake SDK is injected directly
+// (the supported test path), and concurrent ensureSDK + Close must neither
+// race nor invoke the SDK after it was closed.
+func TestEnsureSDK_Close_RaceFree(t *testing.T) {
+	svc := &vaultService{sdk: &fakeSDK{t: t}}
+
+	start := make(chan struct{})
+	const n = 16
+	var wg sync.WaitGroup
+
+	// Concurrent ensureSDK callers: each must get back the injected fake via the
+	// mutex-guarded fast path, or ErrVaultClosed once the racing Close wins. An
+	// unsynchronized access, a torn sdkClient, or a use-after-close would trip
+	// -race.
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			for j := 0; j < 50; j++ {
+				sdk, err := svc.ensureSDK()
+				if errors.Is(err, ErrVaultClosed) {
+					return // service closed by the concurrent goroutine; done
+				}
+				if err != nil {
+					t.Errorf("ensureSDK with injected fake returned error: %v", err)
+					return
+				}
+				if _, ok := sdk.(*fakeSDK); !ok {
+					t.Errorf("ensureSDK returned %T, want *fakeSDK", sdk)
+					return
+				}
+				_ = sdk.AppKey() // exercise the returned SDK
+			}
+		}()
+	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		<-start
+		// Close racing the ensureSDK calls. It must be safe and idempotent.
+		_ = svc.Close()
+	}()
+
+	close(start)
+	wg.Wait()
+}
+
 // TestList_FilePath_ResolvesParent regression: listing a concrete FILE path
 // (e.g. vault:/docs/report.pdf) must list that file's PARENT directory
 // (vault:/docs), not attempt to look up the full path as a directory and
