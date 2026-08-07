@@ -19,10 +19,10 @@ LDFLAGS := -X '$(PKG).Version=$(VERSION)' \
            -X '$(PKG).Architecture=$(ARCH)'
 
 build:
-	go build -ldflags="$(LDFLAGS)" -o pinner ./cmd/pinner
+	CGO_ENABLED=1 go build -ldflags="$(LDFLAGS)" -o pinner ./cmd/pinner
 
 install:
-	go install -ldflags="$(LDFLAGS)" ./cmd/pinner
+	CGO_ENABLED=1 go install -ldflags="$(LDFLAGS)" ./cmd/pinner
 
 clean:
 	rm -f pinner

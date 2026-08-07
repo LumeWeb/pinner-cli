@@ -78,19 +78,17 @@ jobs:
         with:
           go-version: 'stable'
 
-      - name: Download dependencies
-        run: go mod download
-
       - name: Export Go version
         run: echo "GO_VERSION=$(go version | awk '{print $3}' | sed 's/go//')" >> $GITHUB_ENV
 
-      - name: Install GoReleaser
-        uses: goreleaser/goreleaser-action@v7
-        with:
-          install-only: true
-
-      - name: Build snapshot artifacts
-        run: goreleaser release --snapshot --clean
+      - name: Build snapshot artifacts (goreleaser-cross)
+        run: |
+          docker run --rm \
+            -v "$PWD":/go/src/go.lumeweb.com/pinner-cli \
+            -w /go/src/go.lumeweb.com/pinner-cli \
+            -e GO_VERSION \
+            ghcr.io/goreleaser/goreleaser-cross:v1.26 \
+            release --snapshot --clean
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
