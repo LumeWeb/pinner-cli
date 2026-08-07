@@ -517,6 +517,49 @@ func TestDnsRecordsList_DomainArg(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestDnsRecordsTable(t *testing.T) {
+	headers, rows := dnsRecordsTable([]ipfs.RecordResponse{
+		{ZoneId: 1, Name: "www", Type: "CNAME", Content: "example.com", Ttl: 3600, Disabled: false},
+		{ZoneId: 1, Name: "", Type: "A", Content: "1.2.3.4", Ttl: 300, Disabled: false},
+		{ZoneId: 1, Name: "mail", Type: "MX", Content: "10 mail.example.com", Ttl: 3600, Disabled: true},
+	})
+
+	assert.Equal(t, []string{"NAME", "TYPE", "CONTENT", "TTL", "STATUS"}, headers)
+	assert.Equal(t, [][]string{
+		{"www", "CNAME", "example.com", "3600", ""},
+		// blank name renders as the zone apex marker
+		{"@", "A", "1.2.3.4", "300", ""},
+		{"mail", "MX", "10 mail.example.com", "3600", "disabled"},
+	}, rows)
+}
+
+func TestKeepWholeValue(t *testing.T) {
+	tests := []struct {
+		name string
+		row  []string
+		j    int
+		want bool
+	}{
+		// Type/VALUE delegation table layout
+		{"DS value kept whole", []string{"DS", "12345 8 2 abc..."}, 1, true},
+		{"TLSA value kept whole", []string{"TLSA", "3 1 1 0a9e..."}, 1, true},
+		{"delegation A value wraps", []string{"A", "1.2.3.4"}, 1, false},
+		{"delegation type col wraps", []string{"DS", "12345"}, 0, false},
+		// Full DNS record table layout [NAME, TYPE, CONTENT, TTL, STATUS]
+		{"dnslink content kept whole", []string{"_dnslink.example.com", "TXT", "dnslink=/ipfs/bafy...", "300", ""}, 2, true},
+		{"tlsa content kept whole", []string{"_443._tcp.example.com", "TLSA", "3 1 1 0a9e...", "300", ""}, 2, true},
+		{"full table A content wraps", []string{"www", "A", "1.2.3.4", "300", ""}, 2, false},
+		{"full table name col wraps", []string{"www", "A", "1.2.3.4", "300", ""}, 0, false},
+		{"full table ttl wraps", []string{"www", "A", "1.2.3.4", "300", ""}, 3, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, keepWholeValue(tt.row, tt.j))
+		})
+	}
+}
+
 // ===== dnsRecordsCreate =====
 
 func TestDnsRecordsCreate_Success(t *testing.T) {
