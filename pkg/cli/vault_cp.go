@@ -16,23 +16,25 @@ import (
 )
 
 // createVaultDownloadTemp creates a uniquely-named temp file in dir for a
-// vault download/copy. It opens with O_CREATE|O_EXCL and mode 0600 so the
+// vault download/copy, opening with O_CREATE|O_EXCL and the given mode so the
 // kernel applies the process umask atomically at open (as os.Create would),
 // honoring a restrictive umask (e.g. 077) with no syscall.Umask mutation, no
 // TOCTOU race, and no post-hoc chmod. O_EXCL plus a random name prevents
-// symlink following and reuse of a stale temp from a crashed prior run. The
-// 0600 mode also guarantees a vault's decrypted plaintext is never readable by
-// other local users, even in a shared temp directory (the download path writes
-// beside the destination, the vault↔vault copy writes into a private os.TempDir
-// subdirectory).
-func createVaultDownloadTemp(dir string) (*os.File, error) {
+// symlink following and reuse of a stale temp from a crashed prior run.
+//
+// The caller chooses the mode: the download path passes 0o666 (umask-honoring,
+// typically 0644) because the temp is atomically renamed onto the destination,
+// so the final file inherits it. The vault↔vault copy path passes 0o600 because
+// it buffers decrypted plaintext and must never be world-readable even under a
+// permissive umask.
+func createVaultDownloadTemp(dir string, mode os.FileMode) (*os.File, error) {
 	for i := 0; i < 10000; i++ {
 		var b [8]byte
 		if _, err := rand.Read(b[:]); err != nil {
 			return nil, err
 		}
 		name := filepath.Join(dir, ".vault-download-"+hex.EncodeToString(b[:])+".tmp")
-		f, err := os.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		f, err := os.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode)
 		if err == nil {
 			return f, nil
 		}
@@ -219,8 +221,10 @@ func vaultDownload(ctx context.Context, c *cli.Command, output Output, vaultEp, 
 	// Download to a temp file in the same directory, then atomically rename
 	// onto localPath only after the download succeeds, so --force never
 	// truncates an existing file when the service can't be built or the
-	// download fails partway.
-	f, err := createVaultDownloadTemp(filepath.Dir(localPath))
+	// download fails partway. The temp is created at 0666 (umask-honoring,
+	// typically 0644) because the rename preserves its mode as the final
+	// destination file's mode.
+	f, err := createVaultDownloadTemp(filepath.Dir(localPath), 0o666)
 	if err != nil {
 		return err
 	}
@@ -291,7 +295,7 @@ func vaultVaultCopy(ctx context.Context, c *cli.Command, output Output, srcEp, d
 		return err
 	}
 	defer os.RemoveAll(tmpDir)
-	f, err := createVaultDownloadTemp(tmpDir)
+	f, err := createVaultDownloadTemp(tmpDir, 0o600)
 	if err != nil {
 		return err
 	}

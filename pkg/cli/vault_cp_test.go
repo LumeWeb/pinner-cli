@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -123,24 +122,7 @@ func TestVaultCpCommand_VaultToVault(t *testing.T) {
 			t.Logf("source writer is %T (not *os.File); skipping perm assert", w)
 			return
 		}
-		dir := filepath.Dir(tf.Name())
-		di, err := os.Stat(dir)
-		if err != nil {
-			t.Fatalf("stat temp dir: %v", err)
-		}
-		if !strings.HasPrefix(di.Name(), "vault-cp-") {
-			t.Errorf("temp dir = %q, want a private vault-cp-* dir", di.Name())
-		}
-		if perm := di.Mode().Perm(); perm != 0o700 {
-			t.Errorf("temp dir mode = %v, want 0700", perm)
-		}
-		fi, err := tf.Stat()
-		if err != nil {
-			t.Fatalf("stat temp file: %v", err)
-		}
-		if perm := fi.Mode().Perm(); perm != 0o600 {
-			t.Errorf("temp file mode = %v, want 0600", perm)
-		}
+		assertPrivateTempPerms(t, tf)
 	}
 
 	t.Cleanup(func() { srcSvc.onGet = nil })
