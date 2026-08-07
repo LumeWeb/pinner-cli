@@ -4,7 +4,9 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -97,8 +99,24 @@ func TestTunnelFor(t *testing.T) {
 }
 
 func TestRequiresToken(t *testing.T) {
-	// Token supplied directly.
+	// Explicit --token supplied.
 	require.False(t, NewNgrokTunnel("", "tok").RequiresToken())
+
+	// NGROK_AUTHTOKEN env set: token source present.
+	t.Setenv("NGROK_AUTHTOKEN", "sekret")
+	require.False(t, NewNgrokTunnel("", "").RequiresToken())
+
+	// NGROK_CONFIG pointing at an existing config file counts as auth.
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "ngrok.yml")
+	require.NoError(t, os.WriteFile(cfg, []byte("agent:\n  authtoken: x\n"), 0o600))
+	t.Setenv("NGROK_AUTHTOKEN", "")
+	t.Setenv("NGROK_CONFIG", cfg)
+	require.False(t, NewNgrokTunnel("", "").RequiresToken())
+
+	// No token, no env, no config file: token required.
+	t.Setenv("NGROK_CONFIG", filepath.Join(dir, "missing.yml"))
+	require.True(t, NewNgrokTunnel("", "").RequiresToken())
 }
 
 func TestURLForOrigin(t *testing.T) {
