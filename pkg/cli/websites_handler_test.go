@@ -126,6 +126,10 @@ func (m *mockWebsitesHandlerService) GetDomainDNSRequirements(ctx context.Contex
 	return nil, nil
 }
 
+func (m *mockWebsitesHandlerService) RepublishDANE(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainDANERepublishResponse, error) {
+	return nil, nil
+}
+
 func setupWebsitesHandlerTest(t *testing.T) (*mockWebsitesHandlerService, *configmocks.MockManager) {
 	t.Helper()
 	mockSvc := &mockWebsitesHandlerService{}

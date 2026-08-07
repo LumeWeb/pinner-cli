@@ -277,3 +277,17 @@ func (s *websitesService) GetDomainDNSRequirements(ctx context.Context, websiteI
 	}
 	return s.service.GetDomainDNSRequirements(ctx, websiteID, domainID)
 }
+
+// RepublishDANE forces re-publication of a bound domain's DANE records (the
+// _443._tcp.<domain> TLSA RRset) into the managed authoritative zone. It is
+// the operator escape hatch for recovering a TLSA that was deleted or went
+// missing and was not re-published by cert renewal.
+func (s *websitesService) RepublishDANE(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainDANERepublishResponse, error) {
+	if err := s.RequireAuthenticated(); err != nil {
+		return nil, err
+	}
+	if s.service == nil {
+		return nil, ErrServiceUnavailable
+	}
+	return s.service.RepublishDANE(ctx, websiteID, domainID)
+}

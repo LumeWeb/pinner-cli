@@ -177,6 +177,7 @@ type WebsitesService interface {
 	UnbindDomain(ctx context.Context, websiteID string, domainID string) error
 	VerifyDomain(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainResponse, error)
 	GetDomainDNSRequirements(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainResponse, error)
+	RepublishDANE(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainDANERepublishResponse, error)
 }
 
 func resolveRequiredArg(ctx context.Context, websitesService WebsitesService, cmd websitesCommandGetter) (string, error) {
