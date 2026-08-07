@@ -147,11 +147,17 @@ func vaultDownload(ctx context.Context, c *cli.Command, output Output, vaultPath
 		if err != nil {
 			return fmt.Errorf("invalid vault path: %w", err)
 		}
+		if _, err := vault.RequireActiveProfile(vp); err != nil {
+			return err
+		}
 		localPath = filepath.Join(localPath, vp.Name)
 	} else if fi, err := os.Stat(localPath); err == nil && fi.IsDir() {
 		vp, err := vault.ParseVaultPath(vaultPath)
 		if err != nil {
 			return fmt.Errorf("invalid vault path: %w", err)
+		}
+		if _, err := vault.RequireActiveProfile(vp); err != nil {
+			return err
 		}
 		localPath = filepath.Join(localPath, vp.Name)
 	}

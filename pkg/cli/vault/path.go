@@ -1,6 +1,7 @@
 package vault
 
 import (
+	"errors"
 	"fmt"
 	"path"
 	"strings"
@@ -106,6 +107,26 @@ func parsePath(p string, profile *string) (*VaultPath, error) {
 // explicit profile authority).
 func IsVaultPath(path string) bool {
 	return strings.HasPrefix(path, VaultScheme)
+}
+
+// ErrAuthorityUnsupported is returned when a vault path carries an explicit
+// profile authority (vault://<profile>/...) but the consumer cannot resolve a
+// profile-aware service for it. The service layer currently always operates on
+// the active profile (via --profile / config), so an authority path would
+// silently hit the wrong vault if ignored. Cross-profile support is not yet
+// implemented; until then, such paths are rejected rather than misdirected.
+var ErrAuthorityUnsupported = errors.New("vault://<profile>/ authority paths are not supported yet")
+
+// RequireActiveProfile rejects a vault path that names a specific profile
+// authority, since the current service layer cannot honor it (it resolves only
+// the active profile). It returns the path unchanged when there is no explicit
+// authority (Profile == nil), which is the active-profile default. Call this at
+// the command/service boundary right after ParseVaultPath.
+func RequireActiveProfile(vp *VaultPath) (*VaultPath, error) {
+	if vp != nil && vp.Profile != nil {
+		return nil, fmt.Errorf("%w: %v", ErrAuthorityUnsupported, *vp.Profile)
+	}
+	return vp, nil
 }
 
 // profileName returns the named profile authority, or "" when there is no

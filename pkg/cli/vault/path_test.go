@@ -1,6 +1,7 @@
 package vault
 
 import (
+	"errors"
 	"testing"
 )
 
@@ -208,6 +209,38 @@ func TestJoinVaultPath(t *testing.T) {
 		if got := JoinVaultPath(tt.path, tt.name); got != tt.want {
 			t.Errorf("JoinVaultPath(%q,%q) = %q, want %q", tt.path, tt.name, got, tt.want)
 		}
+	}
+}
+
+// TestRequireActiveProfile guards the boundary check that rejects explicit
+// profile authorities (vault://<profile>/...) until a profile-aware service
+// exists, so an authority path can never silently resolve against the active
+// profile's vault.
+func TestRequireActiveProfile(t *testing.T) {
+	// Active-profile paths (no authority) pass through unchanged.
+	for _, input := range []string{"vault:/docs/a.txt", "vault:/docs/", "vault:/"} {
+		t.Run(input, func(t *testing.T) {
+			vp, err := ParseVaultPath(input)
+			if err != nil {
+				t.Fatalf("ParseVaultPath(%q): %v", input, err)
+			}
+			if _, err := RequireActiveProfile(vp); err != nil {
+				t.Errorf("RequireActiveProfile(%q) = %v, want nil", input, err)
+			}
+		})
+	}
+
+	// Authority paths are rejected, not silently redirected.
+	for _, input := range []string{"vault://work/docs/a.txt", "vault://work/"} {
+		t.Run(input, func(t *testing.T) {
+			vp, err := ParseVaultPath(input)
+			if err != nil {
+				t.Fatalf("ParseVaultPath(%q): %v", input, err)
+			}
+			if _, err := RequireActiveProfile(vp); !errors.Is(err, ErrAuthorityUnsupported) {
+				t.Errorf("RequireActiveProfile(%q) = %v, want ErrAuthorityUnsupported", input, err)
+			}
+		})
 	}
 }
 

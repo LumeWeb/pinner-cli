@@ -161,6 +161,10 @@ func (s *vaultService) Put(ctx context.Context, r io.Reader, size int64, vaultPa
 	if err != nil {
 		return nil, err
 	}
+	vp, err = RequireActiveProfile(vp)
+	if err != nil {
+		return nil, err
+	}
 	if vp.IsDir {
 		return nil, fmt.Errorf("destination must be a file path, not a directory")
 	}
@@ -387,6 +391,10 @@ func (s *vaultService) Get(ctx context.Context, vaultPath string, w io.Writer) e
 	if err != nil {
 		return err
 	}
+	vp, err = RequireActiveProfile(vp)
+	if err != nil {
+		return err
+	}
 
 	record, err := s.resolveFile(vp)
 	if err != nil {
@@ -419,6 +427,10 @@ func (s *vaultService) Get(ctx context.Context, vaultPath string, w io.Writer) e
 // List lists files and directories at the given vault path.
 func (s *vaultService) List(ctx context.Context, vaultPath string) ([]ListItem, error) {
 	vp, err := ParseVaultPath(vaultPath)
+	if err != nil {
+		return nil, err
+	}
+	vp, err = RequireActiveProfile(vp)
 	if err != nil {
 		return nil, err
 	}
@@ -510,6 +522,10 @@ func (s *vaultService) List(ctx context.Context, vaultPath string) ([]ListItem, 
 // Stat returns metadata about a file or directory.
 func (s *vaultService) Stat(ctx context.Context, vaultPath string) (*StatResult, error) {
 	vp, err := ParseVaultPath(vaultPath)
+	if err != nil {
+		return nil, err
+	}
+	vp, err = RequireActiveProfile(vp)
 	if err != nil {
 		return nil, err
 	}
@@ -637,6 +653,10 @@ func (s *vaultService) resolveVerifyObject(ctx context.Context, vaultPath string
 	if err != nil {
 		return nil, siastorage.Object{}, false, err
 	}
+	vp, err = RequireActiveProfile(vp)
+	if err != nil {
+		return nil, siastorage.Object{}, false, err
+	}
 
 	record, err := s.resolveFile(vp)
 	if err != nil {
@@ -677,6 +697,10 @@ func (s *vaultService) resolveVerifyObject(ctx context.Context, vaultPath string
 // Remove deletes a file from the vault (local DB + indexer).
 func (s *vaultService) Remove(ctx context.Context, vaultPath string) error {
 	vp, err := ParseVaultPath(vaultPath)
+	if err != nil {
+		return err
+	}
+	vp, err = RequireActiveProfile(vp)
 	if err != nil {
 		return err
 	}
@@ -755,6 +779,10 @@ func (s *vaultService) Remove(ctx context.Context, vaultPath string) error {
 // Share generates a time-limited sia:// share URL for a file.
 func (s *vaultService) Share(ctx context.Context, vaultPath string, validUntil time.Time) (string, error) {
 	vp, err := ParseVaultPath(vaultPath)
+	if err != nil {
+		return "", err
+	}
+	vp, err = RequireActiveProfile(vp)
 	if err != nil {
 		return "", err
 	}
