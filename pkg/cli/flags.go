@@ -77,6 +77,8 @@ const (
 	FlagTargetType   = "target-type"
 	FlagDNSHosting   = "dns-hosting"
 	FlagNoDNSHosting = "no-dns-hosting"
+	FlagPrimary      = "primary"
+	FlagNoPrimary    = "no-primary"
 )
 
 // DNS flags
@@ -548,6 +550,22 @@ func NoDNSHostingFlag() *cli.BoolFlag {
 	return &cli.BoolFlag{
 		Name:  FlagNoDNSHosting,
 		Usage: "Disable DNS hosting for this website",
+	}
+}
+
+// PrimaryFlag returns a flag for promoting a binding to primary.
+func PrimaryFlag() *cli.BoolFlag {
+	return &cli.BoolFlag{
+		Name:  FlagPrimary,
+		Usage: "Promote this binding to the website's primary domain",
+	}
+}
+
+// NoPrimaryFlag returns a flag for demoting a binding from primary.
+func NoPrimaryFlag() *cli.BoolFlag {
+	return &cli.BoolFlag{
+		Name:  FlagNoPrimary,
+		Usage: "Demote this binding from the website's primary domain",
 	}
 }
 

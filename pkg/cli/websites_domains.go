@@ -610,31 +610,27 @@ func newWebsitesDomainsUpdateCommand() *cli.Command {
 		Usage:     "Toggle per-domain DNS control (hosting enable/disable, primary)",
 		ArgsUsage: "<domain>",
 		Flags: []cli.Flag{
-			&cli.BoolFlag{
-				Name:  "dns-hosted",
-				Usage: "Whether the portal manages DNS hosting for this binding (true/false)",
-			},
-			&cli.BoolFlag{
-				Name:  "primary",
-				Usage: "Promote this binding to the website's primary domain (true/false)",
-			},
+			DNSHostingFlag(),
+			NoDNSHostingFlag(),
+			PrimaryFlag(),
+			NoPrimaryFlag(),
 		},
 		Description: `Updates a bound domain's per-domain DNS control. The domain belongs
 to exactly one website, which is resolved automatically. The domain argument can
 be either the domain name (e.g. staging.example.com) or its numeric binding ID.
 
-Only the flags you set are sent; unset fields are left unchanged on the server.
-  --dns-hosted true  enable the portal to manage DNS for this binding
-  --dns-hosted false disable portal DNS hosting for this binding
-  --primary true     promote this binding to primary
-  --primary false    demote this binding from primary
+Only the flag you set is sent; unset fields are left unchanged on the server.
+  --dns-hosting     enable the portal to manage DNS for this binding
+  --no-dns-hosting  disable portal DNS hosting for this binding
+  --primary         promote this binding to primary
+  --no-primary      demote this binding from primary
 
 Examples:
-  pinner websites domains update staging.example.com --dns-hosted true
-  pinner websites domains update staging.example.com --dns-hosted false
-  pinner websites domains update staging.example.com --primary true --json
+  pinner websites domains update staging.example.com --dns-hosting
+  pinner websites domains update staging.example.com --no-dns-hosting
+  pinner websites domains update staging.example.com --primary --json
 
-At least one of --dns-hosted / --primary must be set.`,
+At least one of the four control flags must be set.`,
 		Action: withContext(func(ctx context.Context, cc *commandContext) error {
 			return websitesDomainsUpdate(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
 		}),
@@ -665,20 +661,30 @@ func websitesDomainsUpdateWithService(ctx context.Context, cmd websitesCommandGe
 		return err
 	}
 
-	dnsHosted := cmd.IsSet("dns-hosted")
-	primary := cmd.IsSet("primary")
-	if !dnsHosted && !primary {
-		return fmt.Errorf("at least one of --dns-hosted or --primary is required")
+	enableDNS := cmd.IsSet(FlagDNSHosting)
+	disableDNS := cmd.IsSet(FlagNoDNSHosting)
+	setPrimary := cmd.IsSet(FlagPrimary)
+	unsetPrimary := cmd.IsSet(FlagNoPrimary)
+	if !enableDNS && !disableDNS && !setPrimary && !unsetPrimary {
+		return fmt.Errorf("at least one of --dns-hosting, --no-dns-hosting, --primary or --no-primary is required")
+	}
+	if enableDNS && disableDNS {
+		return fmt.Errorf("--dns-hosting and --no-dns-hosting cannot both be set")
+	}
+	if setPrimary && unsetPrimary {
+		return fmt.Errorf("--primary and --no-primary cannot both be set")
 	}
 
 	req := ipfs.DomainUpdateRequest{}
-	if dnsHosted {
-		v := cmd.Bool("dns-hosted")
-		req.DnsHostingEnabled = &v
+	if enableDNS {
+		req.DnsHostingEnabled = boolPtr(true)
+	} else if disableDNS {
+		req.DnsHostingEnabled = boolPtr(false)
 	}
-	if primary {
-		v := cmd.Bool("primary")
-		req.Primary = &v
+	if setPrimary {
+		req.Primary = boolPtr(true)
+	} else if unsetPrimary {
+		req.Primary = boolPtr(false)
 	}
 
 	websiteID, domainID, err := resolveDomainBinding(ctx, websitesService, domainArg)
@@ -727,6 +733,11 @@ func derefBool(b *bool) bool {
 		return false
 	}
 	return *b
+}
+
+// boolPtr returns a pointer to the given bool value.
+func boolPtr(b bool) *bool {
+	return &b
 }
 
 func newWebsitesDomainsDANERepublishCommand() *cli.Command {

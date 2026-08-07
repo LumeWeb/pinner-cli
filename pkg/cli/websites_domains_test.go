@@ -868,7 +868,7 @@ func TestWebsitesDomainsUpdate(t *testing.T) {
 		errContains string
 	}{
 		{
-			name: "successful update dns-hosted",
+			name: "successful enable dns-hosting",
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
 				svc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
 					return []ipfs.WebsiteItem{{Id: 1, Domain: "example.com"}}, nil
@@ -879,17 +879,42 @@ func TestWebsitesDomainsUpdate(t *testing.T) {
 					}, nil
 				}
 				svc.UpdateDomainFn = func(ctx context.Context, websiteID string, domainID string, req ipfs.DomainUpdateRequest) (*ipfs.DomainResponse, error) {
+					require.NotNil(t, req.DnsHostingEnabled)
+					require.True(t, *req.DnsHostingEnabled)
+					require.Nil(t, req.Primary)
 					return &ipfs.DomainResponse{
 						Id: 1, Domain: "mydomain.com", Namespace: "icann", DnsHostingEnabled: boolPtr(true),
 					}, nil
 				}
 			},
-			cmd: newMockCommand().withArgs("mydomain.com").
-				withBool("dns-hosted", true).withIsSet("dns-hosted", true),
+			cmd:     newMockCommand().withArgs("mydomain.com").withIsSet(FlagDNSHosting, true),
 			wantErr: false,
 		},
 		{
-			name: "successful update primary",
+			name: "successful disable dns-hosting",
+			setupMocks: func(svc *mockWebsitesServiceForCLI) {
+				svc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+					return []ipfs.WebsiteItem{{Id: 1, Domain: "example.com"}}, nil
+				}
+				svc.ListDomainsFn = func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
+					return []ipfs.DomainResponse{
+						{Id: 1, Domain: "mydomain.com", Namespace: "icann"},
+					}, nil
+				}
+				svc.UpdateDomainFn = func(ctx context.Context, websiteID string, domainID string, req ipfs.DomainUpdateRequest) (*ipfs.DomainResponse, error) {
+					require.NotNil(t, req.DnsHostingEnabled)
+					require.False(t, *req.DnsHostingEnabled)
+					require.Nil(t, req.Primary)
+					return &ipfs.DomainResponse{
+						Id: 1, Domain: "mydomain.com", Namespace: "icann", DnsHostingEnabled: boolPtr(false),
+					}, nil
+				}
+			},
+			cmd:     newMockCommand().withArgs("mydomain.com").withIsSet(FlagNoDNSHosting, true),
+			wantErr: false,
+		},
+		{
+			name: "successful promote primary",
 			setupMocks: func(svc *mockWebsitesServiceForCLI) {
 				svc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
 					return []ipfs.WebsiteItem{{Id: 1, Domain: "example.com"}}, nil
@@ -906,8 +931,53 @@ func TestWebsitesDomainsUpdate(t *testing.T) {
 					return &ipfs.DomainResponse{Id: 1, Domain: "mydomain.com", Namespace: "icann"}, nil
 				}
 			},
+			cmd:     newMockCommand().withArgs("mydomain.com").withIsSet(FlagPrimary, true),
+			wantErr: false,
+		},
+		{
+			name: "successful demote primary",
+			setupMocks: func(svc *mockWebsitesServiceForCLI) {
+				svc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+					return []ipfs.WebsiteItem{{Id: 1, Domain: "example.com"}}, nil
+				}
+				svc.ListDomainsFn = func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
+					return []ipfs.DomainResponse{
+						{Id: 1, Domain: "mydomain.com", Namespace: "icann"},
+					}, nil
+				}
+				svc.UpdateDomainFn = func(ctx context.Context, websiteID string, domainID string, req ipfs.DomainUpdateRequest) (*ipfs.DomainResponse, error) {
+					require.NotNil(t, req.Primary)
+					require.False(t, *req.Primary)
+					require.Nil(t, req.DnsHostingEnabled)
+					return &ipfs.DomainResponse{Id: 1, Domain: "mydomain.com", Namespace: "icann"}, nil
+				}
+			},
+			cmd:     newMockCommand().withArgs("mydomain.com").withIsSet(FlagNoPrimary, true),
+			wantErr: false,
+		},
+		{
+			name: "successful set both axes",
+			setupMocks: func(svc *mockWebsitesServiceForCLI) {
+				svc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+					return []ipfs.WebsiteItem{{Id: 1, Domain: "example.com"}}, nil
+				}
+				svc.ListDomainsFn = func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
+					return []ipfs.DomainResponse{
+						{Id: 1, Domain: "mydomain.com", Namespace: "icann"},
+					}, nil
+				}
+				svc.UpdateDomainFn = func(ctx context.Context, websiteID string, domainID string, req ipfs.DomainUpdateRequest) (*ipfs.DomainResponse, error) {
+					require.NotNil(t, req.DnsHostingEnabled)
+					require.True(t, *req.DnsHostingEnabled)
+					require.NotNil(t, req.Primary)
+					require.True(t, *req.Primary)
+					return &ipfs.DomainResponse{
+						Id: 1, Domain: "mydomain.com", Namespace: "icann", DnsHostingEnabled: boolPtr(true),
+					}, nil
+				}
+			},
 			cmd: newMockCommand().withArgs("mydomain.com").
-				withBool("primary", true).withIsSet("primary", true),
+				withIsSet(FlagDNSHosting, true).withIsSet(FlagPrimary, true),
 			wantErr: false,
 		},
 		{
@@ -927,8 +997,7 @@ func TestWebsitesDomainsUpdate(t *testing.T) {
 					}, nil
 				}
 			},
-			cmd: newMockCommand().withArgs("2").
-				withBool("dns-hosted", false).withIsSet("dns-hosted", true),
+			cmd:     newMockCommand().withArgs("2").withIsSet(FlagNoDNSHosting, true),
 			wantErr: false,
 		},
 		{
@@ -945,7 +1014,41 @@ func TestWebsitesDomainsUpdate(t *testing.T) {
 			},
 			cmd:         newMockCommand().withArgs("mydomain.com"),
 			wantErr:     true,
-			errContains: "at least one of --dns-hosted or --primary",
+			errContains: "at least one of --dns-hosting, --no-dns-hosting, --primary or --no-primary",
+		},
+		{
+			name: "error when both dns-hosting and no-dns-hosting set",
+			setupMocks: func(svc *mockWebsitesServiceForCLI) {
+				svc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+					return []ipfs.WebsiteItem{{Id: 1, Domain: "example.com"}}, nil
+				}
+				svc.ListDomainsFn = func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
+					return []ipfs.DomainResponse{
+						{Id: 1, Domain: "mydomain.com", Namespace: "icann"},
+					}, nil
+				}
+			},
+			cmd: newMockCommand().withArgs("mydomain.com").
+				withIsSet(FlagDNSHosting, true).withIsSet(FlagNoDNSHosting, true),
+			wantErr:     true,
+			errContains: "--dns-hosting and --no-dns-hosting cannot both be set",
+		},
+		{
+			name: "error when both primary and no-primary set",
+			setupMocks: func(svc *mockWebsitesServiceForCLI) {
+				svc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+					return []ipfs.WebsiteItem{{Id: 1, Domain: "example.com"}}, nil
+				}
+				svc.ListDomainsFn = func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
+					return []ipfs.DomainResponse{
+						{Id: 1, Domain: "mydomain.com", Namespace: "icann"},
+					}, nil
+				}
+			},
+			cmd: newMockCommand().withArgs("mydomain.com").
+				withIsSet(FlagPrimary, true).withIsSet(FlagNoPrimary, true),
+			wantErr:     true,
+			errContains: "--primary and --no-primary cannot both be set",
 		},
 		{
 			name: "error on sdk failure",
@@ -962,8 +1065,7 @@ func TestWebsitesDomainsUpdate(t *testing.T) {
 					return nil, errors.New("update failed")
 				}
 			},
-			cmd: newMockCommand().withArgs("mydomain.com").
-				withBool("dns-hosted", true).withIsSet("dns-hosted", true),
+			cmd:         newMockCommand().withArgs("mydomain.com").withIsSet(FlagDNSHosting, true),
 			wantErr:     true,
 			errContains: "update failed",
 		},
@@ -977,8 +1079,7 @@ func TestWebsitesDomainsUpdate(t *testing.T) {
 					return []ipfs.DomainResponse{{Id: 1, Domain: "other.com", Namespace: "icann"}}, nil
 				}
 			},
-			cmd: newMockCommand().withArgs("mydomain.com").
-				withBool("dns-hosted", true).withIsSet("dns-hosted", true),
+			cmd:         newMockCommand().withArgs("mydomain.com").withIsSet(FlagDNSHosting, true),
 			wantErr:     true,
 			errContains: "not found",
 		},
@@ -1024,15 +1125,10 @@ func TestWebsitesDomainsUpdateJSON(t *testing.T) {
 	}
 
 	output := NewOutputFormatter(true, false, false, false)
-	cmd := newMockCommand().withArgs("mydomain.com").
-		withBool("dns-hosted", true).withIsSet("dns-hosted", true)
+	cmd := newMockCommand().withArgs("mydomain.com").withIsSet(FlagDNSHosting, true)
 
 	err := websitesDomainsUpdateWithService(context.Background(), cmd, output, mockSvc)
 	require.NoError(t, err)
-}
-
-func boolPtr(b bool) *bool {
-	return &b
 }
 
 // websitesDomainsDANERepublishWithService is a test helper that allows injecting
