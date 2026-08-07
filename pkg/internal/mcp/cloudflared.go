@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -65,7 +66,10 @@ func (c *cloudflaredTunnel) URL() (string, error) {
 	return url, nil
 }
 
-// Stop implements Tunnel.
+// Stop implements Tunnel. It sends an interrupt to the cloudflared process,
+// escalating to SIGKILL if it does not exit within the context deadline. The
+// done channel is owned solely by Stop and the single cmd.Wait() goroutine,
+// so it is never drained elsewhere and can always be awaited here.
 func (c *cloudflaredTunnel) Stop(ctx context.Context) error {
 	c.mu.Lock()
 	cmd := c.cmd
@@ -74,12 +78,26 @@ func (c *cloudflaredTunnel) Stop(ctx context.Context) error {
 	if cmd == nil || cmd.Process == nil {
 		return nil
 	}
+
+	// If the process is already gone (natural exit reaped by the Wait
+	// goroutine), there is nothing to stop. Return promptly rather than
+	// signaling a dead PID or waiting on done.
+	if !processAlive(cmd) {
+		return nil
+	}
+
 	_ = cmd.Process.Signal(os.Interrupt)
+
+	// Bound the graceful wait so a child that ignores SIGINT is escalated
+	// to SIGKILL instead of being left running.
 	if done != nil {
 		select {
 		case <-done:
 			return nil
 		case <-ctx.Done():
+			if ctx.Err() != context.Canceled {
+				_ = cmd.Process.Kill()
+			}
 			return ctx.Err()
 		}
 	}
@@ -128,10 +146,13 @@ func (c *cloudflaredTunnel) Start(ctx context.Context, localAddr string) error {
 
 	// Do not report the URL until the endpoint responds over the tunnel, so
 	// we never print a live URL that is unreachable because cloudflared
-	// exited or never connected. Stop the process on any readiness failure.
+	// exited or never connected. Stop the process on any readiness failure,
+	// bounded so Stop cannot block (its done wait has a deadline).
 	publicURL := "https://" + strings.TrimPrefix(c.domain, "https://")
-	if err := c.waitReady(ctx, publicURL, done); err != nil {
-		c.Stop(ctx)
+	if err := c.waitReady(ctx, publicURL); err != nil {
+		shCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		c.Stop(shCtx)
 		return err
 	}
 	c.setReady(publicURL)
@@ -139,15 +160,16 @@ func (c *cloudflaredTunnel) Start(ctx context.Context, localAddr string) error {
 }
 
 // waitReady polls the public URL until it responds over the tunnel, the
-// cloudflared process exits (observed via done), or the deadline expires.
-func (c *cloudflaredTunnel) waitReady(ctx context.Context, publicURL string, done <-chan error) error {
+// cloudflared process exits, or the deadline expires. It does NOT read the
+// done channel: that channel is owned solely by Stop (and the single
+// cmd.Wait() goroutine), so waitReady probes liveness with signal 0 instead
+// to avoid draining the value Stop awaits.
+func (c *cloudflaredTunnel) waitReady(ctx context.Context, publicURL string) error {
 	deadline := time.Now().Add(30 * time.Second)
 	client := &http.Client{Timeout: 3 * time.Second}
 	for {
-		select {
-		case <-done:
+		if !processAlive(c.cmd) {
 			return fmt.Errorf("cloudflared exited before the tunnel became ready")
-		default:
 		}
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -164,6 +186,15 @@ func (c *cloudflaredTunnel) waitReady(ctx context.Context, publicURL string, don
 		}
 		time.Sleep(300 * time.Millisecond)
 	}
+}
+
+// processAlive reports whether the process is still running using signal 0,
+// which probes existence without delivering a signal or reaping the child.
+func processAlive(cmd *exec.Cmd) bool {
+	if cmd == nil || cmd.Process == nil {
+		return false
+	}
+	return cmd.Process.Signal(syscall.Signal(0)) == nil
 }
 
 // urlForOrigin normalizes a host:port local address into the http:// URL that

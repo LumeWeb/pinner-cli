@@ -1,9 +1,12 @@
 package mcp
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
+	"os/exec"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -137,4 +140,35 @@ func TestURLForOrigin(t *testing.T) {
 
 	_, err = urlForOrigin("notaport")
 	require.Error(t, err)
+}
+
+// TestCloudflaredStopAfterDrainedDone reproduces the deadlock from code
+// review: waitReady observes a premature exit and drains the done channel,
+// so a subsequent Stop must not block forever waiting on a value that will
+// never arrive.
+func TestCloudflaredStopAfterDrainedDone(t *testing.T) {
+	// Spawn a short-lived child we can real-reap.
+	cmd := exec.Command("sh", "-c", "exit 0")
+	require.NoError(t, cmd.Start())
+
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+
+	// Drain done, mirroring what waitReady does when it detects the process
+	// already exited. The process is now reaped.
+	<-done
+
+	c := &cloudflaredTunnel{
+		cmd:  cmd,
+		done: done,
+	}
+
+	// Stop must return promptly instead of blocking on the drained channel.
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	started := time.Now()
+	err := c.Stop(ctx)
+	assert.NoError(t, err)
+	assert.Less(t, time.Since(started), 3*time.Second, "Stop blocked on a drained done channel")
 }
