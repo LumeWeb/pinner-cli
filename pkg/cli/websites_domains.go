@@ -492,6 +492,11 @@ func websitesDomainsVerify(ctx context.Context, cmd websitesCommandGetter, outpu
 
 	result, err := websitesService.VerifyDomain(ctx, websiteID, domainID)
 	if err != nil {
+		// Render actionable next steps on failure (not just the error), unless
+		// the user asked for JSON (machine output).
+		if !output.IsJSON() {
+			renderDNSSelfServiceGuidance(output, err)
+		}
 		return err
 	}
 	if result == nil {
@@ -511,15 +516,23 @@ func websitesDomainsVerify(ctx context.Context, cmd websitesCommandGetter, outpu
 	if result.Status != nil {
 		status = *result.Status
 	}
-	output.PrintFields(FieldGroup{
-		Fields: []Field{
-			{"ID", strconv.Itoa(result.Id)},
-			{"Domain", result.Domain},
-			{"Namespace", result.Namespace},
-			{"Status", status},
-			{"Zone Name", zoneName},
-		},
-	})
+	fields := []Field{
+		{"ID", strconv.Itoa(result.Id)},
+		{"Domain", result.Domain},
+		{"Namespace", result.Namespace},
+		{"Status", status},
+		{"Zone Name", zoneName},
+	}
+	// Surface the explicit DNSSEC state (enabled/disabled/error) + reason from
+	// the delegation bundle so a managed zone whose DS is missing or in error
+	// is immediately diagnosable rather than a bare status.
+	if result.Delegation != nil && result.Delegation.Dnssec != nil {
+		fields = append(fields, Field{"DNSSEC", *result.Delegation.Dnssec})
+		if result.Delegation.DnssecError != nil && *result.Delegation.DnssecError != "" {
+			fields = append(fields, Field{"DNSSEC Error", *result.Delegation.DnssecError})
+		}
+	}
+	output.PrintFields(FieldGroup{Fields: fields})
 
 	return nil
 }
@@ -555,24 +568,14 @@ func websitesDomainsDNSRequirements(ctx context.Context, cmd websitesCommandGett
 		return output.PrintJSON(result)
 	}
 
-	// Determine whether Pinner manages this website's DNS (authoritative side
-	// served by Pinner), so the renderer can omit authoritative records the
-	// user does not need to configure.
-	managed := isWebsiteDNSManaged(ctx, websitesService, websiteID)
+	// Determine whether Pinner manages this domain binding's DNS (authoritative
+	// side served by Pinner), so the renderer can omit authoritative records
+	// the user does not need to configure. DNS hosting is a per-domain-binding
+	// property, carried on the dns-requirements response itself.
+	managed := result.DnsHostingEnabled
 
 	renderDomainDelegation(output, result, managed)
 	return nil
-}
-
-// isWebsiteDNSManaged reports whether Pinner manages DNS for the given website
-// (the authoritative side is served by Pinner). A fetch failure is treated as
-// not-managed so dns-requirements still renders, just without the omission.
-func isWebsiteDNSManaged(ctx context.Context, svc WebsitesService, websiteID string) bool {
-	website, err := svc.Get(ctx, websiteID)
-	if err != nil || website == nil {
-		return false
-	}
-	return website.DnsHostingEnabled
 }
 
 // renderDomainDelegation prints the DNS delegation bundle the server computes
@@ -588,13 +591,20 @@ func renderDomainDelegation(output Output, result *ipfs.DomainResponse, managed 
 	if result.Status != nil {
 		status = *result.Status
 	}
-	output.PrintFields(FieldGroup{
-		Fields: []Field{
-			{"Domain", result.Domain},
-			{"Namespace", result.Namespace},
-			{"Status", status},
-		},
-	})
+	fields := []Field{
+		{"Domain", result.Domain},
+		{"Namespace", result.Namespace},
+		{"Status", status},
+	}
+	// Surface the explicit DNSSEC state (enabled/disabled/error) + reason so an
+	// absent DS on a managed namespace is diagnosable, not a silent gap.
+	if result.Delegation != nil && result.Delegation.Dnssec != nil {
+		fields = append(fields, Field{"DNSSEC", *result.Delegation.Dnssec})
+		if result.Delegation.DnssecError != nil && *result.Delegation.DnssecError != "" {
+			fields = append(fields, Field{"DNSSEC Error", *result.Delegation.DnssecError})
+		}
+	}
+	output.PrintFields(FieldGroup{Fields: fields})
 
 	if result.Delegation == nil {
 		output.Printfln("No delegation records are available for %s.", result.Domain)
@@ -720,7 +730,7 @@ func websitesDomainsUpdateWithService(ctx context.Context, cmd websitesCommandGe
 			{"Namespace", result.Namespace},
 			{"Status", status},
 			{"Zone Name", zoneName},
-			{"DNS Hosting", fmt.Sprintf("%t", derefBool(result.DnsHostingEnabled))},
+			{"DNS Hosting", fmt.Sprintf("%t", result.DnsHostingEnabled)},
 		},
 	})
 

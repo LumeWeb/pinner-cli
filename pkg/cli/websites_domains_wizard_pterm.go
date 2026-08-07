@@ -236,6 +236,13 @@ func (ui *PTermDomainsUI) ExecuteVerifyStep(ctx context.Context, w *DomainAddWiz
 	pterm.Println()
 
 	if err := w.executeVerify(ctx); err != nil {
+		// Surface the real reason (the wizard previously swallowed it into a
+		// generic "step 'Validation' failed") plus actionable next steps.
+		pterm.Error.Println("DNS validation failed.")
+		for _, line := range dnsGuidance(err.Error()) {
+			pterm.Info.Println("  " + line)
+		}
+		pterm.Println()
 		return err
 	}
 

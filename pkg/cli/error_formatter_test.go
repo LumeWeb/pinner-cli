@@ -40,6 +40,21 @@ func TestExtractErrorMessage(t *testing.T) {
 			expected: `{"error":""}`,
 		},
 		{
+			name:     "JSON with nested object error - details",
+			body:     `{"error":{"reason":"ValidationFailed","details":"DNS validation failed"}}`,
+			expected: "DNS validation failed",
+		},
+		{
+			name:     "JSON with nested object error - details empty, reason used",
+			body:     `{"error":{"reason":"ValidationFailed"}}`,
+			expected: "ValidationFailed",
+		},
+		{
+			name:     "JSON with nested object error - both empty",
+			body:     `{"error":{"reason":"","details":""}}`,
+			expected: `{"error":{"reason":"","details":""}}`,
+		},
+		{
 			name:     "plain text",
 			body:     "internal server error",
 			expected: "internal server error",
