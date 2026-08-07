@@ -28,14 +28,22 @@ func vaultServiceForCommand(c *cli.Command) (vault.VaultService, string, error) 
 	if err != nil {
 		return nil, "", err
 	}
+	svc, err := newVaultService(profileName)
+	return svc, profileName, err
+}
+
+// newVaultService builds a VaultService for a specific (already-validated)
+// profile name, resolving the indexer URL from config. Use this to construct a
+// service for a non-active profile, e.g. honoring a "vault://<profile>/" path
+// authority in `vault cp`.
+func newVaultService(profileName string) (vault.VaultService, error) {
 	cfgMgr, err := configManagerFactory()
 	if err != nil {
-		return nil, profileName, err
+		return nil, err
 	}
 	cfg := cfgMgr.Config()
 	indexerURL := cfg.GetSiaIndexerURL()
-	svc, err := vaultServiceFactory(profileName, indexerURL)
-	return svc, profileName, err
+	return vaultServiceFactory(profileName, indexerURL)
 }
 
 func newVaultCommand() *cli.Command {
@@ -54,6 +62,7 @@ Restore a vault:    pinner vault restore --profile <name>
 Vault status:       pinner vault status
 Upload a file:      pinner vault cp ./report.pdf vault:/reports/report.pdf
 Download a file:    pinner vault cp vault:/reports/report.pdf ./
+Copy between vaults: pinner vault cp vault://work/docs/a.txt vault:/docs/a.txt
 List files:         pinner vault ls vault:/reports
 File info:          pinner vault stat vault:/reports/report.pdf
 Stream content:     pinner vault cat vault:/reports/report.pdf

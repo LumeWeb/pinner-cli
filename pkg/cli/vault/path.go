@@ -129,6 +129,17 @@ func RequireActiveProfile(vp *VaultPath) (*VaultPath, error) {
 	return vp, nil
 }
 
+// ScalarPath returns the canonical authority-less ("active-profile") form of
+// this vault path. The profile is dropped so the result is a service-operable
+// path: the VaultService is bound to a profile at construction time, so the
+// path passed into it must not carry its own authority. For a path with no
+// authority this is identical to FullPath.
+func (vp *VaultPath) ScalarPath() string {
+	copy := *vp
+	copy.Profile = nil
+	return copy.FullPath()
+}
+
 // profileName returns the named profile authority, or "" when there is no
 // authority (nil) or it is empty (both resolve to the active profile).
 func (vp *VaultPath) profileName() string {
