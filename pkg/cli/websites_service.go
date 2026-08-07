@@ -291,3 +291,16 @@ func (s *websitesService) RepublishDANE(ctx context.Context, websiteID string, d
 	}
 	return s.service.RepublishDANE(ctx, websiteID, domainID)
 }
+
+// UpdateDomain updates a bound domain's per-domain DNS control - whether the
+// portal manages DNS hosting for this binding and/or promotes the binding to
+// primary. Omitted fields are left unchanged by the server.
+func (s *websitesService) UpdateDomain(ctx context.Context, websiteID string, domainID string, req ipfs.DomainUpdateRequest) (*ipfs.DomainResponse, error) {
+	if err := s.RequireAuthenticated(); err != nil {
+		return nil, err
+	}
+	if s.service == nil {
+		return nil, ErrServiceUnavailable
+	}
+	return s.service.UpdateDomain(ctx, websiteID, domainID, req)
+}

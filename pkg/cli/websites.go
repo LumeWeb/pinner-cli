@@ -169,6 +169,11 @@ type WebsitesService interface {
 	VerifyDomain(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainResponse, error)
 	GetDomainDNSRequirements(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainResponse, error)
 	RepublishDANE(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainDANERepublishResponse, error)
+
+	// UpdateDomain updates a bound domain's per-domain DNS control - whether the
+	// portal manages DNS hosting for this binding (dns_hosting_enabled) and/or
+	// promotes the binding to primary. Omitted fields are left unchanged.
+	UpdateDomain(ctx context.Context, websiteID string, domainID string, req ipfs.DomainUpdateRequest) (*ipfs.DomainResponse, error)
 }
 
 func resolveRequiredArg(ctx context.Context, websitesService WebsitesService, cmd websitesCommandGetter) (string, error) {
