@@ -37,6 +37,7 @@ Examples:
 			newWebsitesDomainsVerifyCommand(),
 			newWebsitesDomainsDNSRequirementsCommand(),
 			newWebsitesDomainsDANERepublishCommand(),
+			newWebsitesDomainsUpdateCommand(),
 			newWebsitesDomainsWizardCommand(),
 		},
 	}
@@ -601,6 +602,142 @@ func renderDomainDelegation(output Output, result *ipfs.DomainResponse, managed 
 	}
 
 	defaultDelegationDriver.Render(output, result, managed)
+}
+
+func newWebsitesDomainsUpdateCommand() *cli.Command {
+	return &cli.Command{
+		Name:      "update",
+		Usage:     "Toggle per-domain DNS control (hosting enable/disable, primary)",
+		ArgsUsage: "<domain>",
+		Flags: []cli.Flag{
+			DNSHostingFlag(),
+			NoDNSHostingFlag(),
+			PrimaryFlag(),
+			NoPrimaryFlag(),
+		},
+		Description: `Updates a bound domain's per-domain DNS control. The domain belongs
+to exactly one website, which is resolved automatically. The domain argument can
+be either the domain name (e.g. staging.example.com) or its numeric binding ID.
+
+Only the flag you set is sent; unset fields are left unchanged on the server.
+  --dns-hosting     enable the portal to manage DNS for this binding
+  --no-dns-hosting  disable portal DNS hosting for this binding
+  --primary         promote this binding to primary
+  --no-primary      demote this binding from primary
+
+Examples:
+  pinner websites domains update staging.example.com --dns-hosting
+  pinner websites domains update staging.example.com --no-dns-hosting
+  pinner websites domains update staging.example.com --primary --json
+
+At least one of the four control flags must be set.`,
+		Action: withContext(func(ctx context.Context, cc *commandContext) error {
+			return websitesDomainsUpdate(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
+		}),
+	}
+}
+
+func websitesDomainsUpdate(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+	defer cancel()
+
+	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken, secure)
+	if err != nil {
+		return err
+	}
+
+	return websitesDomainsUpdateWithService(ctx, cmd, output, websitesService)
+}
+
+// websitesDomainsUpdateWithService is a test helper that allows injecting a
+// mock WebsitesService.
+func websitesDomainsUpdateWithService(ctx context.Context, cmd websitesCommandGetter, output Output, websitesService WebsitesService) error {
+	if err := websitesService.RequireAuthenticated(); err != nil {
+		return err
+	}
+
+	domainArg, err := resolveDomainArg(cmd, "update")
+	if err != nil {
+		return err
+	}
+
+	enableDNS := cmd.IsSet(FlagDNSHosting)
+	disableDNS := cmd.IsSet(FlagNoDNSHosting)
+	setPrimary := cmd.IsSet(FlagPrimary)
+	unsetPrimary := cmd.IsSet(FlagNoPrimary)
+	if !enableDNS && !disableDNS && !setPrimary && !unsetPrimary {
+		return fmt.Errorf("at least one of --dns-hosting, --no-dns-hosting, --primary or --no-primary is required")
+	}
+	if enableDNS && disableDNS {
+		return fmt.Errorf("--dns-hosting and --no-dns-hosting cannot both be set")
+	}
+	if setPrimary && unsetPrimary {
+		return fmt.Errorf("--primary and --no-primary cannot both be set")
+	}
+
+	req := ipfs.DomainUpdateRequest{}
+	if enableDNS {
+		req.DnsHostingEnabled = boolPtr(true)
+	} else if disableDNS {
+		req.DnsHostingEnabled = boolPtr(false)
+	}
+	if setPrimary {
+		req.Primary = boolPtr(true)
+	} else if unsetPrimary {
+		req.Primary = boolPtr(false)
+	}
+
+	websiteID, domainID, err := resolveDomainBinding(ctx, websitesService, domainArg)
+	if err != nil {
+		return err
+	}
+
+	result, err := websitesService.UpdateDomain(ctx, websiteID, domainID, req)
+	if err != nil {
+		return err
+	}
+	if result == nil {
+		return fmt.Errorf("no update result returned for domain %s", domainID)
+	}
+
+	if output.IsJSON() {
+		return output.PrintJSON(result)
+	}
+
+	output.Printfln("Domain %s updated", result.Domain)
+	status := ""
+	if result.Status != nil {
+		status = *result.Status
+	}
+	zoneName := ""
+	if result.ZoneName != nil {
+		zoneName = *result.ZoneName
+	}
+	output.PrintFields(FieldGroup{
+		Fields: []Field{
+			{"ID", strconv.Itoa(result.Id)},
+			{"Domain", result.Domain},
+			{"Namespace", result.Namespace},
+			{"Status", status},
+			{"Zone Name", zoneName},
+			{"DNS Hosting", fmt.Sprintf("%t", derefBool(result.DnsHostingEnabled))},
+		},
+	})
+
+	return nil
+}
+
+// derefBool returns the value of a *bool, or false when nil.
+func derefBool(b *bool) bool {
+	if b == nil {
+		return false
+	}
+	return *b
+}
+
+// boolPtr returns a pointer to the given bool value.
+func boolPtr(b bool) *bool {
+	return &b
 }
 
 func newWebsitesDomainsDANERepublishCommand() *cli.Command {

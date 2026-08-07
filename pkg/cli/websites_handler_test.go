@@ -130,6 +130,10 @@ func (m *mockWebsitesHandlerService) RepublishDANE(ctx context.Context, websiteI
 	return nil, nil
 }
 
+func (m *mockWebsitesHandlerService) UpdateDomain(ctx context.Context, websiteID string, domainID string, req ipfs.DomainUpdateRequest) (*ipfs.DomainResponse, error) {
+	return nil, nil
+}
+
 func setupWebsitesHandlerTest(t *testing.T) (*mockWebsitesHandlerService, *configmocks.MockManager) {
 	t.Helper()
 	mockSvc := &mockWebsitesHandlerService{}
