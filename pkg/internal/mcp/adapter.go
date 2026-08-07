@@ -11,7 +11,6 @@ package mcp
 import (
 	"bytes"
 	"context"
-	"crypto/subtle"
 	"fmt"
 	"net"
 	"net/http"
@@ -90,7 +89,11 @@ adapter.`,
 			},
 			&cli.StringFlag{
 				Name:  "auth-token",
-				Usage: "Bearer token required to reach the MCP HTTP endpoint. REQUIRED when --tunnel is set: the tunnel exposes the endpoint publicly and it executes tools in-process",
+				Usage: "Shared secret used for authorization. In OAuth mode the resource owner enters it on the login page to authorize a client; in loopback mode it is accepted directly as a Bearer token. REQUIRED when --tunnel is set: the tunnel exposes the endpoint publicly and it executes tools in-process",
+			},
+			&cli.StringFlag{
+				Name:  "public-url",
+				Usage: "Public base URL advertised in OAuth discovery metadata (issuer, authorize/token endpoints). Defaults to the tunnel URL when --tunnel is set, or the loopback address otherwise",
 			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
@@ -146,6 +149,7 @@ func serveHTTP(ctx context.Context, srv *server.MCPServer, cmd *cli.Command) err
 	domain := cmd.String("domain")
 	token := cmd.String("token")
 	authToken := cmd.String("auth-token")
+	publicURL := cmd.String("public-url")
 
 	// Bind a concrete local address up front. Port 0 asks the OS for an
 	// available ephemeral port.
@@ -170,19 +174,51 @@ func serveHTTP(ctx context.Context, srv *server.MCPServer, cmd *cli.Command) err
 		// Exposing the endpoint through a public tunnel makes the MCP HTTP
 		// endpoint reachable by anyone who learns the URL. The server
 		// executes catalog CLI tools in-process, so require an explicit
-		// bearer token before exposing it.
+		// shared secret before exposing it.
 		if authToken == "" {
 			return fmt.Errorf("--tunnel requires --auth-token: the public endpoint executes tools without authentication")
 		}
 		tunnel = tpl
 	}
 
+	// Authorization is active whenever a shared secret is provided. When the
+	// server is exposed publicly (tunnel or explicit public URL), default to
+	// the full OAuth handshake so OAuth-expecting MCP clients can authorize;
+	// the resource owner proves control of the secret on the login page.
+	baseURL := publicURL
+	if baseURL == "" {
+		baseURL = "http://" + localAddr
+	}
+	var oauth *oauthServer
+	if authToken != "" {
+		oauth = newOAuthServer(authToken, baseURL)
+	}
+
 	// Serve the streamable-HTTP handler over our own http.Server bound to
 	// the pre-created listener so the ephemeral port is stable and known to
 	// the tunnel before any client connects.
 	mux := http.NewServeMux()
-	mcpHandler := beforeAuthorization(authToken, server.NewStreamableHTTPServer(srv))
+	var mcpHandler http.Handler = server.NewStreamableHTTPServer(srv)
+	if oauth != nil {
+		mcpHandler = oauth.protectMCP("/mcp", mcpHandler)
+	}
 	mux.Handle("/mcp", mcpHandler)
+	if oauth != nil {
+		mux.HandleFunc("/oauth/authorize", func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet:
+				oauth.authorizeGET(w, r)
+			case http.MethodPost:
+				oauth.authorizePOST(w, r)
+			default:
+				w.Header().Set("Allow", "GET, POST")
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			}
+		})
+		mux.HandleFunc("/oauth/token", oauth.tokenHandler)
+		mux.HandleFunc("/.well-known/oauth-authorization-server", oauth.asMetadataHandler)
+		mux.HandleFunc("/.well-known/oauth-protected-resource", oauth.protectedResourceHandler("/mcp"))
+	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
 			http.NotFound(w, r)
@@ -223,13 +259,18 @@ func serveHTTP(ctx context.Context, srv *server.MCPServer, cmd *cli.Command) err
 			shutdown(context.Background())
 			return err
 		}
+		if oauth != nil && publicURL == "" {
+			// Advertise endpoints against the public tunnel URL.
+			oauth.baseURL = strings.TrimRight(url, "/")
+			oauth.issuer = oauth.baseURL
+		}
 		fmt.Printf("MCP server URL: %s/mcp\n", strings.TrimRight(url, "/"))
-		fmt.Println("Endpoint is authenticated with the --auth-token bearer token")
 	} else {
 		fmt.Printf("MCP server listening on http://%s (endpoint /mcp)\n", localAddr)
-		if authToken != "" {
-			fmt.Println("Endpoint is authenticated with the --auth-token bearer token")
-		}
+	}
+	if oauth != nil {
+		fmt.Printf("Authorize MCP clients at %s/oauth/authorize (or via OAuth discovery)\n", oauth.baseURL)
+		fmt.Println("The shared --auth-token secret is required to authorize access")
 	}
 	fmt.Println("Press Ctrl+C to stop")
 
@@ -241,39 +282,6 @@ func serveHTTP(ctx context.Context, srv *server.MCPServer, cmd *cli.Command) err
 	}
 	shutdown(context.Background())
 	return nil
-}
-
-// beforeAuthorization wraps an http.Handler with a bearer-token check. When
-// token is empty, the handler is returned unchanged (no auth required, used
-// for loopback-only serving). When token is non-empty, requests without a
-// matching "Authorization: Bearer <token>" header are rejected with 401.
-func beforeAuthorization(token string, next http.Handler) http.Handler {
-	if token == "" {
-		return next
-	}
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if bearerMatches(r, token) {
-			next.ServeHTTP(w, r)
-			return
-		}
-		w.Header().Set("WWW-Authenticate", `Bearer realm="pinner-mcp"`)
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-	})
-}
-
-// bearerMatches reports whether the request carries an Authorization header
-// equal to "Bearer <token>". The comparison is constant-time to avoid leaking
-// the token length over timing.
-func bearerMatches(r *http.Request, token string) bool {
-	const prefix = "Bearer "
-	auth := r.Header.Get("Authorization")
-	if len(auth) != len(prefix)+len(token) {
-		return false
-	}
-	if auth[:len(prefix)] != prefix {
-		return false
-	}
-	return subtle.ConstantTimeCompare([]byte(auth[len(prefix):]), []byte(token)) == 1
 }
 
 // tunnelFor returns a Tunnel for the named provider, or nil if provider is
