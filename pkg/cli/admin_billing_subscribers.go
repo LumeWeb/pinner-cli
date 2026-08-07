@@ -7,6 +7,7 @@ import (
 
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/pkg/config"
+	"go.lumeweb.com/pinner-cli/pkg/internal/mcp"
 	"go.lumeweb.com/portal-sdk/admin"
 )
 
@@ -322,11 +323,7 @@ Examples:
 				Usage:    "User ID",
 				Required: true,
 			},
-			&cli.StringFlag{
-				Name:  FlagMode,
-				Usage: "Cancel mode: immediate, end_of_billing_period, etc.",
-				Value: "end_of_billing_period",
-			},
+			mcp.EnumStringFlag(FlagMode, "Cancel mode: immediate, end_of_billing_period", false, "end_of_billing_period", "immediate", "end_of_billing_period"),
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			cfgMgr, output, err := setupCommandContext(cmd)
