@@ -52,12 +52,15 @@ jobs:
       - name: Export Go version
         run: echo "GO_VERSION=$(go version | awk '{print $3}' | sed 's/go//')" >> $GITHUB_ENV
 
-      - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v7
-        with:
-          distribution: goreleaser
-          version: "~> v2"
-          args: release --clean
+      - name: Run GoReleaser (goreleaser-cross)
+        run: |
+          docker run --rm \
+            -v "$PWD":/go/src/go.lumeweb.com/pinner-cli \
+            -w /go/src/go.lumeweb.com/pinner-cli \
+            -e GITHUB_TOKEN \
+            -e GO_VERSION \
+            ghcr.io/goreleaser/goreleaser-cross:v1.26 \
+            release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.PAT }}
 

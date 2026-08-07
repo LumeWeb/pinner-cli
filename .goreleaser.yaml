@@ -12,21 +12,21 @@ before:
         - sh -c "mkdir -p manpages && go run ./cmd/pinner generate-docs man -o manpages/pinner.1"
 
 builds:
-    - id: pinner-cli
+    # Each build sets the CGO cross-compiler for its target. All toolchains
+    # are provided by the goreleaser-cross Docker image (see CI workflows).
+    # CGO must stay enabled on EVERY platform: the vault cache uses go-sqlite3,
+    # a cgo driver that compiles to a runtime stub when CGO_ENABLED=0.
+    - id: pinner-cli-linux-amd64
       main: ./cmd/pinner
       binary: pinner
       env:
-          - CGO_ENABLED=0
-      goos:
-          - linux
-          - darwin
-          - windows
-      goarch:
-          - amd64
-          - arm64
-      flags:
-          - -trimpath
-      ldflags:
+          - CGO_ENABLED=1
+          - CC=x86_64-linux-gnu-gcc
+          - CXX=x86_64-linux-gnu-g++
+      goos: [linux]
+      goarch: [amd64]
+      flags: [-trimpath]
+      ldflags: &ldflags
           - -s -w
           - -X 'go.lumeweb.com/pinner-cli/build.Version={{.Version}}'
           - -X 'go.lumeweb.com/pinner-cli/build.GitCommit={{.Commit}}'
@@ -35,6 +35,66 @@ builds:
           - -X 'go.lumeweb.com/pinner-cli/build.GoVersion={{.Env.GO_VERSION}}'
           - -X 'go.lumeweb.com/pinner-cli/build.Platform={{.Os}}'
           - -X 'go.lumeweb.com/pinner-cli/build.Architecture={{.Arch}}'
+      mod_timestamp: "{{.CommitTimestamp}}"
+    - id: pinner-cli-linux-arm64
+      main: ./cmd/pinner
+      binary: pinner
+      env:
+          - CGO_ENABLED=1
+          - CC=aarch64-linux-gnu-gcc
+          - CXX=aarch64-linux-gnu-g++
+      goos: [linux]
+      goarch: [arm64]
+      flags: [-trimpath]
+      ldflags: *ldflags
+      mod_timestamp: "{{.CommitTimestamp}}"
+    - id: pinner-cli-darwin-amd64
+      main: ./cmd/pinner
+      binary: pinner
+      env:
+          - CGO_ENABLED=1
+          - CC=o64-clang
+          - CXX=o64-clang++
+      goos: [darwin]
+      goarch: [amd64]
+      flags: [-trimpath]
+      ldflags: *ldflags
+      mod_timestamp: "{{.CommitTimestamp}}"
+    - id: pinner-cli-darwin-arm64
+      main: ./cmd/pinner
+      binary: pinner
+      env:
+          - CGO_ENABLED=1
+          - CC=oa64-clang
+          - CXX=oa64-clang++
+      goos: [darwin]
+      goarch: [arm64]
+      flags: [-trimpath]
+      ldflags: *ldflags
+      mod_timestamp: "{{.CommitTimestamp}}"
+    - id: pinner-cli-windows-amd64
+      main: ./cmd/pinner
+      binary: pinner
+      env:
+          - CGO_ENABLED=1
+          - CC=x86_64-w64-mingw32-gcc
+          - CXX=x86_64-w64-mingw32-g++
+      goos: [windows]
+      goarch: [amd64]
+      flags: [-trimpath]
+      ldflags: *ldflags
+      mod_timestamp: "{{.CommitTimestamp}}"
+    - id: pinner-cli-windows-arm64
+      main: ./cmd/pinner
+      binary: pinner
+      env:
+          - CGO_ENABLED=1
+          - CC=/llvm-mingw/bin/aarch64-w64-mingw32-gcc
+          - CXX=/llvm-mingw/bin/aarch64-w64-mingw32-g++
+      goos: [windows]
+      goarch: [arm64]
+      flags: [-trimpath]
+      ldflags: *ldflags
       mod_timestamp: "{{.CommitTimestamp}}"
 
 archives:
