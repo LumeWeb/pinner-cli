@@ -366,6 +366,103 @@ func TestList_BareDirectoryPath(t *testing.T) {
 	}
 }
 
+// TestList_ReadOnly_NoSDKBuilt locks in the lazy-SDK guarantee: a read-only
+// command (List) must work from the local SQLite cache alone, with a service
+// whose SDK was never constructed (s.sdk == nil). Constructing the Sia SDK
+// hits the network (CheckAppAuth + refreshHosts against the indexer), so a
+// local-cache-only `ls` must never pay that cost or fail when the indexer is
+// unreachable.
+func TestList_ReadOnly_NoSDKBuilt(t *testing.T) {
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "vault.db")
+	db, err := OpenDB(dbPath)
+	if err != nil {
+		t.Fatalf("OpenDB failed: %v", err)
+	}
+	defer func() {
+		if sqlDB, err := db.DB(); err == nil {
+			sqlDB.Close()
+		}
+	}()
+
+	// NOTE: sdk is intentionally left nil. The previous (pre-lazy) behaviour
+	// constructed the SDK eagerly in NewVaultServiceForProfile, which fails
+	// fast when the indexer is unreachable. With lazy construction, a service
+	// whose SDK is nil must still serve read-only commands.
+	svc := &vaultService{
+		db:     db,
+		sdk:    nil,
+		appKey: types.PrivateKey{},
+	}
+
+	now := time.Now().UTC()
+	rok := "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890a1"
+	if err := db.Create(&File{UUID: "uuid-root", Name: "root.txt", DirectoryID: nil, IsCurrent: true, ObjectKey: rok, Size: 1, ContentDigest: "r", CreatedAt: now, UpdatedAt: now}).Error; err != nil {
+		t.Fatalf("create file: %v", err)
+	}
+
+	items, err := svc.List(ctx, "vault:/")
+	if err != nil {
+		t.Fatalf("List with nil SDK must succeed from local cache, got: %v", err)
+	}
+	if len(items) != 1 || items[0].Name != "root.txt" {
+		t.Errorf("List returned %+v, want [root.txt] from local cache only", items)
+	}
+}
+
+// TestEnsureSDK_Close_RaceFree locks in the fix for a data race flagged by
+// Kody review: ensureSDK's fast-path read of s.sdk and Close()'s read/write
+// used to be unsynchronized, so a concurrent Close() racing ensureSDK could
+// observe a torn sdkClient (or, for the lazy-build path, leak the SDK built
+// after Close observed nil). All access to sdk/sdkErr must go through sdkMu.
+// Run under -race to catch regressions. The fake SDK is injected directly
+// (the supported test path), and concurrent ensureSDK + Close must neither
+// race nor invoke the SDK after it was closed.
+func TestEnsureSDK_Close_RaceFree(t *testing.T) {
+	svc := &vaultService{sdk: &fakeSDK{t: t}}
+
+	start := make(chan struct{})
+	const n = 16
+	var wg sync.WaitGroup
+
+	// Concurrent ensureSDK callers: each must get back the injected fake via the
+	// mutex-guarded fast path, or ErrVaultClosed once the racing Close wins. An
+	// unsynchronized access, a torn sdkClient, or a use-after-close would trip
+	// -race.
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			for j := 0; j < 50; j++ {
+				sdk, err := svc.ensureSDK()
+				if errors.Is(err, ErrVaultClosed) {
+					return // service closed by the concurrent goroutine; done
+				}
+				if err != nil {
+					t.Errorf("ensureSDK with injected fake returned error: %v", err)
+					return
+				}
+				if _, ok := sdk.(*fakeSDK); !ok {
+					t.Errorf("ensureSDK returned %T, want *fakeSDK", sdk)
+					return
+				}
+				_ = sdk.AppKey() // exercise the returned SDK
+			}
+		}()
+	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		<-start
+		// Close racing the ensureSDK calls. It must be safe and idempotent.
+		_ = svc.Close()
+	}()
+
+	close(start)
+	wg.Wait()
+}
+
 // TestList_FilePath_ResolvesParent regression: listing a concrete FILE path
 // (e.g. vault:/docs/report.pdf) must list that file's PARENT directory
 // (vault:/docs), not attempt to look up the full path as a directory and

@@ -65,8 +65,14 @@ func (s *vaultService) Sync(ctx context.Context) (applied int, full bool, err er
 		}
 	}
 
+	// Sync talks to the indexer, so it needs the (lazily-built) SDK.
+	sdk, err := s.ensureSDK()
+	if err != nil {
+		return 0, false, fmt.Errorf("failed to create Sia SDK: %w", err)
+	}
+
 	// Fetch events
-	events, err := s.sdk.ObjectEvents(ctx, cursor, 100)
+	events, err := sdk.ObjectEvents(ctx, cursor, 100)
 	if err != nil {
 		return 0, false, fmt.Errorf("failed to fetch object events: %w", err)
 	}
@@ -265,4 +271,3 @@ func (s *vaultService) Sync(ctx context.Context) (applied int, full bool, err er
 // only consumed internally by Sync; callers that need to confirm forward
 // progress (e.g. cache rebuild) compare the cursor across iterations via the
 // SyncDownCursor row.
-

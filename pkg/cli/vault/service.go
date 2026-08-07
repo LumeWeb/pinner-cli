@@ -13,6 +13,11 @@ import (
 // configuration error, and must not treat the latter as "safe to overwrite".
 var ErrNotFound = errors.New("vault object not found")
 
+// ErrVaultClosed is returned by ensureSDK after Close() has been called. It
+// signals that the service was disposed and must not lazily rebuild a fresh Sia
+// SDK (which would resurrect a closed service and touch the network again).
+var ErrVaultClosed = errors.New("vault service is closed")
+
 // VaultService is the interface for vault operations.
 type VaultService interface {
 	// CheckReady verifies that the indexer has finished propagating the

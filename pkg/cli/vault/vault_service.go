@@ -11,6 +11,7 @@ import (
 	"mime"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -39,9 +40,42 @@ type sdkClient interface {
 
 // vaultService implements VaultService.
 type vaultService struct {
-	sdk    sdkClient
 	db     *gorm.DB
 	appKey types.PrivateKey
+
+	// indexerURL and metadata are retained so the Sia SDK can be built lazily
+	// on first use. Constructing the SDK hits the network (CheckAppAuth +
+	// refreshHosts against the indexer), so building it eagerly for every
+	// command makes even a local-cache-only `ls` take seconds. Read-only
+	// commands (List/Stat/Cat) never touch the SDK.
+	indexerURL string
+	metadata   siastorage.AppMetadata
+
+	sdkMu  sync.Mutex // guards sdk, sdkErr, closed (fast-path read, lazy build, Close)
+	sdk    sdkClient
+	sdkErr error
+	closed bool
+}
+
+// ensureSDK returns the Sia SDK, building it (and hitting the network) only on
+// first use. Tests that inject a fake SDK directly (s.sdk != nil) get it back
+// unchanged; production services build the real SDK lazily. All access to
+// sdk/sdkErr/closed is serialized through sdkMu so a concurrent Close() can
+// never race an in-flight lazy build (or leak the SDK built after it). Once the
+// service is Closed, ensureSDK returns ErrVaultClosed rather than lazily
+// rebuilding a fresh SDK on a disposed service.
+func (s *vaultService) ensureSDK() (sdkClient, error) {
+	s.sdkMu.Lock()
+	defer s.sdkMu.Unlock()
+	if s.closed {
+		return nil, ErrVaultClosed
+	}
+	if s.sdk != nil {
+		return s.sdk, nil
+	}
+	builder := siastorage.NewBuilder(s.indexerURL, s.metadata)
+	s.sdk, s.sdkErr = builder.SDK(s.appKey)
+	return s.sdk, s.sdkErr
 }
 
 // NewVaultService creates a vault service from an SDK and an open database.
@@ -84,26 +118,22 @@ func NewVaultServiceForProfile(profileName string, indexerURL string) (VaultServ
 		ServiceURL:  indexerURL,
 	}
 
-	builder := siastorage.NewBuilder(indexerURL, metadata)
-	sdk, err := builder.SDK(appKey)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create Sia SDK: %w", err)
-	}
-
-	// Open the cache WITHOUT running goose migrations. Migrations are applied
-	// at schema-maintenance boundaries (create/restore/cache rebuild); every
-	// command here is a read of an already-provisioned cache, so re-running the
-	// goose version check on each ls/stat/cat is wasted work.
+	// Open the cache WITHOUT running goose migrations or constructing the Sia
+	// SDK. Migrations are applied at schema-maintenance boundaries
+	// (create/restore/cache rebuild). The SDK is built lazily on first use
+	// because building it hits the network (CheckAppAuth + refreshHosts) — a
+	// local-cache-only `ls`/`stat`/`cat` should not pay a multi-second network
+	// round-trip.
 	db, err := OpenDBNoMigrate(ProfileDBPath(profileName))
 	if err != nil {
-		sdk.Close()
 		return nil, err
 	}
 
 	return &vaultService{
-		sdk:    sdk,
-		db:     db,
-		appKey: appKey,
+		db:         db,
+		appKey:     appKey,
+		indexerURL: indexerURL,
+		metadata:   metadata,
 	}, nil
 }
 
@@ -111,7 +141,11 @@ func NewVaultServiceForProfile(profileName string, indexerURL string) (VaultServ
 // Right after login, the indexer needs a moment to propagate on the network.
 // This returns a clear error so the user knows to wait and retry.
 func (s *vaultService) CheckReady(ctx context.Context) error {
-	account, err := s.sdk.Account(ctx)
+	sdk, err := s.ensureSDK()
+	if err != nil {
+		return fmt.Errorf("failed to create Sia SDK: %w", err)
+	}
+	account, err := sdk.Account(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to check account status: %w", err)
 	}
@@ -129,6 +163,12 @@ func (s *vaultService) Put(ctx context.Context, r io.Reader, size int64, vaultPa
 	}
 	if vp.IsDir {
 		return nil, fmt.Errorf("destination must be a file path, not a directory")
+	}
+
+	// Upload requires the (lazily-built, network-connected) SDK.
+	sdk, err := s.ensureSDK()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Sia SDK: %w", err)
 	}
 
 	// Get or create directory
@@ -183,7 +223,7 @@ func (s *vaultService) Put(ctx context.Context, r io.Reader, size int64, vaultPa
 	hasher := sha256.New()
 	teeReader := io.TeeReader(r, hasher)
 
-	if err := s.sdk.Upload(ctx, &obj, teeReader); err != nil {
+	if err := sdk.Upload(ctx, &obj, teeReader); err != nil {
 		return nil, fmt.Errorf("upload failed: %w", err)
 	}
 
@@ -198,7 +238,7 @@ func (s *vaultService) Put(ctx context.Context, r io.Reader, size int64, vaultPa
 	}
 	obj.UpdateMetadata(metaJSON)
 
-	if err := s.sdk.PinObject(ctx, obj); err != nil {
+	if err := sdk.PinObject(ctx, obj); err != nil {
 		return nil, fmt.Errorf("pin failed: %w", err)
 	}
 
@@ -331,7 +371,7 @@ func (s *vaultService) Put(ctx context.Context, r io.Reader, size int64, vaultPa
 			var refs int64
 			s.db.Model(&File{}).Where("object_key = ? AND deleted_at IS NULL", priorObjectKey).Count(&refs)
 			if refs == 0 {
-				if delErr := s.sdk.DeleteObject(ctx, priorHash); delErr != nil {
+				if delErr := sdk.DeleteObject(ctx, priorHash); delErr != nil {
 					_ = delErr // non-fatal; orphaned content can be reclaimed later
 				}
 			}
@@ -357,12 +397,16 @@ func (s *vaultService) Get(ctx context.Context, vaultPath string, w io.Writer) e
 	if err != nil {
 		return fmt.Errorf("failed to parse object key: %w", err)
 	}
-	obj, err := s.sdk.Object(ctx, objHash)
+	sdk, err := s.ensureSDK()
+	if err != nil {
+		return fmt.Errorf("failed to create Sia SDK: %w", err)
+	}
+	obj, err := sdk.Object(ctx, objHash)
 	if err != nil {
 		return fmt.Errorf("failed to get object from indexer: %w", err)
 	}
 
-	reader, err := s.sdk.Download(obj)
+	reader, err := sdk.Download(obj)
 	if err != nil {
 		return fmt.Errorf("failed to start download: %w", err)
 	}
@@ -563,7 +607,11 @@ func (s *vaultService) VerifyDeep(ctx context.Context, vaultPath string) (*Verif
 		return res, err
 	}
 
-	reader, err := s.sdk.Download(obj)
+	sdk, err := s.ensureSDK()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Sia SDK: %w", err)
+	}
+	reader, err := sdk.Download(obj)
 	if err != nil {
 		return nil, fmt.Errorf("failed to download for verification: %w", err)
 	}
@@ -609,7 +657,11 @@ func (s *vaultService) resolveVerifyObject(ctx context.Context, vaultPath string
 	// ObjectExists=false; any other (transient indexer/network) error must
 	// surface as an error rather than misleadingly reporting the object as
 	// missing/corrupted.
-	obj, err := s.sdk.Object(ctx, objHash)
+	sdk, err := s.ensureSDK()
+	if err != nil {
+		return nil, siastorage.Object{}, false, fmt.Errorf("failed to create Sia SDK: %w", err)
+	}
+	obj, err := sdk.Object(ctx, objHash)
 	if err != nil {
 		if errors.Is(err, slabs.ErrObjectNotFound) {
 			result.ObjectExists = false
@@ -686,8 +738,14 @@ func (s *vaultService) Remove(ctx context.Context, vaultPath string) error {
 	// success, and a retry would then hit "file not found" because the record
 	// is already gone — misleading the caller. Treat it as best-effort.
 	if deleteObject {
-		if err := s.sdk.DeleteObject(ctx, objHash); err != nil {
-			_ = err // best-effort; see comment above
+		// Reclaiming the orphaned object requires the indexer, so build the SDK
+		// only on this path (lazily). A remove that leaves other references
+		// (deleteObject==false) never touches the network.
+		sdk, err := s.ensureSDK()
+		if err == nil {
+			if err := sdk.DeleteObject(ctx, objHash); err != nil {
+				_ = err // best-effort; see comment above
+			}
 		}
 	}
 
@@ -710,7 +768,11 @@ func (s *vaultService) Share(ctx context.Context, vaultPath string, validUntil t
 	if err != nil {
 		return "", fmt.Errorf("failed to parse object key: %w", err)
 	}
-	shareURL, err := s.sdk.CreateSharedObjectURL(ctx, objHash, validUntil)
+	sdk, err := s.ensureSDK()
+	if err != nil {
+		return "", fmt.Errorf("failed to create Sia SDK: %w", err)
+	}
+	shareURL, err := sdk.CreateSharedObjectURL(ctx, objHash, validUntil)
 	if err != nil {
 		return "", fmt.Errorf("failed to create share URL: %w", err)
 	}
@@ -731,8 +793,10 @@ func (s *vaultService) Status(ctx context.Context) (*StatusResult, error) {
 
 	// Remote: probe the indexer account endpoint. Success proves reachability;
 	// any error means the remote is unreachable and the reason is captured.
-	account, err := s.sdk.Account(ctx)
-	if err != nil {
+	sdk, sdkErr := s.ensureSDK()
+	if sdkErr != nil {
+		res.RemoteError = sdkErr.Error()
+	} else if account, err := sdk.Account(ctx); err != nil {
 		res.RemoteError = err.Error()
 	} else {
 		res.RemoteReachable = true
@@ -783,10 +847,20 @@ func (s *vaultService) Close() error {
 		}
 		s.db = nil
 	}
-	if s.sdk != nil {
-		err := s.sdk.Close()
-		s.sdk = nil
-		if err != nil {
+	// Release the SDK under the same lock that guards ensureSDK, so a Close()
+	// that races an in-flight lazy build waits for it and then closes the SDK
+	// it produced (previously it could observe sdk==nil and leak the SDK built
+	// right after). Mark the service closed so a subsequent ensureSDK returns
+	// ErrVaultClosed instead of lazily rebuilding a fresh SDK on a disposed
+	// service.
+	s.sdkMu.Lock()
+	sdk := s.sdk
+	s.sdk = nil
+	s.closed = true
+	s.sdkMu.Unlock()
+
+	if sdk != nil {
+		if err := sdk.Close(); err != nil {
 			return errors.Join(err, dbErr)
 		}
 	}
@@ -952,6 +1026,10 @@ func (s *vaultService) resolveFile(vp *VaultPath) (File, error) {
 // transaction targets the winner's row (overwrite path) instead of re-creating
 // a conflicting row. Returns (false, nil) when no adoption is needed.
 func (s *vaultService) adoptPreflight(ctx context.Context, obj *siastorage.Object, fileMeta *FileMetadata, name string, dirID *uint, rec *File) (bool, error) {
+	sdk, err := s.ensureSDK()
+	if err != nil {
+		return false, fmt.Errorf("failed to create Sia SDK: %w", err)
+	}
 	current, err := s.findCurrentFile(name, dirID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -993,7 +1071,7 @@ func (s *vaultService) adoptPreflight(ctx context.Context, obj *siastorage.Objec
 		return false, fmt.Errorf("re-stamp object metadata after adopting UUID: %w", rerr)
 	}
 	obj.UpdateMetadata(rmeta)
-	if perr := s.sdk.PinObject(ctx, *obj); perr != nil {
+	if perr := sdk.PinObject(ctx, *obj); perr != nil {
 		return false, fmt.Errorf("re-pin object after adopting UUID: %w", perr)
 	}
 	return true, nil
