@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -40,14 +42,49 @@ func (n *ngrokTunnel) Name() string { return "ngrok" }
 // SupportsCustomDomain implements Tunnel.
 func (n *ngrokTunnel) SupportsCustomDomain() bool { return true }
 
-// RequiresToken implements Tunnel. ngrok needs an authtoken, but it may be
-// supplied out of band via the NGROK_AUTHTOKEN env var or the ngrok config
-// file, so we only report true when no token source is present.
+// RequiresToken implements Tunnel. ngrok needs an account authtoken in all
+// cases (even the free tier), but it may be supplied three ways: via --token,
+// via the NGROK_AUTHTOKEN env var, or saved in the ngrok config file by
+// `ngrok config add-authtoken`. We only report true when none of those token
+// sources is present, so the CLI does not falsely reject a user who has
+// configured ngrok out of band.
 func (n *ngrokTunnel) RequiresToken() bool {
 	if n.token != "" || os.Getenv("NGROK_AUTHTOKEN") != "" {
 		return false
 	}
-	return true
+	// An existing ngrok config file (written by `ngrok config add-authtoken`)
+	// authenticates the agent on start, so it also counts as a token source.
+	// Respect NGROK_CONFIG when set; otherwise use the default per-OS path.
+	if path := os.Getenv("NGROK_CONFIG"); path != "" {
+		_, err := os.Stat(path)
+		return err != nil
+	}
+	switch runtime.GOOS {
+	case "windows":
+		// ngrok stores its config under %LOCALAPPDATA%\ngrok\ngrok.yml, not
+		// %APPDATA%\Roaming (os.UserConfigDir), so read LOCALAPPDATA to match
+		// where `ngrok config add-authtoken` actually writes.
+		base := os.Getenv("LOCALAPPDATA")
+		if base == "" {
+			return true
+		}
+		_, err := os.Stat(filepath.Join(base, "ngrok", "ngrok.yml"))
+		return err != nil
+	case "darwin":
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return true
+		}
+		_, err = os.Stat(filepath.Join(home, "Library", "Application Support", "ngrok", "ngrok.yml"))
+		return err != nil
+	default:
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return true
+		}
+		_, err = os.Stat(filepath.Join(home, ".config", "ngrok", "ngrok.yml"))
+		return err != nil
+	}
 }
 
 // URL implements Tunnel.
