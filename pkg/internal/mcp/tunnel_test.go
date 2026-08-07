@@ -97,3 +97,44 @@ func TestRequiresToken(t *testing.T) {
 	// Token supplied directly.
 	require.False(t, NewNgrokTunnel("", "tok").RequiresToken())
 }
+
+func TestBeforeAuthorization(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	// Empty token: no auth required.
+	open := beforeAuthorization("", inner)
+	req := httptest.NewRequest(http.MethodGet, "/mcp", nil)
+	rec := httptest.NewRecorder()
+	open.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	// With a token, a missing/wrong header is rejected with 401.
+	secured := beforeAuthorization("s3cr3t", inner)
+	rec = httptest.NewRecorder()
+	secured.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/mcp", nil))
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+
+	rec = httptest.NewRecorder()
+	bad := httptest.NewRequest(http.MethodGet, "/mcp", nil)
+	bad.Header.Set("Authorization", "Bearer wrong")
+	secured.ServeHTTP(rec, bad)
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+
+	// Correct bearer token passes.
+	rec = httptest.NewRecorder()
+	good := httptest.NewRequest(http.MethodGet, "/mcp", nil)
+	good.Header.Set("Authorization", "Bearer s3cr3t")
+	secured.ServeHTTP(rec, good)
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestURLForOrigin(t *testing.T) {
+	u, err := urlForOrigin("127.0.0.1:8893")
+	require.NoError(t, err)
+	assert.Equal(t, "http://127.0.0.1:8893", u)
+
+	_, err = urlForOrigin("notaport")
+	require.Error(t, err)
+}

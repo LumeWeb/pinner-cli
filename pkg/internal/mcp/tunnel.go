@@ -82,17 +82,20 @@ func splitHostPort(addr string) (string, string, error) {
 	parts := strings.Split(addr, ":")
 	switch len(parts) {
 	case 1:
+		if _, err := strconv.Atoi(parts[0]); err != nil {
+			return "", "", fmt.Errorf("invalid port %q: %w", parts[0], err)
+		}
 		return "127.0.0.1", parts[0], nil
 	case 2:
 		if _, err := strconv.Atoi(parts[1]); err != nil {
-			return "", "", err
+			return "", "", fmt.Errorf("invalid port %q: %w", parts[1], err)
 		}
 		return parts[0], parts[1], nil
 	default:
 		// IPv6 literal form [::1]:port
 		port := parts[len(parts)-1]
 		if _, err := strconv.Atoi(port); err != nil {
-			return "", "", err
+			return "", "", fmt.Errorf("invalid port %q: %w", port, err)
 		}
 		host := strings.TrimPrefix(strings.TrimSuffix(strings.Join(parts[:len(parts)-1], ":"), "]"), "[")
 		return host, port, nil

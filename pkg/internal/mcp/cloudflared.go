@@ -3,9 +3,12 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // cloudflaredTunnel serves a local MCP HTTP server through a Cloudflare named
@@ -26,6 +29,10 @@ type cloudflaredTunnel struct {
 	domain string
 	name   string
 	cmd    *exec.Cmd
+	// done carries the result of the single cmd.Wait() call so both the
+	// readiness probe and Stop can observe process exit without calling
+	// Wait() twice.
+	done chan error
 }
 
 // NewCloudflaredTunnel returns a tunnel backed by a Cloudflare named tunnel
@@ -62,12 +69,20 @@ func (c *cloudflaredTunnel) URL() (string, error) {
 func (c *cloudflaredTunnel) Stop(ctx context.Context) error {
 	c.mu.Lock()
 	cmd := c.cmd
+	done := c.done
 	c.mu.Unlock()
 	if cmd == nil || cmd.Process == nil {
 		return nil
 	}
 	_ = cmd.Process.Signal(os.Interrupt)
-	_ = waitCtx(ctx, cmd)
+	if done != nil {
+		select {
+		case <-done:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 	return nil
 }
 
@@ -80,9 +95,15 @@ func (c *cloudflaredTunnel) Start(ctx context.Context, localAddr string) error {
 		return fmt.Errorf("cloudflared executable not found on PATH: %w (see https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/)", err)
 	}
 
+	// Validate the local origin URL that cloudflared will forward to.
+	origin, err := urlForOrigin(localAddr)
+	if err != nil {
+		return err
+	}
+
 	cmd := exec.CommandContext(ctx, "cloudflared", "tunnel",
 		"--name", c.name,
-		"--url", localAddr,
+		"--url", origin,
 		"--hostname", c.domain,
 	)
 	// The public URL is the custom domain, known before the tunnel connects,
@@ -95,10 +116,62 @@ func (c *cloudflaredTunnel) Start(ctx context.Context, localAddr string) error {
 		return fmt.Errorf("failed to start cloudflared: %w", err)
 	}
 
+	// One process may Wait; feed the result to a shared channel so both the
+	// readiness probe and Stop observe an exit without a second Wait.
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+
 	c.mu.Lock()
 	c.cmd = cmd
+	c.done = done
 	c.mu.Unlock()
 
-	c.setReady("https://" + strings.TrimPrefix(c.domain, "https://"))
+	// Do not report the URL until the endpoint responds over the tunnel, so
+	// we never print a live URL that is unreachable because cloudflared
+	// exited or never connected. Stop the process on any readiness failure.
+	publicURL := "https://" + strings.TrimPrefix(c.domain, "https://")
+	if err := c.waitReady(ctx, publicURL, done); err != nil {
+		c.Stop(ctx)
+		return err
+	}
+	c.setReady(publicURL)
 	return nil
+}
+
+// waitReady polls the public URL until it responds over the tunnel, the
+// cloudflared process exits (observed via done), or the deadline expires.
+func (c *cloudflaredTunnel) waitReady(ctx context.Context, publicURL string, done <-chan error) error {
+	deadline := time.Now().Add(30 * time.Second)
+	client := &http.Client{Timeout: 3 * time.Second}
+	for {
+		select {
+		case <-done:
+			return fmt.Errorf("cloudflared exited before the tunnel became ready")
+		default:
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timed out waiting for cloudflared tunnel %s to become ready", publicURL)
+		}
+		resp, err := client.Get(publicURL)
+		if err == nil {
+			_ = resp.Body.Close()
+			if resp.StatusCode > 0 {
+				return nil
+			}
+		}
+		time.Sleep(300 * time.Millisecond)
+	}
+}
+
+// urlForOrigin normalizes a host:port local address into the http:// URL that
+// cloudflared expects as its --url origin.
+func urlForOrigin(localAddr string) (string, error) {
+	host, port, err := splitHostPort(localAddr)
+	if err != nil {
+		return "", fmt.Errorf("invalid local address %q: %w", localAddr, err)
+	}
+	return "http://" + net.JoinHostPort(host, port), nil
 }
