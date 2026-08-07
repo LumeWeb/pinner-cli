@@ -266,8 +266,9 @@ func (o *oauthServer) newCode(clientID string) string {
 
 // validToken reports whether the given bearer token is one this AS issued
 // and has not expired. It does a single-map lookup only; full-map cleanup of
-// expired entries is deferred to the periodic sweep (see sweep/reapLocked) so
-// per-request cost stays O(1) and does not serialize on the mutex.
+// expired entries is deferred to the periodic sweep (see sweep/reapLocked),
+// so the per-request cost stays O(1). The mutex is still held for the single
+// lookup (removing it would race with writers in tokenHandler/newCode/sweep).
 func (o *oauthServer) validToken(tok string) bool {
 	o.mu.Lock()
 	defer o.mu.Unlock()
