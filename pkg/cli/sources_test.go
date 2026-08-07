@@ -40,13 +40,13 @@ func TestStdinSource_AgentModeSkipsStdin(t *testing.T) {
 		t.Errorf("expected empty string in agent mode, got %q", val)
 	}
 
-	// Verify stdin data was NOT consumed — the JSON-RPC data should still be available
+	// Verify stdin data was NOT consumed; the JSON-RPC data should still be available
 	remaining, err := io.ReadAll(r)
 	if err != nil {
 		t.Fatalf("failed to read remaining stdin: %v", err)
 	}
 	if string(remaining) != jsonRPCData {
-		t.Errorf("stdin data was consumed in agent mode — expected %q, got %q", jsonRPCData, string(remaining))
+		t.Errorf("stdin data was consumed in agent mode: expected %q, got %q", jsonRPCData, string(remaining))
 	}
 }
 
@@ -121,7 +121,7 @@ func TestStdinSource_NormalModeTerminalReturnsFalse(t *testing.T) {
 	// This test mainly ensures no panic/hang in the non-agent path
 	src := NewStdinSource()
 	_, ok := src.Lookup()
-	// Result depends on environment — just ensure no panic
+	// Result depends on environment; just ensure no panic
 	_ = ok
 }
 
@@ -155,7 +155,7 @@ func TestStdinSource_AgentModeDoesNotConsumeJSONRPC(t *testing.T) {
 
 	src := NewStdinSource()
 
-	// Call Lookup multiple times — each time it should skip stdin
+	// Call Lookup multiple times; each time it should skip stdin
 	for i := 0; i < 3; i++ {
 		val, ok := src.Lookup()
 		if ok {
@@ -172,6 +172,6 @@ func TestStdinSource_AgentModeDoesNotConsumeJSONRPC(t *testing.T) {
 		t.Fatalf("failed to read remaining stdin: %v", err)
 	}
 	if !bytes.Equal(remaining, messages) {
-		t.Errorf("stdin data was consumed in agent mode — JSON-RPC stream corrupted\nexpected %q\ngot      %q", messages, remaining)
+		t.Errorf("stdin data was consumed in agent mode: JSON-RPC stream corrupted\nexpected %q\ngot      %q", messages, remaining)
 	}
 }

@@ -19,16 +19,9 @@ func newVaultRestoreCommand() *cli.Command {
 		Name:      "restore",
 		Usage:     "Restore a vault from a recovery seed",
 		ArgsUsage: "[--profile <name>]",
-		Description: `Restores an existing vault on this device using a recovery seed.
+		Description: `Restore an existing vault on this device from a recovery seed (mnemonic). Used when setting up a new device or after local credentials are lost. Derives the vault identity, connects to the Sia indexer via browser approval, creates a new local device credential, and rebuilds the vault cache from remote state.
 
-This is used when setting up a new device, or when local credentials were lost.
-
-The flow:
-1. Read the recovery seed (mnemonic).
-2. Derive the vault identity.
-3. Connect to the Sia indexer via browser approval.
-4. Create a new local device credential.
-5. Rebuild the vault cache from remote state.`,
+In non-interactive (--agent) mode pass --seed-stdin to read the mnemonic from stdin instead of prompting interactively.`,
 		Flags: []cli.Flag{
 			&cli.BoolFlag{
 				Name:  "seed-stdin",
@@ -67,7 +60,7 @@ The flow:
 
 			// Check if profile already exists. A "pending" profile (empty
 			// VaultID) was created by `vault create --agent` and is waiting
-			// for restore to complete it — allow restore to proceed.
+			// for restore to complete it; allow restore to proceed.
 			reg, err := vault.LoadRegistry()
 			if err != nil {
 				return fmt.Errorf("failed to load registry: %w", err)
@@ -76,7 +69,7 @@ The flow:
 				if existing.VaultID != "" {
 					return fmt.Errorf("profile %q already exists. Use 'pinner vault status --profile %s' to check it, or choose a different name", profileName, profileName)
 				}
-				// Pending profile from `vault create --agent` — restore
+				// Pending profile from `vault create --agent`; restore
 				// will complete it. Fall through.
 			}
 
@@ -84,7 +77,7 @@ The flow:
 			// the seed-carrying re-run so only a single connection request is
 			// ever issued (otherwise the first run orphan-approves and forces
 			// a duplicate approval on the --seed-stdin run). Return before
-			// reading a mnemonic or touching the network — BUT only when no
+			// reading a mnemonic or touching the network; BUT only when no
 			// seed is supplied on this invocation. `--agent` is a global
 			// MCP/CI flag, so a re-run that DOES carry --seed-stdin still has
 			// it set; returning here again would loop forever instead of
@@ -129,7 +122,7 @@ The flow:
 			output.Printfln("Restoring vault profile %q...", profileName)
 
 			// Start approval flow (new device needs browser approval). Build a
-			// single Connection shared with the wait/register below — the SDK
+			// single Connection shared with the wait/register below; the SDK
 			// requires Request and WaitForApproval/Register on the same
 			// builder, or the pending request is lost.
 			conn := vault.NewConnection(indexerURL, mnemonic)

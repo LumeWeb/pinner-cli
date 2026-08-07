@@ -267,7 +267,7 @@ func saveAuthToken(output Output, token string) error {
 
 // validateJWTFormat performs a basic structural check on a JWT token.
 // A JWT has three base64url-encoded segments separated by dots: header.payload.signature.
-// This does not verify the signature — it only catches obviously non-JWT strings
+// This does not verify the signature; it only catches obviously non-JWT strings
 // like subcommands typed by mistake (e.g., "register").
 func validateJWTFormat(token string) error {
 	parts := strings.Split(token, ".")
@@ -459,7 +459,7 @@ func newAuthLogoutCommand() *cli.Command {
 		Usage: "Clear stored authentication token",
 		Description: `Remove your stored auth token from the local config.
 
-This does not revoke API keys on the server — it only clears the local
+This does not revoke API keys on the server; it only clears the local
 credential so the CLI no longer authenticates.
 
 Examples:

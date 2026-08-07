@@ -223,13 +223,13 @@ func (s *AuthServiceDefault) canReuseAPIKey(ctx context.Context, loginJWT string
 		return false
 	}
 
-	// Different user ID means different account — cannot reuse
+	// Different user ID means different account; cannot reuse
 	if loginSub != storedSub {
 		s.output.PrintVerbosef("Stored API key belongs to different account (user %s vs %s), creating new key", storedSub, loginSub)
 		return false
 	}
 
-	// Same account — verify the key still works by pinging the API
+	// Same account; verify the key still works by pinging the API
 	authClient := s.clientFactory(s.apiEndpoint, storedToken)
 	if err := authClient.Ping(ctx); err != nil {
 		s.output.PrintVerbosef("Stored API key is no longer valid: %v", err)

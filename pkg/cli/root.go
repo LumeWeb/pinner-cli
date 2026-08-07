@@ -105,7 +105,7 @@ For more help on any command: pinner <command> --help`,
 
 			authToken := cfgMgr.Config().AuthToken
 			secure := cfgMgr.Config().Secure
-			// Build websites service without RequireAuthenticated — the setup wizard
+			// Build websites service without RequireAuthenticated; the setup wizard
 			// must be reachable for unauthenticated users, and the websites wizard's
 			// auth_check step enforces authentication at runtime.
 			var svcOpts []WebsitesServiceOption

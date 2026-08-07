@@ -57,12 +57,12 @@ type Session struct {
 	CreatedAt time.Time
 	ExpiresAt time.Time
 
-	mu         sync.RWMutex
-	advanceMu  sync.Mutex
-	state      WizardState
-	FSM        *fsm.FSM
-	steps      []StepDef
-	stepMap    map[string]StepDef
+	mu        sync.RWMutex
+	advanceMu sync.Mutex
+	state     WizardState
+	FSM       *fsm.FSM
+	steps     []StepDef
+	stepMap   map[string]StepDef
 }
 
 // State returns the wizard state. The returned value is safe to read
@@ -112,7 +112,7 @@ func (s *Session) Touch(ttl time.Duration) {
 }
 
 // SessionStore is a concurrency-safe, TTL-bounded in-memory store of wizard
-// sessions. It is not persisted — sessions die when the process exits.
+// sessions. It is not persisted: sessions die when the process exits.
 // The store enforces a maximum session count to prevent unbounded memory
 // growth from abandoned sessions.
 type SessionStore struct {

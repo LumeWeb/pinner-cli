@@ -108,7 +108,7 @@ func TestLoad_MissingConfigFile_NoError(t *testing.T) {
 		t.Fatalf("Config file should not exist before Load")
 	}
 
-	// Load must succeed with defaults — this is what pinner setup hits
+	// Load must succeed with defaults; this is what pinner setup hits
 	if err := mgr.Load(); err != nil {
 		t.Fatalf("Load should not fail when config file is missing, got: %v", err)
 	}

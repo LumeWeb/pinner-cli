@@ -42,7 +42,9 @@ The output includes:
   - CID: Content identifier for your uploaded content
   - Gateway URL: Public URL to access your content
   - Size: File size in human-readable format
-  - Time: Upload duration`,
+  - Time: Upload duration
+
+Does NOT pin content that is already on IPFS (use 'pin'/'pins add' for an existing CID) and does NOT download; use 'download'/'cat'.`,
 		ArgsUsage: "[path]",
 		Flags: []cli.Flag{
 			NameFlag("Custom name for the pin"),

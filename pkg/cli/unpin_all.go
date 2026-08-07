@@ -37,9 +37,8 @@ Examples:
 			ContinueFlag(),
 			DryRunFlag(),
 			&cli.BoolFlag{
-				Name:   FlagYes,
-				Usage:  "Accept the safety prompt non-interactively (requires --force)",
-				Hidden: true,
+				Name:  FlagYes,
+				Usage: "Accept the safety prompt non-interactively (requires --force)",
 			},
 		},
 		Action: func(ctx context.Context, c *cli.Command) error {

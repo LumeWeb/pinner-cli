@@ -22,7 +22,9 @@ Examples:
   pinner pins add bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --meta owner=alice --meta env=prod
   pinner pins add bafybeig...abc bafybeig...def bafybeig...ghi --parallel 5
   pinner pins add --file cids.txt
-  pinner pins add bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --dry-run`,
+  pinner pins add bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --dry-run
+
+Does NOT upload new local files (use 'upload') and does NOT change metadata after the fact (use 'pins update'). Use 'pins rm' to remove.`,
 		ArgsUsage: "<cid...>",
 		Flags: []cli.Flag{
 			NameFlag("Custom name for the pin"),

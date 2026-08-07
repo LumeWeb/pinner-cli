@@ -29,24 +29,9 @@ func newWebsitesCommand() *cli.Command {
 		Category: "Management",
 		Aliases:  []string{"website"},
 		Usage:    "Manage websites",
-		Description: `Manage websites for your IPFS content. Websites allow you to associate
-domain names with CIDs, making your content accessible through custom domains.
+		Description: `Manage websites: associate domain names with CIDs so your IPFS/IPNS content is served over your custom domains. Covers create/list/get/update/delete/validate, SSL certificate status, domain binding (websites domains), and enabling IPNS addressing (enable-ipns).
 
-Website operations include:
-  - List all websites
-  - Create a new website
-  - Get website details
-  - Update website configuration
-  - Delete a website
-  - Validate website configuration
-
-Examples:
-  pinner websites list
-  pinner websites create example.com --cid bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e
-  pinner websites get example.com
-  pinner websites update example.com --cid bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e
-  pinner websites delete example.com
-  pinner websites validate example.com`,
+For raw DNS zone and record CRUD (A/AAAA/CNAME/TXT/MX/NS, _dnslink, apex vs subdomain), use the 'dns' command tree instead; websites only shows the DNS records your domain needs. Content addressing itself lives under 'ipns'.`,
 		Commands: []*cli.Command{
 			newWebsitesListCommand(),
 			newWebsitesCreateCommand(),
@@ -67,7 +52,7 @@ func newWebsitesListCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "list",
 		Usage: "List all websites",
-		Description: `List all websites for the authenticated user.
+		Description: `List all websites for the authenticated user. Returns each website's ID, domain, target CID, resolved CID, status, DNS-hosting flag and gateway. Use this to obtain the numeric website ID accepted interchangeably with a domain by websites get/update/validate/delete and websites domains list/add.
 
 Examples:
   pinner websites list
@@ -82,7 +67,9 @@ func newWebsitesCreateCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "create",
 		Usage: "Create a new website",
-		Description: `Create a new website with the specified domain and target CID.
+		Description: `Create a website that serves an IPFS CID under a custom domain. Takes the <domain> positional and --cid (required), plus optional --target-type (ipfs|ipns) and --dns-hosting. Returns the created website object including its numeric ID, the validation TXT token, and the DNS/CNAME records you must publish to make it live.
+
+This registers the site itself. To point a website at an IPNS key instead of a fixed CID, use 'websites enable-ipns'; to add an extra domain binding to an existing site use 'websites domains add'. To manage raw DNS records for a zone use 'dns records create' rather than this command.
 
 Examples:
   pinner websites create example.com --cid bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e
@@ -106,7 +93,9 @@ func newWebsitesGetCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "get",
 		Usage: "Get website details",
-		Description: `Get details of a specific website by domain.
+		Description: `Get full details of one website, selected by domain name or numeric ID (either works). Returns ID, domain, CID, resolved CID, target type, status, DNS-hosting flag, validation token, gateway and associated IPNS key / DNS zone IDs, plus the required DNS records.
+
+This reports configuration state. For whether DNS is correctly configured use 'websites validate'; for TLS certificate state use 'websites ssl status'. It does NOT create or modify anything.
 
 Examples:
   pinner websites get example.com
@@ -122,7 +111,9 @@ func newWebsitesUpdateCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "update",
 		Usage: "Update a website",
-		Description: `Update an existing website with new CID, target type, or domain rename.
+		Description: `Update an existing website: change its CID, target type (ipfs|ipns), rename its domain (--rename-to), or toggle DNS hosting. Selects the site by the <domain> positional, then applies whichever optional flags are set (at least one is required). Returns the updated website object.
+
+Passing --target-type ipns converts the site to IPNS addressing (auto-creates an IPNS key). For that conversion alone, prefer the dedicated single-purpose 'websites enable-ipns'. This does NOT touch DNS zone records; use 'dns records update' for those.
 
 At least one of the optional fields must be provided to update the website.
 
@@ -391,12 +382,9 @@ func newWebsitesEnableIPNSCommand() *cli.Command {
 		Name:    "enable-ipns",
 		Aliases: []string{"ipns"},
 		Usage:   "Enable IPNS targeting for a website",
-		Description: `Convert a website from IPFS to IPNS targeting.
+		Description: `Convert a website from IPFS to IPNS targeting (alias 'ipns'). Auto-creates an IPNS key for the site and publishes the current CID to it, or, with --cid, publishes that CID instead. Returns the updated website including its new IPNS key ID. After this, the domain resolves via the mutable IPNS name.
 
-An IPNS key will be auto-created and the current CID will be published to it.
-This enables content-addressed updates without changing the domain's DNS records.
-
-If --cid is provided, the IPNS key will publish that CID instead of the current one.
+Equivalent to 'websites update <domain> --target-type ipns'. To publish a new CID to an existing IPNS key (not tied to a website) or refresh a record, use 'ipns publish' / 'ipns republish' under the 'ipns' tree.
 
 Examples:
   pinner websites enable-ipns example.com
@@ -647,7 +635,7 @@ func showDNSRecordInstructions(output Output, website *ipfs.WebsiteItem, nameser
 
 // showDNSHostingInstructions displays NS delegation instructions when DNS hosting is enabled.
 func showDNSHostingInstructions(output Output, website *ipfs.WebsiteItem, nameservers []string) {
-	output.Printfln("DNS hosting is enabled — Pinner manages your DNS records.")
+	output.Printfln("DNS hosting is enabled: Pinner manages your DNS records.")
 	output.Printfln("Update your domain's nameservers at your registrar:")
 
 	if len(nameservers) > 0 {
@@ -710,7 +698,7 @@ func newWebsitesDeleteCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "delete",
 		Usage: "Delete a website",
-		Description: `Delete a website by domain. This operation is irreversible.
+		Description: `Delete a website, selected by domain name or numeric ID. DESTRUCTIVE and irreversible: there is no undo. Returns a success confirmation. Does NOT delete the website's DNS zone or its IPNS keys; use 'dns zones delete' and 'ipns keys delete' for those.
 
 Examples:
   pinner websites delete example.com
@@ -726,7 +714,9 @@ func newWebsitesValidateCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "validate",
 		Usage: "Validate a website",
-		Description: `Validate a website by domain to check if DNS is properly configured.
+		Description: `Validate that a website's DNS records are correctly configured (TXT validation token + _dnslink). Selects the site by domain name or numeric ID. Returns a valid/message/reason result and, when invalid, lists the required TXT/CNAME records.
+
+This checks website-specific records. To validate that a DNS zone's nameservers are delegated to Pinner's nameservers, use 'dns zones validate' instead.
 
 Examples:
   pinner websites validate example.com
@@ -826,7 +816,7 @@ func doWebsitesValidate(ctx context.Context, cmd websitesCommandGetter, output O
 
 	switch ipfs.WebsiteValidationReasonOf(validationResult) {
 	case ipfs.WebsiteValidationReasonTokenExpired:
-		output.Printfln("Validation token has expired — a new token has been generated.")
+		output.Printfln("Validation token has expired; a new token has been generated.")
 		showValidationInstructions(ctx, output, website, websitesService, arg)
 		return nil
 	case ipfs.WebsiteValidationReasonDNSMissing, ipfs.WebsiteValidationReasonTokenMissing, ipfs.WebsiteValidationReasonDNSMismatch:
@@ -913,9 +903,9 @@ func newWebsitesConfigCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "config",
 		Usage: "Show website hosting configuration",
-		Description: `Show the website hosting configuration including the gateway domain.
+		Description: `Show the account-wide website hosting configuration: the Pinner gateway domain and the nameservers used for DNS hosting. Returns these values plus the suggested CNAME/NS records to configure.
 
-Use this to find the gateway domain for setting up CNAME records with your DNS provider.
+This is account-level, not per-website. To see one site's records use 'websites get'; to list or edit actual DNS records use 'dns records'.
 
 Examples:
   pinner websites config

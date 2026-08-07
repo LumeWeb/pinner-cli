@@ -334,7 +334,7 @@ func TestGenerateRandomData(t *testing.T) {
 		// Test the disk fallback path directly with a small size to avoid
 		// filling the disk on systems with large amounts of RAM.
 		opts := BenchOptions{
-			SizeBytes: 1024, // 1KB — small size, but we're testing the disk path directly
+			SizeBytes: 1024, // 1KB; small size, but we're testing the disk path directly
 			Files:     1,
 			Depth:     0,
 		}

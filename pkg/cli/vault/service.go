@@ -41,7 +41,7 @@ type VaultService interface {
 	Cat(ctx context.Context, vaultPath string, w io.Writer) error
 
 	// Verify checks content integrity: object existence on the indexer and a
-	// digest match. It is deliberately SHALLOW — it compares the stored
+	// digest match. It is deliberately SHALLOW: it compares the stored
 	// digest in the object's metadata against the local row's ContentDigest
 	// WITHOUT downloading the full file content, so it is cheap even for
 	// large encrypted files. Use VerifyDeep for a true full-content

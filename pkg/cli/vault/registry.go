@@ -160,7 +160,7 @@ func SeedPath(name string) string {
 // purpose is to surface that a plaintext master recovery key has been sitting
 // on disk beyond the normal create→restore handoff horizon so the user can act
 // (complete the restore, or remove the seed themselves). Deleting a recovery
-// key out from under the user is intentionally NOT done here — it would
+// key out from under the user is intentionally NOT done here; it would
 // destroy their only path to the vault.
 func SeedIsStale(name string, maxAge time.Duration) bool {
 	info, err := os.Stat(SeedPath(name))
@@ -310,7 +310,7 @@ func RemoveProfile(profileName string) error {
 // The write is atomic (SaveRegistry uses temp-file + rename), so a concurrent
 // writer never leaves a corrupt or partial registry. Like every other registry
 // writer (vault create, vault restore, vault forget), this performs a
-// read-modify-write — here serialized via lockRegistry() so a concurrent
+// read-modify-write; here serialized via lockRegistry() so a concurrent
 // mutation (create/restore/remove) is never clobbered.
 func SetDefaultProfile(profileName string) error {
 	// Serialize with every other registry writer (create/restore/remove) so a
@@ -415,7 +415,7 @@ func ValidateProfileName(name string) error {
 // key). 128 bits is used, not a 48-bit truncation, so two distinct vaults are
 // not confused or falsely detected as already-configured in the restore dedup
 // check. Returns "" (absent identity) when the app key cannot be decoded into
-// a valid public key — never a shared sentinel, so distinct malformed keys
+// a valid public key; never a shared sentinel, so distinct malformed keys
 // are not conflated as the same vault.
 func VaultID(appKeyHex string) string {
 	pubKey, err := DecodeAppKey(appKeyHex)

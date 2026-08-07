@@ -135,7 +135,7 @@ func TestRemoveProfile_MissingProfile(t *testing.T) {
 // TestRemoveProfile_LostUpdateGuard verifies RemoveProfile serializes with
 // other registry writers through the registry lock: while the lock is held (as
 // a concurrent create/set-default would), a RemoveProfile call must not be able
-// to run and clobber a snapshot — it blocks until the lock is released.
+// to run and clobber a snapshot; it blocks until the lock is released.
 func TestRemoveProfile_LostUpdateGuard(t *testing.T) {
 	home := t.TempDir()
 	overrideVaultHome(t, home)

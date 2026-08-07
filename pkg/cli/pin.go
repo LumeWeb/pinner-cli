@@ -25,7 +25,9 @@ Examples:
   pinner pin --file cids.txt
   echo "bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e" | pinner pin
   pinner pin --file cids.txt --continue --parallel 10
-  pinner pin bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --dry-run`,
+  pinner pin bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --dry-run
+
+Does NOT upload new local files (use 'upload' for files/directories) and does NOT support --meta key=value pairs (use 'pins add' for that).`,
 		ArgsUsage: "<cid...>",
 		Flags: []cli.Flag{
 			NameFlag("Custom name for the pin"),

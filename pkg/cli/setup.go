@@ -13,11 +13,7 @@ func newSetupCommand() *cli.Command {
 		Name:     "setup",
 		Category: "Setup",
 		Usage:    "Interactive first-time setup wizard",
-		Description: `Run the interactive setup wizard to configure
-your Pinner.xyz CLI environment. This wizard will guide you
-through authentication and configuration.
-
-If you've already run setup, you can skip steps or reconfigure.
+		Description: `Run the interactive setup wizard to configure your Pinner.xyz CLI environment (authentication + configuration). Requires an interactive terminal; in non-interactive/agent (MCP) contexts this command fails, so configure directly with 'auth' and 'config set' instead. If you've already run setup, you can skip steps or reconfigure.
 
 Examples:
   pinner setup

@@ -56,7 +56,7 @@ Use --search to filter keys by name.`,
 				UsageText: "pinner account api-keys create <name>",
 				Description: `Create a new API key with the given name.
 
-The API key token will be displayed once. Save it securely — it cannot
+The API key token will be displayed once. Save it securely; it cannot
 be retrieved later.
 
 This key can be used with:
@@ -175,7 +175,7 @@ func accountAPIKeysCreate(ctx context.Context, cmd argsFlagGetter, output Output
 	output.Print("")
 	output.Printfln("Token: %s", apiKey.Token)
 	output.Print("")
-	output.Print("Save this token securely — it cannot be retrieved later.")
+	output.Print("Save this token securely; it cannot be retrieved later.")
 	output.Print("Use it with: pinner auth --auth-token <token>")
 
 	return nil

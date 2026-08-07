@@ -17,7 +17,9 @@ Examples:
   pinner pins ls --name "my-project"
   pinner pins ls --status pinned
   pinner pins ls --limit 20
-  pinner pins ls --watch`,
+  pinner pins ls --watch
+
+Shortcut form is 'list' (identical). Does NOT list the internal files inside a pinned directory (that is 'ls <cid>') and does NOT show other users' pins.`,
 		Flags: []cli.Flag{
 			NameFlag("Filter by name"),
 			LimitFlag(),

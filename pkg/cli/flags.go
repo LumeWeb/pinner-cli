@@ -262,7 +262,7 @@ func OptionalNameFlag(usage string) *cli.StringFlag {
 func WaitFlag() *cli.BoolFlag {
 	return &cli.BoolFlag{
 		Name:  FlagWait,
-		Usage: "Wait for the pinning operation to complete before returning",
+		Usage: "Wait for the operation to complete before returning",
 	}
 }
 
@@ -456,7 +456,7 @@ func ProfileFlag() *cli.StringFlag {
 func DomainFlag() *cli.StringFlag {
 	return &cli.StringFlag{
 		Name:  FlagDomain,
-		Usage: "Domain name for the website",
+		Usage: "Domain name",
 	}
 }
 
@@ -464,7 +464,7 @@ func DomainFlag() *cli.StringFlag {
 func RequiredDomainFlag() *cli.StringFlag {
 	return &cli.StringFlag{
 		Name:     FlagDomain,
-		Usage:    "Domain name for the website",
+		Usage:    "Domain name for the DNS zone (e.g. example.com)",
 		Required: true,
 	}
 }

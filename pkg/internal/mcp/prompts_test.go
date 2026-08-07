@@ -316,7 +316,7 @@ func TestPrompts_GetWebsiteOnboarding_EmbeddedResources(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// Count embedded resources — should have at least 2
+	// Count embedded resources: should have at least 2
 	// (account status + DNS requirements + validation status).
 	embeddedCount := 0
 	for _, msg := range result.Messages {

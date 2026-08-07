@@ -289,7 +289,7 @@ func TestWebsitesWizard_FullSession(t *testing.T) {
 	// After start, should be in auth_check state.
 	assert.Equal(t, "auth_check", sess.FSM.Current())
 
-	// Step 1: auth_check — empty input is fine.
+	// Step 1: auth_check: empty input is fine.
 	resp := mcpadapter.BuildStepResponseForTest(sess)
 	require.False(t, resp.Complete)
 	require.Equal(t, "auth_check", resp.CurrentStep)
@@ -299,7 +299,7 @@ func TestWebsitesWizard_FullSession(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "content_source", sess.FSM.Current())
 
-	// Step 2: content_source — provide CID.
+	// Step 2: content_source: provide CID.
 	err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"choice":"cid","cid":"QmTestHash123"}`))
 	require.NoError(t, err)
 	assert.Equal(t, "target_type", sess.FSM.Current())
@@ -340,7 +340,7 @@ func TestWebsitesWizard_FullSession(t *testing.T) {
 	assert.Equal(t, "ipfs", websitesSvc.createCallReq.TargetType)
 	assert.True(t, *websitesSvc.createCallReq.DnsHostingEnabled)
 
-	// Step 7: dns_setup — informational.
+	// Step 7: dns_setup: informational.
 	err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
 	require.NoError(t, err)
 	assert.Equal(t, "validate", sess.FSM.Current())
@@ -559,7 +559,7 @@ func TestWebsitesWizard_ValidateWithoutWebsite(t *testing.T) {
 	require.NoError(t, mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"mode":"self_managed"}`)))
 	require.NoError(t, mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"confirm":true}`)))
 
-	// At dns_setup — skip it.
+	// At dns_setup: skip it.
 	require.NoError(t, mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`)))
 
 	// Now at validate. The wizard has a website, so validate should call service.
@@ -663,24 +663,24 @@ func TestSetupWizard_FullSessionSkipAuth(t *testing.T) {
 	require.NotEmpty(t, sess.ID)
 	assert.Equal(t, "auth", sess.FSM.Current())
 
-	// Step 1: auth — skip.
+	// Step 1: auth: skip.
 	err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"choice":"skip"}`))
 	require.NoError(t, err)
 	assert.Equal(t, "config", sess.FSM.Current())
 
-	// Step 2: config — use defaults.
+	// Step 2: config: use defaults.
 	cfgMgr.EXPECT().SetBaseEndpoint("").Return(nil).Maybe()
 	cfgMgr.EXPECT().SetSecure(true).Return(nil).Maybe()
 	err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"choice":"use_defaults"}`))
 	require.NoError(t, err)
 	assert.Equal(t, "completion", sess.FSM.Current())
 
-	// Step 3: completion — informational.
+	// Step 3: completion: informational.
 	err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"shell":"bash"}`))
 	require.NoError(t, err)
 	assert.Equal(t, "tutorial", sess.FSM.Current())
 
-	// Step 4: tutorial — read-only.
+	// Step 4: tutorial: read-only.
 	err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
 	require.NoError(t, err)
 	assert.Equal(t, "complete", sess.FSM.Current())
@@ -938,7 +938,7 @@ func TestWebsitesWizard_FSMTransitionEnforcement(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "auth_check", sess.FSM.Current())
 
-	// Firing the domain_done event from auth_check should fail — the FSM
+	// Firing the domain_done event from auth_check should fail: the FSM
 	// only allows auth_ok from auth_check.
 	err = sess.FSM.Event(context.Background(), "domain_done")
 	require.Error(t, err)
@@ -951,7 +951,7 @@ func TestWebsitesWizard_FSMTransitionEnforcement(t *testing.T) {
 	err = sess.FSM.Event(context.Background(), "validate_done")
 	require.Error(t, err)
 
-	// FSM should remain in auth_check — no side effects.
+	// FSM should remain in auth_check: no side effects.
 	assert.Equal(t, "auth_check", sess.FSM.Current())
 
 	// Now fire the correct event to advance to content_source.
@@ -959,7 +959,7 @@ func TestWebsitesWizard_FSMTransitionEnforcement(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "content_source", sess.FSM.Current())
 
-	// Fire domain_done from content_source — should fail (wrong state).
+	// Fire domain_done from content_source: should fail (wrong state).
 	// Cannot fire domain_done from content_source; only content_done is valid.
 	err = sess.FSM.Event(context.Background(), "domain_done")
 	require.Error(t, err)
@@ -979,7 +979,7 @@ func TestWebsitesWizard_FSMTransitionEnforcement_OutOfOrderStep(t *testing.T) {
 
 	sess, err := mcpadapter.NewWebsitesSession(store, deps)
 
-	// Try to fire created event from auth_check — should fail.
+	// Try to fire created event from auth_check: should fail.
 	err = sess.FSM.Event(context.Background(), "created")
 	require.Error(t, err)
 	assert.Equal(t, "auth_check", sess.FSM.Current())
@@ -993,7 +993,7 @@ func TestWebsitesWizard_FSMTransitionEnforcement_OutOfOrderStep(t *testing.T) {
 
 	assert.Equal(t, "domain", sess.FSM.Current())
 
-	// Try to fire validate_done from domain — should fail.
+	// Try to fire validate_done from domain: should fail.
 	err = sess.FSM.Event(context.Background(), "validate_done")
 	require.Error(t, err)
 	assert.Equal(t, "domain", sess.FSM.Current())
@@ -1005,7 +1005,7 @@ func TestWebsitesWizard_FSMTransitionEnforcement_OutOfOrderStep(t *testing.T) {
 func TestWebsitesWizard_AuthCheckSkippedWhenAuthed(t *testing.T) {
 	t.Parallel()
 
-	// Authed config (with token) — auth_check should auto-skip.
+	// Authed config (with token): auth_check should auto-skip.
 	cfgMgr := newConfigMgr(t, true)
 	websitesSvc := &mockWebsitesSvc{}
 	store := mcpadapter.NewSessionStore()
@@ -1015,7 +1015,7 @@ func TestWebsitesWizard_AuthCheckSkippedWhenAuthed(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "auth_check", sess.FSM.Current())
 
-	// Empty input is sufficient — the handler just checks the token.
+	// Empty input is sufficient: the handler just checks the token.
 	// No error means the auth_check is silently skipped.
 	err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
 	require.NoError(t, err)
@@ -1035,7 +1035,7 @@ func TestWebsitesWizard_AuthCheckSkippedWhenAuthed(t *testing.T) {
 func TestWebsitesWizard_AuthCheckNotSkippedWhenUnauthed(t *testing.T) {
 	t.Parallel()
 
-	// Unauthed config (no token) — auth_check should block.
+	// Unauthed config (no token): auth_check should block.
 	cfgMgr := newConfigMgr(t, false)
 	websitesSvc := &mockWebsitesSvc{}
 	store := mcpadapter.NewSessionStore()
@@ -1045,12 +1045,12 @@ func TestWebsitesWizard_AuthCheckNotSkippedWhenUnauthed(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "auth_check", sess.FSM.Current())
 
-	// Empty input fails — user needs to authenticate first.
+	// Empty input fails: user needs to authenticate first.
 	err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "authentication required")
 
-	// FSM should remain in auth_check — not skipped, stays for retry.
+	// FSM should remain in auth_check: not skipped, stays for retry.
 	assert.Equal(t, "auth_check", sess.FSM.Current())
 
 	// Step response should still show auth_check as the current step.
@@ -1076,13 +1076,13 @@ func TestWebsitesWizard_RetryAfterHandlerError(t *testing.T) {
 	require.NoError(t, mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`)))
 	assert.Equal(t, "content_source", sess.FSM.Current())
 
-	// First attempt: invalid choice — handler fails, FSM stays in content_source.
+	// First attempt: invalid choice: handler fails, FSM stays in content_source.
 	err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"choice":"bogus"}`))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid choice")
 	assert.Equal(t, "content_source", sess.FSM.Current())
 
-	// Second attempt: valid input — retry succeeds, FSM advances.
+	// Second attempt: valid input: retry succeeds, FSM advances.
 	err = mcpadapter.AdvanceSession(context.Background(),
 		sess, json.RawMessage(`{"choice":"cid","cid":"QmRetryHash"}`))
 	require.NoError(t, err)
@@ -1107,14 +1107,14 @@ func TestWebsitesWizard_RetryContentSourceAfterMissingCID(t *testing.T) {
 	sess, err := mcpadapter.NewWebsitesSession(store, deps)
 	require.NoError(t, mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`)))
 
-	// First attempt: CID choice but no cid value — fails.
+	// First attempt: CID choice but no cid value: fails.
 	err = mcpadapter.AdvanceSession(context.Background(),
 		sess, json.RawMessage(`{"choice":"cid"}`))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "cid cannot be empty")
 	assert.Equal(t, "content_source", sess.FSM.Current())
 
-	// Retry with the cid value — succeeds.
+	// Retry with the cid value: succeeds.
 	err = mcpadapter.AdvanceSession(context.Background(),
 		sess, json.RawMessage(`{"choice":"cid","cid":"QmFixedHash"}`))
 	require.NoError(t, err)
@@ -1154,13 +1154,13 @@ func TestWebsitesWizard_ErrorMidFlow_CreateFails_KeepsFSMState(t *testing.T) {
 
 	assert.Equal(t, "create", sess.FSM.Current())
 
-	// Attempt create — service fails.
+	// Attempt create: service fails.
 	err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"confirm":true}`))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "website creation failed")
 	assert.Contains(t, err.Error(), "create service error")
 
-	// FSM should remain in "create" — the mid-flow error is retryable.
+	// FSM should remain in "create": the mid-flow error is retryable.
 	assert.Equal(t, "create", sess.FSM.Current())
 
 	// The step response should show create is still the current step
@@ -1204,12 +1204,12 @@ func TestWebsitesWizard_ErrorMidFlow_CreateFails_RetryWithSuccess(t *testing.T) 
 	require.NoError(t, mcpadapter.AdvanceSession(context.Background(),
 		sess, json.RawMessage(`{"mode":"self_managed"}`)))
 
-	// First create attempt — fails.
+	// First create attempt: fails.
 	err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"confirm":true}`))
 	require.Error(t, err)
 	assert.Equal(t, "create", sess.FSM.Current())
 
-	// Fix the service and retry — should succeed.
+	// Fix the service and retry: should succeed.
 	websitesSvc.createFunc = func(_ context.Context, req ipfs.WebsiteRequest) (*ipfs.WebsiteItem, error) {
 		return &ipfs.WebsiteItem{
 			Id: 99, Domain: req.Domain, TargetHash: req.TargetHash,
@@ -1260,7 +1260,7 @@ func TestWebsitesWizard_ValidateRetry(t *testing.T) {
 
 	assert.Equal(t, "validate", sess.FSM.Current())
 
-	// First validate attempt — fails.
+	// First validate attempt: fails.
 	err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "validation failed")
@@ -1306,7 +1306,7 @@ func TestSetupWizard_RetryAfterAuthError(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "auth", sess.FSM.Current())
 
-	// First attempt — auth fails.
+	// First attempt: auth fails.
 	err = mcpadapter.AdvanceSession(context.Background(), sess,
 		json.RawMessage(`{"choice":"sign_in","email":"test@example.com","password":"wrong"}`))
 	require.Error(t, err)
@@ -1343,12 +1343,12 @@ func TestSetupWizard_FSMTransitionEnforcement(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "auth", sess.FSM.Current())
 
-	// Firing config_done from auth — should fail (only auth_done is valid).
+	// Firing config_done from auth: should fail (only auth_done is valid).
 	err = sess.FSM.Event(context.Background(), "config_done")
 	require.Error(t, err)
 	assert.Equal(t, "auth", sess.FSM.Current())
 
-	// Firing tutorial_done from auth — should fail.
+	// Firing tutorial_done from auth: should fail.
 	err = sess.FSM.Event(context.Background(), "tutorial_done")
 	require.Error(t, err)
 	assert.Equal(t, "auth", sess.FSM.Current())
@@ -1519,13 +1519,13 @@ func TestSetupWizard_FullFlowSignIn(t *testing.T) {
 	require.NotEmpty(t, sess.ID)
 	assert.Equal(t, "auth", sess.FSM.Current())
 
-	// Step 1: auth — sign in.
+	// Step 1: auth: sign in.
 	err = mcpadapter.AdvanceSession(context.Background(), sess,
 		json.RawMessage(`{"choice":"sign_in","email":"test@example.com","password":"secret"}`))
 	require.NoError(t, err)
 	assert.Equal(t, "config", sess.FSM.Current())
 
-	// Step 2: config — use defaults.
+	// Step 2: config: use defaults.
 	cfgMgr.EXPECT().SetBaseEndpoint("").Return(nil).Maybe()
 	cfgMgr.EXPECT().SetSecure(true).Return(nil).Maybe()
 	err = mcpadapter.AdvanceSession(context.Background(), sess,
@@ -1560,13 +1560,13 @@ func TestSetupWizard_FullFlowSkip(t *testing.T) {
 
 	sess, err := mcpadapter.NewSetupSession(store, deps)
 
-	// Step 1: auth — skip.
+	// Step 1: auth: skip.
 	err = mcpadapter.AdvanceSession(context.Background(), sess,
 		json.RawMessage(`{"choice":"skip"}`))
 	require.NoError(t, err)
 	assert.Equal(t, "config", sess.FSM.Current())
 
-	// Step 2: config — skip.
+	// Step 2: config: skip.
 	cfgMgr.EXPECT().SetSecure(true).Return(nil).Maybe()
 	err = mcpadapter.AdvanceSession(context.Background(), sess,
 		json.RawMessage(`{"choice":"skip"}`))

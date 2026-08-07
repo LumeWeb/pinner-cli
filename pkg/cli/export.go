@@ -6,8 +6,8 @@ import (
 	"strconv"
 
 	"github.com/urfave/cli/v3"
-	meta "go.lumeweb.com/portal-sdk/meta"
 	"go.lumeweb.com/pinner-cli/pkg/config"
+	meta "go.lumeweb.com/portal-sdk/meta"
 )
 
 // ExportService defines the interface for meta export operations.
@@ -119,13 +119,15 @@ block is stored on the Sia network (data keys, encryption keys, sector locations
 This lets you retrieve and decrypt your data directly from Sia without going
 through the portal.
 
-Use 'export sia-object' to get the storage details for a single CID — the data
+Use 'export sia-object' to get the storage details for a single CID: the data
 key, slab layout, and sector references needed to fetch it from Sia.
 
 Examples:
   pinner export dag bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e
   pinner export sia-object bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e
-  pinner export dag bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --json`,
+  pinner export dag bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --json
+
+Does NOT resolve the raw IPFS DAG graph (use 'dag resolve') and does NOT download file bytes (use 'download'). Requires authentication.`,
 		Commands: []*cli.Command{
 			newExportDAGCommand(),
 			newExportSiaObjectCommand(),
@@ -138,15 +140,17 @@ func newExportDAGCommand() *cli.Command {
 		Name:      "dag",
 		Usage:     "Export the full block structure and Sia storage locations for a CID",
 		ArgsUsage: "<cid>",
-		Description: `Shows the complete block structure for a CID — every block, its size, and how
-blocks link together — along with where each block is stored on the Sia network.
+		Description: `Shows the complete block structure for a CID: every block, its size, and how
+blocks link together, along with where each block is stored on the Sia network.
 
 Each block includes its Sia storage key, encryption key, and sector references,
 so you can retrieve and decrypt the data directly from Sia without the portal.
 
 Examples:
   pinner export dag bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e
-  pinner export dag bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --json`,
+  pinner export dag bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --json
+
+This is portal metadata. If you only need the generic IPFS block graph (no Sia locations), prefer 'dag resolve' instead. Requires authentication.`,
 		Action: withContext(func(ctx context.Context, cc *commandContext) error {
 			return exportDAG(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
 		}),
@@ -159,7 +163,7 @@ func newExportSiaObjectCommand() *cli.Command {
 		Aliases:   []string{"sia"},
 		Usage:     "Export the Sia storage details for a CID",
 		ArgsUsage: "<cid>",
-		Description: `Shows the Sia storage details for a single CID — the data key, slab layout,
+		Description: `Shows the Sia storage details for a single CID: the data key, slab layout,
 encryption key, and sector references needed to fetch and decrypt the content
 directly from the Sia network.
 
@@ -169,7 +173,9 @@ structure for a root CID.
 
 Examples:
   pinner export sia-object bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e
-  pinner export sia bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --json`,
+  pinner export sia bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --json
+
+Requires authentication. For the full block graph use 'export dag' instead.`,
 		Action: withContext(func(ctx context.Context, cc *commandContext) error {
 			return exportSiaObject(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
 		}),

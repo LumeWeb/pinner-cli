@@ -493,7 +493,7 @@ func TestResolveDomainBindingDeferredListErrors(t *testing.T) {
 
 func TestResolveDomainBindingSurfacesListErrors(t *testing.T) {
 	// A ListDomains failure surfaces (wrapped) only when no name match is
-	// found and no clean numeric-ID fallback exists — otherwise the error
+	// found and no clean numeric-ID fallback exists; otherwise the error
 	// would be silently masked as "not found".
 	mockSvc := &mockWebsitesServiceForCLI{}
 	mockSvc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
@@ -1468,7 +1468,7 @@ func TestRenderDomainDelegation(t *testing.T) {
 		}, false)
 		out := buf.String()
 		// In inline mode the authoritative side is served via Pinner's
-		// synthetic nameservers — it is not user-configured, so it is omitted.
+		// synthetic nameservers; it is not user-configured, so it is omitted.
 		assert.Contains(t, out, "synthetic nameservers")
 		assert.Contains(t, out, "SYNTH4")
 		assert.NotContains(t, out, "Authoritative records")
@@ -1528,7 +1528,7 @@ func TestRenderDomainDelegation(t *testing.T) {
 		output := NewOutputFormatter(false, false, false, false)
 		output.SetWriter(&buf)
 		// A full-length SHA-256 digest (64 hex chars) that exceeds the table's
-		// default wrap width — it must render contiguous so it stays copyable.
+		// default wrap width; it must render contiguous so it stays copyable.
 		digest := "c35938688953467518f2a9c613b8a32da647595912a67fa9cf47e41b593831d5"
 		dsValue := "lumeweb DS 44451 13 2 " + digest
 		renderDomainDelegation(output, &ipfs.DomainResponse{
@@ -1544,7 +1544,7 @@ func TestRenderDomainDelegation(t *testing.T) {
 		}, false)
 		out := buf.String()
 		// The DS record is communicated once, as a parent record in the
-		// parent-records table — not re-decoded into a redundant block.
+		// parent-records table, not re-decoded into a redundant block.
 		assert.Equal(t, 1, strings.Count(out, dsValue))
 		assert.NotContains(t, out, "DS record (paste")
 		assert.NotContains(t, out, "KEY TAG")

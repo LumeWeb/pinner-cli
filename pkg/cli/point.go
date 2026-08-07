@@ -29,7 +29,9 @@ reuses the key and republishes the new CID.
 
 Examples:
   pinner point vitalik.eth --cid bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e
-  pinner point vitalik.eth --cid bafybeig...updated`,
+  pinner point vitalik.eth --cid bafybeig...updated
+
+Does NOT manage non-domain IPNS publishing (use 'ipns publish'); to remove the pointing use 'unpoint'.`,
 		ArgsUsage: "<name>",
 		Flags: []cli.Flag{
 			&cli.StringFlag{

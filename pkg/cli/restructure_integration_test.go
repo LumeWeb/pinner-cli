@@ -232,11 +232,13 @@ func TestIntegration_HiddenFlags(t *testing.T) {
 		assert.True(t, isHiddenFlag(confirmFlag), "--confirm should be hidden on pins rm")
 	})
 
-	t.Run("unpin all --yes is hidden", func(t *testing.T) {
+	t.Run("unpin all --yes is visible", func(t *testing.T) {
 		cmd := newUnpinAllCommand()
 		yesFlag, found := findFlagByName(cmd.Flags, FlagYes)
 		require.True(t, found, "unpin all should have --yes flag")
-		assert.True(t, isHiddenFlag(yesFlag), "--yes should be hidden on unpin all")
+		// --yes is exposed (not hidden) so non-interactive/agent callers can
+		// accept the destructive safety prompt; it still requires --force.
+		assert.False(t, isHiddenFlag(yesFlag), "--yes should be visible on unpin all")
 	})
 
 	t.Run("unpin all --confirm is hidden", func(t *testing.T) {

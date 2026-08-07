@@ -329,11 +329,11 @@ Examples:
 					},
 					&cli.StringFlag{
 						Name:  FlagSource,
-						Usage: "Allowance source",
+						Usage: "Allowance source reference (free-form label for auditing the origin of the allowance)",
 					},
 					&cli.StringFlag{
 						Name:  FlagQuotaType,
-						Usage: "Allowance type",
+						Usage: "Allowance type (e.g. download, storage, upload, bonus)",
 					},
 					&cli.IntFlag{
 						Name:  FlagUploadLimit,
@@ -375,11 +375,11 @@ Examples:
 					},
 					&cli.StringFlag{
 						Name:  FlagSource,
-						Usage: "Allowance source",
+						Usage: "Allowance source reference (free-form label for auditing the origin of the allowance)",
 					},
 					&cli.StringFlag{
 						Name:  FlagQuotaType,
-						Usage: "Allowance type",
+						Usage: "Allowance type (e.g. download, storage, upload, bonus)",
 					},
 					&cli.IntFlag{
 						Name:  FlagUploadLimit,

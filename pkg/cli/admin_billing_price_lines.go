@@ -353,6 +353,8 @@ func newBillingPriceLinesDeleteCommand() *cli.Command {
 		Usage: "Delete a price line",
 		Description: `Delete a billing price line.
 
+Deletes the whole price line and all its plan associations. To remove only one plan association while keeping the line, use 'delete-plan' instead.
+
 Examples:
   pinner admin billing price-lines delete <id>
   pinner admin billing price-lines delete <id> --json`,
@@ -499,6 +501,8 @@ func newBillingPriceLinesDeletePlanCommand() *cli.Command {
 		Name:  CmdDeletePlan,
 		Usage: "Remove plan from price line",
 		Description: `Remove a pricing plan from a price line.
+
+Removes one plan association from the line, preserving the rest. To delete the whole line use 'delete'.
 
 Examples:
   pinner admin billing price-lines delete-plan <id> --plan-id <plan-id>

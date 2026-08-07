@@ -13,18 +13,9 @@ import (
 
 func newWebsitesSSLCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "ssl",
-		Usage: "Manage SSL certificates for websites",
-		Description: `View SSL certificate status for your websites.
-
-SSL operations include:
-  - Check SSL certificate status for a domain
-  - Monitor SSL status changes in real-time
-
-Examples:
-  pinner websites ssl status example.com
-  pinner websites ssl status example.com --json
-  pinner websites ssl status example.com --watch`,
+		Name:        "ssl",
+		Usage:       "View SSL certificate status for websites",
+		Description: `View the TLS/SSL certificate status for your website domains. Contains the 'status' subcommand, which returns certificate state (active/pending/error), issuance date and errors. Read-only: there is no command to request or force a certificate here.`,
 		Commands: []*cli.Command{
 			newWebsitesSSLStatusCommand(),
 		},
@@ -46,7 +37,9 @@ This command retrieves the current SSL certificate status including:
 Examples:
   pinner websites ssl status example.com
   pinner websites ssl status example.com --json
-  pinner websites ssl status example.com --watch`,
+  pinner websites ssl status example.com --watch
+
+This concerns the HTTPS certificate only, not the website's overall status or DNS validation. For general configuration use 'websites get <domain>'; for DNS correctness use 'websites validate'.`,
 		ArgsUsage: "<domain>",
 		Flags: []cli.Flag{
 			&cli.BoolFlag{

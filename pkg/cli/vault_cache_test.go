@@ -142,7 +142,7 @@ func TestVaultCacheRebuild_LoopsOnFull(t *testing.T) {
 	orig := vaultServiceFactory
 	t.Cleanup(func() { vaultServiceFactory = orig })
 
-	// Three Sync calls: two full batches (of skips — count 0 but cursor moves)
+	// Three Sync calls: two full batches (of skips, count 0 but cursor moves)
 	// then one non-full batch with 5 applied. Convergence requires looping past
 	// the full-skip batches.
 	stub := &cacheSyncStub{
@@ -198,7 +198,7 @@ func TestVaultCacheRebuild_RestoresOnFailure(t *testing.T) {
 
 	orig := vaultServiceFactory
 	t.Cleanup(func() { vaultServiceFactory = orig })
-	// Service recreation fails — the rebuild must roll back, not orphan the DB.
+	// Service recreation fails; the rebuild must roll back, not orphan the DB.
 	vaultServiceFactory = func(profileName, indexerURL string) (vault.VaultService, error) {
 		return nil, errors.New("missing app key")
 	}

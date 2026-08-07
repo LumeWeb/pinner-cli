@@ -229,7 +229,9 @@ func newWebsitesWizardCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "wizard",
 		Usage: "Interactive website creation wizard",
-		Description: `Launch an interactive wizard to create a new website step by step.
+		Description: `Launch the interactive, step-by-step website creation wizard (auth, content source, target type, domain, DNS mode, create, DNS setup, validation). This is a HUMAN-oriented prompts-on-terminal flow; it is NOT suitable for agent invocation.
+
+For automation use the non-interactive 'websites create <domain> --cid ...', or the agent-hosted session wizards 'websites_wizard_start' / 'websites_wizard_step' (MCP tools).
 
 The wizard will guide you through:
   1. Authentication check

@@ -15,7 +15,7 @@ import (
 
 // staleSeedWarningAfter is how old a pending recovery seed must be before
 // `vault create --agent` warns that it has lingered. It is purely a WARNING
-// threshold — the seed (which guards vault data) is never auto-deleted; the
+// threshold: the seed (which guards vault data) is never auto-deleted; the
 // user decides whether to complete the restore or remove the plaintext master
 // key. Configurable via PINNER_VAULT_SEED_STALE_WARN (duration string, e.g.
 // "168h" = 7 days).
@@ -33,12 +33,9 @@ func newVaultCreateCommand() *cli.Command {
 		Name:      "create",
 		Usage:     "Create a new vault",
 		ArgsUsage: "[--profile <name>]",
-		Description: `Creates a new vault identity and configures it locally under the given profile name.
+		Description: `Create a new vault identity and configure it locally under the given profile name. Generates a fresh recovery seed, connects to the Sia indexer via browser approval, and stores a device credential locally. Returns the created profile and (in interactive mode) prints the recovery seed for saving.
 
-This generates a new recovery seed, connects to the Sia indexer via browser
-approval, and stores the device credential locally.
-
-The recovery seed is displayed ONCE and must be saved securely.`,
+In non-interactive (--agent) mode the recovery seed is written to a 0600-permission file (path reported in the output) rather than printed, to avoid leaking it into logs.`,
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:  "device-name",
@@ -61,7 +58,7 @@ The recovery seed is displayed ONCE and must be saved securely.`,
 				if c.String(FlagProfile) != "" {
 					return err
 				}
-				// No --profile and no profiles exist yet — prompt for a name.
+				// No --profile and no profiles exist yet; prompt for a name.
 				// Use promptui (matching the auth flow) so the prompt renders
 				// inline and reads cleanly instead of the raw input echoing on
 				// its own line.
@@ -93,11 +90,11 @@ The recovery seed is displayed ONCE and must be saved securely.`,
 			// agent and interactive create: a pending seed file (e.g. a prior
 			// `create --agent` that generated a seed but was never restored)
 			// is the user's only path back into that vault, and the seed
-			// write below runs for both modes — overwriting it would destroy
+			// write below runs for both modes; overwriting it would destroy
 			// the recovery path.
 			seedPath := vault.SeedPath(profileName)
 			if _, err := os.Stat(seedPath); err == nil {
-				// The seed guards irreplaceable vault DATA, not money — so
+				// The seed guards irreplaceable vault DATA, not money, so
 				// we never auto-delete a stale one (that would destroy the
 				// user's only path back into their content). Instead, warn
 				// if it has lingered beyond the normal handoff horizon so
@@ -124,7 +121,7 @@ The recovery seed is displayed ONCE and must be saved securely.`,
 				// 1. Generate a new mnemonic and start approval flow on a
 				// single builder shared with the wait/register below (the SDK
 				// requires Request and WaitForApproval/Register on the same
-				// builder — a fresh builder would lose the pending request).
+				// builder; a fresh builder would lose the pending request).
 				conn = vault.NewConnection(indexerURL, mnemonic)
 				approvalURL, err = conn.Request(ctx)
 				if err != nil {
@@ -137,7 +134,7 @@ The recovery seed is displayed ONCE and must be saved securely.`,
 			// registration or local registration writes. If approval succeeds
 			// remotely but a later step (SaveProfileState, OpenDB,
 			// SaveRegistry) fails, the vault exists server-side but the
-			// one-time seed must already be safe on disk — otherwise a re-run
+			// one-time seed must already be safe on disk; otherwise a re-run
 			// generates a different mnemonic and orphans the first vault
 			// unrecoverably. The seed file is also the recovery path for
 			// agent-mode restores from this device.
@@ -162,7 +159,7 @@ The recovery seed is displayed ONCE and must be saved securely.`,
 					return fmt.Errorf("failed to save registry: %w", err)
 				}
 
-				// Do NOT include approval_url — restore issues its own
+				// Do NOT include approval_url: restore issues its own
 				// connection request and owns the single browser approval.
 				// Create's only job in agent mode is to generate the seed.
 				output.PrintJSON(vaultCreateApprovalResponse{
@@ -171,7 +168,7 @@ The recovery seed is displayed ONCE and must be saved securely.`,
 					NextStep: fmt.Sprintf("Run: pinner vault restore --profile %s --seed-stdin < %s (restore drives the single browser approval)", profileName, seedPath),
 				})
 				// The JSON handoff (with next_step instructing the restore) IS
-				// the complete deliverable of this invocation — the operation
+				// the complete deliverable of this invocation; the operation
 				// did not fail, it handed off to restore. Return nil so the
 				// exit code is 0 and MCP/CI consumers receive the stdout JSON
 				// (next_step) instead of a non-zero exit / discarded output.
@@ -262,7 +259,7 @@ The recovery seed is displayed ONCE and must be saved securely.`,
 			// that the vault is created and the phrase has been shown to the
 			// user. In agent mode the seed file is intentionally left for the
 			// restore command to consume after it runs. If removal fails,
-			// surface it — the plaintext master mnemonic lingering on disk is
+			// surface it: the plaintext master mnemonic lingering on disk is
 			// a security concern the user must act on, even though the vault
 			// itself is already created.
 			if err := os.Remove(vault.SeedPath(profileName)); err != nil {

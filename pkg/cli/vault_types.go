@@ -18,7 +18,7 @@ type vaultCpResponse struct {
 //
 //	pinner vault restore --profile <name> --seed-stdin < <seed_path>
 //
-// approval_url is intentionally absent — restore issues its own connection
+// approval_url is intentionally absent: restore issues its own connection
 // request and owns the single browser approval. Create's only job in agent
 // mode is to generate the seed.
 type vaultCreateApprovalResponse struct {
@@ -29,11 +29,11 @@ type vaultCreateApprovalResponse struct {
 
 // vaultProfileEntry is a single profile in the `vault profile list` JSON output.
 type vaultProfileEntry struct {
-	Name     string `json:"name"`
-	VaultID  string `json:"vault_id"`
-	Device   string `json:"device"`
-	IsDefault bool  `json:"default"`
-	Cache    string `json:"cache"`
+	Name      string `json:"name"`
+	VaultID   string `json:"vault_id"`
+	Device    string `json:"device"`
+	IsDefault bool   `json:"default"`
+	Cache     string `json:"cache"`
 }
 
 // vaultProfileListResponse is the JSON output for `vault profile list`.
@@ -42,7 +42,7 @@ type vaultProfileListResponse struct {
 }
 
 // vaultRestoreApprovalResponse is the JSON output for `vault restore` in agent mode.
-// It carries no approval URL — the connection request is deferred to the
+// It carries no approval URL: the connection request is deferred to the
 // --seed-stdin re-run, which issues the single browser approval.
 type vaultRestoreApprovalResponse struct {
 	Profile  string `json:"profile"`
@@ -57,10 +57,10 @@ type vaultDeviceInfo struct {
 
 // vaultRestoreResponse is the JSON output for `vault restore` on success.
 type vaultRestoreResponse struct {
-	Profile  string         `json:"profile"`
-	VaultID  string         `json:"vault_id"`
-	Device   vaultDeviceInfo `json:"device"`
-	Cache    vaultCacheState `json:"cache"`
+	Profile string          `json:"profile"`
+	VaultID string          `json:"vault_id"`
+	Device  vaultDeviceInfo `json:"device"`
+	Cache   vaultCacheState `json:"cache"`
 }
 
 // vaultCacheState is the cache sub-object in restore/status JSON output.
@@ -91,18 +91,18 @@ type vaultStatusRemote struct {
 
 // vaultStatusCache is the cache sub-object in `vault status` JSON output.
 type vaultStatusCache struct {
-	State           string `json:"state"`
-	ObjectsIndexed  int64  `json:"objects_indexed"`
+	State          string `json:"state"`
+	ObjectsIndexed int64  `json:"objects_indexed"`
 }
 
 // vaultStatusResponse is the JSON output for `vault status`.
 type vaultStatusResponse struct {
-	Profile  string             `json:"profile"`
-	VaultID  string             `json:"vault_id"`
-	State    vaultStatusState    `json:"state"`
-	Device   vaultDeviceInfo     `json:"device"`
-	Remote   vaultStatusRemote   `json:"remote"`
-	Cache    vaultStatusCache    `json:"cache"`
+	Profile string            `json:"profile"`
+	VaultID string            `json:"vault_id"`
+	State   vaultStatusState  `json:"state"`
+	Device  vaultDeviceInfo   `json:"device"`
+	Remote  vaultStatusRemote `json:"remote"`
+	Cache   vaultStatusCache  `json:"cache"`
 }
 
 // vaultSyncResponse is the JSON output for `vault sync`.

@@ -187,7 +187,7 @@ func (c *ToolCatalog) Invoke(ctx context.Context, name string, args map[string]a
 // RegisterFromCommand walks a urfave/cli/v3 command tree and adds every
 // non-hidden command with an action as a ToolEntry in the catalog. The
 // handler dispatches to the shared toolHandler (in-process command execution).
-// The MCP server itself is not modified — only the catalog is populated.
+// The MCP server itself is not modified: only the catalog is populated.
 func (c *ToolCatalog) RegisterFromCommand(root *cli.Command, hasRootAction bool, prefix []string, handler ToolHandler) error {
 	var walk func(cmd *cli.Command, prefix ...string) error
 	walk = func(cmd *cli.Command, prefix ...string) error {

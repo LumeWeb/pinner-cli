@@ -14,7 +14,7 @@ import (
 // used when what follows is a naming authority. A vault path is addressed under
 // a single namespace (the active profile), so the authority-less form is
 // canonical. When a specific profile must be named (e.g. cross-profile copy),
-// the authority form is used instead: "vault://<profile>/path" — here the
+// the authority form is used instead: "vault://<profile>/path"; here the
 // profile IS the naming authority, which is the RFC-compliant use of "//".
 const VaultScheme = "vault:"
 
@@ -38,9 +38,9 @@ type VaultPath struct {
 //
 // Grammar (RFC 3986-compliant):
 //
-//	vault:<path>              // active profile (no authority) — canonical
+//	vault:<path>              // active profile (no authority); canonical
 //	vault://<profile>/<path>  // named profile authority (URI-friendly profiles)
-//	vault:///<path>           // empty authority — treated as active (lenient)
+//	vault:///<path>           // empty authority; treated as active (lenient)
 //
 // The path component is always slash-delimited regardless of host OS, so the
 // stdlib path (slash-only) package is used for the directory/file split rather

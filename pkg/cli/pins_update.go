@@ -20,7 +20,9 @@ Examples:
   pinner pins update bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --meta owner=alice --meta env=prod
   pinner pins update bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --clear-meta
   pinner pins update bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --clear-meta --meta fresh=start
-  pinner pins update bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --name "renamed" --meta env=prod`,
+  pinner pins update bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --name "renamed" --meta env=prod
+
+Does NOT pin new content (use 'pin'/'pins add') and does NOT delete the pin (use 'unpin'/'pins rm').`,
 		ArgsUsage: "<cid>",
 		Flags: []cli.Flag{
 			NameFlag("Rename the pin"),

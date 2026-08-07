@@ -39,7 +39,7 @@ func TestVaultID_InvalidKey(t *testing.T) {
 }
 
 func TestVaultID_ShortKey(t *testing.T) {
-	// 32 bytes (16 hex chars) — valid hex but too short for ed25519 private key
+	// 32 bytes (16 hex chars): valid hex but too short for ed25519 private key
 	if id := VaultID("a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"); id != "" {
 		t.Fatalf("expected empty identity for short key, got %q", id)
 	}
@@ -74,7 +74,7 @@ func TestVaultID_DistinctKeysDistinct(t *testing.T) {
 			t.Fatal("VaultID returned unknown for a valid key")
 		}
 		if seen[id] {
-			t.Fatalf("VaultID collision across 50 distinct keys at %q — truncated ID too weak", id)
+			t.Fatalf("VaultID collision across 50 distinct keys at %q: truncated ID too weak", id)
 		}
 		seen[id] = true
 	}

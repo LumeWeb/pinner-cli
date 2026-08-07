@@ -24,14 +24,14 @@ import (
 // Upload/PinObject so that Upload on a NewEmptyObject produces a predictable
 // objectKey (the zero hash of an empty slab list).
 type fakeSDK struct {
-	t            *testing.T
-	deleted       []string // object keys passed to DeleteObject
-	uploadCalled  bool
-	pinCalled     bool
-	downloadCalled bool // whether Download was invoked
-	delErr        error         // error to return from DeleteObject (nil = success)
-	objErr        error         // error to return from Object (nil = success)
-	pinnedMeta    []byte        // metadata attached to the most recently pinned object
+	t              *testing.T
+	deleted        []string // object keys passed to DeleteObject
+	uploadCalled   bool
+	pinCalled      bool
+	downloadCalled bool   // whether Download was invoked
+	delErr         error  // error to return from DeleteObject (nil = success)
+	objErr         error  // error to return from Object (nil = success)
+	pinnedMeta     []byte // metadata attached to the most recently pinned object
 }
 
 func (f *fakeSDK) Account(_ context.Context) (app.AccountResponse, error) {
@@ -118,7 +118,7 @@ func TestPut_CreateBeforeDestroyOrder(t *testing.T) {
 		t.Fatalf("create prior file: %v", err)
 	}
 
-	// Call svc.Put — this should:
+	// Call svc.Put; this should:
 	//  1. Delete the prior DB row
 	//  2. Commit the new record
 	//  3. Delete the prior object from the indexer (fake records it)
@@ -357,7 +357,7 @@ func (p *pinRecorder) PinObject(ctx context.Context, obj siastorage.Object) erro
 // TestPut_ConcurrentSamePath_RemoteIdentityMatchesRow regression: when two
 // concurrent Puts to the same new path resolve to a single row (one writer
 // adopts the winner's UUID), the pinned remote object metadata must be
-// re-stamped with that row's UUID — otherwise a later Sync looks up the
+// re-stamped with that row's UUID; otherwise a later Sync looks up the
 // original (now-unused) UUID and inserts a duplicate row.
 func TestPut_ConcurrentSamePath_RemoteIdentityMatchesRow(t *testing.T) {
 	ctx := context.Background()
@@ -496,7 +496,7 @@ func TestRemove_SkipsIndexerDeleteWhenSharedObject(t *testing.T) {
 	fake := &fakeSDK{t: t, objErr: nil}
 	svc := &vaultService{db: db, sdk: fake, appKey: types.PrivateKey{}}
 
-	// Remove the first path — the object is still referenced by b.txt, so the
+	// Remove the first path; the object is still referenced by b.txt, so the
 	// indexer delete must be skipped (only the local row is tombstoned).
 	if err := svc.Remove(ctx, "vault:/docs/a.txt"); err != nil {
 		t.Fatalf("Remove a.txt: %v", err)
@@ -510,7 +510,7 @@ func TestRemove_SkipsIndexerDeleteWhenSharedObject(t *testing.T) {
 		t.Errorf("a.txt should be tombstoned (no live record), got %d live rows", aCount)
 	}
 
-	// Remove the last reference — the indexer delete must now happen.
+	// Remove the last reference; the indexer delete must now happen.
 	if err := svc.Remove(ctx, "vault:/docs/b.txt"); err != nil {
 		t.Fatalf("Remove b.txt: %v", err)
 	}
@@ -708,7 +708,7 @@ func (b *startBarrier) Wait() {
 // so no DB row is committed with a UUID that diverges from the pinned object.
 // Otherwise a later Sync would resolve the object by its (un-changed) metadata
 // UUID and insert a duplicate. Each writer uses its OWN fake SDK (with failOn=2:
-// its 2nd pin is the post-conflict re-pin) — exactly one writer loses the race,
+// its 2nd pin is the post-conflict re-pin), exactly one writer loses the race,
 // does the re-pin, and fails; the winner's single pin always succeeds. The DB
 // must end with exactly one live winner row and the failed writer's row must
 // not persist.
@@ -726,7 +726,7 @@ func TestPut_RePinFailureRollsBackTransaction(t *testing.T) {
 	}()
 
 	// Each writer uses its own fake SDK and its own vaultService (their mutable
-	// fields are never shared across goroutines — the data race that would
+	// fields are never shared across goroutines; the data race that would
 	// otherwise crash under -race), all pointing at the same production DB.
 	// failOn=2 fails the loser's 2nd pin (the re-pin), after both initial pins
 	// (1 each) succeed. A shared start barrier on Upload forces BOTH writers to

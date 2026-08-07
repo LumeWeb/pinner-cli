@@ -835,7 +835,7 @@ func buildSetupSteps(deps SetupWizardDeps) []StepDef {
 						return fmt.Errorf("failed to set secure: %w", err)
 					}
 				case ConfigChoiceSkip:
-					// Skip — preserve existing configuration.
+					// Skip: preserve existing configuration.
 				case ConfigChoiceCustom:
 					if in.Endpoint == "" {
 						return fmt.Errorf("endpoint is required for custom_endpoint choice")
@@ -968,7 +968,7 @@ func buildStepResponse(sess *Session) StepResponse {
 			resp.NextStepSchema = step.Schema(sess)
 		}
 	} else {
-		// No step def for the current state — likely complete.
+		// No step def for the current state: likely complete.
 		resp.Complete = true
 	}
 

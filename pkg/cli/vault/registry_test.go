@@ -66,9 +66,9 @@ func TestSaveLoadRegistry_RoundTrip(t *testing.T) {
 			},
 			"work": {
 				VaultID:    "vault:91da012345",
-				CachePath:   "/tmp/work/cache.db",
-				AppKeyRef:   "/tmp/work/state.json",
-				DeviceName:  "desktop",
+				CachePath:  "/tmp/work/cache.db",
+				AppKeyRef:  "/tmp/work/state.json",
+				DeviceName: "desktop",
 			},
 		},
 	}
@@ -134,7 +134,7 @@ func TestSaveRegistry_MissingConfigDir(t *testing.T) {
 	_, cleanup := withTempHomeDir(t)
 	defer cleanup()
 
-	// Config dir doesn't exist yet — SaveRegistry should create it
+	// Config dir doesn't exist yet; SaveRegistry should create it
 	reg := &VaultRegistry{
 		Profiles: map[string]ProfileConfig{},
 	}

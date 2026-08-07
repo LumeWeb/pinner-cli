@@ -46,7 +46,9 @@ The output includes:
   - CID: Content identifier of the downloaded file
   - Path: Local file path where content was saved
   - Size: File size in human-readable format
-  - Time: Download duration`,
+  - Time: Download duration
+
+Does NOT stream to stdout (use 'cat'), does NOT list a directory (use 'ls'), and does NOT add or remove pins (use 'pin'/'pins add' and 'unpin').`,
 		ArgsUsage: "<cid>[/<path>]",
 		Flags: []cli.Flag{
 			OutputFlag(),
@@ -83,7 +85,9 @@ Examples:
   pinner cat bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e | gzip > data.gz
 
 Note: This command outputs raw content to stdout.
-Use --verbose or redirect stderr for progress info.`,
+Use --verbose or redirect stderr for progress info.
+
+Does NOT save to a file (use 'download' when you want a local file) and does NOT list directory entries (use 'ls').`,
 		ArgsUsage: "<cid>[/<path>]",
 		Flags:     []cli.Flag{},
 		Action: func(ctx context.Context, c *cli.Command) error {
@@ -114,7 +118,9 @@ Examples:
   pinner ls bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e
   pinner ls bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --json
   pinner ls bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --limit 5
-  pinner ls bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e/subdir`,
+  pinner ls bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e/subdir
+
+Does NOT list your pinned-content collection (that is 'list' or 'pins ls'), and does NOT download bytes into a file; use 'cat' to stream or 'download' to save a file.`,
 		ArgsUsage: "<cid>[/<path>]",
 		Flags: []cli.Flag{
 			LimitFlag(),

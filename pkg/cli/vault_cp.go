@@ -175,7 +175,7 @@ func vaultUpload(ctx context.Context, c *cli.Command, output Output, localEp, va
 		}
 	}
 
-	// Wrap reader with progress (stderr — stdout stays clean for piping)
+	// Wrap reader with progress (stderr; stdout stays clean for piping)
 	var reader io.Reader = f
 	if !output.IsJSON() {
 		pr := newProgressReader(f, stat.Size(), "Uploading")
@@ -238,7 +238,7 @@ func vaultDownload(ctx context.Context, c *cli.Command, output Output, vaultEp, 
 	}
 	defer svc.Close()
 
-	// Wrap writer with progress (stderr — stdout stays clean for piping)
+	// Wrap writer with progress (stderr; stdout stays clean for piping)
 	var writer io.Writer = f
 	if !output.IsJSON() {
 		pw := newProgressWriter(f, 0, "Downloading")
@@ -266,7 +266,7 @@ func vaultDownload(ctx context.Context, c *cli.Command, output Output, vaultEp, 
 
 // vaultVaultCopy streams a file between two vaults (which may be different
 // profiles). The source is downloaded into a temp file, then uploaded to the
-// destination path — so files of any size copy without buffering in memory.
+// destination path, so files of any size copy without buffering in memory.
 func vaultVaultCopy(ctx context.Context, c *cli.Command, output Output, srcEp, dstEp *cpEndpoint) error {
 	// Destination may be a directory path; expand with the source filename.
 	dstPath := dstEp.vaultPath

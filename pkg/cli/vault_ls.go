@@ -13,9 +13,11 @@ func newVaultLsCommand() *cli.Command {
 		Name:      "ls",
 		Usage:     "List files and directories in the vault",
 		ArgsUsage: vaultArgsUsage,
-		Description: `List files and directories at the given vault path.
+		Description: `List files and directories at the given vault path, returning name, type, size, and created time for each.
 
-If no path is provided, lists the root directory.`,
+If no path is provided, lists the root directory. Lists one level only (no recursion).
+For a single file's full metadata (digest, object ID, media type), use vault stat.`,
+
 		Action: func(ctx context.Context, c *cli.Command) error {
 			output := setupOutput(c)
 			vaultPath := c.Args().First()

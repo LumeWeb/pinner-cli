@@ -10,10 +10,9 @@ func newVaultSyncCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "sync",
 		Usage: "Sync local vault cache from indexer",
-		Description: `Pulls incremental changes from the Sia indexer.
+		Description: `Pull incremental changes from the Sia indexer into the local vault cache. Uses an event cursor so only changes since the last sync are fetched.
 
-Uses an event cursor for efficient sync — only fetches changes since last sync.
-Run this after logging in on a new machine or to pick up changes from other devices.`,
+Run this after logging in on a new machine, or to pick up changes made from other devices. Returns the number of events processed. Does NOT upload or delete any files.`,
 		Action: func(ctx context.Context, c *cli.Command) error {
 			output := setupOutput(c)
 			svc, _, err := vaultServiceForCommand(c)

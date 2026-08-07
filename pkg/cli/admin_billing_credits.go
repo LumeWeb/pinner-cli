@@ -305,6 +305,8 @@ func newBillingCreditsDeleteCommand() *cli.Command {
 		Usage: "Delete (soft-delete) a credit",
 		Description: `Soft-delete a credit by its ID.
 
+This is a soft delete; the credit can be restored with 'restore' and purged permanently with 'purge'.
+
 Examples:
   pinner admin billing credits delete <id>
   pinner admin billing credits delete <id> --json`,
@@ -354,6 +356,8 @@ func newBillingCreditsRestoreCommand() *cli.Command {
 		Usage: "Restore a deleted credit",
 		Description: `Restore a soft-deleted credit by its ID.
 
+This is the reverse of 'delete' (which soft-deletes a single credit). Use 'user-deleted-credits' to list the soft-deleted credits available to restore.
+
 Examples:
   pinner admin billing credits restore <id>
   pinner admin billing credits restore <id> --json`,
@@ -400,6 +404,8 @@ func newBillingCreditsPurgeCommand() *cli.Command {
 		Name:  CmdPurge,
 		Usage: "Purge deleted credits",
 		Description: `Permanently delete soft-deleted credits older than specified duration.
+
+This permanently deletes every already-soft-deleted credit older than --older-than (default 30d). To remove a single credit, first soft-delete it with 'delete'. This does NOT delete active credits.
 
 Examples:
   pinner admin billing credits purge
@@ -507,6 +513,8 @@ func newBillingCreditsUserDeletedCreditsCommand() *cli.Command {
 		Name:  CmdUserDeletedCredits,
 		Usage: "Get deleted credits by user",
 		Description: `Get all soft-deleted credits for a specific user.
+
+Read-only. Use this to find credits you can restore with 'restore'.
 
 Examples:
   pinner admin billing credits user-deleted-credits <user-id>

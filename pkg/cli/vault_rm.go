@@ -14,10 +14,11 @@ func newVaultRmCommand() *cli.Command {
 		Name:      "rm",
 		Usage:     "Delete a file from the vault",
 		ArgsUsage: vaultArgsUsageFile,
-		Description: `Removes a file from both the local vault database and the Sia indexer.
+		Description: `Permanently delete a file from the vault: removes it from both the local vault database and the Sia indexer.
 
-Use --force to skip confirmation. --agent is not treated as consent;
-deleting in non-interactive mode always requires --force.`,
+DESTRUCTIVE and irreversible: confirm with care. Use --force to skip confirmation. --agent is not treated as consent: deleting in non-interactive mode always requires --force.
+
+Returns the deleted path. Does NOT empty a directory tree; targets a single file path.`,
 		Flags: []cli.Flag{
 			ForceFlag(),
 		},

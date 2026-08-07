@@ -9,8 +9,7 @@ func newPinsCommand() *cli.Command {
 		Name:     "pins",
 		Category: "Pinning",
 		Usage:    "Manage pinned content",
-		Description: `Manage your pinned IPFS content with subcommands for adding,
-removing, listing, checking status, and updating pin metadata.
+		Description: `Manage your pinned IPFS content with subcommands for adding, removing, listing, checking status, and updating pin metadata. Add new local files with 'upload'. For reading content bytes use 'cat'; for directory listing of a CID use 'ls'; for your own login state use 'auth status'.
 
 Examples:
   pinner pins add bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --name "my file"
