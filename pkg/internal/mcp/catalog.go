@@ -27,8 +27,11 @@ const (
 // via the standard tools/list endpoint.
 type ToolEntry struct {
 	Name        string
+	Title       string
 	Description string
 	Category    ToolCategory
+	ReadOnly    bool
+	Destructive bool
 	InputSchema json.RawMessage
 	Handler     func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error)
 }
@@ -44,8 +47,11 @@ type ToolSummary struct {
 // ToolDetail is the full representation returned by describe_tool.
 type ToolDetail struct {
 	Name        string          `json:"name"`
+	Title       string          `json:"title,omitempty"`
 	Description string          `json:"description"`
 	Category    ToolCategory    `json:"category,omitempty"`
+	ReadOnly    bool            `json:"readOnlyHint,omitempty"`
+	Destructive bool            `json:"destructiveHint,omitempty"`
 	InputSchema json.RawMessage `json:"inputSchema"`
 }
 
@@ -81,6 +87,13 @@ func (c *ToolCatalog) Get(name string) (*ToolEntry, bool) {
 	defer c.mu.RUnlock()
 	entry, ok := c.tools[name]
 	return entry, ok
+}
+
+// Len returns the number of tools currently registered in the catalog.
+func (c *ToolCatalog) Len() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return len(c.tools)
 }
 
 // Search finds tools matching the query. The matching strategy is layered:
@@ -160,8 +173,11 @@ func (c *ToolCatalog) Describe(name string) (*ToolDetail, error) {
 
 	return &ToolDetail{
 		Name:        entry.Name,
+		Title:       entry.Title,
 		Description: entry.Description,
 		Category:    entry.Category,
+		ReadOnly:    entry.ReadOnly,
+		Destructive: entry.Destructive,
 		InputSchema: entry.InputSchema,
 	}, nil
 }
@@ -210,6 +226,24 @@ func (c *ToolCatalog) RegisterFromCommand(root *cli.Command, hasRootAction bool,
 			}
 			toolOpts = append(toolOpts, mcp.WithDescription(desc))
 
+			// Emit MCP tool annotations so agents get steering hints without
+			// reading the full description: a human-readable title, a
+			// readOnlyHint for state reads, and a destructiveHint for
+			// irreversible operations. The same values are stored on the
+			// entry so describe_tool can surface them.
+			title := humanTitle(loc)
+			readOnly := isReadOnlyName(loc)
+			destructive := isDestructiveName(loc)
+			if title != "" {
+				toolOpts = append(toolOpts, mcp.WithTitleAnnotation(title))
+			}
+			if readOnly {
+				toolOpts = append(toolOpts, mcp.WithReadOnlyHintAnnotation(true))
+			}
+			if destructive {
+				toolOpts = append(toolOpts, mcp.WithDestructiveHintAnnotation(true))
+			}
+
 			// Build the tool to extract its generated input schema.
 			toolName := strings.Join(loc, ToolDelimiter)
 			tool := mcp.NewTool(toolName, toolOpts...)
@@ -236,8 +270,11 @@ func (c *ToolCatalog) RegisterFromCommand(root *cli.Command, hasRootAction bool,
 			category := categorize(loc)
 			c.Add(&ToolEntry{
 				Name:        toolName,
+				Title:       title,
 				Description: desc,
 				Category:    category,
+				ReadOnly:    readOnly,
+				Destructive: destructive,
 				InputSchema: schemaBytes,
 				Handler:     handler,
 			})
@@ -272,6 +309,82 @@ func categorize(loc []string) ToolCategory {
 	}
 
 	return CategoryCore
+}
+
+// destructiveSegments are leaf command names that perform destructive or
+// irreversible changes (deletes, purges, cancellation of an active contract).
+// These get the MCP destructiveHint annotation so agents can present the
+// action to the user before invoking it.
+var destructiveSegments = map[string]bool{
+	"rm": true, "delete": true, "purge": true, "unpin": true,
+	"unpin-all": true, "abort-cancel": true, "cancel": true, "forget": true,
+	"remove": true, "revoke": true, "clear": true, "reset": true,
+}
+
+// readOnlySegments are leaf command names that only read state and do not
+// modify the environment. These get the MCP readOnlyHint annotation.
+var readOnlySegments = map[string]bool{
+	"list": true, "ls": true, "get": true, "status": true, "stat": true,
+	"show": true, "describe": true, "search": true, "resolve": true,
+	"verify": true, "peek": true, "version": true, "whoami": true,
+	"login-check": true, "profiles": true, "list-users": true,
+	"list-gateway": true, "overview": true, "price-lines": true,
+	"pricing-plans": true,
+}
+
+// isDestructiveName reports whether the leaf command name indicates a
+// destructive operation.
+func isDestructiveName(loc []string) bool {
+	if len(loc) == 0 {
+		return false
+	}
+	return destructiveSegments[loc[len(loc)-1]]
+}
+
+// isReadOnlyName reports whether the leaf command name indicates a read-only
+// operation. Commands that are explicitly destructive are never read-only.
+func isReadOnlyName(loc []string) bool {
+	if len(loc) == 0 {
+		return false
+	}
+	leaf := loc[len(loc)-1]
+	return !destructiveSegments[leaf] && readOnlySegments[leaf]
+}
+
+// humanTitle derives a human-friendly tool title from the command path,
+// always dropping the root application name segment. For example
+// ["pinner", "websites", "domains", "create"] becomes "Websites Domains Create".
+// A path with only the root name yields an empty title.
+func humanTitle(loc []string) string {
+	segments := loc
+	if len(segments) >= 1 {
+		// Drop the root application name segment.
+		segments = segments[1:]
+	}
+	words := make([]string, 0, len(segments))
+	for _, s := range segments {
+		if s == "" {
+			continue
+		}
+		words = append(words, titleWord(s))
+	}
+	if len(words) == 0 {
+		return ""
+	}
+	return strings.Join(words, " ")
+}
+
+// titleWord capitalizes the first letter of a command word, including each
+// hyphen-separated component so "list-users" becomes "List-Users".
+func titleWord(s string) string {
+	parts := strings.Split(s, "-")
+	for i, p := range parts {
+		if p == "" {
+			continue
+		}
+		parts[i] = strings.ToUpper(p[:1]) + p[1:]
+	}
+	return strings.Join(parts, "-")
 }
 
 // matchRank returns -1 if the query does not match the tool at any level.

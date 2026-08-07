@@ -132,11 +132,6 @@ func MCPServerWithOpts(root *cli.Command, hasRootAction bool, prefix []string, o
 // describe_tool, invoke_tool). This implements server-side progressive
 // disclosure.
 func MCPServer(root *cli.Command, hasRootAction bool, prefix ...string) (*server.MCPServer, *ToolCatalog, error) {
-	srv := server.NewMCPServer(root.Name, root.Version,
-		server.WithToolCapabilities(true),
-		server.WithInstructions(mcpInstructions),
-	)
-
 	catalog := NewToolCatalog()
 
 	// runMu serializes root.Run calls. A shallow copy of root gives each
@@ -277,6 +272,14 @@ func MCPServer(root *cli.Command, hasRootAction bool, prefix ...string) (*server
 		return nil, nil, err
 	}
 
+	// Build the server after the catalog is populated so the instructions
+	// can reference the real, computed tool count instead of a hard-coded
+	// number that drifts as commands are added or removed.
+	srv := server.NewMCPServer(root.Name, root.Version,
+		server.WithToolCapabilities(true),
+		server.WithInstructions(buildInstructions(catalog.Len())),
+	)
+
 	return srv, catalog, nil
 }
 
@@ -286,18 +289,27 @@ func MCPServer(root *cli.Command, hasRootAction bool, prefix ...string) (*server
 // Extended from the original upstream which only handled String, Bool, and
 // numeric types. Added: FloatFlag (via the numeric generic), DurationFlag,
 // StringSliceFlag, and filtering of the "version" flag.
-// mcpInstructions is sent to MCP clients in the initialize response. It guides
-// agents through the progressive disclosure flow so they know to search before
-// invoking, and understand how _args works for positional CLI arguments.
-const mcpInstructions = `This server uses progressive disclosure. The tools/list response only shows 3 meta-tools. To use a tool:
+// mcpInstructionsBase is sent to MCP clients in the initialize response. It
+// guides agents through the progressive disclosure flow so they know to
+// search before invoking, and understand how _args works for positional CLI
+// arguments. The exact tool count is computed at server build time via
+// buildInstructions.
+const mcpInstructionsBase = `This server uses progressive disclosure. The tools/list response only shows 3 meta-tools. To use a tool:
 
 1. search_tools({ "query": "..." }): Find tools by keyword. Returns name, description, and category.
 2. describe_tool({ "name": "..." }): Get the full input schema for a tool, including required parameters.
 3. invoke_tool({ "name": "...", "arguments": { ... } }): Execute a tool.
 
-Always search first: do not guess tool names. The catalog has 60+ tools across core, admin, and wizard categories.
+Always search first: do not guess tool names. The catalog has %d tools across core, admin, and wizard categories.
 
 Some tools accept "_args" (an array of positional strings) in their arguments. Check describe_tool output for the _args property and its description to see what positional values are expected.`
+
+// buildInstructions returns the MCP server instructions with the real catalog
+// tool count substituted, so the guidance given to agents stays accurate as
+// commands are added or removed.
+func buildInstructions(toolCount int) string {
+	return fmt.Sprintf(mcpInstructionsBase, toolCount)
+}
 
 // FlagsToTools converts urfave/cli flags to MCP tool property options.
 func FlagsToTools(flags []cli.Flag) ([]mcp.ToolOption, error) {
@@ -308,17 +320,15 @@ func FlagsToTools(flags []cli.Flag) ([]mcp.ToolOption, error) {
 			if f.Hidden {
 				continue
 			}
-			propOpts := []mcp.PropertyOption{
-				mcp.Description(f.Usage),
-			}
-			if f.Required {
-				propOpts = append(propOpts, mcp.Required())
-			}
-			if f.Value != "" {
-				propOpts = append(propOpts, mcp.DefaultString(f.Value))
-			}
+			opts = append(opts, mcp.WithString(f.Name, stringFlagProps(f, nil)...))
 
-			opts = append(opts, mcp.WithString(f.Name, propOpts...))
+		case *enumStringFlag:
+			if f.Hidden {
+				continue
+			}
+			// enumStringFlag embeds *cli.StringFlag and additionally carries an
+			// explicit enum domain declared at the flag definition site.
+			opts = append(opts, mcp.WithString(f.Name, stringFlagProps(f.StringFlag, f.enum)...))
 
 		case *cli.BoolFlag:
 			if f.Name == "help" || f.Name == "version" || f.Hidden {
@@ -413,4 +423,24 @@ func numberToolOption[T int | int8 | int16 | int32 | int64 | uint | uint8 | uint
 		propOpts = append(propOpts, mcp.Required())
 	}
 	return []mcp.ToolOption{mcp.WithNumber(name, propOpts...)}
+}
+
+// stringFlagProps builds the property options for a string flag. An optional
+// non-nil enum is emitted as a JSON-schema enum so MCP agents see the valid
+// values up front. The enum lives on the flag definition, so it is the single
+// source of truth and cannot drift from the CLI's validation.
+func stringFlagProps(f *cli.StringFlag, enum []string) []mcp.PropertyOption {
+	propOpts := []mcp.PropertyOption{
+		mcp.Description(f.Usage),
+	}
+	if f.Required {
+		propOpts = append(propOpts, mcp.Required())
+	}
+	if f.Value != "" {
+		propOpts = append(propOpts, mcp.DefaultString(f.Value))
+	}
+	if len(enum) > 0 {
+		propOpts = append(propOpts, mcp.Enum(enum...))
+	}
+	return propOpts
 }
