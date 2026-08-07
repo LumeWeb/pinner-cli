@@ -16,6 +16,17 @@ import (
 // other SQLite database this CLI may open.
 const gooseVersionTable = "goose_vault_version"
 
+// silentGooseLogger is a no-op goose.Logger. goose otherwise logs every
+// migration and re-check to stderr with timestamps ("OK 0001_init.sql",
+// "successfully migrated", "no migrations to run"), which would leak raw
+// internal lines into the CLI's polished step output. Commands surface the
+// real progress themselves ("Setting up database..."), so goose's own output
+// is silenced here.
+type silentGooseLogger struct{}
+
+func (silentGooseLogger) Fatalf(string, ...any) {}
+func (silentGooseLogger) Printf(string, ...any) {}
+
 // OpenDB opens (or creates) the vault SQLite database and applies any pending
 // schema migrations with goose. gorm remains the ORM for all runtime queries;
 // goose owns schema (DDL) so future changes are versioned SQL migrations.
@@ -82,6 +93,11 @@ func migrate(db *gorm.DB) error {
 
 	goose.SetBaseFS(fsys)
 	goose.SetTableName(gooseVersionTable)
+	// Silence goose's stderr logging (timestamped "OK <migration>",
+	// "successfully migrated", "no migrations to run"). The vault is the only
+	// goose user in this CLI and its output is redundant with the command's
+	// own step lines, so it is always silenced at the package level.
+	goose.SetLogger(silentGooseLogger{})
 	defer goose.SetBaseFS(nil) // hygiene: clear the global between opens
 
 	if err := goose.SetDialect("sqlite3"); err != nil {

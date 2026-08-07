@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -2011,5 +2012,47 @@ func TestSync_DeleteEvent_UUIDMissFallsBackToKey(t *testing.T) {
 	db.Model(&File{}).Where("uuid = ? AND deleted_at IS NULL", "u-live").Count(&live)
 	if live != 0 {
 		t.Errorf("u-live must be tombstoned via the object-key fallback when the event UUID matches no live row, got %d live", live)
+	}
+}
+
+// TestGooseOutputSilenced verifies goose's verbose stderr logging is suppressed
+// during migration. Without the silent logger, OpenDB prints timestamped lines
+// like "OK 0001_init.sql" and "goose: successfully migrated" to stderr, leaking
+// internal noise into the CLI's polished step output. We capture stderr across a
+// real open+migrate and assert those raw goose lines never appear.
+func TestGooseOutputSilenced(t *testing.T) {
+	// This test redirects the process-wide os.Stderr (goose logs via the stdlib
+	// log default -> os.Stderr), so it deliberately does NOT use t.Parallel --
+	// concurrent stderr writes from other tests could race the pipe.
+
+	old := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	os.Stderr = w
+
+	dir := t.TempDir()
+	db, err := OpenDB(filepath.Join(dir, "vault.db"))
+	w.Close()
+	os.Stderr = old
+
+	buf := new(bytes.Buffer)
+	if _, err := io.Copy(buf, r); err != nil {
+		t.Fatalf("copy stderr: %v", err)
+	}
+
+	if db == nil {
+		t.Fatalf("OpenDB returned nil db")
+	}
+	if sqlDB, err := db.DB(); err == nil {
+		sqlDB.Close()
+	}
+
+	got := buf.String()
+	for _, bad := range []string{"goose:", "successfully migrated", "no migrations to run", "_init.sql"} {
+		if strings.Contains(got, bad) {
+			t.Fatalf("goose output leaked to stderr (contains %q):\n%s", bad, got)
+		}
 	}
 }

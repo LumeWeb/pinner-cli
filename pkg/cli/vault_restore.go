@@ -197,6 +197,7 @@ The flow:
 
 			// Initialize fresh SQLite DB
 			dbPath := vault.ProfileDBPath(profileName)
+			output.Printfln("Setting up database...")
 			db, err := vault.OpenDB(dbPath)
 			if err != nil {
 				return fmt.Errorf("failed to initialize vault database: %w", err)

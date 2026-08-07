@@ -212,6 +212,7 @@ The recovery seed is displayed ONCE and must be saved securely.`,
 
 			// 7. Initialize SQLite DB
 			dbPath := vault.ProfileDBPath(profileName)
+			output.Printfln("Setting up database...")
 			db, err := vault.OpenDB(dbPath)
 			if err != nil {
 				return fmt.Errorf("failed to initialize vault database: %w", err)
