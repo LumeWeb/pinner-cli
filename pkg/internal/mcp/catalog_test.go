@@ -35,6 +35,7 @@ func TestReadOnlyAndDestructiveClassification(t *testing.T) {
 	assert.True(t, isDestructiveName([]string{"pinner", "unpin"}))
 	assert.True(t, isDestructiveName([]string{"pinner", "vault", "rm"}))
 	assert.True(t, isDestructiveName([]string{"pinner", "admin", "billing", "credits", "purge"}))
+	assert.True(t, isDestructiveName([]string{"pinner", "admin", "billing", "subscribers", "cancel"}))
 	assert.False(t, isDestructiveName([]string{"pinner", "list"}))
 }
 

@@ -317,8 +317,8 @@ func categorize(loc []string) ToolCategory {
 // action to the user before invoking it.
 var destructiveSegments = map[string]bool{
 	"rm": true, "delete": true, "purge": true, "unpin": true,
-	"unpin-all": true, "abort-cancel": true, "forget": true, "remove": true,
-	"revoke": true, "clear": true, "reset": true,
+	"unpin-all": true, "abort-cancel": true, "cancel": true, "forget": true,
+	"remove": true, "revoke": true, "clear": true, "reset": true,
 }
 
 // readOnlySegments are leaf command names that only read state and do not
