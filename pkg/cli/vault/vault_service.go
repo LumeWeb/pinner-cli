@@ -161,6 +161,10 @@ func (s *vaultService) Put(ctx context.Context, r io.Reader, size int64, vaultPa
 	if err != nil {
 		return nil, err
 	}
+	vp, err = RequireActiveProfile(vp)
+	if err != nil {
+		return nil, err
+	}
 	if vp.IsDir {
 		return nil, fmt.Errorf("destination must be a file path, not a directory")
 	}
@@ -387,6 +391,10 @@ func (s *vaultService) Get(ctx context.Context, vaultPath string, w io.Writer) e
 	if err != nil {
 		return err
 	}
+	vp, err = RequireActiveProfile(vp)
+	if err != nil {
+		return err
+	}
 
 	record, err := s.resolveFile(vp)
 	if err != nil {
@@ -422,6 +430,10 @@ func (s *vaultService) List(ctx context.Context, vaultPath string) ([]ListItem, 
 	if err != nil {
 		return nil, err
 	}
+	vp, err = RequireActiveProfile(vp)
+	if err != nil {
+		return nil, err
+	}
 
 	dirPath := vp.Directory
 	// A non-trailing-slash path with a leaf name is ambiguous: it could be a
@@ -433,7 +445,7 @@ func (s *vaultService) List(ctx context.Context, vaultPath string) ([]ListItem, 
 	// matching `vault:/docs` listing the /docs dir.
 	if !vp.IsDir && vp.Name != "" {
 		if vp.Directory == "/" {
-			dirPath = "/" + vp.Name
+			dirPath = JoinDirPath("/", vp.Name)
 		} else {
 			dirPath = vp.Directory // parent directory of the target file
 		}
@@ -513,6 +525,10 @@ func (s *vaultService) Stat(ctx context.Context, vaultPath string) (*StatResult,
 	if err != nil {
 		return nil, err
 	}
+	vp, err = RequireActiveProfile(vp)
+	if err != nil {
+		return nil, err
+	}
 
 	// If it's a directory or root
 	if vp.IsDir || vp.Name == "" {
@@ -543,7 +559,7 @@ func (s *vaultService) Stat(ctx context.Context, vaultPath string) (*StatResult,
 		// existing directory at root, report it as a directory instead of a
 		// misleading not-found.
 		if vp.Directory == "/" {
-			if _, derr := s.getDirectoryID("/" + vp.Name); derr == nil {
+			if _, derr := s.getDirectoryID(JoinDirPath("/", vp.Name)); derr == nil {
 				return &StatResult{Type: "dir", Name: vp.Name, Path: vaultPath}, nil
 			}
 		}
@@ -637,6 +653,10 @@ func (s *vaultService) resolveVerifyObject(ctx context.Context, vaultPath string
 	if err != nil {
 		return nil, siastorage.Object{}, false, err
 	}
+	vp, err = RequireActiveProfile(vp)
+	if err != nil {
+		return nil, siastorage.Object{}, false, err
+	}
 
 	record, err := s.resolveFile(vp)
 	if err != nil {
@@ -677,6 +697,10 @@ func (s *vaultService) resolveVerifyObject(ctx context.Context, vaultPath string
 // Remove deletes a file from the vault (local DB + indexer).
 func (s *vaultService) Remove(ctx context.Context, vaultPath string) error {
 	vp, err := ParseVaultPath(vaultPath)
+	if err != nil {
+		return err
+	}
+	vp, err = RequireActiveProfile(vp)
 	if err != nil {
 		return err
 	}
@@ -755,6 +779,10 @@ func (s *vaultService) Remove(ctx context.Context, vaultPath string) error {
 // Share generates a time-limited sia:// share URL for a file.
 func (s *vaultService) Share(ctx context.Context, vaultPath string, validUntil time.Time) (string, error) {
 	vp, err := ParseVaultPath(vaultPath)
+	if err != nil {
+		return "", err
+	}
+	vp, err = RequireActiveProfile(vp)
 	if err != nil {
 		return "", err
 	}
@@ -890,7 +918,7 @@ func resolveVaultDirectory(db *gorm.DB, path string) (*uint, error) {
 		if part == "" {
 			continue
 		}
-		currentPath = currentPath + "/" + part
+		currentPath = JoinDirPath(currentPath, part)
 
 		var dir Directory
 		result := db.Where("path = ?", currentPath).First(&dir)

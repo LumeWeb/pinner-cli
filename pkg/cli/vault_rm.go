@@ -13,7 +13,7 @@ func newVaultRmCommand() *cli.Command {
 	return &cli.Command{
 		Name:      "rm",
 		Usage:     "Delete a file from the vault",
-		ArgsUsage: "vault:/path/to/file",
+		ArgsUsage: vaultArgsUsageFile,
 		Description: `Removes a file from both the local vault database and the Sia indexer.
 
 Use --force to skip confirmation. --agent is not treated as consent;

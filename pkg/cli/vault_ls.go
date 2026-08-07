@@ -5,13 +5,14 @@ import (
 	"fmt"
 
 	"github.com/urfave/cli/v3"
+	"go.lumeweb.com/pinner-cli/pkg/cli/vault"
 )
 
 func newVaultLsCommand() *cli.Command {
 	return &cli.Command{
 		Name:      "ls",
 		Usage:     "List files and directories in the vault",
-		ArgsUsage: "vault:/path",
+		ArgsUsage: vaultArgsUsage,
 		Description: `List files and directories at the given vault path.
 
 If no path is provided, lists the root directory.`,
@@ -19,7 +20,7 @@ If no path is provided, lists the root directory.`,
 			output := setupOutput(c)
 			vaultPath := c.Args().First()
 			if vaultPath == "" {
-				vaultPath = "vault:/"
+				vaultPath = vault.VaultRoot
 			}
 
 			svc, _, err := vaultServiceForCommand(c)
