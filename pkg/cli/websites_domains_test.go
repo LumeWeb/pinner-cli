@@ -647,6 +647,25 @@ func TestWebsitesDomainsVerify(t *testing.T) {
 			wantErr:     true,
 			errContains: "verify failed",
 		},
+		{
+			name: "verify returns nil result with no error",
+			setupMocks: func(svc *mockWebsitesServiceForCLI) {
+				svc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+					return []ipfs.WebsiteItem{{Id: 1, Domain: "example.com"}}, nil
+				}
+				svc.ListDomainsFn = func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
+					return []ipfs.DomainResponse{
+						{Id: 2, Domain: "mydomain.hns", Namespace: "hns"},
+					}, nil
+				}
+				svc.VerifyDomainFn = func(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainResponse, error) {
+					return nil, nil
+				}
+			},
+			cmd:         newMockCommand().withArgs("2"),
+			wantErr:     true,
+			errContains: "no verification result returned",
+		},
 	}
 
 	for _, tt := range tests {
@@ -694,6 +713,207 @@ func TestWebsitesDomainsVerifyJSON(t *testing.T) {
 
 	err := websitesDomainsVerifyWithService(context.Background(), cmd, output, mockSvc)
 	require.NoError(t, err)
+}
+
+func TestWebsitesDomainsDANERepublish(t *testing.T) {
+	tests := []struct {
+		name        string
+		setupMocks  func(*mockWebsitesServiceForCLI)
+		cmd         *mockCommand
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name: "successful dane republish by name",
+			setupMocks: func(svc *mockWebsitesServiceForCLI) {
+				svc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+					return []ipfs.WebsiteItem{{Id: 1, Domain: "example.com"}}, nil
+				}
+				svc.ListDomainsFn = func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
+					return []ipfs.DomainResponse{
+						{Id: 1, Domain: "mydomain.com", Namespace: "icann"},
+					}, nil
+				}
+				svc.RepublishDANEFn = func(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainDANERepublishResponse, error) {
+					return &ipfs.DomainDANERepublishResponse{
+						Id: 1, Domain: "mydomain.com", Namespace: "icann",
+						Status:     strPtr("delegated"),
+						OwnerName:  strPtr("_443._tcp.mydomain.com"),
+						TlsaRecord: strPtr("_443._tcp.mydomain.com. 3600 IN TLSA 3 1 1 <sha256>"),
+					}, nil
+				}
+			},
+			cmd:     newMockCommand().withArgs("mydomain.com"),
+			wantErr: false,
+		},
+		{
+			name: "successful dane republish by numeric binding id",
+			setupMocks: func(svc *mockWebsitesServiceForCLI) {
+				svc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+					return []ipfs.WebsiteItem{{Id: 1, Domain: "example.com"}}, nil
+				}
+				svc.ListDomainsFn = func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
+					return []ipfs.DomainResponse{
+						{Id: 2, Domain: "mydomain.hns", Namespace: "hns"},
+					}, nil
+				}
+				svc.RepublishDANEFn = func(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainDANERepublishResponse, error) {
+					return &ipfs.DomainDANERepublishResponse{
+						Id: 2, Domain: "mydomain.hns", Namespace: "hns", Status: strPtr("delegated"),
+					}, nil
+				}
+			},
+			cmd:     newMockCommand().withArgs("2"),
+			wantErr: false,
+		},
+		{
+			name: "domain not found",
+			setupMocks: func(svc *mockWebsitesServiceForCLI) {
+				svc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+					return []ipfs.WebsiteItem{{Id: 1, Domain: "example.com"}}, nil
+				}
+				svc.ListDomainsFn = func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
+					return []ipfs.DomainResponse{
+						{Id: 2, Domain: "mydomain.hns", Namespace: "hns"},
+					}, nil
+				}
+			},
+			cmd:         newMockCommand().withArgs("nonexistent.com"),
+			wantErr:     true,
+			errContains: "not found",
+		},
+		{
+			name: "missing domain argument",
+			setupMocks: func(svc *mockWebsitesServiceForCLI) {
+				svc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+					return []ipfs.WebsiteItem{{Id: 1, Domain: "example.com"}}, nil
+				}
+			},
+			cmd:         newMockCommand(),
+			wantErr:     true,
+			errContains: "domain",
+		},
+		{
+			name: "republish returns nil result with no error",
+			setupMocks: func(svc *mockWebsitesServiceForCLI) {
+				svc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+					return []ipfs.WebsiteItem{{Id: 1, Domain: "example.com"}}, nil
+				}
+				svc.ListDomainsFn = func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
+					return []ipfs.DomainResponse{
+						{Id: 2, Domain: "mydomain.hns", Namespace: "hns"},
+					}, nil
+				}
+				svc.RepublishDANEFn = func(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainDANERepublishResponse, error) {
+					return nil, nil
+				}
+			},
+			cmd:         newMockCommand().withArgs("2"),
+			wantErr:     true,
+			errContains: "no DANE result returned",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockSvc := &mockWebsitesServiceForCLI{}
+			if tt.setupMocks != nil {
+				tt.setupMocks(mockSvc)
+			}
+
+			output := NewOutputFormatter(false, false, false, false)
+			err := websitesDomainsDANERepublishWithService(context.Background(), tt.cmd, output, mockSvc)
+
+			if tt.wantErr {
+				require.Error(t, err)
+				if tt.errContains != "" {
+					require.Contains(t, err.Error(), tt.errContains)
+				}
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestWebsitesDomainsDANERepublishJSON(t *testing.T) {
+	mockSvc := &mockWebsitesServiceForCLI{}
+	mockSvc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+		return []ipfs.WebsiteItem{{Id: 1, Domain: "example.com"}}, nil
+	}
+	mockSvc.ListDomainsFn = func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
+		return []ipfs.DomainResponse{
+			{Id: 1, Domain: "mydomain.com", Namespace: "icann"},
+		}, nil
+	}
+	mockSvc.RepublishDANEFn = func(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainDANERepublishResponse, error) {
+		return &ipfs.DomainDANERepublishResponse{
+			Id: 1, Domain: "mydomain.com", Namespace: "icann", Status: strPtr("delegated"),
+		}, nil
+	}
+
+	output := NewOutputFormatter(true, false, false, false)
+	cmd := newMockCommand().withArgs("mydomain.com")
+
+	err := websitesDomainsDANERepublishWithService(context.Background(), cmd, output, mockSvc)
+	require.NoError(t, err)
+}
+
+// websitesDomainsDANERepublishWithService is a test helper that allows injecting
+// a mock WebsitesService.
+func websitesDomainsDANERepublishWithService(ctx context.Context, cmd websitesCommandGetter, output Output, websitesService WebsitesService) error {
+	if err := websitesService.RequireAuthenticated(); err != nil {
+		return err
+	}
+
+	domainArg, err := resolveDomainArg(cmd, "dane republish")
+	if err != nil {
+		return err
+	}
+
+	websiteID, domainID, err := resolveDomainBinding(ctx, websitesService, domainArg)
+	if err != nil {
+		return err
+	}
+
+	result, err := websitesService.RepublishDANE(ctx, websiteID, domainID)
+	if err != nil {
+		return err
+	}
+	if result == nil {
+		return fmt.Errorf("no DANE result returned for domain %s", domainID)
+	}
+
+	if output.IsJSON() {
+		return output.PrintJSON(result)
+	}
+
+	output.Printfln("DANE TLSA republished for %s", result.Domain)
+
+	status := ""
+	if result.Status != nil {
+		status = *result.Status
+	}
+	ownerName := ""
+	if result.OwnerName != nil {
+		ownerName = *result.OwnerName
+	}
+	tlsaRecord := ""
+	if result.TlsaRecord != nil {
+		tlsaRecord = *result.TlsaRecord
+	}
+	output.PrintFields(FieldGroup{
+		Fields: []Field{
+			{"ID", strconv.Itoa(result.Id)},
+			{"Domain", result.Domain},
+			{"Namespace", result.Namespace},
+			{"Status", status},
+			{"Owner Name", ownerName},
+			{"TLSA Record", tlsaRecord},
+		},
+	})
+
+	return nil
 }
 
 // websitesDomainsListWithService is a test helper that allows injecting a mock WebsitesService
@@ -861,6 +1081,9 @@ func websitesDomainsVerifyWithService(ctx context.Context, cmd websitesCommandGe
 	if err != nil {
 		return err
 	}
+	if result == nil {
+		return fmt.Errorf("no verification result returned for domain %s", domainID)
+	}
 
 	if output.IsJSON() {
 		return output.PrintJSON(result)
@@ -1010,9 +1233,8 @@ func TestWebsitesDomainsDNSRequirements(t *testing.T) {
 					return &ipfs.DomainResponse{
 						Id: 2, Domain: "mydomain.hns", Namespace: "hns", Status: strPtr("delegated"),
 						Delegation: &ipfs.DNSDelegation{
-							Mode:         strPtr("delegated"),
-							Ds:           strPtr("mydomain. 3600 IN DS 12345 13 2 <digest>"),
-							Instructions: strPtr("Publish parent records in your HNS wallet."),
+							Mode: strPtr("delegated"),
+							Ds:   strPtr("mydomain. 3600 IN DS 12345 13 2 <digest>"),
 							ParentRecords: &[]ipfs.DNSDelegationRecord{
 								{Type: "NS", Value: strPtr("ns1.lumeweb,ns2.lumeweb")},
 								{Type: "DS", Value: strPtr("mydomain. 3600 IN DS 12345 13 2 <digest>")},
@@ -1215,9 +1437,8 @@ func TestRenderDomainDelegation(t *testing.T) {
 		renderDomainDelegation(output, &ipfs.DomainResponse{
 			Id: 1, Domain: "mydomain.hns", Namespace: "hns", Status: strPtr("delegated"),
 			Delegation: &ipfs.DNSDelegation{
-				Mode:         strPtr("delegated"),
-				Ds:           strPtr("mydomain. 3600 IN DS 12345 13 2 <digest>"),
-				Instructions: strPtr("Publish parent records in your HNS wallet."),
+				Mode: strPtr("delegated"),
+				Ds:   strPtr("mydomain. 3600 IN DS 12345 13 2 <digest>"),
 				ParentRecords: &[]ipfs.DNSDelegationRecord{
 					{Type: "NS", Value: strPtr("ns1.lumeweb,ns2.lumeweb")},
 				},
@@ -1279,8 +1500,7 @@ func TestRenderDomainDelegation(t *testing.T) {
 		renderDomainDelegation(output, &ipfs.DomainResponse{
 			Id: 1, Domain: "mydomain.com", Namespace: "icann", Status: strPtr("delegated"),
 			Delegation: &ipfs.DNSDelegation{
-				Nameservers:  &[]string{"ns1.example.com", "ns2.example.com"},
-				Instructions: strPtr("Configure these NS records at your registrar for mydomain.com"),
+				Nameservers: &[]string{"ns1.example.com", "ns2.example.com"},
 			},
 		}, false)
 		// exercises the icann driver path (registrar wording, nameservers list)

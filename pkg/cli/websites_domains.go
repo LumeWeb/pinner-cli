@@ -36,6 +36,7 @@ Examples:
 			newWebsitesDomainsRmCommand(),
 			newWebsitesDomainsVerifyCommand(),
 			newWebsitesDomainsDNSRequirementsCommand(),
+			newWebsitesDomainsDANERepublishCommand(),
 			newWebsitesDomainsWizardCommand(),
 		},
 	}
@@ -483,6 +484,9 @@ func websitesDomainsVerify(ctx context.Context, cmd websitesCommandGetter, outpu
 	if err != nil {
 		return err
 	}
+	if result == nil {
+		return fmt.Errorf("no verification result returned for domain %s", domainID)
+	}
 
 	if output.IsJSON() {
 		return output.PrintJSON(result)
@@ -588,4 +592,96 @@ func renderDomainDelegation(output Output, result *ipfs.DomainResponse, managed 
 	}
 
 	defaultDelegationDriver.Render(output, result, managed)
+}
+
+func newWebsitesDomainsDANERepublishCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "dane",
+		Usage: "Manage a domain's DANE records",
+		Commands: []*cli.Command{
+			newWebsitesDomainsDANERepublishTLSACommand(),
+		},
+	}
+}
+
+func newWebsitesDomainsDANERepublishTLSACommand() *cli.Command {
+	return &cli.Command{
+		Name:      "republish",
+		Usage:     "Force re-publication of a domain's DANE TLSA record",
+		ArgsUsage: "<domain>",
+		Description: `Forces re-publication of a bound domain's DANE records (the
+_443._tcp.<domain> TLSA RRset) into the managed authoritative zone. Use this
+to recover a TLSA that was deleted or went missing and was not re-published by
+certificate renewal.
+
+The domain belongs to exactly one website, which is resolved automatically.
+The domain argument can be either the domain name (e.g. staging.example.com)
+or its numeric binding ID.
+
+Examples:
+  pinner websites domains dane republish staging.example.com
+  pinner websites domains dane republish 42 --json`,
+		Action: withContext(func(ctx context.Context, cc *commandContext) error {
+			return websitesDomainsDANERepublish(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
+		}),
+	}
+}
+
+func websitesDomainsDANERepublish(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+	defer cancel()
+
+	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken, secure)
+	if err != nil {
+		return err
+	}
+
+	domainArg, err := resolveDomainArg(cmd, "dane republish")
+	if err != nil {
+		return err
+	}
+
+	websiteID, domainID, err := resolveDomainBinding(ctx, websitesService, domainArg)
+	if err != nil {
+		return err
+	}
+
+	result, err := websitesService.RepublishDANE(ctx, websiteID, domainID)
+	if err != nil {
+		return err
+	}
+	if result == nil {
+		return fmt.Errorf("no DANE result returned for domain %s", domainID)
+	}
+
+	if output.IsJSON() {
+		return output.PrintJSON(result)
+	}
+
+	output.Printfln("DANE TLSA republished for %s", result.Domain)
+
+	status := ""
+	if result.Status != nil {
+		status = *result.Status
+	}
+	ownerName := ""
+	if result.OwnerName != nil {
+		ownerName = *result.OwnerName
+	}
+	tlsaRecord := ""
+	if result.TlsaRecord != nil {
+		tlsaRecord = *result.TlsaRecord
+	}
+	output.PrintFields(FieldGroup{
+		Fields: []Field{
+			{"ID", strconv.Itoa(result.Id)},
+			{"Domain", result.Domain},
+			{"Namespace", result.Namespace},
+			{"Status", status},
+			{"Owner Name", ownerName},
+			{"TLSA Record", tlsaRecord},
+		},
+	})
+
+	return nil
 }

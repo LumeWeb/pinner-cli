@@ -29,6 +29,7 @@ type mockWebsitesServiceForCLI struct {
 	UnbindDomainFn             func(ctx context.Context, websiteID string, domainID string) error
 	VerifyDomainFn             func(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainResponse, error)
 	GetDomainDNSRequirementsFn func(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainResponse, error)
+	RepublishDANEFn            func(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainDANERepublishResponse, error)
 }
 
 func (m *mockWebsitesServiceForCLI) RequireAuthenticated() error {
@@ -172,6 +173,13 @@ func (m *mockWebsitesServiceForCLI) VerifyDomain(ctx context.Context, websiteID 
 func (m *mockWebsitesServiceForCLI) GetDomainDNSRequirements(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainResponse, error) {
 	if m.GetDomainDNSRequirementsFn != nil {
 		return m.GetDomainDNSRequirementsFn(ctx, websiteID, domainID)
+	}
+	return nil, nil
+}
+
+func (m *mockWebsitesServiceForCLI) RepublishDANE(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainDANERepublishResponse, error) {
+	if m.RepublishDANEFn != nil {
+		return m.RepublishDANEFn(ctx, websiteID, domainID)
 	}
 	return nil, nil
 }
