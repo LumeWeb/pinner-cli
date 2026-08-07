@@ -14,7 +14,7 @@ func newListCommand() *cli.Command {
 		Name:     "list",
 		Category: "Pinning",
 		Usage:    "List pinned content (see: pinner pins ls)",
-		Description: `Shortcut for 'pinner pins ls'. List your pinned content with optional filtering.
+		Description: `Shortcut for 'pinner pins ls'. List your pinned content (the set of CIDs you have pinned) with optional filtering.
 
 Examples:
   pinner list
@@ -23,7 +23,9 @@ Examples:
   pinner list --limit 20
   pinner list --watch
   pinner list --name backup --status failed --limit 50
-  echo "backup" | pinner list`,
+  echo "backup" | pinner list
+
+Does NOT list the internal files inside a pinned directory (that is 'ls <cid>') and does NOT show other users' pins. Use 'pins status <cid>' for one pin's progress.`,
 		ArgsUsage: "",
 		Flags: []cli.Flag{
 			NameFlag("Filter by name"),

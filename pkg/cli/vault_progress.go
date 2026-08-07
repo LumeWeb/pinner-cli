@@ -88,20 +88,20 @@ func (pw *progressWriter) Close() {
 
 // progressReader wraps an io.Reader for upload progress.
 type progressReader struct {
-	reader   io.Reader
-	bar      *pterm.ProgressbarPrinter
-	start    time.Time
-	lastUpd  time.Time
-	total    int64
-	read     int64
+	reader  io.Reader
+	bar     *pterm.ProgressbarPrinter
+	start   time.Time
+	lastUpd time.Time
+	total   int64
+	read    int64
 }
 
 func newProgressReader(r io.Reader, total int64, label string) *progressReader {
 	pr := &progressReader{
-		reader:   r,
-		start:    time.Now(),
-		total:    total,
-		lastUpd:  time.Now(),
+		reader:  r,
+		start:   time.Now(),
+		total:   total,
+		lastUpd: time.Now(),
 	}
 	if !isTerminal() {
 		return pr
@@ -172,7 +172,7 @@ func fmtBytes(b int64) string {
 // fmtBytesPerSec formats throughput as bytes/sec.
 func fmtBytesPerSec(bytes int64, elapsedSec float64) string {
 	if elapsedSec <= 0 {
-		return "—"
+		return "-"
 	}
 	bps := float64(bytes) / elapsedSec
 	const unit = 1000

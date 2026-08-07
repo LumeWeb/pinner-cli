@@ -175,7 +175,7 @@ func (s *UploadServiceDefault) Upload(ctx context.Context, filesystem fs.FS, nam
 
 	s.output.PrintVerbosef("Using IPFS endpoint: %s", s.ipfsEndpoint)
 
-	// Resolve the auth token — exchange API key JWT for login JWT if needed
+	// Resolve the auth token; exchange API key JWT for login JWT if needed
 	authToken, err := s.resolveAuthToken(ctx)
 	if err != nil {
 		return nil, err

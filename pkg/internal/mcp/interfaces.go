@@ -44,7 +44,7 @@ type WebsitesWizardState interface {
 
 // SetupWizardState is the interface for the setup wizard state object.
 // Setup wizard steps access services through SetupWizardDeps, not through
-// the state — the state only carries wizard-domain data.
+// the state: the state only carries wizard-domain data.
 type SetupWizardState interface {
 }
 

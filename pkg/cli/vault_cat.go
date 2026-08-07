@@ -13,8 +13,10 @@ func newVaultCatCommand() *cli.Command {
 		Name:      "cat",
 		Usage:     "Stream file content to stdout",
 		ArgsUsage: vaultArgsUsageFile,
-		Description: `Streams file content directly to stdout.
-Progress and metadata go to stderr.`,
+		Description: `Stream a vault file's raw content directly to stdout.
+
+Progress and metadata go to stderr, so the stdout stream is the file bytes alone.
+Does NOT return file metadata or directory listings: use vault stat for metadata, vault ls for listings.`,
 		Action: func(ctx context.Context, c *cli.Command) error {
 			vaultPath := c.Args().First()
 			if vaultPath == "" {
@@ -34,7 +36,7 @@ Progress and metadata go to stderr.`,
 			ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetUploadTimeout())
 			defer cancel()
 
-			// Stream directly to stdout — data goes to stdout, progress to stderr
+			// Stream directly to stdout: data goes to stdout, progress to stderr
 			if err := svc.Cat(ctx, vaultPath, os.Stdout); err != nil {
 				return err
 			}

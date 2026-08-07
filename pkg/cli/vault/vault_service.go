@@ -121,7 +121,7 @@ func NewVaultServiceForProfile(profileName string, indexerURL string) (VaultServ
 	// Open the cache WITHOUT running goose migrations or constructing the Sia
 	// SDK. Migrations are applied at schema-maintenance boundaries
 	// (create/restore/cache rebuild). The SDK is built lazily on first use
-	// because building it hits the network (CheckAppAuth + refreshHosts) — a
+	// because building it hits the network (CheckAppAuth + refreshHosts); a
 	// local-cache-only `ls`/`stat`/`cat` should not pay a multi-second network
 	// round-trip.
 	db, err := OpenDBNoMigrate(ProfileDBPath(profileName))
@@ -150,7 +150,7 @@ func (s *vaultService) CheckReady(ctx context.Context) error {
 		return fmt.Errorf("failed to check account status: %w", err)
 	}
 	if !account.Ready {
-		return fmt.Errorf("account is not ready yet — the indexer is still propagating registration on the network; try again in a few seconds")
+		return fmt.Errorf("account is not ready yet: the indexer is still propagating registration on the network; try again in a few seconds")
 	}
 	return nil
 }
@@ -193,7 +193,7 @@ func (s *vaultService) Put(ctx context.Context, r io.Reader, size int64, vaultPa
 		fileID = current.UUID
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		// A real failure (not a missing row) must not be masked as a brand-new
-		// file — doing so would mint a fresh UUID and break the stable-identity
+		// file; doing so would mint a fresh UUID and break the stable-identity
 		// overwrite contract (and could duplicate the object on the next sync).
 		return nil, fmt.Errorf("failed to resolve current file for %s: %w", vp.Name, err)
 	}
@@ -249,7 +249,7 @@ func (s *vaultService) Put(ctx context.Context, r io.Reader, size int64, vaultPa
 	objectKey := obj.ID()
 
 	// Store in local DB, keyed by UUID, and promote this file as the single
-	// winner for its (name, dir) path — atomically. Overwriting an existing
+	// winner for its (name, dir) path, atomically. Overwriting an existing
 	// path keeps its UUID (same logical file, new content); a brand-new path
 	// gets a fresh UUID. The DB write and the is_current promotion happen in
 	// one transaction so the partial unique index idx_files_live_name_dir
@@ -293,7 +293,7 @@ func (s *vaultService) Put(ctx context.Context, r io.Reader, size int64, vaultPa
 	// concurrent writer claimed the path after we minted our UUID, we are the
 	// loser: adopt the winner's UUID and re-stamp + re-pin the object with it
 	// here, before any write transaction opens. Re-pinning first guarantees the
-	// remote object and the committed row share the adopted identity — a re-pin
+	// remote object and the committed row share the adopted identity; a re-pin
 	// failure returns before anything is committed, so Sync can never mint a
 	// duplicate from stale-metadata (this is the invariant the original
 	// in-transaction re-pin enforced, now without holding the connection).
@@ -472,7 +472,7 @@ func (s *vaultService) List(ctx context.Context, vaultPath string) ([]ListItem, 
 	var dirs []Directory
 	likePattern := escapeLike(prefix) + "%"
 	// Direct children only, filtered in SQL: the path must start with the
-	// prefix (LIKE) and, after the prefix, contain no further '/' — i.e. it is
+	// prefix (LIKE) and, after the prefix, contain no further '/'; i.e. it is
 	// a single-level child, not a deeper descendant. This keeps memory bounded
 	// to the immediate children instead of loading the entire subtree on every
 	// listing and pruning it in Go.
@@ -592,7 +592,7 @@ func (s *vaultService) Cat(ctx context.Context, vaultPath string, w io.Writer) e
 }
 
 // Verify checks content integrity: object existence on the indexer and a
-// digest match. It is deliberately SHALLOW — it compares the stored digest in
+// digest match. It is deliberately SHALLOW: it compares the stored digest in
 // the object's metadata against the local row's ContentDigest WITHOUT
 // downloading the full file content, so it is cheap even for large encrypted
 // files. Use VerifyDeep for a true full-content re-hash.
@@ -722,7 +722,7 @@ func (s *vaultService) Remove(ctx context.Context, vaultPath string) error {
 	// once. Doing the COUNT after the tombstone within the same transaction
 	// closes the check-then-act race: if two concurrent Removes of sibling paths
 	// share one object, the transaction serializes them so the last remover sees
-	// zero remaining live references and deletes — the object cannot be orphaned
+	// zero remaining live references and deletes; the object cannot be orphaned
 	// by both remover reading shared>0 and skipping the delete.
 	now := time.Now().UTC()
 	deleteObject := false
@@ -738,7 +738,7 @@ func (s *vaultService) Remove(ctx context.Context, vaultPath string) error {
 		// Re-count LIVE references (tombstoned rows no longer reference the
 		// object). Our own row is now tombstoned, so this reflects the true
 		// post-remove state and includes any row another concurrent Remove is
-		// about to tombstone — only the final remover sees zero.
+		// about to tombstone; only the final remover sees zero.
 		var shared int64
 		if err := tx.Model(&File{}).
 			Where("object_key = ? AND deleted_at IS NULL", record.ObjectKey).
@@ -760,7 +760,7 @@ func (s *vaultService) Remove(ctx context.Context, vaultPath string) error {
 	// leaks an orphaned content-addressed object (reclaimable later). Returning
 	// an error here would make `vault rm` report total failure after partial
 	// success, and a retry would then hit "file not found" because the record
-	// is already gone — misleading the caller. Treat it as best-effort.
+	// is already gone; misleading the caller. Treat it as best-effort.
 	if deleteObject {
 		// Reclaiming the orphaned object requires the indexer, so build the SDK
 		// only on this path (lazily). A remove that leaves other references
@@ -963,7 +963,7 @@ func (s *vaultService) getDirectoryID(path string) (*uint, error) {
 }
 
 // upsertFromMeta applies a synced object's metadata to an existing row (update
-// in place, including renames — same UUID row, new name — and resurrection of a
+// in place, including renames (same UUID row, new name) and resurrection of a
 // previously-tombstoned object that re-appears). Marked current; the caller
 // promotes it as the (name, dir) winner.
 func upsertFromMeta(tx *gorm.DB, existing *File, meta FileMetadata, objectKey string, updatedAt time.Time, dirID *uint) error {
@@ -1048,7 +1048,7 @@ func (s *vaultService) resolveFile(vp *VaultPath) (File, error) {
 // (SetMaxOpenConns(1)) holds an open write transaction. It also preserves the
 // no-divergence invariant the original in-transaction re-pin enforced: the
 // re-pin happens BEFORE any row is committed, so if it fails we return and
-// nothing is persisted — Sync can never mint a duplicate from stale-metadata.
+// nothing is persisted; Sync can never mint a duplicate from stale-metadata.
 //
 // rec is updated in place to the adopted identity so the caller's subsequent
 // transaction targets the winner's row (overwrite path) instead of re-creating
@@ -1061,7 +1061,7 @@ func (s *vaultService) adoptPreflight(ctx context.Context, obj *siastorage.Objec
 	current, err := s.findCurrentFile(name, dirID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			// No concurrent winner yet — nothing to adopt.
+			// No concurrent winner yet; nothing to adopt.
 			return false, nil
 		}
 		return false, fmt.Errorf("resolve current file for adoption: %w", err)

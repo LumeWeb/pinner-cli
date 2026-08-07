@@ -42,7 +42,7 @@ func TestDomainWizard_FullSession(t *testing.T) {
 	require.Equal(t, "domain_auth_check", resp.CurrentStep)
 	require.NotNil(t, resp.NextStepSchema)
 
-	// Step 1: auth_check — empty input is fine.
+	// Step 1: auth_check: empty input is fine.
 	err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
 	require.NoError(t, err)
 	assert.Equal(t, "domain_website", sess.FSM.Current())
@@ -74,7 +74,7 @@ func TestDomainWizard_FullSession(t *testing.T) {
 	assert.NotNil(t, w.Result())
 	assert.Equal(t, "mydomain.com", w.Result().Domain)
 
-	// Step 6: delegation setup — informational.
+	// Step 6: delegation setup: informational.
 	err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
 	require.NoError(t, err)
 	assert.Equal(t, "domain_verify", sess.FSM.Current())

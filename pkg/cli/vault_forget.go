@@ -19,7 +19,7 @@ pending recovery seed) are deleted. This is destructive and irreversible: the
 on-disk credential for accessing the vault is gone, so you will need the
 recovery seed restored from another device to access the vault again.
 
-Remote vault data on Sia is not deleted — only this device's access is
+Remote vault data on Sia is not deleted; only this device's access is
 revoked. Use --profile <name> to choose the profile to forget; it is required
 so a profile is never forgotten by accident.`,
 		Action: func(ctx context.Context, c *cli.Command) error {

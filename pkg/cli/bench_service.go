@@ -196,7 +196,7 @@ func (s *BenchServiceDefault) Run(ctx context.Context, opts BenchOptions) (*Benc
 			ContinueOn: true,
 		}
 
-		// Retry unpin — the pin may take a moment to propagate to the
+		// Retry unpin; the pin may take a moment to propagate to the
 		// pinning API after the operation completes.
 		var batchResult *BatchResult
 		err := retry.Do(func() error {
@@ -748,7 +748,7 @@ func formatBenchResult(output Output, result *BenchResult) {
 	}
 	output.PrintFields(FieldGroup{Title: "Summary", Fields: summaryFields, PadTop: 1})
 
-	// Stage breakdown table — only for multi-iteration runs where aggregates are meaningful
+	// Stage breakdown table: only for multi-iteration runs where aggregates are meaningful
 	if multiIter && len(result.Summary.Stages) > 0 {
 		headers := []string{"Stage", "Avg", "Min", "Max", "Median"}
 		var rows [][]string

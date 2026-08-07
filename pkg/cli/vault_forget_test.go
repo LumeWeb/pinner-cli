@@ -12,7 +12,7 @@ import (
 )
 
 // TestVaultForget_RequiresProfile verifies forget fails loudly when no explicit
-// --profile is given, even with exactly one profile configured — it must never
+// --profile is given, even with exactly one profile configured; it must never
 // auto-delete.
 func TestVaultForget_RequiresProfile(t *testing.T) {
 	home, err := os.MkdirTemp("", "vault-forget-noprofile")
@@ -102,7 +102,7 @@ func TestVaultForget_EndToEnd(t *testing.T) {
 	if _, ok := reg.Profiles["personal"]; !ok {
 		t.Fatalf("profile 'personal' should be untouched")
 	}
-	// Default pointed at 'work' — must have been cleared.
+	// Default pointed at 'work'; must have been cleared.
 	if reg.Default != "" {
 		t.Fatalf("Default = %q after forgetting default, want empty", reg.Default)
 	}

@@ -88,7 +88,7 @@ func TestMCPCommandServer_OutputNotLeaked_WithStaleCommandContext(t *testing.T) 
 
 	// Step 3: Call the catalog handler directly with the captured context.
 	// This simulates what happens when invoke_tool dispatches to the tool's
-	// handler — the ctx comes from Listen(ctx, ...), which is the Action's
+	// handler: the ctx comes from Listen(ctx, ...), which is the Action's
 	// context containing the stale commandContextKey.
 	entry, ok := catalog.Get("pinner_auth_status")
 	require.True(t, ok, "tool should be in catalog")

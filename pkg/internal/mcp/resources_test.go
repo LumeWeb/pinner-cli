@@ -491,7 +491,7 @@ func TestResources_WizardState_Expired(t *testing.T) {
 	// Need a custom create that sets ExpiryAt in the past. SessionStore.Create
 	// sets ExpiresAt = now + ttl. With ttl=0, now.After(ExpiresAt) is true
 	// only after time advances. Use a tiny TTL and rely on Get checking
-	// time.Now().After(s.ExpiresAt) — with ttl=0, ExpiresAt == now, so
+	// time.Now().After(s.ExpiresAt): with ttl=0, ExpiresAt == now, so
 	// time.Now().After(now) is false at the exact instant. Instead, recreate
 	// with a negative-TTL store via NewSessionStoreWithTTL(-1). But that's
 	// odd. The cleaner approach: create with normal store, then overwrite
@@ -533,7 +533,7 @@ func TestResources_ResourceTemplatesListed(t *testing.T) {
 	}
 	c := buildServerWithResources(t, provs)
 
-	// List resource templates — should include our three templates.
+	// List resource templates: should include our three templates.
 	result, err := c.ListResourceTemplates(t.Context(), mcp.ListResourceTemplatesRequest{})
 	require.NoError(t, err)
 
@@ -550,7 +550,7 @@ func TestResources_ResourceTemplatesListed(t *testing.T) {
 func TestResources_NoProviders_OmitsResourceCapability(t *testing.T) {
 	t.Parallel()
 
-	// No resource providers — should not enable resources capability.
+	// No resource providers: should not enable resources capability.
 	root := &cli.Command{
 		Name:    "test",
 		Version: "1.0.0",

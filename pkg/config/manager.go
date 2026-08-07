@@ -54,7 +54,7 @@ func resolveDefaultConfigPath() string {
 	if err != nil || dir == "" {
 		home, herr := os.UserHomeDir()
 		if herr != nil || home == "" {
-			// No home/config dir resolvable — return empty so callers can
+			// No home/config dir resolvable; return empty so callers can
 			// fail fast instead of silently using a CWD-relative path.
 			return ""
 		}

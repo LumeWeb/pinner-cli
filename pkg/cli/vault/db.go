@@ -24,7 +24,7 @@ const gooseVersionTable = "goose_vault_version"
 // Migrations are a schema-maintenance operation, so OpenDB is only used at the
 // boundaries that (re)create or upgrade the schema: create, restore, and cache
 // rebuild. Ordinary commands open the cache without migrating via
-// OpenDBNoMigrate — running goose's version check on every `ls`/`stat`/`cat`
+// OpenDBNoMigrate; running goose's version check on every `ls`/`stat`/`cat`
 // is unnecessary work on a read-only hot path.
 func OpenDB(dbPath string) (*gorm.DB, error) {
 	return openDB(dbPath, true)
@@ -62,7 +62,7 @@ func openDB(dbPath string, applyMigrations bool) (*gorm.DB, error) {
 	// Restrict the SQLite file to 0600, matching every other sensitive vault
 	// file (state.json, vaults.yaml, recovery.seed). SQLite would otherwise
 	// create the file with the OS-default umask (e.g. 0644 on umask 022),
-	// leaking plaintext vault metadata — file names, sizes, media types — to
+	// leaking plaintext vault metadata (file names, sizes, media types) to
 	// other local users.
 	if err := restrictFilePermissions(dbPath); err != nil {
 		return nil, fmt.Errorf("failed to restrict vault database permissions: %w", err)
@@ -72,7 +72,7 @@ func openDB(dbPath string, applyMigrations bool) (*gorm.DB, error) {
 	// configuration for a single-user local SQLite vault: it guarantees our
 	// write-transactions (Put, Sync) never contend with each other, so the
 	// "database is locked" race two concurrent writers could otherwise hit is
-	// impossible — the partial-unique-index enforcement in Put can rely on that.
+	// impossible; the partial-unique-index enforcement in Put can rely on that.
 	sqlDB, err := db.DB()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get sql.DB handle: %w", err)
@@ -95,7 +95,7 @@ func openDB(dbPath string, applyMigrations bool) (*gorm.DB, error) {
 // goose's API mutates package-global state: SetBaseFS, SetTableName,
 // SetDialect, and Up all read/write a single shared baseFS/dialect underneath
 // (github.com/pressly/goose/v3 keeps these as package-level vars). Two migrate
-// calls therefore race when run concurrently — e.g. one goroutine's deferred
+// calls therefore race when run concurrently; e.g. one goroutine's deferred
 // SetBaseFS(nil) clearing the FS while another's Up is mid-migration. That is a
 // genuine bug if two profiles ever migrate at once, and the race detector
 // catches it when parallel tests each open+migrate their own DB. Serialize the

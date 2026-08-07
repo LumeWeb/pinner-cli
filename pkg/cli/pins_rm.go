@@ -19,7 +19,9 @@ Examples:
   pinner pins rm --file cids.txt --force
   pinner pins rm bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --dry-run
   pinner pins rm --all --force
-  pinner pins rm --all --status failed --force`,
+  pinner pins rm --all --status failed --force
+
+Destructive: permanently removes pins. Shortcut is 'unpin'. To remove one specific pin, prefer 'pins rm <cid> --force'.`,
 		ArgsUsage: "<cid...>",
 		Flags: []cli.Flag{
 			ForceFlag(),

@@ -35,7 +35,9 @@ Examples:
   pinner ipns keys delete my-key
   pinner ipns publish bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --key-name my-key
   pinner ipns republish my-key
-  pinner ipns resolve k51qzi5uqu5djx...`,
+  pinner ipns resolve k51qzi5uqu5djx...
+
+This works on raw IPNS keys. To point an entire hosted *website* at an IPNS key (and have Pinner manage it), use 'websites enable-ipns' instead.`,
 		Commands: []*cli.Command{
 			newIPNSKeysCommand(),
 			newIPNSPublishCommand(),
@@ -49,16 +51,15 @@ func newIPNSKeysCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "keys",
 		Usage: "Manage IPNS keys",
-		Description: `Manage your IPNS keys. Keys are used to publish content under stable
-IPNS names that you can update to point to new CIDs.
-
-Key names and numeric IDs are interchangeable.
+		Description: `Manage your IPNS keys (create, list, get, delete). Keys are named identities you publish CIDs to, so the IPNS name re-points to new content. Key names and numeric IDs are interchangeable.
 
 Examples:
   pinner ipns keys list
   pinner ipns keys create my-key
   pinner ipns keys get my-key
-  pinner ipns keys delete my-key`,
+  pinner ipns keys delete my-key
+
+This manages the keys themselves. To actually point a key at a CID use 'ipns publish'; to refresh its on-network record use 'ipns republish'.`,
 		Commands: []*cli.Command{
 			newIPNSKeysListCommand(),
 			newIPNSKeysCreateCommand(),
@@ -93,7 +94,9 @@ publish content under a stable IPNS name.
 Examples:
   pinner ipns keys create my-key
   pinner ipns keys create my-key --key <private-key>
-  pinner ipns keys create my-key --json`,
+  pinner ipns keys create my-key --json
+
+Does NOT publish content (use 'ipns publish' after creating). --key is sensitive private-key material; handle it securely and do not share it.`,
 		ArgsUsage: "<name>",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
@@ -111,7 +114,7 @@ func newIPNSKeysGetCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "get",
 		Usage: "Get details of a specific IPNS key",
-		Description: `Get details of a specific IPNS key by its name or ID.
+		Description: `Get details of one IPNS key by its name or numeric ID. Returns the key's ID, name, IPNS name, peer ID, and the CID it currently points to. Read-only: does not modify the key.
 
 Examples:
   pinner ipns keys get my-key
@@ -128,7 +131,9 @@ func newIPNSKeysDeleteCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "delete",
 		Usage: "Delete an IPNS key",
-		Description: `Delete an IPNS key by its name or ID. This operation is irreversible.
+		Description: `Delete an IPNS key by its name or numeric ID. DESTRUCTIVE and irreversible. The key and the ability to publish or update its IPNS name are gone forever.
+
+Does NOT delete the site that may be using it: if a website targets this key (see 'websites get'), point it elsewhere or recreate the key first. Returns a deletion confirmation.
 
 Examples:
   pinner ipns keys delete my-key
@@ -152,7 +157,9 @@ Specify the key by name or numeric ID.
 Examples:
   pinner ipns publish bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --key-name my-key
   pinner ipns publish bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --key-name my-key --ttl 24h
-  pinner ipns publish bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --key-name 1 --json`,
+  pinner ipns publish bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --key-name 1 --json
+
+Publishing a new CID to the same key is how you update content under a stable name; to refresh without changing the target use 'ipns republish'. This publishes a raw key; to switch a hosted website onto an IPNS key use 'websites enable-ipns'.`,
 		ArgsUsage: "<cid>",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
@@ -186,7 +193,9 @@ Specify the key by name or numeric ID.
 Examples:
   pinner ipns republish my-key
   pinner ipns republish 1
-  pinner ipns republish my-key --json`,
+  pinner ipns republish my-key --json
+
+Use this to keep a published name alive. To change what the name points to, use 'ipns publish' with a new CID instead.`,
 		ArgsUsage: "<key-name-or-id>",
 		Action: withContext(func(ctx context.Context, cc *commandContext) error {
 			return ipnsRepublish(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
@@ -198,8 +207,7 @@ func newIPNSResolveCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "resolve",
 		Usage: "Resolve an IPNS name to its target CID",
-		Description: `Resolve an IPNS name to its target CID. This shows which content
-the IPNS name currently points to.
+		Description: `Resolve an IPNS name (e.g. k51qzi5uqu5djx...) to the CID it currently points to. Returns the resolved target CID. Read-only inspection; it does not publish, republish, or create anything.
 
 Examples:
   pinner ipns resolve k51qzi5uqu5djx...

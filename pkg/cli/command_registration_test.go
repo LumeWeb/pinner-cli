@@ -86,7 +86,7 @@ func TestCommandRegistration_VaultSubcommands(t *testing.T) {
 	for _, expected := range expectedVaultSubs {
 		assert.True(t, nameSet[expected], "vault should have subcommand %q", expected)
 	}
-	// Exact count — no unexpected commands (no login, no logout).
+	// Exact count: no unexpected commands (no login, no logout).
 	assert.Len(t, vaultCmd.Commands, len(expectedVaultSubs),
 		"vault should have exactly %d subcommands, got %d: %v",
 		len(expectedVaultSubs), len(vaultCmd.Commands), names)
@@ -138,7 +138,7 @@ func TestCommandRegistration_RootSubcommands(t *testing.T) {
 		assert.True(t, nameSet[expected], "root should have subcommand %q", expected)
 	}
 
-	// Verify exact count — no unexpected commands
+	// Verify exact count: no unexpected commands
 	assert.Len(t, root.Commands, len(expectedRootSubcommands),
 		"root should have exactly %d subcommands, got %d: %v",
 		len(expectedRootSubcommands), len(root.Commands), names)
@@ -738,7 +738,7 @@ func TestCommandRegistration_AllCommandsHaveUsage(t *testing.T) {
 	root := NewRootCommand()
 
 	walkCommands(root, func(cmd *cli.Command) {
-		// Skip root — it has Usage but we only care about subcommands
+		// Skip root; it has Usage but we only care about subcommands
 		if cmd.Name == "pinner" {
 			return
 		}

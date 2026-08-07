@@ -19,21 +19,9 @@ func newDNSCommand() *cli.Command {
 		Name:     "dns",
 		Category: "Management",
 		Usage:    "Manage DNS zones and records",
-		Description: `Manage DNS zones and records for your domains. DNS hosting allows you to
-control DNS configuration for IPFS-hosted websites.
+		Description: `Manage raw DNS zones and records for your domains (A/AAAA/CNAME/TXT/MX/NS, _dnslink, apex vs subdomain). Zones hold records; create the zone first ('dns zones create'), then manage records in it ('dns records *').
 
-Zone operations:
-  - List all DNS zones
-  - Create a new DNS zone
-  - Get zone details
-  - Delete a DNS zone
-
-Record operations:
-  - List DNS records for a zone
-  - Create DNS records
-  - Get record details
-  - Update DNS records
-  - Delete DNS records
+This is low-level DNS CRUD. For binding a domain to a hosted website and managing ICANN/HNS delegation, use 'websites domains'. For the DNS records a website needs, use 'websites domains dns-requirements' or 'websites validate'.
 
 Examples:
   pinner dns zones list
@@ -56,7 +44,9 @@ func newDNSZonesCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "zones",
 		Usage: "Manage DNS zones",
-		Description: `Manage DNS zones for your domains.
+		Description: `Manage DNS zones, the containers that hold DNS records for a domain. A zone is created once per domain; records live inside it. Includes list, create, get, delete and validate (nameserver-delegation check).
+
+A DNS zone is the low-level record store. This is different from 'websites domains', which binds domains to hosted websites; see that tree for website delegation.
 
 Examples:
   pinner dns zones list
@@ -94,7 +84,9 @@ func newDNSZonesCreateCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "create",
 		Usage: "Create a new DNS zone",
-		Description: `Create a new DNS zone for a domain.
+		Description: `Create a new DNS zone for a domain, the container that holds that domain's DNS records. Requires --domain; optionally supply --nameservers as a comma-separated list. Returns the created zone including its numeric ID and PowerDNS zone ID.
+
+Prefer 'websites create <domain> --dns-hosting' when you want Pinner to manage DNS for a hosted website end-to-end; use this command to create a standalone zone and then add records with 'dns records create'.
 
 Examples:
   pinner dns zones create --domain example.com
@@ -114,7 +106,7 @@ func newDNSZonesGetCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "get",
 		Usage: "Get a DNS zone by domain",
-		Description: `Get details of a specific DNS zone.
+		Description: `Get details of one DNS zone, selected by domain name or numeric zone ID. Returns the zone's ID, domain, status, PowerDNS zone ID and created/updated timestamps. This returns the zone header only; to list the records inside it use 'dns records list'.
 
 Examples:
   pinner dns zones get example.com
@@ -130,7 +122,7 @@ func newDNSZonesDeleteCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "delete",
 		Usage: "Delete a DNS zone",
-		Description: `Delete a DNS zone and all its records.
+		Description: `Delete a DNS zone and the records inside it, selected by domain name or numeric zone ID. DESTRUCTIVE and irreversible: there is no undo, and every record in the zone is removed. Returns a deletion confirmation. Does NOT remove the domain's website binding; use 'websites domains remove' for that.
 
 Examples:
   pinner dns zones delete example.com`,
@@ -150,7 +142,9 @@ This checks that the domain's nameservers point to the expected Pinner.xyz names
 
 Examples:
   pinner dns zones validate example.com
-  pinner dns zones validate example.com --json`,
+  pinner dns zones validate example.com --json
+
+This checks nameserver delegation for a zone. For website-specific DNS records (TXT token / _dnslink) use 'websites validate'; to verify a website's domain binding use 'websites domains verify'.`,
 		ArgsUsage: "<domain>",
 		Action: withContext(func(ctx context.Context, cc *commandContext) error {
 			return dnsZonesValidate(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
@@ -164,14 +158,16 @@ func newDNSRecordsCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "records",
 		Usage: "Manage DNS records",
-		Description: `Manage DNS records for zones.
+		Description: `Manage DNS records (A, AAAA, CNAME, TXT, MX, NS) inside an existing DNS zone. Each record is addressed by the <domain> of its zone plus --name (label, or apex/@) and --type. Includes list, create, get, update and delete.
 
 Examples:
   pinner dns records list example.com
   pinner dns records create example.com --name www --type CNAME --content example.com
   pinner dns records get example.com --name www --type CNAME
   pinner dns records update example.com --name www --type CNAME --content new.example.com
-  pinner dns records delete example.com --name www --type CNAME`,
+  pinner dns records delete example.com --name www --type CNAME
+
+This is low-level record CRUD. To bind or register a domain to a hosted website (delegation, ICANN/HNS namespaces) use 'websites domains add' instead; do NOT use this tree for that. For the records a website needs to publish, see 'websites domains dns-requirements'.`,
 		Commands: []*cli.Command{
 			newDNSRecordsListCommand(),
 			newDNSRecordsCreateCommand(),
@@ -186,7 +182,7 @@ func newDNSRecordsListCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "list",
 		Usage: "List DNS records for a zone",
-		Description: `List all DNS records for a specific zone.
+		Description: `List all DNS records for a zone, given the zone's domain as the positional argument (e.g. example.com). Returns each record's name/type/content/TTL and disabled state. Does not show the zone itself; use 'dns zones get' for that.
 
 Examples:
   pinner dns records list example.com
@@ -227,7 +223,9 @@ Examples:
   pinner dns records create example.com --name 65e1e2471bd2ee6879cba19982316e6b --type CNAME --content verify.bing.com
 
   # DNSLink for IPFS website hosting
-  pinner dns records create example.com --name _dnslink --type TXT --content "/ipfs/bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e" --ttl 3600`,
+  pinner dns records create example.com --name _dnslink --type TXT --content "/ipfs/bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e" --ttl 3600
+
+This adds a raw record into an existing DNS zone; the zone must already exist (use 'dns zones create'). It does NOT bind a domain to a website or set up ICANN/HNS delegation; that is 'websites domains add'. For DNSLink records that point at a website's CID while keeping Pinner-managed DNS, consider 'websites validate' or 'websites domains dns-requirements', which produce the records for you.`,
 		ArgsUsage: "<domain>",
 		Flags: []cli.Flag{
 			OptionalNameFlag("DNS record name (omit for apex, or use @)"),
@@ -246,7 +244,7 @@ func newDNSRecordsGetCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "get",
 		Usage: "Get a DNS record",
-		Description: `Get details of a specific DNS record.
+		Description: `Get one DNS record, uniquely identified by the zone's <domain> positional plus --name (label, or @ for apex) and --type. Returns the record's content, TTL and disabled state. Does not create or modify anything.
 
 Examples:
   pinner dns records get example.com --name www --type CNAME
@@ -266,7 +264,7 @@ func newDNSRecordsUpdateCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "update",
 		Usage: "Update a DNS record",
-		Description: `Update an existing DNS record.
+		Description: `Update an existing DNS record, identified by the zone's <domain> positional + --name and --type. Change its --content, --ttl, or --disabled state; fields not provided are left unchanged. Returns the updated record.
 
 Examples:
   pinner dns records update example.com --name www --type CNAME --content new.example.com
@@ -290,7 +288,7 @@ func newDNSRecordsDeleteCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "delete",
 		Usage: "Delete a DNS record",
-		Description: `Delete a DNS record from a zone.
+		Description: `Delete a DNS record, identified by the zone's <domain> positional + --name and --type. DESTRUCTIVE and irreversible: there is no undo. Returns a deletion confirmation. This deletes one record only; to remove the whole zone use 'dns zones delete', and to unbind a domain from a website use 'websites domains remove'.
 
 Examples:
   pinner dns records delete example.com --name www --type CNAME`,

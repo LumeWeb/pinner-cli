@@ -41,7 +41,7 @@ func assertPrivateTempPerms(t *testing.T, tf *os.File) {
 // createVaultDownloadTemp: the private buffering path (0o600) must always yield
 // a 0600 file (never world-readable, even under a permissive umask, since umask
 // can only strip bits), while the download path (0o666) must be exactly
-// 0o666 &^ umask — i.e. it must honor the umask so the atomically-renamed
+// 0o666 &^ umask; i.e. it must honor the umask so the atomically-renamed
 // destination file keeps whatever group/other permissions the umask permits
 // (typically 0644). This guards against regressing the download path to a fixed
 // 0600, which would silently strip group/other access. The comparison is

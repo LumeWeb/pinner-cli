@@ -41,7 +41,10 @@ func newVaultShareCommand() *cli.Command {
 		Name:      "share",
 		Usage:     "Generate a shareable link for a vault file",
 		ArgsUsage: vaultArgsUsage,
-		Flags:     []cli.Flag{VaultExpiryFlag()},
+		Description: `Generate a shareable download link for a vault file. Returns the share URL and its expiry time.
+
+Control the expiry with --expiry (e.g. 7d, 30d, 1h, or 0 for never). Does NOT upload or modify the file itself.`,
+		Flags: []cli.Flag{VaultExpiryFlag()},
 		Action: func(ctx context.Context, c *cli.Command) error {
 			output := setupOutput(c)
 			vaultPath := c.Args().First()

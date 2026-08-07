@@ -19,22 +19,22 @@ func TestAgentFlagImpliesJSON(t *testing.T) {
 		wantJSON bool
 	}{
 		{
-			name:     "no flags — human output",
+			name:     "no flags: human output",
 			args:     []string{"test"},
 			wantJSON: false,
 		},
 		{
-			name:     "--json — JSON output",
+			name:     "--json: JSON output",
 			args:     []string{"test", "--json"},
 			wantJSON: true,
 		},
 		{
-			name:     "--agent — JSON output (agent implies json)",
+			name:     "--agent: JSON output (agent implies json)",
 			args:     []string{"test", "--agent"},
 			wantJSON: true,
 		},
 		{
-			name:     "--agent and --json — JSON output",
+			name:     "--agent and --json: JSON output",
 			args:     []string{"test", "--agent", "--json"},
 			wantJSON: true,
 		},

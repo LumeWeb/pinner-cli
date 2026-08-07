@@ -16,6 +16,8 @@ func newBillingSubscribersListCommand() *cli.Command {
 		Usage: "List all subscribers",
 		Description: `List all billing subscribers across all gateways.
 
+This lists across all gateways. To scope to one gateway use 'list-gateway'; to one user use 'list-user'.
+
 Examples:
   pinner admin billing subscribers list
   pinner admin billing subscribers list --json`,
@@ -162,6 +164,8 @@ func newBillingSubscribersListGatewayCommand() *cli.Command {
 		Usage: "List subscribers by gateway",
 		Description: `List all subscribers for a specific gateway.
 
+Scoped to one gateway; for all gateways use 'list', for one user use 'list-user'.
+
 Examples:
   pinner admin billing subscribers list-gateway <gateway-id>
   pinner admin billing subscribers list-gateway <gateway-id> --json`,
@@ -232,6 +236,8 @@ func newBillingSubscribersListUserCommand() *cli.Command {
 		Name:  "list-user",
 		Usage: "List subscribers by user",
 		Description: `List all subscriptions for a specific user.
+
+Scoped to one user; for all gateways use 'list', for one gateway use 'list-gateway'.
 
 Examples:
   pinner admin billing subscribers list-user <user-id>
@@ -304,6 +310,8 @@ func newBillingSubscribersCancelCommand() *cli.Command {
 		Usage: "Cancel subscription",
 		Description: `Cancel a user's subscription.
 
+To undo a scheduled (end-of-billing-period) cancellation, use 'abort-cancel' instead.
+
 Examples:
   pinner admin billing subscribers cancel --user-id 123
   pinner admin billing subscribers cancel --user-id 123 --mode immediate
@@ -364,6 +372,8 @@ func newBillingSubscribersAbortCancelCommand() *cli.Command {
 		Usage: "Abort scheduled subscription cancellation",
 		Description: `Abort a scheduled subscription cancellation for a user.
 
+This is the reverse of 'cancel --mode end_of_billing_period'.
+
 Examples:
   pinner admin billing subscribers abort-cancel --user-id 123
   pinner admin billing subscribers abort-cancel --user-id 123 --json`,
@@ -414,8 +424,8 @@ func newBillingSubscribersChangePlanCommand() *cli.Command {
 		Description: `Change a user's subscription plan.
 
 Examples:
-  pinner admin billing subscribers change-plan --user-id 123 --period-id 1
-  pinner admin billing subscribers change-plan --user-id 123 --period-id 1 --json`,
+  pinner admin billing subscribers change-plan --user-id 123 --plan-id 1
+  pinner admin billing subscribers change-plan --user-id 123 --plan-id 1 --json`,
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:     FlagUserID,
@@ -423,8 +433,9 @@ Examples:
 				Required: true,
 			},
 			&cli.IntFlag{
-				Name:     "period-id",
-				Usage:    "New plan period ID",
+				Name:     FlagPlanID,
+				Aliases:  []string{"period-id"},
+				Usage:    "Target pricing plan period ID to move the user to",
 				Required: true,
 			},
 		},
@@ -484,6 +495,8 @@ func newBillingSubscribersPauseCommand() *cli.Command {
 		Usage: "Pause subscription",
 		Description: `Pause a user's subscription.
 
+Inverse pair: use 'resume' to undo a pause. For a full/unplanned end use 'cancel'.
+
 Examples:
   pinner admin billing subscribers pause --user-id 123
   pinner admin billing subscribers pause --user-id 123 --json`,
@@ -532,6 +545,8 @@ func newBillingSubscribersResumeCommand() *cli.Command {
 		Name:  "resume",
 		Usage: "Resume subscription",
 		Description: `Resume a paused subscription for a user.
+
+Inverse of 'pause': resumes a paused subscription.
 
 Examples:
   pinner admin billing subscribers resume --user-id 123

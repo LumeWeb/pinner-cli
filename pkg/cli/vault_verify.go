@@ -12,11 +12,10 @@ func newVaultVerifyCommand() *cli.Command {
 		Name:      "verify",
 		Usage:     "Verify content integrity of a vault file",
 		ArgsUsage: vaultArgsUsageFile,
-		Description: `Checks that the file's content digest matches and the object exists on the indexer.
+		Description: `Check a vault file's integrity: verifies its recorded SHA-256 digest matches and that the object exists on the Sia indexer. Returns an OK/FAIL result with digest and object facts.
 
-Verifies:
-  1. SHA-256 digest is recorded
-  2. Object exists on the Sia indexer`,
+Does NOT stream or return file content: use vault cat for content. For non-integrity metadata, use vault stat.`,
+
 		Action: func(ctx context.Context, c *cli.Command) error {
 			output := setupOutput(c)
 			vaultPath := c.Args().First()

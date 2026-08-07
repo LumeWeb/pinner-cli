@@ -53,7 +53,9 @@ func newWebsitesDomainsListCommand() *cli.Command {
 Examples:
   pinner websites domains list example.com
   pinner websites domains list 123
-  pinner websites domains list example.com --json`,
+  pinner websites domains list example.com --json
+
+Use this to get the domain binding ID accepted by the rm/verify/dns-requirements/dane commands. This lists bindings, NOT DNS records; for records within a zone use 'dns records list'.`,
 		Action: withContext(func(ctx context.Context, cc *commandContext) error {
 			return websitesDomainsList(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
 		}),
@@ -90,7 +92,9 @@ Examples:
   pinner websites domains add staging.example.com
   pinner websites domains add example.com staging.example.com
   pinner websites domains add mydomain --namespace hns
-  pinner websites domains add 123 staging.example.com --json`,
+  pinner websites domains add 123 staging.example.com --json
+
+This attaches/registers the domain to a site (delegation). To instead add a raw DNS record (A/AAAA/CNAME/TXT/_dnslink) inside an already-created DNS zone, use 'dns records create'. For creating the zone itself use 'dns zones create'.`,
 		Action: withContext(func(ctx context.Context, cc *commandContext) error {
 			return websitesDomainsAdd(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
 		}),
@@ -111,7 +115,9 @@ or its numeric binding ID.
 
 Examples:
   pinner websites domains rm staging.example.com
-  pinner websites domains rm 42`,
+  pinner websites domains rm 42
+
+DESTRUCTIVE: unbinds the domain. This removes the binding/delegation, not the DNS zone or its records. To delete a whole zone and its records use 'dns zones delete'; to delete one record use 'dns records delete'.`,
 
 		Action: withContext(func(ctx context.Context, cc *commandContext) error {
 			return websitesDomainsRm(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
@@ -132,7 +138,9 @@ or its numeric binding ID.
 
 Examples:
   pinner websites domains verify staging.example.com
-  pinner websites domains verify 42 --json`,
+  pinner websites domains verify 42 --json
+
+This checks the domain binding/delegation. For website DNS records use 'websites validate'; for DNS-zone nameserver delegation use 'dns zones validate'.`,
 		Action: withContext(func(ctx context.Context, cc *commandContext) error {
 			return websitesDomainsVerify(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
 		}),
@@ -156,7 +164,9 @@ or its numeric binding ID.
 
 Examples:
   pinner websites domains dns-requirements mydomain
-  pinner websites domains dns-requirements 42 --json`,
+  pinner websites domains dns-requirements 42 --json
+
+This reports what you publish externally; it does not create records inside Pinner's DNS, so use 'dns records create' for that. Account gateway/NS values are in 'websites config'.`,
 		Action: withContext(func(ctx context.Context, cc *commandContext) error {
 			return websitesDomainsDNSRequirements(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
 		}),
@@ -168,7 +178,7 @@ Examples:
 //
 // The website may be supplied via the --website flag or the first positional
 // argument. When neither is given and the user supplies only a single <domain>,
-// the website is auto-selected — but only when there is exactly one website;
+// the website is auto-selected, but only when there is exactly one website;
 // with multiple websites an error asks the caller to name the target.
 func resolveAddTarget(ctx context.Context, websitesService WebsitesService, cmd websitesCommandGetter) (websiteID string, domain string, err error) {
 	args := cmd.Args()
@@ -294,8 +304,7 @@ func resolveDomainID(ctx context.Context, websitesService WebsitesService, websi
 		return "", fmt.Errorf("failed to look up domain: %w", err)
 	}
 
-	// Match by name first (case-insensitive and tolerant of a trailing
-	// dot — DNS names are case-insensitive and bare/FQDN forms are equal).
+	// Match by name first (case-insensitive, tolerant of a trailing dot).
 	for _, d := range domains {
 		if dnsname.Equal(d.Domain, domainArg) {
 			return strconv.Itoa(d.Id), nil
@@ -596,8 +605,9 @@ func renderDomainDelegation(output Output, result *ipfs.DomainResponse, managed 
 
 func newWebsitesDomainsDANERepublishCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "dane",
-		Usage: "Manage a domain's DANE records",
+		Name:        "dane",
+		Usage:       "Manage a domain's DANE TLSA records",
+		Description: `Manage DANE (DNS-based Authentication of Named Entities) records for a bound domain. Currently exposes 'republish', which forces re-publication of the domain's _443._tcp TLSA record into the managed zone; used to recover a missing or deleted TLSA that certificate renewal did not re-publish.`,
 		Commands: []*cli.Command{
 			newWebsitesDomainsDANERepublishTLSACommand(),
 		},
@@ -620,7 +630,9 @@ or its numeric binding ID.
 
 Examples:
   pinner websites domains dane republish staging.example.com
-  pinner websites domains dane republish 42 --json`,
+  pinner websites domains dane republish 42 --json
+
+Returns the republished record's status and TLSA value.`,
 		Action: withContext(func(ctx context.Context, cc *commandContext) error {
 			return websitesDomainsDANERepublish(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
 		}),

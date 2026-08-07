@@ -122,7 +122,7 @@ func newCommandContext(c *cli.Command) (*commandContext, error) {
 }
 
 // withContext wraps a handler that takes *commandContext into a cli.ActionFunc.
-// This is the DRY mechanism for Action closures — replaces 5-line boilerplate with 2-3 lines.
+// This is the DRY mechanism for Action closures; replaces 5-line boilerplate with 2-3 lines.
 func withContext(handler func(ctx context.Context, cc *commandContext) error) cli.ActionFunc {
 	return func(ctx context.Context, c *cli.Command) error {
 		cc, err := newCommandContext(c)

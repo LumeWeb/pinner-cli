@@ -11,7 +11,7 @@ import (
 // *siastorage.Builder for the entire Request -> WaitForApproval -> Register
 // sequence. The SDK stores the pending request, ephemeral key, and approval
 // status on the Builder instance itself, so Request and Wait/Register MUST run
-// on the same builder — spawning a fresh builder for the wait (as the previous
+// on the same builder; spawning a fresh builder for the wait (as the previous
 // split helpers did) left registerResp nil and WaitForApproval failed with
 // "no connection request", orphaning the browser approval.
 type Connection struct {

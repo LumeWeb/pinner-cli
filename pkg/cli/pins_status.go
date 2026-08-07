@@ -16,7 +16,9 @@ If the pin is not found, account operations are checked as a fallback.
 Examples:
   pinner pins status bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e
   pinner pins status bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --watch
-  pinner pins status bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --json`,
+  pinner pins status bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --json
+
+The canonical form; 'status' is its shortcut. Does NOT download or stream content ('download'/'cat') and does NOT report your login ('auth status').`,
 		ArgsUsage: "<cid>",
 		Flags: []cli.Flag{
 			&cli.BoolFlag{

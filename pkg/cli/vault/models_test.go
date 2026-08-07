@@ -58,7 +58,7 @@ func TestOpenDB(t *testing.T) {
 
 	// DUplicate/current-live row: identity is the UUID, but at most one
 	// current LIVE row per (name, dir) exists (enforced by idx_files_live_name_dir).
-	// Inserting a second current row for the same path must FAIL — this is the
+	// Inserting a second current row for the same path must FAIL: this is the
 	// atomic writer guarantee against concurrent Puts.
 	dupCurrent := File{
 		UUID:          "uuid-2",
@@ -88,7 +88,7 @@ func TestOpenDB(t *testing.T) {
 		t.Fatalf("expected a non-current historical row with same name to succeed: %v", err)
 	}
 
-	// A duplicate UUID (same identity) must FAIL — it is the true key.
+	// A duplicate UUID (same identity) must FAIL: it is the true key.
 	dupUUID := File{
 		UUID:          "uuid-1",
 		Name:          "other.pdf",
@@ -139,7 +139,7 @@ func TestOpenDB(t *testing.T) {
 // TestOpenDB_RestrictsFilePermissions regression: the SQLite cache file holds
 // plaintext vault metadata (file names, sizes, media types), so it must be
 // created with strict 0600 permissions like every other sensitive vault file
-// (state.json, vaults.yaml, recovery.seed) — not OS-default umask (e.g. 0644 on
+// (state.json, vaults.yaml, recovery.seed); not OS-default umask (e.g. 0644 on
 // umask 022), which would leak to other local users.
 func TestOpenDB_RestrictsFilePermissions(t *testing.T) {
 	tmpDir := t.TempDir()

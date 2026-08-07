@@ -432,7 +432,7 @@ func TestSessionStore_MaxSessions_EvictsExpired(t *testing.T) {
 	// Wait for s1 to expire.
 	time.Sleep(100 * time.Millisecond)
 
-	// s2 is also expired — touch it to keep it alive.
+	// s2 is also expired: touch it to keep it alive.
 	s2.Touch(50 * time.Millisecond)
 
 	// New session should evict expired s1 and succeed.

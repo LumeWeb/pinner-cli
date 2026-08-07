@@ -13,7 +13,7 @@ import (
 )
 
 // isLiveNameConflict reports whether err is the SQLite unique-constraint
-// violation fired by idx_files_live_name_dir — the partial unique index that
+// violation fired by idx_files_live_name_dir: the partial unique index that
 // atomically allows at most one LIVE file per (name, directory). Put uses this
 // to detect that a concurrent writer won a path and to re-resolve rather than
 // insert a duplicate live row.
@@ -47,7 +47,7 @@ func isDirNameConflict(err error) bool {
 // (the cursor still advances past them); they are re-healed by a later sync
 // re-tick once the uploading device finishes stamping metadata, because the
 // store is an idempotent upsert keyed by the per-file UUID. It deliberately
-// does NOT stall or retry skips — the engine relies on periodic re-runs.
+// does NOT stall or retry skips; the engine relies on periodic re-runs.
 func (s *vaultService) Sync(ctx context.Context) (applied int, full bool, err error) {
 	// Load cursor
 	var cursorRecord SyncDownCursor
@@ -95,7 +95,7 @@ func (s *vaultService) Sync(ctx context.Context) (applied int, full bool, err er
 			//
 			// An object-key delete means the content-addressed object no longer
 			// exists remotely, so EVERY live current alias referencing it is
-			// gone — tombstone them all. Historical versions (is_current=0) and
+			// gone; tombstone them all. Historical versions (is_current=0) and
 			// already-tombstoned rows are preserved. When the delete event
 			// carries file metadata with a per-file UUID, disambiguate to that
 			// exact row first so a shared (deduplicated) key clears only the
@@ -130,7 +130,7 @@ func (s *vaultService) Sync(ctx context.Context) (applied int, full bool, err er
 			continue
 		}
 		if ev.Object == nil {
-			// No object and not a deletion — nothing to record. The cursor
+			// No object and not a deletion; nothing to record. The cursor
 			// advances past it.
 			continue
 		}
@@ -177,7 +177,7 @@ func (s *vaultService) Sync(ctx context.Context) (applied int, full bool, err er
 			var existing File
 			result := tx.Where("uuid = ?", fileID).First(&existing)
 			if result.Error == gorm.ErrRecordNotFound {
-				// New object not yet tracked — create its own row keyed by UUID,
+				// New object not yet tracked; create its own row keyed by UUID,
 				// placed at root for MVP. It starts non-current so a second
 				// distinct object with the same name is a separate (historical)
 				// row that coexists without violating idx_files_live_name_dir;

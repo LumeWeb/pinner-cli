@@ -46,7 +46,7 @@ subcommands as MCP tools. An MCP client (e.g. an AI agent) can discover
 available tools, their flags, and invoke them.
 
 Tool invocations are executed in-process by running the command tree
-directly — no subprocess fork. Commands are exposed faithfully —
+directly; no subprocess fork. Commands are exposed faithfully;
 agent-friendly behavior is the responsibility of each command, not this
 adapter.`,
 		Action: func(ctx context.Context, _ *cli.Command) error {
@@ -111,7 +111,7 @@ type WizardDepsFactory func() (WebsitesWizardDeps, SetupWizardDeps, DomainWizard
 // populates a ToolCatalog with all commands (instead of registering them
 // directly on the server), and applies the given options.
 //
-// The returned catalog is empty of wizard tools — the caller should add
+// The returned catalog is empty of wizard tools: the caller should add
 // wizard tools via RegisterWizardTools before calling RegisterMetaTools.
 func MCPServerWithOpts(root *cli.Command, hasRootAction bool, prefix []string, opts ...MCPServerOption) (*server.MCPServer, *ToolCatalog, error) {
 	srv, catalog, err := MCPServer(root, hasRootAction, prefix...)
@@ -160,7 +160,7 @@ func MCPServer(root *cli.Command, hasRootAction bool, prefix ...string) (*server
 		}
 
 		// Force agent mode for all MCP tool invocations: structured JSON output,
-		// no ANSI colors, no interactive prompts. This is unconditional — every
+		// no ANSI colors, no interactive prompts. This is unconditional: every
 		// command invoked through MCP must run in agent mode.
 		if !slices.Contains(args, "--agent") {
 			args = append(args, "--agent")
@@ -199,7 +199,7 @@ func MCPServer(root *cli.Command, hasRootAction bool, prefix ...string) (*server
 					args = append(args, k, strconv.FormatFloat(v, 'f', -1, 64))
 				}
 			case nil:
-				// null means "not provided" — skip
+				// null means "not provided": skip
 			default:
 				return nil, fmt.Errorf("unsupported argument type for %q: %T", key, val)
 			}
@@ -235,7 +235,7 @@ func MCPServer(root *cli.Command, hasRootAction bool, prefix ...string) (*server
 		// The outer root.Run() (from "pinner mcp") stores the original root
 		// command in the context via an unexported commandContextKey. If we
 		// pass that context through to rootCopy.Run(), urfave/cli v3 sets
-		// rootCopy.parent to the original root — making Root() resolve to
+		// rootCopy.parent to the original root: making Root() resolve to
 		// the original root (whose Writer is os.Stdout) instead of rootCopy
 		// (whose Writer is our buffer). This causes command output to leak
 		// to the real stdout, corrupting the MCP JSON-RPC stream.
@@ -270,7 +270,7 @@ func MCPServer(root *cli.Command, hasRootAction bool, prefix ...string) (*server
 	}
 
 	// Populate the catalog from the command tree. All commands are stored
-	// internally — they are NOT registered on the MCP server. The meta-tools
+	// internally: they are NOT registered on the MCP server. The meta-tools
 	// (search_tools, describe_tool, invoke_tool) provide the discovery and
 	// invocation interface.
 	if err := catalog.RegisterFromCommand(root, hasRootAction, prefix, toolHandler); err != nil {
@@ -291,11 +291,11 @@ func MCPServer(root *cli.Command, hasRootAction bool, prefix ...string) (*server
 // invoking, and understand how _args works for positional CLI arguments.
 const mcpInstructions = `This server uses progressive disclosure. The tools/list response only shows 3 meta-tools. To use a tool:
 
-1. search_tools({ "query": "..." }) — Find tools by keyword. Returns name, description, and category.
-2. describe_tool({ "name": "..." }) — Get the full input schema for a tool, including required parameters.
-3. invoke_tool({ "name": "...", "arguments": { ... } }) — Execute a tool.
+1. search_tools({ "query": "..." }): Find tools by keyword. Returns name, description, and category.
+2. describe_tool({ "name": "..." }): Get the full input schema for a tool, including required parameters.
+3. invoke_tool({ "name": "...", "arguments": { ... } }): Execute a tool.
 
-Always search first — do not guess tool names. The catalog has 60+ tools across core, admin, and wizard categories.
+Always search first: do not guess tool names. The catalog has 60+ tools across core, admin, and wizard categories.
 
 Some tools accept "_args" (an array of positional strings) in their arguments. Check describe_tool output for the _args property and its description to see what positional values are expected.`
 

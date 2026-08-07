@@ -430,7 +430,7 @@ func TestDomainWizardPTermExecuteVerifyStep(t *testing.T) {
 		cfgMgr.EXPECT().Config().Return(cfg).Maybe()
 
 		// BindDomain returns a valid "active" status, but VerifyDomain returns
-		// (nil, nil) — a stale bind status must NOT be treated as verified.
+		// (nil, nil); a stale bind status must NOT be treated as verified.
 		active := "active"
 		mockWebsitesSvc := &mockWebsitesServiceForCLI{
 			BindDomainFn: func(_ context.Context, _ string, _ ipfs.DomainRequest) (*ipfs.DomainResponse, error) {

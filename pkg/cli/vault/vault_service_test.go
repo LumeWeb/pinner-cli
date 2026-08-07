@@ -236,7 +236,7 @@ func TestStat_BareDirectoryPath(t *testing.T) {
 
 // TestSync_UpdatesMetadataFields verifies Sync's update branch copies Name, Size,
 // MediaType,
-// and ContentDigest from the fresh fileMeta — not just UpdatedAt. Otherwise
+// and ContentDigest from the fresh fileMeta, not just UpdatedAt. Otherwise
 // Stat/Verify/List return stale metadata after a remote modification.
 // This test exercises the real DB update path that sync.go uses.
 func TestSync_UpdatesMetadataFields(t *testing.T) {
@@ -493,7 +493,7 @@ func TestList_FilePath_ResolvesParent(t *testing.T) {
 	db.Create(&File{UUID: "u-doc", Name: "report.pdf", DirectoryID: dirID, IsCurrent: true, ObjectKey: dk, Size: 2, ContentDigest: "d", CreatedAt: now, UpdatedAt: now})
 	db.Create(&File{UUID: "u-root", Name: "root.txt", DirectoryID: nil, IsCurrent: true, ObjectKey: rk, Size: 1, ContentDigest: "r", CreatedAt: now, UpdatedAt: now})
 
-	// List a concrete file path — must resolve to its PARENT (/docs).
+	// List a concrete file path; must resolve to its PARENT (/docs).
 	items, err := svc.List(ctx, "vault:/docs/report.pdf")
 	if err != nil {
 		t.Fatalf("List(file path) failed: %v", err)
@@ -517,7 +517,7 @@ func TestList_FilePath_ResolvesParent(t *testing.T) {
 
 // TestSync_PersistsSameNameObjects verifies Sync records BOTH distinct objects
 // that share a name at root. Identity is the UUID, not the name, so a second
-// object with the same name is a separate row — it is never dropped (the
+// object with the same name is a separate row; it is never dropped (the
 // data-loss the old unique (name, dir) index caused).
 func TestSync_PersistsSameNameObjects(t *testing.T) {
 	ctx := context.Background()
@@ -557,7 +557,7 @@ func TestSync_PersistsSameNameObjects(t *testing.T) {
 }
 
 // TestSync_UpdatesRenameOnSameRow verifies a metadata update that renames an
-// object just updates that object's own row (same UUID, new name) — there is
+// object just updates that object's own row (same UUID, new name); there is
 // no unique (name, directory_id) collision to drop or retry, so a rename is a
 // plain row update and both the renamed object and any other same-name object
 // coexist.
@@ -607,7 +607,7 @@ func TestSync_UpdatesRenameOnSameRow(t *testing.T) {
 
 // TestSync_CursorNotAdvancedPastSkipped verifies that the sync cursor is
 // ALWAYS advanced to the LAST event in the batch, exactly like the reference
-// Sia sync-down engine (setSyncDownCursor(lastEvent)) — even when the batch
+// Sia sync-down engine (setSyncDownCursor(lastEvent)); even when the batch
 // ends in a transient skip (a real object with empty metadata). The skip is
 // not dropped; it is simply re-healed on a later re-tick because the store is
 // an idempotent upsert. The valid event is recorded during this batch, and the
@@ -629,7 +629,7 @@ func TestSync_CursorNotAdvancedPastSkipped(t *testing.T) {
 
 	fe := &fakeEvents{fakeSDK: fakeSDK{t: t}}
 	fe.events = []siastorage.ObjectEvent{
-		// A valid object event — this one is recorded.
+		// A valid object event; this one is recorded.
 		testObjectEvent(0xAA, "seen.txt"),
 		// A transient skip: a real object with empty metadata. It is skipped
 		// (no File row) but, per the reference model, the cursor still
@@ -668,7 +668,7 @@ func TestSync_CursorNotAdvancedPastSkipped(t *testing.T) {
 	}
 
 	// The cached cursor must point at the LAST event of the batch (0xBB, the
-	// skip) — the reference setSyncDownCursor(lastEvent) semantics. Advancing
+	// skip); the reference setSyncDownCursor(lastEvent) semantics. Advancing
 	// past the skip is safe because the store is an idempotent upsert re-healed
 	// on the next re-tick.
 	var cursorRecord SyncDownCursor
@@ -724,7 +724,7 @@ func TestSync_CursorStopsAtInterleavedSkip(t *testing.T) {
 		t.Fatalf("Sync: %v", err)
 	}
 
-	// Both processed files are recorded (they come before/after the skip) —
+	// Both processed files are recorded (they come before/after the skip);
 	// the skip must not block events after it in the same batch.
 	for _, name := range []string{"a.txt", "c.txt"} {
 		var count int64
@@ -782,7 +782,7 @@ func TestSync_LeadingNilObjectDoesNotStall(t *testing.T) {
 	fe := &fakeEvents{fakeSDK: fakeSDK{t: t}}
 	fe.events = []siastorage.ObjectEvent{
 		// A nil-Object, non-deletion event first. This can never yield content,
-		// so it must be passed over — not block the batch.
+		// so it must be passed over, not block the batch.
 		{Key: types.Hash256{0x01}, Object: nil, UpdatedAt: time.Now().UTC()},
 		testObjectEvent(0x02, "after.txt"),
 	}
@@ -824,7 +824,7 @@ func TestSync_LeadingNilObjectDoesNotStall(t *testing.T) {
 // (the first event is a real object with empty metadata) does not livelock the
 // batch. Previously no event before the skip existed to rewind to, lastProcessed
 // stayed -1, no cursor was persisted, and every sync re-fetched the same batch
-// forever — never recording the events after the skip. Sync must advance past
+// forever, never recording the events after the skip. Sync must advance past
 // the unresolvable leading skip and still record later events.
 func TestSync_LeadingTransientSkipMakesProgress(t *testing.T) {
 	ctx := context.Background()
@@ -925,7 +925,7 @@ func TestVerify_TransientObjectErrorSurfaces(t *testing.T) {
 	}
 }
 
-// TestVerify_ShallowDoesNotDownload regression: Verify must be SHALLOW — it
+// TestVerify_ShallowDoesNotDownload regression: Verify must be SHALLOW: it
 // computes DigestMatch from the object's metadata-declared digest without
 // downloading the full file content, so it stays cheap for large encrypted
 // files. VerifyDeep is the only path that downloads and recomputes SHA-256.
@@ -987,7 +987,7 @@ func TestVerify_ShallowDoesNotDownload(t *testing.T) {
 // batch has BOTH a leading transient skip and a later interleaved transient
 // skip ([skip, processed, skip, processed]), neither skip holds the cursor:
 // both processed events are recorded and the cursor advances to the LAST event
-// of the batch. This is the reference always-advance model — a skip never
+// of the batch. This is the reference always-advance model; a skip never
 // stalls sync; it is re-healed on a later re-tick via idempotent upsert.
 func TestSync_LeadingThenInterleavedSkipStopsAtInterleaved(t *testing.T) {
 	ctx := context.Background()
@@ -1058,7 +1058,7 @@ func TestSync_LeadingThenInterleavedSkipStopsAtInterleaved(t *testing.T) {
 		t.Fatalf("failed to parse stored cursor: %v", err)
 	}
 	if stored.Key != lastKey {
-		t.Errorf("sync cursor = %x; want %x (end of batch — skips must not hold the cursor)", stored.Key, lastKey)
+		t.Errorf("sync cursor = %x; want %x (end of batch; skips must not hold the cursor)", stored.Key, lastKey)
 	}
 }
 
@@ -1098,7 +1098,7 @@ func TestSync_SkippedObjectResolvesOnReTick(t *testing.T) {
 	}
 
 	// Batch 1: a processed event followed by a transient skip. The skip must
-	// NOT hold the cursor — it advances to the last event (0x02, the skip).
+	// NOT hold the cursor; it advances to the last event (0x02, the skip).
 	fe.events = []siastorage.ObjectEvent{
 		testObjectEvent(0x01, "a.txt"),
 		testTransientSkippedEvent(0x02),
@@ -1157,7 +1157,7 @@ func TestSync_SkippedObjectResolvesOnReTick(t *testing.T) {
 // and leaves the cursor untouched, and a subsequent batch with a leading
 // transient skip still records later processed events and advances the cursor
 // to its last event. There is no PendingSkip/retry state to clear or reclassify
-// — a genuinely-leading skip is simply passed over.
+// A genuinely-leading skip is simply passed over.
 func TestSync_SkipsAlwaysAdvanceCursor(t *testing.T) {
 	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "vault.db")
@@ -1204,7 +1204,7 @@ func TestSync_SkipsAlwaysAdvanceCursor(t *testing.T) {
 	}
 
 	// Batch 3: a GENUINELY-leading transient skip followed by a processed
-	// event. The leading skip must not stall anything — d.txt is recorded and
+	// event. The leading skip must not stall anything; d.txt is recorded and
 	// the cursor advances to the last event of the batch.
 	fe.events = []siastorage.ObjectEvent{
 		testTransientSkippedEvent(0x05),
@@ -1255,7 +1255,7 @@ func TestNewVaultServiceForProfile_RejectsTraversal(t *testing.T) {
 
 // TestNewVaultServiceForProfile_AcceptValidNames ensures benign profile names
 // are not rejected, and that the expected failure mode for a valid name is the
-// "no app key / missing state" path — NOT a validation error.
+// "no app key / missing state" path, NOT a validation error.
 func TestNewVaultServiceForProfile_AcceptValidNames(t *testing.T) {
 	// Valid names should proceed past validation; with no seeded state they
 	// fail later (missing state), never with a profile-name error.
@@ -1269,7 +1269,7 @@ func TestNewVaultServiceForProfile_AcceptValidNames(t *testing.T) {
 }
 
 // TestGetOrCreateDirectory_ConcurrentSamePath regression: concurrent creation
-// of the same new directory path must converge on a single directory row — the
+// of the same new directory path must converge on a single directory row; the
 // unique idx_directories_path conflict is re-resolved instead of failing the
 // writer.
 func TestGetOrCreateDirectory_ConcurrentSamePath(t *testing.T) {
@@ -1393,7 +1393,7 @@ func TestSync_PlacesRemoteObjectInMetadataDirectory(t *testing.T) {
 
 // TestSync_DropsStuckPendingSkipAfterRetryCap regression (reference model):
 // a transient skip whose metadata NEVER resolves must not stall the cursor at
-// all — there is no retry-cap counter anymore. On the very first re-tick the
+// all; there is no retry-cap counter anymore. On the very first re-tick the
 // skip is passed over while later processed events are recorded, and the cursor
 // advances to the last event of the batch. (The old retry-cap machinery that
 // dropped a stuck skip only after many unresolved re-appearances is gone.)
@@ -1461,7 +1461,7 @@ func TestSync_NeverResolvingSkipDoesNotStall(t *testing.T) {
 
 // TestSync_DropsStuckPendingSkipAlone regression (reference model): a lone
 // transient skip with NO processable event after it must still advance the
-// cursor on the first batch — it creates no File row, but the always-advance
+// cursor on the first batch; it creates no File row, but the always-advance
 // model persists a cursor pointing at it (the last event), so re-running sync
 // does not re-fetch the identical batch forever. There is no retry cap or
 // PendingSkip state anymore.
@@ -1511,7 +1511,7 @@ func TestSync_LoneSkipAdvancesCursor(t *testing.T) {
 	}
 
 	// Re-running the identical batch yields the same applied count (still 0)
-	// but must not error or grow the File table — proving re-fetch is harmless.
+	// but must not error or grow the File table; proving re-fetch is harmless.
 	if _, _, err := svc.Sync(ctx); err != nil {
 		t.Fatalf("re-sync: %v", err)
 	}
@@ -1570,7 +1570,7 @@ func TestPut_Stat_MetadataRoundTrips(t *testing.T) {
 // TestIsDirNameConflict_MatchesRealError regression: isDirNameConflict must
 // match the error the go-sqlite3 driver actually reports for an idx_directories_path
 // violation. go-sqlite3 reports the COLUMNS for a plain (non-partial) unique index
-// ("UNIQUE constraint failed: directories.path"), NOT the index name — only a
+// ("UNIQUE constraint failed: directories.path"), NOT the index name; only a
 // partial index (like idx_files_live_name_dir) is reported by index name.
 // Matching on "idx_directories_path" (the index name) would never fire and would
 // make resolveVaultDirectory fall through to a hard error instead of re-resolving.
@@ -1582,7 +1582,7 @@ func TestIsDirNameConflict_MatchesRealError(t *testing.T) {
 		// Real go-sqlite3 message for idx_directories_path (confirmed at the
 		// raw driver level: columns, not index name).
 		{"UNIQUE constraint failed: directories.path", true},
-		// The file partial index reports its name — must NOT match this helper.
+		// The file partial index reports its name; must NOT match this helper.
 		{"UNIQUE constraint failed: index 'idx_files_live_name_dir'", false},
 		// Unrelated constraints.
 		{"UNIQUE constraint failed: directories.id", false},
@@ -1649,7 +1649,7 @@ func TestSync_NilObjectThenTransientSkip(t *testing.T) {
 	}
 
 	// Batch 2: the same object (0x20) now carries metadata and must be
-	// recorded as a file — proving the skip was re-healed, not lost.
+	// recorded as a file; proving the skip was re-healed, not lost.
 	fe.events = []siastorage.ObjectEvent{
 		testObjectEvent(0x20, "resolved.txt"),
 	}
@@ -1665,7 +1665,7 @@ func TestSync_NilObjectThenTransientSkip(t *testing.T) {
 
 // TestSync_DeleteEvent regression: an object-key delete means the content is
 // gone remotely, so every live current alias referencing it must be cleared
-// (soft-tombstoned) — a shared/deduplicated key must NOT leave stale rows that
+// (soft-tombstoned); a shared/deduplicated key must NOT leave stale rows that
 // stay visible in ls/stat on secondary devices forever. Historical versions
 // (is_current=0) and already-tombstoned rows are preserved. When the delete
 // event carries metadata with a per-file UUID, only that exact row is cleared,

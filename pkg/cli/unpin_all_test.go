@@ -443,6 +443,8 @@ func TestNewUnpinAllCommand(t *testing.T) {
 		yesFlag, ok := flags[6].(*cli.BoolFlag)
 		require.True(t, ok)
 		assert.Equal(t, "yes", yesFlag.Name)
-		assert.True(t, yesFlag.Hidden)
+		// --yes is exposed (not hidden) so non-interactive/agent callers can
+		// accept the destructive safety prompt; it still requires --force.
+		assert.False(t, yesFlag.Hidden)
 	})
 }

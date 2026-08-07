@@ -126,7 +126,9 @@ Returns the root CID, total block count, and each block node with its CID, size,
 
 Examples:
   pinner dag resolve bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e
-  pinner dag resolve bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --json`,
+  pinner dag resolve bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --json
+
+Returns the IPFS-side block graph only. Does NOT include Sia storage locations; for portal storage metadata (where blocks live on Sia) use 'export dag' instead. Requires authentication.`,
 		Action: withContext(func(ctx context.Context, cc *commandContext) error {
 			return dagResolve(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
 		}),

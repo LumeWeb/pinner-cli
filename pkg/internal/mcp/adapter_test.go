@@ -158,7 +158,7 @@ func TestSearchTools_EmptyQueryReturnsAll(t *testing.T) {
 	assert.Equal(t, float64(2), result["total"])
 	assert.Len(t, tools, 2)
 
-	// Verify summaries have names, descriptions, and categories — but no inputSchema.
+	// Verify summaries have names, descriptions, and categories: but no inputSchema.
 	for _, raw := range tools {
 		summary := raw.(map[string]any)
 		assert.NotEmpty(t, summary["name"])
@@ -227,7 +227,7 @@ func TestSearchTools_CategoryFilter(t *testing.T) {
 	}
 	c, _ := setupTestServer(t, root, true)
 
-	// Search with category=core — should exclude admin tools.
+	// Search with category=core: should exclude admin tools.
 	req := mcp.CallToolRequest{}
 	req.Params.Name = "search_tools"
 	req.Params.Arguments = map[string]any{"query": "", "category": "core"}
@@ -679,7 +679,7 @@ func TestInvokeTool_AgentFlagAlwaysInjected(t *testing.T) {
 
 	root := &cli.Command{
 		Name: "test",
-		// No "agent" flag defined here — ensureAgentFlag adds it.
+		// No "agent" flag defined here: ensureAgentFlag adds it.
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			fmt.Fprintf(cmd.Root().Writer, "agent=%v", cmd.Bool("agent"))
 			return nil
@@ -704,7 +704,7 @@ func TestInvokeTool_AgentFlagInjectedForSubcommand(t *testing.T) {
 		Commands: []*cli.Command{
 			{
 				Name: "register",
-				// No "agent" flag on subcommand — inherited from root.
+				// No "agent" flag on subcommand: inherited from root.
 				Flags: []cli.Flag{
 					&cli.StringFlag{Name: "email"},
 				},

@@ -391,7 +391,7 @@ func getSubdomainEndpointWithProtocol(base, subdomain string, secure bool) strin
 		}
 	}
 
-	// For bare IPs (e.g. 127.0.0.1), subdomains are not resolvable — use the IP directly.
+	// For bare IPs (e.g. 127.0.0.1), subdomains are not resolvable; use the IP directly.
 	// For localhost, subdomains are valid (e.g. account.localhost, ipfs.localhost).
 	if net.ParseIP(host) != nil {
 		return buildEndpointWithSecure(host+port, secure)

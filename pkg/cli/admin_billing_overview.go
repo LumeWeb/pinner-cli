@@ -14,6 +14,8 @@ func newBillingOverviewCommand() *cli.Command {
 		Usage: "Show billing entity overview and relationships",
 		Description: `Display an overview of billing entities and their relationships.
 
+This aggregates billing entities. For quota usage stats use 'admin quota stats' instead.
+
 Shows the data model hierarchy and current entity counts.
 
 Examples:

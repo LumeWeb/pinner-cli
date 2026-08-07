@@ -113,7 +113,7 @@ func websiteOnboardingHandler(ctx context.Context, req mcp.GetPromptRequest) (*m
 	messages = append(messages, mcp.NewPromptMessage(mcp.RoleUser,
 		mcp.NewTextContent(
 			"Call the `websites_wizard_start` tool (no arguments). It returns a session_id "+
-				"and the first step (auth_check). Store the session_id — you will pass it to "+
+				"and the first step (auth_check). Store the session_id: you will pass it to "+
 				"every subsequent `websites_wizard_step` call.",
 		),
 	))
@@ -205,7 +205,7 @@ func websiteOnboardingHandler(ctx context.Context, req mcp.GetPromptRequest) (*m
 		),
 	))
 
-	// Step 9: DNS setup step — embed the resource reference.
+	// Step 9: DNS setup step: embed the resource reference.
 	if domain != "" {
 		messages = append(messages, mcp.NewPromptMessage(mcp.RoleUser,
 			mcp.NewEmbeddedResource(mcp.TextResourceContents{
@@ -325,9 +325,9 @@ func setupHandler(ctx context.Context, req mcp.GetPromptRequest) (*mcp.GetPrompt
 		mcp.NewTextContent(
 			"Step: auth\n"+
 				"Present the user with three options:\n"+
-				"  1. \"create_account\" — direct them to https://pinner.xyz/register, then sign in\n"+
-				"  2. \"sign_in\" — ask for email, password, and (if needed) OTP code\n"+
-				"  3. \"skip\" — skip authentication for now\n\n"+
+				"  1. \"create_account\": direct them to https://pinner.xyz/register, then sign in\n"+
+				"  2. \"sign_in\": ask for email, password, and (if needed) OTP code\n"+
+				"  3. \"skip\": skip authentication for now\n\n"+
 				"Call `setup_wizard_step` with the appropriate input:\n"+
 				"  - {\"choice\": \"create_account\"} (will error with instructions)\n"+
 				"  - {\"choice\": \"sign_in\", \"email\": \"...\", \"password\": \"...\", \"otp_code\": \"...\"}\n"+
@@ -341,9 +341,9 @@ func setupHandler(ctx context.Context, req mcp.GetPromptRequest) (*mcp.GetPrompt
 		mcp.NewTextContent(
 			"Step: config\n"+
 				"Present the user with three options:\n"+
-				"  1. \"use_defaults\" — use the default endpoint and HTTPS (recommended)\n"+
-				"  2. \"custom_endpoint\" — provide a custom API endpoint and secure flag\n"+
-				"  3. \"skip\" — skip configuration\n\n"+
+				"  1. \"use_defaults\": use the default endpoint and HTTPS (recommended)\n"+
+				"  2. \"custom_endpoint\": provide a custom API endpoint and secure flag\n"+
+				"  3. \"skip\": skip configuration\n\n"+
 				"Call `setup_wizard_step` with the appropriate input:\n"+
 				"  - {\"choice\": \"use_defaults\"}\n"+
 				"  - {\"choice\": \"custom_endpoint\", \"endpoint\": \"https://...\", \"secure\": true}\n"+
@@ -356,7 +356,7 @@ func setupHandler(ctx context.Context, req mcp.GetPromptRequest) (*mcp.GetPrompt
 		mcp.NewTextContent(
 			"Step: completion\n"+
 				"Ask the user which shell they use (bash, zsh, fish, or pwsh). "+
-				"This is informational — instruct the user to run "+
+				"This is informational: instruct the user to run "+
 				"`pinner completion <shell>` to install completions. "+
 				"Call `setup_wizard_step` with input: {\"shell\": \"<shell>\"} or {} to skip.",
 		),
@@ -367,12 +367,12 @@ func setupHandler(ctx context.Context, req mcp.GetPromptRequest) (*mcp.GetPrompt
 		mcp.NewTextContent(
 			"Step: tutorial\n"+
 				"Provide a brief tutorial of common commands:\n"+
-				"  - pinner auth          — check auth status\n"+
-				"  - pinner upload <file> — upload content to IPFS\n"+
-				"  - pinner pins add <cid> — pin existing content\n"+
-				"  - pinner websites       — manage websites\n"+
-				"  - pinner dns            — manage DNS zones\n"+
-				"  - pinner doctor         — run diagnostics\n"+
+				"  - pinner auth          : check auth status\n"+
+				"  - pinner upload <file> : upload content to IPFS\n"+
+				"  - pinner pins add <cid> : pin existing content\n"+
+				"  - pinner websites       : manage websites\n"+
+				"  - pinner dns            : manage DNS zones\n"+
+				"  - pinner doctor         : run diagnostics\n"+
 				"Call `setup_wizard_step` with input: {} to complete the wizard.",
 		),
 	))
@@ -407,19 +407,19 @@ func websiteOnboardingOverview(domain string) string {
 	var b strings.Builder
 	b.WriteString("You are guiding a user through the website creation wizard.\n\n")
 	b.WriteString("Workflow overview (9 steps):\n")
-	b.WriteString("  1. auth_check     — verifies the user is authenticated\n")
-	b.WriteString("  2. content_source — choose CID or upload\n")
-	b.WriteString("  3. target_type    — IPFS or IPNS\n")
-	b.WriteString("  4. domain         — domain name for the website\n")
-	b.WriteString("  5. dns_mode       — managed or self-managed DNS\n")
-	b.WriteString("  6. create         — create the website (irreversible, confirm first)\n")
-	b.WriteString("  7. dns_setup      — read DNS requirements resource\n")
-	b.WriteString("  8. validate       — run live validation\n")
-	b.WriteString("  9. complete       — summarize results\n\n")
+	b.WriteString("  1. auth_check     : verifies the user is authenticated\n")
+	b.WriteString("  2. content_source : choose CID or upload\n")
+	b.WriteString("  3. target_type    : IPFS or IPNS\n")
+	b.WriteString("  4. domain         : domain name for the website\n")
+	b.WriteString("  5. dns_mode       : managed or self-managed DNS\n")
+	b.WriteString("  6. create         : create the website (irreversible, confirm first)\n")
+	b.WriteString("  7. dns_setup      : read DNS requirements resource\n")
+	b.WriteString("  8. validate       : run live validation\n")
+	b.WriteString("  9. complete       : summarize results\n\n")
 	b.WriteString("Rules:\n")
 	b.WriteString("  - Always pass the session_id from websites_wizard_start to websites_wizard_step.\n")
 	b.WriteString("  - The next_step_schema in each response tells you the exact input shape.\n")
-	b.WriteString("  - If a step returns an error, the session stays in the same state — you can retry.\n")
+	b.WriteString("  - If a step returns an error, the session stays in the same state: you can retry.\n")
 	b.WriteString("  - Read pinner:// resources for live data (DNS requirements, validation status).\n")
 	if domain != "" {
 		b.WriteString(fmt.Sprintf("\nPre-filled: domain=%s\n", domain))
@@ -432,7 +432,7 @@ func websiteOnboardingOverview(domain string) string {
 func websiteOnboardingContentStep(contentSource string) string {
 	if contentSource == "upload" {
 		return "Step: content_source\n" +
-			"Content source is \"upload\". The wizard requires an existing CID — " +
+			"Content source is \"upload\". The wizard requires an existing CID: " +
 			"instruct the user to run `pinner upload <file>` first, then restart " +
 			"the wizard with content_source set to \"cid\". Call `websites_wizard_step` " +
 			"with input: {\"choice\": \"upload\"} (this will return an error with instructions)."
@@ -454,16 +454,16 @@ func setupOverview() string {
 	var b strings.Builder
 	b.WriteString("You are guiding a user through the initial pinner setup wizard.\n\n")
 	b.WriteString("Workflow overview (5 steps):\n")
-	b.WriteString("  1. auth       — sign in, create account, or skip\n")
-	b.WriteString("  2. config     — use defaults, custom endpoint, or skip\n")
-	b.WriteString("  3. completion — shell completion setup (informational)\n")
-	b.WriteString("  4. tutorial   — quick command tour (informational)\n")
-	b.WriteString("  5. complete   — finalize and verify\n\n")
+	b.WriteString("  1. auth       : sign in, create account, or skip\n")
+	b.WriteString("  2. config     : use defaults, custom endpoint, or skip\n")
+	b.WriteString("  3. completion : shell completion setup (informational)\n")
+	b.WriteString("  4. tutorial   : quick command tour (informational)\n")
+	b.WriteString("  5. complete   : finalize and verify\n\n")
 	b.WriteString("Rules:\n")
 	b.WriteString("  - Always pass the session_id from setup_wizard_start to setup_wizard_step.\n")
 	b.WriteString("  - The next_step_schema in each response tells you the exact input shape.\n")
-	b.WriteString("  - If a step returns an error, the session stays in the same state — you can retry.\n")
-	b.WriteString("  - For sign_in with OTP, the first call may error asking for otp_code — retry with it.\n")
+	b.WriteString("  - If a step returns an error, the session stays in the same state: you can retry.\n")
+	b.WriteString("  - For sign_in with OTP, the first call may error asking for otp_code: retry with it.\n")
 	b.WriteString("  - Read pinner://account/status to verify the auth state before and after.\n")
 	return b.String()
 }
