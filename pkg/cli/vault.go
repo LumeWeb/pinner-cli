@@ -5,6 +5,14 @@ import (
 	"go.lumeweb.com/pinner-cli/pkg/cli/vault"
 )
 
+// vaultArgsUsage is the conventional vault path placeholder shown in command
+// help (ArgsUsage) for a path that may point at any vault location. Derived
+// from the exported scheme so help text stays in sync if the scheme changes.
+const vaultArgsUsage = vault.VaultRoot + "path"
+
+// vaultArgsUsageFile is the ArgsUsage placeholder for a concrete file path.
+const vaultArgsUsageFile = vault.VaultScheme + "/path/to/file"
+
 // vaultServiceFactory creates a VaultService for the resolved vault profile and
 // indexer URL. It can be overridden in tests.
 var vaultServiceFactory = defaultVaultServiceFactory

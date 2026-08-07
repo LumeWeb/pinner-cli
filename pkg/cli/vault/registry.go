@@ -427,7 +427,7 @@ func VaultID(appKeyHex string) string {
 	}
 	pub := pubKey.PublicKey()
 	h := sha256.Sum256(pub[:])
-	return vaultScheme + hex.EncodeToString(h[:16])
+	return VaultScheme + hex.EncodeToString(h[:16])
 }
 
 // ProfileVaultID derives the current-format VaultID for an existing profile

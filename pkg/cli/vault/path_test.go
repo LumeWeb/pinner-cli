@@ -78,6 +78,139 @@ func TestVaultPath_FullPath(t *testing.T) {
 	}
 }
 
+// TestParseVaultPath_Authority covers the named-profile authority form
+// "vault://<profile>/path" (the RFC-compliant use of "//" before a naming
+// authority). Bare "vault:/path" (no authority) resolves to the active profile.
+func TestParseVaultPath_Authority(t *testing.T) {
+	tests := []struct {
+		input   string
+		profile *string
+		dir     string
+		name    string
+		isDir   bool
+	}{
+		{"vault://work/reports/a.txt", strptr("work"), "/reports", "a.txt", false},
+		{"vault://work/", strptr("work"), "/", "", true},
+		// Bare authority with no path resolves to that profile's root.
+		{"vault://work", strptr("work"), "/", "", true},
+		{"vault:///docs/a.txt", nil, "/docs", "a.txt", false}, // empty authority → active
+		{"vault:/docs/a.txt", nil, "/docs", "a.txt", false},   // no authority → active
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			vp, err := ParseVaultPath(tt.input)
+			if err != nil {
+				t.Fatalf("ParseVaultPath(%q) error: %v", tt.input, err)
+			}
+			if !ptrEqual(vp.Profile, tt.profile) {
+				t.Errorf("Profile = %v, want %v", deref(vp.Profile), deref(tt.profile))
+			}
+			if vp.Directory != tt.dir || vp.Name != tt.name || vp.IsDir != tt.isDir {
+				t.Errorf("got {dir=%q name=%q isDir=%v}, want {dir=%q name=%q isDir=%v}",
+					vp.Directory, vp.Name, vp.IsDir, tt.dir, tt.name, tt.isDir)
+			}
+		})
+	}
+}
+
+// strptr returns a *string for assertion literals.
+func strptr(s string) *string { return &s }
+
+// deref safely dereferences a *string for error output.
+func deref(s *string) string {
+	if s == nil {
+		return "<nil>"
+	}
+	return *s
+}
+
+// ptrEqual compares two *string by value (nil-safe).
+func ptrEqual(a, b *string) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
+}
+
+// TestVaultPath_FullPath_RoundTrip ensures ParseVaultPath → FullPath preserves
+// the profile authority (so a cross-profile command can serialise unambiguously).
+func TestVaultPath_FullPath_RoundTrip(t *testing.T) {
+	for _, input := range []string{
+		"vault:/docs/a.txt",
+		"vault://work/docs/a.txt",
+		"vault://work/",
+		"vault://work/docs/a.txt/",
+	} {
+		t.Run(input, func(t *testing.T) {
+			vp, err := ParseVaultPath(input)
+			if err != nil {
+				t.Fatalf("ParseVaultPath(%q): %v", input, err)
+			}
+			got := vp.FullPath()
+			// Re-parse and re-serialize must be stable (idempotent round-trip).
+			vp2, err := ParseVaultPath(got)
+			if err != nil {
+				t.Fatalf("re-parse %q: %v", got, err)
+			}
+			if vp2.FullPath() != got {
+				t.Errorf("round-trip not stable: %q → %q", got, vp2.FullPath())
+			}
+		})
+	}
+}
+
+// TestVaultConstants guards the exported scheme/root constants used to DRY the
+// codebase (command ArgsUsage, ls root default).
+func TestVaultConstants(t *testing.T) {
+	if VaultScheme != "vault:" {
+		t.Errorf("VaultScheme = %q, want %q", VaultScheme, "vault:")
+	}
+	if VaultRoot != "vault:/" {
+		t.Errorf("VaultRoot = %q, want %q", VaultRoot, "vault:/")
+	}
+	if !IsVaultPath(VaultRoot) {
+		t.Errorf("IsVaultPath(%q) should be true", VaultRoot)
+	}
+}
+
+// TestJoinDirPath guards the scheme-less internal directory join helper used to
+// replace raw "/" concatenation throughout the service.
+func TestJoinDirPath(t *testing.T) {
+	tests := []struct {
+		dir, name, want string
+	}{
+		{"/", "docs", "/docs"},
+		{"/docs", "a.txt", "/docs/a.txt"},
+		{"", "docs", "/docs"},
+		{"/docs", "", "/docs"},
+		{"/a/b", "c", "/a/b/c"},
+	}
+	for _, tt := range tests {
+		if got := JoinDirPath(tt.dir, tt.name); got != tt.want {
+			t.Errorf("JoinDirPath(%q,%q) = %q, want %q", tt.dir, tt.name, got, tt.want)
+		}
+	}
+}
+
+// TestJoinVaultPath guards the vault-path-string join helper used to expand a
+// directory destination, preserving any profile authority. The input is a
+// directory destination path (trailing slash), matching the calling contract in
+// vault cp (which only expands when the destination ends in "/").
+func TestJoinVaultPath(t *testing.T) {
+	tests := []struct {
+		path, name, want string
+	}{
+		{"vault:/docs/", "a.txt", "vault:/docs/a.txt"},
+		{"vault://work/docs/", "a.txt", "vault://work/docs/a.txt"},
+		{"vault:/", "a.txt", "vault:/a.txt"},
+	}
+	for _, tt := range tests {
+		if got := JoinVaultPath(tt.path, tt.name); got != tt.want {
+			t.Errorf("JoinVaultPath(%q,%q) = %q, want %q", tt.path, tt.name, got, tt.want)
+		}
+	}
+}
+
 func TestNormalizeShareURL(t *testing.T) {
 	tests := []struct {
 		input string

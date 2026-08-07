@@ -12,7 +12,7 @@ func newVaultCatCommand() *cli.Command {
 	return &cli.Command{
 		Name:      "cat",
 		Usage:     "Stream file content to stdout",
-		ArgsUsage: "vault:/path/to/file",
+		ArgsUsage: vaultArgsUsageFile,
 		Description: `Streams file content directly to stdout.
 Progress and metadata go to stderr.`,
 		Action: func(ctx context.Context, c *cli.Command) error {

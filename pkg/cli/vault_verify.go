@@ -11,7 +11,7 @@ func newVaultVerifyCommand() *cli.Command {
 	return &cli.Command{
 		Name:      "verify",
 		Usage:     "Verify content integrity of a vault file",
-		ArgsUsage: "vault:/path/to/file",
+		ArgsUsage: vaultArgsUsageFile,
 		Description: `Checks that the file's content digest matches and the object exists on the indexer.
 
 Verifies:

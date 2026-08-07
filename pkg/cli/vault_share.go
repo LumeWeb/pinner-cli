@@ -40,7 +40,7 @@ func newVaultShareCommand() *cli.Command {
 	return &cli.Command{
 		Name:      "share",
 		Usage:     "Generate a shareable link for a vault file",
-		ArgsUsage: "vault:/path/to/file",
+		ArgsUsage: vaultArgsUsage,
 		Flags:     []cli.Flag{VaultExpiryFlag()},
 		Action: func(ctx context.Context, c *cli.Command) error {
 			output := setupOutput(c)

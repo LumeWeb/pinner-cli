@@ -78,9 +78,10 @@ Files are never overwritten without --force.`,
 }
 
 func vaultUpload(ctx context.Context, c *cli.Command, output Output, localPath, vaultPath string) error {
-	// Expand directory destinations: vault:/docs/ → vault:/docs/<filename>
+	// Expand directory destinations: vault:/docs/ → vault:/docs/<filename>.
+	// JoinVaultPath preserves any profile authority (vault://<profile>/...).
 	if strings.HasSuffix(vaultPath, "/") {
-		vaultPath = vaultPath + filepath.Base(localPath)
+		vaultPath = vault.JoinVaultPath(vaultPath, filepath.Base(localPath))
 	}
 
 	f, err := os.Open(localPath)

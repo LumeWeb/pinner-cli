@@ -433,7 +433,7 @@ func (s *vaultService) List(ctx context.Context, vaultPath string) ([]ListItem, 
 	// matching `vault:/docs` listing the /docs dir.
 	if !vp.IsDir && vp.Name != "" {
 		if vp.Directory == "/" {
-			dirPath = "/" + vp.Name
+			dirPath = JoinDirPath("/", vp.Name)
 		} else {
 			dirPath = vp.Directory // parent directory of the target file
 		}
@@ -543,7 +543,7 @@ func (s *vaultService) Stat(ctx context.Context, vaultPath string) (*StatResult,
 		// existing directory at root, report it as a directory instead of a
 		// misleading not-found.
 		if vp.Directory == "/" {
-			if _, derr := s.getDirectoryID("/" + vp.Name); derr == nil {
+			if _, derr := s.getDirectoryID(JoinDirPath("/", vp.Name)); derr == nil {
 				return &StatResult{Type: "dir", Name: vp.Name, Path: vaultPath}, nil
 			}
 		}
@@ -890,7 +890,7 @@ func resolveVaultDirectory(db *gorm.DB, path string) (*uint, error) {
 		if part == "" {
 			continue
 		}
-		currentPath = currentPath + "/" + part
+		currentPath = JoinDirPath(currentPath, part)
 
 		var dir Directory
 		result := db.Where("path = ?", currentPath).First(&dir)

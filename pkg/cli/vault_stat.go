@@ -11,7 +11,7 @@ func newVaultStatCommand() *cli.Command {
 	return &cli.Command{
 		Name:      "stat",
 		Usage:     "Show file or directory metadata",
-		ArgsUsage: "vault:/path/to/file",
+		ArgsUsage: vaultArgsUsageFile,
 		Action: func(ctx context.Context, c *cli.Command) error {
 			output := setupOutput(c)
 			vaultPath := c.Args().First()
