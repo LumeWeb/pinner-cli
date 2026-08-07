@@ -565,22 +565,38 @@ func dnsRecordsList(ctx context.Context, cmd dnsCommandGetter, output Output, cf
 		}
 
 		output.Printfln("DNS Records:")
-		for i, record := range records {
-			fields := []Field{
-				{"Zone ID", fmt.Sprintf("%d", record.ZoneId)},
-				{"Name", record.Name},
-				{"Type", record.Type},
-				{"Content", record.Content},
-				{"TTL", fmt.Sprintf("%d", record.Ttl)},
-			}
-			if record.Disabled {
-				fields = append(fields, Field{"Status", "disabled"})
-			}
-			output.PrintFields(FieldGroup{Fields: fields, PadTop: i})
-		}
+		headers, rows := dnsRecordsTable(records)
+		output.PrintTable(headers, rows)
 	}
 
 	return nil
+}
+
+// dnsRecordsTable builds the header and row data for the DNS records list
+// table. Rendered by the human formatter via Output.PrintTable; kept separate
+// so the row mapping is testable without depending on pterm rendering.
+func dnsRecordsTable(records []ipfs.RecordResponse) ([]string, [][]string) {
+	headers := []string{"NAME", "TYPE", "CONTENT", "TTL", "STATUS"}
+	rows := make([][]string, 0, len(records))
+	for _, record := range records {
+		name := record.Name
+		if name == "" {
+			// blank name denotes the zone apex record
+			name = "@"
+		}
+		status := ""
+		if record.Disabled {
+			status = "disabled"
+		}
+		rows = append(rows, []string{
+			name,
+			record.Type,
+			record.Content,
+			fmt.Sprintf("%d", record.Ttl),
+			status,
+		})
+	}
+	return headers, rows
 }
 
 func dnsRecordsCreate(ctx context.Context, cmd dnsCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {

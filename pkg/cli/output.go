@@ -310,11 +310,10 @@ func (h *humanFormatter) PrintTable(headers []string, rows [][]string) {
 	for i, row := range rows {
 		wrappedRows[i] = make([]string, len(row))
 		for j, cell := range row {
-			// Keep a DS record's value whole (never hard-wrapped mid-token):
-			// the digest is a single opaque value the user must copy exactly,
-			// and splitting it across lines breaks that. The table cell widens
-			// to fit it.
-			if row[0] == "DS" && j == 1 {
+			// Opaque values the user must copy exactly (DS digests, TLSA
+			// parameters, dnslink CIDs) are kept whole and never hard-wrapped
+			// mid-token; the table cell widens to fit them.
+			if keepWholeValue(row, j) {
 				wrappedRows[i][j] = cell
 				continue
 			}
@@ -333,6 +332,27 @@ func (h *humanFormatter) PrintTable(headers []string, rows [][]string) {
 		WithWriter(h.config.writer).
 		WithData(tableData).
 		Render()
+}
+
+// keepWholeValue reports whether the cell at column j in a table row must be
+// left unwrapped. Opaque values the user copies exactly (DS digests, TLSA
+// parameters, dnslink CIDs) must never be hard-wrapped mid-token. Works for
+// both the Type/VALUE delegation table ([TYPE, VALUE]) and the full DNS
+// record table ([NAME, TYPE, CONTENT, TTL, STATUS]).
+func keepWholeValue(row []string, j int) bool {
+	// Type/VALUE delegation table: [TYPE, VALUE]
+	if len(row) == 2 {
+		return (row[0] == "DS" || row[0] == "TLSA") && j == 1
+	}
+	// Full DNS record table: [NAME, TYPE, CONTENT, TTL, STATUS]
+	if len(row) >= 5 && j == 2 {
+		switch row[1] {
+		case "TLSA", "DS":
+			return true
+		}
+		return strings.Contains(row[0], "_dnslink")
+	}
+	return false
 }
 
 // PrintList prints items as a bulleted list.
