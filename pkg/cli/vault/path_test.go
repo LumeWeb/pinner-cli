@@ -244,6 +244,29 @@ func TestRequireActiveProfile(t *testing.T) {
 	}
 }
 
+// TestScalarPath ensures ScalarPath strips an explicit profile authority to the
+// service-operable active-profile form, and is a no-op for authority-less paths.
+func TestScalarPath(t *testing.T) {
+	tests := []struct {
+		input, want string
+	}{
+		{"vault://work/docs/a.txt", "vault:/docs/a.txt"},
+		{"vault://work/", "vault:/"},
+		{"vault:/docs/a.txt", "vault:/docs/a.txt"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			vp, err := ParseVaultPath(tt.input)
+			if err != nil {
+				t.Fatalf("ParseVaultPath(%q): %v", tt.input, err)
+			}
+			if got := vp.ScalarPath(); got != tt.want {
+				t.Errorf("ScalarPath(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestNormalizeShareURL(t *testing.T) {
 	tests := []struct {
 		input string
