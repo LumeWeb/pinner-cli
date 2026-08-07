@@ -555,24 +555,14 @@ func websitesDomainsDNSRequirements(ctx context.Context, cmd websitesCommandGett
 		return output.PrintJSON(result)
 	}
 
-	// Determine whether Pinner manages this website's DNS (authoritative side
-	// served by Pinner), so the renderer can omit authoritative records the
-	// user does not need to configure.
-	managed := isWebsiteDNSManaged(ctx, websitesService, websiteID)
+	// Determine whether Pinner manages this domain binding's DNS (authoritative
+	// side served by Pinner), so the renderer can omit authoritative records
+	// the user does not need to configure. DNS hosting is a per-domain-binding
+	// property, carried on the dns-requirements response itself.
+	managed := result.DnsHostingEnabled
 
 	renderDomainDelegation(output, result, managed)
 	return nil
-}
-
-// isWebsiteDNSManaged reports whether Pinner manages DNS for the given website
-// (the authoritative side is served by Pinner). A fetch failure is treated as
-// not-managed so dns-requirements still renders, just without the omission.
-func isWebsiteDNSManaged(ctx context.Context, svc WebsitesService, websiteID string) bool {
-	website, err := svc.Get(ctx, websiteID)
-	if err != nil || website == nil {
-		return false
-	}
-	return website.DnsHostingEnabled
 }
 
 // renderDomainDelegation prints the DNS delegation bundle the server computes
@@ -720,7 +710,7 @@ func websitesDomainsUpdateWithService(ctx context.Context, cmd websitesCommandGe
 			{"Namespace", result.Namespace},
 			{"Status", status},
 			{"Zone Name", zoneName},
-			{"DNS Hosting", fmt.Sprintf("%t", derefBool(result.DnsHostingEnabled))},
+			{"DNS Hosting", fmt.Sprintf("%t", result.DnsHostingEnabled)},
 		},
 	})
 

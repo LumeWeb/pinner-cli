@@ -883,7 +883,7 @@ func TestWebsitesDomainsUpdate(t *testing.T) {
 					require.True(t, *req.DnsHostingEnabled)
 					require.Nil(t, req.Primary)
 					return &ipfs.DomainResponse{
-						Id: 1, Domain: "mydomain.com", Namespace: "icann", DnsHostingEnabled: boolPtr(true),
+						Id: 1, Domain: "mydomain.com", Namespace: "icann", DnsHostingEnabled: true,
 					}, nil
 				}
 			},
@@ -906,7 +906,7 @@ func TestWebsitesDomainsUpdate(t *testing.T) {
 					require.False(t, *req.DnsHostingEnabled)
 					require.Nil(t, req.Primary)
 					return &ipfs.DomainResponse{
-						Id: 1, Domain: "mydomain.com", Namespace: "icann", DnsHostingEnabled: boolPtr(false),
+						Id: 1, Domain: "mydomain.com", Namespace: "icann", DnsHostingEnabled: false,
 					}, nil
 				}
 			},
@@ -972,7 +972,7 @@ func TestWebsitesDomainsUpdate(t *testing.T) {
 					require.NotNil(t, req.Primary)
 					require.True(t, *req.Primary)
 					return &ipfs.DomainResponse{
-						Id: 1, Domain: "mydomain.com", Namespace: "icann", DnsHostingEnabled: boolPtr(true),
+						Id: 1, Domain: "mydomain.com", Namespace: "icann", DnsHostingEnabled: true,
 					}, nil
 				}
 			},
@@ -993,7 +993,7 @@ func TestWebsitesDomainsUpdate(t *testing.T) {
 				}
 				svc.UpdateDomainFn = func(ctx context.Context, websiteID string, domainID string, req ipfs.DomainUpdateRequest) (*ipfs.DomainResponse, error) {
 					return &ipfs.DomainResponse{
-						Id: 2, Domain: "mydomain.hns", Namespace: "hns", DnsHostingEnabled: boolPtr(false),
+						Id: 2, Domain: "mydomain.hns", Namespace: "hns", DnsHostingEnabled: false,
 					}, nil
 				}
 			},
@@ -1120,7 +1120,7 @@ func TestWebsitesDomainsUpdateJSON(t *testing.T) {
 	}
 	mockSvc.UpdateDomainFn = func(ctx context.Context, websiteID string, domainID string, req ipfs.DomainUpdateRequest) (*ipfs.DomainResponse, error) {
 		return &ipfs.DomainResponse{
-			Id: 1, Domain: "mydomain.com", Namespace: "icann", DnsHostingEnabled: boolPtr(true),
+			Id: 1, Domain: "mydomain.com", Namespace: "icann", DnsHostingEnabled: true,
 		}, nil
 	}
 
@@ -1457,7 +1457,7 @@ func websitesDomainsDNSRequirementsWithService(ctx context.Context, cmd websites
 		return output.PrintJSON(result)
 	}
 
-	managed := isWebsiteDNSManaged(ctx, websitesService, websiteID)
+	managed := result.DnsHostingEnabled
 	renderDomainDelegation(output, result, managed)
 	return nil
 }
@@ -1505,8 +1505,8 @@ func TestWebsitesDomainsDNSRequirements(t *testing.T) {
 					return &ipfs.DomainResponse{
 						Id: 2, Domain: "mydomain.hns", Namespace: "hns", Status: strPtr("delegated"),
 						Delegation: &ipfs.DNSDelegation{
-							Mode: strPtr("delegated"),
-							Ds:   strPtr("mydomain. 3600 IN DS 12345 13 2 <digest>"),
+							Mode:   strPtr("delegated"),
+							Dnssec: strPtr("enabled"),
 							ParentRecords: &[]ipfs.DNSDelegationRecord{
 								{Type: "NS", Value: strPtr("ns1.lumeweb,ns2.lumeweb")},
 								{Type: "DS", Value: strPtr("mydomain. 3600 IN DS 12345 13 2 <digest>")},
@@ -1639,8 +1639,8 @@ func TestWebsitesDomainsDNSRequirementsJSON(t *testing.T) {
 		return &ipfs.DomainResponse{
 			Id: 1, Domain: "mydomain.hns", Namespace: "hns", Status: strPtr("delegated"),
 			Delegation: &ipfs.DNSDelegation{
-				Mode: strPtr("delegated"),
-				Ds:   strPtr("mydomain. 3600 IN DS 12345 13 2 <digest>"),
+				Mode:   strPtr("delegated"),
+				Dnssec: strPtr("enabled"),
 			},
 		}, nil
 	}
@@ -1653,8 +1653,9 @@ func TestWebsitesDomainsDNSRequirementsJSON(t *testing.T) {
 }
 
 func TestWebsitesDomainsDNSRequirementsUsesManagedSignal(t *testing.T) {
-	// The handler must read the website's dns_hosting_enabled (via Get) and
-	// omit the authoritative records when Pinner manages the DNS.
+	// The handler must read the per-domain dns_hosting_enabled from the
+	// dns-requirements response and omit the authoritative records when
+	// Pinner manages the DNS.
 	mockSvc := &mockWebsitesServiceForCLI{}
 	mockSvc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
 		return []ipfs.WebsiteItem{{Id: 1, Domain: "example.com"}}, nil
@@ -1664,12 +1665,10 @@ func TestWebsitesDomainsDNSRequirementsUsesManagedSignal(t *testing.T) {
 			{Id: 2, Domain: "mydomain.hns", Namespace: "hns"},
 		}, nil
 	}
-	mockSvc.getFunc = func(ctx context.Context, id string) (*ipfs.WebsiteItem, error) {
-		return &ipfs.WebsiteItem{Id: 1, Domain: "example.com", DnsHostingEnabled: true}, nil
-	}
 	mockSvc.GetDomainDNSRequirementsFn = func(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainResponse, error) {
 		return &ipfs.DomainResponse{
 			Id: 2, Domain: "mydomain.hns", Namespace: "hns", Status: strPtr("delegated"),
+			DnsHostingEnabled: true,
 			Delegation: &ipfs.DNSDelegation{
 				Mode: strPtr("delegated"),
 				ParentRecords: &[]ipfs.DNSDelegationRecord{
@@ -1709,8 +1708,8 @@ func TestRenderDomainDelegation(t *testing.T) {
 		renderDomainDelegation(output, &ipfs.DomainResponse{
 			Id: 1, Domain: "mydomain.hns", Namespace: "hns", Status: strPtr("delegated"),
 			Delegation: &ipfs.DNSDelegation{
-				Mode: strPtr("delegated"),
-				Ds:   strPtr("mydomain. 3600 IN DS 12345 13 2 <digest>"),
+				Mode:   strPtr("delegated"),
+				Dnssec: strPtr("enabled"),
 				ParentRecords: &[]ipfs.DNSDelegationRecord{
 					{Type: "NS", Value: strPtr("ns1.lumeweb,ns2.lumeweb")},
 				},
@@ -1806,8 +1805,8 @@ func TestRenderDomainDelegation(t *testing.T) {
 		renderDomainDelegation(output, &ipfs.DomainResponse{
 			Id: 1, Domain: "lumeweb", Namespace: "hns", Status: strPtr("delegated"),
 			Delegation: &ipfs.DNSDelegation{
-				Mode: strPtr("delegated"),
-				Ds:   strPtr(dsValue),
+				Mode:   strPtr("delegated"),
+				Dnssec: strPtr("enabled"),
 				ParentRecords: &[]ipfs.DNSDelegationRecord{
 					{Type: "NS", Value: strPtr("ns1.pinner.xyz,ns2.pinner.xyz")},
 					{Type: "DS", Value: strPtr(dsValue)},

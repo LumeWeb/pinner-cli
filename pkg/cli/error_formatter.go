@@ -79,15 +79,32 @@ func NewHTTPError(statusCode int, body string) *HTTPError {
 }
 
 // extractErrorMessage attempts to extract a human-readable message from an HTTP response body.
-// If the body is JSON with an "error" field, it returns that field's value.
-// Otherwise, it returns the body as-is.
+// If the body is JSON with a string "error" field, it returns that field's value. If the body is
+// JSON with an object "error" field ({"reason":..., "details":...}), it returns "details"
+// (falling back to "reason"). Otherwise, it returns the body as-is.
 func extractErrorMessage(body string) string {
-	var parsed struct {
+	var asString struct {
 		Error string `json:"error"`
 	}
-	if err := json.Unmarshal([]byte(body), &parsed); err == nil && parsed.Error != "" {
-		return parsed.Error
+	if err := json.Unmarshal([]byte(body), &asString); err == nil && asString.Error != "" {
+		return asString.Error
 	}
+
+	var asObject struct {
+		Error struct {
+			Reason  string `json:"reason"`
+			Details string `json:"details"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(body), &asObject); err == nil {
+		if asObject.Error.Details != "" {
+			return asObject.Error.Details
+		}
+		if asObject.Error.Reason != "" {
+			return asObject.Error.Reason
+		}
+	}
+
 	return body
 }
 
