@@ -150,6 +150,8 @@ func TestOAuthFullFlow(t *testing.T) {
 	o.tokenHandler(rec, formPost(map[string]string{
 		"grant_type":    "authorization_code",
 		"code":          code,
+		"client_id":     "cli",
+		"redirect_uri":  "http://localhost/cb",
 		"code_verifier": verifier,
 		"resource":      "https://mcp.example.com/mcp",
 	}))
