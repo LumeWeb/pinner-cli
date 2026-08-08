@@ -230,6 +230,7 @@ func serveHTTP(ctx context.Context, srv *server.MCPServer, cmd *cli.Command) err
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			}
 		})
+		mux.HandleFunc("/oauth/register", oauth.registerHandler)
 		mux.HandleFunc("/oauth/token", oauth.tokenHandler)
 		mux.HandleFunc("/.well-known/oauth-authorization-server", oauth.asMetadataHandler)
 		mux.HandleFunc("/.well-known/oauth-protected-resource", oauth.protectedResourceHandler("/mcp"))
