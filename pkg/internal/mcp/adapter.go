@@ -398,6 +398,14 @@ func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string) (*Tool
 			switch v := val.(type) {
 			case string:
 				args = append(args, k, v)
+			case []any:
+				for _, item := range v {
+					s, ok := item.(string)
+					if !ok {
+						return ToolResult{}, fmt.Errorf("array argument %q entries must be strings, got %T", key, item)
+					}
+					args = append(args, k, s)
+				}
 			case bool:
 				if v {
 					args = append(args, k)

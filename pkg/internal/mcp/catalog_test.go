@@ -166,3 +166,14 @@ func TestEnumStringFlagEmitsEnum(t *testing.T) {
 	_, hasEnum := props["path"].(map[string]any)["enum"]
 	assert.False(t, hasEnum)
 }
+
+func TestStringSliceFlagEmitsArraySchema(t *testing.T) {
+	schema, err := flagsToSchema([]cli.Flag{&cli.StringSliceFlag{Name: "tags", Usage: "Tags"}}, "")
+	require.NoError(t, err)
+
+	var doc map[string]any
+	require.NoError(t, json.Unmarshal(schema, &doc))
+	property := doc["properties"].(map[string]any)["tags"].(map[string]any)
+	assert.Equal(t, "array", property["type"])
+	assert.Equal(t, map[string]any{"type": "string"}, property["items"])
+}
