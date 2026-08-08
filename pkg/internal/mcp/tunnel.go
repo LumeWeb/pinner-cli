@@ -35,6 +35,8 @@ type Tunnel interface {
 	// RequiresToken reports whether the provider needs an account token
 	// (e.g. an ngrok authtoken) before it can start.
 	RequiresToken() bool
+	// OAuthBaseURL returns the externally reachable base URL for OAuth discovery.
+	OAuthBaseURL(explicitURL, tunnelURL string) (string, error)
 }
 
 // tunnelBase holds the shared bookkeeping for all tunnel providers.

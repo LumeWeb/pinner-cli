@@ -11,7 +11,6 @@ package mcp
 import (
 	"bytes"
 	"context"
-	"crypto/subtle"
 	"fmt"
 	"net"
 	"net/http"
@@ -22,8 +21,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcp-go/server"
 	"github.com/urfave/cli/v3"
 	"go.uber.org/zap"
 )
@@ -74,7 +71,7 @@ adapter.`,
 			},
 			&cli.StringFlag{
 				Name:  "tunnel",
-				Usage: "Public tunnel provider: ngrok or cloudflared (cloudflared requires a custom domain)",
+				Usage: "Tunnel provider: ngrok, cloudflared, or openai (OpenAI requires --tunnel-id and runtime credentials)",
 			},
 			&cli.StringFlag{
 				Name:  "domain",
@@ -89,8 +86,12 @@ adapter.`,
 				Usage: "Cloudflare tunnel resource name (default: pinner-mcp)",
 			},
 			&cli.StringFlag{
+				Name:  "tunnel-id",
+				Usage: "OpenAI Secure MCP Tunnel ID (required with --tunnel openai)",
+			},
+			&cli.StringFlag{
 				Name:  "auth-token",
-				Usage: "Shared secret used to authorize the MCP endpoint. In OAuth mode (--oauth) the resource owner enters it on the login page as a password; otherwise it is accepted directly as a Bearer token. REQUIRED when --tunnel is set: the tunnel exposes the endpoint publicly and it executes tools in-process",
+				Usage: "Shared secret used to authorize public HTTP MCP endpoints. In OAuth mode (--oauth) the resource owner enters it on the login page as a password; otherwise it is accepted directly as a Bearer token. Required for ngrok and cloudflared; not used by the embedded OpenAI tunnel",
 			},
 			&cli.BoolFlag{
 				Name:  "oauth",
@@ -106,7 +107,8 @@ adapter.`,
 
 			store := NewSessionStore()
 
-			srv, catalog, err := MCPServerWithOpts(root, hasRootAction, nil, opts...)
+			// Build the server after resolving the command tree.
+			srv, catalog, err := OfficialMCPServer(root, hasRootAction, nil)
 			if err != nil {
 				return err
 			}
@@ -126,18 +128,31 @@ adapter.`,
 			if resourceFactory != nil {
 				provs := resourceFactory(store)
 				provs.Sessions = store
-				RegisterResources(srv, provs)
+				resources, templates := ResourceDescriptors(provs)
+				if err := RegisterOfficialResources(srv, resources, templates); err != nil {
+					return fmt.Errorf("failed to register resources: %w", err)
+				}
+			}
+			mcpOpts := &mcpServerOptions{}
+			for _, opt := range opts {
+				if opt != nil {
+					opt(mcpOpts)
+				}
+			}
+			if mcpOpts.prompts {
+				if err := RegisterOfficialPrompts(srv, PromptDescriptors()); err != nil {
+					return fmt.Errorf("failed to register prompts: %w", err)
+				}
 			}
 
-			// Register the 3 meta-tools (search_tools, describe_tool,
-			// invoke_tool). These are the only tools visible via tools/list.
-			// The real catalog is accessible only through these meta-tools.
-			RegisterMetaTools(srv, catalog)
+			if cmd.String("tunnel") == "openai" {
+				log.Debug("serving MCP server through embedded OpenAI Secure MCP Tunnel")
+				return serveHTTP(ctx, srv, cmd)
+			}
 
 			if !cmd.Bool("http") {
-				log.Debug("serving MCP server over stdio")
-				s := server.NewStdioServer(srv)
-				return s.Listen(ctx, os.Stdin, os.Stdout)
+				log.Debug("serving MCP server over stdio (official SDK)")
+				return RunOfficialStdio(ctx, srv, os.Stdin, os.Stdout)
 			}
 
 			return serveHTTP(ctx, srv, cmd)
@@ -149,13 +164,25 @@ adapter.`,
 // to the local address derived from the --host/--port flags. When --tunnel is
 // set, it starts and manages the selected tunnel so a remote MCP client can
 // reach the server over a public URL, then blocks until ctx is cancelled.
-func serveHTTP(ctx context.Context, srv *server.MCPServer, cmd *cli.Command) error {
+func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command) error {
 	provider := cmd.String("tunnel")
 	domain := cmd.String("domain")
 	token := cmd.String("token")
+	tunnelID := cmd.String("tunnel-id")
 	authToken := cmd.String("auth-token")
 	publicURL := cmd.String("public-url")
 	enableOAuth := cmd.Bool("oauth")
+
+	if provider == "openai" {
+		if enableOAuth {
+			return fmt.Errorf("--oauth is not supported with the embedded OpenAI Secure MCP Tunnel; use ngrok or cloudflared for Pinner OAuth")
+		}
+		apiKey := os.Getenv("CONTROL_PLANE_API_KEY")
+		if apiKey == "" {
+			apiKey = os.Getenv("OPENAI_API_KEY")
+		}
+		return runEmbeddedOpenAITunnel(ctx, srv, tunnelID, apiKey)
+	}
 
 	// Bind a concrete local address up front. Port 0 asks the OS for an
 	// available ephemeral port.
@@ -170,7 +197,7 @@ func serveHTTP(ctx context.Context, srv *server.MCPServer, cmd *cli.Command) err
 
 	var tunnel Tunnel
 	if provider != "" {
-		tpl, err := tunnelFor(provider, domain, token, cmd.String("tunnel-name"))
+		tpl, err := tunnelFor(provider, domain, token, cmd.String("tunnel-name"), tunnelID)
 		if err != nil {
 			return err
 		}
@@ -206,14 +233,14 @@ func serveHTTP(ctx context.Context, srv *server.MCPServer, cmd *cli.Command) err
 	// the pre-created listener so the ephemeral port is stable and known to
 	// the tunnel before any client connects.
 	mux := http.NewServeMux()
-	var mcpHandler http.Handler = server.NewStreamableHTTPServer(srv)
+	var mcpHandler http.Handler = NewOfficialStreamableHandler(srv)
 	switch {
 	case oauth != nil:
 		// OAuth handshake: /mcp only accepts tokens issued through the flow.
-		mcpHandler = oauth.protectMCP("/mcp", mcpHandler)
+		mcpHandler = oauth.officialMiddleware(mcpHandler)
 	case authToken != "":
 		// Static bearer: accept the shared secret directly as a Bearer token.
-		mcpHandler = beforeAuthorization(authToken, mcpHandler)
+		mcpHandler = staticBearerMiddleware(authToken, mcpHandler)
 	default:
 		// No secret configured: unauthenticated.
 	}
@@ -278,12 +305,22 @@ func serveHTTP(ctx context.Context, srv *server.MCPServer, cmd *cli.Command) err
 			shutdown(context.Background())
 			return err
 		}
-		if oauth != nil && publicURL == "" {
-			// Advertise endpoints against the public tunnel URL.
-			oauth.baseURL = strings.TrimRight(url, "/")
+		if oauth != nil {
+			oauthURL, err := tunnel.OAuthBaseURL(publicURL, url)
+			if err != nil {
+				shutdown(context.Background())
+				return err
+			}
+			// Advertise endpoints against the provider-approved URL.
+			oauth.baseURL = strings.TrimRight(oauthURL, "/")
 			oauth.issuer = oauth.baseURL
 		}
-		fmt.Printf("MCP server URL: %s/mcp\n", strings.TrimRight(url, "/"))
+		if provider == "openai" {
+			fmt.Printf("OpenAI Secure MCP Tunnel ID: %s\n", tunnelID)
+			fmt.Println("In ChatGPT, choose Connection: Tunnel and select or paste this tunnel ID")
+		} else {
+			fmt.Printf("MCP server URL: %s/mcp\n", strings.TrimRight(url, "/"))
+		}
 	} else {
 		fmt.Printf("MCP server listening on http://%s (endpoint /mcp)\n", localAddr)
 	}
@@ -303,28 +340,9 @@ func serveHTTP(ctx context.Context, srv *server.MCPServer, cmd *cli.Command) err
 	return nil
 }
 
-// beforeAuthorization wraps an http.Handler with a static bearer-token check
-// used for loopback-only serving: requests must carry an Authorization header
-// equal to "Bearer <secret>". The comparison is constant-time. The raw secret
-// is only accepted directly in loopback mode; public exposure uses the OAuth
-// handshake instead.
-func beforeAuthorization(secret string, next http.Handler) http.Handler {
-	if secret == "" {
-		return next
-	}
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		tok := bearerToken(r)
-		if tok != "" && subtle.ConstantTimeCompare([]byte(tok), []byte(secret)) == 1 {
-			next.ServeHTTP(w, r)
-			return
-		}
-		deny(w, `Bearer realm="pinner-mcp"`)
-	})
-}
-
 // tunnelFor returns a Tunnel for the named provider, or nil if provider is
 // empty (no tunnel).
-func tunnelFor(provider, domain, token, name string) (Tunnel, error) {
+func tunnelFor(provider, domain, token, name, tunnelID string) (Tunnel, error) {
 	switch provider {
 	case "":
 		return nil, nil
@@ -332,13 +350,21 @@ func tunnelFor(provider, domain, token, name string) (Tunnel, error) {
 		return NewNgrokTunnel(domain, token), nil
 	case "cloudflared":
 		return NewCloudflaredTunnel(domain, name), nil
+	case "openai":
+		return nil, fmt.Errorf("OpenAI Secure MCP Tunnel is embedded and does not use an HTTP tunnel")
 	default:
-		return nil, fmt.Errorf("unknown tunnel provider %q (supported: ngrok, cloudflared)", provider)
+		return nil, fmt.Errorf("unknown tunnel provider %q (supported: ngrok, cloudflared, openai)", provider)
 	}
 }
 
-// MCPServerOption configures an MCP server built by MCPServerWithOpts.
-type MCPServerOption func(srv *server.MCPServer)
+// mcpServerOptions carries resolved MCP command configuration.
+type mcpServerOptions struct {
+	// prompts enables registration of the prompt templates.
+	prompts bool
+}
+
+// MCPServerOption configures the MCP command served by MCPCommand.
+type MCPServerOption func(*mcpServerOptions)
 
 // ResourceProvidersFactory builds ResourceProviders at Action time, when the
 // session store and other runtime deps are available.
@@ -346,8 +372,8 @@ type ResourceProvidersFactory func(store *SessionStore) ResourceProviders
 
 // WithPrompts attaches MCP prompt templates (website-onboarding, setup).
 func WithPrompts() MCPServerOption {
-	return func(srv *server.MCPServer) {
-		RegisterPrompts(srv)
+	return func(o *mcpServerOptions) {
+		o.prompts = true
 	}
 }
 
@@ -355,31 +381,10 @@ func WithPrompts() MCPServerOption {
 // and services are available. Called inside the MCP command's Action.
 type WizardDepsFactory func() (WebsitesWizardDeps, SetupWizardDeps, DomainWizardDeps, error)
 
-// MCPServerWithOpts builds the MCP server from a urfave/cli command tree,
-// populates a ToolCatalog with all commands (instead of registering them
-// directly on the server), and applies the given options.
-//
-// The returned catalog is empty of wizard tools: the caller should add
-// wizard tools via RegisterWizardTools before calling RegisterMetaTools.
-func MCPServerWithOpts(root *cli.Command, hasRootAction bool, prefix []string, opts ...MCPServerOption) (*server.MCPServer, *ToolCatalog, error) {
-	srv, catalog, err := MCPServer(root, hasRootAction, prefix...)
-	if err != nil {
-		return nil, nil, err
-	}
-	for _, opt := range opts {
-		if opt != nil {
-			opt(srv)
-		}
-	}
-	return srv, catalog, nil
-}
-
-// MCPServer builds an MCP server from a urfave/cli/v3 command tree.
-// Instead of registering commands as individual MCP tools, it populates a
-// ToolCatalog that is accessible only through the meta-tools (search_tools,
-// describe_tool, invoke_tool). This implements server-side progressive
-// disclosure.
-func MCPServer(root *cli.Command, hasRootAction bool, prefix ...string) (*server.MCPServer, *ToolCatalog, error) {
+// buildCatalog walks a urfave/cli/v3 command tree and populates a ToolCatalog
+// with every invocable non-hidden command. The public command tree is
+// cataloged identically for the official SDK builder (OfficialMCPServer).
+func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string) (*ToolCatalog, error) {
 	catalog := NewToolCatalog()
 
 	// runMu serializes root.Run calls. A shallow copy of root gives each
@@ -388,8 +393,8 @@ func MCPServer(root *cli.Command, hasRootAction bool, prefix ...string) (*server
 	// The lock is held only across Run, not during arg prep or response building.
 	runMu := sync.Mutex{}
 
-	toolHandler := func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		args := strings.Split(request.Params.Name, ToolDelimiter)
+	toolHandler := func(ctx context.Context, request ToolRequest) (ToolResult, error) {
+		args := strings.Split(request.Name, ToolDelimiter)
 
 		// Strip the root command name from args before forwarding.
 		args = args[1:]
@@ -399,7 +404,7 @@ func MCPServer(root *cli.Command, hasRootAction bool, prefix ...string) (*server
 
 		// Guard against recursive MCP invocation.
 		if slices.Contains(args, "mcp") {
-			return nil, fmt.Errorf("cannot invoke MCP from within MCP")
+			return ToolResult{}, fmt.Errorf("cannot invoke MCP from within MCP")
 		}
 
 		// Force agent mode for all MCP tool invocations: structured JSON output,
@@ -409,14 +414,14 @@ func MCPServer(root *cli.Command, hasRootAction bool, prefix ...string) (*server
 			args = append(args, "--agent")
 		}
 
-		for key, val := range request.GetArguments() {
+		for key, val := range request.Arguments {
 			if key == "_args" {
 				if arr, ok := val.([]any); ok {
 					for _, a := range arr {
 						if s, ok := a.(string); ok {
 							args = append(args, s)
 						} else {
-							return nil, fmt.Errorf("_args entries must be strings, got %T", a)
+							return ToolResult{}, fmt.Errorf("_args entries must be strings, got %T", a)
 						}
 					}
 				}
@@ -426,6 +431,14 @@ func MCPServer(root *cli.Command, hasRootAction bool, prefix ...string) (*server
 			switch v := val.(type) {
 			case string:
 				args = append(args, k, v)
+			case []any:
+				for _, item := range v {
+					s, ok := item.(string)
+					if !ok {
+						return ToolResult{}, fmt.Errorf("array argument %q entries must be strings, got %T", key, item)
+					}
+					args = append(args, k, s)
+				}
 			case bool:
 				if v {
 					args = append(args, k)
@@ -444,7 +457,7 @@ func MCPServer(root *cli.Command, hasRootAction bool, prefix ...string) (*server
 			case nil:
 				// null means "not provided": skip
 			default:
-				return nil, fmt.Errorf("unsupported argument type for %q: %T", key, val)
+				return ToolResult{}, fmt.Errorf("unsupported argument type for %q: %T", key, val)
 			}
 		}
 		sensitiveFlags := map[string]bool{
@@ -503,13 +516,10 @@ func MCPServer(root *cli.Command, hasRootAction bool, prefix ...string) (*server
 			if msg == "" {
 				msg = runErr.Error()
 			}
-			return &mcp.CallToolResult{
-				IsError: true,
-				Content: []mcp.Content{mcp.NewTextContent(msg)},
-			}, nil
+			return ToolResult{IsError: true, Text: msg}, nil
 		}
 
-		return &mcp.CallToolResult{Content: []mcp.Content{mcp.NewTextContent(stdout.String())}}, nil
+		return ToolResult{Text: stdout.String()}, nil
 	}
 
 	// Populate the catalog from the command tree. All commands are stored
@@ -517,26 +527,12 @@ func MCPServer(root *cli.Command, hasRootAction bool, prefix ...string) (*server
 	// (search_tools, describe_tool, invoke_tool) provide the discovery and
 	// invocation interface.
 	if err := catalog.RegisterFromCommand(root, hasRootAction, prefix, toolHandler); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	// Build the server after the catalog is populated so the instructions
-	// can reference the real, computed tool count instead of a hard-coded
-	// number that drifts as commands are added or removed.
-	srv := server.NewMCPServer(root.Name, root.Version,
-		server.WithToolCapabilities(true),
-		server.WithInstructions(buildInstructions(catalog.Len())),
-	)
-
-	return srv, catalog, nil
+	return catalog, nil
 }
 
-// FlagsToTools converts urfave/cli flags into MCP tool property options.
-// Supports String, Bool, all numeric types, Float, Duration, and StringSlice.
-//
-// Extended from the original upstream which only handled String, Bool, and
-// numeric types. Added: FloatFlag (via the numeric generic), DurationFlag,
-// StringSliceFlag, and filtering of the "version" flag.
 // mcpInstructionsBase is sent to MCP clients in the initialize response. It
 // guides agents through the progressive disclosure flow so they know to
 // search before invoking, and understand how _args works for positional CLI
@@ -557,138 +553,4 @@ Some tools accept "_args" (an array of positional strings) in their arguments. C
 // commands are added or removed.
 func buildInstructions(toolCount int) string {
 	return fmt.Sprintf(mcpInstructionsBase, toolCount)
-}
-
-// FlagsToTools converts urfave/cli flags to MCP tool property options.
-func FlagsToTools(flags []cli.Flag) ([]mcp.ToolOption, error) {
-	var opts []mcp.ToolOption
-	for _, flag := range flags {
-		switch f := flag.(type) {
-		case *cli.StringFlag:
-			if f.Hidden {
-				continue
-			}
-			opts = append(opts, mcp.WithString(f.Name, stringFlagProps(f, nil)...))
-
-		case *enumStringFlag:
-			if f.Hidden {
-				continue
-			}
-			// enumStringFlag embeds *cli.StringFlag and additionally carries an
-			// explicit enum domain declared at the flag definition site.
-			opts = append(opts, mcp.WithString(f.Name, stringFlagProps(f.StringFlag, f.enum)...))
-
-		case *cli.BoolFlag:
-			if f.Name == "help" || f.Name == "version" || f.Hidden {
-				continue
-			}
-			propOpts := []mcp.PropertyOption{
-				mcp.Description(f.Usage),
-				mcp.DefaultBool(f.Value),
-			}
-			if f.Required {
-				propOpts = append(propOpts, mcp.Required())
-			}
-			opts = append(opts, mcp.WithBoolean(f.Name, propOpts...))
-
-		case *cli.StringSliceFlag:
-			if f.Hidden {
-				continue
-			}
-			propOpts := []mcp.PropertyOption{
-				mcp.Description(f.Usage),
-				mcp.Description("(comma-separated for multiple values)"),
-			}
-			if f.Required {
-				propOpts = append(propOpts, mcp.Required())
-			}
-			opts = append(opts, mcp.WithString(f.Name, propOpts...))
-
-		case *cli.DurationFlag:
-			if f.Hidden {
-				continue
-			}
-			propOpts := []mcp.PropertyOption{
-				mcp.Description(fmt.Sprintf("%s (duration, e.g. 5m, 1h30m)", f.Usage)),
-			}
-			if f.Required {
-				propOpts = append(propOpts, mcp.Required())
-			}
-			if f.Value != 0 {
-				propOpts = append(propOpts, mcp.DefaultString(f.Value.String()))
-			}
-			opts = append(opts, mcp.WithString(f.Name, propOpts...))
-
-		// Numeric flags. FloatFlag and Float64Flag are type aliases in
-		// urfave/cli v3 (both are FlagBase[float64, ...]), so only one
-		// case appears. Same for IntFlag/Int64Flag on 64-bit platforms
-		// but they are distinct types at the type-system level.
-		case *cli.FloatFlag:
-			opts = append(opts, numberToolOption(f.Name, f.Usage, f.Value, f.Required, f.Hidden)...)
-		case *cli.Float32Flag:
-			opts = append(opts, numberToolOption(f.Name, f.Usage, f.Value, f.Required, f.Hidden)...)
-
-		case *cli.IntFlag:
-			opts = append(opts, numberToolOption(f.Name, f.Usage, f.Value, f.Required, f.Hidden)...)
-		case *cli.Int8Flag:
-			opts = append(opts, numberToolOption(f.Name, f.Usage, f.Value, f.Required, f.Hidden)...)
-		case *cli.Int16Flag:
-			opts = append(opts, numberToolOption(f.Name, f.Usage, f.Value, f.Required, f.Hidden)...)
-		case *cli.Int32Flag:
-			opts = append(opts, numberToolOption(f.Name, f.Usage, f.Value, f.Required, f.Hidden)...)
-		case *cli.Int64Flag:
-			opts = append(opts, numberToolOption(f.Name, f.Usage, f.Value, f.Required, f.Hidden)...)
-
-		case *cli.UintFlag:
-			opts = append(opts, numberToolOption(f.Name, f.Usage, f.Value, f.Required, f.Hidden)...)
-		case *cli.Uint8Flag:
-			opts = append(opts, numberToolOption(f.Name, f.Usage, f.Value, f.Required, f.Hidden)...)
-		case *cli.Uint16Flag:
-			opts = append(opts, numberToolOption(f.Name, f.Usage, f.Value, f.Required, f.Hidden)...)
-		case *cli.Uint32Flag:
-			opts = append(opts, numberToolOption(f.Name, f.Usage, f.Value, f.Required, f.Hidden)...)
-		case *cli.Uint64Flag:
-			opts = append(opts, numberToolOption(f.Name, f.Usage, f.Value, f.Required, f.Hidden)...)
-
-		default:
-			return nil, fmt.Errorf("unsupported flag type: %T", f)
-		}
-	}
-	return opts, nil
-}
-
-// numberToolOption is a generic helper for numeric flag types.
-// Returns nil (no tool options) if the flag is hidden.
-func numberToolOption[T int | int8 | int16 | int32 | int64 | uint | uint8 | uint16 | uint32 | uint64 | float32 | float64](name, usage string, value T, required, hidden bool) []mcp.ToolOption {
-	if hidden {
-		return nil
-	}
-	propOpts := []mcp.PropertyOption{
-		mcp.Description(usage),
-		mcp.DefaultNumber(float64(value)),
-	}
-	if required {
-		propOpts = append(propOpts, mcp.Required())
-	}
-	return []mcp.ToolOption{mcp.WithNumber(name, propOpts...)}
-}
-
-// stringFlagProps builds the property options for a string flag. An optional
-// non-nil enum is emitted as a JSON-schema enum so MCP agents see the valid
-// values up front. The enum lives on the flag definition, so it is the single
-// source of truth and cannot drift from the CLI's validation.
-func stringFlagProps(f *cli.StringFlag, enum []string) []mcp.PropertyOption {
-	propOpts := []mcp.PropertyOption{
-		mcp.Description(f.Usage),
-	}
-	if f.Required {
-		propOpts = append(propOpts, mcp.Required())
-	}
-	if f.Value != "" {
-		propOpts = append(propOpts, mcp.DefaultString(f.Value))
-	}
-	if len(enum) > 0 {
-		propOpts = append(propOpts, mcp.Enum(enum...))
-	}
-	return propOpts
 }

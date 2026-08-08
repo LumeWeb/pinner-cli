@@ -2,10 +2,10 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
-	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
@@ -83,7 +83,7 @@ func TestCommandAnnotationsRegistered(t *testing.T) {
 	}
 
 	catalog := NewToolCatalog()
-	handler := func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) { return nil, nil }
+	handler := PinnerToolHandler(func(context.Context, ToolRequest) (ToolResult, error) { return ToolResult{}, nil })
 	err := catalog.RegisterFromCommand(root, true, nil, handler)
 	require.NoError(t, err)
 
@@ -130,7 +130,7 @@ func TestDescribeToolCarriesAnnotations(t *testing.T) {
 
 	catalog := NewToolCatalog()
 	err := catalog.RegisterFromCommand(root, true, nil,
-		func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) { return nil, nil })
+		func(context.Context, ToolRequest) (ToolResult, error) { return ToolResult{}, nil })
 	require.NoError(t, err)
 
 	detail, err := catalog.Describe("pinner_status")
@@ -151,28 +151,29 @@ func TestDescribeToolCarriesAnnotations(t *testing.T) {
 // gets its enum emitted into the MCP input schema, while a plain string flag
 // does not.
 func TestEnumStringFlagEmitsEnum(t *testing.T) {
-	// Build through FlagsToTools, which is what RegisterFromCommand uses.
-	enumOpts, err := FlagsToTools([]cli.Flag{
-		EnumStringFlag("mode", "Cancel mode", false, "end_of_billing_period",
-			"immediate", "end_of_billing_period"),
-	})
+	schema, err := flagsToSchema([]cli.Flag{EnumStringFlag("mode", "Cancel mode", false, "end_of_billing_period", "immediate", "end_of_billing_period")}, "")
 	require.NoError(t, err)
-	require.Len(t, enumOpts, 1)
+	var doc map[string]any
+	require.NoError(t, json.Unmarshal(schema, &doc))
+	props := doc["properties"].(map[string]any)
+	mode := props["mode"].(map[string]any)
+	assert.Equal(t, []any{"immediate", "end_of_billing_period"}, mode["enum"])
 
-	schemaTool := mcp.NewTool("pinner_cancel", enumOpts...)
-	require.NotNil(t, schemaTool.InputSchema)
-	props, ok := schemaTool.InputSchema.Properties["mode"].(map[string]any)
-	require.True(t, ok)
-	enum, ok := props["enum"].([]string)
-	require.True(t, ok)
-	require.Equal(t, []string{"immediate", "end_of_billing_period"}, enum)
-
-	// A plain string flag must not carry an enum.
-	plainOpts, err := FlagsToTools([]cli.Flag{&cli.StringFlag{Name: "path", Usage: "Path"}})
+	schema, err = flagsToSchema([]cli.Flag{&cli.StringFlag{Name: "path", Usage: "Path"}}, "")
 	require.NoError(t, err)
-	plainTool := mcp.NewTool("pinner_upload", plainOpts...)
-	pprops, ok := plainTool.InputSchema.Properties["path"].(map[string]any)
-	require.True(t, ok)
-	_, hasEnum := pprops["enum"]
+	require.NoError(t, json.Unmarshal(schema, &doc))
+	props = doc["properties"].(map[string]any)
+	_, hasEnum := props["path"].(map[string]any)["enum"]
 	assert.False(t, hasEnum)
+}
+
+func TestStringSliceFlagEmitsArraySchema(t *testing.T) {
+	schema, err := flagsToSchema([]cli.Flag{&cli.StringSliceFlag{Name: "tags", Usage: "Tags"}}, "")
+	require.NoError(t, err)
+
+	var doc map[string]any
+	require.NoError(t, json.Unmarshal(schema, &doc))
+	property := doc["properties"].(map[string]any)["tags"].(map[string]any)
+	assert.Equal(t, "array", property["type"])
+	assert.Equal(t, map[string]any{"type": "string"}, property["items"])
 }

@@ -6,7 +6,6 @@ import (
 	"io"
 	"testing"
 
-	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
@@ -81,8 +80,8 @@ func TestMCPCommandServer_OutputNotLeaked_WithStaleCommandContext(t *testing.T) 
 	_ = root.Run(context.Background(), []string{"pinner", "__capture_ctx"})
 	require.NotNil(t, capturedCtx, "context should be captured from first Run")
 
-	// Step 2: Create the MCP server from the already-initialized root.
-	srv, catalog, err := mcpadapter.MCPServer(root, false)
+	// Step 2: Create the official MCP server from the already-initialized root.
+	srv, catalog, err := mcpadapter.OfficialMCPServer(root, false, nil)
 	require.NoError(t, err)
 	_ = srv // meta-tools not needed for this test; we invoke via catalog
 
@@ -93,17 +92,10 @@ func TestMCPCommandServer_OutputNotLeaked_WithStaleCommandContext(t *testing.T) 
 	entry, ok := catalog.Get("pinner_auth_status")
 	require.True(t, ok, "tool should be in catalog")
 
-	req := mcp.CallToolRequest{}
-	req.Params.Name = "pinner_auth_status"
-
-	result, err := entry.Handler(capturedCtx, req)
+	result, err := entry.Handler(capturedCtx, mcpadapter.ToolRequest{Name: "pinner_auth_status"})
 	require.NoError(t, err)
-	require.Len(t, result.Content, 1)
-
-	content, ok := result.Content[0].(mcp.TextContent)
-	require.True(t, ok)
-	assert.Contains(t, content.Text, "Authentication status: authenticated")
-	assert.NotEmpty(t, content.Text,
+	assert.Contains(t, result.Text, "Authentication status: authenticated")
+	assert.NotEmpty(t, result.Text,
 		"output should be captured in MCP response, not leaked to stdout "+
 			"(if empty, the commandContextKey from the outer Run is causing "+
 			"cmd.Root() to resolve to the original root with os.Stdout)")

@@ -687,7 +687,17 @@ pinner mcp --http --tunnel ngrok \
 
 Use `--public-url https://your-public-host.example` when the advertised URL cannot be derived from the tunnel. The public URL must be reachable by the MCP client for discovery, `/oauth/register`, `/oauth/token`, and the authorization flow. The server stores registrations and tokens in memory; restarting it requires clients to authorize again.
 
-OpenAI Secure MCP Tunnel is a separate product. It uses OpenAI's `tunnel-client`, tunnel ID, and runtime API key to provide an outbound private connection. `--tunnel ngrok` and `--tunnel cloudflared` do not configure OpenAI Secure MCP Tunnel.
+For ChatGPT's OpenAI Secure MCP Tunnel, use an OpenAI-managed tunnel ID and runtime API key:
+
+```bash
+export CONTROL_PLANE_API_KEY="..."
+pinner mcp --tunnel openai \
+  --tunnel-id tunnel_0123456789abcdef0123456789abcdef
+```
+
+Pinner embeds the official `github.com/openai/tunnel-client` Go SDK and connects its MCP server over an in-memory MCP transport. No local HTTP listener, subprocess, or separate `tunnel-client` installation is required. The tunnel ID must already exist in OpenAI Platform Tunnels, and the runtime key must have tunnel Read and Use permissions. Pinner prints the tunnel ID for ChatGPT's `Connection: Tunnel` setup. This is not a public URL tunnel, and Pinner does not create or manage OpenAI tunnel resources. OAuth discovery is not supported through this mode because Pinner's local OAuth endpoints are not exposed by OpenAI's hosted tunnel URL.
+
+`--tunnel ngrok` and `--tunnel cloudflared` remain public tunnel providers.
 
 When running under an MCP client, the server exposes three meta-tools for progressive disclosure:
 
