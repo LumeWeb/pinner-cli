@@ -6,6 +6,8 @@ import "github.com/samber/lo"
 // this ordered slice as the source of truth; curatedToolSet is derived from it.
 var curatedToolNames = []string{
 	"pinner_upload",
+	"pinner_auth_status",
+	"pinner_auth_logout",
 	"pinner_pin",
 	"pinner_list",
 	"pinner_status",

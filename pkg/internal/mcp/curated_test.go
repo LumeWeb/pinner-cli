@@ -11,9 +11,11 @@ func TestCuratedToolAllowlist(t *testing.T) {
 	for _, name := range curatedToolNames {
 		require.True(t, IsCuratedTool(name), name)
 	}
-	for _, name := range []string{"pinner_setup", "pinner_admin_pprof", "setup_wizard_start", "setup_wizard_step"} {
+	for _, name := range []string{"pinner_setup", "pinner_admin_pprof", "setup_wizard_start", "setup_wizard_step", "pinner_auth"} {
 		require.False(t, IsCuratedTool(name), name)
 	}
+	require.True(t, IsCuratedTool("pinner_auth_status"))
+	require.True(t, IsCuratedTool("pinner_auth_logout"))
 }
 
 func TestRegisterOfficialCuratedToolsFiltersCatalog(t *testing.T) {
@@ -38,4 +40,10 @@ func TestRegisterOfficialCuratedToolsFiltersCatalog(t *testing.T) {
 func TestCuratedToolNamesAreNotRawSetupTools(t *testing.T) {
 	require.False(t, IsCuratedTool("setup_wizard_start"))
 	require.False(t, IsCuratedTool("setup_wizard_step"))
+}
+
+func TestAuthLogoutIsNotClassifiedAsDestructive(t *testing.T) {
+	require.True(t, isReadOnlyName([]string{"pinner", "auth", "status"}))
+	require.False(t, isReadOnlyName([]string{"pinner", "auth", "logout"}))
+	require.False(t, isDestructiveName([]string{"pinner", "auth", "logout"}))
 }
