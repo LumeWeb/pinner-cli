@@ -82,19 +82,19 @@ func TestNgrokEndpointURLChoosesHTTPS(t *testing.T) {
 }
 
 func TestTunnelFor(t *testing.T) {
-	tng, err := tunnelFor("ngrok", "", "tok", "")
+	tng, err := tunnelFor("ngrok", "", "tok", "", "")
 	require.NoError(t, err)
 	assert.Equal(t, "ngrok", tng.Name())
 	assert.True(t, tng.SupportsCustomDomain())
 
-	tcf, err := tunnelFor("cloudflared", "mcp.example.com", "", "")
+	tcf, err := tunnelFor("cloudflared", "mcp.example.com", "", "", "")
 	require.NoError(t, err)
 	assert.Equal(t, "cloudflared", tcf.Name())
 
-	_, err = tunnelFor("bogus", "", "", "")
+	_, err = tunnelFor("bogus", "", "", "", "")
 	require.Error(t, err)
 
-	nilT, err := tunnelFor("", "", "", "")
+	nilT, err := tunnelFor("", "", "", "", "")
 	require.NoError(t, err)
 	assert.Nil(t, nilT)
 }

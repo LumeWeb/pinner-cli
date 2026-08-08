@@ -74,7 +74,7 @@ adapter.`,
 			},
 			&cli.StringFlag{
 				Name:  "tunnel",
-				Usage: "Public tunnel provider: ngrok or cloudflared (cloudflared requires a custom domain)",
+				Usage: "Tunnel provider: ngrok, cloudflared, or openai (OpenAI requires --tunnel-id and runtime credentials)",
 			},
 			&cli.StringFlag{
 				Name:  "domain",
@@ -87,6 +87,10 @@ adapter.`,
 			&cli.StringFlag{
 				Name:  "tunnel-name",
 				Usage: "Cloudflare tunnel resource name (default: pinner-mcp)",
+			},
+			&cli.StringFlag{
+				Name:  "tunnel-id",
+				Usage: "OpenAI Secure MCP Tunnel ID (required with --tunnel openai)",
 			},
 			&cli.StringFlag{
 				Name:  "auth-token",
@@ -153,6 +157,7 @@ func serveHTTP(ctx context.Context, srv *server.MCPServer, cmd *cli.Command) err
 	provider := cmd.String("tunnel")
 	domain := cmd.String("domain")
 	token := cmd.String("token")
+	tunnelID := cmd.String("tunnel-id")
 	authToken := cmd.String("auth-token")
 	publicURL := cmd.String("public-url")
 	enableOAuth := cmd.Bool("oauth")
@@ -170,7 +175,7 @@ func serveHTTP(ctx context.Context, srv *server.MCPServer, cmd *cli.Command) err
 
 	var tunnel Tunnel
 	if provider != "" {
-		tpl, err := tunnelFor(provider, domain, token, cmd.String("tunnel-name"))
+		tpl, err := tunnelFor(provider, domain, token, cmd.String("tunnel-name"), tunnelID)
 		if err != nil {
 			return err
 		}
@@ -283,7 +288,12 @@ func serveHTTP(ctx context.Context, srv *server.MCPServer, cmd *cli.Command) err
 			oauth.baseURL = strings.TrimRight(url, "/")
 			oauth.issuer = oauth.baseURL
 		}
-		fmt.Printf("MCP server URL: %s/mcp\n", strings.TrimRight(url, "/"))
+		if provider == "openai" {
+			fmt.Printf("OpenAI Secure MCP Tunnel ID: %s\n", tunnelID)
+			fmt.Println("In ChatGPT, choose Connection: Tunnel and select or paste this tunnel ID")
+		} else {
+			fmt.Printf("MCP server URL: %s/mcp\n", strings.TrimRight(url, "/"))
+		}
 	} else {
 		fmt.Printf("MCP server listening on http://%s (endpoint /mcp)\n", localAddr)
 	}
@@ -324,7 +334,7 @@ func beforeAuthorization(secret string, next http.Handler) http.Handler {
 
 // tunnelFor returns a Tunnel for the named provider, or nil if provider is
 // empty (no tunnel).
-func tunnelFor(provider, domain, token, name string) (Tunnel, error) {
+func tunnelFor(provider, domain, token, name, tunnelID string) (Tunnel, error) {
 	switch provider {
 	case "":
 		return nil, nil
@@ -332,8 +342,17 @@ func tunnelFor(provider, domain, token, name string) (Tunnel, error) {
 		return NewNgrokTunnel(domain, token), nil
 	case "cloudflared":
 		return NewCloudflaredTunnel(domain, name), nil
+	case "openai":
+		apiKey := token
+		if apiKey == "" {
+			apiKey = os.Getenv("CONTROL_PLANE_API_KEY")
+		}
+		if apiKey == "" {
+			apiKey = os.Getenv("OPENAI_API_KEY")
+		}
+		return newOpenAITunnel(tunnelID, apiKey)
 	default:
-		return nil, fmt.Errorf("unknown tunnel provider %q (supported: ngrok, cloudflared)", provider)
+		return nil, fmt.Errorf("unknown tunnel provider %q (supported: ngrok, cloudflared, openai)", provider)
 	}
 }
 
