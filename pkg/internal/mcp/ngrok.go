@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -25,6 +26,7 @@ type ngrokTunnel struct {
 	domain string
 	token  string
 	cmd    *exec.Cmd
+	done   chan struct{}
 }
 
 // NewNgrokTunnel returns a tunnel powered by the ngrok agent. token is the
@@ -100,13 +102,25 @@ func (n *ngrokTunnel) URL() (string, error) {
 func (n *ngrokTunnel) Stop(ctx context.Context) error {
 	n.mu.Lock()
 	cmd := n.cmd
+	done := n.done
 	n.mu.Unlock()
 	if cmd == nil || cmd.Process == nil {
 		return nil
 	}
+	select {
+	case <-done:
+		return nil
+	default:
+	}
 	_ = cmd.Process.Signal(os.Interrupt)
-	_ = waitCtx(ctx, cmd)
-	return nil
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		_ = cmd.Process.Kill()
+		<-done
+		return ctx.Err()
+	}
 }
 
 // Start implements Tunnel.
@@ -132,15 +146,18 @@ func (n *ngrokTunnel) Start(ctx context.Context, localAddr string) error {
 	if n.token != "" {
 		cmd.Env = append(os.Environ(), "NGROK_AUTHTOKEN="+n.token)
 	}
-	cmd.Stdout = os.Stderr
-	cmd.Stderr = os.Stderr
+	cmd.Stdout = io.Discard
+	cmd.Stderr = io.Discard
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start ngrok: %w", err)
 	}
 
 	n.mu.Lock()
 	n.cmd = cmd
+	n.done = make(chan struct{})
+	done := n.done
 	n.mu.Unlock()
+	go func() { _ = cmd.Wait(); close(done) }()
 
 	if n.domain != "" {
 		// The public URL is known up front; no discovery needed.

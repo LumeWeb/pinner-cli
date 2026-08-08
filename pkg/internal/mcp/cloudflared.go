@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -120,10 +121,10 @@ func (c *cloudflaredTunnel) Start(ctx context.Context, localAddr string) error {
 		"--hostname", c.domain,
 	)
 	// The public URL is the custom domain, known before the tunnel connects,
-	// so there is no need to parse cloudflared output. Route it to stderr so
-	// it does not pollute the MCP transport or stdout.
-	cmd.Stdout = os.Stderr
-	cmd.Stderr = os.Stderr
+	// so there is no need to parse cloudflared output. Keep provider output out
+	// of the CLI and MCP transport; readiness and errors are reported by us.
+	cmd.Stdout = io.Discard
+	cmd.Stderr = io.Discard
 
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start cloudflared: %w", err)
