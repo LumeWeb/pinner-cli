@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -14,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/modelcontextprotocol/go-sdk/auth"
 )
 
 // oauthServer is a deliberately minimal, self-contained OAuth 2.1-shaped
@@ -436,6 +439,11 @@ func (o *oauthServer) newCode(entry authorizationCode) string {
 // so the per-request cost stays O(1). The mutex is still held for the single
 // lookup (removing it would race with writers in tokenHandler/newCode/sweep).
 func (o *oauthServer) validToken(tok string) bool {
+	_, ok := o.tokenExpiry(tok)
+	return ok
+}
+
+func (o *oauthServer) tokenExpiry(tok string) (time.Time, bool) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	exp, ok := o.tokens[tok]
@@ -443,7 +451,38 @@ func (o *oauthServer) validToken(tok string) bool {
 		delete(o.tokens, tok)
 		ok = false
 	}
-	return ok
+	return exp, ok
+}
+
+func (o *oauthServer) officialMiddleware(next http.Handler) http.Handler {
+	verifier := func(_ context.Context, token string, _ *http.Request) (*auth.TokenInfo, error) {
+		exp, ok := o.tokenExpiry(token)
+		if !ok {
+			return nil, auth.ErrInvalidToken
+		}
+		return &auth.TokenInfo{Expiration: exp, UserID: tokenPrincipal(token)}, nil
+	}
+	return auth.RequireBearerToken(verifier, &auth.RequireBearerTokenOptions{
+		ResourceMetadataURL: strings.TrimRight(o.baseURL, "/") + "/.well-known/oauth-protected-resource",
+	})(next)
+}
+
+func staticBearerMiddleware(secret string, next http.Handler) http.Handler {
+	verifier := func(_ context.Context, token string, _ *http.Request) (*auth.TokenInfo, error) {
+		if token == "" || subtle.ConstantTimeCompare([]byte(token), []byte(secret)) != 1 {
+			return nil, auth.ErrInvalidToken
+		}
+		return &auth.TokenInfo{
+			Expiration: time.Now().Add(time.Hour),
+			UserID:     tokenPrincipal(token),
+		}, nil
+	}
+	return auth.RequireBearerToken(verifier, nil)(next)
+}
+
+func tokenPrincipal(token string) string {
+	digest := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(digest[:])
 }
 
 // protectMCP wraps the MCP resource-server handler with OAuth bearer-token
@@ -463,9 +502,8 @@ func (o *oauthServer) protectMCP(mcpPath string, next http.Handler) http.Handler
 	})
 }
 
-// deny writes an HTTP 401 with a WWW-Authenticate challenge. It is shared by
-// the OAuth resource-server path (protectMCP) and the static-bearer path
-// (beforeAuthorization) so both reject unauthorized access the same way.
+// deny writes an HTTP 401 with a WWW-Authenticate challenge for the OAuth
+// resource-server path.
 func deny(w http.ResponseWriter, authenticate string) {
 	w.Header().Set("WWW-Authenticate", authenticate)
 	writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid_token", "error_description": "unauthorized"})

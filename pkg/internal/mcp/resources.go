@@ -6,8 +6,6 @@ import (
 	"fmt"
 
 	"github.com/invopop/jsonschema"
-	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcp-go/server"
 	ipfs "go.lumeweb.com/ipfs-sdk"
 )
 
@@ -110,9 +108,10 @@ type VaultStatusProvider interface {
 	AccountBalance(ctx context.Context) (float64, error)
 }
 
-// ResourceProviders bundles the dependencies that RegisterResources needs.
-// The session store is *SessionStore from this package; the other two are
-// injected interfaces so the resource handlers can call live APIs or mocks.
+// ResourceProviders bundles the dependencies that build the pinner://
+// resources and resource templates. The session store is *SessionStore from
+// this package; the other two are injected interfaces so the resource
+// handlers can call live APIs or mocks.
 type ResourceProviders struct {
 	Account  AccountStatusProvider
 	Websites WebsitesResourceProvider
@@ -120,92 +119,58 @@ type ResourceProviders struct {
 	Sessions *SessionStore
 }
 
-// RegisterResources registers all pinner:// MCP resources and resource
-// templates on the given MCP server, with resource capabilities enabled.
-// It is called by MCPServer during setup.
+// ResourceDescriptors builds the SDK-neutral pinner:// resource and
+// resource-template descriptors from the given providers. The adapter
+// registers them on the protocol server.
 //
-// Static resource: pinner://account/status
+// Static resources: pinner://account/status, pinner://vault/status
 // Resource templates:
 //   - pinner://websites/{domain}/dns-requirements
 //   - pinner://websites/{id}/validation-status
 //   - pinner://wizard/{session_id}/state
-func RegisterResources(srv *server.MCPServer, provs ResourceProviders) {
-	srv.AddResource(
-		mcp.NewResource(
-			AccountStatusURI,
-			"account-status",
-			mcp.WithResourceDescription("Current auth state, quota, and config summary for the authenticated account"),
-			mcp.WithMIMEType("application/json"),
-		),
-		accountStatusHandler(provs.Account),
-	)
-
-	srv.AddResource(
-		mcp.NewResource(
-			VaultStatusURI,
-			"vault-status",
-			mcp.WithResourceDescription("Vault state: initialization, Sia connection, file count, and account balance"),
-			mcp.WithMIMEType("application/json"),
-		),
-		vaultStatusHandler(provs.Vault),
-	)
-
-	srv.AddResourceTemplate(
-		mcp.NewResourceTemplate(
-			DNSRequirementsTmpl,
-			"website-dns-requirements",
-			mcp.WithTemplateDescription("DNS records needed for a website, resolved by domain name"),
-			mcp.WithTemplateMIMEType("application/json"),
-		),
-		dnsRequirementsHandler(provs.Websites),
-	)
-
-	srv.AddResourceTemplate(
-		mcp.NewResourceTemplate(
-			ValidationStatusTmpl,
-			"website-validation-status",
-			mcp.WithTemplateDescription("Live validation state for a website, resolved by numeric ID"),
-			mcp.WithTemplateMIMEType("application/json"),
-		),
-		validationStatusHandler(provs.Websites),
-	)
-
-	srv.AddResourceTemplate(
-		mcp.NewResourceTemplate(
-			WizardStateTmpl,
-			"wizard-session-state",
-			mcp.WithTemplateDescription("Current state of a wizard session, resolved by session ID"),
-			mcp.WithTemplateMIMEType("application/json"),
-		),
-		wizardStateHandler(provs.Sessions),
-	)
-}
-
-// templateArg extracts a string parameter from URI-template match arguments.
-// mcp-go populates request.Params.Arguments with []string values (from the
-// uritemplate library), but we also accept plain strings for safety.
-func templateArg(args map[string]any, key string) string {
-	if args == nil {
-		return ""
+func ResourceDescriptors(provs ResourceProviders) ([]ResourceDescriptor, []ResourceTemplateDescriptor) {
+	resources := []ResourceDescriptor{
+		{
+			URI:         AccountStatusURI,
+			Name:        "account-status",
+			Description: "Current auth state, quota, and config summary for the authenticated account",
+			MIMEType:    "application/json",
+			Handler:     accountStatusHandler(provs.Account),
+		},
+		{
+			URI:         VaultStatusURI,
+			Name:        "vault-status",
+			Description: "Vault state: initialization, Sia connection, file count, and account balance",
+			MIMEType:    "application/json",
+			Handler:     vaultStatusHandler(provs.Vault),
+		},
 	}
-	switch v := args[key].(type) {
-	case string:
-		return v
-	case []string:
-		if len(v) > 0 {
-			return v[0]
-		}
-		return ""
-	case []any:
-		if len(v) > 0 {
-			if s, ok := v[0].(string); ok {
-				return s
-			}
-		}
-		return ""
-	default:
-		return ""
+
+	templates := []ResourceTemplateDescriptor{
+		{
+			URITemplate: DNSRequirementsTmpl,
+			Name:        "website-dns-requirements",
+			Description: "DNS records needed for a website, resolved by domain name",
+			MIMEType:    "application/json",
+			Handler:     dnsRequirementsHandler(provs.Websites),
+		},
+		{
+			URITemplate: ValidationStatusTmpl,
+			Name:        "website-validation-status",
+			Description: "Live validation state for a website, resolved by numeric ID",
+			MIMEType:    "application/json",
+			Handler:     validationStatusHandler(provs.Websites),
+		},
+		{
+			URITemplate: WizardStateTmpl,
+			Name:        "wizard-session-state",
+			Description: "Current state of a wizard session, resolved by session ID",
+			MIMEType:    "application/json",
+			Handler:     wizardStateHandler(provs.Sessions),
+		},
 	}
+
+	return resources, templates
 }
 
 // --- Handlers ---
@@ -214,8 +179,8 @@ func templateArg(args map[string]any, key string) string {
 // JSON. Auth state is derived from the live AccountStatusProvider (which reads
 // cfgMgr at request time) plus an optional AuthStatus call for token
 // verification. Quota is the raw map returned by the provider.
-func accountStatusHandler(acct AccountStatusProvider) server.ResourceHandlerFunc {
-	return func(ctx context.Context, _ mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
+func accountStatusHandler(acct AccountStatusProvider) ResourceHandler {
+	return func(ctx context.Context, req ResourceRequest) (ResourceResult, error) {
 		status := map[string]any{
 			"authenticated": false,
 		}
@@ -249,19 +214,17 @@ func accountStatusHandler(acct AccountStatusProvider) server.ResourceHandlerFunc
 
 		raw, err := json.MarshalIndent(status, "", "  ")
 		if err != nil {
-			return nil, fmt.Errorf("marshal account status: %w", err)
+			return ResourceResult{}, fmt.Errorf("marshal account status: %w", err)
 		}
-		return []mcp.ResourceContents{
-			mcp.TextResourceContents{URI: AccountStatusURI, MIMEType: "application/json", Text: string(raw)},
-		}, nil
+		return ResourceResult{URI: AccountStatusURI, MIMEType: "application/json", Text: string(raw)}, nil
 	}
 }
 
 // vaultStatusHandler builds the vault status resource response.
-func vaultStatusHandler(prov VaultStatusProvider) server.ResourceHandlerFunc {
-	return func(ctx context.Context, _ mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
+func vaultStatusHandler(prov VaultStatusProvider) ResourceHandler {
+	return func(ctx context.Context, req ResourceRequest) (ResourceResult, error) {
 		status := map[string]any{
-			"initialized":   false,
+			"initialized":    false,
 			"sia_configured": false,
 		}
 
@@ -285,33 +248,31 @@ func vaultStatusHandler(prov VaultStatusProvider) server.ResourceHandlerFunc {
 
 		raw, err := json.MarshalIndent(status, "", "  ")
 		if err != nil {
-			return nil, fmt.Errorf("marshal vault status: %w", err)
+			return ResourceResult{}, fmt.Errorf("marshal vault status: %w", err)
 		}
-		return []mcp.ResourceContents{
-			mcp.TextResourceContents{URI: VaultStatusURI, MIMEType: "application/json", Text: string(raw)},
-		}, nil
+		return ResourceResult{URI: VaultStatusURI, MIMEType: "application/json", Text: string(raw)}, nil
 	}
 }
 
 // dnsRequirementsHandler builds the list of DNS records the user must add for
 // a website, mirroring the CLI's showDNSRecordInstructions output.
-func dnsRequirementsHandler(ws WebsitesResourceProvider) server.ResourceTemplateHandlerFunc {
-	return func(ctx context.Context, req mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
-		domain := templateArg(req.Params.Arguments, "domain")
+func dnsRequirementsHandler(ws WebsitesResourceProvider) ResourceHandler {
+	return func(ctx context.Context, req ResourceRequest) (ResourceResult, error) {
+		domain := req.Arguments["domain"]
 		if domain == "" {
-			return nil, fmt.Errorf("missing or invalid domain parameter")
+			return ResourceResult{}, fmt.Errorf("missing or invalid domain parameter")
 		}
 
 		if ws == nil {
-			return nil, fmt.Errorf("websites provider not configured")
+			return ResourceResult{}, fmt.Errorf("websites provider not configured")
 		}
 
 		website, err := ws.GetByDomain(ctx, domain)
 		if err != nil {
-			return nil, fmt.Errorf("resolve website %q: %w", domain, err)
+			return ResourceResult{}, fmt.Errorf("resolve website %q: %w", domain, err)
 		}
 		if website == nil {
-			return nil, fmt.Errorf("website %q not found", domain)
+			return ResourceResult{}, fmt.Errorf("website %q not found", domain)
 		}
 
 		reqs := buildDNSRequirements(website)
@@ -320,7 +281,7 @@ func dnsRequirementsHandler(ws WebsitesResourceProvider) server.ResourceTemplate
 		if website.DnsHostingEnabled {
 			cfg, cfgErr := ws.GetConfig(ctx)
 			if cfgErr != nil {
-				return nil, fmt.Errorf("fetch nameserver config: %w", cfgErr)
+				return ResourceResult{}, fmt.Errorf("fetch nameserver config: %w", cfgErr)
 			}
 			if cfg != nil && cfg.Nameservers != nil && len(*cfg.Nameservers) > 0 {
 				reqs.Nameservers = *cfg.Nameservers
@@ -336,30 +297,28 @@ func dnsRequirementsHandler(ws WebsitesResourceProvider) server.ResourceTemplate
 
 		raw, err := json.MarshalIndent(reqs, "", "  ")
 		if err != nil {
-			return nil, fmt.Errorf("marshal dns requirements: %w", err)
+			return ResourceResult{}, fmt.Errorf("marshal dns requirements: %w", err)
 		}
-		return []mcp.ResourceContents{
-			mcp.TextResourceContents{URI: req.Params.URI, MIMEType: "application/json", Text: string(raw)},
-		}, nil
+		return ResourceResult{URI: req.URI, MIMEType: "application/json", Text: string(raw)}, nil
 	}
 }
 
 // validationStatusHandler calls the live validate API for a website.
-func validationStatusHandler(ws WebsitesResourceProvider) server.ResourceTemplateHandlerFunc {
-	return func(ctx context.Context, req mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
-		id := templateArg(req.Params.Arguments, "id")
+func validationStatusHandler(ws WebsitesResourceProvider) ResourceHandler {
+	return func(ctx context.Context, req ResourceRequest) (ResourceResult, error) {
+		id := req.Arguments["id"]
 		if id == "" {
-			return nil, fmt.Errorf("missing or invalid id parameter")
+			return ResourceResult{}, fmt.Errorf("missing or invalid id parameter")
 		}
 
 		if ws == nil {
-			return nil, fmt.Errorf("websites provider not configured")
+			return ResourceResult{}, fmt.Errorf("websites provider not configured")
 		}
 
 		// Resolve the website first so we can include domain + status.
 		website, err := ws.GetByID(ctx, id)
 		if err != nil {
-			return nil, fmt.Errorf("resolve website id %q: %w", id, err)
+			return ResourceResult{}, fmt.Errorf("resolve website id %q: %w", id, err)
 		}
 		var domain, status string
 		if website != nil {
@@ -369,7 +328,7 @@ func validationStatusHandler(ws WebsitesResourceProvider) server.ResourceTemplat
 
 		result, err := ws.Validate(ctx, id)
 		if err != nil {
-			return nil, fmt.Errorf("validate website %q: %w", id, err)
+			return ResourceResult{}, fmt.Errorf("validate website %q: %w", id, err)
 		}
 
 		vs := ValidationStatus{Status: status}
@@ -386,44 +345,40 @@ func validationStatusHandler(ws WebsitesResourceProvider) server.ResourceTemplat
 
 		raw, err := json.MarshalIndent(vs, "", "  ")
 		if err != nil {
-			return nil, fmt.Errorf("marshal validation status: %w", err)
+			return ResourceResult{}, fmt.Errorf("marshal validation status: %w", err)
 		}
-		return []mcp.ResourceContents{
-			mcp.TextResourceContents{URI: req.Params.URI, MIMEType: "application/json", Text: string(raw)},
-		}, nil
+		return ResourceResult{URI: req.URI, MIMEType: "application/json", Text: string(raw)}, nil
 	}
 }
 
 // wizardStateHandler returns the current FSM state + next-step schema for a
 // wizard session.
-func wizardStateHandler(store *SessionStore) server.ResourceTemplateHandlerFunc {
-	return func(ctx context.Context, req mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
-		sessionID := templateArg(req.Params.Arguments, "session_id")
+func wizardStateHandler(store *SessionStore) ResourceHandler {
+	return func(ctx context.Context, req ResourceRequest) (ResourceResult, error) {
+		sessionID := req.Arguments["session_id"]
 		if sessionID == "" {
-			return nil, fmt.Errorf("missing or invalid session_id parameter")
+			return ResourceResult{}, fmt.Errorf("missing or invalid session_id parameter")
 		}
 
 		if store == nil {
-			return nil, fmt.Errorf("session store not configured")
+			return ResourceResult{}, fmt.Errorf("session store not configured")
 		}
 
-		uri := req.Params.URI
+		uri := req.URI
 		state := WizardSessionState{SessionID: sessionID}
 
 		sess, err := store.Get(sessionID)
 		if err != nil {
 			if err == ErrSessionNotFound {
-				return nil, fmt.Errorf("wizard session %q not found", sessionID)
+				return ResourceResult{}, fmt.Errorf("wizard session %q not found", sessionID)
 			}
 			if err == ErrSessionExpired {
 				state.Expired = true
 				state.Complete = true
 				raw, _ := json.MarshalIndent(state, "", "  ")
-				return []mcp.ResourceContents{
-					mcp.TextResourceContents{URI: uri, MIMEType: "application/json", Text: string(raw)},
-				}, nil
+				return ResourceResult{URI: uri, MIMEType: "application/json", Text: string(raw)}, nil
 			}
-			return nil, fmt.Errorf("lookup session %q: %w", sessionID, err)
+			return ResourceResult{}, fmt.Errorf("lookup session %q: %w", sessionID, err)
 		}
 
 		state.Current = sess.FSM.Current()
@@ -434,11 +389,9 @@ func wizardStateHandler(store *SessionStore) server.ResourceTemplateHandlerFunc 
 
 		raw, err := json.MarshalIndent(state, "", "  ")
 		if err != nil {
-			return nil, fmt.Errorf("marshal wizard state: %w", err)
+			return ResourceResult{}, fmt.Errorf("marshal wizard state: %w", err)
 		}
-		return []mcp.ResourceContents{
-			mcp.TextResourceContents{URI: uri, MIMEType: "application/json", Text: string(raw)},
-		}, nil
+		return ResourceResult{URI: uri, MIMEType: "application/json", Text: string(raw)}, nil
 	}
 }
 
@@ -480,4 +433,3 @@ func buildDNSRequirements(website *ipfs.WebsiteItem) DNSRequirements {
 	reqs.Records = records
 	return reqs
 }
-
