@@ -123,7 +123,7 @@ func (b *schemaBuilder) addDuration(name, usage string, value time.Duration, req
 }
 
 func addNumberProperty[T int | int8 | int16 | int32 | int64 | uint | uint8 | uint16 | uint32 | uint64 | float32 | float64](b *schemaBuilder, name, usage string, value T, required, hidden bool) {
-	b.addProperty(name, "number", usage, float64(value), true, required, hidden)
+	b.addProperty(name, "number", usage, float64(value), value != 0, required, hidden)
 }
 
 func (b *schemaBuilder) addProperty(name, typ, description string, value any, hasDefault, required, hidden bool) {

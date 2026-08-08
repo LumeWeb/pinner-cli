@@ -91,12 +91,14 @@ func TestFlagsToSchema_OmitsZeroDefaults(t *testing.T) {
 	schema, err := flagsToSchema([]cli.Flag{
 		&cli.StringFlag{Name: "string"},
 		&cli.DurationFlag{Name: "duration"},
+		&cli.IntFlag{Name: "count"},
 	}, "")
 	require.NoError(t, err)
 
 	properties := decodeSchema(t, schema)["properties"].(map[string]any)
 	assert.NotContains(t, properties["string"], "default")
 	assert.NotContains(t, properties["duration"], "default")
+	assert.NotContains(t, properties["count"], "default")
 }
 
 func TestFlagsToSchema_RejectsUnsupportedFlag(t *testing.T) {
