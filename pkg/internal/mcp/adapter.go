@@ -102,6 +102,7 @@ adapter.`,
 				Usage: "Public base URL advertised in OAuth discovery metadata (issuer, authorize/token endpoints). Defaults to the tunnel URL when --tunnel is set, or the loopback address otherwise",
 			},
 		},
+		Commands: []*cli.Command{ManagedServiceCommand()},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			log.Debug("building MCP server with progressive disclosure", zap.String("app", root.Name))
 
@@ -145,7 +146,7 @@ adapter.`,
 				}
 			}
 
-			if cmd.String("tunnel") == "openai" {
+			if mcpString(cmd, "tunnel", "MCP_TUNNEL_PROVIDER") == "openai" {
 				log.Debug("serving MCP server through embedded OpenAI Secure MCP Tunnel")
 				return serveHTTP(ctx, srv, cmd)
 			}
@@ -165,13 +166,17 @@ adapter.`,
 // set, it starts and manages the selected tunnel so a remote MCP client can
 // reach the server over a public URL, then blocks until ctx is cancelled.
 func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command) error {
-	provider := cmd.String("tunnel")
-	domain := cmd.String("domain")
-	token := cmd.String("token")
-	tunnelID := cmd.String("tunnel-id")
-	authToken := cmd.String("auth-token")
-	publicURL := cmd.String("public-url")
-	enableOAuth := cmd.Bool("oauth")
+	provider := mcpString(cmd, "tunnel", "MCP_TUNNEL_PROVIDER")
+	domain := mcpString(cmd, "domain", "MCP_DOMAIN")
+	token := mcpString(cmd, "token", "MCP_TUNNEL_TOKEN")
+	tunnelName := mcpString(cmd, "tunnel-name", "MCP_TUNNEL_NAME")
+	if token == "" && provider == "ngrok" {
+		token = strings.TrimSpace(os.Getenv("NGROK_AUTHTOKEN"))
+	}
+	tunnelID := mcpString(cmd, "tunnel-id", "MCP_TUNNEL_ID")
+	authToken := mcpString(cmd, "auth-token", "MCP_AUTH_TOKEN")
+	publicURL := mcpString(cmd, "public-url", "MCP_PUBLIC_URL")
+	enableOAuth := mcpBool(cmd, "oauth", "MCP_OAUTH")
 
 	if provider == "openai" {
 		if enableOAuth {
@@ -186,8 +191,15 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command) error
 
 	// Bind a concrete local address up front. Port 0 asks the OS for an
 	// available ephemeral port.
-	host := cmd.String("host")
+	host := mcpString(cmd, "host", "MCP_HOST")
 	port := cmd.Int("port")
+	if port == 0 {
+		if value := os.Getenv("MCP_PORT"); value != "" {
+			if parsed, parseErr := strconv.Atoi(value); parseErr == nil {
+				port = parsed
+			}
+		}
+	}
 	listener, err := net.Listen("tcp", net.JoinHostPort(host, strconv.Itoa(port)))
 	if err != nil {
 		return fmt.Errorf("failed to bind MCP HTTP server on %s:%d: %w", host, port, err)
@@ -197,7 +209,7 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command) error
 
 	var tunnel Tunnel
 	if provider != "" {
-		tpl, err := tunnelFor(provider, domain, token, cmd.String("tunnel-name"), tunnelID)
+		tpl, err := tunnelFor(provider, domain, token, tunnelName, tunnelID)
 		if err != nil {
 			return err
 		}
