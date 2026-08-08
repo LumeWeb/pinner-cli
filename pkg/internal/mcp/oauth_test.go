@@ -1,6 +1,8 @@
 package mcp
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -22,8 +24,33 @@ const testSecret = "fixture-test-secret"
 func newTestOAuth(t *testing.T) *oauthServer {
 	t.Helper()
 	o := newOAuthServer(testSecret, "https://mcp.example.com")
+	o.clients["cli"] = oauthClient{redirectURIs: []string{"http://localhost/cb"}}
 	t.Cleanup(o.Stop) // stop the background reaper goroutine
 	return o
+}
+
+func testPKCE() (verifier, challenge string) {
+	verifier = "test-verifier-012345678901234567890123456789"
+	sum := sha256.Sum256([]byte(verifier))
+	return verifier, base64.RawURLEncoding.EncodeToString(sum[:])
+}
+
+func TestOAuthRegistration(t *testing.T) {
+	o := newTestOAuth(t)
+	rec := httptest.NewRecorder()
+	body := strings.NewReader(`{"client_name":"ChatGPT","redirect_uris":["http://localhost:1455/callback"],"application_type":"native","token_endpoint_auth_method":"none"}`)
+	req := httptest.NewRequest(http.MethodPost, "/oauth/register", body)
+	req.Header.Set("Content-Type", "application/json")
+	o.registerHandler(rec, req)
+	assert.Equal(t, http.StatusCreated, rec.Code)
+	var doc map[string]any
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&doc))
+	assert.NotEmpty(t, doc["client_id"])
+	assert.Equal(t, "none", doc["token_endpoint_auth_method"])
+
+	// Registered HTTPS callbacks are valid for hosted clients.
+	assert.True(t, allowedClientRedirect("https://chatgpt.com/oauth/callback"))
+	assert.False(t, allowedRedirect("https://chatgpt.com/oauth/callback"))
 }
 
 func TestOAuthASMetadata(t *testing.T) {
@@ -56,7 +83,8 @@ func TestOAuthProtectedResourceMetadata(t *testing.T) {
 
 func TestOAuthAuthorizeGET(t *testing.T) {
 	o := newTestOAuth(t)
-	req := httptest.NewRequest(http.MethodGet, "/oauth/authorize?client_id=cli&redirect_uri=http://localhost/cb", nil)
+	_, challenge := testPKCE()
+	req := httptest.NewRequest(http.MethodGet, "/oauth/authorize?response_type=code&client_id=cli&redirect_uri=http://localhost/cb&code_challenge="+challenge+"&code_challenge_method=S256&resource=https%3A%2F%2Fmcp.example.com%2Fmcp", nil)
 	rec := httptest.NewRecorder()
 	o.authorizeGET(rec, req)
 	assert.Equal(t, http.StatusOK, rec.Code)
@@ -93,12 +121,15 @@ func TestOAuthFullFlow(t *testing.T) {
 	}))
 	assert.Equal(t, http.StatusUnauthorized, rec.Code)
 
-	// Correct secret-as-password issues a code and redirects.
+	// Correct secret-as-password issues a PKCE-bound code and redirects.
+	verifier, challenge := testPKCE()
+	authValues := map[string]string{
+		"response_type": "code", "client_id": "cli", "redirect_uri": "http://localhost/cb",
+		"state": "st", "password": testSecret, "code_challenge": challenge,
+		"code_challenge_method": "S256", "resource": "https://mcp.example.com/mcp",
+	}
 	rec = httptest.NewRecorder()
-	o.authorizePOST(rec, formPost(map[string]string{
-		"client_id": "cli", "redirect_uri": "http://localhost/cb",
-		"state": "st", "password": testSecret,
-	}))
+	o.authorizePOST(rec, formPost(authValues))
 	assert.Equal(t, http.StatusFound, rec.Code)
 	loc, err := url.Parse(rec.Header().Get("Location"))
 	require.NoError(t, err)
@@ -107,12 +138,9 @@ func TestOAuthFullFlow(t *testing.T) {
 	assert.Equal(t, "st", loc.Query().Get("state"))
 	assert.Equal(t, "http://localhost/cb", loc.Scheme+"://"+loc.Host+loc.Path)
 
-	// Redeeming the same code twice must fail (one-time use).
+	// A second authorization produces a different one-time code.
 	rec = httptest.NewRecorder()
-	o.authorizePOST(rec, formPost(map[string]string{
-		"client_id": "cli", "redirect_uri": "http://localhost/cb",
-		"state": "st", "password": testSecret,
-	}))
+	o.authorizePOST(rec, formPost(authValues))
 	loc2, _ := url.Parse(rec.Header().Get("Location"))
 	code2 := loc2.Query().Get("code")
 	require.NotEqual(t, code, code2)
@@ -120,8 +148,12 @@ func TestOAuthFullFlow(t *testing.T) {
 	// Token endpoint: exchange the (single-use) code for an access token.
 	rec = httptest.NewRecorder()
 	o.tokenHandler(rec, formPost(map[string]string{
-		"grant_type": "authorization_code",
-		"code":       code,
+		"grant_type":    "authorization_code",
+		"code":          code,
+		"client_id":     "cli",
+		"redirect_uri":  "http://localhost/cb",
+		"code_verifier": verifier,
+		"resource":      "https://mcp.example.com/mcp",
 	}))
 	assert.Equal(t, http.StatusOK, rec.Code)
 	var tok map[string]any
@@ -129,6 +161,15 @@ func TestOAuthFullFlow(t *testing.T) {
 	access := tok["access_token"].(string)
 	require.NotEmpty(t, access)
 	assert.Equal(t, "Bearer", tok["token_type"])
+	refresh := tok["refresh_token"].(string)
+	require.NotEmpty(t, refresh)
+
+	// Refresh token rotates into a new access token.
+	rec = httptest.NewRecorder()
+	o.tokenHandler(rec, formPost(map[string]string{
+		"grant_type": "refresh_token", "refresh_token": refresh,
+	}))
+	assert.Equal(t, http.StatusOK, rec.Code)
 
 	// The issued token authorizes the MCP endpoint.
 	rec = httptest.NewRecorder()
@@ -181,7 +222,7 @@ func TestOAuthReapExpired(t *testing.T) {
 	o.tokenTTL = -time.Second // force expiry
 	o.codeTTL = -time.Second
 
-	code := o.newCode("cli")
+	code := o.newCode(authorizationCode{clientID: "cli", expiry: time.Now().Add(-time.Second)})
 	o.mu.Lock()
 	o.tokens["expiredtok"] = time.Now().Add(-time.Second)
 	o.mu.Unlock()
