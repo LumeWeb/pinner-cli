@@ -41,12 +41,12 @@ func ManagedServiceCommand() *cli.Command {
 }
 
 func serviceValidateAction(ctx context.Context, cmd *cli.Command) error {
-	_, err := resolveManagedService(ctx, cmd)
+	_, err := resolveManagedService(ctx, cmd, true)
 	return err
 }
 
 func serviceInstallAction(ctx context.Context, cmd *cli.Command) error {
-	svc, err := resolveManagedService(ctx, cmd)
+	svc, err := resolveManagedService(ctx, cmd, true)
 	if err != nil {
 		return err
 	}
@@ -57,7 +57,7 @@ func serviceInstallAction(ctx context.Context, cmd *cli.Command) error {
 }
 
 func serviceUninstallAction(ctx context.Context, cmd *cli.Command) error {
-	svc, err := resolveManagedService(ctx, cmd)
+	svc, err := resolveManagedService(ctx, cmd, false)
 	if err != nil {
 		return err
 	}
@@ -65,7 +65,7 @@ func serviceUninstallAction(ctx context.Context, cmd *cli.Command) error {
 }
 
 func serviceStartAction(ctx context.Context, cmd *cli.Command) error {
-	svc, err := resolveManagedService(ctx, cmd)
+	svc, err := resolveManagedService(ctx, cmd, false)
 	if err != nil {
 		return err
 	}
@@ -73,7 +73,7 @@ func serviceStartAction(ctx context.Context, cmd *cli.Command) error {
 }
 
 func serviceStopAction(ctx context.Context, cmd *cli.Command) error {
-	svc, err := resolveManagedService(ctx, cmd)
+	svc, err := resolveManagedService(ctx, cmd, false)
 	if err != nil {
 		return err
 	}
@@ -81,7 +81,7 @@ func serviceStopAction(ctx context.Context, cmd *cli.Command) error {
 }
 
 func serviceRestartAction(ctx context.Context, cmd *cli.Command) error {
-	svc, err := resolveManagedService(ctx, cmd)
+	svc, err := resolveManagedService(ctx, cmd, false)
 	if err != nil {
 		return err
 	}
@@ -89,7 +89,7 @@ func serviceRestartAction(ctx context.Context, cmd *cli.Command) error {
 }
 
 func serviceStatusAction(ctx context.Context, cmd *cli.Command) error {
-	svc, err := resolveManagedService(ctx, cmd)
+	svc, err := resolveManagedService(ctx, cmd, false)
 	if err != nil {
 		return err
 	}
@@ -102,14 +102,14 @@ func serviceStatusAction(ctx context.Context, cmd *cli.Command) error {
 }
 
 func serviceLogsAction(ctx context.Context, cmd *cli.Command) error {
-	svc, err := resolveManagedService(ctx, cmd)
+	svc, err := resolveManagedService(ctx, cmd, false)
 	if err != nil {
 		return err
 	}
 	return svc.Logs(ctx, cmd.Bool("follow"))
 }
 
-func resolveManagedService(_ context.Context, cmd *cli.Command) (*SystemdUserService, error) {
+func resolveManagedService(_ context.Context, cmd *cli.Command, validate bool) (*SystemdUserService, error) {
 	if cmd.Bool(serviceSystemFlag) {
 		return nil, errors.New("system-wide MCP services are not implemented; use the rootless user service")
 	}
@@ -122,8 +122,15 @@ func resolveManagedService(_ context.Context, cmd *cli.Command) (*SystemdUserSer
 		envFile = filepath.Join(dir, "pinner", defaultMCPEnvFileName)
 	}
 	envFile = expandServicePath(envFile)
-	if _, err := os.Stat(envFile); err != nil {
+	info, err := os.Stat(envFile)
+	if err != nil {
 		return nil, fmt.Errorf("MCP service environment file %q is unavailable: %w", envFile, err)
+	}
+	if !validate {
+		return newManagedService(cmd, envFile, "")
+	}
+	if info.Mode().Perm()&0077 != 0 {
+		return nil, fmt.Errorf("MCP service environment file %q is group/world-readable; run chmod 600 %s", envFile, envFile)
 	}
 	env, err := LoadServiceEnvironment(envFile)
 	if err != nil {
@@ -149,6 +156,9 @@ func resolveManagedService(_ context.Context, cmd *cli.Command) (*SystemdUserSer
 		if strings.TrimSpace(serviceEnvValue(env, "MCP_AUTH_TOKEN", os.Getenv("MCP_AUTH_TOKEN"))) == "" {
 			return nil, errors.New("MCP_AUTH_TOKEN is required for public HTTP MCP tunnels")
 		}
+		if provider == "ngrok" && strings.TrimSpace(serviceEnvValue(env, "NGROK_AUTHTOKEN", os.Getenv("NGROK_AUTHTOKEN"))) == "" && strings.TrimSpace(serviceEnvValue(env, "MCP_TUNNEL_TOKEN", os.Getenv("MCP_TUNNEL_TOKEN"))) == "" {
+			return nil, errors.New("NGROK_AUTHTOKEN or MCP_TUNNEL_TOKEN is required for the ngrok tunnel")
+		}
 		if _, err := exec.LookPath(provider); err != nil {
 			return nil, fmt.Errorf("%s executable not found on PATH: %w", provider, err)
 		}
@@ -158,28 +168,27 @@ func resolveManagedService(_ context.Context, cmd *cli.Command) (*SystemdUserSer
 	default:
 		return nil, fmt.Errorf("unsupported MCP tunnel provider %q", provider)
 	}
+	return newManagedService(cmd, envFile, provider)
+}
+
+func newManagedService(cmd *cli.Command, envFile, provider string) (*SystemdUserService, error) {
 	execPath, err := os.Executable()
 	if err != nil {
 		return nil, fmt.Errorf("resolve pinner executable: %w", err)
 	}
 	args := []string{"mcp"}
-	if provider != "openai" {
+	if provider != "" && provider != "openai" {
 		args = append(args, "--http")
 	}
 	dir, err := os.UserConfigDir()
 	if err != nil {
 		return nil, fmt.Errorf("resolve user config directory: %w", err)
 	}
-	spec := ServiceSpec{
-		Name:        defaultMCPServiceName,
-		Description: "Pinner MCP service",
-		ExecPath:    execPath,
-		Arguments:   args,
-		EnvFile:     envFile,
-		UnitPath:    filepath.Join(dir, "systemd", "user", defaultMCPServiceName),
-		UserMode:    true,
-	}
-	return NewSystemdUserService(spec), nil
+	return NewSystemdUserService(ServiceSpec{
+		Name: defaultMCPServiceName, Description: "Pinner MCP service", ExecPath: execPath,
+		Arguments: args, EnvFile: envFile,
+		UnitPath: filepath.Join(dir, "systemd", "user", defaultMCPServiceName), UserMode: true,
+	}), nil
 }
 
 func expandServicePath(path string) string {

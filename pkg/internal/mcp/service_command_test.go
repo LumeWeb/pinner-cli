@@ -1,10 +1,13 @@
 package mcp
 
 import (
+	"context"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/urfave/cli/v3"
 )
 
 func TestManagedServiceCommandHasLifecycleCommands(t *testing.T) {
@@ -48,6 +51,26 @@ func TestSystemdUnitKeepsSecretsOutOfExecStart(t *testing.T) {
 func TestServiceProviderRequirements(t *testing.T) {
 	require.True(t, openAITunnelID.MatchString("tunnel_0123456789abcdef0123456789abcdef"))
 	require.False(t, openAITunnelID.MatchString("tunnel_invalid"))
+}
+
+func TestResolveManagedServiceRejectsInsecureEnvironmentFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "mcp.env")
+	require.NoError(t, os.WriteFile(path, []byte("MCP_TUNNEL_PROVIDER=openai\n"), 0644))
+	cmd := &cli.Command{Flags: []cli.Flag{&cli.StringFlag{Name: serviceEnvFileFlag}}}
+	require.NoError(t, cmd.Set("env-file", path))
+	_, err := resolveManagedService(context.Background(), cmd, true)
+	require.ErrorContains(t, err, "group/world-readable")
+}
+
+func TestResolveManagedServiceLifecycleSkipsProviderValidation(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "mcp.env")
+	require.NoError(t, os.WriteFile(path, []byte("MCP_TUNNEL_PROVIDER=ngrok\n"), 0600))
+	cmd := &cli.Command{Flags: []cli.Flag{&cli.StringFlag{Name: serviceEnvFileFlag}}}
+	require.NoError(t, cmd.Set("env-file", path))
+	_, err := resolveManagedService(context.Background(), cmd, false)
+	require.NoError(t, err)
 }
 
 func TestServiceEnvironmentPrecedence(t *testing.T) {
