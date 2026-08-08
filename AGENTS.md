@@ -88,9 +88,10 @@ Pinner.xyz CLI is a Go-based command-line tool for managing IPFS content via the
 
 - **`pkg/internal/mcp/`**: MCP adapter for exposing the CLI as a Model Context Protocol server.
   - `MCPCommand()` returns a `*cli.Command` that serves the command tree over stdio
-  - `adapter.go` - in-process command execution, tool schema extraction from urfave flags
-  - `catalog.go` - `ToolCatalog` with progressive disclosure (tools accessible only through meta-tools)
-  - `meta_tools.go` - `search_tools`, `describe_tool`, `invoke_tool`
+  - `adapter.go` - in-process command execution and MCP command registration
+  - `catalog.go` - `ToolCatalog` with progressive disclosure
+  - `schema.go` - CLI flag to JSON Schema conversion
+  - `sdk_official.go` - official MCP SDK server, transport, and descriptor registration
   - `session.go` - FSM-based wizard sessions with TTL (`DefaultSessionTTL = 30m`, `DefaultMaxSessions = 100`)
   - `wizard.go` - website and setup wizard MCP tools (`websites_wizard_start`, `websites_wizard_step`, `setup_wizard_start`, `setup_wizard_step`)
   - `resources.go` - `pinner://` resource handlers (`account/status`, `websites/{domain}/dns-requirements`, `websites/{id}/validation-status`, `wizard/{session_id}/state`)

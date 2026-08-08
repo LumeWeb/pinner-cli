@@ -17,8 +17,8 @@ require (
 	github.com/ipld/go-car/v2 v2.16.0
 	github.com/looplab/fsm v1.0.3
 	github.com/manifoldco/promptui v0.9.0
-	github.com/mark3labs/mcp-go v0.55.1
 	github.com/mattn/go-isatty v0.0.23
+	github.com/modelcontextprotocol/go-sdk v1.4.1
 	github.com/multiformats/go-multiaddr v0.16.1
 	github.com/pressly/goose/v3 v3.27.3
 	github.com/pterm/pterm v0.12.84-0.20260430213317-32e5000d4c27
@@ -27,6 +27,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/tus/tusd/v2 v2.9.1
 	github.com/urfave/cli/v3 v3.6.1
+	github.com/yosida95/uritemplate/v3 v3.0.2
 	go.lumeweb.com/configmanager v0.3.26
 	go.lumeweb.com/ipfs-content v0.1.17
 	go.lumeweb.com/ipfs-sdk v0.1.73
@@ -170,7 +171,8 @@ require (
 	github.com/quic-go/webtransport-go v0.11.1 // indirect
 	github.com/rs/cors v1.11.1 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
-	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 // indirect
+	github.com/segmentio/asm v1.2.1 // indirect
+	github.com/segmentio/encoding v0.5.4 // indirect
 	github.com/sethvargo/go-retry v0.4.0 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
@@ -185,7 +187,6 @@ require (
 	github.com/whyrusleeping/go-keyspace v0.0.0-20160322163242-5b898ac5add1 // indirect
 	github.com/woodsbury/decimal128 v1.4.0 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
-	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	go.etcd.io/etcd/api/v3 v3.6.7 // indirect
 	go.etcd.io/etcd/client/pkg/v3 v3.6.7 // indirect
 	go.etcd.io/etcd/client/v3 v3.6.7 // indirect

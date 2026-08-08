@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -171,12 +172,36 @@ func TestOAuthFullFlow(t *testing.T) {
 	}))
 	assert.Equal(t, http.StatusOK, rec.Code)
 
-	// The issued token authorizes the MCP endpoint.
+	// The issued token authorizes the MCP endpoint and binds the transport session.
+	var userID string
+	bound := o.officialMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		info := auth.TokenInfoFromContext(r.Context())
+		require.NotNil(t, info)
+		userID = info.UserID
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	// The official middleware rejects requests without a bearer token.
+	rec = httptest.NewRecorder()
+	bound.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/mcp", nil))
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+	assert.Contains(t, rec.Header().Get("WWW-Authenticate"), "resource_metadata=")
+
+	// Invalid or expired tokens cannot reach the MCP handler.
+	rec = httptest.NewRecorder()
+	bad = httptest.NewRequest(http.MethodPost, "/mcp", nil)
+	bad.Header.Set("Authorization", "Bearer notissued")
+	bound.ServeHTTP(rec, bad)
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+	assert.Contains(t, rec.Header().Get("WWW-Authenticate"), "resource_metadata=")
+
+	// A valid token authorizes the request and preserves the principal.
 	rec = httptest.NewRecorder()
 	good := httptest.NewRequest(http.MethodPost, "/mcp", nil)
 	good.Header.Set("Authorization", "Bearer "+access)
-	protected.ServeHTTP(rec, good)
+	bound.ServeHTTP(rec, good)
 	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, tokenPrincipal(access), userID)
 }
 
 func TestOAuthTokenRejectsBadGrant(t *testing.T) {
@@ -239,9 +264,9 @@ func TestOAuthReapExpired(t *testing.T) {
 	assert.False(t, o.validToken("nevertissued"))
 }
 
-func TestBeforeAuthorizationStatic(t *testing.T) {
+func TestStaticBearerMiddleware(t *testing.T) {
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
-	h := beforeAuthorization(testSecret, inner)
+	h := staticBearerMiddleware(testSecret, inner)
 
 	// Missing token -> 401.
 	rec := httptest.NewRecorder()

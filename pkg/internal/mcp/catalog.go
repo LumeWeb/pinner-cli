@@ -8,7 +8,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/urfave/cli/v3"
 	"go.uber.org/zap"
 )
@@ -33,7 +32,7 @@ type ToolEntry struct {
 	ReadOnly    bool
 	Destructive bool
 	InputSchema json.RawMessage
-	Handler     func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error)
+	Handler     PinnerToolHandler
 }
 
 // ToolSummary is the lightweight representation returned by search_tools.
@@ -54,9 +53,6 @@ type ToolDetail struct {
 	Destructive bool            `json:"destructiveHint,omitempty"`
 	InputSchema json.RawMessage `json:"inputSchema"`
 }
-
-// ToolHandler is the function signature for executing a catalog tool.
-type ToolHandler = func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error)
 
 // ToolCatalog is an in-memory registry of tools that are discovered through
 // the meta-tools (search_tools, describe_tool, invoke_tool) instead of being
@@ -182,29 +178,26 @@ func (c *ToolCatalog) Describe(name string) (*ToolDetail, error) {
 	}, nil
 }
 
-// Invoke dispatches to the named tool's handler.
-func (c *ToolCatalog) Invoke(ctx context.Context, name string, args map[string]any) (*mcp.CallToolResult, error) {
+// Invoke dispatches to the named tool's handler and returns the Pinner-neutral
+// result.
+func (c *ToolCatalog) Invoke(ctx context.Context, name string, args map[string]any) (ToolResult, error) {
 	c.mu.RLock()
 	entry, ok := c.tools[name]
 	c.mu.RUnlock()
 
 	if !ok {
-		return nil, fmt.Errorf("unknown tool: %s", name)
+		return ToolResult{}, fmt.Errorf("unknown tool: %s", name)
 	}
 
-	req := mcp.CallToolRequest{}
-	req.Params.Name = name
-	req.Params.Arguments = args
-
 	log.Info("meta-tool invoke", zap.String("tool", name))
-	return entry.Handler(ctx, req)
+	return entry.Handler(ctx, ToolRequest{Name: name, Arguments: args})
 }
 
 // RegisterFromCommand walks a urfave/cli/v3 command tree and adds every
 // non-hidden command with an action as a ToolEntry in the catalog. The
 // handler dispatches to the shared toolHandler (in-process command execution).
 // The MCP server itself is not modified: only the catalog is populated.
-func (c *ToolCatalog) RegisterFromCommand(root *cli.Command, hasRootAction bool, prefix []string, handler ToolHandler) error {
+func (c *ToolCatalog) RegisterFromCommand(root *cli.Command, hasRootAction bool, prefix []string, handler PinnerToolHandler) error {
 	var walk func(cmd *cli.Command, prefix ...string) error
 	walk = func(cmd *cli.Command, prefix ...string) error {
 		if cmd.Name == "mcp" || cmd.Name == "help" {
@@ -213,9 +206,9 @@ func (c *ToolCatalog) RegisterFromCommand(root *cli.Command, hasRootAction bool,
 
 		loc := append(prefix, cmd.Name)
 		if !cmd.Hidden && cmd.Action != nil && (len(prefix) > 0 || hasRootAction) {
-			toolOpts, err := FlagsToTools(cmd.Flags)
+			schema, err := flagsToSchema(cmd.Flags, cmd.ArgsUsage)
 			if err != nil {
-				return fmt.Errorf("failed to convert flags to tools %s: %w", loc, err)
+				return fmt.Errorf("failed to convert flags to schema %s: %w", loc, err)
 			}
 
 			var desc string
@@ -224,7 +217,6 @@ func (c *ToolCatalog) RegisterFromCommand(root *cli.Command, hasRootAction bool,
 			} else {
 				desc = cmd.Usage
 			}
-			toolOpts = append(toolOpts, mcp.WithDescription(desc))
 
 			// Emit MCP tool annotations so agents get steering hints without
 			// reading the full description: a human-readable title, a
@@ -234,39 +226,8 @@ func (c *ToolCatalog) RegisterFromCommand(root *cli.Command, hasRootAction bool,
 			title := humanTitle(loc)
 			readOnly := isReadOnlyName(loc)
 			destructive := isDestructiveName(loc)
-			if title != "" {
-				toolOpts = append(toolOpts, mcp.WithTitleAnnotation(title))
-			}
-			if readOnly {
-				toolOpts = append(toolOpts, mcp.WithReadOnlyHintAnnotation(true))
-			}
-			if destructive {
-				toolOpts = append(toolOpts, mcp.WithDestructiveHintAnnotation(true))
-			}
 
-			// Build the tool to extract its generated input schema.
 			toolName := strings.Join(loc, ToolDelimiter)
-			tool := mcp.NewTool(toolName, toolOpts...)
-
-			// If the command has positional args, add an _args property
-			// to the schema so MCP clients know they can pass positionals
-			// via the _args array field.
-			if cmd.ArgsUsage != "" {
-				if tool.InputSchema.Properties == nil {
-					tool.InputSchema.Properties = make(map[string]any)
-				}
-				tool.InputSchema.Properties["_args"] = map[string]any{
-					"type":        "array",
-					"items":       map[string]any{"type": "string"},
-					"description": "Positional arguments: " + cmd.ArgsUsage,
-				}
-			}
-
-			schemaBytes, err := json.Marshal(tool.InputSchema)
-			if err != nil {
-				return fmt.Errorf("failed to marshal input schema for %s: %w", toolName, err)
-			}
-
 			category := categorize(loc)
 			c.Add(&ToolEntry{
 				Name:        toolName,
@@ -275,7 +236,7 @@ func (c *ToolCatalog) RegisterFromCommand(root *cli.Command, hasRootAction bool,
 				Category:    category,
 				ReadOnly:    readOnly,
 				Destructive: destructive,
-				InputSchema: schemaBytes,
+				InputSchema: schema,
 				Handler:     handler,
 			})
 
