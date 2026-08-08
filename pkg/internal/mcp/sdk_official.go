@@ -332,10 +332,25 @@ func RegisterOfficialToolsFromCatalog(srv *mcp.Server, catalog *ToolCatalog) err
 	if catalog == nil {
 		return fmt.Errorf("nil tool catalog")
 	}
-	// The *ToolCatalog does not expose iteration, so expose the three meta
-	// tools only here. Full catalog exposure is intentionally deferred to
-	// preserve the progressive-disclosure contract.
 	return RegisterOfficialMetaTools(srv, catalog)
+}
+
+// RegisterOfficialCuratedTools exposes only entries selected by allowlist.
+// Remaining catalog entries stay behind progressive-disclosure meta-tools.
+func RegisterOfficialCuratedTools(srv *mcp.Server, catalog *ToolCatalog, allowed func(string) bool) error {
+	if srv == nil {
+		return fmt.Errorf("nil official server")
+	}
+	if catalog == nil {
+		return fmt.Errorf("nil tool catalog")
+	}
+	for _, entry := range catalog.Entries() {
+		if !allowed(entry.Name) {
+			continue
+		}
+		srv.AddTool(officialTool(toolDescriptor(entry)), officialToolHandler(entry.Handler))
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------

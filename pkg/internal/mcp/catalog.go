@@ -92,6 +92,17 @@ func (c *ToolCatalog) Len() int {
 	return len(c.tools)
 }
 
+// Entries returns a snapshot of all registered tools.
+func (c *ToolCatalog) Entries() []*ToolEntry {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	entries := make([]*ToolEntry, 0, len(c.tools))
+	for _, entry := range c.tools {
+		entries = append(entries, entry)
+	}
+	return entries
+}
+
 // Search finds tools matching the query. The matching strategy is layered:
 //
 //  1. Empty query returns all tools (sorted by category then name).

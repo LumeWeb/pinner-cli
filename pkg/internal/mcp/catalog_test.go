@@ -42,7 +42,8 @@ func TestReadOnlyAndDestructiveClassification(t *testing.T) {
 func TestBuildInstructionsEmbedsCount(t *testing.T) {
 	got := buildInstructions(42)
 	require.Contains(t, got, "42 tools")
-	require.Contains(t, got, "core, admin, and wizard")
+	require.Contains(t, got, "curated set of common Pinner tools")
+	require.Contains(t, got, "progressive disclosure")
 }
 
 // TestCommandAnnotationsRegistered verifies that RegisterFromCommand sets the
