@@ -178,6 +178,14 @@ func (n *ngrokTunnel) waitForEndpoint(ctx context.Context, localPort string) err
 	deadline := time.Now().Add(30 * time.Second)
 	client := &http.Client{Timeout: 2 * time.Second}
 	for {
+		n.mu.Lock()
+		done := n.done
+		n.mu.Unlock()
+		select {
+		case <-done:
+			return fmt.Errorf("ngrok exited before the tunnel became ready")
+		default:
+		}
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}

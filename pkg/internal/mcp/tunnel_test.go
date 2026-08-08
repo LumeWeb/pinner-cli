@@ -81,6 +81,15 @@ func TestNgrokEndpointURLChoosesHTTPS(t *testing.T) {
 	assert.Equal(t, "https://x.ngrok-free.app", url)
 }
 
+func TestNgrokWaitForEndpointFailsWhenProcessExits(t *testing.T) {
+	n := &ngrokTunnel{done: make(chan struct{})}
+	close(n.done)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	err := n.waitForEndpoint(ctx, "7000")
+	assert.ErrorContains(t, err, "ngrok exited before")
+}
+
 func TestTunnelFor(t *testing.T) {
 	tng, err := tunnelFor("ngrok", "", "tok", "")
 	require.NoError(t, err)
