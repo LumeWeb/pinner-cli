@@ -107,18 +107,22 @@ func (n *ngrokTunnel) Stop(ctx context.Context) error {
 	if cmd == nil || cmd.Process == nil {
 		return nil
 	}
-	select {
-	case <-done:
-		return nil
-	default:
+	if done != nil {
+		select {
+		case <-done:
+			return nil
+		default:
+		}
 	}
 	_ = cmd.Process.Signal(os.Interrupt)
+	if done == nil {
+		return nil
+	}
 	select {
 	case <-done:
 		return nil
 	case <-ctx.Done():
 		_ = cmd.Process.Kill()
-		<-done
 		return ctx.Err()
 	}
 }
