@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"time"
 )
 
 var openAITunnelID = regexp.MustCompile(`^tunnel_[0-9a-f]{32}$`)
@@ -76,12 +77,14 @@ func (o *openAITunnel) Start(ctx context.Context, localAddr string) error {
 
 	// The OpenAI endpoint is known from the tunnel ID. tunnel-client itself
 	// remains the readiness authority; wait briefly for it to stay alive.
+	timer := time.NewTimer(2 * time.Second)
+	defer timer.Stop()
 	select {
 	case <-done:
 		return fmt.Errorf("tunnel-client exited before becoming ready")
 	case <-ctx.Done():
 		return ctx.Err()
-	default:
+	case <-timer.C:
 	}
 	o.setReady("https://api.openai.com/v1/mcp/" + o.tunnelID)
 	return nil

@@ -201,6 +201,9 @@ func serveHTTP(ctx context.Context, srv *server.MCPServer, cmd *cli.Command) err
 	}
 	var oauth *oauthServer
 	if enableOAuth {
+		if provider == "openai" && publicURL == "" {
+			return fmt.Errorf("--tunnel openai does not support OAuth discovery without --public-url: OpenAI's hosted tunnel URL does not forward Pinner OAuth endpoints")
+		}
 		if authToken == "" {
 			return fmt.Errorf("--oauth requires --auth-token: the login page authenticates with the shared secret")
 		}

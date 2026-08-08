@@ -692,12 +692,11 @@ For ChatGPT's OpenAI Secure MCP Tunnel, use an OpenAI-managed tunnel ID and the 
 ```bash
 export CONTROL_PLANE_API_KEY="..."
 pinner mcp --http --tunnel openai \
-  --tunnel-id tunnel_0123456789abcdef0123456789abcdef \
-  --auth-token "$PINNER_MCP_SECRET" \
-  --oauth
+--tunnel-id tunnel_0123456789abcdef0123456789abcdef \
+--auth-token "$PINNER_MCP_SECRET"
 ```
 
-The tunnel ID must already exist in OpenAI Platform Tunnels. `tunnel-client` must be installed and the runtime key must have tunnel Read and Use permissions. Pinner starts it against the local MCP endpoint and prints the tunnel ID for ChatGPT's `Connection: Tunnel` setup. This is not a public URL tunnel, and Pinner does not create or manage OpenAI tunnel resources.
+The tunnel ID must already exist in OpenAI Platform Tunnels. `tunnel-client` must be installed and the runtime key must have tunnel Read and Use permissions. Pinner starts it against the local MCP endpoint and prints the tunnel ID for ChatGPT's `Connection: Tunnel` setup. This is not a public URL tunnel, and Pinner does not create or manage OpenAI tunnel resources. OAuth discovery is not supported through this mode because Pinner's local OAuth endpoints are not exposed by OpenAI's hosted tunnel URL.
 
 `--tunnel ngrok` and `--tunnel cloudflared` remain public tunnel providers.
 
