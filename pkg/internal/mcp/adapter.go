@@ -126,6 +126,10 @@ adapter.`,
 				}
 			}
 
+			if err := RegisterOfficialCuratedTools(srv, catalog, IsCuratedTool); err != nil {
+				return fmt.Errorf("failed to register curated tools: %w", err)
+			}
+
 			if resourceFactory != nil {
 				provs := resourceFactory(store)
 				provs.Sessions = store
@@ -545,20 +549,15 @@ func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string) (*Tool
 	return catalog, nil
 }
 
-// mcpInstructionsBase is sent to MCP clients in the initialize response. It
-// guides agents through the progressive disclosure flow so they know to
-// search before invoking, and understand how _args works for positional CLI
-// arguments. The exact tool count is computed at server build time via
-// buildInstructions.
-const mcpInstructionsBase = `This server uses progressive disclosure. The tools/list response only shows 3 meta-tools. To use a tool:
+// mcpInstructionsBase is sent to MCP clients in the initialize response.
+const mcpInstructionsBase = `This server exposes a curated set of common Pinner tools directly, including upload, pin, list, status, download, vault, website, and website/domain wizard tools. Setup wizard tools are not exposed because they accept credentials.
 
-1. search_tools({ "query": "..." }): Find tools by keyword. Returns name, description, and category.
-2. describe_tool({ "name": "..." }): Get the full input schema for a tool, including required parameters.
-3. invoke_tool({ "name": "...", "arguments": { ... } }): Execute a tool.
+Less common CLI tools remain available through progressive disclosure:
+1. search_tools({ "query": "..." }): Find tools by keyword. Returns matching names, descriptions, and categories.
+2. describe_tool({ "name": "..." }): Get the full input schema for one internal tool.
+3. invoke_tool({ "name": "...", "arguments": { ... } }): Execute one internal tool.
 
-Always search first: do not guess tool names. The catalog has %d tools across core, admin, and wizard categories.
-
-Some tools accept "_args" (an array of positional strings) in their arguments. Check describe_tool output for the _args property and its description to see what positional values are expected.`
+The internal catalog has %d tools. Upload accepts a filesystem path or stdin stream; it does not accept a remote MCP file reference directly. Use a host-side handoff or upload an existing CID through the pin tool.`
 
 // buildInstructions returns the MCP server instructions with the real catalog
 // tool count substituted, so the guidance given to agents stays accurate as
