@@ -24,7 +24,7 @@ func runEmbeddedOpenAITunnel(ctx context.Context, server *mcp.Server, tunnelID, 
 	}
 	apiKey = strings.TrimSpace(apiKey)
 	if apiKey == "" {
-		return errors.New("OpenAI Secure MCP Tunnel requires --token or CONTROL_PLANE_API_KEY/OPENAI_API_KEY")
+		return errors.New("OpenAI Secure MCP Tunnel requires CONTROL_PLANE_API_KEY or OPENAI_API_KEY")
 	}
 
 	serverTransport, clientTransport := mcp.NewInMemoryTransports()

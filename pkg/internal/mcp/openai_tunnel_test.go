@@ -16,7 +16,7 @@ func TestEmbeddedOpenAITunnelValidatesConfiguration(t *testing.T) {
 		want   string
 	}{
 		{name: "invalid tunnel id", tunnel: "invalid", key: "key", want: "invalid OpenAI tunnel ID"},
-		{name: "missing key", tunnel: "tunnel_0123456789abcdef0123456789abcdef", want: "requires --token"},
+		{name: "missing key", tunnel: "tunnel_0123456789abcdef0123456789abcdef", want: "requires CONTROL_PLANE_API_KEY or OPENAI_API_KEY"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

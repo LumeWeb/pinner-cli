@@ -695,9 +695,33 @@ pinner mcp --tunnel openai \
   --tunnel-id tunnel_0123456789abcdef0123456789abcdef
 ```
 
-Pinner embeds the official `github.com/openai/tunnel-client` Go SDK and connects its MCP server over an in-memory MCP transport. No local HTTP listener, subprocess, or separate `tunnel-client` installation is required. The tunnel ID must already exist in OpenAI Platform Tunnels, and the runtime key must have tunnel Read and Use permissions. Pinner prints the tunnel ID for ChatGPT's `Connection: Tunnel` setup. This is not a public URL tunnel, and Pinner does not create or manage OpenAI tunnel resources. OAuth discovery is not supported through this mode because Pinner's local OAuth endpoints are not exposed by OpenAI's hosted tunnel URL.
+Pinner embeds the official `github.com/openai/tunnel-client` Go SDK and connects its MCP server over an in-memory MCP transport. No local HTTP listener, subprocess, or separate `tunnel-client` installation is required. The tunnel ID must already exist in OpenAI Platform Tunnels, and the runtime key must have tunnel Read and Use permissions. Pinner prints the tunnel ID for ChatGPT's `Connection: Tunnel` setup. This is not a public URL tunnel, and Pinner does not create or manage OpenAI tunnel resources. Pinner's local OAuth endpoints are not exposed in embedded mode, so use an externally reachable authorization server or use ngrok/cloudflared when Pinner must host OAuth.
 
 `--tunnel ngrok` and `--tunnel cloudflared` remain public tunnel providers.
+
+### Managed MCP service on Linux
+
+Pinner can install a rootless systemd user service. The service reads tunnel credentials from an explicit environment file because systemd user services must not depend on the interactive shell environment:
+
+```bash
+mkdir -p ~/.config/pinner
+chmod 700 ~/.config/pinner
+cat > ~/.config/pinner/mcp.env <<'EOF'
+MCP_TUNNEL_PROVIDER=openai
+MCP_TUNNEL_ID=tunnel_0123456789abcdef0123456789abcdef
+CONTROL_PLANE_API_KEY=...
+EOF
+chmod 600 ~/.config/pinner/mcp.env
+
+pinner mcp service validate
+pinner mcp service install
+pinner mcp service status
+pinner mcp service logs --follow
+```
+
+For ngrok, use `MCP_TUNNEL_PROVIDER=ngrok`, `MCP_AUTH_TOKEN`, and `NGROK_AUTHTOKEN`. For cloudflared, use `MCP_TUNNEL_PROVIDER=cloudflared`, `MCP_AUTH_TOKEN`, and `MCP_DOMAIN`. The service unit references `~/.config/pinner/mcp.env`; secrets are not placed in `ExecStart` arguments. This is a user service and does not require root. A VPS or homelab host may need systemd lingering enabled by its operator for the service to continue after logout.
+
+`pinner mcp service --system` is not implemented. Pinner does not invoke sudo or capture passwords.
 
 When running under an MCP client, the server exposes three meta-tools for progressive disclosure:
 
