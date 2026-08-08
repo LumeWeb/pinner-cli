@@ -58,6 +58,13 @@ func (c *cloudflaredTunnel) SupportsCustomDomain() bool { return true }
 // cert installed by `cloudflared tunnel login` authenticates the agent.
 func (c *cloudflaredTunnel) RequiresToken() bool { return false }
 
+func (c *cloudflaredTunnel) OAuthBaseURL(explicitURL, tunnelURL string) (string, error) {
+	if explicitURL != "" {
+		return explicitURL, nil
+	}
+	return tunnelURL, nil
+}
+
 // URL implements Tunnel.
 func (c *cloudflaredTunnel) URL() (string, error) {
 	ready, url := c.getState()

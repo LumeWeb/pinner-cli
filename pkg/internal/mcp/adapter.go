@@ -201,9 +201,6 @@ func serveHTTP(ctx context.Context, srv *server.MCPServer, cmd *cli.Command) err
 	}
 	var oauth *oauthServer
 	if enableOAuth {
-		if provider == "openai" && publicURL == "" {
-			return fmt.Errorf("--tunnel openai does not support OAuth discovery without --public-url: OpenAI's hosted tunnel URL does not forward Pinner OAuth endpoints")
-		}
 		if authToken == "" {
 			return fmt.Errorf("--oauth requires --auth-token: the login page authenticates with the shared secret")
 		}
@@ -286,9 +283,14 @@ func serveHTTP(ctx context.Context, srv *server.MCPServer, cmd *cli.Command) err
 			shutdown(context.Background())
 			return err
 		}
-		if oauth != nil && publicURL == "" {
-			// Advertise endpoints against the public tunnel URL.
-			oauth.baseURL = strings.TrimRight(url, "/")
+		if oauth != nil {
+			oauthURL, err := tunnel.OAuthBaseURL(publicURL, url)
+			if err != nil {
+				shutdown(context.Background())
+				return err
+			}
+			// Advertise endpoints against the provider-approved URL.
+			oauth.baseURL = strings.TrimRight(oauthURL, "/")
 			oauth.issuer = oauth.baseURL
 		}
 		if provider == "openai" {

@@ -39,6 +39,13 @@ func (o *openAITunnel) Name() string               { return "openai" }
 func (o *openAITunnel) SupportsCustomDomain() bool { return false }
 func (o *openAITunnel) RequiresToken() bool        { return false }
 
+func (o *openAITunnel) OAuthBaseURL(explicitURL, tunnelURL string) (string, error) {
+	if explicitURL == "" {
+		return "", fmt.Errorf("OpenAI Secure MCP Tunnel does not expose Pinner OAuth endpoints; use --public-url for an externally reachable OAuth base URL")
+	}
+	return explicitURL, nil
+}
+
 func (o *openAITunnel) URL() (string, error) {
 	ready, url := o.getState()
 	if !ready {

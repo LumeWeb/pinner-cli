@@ -88,6 +88,13 @@ func (n *ngrokTunnel) RequiresToken() bool {
 }
 
 // URL implements Tunnel.
+func (n *ngrokTunnel) OAuthBaseURL(explicitURL, tunnelURL string) (string, error) {
+	if explicitURL != "" {
+		return explicitURL, nil
+	}
+	return tunnelURL, nil
+}
+
 func (n *ngrokTunnel) URL() (string, error) {
 	ready, url := n.getState()
 	if !ready {
