@@ -2,6 +2,8 @@ package mcp
 
 import (
 	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -27,7 +29,7 @@ func TestParseServiceEnvironmentRejectsInvalidEntries(t *testing.T) {
 
 func TestWriteServiceEnvironment(t *testing.T) {
 	dir := t.TempDir()
-	path := dir + "/config/mcp.env"
+	path := filepath.Join(dir, "config", "mcp.env")
 	require.NoError(t, WriteServiceEnvironment(path, ServiceEnvironment{
 		"TOKEN": "secret value",
 		"PLAIN": "value",
@@ -35,10 +37,12 @@ func TestWriteServiceEnvironment(t *testing.T) {
 
 	info, err := os.Stat(path)
 	require.NoError(t, err)
-	require.Equal(t, os.FileMode(0600), info.Mode().Perm())
-	dirInfo, err := os.Stat(dir + "/config")
+	dirInfo, err := os.Stat(filepath.Dir(path))
 	require.NoError(t, err)
-	require.Equal(t, os.FileMode(0700), dirInfo.Mode().Perm())
+	if runtime.GOOS != "windows" {
+		require.Equal(t, os.FileMode(0600), info.Mode().Perm())
+		require.Equal(t, os.FileMode(0700), dirInfo.Mode().Perm())
+	}
 
 	env, err := LoadServiceEnvironment(path)
 	require.NoError(t, err)

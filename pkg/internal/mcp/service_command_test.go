@@ -28,7 +28,7 @@ func TestManagedServiceCommandHasLifecycleCommands(t *testing.T) {
 func TestExpandServicePath(t *testing.T) {
 	home, err := os.UserHomeDir()
 	require.NoError(t, err)
-	require.Equal(t, home+"/.config/pinner/mcp.env", expandServicePath("~/.config/pinner/mcp.env"))
+	require.Equal(t, filepath.Join(home, ".config", "pinner", "mcp.env"), expandServicePath("~/.config/pinner/mcp.env"))
 }
 
 func TestServicePort(t *testing.T) {
