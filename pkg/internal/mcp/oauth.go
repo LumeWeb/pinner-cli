@@ -341,6 +341,8 @@ func (o *oauthServer) tokenHandler(w http.ResponseWriter, r *http.Request) {
 
 func (o *oauthServer) exchangeCode(w http.ResponseWriter, r *http.Request) error {
 	code := r.PostFormValue("code")
+	clientID := r.PostFormValue("client_id")
+	redirectURI := r.PostFormValue("redirect_uri")
 	verifier := r.PostFormValue("code_verifier")
 	resource := r.PostFormValue("resource")
 	o.mu.Lock()
@@ -352,8 +354,8 @@ func (o *oauthServer) exchangeCode(w http.ResponseWriter, r *http.Request) error
 	if !ok || time.Now().After(entry.expiry) {
 		return fmt.Errorf("invalid or expired authorization code")
 	}
-	if resource != entry.resource || !verifyPKCE(verifier, entry.codeChallenge) {
-		return fmt.Errorf("invalid code_verifier or resource")
+	if clientID != entry.clientID || redirectURI != entry.redirectURI || resource != entry.resource || !verifyPKCE(verifier, entry.codeChallenge) {
+		return fmt.Errorf("invalid client, redirect_uri, code_verifier, or resource")
 	}
 	pair := o.newTokens()
 	o.storeTokens(pair)
@@ -365,9 +367,11 @@ func (o *oauthServer) exchangeRefreshToken(w http.ResponseWriter, r *http.Reques
 	refresh := r.PostFormValue("refresh_token")
 	o.mu.Lock()
 	expiry, ok := o.refreshTokens[refresh]
-	if ok && time.Now().After(expiry) {
-		delete(o.refreshTokens, refresh)
-		ok = false
+	if ok {
+		delete(o.refreshTokens, refresh) // rotate refresh tokens on use
+		if time.Now().After(expiry) {
+			ok = false
+		}
 	}
 	o.mu.Unlock()
 	if !ok {
