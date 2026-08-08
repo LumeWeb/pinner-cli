@@ -347,9 +347,6 @@ func (o *oauthServer) exchangeCode(w http.ResponseWriter, r *http.Request) error
 	resource := r.PostFormValue("resource")
 	o.mu.Lock()
 	entry, ok := o.codes[code]
-	if ok {
-		delete(o.codes, code)
-	}
 	o.mu.Unlock()
 	if !ok || time.Now().After(entry.expiry) {
 		return fmt.Errorf("invalid or expired authorization code")
@@ -357,6 +354,15 @@ func (o *oauthServer) exchangeCode(w http.ResponseWriter, r *http.Request) error
 	if clientID != entry.clientID || redirectURI != entry.redirectURI || resource != entry.resource || !verifyPKCE(verifier, entry.codeChallenge) {
 		return fmt.Errorf("invalid client, redirect_uri, code_verifier, or resource")
 	}
+	// Consume only after validation. Recheck under the lock so concurrent
+	// redemption can succeed only once.
+	o.mu.Lock()
+	if _, ok := o.codes[code]; !ok {
+		o.mu.Unlock()
+		return fmt.Errorf("authorization code already used")
+	}
+	delete(o.codes, code)
+	o.mu.Unlock()
 	pair := o.newTokens()
 	o.storeTokens(pair)
 	issueTokens(w, pair)
