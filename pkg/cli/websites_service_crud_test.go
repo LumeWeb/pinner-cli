@@ -136,13 +136,44 @@ func TestWebsitesService_AuthTokenLiveFromConfig(t *testing.T) {
 	cfgMgr := configmocks.NewMockManager(t)
 	cfgMgr.EXPECT().Config().RunAndReturn(func() *config.Config { return cfg }).Maybe()
 
-	svc := &websitesService{
-		ipfsServiceBase: ipfsServiceBase{cfgMgr: cfgMgr},
-	}
+	// Build via the real NewWebsitesService so the constructor's token-handling
+	// is exercised (it must NOT freeze config's token into ipfsServiceBase.authToken).
+	// Inject an offline client via WithWebsitesClient to avoid any network.
+	client, err := ipfs.NewClient("http://127.0.0.1:9", "tok-a")
+	require.NoError(t, err)
+	output := NewOutputFormatter(false, false, false, false)
+	iface := NewWebsitesService(cfgMgr, output, "http://127.0.0.1:9", WithWebsitesClient(client))
+	svc, ok := iface.(*websitesService)
+	require.True(t, ok, "expected *websitesService, got %T", iface)
+
+	// No WithWebsitesAuthToken override, and the constructor must not have frozen
+	// the config token, so getAuthToken() falls through to config live.
 	assert.Equal(t, "tok-a", svc.getAuthToken())
 
 	// Simulate `pinner login` updating the on-disk token, which the watcher
 	// live-reloads into the manager; the service must see the new value.
 	cfg.AuthToken = "tok-b"
 	assert.Equal(t, "tok-b", svc.getAuthToken(), "service token must live-reload from config")
+}
+
+// TestWebsitesService_SetAuthTokenReWiresClient verifies that pushing a new token
+// into a long-lived service via SetAuthToken (as the MCP server's config
+// subscription does on live-reload) hot-updates the retained *ipfs.Client rather
+// than leaving it frozen at bootstrap.
+func TestWebsitesService_SetAuthTokenReWiresClient(t *testing.T) {
+	cfgMgr := configmocks.NewMockManager(t)
+	cfgMgr.EXPECT().Config().RunAndReturn(func() *config.Config { return &config.Config{AuthToken: "tok-a"} }).Maybe()
+	output := NewOutputFormatter(false, false, false, false)
+
+	client, err := ipfs.NewClient("http://127.0.0.1:9", "tok-a")
+	require.NoError(t, err)
+	iface := NewWebsitesService(cfgMgr, output, "http://127.0.0.1:9", WithWebsitesClient(client))
+	svc, ok := iface.(*websitesService)
+	require.True(t, ok, "expected *websitesService, got %T", iface)
+	assert.Same(t, client, svc.client, "injected client must be retained")
+	assert.Equal(t, "tok-a", svc.client.BearerToken())
+
+	// Simulate the config subscription firing on a `pinner login`.
+	svc.SetAuthToken("tok-c")
+	assert.Equal(t, "tok-c", svc.client.BearerToken(), "retained client token must hot-update")
 }

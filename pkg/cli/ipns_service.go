@@ -10,6 +10,9 @@ import (
 )
 
 type IPNSService interface {
+	// SetAuthToken hot-updates the auth token on a running service without
+	// reconstructing it (used by long-lived consumers on config live-reload).
+	SetAuthToken(token string)
 	ListKeys(ctx context.Context) ([]ipfs.IPNSKeyResponse, error)
 	CreateKey(ctx context.Context, name string, key *string) (*ipfs.IPNSKeyResponse, error)
 	GetKey(ctx context.Context, id string) (*ipfs.IPNSKeyResponse, error)
@@ -68,12 +71,9 @@ func newAuthenticatedIPNSService(cfgMgr config.Manager, output Output, authToken
 }
 
 func NewIPNSService(cfgMgr config.Manager, output Output, apiEndpoint string, opts ...IPNSServiceOption) IPNSService {
-	authToken := cfgMgr.Config().AuthToken
-
 	s := &ipnsService{
 		ipfsServiceBase: ipfsServiceBase{
-			cfgMgr:    cfgMgr,
-			authToken: authToken,
+			cfgMgr: cfgMgr,
 		},
 	}
 	for _, opt := range opts {
@@ -89,9 +89,20 @@ func NewIPNSService(cfgMgr config.Manager, output Output, apiEndpoint string, op
 			s.service = nil
 			return s
 		}
+		s.client = client
 		s.service = client.IPNS()
 	}
 	return s
+}
+
+// SetAuthToken hot-updates the auth token on the retained *ipfs.Client and
+// re-fetches the sub-service. No-op when no client is retained.
+func (s *ipnsService) SetAuthToken(token string) {
+	if s.client != nil {
+		if err := s.client.SetAuthToken(token); err == nil {
+			s.service = s.client.IPNS()
+		}
+	}
 }
 
 func (s *ipnsService) ListKeys(ctx context.Context) ([]ipfs.IPNSKeyResponse, error) {

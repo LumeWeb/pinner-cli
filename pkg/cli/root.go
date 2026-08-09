@@ -10,6 +10,7 @@ import (
 	contentfs "go.lumeweb.com/ipfs-content/fs"
 	"go.lumeweb.com/pinner-cli/build"
 	"go.lumeweb.com/pinner-cli/pkg/cli/vault"
+	"go.lumeweb.com/pinner-cli/pkg/config"
 	mcpadapter "go.lumeweb.com/pinner-cli/pkg/internal/mcp"
 )
 
@@ -127,6 +128,17 @@ For more help on any command: pinner <command> --help`,
 			websitesSvc := websitesServiceFactory(cfgMgr, output, secure)
 			authSvc := defaultAuthServiceFactory(cfgMgr, output, cfgMgr.Config().BaseEndpoint)
 			uploadSvc := defaultUploadServiceFactory(cfgMgr, output, WithUploadAuthService(authSvc))
+
+			// Live-reload the auth token into the long-lived services without a
+			// restart: subscribe to config auth_token changes (fired by the file
+			// watcher on a `pinner login` / on-disk edit) and push the new token
+			// into the retained clients. RequireAuthenticated/getAuthToken read
+			// config live, so this keeps the running server's credential current.
+			cfgMgr.Subscribe(config.ConfigKeyAuthToken, func(_pattern, _key string, value any) {
+				if tok, ok := value.(string); ok {
+					websitesSvc.SetAuthToken(tok)
+				}
+			})
 			uploadHandler = func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
 				if name == "" {
 					name = "upload"

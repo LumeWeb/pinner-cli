@@ -10,6 +10,9 @@ import (
 // DNSService defines the interface for DNS operations in the CLI.
 type DNSService interface {
 	RequireAuthenticated() error
+	// SetAuthToken hot-updates the auth token on a running service without
+	// reconstructing it (used by long-lived consumers on config live-reload).
+	SetAuthToken(token string)
 
 	// Zone operations
 	CreateZone(ctx context.Context, domain string, nameservers []string) (*ipfs.ZoneResponse, error)
@@ -52,13 +55,13 @@ func WithDNSClient(client *ipfs.Client) DNSServiceOption {
 }
 
 // NewDNSService creates a new DNSService instance with the provided configuration.
+// It must NOT copy cfgMgr.Config().AuthToken into ipfsServiceBase.authToken so
+// getAuthToken() reads config live at request time (live reload for long-lived
+// services). Explicit WithDNSAuthToken overrides still take precedence.
 func NewDNSService(cfgMgr config.Manager, output Output, apiEndpoint string, opts ...DNSServiceOption) DNSService {
-	authToken := cfgMgr.Config().AuthToken
-
 	s := &dnsServiceCLI{
 		ipfsServiceBase: ipfsServiceBase{
-			cfgMgr:    cfgMgr,
-			authToken: authToken,
+			cfgMgr: cfgMgr,
 		},
 		output: output,
 	}
@@ -75,9 +78,20 @@ func NewDNSService(cfgMgr config.Manager, output Output, apiEndpoint string, opt
 			s.service = nil
 			return s
 		}
+		s.client = client
 		s.service = client.DNS()
 	}
 	return s
+}
+
+// SetAuthToken hot-updates the auth token on the retained *ipfs.Client and
+// re-fetches the sub-service. No-op when no client is retained.
+func (s *dnsServiceCLI) SetAuthToken(token string) {
+	if s.client != nil {
+		if err := s.client.SetAuthToken(token); err == nil {
+			s.service = s.client.DNS()
+		}
+	}
 }
 
 // CreateZone creates a new DNS zone.

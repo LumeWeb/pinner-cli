@@ -59,13 +59,15 @@ func newAuthenticatedWebsitesService(cfgMgr config.Manager, output Output, authT
 }
 
 // NewWebsitesService creates a new WebsitesService instance.
+// It must NOT copy cfgMgr.Config().AuthToken into ipfsServiceBase.authToken:
+// leaving authToken empty lets getAuthToken() read config live at request time,
+// so a long-lived service (e.g. the MCP server) live-reloads a `pinner login`
+// that rewrites the on-disk token. Explicit WithWebsitesAuthToken overrides still
+// pin a token and take precedence.
 func NewWebsitesService(cfgMgr config.Manager, output Output, apiEndpoint string, opts ...WebsitesServiceOption) WebsitesService {
-	authToken := cfgMgr.Config().AuthToken
-
 	s := &websitesService{
 		ipfsServiceBase: ipfsServiceBase{
-			cfgMgr:    cfgMgr,
-			authToken: authToken,
+			cfgMgr: cfgMgr,
 		},
 	}
 	for _, opt := range opts {
@@ -81,9 +83,21 @@ func NewWebsitesService(cfgMgr config.Manager, output Output, apiEndpoint string
 			s.service = nil
 			return s
 		}
+		s.client = client
 		s.service = client.Websites()
 	}
 	return s
+}
+
+// SetAuthToken hot-updates the auth token on the retained *ipfs.Client and
+// re-fetches the sub-service so a running service reflects a config token
+// change without being reconstructed. No-op when no client is retained.
+func (s *websitesService) SetAuthToken(token string) {
+	if s.client != nil {
+		if err := s.client.SetAuthToken(token); err == nil {
+			s.service = s.client.Websites()
+		}
+	}
 }
 
 // List retrieves all websites for the authenticated user.

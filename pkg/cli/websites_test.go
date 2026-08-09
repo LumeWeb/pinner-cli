@@ -37,6 +37,8 @@ func (m *mockWebsitesServiceForCLI) RequireAuthenticated() error {
 	return nil
 }
 
+func (m *mockWebsitesServiceForCLI) SetAuthToken(token string) {}
+
 func (m *mockWebsitesServiceForCLI) List(ctx context.Context) ([]ipfs.WebsiteItem, error) {
 	if m.listFunc != nil {
 		return m.listFunc(ctx)

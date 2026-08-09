@@ -97,6 +97,8 @@ type mockIPNSServiceForCLI struct {
 	resolveFunc             func(ctx context.Context, name string) (*ipfs.IPNSResolveResponse, error)
 }
 
+func (m *mockIPNSServiceForCLI) SetAuthToken(token string) {}
+
 func (m *mockIPNSServiceForCLI) ListKeys(ctx context.Context) ([]ipfs.IPNSKeyResponse, error) {
 	if m.listKeysFunc != nil {
 		return m.listKeysFunc(ctx)

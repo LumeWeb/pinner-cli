@@ -31,6 +31,8 @@ func (m *mockDNSServiceForCLI) RequireAuthenticated() error {
 	return m.requireAuthenticatedErr
 }
 
+func (m *mockDNSServiceForCLI) SetAuthToken(token string) {}
+
 func (m *mockDNSServiceForCLI) ListZones(ctx context.Context) ([]ipfs.ZoneListResponse, error) {
 	if m.listZonesFunc != nil {
 		return m.listZonesFunc(ctx)

@@ -33,6 +33,8 @@ func (m *mockWebsitesHandlerService) RequireAuthenticated() error {
 	return m.requireAuthenticatedErr
 }
 
+func (m *mockWebsitesHandlerService) SetAuthToken(token string) {}
+
 func (m *mockWebsitesHandlerService) List(ctx context.Context) ([]ipfs.WebsiteItem, error) {
 	if m.listFunc != nil {
 		return m.listFunc(ctx)
