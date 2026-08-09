@@ -197,10 +197,33 @@ func (o *oauthServer) validateAuthorizeRequest(q url.Values) error {
 	if q.Get("code_challenge_method") != "S256" || q.Get("code_challenge") == "" {
 		return fmt.Errorf("S256 PKCE is required")
 	}
+	if !base64URLChars(q.Get("code_challenge")) {
+		return fmt.Errorf("code_challenge must be base64url (RFC 7636)")
+	}
 	if q.Get("resource") != o.baseURL+"/mcp" {
 		return fmt.Errorf("invalid resource")
 	}
 	return nil
+}
+
+// base64URLChars reports whether s contains only the RFC 4648 base64url
+// alphabet plus the RFC 7636 additional allowed chars (-._~), which is the
+// only legitimately valid shape for an S256 PKCE code_challenge. Rejecting
+// anything else keeps attacker-controlled raw markup out of the authorize page
+// even if a render path were to regress.
+func base64URLChars(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case r == '-', r == '.', r == '_', r == '~':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func contains(values []string, value string) bool {

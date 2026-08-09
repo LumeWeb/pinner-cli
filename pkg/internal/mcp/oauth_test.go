@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"html"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -92,6 +93,56 @@ func TestOAuthAuthorizeGET(t *testing.T) {
 	body := rec.Body.String()
 	assert.Contains(t, body, "auth secret")
 	assert.Contains(t, body, "cli")
+}
+
+func TestOAuthAuthorizeGET_ReflectedXSSEscaped(t *testing.T) {
+	o := newTestOAuth(t)
+	_, challenge := testPKCE()
+	// state is an opaque, unvalidated OAuth param that is echoed verbatim into
+	// a hidden input. A malicious client driving a resource owner to this page
+	// can set state to markup; it must render HTML-escaped so it cannot break
+	// out of the hidden-input attribute. redirect_uri is left valid because it
+	// is validated against the registered client.
+	evil := `"><script>alert(1)</script>`
+	u := "/oauth/authorize?response_type=code&client_id=cli" +
+		"&redirect_uri=" + url.QueryEscape("http://localhost/cb") +
+		"&code_challenge=" + challenge +
+		"&code_challenge_method=S256" +
+		"&state=" + url.QueryEscape(evil) +
+		"&resource=https%3A%2F%2Fmcp.example.com%2Fmcp"
+	rec := httptest.NewRecorder()
+	o.authorizeGET(rec, httptest.NewRequest(http.MethodGet, u, nil))
+	require.Equal(t, http.StatusOK, rec.Code)
+	body := rec.Body.String()
+	// The raw markup must not survive into the page: templ's attribute
+	// escaping encodes both the quote and the angle brackets.
+	assert.NotContains(t, body, "<script>alert(1)</script>")
+	assert.NotContains(t, body, `"><script>`)
+	// The hidden input must render the original value entity-escaped so that a
+	// browser decodes it back to the exact state (XSS-safe AND lossless
+	// round-trip: html.EscapeString escapes the quote, so the escaped text is
+	// the original with each of its metacharacters entity-encoded).
+	assert.Contains(t, body, `name="state" value="`+html.EscapeString(evil)+`"`)
+	// Round-trip: decoding the entity-escaped attribute value yields the
+	// original state the server must echo on POST.
+	escaped := html.EscapeString(evil)
+	assert.Equal(t, evil, html.UnescapeString(escaped))
+}
+
+func TestOAuthAuthorizeGET_InvalidCodeChallengeRejected(t *testing.T) {
+	o := newTestOAuth(t)
+	// A code_challenge that is not plain base64url (RFC 7636) must be rejected
+	// so attacker markup cannot reach the authorize page.
+	bad := `"><script>alert(1)</script>`
+	u := "/oauth/authorize?response_type=code&client_id=cli" +
+		"&redirect_uri=" + url.QueryEscape("http://localhost/cb") +
+		"&code_challenge=" + url.QueryEscape(bad) +
+		"&code_challenge_method=S256" +
+		"&state=abc" +
+		"&resource=https%3A%2F%2Fmcp.example.com%2Fmcp"
+	rec := httptest.NewRecorder()
+	o.authorizeGET(rec, httptest.NewRequest(http.MethodGet, u, nil))
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
 }
 
 func TestOAuthFullFlow(t *testing.T) {

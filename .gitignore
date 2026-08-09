@@ -24,6 +24,9 @@ vendor/
 go.work
 go.work.sum
 
+# Generated templ code (regenerate with `go generate ./...`)
+*_templ.go
+
 # env file
 .env
 
