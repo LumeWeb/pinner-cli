@@ -52,6 +52,7 @@ require (
 	atomicgo.dev/schedule v0.1.0 // indirect
 	filippo.io/edwards25519 v1.2.0 // indirect
 	github.com/Jorropo/jsync v1.0.1 // indirect
+	github.com/a-h/templ v0.3.1020 // indirect
 	github.com/alecthomas/units v0.0.0-20240927000941-0f3dac36c52b // indirect
 	github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
 	github.com/apt304/sse-go v0.0.3 // indirect

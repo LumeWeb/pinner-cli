@@ -110,6 +110,15 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
+      - name: Install templ
+        run: go install github.com/a-h/templ/cmd/templ@latest
+
+      - name: Verify templ formatting and generated code
+        run: |
+          templ fmt .
+          templ generate
+          git diff --exit-code || { echo "templ files drifted: run 'templ fmt .' and 'templ generate', commit the _templ.go changes" >&2; exit 1; }
+
       - name: Install GoReleaser
         uses: goreleaser/goreleaser-action@v7
         with:

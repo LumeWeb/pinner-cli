@@ -9,7 +9,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"html/template"
 	"net/http"
 	"net/url"
 	"strings"
@@ -163,16 +162,21 @@ func (o *oauthServer) authorizeGET(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = tmpl.Execute(w, map[string]any{
-		"Action":              o.baseURL + "/oauth/authorize",
-		"ResponseType":        q.Get("response_type"),
-		"ClientID":            q.Get("client_id"),
-		"RedirectURI":         q.Get("redirect_uri"),
-		"State":               q.Get("state"),
-		"CodeChallenge":       q.Get("code_challenge"),
-		"CodeChallengeMethod": q.Get("code_challenge_method"),
-		"Resource":            q.Get("resource"),
-	})
+	err := oauthLoginPage(oauthAuthorizeData{
+		Action:              o.baseURL + "/oauth/authorize",
+		ResponseType:        q.Get("response_type"),
+		ClientID:            q.Get("client_id"),
+		RedirectURI:         q.Get("redirect_uri"),
+		State:               q.Get("state"),
+		CodeChallenge:       q.Get("code_challenge"),
+		CodeChallengeMethod: q.Get("code_challenge_method"),
+		Resource:            q.Get("resource"),
+	}).Render(r.Context(), w)
+	if err != nil {
+		// Render already partially wrote the response; nothing safe to do but
+		// to stop. A template render failure here is essentially unreachable.
+		return
+	}
 }
 
 func (o *oauthServer) validateAuthorizeRequest(q url.Values) error {
@@ -531,25 +535,3 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
 }
-
-var tmpl = template.Must(template.New("login").Parse(`<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="utf-8"><title>Authorize pinner MCP</title></head>
-<body style="font-family:system-ui,sans-serif;max-width:24rem;margin:4rem auto;padding:0 1rem">
-  <h1>Authorize pinner MCP access</h1>
-  <p>Client <code>{{.ClientID}}</code> is requesting access to this MCP server
-  which executes CLI tools in-process. Enter the shared auth secret to authorize.</p>
-  <form method="post" action="{{.Action}}">
-    <input type="hidden" name="response_type" value="{{.ResponseType}}">
-    <input type="hidden" name="client_id" value="{{.ClientID}}">
-    <input type="hidden" name="redirect_uri" value="{{.RedirectURI}}">
-    <input type="hidden" name="state" value="{{.State}}">
-    <input type="hidden" name="code_challenge" value="{{.CodeChallenge}}">
-    <input type="hidden" name="code_challenge_method" value="{{.CodeChallengeMethod}}">
-    <input type="hidden" name="resource" value="{{.Resource}}">
-    <label for="password">Auth secret</label>
-    <input type="password" id="password" name="password" required autofocus autocomplete="current-password">
-    <button type="submit">Authorize</button>
-  </form>
-</body>
-</html>`))
