@@ -58,15 +58,30 @@ function pollStatus(cid, attempts) {
     arguments: { cid },
   }).then((res) => {
     const st = res && res.structuredContent && res.structuredContent.status;
-    if (!st) return;
-    $("#out-status").textContent = st;
-    const done = (st === "pinned" || st === "failed" || st === "error") || --max <= 0;
-    if (done) {
+    if (st) {
+      $("#out-status").textContent = st;
+    }
+    // Missing status (an IsError result, e.g. ErrPinNotFound right after a pin
+    // is scheduled, or a transient failure) is not terminal: keep polling until
+    // the attempt budget is exhausted rather than silently stopping the UI.
+    if (--max <= 0) {
+      setStatus("info", "Timed out polling pin status (last: " + (st || "unknown") + ").");
+      return;
+    }
+    if (st === "pinned" || st === "failed" || st === "error") {
       setStatus(st === "pinned" ? "ok" : "info",
         st === "pinned" ? "Pinned." : "Current status: " + st);
       return;
     }
     window.setTimeout(() => pollStatus(cid, max), 1500);
+  }).catch(() => {
+    // Transient transport/network error: retry until the budget is exhausted.
+    if (--max > 0) {
+      setStatus("pending", "Checking pin status...");
+      window.setTimeout(() => pollStatus(cid, max), 1500);
+    } else {
+      setStatus("info", "Timed out polling pin status.");
+    }
   });
 }
 

@@ -184,6 +184,35 @@ func TestPinCreateResourceRead(t *testing.T) {
 	}
 }
 
+// TestPinStatusPollingResilient guards the app's status polling against
+// silently halting on a transient failure. Immediately after a pin is
+// scheduled, PinningService.Status can return ErrPinNotFound (an IsError
+// ToolResult with no structuredContent); the view must reschedule the poll on
+// a missing/error status rather than stop, and must survive transport errors
+// via a .catch, until the attempt budget is exhausted.
+func TestPinStatusPollingResilient(t *testing.T) {
+	html := renderPinCreateAppHTML()
+
+	// Missing/error status is non-terminal: the view must reschedule the poll
+	// (guarded by an attempt budget + timeout message) rather than silently
+	// halting the UI after a transient ErrPinNotFound or network error.
+	if strings.Contains(html, "if (!st) return;") {
+		t.Fatalf("polling must not halt silently on a missing/error status")
+	}
+	if !strings.Contains(html, "Timed out polling pin status") {
+		t.Fatalf("polling must surface a timeout once the attempt budget is exhausted")
+	}
+	// A .catch retries transient transport errors until the budget runs out.
+	if !strings.Contains(html, ".catch(") {
+		t.Fatalf("polling must catch transient transport errors via .catch")
+	}
+	// The attempt budget decrements on both the success and error paths so a
+	// long run of transient failures cannot loop forever.
+	if !strings.Contains(html, "--max <= 0") && !strings.Contains(html, "--max > 0") {
+		t.Fatalf("polling must bound retries by the attempt budget")
+	}
+}
+
 // TestPinAppClientB64Decodes verifies the inlined ext-apps client bundle decodes
 // and is the real client (contains PostMessageTransport), so the served view is
 // not a stub.
