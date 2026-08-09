@@ -327,6 +327,7 @@ func websiteOnboardingOverview(domain string) string {
 	b.WriteString("Rules:\n")
 	b.WriteString("  - Always pass the session_id from websites_wizard_start to websites_wizard_step.\n")
 	b.WriteString("  - The next_step_schema in each response tells you the exact input shape.\n")
+	b.WriteString("  - A step that needs input returns a native form elicitation (input_required): the client presents a form for the requested fields. Fill and submit that form; the session_id is carried across automatically.\n")
 	b.WriteString("  - If a step returns an error, the session stays in the same state: you can retry.\n")
 	b.WriteString("  - Read pinner:// resources for live data (DNS requirements, validation status).\n")
 	if domain != "" {
@@ -370,6 +371,7 @@ func setupOverview() string {
 	b.WriteString("Rules:\n")
 	b.WriteString("  - Always pass the session_id from setup_wizard_start to setup_wizard_step.\n")
 	b.WriteString("  - The next_step_schema in each response tells you the exact input shape.\n")
+	b.WriteString("  - A step that needs input returns a native form elicitation (input_required): the client presents a form for the requested fields. Fill and submit that form; the session_id is carried across automatically.\n")
 	b.WriteString("  - If a step returns an error, the session stays in the same state: you can retry.\n")
 	b.WriteString("  - For sign_in, request only the email; relay the out-of-band login URL the handler returns to the user to complete in a browser. Never ask for or collect a password or otp_code.\n")
 	b.WriteString("  - Read pinner://account/status to verify the auth state before and after.\n")

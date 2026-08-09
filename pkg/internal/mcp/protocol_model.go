@@ -9,6 +9,12 @@ import (
 type ToolRequest struct {
 	Name      string
 	Arguments map[string]any
+	// InputResponses reports whether this invocation is a retry that carried
+	// form-elicitation input (InputResponses on the wire) from the client, as
+	// opposed to a fresh argument-only call. Handlers use it to tell a failed
+	// form submission apart from a first-time call so they can re-present the
+	// native form instead of falling back to plain text.
+	InputResponses bool
 }
 
 // ToolResult is the SDK-neutral result of a catalog tool.
@@ -16,6 +22,10 @@ type ToolResult struct {
 	IsError           bool
 	Text              string
 	StructuredContent any
+	// Elicitation, when set, asks the connected client for interactive input
+	// (a form or URL) instead of returning a terminal result. The SDK seam
+	// converts it to an input_required response.
+	Elicitation *ElicitationSpec
 }
 
 // PinnerToolHandler executes a catalog tool without depending on an MCP SDK.

@@ -143,7 +143,10 @@ func officialTool(desc ToolDescriptor) *mcp.Tool {
 }
 
 // PinnerToolHandler → mcp.ToolHandler. The arguments arrive on the wire as
-// raw JSON; unmarshal them into a plain map for the Pinner-owned handler.
+// raw JSON; unmarshal them into a plain map for the Pinner-owned handler. When
+// the call is a retry after an input_required elicitation, the accepted form
+// content is merged into the arguments under their elicitation id so handlers
+// read form submissions like any other argument.
 func officialToolHandler(handler PinnerToolHandler) mcp.ToolHandler {
 	return func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := map[string]any{}
@@ -155,7 +158,22 @@ func officialToolHandler(handler PinnerToolHandler) mcp.ToolHandler {
 				}, nil
 			}
 		}
-		result, err := handler(ctx, ToolRequest{Name: req.Params.Name, Arguments: args})
+		for id, content := range acceptedElicitations(req) {
+			args[id] = content
+		}
+		// Recover cross-round state the client echoed back on a retry after an
+		// input_required result, so handlers can re-establish context (e.g. a
+		// session id) even if the client did not echo the original arguments.
+		if req.Params.RequestState != "" {
+			if _, ok := args["request_state"]; !ok {
+				args["request_state"] = req.Params.RequestState
+			}
+		}
+		result, err := handler(ctx, ToolRequest{
+			Name:           req.Params.Name,
+			Arguments:      args,
+			InputResponses: len(req.Params.InputResponses) > 0,
+		})
 		if err != nil {
 			return &mcp.CallToolResult{
 				IsError: true,
@@ -167,8 +185,12 @@ func officialToolHandler(handler PinnerToolHandler) mcp.ToolHandler {
 }
 
 // officialToolResult converts a Pinner-owned tool result into an official SDK
-// result, preserving isError and single text-content semantics.
+// result, preserving isError and single text-content semantics. When the result
+// carries an Elicitation it is converted into an input_required response.
 func officialToolResult(result ToolResult) *mcp.CallToolResult {
+	if result.Elicitation != nil {
+		return callToolResultFromElicitation(*result.Elicitation)
+	}
 	return &mcp.CallToolResult{
 		IsError:           result.IsError,
 		Content:           []mcp.Content{&mcp.TextContent{Text: result.Text}},
