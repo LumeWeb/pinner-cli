@@ -182,6 +182,12 @@ For more help on any command: pinner <command> --help`,
 			sDeps := mcpadapter.SetupWizardDeps{
 				CfgMgr:      cfgMgr,
 				AuthService: authSvc,
+				// Out-of-band sign-in runs in the user's browser on an
+				// auto-started loopback listener (stdio) or the tunneled/HTTP
+				// mux (remote). The base URL is empty at construction: the
+				// coordinator derives the loopback address when a login is
+				// requested.
+				OutOfBand: mcpadapter.NewOutOfBandLogin(authSvc, "", mcpadapter.DefaultMCPKeyName),
 				SetupFactory: func() mcpadapter.SetupWizardState {
 					return NewSetupWizard(cfgMgr, authSvc, nil, SetupOptions{})
 				},

@@ -28,8 +28,8 @@ func newTestFSM() *fsm.FSM {
 // newTestSteps returns step definitions matching the test FSM.
 func newTestSteps() []StepDef {
 	return []StepDef{
-		{Name: "step1", Event: "next", Handler: func(_ context.Context, _ *Session, _ json.RawMessage) error { return nil }},
-		{Name: "step2", Event: "next", Handler: func(_ context.Context, _ *Session, _ json.RawMessage) error { return nil }},
+		{Name: "step1", Event: "next", Handler: func(_ context.Context, _ *Session, _ json.RawMessage) (string, error) { return "", nil }},
+		{Name: "step2", Event: "next", Handler: func(_ context.Context, _ *Session, _ json.RawMessage) (string, error) { return "", nil }},
 	}
 }
 
@@ -337,17 +337,17 @@ func TestAdvanceSession(t *testing.T) {
 	require.NoError(t, err)
 
 	// step1 -> step2
-	err = AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	_, err = AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
 	require.NoError(t, err)
 	assert.Equal(t, "step2", sess.FSM.Current())
 
 	// step2 -> complete
-	err = AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	_, err = AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
 	require.NoError(t, err)
 	assert.Equal(t, "complete", sess.FSM.Current())
 
 	// No more steps to advance.
-	err = AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	_, err = AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
 	assert.Error(t, err)
 }
 
@@ -359,7 +359,7 @@ func TestAdvanceSession_HandlerError(t *testing.T) {
 		{
 			Name:    "step1",
 			Event:   "next",
-			Handler: func(_ context.Context, _ *Session, _ json.RawMessage) error { return handlerErr },
+			Handler: func(_ context.Context, _ *Session, _ json.RawMessage) (string, error) { return "", handlerErr },
 		},
 	}
 
@@ -367,7 +367,7 @@ func TestAdvanceSession_HandlerError(t *testing.T) {
 	sess, err := store.Create(nil, newTestFSM(), steps)
 	require.NoError(t, err)
 
-	err = AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	_, err = AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
 	assert.ErrorIs(t, err, handlerErr)
 	// FSM should NOT have transitioned because the handler failed.
 	assert.Equal(t, "step1", sess.FSM.Current())
@@ -384,7 +384,7 @@ func TestAdvanceSession_NilHandler(t *testing.T) {
 	sess, err := store.Create(nil, newTestFSM(), steps)
 	require.NoError(t, err)
 
-	err = AdvanceSession(context.Background(), sess, nil)
+	_, err = AdvanceSession(context.Background(), sess, nil)
 	require.NoError(t, err)
 	assert.Equal(t, "step2", sess.FSM.Current())
 }

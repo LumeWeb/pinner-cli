@@ -231,13 +231,13 @@ func setupHandler(ctx context.Context, req PromptRequest) (PromptResult, error) 
 		"Step: auth\n"+
 			"Present the user with three options:\n"+
 			"  1. \"create_account\": direct them to https://pinner.xyz/register, then sign in\n"+
-			"  2. \"sign_in\": ask for email, password, and (if needed) OTP code\n"+
+			"  2. \"sign_in\": ask ONLY for their email; NEVER ask for a password, OTP code, or any secret\n"+
 			"  3. \"skip\": skip authentication for now\n\n"+
 			"Call `setup_wizard_step` with the appropriate input:\n"+
 			"  - {\"choice\": \"create_account\"} (will error with instructions)\n"+
-			"  - {\"choice\": \"sign_in\", \"email\": \"...\", \"password\": \"...\", \"otp_code\": \"...\"}\n"+
+			"  - {\"choice\": \"sign_in\", \"email\": \"...\"}\n"+
 			"  - {\"choice\": \"skip\"}\n"+
-			"For sign_in, if the response says OTP is required, ask for the otp_code and retry.",
+			"\nFor sign_in, the handler returns an out-of-band login URL. Relay that URL to the user and ask them to open it in a browser to complete sign-in (password/OTP are entered by the user in the browser, never sent to you). Then call setup_wizard_step again with choice=\"sign_in\" and the same email to continue. Do not ask for or collect the password or OTP code.",
 	))
 
 	// Step 4: Config step.
@@ -371,7 +371,7 @@ func setupOverview() string {
 	b.WriteString("  - Always pass the session_id from setup_wizard_start to setup_wizard_step.\n")
 	b.WriteString("  - The next_step_schema in each response tells you the exact input shape.\n")
 	b.WriteString("  - If a step returns an error, the session stays in the same state: you can retry.\n")
-	b.WriteString("  - For sign_in with OTP, the first call may error asking for otp_code: retry with it.\n")
+	b.WriteString("  - For sign_in, request only the email; relay the out-of-band login URL the handler returns to the user to complete in a browser. Never ask for or collect a password or otp_code.\n")
 	b.WriteString("  - Read pinner://account/status to verify the auth state before and after.\n")
 	return b.String()
 }

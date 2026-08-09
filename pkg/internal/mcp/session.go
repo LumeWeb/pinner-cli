@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -34,9 +35,17 @@ var ErrSessionStoreFull = errors.New("session store is full")
 // (websites, setup) stores its own state struct here.
 type WizardState any
 
-// StepHandler validates and applies input for a single wizard step.
-// The context is the request context from the MCP tool call.
-type StepHandler func(ctx context.Context, session *Session, input json.RawMessage) error
+// StepHandler validates and applies input for a single wizard step and returns
+// the outcome via idiomatic (value, error):
+//
+//   - (info, nil):    the step relayed informational output the agent should
+//     relay to the user (e.g. an out-of-band login URL); the wizard does NOT
+//     advance so the agent can retry after the user completes the action.
+//   - ("", err):      the step failed; the wizard does NOT advance and the
+//     agent may retry.
+//   - ("", nil):      the step succeeded; the wizard fires the FSM event and
+//     advances to the next step.
+type StepHandler func(ctx context.Context, session *Session, input json.RawMessage) (info string, err error)
 
 // StepDef describes a single wizard step for MCP session purposes.
 type StepDef struct {
@@ -248,27 +257,43 @@ func (s *SessionStore) Count() int {
 }
 
 // AdvanceSession calls the current step's handler with the given input, then
-// fires the FSM event to transition to the next step. It is a helper for
-// wizard tool implementations that centralizes the lookup→handle→transition
-// flow.
-func AdvanceSession(ctx context.Context, sess *Session, input json.RawMessage) error {
+// fires the FSM event to transition to the next step. It returns the handler's
+// output via idiomatic (value, error):
+//
+//   - a non-empty info on success keeps the session on the current step (the
+//     info is informational output the agent should relay, e.g. an out-of-band
+//     login URL), and
+//   - a non-nil error also keeps the session on the current step (a failure
+//     the agent may retry).
+//
+// Only a ("", nil) result fires the FSM event and advances.
+func AdvanceSession(ctx context.Context, sess *Session, input json.RawMessage) (string, error) {
 	sess.advanceMu.Lock()
 	defer sess.advanceMu.Unlock()
 
 	step, ok := sess.CurrentStep()
 	if !ok {
-		return errors.New("no active step to advance")
+		return "", fmt.Errorf("no active step to advance")
 	}
 
+	info, err := "", (error)(nil)
 	if step.Handler != nil {
-		if err := step.Handler(ctx, sess, input); err != nil {
-			return err
+		var handlerErr error
+		info, handlerErr = step.Handler(ctx, sess, input)
+		if handlerErr != nil {
+			// A failure keeps the session on the current step for retry.
+			return "", handlerErr
+		}
+		if info != "" {
+			// Informational output: the step is incomplete and the session must
+			// not advance. The wizard tool surfaces info as a plain message.
+			return info, nil
 		}
 	}
 
-	if err := sess.FSM.Event(ctx, step.Event); err != nil {
-		return err
+	if err = sess.FSM.Event(ctx, step.Event); err != nil {
+		return "", fmt.Errorf("advance event %q: %w", step.Event, err)
 	}
 
-	return nil
+	return "", nil
 }

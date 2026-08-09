@@ -229,12 +229,12 @@ type DomainVerifyInput struct {
 	Retry bool `json:"retry,omitempty" jsonschema:"description=Set to true to retry verification (useful when DNS propagation is pending)"`
 }
 
-// SetupAuthInput is the input for the setup auth step.
+// SetupAuthInput is the input for the setup auth step. Credentials are NOT
+// accepted here: sign_in starts an out-of-band login the human completes in a
+// browser, so passwords and OTP codes never transit the MCP/LLM channel.
 type SetupAuthInput struct {
-	Choice   AuthStepChoiceValue `json:"choice" jsonschema:"enum=create_account,enum=sign_in,enum=skip,description=Whether to create a new account, sign in, or skip auth"`
-	Email    string              `json:"email,omitempty" jsonschema:"description=Email address (required for create_account and sign_in)"`
-	Password string              `json:"password,omitempty" jsonschema:"description=Password (required for create_account and sign_in)"`
-	OTPCode  string              `json:"otp_code,omitempty" jsonschema:"description=OTP code if 2FA is enabled during sign_in"`
+	Choice AuthStepChoiceValue `json:"choice" jsonschema:"enum=create_account,enum=sign_in,enum=skip,description=Whether to create a new account, sign in, or skip auth"`
+	Email  string              `json:"email,omitempty" jsonschema:"description=Email address (required for create_account and sign_in)"`
 }
 
 // SetupConfigInput is the input for the setup config step.
@@ -393,11 +393,11 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []StepDef {
 		{
 			Name:  StateWebsitesAuthCheck,
 			Event: EventWebsitesAuthOK,
-			Handler: func(ctx context.Context, sess *Session, _ json.RawMessage) error {
+			Handler: func(ctx context.Context, sess *Session, _ json.RawMessage) (string, error) {
 				if deps.CfgMgr.Config().AuthToken == "" {
-					return fmt.Errorf("authentication required: run 'pinner auth' or set --auth-token")
+					return "", fmt.Errorf("authentication required: run 'pinner auth' or set --auth-token")
 				}
-				return nil
+				return "", nil
 			},
 			Schema: func(_ *Session) *jsonschema.Schema {
 				return schemaFor[NoInput]()
@@ -406,23 +406,23 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []StepDef {
 		{
 			Name:  StateWebsitesContentSource,
 			Event: EventWebsitesContent,
-			Handler: func(ctx context.Context, sess *Session, input json.RawMessage) error {
+			Handler: func(ctx context.Context, sess *Session, input json.RawMessage) (string, error) {
 				w := sess.State().(WebsitesWizardState)
 				var in ContentSourceInput
 				if err := json.Unmarshal(input, &in); err != nil {
-					return fmt.Errorf("invalid input: %w", err)
+					return "", fmt.Errorf("invalid input: %w", err)
 				}
 				if !in.Choice.Valid() {
-					return fmt.Errorf("invalid choice: %s (expected \"cid\" or \"upload\")", in.Choice)
+					return "", fmt.Errorf("invalid choice: %s (expected \"cid\" or \"upload\")", in.Choice)
 				}
 				if in.Choice == ContentSourceUpload {
-					return fmt.Errorf("content upload required: run 'pinner upload <file>' first, then restart the wizard")
+					return "", fmt.Errorf("content upload required: run 'pinner upload <file>' first, then restart the wizard")
 				}
 				if in.CID == "" {
-					return fmt.Errorf("cid cannot be empty when choice is \"cid\"")
+					return "", fmt.Errorf("cid cannot be empty when choice is \"cid\"")
 				}
 				w.SetCID(in.CID)
-				return nil
+				return "", nil
 			},
 			Schema: func(_ *Session) *jsonschema.Schema {
 				return schemaFor[ContentSourceInput]()
@@ -431,17 +431,17 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []StepDef {
 		{
 			Name:  StateWebsitesTargetType,
 			Event: EventWebsitesTarget,
-			Handler: func(ctx context.Context, sess *Session, input json.RawMessage) error {
+			Handler: func(ctx context.Context, sess *Session, input json.RawMessage) (string, error) {
 				w := sess.State().(WebsitesWizardState)
 				var in TargetTypeInput
 				if err := json.Unmarshal(input, &in); err != nil {
-					return fmt.Errorf("invalid input: %w", err)
+					return "", fmt.Errorf("invalid input: %w", err)
 				}
 				if !in.Type.Valid() {
-					return fmt.Errorf("invalid target type: %s (expected \"ipfs\" or \"ipns\")", in.Type)
+					return "", fmt.Errorf("invalid target type: %s (expected \"ipfs\" or \"ipns\")", in.Type)
 				}
 				w.SetTargetType(string(in.Type))
-				return nil
+				return "", nil
 			},
 			Schema: func(_ *Session) *jsonschema.Schema {
 				return schemaFor[TargetTypeInput]()
@@ -450,17 +450,17 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []StepDef {
 		{
 			Name:  StateWebsitesDomain,
 			Event: EventWebsitesDomainSet,
-			Handler: func(ctx context.Context, sess *Session, input json.RawMessage) error {
+			Handler: func(ctx context.Context, sess *Session, input json.RawMessage) (string, error) {
 				w := sess.State().(WebsitesWizardState)
 				var in DomainInput
 				if err := json.Unmarshal(input, &in); err != nil {
-					return fmt.Errorf("invalid input: %w", err)
+					return "", fmt.Errorf("invalid input: %w", err)
 				}
 				if in.Domain == "" {
-					return fmt.Errorf("domain cannot be empty")
+					return "", fmt.Errorf("domain cannot be empty")
 				}
 				w.SetDomain(in.Domain)
-				return nil
+				return "", nil
 			},
 			Schema: func(_ *Session) *jsonschema.Schema {
 				return schemaFor[DomainInput]()
@@ -469,17 +469,17 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []StepDef {
 		{
 			Name:  StateWebsitesDNSMode,
 			Event: EventWebsitesDNSMode,
-			Handler: func(ctx context.Context, sess *Session, input json.RawMessage) error {
+			Handler: func(ctx context.Context, sess *Session, input json.RawMessage) (string, error) {
 				w := sess.State().(WebsitesWizardState)
 				var in DNSModeInput
 				if err := json.Unmarshal(input, &in); err != nil {
-					return fmt.Errorf("invalid input: %w", err)
+					return "", fmt.Errorf("invalid input: %w", err)
 				}
 				if !in.Mode.Valid() {
-					return fmt.Errorf("invalid DNS mode: %s (expected \"managed\" or \"self_managed\")", in.Mode)
+					return "", fmt.Errorf("invalid DNS mode: %s (expected \"managed\" or \"self_managed\")", in.Mode)
 				}
 				w.SetDNSHosting(in.Mode == DNSModeManaged)
-				return nil
+				return "", nil
 			},
 			Schema: func(_ *Session) *jsonschema.Schema {
 				return schemaFor[DNSModeInput]()
@@ -488,14 +488,14 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []StepDef {
 		{
 			Name:  StateWebsitesCreate,
 			Event: EventWebsitesCreated,
-			Handler: func(ctx context.Context, sess *Session, input json.RawMessage) error {
+			Handler: func(ctx context.Context, sess *Session, input json.RawMessage) (string, error) {
 				w := sess.State().(WebsitesWizardState)
 				var in CreateInput
 				if err := json.Unmarshal(input, &in); err != nil {
-					return fmt.Errorf("invalid input: %w", err)
+					return "", fmt.Errorf("invalid input: %w", err)
 				}
 				if !in.Confirm {
-					return fmt.Errorf("confirmation required: set confirm=true to create the website")
+					return "", fmt.Errorf("confirmation required: set confirm=true to create the website")
 				}
 
 				// Call WebsitesService directly; the CLI wizard's create method is unexported.
@@ -512,10 +512,10 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []StepDef {
 				}
 				website, err := deps.WebsitesService.CreateWithOptions(ctx, req)
 				if err != nil {
-					return fmt.Errorf("website creation failed: %w", err)
+					return "", fmt.Errorf("website creation failed: %w", err)
 				}
 				w.SetWebsite(website)
-				return nil
+				return "", nil
 			},
 			Schema: func(_ *Session) *jsonschema.Schema {
 				return schemaFor[CreateInput]()
@@ -524,9 +524,9 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []StepDef {
 		{
 			Name:  StateWebsitesDNSSetup,
 			Event: EventWebsitesDNSSet,
-			Handler: func(_ context.Context, _ *Session, _ json.RawMessage) error {
+			Handler: func(_ context.Context, _ *Session, _ json.RawMessage) (string, error) {
 				// DNS setup is informational; no state mutation needed.
-				return nil
+				return "", nil
 			},
 			Schema: func(_ *Session) *jsonschema.Schema {
 				return schemaFor[NoInput]()
@@ -535,29 +535,29 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []StepDef {
 		{
 			Name:  StateWebsitesValidate,
 			Event: EventWebsitesValidated,
-			Handler: func(ctx context.Context, sess *Session, input json.RawMessage) error {
+			Handler: func(ctx context.Context, sess *Session, input json.RawMessage) (string, error) {
 				w := sess.State().(WebsitesWizardState)
 				var in ValidateInput
 				if len(input) > 0 && string(input) != "null" {
 					if err := json.Unmarshal(input, &in); err != nil {
-						return fmt.Errorf("invalid input: %w", err)
+						return "", fmt.Errorf("invalid input: %w", err)
 					}
 				}
 				_ = in // The retry flag is informational; validation always runs.
 
 				website := w.Website()
 				if website == nil {
-					return fmt.Errorf("website not created yet")
+					return "", fmt.Errorf("website not created yet")
 				}
 
 				// Call WebsitesService directly; the CLI wizard's validate method is unexported.
 				id := fmt.Sprintf("%d", website.Id)
 				result, err := deps.WebsitesService.Validate(ctx, id)
 				if err != nil {
-					return fmt.Errorf("validation failed: %w", err)
+					return "", fmt.Errorf("validation failed: %w", err)
 				}
 				w.SetValidationResult(result)
-				return nil
+				return "", nil
 			},
 			Schema: func(_ *Session) *jsonschema.Schema {
 				return schemaFor[ValidateInput]()
@@ -584,11 +584,11 @@ func buildDomainSteps(deps DomainWizardDeps) []StepDef {
 		{
 			Name:  StateDomainAuthCheck,
 			Event: EventDomainAuthOK,
-			Handler: func(ctx context.Context, sess *Session, _ json.RawMessage) error {
+			Handler: func(ctx context.Context, sess *Session, _ json.RawMessage) (string, error) {
 				if deps.CfgMgr.Config().AuthToken == "" {
-					return fmt.Errorf("authentication required: run 'pinner auth' or set --auth-token")
+					return "", fmt.Errorf("authentication required: run 'pinner auth' or set --auth-token")
 				}
-				return nil
+				return "", nil
 			},
 			Schema: func(_ *Session) *jsonschema.Schema {
 				return schemaFor[NoInput]()
@@ -597,19 +597,19 @@ func buildDomainSteps(deps DomainWizardDeps) []StepDef {
 		{
 			Name:  StateDomainWebsite,
 			Event: EventDomainWebsite,
-			Handler: func(ctx context.Context, sess *Session, input json.RawMessage) error {
+			Handler: func(ctx context.Context, sess *Session, input json.RawMessage) (string, error) {
 				w := sess.State().(DomainWizardState)
 				var in WebsiteInput
 				if err := json.Unmarshal(input, &in); err != nil {
-					return fmt.Errorf("invalid input: %w", err)
+					return "", fmt.Errorf("invalid input: %w", err)
 				}
 				if in.WebsiteID == "" {
-					return fmt.Errorf("website_id cannot be empty")
+					return "", fmt.Errorf("website_id cannot be empty")
 				}
 
 				websites, err := deps.WebsitesService.List(ctx)
 				if err != nil {
-					return fmt.Errorf("failed to load websites: %w", err)
+					return "", fmt.Errorf("failed to load websites: %w", err)
 				}
 				matched := false
 				for _, ws := range websites {
@@ -621,9 +621,9 @@ func buildDomainSteps(deps DomainWizardDeps) []StepDef {
 					}
 				}
 				if !matched {
-					return fmt.Errorf("website with ID %q not found; list available websites with 'pinner websites list'", in.WebsiteID)
+					return "", fmt.Errorf("website with ID %q not found; list available websites with 'pinner websites list'", in.WebsiteID)
 				}
-				return nil
+				return "", nil
 			},
 			Schema: func(_ *Session) *jsonschema.Schema {
 				return schemaFor[WebsiteInput]()
@@ -632,17 +632,17 @@ func buildDomainSteps(deps DomainWizardDeps) []StepDef {
 		{
 			Name:  StateDomainName,
 			Event: EventDomainName,
-			Handler: func(_ context.Context, sess *Session, input json.RawMessage) error {
+			Handler: func(_ context.Context, sess *Session, input json.RawMessage) (string, error) {
 				w := sess.State().(DomainWizardState)
 				var in DomainNameInput
 				if err := json.Unmarshal(input, &in); err != nil {
-					return fmt.Errorf("invalid input: %w", err)
+					return "", fmt.Errorf("invalid input: %w", err)
 				}
 				if in.Domain == "" {
-					return fmt.Errorf("domain cannot be empty")
+					return "", fmt.Errorf("domain cannot be empty")
 				}
 				w.SetDomain(in.Domain)
-				return nil
+				return "", nil
 			},
 			Schema: func(_ *Session) *jsonschema.Schema {
 				return schemaFor[DomainNameInput]()
@@ -651,17 +651,17 @@ func buildDomainSteps(deps DomainWizardDeps) []StepDef {
 		{
 			Name:  StateDomainNamespace,
 			Event: EventDomainNamespace,
-			Handler: func(_ context.Context, sess *Session, input json.RawMessage) error {
+			Handler: func(_ context.Context, sess *Session, input json.RawMessage) (string, error) {
 				w := sess.State().(DomainWizardState)
 				var in NamespaceInput
 				if err := json.Unmarshal(input, &in); err != nil {
-					return fmt.Errorf("invalid input: %w", err)
+					return "", fmt.Errorf("invalid input: %w", err)
 				}
 				if !in.Namespace.Valid() {
-					return fmt.Errorf("invalid namespace: %s (expected \"icann\" or \"hns\")", in.Namespace)
+					return "", fmt.Errorf("invalid namespace: %s (expected \"icann\" or \"hns\")", in.Namespace)
 				}
 				w.SetNamespace(string(in.Namespace))
-				return nil
+				return "", nil
 			},
 			Schema: func(_ *Session) *jsonschema.Schema {
 				return schemaFor[NamespaceInput]()
@@ -670,20 +670,20 @@ func buildDomainSteps(deps DomainWizardDeps) []StepDef {
 		{
 			Name:  StateDomainBind,
 			Event: EventDomainBound,
-			Handler: func(ctx context.Context, sess *Session, input json.RawMessage) error {
+			Handler: func(ctx context.Context, sess *Session, input json.RawMessage) (string, error) {
 				w := sess.State().(DomainWizardState)
 				var in BindInput
 				if err := json.Unmarshal(input, &in); err != nil {
-					return fmt.Errorf("invalid input: %w", err)
+					return "", fmt.Errorf("invalid input: %w", err)
 				}
 				if !in.Confirm {
-					return fmt.Errorf("confirmation required: set confirm=true to bind the domain")
+					return "", fmt.Errorf("confirmation required: set confirm=true to bind the domain")
 				}
 				if w.Domain() == "" {
-					return fmt.Errorf("domain name not set")
+					return "", fmt.Errorf("domain name not set")
 				}
 				if w.Namespace() == "" {
-					return fmt.Errorf("namespace not set")
+					return "", fmt.Errorf("namespace not set")
 				}
 
 				req := ipfs.DomainRequest{
@@ -692,10 +692,10 @@ func buildDomainSteps(deps DomainWizardDeps) []StepDef {
 				}
 				domainResp, err := deps.WebsitesService.BindDomain(ctx, w.WebsiteID(), req)
 				if err != nil {
-					return fmt.Errorf("domain binding failed: %w", err)
+					return "", fmt.Errorf("domain binding failed: %w", err)
 				}
 				w.SetResult(domainResp)
-				return nil
+				return "", nil
 			},
 			Schema: func(_ *Session) *jsonschema.Schema {
 				return schemaFor[BindInput]()
@@ -704,18 +704,18 @@ func buildDomainSteps(deps DomainWizardDeps) []StepDef {
 		{
 			Name:  StateDomainDelegationSetup,
 			Event: EventDomainDelegation,
-			Handler: func(ctx context.Context, sess *Session, _ json.RawMessage) error {
+			Handler: func(ctx context.Context, sess *Session, _ json.RawMessage) (string, error) {
 				w := sess.State().(DomainWizardState)
 				if w.Result() == nil {
-					return fmt.Errorf("domain not bound yet")
+					return "", fmt.Errorf("domain not bound yet")
 				}
 				// Fetch delegation requirements so the service confirms the binding is
 				// resolvable; rendering is informational and omitted from the MCP flow.
 				domainID := strconv.Itoa(int(w.Result().Id))
 				if _, err := deps.WebsitesService.GetDomainDNSRequirements(ctx, w.WebsiteID(), domainID); err != nil {
-					return fmt.Errorf("failed to fetch delegation requirements: %w", err)
+					return "", fmt.Errorf("failed to fetch delegation requirements: %w", err)
 				}
-				return nil
+				return "", nil
 			},
 			Schema: func(_ *Session) *jsonschema.Schema {
 				return schemaFor[NoInput]()
@@ -724,29 +724,29 @@ func buildDomainSteps(deps DomainWizardDeps) []StepDef {
 		{
 			Name:  StateDomainVerify,
 			Event: EventDomainVerified,
-			Handler: func(ctx context.Context, sess *Session, input json.RawMessage) error {
+			Handler: func(ctx context.Context, sess *Session, input json.RawMessage) (string, error) {
 				w := sess.State().(DomainWizardState)
 				var in DomainVerifyInput
 				if len(input) > 0 && string(input) != "null" {
 					if err := json.Unmarshal(input, &in); err != nil {
-						return fmt.Errorf("invalid input: %w", err)
+						return "", fmt.Errorf("invalid input: %w", err)
 					}
 				}
 				_ = in // The retry flag is informational; verification always runs.
 
 				if w.Result() == nil {
-					return fmt.Errorf("domain not bound yet")
+					return "", fmt.Errorf("domain not bound yet")
 				}
 				domainID := strconv.Itoa(int(w.Result().Id))
 				verified, err := deps.WebsitesService.VerifyDomain(ctx, w.WebsiteID(), domainID)
 				if err != nil {
-					return fmt.Errorf("domain verification failed: %w", err)
+					return "", fmt.Errorf("domain verification failed: %w", err)
 				}
 				// A nil verification response must not clobber the bound result.
 				if verified != nil {
 					w.SetResult(verified)
 				}
-				return nil
+				return "", nil
 			},
 			Schema: func(_ *Session) *jsonschema.Schema {
 				return schemaFor[DomainVerifyInput]()
@@ -763,6 +763,9 @@ type SetupWizardDeps struct {
 	CfgMgr       config.Manager
 	AuthService  AuthService
 	SetupFactory SetupWizardFactory
+	// OutOfBand completes sign-in in a browser so credentials never transit
+	// the MCP/LLM channel. It may be nil in tests that drive auth directly.
+	OutOfBand *OutOfBandLogin
 }
 
 // buildSetupSteps returns the StepDef slice for the setup wizard.
@@ -771,43 +774,52 @@ func buildSetupSteps(deps SetupWizardDeps) []StepDef {
 		{
 			Name:  StateSetupAuth,
 			Event: EventSetupAuthDone,
-			Handler: func(ctx context.Context, sess *Session, input json.RawMessage) error {
+			Handler: func(ctx context.Context, sess *Session, input json.RawMessage) (string, error) {
 				var in SetupAuthInput
 				if err := json.Unmarshal(input, &in); err != nil {
-					return fmt.Errorf("invalid input: %w", err)
+					return "", fmt.Errorf("invalid input: %w", err)
 				}
 				if !in.Choice.Valid() {
-					return fmt.Errorf("invalid auth choice: %s", in.Choice)
+					return "", fmt.Errorf("invalid auth choice: %s", in.Choice)
 				}
 				if in.Choice == AuthChoiceSkip {
-					return nil
+					return "", nil
 				}
 				if in.Choice == AuthChoiceCreate {
-					return fmt.Errorf("account creation must be done at https://pinner.xyz/register, then sign in")
+					return "", fmt.Errorf("account creation must be done at https://pinner.xyz/register, then sign in")
 				}
-				// Sign in
-				if in.Email == "" || in.Password == "" {
-					return fmt.Errorf("email and password are required for sign_in")
+				// Sign in is completed out-of-band in a browser so the password
+				// and any OTP never transit the MCP/LLM channel.
+				if deps.OutOfBand == nil {
+					return "", fmt.Errorf("sign_in requires out-of-band login, which is unavailable in this configuration")
 				}
-				loginResult, err := deps.AuthService.LoginCheck(ctx, in.Email, in.Password)
-				if err != nil {
-					return fmt.Errorf("authentication failed: %w", err)
+				if in.Email == "" {
+					return "", fmt.Errorf("email is required for sign_in")
 				}
-				if loginResult.OTPRequired {
-					if in.OTPCode == "" {
-						return fmt.Errorf("OTP code required: provide otp_code in the input")
-					}
-					err = deps.AuthService.LoginWithOTP(ctx, loginResult.IntermediateJWT, in.OTPCode, "mcp-generated", false)
+				url, done, loginErr := deps.OutOfBand.pendingOutcome(sess.ID, in.Email)
+				if loginErr != nil {
+					// The out-of-band login failed or expired. Restart it so the
+					// user can retry, and keep the session on auth.
+					var err error
+					_, url, err = deps.OutOfBand.Begin(sess.ID, in.Email)
 					if err != nil {
-						return fmt.Errorf("OTP authentication failed: %w", err)
+						return "", fmt.Errorf("failed to start out-of-band login: %w", err)
 					}
-				} else {
-					err = deps.AuthService.CompleteLogin(ctx, loginResult.Token, "mcp-generated", false)
-					if err != nil {
-						return fmt.Errorf("login completion failed: %w", err)
-					}
+					return "Out-of-band sign-in required. Ask the user to open this URL in their browser and complete sign-in: " + url + ". Then call setup_auth again with choice=\"sign_in\" to continue.", nil
 				}
-				return nil
+				if !done {
+					if url == "" {
+						// First request for this email: start the login.
+						var err error
+						_, url, err = deps.OutOfBand.Begin(sess.ID, in.Email)
+						if err != nil {
+							return "", fmt.Errorf("failed to start out-of-band login: %w", err)
+						}
+					}
+					return "Out-of-band sign-in required. Ask the user to open this URL in their browser and complete sign-in: " + url + ". Then call setup_auth again with choice=\"sign_in\" to continue.", nil
+				}
+				// Credentials were verified in the browser; advance.
+				return "", nil
 			},
 			Schema: func(_ *Session) *jsonschema.Schema {
 				return schemaFor[SetupAuthInput]()
@@ -816,36 +828,36 @@ func buildSetupSteps(deps SetupWizardDeps) []StepDef {
 		{
 			Name:  StateSetupConfig,
 			Event: EventSetupConfigDone,
-			Handler: func(ctx context.Context, sess *Session, input json.RawMessage) error {
+			Handler: func(ctx context.Context, sess *Session, input json.RawMessage) (string, error) {
 				var in SetupConfigInput
 				if err := json.Unmarshal(input, &in); err != nil {
-					return fmt.Errorf("invalid input: %w", err)
+					return "", fmt.Errorf("invalid input: %w", err)
 				}
 				if !in.Choice.Valid() {
-					return fmt.Errorf("invalid config choice: %s", in.Choice)
+					return "", fmt.Errorf("invalid config choice: %s", in.Choice)
 				}
 				switch in.Choice {
 				case ConfigChoiceDefaults:
 					if err := deps.CfgMgr.SetBaseEndpoint(""); err != nil {
-						return fmt.Errorf("failed to reset endpoint: %w", err)
+						return "", fmt.Errorf("failed to reset endpoint: %w", err)
 					}
 					if err := deps.CfgMgr.SetSecure(true); err != nil {
-						return fmt.Errorf("failed to set secure: %w", err)
+						return "", fmt.Errorf("failed to set secure: %w", err)
 					}
 				case ConfigChoiceSkip:
 					// Skip: preserve existing configuration.
 				case ConfigChoiceCustom:
 					if in.Endpoint == "" {
-						return fmt.Errorf("endpoint is required for custom_endpoint choice")
+						return "", fmt.Errorf("endpoint is required for custom_endpoint choice")
 					}
 					if err := deps.CfgMgr.SetBaseEndpoint(in.Endpoint); err != nil {
-						return fmt.Errorf("failed to set endpoint: %w", err)
+						return "", fmt.Errorf("failed to set endpoint: %w", err)
 					}
 					if err := deps.CfgMgr.SetSecure(in.Secure); err != nil {
-						return fmt.Errorf("failed to set secure: %w", err)
+						return "", fmt.Errorf("failed to set secure: %w", err)
 					}
 				}
-				return nil
+				return "", nil
 			},
 			Schema: func(_ *Session) *jsonschema.Schema {
 				return schemaFor[SetupConfigInput]()
@@ -854,16 +866,16 @@ func buildSetupSteps(deps SetupWizardDeps) []StepDef {
 		{
 			Name:  StateSetupCompletion,
 			Event: EventSetupCompDone,
-			Handler: func(_ context.Context, _ *Session, input json.RawMessage) error {
+			Handler: func(_ context.Context, _ *Session, input json.RawMessage) (string, error) {
 				var in SetupCompletionInput
 				if len(input) > 0 && string(input) != "null" {
 					if err := json.Unmarshal(input, &in); err != nil {
-						return fmt.Errorf("invalid input: %w", err)
+						return "", fmt.Errorf("invalid input: %w", err)
 					}
 				}
 				// Shell completion is informational for MCP agents.
 				_ = in
-				return nil
+				return "", nil
 			},
 			Schema: func(_ *Session) *jsonschema.Schema {
 				return schemaFor[SetupCompletionInput]()
@@ -872,8 +884,8 @@ func buildSetupSteps(deps SetupWizardDeps) []StepDef {
 		{
 			Name:  StateSetupTutorial,
 			Event: EventSetupTutDone,
-			Handler: func(_ context.Context, _ *Session, _ json.RawMessage) error {
-				return nil
+			Handler: func(_ context.Context, _ *Session, _ json.RawMessage) (string, error) {
+				return "", nil
 			},
 			Schema: func(_ *Session) *jsonschema.Schema {
 				return schemaFor[NoInput]()
@@ -1018,13 +1030,21 @@ func registerWizardStep(catalog *ToolCatalog, name, description string, store *S
 				return marshalWizardResponse(StepResponse{SessionID: sessionID, Error: fmt.Sprintf("failed to encode input: %v", err)})
 			}
 		}
-		if err := AdvanceSession(ctx, sess, input); err != nil {
+		info, err := AdvanceSession(ctx, sess, input)
+		if err != nil {
 			resp := buildStepResponse(sess)
 			resp.Error = err.Error()
 			resp.Message = fmt.Sprintf("step '%s' failed the session remains in state '%s', you may retry", resp.CurrentStep, resp.CurrentStep)
 			return marshalWizardResponse(resp)
 		}
 		resp := buildStepResponse(sess)
+		if info != "" {
+			// The step relayed informational output (e.g. an out-of-band login
+			// URL) and is NOT complete. Surface it as a plain Message with no
+			// error framing; the session stays on the current step.
+			resp.Message = info
+			return marshalWizardResponse(resp)
+		}
 		if resp.Complete {
 			resp.Message = completionMessage
 		}
