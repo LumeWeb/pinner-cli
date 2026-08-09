@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"strconv"
+	"time"
 
 	"github.com/invopop/jsonschema"
 	"github.com/looplab/fsm"
@@ -957,6 +958,60 @@ func NewDomainSession(store *SessionStore, deps DomainWizardDeps) (*Session, err
 
 // --- Response builder ---
 
+// schemaRequiresInput reports whether a wizard step schema actually expects
+// mandatory form fields. Steps with all-optional fields (e.g. ValidateInput's
+// optional `retry`, DomainVerifyInput) auto-advance on the StepResponse path,
+// so only a schema with at least one REQUIRED field triggers a native form
+// elicitation — preserving the invariant that auto-advancing steps never
+// require a form.
+func schemaRequiresInput(schema *jsonschema.Schema) bool {
+	if schema == nil {
+		return false
+	}
+	return len(schema.Required) > 0
+}
+
+// elicitForStep builds the native form elicitation for the current step,
+// carrying the session id across the round-trip via a signed requestState.
+// Returns nil if the step's schema cannot be encoded (caller falls back to
+// StepResponse).
+func elicitForStep(sessionID string, resp StepResponse, now time.Time) *ElicitationSpec {
+	if !schemaRequiresInput(resp.NextStepSchema) {
+		return nil
+	}
+	schema, err := json.Marshal(resp.NextStepSchema)
+	if err != nil {
+		return nil
+	}
+	// Sign the session id so the echoed requestState is integrity-protected
+	// (and expires), per the 2026-07-28 spec's MUST on requestState.
+	state, err := mintWizardRequestState(sessionID, now)
+	if err != nil {
+		return nil
+	}
+	return &ElicitationSpec{
+		ID:           "input",
+		Message:      fmt.Sprintf("Step '%s' needs input.", resp.CurrentStep),
+		FormSchema:   json.RawMessage(schema),
+		RequestState: state,
+	}
+}
+
+// rePresentFormOnFailure re-emits the native form for the current step after a
+// failed form retry, carrying the validation error in the message so the user
+// can correct the submission instead of seeing a blank form. Returns nil when
+// the step no longer needs input (caller falls back to StepResponse).
+func rePresentFormOnFailure(sessionID string, resp StepResponse, cause error, now time.Time) *ElicitationSpec {
+	spec := elicitForStep(sessionID, resp, now)
+	if spec == nil {
+		return nil
+	}
+	if cause != nil {
+		spec.Message = fmt.Sprintf("Step '%s' needs input: %s", resp.CurrentStep, cause.Error())
+	}
+	return spec
+}
+
 // buildStepResponse constructs a StepResponse from the current session state.
 func buildStepResponse(sess *Session) StepResponse {
 	resp := StepResponse{
@@ -995,6 +1050,19 @@ func wizardStepSchema() json.RawMessage {
 	return json.RawMessage(`{"type":"object","properties":{"session_id":{"type":"string","description":"Wizard session ID returned by the wizard start tool"},"input":{"type":"object","description":"Step input matching the next_step_schema from the previous response"}},"required":["session_id"]}`)
 }
 
+// WizardStepInput is the typed argument shape for a wizard step tool. It is
+// decoded from the request arguments via decodeToolArgs so handlers never cast
+// map[string]any values by hand.
+type WizardStepInput struct {
+	// SessionID is the session handle returned by the wizard start tool.
+	SessionID string `json:"session_id"`
+	// Input is the raw step input (matching the current step's schema).
+	Input json.RawMessage `json:"input"`
+	// RequestState is the opaque session id echoed back on an input_required
+	// elicitation retry, used when the client does not echo SessionID.
+	RequestState string `json:"request_state"`
+}
+
 func marshalWizardResponse(resp StepResponse) (ToolResult, error) {
 	raw, err := json.MarshalIndent(resp, "", "  ")
 	if err != nil {
@@ -1015,7 +1083,23 @@ func registerWizardStart(catalog *ToolCatalog, name, description string, start f
 
 func registerWizardStep(catalog *ToolCatalog, name, description string, store *SessionStore, completionMessage string) {
 	catalog.Add(wizardEntry(name, description, wizardStepSchema(), func(ctx context.Context, req ToolRequest) (ToolResult, error) {
-		sessionID, _ := req.Arguments["session_id"].(string)
+		in, err := decodeToolArgs[WizardStepInput](req)
+		if err != nil {
+			return marshalWizardResponse(StepResponse{Error: fmt.Sprintf("invalid step arguments: %v", err)})
+		}
+		sessionID := in.SessionID
+		if sessionID == "" && in.RequestState != "" {
+			// A retry after an input_required elicitation may not echo the
+			// original arguments (only the form content); recover the session
+			// from the signed requestState we set on the elicitation. Verify it
+			// first so a tampered/forged token fails closed instead of being
+			// used as a session id.
+			verified, err := verifyWizardRequestState(in.RequestState, time.Now())
+			if err != nil {
+				return marshalWizardResponse(StepResponse{Error: "session_id is required"})
+			}
+			sessionID = verified
+		}
 		if sessionID == "" {
 			return marshalWizardResponse(StepResponse{Error: "session_id is required"})
 		}
@@ -1023,16 +1107,26 @@ func registerWizardStep(catalog *ToolCatalog, name, description string, store *S
 		if err != nil {
 			return marshalWizardResponse(StepResponse{SessionID: sessionID, Error: err.Error()})
 		}
-		input := json.RawMessage(`{}`)
-		if raw, ok := req.Arguments["input"]; ok && raw != nil {
-			input, err = json.Marshal(raw)
-			if err != nil {
-				return marshalWizardResponse(StepResponse{SessionID: sessionID, Error: fmt.Sprintf("failed to encode input: %v", err)})
-			}
+		input := in.Input
+		if len(input) == 0 || string(input) == "null" {
+			// Treat an absent or explicit-null input as the empty object so
+			// AdvanceSession sees `{}` (a client sending `"input":null` must
+			// not be differentiated from an omitted input).
+			input = json.RawMessage(`{}`)
 		}
 		info, err := AdvanceSession(ctx, sess, input)
 		if err != nil {
 			resp := buildStepResponse(sess)
+			// If this call was a form-elicitiation retry (the client submitted
+			// InputResponses) and the active step still needs input, re-present
+			// the native form so the client stays on it rather than ejecting
+			// into raw StepResponse JSON. The session remains in the same step,
+			// so the user can correct the invalid submission and retry.
+			if req.InputResponses {
+				if spec := rePresentFormOnFailure(sessionID, resp, err, time.Now()); spec != nil {
+					return ToolResult{Elicitation: spec}, nil
+				}
+			}
 			resp.Error = err.Error()
 			resp.Message = fmt.Sprintf("step '%s' failed the session remains in state '%s', you may retry", resp.CurrentStep, resp.CurrentStep)
 			return marshalWizardResponse(resp)
@@ -1047,6 +1141,18 @@ func registerWizardStep(catalog *ToolCatalog, name, description string, store *S
 		}
 		if resp.Complete {
 			resp.Message = completionMessage
+			return marshalWizardResponse(resp)
+		}
+		if schemaRequiresInput(resp.NextStepSchema) {
+			// Next step needs input: ask the client for it natively via the
+			// 2026-07-28 form elicitation instead of returning StepResponse
+			// JSON the model must parse. The accepted fields arrive back under
+			// the "input" key on the retried call, so downstream reading is
+			// unchanged. Steps whose schema has no fields (NoInput) stay on the
+			// StepResponse path so auto-advancing steps never require a form.
+			if spec := elicitForStep(sessionID, resp, time.Now()); spec != nil {
+				return ToolResult{Elicitation: spec}, nil
+			}
 		}
 		return marshalWizardResponse(resp)
 	}))
