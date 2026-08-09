@@ -116,6 +116,7 @@ adapter.`,
 
 			// Register wizard tools into the catalog instead of directly
 			// on the server. The meta-tools expose them through discovery.
+			var oob *OutOfBandLogin
 			if wizardFactory != nil {
 				wDeps, sDeps, dDeps, err := wizardFactory()
 				if err != nil {
@@ -124,6 +125,11 @@ adapter.`,
 				if err := RegisterWizardTools(catalog, store, wDeps, sDeps, dDeps); err != nil {
 					return fmt.Errorf("failed to register wizard tools: %w", err)
 				}
+				// Capture the out-of-band login coordinator so the HTTP/tunnel
+				// transport can mount its /login/ handlers on the shared mux
+				// and point them at the public URL (reachable remotely),
+				// instead of handing remote users an unbootable loopback URL.
+				oob = sDeps.OutOfBand
 			}
 
 			if err := RegisterOfficialCuratedTools(srv, catalog, IsCuratedTool); err != nil {
@@ -190,7 +196,7 @@ adapter.`,
 
 			if mcpString(cmd, "tunnel", "MCP_TUNNEL_PROVIDER") == "openai" {
 				log.Debug("serving MCP server through embedded OpenAI Secure MCP Tunnel")
-				return serveHTTP(ctx, srv, cmd)
+				return serveHTTP(ctx, srv, cmd, oob)
 			}
 
 			if !cmd.Bool("http") {
@@ -198,7 +204,7 @@ adapter.`,
 				return RunOfficialStdio(ctx, srv, os.Stdin, os.Stdout)
 			}
 
-			return serveHTTP(ctx, srv, cmd)
+			return serveHTTP(ctx, srv, cmd, oob)
 		},
 	}
 }
@@ -207,7 +213,11 @@ adapter.`,
 // to the local address derived from the --host/--port flags. When --tunnel is
 // set, it starts and manages the selected tunnel so a remote MCP client can
 // reach the server over a public URL, then blocks until ctx is cancelled.
-func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command) error {
+// oob, when provided, is the out-of-band login coordinator: its /login/
+// handlers are mounted on the shared mux (reachable without the transport
+// bearer token, like the OAuth authorize page) so a remote human can open the
+// login URL on the public/tunnel URL rather than an unreachable loopback.
+func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *OutOfBandLogin) error {
 	provider := mcpString(cmd, "tunnel", "MCP_TUNNEL_PROVIDER")
 	domain := mcpString(cmd, "domain", "MCP_DOMAIN")
 	token := mcpString(cmd, "token", "MCP_TUNNEL_TOKEN")
@@ -275,6 +285,12 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command) error
 	if baseURL == "" {
 		baseURL = "http://" + localAddr
 	}
+	// Point the out-of-band login coordinator at the externally reachable base
+	// URL for the transport. When a tunnel is running the tunnel URL below
+	// overrides this with the provider-approved public origin.
+	if oob != nil {
+		oob.SetBaseURL(baseURL)
+	}
 	var oauth *oauthServer
 	if enableOAuth {
 		if authToken == "" {
@@ -320,6 +336,16 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command) error
 	// OAuth authorization page and the out-of-band login page. staticAssetHandler
 	// strips the /assets/ prefix and sets immutable caching on the hashed asset.
 	mux.Handle("/assets/", staticAssetHandler())
+	// Mount the out-of-band login page on the shared transport mux when a
+	// coordinator is wired, so remote users can complete sign-in at the
+	// public/tunnel URL instead of an unreachable loopback address. It is
+	// intentionally mounted outside the bearer-token middleware guards (like the
+	// OAuth authorize page): the human must open it in a browser to
+	// authenticate. Each /login/<id> URL is protected by the unguessable request
+	// id in the path plus the per-request CSRF token embedded in the form.
+	if oob != nil {
+		oob.registerHandlers(mux)
+	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
 			http.NotFound(w, r)
@@ -337,6 +363,12 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command) error
 		defer cancel()
 		if oauth != nil {
 			oauth.Stop()
+		}
+		if oob != nil {
+			// Stop the out-of-band login coordinator so its loopback listener
+			// and reaper goroutine do not leak for the process lifetime after a
+			// wizard login has completed.
+			oob.Stop(shCtx)
 		}
 		if tunnel != nil {
 			_ = tunnel.Stop(shCtx)
@@ -362,6 +394,11 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command) error
 		if err != nil {
 			shutdown(context.Background())
 			return err
+		}
+		// Advertise the login page against the provider-approved public URL so
+		// a remote human reaches /login/<id> through the tunnel.
+		if oob != nil {
+			oob.SetBaseURL(url)
 		}
 		if oauth != nil {
 			oauthURL, err := tunnel.OAuthBaseURL(publicURL, url)

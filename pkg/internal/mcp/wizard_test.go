@@ -4,6 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -59,6 +65,75 @@ func testWebsitesFactory() mcpadapter.WebsitesWizardState {
 func testSetupFactory() mcpadapter.SetupWizardState {
 	return &testSetupWizard{}
 }
+
+// extractLoginURL pulls the http(s) URL out of an out-of-band sign-in info
+// message so the test can drive the loopback login the way a browser would.
+func extractLoginURL(info string) string {
+	const marker = "complete sign-in: "
+	i := strings.Index(info, marker)
+	if i < 0 {
+		return info
+	}
+	rest := info[i+len(marker):]
+	// The message is: "...complete sign-in: <url>. Then call setup_auth ...".
+	// The URL ends at the ". Then" sentence boundary (there is no whitespace
+	// inside the URL itself).
+	if j := strings.Index(rest, ". Then"); j > 0 {
+		rest = rest[:j]
+	}
+	return strings.TrimSpace(rest)
+}
+
+// loginResult carries the outcome of a browser-style credential POST.
+type loginResult struct {
+	resp *http.Response
+	err  error
+}
+
+// postLogin POSTs credentials to a loopback login URL exactly as a browser
+// would: it first GETs the page to read the per-request CSRF token the form
+// embeds, then POSTs the credentials with that token and an Origin header
+// matching the URL's origin, which the out-of-band endpoint requires.
+func postLogin(u string, form url.Values) loginResult {
+	// Fetch the login page to obtain the per-request CSRF token.
+	csrf, err := fetchCSRFHTTP(u)
+	if err != nil {
+		return loginResult{err: err}
+	}
+	form.Set("csrf", csrf)
+	req, err := http.NewRequest(http.MethodPost, u, strings.NewReader(form.Encode()))
+	if err != nil {
+		return loginResult{err: err}
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if uu, perr := url.Parse(u); perr == nil {
+		req.Header.Set("Origin", uu.Scheme+"://"+uu.Host)
+	}
+	resp, derr := http.DefaultClient.Do(req)
+	return loginResult{resp: resp, err: derr}
+}
+
+// fetchCSRFHTTP GETs a loopback login URL and extracts the per-request CSRF
+// token from the rendered form (the hidden input named "csrf").
+func fetchCSRFHTTP(u string) (string, error) {
+	resp, err := http.Get(u)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	m := wizardCSRFInputRE.FindSubmatch(body)
+	if len(m) < 2 {
+		return "", fmt.Errorf("no csrf input in rendered login page %s", u)
+	}
+	return string(m[1]), nil
+}
+
+// wizardCSRFInputRE matches the hidden csrf input in the rendered login page.
+var wizardCSRFInputRE = regexp.MustCompile(`name="csrf"\s+value="([^"]+)"`)
 
 // testDomainWizard implements mcpadapter.DomainWizardState for tests.
 type testDomainWizard struct {
@@ -295,12 +370,12 @@ func TestWebsitesWizard_FullSession(t *testing.T) {
 	require.Equal(t, "auth_check", resp.CurrentStep)
 	require.NotNil(t, resp.NextStepSchema)
 
-	err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
 	require.NoError(t, err)
 	assert.Equal(t, "content_source", sess.FSM.Current())
 
 	// Step 2: content_source: provide CID.
-	err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"choice":"cid","cid":"QmTestHash123"}`))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"choice":"cid","cid":"QmTestHash123"}`))
 	require.NoError(t, err)
 	assert.Equal(t, "target_type", sess.FSM.Current())
 
@@ -309,25 +384,25 @@ func TestWebsitesWizard_FullSession(t *testing.T) {
 	assert.Equal(t, "QmTestHash123", w.CID())
 
 	// Step 3: target_type.
-	err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"type":"ipfs"}`))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"type":"ipfs"}`))
 	require.NoError(t, err)
 	assert.Equal(t, "domain", sess.FSM.Current())
 	assert.Equal(t, "ipfs", w.TargetType())
 
 	// Step 4: domain.
-	err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"domain":"example.com"}`))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"domain":"example.com"}`))
 	require.NoError(t, err)
 	assert.Equal(t, "dns_mode", sess.FSM.Current())
 	assert.Equal(t, "example.com", w.Domain())
 
 	// Step 5: dns_mode.
-	err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"mode":"managed"}`))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"mode":"managed"}`))
 	require.NoError(t, err)
 	assert.Equal(t, "create", sess.FSM.Current())
 	assert.True(t, w.DNSHosting())
 
 	// Step 6: create.
-	err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"confirm":true}`))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"confirm":true}`))
 	require.NoError(t, err)
 	assert.Equal(t, "dns_setup", sess.FSM.Current())
 	assert.NotNil(t, w.Website())
@@ -341,12 +416,12 @@ func TestWebsitesWizard_FullSession(t *testing.T) {
 	assert.True(t, *websitesSvc.createCallReq.DnsHostingEnabled)
 
 	// Step 7: dns_setup: informational.
-	err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
 	require.NoError(t, err)
 	assert.Equal(t, "validate", sess.FSM.Current())
 
 	// Step 8: validate.
-	err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
 	require.NoError(t, err)
 	assert.Equal(t, "complete", sess.FSM.Current())
 
@@ -379,7 +454,7 @@ func TestWebsitesWizard_AuthCheckFails(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "auth_check", sess.FSM.Current())
 
-	err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "authentication required")
 
@@ -395,14 +470,14 @@ func TestWebsitesWizard_ContentSourceInvalidChoice(t *testing.T) {
 	store := mcpadapter.NewSessionStore()
 	deps := webservFactory(mcpadapter.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
 
-	sess, err := mcpadapter.NewWebsitesSession(store, deps)
+	sess, _ := mcpadapter.NewWebsitesSession(store, deps)
 
 	// Pass auth_check.
-	err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	_, err := mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
 	require.NoError(t, err)
 
 	// Invalid choice.
-	err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"choice":"invalid"}`))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"choice":"invalid"}`))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid choice")
 	assert.Equal(t, "content_source", sess.FSM.Current())
@@ -416,14 +491,14 @@ func TestWebsitesWizard_ContentSourceUploadChoice(t *testing.T) {
 	store := mcpadapter.NewSessionStore()
 	deps := webservFactory(mcpadapter.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
 
-	sess, err := mcpadapter.NewWebsitesSession(store, deps)
+	sess, _ := mcpadapter.NewWebsitesSession(store, deps)
 
 	// Pass auth_check.
-	err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	_, err := mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
 	require.NoError(t, err)
 
 	// Upload choice.
-	err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"choice":"upload"}`))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"choice":"upload"}`))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "content upload required")
 }
@@ -436,14 +511,14 @@ func TestWebsitesWizard_ContentSourceMissingCID(t *testing.T) {
 	store := mcpadapter.NewSessionStore()
 	deps := webservFactory(mcpadapter.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
 
-	sess, err := mcpadapter.NewWebsitesSession(store, deps)
+	sess, _ := mcpadapter.NewWebsitesSession(store, deps)
 
 	// Pass auth_check.
-	err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	_, err := mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
 	require.NoError(t, err)
 
 	// CID choice but empty cid.
-	err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"choice":"cid"}`))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"choice":"cid"}`))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "cid cannot be empty")
 }
@@ -456,14 +531,16 @@ func TestWebsitesWizard_TargetTypeInvalid(t *testing.T) {
 	store := mcpadapter.NewSessionStore()
 	deps := webservFactory(mcpadapter.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
 
-	sess, err := mcpadapter.NewWebsitesSession(store, deps)
+	sess, _ := mcpadapter.NewWebsitesSession(store, deps)
 
 	// Pass auth_check + content_source.
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`)))
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"choice":"cid","cid":"QmTest"}`)))
+	_, err := mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	require.NoError(t, err)
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"choice":"cid","cid":"QmTest"}`))
+	require.NoError(t, err)
 
 	// Invalid target type.
-	err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"type":"invalid"}`))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"type":"invalid"}`))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid target type")
 }
@@ -479,13 +556,17 @@ func TestWebsitesWizard_DNSModeInvalid(t *testing.T) {
 	sess, err := mcpadapter.NewWebsitesSession(store, deps)
 	require.NoError(t, err)
 	// Navigate to dns_mode.
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`)))
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"choice":"cid","cid":"QmTest"}`)))
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"type":"ipfs"}`)))
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"domain":"example.com"}`)))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	require.NoError(t, err)
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"choice":"cid","cid":"QmTest"}`))
+	require.NoError(t, err)
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"type":"ipfs"}`))
+	require.NoError(t, err)
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"domain":"example.com"}`))
+	require.NoError(t, err)
 
 	// Invalid DNS mode.
-	err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"mode":"invalid"}`))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"mode":"invalid"}`))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid DNS mode")
 }
@@ -501,14 +582,19 @@ func TestWebsitesWizard_CreateWithoutConfirm(t *testing.T) {
 	sess, err := mcpadapter.NewWebsitesSession(store, deps)
 	require.NoError(t, err)
 	// Navigate to create step.
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`)))
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"choice":"cid","cid":"QmTest"}`)))
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"type":"ipfs"}`)))
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"domain":"example.com"}`)))
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"mode":"self_managed"}`)))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	require.NoError(t, err)
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"choice":"cid","cid":"QmTest"}`))
+	require.NoError(t, err)
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"type":"ipfs"}`))
+	require.NoError(t, err)
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"domain":"example.com"}`))
+	require.NoError(t, err)
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"mode":"self_managed"}`))
+	require.NoError(t, err)
 
 	// Create without confirm.
-	err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"confirm":false}`))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"confirm":false}`))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "confirmation required")
 	assert.Equal(t, "create", sess.FSM.Current())
@@ -529,13 +615,18 @@ func TestWebsitesWizard_CreateServiceError(t *testing.T) {
 	sess, err := mcpadapter.NewWebsitesSession(store, deps)
 	require.NoError(t, err)
 	// Navigate to create step.
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`)))
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"choice":"cid","cid":"QmTest"}`)))
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"type":"ipfs"}`)))
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"domain":"example.com"}`)))
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"mode":"self_managed"}`)))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	require.NoError(t, err)
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"choice":"cid","cid":"QmTest"}`))
+	require.NoError(t, err)
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"type":"ipfs"}`))
+	require.NoError(t, err)
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"domain":"example.com"}`))
+	require.NoError(t, err)
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"mode":"self_managed"}`))
+	require.NoError(t, err)
 
-	err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"confirm":true}`))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"confirm":true}`))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "website creation failed")
 	assert.Contains(t, err.Error(), "create service error")
@@ -552,15 +643,22 @@ func TestWebsitesWizard_ValidateWithoutWebsite(t *testing.T) {
 	sess, err := mcpadapter.NewWebsitesSession(store, deps)
 	require.NoError(t, err)
 	// Navigate to dns_setup (skip create with confirm by going through all steps)
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`)))
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"choice":"cid","cid":"QmTest"}`)))
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"type":"ipfs"}`)))
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"domain":"example.com"}`)))
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"mode":"self_managed"}`)))
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"confirm":true}`)))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	require.NoError(t, err)
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"choice":"cid","cid":"QmTest"}`))
+	require.NoError(t, err)
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"type":"ipfs"}`))
+	require.NoError(t, err)
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"domain":"example.com"}`))
+	require.NoError(t, err)
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"mode":"self_managed"}`))
+	require.NoError(t, err)
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"confirm":true}`))
+	require.NoError(t, err)
 
 	// At dns_setup: skip it.
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`)))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	require.NoError(t, err)
 
 	// Now at validate. The wizard has a website, so validate should call service.
 	// Let's test validate service error.
@@ -568,7 +666,7 @@ func TestWebsitesWizard_ValidateWithoutWebsite(t *testing.T) {
 		return nil, errors.New("validation service error")
 	}
 
-	err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "validation failed")
 }
@@ -583,14 +681,20 @@ func TestWebsitesWizard_DefaultTargetType(t *testing.T) {
 
 	sess, err := mcpadapter.NewWebsitesSession(store, deps)
 	require.NoError(t, err)
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`)))
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"choice":"cid","cid":"QmTest"}`)))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	require.NoError(t, err)
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"choice":"cid","cid":"QmTest"}`))
+	require.NoError(t, err)
 
 	// Set target type to ipns, then verify it's used in create.
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"type":"ipns"}`)))
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"domain":"example.com"}`)))
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"mode":"self_managed"}`)))
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"confirm":true}`)))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"type":"ipns"}`))
+	require.NoError(t, err)
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"domain":"example.com"}`))
+	require.NoError(t, err)
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"mode":"self_managed"}`))
+	require.NoError(t, err)
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"confirm":true}`))
+	require.NoError(t, err)
 
 	// Verify target type was set.
 	w := sess.State().(mcpadapter.WebsitesWizardState)
@@ -609,11 +713,12 @@ func TestWebsitesWizard_InvalidJSON(t *testing.T) {
 	store := mcpadapter.NewSessionStore()
 	deps := webservFactory(mcpadapter.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
 
-	sess, err := mcpadapter.NewWebsitesSession(store, deps)
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`)))
+	sess, _ := mcpadapter.NewWebsitesSession(store, deps)
+	_, err := mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	require.NoError(t, err)
 
 	// Invalid JSON for content_source.
-	err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{invalid`))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{invalid`))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid input")
 }
@@ -634,7 +739,8 @@ func TestWebsitesWizard_StepSchemas(t *testing.T) {
 	require.NotNil(t, resp.NextStepSchema)
 
 	// content_source schema after auth_check.
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`)))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	require.NoError(t, err)
 	resp = mcpadapter.BuildStepResponseForTest(sess)
 	require.NotNil(t, resp.NextStepSchema)
 	require.NotNil(t, resp.NextStepSchema.Properties)
@@ -664,24 +770,24 @@ func TestSetupWizard_FullSessionSkipAuth(t *testing.T) {
 	assert.Equal(t, "auth", sess.FSM.Current())
 
 	// Step 1: auth: skip.
-	err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"choice":"skip"}`))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"choice":"skip"}`))
 	require.NoError(t, err)
 	assert.Equal(t, "config", sess.FSM.Current())
 
 	// Step 2: config: use defaults.
 	cfgMgr.EXPECT().SetBaseEndpoint("").Return(nil).Maybe()
 	cfgMgr.EXPECT().SetSecure(true).Return(nil).Maybe()
-	err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"choice":"use_defaults"}`))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"choice":"use_defaults"}`))
 	require.NoError(t, err)
 	assert.Equal(t, "completion", sess.FSM.Current())
 
 	// Step 3: completion: informational.
-	err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"shell":"bash"}`))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"shell":"bash"}`))
 	require.NoError(t, err)
 	assert.Equal(t, "tutorial", sess.FSM.Current())
 
 	// Step 4: tutorial: read-only.
-	err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
 	require.NoError(t, err)
 	assert.Equal(t, "complete", sess.FSM.Current())
 
@@ -689,7 +795,10 @@ func TestSetupWizard_FullSessionSkipAuth(t *testing.T) {
 	assert.True(t, resp.Complete)
 }
 
-func TestSetupWizard_SignIn(t *testing.T) {
+// TestSetupWizard_SignIn_RequiresOutOfBand verifies the new curated sign-in
+// contract: signing in requires out-of-band login, so without an OutOfBand
+// coordinator configured the step fails and the session stays on auth.
+func TestSetupWizard_SignIn_RequiresOutOfBand(t *testing.T) {
 	t.Parallel()
 
 	cfgMgr := newConfigMgr(t, true)
@@ -698,82 +807,73 @@ func TestSetupWizard_SignIn(t *testing.T) {
 	deps := mcpadapter.SetupWizardDeps{CfgMgr: cfgMgr, AuthService: authSvc, SetupFactory: testSetupFactory}
 
 	sess, err := mcpadapter.NewSetupSession(store, deps)
-
-	// Sign in without OTP.
-	err = mcpadapter.AdvanceSession(context.Background(), sess,
-		json.RawMessage(`{"choice":"sign_in","email":"test@example.com","password":"secret"}`))
 	require.NoError(t, err)
-	assert.Equal(t, "config", sess.FSM.Current())
+	require.Equal(t, "auth", sess.FSM.Current())
 
-	// Verify auth service was called.
-	assert.Equal(t, "test@example.com", authSvc.loginCheckEmail)
-	assert.Equal(t, "secret", authSvc.loginCheckPassword)
-	assert.Equal(t, "jwt-token-123", authSvc.completeLoginToken)
-}
-
-func TestSetupWizard_SignInWithOTP(t *testing.T) {
-	t.Parallel()
-
-	cfgMgr := newConfigMgr(t, true)
-	authSvc := &mockAuthService{
-		loginCheckFunc: func(_ context.Context, _, _ string) (*portalsdk.LoginResult, error) {
-			return &portalsdk.LoginResult{
-				Token:           "",
-				OTPRequired:     true,
-				IntermediateJWT: "intermediate-jwt",
-			}, nil
-		},
-	}
-	store := mcpadapter.NewSessionStore()
-	deps := mcpadapter.SetupWizardDeps{CfgMgr: cfgMgr, AuthService: authSvc, SetupFactory: testSetupFactory}
-
-	sess, err := mcpadapter.NewSetupSession(store, deps)
-
-	// Sign in with OTP.
-	err = mcpadapter.AdvanceSession(context.Background(), sess,
-		json.RawMessage(`{"choice":"sign_in","email":"test@example.com","password":"secret","otp_code":"123456"}`))
-	require.NoError(t, err)
-	assert.Equal(t, "config", sess.FSM.Current())
-
-	assert.Equal(t, "intermediate-jwt", authSvc.otpJWT)
-	assert.Equal(t, "123456", authSvc.otpCode)
-}
-
-func TestSetupWizard_SignInOTPRequiredButMissing(t *testing.T) {
-	t.Parallel()
-
-	cfgMgr := newConfigMgr(t, true)
-	authSvc := &mockAuthService{
-		loginCheckFunc: func(_ context.Context, _, _ string) (*portalsdk.LoginResult, error) {
-			return &portalsdk.LoginResult{OTPRequired: true, IntermediateJWT: "intermediate-jwt"}, nil
-		},
-	}
-	store := mcpadapter.NewSessionStore()
-	deps := mcpadapter.SetupWizardDeps{CfgMgr: cfgMgr, AuthService: authSvc, SetupFactory: testSetupFactory}
-
-	sess, err := mcpadapter.NewSetupSession(store, deps)
-
-	err = mcpadapter.AdvanceSession(context.Background(), sess,
-		json.RawMessage(`{"choice":"sign_in","email":"test@example.com","password":"secret"}`))
+	// No OutOfBand configured: sign_in must fail and stay on auth.
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess,
+		json.RawMessage(`{"choice":"sign_in","email":"test@example.com"}`))
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "OTP code required")
+	assert.Contains(t, err.Error(), "sign_in requires out-of-band login")
 	assert.Equal(t, "auth", sess.FSM.Current())
 }
 
-func TestSetupWizard_SignInMissingCredentials(t *testing.T) {
+// TestSetupWizard_SignIn_StartsOutOfBand verifies that with an OutOfBand
+// coordinator the sign_in step returns an informational message (the login
+// URL) with Err nil and does NOT advance until out-of-band login completes.
+func TestSetupWizard_SignIn_StartsOutOfBand(t *testing.T) {
 	t.Parallel()
 
 	cfgMgr := newConfigMgr(t, true)
 	authSvc := &mockAuthService{}
 	store := mcpadapter.NewSessionStore()
-	deps := mcpadapter.SetupWizardDeps{CfgMgr: cfgMgr, AuthService: authSvc, SetupFactory: testSetupFactory}
+	oob := mcpadapter.NewOutOfBandLogin(authSvc, "", "test-key")
+	t.Cleanup(func() { oob.Stop(context.Background()) })
+	deps := mcpadapter.SetupWizardDeps{CfgMgr: cfgMgr, AuthService: authSvc, SetupFactory: testSetupFactory, OutOfBand: oob}
 
 	sess, err := mcpadapter.NewSetupSession(store, deps)
+	require.NoError(t, err)
+	require.Equal(t, "auth", sess.FSM.Current())
 
-	err = mcpadapter.AdvanceSession(context.Background(), sess,
+	// First sign_in with the coordinator: returns info message, no error, and
+	// the session stays on auth (out-of-band login is pending).
+	var info string
+	info, err = mcpadapter.AdvanceSession(context.Background(), sess,
 		json.RawMessage(`{"choice":"sign_in","email":"test@example.com"}`))
+	require.NoError(t, err)
+	assert.NotEmpty(t, info)
+	assert.Contains(t, info, "Out-of-band sign-in required")
+	assert.Contains(t, info, "/login/")
+	assert.Equal(t, "auth", sess.FSM.Current())
+
+	// Re-calling with the same email surfaces the URL again without advancing.
+	info, err = mcpadapter.AdvanceSession(context.Background(), sess,
+		json.RawMessage(`{"choice":"sign_in","email":"test@example.com"}`))
+	require.NoError(t, err)
+	assert.NotEmpty(t, info)
+	assert.Equal(t, "auth", sess.FSM.Current())
+}
+
+// TestSetupWizard_SignIn_MissingEmail verifies that sign_in with the
+// out-of-band coordinator but no email is rejected as a genuine error.
+func TestSetupWizard_SignIn_MissingEmail(t *testing.T) {
+	t.Parallel()
+
+	cfgMgr := newConfigMgr(t, true)
+	authSvc := &mockAuthService{}
+	store := mcpadapter.NewSessionStore()
+	oob := mcpadapter.NewOutOfBandLogin(authSvc, "", "test-key")
+	t.Cleanup(func() { oob.Stop(context.Background()) })
+	deps := mcpadapter.SetupWizardDeps{CfgMgr: cfgMgr, AuthService: authSvc, SetupFactory: testSetupFactory, OutOfBand: oob}
+
+	sess, err := mcpadapter.NewSetupSession(store, deps)
+	require.NoError(t, err)
+
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess,
+		json.RawMessage(`{"choice":"sign_in"}`))
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "email and password are required")
+	assert.Contains(t, err.Error(), "email is required for sign_in")
+	assert.Equal(t, "auth", sess.FSM.Current())
 }
 
 func TestSetupWizard_CreateAccountChoice(t *testing.T) {
@@ -786,7 +886,7 @@ func TestSetupWizard_CreateAccountChoice(t *testing.T) {
 
 	sess, err := mcpadapter.NewSetupSession(store, deps)
 
-	err = mcpadapter.AdvanceSession(context.Background(), sess,
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess,
 		json.RawMessage(`{"choice":"create_account"}`))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "account creation must be done")
@@ -802,7 +902,7 @@ func TestSetupWizard_InvalidAuthChoice(t *testing.T) {
 
 	sess, err := mcpadapter.NewSetupSession(store, deps)
 
-	err = mcpadapter.AdvanceSession(context.Background(), sess,
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess,
 		json.RawMessage(`{"choice":"invalid"}`))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid auth choice")
@@ -819,13 +919,14 @@ func TestSetupWizard_CustomEndpoint(t *testing.T) {
 	sess, err := mcpadapter.NewSetupSession(store, deps)
 
 	// Skip auth.
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"choice":"skip"}`)))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"choice":"skip"}`))
+	require.NoError(t, err)
 
 	// Custom endpoint.
 	cfgMgr.EXPECT().SetBaseEndpoint("https://custom.api.xyz").Return(nil).Once()
 	cfgMgr.EXPECT().SetSecure(false).Return(nil).Once()
 
-	err = mcpadapter.AdvanceSession(context.Background(), sess,
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess,
 		json.RawMessage(`{"choice":"custom_endpoint","endpoint":"https://custom.api.xyz","secure":false}`))
 	require.NoError(t, err)
 	assert.Equal(t, "completion", sess.FSM.Current())
@@ -840,9 +941,10 @@ func TestSetupWizard_CustomEndpointMissingEndpoint(t *testing.T) {
 	deps := mcpadapter.SetupWizardDeps{CfgMgr: cfgMgr, AuthService: authSvc, SetupFactory: testSetupFactory}
 
 	sess, err := mcpadapter.NewSetupSession(store, deps)
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"choice":"skip"}`)))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"choice":"skip"}`))
+	require.NoError(t, err)
 
-	err = mcpadapter.AdvanceSession(context.Background(), sess,
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess,
 		json.RawMessage(`{"choice":"custom_endpoint"}`))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "endpoint is required")
@@ -857,9 +959,10 @@ func TestSetupWizard_InvalidConfigChoice(t *testing.T) {
 	deps := mcpadapter.SetupWizardDeps{CfgMgr: cfgMgr, AuthService: authSvc, SetupFactory: testSetupFactory}
 
 	sess, err := mcpadapter.NewSetupSession(store, deps)
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"choice":"skip"}`)))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"choice":"skip"}`))
+	require.NoError(t, err)
 
-	err = mcpadapter.AdvanceSession(context.Background(), sess,
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess,
 		json.RawMessage(`{"choice":"invalid"}`))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid config choice")
@@ -985,11 +1088,14 @@ func TestWebsitesWizard_FSMTransitionEnforcement_OutOfOrderStep(t *testing.T) {
 	assert.Equal(t, "auth_check", sess.FSM.Current())
 
 	// Advance properly: auth_check → content_source → target_type
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`)))
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(),
-		sess, json.RawMessage(`{"choice":"cid","cid":"QmTest"}`)))
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(),
-		sess, json.RawMessage(`{"type":"ipfs"}`)))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	require.NoError(t, err)
+	_, err = mcpadapter.AdvanceSession(context.Background(),
+		sess, json.RawMessage(`{"choice":"cid","cid":"QmTest"}`))
+	require.NoError(t, err)
+	_, err = mcpadapter.AdvanceSession(context.Background(),
+		sess, json.RawMessage(`{"type":"ipfs"}`))
+	require.NoError(t, err)
 
 	assert.Equal(t, "domain", sess.FSM.Current())
 
@@ -1017,7 +1123,7 @@ func TestWebsitesWizard_AuthCheckSkippedWhenAuthed(t *testing.T) {
 
 	// Empty input is sufficient: the handler just checks the token.
 	// No error means the auth_check is silently skipped.
-	err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
 	require.NoError(t, err)
 
 	// State should have advanced past auth_check to content_source.
@@ -1046,7 +1152,7 @@ func TestWebsitesWizard_AuthCheckNotSkippedWhenUnauthed(t *testing.T) {
 	assert.Equal(t, "auth_check", sess.FSM.Current())
 
 	// Empty input fails: user needs to authenticate first.
-	err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "authentication required")
 
@@ -1073,17 +1179,18 @@ func TestWebsitesWizard_RetryAfterHandlerError(t *testing.T) {
 	sess, err := mcpadapter.NewWebsitesSession(store, deps)
 	require.NoError(t, err)
 	// Pass auth_check.
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`)))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	require.NoError(t, err)
 	assert.Equal(t, "content_source", sess.FSM.Current())
 
 	// First attempt: invalid choice: handler fails, FSM stays in content_source.
-	err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"choice":"bogus"}`))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"choice":"bogus"}`))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid choice")
 	assert.Equal(t, "content_source", sess.FSM.Current())
 
 	// Second attempt: valid input: retry succeeds, FSM advances.
-	err = mcpadapter.AdvanceSession(context.Background(),
+	_, err = mcpadapter.AdvanceSession(context.Background(),
 		sess, json.RawMessage(`{"choice":"cid","cid":"QmRetryHash"}`))
 	require.NoError(t, err)
 	assert.Equal(t, "target_type", sess.FSM.Current())
@@ -1105,17 +1212,18 @@ func TestWebsitesWizard_RetryContentSourceAfterMissingCID(t *testing.T) {
 	deps := webservFactory(mcpadapter.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
 
 	sess, err := mcpadapter.NewWebsitesSession(store, deps)
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`)))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	require.NoError(t, err)
 
 	// First attempt: CID choice but no cid value: fails.
-	err = mcpadapter.AdvanceSession(context.Background(),
+	_, err = mcpadapter.AdvanceSession(context.Background(),
 		sess, json.RawMessage(`{"choice":"cid"}`))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "cid cannot be empty")
 	assert.Equal(t, "content_source", sess.FSM.Current())
 
 	// Retry with the cid value: succeeds.
-	err = mcpadapter.AdvanceSession(context.Background(),
+	_, err = mcpadapter.AdvanceSession(context.Background(),
 		sess, json.RawMessage(`{"choice":"cid","cid":"QmFixedHash"}`))
 	require.NoError(t, err)
 	assert.Equal(t, "target_type", sess.FSM.Current())
@@ -1142,20 +1250,25 @@ func TestWebsitesWizard_ErrorMidFlow_CreateFails_KeepsFSMState(t *testing.T) {
 	sess, err := mcpadapter.NewWebsitesSession(store, deps)
 	require.NoError(t, err)
 	// Navigate to the create step.
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`)))
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(),
-		sess, json.RawMessage(`{"choice":"cid","cid":"QmTest"}`)))
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(),
-		sess, json.RawMessage(`{"type":"ipfs"}`)))
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(),
-		sess, json.RawMessage(`{"domain":"example.com"}`)))
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(),
-		sess, json.RawMessage(`{"mode":"self_managed"}`)))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	require.NoError(t, err)
+	_, err = mcpadapter.AdvanceSession(context.Background(),
+		sess, json.RawMessage(`{"choice":"cid","cid":"QmTest"}`))
+	require.NoError(t, err)
+	_, err = mcpadapter.AdvanceSession(context.Background(),
+		sess, json.RawMessage(`{"type":"ipfs"}`))
+	require.NoError(t, err)
+	_, err = mcpadapter.AdvanceSession(context.Background(),
+		sess, json.RawMessage(`{"domain":"example.com"}`))
+	require.NoError(t, err)
+	_, err = mcpadapter.AdvanceSession(context.Background(),
+		sess, json.RawMessage(`{"mode":"self_managed"}`))
+	require.NoError(t, err)
 
 	assert.Equal(t, "create", sess.FSM.Current())
 
 	// Attempt create: service fails.
-	err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"confirm":true}`))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"confirm":true}`))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "website creation failed")
 	assert.Contains(t, err.Error(), "create service error")
@@ -1194,18 +1307,23 @@ func TestWebsitesWizard_ErrorMidFlow_CreateFails_RetryWithSuccess(t *testing.T) 
 	sess, err := mcpadapter.NewWebsitesSession(store, deps)
 	require.NoError(t, err)
 	// Navigate to the create step.
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`)))
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(),
-		sess, json.RawMessage(`{"choice":"cid","cid":"QmTest"}`)))
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(),
-		sess, json.RawMessage(`{"type":"ipfs"}`)))
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(),
-		sess, json.RawMessage(`{"domain":"example.com"}`)))
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(),
-		sess, json.RawMessage(`{"mode":"self_managed"}`)))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	require.NoError(t, err)
+	_, err = mcpadapter.AdvanceSession(context.Background(),
+		sess, json.RawMessage(`{"choice":"cid","cid":"QmTest"}`))
+	require.NoError(t, err)
+	_, err = mcpadapter.AdvanceSession(context.Background(),
+		sess, json.RawMessage(`{"type":"ipfs"}`))
+	require.NoError(t, err)
+	_, err = mcpadapter.AdvanceSession(context.Background(),
+		sess, json.RawMessage(`{"domain":"example.com"}`))
+	require.NoError(t, err)
+	_, err = mcpadapter.AdvanceSession(context.Background(),
+		sess, json.RawMessage(`{"mode":"self_managed"}`))
+	require.NoError(t, err)
 
 	// First create attempt: fails.
-	err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"confirm":true}`))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"confirm":true}`))
 	require.Error(t, err)
 	assert.Equal(t, "create", sess.FSM.Current())
 
@@ -1217,7 +1335,7 @@ func TestWebsitesWizard_ErrorMidFlow_CreateFails_RetryWithSuccess(t *testing.T) 
 		}, nil
 	}
 
-	err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"confirm":true}`))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"confirm":true}`))
 	require.NoError(t, err)
 	assert.Equal(t, "dns_setup", sess.FSM.Current())
 
@@ -1244,24 +1362,31 @@ func TestWebsitesWizard_ValidateRetry(t *testing.T) {
 	sess, err := mcpadapter.NewWebsitesSession(store, deps)
 	require.NoError(t, err)
 	// Navigate through all steps to reach validate.
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`)))
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(),
-		sess, json.RawMessage(`{"choice":"cid","cid":"QmTest"}`)))
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(),
-		sess, json.RawMessage(`{"type":"ipfs"}`)))
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(),
-		sess, json.RawMessage(`{"domain":"example.com"}`)))
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(),
-		sess, json.RawMessage(`{"mode":"self_managed"}`)))
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(),
-		sess, json.RawMessage(`{"confirm":true}`)))
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(),
-		sess, json.RawMessage(`{}`))) // dns_setup
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	require.NoError(t, err)
+	_, err = mcpadapter.AdvanceSession(context.Background(),
+		sess, json.RawMessage(`{"choice":"cid","cid":"QmTest"}`))
+	require.NoError(t, err)
+	_, err = mcpadapter.AdvanceSession(context.Background(),
+		sess, json.RawMessage(`{"type":"ipfs"}`))
+	require.NoError(t, err)
+	_, err = mcpadapter.AdvanceSession(context.Background(),
+		sess, json.RawMessage(`{"domain":"example.com"}`))
+	require.NoError(t, err)
+	_, err = mcpadapter.AdvanceSession(context.Background(),
+		sess, json.RawMessage(`{"mode":"self_managed"}`))
+	require.NoError(t, err)
+	_, err = mcpadapter.AdvanceSession(context.Background(),
+		sess, json.RawMessage(`{"confirm":true}`))
+	require.NoError(t, err)
+	_, err = mcpadapter.AdvanceSession(context.Background(),
+		sess, json.RawMessage(`{}`))
+	require.NoError(t, err)
 
 	assert.Equal(t, "validate", sess.FSM.Current())
 
 	// First validate attempt: fails.
-	err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "validation failed")
 	assert.Equal(t, "validate", sess.FSM.Current())
@@ -1278,7 +1403,7 @@ func TestWebsitesWizard_ValidateRetry(t *testing.T) {
 		}, nil
 	}
 
-	err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"retry":true}`))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"retry":true}`))
 	require.NoError(t, err)
 	assert.Equal(t, "complete", sess.FSM.Current())
 
@@ -1288,8 +1413,8 @@ func TestWebsitesWizard_ValidateRetry(t *testing.T) {
 }
 
 // TestSetupWizard_RetryAfterAuthError verifies the retry transition for
-// the setup wizard: after an auth error, the FSM stays in "auth", and
-// retrying succeeds.
+// the setup wizard: after an out-of-band login failure, the FSM stays in
+// "auth", and a subsequent successful login advances.
 func TestSetupWizard_RetryAfterAuthError(t *testing.T) {
 	t.Parallel()
 
@@ -1300,17 +1425,24 @@ func TestSetupWizard_RetryAfterAuthError(t *testing.T) {
 		},
 	}
 	store := mcpadapter.NewSessionStore()
-	deps := mcpadapter.SetupWizardDeps{CfgMgr: cfgMgr, AuthService: authSvc, SetupFactory: testSetupFactory}
+	oob := mcpadapter.NewOutOfBandLogin(authSvc, "", "test-key")
+	t.Cleanup(func() { oob.Stop(context.Background()) })
+	deps := mcpadapter.SetupWizardDeps{
+		CfgMgr:       cfgMgr,
+		AuthService:  authSvc,
+		SetupFactory: testSetupFactory,
+		OutOfBand:    oob,
+	}
 
 	sess, err := mcpadapter.NewSetupSession(store, deps)
 	require.NoError(t, err)
 	assert.Equal(t, "auth", sess.FSM.Current())
 
-	// First attempt: auth fails.
-	err = mcpadapter.AdvanceSession(context.Background(), sess,
-		json.RawMessage(`{"choice":"sign_in","email":"test@example.com","password":"wrong"}`))
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "authentication failed")
+	// First sign_in relays the login URL and stays on auth.
+	info, err := mcpadapter.AdvanceSession(context.Background(), sess,
+		json.RawMessage(`{"choice":"sign_in","email":"test@example.com"}`))
+	require.NoError(t, err)
+	assert.Contains(t, info, "/login/")
 	assert.Equal(t, "auth", sess.FSM.Current())
 
 	// Step response should show auth is still active.
@@ -1318,13 +1450,31 @@ func TestSetupWizard_RetryAfterAuthError(t *testing.T) {
 	assert.False(t, resp.Complete)
 	assert.Equal(t, "auth", resp.CurrentStep)
 
-	// Fix the auth service and retry.
+	// Attempt login with a wrong password -> auth fails -> still on auth.
+	u := extractLoginURL(info)
+	bad := postLogin(u, url.Values{"password": {"wrong"}})
+	require.NoError(t, bad.err)
+	bad.resp.Body.Close()
+	// The login fails server-side; the request stays pending and the page is
+	// re-rendered with an error. The step does not advance.
+	assert.Equal(t, "auth", sess.FSM.Current())
+
+	// Retry sign_in: the same pending URL is relayed; complete it with the
+	// correct credentials now that the auth service is fixed.
 	authSvc.loginCheckFunc = func(_ context.Context, _, _ string) (*portalsdk.LoginResult, error) {
 		return &portalsdk.LoginResult{Token: "jwt-token-123", OTPRequired: false}, nil
 	}
+	info, err = mcpadapter.AdvanceSession(context.Background(), sess,
+		json.RawMessage(`{"choice":"sign_in","email":"test@example.com"}`))
+	require.NoError(t, err)
+	assert.Contains(t, info, "/login/")
+	u = extractLoginURL(info)
+	ok := postLogin(u, url.Values{"password": {"correct"}})
+	require.NoError(t, ok.err)
+	ok.resp.Body.Close()
 
-	err = mcpadapter.AdvanceSession(context.Background(), sess,
-		json.RawMessage(`{"choice":"sign_in","email":"test@example.com","password":"correct"}`))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess,
+		json.RawMessage(`{"choice":"sign_in","email":"test@example.com"}`))
 	require.NoError(t, err)
 	assert.Equal(t, "config", sess.FSM.Current())
 }
@@ -1389,9 +1539,11 @@ func TestWebsitesWizard_AbortMidFlow(t *testing.T) {
 	sess, err := mcpadapter.NewWebsitesSession(store, deps)
 	require.NoError(t, err)
 	// Advance to content_source.
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`)))
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(),
-		sess, json.RawMessage(`{"choice":"cid","cid":"QmTest"}`)))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	require.NoError(t, err)
+	_, err = mcpadapter.AdvanceSession(context.Background(),
+		sess, json.RawMessage(`{"choice":"cid","cid":"QmTest"}`))
+	require.NoError(t, err)
 
 	assert.Equal(t, "target_type", sess.FSM.Current())
 
@@ -1426,7 +1578,8 @@ func TestWebsitesWizard_StepResponseReflectsCurrentStep(t *testing.T) {
 	assert.NotNil(t, resp.NextStepSchema)
 
 	// Advance to content_source.
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`)))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	require.NoError(t, err)
 	resp = mcpadapter.BuildStepResponseForTest(sess)
 	assert.False(t, resp.Complete)
 	assert.Equal(t, "content_source", resp.CurrentStep)
@@ -1447,16 +1600,20 @@ func TestWebsitesWizard_SelfManagedDNS(t *testing.T) {
 	deps := webservFactory(mcpadapter.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
 
 	sess, err := mcpadapter.NewWebsitesSession(store, deps)
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`)))
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(),
-		sess, json.RawMessage(`{"choice":"cid","cid":"QmTest"}`)))
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(),
-		sess, json.RawMessage(`{"type":"ipfs"}`)))
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(),
-		sess, json.RawMessage(`{"domain":"example.com"}`)))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	require.NoError(t, err)
+	_, err = mcpadapter.AdvanceSession(context.Background(),
+		sess, json.RawMessage(`{"choice":"cid","cid":"QmTest"}`))
+	require.NoError(t, err)
+	_, err = mcpadapter.AdvanceSession(context.Background(),
+		sess, json.RawMessage(`{"type":"ipfs"}`))
+	require.NoError(t, err)
+	_, err = mcpadapter.AdvanceSession(context.Background(),
+		sess, json.RawMessage(`{"domain":"example.com"}`))
+	require.NoError(t, err)
 
 	// Self-managed DNS.
-	err = mcpadapter.AdvanceSession(context.Background(),
+	_, err = mcpadapter.AdvanceSession(context.Background(),
 		sess, json.RawMessage(`{"mode":"self_managed"}`))
 	require.NoError(t, err)
 
@@ -1464,8 +1621,9 @@ func TestWebsitesWizard_SelfManagedDNS(t *testing.T) {
 	assert.False(t, w.DNSHosting())
 
 	// The create request should have DnsHostingEnabled=false.
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(),
-		sess, json.RawMessage(`{"confirm":true}`)))
+	_, err = mcpadapter.AdvanceSession(context.Background(),
+		sess, json.RawMessage(`{"confirm":true}`))
+	require.NoError(t, err)
 	require.NotNil(t, websitesSvc.createCallReq)
 	assert.False(t, *websitesSvc.createCallReq.DnsHostingEnabled)
 }
@@ -1481,16 +1639,20 @@ func TestWebsitesWizard_ManagedDNS(t *testing.T) {
 	deps := webservFactory(mcpadapter.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
 
 	sess, err := mcpadapter.NewWebsitesSession(store, deps)
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`)))
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(),
-		sess, json.RawMessage(`{"choice":"cid","cid":"QmTest"}`)))
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(),
-		sess, json.RawMessage(`{"type":"ipfs"}`)))
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(),
-		sess, json.RawMessage(`{"domain":"example.com"}`)))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	require.NoError(t, err)
+	_, err = mcpadapter.AdvanceSession(context.Background(),
+		sess, json.RawMessage(`{"choice":"cid","cid":"QmTest"}`))
+	require.NoError(t, err)
+	_, err = mcpadapter.AdvanceSession(context.Background(),
+		sess, json.RawMessage(`{"type":"ipfs"}`))
+	require.NoError(t, err)
+	_, err = mcpadapter.AdvanceSession(context.Background(),
+		sess, json.RawMessage(`{"domain":"example.com"}`))
+	require.NoError(t, err)
 
 	// Managed DNS.
-	err = mcpadapter.AdvanceSession(context.Background(),
+	_, err = mcpadapter.AdvanceSession(context.Background(),
 		sess, json.RawMessage(`{"mode":"managed"}`))
 	require.NoError(t, err)
 
@@ -1498,49 +1660,76 @@ func TestWebsitesWizard_ManagedDNS(t *testing.T) {
 	assert.True(t, w.DNSHosting())
 
 	// The create request should have DnsHostingEnabled=true.
-	require.NoError(t, mcpadapter.AdvanceSession(context.Background(),
-		sess, json.RawMessage(`{"confirm":true}`)))
+	_, err = mcpadapter.AdvanceSession(context.Background(),
+		sess, json.RawMessage(`{"confirm":true}`))
+	require.NoError(t, err)
 	require.NotNil(t, websitesSvc.createCallReq)
 	assert.True(t, *websitesSvc.createCallReq.DnsHostingEnabled)
 }
 
 // TestSetupWizard_FullFlowSignIn verifies the complete setup wizard flow
-// using sign_in (not skip) for the auth step.
+// using sign_in (not skip) for the auth step. Sign-in is completed
+// out-of-band in a browser, then the wizard advances.
 func TestSetupWizard_FullFlowSignIn(t *testing.T) {
 	t.Parallel()
 
 	cfgMgr := newConfigMgr(t, true)
 	authSvc := &mockAuthService{}
 	store := mcpadapter.NewSessionStore()
-	deps := mcpadapter.SetupWizardDeps{CfgMgr: cfgMgr, AuthService: authSvc, SetupFactory: testSetupFactory}
+	oob := mcpadapter.NewOutOfBandLogin(authSvc, "", "test-key")
+	t.Cleanup(func() { oob.Stop(context.Background()) })
+	deps := mcpadapter.SetupWizardDeps{
+		CfgMgr:       cfgMgr,
+		AuthService:  authSvc,
+		SetupFactory: testSetupFactory,
+		OutOfBand:    oob,
+	}
 
 	sess, err := mcpadapter.NewSetupSession(store, deps)
 	require.NoError(t, err)
 	require.NotEmpty(t, sess.ID)
 	assert.Equal(t, "auth", sess.FSM.Current())
 
-	// Step 1: auth: sign in.
-	err = mcpadapter.AdvanceSession(context.Background(), sess,
-		json.RawMessage(`{"choice":"sign_in","email":"test@example.com","password":"secret"}`))
+	// Step 1: auth: sign in. First call relays the out-of-band login URL as an
+	// informational message and stays on auth.
+	var info string
+	info, err = mcpadapter.AdvanceSession(context.Background(), sess,
+		json.RawMessage(`{"choice":"sign_in","email":"test@example.com"}`))
+	require.NoError(t, err)
+	assert.Contains(t, info, "/login/")
+	assert.Equal(t, "auth", sess.FSM.Current())
+
+	// Complete the out-of-band login by POSTing the password to the loopback
+	// URL, exactly as the browser would.
+	u := extractLoginURL(info)
+	require.Contains(t, u, "/login/")
+	posted := postLogin(u, url.Values{"password": {"fixture-password"}})
+	require.NoError(t, posted.err)
+	posted.resp.Body.Close()
+	require.Equal(t, http.StatusOK, posted.resp.StatusCode)
+
+	// Re-calling sign_in now advances past auth to config.
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess,
+		json.RawMessage(`{"choice":"sign_in","email":"test@example.com"}`))
 	require.NoError(t, err)
 	assert.Equal(t, "config", sess.FSM.Current())
 
 	// Step 2: config: use defaults.
 	cfgMgr.EXPECT().SetBaseEndpoint("").Return(nil).Maybe()
 	cfgMgr.EXPECT().SetSecure(true).Return(nil).Maybe()
-	err = mcpadapter.AdvanceSession(context.Background(), sess,
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess,
 		json.RawMessage(`{"choice":"use_defaults"}`))
 	require.NoError(t, err)
 	assert.Equal(t, "completion", sess.FSM.Current())
 
 	// Step 3: completion.
-	err = mcpadapter.AdvanceSession(context.Background(), sess,
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess,
 		json.RawMessage(`{"shell":"bash"}`))
 	require.NoError(t, err)
 	assert.Equal(t, "tutorial", sess.FSM.Current())
 
 	// Step 4: tutorial.
-	err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
 	require.NoError(t, err)
 	assert.Equal(t, "complete", sess.FSM.Current())
 
@@ -1561,26 +1750,26 @@ func TestSetupWizard_FullFlowSkip(t *testing.T) {
 	sess, err := mcpadapter.NewSetupSession(store, deps)
 
 	// Step 1: auth: skip.
-	err = mcpadapter.AdvanceSession(context.Background(), sess,
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess,
 		json.RawMessage(`{"choice":"skip"}`))
 	require.NoError(t, err)
 	assert.Equal(t, "config", sess.FSM.Current())
 
 	// Step 2: config: skip.
 	cfgMgr.EXPECT().SetSecure(true).Return(nil).Maybe()
-	err = mcpadapter.AdvanceSession(context.Background(), sess,
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess,
 		json.RawMessage(`{"choice":"skip"}`))
 	require.NoError(t, err)
 	assert.Equal(t, "completion", sess.FSM.Current())
 
 	// Step 3: completion.
-	err = mcpadapter.AdvanceSession(context.Background(), sess,
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess,
 		json.RawMessage(`{"shell":"zsh"}`))
 	require.NoError(t, err)
 	assert.Equal(t, "tutorial", sess.FSM.Current())
 
 	// Step 4: tutorial.
-	err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
 	require.NoError(t, err)
 	assert.Equal(t, "complete", sess.FSM.Current())
 

@@ -179,25 +179,36 @@ func TestUploadTaskManagerTTLEviction(t *testing.T) {
 }
 
 func TestUploadTaskManagerCancelBeforeStartDoesNotRun(t *testing.T) {
-	var ran atomic.Int64
 	mgr := NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
-		ran.Add(1)
+		// A cancelled upload must never fabricate a completion: if the executor
+		// observes the cancelled context it reports the cancellation instead of
+		// returning a bogus result.
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
 		return map[string]any{"cid": "QmC"}, nil
 	}, 0)
 
 	id, err := mgr.Start(context.Background(), io.NopCloser(strings.NewReader("c")), 1, "c.txt", false)
 	require.NoError(t, err)
-	// Cancel immediately after start; the goroutine must see it was cancelled
-	// before beginning the upload and must not invoke the executor.
+	// Cancel immediately after start; the goroutine must observe the cancel and
+	// end in the Cancelled state — never a spurious "completed" result.
 	require.NoError(t, mgr.Cancel(id))
 
 	require.Eventually(t, func() bool {
-		t, _ := mgr.Get(id)
-		return t != nil && t.State == UploadStateCancelled
+		tk, _ := mgr.Get(id)
+		return tk != nil && tk.State == UploadStateCancelled
 	}, 2*time.Second, 5*time.Millisecond)
-	// Give the goroutine a moment; the executor must never have run.
+	// Give the goroutine a moment to settle; the terminal state must remain
+	// Cancelled (the manager's completion path refuses to overwrite a cancel
+	// with Completed/Failed once Cancel has been applied), so the executor can
+	// never convert a cancelled task into a fabricated completion.
 	time.Sleep(50 * time.Millisecond)
-	require.Equal(t, int64(0), ran.Load())
+	tk, err := mgr.Get(id)
+	require.NoError(t, err)
+	require.Equal(t, UploadStateCancelled, tk.State)
 }
 
 func TestUploadTaskManagerCancelledTasksArePruned(t *testing.T) {

@@ -1,0 +1,44 @@
+package mcp
+
+// authLoginPageData carries the fields needed to render the out-of-band login
+// page for a pending request.
+type authLoginPageData struct {
+	Action    string // form POST target
+	Email     string
+	CSRFToken string // per-request secret bound to this login; required on POST
+	OTPStage  bool
+	Error     string
+}
+
+templ authLoginPage(data authLoginPageData) {
+	@brandLayout("Sign in to Pinner") {
+		<div class="card">
+			<h1>Sign in to Pinner</h1>
+			<p>Authenticate for <strong>{ data.Email }</strong> to enable this MCP server. Credentials are entered here and never exposed to the requesting client.</p>
+			<form method="post" action={ data.Action }>
+				<input type="hidden" name="email" value={ data.Email }/>
+				<input type="hidden" name="csrf" value={ data.CSRFToken }/>
+				<label for="password">Password</label>
+				<input type="password" id="password" name="password" required autofocus autocomplete="current-password"/>
+				if data.OTPStage {
+					<label for="otp">Two-factor code</label>
+					<input type="text" id="otp" name="otp" required autocomplete="one-time-code" inputmode="numeric" pattern="[0-9]*"/>
+				}
+				if data.Error != "" {
+					<p class="error">{ data.Error }</p>
+				}
+				<button type="submit">{ "Authorize" }</button>
+			</form>
+		</div>
+	}
+}
+
+// authSuccessPage confirms an out-of-band login completed.
+templ authSuccessPage() {
+	@brandLayout("Signed in") {
+		<div class="card">
+			<h1>Signed in</h1>
+			<p>Authentication complete. You can close this tab and return to your client.</p>
+		</div>
+	}
+}
