@@ -122,3 +122,27 @@ func TestWebsitesService_WithWebsitesAuthToken(t *testing.T) {
 	WithWebsitesAuthToken("override-token")(svc)
 	assert.Equal(t, "override-token", svc.getAuthToken())
 }
+
+// TestWebsitesService_AuthTokenLiveFromConfig verifies the service reads the
+// auth token live from the config manager when NO WithWebsitesAuthToken override
+// is pinned. This is what keeps a long-lived MCP server live-reload aware: a
+// `pinner login` that rewrites the on-disk token is reflected by the running
+// server's websites/DNS/IPNS services without a restart. Pinning the startup
+// token as an override (the root.go bug this guards against) would freeze it and
+// defeat live reload.
+func TestWebsitesService_AuthTokenLiveFromConfig(t *testing.T) {
+	// Mutable config holder so we can simulate a live-reloaded token.
+	cfg := &config.Config{AuthToken: "tok-a"}
+	cfgMgr := configmocks.NewMockManager(t)
+	cfgMgr.EXPECT().Config().RunAndReturn(func() *config.Config { return cfg }).Maybe()
+
+	svc := &websitesService{
+		ipfsServiceBase: ipfsServiceBase{cfgMgr: cfgMgr},
+	}
+	assert.Equal(t, "tok-a", svc.getAuthToken())
+
+	// Simulate `pinner login` updating the on-disk token, which the watcher
+	// live-reloads into the manager; the service must see the new value.
+	cfg.AuthToken = "tok-b"
+	assert.Equal(t, "tok-b", svc.getAuthToken(), "service token must live-reload from config")
+}

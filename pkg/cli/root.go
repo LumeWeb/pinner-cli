@@ -114,16 +114,17 @@ For more help on any command: pinner <command> --help`,
 			output := NewOutputFormatter(false, false, false, false)
 			output.SetWriter(io.Discard)
 
-			authToken := cfgMgr.Config().AuthToken
 			secure := cfgMgr.Config().Secure
 			// Build websites service without RequireAuthenticated; the setup wizard
 			// must be reachable for unauthenticated users, and the websites wizard's
 			// auth_check step enforces authentication at runtime.
-			var svcOpts []WebsitesServiceOption
-			if authToken != "" {
-				svcOpts = append(svcOpts, WithWebsitesAuthToken(authToken))
-			}
-			websitesSvc := websitesServiceFactory(cfgMgr, output, secure, svcOpts...)
+			//
+			// Do NOT pin the auth token here (no WithWebsitesAuthToken override):
+			// the websites/DNS/IPNS services read cfgMgr.Config().AuthToken live at
+			// request time, so a `pinner login` (or config edit) that relocates the
+			// token on disk is picked up by the running server without a restart.
+			// Freezing the startup token as an override would defeat live reload.
+			websitesSvc := websitesServiceFactory(cfgMgr, output, secure)
 			authSvc := defaultAuthServiceFactory(cfgMgr, output, cfgMgr.Config().BaseEndpoint)
 			uploadSvc := defaultUploadServiceFactory(cfgMgr, output, WithUploadAuthService(authSvc))
 			uploadHandler = func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
