@@ -134,6 +134,30 @@ adapter.`,
 				oob = sDeps.OutOfBand
 			}
 
+			// Resolve options before registering curated tools so App wiring
+			// (which must attach _meta.ui to the pin tool in the catalog BEFORE
+			// the curated loop registers it) can read provider factories.
+			mcpOpts := &mcpServerOptions{}
+			for _, opt := range opts {
+				if opt != nil {
+					opt(mcpOpts)
+				}
+			}
+
+			// Register the "Create a Pin" MCP App before curated registration so
+			// the ui:// view is attached to pinner_pin in the catalog ahead of
+			// the curated loop. The app-only status helper and ui:// resource
+			// are additive and independent of the curated loop.
+			if mcpOpts.pinnerPins != nil {
+				pins, err := mcpOpts.pinnerPins()
+				if err != nil {
+					return fmt.Errorf("failed to build pinning provider: %w", err)
+				}
+				if err := RegisterPinApp(srv, catalog, pins); err != nil {
+					return fmt.Errorf("failed to register pin app: %w", err)
+				}
+			}
+
 			if err := RegisterOfficialCuratedTools(srv, catalog, IsCuratedTool); err != nil {
 				return fmt.Errorf("failed to register curated tools: %w", err)
 			}
@@ -144,12 +168,6 @@ adapter.`,
 				resources, templates := ResourceDescriptors(provs)
 				if err := RegisterOfficialResources(srv, resources, templates); err != nil {
 					return fmt.Errorf("failed to register resources: %w", err)
-				}
-			}
-			mcpOpts := &mcpServerOptions{}
-			for _, opt := range opts {
-				if opt != nil {
-					opt(mcpOpts)
 				}
 			}
 			if mcpOpts.chatGPTUpload != nil {
@@ -488,6 +506,9 @@ type mcpServerOptions struct {
 	relayURLUpload    RelayURLUploadHandler
 	relayAllowedHosts []string
 	dataURIUpload     DataURIUploadHandler
+	// pinnerPins, when set, wires the "Create a Pin" MCP App (ui:// view,
+	// app-only status helper) using a live pinning provider built at setup.
+	pinnerPins PinningProviderFactory
 }
 
 // MCPServerOption configures the MCP command served by MCPCommand.
@@ -501,6 +522,15 @@ type ResourceProvidersFactory func(store *SessionStore) ResourceProviders
 func WithPrompts() MCPServerOption {
 	return func(o *mcpServerOptions) {
 		o.prompts = true
+	}
+}
+
+// WithPinningProvider wires the "Create a Pin" MCP App (ui:// view + app-only
+// pin status helper) using provider, which builds a live pinning backend at
+// server setup time. Without it, no pin App is registered.
+func WithPinningProvider(provider PinningProviderFactory) MCPServerOption {
+	return func(o *mcpServerOptions) {
+		o.pinnerPins = provider
 	}
 }
 

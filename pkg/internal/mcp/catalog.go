@@ -32,7 +32,11 @@ type ToolEntry struct {
 	ReadOnly    bool
 	Destructive bool
 	InputSchema json.RawMessage
-	Handler     PinnerToolHandler
+	// Meta carries arbitrary tool metadata (e.g. MCP Apps `_meta.ui`) through
+	// curated registration. SDK-neutral; the wire seam encodes it onto the
+	// tool. Extended, never replaced, when attaching app metadata.
+	Meta    map[string]any
+	Handler PinnerToolHandler
 }
 
 // ToolSummary is the lightweight representation returned by search_tools.

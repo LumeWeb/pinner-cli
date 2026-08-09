@@ -96,6 +96,10 @@ For more help on any command: pinner <command> --help`,
 
 	// Register the MCP server command with a reference to root for in-process tool execution.
 	var resourceFactory mcpadapter.ResourceProvidersFactory
+	// pinProvider builds the live pinning backend for the "Create a Pin" MCP App
+	// (ui:// view + app-only status helper). Populated inside the wizard factory
+	// once a cfgMgr/output/secure are available.
+	var pinProvider mcpadapter.PinningProviderFactory
 	// uploadHandler is the single vendor-agnostic stream→upload executor shared
 	// by every file-input tool (ChatGPT file object, URL relay, draft data: URI,
 	// async). Only the byte source differs; the authenticated upload contract is
@@ -128,6 +132,14 @@ For more help on any command: pinner <command> --help`,
 			websitesSvc := websitesServiceFactory(cfgMgr, output, secure)
 			authSvc := defaultAuthServiceFactory(cfgMgr, output, cfgMgr.Config().BaseEndpoint)
 			uploadSvc := defaultUploadServiceFactory(cfgMgr, output, WithUploadAuthService(authSvc))
+
+			// Build the pinning backend for the "Create a Pin" MCP App. Reuse
+			// the CLI's PinningService (which reads cfgMgr live at request time)
+			// and adapt its Status into the SDK-neutral PinningProvider.
+			pinningSvc := defaultPinningServiceFactory(cfgMgr, output, secure)
+			pinProvider = func() (mcpadapter.PinningProvider, error) {
+				return &pinStatusAdapter{pins: pinningSvc}, nil
+			}
 
 			// Live-reload the auth token into the long-lived services without a
 			// restart: subscribe to config auth_token changes (fired by the file
@@ -223,6 +235,12 @@ For more help on any command: pinner <command> --help`,
 			return mcpadapter.ResourceProviders{Sessions: store}
 		},
 		mcpadapter.WithPrompts(),
+		mcpadapter.WithPinningProvider(func() (mcpadapter.PinningProvider, error) {
+			if pinProvider == nil {
+				return nil, fmt.Errorf("pinning provider dependencies are not initialized")
+			}
+			return pinProvider()
+		}),
 		mcpadapter.WithChatGPTUpload(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
 			if uploadHandler == nil {
 				return nil, fmt.Errorf("ChatGPT upload dependencies are not initialized")
