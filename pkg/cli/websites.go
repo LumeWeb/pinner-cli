@@ -151,6 +151,9 @@ Examples:
 // WebsitesService defines the interface for website operations.
 type WebsitesService interface {
 	RequireAuthenticated() error
+	// SetAuthToken hot-updates the auth token on a running service without
+	// reconstructing it (used by long-lived consumers on config live-reload).
+	SetAuthToken(token string)
 	List(ctx context.Context) ([]ipfs.WebsiteItem, error)
 	Create(ctx context.Context, domain, targetHash, targetType string) (*ipfs.WebsiteItem, error)
 	CreateWithOptions(ctx context.Context, req ipfs.WebsiteRequest) (*ipfs.WebsiteItem, error)

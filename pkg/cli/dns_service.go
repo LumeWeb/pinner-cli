@@ -10,6 +10,9 @@ import (
 // DNSService defines the interface for DNS operations in the CLI.
 type DNSService interface {
 	RequireAuthenticated() error
+	// SetAuthToken hot-updates the auth token on a running service without
+	// reconstructing it (used by long-lived consumers on config live-reload).
+	SetAuthToken(token string)
 
 	// Zone operations
 	CreateZone(ctx context.Context, domain string, nameservers []string) (*ipfs.ZoneResponse, error)
@@ -52,13 +55,13 @@ func WithDNSClient(client *ipfs.Client) DNSServiceOption {
 }
 
 // NewDNSService creates a new DNSService instance with the provided configuration.
+// It must NOT copy cfgMgr.Config().AuthToken into ipfsServiceBase.authToken so
+// getAuthToken() reads config live at request time (live reload for long-lived
+// services). Explicit WithDNSAuthToken overrides still take precedence.
 func NewDNSService(cfgMgr config.Manager, output Output, apiEndpoint string, opts ...DNSServiceOption) DNSService {
-	authToken := cfgMgr.Config().AuthToken
-
 	s := &dnsServiceCLI{
 		ipfsServiceBase: ipfsServiceBase{
-			cfgMgr:    cfgMgr,
-			authToken: authToken,
+			cfgMgr: cfgMgr,
 		},
 		output: output,
 	}
@@ -75,9 +78,34 @@ func NewDNSService(cfgMgr config.Manager, output Output, apiEndpoint string, opt
 			s.service = nil
 			return s
 		}
+		s.client = client
 		s.service = client.DNS()
 	}
 	return s
+}
+
+// SetAuthToken hot-updates the auth token on the retained *ipfs.Client and
+// re-fetches the sub-service. No-op when no client is retained.
+// The write lock serializes this (config-watcher goroutine) with request reads.
+func (s *dnsServiceCLI) SetAuthToken(token string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.client != nil {
+		if err := s.client.SetAuthToken(token); err == nil {
+			s.service = s.client.DNS()
+		}
+	}
+}
+
+// requireService returns the current sub-service under the read lock, so the
+// config-watcher goroutine (SetAuthToken) cannot swap s.service mid-request.
+func (s *dnsServiceCLI) requireService() (ipfs.DNSService, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.service == nil {
+		return nil, ErrServiceUnavailable
+	}
+	return s.service, nil
 }
 
 // CreateZone creates a new DNS zone.
@@ -85,10 +113,11 @@ func (s *dnsServiceCLI) CreateZone(ctx context.Context, domain string, nameserve
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
+	svc, err := s.requireService()
+	if err != nil {
+		return nil, err
 	}
-	return s.service.CreateZone(ctx, domain, nameservers)
+	return svc.CreateZone(ctx, domain, nameservers)
 }
 
 // ListZones lists all DNS zones.
@@ -96,10 +125,11 @@ func (s *dnsServiceCLI) ListZones(ctx context.Context) ([]ipfs.ZoneListResponse,
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
+	svc, err := s.requireService()
+	if err != nil {
+		return nil, err
 	}
-	return s.service.ListZones(ctx)
+	return svc.ListZones(ctx)
 }
 
 // GetZone retrieves a specific DNS zone.
@@ -107,10 +137,11 @@ func (s *dnsServiceCLI) GetZone(ctx context.Context, id string) (*ipfs.ZoneRespo
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
+	svc, err := s.requireService()
+	if err != nil {
+		return nil, err
 	}
-	return s.service.GetZone(ctx, id)
+	return svc.GetZone(ctx, id)
 }
 
 // DeleteZone deletes a DNS zone.
@@ -118,10 +149,11 @@ func (s *dnsServiceCLI) DeleteZone(ctx context.Context, id string) error {
 	if err := s.RequireAuthenticated(); err != nil {
 		return err
 	}
-	if s.service == nil {
-		return ErrServiceUnavailable
+	svc, err := s.requireService()
+	if err != nil {
+		return err
 	}
-	return s.service.DeleteZone(ctx, id)
+	return svc.DeleteZone(ctx, id)
 }
 
 // ValidateZone validates a DNS zone's nameserver delegation.
@@ -129,10 +161,11 @@ func (s *dnsServiceCLI) ValidateZone(ctx context.Context, id string) (*ipfs.Vali
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
+	svc, err := s.requireService()
+	if err != nil {
+		return nil, err
 	}
-	return s.service.ValidateZone(ctx, id)
+	return svc.ValidateZone(ctx, id)
 }
 
 // CreateRecord creates a new DNS record.
@@ -140,10 +173,11 @@ func (s *dnsServiceCLI) CreateRecord(ctx context.Context, id string, record ipfs
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
+	svc, err := s.requireService()
+	if err != nil {
+		return nil, err
 	}
-	return s.service.CreateRecord(ctx, id, record)
+	return svc.CreateRecord(ctx, id, record)
 }
 
 // ListRecords lists all DNS records for a zone.
@@ -151,10 +185,11 @@ func (s *dnsServiceCLI) ListRecords(ctx context.Context, id string) ([]ipfs.Reco
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
+	svc, err := s.requireService()
+	if err != nil {
+		return nil, err
 	}
-	return s.service.ListRecords(ctx, id)
+	return svc.ListRecords(ctx, id)
 }
 
 // GetRecord retrieves a specific DNS record.
@@ -162,10 +197,11 @@ func (s *dnsServiceCLI) GetRecord(ctx context.Context, id string, name string, r
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
+	svc, err := s.requireService()
+	if err != nil {
+		return nil, err
 	}
-	return s.service.GetRecord(ctx, id, name, recordType)
+	return svc.GetRecord(ctx, id, name, recordType)
 }
 
 // UpdateRecord updates a DNS record.
@@ -173,10 +209,11 @@ func (s *dnsServiceCLI) UpdateRecord(ctx context.Context, id string, name string
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
+	svc, err := s.requireService()
+	if err != nil {
+		return nil, err
 	}
-	return s.service.UpdateRecord(ctx, id, name, recordType, record)
+	return svc.UpdateRecord(ctx, id, name, recordType, record)
 }
 
 // DeleteRecord deletes a DNS record.
@@ -184,10 +221,11 @@ func (s *dnsServiceCLI) DeleteRecord(ctx context.Context, id string, name string
 	if err := s.RequireAuthenticated(); err != nil {
 		return err
 	}
-	if s.service == nil {
-		return ErrServiceUnavailable
+	svc, err := s.requireService()
+	if err != nil {
+		return err
 	}
-	return s.service.DeleteRecord(ctx, id, name, recordType)
+	return svc.DeleteRecord(ctx, id, name, recordType)
 }
 
 type dnsServiceFactoryFunc func(cfgMgr config.Manager, output Output, secure bool, opts ...DNSServiceOption) DNSService

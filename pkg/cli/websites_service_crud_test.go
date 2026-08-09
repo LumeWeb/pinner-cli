@@ -2,11 +2,16 @@ package cli
 
 import (
 	"context"
+	"fmt"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	ipfs "go.lumeweb.com/ipfs-sdk"
+	sdkwebsitesmocks "go.lumeweb.com/ipfs-sdk/mocks/services"
 	"go.lumeweb.com/pinner-cli/pkg/config"
 	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
 )
@@ -121,4 +126,117 @@ func TestWebsitesService_WithWebsitesAuthToken(t *testing.T) {
 	}
 	WithWebsitesAuthToken("override-token")(svc)
 	assert.Equal(t, "override-token", svc.getAuthToken())
+}
+
+// TestWebsitesService_AuthTokenLiveFromConfig verifies the service reads the
+// auth token live from the config manager when NO WithWebsitesAuthToken override
+// is pinned. This is what keeps a long-lived MCP server live-reload aware: a
+// `pinner login` that rewrites the on-disk token is reflected by the running
+// server's websites/DNS/IPNS services without a restart. Pinning the startup
+// token as an override (the root.go bug this guards against) would freeze it and
+// defeat live reload.
+func TestWebsitesService_AuthTokenLiveFromConfig(t *testing.T) {
+	// Mutable config holder so we can simulate a live-reloaded token.
+	cfg := &config.Config{AuthToken: "tok-a"}
+	cfgMgr := configmocks.NewMockManager(t)
+	cfgMgr.EXPECT().Config().RunAndReturn(func() *config.Config { return cfg }).Maybe()
+
+	// Build via the real NewWebsitesService so the constructor's token-handling
+	// is exercised (it must NOT freeze config's token into ipfsServiceBase.authToken).
+	// Inject an offline client via WithWebsitesClient to avoid any network.
+	client, err := ipfs.NewClient("http://127.0.0.1:9", "tok-a")
+	require.NoError(t, err)
+	output := NewOutputFormatter(false, false, false, false)
+	iface := NewWebsitesService(cfgMgr, output, "http://127.0.0.1:9", WithWebsitesClient(client))
+	svc, ok := iface.(*websitesService)
+	require.True(t, ok, "expected *websitesService, got %T", iface)
+
+	// No WithWebsitesAuthToken override, and the constructor must not have frozen
+	// the config token, so getAuthToken() falls through to config live.
+	assert.Equal(t, "tok-a", svc.getAuthToken())
+
+	// Simulate `pinner login` updating the on-disk token, which the watcher
+	// live-reloads into the manager; the service must see the new value.
+	cfg.AuthToken = "tok-b"
+	assert.Equal(t, "tok-b", svc.getAuthToken(), "service token must live-reload from config")
+}
+
+// TestWebsitesService_SetAuthTokenReWiresClient verifies that pushing a new token
+// into a long-lived service via SetAuthToken (as the MCP server's config
+// subscription does on live-reload) hot-updates the retained *ipfs.Client rather
+// than leaving it frozen at bootstrap.
+func TestWebsitesService_SetAuthTokenReWiresClient(t *testing.T) {
+	cfgMgr := configmocks.NewMockManager(t)
+	cfgMgr.EXPECT().Config().RunAndReturn(func() *config.Config { return &config.Config{AuthToken: "tok-a"} }).Maybe()
+	output := NewOutputFormatter(false, false, false, false)
+
+	client, err := ipfs.NewClient("http://127.0.0.1:9", "tok-a")
+	require.NoError(t, err)
+	iface := NewWebsitesService(cfgMgr, output, "http://127.0.0.1:9", WithWebsitesClient(client))
+	svc, ok := iface.(*websitesService)
+	require.True(t, ok, "expected *websitesService, got %T", iface)
+	assert.Same(t, client, svc.client, "injected client must be retained")
+	assert.Equal(t, "tok-a", svc.client.BearerToken())
+
+	// Simulate the config subscription firing on a `pinner login`.
+	svc.SetAuthToken("tok-c")
+	assert.Equal(t, "tok-c", svc.client.BearerToken(), "retained client token must hot-update")
+}
+
+// TestWebsitesService_SetAuthTokenConcurrent guards the data race between the
+// config-watcher goroutine (SetAuthToken swaps s.service) and request goroutines
+// reading s.service. Run with -race to verify the mutex serializes them.
+func TestWebsitesService_SetAuthTokenConcurrent(t *testing.T) {
+	cfgMgr := configmocks.NewMockManager(t)
+	cfgMgr.EXPECT().Config().RunAndReturn(func() *config.Config { return &config.Config{AuthToken: "tok-a"} }).Maybe()
+
+	// Inject a mock SDK service so List does real work off a fake.
+	mockSvc := sdkwebsitesmocks.NewMockWebsitesService(t)
+	mockSvc.EXPECT().List(mock.Anything).Return([]ipfs.WebsiteItem{}, nil).Maybe()
+
+	output := NewOutputFormatter(false, false, false, false)
+	client, err := ipfs.NewClient("http://127.0.0.1:9", "tok-a")
+	require.NoError(t, err)
+	iface := NewWebsitesService(cfgMgr, output, "http://127.0.0.1:9", WithWebsitesClient(client))
+	svc, ok := iface.(*websitesService)
+	require.True(t, ok, "expected *websitesService, got %T", iface)
+	svc.service = mockSvc
+
+	ctx := context.Background()
+	var wg sync.WaitGroup
+	stop := make(chan struct{})
+
+	// Requests reading s.service.
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+					if _, err := svc.List(ctx); err != nil {
+						// ErrServiceUnavailable is transient during a swap; ignore it.
+					}
+				}
+			}
+		}()
+	}
+
+	// Config-watcher writer mutating s.service.
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			for j := 0; j < 200; j++ {
+				svc.SetAuthToken(fmt.Sprintf("tok-%d-%d", n, j))
+			}
+		}(i)
+	}
+
+	// Let them race, then stop the readers.
+	time.Sleep(200 * time.Millisecond)
+	close(stop)
+	wg.Wait()
 }

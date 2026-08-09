@@ -1,0 +1,150 @@
+package config
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+)
+
+// writeConfig writes cfg to path with permissive timing-safe error handling.
+func writeConfig(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write config %s: %v", path, err)
+	}
+}
+
+// awaitEndpoint polls m.Config().GetBaseEndpoint() until it equals want or the
+// deadline passes, returning true on success. This is the deterministic way to
+// observe a file-watcher-driven reload without sleeping on wall-clock guesses.
+func awaitEndpoint(m Manager, want string, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for {
+		if m.Config().GetBaseEndpoint() == want {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// newTestManager creates a Manager over a fresh temp config file seeded with
+// valid YAML, then Load()s it (which arms the configmanager file watcher).
+func newTestManager(t *testing.T, seed string) (Manager, string) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if seed != "" {
+		writeConfig(t, path, seed)
+	}
+	m, err := NewManager(path)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	if err := m.Load(); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	return m, path
+}
+
+// TestManagerLiveReloadOnFileChange verifies the core live-reload property: a
+// long-lived Manager (as a running pinner server holds) picks up a config file
+// rewrite -- e.g. `pinner login` or a config edit writing the file from another
+// process -- WITHOUT a restart. The configmanager file source arms an fsnotify
+// watcher on Load, and Config() re-reads the live manager state each call.
+func TestManagerLiveReloadOnFileChange(t *testing.T) {
+	m, path := newTestManager(t, "base_endpoint: \"https://before.example\"\nauth_token: \"\"\nsecure: true\n")
+
+	if got := m.Config().GetBaseEndpoint(); got != "https://before.example" {
+		t.Fatalf("seed not loaded: got %q", got)
+	}
+
+	// Simulate an external writer (a separate `pinner login` process) rewriting
+	// the file with a new token and endpoint.
+	writeConfig(t, path, "base_endpoint: \"https://after.example\"\nauth_token: \"tok-after\"\nsecure: true\n")
+
+	if !awaitEndpoint(m, "https://after.example", 5*time.Second) {
+		t.Fatalf("live reload did not pick up new endpoint; still %q", m.Config().GetBaseEndpoint())
+	}
+	if got := m.Config().AuthToken; got != "tok-after" {
+		t.Fatalf("live reload token = %q, want tok-after", got)
+	}
+}
+
+// TestManagerSetAuthTokenLiveReload verifies the systemd-MCP scenario concretely:
+// one "server" Manager is live and watching, while a separate "login" Manager
+// writes a token via SetAuthToken (the in-process equivalent of `pinner login`
+// persisting a new credential). The long-lived server Manager must observe the
+// new token without a restart.
+func TestManagerSetAuthTokenLiveReload(t *testing.T) {
+	server, path := newTestManager(t, "auth_token: \"\"\nbase_endpoint: \"https://srv.example\"\n")
+
+	login, err := NewManager(path)
+	if err != nil {
+		t.Fatalf("NewManager(login): %v", err)
+	}
+	if err := login.SetAuthToken("tok-live"); err != nil {
+		t.Fatalf("SetAuthToken: %v", err)
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if server.Config().AuthToken == "tok-live" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("server manager did not observe token written by login manager; got %q", server.Config().AuthToken)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// TestManagerSyntaxErrorPreservesConfig verifies the guard rail for the
+// "assuming no syntax errors" contract: a malformed edit must NOT clobber the
+// running in-memory config (the file source returns before touching the manager
+// on a parse error) and must not crash the manager. The last-good state stays
+// authoritative until a valid edit lands.
+func TestManagerSyntaxErrorPreservesConfig(t *testing.T) {
+	m, path := newTestManager(t, "base_endpoint: \"https://good.example\"\nauth_token: \"\"\nsecure: true\n")
+
+	// First land a valid change so we know the watcher is live and working.
+	writeConfig(t, path, "base_endpoint: \"https://good2.example\"\nauth_token: \"\"\nsecure: true\n")
+	if !awaitEndpoint(m, "https://good2.example", 5*time.Second) {
+		t.Fatalf("precondition: watcher did not pick up good2; %q", m.Config().GetBaseEndpoint())
+	}
+
+	// Now write BROKEN YAML. The last-good state (good2) must be preserved.
+	writeConfig(t, path, "base_endpoint: [unclosed\nauth_token: \"\"\n")
+
+	// Give the watcher time to (attempt to) process the bad file.
+	time.Sleep(500 * time.Millisecond)
+
+	if got := m.Config().GetBaseEndpoint(); got != "https://good2.example" {
+		t.Fatalf("syntax error clobbered config: got %q, want https://good2.example", got)
+	}
+}
+
+// TestManagerConfigReflectsLiveManagersAcrossInstances verifies that two
+// managers over the same file converge through the shared on-disk state: a
+// write via one is seen by the other through the watcher, and reads always
+// reflect the latest rewritten file (never a stale in-memory copy).
+func TestManagerConfigReflectsLiveManagersAcrossInstances(t *testing.T) {
+	m1, path := newTestManager(t, "base_endpoint: \"https://one.example\"\nauth_token: \"\"\n")
+	m2, err := NewManager(path)
+	if err != nil {
+		t.Fatalf("NewManager(m2): %v", err)
+	}
+	if err := m2.Load(); err != nil {
+		t.Fatalf("Load(m2): %v", err)
+	}
+
+	// m2 rewrites the file; m1 (the long-lived watcher) must converge.
+	if err := m2.SetBaseEndpoint("https://two.example"); err != nil {
+		t.Fatalf("SetBaseEndpoint: %v", err)
+	}
+	if !awaitEndpoint(m1, "https://two.example", 5*time.Second) {
+		t.Fatalf("m1 did not converge to m2's write; %q", m1.Config().GetBaseEndpoint())
+	}
+}

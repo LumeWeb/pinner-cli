@@ -59,13 +59,15 @@ func newAuthenticatedWebsitesService(cfgMgr config.Manager, output Output, authT
 }
 
 // NewWebsitesService creates a new WebsitesService instance.
+// It must NOT copy cfgMgr.Config().AuthToken into ipfsServiceBase.authToken:
+// leaving authToken empty lets getAuthToken() read config live at request time,
+// so a long-lived service (e.g. the MCP server) live-reloads a `pinner login`
+// that rewrites the on-disk token. Explicit WithWebsitesAuthToken overrides still
+// pin a token and take precedence.
 func NewWebsitesService(cfgMgr config.Manager, output Output, apiEndpoint string, opts ...WebsitesServiceOption) WebsitesService {
-	authToken := cfgMgr.Config().AuthToken
-
 	s := &websitesService{
 		ipfsServiceBase: ipfsServiceBase{
-			cfgMgr:    cfgMgr,
-			authToken: authToken,
+			cfgMgr: cfgMgr,
 		},
 	}
 	for _, opt := range opts {
@@ -81,9 +83,35 @@ func NewWebsitesService(cfgMgr config.Manager, output Output, apiEndpoint string
 			s.service = nil
 			return s
 		}
+		s.client = client
 		s.service = client.Websites()
 	}
 	return s
+}
+
+// SetAuthToken hot-updates the auth token on the retained *ipfs.Client and
+// re-fetches the sub-service so a running service reflects a config token
+// change without being reconstructed. No-op when no client is retained.
+// The write lock serializes this (config-watcher goroutine) with request reads.
+func (s *websitesService) SetAuthToken(token string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.client != nil {
+		if err := s.client.SetAuthToken(token); err == nil {
+			s.service = s.client.Websites()
+		}
+	}
+}
+
+// requireService returns the current sub-service under the read lock, so the
+// config-watcher goroutine (SetAuthToken) cannot swap s.service mid-request.
+func (s *websitesService) requireService() (ipfs.WebsitesService, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.service == nil {
+		return nil, ErrServiceUnavailable
+	}
+	return s.service, nil
 }
 
 // List retrieves all websites for the authenticated user.
@@ -91,10 +119,11 @@ func (s *websitesService) List(ctx context.Context) ([]ipfs.WebsiteItem, error) 
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
+	svc, err := s.requireService()
+	if err != nil {
+		return nil, err
 	}
-	return s.service.List(ctx)
+	return svc.List(ctx)
 }
 
 // Create creates a new website.
@@ -102,10 +131,11 @@ func (s *websitesService) Create(ctx context.Context, domain, targetHash, target
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
+	svc, err := s.requireService()
+	if err != nil {
+		return nil, err
 	}
-	response, err := s.service.Create(ctx, domain, targetHash, targetType)
+	response, err := svc.Create(ctx, domain, targetHash, targetType)
 	if err != nil {
 		return nil, err
 	}
@@ -117,10 +147,11 @@ func (s *websitesService) CreateWithOptions(ctx context.Context, req ipfs.Websit
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
+	svc, err := s.requireService()
+	if err != nil {
+		return nil, err
 	}
-	response, err := s.service.CreateWithOptions(ctx, req)
+	response, err := svc.CreateWithOptions(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -135,10 +166,11 @@ func (s *websitesService) Get(ctx context.Context, id string) (*ipfs.WebsiteItem
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
+	svc, err := s.requireService()
+	if err != nil {
+		return nil, err
 	}
-	response, err := s.service.Get(ctx, id)
+	response, err := svc.Get(ctx, id)
 	if err != nil {
 		if errors.Is(err, ipfs.ErrGone) && response != nil {
 			return (*ipfs.WebsiteItem)(response), err
@@ -153,10 +185,11 @@ func (s *websitesService) Update(ctx context.Context, id, domain, targetHash, ta
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
+	svc, err := s.requireService()
+	if err != nil {
+		return nil, err
 	}
-	response, err := s.service.Update(ctx, id, domain, targetHash, targetType)
+	response, err := svc.Update(ctx, id, domain, targetHash, targetType)
 	if err != nil {
 		return nil, err
 	}
@@ -168,10 +201,11 @@ func (s *websitesService) UpdateWithOptions(ctx context.Context, id string, req 
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
+	svc, err := s.requireService()
+	if err != nil {
+		return nil, err
 	}
-	response, err := s.service.UpdateWithOptions(ctx, id, req)
+	response, err := svc.UpdateWithOptions(ctx, id, req)
 	if err != nil {
 		return nil, err
 	}
@@ -183,10 +217,11 @@ func (s *websitesService) Delete(ctx context.Context, id string) error {
 	if err := s.RequireAuthenticated(); err != nil {
 		return err
 	}
-	if s.service == nil {
-		return ErrServiceUnavailable
+	svc, err := s.requireService()
+	if err != nil {
+		return err
 	}
-	return s.service.Delete(ctx, id)
+	return svc.Delete(ctx, id)
 }
 
 // Validate validates a website.
@@ -194,10 +229,11 @@ func (s *websitesService) Validate(ctx context.Context, id string) (*ipfs.Websit
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
+	svc, err := s.requireService()
+	if err != nil {
+		return nil, err
 	}
-	return s.service.ValidateDNS(ctx, id)
+	return svc.ValidateDNS(ctx, id)
 }
 
 // GetSSLStatus retrieves SSL certificate status for a website domain.
@@ -205,10 +241,11 @@ func (s *websitesService) GetSSLStatus(ctx context.Context, domain string) (*ipf
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
+	svc, err := s.requireService()
+	if err != nil {
+		return nil, err
 	}
-	return s.service.GetSSLStatus(ctx, domain)
+	return svc.GetSSLStatus(ctx, domain)
 }
 
 // GetConfig retrieves the website hosting configuration including the gateway domain.
@@ -216,10 +253,11 @@ func (s *websitesService) GetConfig(ctx context.Context) (*ipfs.WebsiteConfigRes
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
+	svc, err := s.requireService()
+	if err != nil {
+		return nil, err
 	}
-	return s.service.GetConfig(ctx)
+	return svc.GetConfig(ctx)
 }
 
 // ListDomains lists all domains bound to a website.
@@ -227,10 +265,11 @@ func (s *websitesService) ListDomains(ctx context.Context, websiteID string) ([]
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
+	svc, err := s.requireService()
+	if err != nil {
+		return nil, err
 	}
-	return s.service.ListDomains(ctx, websiteID)
+	return svc.ListDomains(ctx, websiteID)
 }
 
 // BindDomain binds a domain to a website under a specific namespace (icann or hns).
@@ -238,10 +277,11 @@ func (s *websitesService) BindDomain(ctx context.Context, websiteID string, req 
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
+	svc, err := s.requireService()
+	if err != nil {
+		return nil, err
 	}
-	return s.service.BindDomain(ctx, websiteID, req)
+	return svc.BindDomain(ctx, websiteID, req)
 }
 
 // UnbindDomain removes a domain binding from a website.
@@ -249,10 +289,11 @@ func (s *websitesService) UnbindDomain(ctx context.Context, websiteID string, do
 	if err := s.RequireAuthenticated(); err != nil {
 		return err
 	}
-	if s.service == nil {
-		return ErrServiceUnavailable
+	svc, err := s.requireService()
+	if err != nil {
+		return err
 	}
-	return s.service.UnbindDomain(ctx, websiteID, domainID)
+	return svc.UnbindDomain(ctx, websiteID, domainID)
 }
 
 // VerifyDomain triggers verification of domain delegation.
@@ -260,10 +301,11 @@ func (s *websitesService) VerifyDomain(ctx context.Context, websiteID string, do
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
+	svc, err := s.requireService()
+	if err != nil {
+		return nil, err
 	}
-	return s.service.VerifyDomain(ctx, websiteID, domainID)
+	return svc.VerifyDomain(ctx, websiteID, domainID)
 }
 
 // GetDomainDNSRequirements returns the DNS records (DS/NS/GLUE/TLSA parent +
@@ -272,10 +314,11 @@ func (s *websitesService) GetDomainDNSRequirements(ctx context.Context, websiteI
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
+	svc, err := s.requireService()
+	if err != nil {
+		return nil, err
 	}
-	return s.service.GetDomainDNSRequirements(ctx, websiteID, domainID)
+	return svc.GetDomainDNSRequirements(ctx, websiteID, domainID)
 }
 
 // RepublishDANE forces re-publication of a bound domain's DANE records (the
@@ -286,10 +329,11 @@ func (s *websitesService) RepublishDANE(ctx context.Context, websiteID string, d
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
+	svc, err := s.requireService()
+	if err != nil {
+		return nil, err
 	}
-	return s.service.RepublishDANE(ctx, websiteID, domainID)
+	return svc.RepublishDANE(ctx, websiteID, domainID)
 }
 
 // UpdateDomain updates a bound domain's per-domain DNS control - whether the
@@ -299,8 +343,9 @@ func (s *websitesService) UpdateDomain(ctx context.Context, websiteID string, do
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
+	svc, err := s.requireService()
+	if err != nil {
+		return nil, err
 	}
-	return s.service.UpdateDomain(ctx, websiteID, domainID, req)
+	return svc.UpdateDomain(ctx, websiteID, domainID, req)
 }

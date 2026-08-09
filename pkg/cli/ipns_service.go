@@ -10,6 +10,9 @@ import (
 )
 
 type IPNSService interface {
+	// SetAuthToken hot-updates the auth token on a running service without
+	// reconstructing it (used by long-lived consumers on config live-reload).
+	SetAuthToken(token string)
 	ListKeys(ctx context.Context) ([]ipfs.IPNSKeyResponse, error)
 	CreateKey(ctx context.Context, name string, key *string) (*ipfs.IPNSKeyResponse, error)
 	GetKey(ctx context.Context, id string) (*ipfs.IPNSKeyResponse, error)
@@ -68,12 +71,9 @@ func newAuthenticatedIPNSService(cfgMgr config.Manager, output Output, authToken
 }
 
 func NewIPNSService(cfgMgr config.Manager, output Output, apiEndpoint string, opts ...IPNSServiceOption) IPNSService {
-	authToken := cfgMgr.Config().AuthToken
-
 	s := &ipnsService{
 		ipfsServiceBase: ipfsServiceBase{
-			cfgMgr:    cfgMgr,
-			authToken: authToken,
+			cfgMgr: cfgMgr,
 		},
 	}
 	for _, opt := range opts {
@@ -89,100 +89,139 @@ func NewIPNSService(cfgMgr config.Manager, output Output, apiEndpoint string, op
 			s.service = nil
 			return s
 		}
+		s.client = client
 		s.service = client.IPNS()
 	}
 	return s
+}
+
+// SetAuthToken hot-updates the auth token on the retained *ipfs.Client and
+// re-fetches the sub-service. No-op when no client is retained.
+// The write lock serializes this (config-watcher goroutine) with request reads.
+func (s *ipnsService) SetAuthToken(token string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.client != nil {
+		if err := s.client.SetAuthToken(token); err == nil {
+			s.service = s.client.IPNS()
+		}
+	}
+}
+
+// requireService returns the current sub-service under the read lock, so the
+// config-watcher goroutine (SetAuthToken) cannot swap s.service mid-request.
+func (s *ipnsService) requireService() (ipfs.IPNSService, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.service == nil {
+		return nil, ErrServiceUnavailable
+	}
+	return s.service, nil
 }
 
 func (s *ipnsService) ListKeys(ctx context.Context) ([]ipfs.IPNSKeyResponse, error) {
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
+	svc, err := s.requireService()
+	if err != nil {
+		return nil, err
 	}
-	return s.service.ListKeys(ctx)
+	return svc.ListKeys(ctx)
 }
 
 func (s *ipnsService) CreateKey(ctx context.Context, name string, key *string) (*ipfs.IPNSKeyResponse, error) {
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
+	svc, err := s.requireService()
+	if err != nil {
+		return nil, err
 	}
 	if key != nil {
-		return s.service.CreateKey(ctx, name, ipfs.WithIPNSKey(*key))
+		return svc.CreateKey(ctx, name, ipfs.WithIPNSKey(*key))
 	}
-	return s.service.CreateKey(ctx, name)
+	return svc.CreateKey(ctx, name)
 }
 
 func (s *ipnsService) GetKey(ctx context.Context, id string) (*ipfs.IPNSKeyResponse, error) {
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
+	svc, err := s.requireService()
+	if err != nil {
+		return nil, err
 	}
-	return s.service.GetKey(ctx, id)
+	return svc.GetKey(ctx, id)
 }
 
 func (s *ipnsService) DeleteKey(ctx context.Context, id string) error {
 	if err := s.RequireAuthenticated(); err != nil {
 		return err
 	}
-	if s.service == nil {
-		return ErrServiceUnavailable
+	svc, err := s.requireService()
+	if err != nil {
+		return err
 	}
-	return s.service.DeleteKey(ctx, id)
+	return svc.DeleteKey(ctx, id)
 }
 
 func (s *ipnsService) Publish(ctx context.Context, cid string, keyName string, ttl *string) (*ipfs.IPNSPublishResponse, error) {
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
+	svc, err := s.requireService()
+	if err != nil {
+		return nil, err
 	}
 
-	keyID, err := resolveIPNSKeyID(ctx, s, keyName)
+	keyID, err := resolveIPNSKeyID(ctx, svc, keyName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve key %q: %w", keyName, err)
 	}
 
 	if ttl != nil {
-		return s.service.Publish(ctx, keyID, cid, ipfs.WithTTL(*ttl))
+		return svc.Publish(ctx, keyID, cid, ipfs.WithTTL(*ttl))
 	}
-	return s.service.Publish(ctx, keyID, cid)
+	return svc.Publish(ctx, keyID, cid)
 }
 
 func (s *ipnsService) Republish(ctx context.Context, keyName string) (*ipfs.IPNSRepublishResponse, error) {
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
+	svc, err := s.requireService()
+	if err != nil {
+		return nil, err
 	}
 
-	keyID, err := resolveIPNSKeyID(ctx, s, keyName)
+	keyID, err := resolveIPNSKeyID(ctx, svc, keyName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve key %q: %w", keyName, err)
 	}
 
-	return s.service.Republish(ctx, strconv.Itoa(keyID))
+	return svc.Republish(ctx, strconv.Itoa(keyID))
 }
 
 func (s *ipnsService) Resolve(ctx context.Context, name string) (*ipfs.IPNSResolveResponse, error) {
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
+	svc, err := s.requireService()
+	if err != nil {
+		return nil, err
 	}
-	return s.service.Resolve(ctx, name)
+	return svc.Resolve(ctx, name)
 }
 
-func resolveIPNSKeyID(ctx context.Context, svc IPNSService, arg string) (int, error) {
+// keyLister is the minimal surface resolveIPNSKeyID needs; accepting it instead
+// of the full service avoids re-entrant locking when called from Publish/Republish
+// (which already hold the service read lock).
+type keyLister interface {
+	ListKeys(ctx context.Context) ([]ipfs.IPNSKeyResponse, error)
+}
+
+func resolveIPNSKeyID(ctx context.Context, svc keyLister, arg string) (int, error) {
 	if id, err := strconv.Atoi(arg); err == nil {
 		return id, nil
 	}
