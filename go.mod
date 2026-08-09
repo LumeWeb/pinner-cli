@@ -19,7 +19,7 @@ require (
 	github.com/looplab/fsm v1.0.3
 	github.com/manifoldco/promptui v0.9.0
 	github.com/mattn/go-isatty v0.0.23
-	github.com/modelcontextprotocol/go-sdk v1.4.1
+	github.com/modelcontextprotocol/go-sdk v1.7.0
 	github.com/multiformats/go-multiaddr v0.16.1
 	github.com/openai/tunnel-client v0.0.12-dev.0.20260807232812-7136b51d2f54
 	github.com/pressly/goose/v3 v3.27.3
@@ -88,7 +88,7 @@ require (
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/gopacket v1.1.19 // indirect
-	github.com/google/jsonschema-go v0.4.2 // indirect
+	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/google/pprof v0.0.0-20250317173921-a4b03ec1a45e // indirect
 	github.com/gookit/color v1.6.0 // indirect
 	github.com/grafana/regexp v0.0.0-20240518133315-a468a5bfb3bc // indirect
