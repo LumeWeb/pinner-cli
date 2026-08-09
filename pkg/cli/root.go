@@ -2,10 +2,14 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"os"
 
 	"github.com/urfave/cli/v3"
+	contentfs "go.lumeweb.com/ipfs-content/fs"
 	"go.lumeweb.com/pinner-cli/build"
+	"go.lumeweb.com/pinner-cli/pkg/cli/vault"
 	mcpadapter "go.lumeweb.com/pinner-cli/pkg/internal/mcp"
 )
 
@@ -91,6 +95,13 @@ For more help on any command: pinner <command> --help`,
 
 	// Register the MCP server command with a reference to root for in-process tool execution.
 	var resourceFactory mcpadapter.ResourceProvidersFactory
+	// uploadHandler is the single vendor-agnostic stream→upload executor shared
+	// by every file-input tool (ChatGPT file object, URL relay, draft data: URI,
+	// async). Only the byte source differs; the authenticated upload contract is
+	// the same. It is also assigned to the vendor-typed ChatGPT handler (a type
+	// alias of UploadHandler) that the vendored pinner_upload_file tool needs.
+	var uploadHandler mcpadapter.UploadHandler
+	var chatGPTVaultPut mcpadapter.ChatGPTVaultPutHandler
 	root.Commands = append(root.Commands, mcpadapter.MCPCommand(root,
 		func() (mcpadapter.WebsitesWizardDeps, mcpadapter.SetupWizardDeps, mcpadapter.DomainWizardDeps, error) {
 			cfgMgr, err := configManagerFactory()
@@ -114,6 +125,42 @@ For more help on any command: pinner <command> --help`,
 			}
 			websitesSvc := websitesServiceFactory(cfgMgr, output, secure, svcOpts...)
 			authSvc := defaultAuthServiceFactory(cfgMgr, output, cfgMgr.Config().BaseEndpoint)
+			uploadSvc := defaultUploadServiceFactory(cfgMgr, output, WithUploadAuthService(authSvc))
+			uploadHandler = func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
+				if name == "" {
+					name = "upload"
+				}
+				file, err := os.CreateTemp("", "pinner-mcp-upload-*")
+				if err != nil {
+					return nil, err
+				}
+				path := file.Name()
+				defer os.Remove(path)
+				defer file.Close()
+				if _, err := io.Copy(file, reader); err != nil {
+					return nil, err
+				}
+				if _, err := file.Seek(0, io.SeekStart); err != nil {
+					return nil, err
+				}
+				result, err := uploadSvc.Upload(ctx, contentfs.NewSingleFileFS(file, name), name, wait)
+				if err != nil {
+					return nil, err
+				}
+				return result, nil
+			}
+			chatGPTVaultPut = func(ctx context.Context, reader io.Reader, size int64, path string) (any, error) {
+				profile, err := vault.ResolveProfile("")
+				if err != nil {
+					return nil, err
+				}
+				vaultSvc, err := newVaultService(profile)
+				if err != nil {
+					return nil, err
+				}
+				defer vaultSvc.Close()
+				return vaultSvc.Put(ctx, reader, size, path, nil)
+			}
 
 			// Wire the resource factory with the services we just built.
 			// Capture cfgMgr (not a config snapshot) so resource reads see latest state.
@@ -157,6 +204,42 @@ For more help on any command: pinner <command> --help`,
 			return mcpadapter.ResourceProviders{Sessions: store}
 		},
 		mcpadapter.WithPrompts(),
+		mcpadapter.WithChatGPTUpload(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
+			if uploadHandler == nil {
+				return nil, fmt.Errorf("ChatGPT upload dependencies are not initialized")
+			}
+			return uploadHandler(ctx, reader, size, name, wait)
+		}),
+		mcpadapter.WithChatGPTVaultPut(func(ctx context.Context, reader io.Reader, size int64, path string) (any, error) {
+			if chatGPTVaultPut == nil {
+				return nil, fmt.Errorf("ChatGPT vault dependencies are not initialized")
+			}
+			return chatGPTVaultPut(ctx, reader, size, path)
+		}),
+		mcpadapter.WithUploadTaskManager(mcpadapter.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
+			if uploadHandler == nil {
+				return nil, fmt.Errorf("ChatGPT upload dependencies are not initialized")
+			}
+			return uploadHandler(ctx, reader, size, name, wait)
+		}, 0)),
+		// pinner_upload_url: vendor-agnostic relay fetch of a caller-supplied
+		// public HTTPS URL. The no-allowlist default permits any public HTTPS
+		// host (the tool's documented contract for remote HTTP clients); the
+		// SSRF guard in the relay's default transport is the hard boundary and
+		// always blocks private/link-local IPs. Operators can restrict further
+		// by passing an explicit allowlist here.
+		mcpadapter.WithRelayURLUpload(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
+			if uploadHandler == nil {
+				return nil, fmt.Errorf("upload dependencies are not initialized")
+			}
+			return uploadHandler(ctx, reader, size, name, wait)
+		}, nil),
+		mcpadapter.WithDataURIUpload(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
+			if uploadHandler == nil {
+				return nil, fmt.Errorf("upload dependencies are not initialized")
+			}
+			return uploadHandler(ctx, reader, size, name, wait)
+		}),
 	))
 
 	return root

@@ -16,6 +16,7 @@ func TestCuratedToolAllowlist(t *testing.T) {
 	}
 	require.True(t, IsCuratedTool("pinner_auth_status"))
 	require.True(t, IsCuratedTool("pinner_auth_logout"))
+	require.True(t, IsCuratedTool("pinner_vault_cat"))
 }
 
 func TestRegisterOfficialCuratedToolsFiltersCatalog(t *testing.T) {

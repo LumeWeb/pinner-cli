@@ -1,0 +1,25 @@
+package mcp
+
+import (
+	"context"
+	"io"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
+
+func TestRelayURLUploadDescriptorRequiresURL(t *testing.T) {
+	desc := RelayURLUploadDescriptor(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
+		return nil, nil
+	}, nil)
+	_, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{}})
+	require.ErrorContains(t, err, "url is required")
+}
+
+func TestRelayURLUploadDescriptorRejectsNonHTTPS(t *testing.T) {
+	desc := RelayURLUploadDescriptor(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
+		return nil, nil
+	}, nil)
+	_, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{"url": "http://example.com/x"}})
+	require.ErrorContains(t, err, "HTTPS")
+}

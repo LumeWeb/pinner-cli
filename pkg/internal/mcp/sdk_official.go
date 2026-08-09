@@ -130,6 +130,7 @@ func officialTool(desc ToolDescriptor) *mcp.Tool {
 		Description: desc.Description,
 		Title:       desc.Title,
 		InputSchema: json.RawMessage(desc.InputSchema),
+		Meta:        desc.Meta,
 	}
 	if desc.ReadOnly || desc.Destructive || desc.Title != "" {
 		tool.Annotations = &mcp.ToolAnnotations{
@@ -218,6 +219,23 @@ func (s *metaToolSchema) raw() json.RawMessage {
 	return out
 }
 
+// searchToolsInput is the typed argument shape for search_tools.
+type searchToolsInput struct {
+	Query    string `json:"query,omitempty" jsonschema:"description=Keywords to search for in tool names and descriptions."`
+	Category string `json:"category,omitempty" jsonschema:"description=Filter by category: core, admin, or wizard."`
+}
+
+// describeToolInput is the typed argument shape for describe_tool.
+type describeToolInput struct {
+	Name string `json:"name" jsonschema:"description=Tool name from search_tools result."`
+}
+
+// invokeToolInput is the typed argument shape for invoke_tool.
+type invokeToolInput struct {
+	Name      string         `json:"name" jsonschema:"description=Tool name from search_tools result."`
+	Arguments map[string]any `json:"arguments,omitempty" jsonschema:"description=Arguments object matching the tool's inputSchema."`
+}
+
 func registerOfficialSearchTools(srv *mcp.Server, catalog *ToolCatalog) error {
 	schema := &metaToolSchema{}
 	schema.property("query", map[string]any{
@@ -236,9 +254,11 @@ func registerOfficialSearchTools(srv *mcp.Server, catalog *ToolCatalog) error {
 	}
 
 	handler := PinnerToolHandler(func(_ context.Context, request ToolRequest) (ToolResult, error) {
-		query, _ := request.Arguments["query"].(string)
-		category, _ := request.Arguments["category"].(string)
-		summaries := catalog.Search(query, category)
+		in, err := decodeToolArgs[searchToolsInput](request)
+		if err != nil {
+			return ToolResult{}, err
+		}
+		summaries := catalog.Search(in.Query, in.Category)
 		data, err := json.Marshal(map[string]any{"tools": summaries, "total": len(summaries)})
 		if err != nil {
 			return ToolResult{}, err
@@ -264,11 +284,14 @@ func registerOfficialDescribeTool(srv *mcp.Server, catalog *ToolCatalog) error {
 	}
 
 	handler := PinnerToolHandler(func(_ context.Context, request ToolRequest) (ToolResult, error) {
-		name, _ := request.Arguments["name"].(string)
-		if name == "" {
+		in, err := decodeToolArgs[describeToolInput](request)
+		if err != nil {
+			return ToolResult{IsError: true, Text: err.Error()}, nil
+		}
+		if in.Name == "" {
 			return ToolResult{IsError: true, Text: "name is required"}, nil
 		}
-		detail, err := catalog.Describe(name)
+		detail, err := catalog.Describe(in.Name)
 		if err != nil {
 			return ToolResult{IsError: true, Text: err.Error()}, nil
 		}
@@ -301,19 +324,22 @@ func registerOfficialInvokeTool(srv *mcp.Server, catalog *ToolCatalog) error {
 	}
 
 	handler := PinnerToolHandler(func(ctx context.Context, request ToolRequest) (ToolResult, error) {
-		name, _ := request.Arguments["name"].(string)
-		if name == "" {
+		in, err := decodeToolArgs[invokeToolInput](request)
+		if err != nil {
+			return ToolResult{IsError: true, Text: err.Error()}, nil
+		}
+		if in.Name == "" {
 			return ToolResult{IsError: true, Text: "name is required"}, nil
 		}
-		toolArgs, _ := request.Arguments["arguments"].(map[string]any)
+		toolArgs := in.Arguments
 		if toolArgs == nil {
 			toolArgs = map[string]any{}
 		}
-		entry, ok := catalog.Get(name)
+		entry, ok := catalog.Get(in.Name)
 		if !ok {
-			return ToolResult{IsError: true, Text: fmt.Sprintf("unknown tool: %s", name)}, nil
+			return ToolResult{IsError: true, Text: fmt.Sprintf("unknown tool: %s", in.Name)}, nil
 		}
-		result, err := entry.Handler(ctx, ToolRequest{Name: name, Arguments: toolArgs})
+		result, err := entry.Handler(ctx, ToolRequest{Name: in.Name, Arguments: toolArgs})
 		if err != nil {
 			return ToolResult{IsError: true, Text: err.Error()}, nil
 		}
@@ -333,6 +359,18 @@ func RegisterOfficialToolsFromCatalog(srv *mcp.Server, catalog *ToolCatalog) err
 		return fmt.Errorf("nil tool catalog")
 	}
 	return RegisterOfficialMetaTools(srv, catalog)
+}
+
+// RegisterOfficialDescriptor adds one Pinner-owned tool directly to tools/list.
+func RegisterOfficialDescriptor(srv *mcp.Server, desc ToolDescriptor) error {
+	if srv == nil {
+		return fmt.Errorf("nil official server")
+	}
+	if desc.Name == "" || desc.Handler == nil {
+		return fmt.Errorf("direct tool requires name and handler")
+	}
+	srv.AddTool(officialTool(desc), officialToolHandler(desc.Handler))
+	return nil
 }
 
 // RegisterOfficialCuratedTools exposes only entries selected by allowlist.

@@ -228,6 +228,7 @@ func (s *UploadServiceDefault) Upload(ctx context.Context, filesystem fs.FS, nam
 		CID:      sdkResult.CID,
 		Size:     sdkResult.Size,
 		Duration: duration,
+		Location: sdkResult.Location,
 	}, nil
 }
 

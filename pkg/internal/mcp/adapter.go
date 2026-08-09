@@ -144,6 +144,44 @@ adapter.`,
 					opt(mcpOpts)
 				}
 			}
+			if mcpOpts.chatGPTUpload != nil {
+				if err := RegisterOfficialDescriptor(srv, ChatGPTUploadDescriptor(mcpOpts.chatGPTUpload)); err != nil {
+					return fmt.Errorf("failed to register ChatGPT upload tool: %w", err)
+				}
+			}
+			if mcpOpts.chatGPTVaultPut != nil {
+				if err := RegisterOfficialDescriptor(srv, ChatGPTVaultPutDescriptor(mcpOpts.chatGPTVaultPut)); err != nil {
+					return fmt.Errorf("failed to register ChatGPT vault tool: %w", err)
+				}
+			}
+			if mcpOpts.relayURLUpload != nil {
+				if err := RegisterOfficialDescriptor(srv, RelayURLUploadDescriptor(mcpOpts.relayURLUpload, mcpOpts.relayAllowedHosts)); err != nil {
+					return fmt.Errorf("failed to register relay URL upload tool: %w", err)
+				}
+			}
+			if mcpOpts.dataURIUpload != nil {
+				if err := RegisterOfficialDescriptor(srv, DataURIUploadDescriptor(mcpOpts.dataURIUpload)); err != nil {
+					return fmt.Errorf("failed to register data URI upload tool: %w", err)
+				}
+			}
+			if mcpOpts.uploadTasks != nil {
+				for _, desc := range NewAsyncUploadTools(mcpOpts.uploadTasks) {
+					if err := RegisterOfficialDescriptor(srv, desc); err != nil {
+						return fmt.Errorf("failed to register async upload tool: %w", err)
+					}
+				}
+			}
+			// Always expose capability detection so hosts can choose a file-input
+			// mode without assuming draft MCP file support is negotiated. Each
+			// capability reflects whether its handler is actually wired.
+			if err := RegisterOfficialDescriptor(srv, NewCapabilitiesDescriptor(
+				mcpOpts.chatGPTUpload != nil,
+				mcpOpts.chatGPTVaultPut != nil,
+				mcpOpts.relayURLUpload != nil,
+				mcpOpts.dataURIUpload != nil,
+			)); err != nil {
+				return fmt.Errorf("failed to register capabilities tool: %w", err)
+			}
 			if mcpOpts.prompts {
 				if err := RegisterOfficialPrompts(srv, PromptDescriptors()); err != nil {
 					return fmt.Errorf("failed to register prompts: %w", err)
@@ -376,7 +414,13 @@ func tunnelFor(provider, domain, token, name, tunnelID string) (Tunnel, error) {
 // mcpServerOptions carries resolved MCP command configuration.
 type mcpServerOptions struct {
 	// prompts enables registration of the prompt templates.
-	prompts bool
+	prompts           bool
+	chatGPTUpload     ChatGPTUploadHandler
+	chatGPTVaultPut   ChatGPTVaultPutHandler
+	uploadTasks       *UploadTaskManager
+	relayURLUpload    RelayURLUploadHandler
+	relayAllowedHosts []string
+	dataURIUpload     DataURIUploadHandler
 }
 
 // MCPServerOption configures the MCP command served by MCPCommand.
@@ -390,6 +434,46 @@ type ResourceProvidersFactory func(store *SessionStore) ResourceProviders
 func WithPrompts() MCPServerOption {
 	return func(o *mcpServerOptions) {
 		o.prompts = true
+	}
+}
+
+// WithChatGPTUpload registers the direct ChatGPT file-input tool.
+func WithChatGPTUpload(handler ChatGPTUploadHandler) MCPServerOption {
+	return func(o *mcpServerOptions) {
+		o.chatGPTUpload = handler
+	}
+}
+
+// WithChatGPTVaultPut registers the direct ChatGPT vault file-input tool.
+func WithChatGPTVaultPut(handler ChatGPTVaultPutHandler) MCPServerOption {
+	return func(o *mcpServerOptions) {
+		o.chatGPTVaultPut = handler
+	}
+}
+
+// WithUploadTaskManager registers async upload-management tools backed by the
+// given manager. Passing nil disables them.
+func WithUploadTaskManager(mgr *UploadTaskManager) MCPServerOption {
+	return func(o *mcpServerOptions) {
+		o.uploadTasks = mgr
+	}
+}
+
+// WithRelayURLUpload registers the generic relay URL upload tool
+// (pinner_upload_url). allowedHosts restricts which hosts Pinner will fetch;
+// pass nil/empty to allow any HTTPS host (subject to the SSRF dial guard).
+func WithRelayURLUpload(handler RelayURLUploadHandler, allowedHosts []string) MCPServerOption {
+	return func(o *mcpServerOptions) {
+		o.relayURLUpload = handler
+		o.relayAllowedHosts = allowedHosts
+	}
+}
+
+// WithDataURIUpload registers the draft SEP-2356 data: URI upload tool
+// (pinner_upload_data). Passing nil disables it.
+func WithDataURIUpload(handler DataURIUploadHandler) MCPServerOption {
+	return func(o *mcpServerOptions) {
+		o.dataURIUpload = handler
 	}
 }
 
@@ -557,7 +641,7 @@ Less common CLI tools remain available through progressive disclosure:
 2. describe_tool({ "name": "..." }): Get the full input schema for one internal tool.
 3. invoke_tool({ "name": "...", "arguments": { ... } }): Execute one internal tool.
 
-The internal catalog has %d tools. Upload accepts a filesystem path or stdin stream; it does not accept a remote MCP file reference directly. Use a host-side handoff or upload an existing CID through the pin tool.`
+The internal catalog has %d tools. Local path arguments refer to the MCP server host, not the remote agent's filesystem. Upload and vault copy therefore require a host-side file handoff. ChatGPT file attachments can use the directly visible pinner_upload_file tool; Pinner fetches the temporary file URL locally and uses its existing authenticated TUS path. Large uploads use TUS internally; the SDK result includes an upload location for resume/status management. TUS is never anonymous. Vault cat returns bounded base64 JSON in agent mode and never writes raw bytes to the MCP transport.`
 
 // buildInstructions returns the MCP server instructions with the real catalog
 // tool count substituted, so the guidance given to agents stays accurate as

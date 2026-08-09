@@ -30,6 +30,7 @@ type ToolDescriptor struct {
 	ReadOnly    bool
 	Destructive bool
 	InputSchema json.RawMessage
+	Meta        map[string]any
 	Handler     PinnerToolHandler
 }
 

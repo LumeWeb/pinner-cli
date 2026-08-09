@@ -13,6 +13,7 @@ type UploadResult struct {
 	CID      string
 	Size     int64
 	Duration time.Duration
+	Location string
 }
 
 // UploadService defines the interface for uploading content to IPFS.
