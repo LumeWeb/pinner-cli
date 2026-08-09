@@ -1,0 +1,116 @@
+/* Pinner brand theme for MCP out-of-band pages.
+   Palette sourced from web/app/pinner.xyz/src/styles/globals.css (@theme tokens).
+   Keep in sync when the brand changes. Served via go:embed as /assets/brand.css. */
+
+:root {
+  --brand-bg: #0d1d1c;
+  --brand-bg-deep: #051413;
+  --brand-card: #0d2d2a;
+  --brand-text: #f8f8f8;
+  --brand-muted: #bdc2c1;
+  --brand-accent: #abeedb;
+  --brand-teal: #adf0dd;
+  --brand-teal-muted: #75ac9e;
+  --brand-primary: #f3c614;
+  --brand-primary-light: #f7d94c;
+  --brand-border: #1f3a37;
+  --brand-danger: #ff6647;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+
+body {
+  background: radial-gradient(1200px 600px at 70% -10%, var(--brand-card) 0%, var(--brand-bg) 55%, var(--brand-bg-deep) 100%);
+  color: var(--brand-text);
+  font-family: "Poppins", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1rem;
+}
+
+.brand-mark {
+  display: flex;
+  align-items: center;
+  gap: .55rem;
+  margin-bottom: 2rem;
+  text-decoration: none;
+}
+.brand-dot {
+  width: .7rem;
+  height: .7rem;
+  border-radius: 9999px;
+  background: var(--brand-primary);
+  box-shadow: 0 0 0 .25rem rgba(243, 198, 20, .15);
+}
+.brand-name {
+  font-weight: 600;
+  letter-spacing: .02em;
+  font-size: 1.15rem;
+  color: var(--brand-text);
+}
+.brand-name em { color: var(--brand-primary); font-style: normal; }
+
+.card {
+  background: rgba(13, 45, 42, .6);
+  border: 1px solid var(--brand-border);
+  border-radius: .75rem;
+  padding: 2rem;
+  width: 100%;
+  max-width: 26rem;
+  backdrop-filter: blur(4px);
+}
+.card h1 { font-size: 1.35rem; font-weight: 600; margin: 0 0 .5rem; }
+.card p { margin: .25rem 0; color: var(--brand-muted); font-size: .92rem; line-height: 1.5; }
+.card p strong { color: var(--brand-text); font-weight: 500; }
+
+label {
+  display: block;
+  font-size: .8rem;
+  color: var(--brand-muted);
+  margin: 1.1rem 0 .35rem;
+  letter-spacing: .02em;
+}
+input[type=password], input[type=email], input[type=text] {
+  width: 100%;
+  padding: .7rem .85rem;
+  border-radius: .5rem;
+  background: var(--brand-bg-deep);
+  border: 1px solid var(--brand-border);
+  color: var(--brand-text);
+  font: inherit;
+  font-size: .95rem;
+  outline: none;
+}
+input:focus { border-color: var(--brand-primary); }
+
+button {
+  width: 100%;
+  margin-top: 1.4rem;
+  padding: .75rem 1rem;
+  border: 0;
+  border-radius: .5rem;
+  background: var(--brand-primary);
+  color: #111c1b;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s ease;
+}
+button:hover { background: var(--brand-primary-light); }
+button:disabled { opacity: .6; cursor: default; }
+
+.status {
+  padding: .7rem .85rem;
+  border-radius: .5rem;
+  margin-top: 1rem;
+  font-size: .88rem;
+}
+.status.error { background: rgba(255, 102, 71, .12); color: var(--brand-danger); border: 1px solid rgba(255, 102, 71, .3); }
+.status.done { background: rgba(173, 240, 221, .1); color: var(--brand-accent); border: 1px solid rgba(173, 240, 221, .3); }
+
+.foot { color: var(--brand-teal-muted); font-size: .78rem; margin-top: 1.5rem; text-align: center; }
+.foot code { background: var(--brand-bg-deep); padding: .1rem .35rem; border-radius: .3rem; color: var(--brand-muted); }

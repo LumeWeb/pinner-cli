@@ -1,0 +1,21 @@
+package mcp
+
+templ brandLayout(title string) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<title>{ title } · Pinner</title>
+			<link rel="stylesheet" href={ brandCSSURL }/>
+		</head>
+		<body>
+			<a class="brand-mark" href="https://pinner.xyz" target="_blank" rel="noopener">
+				<span class="brand-dot"></span>
+				<span class="brand-name">pin<em>ner</em></span>
+			</a>
+			{ children... }
+			<div class="foot">This server runs tools in-process under your PINNER account.</div>
+		</body>
+	</html>
+}

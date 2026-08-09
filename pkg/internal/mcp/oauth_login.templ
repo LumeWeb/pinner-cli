@@ -1,0 +1,40 @@
+package mcp
+
+// oauthAuthorizeData carries every field needed to render the OAuth
+// authorization page, including hidden form echoes that must round-trip on
+// POST.
+type oauthAuthorizeData struct {
+	Action              string
+	ResponseType        string
+	ClientID            string
+	RedirectURI         string
+	State               string
+	CodeChallenge       string
+	CodeChallengeMethod string
+	Resource            string
+}
+
+templ oauthLoginPage(data oauthAuthorizeData) {
+	@brandLayout("Authorize pinner MCP access") {
+		<div class="card">
+			<h1>Authorize pinner MCP access</h1>
+			<p>
+				Client <strong>{ data.ClientID }</strong> is requesting access to this MCP
+				server, which executes CLI tools in-process. Enter the shared auth secret
+				to authorize.
+			</p>
+			<form method="post" action={ data.Action }>
+				<input type="hidden" name="response_type" value={ data.ResponseType }/>
+				<input type="hidden" name="client_id" value={ data.ClientID }/>
+				<input type="hidden" name="redirect_uri" value={ data.RedirectURI }/>
+				<input type="hidden" name="state" value={ data.State }/>
+				<input type="hidden" name="code_challenge" value={ data.CodeChallenge }/>
+				<input type="hidden" name="code_challenge_method" value={ data.CodeChallengeMethod }/>
+				<input type="hidden" name="resource" value={ data.Resource }/>
+				<label for="password">Auth secret</label>
+				<input type="password" id="password" name="password" required autofocus autocomplete="current-password"/>
+				<button type="submit">Authorize</button>
+			</form>
+		</div>
+	}
+}

@@ -58,6 +58,12 @@ jobs:
       - name: Verify dependencies
         run: go mod verify
 
+      - name: Install templ
+        run: go install github.com/a-h/templ/cmd/templ@v0.3.1020
+
+      - name: Generate templ code
+        run: templ generate
+
       - name: Build
         env:
           GOOS: ${{ matrix.goos }}
@@ -80,6 +86,12 @@ jobs:
 
       - name: Export Go version
         run: echo "GO_VERSION=$(go version | awk '{print $3}' | sed 's/go//')" >> $GITHUB_ENV
+
+      - name: Install templ
+        run: go install github.com/a-h/templ/cmd/templ@v0.3.1020
+
+      - name: Generate templ code
+        run: templ generate
 
       - name: Build snapshot artifacts (goreleaser-cross)
         run: |
@@ -110,6 +122,15 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
+      - name: Install templ
+        run: go install github.com/a-h/templ/cmd/templ@v0.3.1020
+
+      - name: Verify templ formatting and generate
+        run: |
+          templ fmt .
+          git diff --exit-code -- '*.templ' || { echo "templ source files are not formatted: run 'templ fmt .' and commit" >&2; exit 1; }
+          templ generate
+
       - name: Install GoReleaser
         uses: goreleaser/goreleaser-action@v7
         with:
@@ -133,6 +154,12 @@ jobs:
 
       - name: Download dependencies
         run: go mod download
+
+      - name: Install templ
+        run: go install github.com/a-h/templ/cmd/templ@v0.3.1020
+
+      - name: Generate templ code
+        run: templ generate
 
       - name: Test with coverage
         run: go test -v -race -coverprofile=coverage.out -covermode=atomic ./...

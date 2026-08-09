@@ -316,6 +316,10 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command) error
 		mux.HandleFunc("/.well-known/oauth-authorization-server", oauth.asMetadataHandler)
 		mux.HandleFunc("/.well-known/oauth-protected-resource", oauth.protectedResourceHandler("/mcp"))
 	}
+	// Serve the embedded branded static assets (brand.css) referenced by the
+	// OAuth authorization page and the out-of-band login page. staticAssetHandler
+	// strips the /assets/ prefix and sets immutable caching on the hashed asset.
+	mux.Handle("/assets/", staticAssetHandler())
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
 			http.NotFound(w, r)
