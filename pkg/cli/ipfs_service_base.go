@@ -1,11 +1,16 @@
 package cli
 
 import (
+	"sync"
+
 	"go.lumeweb.com/pinner-cli/pkg/config"
 )
 
 // ipfsServiceBase provides the shared auth/config pattern used by DNS, IPNS, and Websites services.
+// The mutex guards the concrete service's s.service / s.client fields so the
+// config-watcher goroutine (SetAuthToken) and request goroutines are serialized.
 type ipfsServiceBase struct {
+	mu        sync.RWMutex
 	cfgMgr    config.Manager
 	authToken string
 }
