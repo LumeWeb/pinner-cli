@@ -206,6 +206,17 @@ func TestPinStatusPollingResilient(t *testing.T) {
 	if !strings.Contains(html, ".catch(") {
 		t.Fatalf("polling must catch transient transport errors via .catch")
 	}
+	// The terminal-status check must run BEFORE the budget-exhaustion check so
+	// a terminal status on the final allowed attempt reports "Pinned." instead
+	// of "Timed out" (order matters; guards the two checks against reordering).
+	termIdx := strings.Index(html, `st === "pinned" || st === "failed" || st === "error"`)
+	budgetIdx := strings.Index(html, "--max <= 0")
+	if termIdx == -1 || budgetIdx == -1 {
+		t.Fatalf("polling missing terminal-status or budget check")
+	}
+	if budgetIdx < termIdx {
+		t.Fatalf("budget check must not precede the terminal-status check")
+	}
 	// The attempt budget decrements on both the success and error paths so a
 	// long run of transient failures cannot loop forever.
 	if !strings.Contains(html, "--max <= 0") && !strings.Contains(html, "--max > 0") {

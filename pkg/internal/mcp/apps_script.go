@@ -61,16 +61,17 @@ function pollStatus(cid, attempts) {
     if (st) {
       $("#out-status").textContent = st;
     }
+    // A terminal status wins even on the final allowed attempt.
+    if (st === "pinned" || st === "failed" || st === "error") {
+      setStatus(st === "pinned" ? "ok" : "info",
+        st === "pinned" ? "Pinned." : "Current status: " + st);
+      return;
+    }
     // Missing status (an IsError result, e.g. ErrPinNotFound right after a pin
     // is scheduled, or a transient failure) is not terminal: keep polling until
     // the attempt budget is exhausted rather than silently stopping the UI.
     if (--max <= 0) {
       setStatus("info", "Timed out polling pin status (last: " + (st || "unknown") + ").");
-      return;
-    }
-    if (st === "pinned" || st === "failed" || st === "error") {
-      setStatus(st === "pinned" ? "ok" : "info",
-        st === "pinned" ? "Pinned." : "Current status: " + st);
       return;
     }
     window.setTimeout(() => pollStatus(cid, max), 1500);
