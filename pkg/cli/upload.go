@@ -237,14 +237,16 @@ func handleUpload(ctx context.Context, cmd interface {
 
 	if result != nil {
 		gatewayURL := cfgMgr.Config().GetGatewayEndpointSecure() + result.CID
-		output.PrintFields(FieldGroup{
-			Fields: []Field{
-				{"CID", result.CID},
-				{"Gateway URL", gatewayURL},
-				{"Size", humanReadableSize(result.Size)},
-				{"Time", result.Duration.Round(time.Millisecond).String()},
-			},
-		})
+		fields := []Field{
+			{"CID", result.CID},
+			{"Gateway URL", gatewayURL},
+			{"Size", humanReadableSize(result.Size)},
+			{"Time", result.Duration.Round(time.Millisecond).String()},
+		}
+		if result.Location != "" {
+			fields = append(fields, Field{"Upload Location", result.Location})
+		}
+		output.PrintFields(FieldGroup{Fields: fields})
 
 		if metaPairs := cmd.StringSlice(FlagMeta); len(metaPairs) > 0 {
 			meta, err := parseMetaPairs(metaPairs)

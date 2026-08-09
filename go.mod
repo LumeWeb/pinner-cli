@@ -31,7 +31,7 @@ require (
 	github.com/yosida95/uritemplate/v3 v3.0.2
 	go.lumeweb.com/configmanager v0.3.26
 	go.lumeweb.com/ipfs-content v0.1.17
-	go.lumeweb.com/ipfs-sdk v0.1.73
+	go.lumeweb.com/ipfs-sdk v0.1.74
 	go.lumeweb.com/ipfs-sdk/dnsname v0.1.64
 	go.lumeweb.com/portal-sdk v0.1.64
 	go.lumeweb.com/queryutil v0.3.18

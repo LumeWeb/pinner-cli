@@ -16,6 +16,7 @@ var curatedToolNames = []string{
 	"pinner_vault_ls",
 	"pinner_vault_cp",
 	"pinner_vault_stat",
+	"pinner_vault_cat",
 	"pinner_websites_list",
 	"pinner_websites_get",
 	"pinner_websites_validate",

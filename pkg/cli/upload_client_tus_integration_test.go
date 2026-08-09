@@ -229,9 +229,11 @@ func TestUploadServiceDefault_Upload_TUS_Integration(t *testing.T) {
 		require.NoError(t, err)
 		defer func() { _ = f.Close() }()
 		filesystem := contentfs.NewSingleFileFS(f, "test.txt")
-		cid, err := ts.service.Upload(context.Background(), filesystem, "test.txt", false)
+		result, err := ts.service.Upload(context.Background(), filesystem, "test.txt", false)
 
 		require.NoError(t, err)
-		assert.NotEmpty(t, cid)
+		assert.NotEmpty(t, result)
+		assert.NotEmpty(t, result.CID)
+		assert.NotEmpty(t, result.Location)
 	})
 }
