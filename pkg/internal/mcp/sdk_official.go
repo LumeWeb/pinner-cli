@@ -176,6 +176,17 @@ func officialToolResult(result ToolResult) *mcp.CallToolResult {
 	}
 }
 
+// registerTool is the single registration seam for Pinner-owned tools. It
+// applies the handler adaptation (officialToolHandler) in one place, so
+// callers no longer hand-roll srv.AddTool(tool, officialToolHandler(handler)).
+func registerTool(srv *mcp.Server, tool *mcp.Tool, handler PinnerToolHandler) error {
+	if srv == nil {
+		return fmt.Errorf("nil official server")
+	}
+	srv.AddTool(tool, officialToolHandler(handler))
+	return nil
+}
+
 // RegisterOfficialMetaTools registers the three progressive-disclosure
 // meta-tools (search_tools, describe_tool, invoke_tool) on an official-SDK
 // server. The catalog itself stays hidden; the only tools visible via
@@ -266,8 +277,7 @@ func registerOfficialSearchTools(srv *mcp.Server, catalog *ToolCatalog) error {
 		return ToolResult{Text: string(data)}, nil
 	})
 
-	srv.AddTool(tool, officialToolHandler(handler))
-	return nil
+	return registerTool(srv, tool, handler)
 }
 
 func registerOfficialDescribeTool(srv *mcp.Server, catalog *ToolCatalog) error {
@@ -302,8 +312,7 @@ func registerOfficialDescribeTool(srv *mcp.Server, catalog *ToolCatalog) error {
 		return ToolResult{Text: string(data)}, nil
 	})
 
-	srv.AddTool(tool, officialToolHandler(handler))
-	return nil
+	return registerTool(srv, tool, handler)
 }
 
 func registerOfficialInvokeTool(srv *mcp.Server, catalog *ToolCatalog) error {
@@ -346,8 +355,7 @@ func registerOfficialInvokeTool(srv *mcp.Server, catalog *ToolCatalog) error {
 		return result, nil
 	})
 
-	srv.AddTool(tool, officialToolHandler(handler))
-	return nil
+	return registerTool(srv, tool, handler)
 }
 
 // RegisterOfficialToolsFromCatalog registers every catalog entry as an
@@ -369,8 +377,7 @@ func RegisterOfficialDescriptor(srv *mcp.Server, desc ToolDescriptor) error {
 	if desc.Name == "" || desc.Handler == nil {
 		return fmt.Errorf("direct tool requires name and handler")
 	}
-	srv.AddTool(officialTool(desc), officialToolHandler(desc.Handler))
-	return nil
+	return registerTool(srv, officialTool(desc), desc.Handler)
 }
 
 // RegisterOfficialCuratedTools exposes only entries selected by allowlist.
@@ -386,7 +393,9 @@ func RegisterOfficialCuratedTools(srv *mcp.Server, catalog *ToolCatalog, allowed
 		if !allowed(entry.Name) {
 			continue
 		}
-		srv.AddTool(officialTool(toolDescriptor(entry)), officialToolHandler(entry.Handler))
+		if err := registerTool(srv, officialTool(toolDescriptor(entry)), entry.Handler); err != nil {
+			return err
+		}
 	}
 	return nil
 }
