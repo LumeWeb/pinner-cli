@@ -7,13 +7,37 @@ import (
 	"time"
 )
 
-// writeConfig writes cfg to path with permissive timing-safe error handling.
+// writeConfig writes cfg to path atomically (temp file + rename), mirroring how
+// configmanager persists config (`pinner login`, SetAuthToken). Atomic replace
+// produces a single filesystem Create event on the target path that koanf/fsnotify
+// reliably delivers; in-place truncate+write is timing-sensitive on slow CI
+// runners and has occasionally caused a flaky live-reload test.
 func writeConfig(t *testing.T, path, content string) {
 	t.Helper()
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write config %s: %v", path, err)
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, ".config_tmp_*.yaml")
+	if err != nil {
+		t.Fatalf("create temp config in %s: %v", dir, err)
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.WriteString(content); err != nil {
+		tmp.Close()
+		t.Fatalf("write temp config: %v", err)
+	}
+	if err := tmp.Close(); err != nil {
+		t.Fatalf("close temp config: %v", err)
+	}
+	if err := os.Rename(tmp.Name(), path); err != nil {
+		t.Fatalf("rename temp over %s: %v", path, err)
 	}
 }
+
+// liveReloadAwaitTimeout bounds how long a watcher-driven reload may take to
+// observe an externally-written config. The poll loop itself is deterministic
+// (it returns the instant the value matches); the timeout is only a fail-fast
+// upper bound, so a generous value (15s) absorbs fsnotify + goroutine-scheduling
+// latency on slow/loaded CI runners without weakening the live-reload assertion.
+const liveReloadAwaitTimeout = 15 * time.Second
 
 // awaitEndpoint polls m.Config().GetBaseEndpoint() until it equals want or the
 // deadline passes, returning true on success. This is the deterministic way to
@@ -65,7 +89,7 @@ func TestManagerLiveReloadOnFileChange(t *testing.T) {
 	// the file with a new token and endpoint.
 	writeConfig(t, path, "base_endpoint: \"https://after.example\"\nauth_token: \"tok-after\"\nsecure: true\n")
 
-	if !awaitEndpoint(m, "https://after.example", 5*time.Second) {
+	if !awaitEndpoint(m, "https://after.example", liveReloadAwaitTimeout) {
 		t.Fatalf("live reload did not pick up new endpoint; still %q", m.Config().GetBaseEndpoint())
 	}
 	if got := m.Config().AuthToken; got != "tok-after" {
