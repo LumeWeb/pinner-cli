@@ -5,6 +5,7 @@ go 1.26.2
 require (
 	github.com/LumeWeb/cli-docs v0.0.0-20260613190900-4a7a99d4f66c
 	github.com/Oudwins/zog v0.22.0
+	github.com/a-h/templ v0.3.1020
 	github.com/avast/retry-go/v4 v4.7.0
 	github.com/docker/go-units v0.5.0
 	github.com/gammazero/workerpool v1.2.1
@@ -31,9 +32,9 @@ require (
 	github.com/yosida95/uritemplate/v3 v3.0.2
 	go.lumeweb.com/configmanager v0.3.26
 	go.lumeweb.com/ipfs-content v0.1.17
-	go.lumeweb.com/ipfs-sdk v0.1.74
+	go.lumeweb.com/ipfs-sdk v0.1.75
 	go.lumeweb.com/ipfs-sdk/dnsname v0.1.64
-	go.lumeweb.com/portal-sdk v0.1.64
+	go.lumeweb.com/portal-sdk v0.1.65
 	go.lumeweb.com/queryutil v0.3.18
 	go.sia.tech/core v0.21.7
 	go.sia.tech/indexd v0.2.3-0.20260519120331-4eab507a9847
@@ -52,7 +53,6 @@ require (
 	atomicgo.dev/schedule v0.1.0 // indirect
 	filippo.io/edwards25519 v1.2.0 // indirect
 	github.com/Jorropo/jsync v1.0.1 // indirect
-	github.com/a-h/templ v0.3.1020 // indirect
 	github.com/alecthomas/units v0.0.0-20240927000941-0f3dac36c52b // indirect
 	github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
 	github.com/apt304/sse-go v0.0.3 // indirect
