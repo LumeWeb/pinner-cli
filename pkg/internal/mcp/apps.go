@@ -1,7 +1,6 @@
 package mcp
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -35,24 +34,14 @@ type PinStatusView struct {
 }
 
 // renderPinCreateAppHTML renders the full "Create a Pin" app document
-// (ui://pins/create.html) to a string for serving as the ui:// resource.
-//
-// templ owns the head and the visible body markup; Go assembles the document
-// shell and injects the module script, because templ treats <script> content as
-// raw text and does not evaluate expressions inside it. Served verbatim so the
-// sandboxed iframe needs no network request.
+// (ui://pins/create.html). The shared shell (doctype/<head>/inline theme) and
+// the ESM module (shared ext-apps bootstrap + pin logic) come from
+// renderMcpAppDoc; only the visible body form is authored in templ. Served
+// verbatim so the sandboxed iframe needs no network request.
 func renderPinCreateAppHTML() string {
-	ctx := context.Background()
-	var b bytes.Buffer
-	b.WriteString("<!doctype html><html lang=\"en\">")
-	_ = pinCreateAppHead().Render(ctx, &b)
-	b.WriteString("<body>")
-	_ = pinCreateAppForm().Render(ctx, &b)
-	b.WriteString(`<script type="module">`)
-	b.WriteString(pinAppModule(extAppsClientBase64()))
-	b.WriteString("</script></body></html>")
-	return b.String()
+	return renderMcpAppDoc("Create a Pin", pinCreateAppForm(), pinAppModule(extAppsClientBase64()))
 }
+
 
 // attachPinAppMeta wires pinner_pin (a curated catalog tool) to its ui:// app
 // resource so a UI-capable host renders the create-pin view for it. Plain hosts

@@ -1,71 +1,10 @@
 package mcp
 
-// pinCreateAppHead renders the <head> of the ui://pins/create.html document.
-//
-// The supported markup is authored in templ; the app's ESM module (the vendored
-// ext-apps client plus the pin form logic) is injected by Go in
-// renderPinCreateAppHTML, because templ treats <script> content as raw text and
-// does not evaluate expressions inside it.
-templ pinCreateAppHead() {
-	<head>
-		<meta charset="utf-8"/>
-		<meta name="viewport" content="width=device-width, initial-scale=1"/>
-		<title>Create a Pin</title>
-		<style>
-			:root {
-				--color-text-primary: #d4d4d8;
-				--color-background: #1e1e24;
-				--color-border: #33333d;
-				--color-accent: #4f8cff;
-				--font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-			}
-			* { box-sizing: border-box; }
-			body {
-				margin: 0;
-				font-family: var(--font-sans);
-				color: var(--color-text-primary);
-				background: var(--color-background);
-				padding: 24px;
-			}
-			h1 { font-size: 1.25rem; margin: 0 0 16px; }
-			label { display: block; font-size: 0.85rem; margin: 12px 0 4px; }
-			input {
-				width: 100%;
-				padding: 8px 10px;
-				border: 1px solid var(--color-border);
-				border-radius: 6px;
-				background: rgba(255,255,255,0.04);
-				color: var(--color-text-primary);
-				font: inherit;
-			}
-			button {
-				margin-top: 16px;
-				padding: 9px 16px;
-				border: 0;
-				border-radius: 6px;
-				background: var(--color-accent);
-				color: #fff;
-				font: inherit;
-				cursor: pointer;
-			}
-			.status { margin-top: 14px; min-height: 1.2em; font-size: 0.9rem; }
-			.status.pending { color: #f5c542; }
-			.status.ok { color: #4ade80; }
-			.status.info { color: #93c5fd; }
-			.status.error { color: #f87171; }
-			.result {
-				margin-top: 14px; padding: 12px;
-				border: 1px solid var(--color-border); border-radius: 6px;
-				line-height: 1.6;
-			}
-			.result code { color: var(--color-accent); }
-		</style>
-	</head>
-}
-
 // pinCreateAppForm renders the visible "Create a Pin" view body: the CID/name
-// form, the live status line, and the result readout. The module script
-// (app.js logic) is appended by Go after this body content.
+// form, the live status line, and the result readout. The document <head>
+// (shared inline theme) and the ESM module <script> (shared ext-apps
+// bootstrap + pin logic) are supplied by renderMcpAppDoc, so this templ
+// authors only the app-specific markup.
 templ pinCreateAppForm() {
 	<h1>Create a Pin</h1>
 	<form id="pin-form">
