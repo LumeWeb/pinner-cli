@@ -717,9 +717,15 @@ func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string, seedDr
 				return ToolResult{}, fmt.Errorf("unsupported argument type for %q: %T", key, val)
 			}
 		}
-		sensitiveFlags := map[string]bool{
-			"--password": true, "--auth-token": true, "--token": true, "--secret": true,
-			"--api-key": true, "--key": true, "--passphrase": true, "--private-key": true,
+		// Redact credential values from the arg-trace log. Which flags are
+		// sensitive is declared on the command's own flags (SensitiveProvider)
+		// and carried on the catalog entry, so this derives from the schema
+		// instead of a separately-maintained hardcoded name list.
+		sensitiveFlags := make(map[string]bool, 8)
+		if entry, ok := catalog.Get(request.Name); ok {
+			for _, name := range entry.SensitiveFlags {
+				sensitiveFlags["--"+name] = true
+			}
 		}
 		zapArgs := make([]zap.Field, 0, len(args))
 		for i, arg := range args {

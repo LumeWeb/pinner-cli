@@ -71,6 +71,12 @@ type ToolEntry struct {
 	// curated registration. SDK-neutral; the wire seam encodes it onto the
 	// tool. Extended, never replaced, when attaching app metadata.
 	Meta map[string]any
+	// SensitiveFlags lists the long flag names whose values are credential
+	// material and must be redacted from the in-process arg-trace log. It is
+	// derived from the command's flag declarations (SensitiveProvider) at
+	// registration time, so the redaction vocabulary cannot drift from the
+	// CLI.
+	SensitiveFlags []string
 	// Behavior carries agent-facing execution behavior (stdin gating, OOB
 	// hand-offs). The invoke gate and post-processing layers read this instead
 	// of hardcoded tool-name checks.
@@ -265,6 +271,11 @@ func (c *ToolCatalog) Invoke(ctx context.Context, name string, args map[string]a
 // handler dispatches to the shared toolHandler (in-process command execution).
 // The MCP server itself is not modified: only the catalog is populated.
 func (c *ToolCatalog) RegisterFromCommand(root *cli.Command, hasRootAction bool, prefix []string, handler PinnerToolHandler) error {
+	// Global flags declared on the root command (e.g. --auth-token) apply to
+	// every subcommand. Union them with each command's own sensitive flags so
+	// an agent passing a root-level credential flag to any tool still has its
+	// value redacted from the arg trace.
+	rootSensitive := sensitiveFlagNames(root.Flags)
 	var walk func(cmd *cli.Command, prefix ...string) error
 	walk = func(cmd *cli.Command, prefix ...string) error {
 		if cmd.Name == "mcp" || cmd.Name == "help" {
@@ -298,15 +309,16 @@ func (c *ToolCatalog) RegisterFromCommand(root *cli.Command, hasRootAction bool,
 			category := categorize(loc)
 			interaction := classifyInteraction(loc)
 			c.Add(&ToolEntry{
-				Name:        toolName,
-				Title:       title,
-				Description: desc,
-				Category:    category,
-				ReadOnly:    readOnly,
-				Destructive: destructive,
-				Interaction: interaction,
-				InputSchema: schema,
-				Handler:     handler,
+				Name:           toolName,
+				Title:          title,
+				Description:    desc,
+				Category:       category,
+				ReadOnly:       readOnly,
+				Destructive:    destructive,
+				Interaction:    interaction,
+				InputSchema:    schema,
+				SensitiveFlags: unionSensitiveFlags(sensitiveFlagNames(cmd.Flags), rootSensitive),
+				Handler:        handler,
 			})
 
 			log.Debug("cataloged command", zap.Strings("loc", loc), zap.String("category", string(category)))

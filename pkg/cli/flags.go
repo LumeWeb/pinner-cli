@@ -5,6 +5,7 @@ import (
 
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/pkg/config"
+	"go.lumeweb.com/pinner-cli/pkg/internal/mcp"
 )
 
 // Flag name constants
@@ -224,11 +225,11 @@ func GlobalFlags() []cli.Flag {
 			Name:  FlagAgent,
 			Usage: "Agent mode: force JSON output and disable interactive prompts (for MCP/CI)",
 		},
-		&cli.StringFlag{
+		mcp.SensitiveStringFlag(&cli.StringFlag{
 			Name:    FlagAuthToken,
 			Usage:   "Auth token to override config",
 			Sources: cli.EnvVars("PINNER_AUTH_TOKEN"),
-		},
+		}),
 		SecureFlag(),
 	}
 }

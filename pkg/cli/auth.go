@@ -9,6 +9,7 @@ import (
 	"github.com/manifoldco/promptui"
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/pkg/config"
+	"go.lumeweb.com/pinner-cli/pkg/internal/mcp"
 )
 
 // cleanupTerminal restores terminal state after an interrupt.
@@ -210,7 +211,7 @@ Examples:
 				Usage:   "Email address for login",
 				Sources: cli.EnvVars("PINNER_EMAIL"),
 			},
-			&cli.StringFlag{
+			mcp.SensitiveStringFlag(&cli.StringFlag{
 				Name:    FlagPassword,
 				Aliases: []string{"p"},
 				Usage:   "Password for login (WARNING: insecure, prefer stdin or env var)",
@@ -218,7 +219,7 @@ Examples:
 					Stdin(),
 					cli.EnvVar("PINNER_PASSWORD"),
 				),
-			},
+			}),
 			&cli.StringFlag{
 				Name:    FlagOTPCode,
 				Aliases: []string{"o"},

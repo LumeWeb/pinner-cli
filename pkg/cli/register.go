@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	"github.com/urfave/cli/v3"
+
+	"go.lumeweb.com/pinner-cli/pkg/internal/mcp"
 )
 
 func newRegisterCommand() *cli.Command {
@@ -46,11 +48,11 @@ Examples:
 				Aliases: []string{"l"},
 				Usage:   "Last name",
 			},
-			&cli.StringFlag{
+			mcp.SensitiveStringFlag(&cli.StringFlag{
 				Name:    FlagPassword,
 				Aliases: []string{"p"},
 				Usage:   "Password (if not provided, you will be prompted)",
-			},
+			}),
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			output := setupOutput(cmd)
