@@ -344,6 +344,13 @@ var interactiveLeafSegments = map[string]bool{
 // unconditionally (not guarded by isStdinPipe) and would block over the MCP
 // channel, where no such data is piped. "restore" covers vault restore
 // --seed-stdin, which calls io.ReadAll(os.Stdin) directly.
+//
+// The Interaction enum both drives discovery/steering AND the invoke_tool
+// stdin gate (sdk_official.go), which switches on entry.Interaction. So the
+// signal must stay stdin_input: the non-stdin OOB restore hand-off is already
+// permitted by invoke_tool's bypassGate (scoped to pinner_vault_restore without
+// --seed-stdin), and keeping the enum here guarantees a --seed-stdin invocation
+// is still gated instead of consuming the MCP transport pipe via os.Stdin.
 var stdinInputLeaves = map[string]bool{
 	"restore": true, // vault restore --seed-stdin
 }
