@@ -331,7 +331,11 @@ func (c *ToolCatalog) RegisterFromCommand(root *cli.Command, hasRootAction bool,
 		}
 
 		for _, sub := range cmd.Commands {
-			if err := walk(sub, cmd.Flags, loc...); err != nil {
+			// Accumulate inherited flags down the tree, not just the immediate
+			// parent's: a tool nested 2+ levels deep (e.g. vault → profile →
+			// use) must still see the vault --profile flag its action reads.
+			childInherited := mergeInheritedFlags(inherited, cmd.Flags)
+			if err := walk(sub, childInherited, loc...); err != nil {
 				return err
 			}
 		}

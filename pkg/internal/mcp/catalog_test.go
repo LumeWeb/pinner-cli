@@ -604,3 +604,56 @@ func TestChildFlagOverridesInherited(t *testing.T) {
 	assert.Equal(t, "child token", tokens["description"])
 	assert.Equal(t, 1, len(props), "no duplicate/extra properties beyond token")
 }
+
+// TestInheritedFlagsAccumulateAcrossNesting verifies that inherited flags are
+// accumulated down the whole command tree, not just one level down. A tool
+// nested 2+ levels deep (root → vault → profile → use) must still expose the
+// grandparent vault --profile flag in its schema, because its action reads it.
+func TestInheritedFlagsAccumulateAcrossNesting(t *testing.T) {
+	root := &cli.Command{
+		Name: "pinner",
+		Commands: []*cli.Command{
+			{
+				Name:  "vault",
+				Flags: []cli.Flag{&cli.StringFlag{Name: "profile", Usage: "Vault profile name"}},
+				Commands: []*cli.Command{
+					{
+						Name: "profile",
+						Commands: []*cli.Command{
+							{
+								Name:   "use",
+								Action: func(context.Context, *cli.Command) error { return nil },
+							},
+						},
+					},
+					{
+						Name:   "status",
+						Action: func(context.Context, *cli.Command) error { return nil },
+					},
+				},
+			},
+		},
+	}
+
+	catalog := NewToolCatalog()
+	err := catalog.RegisterFromCommand(root, true, nil,
+		func(context.Context, ToolRequest) (ToolResult, error) { return ToolResult{}, nil })
+	require.NoError(t, err)
+
+	// The 3-level-deep tool accumulates the grandparent's profile flag.
+	d, err := catalog.Describe("pinner_vault_profile_use")
+	require.NoError(t, err)
+	var doc map[string]any
+	require.NoError(t, json.Unmarshal(d.InputSchema, &doc))
+	props := doc["properties"].(map[string]any)
+	p, ok := props["profile"].(map[string]any)
+	require.True(t, ok, "nested tool must accumulate the grandparent profile flag")
+	assert.Equal(t, "string", p["type"])
+
+	// A 2-level tool also gets it.
+	d2, err := catalog.Describe("pinner_vault_status")
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(d2.InputSchema, &doc))
+	_, ok = doc["properties"].(map[string]any)["profile"]
+	assert.True(t, ok, "two-level tool must inherit the immediate parent's flag too")
+}
