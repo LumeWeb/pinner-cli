@@ -113,10 +113,13 @@ func setupDNSHandlerTest(t *testing.T) (*mockDNSServiceForCLI, *configmocks.Mock
 		AuthToken:    "test-token",
 	}).Maybe()
 
-	origFactory := dnsServiceFactory
-	t.Cleanup(func() { dnsServiceFactory = origFactory })
-	dnsServiceFactory = func(config.Manager, Output, bool, ...DNSServiceOption) DNSService {
-		return mockSvc
+	origFactory := newDNSAPI
+	t.Cleanup(func() { newDNSAPI = origFactory })
+	newDNSAPI = func(cfgMgr config.Manager, authToken string, secure bool) (DNSService, error) {
+		if authToken == "" {
+			return nil, ErrNotAuthenticated
+		}
+		return mockSvc, nil
 	}
 
 	return mockSvc, cfgMgr

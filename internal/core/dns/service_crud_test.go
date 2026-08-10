@@ -1,4 +1,4 @@
-package cli
+package dns
 
 import (
 	"context"
@@ -7,164 +7,168 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	ipfs "go.lumeweb.com/ipfs-sdk"
+	coreerrors "go.lumeweb.com/pinner-cli/internal/core/errors"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
 	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
 	"go.lumeweb.com/pinner-cli/internal/core/ipfsbase"
+	"go.uber.org/zap"
 )
 
-func newUnauthDNSService(t *testing.T) *dnsServiceCLI {
+func newUnauthService(t *testing.T) *serviceCLI {
 	cfgMgr := configmocks.NewMockManager(t)
 	cfgMgr.EXPECT().Config().Return(&config.Config{AuthToken: ""}).Maybe()
-	return &dnsServiceCLI{
-		ipfsServiceBase: ipfsbase.New(cfgMgr),
+	return &serviceCLI{
+		Base: ipfsbase.New(cfgMgr),
+		log:  zap.NewNop(),
 	}
 }
 
-func newAuthedNilDNSService(t *testing.T) *dnsServiceCLI {
+func newAuthedNilService(t *testing.T) *serviceCLI {
 	cfgMgr := configmocks.NewMockManager(t)
 	cfgMgr.EXPECT().Config().Return(&config.Config{AuthToken: "token"}).Maybe()
-	return &dnsServiceCLI{
-		ipfsServiceBase: ipfsbase.New(cfgMgr, ipfsbase.WithAuthToken("token")),
-		service:         nil,
+	return &serviceCLI{
+		Base:    ipfsbase.New(cfgMgr, ipfsbase.WithAuthToken("token")),
+		service: nil,
+		log:     zap.NewNop(),
 	}
 }
 
-func TestDNSService_CreateZone_Unauthenticated(t *testing.T) {
-	svc := newUnauthDNSService(t)
+func TestService_CreateZone_Unauthenticated(t *testing.T) {
+	svc := newUnauthService(t)
 	_, err := svc.CreateZone(context.Background(), "example.com", nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not authenticated")
 }
 
-func TestDNSService_CreateZone_ServiceUnavailable(t *testing.T) {
-	svc := newAuthedNilDNSService(t)
+func TestService_CreateZone_ServiceUnavailable(t *testing.T) {
+	svc := newAuthedNilService(t)
 	_, err := svc.CreateZone(context.Background(), "example.com", nil)
 	require.Error(t, err)
-	assert.Equal(t, ErrServiceUnavailable, err)
+	assert.Equal(t, coreerrors.ErrServiceUnavailable, err)
 }
 
-func TestDNSService_ListZones_Unauthenticated(t *testing.T) {
-	svc := newUnauthDNSService(t)
+func TestService_ListZones_Unauthenticated(t *testing.T) {
+	svc := newUnauthService(t)
 	_, err := svc.ListZones(context.Background())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not authenticated")
 }
 
-func TestDNSService_ListZones_ServiceUnavailable(t *testing.T) {
-	svc := newAuthedNilDNSService(t)
+func TestService_ListZones_ServiceUnavailable(t *testing.T) {
+	svc := newAuthedNilService(t)
 	_, err := svc.ListZones(context.Background())
 	require.Error(t, err)
-	assert.Equal(t, ErrServiceUnavailable, err)
+	assert.Equal(t, coreerrors.ErrServiceUnavailable, err)
 }
 
-func TestDNSService_GetZone_Unauthenticated(t *testing.T) {
-	svc := newUnauthDNSService(t)
+func TestService_GetZone_Unauthenticated(t *testing.T) {
+	svc := newUnauthService(t)
 	_, err := svc.GetZone(context.Background(), "123")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not authenticated")
 }
 
-func TestDNSService_GetZone_ServiceUnavailable(t *testing.T) {
-	svc := newAuthedNilDNSService(t)
+func TestService_GetZone_ServiceUnavailable(t *testing.T) {
+	svc := newAuthedNilService(t)
 	_, err := svc.GetZone(context.Background(), "123")
 	require.Error(t, err)
-	assert.Equal(t, ErrServiceUnavailable, err)
+	assert.Equal(t, coreerrors.ErrServiceUnavailable, err)
 }
 
-func TestDNSService_DeleteZone_Unauthenticated(t *testing.T) {
-	svc := newUnauthDNSService(t)
+func TestService_DeleteZone_Unauthenticated(t *testing.T) {
+	svc := newUnauthService(t)
 	err := svc.DeleteZone(context.Background(), "123")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not authenticated")
 }
 
-func TestDNSService_DeleteZone_ServiceUnavailable(t *testing.T) {
-	svc := newAuthedNilDNSService(t)
+func TestService_DeleteZone_ServiceUnavailable(t *testing.T) {
+	svc := newAuthedNilService(t)
 	err := svc.DeleteZone(context.Background(), "123")
 	require.Error(t, err)
-	assert.Equal(t, ErrServiceUnavailable, err)
+	assert.Equal(t, coreerrors.ErrServiceUnavailable, err)
 }
 
-func TestDNSService_ValidateZone_Unauthenticated(t *testing.T) {
-	svc := newUnauthDNSService(t)
+func TestService_ValidateZone_Unauthenticated(t *testing.T) {
+	svc := newUnauthService(t)
 	_, err := svc.ValidateZone(context.Background(), "123")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not authenticated")
 }
 
-func TestDNSService_ValidateZone_ServiceUnavailable(t *testing.T) {
-	svc := newAuthedNilDNSService(t)
+func TestService_ValidateZone_ServiceUnavailable(t *testing.T) {
+	svc := newAuthedNilService(t)
 	_, err := svc.ValidateZone(context.Background(), "123")
 	require.Error(t, err)
-	assert.Equal(t, ErrServiceUnavailable, err)
+	assert.Equal(t, coreerrors.ErrServiceUnavailable, err)
 }
 
-func TestDNSService_CreateRecord_Unauthenticated(t *testing.T) {
-	svc := newUnauthDNSService(t)
+func TestService_CreateRecord_Unauthenticated(t *testing.T) {
+	svc := newUnauthService(t)
 	_, err := svc.CreateRecord(context.Background(), "123", ipfs.RecordRequest{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not authenticated")
 }
 
-func TestDNSService_CreateRecord_ServiceUnavailable(t *testing.T) {
-	svc := newAuthedNilDNSService(t)
+func TestService_CreateRecord_ServiceUnavailable(t *testing.T) {
+	svc := newAuthedNilService(t)
 	_, err := svc.CreateRecord(context.Background(), "123", ipfs.RecordRequest{})
 	require.Error(t, err)
-	assert.Equal(t, ErrServiceUnavailable, err)
+	assert.Equal(t, coreerrors.ErrServiceUnavailable, err)
 }
 
-func TestDNSService_ListRecords_Unauthenticated(t *testing.T) {
-	svc := newUnauthDNSService(t)
+func TestService_ListRecords_Unauthenticated(t *testing.T) {
+	svc := newUnauthService(t)
 	_, err := svc.ListRecords(context.Background(), "123")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not authenticated")
 }
 
-func TestDNSService_ListRecords_ServiceUnavailable(t *testing.T) {
-	svc := newAuthedNilDNSService(t)
+func TestService_ListRecords_ServiceUnavailable(t *testing.T) {
+	svc := newAuthedNilService(t)
 	_, err := svc.ListRecords(context.Background(), "123")
 	require.Error(t, err)
-	assert.Equal(t, ErrServiceUnavailable, err)
+	assert.Equal(t, coreerrors.ErrServiceUnavailable, err)
 }
 
-func TestDNSService_GetRecord_Unauthenticated(t *testing.T) {
-	svc := newUnauthDNSService(t)
+func TestService_GetRecord_Unauthenticated(t *testing.T) {
+	svc := newUnauthService(t)
 	_, err := svc.GetRecord(context.Background(), "123", "www", "A")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not authenticated")
 }
 
-func TestDNSService_GetRecord_ServiceUnavailable(t *testing.T) {
-	svc := newAuthedNilDNSService(t)
+func TestService_GetRecord_ServiceUnavailable(t *testing.T) {
+	svc := newAuthedNilService(t)
 	_, err := svc.GetRecord(context.Background(), "123", "www", "A")
 	require.Error(t, err)
-	assert.Equal(t, ErrServiceUnavailable, err)
+	assert.Equal(t, coreerrors.ErrServiceUnavailable, err)
 }
 
-func TestDNSService_UpdateRecord_Unauthenticated(t *testing.T) {
-	svc := newUnauthDNSService(t)
+func TestService_UpdateRecord_Unauthenticated(t *testing.T) {
+	svc := newUnauthService(t)
 	_, err := svc.UpdateRecord(context.Background(), "123", "www", "A", ipfs.RecordRequest{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not authenticated")
 }
 
-func TestDNSService_UpdateRecord_ServiceUnavailable(t *testing.T) {
-	svc := newAuthedNilDNSService(t)
+func TestService_UpdateRecord_ServiceUnavailable(t *testing.T) {
+	svc := newAuthedNilService(t)
 	_, err := svc.UpdateRecord(context.Background(), "123", "www", "A", ipfs.RecordRequest{})
 	require.Error(t, err)
-	assert.Equal(t, ErrServiceUnavailable, err)
+	assert.Equal(t, coreerrors.ErrServiceUnavailable, err)
 }
 
-func TestDNSService_DeleteRecord_Unauthenticated(t *testing.T) {
-	svc := newUnauthDNSService(t)
+func TestService_DeleteRecord_Unauthenticated(t *testing.T) {
+	svc := newUnauthService(t)
 	err := svc.DeleteRecord(context.Background(), "123", "www", "A")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not authenticated")
 }
 
-func TestDNSService_DeleteRecord_ServiceUnavailable(t *testing.T) {
-	svc := newAuthedNilDNSService(t)
+func TestService_DeleteRecord_ServiceUnavailable(t *testing.T) {
+	svc := newAuthedNilService(t)
 	err := svc.DeleteRecord(context.Background(), "123", "www", "A")
 	require.Error(t, err)
-	assert.Equal(t, ErrServiceUnavailable, err)
+	assert.Equal(t, coreerrors.ErrServiceUnavailable, err)
 }
