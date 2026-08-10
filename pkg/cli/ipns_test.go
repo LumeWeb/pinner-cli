@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 	ipfs "go.lumeweb.com/ipfs-sdk"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner-cli/internal/core/ipns"
 	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
 )
 
@@ -23,10 +24,13 @@ func setupIPNSHandlerTest(t *testing.T) (*mockIPNSServiceForCLI, *configmocks.Mo
 		AuthToken:    "test-token",
 	}).Maybe()
 
-	origFactory := ipnsServiceFactory
-	t.Cleanup(func() { ipnsServiceFactory = origFactory })
-	ipnsServiceFactory = func(config.Manager, Output, bool, ...IPNSServiceOption) IPNSService {
-		return mockSvc
+	origFactory := newIPNSAPI
+	t.Cleanup(func() { newIPNSAPI = origFactory })
+	newIPNSAPI = func(cfgMgr config.Manager, authToken string, secure bool) (IPNSService, error) {
+		if authToken == "" {
+			return nil, ErrNotAuthenticated
+		}
+		return mockSvc, nil
 	}
 
 	return mockSvc, cfgMgr
@@ -411,7 +415,7 @@ func TestResolveIPNSKeyID_ByName(t *testing.T) {
 			{Id: 8, Name: "other-key"},
 		}, nil
 	}
-	id, err := resolveIPNSKeyID(context.Background(), mockSvc, "my-key")
+	id, err := ipns.ResolveKeyID(context.Background(), mockSvc, "my-key")
 	require.NoError(t, err)
 	assert.Equal(t, 7, id)
 }
@@ -421,7 +425,7 @@ func TestResolveIPNSKeyID_NotFound(t *testing.T) {
 	mockSvc.listKeysFunc = func(ctx context.Context) ([]ipfs.IPNSKeyResponse, error) {
 		return []ipfs.IPNSKeyResponse{}, nil
 	}
-	_, err := resolveIPNSKeyID(context.Background(), mockSvc, "missing-key")
+	_, err := ipns.ResolveKeyID(context.Background(), mockSvc, "missing-key")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "IPNS key not found for name")
 }
@@ -431,7 +435,7 @@ func TestResolveIPNSKeyID_ListError(t *testing.T) {
 	mockSvc.listKeysFunc = func(ctx context.Context) ([]ipfs.IPNSKeyResponse, error) {
 		return nil, errors.New("service down")
 	}
-	_, err := resolveIPNSKeyID(context.Background(), mockSvc, "my-key")
+	_, err := ipns.ResolveKeyID(context.Background(), mockSvc, "my-key")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to look up IPNS key by name")
 }
