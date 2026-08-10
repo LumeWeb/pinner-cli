@@ -1,5 +1,11 @@
 .PHONY: build install clean generate
 
+# A bare `make` must produce a binary, not just regenerate templ output.
+# generate was added above build, which silently made it (not build) the
+# default goal. Pin the default explicitly so reordering rules later can't
+# regress it again.
+.DEFAULT_GOAL := build
+
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 GIT_BRANCH := $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)
