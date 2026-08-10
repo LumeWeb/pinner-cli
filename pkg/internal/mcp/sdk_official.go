@@ -337,9 +337,12 @@ func registerOfficialDescribeTool(srv *mcp.Server, catalog *ToolCatalog) error {
 	return registerTool(srv, tool, handler)
 }
 
-// toolArgsHasBool reports whether the given tool arguments set a boolean flag
-// to true. urfave/cli/v3 encodes flags as camelCase keys in the JSON schema
-// arguments map; seed-stdin arrives as "seed-stdin".
+// toolArgsHasBool reports whether the given tool arguments set a flag to a
+// truthy value. urfave/cli/v3 encodes flags as camelCase keys in the JSON
+// schema arguments map (e.g. seed-stdin). Tool arguments come from the agent's
+// JSON, so a boolean flag may arrive as a real bool OR a string/number
+// ("true"/"1"/1); coerce truthiness across those types so any truthy value
+// keeps the stdin gate closed.
 func toolArgsHasBool(args map[string]any, key string) bool {
 	if args == nil {
 		return false
@@ -348,8 +351,15 @@ func toolArgsHasBool(args map[string]any, key string) bool {
 	if !ok {
 		return false
 	}
-	b, ok := v.(bool)
-	return ok && b
+	switch t := v.(type) {
+	case bool:
+		return t
+	case string:
+		return t == "true" || t == "1"
+	case float64:
+		return t == 1
+	}
+	return false
 }
 
 func registerOfficialInvokeTool(srv *mcp.Server, catalog *ToolCatalog, stdioMode bool, seedDrop *SeedDrop, oobRestore *OOBRestore) error {

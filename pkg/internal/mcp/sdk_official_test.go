@@ -416,6 +416,49 @@ func TestOfficialInvokeToolOOBRestoreWithSeedStdinStillGated(t *testing.T) {
 	require.Equal(t, "needs_human", sc["status"])
 	require.Equal(t, string(ReasonStdinRequired), sc["reason"])
 	require.False(t, stdinCalled, "--seed-stdin restore must still be gated even with OOB restore wired")
+
+	// Same for a string-form truthy flag: tool args arrive from the agent's
+	// JSON, so "seed-stdin":"true" must ALSO keep the gate closed (a helper
+	// that only accepted bool would wrongly activate the bypass and read the
+	// MCP pipe).
+	res, err = cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "invoke_tool",
+		Arguments: map[string]any{
+			"name":      "pinner_vault_restore",
+			"arguments": map[string]any{"seed-stdin": "true"},
+		},
+	})
+	require.NoError(t, err)
+	require.False(t, res.IsError)
+	sc, ok = res.StructuredContent.(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "needs_human", sc["status"])
+	require.Equal(t, string(ReasonStdinRequired), sc["reason"])
+	require.False(t, stdinCalled, "string-form --seed-stdin must still be gated")
+}
+
+func TestToolArgsHasBoolTruthiness(t *testing.T) {
+	cases := []struct {
+		name string
+		args map[string]any
+		want bool
+	}{
+		{"missing key", map[string]any{}, false},
+		{"nil args", nil, false},
+		{"bool true", map[string]any{"seed-stdin": true}, true},
+		{"bool false", map[string]any{"seed-stdin": false}, false},
+		{"string true", map[string]any{"seed-stdin": "true"}, true},
+		{"string 1", map[string]any{"seed-stdin": "1"}, true},
+		{"string false", map[string]any{"seed-stdin": "false"}, false},
+		{"number 1", map[string]any{"seed-stdin": float64(1)}, true},
+		{"number 0", map[string]any{"seed-stdin": float64(0)}, false},
+		{"unrelated type", map[string]any{"seed-stdin": []any{}}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, toolArgsHasBool(tc.args, "seed-stdin"))
+		})
+	}
 }
 
 func TestOfficialResourcesRegistered(t *testing.T) {
