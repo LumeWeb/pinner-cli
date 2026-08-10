@@ -1,7 +1,6 @@
 package oauthstore
 
 import (
-	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
@@ -21,36 +20,45 @@ func openTestStore(t *testing.T) *Store {
 
 func TestRefreshRotationAndReuse(t *testing.T) {
 	s := openTestStore(t)
-	rt1, rt2 := "refresh-1", "refresh-2"
+	rt1 := "refresh-1"
 
-	// Issue the root refresh token (chain root).
 	require.NoError(t, s.SaveClient("cli", "Claude", []string{"https://claude.ai/api/mcp/auth_callback"}))
 	require.NoError(t, s.IssueRefreshToken(rt1, "cli", ""))
 
-	// First use: rotate → accept.
-	client, status, err := s.RotateRefreshToken(rt1, "cli", "", rt2)
+	// First use: rotate → accept; the store mints the successor (rt2).
+	client, succ, status, err := s.RotateRefreshToken(rt1, "cli", "")
 	require.NoError(t, err)
 	require.Equal(t, RotateOK, status)
 	require.Equal(t, "cli", client)
 
-	// Reuse the same token within the reuse window → benign, chain not revoked.
-	_, status, err = s.RotateRefreshToken(rt1, "cli", "", "refresh-3")
+	// Force the token into the reuse window deterministically (no wall-clock
+	// dependency, which was flaky on Windows CI where the two calls could
+	// exceed the 100ms window before the DB was touched).
+	require.NoError(t, s.db.Model(&RefreshToken{}).Where("token = ?", rt1).Update("used_at", time.Now()).Error)
+
+	// Reuse the same token within the reuse window → benign; returns the SAME
+	// already-issued successor (succ), not a freshly minted one.
+	_, succ2, status, err := s.RotateRefreshToken(rt1, "cli", "")
 	require.NoError(t, err)
 	require.Equal(t, RotateOKReused, status)
+	require.Equal(t, succ2, succ, "reuse must return the stored successor, not mint a new pair")
 
-	// A never-used token in the same chain (rt2, the first successor) still
-	// rotates as a fresh first use.
-	_, status, err = s.RotateRefreshToken(rt2, "cli", "", "refresh-4")
+	// A never-used successor (succ, the token actually issued by rotation) still
+	// rotates as a fresh first use, minting a new successor and keeping the
+	// chain alive.
+	_, succ3, status, err := s.RotateRefreshToken(succ, "cli", "")
 	require.NoError(t, err)
 	require.Equal(t, RotateOK, status)
+	require.NotEqual(t, succ3, "")
+	require.NotEqual(t, succ3, succ)
 }
 
 func TestRefreshReplayRevokesChain(t *testing.T) {
 	s := openTestStore(t)
-	rt1, rt2 := "refresh-replay-1", "refresh-replay-2"
+	rt1 := "refresh-replay-1"
 	require.NoError(t, s.IssueRefreshToken(rt1, "cli", ""))
 
-	_, status, err := s.RotateRefreshToken(rt1, "cli", "", rt2)
+	_, _, status, err := s.RotateRefreshToken(rt1, "cli", "")
 	require.NoError(t, err)
 	require.Equal(t, RotateOK, status)
 
@@ -58,21 +66,25 @@ func TestRefreshReplayRevokesChain(t *testing.T) {
 	require.NoError(t, s.db.Model(&RefreshToken{}).Where("token = ?", rt1).Update("used_at", time.Now().Add(-time.Minute)).Error)
 
 	// Re-present the rotated token beyond the window → replay → chain revoked.
-	_, status, err = s.RotateRefreshToken(rt1, "cli", "", "refresh-replay-3")
+	_, _, status, err = s.RotateRefreshToken(rt1, "cli", "")
 	require.NoError(t, err)
 	require.Equal(t, RotateReplay, status)
 
-	// The whole chain (including the successor) is now revoked.
-	for _, tok := range []string{rt1, rt2} {
-		var rt RefreshToken
-		require.NoError(t, s.db.Where("token = ?", tok).First(&rt).Error)
-		require.True(t, rt.Revoked, "token %s must be revoked with its chain", tok)
+	// The whole chain is now revoked. Fetch the successor that was issued and
+	// verify it, too, is revoked.
+	var root RefreshToken
+	require.NoError(t, s.db.Where("token = ?", rt1).First(&root).Error)
+	require.True(t, root.Revoked, "token %s must be revoked with its chain", rt1)
+	if root.Successor != "" {
+		var succ RefreshToken
+		require.NoError(t, s.db.Where("token = ?", root.Successor).First(&succ).Error)
+		require.True(t, succ.Revoked, "successor %s must be revoked with its chain", root.Successor)
 	}
 }
 
 func TestRefreshUnknownIsReject(t *testing.T) {
 	s := openTestStore(t)
-	_, status, err := s.RotateRefreshToken("does-not-exist", "", "", "x")
+	_, _, status, err := s.RotateRefreshToken("does-not-exist", "", "")
 	require.NoError(t, err)
 	require.Equal(t, RotateUnknown, status)
 }
@@ -82,9 +94,38 @@ func TestClientBindingMismatchRejects(t *testing.T) {
 	require.NoError(t, s.SaveClient("cli-a", "A", nil))
 	require.NoError(t, s.IssueRefreshToken("rt-a", "cli-a", ""))
 	// Presenting with a different client → replay/rejection.
-	_, status, err := s.RotateRefreshToken("rt-a", "cli-b", "", "rt-b")
+	_, _, status, err := s.RotateRefreshToken("rt-a", "cli-b", "")
 	require.NoError(t, err)
 	require.Equal(t, RotateReplay, status)
+}
+
+// TestRepeatedReuseMintsNoNewTokens guards against the weakness where every
+// in-window reuse of a rotated token mints a fresh successor — that lets a
+// stolen token be re-presented repeatedly to manufacture an unbounded number of
+// valid pairs. Reuse must always return the SAME already-issued successor.
+func TestRepeatedReuseMintsNoNewTokens(t *testing.T) {
+	s := openTestStore(t)
+	require.NoError(t, s.IssueRefreshToken("rt-reuse", "cli", ""))
+
+	// First use rotates and mints one successor.
+	_, succ1, status, err := s.RotateRefreshToken("rt-reuse", "cli", "")
+	require.NoError(t, err)
+	require.Equal(t, RotateOK, status)
+	require.NotEqual(t, succ1, "")
+
+	// Force into the reuse window deterministically, then re-present many times.
+	require.NoError(t, s.db.Model(&RefreshToken{}).Where("token = ?", "rt-reuse").Update("used_at", time.Now()).Error)
+	for i := 0; i < 10; i++ {
+		_, succN, status, err := s.RotateRefreshToken("rt-reuse", "cli", "")
+		require.NoError(t, err)
+		require.Equal(t, RotateOKReused, status)
+		require.Equal(t, succN, succ1, "reuse %d must return the stored successor, not mint a new pair", i)
+	}
+
+	// Only the one successor row may exist in the chain (root + 1).
+	var count int64
+	require.NoError(t, s.db.Model(&RefreshToken{}).Where("chain_root = ?", "rt-reuse").Count(&count).Error)
+	require.Equal(t, int64(2), count, "chain must contain exactly the root and one successor, not unbounded tokens")
 }
 
 // TestPersistedClientSurvivesReopen verifies the durability contract: a client
@@ -128,7 +169,7 @@ func TestConcurrentFirstUseRotatesOnce(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		go func() {
 			<-start
-			_, st, _ := s.RotateRefreshToken("rt-race", "cli", "", fmt.Sprintf("succ-%d", i))
+			_, _, st, _ := s.RotateRefreshToken("rt-race", "cli", "")
 			results <- result{status: st}
 		}()
 	}

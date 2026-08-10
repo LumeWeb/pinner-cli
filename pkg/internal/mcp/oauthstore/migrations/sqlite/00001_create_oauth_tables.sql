@@ -14,7 +14,8 @@ CREATE TABLE oauth_refresh_tokens (
     issued_at  DATETIME NOT NULL,
     used_at    DATETIME,
     expires_at DATETIME NOT NULL,
-    revoked    INTEGER NOT NULL DEFAULT 0
+    revoked    INTEGER NOT NULL DEFAULT 0,
+    successor  TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX idx_oauth_refresh_chain_root ON oauth_refresh_tokens (chain_root);

@@ -440,12 +440,19 @@ func (o *oauthServer) exchangeRefreshToken(w http.ResponseWriter, r *http.Reques
 	refresh := r.PostFormValue("refresh_token")
 	clientID := r.PostFormValue("client_id")
 	resource := r.PostFormValue("resource")
-	pair := o.newTokens()
-	client, status, err := o.store.RotateRefreshToken(refresh, clientID, resource, pair.refresh)
+	// Without a durable store there is no way to rotate or validate a refresh
+	// token, so fall back to a controlled error rather than nil-deref panicking
+	// (newOAuthServer permits a nil store).
+	if o.store == nil {
+		writeInvalidGrant(w)
+		return
+	}
+	client, successor, status, err := o.store.RotateRefreshToken(refresh, clientID, resource)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "server_error"})
 		return
 	}
+	pair := tokenPair{access: newToken(32), refresh: successor}
 	switch status {
 	case oauthstore.RotateOK, oauthstore.RotateOKReused:
 		// Accepted (fresh rotation or benign reuse within the window).
@@ -457,8 +464,12 @@ func (o *oauthServer) exchangeRefreshToken(w http.ResponseWriter, r *http.Reques
 	default:
 		// RotateReplay (rotated beyond reuse window, revoked, expired, or
 		// unknown) → invalid_grant per RFC 6749 §5.2.
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_grant"})
+		writeInvalidGrant(w)
 	}
+}
+
+func writeInvalidGrant(w http.ResponseWriter) {
+	writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_grant"})
 }
 
 func (o *oauthServer) newTokens() tokenPair {

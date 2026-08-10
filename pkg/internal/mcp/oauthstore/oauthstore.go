@@ -10,6 +10,8 @@
 package oauthstore
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -49,6 +51,12 @@ type RefreshToken struct {
 	UsedAt    *time.Time `gorm:"column:used_at"` // set when rotated; nil = current
 	ExpiresAt time.Time  `gorm:"column:expires_at"`
 	Revoked   bool       `gorm:"column:revoked"`
+	// Successor is the refresh token issued as the next step of the chain when
+	// this token was rotated. Stored so a benign reuse within the detection
+	// window can return the SAME already-issued successor instead of minting a
+	// fresh one each time (which would let a stolen token manufacture unbounded
+	// valid pairs). Empty for a not-yet-rotated token.
+	Successor string `gorm:"column:successor"`
 }
 
 // TableName returns the refresh-token table name.
@@ -155,16 +163,25 @@ func (s *Store) Clients() (map[string][]string, error) {
 
 // ---- refresh tokens ----
 
+// newToken returns a fresh random token string (crypto/rand, hex-encoded).
+func (s *Store) newToken() string {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		panic(fmt.Sprintf("oauthstore: crypto/rand failed: %v", err))
+	}
+	return hex.EncodeToString(b)
+}
+
 // IssueRefreshToken stores the initial refresh token of a new chain (the root)
-// issued from an authorization-code exchange.
+// issued from an authorization-code exchange. The root has no successor yet.
 func (s *Store) IssueRefreshToken(token, clientID, resource string) error {
-	return s.issueInChain(token, clientID, resource, token)
+	return s.issueInChain(token, "", clientID, resource, token)
 }
 
 // issueInChain stores a refresh token whose chain root is chainRoot. Successor
 // tokens from rotation inherit the chain root of the token they rotate from so
 // a whole grant chain can be revoked together.
-func (s *Store) issueInChain(token, clientID, resource, chainRoot string) error {
+func (s *Store) issueInChain(token, successor, clientID, resource, chainRoot string) error {
 	return s.db.Create(&RefreshToken{
 		Token:     token,
 		ClientID:  clientID,
@@ -172,6 +189,7 @@ func (s *Store) issueInChain(token, clientID, resource, chainRoot string) error 
 		ChainRoot: chainRoot,
 		IssuedAt:  time.Now(),
 		ExpiresAt: time.Now().Add(s.refreshTTL),
+		Successor: successor,
 	}).Error
 }
 
@@ -200,31 +218,31 @@ const (
 // Re-presentation beyond the window, a revoked token, or bad binding revokes
 // the whole chain and returns RotateReplay, which the caller surfaces as
 // invalid_grant.
-func (s *Store) RotateRefreshToken(token, clientID, resource, successor string) (string, RotateStatus, error) {
+func (s *Store) RotateRefreshToken(token, clientID, resource string) (string, string, RotateStatus, error) {
 	var rt RefreshToken
 	err := s.db.Where("token = ?", token).First(&rt).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return "", RotateUnknown, nil
+			return "", "", RotateUnknown, nil
 		}
-		return "", RotateUnknown, err
+		return "", "", RotateUnknown, err
 	}
 	if rt.Revoked || time.Now().After(rt.ExpiresAt) {
-		return "", RotateReplay, nil
+		return "", "", RotateReplay, nil
 	}
 	// Binding: the presenting client must match, and the resource must match
 	// when one was bound.
 	if clientID != "" && rt.ClientID != clientID {
-		return "", RotateReplay, nil
+		return "", "", RotateReplay, nil
 	}
 	if resource != "" && rt.Resource != "" && resource != rt.Resource {
-		return "", RotateReplay, nil
+		return "", "", RotateReplay, nil
 	}
 	now := time.Now()
 	if rt.UsedAt != nil {
 		// Already rotated (as read). Re-evaluate under the same rules as a
 		// failed atomic claim below.
-		return s.resolvePostUse(rt, now, successor)
+		return s.resolvePostUse(rt, now)
 	}
 	// First-use claim must be ATOMIC: only one concurrent presenter may observe
 	// used_at IS NULL and win the rotation. Two requests racing on the same
@@ -234,46 +252,54 @@ func (s *Store) RotateRefreshToken(token, clientID, resource, successor string) 
 		Where("token = ? AND used_at IS NULL", rt.Token).
 		Update("used_at", now)
 	if res.Error != nil {
-		return "", RotateUnknown, res.Error
+		return "", "", RotateUnknown, res.Error
 	}
 	if res.RowsAffected == 1 {
-		// We won the claim: issue exactly one successor.
-		if err := s.issueInChain(successor, rt.ClientID, rt.Resource, rt.ChainRoot); err != nil {
-			return "", RotateUnknown, err
+		// We won the claim: mint exactly one successor, record it on this row
+		// so a later benign reuse returns the SAME token, and persist it.
+		succ := s.newToken()
+		if err := s.db.Model(&RefreshToken{}).
+			Where("token = ?", rt.Token).
+			Update("successor", succ).Error; err != nil {
+			return "", "", RotateUnknown, err
 		}
-		return rt.ClientID, RotateOK, nil
+		if err := s.issueInChain(succ, "", rt.ClientID, rt.Resource, rt.ChainRoot); err != nil {
+			return "", "", RotateUnknown, err
+		}
+		return rt.ClientID, succ, RotateOK, nil
 	}
 	// We lost the claim: another request already rotated this token. Re-read its
 	// current used_at and decide reuse-vs-replay on fresh state.
 	var current RefreshToken
 	if err := s.db.Where("token = ?", token).First(&current).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return "", RotateUnknown, nil
+			return "", "", RotateUnknown, nil
 		}
-		return "", RotateUnknown, err
+		return "", "", RotateUnknown, err
 	}
-	return s.resolvePostUse(current, now, successor)
+	return s.resolvePostUse(current, now)
 }
 
 // resolvePostUse handles a token that has already been used/rotated. Within the
 // reuse-detection window it is treated as a benign race (the client had not yet
-// persisted the successor) and accepted; beyond the window the whole chain is
-// revoked and the use rejected (replay).
-func (s *Store) resolvePostUse(rt RefreshToken, now time.Time, successor string) (string, RotateStatus, error) {
+// persisted the successor) and accepted — returning the SAME successor that was
+// issued at rotation time so no extra tokens are minted. Beyond the window the
+// whole chain is revoked and the use rejected (replay).
+func (s *Store) resolvePostUse(rt RefreshToken, now time.Time) (string, string, RotateStatus, error) {
 	if rt.UsedAt == nil {
-		return "", RotateReplay, nil
+		return "", "", RotateReplay, nil
 	}
 	if now.Sub(*rt.UsedAt) <= s.reuseWindow {
-		if err := s.issueInChain(successor, rt.ClientID, rt.Resource, rt.ChainRoot); err != nil {
-			return "", RotateUnknown, err
+		if rt.Successor == "" {
+			return "", "", RotateReplay, nil
 		}
-		return rt.ClientID, RotateOKReused, nil
+		return rt.ClientID, rt.Successor, RotateOKReused, nil
 	}
 	// Replay beyond the window: revoke the whole chain and reject.
 	if err := s.revokeChain(rt.ChainRoot); err != nil {
-		return "", RotateUnknown, err
+		return "", "", RotateUnknown, err
 	}
-	return "", RotateReplay, nil
+	return "", "", RotateReplay, nil
 }
 
 // revokeChain marks every token in a chain as revoked.
