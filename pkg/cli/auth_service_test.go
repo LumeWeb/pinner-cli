@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/url"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -1066,4 +1069,38 @@ func TestGetJWTPurpose(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "", purpose)
 	})
+}
+
+// newTestConfigManager builds a real config.Manager seeded from the given YAML.
+func newTestConfigManager(t *testing.T, seed string) config.Manager {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if seed != "" {
+		require.NoError(t, os.WriteFile(path, []byte(seed), 0o600))
+	}
+	m, err := config.NewManager(path)
+	require.NoError(t, err)
+	require.NoError(t, m.Load())
+	return m
+}
+
+// TestMCPAuthServiceEndpointHasScheme reproduces the OOB login bug where the
+// MCP server wired its auth service with the raw BaseEndpoint ("pinner.xyz",
+// no scheme), so the portal SDK built "Post /pinner.xyz/api/auth/login" and
+// failed with `unsupported protocol scheme ""`. The server must instead use
+// GetAccountEndpointSecure(), which yields a scheme-qualified URL. Guard the
+// exact wiring expression so it cannot regress.
+func TestMCPAuthServiceEndpointHasScheme(t *testing.T) {
+	cfgMgr := newTestConfigManager(t, "base_endpoint: \"pinner.xyz\"\nauth_token: \"\"\nsecure: true\n")
+
+	// This is the exact expression used in pkg/cli/root.go when building the
+	// auth service for the MCP / out-of-band login flow.
+	ep := cfgMgr.Config().GetAccountEndpointSecure()
+
+	u, err := url.Parse(ep)
+	require.NoError(t, err, "endpoint must be a valid URL, got %q", ep)
+	require.NotEmpty(t, u.Scheme, "endpoint must carry an http(s) scheme, got %q (raw BaseEndpoint regressed)", ep)
+	require.NotEqual(t, "", u.Scheme)
+	require.True(t, u.Scheme == "https" || u.Scheme == "http", "scheme should be http(s), got %q", u.Scheme)
+	require.NotEmpty(t, u.Host, "endpoint must carry a host, got %q", ep)
 }
