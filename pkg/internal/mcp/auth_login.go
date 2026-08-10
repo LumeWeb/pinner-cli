@@ -116,8 +116,23 @@ type OutOfBandLogin struct {
 	// form whose primary exposure is the owner's own cloud host.
 	throttle map[string]*loginThrottle
 
+	// spent records recently-consumed or expired login tokens once they leave
+	// the pending set, so a re-opened /login/<id> URL whose request has been
+	// evicted by the reaper still renders the branded spent-link page instead
+	// of a bare 404. spentOrder is an insertion-ordered (FIFO) index of spent
+	// keys so the oldest tombstone can be evicted in O(1) at the cap.
+	spent      map[string]spentLogin
+	spentOrder []string
+
 	reaperCtx    context.Context
 	reaperCancel context.CancelFunc
+}
+
+// spentLogin is a tombstone for an evicted login token: when it became spent
+// and the handoffNotActiveReason to show on a re-open.
+type spentLogin struct {
+	at     time.Time
+	reason handoffNotActiveReason
 }
 
 // loginThrottle is the credential attempt counter for an email. lastUsed is
@@ -150,6 +165,7 @@ func NewOutOfBandLogin(auth AuthService, baseURL, keyName string) *OutOfBandLogi
 		keyName:  keyName,
 		requests: make(map[string]*loginRequest),
 		throttle: make(map[string]*loginThrottle),
+		spent:    make(map[string]spentLogin),
 	}
 	// Loopback-associated base URL (empty keeps the loopback-derived URL).
 	o.loopback.baseURL = strings.TrimRight(baseURL, "/")
@@ -358,13 +374,31 @@ func (o *OutOfBandLogin) loginPage(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/login/")
 	o.mu.Lock()
 	req, ok := o.requests[path]
+	sl, spent := o.spent[path]
 	o.mu.Unlock()
 	if !ok {
+		// The request is gone from the pending set. If it was evicted as spent
+		// (consumed or expired, e.g. after the reaper's pendingLoginTTL grace
+		// window), render the branded spent-link page; only a token that never
+		// existed gets a bare 404.
+		if spent {
+			o.loginNotActive(w, r, sl.reason)
+			return
+		}
 		http.NotFound(w, r)
 		return
 	}
 	switch r.Method {
 	case http.MethodGet:
+		// A sign-in link is single-use: opening (or reloading) a URL whose
+		// request already completed successfully or expired must show the
+		// spent-link page immediately, without requiring a form submit. Only
+		// a FAILED attempt (completed with an error) keeps showing the login
+		// form so the human can retry in place.
+		if reason := o.loginSpentReason(req); reason != "" {
+			o.loginNotActive(w, r, reason)
+			return
+		}
 		o.authLoginPage(w, r, req)
 	case http.MethodPost:
 		// CSRF guard: a browser form-POST carries an Origin (and usually a
@@ -383,15 +417,11 @@ func (o *OutOfBandLogin) loginPage(w http.ResponseWriter, r *http.Request) {
 		// reported failure by a stale re-POST (e.g. via the Back button), and an
 		// expired request must not run the auth backend via a URL relayed before
 		// expiry — both would leave a backend session no wizard consumes.
-		// Reject those with 410 Gone and let the wizard restart sign-in. A
+		// Render the spent-link page and let the wizard restart sign-in. A
 		// FAILED attempt (completed with an error) stays POST-able so the human
 		// can retry the form in place; only the throttle blunts repeated guesses.
-		req.mu.Lock()
-		terminalSuccess := req.status == loginCompleted && req.loginError == nil
-		expired := req.status == loginExpired
-		req.mu.Unlock()
-		if terminalSuccess || expired {
-			http.Error(w, "gone", http.StatusGone)
+		if reason := o.loginSpentReason(req); reason != "" {
+			o.loginNotActive(w, r, reason)
 			return
 		}
 		o.authLoginSubmit(w, r, req)
@@ -603,6 +633,34 @@ func (o *OutOfBandLogin) authSuccessPage(w http.ResponseWriter, r *http.Request)
 	_ = authSuccessPage().Render(r.Context(), w)
 }
 
+// loginNotActive renders the shared branded "link no longer active" page for a
+// login URL that is no longer actionable (already used or expired). It keeps a
+// 410 Gone status so programmatic clients still see a spent resource, while
+// rendering a human-readable page body in place of the old bare "410 gone"
+// text.
+func (o *OutOfBandLogin) loginNotActive(w http.ResponseWriter, r *http.Request, reason handoffNotActiveReason) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusGone)
+	_ = handoffNotActivePage(reason, "This sign-in link cannot be used again.").Render(r.Context(), w)
+}
+
+// loginSpentReason reports whether a login request is no longer actionable
+// because its link has been spent: handoffUsed (loginCompleted, no error) means
+// the URL was already used, and handoffExpired means its TTL elapsed. It returns
+// "" for a still-pending request or one that FAILED (completed with an error),
+// which must keep showing the login form so the human can retry.
+func (o *OutOfBandLogin) loginSpentReason(req *loginRequest) handoffNotActiveReason {
+	req.mu.Lock()
+	defer req.mu.Unlock()
+	if req.status == loginExpired {
+		return handoffExpired
+	}
+	if req.status == loginCompleted && req.loginError == nil {
+		return handoffUsed
+	}
+	return ""
+}
+
 // reaper periodically expires stale login requests.
 func (o *OutOfBandLogin) reaper(ctx context.Context) {
 	t := time.NewTicker(time.Minute)
@@ -625,11 +683,31 @@ func (o *OutOfBandLogin) reaper(ctx context.Context) {
 				// cannot leak the request in memory for the process lifetime.
 				expired := req.status == loginExpired
 				completedStale := req.status == loginCompleted && !req.completedAt.IsZero() && now.Sub(req.completedAt) > pendingLoginTTL
+				var reason handoffNotActiveReason
+				if req.status == loginExpired {
+					reason = handoffExpired
+				} else if req.status == loginCompleted && req.loginError == nil {
+					reason = handoffUsed
+				}
 				req.mu.Unlock()
 				if expired || completedStale {
+					// Record a tombstone so a re-opened URL after eviction still
+					// renders the spent page instead of a bare 404. A completed
+					// request with an error is retryable while pending; once it is
+					// evicted as completed-stale it is no longer actionable, so
+					// default to the "used" reason.
+					if reason == "" {
+						reason = handoffUsed
+					}
+					o.markSpentLocked(id, now, reason)
 					delete(o.requests, id)
 				}
 			}
+			// Bound the spent-tombstone map to maxSpentTombstones (FIFO eviction
+			// of the oldest) so a spent login link keeps explaining itself for as
+			// long as it is within retention, while memory stays flat on a
+			// long-running MCP process.
+			o.pruneSpentLocked()
 			// Evict credential throttles idle past their TTL so the map cannot
 			// grow without bound over the process lifetime. A throttle in an
 			// active lockout is never pruned, so the cooldown still holds.
@@ -643,6 +721,30 @@ func (o *OutOfBandLogin) reaper(ctx context.Context) {
 				}
 			}
 			o.mu.Unlock()
+		}
+	}
+}
+
+// markSpentLocked records a spent login token and appends it to the FIFO
+// eviction order. It must be called with o.mu held.
+func (o *OutOfBandLogin) markSpentLocked(id string, at time.Time, reason handoffNotActiveReason) {
+	if _, ok := o.spent[id]; ok {
+		return
+	}
+	o.spent[id] = spentLogin{at: at, reason: reason}
+	o.spentOrder = append(o.spentOrder, id)
+}
+
+// pruneSpentLocked bounds the login spent-tombstone map to maxSpentTombstones
+// by evicting from the FIFO head (O(overflow), never a re-scan) only when the
+// cap is exceeded, so a spent login link keeps explaining itself as long as it
+// is within retention instead of reverting to a bare 404 on a clock.
+func (o *OutOfBandLogin) pruneSpentLocked() {
+	for len(o.spent) > maxSpentTombstones && len(o.spentOrder) > 0 {
+		oldest := o.spentOrder[0]
+		o.spentOrder = o.spentOrder[1:]
+		if _, ok := o.spent[oldest]; ok {
+			delete(o.spent, oldest)
 		}
 	}
 }

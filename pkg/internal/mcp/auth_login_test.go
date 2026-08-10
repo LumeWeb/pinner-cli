@@ -118,18 +118,32 @@ func testOrigin(o *OutOfBandLogin) string {
 // Origin/Referer are allowed.
 func TestOOBLoginRejectsCrossOriginPOST(t *testing.T) {
 	o := newOOBForTest(t)
-	_, u, err := o.Begin("session-1", "test@example.com")
-	require.NoError(t, err)
+
+	// These rejection checks must run on a still-pending request: each is a
+	// fresh login seeded per case so a successful earlier POST cannot consume
+	// the request and turn the follow-up GET into the spent-link page (which
+	// carries no CSRF token for fetchCSRF to extract).
 
 	// Cross-origin Origin must be rejected.
-	assert.Equal(t, http.StatusForbidden, doLogin(t, o, u, "https://evil.example", "").Code)
+	assert.Equal(t, http.StatusForbidden, doLogin(t, o, freshLoginURL(t, o), "https://evil.example", "").Code)
 	// Cross-origin Referer must be rejected.
-	assert.Equal(t, http.StatusForbidden, doLogin(t, o, u, "", "https://evil.example/login").Code)
-	// Same-origin Origin is allowed.
-	assert.NotEqual(t, http.StatusForbidden, doLogin(t, o, u, testOrigin(o), "").Code)
+	assert.Equal(t, http.StatusForbidden, doLogin(t, o, freshLoginURL(t, o), "", "https://evil.example/login").Code)
 	// Non-browser client with no Origin/Referer is rejected: the endpoint is
 	// browser-only and a browser form-POST always carries an Origin.
-	assert.Equal(t, http.StatusForbidden, doLogin(t, o, u, "", "").Code)
+	assert.Equal(t, http.StatusForbidden, doLogin(t, o, freshLoginURL(t, o), "", "").Code)
+	// Same-origin Origin is allowed (completes the login). Use a fresh URL
+	// too: the original `u` was evicted by the freshLoginURL calls above.
+	assert.NotEqual(t, http.StatusForbidden, doLogin(t, o, freshLoginURL(t, o), testOrigin(o), "").Code)
+}
+
+// freshLoginURL returns a fresh login URL for the same session+email, evicting
+// the prior pending request so the returned link is untouched and still renders
+// the login form (with a CSRF token) on GET.
+func freshLoginURL(t *testing.T, o *OutOfBandLogin) string {
+	t.Helper()
+	_, u, err := o.Begin("session-1", "test@example.com")
+	require.NoError(t, err)
+	return u
 }
 
 // TestOOBLoginRejectsMissingCSRFToken verifies the credential POST requires the
@@ -428,8 +442,10 @@ func TestOOBLoginCompleteClearsError(t *testing.T) {
 // TestOOBLoginCompletedRejectsRePOST verifies a login request that has already
 // completed in the browser cannot be flipped into a reported failure by a
 // subsequent wrong-password POST to the same URL (e.g. a Back-button re-POST).
-// The POST branch short-circuits with 410 Gone when the request is no longer
-// loginPending, and the accepted completion stays reported as a success.
+// The POST branch short-circuits when the request is no longer loginPending,
+// rendering the spent-link page, and the accepted completion stays reported as
+// a success. Opening or resubmitting the used URL does not require submitting
+// the form to learn it is spent.
 func TestOOBLoginCompletedRejectsRePOST(t *testing.T) {
 	o := newOOBForTest(t)
 	_, u, err := o.Begin("session-1", "repost@example.com")
@@ -440,16 +456,19 @@ func TestOOBLoginCompletedRejectsRePOST(t *testing.T) {
 	require.NotEqual(t, http.StatusForbidden, code)
 
 	// A second credential POST (as a stale Back-submit with a wrong password)
-	// must be rejected as Gone and must not run the auth backend.
+	// must be short-circuited (spent-link page) and must not run the auth
+	// backend. The terminal-status guard runs before the CSRF token check, so
+	// the body needs no valid token; the spent-link page renders in place of
+	// the old bare "410 gone" text.
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, u, strings.NewReader(url.Values{
 		"password": {"wrong-password"},
-		"csrf":     {fetchCSRF(t, o, u)},
 	}.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Origin", testOrigin(o))
 	o.loginPage(rec, req)
-	assert.Equal(t, http.StatusGone, rec.Code, "a completed login must reject re-POST with 410 Gone")
+	assert.Equal(t, http.StatusGone, rec.Code, "a completed login must keep 410 Gone, not re-run auth")
+	assert.Contains(t, rec.Body.String(), "no longer active", "a completed login must render the spent-link page, not re-run auth")
 
 	// The original acceptance is untouched: pendingOutcome still reports the
 	// completed success, not a failure introduced by the stale POST.
@@ -476,19 +495,121 @@ func TestOOBLoginExpiredRejectsCredentialPOST(t *testing.T) {
 	}
 	o.mu.Unlock()
 
-	// A credential POST to the expired URL must be rejected with 410 Gone. If
-	// the guard were missing, authLoginSubmit would run LoginCheck (success)
-	// and CompleteLogin, returning a 200-render; 410 proves the backend was
-	// not reached.
+	// A credential POST to the expired URL must be short-circuited, rendering
+	// the spent-link page rather than running LoginCheck/CompleteLogin. The
+	// terminal-status guard runs before the CSRF token check, so the POST body
+	// needs no valid token — assert the spent page renders.
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, u, strings.NewReader(url.Values{
 		"password": {"whatever"},
-		"csrf":     {fetchCSRF(t, o, u)},
 	}.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Origin", testOrigin(o))
 	o.loginPage(rec, req)
-	assert.Equal(t, http.StatusGone, rec.Code, "an expired login must reject credential POST with 410 Gone")
+	assert.Equal(t, http.StatusGone, rec.Code, "an expired login must keep 410 Gone, not run auth")
+	assert.Contains(t, rec.Body.String(), "link expired before it was completed", "an expired login must render the spent-link page, not run auth")
+}
+
+// TestOOBLoginUsedDetectedOnGET verifies the core requirement that a spent
+// login link is detected on open/reload (GET), not only after submitting the
+// form. A human who opens a used or expired URL must immediately see the
+// spent-link page instead of a fresh login form.
+func TestOOBLoginUsedDetectedOnGET(t *testing.T) {
+	t.Run("completed", func(t *testing.T) {
+		o := newOOBForTest(t)
+		_, u, err := o.Begin("session-1", "used@example.com")
+		require.NoError(t, err)
+
+		// Complete the login successfully in the browser.
+		code := doLogin(t, o, u, testOrigin(o), "").Code
+		require.NotEqual(t, http.StatusForbidden, code)
+
+		// A subsequent GET (reload / tab reopen) must show the spent-link page
+		// with no submit required.
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, u, nil)
+		o.loginPage(rec, req)
+		assert.Equal(t, http.StatusGone, rec.Code, "GET on a used login must keep 410 Gone")
+		assert.Contains(t, rec.Body.String(), "no longer active", "GET on a used login must show the spent-link page")
+		assert.NotContains(t, rec.Body.String(), `name="email"`, "used login must not render a fresh form")
+	})
+
+	t.Run("expired", func(t *testing.T) {
+		o := newOOBForTest(t)
+		_, u, err := o.Begin("session-1", "stale-get@example.com")
+		require.NoError(t, err)
+
+		// Mark the request expired (as the reaper does).
+		o.mu.Lock()
+		for _, r := range o.requests {
+			r.mu.Lock()
+			r.status = loginExpired
+			r.mu.Unlock()
+		}
+		o.mu.Unlock()
+
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, u, nil)
+		o.loginPage(rec, req)
+		assert.Equal(t, http.StatusGone, rec.Code, "GET on an expired login must keep 410 Gone")
+		assert.Contains(t, rec.Body.String(), "link expired before it was completed", "GET on an expired login must show the spent-link page")
+		assert.NotContains(t, rec.Body.String(), `name="email"`, "expired login must not render a fresh form")
+	})
+}
+
+// TestOOBLoginSpentSurvivesReaperEviction verifies the spent-link page still
+// renders after the reaper has evicted a completed/expired request from the
+// pending set (the pendingLoginTTL grace window). A re-opened /login/<id> URL
+// must show the branded spent page via the tombstone, not regress to a bare
+// 404 because the request object is gone.
+func TestOOBLoginSpentSurvivesReaperEviction(t *testing.T) {
+	t.Run("completed-evicted", func(t *testing.T) {
+		o := newOOBForTest(t)
+		id, u, err := o.Begin("session-1", "evict-used@example.com")
+		require.NoError(t, err)
+
+		// Complete the login, then evict it from the pending set exactly as the
+		// reaper does: the request leaves o.requests and a tombstone is kept.
+		code := doLogin(t, o, u, testOrigin(o), "").Code
+		require.NotEqual(t, http.StatusForbidden, code)
+		o.mu.Lock()
+		o.spent[id] = spentLogin{at: time.Now(), reason: handoffUsed}
+		delete(o.requests, id)
+		o.mu.Unlock()
+
+		// Re-open: must render the spent page (410), not a 404.
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, u, nil)
+		o.loginPage(rec, req)
+		assert.Equal(t, http.StatusGone, rec.Code, "evicted used login must render 410 spent page, not 404")
+		assert.Contains(t, rec.Body.String(), "no longer active")
+	})
+
+	t.Run("expired-evicted", func(t *testing.T) {
+		o := newOOBForTest(t)
+		id, u, err := o.Begin("session-1", "evict-expired@example.com")
+		require.NoError(t, err)
+
+		// Evict as expired: request removed, expired tombstone kept.
+		o.mu.Lock()
+		o.spent[id] = spentLogin{at: time.Now(), reason: handoffExpired}
+		delete(o.requests, id)
+		o.mu.Unlock()
+
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, u, nil)
+		o.loginPage(rec, req)
+		assert.Equal(t, http.StatusGone, rec.Code, "evicted expired login must render 410 spent page, not 404")
+		assert.Contains(t, rec.Body.String(), "expired")
+	})
+
+	t.Run("never-existed-still-404", func(t *testing.T) {
+		o := newOOBForTest(t)
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/login/does-not-exist", nil)
+		o.loginPage(rec, req)
+		assert.Equal(t, http.StatusNotFound, rec.Code, "an unknown token (no tombstone) must stay 404")
+	})
 }
 
 // TestOutOfBandLoginMountsOnSharedMux verifies the coordinator can be served on a
