@@ -17,8 +17,13 @@ import (
 )
 
 // pendingLoginTTL bounds how long an out-of-band login request stays valid
-// before the human must complete it.
-const pendingLoginTTL = 10 * time.Minute
+// before the human must complete it. It is deliberately aligned with the async
+// handle TTL (DefaultSessionTTL, 30m): the human first has to notice the
+// approval URL in another app and complete the sign-in, so a short grace causes
+// frustrating "handle expired" resume failures for someone who is only a little
+// slow. Both the login request and its resume handle must stay alive long
+// enough for a realistic browser round-trip.
+const pendingLoginTTL = DefaultSessionTTL
 
 // maxLoginAttempts and loginLockout throttle credential attempts against the
 // loopback login endpoint: after maxLoginAttempts consecutive failures an email

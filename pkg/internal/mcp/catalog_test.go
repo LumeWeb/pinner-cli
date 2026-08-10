@@ -309,3 +309,48 @@ func TestVaultRestoreInteractionStaysStdinInputThroughBuildCatalog(t *testing.T)
 	assert.Equal(t, InteractionStdinInput, restore.Interaction,
 		"buildCatalog must keep vault restore stdin_input so the --seed-stdin gate holds")
 }
+
+// TestSSOToolsDiscoverableInCatalog verifies the out-of-band sign-in tools are
+// surfaced through progressive discovery, not just as direct (tools/list)
+// descriptors. Previously a catalog search for "sso"/"oob"/"resume" returned
+// zero results even though pinner_auth_sso and pinner_auth_resume existed as
+// direct tools, so an agent that relies on search_tools could never find them.
+func TestSSOToolsDiscoverableInCatalog(t *testing.T) {
+	catalog := NewToolCatalog()
+	// The descriptors carry the metadata; the handlers no-op on nil oob/handles
+	// for discovery purposes.
+	catalog.Add(toolEntryFromDescriptor(NewAuthSSODescriptor(nil, nil)))
+	catalog.Add(toolEntryFromDescriptor(NewAuthResumeDescriptor(nil, nil)))
+
+	for _, q := range []string{"sso", "oob", "resume", "sign-in", "out-of-band", "auth"} {
+		summaries := catalog.Search(q, "")
+		names := make([]string, 0, len(summaries))
+		for _, s := range summaries {
+			names = append(names, s.Name)
+		}
+		assert.Contains(t, names, "pinner_auth_sso", "search %q must find pinner_auth_sso", q)
+		assert.Contains(t, names, "pinner_auth_resume", "search %q must find pinner_auth_resume", q)
+	}
+
+	// Both are agent-safe (non-blocking) and present in the full listing.
+	var ssoCount, resumeCount int
+	for _, s := range catalog.Search("", "") {
+		switch s.Name {
+		case "pinner_auth_sso":
+			ssoCount++
+			assert.Equal(t, InteractionAgentSafe, s.Interaction)
+		case "pinner_auth_resume":
+			resumeCount++
+			assert.Equal(t, InteractionAgentSafe, s.Interaction)
+		}
+	}
+	assert.Equal(t, 1, ssoCount, "pinner_auth_sso must be listed exactly once")
+	assert.Equal(t, 1, resumeCount, "pinner_auth_resume must be listed exactly once")
+
+	// describe_tool / invoke_tool must also resolve them.
+	d, err := catalog.Describe("pinner_auth_sso")
+	require.NoError(t, err)
+	assert.Equal(t, CategoryCore, d.Category)
+	_, ok := catalog.Get("pinner_auth_resume")
+	assert.True(t, ok, "pinner_auth_resume must be registered for describe/invoke")
+}

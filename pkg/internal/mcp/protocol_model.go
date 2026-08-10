@@ -57,6 +57,29 @@ func descriptorFromTool(entry *ToolEntry) ToolDescriptor {
 	}
 }
 
+// toolEntryFromDescriptor mirrors descriptorFromTool in the reverse direction.
+// It lets a tool that is registered as a direct (tools/list) descriptor, such
+// as the out-of-band sign-in tools, ALSO be surfaced through progressive
+// discovery (search_tools/describe_tool) so both discovery surfaces stay in
+// sync. The entry keeps its handler so invoke_tool can call it.
+func toolEntryFromDescriptor(desc ToolDescriptor) *ToolEntry {
+	return &ToolEntry{
+		Name:        desc.Name,
+		Title:       desc.Title,
+		Description: desc.Description,
+		Category:    desc.Category,
+		ReadOnly:    desc.ReadOnly,
+		Destructive: desc.Destructive,
+		InputSchema: desc.InputSchema,
+		Meta:        desc.Meta,
+		Handler:     desc.Handler,
+		// Direct auth tools are non-blocking and safe for agent invocation:
+		// pinner_auth_sso returns a needs_human hand-off, pinner_auth_resume
+		// polls. Ensure discovery treats them as callable, not interactive.
+		Interaction: InteractionAgentSafe,
+	}
+}
+
 // ResourceResult is the SDK-neutral resource response.
 type ResourceResult struct {
 	URI      string

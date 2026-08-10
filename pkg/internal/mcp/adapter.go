@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -29,6 +30,17 @@ import (
 
 // ToolDelimiter separates command path segments in MCP tool names.
 const ToolDelimiter = "_"
+
+// ansiEscapeRE matches ANSI/VT escape sequences (SGR color codes, cursor
+// movement, erase, reset) so agent-facing tool output is always clean plain
+// text. The CLI's human formatter colors status text (e.g. \x1b[32mpinned\x1b[0m)
+// which is fine for a terminal but noisy for an MCP agent; even with --agent
+// forcing JSON, strip any stray escape sequence at the MCP boundary as a
+// defense-in-depth guarantee.
+var ansiEscapeRE = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*(\x07|\x1b\\)|\x1b[PX^_].*?\x1b\\`)
+
+// stripANSI removes ANSI/VT escape sequences from s.
+func stripANSI(s string) string { return ansiEscapeRE.ReplaceAllString(s, "") }
 
 // log is the package-level zap logger for the MCP adapter and its out-of-band
 // auth coordinators. It is a settable variable so a user-configured logger
@@ -271,9 +283,16 @@ adapter.`,
 			if err := RegisterOfficialDescriptor(srv, authSSO); err != nil {
 				return fmt.Errorf("failed to register auth sso tool: %w", err)
 			}
-			if err := RegisterOfficialDescriptor(srv, NewAuthResumeDescriptor(oob, authHandles)); err != nil {
+			authResume := NewAuthResumeDescriptor(oob, authHandles)
+			if err := RegisterOfficialDescriptor(srv, authResume); err != nil {
 				return fmt.Errorf("failed to register auth resume tool: %w", err)
 			}
+			// Surface the out-of-band sign-in tools through progressive
+			// discovery too, so an agent that only calls search_tools finds
+			// them. They are registered as direct (tools/list) tools AND
+			// indexed in the catalog; both discovery surfaces stay in sync.
+			catalog.Add(toolEntryFromDescriptor(authSSO))
+			catalog.Add(toolEntryFromDescriptor(authResume))
 			if mcpOpts.prompts {
 				if err := RegisterOfficialPrompts(srv, PromptDescriptors()); err != nil {
 					return fmt.Errorf("failed to register prompts: %w", err)
@@ -811,14 +830,14 @@ func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string, seedDr
 		cancel()
 
 		if runErr != nil {
-			msg := stderr.String()
+			msg := stripANSI(stderr.String())
 			if msg == "" {
 				msg = runErr.Error()
 			}
 			return ToolResult{IsError: true, Text: msg}, nil
 		}
 
-		text, extra := attachSeedDrop(stdout.String(), request.Name, seedDrop)
+		text, extra := attachSeedDrop(stripANSI(stdout.String()), request.Name, seedDrop)
 		restoreURL := attachRestoreURL(text, request.Name, oobRestore)
 		if restoreURL != "" {
 			if extra == nil {
