@@ -125,6 +125,8 @@ func TestLocalhostProtectionTunnelScoped(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "https://tunnel.example.com/mcp",
 			strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}`))
 		req.Header.Set("Content-Type", "application/json")
+		// Real MCP clients negotiate the streamable-HTTP framing via Accept.
+		req.Header.Set("Accept", "application/json, text/event-stream")
 		// Prime the loopback local address the SDK's guard inspects.
 		req = req.WithContext(context.WithValue(req.Context(), http.LocalAddrContextKey, &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 32000}))
 		rec := httptest.NewRecorder()
@@ -136,8 +138,9 @@ func TestLocalhostProtectionTunnelScoped(t *testing.T) {
 	require.Equal(t, http.StatusForbidden, doReq(handler(false)),
 		"localhost protection must stay on when no tunnel is active")
 
-	// With a tunnel (protection off): the request passes through (not 403).
-	require.NotEqual(t, http.StatusForbidden, doReq(handler(true)),
+	// With a tunnel (protection off): the request is genuinely accepted (200),
+	// not merely "not 403" — proving DisableLocalhostProtection works.
+	require.Equal(t, http.StatusOK, doReq(handler(true)),
 		"localhost protection must be disabled when a tunnel is active")
 }
 
