@@ -31,10 +31,12 @@ func TestRefreshRotationAndReuse(t *testing.T) {
 	require.Equal(t, RotateOK, status)
 	require.Equal(t, "cli", client)
 
-	// Force the token into the reuse window deterministically (no wall-clock
-	// dependency, which was flaky on Windows CI where the two calls could
-	// exceed the 100ms window before the DB was touched).
-	require.NoError(t, s.db.Model(&RefreshToken{}).Where("token = ?", rt1).Update("used_at", time.Now()).Error)
+	// Pin used_at slightly in the future so the reuse is DETERMINISTICALLY
+	// inside the 100ms window (now.Sub(used_at) is negative ⇒ ≤ window) with no
+	// wall-clock dependency — on Windows CI the clock is coarse and the SQLite
+	// round-trip between the two calls previously exceeded the window, flaking
+	// RotateReplay where RotateOKReused was expected.
+	require.NoError(t, s.db.Model(&RefreshToken{}).Where("token = ?", rt1).Update("used_at", time.Now().Add(time.Hour)).Error)
 
 	// Reuse the same token within the reuse window → benign; returns the SAME
 	// already-issued successor (succ), not a freshly minted one.
@@ -113,8 +115,9 @@ func TestRepeatedReuseMintsNoNewTokens(t *testing.T) {
 	require.Equal(t, RotateOK, status)
 	require.NotEqual(t, succ1, "")
 
-	// Force into the reuse window deterministically, then re-present many times.
-	require.NoError(t, s.db.Model(&RefreshToken{}).Where("token = ?", "rt-reuse").Update("used_at", time.Now()).Error)
+	// Pin used_at in the future so every re-presentation is deterministically
+	// inside the window (no Windows wall-clock flake), then re-present many times.
+	require.NoError(t, s.db.Model(&RefreshToken{}).Where("token = ?", "rt-reuse").Update("used_at", time.Now().Add(time.Hour)).Error)
 	for i := 0; i < 10; i++ {
 		_, succN, status, err := s.RotateRefreshToken("rt-reuse", "cli", "")
 		require.NoError(t, err)
