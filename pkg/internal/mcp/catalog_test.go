@@ -168,6 +168,104 @@ func TestEnumStringFlagEmitsEnum(t *testing.T) {
 	assert.False(t, hasEnum)
 }
 
+// TestClassifyInteraction verifies the deterministic interaction classification
+// for both stdin-input and interactive command paths.
+func TestClassifyInteraction(t *testing.T) {
+	cases := []struct {
+		loc  []string
+		want Interaction
+	}{
+		{[]string{"pinner", "upload"}, InteractionAgentSafe}, // upload guarded by isStdinPipe
+		{[]string{"pinner", "pin"}, InteractionAgentSafe},
+		{[]string{"pinner", "vault", "create"}, InteractionAgentSafe},
+		{[]string{"pinner", "vault", "restore"}, InteractionStdinInput}, // --seed-stdin io.ReadAll
+		{[]string{"pinner", "setup"}, InteractionInteractive},
+		{[]string{"pinner", "list"}, InteractionAgentSafe},
+		{[]string{"pinner", "admin", "billing", "subscribers", "list-users"}, InteractionAgentSafe},
+	}
+	for _, c := range cases {
+		assert.Equal(t, c.want, classifyInteraction(c.loc), "classifyInteraction(%v)", c.loc)
+	}
+}
+
+// TestInteractionRegisteredOnCommandTree verifies RegisterFromCommand sets the
+// Interaction field on catalog entries from the command path.
+func TestInteractionRegisteredOnCommandTree(t *testing.T) {
+	root := &cli.Command{
+		Name: "pinner",
+		Commands: []*cli.Command{
+			{Name: "setup", Action: func(context.Context, *cli.Command) error { return nil }},
+			{
+				Name: "vault",
+				Commands: []*cli.Command{
+					{Name: "restore", Action: func(context.Context, *cli.Command) error { return nil }},
+					{Name: "create", Action: func(context.Context, *cli.Command) error { return nil }},
+				},
+			},
+			{Name: "list", Action: func(context.Context, *cli.Command) error { return nil }},
+		},
+	}
+	catalog := NewToolCatalog()
+	err := catalog.RegisterFromCommand(root, true, nil,
+		func(context.Context, ToolRequest) (ToolResult, error) { return ToolResult{}, nil })
+	require.NoError(t, err)
+
+	restore, _ := catalog.Get("pinner_vault_restore")
+	require.NotNil(t, restore)
+	assert.Equal(t, InteractionStdinInput, restore.Interaction)
+
+	setup, _ := catalog.Get("pinner_setup")
+	require.NotNil(t, setup)
+	assert.Equal(t, InteractionInteractive, setup.Interaction)
+
+	create, _ := catalog.Get("pinner_vault_create")
+	require.NotNil(t, create)
+	assert.Equal(t, InteractionAgentSafe, create.Interaction)
+}
+
+// TestSearchHidesInteractiveTools verifies interactive (human-only) tools are
+// omitted from search_tools while stdin_input and agent_safe tools stay
+// discoverable with their interaction signal.
+func TestSearchHidesInteractiveTools(t *testing.T) {
+	root := &cli.Command{
+		Name: "pinner",
+		Commands: []*cli.Command{
+			{Name: "setup", Description: "Run the setup wizard", Action: func(context.Context, *cli.Command) error { return nil }},
+			{
+				Name: "vault",
+				Commands: []*cli.Command{
+					{Name: "restore", Description: "Restore a vault", Action: func(context.Context, *cli.Command) error { return nil }},
+				},
+			},
+			{Name: "status", Description: "Show status", Action: func(context.Context, *cli.Command) error { return nil }},
+		},
+	}
+	catalog := NewToolCatalog()
+	err := catalog.RegisterFromCommand(root, true, nil,
+		func(context.Context, ToolRequest) (ToolResult, error) { return ToolResult{}, nil })
+	require.NoError(t, err)
+
+	summaries := catalog.Search("", "")
+	var names []string
+	var restoreSummary *ToolSummary
+	for i := range summaries {
+		names = append(names, summaries[i].Name)
+		if summaries[i].Name == "pinner_vault_restore" {
+			restoreSummary = &summaries[i]
+		}
+	}
+	assert.NotContains(t, names, "pinner_setup", "interactive tool must be hidden from search_tools")
+	assert.Contains(t, names, "pinner_vault_restore")
+	assert.Contains(t, names, "pinner_status")
+	require.NotNil(t, restoreSummary, "restore must remain discoverable")
+	assert.Equal(t, InteractionStdinInput, restoreSummary.Interaction)
+
+	// Describe must still surface the interaction label for a discoverable tool.
+	detail, err := catalog.Describe("pinner_vault_restore")
+	require.NoError(t, err)
+	assert.Equal(t, InteractionStdinInput, detail.Interaction)
+}
+
 func TestStringSliceFlagEmitsArraySchema(t *testing.T) {
 	schema, err := flagsToSchema([]cli.Flag{&cli.StringSliceFlag{Name: "tags", Usage: "Tags"}}, "")
 	require.NoError(t, err)

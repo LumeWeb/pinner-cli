@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
@@ -37,7 +38,7 @@ func newOfficialTestServer(t *testing.T) (*mcp.Server, *ToolCatalog) {
 	provider[resourceKey] = `{"authenticated":true}`
 
 	srv := NewOfficialServer(nil)
-	require.NoError(t, RegisterOfficialMetaTools(srv, catalog))
+	require.NoError(t, RegisterOfficialMetaTools(srv, catalog, false, nil, nil))
 
 	require.NoError(t, RegisterOfficialResources(srv,
 		[]ResourceDescriptor{
@@ -104,7 +105,7 @@ func connectOfficialClient(t *testing.T, srv *mcp.Server) *mcp.ClientSession {
 func TestOfficialServerFromCatalog(t *testing.T) {
 	catalog := NewToolCatalog()
 	catalog.Add(&ToolEntry{Name: "pinner_status", InputSchema: json.RawMessage(`{"type":"object"}`), Handler: func(_ context.Context, _ ToolRequest) (ToolResult, error) { return ToolResult{Text: "ok"}, nil }})
-	srv, err := OfficialServerFromCatalog(catalog, "instructions")
+	srv, err := OfficialServerFromCatalog(catalog, "instructions", false, nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, srv)
 }
@@ -232,6 +233,232 @@ func TestOfficialInvokeToolUnknownIsError(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, res.IsError)
+}
+
+// TestOfficialInvokeToolRedirectsNonAgentSafe verifies that invoke_tool steers
+// agents away from interactive and stdin-input tools instead of running them:
+// the handler is never called, and a needs_human hand-off is returned.
+func TestOfficialInvokeToolRedirectsNonAgentSafe(t *testing.T) {
+	var interactiveCalled, stdinCalled bool
+
+	catalog := NewToolCatalog()
+	catalog.Add(&ToolEntry{
+		Name:        "pinner_setup",
+		Description: "Setup wizard",
+		Category:    CategoryCore,
+		Interaction: InteractionInteractive,
+		InputSchema: json.RawMessage(`{"type":"object"}`),
+		Handler: func(context.Context, ToolRequest) (ToolResult, error) {
+			interactiveCalled = true
+			return ToolResult{Text: "ran"}, nil
+		},
+	})
+	catalog.Add(&ToolEntry{
+		Name:        "pinner_vault_restore",
+		Description: "Restore a vault",
+		Category:    CategoryCore,
+		Interaction: InteractionStdinInput,
+		InputSchema: json.RawMessage(`{"type":"object"}`),
+		Handler: func(context.Context, ToolRequest) (ToolResult, error) {
+			stdinCalled = true
+			return ToolResult{Text: "ran"}, nil
+		},
+	})
+
+	srv := NewOfficialServer(nil)
+	require.NoError(t, RegisterOfficialMetaTools(srv, catalog, false, nil, nil))
+	cs := connectOfficialClient(t, srv)
+
+	// Interactive tool -> needs_human redirect, handler not called.
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "invoke_tool",
+		Arguments: map[string]any{
+			"name":      "pinner_setup",
+			"arguments": map[string]any{},
+		},
+	})
+	require.NoError(t, err)
+	require.False(t, res.IsError, "needs_human is not an error")
+	sc, ok := res.StructuredContent.(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "needs_human", sc["status"])
+	require.Equal(t, string(ReasonInteractiveOnly), sc["reason"])
+	require.False(t, interactiveCalled, "interactive tool handler must not run")
+
+	// stdin-input tool -> needs_human redirect (stdin absent), handler not called.
+	res, err = cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "invoke_tool",
+		Arguments: map[string]any{
+			"name":      "pinner_vault_restore",
+			"arguments": map[string]any{},
+		},
+	})
+	require.NoError(t, err)
+	require.False(t, res.IsError)
+	sc, ok = res.StructuredContent.(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "needs_human", sc["status"])
+	require.Equal(t, string(ReasonStdinRequired), sc["reason"])
+	require.False(t, stdinCalled, "stdin-input tool handler must not run when stdin is absent")
+}
+
+func TestOfficialInvokeToolAllowsOOBRestore(t *testing.T) {
+	var restoreCalled bool
+
+	catalog := NewToolCatalog()
+	catalog.Add(&ToolEntry{
+		Name:        "pinner_vault_restore",
+		Description: "Restore a vault",
+		Category:    CategoryCore,
+		Interaction: InteractionStdinInput,
+		InputSchema: json.RawMessage(`{"type":"object"}`),
+		Handler: func(context.Context, ToolRequest) (ToolResult, error) {
+			restoreCalled = true
+			return ToolResult{Text: "ran"}, nil
+		},
+	})
+
+	// Wire an OOB restore coordinator: the agent-safe restore must bypass the
+	// stdin gate so the catalog handler can mint the one-time /restore/<token>
+	// URL (which is otherwise unreachable in HTTP/tunnel mode where stdin is
+	// /dev/null).
+	srv := NewOfficialServer(nil)
+	require.NoError(t, RegisterOfficialMetaTools(srv, catalog, false, nil, NewOOBRestore(nil, time.Minute)))
+
+	cs := connectOfficialClient(t, srv)
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "invoke_tool",
+		Arguments: map[string]any{
+			"name":      "pinner_vault_restore",
+			"arguments": map[string]any{},
+		},
+	})
+	require.NoError(t, err)
+	require.False(t, res.IsError)
+	require.True(t, restoreCalled, "OOB restore must bypass the stdin gate so the restore URL can be minted")
+}
+
+func TestOfficialInvokeToolRedirectsStdinInStdioMode(t *testing.T) {
+	var stdinCalled bool
+
+	catalog := NewToolCatalog()
+	catalog.Add(&ToolEntry{
+		Name:        "pinner_vault_restore",
+		Description: "Restore a vault",
+		Category:    CategoryCore,
+		Interaction: InteractionStdinInput,
+		InputSchema: json.RawMessage(`{"type":"object"}`),
+		Handler: func(context.Context, ToolRequest) (ToolResult, error) {
+			stdinCalled = true
+			return ToolResult{Text: "ran"}, nil
+		},
+	})
+
+	// stdioMode=true models the server running over stdio, where os.Stdin is
+	// the MCP transport pipe: a stdin-input command must be redirected even if
+	// stdin happens to be a pipe (consuming it would read MCP protocol bytes).
+	// No OOB restore is wired here, so the stdin gate applies.
+	srv := NewOfficialServer(nil)
+	require.NoError(t, RegisterOfficialMetaTools(srv, catalog, true, nil, nil))
+
+	cs := connectOfficialClient(t, srv)
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "invoke_tool",
+		Arguments: map[string]any{
+			"name":      "pinner_vault_restore",
+			"arguments": map[string]any{},
+		},
+	})
+	require.NoError(t, err)
+	require.False(t, res.IsError)
+	sc, ok := res.StructuredContent.(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "needs_human", sc["status"])
+	require.Equal(t, string(ReasonStdinRequired), sc["reason"])
+	require.False(t, stdinCalled, "stdin-input tool must be redirected in stdio mode")
+}
+
+func TestOfficialInvokeToolOOBRestoreWithSeedStdinStillGated(t *testing.T) {
+	var stdinCalled bool
+
+	catalog := NewToolCatalog()
+	catalog.Add(&ToolEntry{
+		Name:        "pinner_vault_restore",
+		Description: "Restore a vault",
+		Category:    CategoryCore,
+		Interaction: InteractionStdinInput,
+		InputSchema: json.RawMessage(`{"type":"object"}`),
+		Handler: func(context.Context, ToolRequest) (ToolResult, error) {
+			stdinCalled = true
+			return ToolResult{Text: "ran"}, nil
+		},
+	})
+
+	// Even with an OOB restore coordinator wired, a --seed-stdin invocation
+	// reads os.Stdin unconditionally, so the restore bypass must NOT apply.
+	// stdioMode=true models the server over stdio (os.Stdin == MCP pipe):
+	// consuming it would desync the stream, so the stdin gate redirects.
+	srv := NewOfficialServer(nil)
+	require.NoError(t, RegisterOfficialMetaTools(srv, catalog, true, nil, NewOOBRestore(nil, time.Minute)))
+
+	cs := connectOfficialClient(t, srv)
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "invoke_tool",
+		Arguments: map[string]any{
+			"name":      "pinner_vault_restore",
+			"arguments": map[string]any{"seed-stdin": true},
+		},
+	})
+	require.NoError(t, err)
+	require.False(t, res.IsError)
+	sc, ok := res.StructuredContent.(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "needs_human", sc["status"])
+	require.Equal(t, string(ReasonStdinRequired), sc["reason"])
+	require.False(t, stdinCalled, "--seed-stdin restore must still be gated even with OOB restore wired")
+
+	// Same for a string-form truthy flag: tool args arrive from the agent's
+	// JSON, so "seed-stdin":"true" must ALSO keep the gate closed (a helper
+	// that only accepted bool would wrongly activate the bypass and read the
+	// MCP pipe).
+	res, err = cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "invoke_tool",
+		Arguments: map[string]any{
+			"name":      "pinner_vault_restore",
+			"arguments": map[string]any{"seed-stdin": "true"},
+		},
+	})
+	require.NoError(t, err)
+	require.False(t, res.IsError)
+	sc, ok = res.StructuredContent.(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "needs_human", sc["status"])
+	require.Equal(t, string(ReasonStdinRequired), sc["reason"])
+	require.False(t, stdinCalled, "string-form --seed-stdin must still be gated")
+}
+
+func TestToolArgsHasBoolTruthiness(t *testing.T) {
+	cases := []struct {
+		name string
+		args map[string]any
+		want bool
+	}{
+		{"missing key", map[string]any{}, false},
+		{"nil args", nil, false},
+		{"bool true", map[string]any{"seed-stdin": true}, true},
+		{"bool false", map[string]any{"seed-stdin": false}, false},
+		{"string true", map[string]any{"seed-stdin": "true"}, true},
+		{"string 1", map[string]any{"seed-stdin": "1"}, true},
+		{"string false", map[string]any{"seed-stdin": "false"}, false},
+		{"number 1", map[string]any{"seed-stdin": float64(1)}, true},
+		{"number 0", map[string]any{"seed-stdin": float64(0)}, false},
+		{"unrelated type", map[string]any{"seed-stdin": []any{}}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, toolArgsHasBool(tc.args, "seed-stdin"))
+		})
+	}
 }
 
 func TestOfficialResourcesRegistered(t *testing.T) {

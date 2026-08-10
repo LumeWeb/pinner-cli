@@ -68,12 +68,12 @@ func NewOfficialServer(opts *OfficialServerOptions) *mcp.Server {
 
 // OfficialServerFromCatalog builds the official server with Pinner's
 // progressive-disclosure meta-tools. The catalog remains internal.
-func OfficialServerFromCatalog(catalog *ToolCatalog, instructions string) (*mcp.Server, error) {
+func OfficialServerFromCatalog(catalog *ToolCatalog, instructions string, stdioMode bool, seedDrop *SeedDrop, oobRestore *OOBRestore) (*mcp.Server, error) {
 	if catalog == nil {
 		return nil, fmt.Errorf("nil tool catalog")
 	}
 	srv := NewOfficialServer(&OfficialServerOptions{Instructions: instructions})
-	if err := RegisterOfficialMetaTools(srv, catalog); err != nil {
+	if err := RegisterOfficialMetaTools(srv, catalog, stdioMode, seedDrop, oobRestore); err != nil {
 		return nil, err
 	}
 	return srv, nil
@@ -87,12 +87,12 @@ func OfficialServerFromCatalog(catalog *ToolCatalog, instructions string) (*mcp.
 // Resources and prompts are registered by the command action after runtime
 // providers and options are resolved. The descriptor adapters below preserve
 // their wire contracts on the official server.
-func OfficialMCPServer(root *cli.Command, hasRootAction bool, prefix []string) (*mcp.Server, *ToolCatalog, error) {
-	catalog, err := buildCatalog(root, hasRootAction, prefix)
+func OfficialMCPServer(root *cli.Command, hasRootAction bool, prefix []string, stdioMode bool, seedDrop *SeedDrop, oobRestore *OOBRestore) (*mcp.Server, *ToolCatalog, error) {
+	catalog, err := buildCatalog(root, hasRootAction, prefix, seedDrop, oobRestore)
 	if err != nil {
 		return nil, nil, err
 	}
-	srv, err := OfficialServerFromCatalog(catalog, buildInstructions(catalog.Len()))
+	srv, err := OfficialServerFromCatalog(catalog, buildInstructions(catalog.Len()), stdioMode, seedDrop, oobRestore)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -213,7 +213,7 @@ func registerTool(srv *mcp.Server, tool *mcp.Tool, handler PinnerToolHandler) er
 // meta-tools (search_tools, describe_tool, invoke_tool) on an official-SDK
 // server. The catalog itself stays hidden; the only tools visible via
 // tools/list are these three, preserving progressive disclosure.
-func RegisterOfficialMetaTools(srv *mcp.Server, catalog *ToolCatalog) error {
+func RegisterOfficialMetaTools(srv *mcp.Server, catalog *ToolCatalog, stdioMode bool, seedDrop *SeedDrop, oobRestore *OOBRestore) error {
 	if srv == nil {
 		return fmt.Errorf("nil official server")
 	}
@@ -227,7 +227,7 @@ func RegisterOfficialMetaTools(srv *mcp.Server, catalog *ToolCatalog) error {
 	if err := registerOfficialDescribeTool(srv, catalog); err != nil {
 		return err
 	}
-	return registerOfficialInvokeTool(srv, catalog)
+	return registerOfficialInvokeTool(srv, catalog, stdioMode, seedDrop, oobRestore)
 }
 
 // metaToolSchema is a tiny SDK-neutral input schema builder for the static
@@ -337,7 +337,32 @@ func registerOfficialDescribeTool(srv *mcp.Server, catalog *ToolCatalog) error {
 	return registerTool(srv, tool, handler)
 }
 
-func registerOfficialInvokeTool(srv *mcp.Server, catalog *ToolCatalog) error {
+// toolArgsHasBool reports whether the given tool arguments set a flag to a
+// truthy value. urfave/cli/v3 encodes flags as camelCase keys in the JSON
+// schema arguments map (e.g. seed-stdin). Tool arguments come from the agent's
+// JSON, so a boolean flag may arrive as a real bool OR a string/number
+// ("true"/"1"/1); coerce truthiness across those types so any truthy value
+// keeps the stdin gate closed.
+func toolArgsHasBool(args map[string]any, key string) bool {
+	if args == nil {
+		return false
+	}
+	v, ok := args[key]
+	if !ok {
+		return false
+	}
+	switch t := v.(type) {
+	case bool:
+		return t
+	case string:
+		return t == "true" || t == "1"
+	case float64:
+		return t == 1
+	}
+	return false
+}
+
+func registerOfficialInvokeTool(srv *mcp.Server, catalog *ToolCatalog, stdioMode bool, seedDrop *SeedDrop, oobRestore *OOBRestore) error {
 	schema := &metaToolSchema{}
 	schema.property("name", map[string]any{
 		"type":        "string",
@@ -370,6 +395,50 @@ func registerOfficialInvokeTool(srv *mcp.Server, catalog *ToolCatalog) error {
 		if !ok {
 			return ToolResult{IsError: true, Text: fmt.Sprintf("unknown tool: %s", in.Name)}, nil
 		}
+
+		// Steer agents away from commands they cannot run safely over the MCP
+		// channel, instead of letting them hang. A human-only (interactive)
+		// command always redirects; a stdin-input command redirects unless piped
+		// data is actually available. Everything else runs normally.
+		//
+		// pinner_vault_restore is special: although its leaf ("restore") is
+		// classed stdin_input (the --seed-stdin variant reads os.Stdin), agent
+		// mode WITHOUT --seed-stdin returns a non-blocking JSON handoff before
+		// touching stdin, and when an OOB restore coordinator is wired the
+		// catalog handler turns that into a one-time /restore/<token> browser
+		// URL. That agent-safe path must NOT be gated, or the OOB restore
+		// hand-off is unreachable in the HTTP/tunnel mode it targets (where
+		// stdin is /dev/null, so stdinHasData() is false and it is always
+		// — wrongly — redirected). The bypass is strictly scoped to the
+		// non-stdin restore: a --seed-stdin invocation still reads os.Stdin and
+		// must honor the stdin/stdio guard below (consuming the MCP transport
+		// pipe would desync the stream).
+		bypassGate := restoreOOBEnabled(oobRestore) &&
+			in.Name == "pinner_vault_restore" &&
+			!toolArgsHasBool(toolArgs, "seed-stdin")
+		if !bypassGate {
+			switch entry.Interaction {
+			case InteractionInteractive:
+				return NeedsHumanResult(NeedsHuman{
+					Reason:     ReasonInteractiveOnly,
+					ResumeTool: "",
+					Detail:     "This command is human-only (it prompts interactively) and has no agent-safe form. Run it via the CLI, or use the curated agent tool for the same workflow.",
+				}), nil
+			case InteractionStdinInput:
+				// A stdin-input command can only proceed when piped stdin is
+				// genuinely available AND the server is not itself running over
+				// stdio (where os.Stdin is the MCP transport pipe - consuming
+				// it would read protocol bytes and desync the stream).
+				if !stdinHasData() || stdioMode {
+					return NeedsHumanResult(NeedsHuman{
+						Reason:     ReasonStdinRequired,
+						ResumeTool: "",
+						Detail:     "This command reads piped stdin, which the MCP channel cannot supply, and has no agent-safe stdin path. A human or host process must run it on the MCP server host with the required input piped in.",
+					}), nil
+				}
+			}
+		}
+
 		result, err := entry.Handler(ctx, ToolRequest{Name: in.Name, Arguments: toolArgs})
 		if err != nil {
 			return ToolResult{IsError: true, Text: err.Error()}, nil
@@ -388,7 +457,7 @@ func RegisterOfficialToolsFromCatalog(srv *mcp.Server, catalog *ToolCatalog) err
 	if catalog == nil {
 		return fmt.Errorf("nil tool catalog")
 	}
-	return RegisterOfficialMetaTools(srv, catalog)
+	return RegisterOfficialMetaTools(srv, catalog, false, nil, nil)
 }
 
 // RegisterOfficialDescriptor adds one Pinner-owned tool directly to tools/list.

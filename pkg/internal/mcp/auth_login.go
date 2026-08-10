@@ -100,7 +100,11 @@ func (o *OutOfBandLogin) failReq(r *loginRequest, err error) {
 type OutOfBandLogin struct {
 	auth    AuthService
 	keyName string
-	baseURL string // external URL the human opens (loopback or tunnel public URL)
+	// loopback owns the base-URL/loopback-listener mechanics shared with the
+	// other hand-offs (seed drop, restore). The login keeps its own request map
+	// and throttle because it is a resumable/polling flow with server-side
+	// state and brute-force protection, not a simple single-use exchange.
+	loopback loopbackServer
 
 	mu       sync.Mutex
 	requests map[string]*loginRequest
@@ -112,8 +116,6 @@ type OutOfBandLogin struct {
 	// form whose primary exposure is the owner's own cloud host.
 	throttle map[string]*loginThrottle
 
-	srv          *http.Server
-	listener     net.Listener
 	reaperCtx    context.Context
 	reaperCancel context.CancelFunc
 }
@@ -143,35 +145,25 @@ const DefaultMCPKeyName = "mcp-generated"
 // NewOutOfBandLogin creates an out-of-band login coordinator backed by the
 // MCP auth service.
 func NewOutOfBandLogin(auth AuthService, baseURL, keyName string) *OutOfBandLogin {
-	return &OutOfBandLogin{
+	o := &OutOfBandLogin{
 		auth:     auth,
-		baseURL:  strings.TrimRight(baseURL, "/"),
 		keyName:  keyName,
 		requests: make(map[string]*loginRequest),
 		throttle: make(map[string]*loginThrottle),
 	}
+	// Loopback-associated base URL (empty keeps the loopback-derived URL).
+	o.loopback.baseURL = strings.TrimRight(baseURL, "/")
+	return o
 }
 
 // start spins up the loopback HTTP server used when the MCP client runs over
-// stdio. It is idempotent: subsequent calls reuse the existing listener.
+// stdio. It is idempotent: subsequent calls reuse the existing listener. The
+// loopback listener also serves the static /assets/ (branded login page).
 func (o *OutOfBandLogin) start() error {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	if o.srv != nil {
-		return nil
-	}
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return fmt.Errorf("bind out-of-band login listener: %w", err)
-	}
-	mux := http.NewServeMux()
-	mux.Handle("/assets/", staticAssetHandler())
-	o.registerHandlers(mux)
-	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
-	o.listener = ln
-	o.srv = srv
-	go func() { _ = srv.Serve(ln) }()
-	return nil
+	return o.loopback.ensureLoopback(func(mux *http.ServeMux) {
+		mux.Handle("/assets/", staticAssetHandler())
+		o.registerHandlers(mux)
+	})
 }
 
 // registerHandlers mounts the out-of-band login routes (login page, login
@@ -191,29 +183,14 @@ func (o *OutOfBandLogin) registerHandlers(mux *http.ServeMux) {
 // public/tunnel URL). It is safe to call after construction once the remote
 // transport has resolved its public URL; empty keeps the derived loopback URL.
 func (o *OutOfBandLogin) SetBaseURL(url string) {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	o.baseURL = strings.TrimRight(url, "/")
-}
-
-// loopbackAddrLocked returns the "host:port" of the loopback login listener, or
-// the placeholder when it has not started yet. Callers must hold o.mu, which
-// serializes access against Stop() (which zeroes the listener under o.mu).
-func (o *OutOfBandLogin) loopbackAddrLocked() string {
-	if o.listener != nil {
-		return o.listener.Addr().String()
-	}
-	return "127.0.0.1:0"
+	o.loopback.SetBaseURL(url)
 }
 
 // loginURLLocked returns the localhost URL the human opens for a request id, or
 // the external base URL when a tunnel/public base is configured. Callers must
 // hold o.mu (pendingOutcome calls it inside its critical section).
 func (o *OutOfBandLogin) loginURLLocked(id string) string {
-	if o.baseURL != "" {
-		return o.baseURL + "/login/" + id
-	}
-	return "http://" + o.loopbackAddrLocked() + "/login/" + id
+	return o.loopback.urlLocked("login", id)
 }
 
 // loginURL returns the localhost URL the human opens for the given request
@@ -228,12 +205,11 @@ func (o *OutOfBandLogin) loginURL(id string) string {
 // Cross-origin requests to the login endpoints must have a matching Origin or
 // Referer, otherwise they are treated as CSRF (see loginPage).
 func (o *OutOfBandLogin) origin() string {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	if o.baseURL != "" {
-		return o.baseURL
+	orig := o.loopback.acceptedOrigins()
+	if len(orig) == 0 {
+		return ""
 	}
-	return "http://" + o.loopbackAddrLocked()
+	return orig[0]
 }
 
 // acceptedOrigins returns the origins a credential POST is allowed to carry.
@@ -370,13 +346,10 @@ func (o *OutOfBandLogin) Stop(ctx context.Context) {
 		// stale non-nil guard and letting pending requests accumulate unpruned.
 		o.reaperCtx = nil
 	}
-	srv := o.srv
-	o.srv = nil
-	o.listener = nil
 	o.mu.Unlock()
-	if srv != nil {
-		_ = srv.Shutdown(ctx)
-	}
+	// Shutdown runs without holding o.mu (see method doc) so in-flight /login
+	// POST handlers needing o.mu can finish instead of stalling teardown.
+	o.loopback.Stop(ctx)
 }
 
 // loginPage renders the branded login form for a pending request. The browser
@@ -667,6 +640,16 @@ func (o *OutOfBandLogin) reaper(ctx context.Context) {
 
 func randomID() string {
 	b := make([]byte, 8)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
+// strongRandomID returns a 128-bit random identifier (16 bytes, hex-encoded).
+// It backs one-time hand-off URLs that guard high-value secrets (a vault
+// recovery mnemonic), where 64-bit entropy in randomID is too guessable on an
+// otherwise unauthenticated route.
+func strongRandomID() string {
+	b := make([]byte, 16)
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
 }
