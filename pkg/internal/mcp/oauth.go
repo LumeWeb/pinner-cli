@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/auth"
+	"go.lumeweb.com/pinner-cli/pkg/internal/mcp/oauthstore"
 )
 
 // oauthServer is a deliberately minimal, self-contained OAuth 2.1-shaped
@@ -26,25 +27,29 @@ import (
 //
 // It is intentionally a "dummy" AS: the only credential is the shared --auth-token
 // secret, which the resource owner enters on the login page as the password.
-// Client registrations and issued tokens are in-memory. The authorization
-// code flow enforces S256 PKCE and RFC 8707 resource binding; the shared secret
-// remains the only user credential.
+// Client registrations are durable in an embedded SQLite store, as are issued
+// refresh tokens (which tolerate reuse rather than being invalidated on first
+// use, avoiding invalid_grant against clients like Anthropic's that re-present
+// them). Authorization codes and short-lived access tokens remain in memory.
+// The authorization code flow enforces S256 PKCE and RFC 8707 resource binding;
+// the shared secret remains the only user credential.
 type oauthServer struct {
 	mu      sync.Mutex
 	secret  []byte
 	issuer  string
 	baseURL string
 
-	// registered clients keyed by client ID
+	store *oauthstore.Store
+
+	// registered clients keyed by client ID (backed by store)
 	clients map[string]oauthClient
-	// authorization codes, one-time use
+	// authorization codes, one-time use (in-memory)
 	codes map[string]authorizationCode
-	// access and refresh tokens issued to authenticated clients
-	tokens        map[string]time.Time // access token -> expiry
-	refreshTokens map[string]time.Time // refresh token -> expiry
-	tokenTTL      time.Duration
-	refreshTTL    time.Duration
-	codeTTL       time.Duration
+	// access tokens issued to authenticated clients (short-lived, in-memory)
+	tokens map[string]time.Time // access token -> expiry
+	// access token TTL (refresh tokens live in the store)
+	tokenTTL time.Duration
+	codeTTL  time.Duration
 	// done stops the background reaper.
 	done      chan struct{}
 	closeOnce sync.Once
@@ -63,19 +68,28 @@ type authorizationCode struct {
 	expiry              time.Time
 }
 
-func newOAuthServer(secret, baseURL string) *oauthServer {
+func newOAuthServer(secret, baseURL string, store *oauthstore.Store) *oauthServer {
 	o := &oauthServer{
-		secret:        []byte(secret),
-		issuer:        baseURL,
-		baseURL:       baseURL,
-		clients:       make(map[string]oauthClient),
-		codes:         make(map[string]authorizationCode),
-		tokens:        make(map[string]time.Time),
-		refreshTokens: make(map[string]time.Time),
-		tokenTTL:      time.Hour,
-		refreshTTL:    30 * 24 * time.Hour,
-		codeTTL:       10 * time.Minute,
-		done:          make(chan struct{}),
+		secret:   []byte(secret),
+		issuer:   baseURL,
+		baseURL:  baseURL,
+		store:    store,
+		clients:  make(map[string]oauthClient),
+		codes:    make(map[string]authorizationCode),
+		tokens:   make(map[string]time.Time),
+		tokenTTL: time.Hour,
+		codeTTL:  10 * time.Minute,
+		done:     make(chan struct{}),
+	}
+	// Repopulate the in-memory client registry from the durable store so a
+	// previously-registered client can complete a fresh authorization-code login
+	// after a restart (its client_id and refresh token both outlive the process).
+	if store != nil {
+		if persisted, err := store.Clients(); err == nil {
+			for id, uris := range persisted {
+				o.clients[id] = oauthClient{redirectURIs: uris}
+			}
+		}
 	}
 	// Periodic reaper so long-running public tunnels do not grow the maps
 	// without bound as clients rotate and codes go unredeemed.
@@ -83,9 +97,15 @@ func newOAuthServer(secret, baseURL string) *oauthServer {
 	return o
 }
 
-// Stop terminates the background reaper. It is safe to call multiple times.
+// Stop terminates the background reaper and closes the durable store. It is
+// safe to call multiple times.
 func (o *oauthServer) Stop() {
-	o.closeOnce.Do(func() { close(o.done) })
+	o.closeOnce.Do(func() {
+		close(o.done)
+		if o.store != nil {
+			_ = o.store.Close()
+		}
+	})
 }
 
 // sweep periodically drops expired tokens and codes.
@@ -102,7 +122,8 @@ func (o *oauthServer) sweep() {
 	}
 }
 
-// reapLocked removes expired tokens and codes. Caller must hold o.mu.
+// reapLocked removes expired in-memory access tokens and codes, and expired
+// durable refresh tokens/clients via the store. Caller must hold o.mu.
 func (o *oauthServer) reapLocked() {
 	now := time.Now()
 	for tok, exp := range o.tokens {
@@ -110,15 +131,13 @@ func (o *oauthServer) reapLocked() {
 			delete(o.tokens, tok)
 		}
 	}
-	for tok, exp := range o.refreshTokens {
-		if now.After(exp) {
-			delete(o.refreshTokens, tok)
-		}
-	}
 	for code, e := range o.codes {
 		if now.After(e.expiry) {
 			delete(o.codes, code)
 		}
+	}
+	if o.store != nil {
+		_ = o.store.Reap()
 	}
 }
 
@@ -191,6 +210,18 @@ func (o *oauthServer) validateAuthorizeRequest(q url.Values) error {
 	o.mu.Lock()
 	client, ok := o.clients[clientID]
 	o.mu.Unlock()
+	if !ok && o.store != nil {
+		// Client not in the in-memory registry — load it from the durable store
+		// (it may have been registered by a previous process sharing the DB).
+		uris, err := o.store.ClientRedirectURIs(clientID)
+		if err == nil && len(uris) > 0 {
+			client = oauthClient{redirectURIs: uris}
+			ok = true
+			o.mu.Lock()
+			o.clients[clientID] = client
+			o.mu.Unlock()
+		}
+	}
 	if !ok || !contains(client.redirectURIs, redirectURI) {
 		return fmt.Errorf("unregistered client or redirect_uri")
 	}
@@ -265,6 +296,12 @@ func (o *oauthServer) registerHandler(w http.ResponseWriter, r *http.Request) {
 	o.mu.Lock()
 	o.clients[clientID] = oauthClient{redirectURIs: request.RedirectURIs}
 	o.mu.Unlock()
+	if o.store != nil {
+		if err := o.store.SaveClient(clientID, request.ClientName, request.RedirectURIs); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "server_error"})
+			return
+		}
+	}
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"client_id":                  clientID,
 		"client_name":                request.ClientName,
@@ -394,29 +431,45 @@ func (o *oauthServer) exchangeCode(w http.ResponseWriter, r *http.Request) error
 	delete(o.codes, code)
 	o.mu.Unlock()
 	pair := o.newTokens()
-	o.storeTokens(pair)
+	o.storeTokens(pair, entry.clientID, entry.resource)
 	issueTokens(w, pair)
 	return nil
 }
 
 func (o *oauthServer) exchangeRefreshToken(w http.ResponseWriter, r *http.Request) {
 	refresh := r.PostFormValue("refresh_token")
-	o.mu.Lock()
-	expiry, ok := o.refreshTokens[refresh]
-	if ok {
-		delete(o.refreshTokens, refresh) // rotate refresh tokens on use
-		if time.Now().After(expiry) {
-			ok = false
-		}
-	}
-	o.mu.Unlock()
-	if !ok {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_grant"})
+	clientID := r.PostFormValue("client_id")
+	resource := r.PostFormValue("resource")
+	// Without a durable store there is no way to rotate or validate a refresh
+	// token, so fall back to a controlled error rather than nil-deref panicking
+	// (newOAuthServer permits a nil store).
+	if o.store == nil {
+		writeInvalidGrant(w)
 		return
 	}
-	pair := o.newTokens()
-	o.storeTokens(pair)
-	issueTokens(w, pair)
+	client, successor, status, err := o.store.RotateRefreshToken(refresh, clientID, resource)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "server_error"})
+		return
+	}
+	pair := tokenPair{access: newToken(32), refresh: successor}
+	switch status {
+	case oauthstore.RotateOK, oauthstore.RotateOKReused:
+		// Accepted (fresh rotation or benign reuse within the window).
+		o.mu.Lock()
+		o.tokens[pair.access] = time.Now().Add(o.tokenTTL)
+		o.mu.Unlock()
+		_ = client
+		issueTokens(w, pair)
+	default:
+		// RotateReplay (rotated beyond reuse window, revoked, expired, or
+		// unknown) → invalid_grant per RFC 6749 §5.2.
+		writeInvalidGrant(w)
+	}
+}
+
+func writeInvalidGrant(w http.ResponseWriter) {
+	writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_grant"})
 }
 
 func (o *oauthServer) newTokens() tokenPair {
@@ -428,12 +481,14 @@ type tokenPair struct {
 	refresh string
 }
 
-func (o *oauthServer) storeTokens(pair tokenPair) {
+func (o *oauthServer) storeTokens(pair tokenPair, clientID, resource string) {
 	now := time.Now()
 	o.mu.Lock()
 	o.tokens[pair.access] = now.Add(o.tokenTTL)
-	o.refreshTokens[pair.refresh] = now.Add(o.refreshTTL)
 	o.mu.Unlock()
+	if o.store != nil {
+		_ = o.store.IssueRefreshToken(pair.refresh, clientID, resource)
+	}
 }
 
 func issueTokens(w http.ResponseWriter, pair tokenPair) {

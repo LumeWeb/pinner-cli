@@ -15,6 +15,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -22,6 +23,7 @@ import (
 	"time"
 
 	"github.com/urfave/cli/v3"
+	"go.lumeweb.com/pinner-cli/pkg/internal/mcp/oauthstore"
 	"go.uber.org/zap"
 )
 
@@ -209,6 +211,22 @@ adapter.`,
 	}
 }
 
+// oauthStorePath returns the filesystem path of the OAuth state SQLite file.
+// Like the CLI's config, it lives under the user config dir under pinner/ so a
+// long-running or restarted MCP server keeps durable OAuth clients and refresh
+// tokens. Falls back to ~/.pinner on platforms without a standard config dir.
+func oauthStorePath() string {
+	base, err := os.UserConfigDir()
+	if err != nil {
+		home, _ := os.UserHomeDir()
+		if home != "" {
+			return filepath.Join(home, ".pinner", "mcp-oauth.db")
+		}
+		return "mcp-oauth.db"
+	}
+	return filepath.Join(base, "pinner", "mcp-oauth.db")
+}
+
 // serveHTTP serves an MCP server over the streamable-HTTP transport, binding
 // to the local address derived from the --host/--port flags. When --tunnel is
 // set, it starts and manages the selected tunnel so a remote MCP client can
@@ -296,7 +314,11 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 		if authToken == "" {
 			return fmt.Errorf("--oauth requires --auth-token: the login page authenticates with the shared secret")
 		}
-		oauth = newOAuthServer(authToken, baseURL)
+		store, err := oauthstore.Open(oauthStorePath(), 30*24*time.Hour)
+		if err != nil {
+			return fmt.Errorf("open oauth state store: %w", err)
+		}
+		oauth = newOAuthServer(authToken, baseURL, store)
 	}
 
 	// Serve the streamable-HTTP handler over our own http.Server bound to
