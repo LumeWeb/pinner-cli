@@ -42,7 +42,6 @@ func renderPinCreateAppHTML() string {
 	return renderMcpAppDoc("Create a Pin", pinCreateAppForm(), pinAppModule(extAppsClientBase64()))
 }
 
-
 // attachPinAppMeta wires pinner_pin (a curated catalog tool) to its ui:// app
 // resource so a UI-capable host renders the create-pin view for it. Plain hosts
 // keep the tool's text result. The entry's existing metadata is extended.

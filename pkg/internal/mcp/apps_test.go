@@ -183,6 +183,18 @@ func TestPinCreateResourceRead(t *testing.T) {
 	if strings.Contains(html, "extAppsClientBase64(") {
 		t.Fatalf("Go expression leaked into rendered HTML")
 	}
+	// The module is assembled via text/template; no {{ }} directive may survive
+	// into the served document (a leak breaks the JS).
+	if strings.Contains(html, "{{") || strings.Contains(html, "}}") {
+		t.Fatalf("template directive leaked into rendered HTML")
+	}
+	// The shared bootstrap is emitted exactly once: a template that pulls it in
+	// twice would duplicate the function declarations in the served module.
+	for _, fn := range []string{"function $(sel)", "function setStatus(el, state, msg)", "async function extAppsConnect"} {
+		if strings.Count(html, fn) != 1 {
+			t.Fatalf("shared bootstrap helper %q must appear exactly once, got %d", fn, strings.Count(html, fn))
+		}
+	}
 }
 
 // TestPinStatusPollingResilient guards the app's status polling against
