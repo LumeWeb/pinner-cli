@@ -6,6 +6,7 @@ import (
 
 	ipfs "go.lumeweb.com/ipfs-sdk"
 	"go.lumeweb.com/pinner-cli/pkg/config"
+	mcpadapter "go.lumeweb.com/pinner-cli/pkg/internal/mcp"
 )
 
 // accountStatusAdapter wraps cli.AuthService and config to satisfy the MCP
@@ -96,4 +97,23 @@ func (w *websitesResourceAdapter) Validate(ctx context.Context, id string) (*ipf
 
 func (w *websitesResourceAdapter) GetConfig(ctx context.Context) (*ipfs.WebsiteConfigResponse, error) {
 	return w.ws.GetConfig(ctx)
+}
+
+// pinStatusAdapter wraps cli.PinningService to satisfy the MCP
+// PinningProvider interface for the "Create a Pin" app's app-only status
+// helper. It adapts the CLI's Status(cid, watch=false) into the SDK-neutral
+// PinStatusView the mcp package renders.
+type pinStatusAdapter struct {
+	pins PinningService
+}
+
+func (p *pinStatusAdapter) PinStatus(ctx context.Context, cid string) (mcpadapter.PinStatusView, error) {
+	status, err := p.pins.Status(ctx, cid, false)
+	if err != nil {
+		return mcpadapter.PinStatusView{}, err
+	}
+	if status == nil {
+		return mcpadapter.PinStatusView{CID: cid}, nil
+	}
+	return mcpadapter.PinStatusView{CID: status.CID, Status: status.Status}, nil
 }

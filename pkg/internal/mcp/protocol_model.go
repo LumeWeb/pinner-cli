@@ -53,6 +53,7 @@ func descriptorFromTool(entry *ToolEntry) ToolDescriptor {
 		ReadOnly:    entry.ReadOnly,
 		Destructive: entry.Destructive,
 		InputSchema: entry.InputSchema,
+		Meta:        entry.Meta,
 	}
 }
 
