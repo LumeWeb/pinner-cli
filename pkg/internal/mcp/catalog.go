@@ -276,15 +276,21 @@ func (c *ToolCatalog) RegisterFromCommand(root *cli.Command, hasRootAction bool,
 	// an agent passing a root-level credential flag to any tool still has its
 	// value redacted from the arg trace.
 	rootSensitive := sensitiveFlagNames(root.Flags)
-	var walk func(cmd *cli.Command, prefix ...string) error
-	walk = func(cmd *cli.Command, prefix ...string) error {
+	var walk func(cmd *cli.Command, inherited []cli.Flag, inheritedSensitive []string, prefix ...string) error
+	walk = func(cmd *cli.Command, inherited []cli.Flag, inheritedSensitive []string, prefix ...string) error {
 		if cmd.Name == "mcp" || cmd.Name == "help" {
 			return nil
 		}
 
 		loc := append(prefix, cmd.Name)
 		if !cmd.Hidden && cmd.Action != nil && (len(prefix) > 0 || hasRootAction) {
-			schema, err := flagsToSchema(cmd.Flags, cmd.ArgsUsage)
+			// A subcommand inherits its parent command's flags (urfave/cli
+			// semantics), so flags declared only on a parent — e.g. the vault
+			// command's --profile, which every vault subcommand needs — appear
+			// in the tool's input schema instead of being hidden inside the
+			// _args array. Child flags take precedence over inherited ones.
+			schemaFlags := mergeInheritedFlags(inherited, cmd.Flags)
+			schema, err := flagsToSchema(schemaFlags, cmd.ArgsUsage)
 			if err != nil {
 				return fmt.Errorf("failed to convert flags to schema %s: %w", loc, err)
 			}
@@ -317,7 +323,7 @@ func (c *ToolCatalog) RegisterFromCommand(root *cli.Command, hasRootAction bool,
 				Destructive:    destructive,
 				Interaction:    interaction,
 				InputSchema:    schema,
-				SensitiveFlags: unionSensitiveFlags(sensitiveFlagNames(cmd.Flags), rootSensitive),
+				SensitiveFlags: unionSensitiveFlags(unionSensitiveFlags(inheritedSensitive, sensitiveFlagNames(cmd.Flags)), rootSensitive),
 				Handler:        handler,
 			})
 
@@ -325,14 +331,85 @@ func (c *ToolCatalog) RegisterFromCommand(root *cli.Command, hasRootAction bool,
 		}
 
 		for _, sub := range cmd.Commands {
-			if err := walk(sub, loc...); err != nil {
+			// Accumulate inherited flags AND inherited sensitive flag names down
+			// the tree: a sensitive flag declared on an intermediate parent
+			// (e.g. vault --password used by a nested action) must be redacted
+			// from arg-trace logs just like the tool's own, otherwise the
+			// schema advertises it while the adapter's redaction (driven only
+			// by entry.SensitiveFlags) leaves its value in plaintext.
+			childInherited := mergeInheritedFlags(inherited, cmd.Flags)
+			childSensitive := unionSensitiveFlags(inheritedSensitive, sensitiveFlagNames(cmd.Flags))
+			if err := walk(sub, childInherited, childSensitive, loc...); err != nil {
 				return err
 			}
 		}
 		return nil
 	}
 
-	return walk(root, prefix...)
+	return walk(root, nil, nil, prefix...)
+}
+
+// mergeInheritedFlags unions a command's inherited parent flags with its own
+// flags, so subcommands expose flags declared only on their parent in their
+// input schema. Copies are made (never mutating the caller's slices). A flag
+// is identified by its Name; the child's declaration wins over the inherited
+// one when both name the same flag.
+func mergeInheritedFlags(inherited, own []cli.Flag) []cli.Flag {
+	if len(inherited) == 0 {
+		return own
+	}
+	merged := make([]cli.Flag, 0, len(inherited)+len(own))
+	seen := make(map[string]bool, len(inherited)+len(own))
+	for _, f := range inherited {
+		n := flagName(f)
+		if n == "" || seen[n] {
+			continue
+		}
+		seen[n] = true
+		merged = append(merged, f)
+	}
+	for _, f := range own {
+		n := flagName(f)
+		if n == "" {
+			continue
+		}
+		if seen[n] {
+			// Child overrides inherited: drop the inherited copy.
+			for i := range merged {
+				if flagName(merged[i]) == n {
+					merged = append(merged[:i], merged[i+1:]...)
+					break
+				}
+			}
+		}
+		seen[n] = true
+		merged = append(merged, f)
+	}
+	return merged
+}
+
+// flagName returns the primary name of a cli.Flag, or "" if it cannot be
+// determined.
+func flagName(f cli.Flag) string {
+	switch v := f.(type) {
+	case *cli.StringFlag:
+		return v.Name
+	case *sensitiveStringFlag:
+		if v.StringFlag != nil {
+			return v.StringFlag.Name
+		}
+	case *enumStringFlag:
+		return v.Name
+	case *cli.BoolFlag:
+		return v.Name
+	case *cli.StringSliceFlag:
+		return v.Name
+	case *cli.DurationFlag:
+		return v.Name
+	case interface{ GetName() string }:
+		return v.GetName()
+	}
+	return ""
 }
 
 // categorize determines the tool category from its command path.

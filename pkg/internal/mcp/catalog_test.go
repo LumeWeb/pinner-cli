@@ -319,6 +319,66 @@ func TestRootSensitiveFlagRedactedFromSubcommand(t *testing.T) {
 	assert.Contains(t, trace, "user@example.com", "non-sensitive value is not redacted")
 }
 
+// TestInheritedSensitiveFlagRedactedAcrossNesting verifies that a sensitive
+// flag declared on an intermediate parent command (e.g. vault --password used
+// by a nested action) is accumulated into the SensitiveFlags of tools nested
+// 2+ levels deep, so its value is redacted from arg-trace logs. Regression
+// guard: inherited flags were made visible in the schema, but without also
+// threading inherited sensitive names, the adapter's redaction (driven only by
+// entry.SensitiveFlags) would have left the value in plaintext.
+func TestInheritedSensitiveFlagRedactedAcrossNesting(t *testing.T) {
+	root := &cli.Command{
+		Name: "pinner",
+		Commands: []*cli.Command{
+			{
+				Name: "vault",
+				Flags: []cli.Flag{
+					SensitiveStringFlag(&cli.StringFlag{Name: "password", Usage: "Vault password"}),
+				},
+				Commands: []*cli.Command{
+					{
+						Name: "profile",
+						Commands: []*cli.Command{
+							{Name: "use", Action: func(context.Context, *cli.Command) error { return nil }},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	catalog, err := buildCatalog(root, true, nil, nil, nil)
+	require.NoError(t, err)
+
+	entry, ok := catalog.Get("pinner_vault_profile_use")
+	require.True(t, ok)
+	require.Contains(t, entry.SensitiveFlags, "password",
+		"grandparent sensitive flag must be accumulated onto the nested tool entry")
+
+	// The value must be redacted from the arg trace.
+	var buf bytes.Buffer
+	oldLog := log
+	log = zap.New(zapcore.NewCore(
+		zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()),
+		zapcore.AddSync(&buf),
+		zapcore.InfoLevel,
+	))
+	t.Cleanup(func() { log = oldLog })
+
+	_, err = entry.Handler(context.Background(), ToolRequest{
+		Name: "pinner_vault_profile_use",
+		Arguments: map[string]any{
+			"password": "LIVE-VAULT-PASSWORD-456",
+			"profile":  "default",
+		},
+	})
+	require.NoError(t, err)
+
+	trace := buf.String()
+	assert.Contains(t, trace, "****")
+	assert.NotContains(t, trace, "LIVE-VAULT-PASSWORD-456", "inherited sensitive value must be redacted")
+}
+
 // TestUnionSensitiveFlagsDedupes verifies unionSensitiveFlags preserves order
 // and drops duplicate names shared across the root and a subcommand.
 func TestUnionSensitiveFlagsDedupes(t *testing.T) {
@@ -510,4 +570,150 @@ func TestSSOToolsDiscoverableInCatalog(t *testing.T) {
 	assert.Equal(t, CategoryCore, d.Category)
 	_, ok := catalog.Get("pinner_auth_resume")
 	assert.True(t, ok, "pinner_auth_resume must be registered for describe/invoke")
+}
+
+// TestInheritedParentFlagsInSchema verifies that a flag declared only on a
+// parent command (e.g. the vault command's --profile, which every vault
+// subcommand needs) is inherited into the subcommand tool's input schema.
+// Regression guard for real-world feedback: agents had to guess the profile
+// arg form because it was hidden in the _args array instead of being a
+// first-class schema property.
+func TestInheritedParentFlagsInSchema(t *testing.T) {
+	root := &cli.Command{
+		Name: "pinner",
+		Commands: []*cli.Command{
+			{
+				Name:  "vault",
+				Flags: []cli.Flag{&cli.StringFlag{Name: "profile", Usage: "Vault profile name"}},
+				Commands: []*cli.Command{
+					{
+						Name:   "create",
+						Action: func(context.Context, *cli.Command) error { return nil },
+					},
+					{
+						Name:   "restore",
+						Flags:  []cli.Flag{&cli.BoolFlag{Name: "seed-stdin"}},
+						Action: func(context.Context, *cli.Command) error { return nil },
+					},
+				},
+			},
+		},
+	}
+
+	catalog := NewToolCatalog()
+	err := catalog.RegisterFromCommand(root, true, nil,
+		func(context.Context, ToolRequest) (ToolResult, error) { return ToolResult{}, nil })
+	require.NoError(t, err)
+
+	// The inherited --profile flag must be a first-class property on both.
+	for _, tool := range []string{"pinner_vault_create", "pinner_vault_restore"} {
+		d, err := catalog.Describe(tool)
+		require.NoError(t, err)
+		var doc map[string]any
+		require.NoError(t, json.Unmarshal(d.InputSchema, &doc))
+		props := doc["properties"].(map[string]any)
+		p, ok := props["profile"].(map[string]any)
+		require.True(t, ok, "%s must expose the inherited profile flag in its schema", tool)
+		assert.Equal(t, "string", p["type"], "%s profile property must be a string", tool)
+	}
+
+	// The restore tool ALSO keeps its own flag alongside the inherited one.
+	d, err := catalog.Describe("pinner_vault_restore")
+	require.NoError(t, err)
+	var doc map[string]any
+	require.NoError(t, json.Unmarshal(d.InputSchema, &doc))
+	props := doc["properties"].(map[string]any)
+	_, hasSeedStdin := props["seed-stdin"]
+	assert.True(t, hasSeedStdin, "restore tool keeps its own flag too")
+}
+
+// TestChildFlagOverridesInherited verifies that when a subcommand declares a
+// flag with the same name as an inherited parent flag, the child's declaration
+// wins (no duplicate property in the schema).
+func TestChildFlagOverridesInherited(t *testing.T) {
+	root := &cli.Command{
+		Name: "tool",
+		Flags: []cli.Flag{
+			&cli.StringFlag{Name: "token", Usage: "parent token"},
+		},
+		Commands: []*cli.Command{
+			{
+				Name:  "child",
+				Flags: []cli.Flag{&cli.StringFlag{Name: "token", Usage: "child token"}},
+				Action: func(context.Context, *cli.Command) error {
+					return nil
+				},
+			},
+		},
+	}
+
+	catalog := NewToolCatalog()
+	err := catalog.RegisterFromCommand(root, true, nil,
+		func(context.Context, ToolRequest) (ToolResult, error) { return ToolResult{}, nil })
+	require.NoError(t, err)
+
+	d, err := catalog.Describe("tool_child")
+	require.NoError(t, err)
+	var doc map[string]any
+	require.NoError(t, json.Unmarshal(d.InputSchema, &doc))
+	props := doc["properties"].(map[string]any)
+
+	// The property must exist exactly once and carry the child's usage.
+	tokens, ok := props["token"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "child token", tokens["description"])
+	assert.Equal(t, 1, len(props), "no duplicate/extra properties beyond token")
+}
+
+// TestInheritedFlagsAccumulateAcrossNesting verifies that inherited flags are
+// accumulated down the whole command tree, not just one level down. A tool
+// nested 2+ levels deep (root → vault → profile → use) must still expose the
+// grandparent vault --profile flag in its schema, because its action reads it.
+func TestInheritedFlagsAccumulateAcrossNesting(t *testing.T) {
+	root := &cli.Command{
+		Name: "pinner",
+		Commands: []*cli.Command{
+			{
+				Name:  "vault",
+				Flags: []cli.Flag{&cli.StringFlag{Name: "profile", Usage: "Vault profile name"}},
+				Commands: []*cli.Command{
+					{
+						Name: "profile",
+						Commands: []*cli.Command{
+							{
+								Name:   "use",
+								Action: func(context.Context, *cli.Command) error { return nil },
+							},
+						},
+					},
+					{
+						Name:   "status",
+						Action: func(context.Context, *cli.Command) error { return nil },
+					},
+				},
+			},
+		},
+	}
+
+	catalog := NewToolCatalog()
+	err := catalog.RegisterFromCommand(root, true, nil,
+		func(context.Context, ToolRequest) (ToolResult, error) { return ToolResult{}, nil })
+	require.NoError(t, err)
+
+	// The 3-level-deep tool accumulates the grandparent's profile flag.
+	d, err := catalog.Describe("pinner_vault_profile_use")
+	require.NoError(t, err)
+	var doc map[string]any
+	require.NoError(t, json.Unmarshal(d.InputSchema, &doc))
+	props := doc["properties"].(map[string]any)
+	p, ok := props["profile"].(map[string]any)
+	require.True(t, ok, "nested tool must accumulate the grandparent profile flag")
+	assert.Equal(t, "string", p["type"])
+
+	// A 2-level tool also gets it.
+	d2, err := catalog.Describe("pinner_vault_status")
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(d2.InputSchema, &doc))
+	_, ok = doc["properties"].(map[string]any)["profile"]
+	assert.True(t, ok, "two-level tool must inherit the immediate parent's flag too")
 }
