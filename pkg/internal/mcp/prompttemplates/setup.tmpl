@@ -1,0 +1,73 @@
+{{/* setup prompt templates. Rendered by text/template from
+     pkg/internal/mcp/prompts.go. Template names carry a setup_ prefix so they
+     do not collide with the website_* templates loaded into the same namespace
+     by ParseFS. Data is the sitePromptData struct (no fields are consumed by
+     the setup prompt; it is fully static). */}}
+
+{{define "setup_overview"}}You are guiding a user through the initial pinner setup wizard.
+
+Workflow overview (5 steps):
+  1. auth       : sign in, create account, or skip
+  2. config     : use defaults, custom endpoint, or skip
+  3. completion : shell completion setup (informational)
+  4. tutorial   : quick command tour (informational)
+  5. complete   : finalize and verify
+
+Rules:
+  - Always pass the session_id from setup_wizard_start to setup_wizard_step.
+  - The next_step_schema in each response tells you the exact input shape.
+  - A step that needs input returns a native form elicitation (input_required): the client presents a form for the requested fields. Fill and submit that form; the session_id is carried across automatically.
+  - If a step returns an error, the session stays in the same state: you can retry.
+  - For sign_in, request only the email; relay the out-of-band login URL the handler returns to the user to complete in a browser. Never ask for or collect a password or otp_code.
+  - Read pinner://account/status to verify the auth state before and after.
+{{end}}
+
+{{define "setup_auth_status_check"}}Read the pinner://account/status resource above. If "authenticated" is true and "token_valid" is true, the user may skip the auth step. Otherwise, they will need to sign in or create an account.
+{{end}}
+
+{{define "setup_start"}}Call the `setup_wizard_start` tool (no arguments). It returns a session_id and the first step (auth). Store the session_id for subsequent calls.
+{{end}}
+
+{{define "setup_step_auth"}}Step: auth
+Present the user with three options:
+  1. "create_account": direct them to https://pinner.xyz/register, then sign in
+  2. "sign_in": ask ONLY for their email; NEVER ask for a password, OTP code, or any secret
+  3. "skip": skip authentication for now
+
+Call `setup_wizard_step` with the appropriate input:
+  - {"choice": "create_account"} (will error with instructions)
+  - {"choice": "sign_in", "email": "..."}
+  - {"choice": "skip"}
+
+For sign_in, the handler returns an out-of-band login URL. Relay that URL to the user and ask them to open it in a browser to complete sign-in (password/OTP are entered by the user in the browser, never sent to you). Then call setup_wizard_step again with choice="sign_in" and the same email to continue. Do not ask for or collect the password or OTP code.
+{{end}}
+
+{{define "setup_step_config"}}Step: config
+Present the user with three options:
+  1. "use_defaults": use the default endpoint and HTTPS (recommended)
+  2. "custom_endpoint": provide a custom API endpoint and secure flag
+  3. "skip": skip configuration
+
+Call `setup_wizard_step` with the appropriate input:
+  - {"choice": "use_defaults"}
+  - {"choice": "custom_endpoint", "endpoint": "https://...", "secure": true}
+  - {"choice": "skip"}
+{{end}}
+
+{{define "setup_step_completion"}}Step: completion
+Ask the user which shell they use (bash, zsh, fish, or pwsh). This is informational: instruct the user to run `pinner completion <shell>` to install completions. Call `setup_wizard_step` with input: {"shell": "<shell>"} or {} to skip.
+{{end}}
+
+{{define "setup_step_tutorial"}}Step: tutorial
+Provide a brief tutorial of common commands:
+  - pinner auth          : check auth status
+  - pinner upload <file> : upload content to IPFS
+  - pinner pins add <cid> : pin existing content
+  - pinner websites       : manage websites
+  - pinner dns            : manage DNS zones
+  - pinner doctor         : run diagnostics
+Call `setup_wizard_step` with input: {} to complete the wizard.
+{{end}}
+
+{{define "setup_step_complete"}}When the wizard returns "complete": true, setup is done. Read the pinner://account/status resource above to confirm the final state. Summarize for the user: auth status, configured endpoint, and any next steps.
+{{end}}

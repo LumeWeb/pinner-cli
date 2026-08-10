@@ -725,7 +725,9 @@ func TestOOBLoginStopDoesNotHoldLockDuringShutdown(t *testing.T) {
 // email and the handler relays the out-of-band URL for browser completion, so
 // secrets never transit the MCP/LLM channel.
 func TestOOBSetupPromptDoesNotRequestCredentials(t *testing.T) {
-	out := setupOverview()
+	// The overview rules now live in the embedded setup.tmpl template;
+	// render it the same way setupHandler does.
+	out := renderPromptTemplate("setup_overview", sitePromptData{})
 	require.Contains(t, out, "sign_in")
 	require.Contains(t, out, "out-of-band login URL")
 	require.Contains(t, out, "only the email")

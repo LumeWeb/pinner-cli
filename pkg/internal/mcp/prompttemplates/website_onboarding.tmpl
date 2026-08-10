@@ -1,0 +1,94 @@
+{{/* website-onboarding prompt templates. Rendered by text/template from
+     pkg/internal/mcp/prompts.go. Template names carry a website_ prefix so they
+     do not collide with the setup_* templates loaded into the same namespace
+     by ParseFS. Data is the sitePromptData struct. */}}
+
+{{define "website_overview"}}You are guiding a user through the website creation wizard.
+
+Workflow overview (9 steps):
+  1. auth_check     : verifies the user is authenticated
+  2. content_source : choose CID or upload
+  3. target_type    : IPFS or IPNS
+  4. domain         : domain name for the website
+  5. dns_mode       : managed or self-managed DNS
+  6. create         : create the website (irreversible, confirm first)
+  7. dns_setup      : read DNS requirements resource
+  8. validate       : run live validation
+  9. complete       : summarize results
+
+Rules:
+  - Always pass the session_id from websites_wizard_start to websites_wizard_step.
+  - The next_step_schema in each response tells you the exact input shape.
+  - A step that needs input returns a native form elicitation (input_required): the client presents a form for the requested fields. Fill and submit that form; the session_id is carried across automatically.
+  - If a step returns an error, the session stays in the same state: you can retry.
+  - Read pinner:// resources for live data (DNS requirements, validation status).
+{{- if .Domain}}
+
+Pre-filled: domain={{.Domain}}
+{{- end}}
+{{end}}
+
+{{define "website_auth_status"}}Read the pinner://account/status resource above. If "authenticated" is false, instruct the user to run `pinner auth` or provide an auth token via --auth-token. Do not proceed with the wizard until authentication is confirmed.
+{{end}}
+
+{{define "website_start"}}Call the `websites_wizard_start` tool (no arguments). It returns a session_id and the first step (auth_check). Store the session_id: you will pass it to every subsequent `websites_wizard_step` call.
+{{end}}
+
+{{define "website_step_auth_check"}}Step: auth_check
+Call `websites_wizard_step` with the session_id and an empty input object {}. This step auto-validates the configured auth token. If it returns an error, stop and tell the user authentication is required.
+{{end}}
+
+{{define "website_step_content_source_upload"}}Step: content_source
+Content source is "upload". The wizard requires an existing CID: instruct the user to run `pinner upload <file>` first, then restart the wizard with content_source set to "cid". Call `websites_wizard_step` with input: {"choice": "upload"} (this will return an error with instructions).
+{{end}}
+
+{{define "website_step_content_source_cid"}}Step: content_source
+Content source is "cid". Ask the user for their IPFS CID, then call `websites_wizard_step` with input: {"choice": "cid", "cid": "<CID>"}
+{{end}}
+
+{{define "website_step_content_source_ask"}}Step: content_source
+Ask the user whether they have an IPFS CID ready ("cid") or need to upload content first ("upload"). If they choose "upload", they must run `pinner upload <file>` first and restart. Call `websites_wizard_step` with input: {"choice": "<cid|upload>", "cid": "<CID if cid>"}
+{{end}}
+
+{{define "website_step_target_type_filled"}}Step: target_type
+Call `websites_wizard_step` with input: {"type": "{{.TargetType}}"}
+Use "ipfs" for immutable content-addressed data or "ipns" for mutable names.
+{{end}}
+
+{{define "website_step_target_type_ask"}}Step: target_type
+Ask the user whether they want IPFS (immutable, content-addressed) or IPNS (mutable name). Call `websites_wizard_step` with input: {"type": "<ipfs|ipns>"}
+{{end}}
+
+{{define "website_step_domain_filled"}}Step: domain
+Call `websites_wizard_step` with input: {"domain": "{{.Domain}}"}
+{{end}}
+
+{{define "website_step_domain_ask"}}Step: domain
+Ask the user for the domain name for their website (e.g. example.com). Call `websites_wizard_step` with input: {"domain": "<domain>"}
+{{end}}
+
+{{define "website_step_dns_mode_filled"}}Step: dns_mode
+Call `websites_wizard_step` with input: {"mode": "{{.DNSMode}}"}
+Use "managed" if Pinner should handle DNS, or "self_managed" if the user will configure DNS records themselves.
+{{end}}
+
+{{define "website_step_dns_mode_ask"}}Step: dns_mode
+Ask the user whether they want managed DNS (Pinner handles it) or self-managed DNS (they configure records). Call `websites_wizard_step` with input: {"mode": "<managed|self_managed>"}
+{{end}}
+
+{{define "website_step_create"}}Step: create
+This is an irreversible operation. Confirm with the user before proceeding. Call `websites_wizard_step` with input: {"confirm": true} to create the website. If the user is not ready, call with {"confirm": false} to see the error and retry.
+{{end}}
+
+{{define "website_step_dns_setup_filled"}}Read the pinner://websites/{domain}/dns-requirements resource above. Present the DNS records to the user. If DNS is managed, instruct them to update their registrar's nameservers. If self-managed, instruct them to add the TXT, dnslink, and optional CNAME records. Call `websites_wizard_step` with input: {} to proceed.
+{{end}}
+
+{{define "website_step_dns_setup_ask"}}Step: dns_setup
+Read the pinner://websites/{domain}/dns-requirements resource (substitute the domain from the previous step) to get the exact DNS records. Present them to the user. Call `websites_wizard_step` with input: {} to proceed.
+{{end}}
+
+{{define "website_step_validate"}}Read the pinner://websites/{id}/validation-status resource (use the website ID from the create step's response). If validation fails, instruct the user to wait for DNS propagation (may take minutes to hours) and retry. Call `websites_wizard_step` with input: {"retry": true} to re-run validation. Call with input: {} to accept the current status and finish.
+{{end}}
+
+{{define "website_step_complete"}}When the wizard returns "complete": true, the website onboarding is done. Summarize the result for the user: domain, CID, target type, DNS mode, and validation status. If validation failed, provide the reason and suggest next steps.
+{{end}}
