@@ -319,6 +319,66 @@ func TestRootSensitiveFlagRedactedFromSubcommand(t *testing.T) {
 	assert.Contains(t, trace, "user@example.com", "non-sensitive value is not redacted")
 }
 
+// TestInheritedSensitiveFlagRedactedAcrossNesting verifies that a sensitive
+// flag declared on an intermediate parent command (e.g. vault --password used
+// by a nested action) is accumulated into the SensitiveFlags of tools nested
+// 2+ levels deep, so its value is redacted from arg-trace logs. Regression
+// guard: inherited flags were made visible in the schema, but without also
+// threading inherited sensitive names, the adapter's redaction (driven only by
+// entry.SensitiveFlags) would have left the value in plaintext.
+func TestInheritedSensitiveFlagRedactedAcrossNesting(t *testing.T) {
+	root := &cli.Command{
+		Name: "pinner",
+		Commands: []*cli.Command{
+			{
+				Name: "vault",
+				Flags: []cli.Flag{
+					SensitiveStringFlag(&cli.StringFlag{Name: "password", Usage: "Vault password"}),
+				},
+				Commands: []*cli.Command{
+					{
+						Name: "profile",
+						Commands: []*cli.Command{
+							{Name: "use", Action: func(context.Context, *cli.Command) error { return nil }},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	catalog, err := buildCatalog(root, true, nil, nil, nil)
+	require.NoError(t, err)
+
+	entry, ok := catalog.Get("pinner_vault_profile_use")
+	require.True(t, ok)
+	require.Contains(t, entry.SensitiveFlags, "password",
+		"grandparent sensitive flag must be accumulated onto the nested tool entry")
+
+	// The value must be redacted from the arg trace.
+	var buf bytes.Buffer
+	oldLog := log
+	log = zap.New(zapcore.NewCore(
+		zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()),
+		zapcore.AddSync(&buf),
+		zapcore.InfoLevel,
+	))
+	t.Cleanup(func() { log = oldLog })
+
+	_, err = entry.Handler(context.Background(), ToolRequest{
+		Name: "pinner_vault_profile_use",
+		Arguments: map[string]any{
+			"password": "LIVE-VAULT-PASSWORD-456",
+			"profile":  "default",
+		},
+	})
+	require.NoError(t, err)
+
+	trace := buf.String()
+	assert.Contains(t, trace, "****")
+	assert.NotContains(t, trace, "LIVE-VAULT-PASSWORD-456", "inherited sensitive value must be redacted")
+}
+
 // TestUnionSensitiveFlagsDedupes verifies unionSensitiveFlags preserves order
 // and drops duplicate names shared across the root and a subcommand.
 func TestUnionSensitiveFlagsDedupes(t *testing.T) {

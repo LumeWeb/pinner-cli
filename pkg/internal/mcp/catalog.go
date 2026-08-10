@@ -276,8 +276,8 @@ func (c *ToolCatalog) RegisterFromCommand(root *cli.Command, hasRootAction bool,
 	// an agent passing a root-level credential flag to any tool still has its
 	// value redacted from the arg trace.
 	rootSensitive := sensitiveFlagNames(root.Flags)
-	var walk func(cmd *cli.Command, inherited []cli.Flag, prefix ...string) error
-	walk = func(cmd *cli.Command, inherited []cli.Flag, prefix ...string) error {
+	var walk func(cmd *cli.Command, inherited []cli.Flag, inheritedSensitive []string, prefix ...string) error
+	walk = func(cmd *cli.Command, inherited []cli.Flag, inheritedSensitive []string, prefix ...string) error {
 		if cmd.Name == "mcp" || cmd.Name == "help" {
 			return nil
 		}
@@ -323,7 +323,7 @@ func (c *ToolCatalog) RegisterFromCommand(root *cli.Command, hasRootAction bool,
 				Destructive:    destructive,
 				Interaction:    interaction,
 				InputSchema:    schema,
-				SensitiveFlags: unionSensitiveFlags(sensitiveFlagNames(cmd.Flags), rootSensitive),
+				SensitiveFlags: unionSensitiveFlags(unionSensitiveFlags(inheritedSensitive, sensitiveFlagNames(cmd.Flags)), rootSensitive),
 				Handler:        handler,
 			})
 
@@ -331,18 +331,22 @@ func (c *ToolCatalog) RegisterFromCommand(root *cli.Command, hasRootAction bool,
 		}
 
 		for _, sub := range cmd.Commands {
-			// Accumulate inherited flags down the tree, not just the immediate
-			// parent's: a tool nested 2+ levels deep (e.g. vault → profile →
-			// use) must still see the vault --profile flag its action reads.
+			// Accumulate inherited flags AND inherited sensitive flag names down
+			// the tree: a sensitive flag declared on an intermediate parent
+			// (e.g. vault --password used by a nested action) must be redacted
+			// from arg-trace logs just like the tool's own, otherwise the
+			// schema advertises it while the adapter's redaction (driven only
+			// by entry.SensitiveFlags) leaves its value in plaintext.
 			childInherited := mergeInheritedFlags(inherited, cmd.Flags)
-			if err := walk(sub, childInherited, loc...); err != nil {
+			childSensitive := unionSensitiveFlags(inheritedSensitive, sensitiveFlagNames(cmd.Flags))
+			if err := walk(sub, childInherited, childSensitive, loc...); err != nil {
 				return err
 			}
 		}
 		return nil
 	}
 
-	return walk(root, nil, prefix...)
+	return walk(root, nil, nil, prefix...)
 }
 
 // mergeInheritedFlags unions a command's inherited parent flags with its own
