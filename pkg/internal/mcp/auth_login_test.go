@@ -557,6 +557,61 @@ func TestOOBLoginUsedDetectedOnGET(t *testing.T) {
 	})
 }
 
+// TestOOBLoginSpentSurvivesReaperEviction verifies the spent-link page still
+// renders after the reaper has evicted a completed/expired request from the
+// pending set (the pendingLoginTTL grace window). A re-opened /login/<id> URL
+// must show the branded spent page via the tombstone, not regress to a bare
+// 404 because the request object is gone.
+func TestOOBLoginSpentSurvivesReaperEviction(t *testing.T) {
+	t.Run("completed-evicted", func(t *testing.T) {
+		o := newOOBForTest(t)
+		id, u, err := o.Begin("session-1", "evict-used@example.com")
+		require.NoError(t, err)
+
+		// Complete the login, then evict it from the pending set exactly as the
+		// reaper does: the request leaves o.requests and a tombstone is kept.
+		code := doLogin(t, o, u, testOrigin(o), "").Code
+		require.NotEqual(t, http.StatusForbidden, code)
+		o.mu.Lock()
+		o.spent[id] = spentLogin{at: time.Now(), reason: handoffUsed}
+		delete(o.requests, id)
+		o.mu.Unlock()
+
+		// Re-open: must render the spent page (410), not a 404.
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, u, nil)
+		o.loginPage(rec, req)
+		assert.Equal(t, http.StatusGone, rec.Code, "evicted used login must render 410 spent page, not 404")
+		assert.Contains(t, rec.Body.String(), "no longer active")
+	})
+
+	t.Run("expired-evicted", func(t *testing.T) {
+		o := newOOBForTest(t)
+		id, u, err := o.Begin("session-1", "evict-expired@example.com")
+		require.NoError(t, err)
+
+		// Evict as expired: request removed, expired tombstone kept.
+		o.mu.Lock()
+		o.spent[id] = spentLogin{at: time.Now(), reason: handoffExpired}
+		delete(o.requests, id)
+		o.mu.Unlock()
+
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, u, nil)
+		o.loginPage(rec, req)
+		assert.Equal(t, http.StatusGone, rec.Code, "evicted expired login must render 410 spent page, not 404")
+		assert.Contains(t, rec.Body.String(), "expired")
+	})
+
+	t.Run("never-existed-still-404", func(t *testing.T) {
+		o := newOOBForTest(t)
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/login/does-not-exist", nil)
+		o.loginPage(rec, req)
+		assert.Equal(t, http.StatusNotFound, rec.Code, "an unknown token (no tombstone) must stay 404")
+	})
+}
+
 // TestOutOfBandLoginMountsOnSharedMux verifies the coordinator can be served on a
 // shared transport mux (as the HTTP/tunnel transport does) so a remote human can
 // complete sign-in at the public URL rather than an unreachable loopback. It

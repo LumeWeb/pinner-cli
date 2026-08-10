@@ -116,8 +116,21 @@ type OutOfBandLogin struct {
 	// form whose primary exposure is the owner's own cloud host.
 	throttle map[string]*loginThrottle
 
+	// spent records recently-consumed or expired login tokens once they leave
+	// the pending set, so a re-opened /login/<id> URL whose request has been
+	// evicted by the reaper still renders the branded spent-link page instead
+	// of a bare 404. It is pruned once older than spentHoldTTL.
+	spent map[string]spentLogin
+
 	reaperCtx    context.Context
 	reaperCancel context.CancelFunc
+}
+
+// spentLogin is a tombstone for an evicted login token: when it became spent
+// and the handoffNotActiveReason to show on a re-open.
+type spentLogin struct {
+	at     time.Time
+	reason handoffNotActiveReason
 }
 
 // loginThrottle is the credential attempt counter for an email. lastUsed is
@@ -150,6 +163,7 @@ func NewOutOfBandLogin(auth AuthService, baseURL, keyName string) *OutOfBandLogi
 		keyName:  keyName,
 		requests: make(map[string]*loginRequest),
 		throttle: make(map[string]*loginThrottle),
+		spent:    make(map[string]spentLogin),
 	}
 	// Loopback-associated base URL (empty keeps the loopback-derived URL).
 	o.loopback.baseURL = strings.TrimRight(baseURL, "/")
@@ -358,8 +372,17 @@ func (o *OutOfBandLogin) loginPage(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/login/")
 	o.mu.Lock()
 	req, ok := o.requests[path]
+	sl, spent := o.spent[path]
 	o.mu.Unlock()
 	if !ok {
+		// The request is gone from the pending set. If it was evicted as spent
+		// (consumed or expired, e.g. after the reaper's pendingLoginTTL grace
+		// window), render the branded spent-link page; only a token that never
+		// existed gets a bare 404.
+		if spent {
+			o.loginNotActive(w, r, sl.reason)
+			return
+		}
 		http.NotFound(w, r)
 		return
 	}
@@ -658,9 +681,31 @@ func (o *OutOfBandLogin) reaper(ctx context.Context) {
 				// cannot leak the request in memory for the process lifetime.
 				expired := req.status == loginExpired
 				completedStale := req.status == loginCompleted && !req.completedAt.IsZero() && now.Sub(req.completedAt) > pendingLoginTTL
+				var reason handoffNotActiveReason
+				if req.status == loginExpired {
+					reason = handoffExpired
+				} else if req.status == loginCompleted && req.loginError == nil {
+					reason = handoffUsed
+				}
 				req.mu.Unlock()
 				if expired || completedStale {
+					// Record a tombstone so a re-opened URL after eviction still
+					// renders the spent page instead of a bare 404. A completed
+					// request with an error is retryable while pending; once it is
+					// evicted as completed-stale it is no longer actionable, so
+					// default to the "used" reason.
+					if reason == "" {
+						reason = handoffUsed
+					}
+					o.spent[id] = spentLogin{at: now, reason: reason}
 					delete(o.requests, id)
+				}
+			}
+			// Prune spent tombstones older than spentHoldTTL so the map cannot
+			// grow without bound over a long-running MCP process.
+			for id, sl := range o.spent {
+				if now.Sub(sl.at) > spentHoldTTL {
+					delete(o.spent, id)
 				}
 			}
 			// Evict credential throttles idle past their TTL so the map cannot

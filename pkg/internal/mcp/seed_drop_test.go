@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
@@ -64,6 +65,49 @@ func TestSeedDropExpiry(t *testing.T) {
 	require.Contains(t, rec.Body.String(), "no longer active")
 	require.Contains(t, rec.Body.String(), "expired")
 	require.NotContains(t, rec.Body.String(), "secret words", "the seed must never be shown after expiry")
+}
+
+// TestSeedDropTombstonePrunedOnWrite verifies spent tombstones do not grow
+// without bound. Because the SeedDrop/OOBRestore coordinators never start the
+// periodic reaper, tombstone pruning must happen lazily on the read/write
+// path: a consumed token's tombstone older than spentHoldTTL is dropped the
+// next time resolve/remove runs, so the in-memory map stays bounded.
+func TestSeedDropTombstonePrunedOnWrite(t *testing.T) {
+	d := NewSeedDrop(time.Minute)
+	d.SetBaseURL("http://127.0.0.1:9999")
+	url := d.Register("default", "alpha beta gamma")
+
+	// Consume the drop: viewing it once creates a "used" tombstone.
+	mux := http.NewServeMux()
+	d.registerHandlers(mux)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, url, nil))
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	token := seedTokenFromURL(t, url)
+	require.Contains(t, d.core.spent, token, "a consumed drop must leave a tombstone")
+
+	// Advance the clock past the tombstone hold window, then perform a write
+	// (register + consume another drop) to trigger lazy pruning.
+	base := time.Now()
+	d.setNow(func() time.Time { return base.Add(spentHoldTTL + time.Minute) })
+	url2 := d.Register("default", "second words")
+	rec2 := httptest.NewRecorder()
+	mux.ServeHTTP(rec2, httptest.NewRequest(http.MethodGet, url2, nil))
+	require.Equal(t, http.StatusOK, rec2.Code)
+
+	token2 := seedTokenFromURL(t, url2)
+	require.NotContains(t, d.core.spent, token, "a tombstone older than spentHoldTTL must be pruned on the write path")
+	require.Contains(t, d.core.spent, token2, "a freshly consumed token's tombstone must be retained")
+}
+
+// seedTokenFromURL extracts the token (the final /seed/<token> path segment)
+// from a seed drop URL.
+func seedTokenFromURL(t *testing.T, seedURL string) string {
+	t.Helper()
+	u, err := url.Parse(seedURL)
+	require.NoError(t, err)
+	return filepath.Base(u.Path)
 }
 
 func TestAttachSeedDropMintsURL(t *testing.T) {

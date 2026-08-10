@@ -166,6 +166,7 @@ func (h *handoffEndpoint) handle(w http.ResponseWriter, r *http.Request) {
 func (h *handoffEndpoint) resolve(token string) (*handoffItem, handoffNotActiveReason) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	h.pruneSpentLocked()
 	if _, ok := h.spent[token]; ok {
 		return nil, handoffUsed
 	}
@@ -179,6 +180,19 @@ func (h *handoffEndpoint) resolve(token string) (*handoffItem, handoffNotActiveR
 		return nil, handoffExpired
 	}
 	return item, ""
+}
+
+// pruneSpentLocked drops spent tombstones older than spentHoldTTL. It must be
+// called with h.mu held. It runs on the read/write paths (resolve/remove) so
+// tombstones cannot grow without bound even though the periodic reaper
+// (startReaper) is not started by the SeedDrop/OOBRestore coordinators.
+func (h *handoffEndpoint) pruneSpentLocked() {
+	cutoff := h.now().Add(-spentHoldTTL)
+	for token, spentAt := range h.spent {
+		if spentAt.Before(cutoff) {
+			delete(h.spent, token)
+		}
+	}
 }
 
 // lookup returns a valid (non-expired) item for a token, pruning it if stale.
@@ -212,6 +226,7 @@ func (h *handoffEndpoint) remove(token string) {
 	if _, ok := h.spent[token]; !ok {
 		h.spent[token] = h.now()
 	}
+	h.pruneSpentLocked()
 }
 
 // get is a lightweight direct fetch used by children that need the item for
