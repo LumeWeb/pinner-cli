@@ -325,7 +325,11 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 	// the pre-created listener so the ephemeral port is stable and known to
 	// the tunnel before any client connects.
 	mux := http.NewServeMux()
-	var mcpHandler http.Handler = NewOfficialStreamableHandler(srv)
+	// When a public tunnel fronts the loopback listener, remote clients send the
+	// tunnel hostname as the Host header while the server sees a loopback local
+	// address — which the go-sdk's DNS-rebinding guard would 403. Disable that
+	// guard only when a tunnel is active; keep it on for direct loopback serving.
+	var mcpHandler http.Handler = NewOfficialStreamableHandler(srv, tunnel != nil)
 	switch {
 	case oauth != nil:
 		// OAuth handshake: /mcp only accepts tokens issued through the flow.

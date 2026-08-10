@@ -3,6 +3,10 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -103,6 +107,38 @@ func TestOfficialServerFromCatalog(t *testing.T) {
 	srv, err := OfficialServerFromCatalog(catalog, "instructions")
 	require.NoError(t, err)
 	require.NotNil(t, srv)
+}
+
+// TestLocalhostProtectionTunnelScoped verifies the DNS-rebinding guard is
+// disabled ONLY when a tunnel is active. A request arriving via a loopback
+// local address with a non-loopback Host header must be 403'd when
+// disableLocalhostProtection=false, and must pass through when true.
+func TestLocalhostProtectionTunnelScoped(t *testing.T) {
+	srv, _ := newOfficialTestServer(t)
+	handler := func(disable bool) http.Handler {
+		return NewOfficialStreamableHandler(srv, disable)
+	}
+
+	// Simulate the tunnel case: local address is loopback, Host header is the
+	// public tunnel hostname.
+	doReq := func(h http.Handler) int {
+		req := httptest.NewRequest(http.MethodPost, "https://tunnel.example.com/mcp",
+			strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}`))
+		req.Header.Set("Content-Type", "application/json")
+		// Prime the loopback local address the SDK's guard inspects.
+		req = req.WithContext(context.WithValue(req.Context(), http.LocalAddrContextKey, &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 32000}))
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	// Without a tunnel (protection on): the non-loopback Host is rejected 403.
+	require.Equal(t, http.StatusForbidden, doReq(handler(false)),
+		"localhost protection must stay on when no tunnel is active")
+
+	// With a tunnel (protection off): the request passes through (not 403).
+	require.NotEqual(t, http.StatusForbidden, doReq(handler(true)),
+		"localhost protection must be disabled when a tunnel is active")
 }
 
 func TestOfficialMetaToolsListed(t *testing.T) {
