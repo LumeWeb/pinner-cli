@@ -31,9 +31,10 @@ func buildPinAppServer(t *testing.T, pins PinningProvider) *mcp.Server {
 	t.Helper()
 	catalog := NewToolCatalog()
 	catalog.Add(&ToolEntry{
-		Name:        "pinner_pin",
-		Description: "Pin an existing CID via the Pinner.xyz API.",
-		InputSchema: json.RawMessage(`{"type":"object","properties":{"cid":{"type":"string"},"name":{"type":"string"}},"required":["cid"]}`),
+		Name:          "pinner_pin",
+		Description:   "Pin an existing CID via the Pinner.xyz API.",
+		DirectVisible: true,
+		InputSchema:   json.RawMessage(`{"type":"object","properties":{"cid":{"type":"string"},"name":{"type":"string"}},"required":["cid"]}`),
 		Handler: func(_ context.Context, _ ToolRequest) (ToolResult, error) {
 			return ToolResult{Text: "pin scheduled"}, nil
 		},
@@ -43,9 +44,7 @@ func buildPinAppServer(t *testing.T, pins PinningProvider) *mcp.Server {
 	if err := RegisterPinApp(srv, catalog, pins); err != nil {
 		t.Fatalf("RegisterPinApp: %v", err)
 	}
-	if err := RegisterOfficialCuratedTools(srv, catalog, func(name string) bool {
-		return name == "pinner_pin"
-	}); err != nil {
+	if err := RegisterOfficialCuratedTools(srv, catalog); err != nil {
 		t.Fatalf("RegisterOfficialCuratedTools: %v", err)
 	}
 	return srv

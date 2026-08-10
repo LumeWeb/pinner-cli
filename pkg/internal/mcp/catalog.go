@@ -56,6 +56,11 @@ type ToolEntry struct {
 	Category    ToolCategory
 	ReadOnly    bool
 	Destructive bool
+	// DirectVisible reports whether the tool is part of the directly-exposed
+	// surface (tools/list) in addition to progressive discovery. The curated
+	// registration loop registers every DirectVisible entry; the search/describe
+	// meta-tools index the whole catalog regardless.
+	DirectVisible bool
 	// Interaction tells agents whether this tool is safe to invoke directly,
 	// prompts interactively, or reads piped stdin. Only the MCP server sets it
 	// (via classifyInteraction); CLI paths built via RegisterFromCommand get a

@@ -477,9 +477,11 @@ func RegisterOfficialDescriptor(srv *mcp.Server, desc ToolDescriptor) error {
 	return registerTool(srv, officialTool(desc), desc.Handler)
 }
 
-// RegisterOfficialCuratedTools exposes only entries selected by allowlist.
-// Remaining catalog entries stay behind progressive-disclosure meta-tools.
-func RegisterOfficialCuratedTools(srv *mcp.Server, catalog *ToolCatalog, allowed func(string) bool) error {
+// RegisterOfficialCuratedTools exposes the catalog's directly-visible tools
+// (those with DirectVisible set) as standard tools/list tools. Remaining
+// catalog entries stay behind the progressive-disclosure meta-tools
+// (search_tools / describe_tool / invoke_tool) which index the whole catalog.
+func RegisterOfficialCuratedTools(srv *mcp.Server, catalog *ToolCatalog) error {
 	if srv == nil {
 		return fmt.Errorf("nil official server")
 	}
@@ -487,7 +489,7 @@ func RegisterOfficialCuratedTools(srv *mcp.Server, catalog *ToolCatalog, allowed
 		return fmt.Errorf("nil tool catalog")
 	}
 	for _, entry := range catalog.Entries() {
-		if !allowed(entry.Name) {
+		if !entry.DirectVisible {
 			continue
 		}
 		if err := registerTool(srv, officialTool(toolDescriptor(entry)), entry.Handler); err != nil {
