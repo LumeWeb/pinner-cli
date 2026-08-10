@@ -52,7 +52,7 @@ function renderResult(result, cid) {
 }
 
 function pollStatus(cid, attempts) {
-  const max = attempts || 24;
+  let max = attempts || 24;
   return app.callServerTool({
     name: "pinner_pin_status",
     arguments: { cid },

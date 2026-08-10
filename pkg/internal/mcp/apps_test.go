@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -221,6 +222,15 @@ func TestPinStatusPollingResilient(t *testing.T) {
 	// long run of transient failures cannot loop forever.
 	if !strings.Contains(html, "--max <= 0") && !strings.Contains(html, "--max > 0") {
 		t.Fatalf("polling must bound retries by the attempt budget")
+	}
+	// The budget variable is DECREMENTED (--max) on both paths, so it must be
+	// declared with `let`, never `const`. A `const max ...` here throws
+	// "TypeError: Assignment to constant variable" on the first non-terminal
+	// poll, silently killing polling right after a pin is scheduled. The
+	// substring checks above cannot catch this runtime error, so assert the
+	// declaration form directly to guard the regression.
+	if !regexp.MustCompile(`\blet max = attempts`).MatchString(html) {
+		t.Fatalf("attempt-budget variable `max` is mutated via --max and must be declared with `let`, not `const`")
 	}
 }
 
