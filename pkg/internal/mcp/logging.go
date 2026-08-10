@@ -3,6 +3,7 @@ package mcp
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"time"
 
 	"go.uber.org/zap"
@@ -115,9 +116,9 @@ func logToolCallEnd(logger *zap.Logger, name string, startedAt time.Time, result
 		zap.Int64("duration_ms", time.Since(startedAt).Milliseconds()),
 	}
 	if result.IsError && result.Text != "" {
-		fields = append(fields, zap.String("error", truncateForLog(result.Text)))
+		fields = append(fields, zap.String("error", redactForLog(result.Text)))
 	} else if err != nil {
-		fields = append(fields, zap.String("error", truncateForLog(err.Error())))
+		fields = append(fields, zap.String("error", redactForLog(err.Error())))
 	}
 	if outcome == "ok" {
 		logger.Info("tool call result", fields...)
@@ -125,6 +126,33 @@ func logToolCallEnd(logger *zap.Logger, name string, startedAt time.Time, result
 		logger.Warn("tool call failed", fields...)
 	}
 }
+
+// redactRegex matches sensitive material embedded in free text so a tool that
+// echoes a configured secret back in its error/output cannot leak it into the
+// production log. It covers, for a credential-like label (password, token,
+// key, seed, mnemonic, ...), the value that follows it whether the separator is
+// "=", ":" or plain whitespace, and likewise for " --flag value" / "--flag=value".
+var redactRegex = regexp.MustCompile(`(?i)\b(?:` + redactLabelAlt + `)(?:[=:]\s*|\s+)([^,;()\s]+)`)
+
+// redactLabelAlt enumerates the whitespace-delimited sensitive labels plus the
+// "--flag" spellings, so both "--api-key supersecret" and "token: supersecret"
+// and "password supersecret" redact the value.
+const redactLabelAlt = `(--)?(password|pass|token|secret|key|api[_-]?key|private[_-]?key|auth[_-]?token|bearer|passphrase|mnemonic|seed|recovery[_-]?seed|code|otp)`
+
+// redactForLog masks known secret patterns in a string and caps its length.
+// It never logs the credential material; both the value after a sensitive
+// label and long hex/base64 runs are replaced with a redaction marker.
+func redactForLog(s string) string {
+	redacted := redactRegex.ReplaceAllString(s, "${1}${2}****")
+	// Also redact bare long hex/base64 runs (>=32 chars), the hashes and
+	// encodings secrets are typically rendered as.
+	redacted = longSecretRE.ReplaceAllString(redacted, "****")
+	return truncateForLog(redacted)
+}
+
+// longSecretRE matches runs of hex or base64 of length >=32, the hashes and
+// encodings secrets are typically rendered as.
+var longSecretRE = regexp.MustCompile(`\b[0-9a-fA-F]{32,}\b|[A-Za-z0-9+/]{40,}={0,2}\b`)
 
 // truncateForLog caps a single log field so a runaway command error or output
 // snippet cannot balloon a log line.

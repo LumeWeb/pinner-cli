@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"strings"
 	"testing"
 
 	"go.uber.org/zap/zapcore"
@@ -100,5 +101,35 @@ func TestTruncateForLog(t *testing.T) {
 	got := truncateForLog(string(long))
 	if len(got) > 512+3 {
 		t.Errorf("long string not bounded: %d", len(got))
+	}
+}
+
+func TestRedactForLogMasksEmbeddedSecrets(t *testing.T) {
+	secret := "super-secret-value-1234567890abcdef"
+	hexSecret := "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+	cases := []string{
+		// A tool echoing a configured secret under a sensitive label.
+		"auth failed: password " + secret,
+		"token: " + secret,
+		"--api-key " + secret,
+		"--api-key=" + secret,
+		"password=" + secret,
+		"recovery seed: " + hexSecret,
+		"error with bearer " + secret + " in the middle",
+	}
+	for _, in := range cases {
+		got := redactForLog(in)
+		if strings.Contains(got, secret) {
+			t.Errorf("redactForLog leaked secret %q in %q -> %q", secret, in, got)
+		}
+	}
+	// A bare long hex run (a key/seed/token echoed standalone) is redacted.
+	if got := redactForLog("saw token " + hexSecret); strings.Contains(got, hexSecret) {
+		t.Errorf("redactForLog leaked bare hex run: %q", got)
+	}
+	// Ordinary text is preserved.
+	plain := "operation failed: resource not found"
+	if got := redactForLog(plain); got != plain {
+		t.Errorf("redactForLog altered plain text: %q", got)
 	}
 }

@@ -344,22 +344,34 @@ func (o *OutOfBandLogin) pendingOutcome(sessionID, email string) (url string, do
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	var req *loginRequest
+	// Key the lookup on the session id (the resume handle), preferring the
+	// request whose email matches the caller. A wizard session has one
+	// in-flight login in the normal case; but a single wizard session with two
+	// in-flight OOB logins for different emails must never resolve to an
+	// arbitrary request and delete it (which would cross-bind credentials
+	// between accounts). The email is deliberately not the sole key: the human
+	// can edit the account identifier on the approval page (the agent-supplied
+	// email is only a prefill), so the stored req.email can diverge from the
+	// value bound when Begin ran. Prefer the email match; fall back to a
+	// sessionID-only candidate only when it is the sole match.
+	candidates := 0
+	var matched *loginRequest
 	for _, r := range o.requests {
-		// Key the lookup on the session id (the resume handle) alone. The
-		// session id is a cryptographically random, per-login handle, so it
-		// uniquely identifies the login. The email is deliberately NOT part of
-		// the key: the human can edit the account identifier on the approval
-		// page (the agent-supplied email is only a prefill), so the stored
-		// req.email can diverge from the value bound when Begin ran. Matching
-		// on it would make resume silently report "pending" for a login the
-		// human actually completed.
 		if r.sessionID == sessionID {
-			req = r
+			if matched == nil || (r.email == email && matched.email != email) {
+				matched = r
+			}
+			candidates++
 		}
 	}
+	// If multiple candidates share the sessionID and none matches the email,
+	// do not resolve/delete an arbitrary one (would cross-bind credentials).
+	if matched != nil && (candidates == 1 || matched.email == email) {
+		req = matched
+	}
 	if req == nil {
-		o.logf().Warn("out-of-band login resume: no pending request for session",
-			zap.String("session", sessionID), zap.String("email", email))
+		o.logf().Warn("out-of-band login resume: no unambiguous pending request for session",
+			zap.String("session", sessionID), zap.String("email", email), zap.Int("candidates", candidates))
 		return "", false, nil
 	}
 	req.mu.Lock()

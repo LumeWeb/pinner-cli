@@ -828,6 +828,49 @@ func TestOOBResumeDoneAfterHumanEditsEmail(t *testing.T) {
 	assert.False(t, done)
 }
 
+// TestOOBResumeMultipleInFlightSameSession verifies that when a single wizard
+// session holds two in-flight OOB logins for DIFFERENT emails, resume resolves
+// the request matching the caller's email and never deletes an arbitrary one
+// (which would cross-bind credentials between accounts).
+func TestOOBResumeMultipleInFlightSameSession(t *testing.T) {
+	auth := &captureAuthService{}
+	o := NewOutOfBandLogin(auth, "", "test-key")
+	t.Cleanup(func() { o.Stop(context.Background()) })
+
+	// Two in-flight logins for the same session, different emails. Begin does
+	// not evict one for the other (it only evicts same session+email).
+	idA, urlA, err := o.Begin("session-multi", "alice@example.com")
+	require.NoError(t, err)
+	idB, urlB, err := o.Begin("session-multi", "bob@example.com")
+	require.NoError(t, err)
+	require.NotEqual(t, idA, idB)
+
+	// Complete the alice login in the browser.
+	csrf := fetchCSRF(t, o, urlA)
+	rec := httptest.NewRecorder()
+	body := url.Values{
+		"email":    {"alice@example.com"},
+		"password": {"fixture-password"},
+		"csrf":     {csrf},
+	}.Encode()
+	req := httptest.NewRequest(http.MethodPost, urlA, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Origin", testOrigin(o))
+	o.loginPage(rec, req)
+	require.NotEqual(t, http.StatusForbidden, rec.Code, "alice login must complete")
+
+	// Resume for alice resolves done (and consumes her request only).
+	_, done, err := o.pendingOutcome("session-multi", "alice@example.com")
+	require.NoError(t, err)
+	assert.True(t, done, "alice resume must resolve to done")
+
+	// Bob's in-flight login must still be present and pending, untouched.
+	urlB2, doneB, err := o.pendingOutcome("session-multi", "bob@example.com")
+	require.NoError(t, err)
+	assert.False(t, doneB, "bob's login must still be pending")
+	assert.Equal(t, urlB, urlB2, "bob's login URL must be returned for his pending request")
+}
+
 // TestOOBLoginConcurrentCSRFRejectNoRace exercises the CSRF-reject branch of
 // authLoginSubmit concurrently with the email-edit write. The reject path reads
 // req.email for its Warn log and re-renders authLoginPage (which also reads
