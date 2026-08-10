@@ -119,8 +119,10 @@ type OutOfBandLogin struct {
 	// spent records recently-consumed or expired login tokens once they leave
 	// the pending set, so a re-opened /login/<id> URL whose request has been
 	// evicted by the reaper still renders the branded spent-link page instead
-	// of a bare 404. It is pruned once older than spentHoldTTL.
-	spent map[string]spentLogin
+	// of a bare 404. spentOrder is an insertion-ordered (FIFO) index of spent
+	// keys so the oldest tombstone can be evicted in O(1) at the cap.
+	spent      map[string]spentLogin
+	spentOrder []string
 
 	reaperCtx    context.Context
 	reaperCancel context.CancelFunc
@@ -697,7 +699,7 @@ func (o *OutOfBandLogin) reaper(ctx context.Context) {
 					if reason == "" {
 						reason = handoffUsed
 					}
-					o.spent[id] = spentLogin{at: now, reason: reason}
+					o.markSpentLocked(id, now, reason)
 					delete(o.requests, id)
 				}
 			}
@@ -723,21 +725,27 @@ func (o *OutOfBandLogin) reaper(ctx context.Context) {
 	}
 }
 
+// markSpentLocked records a spent login token and appends it to the FIFO
+// eviction order. It must be called with o.mu held.
+func (o *OutOfBandLogin) markSpentLocked(id string, at time.Time, reason handoffNotActiveReason) {
+	if _, ok := o.spent[id]; ok {
+		return
+	}
+	o.spent[id] = spentLogin{at: at, reason: reason}
+	o.spentOrder = append(o.spentOrder, id)
+}
+
 // pruneSpentLocked bounds the login spent-tombstone map to maxSpentTombstones
-// by evicting the oldest entries (FIFO) only when the cap is exceeded, so a
-// spent login link keeps explaining itself as long as it is within retention
-// instead of reverting to a bare 404 on a clock.
+// by evicting from the FIFO head (O(overflow), never a re-scan) only when the
+// cap is exceeded, so a spent login link keeps explaining itself as long as it
+// is within retention instead of reverting to a bare 404 on a clock.
 func (o *OutOfBandLogin) pruneSpentLocked() {
-	for len(o.spent) > maxSpentTombstones {
-		var oldest string
-		var oldestAt time.Time
-		for id, sl := range o.spent {
-			if oldest == "" || sl.at.Before(oldestAt) {
-				oldest = id
-				oldestAt = sl.at
-			}
+	for len(o.spent) > maxSpentTombstones && len(o.spentOrder) > 0 {
+		oldest := o.spentOrder[0]
+		o.spentOrder = o.spentOrder[1:]
+		if _, ok := o.spent[oldest]; ok {
+			delete(o.spent, oldest)
 		}
-		delete(o.spent, oldest)
 	}
 }
 

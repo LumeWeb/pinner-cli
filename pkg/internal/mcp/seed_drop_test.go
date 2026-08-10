@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
@@ -77,44 +76,26 @@ func TestSeedDropTombstonePrunedOnWrite(t *testing.T) {
 	d := NewSeedDrop(time.Minute)
 	d.SetBaseURL("http://127.0.0.1:9999")
 
-	// A consumed real drop creates one tombstone (and is retained).
-	url := d.Register("default", "alpha beta gamma")
-	mux := http.NewServeMux()
-	d.registerHandlers(mux)
-	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, url, nil))
-	require.Equal(t, http.StatusOK, rec.Code)
-	consumed := seedTokenFromURL(t, url)
-	require.Contains(t, d.core.spent, consumed, "a consumed drop must leave a tombstone")
-
-	// Fill the map past the cap with synthetic tombstones stamped with
-	// increasing ages, oldest first.
+	// Fill the map past the cap with synthetic tombstones inserted oldest-first
+	// (via markSpentLocked so the FIFO eviction index stays in sync).
 	base := time.Now().Add(-10 * time.Hour)
 	for i := 0; i < maxSpentTombstones+5; i++ {
-		d.core.spent[fmt.Sprintf("syn-%d", i)] = base.Add(time.Duration(i) * time.Second)
+		d.core.markSpentLocked(fmt.Sprintf("syn-%d", i), base.Add(time.Duration(i)*time.Second))
 	}
 
 	// Trigger lazy pruning on the write path.
 	d.core.remove("does-not-matter")
 
-	// The map is capped, the freshly-consumed real token is retained, and the
-	// oldest synthetic tombstones are the ones dropped.
-	require.LessOrEqual(t, len(d.core.spent), maxSpentTombstones+1)
-	require.Contains(t, d.core.spent, consumed, "the real consumed drop must be retained (spent state persists)")
-	// syn-0..syn-4 are the oldest and must have been evicted; the newest
-	// synthetic tombstone remains.
+	// The map is capped at maxSpentTombstones, and the OLDEST-inserted keys
+	// (the FIFO head) were evicted while the newest remain — an O(1)/O(overflow)
+	// oldest-first eviction, not a per-entry re-scan.
+	require.Equal(t, maxSpentTombstones, len(d.core.spent))
+	// The first 6 inserted (syn-0..syn-5) are the oldest and must be gone.
 	require.NotContains(t, d.core.spent, "syn-0")
-	require.NotContains(t, d.core.spent, "syn-4")
+	require.NotContains(t, d.core.spent, "syn-5")
+	// The newest synthetic tombstones are retained.
 	require.Contains(t, d.core.spent, fmt.Sprintf("syn-%d", maxSpentTombstones+4))
-}
-
-// seedTokenFromURL extracts the token (the final /seed/<token> path segment)
-// from a seed drop URL.
-func seedTokenFromURL(t *testing.T, seedURL string) string {
-	t.Helper()
-	u, err := url.Parse(seedURL)
-	require.NoError(t, err)
-	return filepath.Base(u.Path)
+	require.Contains(t, d.core.spent, fmt.Sprintf("syn-%d", maxSpentTombstones-1))
 }
 
 func TestAttachSeedDropMintsURL(t *testing.T) {

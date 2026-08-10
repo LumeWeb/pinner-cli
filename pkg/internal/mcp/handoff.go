@@ -26,13 +26,15 @@ type handoffEndpoint struct {
 
 	mu    sync.Mutex
 	items map[string]*handoffItem
-	// spent records recently-consumed or expired tokens so a re-open of a
-	// one-time URL can be told apart from a token that never existed, and so a
-	// spent link renders a branded "link no longer active" page instead of a
-	// bare 404. Entries are pruned lazily after spentHoldTTL.
-	spent map[string]time.Time
-	ttl   time.Duration
-	now   func() time.Time
+	// spent records consumed or expired tokens so a re-open of a one-time URL
+	// can be told apart from a token that never existed, and so a spent link
+	// renders a branded "link no longer active" page instead of a bare 404.
+	// spentOrder is an insertion-ordered index (FIFO) of spent keys, so the
+	// oldest tombstone can be evicted in O(1) when the map exceeds its cap.
+	spent      map[string]time.Time
+	spentOrder []string
+	ttl        time.Duration
+	now        func() time.Time
 
 	prefix  string
 	handler handoffHandler
@@ -179,10 +181,21 @@ func (h *handoffEndpoint) resolve(token string) (*handoffItem, handoffNotActiveR
 	}
 	if h.now().After(item.expiresAt) {
 		delete(h.items, token)
-		h.spent[token] = h.now()
+		h.markSpentLocked(token, h.now())
 		return nil, handoffExpired
 	}
 	return item, ""
+}
+
+// markSpentLocked records a consumed/expired token as spent and appends it to
+// the FIFO eviction order. It must be called with h.mu held. The order slice is
+// kept in sync with eviction by pruneSpentLocked (which trims the head).
+func (h *handoffEndpoint) markSpentLocked(token string, at time.Time) {
+	if _, ok := h.spent[token]; ok {
+		return
+	}
+	h.spent[token] = at
+	h.spentOrder = append(h.spentOrder, token)
 }
 
 // pruneSpentLocked bounds the spent-tombstone map to maxSpentTombstones by
@@ -193,16 +206,14 @@ func (h *handoffEndpoint) resolve(token string) (*handoffItem, handoffNotActiveR
 // even though the periodic reaper (startReaper) is not started by the
 // SeedDrop/OOBRestore coordinators.
 func (h *handoffEndpoint) pruneSpentLocked() {
-	for len(h.spent) > maxSpentTombstones {
-		var oldest string
-		var oldestAt time.Time
-		for token, spentAt := range h.spent {
-			if oldest == "" || spentAt.Before(oldestAt) {
-				oldest = token
-				oldestAt = spentAt
-			}
+	// Evict the oldest tombstones from the FIFO head until the map is within
+	// the cap. O(overflow), never a re-scan of the whole map per entry.
+	for len(h.spent) > maxSpentTombstones && len(h.spentOrder) > 0 {
+		oldest := h.spentOrder[0]
+		h.spentOrder = h.spentOrder[1:]
+		if _, ok := h.spent[oldest]; ok {
+			delete(h.spent, oldest)
 		}
-		delete(h.spent, oldest)
 	}
 }
 
@@ -234,9 +245,7 @@ func (h *handoffEndpoint) remove(token string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	delete(h.items, token)
-	if _, ok := h.spent[token]; !ok {
-		h.spent[token] = h.now()
-	}
+	h.markSpentLocked(token, h.now())
 	h.pruneSpentLocked()
 }
 
@@ -291,9 +300,7 @@ func (h *handoffEndpoint) pruneExpired() {
 	for token, item := range h.items {
 		if now.After(item.expiresAt) {
 			delete(h.items, token)
-			if _, ok := h.spent[token]; !ok {
-				h.spent[token] = now
-			}
+			h.markSpentLocked(token, now)
 		}
 	}
 	h.pruneSpentLocked()
