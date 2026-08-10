@@ -7,6 +7,7 @@ import (
 
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/pkg/config"
+	"go.lumeweb.com/pinner-cli/pkg/internal/mcp"
 )
 
 func newIPNSCommand() *cli.Command {
@@ -99,10 +100,10 @@ Examples:
 Does NOT publish content (use 'ipns publish' after creating). --key is sensitive private-key material; handle it securely and do not share it.`,
 		ArgsUsage: "<name>",
 		Flags: []cli.Flag{
-			&cli.StringFlag{
+			mcp.SensitiveStringFlag(&cli.StringFlag{
 				Name:  FlagKey,
 				Usage: "Private key to import (optional, generates a new key if not provided)",
-			},
+			}),
 		},
 		Action: withContext(func(ctx context.Context, cc *commandContext) error {
 			return ipnsKeysCreate(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)

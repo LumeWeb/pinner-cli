@@ -44,6 +44,13 @@ func (b *schemaBuilder) addFlag(flag cli.Flag) error {
 	switch f := flag.(type) {
 	case *cli.StringFlag:
 		b.addString(f.Name, f.Usage, f.Value, f.Required, f.Hidden)
+	case *sensitiveStringFlag:
+		// A credential-bearing string flag; schema-wise it is a plain string.
+		// Declaring it via SensitiveStringFlag keeps the schema identical to a
+		// StringFlag while the adapter can redact its value from the arg trace.
+		if f.StringFlag != nil {
+			b.addString(f.Name, f.Usage, f.Value, f.Required, f.Hidden)
+		}
 	case *enumStringFlag:
 		b.addEnum(f.Name, f.Usage, f.Value, f.enum, f.Required, f.Hidden)
 	case *cli.BoolFlag:

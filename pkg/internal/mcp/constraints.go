@@ -47,3 +47,58 @@ func EnumStringFlag(name, usage string, required bool, value string, enum ...str
 		enum: enum,
 	}
 }
+
+// SensitiveProvider is implemented by flags whose value is credential material
+// (password, token, API key, passphrase) and must never be logged verbatim.
+// Like ConstraintProvider, it is declared next to the flag definition and read
+// by the MCP adapter, so the redaction vocabulary cannot drift from the CLI's
+// flag declarations.
+type SensitiveProvider interface {
+	// Sensitive reports whether this flag's value must be redacted.
+	Sensitive() bool
+}
+
+// sensitiveStringFlag is a cli.StringFlag that carries a sensitive marker. It
+// implements cli.Flag via the embedded *cli.StringFlag and SensitiveProvider
+// for the adapter's arg-trace redaction.
+type sensitiveStringFlag struct {
+	*cli.StringFlag
+	sensitive bool
+}
+
+func (f *sensitiveStringFlag) Sensitive() bool {
+	return f.sensitive
+}
+
+// SensitiveStringFlag marks an existing string flag's value as credential
+// material: the MCP adapter redacts it from the in-process arg-trace log. It
+// wraps the fully-specified flag (preserving Aliases, Sources, and any other
+// fields) and adds the sensitivity marker, so the marker lives in the same
+// expression as the flag definition and cannot drift from the CLI.
+func SensitiveStringFlag(flag *cli.StringFlag) cli.Flag {
+	return &sensitiveStringFlag{
+		StringFlag: flag,
+		sensitive:  true,
+	}
+}
+
+// sensitiveFlagNames returns the long flag names that declare sensitivity via
+// SensitiveProvider. It lets the adapter build the redaction set from the
+// command's actual flag declarations rather than a separately-maintained
+// hardcoded name list.
+func sensitiveFlagNames(flags []cli.Flag) []string {
+	var out []string
+	for _, flag := range flags {
+		sp, ok := flag.(SensitiveProvider)
+		if !ok || !sp.Sensitive() {
+			continue
+		}
+		switch f := flag.(type) {
+		case *sensitiveStringFlag:
+			if f.StringFlag != nil && f.Name != "" {
+				out = append(out, f.Name)
+			}
+		}
+	}
+	return out
+}

@@ -71,6 +71,12 @@ type ToolEntry struct {
 	// curated registration. SDK-neutral; the wire seam encodes it onto the
 	// tool. Extended, never replaced, when attaching app metadata.
 	Meta map[string]any
+	// SensitiveFlags lists the long flag names whose values are credential
+	// material and must be redacted from the in-process arg-trace log. It is
+	// derived from the command's flag declarations (SensitiveProvider) at
+	// registration time, so the redaction vocabulary cannot drift from the
+	// CLI.
+	SensitiveFlags []string
 	// Behavior carries agent-facing execution behavior (stdin gating, OOB
 	// hand-offs). The invoke gate and post-processing layers read this instead
 	// of hardcoded tool-name checks.
@@ -298,15 +304,16 @@ func (c *ToolCatalog) RegisterFromCommand(root *cli.Command, hasRootAction bool,
 			category := categorize(loc)
 			interaction := classifyInteraction(loc)
 			c.Add(&ToolEntry{
-				Name:        toolName,
-				Title:       title,
-				Description: desc,
-				Category:    category,
-				ReadOnly:    readOnly,
-				Destructive: destructive,
-				Interaction: interaction,
-				InputSchema: schema,
-				Handler:     handler,
+				Name:           toolName,
+				Title:          title,
+				Description:    desc,
+				Category:       category,
+				ReadOnly:       readOnly,
+				Destructive:    destructive,
+				Interaction:    interaction,
+				InputSchema:    schema,
+				SensitiveFlags: sensitiveFlagNames(cmd.Flags),
+				Handler:        handler,
 			})
 
 			log.Debug("cataloged command", zap.Strings("loc", loc), zap.String("category", string(category)))

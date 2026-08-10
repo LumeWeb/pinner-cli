@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	"github.com/urfave/cli/v3"
+
+	"go.lumeweb.com/pinner-cli/pkg/internal/mcp"
 )
 
 func newAccountCommand() *cli.Command {
@@ -66,7 +68,7 @@ After successful verification, 2FA will be required for all future logins.`,
 
 WARNING: This reduces your account security. Consider re-enabling 2FA.`,
 				Flags: []cli.Flag{
-					&cli.StringFlag{
+					mcp.SensitiveStringFlag(&cli.StringFlag{
 						Name:    FlagPassword,
 						Aliases: []string{"p"},
 						Usage:   "Password for verification (WARNING: insecure, prefer stdin or prompt)",
@@ -74,7 +76,7 @@ WARNING: This reduces your account security. Consider re-enabling 2FA.`,
 							Stdin(),
 							cli.EnvVar("PINNER_PASSWORD"),
 						),
-					},
+					}),
 				},
 				Action: func(ctx context.Context, cmd *cli.Command) error {
 					output := setupOutput(cmd)

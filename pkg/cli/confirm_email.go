@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/urfave/cli/v3"
+	"go.lumeweb.com/pinner-cli/pkg/internal/mcp"
 	portalsdk "go.lumeweb.com/portal-sdk"
 )
 
@@ -31,12 +32,12 @@ After confirmation, authenticate with:
 				Usage:    "Email address",
 				Required: true,
 			},
-			&cli.StringFlag{
+			mcp.SensitiveStringFlag(&cli.StringFlag{
 				Name:     FlagToken,
 				Aliases:  []string{"t"},
 				Usage:    "Verification token from email",
 				Required: true,
-			},
+			}),
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			output := setupOutput(cmd)

@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"strings"
@@ -10,6 +11,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 func TestHumanTitle(t *testing.T) {
@@ -167,6 +170,102 @@ func TestEnumStringFlagEmitsEnum(t *testing.T) {
 	props = doc["properties"].(map[string]any)
 	_, hasEnum := props["path"].(map[string]any)["enum"]
 	assert.False(t, hasEnum)
+}
+
+// TestSensitiveStringFlagSchemaAndNames verifies that a flag built with
+// SensitiveStringFlag is (a) emitted into the schema as a plain string and
+// (b) reported by sensitiveFlagNames so the adapter can redact its value,
+// while a plain string flag is neither.
+func TestSensitiveStringFlagSchemaAndNames(t *testing.T) {
+	flags := []cli.Flag{
+		SensitiveStringFlag(&cli.StringFlag{Name: "password", Usage: "Password", Aliases: []string{"p"}}),
+		&cli.StringFlag{Name: "email", Usage: "Email"},
+	}
+
+	schema, err := flagsToSchema(flags, "")
+	require.NoError(t, err)
+	var doc map[string]any
+	require.NoError(t, json.Unmarshal(schema, &doc))
+	props := doc["properties"].(map[string]any)
+	passwordSchema, ok := props["password"].(map[string]any)
+	require.True(t, ok, "password flag must appear in schema")
+	assert.Equal(t, "string", passwordSchema["type"])
+
+	names := sensitiveFlagNames(flags)
+	assert.Equal(t, []string{"password"}, names, "only the sensitive flag name is reported")
+}
+
+// TestSensitiveFlagNamesOmitsNonSensitive verifies sensitiveFlagNames ignores
+// flags that do not implement SensitiveProvider.
+func TestSensitiveFlagNamesOmitsNonSensitive(t *testing.T) {
+	flags := []cli.Flag{
+		&cli.StringFlag{Name: "email", Usage: "Email"},
+		&cli.BoolFlag{Name: "force", Usage: "Force"},
+	}
+	assert.Empty(t, sensitiveFlagNames(flags))
+}
+
+// TestSensitiveFlagRedactedFromArgTrace verifies the schema-derived redaction
+// end to end: a tool whose command declares a SensitiveStringFlag must have
+// its value masked (****) in the "invoking in-process" trace instead of the
+// previously hardcoded flag-name list.
+func TestSensitiveFlagRedactedFromArgTrace(t *testing.T) {
+	root := &cli.Command{
+		Name: "pinner",
+		Commands: []*cli.Command{
+			{
+				Name: "auth",
+				Commands: []*cli.Command{
+					{
+						Name: "login",
+						Flags: []cli.Flag{
+							SensitiveStringFlag(&cli.StringFlag{
+								Name:    "password",
+								Aliases: []string{"p"},
+								Usage:   "Password",
+							}),
+							&cli.StringFlag{Name: "email", Usage: "Email"},
+						},
+						Action: func(context.Context, *cli.Command) error { return nil },
+					},
+				},
+			},
+		},
+	}
+
+	catalog, err := buildCatalog(root, true, nil, nil, nil)
+	require.NoError(t, err)
+
+	entry, ok := catalog.Get("pinner_auth_login")
+	require.True(t, ok)
+	require.Equal(t, []string{"password"}, entry.SensitiveFlags,
+		"sensitive flag must be derived onto the catalog entry")
+
+	// Swap the package logger for a capture buffer so we can assert on the
+	// arg-trace line without polluting stderr.
+	var buf bytes.Buffer
+	oldLog := log
+	log = zap.New(zapcore.NewCore(
+		zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()),
+		zapcore.AddSync(&buf),
+		zapcore.InfoLevel,
+	))
+	t.Cleanup(func() { log = oldLog })
+
+	_, err = entry.Handler(context.Background(), ToolRequest{
+		Name: "pinner_auth_login",
+		Arguments: map[string]any{
+			"email":    "user@example.com",
+			"password": "supersecret123",
+		},
+	})
+	require.NoError(t, err)
+
+	trace := buf.String()
+	assert.Contains(t, trace, "--password")
+	assert.Contains(t, trace, "****")
+	assert.NotContains(t, trace, "supersecret123", "password value must not be logged verbatim")
+	assert.Contains(t, trace, "user@example.com", "non-sensitive value is not redacted")
 }
 
 // TestClassifyInteraction verifies the deterministic interaction classification
