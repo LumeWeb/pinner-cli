@@ -349,6 +349,45 @@ func formPost(values map[string]string) *http.Request {
 	return req
 }
 
+// TestOAuthAuthorizeWithoutResource guards the Anthropic re-auth failure. On
+// its re-authorization path Claude sends the authorize request WITHOUT the
+// optional RFC 8707 resource parameter; validateAuthorizeRequest previously
+// hard-rejected that with "invalid resource", aborting the flow and surfacing
+// as "Authorization with the MCP server failed... ofid_...". Both the
+// authorize and the code exchange must accept an absent resource.
+func TestOAuthAuthorizeWithoutResource(t *testing.T) {
+	o := newTestOAuth(t)
+	_, challenge := testPKCE()
+
+	// Authorize GET (login page) without resource must render, not 400.
+	authURL := "/oauth/authorize?response_type=code&client_id=cli&redirect_uri=" + url.QueryEscape("http://localhost/cb") +
+		"&code_challenge=" + challenge + "&code_challenge_method=S256"
+	rec := httptest.NewRecorder()
+	o.authorizeGET(rec, httptest.NewRequest(http.MethodGet, authURL, nil))
+	require.Equal(t, http.StatusOK, rec.Code, "authorize without resource must render the login page")
+
+	// Authorize POST without resource must issue a one-time code (302).
+	rec = httptest.NewRecorder()
+	o.authorizePOST(rec, formPost(map[string]string{
+		"response_type": "code", "client_id": "cli", "redirect_uri": "http://localhost/cb",
+		"state": "st", "password": testSecret, "code_challenge": challenge,
+		"code_challenge_method": "S256",
+	}))
+	require.Equal(t, http.StatusFound, rec.Code, "authorize POST without resource must issue a code")
+	loc, err := url.Parse(rec.Header().Get("Location"))
+	require.NoError(t, err)
+	code := loc.Query().Get("code")
+	require.NotEmpty(t, code)
+
+	// Code exchange without resource must issue tokens.
+	rec = httptest.NewRecorder()
+	o.tokenHandler(rec, formPost(map[string]string{
+		"grant_type": "authorization_code", "code": code, "client_id": "cli",
+		"redirect_uri": "http://localhost/cb", "code_verifier": "test-verifier-012345678901234567890123456789",
+	}))
+	require.Equal(t, http.StatusOK, rec.Code, "code exchange without resource must issue tokens")
+}
+
 // TestOAuthDCRNormalizesConfidentialToPublic guards the Anthropic Claude DCR
 // handshake. Claude requests token_endpoint_auth_method=client_secret_post,
 // which this single-credential AS cannot authenticate; per RFC 7591 §3.2.1 it

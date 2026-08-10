@@ -217,8 +217,16 @@ func (o *oauthServer) validateAuthorizeRequest(q url.Values) error {
 	if !base64URLChars(q.Get("code_challenge")) {
 		return fmt.Errorf("code_challenge must be base64url (RFC 7636)")
 	}
-	if q.Get("resource") != o.baseURL+"/mcp" {
-		return fmt.Errorf("invalid resource")
+	// resource is OPTIONAL per RFC 8707. Anthropic's client omits it on its
+	// re-authorization path (and sometimes sends the endpoint URL in its
+	// place); rejecting a missing resource below has been aborting the whole
+	// flow with "invalid resource" / ofid_... - so tolerate absence. When
+	// present, only reject obviously malformed values (must be an https URL).
+	if res := q.Get("resource"); res != "" {
+		u, err := url.Parse(res)
+		if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+			return fmt.Errorf("invalid resource")
+		}
 	}
 	return nil
 }
@@ -409,7 +417,11 @@ func (o *oauthServer) exchangeCode(w http.ResponseWriter, r *http.Request) error
 	if !ok || time.Now().After(entry.expiry) {
 		return fmt.Errorf("invalid or expired authorization code")
 	}
-	if clientID != entry.clientID || redirectURI != entry.redirectURI || resource != entry.resource || !verifyPKCE(verifier, entry.codeChallenge) {
+	// When the client omitted resource at authorize time, we did not bind the
+	// code to one (RFC 8707 resource is optional), so do not require a match at
+	// exchange either.
+	resourceOK := entry.resource == "" || resource == entry.resource
+	if clientID != entry.clientID || redirectURI != entry.redirectURI || !resourceOK || !verifyPKCE(verifier, entry.codeChallenge) {
 		return fmt.Errorf("invalid client, redirect_uri, code_verifier, or resource")
 	}
 	// Consume only after validation. Recheck under the lock so concurrent
