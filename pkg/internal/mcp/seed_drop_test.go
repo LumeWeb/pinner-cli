@@ -111,7 +111,8 @@ func TestAttachSeedDropMintsURL(t *testing.T) {
 	// (D:\a\...\recovery.seed) are JSON-escaped correctly (a raw backslash is
 	// an invalid JSON escape and would make Unmarshal fail on Windows).
 	out := `{"profile":"default","seed_path":` + mustJSONQuote(seedPath) + `,"next_step":"run restore"}`
-	text, extra := attachSeedDrop(out, "pinner_vault_create", d)
+	spec := &SeedDropSpec{ProfileField: "profile", SeedPathField: "seed_path"}
+	text, extra := attachSeedDrop(out, spec, d)
 	// Text unchanged; structured content carries the URL.
 	assert.Equal(t, out, text)
 	require.NotNil(t, extra)
@@ -122,16 +123,17 @@ func TestAttachSeedDropMintsURL(t *testing.T) {
 	require.NotContains(t, extra, "one two three")
 }
 
-func TestAttachSeedDropIgnoresOtherCommandsAndNil(t *testing.T) {
+func TestAttachSeedDropIgnoresNilSpecOrNilDrop(t *testing.T) {
 	out := `{"profile":"default","seed_path":"/tmp/x"}`
-	text, extra := attachSeedDrop(out, "pinner_status", nil)
+	// No seed-drop coordinator wired: passthrough.
+	text, extra := attachSeedDrop(out, &SeedDropSpec{ProfileField: "profile", SeedPathField: "seed_path"}, nil)
 	assert.Equal(t, out, text)
 	assert.Nil(t, extra)
 
-	// Non-vault-create command with a live seed drop still passes through.
+	// Tool does not declare seed-drop behavior (nil spec) with a live drop.
 	d := NewSeedDrop(time.Minute)
 	d.SetBaseURL("http://127.0.0.1:9999")
-	text, extra = attachSeedDrop(out, "pinner_status", d)
+	text, extra = attachSeedDrop(out, nil, d)
 	assert.Equal(t, out, text)
 	assert.Nil(t, extra)
 }

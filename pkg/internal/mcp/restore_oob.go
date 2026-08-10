@@ -154,14 +154,6 @@ func (o *OOBRestore) setNow(f func() time.Time) {
 	o.core.setNow(f)
 }
 
-// vaultRestoreAgentOutput is the JSON shape `vault restore --agent` prints (see
-// pkg/cli vaultRestoreApprovalResponse). Defined locally to avoid importing the
-// CLI package.
-type vaultRestoreAgentOutput struct {
-	Profile  string `json:"profile"`
-	NextStep string `json:"next_step"`
-}
-
 // restoreOOBEnabled reports whether an OOB restore coordinator is wired and
 // usable (a non-nil coordinator makes the vault-restore browser hand-off
 // reachable). Used to bypass the stdin-input gate for the agent-safe restore
@@ -170,23 +162,25 @@ func restoreOOBEnabled(o *OOBRestore) bool {
 	return o != nil
 }
 
-// attachRestoreURL post-processes the stdout of `vault restore --agent`. When
-// an OOB restore coordinator is wired, it mints a one-time /restore/<token> URL
-// for the targeted profile so the human can supply the recovery seed in a
-// browser instead of re-running with --seed-stdin. Returns the URL, or empty
-// when there is nothing to attach.
-func attachRestoreURL(stdout string, requestName string, oobRestore *OOBRestore) string {
-	if oobRestore == nil {
+// attachRestoreURL post-processes the stdout of a `vault restore --agent` tool
+// that declares restore behavior (Behavior.RestoreURL non-nil). When an OOB
+// restore coordinator is wired, it mints a one-time /restore/<token> URL for
+// the profile named by the spec's ProfileField so the human can supply the
+// recovery seed in a browser instead of re-running with --seed-stdin. Returns
+// the URL, or empty when there is nothing to attach.
+func attachRestoreURL(stdout string, spec *RestoreURLSpec, oobRestore *OOBRestore) string {
+	if spec == nil || oobRestore == nil {
 		return ""
 	}
-	if requestName != "pinner_vault_restore" {
+	var out map[string]any
+	if err := json.Unmarshal([]byte(stdout), &out); err != nil {
 		return ""
 	}
-	var out vaultRestoreAgentOutput
-	if err := json.Unmarshal([]byte(stdout), &out); err != nil || out.Profile == "" {
+	profile, _ := out[spec.ProfileField].(string)
+	if profile == "" {
 		return ""
 	}
-	return oobRestore.Register(out.Profile)
+	return oobRestore.Register(profile)
 }
 
 const restorePageHTML = `<!DOCTYPE html>

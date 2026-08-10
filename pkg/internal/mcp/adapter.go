@@ -37,6 +37,11 @@ const ToolDelimiter = "_"
 // the invoke gate share the canonical name rather than repeating the string.
 const vaultRestoreToolName = "pinner_vault_restore"
 
+// vaultCreateToolName is the catalog name of the vault create tool, which
+// carries seed-drop behavior (a one-time browser hand-off for the recovery
+// seed).
+const vaultCreateToolName = "pinner_vault_create"
+
 // ansiEscapeRE matches ANSI/VT escape sequences (SGR color codes, cursor
 // movement, erase, reset) so agent-facing tool output is always clean plain
 // text. The CLI's human formatter colors status text (e.g. \x1b[32mpinned\x1b[0m)
@@ -843,14 +848,24 @@ func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string, seedDr
 			return ToolResult{IsError: true, Text: msg}, nil
 		}
 
-		text, extra := attachSeedDrop(stripANSI(stdout.String()), request.Name, seedDrop)
-		restoreURL := attachRestoreURL(text, request.Name, oobRestore)
-		if restoreURL != "" {
-			if extra == nil {
-				extra = map[string]any{}
+		// Attach any declared OOB hand-offs to the tool output, driven by the
+		// tool's declarative Behavior (seed drop / restore URL) rather than a
+		// hardcoded tool-name check.
+		outText := stripANSI(stdout.String())
+		var (
+			text  = outText
+			extra map[string]any
+		)
+		if entry, ok := catalog.Get(request.Name); ok {
+			text, extra = attachSeedDrop(outText, entry.Behavior.SeedDrop, seedDrop)
+			restoreURL := attachRestoreURL(text, entry.Behavior.RestoreURL, oobRestore)
+			if restoreURL != "" {
+				if extra == nil {
+					extra = map[string]any{}
+				}
+				extra["restore_url"] = restoreURL
+				extra["next_step"] = "Ask the user to open restore_url in a browser and enter the recovery seed to complete the restore. The seed never crosses the MCP channel."
 			}
-			extra["restore_url"] = restoreURL
-			extra["next_step"] = "Ask the user to open restore_url in a browser and enter the recovery seed to complete the restore. The seed never crosses the MCP channel."
 		}
 		return ToolResult{Text: text, StructuredContent: extra}, nil
 	}
@@ -863,12 +878,9 @@ func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string, seedDr
 		return nil, err
 	}
 
-	// Annotate the vault-restore tool with its declarative behavior when an
-	// OOB restore coordinator is wired: it participates in a one-time browser
-	// restore hand-off (RestoreURL) and its --seed-stdin variant reads
-	// os.Stdin (StdinGate). The invoke gate reads these fields instead of a
-	// hardcoded tool-name check, so a non-stdin restore reaches the OOB
-	// hand-off while a --seed-stdin invoke is still gated.
+	// Annotate the vault tools with their declarative behavior when the
+	// corresponding coordinators are wired. The invoke gate and the output
+	// post-processors read these fields instead of hardcoded tool-name checks.
 	if oobRestore != nil {
 		if restoreEntry, ok := catalog.Get(vaultRestoreToolName); ok {
 			restoreEntry.Behavior = ToolBehavior{
@@ -876,6 +888,17 @@ func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string, seedDr
 				StdinGate:  &StdinGateSpec{ArgName: "seed-stdin"},
 			}
 			catalog.Add(restoreEntry)
+		}
+	}
+	if seedDrop != nil {
+		if createEntry, ok := catalog.Get(vaultCreateToolName); ok {
+			createEntry.Behavior = ToolBehavior{
+				SeedDrop: &SeedDropSpec{
+					ProfileField:  "profile",
+					SeedPathField: "seed_path",
+				},
+			}
+			catalog.Add(createEntry)
 		}
 	}
 
