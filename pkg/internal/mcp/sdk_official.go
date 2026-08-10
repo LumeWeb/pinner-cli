@@ -581,15 +581,23 @@ func RegisterOfficialPrompts(srv *mcp.Server, prompts []PromptDescriptor) error 
 }
 
 // NewStreamableHTTPHandler returns the official SDK streamable-HTTP handler
-// bound to the given server. It is a thin alias so Pinner's HTTP serving code
-// does not need to import the SDK where it only forwards the handler.
-func NewStreamableHTTPHandler(getServer func(*http.Request) *mcp.Server) http.Handler {
-	return mcp.NewStreamableHTTPHandler(getServer, nil)
+// bound to the given server. disableLocalhostProtection turns off the go-sdk's
+// DNS-rebinding guard, which rejects requests arriving via a loopback local
+// address that carry a non-loopback Host header (403 "invalid Host header").
+// This is required when the server listens on 127.0.0.1 but is reached through
+// a public tunnel (remote clients send the tunnel's hostname as the Host
+// header); it must be kept false when serving only on the loopback directly.
+func NewStreamableHTTPHandler(getServer func(*http.Request) *mcp.Server, disableLocalhostProtection bool) http.Handler {
+	var opts *mcp.StreamableHTTPOptions
+	if disableLocalhostProtection {
+		opts = &mcp.StreamableHTTPOptions{DisableLocalhostProtection: true}
+	}
+	return mcp.NewStreamableHTTPHandler(getServer, opts)
 }
 
 // NewOfficialStreamableHandler builds the official streamable-HTTP handler for
 // an OfficialServer. This is what the shared serving path uses so it can stay
 // SDK-neutral.
-func NewOfficialStreamableHandler(srv *OfficialServer) http.Handler {
-	return NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return srv })
+func NewOfficialStreamableHandler(srv *OfficialServer, disableLocalhostProtection bool) http.Handler {
+	return NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return srv }, disableLocalhostProtection)
 }
