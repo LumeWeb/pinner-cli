@@ -348,3 +348,69 @@ func formPost(values map[string]string) *http.Request {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	return req
 }
+
+// TestOAuthDCRNormalizesConfidentialToPublic guards the Anthropic Claude DCR
+// handshake. Claude requests token_endpoint_auth_method=client_secret_post,
+// which this single-credential AS cannot authenticate; per RFC 7591 §3.2.1 it
+// must accept the registration and return a public client ("none") in the
+// response rather than reject it (Claude honors the returned method).
+func TestOAuthDCRNormalizesConfidentialToPublic(t *testing.T) {
+	o := newTestOAuth(t)
+	for _, method := range []string{"client_secret_post", "client_secret_basic"} {
+		body := `{"client_name":"Claude","redirect_uris":["https://claude.ai/callback"],"application_type":"web","token_endpoint_auth_method":"` + method + `"}`
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/oauth/register", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		o.registerHandler(rec, req)
+		if !assert.Equal(t, http.StatusCreated, rec.Code, "method %s should register, not reject", method) {
+			continue
+		}
+		var doc map[string]any
+		require.NoError(t, json.NewDecoder(rec.Body).Decode(&doc))
+		assert.Equal(t, "none", doc["token_endpoint_auth_method"], "confidential registration must be normalized to a public client")
+		assert.Empty(t, doc["client_secret"], "no per-client secret may be issued")
+	}
+}
+
+// TestOAuthAnthropicRootAliases guards the Claude.ai endpoint-synthesis quirk.
+// Claude.ai builds /authorize, /token, /register at the MCP origin root,
+// ignoring the /oauth path in the RFC 8414 metadata, so those root paths must
+// route to the same handlers as their /oauth/* counterparts. It mirrors the
+// registration order serveHTTP uses so a regression shows up here.
+func TestOAuthAnthropicRootAliases(t *testing.T) {
+	o := newTestOAuth(t)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/oauth/authorize", o.handleAuthorize)
+	mux.HandleFunc("/oauth/register", o.registerHandler)
+	mux.HandleFunc("/oauth/token", o.tokenHandler)
+	mux.HandleFunc("/authorize", o.handleAuthorize)
+	mux.HandleFunc("/token", o.tokenHandler)
+	mux.HandleFunc("/register", o.registerHandler)
+
+	// Root /register (Anthropic's synthesized DCR path) must behave exactly
+	// like /oauth/register.
+	body := `{"client_name":"Claude","redirect_uris":["https://claude.ai/callback"],"token_endpoint_auth_method":"none"}`
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/register", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusCreated, rec.Code, "root /register must serve DCR like /oauth/register")
+
+	// Root /authorize with a valid request must render the login page (200),
+	// not 404.
+	_, challenge := testPKCE()
+	authURL := "/authorize?response_type=code&client_id=cli&redirect_uri=" + url.QueryEscape("http://localhost/cb") +
+		"&code_challenge=" + challenge + "&code_challenge_method=S256&resource=https%3A%2F%2Fmcp.example.com%2Fmcp"
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, authURL, nil))
+	require.Equal(t, http.StatusOK, rec.Code, "root /authorize must render the authorize page like /oauth/authorize")
+
+	// Root /token with an invalid grant must return the same 400 the /oauth
+	// path returns (proving it is wired to the same handler).
+	rec = httptest.NewRecorder()
+	tokReq := httptest.NewRequest(http.MethodPost, "/token", strings.NewReader(url.Values{"grant_type": {"authorization_code"}, "code": {"nope"}}.Encode()))
+	tokReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	mux.ServeHTTP(rec, tokReq)
+	assert.Equal(t, http.StatusBadRequest, rec.Code, "root /token must be wired to the token handler")
+}

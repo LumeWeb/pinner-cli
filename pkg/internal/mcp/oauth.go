@@ -179,6 +179,23 @@ func (o *oauthServer) authorizeGET(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleAuthorize dispatches the OAuth authorization endpoint on GET (render
+// the login page) and POST (verify the secret and issue a one-time code). It
+// is mounted at both /oauth/authorize and the origin-root /authorize alias so
+// Anthropic's Claude.ai client (which synthesizes the endpoint at the root,
+// discarding the /oauth path) can complete the flow.
+func (o *oauthServer) handleAuthorize(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		o.authorizeGET(w, r)
+	case http.MethodPost:
+		o.authorizePOST(w, r)
+	default:
+		w.Header().Set("Allow", "GET, POST")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
 func (o *oauthServer) validateAuthorizeRequest(q url.Values) error {
 	if q.Get("response_type") != "code" {
 		return fmt.Errorf("response_type must be code")
@@ -257,7 +274,18 @@ func (o *oauthServer) registerHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if request.TokenEndpointAuthMethod != "" && request.TokenEndpointAuthMethod != "none" {
+	// This AS models every client as a public client: the shared --auth-token
+	// secret (entered on the authorize page) is the only credential, and there
+	// are no per-client secrets. Anthropic's Claude.ai client requests
+	// token_endpoint_auth_method=client_secret_post during DCR, which this
+	// server does not authenticate against. RFC 7591 §3.2.1 lets the server
+	// accept a confidential-client registration but return a public client in
+	// the response (the client honors the returned auth method, not the one it
+	// sent), so accept the standard secret-bearing methods and normalize them
+	// to "none" rather than rejecting the registration outright.
+	switch request.TokenEndpointAuthMethod {
+	case "", "none", "client_secret_post", "client_secret_basic":
+	default:
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_client_metadata"})
 		return
 	}

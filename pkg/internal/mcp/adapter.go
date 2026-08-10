@@ -316,21 +316,23 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 	}
 	mux.Handle("/mcp", mcpHandler)
 	if oauth != nil {
-		mux.HandleFunc("/oauth/authorize", func(w http.ResponseWriter, r *http.Request) {
-			switch r.Method {
-			case http.MethodGet:
-				oauth.authorizeGET(w, r)
-			case http.MethodPost:
-				oauth.authorizePOST(w, r)
-			default:
-				w.Header().Set("Allow", "GET, POST")
-				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			}
-		})
+		mux.HandleFunc("/oauth/authorize", oauth.handleAuthorize)
 		mux.HandleFunc("/oauth/register", oauth.registerHandler)
 		mux.HandleFunc("/oauth/token", oauth.tokenHandler)
 		mux.HandleFunc("/.well-known/oauth-authorization-server", oauth.asMetadataHandler)
 		mux.HandleFunc("/.well-known/oauth-protected-resource", oauth.protectedResourceHandler("/mcp"))
+		// Anthropic's Claude.ai MCP client (and the mcp-remote stdio bridge)
+		// synthesize the authorize/token/register endpoints at the MCP origin's
+		// root paths, discarding any /oauth path prefix from the RFC 8414
+		// metadata, so it 404s against /oauth/* even though ChatGPT, Grok, and
+		// Claude Code read the metadata endpoints verbatim. Serve root-path
+		// aliases to the same handlers so Claude.ai completes the flow. These
+		// are mounted outside the bearer guard like the /oauth/* routes: none
+		// grants access without the shared secret (authorize), a valid
+		// PKCE-bound one-time code (token), or a valid dynamic registration.
+		mux.HandleFunc("/authorize", oauth.handleAuthorize)
+		mux.HandleFunc("/token", oauth.tokenHandler)
+		mux.HandleFunc("/register", oauth.registerHandler)
 	}
 	// Serve the embedded branded static assets (brand.css) referenced by the
 	// OAuth authorization page and the out-of-band login page. staticAssetHandler
