@@ -5,6 +5,8 @@ import (
 	"errors"
 	"os"
 	"testing"
+
+	"go.lumeweb.com/pinner-cli/pkg/cli/vault"
 )
 
 // TestVaultCreateAgentModeNoProfileDoesNotPrompt verifies that 'vault create'
@@ -19,6 +21,15 @@ func TestVaultCreateAgentModeNoProfileDoesNotPrompt(t *testing.T) {
 	}
 	t.Cleanup(func() { os.RemoveAll(home) })
 	overrideHome(t, home)
+
+	// Make the isolated registry deterministic: seed an explicit EMPTY registry
+	// (no profiles, no default) so ResolveProfile("") is guaranteed to fail the
+	// ResolveProfile step regardless of any ambient PINNER_PROFILE or leftover
+	// config on the host, on every OS (incl. Windows where %AppData% isolation
+	// is required).
+	if err := vault.SaveRegistry(&vault.VaultRegistry{Profiles: map[string]vault.ProfileConfig{}}); err != nil {
+		t.Fatalf("seed empty registry: %v", err)
+	}
 
 	// No profiles, no default => ResolveProfile("") fails, which is the branch
 	// that used to fall into the interactive prompt.
