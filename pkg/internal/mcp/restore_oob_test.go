@@ -96,11 +96,14 @@ func TestOOBRestoreExpiry(t *testing.T) {
 
 func TestOOBRestoreAttachURL(t *testing.T) {
 	o, _, _ := buildRestoreServer()
+	spec := &RestoreURLSpec{ProfileField: "profile"}
 
-	// Only pinner_vault_restore with a profile mints a URL.
-	assert.Equal(t, "", attachRestoreURL(`{"profile":"default"}`, "pinner_status", o))
-	assert.Equal(t, "", attachRestoreURL(`{"profile":"default"}`, "pinner_vault_restore", nil))
-	u := attachRestoreURL(`{"profile":"default","next_step":"re-run"}`, "pinner_vault_restore", o)
+	// No OOB restore coordinator wired: no URL.
+	assert.Equal(t, "", attachRestoreURL(`{"profile":"default"}`, spec, nil))
+	// Tool does not declare restore behavior (nil spec): no URL.
+	assert.Equal(t, "", attachRestoreURL(`{"profile":"default"}`, nil, o))
+	// Declared behavior + coordinator + profile mints a URL.
+	u := attachRestoreURL(`{"profile":"default","next_step":"re-run"}`, spec, o)
 	require.Contains(t, u, "/restore/")
 }
 
