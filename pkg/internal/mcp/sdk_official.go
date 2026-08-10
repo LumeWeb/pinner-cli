@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/urfave/cli/v3"
@@ -169,11 +170,14 @@ func officialToolHandler(handler PinnerToolHandler) mcp.ToolHandler {
 				args["request_state"] = req.Params.RequestState
 			}
 		}
+		startedAt := time.Now()
+		logToolCallStart(log, req.Params.Name, args)
 		result, err := handler(ctx, ToolRequest{
 			Name:           req.Params.Name,
 			Arguments:      args,
 			InputResponses: len(req.Params.InputResponses) > 0,
 		})
+		logToolCallEnd(log, req.Params.Name, startedAt, result, err)
 		if err != nil {
 			return &mcp.CallToolResult{
 				IsError: true,
