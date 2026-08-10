@@ -112,37 +112,33 @@ func (s *SeedDrop) setNow(f func() time.Time) {
 	s.core.setNow(f)
 }
 
-// vaultCreateAgentOutput is the JSON shape `vault create --agent` prints (see
-// pkg/cli vaultCreateApprovalResponse). Defined locally to avoid importing the
-// CLI package, which the MCP package must not depend on.
-type vaultCreateAgentOutput struct {
-	Profile  string `json:"profile"`
-	SeedPath string `json:"seed_path"`
-	NextStep string `json:"next_step"`
-}
-
 // attachSeedDrop post-processes the stdout of a successfully invoked CLI
-// command. When the command is `vault create --agent`, a SeedDrop is wired,
-// and the output carries a seed_path, it reads the recovery mnemonic from that
-// host file and mints a one-time browser URL, returning a result that includes
-// both the path (unchanged, for host-side scripts) and the seed_url (for the
-// human) without the mnemonic itself ever crossing the MCP channel. In any
-// other case it returns the raw output unchanged.
-func attachSeedDrop(stdout string, requestName string, seedDrop *SeedDrop) (string, map[string]any) {
-	if seedDrop == nil {
+// command that carries a vault-recovery-seed path. When the tool declares
+// seed-drop behavior (Behavior.SeedDrop non-nil) and a SeedDrop coordinator is
+// wired, it reads the mnemonic from the host seed file and mints a one-time
+// browser URL, returning a result that includes both the path (unchanged) and
+// the seed_url (for the human) without the mnemonic itself ever crossing the
+// MCP channel. The spec's ProfileField/SeedPathField name the JSON output
+// fields to read, so the behavior is data-driven rather than a hardcoded tool
+// name. In any other case it returns the raw output unchanged.
+func attachSeedDrop(stdout string, spec *SeedDropSpec, seedDrop *SeedDrop) (string, map[string]any) {
+	if spec == nil || seedDrop == nil {
 		return stdout, nil
 	}
-	// Only vault create produces a seed-bearing response.
-	if requestName != "pinner_vault_create" {
+	// Decode the agent JSON output generically and read the fields named by
+	// the spec, so the attach logic is decoupled from any specific tool.
+	var out map[string]any
+	if err := json.Unmarshal([]byte(stdout), &out); err != nil {
 		return stdout, nil
 	}
-	var out vaultCreateAgentOutput
-	if err := json.Unmarshal([]byte(stdout), &out); err != nil || out.SeedPath == "" {
+	profile, _ := out[spec.ProfileField].(string)
+	seedPath, _ := out[spec.SeedPathField].(string)
+	if profile == "" || seedPath == "" {
 		return stdout, nil
 	}
 	// Read the mnemonic from the host 0600 seed file. This is host-side access
 	// by the MCP server itself (which owns the filesystem), not the agent.
-	data, err := os.ReadFile(out.SeedPath)
+	data, err := os.ReadFile(seedPath)
 	if err != nil {
 		// If the file is unreadable we still pass the original output through;
 		// the plaintext path remains the fallback.
@@ -152,10 +148,10 @@ func attachSeedDrop(stdout string, requestName string, seedDrop *SeedDrop) (stri
 	if mnemonic == "" {
 		return stdout, nil
 	}
-	url := seedDrop.Register(out.Profile, mnemonic)
+	url := seedDrop.Register(profile, mnemonic)
 	extra := map[string]any{
 		"seed_url": url,
-		"profile":  out.Profile,
+		"profile":  profile,
 		"hint":     "Open seed_url in a browser to view the recovery seed once. The mnemonic is not placed on the MCP channel.",
 	}
 	return stdout, extra

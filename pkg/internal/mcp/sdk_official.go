@@ -405,21 +405,23 @@ func registerOfficialInvokeTool(srv *mcp.Server, catalog *ToolCatalog, stdioMode
 		// command always redirects; a stdin-input command redirects unless piped
 		// data is actually available. Everything else runs normally.
 		//
-		// pinner_vault_restore is special: although its leaf ("restore") is
-		// classed stdin_input (the --seed-stdin variant reads os.Stdin), agent
-		// mode WITHOUT --seed-stdin returns a non-blocking JSON handoff before
-		// touching stdin, and when an OOB restore coordinator is wired the
-		// catalog handler turns that into a one-time /restore/<token> browser
-		// URL. That agent-safe path must NOT be gated, or the OOB restore
-		// hand-off is unreachable in the HTTP/tunnel mode it targets (where
-		// stdin is /dev/null, so stdinHasData() is false and it is always
-		// — wrongly — redirected). The bypass is strictly scoped to the
-		// non-stdin restore: a --seed-stdin invocation still reads os.Stdin and
-		// must honor the stdin/stdio guard below (consuming the MCP transport
-		// pipe would desync the stream).
+		// A tool that carries an OOB restore hand-off (Behavior.RestoreURL) and
+		// is invoked WITHOUT its stdin-gating argument is agent-safe: it returns
+		// a non-blocking hand-off whose /restore/<token> page collects the seed
+		// from the human in a browser. That path must NOT be gated, or the OOB
+		// restore hand-off is unreachable in HTTP/tunnel mode (where stdin is
+		// /dev/null, so stdinHasData() is false and it is always — wrongly —
+		// redirected). The bypass is strictly scoped: an invocation that DOES
+		// set the stdin-gating argument (e.g. vault restore --seed-stdin, which
+		// reads os.Stdin) still honors the stdin guard below — consuming the MCP
+		// transport pipe would desync the stream.
+		//
+		// This is data-driven from Behavior (a restore tool declares its
+		// hand-off and its stdin-gating arg) instead of a hardcoded tool-name
+		// check.
 		bypassGate := restoreOOBEnabled(oobRestore) &&
-			in.Name == "pinner_vault_restore" &&
-			!toolArgsHasBool(toolArgs, "seed-stdin")
+			entry.Behavior.RestoreURL != nil &&
+			(entry.Behavior.StdinGate == nil || !toolArgsHasBool(toolArgs, entry.Behavior.StdinGate.ArgName))
 		if !bypassGate {
 			switch entry.Interaction {
 			case InteractionInteractive:
@@ -475,9 +477,11 @@ func RegisterOfficialDescriptor(srv *mcp.Server, desc ToolDescriptor) error {
 	return registerTool(srv, officialTool(desc), desc.Handler)
 }
 
-// RegisterOfficialCuratedTools exposes only entries selected by allowlist.
-// Remaining catalog entries stay behind progressive-disclosure meta-tools.
-func RegisterOfficialCuratedTools(srv *mcp.Server, catalog *ToolCatalog, allowed func(string) bool) error {
+// RegisterOfficialCuratedTools exposes the catalog's directly-visible tools
+// (those with DirectVisible set) as standard tools/list tools. Remaining
+// catalog entries stay behind the progressive-disclosure meta-tools
+// (search_tools / describe_tool / invoke_tool) which index the whole catalog.
+func RegisterOfficialCuratedTools(srv *mcp.Server, catalog *ToolCatalog) error {
 	if srv == nil {
 		return fmt.Errorf("nil official server")
 	}
@@ -485,7 +489,7 @@ func RegisterOfficialCuratedTools(srv *mcp.Server, catalog *ToolCatalog, allowed
 		return fmt.Errorf("nil tool catalog")
 	}
 	for _, entry := range catalog.Entries() {
-		if !allowed(entry.Name) {
+		if !entry.DirectVisible {
 			continue
 		}
 		if err := registerTool(srv, officialTool(toolDescriptor(entry)), entry.Handler); err != nil {

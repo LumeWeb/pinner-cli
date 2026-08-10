@@ -31,6 +31,17 @@ import (
 // ToolDelimiter separates command path segments in MCP tool names.
 const ToolDelimiter = "_"
 
+// vaultRestoreToolName is the catalog name of the vault restore tool, which
+// carries special agent-facing behavior (OOB browser restore hand-off plus a
+// stdin-gated --seed-stdin variant). Declared once so the behavior wiring and
+// the invoke gate share the canonical name rather than repeating the string.
+const vaultRestoreToolName = "pinner_vault_restore"
+
+// vaultCreateToolName is the catalog name of the vault create tool, which
+// carries seed-drop behavior (a one-time browser hand-off for the recovery
+// seed).
+const vaultCreateToolName = "pinner_vault_create"
+
 // ansiEscapeRE matches ANSI/VT escape sequences (SGR color codes, cursor
 // movement, erase, reset) so agent-facing tool output is always clean plain
 // text. The CLI's human formatter colors status text (e.g. \x1b[32mpinned\x1b[0m)
@@ -169,20 +180,24 @@ adapter.`,
 				oobRestore *OOBRestore
 				catalog    *ToolCatalog
 				err        error
+				// Wizard deps are hoisted so registerCustomTools can hand them
+				// to RegisterWizardTools directly (they used to be captured in
+				// a deferred closure). hasWizard marks whether a factory is
+				// configured.
+				hasWizard bool
+				wizardW   WebsitesWizardDeps
+				wizardS   SetupWizardDeps
+				wizardD   DomainWizardDeps
 			)
-			var wizardDeps func() error
 			if wizardFactory != nil {
-				wDeps, sDeps, dDeps, werr := wizardFactory()
+				var werr error
+				wizardW, wizardS, wizardD, werr = wizardFactory()
 				if werr != nil {
 					return fmt.Errorf("failed to build wizard dependencies: %w", werr)
 				}
-				oob = sDeps.OutOfBand.WithLogger(log)
-				oobRestore = NewOOBRestore(sDeps.Restore, DefaultRestoreTTL).WithLogger(log)
-				// Defer wizard-tool registration until after the server +
-				// catalog exist.
-				wizardDeps = func() error {
-					return RegisterWizardTools(catalog, store, wDeps, sDeps, dDeps)
-				}
+				hasWizard = true
+				oob = wizardS.OutOfBand.WithLogger(log)
+				oobRestore = NewOOBRestore(wizardS.Restore, DefaultRestoreTTL).WithLogger(log)
 			}
 
 			// Build the server after resolving the command tree and wiring the
@@ -195,108 +210,32 @@ adapter.`,
 			if err != nil {
 				return err
 			}
-			if wizardDeps != nil {
-				if err := wizardDeps(); err != nil {
-					return fmt.Errorf("failed to register wizard tools: %w", err)
-				}
-			}
 
-			// Resolve options before registering curated tools so App wiring
-			// (which must attach _meta.ui to the pin tool in the catalog BEFORE
-			// the curated loop registers it) can read provider factories.
+			// Resolve the optional custom tools (upload backends, apps, prompts)
+			// so they are captured in mcpServerOptions, then register every
+			// custom/direct tool, resource, and prompt in one place. Keeping the
+			// registration in registerCustomTools (custom_tools.go) rather than
+			// inline keeps this closure focused on transport only.
 			mcpOpts := &mcpServerOptions{}
 			for _, opt := range opts {
 				if opt != nil {
 					opt(mcpOpts)
 				}
 			}
-
-			// Register the "Create a Pin" MCP App before curated registration so
-			// the ui:// view is attached to pinner_pin in the catalog ahead of
-			// the curated loop. The app-only status helper and ui:// resource
-			// are additive and independent of the curated loop.
-			if mcpOpts.pinnerPins != nil {
-				pins, err := mcpOpts.pinnerPins()
-				if err != nil {
-					return fmt.Errorf("failed to build pinning provider: %w", err)
-				}
-				if err := RegisterPinApp(srv, catalog, pins); err != nil {
-					return fmt.Errorf("failed to register pin app: %w", err)
-				}
-			}
-
-			if err := RegisterOfficialCuratedTools(srv, catalog, IsCuratedTool); err != nil {
-				return fmt.Errorf("failed to register curated tools: %w", err)
-			}
-
-			if resourceFactory != nil {
-				provs := resourceFactory(store)
-				provs.Sessions = store
-				resources, templates := ResourceDescriptors(provs)
-				if err := RegisterOfficialResources(srv, resources, templates); err != nil {
-					return fmt.Errorf("failed to register resources: %w", err)
-				}
-			}
-			if mcpOpts.chatGPTUpload != nil {
-				if err := RegisterOfficialDescriptor(srv, ChatGPTUploadDescriptor(mcpOpts.chatGPTUpload)); err != nil {
-					return fmt.Errorf("failed to register ChatGPT upload tool: %w", err)
-				}
-			}
-			if mcpOpts.chatGPTVaultPut != nil {
-				if err := RegisterOfficialDescriptor(srv, ChatGPTVaultPutDescriptor(mcpOpts.chatGPTVaultPut)); err != nil {
-					return fmt.Errorf("failed to register ChatGPT vault tool: %w", err)
-				}
-			}
-			if mcpOpts.relayURLUpload != nil {
-				if err := RegisterOfficialDescriptor(srv, RelayURLUploadDescriptor(mcpOpts.relayURLUpload, mcpOpts.relayAllowedHosts)); err != nil {
-					return fmt.Errorf("failed to register relay URL upload tool: %w", err)
-				}
-			}
-			if mcpOpts.dataURIUpload != nil {
-				if err := RegisterOfficialDescriptor(srv, DataURIUploadDescriptor(mcpOpts.dataURIUpload)); err != nil {
-					return fmt.Errorf("failed to register data URI upload tool: %w", err)
-				}
-			}
-			if mcpOpts.uploadTasks != nil {
-				for _, desc := range NewAsyncUploadTools(mcpOpts.uploadTasks) {
-					if err := RegisterOfficialDescriptor(srv, desc); err != nil {
-						return fmt.Errorf("failed to register async upload tool: %w", err)
-					}
-				}
-			}
-			// Always expose capability detection so hosts can choose a file-input
-			// mode without assuming draft MCP file support is negotiated. Each
-			// capability reflects whether its handler is actually wired.
-			if err := RegisterOfficialDescriptor(srv, NewCapabilitiesDescriptor(
-				mcpOpts.chatGPTUpload != nil,
-				mcpOpts.chatGPTVaultPut != nil,
-				mcpOpts.relayURLUpload != nil,
-				mcpOpts.dataURIUpload != nil,
-			)); err != nil {
-				return fmt.Errorf("failed to register capabilities tool: %w", err)
-			}
-			// Agent-facing out-of-band sign-in: start (non-blocking) and resume
-			// (poll) tools, backed by the browser-login coordinator. When the
-			// wizard transport is absent oob is nil and both tools return a
-			// structured not-configured hand-off instead of hanging.
-			authSSO := NewAuthSSODescriptor(oob, authHandles)
-			if err := RegisterOfficialDescriptor(srv, authSSO); err != nil {
-				return fmt.Errorf("failed to register auth sso tool: %w", err)
-			}
-			authResume := NewAuthResumeDescriptor(oob, authHandles)
-			if err := RegisterOfficialDescriptor(srv, authResume); err != nil {
-				return fmt.Errorf("failed to register auth resume tool: %w", err)
-			}
-			// Surface the out-of-band sign-in tools through progressive
-			// discovery too, so an agent that only calls search_tools finds
-			// them. They are registered as direct (tools/list) tools AND
-			// indexed in the catalog; both discovery surfaces stay in sync.
-			catalog.Add(toolEntryFromDescriptor(authSSO))
-			catalog.Add(toolEntryFromDescriptor(authResume))
-			if mcpOpts.prompts {
-				if err := RegisterOfficialPrompts(srv, PromptDescriptors()); err != nil {
-					return fmt.Errorf("failed to register prompts: %w", err)
-				}
+			if err := registerCustomTools(customToolDeps{
+				srv:             srv,
+				catalog:         catalog,
+				store:           store,
+				oob:             oob,
+				authHandles:     authHandles,
+				resourceFactory: resourceFactory,
+				opts:            mcpOpts,
+				hasWizard:       hasWizard,
+				wizardW:         wizardW,
+				wizardS:         wizardS,
+				wizardD:         wizardD,
+			}); err != nil {
+				return err
 			}
 
 			if mcpString(cmd, "tunnel", "MCP_TUNNEL_PROVIDER") == "openai" {
@@ -837,14 +776,24 @@ func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string, seedDr
 			return ToolResult{IsError: true, Text: msg}, nil
 		}
 
-		text, extra := attachSeedDrop(stripANSI(stdout.String()), request.Name, seedDrop)
-		restoreURL := attachRestoreURL(text, request.Name, oobRestore)
-		if restoreURL != "" {
-			if extra == nil {
-				extra = map[string]any{}
+		// Attach any declared OOB hand-offs to the tool output, driven by the
+		// tool's declarative Behavior (seed drop / restore URL) rather than a
+		// hardcoded tool-name check.
+		outText := stripANSI(stdout.String())
+		var (
+			text  = outText
+			extra map[string]any
+		)
+		if entry, ok := catalog.Get(request.Name); ok {
+			text, extra = attachSeedDrop(outText, entry.Behavior.SeedDrop, seedDrop)
+			restoreURL := attachRestoreURL(text, entry.Behavior.RestoreURL, oobRestore)
+			if restoreURL != "" {
+				if extra == nil {
+					extra = map[string]any{}
+				}
+				extra["restore_url"] = restoreURL
+				extra["next_step"] = "Ask the user to open restore_url in a browser and enter the recovery seed to complete the restore. The seed never crosses the MCP channel."
 			}
-			extra["restore_url"] = restoreURL
-			extra["next_step"] = "Ask the user to open restore_url in a browser and enter the recovery seed to complete the restore. The seed never crosses the MCP channel."
 		}
 		return ToolResult{Text: text, StructuredContent: extra}, nil
 	}
@@ -855,6 +804,30 @@ func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string, seedDr
 	// invocation interface.
 	if err := catalog.RegisterFromCommand(root, hasRootAction, prefix, toolHandler); err != nil {
 		return nil, err
+	}
+
+	// Annotate the vault tools with their declarative behavior when the
+	// corresponding coordinators are wired. The invoke gate and the output
+	// post-processors read these fields instead of hardcoded tool-name checks.
+	if oobRestore != nil {
+		if restoreEntry, ok := catalog.Get(vaultRestoreToolName); ok {
+			restoreEntry.Behavior = ToolBehavior{
+				RestoreURL: &RestoreURLSpec{ProfileField: "profile"},
+				StdinGate:  &StdinGateSpec{ArgName: "seed-stdin"},
+			}
+			catalog.Add(restoreEntry)
+		}
+	}
+	if seedDrop != nil {
+		if createEntry, ok := catalog.Get(vaultCreateToolName); ok {
+			createEntry.Behavior = ToolBehavior{
+				SeedDrop: &SeedDropSpec{
+					ProfileField:  "profile",
+					SeedPathField: "seed_path",
+				},
+			}
+			catalog.Add(createEntry)
+		}
 	}
 
 	return catalog, nil

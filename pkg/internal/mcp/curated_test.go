@@ -7,21 +7,38 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCuratedToolAllowlist(t *testing.T) {
+func TestMarkCuratedStampsDirectVisible(t *testing.T) {
+	// A catalog built the way buildCatalog does it: CLI commands are present.
+	catalog := NewToolCatalog()
 	for _, name := range curatedToolNames {
-		require.True(t, IsCuratedTool(name), name)
+		catalog.Add(&ToolEntry{Name: name, Handler: func(_ context.Context, _ ToolRequest) (ToolResult, error) {
+			return ToolResult{Text: "ok"}, nil
+		}})
+	}
+	// Non-curated entries stay hidden.
+	for _, name := range []string{"pinner_setup", "pinner_admin_pprof", "setup_wizard_start", "setup_wizard_step", "pinner_auth"} {
+		catalog.Add(&ToolEntry{Name: name, Handler: func(_ context.Context, _ ToolRequest) (ToolResult, error) {
+			return ToolResult{Text: "ok"}, nil
+		}})
+	}
+
+	markCurated(catalog)
+
+	for _, name := range curatedToolNames {
+		entry, ok := catalog.Get(name)
+		require.True(t, ok, name)
+		require.True(t, entry.DirectVisible, name)
 	}
 	for _, name := range []string{"pinner_setup", "pinner_admin_pprof", "setup_wizard_start", "setup_wizard_step", "pinner_auth"} {
-		require.False(t, IsCuratedTool(name), name)
+		entry, ok := catalog.Get(name)
+		require.True(t, ok, name)
+		require.False(t, entry.DirectVisible, name)
 	}
-	require.True(t, IsCuratedTool("pinner_auth_status"))
-	require.True(t, IsCuratedTool("pinner_auth_logout"))
-	require.True(t, IsCuratedTool("pinner_vault_cat"))
 }
 
-func TestRegisterOfficialCuratedToolsFiltersCatalog(t *testing.T) {
+func TestRegisterOfficialCuratedToolsRegistersOnlyDirectVisible(t *testing.T) {
 	catalog := NewToolCatalog()
-	for _, name := range []string{"pinner_status", "pinner_admin_pprof", "websites_wizard_start"} {
+	for _, name := range []string{"pinner_status", "pinner_admin_pprof", "websites_wizard_start", "pinner_auth_sso"} {
 		catalog.Add(&ToolEntry{
 			Name:        name,
 			Title:       name,
@@ -32,15 +49,17 @@ func TestRegisterOfficialCuratedToolsFiltersCatalog(t *testing.T) {
 			},
 		})
 	}
-	server := NewOfficialServer(nil)
-	require.NoError(t, RegisterOfficialCuratedTools(server, catalog, func(name string) bool {
-		return name == "pinner_status"
-	}))
-}
+	// Only these are directly visible; pinner_admin_pprof stays behind the
+	// progressive-disclosure meta-tools.
+	if e, ok := catalog.Get("pinner_status"); ok {
+		e.DirectVisible = true
+	}
+	if e, ok := catalog.Get("pinner_auth_sso"); ok {
+		e.DirectVisible = true
+	}
 
-func TestCuratedToolNamesAreNotRawSetupTools(t *testing.T) {
-	require.False(t, IsCuratedTool("setup_wizard_start"))
-	require.False(t, IsCuratedTool("setup_wizard_step"))
+	server := NewOfficialServer(nil)
+	require.NoError(t, RegisterOfficialCuratedTools(server, catalog))
 }
 
 func TestAuthLogoutIsNotClassifiedAsDestructive(t *testing.T) {

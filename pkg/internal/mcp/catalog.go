@@ -56,6 +56,11 @@ type ToolEntry struct {
 	Category    ToolCategory
 	ReadOnly    bool
 	Destructive bool
+	// DirectVisible reports whether the tool is part of the directly-exposed
+	// surface (tools/list) in addition to progressive discovery. The curated
+	// registration loop registers every DirectVisible entry; the search/describe
+	// meta-tools index the whole catalog regardless.
+	DirectVisible bool
 	// Interaction tells agents whether this tool is safe to invoke directly,
 	// prompts interactively, or reads piped stdin. Only the MCP server sets it
 	// (via classifyInteraction); CLI paths built via RegisterFromCommand get a
@@ -65,8 +70,12 @@ type ToolEntry struct {
 	// Meta carries arbitrary tool metadata (e.g. MCP Apps `_meta.ui`) through
 	// curated registration. SDK-neutral; the wire seam encodes it onto the
 	// tool. Extended, never replaced, when attaching app metadata.
-	Meta    map[string]any
-	Handler PinnerToolHandler
+	Meta map[string]any
+	// Behavior carries agent-facing execution behavior (stdin gating, OOB
+	// hand-offs). The invoke gate and post-processing layers read this instead
+	// of hardcoded tool-name checks.
+	Behavior ToolBehavior
+	Handler  PinnerToolHandler
 }
 
 // ToolSummary is the lightweight representation returned by search_tools.
