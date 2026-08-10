@@ -2,7 +2,7 @@ package cli
 
 import (
 	"github.com/urfave/cli/v3"
-	"go.lumeweb.com/pinner-cli/pkg/cli/vault"
+	"go.lumeweb.com/pinner-cli/internal/core/vault"
 )
 
 // vaultArgsUsage is the conventional vault path placeholder shown in command

@@ -11,7 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/urfave/cli/v3"
-	"go.lumeweb.com/pinner-cli/pkg/cli/vault"
+	"go.lumeweb.com/pinner-cli/internal/core/vault"
 )
 
 func newVaultRestoreCommand() *cli.Command {

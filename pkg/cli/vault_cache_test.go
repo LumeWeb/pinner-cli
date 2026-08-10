@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"go.lumeweb.com/pinner-cli/pkg/cli/vault"
+	"go.lumeweb.com/pinner-cli/internal/core/vault"
 )
 
 // TestVaultCacheClear_NoDB asserts 'cache clear' on a profile with no cache
