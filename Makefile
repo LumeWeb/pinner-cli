@@ -1,4 +1,4 @@
-.PHONY: build install clean
+.PHONY: build install clean generate
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
@@ -18,10 +18,17 @@ LDFLAGS := -X '$(PKG).Version=$(VERSION)' \
            -X '$(PKG).Platform=$(PLATFORM)' \
            -X '$(PKG).Architecture=$(ARCH)'
 
-build:
+# generate regenerates checked-in code from source generators (templ pages via
+# the //go:generate templ generate directive in pkg/internal/mcp/embed.go). It
+# runs before build/install so a change to a *.templ file is never built with
+# stale generated *_templ.go output. Requires the templ CLI on PATH.
+generate:
+	go generate ./...
+
+build: generate
 	CGO_ENABLED=1 go build -ldflags="$(LDFLAGS)" -o pinner ./cmd/pinner
 
-install:
+install: generate
 	CGO_ENABLED=1 go install -ldflags="$(LDFLAGS)" ./cmd/pinner
 
 clean:
