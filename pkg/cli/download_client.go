@@ -41,6 +41,21 @@ func NewDownloadService(cfgMgr config.Manager, output Output, opts ...DownloadSe
 	return s
 }
 
+// SetAuthService implements download.Configurer.
+func (s *DownloadServiceDefault) SetAuthService(authService AuthService) {
+	s.authService = authService
+}
+
+// SetAuthToken implements download.Configurer.
+func (s *DownloadServiceDefault) SetAuthToken(token string) {
+	s.authToken = token
+}
+
+// SetIPFSEndpoint implements download.Configurer.
+func (s *DownloadServiceDefault) SetIPFSEndpoint(endpoint string) {
+	s.ipfsEndpoint = endpoint
+}
+
 func (s *DownloadServiceDefault) RequireAuthenticated() error {
 	authToken := s.getAuthToken()
 	if authToken == "" {
