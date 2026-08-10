@@ -1,6 +1,9 @@
 /* Pinner brand theme for MCP out-of-band pages.
-   Palette sourced from web/app/pinner.xyz/src/styles/globals.css (@theme tokens).
-   Keep in sync when the brand changes. Served via go:embed as /assets/brand.css. */
+   Palette sourced from the pinner.xyz web app (apps/pinner.xyz/src/styles/globals.css
+   and the site logo). Primary CTAs use the dark-teal home-card color (#0d2d2a)
+   with white text — not the yellow token — matching the live site's buttons.
+   Teal (#adf0dd / #abeedb) is the brand accent. Keep in sync when the brand
+   changes. Served via go:embed as /assets/brand.css. */
 
 :root {
   --brand-bg: #0d1d1c;
@@ -11,8 +14,6 @@
   --brand-accent: #abeedb;
   --brand-teal: #adf0dd;
   --brand-teal-muted: #75ac9e;
-  --brand-primary: #f3c614;
-  --brand-primary-light: #f7d94c;
   --brand-border: #1f3a37;
   --brand-danger: #ff6647;
 }
@@ -32,27 +33,20 @@ body {
   padding: 2rem 1rem;
 }
 
+/* Brand mark: the Pinner folded-pin logo, teal on the dark home background. */
 .brand-mark {
   display: flex;
   align-items: center;
-  gap: .55rem;
   margin-bottom: 2rem;
   text-decoration: none;
+  border-radius: .4rem;
 }
-.brand-dot {
-  width: .7rem;
-  height: .7rem;
-  border-radius: 9999px;
-  background: var(--brand-primary);
-  box-shadow: 0 0 0 .25rem rgba(243, 198, 20, .15);
+.brand-logo {
+  width: 2.25rem;
+  height: 2.25rem;
+  display: block;
+  filter: drop-shadow(0 0 .5rem rgba(173, 240, 221, .25));
 }
-.brand-name {
-  font-weight: 600;
-  letter-spacing: .02em;
-  font-size: 1.15rem;
-  color: var(--brand-text);
-}
-.brand-name em { color: var(--brand-primary); font-style: normal; }
 
 .card {
   background: rgba(13, 45, 42, .6);
@@ -85,23 +79,45 @@ input[type=password], input[type=email], input[type=text] {
   font-size: .95rem;
   outline: none;
 }
-input:focus { border-color: var(--brand-primary); }
+input:focus { border-color: var(--brand-teal); }
 
+/* Primary CTA: dark-teal home-card background with white text (live-site
+   button treatment), not the yellow token. */
 button {
   width: 100%;
   margin-top: 1.4rem;
   padding: .75rem 1rem;
   border: 0;
   border-radius: .5rem;
-  background: var(--brand-primary);
-  color: #111c1b;
+  background: var(--brand-card);
+  color: var(--brand-text);
   font: inherit;
   font-weight: 600;
   cursor: pointer;
-  transition: background .15s ease;
+  transition: background .15s ease, opacity .15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
 }
-button:hover { background: var(--brand-primary-light); }
+button:hover, button:focus-visible { background: #123b37; }
 button:disabled { opacity: .6; cursor: default; }
+
+/* Processing state: shown while an OAuth/authorize POST is in flight. The
+   button disables itself and reveals a spinner + label. */
+button .spin {
+  display: none;
+  width: .9rem;
+  height: .9rem;
+  border: 2px solid rgba(248, 248, 248, .35);
+  border-top-color: var(--brand-text);
+  border-radius: 9999px;
+  animation: brand-spin .7s linear infinite;
+}
+@keyframes brand-spin { to { transform: rotate(360deg); } }
+button.processing { cursor: default; }
+button.processing .spin { display: inline-block; }
+button.processing .btn-label { opacity: .85; }
 
 .status {
   padding: .7rem .85rem;
