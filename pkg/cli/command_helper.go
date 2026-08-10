@@ -8,7 +8,7 @@ import (
 
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/pkg/cli/wizard"
-	"go.lumeweb.com/pinner-cli/pkg/config"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
 )
 
 // configManagerFactory is the factory function used by setupCommandContext.

@@ -9,8 +9,9 @@ import (
 	"github.com/urfave/cli/v3"
 	contentfs "go.lumeweb.com/ipfs-content/fs"
 	"go.lumeweb.com/pinner-cli/build"
-	"go.lumeweb.com/pinner-cli/pkg/cli/vault"
-	"go.lumeweb.com/pinner-cli/pkg/config"
+	"go.lumeweb.com/pinner-cli/internal/core/vault"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner-cli/internal/core/websites"
 	mcpadapter "go.lumeweb.com/pinner-cli/pkg/internal/mcp"
 )
 
@@ -129,14 +130,14 @@ For more help on any command: pinner <command> --help`,
 			// request time, so a `pinner login` (or config edit) that relocates the
 			// token on disk is picked up by the running server without a restart.
 			// Freezing the startup token as an override would defeat live reload.
-			websitesSvc := websitesServiceFactory(cfgMgr, output, secure)
-			authSvc := defaultAuthServiceFactory(cfgMgr, output, cfgMgr.Config().GetAccountEndpointSecure())
+			websitesSvc := websites.DefaultFactory(cfgMgr, secure)
+			authSvc := defaultAuthServiceFactory(cfgMgr, cfgMgr.Config().GetAccountEndpointSecure())
 			uploadSvc := defaultUploadServiceFactory(cfgMgr, output, WithUploadAuthService(authSvc))
 
 			// Build the pinning backend for the "Create a Pin" MCP App. Reuse
 			// the CLI's PinningService (which reads cfgMgr live at request time)
 			// and adapt its Status into the SDK-neutral PinningProvider.
-			pinningSvc := defaultPinningServiceFactory(cfgMgr, output, secure)
+			pinningSvc := defaultPinningServiceFactory(cfgMgr, secure)
 			pinProvider = func() (mcpadapter.PinningProvider, error) {
 				return &pinStatusAdapter{pins: pinningSvc}, nil
 			}

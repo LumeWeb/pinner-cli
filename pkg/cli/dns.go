@@ -11,7 +11,7 @@ import (
 	"github.com/urfave/cli/v3"
 	ipfs "go.lumeweb.com/ipfs-sdk"
 	"go.lumeweb.com/ipfs-sdk/dnsname"
-	"go.lumeweb.com/pinner-cli/pkg/config"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
 )
 
 func newDNSCommand() *cli.Command {
@@ -309,7 +309,7 @@ func dnsZonesList(ctx context.Context, cmd dnsCommandGetter, output Output, cfgM
 	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
 	defer cancel()
 
-	dnsService, err := newAuthenticatedDNSService(cfgMgr, output, authToken, secure)
+	dnsService, err := newDNSAPI(cfgMgr, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -363,7 +363,7 @@ func dnsZonesCreate(ctx context.Context, cmd dnsCommandGetter, output Output, cf
 		nameservers = parseCommaSeparated(nameserversStr)
 	}
 
-	dnsService, err := newAuthenticatedDNSService(cfgMgr, output, authToken, secure)
+	dnsService, err := newDNSAPI(cfgMgr, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -403,7 +403,7 @@ func dnsZonesGet(ctx context.Context, cmd dnsCommandGetter, output Output, cfgMg
 
 	arg := args.First()
 
-	dnsService, err := newAuthenticatedDNSService(cfgMgr, output, authToken, secure)
+	dnsService, err := newDNSAPI(cfgMgr, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -447,7 +447,7 @@ func dnsZonesDelete(ctx context.Context, cmd dnsCommandGetter, output Output, cf
 
 	arg := args.First()
 
-	dnsService, err := newAuthenticatedDNSService(cfgMgr, output, authToken, secure)
+	dnsService, err := newDNSAPI(cfgMgr, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -477,7 +477,7 @@ func dnsZonesValidate(ctx context.Context, cmd dnsCommandGetter, output Output, 
 
 	arg := args.First()
 
-	dnsService, err := newAuthenticatedDNSService(cfgMgr, output, authToken, secure)
+	dnsService, err := newDNSAPI(cfgMgr, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -539,7 +539,7 @@ func dnsRecordsList(ctx context.Context, cmd dnsCommandGetter, output Output, cf
 
 	arg := args.First()
 
-	dnsService, err := newAuthenticatedDNSService(cfgMgr, output, authToken, secure)
+	dnsService, err := newDNSAPI(cfgMgr, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -636,7 +636,7 @@ func dnsRecordsCreate(ctx context.Context, cmd dnsCommandGetter, output Output, 
 		Disabled: &disabled,
 	}
 
-	dnsService, err := newAuthenticatedDNSService(cfgMgr, output, authToken, secure)
+	dnsService, err := newDNSAPI(cfgMgr, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -684,7 +684,7 @@ func dnsRecordsGet(ctx context.Context, cmd dnsCommandGetter, output Output, cfg
 	name := cmd.String(FlagName)
 	recordType := cmd.String(FlagType)
 
-	dnsService, err := newAuthenticatedDNSService(cfgMgr, output, authToken, secure)
+	dnsService, err := newDNSAPI(cfgMgr, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -757,7 +757,7 @@ func dnsRecordsUpdate(ctx context.Context, cmd dnsCommandGetter, output Output, 
 		Disabled: &disabled,
 	}
 
-	dnsService, err := newAuthenticatedDNSService(cfgMgr, output, authToken, secure)
+	dnsService, err := newDNSAPI(cfgMgr, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -805,7 +805,7 @@ func dnsRecordsDelete(ctx context.Context, cmd dnsCommandGetter, output Output, 
 	name := cmd.String(FlagName)
 	recordType := cmd.String(FlagType)
 
-	dnsService, err := newAuthenticatedDNSService(cfgMgr, output, authToken, secure)
+	dnsService, err := newDNSAPI(cfgMgr, authToken, secure)
 	if err != nil {
 		return err
 	}

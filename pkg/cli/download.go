@@ -8,7 +8,8 @@ import (
 	"time"
 
 	"github.com/urfave/cli/v3"
-	"go.lumeweb.com/pinner-cli/pkg/config"
+	"go.lumeweb.com/pinner-cli/internal/core/auth"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
 )
 
 const (
@@ -142,7 +143,7 @@ func handleDownload(ctx context.Context, cmd argsFlagGetter, output Output, cfgM
 	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetUploadTimeout())
 	defer cancel()
 
-	authService := NewAuthService(cfgMgr, output, cfgMgr.Config().GetAccountEndpointSecure())
+	authService := auth.NewAuthService(cfgMgr, cfgMgr.Config().GetAccountEndpointSecure(), nil)
 
 	var svcOpts []DownloadServiceOption
 	svcOpts = append(svcOpts, WithDownloadAuthService(authService), WithDownloadIPFSEndpoint(cfgMgr.Config().GetIPFSEndpointWithSecure(secure)))
@@ -224,7 +225,7 @@ func handleCat(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr co
 	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetUploadTimeout())
 	defer cancel()
 
-	authService := NewAuthService(cfgMgr, output, cfgMgr.Config().GetAccountEndpointSecure())
+	authService := auth.NewAuthService(cfgMgr, cfgMgr.Config().GetAccountEndpointSecure(), nil)
 
 	var svcOpts []DownloadServiceOption
 	svcOpts = append(svcOpts, WithDownloadAuthService(authService), WithDownloadIPFSEndpoint(cfgMgr.Config().GetIPFSEndpointWithSecure(secure)))
@@ -258,7 +259,7 @@ func handleLs(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr con
 	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
 	defer cancel()
 
-	authService := NewAuthService(cfgMgr, output, cfgMgr.Config().GetAccountEndpointSecure())
+	authService := auth.NewAuthService(cfgMgr, cfgMgr.Config().GetAccountEndpointSecure(), nil)
 
 	var svcOpts []DownloadServiceOption
 	svcOpts = append(svcOpts, WithDownloadAuthService(authService), WithDownloadIPFSEndpoint(cfgMgr.Config().GetIPFSEndpointWithSecure(secure)))

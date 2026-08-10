@@ -6,7 +6,8 @@ import (
 	"time"
 
 	"github.com/urfave/cli/v3"
-	"go.lumeweb.com/pinner-cli/pkg/config"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner-cli/internal/core/ipns"
 	"go.lumeweb.com/pinner-cli/pkg/internal/mcp"
 )
 
@@ -228,7 +229,7 @@ func ipnsKeysList(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	ipnsService, err := newAuthenticatedIPNSService(cfgMgr, output, authToken, secure)
+	ipnsService, err := newIPNSAPI(cfgMgr, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -278,7 +279,7 @@ func ipnsKeysCreate(ctx context.Context, cmd argsFlagGetter, output Output, cfgM
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	ipnsService, err := newAuthenticatedIPNSService(cfgMgr, output, authToken, secure)
+	ipnsService, err := newIPNSAPI(cfgMgr, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -330,7 +331,7 @@ func ipnsKeysGet(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr 
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	ipnsService, err := newAuthenticatedIPNSService(cfgMgr, output, authToken, secure)
+	ipnsService, err := newIPNSAPI(cfgMgr, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -382,7 +383,7 @@ func ipnsKeysDelete(ctx context.Context, cmd argsFlagGetter, output Output, cfgM
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	ipnsService, err := newAuthenticatedIPNSService(cfgMgr, output, authToken, secure)
+	ipnsService, err := newIPNSAPI(cfgMgr, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -419,7 +420,7 @@ func ipnsPublish(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr 
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	ipnsService, err := newAuthenticatedIPNSService(cfgMgr, output, authToken, secure)
+	ipnsService, err := newIPNSAPI(cfgMgr, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -472,7 +473,7 @@ func ipnsRepublish(ctx context.Context, cmd argsFlagGetter, output Output, cfgMg
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	ipnsService, err := newAuthenticatedIPNSService(cfgMgr, output, authToken, secure)
+	ipnsService, err := newIPNSAPI(cfgMgr, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -502,7 +503,7 @@ func ipnsResolve(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr 
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	ipnsService, err := newAuthenticatedIPNSService(cfgMgr, output, authToken, secure)
+	ipnsService, err := newIPNSAPI(cfgMgr, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -541,7 +542,7 @@ func ipnsResolve(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr 
 }
 
 func resolveIPNSKeyIDToString(ctx context.Context, ipnsService IPNSService, arg string) (string, error) {
-	id, err := resolveIPNSKeyID(ctx, ipnsService, arg)
+	id, err := ipns.ResolveKeyID(ctx, ipnsService, arg)
 	if err != nil {
 		return "", err
 	}

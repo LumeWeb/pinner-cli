@@ -10,7 +10,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.lumeweb.com/pinner-cli/pkg/config"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
 	"go.lumeweb.com/pinner-cli/pkg/internal/io"
 )
 
@@ -417,7 +417,7 @@ func TestUploadDryRun(t *testing.T) {
 				return service
 			}
 
-			pinningServiceFactory := func(cfgMgr config.Manager, output Output, _ bool) PinningService {
+			pinningServiceFactory := func(cfgMgr config.Manager, _ bool) PinningService {
 				return NewMockPinningService(t)
 			}
 

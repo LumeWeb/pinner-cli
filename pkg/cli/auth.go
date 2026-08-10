@@ -8,7 +8,8 @@ import (
 
 	"github.com/manifoldco/promptui"
 	"github.com/urfave/cli/v3"
-	"go.lumeweb.com/pinner-cli/pkg/config"
+	"go.lumeweb.com/pinner-cli/internal/core/auth"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
 	"go.lumeweb.com/pinner-cli/pkg/internal/mcp"
 )
 
@@ -291,16 +292,37 @@ func saveAuthTokenWithFactories(output Output, token string, cfgMgrFactory Confi
 	}
 
 	apiEndpoint := cfgMgr.Config().GetAPIEndpoint()
-	authService := authServiceFactory(cfgMgr, output, apiEndpoint)
+	authService := authServiceFactory(cfgMgr, apiEndpoint)
 
-	return authService.SaveToken(token)
+	res, err := authService.SaveToken(token)
+	if err != nil {
+		return err
+	}
+	renderSaveToken(output, res)
+	return nil
 }
 
 // ConfigManagerFactory creates a config manager for testing.
 type ConfigManagerFactory func() (config.Manager, error)
 
 // AuthServiceFactory creates an auth service for testing.
-type AuthServiceFactory func(cfgMgr config.Manager, output Output, apiEndpoint string) AuthService
+type AuthServiceFactory func(cfgMgr config.Manager, apiEndpoint string) auth.AuthService
+
+// AuthService is the authentication service interface (from internal/core/auth).
+type AuthService = auth.AuthService
+
+// ClientFactory creates an account client (from internal/core/auth).
+type ClientFactory = auth.ClientFactory
+
+// GetJWTPurpose extracts the purpose audience from a JWT (delegates to core).
+func GetJWTPurpose(token string) (string, error) {
+	return auth.GetJWTPurpose(token)
+}
+
+// GetJWTSubject extracts the subject (user ID) from a JWT (delegates to core).
+func GetJWTSubject(token string) (string, error) {
+	return auth.GetJWTSubject(token)
+}
 
 // authLogin handles authentication with interactive, semi-interactive, and non-interactive modes.
 func authLogin(ctx context.Context, cmd flagGetter, output Output, cfgMgrFactory ConfigManagerFactory, authServiceFactory AuthServiceFactory) error {
@@ -324,7 +346,7 @@ func authLoginWithFactories(ctx context.Context, cmd flagGetter, output Output, 
 	}
 
 	apiEndpoint := cfgMgr.Config().GetAPIEndpoint()
-	authService := authServiceFactory(cfgMgr, output, apiEndpoint)
+	authService := authServiceFactory(cfgMgr, apiEndpoint)
 
 	// Use provided prompter or default to promptui
 	if prompter == nil {
@@ -350,6 +372,7 @@ func authLoginWithFactories(ctx context.Context, cmd flagGetter, output Output, 
 
 		// Check if 2FA is required
 		if loginResult.OTPRequired {
+			output.Print("Two-factor authentication required.")
 			if otpCode == "" {
 				// Semi-interactive: prompt for OTP only
 				otpCode, err = prompter.PromptOTP()
@@ -358,11 +381,21 @@ func authLoginWithFactories(ctx context.Context, cmd flagGetter, output Output, 
 				}
 			}
 
-			return authService.LoginWithOTP(ctx, loginResult.IntermediateJWT, otpCode, keyName, noCreateKey)
+			res, err := authService.LoginWithOTP(ctx, loginResult.IntermediateJWT, otpCode, keyName, noCreateKey)
+			if err != nil {
+				return err
+			}
+			renderLoginComplete(output, res)
+			return nil
 		}
 
 		// No 2FA required, complete login
-		return authService.CompleteLogin(ctx, loginResult.Token, keyName, noCreateKey)
+		res, err := authService.CompleteLogin(ctx, loginResult.Token, keyName, noCreateKey)
+		if err != nil {
+			return err
+		}
+		renderLoginComplete(output, res)
+		return nil
 	}
 
 	// Fully interactive mode
@@ -370,7 +403,7 @@ func authLoginWithFactories(ctx context.Context, cmd flagGetter, output Output, 
 }
 
 // interactiveLogin handles fully interactive authentication including 2FA flow.
-func interactiveLogin(ctx context.Context, authService AuthService, output Output, keyName string, noCreateKey, force bool, prompter AuthPrompter) error {
+func interactiveLogin(ctx context.Context, authService auth.AuthService, output Output, keyName string, noCreateKey, force bool, prompter AuthPrompter) error {
 	email, err := prompter.PromptEmail()
 	if err != nil {
 		return fmt.Errorf("failed to read email: %w", err)
@@ -389,17 +422,28 @@ func interactiveLogin(ctx context.Context, authService AuthService, output Outpu
 
 	// Check if 2FA is required
 	if loginResult.OTPRequired {
+		output.Print("Two-factor authentication required.")
 		// Prompt for OTP code (intermediate JWT handled internally)
 		otpCode, err := prompter.PromptOTP()
 		if err != nil {
 			return fmt.Errorf("failed to read OTP code: %w", err)
 		}
 
-		return authService.LoginWithOTP(ctx, loginResult.IntermediateJWT, otpCode, keyName, noCreateKey)
+		res, err := authService.LoginWithOTP(ctx, loginResult.IntermediateJWT, otpCode, keyName, noCreateKey)
+		if err != nil {
+			return err
+		}
+		renderLoginComplete(output, res)
+		return nil
 	}
 
 	// No 2FA required, complete login
-	return authService.CompleteLogin(ctx, loginResult.Token, keyName, noCreateKey)
+	res, err := authService.CompleteLogin(ctx, loginResult.Token, keyName, noCreateKey)
+	if err != nil {
+		return err
+	}
+	renderLoginComplete(output, res)
+	return nil
 }
 
 // defaultConfigManagerFactory creates a config manager using the default config path.
@@ -416,8 +460,8 @@ func defaultConfigManagerFactory() (config.Manager, error) {
 }
 
 // defaultAuthServiceFactory creates an auth service with the given dependencies.
-func defaultAuthServiceFactory(cfgMgr config.Manager, output Output, apiEndpoint string) AuthService {
-	return NewAuthService(cfgMgr, output, apiEndpoint)
+func defaultAuthServiceFactory(cfgMgr config.Manager, apiEndpoint string) auth.AuthService {
+	return auth.DefaultAuthServiceFactory(cfgMgr, apiEndpoint)
 }
 
 // newAuthStatusCommand creates the auth status subcommand.
@@ -449,9 +493,14 @@ func authStatus(ctx context.Context, output Output, cfgMgrFactory ConfigManagerF
 	}
 
 	apiEndpoint := cfgMgr.Config().GetAPIEndpoint()
-	authService := authServiceFactory(cfgMgr, output, apiEndpoint)
+	authService := authServiceFactory(cfgMgr, apiEndpoint)
 
-	return authService.Status(ctx)
+	res, err := authService.Status(ctx)
+	if err != nil {
+		return err
+	}
+	renderAuthStatus(output, res)
+	return nil
 }
 
 func newAuthLogoutCommand() *cli.Command {

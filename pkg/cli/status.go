@@ -5,7 +5,8 @@ import (
 	"fmt"
 
 	"github.com/urfave/cli/v3"
-	"go.lumeweb.com/pinner-cli/pkg/config"
+	"go.lumeweb.com/pinner-cli/internal/core/auth"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
 )
 
 func newStatusCommand() *cli.Command {
@@ -71,7 +72,7 @@ func status(ctx context.Context, cmd interface {
 	if authToken != "" {
 		pinningService = NewPinningService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure), WithAuthToken(authToken))
 	} else {
-		pinningService = pinningServiceFactory(cfgMgr, output, secure)
+		pinningService = pinningServiceFactory(cfgMgr, secure)
 	}
 
 	if err := pinningService.RequireAuthenticated(); err != nil {
@@ -85,7 +86,7 @@ func status(ctx context.Context, cmd interface {
 
 	watch := cmd.Bool("watch")
 
-	authService := NewAuthService(cfgMgr, output, cfgMgr.Config().GetAPIEndpoint())
+	authService := auth.NewAuthService(cfgMgr, cfgMgr.Config().GetAPIEndpoint(), nil)
 	statusService := statusServiceFactory(cfgMgr, output, pinningService, authService)
 
 	var cids []string

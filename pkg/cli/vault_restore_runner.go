@@ -4,7 +4,7 @@ import (
 	"context"
 	"os"
 
-	"go.lumeweb.com/pinner-cli/pkg/cli/vault"
+	"go.lumeweb.com/pinner-cli/internal/core/vault"
 	mcpadapter "go.lumeweb.com/pinner-cli/pkg/internal/mcp"
 )
 

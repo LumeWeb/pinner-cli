@@ -94,11 +94,34 @@ func accountOTPEnable(ctx context.Context, cmd flagGetter, output Output, cfgMgr
 	}
 
 	apiEndpoint := cfgMgr.Config().GetAPIEndpoint()
-	authService := authServiceFactory(cfgMgr, output, apiEndpoint)
+	authService := authServiceFactory(cfgMgr, apiEndpoint)
 
 	otpCode := cmd.String(FlagOTP)
 
-	return authService.EnableOTP(ctx, otpCode)
+	// Generate the OTP secret so the user can add it to their authenticator app.
+	secretRes, err := authService.GenerateOTPSecret(ctx)
+	if err != nil {
+		return err
+	}
+	renderOTPSecret(output, secretRes.Secret)
+
+	// If no OTP code was provided, prompt for it interactively.
+	if otpCode == "" {
+		if agentMode {
+			return ErrNonInteractive
+		}
+		prompter := &promptuiPrompter{}
+		otpCode, err = prompter.PromptOTP()
+		if err != nil {
+			return fmt.Errorf("failed to read OTP code: %w", err)
+		}
+	}
+
+	if err := authService.VerifyOTP(ctx, otpCode); err != nil {
+		return err
+	}
+	renderOTPEnabled(output)
+	return nil
 }
 
 func accountOTPDisable(ctx context.Context, cmd flagGetter, output Output, cfgMgrFactory ConfigManagerFactory, authServiceFactory AuthServiceFactory) error {
@@ -108,9 +131,27 @@ func accountOTPDisable(ctx context.Context, cmd flagGetter, output Output, cfgMg
 	}
 
 	apiEndpoint := cfgMgr.Config().GetAPIEndpoint()
-	authService := authServiceFactory(cfgMgr, output, apiEndpoint)
+	authService := authServiceFactory(cfgMgr, apiEndpoint)
 
 	password := cmd.String("password")
 
-	return authService.DisableOTP(ctx, password)
+	// If no password was provided, prompt for it interactively.
+	if password == "" {
+		if agentMode {
+			return ErrNonInteractive
+		}
+		prompter := &promptuiPrompter{}
+		password, err = prompter.Password("Password")
+		if err != nil {
+			return fmt.Errorf("failed to read password: %w", err)
+		}
+	}
+
+	res, err := authService.DisableOTP(ctx, password)
+	if err != nil {
+		return err
+	}
+	renderOTPDisabled(output)
+	_ = res
+	return nil
 }

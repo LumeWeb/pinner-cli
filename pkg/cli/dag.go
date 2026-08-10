@@ -7,98 +7,31 @@ import (
 
 	"github.com/urfave/cli/v3"
 	ipfs "go.lumeweb.com/ipfs-sdk"
-	"go.lumeweb.com/pinner-cli/pkg/config"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner-cli/internal/core/dag"
 )
 
-// DAGService defines the interface for DAG operations.
-type DAGService interface {
-	RequireAuthenticated() error
-	ResolveDAG(ctx context.Context, cid string) (*ipfs.DAGResponse, error)
+
+// DAGService and options are re-exported from core; the impl lives in core/dag.
+type DAGService = dag.Service
+type DAGServiceOption = dag.Option
+type DAGServiceFactory = dag.ServiceFactoryFunc
+
+// newDAGAPI builds the DAG service used by CLI handlers.
+var newDAGAPI = func(cfgMgr config.Manager, authToken string, secure bool) (DAGService, error) {
+	return dag.NewAuthenticated(cfgMgr, authToken, secure)
 }
 
-type dagService struct {
-	ipfsServiceBase
-	service ipfs.DAGService
-	client  *ipfs.Client
-}
-
-// DAGServiceOption is a function that configures a dagService.
-type DAGServiceOption func(*dagService)
-
-// WithDAGAuthToken sets an auth token override that takes precedence over config.
+// WithDAGAuthToken sets an auth token override (delegates to core).
 func WithDAGAuthToken(token string) DAGServiceOption {
-	return func(s *dagService) {
-		withAuthToken(token)(&s.ipfsServiceBase)
-	}
+	return dag.WithAuthToken(token)
 }
 
-// WithDAGClient sets a pre-configured ipfs.Client, bypassing the default ipfs.NewClient() call.
+// WithDAGClient sets a pre-configured ipfs.Client (delegates to core).
 func WithDAGClient(client *ipfs.Client) DAGServiceOption {
-	return func(s *dagService) {
-		s.client = client
-	}
+	return dag.WithClient(client)
 }
 
-type DAGServiceFactory func(cfgMgr config.Manager, output Output, secure bool, opts ...DAGServiceOption) DAGService
-
-func defaultDAGServiceFactory(cfgMgr config.Manager, output Output, secure bool, opts ...DAGServiceOption) DAGService {
-	return NewDAGService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure), opts...)
-}
-
-type dagServiceFactoryFunc func(cfgMgr config.Manager, output Output, secure bool, opts ...DAGServiceOption) DAGService
-
-var dagServiceFactory dagServiceFactoryFunc = defaultDAGServiceFactory
-
-// newAuthenticatedDAGService creates a DAGService with authentication.
-// It returns an error if the user is not authenticated.
-func newAuthenticatedDAGService(cfgMgr config.Manager, output Output, authToken string, secure bool) (DAGService, error) {
-	var svcOpts []DAGServiceOption
-	if authToken != "" {
-		svcOpts = append(svcOpts, WithDAGAuthToken(authToken))
-	}
-	dagSvc := dagServiceFactory(cfgMgr, output, secure, svcOpts...)
-	if err := dagSvc.RequireAuthenticated(); err != nil {
-		return nil, err
-	}
-	return dagSvc, nil
-}
-
-func NewDAGService(cfgMgr config.Manager, output Output, apiEndpoint string, opts ...DAGServiceOption) DAGService {
-	authToken := cfgMgr.Config().AuthToken
-
-	s := &dagService{
-		ipfsServiceBase: ipfsServiceBase{
-			cfgMgr:    cfgMgr,
-			authToken: authToken,
-		},
-	}
-	for _, opt := range opts {
-		opt(s)
-	}
-
-	if s.client != nil {
-		s.service = s.client.DAG()
-	} else {
-		client, err := ipfs.NewClient(apiEndpoint, s.getAuthToken())
-		if err != nil {
-			output.PrintError(err)
-			s.service = nil
-			return s
-		}
-		s.service = client.DAG()
-	}
-	return s
-}
-
-func (s *dagService) ResolveDAG(ctx context.Context, cid string) (*ipfs.DAGResponse, error) {
-	if err := s.RequireAuthenticated(); err != nil {
-		return nil, err
-	}
-	if s.service == nil {
-		return nil, ErrServiceUnavailable
-	}
-	return s.service.ResolveDAG(ctx, cid)
-}
 
 func newDagCommand() *cli.Command {
 	return &cli.Command{
@@ -145,7 +78,7 @@ func dagResolve(ctx context.Context, cmd commandGetter, output Output, cfgMgr co
 	}
 	cid := args.First()
 
-	dagSvc, err := newAuthenticatedDAGService(cfgMgr, output, authToken, secure)
+	dagSvc, err := newDAGAPI(cfgMgr, authToken, secure)
 	if err != nil {
 		return err
 	}

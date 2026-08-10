@@ -13,8 +13,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	mock "github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"go.lumeweb.com/pinner-cli/pkg/config"
-	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
+	"go.lumeweb.com/pinner-cli/internal/core/auth"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
+	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
 	portalsdk "go.lumeweb.com/portal-sdk"
 	portalsdkmocks "go.lumeweb.com/portal-sdk/mocks"
 )
@@ -93,14 +94,13 @@ func TestAuthService_LoginCheck(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			acc := portalsdkmocks.NewMockAccountAPI(t)
-			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(acc)
 			}
 
-			authService := NewAuthService(cfgMgr, output, "https://api.test.com",
-				WithAuthAccountClient(acc),
+			authService := auth.NewAuthService(cfgMgr, "https://api.test.com", nil,
+				auth.WithAuthAccountClient(acc),
 			)
 
 			result, err := authService.LoginCheck(context.Background(), tt.email, tt.password)
@@ -291,7 +291,6 @@ func TestAuthService_CompleteLogin(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			acc := portalsdkmocks.NewMockAccountAPI(t)
 			authAcc := portalsdkmocks.NewMockAccountAPI(t)
-			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(cfgMgr, acc, authAcc)
@@ -303,14 +302,14 @@ func TestAuthService_CompleteLogin(t *testing.T) {
 					Return(nil, errors.New("API key creation failed"))
 			}
 
-			authService := NewAuthService(cfgMgr, output, "https://api.test.com",
-				WithAuthAccountClient(acc),
-				WithClientFactory(func(endpoint, jwt string) portalsdk.AccountAPI {
+			authService := auth.NewAuthService(cfgMgr, "https://api.test.com", nil,
+				auth.WithAuthAccountClient(acc),
+				auth.WithClientFactory(func(endpoint, jwt string) portalsdk.AccountAPI {
 					return authAcc
 				}),
 			)
 
-			err := authService.CompleteLogin(context.Background(), tt.token, tt.keyName, tt.noCreateKey)
+			_, err := authService.CompleteLogin(context.Background(), tt.token, tt.keyName, tt.noCreateKey)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -357,14 +356,13 @@ func TestAuthService_SaveToken(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
-			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(cfgMgr)
 			}
 
-			authService := NewAuthService(cfgMgr, output, "https://api.test.com")
-			err := authService.SaveToken(tt.token)
+			authService := auth.NewAuthService(cfgMgr, "https://api.test.com", nil)
+			_, err := authService.SaveToken(tt.token)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -380,24 +378,22 @@ func TestAuthService_SaveToken(t *testing.T) {
 
 func TestAuthService_GetAPIEndpoint(t *testing.T) {
 	cfgMgr := configmocks.NewMockManager(t)
-	output := newTestOutput()
 
-	authService := NewAuthService(cfgMgr, output, "https://api.test.com")
+	authService := auth.NewAuthService(cfgMgr, "https://api.test.com", nil)
 	require.Equal(t, "https://api.test.com", authService.GetAPIEndpoint())
 }
 
 func TestAuthService_SaveToken_JSONOutput(t *testing.T) {
-	// Test JSON output for SaveToken
+	// Test that SaveToken persists the token and returns a typed result.
 	cfgMgr := configmocks.NewMockManager(t)
-	output := NewOutputFormatter(true, false, false, false)
 
 	cfgMgr.EXPECT().SetAuthToken("test-token").Return(nil)
 	cfgMgr.EXPECT().ConfigPath().Return("/home/user/.config/pinner/config.yaml")
 	cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://pinner.xyz", Secure: true}).Maybe()
 
-	authService := NewAuthService(cfgMgr, output, "https://api.test.com")
+	authService := auth.NewAuthService(cfgMgr, "https://api.test.com", nil)
 
-	err := authService.SaveToken("test-token")
+	_, err := authService.SaveToken("test-token")
 	require.NoError(t, err)
 }
 
@@ -405,7 +401,6 @@ func TestAuthService_CompleteLogin_JSONOutput(t *testing.T) {
 	cfgMgr := configmocks.NewMockManager(t)
 	acc := portalsdkmocks.NewMockAccountAPI(t)
 	authAcc := portalsdkmocks.NewMockAccountAPI(t)
-	output := NewOutputFormatter(true, false, false, false)
 
 	cfgMgr.EXPECT().SetAuthToken("test-api-key-token").Return(nil)
 	cfgMgr.EXPECT().ConfigPath().Return("/home/user/.config/pinner/config.yaml")
@@ -414,22 +409,21 @@ func TestAuthService_CompleteLogin_JSONOutput(t *testing.T) {
 	authAcc.EXPECT().CreateAPIKey(mock.Anything, "test-key").
 		Return(portalsdk.NewAPIKey("test-key", "test-api-key-token"), nil)
 
-	authService := NewAuthService(cfgMgr, output, "https://api.test.com",
-		WithAuthAccountClient(acc),
-		WithClientFactory(func(endpoint, jwt string) portalsdk.AccountAPI {
+	authService := auth.NewAuthService(cfgMgr, "https://api.test.com", nil,
+		auth.WithAuthAccountClient(acc),
+		auth.WithClientFactory(func(endpoint, jwt string) portalsdk.AccountAPI {
 			return authAcc
 		}),
 	)
 
-	err := authService.CompleteLogin(context.Background(), "test-jwt", "test-key", false)
+	_, err := authService.CompleteLogin(context.Background(), "test-jwt", "test-key", false)
 	require.NoError(t, err)
 }
 
 func TestNewAuthService(t *testing.T) {
 	cfgMgr := configmocks.NewMockManager(t)
-	output := newTestOutput()
 
-	authService := NewAuthService(cfgMgr, output, "https://api.test.com")
+	authService := auth.NewAuthService(cfgMgr, "https://api.test.com", nil)
 
 	// Verify it has the correct endpoint
 	require.Equal(t, "https://api.test.com", authService.GetAPIEndpoint())
@@ -460,7 +454,7 @@ func TestInteractiveLogin(t *testing.T) {
 				authService.EXPECT().LoginCheck(mock.Anything, "test@example.com", "password").
 					Return(portalsdk.NewLoginResult("test-jwt-token", false, ""), nil)
 				authService.EXPECT().CompleteLogin(mock.Anything, "test-jwt-token", "test-key", false).
-					Return(nil)
+					Return(&auth.LoginCompleteResult{}, nil)
 			},
 			wantErr: false,
 		},
@@ -556,7 +550,7 @@ func TestAuthLogin(t *testing.T) {
 				authService.EXPECT().LoginCheck(mock.Anything, "test@example.com", "password").
 					Return(portalsdk.NewLoginResult("test-jwt-token", false, ""), nil)
 				authService.EXPECT().CompleteLogin(mock.Anything, "test-jwt-token", "test-key", false).
-					Return(nil)
+					Return(&auth.LoginCompleteResult{}, nil)
 			},
 			wantErr: false,
 		},
@@ -572,7 +566,7 @@ func TestAuthLogin(t *testing.T) {
 				authService.EXPECT().LoginCheck(mock.Anything, "test@example.com", "prompted-password").
 					Return(portalsdk.NewLoginResult("test-jwt-token", false, ""), nil)
 				authService.EXPECT().CompleteLogin(mock.Anything, "test-jwt-token", "test-key", false).
-					Return(nil)
+					Return(&auth.LoginCompleteResult{}, nil)
 			},
 			wantErr: false,
 		},
@@ -588,7 +582,7 @@ func TestAuthLogin(t *testing.T) {
 				authService.EXPECT().LoginCheck(mock.Anything, "test@example.com", "password").
 					Return(portalsdk.NewLoginResult("", true, "intermediate-jwt"), nil)
 				authService.EXPECT().LoginWithOTP(mock.Anything, "intermediate-jwt", "123456", "test-key", false).
-					Return(nil)
+					Return(&auth.LoginCompleteResult{}, nil)
 			},
 			wantErr: false,
 		},
@@ -647,7 +641,7 @@ func TestAuthLogin(t *testing.T) {
 			}
 
 			// Setup auth service factory
-			authServiceFactory := func(cm config.Manager, out Output, apiEndpoint string) AuthService {
+			authServiceFactory := func(cm config.Manager, apiEndpoint string) AuthService {
 				return authService
 			}
 
@@ -765,7 +759,6 @@ func TestAuthService_LoginWithOTP(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			acc := portalsdkmocks.NewMockAccountAPI(t)
 			authAcc := portalsdkmocks.NewMockAccountAPI(t)
-			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(cfgMgr, acc, authAcc)
@@ -777,14 +770,14 @@ func TestAuthService_LoginWithOTP(t *testing.T) {
 					Return(nil, errors.New("API key creation failed"))
 			}
 
-			authService := NewAuthService(cfgMgr, output, "https://api.test.com",
-				WithAuthAccountClient(acc),
-				WithClientFactory(func(endpoint, jwt string) portalsdk.AccountAPI {
+			authService := auth.NewAuthService(cfgMgr, "https://api.test.com", nil,
+				auth.WithAuthAccountClient(acc),
+				auth.WithClientFactory(func(endpoint, jwt string) portalsdk.AccountAPI {
 					return authAcc
 				}),
 			)
 
-			err := authService.LoginWithOTP(context.Background(), tt.intermediateJWT, tt.otp, tt.keyName, tt.noCreateKey)
+			_, err := authService.LoginWithOTP(context.Background(), tt.intermediateJWT, tt.otp, tt.keyName, tt.noCreateKey)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -811,7 +804,7 @@ func TestSaveAuthToken(t *testing.T) {
 			token: "test-jwt-token",
 			setupMocks: func(cfgMgr *configmocks.MockManager, authService *MockAuthService) {
 				cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://test.com"})
-				authService.EXPECT().SaveToken("test-jwt-token").Return(nil)
+				authService.EXPECT().SaveToken("test-jwt-token").Return(&auth.SaveTokenResult{}, nil)
 			},
 			wantErr: false,
 		},
@@ -827,7 +820,7 @@ func TestSaveAuthToken(t *testing.T) {
 			token: "test-jwt-token",
 			setupMocks: func(cfgMgr *configmocks.MockManager, authService *MockAuthService) {
 				cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://test.com"})
-				authService.EXPECT().SaveToken("test-jwt-token").Return(errors.New("save failed"))
+				authService.EXPECT().SaveToken("test-jwt-token").Return(nil, errors.New("save failed"))
 			},
 			wantErr:     true,
 			errContains: "save failed",
@@ -853,7 +846,7 @@ func TestSaveAuthToken(t *testing.T) {
 			}
 
 			// Setup auth service factory
-			authServiceFactory := func(cm config.Manager, out Output, apiEndpoint string) AuthService {
+			authServiceFactory := func(cm config.Manager, apiEndpoint string) AuthService {
 				return authService
 			}
 
@@ -930,17 +923,16 @@ func TestAuthServiceDefault_Register(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			acc := portalsdkmocks.NewMockAccountAPI(t)
-			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(acc)
 			}
 
-			authService := NewAuthService(cfgMgr, output, "https://api.test.com",
-				WithAuthAccountClient(acc),
+			authService := auth.NewAuthService(cfgMgr, "https://api.test.com", nil,
+				auth.WithAuthAccountClient(acc),
 			)
 
-			err := authService.Register(context.Background(), tt.email, tt.firstName, tt.lastName, tt.password)
+			_, err := authService.Register(context.Background(), tt.email, tt.firstName, tt.lastName, tt.password)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -1027,14 +1019,13 @@ func TestAuthServiceDefault_GetLoginToken(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			acc := portalsdkmocks.NewMockAccountAPI(t)
-			output := newTestOutput()
 
 			if tt.setupMocks != nil {
 				tt.setupMocks(cfgMgr, acc)
 			}
 
-			authService := NewAuthService(cfgMgr, output, "https://api.test.com",
-				WithAuthAccountClient(acc),
+			authService := auth.NewAuthService(cfgMgr, "https://api.test.com", nil,
+				auth.WithAuthAccountClient(acc),
 			)
 
 			token, err := authService.GetLoginToken(context.Background())

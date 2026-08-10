@@ -10,8 +10,8 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
-	"go.lumeweb.com/pinner-cli/pkg/config"
-	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
+	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
 )
 
 func TestStatus(t *testing.T) {
@@ -187,7 +187,7 @@ func TestStatus(t *testing.T) {
 				withCID(tt.cid).
 				withBool(FlagWatch, tt.watchFlag)
 
-			pinningServiceFactory := func(cm config.Manager, out Output, _ bool) PinningService {
+			pinningServiceFactory := func(cm config.Manager, _ bool) PinningService {
 				return pinningSvc
 			}
 

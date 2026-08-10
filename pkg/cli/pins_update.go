@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/urfave/cli/v3"
-	"go.lumeweb.com/pinner-cli/pkg/config"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
 )
 
 func newPinsUpdateCommand() *cli.Command {
@@ -55,7 +55,7 @@ func pinsUpdate(ctx context.Context, cmd interface {
 	if authToken != "" {
 		pinningService = NewPinningService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure), WithAuthToken(authToken))
 	} else {
-		pinningService = pinningServiceFactory(cfgMgr, output, secure)
+		pinningService = pinningServiceFactory(cfgMgr, secure)
 	}
 
 	if err := pinningService.RequireAuthenticated(); err != nil {

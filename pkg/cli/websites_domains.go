@@ -8,7 +8,7 @@ import (
 	"github.com/urfave/cli/v3"
 	ipfs "go.lumeweb.com/ipfs-sdk"
 	"go.lumeweb.com/ipfs-sdk/dnsname"
-	"go.lumeweb.com/pinner-cli/pkg/config"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
 )
 
 func newWebsitesDomainsCommand() *cli.Command {
@@ -326,7 +326,7 @@ func websitesDomainsList(ctx context.Context, cmd websitesCommandGetter, output 
 	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
 	defer cancel()
 
-	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken, secure)
+	websitesService, err := newWebsitesAPI(cfgMgr, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -386,7 +386,7 @@ func websitesDomainsAdd(ctx context.Context, cmd websitesCommandGetter, output O
 	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
 	defer cancel()
 
-	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken, secure)
+	websitesService, err := newWebsitesAPI(cfgMgr, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -441,7 +441,7 @@ func websitesDomainsRm(ctx context.Context, cmd websitesCommandGetter, output Ou
 	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
 	defer cancel()
 
-	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken, secure)
+	websitesService, err := newWebsitesAPI(cfgMgr, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -475,7 +475,7 @@ func websitesDomainsVerify(ctx context.Context, cmd websitesCommandGetter, outpu
 	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
 	defer cancel()
 
-	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken, secure)
+	websitesService, err := newWebsitesAPI(cfgMgr, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -541,7 +541,7 @@ func websitesDomainsDNSRequirements(ctx context.Context, cmd websitesCommandGett
 	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
 	defer cancel()
 
-	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken, secure)
+	websitesService, err := newWebsitesAPI(cfgMgr, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -651,7 +651,7 @@ func websitesDomainsUpdate(ctx context.Context, cmd websitesCommandGetter, outpu
 	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
 	defer cancel()
 
-	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken, secure)
+	websitesService, err := newWebsitesAPI(cfgMgr, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -790,7 +790,7 @@ func websitesDomainsDANERepublish(ctx context.Context, cmd websitesCommandGetter
 	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
 	defer cancel()
 
-	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken, secure)
+	websitesService, err := newWebsitesAPI(cfgMgr, authToken, secure)
 	if err != nil {
 		return err
 	}

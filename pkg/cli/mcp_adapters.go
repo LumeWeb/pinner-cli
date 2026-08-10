@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	ipfs "go.lumeweb.com/ipfs-sdk"
-	"go.lumeweb.com/pinner-cli/pkg/config"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
 	mcpadapter "go.lumeweb.com/pinner-cli/pkg/internal/mcp"
 )
 
@@ -28,7 +28,8 @@ func (a *accountStatusAdapter) AuthStatus(ctx context.Context) error {
 	if a.auth == nil {
 		return fmt.Errorf("auth service not configured")
 	}
-	return a.auth.Status(ctx)
+	_, err := a.auth.Status(ctx)
+	return err
 }
 
 func (a *accountStatusAdapter) APIKey() string {

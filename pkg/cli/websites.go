@@ -10,7 +10,7 @@ import (
 	"github.com/urfave/cli/v3"
 	ipfs "go.lumeweb.com/ipfs-sdk"
 	"go.lumeweb.com/ipfs-sdk/dnsname"
-	"go.lumeweb.com/pinner-cli/pkg/config"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
 )
 
 // stripValidationPrefix strips the "key=" prefix from a validation token value.
@@ -148,36 +148,6 @@ Examples:
 	}
 }
 
-// WebsitesService defines the interface for website operations.
-type WebsitesService interface {
-	RequireAuthenticated() error
-	// SetAuthToken hot-updates the auth token on a running service without
-	// reconstructing it (used by long-lived consumers on config live-reload).
-	SetAuthToken(token string)
-	List(ctx context.Context) ([]ipfs.WebsiteItem, error)
-	Create(ctx context.Context, domain, targetHash, targetType string) (*ipfs.WebsiteItem, error)
-	CreateWithOptions(ctx context.Context, req ipfs.WebsiteRequest) (*ipfs.WebsiteItem, error)
-	Get(ctx context.Context, id string) (*ipfs.WebsiteItem, error)
-	Update(ctx context.Context, id, domain, targetHash, targetType string) (*ipfs.WebsiteItem, error)
-	UpdateWithOptions(ctx context.Context, id string, req ipfs.WebsiteUpdateRequest) (*ipfs.WebsiteItem, error)
-	Delete(ctx context.Context, id string) error
-	Validate(ctx context.Context, id string) (*ipfs.WebsiteValidateResponse, error)
-	GetSSLStatus(ctx context.Context, domain string) (*ipfs.WebsiteResponse, error)
-	GetConfig(ctx context.Context) (*ipfs.WebsiteConfigResponse, error)
-
-	// Domain binding
-	ListDomains(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error)
-	BindDomain(ctx context.Context, websiteID string, req ipfs.DomainRequest) (*ipfs.DomainResponse, error)
-	UnbindDomain(ctx context.Context, websiteID string, domainID string) error
-	VerifyDomain(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainResponse, error)
-	GetDomainDNSRequirements(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainResponse, error)
-	RepublishDANE(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainDANERepublishResponse, error)
-
-	// UpdateDomain updates a bound domain's per-domain DNS control - whether the
-	// portal manages DNS hosting for this binding (dns_hosting_enabled) and/or
-	// promotes the binding to primary. Omitted fields are left unchanged.
-	UpdateDomain(ctx context.Context, websiteID string, domainID string, req ipfs.DomainUpdateRequest) (*ipfs.DomainResponse, error)
-}
 
 func resolveRequiredArg(ctx context.Context, websitesService WebsitesService, cmd websitesCommandGetter) (string, error) {
 	args := cmd.Args()
@@ -224,7 +194,7 @@ func printWebsiteUpdateResult(output Output, website *ipfs.WebsiteItem, message 
 func websitesList(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
 	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
 	defer cancel()
-	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken, secure)
+	websitesService, err := newWebsitesAPI(cfgMgr, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -320,7 +290,7 @@ func resolveAndGetWebsite(ctx context.Context, websitesService WebsitesService, 
 func websitesUpdate(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
 	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
 	defer cancel()
-	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken, secure)
+	websitesService, err := newWebsitesAPI(cfgMgr, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -411,7 +381,7 @@ Examples:
 func websitesEnableIPNS(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
 	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
 	defer cancel()
-	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken, secure)
+	websitesService, err := newWebsitesAPI(cfgMgr, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -448,7 +418,7 @@ func websitesEnableIPNS(ctx context.Context, cmd websitesCommandGetter, output O
 func websitesGet(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
 	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
 	defer cancel()
-	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken, secure)
+	websitesService, err := newWebsitesAPI(cfgMgr, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -531,7 +501,7 @@ func websitesGet(ctx context.Context, cmd websitesCommandGetter, output Output, 
 func websitesCreate(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
 	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
 	defer cancel()
-	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken, secure)
+	websitesService, err := newWebsitesAPI(cfgMgr, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -739,7 +709,7 @@ Examples:
 func websitesDelete(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
 	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
 	defer cancel()
-	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken, secure)
+	websitesService, err := newWebsitesAPI(cfgMgr, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -769,7 +739,7 @@ func websitesDelete(ctx context.Context, cmd websitesCommandGetter, output Outpu
 func websitesValidate(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
 	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
 	defer cancel()
-	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken, secure)
+	websitesService, err := newWebsitesAPI(cfgMgr, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -927,7 +897,7 @@ Examples:
 func websitesConfig(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
 	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
 	defer cancel()
-	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken, secure)
+	websitesService, err := newWebsitesAPI(cfgMgr, authToken, secure)
 	if err != nil {
 		return err
 	}

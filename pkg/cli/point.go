@@ -7,7 +7,7 @@ import (
 
 	"github.com/urfave/cli/v3"
 	ipfs "go.lumeweb.com/ipfs-sdk"
-	"go.lumeweb.com/pinner-cli/pkg/config"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
 )
 
 const (
@@ -76,7 +76,7 @@ func point(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr config
 	name := args.First()
 	cid := cmd.String(FlagCID)
 
-	ipnsService, err := newAuthenticatedIPNSService(cfgMgr, output, authToken, secure)
+	ipnsService, err := newIPNSAPI(cfgMgr, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -95,7 +95,7 @@ func unpoint(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr conf
 
 	name := args.First()
 
-	ipnsService, err := newAuthenticatedIPNSService(cfgMgr, output, authToken, secure)
+	ipnsService, err := newIPNSAPI(cfgMgr, authToken, secure)
 	if err != nil {
 		return err
 	}

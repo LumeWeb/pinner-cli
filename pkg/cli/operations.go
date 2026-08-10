@@ -7,7 +7,7 @@ import (
 
 	"github.com/pterm/pterm"
 	"github.com/urfave/cli/v3"
-	"go.lumeweb.com/pinner-cli/pkg/config"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
 	portalsdk "go.lumeweb.com/portal-sdk"
 )
 
@@ -124,7 +124,7 @@ func operationsList(ctx context.Context, cmd argsFlagGetter, output Output, cfgM
 	setupCtx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
 	defer cancel()
 
-	authService := authServiceFactory(cfgMgr, output, cfgMgr.Config().GetAPIEndpoint())
+	authService := authServiceFactory(cfgMgr, cfgMgr.Config().GetAPIEndpoint())
 	service := serviceFactory(cfgMgr, output, authService)
 
 	if err := service.RequireAuthenticated(); err != nil {
@@ -201,7 +201,7 @@ func operationsGet(ctx context.Context, cmd argsFlagGetter, output Output, cfgMg
 	setupCtx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
 	defer cancel()
 
-	authService := authServiceFactory(cfgMgr, output, cfgMgr.Config().GetAPIEndpoint())
+	authService := authServiceFactory(cfgMgr, cfgMgr.Config().GetAPIEndpoint())
 	service := serviceFactory(cfgMgr, output, authService)
 
 	if err := service.RequireAuthenticated(); err != nil {

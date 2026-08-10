@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/urfave/cli/v3"
-	"go.lumeweb.com/pinner-cli/pkg/config"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
 
 	ipfs "go.lumeweb.com/ipfs-sdk"
 )
@@ -64,7 +64,7 @@ func websitesSSLStatus(ctx context.Context, cmd websitesCommandGetter, output Ou
 	domain := args.First()
 	watch := cmd.Bool("watch")
 
-	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken, secure)
+	websitesService, err := newWebsitesAPI(cfgMgr, authToken, secure)
 	if err != nil {
 		return err
 	}

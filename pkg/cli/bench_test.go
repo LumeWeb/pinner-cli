@@ -11,8 +11,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"go.lumeweb.com/pinner-cli/pkg/config"
-	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
+	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
 	portalsdk "go.lumeweb.com/portal-sdk"
 	portalsdkmocks "go.lumeweb.com/portal-sdk/mocks"
 )
@@ -104,7 +104,7 @@ func setupBenchHandlerTest(t *testing.T) (*mockBenchServiceForCLI, *configmocks.
 	mockAuthSvc := NewMockAuthService(t)
 	mockAuthSvc.EXPECT().GetAuthenticatedClient(mock.Anything).Maybe().Return(portalsdkmocks.NewMockAccountAPI(t), nil)
 
-	benchAuthServiceFactory = func(cfgMgr config.Manager, output Output, apiEndpoint string) AuthService {
+	benchAuthServiceFactory = func(cfgMgr config.Manager, apiEndpoint string) AuthService {
 		return mockAuthSvc
 	}
 
@@ -253,7 +253,7 @@ func TestBenchHandler_AuthError(t *testing.T) {
 	mockAuthSvc := NewMockAuthService(t)
 	mockAuthSvc.EXPECT().GetAuthenticatedClient(mock.Anything).Return(nil, errors.New("auth failed"))
 
-	benchAuthServiceFactory = func(cfgMgr config.Manager, output Output, apiEndpoint string) AuthService {
+	benchAuthServiceFactory = func(cfgMgr config.Manager, apiEndpoint string) AuthService {
 		return mockAuthSvc
 	}
 
@@ -763,7 +763,7 @@ func TestBenchServiceDefault_RunIteration(t *testing.T) {
 		assert.Empty(t, iter.CID)
 		assert.NotNil(t, iter.Error)
 		assert.Equal(t, "network error", iter.Error.Message)
-		assert.NotNil(t, iter.err)
+		assert.NotNil(t, iter.Err)
 
 		stageNames := make([]string, len(iter.Stages))
 		for i, s := range iter.Stages {
@@ -832,7 +832,7 @@ func TestBenchServiceDefault_RunIteration(t *testing.T) {
 
 		iter := svc.runIteration(ctx, opts, 0)
 		assert.NotNil(t, iter.Error)
-		assert.True(t, isUnrecoverableError(iter.err))
+		assert.True(t, isUnrecoverableError(iter.Err))
 	})
 
 	t.Run("iteration number is 1-indexed", func(t *testing.T) {

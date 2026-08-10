@@ -563,7 +563,7 @@ func (o *OutOfBandLogin) authLoginSubmit(w http.ResponseWriter, r *http.Request,
 			o.authLoginPage(w, r, req)
 			return
 		}
-		if err := o.auth.LoginWithOTP(r.Context(), res.IntermediateJWT, otp, o.keyName, false); err != nil {
+		if _, err := o.auth.LoginWithOTP(r.Context(), res.IntermediateJWT, otp, o.keyName, false); err != nil {
 			// Keep the request PENDING and record the OTP error so the page
 			// re-renders with the message and the human can retry the code on
 			// the same page. A terminal fail() here would make pendingOutcome
@@ -581,7 +581,7 @@ func (o *OutOfBandLogin) authLoginSubmit(w http.ResponseWriter, r *http.Request,
 		// accumulated brute-force ban for this email.
 		o.resetThrottle(req.email)
 	} else {
-		if err := o.auth.CompleteLogin(r.Context(), res.Token, o.keyName, false); err != nil {
+		if _, err := o.auth.CompleteLogin(r.Context(), res.Token, o.keyName, false); err != nil {
 			// LoginCheck already verified the password; a completion failure is a
 			// transient backend error, not a credential guess, so it must not
 			// advance the brute-force lockout counter (which could lock the

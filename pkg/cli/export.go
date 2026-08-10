@@ -6,107 +6,32 @@ import (
 	"strconv"
 
 	"github.com/urfave/cli/v3"
-	"go.lumeweb.com/pinner-cli/pkg/config"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner-cli/internal/core/export"
 	meta "go.lumeweb.com/portal-sdk/meta"
 )
 
-// ExportService defines the interface for meta export operations.
-type ExportService interface {
-	RequireAuthenticated() error
-	ExportDAG(ctx context.Context, cid string) (*meta.DAGExport, error)
-	ExportSiaObject(ctx context.Context, cid string) (*meta.SiaObject, error)
-}
 
-type exportService struct {
-	ipfsServiceBase
-	cid    *meta.CIDService
-	client *meta.MetaClient
-}
+// ExportService and options are re-exported from core; the impl lives in core/export.
+type ExportService = export.Service
+type ExportServiceOption = export.Option
+type ExportServiceFactory = export.ServiceFactoryFunc
 
-// ExportServiceOption is a function that configures an exportService.
-type ExportServiceOption func(*exportService)
-
-// WithExportAuthToken sets an auth token override that takes precedence over config.
+// WithExportAuthToken sets an auth token override (delegates to core).
 func WithExportAuthToken(token string) ExportServiceOption {
-	return func(s *exportService) {
-		withAuthToken(token)(&s.ipfsServiceBase)
-	}
+	return export.WithAuthToken(token)
 }
 
-// WithExportMetaClient sets a pre-configured meta client, bypassing the default meta.NewClient() call.
+// WithExportMetaClient sets a pre-configured meta client (delegates to core).
 func WithExportMetaClient(client *meta.MetaClient) ExportServiceOption {
-	return func(s *exportService) {
-		s.client = client
-	}
+	return export.WithMetaClient(client)
 }
 
-type ExportServiceFactory func(cfgMgr config.Manager, output Output, secure bool, opts ...ExportServiceOption) ExportService
-
-func defaultExportServiceFactory(cfgMgr config.Manager, output Output, secure bool, opts ...ExportServiceOption) ExportService {
-	return NewExportService(cfgMgr, output, cfgMgr.Config().GetMetaEndpointWithSecure(secure), opts...)
+// newExportAPI builds the export service used by CLI handlers.
+var newExportAPI = func(cfgMgr config.Manager, authToken string, secure bool) (ExportService, error) {
+	return export.NewAuthenticated(cfgMgr, authToken, secure)
 }
 
-type exportServiceFactoryFunc func(cfgMgr config.Manager, output Output, secure bool, opts ...ExportServiceOption) ExportService
-
-var exportServiceFactory exportServiceFactoryFunc = defaultExportServiceFactory
-
-// newAuthenticatedExportService creates an ExportService with authentication.
-func newAuthenticatedExportService(cfgMgr config.Manager, output Output, authToken string, secure bool) (ExportService, error) {
-	var svcOpts []ExportServiceOption
-	if authToken != "" {
-		svcOpts = append(svcOpts, WithExportAuthToken(authToken))
-	}
-	exportSvc := exportServiceFactory(cfgMgr, output, secure, svcOpts...)
-	if err := exportSvc.RequireAuthenticated(); err != nil {
-		return nil, err
-	}
-	return exportSvc, nil
-}
-
-func NewExportService(cfgMgr config.Manager, output Output, apiEndpoint string, opts ...ExportServiceOption) ExportService {
-	authToken := cfgMgr.Config().AuthToken
-
-	s := &exportService{
-		ipfsServiceBase: ipfsServiceBase{
-			cfgMgr:    cfgMgr,
-			authToken: authToken,
-		},
-	}
-	for _, opt := range opts {
-		opt(s)
-	}
-
-	if s.client == nil {
-		client, err := meta.NewClient(meta.WithEndpoint(apiEndpoint), meta.WithJWT(s.getAuthToken()))
-		if err != nil {
-			output.PrintError(err)
-			return s
-		}
-		s.client = client
-	}
-	s.cid = s.client.CID()
-	return s
-}
-
-func (s *exportService) ExportDAG(ctx context.Context, cid string) (*meta.DAGExport, error) {
-	if err := s.RequireAuthenticated(); err != nil {
-		return nil, err
-	}
-	if s.cid == nil {
-		return nil, ErrServiceUnavailable
-	}
-	return s.cid.GetDAG(ctx, cid)
-}
-
-func (s *exportService) ExportSiaObject(ctx context.Context, cid string) (*meta.SiaObject, error) {
-	if err := s.RequireAuthenticated(); err != nil {
-		return nil, err
-	}
-	if s.cid == nil {
-		return nil, ErrServiceUnavailable
-	}
-	return s.cid.GetSiaObject(ctx, cid)
-}
 
 func newExportCommand() *cli.Command {
 	return &cli.Command{
@@ -192,7 +117,7 @@ func exportDAG(ctx context.Context, cmd commandGetter, output Output, cfgMgr con
 	}
 	cid := args.First()
 
-	exportSvc, err := newAuthenticatedExportService(cfgMgr, output, authToken, secure)
+	exportSvc, err := newExportAPI(cfgMgr, authToken, secure)
 	if err != nil {
 		return err
 	}
@@ -243,7 +168,7 @@ func exportSiaObject(ctx context.Context, cmd commandGetter, output Output, cfgM
 	}
 	cid := args.First()
 
-	exportSvc, err := newAuthenticatedExportService(cfgMgr, output, authToken, secure)
+	exportSvc, err := newExportAPI(cfgMgr, authToken, secure)
 	if err != nil {
 		return err
 	}

@@ -1,4 +1,4 @@
-package cli
+package admin
 
 import (
 	"context"
@@ -8,8 +8,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.lumeweb.com/pinner-cli/pkg/config"
-	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
+	coreerrors "go.lumeweb.com/pinner-cli/internal/core/errors"
+	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
 )
 
 type mockAuthedService[S any] struct {
@@ -240,7 +241,7 @@ func TestQuotaAdminService_Delegation(t *testing.T) {
 			BaseEndpoint: "http://127.0.0.1:1",
 		}).Maybe()
 
-		svc := NewQuotaAdminService(cfgMgr, nil, "http://127.0.0.1:1").(*quotaAdminService)
+		svc := NewQuotaAdminService(cfgMgr, "http://127.0.0.1:1").(*quotaAdminService)
 		return svc
 	}
 
@@ -320,7 +321,7 @@ func TestQuotaAdminService_Delegation(t *testing.T) {
 		svc := newUnauthQuotaAdminService()
 		result, count, err := svc.Reconcile(ctx, nil)
 		require.Error(t, err)
-		assert.Equal(t, ErrNotAuthenticated, err)
+		assert.Equal(t, coreerrors.ErrNotAuthenticated, err)
 		assert.Equal(t, "", result)
 		assert.Equal(t, 0, count)
 	})
@@ -351,7 +352,7 @@ func TestProfilingAdminService_Delegation(t *testing.T) {
 			BaseEndpoint: "http://127.0.0.1:1",
 		}).Maybe()
 
-		svc := NewProfilingAdminService(cfgMgr, nil, "http://127.0.0.1:1").(*profilingAdminService)
+		svc := NewProfilingAdminService(cfgMgr, "http://127.0.0.1:1").(*profilingAdminService)
 		return svc
 	}
 
@@ -359,7 +360,7 @@ func TestProfilingAdminService_Delegation(t *testing.T) {
 		svc := newUnauthProfilingAdminService()
 		result, err := svc.GetProfileIndex(ctx)
 		require.Error(t, err)
-		assert.Equal(t, ErrNotAuthenticated, err)
+		assert.Equal(t, coreerrors.ErrNotAuthenticated, err)
 		assert.Nil(t, result)
 	})
 
@@ -374,7 +375,7 @@ func TestProfilingAdminService_Delegation(t *testing.T) {
 		svc := newUnauthProfilingAdminService()
 		result, err := svc.GetBlockProfile(ctx)
 		require.Error(t, err)
-		assert.Equal(t, ErrNotAuthenticated, err)
+		assert.Equal(t, coreerrors.ErrNotAuthenticated, err)
 		assert.Nil(t, result)
 	})
 
@@ -389,7 +390,7 @@ func TestProfilingAdminService_Delegation(t *testing.T) {
 		svc := newUnauthProfilingAdminService()
 		err := svc.SetBlockProfileRate(ctx, 1)
 		require.Error(t, err)
-		assert.Equal(t, ErrNotAuthenticated, err)
+		assert.Equal(t, coreerrors.ErrNotAuthenticated, err)
 	})
 
 	t.Run("SetBlockProfileRate getService error", func(t *testing.T) {
@@ -402,7 +403,7 @@ func TestProfilingAdminService_Delegation(t *testing.T) {
 		svc := newUnauthProfilingAdminService()
 		result, err := svc.GetCmdline(ctx)
 		require.Error(t, err)
-		assert.Equal(t, ErrNotAuthenticated, err)
+		assert.Equal(t, coreerrors.ErrNotAuthenticated, err)
 		assert.Nil(t, result)
 	})
 
@@ -417,7 +418,7 @@ func TestProfilingAdminService_Delegation(t *testing.T) {
 		svc := newUnauthProfilingAdminService()
 		result, err := svc.GetGoroutineProfile(ctx)
 		require.Error(t, err)
-		assert.Equal(t, ErrNotAuthenticated, err)
+		assert.Equal(t, coreerrors.ErrNotAuthenticated, err)
 		assert.Nil(t, result)
 	})
 
@@ -432,7 +433,7 @@ func TestProfilingAdminService_Delegation(t *testing.T) {
 		svc := newUnauthProfilingAdminService()
 		result, err := svc.GetHeapProfile(ctx)
 		require.Error(t, err)
-		assert.Equal(t, ErrNotAuthenticated, err)
+		assert.Equal(t, coreerrors.ErrNotAuthenticated, err)
 		assert.Nil(t, result)
 	})
 
@@ -447,7 +448,7 @@ func TestProfilingAdminService_Delegation(t *testing.T) {
 		svc := newUnauthProfilingAdminService()
 		result, err := svc.GetMutexProfile(ctx)
 		require.Error(t, err)
-		assert.Equal(t, ErrNotAuthenticated, err)
+		assert.Equal(t, coreerrors.ErrNotAuthenticated, err)
 		assert.Nil(t, result)
 	})
 
@@ -462,7 +463,7 @@ func TestProfilingAdminService_Delegation(t *testing.T) {
 		svc := newUnauthProfilingAdminService()
 		err := svc.SetMutexProfileFraction(ctx, 1)
 		require.Error(t, err)
-		assert.Equal(t, ErrNotAuthenticated, err)
+		assert.Equal(t, coreerrors.ErrNotAuthenticated, err)
 	})
 
 	t.Run("SetMutexProfileFraction getService error", func(t *testing.T) {

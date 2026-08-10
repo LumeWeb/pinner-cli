@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
-	"go.lumeweb.com/pinner-cli/pkg/config"
-	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
+	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
 )
 
 func TestPinDryRun(t *testing.T) {
@@ -90,7 +90,7 @@ func TestPinDryRun(t *testing.T) {
 					withBool(FlagDryRun, tt.dryRunFlag)
 			}
 
-			pinningServiceFactory := func(cfgMgr config.Manager, output Output, _ bool) PinningService {
+			pinningServiceFactory := func(cfgMgr config.Manager, _ bool) PinningService {
 				return service
 			}
 
@@ -246,7 +246,7 @@ func TestPin(t *testing.T) {
 				withString(FlagName, tt.nameFlag).
 				withBool(FlagNoWait, tt.noWaitFlag)
 
-			pinningServiceFactory := func(cm config.Manager, out Output, _ bool) PinningService {
+			pinningServiceFactory := func(cm config.Manager, _ bool) PinningService {
 				return service
 			}
 
@@ -334,7 +334,7 @@ func TestPinBatch(t *testing.T) {
 				withInt(FlagParallel, tt.parallel).
 				withBool(FlagContinue, tt.continueOn)
 
-			pinningServiceFactory := func(cm config.Manager, out Output, _ bool) PinningService {
+			pinningServiceFactory := func(cm config.Manager, _ bool) PinningService {
 				return service
 			}
 
@@ -399,15 +399,14 @@ func TestDefaultPinningServiceFactory(t *testing.T) {
 			Secure:       true,
 		})
 
-		output := newTestOutput()
-
-		service := defaultPinningServiceFactory(cfgMgr, output, true)
+		service := defaultPinningServiceFactory(cfgMgr, true)
 
 		assert.IsType(t, &PinningServiceDefault{}, service)
 		ps := service.(*PinningServiceDefault)
 		assert.NotNil(t, ps.pinningClient)
 		assert.Equal(t, cfgMgr, ps.configMgr)
-		assert.Equal(t, output, ps.output)
+		// The factory is Output-free; the impl gets a discard-writer placeholder output.
+		assert.NotNil(t, ps.output)
 		assert.Equal(t, "https://ipfs.api.test.com", ps.apiEndpoint)
 	})
 }

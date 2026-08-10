@@ -12,7 +12,7 @@ import (
 	"github.com/ipfs/boxo/files"
 	"github.com/ipfs/go-cid"
 	ipfs "go.lumeweb.com/ipfs-sdk"
-	"go.lumeweb.com/pinner-cli/pkg/config"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
 	portalsdk "go.lumeweb.com/portal-sdk"
 )
 
@@ -39,6 +39,21 @@ func NewDownloadService(cfgMgr config.Manager, output Output, opts ...DownloadSe
 		opt(s)
 	}
 	return s
+}
+
+// SetAuthService implements download.Configurer.
+func (s *DownloadServiceDefault) SetAuthService(authService AuthService) {
+	s.authService = authService
+}
+
+// SetAuthToken implements download.Configurer.
+func (s *DownloadServiceDefault) SetAuthToken(token string) {
+	s.authToken = token
+}
+
+// SetIPFSEndpoint implements download.Configurer.
+func (s *DownloadServiceDefault) SetIPFSEndpoint(endpoint string) {
+	s.ipfsEndpoint = endpoint
 }
 
 func (s *DownloadServiceDefault) RequireAuthenticated() error {

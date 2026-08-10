@@ -1,10 +1,17 @@
-package cli
+// Package pinning provides the pinning domain for pinner-cli.
+//
+// It is deliberately free of CLI presentation coupling: the PinningService and
+// StatusService interfaces and their data models live here, and the
+// PinningServiceFactory constructor takes no Output formatter. Callers — the
+// CLI command handlers, the MCP adapter, or any future consumer — depend on the
+// interfaces and are responsible for rendering the returned results.
+package pinning
 
 import (
 	"context"
 	"time"
 
-	"go.lumeweb.com/pinner-cli/pkg/config"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
 )
 
 // Pin represents a pinned item
@@ -130,5 +137,6 @@ type StatusService interface {
 	RequireAuthenticated() error
 }
 
-// PinningServiceFactory creates a PinningService with dependencies
-type PinningServiceFactory func(cfgMgr config.Manager, output Output, secure bool) PinningService
+// PinningServiceFactory creates a PinningService with dependencies.
+// It is free of CLI presentation coupling (no Output formatter).
+type PinningServiceFactory func(cfgMgr config.Manager, secure bool) PinningService

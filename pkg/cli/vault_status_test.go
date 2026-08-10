@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"go.lumeweb.com/pinner-cli/pkg/cli/vault"
+	"go.lumeweb.com/pinner-cli/internal/core/vault"
 )
 
 // statusStubVaultService is a minimal VaultService whose Status returns a

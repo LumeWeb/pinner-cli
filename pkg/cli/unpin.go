@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/urfave/cli/v3"
-	"go.lumeweb.com/pinner-cli/pkg/config"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
 )
 
 func newUnpinCommand() *cli.Command {
@@ -59,7 +59,7 @@ func unpin(ctx context.Context, cmd cidFlagGetter, output Output, cfgMgr config.
 	if authToken != "" {
 		pinningService = NewPinningService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure), WithAuthToken(authToken))
 	} else {
-		pinningService = pinningServiceFactory(cfgMgr, output, secure)
+		pinningService = pinningServiceFactory(cfgMgr, secure)
 	}
 
 	if err := pinningService.RequireAuthenticated(); err != nil {

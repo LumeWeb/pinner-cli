@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"go.lumeweb.com/pinner-cli/pkg/cli/vault"
+	"go.lumeweb.com/pinner-cli/internal/core/vault"
 )
 
 // TestVaultProfileUse_EndToEnd wires the real 'vault profile use' command and

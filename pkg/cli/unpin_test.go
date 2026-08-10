@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
-	"go.lumeweb.com/pinner-cli/pkg/config"
-	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
+	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
 )
 
 func TestUnpin(t *testing.T) {
@@ -132,7 +132,7 @@ func TestUnpin(t *testing.T) {
 				withBool(FlagForce, tt.confirmFlag).
 				withBool(FlagConfirm, tt.confirmFlag)
 
-			pinningServiceFactory := func(cm config.Manager, out Output, _ bool) PinningService {
+			pinningServiceFactory := func(cm config.Manager, _ bool) PinningService {
 				return service
 			}
 
@@ -223,7 +223,7 @@ func TestUnpinBatch(t *testing.T) {
 				withInt(FlagParallel, tt.parallel).
 				withBool(FlagContinue, tt.continueOn)
 
-			pinningServiceFactory := func(cm config.Manager, out Output, _ bool) PinningService {
+			pinningServiceFactory := func(cm config.Manager, _ bool) PinningService {
 				return service
 			}
 

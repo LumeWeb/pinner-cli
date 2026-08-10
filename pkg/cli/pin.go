@@ -3,10 +3,11 @@ package cli
 import (
 	"context"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/urfave/cli/v3"
-	"go.lumeweb.com/pinner-cli/pkg/config"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
 )
 
 func newPinCommand() *cli.Command {
@@ -61,7 +62,7 @@ func pin(ctx context.Context, cmd cidFlagGetter, output Output, cfgMgr config.Ma
 	if authToken != "" {
 		pinningService = NewPinningService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure), WithAuthToken(authToken))
 	} else {
-		pinningService = pinningServiceFactory(cfgMgr, output, secure)
+		pinningService = pinningServiceFactory(cfgMgr, secure)
 	}
 
 	if err := pinningService.RequireAuthenticated(); err != nil {
@@ -157,6 +158,13 @@ func pin(ctx context.Context, cmd cidFlagGetter, output Output, cfgMgr config.Ma
 	return cids, nil
 }
 
-func defaultPinningServiceFactory(cfgMgr config.Manager, output Output, secure bool) PinningService {
-	return NewPinningService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure))
+func defaultPinningServiceFactory(cfgMgr config.Manager, secure bool) PinningService {
+	// The factory is Output-free (the pinning factory type lives in
+	// internal/core/pinning and carries no Output formatter). The factory path
+	// is only exercised when no auth token is present, in which case the service
+	// fails RequireAuthenticated() before any presentation happens, so a
+	// discard-writer output is a safe placeholder here.
+	discard := NewOutputFormatter(false, false, false, false)
+	discard.SetWriter(io.Discard)
+	return NewPinningService(cfgMgr, discard, cfgMgr.Config().GetIPFSEndpointWithSecure(secure))
 }

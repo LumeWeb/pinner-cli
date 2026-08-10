@@ -1,11 +1,12 @@
-package cli
+package admin
 
 import (
 	"context"
 	"fmt"
 	"sync"
 
-	"go.lumeweb.com/pinner-cli/pkg/config"
+	"go.lumeweb.com/pinner-cli/internal/core/auth"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
 	portalsdk "go.lumeweb.com/portal-sdk"
 )
 
@@ -42,7 +43,7 @@ func (p *AdminTokenProvider) GetLoginToken(ctx context.Context) (string, error) 
 	p.mu.RUnlock()
 
 	// Check if exchange is needed
-	purpose, err := GetJWTPurpose(baseToken)
+	purpose, err := auth.GetJWTPurpose(baseToken)
 	if err != nil || purpose != "api" {
 		// No exchange needed, use base token as-is
 		p.mu.Lock()

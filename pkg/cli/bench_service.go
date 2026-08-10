@@ -16,112 +16,30 @@ import (
 
 	"github.com/avast/retry-go/v4"
 	"github.com/docker/go-units"
-	"go.lumeweb.com/pinner-cli/pkg/config"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
+	benchpkg "go.lumeweb.com/pinner-cli/internal/core/bench"
 	portalsdk "go.lumeweb.com/portal-sdk"
 	"go.lumeweb.com/queryutil/filter"
 	"testing/fstest"
 )
 
-// BenchStage represents a single stage in the benchmark pipeline.
-type BenchStage struct {
-	Name      string        `json:"name"`
-	Duration  time.Duration `json:"duration"`
-	StartedAt time.Time     `json:"started_at"`
-	EndedAt   time.Time     `json:"ended_at"`
-}
 
-// BenchError represents a structured error for JSON serialization.
-type BenchError struct {
-	Message string         `json:"message"`
-	Detail  map[string]any `json:"detail,omitempty"`
-}
+// Bench models and the BenchService contract are re-exported from core. The
+// impl (BenchServiceDefault) stays in pkg/cli because it is irreducibly
+// presentation-coupled (interactive progress reporting, signal handling).
 
-// String returns the message for human-readable output.
-func (e *BenchError) String() string {
-	return e.Message
-}
 
-// BenchIteration tracks all stages for a single upload iteration.
-type BenchIteration struct {
-	Number int           `json:"iteration"`
-	CID    string        `json:"cid,omitempty"`
-	Size   int64         `json:"size"`
-	Stages []BenchStage  `json:"stages"`
-	Error  *BenchError   `json:"error,omitempty"`
-	Total  time.Duration `json:"total"`
-
-	err error // original error for formatted output (not serialized)
-}
-
-// BenchCleanup tracks the cleanup (unpin) phase.
-type BenchCleanup struct {
-	Unpinned []BenchCleanupFailure `json:"unpinned"`
-	Failed   []BenchCleanupFailure `json:"failed"`
-	Duration time.Duration         `json:"duration"`
-}
-
-// BenchCleanupFailure records a CID that failed to unpin.
-type BenchCleanupFailure struct {
-	CID   string `json:"cid"`
-	Error string `json:"error"`
-}
-
-// BenchInput describes the benchmark input configuration.
-type BenchInput struct {
-	Type    string `json:"type"` // "random" or "path"
-	Size    int64  `json:"size"` // total bytes
-	Files   int    `json:"files"`
-	Depth   int    `json:"depth"`
-	Path    string `json:"path,omitempty"`
-	Storage string `json:"storage,omitempty"` // "memory" or "disk" (only for random type)
-}
-
-// BenchSummary contains aggregated statistics across iterations.
-type BenchSummary struct {
-	TotalDuration   time.Duration         `json:"total_duration"`
-	UploadDuration  time.Duration         `json:"upload_duration"`
-	CleanupDuration time.Duration         `json:"cleanup_duration"`
-	Stages          map[string]StageStats `json:"stages"`
-}
-
-// StageStats contains per-stage aggregate statistics.
-type StageStats struct {
-	Min    time.Duration `json:"min"`
-	Max    time.Duration `json:"max"`
-	Avg    time.Duration `json:"avg"`
-	Median time.Duration `json:"median"`
-}
-
-// BenchResult is the top-level result of a benchmark run.
-type BenchResult struct {
-	Input      BenchInput       `json:"input"`
-	Iterations []BenchIteration `json:"iterations"`
-	Cleanup    BenchCleanup     `json:"cleanup"`
-	Summary    BenchSummary     `json:"summary"`
-}
-
-// BenchOptions configures the benchmark run.
-type BenchOptions struct {
-	SizeBytes       int64
-	Files           int
-	Depth           int
-	Iterations      int
-	Parallel        int
-	NoCleanup       bool
-	PollInterval    time.Duration
-	MemoryLimit     uint64
-	DryRun          bool
-	Path            string
-	ChunkSize       int64
-	ChunkerStrategy string
-	MaxLinks        int
-}
-
-// BenchService defines the interface for running benchmarks.
-type BenchService interface {
-	Run(ctx context.Context, opts BenchOptions) (*BenchResult, error)
-	RequireAuthenticated() error
-}
+type BenchStage = benchpkg.BenchStage
+type BenchError = benchpkg.BenchError
+type BenchIteration = benchpkg.BenchIteration
+type BenchCleanup = benchpkg.BenchCleanup
+type BenchCleanupFailure = benchpkg.BenchCleanupFailure
+type BenchInput = benchpkg.BenchInput
+type BenchSummary = benchpkg.BenchSummary
+type StageStats = benchpkg.StageStats
+type BenchResult = benchpkg.BenchResult
+type BenchOptions = benchpkg.BenchOptions
+type BenchService = benchpkg.Service
 
 // BenchServiceFactory creates a BenchService with dependencies.
 type BenchServiceFactory func(cfgMgr config.Manager, output Output, uploadService UploadService, pinningService PinningService, accountClient portalsdk.AccountAPI) BenchService
@@ -314,7 +232,7 @@ func (s *BenchServiceDefault) runIteration(ctx context.Context, opts BenchOption
 
 	if err != nil {
 		iteration.Error = newBenchError(err)
-		iteration.err = err
+		iteration.Err = err
 		iteration.Stages = append(iteration.Stages, BenchStage{
 			Name:      "upload",
 			StartedAt: uploadStart,
@@ -340,7 +258,7 @@ func (s *BenchServiceDefault) runIteration(ctx context.Context, opts BenchOption
 	iteration.Stages = append(iteration.Stages, pollStages...)
 	if opErr != "" {
 		iteration.Error = &BenchError{Message: opErr}
-		iteration.err = fmt.Errorf("%s", opErr)
+		iteration.Err = fmt.Errorf("%s", opErr)
 	}
 
 	iteration.Total = time.Since(genStart)
@@ -705,8 +623,8 @@ func formatBenchResult(output Output, result *BenchResult) {
 
 	// Per-iteration details
 	for _, iter := range result.Iterations {
-		if iter.err != nil {
-			output.Printfln("  Iteration %d: FAILED - %s", iter.Number, FormatError(iter.err, output.IsVerbose()))
+		if iter.Err != nil {
+			output.Printfln("  Iteration %d: FAILED - %s", iter.Number, FormatError(iter.Err, output.IsVerbose()))
 			continue
 		}
 

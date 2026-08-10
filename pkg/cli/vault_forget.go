@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/urfave/cli/v3"
-	"go.lumeweb.com/pinner-cli/pkg/cli/vault"
+	"go.lumeweb.com/pinner-cli/internal/core/vault"
 )
 
 func newVaultForgetCommand() *cli.Command {

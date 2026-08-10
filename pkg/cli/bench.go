@@ -7,7 +7,8 @@ import (
 
 	"github.com/docker/go-units"
 	"github.com/urfave/cli/v3"
-	"go.lumeweb.com/pinner-cli/pkg/config"
+	"go.lumeweb.com/pinner-cli/internal/core/auth"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
 )
 
 // Bench flag constants
@@ -136,10 +137,10 @@ func BenchPollIntervalFlag() *cli.DurationFlag {
 	}
 }
 
-type benchAuthServiceFactoryFunc func(cfgMgr config.Manager, output Output, apiEndpoint string) AuthService
+type benchAuthServiceFactoryFunc func(cfgMgr config.Manager, apiEndpoint string) auth.AuthService
 
-var benchAuthServiceFactory benchAuthServiceFactoryFunc = func(cfgMgr config.Manager, output Output, apiEndpoint string) AuthService {
-	return NewAuthService(cfgMgr, output, apiEndpoint)
+var benchAuthServiceFactory benchAuthServiceFactoryFunc = func(cfgMgr config.Manager, apiEndpoint string) auth.AuthService {
+	return auth.DefaultAuthServiceFactory(cfgMgr, apiEndpoint)
 }
 
 func bench(ctx context.Context, cmd interface {
@@ -172,7 +173,7 @@ func bench(ctx context.Context, cmd interface {
 		pinningService = NewPinningService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure))
 	}
 
-	authService := benchAuthServiceFactory(cfgMgr, output, cfgMgr.Config().GetAccountEndpointSecure())
+	authService := benchAuthServiceFactory(cfgMgr, cfgMgr.Config().GetAccountEndpointSecure())
 
 	var svcOpts []UploadServiceOption
 	svcOpts = append(svcOpts, WithMemoryLimit(memoryLimit), WithUploadAuthService(authService))

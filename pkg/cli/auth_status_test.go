@@ -8,8 +8,9 @@ import (
 	"github.com/manifoldco/promptui"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"go.lumeweb.com/pinner-cli/pkg/config"
-	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
+	"go.lumeweb.com/pinner-cli/internal/core/auth"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
+	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
 	portalsdk "go.lumeweb.com/portal-sdk"
 	portalsdkmocks "go.lumeweb.com/portal-sdk/mocks"
 )
@@ -25,7 +26,7 @@ func TestAuthStatus(t *testing.T) {
 			name: "successful status check - authenticated",
 			setupMocks: func(cfgMgr *configmocks.MockManager, authService *MockAuthService) {
 				cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://api.test.com"})
-				authService.EXPECT().Status(mock.Anything).Return(nil)
+				authService.EXPECT().Status(mock.Anything).Return(&auth.StatusResult{}, nil)
 			},
 			wantErr: false,
 		},
@@ -34,7 +35,7 @@ func TestAuthStatus(t *testing.T) {
 			setupMocks: func(cfgMgr *configmocks.MockManager, authService *MockAuthService) {
 				cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://api.test.com"})
 				authService.EXPECT().Status(mock.Anything).
-					Return(errors.New("not authenticated: unauthorized"))
+					Return(nil, errors.New("not authenticated: unauthorized"))
 			},
 			wantErr:     true,
 			errContains: "not authenticated",
@@ -50,7 +51,7 @@ func TestAuthStatus(t *testing.T) {
 			setupMocks: func(cfgMgr *configmocks.MockManager, authService *MockAuthService) {
 				cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://api.test.com"})
 				authService.EXPECT().Status(mock.Anything).
-					Return(errors.New("connection refused"))
+					Return(nil, errors.New("connection refused"))
 			},
 			wantErr:     true,
 			errContains: "connection refused",
@@ -74,7 +75,7 @@ func TestAuthStatus(t *testing.T) {
 				}
 			}
 
-			authServiceFactory := func(cm config.Manager, out Output, apiEndpoint string) AuthService {
+			authServiceFactory := func(cm config.Manager, apiEndpoint string) AuthService {
 				return authService
 			}
 
@@ -134,7 +135,6 @@ func TestAuthService_Status(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgMgr := configmocks.NewMockManager(t)
 			acc := portalsdkmocks.NewMockAccountAPI(t)
-			output := newTestOutput()
 
 			// Mock Config() to return a config with a login JWT and portal URL
 			cfg := config.NewConfig()
@@ -148,14 +148,14 @@ func TestAuthService_Status(t *testing.T) {
 			}
 
 			// Override clientFactory to return the mocked client
-			authService := NewAuthService(cfgMgr, output, "https://api.test.com",
-				WithAuthAccountClient(acc),
-				WithClientFactory(func(endpoint, jwt string) portalsdk.AccountAPI {
+			authService := auth.NewAuthService(cfgMgr, "https://api.test.com", nil,
+				auth.WithAuthAccountClient(acc),
+				auth.WithClientFactory(func(endpoint, jwt string) portalsdk.AccountAPI {
 					return acc
 				}),
 			)
 
-			err := authService.Status(context.Background())
+			_, err := authService.Status(context.Background())
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -170,10 +170,11 @@ func TestAuthService_Status(t *testing.T) {
 }
 
 func TestAuthService_Status_JSONOutput(t *testing.T) {
-	// Test that JSON output works correctly
+	// Test that status works and is rendered as JSON by the CLI layer.
+	// Status returns a typed *auth.StatusResult; JSON formatting is applied
+	// by the CLI render layer (auth_render.go), not the core service.
 	cfgMgr := configmocks.NewMockManager(t)
 	acc := portalsdkmocks.NewMockAccountAPI(t)
-	output := NewOutputFormatter(true, false, false, false)
 
 	// Mock Config() to return a config with a login JWT and portal URL
 	cfg := config.NewConfig()
@@ -184,22 +185,22 @@ func TestAuthService_Status_JSONOutput(t *testing.T) {
 
 	acc.EXPECT().Ping(mock.Anything).Return(nil)
 
-	authService := NewAuthService(cfgMgr, output, "https://api.test.com",
-		WithAuthAccountClient(acc),
-		WithClientFactory(func(endpoint, jwt string) portalsdk.AccountAPI {
+	authService := auth.NewAuthService(cfgMgr, "https://api.test.com", nil,
+			auth.WithAuthAccountClient(acc),
+		auth.WithClientFactory(func(endpoint, jwt string) portalsdk.AccountAPI {
 			return acc
 		}),
 	)
 
-	err := authService.Status(context.Background())
+	_, err := authService.Status(context.Background())
 	require.NoError(t, err)
 }
 
 func TestAuthService_Status_VerboseOutput(t *testing.T) {
-	// Test that verbose output includes API endpoint
+	// Status returns a typed result; verbose output formatting is applied by
+	// the CLI render layer. This test asserts the service status path succeeds.
 	cfgMgr := configmocks.NewMockManager(t)
 	acc := portalsdkmocks.NewMockAccountAPI(t)
-	output := NewOutputFormatter(false, true, false, false)
 
 	// Mock Config() to return a config with a login JWT and portal URL
 	cfg := config.NewConfig()
@@ -210,14 +211,14 @@ func TestAuthService_Status_VerboseOutput(t *testing.T) {
 
 	acc.EXPECT().Ping(mock.Anything).Return(nil)
 
-	authService := NewAuthService(cfgMgr, output, "https://api.test.com",
-		WithAuthAccountClient(acc),
-		WithClientFactory(func(endpoint, jwt string) portalsdk.AccountAPI {
+	authService := auth.NewAuthService(cfgMgr, "https://api.test.com", nil,
+			auth.WithAuthAccountClient(acc),
+		auth.WithClientFactory(func(endpoint, jwt string) portalsdk.AccountAPI {
 			return acc
 		}),
 	)
 
-	err := authService.Status(context.Background())
+	_, err := authService.Status(context.Background())
 	require.NoError(t, err)
 }
 
@@ -239,7 +240,7 @@ func TestAuthStatusCommand(t *testing.T) {
 			},
 			setupMocks: func(cfgMgr *configmocks.MockManager, authService *MockAuthService) {
 				cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://api.test.com"})
-				authService.EXPECT().Status(mock.Anything).Return(nil)
+				authService.EXPECT().Status(mock.Anything).Return(&auth.StatusResult{}, nil)
 			},
 			wantErr: false,
 		},
@@ -253,7 +254,7 @@ func TestAuthStatusCommand(t *testing.T) {
 			},
 			setupMocks: func(cfgMgr *configmocks.MockManager, authService *MockAuthService) {
 				cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://api.test.com"})
-				authService.EXPECT().Status(mock.Anything).Return(nil)
+				authService.EXPECT().Status(mock.Anything).Return(&auth.StatusResult{}, nil)
 			},
 			wantErr: false,
 		},
@@ -267,7 +268,7 @@ func TestAuthStatusCommand(t *testing.T) {
 			},
 			setupMocks: func(cfgMgr *configmocks.MockManager, authService *MockAuthService) {
 				cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://api.test.com"})
-				authService.EXPECT().Status(mock.Anything).Return(nil)
+				authService.EXPECT().Status(mock.Anything).Return(&auth.StatusResult{}, nil)
 			},
 			wantErr: false,
 		},
@@ -288,7 +289,7 @@ func TestAuthStatusCommand(t *testing.T) {
 				return cfgMgr, nil
 			}
 
-			authServiceFactory := func(cm config.Manager, out Output, apiEndpoint string) AuthService {
+			authServiceFactory := func(cm config.Manager, apiEndpoint string) AuthService {
 				return authService
 			}
 
@@ -337,10 +338,10 @@ func TestAuthLogin_MockCommand_WithEmailPassword(t *testing.T) {
 
 	authService.EXPECT().LoginCheck(mock.Anything, "user@example.com", "secret").
 		Return(&portalsdk.LoginResult{Token: "jwt-token", OTPRequired: false}, nil)
-	authService.EXPECT().CompleteLogin(mock.Anything, "jwt-token", "cli-generated", false).Return(nil)
+	authService.EXPECT().CompleteLogin(mock.Anything, "jwt-token", "cli-generated", false).Return(&auth.LoginCompleteResult{}, nil)
 
 	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-	authServiceFactory := func(cm config.Manager, out Output, apiEndpoint string) AuthService {
+	authServiceFactory := func(cm config.Manager, apiEndpoint string) AuthService {
 		return authService
 	}
 
@@ -362,10 +363,10 @@ func TestAuthLogin_MockCommand_WithOTPFlow(t *testing.T) {
 
 	authService.EXPECT().LoginCheck(mock.Anything, "user@example.com", "secret").
 		Return(&portalsdk.LoginResult{IntermediateJWT: "intermediate-jwt", OTPRequired: true}, nil)
-	authService.EXPECT().LoginWithOTP(mock.Anything, "intermediate-jwt", "123456", "cli-generated", false).Return(nil)
+	authService.EXPECT().LoginWithOTP(mock.Anything, "intermediate-jwt", "123456", "cli-generated", false).Return(&auth.LoginCompleteResult{}, nil)
 
 	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-	authServiceFactory := func(cm config.Manager, out Output, apiEndpoint string) AuthService {
+	authServiceFactory := func(cm config.Manager, apiEndpoint string) AuthService {
 		return authService
 	}
 
@@ -390,7 +391,7 @@ func TestAuthLogin_MockCommand_LoginCheckError(t *testing.T) {
 		Return(nil, errors.New("invalid credentials"))
 
 	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-	authServiceFactory := func(cm config.Manager, out Output, apiEndpoint string) AuthService {
+	authServiceFactory := func(cm config.Manager, apiEndpoint string) AuthService {
 		return authService
 	}
 
@@ -413,7 +414,7 @@ func TestAuthLogin_MockCommand_ConfigError(t *testing.T) {
 		withString("password", "secret")
 
 	err := authLoginWithFactories(context.Background(), cmd, output, failingConfigMgrFactory(),
-		func(cm config.Manager, out Output, apiEndpoint string) AuthService { return nil }, nil)
+		func(cm config.Manager, apiEndpoint string) AuthService { return nil }, nil)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "failed to initialize config manager")
 }
@@ -425,10 +426,10 @@ func TestAuthLogin_MockCommand_NoCreateKey(t *testing.T) {
 
 	authService.EXPECT().LoginCheck(mock.Anything, "user@example.com", "secret").
 		Return(&portalsdk.LoginResult{Token: "jwt-token", OTPRequired: false}, nil)
-	authService.EXPECT().CompleteLogin(mock.Anything, "jwt-token", "cli-generated", true).Return(nil)
+	authService.EXPECT().CompleteLogin(mock.Anything, "jwt-token", "cli-generated", true).Return(&auth.LoginCompleteResult{}, nil)
 
 	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-	authServiceFactory := func(cm config.Manager, out Output, apiEndpoint string) AuthService {
+	authServiceFactory := func(cm config.Manager, apiEndpoint string) AuthService {
 		return authService
 	}
 
@@ -448,10 +449,10 @@ func TestSaveAuthTokenWithFactories_Success(t *testing.T) {
 	cfgMgr := newTestConfigMgr(t)
 	output := newTestOutput()
 
-	authService.EXPECT().SaveToken("my-jwt-token").Return(nil)
+	authService.EXPECT().SaveToken("my-jwt-token").Return(&auth.SaveTokenResult{}, nil)
 
 	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-	authServiceFactory := func(cm config.Manager, out Output, apiEndpoint string) AuthService {
+	authServiceFactory := func(cm config.Manager, apiEndpoint string) AuthService {
 		return authService
 	}
 
@@ -463,7 +464,7 @@ func TestSaveAuthTokenWithFactories_ConfigError(t *testing.T) {
 	output := newTestOutput()
 
 	err := saveAuthTokenWithFactories(output, "my-jwt-token", failingConfigMgrFactory(),
-		func(cm config.Manager, out Output, apiEndpoint string) AuthService { return nil })
+		func(cm config.Manager, apiEndpoint string) AuthService { return nil })
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "failed to initialize config manager")
 }
@@ -473,10 +474,10 @@ func TestSaveAuthTokenWithFactories_SaveError(t *testing.T) {
 	cfgMgr := newTestConfigMgr(t)
 	output := newTestOutput()
 
-	authService.EXPECT().SaveToken("bad-token").Return(errors.New("invalid token format"))
+	authService.EXPECT().SaveToken("bad-token").Return(nil, errors.New("invalid token format"))
 
 	cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-	authServiceFactory := func(cm config.Manager, out Output, apiEndpoint string) AuthService {
+	authServiceFactory := func(cm config.Manager, apiEndpoint string) AuthService {
 		return authService
 	}
 

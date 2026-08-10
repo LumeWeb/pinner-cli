@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	ipfs "go.lumeweb.com/ipfs-sdk"
-	"go.lumeweb.com/pinner-cli/pkg/config"
-	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
+	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
 )
 
 type mockDNSServiceForCLI struct {
@@ -113,10 +113,13 @@ func setupDNSHandlerTest(t *testing.T) (*mockDNSServiceForCLI, *configmocks.Mock
 		AuthToken:    "test-token",
 	}).Maybe()
 
-	origFactory := dnsServiceFactory
-	t.Cleanup(func() { dnsServiceFactory = origFactory })
-	dnsServiceFactory = func(config.Manager, Output, bool, ...DNSServiceOption) DNSService {
-		return mockSvc
+	origFactory := newDNSAPI
+	t.Cleanup(func() { newDNSAPI = origFactory })
+	newDNSAPI = func(cfgMgr config.Manager, authToken string, secure bool) (DNSService, error) {
+		if authToken == "" {
+			return nil, ErrNotAuthenticated
+		}
+		return mockSvc, nil
 	}
 
 	return mockSvc, cfgMgr

@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
-	"go.lumeweb.com/pinner-cli/pkg/config"
-	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
+	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
 )
 
 func TestList(t *testing.T) {
@@ -125,7 +125,7 @@ func TestList(t *testing.T) {
 				withString(FlagName, tt.nameFilter).
 				withInt(FlagLimit, tt.limit)
 
-			pinningServiceFactory := func(cm config.Manager, out Output, _ bool) PinningService {
+			pinningServiceFactory := func(cm config.Manager, _ bool) PinningService {
 				return service
 			}
 
@@ -187,7 +187,7 @@ func TestList_WithStatusFilter(t *testing.T) {
 		withInt(FlagLimit, 10).
 		withString(FlagStatus, "pinned")
 
-	pinningServiceFactory := func(cm config.Manager, out Output, _ bool) PinningService {
+	pinningServiceFactory := func(cm config.Manager, _ bool) PinningService {
 		return service
 	}
 
@@ -204,7 +204,7 @@ func TestList_RequireAuthFails(t *testing.T) {
 
 	cmd := newMockCommand()
 
-	pinningServiceFactory := func(cm config.Manager, out Output, _ bool) PinningService {
+	pinningServiceFactory := func(cm config.Manager, _ bool) PinningService {
 		return service
 	}
 

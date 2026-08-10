@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"go.lumeweb.com/pinner-cli/internal/core/auth"
 	"context"
 	"errors"
 	"testing"
@@ -9,7 +10,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
-	"go.lumeweb.com/pinner-cli/pkg/config"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
 )
 
 func TestNewRegisterCommand(t *testing.T) {
@@ -37,7 +38,7 @@ func TestRegisterAllFlagsProvided(t *testing.T) {
 	authService := NewMockAuthService(t)
 	output := newTestOutput()
 
-	authService.EXPECT().Register(mock.Anything, "user@example.com", "John", "Doe", "secret123").Return(nil)
+	authService.EXPECT().Register(mock.Anything, "user@example.com", "John", "Doe", "secret123").Return(&auth.RegisterResult{}, nil)
 
 	cmd := &cli.Command{
 		Flags: []cli.Flag{
@@ -49,7 +50,7 @@ func TestRegisterAllFlagsProvided(t *testing.T) {
 	}
 
 	cfgMgrFactory := func() (config.Manager, error) { return newTestConfigMgr(t), nil }
-	authServiceFactory := func(cfgMgr config.Manager, output Output, apiEndpoint string) AuthService {
+	authServiceFactory := func(cfgMgr config.Manager, apiEndpoint string) AuthService {
 		return authService
 	}
 
@@ -72,7 +73,7 @@ func TestRegisterConfigManagerError(t *testing.T) {
 	cfgMgrFactory := func() (config.Manager, error) {
 		return nil, errors.New("config error")
 	}
-	authServiceFactory := func(cfgMgr config.Manager, output Output, apiEndpoint string) AuthService {
+	authServiceFactory := func(cfgMgr config.Manager, apiEndpoint string) AuthService {
 		return nil
 	}
 
@@ -86,7 +87,7 @@ func TestRegisterAuthServiceError(t *testing.T) {
 	output := newTestOutput()
 
 	authService.EXPECT().Register(mock.Anything, "user@example.com", "John", "Doe", "secret123").
-		Return(errors.New("registration failed"))
+		Return(nil, errors.New("registration failed"))
 
 	cmd := &cli.Command{
 		Flags: []cli.Flag{
@@ -98,7 +99,7 @@ func TestRegisterAuthServiceError(t *testing.T) {
 	}
 
 	cfgMgrFactory := func() (config.Manager, error) { return newTestConfigMgr(t), nil }
-	authServiceFactory := func(cfgMgr config.Manager, output Output, apiEndpoint string) AuthService {
+	authServiceFactory := func(cfgMgr config.Manager, apiEndpoint string) AuthService {
 		return authService
 	}
 
@@ -118,7 +119,7 @@ func TestRegisterMissingEmailPrompts(t *testing.T) {
 
 	output := newTestOutput()
 	cfgMgrFactory := func() (config.Manager, error) { return newTestConfigMgr(t), nil }
-	authServiceFactory := func(cfgMgr config.Manager, output Output, apiEndpoint string) AuthService { return nil }
+	authServiceFactory := func(cfgMgr config.Manager, apiEndpoint string) AuthService { return nil }
 
 	err := register(context.Background(), newCLICommandWrapper(cmd), output, cfgMgrFactory, authServiceFactory)
 	require.Error(t, err)
@@ -136,7 +137,7 @@ func TestRegisterMissingFirstNamePrompts(t *testing.T) {
 
 	output := newTestOutput()
 	cfgMgrFactory := func() (config.Manager, error) { return newTestConfigMgr(t), nil }
-	authServiceFactory := func(cfgMgr config.Manager, output Output, apiEndpoint string) AuthService { return nil }
+	authServiceFactory := func(cfgMgr config.Manager, apiEndpoint string) AuthService { return nil }
 
 	err := register(context.Background(), newCLICommandWrapper(cmd), output, cfgMgrFactory, authServiceFactory)
 	require.Error(t, err)
@@ -154,7 +155,7 @@ func TestRegisterMissingLastNamePrompts(t *testing.T) {
 
 	output := newTestOutput()
 	cfgMgrFactory := func() (config.Manager, error) { return newTestConfigMgr(t), nil }
-	authServiceFactory := func(cfgMgr config.Manager, output Output, apiEndpoint string) AuthService { return nil }
+	authServiceFactory := func(cfgMgr config.Manager, apiEndpoint string) AuthService { return nil }
 
 	err := register(context.Background(), newCLICommandWrapper(cmd), output, cfgMgrFactory, authServiceFactory)
 	require.Error(t, err)
@@ -172,7 +173,7 @@ func TestRegisterMissingPasswordPrompts(t *testing.T) {
 
 	output := newTestOutput()
 	cfgMgrFactory := func() (config.Manager, error) { return newTestConfigMgr(t), nil }
-	authServiceFactory := func(cfgMgr config.Manager, output Output, apiEndpoint string) AuthService { return nil }
+	authServiceFactory := func(cfgMgr config.Manager, apiEndpoint string) AuthService { return nil }
 
 	err := register(context.Background(), newCLICommandWrapper(cmd), output, cfgMgrFactory, authServiceFactory)
 	require.Error(t, err)

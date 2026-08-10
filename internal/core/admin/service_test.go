@@ -1,12 +1,12 @@
-package cli
+package admin
 
 import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.lumeweb.com/pinner-cli/pkg/config"
-	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
+	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
 )
 
 const adminTestAuthToken = "test-auth-token"
@@ -50,8 +50,7 @@ func TestDefaultQuotaAdminServiceFactory(t *testing.T) {
 				tt.setupMocks(cfgMgr)
 			}
 
-			output := newTestOutput()
-			service := defaultQuotaAdminServiceFactory(cfgMgr, output)
+			service := DefaultQuotaAdminServiceFactory(cfgMgr)
 
 			assert.NotNil(t, service)
 		})
@@ -97,8 +96,7 @@ func TestDefaultBillingAdminServiceFactory(t *testing.T) {
 				tt.setupMocks(cfgMgr)
 			}
 
-			output := newTestOutput()
-			service := defaultBillingAdminServiceFactory(cfgMgr, output)
+			service := DefaultBillingAdminServiceFactory(cfgMgr)
 
 			assert.NotNil(t, service)
 		})
@@ -133,8 +131,7 @@ func TestNewQuotaAdminService(t *testing.T) {
 				AuthToken: tt.authToken,
 			})
 
-			output := newTestOutput()
-			service := NewQuotaAdminService(cfgMgr, output, tt.apiEndpoint)
+			service := NewQuotaAdminService(cfgMgr, tt.apiEndpoint)
 
 			assert.NotNil(t, service)
 
@@ -176,8 +173,7 @@ func TestNewBillingAdminService(t *testing.T) {
 				AuthToken: tt.authToken,
 			})
 
-			output := newTestOutput()
-			service := NewBillingAdminService(cfgMgr, output, tt.apiEndpoint)
+			service := NewBillingAdminService(cfgMgr, tt.apiEndpoint)
 
 			assert.NotNil(t, service)
 
@@ -220,8 +216,7 @@ func TestQuotaAdminService_RequireAuthenticated(t *testing.T) {
 				Secure:       true,
 			})
 
-			output := newTestOutput()
-			service := NewQuotaAdminService(cfgMgr, output, "https://api.test.com")
+			service := NewQuotaAdminService(cfgMgr, "https://api.test.com")
 
 			err := service.RequireAuthenticated()
 
@@ -266,8 +261,7 @@ func TestBillingAdminService_RequireAuthenticated(t *testing.T) {
 				Secure:       true,
 			})
 
-			output := newTestOutput()
-			service := NewBillingAdminService(cfgMgr, output, "https://api.test.com")
+			service := NewBillingAdminService(cfgMgr, "https://api.test.com")
 
 			err := service.RequireAuthenticated()
 
@@ -291,8 +285,7 @@ func TestQuotaAdminService_HasTokenProvider(t *testing.T) {
 		Secure:       true,
 	})
 
-	output := newTestOutput()
-	service := NewQuotaAdminService(cfgMgr, output, "https://api.test.com")
+	service := NewQuotaAdminService(cfgMgr, "https://api.test.com")
 
 	qs := service.(*quotaAdminService)
 	assert.NotNil(t, qs.tokenProvider)
@@ -306,8 +299,7 @@ func TestBillingAdminService_HasTokenProvider(t *testing.T) {
 		Secure:       true,
 	})
 
-	output := newTestOutput()
-	service := NewBillingAdminService(cfgMgr, output, "https://api.test.com")
+	service := NewBillingAdminService(cfgMgr, "https://api.test.com")
 
 	bs := service.(*billingAdminService)
 	assert.NotNil(t, bs.tokenProvider)

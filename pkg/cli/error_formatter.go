@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 
+	coreerrors "go.lumeweb.com/pinner-cli/internal/core/errors"
 	portalsdk "go.lumeweb.com/portal-sdk"
 )
 
@@ -16,7 +17,8 @@ import (
 // Use errors.Is() to check for these errors instead of string matching.
 var (
 	// Authentication errors
-	ErrNotAuthenticated = errors.New("not authenticated")
+	// Consolidated into internal/core/errors; re-exported here for CLI consumers.
+	ErrNotAuthenticated = coreerrors.ErrNotAuthenticated
 
 	// Input validation errors
 	ErrPathRequired   = errors.New("path is required")
@@ -30,7 +32,7 @@ var (
 	ErrPermissionDenied  = errors.New("permission denied")
 
 	// Pinning errors
-	ErrPinNotFound     = errors.New("pin not found")
+	ErrPinNotFound     = coreerrors.ErrPinNotFound
 	ErrPinningFailed   = errors.New("pinning failed")
 	ErrStatusCheck     = errors.New("failed to check pin status")
 	ErrUnpinAllAborted = errors.New("unpin-all aborted")
@@ -53,7 +55,8 @@ var (
 	// Operation errors
 	ErrOperationFailed    = errors.New("operation failed")
 	ErrOperationNotFound  = errors.New("operation not found")
-	ErrServiceUnavailable = errors.New("service unavailable")
+	// Consolidated into internal/core/errors; re-exported here for CLI consumers.
+	ErrServiceUnavailable = coreerrors.ErrServiceUnavailable
 
 	// Benchmark errors
 	ErrBenchmarkFailed = errors.New("benchmark failed")

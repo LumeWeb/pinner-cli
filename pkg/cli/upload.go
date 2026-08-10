@@ -13,7 +13,8 @@ import (
 	"github.com/urfave/cli/v3"
 	contentfs "go.lumeweb.com/ipfs-content/fs"
 	ipfs "go.lumeweb.com/ipfs-sdk"
-	"go.lumeweb.com/pinner-cli/pkg/config"
+	"go.lumeweb.com/pinner-cli/internal/core/auth"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
 	internalio "go.lumeweb.com/pinner-cli/pkg/internal/io"
 )
 
@@ -161,7 +162,7 @@ func handleUpload(ctx context.Context, cmd interface {
 		memoryLimit = cfgMgr.Config().MemoryLimit
 	}
 
-	authService := NewAuthService(cfgMgr, output, cfgMgr.Config().GetAccountEndpointSecure())
+	authService := auth.NewAuthService(cfgMgr, cfgMgr.Config().GetAccountEndpointSecure(), nil)
 
 	var svcOpts []UploadServiceOption
 	svcOpts = append(svcOpts, WithMemoryLimit(memoryLimit), WithUploadAuthService(authService))
@@ -183,7 +184,7 @@ func handleUpload(ctx context.Context, cmd interface {
 	wait := !cmd.Bool(FlagNoWait)
 
 	if wait {
-		svcOpts = append(svcOpts, WithUploadPinningService(pinningServiceFactory(cfgMgr, output, secure)))
+		svcOpts = append(svcOpts, WithUploadPinningService(pinningServiceFactory(cfgMgr, secure)))
 	}
 
 	uploadService := uploadServiceFactory(cfgMgr, output, svcOpts...)
@@ -257,7 +258,7 @@ func handleUpload(ctx context.Context, cmd interface {
 			if authToken != "" {
 				metaPinningService = NewPinningService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure), WithAuthToken(authToken))
 			} else {
-				metaPinningService = pinningServiceFactory(cfgMgr, output, secure)
+				metaPinningService = pinningServiceFactory(cfgMgr, secure)
 			}
 			slice := metaMapToSlice(meta)
 			if err := metaPinningService.UpdateMetadata(ctx, result.CID, slice, false); err != nil {
