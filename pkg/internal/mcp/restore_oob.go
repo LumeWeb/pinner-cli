@@ -6,7 +6,6 @@ import (
 	"html/template"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -20,24 +19,20 @@ import (
 // RestoreRunner). The mnemonic travels human-browser-to-host over loopback or
 // the transport mux, never through the agent channel.
 //
-// Like SeedDrop, it works over both transports: registerHandlers mounts on the
-// shared HTTP/tunnel mux (base URL set); Start() spins up a loopback listener
-// on a random port for stdio mode. CSRF/Origin checks mirror the OOB login
-// page, and each token is single-use and expiring.
+// It is a collect-direction hand-off built on the shared handoffEndpoint core,
+// which supplies the one-time/expiring URL, loopback-or-shared-mux bootstrap,
+// and CSRF origin guard; this type supplies the form (GET) and restore (POST)
+// behavior. Works over both stdio and HTTP/tunnel.
 type OOBRestore struct {
-	mu       sync.Mutex
-	pending  map[string]*restoreItem
-	runner   RestoreRunner
-	ttl      time.Duration
-	now      func() time.Time
-	loopback loopbackServer
+	runner RestoreRunner
+	core   handoffEndpoint
 	// html holds the parsed restore form template.
 	html *template.Template
 }
 
-type restoreItem struct {
-	profile   string
-	expiresAt time.Time
+// restorePayload is the per-token context for a pending restore.
+type restorePayload struct {
+	profile string
 }
 
 // DefaultRestoreTTL is how long an OOB restore URL stays valid.
@@ -50,105 +45,57 @@ func NewOOBRestore(runner RestoreRunner, ttl time.Duration) *OOBRestore {
 		ttl = DefaultRestoreTTL
 	}
 	html := template.Must(template.New("restore").Parse(restorePageHTML))
-	return &OOBRestore{
-		pending: make(map[string]*restoreItem),
-		runner:  runner,
-		ttl:     ttl,
-		now:     time.Now,
-		html:    html,
-	}
+	o := &OOBRestore{runner: runner, html: html}
+	o.core = *newHandoff("restore", o, ttl)
+	return o
 }
 
 // SetBaseURL sets the externally reachable base URL used to build restore URLs.
 func (o *OOBRestore) SetBaseURL(baseURL string) {
-	o.loopback.SetBaseURL(baseURL)
+	o.core.SetBaseURL(baseURL)
 }
 
 // registerHandlers mounts the restore page + POST routes on the shared mux.
 func (o *OOBRestore) registerHandlers(mux *http.ServeMux) {
-	mux.HandleFunc("/restore/", o.handle)
+	o.core.registerHandlers(mux)
 }
 
 // Register mints a one-time, expiring URL that completes a restore for the
-// given profile. It returns the full URL the human opens. Non-blocking: the
-// restore runs only once the human submits the form. It ensures the loopback
-// listener is running in stdio mode so the URL is always reachable.
+// given profile. Non-blocking: the restore runs only once the human submits
+// the form.
 func (o *OOBRestore) Register(profile string) string {
-	if err := o.loopback.ensureLoopback(o.registerHandlers); err != nil {
-		return ""
-	}
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	token := randomID()
-	o.pending[token] = &restoreItem{profile: profile, expiresAt: o.now().Add(o.ttl)}
-	return o.loopback.urlLocked("restore", token)
+	return o.core.mint(&restorePayload{profile: profile})
 }
 
 // Stop shuts down the loopback listener, if any.
 func (o *OOBRestore) Stop(ctx context.Context) {
-	o.loopback.Stop(ctx)
+	o.core.Stop(ctx)
 }
 
-// handle serves the restore form (GET) and completes the restore (POST).
-func (o *OOBRestore) handle(w http.ResponseWriter, r *http.Request) {
-	token := strings.TrimPrefix(r.URL.Path, "/restore/")
-	o.mu.Lock()
-	item, ok := o.pending[token]
-	if !ok || o.now().After(item.expiresAt) {
-		if ok {
-			delete(o.pending, token)
-		}
-		o.mu.Unlock()
-		http.NotFound(w, r)
-		return
-	}
-	o.mu.Unlock()
+// consumeOnGET reports that a GET does NOT consume the restore token (it is
+// collected on POST; the form must be viewable/reloadable before submit).
+func (o *OOBRestore) consumeOnGET() bool { return false }
 
-	switch r.Method {
-	case http.MethodGet:
-		o.renderForm(w, token, item)
-	case http.MethodPost:
-		// CSRF guard: only the loopback/host origin is accepted (same as OOB
-		// login). The mnemonic field is consumed once.
-		if !sameOrigin(r, o.acceptedOrigins()...) {
-			w.Header().Set("X-Content-Type-Options", "nosniff")
-			http.Error(w, "forbidden", http.StatusForbidden)
-			return
-		}
-		o.submit(w, r, token, item)
-	default:
-		w.Header().Set("Allow", "GET, POST")
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-// acceptedOrigins returns the origins allowed to POST the restore form.
-func (o *OOBRestore) acceptedOrigins() []string {
-	return o.loopback.acceptedOrigins()
-}
-
-// renderForm shows the one-time mnemonic entry page.
-func (o *OOBRestore) renderForm(w http.ResponseWriter, token string, item *restoreItem) {
+// renderGET implements handoffHandler: show the one-time mnemonic entry form.
+func (o *OOBRestore) renderGET(w http.ResponseWriter, r *http.Request, token string, item *handoffItem) {
+	payload, _ := item.payload.(*restorePayload)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	_ = o.html.Execute(w, map[string]any{
-		"Profile": item.profile,
+		"Profile": payload.profile,
 		"Token":   token,
 	})
 }
 
-// submit consumes the token and runs the restore with the submitted mnemonic.
-func (o *OOBRestore) submit(w http.ResponseWriter, r *http.Request, token string, item *restoreItem) {
-	// Single use: consume the token before running so a re-POST or concurrent
-	// POST cannot run the restore twice against the same profile.
-	o.mu.Lock()
-	if _, ok := o.pending[token]; !ok {
-		o.mu.Unlock()
-		http.NotFound(w, r)
-		return
-	}
-	delete(o.pending, token)
-	o.mu.Unlock()
+// consumePOST implements handoffHandler: run the restore with the submitted
+// mnemonic and consume the token (single use).
+func (o *OOBRestore) consumePOST(w http.ResponseWriter, r *http.Request, token string, item *handoffItem) (consumed bool) {
+	payload, _ := item.payload.(*restorePayload)
+
+	// Single-use: always consume the token so a re-POST or concurrent POST
+	// cannot run the restore twice against the same profile. The core removes
+	// the token after consumePOST returns true.
+	defer func() { consumed = true }()
 
 	if o.runner == nil {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -158,8 +105,7 @@ func (o *OOBRestore) submit(w http.ResponseWriter, r *http.Request, token string
 		return
 	}
 
-	mnemonic := r.FormValue("mnemonic")
-	mnemonic = strings.TrimSpace(mnemonic)
+	mnemonic := strings.TrimSpace(r.FormValue("mnemonic"))
 	if mnemonic == "" {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
@@ -169,7 +115,7 @@ func (o *OOBRestore) submit(w http.ResponseWriter, r *http.Request, token string
 	}
 
 	// Run the restore. It may block on the Sia browser approval.
-	vaultID, err := o.runner.RunRestore(r.Context(), item.profile, mnemonic)
+	vaultID, err := o.runner.RunRestore(r.Context(), payload.profile, mnemonic)
 	if err != nil {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
@@ -181,27 +127,22 @@ func (o *OOBRestore) submit(w http.ResponseWriter, r *http.Request, token string
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	_, _ = w.Write([]byte("<html><body><h2>Vault restored</h2><p>Profile <code>" +
-		htmlEscape(item.profile) + "</code> is ready (vault ID " + htmlEscape(vaultID) + ").</p></body></html>"))
+		htmlEscape(payload.profile) + "</code> is ready (vault ID " + htmlEscape(vaultID) + ").</p></body></html>"))
+	return
 }
 
 func htmlEscape(s string) string {
 	return strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&#34;", "'", "&#39;").Replace(s)
 }
 
-// count returns the number of pending unexpired restore tokens (tests).
+// count returns the number of pending, unexpired restore tokens.
 func (o *OOBRestore) count() int {
-	now := o.now()
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	n := 0
-	for token, it := range o.pending {
-		if now.After(it.expiresAt) {
-			delete(o.pending, token)
-			continue
-		}
-		n++
-	}
-	return n
+	return o.core.count()
+}
+
+// setNow overrides the clock used for expiry (test seam).
+func (o *OOBRestore) setNow(f func() time.Time) {
+	o.core.setNow(f)
 }
 
 // vaultRestoreAgentOutput is the JSON shape `vault restore --agent` prints (see

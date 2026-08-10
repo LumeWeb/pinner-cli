@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -28,17 +27,14 @@ import (
 // loopback URL. Either way the seed never transits the MCP/LLM channel, which
 // is the whole point.
 type SeedDrop struct {
-	mu       sync.Mutex
-	drops    map[string]*seedDropItem
-	ttl      time.Duration
-	now      func() time.Time
-	loopback loopbackServer
+	core handoffEndpoint
 }
 
-type seedDropItem struct {
-	profile   string
-	mnemonic  string
-	expiresAt time.Time
+// seedPayload is the per-token context for a seed drop: the profile it belongs
+// to and the recovery mnemonic to show exactly once.
+type seedPayload struct {
+	profile  string
+	mnemonic string
 }
 
 // DefaultSeedDropTTL is how long a seed drop URL stays valid before it expires.
@@ -49,106 +45,62 @@ func NewSeedDrop(ttl time.Duration) *SeedDrop {
 	if ttl <= 0 {
 		ttl = DefaultSeedDropTTL
 	}
-	return &SeedDrop{
-		drops: make(map[string]*seedDropItem),
-		ttl:   ttl,
-		now:   time.Now,
-	}
+	s := &SeedDrop{}
+	s.core = *newHandoff("seed", s, ttl)
+	return s
 }
 
 // SetBaseURL sets the externally reachable base URL used to build seed URLs
 // (the same value pointed at the OOB login coordinator).
 func (s *SeedDrop) SetBaseURL(baseURL string) {
-	s.loopback.SetBaseURL(baseURL)
+	s.core.SetBaseURL(baseURL)
 }
 
 // Register mints a one-time, expiring, single-use URL carrying the given
-// recovery mnemonic for a profile. It returns the full URL the human opens.
-// It ensures the loopback listener is running so the URL is always reachable,
-// whether in HTTP mode (handlers on the shared mux, base URL set) or stdio
-// mode (loopback listener).
+// recovery mnemonic for a profile. It returns the full URL the human opens. It
+// is a read-direction hand-off: the seed is shown once on GET, then the token
+// is consumed.
 func (s *SeedDrop) Register(profile, mnemonic string) string {
-	if err := s.loopback.ensureLoopback(s.registerHandlers); err != nil {
-		// If we cannot spin up a listener there is no URL to hand over; return
-		// empty so the caller keeps the plaintext-path fallback.
-		return ""
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	token := randomID()
-	s.drops[token] = &seedDropItem{
-		profile:   profile,
-		mnemonic:  mnemonic,
-		expiresAt: s.now().Add(s.ttl),
-	}
-	return s.loopback.urlLocked("seed", token)
+	return s.core.mint(&seedPayload{profile: profile, mnemonic: mnemonic})
 }
 
 // Stop shuts down the loopback listener, if any.
 func (s *SeedDrop) Stop(ctx context.Context) {
-	s.loopback.Stop(ctx)
+	s.core.Stop(ctx)
 }
 
-// registerHandlers mounts the GET-only seed retrieval route on the shared mux,
-// mounted outside the bearer-token middleware (the human must open it in a
-// browser). The unguessable token in the path is the access control.
+// registerHandlers mounts the GET-only seed retrieval route on the shared mux.
 func (s *SeedDrop) registerHandlers(mux *http.ServeMux) {
-	mux.HandleFunc("/seed/", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			w.Header().Set("Allow", "GET")
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		token := strings.TrimPrefix(r.URL.Path, "/seed/")
-		s.serve(w, token)
-	})
+	s.core.registerHandlers(mux)
 }
 
-// serve fulfills a seed drop request exactly once, then invalidates it. It is
-// rate/size-bounded and expires drops whose TTL has elapsed so the map doesn't
-// grow unbounded over a long-running process.
-func (s *SeedDrop) serve(w http.ResponseWriter, token string) {
-	s.mu.Lock()
-	item, ok := s.drops[token]
-	if !ok {
-		s.mu.Unlock()
-		http.NotFound(w, nil)
-		return
-	}
-	if s.now().After(item.expiresAt) {
-		delete(s.drops, token)
-		s.mu.Unlock()
-		http.NotFound(w, nil)
-		return
-	}
-	// Single use: consume the drop before rendering so a concurrent or
-	// repeated GET cannot read it twice.
-	delete(s.drops, token)
-	profile := item.profile
-	seed := item.mnemonic
-	s.mu.Unlock()
+// consumeOnGET reports that a GET consumes the seed drop (single-use display).
+func (s *SeedDrop) consumeOnGET() bool { return true }
 
+// renderGET implements handoffHandler: show the seed exactly once.
+func (s *SeedDrop) renderGET(w http.ResponseWriter, r *http.Request, token string, item *handoffItem) {
+	payload, _ := item.payload.(*seedPayload)
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("Vault recovery seed for profile " + profile + " (shown once):\n\n" + seed + "\n\nThis is your only path back into the vault. Store it securely. This page is no longer available after this view.\n"))
+	w.Write([]byte("Vault recovery seed for profile " + payload.profile + " (shown once):\n\n" + payload.mnemonic + "\n\nThis is your only path back into the vault. Store it securely. This page is no longer available after this view.\n"))
 }
 
-// count returns the number of currently registered, unexpired drops. Used in
-// tests and possible instrumentation.
+// consumePOST is unused for the GET-only seed drop; satisfy the interface.
+func (s *SeedDrop) consumePOST(w http.ResponseWriter, r *http.Request, token string, item *handoffItem) bool {
+	w.Header().Set("Allow", "GET")
+	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	return true
+}
+
+// count returns the number of currently registered, unexpired drops.
 func (s *SeedDrop) count() int {
-	now := s.now()
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	n := 0
-	for token, it := range s.drops {
-		if now.After(it.expiresAt) {
-			delete(s.drops, token)
-			continue
-		}
-		n++
-	}
-	return n
+	return s.core.count()
+}
+
+// setNow overrides the clock used for expiry (test seam).
+func (s *SeedDrop) setNow(f func() time.Time) {
+	s.core.setNow(f)
 }
 
 // vaultCreateAgentOutput is the JSON shape `vault create --agent` prints (see

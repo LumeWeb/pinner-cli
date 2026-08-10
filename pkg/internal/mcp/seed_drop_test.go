@@ -42,7 +42,7 @@ func TestSeedDropExpiry(t *testing.T) {
 	d.registerHandlers(mux)
 
 	// Advance past expiry.
-	d.now = func() time.Time { return time.Now().Add(2 * time.Minute) }
+	d.setNow(func() time.Time { return time.Now().Add(2 * time.Minute) })
 
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, url, nil))

@@ -81,7 +81,7 @@ func TestOOBRestoreExpiry(t *testing.T) {
 	url := o.Register("default")
 
 	// Advance past expiry.
-	o.now = func() time.Time { return time.Now().Add(2 * time.Minute) }
+	o.setNow(func() time.Time { return time.Now().Add(2 * time.Minute) })
 
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, url, nil))
