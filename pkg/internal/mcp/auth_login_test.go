@@ -609,3 +609,55 @@ func TestOOBSetupPromptDoesNotRequestCredentials(t *testing.T) {
 	// input field or ask for one from the user.
 	assert.NotContains(t, out, "ask for email, password")
 }
+
+// captureAuthService records the account identifier and password each
+// LoginCheck is called with, so tests can assert the human-entered username
+// overrides the agent-supplied email on the OOB login page.
+type captureAuthService struct {
+	emails   []string
+	password string
+}
+
+func (s *captureAuthService) LoginCheck(ctx context.Context, email, password string) (*portalsdk.LoginResult, error) {
+	s.emails = append(s.emails, email)
+	s.password = password
+	return &portalsdk.LoginResult{Token: stubToken(), OTPRequired: false}, nil
+}
+func (s *captureAuthService) CompleteLogin(ctx context.Context, token, keyName string, noCreateKey bool) error {
+	return nil
+}
+func (s *captureAuthService) LoginWithOTP(ctx context.Context, intermediateJWT, otp, keyName string, noCreateKey bool) error {
+	return nil
+}
+func (s *captureAuthService) Status(ctx context.Context) error { return nil }
+
+// TestOOBLoginHumanEmailOverridesAgentEmail verifies the account identifier on
+// the login page is editable: even though pinner_auth_sso prefilled an email
+// via Begin, the human can change it on the form and the posted value is what
+// LoginCheck authenticates against (a normal username/password account).
+func TestOOBLoginHumanEmailOverridesAgentEmail(t *testing.T) {
+	auth := &captureAuthService{}
+	o := NewOutOfBandLogin(auth, "", "test-key")
+	t.Cleanup(func() { o.Stop(context.Background()) })
+
+	// Agent starts the SSO with one email; the human edits it on the page.
+	_, u, err := o.Begin("session-1", "agent@example.com")
+	require.NoError(t, err)
+
+	csrf := fetchCSRF(t, o, u)
+	rec := httptest.NewRecorder()
+	body := url.Values{
+		"email":    {"human@example.com"},
+		"password": {"fixture-password"},
+		"csrf":     {csrf},
+	}.Encode()
+	req := httptest.NewRequest(http.MethodPost, u, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Origin", testOrigin(o))
+	o.loginPage(rec, req)
+
+	require.NotEqual(t, http.StatusForbidden, rec.Code)
+	require.Len(t, auth.emails, 1, "LoginCheck must be called exactly once")
+	assert.Equal(t, "human@example.com", auth.emails[0], "the human's edited email must be used, not the agent's prefill")
+	assert.Equal(t, "fixture-password", auth.password)
+}
