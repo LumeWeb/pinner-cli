@@ -90,8 +90,13 @@ type ToolDescriptor struct {
 	Category    ToolCategory
 	ReadOnly    bool
 	Destructive bool
-	InputSchema json.RawMessage
-	Meta        map[string]any
+	// DirectVisible reports whether the tool is part of the directly-exposed
+	// surface (tools/list) in addition to progressive discovery. It replaces
+	// the adhoc name-allowlist predicate (IsCuratedTool) used to filter the
+	// curated registration loop.
+	DirectVisible bool
+	InputSchema   json.RawMessage
+	Meta          map[string]any
 	// Behavior captures agent-facing execution behavior (stdin gating, OOB
 	// hand-offs) that used to be encoded as hardcoded tool-name checks in the
 	// invoke gate and post-processing layers. Carrying it on the descriptor
@@ -103,15 +108,16 @@ type ToolDescriptor struct {
 
 func descriptorFromTool(entry *ToolEntry) ToolDescriptor {
 	return ToolDescriptor{
-		Name:        entry.Name,
-		Title:       entry.Title,
-		Description: entry.Description,
-		Category:    entry.Category,
-		ReadOnly:    entry.ReadOnly,
-		Destructive: entry.Destructive,
-		InputSchema: entry.InputSchema,
-		Meta:        entry.Meta,
-		Behavior:    entry.Behavior,
+		Name:          entry.Name,
+		Title:         entry.Title,
+		Description:   entry.Description,
+		Category:      entry.Category,
+		ReadOnly:      entry.ReadOnly,
+		Destructive:   entry.Destructive,
+		DirectVisible: entry.DirectVisible,
+		InputSchema:   entry.InputSchema,
+		Meta:          entry.Meta,
+		Behavior:      entry.Behavior,
 	}
 }
 
@@ -122,16 +128,17 @@ func descriptorFromTool(entry *ToolEntry) ToolDescriptor {
 // sync. The entry keeps its handler so invoke_tool can call it.
 func toolEntryFromDescriptor(desc ToolDescriptor) *ToolEntry {
 	return &ToolEntry{
-		Name:        desc.Name,
-		Title:       desc.Title,
-		Description: desc.Description,
-		Category:    desc.Category,
-		ReadOnly:    desc.ReadOnly,
-		Destructive: desc.Destructive,
-		InputSchema: desc.InputSchema,
-		Meta:        desc.Meta,
-		Behavior:    desc.Behavior,
-		Handler:     desc.Handler,
+		Name:          desc.Name,
+		Title:         desc.Title,
+		Description:   desc.Description,
+		Category:      desc.Category,
+		ReadOnly:      desc.ReadOnly,
+		Destructive:   desc.Destructive,
+		DirectVisible: desc.DirectVisible,
+		InputSchema:   desc.InputSchema,
+		Meta:          desc.Meta,
+		Behavior:      desc.Behavior,
+		Handler:       desc.Handler,
 		// Direct auth tools are non-blocking and safe for agent invocation:
 		// pinner_auth_sso returns a needs_human hand-off, pinner_auth_resume
 		// polls. Ensure discovery treats them as callable, not interactive.
