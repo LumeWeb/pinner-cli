@@ -164,6 +164,16 @@ func TestConcurrentFirstUseRotatesOnce(t *testing.T) {
 	s := openTestStore(t)
 	require.NoError(t, s.IssueRefreshToken("rt-race", "cli", ""))
 
+	// The invariant under test is the ATOMIC first-use claim: exactly one racer
+	// may win and return RotateOK; the loser must be treated as a benign in-window
+	// reuse (RotateOKReused), never a second first-use. The winner/loser contention
+	// on the `used_at IS NULL` UPDATE is independent of the reuse-window size, so
+	// widen the window here to make the loser's classification deterministic: on
+	// Windows CI the gap between the winner's used_at write and the loser's re-read
+	// can exceed the test default of 100ms, which would mis-classify the loser as
+	// RotateReplay (untracked by the counters below) and flake the assertion.
+	s.reuseWindow = time.Hour
+
 	type result struct {
 		status RotateStatus
 	}
