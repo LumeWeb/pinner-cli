@@ -337,6 +337,21 @@ func registerOfficialDescribeTool(srv *mcp.Server, catalog *ToolCatalog) error {
 	return registerTool(srv, tool, handler)
 }
 
+// toolArgsHasBool reports whether the given tool arguments set a boolean flag
+// to true. urfave/cli/v3 encodes flags as camelCase keys in the JSON schema
+// arguments map; seed-stdin arrives as "seed-stdin".
+func toolArgsHasBool(args map[string]any, key string) bool {
+	if args == nil {
+		return false
+	}
+	v, ok := args[key]
+	if !ok {
+		return false
+	}
+	b, ok := v.(bool)
+	return ok && b
+}
+
 func registerOfficialInvokeTool(srv *mcp.Server, catalog *ToolCatalog, stdioMode bool, seedDrop *SeedDrop, oobRestore *OOBRestore) error {
 	schema := &metaToolSchema{}
 	schema.property("name", map[string]any{
@@ -384,8 +399,13 @@ func registerOfficialInvokeTool(srv *mcp.Server, catalog *ToolCatalog, stdioMode
 		// URL. That agent-safe path must NOT be gated, or the OOB restore
 		// hand-off is unreachable in the HTTP/tunnel mode it targets (where
 		// stdin is /dev/null, so stdinHasData() is false and it is always
-		// — wrongly — redirected).
-		bypassGate := restoreOOBEnabled(oobRestore) && in.Name == "pinner_vault_restore"
+		// — wrongly — redirected). The bypass is strictly scoped to the
+		// non-stdin restore: a --seed-stdin invocation still reads os.Stdin and
+		// must honor the stdin/stdio guard below (consuming the MCP transport
+		// pipe would desync the stream).
+		bypassGate := restoreOOBEnabled(oobRestore) &&
+			in.Name == "pinner_vault_restore" &&
+			!toolArgsHasBool(toolArgs, "seed-stdin")
 		if !bypassGate {
 			switch entry.Interaction {
 			case InteractionInteractive:

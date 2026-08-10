@@ -378,6 +378,46 @@ func TestOfficialInvokeToolRedirectsStdinInStdioMode(t *testing.T) {
 	require.False(t, stdinCalled, "stdin-input tool must be redirected in stdio mode")
 }
 
+func TestOfficialInvokeToolOOBRestoreWithSeedStdinStillGated(t *testing.T) {
+	var stdinCalled bool
+
+	catalog := NewToolCatalog()
+	catalog.Add(&ToolEntry{
+		Name:        "pinner_vault_restore",
+		Description: "Restore a vault",
+		Category:    CategoryCore,
+		Interaction: InteractionStdinInput,
+		InputSchema: json.RawMessage(`{"type":"object"}`),
+		Handler: func(context.Context, ToolRequest) (ToolResult, error) {
+			stdinCalled = true
+			return ToolResult{Text: "ran"}, nil
+		},
+	})
+
+	// Even with an OOB restore coordinator wired, a --seed-stdin invocation
+	// reads os.Stdin unconditionally, so the restore bypass must NOT apply.
+	// stdioMode=true models the server over stdio (os.Stdin == MCP pipe):
+	// consuming it would desync the stream, so the stdin gate redirects.
+	srv := NewOfficialServer(nil)
+	require.NoError(t, RegisterOfficialMetaTools(srv, catalog, true, nil, NewOOBRestore(nil, time.Minute)))
+
+	cs := connectOfficialClient(t, srv)
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "invoke_tool",
+		Arguments: map[string]any{
+			"name":      "pinner_vault_restore",
+			"arguments": map[string]any{"seed-stdin": true},
+		},
+	})
+	require.NoError(t, err)
+	require.False(t, res.IsError)
+	sc, ok := res.StructuredContent.(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "needs_human", sc["status"])
+	require.Equal(t, string(ReasonStdinRequired), sc["reason"])
+	require.False(t, stdinCalled, "--seed-stdin restore must still be gated even with OOB restore wired")
+}
+
 func TestOfficialResourcesRegistered(t *testing.T) {
 	srv, _ := newOfficialTestServer(t)
 	cs := connectOfficialClient(t, srv)
