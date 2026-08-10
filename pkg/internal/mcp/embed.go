@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"embed"
 	"encoding/hex"
+	"fmt"
 	"io/fs"
 	"net/http"
 	"strings"
@@ -29,26 +30,44 @@ const brandCSSPath = "/assets/brand.css"
 // embedded static/ directory.
 const brandCSSFileName = "brand.css"
 
-// AssetVersion is a content hash of the embedded brand.css. It is appended as
-// ?v= to the asset URL for cache busting: because brand.css is embedded, the
-// hash changes exactly when the asset changes (binary rebuild), so browsers
-// fetch a fresh copy rather than a stale cached one. Mirrors the s3-server
-// cache-busting pattern.
+// AssetVersion is a content hash of the embedded brand assets (brand.css and
+// logo.svg). It is appended as ?v= to asset URLs for cache busting: because the
+// assets are embedded, the hash changes exactly when any asset changes (binary
+// rebuild), so browsers fetch a fresh copy rather than a stale cached one.
+// Mirrors the s3-server cache-busting pattern.
 var AssetVersion string
 
 func init() {
-	data, err := staticFS.ReadFile("static/brand.css")
-	if err != nil {
-		// brand.css is embedded; absence is a build-time error.
-		panic("mcp: embedded brand.css missing: " + err.Error())
+	css, errCSS := staticFS.ReadFile("static/brand.css")
+	logo, errLogo := staticFS.ReadFile("static/logo.svg")
+	if errCSS != nil || errLogo != nil {
+		// Both brand assets are embedded; absence is a build-time error.
+		panic("mcp: embedded brand assets missing: cssErr=" + fmt.Sprint(errCSS) + " logoErr=" + fmt.Sprint(errLogo))
 	}
-	sum := sha256.Sum256(data)
-	AssetVersion = hex.EncodeToString(sum[:])[:12]
+	h := sha256.New()
+	h.Write(css)
+	h.Write(logo)
+	AssetVersion = hex.EncodeToString(h.Sum(nil))[:12]
 }
 
-// brandCSSURL is the cache-busted URL for brand.css. Page templates link this
-// so the embedded stylesheet is reliably re-fetched on change.
-var brandCSSURL = brandCSSPath + "?v=" + AssetVersion
+// brandCSSURL returns the cache-busted URL for brand.css. Page templates call
+// this so the embedded stylesheet is reliably re-fetched on change. It is a
+// function, not a var, because AssetVersion is computed in init() — a package
+// var would bake in the empty value at init order.
+func brandCSSURL() string {
+	return brandCSSPath + "?v=" + AssetVersion
+}
+
+// brandLogoPath is the URL path under which the Pinner logo is served. Page
+// templates reference it as the branded mark; it lives in the same embedded
+// static/ tree as brand.css so one handler serves both.
+const brandLogoPath = "/assets/logo.svg"
+
+// brandLogoURL returns the cache-busted URL for the Pinner logo SVG. See
+// brandCSSURL for why this is a function rather than a var.
+func brandLogoURL() string {
+	return brandLogoPath + "?v=" + AssetVersion
+}
 
 // staticAssetHandler serves files from the embedded static/ directory under
 // /assets/. Pages reference the hashed brand.css URL (see brandCSSURL); the

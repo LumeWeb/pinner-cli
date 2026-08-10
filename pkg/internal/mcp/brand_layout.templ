@@ -7,15 +7,34 @@ templ brandLayout(title string) {
 			<meta charset="utf-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
 			<title>{ title } · Pinner</title>
-			<link rel="stylesheet" href={ brandCSSURL }/>
+			<link rel="stylesheet" href={ brandCSSURL() }/>
 		</head>
 		<body>
-			<a class="brand-mark" href="https://pinner.xyz" target="_blank" rel="noopener">
-				<span class="brand-dot"></span>
-				<span class="brand-name">pin<em>ner</em></span>
+			<a class="brand-mark" href="https://pinner.xyz" target="_blank" rel="noopener" aria-label="Pinner — pinner.xyz">
+				<img class="brand-logo" src={ brandLogoURL() } alt="Pinner logo" width={ 36 } height={ 36 }/>
 			</a>
 			{ children... }
 			<div class="foot">This server runs tools in-process under your PINNER account.</div>
+			<script>
+				// Disable and mark the submit button as processing while a form
+				// POST is in flight, so an OAuth/authorize no-op or slow round
+				// trip doesn't get double-submitted. Progressive enhancement:
+				// with JavaScript off the form still submits normally.
+				document.addEventListener("submit", function (e) {
+					var f = e.target;
+					if (!f || !f.matches("form")) return;
+					var btn = f.querySelector("button[type=submit]");
+					if (!btn) return;
+					btn.disabled = true;
+					btn.classList.add("processing");
+					if (!btn.querySelector(".spin")) {
+						var s = document.createElement("span");
+						s.className = "spin";
+						s.setAttribute("aria-hidden", "true");
+						btn.prepend(s);
+					}
+				});
+			</script>
 		</body>
 	</html>
 }
