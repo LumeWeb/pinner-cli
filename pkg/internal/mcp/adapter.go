@@ -271,9 +271,16 @@ adapter.`,
 			if err := RegisterOfficialDescriptor(srv, authSSO); err != nil {
 				return fmt.Errorf("failed to register auth sso tool: %w", err)
 			}
-			if err := RegisterOfficialDescriptor(srv, NewAuthResumeDescriptor(oob, authHandles)); err != nil {
+			authResume := NewAuthResumeDescriptor(oob, authHandles)
+			if err := RegisterOfficialDescriptor(srv, authResume); err != nil {
 				return fmt.Errorf("failed to register auth resume tool: %w", err)
 			}
+			// Surface the out-of-band sign-in tools through progressive
+			// discovery too, so an agent that only calls search_tools finds
+			// them. They are registered as direct (tools/list) tools AND
+			// indexed in the catalog; both discovery surfaces stay in sync.
+			catalog.Add(toolEntryFromDescriptor(authSSO))
+			catalog.Add(toolEntryFromDescriptor(authResume))
 			if mcpOpts.prompts {
 				if err := RegisterOfficialPrompts(srv, PromptDescriptors()); err != nil {
 					return fmt.Errorf("failed to register prompts: %w", err)
