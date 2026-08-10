@@ -87,8 +87,8 @@ func OfficialServerFromCatalog(catalog *ToolCatalog, instructions string) (*mcp.
 // Resources and prompts are registered by the command action after runtime
 // providers and options are resolved. The descriptor adapters below preserve
 // their wire contracts on the official server.
-func OfficialMCPServer(root *cli.Command, hasRootAction bool, prefix []string) (*mcp.Server, *ToolCatalog, error) {
-	catalog, err := buildCatalog(root, hasRootAction, prefix)
+func OfficialMCPServer(root *cli.Command, hasRootAction bool, prefix []string, seedDrop *SeedDrop) (*mcp.Server, *ToolCatalog, error) {
+	catalog, err := buildCatalog(root, hasRootAction, prefix, seedDrop)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -370,6 +370,28 @@ func registerOfficialInvokeTool(srv *mcp.Server, catalog *ToolCatalog) error {
 		if !ok {
 			return ToolResult{IsError: true, Text: fmt.Sprintf("unknown tool: %s", in.Name)}, nil
 		}
+
+		// Steer agents away from commands they cannot run safely over the MCP
+		// channel, instead of letting them hang. A human-only (interactive)
+		// command always redirects; a stdin-input command redirects unless piped
+		// data is actually available. Everything else runs normally.
+		switch entry.Interaction {
+		case InteractionInteractive:
+			return NeedsHumanResult(NeedsHuman{
+				Reason:     ReasonInteractiveOnly,
+				ResumeTool: "",
+				Detail:     "This command is human-only (it prompts interactively) and has no agent-safe form. Run it via the CLI, or use the curated agent tool for the same workflow.",
+			}), nil
+		case InteractionStdinInput:
+			if !stdinHasData() {
+				return NeedsHumanResult(NeedsHuman{
+					Reason:     ReasonStdinRequired,
+					ResumeTool: "",
+					Detail:     "This command reads piped stdin (e.g. a vault recovery seed), which the MCP channel cannot supply. For vault restore, the seed lives in a 0600 file on the MCP server host (see the next_step from vault create --agent); a human or host process must run 'pinner vault restore --profile <name> --seed-stdin < seedfile' on that host to complete it.",
+				}), nil
+			}
+		}
+
 		result, err := entry.Handler(ctx, ToolRequest{Name: in.Name, Arguments: toolArgs})
 		if err != nil {
 			return ToolResult{IsError: true, Text: err.Error()}, nil

@@ -234,6 +234,73 @@ func TestOfficialInvokeToolUnknownIsError(t *testing.T) {
 	require.True(t, res.IsError)
 }
 
+// TestOfficialInvokeToolRedirectsNonAgentSafe verifies that invoke_tool steers
+// agents away from interactive and stdin-input tools instead of running them:
+// the handler is never called, and a needs_human hand-off is returned.
+func TestOfficialInvokeToolRedirectsNonAgentSafe(t *testing.T) {
+	var interactiveCalled, stdinCalled bool
+
+	catalog := NewToolCatalog()
+	catalog.Add(&ToolEntry{
+		Name:        "pinner_setup",
+		Description: "Setup wizard",
+		Category:    CategoryCore,
+		Interaction: InteractionInteractive,
+		InputSchema: json.RawMessage(`{"type":"object"}`),
+		Handler: func(context.Context, ToolRequest) (ToolResult, error) {
+			interactiveCalled = true
+			return ToolResult{Text: "ran"}, nil
+		},
+	})
+	catalog.Add(&ToolEntry{
+		Name:        "pinner_vault_restore",
+		Description: "Restore a vault",
+		Category:    CategoryCore,
+		Interaction: InteractionStdinInput,
+		InputSchema: json.RawMessage(`{"type":"object"}`),
+		Handler: func(context.Context, ToolRequest) (ToolResult, error) {
+			stdinCalled = true
+			return ToolResult{Text: "ran"}, nil
+		},
+	})
+
+	srv := NewOfficialServer(nil)
+	require.NoError(t, RegisterOfficialMetaTools(srv, catalog))
+	cs := connectOfficialClient(t, srv)
+
+	// Interactive tool -> needs_human redirect, handler not called.
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "invoke_tool",
+		Arguments: map[string]any{
+			"name":      "pinner_setup",
+			"arguments": map[string]any{},
+		},
+	})
+	require.NoError(t, err)
+	require.False(t, res.IsError, "needs_human is not an error")
+	sc, ok := res.StructuredContent.(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "needs_human", sc["status"])
+	require.Equal(t, string(ReasonInteractiveOnly), sc["reason"])
+	require.False(t, interactiveCalled, "interactive tool handler must not run")
+
+	// stdin-input tool -> needs_human redirect (stdin absent), handler not called.
+	res, err = cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "invoke_tool",
+		Arguments: map[string]any{
+			"name":      "pinner_vault_restore",
+			"arguments": map[string]any{},
+		},
+	})
+	require.NoError(t, err)
+	require.False(t, res.IsError)
+	sc, ok = res.StructuredContent.(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "needs_human", sc["status"])
+	require.Equal(t, string(ReasonStdinRequired), sc["reason"])
+	require.False(t, stdinCalled, "stdin-input tool handler must not run when stdin is absent")
+}
+
 func TestOfficialResourcesRegistered(t *testing.T) {
 	srv, _ := newOfficialTestServer(t)
 	cs := connectOfficialClient(t, srv)

@@ -21,6 +21,31 @@ const (
 	CategoryWizard ToolCategory = "wizard"
 )
 
+// Interaction classifies how a tool behaves when invoked by an agent over the
+// MCP channel (via invoke_tool). It lets the server steer agents away from
+// commands that would read drained stdin or block on a prompt, and instead
+// return a structured redirect — so an agent can never hang on a deep command.
+//
+// The classification is inferred from the CLI command path at registration
+// (see classifyInteraction), mirroring how categorize/isReadOnlyName work.
+type Interaction string
+
+const (
+	// InteractionAgentSafe marks a tool that is non-blocking for agents: it
+	// either completes, fast-fails, or returns a needs_human redirect. This is
+	// the default.
+	InteractionAgentSafe Interaction = "agent_safe"
+	// InteractionInteractive marks a tool that is purely human-facing (a
+	// wizard/setup flow that prompts interactively). Agents should not invoke
+	// it; invoke_tool redirects, and search_tools hides it.
+	InteractionInteractive Interaction = "interactive"
+	// InteractionStdinInput marks a tool whose action reads piped stdin as its
+	// input (e.g. --seed-stdin restore, upload-from-stdin). Over MCP no such
+	// data is piped, so invoking it would block; invoke_tool steers agents to
+	// an alternative instead.
+	InteractionStdinInput Interaction = "stdin_input"
+)
+
 // ToolEntry is a single tool in the internal catalog. It stores everything
 // the meta-tools need to describe and invoke a tool without exposing it
 // via the standard tools/list endpoint.
@@ -31,6 +56,11 @@ type ToolEntry struct {
 	Category    ToolCategory
 	ReadOnly    bool
 	Destructive bool
+	// Interaction tells agents whether this tool is safe to invoke directly,
+	// prompts interactively, or reads piped stdin. Only the MCP server sets it
+	// (via classifyInteraction); CLI paths built via RegisterFromCommand get a
+	// value at registration.
+	Interaction Interaction
 	InputSchema json.RawMessage
 	// Meta carries arbitrary tool metadata (e.g. MCP Apps `_meta.ui`) through
 	// curated registration. SDK-neutral; the wire seam encodes it onto the
@@ -45,6 +75,11 @@ type ToolSummary struct {
 	Name        string       `json:"name"`
 	Description string       `json:"description"`
 	Category    ToolCategory `json:"category,omitempty"`
+	// Interaction tells an agent whether direct invocation is safe
+	// (agent_safe), prompts interactively (interactive), or reads piped stdin
+	// (stdin_input). Interactive tools are omitted from search_tools entirely;
+	// stdin_input tools remain discoverable so agents see the steering signal.
+	Interaction Interaction `json:"interaction,omitempty"`
 }
 
 // ToolDetail is the full representation returned by describe_tool.
@@ -55,6 +90,7 @@ type ToolDetail struct {
 	Category    ToolCategory    `json:"category,omitempty"`
 	ReadOnly    bool            `json:"readOnlyHint,omitempty"`
 	Destructive bool            `json:"destructiveHint,omitempty"`
+	Interaction Interaction     `json:"interaction,omitempty"`
 	InputSchema json.RawMessage `json:"inputSchema"`
 }
 
@@ -132,6 +168,11 @@ func (c *ToolCatalog) Search(query, category string) []ToolSummary {
 
 	var results []ranked
 	for _, t := range c.tools {
+		// Human-only (interactive) tools are hidden from agent discovery so an
+		// agent cannot even find a trap that would block on a prompt.
+		if t.Interaction == InteractionInteractive {
+			continue
+		}
 		if category != "" && string(t.Category) != category {
 			continue
 		}
@@ -140,6 +181,7 @@ func (c *ToolCatalog) Search(query, category string) []ToolSummary {
 			Name:        t.Name,
 			Description: t.Description,
 			Category:    t.Category,
+			Interaction: t.Interaction,
 		}
 
 		if query == "" {
@@ -189,6 +231,7 @@ func (c *ToolCatalog) Describe(name string) (*ToolDetail, error) {
 		Category:    entry.Category,
 		ReadOnly:    entry.ReadOnly,
 		Destructive: entry.Destructive,
+		Interaction: entry.Interaction,
 		InputSchema: entry.InputSchema,
 	}, nil
 }
@@ -244,6 +287,7 @@ func (c *ToolCatalog) RegisterFromCommand(root *cli.Command, hasRootAction bool,
 
 			toolName := strings.Join(loc, ToolDelimiter)
 			category := categorize(loc)
+			interaction := classifyInteraction(loc)
 			c.Add(&ToolEntry{
 				Name:        toolName,
 				Title:       title,
@@ -251,6 +295,7 @@ func (c *ToolCatalog) RegisterFromCommand(root *cli.Command, hasRootAction bool,
 				Category:    category,
 				ReadOnly:    readOnly,
 				Destructive: destructive,
+				Interaction: interaction,
 				InputSchema: schema,
 				Handler:     handler,
 			})
@@ -285,6 +330,42 @@ func categorize(loc []string) ToolCategory {
 	}
 
 	return CategoryCore
+}
+
+// interactiveLeafSegments are leaf command names whose action is purely
+// human-driven (interactive setup flows) and has no meaningful agent-safe
+// result. Agents are steered away from these and they are hidden from
+// search_tools discovery.
+var interactiveLeafSegments = map[string]bool{
+	"setup": true,
+}
+
+// stdinInputLeaves are leaf command names whose action reads piped stdin
+// unconditionally (not guarded by isStdinPipe) and would block over the MCP
+// channel, where no such data is piped. "restore" covers vault restore
+// --seed-stdin, which calls io.ReadAll(os.Stdin) directly.
+var stdinInputLeaves = map[string]bool{
+	"restore": true, // vault restore --seed-stdin
+}
+
+// classifyInteraction determines how a command behaves when an agent invokes
+// it over the MCP channel, inferred from its command path. The rules:
+//
+//   - leaf == "setup"              -> interactive (human-only setup flow)
+//   - leaf == "upload"/"restore"   -> stdin_input (reads piped stdin)
+//   - everything else              -> agent_safe (the default)
+func classifyInteraction(loc []string) Interaction {
+	if len(loc) == 0 {
+		return InteractionAgentSafe
+	}
+	leaf := loc[len(loc)-1]
+	if interactiveLeafSegments[leaf] {
+		return InteractionInteractive
+	}
+	if stdinInputLeaves[leaf] {
+		return InteractionStdinInput
+	}
+	return InteractionAgentSafe
 }
 
 // destructiveSegments are leaf command names that perform destructive or

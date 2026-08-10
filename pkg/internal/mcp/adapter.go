@@ -109,9 +109,15 @@ adapter.`,
 			log.Debug("building MCP server with progressive disclosure", zap.String("app", root.Name))
 
 			store := NewSessionStore()
+			// Async handle store backs the agent-facing SSO/auth tools and any
+			// long-running operations that mint resume handles.
+			authHandles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+			// SeedDrop hands a vault recovery seed to a human over a one-time
+			// browser URL in HTTP mode, without it transiting the MCP channel.
+			seedDrop := NewSeedDrop(DefaultSeedDropTTL)
 
 			// Build the server after resolving the command tree.
-			srv, catalog, err := OfficialMCPServer(root, hasRootAction, nil)
+			srv, catalog, err := OfficialMCPServer(root, hasRootAction, nil, seedDrop)
 			if err != nil {
 				return err
 			}
@@ -208,6 +214,17 @@ adapter.`,
 			)); err != nil {
 				return fmt.Errorf("failed to register capabilities tool: %w", err)
 			}
+			// Agent-facing out-of-band sign-in: start (non-blocking) and resume
+			// (poll) tools, backed by the browser-login coordinator. When the
+			// wizard transport is absent oob is nil and both tools return a
+			// structured not-configured hand-off instead of hanging.
+			authSSO := NewAuthSSODescriptor(oob, authHandles)
+			if err := RegisterOfficialDescriptor(srv, authSSO); err != nil {
+				return fmt.Errorf("failed to register auth sso tool: %w", err)
+			}
+			if err := RegisterOfficialDescriptor(srv, NewAuthResumeDescriptor(oob, authHandles)); err != nil {
+				return fmt.Errorf("failed to register auth resume tool: %w", err)
+			}
 			if mcpOpts.prompts {
 				if err := RegisterOfficialPrompts(srv, PromptDescriptors()); err != nil {
 					return fmt.Errorf("failed to register prompts: %w", err)
@@ -216,7 +233,7 @@ adapter.`,
 
 			if mcpString(cmd, "tunnel", "MCP_TUNNEL_PROVIDER") == "openai" {
 				log.Debug("serving MCP server through embedded OpenAI Secure MCP Tunnel")
-				return serveHTTP(ctx, srv, cmd, oob)
+				return serveHTTP(ctx, srv, cmd, oob, seedDrop)
 			}
 
 			if !cmd.Bool("http") {
@@ -224,7 +241,7 @@ adapter.`,
 				return RunOfficialStdio(ctx, srv, os.Stdin, os.Stdout)
 			}
 
-			return serveHTTP(ctx, srv, cmd, oob)
+			return serveHTTP(ctx, srv, cmd, oob, seedDrop)
 		},
 	}
 }
@@ -253,7 +270,7 @@ func oauthStorePath() string {
 // handlers are mounted on the shared mux (reachable without the transport
 // bearer token, like the OAuth authorize page) so a remote human can open the
 // login URL on the public/tunnel URL rather than an unreachable loopback.
-func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *OutOfBandLogin) error {
+func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *OutOfBandLogin, seedDrop *SeedDrop) error {
 	provider := mcpString(cmd, "tunnel", "MCP_TUNNEL_PROVIDER")
 	domain := mcpString(cmd, "domain", "MCP_DOMAIN")
 	token := mcpString(cmd, "token", "MCP_TUNNEL_TOKEN")
@@ -327,6 +344,9 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 	if oob != nil {
 		oob.SetBaseURL(baseURL)
 	}
+	if seedDrop != nil {
+		seedDrop.SetBaseURL(baseURL)
+	}
 	var oauth *oauthServer
 	if enableOAuth {
 		if authToken == "" {
@@ -389,6 +409,14 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 	// id in the path plus the per-request CSRF token embedded in the form.
 	if oob != nil {
 		oob.registerHandlers(mux)
+	}
+	// Mount the one-time seed-drop route on the shared mux so a human can
+	// retrieve a vault recovery seed in a browser at the public/tunnel URL.
+	// Like the OOB login page, it is mounted outside the bearer-token guards
+	// (the human must open it in a browser); the unguessable /seed/<token> path
+	// is the access control and the drop is single-use + expiring.
+	if seedDrop != nil {
+		seedDrop.registerHandlers(mux)
 	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
@@ -581,7 +609,10 @@ type WizardDepsFactory func() (WebsitesWizardDeps, SetupWizardDeps, DomainWizard
 // buildCatalog walks a urfave/cli/v3 command tree and populates a ToolCatalog
 // with every invocable non-hidden command. The public command tree is
 // cataloged identically for the official SDK builder (OfficialMCPServer).
-func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string) (*ToolCatalog, error) {
+// seedDrop, when non-nil (HTTP mode), lets the tool handler mint a one-time
+// seed-drop URL for vault-create agent output so the human can retrieve the
+// seed in a browser without it transiting the MCP channel.
+func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string, seedDrop *SeedDrop) (*ToolCatalog, error) {
 	catalog := NewToolCatalog()
 
 	// runMu serializes root.Run calls. A shallow copy of root gives each
@@ -716,7 +747,8 @@ func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string) (*Tool
 			return ToolResult{IsError: true, Text: msg}, nil
 		}
 
-		return ToolResult{Text: stdout.String()}, nil
+		text, extra := attachSeedDrop(stdout.String(), request.Name, seedDrop)
+		return ToolResult{Text: text, StructuredContent: extra}, nil
 	}
 
 	// Populate the catalog from the command tree. All commands are stored
@@ -731,7 +763,11 @@ func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string) (*Tool
 }
 
 // mcpInstructionsBase is sent to MCP clients in the initialize response.
-const mcpInstructionsBase = `This server exposes a curated set of common Pinner tools directly, including upload, pin, list, status, download, vault, website, and website/domain wizard tools. Setup wizard tools are not exposed because they accept credentials.
+const mcpInstructionsBase = `This server exposes a curated set of common Pinner tools directly, including upload, pin, list, status, download, vault, website, website/domain wizard tools, and the agent-facing out-of-band sign-in tools (pinner_auth_sso and pinner_auth_resume). Setup wizard tools are not exposed because they accept credentials.
+
+For authentication, prefer the out-of-band flow: call pinner_auth_sso, give the returned approval URL to the human, then poll pinner_auth_resume with the returned handle until it reports done. This avoids an invalid or missing API key blocking work.
+
+Some internal commands are human-only or read piped stdin; when an agent invokes one via invoke_tool, the server returns a structured needs_human redirect instead of blocking. Commands that prompt interactively are hidden from search_tools entirely.
 
 Less common CLI tools remain available through progressive disclosure:
 1. search_tools({ "query": "..." }): Find tools by keyword. Returns matching names, descriptions, and categories.
