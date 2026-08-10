@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 // OOBRestore completes a vault restore from a recovery mnemonic the human
@@ -53,6 +55,13 @@ func NewOOBRestore(runner RestoreRunner, ttl time.Duration) *OOBRestore {
 // SetBaseURL sets the externally reachable base URL used to build restore URLs.
 func (o *OOBRestore) SetBaseURL(baseURL string) {
 	o.core.SetBaseURL(baseURL)
+}
+
+// WithLogger sets the zap logger the restore coordinator uses for lifecycle
+// events.
+func (o *OOBRestore) WithLogger(l *zap.Logger) *OOBRestore {
+	o.core.WithLogger(l)
+	return o
 }
 
 // registerHandlers mounts the restore page + POST routes on the shared mux.
