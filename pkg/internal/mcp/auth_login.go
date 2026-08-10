@@ -345,11 +345,21 @@ func (o *OutOfBandLogin) pendingOutcome(sessionID, email string) (url string, do
 	defer o.mu.Unlock()
 	var req *loginRequest
 	for _, r := range o.requests {
-		if r.email == email && r.sessionID == sessionID {
+		// Key the lookup on the session id (the resume handle) alone. The
+		// session id is a cryptographically random, per-login handle, so it
+		// uniquely identifies the login. The email is deliberately NOT part of
+		// the key: the human can edit the account identifier on the approval
+		// page (the agent-supplied email is only a prefill), so the stored
+		// req.email can diverge from the value bound when Begin ran. Matching
+		// on it would make resume silently report "pending" for a login the
+		// human actually completed.
+		if r.sessionID == sessionID {
 			req = r
 		}
 	}
 	if req == nil {
+		o.logf().Warn("out-of-band login resume: no pending request for session",
+			zap.String("session", sessionID), zap.String("email", email))
 		return "", false, nil
 	}
 	req.mu.Lock()

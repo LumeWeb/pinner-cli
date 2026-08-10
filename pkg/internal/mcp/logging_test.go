@@ -54,3 +54,51 @@ func TestNewZapLoggerFormats(t *testing.T) {
 		t.Error("newZapLogger with bad format: expected error, got nil")
 	}
 }
+
+func TestMaskArgsRedactsCredentials(t *testing.T) {
+	args := map[string]any{
+		"email":       "agent@example.com",
+		"password":    "s3cret",
+		"api_key":     "key-123",
+		"session_id":  "sess-1",
+		"gnarly_file": "/tmp/x.tar",
+	}
+	got := maskArgs(args)
+	// Original map is never mutated.
+	if args["password"] != "s3cret" {
+		t.Fatal("maskArgs mutated the caller's map")
+	}
+	if got["password"] != "****" {
+		t.Errorf("password not redacted: %v", got["password"])
+	}
+	if got["api_key"] != "****" {
+		t.Errorf("api_key not redacted: %v", got["api_key"])
+	}
+	if got["email"] != "agent@example.com" {
+		t.Errorf("email should not be redacted: %v", got["email"])
+	}
+	if got["session_id"] != "sess-1" {
+		t.Errorf("session_id should not be redacted: %v", got["session_id"])
+	}
+	if got["gnarly_file"] != "/tmp/x.tar" {
+		t.Errorf("non-secret arg changed: %v", got["gnarly_file"])
+	}
+	if maskArgs(nil) != nil {
+		t.Error("maskArgs(nil) should return nil")
+	}
+}
+
+func TestTruncateForLog(t *testing.T) {
+	short := "ok"
+	if got := truncateForLog(short); got != short {
+		t.Errorf("short string truncated: %q", got)
+	}
+	long := make([]byte, 600)
+	for i := range long {
+		long[i] = 'a'
+	}
+	got := truncateForLog(string(long))
+	if len(got) > 512+3 {
+		t.Errorf("long string not bounded: %d", len(got))
+	}
+}
