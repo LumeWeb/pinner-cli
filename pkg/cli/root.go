@@ -213,6 +213,10 @@ For more help on any command: pinner <command> --help`,
 				// coordinator derives the loopback address when a login is
 				// requested.
 				OutOfBand: mcpadapter.NewOutOfBandLogin(authSvc, "", mcpadapter.DefaultMCPKeyName),
+				// OOB restore completes a vault restore from a mnemonic the
+				// human enters in a browser form (loopback in stdio, shared
+				// mux over HTTP), so the seed never transits the MCP channel.
+				Restore: NewVaultRestoreRunner(output, cfgMgr.Config().GetSiaIndexerURL()),
 				SetupFactory: func() mcpadapter.SetupWizardState {
 					return NewSetupWizard(cfgMgr, authSvc, nil, SetupOptions{})
 				},

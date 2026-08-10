@@ -35,7 +35,7 @@ func TestSeedDropSingleUse(t *testing.T) {
 
 func TestSeedDropExpiry(t *testing.T) {
 	d := NewSeedDrop(time.Minute)
-	d.baseURL = "http://127.0.0.1:9999"
+	d.SetBaseURL("http://127.0.0.1:9999")
 	url := d.Register("default", "secret words")
 
 	mux := http.NewServeMux()
@@ -51,7 +51,7 @@ func TestSeedDropExpiry(t *testing.T) {
 
 func TestAttachSeedDropMintsURL(t *testing.T) {
 	d := NewSeedDrop(time.Minute)
-	d.baseURL = "http://127.0.0.1:9999"
+	d.SetBaseURL("http://127.0.0.1:9999")
 
 	// Write a fake seed file on the host.
 	dir := t.TempDir()
@@ -78,7 +78,7 @@ func TestAttachSeedDropIgnoresOtherCommandsAndNil(t *testing.T) {
 
 	// Non-vault-create command with a live seed drop still passes through.
 	d := NewSeedDrop(time.Minute)
-	d.baseURL = "http://127.0.0.1:9999"
+	d.SetBaseURL("http://127.0.0.1:9999")
 	text, extra = attachSeedDrop(out, "pinner_status", d)
 	assert.Equal(t, out, text)
 	assert.Nil(t, extra)

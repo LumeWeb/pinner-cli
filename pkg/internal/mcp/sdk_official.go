@@ -87,8 +87,8 @@ func OfficialServerFromCatalog(catalog *ToolCatalog, instructions string) (*mcp.
 // Resources and prompts are registered by the command action after runtime
 // providers and options are resolved. The descriptor adapters below preserve
 // their wire contracts on the official server.
-func OfficialMCPServer(root *cli.Command, hasRootAction bool, prefix []string, seedDrop *SeedDrop) (*mcp.Server, *ToolCatalog, error) {
-	catalog, err := buildCatalog(root, hasRootAction, prefix, seedDrop)
+func OfficialMCPServer(root *cli.Command, hasRootAction bool, prefix []string, seedDrop *SeedDrop, oobRestore *OOBRestore) (*mcp.Server, *ToolCatalog, error) {
+	catalog, err := buildCatalog(root, hasRootAction, prefix, seedDrop, oobRestore)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -387,7 +387,7 @@ func registerOfficialInvokeTool(srv *mcp.Server, catalog *ToolCatalog) error {
 				return NeedsHumanResult(NeedsHuman{
 					Reason:     ReasonStdinRequired,
 					ResumeTool: "",
-					Detail:     "This command reads piped stdin (e.g. a vault recovery seed), which the MCP channel cannot supply. For vault restore, the seed lives in a 0600 file on the MCP server host (see the next_step from vault create --agent); a human or host process must run 'pinner vault restore --profile <name> --seed-stdin < seedfile' on that host to complete it.",
+					Detail:     "This command reads piped stdin, which the MCP channel cannot supply, and has no agent-safe stdin path. A human or host process must run it on the MCP server host with the required input piped in.",
 				}), nil
 			}
 		}

@@ -81,7 +81,7 @@ func TestMCPCommandServer_OutputNotLeaked_WithStaleCommandContext(t *testing.T) 
 	require.NotNil(t, capturedCtx, "context should be captured from first Run")
 
 	// Step 2: Create the official MCP server from the already-initialized root.
-	srv, catalog, err := mcpadapter.OfficialMCPServer(root, false, nil, nil)
+	srv, catalog, err := mcpadapter.OfficialMCPServer(root, false, nil, nil, nil)
 	require.NoError(t, err)
 	_ = srv // meta-tools not needed for this test; we invoke via catalog
 

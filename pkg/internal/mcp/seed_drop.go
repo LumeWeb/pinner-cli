@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -13,18 +14,25 @@ import (
 // expiring URL without it ever transiting the MCP/LLM channel.
 //
 // vault create --agent writes the seed to a 0600 file on the host and returns
-// that path (not the seed) so it stays out of logs and agent context. In HTTP
-// mode, the MCP layer additionally mints a SeedDrop: the human opens
+// that path (not the seed) so it stays out of logs and agent context. The MCP
+// layer additionally mints a SeedDrop: the human opens
 // <baseURL>/seed/<unguessable-token> in a browser, sees the seed exactly once,
 // and then the URL is invalidated. This closes the "agent created a vault it
 // can't finish / human can't find the seed" gap while preserving the security
 // invariant that the plaintext master mnemonic never crosses the MCP layer.
+//
+// SeedDrop works over BOTH transports: over HTTP/tunnel it mounts /seed/ on the
+// shared transport mux via registerHandlers (baseURL set); over stdio there is
+// no transport server, so Start() spins up a loopback listener on a random
+// port (the same pattern OutOfBandLogin uses) and Register falls back to the
+// loopback URL. Either way the seed never transits the MCP/LLM channel, which
+// is the whole point.
 type SeedDrop struct {
-	mu      sync.Mutex
-	drops   map[string]*seedDropItem
-	baseURL string
-	ttl     time.Duration
-	now     func() time.Time
+	mu       sync.Mutex
+	drops    map[string]*seedDropItem
+	ttl      time.Duration
+	now      func() time.Time
+	loopback loopbackServer
 }
 
 type seedDropItem struct {
@@ -51,14 +59,20 @@ func NewSeedDrop(ttl time.Duration) *SeedDrop {
 // SetBaseURL sets the externally reachable base URL used to build seed URLs
 // (the same value pointed at the OOB login coordinator).
 func (s *SeedDrop) SetBaseURL(baseURL string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.baseURL = strings.TrimRight(baseURL, "/")
+	s.loopback.SetBaseURL(baseURL)
 }
 
 // Register mints a one-time, expiring, single-use URL carrying the given
 // recovery mnemonic for a profile. It returns the full URL the human opens.
+// It ensures the loopback listener is running so the URL is always reachable,
+// whether in HTTP mode (handlers on the shared mux, base URL set) or stdio
+// mode (loopback listener).
 func (s *SeedDrop) Register(profile, mnemonic string) string {
+	if err := s.loopback.ensureLoopback(s.registerHandlers); err != nil {
+		// If we cannot spin up a listener there is no URL to hand over; return
+		// empty so the caller keeps the plaintext-path fallback.
+		return ""
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	token := randomID()
@@ -67,11 +81,12 @@ func (s *SeedDrop) Register(profile, mnemonic string) string {
 		mnemonic:  mnemonic,
 		expiresAt: s.now().Add(s.ttl),
 	}
-	return s.urlLocked(token)
+	return s.loopback.urlLocked("seed", token)
 }
 
-func (s *SeedDrop) urlLocked(token string) string {
-	return s.baseURL + "/seed/" + token
+// Stop shuts down the loopback listener, if any.
+func (s *SeedDrop) Stop(ctx context.Context) {
+	s.loopback.Stop(ctx)
 }
 
 // registerHandlers mounts the GET-only seed retrieval route on the shared mux,

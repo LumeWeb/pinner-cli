@@ -758,8 +758,21 @@ func buildDomainSteps(deps DomainWizardDeps) []StepDef {
 
 // --- Setup wizard step definitions ---
 
+// RestoreRunner completes a vault restore on the host from a recovery
+// mnemonic provided by the human (via a browser form, never through the MCP
+// channel). It is implemented in pkg/cli (wrapping the shared restoreVault
+// code) and injected so the MCP package can drive restores without importing
+// the CLI package.
+type RestoreRunner interface {
+	// RestoreProfileName returns the profile that a pending restore targets.
+	RestoreProfileName() string
+	// RunRestore completes a restore for the given profile and mnemonic,
+	// returning the restored vault ID. It may block on the browser approval.
+	RunRestore(ctx context.Context, profile, mnemonic string) (string, error)
+}
+
 // SetupWizardDeps holds the dependencies needed to build and run the
-// setup wizard session steps.
+// setup wizard session steps and OOB restore path.
 type SetupWizardDeps struct {
 	CfgMgr       config.Manager
 	AuthService  AuthService
@@ -767,6 +780,10 @@ type SetupWizardDeps struct {
 	// OutOfBand completes sign-in in a browser so credentials never transit
 	// the MCP/LLM channel. It may be nil in tests that drive auth directly.
 	OutOfBand *OutOfBandLogin
+	// Restore completes a vault restore from a human-supplied mnemonic via a
+	// one-time browser form (never through the MCP channel). It may be nil in
+	// tests that don't exercise OOB restore.
+	Restore RestoreRunner
 }
 
 // buildSetupSteps returns the StepDef slice for the setup wizard.

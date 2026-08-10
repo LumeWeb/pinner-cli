@@ -113,31 +113,45 @@ adapter.`,
 			// long-running operations that mint resume handles.
 			authHandles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
 			// SeedDrop hands a vault recovery seed to a human over a one-time
-			// browser URL in HTTP mode, without it transiting the MCP channel.
+			// browser URL (loopback in stdio, shared mux over HTTP), without it
+			// transiting the MCP channel.
 			seedDrop := NewSeedDrop(DefaultSeedDropTTL)
 
-			// Build the server after resolving the command tree.
-			srv, catalog, err := OfficialMCPServer(root, hasRootAction, nil, seedDrop)
+			// Resolve wizard dependencies first: the OOB login and OOB restore
+			// coordinators are built from the services the CLI provides and
+			// must exist before the catalog is built so the vault-create /
+			// vault-restore tool handlers can mint seed/restore URLs.
+			var (
+				oob        *OutOfBandLogin
+				oobRestore *OOBRestore
+				catalog    *ToolCatalog
+				err        error
+			)
+			var wizardDeps func() error
+			if wizardFactory != nil {
+				wDeps, sDeps, dDeps, werr := wizardFactory()
+				if werr != nil {
+					return fmt.Errorf("failed to build wizard dependencies: %w", werr)
+				}
+				oob = sDeps.OutOfBand
+				oobRestore = NewOOBRestore(sDeps.Restore, DefaultRestoreTTL)
+				// Defer wizard-tool registration until after the server +
+				// catalog exist.
+				wizardDeps = func() error {
+					return RegisterWizardTools(catalog, store, wDeps, sDeps, dDeps)
+				}
+			}
+
+			// Build the server after resolving the command tree and wiring the
+			// seed/restore coordinators into the tool handlers.
+			srv, catalog, err := OfficialMCPServer(root, hasRootAction, nil, seedDrop, oobRestore)
 			if err != nil {
 				return err
 			}
-
-			// Register wizard tools into the catalog instead of directly
-			// on the server. The meta-tools expose them through discovery.
-			var oob *OutOfBandLogin
-			if wizardFactory != nil {
-				wDeps, sDeps, dDeps, err := wizardFactory()
-				if err != nil {
-					return fmt.Errorf("failed to build wizard dependencies: %w", err)
-				}
-				if err := RegisterWizardTools(catalog, store, wDeps, sDeps, dDeps); err != nil {
+			if wizardDeps != nil {
+				if err := wizardDeps(); err != nil {
 					return fmt.Errorf("failed to register wizard tools: %w", err)
 				}
-				// Capture the out-of-band login coordinator so the HTTP/tunnel
-				// transport can mount its /login/ handlers on the shared mux
-				// and point them at the public URL (reachable remotely),
-				// instead of handing remote users an unbootable loopback URL.
-				oob = sDeps.OutOfBand
 			}
 
 			// Resolve options before registering curated tools so App wiring
@@ -233,7 +247,7 @@ adapter.`,
 
 			if mcpString(cmd, "tunnel", "MCP_TUNNEL_PROVIDER") == "openai" {
 				log.Debug("serving MCP server through embedded OpenAI Secure MCP Tunnel")
-				return serveHTTP(ctx, srv, cmd, oob, seedDrop)
+				return serveHTTP(ctx, srv, cmd, oob, seedDrop, oobRestore)
 			}
 
 			if !cmd.Bool("http") {
@@ -241,7 +255,7 @@ adapter.`,
 				return RunOfficialStdio(ctx, srv, os.Stdin, os.Stdout)
 			}
 
-			return serveHTTP(ctx, srv, cmd, oob, seedDrop)
+			return serveHTTP(ctx, srv, cmd, oob, seedDrop, oobRestore)
 		},
 	}
 }
@@ -270,7 +284,9 @@ func oauthStorePath() string {
 // handlers are mounted on the shared mux (reachable without the transport
 // bearer token, like the OAuth authorize page) so a remote human can open the
 // login URL on the public/tunnel URL rather than an unreachable loopback.
-func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *OutOfBandLogin, seedDrop *SeedDrop) error {
+// seedDrop and oobRestore, when provided, mount the one-time seed and restore
+// URLs on the same shared mux.
+func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *OutOfBandLogin, seedDrop *SeedDrop, oobRestore *OOBRestore) error {
 	provider := mcpString(cmd, "tunnel", "MCP_TUNNEL_PROVIDER")
 	domain := mcpString(cmd, "domain", "MCP_DOMAIN")
 	token := mcpString(cmd, "token", "MCP_TUNNEL_TOKEN")
@@ -347,6 +363,9 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 	if seedDrop != nil {
 		seedDrop.SetBaseURL(baseURL)
 	}
+	if oobRestore != nil {
+		oobRestore.SetBaseURL(baseURL)
+	}
 	var oauth *oauthServer
 	if enableOAuth {
 		if authToken == "" {
@@ -417,6 +436,12 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 	// is the access control and the drop is single-use + expiring.
 	if seedDrop != nil {
 		seedDrop.registerHandlers(mux)
+	}
+	// Mount the one-time restore route on the shared mux so a human can supply
+	// a recovery seed to the host restore in a browser at the public/tunnel
+	// URL, never through the MCP channel.
+	if oobRestore != nil {
+		oobRestore.registerHandlers(mux)
 	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
@@ -609,10 +634,11 @@ type WizardDepsFactory func() (WebsitesWizardDeps, SetupWizardDeps, DomainWizard
 // buildCatalog walks a urfave/cli/v3 command tree and populates a ToolCatalog
 // with every invocable non-hidden command. The public command tree is
 // cataloged identically for the official SDK builder (OfficialMCPServer).
-// seedDrop, when non-nil (HTTP mode), lets the tool handler mint a one-time
-// seed-drop URL for vault-create agent output so the human can retrieve the
-// seed in a browser without it transiting the MCP channel.
-func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string, seedDrop *SeedDrop) (*ToolCatalog, error) {
+// seedDrop and oobRestore, when non-nil, let the tool handler mint one-time
+// seed/restore URLs for vault-create/vault-restore agent output so the human
+// can retrieve or supply a recovery seed in a browser without it transiting
+// the MCP channel.
+func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string, seedDrop *SeedDrop, oobRestore *OOBRestore) (*ToolCatalog, error) {
 	catalog := NewToolCatalog()
 
 	// runMu serializes root.Run calls. A shallow copy of root gives each
@@ -748,6 +774,14 @@ func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string, seedDr
 		}
 
 		text, extra := attachSeedDrop(stdout.String(), request.Name, seedDrop)
+		restoreURL := attachRestoreURL(text, request.Name, oobRestore)
+		if restoreURL != "" {
+			if extra == nil {
+				extra = map[string]any{}
+			}
+			extra["restore_url"] = restoreURL
+			extra["next_step"] = "Ask the user to open restore_url in a browser and enter the recovery seed to complete the restore. The seed never crosses the MCP channel."
+		}
 		return ToolResult{Text: text, StructuredContent: extra}, nil
 	}
 
