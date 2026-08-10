@@ -180,20 +180,24 @@ adapter.`,
 				oobRestore *OOBRestore
 				catalog    *ToolCatalog
 				err        error
+				// Wizard deps are hoisted so registerCustomTools can hand them
+				// to RegisterWizardTools directly (they used to be captured in
+				// a deferred closure). hasWizard marks whether a factory is
+				// configured.
+				hasWizard bool
+				wizardW   WebsitesWizardDeps
+				wizardS   SetupWizardDeps
+				wizardD   DomainWizardDeps
 			)
-			var wizardDeps func() error
 			if wizardFactory != nil {
-				wDeps, sDeps, dDeps, werr := wizardFactory()
+				var werr error
+				wizardW, wizardS, wizardD, werr = wizardFactory()
 				if werr != nil {
 					return fmt.Errorf("failed to build wizard dependencies: %w", werr)
 				}
-				oob = sDeps.OutOfBand.WithLogger(log)
-				oobRestore = NewOOBRestore(sDeps.Restore, DefaultRestoreTTL).WithLogger(log)
-				// Defer wizard-tool registration until after the server +
-				// catalog exist.
-				wizardDeps = func() error {
-					return RegisterWizardTools(catalog, store, wDeps, sDeps, dDeps)
-				}
+				hasWizard = true
+				oob = wizardS.OutOfBand.WithLogger(log)
+				oobRestore = NewOOBRestore(wizardS.Restore, DefaultRestoreTTL).WithLogger(log)
 			}
 
 			// Build the server after resolving the command tree and wiring the
@@ -206,113 +210,32 @@ adapter.`,
 			if err != nil {
 				return err
 			}
-			if wizardDeps != nil {
-				if err := wizardDeps(); err != nil {
-					return fmt.Errorf("failed to register wizard tools: %w", err)
-				}
-			}
 
-			// Resolve options before registering curated tools so App wiring
-			// (which must attach _meta.ui to the pin tool in the catalog BEFORE
-			// the curated loop registers it) can read provider factories.
+			// Resolve the optional custom tools (upload backends, apps, prompts)
+			// so they are captured in mcpServerOptions, then register every
+			// custom/direct tool, resource, and prompt in one place. Keeping the
+			// registration in registerCustomTools (custom_tools.go) rather than
+			// inline keeps this closure focused on transport only.
 			mcpOpts := &mcpServerOptions{}
 			for _, opt := range opts {
 				if opt != nil {
 					opt(mcpOpts)
 				}
 			}
-
-			// Register the "Create a Pin" MCP App before curated registration so
-			// the ui:// view is attached to pinner_pin in the catalog ahead of
-			// the curated loop. The app-only status helper and ui:// resource
-			// are additive and independent of the curated loop.
-			if mcpOpts.pinnerPins != nil {
-				pins, err := mcpOpts.pinnerPins()
-				if err != nil {
-					return fmt.Errorf("failed to build pinning provider: %w", err)
-				}
-				if err := RegisterPinApp(srv, catalog, pins); err != nil {
-					return fmt.Errorf("failed to register pin app: %w", err)
-				}
-			}
-
-			// Agent-facing out-of-band sign-in tools (start + resume) are part
-			// of the direct surface AND indexed for progressive discovery.
-			// Adding them to the catalog with DirectVisible before the curated
-			// loop means a single registration path (the DirectVisible scan in
-			// RegisterOfficialCuratedTools) exposes them on tools/list while
-			// the catalog entry supplies search/describe/invoke, instead of the
-			// prior dual RegisterOfficialDescriptor + catalog.Add dance. When
-			// the wizard transport is absent oob is nil and both tools return a
-			// structured not-configured hand-off instead of hanging.
-			authSSO := NewAuthSSODescriptor(oob, authHandles)
-			authSSO.DirectVisible = true
-			authResume := NewAuthResumeDescriptor(oob, authHandles)
-			authResume.DirectVisible = true
-			catalog.Add(toolEntryFromDescriptor(authSSO))
-			catalog.Add(toolEntryFromDescriptor(authResume))
-
-			// Stamp which tools are part of the direct tools/list surface. This
-			// must run after the wizard tools and SSO tools are added to the
-			// catalog (both are created after buildCatalog returns), so the
-			// curated names — which include the website/domain wizard tools —
-			// are all present before visibility is marked.
-			markCurated(catalog)
-
-			if err := RegisterOfficialCuratedTools(srv, catalog); err != nil {
-				return fmt.Errorf("failed to register curated tools: %w", err)
-			}
-
-			if resourceFactory != nil {
-				provs := resourceFactory(store)
-				provs.Sessions = store
-				resources, templates := ResourceDescriptors(provs)
-				if err := RegisterOfficialResources(srv, resources, templates); err != nil {
-					return fmt.Errorf("failed to register resources: %w", err)
-				}
-			}
-			if mcpOpts.chatGPTUpload != nil {
-				if err := RegisterOfficialDescriptor(srv, ChatGPTUploadDescriptor(mcpOpts.chatGPTUpload)); err != nil {
-					return fmt.Errorf("failed to register ChatGPT upload tool: %w", err)
-				}
-			}
-			if mcpOpts.chatGPTVaultPut != nil {
-				if err := RegisterOfficialDescriptor(srv, ChatGPTVaultPutDescriptor(mcpOpts.chatGPTVaultPut)); err != nil {
-					return fmt.Errorf("failed to register ChatGPT vault tool: %w", err)
-				}
-			}
-			if mcpOpts.relayURLUpload != nil {
-				if err := RegisterOfficialDescriptor(srv, RelayURLUploadDescriptor(mcpOpts.relayURLUpload, mcpOpts.relayAllowedHosts)); err != nil {
-					return fmt.Errorf("failed to register relay URL upload tool: %w", err)
-				}
-			}
-			if mcpOpts.dataURIUpload != nil {
-				if err := RegisterOfficialDescriptor(srv, DataURIUploadDescriptor(mcpOpts.dataURIUpload)); err != nil {
-					return fmt.Errorf("failed to register data URI upload tool: %w", err)
-				}
-			}
-			if mcpOpts.uploadTasks != nil {
-				for _, desc := range NewAsyncUploadTools(mcpOpts.uploadTasks) {
-					if err := RegisterOfficialDescriptor(srv, desc); err != nil {
-						return fmt.Errorf("failed to register async upload tool: %w", err)
-					}
-				}
-			}
-			// Always expose capability detection so hosts can choose a file-input
-			// mode without assuming draft MCP file support is negotiated. Each
-			// capability reflects whether its handler is actually wired.
-			if err := RegisterOfficialDescriptor(srv, NewCapabilitiesDescriptor(
-				mcpOpts.chatGPTUpload != nil,
-				mcpOpts.chatGPTVaultPut != nil,
-				mcpOpts.relayURLUpload != nil,
-				mcpOpts.dataURIUpload != nil,
-			)); err != nil {
-				return fmt.Errorf("failed to register capabilities tool: %w", err)
-			}
-			if mcpOpts.prompts {
-				if err := RegisterOfficialPrompts(srv, PromptDescriptors()); err != nil {
-					return fmt.Errorf("failed to register prompts: %w", err)
-				}
+			if err := registerCustomTools(customToolDeps{
+				srv:             srv,
+				catalog:         catalog,
+				store:           store,
+				oob:             oob,
+				authHandles:     authHandles,
+				resourceFactory: resourceFactory,
+				opts:            mcpOpts,
+				hasWizard:       hasWizard,
+				wizardW:         wizardW,
+				wizardS:         wizardS,
+				wizardD:         wizardD,
+			}); err != nil {
+				return err
 			}
 
 			if mcpString(cmd, "tunnel", "MCP_TUNNEL_PROVIDER") == "openai" {
