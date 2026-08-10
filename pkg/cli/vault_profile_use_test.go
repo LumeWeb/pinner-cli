@@ -55,10 +55,17 @@ func TestVaultProfileUse_EndToEnd(t *testing.T) {
 }
 
 // overrideHome rewrites the config path helpers to point at the given temp dir
-// by setting the same env vars the config layer consults.
+// by setting the same env vars the config layer consults. It sets BOTH the
+// POSIX vars (HOME/XDG_CONFIG_HOME/XDG_CACHE_HOME) and the Windows vars
+// (APPDATA/LOCALAPPDATA) because os.UserConfigDir honors the platform-specific
+// one and may cache it per-process — omitting the Windows ones makes registry
+// isolation tests fail on Windows CI, which reads the runner's real %AppData%.
 func overrideHome(t *testing.T, home string) {
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	t.Setenv("APPDATA", filepath.Join(home, "AppData", "Roaming"))
+	t.Setenv("LOCALAPPDATA", filepath.Join(home, "AppData", "Local"))
 	// sanity: ensure an empty PINNER_PROFILE does not force selection
 	t.Setenv("PINNER_PROFILE", "")
 }
