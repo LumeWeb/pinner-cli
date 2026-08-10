@@ -58,10 +58,18 @@ In non-interactive (--agent) mode the recovery seed is written to a 0600-permiss
 				if c.String(FlagProfile) != "" {
 					return err
 				}
-				// No --profile and no profiles exist yet; prompt for a name.
-				// Use promptui (matching the auth flow) so the prompt renders
-				// inline and reads cleanly instead of the raw input echoing on
-				// its own line.
+				// No --profile could be resolved (no default, no active
+				// profile). In agent/non-interactive mode (MCP/CI) stdin is the
+				// JSON-RPC transport, so an interactive prompt here would render
+				// garbage into the user's CLI and hang the call — surface an
+				// actionable error instead of blocking.
+				if IsAgentMode() {
+					return fmt.Errorf("%w: pass --profile <name> to select the vault profile to create", ErrNonInteractive)
+				}
+				// Interactive mode: prompt for a name. Use promptui (matching
+				// the auth flow) so the prompt renders inline and reads cleanly
+				// instead of the raw input echoing on its own line. Wrapped in
+				// runPrompt so a re-entrant agent-mode set cannot block.
 				prompt := promptui.Prompt{
 					Label: "Vault profile name",
 					Validate: func(input string) error {
@@ -71,9 +79,9 @@ In non-interactive (--agent) mode the recovery seed is written to a 0600-permiss
 						return vault.ValidateProfileName(input)
 					},
 				}
-				profileName, err = prompt.Run()
+				profileName, err = runPrompt(func() (string, error) { return prompt.Run() })
 				if err != nil {
-					return handleInterrupt(err)
+					return err
 				}
 			}
 
