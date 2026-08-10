@@ -312,6 +312,14 @@ func TestOfficialInvokeToolAllowsOOBRestore(t *testing.T) {
 		Description: "Restore a vault",
 		Category:    CategoryCore,
 		Interaction: InteractionStdinInput,
+		// Declare the OOB restore behavior: a non-stdin invocation is
+		// agent-safe (mints a browser hand-off), while its stdin-gating
+		// --seed-stdin variant reads os.Stdin. The invoke gate reads these
+		// fields instead of a hardcoded tool-name check.
+		Behavior: ToolBehavior{
+			RestoreURL: &RestoreURLSpec{ProfileField: "profile"},
+			StdinGate:  &StdinGateSpec{ArgName: "seed-stdin"},
+		},
 		InputSchema: json.RawMessage(`{"type":"object"}`),
 		Handler: func(context.Context, ToolRequest) (ToolResult, error) {
 			restoreCalled = true
@@ -388,6 +396,13 @@ func TestOfficialInvokeToolOOBRestoreWithSeedStdinStillGated(t *testing.T) {
 		Description: "Restore a vault",
 		Category:    CategoryCore,
 		Interaction: InteractionStdinInput,
+		// Declare the OOB restore behavior so the gate's data-driven bypass is
+		// exercised: even with RestoreURL set, a --seed-stdin invocation must
+		// still be gated.
+		Behavior: ToolBehavior{
+			RestoreURL: &RestoreURLSpec{ProfileField: "profile"},
+			StdinGate:  &StdinGateSpec{ArgName: "seed-stdin"},
+		},
 		InputSchema: json.RawMessage(`{"type":"object"}`),
 		Handler: func(context.Context, ToolRequest) (ToolResult, error) {
 			stdinCalled = true

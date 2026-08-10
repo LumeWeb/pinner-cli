@@ -31,6 +31,12 @@ import (
 // ToolDelimiter separates command path segments in MCP tool names.
 const ToolDelimiter = "_"
 
+// vaultRestoreToolName is the catalog name of the vault restore tool, which
+// carries special agent-facing behavior (OOB browser restore hand-off plus a
+// stdin-gated --seed-stdin variant). Declared once so the behavior wiring and
+// the invoke gate share the canonical name rather than repeating the string.
+const vaultRestoreToolName = "pinner_vault_restore"
+
 // ansiEscapeRE matches ANSI/VT escape sequences (SGR color codes, cursor
 // movement, erase, reset) so agent-facing tool output is always clean plain
 // text. The CLI's human formatter colors status text (e.g. \x1b[32mpinned\x1b[0m)
@@ -855,6 +861,22 @@ func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string, seedDr
 	// invocation interface.
 	if err := catalog.RegisterFromCommand(root, hasRootAction, prefix, toolHandler); err != nil {
 		return nil, err
+	}
+
+	// Annotate the vault-restore tool with its declarative behavior when an
+	// OOB restore coordinator is wired: it participates in a one-time browser
+	// restore hand-off (RestoreURL) and its --seed-stdin variant reads
+	// os.Stdin (StdinGate). The invoke gate reads these fields instead of a
+	// hardcoded tool-name check, so a non-stdin restore reaches the OOB
+	// hand-off while a --seed-stdin invoke is still gated.
+	if oobRestore != nil {
+		if restoreEntry, ok := catalog.Get(vaultRestoreToolName); ok {
+			restoreEntry.Behavior = ToolBehavior{
+				RestoreURL: &RestoreURLSpec{ProfileField: "profile"},
+				StdinGate:  &StdinGateSpec{ArgName: "seed-stdin"},
+			}
+			catalog.Add(restoreEntry)
+		}
 	}
 
 	return catalog, nil

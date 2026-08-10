@@ -65,8 +65,12 @@ type ToolEntry struct {
 	// Meta carries arbitrary tool metadata (e.g. MCP Apps `_meta.ui`) through
 	// curated registration. SDK-neutral; the wire seam encodes it onto the
 	// tool. Extended, never replaced, when attaching app metadata.
-	Meta    map[string]any
-	Handler PinnerToolHandler
+	Meta map[string]any
+	// Behavior carries agent-facing execution behavior (stdin gating, OOB
+	// hand-offs). The invoke gate and post-processing layers read this instead
+	// of hardcoded tool-name checks.
+	Behavior ToolBehavior
+	Handler  PinnerToolHandler
 }
 
 // ToolSummary is the lightweight representation returned by search_tools.
