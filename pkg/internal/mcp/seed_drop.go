@@ -7,6 +7,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 // SeedDrop hands a vault recovery seed to a human over a secure, one-time,
@@ -54,6 +56,13 @@ func NewSeedDrop(ttl time.Duration) *SeedDrop {
 // (the same value pointed at the OOB login coordinator).
 func (s *SeedDrop) SetBaseURL(baseURL string) {
 	s.core.SetBaseURL(baseURL)
+}
+
+// WithLogger sets the zap logger the seed-drop coordinator uses for lifecycle
+// events.
+func (s *SeedDrop) WithLogger(l *zap.Logger) *SeedDrop {
+	s.core.WithLogger(l)
+	return s
 }
 
 // Register mints a one-time, expiring, single-use URL carrying the given

@@ -17,6 +17,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/auth"
 	"go.lumeweb.com/pinner-cli/pkg/internal/mcp/oauthstore"
+	"go.uber.org/zap"
 )
 
 // oauthServer is a deliberately minimal, self-contained OAuth 2.1-shaped
@@ -53,6 +54,10 @@ type oauthServer struct {
 	// done stops the background reaper.
 	done      chan struct{}
 	closeOnce sync.Once
+
+	// logger logs authorization events. It defaults to the shared package
+	// logger and can be replaced via WithLogger.
+	logger *zap.Logger
 }
 
 type oauthClient struct {
@@ -80,6 +85,7 @@ func newOAuthServer(secret, baseURL string, store *oauthstore.Store) *oauthServe
 		tokenTTL: time.Hour,
 		codeTTL:  10 * time.Minute,
 		done:     make(chan struct{}),
+		logger:   log,
 	}
 	// Repopulate the in-memory client registry from the durable store so a
 	// previously-registered client can complete a fresh authorization-code login
@@ -95,6 +101,23 @@ func newOAuthServer(secret, baseURL string, store *oauthstore.Store) *oauthServe
 	// without bound as clients rotate and codes go unredeemed.
 	go o.sweep()
 	return o
+}
+
+// WithLogger sets the zap logger the OAuth server uses for authorization
+// events. It defaults to the shared package logger.
+func (o *oauthServer) WithLogger(l *zap.Logger) *oauthServer {
+	if l != nil {
+		o.logger = l
+	}
+	return o
+}
+
+// logf returns the OAuth server's logger, falling back to the package logger.
+func (o *oauthServer) logf() *zap.Logger {
+	if o.logger != nil {
+		return o.logger
+	}
+	return log
 }
 
 // Stop terminates the background reaper and closes the durable store. It is
@@ -321,10 +344,12 @@ func (o *oauthServer) authorizePOST(w http.ResponseWriter, r *http.Request) {
 	}
 	password := r.PostFormValue("password")
 	if subtle.ConstantTimeCompare([]byte(password), o.secret) != 1 {
+		o.logf().Warn("OAuth authorize rejected: bad resource-owner secret", zap.String("client_id", r.PostFormValue("client_id")), zap.String("remote", r.RemoteAddr))
 		http.Error(w, "invalid password", http.StatusUnauthorized)
 		return
 	}
 	if err := o.validateAuthorizeRequest(r.PostForm); err != nil {
+		o.logf().Warn("OAuth authorize rejected: invalid request", zap.String("client_id", r.PostFormValue("client_id")), zap.Error(err))
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -337,6 +362,7 @@ func (o *oauthServer) authorizePOST(w http.ResponseWriter, r *http.Request) {
 		resource:            r.PostFormValue("resource"),
 		expiry:              time.Now().Add(o.codeTTL),
 	})
+	o.logf().Info("OAuth authorization code issued", zap.String("client_id", r.PostFormValue("client_id")), zap.String("resource", r.PostFormValue("resource")), zap.String("remote", r.RemoteAddr))
 	redirectURI := r.PostFormValue("redirect_uri")
 	params := url.Values{"code": {code}}
 	if state := r.PostFormValue("state"); state != "" {
@@ -432,6 +458,7 @@ func (o *oauthServer) exchangeCode(w http.ResponseWriter, r *http.Request) error
 	o.mu.Unlock()
 	pair := o.newTokens()
 	o.storeTokens(pair, entry.clientID, entry.resource)
+	o.logf().Info("OAuth token issued (authorization_code)", zap.String("client_id", entry.clientID), zap.String("resource", entry.resource), zap.String("remote", r.RemoteAddr))
 	issueTokens(w, pair)
 	return nil
 }
@@ -460,10 +487,12 @@ func (o *oauthServer) exchangeRefreshToken(w http.ResponseWriter, r *http.Reques
 		o.tokens[pair.access] = time.Now().Add(o.tokenTTL)
 		o.mu.Unlock()
 		_ = client
+		o.logf().Info("OAuth token issued (refresh_token)", zap.String("client_id", clientID), zap.String("resource", resource), zap.String("remote", r.RemoteAddr))
 		issueTokens(w, pair)
 	default:
 		// RotateReplay (rotated beyond reuse window, revoked, expired, or
 		// unknown) → invalid_grant per RFC 6749 §5.2.
+		o.logf().Warn("OAuth refresh token rejected", zap.String("client_id", clientID), zap.String("resource", resource))
 		writeInvalidGrant(w)
 	}
 }
@@ -578,6 +607,8 @@ func (o *oauthServer) protectMCP(mcpPath string, next http.Handler) http.Handler
 			next.ServeHTTP(w, r)
 			return
 		}
+		o.logf().Warn("MCP endpoint denied: missing or invalid bearer token",
+			zap.String("path", r.URL.Path), zap.String("remote", r.RemoteAddr), zap.Bool("presented_token", token != ""))
 		deny(w, fmt.Sprintf(
 			`Bearer resource_metadata="%s/.well-known/oauth-protected-resource", error="invalid_token", error_description="OAuth authorization required"`,
 			o.baseURL))

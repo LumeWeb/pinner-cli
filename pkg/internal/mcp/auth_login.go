@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 // pendingLoginTTL bounds how long an out-of-band login request stays valid
@@ -84,6 +86,7 @@ func (o *OutOfBandLogin) completeReq(r *loginRequest) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	r.complete()
+	o.logf().Info("out-of-band login completed", zap.String("session", r.sessionID), zap.String("email", r.email), zap.String("id", r.id))
 }
 
 // failReq marks a request terminal-failure under o.mu (see completeReq).
@@ -91,6 +94,7 @@ func (o *OutOfBandLogin) failReq(r *loginRequest, err error) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	r.fail(err)
+	o.logf().Warn("out-of-band login failed", zap.String("session", r.sessionID), zap.String("email", r.email), zap.String("id", r.id), zap.Error(err))
 }
 
 // OutOfBandLogin serves branded login pages on a loopback listener (stdio) or
@@ -123,6 +127,10 @@ type OutOfBandLogin struct {
 	// keys so the oldest tombstone can be evicted in O(1) at the cap.
 	spent      map[string]spentLogin
 	spentOrder []string
+
+	// logger is used for lifecycle and auth events. It defaults to the shared
+	// package logger and can be replaced via WithLogger.
+	logger *zap.Logger
 
 	reaperCtx    context.Context
 	reaperCancel context.CancelFunc
@@ -166,10 +174,28 @@ func NewOutOfBandLogin(auth AuthService, baseURL, keyName string) *OutOfBandLogi
 		requests: make(map[string]*loginRequest),
 		throttle: make(map[string]*loginThrottle),
 		spent:    make(map[string]spentLogin),
+		logger:   log,
 	}
 	// Loopback-associated base URL (empty keeps the loopback-derived URL).
 	o.loopback.baseURL = strings.TrimRight(baseURL, "/")
 	return o
+}
+
+// WithLogger sets the zap logger the coordinator uses for its lifecycle and
+// auth events. It defaults to the shared package logger.
+func (o *OutOfBandLogin) WithLogger(l *zap.Logger) *OutOfBandLogin {
+	if l != nil {
+		o.logger = l
+	}
+	return o
+}
+
+// logf returns the coordinator's logger, falling back to the package logger.
+func (o *OutOfBandLogin) logf() *zap.Logger {
+	if o.logger != nil {
+		return o.logger
+	}
+	return log
 }
 
 // start spins up the loopback HTTP server used when the MCP client runs over
@@ -286,10 +312,12 @@ func (o *OutOfBandLogin) Begin(sessionID, email string) (id, url string, err err
 	}
 	if completed != nil {
 		o.mu.Unlock()
+		o.logf().Info("out-of-band login reused prior completed request", zap.String("session", sessionID), zap.String("email", email))
 		return completed.id, o.loginURL(completed.id), nil
 	}
 	o.requests[req.id] = req
 	o.mu.Unlock()
+	o.logf().Info("out-of-band login started", zap.String("session", sessionID), zap.String("email", email), zap.String("id", req.id))
 	return req.id, o.loginURL(req.id), nil
 }
 
@@ -336,12 +364,17 @@ func (o *OutOfBandLogin) pendingOutcome(sessionID, email string) (url string, do
 		// request so a later session signing in with the same email cannot see
 		// a stale "done" for credentials it never entered, and so completed
 		// requests do not accumulate for the process lifetime (see reaper).
+		o.logf().Info("out-of-band login resolved",
+			zap.String("session", sessionID), zap.String("email", email),
+			zap.String("id", req.id), zap.Bool("error", req.loginError != nil))
 		delete(o.requests, req.id)
 		if req.loginError != nil {
 			return "", true, req.loginError
 		}
 		return "", true, nil
 	default: // expired
+		o.logf().Warn("out-of-band login expired during polling",
+			zap.String("session", sessionID), zap.String("email", email), zap.String("id", req.id))
 		delete(o.requests, req.id)
 		return "", true, fmt.Errorf("out-of-band login expired, please retry")
 	}
@@ -409,6 +442,7 @@ func (o *OutOfBandLogin) loginPage(w http.ResponseWriter, r *http.Request) {
 		// client-controllable Host header. Requests carrying neither header are
 		// rejected (the endpoint is browser-only).
 		if ok := sameOrigin(r, o.acceptedOrigins()...); !ok {
+			o.logf().Warn("out-of-band login rejected: cross-origin POST", zap.String("session", req.sessionID), zap.String("id", req.id), zap.String("origin", r.Header.Get("Origin")), zap.String("remote", r.RemoteAddr))
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
@@ -466,6 +500,7 @@ func (o *OutOfBandLogin) authLoginSubmit(w http.ResponseWriter, r *http.Request,
 	expectedCSRF := req.csrfToken
 	req.mu.Unlock()
 	if expectedCSRF == "" || subtle.ConstantTimeCompare([]byte(r.FormValue("csrf")), []byte(expectedCSRF)) != 1 {
+		o.logf().Warn("out-of-band login rejected: bad CSRF token", zap.String("session", req.sessionID), zap.String("email", req.email), zap.String("id", req.id), zap.String("remote", r.RemoteAddr))
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
@@ -475,6 +510,7 @@ func (o *OutOfBandLogin) authLoginSubmit(w http.ResponseWriter, r *http.Request,
 	// login cannot reset it. A short flat cooldown blunts brute-force without the
 	// complexity of session-scoped or escalating counters.
 	if o.throttleLocked(req.email) {
+		o.logf().Warn("out-of-band login throttled (lockout in effect)", zap.String("email", req.email), zap.String("remote", r.RemoteAddr))
 		o.authLoginPage(w, r, req)
 		return
 	}
@@ -701,6 +737,7 @@ func (o *OutOfBandLogin) reaper(ctx context.Context) {
 					}
 					o.markSpentLocked(id, now, reason)
 					delete(o.requests, id)
+					o.logf().Debug("out-of-band login evicted by reaper", zap.String("session", req.sessionID), zap.String("id", id), zap.String("reason", string(reason)))
 				}
 			}
 			// Bound the spent-tombstone map to maxSpentTombstones (FIFO eviction

@@ -6,6 +6,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 // handoffEndpoint is the shared core behind every "create or read X secret over
@@ -35,6 +37,10 @@ type handoffEndpoint struct {
 	spentOrder []string
 	ttl        time.Duration
 	now        func() time.Time
+
+	// logger logs hand-off lifecycle events (mint, consume, expire). It
+	// defaults to the shared package logger.
+	logger *zap.Logger
 
 	prefix  string
 	handler handoffHandler
@@ -93,7 +99,26 @@ func newHandoff(prefix string, handler handoffHandler, ttl time.Duration) *hando
 		now:     time.Now,
 		prefix:  strings.Trim(prefix, "/"),
 		handler: handler,
+		logger:  log,
 	}
+}
+
+// WithLogger sets the zap logger the hand-off endpoint uses for lifecycle
+// events. It defaults to the shared package logger.
+func (h *handoffEndpoint) WithLogger(l *zap.Logger) *handoffEndpoint {
+	if l != nil {
+		h.logger = l
+	}
+	return h
+}
+
+// logf returns the hand-off endpoint's logger, falling back to the package
+// logger.
+func (h *handoffEndpoint) logf() *zap.Logger {
+	if h.logger != nil {
+		return h.logger
+	}
+	return log
 }
 
 // DefaultHandoffTTL is how long a hand-off URL stays valid before it expires.
@@ -115,6 +140,7 @@ func (h *handoffEndpoint) mint(payload any) string {
 	defer h.mu.Unlock()
 	token := strongRandomID()
 	h.items[token] = &handoffItem{payload: payload, expiresAt: h.now().Add(h.ttl)}
+	h.logf().Debug("one-time hand-off minted", zap.String("prefix", h.prefix))
 	return h.loopback.urlLocked(h.prefix, token)
 }
 

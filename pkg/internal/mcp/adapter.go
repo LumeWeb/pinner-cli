@@ -30,10 +30,20 @@ import (
 // ToolDelimiter separates command path segments in MCP tool names.
 const ToolDelimiter = "_"
 
-// log is the package-level zap logger for the MCP adapter.
-// Uses a production config (Info level, JSON encoder) to avoid leaking debug
-// output (including stderr buffers) onto the stdio JSON-RPC transport.
+// log is the package-level zap logger for the MCP adapter and its out-of-band
+// auth coordinators. It is a settable variable so a user-configured logger
+// (built from the mcp command's --log-level/--log-format flags) replaces the
+// default. The default uses a production config (Info level, JSON encoder) to
+// avoid leaking debug output (including stderr buffers) onto the stdio JSON-RPC
+// transport.
 var log = zap.Must(zap.NewProduction())
+
+// setPackageLogger installs a user-configured logger as the shared package
+// logger. Components that hold their own logger reference are unaffected; this
+// updates the fallback used by call sites reading the package-level log.
+func setPackageLogger(l *zap.Logger) {
+	log = l
+}
 
 // MCPCommand returns a *cli.Command that serves the command tree as an MCP
 // server over stdio. It should be appended to the root command's Commands.
@@ -103,9 +113,30 @@ adapter.`,
 				Name:  "public-url",
 				Usage: "Public base URL advertised in OAuth discovery metadata (issuer, authorize/token endpoints). Defaults to the tunnel URL when --tunnel is set, or the loopback address otherwise",
 			},
+			&cli.StringFlag{
+				Name:  "log-level",
+				Value: "info",
+				Usage: "Log level for the MCP server and its out-of-band auth components: debug, info, warn, error",
+			},
+			&cli.StringFlag{
+				Name:  "log-format",
+				Value: "json",
+				Usage: "Log encoding for the MCP server: json (default) or console",
+			},
 		},
 		Commands: []*cli.Command{ManagedServiceCommand()},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
+			// Build the MCP logger from the user's flags. It is installed as
+			// the package logger so every component (adapter, catalog, and the
+			// out-of-band auth coordinators) shares one configured sink. Logs
+			// go to stderr so they never corrupt the stdio JSON-RPC transport.
+			if lvl, lerr := logLevelFromString(cmd.String("log-level")); lerr != nil {
+				return lerr
+			} else if lgr, gerr := newZapLogger(lvl, cmd.String("log-format")); gerr != nil {
+				return gerr
+			} else {
+				setPackageLogger(lgr)
+			}
 			log.Debug("building MCP server with progressive disclosure", zap.String("app", root.Name))
 
 			store := NewSessionStore()
@@ -115,7 +146,7 @@ adapter.`,
 			// SeedDrop hands a vault recovery seed to a human over a one-time
 			// browser URL (loopback in stdio, shared mux over HTTP), without it
 			// transiting the MCP channel.
-			seedDrop := NewSeedDrop(DefaultSeedDropTTL)
+			seedDrop := NewSeedDrop(DefaultSeedDropTTL).WithLogger(log)
 
 			// Resolve wizard dependencies first: the OOB login and OOB restore
 			// coordinators are built from the services the CLI provides and
@@ -133,8 +164,8 @@ adapter.`,
 				if werr != nil {
 					return fmt.Errorf("failed to build wizard dependencies: %w", werr)
 				}
-				oob = sDeps.OutOfBand
-				oobRestore = NewOOBRestore(sDeps.Restore, DefaultRestoreTTL)
+				oob = sDeps.OutOfBand.WithLogger(log)
+				oobRestore = NewOOBRestore(sDeps.Restore, DefaultRestoreTTL).WithLogger(log)
 				// Defer wizard-tool registration until after the server +
 				// catalog exist.
 				wizardDeps = func() error {
@@ -379,7 +410,7 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 		if err != nil {
 			return fmt.Errorf("open oauth state store: %w", err)
 		}
-		oauth = newOAuthServer(authToken, baseURL, store)
+		oauth = newOAuthServer(authToken, baseURL, store).WithLogger(log)
 	}
 
 	// Serve the streamable-HTTP handler over our own http.Server bound to
