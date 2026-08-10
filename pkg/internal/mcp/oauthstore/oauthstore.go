@@ -247,22 +247,20 @@ func (s *Store) RotateRefreshToken(token, clientID, resource string) (string, st
 	// First-use claim must be ATOMIC: only one concurrent presenter may observe
 	// used_at IS NULL and win the rotation. Two requests racing on the same
 	// never-used token cannot both turn it into two distinct first uses, which
-	// would defeat replay detection.
+	// would defeat replay detection. Mint the successor up front and set used_at
+	// AND successor in a single conditional UPDATE so no reader can ever observe
+	// used_at set but successor empty (which would misclassify a benign reuse as
+	// RotateReplay). The atomic claim doubles as the invariant that the store
+	// never issues a successor without the claimed token being marked used.
+	succ := s.newToken()
 	res := s.db.Model(&RefreshToken{}).
 		Where("token = ? AND used_at IS NULL", rt.Token).
-		Update("used_at", now)
+		Updates(map[string]interface{}{"used_at": now, "successor": succ})
 	if res.Error != nil {
 		return "", "", RotateUnknown, res.Error
 	}
 	if res.RowsAffected == 1 {
-		// We won the claim: mint exactly one successor, record it on this row
-		// so a later benign reuse returns the SAME token, and persist it.
-		succ := s.newToken()
-		if err := s.db.Model(&RefreshToken{}).
-			Where("token = ?", rt.Token).
-			Update("successor", succ).Error; err != nil {
-			return "", "", RotateUnknown, err
-		}
+		// We won the claim: persist the single successor in the same chain.
 		if err := s.issueInChain(succ, "", rt.ClientID, rt.Resource, rt.ChainRoot); err != nil {
 			return "", "", RotateUnknown, err
 		}
