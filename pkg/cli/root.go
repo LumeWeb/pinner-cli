@@ -11,6 +11,7 @@ import (
 	"go.lumeweb.com/pinner-cli/build"
 	"go.lumeweb.com/pinner-cli/internal/core/vault"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner-cli/internal/core/websites"
 	mcpadapter "go.lumeweb.com/pinner-cli/pkg/internal/mcp"
 )
 
@@ -129,7 +130,7 @@ For more help on any command: pinner <command> --help`,
 			// request time, so a `pinner login` (or config edit) that relocates the
 			// token on disk is picked up by the running server without a restart.
 			// Freezing the startup token as an override would defeat live reload.
-			websitesSvc := websitesServiceFactory(cfgMgr, output, secure)
+			websitesSvc := websites.DefaultFactory(cfgMgr, secure)
 			authSvc := defaultAuthServiceFactory(cfgMgr, cfgMgr.Config().GetAccountEndpointSecure())
 			uploadSvc := defaultUploadServiceFactory(cfgMgr, output, WithUploadAuthService(authSvc))
 

@@ -146,10 +146,13 @@ func setupWebsitesHandlerTest(t *testing.T) (*mockWebsitesHandlerService, *confi
 		AuthToken:    "test-token",
 	}).Maybe()
 
-	origFactory := websitesServiceFactory
-	t.Cleanup(func() { websitesServiceFactory = origFactory })
-	websitesServiceFactory = func(config.Manager, Output, bool, ...WebsitesServiceOption) WebsitesService {
-		return mockSvc
+	origFactory := newWebsitesAPI
+	t.Cleanup(func() { newWebsitesAPI = origFactory })
+	newWebsitesAPI = func(cfgMgr config.Manager, authToken string, secure bool) (WebsitesService, error) {
+		if authToken == "" {
+			return nil, ErrNotAuthenticated
+		}
+		return mockSvc, nil
 	}
 
 	return mockSvc, cfgMgr
