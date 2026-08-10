@@ -1,9 +1,10 @@
 package mcp
 
-import "github.com/samber/lo"
-
-// curatedToolNames is the first directly exposed MCP product surface. Keep
-// this ordered slice as the source of truth; curatedToolSet is derived from it.
+// curatedToolNames is the ordered product surface of tools exposed directly
+// (tools/list) in addition to progressive discovery. It is the single source
+// of truth for which catalog tools are directly visible; applying it to the
+// catalog stamps each entry's DirectVisible flag (see markCurated). Keep the
+// names in a stable, human-reviewable order.
 var curatedToolNames = []string{
 	"pinner_upload",
 	"pinner_auth_status",
@@ -26,12 +27,18 @@ var curatedToolNames = []string{
 	"websites_wizard_step",
 }
 
-var curatedToolSet = lo.SliceToMap(curatedToolNames, func(name string) (string, struct{}) {
-	return name, struct{}{}
-})
-
-// IsCuratedTool reports whether name belongs to the direct MCP surface.
-func IsCuratedTool(name string) bool {
-	_, ok := curatedToolSet[name]
-	return ok
+// markCurated stamps DirectVisible=true on the entries named by
+// curatedToolNames. The curated registration loop reads DirectVisible rather
+// than re-checking a name predicate, so visibility is a property of the tool.
+func markCurated(catalog *ToolCatalog) {
+	visible := make(map[string]struct{}, len(curatedToolNames))
+	for _, name := range curatedToolNames {
+		visible[name] = struct{}{}
+	}
+	for _, entry := range catalog.Entries() {
+		if _, ok := visible[entry.Name]; ok {
+			entry.DirectVisible = true
+			catalog.Add(entry)
+		}
+	}
 }
