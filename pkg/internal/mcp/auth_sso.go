@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 )
 
@@ -92,7 +93,17 @@ func NewAuthResumeDescriptor(oob *OutOfBandLogin, handles *AsyncHandleStore) Too
 			}
 			_, data, err := handles.Get(in.Handle)
 			if err != nil {
-				return ToolResult{IsError: true, Text: "unknown or expired handle; start a new login with pinner_auth_sso"}, nil
+				detail := "unknown handle; start a new login with pinner_auth_sso"
+				if errors.Is(err, ErrHandleExpired) {
+					detail = "the sign-in handle expired before the human completed approval; start a fresh login with pinner_auth_sso and have the user approve promptly"
+				}
+				// A login that can no longer be resumed must not leave the agent
+				// retrying a dead handle. Steer it to start over immediately.
+				return NeedsHumanResult(NeedsHuman{
+					Reason:     ReasonSSOApproval,
+					ResumeTool: "pinner_auth_sso",
+					Detail:     detail,
+				}), nil
 			}
 			email, _ := data["email"].(string)
 
