@@ -81,6 +81,16 @@ func newOAuthServer(secret, baseURL string, store *oauthstore.Store) *oauthServe
 		codeTTL:  10 * time.Minute,
 		done:     make(chan struct{}),
 	}
+	// Repopulate the in-memory client registry from the durable store so a
+	// previously-registered client can complete a fresh authorization-code login
+	// after a restart (its client_id and refresh token both outlive the process).
+	if store != nil {
+		if persisted, err := store.Clients(); err == nil {
+			for id, uris := range persisted {
+				o.clients[id] = oauthClient{redirectURIs: uris}
+			}
+		}
+	}
 	// Periodic reaper so long-running public tunnels do not grow the maps
 	// without bound as clients rotate and codes go unredeemed.
 	go o.sweep()
@@ -200,6 +210,18 @@ func (o *oauthServer) validateAuthorizeRequest(q url.Values) error {
 	o.mu.Lock()
 	client, ok := o.clients[clientID]
 	o.mu.Unlock()
+	if !ok && o.store != nil {
+		// Client not in the in-memory registry — load it from the durable store
+		// (it may have been registered by a previous process sharing the DB).
+		uris, err := o.store.ClientRedirectURIs(clientID)
+		if err == nil && len(uris) > 0 {
+			client = oauthClient{redirectURIs: uris}
+			ok = true
+			o.mu.Lock()
+			o.clients[clientID] = client
+			o.mu.Unlock()
+		}
+	}
 	if !ok || !contains(client.redirectURIs, redirectURI) {
 		return fmt.Errorf("unregistered client or redirect_uri")
 	}

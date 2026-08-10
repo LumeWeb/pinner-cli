@@ -83,11 +83,13 @@ func Open(path string, refreshTTL time.Duration) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("oauthstore: open db: %w", err)
 	}
-	if err := db.AutoMigrate(&Client{}, &RefreshToken{}); err != nil {
-		return nil, fmt.Errorf("oauthstore: migrate: %w", err)
-	}
 	if err := restrictFile(path); err != nil {
 		return nil, fmt.Errorf("oauthstore: restrict permissions: %w", err)
+	}
+	// Apply the goose schema migrations. Write contention during this one-time
+	// startup step is covered by the _busy_timeout=5000 DSN pragma.
+	if err := migrate(db); err != nil {
+		return nil, fmt.Errorf("oauthstore: migrate: %w", err)
 	}
 	if refreshTTL <= 0 {
 		refreshTTL = 30 * 24 * time.Hour
@@ -130,6 +132,25 @@ func (s *Store) ClientRedirectURIs(id string) ([]string, error) {
 		return nil, err
 	}
 	return uris, nil
+}
+
+// Clients returns every persisted client's id and redirect URIs, used to
+// repopulate the in-memory client registry on startup so previously-registered
+// clients can complete fresh authorization-code logins after a restart.
+func (s *Store) Clients() (map[string][]string, error) {
+	var rows []Client
+	if err := s.db.Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make(map[string][]string, len(rows))
+	for _, r := range rows {
+		var uris []string
+		if err := json.Unmarshal([]byte(r.RedirectURIs), &uris); err != nil {
+			return nil, err
+		}
+		out[r.ID] = uris
+	}
+	return out, nil
 }
 
 // ---- refresh tokens ----
@@ -201,27 +222,58 @@ func (s *Store) RotateRefreshToken(token, clientID, resource, successor string) 
 	}
 	now := time.Now()
 	if rt.UsedAt != nil {
-		// Already rotated. Within the reuse window → benign race, tolerate.
-		if now.Sub(*rt.UsedAt) <= s.reuseWindow {
-			if err := s.issueInChain(successor, rt.ClientID, rt.Resource, rt.ChainRoot); err != nil {
-				return "", RotateUnknown, err
-			}
-			return rt.ClientID, RotateOKReused, nil
-		}
-		// Replay: revoke the whole chain and reject.
-		if err := s.revokeChain(rt.ChainRoot); err != nil {
+		// Already rotated (as read). Re-evaluate under the same rules as a
+		// failed atomic claim below.
+		return s.resolvePostUse(rt, now, successor)
+	}
+	// First-use claim must be ATOMIC: only one concurrent presenter may observe
+	// used_at IS NULL and win the rotation. Two requests racing on the same
+	// never-used token cannot both turn it into two distinct first uses, which
+	// would defeat replay detection.
+	res := s.db.Model(&RefreshToken{}).
+		Where("token = ? AND used_at IS NULL", rt.Token).
+		Update("used_at", now)
+	if res.Error != nil {
+		return "", RotateUnknown, res.Error
+	}
+	if res.RowsAffected == 1 {
+		// We won the claim: issue exactly one successor.
+		if err := s.issueInChain(successor, rt.ClientID, rt.Resource, rt.ChainRoot); err != nil {
 			return "", RotateUnknown, err
 		}
+		return rt.ClientID, RotateOK, nil
+	}
+	// We lost the claim: another request already rotated this token. Re-read its
+	// current used_at and decide reuse-vs-replay on fresh state.
+	var current RefreshToken
+	if err := s.db.Where("token = ?", token).First(&current).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return "", RotateUnknown, nil
+		}
+		return "", RotateUnknown, err
+	}
+	return s.resolvePostUse(current, now, successor)
+}
+
+// resolvePostUse handles a token that has already been used/rotated. Within the
+// reuse-detection window it is treated as a benign race (the client had not yet
+// persisted the successor) and accepted; beyond the window the whole chain is
+// revoked and the use rejected (replay).
+func (s *Store) resolvePostUse(rt RefreshToken, now time.Time, successor string) (string, RotateStatus, error) {
+	if rt.UsedAt == nil {
 		return "", RotateReplay, nil
 	}
-	// First use: mark used, issue successor in the same chain.
-	if err := s.db.Model(&rt).Updates(map[string]any{"used_at": now}).Error; err != nil {
+	if now.Sub(*rt.UsedAt) <= s.reuseWindow {
+		if err := s.issueInChain(successor, rt.ClientID, rt.Resource, rt.ChainRoot); err != nil {
+			return "", RotateUnknown, err
+		}
+		return rt.ClientID, RotateOKReused, nil
+	}
+	// Replay beyond the window: revoke the whole chain and reject.
+	if err := s.revokeChain(rt.ChainRoot); err != nil {
 		return "", RotateUnknown, err
 	}
-	if err := s.issueInChain(successor, rt.ClientID, rt.Resource, rt.ChainRoot); err != nil {
-		return "", RotateUnknown, err
-	}
-	return rt.ClientID, RotateOK, nil
+	return "", RotateReplay, nil
 }
 
 // revokeChain marks every token in a chain as revoked.
@@ -237,7 +289,7 @@ func (s *Store) Reap() error {
 	if err != nil {
 		return err
 	}
-	return s.db.Where("issued_at < ?", now.Add(-s.refreshTTL)).Delete(&Client{}).Error
+	return s.db.Where("created_at < ?", now.Add(-s.refreshTTL)).Delete(&Client{}).Error
 }
 
 func restrictFile(path string) error {
