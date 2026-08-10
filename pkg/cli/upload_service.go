@@ -5,7 +5,7 @@ import (
 	"io/fs"
 	"time"
 
-	"go.lumeweb.com/pinner-cli/pkg/config"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
 )
 
 // UploadResult contains information about an upload operation.

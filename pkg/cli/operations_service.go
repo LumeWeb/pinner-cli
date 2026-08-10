@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"go.lumeweb.com/pinner-cli/pkg/config"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
 	portalsdk "go.lumeweb.com/portal-sdk"
 	"go.lumeweb.com/queryutil"
 	"go.lumeweb.com/queryutil/filter"

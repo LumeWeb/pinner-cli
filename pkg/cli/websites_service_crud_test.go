@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 	ipfs "go.lumeweb.com/ipfs-sdk"
 	sdkwebsitesmocks "go.lumeweb.com/ipfs-sdk/mocks/services"
-	"go.lumeweb.com/pinner-cli/pkg/config"
-	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
+	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
 )
 
 func newUnauthWebsitesService(t *testing.T) *websitesService {

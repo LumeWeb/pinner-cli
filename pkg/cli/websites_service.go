@@ -5,7 +5,7 @@ import (
 	"errors"
 
 	ipfs "go.lumeweb.com/ipfs-sdk"
-	"go.lumeweb.com/pinner-cli/pkg/config"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
 )
 
 // websitesService implements the WebsitesService interface using the ipfs.WebsitesService.

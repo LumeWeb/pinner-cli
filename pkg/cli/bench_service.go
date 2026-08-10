@@ -16,7 +16,7 @@ import (
 
 	"github.com/avast/retry-go/v4"
 	"github.com/docker/go-units"
-	"go.lumeweb.com/pinner-cli/pkg/config"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
 	portalsdk "go.lumeweb.com/portal-sdk"
 	"go.lumeweb.com/queryutil/filter"
 	"testing/fstest"

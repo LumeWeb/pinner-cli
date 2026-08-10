@@ -12,7 +12,7 @@ import (
 	"github.com/ipfs/boxo/files"
 	"github.com/ipfs/go-cid"
 	ipfs "go.lumeweb.com/ipfs-sdk"
-	"go.lumeweb.com/pinner-cli/pkg/config"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
 	portalsdk "go.lumeweb.com/portal-sdk"
 )
 

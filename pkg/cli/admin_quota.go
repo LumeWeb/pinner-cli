@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"go.lumeweb.com/pinner-cli/pkg/config"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
 	"go.lumeweb.com/portal-sdk/admin"
 )
 

@@ -7,7 +7,7 @@ import (
 
 	"github.com/pterm/pterm"
 	"github.com/urfave/cli/v3"
-	"go.lumeweb.com/pinner-cli/pkg/config"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
 	portalsdk "go.lumeweb.com/portal-sdk"
 )
 

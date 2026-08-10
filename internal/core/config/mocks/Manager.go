@@ -12,7 +12,7 @@ import (
 	mock "github.com/stretchr/testify/mock"
 	"go.lumeweb.com/configmanager"
 	"go.lumeweb.com/configmanager/source"
-	"go.lumeweb.com/pinner-cli/pkg/config"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
 )
 
 // NewMockManager creates a new instance of MockManager. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.

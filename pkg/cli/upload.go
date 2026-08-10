@@ -13,7 +13,7 @@ import (
 	"github.com/urfave/cli/v3"
 	contentfs "go.lumeweb.com/ipfs-content/fs"
 	ipfs "go.lumeweb.com/ipfs-sdk"
-	"go.lumeweb.com/pinner-cli/pkg/config"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
 	internalio "go.lumeweb.com/pinner-cli/pkg/internal/io"
 )
 

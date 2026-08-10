@@ -14,8 +14,8 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	climocks "go.lumeweb.com/pinner-cli/pkg/cli/internal/mocks"
-	"go.lumeweb.com/pinner-cli/pkg/config"
-	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
+	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
 )
 
 var (

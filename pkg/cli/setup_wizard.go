@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"go.lumeweb.com/pinner-cli/pkg/cli/wizard"
-	"go.lumeweb.com/pinner-cli/pkg/config"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
 )
 
 // SetupOptions configures the wizard behavior.

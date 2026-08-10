@@ -18,8 +18,8 @@ import (
 	"github.com/tus/tusd/v2/pkg/handler"
 	"github.com/tus/tusd/v2/pkg/memorylocker"
 	contentfs "go.lumeweb.com/ipfs-content/fs"
-	"go.lumeweb.com/pinner-cli/pkg/config"
-	configmocks "go.lumeweb.com/pinner-cli/pkg/config/mocks"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
+	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
 	portalsdkmocks "go.lumeweb.com/portal-sdk/mocks"
 )
 

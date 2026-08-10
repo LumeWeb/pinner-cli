@@ -4,7 +4,7 @@ import (
 	"context"
 
 	ipfs "go.lumeweb.com/ipfs-sdk"
-	"go.lumeweb.com/pinner-cli/pkg/config"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
 )
 
 // DNSService defines the interface for DNS operations in the CLI.
