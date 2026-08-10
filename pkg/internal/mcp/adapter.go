@@ -143,8 +143,12 @@ adapter.`,
 			}
 
 			// Build the server after resolving the command tree and wiring the
-			// seed/restore coordinators into the tool handlers.
-			srv, catalog, err := OfficialMCPServer(root, hasRootAction, nil, seedDrop, oobRestore)
+			// seed/restore coordinators into the tool handlers. stdioMode tells
+			// the invoke-tool gate that os.Stdin is the MCP transport pipe (so a
+			// stdin-input command must be redirected rather than consume
+			// protocol bytes); it mirrors the transport decision below.
+			stdioMode := mcpString(cmd, "tunnel", "MCP_TUNNEL_PROVIDER") != "openai" && !cmd.Bool("http")
+			srv, catalog, err := OfficialMCPServer(root, hasRootAction, nil, stdioMode, seedDrop, oobRestore)
 			if err != nil {
 				return err
 			}
@@ -496,6 +500,16 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 		// a remote human reaches /login/<id> through the tunnel.
 		if oob != nil {
 			oob.SetBaseURL(url)
+		}
+		// Mirror the login coordinator: point the seed and restore hand-offs at
+		// the same provider-approved public origin so a remote human can reach
+		// /seed/<token> and /restore/<token> through the tunnel (and the CSRF
+		// origin check admits the tunnel origin, not just the loopback).
+		if seedDrop != nil {
+			seedDrop.SetBaseURL(url)
+		}
+		if oobRestore != nil {
+			oobRestore.SetBaseURL(url)
 		}
 		if oauth != nil {
 			oauthURL, err := tunnel.OAuthBaseURL(publicURL, url)

@@ -153,6 +153,14 @@ type vaultRestoreAgentOutput struct {
 	NextStep string `json:"next_step"`
 }
 
+// restoreOOBEnabled reports whether an OOB restore coordinator is wired and
+// usable (a non-nil coordinator makes the vault-restore browser hand-off
+// reachable). Used to bypass the stdin-input gate for the agent-safe restore
+// path.
+func restoreOOBEnabled(o *OOBRestore) bool {
+	return o != nil
+}
+
 // attachRestoreURL post-processes the stdout of `vault restore --agent`. When
 // an OOB restore coordinator is wired, it mints a one-time /restore/<token> URL
 // for the targeted profile so the human can supply the recovery seed in a

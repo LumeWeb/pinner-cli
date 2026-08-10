@@ -95,7 +95,7 @@ func (h *handoffEndpoint) mint(payload any) string {
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	token := randomID()
+	token := strongRandomID()
 	h.items[token] = &handoffItem{payload: payload, expiresAt: h.now().Add(h.ttl)}
 	return h.loopback.urlLocked(h.prefix, token)
 }

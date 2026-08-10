@@ -644,6 +644,16 @@ func randomID() string {
 	return hex.EncodeToString(b)
 }
 
+// strongRandomID returns a 128-bit random identifier (16 bytes, hex-encoded).
+// It backs one-time hand-off URLs that guard high-value secrets (a vault
+// recovery mnemonic), where 64-bit entropy in randomID is too guessable on an
+// otherwise unauthenticated route.
+func strongRandomID() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
 // sameOrigin reports whether an inbound request originates from one of the
 // given acceptable origins. The login endpoint is browser-only: a browser form
 // POST always carries an Origin header (and usually a Referer), so a request

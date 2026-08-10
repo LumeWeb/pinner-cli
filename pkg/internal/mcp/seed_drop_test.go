@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -11,6 +12,16 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// mustJSONQuote returns the JSON-escaped string literal for s, so filesystem
+// paths with backslashes (Windows) are embedded validly in a JSON handoff.
+func mustJSONQuote(s string) string {
+	b, err := json.Marshal(s)
+	if err != nil {
+		panic(err)
+	}
+	return string(b)
+}
 
 func TestSeedDropSingleUse(t *testing.T) {
 	d := NewSeedDrop(time.Minute)
@@ -58,7 +69,10 @@ func TestAttachSeedDropMintsURL(t *testing.T) {
 	seedPath := filepath.Join(dir, "recovery.seed")
 	require.NoError(t, os.WriteFile(seedPath, []byte("one two three\n"), 0600))
 
-	out := `{"profile":"default","seed_path":"` + seedPath + `","next_step":"run restore"}`
+	// Build the JSON handoff by marshaling so Windows drive-letter paths
+	// (D:\a\...\recovery.seed) are JSON-escaped correctly (a raw backslash is
+	// an invalid JSON escape and would make Unmarshal fail on Windows).
+	out := `{"profile":"default","seed_path":` + mustJSONQuote(seedPath) + `,"next_step":"run restore"}`
 	text, extra := attachSeedDrop(out, "pinner_vault_create", d)
 	// Text unchanged; structured content carries the URL.
 	assert.Equal(t, out, text)
