@@ -187,7 +187,7 @@ func TestStatus(t *testing.T) {
 				withCID(tt.cid).
 				withBool(FlagWatch, tt.watchFlag)
 
-			pinningServiceFactory := func(cm config.Manager, out Output, _ bool) PinningService {
+			pinningServiceFactory := func(cm config.Manager, _ bool) PinningService {
 				return pinningSvc
 			}
 

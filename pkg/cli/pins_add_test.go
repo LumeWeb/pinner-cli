@@ -47,7 +47,7 @@ func TestPinsAdd_DryRun(t *testing.T) {
 		withCID("QmXxx").
 		withBool(FlagDryRun, true)
 
-	pinningServiceFactory := func(cm config.Manager, out Output, _ bool) PinningService {
+	pinningServiceFactory := func(cm config.Manager, _ bool) PinningService {
 		return service
 	}
 
@@ -73,7 +73,7 @@ func TestPinsAdd_NoMeta(t *testing.T) {
 
 	cmd := newMockCommand().withCID("QmXxx")
 
-	pinningServiceFactory := func(cm config.Manager, out Output, _ bool) PinningService {
+	pinningServiceFactory := func(cm config.Manager, _ bool) PinningService {
 		return service
 	}
 
@@ -105,7 +105,7 @@ func TestPinsAdd_WithMetadata(t *testing.T) {
 		withCID("QmXxx").
 		withStringSlice(FlagMeta, []string{"owner=alice"})
 
-	pinningServiceFactory := func(cm config.Manager, out Output, _ bool) PinningService {
+	pinningServiceFactory := func(cm config.Manager, _ bool) PinningService {
 		return service
 	}
 
@@ -131,7 +131,7 @@ func TestPinsAdd_PinError(t *testing.T) {
 
 	cmd := newMockCommand().withCID("QmXxx")
 
-	pinningServiceFactory := func(cm config.Manager, out Output, _ bool) PinningService {
+	pinningServiceFactory := func(cm config.Manager, _ bool) PinningService {
 		return service
 	}
 
@@ -162,7 +162,7 @@ func TestPinsAdd_MetadataUpdateError(t *testing.T) {
 		withCID("QmXxx").
 		withStringSlice(FlagMeta, []string{"owner=alice"})
 
-	pinningServiceFactory := func(cm config.Manager, out Output, _ bool) PinningService {
+	pinningServiceFactory := func(cm config.Manager, _ bool) PinningService {
 		return service
 	}
 
@@ -191,7 +191,7 @@ func TestPinsAdd_InvalidMetaFormat(t *testing.T) {
 		withCID("QmXxx").
 		withStringSlice(FlagMeta, []string{"invalid-no-equals"})
 
-	pinningServiceFactory := func(cm config.Manager, out Output, _ bool) PinningService {
+	pinningServiceFactory := func(cm config.Manager, _ bool) PinningService {
 		return service
 	}
 

@@ -72,7 +72,7 @@ func status(ctx context.Context, cmd interface {
 	if authToken != "" {
 		pinningService = NewPinningService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure), WithAuthToken(authToken))
 	} else {
-		pinningService = pinningServiceFactory(cfgMgr, output, secure)
+		pinningService = pinningServiceFactory(cfgMgr, secure)
 	}
 
 	if err := pinningService.RequireAuthenticated(); err != nil {

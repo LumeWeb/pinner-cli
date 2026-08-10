@@ -27,7 +27,7 @@ func TestPinsUpdate(t *testing.T) {
 			AuthToken:    "test-token",
 			MaxRetries:   3,
 		}).Maybe()
-		pinningServiceFactory := func(cm config.Manager, out Output, _ bool) PinningService {
+		pinningServiceFactory := func(cm config.Manager, _ bool) PinningService {
 			return service
 		}
 
@@ -51,7 +51,7 @@ func TestPinsUpdate(t *testing.T) {
 			AuthToken:    "test-token",
 			MaxRetries:   3,
 		}).Maybe()
-		pinningServiceFactory := func(cm config.Manager, out Output, _ bool) PinningService {
+		pinningServiceFactory := func(cm config.Manager, _ bool) PinningService {
 			return service
 		}
 
@@ -77,7 +77,7 @@ func TestPinsUpdate(t *testing.T) {
 			AuthToken:    "test-token",
 			MaxRetries:   3,
 		}).Maybe()
-		pinningServiceFactory := func(cm config.Manager, out Output, _ bool) PinningService {
+		pinningServiceFactory := func(cm config.Manager, _ bool) PinningService {
 			return service
 		}
 
@@ -99,7 +99,7 @@ func TestPinsUpdate(t *testing.T) {
 			withIsSet(FlagName, true)
 
 		output := newTestOutput()
-		pinningServiceFactory := func(cm config.Manager, out Output, _ bool) PinningService {
+		pinningServiceFactory := func(cm config.Manager, _ bool) PinningService {
 			return service
 		}
 
@@ -124,7 +124,7 @@ func TestPinsUpdate(t *testing.T) {
 			withIsSet(FlagName, true)
 
 		output := newTestOutput()
-		pinningServiceFactory := func(cm config.Manager, out Output, _ bool) PinningService {
+		pinningServiceFactory := func(cm config.Manager, _ bool) PinningService {
 			return service
 		}
 
@@ -148,7 +148,7 @@ func TestPinsUpdate(t *testing.T) {
 			withIsSet(FlagMeta, true)
 
 		output := newTestOutput()
-		pinningServiceFactory := func(cm config.Manager, out Output, _ bool) PinningService {
+		pinningServiceFactory := func(cm config.Manager, _ bool) PinningService {
 			return service
 		}
 
@@ -172,7 +172,7 @@ func TestPinsUpdate(t *testing.T) {
 			withIsSet(FlagClearMeta, true)
 
 		output := newTestOutput()
-		pinningServiceFactory := func(cm config.Manager, out Output, _ bool) PinningService {
+		pinningServiceFactory := func(cm config.Manager, _ bool) PinningService {
 			return service
 		}
 
@@ -198,7 +198,7 @@ func TestPinsUpdate(t *testing.T) {
 			withIsSet(FlagMeta, true)
 
 		output := newTestOutput()
-		pinningServiceFactory := func(cm config.Manager, out Output, _ bool) PinningService {
+		pinningServiceFactory := func(cm config.Manager, _ bool) PinningService {
 			return service
 		}
 
@@ -224,7 +224,7 @@ func TestPinsUpdate(t *testing.T) {
 			withIsSet(FlagMeta, true)
 
 		output := newTestOutput()
-		pinningServiceFactory := func(cm config.Manager, out Output, _ bool) PinningService {
+		pinningServiceFactory := func(cm config.Manager, _ bool) PinningService {
 			return service
 		}
 
@@ -253,7 +253,7 @@ func TestPinsUpdate(t *testing.T) {
 			withIsSet(FlagDryRun, true)
 
 		output := newTestOutput()
-		pinningServiceFactory := func(cm config.Manager, out Output, _ bool) PinningService {
+		pinningServiceFactory := func(cm config.Manager, _ bool) PinningService {
 			return service
 		}
 

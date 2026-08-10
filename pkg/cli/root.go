@@ -136,7 +136,7 @@ For more help on any command: pinner <command> --help`,
 			// Build the pinning backend for the "Create a Pin" MCP App. Reuse
 			// the CLI's PinningService (which reads cfgMgr live at request time)
 			// and adapt its Status into the SDK-neutral PinningProvider.
-			pinningSvc := defaultPinningServiceFactory(cfgMgr, output, secure)
+			pinningSvc := defaultPinningServiceFactory(cfgMgr, secure)
 			pinProvider = func() (mcpadapter.PinningProvider, error) {
 				return &pinStatusAdapter{pins: pinningSvc}, nil
 			}
