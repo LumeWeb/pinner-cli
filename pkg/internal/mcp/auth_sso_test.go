@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -77,8 +78,35 @@ func TestAuthResumeUnknownHandleErrors(t *testing.T) {
 		Arguments: map[string]any{"handle": "does-not-exist"},
 	})
 	require.NoError(t, err)
-	require.True(t, result.IsError)
-	assert.Contains(t, result.Text, "start a new login")
+	// An unresumable login must return a structured needs_human hand-off that
+	// steers the agent to start a fresh login, not a bare error the agent would
+	// just surface. The description distinguishes the unknown case.
+	sc := requireHandoff(t, result)
+	assert.Equal(t, ReasonSSOApproval, sc["reason"])
+	assert.Equal(t, "pinner_auth_sso", sc["resume_tool"])
+	assert.Contains(t, sc["detail"].(string), "unknown handle")
+	assert.Contains(t, sc["detail"].(string), "start a new login")
+}
+
+func TestAuthResumeExpiredHandleSteersRestart(t *testing.T) {
+	oob := newOOBForTest(t)
+	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	desc := NewAuthResumeDescriptor(oob, handles)
+
+	// Mint a handle, then force it past its TTL so Get returns ErrHandleExpired.
+	handle := handles.Create("pending", map[string]any{"email": "a@example.com"})
+	handles.now = func() time.Time { return time.Now().Add(2 * DefaultSessionTTL) }
+
+	result, err := desc.Handler(context.Background(), ToolRequest{
+		Name:      "pinner_auth_resume",
+		Arguments: map[string]any{"handle": handle},
+	})
+	require.NoError(t, err)
+	sc := requireHandoff(t, result)
+	assert.Equal(t, ReasonSSOApproval, sc["reason"])
+	assert.Equal(t, "pinner_auth_sso", sc["resume_tool"])
+	assert.Contains(t, sc["detail"].(string), "expired")
+	assert.Contains(t, sc["detail"].(string), "fresh login")
 }
 
 // TestAuthSSONotConfigured verifies the nil-coordinator case returns a
