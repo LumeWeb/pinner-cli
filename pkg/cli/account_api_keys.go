@@ -104,7 +104,7 @@ current key, you must re-authenticate with 'pinner auth'.`,
 
 func accountAPIKeysList(ctx context.Context, cmd flagGetter, output Output, cfgMgr config.Manager, authToken string, authServiceFactory AuthServiceFactory, svcFactory APIKeyServiceFactory) error {
 	apiEndpoint := cfgMgr.Config().GetAPIEndpoint()
-	authService := authServiceFactory(cfgMgr, output, apiEndpoint)
+	authService := authServiceFactory(cfgMgr, apiEndpoint)
 	svc := svcFactory(authService, authToken)
 
 	search := cmd.String(FlagSearch)
@@ -148,7 +148,7 @@ func accountAPIKeysList(ctx context.Context, cmd flagGetter, output Output, cfgM
 
 func accountAPIKeysCreate(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr config.Manager, authToken string, authServiceFactory AuthServiceFactory, svcFactory APIKeyServiceFactory) error {
 	apiEndpoint := cfgMgr.Config().GetAPIEndpoint()
-	authService := authServiceFactory(cfgMgr, output, apiEndpoint)
+	authService := authServiceFactory(cfgMgr, apiEndpoint)
 	svc := svcFactory(authService, authToken)
 
 	name := cmd.Args().First()
@@ -183,7 +183,7 @@ func accountAPIKeysCreate(ctx context.Context, cmd argsFlagGetter, output Output
 
 func accountAPIKeysDelete(ctx context.Context, cmd argsFlagGetterWithBool, output Output, cfgMgr config.Manager, authToken string, authServiceFactory AuthServiceFactory, svcFactory APIKeyServiceFactory) error {
 	apiEndpoint := cfgMgr.Config().GetAPIEndpoint()
-	authService := authServiceFactory(cfgMgr, output, apiEndpoint)
+	authService := authServiceFactory(cfgMgr, apiEndpoint)
 	svc := svcFactory(authService, authToken)
 
 	idOrName := cmd.Args().First()

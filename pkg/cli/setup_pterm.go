@@ -159,7 +159,7 @@ func (ui *PTermSetupUI) handleSignIn(ctx context.Context, wizard *SetupWizard) e
 
 		spinner.UpdateText("Completing authentication...")
 
-		err = wizard.AuthService().LoginWithOTP(ctx, loginResult.IntermediateJWT, otpCode, "cli-generated", false)
+		_, err = wizard.AuthService().LoginWithOTP(ctx, loginResult.IntermediateJWT, otpCode, "cli-generated", false)
 		if err != nil {
 			spinner.Fail("Authentication failed")
 			return fmt.Errorf("%s", FormatError(err, ui.output.IsVerbose()))
@@ -167,7 +167,7 @@ func (ui *PTermSetupUI) handleSignIn(ctx context.Context, wizard *SetupWizard) e
 	} else {
 		spinner.UpdateText("Completing authentication...")
 
-		err = wizard.AuthService().CompleteLogin(ctx, loginResult.Token, "cli-generated", false)
+		_, err = wizard.AuthService().CompleteLogin(ctx, loginResult.Token, "cli-generated", false)
 		if err != nil {
 			spinner.Fail("Authentication failed")
 			return fmt.Errorf("%s", FormatError(err, ui.output.IsVerbose()))

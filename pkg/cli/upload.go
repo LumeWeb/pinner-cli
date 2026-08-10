@@ -13,6 +13,7 @@ import (
 	"github.com/urfave/cli/v3"
 	contentfs "go.lumeweb.com/ipfs-content/fs"
 	ipfs "go.lumeweb.com/ipfs-sdk"
+	"go.lumeweb.com/pinner-cli/internal/core/auth"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
 	internalio "go.lumeweb.com/pinner-cli/pkg/internal/io"
 )
@@ -161,7 +162,7 @@ func handleUpload(ctx context.Context, cmd interface {
 		memoryLimit = cfgMgr.Config().MemoryLimit
 	}
 
-	authService := NewAuthService(cfgMgr, output, cfgMgr.Config().GetAccountEndpointSecure())
+	authService := auth.NewAuthService(cfgMgr, cfgMgr.Config().GetAccountEndpointSecure(), nil)
 
 	var svcOpts []UploadServiceOption
 	svcOpts = append(svcOpts, WithMemoryLimit(memoryLimit), WithUploadAuthService(authService))

@@ -81,7 +81,7 @@ func runSetupWizardWithFactories(
 	}
 
 	apiEndpoint := cfgMgr.Config().GetAPIEndpoint()
-	authService := authServiceFactory(cfgMgr, output, apiEndpoint)
+	authService := authServiceFactory(cfgMgr, apiEndpoint)
 
 	if ui == nil {
 		ui = NewPTermSetupUI(output)

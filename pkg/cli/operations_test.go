@@ -566,7 +566,7 @@ func TestOperationsList(t *testing.T) {
 		cmd := newMockCommand()
 
 		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-		authSvcFactory := func(cm config.Manager, out Output, endpoint string) AuthService { return nil }
+		authSvcFactory := func(cm config.Manager, endpoint string) AuthService { return nil }
 		svcFactory := func(cm config.Manager, out Output, as AuthService) OperationsService { return opsSvc }
 
 		err := operationsList(context.Background(), cmd, output, cfgMgrFactory, authSvcFactory, svcFactory)
@@ -587,7 +587,7 @@ func TestOperationsList(t *testing.T) {
 		cmd := newMockCommand()
 
 		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-		authSvcFactory := func(cm config.Manager, out Output, endpoint string) AuthService { return nil }
+		authSvcFactory := func(cm config.Manager, endpoint string) AuthService { return nil }
 		svcFactory := func(cm config.Manager, out Output, as AuthService) OperationsService { return opsSvc }
 
 		err := operationsList(context.Background(), cmd, output, cfgMgrFactory, authSvcFactory, svcFactory)
@@ -604,7 +604,7 @@ func TestOperationsList(t *testing.T) {
 		cmd := newMockCommand()
 
 		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-		authSvcFactory := func(cm config.Manager, out Output, endpoint string) AuthService { return nil }
+		authSvcFactory := func(cm config.Manager, endpoint string) AuthService { return nil }
 		svcFactory := func(cm config.Manager, out Output, as AuthService) OperationsService { return opsSvc }
 
 		err := operationsList(context.Background(), cmd, output, cfgMgrFactory, authSvcFactory, svcFactory)
@@ -623,7 +623,7 @@ func TestOperationsList(t *testing.T) {
 		cmd := newMockCommand()
 
 		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-		authSvcFactory := func(cm config.Manager, out Output, endpoint string) AuthService { return nil }
+		authSvcFactory := func(cm config.Manager, endpoint string) AuthService { return nil }
 		svcFactory := func(cm config.Manager, out Output, as AuthService) OperationsService { return opsSvc }
 
 		err := operationsList(context.Background(), cmd, output, cfgMgrFactory, authSvcFactory, svcFactory)
@@ -657,7 +657,7 @@ func TestOperationsList(t *testing.T) {
 			withInt(FlagPageSize, 5)
 
 		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-		authSvcFactory := func(cm config.Manager, out Output, endpoint string) AuthService { return nil }
+		authSvcFactory := func(cm config.Manager, endpoint string) AuthService { return nil }
 		svcFactory := func(cm config.Manager, out Output, as AuthService) OperationsService { return opsSvc }
 
 		err := operationsList(context.Background(), cmd, output, cfgMgrFactory, authSvcFactory, svcFactory)
@@ -669,7 +669,7 @@ func TestOperationsList(t *testing.T) {
 		cmd := newMockCommand()
 
 		cfgMgrFactory := func() (config.Manager, error) { return nil, errors.New("config error") }
-		authSvcFactory := func(cm config.Manager, out Output, endpoint string) AuthService { return nil }
+		authSvcFactory := func(cm config.Manager, endpoint string) AuthService { return nil }
 		svcFactory := func(cm config.Manager, out Output, as AuthService) OperationsService { return nil }
 
 		err := operationsList(context.Background(), cmd, output, cfgMgrFactory, authSvcFactory, svcFactory)
@@ -702,7 +702,7 @@ func TestOperationsGet(t *testing.T) {
 		cmd := newMockCommand().withArgs("42")
 
 		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-		authSvcFactory := func(cm config.Manager, out Output, endpoint string) AuthService { return nil }
+		authSvcFactory := func(cm config.Manager, endpoint string) AuthService { return nil }
 		svcFactory := func(cm config.Manager, out Output, as AuthService) OperationsService { return opsSvc }
 
 		err := operationsGet(context.Background(), cmd, output, cfgMgrFactory, authSvcFactory, svcFactory)
@@ -719,7 +719,7 @@ func TestOperationsGet(t *testing.T) {
 		cmd := newMockCommand()
 
 		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-		authSvcFactory := func(cm config.Manager, out Output, endpoint string) AuthService { return nil }
+		authSvcFactory := func(cm config.Manager, endpoint string) AuthService { return nil }
 		svcFactory := func(cm config.Manager, out Output, as AuthService) OperationsService { return opsSvc }
 
 		err := operationsGet(context.Background(), cmd, output, cfgMgrFactory, authSvcFactory, svcFactory)
@@ -737,7 +737,7 @@ func TestOperationsGet(t *testing.T) {
 		cmd := newMockCommand().withArgs("not-a-number")
 
 		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-		authSvcFactory := func(cm config.Manager, out Output, endpoint string) AuthService { return nil }
+		authSvcFactory := func(cm config.Manager, endpoint string) AuthService { return nil }
 		svcFactory := func(cm config.Manager, out Output, as AuthService) OperationsService { return opsSvc }
 
 		err := operationsGet(context.Background(), cmd, output, cfgMgrFactory, authSvcFactory, svcFactory)
@@ -756,7 +756,7 @@ func TestOperationsGet(t *testing.T) {
 		cmd := newMockCommand().withArgs("999")
 
 		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-		authSvcFactory := func(cm config.Manager, out Output, endpoint string) AuthService { return nil }
+		authSvcFactory := func(cm config.Manager, endpoint string) AuthService { return nil }
 		svcFactory := func(cm config.Manager, out Output, as AuthService) OperationsService { return opsSvc }
 
 		err := operationsGet(context.Background(), cmd, output, cfgMgrFactory, authSvcFactory, svcFactory)
@@ -774,7 +774,7 @@ func TestOperationsGet(t *testing.T) {
 		cmd := newMockCommand().withArgs("1")
 
 		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-		authSvcFactory := func(cm config.Manager, out Output, endpoint string) AuthService { return nil }
+		authSvcFactory := func(cm config.Manager, endpoint string) AuthService { return nil }
 		svcFactory := func(cm config.Manager, out Output, as AuthService) OperationsService { return opsSvc }
 
 		err := operationsGet(context.Background(), cmd, output, cfgMgrFactory, authSvcFactory, svcFactory)
@@ -787,7 +787,7 @@ func TestOperationsGet(t *testing.T) {
 		cmd := newMockCommand().withArgs("1")
 
 		cfgMgrFactory := func() (config.Manager, error) { return nil, errors.New("config error") }
-		authSvcFactory := func(cm config.Manager, out Output, endpoint string) AuthService { return nil }
+		authSvcFactory := func(cm config.Manager, endpoint string) AuthService { return nil }
 		svcFactory := func(cm config.Manager, out Output, as AuthService) OperationsService { return nil }
 
 		err := operationsGet(context.Background(), cmd, output, cfgMgrFactory, authSvcFactory, svcFactory)
@@ -1228,7 +1228,7 @@ func TestOperationsList_SortFlag(t *testing.T) {
 			withString(FlagSort, "id:desc")
 
 		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-		authSvcFactory := func(cm config.Manager, out Output, endpoint string) AuthService { return nil }
+		authSvcFactory := func(cm config.Manager, endpoint string) AuthService { return nil }
 		svcFactory := func(cm config.Manager, out Output, as AuthService) OperationsService { return opsSvc }
 
 		err := operationsList(context.Background(), cmd, output, cfgMgrFactory, authSvcFactory, svcFactory)
@@ -1254,7 +1254,7 @@ func TestOperationsList_SortFlag(t *testing.T) {
 			withString(FlagSort, "started:asc")
 
 		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-		authSvcFactory := func(cm config.Manager, out Output, endpoint string) AuthService { return nil }
+		authSvcFactory := func(cm config.Manager, endpoint string) AuthService { return nil }
 		svcFactory := func(cm config.Manager, out Output, as AuthService) OperationsService { return opsSvc }
 
 		err := operationsList(context.Background(), cmd, output, cfgMgrFactory, authSvcFactory, svcFactory)
@@ -1274,7 +1274,7 @@ func TestOperationsList_StatusValidation(t *testing.T) {
 			withString(FlagStatus, "invalid")
 
 		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-		authSvcFactory := func(cm config.Manager, out Output, endpoint string) AuthService { return nil }
+		authSvcFactory := func(cm config.Manager, endpoint string) AuthService { return nil }
 		svcFactory := func(cm config.Manager, out Output, as AuthService) OperationsService { return opsSvc }
 
 		err := operationsList(context.Background(), cmd, output, cfgMgrFactory, authSvcFactory, svcFactory)
@@ -1301,7 +1301,7 @@ func TestOperationsList_StatusValidation(t *testing.T) {
 			withString(FlagStatus, "running")
 
 		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-		authSvcFactory := func(cm config.Manager, out Output, endpoint string) AuthService { return nil }
+		authSvcFactory := func(cm config.Manager, endpoint string) AuthService { return nil }
 		svcFactory := func(cm config.Manager, out Output, as AuthService) OperationsService { return opsSvc }
 
 		err := operationsList(context.Background(), cmd, output, cfgMgrFactory, authSvcFactory, svcFactory)
@@ -1331,7 +1331,7 @@ func TestOperationsList_Pagination(t *testing.T) {
 			withInt(FlagPageSize, 20)
 
 		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-		authSvcFactory := func(cm config.Manager, out Output, endpoint string) AuthService { return nil }
+		authSvcFactory := func(cm config.Manager, endpoint string) AuthService { return nil }
 		svcFactory := func(cm config.Manager, out Output, as AuthService) OperationsService { return opsSvc }
 
 		err := operationsList(context.Background(), cmd, output, cfgMgrFactory, authSvcFactory, svcFactory)
@@ -1361,7 +1361,7 @@ func TestOperationsList_Pagination(t *testing.T) {
 			withInt(FlagPage, 2)
 
 		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-		authSvcFactory := func(cm config.Manager, out Output, endpoint string) AuthService { return nil }
+		authSvcFactory := func(cm config.Manager, endpoint string) AuthService { return nil }
 		svcFactory := func(cm config.Manager, out Output, as AuthService) OperationsService { return opsSvc }
 
 		err := operationsList(context.Background(), cmd, output, cfgMgrFactory, authSvcFactory, svcFactory)

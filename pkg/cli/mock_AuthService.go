@@ -8,6 +8,7 @@ import (
 	"context"
 
 	mock "github.com/stretchr/testify/mock"
+	"go.lumeweb.com/pinner-cli/internal/core/auth"
 	"go.lumeweb.com/portal-sdk"
 )
 
@@ -39,20 +40,31 @@ func (_m *MockAuthService) EXPECT() *MockAuthService_Expecter {
 }
 
 // CompleteLogin provides a mock function for the type MockAuthService
-func (_mock *MockAuthService) CompleteLogin(ctx context.Context, token string, keyName string, noCreateKey bool) error {
+func (_mock *MockAuthService) CompleteLogin(ctx context.Context, token string, keyName string, noCreateKey bool) (*auth.LoginCompleteResult, error) {
 	ret := _mock.Called(ctx, token, keyName, noCreateKey)
 
 	if len(ret) == 0 {
 		panic("no return value specified for CompleteLogin")
 	}
 
-	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, bool) error); ok {
+	var r0 *auth.LoginCompleteResult
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, bool) (*auth.LoginCompleteResult, error)); ok {
+		return returnFunc(ctx, token, keyName, noCreateKey)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, bool) *auth.LoginCompleteResult); ok {
 		r0 = returnFunc(ctx, token, keyName, noCreateKey)
 	} else {
-		r0 = ret.Error(0)
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*auth.LoginCompleteResult)
+		}
 	}
-	return r0
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, string, bool) error); ok {
+		r1 = returnFunc(ctx, token, keyName, noCreateKey)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
 }
 
 // MockAuthService_CompleteLogin_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CompleteLogin'
@@ -97,31 +109,42 @@ func (_c *MockAuthService_CompleteLogin_Call) Run(run func(ctx context.Context, 
 	return _c
 }
 
-func (_c *MockAuthService_CompleteLogin_Call) Return(err error) *MockAuthService_CompleteLogin_Call {
-	_c.Call.Return(err)
+func (_c *MockAuthService_CompleteLogin_Call) Return(loginCompleteResult *auth.LoginCompleteResult, err error) *MockAuthService_CompleteLogin_Call {
+	_c.Call.Return(loginCompleteResult, err)
 	return _c
 }
 
-func (_c *MockAuthService_CompleteLogin_Call) RunAndReturn(run func(ctx context.Context, token string, keyName string, noCreateKey bool) error) *MockAuthService_CompleteLogin_Call {
+func (_c *MockAuthService_CompleteLogin_Call) RunAndReturn(run func(ctx context.Context, token string, keyName string, noCreateKey bool) (*auth.LoginCompleteResult, error)) *MockAuthService_CompleteLogin_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // DisableOTP provides a mock function for the type MockAuthService
-func (_mock *MockAuthService) DisableOTP(ctx context.Context, password string) error {
+func (_mock *MockAuthService) DisableOTP(ctx context.Context, password string) (*auth.DisableOTPResult, error) {
 	ret := _mock.Called(ctx, password)
 
 	if len(ret) == 0 {
 		panic("no return value specified for DisableOTP")
 	}
 
-	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string) error); ok {
+	var r0 *auth.DisableOTPResult
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) (*auth.DisableOTPResult, error)); ok {
+		return returnFunc(ctx, password)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) *auth.DisableOTPResult); ok {
 		r0 = returnFunc(ctx, password)
 	} else {
-		r0 = ret.Error(0)
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*auth.DisableOTPResult)
+		}
 	}
-	return r0
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string) error); ok {
+		r1 = returnFunc(ctx, password)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
 }
 
 // MockAuthService_DisableOTP_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DisableOTP'
@@ -154,69 +177,74 @@ func (_c *MockAuthService_DisableOTP_Call) Run(run func(ctx context.Context, pas
 	return _c
 }
 
-func (_c *MockAuthService_DisableOTP_Call) Return(err error) *MockAuthService_DisableOTP_Call {
-	_c.Call.Return(err)
+func (_c *MockAuthService_DisableOTP_Call) Return(disableOTPResult *auth.DisableOTPResult, err error) *MockAuthService_DisableOTP_Call {
+	_c.Call.Return(disableOTPResult, err)
 	return _c
 }
 
-func (_c *MockAuthService_DisableOTP_Call) RunAndReturn(run func(ctx context.Context, password string) error) *MockAuthService_DisableOTP_Call {
+func (_c *MockAuthService_DisableOTP_Call) RunAndReturn(run func(ctx context.Context, password string) (*auth.DisableOTPResult, error)) *MockAuthService_DisableOTP_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
-// EnableOTP provides a mock function for the type MockAuthService
-func (_mock *MockAuthService) EnableOTP(ctx context.Context, otpCode string) error {
-	ret := _mock.Called(ctx, otpCode)
+// GenerateOTPSecret provides a mock function for the type MockAuthService
+func (_mock *MockAuthService) GenerateOTPSecret(ctx context.Context) (*auth.OTPSecretResult, error) {
+	ret := _mock.Called(ctx)
 
 	if len(ret) == 0 {
-		panic("no return value specified for EnableOTP")
+		panic("no return value specified for GenerateOTPSecret")
 	}
 
-	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string) error); ok {
-		r0 = returnFunc(ctx, otpCode)
-	} else {
-		r0 = ret.Error(0)
+	var r0 *auth.OTPSecretResult
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context) (*auth.OTPSecretResult, error)); ok {
+		return returnFunc(ctx)
 	}
-	return r0
+	if returnFunc, ok := ret.Get(0).(func(context.Context) *auth.OTPSecretResult); ok {
+		r0 = returnFunc(ctx)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*auth.OTPSecretResult)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context) error); ok {
+		r1 = returnFunc(ctx)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
 }
 
-// MockAuthService_EnableOTP_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'EnableOTP'
-type MockAuthService_EnableOTP_Call struct {
+// MockAuthService_GenerateOTPSecret_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GenerateOTPSecret'
+type MockAuthService_GenerateOTPSecret_Call struct {
 	*mock.Call
 }
 
-// EnableOTP is a helper method to define mock.On call
+// GenerateOTPSecret is a helper method to define mock.On call
 //   - ctx context.Context
-//   - otpCode string
-func (_e *MockAuthService_Expecter) EnableOTP(ctx interface{}, otpCode interface{}) *MockAuthService_EnableOTP_Call {
-	return &MockAuthService_EnableOTP_Call{Call: _e.mock.On("EnableOTP", ctx, otpCode)}
+func (_e *MockAuthService_Expecter) GenerateOTPSecret(ctx interface{}) *MockAuthService_GenerateOTPSecret_Call {
+	return &MockAuthService_GenerateOTPSecret_Call{Call: _e.mock.On("GenerateOTPSecret", ctx)}
 }
 
-func (_c *MockAuthService_EnableOTP_Call) Run(run func(ctx context.Context, otpCode string)) *MockAuthService_EnableOTP_Call {
+func (_c *MockAuthService_GenerateOTPSecret_Call) Run(run func(ctx context.Context)) *MockAuthService_GenerateOTPSecret_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 string
-		if args[1] != nil {
-			arg1 = args[1].(string)
-		}
 		run(
 			arg0,
-			arg1,
 		)
 	})
 	return _c
 }
 
-func (_c *MockAuthService_EnableOTP_Call) Return(err error) *MockAuthService_EnableOTP_Call {
-	_c.Call.Return(err)
+func (_c *MockAuthService_GenerateOTPSecret_Call) Return(oTPSecretResult *auth.OTPSecretResult, err error) *MockAuthService_GenerateOTPSecret_Call {
+	_c.Call.Return(oTPSecretResult, err)
 	return _c
 }
 
-func (_c *MockAuthService_EnableOTP_Call) RunAndReturn(run func(ctx context.Context, otpCode string) error) *MockAuthService_EnableOTP_Call {
+func (_c *MockAuthService_GenerateOTPSecret_Call) RunAndReturn(run func(ctx context.Context) (*auth.OTPSecretResult, error)) *MockAuthService_GenerateOTPSecret_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -462,20 +490,31 @@ func (_c *MockAuthService_LoginCheck_Call) RunAndReturn(run func(ctx context.Con
 }
 
 // LoginWithOTP provides a mock function for the type MockAuthService
-func (_mock *MockAuthService) LoginWithOTP(ctx context.Context, intermediateJWT string, otp string, keyName string, noCreateKey bool) error {
+func (_mock *MockAuthService) LoginWithOTP(ctx context.Context, intermediateJWT string, otp string, keyName string, noCreateKey bool) (*auth.LoginCompleteResult, error) {
 	ret := _mock.Called(ctx, intermediateJWT, otp, keyName, noCreateKey)
 
 	if len(ret) == 0 {
 		panic("no return value specified for LoginWithOTP")
 	}
 
-	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, string, bool) error); ok {
+	var r0 *auth.LoginCompleteResult
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, string, bool) (*auth.LoginCompleteResult, error)); ok {
+		return returnFunc(ctx, intermediateJWT, otp, keyName, noCreateKey)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, string, bool) *auth.LoginCompleteResult); ok {
 		r0 = returnFunc(ctx, intermediateJWT, otp, keyName, noCreateKey)
 	} else {
-		r0 = ret.Error(0)
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*auth.LoginCompleteResult)
+		}
 	}
-	return r0
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, string, string, bool) error); ok {
+		r1 = returnFunc(ctx, intermediateJWT, otp, keyName, noCreateKey)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
 }
 
 // MockAuthService_LoginWithOTP_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'LoginWithOTP'
@@ -526,31 +565,42 @@ func (_c *MockAuthService_LoginWithOTP_Call) Run(run func(ctx context.Context, i
 	return _c
 }
 
-func (_c *MockAuthService_LoginWithOTP_Call) Return(err error) *MockAuthService_LoginWithOTP_Call {
-	_c.Call.Return(err)
+func (_c *MockAuthService_LoginWithOTP_Call) Return(loginCompleteResult *auth.LoginCompleteResult, err error) *MockAuthService_LoginWithOTP_Call {
+	_c.Call.Return(loginCompleteResult, err)
 	return _c
 }
 
-func (_c *MockAuthService_LoginWithOTP_Call) RunAndReturn(run func(ctx context.Context, intermediateJWT string, otp string, keyName string, noCreateKey bool) error) *MockAuthService_LoginWithOTP_Call {
+func (_c *MockAuthService_LoginWithOTP_Call) RunAndReturn(run func(ctx context.Context, intermediateJWT string, otp string, keyName string, noCreateKey bool) (*auth.LoginCompleteResult, error)) *MockAuthService_LoginWithOTP_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // Register provides a mock function for the type MockAuthService
-func (_mock *MockAuthService) Register(ctx context.Context, email string, firstName string, lastName string, password string) error {
+func (_mock *MockAuthService) Register(ctx context.Context, email string, firstName string, lastName string, password string) (*auth.RegisterResult, error) {
 	ret := _mock.Called(ctx, email, firstName, lastName, password)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Register")
 	}
 
-	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, string, string) error); ok {
+	var r0 *auth.RegisterResult
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, string, string) (*auth.RegisterResult, error)); ok {
+		return returnFunc(ctx, email, firstName, lastName, password)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, string, string) *auth.RegisterResult); ok {
 		r0 = returnFunc(ctx, email, firstName, lastName, password)
 	} else {
-		r0 = ret.Error(0)
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*auth.RegisterResult)
+		}
 	}
-	return r0
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, string, string, string) error); ok {
+		r1 = returnFunc(ctx, email, firstName, lastName, password)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
 }
 
 // MockAuthService_Register_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Register'
@@ -601,31 +651,42 @@ func (_c *MockAuthService_Register_Call) Run(run func(ctx context.Context, email
 	return _c
 }
 
-func (_c *MockAuthService_Register_Call) Return(err error) *MockAuthService_Register_Call {
-	_c.Call.Return(err)
+func (_c *MockAuthService_Register_Call) Return(registerResult *auth.RegisterResult, err error) *MockAuthService_Register_Call {
+	_c.Call.Return(registerResult, err)
 	return _c
 }
 
-func (_c *MockAuthService_Register_Call) RunAndReturn(run func(ctx context.Context, email string, firstName string, lastName string, password string) error) *MockAuthService_Register_Call {
+func (_c *MockAuthService_Register_Call) RunAndReturn(run func(ctx context.Context, email string, firstName string, lastName string, password string) (*auth.RegisterResult, error)) *MockAuthService_Register_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // SaveToken provides a mock function for the type MockAuthService
-func (_mock *MockAuthService) SaveToken(token string) error {
+func (_mock *MockAuthService) SaveToken(token string) (*auth.SaveTokenResult, error) {
 	ret := _mock.Called(token)
 
 	if len(ret) == 0 {
 		panic("no return value specified for SaveToken")
 	}
 
-	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(string) error); ok {
+	var r0 *auth.SaveTokenResult
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(string) (*auth.SaveTokenResult, error)); ok {
+		return returnFunc(token)
+	}
+	if returnFunc, ok := ret.Get(0).(func(string) *auth.SaveTokenResult); ok {
 		r0 = returnFunc(token)
 	} else {
-		r0 = ret.Error(0)
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*auth.SaveTokenResult)
+		}
 	}
-	return r0
+	if returnFunc, ok := ret.Get(1).(func(string) error); ok {
+		r1 = returnFunc(token)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
 }
 
 // MockAuthService_SaveToken_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SaveToken'
@@ -652,31 +713,42 @@ func (_c *MockAuthService_SaveToken_Call) Run(run func(token string)) *MockAuthS
 	return _c
 }
 
-func (_c *MockAuthService_SaveToken_Call) Return(err error) *MockAuthService_SaveToken_Call {
-	_c.Call.Return(err)
+func (_c *MockAuthService_SaveToken_Call) Return(saveTokenResult *auth.SaveTokenResult, err error) *MockAuthService_SaveToken_Call {
+	_c.Call.Return(saveTokenResult, err)
 	return _c
 }
 
-func (_c *MockAuthService_SaveToken_Call) RunAndReturn(run func(token string) error) *MockAuthService_SaveToken_Call {
+func (_c *MockAuthService_SaveToken_Call) RunAndReturn(run func(token string) (*auth.SaveTokenResult, error)) *MockAuthService_SaveToken_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // Status provides a mock function for the type MockAuthService
-func (_mock *MockAuthService) Status(ctx context.Context) error {
+func (_mock *MockAuthService) Status(ctx context.Context) (*auth.StatusResult, error) {
 	ret := _mock.Called(ctx)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Status")
 	}
 
-	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context) error); ok {
+	var r0 *auth.StatusResult
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context) (*auth.StatusResult, error)); ok {
+		return returnFunc(ctx)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context) *auth.StatusResult); ok {
 		r0 = returnFunc(ctx)
 	} else {
-		r0 = ret.Error(0)
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*auth.StatusResult)
+		}
 	}
-	return r0
+	if returnFunc, ok := ret.Get(1).(func(context.Context) error); ok {
+		r1 = returnFunc(ctx)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
 }
 
 // MockAuthService_Status_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Status'
@@ -703,12 +775,69 @@ func (_c *MockAuthService_Status_Call) Run(run func(ctx context.Context)) *MockA
 	return _c
 }
 
-func (_c *MockAuthService_Status_Call) Return(err error) *MockAuthService_Status_Call {
+func (_c *MockAuthService_Status_Call) Return(statusResult *auth.StatusResult, err error) *MockAuthService_Status_Call {
+	_c.Call.Return(statusResult, err)
+	return _c
+}
+
+func (_c *MockAuthService_Status_Call) RunAndReturn(run func(ctx context.Context) (*auth.StatusResult, error)) *MockAuthService_Status_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// VerifyOTP provides a mock function for the type MockAuthService
+func (_mock *MockAuthService) VerifyOTP(ctx context.Context, otpCode string) error {
+	ret := _mock.Called(ctx, otpCode)
+
+	if len(ret) == 0 {
+		panic("no return value specified for VerifyOTP")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) error); ok {
+		r0 = returnFunc(ctx, otpCode)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockAuthService_VerifyOTP_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'VerifyOTP'
+type MockAuthService_VerifyOTP_Call struct {
+	*mock.Call
+}
+
+// VerifyOTP is a helper method to define mock.On call
+//   - ctx context.Context
+//   - otpCode string
+func (_e *MockAuthService_Expecter) VerifyOTP(ctx interface{}, otpCode interface{}) *MockAuthService_VerifyOTP_Call {
+	return &MockAuthService_VerifyOTP_Call{Call: _e.mock.On("VerifyOTP", ctx, otpCode)}
+}
+
+func (_c *MockAuthService_VerifyOTP_Call) Run(run func(ctx context.Context, otpCode string)) *MockAuthService_VerifyOTP_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockAuthService_VerifyOTP_Call) Return(err error) *MockAuthService_VerifyOTP_Call {
 	_c.Call.Return(err)
 	return _c
 }
 
-func (_c *MockAuthService_Status_Call) RunAndReturn(run func(ctx context.Context) error) *MockAuthService_Status_Call {
+func (_c *MockAuthService_VerifyOTP_Call) RunAndReturn(run func(ctx context.Context, otpCode string) error) *MockAuthService_VerifyOTP_Call {
 	_c.Call.Return(run)
 	return _c
 }

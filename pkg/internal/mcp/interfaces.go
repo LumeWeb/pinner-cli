@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 
+	"go.lumeweb.com/pinner-cli/internal/core/auth"
 	ipfs "go.lumeweb.com/ipfs-sdk"
 	portalsdk "go.lumeweb.com/portal-sdk"
 )
@@ -17,12 +18,12 @@ type WebsitesService interface {
 	VerifyDomain(ctx context.Context, websiteID, domainID string) (*ipfs.DomainResponse, error)
 }
 
-// AuthService is the subset of cli.AuthService used by the MCP wizard.
+// AuthService is the subset of core/auth.AuthService used by the MCP wizard.
 type AuthService interface {
 	LoginCheck(ctx context.Context, email, password string) (*portalsdk.LoginResult, error)
-	CompleteLogin(ctx context.Context, token, keyName string, noCreateKey bool) error
-	LoginWithOTP(ctx context.Context, intermediateJWT, otp, keyName string, noCreateKey bool) error
-	Status(ctx context.Context) error
+	CompleteLogin(ctx context.Context, token, keyName string, noCreateKey bool) (*auth.LoginCompleteResult, error)
+	LoginWithOTP(ctx context.Context, intermediateJWT, otp, keyName string, noCreateKey bool) (*auth.LoginCompleteResult, error)
+	Status(ctx context.Context) (*auth.StatusResult, error)
 }
 
 // WebsitesWizardState is the interface for the websites wizard state object.

@@ -130,7 +130,7 @@ For more help on any command: pinner <command> --help`,
 			// token on disk is picked up by the running server without a restart.
 			// Freezing the startup token as an override would defeat live reload.
 			websitesSvc := websitesServiceFactory(cfgMgr, output, secure)
-			authSvc := defaultAuthServiceFactory(cfgMgr, output, cfgMgr.Config().GetAccountEndpointSecure())
+			authSvc := defaultAuthServiceFactory(cfgMgr, cfgMgr.Config().GetAccountEndpointSecure())
 			uploadSvc := defaultUploadServiceFactory(cfgMgr, output, WithUploadAuthService(authSvc))
 
 			// Build the pinning backend for the "Create a Pin" MCP App. Reuse
