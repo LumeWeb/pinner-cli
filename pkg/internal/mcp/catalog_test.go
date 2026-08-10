@@ -511,3 +511,96 @@ func TestSSOToolsDiscoverableInCatalog(t *testing.T) {
 	_, ok := catalog.Get("pinner_auth_resume")
 	assert.True(t, ok, "pinner_auth_resume must be registered for describe/invoke")
 }
+
+// TestInheritedParentFlagsInSchema verifies that a flag declared only on a
+// parent command (e.g. the vault command's --profile, which every vault
+// subcommand needs) is inherited into the subcommand tool's input schema.
+// Regression guard for real-world feedback: agents had to guess the profile
+// arg form because it was hidden in the _args array instead of being a
+// first-class schema property.
+func TestInheritedParentFlagsInSchema(t *testing.T) {
+	root := &cli.Command{
+		Name: "pinner",
+		Commands: []*cli.Command{
+			{
+				Name:  "vault",
+				Flags: []cli.Flag{&cli.StringFlag{Name: "profile", Usage: "Vault profile name"}},
+				Commands: []*cli.Command{
+					{
+						Name:   "create",
+						Action: func(context.Context, *cli.Command) error { return nil },
+					},
+					{
+						Name:   "restore",
+						Flags:  []cli.Flag{&cli.BoolFlag{Name: "seed-stdin"}},
+						Action: func(context.Context, *cli.Command) error { return nil },
+					},
+				},
+			},
+		},
+	}
+
+	catalog := NewToolCatalog()
+	err := catalog.RegisterFromCommand(root, true, nil,
+		func(context.Context, ToolRequest) (ToolResult, error) { return ToolResult{}, nil })
+	require.NoError(t, err)
+
+	// The inherited --profile flag must be a first-class property on both.
+	for _, tool := range []string{"pinner_vault_create", "pinner_vault_restore"} {
+		d, err := catalog.Describe(tool)
+		require.NoError(t, err)
+		var doc map[string]any
+		require.NoError(t, json.Unmarshal(d.InputSchema, &doc))
+		props := doc["properties"].(map[string]any)
+		p, ok := props["profile"].(map[string]any)
+		require.True(t, ok, "%s must expose the inherited profile flag in its schema", tool)
+		assert.Equal(t, "string", p["type"], "%s profile property must be a string", tool)
+	}
+
+	// The restore tool ALSO keeps its own flag alongside the inherited one.
+	d, err := catalog.Describe("pinner_vault_restore")
+	require.NoError(t, err)
+	var doc map[string]any
+	require.NoError(t, json.Unmarshal(d.InputSchema, &doc))
+	props := doc["properties"].(map[string]any)
+	_, hasSeedStdin := props["seed-stdin"]
+	assert.True(t, hasSeedStdin, "restore tool keeps its own flag too")
+}
+
+// TestChildFlagOverridesInherited verifies that when a subcommand declares a
+// flag with the same name as an inherited parent flag, the child's declaration
+// wins (no duplicate property in the schema).
+func TestChildFlagOverridesInherited(t *testing.T) {
+	root := &cli.Command{
+		Name: "tool",
+		Flags: []cli.Flag{
+			&cli.StringFlag{Name: "token", Usage: "parent token"},
+		},
+		Commands: []*cli.Command{
+			{
+				Name:  "child",
+				Flags: []cli.Flag{&cli.StringFlag{Name: "token", Usage: "child token"}},
+				Action: func(context.Context, *cli.Command) error {
+					return nil
+				},
+			},
+		},
+	}
+
+	catalog := NewToolCatalog()
+	err := catalog.RegisterFromCommand(root, true, nil,
+		func(context.Context, ToolRequest) (ToolResult, error) { return ToolResult{}, nil })
+	require.NoError(t, err)
+
+	d, err := catalog.Describe("tool_child")
+	require.NoError(t, err)
+	var doc map[string]any
+	require.NoError(t, json.Unmarshal(d.InputSchema, &doc))
+	props := doc["properties"].(map[string]any)
+
+	// The property must exist exactly once and carry the child's usage.
+	tokens, ok := props["token"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "child token", tokens["description"])
+	assert.Equal(t, 1, len(props), "no duplicate/extra properties beyond token")
+}
