@@ -268,6 +268,64 @@ func TestSensitiveFlagRedactedFromArgTrace(t *testing.T) {
 	assert.Contains(t, trace, "user@example.com", "non-sensitive value is not redacted")
 }
 
+// TestRootSensitiveFlagRedactedFromSubcommand verifies that a root-level
+// global sensitive flag (e.g. the global --auth-token) is unioned onto every
+// subcommand's SensitiveFlags, so an agent passing it to any tool has its
+// value redacted from the arg trace. This is a regression guard: root/global
+// flags were previously dropped, leaking the live auth token verbatim.
+func TestRootSensitiveFlagRedactedFromSubcommand(t *testing.T) {
+	root := &cli.Command{
+		Name: "pinner",
+		Flags: []cli.Flag{
+			SensitiveStringFlag(&cli.StringFlag{Name: "auth-token", Usage: "Auth token"}),
+			&cli.StringFlag{Name: "email", Usage: "Email"},
+		},
+		Commands: []*cli.Command{
+			{Name: "status", Action: func(context.Context, *cli.Command) error { return nil }},
+		},
+	}
+
+	catalog, err := buildCatalog(root, true, nil, nil, nil)
+	require.NoError(t, err)
+
+	status, ok := catalog.Get("pinner_status")
+	require.True(t, ok)
+	require.Contains(t, status.SensitiveFlags, "auth-token",
+		"root-level sensitive flag must be unioned onto the subcommand entry")
+
+	// Render and assert the token is redacted from the arg trace.
+	var buf bytes.Buffer
+	oldLog := log
+	log = zap.New(zapcore.NewCore(
+		zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()),
+		zapcore.AddSync(&buf),
+		zapcore.InfoLevel,
+	))
+	t.Cleanup(func() { log = oldLog })
+
+	_, err = status.Handler(context.Background(), ToolRequest{
+		Name: "pinner_status",
+		Arguments: map[string]any{
+			"auth-token": "LIVE-AUTH-TOKEN-123",
+			"email":      "user@example.com",
+		},
+	})
+	require.NoError(t, err)
+
+	trace := buf.String()
+	assert.Contains(t, trace, "--auth-token")
+	assert.Contains(t, trace, "****")
+	assert.NotContains(t, trace, "LIVE-AUTH-TOKEN-123", "root auth token must be redacted")
+	assert.Contains(t, trace, "user@example.com", "non-sensitive value is not redacted")
+}
+
+// TestUnionSensitiveFlagsDedupes verifies unionSensitiveFlags preserves order
+// and drops duplicate names shared across the root and a subcommand.
+func TestUnionSensitiveFlagsDedupes(t *testing.T) {
+	got := unionSensitiveFlags([]string{"password", "key"}, []string{"key", "auth-token"})
+	assert.Equal(t, []string{"password", "key", "auth-token"}, got)
+}
+
 // TestClassifyInteraction verifies the deterministic interaction classification
 // for both stdin-input and interactive command paths.
 func TestClassifyInteraction(t *testing.T) {

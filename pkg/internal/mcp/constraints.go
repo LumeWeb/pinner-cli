@@ -102,3 +102,21 @@ func sensitiveFlagNames(flags []cli.Flag) []string {
 	}
 	return out
 }
+
+// unionSensitiveFlags merges two sensitive flag-name lists, de-duplicating so
+// a name shared by a command and the root appears once. Order is preserved
+// with the second list appended after the first.
+func unionSensitiveFlags(a, b []string) []string {
+	seen := make(map[string]bool, len(a)+len(b))
+	out := make([]string, 0, len(a)+len(b))
+	for _, lists := range [][]string{a, b} {
+		for _, name := range lists {
+			if seen[name] {
+				continue
+			}
+			seen[name] = true
+			out = append(out, name)
+		}
+	}
+	return out
+}

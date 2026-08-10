@@ -271,6 +271,11 @@ func (c *ToolCatalog) Invoke(ctx context.Context, name string, args map[string]a
 // handler dispatches to the shared toolHandler (in-process command execution).
 // The MCP server itself is not modified: only the catalog is populated.
 func (c *ToolCatalog) RegisterFromCommand(root *cli.Command, hasRootAction bool, prefix []string, handler PinnerToolHandler) error {
+	// Global flags declared on the root command (e.g. --auth-token) apply to
+	// every subcommand. Union them with each command's own sensitive flags so
+	// an agent passing a root-level credential flag to any tool still has its
+	// value redacted from the arg trace.
+	rootSensitive := sensitiveFlagNames(root.Flags)
 	var walk func(cmd *cli.Command, prefix ...string) error
 	walk = func(cmd *cli.Command, prefix ...string) error {
 		if cmd.Name == "mcp" || cmd.Name == "help" {
@@ -312,7 +317,7 @@ func (c *ToolCatalog) RegisterFromCommand(root *cli.Command, hasRootAction bool,
 				Destructive:    destructive,
 				Interaction:    interaction,
 				InputSchema:    schema,
-				SensitiveFlags: sensitiveFlagNames(cmd.Flags),
+				SensitiveFlags: unionSensitiveFlags(sensitiveFlagNames(cmd.Flags), rootSensitive),
 				Handler:        handler,
 			})
 
