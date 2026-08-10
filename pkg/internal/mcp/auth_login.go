@@ -498,9 +498,10 @@ func (o *OutOfBandLogin) authLoginSubmit(w http.ResponseWriter, r *http.Request,
 	// a secondary defense-in-depth layer.
 	req.mu.Lock()
 	expectedCSRF := req.csrfToken
+	email := req.email
 	req.mu.Unlock()
 	if expectedCSRF == "" || subtle.ConstantTimeCompare([]byte(r.FormValue("csrf")), []byte(expectedCSRF)) != 1 {
-		o.logf().Warn("out-of-band login rejected: bad CSRF token", zap.String("session", req.sessionID), zap.String("email", req.email), zap.String("id", req.id), zap.String("remote", r.RemoteAddr))
+		o.logf().Warn("out-of-band login rejected: bad CSRF token", zap.String("session", req.sessionID), zap.String("email", email), zap.String("id", req.id), zap.String("remote", r.RemoteAddr))
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
@@ -509,8 +510,8 @@ func (o *OutOfBandLogin) authLoginSubmit(w http.ResponseWriter, r *http.Request,
 	// The counter is keyed on email and lives on the coordinator, so restarting a
 	// login cannot reset it. A short flat cooldown blunts brute-force without the
 	// complexity of session-scoped or escalating counters.
-	if o.throttleLocked(req.email) {
-		o.logf().Warn("out-of-band login throttled (lockout in effect)", zap.String("email", req.email), zap.String("remote", r.RemoteAddr))
+	if o.throttleLocked(email) {
+		o.logf().Warn("out-of-band login throttled (lockout in effect)", zap.String("email", email), zap.String("remote", r.RemoteAddr))
 		o.authLoginPage(w, r, req)
 		return
 	}
@@ -652,11 +653,12 @@ func (o *OutOfBandLogin) authLoginPage(w http.ResponseWriter, r *http.Request, r
 		errMsg = req.loginError.Error()
 	}
 	csrfToken := req.csrfToken
+	email := req.email
 	req.mu.Unlock()
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_ = authLoginPage(authLoginPageData{
 		Action:    o.loginURL(req.id),
-		Email:     req.email,
+		Email:     email,
 		CSRFToken: csrfToken,
 		OTPStage:  otpStage,
 		Error:     errMsg,

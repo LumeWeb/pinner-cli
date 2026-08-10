@@ -5,11 +5,14 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -781,4 +784,68 @@ func TestOOBLoginHumanEmailOverridesAgentEmail(t *testing.T) {
 	require.Len(t, auth.emails, 1, "LoginCheck must be called exactly once")
 	assert.Equal(t, "human@example.com", auth.emails[0], "the human's edited email must be used, not the agent's prefill")
 	assert.Equal(t, "fixture-password", auth.password)
+}
+
+// TestOOBLoginConcurrentCSRFRejectNoRace exercises the CSRF-reject branch of
+// authLoginSubmit concurrently with the email-edit write. The reject path reads
+// req.email for its Warn log and re-renders authLoginPage (which also reads
+// req.email); the ":xxx" edit writes it under req.mu. Both must be snapshotted
+// under the request lock — running under -race proves there is no data race on
+// req.email between concurrent login POSTs and the account-edit write.
+func TestOOBLoginConcurrentCSRFRejectNoRace(t *testing.T) {
+	o := newOOBForTest(t)
+	_, u, err := o.Begin("session-race", "prefill@example.com")
+	require.NoError(t, err)
+
+	var wg sync.WaitGroup
+
+	// Resolve the live *loginRequest once and share it via an atomic pointer so
+	// both the writer and the reader POSTs stay on the same request object for
+	// the whole run.
+	var reqPtr atomic.Pointer[loginRequest]
+	o.mu.Lock()
+	for _, r := range o.requests {
+		if r.id != "" {
+			reqPtr.Store(r)
+			break
+		}
+	}
+	o.mu.Unlock()
+	require.NotNil(t, reqPtr.Load(), "Begin must have created a pending login request")
+
+	// Writer goroutine mutating req.email under the request lock (matches the
+	// real authLoginSubmit email-edit path).
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 500; i++ {
+			r := reqPtr.Load()
+			if r == nil {
+				continue
+			}
+			r.mu.Lock()
+			r.email = fmt.Sprintf("human-%d@example.com", i%7)
+			r.mu.Unlock()
+		}
+	}()
+
+	// Concurrent CSRF-reject POSTs: each renders the login page (reading
+	// req.email) and logs req.email via the Warn in authLoginSubmit.
+	for i := 0; i < 32; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 20; j++ {
+				rec := httptest.NewRecorder()
+				r := httptest.NewRequest(http.MethodPost, u, strings.NewReader(url.Values{
+					"password": {"fixture-password"},
+				}.Encode()))
+				r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+				r.Header.Set("Origin", testOrigin(o))
+				o.loginPage(rec, r)
+			}
+		}()
+	}
+
+	wg.Wait()
 }
