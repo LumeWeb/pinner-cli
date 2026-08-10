@@ -38,10 +38,13 @@ func TestSeedDropSingleUse(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Contains(t, rec.Body.String(), "alpha beta gamma")
 
-	// Second read must be gone (single use).
+	// Second read must be spent: a branded "link no longer active" page (410),
+	// not the seed again and not a bare 404.
 	rec2 := httptest.NewRecorder()
 	mux.ServeHTTP(rec2, httptest.NewRequest(http.MethodGet, url, nil))
-	require.Equal(t, http.StatusNotFound, rec2.Code)
+	require.Equal(t, http.StatusGone, rec2.Code, "a consumed seed link must render 410 with the spent page")
+	require.Contains(t, rec2.Body.String(), "no longer active")
+	require.NotContains(t, rec2.Body.String(), "alpha beta gamma", "the seed must never be shown twice")
 }
 
 func TestSeedDropExpiry(t *testing.T) {
@@ -57,7 +60,10 @@ func TestSeedDropExpiry(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, url, nil))
-	require.Equal(t, http.StatusNotFound, rec.Code)
+	require.Equal(t, http.StatusGone, rec.Code, "an expired seed link must render 410 with the spent page")
+	require.Contains(t, rec.Body.String(), "no longer active")
+	require.Contains(t, rec.Body.String(), "expired")
+	require.NotContains(t, rec.Body.String(), "secret words", "the seed must never be shown after expiry")
 }
 
 func TestAttachSeedDropMintsURL(t *testing.T) {

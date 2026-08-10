@@ -26,6 +26,11 @@ type handoffEndpoint struct {
 
 	mu    sync.Mutex
 	items map[string]*handoffItem
+	// spent records recently-consumed or expired tokens so a re-open of a
+	// one-time URL can be told apart from a token that never existed, and so a
+	// spent link renders a branded "link no longer active" page instead of a
+	// bare 404. Entries are pruned lazily after spentHoldTTL.
+	spent map[string]time.Time
 	ttl   time.Duration
 	now   func() time.Time
 
@@ -38,6 +43,13 @@ type handoffEndpoint struct {
 	reaperCtx    context.Context
 	reaperCancel context.CancelFunc
 }
+
+// spentHoldTTL is how long a consumed/expired token's tombstone is kept so a
+// re-open can render the spent-link page. It must outlive the read that would
+// follow a single-use GET (rendering then the client immediately closes), but
+// need not persist for the whole process: spent URLs only need to explain
+// themselves for a short window before the tombstone can be forgotten.
+const spentHoldTTL = 10 * time.Minute
 
 // handoffItem is a single pending hand-off. payload is interpreted by the
 // concrete handler (it may hold a secret to display, an input to collect, or a
@@ -71,6 +83,7 @@ func newHandoff(prefix string, handler handoffHandler, ttl time.Duration) *hando
 	}
 	return &handoffEndpoint{
 		items:   make(map[string]*handoffItem),
+		spent:   make(map[string]time.Time),
 		ttl:     ttl,
 		now:     time.Now,
 		prefix:  strings.Trim(prefix, "/"),
@@ -105,11 +118,20 @@ func (h *handoffEndpoint) registerHandlers(mux *http.ServeMux) {
 	mux.HandleFunc("/"+h.prefix+"/", h.handle)
 }
 
-// handle routes a GET/POST to the concrete handler, guarding expiry + CSRF.
+// handle routes a GET/POST to the concrete handler. A token that is valid
+// (issued, not yet used, not yet expired) dispatches to the concrete handler; a
+// token that is already used or expired renders the shared branded "link no
+// longer active" page immediately (no submit required), so a human who reopens
+// a one-time seed/restore URL learns it is spent instead of hitting a bare 404
+// or a fresh form. Only a token that never existed gets a 404.
 func (h *handoffEndpoint) handle(w http.ResponseWriter, r *http.Request) {
 	token := strings.TrimPrefix(r.URL.Path, "/"+h.prefix+"/")
-	item, ok := h.lookup(token)
-	if !ok {
+	item, reason := h.resolve(token)
+	if item == nil {
+		if reason != "" {
+			h.spentPage(w, r, reason)
+			return
+		}
 		http.NotFound(w, r)
 		return
 	}
@@ -135,26 +157,61 @@ func (h *handoffEndpoint) handle(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// lookup returns a valid (non-expired) item for a token, pruning it if stale.
-func (h *handoffEndpoint) lookup(token string) (*handoffItem, bool) {
+// resolve returns a valid (issued, unexpired) item for a token, or — when the
+// token exists but is no longer usable — a nil item plus the reason it is spent
+// (handoffUsed if it was consumed, handoffExpired if its TTL elapsed). For a
+// token that never existed it returns nil and an empty reason, so the caller
+// can keep a 404. Consumed and expired tokens are recorded as tombstones so the
+// spent state is observable on a re-open.
+func (h *handoffEndpoint) resolve(token string) (*handoffItem, handoffNotActiveReason) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	if _, ok := h.spent[token]; ok {
+		return nil, handoffUsed
+	}
 	item, ok := h.items[token]
 	if !ok {
-		return nil, false
+		return nil, ""
 	}
 	if h.now().After(item.expiresAt) {
 		delete(h.items, token)
+		h.spent[token] = h.now()
+		return nil, handoffExpired
+	}
+	return item, ""
+}
+
+// lookup returns a valid (non-expired) item for a token, pruning it if stale.
+func (h *handoffEndpoint) lookup(token string) (*handoffItem, bool) {
+	item, reason := h.resolve(token)
+	if item == nil {
 		return nil, false
 	}
+	_ = reason
 	return item, true
 }
 
-// remove deletes a token from the pending set.
+// spentPage renders the shared branded "link no longer active" page (410 Gone)
+// for a used or expired one-time URL.
+func (h *handoffEndpoint) spentPage(w http.ResponseWriter, r *http.Request, reason handoffNotActiveReason) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusGone)
+	detail := "This one-time link cannot be used again."
+	if reason == handoffExpired {
+		detail = "This one-time link expired before it was used."
+	}
+	_ = handoffNotActivePage(reason, detail).Render(r.Context(), w)
+}
+
+// remove deletes a token from the pending set and records it as spent so a
+// re-open renders the spent-link page rather than a bare 404.
 func (h *handoffEndpoint) remove(token string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	delete(h.items, token)
+	if _, ok := h.spent[token]; !ok {
+		h.spent[token] = h.now()
+	}
 }
 
 // get is a lightweight direct fetch used by children that need the item for
@@ -199,7 +256,8 @@ func (h *handoffEndpoint) startReaper(interval time.Duration) {
 	}()
 }
 
-// pruneExpired removes items whose TTL has elapsed.
+// pruneExpired removes items whose TTL has elapsed and tombstones older than
+// spentHoldTTL, bounding the maps over a long-running process.
 func (h *handoffEndpoint) pruneExpired() {
 	now := h.now()
 	h.mu.Lock()
@@ -207,6 +265,14 @@ func (h *handoffEndpoint) pruneExpired() {
 	for token, item := range h.items {
 		if now.After(item.expiresAt) {
 			delete(h.items, token)
+			if _, ok := h.spent[token]; !ok {
+				h.spent[token] = now
+			}
+		}
+	}
+	for token, spentAt := range h.spent {
+		if now.Sub(spentAt) > spentHoldTTL {
+			delete(h.spent, token)
 		}
 	}
 }

@@ -365,6 +365,15 @@ func (o *OutOfBandLogin) loginPage(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodGet:
+		// A sign-in link is single-use: opening (or reloading) a URL whose
+		// request already completed successfully or expired must show the
+		// spent-link page immediately, without requiring a form submit. Only
+		// a FAILED attempt (completed with an error) keeps showing the login
+		// form so the human can retry in place.
+		if reason := o.loginSpentReason(req); reason != "" {
+			o.loginNotActive(w, r, reason)
+			return
+		}
 		o.authLoginPage(w, r, req)
 	case http.MethodPost:
 		// CSRF guard: a browser form-POST carries an Origin (and usually a
@@ -383,15 +392,11 @@ func (o *OutOfBandLogin) loginPage(w http.ResponseWriter, r *http.Request) {
 		// reported failure by a stale re-POST (e.g. via the Back button), and an
 		// expired request must not run the auth backend via a URL relayed before
 		// expiry — both would leave a backend session no wizard consumes.
-		// Reject those with 410 Gone and let the wizard restart sign-in. A
+		// Render the spent-link page and let the wizard restart sign-in. A
 		// FAILED attempt (completed with an error) stays POST-able so the human
 		// can retry the form in place; only the throttle blunts repeated guesses.
-		req.mu.Lock()
-		terminalSuccess := req.status == loginCompleted && req.loginError == nil
-		expired := req.status == loginExpired
-		req.mu.Unlock()
-		if terminalSuccess || expired {
-			http.Error(w, "gone", http.StatusGone)
+		if reason := o.loginSpentReason(req); reason != "" {
+			o.loginNotActive(w, r, reason)
 			return
 		}
 		o.authLoginSubmit(w, r, req)
@@ -601,6 +606,34 @@ func (o *OutOfBandLogin) authLoginPage(w http.ResponseWriter, r *http.Request, r
 func (o *OutOfBandLogin) authSuccessPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_ = authSuccessPage().Render(r.Context(), w)
+}
+
+// loginNotActive renders the shared branded "link no longer active" page for a
+// login URL that is no longer actionable (already used or expired). It keeps a
+// 410 Gone status so programmatic clients still see a spent resource, while
+// rendering a human-readable page body in place of the old bare "410 gone"
+// text.
+func (o *OutOfBandLogin) loginNotActive(w http.ResponseWriter, r *http.Request, reason handoffNotActiveReason) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusGone)
+	_ = handoffNotActivePage(reason, "This sign-in link cannot be used again.").Render(r.Context(), w)
+}
+
+// loginSpentReason reports whether a login request is no longer actionable
+// because its link has been spent: handoffUsed (loginCompleted, no error) means
+// the URL was already used, and handoffExpired means its TTL elapsed. It returns
+// "" for a still-pending request or one that FAILED (completed with an error),
+// which must keep showing the login form so the human can retry.
+func (o *OutOfBandLogin) loginSpentReason(req *loginRequest) handoffNotActiveReason {
+	req.mu.Lock()
+	defer req.mu.Unlock()
+	if req.status == loginExpired {
+		return handoffExpired
+	}
+	if req.status == loginCompleted && req.loginError == nil {
+		return handoffUsed
+	}
+	return ""
 }
 
 // reaper periodically expires stale login requests.

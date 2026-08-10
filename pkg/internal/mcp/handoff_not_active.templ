@@ -1,0 +1,45 @@
+package mcp
+
+import "fmt"
+
+// handoffNotActiveReason describes why a one-time hand-off URL is no longer
+// actionable. It is shown in the branded "link no longer active" page shared by
+// every out-of-band flow (sign-in login, vault seed drop, vault restore).
+type handoffNotActiveReason string
+
+const (
+	// handoffExpired means the one-time URL's TTL elapsed before it was used.
+	handoffExpired handoffNotActiveReason = "expired"
+	// handoffUsed means the one-time URL was already consumed (shown/submitted once).
+	handoffUsed handoffNotActiveReason = "used"
+)
+
+// handoffTitle returns the human-facing <title> suffix for a spent-link page.
+func (r handoffNotActiveReason) handoffTitle() string {
+	return "Link already used"
+}
+
+// handoffPrefix is exposed for tests.
+func (r handoffNotActiveReason) String() string { return string(r) }
+
+// handoffNotActivePage is the shared branded page rendered when a one-time
+// out-of-band link (sign-in, seed drop, restore) is opened after it was already
+// used or expired. A single-use link is spent as soon as it is consumed or its
+// TTL elapses; a human who opens or resubmits it must be told immediately —
+// without submitting anything — that the link is no longer active and to start a
+// fresh flow from their client.
+templ handoffNotActivePage(reason handoffNotActiveReason, detail string) {
+	@brandLayout(reason.handoffTitle()) {
+		<div class="card">
+			<h1>This link is no longer active</h1>
+			<p>
+				if reason == handoffExpired {
+					This link expired before it was completed.
+				} else {
+					This link has already been used.
+				}
+				{ fmt.Sprintf("%s Return to your client and start a new flow to get a fresh link.", detail) }
+			</p>
+		</div>
+	}
+}

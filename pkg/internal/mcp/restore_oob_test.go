@@ -67,13 +67,16 @@ func TestOOBRestoreFormSingleUse(t *testing.T) {
 	require.Equal(t, 1, runner.calls)
 	require.Contains(t, okRec.Body.String(), "vault-abc123")
 
-	// The token is now consumed: a repeat POST is not found.
+	// The token is now consumed: a repeat POST is spent (410 + spent page),
+	// not found, and must not run restore again.
 	repeat := httptest.NewRequest(http.MethodPost, url, strings.NewReader("mnemonic=again"))
 	repeat.Header.Set("Origin", "http://127.0.0.1:9999")
 	repeat.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	repeatRec := httptest.NewRecorder()
 	mux.ServeHTTP(repeatRec, repeat)
-	require.Equal(t, http.StatusNotFound, repeatRec.Code)
+	require.Equal(t, http.StatusGone, repeatRec.Code)
+	require.Contains(t, repeatRec.Body.String(), "no longer active")
+	require.Equal(t, 1, runner.calls, "a repeat POST must not run restore a second time")
 }
 
 func TestOOBRestoreExpiry(t *testing.T) {
@@ -85,7 +88,10 @@ func TestOOBRestoreExpiry(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, url, nil))
-	require.Equal(t, http.StatusNotFound, rec.Code)
+	require.Equal(t, http.StatusGone, rec.Code, "an expired restore link must render 410 with the spent page")
+	require.Contains(t, rec.Body.String(), "no longer active")
+	require.Contains(t, rec.Body.String(), "expired")
+	require.NotContains(t, rec.Body.String(), "Recovery phrase", "an expired restore must not render the form")
 }
 
 func TestOOBRestoreAttachURL(t *testing.T) {
@@ -116,11 +122,14 @@ func TestSeedDropStdioLoopback(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	require.Contains(t, string(body), "loopback seed words")
 
-	// Second read is gone (single use).
+	// Second read is spent (410 + spent page), not the seed again.
 	resp2, err := client.Get(url)
 	require.NoError(t, err)
-	resp2.Body.Close()
-	require.Equal(t, http.StatusNotFound, resp2.StatusCode)
+	defer resp2.Body.Close()
+	body2, _ := io.ReadAll(resp2.Body)
+	require.Equal(t, http.StatusGone, resp2.StatusCode)
+	require.Contains(t, string(body2), "no longer active")
+	require.NotContains(t, string(body2), "loopback seed words", "the seed must not be shown twice")
 }
 
 // TestOOBRestoreStdioLoopback verifies the stdio path mints a loopback URL.
