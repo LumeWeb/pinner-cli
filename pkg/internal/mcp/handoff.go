@@ -44,12 +44,15 @@ type handoffEndpoint struct {
 	reaperCancel context.CancelFunc
 }
 
-// spentHoldTTL is how long a consumed/expired token's tombstone is kept so a
-// re-open can render the spent-link page. It must outlive the read that would
-// follow a single-use GET (rendering then the client immediately closes), but
-// need not persist for the whole process: spent URLs only need to explain
-// themselves for a short window before the tombstone can be forgotten.
-const spentHoldTTL = 10 * time.Minute
+// maxSpentTombstones is the capacity cap for spent-link tombstones. Consumed
+// and expired one-time URLs are remembered indefinitely so a re-open can still
+// explain that the link was used/expired (a human may re-open a login, seed, or
+// restore link well after it was spent, so the explanation must not vanish on a
+// clock). To keep memory bounded on a long-running MCP process, the oldest
+// tombstones are evicted only when the map exceeds this cap (FIFO), so the
+// spent explanation persists for any link within retention while the total
+// memory stays flat.
+const maxSpentTombstones = 10000
 
 // handoffItem is a single pending hand-off. payload is interpreted by the
 // concrete handler (it may hold a secret to display, an input to collect, or a
@@ -182,16 +185,24 @@ func (h *handoffEndpoint) resolve(token string) (*handoffItem, handoffNotActiveR
 	return item, ""
 }
 
-// pruneSpentLocked drops spent tombstones older than spentHoldTTL. It must be
-// called with h.mu held. It runs on the read/write paths (resolve/remove) so
-// tombstones cannot grow without bound even though the periodic reaper
-// (startReaper) is not started by the SeedDrop/OOBRestore coordinators.
+// pruneSpentLocked bounds the spent-tombstone map to maxSpentTombstones by
+// evicting the oldest entries (FIFO) only when the cap is exceeded, so a spent
+// link's explanation persists as long as it is within retention instead of
+// vanishing on a clock. It must be called with h.mu held. It runs on the
+// read/write paths (resolve/remove) so tombstones cannot grow without bound
+// even though the periodic reaper (startReaper) is not started by the
+// SeedDrop/OOBRestore coordinators.
 func (h *handoffEndpoint) pruneSpentLocked() {
-	cutoff := h.now().Add(-spentHoldTTL)
-	for token, spentAt := range h.spent {
-		if spentAt.Before(cutoff) {
-			delete(h.spent, token)
+	for len(h.spent) > maxSpentTombstones {
+		var oldest string
+		var oldestAt time.Time
+		for token, spentAt := range h.spent {
+			if oldest == "" || spentAt.Before(oldestAt) {
+				oldest = token
+				oldestAt = spentAt
+			}
 		}
+		delete(h.spent, oldest)
 	}
 }
 
@@ -271,8 +282,8 @@ func (h *handoffEndpoint) startReaper(interval time.Duration) {
 	}()
 }
 
-// pruneExpired removes items whose TTL has elapsed and tombstones older than
-// spentHoldTTL, bounding the maps over a long-running process.
+// pruneExpired removes items whose TTL has elapsed, moving them to spent
+// tombstones, and bounds the spent map to maxSpentTombstones.
 func (h *handoffEndpoint) pruneExpired() {
 	now := h.now()
 	h.mu.Lock()
@@ -285,11 +296,7 @@ func (h *handoffEndpoint) pruneExpired() {
 			}
 		}
 	}
-	for token, spentAt := range h.spent {
-		if now.Sub(spentAt) > spentHoldTTL {
-			delete(h.spent, token)
-		}
-	}
+	h.pruneSpentLocked()
 }
 
 // Stop shuts down the loopback listener and reaper, if any.

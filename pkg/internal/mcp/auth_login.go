@@ -701,13 +701,11 @@ func (o *OutOfBandLogin) reaper(ctx context.Context) {
 					delete(o.requests, id)
 				}
 			}
-			// Prune spent tombstones older than spentHoldTTL so the map cannot
-			// grow without bound over a long-running MCP process.
-			for id, sl := range o.spent {
-				if now.Sub(sl.at) > spentHoldTTL {
-					delete(o.spent, id)
-				}
-			}
+			// Bound the spent-tombstone map to maxSpentTombstones (FIFO eviction
+			// of the oldest) so a spent login link keeps explaining itself for as
+			// long as it is within retention, while memory stays flat on a
+			// long-running MCP process.
+			o.pruneSpentLocked()
 			// Evict credential throttles idle past their TTL so the map cannot
 			// grow without bound over the process lifetime. A throttle in an
 			// active lockout is never pruned, so the cooldown still holds.
@@ -722,6 +720,24 @@ func (o *OutOfBandLogin) reaper(ctx context.Context) {
 			}
 			o.mu.Unlock()
 		}
+	}
+}
+
+// pruneSpentLocked bounds the login spent-tombstone map to maxSpentTombstones
+// by evicting the oldest entries (FIFO) only when the cap is exceeded, so a
+// spent login link keeps explaining itself as long as it is within retention
+// instead of reverting to a bare 404 on a clock.
+func (o *OutOfBandLogin) pruneSpentLocked() {
+	for len(o.spent) > maxSpentTombstones {
+		var oldest string
+		var oldestAt time.Time
+		for id, sl := range o.spent {
+			if oldest == "" || sl.at.Before(oldestAt) {
+				oldest = id
+				oldestAt = sl.at
+			}
+		}
+		delete(o.spent, oldest)
 	}
 }
 

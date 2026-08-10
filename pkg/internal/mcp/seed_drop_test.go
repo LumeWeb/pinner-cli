@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -67,38 +68,44 @@ func TestSeedDropExpiry(t *testing.T) {
 	require.NotContains(t, rec.Body.String(), "secret words", "the seed must never be shown after expiry")
 }
 
-// TestSeedDropTombstonePrunedOnWrite verifies spent tombstones do not grow
-// without bound. Because the SeedDrop/OOBRestore coordinators never start the
-// periodic reaper, tombstone pruning must happen lazily on the read/write
-// path: a consumed token's tombstone older than spentHoldTTL is dropped the
-// next time resolve/remove runs, so the in-memory map stays bounded.
+// TestSeedDropTombstonePrunedOnWrite verifies the spent-tombstone map stays
+// memory-bounded. Because the SeedDrop/OOBRestore coordinators never start the
+// periodic reaper, pruning must happen lazily on the read/write path: when the
+// map exceeds maxSpentTombstones, the oldest tombstones are evicted (FIFO) so
+// the map is capped while any spent URL within retention still explains itself.
 func TestSeedDropTombstonePrunedOnWrite(t *testing.T) {
 	d := NewSeedDrop(time.Minute)
 	d.SetBaseURL("http://127.0.0.1:9999")
-	url := d.Register("default", "alpha beta gamma")
 
-	// Consume the drop: viewing it once creates a "used" tombstone.
+	// A consumed real drop creates one tombstone (and is retained).
+	url := d.Register("default", "alpha beta gamma")
 	mux := http.NewServeMux()
 	d.registerHandlers(mux)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, url, nil))
 	require.Equal(t, http.StatusOK, rec.Code)
+	consumed := seedTokenFromURL(t, url)
+	require.Contains(t, d.core.spent, consumed, "a consumed drop must leave a tombstone")
 
-	token := seedTokenFromURL(t, url)
-	require.Contains(t, d.core.spent, token, "a consumed drop must leave a tombstone")
+	// Fill the map past the cap with synthetic tombstones stamped with
+	// increasing ages, oldest first.
+	base := time.Now().Add(-10 * time.Hour)
+	for i := 0; i < maxSpentTombstones+5; i++ {
+		d.core.spent[fmt.Sprintf("syn-%d", i)] = base.Add(time.Duration(i) * time.Second)
+	}
 
-	// Advance the clock past the tombstone hold window, then perform a write
-	// (register + consume another drop) to trigger lazy pruning.
-	base := time.Now()
-	d.setNow(func() time.Time { return base.Add(spentHoldTTL + time.Minute) })
-	url2 := d.Register("default", "second words")
-	rec2 := httptest.NewRecorder()
-	mux.ServeHTTP(rec2, httptest.NewRequest(http.MethodGet, url2, nil))
-	require.Equal(t, http.StatusOK, rec2.Code)
+	// Trigger lazy pruning on the write path.
+	d.core.remove("does-not-matter")
 
-	token2 := seedTokenFromURL(t, url2)
-	require.NotContains(t, d.core.spent, token, "a tombstone older than spentHoldTTL must be pruned on the write path")
-	require.Contains(t, d.core.spent, token2, "a freshly consumed token's tombstone must be retained")
+	// The map is capped, the freshly-consumed real token is retained, and the
+	// oldest synthetic tombstones are the ones dropped.
+	require.LessOrEqual(t, len(d.core.spent), maxSpentTombstones+1)
+	require.Contains(t, d.core.spent, consumed, "the real consumed drop must be retained (spent state persists)")
+	// syn-0..syn-4 are the oldest and must have been evicted; the newest
+	// synthetic tombstone remains.
+	require.NotContains(t, d.core.spent, "syn-0")
+	require.NotContains(t, d.core.spent, "syn-4")
+	require.Contains(t, d.core.spent, fmt.Sprintf("syn-%d", maxSpentTombstones+4))
 }
 
 // seedTokenFromURL extracts the token (the final /seed/<token> path segment)
