@@ -12,6 +12,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -355,8 +356,11 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 		}
 		fmt.Fprintln(w, "pinner MCP server. Point your MCP client at /mcp")
 	})
+	// TEMP DEBUG: wrap the whole mux so every request and its response body is
+	// printed to stderr, to trace the Anthropic Claude OAuth handshake over a
+	// public tunnel. REMOVE before merge.
 	httpSrv := &http.Server{
-		Handler:           mux,
+		Handler:           debugLogHandler(mux),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -691,4 +695,74 @@ The internal catalog has %d tools. Local path arguments refer to the MCP server 
 // commands are added or removed.
 func buildInstructions(toolCount int) string {
 	return fmt.Sprintf(mcpInstructionsBase, toolCount)
+}
+
+// TEMP DEBUG (remove before merge): debugLogHandler prints the OAuth handshake
+// requests and their responses to debugWriter (stderr) so the Anthropic Claude
+// flow can be traced over a public tunnel. Only /.well-known/, /oauth/*,
+// /authorize, /token, and /register paths are logged; the streaming /mcp
+// endpoint passes through untouched. Handlers that require the request body
+// (register, token) explicitly read it into memory already, so wrapping is
+// safe; the body clone here also restores the stream to keep those handlers
+// working.
+type debugResponseWriter struct {
+	http.ResponseWriter
+	status int
+	body   *bytes.Buffer
+}
+
+func (w *debugResponseWriter) WriteHeader(status int) {
+	w.status = status
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *debugResponseWriter) Write(p []byte) (int, error) {
+	w.body.Write(p)
+	return w.ResponseWriter.Write(p)
+}
+
+func debugLogHandler(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !debugShouldLog(r) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		body := ""
+		if r.Body != nil {
+			if b, err := io.ReadAll(r.Body); err == nil {
+				body = string(b)
+				// Restore the body for the downstream handler.
+				r.Body = io.NopCloser(bytes.NewReader(b))
+			}
+		}
+		dw := &debugResponseWriter{ResponseWriter: w, status: http.StatusOK, body: &bytes.Buffer{}}
+		next.ServeHTTP(dw, r)
+		query := r.URL.RawQuery
+		if len(query) > 2000 {
+			query = query[:2000] + "...(truncated)"
+		}
+		if len(body) > 4000 {
+			body = body[:4000] + "...(truncated)"
+		}
+		resp := dw.body.String()
+		if len(resp) > 8000 {
+			resp = resp[:8000] + "...(truncated)"
+		}
+		fmt.Fprintf(debugWriter, "\n[mcp-debug] >>> %s %s?%s\n[mcp-debug] REQ-BODY: %s\n[mcp-debug] <<< %d\n[mcp-debug] RESP-BODY: %s\n",
+			r.Method, r.URL.Path, query, body, dw.status, resp)
+	})
+}
+
+// TEMP DEBUG (remove before merge): debugWriter is where debugLogHandler writes;
+// it defaults to stderr and is redirected by tests.
+var debugWriter io.Writer = os.Stderr
+
+// debugShouldLog reports whether a request belongs to the OAuth handshake we
+// are tracing. Everything else (notably the streaming /mcp endpoint) passes
+// through untouched so streamed responses are not buffered or re-flushed.
+func debugShouldLog(r *http.Request) bool {
+	p := r.URL.Path
+	return strings.HasPrefix(p, "/.well-known/") ||
+		p == "/authorize" || strings.HasPrefix(p, "/oauth/") ||
+		p == "/token" || p == "/register"
 }
