@@ -14,12 +14,17 @@ templ authLoginPage(data authLoginPageData) {
 	@brandLayout("Sign in to Pinner") {
 		<div class="card">
 			<h1>Sign in to Pinner</h1>
-			<p>Authenticate for <strong>{ data.Email }</strong> to enable this MCP server. Credentials are entered here and never exposed to the requesting client.</p>
+			<p>
+				Authenticate to enable this MCP server. Enter the account username/email and
+				password for a normal account (or the API key token for a token account).
+				Credentials are entered here and never exposed to the requesting client.
+			</p>
 			<form method="post" action={ data.Action }>
-				<input type="hidden" name="email" value={ data.Email }/>
 				<input type="hidden" name="csrf" value={ data.CSRFToken }/>
-				<label for="password">Password</label>
-				<input type="password" id="password" name="password" required autofocus autocomplete="current-password"/>
+				<label for="email">Username / email</label>
+				<input type="text" id="email" name="email" value={ data.Email } required autofocus autocomplete="username" spellcheck="false"/>
+				<label for="password">Password / API key</label>
+				<input type="password" id="password" name="password" required autocomplete="current-password"/>
 				if data.OTPStage {
 					<label for="otp">Two-factor code</label>
 					<input type="text" id="otp" name="otp" required autocomplete="one-time-code" inputmode="numeric" pattern="[0-9]*"/>
