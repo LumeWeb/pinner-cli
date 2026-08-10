@@ -32,7 +32,7 @@ var (
 	ErrPermissionDenied  = errors.New("permission denied")
 
 	// Pinning errors
-	ErrPinNotFound     = errors.New("pin not found")
+	ErrPinNotFound     = coreerrors.ErrPinNotFound
 	ErrPinningFailed   = errors.New("pinning failed")
 	ErrStatusCheck     = errors.New("failed to check pin status")
 	ErrUnpinAllAborted = errors.New("unpin-all aborted")
