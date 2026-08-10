@@ -23,7 +23,7 @@ import (
 //
 // Re-vendor by bumping the version and re-copying the bundled file.
 //
-//go:embed appsassets/ext-apps-client.js
+//go:embed appsassets
 var appsAssets embed.FS
 
 // extAppsClientSrc returns the embedded ext-apps client module, inlined into
