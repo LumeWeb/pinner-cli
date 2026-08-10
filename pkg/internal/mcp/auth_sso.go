@@ -34,7 +34,7 @@ func NewAuthSSODescriptor(oob *OutOfBandLogin, handles *AsyncHandleStore) ToolDe
 	return ToolDescriptor{
 		Name:        "pinner_auth_sso",
 		Title:       "Sign In (Out-of-Band)",
-		Description: "Start an out-of-band browser sign-in. Returns immediately with an approval URL the human opens, and a resume handle for pinner_auth_resume. Password/OTP never transit this channel. Non-blocking.",
+		Description: "Start an out-of-band (OOB) browser sign-in for SSO authentication. Returns immediately with an approval URL the human opens, and a resume handle for the pinner_auth_resume tool. Non-blocking, and never asks the human for a password or OTP on this channel. Start here to authenticate.",
 		Category:    CategoryCore,
 		InputSchema: toolSchemaFor[authSSOArgs](),
 		Handler: func(ctx context.Context, req ToolRequest) (ToolResult, error) {
@@ -73,7 +73,7 @@ func NewAuthResumeDescriptor(oob *OutOfBandLogin, handles *AsyncHandleStore) Too
 	return ToolDescriptor{
 		Name:        "pinner_auth_resume",
 		Title:       "Sign In Resume",
-		Description: "Poll a pending out-of-band sign-in. Returns pending (needs_human) until the human completes the approval, then done. Pass the handle from pinner_auth_sso.",
+		Description: "Poll a pending out-of-band (OOB) sign in to check whether the human has completed the SSO approval (sign-in). Returns pending (needs_human) until approval is done, then reports done. Pass the handle returned by pinner_auth_sso.",
 		Category:    CategoryCore,
 		InputSchema: toolSchemaFor[authResumeArgs](),
 		Handler: func(ctx context.Context, req ToolRequest) (ToolResult, error) {
