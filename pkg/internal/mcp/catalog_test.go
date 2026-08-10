@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -275,6 +276,38 @@ func TestStringSliceFlagEmitsArraySchema(t *testing.T) {
 	property := doc["properties"].(map[string]any)["tags"].(map[string]any)
 	assert.Equal(t, "array", property["type"])
 	assert.Equal(t, map[string]any{"type": "string"}, property["items"])
+}
+
+// TestVaultRestoreInteractionStaysStdinInputThroughBuildCatalog asserts that
+// buildCatalog never reclassifies pinner_vault_restore away from stdin_input,
+// even when an OOB restore coordinator is wired. The Interaction enum drives
+// the invoke_tool stdin gate (sdk_official.go), which switches on
+// entry.Interaction: if it became agent_safe, a --seed-stdin invocation would
+// fall through the switch and run io.ReadAll(os.Stdin) — desyncing the stdio
+// MCP transport. The non-stdin OOB hand-off is already permitted by the
+// bypassGate, so the signal must stay stdin_input.
+func TestVaultRestoreInteractionStaysStdinInputThroughBuildCatalog(t *testing.T) {
+	root := &cli.Command{
+		Name: "pinner",
+		Commands: []*cli.Command{
+			{
+				Name: "vault",
+				Commands: []*cli.Command{
+					{Name: "restore", Action: func(context.Context, *cli.Command) error { return nil }},
+				},
+			},
+		},
+	}
+
+	// With an OOB restore coordinator wired, restore must STILL be stdin_input.
+	oobRestore := NewOOBRestore(nil, time.Minute)
+	t.Cleanup(func() { oobRestore.Stop(context.Background()) })
+	catalog, err := buildCatalog(root, true, nil, nil, oobRestore)
+	require.NoError(t, err)
+	restore, ok := catalog.Get("pinner_vault_restore")
+	require.True(t, ok)
+	assert.Equal(t, InteractionStdinInput, restore.Interaction,
+		"buildCatalog must keep vault restore stdin_input so the --seed-stdin gate holds")
 }
 
 // TestSSOToolsDiscoverableInCatalog verifies the out-of-band sign-in tools are
