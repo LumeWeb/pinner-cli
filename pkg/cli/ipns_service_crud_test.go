@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 	ipfs "go.lumeweb.com/ipfs-sdk"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner-cli/internal/core/ipfsbase"
 	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
 )
 
@@ -86,7 +87,7 @@ func newAuthedIPNSService(t *testing.T, sdkSvc ipfs.IPNSService) *ipnsService {
 	cfgMgr := configmocks.NewMockManager(t)
 	cfgMgr.EXPECT().Config().Return(&config.Config{AuthToken: "test-token"}).Maybe()
 	return &ipnsService{
-		ipfsServiceBase: ipfsServiceBase{cfgMgr: cfgMgr, authToken: "test-token"},
+		ipfsServiceBase: ipfsbase.New(cfgMgr, ipfsbase.WithAuthToken("test-token")),
 		service:         sdkSvc,
 	}
 }
@@ -95,7 +96,7 @@ func newUnauthIPNSService(t *testing.T) *ipnsService {
 	cfgMgr := configmocks.NewMockManager(t)
 	cfgMgr.EXPECT().Config().Return(&config.Config{AuthToken: ""}).Maybe()
 	return &ipnsService{
-		ipfsServiceBase: ipfsServiceBase{cfgMgr: cfgMgr, authToken: ""},
+		ipfsServiceBase: ipfsbase.New(cfgMgr),
 	}
 }
 
@@ -169,10 +170,10 @@ func TestIPNSService_WithIPNSAuthToken(t *testing.T) {
 	cfgMgr.EXPECT().Config().Return(&config.Config{AuthToken: ""}).Maybe()
 
 	svc := &ipnsService{
-		ipfsServiceBase: ipfsServiceBase{cfgMgr: cfgMgr},
+		ipfsServiceBase: ipfsbase.New(cfgMgr),
 	}
 	WithIPNSAuthToken("override-token")(svc)
-	assert.Equal(t, "override-token", svc.getAuthToken())
+	assert.Equal(t, "override-token", svc.GetAuthToken())
 }
 
 func TestResolveIPNSKeyID_NumericArg(t *testing.T) {

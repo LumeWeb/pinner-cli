@@ -5,6 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner-cli/internal/core/ipfsbase"
 	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
 )
 
@@ -16,10 +17,7 @@ func TestDNSService_RequireAuthenticated(t *testing.T) {
 		}).Maybe()
 
 		svc := &dnsServiceCLI{
-			ipfsServiceBase: ipfsServiceBase{
-				cfgMgr:    cfgMgr,
-				authToken: "test-token",
-			},
+			ipfsServiceBase: ipfsbase.New(cfgMgr, ipfsbase.WithAuthToken("test-token")),
 		}
 
 		err := svc.RequireAuthenticated()
@@ -33,10 +31,7 @@ func TestDNSService_RequireAuthenticated(t *testing.T) {
 		}).Maybe()
 
 		svc := &dnsServiceCLI{
-			ipfsServiceBase: ipfsServiceBase{
-				cfgMgr:    cfgMgr,
-				authToken: "",
-			},
+			ipfsServiceBase: ipfsbase.New(cfgMgr),
 		}
 
 		err := svc.RequireAuthenticated()
@@ -53,10 +48,7 @@ func TestDNSService_AuthTokenOverride(t *testing.T) {
 		}).Maybe()
 
 		svc := &dnsServiceCLI{
-			ipfsServiceBase: ipfsServiceBase{
-				cfgMgr:    cfgMgr,
-				authToken: "override-token",
-			},
+			ipfsServiceBase: ipfsbase.New(cfgMgr, ipfsbase.WithAuthToken("override-token")),
 		}
 
 		err := svc.RequireAuthenticated()
@@ -70,13 +62,10 @@ func TestDNSService_AuthTokenOverride(t *testing.T) {
 		}).Maybe()
 
 		svc := &dnsServiceCLI{
-			ipfsServiceBase: ipfsServiceBase{
-				cfgMgr:    cfgMgr,
-				authToken: "override-token",
-			},
+			ipfsServiceBase: ipfsbase.New(cfgMgr, ipfsbase.WithAuthToken("override-token")),
 		}
 
-		require.Equal(t, "override-token", svc.getAuthToken())
+		require.Equal(t, "override-token", svc.GetAuthToken())
 	})
 
 	t.Run("falls back to config token when override is empty", func(t *testing.T) {
@@ -86,13 +75,10 @@ func TestDNSService_AuthTokenOverride(t *testing.T) {
 		}).Maybe()
 
 		svc := &dnsServiceCLI{
-			ipfsServiceBase: ipfsServiceBase{
-				cfgMgr:    cfgMgr,
-				authToken: "",
-			},
+			ipfsServiceBase: ipfsbase.New(cfgMgr),
 		}
 
-		require.Equal(t, "config-token", svc.getAuthToken())
+		require.Equal(t, "config-token", svc.GetAuthToken())
 	})
 
 	t.Run("WithDNSAuthToken functional option sets override", func(t *testing.T) {
@@ -102,13 +88,11 @@ func TestDNSService_AuthTokenOverride(t *testing.T) {
 		}).Maybe()
 
 		svc := &dnsServiceCLI{
-			ipfsServiceBase: ipfsServiceBase{
-				cfgMgr: cfgMgr,
-			},
+			ipfsServiceBase: ipfsbase.New(cfgMgr),
 		}
 		WithDNSAuthToken("override-token")(svc)
 
-		require.Equal(t, "override-token", svc.getAuthToken())
+		require.Equal(t, "override-token", svc.GetAuthToken())
 		err := svc.RequireAuthenticated()
 		require.NoError(t, err)
 	})

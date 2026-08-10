@@ -13,6 +13,7 @@ import (
 	ipfs "go.lumeweb.com/ipfs-sdk"
 	sdkwebsitesmocks "go.lumeweb.com/ipfs-sdk/mocks/services"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner-cli/internal/core/ipfsbase"
 	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
 )
 
@@ -20,7 +21,7 @@ func newUnauthWebsitesService(t *testing.T) *websitesService {
 	cfgMgr := configmocks.NewMockManager(t)
 	cfgMgr.EXPECT().Config().Return(&config.Config{AuthToken: ""}).Maybe()
 	return &websitesService{
-		ipfsServiceBase: ipfsServiceBase{cfgMgr: cfgMgr, authToken: ""},
+		ipfsServiceBase: ipfsbase.New(cfgMgr),
 	}
 }
 
@@ -28,7 +29,7 @@ func newAuthedNilWebsitesService(t *testing.T) *websitesService {
 	cfgMgr := configmocks.NewMockManager(t)
 	cfgMgr.EXPECT().Config().Return(&config.Config{AuthToken: "token"}).Maybe()
 	return &websitesService{
-		ipfsServiceBase: ipfsServiceBase{cfgMgr: cfgMgr, authToken: "token"},
+		ipfsServiceBase: ipfsbase.New(cfgMgr, ipfsbase.WithAuthToken("token")),
 		service:         nil,
 	}
 }
@@ -122,10 +123,10 @@ func TestWebsitesService_WithWebsitesAuthToken(t *testing.T) {
 	cfgMgr.EXPECT().Config().Return(&config.Config{AuthToken: ""}).Maybe()
 
 	svc := &websitesService{
-		ipfsServiceBase: ipfsServiceBase{cfgMgr: cfgMgr},
+		ipfsServiceBase: ipfsbase.New(cfgMgr),
 	}
 	WithWebsitesAuthToken("override-token")(svc)
-	assert.Equal(t, "override-token", svc.getAuthToken())
+	assert.Equal(t, "override-token", svc.GetAuthToken())
 }
 
 // TestWebsitesService_AuthTokenLiveFromConfig verifies the service reads the
@@ -153,12 +154,12 @@ func TestWebsitesService_AuthTokenLiveFromConfig(t *testing.T) {
 
 	// No WithWebsitesAuthToken override, and the constructor must not have frozen
 	// the config token, so getAuthToken() falls through to config live.
-	assert.Equal(t, "tok-a", svc.getAuthToken())
+	assert.Equal(t, "tok-a", svc.GetAuthToken())
 
 	// Simulate `pinner login` updating the on-disk token, which the watcher
 	// live-reloads into the manager; the service must see the new value.
 	cfg.AuthToken = "tok-b"
-	assert.Equal(t, "tok-b", svc.getAuthToken(), "service token must live-reload from config")
+	assert.Equal(t, "tok-b", svc.GetAuthToken(), "service token must live-reload from config")
 }
 
 // TestWebsitesService_SetAuthTokenReWiresClient verifies that pushing a new token

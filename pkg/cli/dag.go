@@ -8,6 +8,7 @@ import (
 	"github.com/urfave/cli/v3"
 	ipfs "go.lumeweb.com/ipfs-sdk"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner-cli/internal/core/ipfsbase"
 )
 
 // DAGService defines the interface for DAG operations.
@@ -17,7 +18,7 @@ type DAGService interface {
 }
 
 type dagService struct {
-	ipfsServiceBase
+	*ipfsServiceBase
 	service ipfs.DAGService
 	client  *ipfs.Client
 }
@@ -28,7 +29,7 @@ type DAGServiceOption func(*dagService)
 // WithDAGAuthToken sets an auth token override that takes precedence over config.
 func WithDAGAuthToken(token string) DAGServiceOption {
 	return func(s *dagService) {
-		withAuthToken(token)(&s.ipfsServiceBase)
+		withAuthToken(token)(s.ipfsServiceBase)
 	}
 }
 
@@ -67,10 +68,7 @@ func NewDAGService(cfgMgr config.Manager, output Output, apiEndpoint string, opt
 	authToken := cfgMgr.Config().AuthToken
 
 	s := &dagService{
-		ipfsServiceBase: ipfsServiceBase{
-			cfgMgr:    cfgMgr,
-			authToken: authToken,
-		},
+		ipfsServiceBase: ipfsbase.New(cfgMgr, ipfsbase.WithAuthToken(authToken)),
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -79,7 +77,7 @@ func NewDAGService(cfgMgr config.Manager, output Output, apiEndpoint string, opt
 	if s.client != nil {
 		s.service = s.client.DAG()
 	} else {
-		client, err := ipfs.NewClient(apiEndpoint, s.getAuthToken())
+		client, err := ipfs.NewClient(apiEndpoint, s.GetAuthToken())
 		if err != nil {
 			output.PrintError(err)
 			s.service = nil

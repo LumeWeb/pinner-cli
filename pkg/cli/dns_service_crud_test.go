@@ -9,13 +9,14 @@ import (
 	ipfs "go.lumeweb.com/ipfs-sdk"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
 	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
+	"go.lumeweb.com/pinner-cli/internal/core/ipfsbase"
 )
 
 func newUnauthDNSService(t *testing.T) *dnsServiceCLI {
 	cfgMgr := configmocks.NewMockManager(t)
 	cfgMgr.EXPECT().Config().Return(&config.Config{AuthToken: ""}).Maybe()
 	return &dnsServiceCLI{
-		ipfsServiceBase: ipfsServiceBase{cfgMgr: cfgMgr, authToken: ""},
+		ipfsServiceBase: ipfsbase.New(cfgMgr),
 	}
 }
 
@@ -23,7 +24,7 @@ func newAuthedNilDNSService(t *testing.T) *dnsServiceCLI {
 	cfgMgr := configmocks.NewMockManager(t)
 	cfgMgr.EXPECT().Config().Return(&config.Config{AuthToken: "token"}).Maybe()
 	return &dnsServiceCLI{
-		ipfsServiceBase: ipfsServiceBase{cfgMgr: cfgMgr, authToken: "token"},
+		ipfsServiceBase: ipfsbase.New(cfgMgr, ipfsbase.WithAuthToken("token")),
 		service:         nil,
 	}
 }
