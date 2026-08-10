@@ -5,7 +5,7 @@ import (
 	"io"
 	"time"
 
-	"go.lumeweb.com/pinner-cli/pkg/config"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
 )
 
 type DownloadResult struct {

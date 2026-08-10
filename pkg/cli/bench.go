@@ -7,7 +7,7 @@ import (
 
 	"github.com/docker/go-units"
 	"github.com/urfave/cli/v3"
-	"go.lumeweb.com/pinner-cli/pkg/config"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
 )
 
 // Bench flag constants

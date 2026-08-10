@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"go.lumeweb.com/pinner-cli/pkg/config"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
 )
 
 // Pin represents a pinned item

@@ -6,7 +6,7 @@ import (
 	"strconv"
 
 	"github.com/urfave/cli/v3"
-	"go.lumeweb.com/pinner-cli/pkg/config"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
 	meta "go.lumeweb.com/portal-sdk/meta"
 )
 

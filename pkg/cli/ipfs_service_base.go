@@ -3,7 +3,7 @@ package cli
 import (
 	"sync"
 
-	"go.lumeweb.com/pinner-cli/pkg/config"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
 )
 
 // ipfsServiceBase provides the shared auth/config pattern used by DNS, IPNS, and Websites services.
