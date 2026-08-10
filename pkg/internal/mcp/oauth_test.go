@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.lumeweb.com/pinner-cli/pkg/internal/mcp/oauthstore"
 )
 
 // testSecret is an arbitrary non-secret fixture value used only to exercise
@@ -25,7 +27,9 @@ const testSecret = "fixture-test-secret"
 
 func newTestOAuth(t *testing.T) *oauthServer {
 	t.Helper()
-	o := newOAuthServer(testSecret, "https://mcp.example.com")
+	store, err := oauthstore.Open(filepath.Join(t.TempDir(), "oauth.db"), 30*24*time.Hour)
+	require.NoError(t, err)
+	o := newOAuthServer(testSecret, "https://mcp.example.com", store)
 	o.clients["cli"] = oauthClient{redirectURIs: []string{"http://localhost/cb"}}
 	t.Cleanup(o.Stop) // stop the background reaper goroutine
 	return o
@@ -347,4 +351,47 @@ func formPost(values map[string]string) *http.Request {
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	return req
+}
+
+// TestOAuthRefreshReuseTolerated guards the Anthropic Claude failure mode: the
+// connector can re-present the same refresh token while it persists the
+// rotated successor. With the durable store's reuse-detection window, that
+// re-presentation is accepted (not invalid_grant), so the session stays alive.
+func TestOAuthRefreshReuseTolerated(t *testing.T) {
+	o := newTestOAuth(t)
+	verifier, challenge := testPKCE()
+
+	// Complete an authorization-code flow to mint a refresh token.
+	const res = "https://mcp.example.com/mcp"
+	rec := httptest.NewRecorder()
+	o.authorizePOST(rec, formPost(map[string]string{
+		"response_type": "code", "client_id": "cli", "redirect_uri": "http://localhost/cb",
+		"password": testSecret, "code_challenge": challenge, "code_challenge_method": "S256", "resource": res,
+	}))
+	require.Equal(t, http.StatusFound, rec.Code)
+	loc, _ := url.Parse(rec.Header().Get("Location"))
+	code := loc.Query().Get("code")
+
+	rec = httptest.NewRecorder()
+	o.tokenHandler(rec, formPost(map[string]string{
+		"grant_type": "authorization_code", "code": code, "client_id": "cli",
+		"redirect_uri": "http://localhost/cb", "code_verifier": verifier, "resource": res,
+	}))
+	require.Equal(t, http.StatusOK, rec.Code)
+	var tok map[string]any
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&tok))
+	refresh := tok["refresh_token"].(string)
+	require.NotEmpty(t, refresh)
+
+	// First refresh use rotates.
+	rec = httptest.NewRecorder()
+	o.tokenHandler(rec, formPost(map[string]string{"grant_type": "refresh_token", "refresh_token": refresh}))
+	require.Equal(t, http.StatusOK, rec.Code, "first refresh must succeed")
+
+	// Re-presenting the SAME refresh token immediately (within the reuse
+	// window) must also succeed — this is what previously returned invalid_grant
+	// and broke the Claude connection.
+	rec = httptest.NewRecorder()
+	o.tokenHandler(rec, formPost(map[string]string{"grant_type": "refresh_token", "refresh_token": refresh}))
+	require.Equal(t, http.StatusOK, rec.Code, "benign refresh-token reuse within the window must not invalid_grant")
 }
