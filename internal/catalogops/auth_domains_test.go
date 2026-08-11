@@ -116,4 +116,14 @@ func TestDestructiveDeleteConfirmGuards(t *testing.T) {
 			t.Fatalf("%s: expected confirmation error, got nil", op.Name())
 		}
 	}
+	// vault.forget is SafetyDestructive and declares a confirm arg; its handler
+	// must refuse to delete the profile without confirmation.
+	for _, op := range VaultOperations(VaultDeps{}) {
+		if op.Name() == "vault.forget" {
+			if _, err := op.Handler().Execute(ctx, map[string]any{}); err == nil {
+				t.Fatal("vault.forget: expected confirmation error, got nil")
+			}
+			break
+		}
+	}
 }

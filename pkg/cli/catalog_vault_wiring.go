@@ -182,15 +182,16 @@ func vaultActionAdapter(op catalog.Operation) cli.ActionFunc {
 
 		// Destructive gate (vault rm). Enforce --force.
 		//
-		// vault.forget is deliberately EXCLUDED: its destructive guard is the
-		// required --profile argument (never auto-resolve a default and delete
-		// the wrong profile), not --force — faithful to the legacy command, which
-		// requires --profile and has no --force gate.
-		if op.Safety() == catalog.SafetyDestructive && op.Name() != "vault.forget" {
-			confirm := c.Bool(FlagForce)
+		// Destructive confirmation gate (vault rm / vault forget). The required
+		// --profile argument guards against auto-resolving the wrong profile;
+		// --force guards the irreversible registry/cache/seed deletion. Both
+		// destructive ops enforce confirmation at the handler level too, so the
+		// CLI maps --force into input["confirm"] for programmatic parity.
+		if op.Safety() == catalog.SafetyDestructive {
+			confirm := c.Bool(FlagForce) || c.Bool(FlagConfirm)
 			input["confirm"] = confirm
 			if !confirm {
-				return fmt.Errorf("vault rm: pass --force to confirm this destructive operation")
+				return fmt.Errorf("vault %s: pass --force to confirm this destructive operation", strings.TrimPrefix(op.Name(), "vault."))
 			}
 		}
 

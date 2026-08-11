@@ -462,6 +462,9 @@ func vaultForget(d VaultDeps) catalog.Operation {
 			{Name: "confirm", Type: catalog.ArgTypeBool, Default: "false", Help: "Confirm the destructive operation (CLI maps --force here)"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
+			if !boolFrom(input, "confirm", false) {
+				return nil, fmt.Errorf("vault.forget requires confirmation (pass --force/confirm)")
+			}
 			profileName := str(input, "profile", "")
 			if profileName == "" {
 				return nil, fmt.Errorf("vault.forget: --profile <name> is required to forget a vault profile")
