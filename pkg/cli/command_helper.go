@@ -15,6 +15,25 @@ import (
 // It can be overridden in tests to inject mock config managers.
 var configManagerFactory ConfigManagerFactory = defaultConfigManagerFactory
 
+// applyDefaultTimeout wraps ctx with a context.WithTimeout derived from the
+// configured default timeout, returning a no-op cancel when no config manager
+// or timeout is available. This restores the legacy per-call deadline that the
+// migrated catalog handlers dropped: every catalog operation runs against the
+// core service with a bounded deadline so a hanging backend fails after the
+// configured timeout instead of blocking the CLI/MCP process indefinitely.
+func applyDefaultTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	cfgMgr, err := configManagerFactory()
+	if err != nil || cfgMgr == nil {
+		return ctx, func() {}
+	}
+	timeout := cfgMgr.Config().GetDefaultTimeout()
+	if timeout <= 0 {
+		return ctx, func() {}
+	}
+	dctx, cancel := context.WithTimeout(ctx, timeout)
+	return dctx, cancel
+}
+
 // setupCommandContext creates the common configuration and output objects needed by command actions.
 // This reduces boilerplate code across command handlers.
 func setupCommandContext(cmd *cli.Command) (config.Manager, Output, error) {

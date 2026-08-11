@@ -12,8 +12,10 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
+	"go.lumeweb.com/pinner-cli/internal/catalogops"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
 	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
+	"go.lumeweb.com/pinner-cli/internal/core/operations"
 	portalsdk "go.lumeweb.com/portal-sdk"
 	portalsdkmocks "go.lumeweb.com/portal-sdk/mocks"
 	"go.lumeweb.com/queryutil"
@@ -1386,3 +1388,52 @@ func TestOperationsList_Pagination(t *testing.T) {
 		assert.Contains(t, buf.String(), "Showing 11-12 of 25 operation(s)")
 	})
 }
+
+// TestWatchCatalogOperationsList_PaginationAndAuth verifies the wiring-level
+// regressions that Kody flagged on the watch path: watchCatalogOperationsList
+// must (1) require authentication before polling and (2) clamp unset/zero
+// page/page-size to the legacy defaults (1/10) so PageSize=0 does not disable
+// pagination and fetch the entire operations table on every poll tick.
+func TestWatchCatalogOperationsList_PaginationAndAuth(t *testing.T) {
+	opsSvc := NewMockOperationsService(t)
+	opsSvc.EXPECT().RequireAuthenticated().Return(nil)
+	opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{Page: 1, PageSize: 10}).Return(&OperationsListResult{
+		Operations: []OperationListItem{
+			{ID: 1, CID: "QmTest", Status: "completed", Operation: "pin", OperationDisplayName: "Pin", Protocol: "ipfs", ProtocolDisplayName: "IPFS", ProgressPercent: 100, StartedAt: "2024-01-01"},
+		},
+		Total: 1,
+	}, nil)
+
+	prev := operationsCatalogDepsVar
+	operationsCatalogDepsVar = catalogops.OperationsDeps{
+		Service: func(map[string]any) operations.Service { return opsSvc },
+	}
+	defer func() { operationsCatalogDepsVar = prev }()
+
+	var buf bytes.Buffer
+	cmd := &cli.Command{Writer: &buf}
+	// No page/page-size in input -> must clamp to 1/10.
+	err := watchCatalogOperationsList(context.Background(), cmd, nil, map[string]any{})
+	require.NoError(t, err)
+}
+
+// TestWatchCatalogOperationsList_RequiresAuth verifies that an unauthenticated
+// service short-circuits the watch path with the auth error before any List
+// call (the polling loop must not run when the caller is not authenticated).
+func TestWatchCatalogOperationsList_RequiresAuth(t *testing.T) {
+	opsSvc := NewMockOperationsService(t)
+	opsSvc.EXPECT().RequireAuthenticated().Return(errors.New("not authenticated"))
+
+	prev := operationsCatalogDepsVar
+	operationsCatalogDepsVar = catalogops.OperationsDeps{
+		Service: func(map[string]any) operations.Service { return opsSvc },
+	}
+	defer func() { operationsCatalogDepsVar = prev }()
+
+	var buf bytes.Buffer
+	cmd := &cli.Command{Writer: &buf}
+	err := watchCatalogOperationsList(context.Background(), cmd, nil, map[string]any{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not authenticated")
+}
+

@@ -258,8 +258,11 @@ func catalogActionAdapter(op catalog.Operation, group string) cli.ActionFunc {
 
 		// Require the operator to type the pinned count (or pass --yes/--force)
 		// before an unpin-all, mirroring the legacy unpinAll safety prompt
-		// (pins_rm.go -> unpin_all.go:128-140, yes = force || yes). This is
-		// intentionally CLI-only: catalogops stays IO-agnostic, and the
+		// (pins_rm.go -> unpin_all.go:83,128-140, yes = force || yes). The hidden
+		// --confirm alias only satisfies the outer destructive gate (it lets the
+		// operation proceed); it deliberately does NOT bypass the typed-count
+		// safety prompt, and must continue to require --force or --yes for that.
+		// This is intentionally CLI-only: catalogops stays IO-agnostic, and the
 		// MCP/programmatic path is necessarily non-interactive (passes --force).
 		if op.Name() == "pins.rm" && c.Bool(FlagAll) && !c.Bool(FlagDryRun) && !c.Bool(FlagYes) && !c.Bool(FlagForce) {
 			svc, svcErr := catalogPinningDeps().Service(input)
@@ -294,7 +297,11 @@ func catalogActionAdapter(op catalog.Operation, group string) cli.ActionFunc {
 			}
 		}
 
-		result, err := op.Handler().Execute(ctx, input)
+		// Apply the legacy per-call deadline (shared with every catalog domain).
+		dctx, cancel := applyDefaultTimeout(ctx)
+		defer cancel()
+
+		result, err := op.Handler().Execute(dctx, input)
 		if err != nil {
 			return err
 		}
