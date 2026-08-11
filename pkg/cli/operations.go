@@ -12,30 +12,8 @@ import (
 )
 
 func newOperationsCommand() *cli.Command {
-	return &cli.Command{
-		Name:     "operations",
-		Category: "Management",
-		Usage:    "List and inspect account operations",
-		Description: `View and monitor account operations such as uploads, pins, and other processing tasks.
-
-Operations track server-side processing of your requests. Each operation has a status:
-- pending   - Operation is queued
-- running   - Operation is in progress
-- completed - Operation finished successfully
-- failed    - Operation failed
-- error     - Operation encountered an error
-
-Examples:
-  pinner operations list
-  pinner operations list --status running
-  pinner operations list --cid bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e
-  pinner operations list --page 2 --page-size 20
-  pinner operations list --watch`,
-		Commands: []*cli.Command{
-			newOperationsListCommand(),
-			newOperationsGetCommand(),
-		},
-	}
+	// The operations parent is catalog-driven (see operations_wiring.go).
+	return newOperationsCommandCatalog()
 }
 
 func newOperationsListCommand() *cli.Command {

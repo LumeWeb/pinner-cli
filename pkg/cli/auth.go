@@ -464,6 +464,13 @@ func defaultAuthServiceFactory(cfgMgr config.Manager, apiEndpoint string) auth.A
 	return auth.DefaultAuthServiceFactory(cfgMgr, apiEndpoint)
 }
 
+// defaultAuthServiceFactoryWithToken creates an auth service pinned to an
+// explicit per-invocation auth token (the --auth-token flag override), taking
+// precedence over the config-stored token when building authenticated clients.
+func defaultAuthServiceFactoryWithToken(cfgMgr config.Manager, apiEndpoint, token string) auth.AuthService {
+	return auth.NewAuthService(cfgMgr, apiEndpoint, nil, auth.WithAuthToken(token))
+}
+
 // newAuthStatusCommand creates the auth status subcommand.
 func newAuthStatusCommand() *cli.Command {
 	return &cli.Command{

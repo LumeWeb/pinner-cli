@@ -12,41 +12,10 @@ import (
 )
 
 func newIPNSCommand() *cli.Command {
-	return &cli.Command{
-		Name:     "ipns",
-		Category: "Management",
-		Usage:    "Manage IPNS (InterPlanetary Name System) keys and records",
-		Description: `IPNS provides a mutable address scheme for IPFS content, allowing you to
-publish content under a stable name that you can update to point to new CIDs.
-
-IPNS operations include:
-  - Managing IPNS keys (create, list, get, delete)
-  - Publishing CIDs to IPNS names
-  - Republishing IPNS records
-  - Resolving IPNS names to their target CIDs
-
-Key names and numeric IDs are interchangeable. For example:
-  pinner ipns keys get my-key
-is equivalent to:
-  pinner ipns keys get 1
-
-Examples:
-  pinner ipns keys list
-  pinner ipns keys create my-key
-  pinner ipns keys get my-key
-  pinner ipns keys delete my-key
-  pinner ipns publish bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --key-name my-key
-  pinner ipns republish my-key
-  pinner ipns resolve k51qzi5uqu5djx...
-
-This works on raw IPNS keys. To point an entire hosted *website* at an IPNS key (and have Pinner manage it), use 'websites enable-ipns' instead.`,
-		Commands: []*cli.Command{
-			newIPNSKeysCommand(),
-			newIPNSPublishCommand(),
-			newIPNSRepublishCommand(),
-			newIPNSResolveCommand(),
-		},
-	}
+	// The ipns parent is catalog-driven: the keys + publish/republish/resolve
+	// subcommands are compiled from the canonical operation catalog
+	// (internal/catalogops) — see ipns_wiring.go.
+	return newIPNSCommandCatalog()
 }
 
 func newIPNSKeysCommand() *cli.Command {
