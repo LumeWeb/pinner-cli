@@ -9,6 +9,7 @@ import (
 
 	mock "github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.lumeweb.com/pinner-cli/internal/core/apikeys"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
 	portalsdk "go.lumeweb.com/portal-sdk"
 	portalsdkmocks "go.lumeweb.com/portal-sdk/mocks"
@@ -21,15 +22,12 @@ func newTestAPIKey(name, uuidStr string) *portalsdk.APIKey {
 	return &key
 }
 
-func setupAPIKeyServiceWithAuth(t *testing.T, authToken string, setupAcc func(*portalsdkmocks.MockAccountAPI)) *apiKeyService {
+func setupAPIKeyServiceWithAuth(t *testing.T, authToken string, setupAcc func(*portalsdkmocks.MockAccountAPI)) APIKeyService {
 	authSvc := NewMockAuthService(t)
 	acc := portalsdkmocks.NewMockAccountAPI(t)
 	setupAcc(acc)
 	authSvc.EXPECT().GetAuthenticatedClient(mock.Anything).Return(acc, nil).Maybe()
-	return &apiKeyService{
-		authService: authSvc,
-		authToken:   authToken,
-	}
+	return apikeys.New(authSvc, authToken)
 }
 
 func TestAPIKeyService_ListAPIKeys(t *testing.T) {
@@ -288,9 +286,7 @@ func TestAPIKeyService_GetCurrentAPIKeyUUID(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			svc := &apiKeyService{
-				authToken: tt.authToken,
-			}
+			svc := apikeys.New(nil, tt.authToken)
 
 			uuid := svc.GetCurrentAPIKeyUUID()
 			require.Equal(t, tt.wantUUID, uuid)
@@ -299,11 +295,11 @@ func TestAPIKeyService_GetCurrentAPIKeyUUID(t *testing.T) {
 }
 
 func TestAPIKeyService_RequireAuthenticated(t *testing.T) {
-	svc := &apiKeyService{authToken: ""}
+	svc := apikeys.New(nil, "")
 	err := svc.RequireAuthenticated()
 	require.Error(t, err)
 
-	svc = &apiKeyService{authToken: "test-token"}
+	svc = apikeys.New(nil, "test-token")
 	err = svc.RequireAuthenticated()
 	require.NoError(t, err)
 }
