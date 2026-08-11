@@ -1,62 +1,41 @@
 package cli
 
 import (
-	"context"
-	"io"
-	"time"
-
+	"go.lumeweb.com/pinner-cli/internal/core/auth"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner-cli/internal/core/download"
 )
 
-type DownloadResult struct {
-	CID      string        `json:"cid"`
-	Path     string        `json:"path"`
-	Size     int64         `json:"size"`
-	Duration time.Duration `json:"duration"`
-}
+// DownloadService, result models and the option type are re-exported from core
+// for CLI consumers and handler signatures; the concrete impl stays in pkg/cli.
+type DownloadService = download.Service
+type DownloadResult = download.DownloadResult
+type DirEntry = download.DirEntry
+type LsResult = download.LsResult
+type DownloadServiceOption = download.Option
 
-type DirEntry struct {
-	Name string `json:"name"`
-	Size int64  `json:"size"`
-	Type string `json:"type"`
-}
-
-type LsResult struct {
-	CID     string     `json:"cid"`
-	Count   int        `json:"entries"`
-	Entries []DirEntry `json:"items"`
-}
-
-type DownloadService interface {
-	Cat(ctx context.Context, ipfsPath string) (io.ReadCloser, error)
-	Download(ctx context.Context, ipfsPath string, outputPath string, force bool) (*DownloadResult, error)
-	ListDirectory(ctx context.Context, ipfsPath string) ([]DirEntry, error)
-	FileSize(ctx context.Context, ipfsPath string) (int64, error)
-	RequireAuthenticated() error
-}
-
+// DownloadServiceFactory builds a Service with dependencies plus the CLI
+// Output for the concrete impl. It is a presentation-layer type distinct from
+// the Output-free core.ServiceFactoryFunc.
 type DownloadServiceFactory func(cfgMgr config.Manager, output Output, opts ...DownloadServiceOption) DownloadService
 
-type DownloadServiceOption func(*DownloadServiceDefault)
-
-func WithDownloadAuthService(authSvc AuthService) DownloadServiceOption {
-	return func(s *DownloadServiceDefault) {
-		s.authService = authSvc
-	}
+// WithDownloadAuthService injects the auth service used to exchange API-key
+// JWTs for login tokens before downloading.
+func WithDownloadAuthService(authSvc auth.AuthService) DownloadServiceOption {
+	return download.WithAuthService(authSvc)
 }
 
+// WithDownloadAuthToken pins an explicit auth token override.
 func WithDownloadAuthToken(token string) DownloadServiceOption {
-	return func(s *DownloadServiceDefault) {
-		s.authToken = token
-	}
+	return download.WithAuthToken(token)
 }
 
+// WithDownloadIPFSEndpoint overrides the IPFS endpoint used for downloads.
 func WithDownloadIPFSEndpoint(endpoint string) DownloadServiceOption {
-	return func(s *DownloadServiceDefault) {
-		s.ipfsEndpoint = endpoint
-	}
+	return download.WithIPFSEndpoint(endpoint)
 }
 
+// defaultDownloadServiceFactory is the factory used by download handlers.
 func defaultDownloadServiceFactory(cfgMgr config.Manager, output Output, opts ...DownloadServiceOption) DownloadService {
 	return NewDownloadService(cfgMgr, output, opts...)
 }

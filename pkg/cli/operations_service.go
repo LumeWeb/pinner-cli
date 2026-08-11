@@ -7,69 +7,20 @@ import (
 	"time"
 
 	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner-cli/internal/core/operations"
 	portalsdk "go.lumeweb.com/portal-sdk"
 	"go.lumeweb.com/queryutil"
 	"go.lumeweb.com/queryutil/filter"
 )
 
-type OperationListItem struct {
-	ID                   int
-	Operation            string
-	OperationDisplayName string
-	Protocol             string
-	ProtocolDisplayName  string
-	Status               string
-	StatusDisplayName    string
-	StatusMessage        string
-	CID                  string
-	ProgressPercent      float32
-	StartedAt            string
-	UpdatedAt            string
-	Error                string
-	CurrentStep          *int
-	TotalSteps           *int
-}
+// Operation models and the OperationsService contract are re-exported from core.
+type OperationListItem = operations.OperationListItem
+type OperationDetail = operations.OperationDetail
+type OperationsListResult = operations.OperationsListResult
+type OperationsListOptions = operations.ListOptions
+type OperationsService = operations.Service
 
-type OperationDetail struct {
-	ID                   int
-	Operation            string
-	OperationDisplayName string
-	Protocol             string
-	ProtocolDisplayName  string
-	Status               string
-	StatusDisplayName    string
-	StatusMessage        string
-	CID                  string
-	ProgressPercent      float32
-	StartedAt            string
-	UpdatedAt            string
-	Error                string
-	CurrentStep          *int
-	TotalSteps           *int
-}
-
-type OperationsListResult struct {
-	Operations []OperationListItem
-	Total      int
-}
-
-type OperationsService interface {
-	List(ctx context.Context, opts OperationsListOptions) (*OperationsListResult, error)
-	Get(ctx context.Context, id int64) (*OperationDetail, error)
-	Watch(ctx context.Context, id int64) (*OperationDetail, error)
-	RequireAuthenticated() error
-}
-
-type OperationsListOptions struct {
-	StatusFilter    string
-	OperationFilter string
-	ProtocolFilter  string
-	CIDFilter       string
-	Sort            string
-	Page            int
-	PageSize        int
-}
-
+// OperationsServiceOption mutates the CLI's concrete impl (portalsdk-coupled).
 type OperationsServiceOption func(*OperationsServiceDefault)
 
 func WithOperationsAccountClient(client portalsdk.AccountAPI) OperationsServiceOption {
@@ -84,6 +35,7 @@ func WithOperationsAuthService(as AuthService) OperationsServiceOption {
 	}
 }
 
+// OperationsServiceFactory builds a Service with the CLI Output and auth service.
 type OperationsServiceFactory func(cfgMgr config.Manager, output Output, authService AuthService) OperationsService
 
 type OperationsServiceDefault struct {
