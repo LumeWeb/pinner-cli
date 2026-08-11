@@ -24,6 +24,25 @@ func stripValidationPrefix(token string) string {
 }
 
 func newWebsitesCommand() *cli.Command {
+	// The websites parent is catalog-driven: the core website CRUD + status
+	// subcommands (list, create, get, update, enable-ipns, delete, validate,
+	// ssl status, config) are compiled from the canonical operation catalog
+	// (internal/catalogops) — see catalog_websites_wiring.go. The commands
+	// that are fundamentally interactive/IO or domain-delegation-focused are
+	// NOT representable as pure data-returning handlers and remain hand-written:
+	//   - websites wizard        — interactive stepwise creation session.
+	//   - websites domains ...   — domain binding + DANE delegation tree
+	//                              (list/add/rm/verify/dns-requirements/dane
+	//                              republish/update + wizard), driven by the
+	//                              core websites domain-binding service but
+	//                              with wizard/IO coupling that is out of scope
+	//                              for this catalog migration pass.
+	cmds := newWebsitesCatalogCommands()
+	cmds = append(cmds,
+		newWebsitesWizardCommand(),
+		newWebsitesDomainsCommand(),
+	)
+
 	return &cli.Command{
 		Name:     "websites",
 		Category: "Management",
@@ -32,19 +51,7 @@ func newWebsitesCommand() *cli.Command {
 		Description: `Manage websites: associate domain names with CIDs so your IPFS/IPNS content is served over your custom domains. Covers create/list/get/update/delete/validate, SSL certificate status, domain binding (websites domains), and enabling IPNS addressing (enable-ipns).
 
 For raw DNS zone and record CRUD (A/AAAA/CNAME/TXT/MX/NS, _dnslink, apex vs subdomain), use the 'dns' command tree instead; websites only shows the DNS records your domain needs. Content addressing itself lives under 'ipns'.`,
-		Commands: []*cli.Command{
-			newWebsitesListCommand(),
-			newWebsitesCreateCommand(),
-			newWebsitesGetCommand(),
-			newWebsitesUpdateCommand(),
-			newWebsitesEnableIPNSCommand(),
-			newWebsitesDeleteCommand(),
-			newWebsitesValidateCommand(),
-			newWebsitesSSLCommand(),
-			newWebsitesConfigCommand(),
-			newWebsitesWizardCommand(),
-			newWebsitesDomainsCommand(),
-		},
+		Commands: cmds,
 	}
 }
 

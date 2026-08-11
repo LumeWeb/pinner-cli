@@ -462,13 +462,16 @@ func stringSliceVal(v any) []string {
 // Why: the catalog compiler marks an OperationArg with Required=true as a
 // urfave-required flag, and urfave/cli/v3 fails at PARSE time when it is not
 // set — before any Action runs. But a required arg that the CLI passes
-// positionally (e.g. `pins rm <cid>`) is supplied via the wiring layer's
-// positional→input mapping, not as a `--<name>` flag. If the flag stays
-// urfave-required the command is rejected before that mapping ever runs.
+// positionally (e.g. `vault profile use work`, `dns zone get example.com`,
+// `pins rm <cid>`) is supplied via the wiring layer's positional→input
+// mapping, not as a `--<name>` flag. If the flag stays urfave-required the
+// command is rejected before that mapping ever runs.
 //
 // Every catalog operation handler re-enforces requiredness itself (it errors
 // when the resolved value is empty), so relaxing the urfave marker loses no
-// safety — it only lets positionally-supplied values reach the handler.
+// safety — it only lets positionally-supplied values reach the handler. This
+// keeps `Required` as a catalog-level contract enforced by the handler and
+// the adapter, rather than an incompatible urfave-parse-time gate.
 //
 // Bool and StringSlice flags are untouched: Bool is never a positional target
 // and StringSlice positional values are multi-valued and handled separately.
@@ -485,15 +488,4 @@ func relaxFlagRequired(cmd *cli.Command) {
 			flag.Required = false
 		}
 	}
-}
-
-// hasArg reports whether the operation declares an argument with the given name.
-// Used by wiring layers to decide how positionals/flags map onto operation args.
-func hasArg(op catalog.Operation, name string) bool {
-	for _, a := range op.Args() {
-		if a.Name == name {
-			return true
-		}
-	}
-	return false
 }
