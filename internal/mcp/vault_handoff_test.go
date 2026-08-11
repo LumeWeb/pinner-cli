@@ -288,3 +288,93 @@ func TestMintVaultHandoffDegradesWithoutResumeMachinery(t *testing.T) {
 	assert.Empty(t, h)
 	assert.Empty(t, rt)
 }
+
+// TestVaultCreateResumeExpiredTokenSteersRestart verifies the Kody high finding:
+// an EXPIRED one-time seed_url must NOT be reported as a completed vault create
+// (StatusDone) — it must terminate the continuation and steer the agent to
+// start a fresh pinner_vault_create. Previously tokenDone conflated consumed
+// and expired tokens (both absent from the store), so polling after the TTL
+// elapsed falsely read "seed retrieved". See handoffEndpoint.resolve's
+// handoffUsed vs handoffExpired distinction.
+func TestVaultCreateResumeExpiredTokenSteersRestart(t *testing.T) {
+	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	reg := NewHandoffRegistry()
+	seedDrop := NewSeedDrop(time.Minute)
+	seedDrop.SetBaseURL("http://127.0.0.1:9999")
+
+	url := seedDrop.Register("default", "alpha beta gamma")
+	token := vaultTokenFromURL(url)
+	require.NotEmpty(t, token)
+	handle := handles.Create("pending", map[string]any{handleDataToken: token})
+	reg.Begin(handle, vaultCreateResumeContinuation(seedDrop, handles, reg))
+
+	resume := NewVaultCreateResumeDescriptor(reg, handles)
+
+	// Before expiry: pending.
+	r, err := resume.Handler(context.Background(), ToolRequest{
+		Name: vaultCreateResumeToolName, Arguments: map[string]any{"handle": handle},
+	})
+	require.NoError(t, err)
+	requireHandoff(t, r)
+
+	// Advance the clock past the 1m TTL so the token is handoffExpired.
+	seedDrop.setNow(func() time.Time { return time.Now().Add(2 * time.Minute) })
+
+	// The resume must NOT report done — it must steer to a fresh vault create.
+	r, err = resume.Handler(context.Background(), ToolRequest{
+		Name: vaultCreateResumeToolName, Arguments: map[string]any{"handle": handle},
+	})
+	require.NoError(t, err)
+	sc := requireHandoff(t, r)
+	assert.Equal(t, vaultCreateToolName, sc["resume_tool"],
+		"expired seed token must steer to pinner_vault_create, not report done")
+	assert.NotEqual(t, StatusDone, sc["status"], "expired token must never read as a completed vault create")
+	assert.NotContains(t, r.Text, "alpha beta gamma")
+
+	// The expired continuation + backing handle must be cleared so the agent
+	// is not left polling a dead flow: a follow-up poll now hits the
+	// template's dead-handle branch (unknown handle).
+	r, err = resume.Handler(context.Background(), ToolRequest{
+		Name: vaultCreateResumeToolName, Arguments: map[string]any{"handle": handle},
+	})
+	require.NoError(t, err)
+	sc = requireHandoff(t, r)
+	assert.Equal(t, vaultCreateToolName, sc["resume_tool"], "cleared expiration must read as dead-handle restart")
+}
+
+// TestVaultRestoreResumeExpiredTokenSteersRestart mirrors the create expiry
+// case for the restore flow: an EXPIRED restore_url must steer to a fresh
+// pinner_vault_restore rather than falsely reporting "vault has been
+// restored".
+func TestVaultRestoreResumeExpiredTokenSteersRestart(t *testing.T) {
+	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	reg := NewHandoffRegistry()
+	oob, _, _ := buildRestoreServer()
+
+	url := oob.Register("default")
+	token := vaultTokenFromURL(url)
+	require.NotEmpty(t, token)
+	handle := handles.Create("pending", map[string]any{handleDataToken: token})
+	reg.Begin(handle, vaultRestoreResumeContinuation(oob, handles, reg))
+
+	resume := NewVaultRestoreResumeDescriptor(reg, handles)
+
+	// Before expiry: pending.
+	r, err := resume.Handler(context.Background(), ToolRequest{
+		Name: vaultRestoreResumeToolName, Arguments: map[string]any{"handle": handle},
+	})
+	require.NoError(t, err)
+	requireHandoff(t, r)
+
+	// Advance the clock past the restore TTL so the token is handoffExpired.
+	oob.setNow(func() time.Time { return time.Now().Add(2 * time.Hour) })
+
+	r, err = resume.Handler(context.Background(), ToolRequest{
+		Name: vaultRestoreResumeToolName, Arguments: map[string]any{"handle": handle},
+	})
+	require.NoError(t, err)
+	sc := requireHandoff(t, r)
+	assert.Equal(t, vaultRestoreToolName, sc["resume_tool"],
+		"expired restore token must steer to pinner_vault_restore, not report done")
+	assert.NotEqual(t, StatusDone, sc["status"], "expired token must never read as a completed restore")
+}
