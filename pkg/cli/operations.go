@@ -7,90 +7,12 @@ import (
 
 	"github.com/pterm/pterm"
 	"github.com/urfave/cli/v3"
-	"go.lumeweb.com/pinner-cli/internal/core/config"
 	portalsdk "go.lumeweb.com/portal-sdk"
 )
 
 func newOperationsCommand() *cli.Command {
 	// The operations parent is catalog-driven (see operations_wiring.go).
 	return newOperationsCommandCatalog()
-}
-
-func newOperationsListCommand() *cli.Command {
-	return &cli.Command{
-		Name:  "list",
-		Usage: "List account operations",
-		Description: `List your account operations with optional filtering.
-Operations track server-side processing of your requests (uploads, pins, etc.).
-Results are sorted by newest first (id:desc) by default.
-
-Examples:
-  pinner operations list
-  pinner operations list --status running
-  pinner operations list --operation upload
-  pinner operations list --protocol ipfs
-  pinner operations list --cid bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e
-  pinner operations list --sort started:asc
-  pinner operations list --page 2 --page-size 20
-  pinner operations list --watch`,
-		Flags: []cli.Flag{
-			&cli.StringFlag{
-				Name:  FlagStatus,
-				Usage: "Filter by status (pending, running, completed, failed, error)",
-			},
-			&cli.StringFlag{
-				Name:  FlagOperation,
-				Usage: "Filter by operation type (e.g., upload, pin)",
-			},
-			&cli.StringFlag{
-				Name:  FlagProtocol,
-				Usage: "Filter by protocol (e.g., ipfs)",
-			},
-			&cli.StringFlag{
-				Name:  FlagCID,
-				Usage: "Filter by CID",
-			},
-			&cli.StringFlag{
-				Name:  FlagSort,
-				Usage: "Sort results (format: field:order, e.g., id:desc, started:asc). Multiple sorts comma-separated",
-				Value: "id:desc",
-			},
-			PageFlag(),
-			PageSizeFlag(),
-			WatchFlag(),
-		},
-		Action: func(ctx context.Context, c *cli.Command) error {
-			output := setupOutput(c)
-			return operationsList(ctx, newCLICommandWrapper(c), output, defaultConfigManagerFactory, defaultAuthServiceFactory, defaultOperationsServiceFactory)
-		},
-	}
-}
-
-func newOperationsGetCommand() *cli.Command {
-	return &cli.Command{
-		Name:      "get",
-		Usage:     "Get details of an operation",
-		ArgsUsage: "<operation-id>",
-		Description: `Get detailed information about a specific operation.
-
-Examples:
-  pinner operations get 42
-  pinner operations get 42 --watch`,
-		Flags: []cli.Flag{
-			&cli.BoolFlag{
-				Name:  FlagWatch,
-				Usage: "Wait for the operation to complete",
-			},
-		},
-		Action: func(ctx context.Context, c *cli.Command) error {
-			output := setupOutput(c)
-			return operationsGet(ctx, newCLICommandWrapper(c), output, defaultConfigManagerFactory, defaultAuthServiceFactory, defaultOperationsServiceFactory)
-		},
-	}
-}
-
-func defaultOperationsServiceFactory(cfgMgr config.Manager, output Output, authService AuthService) OperationsService {
-	return NewOperationsService(cfgMgr, output, authService)
 }
 
 func operationsList(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgrFactory ConfigManagerFactory, authServiceFactory AuthServiceFactory, serviceFactory OperationsServiceFactory) error {
