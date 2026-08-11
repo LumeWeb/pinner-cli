@@ -149,6 +149,7 @@ func (ui *PTermSetupUI) handleSignIn(ctx context.Context, wizard *SetupWizard) e
 
 	// Handle 2FA if required
 	if loginResult.OTPRequired {
+		ui.output.Print("Two-factor authentication required.")
 		spinner.UpdateText("OTP required")
 
 		otpCode, err := prompter.PromptOTP()
