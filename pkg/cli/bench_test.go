@@ -763,7 +763,7 @@ func TestBenchServiceDefault_RunIteration(t *testing.T) {
 		assert.Empty(t, iter.CID)
 		assert.NotNil(t, iter.Error)
 		assert.Equal(t, "network error", iter.Error.Message)
-		assert.NotNil(t, iter.err)
+		assert.NotNil(t, iter.Err)
 
 		stageNames := make([]string, len(iter.Stages))
 		for i, s := range iter.Stages {
@@ -832,7 +832,7 @@ func TestBenchServiceDefault_RunIteration(t *testing.T) {
 
 		iter := svc.runIteration(ctx, opts, 0)
 		assert.NotNil(t, iter.Error)
-		assert.True(t, isUnrecoverableError(iter.err))
+		assert.True(t, isUnrecoverableError(iter.Err))
 	})
 
 	t.Run("iteration number is 1-indexed", func(t *testing.T) {

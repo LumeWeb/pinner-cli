@@ -1,4 +1,4 @@
-package cli
+package admin
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	coreerrors "go.lumeweb.com/pinner-cli/internal/core/errors"
 	"go.lumeweb.com/portal-sdk/admin"
 )
 
@@ -183,7 +184,7 @@ func TestAdminServiceBase_RequireAuthenticated(t *testing.T) {
 		base := &adminServiceBase{authenticated: false}
 		err := base.RequireAuthenticated()
 		require.Error(t, err)
-		assert.Equal(t, ErrNotAuthenticated, err)
+		assert.Equal(t, coreerrors.ErrNotAuthenticated, err)
 	})
 	t.Run("authenticated", func(t *testing.T) {
 		base := &adminServiceBase{authenticated: true}
