@@ -184,7 +184,7 @@ func handleUpload(ctx context.Context, cmd interface {
 	wait := !cmd.Bool(FlagNoWait)
 
 	if wait {
-		svcOpts = append(svcOpts, WithUploadPinningService(pinningServiceFactory(cfgMgr, output, secure)))
+		svcOpts = append(svcOpts, WithUploadPinningService(pinningServiceFactory(cfgMgr, secure)))
 	}
 
 	uploadService := uploadServiceFactory(cfgMgr, output, svcOpts...)
@@ -258,7 +258,7 @@ func handleUpload(ctx context.Context, cmd interface {
 			if authToken != "" {
 				metaPinningService = NewPinningService(cfgMgr, output, cfgMgr.Config().GetIPFSEndpointWithSecure(secure), WithAuthToken(authToken))
 			} else {
-				metaPinningService = pinningServiceFactory(cfgMgr, output, secure)
+				metaPinningService = pinningServiceFactory(cfgMgr, secure)
 			}
 			slice := metaMapToSlice(meta)
 			if err := metaPinningService.UpdateMetadata(ctx, result.CID, slice, false); err != nil {

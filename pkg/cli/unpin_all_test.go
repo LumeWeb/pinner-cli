@@ -258,7 +258,7 @@ func TestUnpinAll(t *testing.T) {
 				withInt(FlagParallel, tt.parallel).
 				withBool(FlagContinue, tt.continueOn)
 
-			pinningServiceFactory := func(cm config.Manager, out Output, _ bool) PinningService {
+			pinningServiceFactory := func(cm config.Manager, _ bool) PinningService {
 				return service
 			}
 
@@ -307,7 +307,7 @@ func TestUnpinAllConfirmPrompt(t *testing.T) {
 			withInt(FlagParallel, 0).
 			withBool(FlagContinue, false)
 
-		pinningServiceFactory := func(cm config.Manager, out Output, _ bool) PinningService {
+		pinningServiceFactory := func(cm config.Manager, _ bool) PinningService {
 			return service
 		}
 
@@ -356,7 +356,7 @@ func TestUnpinAllConfirmPrompt(t *testing.T) {
 			withInt(FlagParallel, 0).
 			withBool(FlagContinue, false)
 
-		pinningServiceFactory := func(cm config.Manager, out Output, _ bool) PinningService {
+		pinningServiceFactory := func(cm config.Manager, _ bool) PinningService {
 			return service
 		}
 
@@ -395,7 +395,7 @@ func TestUnpinAllConfirmPrompt(t *testing.T) {
 			withInt(FlagParallel, 0).
 			withBool(FlagContinue, false)
 
-		pinningServiceFactory := func(cm config.Manager, out Output, _ bool) PinningService {
+		pinningServiceFactory := func(cm config.Manager, _ bool) PinningService {
 			return service
 		}
 
