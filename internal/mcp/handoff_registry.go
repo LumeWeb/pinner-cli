@@ -87,8 +87,11 @@ func (r *HandoffRegistry) SetCleanup(fn func(handle string)) {
 // pruned under the same lock so the registry cannot grow past maxEntries.
 func (r *HandoffRegistry) Begin(handle string, c ResumeContinuation) {
 	r.mu.Lock()
-	r.pruneLocked()
-	var evicted string
+	// Collect both TTL-expired and capacity-evicted handles, then retire their
+	// backing store handles below, OUTSIDE the registry lock (cleanup never
+	// touches r.cont and acquires its own store lock).
+	pruned := r.pruneLocked()
+	evicted := make([]string, 0, 1)
 	if len(r.cont) >= r.maxEntries {
 		// Bounded like AsyncHandleStore: evict the oldest entry so a flood of
 		// abandoned hand-offs cannot exhaust memory. Newer flows win.
@@ -101,20 +104,23 @@ func (r *HandoffRegistry) Begin(handle string, c ResumeContinuation) {
 		}
 		if oldest != "" {
 			delete(r.cont, oldest)
-			evicted = oldest
+			evicted = append(evicted, oldest)
 		}
 	}
 	r.cont[handle] = registryEntry{createdAt: r.now(), cont: c}
-	// Retire the still-valid backing handle for the evicted flow so it cannot
-	// be resumed into a misleading dead-handle steer once the flow is gone.
-	// The cleanup callback (AsyncHandleStore.Delete) acquires its OWN store
-	// lock, so it must run outside the registry lock to avoid holding every
-	// handoff operation hostage to the store and to avoid lock-ordering
-	// hazards. It never touches r.cont.
+	// Retire the backing handles for the swept flows so none of them can be
+	// resumed into a misleading dead-handle steer once their flow is gone. The
+	// cleanup callback (AsyncHandleStore.Delete) acquires its OWN store lock,
+	// so it must run outside the registry lock to avoid holding every handoff
+	// operation hostage to the store and to avoid lock-ordering hazards.
 	cleanup := r.cleanup
 	r.mu.Unlock()
-	if evicted != "" && cleanup != nil {
-		cleanup(evicted)
+	if cleanup != nil {
+		for _, h := range append(evicted, pruned...) {
+			if h != "" {
+				cleanup(h)
+			}
+		}
 	}
 }
 
@@ -146,18 +152,33 @@ func (r *HandoffRegistry) End(handle string) {
 // to call periodically or opportunistically; Get and Begin also self-prune.
 func (r *HandoffRegistry) Prune() {
 	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.pruneLocked()
+	pruned := r.pruneLocked()
+	cleanup := r.cleanup
+	r.mu.Unlock()
+	// Retire backing handles outside the registry lock (cleanup acquires its
+	// own store lock and must not run under r.mu).
+	if cleanup != nil {
+		for _, h := range pruned {
+			if h != "" {
+				cleanup(h)
+			}
+		}
+	}
 }
 
-// pruneLocked removes expired entries, assuming the write lock is held.
-func (r *HandoffRegistry) pruneLocked() {
+// pruneLocked removes expired entries, assuming the write lock is held. It
+// returns the handles whose entries were removed so the caller can retire their
+// backing store handles outside the lock; it does not run cleanup itself.
+func (r *HandoffRegistry) pruneLocked() []string {
 	now := r.now()
+	var evicted []string
 	for h, e := range r.cont {
 		if now.Sub(e.createdAt) > r.ttp {
 			delete(r.cont, h)
+			evicted = append(evicted, h)
 		}
 	}
+	return evicted
 }
 
 // resumeArgs is the input of any *_resume tool.
@@ -274,14 +295,18 @@ func NewResumeTool(spec ResumeToolSpec, reg *HandoffRegistry, handles *AsyncHand
 }
 
 // isTerminalResume reports whether a resume result is terminal (done) rather
-// than a still-pending needs_human. A NeedsHumanResult is never terminal; a
-// plain done result is.
+// than a still-pending needs_human. Only an explicit status that is not
+// needs_human is terminal. A result with nil or non-map structured content is
+// treated as UNKNOWN (not terminal): conservatively keeping the continuation
+// makes the agent poll once more, which is harmless, whereas wrongly dropping
+// it mid-flow would report "done" for a flow that may still be pending. SSO
+// returns map content for both pending and done, so this is only a safety net
+// for future generic flows (vault seed, OTP).
 func isTerminalResume(result ToolResult) bool {
-	if result.StructuredContent == nil {
-		return true
+	sc, ok := result.StructuredContent.(map[string]any)
+	if !ok {
+		return false
 	}
-	if sc, ok := result.StructuredContent.(map[string]any); ok {
-		return sc["status"] != StatusNeedsHuman
-	}
-	return true
+	status, _ := sc["status"].(string)
+	return status != "" && status != StatusNeedsHuman
 }

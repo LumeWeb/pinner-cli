@@ -142,6 +142,81 @@ func TestBeginCleanupDoesNotHoldLock(t *testing.T) {
 	assert.True(t, ok, "newest flow survives eviction")
 }
 
+// TestIsTerminalResumeUnknownShapesNotTerminal guards the generic-contract
+// landmine the audit flagged: a continuation returning nil or non-map
+// structured content must NOT be classified terminal (which would drop the
+// continuation mid-flow and misreport "done"). Only an explicit non-human
+// status is terminal.
+func TestIsTerminalResumeUnknownShapesNotTerminal(t *testing.T) {
+	assert.False(t, isTerminalResume(ToolResult{Text: "bare text, no content"}),
+		"nil structured content must be treated as non-terminal")
+	assert.False(t, isTerminalResume(ToolResult{StructuredContent: "not-a-map"}),
+		"non-map structured content must be treated as non-terminal")
+	assert.False(t, isTerminalResume(ToolResult{StructuredContent: map[string]any{"status": StatusNeedsHuman}}),
+		"needs_human must be non-terminal")
+	assert.True(t, isTerminalResume(ToolResult{StructuredContent: map[string]any{"status": StatusDone}}),
+		"done must be terminal")
+}
+
+// TestPruneRetiresBackingHandles verifies that TTL pruning (via Prune and via
+// Begin's self-prune) retires the backing store handle for an expired
+// continuation, so an expired flow cannot leave a live-but-unresumable handle.
+func TestPruneRetiresBackingHandles(t *testing.T) {
+	reg := NewHandoffRegistry()
+	reg.ttp = time.Hour
+	handles := NewAsyncHandleStore(time.Hour, DefaultMaxSessions)
+	reg.now = func() time.Time { return time.Date(2026, 8, 11, 0, 0, 0, 0, time.UTC) }
+
+	base := time.Date(2026, 8, 11, 0, 0, 0, 0, time.UTC)
+	cont := func(ctx context.Context, h string, d map[string]any) (ToolResult, error) {
+		return ToolResult{Text: "done"}, nil
+	}
+	retired := map[string]bool{}
+	reg.SetCleanup(func(handle string) { retired[handle] = true })
+
+	// In real usage the registry handle equals the store handle (SSO uses one
+	// handle for both stores.Create and reg.Begin). Mirror that here.
+	h1 := handles.Create("pending", nil)
+	reg.Begin(h1, cont)
+	h2 := handles.Create("pending", nil)
+	reg.Begin(h2, cont)
+
+	// Advance past TTL: both should be pruned and their store handles retired.
+	reg.now = func() time.Time { return base.Add(2 * time.Hour) }
+	reg.Prune()
+
+	assert.True(t, retired[h1], "expired continuation must retire its backing handle")
+	assert.True(t, retired[h2], "expired continuation must retire its backing handle")
+}
+
+// TestSSOContinuationNoPendingIsDone guards the concurrent double-resume path
+// (M2): when pendingOutcome returns no pending request for a still-gated
+// handle, the continuation reports a terminal done (the login concluded from
+// the OOB side) rather than a misleading "still pending". It also verifies the
+// continuation's own cleanup drops the registry entry on the done path.
+func TestSSOContinuationNoPendingIsDone(t *testing.T) {
+	oob := newOOBForTest(t)
+	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	reg := NewHandoffRegistry()
+
+	// A handle bound in the store but with NO corresponding OOB request is the
+	// exact state a second concurrent resume observes after the first consumed
+	// the request. It must resolve done, not "still pending".
+	handle := handles.Create("pending", map[string]any{"email": "agent@example.com"})
+	cont := ssoResumeContinuation(oob, handles, reg)
+
+	res, err := cont(context.Background(), handle, map[string]any{"email": "agent@example.com"})
+	require.NoError(t, err)
+	require.False(t, res.IsError)
+	sc := res.StructuredContent.(map[string]any)
+	assert.Equal(t, StatusDone, sc["status"], "no pending request must resolve done, not pending")
+
+	_, still := reg.Get(handle)
+	assert.False(t, still, "done continuation must drop its registry entry")
+	_, _, storeErr := handles.Get(handle)
+	assert.Error(t, storeErr, "done continuation must retire the backing store handle")
+}
+
 // TestResumeTemplateDispatchesContinuation verifies the shared resume template
 // resolves a registered continuation for a given handle and returns its result,
 // without any SSO dependency — proving the framework mechanism is generic.

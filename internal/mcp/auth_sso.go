@@ -51,11 +51,15 @@ func NewAuthSSODescriptor(oob *OutOfBandLogin, handles *AsyncHandleStore, reg *H
 			handle := handles.Create("pending", map[string]any{"email": in.Email})
 			_, url, err := oob.Begin(handle, in.Email)
 			if err != nil {
+				// Do not leave an orphaned handle in the store with no
+				// continuation registered; retire it so a future resume does
+				// not see a live handle with nothing backing it.
+				handles.Delete(handle)
 				return ToolResult{IsError: true, Text: fmt.Sprintf("failed to start out-of-band login: %v", err)}, nil
 			}
 			// Register the SSO-specific poll logic under the handle so the
 			// shared pinner_auth_resume template dispatches to it.
-			reg.Begin(handle, ssoResumeContinuation(oob, handles))
+			reg.Begin(handle, ssoResumeContinuation(oob, handles, reg))
 			return NeedsHumanResult(NeedsHuman{
 				Reason:     ReasonSSOApproval,
 				ActionURL:  url,
@@ -72,12 +76,21 @@ func NewAuthSSODescriptor(oob *OutOfBandLogin, handles *AsyncHandleStore, reg *H
 // (needs_human) until done, then a terminal done result. It is registered
 // against the handle by pinner_auth_sso so the shared resume template can
 // dispatch to it.
-func ssoResumeContinuation(oob *OutOfBandLogin, handles *AsyncHandleStore) ResumeContinuation {
+//
+// The continuation performs its own registry cleanup (reg.End) on every
+// terminal outcome — done, login error, or already-consumed/no-pending-request
+// — rather than relying solely on the template's isTerminalResume. The
+// concurrent double-resume path in pendingOutcome returns
+// ("", false, nil) when another resume already consumed the request; that is a
+// completed outcome from the human's perspective, so it is reported done, not
+// misleadingly "still pending".
+func ssoResumeContinuation(oob *OutOfBandLogin, handles *AsyncHandleStore, reg *HandoffRegistry) ResumeContinuation {
 	return func(ctx context.Context, handle string, data map[string]any) (ToolResult, error) {
 		email, _ := data["email"].(string)
 		url, done, loginErr := oob.pendingOutcome(handle, email)
 		if loginErr != nil {
 			handles.Delete(handle)
+			reg.End(handle)
 			return NeedsHumanResult(NeedsHuman{
 				Reason:     ReasonSSOApproval,
 				ResumeTool: "pinner_auth_sso",
@@ -85,6 +98,19 @@ func ssoResumeContinuation(oob *OutOfBandLogin, handles *AsyncHandleStore) Resum
 			}), nil
 		}
 		if !done {
+			// pendingOutcome returns ("", false, nil) when there is no pending
+			// request for this handle — either the login was already consumed
+			// by a concurrent resume or it never registered. Either way the
+			// flow has concluded from the OOB side; report done rather than a
+			// misleading "still pending" with no URL to approve.
+			if url == "" {
+				handles.Delete(handle)
+				reg.End(handle)
+				return ToolResult{
+					Text:              "Sign-in complete. Authentication is now configured.",
+					StructuredContent: map[string]any{"status": StatusDone, "handle": handle},
+				}, nil
+			}
 			return NeedsHumanResult(NeedsHuman{
 				Reason:     ReasonSSOApproval,
 				ActionURL:  url,
@@ -94,6 +120,7 @@ func ssoResumeContinuation(oob *OutOfBandLogin, handles *AsyncHandleStore) Resum
 			}), nil
 		}
 		handles.Delete(handle)
+		reg.End(handle)
 		return ToolResult{
 			Text:              "Sign-in complete. Authentication is now configured.",
 			StructuredContent: map[string]any{"status": StatusDone, "handle": handle},
