@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"time"
 )
 
 // This file provides the GENERIC, internally-shared machinery behind the
@@ -31,31 +32,78 @@ type ResumeContinuation func(ctx context.Context, handle string, data map[string
 // its needs_human hand-off; the template resume tool looks the handle up by
 // handle to dispatch. One registry instance is shared by every hand-off flow
 // on the server.
+//
+// The registry mirrors AsyncHandleStore's bounded, TTL-bounded lifetime: a
+// continuation is only valid for as long as its backing handle, so entries
+// carry a createdAt timestamp and are evicted once past the TTL (lazily on
+// access and on each Begin/Prune) and when the map exceeds MaxEntries. This
+// guarantees an abandoned hand-off never leaks a continuation forever.
 type HandoffRegistry struct {
-	mu   sync.RWMutex
-	cont map[string]ResumeContinuation
+	mu         sync.RWMutex
+	cont       map[string]registryEntry
+	ttp        time.Duration // time-to-live for a registered continuation
+	maxEntries int
+	now        func() time.Time
 }
 
-// NewHandoffRegistry returns an empty hand-off continuation registry.
+// registryEntry pairs a resume continuation with the instant it was registered
+// so expired entries can be evicted under lock.
+type registryEntry struct {
+	createdAt time.Time
+	cont      ResumeContinuation
+}
+
+// NewHandoffRegistry returns an empty hand-off continuation registry. Entries
+// live for ttl and the registry is capped at maxEntries. Pass DefaultSessionTTL
+// and DefaultMaxSessions to mirror the AsyncHandleStore backing the handles.
 func NewHandoffRegistry() *HandoffRegistry {
-	return &HandoffRegistry{cont: make(map[string]ResumeContinuation)}
+	return &HandoffRegistry{
+		cont:       make(map[string]registryEntry),
+		ttp:        DefaultSessionTTL,
+		maxEntries: DefaultMaxSessions,
+		now:        time.Now,
+	}
 }
 
 // Begin registers the continuation for a handle. It overwrites any prior
 // continuation for the same handle. Call this when a hand-off flow starts,
-// BEFORE returning the needs_human hand-off with that handle.
+// BEFORE returning the needs_human hand-off with that handle. Stale entries are
+// pruned under the same lock so the registry cannot grow past maxEntries.
 func (r *HandoffRegistry) Begin(handle string, c ResumeContinuation) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.cont[handle] = c
+	r.pruneLocked()
+	if len(r.cont) >= r.maxEntries {
+		// Bounded like AsyncHandleStore: evict the oldest entry so a flood of
+		// abandoned hand-offs cannot exhaust memory. Newer flows win.
+		var oldest string
+		var oldestAt time.Time
+		for h, e := range r.cont {
+			if oldest == "" || e.createdAt.Before(oldestAt) {
+				oldest, oldestAt = h, e.createdAt
+			}
+		}
+		if oldest != "" {
+			delete(r.cont, oldest)
+		}
+	}
+	r.cont[handle] = registryEntry{createdAt: r.now(), cont: c}
 }
 
-// Get returns the continuation registered for a handle, if any.
+// Get returns the continuation registered for a handle, if any. An entry past
+// its TTL is treated as absent, so a dead handle can never be resumed against
+// a leaked continuation; expired entries are swept by Begin/Prune.
 func (r *HandoffRegistry) Get(handle string) (ResumeContinuation, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	c, ok := r.cont[handle]
-	return c, ok
+	e, ok := r.cont[handle]
+	if !ok {
+		return nil, false
+	}
+	if r.now().Sub(e.createdAt) > r.ttp {
+		return nil, false
+	}
+	return e.cont, true
 }
 
 // End removes the continuation for a handle. Call it once the hand-off reaches
@@ -64,6 +112,24 @@ func (r *HandoffRegistry) End(handle string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	delete(r.cont, handle)
+}
+
+// Prune removes every continuation whose backing handle has expired. It is safe
+// to call periodically or opportunistically; Get and Begin also self-prune.
+func (r *HandoffRegistry) Prune() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.pruneLocked()
+}
+
+// pruneLocked removes expired entries, assuming the write lock is held.
+func (r *HandoffRegistry) pruneLocked() {
+	now := r.now()
+	for h, e := range r.cont {
+		if now.Sub(e.createdAt) > r.ttp {
+			delete(r.cont, h)
+		}
+	}
 }
 
 // resumeArgs is the input of any *_resume tool.

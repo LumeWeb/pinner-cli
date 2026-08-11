@@ -32,6 +32,55 @@ func TestHandoffRegistryBeginGetEnd(t *testing.T) {
 	assert.False(t, ok, "end must remove the continuation")
 }
 
+// TestHandoffRegistryExpiryPrunes tests that a continuation registered past its
+// TTL is treated as absent and is swept from the registry, so an abandoned
+// hand-off does not leak its continuation forever.
+func TestHandoffRegistryExpiryPrunes(t *testing.T) {
+	reg := NewHandoffRegistry()
+	reg.ttp = time.Hour
+	reg.now = func() time.Time { return time.Date(2026, 8, 11, 0, 0, 0, 0, time.UTC) }
+
+	reg.Begin("h1", func(ctx context.Context, h string, d map[string]any) (ToolResult, error) {
+		return ToolResult{Text: "done"}, nil
+	})
+	require.True(t, func() bool { _, ok := reg.Get("h1"); return ok }())
+
+	// Far past TTL: Get reports absent and Prune sweeps the entry.
+	reg.now = func() time.Time { return time.Date(2026, 8, 12, 0, 0, 0, 0, time.UTC) }
+	_, ok := reg.Get("h1")
+	assert.False(t, ok, "expired continuation must be absent")
+
+	reg.Prune()
+	reg.now = func() time.Time { return time.Date(2026, 8, 11, 1, 0, 0, 0, time.UTC) }
+	_, ok = reg.Get("h1")
+	assert.False(t, ok, "pruned continuation must be gone even if clock rewinds")
+}
+
+// TestHandoffRegistryBounded tests that the registry never grows past its
+// capacity, evicting the oldest entry like AsyncHandleStore does.
+func TestHandoffRegistryBounded(t *testing.T) {
+	reg := NewHandoffRegistry()
+	reg.maxEntries = 3
+	reg.ttp = time.Hour
+	reg.now = func() time.Time { return time.Date(2026, 8, 11, 0, 0, 0, 0, time.UTC) }
+	cont := func(ctx context.Context, h string, d map[string]any) (ToolResult, error) {
+		return ToolResult{Text: "done"}, nil
+	}
+
+	reg.Begin("h1", cont) // oldest
+	reg.now = func() time.Time { return time.Date(2026, 8, 11, 0, 0, 1, 0, time.UTC) }
+	reg.Begin("h2", cont)
+	reg.now = func() time.Time { return time.Date(2026, 8, 11, 0, 0, 2, 0, time.UTC) }
+	reg.Begin("h3", cont)
+	reg.now = func() time.Time { return time.Date(2026, 8, 11, 0, 0, 3, 0, time.UTC) }
+	reg.Begin("h4", cont) // exceeds capacity -> evicts oldest (h1)
+
+	_, ok := reg.Get("h1")
+	assert.False(t, ok, "oldest entry must be evicted on overflow")
+	_, ok = reg.Get("h4")
+	assert.True(t, ok, "newest entry survives")
+}
+
 // TestResumeTemplateDispatchesContinuation verifies the shared resume template
 // resolves a registered continuation for a given handle and returns its result,
 // without any SSO dependency — proving the framework mechanism is generic.
