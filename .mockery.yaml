@@ -12,13 +12,13 @@ packages:
       Manager: {}
   go.lumeweb.com/pinner-cli/internal/core/auth:
     config:
-      dir: ./pkg/cli
+      dir: ./internal/cli
       pkgname: "cli"
     interfaces:
       AuthService:
         config:
           filename: "mock_AuthService.go"
-  go.lumeweb.com/pinner-cli/pkg/cli:
+  go.lumeweb.com/pinner-cli/internal/cli:
     config:
       filename: "mock_{{.InterfaceName}}.go"
       dir: "{{.InterfaceDir}}"
@@ -42,9 +42,9 @@ packages:
     interfaces:
       Catalog: {}
       Compiler: {}
-  go.lumeweb.com/pinner-cli/pkg/cli/internal:
+  go.lumeweb.com/pinner-cli/internal/cli/internal:
     config:
-      dir: ./pkg/cli/internal/mocks
+      dir: ./internal/cli/internal/mocks
       pkgname: "mocks"
     interfaces:
       PinningClient: {}

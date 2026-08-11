@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"go.lumeweb.com/pinner-cli/pkg/cli"
+	"go.lumeweb.com/pinner-cli/internal/cli"
 )
 
 func main() {
