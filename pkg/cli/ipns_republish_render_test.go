@@ -22,21 +22,33 @@ func TestRenderIPNSRepublishResult(t *testing.T) {
 	resp := &ipfs.IPNSRepublishResponse{Count: 3, Message: "record refreshed"}
 
 	cmd := &cli.Command{
-		Name:      "republish",
-		ArgsUsage: "<key-name-or-id>",
-		Writer:    &buf,
+		Name:       "republish",
+		ArgsUsage:  "<key-name-or-id>",
+		Flags:      []cli.Flag{&cli.StringFlag{Name: "key-name"}},
+		Writer:     &buf,
 		Action: func(ctx context.Context, c *cli.Command) error {
 			return renderIPNSResult(ctx, c, op, resp)
 		},
 	}
 
+	// Positional <key> form.
 	if err := cmd.Run(t.Context(), []string{"republish", "my-key"}); err != nil {
-		t.Fatalf("run: unexpected error: %v", err)
+		t.Fatalf("run (positional): unexpected error: %v", err)
 	}
-
 	got := buf.String()
 	want := "Republished IPNS key my-key: record refreshed (3 record(s))"
 	if !strings.Contains(got, want) {
-		t.Fatalf("output %q does not contain %q", got, want)
+		t.Fatalf("positional output %q does not contain %q", got, want)
+	}
+
+	// Flag-only --key-name form (ipns.republish declares it as a flag arg).
+	buf.Reset()
+	if err := cmd.Run(t.Context(), []string{"republish", "--key-name", "flag-key"}); err != nil {
+		t.Fatalf("run (flag): unexpected error: %v", err)
+	}
+	got = buf.String()
+	want = "Republished IPNS key flag-key: record refreshed (3 record(s))"
+	if !strings.Contains(got, want) {
+		t.Fatalf("flag output %q does not contain %q", got, want)
 	}
 }

@@ -47,6 +47,21 @@ func newVaultService(profileName string) (vault.VaultService, error) {
 }
 
 func newVaultCommand() *cli.Command {
+	// The vault parent is catalog-driven: most subcommands are compiled from
+	// the canonical operation catalog (internal/catalogops). The commands that
+	// are fundamentally interactive/IO-coupled (create, restore, cp, cat) are
+	// NOT representable as pure data-returning handlers — create/restore drive
+	// an interactive browser-approval flow and write the recovery seed to a
+	// 0600 file, and cp/cat stream binary local/vault content — so they remain
+	// hand-written and are appended here.
+	cmds := newVaultCatalogCommands()
+	cmds = append(cmds,
+		newVaultCreateCommand(),
+		newVaultRestoreCommand(),
+		newVaultCpCommand(),
+		newVaultCatCommand(),
+	)
+
 	return &cli.Command{
 		Name:     "vault",
 		Category: "Vault",
@@ -76,23 +91,6 @@ Forget a profile:   pinner vault forget --profile <name>
 
 Paths use the vault:/ scheme. Local paths work as normal.
 Stdout contains data or JSON results; progress goes to stderr.`,
-		// Command registrations are added incrementally by the per-command vault
-		// PRs, so this skeleton builds/merges before any subcommand exists.
-		Commands: []*cli.Command{
-			newVaultCreateCommand(),
-			newVaultRestoreCommand(),
-			newVaultLsCommand(),
-			newVaultStatCommand(),
-			newVaultCatCommand(),
-			newVaultVerifyCommand(),
-			newVaultRmCommand(),
-			newVaultCpCommand(),
-			newVaultShareCommand(),
-			newVaultSyncCommand(),
-			newVaultProfileCommand(),
-			newVaultStatusCommand(),
-			newVaultCacheCommand(),
-			newVaultForgetCommand(),
-		},
+		Commands: cmds,
 	}
 }

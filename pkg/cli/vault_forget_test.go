@@ -77,7 +77,7 @@ func TestVaultForget_EndToEnd(t *testing.T) {
 	root := NewRootCommand()
 	var buf bytes.Buffer
 	root.Writer = &buf
-	if err := root.Run(context.Background(), []string{"pinner", "vault", "forget", "--profile", "work", "--json"}); err != nil {
+	if err := root.Run(context.Background(), []string{"pinner", "vault", "forget", "--profile", "work", "--force", "--json"}); err != nil {
 		t.Fatalf("vault forget failed: %v", err)
 	}
 

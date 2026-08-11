@@ -241,8 +241,11 @@ func renderIPNSResult(_ context.Context, c *cli.Command, op catalog.Operation, r
 		if output.IsJSON() {
 			return output.PrintJSON(r)
 		}
-		keyArg := ""
-		if c.Args().Len() > 0 {
+		// ipns.republish declares its key as the --key-name flag arg (not a
+		// positional); the adapter also maps a positional <key> into it. Read
+		// the flag first, falling back to positional args.
+		keyArg := c.String("key-name")
+		if keyArg == "" && c.Args().Len() > 0 {
 			keyArg = c.Args().First()
 		}
 		output.Printfln("Republished IPNS key %s: %s (%d record(s))", keyArg, r.Message, r.Count)
