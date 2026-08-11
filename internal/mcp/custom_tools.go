@@ -27,6 +27,13 @@ type customToolDeps struct {
 	oob         *OutOfBandLogin
 	authHandles *AsyncHandleStore
 	handoffReg  *HandoffRegistry
+	// seedDrop and oobRestore back the vault create/restore OOB hand-offs.
+	// seedDrop is the vault-create seed-drop coordinator and oobRestore is the
+	// vault-restore coordinator. They are threaded here so the resume tools
+	// (pinner_vault_create_resume / pinner_vault_restore_resume) can poll the
+	// coordinators to completion over the same shared handoffReg + handles.
+	seedDrop    *SeedDrop
+	oobRestore  *OOBRestore
 	// resourceFactory, when non-nil, builds the pinner:// resource providers.
 	resourceFactory ResourceProvidersFactory
 	// opts carries the optional custom tools wired by MCPServerOption (upload,
@@ -87,6 +94,21 @@ func registerCustomTools(deps customToolDeps) error {
 	authResume.DirectVisible = true
 	deps.catalog.Add(toolEntryFromDescriptor(authSSO))
 	deps.catalog.Add(toolEntryFromDescriptor(authResume))
+
+	// Vault create/restore OOB hand-offs ride the SAME generic handoff-resume
+	// framework: the invoke path (buildCatalog) mints a handle and registers a
+	// per-domain continuation against it when it attaches a seed_url /
+	// restore_url; these two named *_resume tools poll that continuation to
+	// completion, pattern-matched from their domain-specific names. They are
+	// direct-surface tools like the SSO resume tool. When the coordinators or
+	// resume machinery are absent, the templates return a structured
+	// not-configured hand-off instead of hanging.
+	vaultCreateResume := NewVaultCreateResumeDescriptor(deps.handoffReg, deps.authHandles)
+	vaultCreateResume.DirectVisible = true
+	vaultRestoreResume := NewVaultRestoreResumeDescriptor(deps.handoffReg, deps.authHandles)
+	vaultRestoreResume.DirectVisible = true
+	deps.catalog.Add(toolEntryFromDescriptor(vaultCreateResume))
+	deps.catalog.Add(toolEntryFromDescriptor(vaultRestoreResume))
 
 	// Stamp which tools are part of the direct tools/list surface. This must
 	// run after the wizard tools and SSO tools are added to the catalog (both
