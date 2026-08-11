@@ -8,6 +8,7 @@ import (
 	ipfs "go.lumeweb.com/ipfs-sdk"
 	"go.lumeweb.com/pinner-cli/pkg/cli/wizard"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner-cli/internal/core/websites"
 )
 
 // WebsitesWizard manages the website creation wizard.
@@ -263,11 +264,11 @@ func runWebsitesWizard(ctx context.Context, cmd *cli.Command, output Output) err
 	authToken := GetAuthToken(cmd, cfgMgr)
 	secure := GetSecureSetting(cmd, cfgMgr)
 
-	var svcOpts []WebsitesServiceOption
+	var svcOpts []websites.Option
 	if authToken != "" {
-		svcOpts = append(svcOpts, WithWebsitesAuthToken(authToken))
+		svcOpts = append(svcOpts, websites.WithAuthToken(authToken))
 	}
-	websitesService = defaultWebsitesServiceFactory(cfgMgr, output, secure, svcOpts...)
+	websitesService = websites.DefaultFactory(cfgMgr, secure, svcOpts...)
 
 	ui := NewPTermWebsitesUI(output)
 

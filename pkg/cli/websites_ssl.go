@@ -64,7 +64,7 @@ func websitesSSLStatus(ctx context.Context, cmd websitesCommandGetter, output Ou
 	domain := args.First()
 	watch := cmd.Bool("watch")
 
-	websitesService, err := newAuthenticatedWebsitesService(cfgMgr, output, authToken, secure)
+	websitesService, err := newWebsitesAPI(cfgMgr, authToken, secure)
 	if err != nil {
 		return err
 	}

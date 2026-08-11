@@ -182,13 +182,12 @@ func TestUploadTaskManagerCancelBeforeStartDoesNotRun(t *testing.T) {
 	mgr := NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
 		// A cancelled upload must never fabricate a completion: if the executor
 		// observes the cancelled context it reports the cancellation instead of
-		// returning a bogus result.
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		default:
-		}
-		return map[string]any{"cid": "QmC"}, nil
+		// returning a bogus result. The executor blocks on ctx.Done() so the
+		// cancel deterministically beats completion — a non-blocking select
+		// with default would let the goroutine finish before Cancel() ran,
+		// making the race outcome (and this test) scheduling-dependent.
+		<-ctx.Done()
+		return nil, ctx.Err()
 	}, 0)
 
 	id, err := mgr.Start(context.Background(), io.NopCloser(strings.NewReader("c")), 1, "c.txt", false)
