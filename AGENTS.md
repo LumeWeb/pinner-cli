@@ -29,13 +29,13 @@ go test ./...
 go test -cover ./...
 
 # Run tests for a specific package
-go test ./pkg/cli
+go test ./internal/cli
 
 # Run tests with verbose output
 go test -v ./...
 
 # Run specific test functions
-go test ./pkg/cli -run TestUpload
+go test ./internal/cli -run TestUpload
 ```
 
 ### Mock Generation
@@ -70,9 +70,9 @@ Pinner.xyz CLI is a Go-based command-line tool for managing IPFS content via the
 
 ### Core Directories
 
-- **`cmd/pinner/`**: Entry point for the CLI application. Minimal main.go that delegates to `pkg/cli.Run()`.
+- **`cmd/pinner/`**: Entry point for the CLI application. Minimal main.go that delegates to `internal/cli.Run()`.
 
-- **`pkg/cli/`**: Primary CLI command implementations and orchestration logic.
+- **`internal/cli/`**: Primary CLI command implementations and orchestration logic.
   - Contains all command handlers: `auth.go`, `account.go`, `account_api_keys.go`, `register.go`, `confirm_email.go`, `upload.go`, `download.go`, `pin.go`, `pins.go` + `pins_*.go` (add/ls/rm/status/update), `list.go`, `status.go`, `unpin.go`, `unpin_all.go`, `metadata.go` (removed command), `meta.go` (metadata flag helpers), `operations.go`, `dns.go`, `ipns.go`, `websites.go`, `bench.go`, `config.go`, `doctor.go`, `setup.go`, `admin.go`, `version.go`, `root.go`
   - Defines service interfaces: `PinningService`, `StatusService`, `UploadService`, `AuthService`, `DownloadService`, `BenchService`, `OperationsService`, `DNSService`, `IPNSService`, `WebsitesService`, `QuotaAdminService`, `BillingAdminService`, `WebsiteAdminService`, `AdminTokenProvider`
   - Output formatting system with human-readable and JSON modes
@@ -81,12 +81,12 @@ Pinner.xyz CLI is a Go-based command-line tool for managing IPFS content via the
   - Generic wizard framework in `wizard/` using Go generics (`Step[S any]`, `Run[S]()`)
   - Structured error types: `BenchError`, `HTTPError`, `FormatError`
 
-- **`pkg/cli/internal/`**: Internal implementations of service interfaces.
+- **`internal/cli/internal/`**: Internal implementations of service interfaces.
   - `PinningClient` interface wraps boxo's remote pinning client
   - `BoxoPinningClient` provides the actual implementation with retry logic
   - HTTP client with configurable retry behavior
 
-- **`pkg/internal/mcp/`**: MCP adapter for exposing the CLI as a Model Context Protocol server.
+- **`internal/mcp/`**: MCP adapter for exposing the CLI as a Model Context Protocol server.
   - `MCPCommand()` returns a `*cli.Command` that serves the command tree over stdio
   - `adapter.go` - in-process command execution and MCP command registration
   - `catalog.go` - `ToolCatalog` with progressive disclosure
@@ -96,9 +96,9 @@ Pinner.xyz CLI is a Go-based command-line tool for managing IPFS content via the
   - `wizard.go` - website and setup wizard MCP tools (`websites_wizard_start`, `websites_wizard_step`, `setup_wizard_start`, `setup_wizard_step`)
   - `resources.go` - `pinner://` resource handlers (`account/status`, `websites/{domain}/dns-requirements`, `websites/{id}/validation-status`, `wizard/{session_id}/state`)
   - `prompts.go` - MCP prompt templates (`website-onboarding`, `setup`)
-  - `interfaces.go` - breaks import cycles between `pkg/cli` and `pkg/internal/mcp`
+  - `interfaces.go` - breaks import cycles between `internal/cli` and `internal/mcp`
 
-- **`pkg/internal/`**: Internal shared utilities.
+- **`internal/`**: Internal shared utilities.
   - `car.go` - CAR file root reading (`GetCarRoots`)
   - `io/stdinfs.go` - Implements `fs.FS` for stdin (pipe) input
 
@@ -141,18 +141,18 @@ These interfaces enable dependency injection for testing. Factory functions crea
 
 Two implementations: `humanFormatter` and `jsonFormatter`, selected based on global `--json` flag.
 
-**MCP Adapter Pattern**: The MCP adapter (`pkg/internal/mcp/`) exposes the CLI command tree as an MCP server over stdio. Key design decisions:
+**MCP Adapter Pattern**: The MCP adapter (`internal/mcp/`) exposes the CLI command tree as an MCP server over stdio. Key design decisions:
 - In-process execution: tool invocations run the command tree directly, no subprocess fork
 - Progressive disclosure: only `search_tools`, `describe_tool`, and `invoke_tool` are visible in `tools/list`; the full catalog is internal
 - Automatic `--agent` injection: all tool invocations receive `--agent`, forcing JSON output and disabling interactive prompts
 - Wizard sessions: FSM-based with `SessionStore` enforcing TTL (`30m`) and max capacity (`100`)
 - Resources: live data exposed via `pinner://` URIs (`account/status`, `websites/{domain}/dns-requirements`, etc.)
 - Prompts: deterministic workflow guides (`website-onboarding`, `setup`) with optional pre-filled arguments
-- Import cycle broken via `interfaces.go` — `WizardDepsFactory` and `ResourceProvidersFactory` are defined in `pkg/internal/mcp`, concrete implementations live in `pkg/cli`
+- Import cycle broken via `interfaces.go` — `WizardDepsFactory` and `ResourceProvidersFactory` are defined in `internal/mcp`, concrete implementations live in `internal/cli`
 
 **CAR Generation Flow**:
 1. Upload uses IPFS boxo libraries for DAG building and CAR format handling
-2. CAR root reading via `GetCarRoots` in `pkg/internal/car.go`
+2. CAR root reading via `GetCarRoots` in `internal/car.go`
 3. Memory usage limited by `--memory-limit` flag (default: 100MB)
 
 **CLI Command Pattern**:

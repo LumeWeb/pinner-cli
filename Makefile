@@ -25,7 +25,7 @@ LDFLAGS := -X '$(PKG).Version=$(VERSION)' \
            -X '$(PKG).Architecture=$(ARCH)'
 
 # generate regenerates checked-in code from source generators (templ pages via
-# the //go:generate templ generate directive in pkg/internal/mcp/embed.go). It
+# the //go:generate templ generate directive in internal/mcp/embed.go). It
 # runs before build/install so a change to a *.templ file is never built with
 # stale generated *_templ.go output. Requires the templ CLI on PATH.
 generate:
