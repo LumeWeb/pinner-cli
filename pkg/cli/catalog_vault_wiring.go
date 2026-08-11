@@ -169,7 +169,7 @@ func vaultActionAdapter(op catalog.Operation) cli.ActionFunc {
 			if !hasArg(op, "path") && hasArg(op, "name") {
 				argName = "name"
 			}
-			if stringVal(input[argName]) == "" {
+			if catalog.StrArg(input, argName, "") == "" {
 				input[argName] = c.Args().First()
 			}
 		}

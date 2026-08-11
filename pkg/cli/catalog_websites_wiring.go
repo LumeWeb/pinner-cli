@@ -188,7 +188,7 @@ func websitesActionAdapter(op catalog.Operation) cli.ActionFunc {
 		// The catalog CLI compiler reads flags only, so the adapter resolves
 		// the positional <domain> into the declared string arg.
 		if c.Args().Len() > 0 && hasArg(op, "website") {
-			if stringVal(input["website"]) == "" {
+			if catalog.StrArg(input, "website", "") == "" {
 				input["website"] = c.Args().First()
 			}
 		}
@@ -199,7 +199,7 @@ func websitesActionAdapter(op catalog.Operation) cli.ActionFunc {
 		if op.Safety() == catalog.SafetyDestructive {
 			confirm := c.Bool(FlagForce) || c.Bool(FlagConfirm)
 			input["confirm"] = confirm
-			if !confirm && stringVal(input["website"]) != "" {
+			if !confirm && catalog.StrArg(input, "website", "") != "" {
 				return fmt.Errorf("websites delete: pass --force to confirm this destructive operation")
 			}
 		}

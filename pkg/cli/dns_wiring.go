@@ -182,7 +182,7 @@ func dnsCatalogActionAdapter(c *cli.Command, group, leaf string) cli.ActionFunc 
 		}
 
 		// Map the positional <domain>/<zone-id> into the "zone" input.
-		if cmd.Args().Len() > 0 && stringVal(input["zone"]) == "" {
+		if cmd.Args().Len() > 0 && catalog.StrArg(input, "zone", "") == "" {
 			input["zone"] = cmd.Args().First()
 		}
 
@@ -196,7 +196,7 @@ func dnsCatalogActionAdapter(c *cli.Command, group, leaf string) cli.ActionFunc 
 			// With a target zone and no --force, refuse loudly (non-zero exit)
 			// rather than silently succeeding; with no zone, fall through so the
 			// handler's required-argument validation produces a non-zero exit.
-			if !confirm && stringVal(input["zone"]) != "" {
+			if !confirm && catalog.StrArg(input, "zone", "") != "" {
 				return fmt.Errorf("dns %s: pass --force to confirm this destructive operation", leaf)
 			}
 		}
@@ -220,7 +220,7 @@ func dnsCatalogActionAdapter(c *cli.Command, group, leaf string) cli.ActionFunc 
 // operation would have done (used by the --force guard hint).
 func describeDNSAction(group, leaf string, input map[string]any) string {
 	what := "the " + group + " " + leaf + " operation"
-	if z := stringVal(input["zone"]); z != "" {
+	if z := catalog.StrArg(input, "zone", ""); z != "" {
 		what = fmt.Sprintf("%s on %s", what, z)
 	}
 	return what

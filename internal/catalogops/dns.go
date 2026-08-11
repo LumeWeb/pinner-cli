@@ -180,11 +180,11 @@ func dnsZonesCreate(d DNSDeps) catalog.Operation {
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
-			domain := str(input, "domain", "")
+			domain := catalog.StrArg(input, "domain", "")
 			if err := validateDomain(domain); err != nil {
 				return nil, err
 			}
-			nameservers := parseCommaSeparated(str(input, "nameservers", ""))
+			nameservers := parseCommaSeparated(catalog.StrArg(input, "nameservers", ""))
 			// *ipfs.ZoneResponse
 			zone, err := svc.CreateZone(ctx, domain, nameservers)
 			if err != nil {
@@ -222,7 +222,7 @@ func dnsZonesGet(d DNSDeps) catalog.Operation {
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
-			arg := str(input, "zone", "")
+			arg := catalog.StrArg(input, "zone", "")
 			if arg == "" {
 				return nil, fmt.Errorf("domain or zone ID is required")
 			}
@@ -259,7 +259,7 @@ func dnsZonesDelete(d DNSDeps) catalog.Operation {
 			{Name: "confirm", Type: catalog.ArgTypeBool, Default: "false", Help: "Confirm the destructive operation (CLI maps --force here)"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			if !boolFrom(input, "confirm", false) {
+			if !catalog.BoolArg(input, "confirm", false) {
 				return nil, fmt.Errorf("dns.zones.delete requires confirmation (pass --force/confirm)")
 			}
 			svc, svcErr := d.service(input)
@@ -269,7 +269,7 @@ func dnsZonesDelete(d DNSDeps) catalog.Operation {
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
-			arg := str(input, "zone", "")
+			arg := catalog.StrArg(input, "zone", "")
 			if arg == "" {
 				return nil, fmt.Errorf("domain or zone ID is required")
 			}
@@ -310,7 +310,7 @@ func dnsZonesValidate(d DNSDeps) catalog.Operation {
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
-			arg := str(input, "zone", "")
+			arg := catalog.StrArg(input, "zone", "")
 			if arg == "" {
 				return nil, fmt.Errorf("domain or zone ID is required")
 			}
@@ -354,7 +354,7 @@ func dnsRecordsList(d DNSDeps) catalog.Operation {
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
-			arg := str(input, "zone", "")
+			arg := catalog.StrArg(input, "zone", "")
 			if arg == "" {
 				return nil, fmt.Errorf("domain or zone ID is required")
 			}
@@ -404,13 +404,13 @@ func dnsRecordsCreate(d DNSDeps) catalog.Operation {
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
-			arg := str(input, "zone", "")
+			arg := catalog.StrArg(input, "zone", "")
 			if arg == "" {
 				return nil, fmt.Errorf("domain or zone ID is required")
 			}
-			name := str(input, "name", "")
-			recordType := str(input, "type", "")
-			content := str(input, "content", "")
+			name := catalog.StrArg(input, "name", "")
+			recordType := catalog.StrArg(input, "type", "")
+			content := catalog.StrArg(input, "content", "")
 
 			if err := validateDNSRecord(recordType, content); err != nil {
 				return nil, err
@@ -419,11 +419,11 @@ func dnsRecordsCreate(d DNSDeps) catalog.Operation {
 				return nil, err
 			}
 
-			ttlVal := intFrom(input, "ttl", 3600)
+			ttlVal := catalog.IntArg(input, "ttl", 3600)
 			if ttlVal == 0 {
 				ttlVal = 3600
 			}
-			disabled := boolFrom(input, "disabled", false)
+			disabled := catalog.BoolArg(input, "disabled", false)
 
 			record := ipfs.RecordRequest{
 				Name:     name,
@@ -473,12 +473,12 @@ func dnsRecordsGet(d DNSDeps) catalog.Operation {
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
-			arg := str(input, "zone", "")
+			arg := catalog.StrArg(input, "zone", "")
 			if arg == "" {
 				return nil, fmt.Errorf("domain or zone ID is required")
 			}
-			name := str(input, "name", "")
-			recordType := str(input, "type", "")
+			name := catalog.StrArg(input, "name", "")
+			recordType := catalog.StrArg(input, "type", "")
 			if name == "" || recordType == "" {
 				return nil, fmt.Errorf("record name (--name) and type (--type) are required")
 			}
@@ -526,13 +526,13 @@ func dnsRecordsUpdate(d DNSDeps) catalog.Operation {
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
-			arg := str(input, "zone", "")
+			arg := catalog.StrArg(input, "zone", "")
 			if arg == "" {
 				return nil, fmt.Errorf("domain or zone ID is required")
 			}
-			name := str(input, "name", "")
-			recordType := str(input, "type", "")
-			content := str(input, "content", "")
+			name := catalog.StrArg(input, "name", "")
+			recordType := catalog.StrArg(input, "type", "")
+			content := catalog.StrArg(input, "content", "")
 
 			if err := validateDNSRecord(recordType, content); err != nil {
 				return nil, err
@@ -541,11 +541,11 @@ func dnsRecordsUpdate(d DNSDeps) catalog.Operation {
 				return nil, err
 			}
 
-			ttlVal := intFrom(input, "ttl", 3600)
+			ttlVal := catalog.IntArg(input, "ttl", 3600)
 			if ttlVal == 0 {
 				ttlVal = 3600
 			}
-			disabled := boolFrom(input, "disabled", false)
+			disabled := catalog.BoolArg(input, "disabled", false)
 
 			record := ipfs.RecordRequest{
 				Name:     name,
@@ -590,7 +590,7 @@ func dnsRecordsDelete(d DNSDeps) catalog.Operation {
 			{Name: "confirm", Type: catalog.ArgTypeBool, Default: "false", Help: "Confirm the destructive operation (CLI maps --force here)"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			if !boolFrom(input, "confirm", false) {
+			if !catalog.BoolArg(input, "confirm", false) {
 				return nil, fmt.Errorf("dns.records.delete requires confirmation (pass --force/confirm)")
 			}
 			svc, svcErr := d.service(input)
@@ -600,12 +600,12 @@ func dnsRecordsDelete(d DNSDeps) catalog.Operation {
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
-			arg := str(input, "zone", "")
+			arg := catalog.StrArg(input, "zone", "")
 			if arg == "" {
 				return nil, fmt.Errorf("domain or zone ID is required")
 			}
-			name := str(input, "name", "")
-			recordType := str(input, "type", "")
+			name := catalog.StrArg(input, "name", "")
+			recordType := catalog.StrArg(input, "type", "")
 			if name == "" || recordType == "" {
 				return nil, fmt.Errorf("record name (--name) and type (--type) are required")
 			}

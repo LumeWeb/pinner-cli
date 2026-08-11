@@ -218,7 +218,7 @@ func catalogActionAdapter(op catalog.Operation, group string) cli.ActionFunc {
 			}
 			input["cids"] = resolved
 		case group + "status", group + "update":
-			if cid := positionalCID(c); cid != "" && stringVal(input["cid"]) == "" {
+			if cid := positionalCID(c); cid != "" && catalog.StrArg(input, "cid", "") == "" {
 				input["cid"] = cid
 			}
 		}
@@ -245,8 +245,8 @@ func catalogActionAdapter(op catalog.Operation, group string) cli.ActionFunc {
 				case c.Bool(FlagAll):
 					output.Printfln("Use --force to unpin all pins. This is a destructive operation.")
 					return nil
-				case len(stringSliceVal(input["cids"])) > 0:
-					output.Printfln("Use --force to unpin CID: %s", stringSliceVal(input["cids"])[0])
+				case len(catalog.StrSliceArg(input, "cids")) > 0:
+					output.Printfln("Use --force to unpin CID: %s", catalog.StrSliceArg(input, "cids")[0])
 					return nil
 				default:
 					// Nothing to delete: fall through to the handler so its
@@ -446,21 +446,6 @@ func resolveCidsInput(c *cli.Command) ([]string, error) {
 		}
 	}
 	return clean, nil
-}
-
-// stringVal / stringSliceVal are tiny type assertions for building inputs.
-func stringVal(v any) string {
-	if s, ok := v.(string); ok {
-		return s
-	}
-	return ""
-}
-
-func stringSliceVal(v any) []string {
-	if s, ok := v.([]string); ok {
-		return s
-	}
-	return nil
 }
 
 // relaxFlagRequired clears the urfave-level Required marker on a command's

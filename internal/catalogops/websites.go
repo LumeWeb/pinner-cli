@@ -125,7 +125,7 @@ func resolveWebsiteID(ctx context.Context, svc websites.Service, arg string) (st
 // resolveRequiredWebsiteID is resolveWebsiteID plus the "required" gate the
 // legacy resolveRequiredArg enforces (an empty positional is an error).
 func resolveRequiredWebsiteID(ctx context.Context, svc websites.Service, input map[string]any) (string, error) {
-	arg := str(input, "website", "")
+	arg := catalog.StrArg(input, "website", "")
 	if arg == "" {
 		return "", fmt.Errorf("website ID or domain is required")
 	}
@@ -244,24 +244,24 @@ func websitesCreate(d WebsitesDeps) catalog.Operation {
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
-			domain := str(input, "website", "")
+			domain := catalog.StrArg(input, "website", "")
 			if domain == "" {
 				return nil, fmt.Errorf("websites.create: domain is required")
 			}
-			cid := str(input, "cid", "")
+			cid := catalog.StrArg(input, "cid", "")
 			if cid == "" {
 				return nil, fmt.Errorf("websites.create: --cid is required")
 			}
-			targetType := str(input, "target-type", "ipfs")
+			targetType := catalog.StrArg(input, "target-type", "ipfs")
 			req := ipfs.WebsiteRequest{
 				Domain:     domain,
 				TargetHash: cid,
 				TargetType: targetType,
 			}
-			if boolFrom(input, "dns-hosting", false) {
+			if catalog.BoolArg(input, "dns-hosting", false) {
 				v := true
 				req.DnsHostingEnabled = &v
-			} else if boolFrom(input, "no-dns-hosting", false) {
+			} else if catalog.BoolArg(input, "no-dns-hosting", false) {
 				v := false
 				req.DnsHostingEnabled = &v
 			}
@@ -313,11 +313,11 @@ func websitesUpdate(d WebsitesDeps) catalog.Operation {
 				return nil, err
 			}
 			req := ipfs.WebsiteUpdateRequest{}
-			if v := str(input, "rename-to", ""); v != "" {
+			if v := catalog.StrArg(input, "rename-to", ""); v != "" {
 				req.Domain = &v
 			}
-			cid := str(input, "cid", "")
-			targetType := str(input, "target-type", "")
+			cid := catalog.StrArg(input, "cid", "")
+			targetType := catalog.StrArg(input, "target-type", "")
 			if cid != "" {
 				req.TargetHash = &cid
 			}
@@ -327,10 +327,10 @@ func websitesUpdate(d WebsitesDeps) catalog.Operation {
 			if req.TargetHash != nil && req.TargetType == nil {
 				return nil, fmt.Errorf("--target-type is required when --cid is provided")
 			}
-			if boolFrom(input, "dns-hosting", false) {
+			if catalog.BoolArg(input, "dns-hosting", false) {
 				v := true
 				req.DnsHostingEnabled = &v
-			} else if boolFrom(input, "no-dns-hosting", false) {
+			} else if catalog.BoolArg(input, "no-dns-hosting", false) {
 				v := false
 				req.DnsHostingEnabled = &v
 			}
@@ -374,7 +374,7 @@ func websitesEnableIPNS(d WebsitesDeps) catalog.Operation {
 			}
 			ipnsType := "ipns"
 			req := ipfs.WebsiteUpdateRequest{TargetType: &ipnsType}
-			if cid := str(input, "cid", ""); cid != "" {
+			if cid := catalog.StrArg(input, "cid", ""); cid != "" {
 				req.TargetHash = &cid
 			}
 			// *ipfs.WebsiteItem
@@ -408,7 +408,7 @@ func websitesDelete(d WebsitesDeps) catalog.Operation {
 			{Name: "confirm", Type: catalog.ArgTypeBool, Default: "false", Help: "Confirm the destructive operation (CLI maps --force here)"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			if !boolFrom(input, "confirm", false) {
+			if !catalog.BoolArg(input, "confirm", false) {
 				return nil, fmt.Errorf("websites.delete requires confirmation (pass --force/confirm)")
 			}
 			svc, svcErr := d.service(input)
@@ -501,7 +501,7 @@ func websitesSSLStatus(d WebsitesDeps) catalog.Operation {
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
-			domain := str(input, "website", "")
+			domain := catalog.StrArg(input, "website", "")
 			if domain == "" {
 				return nil, fmt.Errorf("websites.ssl.status: domain is required")
 			}

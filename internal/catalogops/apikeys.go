@@ -44,7 +44,7 @@ func apiKeysList(d APIKeysDeps) catalog.Operation {
 			if svc == nil {
 				return nil, fmt.Errorf("api-keys service unavailable")
 			}
-			keys, total, err := svc.ListAPIKeys(ctx, str(input, "search", ""))
+			keys, total, err := svc.ListAPIKeys(ctx, catalog.StrArg(input, "search", ""))
 			if err != nil {
 				return nil, err
 			}
@@ -67,7 +67,7 @@ func apiKeysCreate(d APIKeysDeps) catalog.Operation {
 			if svc == nil {
 				return nil, fmt.Errorf("api-keys service unavailable")
 			}
-			name := str(input, "name", "")
+			name := catalog.StrArg(input, "name", "")
 			if name == "" {
 				return nil, fmt.Errorf("api-keys.create: key name is required")
 			}
@@ -90,11 +90,11 @@ func apiKeysDelete(d APIKeysDeps) catalog.Operation {
 			if svc == nil {
 				return nil, fmt.Errorf("api-keys service unavailable")
 			}
-			id := str(input, "id", "")
+			id := catalog.StrArg(input, "id", "")
 			if id == "" {
 				return nil, fmt.Errorf("api-keys.delete: key name or UUID is required")
 			}
-			if err := svc.DeleteAPIKey(ctx, id, boolFrom(input, "force", false)); err != nil {
+			if err := svc.DeleteAPIKey(ctx, id, catalog.BoolArg(input, "force", false)); err != nil {
 				return nil, err
 			}
 			return &APIKeyDeleteResult{ID: id}, nil
