@@ -87,6 +87,61 @@ func TestHandoffRegistryBounded(t *testing.T) {
 	assert.True(t, retired["h1"], "evicted flow must retire its backing handle")
 }
 
+// TestBeginCleanupDoesNotHoldLock verifies that Begin runs the injected cleanup
+// callback OUTSIDE the registry lock. The callback acquires its own
+// AsyncHandleStore lock, so it must not block every other registry operation
+// or create a lock-ordering hazard. We hold open a channel inside cleanup and
+// assert a concurrent Get on another handle completes immediately.
+func TestBeginCleanupDoesNotHoldLock(t *testing.T) {
+	reg := NewHandoffRegistry()
+	reg.maxEntries = 1
+	reg.ttp = time.Hour
+	reg.now = func() time.Time { return time.Date(2026, 8, 11, 0, 0, 0, 0, time.UTC) }
+	cont := func(ctx context.Context, h string, d map[string]any) (ToolResult, error) {
+		return ToolResult{Text: "done"}, nil
+	}
+
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	reg.SetCleanup(func(handle string) {
+		close(entered) // cleanup is running
+		<-release      // block until the test verifies the lock is free
+	})
+
+	reg.Begin("h1", cont) // fills the single slot
+
+	done := make(chan bool)
+	go func() {
+		_, _ = reg.Get("other-handle") // unrelated handle
+		done <- true
+	}()
+
+	// Trigger the eviction of h1 by beginning a new flow. cleanup runs and
+	// blocks on `release` — if Begin held the lock, the Get above could not
+	// complete until cleanup unblocks.
+	reg.Begin("h2", cont)
+
+	select {
+	case <-entered:
+		// cleanup is in progress; the lock should already be free.
+	case <-time.After(time.Second):
+		t.Fatal("cleanup callback never ran")
+	}
+
+	select {
+	case <-done:
+		// Proven: Get completed while cleanup was still blocked, so the
+		// registry lock was not held during the external callback.
+	case <-time.After(time.Second):
+		close(release)
+		t.Fatal("concurrent Get blocked while cleanup ran -> registry lock held")
+	}
+	close(release) // let the blocked cleanup callback finish
+
+	_, ok := reg.Get("h2")
+	assert.True(t, ok, "newest flow survives eviction")
+}
+
 // TestResumeTemplateDispatchesContinuation verifies the shared resume template
 // resolves a registered continuation for a given handle and returns its result,
 // without any SSO dependency — proving the framework mechanism is generic.

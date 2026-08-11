@@ -87,8 +87,8 @@ func (r *HandoffRegistry) SetCleanup(fn func(handle string)) {
 // pruned under the same lock so the registry cannot grow past maxEntries.
 func (r *HandoffRegistry) Begin(handle string, c ResumeContinuation) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	r.pruneLocked()
+	var evicted string
 	if len(r.cont) >= r.maxEntries {
 		// Bounded like AsyncHandleStore: evict the oldest entry so a flood of
 		// abandoned hand-offs cannot exhaust memory. Newer flows win.
@@ -101,14 +101,21 @@ func (r *HandoffRegistry) Begin(handle string, c ResumeContinuation) {
 		}
 		if oldest != "" {
 			delete(r.cont, oldest)
-			// Retire the still-valid backing handle so it cannot be resumed
-			// into a misleading dead-handle steer once the flow is gone.
-			if r.cleanup != nil {
-				r.cleanup(oldest)
-			}
+			evicted = oldest
 		}
 	}
 	r.cont[handle] = registryEntry{createdAt: r.now(), cont: c}
+	// Retire the still-valid backing handle for the evicted flow so it cannot
+	// be resumed into a misleading dead-handle steer once the flow is gone.
+	// The cleanup callback (AsyncHandleStore.Delete) acquires its OWN store
+	// lock, so it must run outside the registry lock to avoid holding every
+	// handoff operation hostage to the store and to avoid lock-ordering
+	// hazards. It never touches r.cont.
+	cleanup := r.cleanup
+	r.mu.Unlock()
+	if evicted != "" && cleanup != nil {
+		cleanup(evicted)
+	}
 }
 
 // Get returns the continuation registered for a handle, if any. An entry past
