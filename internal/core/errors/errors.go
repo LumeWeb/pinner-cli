@@ -16,4 +16,7 @@ var (
 	// ErrServiceUnavailable is returned when a backing service is unavailable
 	// (e.g. an IPFS client could not be created or is nil).
 	ErrServiceUnavailable = errors.New("service unavailable")
+
+	// ErrPinNotFound is returned when a CID has no pin record.
+	ErrPinNotFound = errors.New("pin not found")
 )

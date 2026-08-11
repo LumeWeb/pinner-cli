@@ -1,143 +1,43 @@
 package cli
 
 import (
-	"context"
-	"errors"
-	"fmt"
-	"time"
-
 	"go.lumeweb.com/pinner-cli/internal/core/config"
+	statuspkg "go.lumeweb.com/pinner-cli/internal/core/status"
 	portalsdk "go.lumeweb.com/portal-sdk"
-	"go.lumeweb.com/queryutil/filter"
 )
 
-type StatusServiceOption func(*StatusServiceDefault)
+// The StatusService interface and its models are re-exported from core pinning
+// (see pinning_types.go). The concrete impl lives in internal/core/status;
+// pkg/cli keeps only the option wrappers and the constructor used by handlers.
 
+// StatusServiceOption configures the core status service.
+type StatusServiceOption = statuspkg.Option
+
+// WithStatusAccountClient sets a pre-configured portal-sdk account client.
 func WithStatusAccountClient(client portalsdk.AccountAPI) StatusServiceOption {
-	return func(s *StatusServiceDefault) {
-		s.accountClient = client
-	}
+	return statuspkg.WithAccountClient(client)
 }
 
+// WithStatusPinningService injects the pinning service used for pin-status checks.
 func WithStatusPinningService(ps PinningService) StatusServiceOption {
-	return func(s *StatusServiceDefault) {
-		s.pinningService = ps
-	}
+	return statuspkg.WithPinningService(ps)
 }
 
+// WithStatusAuthService injects the auth service used for operation lookup.
 func WithStatusAuthService(as AuthService) StatusServiceOption {
-	return func(s *StatusServiceDefault) {
-		s.authService = as
-	}
+	return statuspkg.WithAuthService(as)
 }
 
+// StatusServiceFactory builds a StatusService with the given dependencies.
 type StatusServiceFactory func(cfgMgr config.Manager, output Output, pinningService PinningService, authService AuthService) StatusService
 
-type StatusServiceDefault struct {
-	pinningService PinningService
-	accountClient  portalsdk.AccountAPI
-	authService    AuthService
-	configMgr      config.Manager
-	output         Output
-}
-
+// NewStatusService creates a StatusService with the given dependencies
+// (delegates to core). The output param is retained for signature compatibility
+// with the factory but is unused by the core impl.
 func NewStatusService(cfgMgr config.Manager, output Output, pinningService PinningService, authService AuthService, opts ...StatusServiceOption) StatusService {
-	s := &StatusServiceDefault{
-		pinningService: pinningService,
-		authService:    authService,
-		configMgr:      cfgMgr,
-		output:         output,
-	}
+	s := statuspkg.New(cfgMgr, pinningService, authService, nil)
 	for _, opt := range opts {
 		opt(s)
 	}
 	return s
-}
-
-func (s *StatusServiceDefault) RequireAuthenticated() error {
-	return s.pinningService.RequireAuthenticated()
-}
-
-func (s *StatusServiceDefault) Status(ctx context.Context, cid string, watch bool) (*PinStatus, *OperationStatusResult, error) {
-	if err := s.RequireAuthenticated(); err != nil {
-		return nil, nil, err
-	}
-
-	pinStatus, err := s.pinningService.Status(ctx, cid, watch)
-	if err == nil {
-		return pinStatus, nil, nil
-	}
-
-	if !errors.Is(err, ErrPinNotFound) {
-		return nil, nil, err
-	}
-
-	opResult, opErr := s.lookupOperation(ctx, cid)
-	if opErr != nil {
-		return nil, nil, opErr
-	}
-
-	return nil, opResult, nil
-}
-
-func (s *StatusServiceDefault) resolveAccountClient(ctx context.Context) (portalsdk.AccountAPI, error) {
-	if s.accountClient != nil {
-		return s.accountClient, nil
-	}
-
-	if s.authService == nil {
-		return nil, ErrPinNotFound
-	}
-
-	client, err := s.authService.GetAuthenticatedClient(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to authenticate for operation lookup: %w", err)
-	}
-
-	s.accountClient = client
-	return client, nil
-}
-
-func (s *StatusServiceDefault) lookupOperation(ctx context.Context, cid string) (*OperationStatusResult, error) {
-	client, err := s.resolveAccountClient(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	s.output.PrintVerbosef("Pin not found, checking account operations for CID %s", cid)
-
-	operations, _, err := client.ListOperations(ctx, portalsdk.WithFilters(filter.FieldEqual("cid", cid)))
-	if err != nil {
-		return nil, fmt.Errorf("failed to lookup operations: %w", err)
-	}
-
-	if len(operations) == 0 {
-		return nil, ErrPinNotFound
-	}
-
-	op := operations[0]
-	result := &OperationStatusResult{
-		ID:                   op.Id,
-		Operation:            op.Operation,
-		OperationDisplayName: op.OperationDisplayName,
-		Protocol:             op.Protocol,
-		ProtocolDisplayName:  op.ProtocolDisplayName,
-		Status:               op.Status,
-		StatusDisplayName:    op.StatusDisplayName,
-		StatusMessage:        op.StatusMessage,
-		ProgressPercent:      op.ProgressPercent,
-		StartedAt:            op.StartedAt.Format(time.RFC3339),
-		UpdatedAt:            op.UpdatedAt.Format(time.RFC3339),
-		Source:               "operation",
-	}
-
-	if op.Cid != nil {
-		result.CID = *op.Cid
-	}
-
-	if op.Error != nil && *op.Error != "" {
-		result.Error = *op.Error
-	}
-
-	return result, nil
 }

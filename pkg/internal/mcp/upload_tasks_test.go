@@ -212,7 +212,12 @@ func TestUploadTaskManagerCancelBeforeStartDoesNotRun(t *testing.T) {
 
 func TestUploadTaskManagerCancelledTasksArePruned(t *testing.T) {
 	mgr := NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
-		return map[string]any{"cid": "QmC"}, nil
+		// Block on ctx.Done() so the cancel deterministically wins the race
+		// against completion — an instant-return executor can finish before
+		// Cancel() runs, making mgr.Cancel fail with 'not cancellable (state
+		// completed)' and this test scheduling-dependent on CI.
+		<-ctx.Done()
+		return nil, ctx.Err()
 	}, 50*time.Millisecond)
 
 	id, err := mgr.Start(context.Background(), io.NopCloser(strings.NewReader("c")), 1, "c.txt", false)
