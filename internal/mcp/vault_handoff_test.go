@@ -378,3 +378,41 @@ func TestVaultRestoreResumeExpiredTokenSteersRestart(t *testing.T) {
 		"expired restore token must steer to pinner_vault_restore, not report done")
 	assert.NotEqual(t, StatusDone, sc["status"], "expired token must never read as a completed restore")
 }
+
+// TestVaultResumeAbsentTokenSteersRestart covers the Kody edge: a token that
+// no longer resolves — because it never existed, or because its spent
+// tombstone was evicted by pruneSpentLocked at maxSpentTombstones — must NOT
+// leave the agent pending forever (done=false, expired=false, not pending).
+// It must terminate the continuation and steer to a fresh start, matching how
+// expired and consumed tokens are handled.
+func TestVaultResumeAbsentTokenSteersRestart(t *testing.T) {
+	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	reg := NewHandoffRegistry()
+	seedDrop := NewSeedDrop(time.Minute)
+	seedDrop.SetBaseURL("http://127.0.0.1:9999")
+
+	// A token that was never minted is absent from the coordinator.
+	handle := handles.Create("pending", map[string]any{handleDataToken: "never-minted"})
+	reg.Begin(handle, vaultCreateResumeContinuation(seedDrop, handles, reg))
+	resume := NewVaultCreateResumeDescriptor(reg, handles)
+
+	r, err := resume.Handler(context.Background(), ToolRequest{
+		Name: vaultCreateResumeToolName, Arguments: map[string]any{"handle": handle},
+	})
+	require.NoError(t, err)
+	sc := requireHandoff(t, r)
+	assert.Equal(t, vaultCreateToolName, sc["resume_tool"],
+		"absent token must steer to pinner_vault_create, not pending forever")
+	assert.NotEqual(t, StatusDone, sc["status"], "absent token must never read as a completed create")
+
+	// The continuation + backing handle must be cleared so the agent is not
+	// left polling a dead flow: the next poll hits the dead-handle branch.
+	_, _, err = handles.Get(handle)
+	assert.Error(t, err, "absent-token flow must retire the backing handle")
+	r, err = resume.Handler(context.Background(), ToolRequest{
+		Name: vaultCreateResumeToolName, Arguments: map[string]any{"handle": handle},
+	})
+	require.NoError(t, err)
+	sc = requireHandoff(t, r)
+	assert.Equal(t, vaultCreateToolName, sc["resume_tool"], "cleared flow must read as dead-handle restart")
+}

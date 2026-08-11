@@ -53,28 +53,33 @@ func vaultTokenFromURL(url string) string {
 	return url[p+1:]
 }
 
-// tokenDone reports whether the coordinator token has reached a terminal
-// state, and whether that state was a successful consumption or an expiry.
-// It distinguishes the two via handoffEndpoint.resolve, which records a
-// consumed one-time token as handoffUsed and a TTL-expired one as
-// handoffExpired. This matters because an EXPIRED hand-off must not be
-// reported to the agent as a completed vault create/restore — only a token
-// the human actually consumed (seed retrieved / restore submitted) counts as
-// done. This is a pure state check; it never touches the seed mnemonic.
-func (s *SeedDrop) tokenDone(token string) (done, expired bool) {
+// tokenDone reports the coordinator token's current state by resolving it
+// against the shared handoffEndpoint core, which distinguishes:
+//
+//	handoffUsed      -> the human consumed the one-time link (done)
+//	handoffExpired   -> the TTL elapsed before use (dead -> restart)
+//	live item        -> still pending, the human has not acted yet
+//	absent           -> never existed, or its spent tombstone was evicted by
+//	                    pruneSpentLocked at maxSpentTombstones, so it can never
+//	                    transition on its own (dead -> restart)
+//
+// A token that no longer resolves must NOT be reported as either done or
+// pending forever — the caller routes both of those to a terminal steer. This
+// is a pure state check; it never touches the seed mnemonic.
+func (s *SeedDrop) tokenDone(token string) (done, expired, pending bool) {
 	if token == "" {
-		return true, false
+		return false, false, false
 	}
-	_, reason := s.core.resolve(token)
-	return reason == handoffUsed, reason == handoffExpired
+	item, reason := s.core.resolve(token)
+	return reason == handoffUsed, reason == handoffExpired, item != nil
 }
 
-func (o *OOBRestore) tokenDone(token string) (done, expired bool) {
+func (o *OOBRestore) tokenDone(token string) (done, expired, pending bool) {
 	if token == "" {
-		return true, false
+		return false, false, false
 	}
-	_, reason := o.core.resolve(token)
-	return reason == handoffUsed, reason == handoffExpired
+	item, reason := o.core.resolve(token)
+	return reason == handoffUsed, reason == handoffExpired, item != nil
 }
 
 // vaultCreateResumeContinuation returns the vault-create-specific poll logic:
@@ -92,7 +97,7 @@ func vaultCreateResumeContinuation(db *SeedDrop, handles *AsyncHandleStore, reg 
 			return vaultExpiredResult(handles, reg, handle, vaultCreateResumeToolName, vaultCreateToolName,
 				"Vault create is not configured for this server; start a fresh vault create with pinner_vault_create.")
 		}
-		done, expired := db.tokenDone(token)
+		done, expired, pending := db.tokenDone(token)
 		switch {
 		case done:
 			// Seed retrieved by the human — hand-off over.
@@ -107,13 +112,20 @@ func vaultCreateResumeContinuation(db *SeedDrop, handles *AsyncHandleStore, reg 
 			// NOT report completion — terminate and steer to a fresh start.
 			return vaultExpiredResult(handles, reg, handle, vaultCreateResumeToolName, vaultCreateToolName,
 				"The one-time seed_url expired before the recovery seed was retrieved; start a fresh vault create with pinner_vault_create so a new seed_url is minted.")
-		default:
+		case pending:
 			return NeedsHumanResult(NeedsHuman{
 				Reason:     ReasonCredentialEntry,
 				Handle:     handle,
 				ResumeTool: vaultCreateResumeToolName,
 				Detail:     "Ask the user to open the seed_url in a browser and retrieve the recovery seed. Then call pinner_vault_create_resume with the handle.",
 			}), nil
+		default:
+			// Token is absent (never existed, or its spent tombstone was
+			// evicted) and cannot transition on its own — do not report done
+			// and do not leave the agent pending forever. Terminate and steer
+			// to a fresh start.
+			return vaultExpiredResult(handles, reg, handle, vaultCreateResumeToolName, vaultCreateToolName,
+				"The vault create hand-off is no longer resolvable; start a fresh vault create with pinner_vault_create so a new seed_url is minted.")
 		}
 	}
 }
@@ -135,7 +147,7 @@ func vaultRestoreResumeContinuation(oob *OOBRestore, handles *AsyncHandleStore, 
 			return vaultExpiredResult(handles, reg, handle, vaultRestoreResumeToolName, vaultRestoreToolName,
 				"Vault restore is not configured for this server; start a fresh vault restore with pinner_vault_restore.")
 		}
-		done, expired := oob.tokenDone(token)
+		done, expired, pending := oob.tokenDone(token)
 		switch {
 		case done:
 			// Restore form submitted — hand-off over.
@@ -149,13 +161,20 @@ func vaultRestoreResumeContinuation(oob *OOBRestore, handles *AsyncHandleStore, 
 			// One-time link expired before the human completed the restore.
 			return vaultExpiredResult(handles, reg, handle, vaultRestoreResumeToolName, vaultRestoreToolName,
 				"The one-time restore_url expired before the restore was completed; start a fresh vault restore with pinner_vault_restore so a new restore_url is minted.")
-		default:
+		case pending:
 			return NeedsHumanResult(NeedsHuman{
 				Reason:     ReasonCredentialEntry,
 				Handle:     handle,
 				ResumeTool: vaultRestoreResumeToolName,
 				Detail:     "Ask the user to open the restore_url in a browser and enter the recovery seed to complete the restore. Then call pinner_vault_restore_resume with the handle.",
 			}), nil
+		default:
+			// Token is absent (never existed, or its spent tombstone was
+			// evicted) and cannot transition on its own — do not report done
+			// and do not leave the agent pending forever. Terminate and steer
+			// to a fresh start.
+			return vaultExpiredResult(handles, reg, handle, vaultRestoreResumeToolName, vaultRestoreToolName,
+				"The vault restore hand-off is no longer resolvable; start a fresh vault restore with pinner_vault_restore so a new restore_url is minted.")
 		}
 	}
 }
