@@ -66,3 +66,33 @@ func TestService_AuthTokenOverride(t *testing.T) {
 		require.NoError(t, err)
 	})
 }
+
+// TestNewAuthenticated_RequiresAuth exercises the production NewAuthenticated
+// entry point, which is what the CLI handlers use and what enforces the auth
+// boundary. Guards against silently dropping RequireAuthenticated from core.
+func TestNewAuthenticated_RequiresAuth(t *testing.T) {
+	t.Run("no token returns not authenticated", func(t *testing.T) {
+		cfgMgr := configmocks.NewMockManager(t)
+		cfgMgr.EXPECT().Config().Return(&config.Config{
+			AuthToken: "",
+		}).Maybe()
+
+		svc, err := NewAuthenticated(cfgMgr, "", true)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "not authenticated")
+		require.Nil(t, svc)
+	})
+
+	t.Run("explicit auth token builds authenticated service", func(t *testing.T) {
+		cfgMgr := configmocks.NewMockManager(t)
+		cfgMgr.EXPECT().Config().Return(&config.Config{
+			AuthToken: "",
+		}).Maybe()
+
+		svc, err := NewAuthenticated(cfgMgr, "test-token", true)
+		require.NoError(t, err)
+		require.NotNil(t, svc)
+		err = svc.RequireAuthenticated()
+		require.NoError(t, err)
+	})
+}
