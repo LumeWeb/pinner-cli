@@ -405,8 +405,12 @@ func websitesDelete(d WebsitesDeps) catalog.Operation {
 		Positional:  "<domain>",
 		Args: []catalog.OperationArg{
 			{Name: "website", Type: catalog.ArgTypeString, Help: "Website ID or domain to delete (positional)"},
+			{Name: "confirm", Type: catalog.ArgTypeBool, Default: "false", Help: "Confirm the destructive operation (CLI maps --force here)"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
+			if !boolFrom(input, "confirm", false) {
+				return nil, fmt.Errorf("websites.delete requires confirmation (pass --force/confirm)")
+			}
 			svc, svcErr := d.service(input)
 			if svcErr != nil {
 				return nil, svcErr

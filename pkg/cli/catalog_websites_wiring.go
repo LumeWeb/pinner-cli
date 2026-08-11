@@ -198,6 +198,7 @@ func websitesActionAdapter(op catalog.Operation) cli.ActionFunc {
 		// validation produces a non-zero exit instead of silently succeeding.
 		if op.Safety() == catalog.SafetyDestructive {
 			confirm := c.Bool(FlagForce) || c.Bool(FlagConfirm)
+			input["confirm"] = confirm
 			if !confirm && stringVal(input["website"]) != "" {
 				return fmt.Errorf("websites delete: pass --force to confirm this destructive operation")
 			}

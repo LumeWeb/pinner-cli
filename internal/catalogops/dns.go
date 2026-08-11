@@ -256,8 +256,12 @@ func dnsZonesDelete(d DNSDeps) catalog.Operation {
 		Positional:  "<domain>",
 		Args: []catalog.OperationArg{
 			{Name: "zone", Type: catalog.ArgTypeString, Required: true, Help: "Domain name or numeric zone ID (positional)"},
+			{Name: "confirm", Type: catalog.ArgTypeBool, Default: "false", Help: "Confirm the destructive operation (CLI maps --force here)"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
+			if !boolFrom(input, "confirm", false) {
+				return nil, fmt.Errorf("dns.zones.delete requires confirmation (pass --force/confirm)")
+			}
 			svc, svcErr := d.service(input)
 			if svcErr != nil {
 				return nil, svcErr
@@ -566,8 +570,8 @@ func dnsRecordsUpdate(d DNSDeps) catalog.Operation {
 }
 
 // dnsRecordsDelete is the `dns records delete` operation. Identified by zone
-// + --name + --type. Destructive; confirmation gate is enforced in the CLI
-// wiring layer (--force), not here. Returns a confirmation result.
+// + --name + --type. Destructive; the handler enforces the confirmation gate
+// (mirrored by the CLI wiring's --force) so every actor subtype is covered.
 func dnsRecordsDelete(d DNSDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
 		Name:        "dns.records.delete",
@@ -583,8 +587,12 @@ func dnsRecordsDelete(d DNSDeps) catalog.Operation {
 			{Name: "zone", Type: catalog.ArgTypeString, Required: true, Help: "Domain name or numeric zone ID (positional)"},
 			{Name: "name", Type: catalog.ArgTypeString, Required: true, Help: "Record name (or @ for apex)"},
 			{Name: "type", Type: catalog.ArgTypeString, Required: true, Help: "Record type"},
+			{Name: "confirm", Type: catalog.ArgTypeBool, Default: "false", Help: "Confirm the destructive operation (CLI maps --force here)"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
+			if !boolFrom(input, "confirm", false) {
+				return nil, fmt.Errorf("dns.records.delete requires confirmation (pass --force/confirm)")
+			}
 			svc, svcErr := d.service(input)
 			if svcErr != nil {
 				return nil, svcErr

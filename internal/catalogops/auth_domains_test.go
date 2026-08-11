@@ -1,6 +1,7 @@
 package catalogops
 
 import (
+	"context"
 	"testing"
 
 	"go.lumeweb.com/pinner-cli/internal/core/config"
@@ -88,5 +89,31 @@ func TestDNSServiceNilConfigError(t *testing.T) {
 	}
 	if _, err := d.service(map[string]any{}); err == nil {
 		t.Fatal("service: expected error for nil config manager, got nil")
+	}
+}
+
+// TestDestructiveDeleteConfirmGuards verifies the websites/dns delete handlers
+// refuse to run without confirmation, even for human/app actors that bypass
+// the CLI wiring gate (Catalog.Invoke only gates SafetyDestructive for model
+// actors). Each handler must check input["confirm"] before touching the service.
+func TestDestructiveDeleteConfirmGuards(t *testing.T) {
+	ctx := context.Background()
+	deps := WebsitesDeps{}
+	for _, op := range WebsitesOperations(deps) {
+		if op.Name() != "websites.delete" {
+			continue
+		}
+		if _, err := op.Handler().Execute(ctx, map[string]any{}); err == nil {
+			t.Fatal("websites.delete: expected confirmation error, got nil")
+		}
+	}
+	dnsDeps := DNSDeps{}
+	for _, op := range DNSOperations(dnsDeps) {
+		if op.Name() != "dns.zones.delete" && op.Name() != "dns.records.delete" {
+			continue
+		}
+		if _, err := op.Handler().Execute(ctx, map[string]any{}); err == nil {
+			t.Fatalf("%s: expected confirmation error, got nil", op.Name())
+		}
 	}
 }
