@@ -5,6 +5,7 @@ import (
 
 	ipfs "go.lumeweb.com/ipfs-sdk"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner-cli/internal/core/ipfsbase"
 )
 
 // DNSService defines the interface for DNS operations in the CLI.
@@ -31,7 +32,7 @@ type DNSService interface {
 
 // dnsServiceCLI wraps the SDK DNS service with CLI-specific functionality.
 type dnsServiceCLI struct {
-	ipfsServiceBase
+	*ipfsServiceBase
 	service ipfs.DNSService
 	output  Output
 	client  *ipfs.Client // injected client (nil = create default)
@@ -43,7 +44,7 @@ type DNSServiceOption func(*dnsServiceCLI)
 // WithDNSAuthToken sets an auth token override that takes precedence over config.
 func WithDNSAuthToken(token string) DNSServiceOption {
 	return func(s *dnsServiceCLI) {
-		withAuthToken(token)(&s.ipfsServiceBase)
+		withAuthToken(token)(s.ipfsServiceBase)
 	}
 }
 
@@ -60,10 +61,8 @@ func WithDNSClient(client *ipfs.Client) DNSServiceOption {
 // services). Explicit WithDNSAuthToken overrides still take precedence.
 func NewDNSService(cfgMgr config.Manager, output Output, apiEndpoint string, opts ...DNSServiceOption) DNSService {
 	s := &dnsServiceCLI{
-		ipfsServiceBase: ipfsServiceBase{
-			cfgMgr: cfgMgr,
-		},
-		output: output,
+		ipfsServiceBase: ipfsbase.New(cfgMgr),
+		output:          output,
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -72,7 +71,7 @@ func NewDNSService(cfgMgr config.Manager, output Output, apiEndpoint string, opt
 	if s.client != nil {
 		s.service = s.client.DNS()
 	} else {
-		client, err := ipfs.NewClient(apiEndpoint, s.getAuthToken())
+		client, err := ipfs.NewClient(apiEndpoint, s.GetAuthToken())
 		if err != nil {
 			output.PrintError(err)
 			s.service = nil
@@ -88,8 +87,8 @@ func NewDNSService(cfgMgr config.Manager, output Output, apiEndpoint string, opt
 // re-fetches the sub-service. No-op when no client is retained.
 // The write lock serializes this (config-watcher goroutine) with request reads.
 func (s *dnsServiceCLI) SetAuthToken(token string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.Lock()
+	defer s.Unlock()
 	if s.client != nil {
 		if err := s.client.SetAuthToken(token); err == nil {
 			s.service = s.client.DNS()
@@ -100,8 +99,8 @@ func (s *dnsServiceCLI) SetAuthToken(token string) {
 // requireService returns the current sub-service under the read lock, so the
 // config-watcher goroutine (SetAuthToken) cannot swap s.service mid-request.
 func (s *dnsServiceCLI) requireService() (ipfs.DNSService, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.RLock()
+	defer s.RUnlock()
 	if s.service == nil {
 		return nil, ErrServiceUnavailable
 	}

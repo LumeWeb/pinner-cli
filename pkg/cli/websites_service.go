@@ -6,11 +6,12 @@ import (
 
 	ipfs "go.lumeweb.com/ipfs-sdk"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner-cli/internal/core/ipfsbase"
 )
 
 // websitesService implements the WebsitesService interface using the ipfs.WebsitesService.
 type websitesService struct {
-	ipfsServiceBase
+	*ipfsServiceBase
 	service ipfs.WebsitesService
 	client  *ipfs.Client
 }
@@ -21,7 +22,7 @@ type WebsitesServiceOption func(*websitesService)
 // WithWebsitesAuthToken sets an auth token override that takes precedence over config.
 func WithWebsitesAuthToken(token string) WebsitesServiceOption {
 	return func(s *websitesService) {
-		withAuthToken(token)(&s.ipfsServiceBase)
+		withAuthToken(token)(s.ipfsServiceBase)
 	}
 }
 
@@ -66,9 +67,7 @@ func newAuthenticatedWebsitesService(cfgMgr config.Manager, output Output, authT
 // pin a token and take precedence.
 func NewWebsitesService(cfgMgr config.Manager, output Output, apiEndpoint string, opts ...WebsitesServiceOption) WebsitesService {
 	s := &websitesService{
-		ipfsServiceBase: ipfsServiceBase{
-			cfgMgr: cfgMgr,
-		},
+		ipfsServiceBase: ipfsbase.New(cfgMgr),
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -77,7 +76,7 @@ func NewWebsitesService(cfgMgr config.Manager, output Output, apiEndpoint string
 	if s.client != nil {
 		s.service = s.client.Websites()
 	} else {
-		client, err := ipfs.NewClient(apiEndpoint, s.getAuthToken())
+		client, err := ipfs.NewClient(apiEndpoint, s.GetAuthToken())
 		if err != nil {
 			output.PrintError(err)
 			s.service = nil
@@ -94,8 +93,8 @@ func NewWebsitesService(cfgMgr config.Manager, output Output, apiEndpoint string
 // change without being reconstructed. No-op when no client is retained.
 // The write lock serializes this (config-watcher goroutine) with request reads.
 func (s *websitesService) SetAuthToken(token string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.Lock()
+	defer s.Unlock()
 	if s.client != nil {
 		if err := s.client.SetAuthToken(token); err == nil {
 			s.service = s.client.Websites()
@@ -106,8 +105,8 @@ func (s *websitesService) SetAuthToken(token string) {
 // requireService returns the current sub-service under the read lock, so the
 // config-watcher goroutine (SetAuthToken) cannot swap s.service mid-request.
 func (s *websitesService) requireService() (ipfs.WebsitesService, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.RLock()
+	defer s.RUnlock()
 	if s.service == nil {
 		return nil, ErrServiceUnavailable
 	}

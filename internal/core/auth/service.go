@@ -14,6 +14,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
+	coreerrors "go.lumeweb.com/pinner-cli/internal/core/errors"
 	portalsdk "go.lumeweb.com/portal-sdk"
 	"go.uber.org/zap"
 )
@@ -475,7 +476,7 @@ func (s *AuthServiceDefault) GetAuthenticatedClient(ctx context.Context) (portal
 	token := cfg.AuthToken
 
 	if token == "" {
-		return nil, config.ErrNotAuthenticated
+		return nil, coreerrors.ErrNotAuthenticated
 	}
 
 	// Check if the token is an API key JWT by decoding its claims
@@ -504,7 +505,7 @@ func (s *AuthServiceDefault) GetLoginToken(ctx context.Context) (string, error) 
 	token := cfg.AuthToken
 
 	if token == "" {
-		return "", config.ErrNotAuthenticated
+		return "", coreerrors.ErrNotAuthenticated
 	}
 
 	purpose, err := GetJWTPurpose(token)

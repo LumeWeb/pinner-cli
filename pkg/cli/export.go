@@ -7,6 +7,7 @@ import (
 
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner-cli/internal/core/ipfsbase"
 	meta "go.lumeweb.com/portal-sdk/meta"
 )
 
@@ -18,7 +19,7 @@ type ExportService interface {
 }
 
 type exportService struct {
-	ipfsServiceBase
+	*ipfsServiceBase
 	cid    *meta.CIDService
 	client *meta.MetaClient
 }
@@ -29,7 +30,7 @@ type ExportServiceOption func(*exportService)
 // WithExportAuthToken sets an auth token override that takes precedence over config.
 func WithExportAuthToken(token string) ExportServiceOption {
 	return func(s *exportService) {
-		withAuthToken(token)(&s.ipfsServiceBase)
+		withAuthToken(token)(s.ipfsServiceBase)
 	}
 }
 
@@ -67,17 +68,14 @@ func NewExportService(cfgMgr config.Manager, output Output, apiEndpoint string, 
 	authToken := cfgMgr.Config().AuthToken
 
 	s := &exportService{
-		ipfsServiceBase: ipfsServiceBase{
-			cfgMgr:    cfgMgr,
-			authToken: authToken,
-		},
+		ipfsServiceBase: ipfsbase.New(cfgMgr, ipfsbase.WithAuthToken(authToken)),
 	}
 	for _, opt := range opts {
 		opt(s)
 	}
 
 	if s.client == nil {
-		client, err := meta.NewClient(meta.WithEndpoint(apiEndpoint), meta.WithJWT(s.getAuthToken()))
+		client, err := meta.NewClient(meta.WithEndpoint(apiEndpoint), meta.WithJWT(s.GetAuthToken()))
 		if err != nil {
 			output.PrintError(err)
 			return s

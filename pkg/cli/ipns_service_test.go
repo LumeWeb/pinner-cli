@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 	ipfs "go.lumeweb.com/ipfs-sdk"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner-cli/internal/core/ipfsbase"
 	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
 )
 
@@ -266,10 +267,7 @@ func TestIPNSService_RequireAuthenticated(t *testing.T) {
 			}).Maybe()
 
 			svc := &ipnsService{
-				ipfsServiceBase: ipfsServiceBase{
-					authToken: tt.authToken,
-					cfgMgr:    cfgMgr,
-				},
+				ipfsServiceBase: ipfsbase.New(cfgMgr, ipfsbase.WithAuthToken(tt.authToken)),
 			}
 
 			err := svc.RequireAuthenticated()
@@ -294,10 +292,7 @@ func TestIPNSService_AuthTokenOverride(t *testing.T) {
 		}).Maybe()
 
 		svc := &ipnsService{
-			ipfsServiceBase: ipfsServiceBase{
-				cfgMgr:    cfgMgr,
-				authToken: "override-token",
-			},
+			ipfsServiceBase: ipfsbase.New(cfgMgr, ipfsbase.WithAuthToken("override-token")),
 		}
 
 		err := svc.RequireAuthenticated()
@@ -311,13 +306,10 @@ func TestIPNSService_AuthTokenOverride(t *testing.T) {
 		}).Maybe()
 
 		svc := &ipnsService{
-			ipfsServiceBase: ipfsServiceBase{
-				cfgMgr:    cfgMgr,
-				authToken: "override-token",
-			},
+			ipfsServiceBase: ipfsbase.New(cfgMgr, ipfsbase.WithAuthToken("override-token")),
 		}
 
-		require.Equal(t, "override-token", svc.getAuthToken())
+		require.Equal(t, "override-token", svc.GetAuthToken())
 	})
 
 	t.Run("falls back to config token when override is empty", func(t *testing.T) {
@@ -327,13 +319,10 @@ func TestIPNSService_AuthTokenOverride(t *testing.T) {
 		}).Maybe()
 
 		svc := &ipnsService{
-			ipfsServiceBase: ipfsServiceBase{
-				cfgMgr:    cfgMgr,
-				authToken: "",
-			},
+			ipfsServiceBase: ipfsbase.New(cfgMgr),
 		}
 
-		require.Equal(t, "config-token", svc.getAuthToken())
+		require.Equal(t, "config-token", svc.GetAuthToken())
 	})
 
 	t.Run("WithIPNSAuthToken functional option sets override", func(t *testing.T) {
@@ -343,13 +332,11 @@ func TestIPNSService_AuthTokenOverride(t *testing.T) {
 		}).Maybe()
 
 		svc := &ipnsService{
-			ipfsServiceBase: ipfsServiceBase{
-				cfgMgr: cfgMgr,
-			},
+			ipfsServiceBase: ipfsbase.New(cfgMgr),
 		}
 		WithIPNSAuthToken("override-token")(svc)
 
-		require.Equal(t, "override-token", svc.getAuthToken())
+		require.Equal(t, "override-token", svc.GetAuthToken())
 		err := svc.RequireAuthenticated()
 		require.NoError(t, err)
 	})

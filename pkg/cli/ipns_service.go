@@ -7,6 +7,7 @@ import (
 
 	ipfs "go.lumeweb.com/ipfs-sdk"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner-cli/internal/core/ipfsbase"
 )
 
 type IPNSService interface {
@@ -24,7 +25,7 @@ type IPNSService interface {
 }
 
 type ipnsService struct {
-	ipfsServiceBase
+	*ipfsServiceBase
 	service ipfs.IPNSService
 	client  *ipfs.Client
 }
@@ -35,7 +36,7 @@ type IPNSServiceOption func(*ipnsService)
 // WithIPNSAuthToken sets an auth token override that takes precedence over config.
 func WithIPNSAuthToken(token string) IPNSServiceOption {
 	return func(s *ipnsService) {
-		withAuthToken(token)(&s.ipfsServiceBase)
+		withAuthToken(token)(s.ipfsServiceBase)
 	}
 }
 
@@ -72,9 +73,7 @@ func newAuthenticatedIPNSService(cfgMgr config.Manager, output Output, authToken
 
 func NewIPNSService(cfgMgr config.Manager, output Output, apiEndpoint string, opts ...IPNSServiceOption) IPNSService {
 	s := &ipnsService{
-		ipfsServiceBase: ipfsServiceBase{
-			cfgMgr: cfgMgr,
-		},
+		ipfsServiceBase: ipfsbase.New(cfgMgr),
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -83,7 +82,7 @@ func NewIPNSService(cfgMgr config.Manager, output Output, apiEndpoint string, op
 	if s.client != nil {
 		s.service = s.client.IPNS()
 	} else {
-		client, err := ipfs.NewClient(apiEndpoint, s.getAuthToken())
+		client, err := ipfs.NewClient(apiEndpoint, s.GetAuthToken())
 		if err != nil {
 			output.PrintError(err)
 			s.service = nil
@@ -99,8 +98,8 @@ func NewIPNSService(cfgMgr config.Manager, output Output, apiEndpoint string, op
 // re-fetches the sub-service. No-op when no client is retained.
 // The write lock serializes this (config-watcher goroutine) with request reads.
 func (s *ipnsService) SetAuthToken(token string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.Lock()
+	defer s.Unlock()
 	if s.client != nil {
 		if err := s.client.SetAuthToken(token); err == nil {
 			s.service = s.client.IPNS()
@@ -111,8 +110,8 @@ func (s *ipnsService) SetAuthToken(token string) {
 // requireService returns the current sub-service under the read lock, so the
 // config-watcher goroutine (SetAuthToken) cannot swap s.service mid-request.
 func (s *ipnsService) requireService() (ipfs.IPNSService, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.RLock()
+	defer s.RUnlock()
 	if s.service == nil {
 		return nil, ErrServiceUnavailable
 	}
