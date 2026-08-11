@@ -393,7 +393,7 @@ func TestAccountAPIKeysList_Success(t *testing.T) {
 	output := newTestOutput()
 	cmd := newMockCommand()
 	err := accountAPIKeysList(context.Background(), cmd, output, cfgMgr, "test-token",
-		func(cm config.Manager, out Output, apiEndpoint string) AuthService {
+		func(cm config.Manager, apiEndpoint string) AuthService {
 			return NewMockAuthService(t)
 		},
 		func(authService AuthService, authToken string) APIKeyService {
@@ -412,7 +412,7 @@ func TestAccountAPIKeysList_Empty(t *testing.T) {
 	output := newTestOutput()
 	cmd := newMockCommand()
 	err := accountAPIKeysList(context.Background(), cmd, output, cfgMgr, "test-token",
-		func(cm config.Manager, out Output, apiEndpoint string) AuthService {
+		func(cm config.Manager, apiEndpoint string) AuthService {
 			return NewMockAuthService(t)
 		},
 		func(authService AuthService, authToken string) APIKeyService {
@@ -432,7 +432,7 @@ func TestAccountAPIKeysList_WithSearch(t *testing.T) {
 	output := newTestOutput()
 	cmd := newMockCommand().withString(FlagSearch, "my-key")
 	err := accountAPIKeysList(context.Background(), cmd, output, cfgMgr, "test-token",
-		func(cm config.Manager, out Output, apiEndpoint string) AuthService {
+		func(cm config.Manager, apiEndpoint string) AuthService {
 			return NewMockAuthService(t)
 		},
 		func(authService AuthService, authToken string) APIKeyService {
@@ -451,7 +451,7 @@ func TestAccountAPIKeysList_ServiceError(t *testing.T) {
 	output := newTestOutput()
 	cmd := newMockCommand()
 	err := accountAPIKeysList(context.Background(), cmd, output, cfgMgr, "test-token",
-		func(cm config.Manager, out Output, apiEndpoint string) AuthService {
+		func(cm config.Manager, apiEndpoint string) AuthService {
 			return NewMockAuthService(t)
 		},
 		func(authService AuthService, authToken string) APIKeyService {
@@ -472,7 +472,7 @@ func TestAccountAPIKeysCreate_Success(t *testing.T) {
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("my-new-key")
 	err := accountAPIKeysCreate(context.Background(), cmd, output, cfgMgr, "test-token",
-		func(cm config.Manager, out Output, apiEndpoint string) AuthService {
+		func(cm config.Manager, apiEndpoint string) AuthService {
 			return NewMockAuthService(t)
 		},
 		func(authService AuthService, authToken string) APIKeyService {
@@ -488,7 +488,7 @@ func TestAccountAPIKeysCreate_MissingName(t *testing.T) {
 	output := newTestOutput()
 	cmd := newMockCommand()
 	err := accountAPIKeysCreate(context.Background(), cmd, output, cfgMgr, "test-token",
-		func(cm config.Manager, out Output, apiEndpoint string) AuthService {
+		func(cm config.Manager, apiEndpoint string) AuthService {
 			return NewMockAuthService(t)
 		},
 		func(authService AuthService, authToken string) APIKeyService {
@@ -508,7 +508,7 @@ func TestAccountAPIKeysCreate_ServiceError(t *testing.T) {
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("dup-key")
 	err := accountAPIKeysCreate(context.Background(), cmd, output, cfgMgr, "test-token",
-		func(cm config.Manager, out Output, apiEndpoint string) AuthService {
+		func(cm config.Manager, apiEndpoint string) AuthService {
 			return NewMockAuthService(t)
 		},
 		func(authService AuthService, authToken string) APIKeyService {
@@ -530,7 +530,7 @@ func TestAccountAPIKeysDelete_Success(t *testing.T) {
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("00000000-0000-0000-0000-000000000001")
 	err := accountAPIKeysDelete(context.Background(), cmd, output, cfgMgr, "test-token",
-		func(cm config.Manager, out Output, apiEndpoint string) AuthService {
+		func(cm config.Manager, apiEndpoint string) AuthService {
 			return NewMockAuthService(t)
 		},
 		func(authService AuthService, authToken string) APIKeyService {
@@ -546,7 +546,7 @@ func TestAccountAPIKeysDelete_MissingArg(t *testing.T) {
 	output := newTestOutput()
 	cmd := newMockCommand()
 	err := accountAPIKeysDelete(context.Background(), cmd, output, cfgMgr, "test-token",
-		func(cm config.Manager, out Output, apiEndpoint string) AuthService {
+		func(cm config.Manager, apiEndpoint string) AuthService {
 			return NewMockAuthService(t)
 		},
 		func(authService AuthService, authToken string) APIKeyService {
@@ -566,7 +566,7 @@ func TestAccountAPIKeysDelete_ServiceError(t *testing.T) {
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("nonexistent").withBool(FlagForce, true)
 	err := accountAPIKeysDelete(context.Background(), cmd, output, cfgMgr, "test-token",
-		func(cm config.Manager, out Output, apiEndpoint string) AuthService {
+		func(cm config.Manager, apiEndpoint string) AuthService {
 			return NewMockAuthService(t)
 		},
 		func(authService AuthService, authToken string) APIKeyService {
@@ -587,7 +587,7 @@ func TestAccountAPIKeysDelete_WithForce(t *testing.T) {
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("my-key").withBool(FlagForce, true)
 	err := accountAPIKeysDelete(context.Background(), cmd, output, cfgMgr, "test-token",
-		func(cm config.Manager, out Output, apiEndpoint string) AuthService {
+		func(cm config.Manager, apiEndpoint string) AuthService {
 			return NewMockAuthService(t)
 		},
 		func(authService AuthService, authToken string) APIKeyService {

@@ -117,7 +117,12 @@ func register(ctx context.Context, cmd argsFlagGetterWithBool, output Output, cf
 	}
 
 	apiEndpoint := cfgMgr.Config().GetAPIEndpoint()
-	authService := authServiceFactory(cfgMgr, output, apiEndpoint)
+	authService := authServiceFactory(cfgMgr, apiEndpoint)
 
-	return authService.Register(ctx, email, firstName, lastName, password)
+	res, err := authService.Register(ctx, email, firstName, lastName, password)
+	if err != nil {
+		return err
+	}
+	renderRegister(output, res)
+	return nil
 }

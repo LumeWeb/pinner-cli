@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	ipfs "go.lumeweb.com/ipfs-sdk"
+	"go.lumeweb.com/pinner-cli/internal/core/auth"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
 	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
 	portalsdk "go.lumeweb.com/portal-sdk"
@@ -289,30 +290,30 @@ func (m *mockAuthService) LoginCheck(ctx context.Context, email, password string
 	return &portalsdk.LoginResult{Token: "jwt-token-123", OTPRequired: false}, nil
 }
 
-func (m *mockAuthService) CompleteLogin(_ context.Context, token, keyName string, noCreateKey bool) error {
+func (m *mockAuthService) CompleteLogin(_ context.Context, token, keyName string, noCreateKey bool) (*auth.LoginCompleteResult, error) {
 	m.completeLoginToken = token
 	m.completeLoginKey = keyName
 	m.completeLoginNoCreate = noCreateKey
-	return m.completeLoginErr
+	return &auth.LoginCompleteResult{}, m.completeLoginErr
 }
 
-func (m *mockAuthService) LoginWithOTP(_ context.Context, intermediateJWT, otp, keyName string, noCreateKey bool) error {
+func (m *mockAuthService) LoginWithOTP(_ context.Context, intermediateJWT, otp, keyName string, noCreateKey bool) (*auth.LoginCompleteResult, error) {
 	m.otpJWT = intermediateJWT
 	m.otpCode = otp
 	m.otpKey = keyName
 	m.otpNoCreate = noCreateKey
-	return m.loginWithOTPErr
+	return &auth.LoginCompleteResult{}, m.loginWithOTPErr
 }
 
-func (m *mockAuthService) Register(_ context.Context, _, _, _, _ string) error {
-	return m.registerErr
+func (m *mockAuthService) Register(_ context.Context, _, _, _, _ string) (*auth.RegisterResult, error) {
+	return &auth.RegisterResult{}, m.registerErr
 }
 
-func (m *mockAuthService) SaveToken(_ string) error { return m.saveTokenErr }
+func (m *mockAuthService) SaveToken(_ string) (*auth.SaveTokenResult, error) { return &auth.SaveTokenResult{}, m.saveTokenErr }
 
 func (m *mockAuthService) GetAPIEndpoint() string { return "https://api.pinner.xyz" }
 
-func (m *mockAuthService) Status(_ context.Context) error { return nil }
+func (m *mockAuthService) Status(_ context.Context) (*auth.StatusResult, error) { return &auth.StatusResult{}, nil }
 
 func (m *mockAuthService) GetAuthenticatedClient(_ context.Context) (portalsdk.AccountAPI, error) {
 	return nil, nil
@@ -322,9 +323,9 @@ func (m *mockAuthService) GetLoginToken(_ context.Context) (string, error) {
 	return "jwt-token-123", nil
 }
 
-func (m *mockAuthService) EnableOTP(_ context.Context, _ string) error { return m.enableOTPErr }
+func (m *mockAuthService) EnableOTP(_ context.Context, _ string) (*auth.OTPSecretResult, error) { return &auth.OTPSecretResult{}, m.enableOTPErr }
 
-func (m *mockAuthService) DisableOTP(_ context.Context, _ string) error { return m.disableOTPErr }
+func (m *mockAuthService) DisableOTP(_ context.Context, _ string) (*auth.DisableOTPResult, error) { return &auth.DisableOTPResult{}, m.disableOTPErr }
 
 // --- Test helpers ---
 

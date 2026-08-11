@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"go.lumeweb.com/pinner-cli/internal/core/auth"
 	"context"
 	"testing"
 
@@ -58,7 +59,7 @@ func TestRegisterPositionalArgFallback(t *testing.T) {
 	output := newTestOutput()
 
 	// Positional email is used when --email flag is empty
-	authService.EXPECT().Register(mock.Anything, "positional@example.com", "John", "Doe", "secret123").Return(nil)
+	authService.EXPECT().Register(mock.Anything, "positional@example.com", "John", "Doe", "secret123").Return(&auth.RegisterResult{}, nil)
 
 	cmd := &cli.Command{
 		Flags: []cli.Flag{
@@ -72,7 +73,7 @@ func TestRegisterPositionalArgFallback(t *testing.T) {
 	wrapper := newTestCmdWithArgs(cmd, "positional@example.com")
 
 	cfgMgrFactory := func() (config.Manager, error) { return newTestConfigMgr(t), nil }
-	authServiceFactory := func(cfgMgr config.Manager, output Output, apiEndpoint string) AuthService {
+	authServiceFactory := func(cfgMgr config.Manager, apiEndpoint string) AuthService {
 		return authService
 	}
 
@@ -85,7 +86,7 @@ func TestRegisterEmailFlagTakesPrecedenceOverPositional(t *testing.T) {
 	output := newTestOutput()
 
 	// --email flag value should be used, not the positional arg
-	authService.EXPECT().Register(mock.Anything, "flag@example.com", "John", "Doe", "secret123").Return(nil)
+	authService.EXPECT().Register(mock.Anything, "flag@example.com", "John", "Doe", "secret123").Return(&auth.RegisterResult{}, nil)
 
 	cmd := &cli.Command{
 		Flags: []cli.Flag{
@@ -99,7 +100,7 @@ func TestRegisterEmailFlagTakesPrecedenceOverPositional(t *testing.T) {
 	wrapper := newTestCmdWithArgs(cmd, "positional@example.com")
 
 	cfgMgrFactory := func() (config.Manager, error) { return newTestConfigMgr(t), nil }
-	authServiceFactory := func(cfgMgr config.Manager, output Output, apiEndpoint string) AuthService {
+	authServiceFactory := func(cfgMgr config.Manager, apiEndpoint string) AuthService {
 		return authService
 	}
 

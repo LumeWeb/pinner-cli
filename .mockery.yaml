@@ -10,6 +10,14 @@ packages:
       pkgname: "mocks"
     interfaces:
       Manager: {}
+  go.lumeweb.com/pinner-cli/internal/core/auth:
+    config:
+      dir: ./pkg/cli
+      pkgname: "cli"
+    interfaces:
+      AuthService:
+        config:
+          filename: "mock_AuthService.go"
   go.lumeweb.com/pinner-cli/pkg/cli:
     config:
       filename: "mock_{{.InterfaceName}}.go"
@@ -17,7 +25,6 @@ packages:
       pkgname: "{{.SrcPackageName}}"
     interfaces:
       AuthPrompter: {}
-      AuthService: {}
       PinningService: {}
       UploadService: {}
       DownloadService: {}

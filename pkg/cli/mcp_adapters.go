@@ -28,7 +28,8 @@ func (a *accountStatusAdapter) AuthStatus(ctx context.Context) error {
 	if a.auth == nil {
 		return fmt.Errorf("auth service not configured")
 	}
-	return a.auth.Status(ctx)
+	_, err := a.auth.Status(ctx)
+	return err
 }
 
 func (a *accountStatusAdapter) APIKey() string {

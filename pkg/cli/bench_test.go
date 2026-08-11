@@ -104,7 +104,7 @@ func setupBenchHandlerTest(t *testing.T) (*mockBenchServiceForCLI, *configmocks.
 	mockAuthSvc := NewMockAuthService(t)
 	mockAuthSvc.EXPECT().GetAuthenticatedClient(mock.Anything).Maybe().Return(portalsdkmocks.NewMockAccountAPI(t), nil)
 
-	benchAuthServiceFactory = func(cfgMgr config.Manager, output Output, apiEndpoint string) AuthService {
+	benchAuthServiceFactory = func(cfgMgr config.Manager, apiEndpoint string) AuthService {
 		return mockAuthSvc
 	}
 
@@ -253,7 +253,7 @@ func TestBenchHandler_AuthError(t *testing.T) {
 	mockAuthSvc := NewMockAuthService(t)
 	mockAuthSvc.EXPECT().GetAuthenticatedClient(mock.Anything).Return(nil, errors.New("auth failed"))
 
-	benchAuthServiceFactory = func(cfgMgr config.Manager, output Output, apiEndpoint string) AuthService {
+	benchAuthServiceFactory = func(cfgMgr config.Manager, apiEndpoint string) AuthService {
 		return mockAuthSvc
 	}
 

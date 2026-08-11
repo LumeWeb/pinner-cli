@@ -18,6 +18,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.lumeweb.com/pinner-cli/internal/core/auth"
 	portalsdk "go.lumeweb.com/portal-sdk"
 )
 
@@ -48,13 +49,13 @@ func (s stubAuthService) LoginCheck(ctx context.Context, email, password string)
 	}
 	return &portalsdk.LoginResult{Token: stubToken(), OTPRequired: false}, nil
 }
-func (s stubAuthService) CompleteLogin(ctx context.Context, token, keyName string, noCreateKey bool) error {
-	return s.completeErr
+func (s stubAuthService) CompleteLogin(ctx context.Context, token, keyName string, noCreateKey bool) (*auth.LoginCompleteResult, error) {
+	return nil, s.completeErr
 }
-func (s stubAuthService) LoginWithOTP(ctx context.Context, intermediateJWT, otp, keyName string, noCreateKey bool) error {
-	return nil
+func (s stubAuthService) LoginWithOTP(ctx context.Context, intermediateJWT, otp, keyName string, noCreateKey bool) (*auth.LoginCompleteResult, error) {
+	return nil, nil
 }
-func (s stubAuthService) Status(ctx context.Context) error { return nil }
+func (s stubAuthService) Status(ctx context.Context) (*auth.StatusResult, error) { return nil, nil }
 
 func newOOBForTest(t *testing.T) *OutOfBandLogin {
 	t.Helper()
@@ -764,13 +765,13 @@ func (s *captureAuthService) LoginCheck(ctx context.Context, email, password str
 	s.password = password
 	return &portalsdk.LoginResult{Token: stubToken(), OTPRequired: false}, nil
 }
-func (s *captureAuthService) CompleteLogin(ctx context.Context, token, keyName string, noCreateKey bool) error {
-	return nil
+func (s *captureAuthService) CompleteLogin(ctx context.Context, token, keyName string, noCreateKey bool) (*auth.LoginCompleteResult, error) {
+	return nil, nil
 }
-func (s *captureAuthService) LoginWithOTP(ctx context.Context, intermediateJWT, otp, keyName string, noCreateKey bool) error {
-	return nil
+func (s *captureAuthService) LoginWithOTP(ctx context.Context, intermediateJWT, otp, keyName string, noCreateKey bool) (*auth.LoginCompleteResult, error) {
+	return nil, nil
 }
-func (s *captureAuthService) Status(ctx context.Context) error { return nil }
+func (s *captureAuthService) Status(ctx context.Context) (*auth.StatusResult, error) { return nil, nil }
 
 // TestOOBLoginHumanEmailOverridesAgentEmail verifies the account identifier on
 // the login page is editable: even though pinner_auth_sso prefilled an email

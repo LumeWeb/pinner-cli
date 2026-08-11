@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/urfave/cli/v3"
+	"go.lumeweb.com/pinner-cli/internal/core/auth"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
 )
 
@@ -85,7 +86,7 @@ func status(ctx context.Context, cmd interface {
 
 	watch := cmd.Bool("watch")
 
-	authService := NewAuthService(cfgMgr, output, cfgMgr.Config().GetAPIEndpoint())
+	authService := auth.NewAuthService(cfgMgr, cfgMgr.Config().GetAPIEndpoint(), nil)
 	statusService := statusServiceFactory(cfgMgr, output, pinningService, authService)
 
 	var cids []string
