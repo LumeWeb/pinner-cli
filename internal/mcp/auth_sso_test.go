@@ -24,7 +24,8 @@ func requireHandoff(t *testing.T, r ToolResult) map[string]any {
 func TestAuthSSOStartsOutOfBandLogin(t *testing.T) {
 	oob := newOOBForTest(t)
 	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
-	desc := NewAuthSSODescriptor(oob, handles)
+	reg := NewHandoffRegistry()
+	desc := NewAuthSSODescriptor(oob, handles, reg)
 
 	result, err := desc.Handler(context.Background(), ToolRequest{
 		Name:      "pinner_auth_sso",
@@ -45,8 +46,9 @@ func TestAuthSSOStartsOutOfBandLogin(t *testing.T) {
 func TestAuthResumeReportsPendingBeforeCompletion(t *testing.T) {
 	oob := newOOBForTest(t)
 	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	reg := NewHandoffRegistry()
 
-	start := NewAuthSSODescriptor(oob, handles)
+	start := NewAuthSSODescriptor(oob, handles, reg)
 	startResult, err := start.Handler(context.Background(), ToolRequest{
 		Name:      "pinner_auth_sso",
 		Arguments: map[string]any{"email": "agent@example.com"},
@@ -55,7 +57,7 @@ func TestAuthResumeReportsPendingBeforeCompletion(t *testing.T) {
 	sc := requireHandoff(t, startResult)
 	handle := sc["handle"].(string)
 
-	resume := NewAuthResumeDescriptor(oob, handles)
+	resume := NewAuthResumeDescriptor(reg, handles)
 	result, err := resume.Handler(context.Background(), ToolRequest{
 		Name:      "pinner_auth_resume",
 		Arguments: map[string]any{"handle": handle},
@@ -69,9 +71,9 @@ func TestAuthResumeReportsPendingBeforeCompletion(t *testing.T) {
 // TestAuthResumeUnknownHandleErrors verifies an invalid handle fast-fails
 // rather than hanging.
 func TestAuthResumeUnknownHandleErrors(t *testing.T) {
-	oob := newOOBForTest(t)
 	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
-	desc := NewAuthResumeDescriptor(oob, handles)
+	reg := NewHandoffRegistry()
+	desc := NewAuthResumeDescriptor(reg, handles)
 
 	result, err := desc.Handler(context.Background(), ToolRequest{
 		Name:      "pinner_auth_resume",
@@ -89,9 +91,9 @@ func TestAuthResumeUnknownHandleErrors(t *testing.T) {
 }
 
 func TestAuthResumeExpiredHandleSteersRestart(t *testing.T) {
-	oob := newOOBForTest(t)
 	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
-	desc := NewAuthResumeDescriptor(oob, handles)
+	reg := NewHandoffRegistry()
+	desc := NewAuthResumeDescriptor(reg, handles)
 
 	// Mint a handle, then force it past its TTL so Get returns ErrHandleExpired.
 	handle := handles.Create("pending", map[string]any{"email": "a@example.com"})
@@ -112,7 +114,7 @@ func TestAuthResumeExpiredHandleSteersRestart(t *testing.T) {
 // TestAuthSSONotConfigured verifies the nil-coordinator case returns a
 // structured hand-off instead of hanging.
 func TestAuthSSONotConfigured(t *testing.T) {
-	desc := NewAuthSSODescriptor(nil, nil)
+	desc := NewAuthSSODescriptor(nil, nil, nil)
 	result, err := desc.Handler(context.Background(), ToolRequest{
 		Name:      "pinner_auth_sso",
 		Arguments: map[string]any{},
