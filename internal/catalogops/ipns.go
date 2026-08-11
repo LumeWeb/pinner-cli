@@ -117,12 +117,12 @@ func ipnsKeysCreate(d IPNSDeps) catalog.Operation {
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
-			name := str(input, "name", "")
+			name := catalog.StrArg(input, "name", "")
 			if name == "" {
 				return nil, fmt.Errorf("ipns.keys.create: key name is required")
 			}
 			var key *string
-			if k := str(input, "key", ""); k != "" {
+			if k := catalog.StrArg(input, "key", ""); k != "" {
 				key = &k
 			}
 			return svc.CreateKey(ctx, name, key)
@@ -147,7 +147,7 @@ func ipnsKeysGet(d IPNSDeps) catalog.Operation {
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
-			id := str(input, "id", "")
+			id := catalog.StrArg(input, "id", "")
 			if id == "" {
 				return nil, fmt.Errorf("ipns.keys.get: key ID is required")
 			}
@@ -173,7 +173,7 @@ func ipnsKeysDelete(d IPNSDeps) catalog.Operation {
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
-			id := str(input, "id", "")
+			id := catalog.StrArg(input, "id", "")
 			if id == "" {
 				return nil, fmt.Errorf("ipns.keys.delete: key ID is required")
 			}
@@ -201,15 +201,15 @@ func ipnsPublish(d IPNSDeps) catalog.Operation {
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
-			cid := str(input, "cid", "")
+			cid := catalog.StrArg(input, "cid", "")
 			if cid == "" {
 				return nil, fmt.Errorf("ipns.publish: CID is required")
 			}
 			var ttl *string
-			if t := str(input, "ttl", ""); t != "" {
+			if t := catalog.StrArg(input, "ttl", ""); t != "" {
 				ttl = &t
 			}
-			return svc.Publish(ctx, cid, str(input, "key-name", ""), ttl)
+			return svc.Publish(ctx, cid, catalog.StrArg(input, "key-name", ""), ttl)
 		}),
 	})
 }
@@ -231,7 +231,7 @@ func ipnsRepublish(d IPNSDeps) catalog.Operation {
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
-			return svc.Republish(ctx, str(input, "key-name", ""))
+			return svc.Republish(ctx, catalog.StrArg(input, "key-name", ""))
 		}),
 	})
 }
@@ -253,7 +253,7 @@ func ipnsResolve(d IPNSDeps) catalog.Operation {
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
-			name := str(input, "name", "")
+			name := catalog.StrArg(input, "name", "")
 			if name == "" {
 				return nil, fmt.Errorf("ipns.resolve: name is required")
 			}

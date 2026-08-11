@@ -110,74 +110,10 @@ func (h handler) Execute(ctx context.Context, input map[string]any) (any, error)
 	return h(ctx, input)
 }
 
-// str reads a string arg from input, defaulting to def when absent.
-func str(input map[string]any, key, def string) string {
-	if v, ok := input[key].(string); ok && v != "" {
-		return v
-	}
-	return def
-}
-
-// intFrom reads an int arg from input, defaulting to def when absent. Values
-// may arrive as json.Number, float64, or int.
-func intFrom(input map[string]any, key string, def int) int {
-	v, ok := input[key]
-	if !ok || v == nil {
-		return def
-	}
-	switch n := v.(type) {
-	case int:
-		return n
-	case int64:
-		return int(n)
-	case float64:
-		return int(n)
-	case jsonNumber:
-		i, err := n.Int64()
-		if err == nil {
-			return int(i)
-		}
-	case string:
-		if i, err := strconv.Atoi(n); err == nil {
-			return i
-		}
-	}
-	return def
-}
-
-// boolFrom reads a bool arg from input, defaulting to def when absent.
-func boolFrom(input map[string]any, key string, def bool) bool {
-	if v, ok := input[key].(bool); ok {
-		return v
-	}
-	return def
-}
-
-// jsonNumber is the numeric type produced by encoding/json when unmarshaling
-// into any. It is aliased here to keep the decoder dependency local.
-type jsonNumber = interface{ Int64() (int64, error) }
-
-// strSlice reads a []string slice arg from input (values may arrive as []any).
-func strSlice(input map[string]any, key string) []string {
-	v, ok := input[key]
-	if !ok || v == nil {
-		return nil
-	}
-	switch s := v.(type) {
-	case []string:
-		return s
-	case []any:
-		out := make([]string, 0, len(s))
-		for _, item := range s {
-			if str, ok := item.(string); ok {
-				out = append(out, str)
-			}
-		}
-		return out
-	default:
-		return nil
-	}
-}
+// jsonNumber is retained here for any JSON-related helpers that still need it;
+// the arg accessors now live in internal/catalog (StrArg/IntArg/BoolArg/
+// StrSliceArg) to avoid duplicating the type-assertion logic between the
+// catalogops handlers and the pkg/cli wiring layer.
 
 // DryRunResult is the data returned by a handler when the caller requests a
 // dry-run (--dry-run): the operation never mutates state, and the handler
@@ -246,7 +182,7 @@ func pinsList(d PinsDeps) catalog.Operation {
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
-			pins, err := svc.List(ctx, str(input, "name", ""), intFrom(input, "limit", 0), str(input, "status", ""))
+			pins, err := svc.List(ctx, catalog.StrArg(input, "name", ""), catalog.IntArg(input, "limit", 0), catalog.StrArg(input, "status", ""))
 			if err != nil {
 				return nil, err
 			}
@@ -301,19 +237,19 @@ func pinsAdd(d PinsDeps) catalog.Operation {
 				return nil, err
 			}
 
-			cids := strSlice(input, "cids")
+			cids := catalog.StrSliceArg(input, "cids")
 			if len(cids) == 0 {
 				return nil, fmt.Errorf("pins.add: no CIDs provided (pass <cid...>, --file, or pipe from stdin)")
 			}
 
-			name := str(input, "name", "")
-			wait := boolFrom(input, "wait", true)
-			parallel := intFrom(input, "parallel", 0)
-			continueOn := boolFrom(input, "continue", false)
-			metaPairs := strSlice(input, "meta")
+			name := catalog.StrArg(input, "name", "")
+			wait := catalog.BoolArg(input, "wait", true)
+			parallel := catalog.IntArg(input, "parallel", 0)
+			continueOn := catalog.BoolArg(input, "continue", false)
+			metaPairs := catalog.StrSliceArg(input, "meta")
 
 			// Dry-run: report the plan, never mutate.
-			if boolFrom(input, "dry-run", false) {
+			if catalog.BoolArg(input, "dry-run", false) {
 				options := map[string]string{}
 				options["Wait"] = strconv.FormatBool(wait)
 				if name != "" {
@@ -427,14 +363,14 @@ func pinsRemove(d PinsDeps) catalog.Operation {
 				return nil, err
 			}
 
-			confirm := boolFrom(input, "force", false) || boolFrom(input, "confirm", false)
-			parallel := intFrom(input, "parallel", 0)
-			continueOn := boolFrom(input, "continue", false)
+			confirm := catalog.BoolArg(input, "force", false) || catalog.BoolArg(input, "confirm", false)
+			parallel := catalog.IntArg(input, "parallel", 0)
+			continueOn := catalog.BoolArg(input, "continue", false)
 
 			// --all unpins every pin (optionally filtered by status).
-			if boolFrom(input, "all", false) {
-				statusFilter := str(input, "status", "")
-				if boolFrom(input, "dry-run", false) {
+			if catalog.BoolArg(input, "all", false) {
+				statusFilter := catalog.StrArg(input, "status", "")
+				if catalog.BoolArg(input, "dry-run", false) {
 					// Report the request IDs that would be unpinned without
 					// mutating state. Naming them requires a read-only List,
 					// which is safe and faithful to the legacy dry-run.
@@ -465,12 +401,12 @@ func pinsRemove(d PinsDeps) catalog.Operation {
 				})
 			}
 
-			cids := strSlice(input, "cids")
+			cids := catalog.StrSliceArg(input, "cids")
 			if len(cids) == 0 {
 				return nil, fmt.Errorf("pins.rm: no CIDs provided (pass <cid...>, --file, pipe from stdin, or --all)")
 			}
 
-			if boolFrom(input, "dry-run", false) {
+			if catalog.BoolArg(input, "dry-run", false) {
 				options := map[string]string{"Confirm": "yes"}
 				if confirm {
 					options["Confirm"] = "no (using --force)"
@@ -531,12 +467,12 @@ func pinsStatus(d PinsDeps) catalog.Operation {
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
-			cid := str(input, "cid", "")
+			cid := catalog.StrArg(input, "cid", "")
 			if cid == "" {
 				return nil, fmt.Errorf("pins.status: missing required argument cid")
 			}
 			// *pinning.PinStatus
-			return svc.Status(ctx, cid, boolFrom(input, "watch", false))
+			return svc.Status(ctx, cid, catalog.BoolArg(input, "watch", false))
 		}),
 	})
 }
@@ -577,16 +513,16 @@ func pinsUpdate(d PinsDeps) catalog.Operation {
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
-			cid := str(input, "cid", "")
+			cid := catalog.StrArg(input, "cid", "")
 			if cid == "" {
 				return nil, fmt.Errorf("pins.update: missing required argument cid")
 			}
 
-			name := str(input, "name", "")
-			metaPairs := strSlice(input, "meta")
-			clearMeta := boolFrom(input, "clear-meta", false)
+			name := catalog.StrArg(input, "name", "")
+			metaPairs := catalog.StrSliceArg(input, "meta")
+			clearMeta := catalog.BoolArg(input, "clear-meta", false)
 
-			if boolFrom(input, "dry-run", false) {
+			if catalog.BoolArg(input, "dry-run", false) {
 				options := map[string]string{"CID": cid}
 				if name != "" {
 					options["Name"] = name

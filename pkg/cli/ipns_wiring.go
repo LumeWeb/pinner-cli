@@ -153,7 +153,7 @@ func ipnsActionAdapter(op catalog.Operation) cli.ActionFunc {
 		// it is still empty (positional <key>/<id>/<cid>/<name>).
 		if c.Args().Len() > 0 {
 			for _, a := range op.Args() {
-				if a.Type == catalog.ArgTypeString && stringVal(input[a.Name]) == "" {
+				if a.Type == catalog.ArgTypeString && catalog.StrArg(input, a.Name, "") == "" {
 					input[a.Name] = c.Args().First()
 					break
 				}

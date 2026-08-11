@@ -109,10 +109,10 @@ func operationsActionAdapter(op catalog.Operation) cli.ActionFunc {
 
 		// Map the positional <id> into the operation's "id" arg when not already
 		// provided. The id arg is ArgTypeInt, so flagValue stores an int; compare
-		// with intVal (not stringVal, which asserts a string and always returns
-		// "") so an explicit --id flag is not clobbered by a positional.
+		// with IntArg (which coerces string/int) so an explicit --id flag is not
+		// clobbered by a positional.
 		if c.Args().Len() > 0 {
-			if hasArg(op, "id") && intVal(input["id"]) == 0 {
+			if hasArg(op, "id") && catalog.IntArg(input, "id", 0) == 0 {
 				input["id"] = c.Args().First()
 			}
 		}
@@ -152,20 +152,20 @@ func watchCatalogOperationsList(ctx context.Context, c *cli.Command, op catalog.
 	if err := svc.RequireAuthenticated(); err != nil {
 		return err
 	}
-	page := intVal(input["page"])
+	page := catalog.IntArg(input, "page", 0)
 	if page < 1 {
 		page = 1
 	}
-	pageSize := intVal(input["page-size"])
+	pageSize := catalog.IntArg(input, "page-size", 0)
 	if pageSize < 1 {
 		pageSize = 10
 	}
 	opts := operations.ListOptions{
-		StatusFilter:    stringVal(input["status"]),
-		OperationFilter: stringVal(input["operation"]),
-		ProtocolFilter:  stringVal(input["protocol"]),
-		CIDFilter:       stringVal(input["cid"]),
-		Sort:            stringVal(input["sort"]),
+		StatusFilter:    catalog.StrArg(input, "status", ""),
+		OperationFilter: catalog.StrArg(input, "operation", ""),
+		ProtocolFilter:  catalog.StrArg(input, "protocol", ""),
+		CIDFilter:       catalog.StrArg(input, "cid", ""),
+		Sort:            catalog.StrArg(input, "sort", ""),
 		Page:            page,
 		PageSize:        pageSize,
 	}
@@ -217,19 +217,3 @@ func renderOperationsResult(_ context.Context, c *cli.Command, op catalog.Operat
 	}
 }
 
-// intVal returns the integer value of an operation input entry, accepting an
-// int directly (flagValue's encoding for ArgTypeInt flags) or a numeric string
-// (the positional override path). Used to guard the positional <id> override
-// so an explicitly provided --id is not clobbered.
-func intVal(v any) int {
-	switch t := v.(type) {
-	case int:
-		return t
-	case string:
-		var n int
-		if _, err := fmt.Sscanf(t, "%d", &n); err == nil {
-			return n
-		}
-	}
-	return 0
-}

@@ -57,20 +57,20 @@ func operationsList(d OperationsDeps) catalog.Operation {
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
-			page := intFrom(input, "page", 0)
+			page := catalog.IntArg(input, "page", 0)
 			if page < 1 {
 				page = 1
 			}
-			pageSize := intFrom(input, "page-size", 0)
+			pageSize := catalog.IntArg(input, "page-size", 0)
 			if pageSize < 1 {
 				pageSize = 10
 			}
 			return svc.List(ctx, operations.ListOptions{
-				StatusFilter:    str(input, "status", ""),
-				OperationFilter: str(input, "operation", ""),
-				ProtocolFilter:  str(input, "protocol", ""),
-				CIDFilter:       str(input, "cid", ""),
-				Sort:            str(input, "sort", ""),
+				StatusFilter:    catalog.StrArg(input, "status", ""),
+				OperationFilter: catalog.StrArg(input, "operation", ""),
+				ProtocolFilter:  catalog.StrArg(input, "protocol", ""),
+				CIDFilter:       catalog.StrArg(input, "cid", ""),
+				Sort:            catalog.StrArg(input, "sort", ""),
 				Page:            page,
 				PageSize:        pageSize,
 			})
@@ -96,11 +96,11 @@ func operationsGet(d OperationsDeps) catalog.Operation {
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
-			id := int64(intFrom(input, "id", 0))
+			id := int64(catalog.IntArg(input, "id", 0))
 			if id == 0 {
 				return nil, fmt.Errorf("operations.get: operation ID is required")
 			}
-			if boolFrom(input, "watch", false) {
+			if catalog.BoolArg(input, "watch", false) {
 				return svc.Watch(ctx, id)
 			}
 			return svc.Get(ctx, id)

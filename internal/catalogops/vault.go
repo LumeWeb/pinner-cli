@@ -106,7 +106,7 @@ func vaultStatus(d VaultDeps) catalog.Operation {
 			{Name: "profile", Type: catalog.ArgTypeString, Help: "Vault profile name (defaults to active profile)"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			profileName, err := vault.ResolveProfile(str(input, "profile", ""))
+			profileName, err := vault.ResolveProfile(catalog.StrArg(input, "profile", ""))
 			if err != nil {
 				return nil, err
 			}
@@ -143,11 +143,11 @@ func vaultLs(d VaultDeps) catalog.Operation {
 			{Name: "profile", Type: catalog.ArgTypeString, Help: "Vault profile name (defaults to active profile)"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			vaultPath := str(input, "path", "")
+			vaultPath := catalog.StrArg(input, "path", "")
 			if vaultPath == "" {
 				vaultPath = vault.VaultRoot
 			}
-			profileName, err := vault.ResolveProfile(str(input, "profile", ""))
+			profileName, err := vault.ResolveProfile(catalog.StrArg(input, "profile", ""))
 			if err != nil {
 				return nil, err
 			}
@@ -182,11 +182,11 @@ func vaultStat(d VaultDeps) catalog.Operation {
 			{Name: "profile", Type: catalog.ArgTypeString, Help: "Vault profile name (defaults to active profile)"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			vaultPath := str(input, "path", "")
+			vaultPath := catalog.StrArg(input, "path", "")
 			if vaultPath == "" {
 				return nil, fmt.Errorf("vault.stat: missing required argument path")
 			}
-			profileName, err := vault.ResolveProfile(str(input, "profile", ""))
+			profileName, err := vault.ResolveProfile(catalog.StrArg(input, "profile", ""))
 			if err != nil {
 				return nil, err
 			}
@@ -222,11 +222,11 @@ func vaultVerify(d VaultDeps) catalog.Operation {
 			{Name: "profile", Type: catalog.ArgTypeString, Help: "Vault profile name (defaults to active profile)"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			vaultPath := str(input, "path", "")
+			vaultPath := catalog.StrArg(input, "path", "")
 			if vaultPath == "" {
 				return nil, fmt.Errorf("vault.verify: missing required argument path")
 			}
-			profileName, err := vault.ResolveProfile(str(input, "profile", ""))
+			profileName, err := vault.ResolveProfile(catalog.StrArg(input, "profile", ""))
 			if err != nil {
 				return nil, err
 			}
@@ -235,7 +235,7 @@ func vaultVerify(d VaultDeps) catalog.Operation {
 				return nil, err
 			}
 			defer svc.Close()
-			if boolFrom(input, "deep", false) {
+			if catalog.BoolArg(input, "deep", false) {
 				// *vault.VerifyResult (full-content deep check)
 				return svc.VerifyDeep(ctx, vaultPath)
 			}
@@ -275,17 +275,17 @@ func vaultRm(d VaultDeps) catalog.Operation {
 			{Name: "confirm", Type: catalog.ArgTypeBool, Default: "false", Help: "Confirm the destructive operation (CLI maps --force here)"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			vaultPath := str(input, "path", "")
+			vaultPath := catalog.StrArg(input, "path", "")
 			if vaultPath == "" {
 				return nil, fmt.Errorf("vault.rm: missing required argument path")
 			}
 			// The CLI wiring maps --force to confirm; enforcing here guards
 			// programmatic/MCP callers who bypass the CLI gate from deleting a
 			// file with no confirmation state effective.
-			if !boolFrom(input, "confirm", false) {
+			if !catalog.BoolArg(input, "confirm", false) {
 				return nil, fmt.Errorf("vault.rm requires confirmation (pass --force/confirm)")
 			}
-			profileName, err := vault.ResolveProfile(str(input, "profile", ""))
+			profileName, err := vault.ResolveProfile(catalog.StrArg(input, "profile", ""))
 			if err != nil {
 				return nil, err
 			}
@@ -328,7 +328,7 @@ func vaultSync(d VaultDeps) catalog.Operation {
 			{Name: "profile", Type: catalog.ArgTypeString, Help: "Vault profile name (defaults to active profile)"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			profileName, err := vault.ResolveProfile(str(input, "profile", ""))
+			profileName, err := vault.ResolveProfile(catalog.StrArg(input, "profile", ""))
 			if err != nil {
 				return nil, err
 			}
@@ -409,15 +409,15 @@ func vaultShare(d VaultDeps) catalog.Operation {
 			{Name: "profile", Type: catalog.ArgTypeString, Help: "Vault profile name (defaults to active profile)"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			vaultPath := str(input, "path", "")
+			vaultPath := catalog.StrArg(input, "path", "")
 			if vaultPath == "" {
 				return nil, fmt.Errorf("vault.share: missing required argument path")
 			}
-			validUntil, err := parseVaultExpiry(str(input, "expiry", "7d"))
+			validUntil, err := parseVaultExpiry(catalog.StrArg(input, "expiry", "7d"))
 			if err != nil {
 				return nil, err
 			}
-			profileName, err := vault.ResolveProfile(str(input, "profile", ""))
+			profileName, err := vault.ResolveProfile(catalog.StrArg(input, "profile", ""))
 			if err != nil {
 				return nil, err
 			}
@@ -462,10 +462,10 @@ func vaultForget(d VaultDeps) catalog.Operation {
 			{Name: "confirm", Type: catalog.ArgTypeBool, Default: "false", Help: "Confirm the destructive operation (CLI maps --force here)"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			if !boolFrom(input, "confirm", false) {
+			if !catalog.BoolArg(input, "confirm", false) {
 				return nil, fmt.Errorf("vault.forget requires confirmation (pass --force/confirm)")
 			}
-			profileName := str(input, "profile", "")
+			profileName := catalog.StrArg(input, "profile", "")
 			if profileName == "" {
 				return nil, fmt.Errorf("vault.forget: --profile <name> is required to forget a vault profile")
 			}
@@ -502,7 +502,7 @@ func vaultProfileUse(d VaultDeps) catalog.Operation {
 			{Name: "name", Type: catalog.ArgTypeString, Required: true, Help: "Profile name to set as default (positional)"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			name := str(input, "name", "")
+			name := catalog.StrArg(input, "name", "")
 			if name == "" {
 				return nil, fmt.Errorf("vault.profile.use: missing required argument name")
 			}
@@ -547,7 +547,7 @@ func vaultCacheRebuild(d VaultDeps) catalog.Operation {
 			{Name: "profile", Type: catalog.ArgTypeString, Help: "Vault profile name (defaults to active profile)"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			profileName, err := vault.ResolveProfile(str(input, "profile", ""))
+			profileName, err := vault.ResolveProfile(catalog.StrArg(input, "profile", ""))
 			if err != nil {
 				return nil, err
 			}
@@ -640,7 +640,7 @@ func vaultCacheClear(d VaultDeps) catalog.Operation {
 			{Name: "profile", Type: catalog.ArgTypeString, Help: "Vault profile name (defaults to active profile)"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			profileName, err := vault.ResolveProfile(str(input, "profile", ""))
+			profileName, err := vault.ResolveProfile(catalog.StrArg(input, "profile", ""))
 			if err != nil {
 				return nil, err
 			}

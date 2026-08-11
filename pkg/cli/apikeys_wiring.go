@@ -114,10 +114,10 @@ func apiKeysActionAdapter(op catalog.Operation) cli.ActionFunc {
 
 		// Map the positional <name>/<id> into the "name"/"id" arg when empty.
 		if c.Args().Len() > 0 {
-			if hasArg(op, "name") && stringVal(input["name"]) == "" {
+			if hasArg(op, "name") && catalog.StrArg(input, "name", "") == "" {
 				input["name"] = c.Args().First()
 			}
-			if hasArg(op, "id") && stringVal(input["id"]) == "" {
+			if hasArg(op, "id") && catalog.StrArg(input, "id", "") == "" {
 				input["id"] = c.Args().First()
 			}
 		}
