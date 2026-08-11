@@ -10,6 +10,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/catalog"
 	"go.lumeweb.com/pinner-cli/internal/catalogops"
 	"go.lumeweb.com/pinner-cli/internal/core/apikeys"
+	"go.lumeweb.com/pinner-cli/internal/core/auth"
 )
 
 // apikeys_wiring.go is the pkg/cli frontend adapter for the api-keys catalog
@@ -27,13 +28,19 @@ func catalogAPIKeysDeps() catalogops.APIKeysDeps {
 			if err != nil {
 				return nil
 			}
-			authService := defaultAuthServiceFactory(cfgMgr, cfgMgr.Config().GetAPIEndpoint())
 			// The per-invocation --auth-token flag (threaded through the input
 			// map by apiKeysActionAdapter) takes precedence over the config
-			// token, mirroring the legacy flag -> config fallback.
+			// token, mirroring the legacy flag -> config fallback. When present,
+			// build the authService pinned to the override so List/Create/Delete
+			// authenticate with it (not just the self-delete gating helpers).
+			endpoint := cfgMgr.Config().GetAPIEndpoint()
+			var authService auth.AuthService
 			token := cfgMgr.Config().AuthToken
 			if t, ok := input[catalogops.AuthTokenInputKey].(string); ok && t != "" {
 				token = t
+				authService = defaultAuthServiceFactoryWithToken(cfgMgr, endpoint, t)
+			} else {
+				authService = defaultAuthServiceFactory(cfgMgr, endpoint)
 			}
 			return apikeys.New(authService, token)
 		},
