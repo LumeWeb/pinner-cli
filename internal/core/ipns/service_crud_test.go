@@ -1,4 +1,4 @@
-package cli
+package ipns
 
 import (
 	"context"
@@ -82,21 +82,21 @@ func (m *mockIPNSSDKService) WaitForIPNSResolution(ctx context.Context, name str
 	return nil, nil
 }
 
-func newAuthedIPNSService(t *testing.T, sdkSvc ipfs.IPNSService) *ipnsService {
+func newAuthedIPNSService(t *testing.T, sdkSvc ipfs.IPNSService) *service {
 	t.Helper()
 	cfgMgr := configmocks.NewMockManager(t)
 	cfgMgr.EXPECT().Config().Return(&config.Config{AuthToken: "test-token"}).Maybe()
-	return &ipnsService{
-		ipfsServiceBase: ipfsbase.New(cfgMgr, ipfsbase.WithAuthToken("test-token")),
+	return &service{
+		Base: ipfsbase.New(cfgMgr, ipfsbase.WithAuthToken("test-token")),
 		service:         sdkSvc,
 	}
 }
 
-func newUnauthIPNSService(t *testing.T) *ipnsService {
+func newUnauthIPNSService(t *testing.T) *service {
 	cfgMgr := configmocks.NewMockManager(t)
 	cfgMgr.EXPECT().Config().Return(&config.Config{AuthToken: ""}).Maybe()
-	return &ipnsService{
-		ipfsServiceBase: ipfsbase.New(cfgMgr),
+	return &service{
+		Base: ipfsbase.New(cfgMgr),
 	}
 }
 
@@ -165,25 +165,25 @@ func TestIPNSService_Resolve_Unauthenticated(t *testing.T) {
 	assert.Contains(t, err.Error(), "not authenticated")
 }
 
-func TestIPNSService_WithIPNSAuthToken(t *testing.T) {
+func TestIPNSService_WithAuthToken(t *testing.T) {
 	cfgMgr := configmocks.NewMockManager(t)
 	cfgMgr.EXPECT().Config().Return(&config.Config{AuthToken: ""}).Maybe()
 
-	svc := &ipnsService{
-		ipfsServiceBase: ipfsbase.New(cfgMgr),
+	svc := &service{
+		Base: ipfsbase.New(cfgMgr),
 	}
-	WithIPNSAuthToken("override-token")(svc)
+	WithAuthToken("override-token")(svc)
 	assert.Equal(t, "override-token", svc.GetAuthToken())
 }
 
 func TestResolveIPNSKeyID_NumericArg(t *testing.T) {
-	id, err := resolveIPNSKeyID(context.Background(), nil, "42")
+	id, err := ResolveKeyID(context.Background(), nil, "42")
 	require.NoError(t, err)
 	assert.Equal(t, 42, id)
 }
 
 func TestResolveIPNSKeyID_NumericString(t *testing.T) {
-	id, err := resolveIPNSKeyID(context.Background(), nil, "0")
+	id, err := ResolveKeyID(context.Background(), nil, "0")
 	require.NoError(t, err)
 	assert.Equal(t, 0, id)
 }
