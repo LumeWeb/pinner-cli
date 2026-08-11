@@ -57,14 +57,22 @@ func operationsList(d OperationsDeps) catalog.Operation {
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
+			page := intFrom(input, "page", 0)
+			if page < 1 {
+				page = 1
+			}
+			pageSize := intFrom(input, "page-size", 0)
+			if pageSize < 1 {
+				pageSize = 10
+			}
 			return svc.List(ctx, operations.ListOptions{
 				StatusFilter:    str(input, "status", ""),
 				OperationFilter: str(input, "operation", ""),
 				ProtocolFilter:  str(input, "protocol", ""),
 				CIDFilter:       str(input, "cid", ""),
 				Sort:            str(input, "sort", ""),
-				Page:            intFrom(input, "page", 0),
-				PageSize:        intFrom(input, "page-size", 0),
+				Page:            page,
+				PageSize:        pageSize,
 			})
 		}),
 	})

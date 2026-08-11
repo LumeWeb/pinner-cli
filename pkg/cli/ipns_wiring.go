@@ -160,13 +160,11 @@ func ipnsActionAdapter(op catalog.Operation) cli.ActionFunc {
 			}
 		}
 
-		// Destructive gate (ipns keys delete). Enforce --force and fail loudly.
-		// The prior silent "Use --force..."/return nil reported exit 0 without
-		// deleting, which a user could mistake for success; return a real error
-		// instead so a missing --force is never a silent no-op.
-		if op.Safety() == catalog.SafetyDestructive && !c.Bool(FlagForce) {
-			return fmt.Errorf("ipns keys delete: pass --force to confirm this destructive operation")
-		}
+		// Note: the catalog marks ipns.keys.delete SafetyDestructive, and the
+		// compiler registers a --force flag for it, but the legacy ipns keys
+		// delete command deleted keys directly without requiring --force. To
+		// stay faithful to that legacy contract (and avoid breaking existing
+		// scripts), the CLI path does NOT gate on --force here.
 
 		result, err := op.Handler().Execute(ctx, input)
 		if err != nil {
@@ -237,6 +235,17 @@ func renderIPNSResult(_ context.Context, c *cli.Command, op catalog.Operation, r
 			{"Path", r.Path},
 			{"Value", r.Value},
 		}})
+		return nil
+
+	case *ipfs.IPNSRepublishResponse:
+		if output.IsJSON() {
+			return output.PrintJSON(r)
+		}
+		keyArg := ""
+		if c.Args().Len() > 0 {
+			keyArg = c.Args().First()
+		}
+		output.Printfln("Republished IPNS key %s: %s (%d record(s))", keyArg, r.Message, r.Count)
 		return nil
 
 	default:
