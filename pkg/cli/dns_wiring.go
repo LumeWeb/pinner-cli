@@ -201,20 +201,14 @@ func dnsCatalogActionAdapter(c *cli.Command, group, leaf string) cli.ActionFunc 
 			}
 		}
 
-		// Restore the legacy per-call deadline: the migrated catalog handlers
-		// call the DNS service with the raw context, but legacy dns actions
-		// wrapped it in context.WithTimeout(GetDefaultTimeout) so a hanging
-		// backend fails after the configured timeout instead of blocking forever.
-		if cfgMgr, err := defaultConfigManagerFactory(); err == nil && cfgMgr != nil {
-			timeout := cfgMgr.Config().GetDefaultTimeout()
-			if timeout > 0 {
-				var cancel context.CancelFunc
-				ctx, cancel = context.WithTimeout(ctx, timeout)
-				defer cancel()
-			}
-		}
+		// Apply the legacy per-call deadline (shared with every catalog domain):
+		// the migrated catalog handlers call the core service with the raw
+		// context, but legacy actions wrapped it in context.WithTimeout so a
+		// hanging backend fails after the configured timeout instead of blocking.
+		dctx, cancel := applyDefaultTimeout(ctx)
+		defer cancel()
 
-		result, err := op.Handler().Execute(ctx, input)
+		result, err := op.Handler().Execute(dctx, input)
 		if err != nil {
 			return err
 		}

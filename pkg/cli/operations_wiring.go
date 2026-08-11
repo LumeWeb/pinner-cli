@@ -124,7 +124,11 @@ func operationsActionAdapter(op catalog.Operation) cli.ActionFunc {
 			return watchCatalogOperationsList(ctx, c, op, input)
 		}
 
-		result, err := op.Handler().Execute(ctx, input)
+		// Apply the legacy per-call deadline (shared with every catalog domain).
+		dctx, cancel := applyDefaultTimeout(ctx)
+		defer cancel()
+
+		result, err := op.Handler().Execute(dctx, input)
 		if err != nil {
 			return err
 		}
@@ -134,12 +138,27 @@ func operationsActionAdapter(op catalog.Operation) cli.ActionFunc {
 
 // watchCatalogOperationsList runs the operations list watcher for the
 // catalog-driven command, reusing the legacy watchOperationsList polling loop
-// with an OperationsService resolved from the catalogops deps closure.
+// with an OperationsService resolved from the catalogops deps closure. It
+// mirrors the non-watch operationsList handler: require authentication up front
+// and clamp page/pageSize to the legacy defaults (1/10) so an unset or zero
+// page-size does not disable pagination and fetch the entire operations table
+// on every poll tick.
 func watchCatalogOperationsList(ctx context.Context, c *cli.Command, op catalog.Operation, input map[string]any) error {
 	output := setupOutput(c)
-	svc := catalogOperationsDeps().Service(input)
+	svc := operationsCatalogDepsVar.Service(input)
 	if svc == nil {
 		return fmt.Errorf("operations service unavailable")
+	}
+	if err := svc.RequireAuthenticated(); err != nil {
+		return err
+	}
+	page := intVal(input["page"])
+	if page < 1 {
+		page = 1
+	}
+	pageSize := intVal(input["page-size"])
+	if pageSize < 1 {
+		pageSize = 10
 	}
 	opts := operations.ListOptions{
 		StatusFilter:    stringVal(input["status"]),
@@ -147,8 +166,8 @@ func watchCatalogOperationsList(ctx context.Context, c *cli.Command, op catalog.
 		ProtocolFilter:  stringVal(input["protocol"]),
 		CIDFilter:       stringVal(input["cid"]),
 		Sort:            stringVal(input["sort"]),
-		Page:            intVal(input["page"]),
-		PageSize:        intVal(input["page-size"]),
+		Page:            page,
+		PageSize:        pageSize,
 	}
 	return watchOperationsList(ctx, svc, output, opts)
 }

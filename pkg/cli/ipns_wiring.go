@@ -166,7 +166,11 @@ func ipnsActionAdapter(op catalog.Operation) cli.ActionFunc {
 		// stay faithful to that legacy contract (and avoid breaking existing
 		// scripts), the CLI path does NOT gate on --force here.
 
-		result, err := op.Handler().Execute(ctx, input)
+		// Apply the legacy per-call deadline (shared with every catalog domain).
+		dctx, cancel := applyDefaultTimeout(ctx)
+		defer cancel()
+
+		result, err := op.Handler().Execute(dctx, input)
 		if err != nil {
 			return err
 		}
