@@ -67,6 +67,11 @@ func TestHandoffRegistryBounded(t *testing.T) {
 		return ToolResult{Text: "done"}, nil
 	}
 
+	// Wire a cleanup that records which handles were retired (mirrors the
+	// server wiring handoffReg.SetCleanup(store.Delete)).
+	retired := map[string]bool{}
+	reg.SetCleanup(func(handle string) { retired[handle] = true })
+
 	reg.Begin("h1", cont) // oldest
 	reg.now = func() time.Time { return time.Date(2026, 8, 11, 0, 0, 1, 0, time.UTC) }
 	reg.Begin("h2", cont)
@@ -79,6 +84,7 @@ func TestHandoffRegistryBounded(t *testing.T) {
 	assert.False(t, ok, "oldest entry must be evicted on overflow")
 	_, ok = reg.Get("h4")
 	assert.True(t, ok, "newest entry survives")
+	assert.True(t, retired["h1"], "evicted flow must retire its backing handle")
 }
 
 // TestResumeTemplateDispatchesContinuation verifies the shared resume template

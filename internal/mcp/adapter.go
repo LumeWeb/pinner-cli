@@ -171,6 +171,9 @@ adapter.`,
 			// hand-off flow (SSO, vault seed create/restore) to the right
 			// poll logic. One registry is shared by every hand-off flow.
 			handoffReg := NewHandoffRegistry()
+			// When the registry capacity-evicts a still-live continuation,
+			// retire its backing handle too so it cannot be resumed.
+			handoffReg.SetCleanup(authHandles.Delete)
 			// SeedDrop hands a vault recovery seed to a human over a one-time
 			// browser URL (loopback in stdio, shared mux over HTTP), without it
 			// transiting the MCP channel.

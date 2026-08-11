@@ -44,6 +44,12 @@ type HandoffRegistry struct {
 	ttp        time.Duration // time-to-live for a registered continuation
 	maxEntries int
 	now        func() time.Time
+	// cleanup, when set, retires the backing async handle when the registry
+	// evicts a still-live continuation (capacity eviction). It keeps the
+	// registry decoupled from AsyncHandleStore: the server injects
+	// store.Delete so an evicted flow cannot leave a live-but-unresumable
+	// handle that would mislead a resumer.
+	cleanup func(handle string)
 }
 
 // registryEntry pairs a resume continuation with the instant it was registered
@@ -63,6 +69,16 @@ func NewHandoffRegistry() *HandoffRegistry {
 		maxEntries: DefaultMaxSessions,
 		now:        time.Now,
 	}
+}
+
+// SetCleanup wires a callback invoked when the registry evicts a still-live
+// continuation to free its backing handle. Concretely the server sets it to the
+// AsyncHandleStore.Delete so an evicted flow cannot be resumed into a
+// misleading "no pending continuation" steer.
+func (r *HandoffRegistry) SetCleanup(fn func(handle string)) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.cleanup = fn
 }
 
 // Begin registers the continuation for a handle. It overwrites any prior
@@ -85,6 +101,11 @@ func (r *HandoffRegistry) Begin(handle string, c ResumeContinuation) {
 		}
 		if oldest != "" {
 			delete(r.cont, oldest)
+			// Retire the still-valid backing handle so it cannot be resumed
+			// into a misleading dead-handle steer once the flow is gone.
+			if r.cleanup != nil {
+				r.cleanup(oldest)
+			}
 		}
 	}
 	r.cont[handle] = registryEntry{createdAt: r.now(), cont: c}
