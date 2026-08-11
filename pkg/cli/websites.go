@@ -55,107 +55,6 @@ For raw DNS zone and record CRUD (A/AAAA/CNAME/TXT/MX/NS, _dnslink, apex vs subd
 	}
 }
 
-func newWebsitesListCommand() *cli.Command {
-	return &cli.Command{
-		Name:  "list",
-		Usage: "List all websites",
-		Description: `List all websites for the authenticated user. Returns each website's ID, domain, target CID, resolved CID, status, DNS-hosting flag and gateway. Use this to obtain the numeric website ID accepted interchangeably with a domain by websites get/update/validate/delete and websites domains list/add.
-
-Examples:
-  pinner websites list
-  pinner websites list --json`,
-		Action: withContext(func(ctx context.Context, cc *commandContext) error {
-			return websitesList(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
-		}),
-	}
-}
-
-func newWebsitesCreateCommand() *cli.Command {
-	return &cli.Command{
-		Name:  "create",
-		Usage: "Create a new website",
-		Description: `Create a website that serves an IPFS CID under a custom domain. Takes the <domain> positional and --cid (required), plus optional --target-type (ipfs|ipns) and --dns-hosting. Returns the created website object including its numeric ID, the validation TXT token, and the DNS/CNAME records you must publish to make it live.
-
-This registers the site itself. To point a website at an IPNS key instead of a fixed CID, use 'websites enable-ipns'; to add an extra domain binding to an existing site use 'websites domains add'. To manage raw DNS records for a zone use 'dns records create' rather than this command.
-
-Examples:
-  pinner websites create example.com --cid bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e
-  pinner websites create example.com --cid bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --target-type ipfs
-  pinner websites create example.com --cid bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --dns-hosting
-  pinner websites create example.com --cid bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --json`,
-		ArgsUsage: "<domain>",
-		Flags: []cli.Flag{
-			RequiredCIDFlag(),
-			TargetTypeFlag(),
-			DNSHostingFlag(),
-			NoDNSHostingFlag(),
-		},
-		Action: withContext(func(ctx context.Context, cc *commandContext) error {
-			return websitesCreate(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
-		}),
-	}
-}
-
-func newWebsitesGetCommand() *cli.Command {
-	return &cli.Command{
-		Name:  "get",
-		Usage: "Get website details",
-		Description: `Get full details of one website, selected by domain name or numeric ID (either works). Returns ID, domain, CID, resolved CID, target type, status, DNS-hosting flag, validation token, gateway and associated IPNS key / DNS zone IDs, plus the required DNS records.
-
-This reports configuration state. For whether DNS is correctly configured use 'websites validate'; for TLS certificate state use 'websites ssl status'. It does NOT create or modify anything.
-
-Examples:
-  pinner websites get example.com
-  pinner websites get example.com --json`,
-		ArgsUsage: "<domain>",
-		Action: withContext(func(ctx context.Context, cc *commandContext) error {
-			return websitesGet(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
-		}),
-	}
-}
-
-func newWebsitesUpdateCommand() *cli.Command {
-	return &cli.Command{
-		Name:  "update",
-		Usage: "Update a website",
-		Description: `Update an existing website: change its CID, target type (ipfs|ipns), rename its domain (--rename-to), or toggle DNS hosting. Selects the site by the <domain> positional, then applies whichever optional flags are set (at least one is required). Returns the updated website object.
-
-Passing --target-type ipns converts the site to IPNS addressing (auto-creates an IPNS key). For that conversion alone, prefer the dedicated single-purpose 'websites enable-ipns'. This does NOT touch DNS zone records; use 'dns records update' for those.
-
-At least one of the optional fields must be provided to update the website.
-
-When --target-type is set to "ipns" without --cid, the website will be converted
-from IPFS to IPNS targeting (an IPNS key is auto-created and the current CID is
-published to it).
-
-When --target-type is "ipns" and --cid is a regular IPFS CID (not a peer ID),
-an IPNS key is auto-created and that CID is published to it.
-
-The positional <domain> selects the website to update. Use --rename-to to give
-it a new domain.
-
-Examples:
-  pinner websites update example.com --cid bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --target-type ipfs
-  pinner websites update example.com --target-type ipns
-  pinner websites update example.com --rename-to newdomain.com
-  pinner websites update example.com --dns-hosting
-  pinner websites update example.com --no-dns-hosting
-  pinner websites update example.com --json`,
-		ArgsUsage: "<domain>",
-		Flags: []cli.Flag{
-			RenameDomainFlag(),
-			CIDFlag(),
-			TargetTypeFlag(),
-			DNSHostingFlag(),
-			NoDNSHostingFlag(),
-		},
-		Action: withContext(func(ctx context.Context, cc *commandContext) error {
-			return websitesUpdate(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
-		}),
-	}
-}
-
-
 func resolveRequiredArg(ctx context.Context, websitesService WebsitesService, cmd websitesCommandGetter) (string, error) {
 	args := cmd.Args()
 	if args.Len() == 0 {
@@ -360,29 +259,6 @@ func websitesUpdate(ctx context.Context, cmd websitesCommandGetter, output Outpu
 	}
 
 	return nil
-}
-
-func newWebsitesEnableIPNSCommand() *cli.Command {
-	return &cli.Command{
-		Name:    "enable-ipns",
-		Aliases: []string{"ipns"},
-		Usage:   "Enable IPNS targeting for a website",
-		Description: `Convert a website from IPFS to IPNS targeting (alias 'ipns'). Auto-creates an IPNS key for the site and publishes the current CID to it, or, with --cid, publishes that CID instead. Returns the updated website including its new IPNS key ID. After this, the domain resolves via the mutable IPNS name.
-
-Equivalent to 'websites update <domain> --target-type ipns'. To publish a new CID to an existing IPNS key (not tied to a website) or refresh a record, use 'ipns publish' / 'ipns republish' under the 'ipns' tree.
-
-Examples:
-  pinner websites enable-ipns example.com
-  pinner websites enable-ipns example.com --cid bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e
-  pinner websites enable-ipns example.com --json`,
-		ArgsUsage: "<domain>",
-		Flags: []cli.Flag{
-			CIDFlag(),
-		},
-		Action: withContext(func(ctx context.Context, cc *commandContext) error {
-			return websitesEnableIPNS(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
-		}),
-	}
 }
 
 func websitesEnableIPNS(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
@@ -679,40 +555,6 @@ func showConfigDNSRecords(output Output, config *ipfs.WebsiteConfigResponse) {
 	}
 }
 
-func newWebsitesDeleteCommand() *cli.Command {
-	return &cli.Command{
-		Name:  "delete",
-		Usage: "Delete a website",
-		Description: `Delete a website, selected by domain name or numeric ID. DESTRUCTIVE and irreversible: there is no undo. Returns a success confirmation. Does NOT delete the website's DNS zone or its IPNS keys; use 'dns zones delete' and 'ipns keys delete' for those.
-
-Examples:
-  pinner websites delete example.com
-  pinner websites delete example.com --json`,
-		ArgsUsage: "<domain>",
-		Action: withContext(func(ctx context.Context, cc *commandContext) error {
-			return websitesDelete(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
-		}),
-	}
-}
-
-func newWebsitesValidateCommand() *cli.Command {
-	return &cli.Command{
-		Name:  "validate",
-		Usage: "Validate a website",
-		Description: `Validate that a website's DNS records are correctly configured (TXT validation token + _dnslink). Selects the site by domain name or numeric ID. Returns a valid/message/reason result and, when invalid, lists the required TXT/CNAME records.
-
-This checks website-specific records. To validate that a DNS zone's nameservers are delegated to Pinner's nameservers, use 'dns zones validate' instead.
-
-Examples:
-  pinner websites validate example.com
-  pinner websites validate example.com --json`,
-		ArgsUsage: "<domain>",
-		Action: withContext(func(ctx context.Context, cc *commandContext) error {
-			return websitesValidate(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
-		}),
-	}
-}
-
 func websitesDelete(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
 	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
 	defer cancel()
@@ -882,23 +724,6 @@ func buildRequiredRecords(website *ipfs.WebsiteItem, nameservers []string) []map
 	}
 
 	return records
-}
-
-func newWebsitesConfigCommand() *cli.Command {
-	return &cli.Command{
-		Name:  "config",
-		Usage: "Show website hosting configuration",
-		Description: `Show the account-wide website hosting configuration: the Pinner gateway domain and the nameservers used for DNS hosting. Returns these values plus the suggested CNAME/NS records to configure.
-
-This is account-level, not per-website. To see one site's records use 'websites get'; to list or edit actual DNS records use 'dns records'.
-
-Examples:
-  pinner websites config
-  pinner websites config --json`,
-		Action: withContext(func(ctx context.Context, cc *commandContext) error {
-			return websitesConfig(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
-		}),
-	}
 }
 
 func websitesConfig(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {

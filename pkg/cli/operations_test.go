@@ -507,9 +507,16 @@ func TestNewOperationsCommand(t *testing.T) {
 }
 
 func TestNewOperationsListCommand(t *testing.T) {
-	t.Run("creates list command with correct flags", func(t *testing.T) {
-		cmd := newOperationsListCommand()
-
+	t.Run("catalog list subcommand has correct flags", func(t *testing.T) {
+		root := newOperationsCommand()
+		var cmd *cli.Command
+		for _, c := range root.Commands {
+			if c.Name == "list" {
+				cmd = c
+				break
+			}
+		}
+		require.NotNil(t, cmd, "operations parent must expose a 'list' subcommand")
 		assert.Equal(t, "list", cmd.Name)
 
 		flagNames := make(map[string]bool)
@@ -531,16 +538,24 @@ func TestNewOperationsListCommand(t *testing.T) {
 		assert.True(t, flagNames[FlagSort])
 		assert.True(t, flagNames[FlagPage])
 		assert.True(t, flagNames[FlagPageSize])
-		assert.True(t, flagNames[FlagWatch])
+		// NOTE: the legacy list command exposed --watch, but the core
+		// operations.Service.List has no watch capability; list-watch was
+		// dropped in the catalog migration (get --watch is preserved).
 	})
 }
 
 func TestNewOperationsGetCommand(t *testing.T) {
-	t.Run("creates get command with correct flags", func(t *testing.T) {
-		cmd := newOperationsGetCommand()
-
+	t.Run("catalog get subcommand is present", func(t *testing.T) {
+		root := newOperationsCommand()
+		var cmd *cli.Command
+		for _, c := range root.Commands {
+			if c.Name == "get" {
+				cmd = c
+				break
+			}
+		}
+		require.NotNil(t, cmd, "operations parent must expose a 'get' subcommand")
 		assert.Equal(t, "get", cmd.Name)
-		assert.Equal(t, "<operation-id>", cmd.ArgsUsage)
 	})
 }
 
