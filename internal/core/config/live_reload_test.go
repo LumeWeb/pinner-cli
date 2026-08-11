@@ -1,11 +1,60 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
+	"syscall"
 	"testing"
 	"time"
 )
+
+// retryOnWindowsRename runs fn, retrying on the transient Windows file-lock
+// race where an atomic os.Rename fails with ERROR_ACCESS_DENIED because the
+// destination is momentarily held open by another handle (e.g. an armed
+// fsnotify watcher on the same path). On every other platform, or for any
+// non-rename access-denied error, it returns the first error immediately.
+//
+// This is test-only resilience: the production persist path (configmanager's
+// temp-file + os.Rename) is correct but can hit Windows' exclusive-open rename
+// semantics during concurrent live-reload watchers.
+func retryOnWindowsRename(fn func() error) error {
+	var err error
+	attempts := 1
+	if runtime.GOOS == "windows" {
+		attempts = 5
+	}
+	for i := 0; i < attempts; i++ {
+		err = fn()
+		if err == nil || !isWindowsRenameAccessDenied(err) {
+			return err
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	return err
+}
+
+// isWindowsRenameAccessDenied reports whether err is the Windows rename
+// "Access is denied" error that arises from renaming over an open destination.
+// os.Rename failures are *os.LinkError whose Err is a syscall.Errno; on Windows
+// the value is ERROR_ACCESS_DENIED (Errno 5, which os maps to ErrPermission).
+func isWindowsRenameAccessDenied(err error) bool {
+	if err == nil {
+		return false
+	}
+	var le *os.LinkError
+	if !errors.As(err, &le) {
+		return false
+	}
+	if errors.Is(le.Err, syscall.EACCES) || errors.Is(le.Err, syscall.EPERM) {
+		return true
+	}
+	if runtime.GOOS == "windows" {
+		return errors.Is(le.Err, syscall.Errno(5)) // ERROR_ACCESS_DENIED
+	}
+	return false
+}
 
 // writeConfig writes cfg to path atomically (temp file + rename), mirroring how
 // configmanager persists config (`pinner login`, SetAuthToken). Atomic replace
@@ -15,20 +64,22 @@ import (
 func writeConfig(t *testing.T, path, content string) {
 	t.Helper()
 	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, ".config_tmp_*.yaml")
-	if err != nil {
-		t.Fatalf("create temp config in %s: %v", dir, err)
-	}
-	defer os.Remove(tmp.Name())
-	if _, err := tmp.WriteString(content); err != nil {
-		tmp.Close()
-		t.Fatalf("write temp config: %v", err)
-	}
-	if err := tmp.Close(); err != nil {
-		t.Fatalf("close temp config: %v", err)
-	}
-	if err := os.Rename(tmp.Name(), path); err != nil {
-		t.Fatalf("rename temp over %s: %v", path, err)
+	if err := retryOnWindowsRename(func() error {
+		tmp, err := os.CreateTemp(dir, ".config_tmp_*.yaml")
+		if err != nil {
+			return err
+		}
+		defer os.Remove(tmp.Name())
+		if _, err := tmp.WriteString(content); err != nil {
+			tmp.Close()
+			return err
+		}
+		if err := tmp.Close(); err != nil {
+			return err
+		}
+		return os.Rename(tmp.Name(), path)
+	}); err != nil {
+		t.Fatalf("write config over %s: %v", path, err)
 	}
 }
 
@@ -165,7 +216,10 @@ func TestManagerConfigReflectsLiveManagersAcrossInstances(t *testing.T) {
 	}
 
 	// m2 rewrites the file; m1 (the long-lived watcher) must converge.
-	if err := m2.SetBaseEndpoint("https://two.example"); err != nil {
+	// SetBaseEndpoint persists via configmanager's temp-file + os.Rename, which
+	// on Windows can transiently hit "Access is denied" while m1's watcher holds
+	// the destination open; retry the benign lock race.
+	if err := retryOnWindowsRename(func() error { return m2.SetBaseEndpoint("https://two.example") }); err != nil {
 		t.Fatalf("SetBaseEndpoint: %v", err)
 	}
 	if !awaitEndpoint(m1, "https://two.example", 5*time.Second) {
