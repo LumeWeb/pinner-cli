@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/manifoldco/promptui"
 	"github.com/urfave/cli/v3"
-	"go.lumeweb.com/pinner-cli/pkg/cli/vault"
+	"go.lumeweb.com/pinner-cli/internal/core/vault"
 )
 
 // staleSeedWarningAfter is how old a pending recovery seed must be before

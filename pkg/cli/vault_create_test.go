@@ -6,7 +6,7 @@ import (
 	"os"
 	"testing"
 
-	"go.lumeweb.com/pinner-cli/pkg/cli/vault"
+	"go.lumeweb.com/pinner-cli/internal/core/vault"
 )
 
 // TestVaultCreateAgentModeNoProfileDoesNotPrompt verifies that 'vault create'
