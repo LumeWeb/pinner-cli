@@ -547,7 +547,7 @@ func TestOfficialInvokeVaultRestoreSeedStdinGatedThroughBuildCatalog(t *testing.
 	// produce the real catalog through buildCatalog (the path the server uses).
 	oobRestore := NewOOBRestore(nil, time.Minute)
 	t.Cleanup(func() { oobRestore.Stop(context.Background()) })
-	catalog, err := buildCatalog(root, true, nil, nil, oobRestore)
+	catalog, err := buildCatalog(root, true, nil, nil, oobRestore, nil, nil)
 	require.NoError(t, err)
 
 	restore, ok := catalog.Get("pinner_vault_restore")

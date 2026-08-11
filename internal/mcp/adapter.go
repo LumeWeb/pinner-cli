@@ -214,7 +214,7 @@ adapter.`,
 			// stdin-input command must be redirected rather than consume
 			// protocol bytes); it mirrors the transport decision below.
 			stdioMode := mcpString(cmd, "tunnel", "MCP_TUNNEL_PROVIDER") != "openai" && !cmd.Bool("http")
-			srv, catalog, err := OfficialMCPServer(root, hasRootAction, nil, stdioMode, seedDrop, oobRestore)
+			srv, catalog, err := OfficialMCPServer(root, hasRootAction, nil, stdioMode, seedDrop, oobRestore, handoffReg, authHandles)
 			if err != nil {
 				return err
 			}
@@ -237,6 +237,8 @@ adapter.`,
 				oob:             oob,
 				authHandles:     authHandles,
 				handoffReg:      handoffReg,
+				seedDrop:        seedDrop,
+				oobRestore:      oobRestore,
 				resourceFactory: resourceFactory,
 				opts:            mcpOpts,
 				hasWizard:       hasWizard,
@@ -650,7 +652,7 @@ type WizardDepsFactory func() (WebsitesWizardDeps, SetupWizardDeps, DomainWizard
 // seed/restore URLs for vault-create/vault-restore agent output so the human
 // can retrieve or supply a recovery seed in a browser without it transiting
 // the MCP channel.
-func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string, seedDrop *SeedDrop, oobRestore *OOBRestore) (*ToolCatalog, error) {
+func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string, seedDrop *SeedDrop, oobRestore *OOBRestore, handoffReg *HandoffRegistry, authHandles *AsyncHandleStore) (*ToolCatalog, error) {
 	catalog := NewToolCatalog()
 
 	// runMu serializes root.Run calls. A shallow copy of root gives each
@@ -808,6 +810,25 @@ func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string, seedDr
 				}
 				extra["restore_url"] = restoreURL
 				extra["next_step"] = "Ask the user to open restore_url in a browser and enter the recovery seed to complete the restore. The seed never crosses the MCP channel."
+			}
+			// Add the resume handle + resume tool to the structured hand-off so
+			// the agent knows it can poll the matching *_resume tool instead of
+			// repeating the start. Only the one-time token is tracked — the
+			// mnemonic never enters the handle or the structured content.
+			var seedURL string
+			if extra != nil {
+				if u, ok := extra["seed_url"].(string); ok {
+					seedURL = u
+				}
+			}
+			handle, resumeTool := mintVaultHandoff(entry, seedURL, restoreURL, seedDrop, oobRestore, handoffReg, authHandles)
+			if handle != "" && resumeTool != "" {
+				if extra == nil {
+					extra = map[string]any{}
+				}
+				extra["handle"] = handle
+				extra["resume_tool"] = resumeTool
+				extra["next_step"] = "Ask the user to complete the action in the browser, then poll " + resumeTool + " with the handle to wait for completion. The seed never crosses the MCP channel."
 			}
 		}
 		return ToolResult{Text: text, StructuredContent: extra}, nil
