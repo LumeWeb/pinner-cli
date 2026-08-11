@@ -113,10 +113,14 @@ func setupDNSHandlerTest(t *testing.T) (*mockDNSServiceForCLI, *configmocks.Mock
 		AuthToken:    "test-token",
 	}).Maybe()
 
-	origFactory := dnsServiceFactory
-	t.Cleanup(func() { dnsServiceFactory = origFactory })
-	dnsServiceFactory = func(config.Manager, Output, bool, ...DNSServiceOption) DNSService {
-		return mockSvc
+	origFactory := newDNSAPI
+	t.Cleanup(func() { newDNSAPI = origFactory })
+	newDNSAPI = func(cfgMgr config.Manager, authToken string, secure bool) (DNSService, error) {
+		// Mirror production NewAuthenticated, which enforces the auth boundary
+		// through the service-level RequireAuthenticated check. Tests set
+		// requireAuthenticatedErr to drive the unauthenticated path, so dropping
+		// that boundary from core breaks these handler tests.
+		return mockSvc, mockSvc.RequireAuthenticated()
 	}
 
 	return mockSvc, cfgMgr
