@@ -131,6 +131,15 @@ func WithAuthAccountClient(client portalsdk.AccountAPI) AuthServiceOption {
 	}
 }
 
+// WithAuthToken pins the auth service to an explicit auth token, taking
+// precedence over the config-derived token in GetAuthenticatedClient. This
+// lets the per-invocation --auth-token flag override the stored config token.
+func WithAuthToken(token string) AuthServiceOption {
+	return func(s *AuthServiceDefault) {
+		s.authToken = token
+	}
+}
+
 // WithClientFactory sets a custom client factory for creating authenticated clients.
 func WithClientFactory(factory ClientFactory) AuthServiceOption {
 	return func(s *AuthServiceDefault) {
@@ -155,6 +164,9 @@ type AuthServiceDefault struct {
 	log           *zap.Logger
 	apiEndpoint   string
 	clientFactory ClientFactory
+	// authToken, when set via WithAuthToken, overrides the config token used
+	// to build an authenticated account client.
+	authToken string
 }
 
 // NewAuthService creates a new AuthService with the given dependencies.
@@ -473,7 +485,12 @@ func (s *AuthServiceDefault) Status(ctx context.Context) (*StatusResult, error) 
 // If the stored token is a login JWT, it uses it directly.
 func (s *AuthServiceDefault) GetAuthenticatedClient(ctx context.Context) (portalsdk.AccountAPI, error) {
 	cfg := s.configMgr.Config()
+	// The per-invocation --auth-token override (WithAuthToken) takes precedence
+	// over the config-stored token.
 	token := cfg.AuthToken
+	if s.authToken != "" {
+		token = s.authToken
+	}
 
 	if token == "" {
 		return nil, coreerrors.ErrNotAuthenticated

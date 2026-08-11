@@ -425,6 +425,15 @@ func ForceFlag() *cli.BoolFlag {
 	}
 }
 
+// YesFlag returns a flag for auto-accepting confirmation prompts
+// (e.g. the unpin-all count-typing prompt) non-interactively.
+func YesFlag() *cli.BoolFlag {
+	return &cli.BoolFlag{
+		Name:  FlagYes,
+		Usage: "Auto-accept confirmation prompts without interaction",
+	}
+}
+
 // VaultExpiryFlag returns a flag for setting vault share link expiry.
 func VaultExpiryFlag() *cli.StringFlag {
 	return &cli.StringFlag{

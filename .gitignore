@@ -42,3 +42,6 @@ pkg/account/client/
 pinner
 completions/
 .sisyphus/
+
+# Git worktrees
+.worktrees/

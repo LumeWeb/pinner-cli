@@ -157,7 +157,7 @@ func mountCatalogCommand(cmd *cli.Command) *cli.Command {
 	case "add":
 		cmd.Flags = append(cmd.Flags, FileFlag(), NoWaitFlag())
 	case "rm":
-		cmd.Flags = append(cmd.Flags, FileFlag())
+		cmd.Flags = append(cmd.Flags, FileFlag(), YesFlag())
 	}
 
 	// Find the canonical operation for this command so the adapter and
@@ -256,13 +256,12 @@ func catalogActionAdapter(op catalog.Operation, group string) cli.ActionFunc {
 			}
 		}
 
-		// Require the operator to type the pinned count (or pass --yes) before an
-		// unpin-all, mirroring the legacy unpinAll safety prompt (pins_rm.go ->
-		// unpin_all.go:128-140). This is intentionally CLI-only: catalogops stays
-		// IO-agnostic, and the MCP/programmatic path is necessarily non-interactive.
-		// Note this hardening requires --yes (not --force alone) to auto-accept, per
-		// review: a bare --force must not silently unpin every pin.
-		if op.Name() == "pins.rm" && c.Bool(FlagAll) && !c.Bool(FlagDryRun) && !c.Bool(FlagYes) {
+		// Require the operator to type the pinned count (or pass --yes/--force)
+		// before an unpin-all, mirroring the legacy unpinAll safety prompt
+		// (pins_rm.go -> unpin_all.go:128-140, yes = force || yes). This is
+		// intentionally CLI-only: catalogops stays IO-agnostic, and the
+		// MCP/programmatic path is necessarily non-interactive (passes --force).
+		if op.Name() == "pins.rm" && c.Bool(FlagAll) && !c.Bool(FlagDryRun) && !c.Bool(FlagYes) && !c.Bool(FlagForce) {
 			svc, svcErr := catalogPinningDeps().Service(input)
 			if svcErr != nil {
 				return svcErr

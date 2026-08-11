@@ -499,8 +499,10 @@ func TestNewOperationsCommand(t *testing.T) {
 
 		assert.Equal(t, "operations", cmd.Name)
 		require.Len(t, cmd.Commands, 2)
-		assert.Equal(t, "list", cmd.Commands[0].Name)
-		assert.Equal(t, "get", cmd.Commands[1].Name)
+		// Deterministic order: the catalog's Search sorts ops by name, so the
+		// compiled subcommands are alphabetical (get < list).
+		assert.Equal(t, "get", cmd.Commands[0].Name)
+		assert.Equal(t, "list", cmd.Commands[1].Name)
 	})
 }
 
