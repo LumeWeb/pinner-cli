@@ -66,6 +66,9 @@ func (d WebsitesDeps) config() config.Manager {
 // GetAuthToken(c, cfgMgr) flag -> config precedence.
 func (d WebsitesDeps) service(input map[string]any) (websites.Service, error) {
 	cfgMgr := d.config()
+	if cfgMgr == nil {
+		return nil, fmt.Errorf("catalogops: no config manager available")
+	}
 	secure := false
 	if d.Secure != nil {
 		secure = d.Secure()

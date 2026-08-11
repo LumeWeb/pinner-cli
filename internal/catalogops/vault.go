@@ -279,6 +279,12 @@ func vaultRm(d VaultDeps) catalog.Operation {
 			if vaultPath == "" {
 				return nil, fmt.Errorf("vault.rm: missing required argument path")
 			}
+			// The CLI wiring maps --force to confirm; enforcing here guards
+			// programmatic/MCP callers who bypass the CLI gate from deleting a
+			// file with no confirmation state effective.
+			if !boolFrom(input, "confirm", false) {
+				return nil, fmt.Errorf("vault.rm requires confirmation (pass --force/confirm)")
+			}
 			profileName, err := vault.ResolveProfile(str(input, "profile", ""))
 			if err != nil {
 				return nil, err

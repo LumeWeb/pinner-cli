@@ -155,8 +155,6 @@ func mountVaultCatalogCommand(cmd *cli.Command) *cli.Command {
 // renders the handler's result through renderVaultResult.
 func vaultActionAdapter(op catalog.Operation) cli.ActionFunc {
 	return func(ctx context.Context, c *cli.Command) error {
-		output := setupOutput(c)
-
 		// Build the input map from the compiler-declared flags.
 		input := map[string]any{}
 		for _, a := range op.Args() {
@@ -192,8 +190,7 @@ func vaultActionAdapter(op catalog.Operation) cli.ActionFunc {
 			confirm := c.Bool(FlagForce)
 			input["confirm"] = confirm
 			if !confirm {
-				output.Printfln("Use --force to confirm this destructive operation.")
-				return nil
+				return fmt.Errorf("vault rm: pass --force to confirm this destructive operation")
 			}
 		}
 

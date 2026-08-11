@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"go.lumeweb.com/pinner-cli/internal/core/config"
+	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
 	"go.lumeweb.com/pinner-cli/internal/core/dns"
 	"go.lumeweb.com/pinner-cli/internal/core/websites"
 )
@@ -15,6 +16,7 @@ import (
 func TestWebsitesServiceAuthTokenPrecedence(t *testing.T) {
 	var gotToken string
 	d := WebsitesDeps{
+		CfgMgr: func() config.Manager { return configmocks.NewMockManager(t) },
 		NewAuthenticated: func(_ config.Manager, _ bool, token string) (websites.Service, error) {
 			gotToken = token
 			return nil, nil
@@ -39,6 +41,7 @@ func TestWebsitesServiceAuthTokenPrecedence(t *testing.T) {
 func TestDNSServiceAuthTokenPrecedence(t *testing.T) {
 	var gotToken string
 	d := DNSDeps{
+		CfgMgr: func() config.Manager { return configmocks.NewMockManager(t) },
 		NewAuthenticated: func(_ config.Manager, _ bool, token string) dns.Service {
 			gotToken = token
 			return nil
@@ -56,5 +59,34 @@ func TestDNSServiceAuthTokenPrecedence(t *testing.T) {
 	d.service(map[string]any{})
 	if gotToken != "config-token" {
 		t.Fatalf("config fallback: got %q, want config-token", gotToken)
+	}
+}
+
+// TestWebsitesServiceNilConfigError verifies a nil config manager yields a clean
+// error instead of a nil-pointer panic inside ServiceFactory/NewAuthenticated.
+func TestWebsitesServiceNilConfigError(t *testing.T) {
+	d := WebsitesDeps{
+		// CfgMgr unset -> config() returns nil -> service() must error.
+		NewAuthenticated: func(_ config.Manager, _ bool, _ string) (websites.Service, error) {
+			t.Fatal("NewAuthenticated must not be reached with a nil config manager")
+			return nil, nil
+		},
+	}
+	if _, err := d.service(map[string]any{}); err == nil {
+		t.Fatal("service: expected error for nil config manager, got nil")
+	}
+}
+
+// TestDNSServiceNilConfigError mirrors the websites guard for the DNS domain.
+func TestDNSServiceNilConfigError(t *testing.T) {
+	d := DNSDeps{
+		// CfgMgr unset -> config() returns nil -> service() must error.
+		NewAuthenticated: func(_ config.Manager, _ bool, _ string) dns.Service {
+			t.Fatal("NewAuthenticated must not be reached with a nil config manager")
+			return nil
+		},
+	}
+	if _, err := d.service(map[string]any{}); err == nil {
+		t.Fatal("service: expected error for nil config manager, got nil")
 	}
 }

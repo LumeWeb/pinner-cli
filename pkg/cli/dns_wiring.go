@@ -156,8 +156,6 @@ func dnsCatalogActionAdapter(c *cli.Command, group, leaf string) cli.ActionFunc 
 	canonicalName := "dns." + group + "." + leaf
 
 	return func(ctx context.Context, cmd *cli.Command) error {
-		output := setupOutput(cmd)
-
 		// Build the input map from the compiler-declared flags plus the
 		// resolved positional <domain> → "zone" input.
 		var op catalog.Operation
@@ -195,13 +193,11 @@ func dnsCatalogActionAdapter(c *cli.Command, group, leaf string) cli.ActionFunc 
 		if op.Safety() == catalog.SafetyDestructive {
 			confirm := cmd.Bool(FlagForce) || cmd.Bool(FlagConfirm)
 			input["confirm"] = confirm
-			// Only short-circuit with the --force hint when there is an actual
-			// target to delete; with no zone supplied, fall through so the
-			// handler's required-argument validation produces a non-zero exit
-			// instead of silently succeeding (exit 0).
+			// With a target zone and no --force, refuse loudly (non-zero exit)
+			// rather than silently succeeding; with no zone, fall through so the
+			// handler's required-argument validation produces a non-zero exit.
 			if !confirm && stringVal(input["zone"]) != "" {
-				output.Printfln("Use --force to %s. This is a destructive operation.", describeDNSAction(group, leaf, input))
-				return nil
+				return fmt.Errorf("dns %s: pass --force to confirm this destructive operation", leaf)
 			}
 		}
 

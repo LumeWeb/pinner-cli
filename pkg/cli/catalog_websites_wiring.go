@@ -193,12 +193,13 @@ func websitesActionAdapter(op catalog.Operation) cli.ActionFunc {
 			}
 		}
 
-		// Destructive gate (websites delete). Enforce --force.
+		// Destructive gate (websites delete). Enforce --force when a target is
+		// present; with no target, fall through so the handler's required-arg
+		// validation produces a non-zero exit instead of silently succeeding.
 		if op.Safety() == catalog.SafetyDestructive {
 			confirm := c.Bool(FlagForce) || c.Bool(FlagConfirm)
-			if !confirm {
-				output.Printfln("Use --force to confirm this destructive operation.")
-				return nil
+			if !confirm && stringVal(input["website"]) != "" {
+				return fmt.Errorf("websites delete: pass --force to confirm this destructive operation")
 			}
 		}
 

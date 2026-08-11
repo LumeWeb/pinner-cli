@@ -68,23 +68,26 @@ func (d DNSDeps) config() config.Manager {
 // per-invocation --auth-token flag (threaded through input) takes precedence
 // over the deps.GetAuthToken() config fallback, mirroring the legacy
 // GetAuthToken(c, cfgMgr) flag -> config precedence.
-func (d DNSDeps) service(input map[string]any) dns.Service {
+func (d DNSDeps) service(input map[string]any) (dns.Service, error) {
 	cfgMgr := d.config()
+	if cfgMgr == nil {
+		return nil, fmt.Errorf("catalogops: no config manager available")
+	}
 	secure := false
 	if d.Secure != nil {
 		secure = d.Secure()
 	}
 	if d.NewAuthenticated != nil {
 		if t := authTokenFromInput(input); t != "" {
-			return d.NewAuthenticated(cfgMgr, secure, t)
+			return d.NewAuthenticated(cfgMgr, secure, t), nil
 		}
 		if tok := d.GetAuthToken; tok != nil {
 			if t := tok(); t != "" {
-				return d.NewAuthenticated(cfgMgr, secure, t)
+				return d.NewAuthenticated(cfgMgr, secure, t), nil
 			}
 		}
 	}
-	return d.ServiceFactory(cfgMgr, secure)
+	return d.ServiceFactory(cfgMgr, secure), nil
 }
 
 // DNSZoneDeleteResult is the data returned by the zones delete handler.
@@ -132,7 +135,10 @@ func dnsZonesList(d DNSDeps) catalog.Operation {
 		Visibility:  catalog.VisibilityBoth,
 		Positional:  "",
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc := d.service(input)
+			svc, svcErr := d.service(input)
+			if svcErr != nil {
+				return nil, svcErr
+			}
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
@@ -167,7 +173,10 @@ func dnsZonesCreate(d DNSDeps) catalog.Operation {
 			{Name: "nameservers", Type: catalog.ArgTypeString, Help: "Comma-separated list of custom nameservers"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc := d.service(input)
+			svc, svcErr := d.service(input)
+			if svcErr != nil {
+				return nil, svcErr
+			}
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
@@ -206,7 +215,10 @@ func dnsZonesGet(d DNSDeps) catalog.Operation {
 			{Name: "zone", Type: catalog.ArgTypeString, Required: true, Help: "Domain name or numeric zone ID (positional)"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc := d.service(input)
+			svc, svcErr := d.service(input)
+			if svcErr != nil {
+				return nil, svcErr
+			}
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
@@ -246,7 +258,10 @@ func dnsZonesDelete(d DNSDeps) catalog.Operation {
 			{Name: "zone", Type: catalog.ArgTypeString, Required: true, Help: "Domain name or numeric zone ID (positional)"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc := d.service(input)
+			svc, svcErr := d.service(input)
+			if svcErr != nil {
+				return nil, svcErr
+			}
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
@@ -284,7 +299,10 @@ func dnsZonesValidate(d DNSDeps) catalog.Operation {
 			{Name: "zone", Type: catalog.ArgTypeString, Required: true, Help: "Domain name or numeric zone ID (positional)"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc := d.service(input)
+			svc, svcErr := d.service(input)
+			if svcErr != nil {
+				return nil, svcErr
+			}
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
@@ -325,7 +343,10 @@ func dnsRecordsList(d DNSDeps) catalog.Operation {
 			{Name: "zone", Type: catalog.ArgTypeString, Required: true, Help: "Domain name or numeric zone ID (positional)"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc := d.service(input)
+			svc, svcErr := d.service(input)
+			if svcErr != nil {
+				return nil, svcErr
+			}
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
@@ -372,7 +393,10 @@ func dnsRecordsCreate(d DNSDeps) catalog.Operation {
 			{Name: "disabled", Type: catalog.ArgTypeBool, Default: "false", Help: "Disable the record"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc := d.service(input)
+			svc, svcErr := d.service(input)
+			if svcErr != nil {
+				return nil, svcErr
+			}
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
@@ -438,7 +462,10 @@ func dnsRecordsGet(d DNSDeps) catalog.Operation {
 			{Name: "type", Type: catalog.ArgTypeString, Required: true, Help: "Record type"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc := d.service(input)
+			svc, svcErr := d.service(input)
+			if svcErr != nil {
+				return nil, svcErr
+			}
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
@@ -488,7 +515,10 @@ func dnsRecordsUpdate(d DNSDeps) catalog.Operation {
 			{Name: "disabled", Type: catalog.ArgTypeBool, Default: "false", Help: "New disabled state"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc := d.service(input)
+			svc, svcErr := d.service(input)
+			if svcErr != nil {
+				return nil, svcErr
+			}
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
@@ -555,7 +585,10 @@ func dnsRecordsDelete(d DNSDeps) catalog.Operation {
 			{Name: "type", Type: catalog.ArgTypeString, Required: true, Help: "Record type"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc := d.service(input)
+			svc, svcErr := d.service(input)
+			if svcErr != nil {
+				return nil, svcErr
+			}
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
