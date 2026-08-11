@@ -110,21 +110,26 @@ func TestBeginCleanupDoesNotHoldLock(t *testing.T) {
 
 	reg.Begin("h1", cont) // fills the single slot
 
-	done := make(chan bool)
+	done := make(chan bool, 1)
+	beginDone := make(chan struct{})
 	go func() {
 		_, _ = reg.Get("other-handle") // unrelated handle
 		done <- true
 	}()
-
-	// Trigger the eviction of h1 by beginning a new flow. cleanup runs and
-	// blocks on `release` — if Begin held the lock, the Get above could not
-	// complete until cleanup unblocks.
-	reg.Begin("h2", cont)
+	// Trigger the eviction of h1 by beginning a new flow in a separate
+	// goroutine (cleanup blocks on `release`). If Begin held the registry lock
+	// while running cleanup, the Get above could not complete until the lock
+	// is released.
+	go func() {
+		reg.Begin("h2", cont)
+		close(beginDone)
+	}()
 
 	select {
 	case <-entered:
 		// cleanup is in progress; the lock should already be free.
 	case <-time.After(time.Second):
+		close(release)
 		t.Fatal("cleanup callback never ran")
 	}
 
@@ -137,6 +142,13 @@ func TestBeginCleanupDoesNotHoldLock(t *testing.T) {
 		t.Fatal("concurrent Get blocked while cleanup ran -> registry lock held")
 	}
 	close(release) // let the blocked cleanup callback finish
+
+	select {
+	case <-beginDone:
+		// Begin completed after cleanup unblocked.
+	case <-time.After(time.Second):
+		t.Fatal("Begin did not return after cleanup released")
+	}
 
 	_, ok := reg.Get("h2")
 	assert.True(t, ok, "newest flow survives eviction")
