@@ -21,9 +21,12 @@ type customToolDeps struct {
 	// store backs wizard sessions and resource providers.
 	store *SessionStore
 	// oob, when non-nil, backs the out-of-band sign-in (SSO) and restore
-	// tools; authHandles stores their pending handles.
+	// tools; authHandles stores their pending handles, and handoffReg maps a
+	// handle to its domain-specific resume continuation so the shared resume
+	// template can poll it.
 	oob         *OutOfBandLogin
 	authHandles *AsyncHandleStore
+	handoffReg  *HandoffRegistry
 	// resourceFactory, when non-nil, builds the pinner:// resource providers.
 	resourceFactory ResourceProvidersFactory
 	// opts carries the optional custom tools wired by MCPServerOption (upload,
@@ -78,9 +81,9 @@ func registerCustomTools(deps customToolDeps) error {
 	// search/describe/invoke. When the wizard transport is absent oob is nil
 	// and both tools return a structured not-configured hand-off instead of
 	// hanging.
-	authSSO := NewAuthSSODescriptor(deps.oob, deps.authHandles)
+	authSSO := NewAuthSSODescriptor(deps.oob, deps.authHandles, deps.handoffReg)
 	authSSO.DirectVisible = true
-	authResume := NewAuthResumeDescriptor(deps.oob, deps.authHandles)
+	authResume := NewAuthResumeDescriptor(deps.handoffReg, deps.authHandles)
 	authResume.DirectVisible = true
 	deps.catalog.Add(toolEntryFromDescriptor(authSSO))
 	deps.catalog.Add(toolEntryFromDescriptor(authResume))

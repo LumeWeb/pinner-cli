@@ -166,6 +166,14 @@ adapter.`,
 			// Async handle store backs the agent-facing SSO/auth tools and any
 			// long-running operations that mint resume handles.
 			authHandles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+			// HandoffRegistry maps a resume handle to its domain-specific
+			// continuation so the shared *_resume tool template dispatches any
+			// hand-off flow (SSO, vault seed create/restore) to the right
+			// poll logic. One registry is shared by every hand-off flow.
+			handoffReg := NewHandoffRegistry()
+			// When the registry capacity-evicts a still-live continuation,
+			// retire its backing handle too so it cannot be resumed.
+			handoffReg.SetCleanup(authHandles.Delete)
 			// SeedDrop hands a vault recovery seed to a human over a one-time
 			// browser URL (loopback in stdio, shared mux over HTTP), without it
 			// transiting the MCP channel.
@@ -228,6 +236,7 @@ adapter.`,
 				store:           store,
 				oob:             oob,
 				authHandles:     authHandles,
+				handoffReg:      handoffReg,
 				resourceFactory: resourceFactory,
 				opts:            mcpOpts,
 				hasWizard:       hasWizard,

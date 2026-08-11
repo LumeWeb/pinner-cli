@@ -536,7 +536,7 @@ func TestSSOToolsDiscoverableInCatalog(t *testing.T) {
 	catalog := NewToolCatalog()
 	// The descriptors carry the metadata; the handlers no-op on nil oob/handles
 	// for discovery purposes.
-	catalog.Add(toolEntryFromDescriptor(NewAuthSSODescriptor(nil, nil)))
+	catalog.Add(toolEntryFromDescriptor(NewAuthSSODescriptor(nil, nil, nil)))
 	catalog.Add(toolEntryFromDescriptor(NewAuthResumeDescriptor(nil, nil)))
 
 	for _, q := range []string{"sso", "oob", "resume", "sign-in", "out-of-band", "auth"} {

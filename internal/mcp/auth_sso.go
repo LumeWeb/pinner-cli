@@ -2,7 +2,6 @@ package mcp
 
 import (
 	"context"
-	"errors"
 	"fmt"
 )
 
@@ -22,16 +21,13 @@ type authSSOArgs struct {
 	Email string `json:"email,omitempty"`
 }
 
-type authResumeArgs struct {
-	// Handle is the handle returned by pinner_auth_sso.
-	Handle string `json:"handle,omitempty"`
-}
-
 // NewAuthSSODescriptor returns the pinner_auth_sso tool: start an out-of-band
 // browser login, non-blocking, returning a needs_human hand-off with the
-// approval URL and a resume handle. If oob or handles is nil, it returns a
-// structured "not configured" hand-off instead of hanging.
-func NewAuthSSODescriptor(oob *OutOfBandLogin, handles *AsyncHandleStore) ToolDescriptor {
+// approval URL and a resume handle. If oob, handles, or reg is nil, it returns
+// a structured "not configured" hand-off instead of hanging. It registers a
+// resume continuation so the shared pinner_auth_resume template can poll the
+// login to completion.
+func NewAuthSSODescriptor(oob *OutOfBandLogin, handles *AsyncHandleStore, reg *HandoffRegistry) ToolDescriptor {
 	return ToolDescriptor{
 		Name:        "pinner_auth_sso",
 		Title:       "Sign In (Out-of-Band)",
@@ -39,7 +35,7 @@ func NewAuthSSODescriptor(oob *OutOfBandLogin, handles *AsyncHandleStore) ToolDe
 		Category:    CategoryCore,
 		InputSchema: toolSchemaFor[authSSOArgs](),
 		Handler: func(ctx context.Context, req ToolRequest) (ToolResult, error) {
-			if oob == nil || handles == nil {
+			if oob == nil || handles == nil || reg == nil {
 				return NeedsHumanResult(NeedsHuman{
 					Reason: ReasonInteractiveOnly,
 					Detail: "Out-of-band login is not configured for this server. Use the CLI 'pinner auth' to sign in, or run with the transport that provides a browser login.",
@@ -55,8 +51,15 @@ func NewAuthSSODescriptor(oob *OutOfBandLogin, handles *AsyncHandleStore) ToolDe
 			handle := handles.Create("pending", map[string]any{"email": in.Email})
 			_, url, err := oob.Begin(handle, in.Email)
 			if err != nil {
+				// Do not leave an orphaned handle in the store with no
+				// continuation registered; retire it so a future resume does
+				// not see a live handle with nothing backing it.
+				handles.Delete(handle)
 				return ToolResult{IsError: true, Text: fmt.Sprintf("failed to start out-of-band login: %v", err)}, nil
 			}
+			// Register the SSO-specific poll logic under the handle so the
+			// shared pinner_auth_resume template dispatches to it.
+			reg.Begin(handle, ssoResumeContinuation(oob, handles, reg))
 			return NeedsHumanResult(NeedsHuman{
 				Reason:     ReasonSSOApproval,
 				ActionURL:  url,
@@ -68,68 +71,74 @@ func NewAuthSSODescriptor(oob *OutOfBandLogin, handles *AsyncHandleStore) ToolDe
 	}
 }
 
-// NewAuthResumeDescriptor returns the pinner_auth_resume tool: poll/complete a
-// pending out-of-band sign-in handle.
-func NewAuthResumeDescriptor(oob *OutOfBandLogin, handles *AsyncHandleStore) ToolDescriptor {
-	return ToolDescriptor{
-		Name:        "pinner_auth_resume",
-		Title:       "Sign In Resume",
-		Description: "Poll a pending out-of-band (OOB) sign in to check whether the human has completed the SSO approval (sign-in). Returns pending (needs_human) until approval is done, then reports done. Pass the handle returned by pinner_auth_sso.",
-		Category:    CategoryCore,
-		InputSchema: toolSchemaFor[authResumeArgs](),
-		Handler: func(ctx context.Context, req ToolRequest) (ToolResult, error) {
-			if oob == nil || handles == nil {
-				return NeedsHumanResult(NeedsHuman{
-					Reason: ReasonInteractiveOnly,
-					Detail: "Out-of-band login is not configured for this server.",
-				}), nil
+// ssoResumeContinuation returns the SSO-specific poll logic: it checks whether
+// the human has completed the browser approval and returns pending
+// (needs_human) until done, then a terminal done result. It is registered
+// against the handle by pinner_auth_sso so the shared resume template can
+// dispatch to it.
+//
+// The continuation performs its own registry cleanup (reg.End) on every
+// terminal outcome — done, login error, or already-consumed/no-pending-request
+// — rather than relying solely on the template's isTerminalResume. The
+// concurrent double-resume path in pendingOutcome returns
+// ("", false, nil) when another resume already consumed the request; that is a
+// completed outcome from the human's perspective, so it is reported done, not
+// misleadingly "still pending".
+func ssoResumeContinuation(oob *OutOfBandLogin, handles *AsyncHandleStore, reg *HandoffRegistry) ResumeContinuation {
+	return func(ctx context.Context, handle string, data map[string]any) (ToolResult, error) {
+		email, _ := data["email"].(string)
+		url, done, loginErr := oob.pendingOutcome(handle, email)
+		if loginErr != nil {
+			handles.Delete(handle)
+			reg.End(handle)
+			return NeedsHumanResult(NeedsHuman{
+				Reason:     ReasonSSOApproval,
+				ResumeTool: "pinner_auth_sso",
+				Detail:     "The out-of-band login failed or expired. Start a fresh login with pinner_auth_sso.",
+			}), nil
+		}
+		if !done {
+			// pendingOutcome returns ("", false, nil) when there is no pending
+			// request for this handle — either the login was already consumed
+			// by a concurrent resume or it never registered. Either way the
+			// flow has concluded from the OOB side; report done rather than a
+			// misleading "still pending" with no URL to approve.
+			if url == "" {
+				handles.Delete(handle)
+				reg.End(handle)
+				return ToolResult{
+					Text:              "Sign-in complete. Authentication is now configured.",
+					StructuredContent: map[string]any{"status": StatusDone, "handle": handle},
+				}, nil
 			}
-			in, err := decodeToolArgs[authResumeArgs](req)
-			if err != nil {
-				return ToolResult{IsError: true, Text: err.Error()}, nil
-			}
-			if in.Handle == "" {
-				return ToolResult{IsError: true, Text: "handle is required"}, nil
-			}
-			_, data, err := handles.Get(in.Handle)
-			if err != nil {
-				detail := "unknown handle; start a new login with pinner_auth_sso"
-				if errors.Is(err, ErrHandleExpired) {
-					detail = "the sign-in handle expired before the human completed approval; start a fresh login with pinner_auth_sso and have the user approve promptly"
-				}
-				// A login that can no longer be resumed must not leave the agent
-				// retrying a dead handle. Steer it to start over immediately.
-				return NeedsHumanResult(NeedsHuman{
-					Reason:     ReasonSSOApproval,
-					ResumeTool: "pinner_auth_sso",
-					Detail:     detail,
-				}), nil
-			}
-			email, _ := data["email"].(string)
-
-			url, done, loginErr := oob.pendingOutcome(in.Handle, email)
-			if loginErr != nil {
-				return NeedsHumanResult(NeedsHuman{
-					Reason:     ReasonSSOApproval,
-					Handle:     in.Handle,
-					ResumeTool: "pinner_auth_sso",
-					Detail:     "The out-of-band login failed or expired. Start a fresh login with pinner_auth_sso.",
-				}), nil
-			}
-			if !done {
-				return NeedsHumanResult(NeedsHuman{
-					Reason:     ReasonSSOApproval,
-					ActionURL:  url,
-					Handle:     in.Handle,
-					ResumeTool: "pinner_auth_resume",
-					Detail:     "Sign-in still pending; the user has not completed the approval yet.",
-				}), nil
-			}
-			handles.Delete(in.Handle)
-			return ToolResult{
-				Text:              "Sign-in complete. Authentication is now configured.",
-				StructuredContent: map[string]any{"status": StatusDone, "handle": in.Handle},
-			}, nil
-		},
+			return NeedsHumanResult(NeedsHuman{
+				Reason:     ReasonSSOApproval,
+				ActionURL:  url,
+				Handle:     handle,
+				ResumeTool: "pinner_auth_resume",
+				Detail:     "Sign-in still pending; the user has not completed the approval yet.",
+			}), nil
+		}
+		handles.Delete(handle)
+		reg.End(handle)
+		return ToolResult{
+			Text:              "Sign-in complete. Authentication is now configured.",
+			StructuredContent: map[string]any{"status": StatusDone, "handle": handle},
+		}, nil
 	}
+}
+
+// NewAuthResumeDescriptor returns the pinner_auth_resume tool, built from the
+// shared resume template. The name/description, restart steering, and
+// dead-handle guidance are SSO-specific; the dispatch logic (handle validation,
+// expiry, continuation lookup) is shared via NewResumeTool.
+func NewAuthResumeDescriptor(reg *HandoffRegistry, handles *AsyncHandleStore) ToolDescriptor {
+	return NewResumeTool(ResumeToolSpec{
+		Name:                "pinner_auth_resume",
+		Description:         "Poll a pending out-of-band (OOB) sign in to check whether the human has completed the SSO approval (sign-in). Returns pending (needs_human) until approval is done, then reports done. Pass the handle returned by pinner_auth_sso.",
+		RestartTool:         "pinner_auth_sso",
+		UnknownHandleDetail: "unknown handle; start a new login with pinner_auth_sso",
+		ExpiredHandleDetail: "the sign-in handle expired before the human completed approval; start a fresh login with pinner_auth_sso and have the user approve promptly",
+		DeadHandleReason:    ReasonSSOApproval,
+	}, reg, handles)
 }
