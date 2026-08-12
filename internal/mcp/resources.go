@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/invopop/jsonschema"
 	ipfs "go.lumeweb.com/ipfs-sdk"
@@ -422,8 +423,27 @@ func buildDNSRequirements(website *ipfs.WebsiteItem) DNSRequirements {
 		validationHost = *website.ValidationRecordHost
 	}
 
+	// The TXT record value the server validates is "<key>=<token>", where <key>
+	// is the server-provided verification key embedded as the first DNS label
+	// of the validation record host (e.g. host "pinner-verify.example.com"
+	// carries key "pinner-verify"). It is never hardcoded; fall back to the
+	// token when no host is available to derive the key from. The token is
+	// normalized first — only an actual "<key>=" prefix is stripped, so the
+	// result is always "<key>=<token>", never a doubled "<key>=<key>=<token>",
+	// and a token containing "=" as content is never corrupted.
+	validationValue := website.ValidationToken
+	if website.ValidationRecordHost != nil && *website.ValidationRecordHost != "" {
+		if key, _, _ := strings.Cut(*website.ValidationRecordHost, "."); key != "" {
+			raw := website.ValidationToken
+			if strings.HasPrefix(raw, key+"=") {
+				raw = raw[len(key)+1:]
+			}
+			validationValue = key + "=" + raw
+		}
+	}
+
 	records := []DNSRecord{
-		{Name: validationHost, Type: "TXT", Value: website.ValidationToken},
+		{Name: validationHost, Type: "TXT", Value: validationValue},
 		{Name: "_dnslink." + website.Domain, Type: "TXT", Value: "dnslink=/" + website.TargetType + "/" + website.TargetHash},
 	}
 
