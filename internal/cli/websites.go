@@ -14,13 +14,46 @@ import (
 )
 
 // stripValidationPrefix strips the "key=" prefix from a validation token value.
-// The API returns the full DNS TXT record value (e.g. "lumeweb-verify=abc123"),
-// but for English display we only want the token portion.
+// Some server builds return the full DNS TXT record value (e.g.
+// "pinner-verify=abc123"); for English display of the token alone we only want
+// the portion after the "=".
 func stripValidationPrefix(token string) string {
 	if idx := strings.Index(token, "="); idx >= 0 {
 		return token[idx+1:]
 	}
 	return token
+}
+
+// validationRecordValue returns the full DNS TXT record value the server
+// validates a website against: "<key>=<token>". The verification key is
+// server-provided — the server embeds it as the first DNS label of the
+// validation record host (e.g. host "pinner-verify.example.com" carries the
+// key "pinner-verify") and validates the TXT record value as
+// "<key>=<token>". It is never hardcoded here.
+//
+// Some server builds return ValidationToken already carrying the "key="
+// prefix (see stripValidationPrefix); strip any such prefix before
+// prepending the derived key so the result is always "<key>=<token>", never a
+// doubled "<key>=<key>=<token>". When no validation record host is available
+// to derive a key from, the token is returned as-is.
+func validationRecordValue(website *ipfs.WebsiteItem) string {
+	token := website.ValidationToken
+	if website.ValidationRecordHost == nil || *website.ValidationRecordHost == "" {
+		return token
+	}
+	key, _, _ := strings.Cut(*website.ValidationRecordHost, ".")
+	if key == "" {
+		return token
+	}
+	// Normalize the token: only strip the "key=" prefix when the token
+	// actually starts with the derived key, so we never emit a doubled prefix
+	// (e.g. "pinner-verify=pinner-verify=abc123") AND never corrupt a token
+	// that legitimately contains "=" as content (e.g. base64/URL-encoded
+	// padding) but has no "key=" prefix.
+	if strings.HasPrefix(token, key+"=") {
+		token = token[len(key)+1:]
+	}
+	return key + "=" + token
 }
 
 func newWebsitesCommand() *cli.Command {
@@ -523,7 +556,7 @@ func showSelfManagedDNSInstructions(output Output, website *ipfs.WebsiteItem) {
 	}
 
 	records := [][]string{
-		{validationHost, "TXT", website.ValidationToken},
+		{validationHost, "TXT", validationRecordValue(website)},
 		{"_dnslink." + website.Domain, "TXT", "dnslink=/" + website.TargetType + "/" + website.TargetHash},
 	}
 
@@ -713,7 +746,7 @@ func buildRequiredRecords(website *ipfs.WebsiteItem, nameservers []string) []map
 	}
 
 	records := []map[string]string{
-		{"name": validationHost, "type": "TXT", "value": website.ValidationToken},
+		{"name": validationHost, "type": "TXT", "value": validationRecordValue(website)},
 		{"name": "_dnslink." + website.Domain, "type": "TXT", "value": "dnslink=/" + website.TargetType + "/" + website.TargetHash},
 	}
 

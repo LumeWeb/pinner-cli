@@ -1758,6 +1758,95 @@ func TestStripValidationPrefix(t *testing.T) {
 	}
 }
 
+func TestValidationRecordValue(t *testing.T) {
+	strPtr := func(s string) *string { return &s }
+
+	tests := []struct {
+		name     string
+		website  *ipfs.WebsiteItem
+		expected string
+	}{
+		{
+			name: "derives key from validation record host",
+			website: &ipfs.WebsiteItem{
+				Domain:               "example.com",
+				ValidationRecordHost: strPtr("pinner-verify.example.com"),
+				ValidationToken:      "abc123",
+			},
+			expected: "pinner-verify=abc123",
+		},
+		{
+			name: "custom server key",
+			website: &ipfs.WebsiteItem{
+				Domain:               "example.com",
+				ValidationRecordHost: strPtr("lumeweb-verify.example.com"),
+				ValidationToken:      "abc123",
+			},
+			expected: "lumeweb-verify=abc123",
+		},
+		{
+			name: "token already carries key= prefix is not doubled",
+			website: &ipfs.WebsiteItem{
+				Domain:               "example.com",
+				ValidationRecordHost: strPtr("pinner-verify.example.com"),
+				ValidationToken:      "pinner-verify=abc123",
+			},
+			expected: "pinner-verify=abc123",
+		},
+		{
+			name: "token with foreign prefix is preserved unchanged (no rewrite)",
+			website: &ipfs.WebsiteItem{
+				Domain:               "example.com",
+				ValidationRecordHost: strPtr("pinner-verify.example.com"),
+				ValidationToken:      "lumeweb-verify=abc123",
+			},
+			expected: "pinner-verify=lumeweb-verify=abc123",
+		},
+		{
+			name: "token containing equals as content is not corrupted",
+			website: &ipfs.WebsiteItem{
+				Domain:               "example.com",
+				ValidationRecordHost: strPtr("pinner-verify.example.com"),
+				ValidationToken:      "abc=def==",
+			},
+			expected: "pinner-verify=abc=def==",
+		},
+		{
+			name: "token matching derived key without equals is not stripped",
+			website: &ipfs.WebsiteItem{
+				Domain:               "example.com",
+				ValidationRecordHost: strPtr("pinner-verify.example.com"),
+				ValidationToken:      "pinner-verifyvalue",
+			},
+			expected: "pinner-verify=pinner-verifyvalue",
+		},
+		{
+			name: "no validation record host falls back to bare token",
+			website: &ipfs.WebsiteItem{
+				Domain:          "example.com",
+				ValidationToken: "abc123",
+			},
+			expected: "abc123",
+		},
+		{
+			name: "empty validation record host falls back to bare token",
+			website: &ipfs.WebsiteItem{
+				Domain:               "example.com",
+				ValidationRecordHost: strPtr(""),
+				ValidationToken:      "abc123",
+			},
+			expected: "abc123",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := validationRecordValue(tt.website)
+			require.Equal(t, tt.expected, result)
+		})
+	}
+}
+
 func TestResolveWebsiteID(t *testing.T) {
 	t.Run("numeric ID returned as-is", func(t *testing.T) {
 		mockSvc := &mockWebsitesServiceForCLI{}
