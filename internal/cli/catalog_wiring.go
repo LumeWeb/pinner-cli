@@ -15,35 +15,28 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/core/pinning"
 )
 
-// catalog_wiring.go is the pkg/cli frontend adapter for the operation catalog
-// (internal/catalog) and its catalogops domain operations. This is the PILOT
-// wiring: it compiles the catalog's pins operations into real urfave/cli/v3
-// commands and mounts them under the "pins" parent command, rendering every
-// handler's typed DATA result through the CLI's Output formatter.
+// catalog_wiring.go adapts the operation catalog (internal/catalog) and its
+// catalogops pins operations to the urfave/cli/v3 command tree, mounting them
+// under the "pins" parent command and rendering each handler's DATA result
+// through the CLI Output formatter.
 //
-// Architectural split enforced here:
-//   - internal/catalogops exposes PinsDeps + PinsOperations; it never renders
-//     and never imports pkg/cli.
-//   - This file is the single place that maps IO/CLI concerns onto the catalog:
-//     positional CID args, --file/stdin CID reads, the destructive --force/
-//     --confirm gate, requireUpdateFields, dry-run passthrough, and all result
-//     rendering.
+// internal/catalogops exposes PinsDeps and PinsOperations and never renders or
+// imports pkg/cli. This file maps CLI concerns onto the catalog: positional CID
+// args, --file/stdin CID reads, the --force/--confirm gate, requireUpdateFields,
+// dry-run passthrough, and result rendering.
 //
-// Name mapping: the catalog compiler names operations with a dot ("pins.add").
-// The real CLI wants nested subcommands, so we strip the "<group>." prefix and
-// mount each leaf under a "pins" parent command. This mapping lives HERE (the
-// pkg/cli adapter), NOT in internal/catalog.
+// The catalog compiler names operations with a dot ("pins.add"). The CLI nests
+// them, so the "<group>." prefix is stripped and each leaf is mounted under the
+// "pins" parent. That mapping lives here, not in internal/catalog.
 //
-// Positional mapping: the catalog's CLI compiler builds its input map from
-// FLAGS only (see actionFor); it does not read positional args. Commands that
-// take a <cid>/<cid...> positionally (pins add/rm/status/update) therefore
-// need the wiring layer to translate positional args (plus --file/stdin) into
-// the operation's "cids"/"cid" input before dispatching to the handler. We do
-// that here by replacing each compiled command's Action with an adapter that
-// (1) resolves CLI inputs into the operation input map, (2) applies the
-// CLI-only presentation gates, (3) calls op.Handler().Execute, and (4) renders
-// the returned data through the Output formatter. The flags/help/names are
-// still produced by the catalog compiler — only the Action is wrapped.
+// The catalog compiler builds the input map from flags only and does not read
+// positional args. Commands that take <cid>/<cid...> positionally (pins
+// add/rm/status/update) translate the positional args plus --file/stdin into
+// the operation's "cids"/"cid" input before dispatch. Each compiled command's
+// Action is replaced with an adapter that resolves CLI inputs into the
+// operation input map, applies the CLI-only gates, calls op.Handler().Execute,
+// and renders the returned data. The flags, help, and names still come from the
+// catalog compiler; only the Action is wrapped.
 
 // catalogPinningDeps builds the catalogops.PinsDeps from the live CLI wiring.
 // Service construction uses a discard writer so handlers return pure data and
@@ -72,11 +65,9 @@ func catalogPinningDeps() catalogops.PinsDeps {
 			return NewPinningService(cfgMgr, discard, cfgMgr.Config().GetIPFSEndpointWithSecure(secure), WithAuthToken(token))
 		},
 		GetAuthToken: func() string {
-			// Read the auth token live from config (the common authenticated
-			// path). Handlers that hit NewAuthenticated get a service pinned to
-			// this token; when unset they fall back to ServiceFactory, which
-			// also reads config. The per-invocation --auth-token flag override
-			// remains a concern of the hand-written commands in this pilot.
+			// Read the auth token live from config. Handlers that use
+			// NewAuthenticated get a service pinned to this token; when unset
+			// they fall back to ServiceFactory, which also reads config.
 			cfgMgr, err := defaultConfigManagerFactory()
 			if err != nil {
 				return ""
@@ -86,17 +77,13 @@ func catalogPinningDeps() catalogops.PinsDeps {
 	}
 }
 
-// pinsCatalogDeps lazily builds the catalog's registered pins operations. It
-// is an indirection so the wiring and the renderer can both reach the
-// canonical operation list without rebuilding it repeatedly.
+// pinsCatalogDeps holds the catalogops.PinsDeps so the wiring and the renderer
+// can both reach the canonical operation list without rebuilding it.
 var pinsCatalogDeps = catalogops.PinsDeps(catalogPinningDeps())
 
 // newPinsCommand is the catalog-driven "pins" parent command. It compiles the
-// pins operations via the catalog's CLI compiler (NewCLICompilerWithRenderer)
-// and nests the resulting leaf commands under a "pins" group. This replaces
-// the hand-written pins parent as the pilot for the operation-catalog
-// migration; the individual hand-written pins_*.go command constructors are
-// retained for their tests until the migration is complete domain-wide.
+// pins operations via the catalog's CLI compiler and nests the resulting leaf
+// commands under a "pins" group.
 func newPinsCommand() *cli.Command {
 	cat := catalog.NewCatalog()
 	for _, op := range catalogops.PinsOperations(pinsCatalogDeps) {
@@ -125,20 +112,19 @@ func newPinsCommand() *cli.Command {
 	}
 }
 
-// mountCatalogCommand adapts a single catalog-compiled command (dotted name
-// like "pins.add") into a live CLI subcommand: it strips the "pins." group
-// prefix and wraps the Action with the CLI-input adapter (positional/file/
-// stdin → operation input, destructive gate, field-required gate). The
-// compiler-produced flags and help text are preserved.
+// mountCatalogCommand adapts a catalog-compiled command (dotted name like
+// "pins.add") into a live CLI subcommand: it strips the "pins." group prefix
+// and wraps the Action with the CLI-input adapter (positional/file/stdin to
+// operation input, destructive gate, field-required gate). The compiler's flags
+// and help text are preserved.
 func mountCatalogCommand(cmd *cli.Command) *cli.Command {
 	group := "pins."
 	canonicalLeaf := cmd.Name
 	if strings.HasPrefix(cmd.Name, group) {
 		canonicalLeaf = strings.TrimPrefix(cmd.Name, group)
-		// The catalog canonical name is "pins.list"; the CLI exposes this
-		// group's listing subcommand as "ls" (the legacy/battle-tested UX and
-		// the documented `pinner pins ls`). MCP keeps the canonical "list".
-		// This alias lives ONLY in the CLI adapter layer, never in the catalog.
+		// The catalog name is "pins.list"; the CLI exposes the listing
+		// subcommand as "ls" (the documented `pinner pins ls`). MCP keeps the
+		// canonical "list". The alias lives in the CLI adapter layer only.
 		display := canonicalLeaf
 		if display == "list" {
 			display = "ls"
@@ -147,12 +133,11 @@ func mountCatalogCommand(cmd *cli.Command) *cli.Command {
 	}
 	cmd.Category = "Pinning"
 
-	// The adapter reads the legacy --file/--no-wait flags (resolveCidsInput and
-	// the no-wait mapping), but catalog-compiled add/rm commands only derive
-	// flags from op.Args(), which declare neither. Re-declare them here —
-	// matching the legacy hand-written pins_add/pins_rm — so `pins add --file
-	// cids.txt`, `pins add --no-wait`, and `pins rm --file cids.txt --force`
-	// work instead of silently ignoring the file / never reaching no-wait mode.
+	// The adapter reads the --file/--no-wait flags, but catalog-compiled
+	// add/rm commands only derive flags from op.Args(), which declare neither.
+	// Re-declare them here so `pins add --file cids.txt`, `pins add --no-wait`,
+	// and `pins rm --file cids.txt --force` work instead of silently ignoring
+	// the file or never reaching no-wait mode.
 	switch canonicalLeaf {
 	case "add":
 		cmd.Flags = append(cmd.Flags, FileFlag(), NoWaitFlag())
@@ -201,9 +186,9 @@ func catalogActionAdapter(op catalog.Operation, group string) cli.ActionFunc {
 			input[a.Name] = flagValue(c, a)
 		}
 
-		// Thread the per-invocation --auth-token flag into the operation's
-		// service construction (flag -> config precedence). Only when set, so
-		// deps.service() still falls back to the config-read GetAuthToken.
+		// The per-invocation --auth-token flag takes precedence over the config
+		// token. Only set it when provided so deps.service() falls back to the
+		// config-read GetAuthToken otherwise.
 		if tok := c.String(FlagAuthToken); tok != "" {
 			input[catalogops.AuthTokenInputKey] = tok
 		}
@@ -228,18 +213,17 @@ func catalogActionAdapter(op catalog.Operation, group string) cli.ActionFunc {
 			input["wait"] = false
 		}
 
-		// Destructive gate (pins rm). The catalog compiler also injects a
-		// --force confirm gate into the compiled Action, but since we replace
-		// the Action here we enforce it ourselves, honoring both --force and
-		// the hidden --confirm legacy alias.
+		// Destructive gate (pins rm). The catalog compiler injects a --force
+		// confirm gate into the compiled Action, but since we replace the Action
+		// here we enforce it ourselves, honoring both --force and the hidden
+		// --confirm alias.
 		if op.Safety() == catalog.SafetyDestructive {
 			confirm := c.Bool(FlagForce) || c.Bool(FlagConfirm)
 			input["confirm"] = confirm
 			if c.Bool(FlagAll) {
 				input["all"] = true
 			}
-			// Unconfirmed destructive operations print the guard hint and
-			// refuse — faithful to the legacy pins rm / unpin all behavior.
+			// Unconfirmed destructive operations print a guard hint and refuse.
 			if !confirm && !c.Bool(FlagDryRun) {
 				switch {
 				case c.Bool(FlagAll):
@@ -257,13 +241,11 @@ func catalogActionAdapter(op catalog.Operation, group string) cli.ActionFunc {
 		}
 
 		// Require the operator to type the pinned count (or pass --yes/--force)
-		// before an unpin-all, mirroring the legacy unpinAll safety prompt
-		// (pins_rm.go -> unpin_all.go:83,128-140, yes = force || yes). The hidden
-		// --confirm alias only satisfies the outer destructive gate (it lets the
-		// operation proceed); it deliberately does NOT bypass the typed-count
-		// safety prompt, and must continue to require --force or --yes for that.
-		// This is intentionally CLI-only: catalogops stays IO-agnostic, and the
-		// MCP/programmatic path is necessarily non-interactive (passes --force).
+		// before an unpin-all. The hidden --confirm alias only satisfies the
+		// outer destructive gate (it lets the operation proceed); it does not
+		// bypass the typed-count prompt, which still requires --force or --yes.
+		// This is CLI-only: catalogops stays IO-agnostic, and the MCP/programmatic
+		// path is non-interactive (passes --force).
 		if op.Name() == "pins.rm" && c.Bool(FlagAll) && !c.Bool(FlagDryRun) && !c.Bool(FlagYes) && !c.Bool(FlagForce) {
 			svc, svcErr := catalogPinningDeps().Service(input)
 			if svcErr != nil {
@@ -297,7 +279,7 @@ func catalogActionAdapter(op catalog.Operation, group string) cli.ActionFunc {
 			}
 		}
 
-		// Apply the legacy per-call deadline (shared with every catalog domain).
+		// Apply the configured per-command timeout.
 		dctx, cancel := applyDefaultTimeout(ctx)
 		defer cancel()
 
@@ -311,10 +293,8 @@ func catalogActionAdapter(op catalog.Operation, group string) cli.ActionFunc {
 
 // renderCatalogResult renders a handler's typed DATA result through the CLI
 // Output formatter. It is the single rendering home for catalog-driven commands
-// and never touches core services. It is invoked by catalogActionAdapter (the
-// wiring replaces each compiled command's Action), so it is a plain function,
-// not a catalog.RenderFunc (that renderer hook no longer exists on the fresh
-// Compiler API).
+// and never touches core services. It is a plain function invoked by
+// catalogActionAdapter.
 func renderCatalogResult(_ context.Context, c *cli.Command, op catalog.Operation, result any) error {
 	output := setupOutput(c)
 
@@ -368,8 +348,7 @@ func renderCatalogResult(_ context.Context, c *cli.Command, op catalog.Operation
 	}
 }
 
-// renderCatalogDryRun renders a DryRunResult as the CLI dry-run preview,
-// mirroring the presentation of the legacy RenderDryRun helper.
+// renderCatalogDryRun renders a DryRunResult as the CLI dry-run preview.
 func renderCatalogDryRun(output Output, _ *cli.Command, r *catalogops.DryRunResult) {
 	output.Printfln("Dry run: %s (no changes made)", r.Operation)
 	if len(r.CIDs) > 0 {
@@ -392,9 +371,9 @@ func renderCatalogDryRun(output Output, _ *cli.Command, r *catalogops.DryRunResu
 // ---- CLI-input helpers (pkg/cli layer only; not in internal/catalogops) ----
 
 // flagValue reads a compiled flag's value for the given operation arg into the
-// input map, mirroring the catalog compiler's own flag→input mapping so the
-// adapter and compiler agree. Bool/Int/String/StringSlice are covered; the
-// pins domain uses only these.
+// input map, matching the catalog compiler's flag-to-input mapping so the
+// adapter and compiler agree. Bool, Int, String, and StringSlice are covered;
+// the pins domain uses only these.
 func flagValue(c *cli.Command, a catalog.OperationArg) any {
 	switch a.Type {
 	case catalog.ArgTypeBool:
@@ -408,7 +387,7 @@ func flagValue(c *cli.Command, a catalog.OperationArg) any {
 	}
 }
 
-// positiontionalCID returns the first positional argument, if any (used for
+// positionalCID returns the first positional argument, if any (used for
 // the <cid> single-CID operations status/update).
 func positionalCID(c *cli.Command) string {
 	if c.Args().Len() == 0 {
@@ -418,8 +397,8 @@ func positionalCID(c *cli.Command) string {
 }
 
 // resolveCidsInput collects CIDs for the add/rm operations from, in priority
-// order: stdin pipe, --file, then positional args. Returns an error mirroring
-// the legacy "no CIDs provided" contract when nothing is supplied.
+// order: stdin pipe, --file, then positional args. Returns an error when
+// nothing is supplied.
 func resolveCidsInput(c *cli.Command) ([]string, error) {
 	var cids []string
 	var err error
@@ -451,19 +430,16 @@ func resolveCidsInput(c *cli.Command) ([]string, error) {
 // relaxFlagRequired clears the urfave-level Required marker on a command's
 // single-valued flags.
 //
-// Why: the catalog compiler marks an OperationArg with Required=true as a
-// urfave-required flag, and urfave/cli/v3 fails at PARSE time when it is not
-// set — before any Action runs. But a required arg that the CLI passes
-// positionally (e.g. `vault profile use work`, `dns zone get example.com`,
-// `pins rm <cid>`) is supplied via the wiring layer's positional→input
-// mapping, not as a `--<name>` flag. If the flag stays urfave-required the
-// command is rejected before that mapping ever runs.
+// The catalog compiler marks required OperationArgs as urfave-required, and
+// urfave/cli/v3 fails at parse time when such a flag is not set, before any
+// Action runs. But required args that the CLI passes positionally (for example
+// `pins rm <cid>`) come through the wiring's positional-to-input mapping, not
+// as a --<name> flag. If the marker stayed set, the command would be rejected
+// before that mapping runs.
 //
-// Every catalog operation handler re-enforces requiredness itself (it errors
-// when the resolved value is empty), so relaxing the urfave marker loses no
-// safety — it only lets positionally-supplied values reach the handler. This
-// keeps `Required` as a catalog-level contract enforced by the handler and
-// the adapter, rather than an incompatible urfave-parse-time gate.
+// Every catalog handler re-enforces requiredness itself (it errors when the
+// resolved value is empty), so relaxing the marker loses no safety. It only
+// lets positionally-supplied values reach the handler.
 //
 // Bool and StringSlice flags are untouched: Bool is never a positional target
 // and StringSlice positional values are multi-valued and handled separately.

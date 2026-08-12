@@ -5,7 +5,7 @@ import "os"
 // This file provides the standard H2A/A2A hand-off shape: a ToolResult that
 // tells the agent a human action (approval, credential entry, confirmation)
 // is required before work can continue, and where/how to resume. It is
-// SDK-neutral — it builds a plain ToolResult, so the official SDK seam and any
+// SDK-neutral; it builds a plain ToolResult, so the official SDK seam and any
 // other transport encode it consistently.
 
 // HandoffReason enumerates why a tool is asking for human intervention.
@@ -43,8 +43,8 @@ type NeedsHuman struct {
 
 // NeedsHumanResult returns a ToolResult whose structured content carries the
 // standard {status:"needs_human", reason, action_url, handle, resume_tool}
-// shape, plus a legible one-line Text for human formatters. It is not an
-// error — a needs_human hand-off is a valid, resumable state.
+// shape, plus a one-line Text for human formatters. It is not an error; a
+// needs_human hand-off is a valid, resumable state.
 func NeedsHumanResult(n NeedsHuman) ToolResult {
 	sc := map[string]any{
 		"status": StatusNeedsHuman,
@@ -78,7 +78,7 @@ func NeedsHumanResult(n NeedsHuman) ToolResult {
 // stdinHasData reports whether stdin has piped data available WITHOUT blocking.
 // Over the MCP channel stdin is drained or absent for agent invocations, so a
 // nonzero-char-device check tells invoke_tool whether a stdin-input command can
-// proceed or must be redirected. It mirrors pkg/cli.isStdinPipe semantics.
+// proceed or must be redirected.
 func stdinHasData() bool {
 	fi, err := os.Stdin.Stat()
 	if err != nil {

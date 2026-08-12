@@ -13,11 +13,11 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/core/config"
 )
 
-// NOTE: the DNS command tree (newDNSCommand) is now catalog-driven and lives
-// in dns_wiring.go. The files below retain the faithful handler functions and
-// validation helpers for the legacy hand-written commands; they are exercised
-// directly by the DNS handler tests. No urfave/cli command construction lives
-// here anymore — that presentation is owned by the catalog wiring layer.
+// NOTE: the DNS command tree (newDNSCommand) is catalog-driven and lives in
+// dns_wiring.go. The files below hold the DNS handler functions and validation
+// helpers, exercised directly by the DNS handler tests. No urfave/cli command
+// construction lives here; that presentation is owned by the catalog wiring
+// layer.
 
 // ===== HANDLERS =====
 

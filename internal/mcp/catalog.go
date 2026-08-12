@@ -24,10 +24,10 @@ const (
 // Interaction classifies how a tool behaves when invoked by an agent over the
 // MCP channel (via invoke_tool). It lets the server steer agents away from
 // commands that would read drained stdin or block on a prompt, and instead
-// return a structured redirect — so an agent can never hang on a deep command.
+// return a structured redirect so an agent never hangs on a deep command.
 //
 // The classification is inferred from the CLI command path at registration
-// (see classifyInteraction), mirroring how categorize/isReadOnlyName work.
+// (see classifyInteraction), in the same way categorize/isReadOnlyName work.
 type Interaction string
 
 const (
@@ -285,8 +285,8 @@ func (c *ToolCatalog) RegisterFromCommand(root *cli.Command, hasRootAction bool,
 		loc := append(prefix, cmd.Name)
 		if !cmd.Hidden && cmd.Action != nil && (len(prefix) > 0 || hasRootAction) {
 			// A subcommand inherits its parent command's flags (urfave/cli
-			// semantics), so flags declared only on a parent — e.g. the vault
-			// command's --profile, which every vault subcommand needs — appear
+			// semantics), so flags declared only on a parent (e.g. the vault
+			// command's --profile, which every vault subcommand needs) appear
 			// in the tool's input schema instead of being hidden inside the
 			// _args array. Child flags take precedence over inherited ones.
 			schemaFlags := mergeInheritedFlags(inherited, cmd.Flags)

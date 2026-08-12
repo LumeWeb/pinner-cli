@@ -6,23 +6,23 @@ import (
 )
 
 // This file exposes the vault seed create/restore out-of-band hand-offs as
-// first-class, resumable flows for agents, mirroring the SSO pattern
+// first-class, resumable flows for agents, following the SSO pattern
 // (auth_sso.go): a start tool returns a needs_human seed_url / restore_url
-// hand-off PLUS a resume handle, and two named *_resume tools —
-// pinner_vault_create_resume and pinner_vault_restore_resume — poll the
+// hand-off plus a resume handle, and two named *_resume tools,
+// pinner_vault_create_resume and pinner_vault_restore_resume, poll the
 // coordinator until the human has completed the browser action.
 //
-// Exactly like SSO, only the SURFACE is per-domain (the two named *_resume
-// tools); the dispatch machinery is the shared NewResumeTool template and the
-// HandoffRegistry. The plaintext recovery seed still never transits the
-// MCP/LLM channel: it travels human-browser-to-host only, and the resume
-// tools only report pending vs. done for the token the coordinator minted.
+// Only the surface is per-domain (the two named *_resume tools); the dispatch
+// machinery is the shared NewResumeTool template and the HandoffRegistry. The
+// plaintext recovery seed never transits the MCP/LLM channel: it travels
+// human-browser-to-host only, and the resume tools only report pending vs.
+// done for the token the coordinator minted.
 //
 // The single-shot hand-off (seed_url / restore_url returned directly to the
-// agent in the invoke path) is preserved unchanged; this layer ADDS a
-// resume handle + poll path on top of it. If the resume machinery is not
-// wired (nil registry / handles), no handle is minted and the flow reduces to
-// the original single-shot behavior.
+// agent in the invoke path) is preserved unchanged; this layer adds a resume
+// handle + poll path on top of it. If the resume machinery is not wired (nil
+// registry / handles), no handle is minted and the flow reduces to the
+// original single-shot behavior.
 
 const (
 	// vaultCreateResumeToolName is the resume tool for a vault create
@@ -64,7 +64,7 @@ func vaultTokenFromURL(url string) string {
 //	                    transition on its own (dead -> restart)
 //
 // A token that no longer resolves must NOT be reported as either done or
-// pending forever — the caller routes both of those to a terminal steer. This
+// pending forever; the caller routes both of those to a terminal steer. This
 // is a pure state check; it never touches the seed mnemonic.
 func (s *SeedDrop) tokenDone(token string) (done, expired, pending bool) {
 	if token == "" {
@@ -86,7 +86,7 @@ func (o *OOBRestore) tokenDone(token string) (done, expired, pending bool) {
 // it reports pending (needs_human) until the human has picked up the seed from
 // the one-time seed_url, then a terminal done result; if the one-time link
 // expires before use it terminates the continuation and steers the agent to
-// start a fresh vault create (it must not report a stale hand-off as done). It
+// start a fresh vault create (a stale hand-off is never reported as done). It
 // is registered against the handle by mintVaultHandoff so the shared
 // pinner_vault_create_resume template dispatches to it. The continuation
 // performs its own registry/handle cleanup on every terminal outcome.
@@ -100,7 +100,7 @@ func vaultCreateResumeContinuation(db *SeedDrop, handles *AsyncHandleStore, reg 
 		done, expired, pending := db.tokenDone(token)
 		switch {
 		case done:
-			// Seed retrieved by the human — hand-off over.
+			// Seed retrieved by the human; hand-off over.
 			handles.Delete(handle)
 			reg.End(handle)
 			return ToolResult{
@@ -108,8 +108,8 @@ func vaultCreateResumeContinuation(db *SeedDrop, handles *AsyncHandleStore, reg 
 				StructuredContent: map[string]any{"status": StatusDone, "handle": handle},
 			}, nil
 		case expired:
-			// One-time link expired before the human retrieved the seed. Do
-			// NOT report completion — terminate and steer to a fresh start.
+			// One-time link expired before the human retrieved the seed. Do not
+			// report completion; terminate and steer to a fresh start.
 			return vaultExpiredResult(handles, reg, handle, vaultCreateResumeToolName, vaultCreateToolName,
 				"The one-time seed_url expired before the recovery seed was retrieved; start a fresh vault create with pinner_vault_create so a new seed_url is minted.")
 		case pending:
@@ -120,10 +120,10 @@ func vaultCreateResumeContinuation(db *SeedDrop, handles *AsyncHandleStore, reg 
 				Detail:     "Ask the user to open the seed_url in a browser and retrieve the recovery seed. Then call pinner_vault_create_resume with the handle.",
 			}), nil
 		default:
-			// Token is absent (never existed, or its spent tombstone was
-			// evicted) and cannot transition on its own — do not report done
-			// and do not leave the agent pending forever. Terminate and steer
-			// to a fresh start.
+			// Token is absent (never existed, or its spent tombstone was evicted)
+			// and cannot transition on its own. Do not report done and do not
+			// leave the agent pending forever. Terminate and steer to a fresh
+			// start.
 			return vaultExpiredResult(handles, reg, handle, vaultCreateResumeToolName, vaultCreateToolName,
 				"The vault create hand-off is no longer resolvable; start a fresh vault create with pinner_vault_create so a new seed_url is minted.")
 		}
@@ -134,11 +134,11 @@ func vaultCreateResumeContinuation(db *SeedDrop, handles *AsyncHandleStore, reg 
 // it reports pending (needs_human) until the human has submitted the recovery
 // seed on the one-time restore page, then a terminal done result; if the
 // one-time link expires before use it terminates the continuation and steers
-// the agent to restart (an expired restore must not be reported as done). It
+// the agent to restart (an expired restore is not reported as done). It
 // is registered against the handle by mintVaultHandoff so the shared
 // pinner_vault_restore_resume template dispatches to it. It is a pure
-// coordinator-state poll (the token going spent) — the RestoreRunner only runs
-// in the browser POST handler, never on this channel — so the seed never
+// coordinator-state poll (the token going spent); the RestoreRunner only runs
+// in the browser POST handler, never on this channel, so the seed never
 // reaches the agent.
 func vaultRestoreResumeContinuation(oob *OOBRestore, handles *AsyncHandleStore, reg *HandoffRegistry) ResumeContinuation {
 	return func(ctx context.Context, handle string, data map[string]any) (ToolResult, error) {
@@ -150,7 +150,7 @@ func vaultRestoreResumeContinuation(oob *OOBRestore, handles *AsyncHandleStore, 
 		done, expired, pending := oob.tokenDone(token)
 		switch {
 		case done:
-			// Restore form submitted — hand-off over.
+			// Restore form submitted; hand-off over.
 			handles.Delete(handle)
 			reg.End(handle)
 			return ToolResult{
@@ -169,10 +169,10 @@ func vaultRestoreResumeContinuation(oob *OOBRestore, handles *AsyncHandleStore, 
 				Detail:     "Ask the user to open the restore_url in a browser and enter the recovery seed to complete the restore. Then call pinner_vault_restore_resume with the handle.",
 			}), nil
 		default:
-			// Token is absent (never existed, or its spent tombstone was
-			// evicted) and cannot transition on its own — do not report done
-			// and do not leave the agent pending forever. Terminate and steer
-			// to a fresh start.
+			// Token is absent (never existed, or its spent tombstone was evicted)
+			// and cannot transition on its own. Do not report done and do not
+			// leave the agent pending forever. Terminate and steer to a fresh
+			// start.
 			return vaultExpiredResult(handles, reg, handle, vaultRestoreResumeToolName, vaultRestoreToolName,
 				"The vault restore hand-off is no longer resolvable; start a fresh vault restore with pinner_vault_restore so a new restore_url is minted.")
 		}
@@ -182,13 +182,13 @@ func vaultRestoreResumeContinuation(oob *OOBRestore, handles *AsyncHandleStore, 
 // vaultExpiredResult terminates an expired (or unconfigured) vault hand-off:
 // it clears the continuation and backing handle so the agent is not left
 // polling a dead flow, and returns a needs_human steer to the matching start
-// tool. It is NOT a success result — an expired one-time link must read as a
+// tool. It is NOT a success result; an expired one-time link must read as a
 // restart, never as a completed vault create/restore.
 func vaultExpiredResult(handles *AsyncHandleStore, reg *HandoffRegistry, handle, resumeTool, restartTool, detail string) (ToolResult, error) {
 	// Clearing the continuation + backing handle means the next poll of the
 	// *_resume tool hits the template's dead-handle branch, which steers to
-	// restart via the tool spec — so the agent gets one clean restart
-	// instruction instead of a forever-pending or falsely-done hand-off.
+	// restart via the tool spec. The agent gets one clean restart instruction
+	// instead of a forever-pending or falsely-done hand-off.
 	handles.Delete(handle)
 	reg.End(handle)
 	_ = resumeTool
@@ -234,8 +234,8 @@ func NewVaultRestoreResumeDescriptor(reg *HandoffRegistry, handles *AsyncHandleS
 // fresh async handle, registers the per-domain continuation against it, and
 // returns the handle + resume tool name to embed in the structured content.
 //
-// Only the coordinator's one-time TOKEN is stored on the handle and re-polled
-// by the continuation — never the mnemonic. If there is nothing to resume (no
+// Only the coordinator's one-time token is stored on the handle and re-polled
+// by the continuation; never the mnemonic. If there is nothing to resume (no
 // hand-off minted, coordinators absent, or resume machinery not wired) it
 // returns empty strings so the invoke path degrades to the original
 // single-shot hand-off unchanged.

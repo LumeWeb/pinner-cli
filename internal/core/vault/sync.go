@@ -41,13 +41,13 @@ func isDirNameConflict(err error) bool {
 
 // Sync pulls changes from the indexer into the local cache.
 //
-// It follows the reference Sia sync-down model: consume ObjectEvents, apply each
-// to the local store idempotently, and ALWAYS advance the cursor to the last
-// event in the batch. Events whose metadata is missing/malformed are skipped
-// (the cursor still advances past them); they are re-healed by a later sync
-// re-tick once the uploading device finishes stamping metadata, because the
-// store is an idempotent upsert keyed by the per-file UUID. It deliberately
-// does NOT stall or retry skips; the engine relies on periodic re-runs.
+// It consumes ObjectEvents, applies each to the local store idempotently, and
+// ALWAYS advances the cursor to the last event in the batch. Events whose
+// metadata is missing/malformed are skipped (the cursor still advances past
+// them); they are re-processed on a later sync pass once the uploading device
+// finishes stamping metadata, because the store is an idempotent upsert keyed
+// by the per-file UUID. Skips are deliberately not stalled or retried; the
+// engine relies on periodic re-runs.
 func (s *vaultService) Sync(ctx context.Context) (applied int, full bool, err error) {
 	// Load cursor
 	var cursorRecord SyncDownCursor
@@ -187,8 +187,8 @@ func (s *vaultService) Sync(ctx context.Context) (applied int, full bool, err er
 				var metaJSON datatypes.JSON
 				if fileMeta.Metadata != nil {
 					// Persist the user metadata carried in the object's
-					// FileMetadata on the newly-created row, mirroring
-					// upsertFromMeta and Put so Stat returns it immediately on a
+					// FileMetadata on the newly-created row (same behavior as
+					// upsertFromMeta and Put) so Stat returns it immediately on a
 					// fresh-cache sync rather than only after an overwrite.
 					if b, jerr := json.Marshal(fileMeta.Metadata); jerr == nil {
 						metaJSON = datatypes.JSON(b)
@@ -211,8 +211,7 @@ func (s *vaultService) Sync(ctx context.Context) (applied int, full bool, err er
 					// A unique-index collision (two distinct objects claiming the
 					// same live name) is an app-layer namespace condition, not a
 					// network error: keep the first-seen binding and drop the new
-					// claim, then continue syncing (per the reference's
-					// first-seen policy).
+					// claim, then continue syncing (first-seen policy).
 					if isLiveNameConflict(err) {
 						return nil
 					}
@@ -233,9 +232,9 @@ func (s *vaultService) Sync(ctx context.Context) (applied int, full bool, err er
 		applied++
 	}
 
-	// Always advance the cursor to the last event in the batch, exactly like
-	// the reference engine (setSyncDownCursor(lastEvent)). Skips don't hold it;
-	// a re-tick re-processes them and idempotent upsert makes that safe.
+	// Always advance the cursor to the last event in the batch. Skips don't
+	// hold it; a later pass re-processes them and the idempotent upsert makes
+	// that safe.
 	if len(events) > 0 {
 		last := events[len(events)-1]
 		newCursor := cursor

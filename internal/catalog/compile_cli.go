@@ -19,10 +19,9 @@ type Compiler[T any] interface {
 	Compile(cat Catalog) ([]T, error)
 }
 
-// ForceFlagName is the boolean confirm flag injected by the CLI compiler onto
-// every SafetyDestructive operation. When absent/not set the command's Action
-// refuses to run, mirroring how the existing CLI gates force operations behind
-// --force.
+// ForceFlagName is the boolean confirm flag the CLI compiler adds to every
+// SafetyDestructive operation. When it is not set the command's Action refuses
+// to run, matching how the existing CLI gates force operations behind --force.
 const ForceFlagName = "force"
 
 // NewCLICompiler returns an urfave/cli/v3 compiler (a Compiler[*cli.Command])
@@ -30,15 +29,14 @@ const ForceFlagName = "force"
 func NewCLICompiler() Compiler[*cli.Command] { return &cliCompiler{} }
 
 // cliCompiler maps a Catalog's operations to urfave/cli/v3 *cli.Command values.
-// The CLI compiler consumes the underlying Operation directly (it needs the
-// declared Metadata AND the Handler to wire into the command's Action), which
-// is why its element type differs from the MCP compiler's.
+// It consumes the underlying Operation directly (it needs the declared Metadata
+// AND the Handler to wire into the command's Action), which is why its element
+// type differs from the MCP compiler's.
 //
-// Name policy: each operation's Name() (e.g. "vault.create") is used verbatim
-// as the *cli.Command Name. urfave tolerates dotted names, and using the full
-// declared name keeps the mapping lossless and unambiguous across categories —
-// two categories may both declare a "create" leaf, so flattening to leaf names
-// would collide. (A future nesting pass can split on "." into subcommands.)
+// Each operation's Name() (e.g. "vault.create") is used verbatim as the
+// *cli.Command Name. urfave tolerates dotted names, and using the full declared
+// name keeps the mapping unambiguous across categories: two categories can both
+// declare a "create" leaf, so flattening to leaf names would collide.
 type cliCompiler struct{}
 
 // Compile converts every operation in cat into a []*cli.Command.
@@ -92,8 +90,8 @@ func commandFor(op Operation) (*cli.Command, error) {
 	}
 
 	// Human-only operations remain runnable by a human at the CLI, so we do
-	// not hide them — but flag the intent for future frontends (e.g. MCP,
-	// which must refuse them for model agents) with a usage note.
+	// not hide them, but flag the intent for future frontends (e.g. MCP, which
+	// must refuse them for model agents) with a usage note.
 	if op.Interaction() == InteractionHumanOnly {
 		cmd.Usage = op.Summary() + " (requires interactive human input)"
 	}
@@ -114,8 +112,8 @@ func flagsFor(op Operation) []cli.Flag {
 	return flags
 }
 
-// flagFor converts a single OperationArg into its urfave flag. The ArgType→flag
-// mapping mirrors the JSON-Schema mapping used by the MCP layer.
+// flagFor converts a single OperationArg into its urfave flag. The ArgType to
+// flag mapping matches the JSON-Schema mapping used by the MCP layer.
 func flagFor(a OperationArg) cli.Flag {
 	help := a.Help
 	// urfave/cli/v3 core has no dedicated sensitive flag; mark the usage so

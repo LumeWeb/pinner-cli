@@ -14,18 +14,17 @@ func NewMCPCompiler() Compiler[ToolDescriptor] { return newMCPCompiler(Visibilit
 // NewMCPAppCompiler returns a Compiler[ToolDescriptor] that maps a Catalog to
 // []ToolDescriptor for the *app* surface: it yields app-only and both-visible
 // operations, and uses the plain human Description (never AgentDescription).
-// App-only helpers that a model agent must not see are emitted here — expose
+// App-only helpers that a model agent must not see are emitted here. Expose
 // this surface to the hosting application, not to the model.
 func NewMCPAppCompiler() Compiler[ToolDescriptor] { return newMCPCompiler(VisibilityAppOnly) }
 
 // newMCPCompiler builds an MCP compiler targeting the given visibility surface.
 //
-// Visibility model-vs-app split: the target selects which Search visibility the
-// descriptor set is drawn from, mirroring Catalog.Search's visibility semantics
-// (a model surface search excludes app-only ops; an app surface search includes
-// them). Description audience follows the target: model surfaces get
-// AgentDescription (agent-aware) when non-empty, app surfaces always get
-// Description.
+// The target selects which Search visibility the descriptor set is drawn from,
+// following Catalog.Search's visibility semantics (a model surface search
+// excludes app-only ops; an app surface search includes them). Description
+// audience follows the target: model surfaces get AgentDescription when
+// non-empty, app surfaces always get Description.
 func newMCPCompiler(target Visibility) Compiler[ToolDescriptor] {
 	return &mcpCompiler{target: target}
 }

@@ -1,18 +1,6 @@
-// Package catalogops wires the canonical operation catalog (internal/catalog)
-// to the extracted core service domains. This file captures the faithful
-// semantics of the `websites` subcommand group (create/list/get/update/
-// enable-ipns/delete/validate/ssl status/config) as catalog operations whose
-// Handlers drive the core websites Service (internal/core/websites) directly.
-//
-// Every Handler returns typed core-service DATA (e.g. []ipfs.WebsiteItem,
-// *ipfs.WebsiteItem, *ipfs.WebsiteResponse, *ipfs.WebsiteValidateResponse,
-// *ipfs.WebsiteConfigResponse) and NEVER renders, never touches urfave, and
-// never imports pkg/cli. Rendering happens in the frontend wiring layer
-// (pkg/cli compiler / MCP compiler).
-//
-// Import rule (architectural invariant): this package may import
-// internal/catalog and internal/core/* but NEVER pkg/cli. The reverse
-// direction (pkg/cli → this package) is the only allowed one.
+// Package catalogops implements websites domain operations for the operation
+// catalog. Each operation drives the core websites service directly and
+// returns typed data; rendering happens in the frontend wiring layer.
 package catalogops
 
 import (
@@ -48,7 +36,7 @@ type WebsitesDeps struct {
 	// ServiceFactory.
 	NewAuthenticated func(cfgMgr config.Manager, secure bool, token string) (websites.Service, error)
 	// GetAuthToken returns an auth token override for the current command
-	// context (empty = none). Mirrors pkg/cli.GetAuthToken.
+	// context (empty = none).
 	GetAuthToken func() string
 }
 
@@ -62,8 +50,7 @@ func (d WebsitesDeps) config() config.Manager {
 
 // service builds the websites Service honoring the auth-token override. The
 // per-invocation --auth-token flag (threaded through input) takes precedence
-// over the deps.GetAuthToken() config fallback, mirroring the legacy
-// GetAuthToken(c, cfgMgr) flag -> config precedence.
+// over the deps.GetAuthToken() config fallback (flag over config).
 func (d WebsitesDeps) service(input map[string]any) (websites.Service, error) {
 	cfgMgr := d.config()
 	if cfgMgr == nil {
@@ -102,10 +89,9 @@ func WebsitesOperations(d WebsitesDeps) []catalog.Operation {
 }
 
 // resolveWebsiteID resolves an ID-or-domain argument to a numeric website ID
-// string, mirroring the legacy CLI's resolveWebsiteID: if the arg parses as a
-// number it is returned as-is; otherwise the service lists websites and
-// matches the domain (case-insensitively, DNS-normalized). This is business
-// logic (a service read), so it lives in the handler, returning typed data.
+// string. If the arg parses as a number it is returned as-is; otherwise the
+// service lists websites and matches the domain (case-insensitively,
+// DNS-normalized).
 func resolveWebsiteID(ctx context.Context, svc websites.Service, arg string) (string, error) {
 	if _, err := strconv.Atoi(arg); err == nil {
 		return arg, nil
@@ -122,8 +108,8 @@ func resolveWebsiteID(ctx context.Context, svc websites.Service, arg string) (st
 	return "", fmt.Errorf("website not found for domain %q", arg)
 }
 
-// resolveRequiredWebsiteID is resolveWebsiteID plus the "required" gate the
-// legacy resolveRequiredArg enforces (an empty positional is an error).
+// resolveRequiredWebsiteID is resolveWebsiteID plus a required-argument gate
+// (an empty positional is an error).
 func resolveRequiredWebsiteID(ctx context.Context, svc websites.Service, input map[string]any) (string, error) {
 	arg := catalog.StrArg(input, "website", "")
 	if arg == "" {
@@ -152,7 +138,7 @@ func websitesList(d WebsitesDeps) catalog.Operation {
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
-			// []ipfs.WebsiteItem — the CLI renders as an ID/NAME/CID/... table.
+			// Rendered as an ID/NAME/CID/... table by the CLI.
 			return svc.List(ctx)
 		}),
 	})
@@ -161,15 +147,11 @@ func websitesList(d WebsitesDeps) catalog.Operation {
 // websitesGet is the `websites get` operation. Selects the site by <website>
 // (domain or numeric ID) and returns *ipfs.WebsiteItem.
 //
-// Faithfulness notes:
-//   - The core Get may return (item, ipfs.ErrGone) when the website is in a
-//     broken state: the API returns 410 Gone with the website data in the
-//     body. The legacy CLI treats that as "display the data" (it only fails
-//     when the item is nil). This handler reproduces that: when ErrGone and
-//     the item is non-nil, it returns the item as data with a nil error so
-//     the broken record is still presented.
-//   - DNS-hosting instruction enrichment (getNameservers/showDNSRecord...) is
-//     presentation and lives in the wiring layer, not here.
+// The core Get may return (item, ipfs.ErrGone) when the website is in a
+// broken state: the API returns 410 Gone with the website data in the body.
+// When ErrGone and the item is non-nil, this handler returns the item as data
+// with a nil error so the broken record is still presented. DNS-hosting
+// instruction enrichment is presentation and lives in the wiring layer.
 func websitesGet(d WebsitesDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
 		Name:        "websites.get",
@@ -211,13 +193,10 @@ func websitesGet(d WebsitesDeps) catalog.Operation {
 
 // websitesCreate is the `websites create` operation. Returns *ipfs.WebsiteItem.
 //
-// Faithfulness notes:
-//   - The <domain> positional and --cid are required (the CLI enforces a
-//     required --cid flag; this handler errors if either is missing).
-//   - --target-type defaults to "ipfs".
-//   - --dns-hosting / --no-dns-hosting map onto DnsHostingEnabled: when
-//     --dns-hosting is set it explicitly enables; else when --no-dns-hosting
-//     is set it explicitly disables; otherwise the field is left nil.
+// The <domain> positional and --cid are required (this handler errors if
+// either is missing). --target-type defaults to "ipfs". --dns-hosting /
+// --no-dns-hosting map onto DnsHostingEnabled: each explicitly enables or
+// disables; otherwise the field is left nil.
 func websitesCreate(d WebsitesDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
 		Name:        "websites.create",
@@ -273,14 +252,10 @@ func websitesCreate(d WebsitesDeps) catalog.Operation {
 
 // websitesUpdate is the `websites update` operation. Returns *ipfs.WebsiteItem.
 //
-// Faithfulness notes:
-//   - At least one optional field is required; the legacy CLI enforces this
-//     via requireUpdateFields in the wiring layer (a pure input gate, so it
-//     lives there). This handler also enforces the --target-type-required-
-//     with---cid business rule.
-//   - Flag mapping mirrors the legacy IsSet logic: rename-to -> req.Domain,
-//     cid -> req.TargetHash, target-type -> req.TargetType, and
-//     dns-hosting/no-dns-hosting -> req.DnsHostingEnabled.
+// At least one optional field is required; this handler also enforces the
+// --target-type-required-with--cid business rule. Flag mapping: rename-to ->
+// req.Domain, cid -> req.TargetHash, target-type -> req.TargetType,
+// dns-hosting/no-dns-hosting -> req.DnsHostingEnabled.
 func websitesUpdate(d WebsitesDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
 		Name:        "websites.update",
@@ -433,11 +408,9 @@ func websitesDelete(d WebsitesDeps) catalog.Operation {
 // websitesValidate is the `websites validate` operation. Returns
 // *ipfs.WebsiteValidateResponse.
 //
-// Faithfulness notes:
-//   - The legacy validate command also re-fetches the website and config to
-//     build "required DNS records" hints for display. That enrichment is
-//     presentation (it re-reads data to render instructions) and is not part
-//     of the core validate data contract, so it is left to the wiring layer.
+// The validate command's "required DNS records" hints re-fetch the website
+// and config to render instructions. That enrichment is presentation and is
+// left to the wiring layer, not part of the core validate data contract.
 func websitesValidate(d WebsitesDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
 		Name:        "websites.validate",
@@ -474,11 +447,9 @@ func websitesValidate(d WebsitesDeps) catalog.Operation {
 // <website> positional as a DOMAIN (SSL status is keyed by domain, not ID) and
 // returns *ipfs.WebsiteResponse.
 //
-// Faithfulness notes:
-//   - The legacy command's --watch flag drives a presentational polling loop
-//     (output.Watch) that re-invokes GetSSLStatus; it is NOT part of the data
-//     contract and is therefore left to the CLI wiring layer, which may wrap
-//     this operation with watch rendering.
+// The SSL-status command previously wrapped this operation in a presentational
+// polling loop driven by a --watch flag. That watch rendering is not part of
+// the data contract and is left to the CLI wiring layer.
 func websitesSSLStatus(d WebsitesDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
 		Name:        "websites.ssl.status",

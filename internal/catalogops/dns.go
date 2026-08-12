@@ -1,22 +1,6 @@
-// DNS domain operations for the operation catalog.
-//
-// This file is the faithful migration of the DNS CLI domain (pkg/cli/dns.go)
-// to the operation catalog. Every operation here drives the extracted core
-// DNS service (internal/core/dns) directly and returns its typed DATA
-// (e.g. []ipfs.ZoneListResponse, *ipfs.ZoneResponse, []ipfs.RecordResponse,
-// *ipfs.RecordResponse, *ipfs.ValidationResponse) — never urfave, never
-// renders, never imports pkg/cli.
-//
-// The DNS domain covers zone + record CRUD: zones list/create/get/delete/
-// validate and records list/create/get/update/delete. Zone selection by
-// domain name (vs numeric ID) is resolved here via the core service's
-// read-only ListZones, faithfully matching the legacy resolveZoneID /
-// resolveZoneByArg helpers. Input validation (domain format, record
-// type/content, record name) is business logic and lives here as data
-// validation, not presentation.
-//
-// Import rule (architectural invariant): this package may import
-// internal/catalog and internal/core/* but NEVER pkg/cli.
+// Package catalogops implements the DNS domain operations for the operation
+// catalog: zone and record CRUD driving the core DNS service directly and
+// returning typed data.
 package catalogops
 
 import (
@@ -50,7 +34,7 @@ type DNSDeps struct {
 	// tokens are read from config via ServiceFactory.
 	NewAuthenticated func(cfgMgr config.Manager, secure bool, token string) dns.Service
 	// GetAuthToken returns an auth token override for the current command
-	// context (empty = none). Mirrors pkg/cli.GetAuthToken.
+	// context (empty = none).
 	GetAuthToken func() string
 }
 
@@ -62,12 +46,9 @@ func (d DNSDeps) config() config.Manager {
 	return nil
 }
 
-// service builds the DNS Service honoring the auth-token override, mirroring
-// the CLI's newDNSAPI (which uses dns.NewAuthenticated). When the token
-// override is empty it falls back to the plain ServiceFactory path. The
-// per-invocation --auth-token flag (threaded through input) takes precedence
-// over the deps.GetAuthToken() config fallback, mirroring the legacy
-// GetAuthToken(c, cfgMgr) flag -> config precedence.
+// service builds the DNS Service from the deps. A per-invocation auth-token
+// override from input takes precedence over the deps.GetAuthToken() config
+// fallback; otherwise the plain ServiceFactory path is used.
 func (d DNSDeps) service(input map[string]any) (dns.Service, error) {
 	cfgMgr := d.config()
 	if cfgMgr == nil {
@@ -146,17 +127,13 @@ func dnsZonesList(d DNSDeps) catalog.Operation {
 			if err != nil {
 				return nil, fmt.Errorf("failed to list zones: %w", err)
 			}
-			// []ipfs.ZoneListResponse — rendered as a field list per zone.
 			return zones, nil
 		}),
 	})
 }
 
-// dnsZonesCreate is the `dns zones create` operation.
-//
-// Faithfulness notes: nameservers arrive as a comma-separated string in the
-// legacy CLI (--nameservers ns1,ns2); the handler splits it into a slice via
-// parseCommaSeparated and validates the domain format before creating.
+// dnsZonesCreate is the `dns zones create` operation. Splits the
+// comma-separated nameservers and validates the domain before creating.
 func dnsZonesCreate(d DNSDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
 		Name:        "dns.zones.create",
@@ -185,7 +162,6 @@ func dnsZonesCreate(d DNSDeps) catalog.Operation {
 				return nil, err
 			}
 			nameservers := parseCommaSeparated(catalog.StrArg(input, "nameservers", ""))
-			// *ipfs.ZoneResponse
 			zone, err := svc.CreateZone(ctx, domain, nameservers)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create zone: %w", err)
@@ -226,7 +202,6 @@ func dnsZonesGet(d DNSDeps) catalog.Operation {
 			if arg == "" {
 				return nil, fmt.Errorf("domain or zone ID is required")
 			}
-			// *ipfs.ZoneResponse
 			zone, err := resolveZoneByArg(ctx, svc, arg)
 			if err != nil {
 				return nil, err
@@ -238,11 +213,9 @@ func dnsZonesGet(d DNSDeps) catalog.Operation {
 
 // dnsZonesDelete is the `dns zones delete` operation.
 //
-// Destructive and irreversible. The legacy command requires a confirmation
-// prompt; that gate is a CLI presentation concern enforced in the pkg/cli
-// wiring layer (the --force flag), not in this data-returning handler. The
-// handler resolves the domain/ID to a numeric zone ID and deletes it,
-// returning a confirmation result.
+// Destructive and irreversible. Confirmation is enforced here (the confirm
+// arg, mapped from the CLI's --force); the handler resolves the domain/ID to
+// a numeric zone ID and deletes it, returning a confirmation result.
 func dnsZonesDelete(d DNSDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
 		Name:        "dns.zones.delete",
@@ -286,8 +259,7 @@ func dnsZonesDelete(d DNSDeps) catalog.Operation {
 }
 
 // dnsZonesValidate is the `dns zones validate` operation (nameserver
-// delegation check). Returns *ipfs.ValidationResponse (Valid/Message/
-// Nameservers/CheckedAt).
+// delegation check).
 func dnsZonesValidate(d DNSDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
 		Name:        "dns.zones.validate",
@@ -318,7 +290,6 @@ func dnsZonesValidate(d DNSDeps) catalog.Operation {
 			if err != nil {
 				return nil, err
 			}
-			// *ipfs.ValidationResponse
 			result, err := svc.ValidateZone(ctx, strconv.Itoa(zone.Id))
 			if err != nil {
 				return nil, fmt.Errorf("failed to validate zone: %w", err)
@@ -331,7 +302,7 @@ func dnsZonesValidate(d DNSDeps) catalog.Operation {
 // ---- Records ----
 
 // dnsRecordsList is the `dns records list` operation. Resolves the zone by
-// domain/ID and returns []ipfs.RecordResponse.
+// domain/ID.
 func dnsRecordsList(d DNSDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
 		Name:        "dns.records.list",
@@ -362,7 +333,6 @@ func dnsRecordsList(d DNSDeps) catalog.Operation {
 			if err != nil {
 				return nil, err
 			}
-			// []ipfs.RecordResponse
 			records, err := svc.ListRecords(ctx, zoneID)
 			if err != nil {
 				return nil, fmt.Errorf("failed to list records: %w", err)
@@ -372,11 +342,9 @@ func dnsRecordsList(d DNSDeps) catalog.Operation {
 	})
 }
 
-// dnsRecordsCreate is the `dns records create` operation.
-//
-// Faithfulness notes: --name is optional (apex when empty or "@"); --ttl
-// defaults to 3600 when unset; the record type/content are validated before
-// create. Returns *ipfs.RecordResponse.
+// dnsRecordsCreate is the `dns records create` operation. --name is optional
+// (apex when empty or "@"), --ttl defaults to 3600, and the record
+// type/content are validated before create.
 func dnsRecordsCreate(d DNSDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
 		Name:        "dns.records.create",
@@ -437,7 +405,6 @@ func dnsRecordsCreate(d DNSDeps) catalog.Operation {
 			if err != nil {
 				return nil, err
 			}
-			// *ipfs.RecordResponse
 			created, err := svc.CreateRecord(ctx, zoneID, record)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create record: %w", err)
@@ -448,7 +415,7 @@ func dnsRecordsCreate(d DNSDeps) catalog.Operation {
 }
 
 // dnsRecordsGet is the `dns records get` operation. Identified by zone
-// (positional domain/ID) + --name + --type. Returns *ipfs.RecordResponse.
+// (positional domain/ID) + --name + --type.
 func dnsRecordsGet(d DNSDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
 		Name:        "dns.records.get",
@@ -486,7 +453,6 @@ func dnsRecordsGet(d DNSDeps) catalog.Operation {
 			if err != nil {
 				return nil, err
 			}
-			// *ipfs.RecordResponse
 			record, err := svc.GetRecord(ctx, zoneID, name, recordType)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get record: %w", err)
@@ -498,7 +464,7 @@ func dnsRecordsGet(d DNSDeps) catalog.Operation {
 
 // dnsRecordsUpdate is the `dns records update` operation. Identified by zone
 // + --name + --type; changes --content/--ttl/--disabled; fields not provided
-// are left unchanged. Returns *ipfs.RecordResponse.
+// are left unchanged.
 func dnsRecordsUpdate(d DNSDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
 		Name:        "dns.records.update",
@@ -559,7 +525,6 @@ func dnsRecordsUpdate(d DNSDeps) catalog.Operation {
 			if err != nil {
 				return nil, err
 			}
-			// *ipfs.RecordResponse
 			updated, err := svc.UpdateRecord(ctx, zoneID, name, recordType, record)
 			if err != nil {
 				return nil, fmt.Errorf("failed to update record: %w", err)
@@ -571,7 +536,7 @@ func dnsRecordsUpdate(d DNSDeps) catalog.Operation {
 
 // dnsRecordsDelete is the `dns records delete` operation. Identified by zone
 // + --name + --type. Destructive; the handler enforces the confirmation gate
-// (mirrored by the CLI wiring's --force) so every actor subtype is covered.
+// locally so all callers are covered.
 func dnsRecordsDelete(d DNSDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
 		Name:        "dns.records.delete",
@@ -621,7 +586,7 @@ func dnsRecordsDelete(d DNSDeps) catalog.Operation {
 	})
 }
 
-// ---- Domain/zone resolution helpers (business logic, faithful to legacy) ----
+// ---- Domain/zone resolution helpers ----
 
 // resolveZoneID resolves a domain name or numeric ID to a zone ID string. If
 // arg is numeric, it is returned as-is; otherwise it searches by domain via
@@ -665,8 +630,8 @@ func validateDomain(domain string) error {
 	return nil
 }
 
-// validateDNSRecord validates a record type/content pair, mirroring the
-// legacy DNS validation before the record is sent to the API.
+// validateDNSRecord validates a record type/content pair before the record
+// is sent to the API.
 func validateDNSRecord(recordType, content string) error {
 	switch strings.ToUpper(recordType) {
 	case "A":

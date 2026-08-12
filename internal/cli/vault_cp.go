@@ -314,7 +314,7 @@ func vaultVaultCopy(ctx context.Context, c *cli.Command, output Output, srcEp, d
 		return err
 	}
 
-	// Check destination (unless --force), mirroring upload.
+	// Check destination (unless --force), like upload.
 	if !c.Bool(FlagForce) {
 		if _, err := dstSvc.Stat(ctx, dstPath); err == nil {
 			return fmt.Errorf("file already exists in vault: %s (use --force to overwrite)", dstEp.raw)

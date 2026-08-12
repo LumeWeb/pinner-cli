@@ -6,12 +6,10 @@ import (
 )
 
 // splitMetaPairs parses a list of `key=value` strings into a flat, alternating
-// [key, value, key, value, ...] slice, mirroring the legacy pins_*.go behavior
-// (parseMetaPairs -> metaMapToSlice) before metadata is handed to the core
-// UpdateMetadata / UpdatePin services, which require even-length pair slices.
+// [key, value, key, value, ...] slice. The core UpdateMetadata / UpdatePin
+// services require even-length pair slices.
 //
-// Iteration is in input order (deterministic), unlike the legacy map-based
-// expansion which ranged over an unordered map. Each entry is split on the
+// Iteration is in input order (deterministic). Each entry is split on the
 // first `=`, and an empty key or a missing `=` is rejected.
 func splitMetaPairs(pairs []string) ([]string, error) {
 	if len(pairs) == 0 {

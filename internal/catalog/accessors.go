@@ -3,9 +3,8 @@ package catalog
 import "strconv"
 
 // Arg accessors read typed values out of an operation input map. They are the
-// single shared implementation for reading catalog operation arguments, used
-// by both the IO-agnostic catalogops handlers and the pkg/cli wiring layer.
-// This avoids duplicate type-assertion logic across the two boundaries.
+// single shared implementation used by both the IO-agnostic catalogops handlers
+// and the pkg/cli wiring layer to read catalog operation arguments.
 //
 // All read from `input map[string]any`, matching Operation.Execute's signature
 // (operation.go). Absent/nil keys return the provided default; the string,

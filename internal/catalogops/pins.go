@@ -1,29 +1,6 @@
-// Package catalogops wires the canonical operation catalog (internal/catalog)
-// to the extracted core service domains. Each function in this package builds
-// catalog.Operations whose Handlers drive core service methods directly —
-// never the urfave command tree, never any CLI presentation. Rendering of the
-// returned data happens in the frontend (CLI compiler / MCP compiler), keeping
-// this package CLI-agnostic.
-//
-// The catalog is the single source of truth: the same operations registered
-// here are compiled to urfave commands (for the real CLI) and to MCP tools +
-// meta-tools. There is exactly one flag/argument representation (OperationArg)
-// and one business-logic path (core services) — no duplication.
-//
-// This file is the PILOT for the operation-catalog migration: it captures the
-// full, faithful semantics of the five `pins` subcommands (add/rm/ls/status/
-// update) as catalog operations. Every Handler returns the typed core-service
-// DATA (e.g. []pinning.Pin, *pinning.PinResult, *pinning.BatchResult) and never
-// renders. Presentation-sensitive behavior that is inherently CLI/IO-coupled
-// (reading CIDs from a local file path, stdin-pipe detection, the interactive
-// dry-run preview, the unpin-all count-typing safety prompt) is deliberately
-// NOT ported here — see the individual operation docs for the split. That
-// presentation lives in the pkg/cli wiring layer that compiles these
-// operations.
-//
-// Import rule (architectural invariant): this package may import
-// internal/catalog and internal/core/* but NEVER pkg/cli. The reverse
-// direction (pkg/cli → this package) is the only allowed one.
+// Package catalogops builds catalog.Operations whose handlers drive the core
+// service domains directly and return typed data. Rendering happens in the
+// CLI/MCP frontend.
 package catalogops
 
 import (
@@ -54,7 +31,7 @@ type PinsDeps struct {
 	// tokens are read from config via ServiceFactory.
 	NewAuthenticated func(cfgMgr config.Manager, secure bool, token string) pinning.PinningService
 	// GetAuthToken returns an auth token override for the current command
-	// context (empty = none). Mirrors pkg/cli.GetAuthToken.
+	// context (empty = none).
 	GetAuthToken func() string
 }
 
@@ -67,10 +44,9 @@ func (d PinsDeps) config() config.Manager {
 	return nil
 }
 
-// service builds the PinningService honoring the auth-token override. The
-// per-invocation --auth-token flag (threaded through input) takes precedence
-// over the deps.GetAuthToken() config fallback, mirroring the legacy
-// GetAuthToken(c, cfgMgr) flag -> config precedence.
+// service builds the PinningService from the deps. A per-invocation
+// auth-token override from input takes precedence over the
+// deps.GetAuthToken() config fallback; otherwise ServiceFactory is used.
 func (d PinsDeps) service(input map[string]any) (pinning.PinningService, error) {
 	cfgMgr := d.config()
 	if cfgMgr == nil {
@@ -110,14 +86,9 @@ func (h handler) Execute(ctx context.Context, input map[string]any) (any, error)
 	return h(ctx, input)
 }
 
-// jsonNumber is retained here for any JSON-related helpers that still need it;
-// the arg accessors now live in internal/catalog (StrArg/IntArg/BoolArg/
-// StrSliceArg) to avoid duplicating the type-assertion logic between the
-// catalogops handlers and the pkg/cli wiring layer.
-
 // DryRunResult is the data returned by a handler when the caller requests a
 // dry-run (--dry-run): the operation never mutates state, and the handler
-// instead returns what it WOULD have done. It is pure data — the CLI wiring
+// instead returns what it WOULD have done. It is pure data. The CLI wiring
 // layer renders it as a dry-run preview; the MCP layer renders it as a result.
 type DryRunResult struct {
 	Operation string
@@ -126,9 +97,8 @@ type DryRunResult struct {
 }
 
 // dryRun builds a DryRunResult describing what a dry-run of the given
-// operation would do with the provided CIDs/options. The handler returns this
-// WITHOUT calling the core service, faithfully capturing the fence semantics
-// of the existing CLI (no mutation, report the plan).
+// operation would do. The handler returns this without calling the core
+// service (no mutation, report the plan).
 func dryRun(operation string, cids []string, options map[string]string) *DryRunResult {
 	if options == nil {
 		options = map[string]string{}
@@ -148,16 +118,9 @@ func PinsOperations(d PinsDeps) []catalog.Operation {
 	}
 }
 
-// pinsList is the `pins ls` operation.
-//
-// Faithfulness notes:
-//   - The `--watch` flag of the legacy `list` command drives a purely
-//     presentational polling loop (output.Watch) that re-invokes List; it is
-//     NOT part of the data contract and is therefore not declared here. The
-//     CLI wiring layer may wrap this operation with watch rendering if needed.
-//   - The legacy command also consumes a name pattern from stdin when stdin is
-//     a pipe; that IO read is a CLI concern and stays in the wiring layer,
-//     which feeds the resolved name filter into the "name" input.
+// pinsList is the `pins ls` operation. Watch polling and stdin name reads
+// are CLI presentation concerns handled in the wiring layer; this handler
+// only takes the resolved name filter.
 func pinsList(d PinsDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
 		Name:        "pins.list",
@@ -186,26 +149,17 @@ func pinsList(d PinsDeps) catalog.Operation {
 			if err != nil {
 				return nil, err
 			}
-			// []pinning.Pin — the CLI renders as a CID/NAME/STATUS/CREATED table.
 			return pins, nil
 		}),
 	})
 }
 
-// pinsAdd is the `pins add` operation (pin existing CIDs).
-//
-// Faithfulness notes (migrated from the legacy `pins add` command):
-//   - A single CID goes through PinningService.Pin (returns *pinning.PinResult);
-//     multiple CIDs go through PinningService.PinBatch (returns
-//     *pinning.BatchResult). wait defaults to true (the CLI exposes --no-wait).
-//   - `meta` (--meta key=value pairs) is applied after a successful pin via
-//     PinningService.UpdateMetadata for each CID — exactly the legacy two-step
-//     behavior (pin first, then set metadata). The service itself validates
-//     that metadata pairs come in key/value order.
-//   - CID input (positional <cid...>, --file <path>, or stdin pipe) is resolved
-//     in the CLI wiring layer and injected as the "cids" []string input; this
-//     handler is IO-free.
-//   - --dry-run returns a DryRunResult instead of mutating state.
+// pinsAdd is the `pins add` operation (pin existing CIDs). A single CID goes
+// through PinningService.Pin; multiple CIDs go through PinBatch. wait defaults
+// to true. Metadata pairs are applied after a successful pin. CID input is
+// resolved in the CLI wiring layer and injected as the "cids" arg; this
+// handler is IO-free. --dry-run returns a DryRunResult instead of mutating
+// state.
 func pinsAdd(d PinsDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
 		Name:        "pins.add",
@@ -219,7 +173,7 @@ func pinsAdd(d PinsDeps) catalog.Operation {
 		Positional:  "<cid...>",
 		Args: []catalog.OperationArg{
 			// cids is populated by the CLI wiring layer from positional args,
-			// --file, or stdin; declared as the single argument representation.
+			// --file, or stdin.
 			{Name: "cids", Type: catalog.ArgTypeStringSlice, Help: "Content identifiers to pin (positional, --file, or stdin)"},
 			{Name: "name", Type: catalog.ArgTypeString, Help: "Custom name for the pin"},
 			{Name: "wait", Type: catalog.ArgTypeBool, Default: "true", Help: "Wait for the pin to be confirmed (default true; use --no-wait to skip)"},
@@ -290,13 +244,11 @@ func pinsAdd(d PinsDeps) catalog.Operation {
 				pinned = cids
 			}
 
-			// Apply --meta after the pin succeeds (legacy two-step behavior):
-			// metadata is set on each CID only after its pin is created.
+			// Apply --meta after the pin succeeds: metadata is set on each
+			// CID only after its pin is created.
 			if len(metaPairs) > 0 {
 				// Parse each --meta k=v pair into an alternating [k,v,k,v]
-				// slice, mirroring legacy pins_add.go parseMetaPairs +
-				// metaMapToSlice before UpdateMetadata (which rejects
-				// odd-length slices and would otherwise mis-pair values).
+				// slice for UpdateMetadata, which rejects odd-length slices.
 				parsed, perr := splitMetaPairs(metaPairs)
 				if perr != nil {
 					return nil, perr
@@ -312,28 +264,20 @@ func pinsAdd(d PinsDeps) catalog.Operation {
 				}
 			}
 
-			// *pinning.PinResult (single) or *pinning.BatchResult (batch).
 			return result, nil
 		}),
 	})
 }
 
 // pinsRemove is the `pins rm` operation (unpin CIDs, or unpin all).
-//
-// Faithfulness notes (migrated from the legacy `pins rm` command):
-//   - Confirmation ("force") is mandatory: with a single CID the core Unpin
-//     silently no-ops without confirm; batch/unpin-all require confirm. The CLI
-//     wiring layer enforces --force (and the hidden --confirm alias) via the
-//     destructive gate; this handler still threads the confirm bool through so
-//     programmatic callers can pass it explicitly.
-//   - `--all` unpins every pin (optionally filtered by --status) via
-//     PinningService.UnpinAll. The legacy command additionally required an
-//     interactive count-typing safety prompt (or --yes to skip); that prompt
-//     is a human-only CLI presentation concern and is enforced in the wiring
-//     layer, NOT in this data-returning handler.
-//   - CID input (positional <cid...>, --file, stdin) is resolved in the wiring
-//     layer and injected as the "cids" input; this handler is IO-free.
-//   - --dry-run returns a DryRunResult instead of mutating state.
+// Confirmation is mandatory: without it a single-CID Unpin silently no-ops,
+// and batch/unpin-all fail. The CLI wiring enforces --force (and the hidden
+// --confirm alias) via the destructive gate; this handler threads the confirm
+// bool through so programmatic callers can pass it explicitly. --all unpins
+// every pin (optionally filtered by --status) via UnpinAll; the interactive
+// count-typing prompt is enforced in the wiring layer, not here. CID input is
+// resolved in the wiring layer and injected as the "cids" arg. --dry-run
+// returns a DryRunResult instead of mutating state.
 func pinsRemove(d PinsDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
 		Name:        "pins.rm",
@@ -372,8 +316,7 @@ func pinsRemove(d PinsDeps) catalog.Operation {
 				statusFilter := catalog.StrArg(input, "status", "")
 				if catalog.BoolArg(input, "dry-run", false) {
 					// Report the request IDs that would be unpinned without
-					// mutating state. Naming them requires a read-only List,
-					// which is safe and faithful to the legacy dry-run.
+					// mutating state. Naming them requires a read-only List.
 					pins, err := svc.List(ctx, "", 0, statusFilter)
 					if err != nil {
 						return nil, err
@@ -421,11 +364,9 @@ func pinsRemove(d PinsDeps) catalog.Operation {
 			}
 
 			if len(cids) == 1 {
-				// *pinning.UnpinResult
 				return svc.Unpin(ctx, cids[0], confirm)
 			}
 
-			// *pinning.BatchResult
 			return svc.UnpinBatch(ctx, cids, pinning.BatchOptions{
 				Parallel:   parallel,
 				ContinueOn: continueOn,
@@ -434,16 +375,8 @@ func pinsRemove(d PinsDeps) catalog.Operation {
 	})
 }
 
-// pinsStatus is the `pins status` operation.
-//
-// Faithfulness notes:
-//   - The legacy `pins status` command routes through a StatusService that
-//     falls back to account operations when the pin is not found. That fallback
-//     is a richer StatusService concern outside the PinningService-based deps
-//     this pilot wires; this operation captures the canonical pin-status
-//     semantics via PinningService.Status.
-//   - `watch` is a genuine service parameter (PinningService.Status polls until
-//     the pin settles internally), so it is declared and threaded through.
+// pinsStatus is the `pins status` operation. Status polls until the pin
+// settles internally when --watch is set, so watch is threaded through.
 func pinsStatus(d PinsDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
 		Name:        "pins.status",
@@ -471,22 +404,16 @@ func pinsStatus(d PinsDeps) catalog.Operation {
 			if cid == "" {
 				return nil, fmt.Errorf("pins.status: missing required argument cid")
 			}
-			// *pinning.PinStatus
 			return svc.Status(ctx, cid, catalog.BoolArg(input, "watch", false))
 		}),
 	})
 }
 
-// pinsUpdate is the `pins update` operation (rename / metadata).
-//
-// Faithfulness notes (migrated from the legacy `pins update` command):
-//   - The legacy command requires at least one of --name/--meta/--clear-meta
-//     (requireUpdateFields). That validation is a CLI-presentation concern and
-//     is enforced in the wiring layer; the handler faithfully delegates the
-//     whole update to PinningService.UpdatePin, which handles the CID lookup
-//     and Replace.
-//   - --dry-run returns a DryRunResult instead of mutating state.
-//   - CID input is a single positional (or --cid); resolved in the wiring layer.
+// pinsUpdate is the `pins update` operation (rename / metadata). At least one
+// of --name/--meta/--clear-meta is required (enforced in the wiring layer);
+// the handler delegates the update to PinningService.UpdatePin. --dry-run
+// returns a DryRunResult instead of mutating state. CID input is a single
+// positional (or --cid), resolved in the wiring layer.
 func pinsUpdate(d PinsDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
 		Name:        "pins.update",
@@ -537,7 +464,7 @@ func pinsUpdate(d PinsDeps) catalog.Operation {
 			}
 
 			// UpdatePin requires an alternating key,value metadata slice.
-			// Parse each --meta k=v pair first (legacy pins_update.go behavior).
+			// Parse each --meta k=v pair first.
 			parsedMeta, perr := splitMetaPairs(metaPairs)
 			if perr != nil {
 				return nil, perr
