@@ -7,37 +7,37 @@ import (
 	"time"
 )
 
-// This file provides the GENERIC, internally-shared machinery behind the
-// out-of-band hand-off (start → needs_human → resume → done) protocol.
+// This file provides the generic, internally-shared machinery behind the
+// out-of-band hand-off (start -> needs_human -> resume -> done) protocol.
 //
-// The mechanics are DRY here ONCE and reused by every hand-off flow (SSO
-// login, vault seed create, vault seed restore, future OTP/device hand-offs):
+// The mechanics are implemented here once and reused by every hand-off flow
+// (SSO login, vault seed create, vault seed restore, future OTP/device
+// hand-offs):
 //   - a start-point op mints a handle and registers a per-handle continuation,
 //   - the matching named *_resume tool dispatches on that handle.
 //
-// The SURFACE stays per-domain: each flow exposes its own named *_resume tool
-// (e.g. pinner_auth_resume, future pinner_vault_resume) so an LLM can
-// pattern-match the flow from the tool name. Only the internals are shared via
-// NewResumeTool.
+// Each flow exposes its own named *_resume tool (e.g. pinner_auth_resume,
+// pinner_vault_resume) so an LLM can recognize the flow from the tool name.
+// Only the internals are shared via NewResumeTool.
 
 // ResumeContinuation completes or polls a pending hand-off for a handle. It is
 // domain-specific (SSO polls its OOB login; vault polls its seed/restore
 // coordinator), registered against the handle when the flow starts. It returns
-// either a NeedsHumanResult (hand-off still pending — the caller should keep
+// either a NeedsHumanResult (hand-off still pending, so the caller should keep
 // polling) or a terminal done result (completed).
 type ResumeContinuation func(ctx context.Context, handle string, data map[string]any) (ToolResult, error)
 
 // HandoffRegistry is the shared internal registry of per-handle resume
 // continuations. A start-point tool calls Begin(handle, cont) before returning
-// its needs_human hand-off; the template resume tool looks the handle up by
-// handle to dispatch. One registry instance is shared by every hand-off flow
-// on the server.
+// its needs_human hand-off; the template resume tool looks the handle up to
+// dispatch. One registry instance is shared by every hand-off flow on the
+// server.
 //
-// The registry mirrors AsyncHandleStore's bounded, TTL-bounded lifetime: a
-// continuation is only valid for as long as its backing handle, so entries
-// carry a createdAt timestamp and are evicted once past the TTL (lazily on
-// access and on each Begin/Prune) and when the map exceeds MaxEntries. This
-// guarantees an abandoned hand-off never leaks a continuation forever.
+// The registry has the same bounded, TTL-limited lifetime as AsyncHandleStore:
+// a continuation is only valid as long as its backing handle, so entries carry
+// a createdAt timestamp and are evicted once past the TTL (lazily on access and
+// on each Begin/Prune) and when the map exceeds MaxEntries. An abandoned
+// hand-off never leaks a continuation forever.
 type HandoffRegistry struct {
 	mu         sync.RWMutex
 	cont       map[string]registryEntry
@@ -45,8 +45,7 @@ type HandoffRegistry struct {
 	maxEntries int
 	now        func() time.Time
 	// cleanup, when set, retires the backing async handle when the registry
-	// evicts a still-live continuation (capacity eviction). It keeps the
-	// registry decoupled from AsyncHandleStore: the server injects
+	// evicts a still-live continuation (capacity eviction). The server injects
 	// store.Delete so an evicted flow cannot leave a live-but-unresumable
 	// handle that would mislead a resumer.
 	cleanup func(handle string)
@@ -61,7 +60,7 @@ type registryEntry struct {
 
 // NewHandoffRegistry returns an empty hand-off continuation registry. Entries
 // live for ttl and the registry is capped at maxEntries. Pass DefaultSessionTTL
-// and DefaultMaxSessions to mirror the AsyncHandleStore backing the handles.
+// and DefaultMaxSessions to match the AsyncHandleStore backing the handles.
 func NewHandoffRegistry() *HandoffRegistry {
 	return &HandoffRegistry{
 		cont:       make(map[string]registryEntry),
@@ -218,8 +217,8 @@ func (s ResumeToolSpec) deadHandleReason() HandoffReason {
 	return ReasonCredentialEntry
 }
 
-// NewResumeTool builds a per-domain, NAMED *_resume tool from the shared
-// template. All of the resume dispatch logic is written here ONCE:
+// NewResumeTool builds a per-domain, named *_resume tool from the shared
+// template. The resume dispatch logic is implemented here once:
 //
 //   - decode + require the handle,
 //   - AsyncHandleStore Get for TTL/expiry (a missing/expired handle steers the
@@ -285,7 +284,7 @@ func NewResumeTool(spec ResumeToolSpec, reg *HandoffRegistry, handles *AsyncHand
 				}), nil
 			}
 			// A terminal (done) result from the continuation means the hand-off
-			// is complete — drop the continuation so it cannot be resumed again.
+			// is complete. Drop the continuation so it cannot be resumed again.
 			if isTerminalResume(result) {
 				reg.End(in.Handle)
 			}
@@ -297,11 +296,11 @@ func NewResumeTool(spec ResumeToolSpec, reg *HandoffRegistry, handles *AsyncHand
 // isTerminalResume reports whether a resume result is terminal (done) rather
 // than a still-pending needs_human. Only an explicit status that is not
 // needs_human is terminal. A result with nil or non-map structured content is
-// treated as UNKNOWN (not terminal): conservatively keeping the continuation
-// makes the agent poll once more, which is harmless, whereas wrongly dropping
-// it mid-flow would report "done" for a flow that may still be pending. SSO
-// returns map content for both pending and done, so this is only a safety net
-// for future generic flows (vault seed, OTP).
+// treated as UNKNOWN (not terminal): keeping the continuation makes the agent
+// poll once more, which is harmless, whereas dropping it mid-flow would report
+// "done" for a flow that may still be pending. SSO returns map content for both
+// pending and done, so this is only a safety net for future generic flows
+// (vault seed, OTP).
 func isTerminalResume(result ToolResult) bool {
 	sc, ok := result.StructuredContent.(map[string]any)
 	if !ok {

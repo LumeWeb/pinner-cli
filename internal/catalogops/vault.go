@@ -1,33 +1,13 @@
-// Package catalogops wires the canonical operation catalog (internal/catalog)
-// to the extracted core service domains. This file adds the vault domain:
-// catalog operations that drive internal/core/vault (the VaultService and the
-// profile/registry helpers). Every Handler returns typed core DATA and never
-// renders — see the package doc on pins.go for the overall do/render split.
+// Package catalogops implements vault domain operations for the operation
+// catalog. Each operation drives the core vault service directly and returns
+// typed data.
 //
-// Import rule (architectural invariant): this package may import
-// internal/catalog and internal/core/* but NEVER pkg/cli.
-//
-// SPLIT DECISIONS (faithfulness vs. the data-returning contract)
-//
-// The vault CLI is a large, IO-heavy domain. The commands below are the ones
-// that CAN be faithfully represented as pure data-returning operations driving
-// core services (they read state, mutate the profile registry, or drive the
-// VaultService and return typed results). Commands that are fundamentally
-// interactive/IO-coupled are NOT ported here and remain hand-written in
-// pkg/cli (see the per-domain note at the bottom):
-//
-//   - vault create   — interactive browser-approval flow + writing the
-//     recovery seed to a 0600 file + progressive JSON handoff. The seed file
-//     IO and the browser handoff are inherent CLI presentation concerns that
-//     cannot be expressed as a data-returning handler without losing the
-//     seed-on-disk safety property. Kept hand-written.
-//   - vault restore  — same interactive browser approval + stdin seed read +
-//     progressive handoff. Kept hand-written.
-//   - vault cp       — binary streaming between the local filesystem and
-//     vault(s) with atomic temp-file rename, progress, and force-overwrite
-//     guards. Fundamentally IO-coupled. Kept hand-written.
-//   - vault cat      — raw binary stdout streaming (and agent-mode base64
-//     buffering). Fundamentally IO-coupled. Kept hand-written.
+// The vault CLI is largely IO-heavy, so only the data-returning operations
+// live here. The interactive and streaming commands stay hand-written in
+// pkg/cli: vault create and vault restore (browser approval, seed-file and
+// stdin IO, progressive handoff), vault cp (binary streaming with atomic
+// temp-file rename and force-overwrite guards), and vault cat (raw binary
+// stdout streaming).
 package catalogops
 
 import (
@@ -70,7 +50,7 @@ func (d VaultDeps) service(profileName string) (vault.VaultService, error) {
 }
 
 // VaultOperations returns the catalog operations for the vault domain that can
-// be faithfully expressed as data-returning handlers driving core services.
+// be represented as data-returning handlers driving core services.
 func VaultOperations(d VaultDeps) []catalog.Operation {
 	return []catalog.Operation{
 		vaultStatus(d),
@@ -115,9 +95,8 @@ func vaultStatus(d VaultDeps) catalog.Operation {
 				return nil, err
 			}
 			defer svc.Close()
-			// *vault.StatusResult — the CLI renders it as fields (human) or
-			// the raw JSON (machine). profileName is a CLI-presentation nuance
-			// and is resolved by the renderer.
+			// StatusResult is rendered as fields (human) or raw JSON (machine);
+			// profileName is a CLI-presentation nuance resolved by the renderer.
 			return svc.Status(ctx)
 		}),
 	})
@@ -250,7 +229,7 @@ func vaultVerify(d VaultDeps) catalog.Operation {
 // ---------------------------------------------------------------------------
 
 // VaultRmResult is the data returned by a successful vault.rm: the deleted
-// path. Pure data — the CLI renders it, the MCP client consumes it.
+// path.
 type VaultRmResult struct {
 	Deleted string `json:"deleted"`
 }
@@ -366,8 +345,7 @@ type VaultShareResult struct {
 }
 
 // parseVaultExpiry parses a duration string like "7d", "30d", "1h", "0"
-// (never) into a valid-until time.Time. Faithfully ported from the legacy CLI
-// helper so the operation is self-contained and presentation-neutral.
+// (never) into a valid-until time.Time.
 func parseVaultExpiry(s string) (time.Time, error) {
 	if s == "0" || s == "never" {
 		return time.Now().AddDate(100, 0, 0), nil
@@ -524,8 +502,7 @@ func vaultProfileUse(d VaultDeps) catalog.Operation {
 // VaultCacheResult is the data returned by a vault cache operation: the
 // outcome state ("rebuilt", "cleared") and, for rebuild, the number of changes
 // synced. Existed records whether a cache DB was present before a clear, so
-// the frontend can report "no cache to clear" faithfully (JSON keeps just
-// state, matching the legacy wire shape).
+// the frontend can report "no cache to clear".
 type VaultCacheResult struct {
 	State           string `json:"state"`
 	EventsProcessed int64  `json:"events_processed,omitempty"`

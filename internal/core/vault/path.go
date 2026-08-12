@@ -67,8 +67,8 @@ func ParseVaultPath(pathStr string) (*VaultPath, error) {
 }
 
 // parsePath parses a "vault:<path>" string (path may be rootless after the
-// scheme) plus an explicit profile, producing the same Directory/Name/IsDir
-// split the legacy parser did.
+// scheme) plus an explicit profile, producing the Directory/Name/IsDir
+// components of a VaultPath.
 func parsePath(p string, profile *string) (*VaultPath, error) {
 	// Strip "vault:" prefix
 	pp := strings.TrimPrefix(p, VaultScheme)

@@ -2,14 +2,10 @@ package catalogops
 
 // AuthTokenInputKey is the reserved input-map key through which the CLI wiring
 // threads the per-invocation --auth-token flag override into an operation's
-// service construction. It is the only channel by which the per-invocation
-// command flag (held in the pkg/cli wiring layer) can reach the canonical
-// deps closures in internal/catalogops, which by architectural invariant may
-// not import pkg/cli.
+// service construction.
 //
 // When present and non-empty it takes precedence over the deps.GetAuthToken()
-// config fallback, mirroring the legacy GetAuthToken(c, cfgMgr) precedence of
-// flag -> config.
+// config fallback (flag takes precedence over config).
 const AuthTokenInputKey = "auth_token"
 
 // authTokenFromInput returns the --auth-token flag override threaded through

@@ -14,27 +14,26 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/core/dns"
 )
 
-// dns_wiring.go is the pkg/cli frontend adapter for the DNS catalog
-// operations (internal/catalogops/dns.go). It keeps the catalog fully free of
-// pkg/cli imports: this file is the single place that maps IO/CLI concerns
-// (positional <domain> zone argument, the destructive --force gate for
-// zone/record delete) onto the catalog and renders every handler's typed DATA
-// result through the CLI Output formatter.
+// dns_wiring.go adapts the DNS catalog operations
+// (internal/catalogops/dns.go) to urfave/cli/v3 commands. The catalog never
+// imports pkg/cli; this file maps CLI concerns (positional <domain> zone
+// argument, the destructive --force gate for zone/record delete) onto the
+// catalog and renders each handler's DATA result through the CLI Output
+// formatter.
 //
-// Name mapping: the DNS operations are canonically dotted
-// ("dns.zones.list", "dns.records.create", ...). The real CLI nests them as
-// "dns" → ("zones" | "records") → leaf. This two-level nesting lives HERE,
-// not in internal/catalog.
+// The DNS operations are canonically dotted ("dns.zones.list",
+// "dns.records.create", ...). The CLI nests them as "dns" -> ("zones" |
+// "records") -> leaf. That nesting lives here, not in internal/catalog.
 //
-// Positional mapping: the catalog compiler builds its input map from FLAGS
-// only. Commands that take a <domain> positionally (zones get/delete/validate,
-// records list/create/get/update/delete) therefore need the wiring layer to
-// translate the first positional arg into the operation's "zone" input before
-// dispatching. We do that here by wrapping each compiled command's Action.
+// The catalog compiler builds its input map from flags only. Commands that
+// take a <domain> positionally (zones get/delete/validate, records
+// list/create/get/update/delete) translate the first positional arg into the
+// operation's "zone" input before dispatch. We do that by wrapping each
+// compiled command's Action.
 
 // catalogDNSDeps builds the catalogops.DNSDeps from the live CLI wiring.
 // Service construction uses a discard writer so handlers return pure data and
-// NEVER render; all presentation happens in renderDNSResult.
+// never render; all presentation happens in renderDNSResult.
 func catalogDNSDeps() catalogops.DNSDeps {
 	return catalogops.DNSDeps{
 		// Lazy config manager: resolved per invocation, never at package init.
@@ -54,10 +53,10 @@ func catalogDNSDeps() catalogops.DNSDeps {
 		},
 		ServiceFactory: dns.ServiceFactory,
 		NewAuthenticated: func(cfgMgr config.Manager, secure bool, token string) dns.Service {
-			// Mirrors newDNSAPI (dns.NewAuthenticated). Constructs a service
-			// pinned to the override token; on failure fall back to a TOKEN-LESS
-			// service so every handler's RequireAuthenticated() returns
-			// ErrNotAuthenticated cleanly instead of panicking on a nil service.
+			// Construct a service pinned to the override token; on failure fall
+			// back to a token-less service so each handler's
+			// RequireAuthenticated() returns ErrNotAuthenticated instead of
+			// panicking on a nil service.
 			svc, err := dns.NewAuthenticated(cfgMgr, token, secure)
 			if err != nil {
 				return dns.ServiceFactory(cfgMgr, secure)
@@ -74,14 +73,12 @@ func catalogDNSDeps() catalogops.DNSDeps {
 	}
 }
 
-// dnsCatalogDeps lazily builds the catalog's registered DNS operations.
+// dnsCatalogDeps holds the catalog's registered DNS operation deps.
 var dnsCatalogDeps = catalogops.DNSDeps(catalogDNSDeps())
 
 // newDNSCommand is the catalog-driven "dns" parent command. It compiles the
-// DNS operations via the catalog's CLI compiler (NewCLICompilerWithRenderer)
-// and nests the resulting leaf commands under "dns" → ("zones" | "records").
-// This replaces the hand-written DNS command tree; the hand-written dnsXxx
-// handler functions in dns.go are retained for their tests.
+// DNS operations via the catalog's CLI compiler and nests the resulting leaf
+// commands under "dns" -> ("zones" | "records").
 func newDNSCommand() *cli.Command {
 	cat := catalog.NewCatalog()
 	for _, op := range catalogops.DNSOperations(dnsCatalogDeps) {
@@ -157,7 +154,7 @@ func dnsCatalogActionAdapter(c *cli.Command, group, leaf string) cli.ActionFunc 
 
 	return func(ctx context.Context, cmd *cli.Command) error {
 		// Build the input map from the compiler-declared flags plus the
-		// resolved positional <domain> → "zone" input.
+		// resolved positional <domain> in the "zone" input.
 		var op catalog.Operation
 		for _, cand := range catalogops.DNSOperations(dnsCatalogDeps) {
 			if cand.Name() == canonicalName {
@@ -174,9 +171,9 @@ func dnsCatalogActionAdapter(c *cli.Command, group, leaf string) cli.ActionFunc 
 			input[a.Name] = flagValue(cmd, a)
 		}
 
-		// Thread the per-invocation --auth-token flag into the operation's
-		// service construction (flag -> config precedence). Only when set, so
-		// deps.service() still falls back to the config-read GetAuthToken.
+		// The per-invocation --auth-token flag takes precedence over the config
+		// token. Only set it when provided so deps.service() falls back to the
+		// config-read GetAuthToken.
 		if tok := cmd.String(FlagAuthToken); tok != "" {
 			input[catalogops.AuthTokenInputKey] = tok
 		}
@@ -186,10 +183,9 @@ func dnsCatalogActionAdapter(c *cli.Command, group, leaf string) cli.ActionFunc 
 			input["zone"] = cmd.Args().First()
 		}
 
-		// Destructive gate (zones delete, records delete). The catalog
-		// compiler injects a --force flag; since we replace the Action we
-		// enforce it ourselves, honoring both --force and the hidden
-		// --confirm legacy alias.
+		// Destructive gate (zones delete, records delete). The catalog compiler
+		// injects a --force flag; since we replace the Action we enforce it
+		// ourselves, honoring both --force and the hidden --confirm alias.
 		if op.Safety() == catalog.SafetyDestructive {
 			confirm := cmd.Bool(FlagForce) || cmd.Bool(FlagConfirm)
 			input["confirm"] = confirm
@@ -201,10 +197,8 @@ func dnsCatalogActionAdapter(c *cli.Command, group, leaf string) cli.ActionFunc 
 			}
 		}
 
-		// Apply the legacy per-call deadline (shared with every catalog domain):
-		// the migrated catalog handlers call the core service with the raw
-		// context, but legacy actions wrapped it in context.WithTimeout so a
-		// hanging backend fails after the configured timeout instead of blocking.
+		// Apply the configured per-command timeout so a hanging backend fails
+		// after the configured timeout instead of blocking.
 		dctx, cancel := applyDefaultTimeout(ctx)
 		defer cancel()
 

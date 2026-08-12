@@ -1,12 +1,6 @@
-// Package catalogops: faithful IPNS operations driving the core IPNS service.
-//
-// The IPNS domain (pns keys list/create/get/delete, publish, republish,
-// resolve) is migrated to the operation catalog: each Operation.Handler calls
-// internal/core/ipns.Service directly and returns typed DATA (never renders).
-// Rendering happens in the pkg/cli wiring layer (ipns_wiring.go).
-//
-// Import rule (architectural invariant): this package imports internal/catalog
-// and internal/core/* but NEVER pkg/cli.
+// Package catalogops implements IPNS domain operations for the operation
+// catalog. Each operation drives the core IPNS service directly and returns
+// typed data; rendering happens in the CLI wiring layer.
 package catalogops
 
 import (
@@ -31,9 +25,8 @@ type IPNSDeps struct {
 }
 
 // service builds the IPNS Service honoring the per-invocation auth-token
-// override from the input map (flag → config precedence), falling back to
-// GetAuthToken(). Returns a clean error when no config manager is available,
-// mirroring PinsDeps.service.
+// override from the input map (flag over config), falling back to
+// GetAuthToken(). Returns a clean error when no config manager is available.
 func (d IPNSDeps) service(input map[string]any) (ipns.Service, error) {
 	cfgMgr := d.config()
 	if cfgMgr == nil {

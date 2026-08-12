@@ -13,11 +13,10 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/core/operations"
 )
 
-// operations_wiring.go is the pkg/cli frontend adapter for the operations
-// catalog operations (internal/catalogops/operations.go). The core operations
-// package is contract-only (its impl is portalsdk-coupled and lives here in
-// pkg/cli), so this wiring injects the concrete OperationsService and maps
-// IO/CLI concerns (positional <id>, rendering) onto the catalog.
+// operations_wiring.go adapts the operations catalog operations
+// (internal/catalogops/operations.go) to urfave/cli/v3 commands. It injects
+// the concrete OperationsService and maps CLI concerns (positional <id>,
+// rendering) onto the catalog.
 
 // catalogOperationsDeps builds catalogops.OperationsDeps with a live
 // OperationsService constructed per invocation (discard writer: handlers
@@ -33,7 +32,7 @@ func catalogOperationsDeps() catalogops.OperationsDeps {
 			discard.SetWriter(io.Discard)
 			// The per-invocation --auth-token flag (threaded through the input
 			// map by operationsActionAdapter) takes precedence over the config
-			// token, mirroring the legacy flag -> config fallback.
+			// token.
 			if t, ok := input[catalogops.AuthTokenInputKey].(string); ok && t != "" {
 				authService := defaultAuthServiceFactoryWithToken(cfgMgr, cfgMgr.Config().GetAPIEndpoint(), t)
 				return NewOperationsService(cfgMgr, discard, authService)
@@ -101,8 +100,7 @@ func operationsActionAdapter(op catalog.Operation) cli.ActionFunc {
 		}
 
 		// Thread the per-invocation --auth-token override into the operation
-		// input so the Service closure honors it (flag -> config precedence),
-		// mirroring the pins wiring.
+		// input so the Service closure honors it (flag over config).
 		if tok := c.String(FlagAuthToken); tok != "" {
 			input[catalogops.AuthTokenInputKey] = tok
 		}
@@ -117,9 +115,9 @@ func operationsActionAdapter(op catalog.Operation) cli.ActionFunc {
 			}
 		}
 
-		// `operations list --watch` polls until the list settles, mirroring the
-		// legacy interactive watcher. Driving it from the wiring (not the
-		// catalogops handler) keeps catalogops IO-agnostic.
+		// `operations list --watch` polls until the list settles. Driving it
+		// from the wiring (not the catalogops handler) keeps catalogops
+		// IO-agnostic.
 		if op.Name() == "operations.list" && c.Bool(FlagWatch) && !setupOutput(c).IsJSON() {
 			return watchCatalogOperationsList(ctx, c, op, input)
 		}
@@ -137,12 +135,10 @@ func operationsActionAdapter(op catalog.Operation) cli.ActionFunc {
 }
 
 // watchCatalogOperationsList runs the operations list watcher for the
-// catalog-driven command, reusing the legacy watchOperationsList polling loop
-// with an OperationsService resolved from the catalogops deps closure. It
-// mirrors the non-watch operationsList handler: require authentication up front
-// and clamp page/pageSize to the legacy defaults (1/10) so an unset or zero
-// page-size does not disable pagination and fetch the entire operations table
-// on every poll tick.
+// catalog-driven command, with an OperationsService resolved from the
+// catalogops deps closure. It requires authentication up front and clamps
+// page/pageSize to the defaults (1/10) so an unset or zero page-size does not
+// disable pagination and fetch the entire operations table on every poll tick.
 func watchCatalogOperationsList(ctx context.Context, c *cli.Command, op catalog.Operation, input map[string]any) error {
 	output := setupOutput(c)
 	svc := operationsCatalogDepsVar.Service(input)
@@ -216,4 +212,3 @@ func renderOperationsResult(_ context.Context, c *cli.Command, op catalog.Operat
 		return fmt.Errorf("catalog command %q returned an unroutable result type %T", op.Name(), result)
 	}
 }
-

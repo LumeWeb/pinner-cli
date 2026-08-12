@@ -262,7 +262,7 @@ func (s *vaultService) Put(ctx context.Context, r io.Reader, size int64, vaultPa
 	nowTs := time.Now().UTC()
 	// Persist the user-supplied metadata map on the local File row so it
 	// survives cache rebuilds and is returned by Stat. The Sia object already
-	// carries it in its encrypted metadata; this is the local DB mirror.
+	// carries it in its encrypted metadata; this is the local copy.
 	userMetaJSON, err := json.Marshal(metadata)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal metadata: %w", err)
@@ -295,8 +295,8 @@ func (s *vaultService) Put(ctx context.Context, r io.Reader, size int64, vaultPa
 	// here, before any write transaction opens. Re-pinning first guarantees the
 	// remote object and the committed row share the adopted identity; a re-pin
 	// failure returns before anything is committed, so Sync can never mint a
-	// duplicate from stale-metadata (this is the invariant the original
-	// in-transaction re-pin enforced, now without holding the connection).
+	// duplicate from stale-metadata (the no-divergence invariant, now enforced
+	// without holding the connection).
 	//
 	// If the transaction still hits a create-conflict (a writer committed
 	// between adoptPreflight and tx.Create), we retry: the next preflight finds
@@ -555,7 +555,7 @@ func (s *vaultService) Stat(ctx context.Context, vaultPath string) (*StatResult,
 	if f, err := s.findCurrentFile(vp.Name, dirID); err != nil {
 		// Not a file. A bare root leaf (vault:/docs -> Directory "/", Name
 		// "docs") is ambiguous: it can be a directory that `vault ls /docs`
-		// lists. Mirror List's root-leaf handling: if the leaf names an
+		// lists. Match List's root-leaf handling: if the leaf names an
 		// existing directory at root, report it as a directory instead of a
 		// misleading not-found.
 		if vp.Directory == "/" {
@@ -902,9 +902,9 @@ func (s *vaultService) getOrCreateDirectory(path string) (*uint, error) {
 
 // resolveVaultDirectory resolves a vault directory path to its DirectoryID,
 // creating any missing intermediate directories along the way (root/empty => nil).
-// It mirrors getOrCreateDirectory but takes a *gorm.DB so Sync can resolve the
-// directory from an object's FileMetadata.Directory using the shared service DB
-// BEFORE opening its write transaction (avoiding a single-connection deadlock).
+// It takes a *gorm.DB so Sync can resolve the directory from an object's
+// FileMetadata.Directory using the shared service DB BEFORE opening its write
+// transaction (avoiding a single-connection deadlock).
 func resolveVaultDirectory(db *gorm.DB, path string) (*uint, error) {
 	if path == "" || path == "/" {
 		return nil, nil // root directory, NULL FK
@@ -976,7 +976,7 @@ func upsertFromMeta(tx *gorm.DB, existing *File, meta FileMetadata, objectKey st
 	existing.UpdatedAt = updatedAt
 	if meta.Metadata != nil {
 		// Persist the user metadata carried in the object's FileMetadata so the
-		// local row mirrors what the remote object carries after a cache rebuild.
+		// local row matches what the remote object carries after a cache rebuild.
 		metaJSON, err := json.Marshal(meta.Metadata)
 		if err == nil {
 			existing.Metadata = datatypes.JSON(metaJSON)
@@ -1017,8 +1017,7 @@ func (s *vaultService) findCurrentFile(name string, dirID *uint) (File, error) {
 // missing file yields an ErrNotFound-wrapped error (distinguishable via
 // errors.Is); any genuine DB/transient failure is returned as a distinct,
 // non-ErrNotFound error so callers never mistake a DB outage for a free path.
-// Used by Get, Verify, Remove, and Share, which all previously duplicated this
-// resolve sequence inline.
+// Used by Get, Verify, Remove, and Share.
 func (s *vaultService) resolveFile(vp *VaultPath) (File, error) {
 	dirID, err := s.getDirectoryID(vp.Directory)
 	if err != nil {
@@ -1046,9 +1045,9 @@ func (s *vaultService) resolveFile(vp *VaultPath) (File, error) {
 // Doing this OUTSIDE the transaction is what keeps the indexer network
 // round-trip (PinObject) from running while the single SQLite connection
 // (SetMaxOpenConns(1)) holds an open write transaction. It also preserves the
-// no-divergence invariant the original in-transaction re-pin enforced: the
-// re-pin happens BEFORE any row is committed, so if it fails we return and
-// nothing is persisted; Sync can never mint a duplicate from stale-metadata.
+// no-divergence invariant: the re-pin happens BEFORE any row is committed, so
+// if it fails we return and nothing is persisted; Sync can never mint a
+// duplicate from stale-metadata.
 //
 // rec is updated in place to the adopted identity so the caller's subsequent
 // transaction targets the winner's row (overwrite path) instead of re-creating
@@ -1107,10 +1106,9 @@ func (s *vaultService) adoptPreflight(ctx context.Context, obj *siastorage.Objec
 
 // promoteCurrent makes targetID the single winner for its (name, dir) group
 // within a transaction: it demotes any other live current row in that group and
-// promotes targetID. This is the write-side counterpart to findCurrentFile and
-// mirrors the reference apps' recalculateCurrentForGroup. It must be called on
-// the same *gorm.DB (transaction) that wrote targetID so the promotion and the
-// write are atomic.
+// promotes targetID. This is the write-side counterpart to findCurrentFile. It
+// must be called on the same *gorm.DB (transaction) that wrote targetID so the
+// promotion and the write are atomic.
 func promoteCurrent(tx *gorm.DB, name string, dirID *uint, targetID uint) error {
 	q := tx.Model(&File{}).Where("name = ? AND is_current = 1 AND deleted_at IS NULL", name)
 	if dirID == nil {

@@ -14,29 +14,22 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/core/websites"
 )
 
-// catalog_websites_wiring.go is the pkg/cli frontend adapter for the websites
-// domain operations in internal/catalogops. It compiles the catalog's websites
-// operations into real urfave/cli/v3 commands nested under the "websites"
-// parent command, renders every handler's typed DATA result through the CLI's
-// Output formatter, and maps positional args / the destructive force-gate onto
-// the operation inputs.
+// catalog_websites_wiring.go adapts the websites domain operations in
+// internal/catalogops to the urfave CLI: it compiles catalog operations into
+// commands under the "websites" parent, renders each handler's result through
+// the Output formatter, and maps positional args and the destructive --force
+// gate onto operation inputs. IO and CLI concerns (positional <domain>
+// mapping, force gate, update at-least-one-field gate, result rendering) live
+// here, not in catalogops.
 //
-// Architectural split (mirrors the pins pilot in catalog_wiring.go and the
-// vault wiring in catalog_vault_wiring.go):
-//   - internal/catalogops exposes WebsitesDeps + WebsitesOperations; it never
-//     renders and never imports pkg/cli.
-//   - This file is where IO/CLI concerns live: positional <domain> mapping,
-//     the destructive --force gate for delete, the update at-least-one-field
-//     gate, and all result rendering.
+// Name mapping: canonical catalog names use dots ("websites.list"). The
+// "websites." group prefix is stripped and leaves are mounted under a
+// "websites" parent; the two-level op "websites.ssl.status" nests under an
+// "ssl" parent command.
 //
-// Name mapping: canonical catalog names use dots ("websites.list"). We strip
-// the "websites." group prefix and mount leaves under a "websites" parent; the
-// two-level op "websites.ssl.status" is nested under an "ssl" parent command.
-//
-// The commands that are fundamentally interactive/IO (websites wizard,
-// websites domains wizard) are NOT compiled from the catalog — the wizard
-// commands drive an interactive stepwise session — and are appended to the
-// websites parent as hand-written commands alongside the catalog ones.
+// The websites wizard and websites domains wizard commands are not compiled
+// from the catalog (they drive an interactive stepwise session) and are
+// appended to the websites parent as hand-written commands.
 
 // catalogWebsitesDeps builds the catalogops.WebsitesDeps from the live CLI
 // wiring. Service construction uses the core factories; all config is read
@@ -257,10 +250,8 @@ func websitesActionAdapter(op catalog.Operation) cli.ActionFunc {
 }
 
 // renderWebsitesResult is the catalog.RenderFunc that renders a websites
-// handler's typed DATA result through the CLI Output formatter. It is the
-// single rendering home for catalog-driven websites commands and never touches
-// core services. JSON shapes are kept faithful to the legacy hand-written
-// commands.
+// handler's typed result through the CLI Output formatter. It is the single
+// rendering home for catalog-driven websites commands.
 func renderWebsitesResult(_ context.Context, c *cli.Command, op catalog.Operation, result any) error {
 	output := setupOutput(c)
 
@@ -310,8 +301,8 @@ func renderWebsitesResult(_ context.Context, c *cli.Command, op catalog.Operatio
 		return nil
 
 	case *ipfs.WebsiteResponse:
-		// websites ssl status returns a full WebsiteResponse; render the SSL
-		// portion faithfully (the legacy ssl status command).
+		// websites ssl status returns a full WebsiteResponse; render its SSL
+		// portion.
 		if output.IsJSON() {
 			return output.PrintJSON(r)
 		}
@@ -373,7 +364,7 @@ func renderWebsitesResult(_ context.Context, c *cli.Command, op catalog.Operatio
 }
 
 // renderWebsiteItemHuman renders the fields of a single website (used by get,
-// create, update, and enable-ipns), mirroring the legacy field presentation.
+// create, update, and enable-ipns).
 func renderWebsiteItemHuman(output Output, w *ipfs.WebsiteItem) {
 	output.Printfln("Website Details")
 
@@ -421,8 +412,7 @@ func renderWebsiteItemHuman(output Output, w *ipfs.WebsiteItem) {
 	}
 }
 
-// renderWebsiteSSLStatusHuman renders the SSL portion of a WebsiteResponse,
-// mirroring the legacy `websites ssl status` presentation.
+// renderWebsiteSSLStatusHuman renders the SSL portion of a WebsiteResponse.
 func renderWebsiteSSLStatusHuman(output Output, r *ipfs.WebsiteResponse) {
 	output.Printfln("SSL Status for %s", r.Domain)
 	if r.Ssl == nil {

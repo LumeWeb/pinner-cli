@@ -8,15 +8,15 @@ import (
 	"path/filepath"
 	"strings"
 
-	coreerrors "go.lumeweb.com/pinner-cli/internal/core/errors"
 	"go.lumeweb.com/configmanager"
 	"go.lumeweb.com/configmanager/source"
+	coreerrors "go.lumeweb.com/pinner-cli/internal/core/errors"
 )
 
 var (
 	// ErrNotAuthenticated is returned when an operation requires authentication.
-	// Consolidated from errant per-package copies into internal/core/errors;
-	// re-exported here for backward compatibility with existing consumers.
+	// Re-exported from internal/core/errors for backward compatibility with
+	// existing consumers.
 	ErrNotAuthenticated = coreerrors.ErrNotAuthenticated
 
 	// DefaultConfigPath is the default location for the config file.

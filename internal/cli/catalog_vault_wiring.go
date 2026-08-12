@@ -12,27 +12,21 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/core/vault"
 )
 
-// catalog_vault_wiring.go is the pkg/cli frontend adapter for the vault domain
-// operations in internal/catalogops. It compiles the catalog's vault
-// operations into real urfave/cli/v3 commands nested under the "vault" parent
-// command, renders every handler's typed DATA result through the CLI's Output
-// formatter, and maps positional args / profile selection / the destructive
-// force-gate onto the operation inputs.
+// catalog_vault_wiring.go adapts the vault domain operations in
+// internal/catalogops to the urfave CLI: it compiles catalog operations into
+// commands under the "vault" parent, renders each handler's result through the
+// Output formatter, and maps positional args, profile selection, and the
+// destructive --force gate onto operation inputs. IO and CLI concerns
+// (positional path/name mapping, profile resolution, force gate, result
+// rendering) live here, not in catalogops.
 //
-// Architectural split (mirrors the pins pilot in catalog_wiring.go):
-//   - internal/catalogops exposes VaultDeps + VaultOperations; it never renders
-//     and never imports pkg/cli.
-//   - This file is where IO/CLI concerns live: positional path/name mapping,
-//     profile resolution, the destructive --force gate, and all result
-//     rendering.
-//
-// Name mapping: canonical catalog names use dots ("vault.status"). We strip the
-// "vault." group prefix and mount leaves under a "vault" parent; two-level ops
-// ("vault.profile.use", "vault.cache.rebuild", "vault.cache.clear") are nested
-// under their "profile"/"cache" parent commands.
+// Name mapping: canonical catalog names use dots ("vault.status"). The "vault."
+// group prefix is stripped and leaves are mounted under a "vault" parent;
+// two-level ops ("vault.profile.use", "vault.cache.rebuild", "vault.cache.clear")
+// nest under their "profile"/"cache" parent commands.
 //
 // The commands that are fundamentally interactive/IO (create, restore, cp, cat)
-// are NOT compiled from the catalog — see catalogops.VaultOperations for why —
+// are not compiled from the catalog (see catalogops.VaultOperations for why)
 // and are appended to the vault parent as hand-written commands.
 
 // vaultCatalogDeps lazily builds the catalogops.VaultDeps from the live CLI
@@ -218,16 +212,15 @@ func hasArg(op catalog.Operation, name string) bool {
 }
 
 // renderVaultResult is the catalog.RenderFunc that renders a vault handler's
-// typed DATA result through the CLI Output formatter. It is the single
-// rendering home for catalog-driven vault commands and never touches core
-// services. JSON shapes are kept faithful to the legacy hand-written commands.
+// typed result through the CLI Output formatter. It is the single rendering
+// home for catalog-driven vault commands.
 func renderVaultResult(_ context.Context, c *cli.Command, op catalog.Operation, result any) error {
 	output := setupOutput(c)
 
 	switch r := result.(type) {
 	case *vault.StatusResult:
 		if output.IsJSON() {
-			// Faithful: raw StatusResult at top level (as the legacy command).
+			// Raw StatusResult at top level.
 			return output.PrintJSON(r)
 		}
 		return renderVaultStatusHuman(output, c, r)

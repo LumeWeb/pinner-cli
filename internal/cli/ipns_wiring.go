@@ -14,17 +14,16 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/core/ipns"
 )
 
-// ipns_wiring.go is the pkg/cli frontend adapter for the IPNS catalog
-// operations (internal/catalogops/ipns.go). It keeps the catalog free of
-// pkg/cli imports: this file is the single place that maps IO/CLI concerns
-// (positional <key>/<id>/<cid>/<name> args, the destructive --force gate for
-// key delete) onto the catalog and renders every handler's typed DATA result
-// through the CLI Output formatter.
+// ipns_wiring.go adapts the IPNS catalog operations
+// (internal/catalogops/ipns.go) to urfave/cli/v3 commands. The catalog never
+// imports pkg/cli; this file maps CLI concerns (positional
+// <key>/<id>/<cid>/<name> args, the destructive --force gate for key delete)
+// onto the catalog and renders each handler's DATA result through the CLI
+// Output formatter.
 //
-// Name mapping: the IPNS operations are canonically dotted
-// ("ipns.keys.list", "ipns.publish", ...). The real CLI nests ipns.keys.* under
-// a "keys" parent; the rest are direct leaves. This nesting lives HERE, not in
-// internal/catalog.
+// The IPNS operations are canonically dotted ("ipns.keys.list",
+// "ipns.publish", ...). The CLI nests ipns.keys.* under a "keys" parent; the
+// rest are direct leaves. That nesting lives here, not in internal/catalog.
 
 // catalogIPNSDeps builds the catalogops.IPNSDeps from the live CLI wiring.
 func catalogIPNSDeps() catalogops.IPNSDeps {
@@ -59,9 +58,9 @@ func catalogIPNSDeps() catalogops.IPNSDeps {
 
 var ipnsCatalogDepsVar = catalogops.IPNSDeps(catalogIPNSDeps())
 
-// newIPNSCommandCatalog is the catalog-driven "ipns" parent command. It
+// newIPNSCommandCatalog builds the catalog-driven "ipns" parent command. It
 // compiles the IPNS operations and nests ipns.keys.* under a "keys" parent.
-// (The hand-written newIPNSCommand in ipns.go delegates to this.)
+// newIPNSCommand in ipns.go delegates to this.
 func newIPNSCommandCatalog() *cli.Command {
 	cat := catalog.NewCatalog()
 	for _, op := range catalogops.IPNSOperations(ipnsCatalogDepsVar) {
@@ -131,8 +130,8 @@ func mountIPNSCatalogCommand(cmd *cli.Command) *cli.Command {
 
 // ipnsActionAdapter returns the per-invocation ActionFunc for an IPNS catalog
 // operation. It maps the positional <key>/<id>/<cid>/<name> into the
-// operation's string arg, enforces the destructive --force gate for key
-// delete, then invokes the handler and renders the result.
+// operation's string arg, threads the --auth-token override into the input,
+// and invokes the handler, then renders the result.
 func ipnsActionAdapter(op catalog.Operation) cli.ActionFunc {
 	return func(ctx context.Context, c *cli.Command) error {
 		input := map[string]any{}
@@ -140,11 +139,9 @@ func ipnsActionAdapter(op catalog.Operation) cli.ActionFunc {
 			input[a.Name] = flagValue(c, a)
 		}
 
-		// Thread the per-invocation --auth-token override into the operation
-		// input so IPNSDeps.service() honors it (flag -> config precedence),
-		// mirroring the pins wiring. Without this the flag is silently ignored
-		// in favor of the config token — a regression from the legacy
-		// GetAuthToken(c, cfgMgr) flag-first resolution.
+		// The per-invocation --auth-token override takes precedence over the
+		// config token. Put it in the input so IPNSDeps.service() honors it;
+		// otherwise the config token would win and the flag would be ignored.
 		if tok := c.String(FlagAuthToken); tok != "" {
 			input[catalogops.AuthTokenInputKey] = tok
 		}
@@ -160,13 +157,12 @@ func ipnsActionAdapter(op catalog.Operation) cli.ActionFunc {
 			}
 		}
 
-		// Note: the catalog marks ipns.keys.delete SafetyDestructive, and the
-		// compiler registers a --force flag for it, but the legacy ipns keys
-		// delete command deleted keys directly without requiring --force. To
-		// stay faithful to that legacy contract (and avoid breaking existing
-		// scripts), the CLI path does NOT gate on --force here.
+		// The catalog marks ipns.keys.delete SafetyDestructive and the compiler
+		// registers a --force flag for it, but the ipns keys delete command
+		// deletes keys without requiring --force. To keep that contract (and not
+		// break existing scripts), the CLI path does not gate on --force here.
 
-		// Apply the legacy per-call deadline (shared with every catalog domain).
+		// Apply the configured per-command timeout.
 		dctx, cancel := applyDefaultTimeout(ctx)
 		defer cancel()
 
@@ -179,9 +175,7 @@ func ipnsActionAdapter(op catalog.Operation) cli.ActionFunc {
 }
 
 // renderIPNSResult renders an IPNS handler's typed DATA result through the CLI
-// Output formatter. It is invoked by the wiring's own adapter, so it is a plain
-// function — not a catalog.RenderFunc (that renderer hook no longer exists on
-// the fresh Compiler API).
+// Output formatter. It is a plain function invoked by the wiring's own adapter.
 func renderIPNSResult(_ context.Context, c *cli.Command, op catalog.Operation, result any) error {
 	output := setupOutput(c)
 

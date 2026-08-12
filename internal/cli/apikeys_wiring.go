@@ -13,10 +13,9 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/core/auth"
 )
 
-// apikeys_wiring.go is the pkg/cli frontend adapter for the api-keys catalog
-// operations (internal/catalogops/apikeys.go). The apikeys core package is
-// fully implemented (no pkg/cli coupling); this wiring injects a concrete
-// apikeys.Service and maps IO/CLI concerns (positional <name>/<id>, the
+// apikeys_wiring.go adapts the api-keys catalog operations
+// (internal/catalogops/apikeys.go) to urfave/cli/v3 commands. It injects a
+// concrete apikeys.Service and maps CLI concerns (positional <name>/<id>, the
 // --force gate for delete) onto the catalog, then renders typed results.
 
 // catalogAPIKeysDeps builds catalogops.APIKeysDeps with a live apikeys.Service
@@ -28,11 +27,11 @@ func catalogAPIKeysDeps() catalogops.APIKeysDeps {
 			if err != nil {
 				return nil
 			}
-			// The per-invocation --auth-token flag (threaded through the input
-			// map by apiKeysActionAdapter) takes precedence over the config
-			// token, mirroring the legacy flag -> config fallback. When present,
-			// build the authService pinned to the override so List/Create/Delete
-			// authenticate with it (not just the self-delete gating helpers).
+			// The per-invocation --auth-token flag (put in the input map by
+			// apiKeysActionAdapter) takes precedence over the config token.
+			// When present, pin the authService to the override so
+			// List/Create/Delete authenticate with it (not just the self-delete
+			// gating helpers).
 			endpoint := cfgMgr.Config().GetAPIEndpoint()
 			var authService auth.AuthService
 			token := cfgMgr.Config().AuthToken
@@ -104,10 +103,9 @@ func apiKeysActionAdapter(op catalog.Operation) cli.ActionFunc {
 			input[a.Name] = flagValue(c, a)
 		}
 
-		// Thread the per-invocation --auth-token override into the operation
-		// input so the Service closure honors it (flag -> config precedence),
-		// mirroring the pins wiring. Without this, api-keys silently
-		// authenticate with the config token instead of the flag.
+		// The per-invocation --auth-token override takes precedence over the
+		// config token. Put it in the input so the Service closure honors it;
+		// otherwise api-keys authenticate with the config token.
 		if tok := c.String(FlagAuthToken); tok != "" {
 			input[catalogops.AuthTokenInputKey] = tok
 		}
@@ -122,19 +120,17 @@ func apiKeysActionAdapter(op catalog.Operation) cli.ActionFunc {
 			}
 		}
 
-		// Destructive gate (delete). Unlike pins rm, api-keys delete does NOT
-		// require --force to run in general: the core service enforces the rule
-		// that deleting the currently-authenticating key needs --force. So we
-		// pass the flag through to the handler (input["force"]) and let the
-		// service decide, exactly like the legacy account_api_keys.go delete —
-		// a blanket 'must pass --force to delete any key' would be a regression.
-		// The compiler still injects --force onto the destructive command; here
-		// we simply thread it into the operation input.
+		// Destructive gate (delete). Unlike pins rm, api-keys delete does not
+		// require --force in general: the core service enforces the rule that
+		// deleting the currently-authenticating key needs --force. So we pass
+		// the flag through to the handler (input["force"]) and let the service
+		// decide. The compiler still injects --force onto the destructive
+		// command; here we just put it into the operation input.
 		if op.Safety() == catalog.SafetyDestructive {
 			input["force"] = c.Bool(FlagForce)
 		}
 
-		// Apply the legacy per-call deadline (shared with every catalog domain).
+		// Apply the configured per-command timeout.
 		dctx, cancel := applyDefaultTimeout(ctx)
 		defer cancel()
 

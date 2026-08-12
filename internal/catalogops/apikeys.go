@@ -1,6 +1,5 @@
-// Package catalogops: faithful API-key operations driving the core apikeys
-// service. The apikeys core package is fully implemented (no pkg/cli
-// coupling); catalogops calls it directly.
+// Package catalogops implements API-key domain operations for the operation
+// catalog, driving the core apikeys service directly.
 package catalogops
 
 import (

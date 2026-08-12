@@ -31,10 +31,10 @@ import (
 // ToolDelimiter separates command path segments in MCP tool names.
 const ToolDelimiter = "_"
 
-// vaultRestoreToolName is the catalog name of the vault restore tool, which
-// carries special agent-facing behavior (OOB browser restore hand-off plus a
-// stdin-gated --seed-stdin variant). Declared once so the behavior wiring and
-// the invoke gate share the canonical name rather than repeating the string.
+// vaultRestoreToolName is the catalog name of the vault restore tool. It has
+// agent-facing behavior (OOB browser restore hand-off plus a stdin-gated
+// --seed-stdin variant). Declared once so the behavior wiring and the invoke
+// gate share one name.
 const vaultRestoreToolName = "pinner_vault_restore"
 
 // vaultCreateToolName is the catalog name of the vault create tool, which
@@ -44,10 +44,9 @@ const vaultCreateToolName = "pinner_vault_create"
 
 // ansiEscapeRE matches ANSI/VT escape sequences (SGR color codes, cursor
 // movement, erase, reset) so agent-facing tool output is always clean plain
-// text. The CLI's human formatter colors status text (e.g. \x1b[32mpinned\x1b[0m)
-// which is fine for a terminal but noisy for an MCP agent; even with --agent
-// forcing JSON, strip any stray escape sequence at the MCP boundary as a
-// defense-in-depth guarantee.
+// text. The CLI's human formatter colors status text (e.g. \x1b[32mpinned\x1b[0m);
+// even with --agent forcing JSON, strip any stray escape sequence at the MCP
+// boundary so a terminal code can never reach an agent.
 var ansiEscapeRE = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*(\x07|\x1b\\)|\x1b[PX^_].*?\x1b\\`)
 
 // stripANSI removes ANSI/VT escape sequences from s.
@@ -85,7 +84,7 @@ By default the server speaks MCP over stdio. Pass --http to serve over the
 streamable-HTTP transport instead, optionally behind a public tunnel.
 
 Tool invocations are executed in-process by running the command tree
-directly; no subprocess fork. Commands are exposed faithfully;
+directly; no subprocess fork. Commands are exposed as-is;
 agent-friendly behavior is the responsibility of each command, not this
 adapter.`,
 		Flags: []cli.Flag{
@@ -388,8 +387,9 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 	mux := http.NewServeMux()
 	// When a public tunnel fronts the loopback listener, remote clients send the
 	// tunnel hostname as the Host header while the server sees a loopback local
-	// address — which the go-sdk's DNS-rebinding guard would 403. Disable that
-	// guard only when a tunnel is active; keep it on for direct loopback serving.
+	// address, which the go-sdk's DNS-rebinding guard would reject with 403.
+	// Disable that guard only when a tunnel is active; keep it on for direct
+	// loopback serving.
 	var mcpHandler http.Handler = NewOfficialStreamableHandler(srv, tunnel != nil)
 	switch {
 	case oauth != nil:
@@ -675,9 +675,8 @@ func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string, seedDr
 			return ToolResult{}, fmt.Errorf("cannot invoke MCP from within MCP")
 		}
 
-		// Force agent mode for all MCP tool invocations: structured JSON output,
-		// no ANSI colors, no interactive prompts. This is unconditional: every
-		// command invoked through MCP must run in agent mode.
+		// Force agent mode for every MCP tool invocation: structured JSON
+		// output, no ANSI colors, no interactive prompts.
 		if !slices.Contains(args, "--agent") {
 			args = append(args, "--agent")
 		}
@@ -812,8 +811,8 @@ func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string, seedDr
 				extra["next_step"] = "Ask the user to open restore_url in a browser and enter the recovery seed to complete the restore. The seed never crosses the MCP channel."
 			}
 			// Add the resume handle + resume tool to the structured hand-off so
-			// the agent knows it can poll the matching *_resume tool instead of
-			// repeating the start. Only the one-time token is tracked — the
+			// the agent can poll the matching *_resume tool instead of
+			// repeating the start. Only the one-time token is tracked; the
 			// mnemonic never enters the handle or the structured content.
 			var seedURL string
 			if extra != nil {

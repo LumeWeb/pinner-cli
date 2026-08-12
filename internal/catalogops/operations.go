@@ -1,10 +1,6 @@
-// Package catalogops: faithful operations-domain operations driving the core
-// OperationsService contract.
-//
-// internal/core/operations carries the Service interface + models only (the
-// concrete impl lives in pkg/cli due to portal-sdk coupling). catalogops
-// depends only on the core INTERFACE and injects a concrete Service via deps,
-// so it stays free of pkg/cli imports.
+// Package catalogops implements operations-domain operations for the
+// operation catalog. catalogops depends only on the core OperationsService
+// interface and injects the concrete service via deps.
 package catalogops
 
 import (

@@ -581,7 +581,7 @@ func websitesDomainsDNSRequirements(ctx context.Context, cmd websitesCommandGett
 // renderDomainDelegation prints the DNS delegation bundle the server computes
 // for a domain. Rendering is driver-based: the namespace selects a
 // context-specific driver (HNS, ICANN, ...) with a neutral generic fallback,
-// mirroring the server's per-namespace DomainProvider design. managed indicates
+// matching the server's per-namespace DomainProvider design. managed indicates
 // whether Pinner manages the domain's DNS, so drivers can omit authoritative
 // records the user does not need to configure.
 func renderDomainDelegation(output Output, result *ipfs.DomainResponse, managed bool) {

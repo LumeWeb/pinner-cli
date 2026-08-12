@@ -1,17 +1,12 @@
-// Package catalog provides the agnostic operation-descriptor registry that
-// every frontend (CLI, MCP, and future desktop/server/mobile) derives from.
-//
-// A catalog operation is declared, not inferred: it carries explicit machine
-// properties (Safety, Interaction, Visibility) plus a first-class Handler, so
-// frontends never have to reverse-engineer intent from a command's name. The
-// catalog is an in-memory Go registry of Operation descriptors; it is not a
-// wire format or serialization surface.
+// Package catalog provides the operation-descriptor registry that every
+// frontend (CLI, MCP, desktop/server/mobile) derives from. It is an in-memory
+// Go registry of Operation descriptors, not a wire format.
 package catalog
 
 import "context"
 
-// Safety classifies what an operation does to state. Declared, NOT inferred
-// from command name — renaming a command can never silently drop a guard.
+// Safety classifies what an operation does to state. It is declared on the
+// operation, not inferred from a command name.
 type Safety int
 
 const (
@@ -47,7 +42,7 @@ const (
 	VisibilityBoth
 )
 
-// ArgType mirrors the urfave/v3 flag type mapping already in the MCP schema layer.
+// ArgType matches the urfave/v3 flag type mapping used by the MCP schema layer.
 type ArgType int
 
 const (
@@ -65,8 +60,8 @@ const (
 	ArgTypeStringSlice
 )
 
-// OperationArg describes one input. Drives the JSON Schema (MCP) AND the
-// urfave flag (CLI) — one declaration, both views.
+// OperationArg describes one input. It drives both the JSON Schema (MCP) and
+// the urfave flag (CLI).
 type OperationArg struct {
 	Name      string
 	Type      ArgType
@@ -75,11 +70,11 @@ type OperationArg struct {
 	Enum      []string
 	Sensitive bool
 	Help      string // human help (CLI)
-	AgentHelp string // agent-oriented help (MCP) — audience separation
+	AgentHelp string // agent-oriented help (MCP); audience separation
 }
 
-// Handler.Execute runs the business operation against core. Never touches
-// urfave or MCP. Implemented by core services; injected at registry-build time.
+// Handler.Execute runs the business operation against core. It never touches
+// urfave or MCP. Implemented by core services.
 type Handler interface {
 	Execute(ctx context.Context, input map[string]any) (any, error)
 }
