@@ -3,8 +3,8 @@ package mcp
 import (
 	"context"
 
-	"go.lumeweb.com/pinner-cli/internal/core/auth"
 	ipfs "go.lumeweb.com/ipfs-sdk"
+	"go.lumeweb.com/pinner-cli/internal/core/auth"
 	portalsdk "go.lumeweb.com/portal-sdk"
 )
 

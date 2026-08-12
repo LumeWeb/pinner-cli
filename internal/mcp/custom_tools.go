@@ -32,8 +32,8 @@ type customToolDeps struct {
 	// vault-restore coordinator. They are threaded here so the resume tools
 	// (pinner_vault_create_resume / pinner_vault_restore_resume) can poll the
 	// coordinators to completion over the same shared handoffReg + handles.
-	seedDrop    *SeedDrop
-	oobRestore  *OOBRestore
+	seedDrop   *SeedDrop
+	oobRestore *OOBRestore
 	// resourceFactory, when non-nil, builds the pinner:// resource providers.
 	resourceFactory ResourceProvidersFactory
 	// opts carries the optional custom tools wired by MCPServerOption (upload,

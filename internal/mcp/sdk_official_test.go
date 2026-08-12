@@ -6,6 +6,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -236,11 +238,13 @@ func TestOfficialInvokeToolUnknownIsError(t *testing.T) {
 	require.True(t, res.IsError)
 }
 
-// TestOfficialInvokeToolRedirectsNonAgentSafe verifies that invoke_tool steers
-// agents away from interactive and stdin-input tools instead of running them:
-// the handler is never called, and a needs_human hand-off is returned.
-func TestOfficialInvokeToolRedirectsNonAgentSafe(t *testing.T) {
-	var interactiveCalled, stdinCalled bool
+// TestOfficialInvokeToolRedirectsInteractiveOnly verifies that invoke_tool
+// steers agents away from interactive (human-only setup) tools by returning a
+// needs_human hand-off instead of running them, while agent-safe tools
+// (including the OOB vault restore) run their handler directly. Stdin gating
+// is a CLI-side concern; the MCP invoke path does not perform stdin gating.
+func TestOfficialInvokeToolRedirectsInteractiveOnly(t *testing.T) {
+	var interactiveCalled, restoreCalled bool
 
 	catalog := NewToolCatalog()
 	catalog.Add(&ToolEntry{
@@ -258,10 +262,10 @@ func TestOfficialInvokeToolRedirectsNonAgentSafe(t *testing.T) {
 		Name:        "pinner_vault_restore",
 		Description: "Restore a vault",
 		Category:    CategoryCore,
-		Interaction: InteractionStdinInput,
+		Interaction: InteractionAgentSafe,
 		InputSchema: json.RawMessage(`{"type":"object"}`),
 		Handler: func(context.Context, ToolRequest) (ToolResult, error) {
-			stdinCalled = true
+			restoreCalled = true
 			return ToolResult{Text: "ran"}, nil
 		},
 	})
@@ -286,7 +290,8 @@ func TestOfficialInvokeToolRedirectsNonAgentSafe(t *testing.T) {
 	require.Equal(t, string(ReasonInteractiveOnly), sc["reason"])
 	require.False(t, interactiveCalled, "interactive tool handler must not run")
 
-	// stdin-input tool -> needs_human redirect (stdin absent), handler not called.
+	// Agent-safe tool (vault restore OOB) runs its handler, with no stdin
+	// gating.
 	res, err = cs.CallTool(context.Background(), &mcp.CallToolParams{
 		Name: "invoke_tool",
 		Arguments: map[string]any{
@@ -296,185 +301,7 @@ func TestOfficialInvokeToolRedirectsNonAgentSafe(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.False(t, res.IsError)
-	sc, ok = res.StructuredContent.(map[string]any)
-	require.True(t, ok)
-	require.Equal(t, "needs_human", sc["status"])
-	require.Equal(t, string(ReasonStdinRequired), sc["reason"])
-	require.False(t, stdinCalled, "stdin-input tool handler must not run when stdin is absent")
-}
-
-func TestOfficialInvokeToolAllowsOOBRestore(t *testing.T) {
-	var restoreCalled bool
-
-	catalog := NewToolCatalog()
-	catalog.Add(&ToolEntry{
-		Name:        "pinner_vault_restore",
-		Description: "Restore a vault",
-		Category:    CategoryCore,
-		Interaction: InteractionStdinInput,
-		// Declare the OOB restore behavior: a non-stdin invocation is
-		// agent-safe (mints a browser hand-off), while its stdin-gating
-		// --seed-stdin variant reads os.Stdin. The invoke gate reads these
-		// fields instead of a hardcoded tool-name check.
-		Behavior: ToolBehavior{
-			RestoreURL: &RestoreURLSpec{ProfileField: "profile"},
-			StdinGate:  &StdinGateSpec{ArgName: "seed-stdin"},
-		},
-		InputSchema: json.RawMessage(`{"type":"object"}`),
-		Handler: func(context.Context, ToolRequest) (ToolResult, error) {
-			restoreCalled = true
-			return ToolResult{Text: "ran"}, nil
-		},
-	})
-
-	// Wire an OOB restore coordinator: the agent-safe restore must bypass the
-	// stdin gate so the catalog handler can mint the one-time /restore/<token>
-	// URL (which is otherwise unreachable in HTTP/tunnel mode where stdin is
-	// /dev/null).
-	srv := NewOfficialServer(nil)
-	require.NoError(t, RegisterOfficialMetaTools(srv, catalog, false, nil, NewOOBRestore(nil, time.Minute)))
-
-	cs := connectOfficialClient(t, srv)
-	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
-		Name: "invoke_tool",
-		Arguments: map[string]any{
-			"name":      "pinner_vault_restore",
-			"arguments": map[string]any{},
-		},
-	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
-	require.True(t, restoreCalled, "OOB restore must bypass the stdin gate so the restore URL can be minted")
-}
-
-func TestOfficialInvokeToolRedirectsStdinInStdioMode(t *testing.T) {
-	var stdinCalled bool
-
-	catalog := NewToolCatalog()
-	catalog.Add(&ToolEntry{
-		Name:        "pinner_vault_restore",
-		Description: "Restore a vault",
-		Category:    CategoryCore,
-		Interaction: InteractionStdinInput,
-		InputSchema: json.RawMessage(`{"type":"object"}`),
-		Handler: func(context.Context, ToolRequest) (ToolResult, error) {
-			stdinCalled = true
-			return ToolResult{Text: "ran"}, nil
-		},
-	})
-
-	// stdioMode=true models the server running over stdio, where os.Stdin is
-	// the MCP transport pipe: a stdin-input command must be redirected even if
-	// stdin happens to be a pipe (consuming it would read MCP protocol bytes).
-	// No OOB restore is wired here, so the stdin gate applies.
-	srv := NewOfficialServer(nil)
-	require.NoError(t, RegisterOfficialMetaTools(srv, catalog, true, nil, nil))
-
-	cs := connectOfficialClient(t, srv)
-	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
-		Name: "invoke_tool",
-		Arguments: map[string]any{
-			"name":      "pinner_vault_restore",
-			"arguments": map[string]any{},
-		},
-	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
-	sc, ok := res.StructuredContent.(map[string]any)
-	require.True(t, ok)
-	require.Equal(t, "needs_human", sc["status"])
-	require.Equal(t, string(ReasonStdinRequired), sc["reason"])
-	require.False(t, stdinCalled, "stdin-input tool must be redirected in stdio mode")
-}
-
-func TestOfficialInvokeToolOOBRestoreWithSeedStdinStillGated(t *testing.T) {
-	var stdinCalled bool
-
-	catalog := NewToolCatalog()
-	catalog.Add(&ToolEntry{
-		Name:        "pinner_vault_restore",
-		Description: "Restore a vault",
-		Category:    CategoryCore,
-		Interaction: InteractionStdinInput,
-		// Declare the OOB restore behavior so the gate's data-driven bypass is
-		// exercised: even with RestoreURL set, a --seed-stdin invocation must
-		// still be gated.
-		Behavior: ToolBehavior{
-			RestoreURL: &RestoreURLSpec{ProfileField: "profile"},
-			StdinGate:  &StdinGateSpec{ArgName: "seed-stdin"},
-		},
-		InputSchema: json.RawMessage(`{"type":"object"}`),
-		Handler: func(context.Context, ToolRequest) (ToolResult, error) {
-			stdinCalled = true
-			return ToolResult{Text: "ran"}, nil
-		},
-	})
-
-	// Even with an OOB restore coordinator wired, a --seed-stdin invocation
-	// reads os.Stdin unconditionally, so the restore bypass must NOT apply.
-	// stdioMode=true models the server over stdio (os.Stdin == MCP pipe):
-	// consuming it would desync the stream, so the stdin gate redirects.
-	srv := NewOfficialServer(nil)
-	require.NoError(t, RegisterOfficialMetaTools(srv, catalog, true, nil, NewOOBRestore(nil, time.Minute)))
-
-	cs := connectOfficialClient(t, srv)
-	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
-		Name: "invoke_tool",
-		Arguments: map[string]any{
-			"name":      "pinner_vault_restore",
-			"arguments": map[string]any{"seed-stdin": true},
-		},
-	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
-	sc, ok := res.StructuredContent.(map[string]any)
-	require.True(t, ok)
-	require.Equal(t, "needs_human", sc["status"])
-	require.Equal(t, string(ReasonStdinRequired), sc["reason"])
-	require.False(t, stdinCalled, "--seed-stdin restore must still be gated even with OOB restore wired")
-
-	// Same for a string-form truthy flag: tool args arrive from the agent's
-	// JSON, so "seed-stdin":"true" must ALSO keep the gate closed (a helper
-	// that only accepted bool would wrongly activate the bypass and read the
-	// MCP pipe).
-	res, err = cs.CallTool(context.Background(), &mcp.CallToolParams{
-		Name: "invoke_tool",
-		Arguments: map[string]any{
-			"name":      "pinner_vault_restore",
-			"arguments": map[string]any{"seed-stdin": "true"},
-		},
-	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
-	sc, ok = res.StructuredContent.(map[string]any)
-	require.True(t, ok)
-	require.Equal(t, "needs_human", sc["status"])
-	require.Equal(t, string(ReasonStdinRequired), sc["reason"])
-	require.False(t, stdinCalled, "string-form --seed-stdin must still be gated")
-}
-
-func TestToolArgsHasBoolTruthiness(t *testing.T) {
-	cases := []struct {
-		name string
-		args map[string]any
-		want bool
-	}{
-		{"missing key", map[string]any{}, false},
-		{"nil args", nil, false},
-		{"bool true", map[string]any{"seed-stdin": true}, true},
-		{"bool false", map[string]any{"seed-stdin": false}, false},
-		{"string true", map[string]any{"seed-stdin": "true"}, true},
-		{"string 1", map[string]any{"seed-stdin": "1"}, true},
-		{"string false", map[string]any{"seed-stdin": "false"}, false},
-		{"number 1", map[string]any{"seed-stdin": float64(1)}, true},
-		{"number 0", map[string]any{"seed-stdin": float64(0)}, false},
-		{"unrelated type", map[string]any{"seed-stdin": []any{}}, false},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			require.Equal(t, tc.want, toolArgsHasBool(tc.args, "seed-stdin"))
-		})
-	}
+	require.True(t, restoreCalled, "agent-safe restore must run directly (stdin is a CLI-side concern)")
 }
 
 func TestOfficialResourcesRegistered(t *testing.T) {
@@ -522,8 +349,20 @@ func TestOfficialReadResourceTemplate(t *testing.T) {
 // through and run os.Stdin — desyncing the stdio transport — instead of
 // honoring the gate. The enum must stay stdin_input so the gate holds, while
 // the non-stdin OOB hand-off (bypassGate) remains reachable.
-func TestOfficialInvokeVaultRestoreSeedStdinGatedThroughBuildCatalog(t *testing.T) {
-	var restoreRan bool
+func TestOfficialInvokeVaultRestoreRoutesAgentSafeHandoff(t *testing.T) {
+	// Isolate vault paths so the restore op's resolveRestoreProfile registry
+	// read never depends on real host state (which varies by CI environment and
+	// platform). Without this the op can resolve to a leftover active default
+	// profile (e.g. "work") and be rejected by the active-vault guard.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	if runtime.GOOS == "windows" {
+		t.Setenv("APPDATA", filepath.Join(home, "AppData", "Roaming"))
+		t.Setenv("LOCALAPPDATA", filepath.Join(home, "AppData", "Local"))
+	}
+
 	root := &cli.Command{
 		Name:  "pinner",
 		Flags: []cli.Flag{&cli.BoolFlag{Name: "agent", Usage: "agent mode"}},
@@ -532,55 +371,38 @@ func TestOfficialInvokeVaultRestoreSeedStdinGatedThroughBuildCatalog(t *testing.
 				Name: "vault",
 				Commands: []*cli.Command{
 					{
-						Name: "restore",
-						Action: func(ctx context.Context, cmd *cli.Command) error {
-							restoreRan = true
-							return nil
-						},
+						Name:   "restore",
+						Action: func(ctx context.Context, cmd *cli.Command) error { return nil },
 					},
 				},
 			},
 		},
 	}
 
-	// Wire an OOB restore coordinator so the restore bypass is active, then
-	// produce the real catalog through buildCatalog (the path the server uses).
+	// Wire an OOB restore coordinator + resume machinery, then produce the real
+	// catalog through buildCatalog (the path the server uses). The restore tool
+	// must route through the agent-safe catalog-op handler and mint a restore_url
+	// hand-off; it is not stdin-gated (the seed is entered by
+	// the human on the one-time page, never via --seed-stdin on the MCP channel).
 	oobRestore := NewOOBRestore(nil, time.Minute)
 	t.Cleanup(func() { oobRestore.Stop(context.Background()) })
-	catalog, err := buildCatalog(root, true, nil, nil, oobRestore, nil, nil)
+	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	reg := NewHandoffRegistry()
+	catalog, err := buildCatalog(root, true, nil, nil, oobRestore, reg, handles)
 	require.NoError(t, err)
 
 	restore, ok := catalog.Get("pinner_vault_restore")
 	require.True(t, ok)
-	require.Equal(t, InteractionStdinInput, restore.Interaction,
-		"buildCatalog must keep vault restore stdin_input so the --seed-stdin gate holds")
+	require.Equal(t, InteractionAgentSafe, restore.Interaction,
+		"buildCatalog must route vault restore through the agent-safe OOB hand-off handler")
 
-	// stdioMode=true models the server over stdio: os.Stdin is the MCP
-	// transport pipe, so a --seed-stdin invocation must be redirected, never
-	// run.
 	srv := NewOfficialServer(nil)
 	require.NoError(t, RegisterOfficialMetaTools(srv, catalog, true, nil, oobRestore))
 	cs := connectOfficialClient(t, srv)
 
+	// A plain restore invoke (no seed on the channel) must reach the handler and
+	// return a needs_human restore_url hand-off.
 	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
-		Name: "invoke_tool",
-		Arguments: map[string]any{
-			"name":      "pinner_vault_restore",
-			"arguments": map[string]any{"seed-stdin": true},
-		},
-	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
-	sc, ok := res.StructuredContent.(map[string]any)
-	require.True(t, ok)
-	require.Equal(t, "needs_human", sc["status"])
-	require.Equal(t, string(ReasonStdinRequired), sc["reason"])
-	require.False(t, restoreRan, "--seed-stdin restore routed through buildCatalog must still be gated, not run")
-
-	// The non-stdin OOB hand-off must still bypass the gate and reach the
-	// handler (so the one-time /restore/<token> URL can be minted).
-	restoreRan = false
-	res, err = cs.CallTool(context.Background(), &mcp.CallToolParams{
 		Name: "invoke_tool",
 		Arguments: map[string]any{
 			"name":      "pinner_vault_restore",
@@ -589,7 +411,19 @@ func TestOfficialInvokeVaultRestoreSeedStdinGatedThroughBuildCatalog(t *testing.
 	})
 	require.NoError(t, err)
 	require.False(t, res.IsError)
-	require.True(t, restoreRan, "non-stdin restore must bypass the gate and run the OOB hand-off")
+	sc, ok := res.StructuredContent.(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "needs_human", sc["status"])
+	require.Equal(t, string(ReasonCredentialEntry), sc["reason"])
+	restoreURL, _ := sc["restore_url"].(string)
+	require.Contains(t, restoreURL, "/restore/", "restore must mint a one-time restore_url from the OOB coordinator")
+	require.NotEmpty(t, sc["handle"])
+	require.Equal(t, vaultRestoreResumeToolName, sc["resume_tool"])
+	// The restore flow carries NO seed on the channel at all: the human enters
+	// it on the browser page. Assert there is no plaintext-mnemonic field and
+	// the structured content is free of recovery-seed material.
+	require.NotContains(t, sc, "seed")
+	require.NotContains(t, sc, "mnemonic")
 }
 
 func TestOfficialPromptsRegistered(t *testing.T) {

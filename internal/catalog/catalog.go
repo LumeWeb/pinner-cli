@@ -321,17 +321,27 @@ func (c *catalogImpl) Invoke(ctx context.Context, name string, input map[string]
 	}
 	// Required-arg validation is shared with the CLI surface (firstMissingRequiredArg):
 	// an arg is mandatory only when Required AND has no Default (the default
-	// satisfies it via normalizeInputDefaults below), and a present-but-empty or
+	// satisfies it via NormalizeOperationInput below), and a present-but-empty or
 	// nil string/slice counts as missing too. Both frontends therefore reject the
 	// same inputs before a Handler runs.
-	if missing := firstMissingRequiredArg(op.Args(), input); missing != nil {
-		return nil, fmt.Errorf("operation %q: missing required argument %q", name, missing.Name)
-	}
-	normalized, err := normalizeInputDefaults(op.Args(), input)
+	normalized, err := NormalizeOperationInput(op, input)
 	if err != nil {
 		return nil, fmt.Errorf("operation %q: %w", name, err)
 	}
 	return h.Execute(ctx, normalized)
+}
+
+// NormalizeOperationInput coerce-renders an operation's raw input into its
+// declared arg shapes and fills declared defaults, using the same single
+// resolveArg state machine as the CLI and MCP dispatch surfaces. It is the
+// standalone entry point callers that invoke an Operation.Handler directly
+// (e.g. the MCP vault setup handlers, which route around Catalog.Invoke) must
+// use so aliasing, coercion, and defaults apply identically to the Invoke path.
+func NormalizeOperationInput(op Operation, input map[string]any) (map[string]any, error) {
+	if m := firstMissingRequiredArg(op.Args(), input); m != nil {
+		return nil, fmt.Errorf("missing required argument %q", m.Name)
+	}
+	return normalizeInputDefaults(op.Args(), input)
 }
 
 // argState is the classification of what a supplied argument value means.
@@ -622,13 +632,53 @@ func firstMissingRequiredArg(args []OperationArg, input map[string]any) *Operati
 		if !isRequiredArg(a) {
 			continue
 		}
-		raw, present := input[a.Name]
+		raw, present := lookupArgInput(a, input)
 		_, st, _ := resolveArg(a, raw, present)
 		if st == stateAbsent || st == stateNull || st == stateEmpty {
 			return &args[i]
 		}
 	}
 	return nil
+}
+
+// lookupArgInput resolves an operation arg against a raw input map, matching
+// both the declared (kebab) name and its camelCase alias, so a model sending
+// either spelling satisfies the arg. Returns the value and whether it was
+// present under either key.
+func lookupArgInput(a OperationArg, input map[string]any) (any, bool) {
+	if raw, ok := input[a.Name]; ok {
+		return raw, true
+	}
+	if alias := camelCase(a.Name); alias != a.Name {
+		if raw, ok := input[alias]; ok {
+			return raw, true
+		}
+	}
+	return nil, false
+}
+
+// camelCase converts a kebab-case name to camelCase (e.g. "device-name" ->
+// "deviceName"). Used to accept the camelCase spelling of an arg a model may
+// send in place of the declared kebab name.
+func camelCase(name string) string {
+	var b strings.Builder
+	b.Grow(len(name))
+	upper := false
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		if c == '-' {
+			upper = true
+			continue
+		}
+		if upper {
+			if c >= 'a' && c <= 'z' {
+				c -= 'a' - 'A'
+			}
+			upper = false
+		}
+		b.WriteByte(c)
+	}
+	return b.String()
 }
 
 // normalizeInputDefaults mutates a copy of input, using resolveArg to (1) coerce
@@ -644,7 +694,19 @@ func normalizeInputDefaults(args []OperationArg, input map[string]any) (map[stri
 		out[k] = v
 	}
 	for _, a := range args {
-		raw, present := out[a.Name]
+		// Resolve the arg under either the declared (kebab) name or its
+		// camelCase alias (e.g. "deviceName" for "device-name"): agents
+		// commonly use camelCase, and aliasing both to the declared name keeps
+		// every Handler reading a single, consistent key without per-op
+		// dual-read hacks. The required-arg check shares lookupArgInput, so the
+		// schema, dispatch, and Handler agree on both spellings.
+		raw, present := lookupArgInput(a, out)
+		if alias := camelCase(a.Name); alias != a.Name {
+			// Drop the alias from the handler input regardless of which key
+			// supplied the value, so a model's camelCase spelling is
+			// canonicalized to the declared name and never leaks a duplicate.
+			delete(out, alias)
+		}
 		value, st, err := resolveArg(a, raw, present)
 		if err != nil {
 			return nil, fmt.Errorf("operation arg %q: %w", a.Name, err)

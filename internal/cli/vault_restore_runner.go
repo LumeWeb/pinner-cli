@@ -10,19 +10,18 @@ import (
 
 // vaultRestoreRunner implements mcpadapter.RestoreRunner so the MCP layer can
 // complete a vault restore from a mnemonic the human enters in a browser
-// (OOB restore). It delegates to the same restoreVault path the CLI action
-// uses, so the two cannot drift. The mnemonic travels human-browser-to-host
-// over the OOB restore handler's loopback/shared mux, never through the MCP
-// channel.
+// (OOB restore). It drives the shared provisioning service directly (the same
+// vault.Provisioner the CLI action uses), so the two cannot drift. The
+// mnemonic travels human-browser-to-host over the OOB restore handler's
+// loopback/shared mux, never through the MCP channel.
 type vaultRestoreRunner struct {
-	output    Output
 	indexerURL string
 }
 
 // NewVaultRestoreRunner builds a RestoreRunner wired to the shared vault
-// restore completion path.
+// provisioning/completion service.
 func NewVaultRestoreRunner(output Output, indexerURL string) mcpadapter.RestoreRunner {
-	return &vaultRestoreRunner{output: output, indexerURL: indexerURL}
+	return &vaultRestoreRunner{indexerURL: indexerURL}
 }
 
 // RestoreProfileName returns the profile targeted by a pending restore,
@@ -43,21 +42,19 @@ func (r *vaultRestoreRunner) RestoreProfileName() string {
 }
 
 // RunRestore completes a restore for the given profile and mnemonic, returning
-// the restored vault ID. It reuses the shared completion code and emits JSON so
-// the outcome is structured.
-func (r *vaultRestoreRunner) RunRestore(ctx context.Context, profile, mnemonic string) (string, error) {
-	// The completion prints the JSON response and removes the consumed seed
-	// file; we cannot capture the vault ID from a void return, so record the
-	// registry afterwards to surface it to the OOB success page.
-	if err := restoreVault(ctx, r.output, profile, mnemonic, r.indexerURL, "", false, true); err != nil {
-		return "", err
-	}
-	reg, err := vault.LoadRegistry()
+// the restored vault ID. It drives the shared Provisioner and returns the typed
+// VaultID from the completion result. onApproval, when non-nil, is passed to the
+// Provisioner's OnApprovalURL so the Sia approval URL can be surfaced to the
+// human before Restore blocks waiting for approval.
+func (r *vaultRestoreRunner) RunRestore(ctx context.Context, profile, mnemonic string, onApproval func(approvalURL string)) (string, error) {
+	res, err := vault.NewProvisioner().Restore(ctx, vault.RestoreRequest{
+		Profile:       profile,
+		Mnemonic:      mnemonic,
+		IndexerURL:    r.indexerURL,
+		OnApprovalURL: onApproval,
+	})
 	if err != nil {
 		return "", err
 	}
-	if p, ok := reg.Profiles[profile]; ok {
-		return p.VaultID, nil
-	}
-	return "", nil
+	return res.VaultID, nil
 }

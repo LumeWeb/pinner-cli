@@ -309,11 +309,15 @@ func (m *mockAuthService) Register(_ context.Context, _, _, _, _ string) (*auth.
 	return &auth.RegisterResult{}, m.registerErr
 }
 
-func (m *mockAuthService) SaveToken(_ string) (*auth.SaveTokenResult, error) { return &auth.SaveTokenResult{}, m.saveTokenErr }
+func (m *mockAuthService) SaveToken(_ string) (*auth.SaveTokenResult, error) {
+	return &auth.SaveTokenResult{}, m.saveTokenErr
+}
 
 func (m *mockAuthService) GetAPIEndpoint() string { return "https://api.pinner.xyz" }
 
-func (m *mockAuthService) Status(_ context.Context) (*auth.StatusResult, error) { return &auth.StatusResult{}, nil }
+func (m *mockAuthService) Status(_ context.Context) (*auth.StatusResult, error) {
+	return &auth.StatusResult{}, nil
+}
 
 func (m *mockAuthService) GetAuthenticatedClient(_ context.Context) (portalsdk.AccountAPI, error) {
 	return nil, nil
@@ -323,9 +327,13 @@ func (m *mockAuthService) GetLoginToken(_ context.Context) (string, error) {
 	return "jwt-token-123", nil
 }
 
-func (m *mockAuthService) EnableOTP(_ context.Context, _ string) (*auth.OTPSecretResult, error) { return &auth.OTPSecretResult{}, m.enableOTPErr }
+func (m *mockAuthService) EnableOTP(_ context.Context, _ string) (*auth.OTPSecretResult, error) {
+	return &auth.OTPSecretResult{}, m.enableOTPErr
+}
 
-func (m *mockAuthService) DisableOTP(_ context.Context, _ string) (*auth.DisableOTPResult, error) { return &auth.DisableOTPResult{}, m.disableOTPErr }
+func (m *mockAuthService) DisableOTP(_ context.Context, _ string) (*auth.DisableOTPResult, error) {
+	return &auth.DisableOTPResult{}, m.disableOTPErr
+}
 
 // --- Test helpers ---
 

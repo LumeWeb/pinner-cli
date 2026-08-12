@@ -1,28 +1,17 @@
 package mcp
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// mustJSONQuote returns the JSON-escaped string literal for s, so filesystem
-// paths with backslashes (Windows) are embedded validly in a JSON handoff.
-func mustJSONQuote(s string) string {
-	b, err := json.Marshal(s)
-	if err != nil {
-		panic(err)
-	}
-	return string(b)
-}
+// The seed drop coordinator's Register/tokenDone/resolve behavior above is the
+// live path the catalog-op create hand-off drives.
 
 func TestSeedDropSingleUse(t *testing.T) {
 	d := NewSeedDrop(time.Minute)
@@ -96,44 +85,4 @@ func TestSeedDropTombstonePrunedOnWrite(t *testing.T) {
 	// The newest synthetic tombstones are retained.
 	require.Contains(t, d.core.spent, fmt.Sprintf("syn-%d", maxSpentTombstones+4))
 	require.Contains(t, d.core.spent, fmt.Sprintf("syn-%d", maxSpentTombstones-1))
-}
-
-func TestAttachSeedDropMintsURL(t *testing.T) {
-	d := NewSeedDrop(time.Minute)
-	d.SetBaseURL("http://127.0.0.1:9999")
-
-	// Write a fake seed file on the host.
-	dir := t.TempDir()
-	seedPath := filepath.Join(dir, "recovery.seed")
-	require.NoError(t, os.WriteFile(seedPath, []byte("one two three\n"), 0600))
-
-	// Build the JSON handoff by marshaling so Windows drive-letter paths
-	// (D:\a\...\recovery.seed) are JSON-escaped correctly (a raw backslash is
-	// an invalid JSON escape and would make Unmarshal fail on Windows).
-	out := `{"profile":"default","seed_path":` + mustJSONQuote(seedPath) + `,"next_step":"run restore"}`
-	spec := &SeedDropSpec{ProfileField: "profile", SeedPathField: "seed_path"}
-	text, extra := attachSeedDrop(out, spec, d)
-	// Text unchanged; structured content carries the URL.
-	assert.Equal(t, out, text)
-	require.NotNil(t, extra)
-	url, _ := extra["seed_url"].(string)
-	require.Contains(t, url, "/seed/")
-
-	// The mnemonic must NOT appear in extra; only the URL to retrieve it.
-	require.NotContains(t, extra, "one two three")
-}
-
-func TestAttachSeedDropIgnoresNilSpecOrNilDrop(t *testing.T) {
-	out := `{"profile":"default","seed_path":"/tmp/x"}`
-	// No seed-drop coordinator wired: passthrough.
-	text, extra := attachSeedDrop(out, &SeedDropSpec{ProfileField: "profile", SeedPathField: "seed_path"}, nil)
-	assert.Equal(t, out, text)
-	assert.Nil(t, extra)
-
-	// Tool does not declare seed-drop behavior (nil spec) with a live drop.
-	d := NewSeedDrop(time.Minute)
-	d.SetBaseURL("http://127.0.0.1:9999")
-	text, extra = attachSeedDrop(out, nil, d)
-	assert.Equal(t, out, text)
-	assert.Nil(t, extra)
 }

@@ -3,10 +3,12 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
+	"go.lumeweb.com/pinner-cli/internal/core/vault"
 )
 
 // ---- resume-tool (template) tests -----------------------------------------
@@ -120,6 +123,153 @@ func TestVaultRestoreResumePendingToDone(t *testing.T) {
 	assert.NotContains(t, r.Text, "secret words")
 }
 
+// TestVaultRestoreResumeFailedSteersRestart verifies that when RunRestore fails
+// (wrong mnemonic or Sia approval/registration error), the restore resume
+// continuation steers the agent to restart instead of reporting "the vault has
+// been restored". The claimed token's outcome is recorded as failed and never
+// maps to StatusDone, matching the OOB page's error banner.
+func TestVaultRestoreResumeFailedSteersRestart(t *testing.T) {
+	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	reg := NewHandoffRegistry()
+	oob, mux, runner := buildRestoreServer()
+	runner.err = errors.New("approval/registration failed: seed rejected")
+
+	url := oob.Register("default")
+	token := vaultTokenFromURL(url)
+	require.NotEmpty(t, token)
+	handle := handles.Create("pending", map[string]any{handleDataToken: token})
+	reg.Begin(handle, vaultRestoreResumeContinuation(oob, handles, reg))
+
+	resume := NewVaultRestoreResumeDescriptor(reg, handles)
+
+	// Submit the restore form; RunRestore fails and records a failed outcome.
+	postReq := httptest.NewRequest("POST", url, strings.NewReader("mnemonic=secret+words"))
+	postReq.Header.Set("Origin", "http://127.0.0.1:9999")
+	postReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	postRec := httptest.NewRecorder()
+	mux.ServeHTTP(postRec, postReq)
+	require.Equal(t, 1, runner.calls)
+
+	// Resume must steer to restart, NOT report done.
+	r, err := resume.Handler(context.Background(), ToolRequest{
+		Name:      vaultRestoreResumeToolName,
+		Arguments: map[string]any{"handle": handle},
+	})
+	require.NoError(t, err)
+	sc := requireHandoff(t, r)
+	assert.Equal(t, vaultRestoreToolName, sc["resume_tool"], "a failed restore must steer back to pinner_vault_restore")
+	assert.NotEqual(t, StatusDone, sc["status"], "a failed restore must never report StatusDone")
+	assert.NotContains(t, r.Text, "secret words")
+	assert.NotContains(t, r.Text, "has been restored", "must not claim the vault was restored on failure")
+}
+
+// TestVaultRestoreResumePendingDuringApproval verifies that after the browser
+// form is submitted but while RunRestore is still blocked on the Sia approval,
+// the resume continuation keeps reporting pending (needs_human) rather than
+// treating the claimed-but-unsettled token as a dead hand-off and steering the
+// agent to restart mid-approval.
+func TestVaultRestoreResumePendingDuringApproval(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	reg := NewHandoffRegistry()
+	oob := NewOOBRestore(&fakeRestoreRunner{profile: "default", started: started, release: release}, time.Minute)
+	oob.SetBaseURL("http://127.0.0.1:9999")
+	mux := http.NewServeMux()
+	oob.registerHandlers(mux)
+
+	url := oob.Register("default")
+	token := vaultTokenFromURL(url)
+	require.NotEmpty(t, token)
+	handle := handles.Create("pending", map[string]any{handleDataToken: token})
+	reg.Begin(handle, vaultRestoreResumeContinuation(oob, handles, reg))
+
+	resume := NewVaultRestoreResumeDescriptor(reg, handles)
+
+	// Submit the form in a goroutine; RunRestore blocks on the approval.
+	postReq := httptest.NewRequest("POST", url, strings.NewReader("mnemonic=secret+words"))
+	postReq.Header.Set("Origin", "http://127.0.0.1:9999")
+	postReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	postRec := httptest.NewRecorder()
+	go mux.ServeHTTP(postRec, postReq)
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("restore did not start")
+	}
+
+	// Resume while the approval is outstanding: must remain pending (needs_human),
+	// NOT a dead-handle steer to restart.
+	r, err := resume.Handler(context.Background(), ToolRequest{
+		Name:      vaultRestoreResumeToolName,
+		Arguments: map[string]any{"handle": handle},
+	})
+	require.NoError(t, err)
+	sc := requireHandoff(t, r)
+	assert.Equal(t, vaultRestoreResumeToolName, sc["resume_tool"], "a mid-approval restore must keep reporting needs_human to the resume tool")
+	assert.NotEqual(t, StatusDone, sc["status"], "a mid-approval restore must not report done")
+	assert.NotEqual(t, vaultRestoreToolName, sc["resume_tool"], "a mid-approval restore must not steer to restart")
+
+	// Let the restore finish. Poll until the continuation observes the settled
+	// outcome rather than racing the blocking restore's completion.
+	close(release)
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		r, err = resume.Handler(context.Background(), ToolRequest{
+			Name:      vaultRestoreResumeToolName,
+			Arguments: map[string]any{"handle": handle},
+		})
+		require.NoError(t, err)
+		if sc, ok := r.StructuredContent.(map[string]any); ok && sc["status"] == StatusDone {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("restore did not settle to done within deadline: " + r.Text)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	requireVaultDone(t, r)
+}
+
+// TestVaultRestoreResumeFreesOutcome verifies that once the continuation
+// consumes a terminal result, the per-token outcome record is removed from the
+// coordinator map, so settled restores do not accumulate.
+func TestVaultRestoreResumeFreesOutcome(t *testing.T) {
+	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	reg := NewHandoffRegistry()
+	oob, mux, _ := buildRestoreServer()
+
+	url := oob.Register("default")
+	token := vaultTokenFromURL(url)
+	require.NotEmpty(t, token)
+	handle := handles.Create("pending", map[string]any{handleDataToken: token})
+	reg.Begin(handle, vaultRestoreResumeContinuation(oob, handles, reg))
+	resume := NewVaultRestoreResumeDescriptor(reg, handles)
+
+	postReq := httptest.NewRequest("POST", url, strings.NewReader("mnemonic=secret+words"))
+	postReq.Header.Set("Origin", "http://127.0.0.1:9999")
+	postReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	mux.ServeHTTP(httptest.NewRecorder(), postReq)
+
+	// Outcome was recorded while restoring, then freed once the continuation
+	// consumed the terminal done result.
+	oob.mu.Lock()
+	_, wasRecorded := oob.outcomes[token]
+	oob.mu.Unlock()
+	require.True(t, wasRecorded, "outcome should be recorded once the restore settles")
+
+	_, err := resume.Handler(context.Background(), ToolRequest{
+		Name:      vaultRestoreResumeToolName,
+		Arguments: map[string]any{"handle": handle},
+	})
+	require.NoError(t, err)
+
+	oob.mu.Lock()
+	_, stillThere := oob.outcomes[token]
+	oob.mu.Unlock()
+	assert.False(t, stillThere, "a consumed terminal outcome must be freed from the map")
+}
+
 // TestVaultRestoreResumeDeadHandleSteersRestart verifies that an unknown or
 // expired handle passed to pinner_vault_restore_resume steers the agent back
 // to pinner_vault_restore instead of retrying a dead handle.
@@ -180,11 +330,19 @@ func TestVaultResumeNotConfigured(t *testing.T) {
 
 // ---- start hand-off structured content (full invoke path) -----------------
 
-// vaultRestoreJSONRoot builds a minimal root whose `vault restore` Action emits
-// the agent-mode JSON that declares the restore profile, so the invoke path can
-// mint a restore_url and a resume handle.
-func vaultRestoreJSONRoot(t *testing.T) (*cli.Command, *bool) {
-	var ran bool
+func TestVaultRestoreStartHandoffIncludesHandleAndResumeTool(t *testing.T) {
+	// Isolate vault paths so resolveRestoreProfile's registry read never
+	// depends on a real host registry (which varies across CI environments and
+	// platforms). Mirrors the create-start test below.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	if runtime.GOOS == "windows" {
+		t.Setenv("APPDATA", filepath.Join(home, "AppData", "Roaming"))
+		t.Setenv("LOCALAPPDATA", filepath.Join(home, "AppData", "Local"))
+	}
+
 	root := &cli.Command{
 		Name:  "pinner",
 		Flags: []cli.Flag{&cli.BoolFlag{Name: "agent", Usage: "agent mode"}},
@@ -192,32 +350,23 @@ func vaultRestoreJSONRoot(t *testing.T) (*cli.Command, *bool) {
 			{
 				Name: "vault",
 				Commands: []*cli.Command{
-					{
-						Name: "restore",
-						Action: func(ctx context.Context, cmd *cli.Command) error {
-							ran = true
-							_, err := cmd.Root().Writer.Write([]byte(`{"profile":"default"}`))
-							return err
-						},
-					},
+					{Name: "restore", Action: func(ctx context.Context, cmd *cli.Command) error { return nil }},
 				},
 			},
 		},
 	}
-	return root, &ran
-}
-
-func TestVaultRestoreStartHandoffIncludesHandleAndResumeTool(t *testing.T) {
-	root, ran := vaultRestoreJSONRoot(t)
 	oob, _, _ := buildRestoreServer()
 	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
 	reg := NewHandoffRegistry()
 	catalog, err := buildCatalog(root, true, nil, nil, oob, reg, handles)
 	require.NoError(t, err)
 
+	// Invoke the restore tool through the catalog-op handler: it resolves the
+	// target profile (no profile/env/registry -> "default") and mints a
+	// one-time restore_url + resume handle from the OOB coordinator, without
+	// relying on CLI stdout.
 	res, err := catalog.Invoke(context.Background(), vaultRestoreToolName, map[string]any{})
 	require.NoError(t, err)
-	require.True(t, *ran)
 	sc, ok := res.StructuredContent.(map[string]any)
 	require.True(t, ok, "restore hand-off must carry structured content")
 	// Both the one-time URL and the resume handle + resume tool must be present.
@@ -232,11 +381,17 @@ func TestVaultRestoreStartHandoffIncludesHandleAndResumeTool(t *testing.T) {
 }
 
 func TestVaultCreateStartHandoffIncludesHandleAndResumeTool(t *testing.T) {
-	dir := t.TempDir()
-	seedPath := filepath.Join(dir, "recovery.seed")
-	require.NoError(t, os.WriteFile(seedPath, []byte("one two three\n"), 0600))
+	// Isolate vault paths so CreatePending writes seed + pending profile into a
+	// temp dir, and the seeded hub/core never reaches a real config.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	if runtime.GOOS == "windows" {
+		t.Setenv("APPDATA", filepath.Join(home, "AppData", "Roaming"))
+		t.Setenv("LOCALAPPDATA", filepath.Join(home, "AppData", "Local"))
+	}
 
-	var ran bool
 	root := &cli.Command{
 		Name:  "pinner",
 		Flags: []cli.Flag{&cli.BoolFlag{Name: "agent", Usage: "agent mode"}},
@@ -244,14 +399,7 @@ func TestVaultCreateStartHandoffIncludesHandleAndResumeTool(t *testing.T) {
 			{
 				Name: "vault",
 				Commands: []*cli.Command{
-					{
-						Name: "create",
-						Action: func(ctx context.Context, cmd *cli.Command) error {
-							ran = true
-							_, err := cmd.Root().Writer.Write([]byte(`{"profile":"default","seed_path":` + mustJSONQuote(seedPath) + `}`))
-							return err
-						},
-					},
+					{Name: "create", Action: func(ctx context.Context, cmd *cli.Command) error { return nil }},
 				},
 			},
 		},
@@ -264,29 +412,70 @@ func TestVaultCreateStartHandoffIncludesHandleAndResumeTool(t *testing.T) {
 	catalog, err := buildCatalog(root, true, nil, seedDrop, nil, reg, handles)
 	require.NoError(t, err)
 
-	res, err := catalog.Invoke(context.Background(), vaultCreateToolName, map[string]any{})
+	// Invoke the create tool through the catalog-op handler: it runs
+	// Provisioner.CreatePending (real fresh seed + 0600 file + pending profile),
+	// then the MCP layer mints a one-time seed_url + resume handle. The mnemonic
+	// must never appear in the result.
+	res, err := catalog.Invoke(context.Background(), vaultCreateToolName, map[string]any{"profile": "testcreate"})
 	require.NoError(t, err)
-	require.True(t, ran)
 	sc, ok := res.StructuredContent.(map[string]any)
 	require.True(t, ok, "create hand-off must carry structured content")
 	require.Contains(t, sc["seed_url"].(string), "/seed/")
 	require.NotEmpty(t, sc["handle"])
 	assert.Equal(t, vaultCreateResumeToolName, sc["resume_tool"])
 
-	// Seed-never-transits assertion: the mnemonic must not appear anywhere.
+	// Seed-never-transits assertion: the actual generated mnemonic must not
+	// appear anywhere in the hand-off (Text or StructuredContent). Reading it
+	// from the seed file enforces the real guarantee rather than a constant.
+	mnemonic, err := os.ReadFile(vault.SeedPath("testcreate"))
+	require.NoError(t, err, "seed file must exist under the isolated home")
+	require.NotEmpty(t, mnemonic)
 	blob, _ := json.Marshal(sc)
-	require.NotContains(t, string(blob), "one two three")
-	require.NotContains(t, res.Text, "one two three")
+	require.NotContains(t, string(blob), string(mnemonic), "mnemonic must never appear in structured content")
+	require.NotContains(t, res.Text, string(mnemonic), "mnemonic must never appear in hand-off text")
+	// The pending profile + seed file must exist under the isolated home.
+	reg2, err := vault.LoadRegistry()
+	require.NoError(t, err)
+	require.Contains(t, reg2.Profiles, "testcreate")
 }
 
-// TestMintVaultHandoffDegradesWithoutResumeMachinery verifies that when the
-// resume machinery (registry/handles) is absent, mintVaultHandoff returns
-// empty handle so the single-shot hand-off is preserved unchanged.
-func TestMintVaultHandoffDegradesWithoutResumeMachinery(t *testing.T) {
-	restoreEntry := &ToolEntry{Behavior: ToolBehavior{RestoreURL: &RestoreURLSpec{ProfileField: "profile"}}}
-	h, rt := mintVaultHandoff(restoreEntry, "http://127.0.0.1:9999/restore/tok", "", nil, nil, nil, nil)
-	assert.Empty(t, h)
-	assert.Empty(t, rt)
+// TestVaultCreateSetupHandlerAliasesCamelCaseDeviceName verifies the
+// pinner_vault_create setup handler routes args through the catalog's
+// NormalizeOperationInput, so a model sending camelCase "deviceName" for the
+// kebab-declared "device-name" arg reaches the op handler (and the resulting
+// profile) instead of being silently dropped to the empty-string default.
+func TestVaultCreateSetupHandlerAliasesCamelCaseDeviceName(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	if runtime.GOOS == "windows" {
+		t.Setenv("APPDATA", filepath.Join(home, "AppData", "Roaming"))
+		t.Setenv("LOCALAPPDATA", filepath.Join(home, "AppData", "Local"))
+	}
+
+	seedDrop := NewSeedDrop(time.Minute)
+	seedDrop.SetBaseURL("http://127.0.0.1:9999")
+	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	reg := NewHandoffRegistry()
+
+	handler := vaultCreateSetupHandler(seedDrop, reg, handles)
+	res, err := handler(context.Background(), ToolRequest{
+		Name: vaultCreateToolName,
+		Arguments: map[string]any{
+			"profile":    "aliasdev",
+			"deviceName": "agent-issued-device",
+		},
+	})
+	require.NoError(t, err)
+	require.False(t, res.IsError, "create must succeed with camelCase deviceName: %s", res.Text)
+
+	// The aliased device name must land on the pending profile.
+	loaded, err := vault.LoadRegistry()
+	require.NoError(t, err)
+	prof, ok := loaded.Profiles["aliasdev"]
+	require.True(t, ok, "pending profile must exist")
+	assert.Equal(t, "agent-issued-device", prof.DeviceName)
 }
 
 // TestVaultCreateResumeExpiredTokenSteersRestart verifies the Kody high finding:

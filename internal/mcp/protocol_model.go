@@ -31,57 +31,6 @@ type ToolResult struct {
 // PinnerToolHandler executes a catalog tool without depending on an MCP SDK.
 type PinnerToolHandler func(context.Context, ToolRequest) (ToolResult, error)
 
-// ToolBehavior captures the agent-facing execution behavior of a tool. The
-// invoke gate and post-processing layers used to encode these as hardcoded
-// tool-name / argument-string checks (e.g. "pinner_vault_restore" +
-// "seed-stdin"); carrying them declaratively on the entry turns those into
-// pure data-driven switches.
-type ToolBehavior struct {
-	// StdinGate, when non-nil, names the argument that switches this tool
-	// from its agent-safe hand-off into a raw os.Stdin read. An invocation
-	// with that argument truthy must be gated (redirected rather than run,
-	// which would consume the MCP transport pipe); an invocation without it
-	// is agent-safe. This replaces the hardcoded pinner_vault_restore /
-	// seed-stdin bypass in invoke_tool.
-	StdinGate *StdinGateSpec
-
-	// RestoreURL, when non-nil, marks this tool as an out-of-band restore
-	// that mints a one-time /restore/<token> browser URL for the human to
-	// supply the seed. Its presence is what exempts a non-stdin invocation
-	// from its own StdinGate (the OOB path is reachable and must not be
-	// wrongly redirected when stdin is /dev/null).
-	RestoreURL *RestoreURLSpec
-
-	// SeedDrop, when non-nil, marks this tool as one whose stdout carries a
-	// vault-recovery-seed path that the MCP layer should turn into a one-time
-	// browser hand-off instead of returning the mnemonic on the channel.
-	SeedDrop *SeedDropSpec
-}
-
-// StdinGateSpec names the single boolean argument that flips a tool into a
-// raw os.Stdin read (e.g. seed-stdin on vault restore).
-type StdinGateSpec struct {
-	// ArgName is the flag key (as it appears in the JSON arguments map) that
-	// triggers the stdin path.
-	ArgName string
-}
-
-// SeedDropSpec describes how to build a one-time seed-drop URL from a tool's
-// agent-mode JSON output.
-type SeedDropSpec struct {
-	// ProfileField is the JSON field carrying the profile name.
-	ProfileField string
-	// SeedPathField is the JSON field carrying the host seed-file path.
-	SeedPathField string
-}
-
-// RestoreURLSpec describes how to build a one-time restore URL from a tool's
-// agent-mode JSON output.
-type RestoreURLSpec struct {
-	// ProfileField is the JSON field carrying the profile name.
-	ProfileField string
-}
-
 // ToolDescriptor describes a Pinner-owned tool.
 type ToolDescriptor struct {
 	Name        string
@@ -101,13 +50,7 @@ type ToolDescriptor struct {
 	// tools that carry credential-bearing flags surface them to the redaction
 	// path through the shared converters.
 	SensitiveFlags []string
-	// Behavior captures agent-facing execution behavior (stdin gating, OOB
-	// hand-offs) that used to be encoded as hardcoded tool-name checks in the
-	// invoke gate and post-processing layers. Carrying it on the descriptor
-	// keeps the two discovery surfaces (direct tools/list and the internal
-	// catalog) in sync through the shared converters.
-	Behavior ToolBehavior
-	Handler  PinnerToolHandler
+	Handler        PinnerToolHandler
 }
 
 func descriptorFromTool(entry *ToolEntry) ToolDescriptor {
@@ -122,7 +65,6 @@ func descriptorFromTool(entry *ToolEntry) ToolDescriptor {
 		InputSchema:    entry.InputSchema,
 		Meta:           entry.Meta,
 		SensitiveFlags: entry.SensitiveFlags,
-		Behavior:       entry.Behavior,
 	}
 }
 
@@ -143,7 +85,6 @@ func toolEntryFromDescriptor(desc ToolDescriptor) *ToolEntry {
 		InputSchema:    desc.InputSchema,
 		Meta:           desc.Meta,
 		SensitiveFlags: desc.SensitiveFlags,
-		Behavior:       desc.Behavior,
 		Handler:        desc.Handler,
 		// Direct auth tools are non-blocking and safe for agent invocation:
 		// pinner_auth_sso returns a needs_human hand-off, pinner_auth_resume

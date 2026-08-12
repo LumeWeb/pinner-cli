@@ -7,9 +7,7 @@ import (
 	"io"
 	"os"
 	"strings"
-	"time"
 
-	"github.com/google/uuid"
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/internal/core/vault"
 )
@@ -119,156 +117,39 @@ In non-interactive (--agent) mode pass --seed-stdin to read the mnemonic from st
 			}
 			indexerURL := cfgMgr.Config().GetSiaIndexerURL()
 
-			return restoreVault(ctx, output, profileName, mnemonic, indexerURL, c.String("device-name"), c.Bool("no-sync"), c.Bool(FlagJSON) || c.Bool(FlagAgent))
+			jsonOnly := c.Bool(FlagJSON) || c.Bool(FlagAgent)
+			output.Printfln("Restoring vault profile %q...", profileName)
+			res, err := vault.NewProvisioner().Restore(ctx, vault.RestoreRequest{
+				Profile:    profileName,
+				Mnemonic:   mnemonic,
+				IndexerURL: indexerURL,
+				DeviceName: c.String("device-name"),
+				NoSync:     c.Bool("no-sync"),
+				OnApprovalURL: func(u string) {
+					output.Printfln("Open this URL in your browser to approve:")
+					output.Printfln("  %s", u)
+					output.Printfln("Waiting for approval...")
+				},
+			})
+			if err != nil {
+				return err
+			}
+			if jsonOnly {
+				output.PrintJSON(vaultRestoreResponse{
+					Profile: res.Profile,
+					VaultID: res.VaultID,
+					Device:  vaultDeviceInfo{ID: res.DeviceID, Name: res.Device},
+					Cache:   vaultCacheState{State: res.Cache},
+				})
+			} else {
+				output.Printfln("Vault restored.")
+				output.Printfln("Vault ID: %s", res.VaultID)
+				output.Printfln("Device registered: %s", res.Device)
+			}
+			return nil
 		},
 	}
 }
 
-// restoreVault runs the shared restore-completion path given an already-resolved
-// profile and a recovery mnemonic. It derives the vault identity, drives the
-// single browser-approval connection, registers a new device credential, and
-// rebuilds the local cache. Both the CLI action and the out-of-band restore
-// handler (which receives the mnemonic from a browser, never through the MCP
-// channel) call this same code so the two paths cannot drift. When jsonOnly is
-// true the completion prints a structured response; otherwise it prints the
-// human-readable result.
-func restoreVault(ctx context.Context, output Output, profileName, mnemonic, indexerURL, deviceName string, noSync, jsonOnly bool) error {
-	output.Printfln("Restoring vault profile %q...", profileName)
-
-	// Start approval flow (new device needs browser approval). Build a
-	// single Connection shared with the wait/register below; the SDK
-	// requires Request and WaitForApproval/Register on the same
-	// builder, or the pending request is lost.
-	conn := vault.NewConnection(indexerURL, mnemonic)
-	approvalURL, err := conn.Request(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to request connection: %w", err)
-	}
-
-	output.Printfln("Open this URL in your browser to approve:")
-	output.Printfln("  %s", approvalURL)
-	output.Printfln("Waiting for approval...")
-
-	// Wait for approval and register with mnemonic on the same builder.
-	appKeyHex, err := conn.WaitAndRegister(ctx)
-	if err != nil {
-		return fmt.Errorf("approval/registration failed: %w", err)
-	}
-
-	// Derive vault ID
-	vaultID := vault.VaultID(appKeyHex)
-
-	// Check if vault ID already exists under another profile. Derive
-	// each existing profile's vault ID from its stored app key rather
-	// than trusting the persisted ProfileConfig.VaultID string, which
-	// may predate a VaultID format widening and thus never match a
-	// freshly-derived ID (letting a previously-configured vault escape
-	// the dedup guard). Fall back to the persisted string only when no
-	// app key state is available (e.g. a pending profile).
-	reg, err := vault.LoadRegistry()
-	if err != nil {
-		return fmt.Errorf("failed to load registry: %w", err)
-	}
-	for name, p := range reg.Profiles {
-		// Skip the profile currently being restored: it was already
-		// admitted (or rejected) by the pending-profile guard above.
-		// Deriving its ID here would otherwise falsely block recovery
-		// when a previous restore wrote state.json but failed before
-		// SaveRegistry (leaving it pending with a valid app key that
-		// re-derives the same ID on a re-run).
-		if name == profileName {
-			continue
-		}
-		existingID := p.VaultID
-		if derivedID, ok := vault.ProfileVaultID(name); ok {
-			existingID = derivedID
-		}
-		if existingID == vaultID {
-			return fmt.Errorf("this vault is already configured locally as profile %q. Use 'pinner vault profile rename %s %s' if you want to rename it", name, name, profileName)
-		}
-	}
-
-	// Generate device ID and name
-	deviceID := uuid.NewString()
-	if deviceName == "" {
-		hostname, _ := os.Hostname()
-		deviceName = hostname
-	}
-
-	// Create profile state
-	state := &vault.ProfileState{
-		AppKey:    appKeyHex,
-		DeviceID:  deviceID,
-		CreatedAt: time.Now().UTC().Format(time.RFC3339),
-	}
-	if err := vault.SaveProfileState(profileName, state); err != nil {
-		return fmt.Errorf("failed to save profile state: %w", err)
-	}
-
-	// Initialize fresh SQLite DB
-	dbPath := vault.ProfileDBPath(profileName)
-	output.Printfln("Setting up database...")
-	db, err := vault.OpenDB(dbPath)
-	if err != nil {
-		return fmt.Errorf("failed to initialize vault database: %w", err)
-	}
-	if sqlDB, err := db.DB(); err == nil {
-		sqlDB.Close()
-	}
-
-	// Add profile to registry (serialized, atomic)
-	if err := vault.AddProfile(profileName, vault.ProfileConfig{
-		VaultID:    vaultID,
-		CachePath:  dbPath,
-		AppKeyRef:  vault.ProfileStatePath(profileName),
-		DeviceName: deviceName,
-	}); err != nil {
-		return fmt.Errorf("failed to save registry: %w", err)
-	}
-
-	// Full cache rebuild from remote (unless noSync)
-	cacheState := "skipped"
-	if !noSync {
-		output.Printfln("Rebuilding cache from remote...")
-		svc, err := vaultServiceFactory(profileName, indexerURL)
-		if err != nil {
-			output.Printfln("Warning: sync skipped (%v)", err)
-			cacheState = "error"
-		} else {
-			count, _, err := svc.Sync(ctx)
-			if err != nil {
-				output.Printfln("Warning: sync failed (%v)", err)
-				cacheState = "error"
-			} else {
-				output.Printfln("Synced %d changes.", count)
-				cacheState = "ready"
-			}
-			svc.Close()
-		}
-	} else {
-		output.Printfln("The local vault index has not been restored.")
-		output.Printfln("Run: pinner vault cache rebuild --profile %s", profileName)
-	}
-
-	// Consume the one-time recovery seed on any successful restore of
-	// a pending profile, whether the mnemonic came from --seed-stdin, the
-	// interactive prompt, or an out-of-band browser form. The plaintext
-	// master recovery mnemonic (the single credential controlling all
-	// vault content) must not persist on disk after use.
-	_ = os.Remove(vault.SeedPath(profileName))
-
-	if jsonOnly {
-		output.PrintJSON(vaultRestoreResponse{
-			Profile: profileName,
-			VaultID: vaultID,
-			Device:  vaultDeviceInfo{ID: deviceID, Name: deviceName},
-			Cache:   vaultCacheState{State: cacheState},
-		})
-	} else {
-		output.Printfln("Vault restored.")
-		output.Printfln("Vault ID: %s", vaultID)
-		output.Printfln("Device registered: %s", deviceName)
-		output.Printfln("Cache initialized at %s", dbPath)
-	}
-	return nil
-}
+// (restore completion core moved to vault.Provisioner.Restore in
+// internal/core/vault/provision.go; the CLI action renders its typed result.)
