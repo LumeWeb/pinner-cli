@@ -430,9 +430,13 @@ func (p *Provisioner) MarkSeedRetrieved(profile string) error {
 			return fmt.Errorf("failed to clear keep-seed marker: %w", err)
 		}
 	}
-	// The seed was displayed exactly once; remove the at-rest copy now rather
-	// than relying on a later reconcile that may never run.
-	_ = os.Remove(SeedPath(profile))
+	if err := os.Remove(SeedPath(profile)); err != nil && !os.IsNotExist(err) {
+		// Surface genuine removal failures (permission, IO) so the caller can
+		// keep the token live and report truthfully instead of silently leaving
+		// the plaintext mnemonic at rest. A missing file (already removed) is
+		// the desired end state, not an error.
+		return fmt.Errorf("failed to remove at-rest recovery copy: %w", err)
+	}
 	return nil
 }
 

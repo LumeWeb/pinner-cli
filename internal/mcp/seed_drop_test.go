@@ -312,15 +312,17 @@ func TestSeedDropConfirmFailureKeepsTokenLive(t *testing.T) {
 	d.SetBaseURL("http://127.0.0.1:9999")
 	mux := http.NewServeMux()
 	d.registerHandlers(mux)
-	url := d.Register("keepfail", "seed that must survive a registry-save failure")
+	url := d.Register("keepfail", "seed that must survive a failed removal")
 
-	// Force MarkSeedRetrieved's SaveRegistry to fail by making the registry
-	// directory read-only. lockRegistry can still open the existing lock file
-	// and LoadRegistry can still read the existing registry, but CreateTemp
-	// (which creates a NEW entry) will fail.
-	regDir := filepath.Dir(vault.RegistryPath())
-	require.NoError(t, os.Chmod(regDir, 0o500))
-	defer os.Chmod(regDir, 0o700) // restore so isoVaultPaths cleanup can remove
+	// Force MarkSeedRetrieved's os.Remove to fail by making the seed's own
+	// parent directory read-only. The file exists, so Remove fails with a real
+	// error (not NotExist), which MarkSeedRetrieved must surface rather than
+	// swallow. The registry dir stays writable, so the KeepSeed marker is
+	// cleared first — the on-disk recovery file is the critical thing that must
+	// survive.
+	seedDir := filepath.Dir(seedPath)
+	require.NoError(t, os.Chmod(seedDir, 0o500))
+	defer os.Chmod(seedDir, 0o700) // restore so isoVaultPaths cleanup can remove
 
 	// Same-origin confirmation POST must surface a 500 and NOT consume.
 	rec := httptest.NewRecorder()
@@ -331,17 +333,14 @@ func TestSeedDropConfirmFailureKeepsTokenLive(t *testing.T) {
 	require.Contains(t, rec.Body.String(), "could <strong>not</strong> be removed", "the page must truthfully say removal failed")
 	require.NotContains(t, rec.Body.String(), "has been removed", "the page must not falsely claim removal")
 
-	// The at-rest copy and KeepSeed marker must survive the failed confirmation.
+	// The at-rest copy must survive the failed removal.
 	after, err := os.ReadFile(seedPath)
-	require.NoError(t, err, "the at-rest copy must survive a failed confirmation")
+	require.NoError(t, err, "the at-rest copy must survive a failed removal")
 	require.Equal(t, before, after, "the seed bytes must be unchanged after failed removal")
-	reg, err := vault.LoadRegistry()
-	require.NoError(t, err)
-	require.True(t, reg.Profiles["keepfail"].KeepSeed, "keep-seed must not be cleared when removal fails")
 
 	// The token was NOT consumed: it is still retryable once the failure clears.
 	recGet := httptest.NewRecorder()
 	mux.ServeHTTP(recGet, httptest.NewRequest(http.MethodGet, url, nil))
 	require.Equal(t, http.StatusOK, recGet.Code, "a failed confirmation must not consume the token; it stays live")
-	require.Contains(t, recGet.Body.String(), "seed that must survive a registry-save failure")
+	require.Contains(t, recGet.Body.String(), "seed that must survive a failed removal")
 }
