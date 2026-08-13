@@ -281,3 +281,67 @@ func TestSeedDropWriteFailureKeepsSeedRetryable(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code, "a failed GET must not consume the token; it is retryable")
 	require.Contains(t, rec.Body.String(), "mnemonic that must survive a failed write")
 }
+
+// TestSeedDropConfirmFailureKeepsTokenLive verifies that when MarkSeedRetrieved
+// fails to remove the at-rest recovery copy, consumePOST must NOT consume the
+// token or falsely report removal: the human must be told the copy could not be
+// deleted (500), the KeepSeed marker must survive, and the token must stay live
+// so the failure is retryable rather than leaving the only recovery credential
+// stranded.
+func TestSeedDropConfirmFailureKeepsTokenLive(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("read-only dir chmod semantics differ on Windows")
+	}
+	isoVaultPaths(t)
+
+	// Create a real active keep-seed profile; the seed is on disk + marked.
+	prov := vault.NewProvisioner()
+	_, err := prov.Create(context.Background(), vault.CreateRequest{
+		Profile:       "keepfail",
+		IndexerURL:    "http://indexer",
+		NewConnection: func(_, _ string) vault.ConnectionFlow { return &stubConnMCP{appKeyHex: validAppKeyHexMCP(t)} },
+	})
+	require.NoError(t, err)
+	seedPath := vault.SeedPath("keepfail")
+	before, err := os.ReadFile(seedPath)
+	require.NoError(t, err)
+	require.NotEmpty(t, strings.TrimSpace(string(before)))
+
+	// Register a seeddrop.
+	d := NewSeedDrop(time.Minute)
+	d.SetBaseURL("http://127.0.0.1:9999")
+	mux := http.NewServeMux()
+	d.registerHandlers(mux)
+	url := d.Register("keepfail", "seed that must survive a registry-save failure")
+
+	// Force MarkSeedRetrieved's SaveRegistry to fail by making the registry
+	// directory read-only. lockRegistry can still open the existing lock file
+	// and LoadRegistry can still read the existing registry, but CreateTemp
+	// (which creates a NEW entry) will fail.
+	regDir := filepath.Dir(vault.RegistryPath())
+	require.NoError(t, os.Chmod(regDir, 0o500))
+	defer os.Chmod(regDir, 0o700) // restore so isoVaultPaths cleanup can remove
+
+	// Same-origin confirmation POST must surface a 500 and NOT consume.
+	rec := httptest.NewRecorder()
+	postReq := httptest.NewRequest(http.MethodPost, url, nil)
+	postReq.Header.Set("Origin", "http://127.0.0.1:9999")
+	mux.ServeHTTP(rec, postReq)
+	require.Equal(t, http.StatusInternalServerError, rec.Code, "a failed removal must render 500, not a success page")
+	require.Contains(t, rec.Body.String(), "could <strong>not</strong> be removed", "the page must truthfully say removal failed")
+	require.NotContains(t, rec.Body.String(), "has been removed", "the page must not falsely claim removal")
+
+	// The at-rest copy and KeepSeed marker must survive the failed confirmation.
+	after, err := os.ReadFile(seedPath)
+	require.NoError(t, err, "the at-rest copy must survive a failed confirmation")
+	require.Equal(t, before, after, "the seed bytes must be unchanged after failed removal")
+	reg, err := vault.LoadRegistry()
+	require.NoError(t, err)
+	require.True(t, reg.Profiles["keepfail"].KeepSeed, "keep-seed must not be cleared when removal fails")
+
+	// The token was NOT consumed: it is still retryable once the failure clears.
+	recGet := httptest.NewRecorder()
+	mux.ServeHTTP(recGet, httptest.NewRequest(http.MethodGet, url, nil))
+	require.Equal(t, http.StatusOK, recGet.Code, "a failed confirmation must not consume the token; it stays live")
+	require.Contains(t, recGet.Body.String(), "seed that must survive a registry-save failure")
+}

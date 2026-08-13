@@ -137,7 +137,20 @@ func (s *SeedDrop) consumePOST(w http.ResponseWriter, r *http.Request, token str
 	// seed remains on disk as the durable recovery backup for a vault they were
 	// creating fresh (no prior key), which is correct.
 	if err := vault.NewProvisioner().MarkSeedRetrieved(payload.profile); err != nil {
-		s.core.logf().Warn("failed to clear kept seed after confirmation", zap.String("profile", payload.profile), zap.Error(err))
+		// The at-rest copy could not be removed. Report this truthfully: telling
+		// the human it was removed while the plaintext mnemonic lingers on disk
+		// would leave the vault's only recovery credential silently exposed.
+		// Keep the token live so they can retry (and an operator can investigate)
+		// rather than consuming it and stranding them with no way back.
+		s.core.logf().Error("failed to remove at-rest recovery copy", zap.String("profile", payload.profile), zap.Error(err))
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprint(w, `<!doctype html><html><head><meta charset="utf-8">
+<title>Recovery seed — removal failed</title></head><body>
+<p>You have confirmed your recovery seed, but the on-disk copy could <strong>not</strong> be removed. Do not discard anything. Contact your administrator before proceeding — the recovery copy may still exist on this host and must be securely erased.</p>
+</body></html>`)
+		return false // do not consume the token while the at-rest copy survives
 	}
 	s.core.logf().Info("seed drop confirmed; at-rest recovery copy removed", zap.String("profile", payload.profile))
 
