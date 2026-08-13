@@ -428,7 +428,7 @@ func resolveCidsInput(c *cli.Command) ([]string, error) {
 }
 
 // relaxFlagRequired clears the urfave-level Required marker on a command's
-// single-valued flags.
+// single-valued and Bool flags.
 //
 // The catalog compiler marks required OperationArgs as urfave-required, and
 // urfave/cli/v3 fails at parse time when such a flag is not set, before any
@@ -437,12 +437,14 @@ func resolveCidsInput(c *cli.Command) ([]string, error) {
 // as a --<name> flag. If the marker stayed set, the command would be rejected
 // before that mapping runs.
 //
-// Every catalog handler re-enforces requiredness itself (it errors when the
-// resolved value is empty), so relaxing the marker loses no safety. It only
-// lets positionally-supplied values reach the handler.
+// Bool flags are relaxed too: an operation's destructive-confirm arg is backed
+// by a separate --force gate, not the compiled --confirm flag (the wiring maps
+// --force into input["confirm"]). If the compiled bool stayed required, urfave
+// would reject <op> --force at parse time. The gate and the handler re-enforce
+// the confirmation before any mutation, so relaxing the marker loses no safety.
 //
-// Bool and StringSlice flags are untouched: Bool is never a positional target
-// and StringSlice positional values are multi-valued and handled separately.
+// StringSlice flags are untouched: their CLI values are multi-valued positional
+// and handled separately by the resolver.
 func relaxFlagRequired(cmd *cli.Command) {
 	for _, f := range cmd.Flags {
 		switch flag := f.(type) {
@@ -453,6 +455,8 @@ func relaxFlagRequired(cmd *cli.Command) {
 		case *cli.Float64Flag:
 			flag.Required = false
 		case *cli.DurationFlag:
+			flag.Required = false
+		case *cli.BoolFlag:
 			flag.Required = false
 		}
 	}

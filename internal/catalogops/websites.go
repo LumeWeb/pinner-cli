@@ -384,7 +384,7 @@ func websitesDelete(d WebsitesDeps) catalog.Operation {
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			if !catalog.BoolArg(input, "confirm", false) {
-				return nil, fmt.Errorf("websites.delete requires confirmation (pass --force/confirm)")
+				return nil, fmt.Errorf("websites_delete: confirmation is required to delete the website")
 			}
 			svc, svcErr := d.service(input)
 			if svcErr != nil {
@@ -474,7 +474,7 @@ func websitesSSLStatus(d WebsitesDeps) catalog.Operation {
 			}
 			domain := catalog.StrArg(input, "website", "")
 			if domain == "" {
-				return nil, fmt.Errorf("websites.ssl.status: domain is required")
+				return nil, fmt.Errorf("websites_ssl_status: domain is required")
 			}
 			// *ipfs.WebsiteResponse
 			return svc.GetSSLStatus(ctx, domain)

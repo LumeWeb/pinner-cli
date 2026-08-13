@@ -211,6 +211,19 @@ type ResumeToolSpec struct {
 	// restart after a dead handle. Domain-specific so the steer reads naturally
 	// for the flow (SSO uses ReasonSSOApproval).
 	DeadHandleReason HandoffReason
+	// Category is the tool category for search/filter. Defaults to CategoryCore
+	// when zero. Auth resumes use CategoryAccount; vault resumes use
+	// CategoryVault so filtering by category surfaces the OOB flow correctly.
+	Category ToolCategory
+}
+
+// CategoryOrDefault returns the resume tool's category, defaulting to
+// CategoryCore when the spec left it unset.
+func (s ResumeToolSpec) CategoryOrDefault() ToolCategory {
+	if s.Category == "" {
+		return CategoryCore
+	}
+	return s.Category
 }
 
 // title returns the flow-specific title, defaulting to a plain "Resume" only if
@@ -248,7 +261,7 @@ func NewResumeTool(spec ResumeToolSpec, reg *HandoffRegistry, handles *AsyncHand
 		Name:        spec.Name,
 		Title:       spec.title(),
 		Description: spec.Description,
-		Category:    CategoryCore,
+		Category:    spec.CategoryOrDefault(),
 		InputSchema: toolSchemaFor[resumeArgs](),
 		Handler: func(ctx context.Context, req ToolRequest) (ToolResult, error) {
 			if reg == nil || handles == nil {

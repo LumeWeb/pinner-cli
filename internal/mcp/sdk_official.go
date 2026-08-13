@@ -258,8 +258,8 @@ func (s *metaToolSchema) raw() json.RawMessage {
 
 // searchToolsInput is the typed argument shape for search_tools.
 type searchToolsInput struct {
-	Query    string `json:"query,omitempty" jsonschema:"description=Keywords to search for in tool names and descriptions."`
-	Category string `json:"category,omitempty" jsonschema:"description=Filter by category: core, admin, or wizard."`
+	Query    string `json:"query,omitempty" jsonschema:"description=A single keyword to search for in tool names and descriptions."`
+	Category string `json:"category,omitempty" jsonschema:"description=Filter by category: core, account, vault, ipns, operations, admin, or wizard."`
 }
 
 // describeToolInput is the typed argument shape for describe_tool.
@@ -281,12 +281,12 @@ func registerOfficialSearchTools(srv *mcp.Server, catalog *ToolCatalog) error {
 	})
 	schema.property("category", map[string]any{
 		"type":        "string",
-		"description": "Filter by category: 'core' (user commands), 'admin' (admin operations), 'wizard' (interactive wizards). Leave empty to search all categories.",
+		"description": "Filter by category: 'core' (user commands incl. pins/dns/websites), 'account' (auth, api keys), 'vault', 'ipns', 'operations', 'admin', or 'wizard'. Leave empty to search all categories.",
 	})
 
 	tool := &mcp.Tool{
 		Name:        "search_tools",
-		Description: "Search the internal tool catalog by a single keyword. Matching is substring/subsequence on the tool name, then ranked: exact name match ranks highest, then name-starts-with, name-contains, name-subsequence, and finally description-contains; tools that never match are omitted. There is no boolean (AND/OR) syntax: pass one keyword at a time (e.g. 'pin', not 'pin OR upload'). Use the 'category' filter (core/admin/wizard) to narrow scope, and describe_tool for a tool's full input schema. Leave query empty to list all tools.",
+		Description: "Search the internal tool catalog by a single keyword. Matching is substring/subsequence on the tool name, then ranked: exact name match ranks highest, then name-starts-with, name-contains, name-subsequence, and finally description-contains; tools that never match are omitted. There is no boolean (AND/OR) syntax: pass one keyword at a time (e.g. 'pin', not 'pin OR upload'). Use the 'category' filter (core/account/vault/ipns/operations/admin/wizard) to narrow scope, and describe_tool for a tool's full input schema. Leave query empty to list all tools.",
 		InputSchema: schema.raw(),
 	}
 

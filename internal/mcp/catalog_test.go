@@ -152,10 +152,11 @@ func TestSSOToolsDiscoverableInCatalog(t *testing.T) {
 	assert.Equal(t, 1, ssoCount, "auth_sso must be listed exactly once")
 	assert.Equal(t, 1, resumeCount, "auth_resume must be listed exactly once")
 
-	// describe_tool / invoke_tool must also resolve them.
+	// describe_tool / invoke_tool must also resolve them. auth_sso is an
+	// account-domain tool, so it surfaces under CategoryAccount.
 	d, err := catalog.Describe("auth_sso")
 	require.NoError(t, err)
-	assert.Equal(t, CategoryCore, d.Category)
+	assert.Equal(t, CategoryAccount, d.Category)
 	_, ok := catalog.Get("auth_resume")
 	assert.True(t, ok, "auth_resume must be registered for describe/invoke")
 }
