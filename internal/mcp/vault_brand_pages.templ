@@ -81,30 +81,6 @@ templ restoreVaultPage(profile, token string) {
 	}
 }
 
-// createVaultProgressShell is the streamed create-progress page shell. The
-// approval/done/error fragments are injected into #status by JS as the create
-// runs (blocking on a Sia browser approval).
-templ createVaultProgressShell(profile string) {
-	@brandLayout("Create Pinner Vault") {
-		<div class="card">
-			<h1>Create Pinner Vault</h1>
-			<p>Profile: <strong>{ profile }</strong></p>
-			<div id="status">Preparing your new vault…</div>
-		</div>
-	}
-}
-
-// restoreVaultProgressShell is the streamed restore-progress page shell.
-templ restoreVaultProgressShell(profile string) {
-	@brandLayout("Restoring Pinner Vault") {
-		<div class="card">
-			<h1>Restoring Pinner Vault</h1>
-			<p>Profile: <strong>{ profile }</strong></p>
-			<div id="status">Starting restore…</div>
-		</div>
-	}
-}
-
 // createVaultApproval / restoreVaultApproval are streamed fragments shown while
 // waiting on the Sia device approval.
 templ createVaultApproval(approvalURL string) {
@@ -141,9 +117,4 @@ templ createVaultError(errMsg string) {
 templ restoreVaultError(errMsg string) {
 	<h2>Restore failed</h2>
 	<p class="status error" id="restore-error" role="alert">{ errMsg }</p>
-}
-
-// progressPageEndTail closes the streamed shell with a brand footer note.
-templ progressPageTail() {
-	<div class="seed-foot">This page reflects the on-host vault state. The recovery phrase never leaves your browser.</div>
 }

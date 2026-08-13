@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"sync"
 	"time"
@@ -165,14 +166,23 @@ func (c *OOBCreate) consumePOST(w http.ResponseWriter, r *http.Request, token st
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	flusher, hasFlusher := w.(http.Flusher)
-	streamComp := func(comp templ.Component) {
-		_ = comp.Render(r.Context(), w)
+	flush := func() {
 		if hasFlusher {
 			flusher.Flush()
 		}
 	}
+	stream := func(s string) {
+		fmt.Fprint(w, s)
+		flush()
+	}
+	streamComp := func(comp templ.Component) {
+		_ = comp.Render(r.Context(), w)
+		flush()
+	}
 
-	streamComp(createVaultProgressShell(profile))
+	// Opening shell (branded) stops before </body></html>; the fragments below
+	// stream INSIDE #status before progressPageEnd closes the document.
+	stream(createVaultProgressStart(profile))
 
 	// Run the create. It GENERATES a fresh seed and blocks waiting for the Sia
 	// browser approval; onApproval streams the approval link here first.
@@ -182,7 +192,7 @@ func (c *OOBCreate) consumePOST(w http.ResponseWriter, r *http.Request, token st
 	if err != nil {
 		settle(false, err.Error(), "")
 		streamComp(createVaultError(err.Error()))
-		streamComp(progressPageTail())
+		stream(progressPageEnd())
 		return
 	}
 
@@ -191,7 +201,7 @@ func (c *OOBCreate) consumePOST(w http.ResponseWriter, r *http.Request, token st
 	seedToken := vaultTokenFromURL(seedURL)
 	settle(true, "", seedToken)
 	streamComp(createVaultDone(profile, vaultID, seedURL))
-	streamComp(progressPageTail())
+	stream(progressPageEnd())
 	return
 }
 

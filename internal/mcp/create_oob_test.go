@@ -117,6 +117,18 @@ func TestOOBCreateStreamsApprovalAndSeed(t *testing.T) {
 	require.Contains(t, body, "seed-link", "a seed retrieval link must be streamed")
 	require.Contains(t, body, "Vault created")
 	require.NotContains(t, body, "fresh generated seed phrase", "the plaintext seed must never be reflected on the page body machine-parseably; it is delivered on a separate one-time seed link")
+
+	// The streamed fragments must land INSIDE the page, not as raw siblings
+	// after </html>: the document must be well-formed (open + close), and the
+	// status container must precede the closing body/html.
+	require.True(t, strings.Contains(body, "</html>"), "the progress page must close its document")
+	require.True(t, strings.LastIndex(body, "approve.sia") > 0, "approval content must be inside the document")
+	require.True(t, strings.Index(body, `id="status"`) < strings.LastIndex(body, "</body>"),
+		"the #status container must open before </body> so fragments render inside it")
+	require.True(t, strings.Index(body, "approve.sia") < strings.Index(body, "</body>"),
+		"the streamed approval link must appear before the closing </body>")
+	require.True(t, strings.Index(body, "seed-link") < strings.Index(body, "</body>"),
+		"the streamed seed link must appear before the closing </body>")
 }
 
 func TestOOBCreateFailureDoesNotDeliverSeed(t *testing.T) {

@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"sync"
@@ -177,14 +178,23 @@ func (o *OOBRestore) consumePOST(w http.ResponseWriter, r *http.Request, token s
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	flusher, hasFlusher := w.(http.Flusher)
-	streamComp := func(comp templ.Component) {
-		_ = comp.Render(r.Context(), w)
+	flush := func() {
 		if hasFlusher {
 			flusher.Flush()
 		}
 	}
+	stream := func(s string) {
+		fmt.Fprint(w, s)
+		flush()
+	}
+	streamComp := func(comp templ.Component) {
+		_ = comp.Render(r.Context(), w)
+		flush()
+	}
 
-	streamComp(restoreVaultProgressShell(profile))
+	// Opening shell (branded) stops before </body></html>; the fragments below
+	// stream INSIDE #status before progressPageEnd closes the document.
+	stream(restoreVaultProgressStart(profile))
 
 	// Run the restore. On a fresh device it blocks waiting for the Sia browser
 	// approval; onApproval streams the approval link to this page so the human
@@ -203,11 +213,11 @@ func (o *OOBRestore) consumePOST(w http.ResponseWriter, r *http.Request, token s
 		// caching) and escape the error text, which may embed mnemonic-derived
 		// content, so it cannot be reflected as executable markup.
 		streamComp(restoreVaultError(err.Error()))
-		streamComp(progressPageTail())
+		stream(progressPageEnd())
 		return
 	}
 	streamComp(restoreVaultDone(profile, vaultID))
-	streamComp(progressPageTail())
+	stream(progressPageEnd())
 	settle(true, "")
 	return
 }
