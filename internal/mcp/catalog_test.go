@@ -396,7 +396,7 @@ func TestClassifyInteraction(t *testing.T) {
 		{[]string{"pinner", "upload"}, InteractionAgentSafe}, // upload guarded by isStdinPipe
 		{[]string{"pinner", "pin"}, InteractionAgentSafe},
 		{[]string{"pinner", "vault", "create"}, InteractionAgentSafe},
-		{[]string{"pinner", "vault", "restore"}, InteractionStdinInput}, // --seed-stdin io.ReadAll
+		{[]string{"pinner", "vault", "restore"}, InteractionAgentSafe}, // OOB hand-off, not stdin
 		{[]string{"pinner", "setup"}, InteractionInteractive},
 		{[]string{"pinner", "list"}, InteractionAgentSafe},
 		{[]string{"pinner", "admin", "billing", "subscribers", "list-users"}, InteractionAgentSafe},
@@ -430,7 +430,7 @@ func TestInteractionRegisteredOnCommandTree(t *testing.T) {
 
 	restore, _ := catalog.Get("pinner_vault_restore")
 	require.NotNil(t, restore)
-	assert.Equal(t, InteractionStdinInput, restore.Interaction)
+	assert.Equal(t, InteractionAgentSafe, restore.Interaction)
 
 	setup, _ := catalog.Get("pinner_setup")
 	require.NotNil(t, setup)
@@ -442,8 +442,8 @@ func TestInteractionRegisteredOnCommandTree(t *testing.T) {
 }
 
 // TestSearchHidesInteractiveTools verifies interactive (human-only) tools are
-// omitted from search_tools while stdin_input and agent_safe tools stay
-// discoverable with their interaction signal.
+// omitted from search_tools while agent_safe tools stay discoverable with
+// their interaction signal (including the OOB vault restore).
 func TestSearchHidesInteractiveTools(t *testing.T) {
 	root := &cli.Command{
 		Name: "pinner",
@@ -476,12 +476,12 @@ func TestSearchHidesInteractiveTools(t *testing.T) {
 	assert.Contains(t, names, "pinner_vault_restore")
 	assert.Contains(t, names, "pinner_status")
 	require.NotNil(t, restoreSummary, "restore must remain discoverable")
-	assert.Equal(t, InteractionStdinInput, restoreSummary.Interaction)
+	assert.Equal(t, InteractionAgentSafe, restoreSummary.Interaction)
 
 	// Describe must still surface the interaction label for a discoverable tool.
 	detail, err := catalog.Describe("pinner_vault_restore")
 	require.NoError(t, err)
-	assert.Equal(t, InteractionStdinInput, detail.Interaction)
+	assert.Equal(t, InteractionAgentSafe, detail.Interaction)
 }
 
 func TestStringSliceFlagEmitsArraySchema(t *testing.T) {
@@ -503,7 +503,7 @@ func TestStringSliceFlagEmitsArraySchema(t *testing.T) {
 // fall through the switch and run io.ReadAll(os.Stdin) — desyncing the stdio
 // MCP transport. The non-stdin OOB hand-off is already permitted by the
 // bypassGate, so the signal must stay stdin_input.
-func TestVaultRestoreInteractionStaysStdinInputThroughBuildCatalog(t *testing.T) {
+func TestVaultRestoreInteractionStaysAgentSafeThroughBuildCatalog(t *testing.T) {
 	root := &cli.Command{
 		Name: "pinner",
 		Commands: []*cli.Command{
@@ -516,15 +516,20 @@ func TestVaultRestoreInteractionStaysStdinInputThroughBuildCatalog(t *testing.T)
 		},
 	}
 
-	// With an OOB restore coordinator wired, restore must STILL be stdin_input.
+	// With an OOB restore coordinator wired, restore must be routed through the
+	// catalog-op out-of-band handler and remain agent_safe (not stdin-gated): the
+	// seed is supplied by the human on the one-time /restore/<token> page, never
+	// through --seed-stdin on the MCP channel.
 	oobRestore := NewOOBRestore(nil, time.Minute)
 	t.Cleanup(func() { oobRestore.Stop(context.Background()) })
-	catalog, err := buildCatalog(root, true, nil, nil, oobRestore, nil, nil)
+	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	reg := NewHandoffRegistry()
+	catalog, err := buildCatalog(root, true, nil, nil, oobRestore, reg, handles)
 	require.NoError(t, err)
 	restore, ok := catalog.Get("pinner_vault_restore")
 	require.True(t, ok)
-	assert.Equal(t, InteractionStdinInput, restore.Interaction,
-		"buildCatalog must keep vault restore stdin_input so the --seed-stdin gate holds")
+	assert.Equal(t, InteractionAgentSafe, restore.Interaction,
+		"buildCatalog must route vault restore through the agent-safe OOB hand-off handler, not stdin-gate it")
 }
 
 // TestSSOToolsDiscoverableInCatalog verifies the out-of-band sign-in tools are

@@ -275,6 +275,24 @@ func (h *handoffEndpoint) remove(token string) {
 	h.pruneSpentLocked()
 }
 
+// claim atomically takes a token for a single long-running handler, removing it
+// from the pending set and marking it spent under the lock so a concurrent or
+// repeated call cannot re-resolve the same token. It reports whether the token
+// was present and claimed. Handlers that block for a long time (e.g. an OOB
+// restore waiting on a browser approval) claim first so a re-POST during the
+// window is rejected instead of re-entering the blocking work.
+func (h *handoffEndpoint) claim(token string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if _, ok := h.items[token]; !ok {
+		return false
+	}
+	delete(h.items, token)
+	h.markSpentLocked(token, h.now())
+	h.pruneSpentLocked()
+	return true
+}
+
 // get is a lightweight direct fetch used by children that need the item for
 // polling without going through the method-dispatch.
 func (h *handoffEndpoint) get(token string) (*handoffItem, bool) {

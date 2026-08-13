@@ -767,8 +767,11 @@ type RestoreRunner interface {
 	// RestoreProfileName returns the profile that a pending restore targets.
 	RestoreProfileName() string
 	// RunRestore completes a restore for the given profile and mnemonic,
-	// returning the restored vault ID. It may block on the browser approval.
-	RunRestore(ctx context.Context, profile, mnemonic string) (string, error)
+	// returning the restored vault ID. On a device that requires browser
+	// approval, onApproval is called with the Sia approval URL before
+	// RunRestore blocks waiting for that approval, so the caller can surface
+	// the URL to the human (e.g. via an OOB status page).
+	RunRestore(ctx context.Context, profile, mnemonic string, onApproval func(approvalURL string)) (string, error)
 }
 
 // SetupWizardDeps holds the dependencies needed to build and run the

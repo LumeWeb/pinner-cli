@@ -34,6 +34,11 @@ type VaultDeps struct {
 	// current invocation. When nil and a service is needed, operations fail
 	// with a clear error.
 	ResolveIndexerURL func() string
+	// Provisioner builds the vault provisioning service (create/restore).
+	// Only the setup operations (vault.create / vault.restore) need it; when
+	// nil they fail with a clear error. It is a getter so tests can inject a
+	// stub and the MCP layer can reuse the default provisioner.
+	Provisioner func() *vault.Provisioner
 }
 
 // service builds the VaultService for the given profile, resolving the

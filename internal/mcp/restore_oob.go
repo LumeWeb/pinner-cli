@@ -2,10 +2,11 @@ package mcp
 
 import (
 	"context"
-	"encoding/json"
+	"fmt"
 	"html/template"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"go.uber.org/zap"
@@ -30,6 +31,24 @@ type OOBRestore struct {
 	core   handoffEndpoint
 	// html holds the parsed restore form template.
 	html *template.Template
+
+	// mu guards outcomes. outcomes records the terminal outcome of each
+	// restore attempt so the resume continuation can distinguish a succeeded
+	// restore (report done) from a failed one (steer the agent), rather than
+	// treating every claimed/spent token as restored. Keyed by token.
+	mu       sync.Mutex
+	outcomes map[string]*restoreOutcome
+}
+
+// restoreOutcome records the live/terminal result of a claimed restore attempt.
+// The record is created at claim time (restore running) and settled after
+// RunRestore: succeeded on success, or failed with the error text. An unsettled
+// record (succeeded still false, err still empty) means the restore is still in
+// progress (the browser approval is outstanding).
+type restoreOutcome struct {
+	succeeded bool
+	err       string
+	started   time.Time
 }
 
 // restorePayload is the per-token context for a pending restore.
@@ -47,7 +66,7 @@ func NewOOBRestore(runner RestoreRunner, ttl time.Duration) *OOBRestore {
 		ttl = DefaultRestoreTTL
 	}
 	html := template.Must(template.New("restore").Parse(restorePageHTML))
-	o := &OOBRestore{runner: runner, html: html}
+	o := &OOBRestore{runner: runner, html: html, outcomes: map[string]*restoreOutcome{}}
 	o.core = *newHandoff("restore", o, ttl)
 	return o
 }
@@ -97,15 +116,20 @@ func (o *OOBRestore) renderGET(w http.ResponseWriter, r *http.Request, token str
 }
 
 // consumePOST implements handoffHandler: run the restore with the submitted
-// mnemonic and consume the token (single use).
+// mnemonic and consume the token (single use). The response is streamed so a
+// fresh-device Sia browser approval does not hang the human: the OOB form is a
+// standard form-POST navigation, so the browser renders the response
+// incrementally, and RunRestore's onApproval callback writes + flushes the
+// approval URL to this page *before* WaitAndRegister blocks. The human sees the
+// approval link immediately, approves, and the handler then renders the result.
 func (o *OOBRestore) consumePOST(w http.ResponseWriter, r *http.Request, token string, item *handoffItem) (consumed bool) {
 	payload, _ := item.payload.(*restorePayload)
 
-	// Single-use: always consume the token so a re-POST or concurrent POST
-	// cannot run the restore twice against the same profile. The core removes
-	// the token after consumePOST returns true.
-	defer func() { consumed = true }()
-
+	// Validation failures (missing runner, empty mnemonic) do NOT consume the
+	// token: no restore ran, so the one-time URL stays valid for the human to
+	// retry. Only a genuine restore attempt claims it (single use), so a
+	// re-POST or concurrent POST cannot run the restore twice against the same
+	// profile.
 	if o.runner == nil {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
@@ -114,6 +138,7 @@ func (o *OOBRestore) consumePOST(w http.ResponseWriter, r *http.Request, token s
 		return
 	}
 
+	profile := payload.profile
 	mnemonic := strings.TrimSpace(r.FormValue("mnemonic"))
 	if mnemonic == "" {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -123,28 +148,78 @@ func (o *OOBRestore) consumePOST(w http.ResponseWriter, r *http.Request, token s
 		return
 	}
 
-	// Run the restore. It may block on the Sia browser approval.
-	vaultID, err := o.runner.RunRestore(r.Context(), payload.profile, mnemonic)
-	if err != nil {
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	// Claim the token atomically BEFORE the blocking restore. The restore can
+	// wait minutes on a Sia browser approval, and the token is only removed from
+	// the pending set by the core after consumePOST returns; an atomic claim
+	// here removes it immediately (under the store mutex) so a concurrent or
+	// repeated POST during the approval window is rejected instead of issuing a
+	// second browser approval or registering a second device for the same seed.
+	if !o.core.claim(token) {
 		w.Header().Set("Cache-Control", "no-store")
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte("Restore failed: " + err.Error() + "\n"))
+		http.Error(w, "A restore is already in progress or this link was already used.", http.StatusGone)
 		return
+	}
+	// The one-time token is now claimed (removed + marked spent) by this
+	// attempt, so the handler's return value truthfully reports it was
+	// consumed. The core's `remove` on this return is an idempotent no-op since
+	// claim already performed the deletion.
+	consumed = true
+
+	// Record the in-flight outcome so the resume continuation knows the claimed
+	// token is still restoring (not yet succeeded or failed). Sweep stale
+	// terminal outcomes here so an abandoned restore (never resumed) does not
+	// accumulate: each new restore reaps terminal records older than the TTL.
+	out := &restoreOutcome{started: time.Now()}
+	o.mu.Lock()
+	o.pruneOutcomesLocked(time.Now().Add(-DefaultRestoreTTL))
+	o.outcomes[token] = out
+	o.mu.Unlock()
+	settle := func(succeeded bool, errText string) {
+		o.mu.Lock()
+		defer o.mu.Unlock()
+		out.succeeded = succeeded
+		out.err = errText
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	_, _ = w.Write([]byte("<html><body><h2>Vault restored</h2><p>Profile <code>" +
-		htmlEscape(payload.profile) + "</code> is ready (vault ID " + htmlEscape(vaultID) + ").</p></body></html>"))
+	flusher, hasFlusher := w.(http.Flusher)
+	stream := func(s string) {
+		fmt.Fprint(w, s)
+		if hasFlusher {
+			flusher.Flush()
+		}
+	}
+
+	progress := progressPageStart(htmlEscape(profile))
+	stream(progress)
+
+	// Run the restore. On a fresh device it blocks waiting for the Sia browser
+	// approval; onApproval streams the approval link to this page so the human
+	// is told where to approve rather than hanging silently. The approval URL
+	// arrives before WaitAndRegister blocks, so the link is rendered first.
+	vaultID, err := o.runner.RunRestore(r.Context(), profile, mnemonic, func(approvalURL string) {
+		stream(progressPageApproval(htmlEscape(profile), htmlEscape(approvalURL)))
+	})
+	if err != nil {
+		settle(false, err.Error())
+		// The restore failed after the page was already streamed (the approval
+		// link / progress was written before the outcome was known), so the
+		// HTTP status is already committed as 200; a 5xx cannot be retroactively
+		// applied. To keep the failure unambiguous for humans and automated
+		// consumers alike, render a distinct error banner (no-store prevents
+		// caching) and escape the error text, which may embed mnemonic-derived
+		// content, so it cannot be reflected as executable markup.
+		stream(progressPageError(htmlEscape(err.Error())))
+		stream(progressPageEnd())
+		return
+	}
+	stream(progressPageDone(htmlEscape(profile), htmlEscape(vaultID)))
+	stream(progressPageEnd())
+	settle(true, "")
 	return
 }
 
-func htmlEscape(s string) string {
-	return strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&#34;", "'", "&#39;").Replace(s)
-}
-
-// count returns the number of pending, unexpired restore tokens.
 func (o *OOBRestore) count() int {
 	return o.core.count()
 }
@@ -154,33 +229,8 @@ func (o *OOBRestore) setNow(f func() time.Time) {
 	o.core.setNow(f)
 }
 
-// restoreOOBEnabled reports whether an OOB restore coordinator is wired and
-// usable (a non-nil coordinator makes the vault-restore browser hand-off
-// reachable). Used to bypass the stdin-input gate for the agent-safe restore
-// path.
-func restoreOOBEnabled(o *OOBRestore) bool {
-	return o != nil
-}
-
-// attachRestoreURL post-processes the stdout of a `vault restore --agent` tool
-// that declares restore behavior (Behavior.RestoreURL non-nil). When an OOB
-// restore coordinator is wired, it mints a one-time /restore/<token> URL for
-// the profile named by the spec's ProfileField so the human can supply the
-// recovery seed in a browser instead of re-running with --seed-stdin. Returns
-// the URL, or empty when there is nothing to attach.
-func attachRestoreURL(stdout string, spec *RestoreURLSpec, oobRestore *OOBRestore) string {
-	if spec == nil || oobRestore == nil {
-		return ""
-	}
-	var out map[string]any
-	if err := json.Unmarshal([]byte(stdout), &out); err != nil {
-		return ""
-	}
-	profile, _ := out[spec.ProfileField].(string)
-	if profile == "" {
-		return ""
-	}
-	return oobRestore.Register(profile)
+func htmlEscape(s string) string {
+	return strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&#34;", "'", "&#39;").Replace(s)
 }
 
 const restorePageHTML = `<!DOCTYPE html>
@@ -210,3 +260,23 @@ footer{margin-top:2rem;font-size:.8rem;color:#999}
 </form>
 <footer>One-time page. It expires if unused.</footer>
 </body></html>`
+
+func progressPageStart(profile string) string {
+	return "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>Restoring Pinner Vault</title><style>body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:520px;margin:3rem auto;padding:0 1rem;color:#1a1a1a;line-height:1.5}a{color:#0a66c2}footer{margin-top:2rem;font-size:.8rem;color:#999}</style></head><body><h1>Restoring Pinner Vault</h1><p>Profile: <strong>" + profile + "</strong></p><div id=\"status\">Starting restore...</div>"
+}
+
+func progressPageApproval(profile, approvalURL string) string {
+	return "<p>To finish restoring this vault, approve the device connection at:</p><p><a href=\"" + approvalURL + "\">" + approvalURL + "</a></p><p>Waiting for your approval...</p>"
+}
+
+func progressPageDone(profile, vaultID string) string {
+	return "<h2>Vault restored</h2><p>Profile <code>" + profile + "</code> is ready (vault ID " + vaultID + ").</p>"
+}
+
+func progressPageError(errMsg string) string {
+	return "<h2>Restore failed</h2><p id=\"restore-error\" role=\"alert\">" + errMsg + "</p>"
+}
+
+func progressPageEnd() string {
+	return "<footer>This page reflects the on-host restore state. The recovery phrase never leaves your browser.</footer></body></html>"
+}

@@ -1,7 +1,5 @@
 package mcp
 
-import "os"
-
 // This file provides the standard H2A/A2A hand-off shape: a ToolResult that
 // tells the agent a human action (approval, credential entry, confirmation)
 // is required before work can continue, and where/how to resume. It is
@@ -18,10 +16,6 @@ const (
 	// ReasonInteractiveOnly: the underlying command is human-only (interactive
 	// prompt) with no agent-safe form; the human must run it via the CLI.
 	ReasonInteractiveOnly HandoffReason = "interactive_only"
-	// ReasonStdinRequired: the command needs piped stdin (e.g. a seed or file
-	// content) that the MCP channel cannot provide; the human or a host
-	// mechanism must supply it.
-	ReasonStdinRequired HandoffReason = "stdin_required"
 	// ReasonCredentialEntry: a credential/token must be supplied.
 	ReasonCredentialEntry HandoffReason = "credential_entry"
 	// ReasonConfirmation: a destructive or consequential action needs
@@ -75,16 +69,6 @@ func NeedsHumanResult(n NeedsHuman) ToolResult {
 	return ToolResult{Text: text, StructuredContent: sc}
 }
 
-// stdinHasData reports whether stdin has piped data available WITHOUT blocking.
-// Over the MCP channel stdin is drained or absent for agent invocations, so a
-// nonzero-char-device check tells invoke_tool whether a stdin-input command can
-// proceed or must be redirected.
-func stdinHasData() bool {
-	fi, err := os.Stdin.Stat()
-	if err != nil {
-		return false
-	}
-	// A pipe/socket/file (not a character device/terminal) counts as having
-	// stdin available.
-	return (fi.Mode() & os.ModeCharDevice) == 0
-}
+// Stdin-reading is a CLI-side concern only. The MCP invoke gate does not reason
+// about os.Stdin; the agent-facing vault tools are agent-safe OOB hand-offs
+// that never touch stdin.

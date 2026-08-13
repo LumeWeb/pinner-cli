@@ -792,45 +792,11 @@ func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string, seedDr
 			return ToolResult{IsError: true, Text: msg}, nil
 		}
 
-		// Attach any declared OOB hand-offs to the tool output, driven by the
-		// tool's declarative Behavior (seed drop / restore URL) rather than a
-		// hardcoded tool-name check.
-		outText := stripANSI(stdout.String())
-		var (
-			text  = outText
-			extra map[string]any
-		)
-		if entry, ok := catalog.Get(request.Name); ok {
-			text, extra = attachSeedDrop(outText, entry.Behavior.SeedDrop, seedDrop)
-			restoreURL := attachRestoreURL(text, entry.Behavior.RestoreURL, oobRestore)
-			if restoreURL != "" {
-				if extra == nil {
-					extra = map[string]any{}
-				}
-				extra["restore_url"] = restoreURL
-				extra["next_step"] = "Ask the user to open restore_url in a browser and enter the recovery seed to complete the restore. The seed never crosses the MCP channel."
-			}
-			// Add the resume handle + resume tool to the structured hand-off so
-			// the agent can poll the matching *_resume tool instead of
-			// repeating the start. Only the one-time token is tracked; the
-			// mnemonic never enters the handle or the structured content.
-			var seedURL string
-			if extra != nil {
-				if u, ok := extra["seed_url"].(string); ok {
-					seedURL = u
-				}
-			}
-			handle, resumeTool := mintVaultHandoff(entry, seedURL, restoreURL, seedDrop, oobRestore, handoffReg, authHandles)
-			if handle != "" && resumeTool != "" {
-				if extra == nil {
-					extra = map[string]any{}
-				}
-				extra["handle"] = handle
-				extra["resume_tool"] = resumeTool
-				extra["next_step"] = "Ask the user to complete the action in the browser, then poll " + resumeTool + " with the handle to wait for completion. The seed never crosses the MCP channel."
-			}
-		}
-		return ToolResult{Text: text, StructuredContent: extra}, nil
+		// Return the CLI command's stdout directly. The vault create/restore OOB
+		// hand-offs are routed through the catalog operations by dedicated
+		// handlers (see vault_setup_ops.go) that return a needs_human hand-off,
+		// so no stdout post-processing is needed here.
+		return ToolResult{Text: stripANSI(stdout.String())}, nil
 	}
 
 	// Populate the catalog from the command tree. All commands are stored
@@ -841,28 +807,21 @@ func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string, seedDr
 		return nil, err
 	}
 
-	// Annotate the vault tools with their declarative behavior when the
-	// corresponding coordinators are wired. The invoke gate and the output
-	// post-processors read these fields instead of hardcoded tool-name checks.
-	if oobRestore != nil {
-		if restoreEntry, ok := catalog.Get(vaultRestoreToolName); ok {
-			restoreEntry.Behavior = ToolBehavior{
-				RestoreURL: &RestoreURLSpec{ProfileField: "profile"},
-				StdinGate:  &StdinGateSpec{ArgName: "seed-stdin"},
-			}
-			catalog.Add(restoreEntry)
-		}
+	// Route the vault create/restore tools through the catalog operations
+	// (vault_setup_ops.go) so they produce a clean, CLI-free OOB hand-off. These
+	// two tools are agent-safe OOB hand-offs that never touch os.Stdin (the
+	// `--seed-stdin` path is a CLI/terminal mechanism, not an MCP surface).
+	// Interaction is forced to agent_safe so neither tool is hidden on the MCP
+	// channel.
+	if restoreEntry, ok := catalog.Get(vaultRestoreToolName); ok {
+		restoreEntry.Handler = vaultRestoreSetupHandler(oobRestore, handoffReg, authHandles)
+		restoreEntry.Interaction = InteractionAgentSafe
+		catalog.Add(restoreEntry)
 	}
-	if seedDrop != nil {
-		if createEntry, ok := catalog.Get(vaultCreateToolName); ok {
-			createEntry.Behavior = ToolBehavior{
-				SeedDrop: &SeedDropSpec{
-					ProfileField:  "profile",
-					SeedPathField: "seed_path",
-				},
-			}
-			catalog.Add(createEntry)
-		}
+	if createEntry, ok := catalog.Get(vaultCreateToolName); ok {
+		createEntry.Handler = vaultCreateSetupHandler(seedDrop, handoffReg, authHandles)
+		createEntry.Interaction = InteractionAgentSafe
+		catalog.Add(createEntry)
 	}
 
 	return catalog, nil

@@ -341,31 +341,6 @@ func registerOfficialDescribeTool(srv *mcp.Server, catalog *ToolCatalog) error {
 	return registerTool(srv, tool, handler)
 }
 
-// toolArgsHasBool reports whether the given tool arguments set a flag to a
-// truthy value. urfave/cli/v3 encodes flags as camelCase keys in the JSON
-// schema arguments map (e.g. seed-stdin). Tool arguments come from the agent's
-// JSON, so a boolean flag may arrive as a real bool OR a string/number
-// ("true"/"1"/1); coerce truthiness across those types so any truthy value
-// keeps the stdin gate closed.
-func toolArgsHasBool(args map[string]any, key string) bool {
-	if args == nil {
-		return false
-	}
-	v, ok := args[key]
-	if !ok {
-		return false
-	}
-	switch t := v.(type) {
-	case bool:
-		return t
-	case string:
-		return t == "true" || t == "1"
-	case float64:
-		return t == 1
-	}
-	return false
-}
-
 func registerOfficialInvokeTool(srv *mcp.Server, catalog *ToolCatalog, stdioMode bool, seedDrop *SeedDrop, oobRestore *OOBRestore) error {
 	schema := &metaToolSchema{}
 	schema.property("name", map[string]any{
@@ -402,47 +377,21 @@ func registerOfficialInvokeTool(srv *mcp.Server, catalog *ToolCatalog, stdioMode
 
 		// Steer agents away from commands they cannot run safely over the MCP
 		// channel, instead of letting them hang. A human-only (interactive)
-		// command always redirects; a stdin-input command redirects unless piped
-		// data is actually available. Everything else runs normally.
+		// command always redirects. Everything else runs normally.
 		//
-		// A tool that carries an OOB restore hand-off (Behavior.RestoreURL) and
-		// is invoked WITHOUT its stdin-gating argument is agent-safe: it returns
-		// a non-blocking hand-off whose /restore/<token> page collects the seed
-		// from the human in a browser. That path must NOT be gated, or the OOB
-		// restore hand-off is unreachable in HTTP/tunnel mode (where stdin is
-		// /dev/null, so stdinHasData() is false and it is always — wrongly —
-		// redirected). The bypass is strictly scoped: an invocation that DOES
-		// set the stdin-gating argument (e.g. vault restore --seed-stdin, which
-		// reads os.Stdin) still honors the stdin guard below — consuming the MCP
-		// transport pipe would desync the stream.
-		//
-		// This is data-driven from Behavior (a restore tool declares its
-		// hand-off and its stdin-gating arg) instead of a hardcoded tool-name
-		// check.
-		bypassGate := restoreOOBEnabled(oobRestore) &&
-			entry.Behavior.RestoreURL != nil &&
-			(entry.Behavior.StdinGate == nil || !toolArgsHasBool(toolArgs, entry.Behavior.StdinGate.ArgName))
-		if !bypassGate {
-			switch entry.Interaction {
-			case InteractionInteractive:
-				return NeedsHumanResult(NeedsHuman{
-					Reason:     ReasonInteractiveOnly,
-					ResumeTool: "",
-					Detail:     "This command is human-only (it prompts interactively) and has no agent-safe form. Run it via the CLI, or use the curated agent tool for the same workflow.",
-				}), nil
-			case InteractionStdinInput:
-				// A stdin-input command can only proceed when piped stdin is
-				// genuinely available AND the server is not itself running over
-				// stdio (where os.Stdin is the MCP transport pipe - consuming
-				// it would read protocol bytes and desync the stream).
-				if !stdinHasData() || stdioMode {
-					return NeedsHumanResult(NeedsHuman{
-						Reason:     ReasonStdinRequired,
-						ResumeTool: "",
-						Detail:     "This command reads piped stdin, which the MCP channel cannot supply, and has no agent-safe stdin path. A human or host process must run it on the MCP server host with the required input piped in.",
-					}), nil
-				}
-			}
+		// Stdin-reading is a CLI-side concern only and is never gated here: a
+		// command whose action reads piped stdin (e.g. `vault restore
+		// --seed-stdin`) is a human/terminal mechanism that is not exposed
+		// through MCP. The agent-facing vault tools are the agent-safe OOB
+		// hand-offs (vaultSetupOps), which never touch os.Stdin. So the invoke
+		// gate only redirects interactive (human-only setup) tools.
+		switch entry.Interaction {
+		case InteractionInteractive:
+			return NeedsHumanResult(NeedsHuman{
+				Reason:     ReasonInteractiveOnly,
+				ResumeTool: "",
+				Detail:     "This command is human-only (it prompts interactively) and has no agent-safe form. Run it via the CLI, or use the curated agent tool for the same workflow.",
+			}), nil
 		}
 
 		result, err := entry.Handler(ctx, ToolRequest{Name: in.Name, Arguments: toolArgs})

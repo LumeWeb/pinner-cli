@@ -39,11 +39,6 @@ const (
 	// wizard/setup flow that prompts interactively). Agents should not invoke
 	// it; invoke_tool redirects, and search_tools hides it.
 	InteractionInteractive Interaction = "interactive"
-	// InteractionStdinInput marks a tool whose action reads piped stdin as its
-	// input (e.g. --seed-stdin restore, upload-from-stdin). Over MCP no such
-	// data is piped, so invoking it would block; invoke_tool steers agents to
-	// an alternative instead.
-	InteractionStdinInput Interaction = "stdin_input"
 )
 
 // ToolEntry is a single tool in the internal catalog. It stores everything
@@ -77,11 +72,7 @@ type ToolEntry struct {
 	// registration time, so the redaction vocabulary cannot drift from the
 	// CLI.
 	SensitiveFlags []string
-	// Behavior carries agent-facing execution behavior (stdin gating, OOB
-	// hand-offs). The invoke gate and post-processing layers read this instead
-	// of hardcoded tool-name checks.
-	Behavior ToolBehavior
-	Handler  PinnerToolHandler
+	Handler        PinnerToolHandler
 }
 
 // ToolSummary is the lightweight representation returned by search_tools.
@@ -431,34 +422,23 @@ func categorize(loc []string) ToolCategory {
 }
 
 // interactiveLeafSegments are leaf command names whose action is purely
-// human-driven (interactive setup flows) and has no meaningful agent-safe
-// result. Agents are steered away from these and they are hidden from
+// human-facing (a wizard/setup flow that prompts interactively) and have no
+// agent-safe form. Agents are steered away from these and they are hidden from
 // search_tools discovery.
 var interactiveLeafSegments = map[string]bool{
 	"setup": true,
 }
 
-// stdinInputLeaves are leaf command names whose action reads piped stdin
-// unconditionally (not guarded by isStdinPipe) and would block over the MCP
-// channel, where no such data is piped. "restore" covers vault restore
-// --seed-stdin, which calls io.ReadAll(os.Stdin) directly.
-//
-// The Interaction enum both drives discovery/steering AND the invoke_tool
-// stdin gate (sdk_official.go), which switches on entry.Interaction. So the
-// signal must stay stdin_input: the non-stdin OOB restore hand-off is already
-// permitted by invoke_tool's bypassGate (scoped to pinner_vault_restore without
-// --seed-stdin), and keeping the enum here guarantees a --seed-stdin invocation
-// is still gated instead of consuming the MCP transport pipe via os.Stdin.
-var stdinInputLeaves = map[string]bool{
-	"restore": true, // vault restore --seed-stdin
-}
-
 // classifyInteraction determines how a command behaves when an agent invokes
 // it over the MCP channel, inferred from its command path. The rules:
 //
-//   - leaf == "setup"              -> interactive (human-only setup flow)
-//   - leaf == "upload"/"restore"   -> stdin_input (reads piped stdin)
-//   - everything else              -> agent_safe (the default)
+//   - leaf == "setup"   -> interactive (human-only setup flow)
+//   - everything else   -> agent_safe (the default)
+//
+// Stdin-reading is a CLI-side concern only: a command whose action reads piped
+// stdin (e.g. `vault restore --seed-stdin`) is a human/terminal mechanism and
+// is never exposed through the MCP tools (the agent-safe OOB hand-off is used
+// instead). The MCP layer does not reason about, gate, or expose stdin.
 func classifyInteraction(loc []string) Interaction {
 	if len(loc) == 0 {
 		return InteractionAgentSafe
@@ -466,9 +446,6 @@ func classifyInteraction(loc []string) Interaction {
 	leaf := loc[len(loc)-1]
 	if interactiveLeafSegments[leaf] {
 		return InteractionInteractive
-	}
-	if stdinInputLeaves[leaf] {
-		return InteractionStdinInput
 	}
 	return InteractionAgentSafe
 }

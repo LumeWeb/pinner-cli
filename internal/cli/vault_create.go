@@ -121,66 +121,54 @@ In non-interactive (--agent) mode the recovery seed is written to a 0600-permiss
 
 			output.Printfln("Creating vault profile %q...", profileName)
 
+			// Agent mode: provision a pending profile (fresh seed + 0600 file +
+			// pending registry entry) via the shared provisioning service. This
+			// is the agent/OOB create path; the browser approval is deferred to
+			// restore, which owns the single connection request. No approval
+			// URL is minted here and the seed never touches stdout.
+			if c.Bool(FlagAgent) {
+				pend, err := vault.NewProvisioner().CreatePending(vault.CreateRequest{
+					Profile:    profileName,
+					DeviceName: c.String("device-name"),
+				})
+				if err != nil {
+					return err
+				}
+				output.PrintJSON(vaultCreateApprovalResponse{
+					Profile:  pend.Profile,
+					SeedPath: pend.SeedPath,
+					NextStep: fmt.Sprintf("Run: pinner vault restore --profile %s --seed-stdin < %s (restore drives the single browser approval)", pend.Profile, pend.SeedPath),
+				})
+				// The JSON handoff IS the complete deliverable of this
+				// invocation; return nil so exit code is 0 and MCP/CI
+				// consumers receive the stdout JSON, not a non-zero exit.
+				return nil
+			}
+
 			var approvalURL string
 			mnemonic := vault.NewSeedPhrase()
 			var conn *vault.Connection
 
-			if !c.Bool(FlagAgent) {
-				// 1. Generate a new mnemonic and start approval flow on a
-				// single builder shared with the wait/register below (the SDK
-				// requires Request and WaitForApproval/Register on the same
-				// builder; a fresh builder would lose the pending request).
-				conn = vault.NewConnection(indexerURL, mnemonic)
-				approvalURL, err = conn.Request(ctx)
-				if err != nil {
-					return fmt.Errorf("failed to request connection: %w", err)
-				}
+			// 1. Start approval flow on a single builder shared with the
+			// wait/register below (the SDK requires Request and
+			// WaitForApproval/Register on the same builder).
+			conn = vault.NewConnection(indexerURL, mnemonic)
+			approvalURL, err = conn.Request(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to request connection: %w", err)
 			}
 
 			// Persist the freshly-generated recovery seed to a 0600 file
-			// IMMEDIATELY after generation, BEFORE any remote approval /
+			// immediately after generation, before any remote approval /
 			// registration or local registration writes. If approval succeeds
-			// remotely but a later step (SaveProfileState, OpenDB,
-			// SaveRegistry) fails, the vault exists server-side but the
-			// one-time seed must already be safe on disk; otherwise a re-run
-			// generates a different mnemonic and orphans the first vault
-			// unrecoverably. The seed file is also the recovery path for
-			// agent-mode restores from this device.
+			// remotely but a later step fails, the one-time seed must already
+			// be safe on disk.
 			seedDir := filepath.Dir(seedPath)
 			if err := os.MkdirAll(seedDir, 0700); err != nil {
 				return fmt.Errorf("failed to create seed directory: %w", err)
 			}
 			if err := os.WriteFile(seedPath, []byte(mnemonic+"\n"), 0600); err != nil {
 				return fmt.Errorf("failed to save recovery seed: %w", err)
-			}
-
-			if c.Bool(FlagAgent) {
-				// Record the profile as "pending" in the registry so a
-				// repeat `vault create --agent` hits the profile-exists guard
-				// above rather than silently overwriting the seed.
-				if err := vault.AddProfile(profileName, vault.ProfileConfig{
-					VaultID:    "",
-					CachePath:  vault.ProfileDBPath(profileName),
-					AppKeyRef:  vault.ProfileStatePath(profileName),
-					DeviceName: c.String("device-name"),
-				}); err != nil {
-					return fmt.Errorf("failed to save registry: %w", err)
-				}
-
-				// Do NOT include approval_url: restore issues its own
-				// connection request and owns the single browser approval.
-				// Create's only job in agent mode is to generate the seed.
-				output.PrintJSON(vaultCreateApprovalResponse{
-					Profile:  profileName,
-					SeedPath: seedPath,
-					NextStep: fmt.Sprintf("Run: pinner vault restore --profile %s --seed-stdin < %s (restore drives the single browser approval)", profileName, seedPath),
-				})
-				// The JSON handoff (with next_step instructing the restore) IS
-				// the complete deliverable of this invocation; the operation
-				// did not fail, it handed off to restore. Return nil so the
-				// exit code is 0 and MCP/CI consumers receive the stdout JSON
-				// (next_step) instead of a non-zero exit / discarded output.
-				return nil
 			}
 
 			output.Printfln("Open this URL in your browser to approve:")

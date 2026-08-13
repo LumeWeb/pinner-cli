@@ -461,6 +461,55 @@ func TestInvokeAppliesDeclaredDefaults(t *testing.T) {
 	}
 }
 
+// TestInvokeAliasesCamelCaseToKebabArg verifies a model sending the camelCase
+// spelling of a kebab-declared arg (e.g. "deviceName" for "device-name") is
+// normalized to the declared key before the Handler runs, so Handlers read a
+// single canonical name and need no per-op dual-read.
+func TestInvokeAliasesCamelCaseToKebabArg(t *testing.T) {
+	h := &captureHandler{}
+	c := NewCatalog()
+	if err := c.Add(NewOperation(OperationSpec{
+		Name: "job.device", Title: "Device", Summary: "device",
+		Category: "job", Safety: SafetyMutate,
+		Interaction: InteractionAgentSafe, Visibility: VisibilityModel,
+		Args: []OperationArg{
+			{Name: "device-name", Type: ArgTypeString, Required: true},
+		},
+		Handler: h,
+	})); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	// Model sends camelCase only; the handler must see the canonical key.
+	if _, err := c.Invoke(context.Background(), "job.device", map[string]any{"deviceName": "laptop"}, ActorModel); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got, _ := h.got["device-name"].(string); got != "laptop" {
+		t.Fatalf("camelCase arg not aliased to kebab key, got %#v", h.got["device-name"])
+	}
+	if _, still := h.got["deviceName"]; still {
+		t.Fatalf("camelCase alias should be removed from handler input, got %#v", h.got)
+	}
+	// The canonical kebab spelling still works normally.
+	h2 := &captureHandler{}
+	if err := c.Add(NewOperation(OperationSpec{
+		Name: "job.device2", Title: "D", Summary: "d",
+		Category: "job", Safety: SafetyMutate,
+		Interaction: InteractionAgentSafe, Visibility: VisibilityModel,
+		Args: []OperationArg{
+			{Name: "device-name", Type: ArgTypeString, Required: true},
+		},
+		Handler: h2,
+	})); err != nil {
+		t.Fatalf("Add peer: %v", err)
+	}
+	if _, err := c.Invoke(context.Background(), "job.device2", map[string]any{"device-name": "workstation"}, ActorModel); err != nil {
+		t.Fatalf("Invoke peer: %v", err)
+	}
+	if got, _ := h2.got["device-name"].(string); got != "workstation" {
+		t.Fatalf("kebab arg not passed through, got %#v", h2.got["device-name"])
+	}
+}
+
 // TestInvokeMissingRequiredArgErrors verifies Invoke rejects a handlerless
 // dispatch when a required arg (no Default) is absent from input, mirroring the
 // CLI actionFor contract. An arg that is Required but declares a Default is

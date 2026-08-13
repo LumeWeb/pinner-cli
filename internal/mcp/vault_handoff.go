@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"strings"
+	"time"
 )
 
 // This file exposes the vault seed create/restore out-of-band hand-offs as
@@ -74,12 +75,87 @@ func (s *SeedDrop) tokenDone(token string) (done, expired, pending bool) {
 	return reason == handoffUsed, reason == handoffExpired, item != nil
 }
 
-func (o *OOBRestore) tokenDone(token string) (done, expired, pending bool) {
+// tokenDone reports the restore coordinator token's current state. Unlike a
+// generic spent check, it distinguishes a succeeded restore (done) from a
+// failed one (failed) by consulting the per-token outcome recorded when the
+// browser POST ran RunRestore. This prevents the resume continuation from
+// reporting "the vault has been restored" when RunRestore actually failed (a
+// wrong mnemonic or Sia approval/registration error).
+//
+//	succeeded outcome -> done
+//	failed outcome     -> failed (steer, never done)
+//	live item          -> pending (the human has not submitted the form yet)
+//	handoffExpired     -> expired
+//	no outcome + spent -> absent/evicted (dead -> steer)
+func (o *OOBRestore) tokenDone(token string) (done, failed, expired, pending bool) {
 	if token == "" {
-		return false, false, false
+		return false, false, false, false
 	}
 	item, reason := o.core.resolve(token)
-	return reason == handoffUsed, reason == handoffExpired, item != nil
+	if item != nil {
+		return false, false, false, true // still live: nothing submitted
+	}
+	if reason == handoffExpired {
+		return false, false, true, false
+	}
+	o.mu.Lock()
+	out, ok := o.outcomes[token]
+	var succeeded bool
+	var errText string
+	if ok {
+		succeeded, errText = out.succeeded, out.err
+	}
+	o.mu.Unlock()
+	if ok && succeeded {
+		return true, false, false, false
+	}
+	if ok && errText != "" {
+		// Restore settled as failed: surface it, never report done.
+		return false, true, false, false
+	}
+	if ok {
+		// Claimed but the restore is still running (browser approval or sync
+		// outstanding). Keep reporting pending so the continuation keeps
+		// returning needs_human rather than treating a mid-approval restore as
+		// a dead hand-off and steering the agent to restart.
+		return false, false, false, true
+	}
+	// The spent tombstone was evicted before the outcome settled; it can never
+	// transition to done on its own.
+	o.pruneOutcomes()
+	return false, false, false, false
+}
+
+// forgetOutcome drops the outcome record for a token once a continuation has
+// consumed its terminal result (done or failed). This frees observed records
+// immediately rather than leaving them to TTL-age, so the outcome map tracks
+// only active or recently-settled hand-offs, not every restore ever attempted.
+func (o *OOBRestore) forgetOutcome(token string) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	delete(o.outcomes, token)
+}
+
+// pruneOutcomes drops outcome records that have gone terminal and are older than
+// the restore TTL, keeping the per-token outcome map bounded even when a
+// continuation stops polling. Callers in the poll path use this locked wrapper;
+// code already holding o.mu calls pruneOutcomesLocked.
+func (o *OOBRestore) pruneOutcomes() {
+	cutoff := time.Now().Add(-DefaultRestoreTTL)
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.pruneOutcomesLocked(cutoff)
+}
+
+// pruneOutcomesLocked prunes terminal outcomes older than cutoff. Caller holds
+// o.mu. It is invoked from settle (the completion path) so a terminal record is
+// never left resident waiting on a later poll to reap it.
+func (o *OOBRestore) pruneOutcomesLocked(cutoff time.Time) {
+	for token, out := range o.outcomes {
+		if (out.succeeded || out.err != "") && out.started.Before(cutoff) {
+			delete(o.outcomes, token)
+		}
+	}
 }
 
 // vaultCreateResumeContinuation returns the vault-create-specific poll logic:
@@ -147,16 +223,25 @@ func vaultRestoreResumeContinuation(oob *OOBRestore, handles *AsyncHandleStore, 
 			return vaultExpiredResult(handles, reg, handle, vaultRestoreResumeToolName, vaultRestoreToolName,
 				"Vault restore is not configured for this server; start a fresh vault restore with pinner_vault_restore.")
 		}
-		done, expired, pending := oob.tokenDone(token)
+		done, failed, expired, pending := oob.tokenDone(token)
 		switch {
 		case done:
-			// Restore form submitted; hand-off over.
+			// Restore succeeded; hand-off over. Free the consumed outcome record.
+			oob.forgetOutcome(token)
 			handles.Delete(handle)
 			reg.End(handle)
 			return ToolResult{
 				Text:              "Vault restore hand-off complete: the vault has been restored.",
 				StructuredContent: map[string]any{"status": StatusDone, "handle": handle},
 			}, nil
+		case failed:
+			// RunRestore failed (wrong mnemonic, approval/registration error). Do
+			// not report done; terminate and steer the agent to restart so the
+			// human can correct the seed. vaultExpiredResult clears the handle and
+			// the consumed outcome record is freed.
+			oob.forgetOutcome(token)
+			return vaultExpiredResult(handles, reg, handle, vaultRestoreResumeToolName, vaultRestoreToolName,
+				"The restore failed on the one-time page (the recovery phrase was rejected or the device approval/registration errored). Review the seed and start a fresh vault restore with pinner_vault_restore so a new restore_url is minted.")
 		case expired:
 			// One-time link expired before the human completed the restore.
 			return vaultExpiredResult(handles, reg, handle, vaultRestoreResumeToolName, vaultRestoreToolName,
@@ -225,37 +310,4 @@ func NewVaultRestoreResumeDescriptor(reg *HandoffRegistry, handles *AsyncHandleS
 		ExpiredHandleDetail: "the vault restore hand-off expired before the human completed it; start a fresh vault restore with pinner_vault_restore so a new restore_url is minted",
 		DeadHandleReason:    ReasonCredentialEntry,
 	}, reg, handles)
-}
-
-// mintVaultHandoff is the invoke-path bridge that turns a raw seed_url /
-// restore_url hand-off into a resumable one. Given the tool entry that just
-// produced a hand-off, the minted seed_url (from attachSeedDrop) and
-// restore_url (from attachRestoreURL), plus the resume machinery, it mints a
-// fresh async handle, registers the per-domain continuation against it, and
-// returns the handle + resume tool name to embed in the structured content.
-//
-// Only the coordinator's one-time token is stored on the handle and re-polled
-// by the continuation; never the mnemonic. If there is nothing to resume (no
-// hand-off minted, coordinators absent, or resume machinery not wired) it
-// returns empty strings so the invoke path degrades to the original
-// single-shot hand-off unchanged.
-func mintVaultHandoff(entry *ToolEntry, seedURL, restoreURL string, seedDrop *SeedDrop, oobRestore *OOBRestore, handoffReg *HandoffRegistry, authHandles *AsyncHandleStore) (handle, resumeTool string) {
-	if handoffReg == nil || authHandles == nil || entry == nil {
-		return "", ""
-	}
-	// Restore hand-off: attachRestoreURL mints restore_url directly.
-	if entry.Behavior.RestoreURL != nil && restoreURL != "" {
-		token := vaultTokenFromURL(restoreURL)
-		handle := authHandles.Create("pending", map[string]any{handleDataToken: token})
-		handoffReg.Begin(handle, vaultRestoreResumeContinuation(oobRestore, authHandles, handoffReg))
-		return handle, vaultRestoreResumeToolName
-	}
-	// Seed-drop hand-off (vault create): attachSeedDrop mints seed_url into extra.
-	if entry.Behavior.SeedDrop != nil && seedURL != "" {
-		token := vaultTokenFromURL(seedURL)
-		handle := authHandles.Create("pending", map[string]any{handleDataToken: token})
-		handoffReg.Begin(handle, vaultCreateResumeContinuation(seedDrop, authHandles, handoffReg))
-		return handle, vaultCreateResumeToolName
-	}
-	return "", ""
 }

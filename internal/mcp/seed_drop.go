@@ -2,10 +2,7 @@ package mcp
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
-	"os"
-	"strings"
 	"time"
 
 	"go.uber.org/zap"
@@ -110,49 +107,4 @@ func (s *SeedDrop) count() int {
 // setNow overrides the clock used for expiry (test seam).
 func (s *SeedDrop) setNow(f func() time.Time) {
 	s.core.setNow(f)
-}
-
-// attachSeedDrop post-processes the stdout of a successfully invoked CLI
-// command that carries a vault-recovery-seed path. When the tool declares
-// seed-drop behavior (Behavior.SeedDrop non-nil) and a SeedDrop coordinator is
-// wired, it reads the mnemonic from the host seed file and mints a one-time
-// browser URL, returning a result that includes both the path (unchanged) and
-// the seed_url (for the human) without the mnemonic itself ever crossing the
-// MCP channel. The spec's ProfileField/SeedPathField name the JSON output
-// fields to read, so the behavior is data-driven rather than a hardcoded tool
-// name. In any other case it returns the raw output unchanged.
-func attachSeedDrop(stdout string, spec *SeedDropSpec, seedDrop *SeedDrop) (string, map[string]any) {
-	if spec == nil || seedDrop == nil {
-		return stdout, nil
-	}
-	// Decode the agent JSON output generically and read the fields named by
-	// the spec, so the attach logic is decoupled from any specific tool.
-	var out map[string]any
-	if err := json.Unmarshal([]byte(stdout), &out); err != nil {
-		return stdout, nil
-	}
-	profile, _ := out[spec.ProfileField].(string)
-	seedPath, _ := out[spec.SeedPathField].(string)
-	if profile == "" || seedPath == "" {
-		return stdout, nil
-	}
-	// Read the mnemonic from the host 0600 seed file. This is host-side access
-	// by the MCP server itself (which owns the filesystem), not the agent.
-	data, err := os.ReadFile(seedPath)
-	if err != nil {
-		// If the file is unreadable we still pass the original output through;
-		// the plaintext path remains the fallback.
-		return stdout, nil
-	}
-	mnemonic := strings.TrimSpace(string(data))
-	if mnemonic == "" {
-		return stdout, nil
-	}
-	url := seedDrop.Register(profile, mnemonic)
-	extra := map[string]any{
-		"seed_url": url,
-		"profile":  profile,
-		"hint":     "Open seed_url in a browser to view the recovery seed once. The mnemonic is not placed on the MCP channel.",
-	}
-	return stdout, extra
 }
