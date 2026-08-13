@@ -96,7 +96,11 @@ func TestCompiledReadOpDispatchesThroughInvokeGate(t *testing.T) {
 	res, err := entry.Handler(context.Background(), ToolRequest{Name: "vault.get", Arguments: map[string]any{"name": "v"}})
 	require.NoError(t, err)
 	require.False(t, res.IsError)
-	require.Equal(t, "ran:vault.get", res.Text)
+	// A scalar string result is wrapped in the canonical {status, value} envelope.
+	require.Contains(t, res.Text, "ran:vault.get")
+	sc := res.StructuredContent.(map[string]any)
+	require.Equal(t, StatusOk, sc["status"])
+	require.Equal(t, "ran:vault.get", sc["value"])
 }
 
 func TestCompiledDestructiveOpReturnsNeedsHumanForModelActor(t *testing.T) {
@@ -147,7 +151,7 @@ func TestAgentRequiredArgEnforcedAtMCPDispatch(t *testing.T) {
 	res, err = entry.Handler(context.Background(), ToolRequest{Name: "pins.mcp.add", Arguments: map[string]any{"cids": []string{"bafy"}}})
 	require.NoError(t, err)
 	require.False(t, res.IsError)
-	require.Equal(t, "ran:pins.mcp.add", res.Text)
+	require.Contains(t, res.Text, "ran:pins.mcp.add")
 
 	// The shared catalog Invoke path must NOT enforce AgentRequired: a
 	// non-MCP caller invoking the op without cids should still run, because
