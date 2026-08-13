@@ -34,6 +34,33 @@ templ brandLayout(title string) {
 						btn.prepend(s);
 					}
 				});
+				// Copy the full recovery seed from the seed-card's data-seed
+				// attribute (the complete mnemonic, not the visually-rendered
+				// word grid) to the clipboard. Fall back to a textarea + execCommand
+				// for non-secure contexts where navigator.clipboard is absent.
+				window.copySeed = function (btn) {
+					var card = btn.closest(".seed-card");
+					if (!card) return;
+					var text = (card.getAttribute("data-seed") || "").trim();
+					var label = function (ok) {
+						var txt = btn.textContent;
+						btn.textContent = ok ? "Copied" : "Copy failed";
+						btn.classList.toggle("copied", ok);
+						setTimeout(function () { btn.textContent = txt; btn.classList.remove("copied"); }, 1500);
+					};
+					if (navigator.clipboard && navigator.clipboard.writeText) {
+						navigator.clipboard.writeText(text).then(function () { label(true); }, function () { label(false); });
+						return;
+					}
+					var ta = document.createElement("textarea");
+					ta.value = text;
+					ta.style.position = "fixed";
+					ta.style.opacity = "0";
+					document.body.appendChild(ta);
+					ta.select();
+					try { label(document.execCommand("copy")); } catch (e) { label(false); }
+					document.body.removeChild(ta);
+				};
 			</script>
 		</body>
 	</html>

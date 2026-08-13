@@ -79,6 +79,17 @@ func TestSeedDropSingleUse(t *testing.T) {
 	require.Contains(t, rec.Body.String(), "alpha beta gamma")
 	require.Contains(t, rec.Body.String(), `method="post"`, "the page must include a confirmation form")
 
+	// The seed is rendered as an unnumbered copyable word grid with a clipboard
+	// button (no <ol> whose numbers a highlight could drag into the copy).
+	body := rec.Body.String()
+	require.Contains(t, body, `class="seed-word"`, "each recovery word must be a select-safe grid chip")
+	require.Equal(t, 3, strings.Count(body, `class="seed-word"`), "all three words must be rendered as chips")
+	require.Contains(t, body, "Copy seed", "the page must offer a clipboard button")
+	require.Contains(t, body, "data-seed=", "the full mnemonic must be available to the copy handler")
+	require.Contains(t, body, `data-seed=" alpha beta gamma"`, "the copy payload must carry the exact full mnemonic")
+	require.NotContains(t, body, "<ol", "no ordered list: list numbers must never be copied with the words")
+	require.NotContains(t, body, "user-select: text", "word chips must not be freely selectable")
+
 	// A second GET before confirmation re-renders (retry is possible).
 	rec2 := httptest.NewRecorder()
 	mux.ServeHTTP(rec2, httptest.NewRequest(http.MethodGet, url, nil))
