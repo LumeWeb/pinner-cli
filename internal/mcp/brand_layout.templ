@@ -36,8 +36,11 @@ templ brandLayout(title string) {
 				});
 				// Copy the full recovery seed from the seed-card's data-seed
 				// attribute (the complete mnemonic, not the visually-rendered
-				// word grid) to the clipboard. Fall back to a textarea + execCommand
-				// for non-secure contexts where navigator.clipboard is absent.
+				// word grid) to the clipboard. Prefer navigator.clipboard when
+				// available, but ALWAYS fall through to a textarea + execCommand
+				// path on rejection (permission denied / restricted API), so a
+				// locked clipboard still yields a useable copy instead of a
+				// bare "Copy failed".
 				window.copySeed = function (btn) {
 					var card = btn.closest(".seed-card");
 					if (!card) return;
@@ -48,18 +51,26 @@ templ brandLayout(title string) {
 						btn.classList.toggle("copied", ok);
 						setTimeout(function () { btn.textContent = txt; btn.classList.remove("copied"); }, 1500);
 					};
+					var fallback = function () {
+						var ta = document.createElement("textarea");
+						ta.value = text;
+						ta.style.position = "fixed";
+						ta.style.opacity = "0";
+						document.body.appendChild(ta);
+						ta.select();
+						var ok = false;
+						try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+						document.body.removeChild(ta);
+						label(ok);
+					};
 					if (navigator.clipboard && navigator.clipboard.writeText) {
-						navigator.clipboard.writeText(text).then(function () { label(true); }, function () { label(false); });
+						navigator.clipboard.writeText(text).then(
+							function () { label(true); },
+							function () { fallback(); }
+						);
 						return;
 					}
-					var ta = document.createElement("textarea");
-					ta.value = text;
-					ta.style.position = "fixed";
-					ta.style.opacity = "0";
-					document.body.appendChild(ta);
-					ta.select();
-					try { label(document.execCommand("copy")); } catch (e) { label(false); }
-					document.body.removeChild(ta);
+					fallback();
 				};
 			</script>
 		</body>

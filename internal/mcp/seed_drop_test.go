@@ -89,6 +89,10 @@ func TestSeedDropSingleUse(t *testing.T) {
 	require.Contains(t, body, `data-seed=" alpha beta gamma"`, "the copy payload must carry the exact full mnemonic")
 	require.NotContains(t, body, "<ol", "no ordered list: list numbers must never be copied with the words")
 	require.NotContains(t, body, "user-select: text", "word chips must not be freely selectable")
+	// No-JS / locked-clipboard fallback: the plain mnemonic must still render as
+	// selectable <code> inside <noscript> so a human can recover the seed by hand.
+	require.Contains(t, body, "<noscript>", "a no-JS fallback must be present")
+	require.Contains(t, body, `<code class="seed-code">alpha beta gamma</code>`, "the no-JS fallback must render the full selectable mnemonic")
 
 	// A second GET before confirmation re-renders (retry is possible).
 	rec2 := httptest.NewRecorder()

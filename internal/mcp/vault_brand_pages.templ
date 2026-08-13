@@ -23,6 +23,12 @@ templ seedDropPage(profile, mnemonic, action string) {
 					}
 				</div>
 				<button type="button" class="seed-copy" onclick="copySeed(this)">Copy seed</button>
+				// No-JS fallback: render the plain mnemonic as selectable text so a
+				// human with scripting disabled (or a locked clipboard where the
+				// JS copy could not run) can still recover the seed by hand.
+				<noscript>
+					<code class="seed-code">{ mnemonic }</code>
+				</noscript>
 			</div>
 
 			<p>Only click <em>I have stored my recovery seed</em> once you have safely saved it. After you confirm, this link is invalidated and the on-disk copy is removed.</p>
