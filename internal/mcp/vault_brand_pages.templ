@@ -1,0 +1,149 @@
+package mcp
+
+// Vault out-of-band pages, rendered with the shared Pinner brand identity
+// (brandLayout + brand.css) so they match the OAuth/authorize, sign-in, and
+// spent-link pages instead of hand-rolled inline styles.
+
+// seedDropPage is the one-time recovery-seed retrieval page. GET renders it
+// with the mnemonic; only the confirm POST consumes it. The seed is shown in a
+// monospace block so it can be copied exactly.
+templ seedDropPage(profile, mnemonic, action string) {
+	@brandLayout("Vault recovery seed") {
+		<div class="card">
+			<h1>Vault recovery seed</h1>
+			<p>Profile: <strong>{ profile }</strong></p>
+			<p class="seed-warn">This is the only way back into this vault. Write it down and store it somewhere safe. Do not share it.</p>
+			<code class="seed-code">{ mnemonic }</code>
+			<p>Only click <em>I have stored my recovery seed</em> once you have safely saved it. After you confirm, this link is invalidated and the on-disk copy is removed.</p>
+			<form method="post" action={ action }>
+				<button type="submit">I have stored my recovery seed</button>
+			</form>
+		</div>
+	}
+}
+
+// seedDropConfirmedPage confirms the drop was consumed and the copy removed.
+templ seedDropConfirmedPage() {
+	@brandLayout("Recovery seed confirmed") {
+		<div class="card">
+			<h1>Recovery seed confirmed</h1>
+			<p>Your recovery seed is confirmed. This link is no longer active and the on-disk copy has been removed. You can now close this window.</p>
+		</div>
+	}
+}
+
+// seedDropRemovalFailedPage warns truthfully when the at-rest copy could not be
+// removed; the token stays live so the human can retry.
+templ seedDropRemovalFailedPage() {
+	@brandLayout("Recovery seed — removal failed") {
+		<div class="card">
+			<h1>Recovery seed not fully removed</h1>
+			<p class="seed-warn">You have confirmed your recovery seed, but the on-disk copy could <strong>not</strong> be removed. Do not discard anything.</p>
+			<p>Contact your administrator before proceeding — the recovery copy may still exist on this host and must be securely erased.</p>
+		</div>
+	}
+}
+
+// createVaultPage is the create-vault GET page: a one-time form whose POST
+// starts vault creation. It generates a fresh seed (never the MCP channel).
+templ createVaultPage(profile, token string) {
+	@brandLayout("Create Pinner Vault") {
+		<div class="card">
+			<h1>Create Pinner Vault</h1>
+			<p>Profile: <strong>{ profile }</strong></p>
+			<p>A fresh recovery seed is generated and shown exactly once for you to back up.</p>
+			<p class="seed-warn">This creates a new vault identity. The MCP/agent channel never sees the recovery seed.</p>
+			<form method="post" action="/create/{ token }">
+				<button type="submit">Create vault</button>
+			</form>
+			<div class="seed-foot">One-time page. It expires if unused.</div>
+		</div>
+	}
+}
+
+// restoreVaultPage is the restore-vault GET page: a one-time form whose POST
+// starts vault restoration. The human enters their recovery phrase here; it
+// goes only to the local vault process, never the MCP/agent channel.
+templ restoreVaultPage(profile, token string) {
+	@brandLayout("Restore Pinner Vault") {
+		<div class="card">
+			<h1>Restore Pinner Vault</h1>
+			<p>Profile: <strong>{ profile }</strong></p>
+			<p>Enter your recovery phrase to restore this vault. It is sent from your browser directly to the vault process on this machine and is used once.</p>
+			<p class="seed-warn">This recovery phrase is the only way back into the vault. Enter it only on a trusted device. The MCP/agent channel never sees it.</p>
+			<form method="post" action="/restore/{ token }">
+				<label for="mnemonic">Recovery phrase</label>
+				<textarea name="mnemonic" id="mnemonic" required autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="word1 word2 word3 ..."></textarea>
+				<button type="submit">Restore vault</button>
+			</form>
+			<div class="seed-foot">One-time page. It expires if unused.</div>
+		</div>
+	}
+}
+
+// createVaultProgressShell is the streamed create-progress page shell. The
+// approval/done/error fragments are injected into #status by JS as the create
+// runs (blocking on a Sia browser approval).
+templ createVaultProgressShell(profile string) {
+	@brandLayout("Create Pinner Vault") {
+		<div class="card">
+			<h1>Create Pinner Vault</h1>
+			<p>Profile: <strong>{ profile }</strong></p>
+			<div id="status">Preparing your new vault…</div>
+		</div>
+	}
+}
+
+// restoreVaultProgressShell is the streamed restore-progress page shell.
+templ restoreVaultProgressShell(profile string) {
+	@brandLayout("Restoring Pinner Vault") {
+		<div class="card">
+			<h1>Restoring Pinner Vault</h1>
+			<p>Profile: <strong>{ profile }</strong></p>
+			<div id="status">Starting restore…</div>
+		</div>
+	}
+}
+
+// createVaultApproval / restoreVaultApproval are streamed fragments shown while
+// waiting on the Sia device approval.
+templ createVaultApproval(approvalURL string) {
+	<p>To finish creating this vault, approve the device connection at:</p>
+	<p class="seed-code"><a href={ approvalURL }>{ approvalURL }</a></p>
+	<p>Waiting for your approval…</p>
+}
+
+templ restoreVaultApproval(approvalURL string) {
+	<p>To finish restoring this vault, approve the device connection at:</p>
+	<p class="seed-code"><a href={ approvalURL }>{ approvalURL }</a></p>
+	<p>Waiting for your approval…</p>
+}
+
+// createVaultDone streams the seed-drop retrieval link once the vault is active.
+templ createVaultDone(profile, vaultID, seedURL string) {
+	<h2>Vault created</h2>
+	<p>Profile <code>{ profile }</code> is active (vault ID { vaultID }).</p>
+	<p id="seed-link">Retrieve your one-time recovery seed: <a href={ seedURL }>open seed page</a>.</p>
+}
+
+// restoreVaultDone confirms restoration completed.
+templ restoreVaultDone(profile, vaultID string) {
+	<h2>Vault restored</h2>
+	<p>Profile <code>{ profile }</code> is ready (vault ID { vaultID }).</p>
+}
+
+// createVaultError / restoreVaultError stream a failure into the status area.
+templ createVaultError(errMsg string) {
+	<h2>Vault create failed</h2>
+	<p class="status error" id="create-error" role="alert">{ errMsg }</p>
+}
+
+templ restoreVaultError(errMsg string) {
+	<h2>Restore failed</h2>
+	<p class="status error" id="restore-error" role="alert">{ errMsg }</p>
+}
+
+// progressPageEndTail closes the streamed shell with a brand footer note.
+templ progressPageTail() {
+	<div class="seed-foot">This page reflects the on-host vault state. The recovery phrase never leaves your browser.</div>
+}

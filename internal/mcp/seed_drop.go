@@ -2,7 +2,6 @@ package mcp
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"time"
 
@@ -106,22 +105,7 @@ func (s *SeedDrop) renderGET(w http.ResponseWriter, r *http.Request, token strin
 	w.Header().Set("Cache-Control", "no-store")
 
 	action := "/" + s.core.prefix + "/" + token
-	fmt.Fprintf(w, `<!doctype html><html><head><meta charset="utf-8">
-<title>Pinner vault recovery seed</title>
-<style>body{font-family:system-ui,sans-serif;max-width:40rem;margin:2rem auto;padding:0 1rem;line-height:1.5}
-code{display:block;white-space:pre-wrap;background:#f4f4f4;border:1px solid #ddd;padding:1rem;border-radius:6px;font-size:1.1rem}
-.warn{color:#9a2f2f;font-weight:600}
-button{font-size:1rem;padding:.6rem 1.2rem;border-radius:6px;border:1px solid #999;background:#fff;cursor:pointer}
-</style></head><body>
-<h1>Vault recovery seed</h1>
-<p>Profile: <strong>%s</strong></p>
-<p class="warn">This is the only way back into this vault. Write it down and store it somewhere safe. Do not share it.</p>
-<code>%s</code>
-<p>Only click <em>I have stored my recovery seed</em> once you have safely saved it. After you confirm, this link is invalidated and the on-disk copy is removed.</p>
-<form method="post" action="%s">
-<button type="submit">I have stored my recovery seed</button>
-</form>
-</body></html>`, htmlEscape(payload.profile), htmlEscape(payload.mnemonic), htmlEscape(action))
+	_ = seedDropPage(payload.profile, payload.mnemonic, action).Render(r.Context(), w)
 }
 
 // consumePOST implements handoffHandler: the human's explicit confirmation
@@ -147,10 +131,7 @@ func (s *SeedDrop) consumePOST(w http.ResponseWriter, r *http.Request, token str
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprint(w, `<!doctype html><html><head><meta charset="utf-8">
-<title>Recovery seed — removal failed</title></head><body>
-<p>You have confirmed your recovery seed, but the on-disk copy could <strong>not</strong> be removed. Do not discard anything. Contact your administrator before proceeding — the recovery copy may still exist on this host and must be securely erased.</p>
-</body></html>`)
+		_ = seedDropRemovalFailedPage().Render(r.Context(), w)
 		return false // do not consume the token while the at-rest copy survives
 	}
 	if err != nil {
@@ -161,10 +142,7 @@ func (s *SeedDrop) consumePOST(w http.ResponseWriter, r *http.Request, token str
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	fmt.Fprintf(w, `<!doctype html><html><head><meta charset="utf-8">
-<title>Recovery seed confirmed</title></head><body>
-<p>Your recovery seed is confirmed. This link is no longer active and the on-disk copy has been removed. You can now close this window.</p>
-</body></html>`)
+	_ = seedDropConfirmedPage().Render(r.Context(), w)
 	return true
 }
 

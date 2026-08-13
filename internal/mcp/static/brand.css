@@ -68,7 +68,7 @@ label {
   margin: 1.1rem 0 .35rem;
   letter-spacing: .02em;
 }
-input[type=password], input[type=email], input[type=text] {
+input[type=password], input[type=email], input[type=text], textarea {
   width: 100%;
   padding: .7rem .85rem;
   border-radius: .5rem;
@@ -79,6 +79,9 @@ input[type=password], input[type=email], input[type=text] {
   font-size: .95rem;
   outline: none;
 }
+textarea { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; min-height: 6.5rem; resize: vertical; }
+/* Honor the existing generic input:focus rule below by scoping to textarea too. */
+textarea:focus { border-color: var(--brand-teal); }
 input:focus { border-color: var(--brand-teal); }
 
 /* Primary CTA: dark-teal home-card background with white text (live-site
@@ -130,3 +133,38 @@ button.processing .btn-label { opacity: .85; }
 
 .foot { color: var(--brand-teal-muted); font-size: .78rem; margin-top: 1.5rem; text-align: center; }
 .foot code { background: var(--brand-bg-deep); padding: .1rem .35rem; border-radius: .3rem; color: var(--brand-muted); }
+
+/* Vault out-of-band pages (seed drop, create/restore progress). */
+.card a { color: var(--brand-accent); text-decoration: underline; }
+.card a:hover { color: var(--brand-teal); }
+.card form { margin-top: 1.25rem; }
+
+/* Warning callout: kept-seed / never-share notices. */
+.seed-warn {
+  margin: .9rem 0 !important;
+  padding: .7rem .85rem;
+  border-radius: .5rem;
+  background: rgba(173, 240, 221, .1);
+  border: 1px solid rgba(173, 240, 221, .3);
+  color: var(--brand-accent);
+  font-size: .88rem;
+}
+
+/* Seed mnemonic display / approval URL: monospace block for exact copy. */
+.seed-code {
+  display: block;
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: var(--brand-bg-deep);
+  border: 1px solid var(--brand-border);
+  border-radius: .5rem;
+  padding: 1rem;
+  margin: .9rem 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .95rem;
+  color: var(--brand-text);
+  line-height: 1.5;
+}
+.seed-code a { word-break: break-all; }
+
+.seed-foot { color: var(--brand-teal-muted); font-size: .78rem; margin-top: 1.5rem; text-align: center; }

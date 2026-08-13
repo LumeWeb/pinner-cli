@@ -2,11 +2,11 @@ package mcp
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"sync"
 	"time"
 
+	"github.com/a-h/templ"
 	"go.uber.org/zap"
 )
 
@@ -112,7 +112,7 @@ func (c *OOBCreate) renderGET(w http.ResponseWriter, r *http.Request, token stri
 	payload, _ := item.payload.(*createPayload)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	fmt.Fprint(w, createPageGet(htmlEscape(payload.profile), htmlEscape(token)))
+	_ = createVaultPage(payload.profile, token).Render(r.Context(), w)
 }
 
 // consumePOST implements handoffHandler: run the create (generate seed + Sia
@@ -165,24 +165,24 @@ func (c *OOBCreate) consumePOST(w http.ResponseWriter, r *http.Request, token st
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	flusher, hasFlusher := w.(http.Flusher)
-	stream := func(s string) {
-		fmt.Fprint(w, s)
+	streamComp := func(comp templ.Component) {
+		_ = comp.Render(r.Context(), w)
 		if hasFlusher {
 			flusher.Flush()
 		}
 	}
 
-	stream(createPageStart(htmlEscape(profile)))
+	streamComp(createVaultProgressShell(profile))
 
 	// Run the create. It GENERATES a fresh seed and blocks waiting for the Sia
 	// browser approval; onApproval streams the approval link here first.
 	vaultID, seed, _, err := c.runner.RunCreate(r.Context(), profile, func(approvalURL string) {
-		stream(createPageApproval(htmlEscape(profile), htmlEscape(approvalURL)))
+		streamComp(createVaultApproval(approvalURL))
 	})
 	if err != nil {
 		settle(false, err.Error(), "")
-		stream(createPageError(htmlEscape(err.Error())))
-		stream(progressPageEnd())
+		streamComp(createVaultError(err.Error()))
+		streamComp(progressPageTail())
 		return
 	}
 
@@ -190,8 +190,8 @@ func (c *OOBCreate) consumePOST(w http.ResponseWriter, r *http.Request, token st
 	seedURL := c.seedDrop.Register(profile, seed)
 	seedToken := vaultTokenFromURL(seedURL)
 	settle(true, "", seedToken)
-	stream(createPageDone(htmlEscape(profile), htmlEscape(vaultID), htmlEscape(seedURL)))
-	stream(progressPageEnd())
+	streamComp(createVaultDone(profile, vaultID, seedURL))
+	streamComp(progressPageTail())
 	return
 }
 
@@ -292,53 +292,4 @@ func (c *OOBCreate) pruneOutcomesLocked(cutoff time.Time) {
 			delete(c.outcomes, token)
 		}
 	}
-}
-
-// progress page builders mirror OOBRestore's streaming contract (brand-neutral
-// inline CSS; labelled id anchors for tests).
-
-func createPageStart(profile string) string {
-	return "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>Create Pinner Vault</title><style>body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:520px;margin:3rem auto;padding:0 1rem;color:#1a1a1a;line-height:1.5}a{color:#0a66c2}footer{margin-top:2rem;font-size:.8rem;color:#999}</style></head><body><h1>Create Pinner Vault</h1><p>Profile: <strong>" + profile + "</strong></p><div id=\"status\">Preparing your new vault...</div>"
-}
-
-// createPageGet renders the initial create page: a one-time form whose POST
-// starts the vault create + Sia device approval. Mirror of the restore form but
-// with no mnemonic entry (the seed is generated, not provided).
-func createPageGet(profile, token string) string {
-	return `<!DOCTYPE html>
-<html><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Create Pinner Vault</title>
-<style>
-body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:520px;margin:3rem auto;padding:0 1rem;color:#1a1a1a;line-height:1.5}
-h1{font-size:1.4rem;margin-bottom:.25rem}
-p.dim{color:#666}
-form{margin-top:1.5rem}
-button{width:100%;padding:.7rem;margin-top:1rem;background:#111;color:#fff;border:0;border-radius:6px;font-size:1rem;cursor:pointer}
-button:hover{background:#000}
-.warn{background:#f0f7f7;border:1px solid #b8dcdc;border-radius:6px;padding:.75rem;font-size:.85rem;color:#0d2a2a}
-footer{margin-top:2rem;font-size:.8rem;color:#999}
-</style></head>
-<body>
-<h1>Create Pinner Vault</h1>
-<p>Profile: <strong>` + profile + `</strong></p>
-<p class="dim">Create a new vault on this machine and register this device. A fresh recovery seed is generated and shown exactly once for you to back up.</p>
-<div class="warn">This creates a new vault identity. The MCP/agent channel never sees the recovery seed.</div>
-<form method="post" action="/create/` + token + `">
-<button type="submit">Create vault</button>
-</form>
-<footer>One-time page. It expires if unused.</footer>
-</body></html>`
-}
-
-func createPageApproval(profile, approvalURL string) string {
-	return "<p>To finish creating this vault, approve the device connection at:</p><p><a href=\"" + approvalURL + "\">" + approvalURL + "</a></p><p>Waiting for your approval...</p>"
-}
-
-func createPageDone(profile, vaultID, seedURL string) string {
-	return "<h2>Vault created</h2><p>Profile <code>" + profile + "</code> is active (vault ID " + vaultID + ").</p><p id=\"seed-link\">Retrieve your one-time recovery seed: <a href=\"" + seedURL + "\">open seed page</a>.</p>"
-}
-
-func createPageError(errMsg string) string {
-	return "<h2>Vault create failed</h2><p id=\"create-error\" role=\"alert\">" + errMsg + "</p>"
 }

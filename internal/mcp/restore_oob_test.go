@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"errors"
+	"html"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -254,8 +255,9 @@ func TestOOBRestoreErrorEscapedAndMarked(t *testing.T) {
 	require.Contains(t, postRec.Body.String(), `id="restore-error"`, "the failure must carry a distinct detectable marker")
 
 	// The error is escaped in the streamed page (no raw injected markup).
-	require.Contains(t, postRec.Body.String(), htmlEscape(runner.err.Error()))
-	require.NotContains(t, postRec.Body.String(), "<script>", "error markup must be escaped, not reflected as executable HTML")
+	require.Contains(t, postRec.Body.String(), html.EscapeString(runner.err.Error()))
+	require.NotContains(t, postRec.Body.String(), `alert("x")`, "error markup must be escaped, not reflected as executable HTML")
+	require.NotContains(t, postRec.Body.String(), `<script>alert`, "the raw script tag must not be reflected verbatim")
 
 	// The token is consumed after a genuine (failed) attempt: a re-POST is spent.
 	repeat := httptest.NewRequest(http.MethodPost, url, strings.NewReader("mnemonic=again"))
