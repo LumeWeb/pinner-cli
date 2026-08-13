@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -64,9 +65,10 @@ func (s *SeedDrop) WithLogger(l *zap.Logger) *SeedDrop {
 }
 
 // Register mints a one-time, expiring, single-use URL carrying the given
-// recovery mnemonic for a profile. It returns the full URL the human opens. It
-// is a read-direction hand-off: the seed is shown once on GET, then the token
-// is consumed.
+// recovery mnemonic for a profile. It returns the full URL the human opens.
+// It is a confirm-direction hand-off: GET renders the seed plus a
+// CSRF-guarded confirmation form; only the explicit human confirmation POST
+// consumes the token and destroys the at-rest recovery copy.
 func (s *SeedDrop) Register(profile, mnemonic string) string {
 	return s.core.mint(&seedPayload{profile: profile, mnemonic: mnemonic})
 }
@@ -81,43 +83,70 @@ func (s *SeedDrop) registerHandlers(mux *http.ServeMux) {
 	s.core.registerHandlers(mux)
 }
 
-// consumeOnGET reports that a GET consumes the seed drop (single-use display).
-func (s *SeedDrop) consumeOnGET() bool { return true }
+// consumeOnGET reports that a GET does NOT consume the seed drop. GET only
+// renders the seed and a confirmation form; a failed transport, prefetch, or
+// link-expander must not consume the token or destroy the at-rest recovery
+// copy, or the human would be stranded with a 410 and a dead vault. Only the
+// explicit confirmation POST consumes it.
+func (s *SeedDrop) consumeOnGET() bool { return false }
 
-// renderGET implements handoffHandler: show the seed exactly once.
+// renderGET implements handoffHandler: show the seed plus a confirmation form.
+//
+// Delivery is NOT confirmed at the HTTP layer — ResponseWriter.Write buffers
+// into a bufio.Writer and returns success even if the client never received
+// the bytes (a closed connection, a prefetch, a link-expander). So GET neither
+// consumes the token nor destroys the at-rest seed. Instead the page renders
+// the seed (a bearer secret, no new exposure) and asks the human to click "I
+// have stored it" — the confirmation POST is what marks the seed retrieved and
+// deletes the only at-rest recovery copy. If the transport fails or the human
+// just reopens the URL, GET re-renders and they can still see the seed.
 func (s *SeedDrop) renderGET(w http.ResponseWriter, r *http.Request, token string, item *handoffItem) {
 	payload, _ := item.payload.(*seedPayload)
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	w.WriteHeader(http.StatusOK)
 
-	// Write the seed and verify it actually reached the client before
-	// destroying the only at-rest copy. A prefetch, a link-expander, an
-	// attacker holding the URL, or a transport failure after WriteHeader would
-	// otherwise trigger MarkSeedRetrieved without the human ever storing the
-	// mnemonic — permanently losing the active vault's recovery credential.
-	body := "Vault recovery seed for profile " + payload.profile + " (shown once):\n\n" +
-		payload.mnemonic +
-		"\n\nThis is your only path back into the vault. Store it securely. This page is no longer available after this view.\n"
-	if n, err := w.Write([]byte(body)); err != nil || n == 0 {
-		s.core.logf().Warn("seed not fully delivered; keeping at-rest copy",
-			zap.String("profile", payload.profile), zap.Error(err))
-		return
-	}
-
-	// The seed was written successfully: it has now been one-time retrieved by
-	// the human. Clear the profile's KeepSeed marker and remove the at-rest
-	// copy so the plaintext recovery mnemonic does not linger on disk
-	// indefinitely (a no-op for non-keep-seed drops).
-	if err := vault.NewProvisioner().MarkSeedRetrieved(payload.profile); err != nil {
-		s.core.logf().Warn("failed to clear kept seed after retrieval", zap.String("profile", payload.profile), zap.Error(err))
-	}
+	action := "/" + s.core.prefix + "/" + token
+	fmt.Fprintf(w, `<!doctype html><html><head><meta charset="utf-8">
+<title>Pinner vault recovery seed</title>
+<style>body{font-family:system-ui,sans-serif;max-width:40rem;margin:2rem auto;padding:0 1rem;line-height:1.5}
+code{display:block;white-space:pre-wrap;background:#f4f4f4;border:1px solid #ddd;padding:1rem;border-radius:6px;font-size:1.1rem}
+.warn{color:#9a2f2f;font-weight:600}
+button{font-size:1rem;padding:.6rem 1.2rem;border-radius:6px;border:1px solid #999;background:#fff;cursor:pointer}
+</style></head><body>
+<h1>Vault recovery seed</h1>
+<p>Profile: <strong>%s</strong></p>
+<p class="warn">This is the only way back into this vault. Write it down and store it somewhere safe. Do not share it.</p>
+<code>%s</code>
+<p>Only click <em>I have stored my recovery seed</em> once you have safely saved it. After you confirm, this link is invalidated and the on-disk copy is removed.</p>
+<form method="post" action="%s">
+<button type="submit">I have stored my recovery seed</button>
+</form>
+</body></html>`, htmlEscape(payload.profile), htmlEscape(payload.mnemonic), htmlEscape(action))
 }
 
-// consumePOST is unused for the GET-only seed drop; satisfy the interface.
+// consumePOST implements handoffHandler: the human's explicit confirmation
+// that they stored the seed. This is the single point where the seed drop is
+// consumed AND the at-rest recovery copy is destroyed — the destructive action
+// is gated behind the CSRF origin check in handle() and a deliberate human
+// click, never a fire-and-forget GET.
 func (s *SeedDrop) consumePOST(w http.ResponseWriter, r *http.Request, token string, item *handoffItem) bool {
-	w.Header().Set("Allow", "GET")
-	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	payload, _ := item.payload.(*seedPayload)
+
+	// Only now — on explicit human confirmation — clear the profile's KeepSeed
+	// marker and remove the at-rest copy. If the human never confirms, the kept
+	// seed remains on disk as the durable recovery backup for a vault they were
+	// creating fresh (no prior key), which is correct.
+	if err := vault.NewProvisioner().MarkSeedRetrieved(payload.profile); err != nil {
+		s.core.logf().Warn("failed to clear kept seed after confirmation", zap.String("profile", payload.profile), zap.Error(err))
+	}
+	s.core.logf().Info("seed drop confirmed; at-rest recovery copy removed", zap.String("profile", payload.profile))
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	fmt.Fprintf(w, `<!doctype html><html><head><meta charset="utf-8">
+<title>Recovery seed confirmed</title></head><body>
+<p>Your recovery seed is confirmed. This link is no longer active and the on-disk copy has been removed. You can now close this window.</p>
+</body></html>`)
 	return true
 }
 

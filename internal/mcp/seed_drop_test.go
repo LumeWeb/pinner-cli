@@ -60,8 +60,8 @@ func isoVaultPaths(t *testing.T) {
 // live path the catalog-op create hand-off drives.
 
 func TestSeedDropSingleUse(t *testing.T) {
-	// Isolate vault paths: the retrieval hook shadows the at-rest keep-seed
-	// file, so the test must not touch the real user config.
+	// Isolate vault paths: the confirmation hook touches the keep-seed file,
+	// so the test must not write to real user config.
 	isoVaultPaths(t)
 	d := NewSeedDrop(time.Minute)
 	d.SetBaseURL("http://127.0.0.1:9999")
@@ -71,19 +71,46 @@ func TestSeedDropSingleUse(t *testing.T) {
 	mux := http.NewServeMux()
 	d.registerHandlers(mux)
 
-	req := httptest.NewRequest(http.MethodGet, url, nil)
+	// GET renders the seed plus a confirmation form; it does NOT consume the
+	// token, so a failed transport or prefetch never strands the human.
 	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, req)
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, url, nil))
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Contains(t, rec.Body.String(), "alpha beta gamma")
+	require.Contains(t, rec.Body.String(), `method="post"`, "the page must include a confirmation form")
 
-	// Second read must be spent: a branded "link no longer active" page (410),
-	// not the seed again and not a bare 404.
+	// A second GET before confirmation re-renders (retry is possible).
 	rec2 := httptest.NewRecorder()
 	mux.ServeHTTP(rec2, httptest.NewRequest(http.MethodGet, url, nil))
-	require.Equal(t, http.StatusGone, rec2.Code, "a consumed seed link must render 410 with the spent page")
-	require.Contains(t, rec2.Body.String(), "no longer active")
-	require.NotContains(t, rec2.Body.String(), "alpha beta gamma", "the seed must never be shown twice")
+	require.Equal(t, http.StatusOK, rec2.Code, "a GET before confirmation must re-render the seed")
+	require.Contains(t, rec2.Body.String(), "alpha beta gamma")
+
+	// A cross-origin POST is forged (CSRF) and must be rejected while the
+	// token is still live, AND must not consume it.
+	recForge := httptest.NewRecorder()
+	forge := httptest.NewRequest(http.MethodPost, url, nil)
+	forge.Header.Set("Origin", "http://evil.example")
+	mux.ServeHTTP(recForge, forge)
+	require.Equal(t, http.StatusForbidden, recForge.Code, "a cross-origin confirmation POST must be rejected")
+	rec5 := httptest.NewRecorder()
+	mux.ServeHTTP(rec5, httptest.NewRequest(http.MethodGet, url, nil))
+	require.Equal(t, http.StatusOK, rec5.Code, "a forged POST must not consume the token")
+	require.Contains(t, rec5.Body.String(), "alpha beta gamma")
+
+	// Only the explicit, same-origin confirmation POST consumes the drop.
+	rec3 := httptest.NewRecorder()
+	postReq := httptest.NewRequest(http.MethodPost, url, nil)
+	postReq.Header.Set("Origin", "http://127.0.0.1:9999")
+	mux.ServeHTTP(rec3, postReq)
+	require.Equal(t, http.StatusOK, rec3.Code)
+
+	// After confirmation the link is spent: a branded "link no longer active"
+	// page (410), not the seed again and not a bare 404.
+	rec4 := httptest.NewRecorder()
+	mux.ServeHTTP(rec4, httptest.NewRequest(http.MethodGet, url, nil))
+	require.Equal(t, http.StatusGone, rec4.Code, "a consumed seed link must render 410 with the spent page")
+	require.Contains(t, rec4.Body.String(), "no longer active")
+	require.NotContains(t, rec4.Body.String(), "alpha beta gamma", "the seed must never be shown after confirmation")
 }
 
 func TestSeedDropExpiry(t *testing.T) {
@@ -137,11 +164,11 @@ func TestSeedDropTombstonePrunedOnWrite(t *testing.T) {
 	require.Contains(t, d.core.spent, fmt.Sprintf("syn-%d", maxSpentTombstones-1))
 }
 
-// TestSeedDropRetrievalClearsKeptSeed verifies the end-to-end post-retrieval
+// TestSeedDropRetrievalClearsKeptSeed verifies the end-to-end post-confirmation
 // cleanup hook: a create-backup (KeepSeed) seed registered in a SeedDrop is
-// removed from disk, and its profile's KeepSeed marker cleared, the moment the
-// human claims it via the one-time GET — so the plaintext recovery mnemonic
-// does not linger at rest indefinitely.
+// removed from disk, and its profile's KeepSeed marker cleared, only when the
+// human confirms via POST — a mere GET (which cannot prove delivery) must leave
+// the at-rest recovery copy intact.
 func TestSeedDropRetrievalClearsKeptSeed(t *testing.T) {
 	isoVaultPaths(t)
 
@@ -160,30 +187,42 @@ func TestSeedDropRetrievalClearsKeptSeed(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, reg.Profiles["claimhook"].KeepSeed, "create must mark the profile as keep-seed")
 
-	// Register the same seed in a SeedDrop and claim it exactly once.
+	// Register the same seed in a SeedDrop.
 	d := NewSeedDrop(time.Minute)
 	d.SetBaseURL("http://127.0.0.1:9999")
 	mux := http.NewServeMux()
 	d.registerHandlers(mux)
 	url := d.Register("claimhook", "fresh mnemonic from create")
 
+	// GET renders the seed (delivery may or may not have happened) and must NOT
+	// destroy the at-rest copy or clear KeepSeed.
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, url, nil))
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Contains(t, rec.Body.String(), "fresh mnemonic from create")
-
-	// The retrieval hook must have removed the at-rest keep-seed copy and
-	// cleared the profile's KeepSeed marker.
 	_, statErr := os.Stat(seedPath)
-	require.True(t, os.IsNotExist(statErr), "the keep-seed must be removed once the human claims it")
+	require.NoError(t, statErr, "a GET alone must not remove the kept seed")
 	reg, err = vault.LoadRegistry()
 	require.NoError(t, err)
-	require.False(t, reg.Profiles["claimhook"].KeepSeed, "the keep-seed marker must be cleared once retrieved")
+	require.True(t, reg.Profiles["claimhook"].KeepSeed, "a GET alone must not clear keep-seed")
+
+	// Only the human's explicit, same-origin confirmation POST removes the
+	// at-rest copy and clears the KeepSeed marker.
+	recPost := httptest.NewRecorder()
+	postReq := httptest.NewRequest(http.MethodPost, url, nil)
+	postReq.Header.Set("Origin", "http://127.0.0.1:9999")
+	mux.ServeHTTP(recPost, postReq)
+	require.Equal(t, http.StatusOK, recPost.Code)
+	_, statErr = os.Stat(seedPath)
+	require.True(t, os.IsNotExist(statErr), "the keep-seed must be removed once the human confirms")
+	reg, err = vault.LoadRegistry()
+	require.NoError(t, err)
+	require.False(t, reg.Profiles["claimhook"].KeepSeed, "the keep-seed marker must be cleared once confirmed")
 }
 
-// failingWriter simulates a transport failure: every Write fails, so a GET
-// against a seeddrop cannot be considered "retrieved" and must not destroy the
-// only at-rest recovery copy.
+// failingWriter simulates a transport failure: every Write fails. Because GET
+// never destroys the at-rest seed, a failed/partial GET must leave the recovery
+// credential and token fully intact and retryable.
 type failingWriter struct {
 	header http.Header
 }
@@ -199,13 +238,11 @@ func (f *failingWriter) Write([]byte) (int, error) {
 	return 0, fmt.Errorf("simulated transport failure")
 }
 
-// TestSeedDropWriteFailurePreservesKeptSeed verifies that MarkSeedRetrieved is
-// only invoked after the seed text is confirmed written to the client. A failed
-// Write (prefetch, link-expander, transport loss, attacker racing the URL) must
-// NOT clear KeepSeed or delete the at-rest recovery seed, or the active vault
-// would permanently lose its only recovery credential without the human ever
-// receiving it.
-func TestSeedDropWriteFailurePreservesKeptSeed(t *testing.T) {
+// TestSeedDropWriteFailureKeepsSeedRetryable verifies that a GET that fails to
+// deliver (prefetch, link-expander, transport loss, attacker racing the URL)
+// does NOT clear KeepSeed, delete the at-rest recovery seed, or consume the
+// token. The human can retry and still claim the seed.
+func TestSeedDropWriteFailureKeepsSeedRetryable(t *testing.T) {
 	isoVaultPaths(t)
 
 	// Create a real active keep-seed profile; the seed is on disk + marked.
@@ -221,8 +258,7 @@ func TestSeedDropWriteFailurePreservesKeptSeed(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, strings.TrimSpace(string(before)))
 
-	// Register a seeddrop for the same profile and serve a GET whose Write
-	// always fails.
+	// Register a seeddrop and serve a GET whose Write always fails.
 	d := NewSeedDrop(time.Minute)
 	d.SetBaseURL("http://127.0.0.1:9999")
 	mux := http.NewServeMux()
@@ -231,12 +267,17 @@ func TestSeedDropWriteFailurePreservesKeptSeed(t *testing.T) {
 
 	mux.ServeHTTP(&failingWriter{}, httptest.NewRequest(http.MethodGet, url, nil))
 
-	// The seed file and KeepSeed marker must be untouched: the client never
-	// confirmed receipt, so the recovery credential must remain.
+	// Nothing was destroyed; the seed is untouched and still marked as keep.
 	after, err := os.ReadFile(seedPath)
 	require.NoError(t, err, "the kept seed must survive a failed write")
 	require.Equal(t, before, after, "the seed bytes must be unchanged after a failed write")
 	reg, err := vault.LoadRegistry()
 	require.NoError(t, err)
-	require.True(t, reg.Profiles["keeponfail"].KeepSeed, "keep-seed must not be cleared when the write fails")
+	require.True(t, reg.Profiles["keeponfail"].KeepSeed, "keep-seed must not be cleared on a failed write")
+
+	// The token is NOT consumed by the failed GET: a retry can still claim it.
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, url, nil))
+	require.Equal(t, http.StatusOK, rec.Code, "a failed GET must not consume the token; it is retryable")
+	require.Contains(t, rec.Body.String(), "mnemonic that must survive a failed write")
 }

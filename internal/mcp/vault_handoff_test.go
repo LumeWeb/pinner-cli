@@ -81,10 +81,24 @@ func TestVaultCreateResumePendingToDone(t *testing.T) {
 	require.NoError(t, err)
 	requireHandoff(t, r) // still needs_human: seed not picked up yet
 
-	// Consume the seed the way a browser GET would (single-use display).
+	// Confirm the seed the way a browser would: GET to render, then the
+	// explicit same-origin confirmation POST consumes the seeddrop. A bare GET
+	// (which cannot prove delivery) must leave the state pending.
+	recSeedGet := httptest.NewRecorder()
+	mux.ServeHTTP(recSeedGet, httptest.NewRequest("GET", seedURL, nil))
+	require.Equal(t, http.StatusOK, recSeedGet.Code)
+	r, err = resume.Handler(context.Background(), ToolRequest{
+		Name:      vaultCreateResumeToolName,
+		Arguments: map[string]any{"handle": handle},
+	})
+	require.NoError(t, err)
+	requireHandoff(t, r) // still needs_human: seed shown but not confirmed yet
+
 	recSeed := httptest.NewRecorder()
-	mux.ServeHTTP(recSeed, httptest.NewRequest("GET", seedURL, nil))
-	require.Equal(t, 200, recSeed.Code)
+	confirmReq := httptest.NewRequest("POST", seedURL, nil)
+	confirmReq.Header.Set("Origin", "http://127.0.0.1:9999")
+	mux.ServeHTTP(recSeed, confirmReq)
+	require.Equal(t, http.StatusOK, recSeed.Code)
 
 	// Now resume reports terminal done.
 	r, err = resume.Handler(context.Background(), ToolRequest{

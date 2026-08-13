@@ -73,6 +73,7 @@ func buildCreateServer() (*OOBCreate, *http.ServeMux, *fakeCreateRunner) {
 	seedDrop := NewSeedDrop(time.Minute)
 	c := NewOOBCreate(runner, seedDrop, time.Minute)
 	c.SetBaseURL("http://127.0.0.1:9999")
+	seedDrop.SetBaseURL("http://127.0.0.1:9999")
 	mux := http.NewServeMux()
 	c.registerHandlers(mux)
 	seedDrop.registerHandlers(mux)
