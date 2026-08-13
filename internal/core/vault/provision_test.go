@@ -371,6 +371,44 @@ func TestProvisionerCreateSeedSurvivesReconcile(t *testing.T) {
 	require.True(t, os.IsNotExist(statErr), "a consumed restore seed must still be removed by reconcile")
 }
 
+// TestProvisionerMarkSeedRetrievedRemovesKeptSeed verifies the post-retrieval
+// cleanup path: once the human has claimed the one-time seed (MarkSeedRetrieved),
+// the KeepSeed marker is cleared and the at-rest plaintext seed file is removed,
+// so the recovery mnemonic does not linger on disk indefinitely. A subsequent
+// reconcile of a consumed profile then treats any straggler as residue to remove.
+func TestProvisionerMarkSeedRetrievedRemovesKeptSeed(t *testing.T) {
+	isolateVaultPaths(t)
+	p := NewProvisioner()
+
+	// Create an active keep-seed profile; the backup seed is on disk + marked.
+	_, err := p.Create(context.Background(), CreateRequest{
+		Profile:       "claimed",
+		IndexerURL:    "http://indexer",
+		NewConnection: func(_, _ string) ConnectionFlow { return &stubConn{appKeyHex: validAppKeyHex(t)} },
+	})
+	require.NoError(t, err)
+	reg, err := LoadRegistry()
+	require.NoError(t, err)
+	require.True(t, reg.Profiles["claimed"].KeepSeed, "create must mark the profile as keep-seed")
+	_, err = os.Stat(SeedPath("claimed"))
+	require.NoError(t, err, "the kept seed must be on disk before retrieval")
+
+	// The human claims the one-time seed. This is exactly what the SeedDrop GET
+	// path invokes after serving it.
+	require.NoError(t, p.MarkSeedRetrieved("claimed"))
+
+	// The at-rest copy is removed and the marker cleared.
+	_, statErr := os.Stat(SeedPath("claimed"))
+	require.True(t, os.IsNotExist(statErr), "the kept seed must be removed once retrieved")
+	reg, err = LoadRegistry()
+	require.NoError(t, err)
+	require.False(t, reg.Profiles["claimed"].KeepSeed, "the keep-seed marker must be cleared once retrieved")
+
+	// Unknown and already-cleared profiles are no-ops (no panic, no error).
+	require.NoError(t, p.MarkSeedRetrieved("does-not-exist"))
+	require.NoError(t, p.MarkSeedRetrieved("claimed"))
+}
+
 // TestProvisionerCreatePendingRollsBackSeedOnRegistryFailure verifies that a
 // failed registry write does not leave an orphaned seed file that would brick
 // the profile (the stat guard treats a residual seed as an existing pending

@@ -1,19 +1,67 @@
 package mcp
 
 import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"go.lumeweb.com/pinner-cli/internal/core/vault"
+	"go.sia.tech/core/types"
 )
+
+// validAppKeyHexMCP returns a valid Sia private-key hex for driving the real
+// Provisioner.Create in mcp tests (mcp-local mirror of the vault unit helper).
+func validAppKeyHexMCP(t *testing.T) string {
+	t.Helper()
+	seed := make([]byte, 32)
+	_, err := rand.Read(seed)
+	require.NoError(t, err)
+	return hex.EncodeToString(types.NewPrivateKeyFromSeed(seed))
+}
+
+// stubConnMCP is a ConnectionFlow returning a canned app key hex, mirroring the
+// vault unit-test stub so mcp tests can drive the real Provisioner locally.
+type stubConnMCP struct {
+	appKeyHex string
+}
+
+func (s *stubConnMCP) Request(ctx context.Context) (string, error) { return "http://approve", nil }
+func (s *stubConnMCP) WaitAndRegister(ctx context.Context) (string, error) {
+	return s.appKeyHex, nil
+}
+
+// isoVaultPaths redirects the vault registry/seed/DB paths to a temp dir so
+// config-touching vault operations in these tests never write to real user
+// config (mirrors the isolation used across the mcp vault tests).
+func isoVaultPaths(t *testing.T) {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	if runtime.GOOS == "windows" {
+		t.Setenv("APPDATA", filepath.Join(home, "AppData", "Roaming"))
+		t.Setenv("LOCALAPPDATA", filepath.Join(home, "AppData", "Local"))
+	}
+}
 
 // The seed drop coordinator's Register/tokenDone/resolve behavior above is the
 // live path the catalog-op create hand-off drives.
 
 func TestSeedDropSingleUse(t *testing.T) {
+	// Isolate vault paths: the retrieval hook shadows the at-rest keep-seed
+	// file, so the test must not touch the real user config.
+	isoVaultPaths(t)
 	d := NewSeedDrop(time.Minute)
 	d.SetBaseURL("http://127.0.0.1:9999")
 	url := d.Register("default", "alpha beta gamma")
@@ -38,6 +86,7 @@ func TestSeedDropSingleUse(t *testing.T) {
 }
 
 func TestSeedDropExpiry(t *testing.T) {
+	isoVaultPaths(t)
 	d := NewSeedDrop(time.Minute)
 	d.SetBaseURL("http://127.0.0.1:9999")
 	url := d.Register("default", "secret words")
@@ -85,4 +134,48 @@ func TestSeedDropTombstonePrunedOnWrite(t *testing.T) {
 	// The newest synthetic tombstones are retained.
 	require.Contains(t, d.core.spent, fmt.Sprintf("syn-%d", maxSpentTombstones+4))
 	require.Contains(t, d.core.spent, fmt.Sprintf("syn-%d", maxSpentTombstones-1))
+}
+
+// TestSeedDropRetrievalClearsKeptSeed verifies the end-to-end post-retrieval
+// cleanup hook: a create-backup (KeepSeed) seed registered in a SeedDrop is
+// removed from disk, and its profile's KeepSeed marker cleared, the moment the
+// human claims it via the one-time GET — so the plaintext recovery mnemonic
+// does not linger at rest indefinitely.
+func TestSeedDropRetrievalClearsKeptSeed(t *testing.T) {
+	isoVaultPaths(t)
+
+	// Create a real active keep-seed profile; the seed is on disk + marked.
+	prov := vault.NewProvisioner()
+	_, err := prov.Create(context.Background(), vault.CreateRequest{
+		Profile:       "claimhook",
+		IndexerURL:    "http://indexer",
+		NewConnection: func(_, _ string) vault.ConnectionFlow { return &stubConnMCP{appKeyHex: validAppKeyHexMCP(t)} },
+	})
+	require.NoError(t, err)
+	seedPath := vault.SeedPath("claimhook")
+	_, err = os.Stat(seedPath)
+	require.NoError(t, err, "the kept seed must be on disk before retrieval")
+	reg, err := vault.LoadRegistry()
+	require.NoError(t, err)
+	require.True(t, reg.Profiles["claimhook"].KeepSeed, "create must mark the profile as keep-seed")
+
+	// Register the same seed in a SeedDrop and claim it exactly once.
+	d := NewSeedDrop(time.Minute)
+	d.SetBaseURL("http://127.0.0.1:9999")
+	mux := http.NewServeMux()
+	d.registerHandlers(mux)
+	url := d.Register("claimhook", "fresh mnemonic from create")
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, url, nil))
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Body.String(), "fresh mnemonic from create")
+
+	// The retrieval hook must have removed the at-rest keep-seed copy and
+	// cleared the profile's KeepSeed marker.
+	_, statErr := os.Stat(seedPath)
+	require.True(t, os.IsNotExist(statErr), "the keep-seed must be removed once the human claims it")
+	reg, err = vault.LoadRegistry()
+	require.NoError(t, err)
+	require.False(t, reg.Profiles["claimhook"].KeepSeed, "the keep-seed marker must be cleared once retrieved")
 }

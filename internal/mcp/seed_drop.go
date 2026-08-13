@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"go.lumeweb.com/pinner-cli/internal/core/vault"
 	"go.uber.org/zap"
 )
 
@@ -90,6 +91,14 @@ func (s *SeedDrop) renderGET(w http.ResponseWriter, r *http.Request, token strin
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("Vault recovery seed for profile " + payload.profile + " (shown once):\n\n" + payload.mnemonic + "\n\nThis is your only path back into the vault. Store it securely. This page is no longer available after this view.\n"))
+
+	// The seed has been one-time retrieved by the human. Clear the profile's
+	// KeepSeed marker and remove the at-rest copy so the plaintext recovery
+	// mnemonic does not linger on disk indefinitely (a no-op for non-keep-seed
+	// drops). Done after the page is served so a display failure still shows it.
+	if err := vault.NewProvisioner().MarkSeedRetrieved(payload.profile); err != nil {
+		s.core.logf().Warn("failed to clear kept seed after retrieval", zap.String("profile", payload.profile), zap.Error(err))
+	}
 }
 
 // consumePOST is unused for the GET-only seed drop; satisfy the interface.

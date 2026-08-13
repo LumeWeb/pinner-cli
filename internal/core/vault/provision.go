@@ -400,6 +400,42 @@ func (p *Provisioner) Create(ctx context.Context, req CreateRequest) (*CreateRes
 	}, nil
 }
 
+// MarkSeedRetrieved clears a profile's KeepSeed flag and removes the kept
+// create-backup seed once the human has claimed the one-time seed retrieval
+// (the SeedDrop GET that displays it). The plaintext recovery mnemonic must not
+// persist at rest indefinitely: it is a one-time retrieval credential, not a
+// permanent backup. After retrieval it is removed immediately (same post-use
+// semantics as restore), and the profile is un-marked so reconcileLocked treats
+// any straggler as ordinary consumed residue. Unknown or already-un-kept
+// profiles are no-ops.
+func (p *Provisioner) MarkSeedRetrieved(profile string) error {
+	unlock, err := lockRegistry()
+	if err != nil {
+		return fmt.Errorf("failed to lock registry: %w", err)
+	}
+	defer unlock()
+
+	reg, err := LoadRegistry()
+	if err != nil {
+		return err
+	}
+	prof, ok := reg.Profiles[profile]
+	if !ok {
+		return nil // unknown profile: nothing to flip
+	}
+	if prof.KeepSeed {
+		prof.KeepSeed = false
+		reg.Profiles[profile] = prof
+		if err := SaveRegistry(reg); err != nil {
+			return fmt.Errorf("failed to clear keep-seed marker: %w", err)
+		}
+	}
+	// The seed was displayed exactly once; remove the at-rest copy now rather
+	// than relying on a later reconcile that may never run.
+	_ = os.Remove(SeedPath(profile))
+	return nil
+}
+
 // finishRestoreLocked performs the local commit that turns a pending profile
 // active, under the registry lock. The browser approval and registration have
 // already happened (they need no lock); everything that durably records the
