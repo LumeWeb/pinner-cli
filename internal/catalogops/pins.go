@@ -174,7 +174,7 @@ func pinsAdd(d PinsDeps) catalog.Operation {
 		Args: []catalog.OperationArg{
 			// cids is populated by the CLI wiring layer from positional args,
 			// --file, or stdin; agents pass concrete CID values.
-			{Name: "cids", Type: catalog.ArgTypeStringSlice, Help: "Content identifiers (CIDs) to pin", AgentHelp: "One or more concrete CIDs to pin. Do not pass CLI positional/file/stdin syntax; supply the values here."},
+			{Name: "cids", Type: catalog.ArgTypeStringSlice, AgentRequired: true, Help: "Content identifiers (CIDs) to pin", AgentHelp: "One or more concrete CIDs to pin. This field is required; supply the values here."},
 			{Name: "name", Type: catalog.ArgTypeString, Help: "Custom name for the pin"},
 			{Name: "wait", Type: catalog.ArgTypeBool, Default: "true", Help: "Whether to wait for the pin to be confirmed (default true)"},
 			{Name: "parallel", Type: catalog.ArgTypeInt, Default: "0", Help: "Maximum number of parallel pin operations for a batch"},
@@ -290,7 +290,7 @@ func pinsRemove(d PinsDeps) catalog.Operation {
 		Visibility:  catalog.VisibilityBoth,
 		Positional:  "<cid...>",
 		Args: []catalog.OperationArg{
-			{Name: "cids", Type: catalog.ArgTypeStringSlice, Help: "Content identifiers to unpin (positional, --file, or stdin)", AgentHelp: "Concrete CIDs to unpin. Omit only when removing all pins (all=true). Do not pass CLI positional/file/stdin syntax."},
+			{Name: "cids", Type: catalog.ArgTypeStringSlice, Help: "Content identifiers to unpin", AgentHelp: "Concrete CIDs to unpin. Omit only when removing all pins (all=true). Do not pass CLI positional/file/stdin syntax; supply the values here."},
 			{Name: "confirm", Type: catalog.ArgTypeBool, Default: "false", Help: "Confirm the destructive unpin", AgentHelp: "Set true to confirm removal without an interactive prompt; destructive and cannot be undone."},
 			{Name: "all", Type: catalog.ArgTypeBool, Default: "false", Help: "Remove all pins"},
 			{Name: "status", Type: catalog.ArgTypeString, Help: "When all=true, only unpin pins with this status (e.g. failed)"},
@@ -426,7 +426,7 @@ func pinsUpdate(d PinsDeps) catalog.Operation {
 		Visibility:  catalog.VisibilityBoth,
 		Positional:  "<cid>",
 		Args: []catalog.OperationArg{
-			{Name: "cid", Type: catalog.ArgTypeString, Required: true, Help: "Content identifier to update (positional or --cid)", AgentHelp: "The concrete CID of the pin to update."},
+			{Name: "cid", Type: catalog.ArgTypeString, Required: true, Help: "Content identifier to update (or via cid)", AgentHelp: "The concrete CID of the pin to update."},
 			{Name: "name", Type: catalog.ArgTypeString, Help: "New name for the pin"},
 			{Name: "meta", Type: catalog.ArgTypeStringSlice, Help: "Metadata key=value pairs to set (repeatable)"},
 			{Name: "clear-meta", Type: catalog.ArgTypeBool, Default: "false", Help: "Clear existing metadata before applying the new pairs"},

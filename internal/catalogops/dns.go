@@ -188,7 +188,7 @@ func dnsZonesGet(d DNSDeps) catalog.Operation {
 		Visibility:  catalog.VisibilityBoth,
 		Positional:  "<domain>",
 		Args: []catalog.OperationArg{
-			{Name: "zone", Type: catalog.ArgTypeString, Required: true, Help: "Domain name or numeric zone ID (positional)"},
+			{Name: "zone", Type: catalog.ArgTypeString, Required: true, Help: "Domain name or numeric zone ID"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			svc, svcErr := d.service(input)
@@ -228,8 +228,8 @@ func dnsZonesDelete(d DNSDeps) catalog.Operation {
 		Visibility:  catalog.VisibilityBoth,
 		Positional:  "<domain>",
 		Args: []catalog.OperationArg{
-			{Name: "zone", Type: catalog.ArgTypeString, Required: true, Help: "Domain name or numeric zone ID (positional)"},
-			{Name: "confirm", Type: catalog.ArgTypeBool, Default: "false", Help: "Confirm the destructive operation (CLI maps --force here)"},
+			{Name: "zone", Type: catalog.ArgTypeString, Required: true, Help: "Domain name or numeric zone ID"},
+			{Name: "confirm", Type: catalog.ArgTypeBool, Required: true, Help: "Confirm the destructive delete", AgentHelp: "Must be true to delete the zone; this is destructive and cannot be undone."},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			if !catalog.BoolArg(input, "confirm", false) {
@@ -272,7 +272,7 @@ func dnsZonesValidate(d DNSDeps) catalog.Operation {
 		Visibility:  catalog.VisibilityBoth,
 		Positional:  "<domain>",
 		Args: []catalog.OperationArg{
-			{Name: "zone", Type: catalog.ArgTypeString, Required: true, Help: "Domain name or numeric zone ID (positional)"},
+			{Name: "zone", Type: catalog.ArgTypeString, Required: true, Help: "Domain name or numeric zone ID"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			svc, svcErr := d.service(input)
@@ -308,14 +308,14 @@ func dnsRecordsList(d DNSDeps) catalog.Operation {
 		Name:        "dns_records_list",
 		Title:       "List DNS records",
 		Summary:     "List DNS records for a zone",
-		Description: "List all DNS records for a zone, given the zone's domain (or numeric ID) as the positional argument. Returns each record's name/type/content/TTL and disabled state.",
+		Description: "List all DNS records for a zone, given the zone's domain (or numeric ID). Returns each record's name/type/content/TTL and disabled state.",
 		Category:    "core",
 		Safety:      catalog.SafetyRead,
 		Interaction: catalog.InteractionAgentSafe,
 		Visibility:  catalog.VisibilityBoth,
 		Positional:  "<domain>",
 		Args: []catalog.OperationArg{
-			{Name: "zone", Type: catalog.ArgTypeString, Required: true, Help: "Domain name or numeric zone ID (positional)"},
+			{Name: "zone", Type: catalog.ArgTypeString, Required: true, Help: "Domain name or numeric zone ID"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			svc, svcErr := d.service(input)
@@ -350,14 +350,14 @@ func dnsRecordsCreate(d DNSDeps) catalog.Operation {
 		Name:        "dns_records_create",
 		Title:       "Create a DNS record",
 		Summary:     "Create a DNS record",
-		Description: "Create a DNS record (A/AAAA/CNAME/MX/NS/TXT) in the specified zone. --name is optional (omit or use @ for the apex); --type and --content are required; --ttl defaults to 3600. Returns the created record.",
+		Description: "Create a DNS record (A/AAAA/CNAME/MX/NS/TXT) in the specified zone. name is optional (omit or use @ for the apex); type and content are required; ttl defaults to 3600. Returns the created record.",
 		Category:    "core",
 		Safety:      catalog.SafetyMutate,
 		Interaction: catalog.InteractionAgentSafe,
 		Visibility:  catalog.VisibilityBoth,
 		Positional:  "<domain>",
 		Args: []catalog.OperationArg{
-			{Name: "zone", Type: catalog.ArgTypeString, Required: true, Help: "Domain name or numeric zone ID (positional)"},
+			{Name: "zone", Type: catalog.ArgTypeString, Required: true, Help: "Domain name or numeric zone ID"},
 			{Name: "name", Type: catalog.ArgTypeString, Help: "Record name (omit or use @ for apex)"},
 			{Name: "type", Type: catalog.ArgTypeString, Required: true, Help: "Record type (A, AAAA, CNAME, MX, NS, TXT)"},
 			{Name: "content", Type: catalog.ArgTypeString, Required: true, Help: "Record content (IP, domain, or text)"},
@@ -421,14 +421,14 @@ func dnsRecordsGet(d DNSDeps) catalog.Operation {
 		Name:        "dns_records_get",
 		Title:       "Get a DNS record",
 		Summary:     "Get a DNS record",
-		Description: "Get one DNS record, uniquely identified by the zone's domain (positional) plus --name (label, or @ for apex) and --type. Returns the record's content, TTL and disabled state.",
+		Description: "Get one DNS record, uniquely identified by the zone's domain plus name (label, or @ for apex) and type. Returns the record's content, TTL and disabled state.",
 		Category:    "core",
 		Safety:      catalog.SafetyRead,
 		Interaction: catalog.InteractionAgentSafe,
 		Visibility:  catalog.VisibilityBoth,
 		Positional:  "<domain>",
 		Args: []catalog.OperationArg{
-			{Name: "zone", Type: catalog.ArgTypeString, Required: true, Help: "Domain name or numeric zone ID (positional)"},
+			{Name: "zone", Type: catalog.ArgTypeString, Required: true, Help: "Domain name or numeric zone ID"},
 			{Name: "name", Type: catalog.ArgTypeString, Required: true, Help: "Record name (or @ for apex)"},
 			{Name: "type", Type: catalog.ArgTypeString, Required: true, Help: "Record type"},
 		},
@@ -470,14 +470,14 @@ func dnsRecordsUpdate(d DNSDeps) catalog.Operation {
 		Name:        "dns_records_update",
 		Title:       "Update a DNS record",
 		Summary:     "Update a DNS record",
-		Description: "Update an existing DNS record, identified by the zone's domain (positional) + --name and --type. Change its --content, --ttl, or --disabled state; fields not provided are left unchanged. Returns the updated record.",
+		Description: "Update an existing DNS record, identified by the zone's domain plus name and type. Change its content, ttl, or disabled state; fields not provided are left unchanged. Returns the updated record.",
 		Category:    "core",
 		Safety:      catalog.SafetyMutate,
 		Interaction: catalog.InteractionAgentSafe,
 		Visibility:  catalog.VisibilityBoth,
 		Positional:  "<domain>",
 		Args: []catalog.OperationArg{
-			{Name: "zone", Type: catalog.ArgTypeString, Required: true, Help: "Domain name or numeric zone ID (positional)"},
+			{Name: "zone", Type: catalog.ArgTypeString, Required: true, Help: "Domain name or numeric zone ID"},
 			{Name: "name", Type: catalog.ArgTypeString, Required: true, Help: "Record name (or @ for apex)"},
 			{Name: "type", Type: catalog.ArgTypeString, Required: true, Help: "Record type"},
 			{Name: "content", Type: catalog.ArgTypeString, Help: "New record content"},
@@ -542,14 +542,14 @@ func dnsRecordsDelete(d DNSDeps) catalog.Operation {
 		Name:        "dns_records_delete",
 		Title:       "Delete a DNS record",
 		Summary:     "Delete a DNS record",
-		Description: "Delete a DNS record, identified by the zone's domain (positional) + --name and --type. DESTRUCTIVE and irreversible. Deletes one record only; to remove the whole zone use dns zones delete.",
+		Description: "Delete a DNS record, identified by the zone's domain plus name and type. DESTRUCTIVE and irreversible. Deletes one record only; to remove the whole zone use dns_zones_delete.",
 		Category:    "core",
 		Safety:      catalog.SafetyDestructive,
 		Interaction: catalog.InteractionAgentSafe,
 		Visibility:  catalog.VisibilityBoth,
 		Positional:  "<domain>",
 		Args: []catalog.OperationArg{
-			{Name: "zone", Type: catalog.ArgTypeString, Required: true, Help: "Domain name or numeric zone ID (positional)"},
+			{Name: "zone", Type: catalog.ArgTypeString, Required: true, Help: "Domain name or numeric zone ID"},
 			{Name: "name", Type: catalog.ArgTypeString, Required: true, Help: "Record name (or @ for apex)"},
 			{Name: "type", Type: catalog.ArgTypeString, Required: true, Help: "Record type"},
 			{Name: "confirm", Type: catalog.ArgTypeBool, Default: "false", Help: "Confirm the destructive operation (CLI maps --force here)"},

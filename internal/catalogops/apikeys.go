@@ -59,7 +59,7 @@ func apiKeysCreate(d APIKeysDeps) catalog.Operation {
 		Category:    "account", Safety: catalog.SafetyMutate, Interaction: catalog.InteractionAgentSafe, Visibility: catalog.VisibilityBoth,
 		Positional: "<name>",
 		Args: []catalog.OperationArg{
-			{Name: "name", Type: catalog.ArgTypeString, Required: true, Help: "Key name (positional)"},
+			{Name: "name", Type: catalog.ArgTypeString, Required: true, Help: "Key name"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			svc := d.Service(input)
@@ -78,11 +78,12 @@ func apiKeysCreate(d APIKeysDeps) catalog.Operation {
 func apiKeysDelete(d APIKeysDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
 		Name: "api_keys_delete", Title: "Delete an API key", Summary: "Delete an API key",
-		Description: "Delete an API key by name or UUID. Blocked if the key is the one currently used for auth unless --force.",
+		Description: "Delete an API key by name or UUID. Deleting the key currently used for authentication is blocked unless confirm=true.",
 		Category:    "account", Safety: catalog.SafetyDestructive, Interaction: catalog.InteractionAgentSafe, Visibility: catalog.VisibilityBoth,
 		Positional: "<id>",
 		Args: []catalog.OperationArg{
-			{Name: "id", Type: catalog.ArgTypeString, Required: true, Help: "API key name or UUID (positional)"},
+			{Name: "id", Type: catalog.ArgTypeString, Required: true, Help: "API key name or UUID", AgentHelp: "The name or UUID of the API key to delete."},
+			{Name: "confirm", Type: catalog.ArgTypeBool, Default: "false", Help: "Allow deleting the key currently used for authentication", AgentHelp: "Set true to delete the API key even if it is the one currently used for authentication."},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			svc := d.Service(input)
@@ -93,7 +94,7 @@ func apiKeysDelete(d APIKeysDeps) catalog.Operation {
 			if id == "" {
 				return nil, fmt.Errorf("api_keys_delete: key name or UUID is required")
 			}
-			if err := svc.DeleteAPIKey(ctx, id, catalog.BoolArg(input, "force", false)); err != nil {
+			if err := svc.DeleteAPIKey(ctx, id, catalog.BoolArg(input, "confirm", false)); err != nil {
 				return nil, err
 			}
 			return &APIKeyDeleteResult{ID: id}, nil

@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"go.lumeweb.com/pinner-cli/internal/catalog"
 	"github.com/stretchr/testify/require"
+	"go.lumeweb.com/pinner-cli/internal/catalog"
 )
 
 // markerHandler is a test-only catalog Operation.Handler that returns its
@@ -47,6 +47,22 @@ func sampleCatalog() catalog.Catalog {
 			{Name: "name", Type: catalog.ArgTypeString, Required: true, Help: "vault name"},
 		},
 		Handler: markerHandler{marker: "ran:vault.delete"},
+	}))
+	// An op with an AgentRequired StringSlice: required on the MCP surface,
+	// never a CLI flag, and never enforced by the shared normalize path.
+	_ = c.Add(catalog.NewOperation(catalog.OperationSpec{
+		Name:        "pins.mcp.add",
+		Title:       "Add pins",
+		Summary:     "add pins",
+		Description: "add pins to the pin set",
+		Category:    "pins",
+		Safety:      catalog.SafetyMutate,
+		Interaction: catalog.InteractionAgentSafe,
+		Visibility:  catalog.VisibilityModel,
+		Args: []catalog.OperationArg{
+			{Name: "cids", Type: catalog.ArgTypeStringSlice, AgentRequired: true, Help: "cids to pin"},
+		},
+		Handler: markerHandler{marker: "ran:pins.mcp.add"},
 	}))
 	return c
 }
@@ -111,4 +127,33 @@ func TestCompiledOpMissingRequiredArgFailsCleanly(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, res.IsError, "missing required arg is surfaced as a clean ToolResult error")
 	require.NotEmpty(t, res.Text)
+}
+
+func TestAgentRequiredArgEnforcedAtMCPDispatch(t *testing.T) {
+	tc := NewToolCatalog()
+	_, err := populateCatalogSurface(tc, sampleCatalog())
+	require.NoError(t, err)
+
+	entry, ok := tc.Get("pins.mcp.add")
+	require.True(t, ok)
+
+	// Missing the AgentRequired arg: the MCP dispatch layer must reject it.
+	res, err := entry.Handler(context.Background(), ToolRequest{Name: "pins.mcp.add", Arguments: map[string]any{}})
+	require.NoError(t, err)
+	require.True(t, res.IsError, "AgentRequired arg must be enforced at MCP dispatch")
+	require.Contains(t, res.Text, "cids")
+
+	// Supplying it succeeds.
+	res, err = entry.Handler(context.Background(), ToolRequest{Name: "pins.mcp.add", Arguments: map[string]any{"cids": []string{"bafy"}}})
+	require.NoError(t, err)
+	require.False(t, res.IsError)
+	require.Equal(t, "ran:pins.mcp.add", res.Text)
+
+	// The shared catalog Invoke path must NOT enforce AgentRequired: a
+	// non-MCP caller invoking the op without cids should still run, because
+	// AgentRequired is MCP-only and must not leak into the shared contract.
+	cat := sampleCatalog()
+	out, err := cat.Invoke(context.Background(), "pins.mcp.add", map[string]any{}, catalog.ActorModel)
+	require.NoError(t, err)
+	require.Equal(t, "ran:pins.mcp.add", out)
 }

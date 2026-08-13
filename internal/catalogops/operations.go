@@ -81,7 +81,7 @@ func operationsGet(d OperationsDeps) catalog.Operation {
 		Category:    "operations", Safety: catalog.SafetyRead, Interaction: catalog.InteractionAgentSafe, Visibility: catalog.VisibilityBoth,
 		Positional: "<id>",
 		Args: []catalog.OperationArg{
-			{Name: "id", Type: catalog.ArgTypeInt, Required: true, Help: "Operation ID (positional)"},
+			{Name: "id", Type: catalog.ArgTypeInt, Required: true, Help: "Operation ID"},
 			{Name: "watch", Type: catalog.ArgTypeBool, Default: "false", Help: "Wait for the operation to complete"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {

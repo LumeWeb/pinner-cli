@@ -45,6 +45,16 @@ import (
 // On any other error the result is a plain ToolResult{IsError:true} with a
 // cleaned message.
 func DispatchCatalogOp(ctx context.Context, cat catalog.Catalog, actor catalog.Actor, name string, args map[string]any, resumeTool string) (ToolResult, error) {
+	// AgentRequired args are enforced here, in the MCP dispatch layer, not in
+	// Catalog.Invoke / NormalizeOperationInput — those are shared normalization
+	// seams that the CLI and other non-MCP callers use, and AgentRequired must
+	// never leak into a non-MCP invocation. So the AgentRequired check belongs
+	// at the MCP surface, just before the op runs.
+	if op, ok := cat.Get(name); ok {
+		if err := catalog.ValidateMCPRequired(op, args); err != nil {
+			return ToolResult{IsError: true, Text: cleanMessage(err)}, nil
+		}
+	}
 	result, err := cat.Invoke(ctx, name, args, actor)
 	if err != nil {
 		// A destructive op invoked by a model needs explicit human
