@@ -283,7 +283,7 @@ func pinsRemove(d PinsDeps) catalog.Operation {
 		Name:        "pins_rm",
 		Title:       "Remove a pin",
 		Summary:     "Unpin existing CIDs (or all pins)",
-		Description: "Remove a pin by its cids, remove multiple CIDs in a batch, or remove all pins with the all flag. Destructive: pass confirm=true to proceed.",
+		Description: "Remove pins from the network. Provide cids to unpin specific CIDs, OR set all=true to remove every pin (optionally filtered by status) — not both. DESTRUCTIVE and irreversible: confirm=true is required.",
 		Category:    "core",
 		Safety:      catalog.SafetyDestructive,
 		Interaction: catalog.InteractionAgentSafe,
@@ -291,7 +291,7 @@ func pinsRemove(d PinsDeps) catalog.Operation {
 		Positional:  "<cid...>",
 		Args: []catalog.OperationArg{
 			{Name: "cids", Type: catalog.ArgTypeStringSlice, Help: "Content identifiers to unpin", AgentHelp: "Concrete CIDs to unpin. Omit only when removing all pins (all=true). Do not pass CLI positional/file/stdin syntax; supply the values here."},
-			{Name: "confirm", Type: catalog.ArgTypeBool, Default: "false", Help: "Confirm the destructive unpin", AgentHelp: "Set true to confirm removal without an interactive prompt; destructive and cannot be undone."},
+			{Name: "confirm", Type: catalog.ArgTypeBool, Required: true, Help: "Confirm the destructive unpin", AgentHelp: "Must be true to remove pins; this is destructive and cannot be undone."},
 			{Name: "all", Type: catalog.ArgTypeBool, Default: "false", Help: "Remove all pins"},
 			{Name: "status", Type: catalog.ArgTypeString, Help: "When all=true, only unpin pins with this status (e.g. failed)"},
 			{Name: "parallel", Type: catalog.ArgTypeInt, Default: "0", Help: "Maximum number of parallel unpin operations for a batch"},
