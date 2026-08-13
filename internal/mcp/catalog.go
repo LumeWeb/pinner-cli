@@ -108,6 +108,13 @@ type ToolDetail struct {
 type ToolCatalog struct {
 	mu    sync.RWMutex
 	tools map[string]*ToolEntry
+	// CatalogDeps, when set, holds the operation-catalog dependency factory
+	// (config manager + core service factories) handed to buildCatalog via the
+	// withCatalogDeps option. It is plumbing only at this stage: nothing in the
+	// catalog consumes it yet. A later unit reads it to populate the surface
+	// from the operation catalog instead of (or alongside) the CLI command
+	// tree.
+	CatalogDeps func() *CatalogDepsBundle
 }
 
 // NewToolCatalog returns an empty catalog.

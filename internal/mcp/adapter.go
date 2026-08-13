@@ -684,8 +684,21 @@ type WizardDepsFactory func() (WebsitesWizardDeps, SetupWizardDeps, DomainWizard
 // one-time seed/restore/create URLs for vault-create/vault-restore agent output
 // so the human can retrieve or supply a recovery seed in a browser without it
 // transiting the MCP channel.
-func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate, handoffReg *HandoffRegistry, authHandles *AsyncHandleStore) (*ToolCatalog, error) {
+func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate, handoffReg *HandoffRegistry, authHandles *AsyncHandleStore, opts ...buildCatalogOpt) (*ToolCatalog, error) {
 	catalog := NewToolCatalog()
+
+	// Apply the functional options. Currently the only option is withCatalogDeps,
+	// which stores the operation-catalog dependency factory on catalog.CatalogDeps
+	// for a later unit to consume; no population behavior changes here.
+	cfg := &buildCatalogConfig{}
+	for _, opt := range opts {
+		if err := opt(cfg); err != nil {
+			return nil, err
+		}
+	}
+	if cfg.catalogDeps != nil {
+		catalog.CatalogDeps = cfg.catalogDeps
+	}
 
 	// runMu serializes root.Run calls. A shallow copy of root gives each
 	// invocation isolated Writer/ErrWriter, but subcommand flag state is shared

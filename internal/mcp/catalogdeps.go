@@ -32,3 +32,28 @@ type CatalogDepsBundle struct {
 	APIKeys   catalogops.APIKeysDeps
 	Operations catalogops.OperationsDeps
 }
+
+// buildCatalogOpt configures buildCatalog. It is a functional option so the
+// existing positional signature of buildCatalog stays intact and all current
+// positional-only callers compile and behave unchanged. A later unit will read
+// the configured factory off the returned ToolCatalog to populate the surface.
+type buildCatalogOpt func(*buildCatalogConfig) error
+
+// buildCatalogConfig carries the resolved buildCatalog options.
+type buildCatalogConfig struct {
+	// catalogDeps, when set, supplies the operation-catalog dependency
+	// factory to store on the returned ToolCatalog. The factory is lazily
+	// resolved per invocation (the catalogops lazy-deps pattern) so a
+	// test/global override stays live.
+	catalogDeps func() *CatalogDepsBundle
+}
+
+// withCatalogDeps sets the operation-catalog dependency factory that buildCatalog
+// stores on the returned ToolCatalog. It is the only buildCatalog option for
+// now; nothing consumes the factory yet (that is a later unit).
+func withCatalogDeps(f func() *CatalogDepsBundle) buildCatalogOpt {
+	return func(cfg *buildCatalogConfig) error {
+		cfg.catalogDeps = f
+		return nil
+	}
+}
