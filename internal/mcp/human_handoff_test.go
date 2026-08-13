@@ -15,7 +15,7 @@ func TestNeedsHumanResultShape(t *testing.T) {
 		Reason:     ReasonSSOApproval,
 		ActionURL:  "https://example.com/approve",
 		Handle:     "abc123",
-		ResumeTool: "pinner_auth_resume",
+		ResumeTool: "auth_resume",
 		Detail:     "open the link and approve",
 	})
 	assert.False(t, r.IsError)
@@ -25,7 +25,7 @@ func TestNeedsHumanResultShape(t *testing.T) {
 	assert.Equal(t, ReasonSSOApproval, sc["reason"])
 	assert.Equal(t, "https://example.com/approve", sc["action_url"])
 	assert.Equal(t, "abc123", sc["handle"])
-	assert.Equal(t, "pinner_auth_resume", sc["resume_tool"])
+	assert.Equal(t, "auth_resume", sc["resume_tool"])
 	assert.Equal(t, "open the link and approve", sc["detail"])
 	assert.Contains(t, r.Text, "needs_human")
 

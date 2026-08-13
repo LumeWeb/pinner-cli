@@ -18,14 +18,14 @@ import (
 // making every `pinner ipns republish <key>` fail at render time.
 func TestRenderIPNSRepublishResult(t *testing.T) {
 	var buf bytes.Buffer
-	op := catalog.NewOperation(catalog.OperationSpec{Name: "ipns.republish"})
+	op := catalog.NewOperation(catalog.OperationSpec{Name: "ipns_republish"})
 	resp := &ipfs.IPNSRepublishResponse{Count: 3, Message: "record refreshed"}
 
 	cmd := &cli.Command{
-		Name:       "republish",
-		ArgsUsage:  "<key-name-or-id>",
-		Flags:      []cli.Flag{&cli.StringFlag{Name: "key-name"}},
-		Writer:     &buf,
+		Name:      "republish",
+		ArgsUsage: "<key-name-or-id>",
+		Flags:     []cli.Flag{&cli.StringFlag{Name: "key-name"}},
+		Writer:    &buf,
 		Action: func(ctx context.Context, c *cli.Command) error {
 			return renderIPNSResult(ctx, c, op, resp)
 		},

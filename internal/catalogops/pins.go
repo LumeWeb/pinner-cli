@@ -123,7 +123,7 @@ func PinsOperations(d PinsDeps) []catalog.Operation {
 // only takes the resolved name filter.
 func pinsList(d PinsDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:        "pins.list",
+		Name:        "pins_list",
 		Title:       "List pins",
 		Summary:     "List pinned content",
 		Description: "List your pinned content with optional filtering by name, status, and a result limit.",
@@ -162,7 +162,7 @@ func pinsList(d PinsDeps) catalog.Operation {
 // state.
 func pinsAdd(d PinsDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:        "pins.add",
+		Name:        "pins_add",
 		Title:       "Add a pin",
 		Summary:     "Pin existing content by CID",
 		Description: "Pin content that already exists on IPFS by providing its CID(s), optionally with a name, metadata (--meta k=v), parallel batch control (--parallel/--continue), and the choice of waiting for confirmation. CIDs may be given positionally, via --file, or piped from stdin.",
@@ -193,7 +193,7 @@ func pinsAdd(d PinsDeps) catalog.Operation {
 
 			cids := catalog.StrSliceArg(input, "cids")
 			if len(cids) == 0 {
-				return nil, fmt.Errorf("pins.add: no CIDs provided (pass <cid...>, --file, or pipe from stdin)")
+				return nil, fmt.Errorf("pins_add: no CIDs provided (pass <cid...>, --file, or pipe from stdin)")
 			}
 
 			name := catalog.StrArg(input, "name", "")
@@ -280,7 +280,7 @@ func pinsAdd(d PinsDeps) catalog.Operation {
 // returns a DryRunResult instead of mutating state.
 func pinsRemove(d PinsDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:        "pins.rm",
+		Name:        "pins_rm",
 		Title:       "Remove a pin",
 		Summary:     "Unpin existing CIDs (or all pins)",
 		Description: "Remove a pin by CID, remove multiple CIDs in a batch, or remove all pins with --all. Destructive: requires confirmation (--force).",
@@ -346,7 +346,7 @@ func pinsRemove(d PinsDeps) catalog.Operation {
 
 			cids := catalog.StrSliceArg(input, "cids")
 			if len(cids) == 0 {
-				return nil, fmt.Errorf("pins.rm: no CIDs provided (pass <cid...>, --file, pipe from stdin, or --all)")
+				return nil, fmt.Errorf("pins_rm: no CIDs provided (pass <cid...>, --file, pipe from stdin, or --all)")
 			}
 
 			if catalog.BoolArg(input, "dry-run", false) {
@@ -379,7 +379,7 @@ func pinsRemove(d PinsDeps) catalog.Operation {
 // settles internally when --watch is set, so watch is threaded through.
 func pinsStatus(d PinsDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:        "pins.status",
+		Name:        "pins_status",
 		Title:       "Pin status",
 		Summary:     "Get the status of a pin",
 		Description: "Get the current status of a pinned CID, optionally watching until it settles (--watch).",
@@ -402,7 +402,7 @@ func pinsStatus(d PinsDeps) catalog.Operation {
 			}
 			cid := catalog.StrArg(input, "cid", "")
 			if cid == "" {
-				return nil, fmt.Errorf("pins.status: missing required argument cid")
+				return nil, fmt.Errorf("pins_status: missing required argument cid")
 			}
 			return svc.Status(ctx, cid, catalog.BoolArg(input, "watch", false))
 		}),
@@ -416,7 +416,7 @@ func pinsStatus(d PinsDeps) catalog.Operation {
 // positional (or --cid), resolved in the wiring layer.
 func pinsUpdate(d PinsDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:        "pins.update",
+		Name:        "pins_update",
 		Title:       "Update a pin",
 		Summary:     "Update a pin's name or metadata",
 		Description: "Update the name and/or metadata of an existing pin by CID. Metadata is a set of key-value pairs (--meta k=v, repeatable); --clear-meta wipes existing metadata first.",
@@ -442,7 +442,7 @@ func pinsUpdate(d PinsDeps) catalog.Operation {
 			}
 			cid := catalog.StrArg(input, "cid", "")
 			if cid == "" {
-				return nil, fmt.Errorf("pins.update: missing required argument cid")
+				return nil, fmt.Errorf("pins_update: missing required argument cid")
 			}
 
 			name := catalog.StrArg(input, "name", "")

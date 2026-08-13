@@ -29,7 +29,7 @@ func requireVaultDone(t *testing.T, r ToolResult) {
 	require.Equal(t, StatusDone, sc["status"])
 }
 
-// TestVaultCreateResumePendingToDone verifies pinner_vault_create_resume (the
+// TestVaultCreateResumePendingToDone verifies vault_create_resume (the
 // shared NewResumeTool template with the create continuation registered) polls
 // a create hand-off from pending to done as the vault is created/activated and
 // the fresh seed is retrieved from its one-time seeddrop.
@@ -133,7 +133,7 @@ func extractSeedURL(t *testing.T, body string) string {
 	return rest[:end]
 }
 
-// TestVaultRestoreResumePendingToDone verifies pinner_vault_restore_resume
+// TestVaultRestoreResumePendingToDone verifies vault_restore_resume
 // polls a restore hand-off from pending to done as the human submits the OOB
 // restore form. It models the OOB restore coordinator with a fake
 // RestoreRunner (no network).
@@ -327,7 +327,7 @@ func TestVaultRestoreResumeFreesOutcome(t *testing.T) {
 }
 
 // TestVaultRestoreResumeDeadHandleSteersRestart verifies that an unknown or
-// expired handle passed to pinner_vault_restore_resume steers the agent back
+// expired handle passed to vault_restore_resume steers the agent back
 // to pinner_vault_restore instead of retrying a dead handle.
 func TestVaultRestoreResumeDeadHandleSteersRestart(t *testing.T) {
 	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
@@ -358,7 +358,7 @@ func TestVaultRestoreResumeDeadHandleSteersRestart(t *testing.T) {
 }
 
 // TestVaultCreateResumeDeadHandleSteersRestart verifies an unknown handle
-// passed to pinner_vault_create_resume steers back to pinner_vault_create.
+// passed to vault_create_resume steers back to pinner_vault_create.
 func TestVaultCreateResumeDeadHandleSteersRestart(t *testing.T) {
 	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
 	reg := NewHandoffRegistry()

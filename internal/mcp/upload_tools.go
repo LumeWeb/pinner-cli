@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-// ChatGPTFileAsyncInput is the typed argument shape for pinner_upload_file_async.
+// ChatGPTFileAsyncInput is the typed argument shape for upload_file_async.
 type ChatGPTFileAsyncInput struct {
 	File ChatGPTFileInput `json:"file" jsonschema:"description=OpenAI file object with a temporary download URL."`
 	Name string           `json:"name,omitempty" jsonschema:"description=Optional upload name (defaults to the file name)."`
@@ -14,7 +14,7 @@ type ChatGPTFileAsyncInput struct {
 
 // UploadHandleInput is the typed argument shape for upload status/cancel tools.
 type UploadHandleInput struct {
-	Handle string `json:"handle" jsonschema:"description=Opaque async upload handle returned by pinner_upload_file_async."`
+	Handle string `json:"handle" jsonschema:"description=Opaque async upload handle returned by upload_file_async."`
 }
 
 // NewAsyncUploadTools returns the async upload-management tool descriptors
@@ -26,9 +26,9 @@ func NewAsyncUploadTools(mgr *UploadTaskManager) []ToolDescriptor {
 	}
 	return []ToolDescriptor{
 		{
-			Name:        "pinner_upload_file_async",
+			Name:        "upload_file_async",
 			Title:       "Start an async external-file upload",
-			Description: "Start uploading a ChatGPT file reference in the background and return an opaque handle. Poll pinner_upload_status, cancel with pinner_upload_cancel, and list with pinner_upload_list. Pinner fetches the temporary URL locally and uses its authenticated TUS path.",
+			Description: "Start uploading a ChatGPT file reference in the background and return an opaque handle. Poll upload_status, cancel with upload_cancel, and list with upload_list. Pinner fetches the temporary URL locally and uses its authenticated TUS path.",
 			Category:    CategoryCore,
 			InputSchema: toolSchemaFor[ChatGPTFileAsyncInput](),
 			Meta:        chatgptFileMeta(),
@@ -66,7 +66,7 @@ func NewAsyncUploadTools(mgr *UploadTaskManager) []ToolDescriptor {
 			},
 		},
 		{
-			Name:        "pinner_upload_status",
+			Name:        "upload_status",
 			Title:       "Get async upload status",
 			Description: "Return the current status of an async upload handle: queued, running, completed, failed, or cancelled.",
 			Category:    CategoryCore,
@@ -87,7 +87,7 @@ func NewAsyncUploadTools(mgr *UploadTaskManager) []ToolDescriptor {
 			},
 		},
 		{
-			Name:        "pinner_upload_cancel",
+			Name:        "upload_cancel",
 			Title:       "Cancel an async upload",
 			Description: "Cancel a queued or running async upload by handle.",
 			Category:    CategoryCore,
@@ -107,7 +107,7 @@ func NewAsyncUploadTools(mgr *UploadTaskManager) []ToolDescriptor {
 			},
 		},
 		{
-			Name:        "pinner_upload_list",
+			Name:        "upload_list",
 			Title:       "List async uploads",
 			Description: "List all tracked async upload handles and their current status.",
 			Category:    CategoryCore,

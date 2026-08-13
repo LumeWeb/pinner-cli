@@ -10,9 +10,9 @@ import (
 // never transit the MCP/LLM channel. These tools make that flow non-blocking
 // and resumable for agents (and humans collaborating with agents):
 //
-//   - pinner_auth_sso: start an out-of-band sign-in; returns a needs_human
+//   - auth_sso: start an out-of-band sign-in; returns a needs_human
 //     hand-off with the approval URL and a resume handle. Never blocks.
-//   - pinner_auth_resume: poll/complete a pending out-of-band sign-in handle;
+//   - auth_resume: poll/complete a pending out-of-band sign-in handle;
 //     returns pending until the human has approved, then done.
 
 type authSSOArgs struct {
@@ -21,17 +21,17 @@ type authSSOArgs struct {
 	Email string `json:"email,omitempty"`
 }
 
-// NewAuthSSODescriptor returns the pinner_auth_sso tool: start an out-of-band
+// NewAuthSSODescriptor returns the auth_sso tool: start an out-of-band
 // browser login, non-blocking, returning a needs_human hand-off with the
 // approval URL and a resume handle. If oob, handles, or reg is nil, it returns
 // a structured "not configured" hand-off instead of hanging. It registers a
-// resume continuation so the shared pinner_auth_resume template can poll the
+// resume continuation so the shared auth_resume template can poll the
 // login to completion.
 func NewAuthSSODescriptor(oob *OutOfBandLogin, handles *AsyncHandleStore, reg *HandoffRegistry) ToolDescriptor {
 	return ToolDescriptor{
-		Name:        "pinner_auth_sso",
+		Name:        "auth_sso",
 		Title:       "Sign In (Out-of-Band)",
-		Description: "Start an out-of-band (OOB) browser sign-in for SSO authentication. Returns immediately with an approval URL the human opens, and a resume handle for the pinner_auth_resume tool. Non-blocking, and never asks the human for a password or OTP on this channel. Start here to authenticate.",
+		Description: "Start an out-of-band (OOB) browser sign-in for SSO authentication. Returns immediately with an approval URL the human opens, and a resume handle for the auth_resume tool. Non-blocking, and never asks the human for a password or OTP on this channel. Start here to authenticate.",
 		Category:    CategoryCore,
 		InputSchema: toolSchemaFor[authSSOArgs](),
 		Handler: func(ctx context.Context, req ToolRequest) (ToolResult, error) {
@@ -58,14 +58,14 @@ func NewAuthSSODescriptor(oob *OutOfBandLogin, handles *AsyncHandleStore, reg *H
 				return ToolResult{IsError: true, Text: fmt.Sprintf("failed to start out-of-band login: %v", err)}, nil
 			}
 			// Register the SSO-specific poll logic under the handle so the
-			// shared pinner_auth_resume template dispatches to it.
+			// shared auth_resume template dispatches to it.
 			reg.Begin(handle, ssoResumeContinuation(oob, handles, reg))
 			return NeedsHumanResult(NeedsHuman{
 				Reason:     ReasonSSOApproval,
 				ActionURL:  url,
 				Handle:     handle,
-				ResumeTool: "pinner_auth_resume",
-				Detail:     "Ask the user to open the approval URL in their browser and complete sign-in. Then call pinner_auth_resume with the handle.",
+				ResumeTool: "auth_resume",
+				Detail:     "Ask the user to open the approval URL in their browser and complete sign-in. Then call auth_resume with the handle.",
 			}), nil
 		},
 	}
@@ -74,7 +74,7 @@ func NewAuthSSODescriptor(oob *OutOfBandLogin, handles *AsyncHandleStore, reg *H
 // ssoResumeContinuation returns the SSO-specific poll logic: it checks whether
 // the human has completed the browser approval and returns pending
 // (needs_human) until done, then a terminal done result. It is registered
-// against the handle by pinner_auth_sso so the shared resume template can
+// against the handle by auth_sso so the shared resume template can
 // dispatch to it.
 //
 // The continuation performs its own registry cleanup (reg.End) on every
@@ -93,8 +93,8 @@ func ssoResumeContinuation(oob *OutOfBandLogin, handles *AsyncHandleStore, reg *
 			reg.End(handle)
 			return NeedsHumanResult(NeedsHuman{
 				Reason:     ReasonSSOApproval,
-				ResumeTool: "pinner_auth_sso",
-				Detail:     "The out-of-band login failed or expired. Start a fresh login with pinner_auth_sso.",
+				ResumeTool: "auth_sso",
+				Detail:     "The out-of-band login failed or expired. Start a fresh login with auth_sso.",
 			}), nil
 		}
 		if !done {
@@ -115,7 +115,7 @@ func ssoResumeContinuation(oob *OutOfBandLogin, handles *AsyncHandleStore, reg *
 				Reason:     ReasonSSOApproval,
 				ActionURL:  url,
 				Handle:     handle,
-				ResumeTool: "pinner_auth_resume",
+				ResumeTool: "auth_resume",
 				Detail:     "Sign-in still pending; the user has not completed the approval yet.",
 			}), nil
 		}
@@ -128,18 +128,18 @@ func ssoResumeContinuation(oob *OutOfBandLogin, handles *AsyncHandleStore, reg *
 	}
 }
 
-// NewAuthResumeDescriptor returns the pinner_auth_resume tool, built from the
+// NewAuthResumeDescriptor returns the auth_resume tool, built from the
 // shared resume template. The name/description, restart steering, and
 // dead-handle guidance are SSO-specific; the dispatch logic (handle validation,
 // expiry, continuation lookup) is shared via NewResumeTool.
 func NewAuthResumeDescriptor(reg *HandoffRegistry, handles *AsyncHandleStore) ToolDescriptor {
 	return NewResumeTool(ResumeToolSpec{
-		Name:                "pinner_auth_resume",
+		Name:                "auth_resume",
 		Title:               "Auth Sign-In Resume",
-		Description:         "Poll a pending out-of-band (OOB) sign in to check whether the human has completed the SSO approval (sign-in). Returns pending (needs_human) until approval is done, then reports done. Pass the handle returned by pinner_auth_sso.",
-		RestartTool:         "pinner_auth_sso",
-		UnknownHandleDetail: "unknown handle; start a new login with pinner_auth_sso",
-		ExpiredHandleDetail: "the sign-in handle expired before the human completed approval; start a fresh login with pinner_auth_sso and have the user approve promptly",
+		Description:         "Poll a pending out-of-band (OOB) sign in to check whether the human has completed the SSO approval (sign-in). Returns pending (needs_human) until approval is done, then reports done. Pass the handle returned by auth_sso.",
+		RestartTool:         "auth_sso",
+		UnknownHandleDetail: "unknown handle; start a new login with auth_sso",
+		ExpiredHandleDetail: "the sign-in handle expired before the human completed approval; start a fresh login with auth_sso and have the user approve promptly",
 		DeadHandleReason:    ReasonSSOApproval,
 	}, reg, handles)
 }

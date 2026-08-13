@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-// DataURIUploadInput is the typed argument shape for pinner_upload_data.
+// DataURIUploadInput is the typed argument shape for upload_data.
 // The File field has no omitempty tag, so the jsonschema reflector marks it
 // required (matching the wizard step-input convention).
 type DataURIUploadInput struct {
@@ -22,7 +22,7 @@ type DataURIUploadInput struct {
 // materialized in memory.
 func DataURIUploadDescriptor(handler DataURIUploadHandler) ToolDescriptor {
 	return ToolDescriptor{
-		Name:        "pinner_upload_data",
+		Name:        "upload_data",
 		Title:       "Upload a file from a data URI",
 		Description: "Upload a file supplied as a SEP-2356 data: file URI (x-mcp-file wire form). Pinner decodes the base64 payload locally and uploads it through the authenticated path. Use this when the host can attach file bytes as a data URI but cannot supply a fetchable URL.",
 		Category:    CategoryCore,

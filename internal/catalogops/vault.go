@@ -78,7 +78,7 @@ func VaultOperations(d VaultDeps) []catalog.Operation {
 
 func vaultStatus(d VaultDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:        "vault.status",
+		Name:        "vault_status",
 		Title:       "Vault status",
 		Summary:     "Show vault profile status",
 		Description: "Summarize identity, local session, remote health, storage usage, and cache health for the selected vault profile. Remote health is probed live against the indexer; local cache stats come from the profile's index.",
@@ -113,7 +113,7 @@ func vaultStatus(d VaultDeps) catalog.Operation {
 
 func vaultLs(d VaultDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:        "vault.ls",
+		Name:        "vault_ls",
 		Title:       "List vault files",
 		Summary:     "List files and directories in the vault",
 		Description: "List files and directories at the given vault path (name, type, size, and created time). If no path is provided, lists the root directory. Lists one level only (no recursion).",
@@ -152,7 +152,7 @@ func vaultLs(d VaultDeps) catalog.Operation {
 
 func vaultStat(d VaultDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:        "vault.stat",
+		Name:        "vault_stat",
 		Title:       "Show vault file metadata",
 		Summary:     "Show file or directory metadata",
 		Description: "Show metadata for a single vault path: type, size, media type, content digest, and object ID. Returns metadata only and does NOT stream file content.",
@@ -191,7 +191,7 @@ func vaultStat(d VaultDeps) catalog.Operation {
 
 func vaultVerify(d VaultDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:        "vault.verify",
+		Name:        "vault_verify",
 		Title:       "Verify vault file integrity",
 		Summary:     "Verify content integrity of a vault file",
 		Description: "Check a vault file's integrity: verifies its recorded SHA-256 digest matches and that the object exists on the Sia indexer. Returns an OK/FAIL result with digest and object facts. Does NOT stream or return file content.",
@@ -241,7 +241,7 @@ type VaultRmResult struct {
 
 func vaultRm(d VaultDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:        "vault.rm",
+		Name:        "vault_rm",
 		Title:       "Delete a vault file",
 		Summary:     "Delete a file from the vault",
 		Description: "Permanently delete a file from the vault: removes it from both the local vault database and the Sia indexer. DESTRUCTIVE and irreversible: requires --force (agent mode always requires --force). Targets a single file path.",
@@ -261,7 +261,7 @@ func vaultRm(d VaultDeps) catalog.Operation {
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			vaultPath := catalog.StrArg(input, "path", "")
 			if vaultPath == "" {
-				return nil, fmt.Errorf("vault.rm: missing required argument path")
+				return nil, fmt.Errorf("vault_rm: missing required argument path")
 			}
 			// The CLI wiring maps --force to confirm; enforcing here guards
 			// programmatic/MCP callers who bypass the CLI gate from deleting a
@@ -299,7 +299,7 @@ type VaultSyncResult struct {
 
 func vaultSync(d VaultDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:        "vault.sync",
+		Name:        "vault_sync",
 		Title:       "Sync vault cache from indexer",
 		Summary:     "Sync local vault cache from indexer",
 		Description: "Pull incremental changes from the Sia indexer into the local vault cache using an event cursor. Loops while a fetched batch is full so the cache converges even when >100 changes accumulate. Returns the number of events processed. Does NOT upload or delete any files.",
@@ -377,7 +377,7 @@ func parseVaultExpiry(s string) (time.Time, error) {
 
 func vaultShare(d VaultDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:        "vault.share",
+		Name:        "vault_share",
 		Title:       "Share a vault file",
 		Summary:     "Generate a shareable link for a vault file",
 		Description: "Generate a shareable download link for a vault file. Returns the share URL and its expiry time. Control the expiry with --expiry (e.g. 7d, 30d, 1h, or 0 for never). Does NOT upload or modify the file itself.",
@@ -431,7 +431,7 @@ type VaultForgetResult struct {
 
 func vaultForget(d VaultDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:        "vault.forget",
+		Name:        "vault_forget",
 		Title:       "Forget a vault profile",
 		Summary:     "Remove a vault profile and its local data",
 		Description: "Permanently removes a vault profile from this machine: the registry entry and its local data (state, cache DB, and any pending recovery seed) are deleted. DESTRUCTIVE and irreversible: the on-disk credential for accessing the vault is gone. Remote vault data on Sia is not deleted. Requires an explicit --profile (never auto-resolves) and --force to confirm.",
@@ -450,7 +450,7 @@ func vaultForget(d VaultDeps) catalog.Operation {
 			}
 			profileName := catalog.StrArg(input, "profile", "")
 			if profileName == "" {
-				return nil, fmt.Errorf("vault.forget: --profile <name> is required to forget a vault profile")
+				return nil, fmt.Errorf("vault_forget: --profile <name> is required to forget a vault profile")
 			}
 			if err := vault.RemoveProfile(profileName); err != nil {
 				return nil, err
@@ -472,7 +472,7 @@ type VaultProfileUseResult struct {
 
 func vaultProfileUse(d VaultDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:        "vault.profile.use",
+		Name:        "vault_profile_use",
 		Title:       "Set default vault profile",
 		Summary:     "Set the default profile for vault commands",
 		Description: "Sets the profile used by default when neither --profile nor the PINNER_PROFILE env var selects one. An explicit --profile or PINNER_PROFILE still take precedence.",
@@ -516,7 +516,7 @@ type VaultCacheResult struct {
 
 func vaultCacheRebuild(d VaultDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:        "vault.cache.rebuild",
+		Name:        "vault_cache_rebuild",
 		Title:       "Rebuild vault cache",
 		Summary:     "Rebuild the cache from remote state",
 		Description: "Discards the local SQLite index and re-syncs all metadata from the Sia indexer. File content is not re-downloaded; only the index is rederived. The prior cache is set aside (not deleted) and restored if the rebuild fails. Use to repair a corrupted or stale local cache.",
@@ -609,7 +609,7 @@ func vaultCacheRebuild(d VaultDeps) catalog.Operation {
 
 func vaultCacheClear(d VaultDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:        "vault.cache.clear",
+		Name:        "vault_cache_clear",
 		Title:       "Clear vault cache",
 		Summary:     "Clear the local cache (keeps profile credentials)",
 		Description: "Deletes the SQLite cache file. The next vault operation recreates an empty cache; run 'pinner vault cache rebuild' to populate it from remote.",

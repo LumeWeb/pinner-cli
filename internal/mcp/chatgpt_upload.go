@@ -100,7 +100,7 @@ func openChatGPTInput(ctx context.Context, in ChatGPTFileInput, timeout time.Dur
 	return ref, body, size, nil
 }
 
-// ChatGPTUploadInput is the typed argument shape for pinner_upload_file.
+// ChatGPTUploadInput is the typed argument shape for upload_file.
 type ChatGPTUploadInput struct {
 	File ChatGPTFileInput `json:"file" jsonschema:"description=OpenAI file object with a temporary download URL."`
 	Name string           `json:"name,omitempty" jsonschema:"description=Optional upload name (defaults to the file name)."`
@@ -111,7 +111,7 @@ type ChatGPTUploadInput struct {
 // OpenAI metadata is additive and ignored by clients that do not understand it.
 func ChatGPTUploadDescriptor(handler ChatGPTUploadHandler) ToolDescriptor {
 	return ToolDescriptor{
-		Name:        "pinner_upload_file",
+		Name:        "upload_file",
 		Title:       "Upload a ChatGPT file to Pinner",
 		Description: "Upload a user-selected ChatGPT file to Pinner. ChatGPT supplies the file reference; Pinner fetches it locally and uses its existing authenticated upload path.",
 		Category:    CategoryCore,

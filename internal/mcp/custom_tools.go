@@ -31,7 +31,7 @@ type customToolDeps struct {
 	// hand-offs. seedDrop is the vault-create seed-drop coordinator, oobRestore
 	// is the vault-restore coordinator, and oobCreate is the vault-create
 	// coordinator. They are threaded here so the resume tools
-	// (pinner_vault_create_resume / pinner_vault_restore_resume) can poll the
+	// (vault_create_resume / vault_restore_resume) can poll the
 	// coordinators to completion over the same shared handoffReg + handles.
 	seedDrop   *SeedDrop
 	oobRestore *OOBRestore

@@ -90,11 +90,11 @@ func newVaultCatalogCommands() []*cli.Command {
 	parents := map[string]*cli.Command{}
 	var out []*cli.Command
 	for _, c := range compiled {
-		canonical := c.Name // e.g. "vault.cache.rebuild", BEFORE mount mutates it
+		canonical := c.Name // e.g. "vault_cache_rebuild", BEFORE mount mutates it
 		mounted := mountVaultCatalogCommand(c)
-		rest := strings.TrimPrefix(canonical, "vault.")
-		if idx := strings.Index(rest, "."); idx > 0 {
-			// Two-level: parent.child (profile.use, cache.rebuild, cache.clear)
+		rest := strings.TrimPrefix(canonical, "vault_")
+		if idx := strings.Index(rest, "_"); idx > 0 {
+			// Two-level: parent_child (profile_use, cache_rebuild, cache_clear)
 			parentName := rest[:idx]
 			parent, ok := parents[parentName]
 			if !ok {
@@ -111,16 +111,16 @@ func newVaultCatalogCommands() []*cli.Command {
 }
 
 // mountVaultCatalogCommand adapts a single catalog-compiled command (dotted
-// name like "vault.status") into a live vault subcommand: it strips the
-// "vault." group prefix, sets the vault category, and wraps the Action with the
+// name like "vault_status") into a live vault subcommand: it strips the
+// "vault_" group prefix, sets the vault category, and wraps the Action with the
 // CLI-input adapter (positional → operation input, profile, destructive gate)
 // and the vault result renderer.
 func mountVaultCatalogCommand(cmd *cli.Command) *cli.Command {
 	canonical := cmd.Name
-	display := strings.TrimPrefix(canonical, "vault.")
-	// Two-level ops (profile.use, cache.rebuild, cache.clear) keep their leaf
+	display := strings.TrimPrefix(canonical, "vault_")
+	// Two-level ops (profile_use, cache_rebuild, cache_clear) keep their leaf
 	// name; the parent is handled by newVaultCatalogCommands.
-	if idx := strings.Index(display, "."); idx > 0 {
+	if idx := strings.Index(display, "_"); idx > 0 {
 		display = display[idx+1:]
 	}
 	cmd.Name = display
@@ -185,7 +185,7 @@ func vaultActionAdapter(op catalog.Operation) cli.ActionFunc {
 			confirm := c.Bool(FlagForce) || c.Bool(FlagConfirm)
 			input["confirm"] = confirm
 			if !confirm {
-				return fmt.Errorf("vault %s: pass --force to confirm this destructive operation", strings.TrimPrefix(op.Name(), "vault."))
+				return fmt.Errorf("vault %s: pass --force to confirm this destructive operation", strings.TrimPrefix(op.Name(), "vault_"))
 			}
 		}
 

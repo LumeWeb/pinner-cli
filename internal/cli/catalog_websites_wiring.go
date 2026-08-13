@@ -94,9 +94,13 @@ func newWebsitesCatalogCommands() []*cli.Command {
 	var out []*cli.Command
 	for _, c := range compiled {
 		mounted := mountWebsitesCatalogCommand(c)
-		rest := strings.TrimPrefix(c.Name, "websites.")
-		if idx := strings.Index(rest, "."); idx > 0 {
-			// Two-level: parent.child (ssl.status)
+		rest := strings.TrimPrefix(c.Name, "websites_")
+		// Only nest genuine two-level ops (ssl_status). websites_enable_ipns is
+		// a single-level leaf whose underscore is part of the leaf name, so it
+		// must NOT be split (it would mount as `websites enable ipns` and clobber
+		// the enable-ipns remap in mountWebsitesCatalogCommand).
+		if idx := strings.Index(rest, "_"); idx > 0 && rest != "enable_ipns" {
+			// Two-level: parent_child (ssl_status)
 			parentName := rest[:idx]
 			parent, ok := parents[parentName]
 			if !ok {
@@ -105,7 +109,7 @@ func newWebsitesCatalogCommands() []*cli.Command {
 				out = append(out, parent)
 			}
 			// The leaf keeps only its final segment when nested under a parent
-			// (websites.ssl.status -> ssl -> status).
+			// (websites_ssl_status -> ssl -> status).
 			mounted.Name = rest[idx+1:]
 			parent.Commands = append(parent.Commands, mounted)
 			continue
@@ -122,10 +126,16 @@ func newWebsitesCatalogCommands() []*cli.Command {
 // and wraps the Action with the CLI-input adapter and renderer.
 func mountWebsitesCatalogCommand(cmd *cli.Command) *cli.Command {
 	canonical := cmd.Name
-	// Strip ONLY the "websites." domain prefix. Two-level ops (ssl.status) keep
-	// their intermediate segment (ssl.status) so newWebsitesCatalogCommands can
-	// nest them under the "ssl" parent; only the websites. group goes away here.
-	display := strings.TrimPrefix(canonical, "websites.")
+	// Strip ONLY the "websites_" domain prefix. Two-level ops (ssl_status) keep
+	// their intermediate segment (ssl_status) so newWebsitesCatalogCommands can
+	// nest them under the "ssl" parent; only the websites_ group goes away here.
+	display := strings.TrimPrefix(canonical, "websites_")
+	// Keep the CLI leaf names stable: the renamed MCP tool websites_enable_ipns
+	// still renders on the CLI as `websites enable-ipns` (hyphen) per its
+	// historical CLI name.
+	if display == "enable_ipns" {
+		display = "enable-ipns"
+	}
 	cmd.Name = display
 	cmd.Category = "Management"
 	// Legacy alias: the websites group exposed `enable-ipns` with alias `ipns`.
@@ -146,7 +156,7 @@ func mountWebsitesCatalogCommand(cmd *cli.Command) *cli.Command {
 		relaxFlagRequired(cmd)
 		// Preserve the legacy `ssl status --watch` presentational polling flag
 		// (not part of the data contract — it lives here in the wiring layer).
-		if canonical == "websites.ssl.status" {
+		if canonical == "websites_ssl_status" {
 			cmd.Flags = append(cmd.Flags, &cli.BoolFlag{Name: "watch", Usage: "Watch for SSL status changes"})
 		}
 		cmd.Action = websitesActionAdapter(op)
@@ -198,7 +208,7 @@ func websitesActionAdapter(op catalog.Operation) cli.ActionFunc {
 		}
 
 		// At-least-one-field gate for update (mirrors requireUpdateFields).
-		if op.Name() == "websites.update" {
+		if op.Name() == "websites_update" {
 			if !c.IsSet(FlagRenameTo) && !c.IsSet(FlagCID) && !c.IsSet(FlagTargetType) &&
 				!c.IsSet(FlagDNSHosting) && !c.IsSet(FlagNoDNSHosting) {
 				return fmt.Errorf("at least one field must be provided for update (--rename-to, --cid, --target-type, --dns-hosting, --no-dns-hosting)")
@@ -209,7 +219,7 @@ func websitesActionAdapter(op catalog.Operation) cli.ActionFunc {
 		// handler (which returns the typed *ipfs.WebsiteResponse) and render
 		// its SSL portion repeatedly. The data call stays in the handler; the
 		// polling/formatting is CLI-IO, so it lives here.
-		if op.Name() == "websites.ssl.status" && c.Bool("watch") {
+		if op.Name() == "websites_ssl_status" && c.Bool("watch") {
 			return output.Watch(ctx,
 				func(ctx context.Context) (any, error) {
 					return op.Handler().Execute(ctx, input)

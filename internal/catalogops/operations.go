@@ -31,7 +31,7 @@ func OperationsOperations(d OperationsDeps) []catalog.Operation {
 
 func operationsList(d OperationsDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name: "operations.list", Title: "List account operations", Summary: "List account operations",
+		Name: "operations_list", Title: "List account operations", Summary: "List account operations",
 		Description: "List account operations (uploads, pins, and other processing tasks) with optional filters and pagination.",
 		Category:    "operations", Safety: catalog.SafetyRead, Interaction: catalog.InteractionAgentSafe, Visibility: catalog.VisibilityBoth,
 		Positional: "",
@@ -76,7 +76,7 @@ func operationsList(d OperationsDeps) catalog.Operation {
 
 func operationsGet(d OperationsDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name: "operations.get", Title: "Get operation details", Summary: "Get details of an operation",
+		Name: "operations_get", Title: "Get operation details", Summary: "Get details of an operation",
 		Description: "Get the full details of a single account operation by ID, optionally waiting for it to complete.",
 		Category:    "operations", Safety: catalog.SafetyRead, Interaction: catalog.InteractionAgentSafe, Visibility: catalog.VisibilityBoth,
 		Positional: "<id>",
@@ -94,7 +94,7 @@ func operationsGet(d OperationsDeps) catalog.Operation {
 			}
 			id := int64(catalog.IntArg(input, "id", 0))
 			if id == 0 {
-				return nil, fmt.Errorf("operations.get: operation ID is required")
+				return nil, fmt.Errorf("operations_get: operation ID is required")
 			}
 			if catalog.BoolArg(input, "watch", false) {
 				return svc.Watch(ctx, id)

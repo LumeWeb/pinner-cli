@@ -121,7 +121,7 @@ func resolveRequiredWebsiteID(ctx context.Context, svc websites.Service, input m
 // websitesList is the `websites list` operation. Returns []ipfs.WebsiteItem.
 func websitesList(d WebsitesDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:        "websites.list",
+		Name:        "websites_list",
 		Title:       "List websites",
 		Summary:     "List all websites",
 		Description: "List all websites for the authenticated user, returning each website's ID, domain, target CID, resolved CID, status, DNS-hosting flag and gateway.",
@@ -154,7 +154,7 @@ func websitesList(d WebsitesDeps) catalog.Operation {
 // instruction enrichment is presentation and lives in the wiring layer.
 func websitesGet(d WebsitesDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:        "websites.get",
+		Name:        "websites_get",
 		Title:       "Get website details",
 		Summary:     "Get full details of one website",
 		Description: "Get full details of one website, selected by domain name or numeric ID (either works): ID, domain, CID, resolved CID, target type, status, DNS-hosting flag, validation token, gateway, and associated IPNS key / DNS zone IDs.",
@@ -199,7 +199,7 @@ func websitesGet(d WebsitesDeps) catalog.Operation {
 // disables; otherwise the field is left nil.
 func websitesCreate(d WebsitesDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:        "websites.create",
+		Name:        "websites_create",
 		Title:       "Create a website",
 		Summary:     "Create a new website",
 		Description: "Create a website that serves an IPFS CID under a custom domain. Takes the <domain> positional and --cid (required), plus optional --target-type (ipfs|ipns) and --dns-hosting. Returns the created website object including its numeric ID, validation TXT token, and DNS records you must publish.",
@@ -225,11 +225,11 @@ func websitesCreate(d WebsitesDeps) catalog.Operation {
 			}
 			domain := catalog.StrArg(input, "website", "")
 			if domain == "" {
-				return nil, fmt.Errorf("websites.create: domain is required")
+				return nil, fmt.Errorf("websites_create: domain is required")
 			}
 			cid := catalog.StrArg(input, "cid", "")
 			if cid == "" {
-				return nil, fmt.Errorf("websites.create: --cid is required")
+				return nil, fmt.Errorf("websites_create: --cid is required")
 			}
 			targetType := catalog.StrArg(input, "target-type", "ipfs")
 			req := ipfs.WebsiteRequest{
@@ -258,7 +258,7 @@ func websitesCreate(d WebsitesDeps) catalog.Operation {
 // dns-hosting/no-dns-hosting -> req.DnsHostingEnabled.
 func websitesUpdate(d WebsitesDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:        "websites.update",
+		Name:        "websites_update",
 		Title:       "Update a website",
 		Summary:     "Update a website",
 		Description: "Update an existing website: change its CID, target type (ipfs|ipns), rename its domain (--rename-to), or toggle DNS hosting. Selects the site by the <domain> positional, then applies whichever optional flags are set (at least one is required). Returns the updated website object.",
@@ -322,7 +322,7 @@ func websitesUpdate(d WebsitesDeps) catalog.Operation {
 // with --cid): it auto-creates an IPNS key and publishes the current CID to it.
 func websitesEnableIPNS(d WebsitesDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:        "websites.enable-ipns",
+		Name:        "websites_enable_ipns",
 		Title:       "Enable IPNS targeting",
 		Summary:     "Enable IPNS targeting for a website",
 		Description: "Convert a website from IPFS to IPNS targeting (alias 'ipns'). Auto-creates an IPNS key for the site and publishes the current CID to it, or, with --cid, publishes that CID instead. Returns the updated website including its new IPNS key ID.",
@@ -369,7 +369,7 @@ type WebsiteDeleteResult struct {
 // the resolved ID so the frontend can render a confirmation.
 func websitesDelete(d WebsitesDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:        "websites.delete",
+		Name:        "websites_delete",
 		Title:       "Delete a website",
 		Summary:     "Delete a website",
 		Description: "Delete a website, selected by domain name or numeric ID. DESTRUCTIVE and irreversible: there is no undo. Requires --force. Does NOT delete the website's DNS zone or its IPNS keys.",
@@ -413,7 +413,7 @@ func websitesDelete(d WebsitesDeps) catalog.Operation {
 // left to the wiring layer, not part of the core validate data contract.
 func websitesValidate(d WebsitesDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:        "websites.validate",
+		Name:        "websites_validate",
 		Title:       "Validate a website",
 		Summary:     "Validate a website's DNS records",
 		Description: "Validate that a website's DNS records are correctly configured (TXT validation token + _dnslink). Selects the site by domain name or numeric ID. Returns a valid/message/reason result.",
@@ -452,7 +452,7 @@ func websitesValidate(d WebsitesDeps) catalog.Operation {
 // the data contract and is left to the CLI wiring layer.
 func websitesSSLStatus(d WebsitesDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:        "websites.ssl.status",
+		Name:        "websites_ssl_status",
 		Title:       "SSL certificate status",
 		Summary:     "Get SSL certificate status for a website",
 		Description: "Get SSL certificate status for a website domain: certificate status (active, pending, error, etc.), issuance date, last-update timestamp, and any error messages.",
@@ -486,7 +486,7 @@ func websitesSSLStatus(d WebsitesDeps) catalog.Operation {
 // *ipfs.WebsiteConfigResponse (gateway domain + nameservers).
 func websitesConfig(d WebsitesDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:        "websites.config",
+		Name:        "websites_config",
 		Title:       "Website hosting configuration",
 		Summary:     "Show website hosting configuration",
 		Description: "Show the account-wide website hosting configuration: the Pinner gateway domain and the nameservers used for DNS hosting.",

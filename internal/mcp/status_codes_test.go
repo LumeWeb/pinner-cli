@@ -35,8 +35,8 @@ func TestRequiresAuthResult(t *testing.T) {
 	require.False(t, r.IsError)
 	sc := r.StructuredContent.(map[string]any)
 	assert.Equal(t, StatusRequiresAuth, sc["status"])
-	assert.Equal(t, "pinner_auth_sso", sc["resume_tool"])
-	assert.Contains(t, r.Text, "pinner_auth_sso")
+	assert.Equal(t, "auth_sso", sc["resume_tool"])
+	assert.Contains(t, r.Text, "auth_sso")
 }
 
 // TestAsyncStatusPollFlow exercises the async pattern end to end: start a

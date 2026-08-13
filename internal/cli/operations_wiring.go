@@ -62,7 +62,7 @@ func newOperationsCommandCatalog() *cli.Command {
 	out := make([]*cli.Command, 0, len(compiled))
 	for _, c := range compiled {
 		canonical := c.Name // e.g. "operations.list"
-		c.Name = strings.TrimPrefix(canonical, "operations.")
+		c.Name = strings.TrimPrefix(canonical, "operations_")
 		c.Category = "Management"
 		relaxFlagRequired(c)
 
@@ -118,7 +118,7 @@ func operationsActionAdapter(op catalog.Operation) cli.ActionFunc {
 		// `operations list --watch` polls until the list settles. Driving it
 		// from the wiring (not the catalogops handler) keeps catalogops
 		// IO-agnostic.
-		if op.Name() == "operations.list" && c.Bool(FlagWatch) && !setupOutput(c).IsJSON() {
+		if op.Name() == "operations_list" && c.Bool(FlagWatch) && !setupOutput(c).IsJSON() {
 			return watchCatalogOperationsList(ctx, c, op, input)
 		}
 

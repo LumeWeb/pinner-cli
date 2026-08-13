@@ -133,10 +133,10 @@ func TestAsyncUploadToolsRegistered(t *testing.T) {
 	for _, d := range descs {
 		names[d.Name] = true
 	}
-	require.True(t, names["pinner_upload_file_async"])
-	require.True(t, names["pinner_upload_status"])
-	require.True(t, names["pinner_upload_cancel"])
-	require.True(t, names["pinner_upload_list"])
+	require.True(t, names["upload_file_async"])
+	require.True(t, names["upload_status"])
+	require.True(t, names["upload_cancel"])
+	require.True(t, names["upload_list"])
 }
 
 func TestAsyncUploadStatusToolMissingHandle(t *testing.T) {
@@ -146,7 +146,7 @@ func TestAsyncUploadStatusToolMissingHandle(t *testing.T) {
 	descs := NewAsyncUploadTools(mgr)
 	var status *ToolDescriptor
 	for i := range descs {
-		if descs[i].Name == "pinner_upload_status" {
+		if descs[i].Name == "upload_status" {
 			status = &descs[i]
 		}
 	}

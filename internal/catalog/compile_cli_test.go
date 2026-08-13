@@ -25,8 +25,8 @@ func TestCLICompilerCommandCount(t *testing.T) {
 // TestCLICompilerCommandIdentity checks the declared Command fields derived from
 // the Operation (name, usage from Summary, description).
 func TestCLICompilerCommandIdentity(t *testing.T) {
-	op := compiledOp(t, "vault.create")
-	if op.Name != "vault.create" {
+	op := compiledOp(t, "vault_create")
+	if op.Name != "vault_create" {
 		t.Fatalf("cmd.Name = %q, want vault.create", op.Name)
 	}
 	if op.Usage != "create a vault" {
@@ -44,7 +44,7 @@ func TestCLICompilerCommandIdentity(t *testing.T) {
 
 // TestCLICompilerFlagMapping asserts each ArgType becomes the matching urfave flag.
 func TestCLICompilerFlagMapping(t *testing.T) {
-	cmd := compiledOp(t, "vault.create")
+	cmd := compiledOp(t, "vault_create")
 
 	want := map[string]struct {
 		wantType string // %T of the flag
@@ -208,7 +208,7 @@ func TestCLICompilerRejectsForceArgOnDestructive(t *testing.T) {
 }
 
 // buildCompileSample returns a catalog with a Read, Mutate, Destructive, and
-// HumanOnly operation. The mutate op ("vault.create") carries one flag of every
+// HumanOnly operation. The mutate op ("vault_create") carries one flag of every
 // ArgType to exercise flag mapping.
 func buildCompileSample(t *testing.T) Catalog {
 	t.Helper()
@@ -228,7 +228,7 @@ func buildCompileSample(t *testing.T) Catalog {
 	}))
 
 	ok(NewOperation(OperationSpec{
-		Name: "vault.create", Title: "Create Vault", Summary: "create a vault",
+		Name: "vault_create", Title: "Create Vault", Summary: "create a vault",
 		Description: "long vault create description", Positional: "NAME",
 		Category: "vault", Safety: SafetyMutate, Interaction: InteractionAgentSafe, Visibility: VisibilityModel,
 		Args: []OperationArg{

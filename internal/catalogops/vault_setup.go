@@ -60,11 +60,11 @@ func VaultSetupOperations(d VaultDeps) []catalog.Operation {
 
 func vaultCreate(d VaultDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:             "vault.create",
+		Name:             "vault_create",
 		Title:            "Create a new vault",
 		Summary:          "Provision and activate a new vault with a fresh recovery seed",
 		Description:      "Provision a new vault identity under the given profile name. The create is completed out-of-band: the human approves the Sia device connection in a browser and retrieves the freshly generated recovery seed once. Returns the profile targeted by the create.",
-		AgentDescription: "Provision a new vault under a profile and hand the host off to a human. The create is completed out-of-band: the human opens the returned create_url, approves the Sia device connection in a browser, and retrieves the one-time recovery seed. Poll the returned pinner_vault_create_resume handle until the vault is active and the seed has been retrieved. The plaintext mnemonic never appears on this channel.",
+		AgentDescription: "Provision a new vault under a profile and hand the host off to a human. The create is completed out-of-band: the human opens the returned create_url, approves the Sia device connection in a browser, and retrieves the one-time recovery seed. Poll the returned vault_create_resume handle until the vault is active and the seed has been retrieved. The plaintext mnemonic never appears on this channel.",
 		Category:         "vault",
 		Safety:           catalog.SafetyMutate,
 		Interaction:      catalog.InteractionAgentSafe,
@@ -76,14 +76,14 @@ func vaultCreate(d VaultDeps) catalog.Operation {
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			profileName := catalog.StrArg(input, "profile", "")
 			if profileName == "" {
-				return nil, fmt.Errorf("vault.create: --profile <name> is required to provision a new vault")
+				return nil, fmt.Errorf("vault_create: --profile <name> is required to provision a new vault")
 			}
 			if d.Provisioner == nil {
-				return nil, fmt.Errorf("vault.create: no provisioning service wired")
+				return nil, fmt.Errorf("vault_create: no provisioning service wired")
 			}
 			prov := d.Provisioner()
 			if prov == nil {
-				return nil, fmt.Errorf("vault.create: no provisioning service wired")
+				return nil, fmt.Errorf("vault_create: no provisioning service wired")
 			}
 			// Validate the profile name up front (fail fast before minting an
 			// out-of-band create URL) without creating any local vault state; the
@@ -141,11 +141,11 @@ func resolveRestoreProfile(flagValue string) (string, error) {
 
 func vaultRestore(d VaultDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:             "vault.restore",
+		Name:             "vault_restore",
 		Title:            "Restore a vault",
 		Summary:          "Start an out-of-band restore for a vault profile",
 		Description:      "Start restoring an existing vault on this device from a recovery seed supplied out-of-band by a human in a browser. Resolves the target profile and returns it so an out-of-band restore_url can be minted; the restore itself completes when the human enters the seed on that page. The seed never crosses the agent channel.",
-		AgentDescription: "Start an out-of-band vault restore for a profile. An out-of-band restore_url is returned for the human to open in a browser and enter the recovery seed to complete the restore; poll the returned pinner_vault_restore_resume handle until done. The seed never appears on this channel.",
+		AgentDescription: "Start an out-of-band vault restore for a profile. An out-of-band restore_url is returned for the human to open in a browser and enter the recovery seed to complete the restore; poll the returned vault_restore_resume handle until done. The seed never appears on this channel.",
 		Category:         "vault",
 		Safety:           catalog.SafetyMutate,
 		Interaction:      catalog.InteractionAgentSafe,

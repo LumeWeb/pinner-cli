@@ -42,16 +42,15 @@ func renderPinCreateAppHTML() string {
 	return renderMcpAppDoc("Create a Pin", pinCreateAppForm(), pinAppModule(extAppsClientBase64()))
 }
 
-// attachPinAppMeta wires pins.add (the compiler-backed pin-creation operation
+// attachPinAppMeta wires pins_add (the compiler-backed pin-creation operation
 // from the operation catalog) to its ui:// app resource so a UI-capable host
 // renders the create-pin view for it. Plain hosts keep the tool's text result.
-// The entry's existing metadata is extended. pins.add is the curated pin tool
-// that survived the compiler-only surface migration (the legacy pinner_pin
-// tool was removed with the CLI-tree walk).
+// The entry's existing metadata is extended. pins_add is the curated pin tool
+// on the compiler surface.
 func attachPinAppMeta(catalog *ToolCatalog) error {
-	entry, ok := catalog.Get("pins.add")
+	entry, ok := catalog.Get("pins_add")
 	if !ok {
-		return fmt.Errorf("pins.add not in catalog")
+		return fmt.Errorf("pins_add not in catalog")
 	}
 	meta, err := marshalToolMeta(AppToolMeta{ResourceURI: PinCreateAppURI})
 	if err != nil {
@@ -71,7 +70,7 @@ func attachPinAppMeta(catalog *ToolCatalog) error {
 // calls it via callServerTool to poll until a terminal state.
 func pinStatusDescriptor(pins PinningProvider) ToolDescriptor {
 	return ToolDescriptor{
-		Name:        "pinner_pin_status",
+		Name:        "pin_status",
 		Description: "Poll the current status of a pinned CID. App-only helper for the Create a Pin view.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"cid":{"type":"string"}},"required":["cid"]}`),
 		Handler: func(ctx context.Context, req ToolRequest) (ToolResult, error) {
@@ -92,9 +91,9 @@ func pinStatusDescriptor(pins PinningProvider) ToolDescriptor {
 }
 
 // RegisterPinApp wires the complete "Create a Pin" MCP App:
-//   - attaches the ui:// view to the curated pins.add tool,
+//   - attaches the ui:// view to the curated pins_add tool,
 //   - registers the ui://pins/create.html HTML resource,
-//   - registers the app-only pinner_pin_status polling helper.
+//   - registers the app-only pin_status polling helper.
 //
 // Returns an error if the pin tool is missing from the catalog. App wiring is
 // additive: existing curated tools and plain-host text results are preserved.

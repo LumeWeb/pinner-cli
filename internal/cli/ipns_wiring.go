@@ -78,9 +78,9 @@ func newIPNSCommandCatalog() *cli.Command {
 	for _, c := range compiled {
 		canonical := c.Name // e.g. "ipns.keys.list", BEFORE mount mutates it
 		mounted := mountIPNSCatalogCommand(c)
-		rest := strings.TrimPrefix(canonical, "ipns.")
-		if idx := strings.Index(rest, "."); idx > 0 {
-			// Two-level: parent.child (keys.list, keys.create, keys.get, keys.delete)
+		rest := strings.TrimPrefix(canonical, "ipns_")
+		if idx := strings.Index(rest, "_"); idx > 0 {
+			// Two-level: parent_child (keys_list, keys_create, keys_get, keys_delete)
 			parentName := rest[:idx]
 			parent, ok := parents[parentName]
 			if !ok {
@@ -105,12 +105,12 @@ func newIPNSCommandCatalog() *cli.Command {
 }
 
 // mountIPNSCatalogCommand adapts a single catalog-compiled command (dotted name
-// like "ipns.keys.list") into a live ipns subcommand: it strips the "ipns."
+// like "ipns_keys_list") into a live ipns subcommand: it strips the "ipns_"
 // group prefix, relaxes parsed-time required flags so positionals can supply
 // them, and wraps the Action with the CLI-input adapter.
 func mountIPNSCatalogCommand(cmd *cli.Command) *cli.Command {
 	canonical := cmd.Name
-	display := strings.TrimPrefix(canonical, "ipns.")
+	display := strings.TrimPrefix(canonical, "ipns_")
 	cmd.Name = display
 	cmd.Category = "Management"
 	relaxFlagRequired(cmd)

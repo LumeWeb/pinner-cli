@@ -65,7 +65,7 @@ func apiKeysParent() *cli.Command {
 	out := make([]*cli.Command, 0, len(compiled))
 	for _, c := range compiled {
 		canonical := c.Name // e.g. "api-keys.list"
-		leaf := canonical[len("api-keys."):]
+		leaf := canonical[len("api_keys_"):]
 		c.Name = leaf
 		c.Category = "Management"
 		relaxFlagRequired(c)

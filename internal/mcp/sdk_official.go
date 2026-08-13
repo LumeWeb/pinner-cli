@@ -277,7 +277,7 @@ func registerOfficialSearchTools(srv *mcp.Server, catalog *ToolCatalog) error {
 	schema := &metaToolSchema{}
 	schema.property("query", map[string]any{
 		"type":        "string",
-		"description": "Keywords to search for in tool names and descriptions. Supports subsequence matching (e.g. 'pload' matches 'pinner_upload'). Leave empty to return all tools.",
+		"description": "Keywords to search for in tool names and descriptions. Supports subsequence matching (e.g. 'pload' matches 'upload'). Leave empty to return all tools.",
 	})
 	schema.property("category", map[string]any{
 		"type":        "string",

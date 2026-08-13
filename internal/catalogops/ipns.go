@@ -75,7 +75,7 @@ func IPNSOperations(d IPNSDeps) []catalog.Operation {
 
 func ipnsKeysList(d IPNSDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name: "ipns.keys.list", Title: "List IPNS keys", Summary: "List all IPNS keys",
+		Name: "ipns_keys_list", Title: "List IPNS keys", Summary: "List all IPNS keys",
 		Description: "List all IPNS keys for the authenticated account.",
 		Category:    "ipns", Safety: catalog.SafetyRead, Interaction: catalog.InteractionAgentSafe, Visibility: catalog.VisibilityBoth,
 		Positional: "", Args: nil,
@@ -94,7 +94,7 @@ func ipnsKeysList(d IPNSDeps) catalog.Operation {
 
 func ipnsKeysCreate(d IPNSDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name: "ipns.keys.create", Title: "Create an IPNS key", Summary: "Create a new IPNS key",
+		Name: "ipns_keys_create", Title: "Create an IPNS key", Summary: "Create a new IPNS key",
 		Description: "Create a new IPNS key, optionally importing an existing private key via --key.",
 		Category:    "ipns", Safety: catalog.SafetyMutate, Interaction: catalog.InteractionAgentSafe, Visibility: catalog.VisibilityBoth,
 		Positional: "<name>",
@@ -112,7 +112,7 @@ func ipnsKeysCreate(d IPNSDeps) catalog.Operation {
 			}
 			name := catalog.StrArg(input, "name", "")
 			if name == "" {
-				return nil, fmt.Errorf("ipns.keys.create: key name is required")
+				return nil, fmt.Errorf("ipns_keys_create: key name is required")
 			}
 			var key *string
 			if k := catalog.StrArg(input, "key", ""); k != "" {
@@ -125,7 +125,7 @@ func ipnsKeysCreate(d IPNSDeps) catalog.Operation {
 
 func ipnsKeysGet(d IPNSDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name: "ipns.keys.get", Title: "Get an IPNS key", Summary: "Get details of a specific IPNS key",
+		Name: "ipns_keys_get", Title: "Get an IPNS key", Summary: "Get details of a specific IPNS key",
 		Description: "Get the full details (name, ID, sequence) of a single IPNS key.",
 		Category:    "ipns", Safety: catalog.SafetyRead, Interaction: catalog.InteractionAgentSafe, Visibility: catalog.VisibilityBoth,
 		Positional: "<id>",
@@ -142,7 +142,7 @@ func ipnsKeysGet(d IPNSDeps) catalog.Operation {
 			}
 			id := catalog.StrArg(input, "id", "")
 			if id == "" {
-				return nil, fmt.Errorf("ipns.keys.get: key ID is required")
+				return nil, fmt.Errorf("ipns_keys_get: key ID is required")
 			}
 			return svc.GetKey(ctx, id)
 		}),
@@ -151,7 +151,7 @@ func ipnsKeysGet(d IPNSDeps) catalog.Operation {
 
 func ipnsKeysDelete(d IPNSDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name: "ipns.keys.delete", Title: "Delete an IPNS key", Summary: "Delete an IPNS key",
+		Name: "ipns_keys_delete", Title: "Delete an IPNS key", Summary: "Delete an IPNS key",
 		Description: "Delete an IPNS key by ID. Destructive: requires --force.",
 		Category:    "ipns", Safety: catalog.SafetyDestructive, Interaction: catalog.InteractionAgentSafe, Visibility: catalog.VisibilityBoth,
 		Positional: "<id>",
@@ -168,7 +168,7 @@ func ipnsKeysDelete(d IPNSDeps) catalog.Operation {
 			}
 			id := catalog.StrArg(input, "id", "")
 			if id == "" {
-				return nil, fmt.Errorf("ipns.keys.delete: key ID is required")
+				return nil, fmt.Errorf("ipns_keys_delete: key ID is required")
 			}
 			return nil, svc.DeleteKey(ctx, id)
 		}),
@@ -177,7 +177,7 @@ func ipnsKeysDelete(d IPNSDeps) catalog.Operation {
 
 func ipnsPublish(d IPNSDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name: "ipns.publish", Title: "Publish a CID to IPNS", Summary: "Publish a CID under an IPNS key",
+		Name: "ipns_publish", Title: "Publish a CID to IPNS", Summary: "Publish a CID under an IPNS key",
 		Description: "Publish a CID to an IPNS key, optionally with a TTL.",
 		Category:    "ipns", Safety: catalog.SafetyMutate, Interaction: catalog.InteractionAgentSafe, Visibility: catalog.VisibilityBoth,
 		Positional: "<cid>",
@@ -196,7 +196,7 @@ func ipnsPublish(d IPNSDeps) catalog.Operation {
 			}
 			cid := catalog.StrArg(input, "cid", "")
 			if cid == "" {
-				return nil, fmt.Errorf("ipns.publish: CID is required")
+				return nil, fmt.Errorf("ipns_publish: CID is required")
 			}
 			var ttl *string
 			if t := catalog.StrArg(input, "ttl", ""); t != "" {
@@ -209,7 +209,7 @@ func ipnsPublish(d IPNSDeps) catalog.Operation {
 
 func ipnsRepublish(d IPNSDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name: "ipns.republish", Title: "Republish an IPNS record", Summary: "Republish an IPNS record for a key",
+		Name: "ipns_republish", Title: "Republish an IPNS record", Summary: "Republish an IPNS record for a key",
 		Description: "Republish an existing IPNS record for a key.",
 		Category:    "ipns", Safety: catalog.SafetyMutate, Interaction: catalog.InteractionAgentSafe, Visibility: catalog.VisibilityBoth,
 		Positional: "",
@@ -231,7 +231,7 @@ func ipnsRepublish(d IPNSDeps) catalog.Operation {
 
 func ipnsResolve(d IPNSDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name: "ipns.resolve", Title: "Resolve an IPNS name", Summary: "Resolve an IPNS name to a CID",
+		Name: "ipns_resolve", Title: "Resolve an IPNS name", Summary: "Resolve an IPNS name to a CID",
 		Description: "Resolve an IPNS name to the CID it points to.",
 		Category:    "ipns", Safety: catalog.SafetyRead, Interaction: catalog.InteractionAgentSafe, Visibility: catalog.VisibilityBoth,
 		Positional: "<name>",
@@ -248,7 +248,7 @@ func ipnsResolve(d IPNSDeps) catalog.Operation {
 			}
 			name := catalog.StrArg(input, "name", "")
 			if name == "" {
-				return nil, fmt.Errorf("ipns.resolve: name is required")
+				return nil, fmt.Errorf("ipns_resolve: name is required")
 			}
 			return svc.Resolve(ctx, name)
 		}),

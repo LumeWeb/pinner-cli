@@ -106,7 +106,7 @@ func DNSOperations(d DNSDeps) []catalog.Operation {
 // dnsZonesList is the `dns zones list` operation.
 func dnsZonesList(d DNSDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:        "dns.zones.list",
+		Name:        "dns_zones_list",
 		Title:       "List DNS zones",
 		Summary:     "List all DNS zones",
 		Description: "List all DNS zones for the authenticated user. Returns each zone's ID, domain, status, optional PowerDNS zone ID and created timestamp.",
@@ -136,7 +136,7 @@ func dnsZonesList(d DNSDeps) catalog.Operation {
 // comma-separated nameservers and validates the domain before creating.
 func dnsZonesCreate(d DNSDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:        "dns.zones.create",
+		Name:        "dns_zones_create",
 		Title:       "Create a DNS zone",
 		Summary:     "Create a new DNS zone",
 		Description: "Create a new DNS zone for a domain (the container that holds that domain's DNS records). Requires a domain; optionally supply nameservers as a comma-separated list. Returns the created zone including its numeric ID and PowerDNS zone ID.",
@@ -178,7 +178,7 @@ func dnsZonesCreate(d DNSDeps) catalog.Operation {
 // + GetZone).
 func dnsZonesGet(d DNSDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:        "dns.zones.get",
+		Name:        "dns_zones_get",
 		Title:       "Get a DNS zone",
 		Summary:     "Get a DNS zone by domain or ID",
 		Description: "Get details of one DNS zone, selected by domain name or numeric zone ID. Returns the zone's ID, domain, status, PowerDNS zone ID and created/updated timestamps. This returns the zone header only.",
@@ -218,7 +218,7 @@ func dnsZonesGet(d DNSDeps) catalog.Operation {
 // a numeric zone ID and deletes it, returning a confirmation result.
 func dnsZonesDelete(d DNSDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:        "dns.zones.delete",
+		Name:        "dns_zones_delete",
 		Title:       "Delete a DNS zone",
 		Summary:     "Delete a DNS zone",
 		Description: "Delete a DNS zone and the records inside it, selected by domain name or numeric zone ID. DESTRUCTIVE and irreversible: there is no undo, and every record in the zone is removed. Does NOT remove the domain's website binding.",
@@ -262,7 +262,7 @@ func dnsZonesDelete(d DNSDeps) catalog.Operation {
 // delegation check).
 func dnsZonesValidate(d DNSDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:        "dns.zones.validate",
+		Name:        "dns_zones_validate",
 		Title:       "Validate DNS zone",
 		Summary:     "Validate DNS zone nameserver delegation",
 		Description: "Validate that a DNS zone's nameservers are properly delegated (point to the expected Pinner.xyz nameservers). Selects the zone by domain name or numeric ID.",
@@ -305,7 +305,7 @@ func dnsZonesValidate(d DNSDeps) catalog.Operation {
 // domain/ID.
 func dnsRecordsList(d DNSDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:        "dns.records.list",
+		Name:        "dns_records_list",
 		Title:       "List DNS records",
 		Summary:     "List DNS records for a zone",
 		Description: "List all DNS records for a zone, given the zone's domain (or numeric ID) as the positional argument. Returns each record's name/type/content/TTL and disabled state.",
@@ -347,7 +347,7 @@ func dnsRecordsList(d DNSDeps) catalog.Operation {
 // type/content are validated before create.
 func dnsRecordsCreate(d DNSDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:        "dns.records.create",
+		Name:        "dns_records_create",
 		Title:       "Create a DNS record",
 		Summary:     "Create a DNS record",
 		Description: "Create a DNS record (A/AAAA/CNAME/MX/NS/TXT) in the specified zone. --name is optional (omit or use @ for the apex); --type and --content are required; --ttl defaults to 3600. Returns the created record.",
@@ -418,7 +418,7 @@ func dnsRecordsCreate(d DNSDeps) catalog.Operation {
 // (positional domain/ID) + --name + --type.
 func dnsRecordsGet(d DNSDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:        "dns.records.get",
+		Name:        "dns_records_get",
 		Title:       "Get a DNS record",
 		Summary:     "Get a DNS record",
 		Description: "Get one DNS record, uniquely identified by the zone's domain (positional) plus --name (label, or @ for apex) and --type. Returns the record's content, TTL and disabled state.",
@@ -467,7 +467,7 @@ func dnsRecordsGet(d DNSDeps) catalog.Operation {
 // are left unchanged.
 func dnsRecordsUpdate(d DNSDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:        "dns.records.update",
+		Name:        "dns_records_update",
 		Title:       "Update a DNS record",
 		Summary:     "Update a DNS record",
 		Description: "Update an existing DNS record, identified by the zone's domain (positional) + --name and --type. Change its --content, --ttl, or --disabled state; fields not provided are left unchanged. Returns the updated record.",
@@ -539,7 +539,7 @@ func dnsRecordsUpdate(d DNSDeps) catalog.Operation {
 // locally so all callers are covered.
 func dnsRecordsDelete(d DNSDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:        "dns.records.delete",
+		Name:        "dns_records_delete",
 		Title:       "Delete a DNS record",
 		Summary:     "Delete a DNS record",
 		Description: "Delete a DNS record, identified by the zone's domain (positional) + --name and --type. DESTRUCTIVE and irreversible. Deletes one record only; to remove the whole zone use dns zones delete.",

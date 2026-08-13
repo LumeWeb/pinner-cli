@@ -502,7 +502,7 @@ func (o *OutOfBandLogin) authLoginSubmit(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	// The human may edit the account identifier on the page (the agent-supplied
-	// email for pinner_auth_sso is only a prefill). Bind the posted value into
+	// email for auth_sso is only a prefill). Bind the posted value into
 	// the request so LoginCheck, the brute-force throttle, and the OTP stage all
 	// key on the account the human actually entered.
 	if email := strings.TrimSpace(r.FormValue("email")); email != "" {

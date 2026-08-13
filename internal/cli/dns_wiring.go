@@ -96,12 +96,11 @@ func newDNSCommand() *cli.Command {
 	leaves := compiled
 	groups := map[string][]*cli.Command{}
 	for _, c := range leaves {
-		if !strings.HasPrefix(c.Name, "dns.") {
+		if !strings.HasPrefix(c.Name, "dns_") {
 			continue // skip anything not in the dns domain
 		}
-		rest := strings.TrimPrefix(c.Name, "dns.")
-		rest = strings.TrimPrefix(rest, ".")
-		seg := strings.SplitN(rest, ".", 2)
+		rest := strings.TrimPrefix(c.Name, "dns_")
+		seg := strings.SplitN(rest, "_", 2)
 		if len(seg) != 2 {
 			continue
 		}
@@ -150,7 +149,7 @@ func newDNSCommand() *cli.Command {
 // "zone" input, enforces the destructive --force gate for delete operations,
 // then invokes the handler and renders the result via renderDNSResult.
 func dnsCatalogActionAdapter(c *cli.Command, group, leaf string) cli.ActionFunc {
-	canonicalName := "dns." + group + "." + leaf
+	canonicalName := "dns_" + group + "_" + leaf
 
 	return func(ctx context.Context, cmd *cli.Command) error {
 		// Build the input map from the compiler-declared flags plus the
