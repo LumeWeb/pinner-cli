@@ -12,6 +12,7 @@ type oauthAuthorizeData struct {
 	CodeChallenge       string
 	CodeChallengeMethod string
 	Resource            string
+	Error               string
 }
 
 templ oauthLoginPage(data oauthAuthorizeData) {
@@ -33,6 +34,9 @@ templ oauthLoginPage(data oauthAuthorizeData) {
 				<input type="hidden" name="resource" value={ data.Resource }/>
 				<label for="password">Auth secret</label>
 				<input type="password" id="password" name="password" required autofocus autocomplete="current-password"/>
+				if data.Error != "" {
+					<p class="error">{ data.Error }</p>
+				}
 				<button type="submit">Authorize</button>
 			</form>
 		</div>

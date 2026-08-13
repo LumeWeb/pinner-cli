@@ -345,7 +345,22 @@ func (o *oauthServer) authorizePOST(w http.ResponseWriter, r *http.Request) {
 	password := r.PostFormValue("password")
 	if subtle.ConstantTimeCompare([]byte(password), o.secret) != 1 {
 		o.logf().Warn("OAuth authorize rejected: bad resource-owner secret", zap.String("client_id", r.PostFormValue("client_id")), zap.String("remote", r.RemoteAddr))
-		http.Error(w, "invalid password", http.StatusUnauthorized)
+		// Re-render the login page so a human who mistyped the shared secret
+		// sees a branded retry form rather than a bare text/JSON error. Keep
+		// 401 so programmatic clients still observe the failed authorization.
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = oauthLoginPage(oauthAuthorizeData{
+			Action:              o.baseURL + "/oauth/authorize",
+			ResponseType:        r.PostFormValue("response_type"),
+			ClientID:            r.PostFormValue("client_id"),
+			RedirectURI:         r.PostFormValue("redirect_uri"),
+			State:               r.PostFormValue("state"),
+			CodeChallenge:       r.PostFormValue("code_challenge"),
+			CodeChallengeMethod: r.PostFormValue("code_challenge_method"),
+			Resource:            r.PostFormValue("resource"),
+			Error:               "Invalid auth secret. Please try again.",
+		}).Render(r.Context(), w)
 		return
 	}
 	if err := o.validateAuthorizeRequest(r.PostForm); err != nil {
