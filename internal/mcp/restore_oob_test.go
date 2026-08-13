@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"errors"
+	"html"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -110,6 +111,16 @@ func TestOOBRestoreFormSingleUse(t *testing.T) {
 	require.Contains(t, okRec.Body.String(), "http://approve.sia", "the Sia approval URL must be streamed to the browser")
 	// And the result is rendered.
 	require.Contains(t, okRec.Body.String(), "vault-abc123")
+	// Streamed fragments must land INSIDE the page (before </body></html>), not
+	// as raw siblings after a closed document.
+	rbody := okRec.Body.String()
+	require.True(t, strings.Contains(rbody, "</html>"), "the restore progress page must close its document")
+	require.True(t, strings.Index(rbody, "http://approve.sia") < strings.Index(rbody, "</body>"),
+		"the streamed approval link must appear before the closing </body>")
+	require.True(t, strings.Index(rbody, "vault-abc123") < strings.Index(rbody, "</body>"),
+		"the streamed result must appear before the closing </body>")
+	require.True(t, strings.Index(rbody, `id="status"`) < strings.Index(rbody, "</body>"),
+		"the #status container must open before </body> so fragments render inside it")
 
 	// The token is now consumed: a repeat POST is spent (410 + spent page),
 	// not found, and must not run restore again.
@@ -254,8 +265,9 @@ func TestOOBRestoreErrorEscapedAndMarked(t *testing.T) {
 	require.Contains(t, postRec.Body.String(), `id="restore-error"`, "the failure must carry a distinct detectable marker")
 
 	// The error is escaped in the streamed page (no raw injected markup).
-	require.Contains(t, postRec.Body.String(), htmlEscape(runner.err.Error()))
-	require.NotContains(t, postRec.Body.String(), "<script>", "error markup must be escaped, not reflected as executable HTML")
+	require.Contains(t, postRec.Body.String(), html.EscapeString(runner.err.Error()))
+	require.NotContains(t, postRec.Body.String(), `alert("x")`, "error markup must be escaped, not reflected as executable HTML")
+	require.NotContains(t, postRec.Body.String(), `<script>alert`, "the raw script tag must not be reflected verbatim")
 
 	// The token is consumed after a genuine (failed) attempt: a re-POST is spent.
 	repeat := httptest.NewRequest(http.MethodPost, url, strings.NewReader("mnemonic=again"))

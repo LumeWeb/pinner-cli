@@ -3,12 +3,12 @@ package mcp
 import (
 	"context"
 	"fmt"
-	"html/template"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/a-h/templ"
 	"go.uber.org/zap"
 )
 
@@ -29,8 +29,6 @@ import (
 type OOBRestore struct {
 	runner RestoreRunner
 	core   handoffEndpoint
-	// html holds the parsed restore form template.
-	html *template.Template
 
 	// mu guards outcomes. outcomes records the terminal outcome of each
 	// restore attempt so the resume continuation can distinguish a succeeded
@@ -65,8 +63,7 @@ func NewOOBRestore(runner RestoreRunner, ttl time.Duration) *OOBRestore {
 	if ttl <= 0 {
 		ttl = DefaultRestoreTTL
 	}
-	html := template.Must(template.New("restore").Parse(restorePageHTML))
-	o := &OOBRestore{runner: runner, html: html, outcomes: map[string]*restoreOutcome{}}
+	o := &OOBRestore{runner: runner, outcomes: map[string]*restoreOutcome{}}
 	o.core = *newHandoff("restore", o, ttl)
 	return o
 }
@@ -109,10 +106,7 @@ func (o *OOBRestore) renderGET(w http.ResponseWriter, r *http.Request, token str
 	payload, _ := item.payload.(*restorePayload)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	_ = o.html.Execute(w, map[string]any{
-		"Profile": payload.profile,
-		"Token":   token,
-	})
+	_ = restoreVaultPage(payload.profile, token).Render(r.Context(), w)
 }
 
 // consumePOST implements handoffHandler: run the restore with the submitted
@@ -184,22 +178,30 @@ func (o *OOBRestore) consumePOST(w http.ResponseWriter, r *http.Request, token s
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	flusher, hasFlusher := w.(http.Flusher)
-	stream := func(s string) {
-		fmt.Fprint(w, s)
+	flush := func() {
 		if hasFlusher {
 			flusher.Flush()
 		}
 	}
+	stream := func(s string) {
+		fmt.Fprint(w, s)
+		flush()
+	}
+	streamComp := func(comp templ.Component) {
+		_ = comp.Render(r.Context(), w)
+		flush()
+	}
 
-	progress := progressPageStart(htmlEscape(profile))
-	stream(progress)
+	// Opening shell (branded) stops before </body></html>; the fragments below
+	// stream INSIDE #status before progressPageEnd closes the document.
+	stream(restoreVaultProgressStart(profile))
 
 	// Run the restore. On a fresh device it blocks waiting for the Sia browser
 	// approval; onApproval streams the approval link to this page so the human
 	// is told where to approve rather than hanging silently. The approval URL
 	// arrives before WaitAndRegister blocks, so the link is rendered first.
 	vaultID, err := o.runner.RunRestore(r.Context(), profile, mnemonic, func(approvalURL string) {
-		stream(progressPageApproval(htmlEscape(profile), htmlEscape(approvalURL)))
+		streamComp(restoreVaultApproval(approvalURL))
 	})
 	if err != nil {
 		settle(false, err.Error())
@@ -210,11 +212,11 @@ func (o *OOBRestore) consumePOST(w http.ResponseWriter, r *http.Request, token s
 		// consumers alike, render a distinct error banner (no-store prevents
 		// caching) and escape the error text, which may embed mnemonic-derived
 		// content, so it cannot be reflected as executable markup.
-		stream(progressPageError(htmlEscape(err.Error())))
+		streamComp(restoreVaultError(err.Error()))
 		stream(progressPageEnd())
 		return
 	}
-	stream(progressPageDone(htmlEscape(profile), htmlEscape(vaultID)))
+	streamComp(restoreVaultDone(profile, vaultID))
 	stream(progressPageEnd())
 	settle(true, "")
 	return
@@ -227,56 +229,4 @@ func (o *OOBRestore) count() int {
 // setNow overrides the clock used for expiry (test seam).
 func (o *OOBRestore) setNow(f func() time.Time) {
 	o.core.setNow(f)
-}
-
-func htmlEscape(s string) string {
-	return strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&#34;", "'", "&#39;").Replace(s)
-}
-
-const restorePageHTML = `<!DOCTYPE html>
-<html><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Restore Pinner Vault</title>
-<style>
-body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:520px;margin:3rem auto;padding:0 1rem;color:#1a1a1a;line-height:1.5}
-h1{font-size:1.4rem;margin-bottom:.25rem}
-p.dim{color:#666}
-form{margin-top:1.5rem}
-textarea{width:100%;min-height:120px;font-family:ui-monospace,Menlo,Consolas,monospace;padding:.6rem;border:1px solid #ccc;border-radius:6px;font-size:14px}
-button{width:100%;padding:.7rem;margin-top:1rem;background:#111;color:#fff;border:0;border-radius:6px;font-size:1rem;cursor:pointer}
-button:hover{background:#000}
-.warn{background:#fff7ed;border:1px solid #fed7aa;border-radius:6px;padding:.75rem;font-size:.85rem;color:#7c2d12}
-footer{margin-top:2rem;font-size:.8rem;color:#999}
-</style></head>
-<body>
-<h1>Restore Pinner Vault</h1>
-<p>Profile: <strong>{{.Profile}}</strong></p>
-<p class="dim">Enter your recovery phrase to restore this vault. It is sent from your browser directly to the vault process on this machine and is used once.</p>
-<div class="warn">This recovery phrase is the only way back into the vault. Enter it only on a trusted device. The MCP/agent channel never sees it.</div>
-<form method="post" action="/restore/{{.Token}}">
-<label for="mnemonic">Recovery phrase</label><br>
-<textarea name="mnemonic" id="mnemonic" required autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="word1 word2 word3 ..."></textarea>
-<button type="submit">Restore vault</button>
-</form>
-<footer>One-time page. It expires if unused.</footer>
-</body></html>`
-
-func progressPageStart(profile string) string {
-	return "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>Restoring Pinner Vault</title><style>body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:520px;margin:3rem auto;padding:0 1rem;color:#1a1a1a;line-height:1.5}a{color:#0a66c2}footer{margin-top:2rem;font-size:.8rem;color:#999}</style></head><body><h1>Restoring Pinner Vault</h1><p>Profile: <strong>" + profile + "</strong></p><div id=\"status\">Starting restore...</div>"
-}
-
-func progressPageApproval(profile, approvalURL string) string {
-	return "<p>To finish restoring this vault, approve the device connection at:</p><p><a href=\"" + approvalURL + "\">" + approvalURL + "</a></p><p>Waiting for your approval...</p>"
-}
-
-func progressPageDone(profile, vaultID string) string {
-	return "<h2>Vault restored</h2><p>Profile <code>" + profile + "</code> is ready (vault ID " + vaultID + ").</p>"
-}
-
-func progressPageError(errMsg string) string {
-	return "<h2>Restore failed</h2><p id=\"restore-error\" role=\"alert\">" + errMsg + "</p>"
-}
-
-func progressPageEnd() string {
-	return "<footer>This page reflects the on-host restore state. The recovery phrase never leaves your browser.</footer></body></html>"
 }
