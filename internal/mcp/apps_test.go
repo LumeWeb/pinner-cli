@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"go.lumeweb.com/pinner-cli/internal/catalogops"
 )
 
 // fakePins is a controllable PinningProvider for app tests.
@@ -25,13 +27,13 @@ func (f *fakePins) PinStatus(_ context.Context, cid string) (PinStatusView, erro
 }
 
 // buildPinAppServer constructs the catalog + server the way the adapter does,
-// with a single pinner_pin curated tool, then registers the pin app and the
+// with a single pins.add curated tool, then registers the pin app and the
 // curated loop. Returns the ready server.
 func buildPinAppServer(t *testing.T, pins PinningProvider) *mcp.Server {
 	t.Helper()
 	catalog := NewToolCatalog()
 	catalog.Add(&ToolEntry{
-		Name:          "pinner_pin",
+		Name:          "pins.add",
 		Description:   "Pin an existing CID via the Pinner.xyz API.",
 		DirectVisible: true,
 		InputSchema:   json.RawMessage(`{"type":"object","properties":{"cid":{"type":"string"},"name":{"type":"string"}},"required":["cid"]}`),
@@ -73,7 +75,7 @@ func TestRegisterPinAppWire(t *testing.T) {
 		t.Fatalf("pin create resource not listed; got %#v", res.Resources)
 	}
 
-	// Tools: pinner_pin carries _meta.ui; pinner_pin_status is the app-only
+	// Tools: pins.add carries _meta.ui; pinner_pin_status is the app-only
 	// helper whose _meta.ui.visibility marks it "app" (the UI-capable host hides
 	// it from the model surface).
 	tres, err := cs.ListTools(ctx, nil)
@@ -83,18 +85,18 @@ func TestRegisterPinAppWire(t *testing.T) {
 	var pinTool, statusTool *mcp.Tool
 	for _, x := range tres.Tools {
 		switch x.Name {
-		case "pinner_pin":
+		case "pins.add":
 			pinTool = x
 		case "pinner_pin_status":
 			statusTool = x
 		}
 	}
 	if pinTool == nil {
-		t.Fatalf("pinner_pin not listed")
+		t.Fatalf("pins.add not listed")
 	}
 	ui, ok := pinTool.Meta["ui"].(map[string]any)
 	if !ok {
-		t.Fatalf("_meta.ui missing on pinner_pin: %T", pinTool.Meta["ui"])
+		t.Fatalf("_meta.ui missing on pins.add: %T", pinTool.Meta["ui"])
 	}
 	if got := ui["resourceUri"]; got != PinCreateAppURI {
 		t.Fatalf("_meta.ui.resourceUri = %#v, want %q", got, PinCreateAppURI)
@@ -275,5 +277,73 @@ func TestPinAppClientB64Decodes(t *testing.T) {
 	}
 	if !strings.Contains(string(raw), "PostMessageTransport") {
 		t.Fatalf("decoded client bundle does not contain PostMessageTransport")
+	}
+}
+
+// TestRegisterPinAppOnCompilerSurface guards the startup regression where
+// RegisterPinApp failed with "pinner_pin not in catalog" after the compiler-only
+// migration removed the legacy pinner_pin tool: the pin app must attach to the
+// compiled pins.add operation instead. It assembles the real operation-catalog
+// surface, populates a ToolCatalog as buildCatalog does, and confirms
+// RegisterPinApp (the exact step the server runs on startup) succeeds.
+func TestRegisterPinAppOnCompilerSurface(t *testing.T) {
+	cat, err := AssembleCatalogOps(&CatalogDepsBundle{Pins: catalogops.PinsDeps{}})
+	if err != nil {
+		t.Fatalf("AssembleCatalogOps: %v", err)
+	}
+	tc := NewToolCatalog()
+	if _, err := populateCatalogSurface(tc, cat); err != nil {
+		t.Fatalf("populateCatalogSurface: %v", err)
+	}
+	if _, ok := tc.Get("pins.add"); !ok {
+		t.Fatalf("pins.add must be present on the compiler surface (legacy pinner_pin is gone)")
+	}
+
+	// The pin app must wire without error against the compiler surface.
+	srv := NewOfficialServer(nil)
+	if err := RegisterPinApp(srv, tc, &fakePins{status: "pinned"}); err != nil {
+		t.Fatalf("RegisterPinApp on compiler surface must succeed, got: %v", err)
+	}
+	// The ui:// resource and app-only helper are registered.
+	cs := connectOfficialClient(t, srv)
+	ctx := context.Background()
+	res, err := cs.ListResources(ctx, nil)
+	if err != nil {
+		t.Fatalf("ListResources: %v", err)
+	}
+	var found bool
+	for _, r := range res.Resources {
+		if r.URI == PinCreateAppURI {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("pin create resource not listed")
+	}
+}
+
+// TestPinAppModuleTargetsExistingTool guards that the served Create-a-Pin app
+// module calls a tool that actually exists on the compiler surface. After the
+// compiler-only migration removed the legacy pinner_pin tool, the app's submit
+// handler must target the compiled pins.add operation with its cids array arg,
+// not the removed pinner_pin. (That pins.add is present in the served catalog
+// is asserted by TestRegisterPinAppOnCompilerSurface; this test pins the
+// static module contract so the app can never regress to a removed tool.)
+func TestPinAppModuleTargetsExistingTool(t *testing.T) {
+	appHTML := renderPinCreateAppHTML()
+
+	// The app-only polling helper pinner_pin_status is a valid, still-registered
+	// tool (see pinStatusDescriptor); only the removed pinner_pin (with no
+	// _status suffix) must be absent.
+	for _, probe := range []string{`"pinner_pin"`, `pinner_pin,`, `pinner_pin `} {
+		if strings.Contains(appHTML, probe) {
+			t.Fatalf("app module must not reference the removed pinner_pin tool, found %q", probe)
+		}
+	}
+	if !strings.Contains(appHTML, `"pins.add"`) {
+		t.Fatalf("app module must invoke the compiled pins.add tool")
+	}
+	if !strings.Contains(appHTML, "cids:") {
+		t.Fatalf("app module must pass cids (array) to pins.add")
 	}
 }
