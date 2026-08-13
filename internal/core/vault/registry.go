@@ -27,6 +27,11 @@ type ProfileConfig struct {
 	CachePath  string `yaml:"cache_path"`
 	AppKeyRef  string `yaml:"app_key_ref"`
 	DeviceName string `yaml:"device_name"`
+	// KeepSeed marks a profile whose on-disk recovery.seed is an intentional
+	// create backup (KeepSeed create flow), not a consumed restore mnemonic.
+	// reconcileLocked must not delete a kept create-backup seed on a later
+	// activation; it is the durable recovery copy until explicitly removed.
+	KeepSeed bool `yaml:"keep_seed,omitempty"`
 }
 
 // VaultRegistry is the global vault profile registry.

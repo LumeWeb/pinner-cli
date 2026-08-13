@@ -384,6 +384,11 @@ func (p *Provisioner) Create(ctx context.Context, req CreateRequest) (*CreateRes
 		NoSync:     true,
 		KeepSeed:   true,
 	}, appKeyHex, vaultID); err != nil {
+		// Activation failed after approval/registration. The vault was never
+		// made active, so the pending-seed guard would otherwise block retries
+		// forever and leave a plaintext mnemonic for a never-activated vault on
+		// disk. Mirror the driveApproval cleanup above.
+		_ = os.Remove(SeedPath(req.Profile))
 		return nil, err
 	}
 
@@ -476,6 +481,7 @@ func (p *Provisioner) finishRestoreLocked(ctx context.Context, req RestoreReques
 		CachePath:  dbPath,
 		AppKeyRef:  ProfileStatePath(req.Profile),
 		DeviceName: deviceName,
+		KeepSeed:   req.KeepSeed,
 	}
 	if reg.Default == "" {
 		reg.Default = req.Profile
@@ -544,7 +550,9 @@ func (p *Provisioner) finishRestoreLocked(ctx context.Context, req RestoreReques
 //     acts on registry-known profiles.
 //   - For an active (VaultID != "") profile, a leftover recovery.seed holds the
 //     consumed one-time mnemonic for a completed vault; the plaintext master
-//     key must not linger on disk and is removed.
+//     key must not linger on disk and is removed — unless the profile was
+//     created with KeepSeed, in which case the seed is an intentional durable
+//     backup and is preserved across activations.
 //   - Pending (VaultID == "") and unregistered profiles are left entirely
 //     alone, including any state.json/cache.db a restore may have partially
 //     written before the registry commit. That residue is not confirmed
@@ -568,7 +576,12 @@ func reconcileLocked(reg *VaultRegistry) {
 		if prof.VaultID == "" {
 			continue // pending: leave the seed and any partial restore state alone
 		}
-		// Completed profile: a leftover seed holds a consumed mnemonic.
+		// Completed profile: remove a leftover *consumed* mnemonic — except an
+		// intentional create backup (KeepSeed), which is the durable recovery
+		// copy that must survive subsequent activations until explicitly removed.
+		if prof.KeepSeed {
+			continue
+		}
 		_ = os.Remove(SeedPath(name))
 	}
 }

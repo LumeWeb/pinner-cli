@@ -287,6 +287,90 @@ func TestProvisionerCreateRejectsActiveProfile(t *testing.T) {
 	require.Equal(t, 0, conn.requests, "no approval should be spent on a known-active profile")
 }
 
+// TestProvisionerCreateRollsBackSeedOnActivationFailure verifies that when the
+// create's local activation (finishRestoreLocked) fails AFTER the Sia approval
+// succeeded, the freshly generated seed is removed — mirroring the driveApproval
+// failure cleanup. Otherwise the pending-seed guard would block any retry of
+// that profile and leave a plaintext mnemonic for a never-activated vault on
+// disk. finishRestoreLocked is forced to fail by poisoning the profile DB path.
+func TestProvisionerCreateRollsBackSeedOnActivationFailure(t *testing.T) {
+	isolateVaultPaths(t)
+	p := NewProvisioner()
+	appKeyHex := validAppKeyHex(t)
+
+	// Poison the profile's SQLite path so OpenDB inside finishRestoreLocked
+	// fails after driveApproval already succeeded (activation is the failure).
+	dbPath := ProfileDBPath("actfail")
+	require.NoError(t, os.MkdirAll(filepath.Dir(dbPath), 0700))
+	require.NoError(t, os.WriteFile(dbPath, []byte("this is not a sqlite db"), 0600))
+
+	conn := &stubConn{appKeyHex: appKeyHex}
+	_, err := p.Create(context.Background(), CreateRequest{
+		Profile:       "actfail",
+		IndexerURL:    "http://indexer",
+		NewConnection: func(_, _ string) ConnectionFlow { return conn },
+	})
+	require.Error(t, err, "activation must fail on a poisoned DB path")
+	require.Equal(t, 1, conn.requests, "the approval must have been spent before activation")
+	require.Contains(t, err.Error(), "failed to initialize vault database")
+
+	// The generated seed must be rolled back so a retry of the profile is not
+	// blocked by the pending-seed guard, and no active profile is left behind.
+	_, statErr := os.Stat(SeedPath("actfail"))
+	require.True(t, os.IsNotExist(statErr), "a failed activation must not leave an orphaned seed blocking a retry")
+	reg, err := LoadRegistry()
+	require.NoError(t, err)
+	_, ok := reg.Profiles["actfail"]
+	require.False(t, ok, "a failed activation must not register an active profile")
+}
+
+// TestProvisionerCreateSeedSurvivesReconcile verifies that a create (KeepSeed)
+// backup seed is NOT deleted by reconcileLocked when a subsequent activation of
+// another profile runs. reconcileLocked treats only *consumed* restore seeds as
+// residue to remove; an intentional create-backup seed is the durable recovery
+// copy and must survive across activations until explicitly removed.
+func TestProvisionerCreateSeedSurvivesReconcile(t *testing.T) {
+	isolateVaultPaths(t)
+	p := NewProvisioner()
+
+	// Create an active profile with KeepSeed (the durable-backup create flow).
+	_, err := p.Create(context.Background(), CreateRequest{
+		Profile:       "keepme",
+		IndexerURL:    "http://indexer",
+		NewConnection: func(_, _ string) ConnectionFlow { return &stubConn{appKeyHex: validAppKeyHex(t)} },
+	})
+	require.NoError(t, err)
+	seedBytes, err := os.ReadFile(SeedPath("keepme"))
+	require.NoError(t, err, "create must persist the durable backup seed")
+	require.NotEmpty(t, strings.TrimSpace(string(seedBytes)))
+
+	// Restore a second profile; Restore's finishRestoreLocked runs
+	// reconcileLocked over ALL registry-known profiles, which must not remove
+	// the keepme backup seed.
+	pend, err := p.CreatePending(CreateRequest{Profile: "other"})
+	require.NoError(t, err)
+	_, err = p.Restore(context.Background(), RestoreRequest{
+		Profile:       "other",
+		Mnemonic:      pend.Seed,
+		IndexerURL:    "http://indexer",
+		DeviceName:    "dev1",
+		NoSync:        true,
+		NewConnection: func(_, _ string) ConnectionFlow { return &stubConn{appKeyHex: validAppKeyHex(t)} },
+	})
+	require.NoError(t, err)
+
+	// The KeepSeed backup must survive the reconcile.
+	after, err := os.ReadFile(SeedPath("keepme"))
+	require.NoError(t, err, "a kept create-backup seed must survive a later activation's reconcile")
+	require.Equal(t, strings.TrimSpace(string(seedBytes)), strings.TrimSpace(string(after)),
+		"the kept seed must be byte-identical after reconcile")
+
+	// The restore seed (consumed) must have been removed, confirming reconcile
+	// still cleans up consumed restore residue.
+	_, statErr := os.Stat(SeedPath("other"))
+	require.True(t, os.IsNotExist(statErr), "a consumed restore seed must still be removed by reconcile")
+}
+
 // TestProvisionerCreatePendingRollsBackSeedOnRegistryFailure verifies that a
 // failed registry write does not leave an orphaned seed file that would brick
 // the profile (the stat guard treats a residual seed as an existing pending
