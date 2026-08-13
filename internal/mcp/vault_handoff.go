@@ -8,7 +8,7 @@ import (
 
 // This file exposes the vault seed create/restore out-of-band hand-offs as
 // first-class, resumable flows for agents, following the SSO pattern
-// (auth_sso.go): a start tool returns a needs_human seed_url / restore_url
+// (auth_sso.go): a start tool returns a needs_human create_url / restore_url
 // hand-off plus a resume handle, and two named *_resume tools,
 // pinner_vault_create_resume and pinner_vault_restore_resume, poll the
 // coordinator until the human has completed the browser action.
@@ -19,7 +19,7 @@ import (
 // human-browser-to-host only, and the resume tools only report pending vs.
 // done for the token the coordinator minted.
 //
-// The single-shot hand-off (seed_url / restore_url returned directly to the
+// The single-shot hand-off (create_url / restore_url returned directly to the
 // agent in the invoke path) is preserved unchanged; this layer adds a resume
 // handle + poll path on top of it. If the resume machinery is not wired (nil
 // registry / handles), no handle is minted and the flow reduces to the
@@ -27,7 +27,7 @@ import (
 
 const (
 	// vaultCreateResumeToolName is the resume tool for a vault create
-	// hand-off (seed drop). Its name is per-domain so an agent can
+	// hand-off. Its name is per-domain so an agent can
 	// pattern-match "this is the vault CREATE flow" and steer a restart to
 	// the matching start tool pinner_vault_create.
 	vaultCreateResumeToolName = "pinner_vault_create_resume"
@@ -159,41 +159,52 @@ func (o *OOBRestore) pruneOutcomesLocked(cutoff time.Time) {
 }
 
 // vaultCreateResumeContinuation returns the vault-create-specific poll logic:
-// it reports pending (needs_human) until the human has picked up the seed from
-// the one-time seed_url, then a terminal done result; if the one-time link
-// expires before use it terminates the continuation and steers the agent to
-// start a fresh vault create (a stale hand-off is never reported as done). It
-// is registered against the handle by mintVaultHandoff so the shared
-// pinner_vault_create_resume template dispatches to it. The continuation
-// performs its own registry/handle cleanup on every terminal outcome.
-func vaultCreateResumeContinuation(db *SeedDrop, handles *AsyncHandleStore, reg *HandoffRegistry) ResumeContinuation {
+// it reports pending (needs_human) until the human has approved the Sia device
+// connection on the one-time create page AND retrieved the freshly generated
+// recovery seed, then a terminal done result; if the one-time link expires or
+// the create fails before the seed is retrieved it terminates the continuation
+// and steers the agent to start a fresh vault create (a stale/failed hand-off is
+// never reported as done). It is registered against the handle by
+// vaultCreateSetupHandler so the shared pinner_vault_create_resume template
+// dispatches to it. The continuation performs its own registry/handle cleanup
+// on every terminal outcome.
+func vaultCreateResumeContinuation(oob *OOBCreate, handles *AsyncHandleStore, reg *HandoffRegistry) ResumeContinuation {
 	return func(ctx context.Context, handle string, data map[string]any) (ToolResult, error) {
 		token, _ := data[handleDataToken].(string)
-		if db == nil {
+		if oob == nil {
 			return vaultExpiredResult(handles, reg, handle, vaultCreateResumeToolName, vaultCreateToolName,
 				"Vault create is not configured for this server; start a fresh vault create with pinner_vault_create.")
 		}
-		done, expired, pending := db.tokenDone(token)
+		done, failed, expired, pending := oob.tokenDone(token)
 		switch {
 		case done:
-			// Seed retrieved by the human; hand-off over.
+			// Vault created + activated and the recovery seed has been retrieved
+			// by the human; hand-off over.
+			oob.forgetOutcome(token)
 			handles.Delete(handle)
 			reg.End(handle)
 			return ToolResult{
-				Text:              "Vault create hand-off complete: the recovery seed has been retrieved.",
+				Text:              "Vault create hand-off complete: the vault is active and the recovery seed has been retrieved.",
 				StructuredContent: map[string]any{"status": StatusDone, "handle": handle},
 			}, nil
-		case expired:
-			// One-time link expired before the human retrieved the seed. Do not
-			// report completion; terminate and steer to a fresh start.
+		case failed:
+			// RunCreate failed (approval/registration error). Do not report done;
+			// terminate and steer to restart so the human can retry.
+			oob.forgetOutcome(token)
 			return vaultExpiredResult(handles, reg, handle, vaultCreateResumeToolName, vaultCreateToolName,
-				"The one-time seed_url expired before the recovery seed was retrieved; start a fresh vault create with pinner_vault_create so a new seed_url is minted.")
+				"The vault create failed on the one-time page (the Sia device approval/registration errored). Start a fresh vault create with pinner_vault_create so a new create_url is minted.")
+		case expired:
+			// One-time link expired before the vault was created and the seed
+			// retrieved. Do not report completion; terminate and steer to a fresh
+			// start.
+			return vaultExpiredResult(handles, reg, handle, vaultCreateResumeToolName, vaultCreateToolName,
+				"The one-time create_url expired before the vault was created and the seed retrieved; start a fresh vault create with pinner_vault_create so a new create_url is minted.")
 		case pending:
 			return NeedsHumanResult(NeedsHuman{
 				Reason:     ReasonCredentialEntry,
 				Handle:     handle,
 				ResumeTool: vaultCreateResumeToolName,
-				Detail:     "Ask the user to open the seed_url in a browser and retrieve the recovery seed. Then call pinner_vault_create_resume with the handle.",
+				Detail:     "Ask the user to open the create_url in a browser, approve the Sia device connection, then retrieve the one-time recovery seed. Then call pinner_vault_create_resume with the handle.",
 			}), nil
 		default:
 			// Token is absent (never existed, or its spent tombstone was evicted)
@@ -201,7 +212,7 @@ func vaultCreateResumeContinuation(db *SeedDrop, handles *AsyncHandleStore, reg 
 			// leave the agent pending forever. Terminate and steer to a fresh
 			// start.
 			return vaultExpiredResult(handles, reg, handle, vaultCreateResumeToolName, vaultCreateToolName,
-				"The vault create hand-off is no longer resolvable; start a fresh vault create with pinner_vault_create so a new seed_url is minted.")
+				"The vault create hand-off is no longer resolvable; start a fresh vault create with pinner_vault_create so a new create_url is minted.")
 		}
 	}
 }
@@ -290,10 +301,10 @@ func vaultExpiredResult(handles *AsyncHandleStore, reg *HandoffRegistry, handle,
 func NewVaultCreateResumeDescriptor(reg *HandoffRegistry, handles *AsyncHandleStore) ToolDescriptor {
 	return NewResumeTool(ResumeToolSpec{
 		Name:                vaultCreateResumeToolName,
-		Description:         "Poll a pending vault create (seed drop) hand-off to check whether the human has retrieved the recovery seed from the one-time seed_url. Returns pending (needs_human) until the seed has been retrieved, then reports done. Pass the handle returned by pinner_vault_create.",
+		Description:         "Poll a pending vault create hand-off to check whether the human has approved the Sia device connection on the one-time create_url and retrieved the recovery seed. Returns pending (needs_human) until the vault is active and the seed has been retrieved, then reports done. Pass the handle returned by pinner_vault_create.",
 		RestartTool:         vaultCreateToolName,
 		UnknownHandleDetail: "unknown handle; start a fresh vault create with pinner_vault_create",
-		ExpiredHandleDetail: "the vault create hand-off expired before the seed was retrieved; start a fresh vault create with pinner_vault_create so a new seed_url is minted",
+		ExpiredHandleDetail: "the vault create hand-off expired before the vault was created and the seed retrieved; start a fresh vault create with pinner_vault_create so a new create_url is minted",
 		DeadHandleReason:    ReasonCredentialEntry,
 	}, reg, handles)
 }

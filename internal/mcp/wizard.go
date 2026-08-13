@@ -774,6 +774,22 @@ type RestoreRunner interface {
 	RunRestore(ctx context.Context, profile, mnemonic string, onApproval func(approvalURL string)) (string, error)
 }
 
+// CreateRunner provisions and activates a new vault on the host, symmetric with
+// RestoreRunner: it GENERATES a fresh recovery seed, drives the Sia browser
+// approval, registers + activates the vault, and returns the fresh seed
+// host-side for a one-time seed_url. Implemented in internal/cli over the
+// shared Provisioner.Create path so the MCP layer can drive agent-mode creates
+// without importing the CLI package. The seed is returned for OOB delivery only
+// and is never placed on the MCP channel.
+type CreateRunner interface {
+	// RunCreate provisions and activates a new vault for the given profile,
+	// returning the active vault ID plus the freshly generated seed (host-side
+	// presentation only, for a one-time seed_url) and its 0600 seed-file path.
+	// On a device that requires browser approval, onApproval is called with the
+	// Sia approval URL before RunCreate blocks waiting for that approval.
+	RunCreate(ctx context.Context, profile string, onApproval func(approvalURL string)) (vaultID, seed, seedPath string, err error)
+}
+
 // SetupWizardDeps holds the dependencies needed to build and run the
 // setup wizard session steps and OOB restore path.
 type SetupWizardDeps struct {
@@ -787,6 +803,11 @@ type SetupWizardDeps struct {
 	// one-time browser form (never through the MCP channel). It may be nil in
 	// tests that don't exercise OOB restore.
 	Restore RestoreRunner
+	// Create provisions + activates a new vault (generating a fresh seed) via a
+	// one-time browser page (never through the MCP channel). It may be nil in
+	// tests that don't exercise OOB create. Symmetric with Restore; the only
+	// difference is seed origin (generated vs provided).
+	Create CreateRunner
 }
 
 // buildSetupSteps returns the StepDef slice for the setup wizard.

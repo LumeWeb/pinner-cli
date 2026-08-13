@@ -69,12 +69,12 @@ func NewOfficialServer(opts *OfficialServerOptions) *mcp.Server {
 
 // OfficialServerFromCatalog builds the official server with Pinner's
 // progressive-disclosure meta-tools. The catalog remains internal.
-func OfficialServerFromCatalog(catalog *ToolCatalog, instructions string, stdioMode bool, seedDrop *SeedDrop, oobRestore *OOBRestore) (*mcp.Server, error) {
+func OfficialServerFromCatalog(catalog *ToolCatalog, instructions string, stdioMode bool, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate) (*mcp.Server, error) {
 	if catalog == nil {
 		return nil, fmt.Errorf("nil tool catalog")
 	}
 	srv := NewOfficialServer(&OfficialServerOptions{Instructions: instructions})
-	if err := RegisterOfficialMetaTools(srv, catalog, stdioMode, seedDrop, oobRestore); err != nil {
+	if err := RegisterOfficialMetaTools(srv, catalog, stdioMode, seedDrop, oobRestore, oobCreate); err != nil {
 		return nil, err
 	}
 	return srv, nil
@@ -88,12 +88,12 @@ func OfficialServerFromCatalog(catalog *ToolCatalog, instructions string, stdioM
 // Resources and prompts are registered by the command action after runtime
 // providers and options are resolved. The descriptor adapters below preserve
 // their wire contracts on the official server.
-func OfficialMCPServer(root *cli.Command, hasRootAction bool, prefix []string, stdioMode bool, seedDrop *SeedDrop, oobRestore *OOBRestore, handoffReg *HandoffRegistry, authHandles *AsyncHandleStore) (*mcp.Server, *ToolCatalog, error) {
-	catalog, err := buildCatalog(root, hasRootAction, prefix, seedDrop, oobRestore, handoffReg, authHandles)
+func OfficialMCPServer(root *cli.Command, hasRootAction bool, prefix []string, stdioMode bool, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate, handoffReg *HandoffRegistry, authHandles *AsyncHandleStore) (*mcp.Server, *ToolCatalog, error) {
+	catalog, err := buildCatalog(root, hasRootAction, prefix, seedDrop, oobRestore, oobCreate, handoffReg, authHandles)
 	if err != nil {
 		return nil, nil, err
 	}
-	srv, err := OfficialServerFromCatalog(catalog, buildInstructions(catalog.Len()), stdioMode, seedDrop, oobRestore)
+	srv, err := OfficialServerFromCatalog(catalog, buildInstructions(catalog.Len()), stdioMode, seedDrop, oobRestore, oobCreate)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -217,7 +217,7 @@ func registerTool(srv *mcp.Server, tool *mcp.Tool, handler PinnerToolHandler) er
 // meta-tools (search_tools, describe_tool, invoke_tool) on an official-SDK
 // server. The catalog itself stays hidden; the only tools visible via
 // tools/list are these three, preserving progressive disclosure.
-func RegisterOfficialMetaTools(srv *mcp.Server, catalog *ToolCatalog, stdioMode bool, seedDrop *SeedDrop, oobRestore *OOBRestore) error {
+func RegisterOfficialMetaTools(srv *mcp.Server, catalog *ToolCatalog, stdioMode bool, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate) error {
 	if srv == nil {
 		return fmt.Errorf("nil official server")
 	}
@@ -231,7 +231,7 @@ func RegisterOfficialMetaTools(srv *mcp.Server, catalog *ToolCatalog, stdioMode 
 	if err := registerOfficialDescribeTool(srv, catalog); err != nil {
 		return err
 	}
-	return registerOfficialInvokeTool(srv, catalog, stdioMode, seedDrop, oobRestore)
+	return registerOfficialInvokeTool(srv, catalog, stdioMode, seedDrop, oobRestore, oobCreate)
 }
 
 // metaToolSchema is a tiny SDK-neutral input schema builder for the static
@@ -341,7 +341,7 @@ func registerOfficialDescribeTool(srv *mcp.Server, catalog *ToolCatalog) error {
 	return registerTool(srv, tool, handler)
 }
 
-func registerOfficialInvokeTool(srv *mcp.Server, catalog *ToolCatalog, stdioMode bool, seedDrop *SeedDrop, oobRestore *OOBRestore) error {
+func registerOfficialInvokeTool(srv *mcp.Server, catalog *ToolCatalog, stdioMode bool, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate) error {
 	schema := &metaToolSchema{}
 	schema.property("name", map[string]any{
 		"type":        "string",
@@ -412,7 +412,7 @@ func RegisterOfficialToolsFromCatalog(srv *mcp.Server, catalog *ToolCatalog) err
 	if catalog == nil {
 		return fmt.Errorf("nil tool catalog")
 	}
-	return RegisterOfficialMetaTools(srv, catalog, false, nil, nil)
+	return RegisterOfficialMetaTools(srv, catalog, false, nil, nil, nil)
 }
 
 // RegisterOfficialDescriptor adds one Pinner-owned tool directly to tools/list.

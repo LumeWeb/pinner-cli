@@ -18,11 +18,13 @@ import (
 // find a seed path or profile, the handler invokes the catalog operation,
 // receives typed handoff data, and builds the OOB hand-off directly.
 //
-// The plaintext recovery mnemonic is used host-side only to mint the one-time
-// seed_url (SeedDrop.Register); it is never placed on the MCP ToolResult Text
-// or StructuredContent. The restore seed never crosses the agent channel at
-// all: it is entered by the human on the one-time /restore/<token> page and
-// consumed by the OOBRestore coordinator's RestoreRunner.
+// The plaintext recovery mnemonic is never placed on the MCP ToolResult Text
+// or StructuredContent. On create, the vault is created + activated out-of-band
+// through the OOBCreate coordinator (fresh seed + Sia approval + registration)
+// and the freshly generated seed is delivered through the shared SeedDrop's
+// one-time seed_url. The restore seed never crosses the agent channel at all:
+// it is entered by the human on the one-time /restore/<token> page and consumed
+// by the OOBRestore coordinator's RestoreRunner.
 
 // vaultSetupOps returns the create/restore catalog operations wired to the
 // default core Provisioner. The getter preserves the lazy-deps pattern: a
@@ -44,8 +46,8 @@ func vaultSetupOps() (create, restore catalog.Operation) {
 }
 
 // vaultHandoffResult builds a needs_human ToolResult that preserves the vault
-// OOB contract keys (seed_url / restore_url), distinct from the generic
-// action_url used by SSO. The urlKey is "seed_url" for create and
+// OOB contract keys (create_url / restore_url), distinct from the generic
+// action_url used by SSO. The urlKey is "create_url" for create and
 // "restore_url" for restore. The plaintext mnemonic never appears in either
 // the Text or StructuredContent; only the one-time URL, handle and resume tool.
 func vaultHandoffResult(resumeTool, urlKey, url, handle, detail string) ToolResult {
@@ -70,20 +72,22 @@ func vaultHandoffResult(resumeTool, urlKey, url, handle, detail string) ToolResu
 }
 
 // vaultCreateSetupHandler builds the PinnerToolHandler for pinner_vault_create.
-// It runs the vault.create catalog operation, then mints a one-time seed_url
-// (SeedDrop.Register with the host-side mnemonic) and a resume handle whose
-// continuation polls that seed drop, returning a needs_human hand-off with
-// seed_url + handle + resume_tool. The mnemonic never enters the result.
+// It runs the vault.create catalog operation (provisioning a fresh vault that
+// SSO-activates like restore), then mints a one-time create_url (OOBCreate.Register)
+// and a resume handle whose continuation polls that OOB create, returning a
+// needs_human hand-off with create_url + handle + resume_tool. The freshly
+// generated seed is only ever delivered to the human through the OOB seeddrop
+// after the create activates; it never enters the result.
 //
-// When the seed-drop coordinator is absent, the handler returns a structured
+// When the OOB create coordinator is absent, the handler returns a structured
 // not-configured hand-off rather than hanging.
-func vaultCreateSetupHandler(seedDrop *SeedDrop, reg *HandoffRegistry, handles *AsyncHandleStore) PinnerToolHandler {
+func vaultCreateSetupHandler(oobCreate *OOBCreate, reg *HandoffRegistry, handles *AsyncHandleStore) PinnerToolHandler {
 	return func(ctx context.Context, req ToolRequest) (ToolResult, error) {
-		if reg == nil || handles == nil || seedDrop == nil {
+		if reg == nil || handles == nil || oobCreate == nil {
 			return NeedsHumanResult(NeedsHuman{
 				Reason:     ReasonInteractiveOnly,
 				ResumeTool: vaultCreateResumeToolName,
-				Detail:     "Vault create is not configured for this server; the out-of-band seed hand-off is unavailable.",
+				Detail:     "Vault create is not configured for this server; the out-of-band create hand-off is unavailable.",
 			}), nil
 		}
 		op, _ := vaultSetupOps()
@@ -106,14 +110,15 @@ func vaultCreateSetupHandler(seedDrop *SeedDrop, reg *HandoffRegistry, handles *
 		if !ok {
 			return ToolResult{IsError: true, Text: "vault create: unexpected result"}, nil
 		}
-		// Mint the one-time seed drop from the host-side mnemonic. The seed is
-		// passed to the coordinator only; it is never placed on the channel.
-		seedURL := seedDrop.Register(handoff.Profile, handoff.Seed)
-		token := vaultTokenFromURL(seedURL)
+		// Mint the one-time OOB create URL for the requested profile. The create
+		// page runs the SSO approval + activation in the browser and, on success,
+		// delivers the freshly generated seed via a one-time seeddrop link.
+		createURL := oobCreate.Register(handoff.Profile)
+		token := vaultTokenFromURL(createURL)
 		handle := handles.Create("pending", map[string]any{handleDataToken: token})
-		reg.Begin(handle, vaultCreateResumeContinuation(seedDrop, handles, reg))
-		return vaultHandoffResult(vaultCreateResumeToolName, "seed_url", seedURL, handle,
-			"Ask the user to open seed_url in a browser and retrieve the recovery seed. Then call pinner_vault_create_resume with the handle. The mnemonic never crosses the MCP channel."), nil
+		reg.Begin(handle, vaultCreateResumeContinuation(oobCreate, handles, reg))
+		return vaultHandoffResult(vaultCreateResumeToolName, "create_url", createURL, handle,
+			"Ask the user to open create_url in a browser, approve the Sia device connection, then retrieve the one-time recovery seed. Then call pinner_vault_create_resume with the handle. The seed never crosses the MCP channel."), nil
 	}
 }
 

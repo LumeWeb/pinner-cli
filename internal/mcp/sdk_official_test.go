@@ -41,7 +41,7 @@ func newOfficialTestServer(t *testing.T) (*mcp.Server, *ToolCatalog) {
 	provider[resourceKey] = `{"authenticated":true}`
 
 	srv := NewOfficialServer(nil)
-	require.NoError(t, RegisterOfficialMetaTools(srv, catalog, false, nil, nil))
+	require.NoError(t, RegisterOfficialMetaTools(srv, catalog, false, nil, nil, nil))
 
 	require.NoError(t, RegisterOfficialResources(srv,
 		[]ResourceDescriptor{
@@ -108,7 +108,7 @@ func connectOfficialClient(t *testing.T, srv *mcp.Server) *mcp.ClientSession {
 func TestOfficialServerFromCatalog(t *testing.T) {
 	catalog := NewToolCatalog()
 	catalog.Add(&ToolEntry{Name: "pinner_status", InputSchema: json.RawMessage(`{"type":"object"}`), Handler: func(_ context.Context, _ ToolRequest) (ToolResult, error) { return ToolResult{Text: "ok"}, nil }})
-	srv, err := OfficialServerFromCatalog(catalog, "instructions", false, nil, nil)
+	srv, err := OfficialServerFromCatalog(catalog, "instructions", false, nil, nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, srv)
 }
@@ -271,7 +271,7 @@ func TestOfficialInvokeToolRedirectsInteractiveOnly(t *testing.T) {
 	})
 
 	srv := NewOfficialServer(nil)
-	require.NoError(t, RegisterOfficialMetaTools(srv, catalog, false, nil, nil))
+	require.NoError(t, RegisterOfficialMetaTools(srv, catalog, false, nil, nil, nil))
 	cs := connectOfficialClient(t, srv)
 
 	// Interactive tool -> needs_human redirect, handler not called.
@@ -388,7 +388,7 @@ func TestOfficialInvokeVaultRestoreRoutesAgentSafeHandoff(t *testing.T) {
 	t.Cleanup(func() { oobRestore.Stop(context.Background()) })
 	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
 	reg := NewHandoffRegistry()
-	catalog, err := buildCatalog(root, true, nil, nil, oobRestore, reg, handles)
+	catalog, err := buildCatalog(root, true, nil, nil, oobRestore, nil, reg, handles)
 	require.NoError(t, err)
 
 	restore, ok := catalog.Get("pinner_vault_restore")
@@ -397,7 +397,7 @@ func TestOfficialInvokeVaultRestoreRoutesAgentSafeHandoff(t *testing.T) {
 		"buildCatalog must route vault restore through the agent-safe OOB hand-off handler")
 
 	srv := NewOfficialServer(nil)
-	require.NoError(t, RegisterOfficialMetaTools(srv, catalog, true, nil, oobRestore))
+	require.NoError(t, RegisterOfficialMetaTools(srv, catalog, true, nil, oobRestore, nil))
 	cs := connectOfficialClient(t, srv)
 
 	// A plain restore invoke (no seed on the channel) must reach the handler and

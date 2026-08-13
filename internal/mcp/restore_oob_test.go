@@ -139,7 +139,7 @@ func TestOOBRestoreExpiry(t *testing.T) {
 }
 
 // TestSeedDropStdioLoopback verifies the stdio path (no base URL): Register
-// returns a reachable 127.0.0.1 loopback URL and the drop serves once.
+// returns a reachable 127.0.0.1 loopback URL and the drop confirms via POST.
 func TestSeedDropStdioLoopback(t *testing.T) {
 	d := NewSeedDrop(time.Minute)
 	// No base URL -> loopback listener is started lazily by Register.
@@ -147,7 +147,7 @@ func TestSeedDropStdioLoopback(t *testing.T) {
 	require.True(t, strings.HasPrefix(url, "http://127.0.0.1:"), "expected loopback URL, got %q", url)
 	defer d.Stop(context.Background())
 
-	// Hit the real loopback listener; the seed is shown once.
+	// Hit the real loopback listener; the seed is shown with a confirm form.
 	client := &http.Client{Timeout: 5 * time.Second}
 	resp, err := client.Get(url)
 	require.NoError(t, err)
@@ -156,14 +156,35 @@ func TestSeedDropStdioLoopback(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	require.Contains(t, string(body), "loopback seed words")
 
-	// Second read is spent (410 + spent page), not the seed again.
+	// A re-open BEFORE confirmation still renders the seed (a failed transport
+	// or prefetch must not strand the human with a dead link).
 	resp2, err := client.Get(url)
 	require.NoError(t, err)
-	defer resp2.Body.Close()
 	body2, _ := io.ReadAll(resp2.Body)
-	require.Equal(t, http.StatusGone, resp2.StatusCode)
-	require.Contains(t, string(body2), "no longer active")
-	require.NotContains(t, string(body2), "loopback seed words", "the seed must not be shown twice")
+	resp2.Body.Close()
+	require.Equal(t, http.StatusOK, resp2.StatusCode, "a GET before confirmation must still render the seed")
+	require.Contains(t, string(body2), "loopback seed words")
+
+	// The explicit, same-origin confirmation POST consumes the drop. The
+	// accepted origin is the loopback URL host; a browser form submission sends
+	// an Origin/Referer matching it, so mirror that.
+	post, err := http.NewRequest(http.MethodPost, url, nil)
+	require.NoError(t, err)
+	post.Header.Set("Origin", url[:strings.Index(url, "/seed/")])
+	resp3, err := client.Do(post)
+	require.NoError(t, err)
+	io.Copy(io.Discard, resp3.Body)
+	resp3.Body.Close()
+	require.Equal(t, http.StatusOK, resp3.StatusCode)
+
+	// After confirmation the link is spent (410 + spent page).
+	resp4, err := client.Get(url)
+	require.NoError(t, err)
+	defer resp4.Body.Close()
+	body4, _ := io.ReadAll(resp4.Body)
+	require.Equal(t, http.StatusGone, resp4.StatusCode)
+	require.Contains(t, string(body4), "no longer active")
+	require.NotContains(t, string(body4), "loopback seed words", "the seed must not be shown after confirmation")
 }
 
 // TestOOBRestoreStdioLoopback verifies the stdio path mints a loopback URL.

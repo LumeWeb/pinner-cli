@@ -24,23 +24,14 @@ import (
 // they describe is returned by the MCP wrapper as a needs_human result, not by
 // the catalog gate.
 
-// VaultCreateHandoff is the typed result of vault.create: a pending vault has
-// been provisioned by the core Provisioner (fresh 0600 recovery-seed file +
-// pending registry entry). Seed holds the plaintext recovery mnemonic for the
-// MCP layer to hand to the human over a one-time seed_url. It is host-side
-// only and is excluded from JSON serialization (json:"-") so it can never leak
-// through a machine channel. Consumers must never place Seed on the MCP
-// Text/StructuredContent, CLI stdout, or logs.
+// VaultCreateHandoff is the typed result of vault.create: the profile a new
+// vault create targets. No seed is minted at hand-off time; the create (fresh
+// seed + Sia approval + activation) runs out-of-band in the browser POST
+// handler, and the freshly generated seed is delivered to the human through a
+// one-time seeddrop. It is never carried on this channel.
 type VaultCreateHandoff struct {
-	// Profile is the provisioned pending profile name.
+	// Profile is the profile name the create targets.
 	Profile string `json:"profile"`
-	// SeedPath is the durable 0600 recovery-seed file path.
-	SeedPath string `json:"seed_path,omitempty"`
-	// Seed is the plaintext recovery mnemonic, host-side presentation only.
-	// REDACTED: never log, never place on the MCP Text/StructuredContent or CLI
-	// stdout, never serialize. Excluded from JSON via json:"-". Transported only
-	// through the OOB one-time loopback seed_url.
-	Seed string `json:"-"`
 }
 
 // VaultRestoreHandoff is the typed result of vault.restore: the profile
@@ -71,9 +62,9 @@ func vaultCreate(d VaultDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
 		Name:             "vault.create",
 		Title:            "Create a new vault",
-		Summary:          "Provision a new pending vault profile with a fresh recovery seed",
-		Description:      "Provision a new vault identity under the given profile name: generate a fresh recovery seed, persist it to a 0600 host file, and register a pending profile awaiting restore. The vault is completed by an out-of-band browser restore. Returns the profile and the host seed path.",
-		AgentDescription: "Provision a new vault under a profile and hand the host off to a human. Generates a fresh recovery seed, persists it to a 0600 host file, and registers a pending profile. An out-of-band seed_url is returned for the human to retrieve the recovery seed in a browser; poll the returned pinner_vault_create_resume handle until the seed has been retrieved. The plaintext mnemonic never appears on this channel.",
+		Summary:          "Provision and activate a new vault with a fresh recovery seed",
+		Description:      "Provision a new vault identity under the given profile name. The create is completed out-of-band: the human approves the Sia device connection in a browser and retrieves the freshly generated recovery seed once. Returns the profile targeted by the create.",
+		AgentDescription: "Provision a new vault under a profile and hand the host off to a human. The create is completed out-of-band: the human opens the returned create_url, approves the Sia device connection in a browser, and retrieves the one-time recovery seed. Poll the returned pinner_vault_create_resume handle until the vault is active and the seed has been retrieved. The plaintext mnemonic never appears on this channel.",
 		Category:         "vault",
 		Safety:           catalog.SafetyMutate,
 		Interaction:      catalog.InteractionAgentSafe,
@@ -81,7 +72,6 @@ func vaultCreate(d VaultDeps) catalog.Operation {
 		Positional:       "",
 		Args: []catalog.OperationArg{
 			{Name: "profile", Type: catalog.ArgTypeString, Required: true, Help: "Vault profile name to provision (a fresh vault cannot auto-resolve a default)"},
-			{Name: "device-name", Type: catalog.ArgTypeString, Help: "Name for this device (defaults to hostname)"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			profileName := catalog.StrArg(input, "profile", "")
@@ -95,17 +85,15 @@ func vaultCreate(d VaultDeps) catalog.Operation {
 			if prov == nil {
 				return nil, fmt.Errorf("vault.create: no provisioning service wired")
 			}
-			pend, err := prov.CreatePending(vault.CreateRequest{
-				Profile:    profileName,
-				DeviceName: catalog.StrArg(input, "device-name", ""),
-			})
-			if err != nil {
+			// Validate the profile name up front (fail fast before minting an
+			// out-of-band create URL) without creating any local vault state; the
+			// actual create (fresh seed + Sia approval + activation) runs in the
+			// browser POST handler, symmetric with restore.
+			if err := vault.ValidateProfileName(profileName); err != nil {
 				return nil, err
 			}
 			return &VaultCreateHandoff{
-				Profile:  pend.Profile,
-				SeedPath: pend.SeedPath,
-				Seed:     pend.Seed,
+				Profile: profileName,
 			}, nil
 		}),
 	})
