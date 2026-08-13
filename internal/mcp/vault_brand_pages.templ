@@ -53,7 +53,7 @@ templ createVaultPage(profile, token string) {
 			<p>Profile: <strong>{ profile }</strong></p>
 			<p>A fresh recovery seed is generated and shown exactly once for you to back up.</p>
 			<p class="seed-warn">This creates a new vault identity. The MCP/agent channel never sees the recovery seed.</p>
-			<form method="post" action="/create/{ token }">
+			<form method="post" action={ "/create/" + token }>
 				<button type="submit">Create vault</button>
 			</form>
 			<div class="seed-foot">One-time page. It expires if unused.</div>
@@ -71,7 +71,7 @@ templ restoreVaultPage(profile, token string) {
 			<p>Profile: <strong>{ profile }</strong></p>
 			<p>Enter your recovery phrase to restore this vault. It is sent from your browser directly to the vault process on this machine and is used once.</p>
 			<p class="seed-warn">This recovery phrase is the only way back into the vault. Enter it only on a trusted device. The MCP/agent channel never sees it.</p>
-			<form method="post" action="/restore/{ token }">
+			<form method="post" action={ "/restore/" + token }>
 				<label for="mnemonic">Recovery phrase</label>
 				<textarea name="mnemonic" id="mnemonic" required autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="word1 word2 word3 ..."></textarea>
 				<button type="submit">Restore vault</button>

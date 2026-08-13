@@ -85,6 +85,17 @@ func TestOOBRestoreFormSingleUse(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Contains(t, rec.Body.String(), "Recovery phrase")
 
+	// The form's submit action must target THIS token, not an un-substituted
+	// "{ token }" placeholder (a templ string-literal leak that makes the POST
+	// hit /restore/%7B%20token%20%7D). Extract the token from the minted URL and
+	// require the action to be the real /restore/<token> path.
+	tok := strings.TrimPrefix(url, "http://127.0.0.1:9999/restore/")
+	require.NotEmpty(t, tok)
+	body := rec.Body.String()
+	require.Contains(t, body, "action=\"/restore/"+tok+"\"", "form action must carry the real one-time token")
+	require.NotContains(t, body, "{ token }", "the token placeholder must never render literally")
+	require.NotContains(t, body, "%7B", "the placeholder must never be URL-encoded into the action")
+
 	// POST from a foreign origin is rejected (CSRF).
 	badReq := httptest.NewRequest(http.MethodPost, url, strings.NewReader("mnemonic=secret words"))
 	badReq.Header.Set("Origin", "http://evil.example")
