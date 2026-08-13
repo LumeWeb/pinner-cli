@@ -92,6 +92,17 @@ func TestOOBCreateFormSingleUse(t *testing.T) {
 	require.Contains(t, rec.Body.String(), "Create Pinner Vault")
 	require.Contains(t, rec.Body.String(), "Create vault")
 
+	// The form's submit action must target THIS token, not an un-substituted
+	// "{ token }" placeholder (a templ string-literal leak that makes the POST
+	// hit /create/%7B%20token%20%7D). Extract the token from the minted URL and
+	// require the action to be the real /create/<token> path.
+	tok := strings.TrimPrefix(url, "http://127.0.0.1:9999/create/")
+	require.NotEmpty(t, tok)
+	body := rec.Body.String()
+	require.Contains(t, body, "action=\"/create/"+tok+"\"", "form action must carry the real one-time token")
+	require.NotContains(t, body, "{ token }", "the token placeholder must never render literally")
+	require.NotContains(t, body, "%7B", "the placeholder must never be URL-encoded into the action")
+
 	// POST from a foreign origin is rejected (CSRF).
 	badReq := httptest.NewRequest(http.MethodPost, url, strings.NewReader(""))
 	badReq.Header.Set("Origin", "http://evil.example")
