@@ -591,6 +591,11 @@ type mcpServerOptions struct {
 	// pinnerPins, when set, wires the "Create a Pin" MCP App (ui:// view,
 	// app-only status helper) using a live pinning provider built at setup.
 	pinnerPins PinningProviderFactory
+	// catalogDeps, when set, supplies the operation-catalog dependency graph
+	// (config manager + core service factories) so the MCP surface can be
+	// populated from the operation catalog instead of (or alongside) the CLI
+	// command-tree walk. Nil leaves the catalog purely legacy-derived.
+	catalogDeps func() *CatalogDepsBundle
 }
 
 // MCPServerOption configures the MCP command served by MCPCommand.
@@ -653,6 +658,18 @@ func WithRelayURLUpload(handler RelayURLUploadHandler, allowedHosts []string) MC
 func WithDataURIUpload(handler DataURIUploadHandler) MCPServerOption {
 	return func(o *mcpServerOptions) {
 		o.dataURIUpload = handler
+	}
+}
+
+// WithCatalogOps supplies the operation-catalog dependency graph (config
+// manager + core service factories) so the MCP surface can be populated from
+// the operation catalog. The factory is a closure built at Action time when
+// config and services are available (mirroring WizardDepsFactory); it returns
+// a fresh bundle per call so a test/global override stays live. Without it the
+// catalog remains purely legacy-derived from the CLI command tree.
+func WithCatalogOps(factory func() *CatalogDepsBundle) MCPServerOption {
+	return func(o *mcpServerOptions) {
+		o.catalogDeps = factory
 	}
 }
 
