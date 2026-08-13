@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -326,4 +327,36 @@ func TestResumeTemplateDeadHandleSteersRestart(t *testing.T) {
 	assert.Equal(t, ReasonConfirmation, sc["reason"])
 	assert.Equal(t, "test_flow_start", sc["resume_tool"])
 	assert.Contains(t, sc["detail"].(string), "expired")
+}
+
+// TestResumeToolsHaveDistinctFlowTitles guards that every *_resume tool in the
+// product surface carries a flow-specific title (GV-1) instead of the previous
+// ambiguous generic "Resume", so SSO, vault-create and vault-restore resume
+// tools are distinguishable in a host UI.
+func TestResumeToolsHaveDistinctFlowTitles(t *testing.T) {
+	descs := map[string]string{
+		"pinner_auth_resume":          NewAuthResumeDescriptor(nil, nil).Title,
+		"pinner_vault_create_resume":  NewVaultCreateResumeDescriptor(nil, nil).Title,
+		"pinner_vault_restore_resume": NewVaultRestoreResumeDescriptor(nil, nil).Title,
+	}
+	seen := map[string]string{}
+	for name, title := range descs {
+		require.NotEmpty(t, title, "%s must carry a flow-specific title", name)
+		require.NotEqual(t, "Resume", title, "%s title must not be the generic default", name)
+		if prev, ok := seen[title]; ok {
+			t.Fatalf("title %q shared by %s and %s; resume titles must be distinct", title, prev, name)
+		}
+		seen[title] = name
+	}
+}
+
+// TestResumeArgsHandleRequired guards (GV-2) that the resume tools' schema
+// advertises handle as required, so the model does not attempt to poll a
+// handle-less resume.
+func TestResumeArgsHandleRequired(t *testing.T) {
+	var sch struct {
+		Required []string `json:"required"`
+	}
+	require.NoError(t, json.Unmarshal(toolSchemaFor[resumeArgs](), &sch))
+	assert.Contains(t, sch.Required, "handle", "resume schema must mark handle as required")
 }
