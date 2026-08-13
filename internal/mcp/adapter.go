@@ -43,6 +43,15 @@ const vaultRestoreToolName = "pinner_vault_restore"
 // seed).
 const vaultCreateToolName = "pinner_vault_create"
 
+// compiledVaultCreateToolName / compiledVaultRestoreToolName are the
+// compiler-backed names of the vault setup operations. They are surfaced by
+// the operation catalog (not the CLI tree) and must route through the same
+// out-of-band setup handlers as the legacy names so the create_url /
+// restore_url + resume-handle hand-off contract is honored on the compiled
+// surface.
+const compiledVaultCreateToolName = "vault.create"
+const compiledVaultRestoreToolName = "vault.restore"
+
 // ansiEscapeRE matches ANSI/VT escape sequences (SGR color codes, cursor
 // movement, erase, reset) so agent-facing tool output is always clean plain
 // text. The CLI's human formatter colors status text (e.g. \x1b[32mpinned\x1b[0m);
@@ -216,22 +225,33 @@ adapter.`,
 			// stdin-input command must be redirected rather than consume
 			// protocol bytes); it mirrors the transport decision below.
 			stdioMode := mcpString(cmd, "tunnel", "MCP_TUNNEL_PROVIDER") != "openai" && !cmd.Bool("http")
-			srv, catalog, err := OfficialMCPServer(root, hasRootAction, nil, stdioMode, seedDrop, oobRestore, oobCreate, handoffReg, authHandles)
-			if err != nil {
-				return err
-			}
 
 			// Resolve the optional custom tools (upload backends, apps, prompts)
-			// so they are captured in mcpServerOptions, then register every
-			// custom/direct tool, resource, and prompt in one place. Keeping the
-			// registration in registerCustomTools (custom_tools.go) rather than
-			// inline keeps this closure focused on transport only.
+			// and the catalog-deps bundle before the server is built so a
+			// WithCatalogOps option can be threaded into buildCatalog as
+			// withCatalogDeps (making the compiler-backed operation surface
+			// live in production rather than dead code).
 			mcpOpts := &mcpServerOptions{}
 			for _, opt := range opts {
 				if opt != nil {
 					opt(mcpOpts)
 				}
 			}
+			var catalogOpts []buildCatalogOpt
+			if mcpOpts.catalogDeps != nil {
+				catalogOpts = append(catalogOpts, withCatalogDeps(mcpOpts.catalogDeps))
+			}
+
+			// Build the server after resolving the command tree and wiring the
+			// seed/restore coordinators into the tool handlers. stdioMode tells
+			// the invoke-tool gate that os.Stdin is the MCP transport pipe (so a
+			// stdin-input command must be redirected rather than consume
+			// protocol bytes); it mirrors the transport decision below.
+			srv, catalog, err := OfficialMCPServer(root, hasRootAction, nil, stdioMode, seedDrop, oobRestore, oobCreate, handoffReg, authHandles, catalogOpts...)
+			if err != nil {
+				return err
+			}
+
 			if err := registerCustomTools(customToolDeps{
 				srv:             srv,
 				catalog:         catalog,
@@ -910,6 +930,22 @@ func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string, seedDr
 			return nil, err
 		}
 		compiledOps = names
+		// Route the compiled vault.create / vault.restore entries through the
+		// same out-of-band setup handlers as the legacy names, so a model
+		// invoking the compiled vault-setup tool receives the full create_url /
+		// restore_url + resume-handle + needs_human hand-off its
+		// AgentDescription promises, rather than a bare JSON-serialized
+		// VaultCreateHandoff/VaultRestoreHandoff{Profile} plaintext.
+		if restoreEntry, ok := catalog.Get(compiledVaultRestoreToolName); ok {
+			restoreEntry.Handler = vaultRestoreSetupHandler(oobRestore, handoffReg, authHandles)
+			restoreEntry.Interaction = InteractionAgentSafe
+			catalog.Add(restoreEntry)
+		}
+		if createEntry, ok := catalog.Get(compiledVaultCreateToolName); ok {
+			createEntry.Handler = vaultCreateSetupHandler(oobCreate, handoffReg, authHandles)
+			createEntry.Interaction = InteractionAgentSafe
+			catalog.Add(createEntry)
+		}
 		markCurated(catalog)
 	}
 
