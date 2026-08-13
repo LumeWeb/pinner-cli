@@ -135,6 +135,7 @@ func ssoResumeContinuation(oob *OutOfBandLogin, handles *AsyncHandleStore, reg *
 func NewAuthResumeDescriptor(reg *HandoffRegistry, handles *AsyncHandleStore) ToolDescriptor {
 	return NewResumeTool(ResumeToolSpec{
 		Name:                "pinner_auth_resume",
+		Title:               "Auth Sign-In Resume",
 		Description:         "Poll a pending out-of-band (OOB) sign in to check whether the human has completed the SSO approval (sign-in). Returns pending (needs_human) until approval is done, then reports done. Pass the handle returned by pinner_auth_sso.",
 		RestartTool:         "pinner_auth_sso",
 		UnknownHandleDetail: "unknown handle; start a new login with pinner_auth_sso",

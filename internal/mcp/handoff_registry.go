@@ -183,7 +183,7 @@ func (r *HandoffRegistry) pruneLocked() []string {
 // resumeArgs is the input of any *_resume tool.
 type resumeArgs struct {
 	// Handle is the handle returned by the matching start tool.
-	Handle string `json:"handle,omitempty"`
+	Handle string `json:"handle" jsonschema:"required"`
 }
 
 // ResumeToolSpec carries the per-domain copy + restart steering for a *_resume
@@ -194,6 +194,11 @@ type resumeArgs struct {
 type ResumeToolSpec struct {
 	// Name is the tool name (e.g. "pinner_auth_resume").
 	Name string
+	// Title is the short human/agent-facing title shown in tools/list. It must
+	// be flow-specific (e.g. "Auth Sign-In Resume", "Vault Create Resume") so
+	// the SSO, vault-create and vault-restore resume tools are distinguishable
+	// in a host UI rather than all rendering as "Resume".
+	Title string
 	// Description is the agent-facing description.
 	Description string
 	// RestartTool is the start tool to steer to when the handle is dead.
@@ -206,6 +211,15 @@ type ResumeToolSpec struct {
 	// restart after a dead handle. Domain-specific so the steer reads naturally
 	// for the flow (SSO uses ReasonSSOApproval).
 	DeadHandleReason HandoffReason
+}
+
+// title returns the flow-specific title, defaulting to a plain "Resume" only if
+// a domain did not supply one (all current callers do).
+func (s ResumeToolSpec) title() string {
+	if s.Title != "" {
+		return s.Title
+	}
+	return "Resume"
 }
 
 // deadHandleReason returns the domain's HandoffReason for steering an agent
@@ -232,7 +246,7 @@ func (s ResumeToolSpec) deadHandleReason() HandoffReason {
 func NewResumeTool(spec ResumeToolSpec, reg *HandoffRegistry, handles *AsyncHandleStore) ToolDescriptor {
 	return ToolDescriptor{
 		Name:        spec.Name,
-		Title:       "Resume",
+		Title:       spec.title(),
 		Description: spec.Description,
 		Category:    CategoryCore,
 		InputSchema: toolSchemaFor[resumeArgs](),

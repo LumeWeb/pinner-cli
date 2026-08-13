@@ -301,6 +301,7 @@ func vaultExpiredResult(handles *AsyncHandleStore, reg *HandoffRegistry, handle,
 func NewVaultCreateResumeDescriptor(reg *HandoffRegistry, handles *AsyncHandleStore) ToolDescriptor {
 	return NewResumeTool(ResumeToolSpec{
 		Name:                vaultCreateResumeToolName,
+		Title:               "Vault Create Resume",
 		Description:         "Poll a pending vault create hand-off to check whether the human has approved the Sia device connection on the one-time create_url and retrieved the recovery seed. Returns pending (needs_human) until the vault is active and the seed has been retrieved, then reports done. Pass the handle returned by vault.create.",
 		RestartTool:         compiledVaultCreateToolName,
 		UnknownHandleDetail: "unknown handle; start a fresh vault create with vault.create",
@@ -315,6 +316,7 @@ func NewVaultCreateResumeDescriptor(reg *HandoffRegistry, handles *AsyncHandleSt
 func NewVaultRestoreResumeDescriptor(reg *HandoffRegistry, handles *AsyncHandleStore) ToolDescriptor {
 	return NewResumeTool(ResumeToolSpec{
 		Name:                vaultRestoreResumeToolName,
+		Title:               "Vault Restore Resume",
 		Description:         "Poll a pending vault restore hand-off to check whether the human has completed the out-of-band restore on the one-time restore_url. Returns pending (needs_human) until the restore is done, then reports done. Pass the handle returned by vault.restore.",
 		RestartTool:         compiledVaultRestoreToolName,
 		UnknownHandleDetail: "unknown handle; start a fresh vault restore with vault.restore",

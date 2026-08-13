@@ -286,7 +286,7 @@ func registerOfficialSearchTools(srv *mcp.Server, catalog *ToolCatalog) error {
 
 	tool := &mcp.Tool{
 		Name:        "search_tools",
-		Description: "Search the internal tool catalog by keyword. Returns matching tool names, descriptions, and categories (without input schemas). Use describe_tool to get the full input schema for a specific tool. Leave query empty to list all available tools.",
+		Description: "Search the internal tool catalog by a single keyword. Matching is substring/subsequence on the tool name, then ranked: exact name match ranks highest, then name-starts-with, name-contains, name-subsequence, and finally description-contains; tools that never match are omitted. There is no boolean (AND/OR) syntax: pass one keyword at a time (e.g. 'pin', not 'pin OR upload'). Use the 'category' filter (core/admin/wizard) to narrow scope, and describe_tool for a tool's full input schema. Leave query empty to list all tools.",
 		InputSchema: schema.raw(),
 	}
 
