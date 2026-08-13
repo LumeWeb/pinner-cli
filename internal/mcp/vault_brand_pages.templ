@@ -15,7 +15,6 @@ templ seedDropPage(profile, mnemonic, action string) {
 			<h1>Vault recovery seed</h1>
 			<p>Profile: <strong>{ profile }</strong></p>
 			<p class="seed-warn">This is the only way back into this vault. Write it down and store it somewhere safe. Do not share it.</p>
-
 			<div class="seed-card" data-seed={ " " + mnemonic }>
 				<div class="seed-grid" aria-label="Recovery seed words">
 					for _, w := range seedWords(mnemonic) {
@@ -30,7 +29,6 @@ templ seedDropPage(profile, mnemonic, action string) {
 					<code class="seed-code">{ mnemonic }</code>
 				</noscript>
 			</div>
-
 			<p>Only click <em>I have stored my recovery seed</em> once you have safely saved it. After you confirm, this link is invalidated and the on-disk copy is removed.</p>
 			<form method="post" action={ action }>
 				<button type="submit">I have stored my recovery seed</button>
