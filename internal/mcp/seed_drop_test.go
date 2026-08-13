@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -178,4 +179,64 @@ func TestSeedDropRetrievalClearsKeptSeed(t *testing.T) {
 	reg, err = vault.LoadRegistry()
 	require.NoError(t, err)
 	require.False(t, reg.Profiles["claimhook"].KeepSeed, "the keep-seed marker must be cleared once retrieved")
+}
+
+// failingWriter simulates a transport failure: every Write fails, so a GET
+// against a seeddrop cannot be considered "retrieved" and must not destroy the
+// only at-rest recovery copy.
+type failingWriter struct {
+	header http.Header
+}
+
+func (f *failingWriter) Header() http.Header {
+	if f.header == nil {
+		f.header = http.Header{}
+	}
+	return f.header
+}
+func (f *failingWriter) WriteHeader(int) {}
+func (f *failingWriter) Write([]byte) (int, error) {
+	return 0, fmt.Errorf("simulated transport failure")
+}
+
+// TestSeedDropWriteFailurePreservesKeptSeed verifies that MarkSeedRetrieved is
+// only invoked after the seed text is confirmed written to the client. A failed
+// Write (prefetch, link-expander, transport loss, attacker racing the URL) must
+// NOT clear KeepSeed or delete the at-rest recovery seed, or the active vault
+// would permanently lose its only recovery credential without the human ever
+// receiving it.
+func TestSeedDropWriteFailurePreservesKeptSeed(t *testing.T) {
+	isoVaultPaths(t)
+
+	// Create a real active keep-seed profile; the seed is on disk + marked.
+	prov := vault.NewProvisioner()
+	_, err := prov.Create(context.Background(), vault.CreateRequest{
+		Profile:       "keeponfail",
+		IndexerURL:    "http://indexer",
+		NewConnection: func(_, _ string) vault.ConnectionFlow { return &stubConnMCP{appKeyHex: validAppKeyHexMCP(t)} },
+	})
+	require.NoError(t, err)
+	seedPath := vault.SeedPath("keeponfail")
+	before, err := os.ReadFile(seedPath)
+	require.NoError(t, err)
+	require.NotEmpty(t, strings.TrimSpace(string(before)))
+
+	// Register a seeddrop for the same profile and serve a GET whose Write
+	// always fails.
+	d := NewSeedDrop(time.Minute)
+	d.SetBaseURL("http://127.0.0.1:9999")
+	mux := http.NewServeMux()
+	d.registerHandlers(mux)
+	url := d.Register("keeponfail", "mnemonic that must survive a failed write")
+
+	mux.ServeHTTP(&failingWriter{}, httptest.NewRequest(http.MethodGet, url, nil))
+
+	// The seed file and KeepSeed marker must be untouched: the client never
+	// confirmed receipt, so the recovery credential must remain.
+	after, err := os.ReadFile(seedPath)
+	require.NoError(t, err, "the kept seed must survive a failed write")
+	require.Equal(t, before, after, "the seed bytes must be unchanged after a failed write")
+	reg, err := vault.LoadRegistry()
+	require.NoError(t, err)
+	require.True(t, reg.Profiles["keeponfail"].KeepSeed, "keep-seed must not be cleared when the write fails")
 }
