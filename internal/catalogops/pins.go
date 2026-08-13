@@ -290,9 +290,9 @@ func pinsRemove(d PinsDeps) catalog.Operation {
 		Visibility:  catalog.VisibilityBoth,
 		Positional:  "<cid...>",
 		Args: []catalog.OperationArg{
-			{Name: "cids", Type: catalog.ArgTypeStringSlice, Help: "Content identifiers to unpin", AgentHelp: "Concrete CIDs to unpin. Omit only when removing all pins (all=true). Do not pass CLI positional/file/stdin syntax; supply the values here."},
+			{Name: "cids", Type: catalog.ArgTypeStringSlice, ExclusiveGroup: "cids_or_all", Help: "Content identifiers to unpin", AgentHelp: "Concrete CIDs to unpin. Omit only when removing all pins (all=true). Do not pass CLI positional/file/stdin syntax; supply the values here."},
 			{Name: "confirm", Type: catalog.ArgTypeBool, Required: true, Help: "Confirm the destructive unpin", AgentHelp: "Must be true to remove pins; this is destructive and cannot be undone."},
-			{Name: "all", Type: catalog.ArgTypeBool, Default: "false", Help: "Remove all pins"},
+			{Name: "all", Type: catalog.ArgTypeBool, ExclusiveGroup: "cids_or_all", Default: "false", Help: "Remove all pins"},
 			{Name: "status", Type: catalog.ArgTypeString, Help: "When all=true, only unpin pins with this status (e.g. failed)"},
 			{Name: "parallel", Type: catalog.ArgTypeInt, Default: "0", Help: "Maximum number of parallel unpin operations for a batch"},
 			{Name: "continue", Type: catalog.ArgTypeBool, Default: "false", Help: "Continue unpinning remaining CIDs when one fails"},
@@ -311,8 +311,18 @@ func pinsRemove(d PinsDeps) catalog.Operation {
 			parallel := catalog.IntArg(input, "parallel", 0)
 			continueOn := catalog.BoolArg(input, "continue", false)
 
+			// Enforce exactly-one-of cids | all: supplying both would silently
+			// discard cids and unpin every pin (destructive); supplying neither
+			// removes nothing. Reject both so the guide, schema (oneOf), and
+			// runtime agree on the destructive selector contract.
+			cids := catalog.StrSliceArg(input, "cids")
+			all := catalog.BoolArg(input, "all", false)
+			if len(cids) > 0 && all {
+				return nil, fmt.Errorf("pins_rm: pass either cids or all=true, not both")
+			}
+
 			// --all unpins every pin (optionally filtered by status).
-			if catalog.BoolArg(input, "all", false) {
+			if all {
 				statusFilter := catalog.StrArg(input, "status", "")
 				if catalog.BoolArg(input, "dry-run", false) {
 					// Report the request IDs that would be unpinned without
@@ -344,7 +354,6 @@ func pinsRemove(d PinsDeps) catalog.Operation {
 				})
 			}
 
-			cids := catalog.StrSliceArg(input, "cids")
 			if len(cids) == 0 {
 				return nil, fmt.Errorf("pins_rm: no CIDs provided (pass <cid...>, --file, pipe from stdin, or --all)")
 			}

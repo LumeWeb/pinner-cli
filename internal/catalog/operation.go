@@ -72,6 +72,12 @@ type OperationArg struct {
 	Help          string // human help (CLI)
 	AgentHelp     string // agent-oriented help (MCP); audience separation
 	AgentRequired bool   // required on the MCP surface only; never the CLI
+	// ExclusiveGroup groups args that must be supplied exactly-one-of on the
+	// MCP surface (JSON Schema oneOf). Args sharing the same non-empty group
+	// name are mutually exclusive alternatives; supplying none or more than
+	// one is rejected. Only the schema advertises the constraint; runtime
+	// enforcement stays with the handler.
+	ExclusiveGroup string
 }
 
 // Handler.Execute runs the business operation against core. It never touches

@@ -290,6 +290,162 @@ func TestInputSchemaRequiredExcludesDefaultedArg(t *testing.T) {
 	}
 }
 
+// TestInputSchemaEmitsExclusiveOneOf pins the v5 polish: args sharing an
+// ExclusiveGroup are advertised as a JSON Schema oneOf so the model supplies
+// exactly one of them, mirroring the runtime handler's cids-OR-all guard.
+func TestInputSchemaEmitsExclusiveOneOf(t *testing.T) {
+	c := NewCatalog()
+	if err := c.Add(NewOperation(OperationSpec{
+		Name: "pins.rm", Title: "Remove pins", Summary: "remove pins",
+		Category: "core", Safety: SafetyDestructive,
+		Interaction: InteractionAgentSafe, Visibility: VisibilityModel,
+		Args: []OperationArg{
+			{Name: "confirm", Type: ArgTypeBool, Required: true},
+			{Name: "cids", Type: ArgTypeStringSlice, ExclusiveGroup: "cids_or_all"},
+			{Name: "all", Type: ArgTypeBool, ExclusiveGroup: "cids_or_all"},
+			{Name: "status", Type: ArgTypeString},
+		},
+		Handler: &captureHandler{},
+	})); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	raw, err := NewMCPCompiler().Compile(c)
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	td := toolNamed(t, raw, "pins.rm")
+	var sch map[string]any
+	if err := json.Unmarshal(td.InputSchema, &sch); err != nil {
+		t.Fatalf("InputSchema not valid JSON: %v", err)
+	}
+	oneOf, ok := sch["oneOf"].([]any)
+	if !ok {
+		t.Fatalf("schema oneOf missing or not a list: %#v", sch["oneOf"])
+	}
+	if len(oneOf) != 2 {
+		t.Fatalf("oneOf has %d clauses, want 2 (cids XOR all): %#v", len(oneOf), oneOf)
+	}
+	// Value-aware clauses: cids branch forbids all:{const:true} (so explicit
+	// all:false alongside cids is valid); all branch requires all:{const:true}.
+	cidsClause := oneOf[0].(map[string]any)
+	allClause := oneOf[1].(map[string]any)
+	if !contains(toStrings(cidsClause["required"]), "cids") {
+		t.Fatalf("first clause must require cids: %#v", cidsClause)
+	}
+	// The cids branch itself must require a NON-EMPTY array (matching the
+	// runtime len(cids)>0 check): an empty but present [] does not select cids.
+	cidsMin := cidsClause["properties"].(map[string]any)["cids"].(map[string]any)
+	if cidsMin["minItems"] != float64(1) {
+		t.Fatalf("cids branch must require cids:{minItems:1}, got %#v", cidsMin)
+	}
+	cidsNot := cidsClause["not"].(map[string]any)
+	cidsAnyOf := cidsNot["anyOf"].([]any)
+	cidsForbid := cidsAnyOf[0].(map[string]any)
+	// The bool forbid must pair presence with the const, so an absent `all`
+	// (normal cids-only call) is not vacuum-caught: require all present-true.
+	if !contains(toStrings(cidsForbid["required"]), "all") {
+		t.Fatalf("cids branch bool-forbid must require all presence (avoid vacuum): %#v", cidsForbid)
+	}
+	allConst := cidsForbid["properties"].(map[string]any)["all"].(map[string]any)
+	if allConst["const"] != true {
+		t.Fatalf("cids branch must forbid all:{const:true}, got %#v", allConst)
+	}
+	if !contains(toStrings(allClause["required"]), "all") {
+		t.Fatalf("second clause must require all: %#v", allClause)
+	}
+	allProps := allClause["properties"].(map[string]any)["all"].(map[string]any)
+	if allProps["const"] != true {
+		t.Fatalf("all branch must require all:{const:true}, got %#v", allProps)
+	}
+	// The all-branch's forbid of cids must require a NON-EMPTY cids, so
+	// {cids:[], all:true} is a valid unpin-all (empty cids is not selected),
+	// matching the runtime.
+	allNot := allClause["not"].(map[string]any)
+	allAnyOf := allNot["anyOf"].([]any)
+	allCidsForbid := allAnyOf[0].(map[string]any)
+	allCidsMin := allCidsForbid["properties"].(map[string]any)["cids"].(map[string]any)
+	if allCidsMin["minItems"] != float64(1) {
+		t.Fatalf("all branch cids-forbid must require cids:{minItems:1}, got %#v", allCidsMin)
+	}
+	// The exclusive args must NOT be in top-level required (neither is individually required).
+	if req, ok := sch["required"].([]any); ok {
+		for _, r := range req {
+			if r == "cids" || r == "all" {
+				t.Fatalf("exclusive arg %v must not be in top-level required", r)
+			}
+		}
+	}
+}
+
+// TestInputSchemaExclusiveOneOfAccumulates pins the Kody finding on 3+ member
+// groups: each branch's "not" must aggregate constraints for ALL other members
+// (under not:{anyOf:[...]}), not just the last one, so exactly-one XOR holds.
+func TestInputSchemaExclusiveOneOfAccumulates(t *testing.T) {
+	c := NewCatalog()
+	if err := c.Add(NewOperation(OperationSpec{
+		Name: "pick.one", Title: "Pick one", Summary: "pick one",
+		Category: "core", Safety: SafetyMutate,
+		Interaction: InteractionAgentSafe, Visibility: VisibilityModel,
+		Args: []OperationArg{
+			{Name: "a", Type: ArgTypeString, ExclusiveGroup: "choice"},
+			{Name: "b", Type: ArgTypeBool, ExclusiveGroup: "choice"},
+			{Name: "c", Type: ArgTypeStringSlice, ExclusiveGroup: "choice"},
+		},
+		Handler: &captureHandler{},
+	})); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	raw, err := NewMCPCompiler().Compile(c)
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	td := toolNamed(t, raw, "pick.one")
+	var sch map[string]any
+	if err := json.Unmarshal(td.InputSchema, &sch); err != nil {
+		t.Fatalf("InputSchema not valid JSON: %v", err)
+	}
+	oneOf, ok := sch["oneOf"].([]any)
+	if !ok {
+		t.Fatalf("schema oneOf missing or not a list: %#v", sch["oneOf"])
+	}
+	if len(oneOf) != 3 {
+		t.Fatalf("oneOf has %d clauses, want 3 (one per member): %#v", len(oneOf), oneOf)
+	}
+	// The branch for "a" must forbid both other members via a 2-element anyOf.
+	aClause := oneOf[0].(map[string]any)
+	if !contains(toStrings(aClause["required"]), "a") {
+		t.Fatalf("clause 0 must require a: %#v", aClause)
+	}
+	aNot := aClause["not"].(map[string]any)
+	aAnyOf := aNot["anyOf"].([]any)
+	if len(aAnyOf) != 2 {
+		t.Fatalf("a branch must forbid 2 other members via anyOf of length 2, got %#v", aNot)
+	}
+}
+
+func contains(hay []string, needle string) bool {
+	for _, h := range hay {
+		if h == needle {
+			return true
+		}
+	}
+	return false
+}
+
+func toStrings(v any) []string {
+	switch t := v.(type) {
+	case []string:
+		return t
+	case []any:
+		out := make([]string, len(t))
+		for i, e := range t {
+			out[i], _ = e.(string)
+		}
+		return out
+	}
+	return nil
+}
+
 // TestInputSchemaMarksSensitiveArg pins the round-12 fix: an OperationArg with
 // Sensitive set is carried through the shared JSON Schema via SensitiveSchemaKey,
 // so the MCP/adapter layer can redact the value from logs and echoed tool calls —

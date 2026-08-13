@@ -197,6 +197,33 @@ func catalogActionAdapter(op catalog.Operation, group string) cli.ActionFunc {
 		// accept them (add/rm take cids; status/update take a single cid).
 		switch op.Name() {
 		case group + "add", group + "rm":
+			// rm's cids|--all selector is enforced at the CLI boundary too. Any
+			// explicit, non-empty CID source alongside --all (positional args,
+			// the generated --cids flag, an --file, or piped stdin carrying
+			// CIDs) is a destructive ambiguity and is rejected before dispatch
+			// — never silently discard the operator's CIDs and unpin everything.
+			// Only a truly empty bare `--all` proceeds to unpin-all.
+			if op.Name() == group+"rm" && c.Bool(FlagAll) {
+				// Positional args and the generated --cids flag are explicit
+				// selector intent; a non-empty input alongside --all is a
+				// destructive ambiguity -> reject (never silently discard
+				// typed CIDs and unpin everything).
+				if c.Args().Len() > 0 || len(c.StringSlice("cids")) > 0 {
+					return fmt.Errorf("pins rm: pass either cids or --all, not both")
+				}
+				// An explicit --file or piped stdin that actually yields CIDs
+				// alongside --all is also a destructive ambiguity (an operator
+				// pointing --all at a real CID list), so resolve the source and
+				// reject non-empty results. Only a truly empty bare --all
+				// proceeds to unpin-all. Resolution here consumes stdin when
+				// piped; that is correct since the call is being rejected.
+				if c.IsSet(FlagFile) || isStdinPipe() {
+					if resolved, err := resolveCidsInput(c); err == nil && len(resolved) > 0 {
+						return fmt.Errorf("pins rm: pass either cids or --all, not both")
+					}
+				}
+				break
+			}
 			resolved, err := resolveCidsInput(c)
 			if err != nil {
 				return err
