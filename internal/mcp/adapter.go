@@ -9,7 +9,6 @@
 package mcp
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"net"
@@ -17,10 +16,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/urfave/cli/v3"
@@ -723,13 +720,10 @@ func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string, seedDr
 
 	// Compiled operation surface. When catalogDeps is set, buildCatalog derives
 	// the MCP tool surface from the operation catalog (compiler-backed
-	// descriptions/schemas) in addition to the legacy CLI-tree walk. compiledOps
-	// records which tool names are catalog-backed so the tool handler routes
-	// them through catalog.Catalog.Invoke instead of the CLI argv dispatcher.
-	var (
-		opsCat      opcat.Catalog
-		compiledOps map[string]bool
-	)
+	// descriptions/schemas). Each compiled operation is surfaced as a ToolEntry
+	// whose Handler routes through catalog.Catalog.Invoke directly (see
+	// populateCatalogSurface), so there is no separate argv-dispatcher routing.
+	var opsCat opcat.Catalog
 	if cfg.catalogDeps != nil {
 		if deps := cfg.catalogDeps(); deps != nil {
 			oc, err := AssembleCatalogOps(deps)
@@ -739,202 +733,44 @@ func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string, seedDr
 			opsCat = oc
 		}
 	}
+	// Record whether compiler mode is actually active (factory supplied AND
+	// resolved non-nil) so registerCustomTools picks the same curated set
+	// buildCatalog used. This is the single source of truth for the mode.
+	catalog.CompilerMode = opsCat != nil
 
-	// runMu serializes root.Run calls. A shallow copy of root gives each
-	// invocation isolated Writer/ErrWriter, but subcommand flag state is shared
-	// in the Commands slice, so concurrent Run calls race on those pointers.
-	// The lock is held only across Run, not during arg prep or response building.
-	runMu := sync.Mutex{}
-
-	toolHandler := func(ctx context.Context, request ToolRequest) (ToolResult, error) {
-		args := strings.Split(request.Name, ToolDelimiter)
-
-		// Strip the root command name from args before forwarding.
-		args = args[1:]
-
-		// Prepend any non-root command prefix.
-		args = append(prefix, args...)
-
-		// Guard against recursive MCP invocation.
-		if slices.Contains(args, "mcp") {
-			return ToolResult{}, fmt.Errorf("cannot invoke MCP from within MCP")
-		}
-
-		// Catalog-backed operations dispatch through the operation catalog's
-		// Invoke gate (typed arguments + Safety/Interaction/Visibility
-		// enforcement), not the CLI argv dispatcher. Route them here so the
-		// compiler-produced descriptions/schemas are the single surface these
-		// tools present.
-		if opsCat != nil && compiledOps[request.Name] {
-			return DispatchCatalogOp(ctx, opsCat, opcat.ActorModel, request.Name, request.Arguments, request.Name)
-		}
-
-		// Force agent mode for every MCP tool invocation: structured JSON
-		// output, no ANSI colors, no interactive prompts.
-		if !slices.Contains(args, "--agent") {
-			args = append(args, "--agent")
-		}
-
-		for key, val := range request.Arguments {
-			if key == "_args" {
-				if arr, ok := val.([]any); ok {
-					for _, a := range arr {
-						if s, ok := a.(string); ok {
-							args = append(args, s)
-						} else {
-							return ToolResult{}, fmt.Errorf("_args entries must be strings, got %T", a)
-						}
-					}
-				}
-				continue
-			}
-			k := fmt.Sprintf("--%s", key)
-			switch v := val.(type) {
-			case string:
-				args = append(args, k, v)
-			case []any:
-				for _, item := range v {
-					s, ok := item.(string)
-					if !ok {
-						return ToolResult{}, fmt.Errorf("array argument %q entries must be strings, got %T", key, item)
-					}
-					args = append(args, k, s)
-				}
-			case bool:
-				if v {
-					args = append(args, k)
-				} else {
-					args = append(args, fmt.Sprintf("%s=false", k))
-				}
-			case float64:
-				// JSON decodes all numbers as float64. Format as int64 when
-				// the value is a whole number to avoid precision loss on
-				// large integer flags.
-				if v == float64(int64(v)) && v >= -9223372036854775808 && v <= 9223372036854775807 {
-					args = append(args, k, strconv.FormatInt(int64(v), 10))
-				} else {
-					args = append(args, k, strconv.FormatFloat(v, 'f', -1, 64))
-				}
-			case nil:
-				// null means "not provided": skip
-			default:
-				return ToolResult{}, fmt.Errorf("unsupported argument type for %q: %T", key, val)
-			}
-		}
-		// Redact credential values from the arg-trace log. Which flags are
-		// sensitive is declared on the command's own flags (SensitiveProvider)
-		// and carried on the catalog entry, so this derives from the schema
-		// instead of a separately-maintained hardcoded name list.
-		sensitiveFlags := make(map[string]bool, 8)
-		if entry, ok := catalog.Get(request.Name); ok {
-			for _, name := range entry.SensitiveFlags {
-				sensitiveFlags["--"+name] = true
-			}
-		}
-		zapArgs := make([]zap.Field, 0, len(args))
-		for i, arg := range args {
-			if i > 0 && sensitiveFlags[args[i-1]] {
-				zapArgs = append(zapArgs, zap.String(fmt.Sprintf("%d", i), "****"))
-			} else {
-				zapArgs = append(zapArgs, zap.String(fmt.Sprintf("%d", i), arg))
-			}
-		}
-		log.Info("invoking in-process", zapArgs...)
-
-		// Execute the command tree in-process, capturing stdout and stderr
-		// into buffers instead of forking a subprocess. root.Run expects
-		// osArgs[0] to be the program name (like os.Args), so prepend the
-		// root command name.
-		runArgs := append([]string{root.Name}, args...)
-		var stdout, stderr bytes.Buffer
-		// Shallow-copy the root command so each invocation gets isolated
-		// Writer/ErrWriter without mutating the shared root or serializing
-		// concurrent tool calls.
-		rootCopy := *root
-		rootCopy.Writer = &stdout
-		rootCopy.ErrWriter = &stderr
-		// Create a fresh context for the in-process command run.
-		//
-		// The outer root.Run() (from "pinner mcp") stores the original root
-		// command in the context via an unexported commandContextKey. If we
-		// pass that context through to rootCopy.Run(), urfave/cli v3 sets
-		// rootCopy.parent to the original root: making Root() resolve to
-		// the original root (whose Writer is os.Stdout) instead of rootCopy
-		// (whose Writer is our buffer). This causes command output to leak
-		// to the real stdout, corrupting the MCP JSON-RPC stream.
-		//
-		// Since commandContextKey is unexported, we create a bare context
-		// and propagate only cancellation from the parent.
-		runCtx, cancel := context.WithCancel(context.Background())
-		go func() {
-			select {
-			case <-ctx.Done():
-				cancel()
-			case <-runCtx.Done():
-			}
-		}()
-		runMu.Lock()
-		runErr := rootCopy.Run(runCtx, runArgs)
-		runMu.Unlock()
-		cancel()
-
-		if runErr != nil {
-			msg := stripANSI(stderr.String())
-			if msg == "" {
-				msg = runErr.Error()
-			}
-			return ToolResult{IsError: true, Text: msg}, nil
-		}
-
-		// Return the CLI command's stdout directly. The vault create/restore OOB
-		// hand-offs are routed through the catalog operations by dedicated
-		// handlers (see vault_setup_ops.go) that return a needs_human hand-off,
-		// so no stdout post-processing is needed here.
-		return ToolResult{Text: stripANSI(stdout.String())}, nil
+	// The compiler-backed operation catalog is the sole population mechanism:
+	// the legacy CLI-tree walk is intentionally not run. A nil opsCat therefore
+	// means there is no model surface at all (only transport/custom tools), so
+	// fail fast with an explicit error instead of silently serving an empty
+	// catalog. Callers must supply a resolving WithCatalogOps bundle.
+	if opsCat == nil {
+		return nil, fmt.Errorf("mcp: no catalog-deps bundle resolved; the compiler-backed surface is the only source and requires withCatalogDeps")
 	}
 
-	// Populate the catalog from the command tree. All commands are stored
-	// internally: they are NOT registered on the MCP server. The meta-tools
-	// (search_tools, describe_tool, invoke_tool) provide the discovery and
-	// invocation interface.
-	if err := catalog.RegisterFromCommand(root, hasRootAction, prefix, toolHandler); err != nil {
-		return nil, err
-	}
+	// Populate the catalog. The compiler-backed operation catalog is the single
+	// source of truth for the MCP surface: the covered domains (auth,
+	// vault/setup, pins, websites, dns, ipns, api-keys, operations) come from
+	// populateCatalogSurface below, and custom transport tools (SSO/resume,
+	// wizards, upload backends) are layered by registerCustomTools. The legacy
+	// CLI-tree walk is not run at all, so no pinner_* tools are produced.
 
-	// Route the vault create/restore tools through the catalog operations
-	// (vault_setup_ops.go) so they produce a clean, CLI-free OOB hand-off. These
-	// two tools are agent-safe OOB hand-offs that never touch os.Stdin (the
-	// `--seed-stdin` path is a CLI/terminal mechanism, not an MCP surface).
-	// Interaction is forced to agent_safe so neither tool is hidden on the MCP
-	// channel.
-	if restoreEntry, ok := catalog.Get(vaultRestoreToolName); ok {
-		restoreEntry.Handler = vaultRestoreSetupHandler(oobRestore, handoffReg, authHandles)
-		restoreEntry.Interaction = InteractionAgentSafe
-		catalog.Add(restoreEntry)
-	}
-	if createEntry, ok := catalog.Get(vaultCreateToolName); ok {
-		createEntry.Handler = vaultCreateSetupHandler(oobCreate, handoffReg, authHandles)
-		createEntry.Interaction = InteractionAgentSafe
-		catalog.Add(createEntry)
-	}
-
-	// When a catalog-deps bundle was supplied, append the compiler-derived
+	// When a catalog-deps bundle was supplied, register the compiler-derived
 	// operation surface (auth, vault-setup, vault, pins, websites, dns, ipns,
-	// api-keys, operations) on top of the legacy CLI-tree tools. These entries
-	// carry the catalogops AgentDescription/typed schemas and dispatch through
-	// the operation catalog's Invoke gate at runtime (see compiledOps routing
-	// in toolHandler). markCurated promotes any matching name to tools/list.
+	// api-keys, operations). These entries carry the catalogops
+	// AgentDescription/typed schemas and dispatch through the operation
+	// catalog's Invoke gate at runtime. markCurated promotes the compiled
+	// curated names to tools/list.
 	if opsCat != nil {
 		names, err := populateCatalogSurface(catalog, opsCat)
 		if err != nil {
 			return nil, err
 		}
-		compiledOps = names
+		_ = names // populateCatalogSurface registers the compiled entries; the name set is informational only.
 		// Route the compiled vault.create / vault.restore entries through the
-		// same out-of-band setup handlers as the legacy names, so a model
-		// invoking the compiled vault-setup tool receives the full create_url /
-		// restore_url + resume-handle + needs_human hand-off its
-		// AgentDescription promises, rather than a bare JSON-serialized
+		// out-of-band setup handlers, so a model invoking the compiled
+		// vault-setup tool receives the full create_url / restore_url +
+		// resume-handle + needs_human hand-off its AgentDescription promises,
+		// rather than a bare JSON-serialized
 		// VaultCreateHandoff/VaultRestoreHandoff{Profile} plaintext.
 		if restoreEntry, ok := catalog.Get(compiledVaultRestoreToolName); ok {
 			restoreEntry.Handler = vaultRestoreSetupHandler(oobRestore, handoffReg, authHandles)

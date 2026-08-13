@@ -8,15 +8,14 @@ import (
 )
 
 func TestMarkCuratedStampsDirectVisible(t *testing.T) {
-	// A catalog built the way buildCatalog does it: CLI commands are present.
 	catalog := NewToolCatalog()
-	for _, name := range curatedToolNames {
+	for _, name := range compiledCuratedToolNames {
 		catalog.Add(&ToolEntry{Name: name, Handler: func(_ context.Context, _ ToolRequest) (ToolResult, error) {
 			return ToolResult{Text: "ok"}, nil
 		}})
 	}
 	// Non-curated entries stay hidden.
-	for _, name := range []string{"pinner_setup", "pinner_admin_pprof", "setup_wizard_start", "setup_wizard_step", "pinner_auth"} {
+	for _, name := range []string{"pinner_setup", "pinner_pins", "pinner_auth", "dns.zones.list", "vault.sync", "operations.list", "websites.create"} {
 		catalog.Add(&ToolEntry{Name: name, Handler: func(_ context.Context, _ ToolRequest) (ToolResult, error) {
 			return ToolResult{Text: "ok"}, nil
 		}})
@@ -24,12 +23,12 @@ func TestMarkCuratedStampsDirectVisible(t *testing.T) {
 
 	markCurated(catalog)
 
-	for _, name := range curatedToolNames {
+	for _, name := range compiledCuratedToolNames {
 		entry, ok := catalog.Get(name)
 		require.True(t, ok, name)
 		require.True(t, entry.DirectVisible, name)
 	}
-	for _, name := range []string{"pinner_setup", "pinner_admin_pprof", "setup_wizard_start", "setup_wizard_step", "pinner_auth"} {
+	for _, name := range []string{"pinner_setup", "pinner_pins", "pinner_auth", "dns.zones.list", "vault.sync", "operations.list", "websites.create"} {
 		entry, ok := catalog.Get(name)
 		require.True(t, ok, name)
 		require.False(t, entry.DirectVisible, name)
@@ -62,8 +61,29 @@ func TestRegisterOfficialCuratedToolsRegistersOnlyDirectVisible(t *testing.T) {
 	require.NoError(t, RegisterOfficialCuratedTools(server, catalog))
 }
 
-func TestAuthLogoutIsNotClassifiedAsDestructive(t *testing.T) {
-	require.True(t, isReadOnlyName([]string{"pinner", "auth", "status"}))
-	require.False(t, isReadOnlyName([]string{"pinner", "auth", "logout"}))
-	require.False(t, isDestructiveName([]string{"pinner", "auth", "logout"}))
+// TestMarkCuratedPromotesWizardTools guards the Kody finding that the
+// website/domain wizard start/step tools must remain on the direct tools/list
+// surface. RegisterWizardTools does not set DirectVisible itself, so the
+// wizard names must be part of the curated set promoted by markCurated.
+func TestMarkCuratedPromotesWizardTools(t *testing.T) {
+	catalog := NewToolCatalog()
+	for _, name := range []string{
+		"domains_wizard_start", "domains_wizard_step",
+		"websites_wizard_start", "websites_wizard_step",
+		"auth.status", "vault.ls",
+	} {
+		catalog.Add(&ToolEntry{Name: name, Handler: func(_ context.Context, _ ToolRequest) (ToolResult, error) {
+			return ToolResult{Text: "ok"}, nil
+		}})
+	}
+	markCurated(catalog)
+	for _, name := range []string{
+		"domains_wizard_start", "domains_wizard_step",
+		"websites_wizard_start", "websites_wizard_step",
+	} {
+		entry, ok := catalog.Get(name)
+		require.True(t, ok, name)
+		require.True(t, entry.DirectVisible, "wizard tool %s must be directly visible after markCurated", name)
+	}
 }
+

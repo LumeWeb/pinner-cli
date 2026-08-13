@@ -14,7 +14,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
-	"github.com/urfave/cli/v3"
+	"go.lumeweb.com/pinner-cli/internal/catalogops"
 )
 
 // newOfficialTestServer builds an official-SDK server with one catalog entry
@@ -363,38 +363,26 @@ func TestOfficialInvokeVaultRestoreRoutesAgentSafeHandoff(t *testing.T) {
 		t.Setenv("LOCALAPPDATA", filepath.Join(home, "AppData", "Local"))
 	}
 
-	root := &cli.Command{
-		Name:  "pinner",
-		Flags: []cli.Flag{&cli.BoolFlag{Name: "agent", Usage: "agent mode"}},
-		Commands: []*cli.Command{
-			{
-				Name: "vault",
-				Commands: []*cli.Command{
-					{
-						Name:   "restore",
-						Action: func(ctx context.Context, cmd *cli.Command) error { return nil },
-					},
-				},
-			},
-		},
-	}
-
 	// Wire an OOB restore coordinator + resume machinery, then produce the real
-	// catalog through buildCatalog (the path the server uses). The restore tool
-	// must route through the agent-safe catalog-op handler and mint a restore_url
-	// hand-off; it is not stdin-gated (the seed is entered by
-	// the human on the one-time page, never via --seed-stdin on the MCP channel).
+	// catalog through buildCatalog (the path the server uses). The compiled
+	// vault.restore tool must route through the agent-safe catalog-op handler
+	// and mint a restore_url hand-off; it is not stdin-gated (the seed is
+	// entered by the human on the one-time page, never via --seed-stdin on the
+	// MCP channel).
 	oobRestore := NewOOBRestore(nil, time.Minute)
 	t.Cleanup(func() { oobRestore.Stop(context.Background()) })
 	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
 	reg := NewHandoffRegistry()
-	catalog, err := buildCatalog(root, true, nil, nil, oobRestore, nil, reg, handles)
+	catalog, err := buildCatalog(compilerRoot(), true, nil, nil, oobRestore, nil, reg, handles,
+		withCatalogDeps(func() *CatalogDepsBundle {
+			return &CatalogDepsBundle{VaultSetup: catalogops.VaultDeps{}}
+		}))
 	require.NoError(t, err)
 
-	restore, ok := catalog.Get("pinner_vault_restore")
-	require.True(t, ok)
+	restore, ok := catalog.Get(compiledVaultRestoreToolName)
+	require.True(t, ok, "compiled vault.restore must be present in compiler mode")
 	require.Equal(t, InteractionAgentSafe, restore.Interaction,
-		"buildCatalog must route vault restore through the agent-safe OOB hand-off handler")
+		"buildCatalog must route compiled vault restore through the agent-safe OOB hand-off handler")
 
 	srv := NewOfficialServer(nil)
 	require.NoError(t, RegisterOfficialMetaTools(srv, catalog, true, nil, oobRestore, nil))
@@ -405,7 +393,7 @@ func TestOfficialInvokeVaultRestoreRoutesAgentSafeHandoff(t *testing.T) {
 	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
 		Name: "invoke_tool",
 		Arguments: map[string]any{
-			"name":      "pinner_vault_restore",
+			"name":      compiledVaultRestoreToolName,
 			"arguments": map[string]any{},
 		},
 	})

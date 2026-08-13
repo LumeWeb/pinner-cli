@@ -114,9 +114,8 @@ func registerCustomTools(deps customToolDeps) error {
 
 	// Stamp which tools are part of the direct tools/list surface. This must
 	// run after the wizard tools and SSO tools are added to the catalog (both
-	// are created after buildCatalog returns), so the curated names — which
-	// include the website/domain wizard tools — are all present before
-	// visibility is marked.
+	// are created after buildCatalog returns), so the compiled curated names
+	// are all present before visibility is marked.
 	markCurated(deps.catalog)
 
 	if err := RegisterOfficialCuratedTools(deps.srv, deps.catalog); err != nil {

@@ -12,9 +12,11 @@ import (
 )
 
 // compilerRoot builds a minimal CLI command tree with one walkable command
-// (pinner_pins) so the legacy RegisterFromCommand would surface it in the
-// no-deps fallback path.
-func compilerRoot245() *cli.Command {
+// (pinner_pins). Because the legacy RegisterFromCommand walk is not run at all
+// in the MCP surface, this command is only surfaced when the compiled pins
+// domain is present (if at all); it is primarily a fixture for asserting the
+// walk is absent.
+func compilerRoot() *cli.Command {
 	return &cli.Command{
 		Name: "pinner",
 		Commands: []*cli.Command{
@@ -26,27 +28,24 @@ func compilerRoot245() *cli.Command {
 // TestOfficialMCPServerForwardsCatalogDeps guards the production wiring that
 // Kody flagged as dead code: MCPCommand's Action must thread a WithCatalogOps
 // bundle into buildCatalog (via OfficialMCPServer with withCatalogDeps) so the
-// compiler surface is actually live in the running server. It exercises the
-// public official server entry point with and without the option.
+// compiler surface is actually live in the running server. Without the option
+// buildCatalog fails fast (there is no fallback surface), and with it the
+// compiler surface is live.
 func TestOfficialMCPServerForwardsCatalogDeps(t *testing.T) {
-	root := compilerRoot245()
+	root := compilerRoot()
 
-	// Without the option, the compiled surface is absent and the legacy walk
-	// runs (baseline: the option is what turns the compiler surface on).
-	srv, cat, err := OfficialMCPServer(root, true, nil, false, nil, nil, nil, NewHandoffRegistry(), NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions))
-	require.NoError(t, err)
-	require.NotNil(t, srv)
-	_, ok := cat.Get("auth.status")
-	require.False(t, ok, "compiled op must be absent without withCatalogDeps")
-	_, ok = cat.Get("pinner_pins")
-	require.True(t, ok, "legacy walk must run without withCatalogDeps")
+	// Without the option, buildCatalog fails fast: there is no legacy walk and
+	// no compiler surface, so a caller that forgot WithCatalogOps gets an
+	// explicit error instead of a silently-empty model catalog.
+	_, _, err := OfficialMCPServer(root, true, nil, false, nil, nil, nil, NewHandoffRegistry(), NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions))
+	require.Error(t, err, "missing catalog-deps bundle must fail fast, not silently serve an empty surface")
 
-	// With the option, the compiled surface is live on top of the legacy walk.
+	// With the option, the compiler surface is live.
 	srv2, cat2, err := OfficialMCPServer(root, true, nil, false, nil, nil, nil, NewHandoffRegistry(), NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions),
 		withCatalogDeps(func() *CatalogDepsBundle { return &CatalogDepsBundle{Auth: catalogops.AuthDeps{}} }))
 	require.NoError(t, err)
 	require.NotNil(t, srv2)
-	_, ok = cat2.Get("auth.status")
+	_, ok := cat2.Get("auth.status")
 	require.True(t, ok, "compiled op must be present when withCatalogDeps is supplied to OfficialMCPServer")
 }
 
@@ -70,7 +69,7 @@ func TestCompiledVaultCreateHonorsOOBHandoff(t *testing.T) {
 	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
 	reg := NewHandoffRegistry()
 
-	srv, cat, err := OfficialMCPServer(compilerRoot245(), true, nil, false, nil, nil, oob, reg, handles,
+	srv, cat, err := OfficialMCPServer(compilerRoot(), true, nil, false, nil, nil, oob, reg, handles,
 		withCatalogDeps(func() *CatalogDepsBundle { return &CatalogDepsBundle{Auth: catalogops.AuthDeps{}} }))
 	require.NoError(t, err)
 	require.NotNil(t, srv)
@@ -99,4 +98,54 @@ func TestCompiledVaultCreateHonorsOOBHandoff(t *testing.T) {
 	require.Contains(t, createURL, "/create/", "compiled vault.create must mint a one-time create_url")
 	require.NotEmpty(t, sc["handle"], "compiled vault.create hand-off must carry a resume handle")
 	require.NotEmpty(t, sc["resume_tool"], "compiled vault.create hand-off must name its resume tool")
+}
+
+// TestCompilerModeProvidesCompiledSurface verifies that when a catalog-deps
+// bundle is supplied, buildCatalog is compiler-backed: the compiled catalogops
+// surface is present and the legacy CLI-tree walk is not run (so no pinner_*
+// tools are produced for any domain).
+func TestCompilerModeProvidesCompiledSurface(t *testing.T) {
+	tc, err := buildCatalog(compilerRoot(), true, nil, nil, nil, nil, nil, nil,
+		withCatalogDeps(func() *CatalogDepsBundle {
+			return &CatalogDepsBundle{
+				Auth: catalogops.AuthDeps{}, // nil services fine at registration
+			}
+		}))
+	require.NoError(t, err)
+
+	// Compiled op present and discoverable via the compiler-backed surface.
+	entry, ok := tc.Get("auth.status")
+	require.True(t, ok, "compiled auth.status should be present in compiler mode")
+	require.NotNil(t, entry.Handler)
+
+	// The legacy walk is entirely absent: the CLI-tree tool for the `pins`
+	// command (would be pinner_pins) must NOT be registered.
+	_, ok = tc.Get("pinner_pins")
+	require.False(t, ok, "legacy pinner_pins must not be registered (walk is removed)")
+
+	// The compiled op dispatches through the catalog gate without a hard error
+	// (missing required args surface as a clean ToolResult error, not a panic).
+	res, err := entry.Handler(context.Background(), ToolRequest{Name: "auth.status", Arguments: map[string]any{}})
+	require.NoError(t, err)
+	require.True(t, res.IsError, "executing auth.status with nil deps should fail cleanly, not panic")
+}
+
+// TestNoLegacyWalkFailsFastWithoutDeps verifies the compiler-only contract:
+// with no catalog-deps bundle the legacy walk is never run, and buildCatalog
+// fails fast with an explicit error rather than silently serving an empty
+// model surface (there is no fallback).
+func TestNoLegacyWalkFailsFastWithoutDeps(t *testing.T) {
+	_, err := buildCatalog(compilerRoot(), true, nil, nil, nil, nil, nil, nil)
+	require.Error(t, err, "buildCatalog without a resolving deps bundle must fail fast")
+	require.ErrorContains(t, err, "withCatalogDeps", "error should point at the required option")
+}
+
+// TestCompilerModeConsistentWhenDepsResolveNil guards the Kody finding that the
+// compiler mode must originate from one resolved source. When the factory is
+// supplied but resolves to nil there is no model surface, so buildCatalog
+// fails fast instead of silently serving an empty catalog.
+func TestCompilerModeConsistentWhenDepsResolveNil(t *testing.T) {
+	_, err := buildCatalog(compilerRoot(), true, nil, nil, nil, nil, nil, nil,
+		withCatalogDeps(func() *CatalogDepsBundle { return nil }))
+	require.Error(t, err, "resolved-nil bundle must fail fast, not silently serve an empty surface")
 }
