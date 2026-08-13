@@ -286,6 +286,12 @@ For more help on any command: pinner <command> --help`,
 			}
 			return uploadHandler(ctx, reader, size, name, wait)
 		}),
+		// Wire the production operation-catalog deps bundle so the
+		// compiler-derived MCP surface (auth, vault-setup, vault, pins,
+		// websites, dns, ipns, api-keys, operations) goes LIVE for real
+		// invocations. The bundle resolves config and services lazily per
+		// request via buildCatalogOpsDeps, so live token reload is preserved.
+		mcpadapter.WithCatalogOps(buildCatalogOpsDeps),
 	))
 
 	return root
