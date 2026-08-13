@@ -63,14 +63,15 @@ const (
 // OperationArg describes one input. It drives both the JSON Schema (MCP) and
 // the urfave flag (CLI).
 type OperationArg struct {
-	Name      string
-	Type      ArgType
-	Required  bool
-	Default   string
-	Enum      []string
-	Sensitive bool
-	Help      string // human help (CLI)
-	AgentHelp string // agent-oriented help (MCP); audience separation
+	Name          string
+	Type          ArgType
+	Required      bool
+	Default       string
+	Enum          []string
+	Sensitive     bool
+	Help          string // human help (CLI)
+	AgentHelp     string // agent-oriented help (MCP); audience separation
+	AgentRequired bool   // required on the MCP surface only; never the CLI
 }
 
 // Handler.Execute runs the business operation against core. It never touches

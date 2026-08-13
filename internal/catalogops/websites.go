@@ -164,7 +164,7 @@ func websitesGet(d WebsitesDeps) catalog.Operation {
 		Visibility:  catalog.VisibilityBoth,
 		Positional:  "<domain>",
 		Args: []catalog.OperationArg{
-			{Name: "website", Type: catalog.ArgTypeString, Help: "Website ID or domain to get (positional)"},
+			{Name: "website", Type: catalog.ArgTypeString, Help: "Website ID or domain to get"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			svc, svcErr := d.service(input)
@@ -202,15 +202,15 @@ func websitesCreate(d WebsitesDeps) catalog.Operation {
 		Name:        "websites_create",
 		Title:       "Create a website",
 		Summary:     "Create a new website",
-		Description: "Create a website that serves an IPFS CID under a custom domain. Takes the <domain> positional and --cid (required), plus optional --target-type (ipfs|ipns) and --dns-hosting. Returns the created website object including its numeric ID, validation TXT token, and DNS records you must publish.",
+		Description: "Create a website that serves an IPFS CID under a custom domain. Takes the website field and cid (required), plus optional target-type (ipfs|ipns) and dns-hosting. Returns the created website object including its numeric ID, validation TXT token, and DNS records you must publish.",
 		Category:    "core",
 		Safety:      catalog.SafetyMutate,
 		Interaction: catalog.InteractionAgentSafe,
 		Visibility:  catalog.VisibilityBoth,
 		Positional:  "<domain>",
 		Args: []catalog.OperationArg{
-			{Name: "website", Type: catalog.ArgTypeString, Help: "Domain for the new website (positional)"},
-			{Name: "cid", Type: catalog.ArgTypeString, Required: true, Help: "IPFS CID to serve (--cid)"},
+			{Name: "website", Type: catalog.ArgTypeString, Help: "Domain for the new website"},
+			{Name: "cid", Type: catalog.ArgTypeString, Required: true, Help: "IPFS CID to serve", AgentHelp: "The IPFS CID the website should serve."},
 			{Name: "target-type", Type: catalog.ArgTypeString, Default: "ipfs", Help: "Target type (ipfs|ipns)"},
 			{Name: "dns-hosting", Type: catalog.ArgTypeBool, Default: "false", Help: "Let Pinner manage DNS for this website"},
 			{Name: "no-dns-hosting", Type: catalog.ArgTypeBool, Default: "false", Help: "Disable Pinner-managed DNS for this website"},
@@ -261,14 +261,14 @@ func websitesUpdate(d WebsitesDeps) catalog.Operation {
 		Name:        "websites_update",
 		Title:       "Update a website",
 		Summary:     "Update a website",
-		Description: "Update an existing website: change its CID, target type (ipfs|ipns), rename its domain (--rename-to), or toggle DNS hosting. Selects the site by the <domain> positional, then applies whichever optional flags are set (at least one is required). Returns the updated website object.",
+		Description: "Update an existing website: change its cid, target-type (ipfs|ipns), rename its domain via rename-to, or toggle dns-hosting. Selects the site by the website field, then applies whichever optional fields are set (at least one is required). Returns the updated website object.",
 		Category:    "core",
 		Safety:      catalog.SafetyMutate,
 		Interaction: catalog.InteractionAgentSafe,
 		Visibility:  catalog.VisibilityBoth,
 		Positional:  "<domain>",
 		Args: []catalog.OperationArg{
-			{Name: "website", Type: catalog.ArgTypeString, Help: "Website ID or domain to update (positional)"},
+			{Name: "website", Type: catalog.ArgTypeString, Help: "Website ID or domain to update"},
 			{Name: "rename-to", Type: catalog.ArgTypeString, Help: "New domain for the website"},
 			{Name: "cid", Type: catalog.ArgTypeString, Help: "New target CID"},
 			{Name: "target-type", Type: catalog.ArgTypeString, Help: "New target type (ipfs|ipns)"},
@@ -325,14 +325,14 @@ func websitesEnableIPNS(d WebsitesDeps) catalog.Operation {
 		Name:        "websites_enable_ipns",
 		Title:       "Enable IPNS targeting",
 		Summary:     "Enable IPNS targeting for a website",
-		Description: "Convert a website from IPFS to IPNS targeting (alias 'ipns'). Auto-creates an IPNS key for the site and publishes the current CID to it, or, with --cid, publishes that CID instead. Returns the updated website including its new IPNS key ID.",
+		Description: "Convert a website from IPFS to IPNS targeting (alias 'ipns'). Auto-creates an IPNS key for the site and publishes the current CID to it, or, with the cid field, publishes that CID instead. Returns the updated website including its new IPNS key ID.",
 		Category:    "core",
 		Safety:      catalog.SafetyMutate,
 		Interaction: catalog.InteractionAgentSafe,
 		Visibility:  catalog.VisibilityBoth,
 		Positional:  "<domain>",
 		Args: []catalog.OperationArg{
-			{Name: "website", Type: catalog.ArgTypeString, Help: "Website ID or domain to convert (positional)"},
+			{Name: "website", Type: catalog.ArgTypeString, Help: "Website ID or domain to convert"},
 			{Name: "cid", Type: catalog.ArgTypeString, Help: "Optional CID to publish to the new IPNS key"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
@@ -372,15 +372,15 @@ func websitesDelete(d WebsitesDeps) catalog.Operation {
 		Name:        "websites_delete",
 		Title:       "Delete a website",
 		Summary:     "Delete a website",
-		Description: "Delete a website, selected by domain name or numeric ID. DESTRUCTIVE and irreversible: there is no undo. Requires --force. Does NOT delete the website's DNS zone or its IPNS keys.",
+		Description: "Delete a website, selected by domain name or numeric ID. DESTRUCTIVE and irreversible: there is no undo. Requires confirm=true. Does NOT delete the website's DNS zone or its IPNS keys.",
 		Category:    "core",
 		Safety:      catalog.SafetyDestructive,
 		Interaction: catalog.InteractionAgentSafe,
 		Visibility:  catalog.VisibilityBoth,
 		Positional:  "<domain>",
 		Args: []catalog.OperationArg{
-			{Name: "website", Type: catalog.ArgTypeString, Help: "Website ID or domain to delete (positional)"},
-			{Name: "confirm", Type: catalog.ArgTypeBool, Default: "false", Help: "Confirm the destructive operation (CLI maps --force here)"},
+			{Name: "website", Type: catalog.ArgTypeString, Help: "Website ID or domain to delete"},
+			{Name: "confirm", Type: catalog.ArgTypeBool, Required: true, Help: "Confirm the destructive delete", AgentHelp: "Must be true to delete the website; this is destructive and cannot be undone."},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			if !catalog.BoolArg(input, "confirm", false) {
@@ -423,7 +423,7 @@ func websitesValidate(d WebsitesDeps) catalog.Operation {
 		Visibility:  catalog.VisibilityBoth,
 		Positional:  "<domain>",
 		Args: []catalog.OperationArg{
-			{Name: "website", Type: catalog.ArgTypeString, Help: "Website ID or domain to validate (positional)"},
+			{Name: "website", Type: catalog.ArgTypeString, Help: "Website ID or domain to validate"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			svc, svcErr := d.service(input)
@@ -462,7 +462,7 @@ func websitesSSLStatus(d WebsitesDeps) catalog.Operation {
 		Visibility:  catalog.VisibilityBoth,
 		Positional:  "<domain>",
 		Args: []catalog.OperationArg{
-			{Name: "website", Type: catalog.ArgTypeString, Help: "Website domain to check SSL status for (positional)"},
+			{Name: "website", Type: catalog.ArgTypeString, Help: "Website domain to check SSL status for"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			svc, svcErr := d.service(input)

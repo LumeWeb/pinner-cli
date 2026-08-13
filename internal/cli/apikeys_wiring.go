@@ -122,12 +122,12 @@ func apiKeysActionAdapter(op catalog.Operation) cli.ActionFunc {
 
 		// Destructive gate (delete). Unlike pins rm, api-keys delete does not
 		// require --force in general: the core service enforces the rule that
-		// deleting the currently-authenticating key needs --force. So we pass
-		// the flag through to the handler (input["force"]) and let the service
-		// decide. The compiler still injects --force onto the destructive
-		// command; here we just put it into the operation input.
+		// deleting the currently-authenticating key needs confirmation. So we
+		// pass the flag through to the handler (input["confirm"]) and let the
+		// service decide. The compiler still injects --force onto the
+		// destructive command; here we just map it into the operation input.
 		if op.Safety() == catalog.SafetyDestructive {
-			input["force"] = c.Bool(FlagForce)
+			input["confirm"] = c.Bool(FlagForce)
 		}
 
 		// Apply the configured per-command timeout.

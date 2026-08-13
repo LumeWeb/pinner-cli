@@ -95,11 +95,11 @@ func ipnsKeysList(d IPNSDeps) catalog.Operation {
 func ipnsKeysCreate(d IPNSDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
 		Name: "ipns_keys_create", Title: "Create an IPNS key", Summary: "Create a new IPNS key",
-		Description: "Create a new IPNS key, optionally importing an existing private key via --key.",
+		Description: "Create a new IPNS key, optionally importing an existing private key via the key field.",
 		Category:    "ipns", Safety: catalog.SafetyMutate, Interaction: catalog.InteractionAgentSafe, Visibility: catalog.VisibilityBoth,
 		Positional: "<name>",
 		Args: []catalog.OperationArg{
-			{Name: "name", Type: catalog.ArgTypeString, Required: true, Help: "Key name (positional)"},
+			{Name: "name", Type: catalog.ArgTypeString, Required: true, Help: "Key name"},
 			{Name: "key", Type: catalog.ArgTypeString, Sensitive: true, Help: "Private key to import (optional)"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
@@ -130,7 +130,7 @@ func ipnsKeysGet(d IPNSDeps) catalog.Operation {
 		Category:    "ipns", Safety: catalog.SafetyRead, Interaction: catalog.InteractionAgentSafe, Visibility: catalog.VisibilityBoth,
 		Positional: "<id>",
 		Args: []catalog.OperationArg{
-			{Name: "id", Type: catalog.ArgTypeString, Required: true, Help: "Key ID (positional)"},
+			{Name: "id", Type: catalog.ArgTypeString, Required: true, Help: "Key ID"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			svc, err := d.service(input)
@@ -152,11 +152,11 @@ func ipnsKeysGet(d IPNSDeps) catalog.Operation {
 func ipnsKeysDelete(d IPNSDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
 		Name: "ipns_keys_delete", Title: "Delete an IPNS key", Summary: "Delete an IPNS key",
-		Description: "Delete an IPNS key by ID. Destructive: requires --force.",
+		Description: "Delete an IPNS key by ID. This permanently removes the key.",
 		Category:    "ipns", Safety: catalog.SafetyDestructive, Interaction: catalog.InteractionAgentSafe, Visibility: catalog.VisibilityBoth,
 		Positional: "<id>",
 		Args: []catalog.OperationArg{
-			{Name: "id", Type: catalog.ArgTypeString, Required: true, Help: "Key ID (positional)"},
+			{Name: "id", Type: catalog.ArgTypeString, Required: true, Help: "Key ID"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			svc, err := d.service(input)
@@ -182,7 +182,7 @@ func ipnsPublish(d IPNSDeps) catalog.Operation {
 		Category:    "ipns", Safety: catalog.SafetyMutate, Interaction: catalog.InteractionAgentSafe, Visibility: catalog.VisibilityBoth,
 		Positional: "<cid>",
 		Args: []catalog.OperationArg{
-			{Name: "cid", Type: catalog.ArgTypeString, Required: true, Help: "Content identifier (positional)"},
+			{Name: "cid", Type: catalog.ArgTypeString, Required: true, Help: "Content identifier"},
 			{Name: "key-name", Type: catalog.ArgTypeString, Help: "IPNS key to publish under (defaults to default key)"},
 			{Name: "ttl", Type: catalog.ArgTypeString, Help: "TTL for the published record"},
 		},
@@ -236,7 +236,7 @@ func ipnsResolve(d IPNSDeps) catalog.Operation {
 		Category:    "ipns", Safety: catalog.SafetyRead, Interaction: catalog.InteractionAgentSafe, Visibility: catalog.VisibilityBoth,
 		Positional: "<name>",
 		Args: []catalog.OperationArg{
-			{Name: "name", Type: catalog.ArgTypeString, Required: true, Help: "IPNS name to resolve (positional)"},
+			{Name: "name", Type: catalog.ArgTypeString, Required: true, Help: "IPNS name to resolve"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			svc, err := d.service(input)

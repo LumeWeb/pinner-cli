@@ -162,7 +162,7 @@ func vaultStat(d VaultDeps) catalog.Operation {
 		Visibility:  catalog.VisibilityBoth,
 		Positional:  "<path>",
 		Args: []catalog.OperationArg{
-			{Name: "path", Type: catalog.ArgTypeString, Required: true, Help: "Vault path to stat (positional)"},
+			{Name: "path", Type: catalog.ArgTypeString, Required: true, Help: "Vault path to stat", AgentHelp: "The vault:/ path to report on."},
 			{Name: "profile", Type: catalog.ArgTypeString, Help: "Vault profile name (defaults to active profile)"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
@@ -201,7 +201,7 @@ func vaultVerify(d VaultDeps) catalog.Operation {
 		Visibility:  catalog.VisibilityBoth,
 		Positional:  "<path>",
 		Args: []catalog.OperationArg{
-			{Name: "path", Type: catalog.ArgTypeString, Required: true, Help: "Vault path to verify (positional)"},
+			{Name: "path", Type: catalog.ArgTypeString, Required: true, Help: "Vault path to verify", AgentHelp: "The vault:/ path to verify."},
 			{Name: "deep", Type: catalog.ArgTypeBool, Default: "false", Help: "Download the full object and recompute SHA-256 (true integrity check; transfers the whole file)"},
 			{Name: "profile", Type: catalog.ArgTypeString, Help: "Vault profile name (defaults to active profile)"},
 		},
@@ -244,19 +244,19 @@ func vaultRm(d VaultDeps) catalog.Operation {
 		Name:        "vault_rm",
 		Title:       "Delete a vault file",
 		Summary:     "Delete a file from the vault",
-		Description: "Permanently delete a file from the vault: removes it from both the local vault database and the Sia indexer. DESTRUCTIVE and irreversible: requires --force (agent mode always requires --force). Targets a single file path.",
+		Description: "Permanently delete a file from the vault: removes it from both the local vault database and the Sia indexer. DESTRUCTIVE and irreversible: requires confirm=true. Targets a single file path.",
 		Category:    "vault",
 		Safety:      catalog.SafetyDestructive,
 		Interaction: catalog.InteractionAgentSafe,
 		Visibility:  catalog.VisibilityBoth,
 		Positional:  "<path>",
 		Args: []catalog.OperationArg{
-			{Name: "path", Type: catalog.ArgTypeString, Required: true, Help: "Vault path to delete (positional)"},
-			{Name: "profile", Type: catalog.ArgTypeString, Help: "Vault profile name (defaults to active profile)"},
-			// confirm is threaded so programmatic callers can pass it
-			// explicitly; the CLI wiring enforces --force via the destructive
-			// gate.
-			{Name: "confirm", Type: catalog.ArgTypeBool, Default: "false", Help: "Confirm the destructive operation (CLI maps --force here)"},
+			{Name: "path", Type: catalog.ArgTypeString, Required: true, Help: "Vault path to delete", AgentHelp: "The vault:/ path of the file to delete."},
+			{Name: "profile", Type: catalog.ArgTypeString, Help: "Vault profile name (defaults to the active profile)"},
+			// confirm is required on the surface and enforced here so any
+			// caller (CLI --force gate, programmatic, or MCP) must confirm
+			// before a file is irreversibly removed.
+			{Name: "confirm", Type: catalog.ArgTypeBool, Required: true, Help: "Confirm the destructive delete", AgentHelp: "Must be true to delete the file; this is destructive and cannot be undone."},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			vaultPath := catalog.StrArg(input, "path", "")
@@ -387,7 +387,7 @@ func vaultShare(d VaultDeps) catalog.Operation {
 		Visibility:  catalog.VisibilityBoth,
 		Positional:  "<path>",
 		Args: []catalog.OperationArg{
-			{Name: "path", Type: catalog.ArgTypeString, Required: true, Help: "Vault path to share (positional)", AgentHelp: "The vault:/ path to the file to share."},
+			{Name: "path", Type: catalog.ArgTypeString, Required: true, Help: "Vault path to share", AgentHelp: "The vault:/ path to the file to share."},
 			{Name: "expiry", Type: catalog.ArgTypeString, Default: "7d", Help: "Share link expiry (e.g. 7d, 30d, 1h, or 0 for never)"},
 			{Name: "profile", Type: catalog.ArgTypeString, Help: "Vault profile name (defaults to the active profile)"},
 		},
@@ -482,7 +482,7 @@ func vaultProfileUse(d VaultDeps) catalog.Operation {
 		Visibility:  catalog.VisibilityBoth,
 		Positional:  "<name>",
 		Args: []catalog.OperationArg{
-			{Name: "name", Type: catalog.ArgTypeString, Required: true, Help: "Profile name to set as default (positional)", AgentHelp: "The vault profile name to set as the default for subsequent vault operations."},
+			{Name: "name", Type: catalog.ArgTypeString, Required: true, Help: "Profile name to set as default", AgentHelp: "The vault profile name to set as the default for subsequent vault operations."},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			name := catalog.StrArg(input, "name", "")

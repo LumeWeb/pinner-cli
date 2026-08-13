@@ -336,3 +336,84 @@ func TestInputSchemaMarksSensitiveArg(t *testing.T) {
 		t.Errorf("label property should not be marked sensitive: %#v", label)
 	}
 }
+
+// TestAgentRequiredMcpOnly pins the v3 fix: an arg marked AgentRequired appears
+// in the MCP JSON-Schema "required" array AND is enforced by ValidateMCPRequired
+// (called from the MCP dispatch layer), but is NEVER enforced by the shared
+// NormalizeOperationInput and is NEVER a required urfave CLI flag — so a
+// positionally-supplied CLI value keeps working. This is what lets pins_add.cids
+// be required of an agent without regressing `pins add <cid>...` or leaking
+// MCP-only validation into non-MCP callers.
+func TestAgentRequiredMcpOnly(t *testing.T) {
+	c := NewCatalog()
+	if err := c.Add(NewOperation(OperationSpec{
+		Name: "job.submit", Title: "Submit", Summary: "submit a job",
+		Category: "job", Safety: SafetyMutate,
+		Interaction: InteractionAgentSafe, Visibility: VisibilityModel,
+		// cids is a StringSlice accepted positionally on the CLI, but the MCP
+		// surface requires it.
+		Args: []OperationArg{
+			{Name: "cids", Type: ArgTypeStringSlice, AgentRequired: true},
+		},
+		Handler: &captureHandler{},
+	})); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	// MCP schema lists cids in required.
+	raw, err := NewMCPCompiler().Compile(c)
+	if err != nil {
+		t.Fatalf("Compile MCP: %v", err)
+	}
+	td := toolNamed(t, raw, "job.submit")
+	var sch map[string]any
+	if err := json.Unmarshal(td.InputSchema, &sch); err != nil {
+		t.Fatalf("InputSchema not valid JSON: %v", err)
+	}
+	req, ok := sch["required"].([]any)
+	if !ok {
+		t.Fatalf("schema required missing or not a list: %#v", sch["required"])
+	}
+	found := false
+	for _, r := range req {
+		if r == "cids" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("AgentRequired arg cids missing from MCP schema required: %#v", req)
+	}
+
+	// AgentRequired must be enforced by the dedicated MCP dispatch check, NOT by
+	// the shared NormalizeOperationInput (which the CLI and other non-MCP callers
+	// route through). This is the contract that keeps AgentRequired MCP-only: a
+	// shared invocation must not inherit MCP-specific validation.
+	op, ok := c.Get("job.submit")
+	if !ok {
+		t.Fatal("Get job.submit")
+	}
+	if _, err := NormalizeOperationInput(op, map[string]any{}); err != nil {
+		t.Errorf("shared NormalizeOperationInput must NOT enforce AgentRequired (MCP-only), got: %v", err)
+	}
+	if err := ValidateMCPRequired(op, map[string]any{}); err == nil {
+		t.Error("ValidateMCPRequired must reject a missing AgentRequired arg")
+	}
+	if err := ValidateMCPRequired(op, map[string]any{"cids": []string{"bafy"}}); err != nil {
+		t.Errorf("ValidateMCPRequired with cids supplied should pass, got: %v", err)
+	}
+
+	// CLI: cids must NOT be a required urfave flag (positional-friendly).
+	cliRaw, err := NewCLICompiler().Compile(c)
+	if err != nil {
+		t.Fatalf("Compile CLI: %v", err)
+	}
+	for _, cmd := range cliRaw {
+		for _, f := range cmd.Flags {
+			if f.Names()[0] == "cids" {
+				if r, ok := f.(requireder); ok && r.IsRequired() {
+					t.Error("AgentRequired arg cids must NOT be a required CLI flag")
+				}
+			}
+		}
+	}
+}

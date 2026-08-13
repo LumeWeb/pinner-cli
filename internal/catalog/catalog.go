@@ -628,6 +628,21 @@ func requiredArgNames(args []OperationArg) []string {
 	return out
 }
 
+// mcpRequiredNames lists the args the MCP surface must require: the shared
+// required set plus any AgentRequired arg. AgentRequired is MCP-only — it is
+// never part of requiredArgNames, so the CLI compiler never turns it into a
+// required urfave flag. But the MCP JSON-Schema and dispatch must still reject
+// an agent that omits it.
+func mcpRequiredNames(args []OperationArg) []string {
+	out := requiredArgNames(args)
+	for _, a := range args {
+		if a.AgentRequired {
+			out = append(out, a.Name)
+		}
+	}
+	return out
+}
+
 // firstMissingRequiredArg returns the first required arg whose resolved state
 // is Absent, Null, or Empty (Required with no default, and not a filled value).
 // It is the enforcement point shared by Invoke and the CLI actionFor so both
@@ -635,9 +650,33 @@ func requiredArgNames(args []OperationArg) []string {
 // required arg is satisfied. Classification comes from resolveArg, the same
 // function normalizeInputDefaults uses.
 func firstMissingRequiredArg(args []OperationArg, input map[string]any) *OperationArg {
+	return firstMissingArg(args, input, func(a OperationArg) bool { return isRequiredArg(a) })
+}
+
+// firstMissingMCPRequiredArg is the MCP-surface variant of
+// firstMissingRequiredArg: it also enforces AgentRequired args, which the CLI
+// never requires. Returns nil when every MCP-required arg is satisfied.
+func firstMissingMCPRequiredArg(args []OperationArg, input map[string]any) *OperationArg {
+	return firstMissingArg(args, input, func(a OperationArg) bool { return isRequiredArg(a) || a.AgentRequired })
+}
+
+// ValidateMCPRequired is the AgentRequired enforcement point for the MCP
+// dispatch layer (DispatchCatalogOp). AgentRequired marks an arg required on the
+// MCP surface only — it is deliberately absent from the shared
+// NormalizeOperationInput, which the CLI path uses, so AgentRequired can never
+// leak into a non-MCP invocation. Returns an error naming the first missing
+// MCP-required arg, or nil when all are satisfied.
+func ValidateMCPRequired(op Operation, input map[string]any) error {
+	if m := firstMissingMCPRequiredArg(op.Args(), input); m != nil {
+		return fmt.Errorf("missing required argument %q", m.Name)
+	}
+	return nil
+}
+
+func firstMissingArg(args []OperationArg, input map[string]any, required func(OperationArg) bool) *OperationArg {
 	for i := range args {
 		a := args[i]
-		if !isRequiredArg(a) {
+		if !required(a) {
 			continue
 		}
 		raw, present := lookupArgInput(a, input)
@@ -812,12 +851,14 @@ func inputSchemaFromArgs(name string, args []OperationArg) json.RawMessage {
 		}
 		props[a.Name] = p
 	}
-	// Requiredness comes from requiredArgNames, the shared predicate
-	// (isRequiredArg) also used by Invoke and the CLI flagFor/actionFor, so the
-	// schema, dispatch, and CLI agree on which args are actually mandatory. An
-	// arg that is Required but declares a Default is satisfied by the default
-	// and so is not required from the caller's perspective.
-	required := requiredArgNames(args)
+	// Requiredness comes from mcpRequiredNames: the shared predicate
+	// (isRequiredArg) plus any AgentRequired arg. This is the MCP JSON-Schema,
+	// so the required array must reflect what the agent surface enforces; the
+	// CLI flag generation uses the shared requiredArgNames, untouched by
+	// AgentRequired. An arg that is Required but declares a Default is
+	// satisfied by the default and so is not required from the agent's
+	// perspective.
+	required := mcpRequiredNames(args)
 	sch := map[string]any{
 		"type":       "object",
 		"properties": props,
