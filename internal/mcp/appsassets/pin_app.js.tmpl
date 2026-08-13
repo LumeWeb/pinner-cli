@@ -18,7 +18,7 @@ extAppsConnect(CLIENT_B64, "{{.Name}}", "{{.Version}}").then((app) => {
     const name = $("#name").value.trim();
     if (!cid) { setStatus(statusEl, "error", "A CID is required."); return; }
     setStatus(statusEl, "pending", "Pinning " + cid + " ...");
-    app.callServerTool({ name: "pinner_pin", arguments: { cid, name } }).then((res) => {
+    app.callServerTool({ name: "pins.add", arguments: { cids: [cid], name } }).then((res) => {
       renderResult(app, res, cid);
       if (res && !res.isError) pollStatus(app, cid);
     });
@@ -29,14 +29,17 @@ extAppsConnect(CLIENT_B64, "{{.Name}}", "{{.Version}}").then((app) => {
 });
 
 function renderResult(app, result, cid) {
+  // pins.add returns StructuredContent = { status: "ok", value: { CID, RequestID, Status } }
+  // for a single-CID pin action.
   const sc = result && result.structuredContent;
-  if (sc && sc.pin && sc.pin.cid) {
-    $("#out-cid").textContent = sc.pin.cid;
+  const value = sc && sc.value;
+  if (value && value.CID) {
+    $("#out-cid").textContent = value.CID;
   } else if (cid) {
     $("#out-cid").textContent = cid;
   }
-  if (sc && sc.pin && sc.pin.status) {
-    $("#out-status").textContent = sc.pin.status;
+  if (value && value.Status) {
+    $("#out-status").textContent = value.Status;
   }
   setStatus(statusEl, result && result.isError ? "error" : "ok",
     result && result.isError ? "Pin failed." : "Pin scheduled.");

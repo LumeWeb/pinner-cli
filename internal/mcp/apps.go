@@ -42,13 +42,16 @@ func renderPinCreateAppHTML() string {
 	return renderMcpAppDoc("Create a Pin", pinCreateAppForm(), pinAppModule(extAppsClientBase64()))
 }
 
-// attachPinAppMeta wires pinner_pin (a curated catalog tool) to its ui:// app
-// resource so a UI-capable host renders the create-pin view for it. Plain hosts
-// keep the tool's text result. The entry's existing metadata is extended.
+// attachPinAppMeta wires pins.add (the compiler-backed pin-creation operation
+// from the operation catalog) to its ui:// app resource so a UI-capable host
+// renders the create-pin view for it. Plain hosts keep the tool's text result.
+// The entry's existing metadata is extended. pins.add is the curated pin tool
+// that survived the compiler-only surface migration (the legacy pinner_pin
+// tool was removed with the CLI-tree walk).
 func attachPinAppMeta(catalog *ToolCatalog) error {
-	entry, ok := catalog.Get("pinner_pin")
+	entry, ok := catalog.Get("pins.add")
 	if !ok {
-		return fmt.Errorf("pinner_pin not in catalog")
+		return fmt.Errorf("pins.add not in catalog")
 	}
 	meta, err := marshalToolMeta(AppToolMeta{ResourceURI: PinCreateAppURI})
 	if err != nil {
@@ -89,7 +92,7 @@ func pinStatusDescriptor(pins PinningProvider) ToolDescriptor {
 }
 
 // RegisterPinApp wires the complete "Create a Pin" MCP App:
-//   - attaches the ui:// view to the curated pinner_pin tool,
+//   - attaches the ui:// view to the curated pins.add tool,
 //   - registers the ui://pins/create.html HTML resource,
 //   - registers the app-only pinner_pin_status polling helper.
 //
