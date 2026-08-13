@@ -2,7 +2,6 @@ package catalogops
 
 import (
 	"context"
-	"encoding/json"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -29,7 +28,7 @@ func isolateVaultHome(t *testing.T) {
 	}
 }
 
-func TestVaultCreateOpDrivesProvisionerCreatePending(t *testing.T) {
+func TestVaultCreateOpReturnsProfileHandoff(t *testing.T) {
 	isolateVaultHome(t)
 	deps := VaultDeps{
 		Provisioner: func() *vault.Provisioner { return vault.NewProvisioner() },
@@ -50,19 +49,16 @@ func TestVaultCreateOpDrivesProvisionerCreatePending(t *testing.T) {
 	handoff, ok := res.(*VaultCreateHandoff)
 	require.True(t, ok, "vault.create must return a typed VaultCreateHandoff")
 	assert.Equal(t, "testvault", handoff.Profile)
-	assert.NotEmpty(t, handoff.SeedPath)
-	// The plaintext seed is produced host-side for the OOB coordinator.
-	assert.NotEmpty(t, handoff.Seed)
 
-	// The mnemonic is json:"-" so it can never serialize onto a machine channel.
-	blob, err := json.Marshal(handoff)
-	require.NoError(t, err)
-	assert.NotContains(t, string(blob), handoff.Seed, "the mnemonic must never serialize")
+	// The create op only targets a profile at hand-off time; the actual create
+	// (fresh seed + Sia approval + activation) runs out-of-band in the browser
+	// POST handler, so no seed or pending registry entry is minted here.
 
-	// The pending profile really landed in the isolated registry.
+	// No pending profile must be registered on the host by the op itself.
 	reg, err := vault.LoadRegistry()
 	require.NoError(t, err)
-	require.Contains(t, reg.Profiles, "testvault")
+	_, ok = reg.Profiles["testvault"]
+	assert.False(t, ok, "vault.create op must not register a pending profile; the create runs out-of-band")
 }
 
 func TestVaultCreateOpRequiresProfile(t *testing.T) {

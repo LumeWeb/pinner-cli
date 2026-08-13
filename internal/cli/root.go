@@ -9,8 +9,8 @@ import (
 	"github.com/urfave/cli/v3"
 	contentfs "go.lumeweb.com/ipfs-content/fs"
 	"go.lumeweb.com/pinner-cli/build"
-	"go.lumeweb.com/pinner-cli/internal/core/vault"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner-cli/internal/core/vault"
 	"go.lumeweb.com/pinner-cli/internal/core/websites"
 	mcpadapter "go.lumeweb.com/pinner-cli/internal/mcp"
 )
@@ -218,6 +218,10 @@ For more help on any command: pinner <command> --help`,
 				// human enters in a browser form (loopback in stdio, shared
 				// mux over HTTP), so the seed never transits the MCP channel.
 				Restore: NewVaultRestoreRunner(output, cfgMgr.Config().GetSiaIndexerURL()),
+				// OOB create provisions + activates a new vault (generating a
+				// fresh seed) in a browser page, symmetric with restore, so the
+				// seed never transits the MCP channel.
+				Create: NewVaultCreateRunner(cfgMgr.Config().GetSiaIndexerURL()),
 				SetupFactory: func() mcpadapter.SetupWizardState {
 					return NewSetupWizard(cfgMgr, authSvc, nil, SetupOptions{})
 				},

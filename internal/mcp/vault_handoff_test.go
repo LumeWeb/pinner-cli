@@ -2,7 +2,6 @@ package mcp
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -32,24 +31,24 @@ func requireVaultDone(t *testing.T, r ToolResult) {
 
 // TestVaultCreateResumePendingToDone verifies pinner_vault_create_resume (the
 // shared NewResumeTool template with the create continuation registered) polls
-// a create hand-off from pending to done as the seed drop is consumed.
+// a create hand-off from pending to done as the vault is created/activated and
+// the fresh seed is retrieved from its one-time seeddrop.
 func TestVaultCreateResumePendingToDone(t *testing.T) {
 	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
 	reg := NewHandoffRegistry()
-	seedDrop := NewSeedDrop(time.Minute)
-	seedDrop.SetBaseURL("http://127.0.0.1:9999")
+	oob, mux, _ := buildCreateServer()
 
-	// Simulate a create start: mint a seed drop, then register the create
+	// Simulate a create start: mint an OOB create URL, then register the create
 	// continuation against a handle holding the token (as the invoke path does).
-	url := seedDrop.Register("default", "alpha beta gamma")
-	token := vaultTokenFromURL(url)
+	createURL := oob.Register("default")
+	token := vaultTokenFromURL(createURL)
 	require.NotEmpty(t, token)
 	handle := handles.Create("pending", map[string]any{handleDataToken: token})
-	reg.Begin(handle, vaultCreateResumeContinuation(seedDrop, handles, reg))
+	reg.Begin(handle, vaultCreateResumeContinuation(oob, handles, reg))
 
 	resume := NewVaultCreateResumeDescriptor(reg, handles)
 
-	// Before the seed is picked up: pending needs_human.
+	// Before the create page is acted on: pending needs_human.
 	r, err := resume.Handler(context.Background(), ToolRequest{
 		Name:      vaultCreateResumeToolName,
 		Arguments: map[string]any{"handle": handle},
@@ -57,15 +56,35 @@ func TestVaultCreateResumePendingToDone(t *testing.T) {
 	require.NoError(t, err)
 	sc := requireHandoff(t, r)
 	assert.Equal(t, vaultCreateResumeToolName, sc["resume_tool"])
-	assert.NotContains(t, r.Text, "alpha beta gamma", "the seed must never appear in resume text")
-	assert.NotContains(t, sc, "alpha beta gamma")
+	assert.NotContains(t, r.Text, "fresh generated seed phrase", "the seed must never appear in resume text")
+	assert.NotContains(t, sc, "fresh generated seed phrase")
+
+	// Drive the create: POST the create page. This runs the fake runner, which
+	// activates the vault and mints a one-time seeddrop for the fresh seed. The
+	// seeddrop URL is embedded in the streamed page.
+	postReq := httptest.NewRequest("POST", createURL, nil)
+	postReq.Header.Set("Origin", "http://127.0.0.1:9999")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, postReq)
+	require.Equal(t, http.StatusOK, rec.Code)
+	// Extract the seed_url from the streamed done page.
+	seedLink := rec.Body.String()
+	require.Contains(t, seedLink, "seed-link")
+	seedURL := extractSeedURL(t, seedLink)
+	require.NotEmpty(t, seedURL)
+
+	// Resume now: the vault is active but the seed not yet retrieved -> pending.
+	r, err = resume.Handler(context.Background(), ToolRequest{
+		Name:      vaultCreateResumeToolName,
+		Arguments: map[string]any{"handle": handle},
+	})
+	require.NoError(t, err)
+	requireHandoff(t, r) // still needs_human: seed not picked up yet
 
 	// Consume the seed the way a browser GET would (single-use display).
-	mux := http.NewServeMux()
-	seedDrop.registerHandlers(mux)
-	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest("GET", url, nil))
-	require.Equal(t, 200, rec.Code)
+	recSeed := httptest.NewRecorder()
+	mux.ServeHTTP(recSeed, httptest.NewRequest("GET", seedURL, nil))
+	require.Equal(t, 200, recSeed.Code)
 
 	// Now resume reports terminal done.
 	r, err = resume.Handler(context.Background(), ToolRequest{
@@ -74,7 +93,30 @@ func TestVaultCreateResumePendingToDone(t *testing.T) {
 	})
 	require.NoError(t, err)
 	requireVaultDone(t, r)
-	assert.NotContains(t, r.Text, "alpha beta gamma")
+	assert.NotContains(t, r.Text, "fresh generated seed phrase")
+}
+
+// extractSeedURL pulls the /seed/<token> href out of a streamed create done
+// page. It looks for the href after the seed-link marker (the page also carries
+// the Sia approval href earlier, which must be skipped).
+func extractSeedURL(t *testing.T, body string) string {
+	t.Helper()
+	marker := "seed-link"
+	idx := strings.LastIndex(body, marker)
+	if idx < 0 {
+		return ""
+	}
+	rest := body[idx:]
+	start := strings.Index(rest, "href=\"")
+	if start < 0 {
+		return ""
+	}
+	rest = rest[start+len("href=\""):]
+	end := strings.Index(rest, "\"")
+	if end < 0 {
+		return ""
+	}
+	return rest[:end]
 }
 
 // TestVaultRestoreResumePendingToDone verifies pinner_vault_restore_resume
@@ -358,7 +400,7 @@ func TestVaultRestoreStartHandoffIncludesHandleAndResumeTool(t *testing.T) {
 	oob, _, _ := buildRestoreServer()
 	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
 	reg := NewHandoffRegistry()
-	catalog, err := buildCatalog(root, true, nil, nil, oob, reg, handles)
+	catalog, err := buildCatalog(root, true, nil, nil, oob, nil, reg, handles)
 	require.NoError(t, err)
 
 	// Invoke the restore tool through the catalog-op handler: it resolves the
@@ -381,8 +423,7 @@ func TestVaultRestoreStartHandoffIncludesHandleAndResumeTool(t *testing.T) {
 }
 
 func TestVaultCreateStartHandoffIncludesHandleAndResumeTool(t *testing.T) {
-	// Isolate vault paths so CreatePending writes seed + pending profile into a
-	// temp dir, and the seeded hub/core never reaches a real config.
+	// Isolate vault paths so nothing reaches the seeded hub/core config.
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
@@ -405,46 +446,42 @@ func TestVaultCreateStartHandoffIncludesHandleAndResumeTool(t *testing.T) {
 		},
 	}
 
-	seedDrop := NewSeedDrop(time.Minute)
-	seedDrop.SetBaseURL("http://127.0.0.1:9999")
+	oobCreate, _, _ := buildCreateServer()
 	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
 	reg := NewHandoffRegistry()
-	catalog, err := buildCatalog(root, true, nil, seedDrop, nil, reg, handles)
+	catalog, err := buildCatalog(root, true, nil, nil, nil, oobCreate, reg, handles)
 	require.NoError(t, err)
 
-	// Invoke the create tool through the catalog-op handler: it runs
-	// Provisioner.CreatePending (real fresh seed + 0600 file + pending profile),
-	// then the MCP layer mints a one-time seed_url + resume handle. The mnemonic
-	// must never appear in the result.
+	// Invoke the create tool through the catalog-op handler: it targets the
+	// requested profile for an out-of-band create (SSO + activation runs in the
+	// browser), then the MCP layer mints a one-time create_url + resume handle.
+	// No seed is minted or written at invoke time. The mnemonic must never
+	// appear in the result.
 	res, err := catalog.Invoke(context.Background(), vaultCreateToolName, map[string]any{"profile": "testcreate"})
 	require.NoError(t, err)
 	sc, ok := res.StructuredContent.(map[string]any)
 	require.True(t, ok, "create hand-off must carry structured content")
-	require.Contains(t, sc["seed_url"].(string), "/seed/")
+	require.Contains(t, sc["create_url"].(string), "/create/")
 	require.NotEmpty(t, sc["handle"])
 	assert.Equal(t, vaultCreateResumeToolName, sc["resume_tool"])
 
-	// Seed-never-transits assertion: the actual generated mnemonic must not
-	// appear anywhere in the hand-off (Text or StructuredContent). Reading it
-	// from the seed file enforces the real guarantee rather than a constant.
-	mnemonic, err := os.ReadFile(vault.SeedPath("testcreate"))
-	require.NoError(t, err, "seed file must exist under the isolated home")
-	require.NotEmpty(t, mnemonic)
-	blob, _ := json.Marshal(sc)
-	require.NotContains(t, string(blob), string(mnemonic), "mnemonic must never appear in structured content")
-	require.NotContains(t, res.Text, string(mnemonic), "mnemonic must never appear in hand-off text")
-	// The pending profile + seed file must exist under the isolated home.
+	// The create must not have written a pending seed file or registered a
+	// pending profile at invoke time; both happen out-of-band on browser POST.
+	_, statErr := os.Stat(vault.SeedPath("testcreate"))
+	assert.True(t, os.IsNotExist(statErr), "no seed file should be written at create hand-off time")
 	reg2, err := vault.LoadRegistry()
 	require.NoError(t, err)
-	require.Contains(t, reg2.Profiles, "testcreate")
+	_, ok = reg2.Profiles["testcreate"]
+	assert.False(t, ok, "no pending profile should be registered at create hand-off time")
 }
 
-// TestVaultCreateSetupHandlerAliasesCamelCaseDeviceName verifies the
-// pinner_vault_create setup handler routes args through the catalog's
-// NormalizeOperationInput, so a model sending camelCase "deviceName" for the
-// kebab-declared "device-name" arg reaches the op handler (and the resulting
-// profile) instead of being silently dropped to the empty-string default.
-func TestVaultCreateSetupHandlerAliasesCamelCaseDeviceName(t *testing.T) {
+// TestVaultCreateSetupHandlerMintsOneTimeCreateURL verifies the
+// pinner_vault_create setup handler mints an out-of-band create_url via the
+// OOB create coordinator against the requested profile, and that the seed is
+// NOT minted at invoke time (it is generated only when the human approves Sia
+// in the browser). camelCase-aliased args are accepted through the catalog's
+// NormalizeOperationInput.
+func TestVaultCreateSetupHandlerMintsOneTimeCreateURL(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
@@ -454,28 +491,33 @@ func TestVaultCreateSetupHandlerAliasesCamelCaseDeviceName(t *testing.T) {
 		t.Setenv("LOCALAPPDATA", filepath.Join(home, "AppData", "Local"))
 	}
 
-	seedDrop := NewSeedDrop(time.Minute)
-	seedDrop.SetBaseURL("http://127.0.0.1:9999")
+	oob, _, _ := buildCreateServer()
 	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
 	reg := NewHandoffRegistry()
 
-	handler := vaultCreateSetupHandler(seedDrop, reg, handles)
+	handler := vaultCreateSetupHandler(oob, reg, handles)
 	res, err := handler(context.Background(), ToolRequest{
 		Name: vaultCreateToolName,
 		Arguments: map[string]any{
-			"profile":    "aliasdev",
-			"deviceName": "agent-issued-device",
+			"profile": "aliasdev",
 		},
 	})
 	require.NoError(t, err)
-	require.False(t, res.IsError, "create must succeed with camelCase deviceName: %s", res.Text)
+	require.False(t, res.IsError, "create must succeed with a profile: %s", res.Text)
 
-	// The aliased device name must land on the pending profile.
-	loaded, err := vault.LoadRegistry()
-	require.NoError(t, err)
-	prof, ok := loaded.Profiles["aliasdev"]
-	require.True(t, ok, "pending profile must exist")
-	assert.Equal(t, "agent-issued-device", prof.DeviceName)
+	// The handler must return a needs_human hand-off minting a one-time create
+	// URL against the OOB create coordinator (the vault is created + activated
+	// in the browser, not as a pending profile at op time).
+	sc, ok := res.StructuredContent.(map[string]any)
+	require.True(t, ok, "create hand-off must carry structured content")
+	createURL, _ := sc["create_url"].(string)
+	require.Contains(t, createURL, "/create/", "the create hand-off must mint a one-time create_url")
+	require.NotEmpty(t, sc["handle"], "the create hand-off must carry a resume handle")
+
+	// The seed must never have been minted at invoke time; it is generated only
+	// after the human approves the Sia connection in the browser.
+	_, statErr := os.Stat(vault.SeedPath("aliasdev"))
+	assert.True(t, os.IsNotExist(statErr), "no seed file should be written at create hand-off time")
 }
 
 // TestVaultCreateResumeExpiredTokenSteersRestart verifies the Kody high finding:
@@ -488,14 +530,13 @@ func TestVaultCreateSetupHandlerAliasesCamelCaseDeviceName(t *testing.T) {
 func TestVaultCreateResumeExpiredTokenSteersRestart(t *testing.T) {
 	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
 	reg := NewHandoffRegistry()
-	seedDrop := NewSeedDrop(time.Minute)
-	seedDrop.SetBaseURL("http://127.0.0.1:9999")
+	oob, _, _ := buildCreateServer()
 
-	url := seedDrop.Register("default", "alpha beta gamma")
+	url := oob.Register("default")
 	token := vaultTokenFromURL(url)
 	require.NotEmpty(t, token)
 	handle := handles.Create("pending", map[string]any{handleDataToken: token})
-	reg.Begin(handle, vaultCreateResumeContinuation(seedDrop, handles, reg))
+	reg.Begin(handle, vaultCreateResumeContinuation(oob, handles, reg))
 
 	resume := NewVaultCreateResumeDescriptor(reg, handles)
 
@@ -507,7 +548,7 @@ func TestVaultCreateResumeExpiredTokenSteersRestart(t *testing.T) {
 	requireHandoff(t, r)
 
 	// Advance the clock past the 1m TTL so the token is handoffExpired.
-	seedDrop.setNow(func() time.Time { return time.Now().Add(2 * time.Minute) })
+	oob.setNow(func() time.Time { return time.Now().Add(2 * time.Minute) })
 
 	// The resume must NOT report done — it must steer to a fresh vault create.
 	r, err = resume.Handler(context.Background(), ToolRequest{
@@ -516,9 +557,9 @@ func TestVaultCreateResumeExpiredTokenSteersRestart(t *testing.T) {
 	require.NoError(t, err)
 	sc := requireHandoff(t, r)
 	assert.Equal(t, vaultCreateToolName, sc["resume_tool"],
-		"expired seed token must steer to pinner_vault_create, not report done")
+		"expired create token must steer to pinner_vault_create, not report done")
 	assert.NotEqual(t, StatusDone, sc["status"], "expired token must never read as a completed vault create")
-	assert.NotContains(t, r.Text, "alpha beta gamma")
+	assert.NotContains(t, r.Text, "fresh generated seed phrase")
 
 	// The expired continuation + backing handle must be cleared so the agent
 	// is not left polling a dead flow: a follow-up poll now hits the
@@ -577,12 +618,11 @@ func TestVaultRestoreResumeExpiredTokenSteersRestart(t *testing.T) {
 func TestVaultResumeAbsentTokenSteersRestart(t *testing.T) {
 	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
 	reg := NewHandoffRegistry()
-	seedDrop := NewSeedDrop(time.Minute)
-	seedDrop.SetBaseURL("http://127.0.0.1:9999")
+	oob, _, _ := buildCreateServer()
 
 	// A token that was never minted is absent from the coordinator.
 	handle := handles.Create("pending", map[string]any{handleDataToken: "never-minted"})
-	reg.Begin(handle, vaultCreateResumeContinuation(seedDrop, handles, reg))
+	reg.Begin(handle, vaultCreateResumeContinuation(oob, handles, reg))
 	resume := NewVaultCreateResumeDescriptor(reg, handles)
 
 	r, err := resume.Handler(context.Background(), ToolRequest{

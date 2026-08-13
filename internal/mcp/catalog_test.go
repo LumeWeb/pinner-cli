@@ -233,7 +233,7 @@ func TestSensitiveFlagRedactedFromArgTrace(t *testing.T) {
 		},
 	}
 
-	catalog, err := buildCatalog(root, true, nil, nil, nil, nil, nil)
+	catalog, err := buildCatalog(root, true, nil, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 
 	entry, ok := catalog.Get("pinner_auth_login")
@@ -285,7 +285,7 @@ func TestRootSensitiveFlagRedactedFromSubcommand(t *testing.T) {
 		},
 	}
 
-	catalog, err := buildCatalog(root, true, nil, nil, nil, nil, nil)
+	catalog, err := buildCatalog(root, true, nil, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 
 	status, ok := catalog.Get("pinner_status")
@@ -347,7 +347,7 @@ func TestInheritedSensitiveFlagRedactedAcrossNesting(t *testing.T) {
 		},
 	}
 
-	catalog, err := buildCatalog(root, true, nil, nil, nil, nil, nil)
+	catalog, err := buildCatalog(root, true, nil, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 
 	entry, ok := catalog.Get("pinner_vault_profile_use")
@@ -524,7 +524,7 @@ func TestVaultRestoreInteractionStaysAgentSafeThroughBuildCatalog(t *testing.T) 
 	t.Cleanup(func() { oobRestore.Stop(context.Background()) })
 	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
 	reg := NewHandoffRegistry()
-	catalog, err := buildCatalog(root, true, nil, nil, oobRestore, reg, handles)
+	catalog, err := buildCatalog(root, true, nil, nil, oobRestore, nil, reg, handles)
 	require.NoError(t, err)
 	restore, ok := catalog.Get("pinner_vault_restore")
 	require.True(t, ok)

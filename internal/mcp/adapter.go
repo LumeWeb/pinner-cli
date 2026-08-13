@@ -185,6 +185,7 @@ adapter.`,
 			var (
 				oob        *OutOfBandLogin
 				oobRestore *OOBRestore
+				oobCreate  *OOBCreate
 				catalog    *ToolCatalog
 				err        error
 				// Wizard deps are hoisted so registerCustomTools can hand them
@@ -205,6 +206,7 @@ adapter.`,
 				hasWizard = true
 				oob = wizardS.OutOfBand.WithLogger(log)
 				oobRestore = NewOOBRestore(wizardS.Restore, DefaultRestoreTTL).WithLogger(log)
+				oobCreate = NewOOBCreate(wizardS.Create, seedDrop, DefaultCreateTTL).WithLogger(log)
 			}
 
 			// Build the server after resolving the command tree and wiring the
@@ -213,7 +215,7 @@ adapter.`,
 			// stdin-input command must be redirected rather than consume
 			// protocol bytes); it mirrors the transport decision below.
 			stdioMode := mcpString(cmd, "tunnel", "MCP_TUNNEL_PROVIDER") != "openai" && !cmd.Bool("http")
-			srv, catalog, err := OfficialMCPServer(root, hasRootAction, nil, stdioMode, seedDrop, oobRestore, handoffReg, authHandles)
+			srv, catalog, err := OfficialMCPServer(root, hasRootAction, nil, stdioMode, seedDrop, oobRestore, oobCreate, handoffReg, authHandles)
 			if err != nil {
 				return err
 			}
@@ -238,6 +240,7 @@ adapter.`,
 				handoffReg:      handoffReg,
 				seedDrop:        seedDrop,
 				oobRestore:      oobRestore,
+				oobCreate:       oobCreate,
 				resourceFactory: resourceFactory,
 				opts:            mcpOpts,
 				hasWizard:       hasWizard,
@@ -250,7 +253,7 @@ adapter.`,
 
 			if mcpString(cmd, "tunnel", "MCP_TUNNEL_PROVIDER") == "openai" {
 				log.Debug("serving MCP server through embedded OpenAI Secure MCP Tunnel")
-				return serveHTTP(ctx, srv, cmd, oob, seedDrop, oobRestore)
+				return serveHTTP(ctx, srv, cmd, oob, seedDrop, oobRestore, oobCreate)
 			}
 
 			if !cmd.Bool("http") {
@@ -258,7 +261,7 @@ adapter.`,
 				return RunOfficialStdio(ctx, srv, os.Stdin, os.Stdout)
 			}
 
-			return serveHTTP(ctx, srv, cmd, oob, seedDrop, oobRestore)
+			return serveHTTP(ctx, srv, cmd, oob, seedDrop, oobRestore, oobCreate)
 		},
 	}
 }
@@ -288,8 +291,8 @@ func oauthStorePath() string {
 // bearer token, like the OAuth authorize page) so a remote human can open the
 // login URL on the public/tunnel URL rather than an unreachable loopback.
 // seedDrop and oobRestore, when provided, mount the one-time seed and restore
-// URLs on the same shared mux.
-func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *OutOfBandLogin, seedDrop *SeedDrop, oobRestore *OOBRestore) error {
+// URLs on the same shared mux. oobCreate mounts the one-time create URL.
+func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *OutOfBandLogin, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate) error {
 	provider := mcpString(cmd, "tunnel", "MCP_TUNNEL_PROVIDER")
 	domain := mcpString(cmd, "domain", "MCP_DOMAIN")
 	token := mcpString(cmd, "token", "MCP_TUNNEL_TOKEN")
@@ -369,6 +372,9 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 	if oobRestore != nil {
 		oobRestore.SetBaseURL(baseURL)
 	}
+	if oobCreate != nil {
+		oobCreate.SetBaseURL(baseURL)
+	}
 	var oauth *oauthServer
 	if enableOAuth {
 		if authToken == "" {
@@ -447,6 +453,12 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 	if oobRestore != nil {
 		oobRestore.registerHandlers(mux)
 	}
+	// Mount the one-time create route on the shared mux so a human can create +
+	// activate a new vault (fresh seed generated) in a browser at the
+	// public/tunnel URL, never through the MCP channel.
+	if oobCreate != nil {
+		oobCreate.registerHandlers(mux)
+	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
 			http.NotFound(w, r)
@@ -510,6 +522,9 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 		}
 		if oobRestore != nil {
 			oobRestore.SetBaseURL(url)
+		}
+		if oobCreate != nil {
+			oobCreate.SetBaseURL(url)
 		}
 		if oauth != nil {
 			oauthURL, err := tunnel.OAuthBaseURL(publicURL, url)
@@ -648,11 +663,11 @@ type WizardDepsFactory func() (WebsitesWizardDeps, SetupWizardDeps, DomainWizard
 // buildCatalog walks a urfave/cli/v3 command tree and populates a ToolCatalog
 // with every invocable non-hidden command. The public command tree is
 // cataloged identically for the official SDK builder (OfficialMCPServer).
-// seedDrop and oobRestore, when non-nil, let the tool handler mint one-time
-// seed/restore URLs for vault-create/vault-restore agent output so the human
-// can retrieve or supply a recovery seed in a browser without it transiting
-// the MCP channel.
-func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string, seedDrop *SeedDrop, oobRestore *OOBRestore, handoffReg *HandoffRegistry, authHandles *AsyncHandleStore) (*ToolCatalog, error) {
+// seedDrop, oobRestore, and oobCreate, when non-nil, let the tool handler mint
+// one-time seed/restore/create URLs for vault-create/vault-restore agent output
+// so the human can retrieve or supply a recovery seed in a browser without it
+// transiting the MCP channel.
+func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate, handoffReg *HandoffRegistry, authHandles *AsyncHandleStore) (*ToolCatalog, error) {
 	catalog := NewToolCatalog()
 
 	// runMu serializes root.Run calls. A shallow copy of root gives each
@@ -819,7 +834,7 @@ func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string, seedDr
 		catalog.Add(restoreEntry)
 	}
 	if createEntry, ok := catalog.Get(vaultCreateToolName); ok {
-		createEntry.Handler = vaultCreateSetupHandler(seedDrop, handoffReg, authHandles)
+		createEntry.Handler = vaultCreateSetupHandler(oobCreate, handoffReg, authHandles)
 		createEntry.Interaction = InteractionAgentSafe
 		catalog.Add(createEntry)
 	}
