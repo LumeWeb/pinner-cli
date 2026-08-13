@@ -317,9 +317,9 @@ func TestSeedDropConfirmFailureKeepsTokenLive(t *testing.T) {
 	// Force MarkSeedRetrieved's os.Remove to fail by making the seed's own
 	// parent directory read-only. The file exists, so Remove fails with a real
 	// error (not NotExist), which MarkSeedRetrieved must surface rather than
-	// swallow. The registry dir stays writable, so the KeepSeed marker is
-	// cleared first — the on-disk recovery file is the critical thing that must
-	// survive.
+	// swallow. Because MarkSeedRetrieved removes the file before clearing
+	// KeepSeed, a failed removal leaves both the on-disk copy AND the KeepSeed
+	// marker intact.
 	seedDir := filepath.Dir(seedPath)
 	require.NoError(t, os.Chmod(seedDir, 0o500))
 	defer os.Chmod(seedDir, 0o700) // restore so isoVaultPaths cleanup can remove
@@ -337,6 +337,12 @@ func TestSeedDropConfirmFailureKeepsTokenLive(t *testing.T) {
 	after, err := os.ReadFile(seedPath)
 	require.NoError(t, err, "the at-rest copy must survive a failed removal")
 	require.Equal(t, before, after, "the seed bytes must be unchanged after failed removal")
+
+	// Because removal failed, KeepSeed must still be set so reconcileLocked
+	// preserves the surviving copy rather than silently deleting it later.
+	reg, err := vault.LoadRegistry()
+	require.NoError(t, err)
+	require.True(t, reg.Profiles["keepfail"].KeepSeed, "keep-seed must survive a failed removal so reconcile preserves the copy")
 
 	// The token was NOT consumed: it is still retryable once the failure clears.
 	recGet := httptest.NewRecorder()

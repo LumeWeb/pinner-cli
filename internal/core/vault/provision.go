@@ -423,19 +423,24 @@ func (p *Provisioner) MarkSeedRetrieved(profile string) error {
 	if !ok {
 		return nil // unknown profile: nothing to flip
 	}
-	if prof.KeepSeed {
-		prof.KeepSeed = false
-		reg.Profiles[profile] = prof
-		if err := SaveRegistry(reg); err != nil {
-			return fmt.Errorf("failed to clear keep-seed marker: %w", err)
-		}
-	}
+	// Remove the at-rest copy FIRST, and only clear/save KeepSeed after a
+	// successful removal. If removal fails, KeepSeed stays true so
+	// reconcileLocked preserves the surviving copy; clearing it first would let
+	// a later reconcile silently delete the very copy the caller believes is
+	// still on disk (contradicting the truthful-reporting guarantee).
 	if err := os.Remove(SeedPath(profile)); err != nil && !os.IsNotExist(err) {
 		// Surface genuine removal failures (permission, IO) so the caller can
 		// keep the token live and report truthfully instead of silently leaving
 		// the plaintext mnemonic at rest. A missing file (already removed) is
 		// the desired end state, not an error.
 		return fmt.Errorf("failed to remove at-rest recovery copy: %w", err)
+	}
+	if prof.KeepSeed {
+		prof.KeepSeed = false
+		reg.Profiles[profile] = prof
+		if err := SaveRegistry(reg); err != nil {
+			return fmt.Errorf("failed to clear keep-seed marker: %w", err)
+		}
 	}
 	return nil
 }
