@@ -167,4 +167,73 @@ button.processing .btn-label { opacity: .85; }
 }
 .seed-code a { word-break: break-all; }
 
+/* Recovery seed displayed as a copyable word grid (shadcn-style card). Words
+   are individual chips with selection disabled so a highlight can't silently
+   capture the phrase, and there is no <ol> whose numbers could be copied. The
+   single "Copy seed" button writes the full mnemonic from data-seed. */
+.seed-card {
+  margin: 1rem 0 .25rem;
+  padding: .9rem;
+  border-radius: .6rem;
+  background: var(--brand-bg-deep);
+  border: 1px solid var(--brand-border);
+}
+.seed-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: .4rem;
+}
+.seed-word {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .82rem;
+  color: var(--brand-text);
+  background: rgba(173, 240, 221, .06);
+  border: 1px solid rgba(173, 240, 221, .12);
+  border-radius: .4rem;
+  padding: .4rem .5rem;
+  text-align: center;
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: default;
+}
+.seed-copy {
+  width: 100%;
+  margin: .75rem 0 0;
+  padding: .5rem .75rem;
+  border: 1px solid var(--brand-border);
+  border-radius: .5rem;
+  background: transparent;
+  color: var(--brand-muted);
+  font: inherit;
+  font-size: .82rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background .15s ease, color .15s ease, border-color .15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .4rem;
+}
+.seed-copy:hover, .seed-copy:focus-visible { background: rgba(173, 240, 221, .08); color: var(--brand-teal); border-color: var(--brand-teal); }
+.seed-copy.copied { color: var(--brand-teal); border-color: var(--brand-teal); }
+
+/* Link rendered as a primary CTA button (used for the seed-retrieval action). */
+a.btn.primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+  margin-top: .5rem;
+  padding: .7rem 1rem;
+  border-radius: .5rem;
+  background: var(--brand-teal);
+  color: #051413;
+  font-weight: 600;
+  text-decoration: none;
+  width: 100%;
+  transition: background .15s ease, opacity .15s ease;
+}
+a.btn.primary:hover, a.btn.primary:focus-visible { background: #c6f6e9; }
+a.btn.primary:active { opacity: .85; }
+
 .seed-foot { color: var(--brand-teal-muted); font-size: .78rem; margin-top: 1.5rem; text-align: center; }

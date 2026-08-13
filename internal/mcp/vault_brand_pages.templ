@@ -5,15 +5,30 @@ package mcp
 // spent-link pages instead of hand-rolled inline styles.
 
 // seedDropPage is the one-time recovery-seed retrieval page. GET renders it
-// with the mnemonic; only the confirm POST consumes it. The seed is shown in a
-// monospace block so it can be copied exactly.
+// with the mnemonic; only the confirm POST consumes it. The seed is shown as a
+// copyable word grid (shadcn-style card) with a clipboard button; word select
+// is disabled so a highlight can't silently include the recovery phrase, and no
+// ordered-list numbers are rendered that could get copied along with the words.
 templ seedDropPage(profile, mnemonic, action string) {
 	@brandLayout("Vault recovery seed") {
 		<div class="card">
 			<h1>Vault recovery seed</h1>
 			<p>Profile: <strong>{ profile }</strong></p>
 			<p class="seed-warn">This is the only way back into this vault. Write it down and store it somewhere safe. Do not share it.</p>
-			<code class="seed-code">{ mnemonic }</code>
+			<div class="seed-card" data-seed={ " " + mnemonic }>
+				<div class="seed-grid" aria-label="Recovery seed words">
+					for _, w := range seedWords(mnemonic) {
+						<span class="seed-word">{ w }</span>
+					}
+				</div>
+				<button type="button" class="seed-copy" onclick="copySeed(this)">Copy seed</button>
+				// No-JS fallback: render the plain mnemonic as selectable text so a
+				// human with scripting disabled (or a locked clipboard where the
+				// JS copy could not run) can still recover the seed by hand.
+				<noscript>
+					<code class="seed-code">{ mnemonic }</code>
+				</noscript>
+			</div>
 			<p>Only click <em>I have stored my recovery seed</em> once you have safely saved it. After you confirm, this link is invalidated and the on-disk copy is removed.</p>
 			<form method="post" action={ action }>
 				<button type="submit">I have stored my recovery seed</button>
@@ -82,30 +97,50 @@ templ restoreVaultPage(profile, token string) {
 }
 
 // createVaultApproval / restoreVaultApproval are streamed fragments shown while
-// waiting on the Sia device approval.
+// waiting on the Sia device approval. The approval link opens the Sia device
+// connection page in a new tab (the "bank" device page stays separate from the
+// create/restore flow the human is on).
 templ createVaultApproval(approvalURL string) {
 	<p>To finish creating this vault, approve the device connection at:</p>
-	<p class="seed-code"><a href={ approvalURL }>{ approvalURL }</a></p>
+	<p class="seed-code"><a href={ approvalURL } target="_blank" rel="noopener noreferrer">{ approvalURL }</a></p>
 	<p>Waiting for your approval…</p>
 }
 
 templ restoreVaultApproval(approvalURL string) {
 	<p>To finish restoring this vault, approve the device connection at:</p>
-	<p class="seed-code"><a href={ approvalURL }>{ approvalURL }</a></p>
+	<p class="seed-code"><a href={ approvalURL } target="_blank" rel="noopener noreferrer">{ approvalURL }</a></p>
 	<p>Waiting for your approval…</p>
 }
 
 // createVaultDone streams the seed-drop retrieval link once the vault is active.
+// It also collapses the in-progress shell ("Create Pinner Vault / Preparing
+// your new vault…") so only the created state is shown once creation succeeds,
+// instead of both stacking.
 templ createVaultDone(profile, vaultID, seedURL string) {
-	<h2>Vault created</h2>
-	<p>Profile <code>{ profile }</code> is active (vault ID { vaultID }).</p>
-	<p id="seed-link">Retrieve your one-time recovery seed: <a href={ seedURL }>open seed page</a>.</p>
+	<script>
+		// Replace the in-progress status area with the created result so the
+		// "Preparing your new vault…" shell does not linger below the result.
+		var s = document.getElementById("status");
+		if (s) { s.innerHTML = ""; }
+	</script>
+	<div class="status done">
+		<h2>Vault created</h2>
+		<p>Profile <code>{ profile }</code> is active (vault ID <code>{ vaultID }</code>).</p>
+	</div>
+	<p id="seed-link">Back up your one-time recovery seed before continuing:</p>
+	<a class="btn primary" href={ seedURL } id="seed-cta">Retrieve my recovery seed</a>
 }
 
 // restoreVaultDone confirms restoration completed.
 templ restoreVaultDone(profile, vaultID string) {
-	<h2>Vault restored</h2>
-	<p>Profile <code>{ profile }</code> is ready (vault ID { vaultID }).</p>
+	<script>
+		var s = document.getElementById("status");
+		if (s) { s.innerHTML = ""; }
+	</script>
+	<div class="status done">
+		<h2>Vault restored</h2>
+		<p>Profile <code>{ profile }</code> is ready (vault ID <code>{ vaultID }</code>).</p>
+	</div>
 }
 
 // createVaultError / restoreVaultError stream a failure into the status area.

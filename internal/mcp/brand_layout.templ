@@ -34,6 +34,44 @@ templ brandLayout(title string) {
 						btn.prepend(s);
 					}
 				});
+				// Copy the full recovery seed from the seed-card's data-seed
+				// attribute (the complete mnemonic, not the visually-rendered
+				// word grid) to the clipboard. Prefer navigator.clipboard when
+				// available, but ALWAYS fall through to a textarea + execCommand
+				// path on rejection (permission denied / restricted API), so a
+				// locked clipboard still yields a useable copy instead of a
+				// bare "Copy failed".
+				window.copySeed = function (btn) {
+					var card = btn.closest(".seed-card");
+					if (!card) return;
+					var text = (card.getAttribute("data-seed") || "").trim();
+					var label = function (ok) {
+						var txt = btn.textContent;
+						btn.textContent = ok ? "Copied" : "Copy failed";
+						btn.classList.toggle("copied", ok);
+						setTimeout(function () { btn.textContent = txt; btn.classList.remove("copied"); }, 1500);
+					};
+					var fallback = function () {
+						var ta = document.createElement("textarea");
+						ta.value = text;
+						ta.style.position = "fixed";
+						ta.style.opacity = "0";
+						document.body.appendChild(ta);
+						ta.select();
+						var ok = false;
+						try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+						document.body.removeChild(ta);
+						label(ok);
+					};
+					if (navigator.clipboard && navigator.clipboard.writeText) {
+						navigator.clipboard.writeText(text).then(
+							function () { label(true); },
+							function () { fallback(); }
+						);
+						return;
+					}
+					fallback();
+				};
 			</script>
 		</body>
 	</html>

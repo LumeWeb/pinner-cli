@@ -12,6 +12,14 @@ func htmlEscapeText(s string) string {
 	return strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&#34;", "'", "&#39;").Replace(s)
 }
 
+// seedWords splits a recovery mnemonic (whitespace-separated words, some BIP39
+// styles use a trailing check word) into its words for rendering as a grid of
+// copyable chips. Declaratively rendering each word avoids an <ol> whose list
+// numbers could get copied alongside the words if the human highlights.
+func seedWords(mnemonic string) []string {
+	return strings.Fields(mnemonic)
+}
+
 // Vault create/restore progress pages are STREAMED: the Sia browser approval
 // can block for minutes, so consumePOST writes an opening shell, streams the
 // approval/link/result/error fragments into #status as they become known, then

@@ -140,6 +140,19 @@ func TestOOBCreateStreamsApprovalAndSeed(t *testing.T) {
 		"the streamed approval link must appear before the closing </body>")
 	require.True(t, strings.Index(body, "seed-link") < strings.Index(body, "</body>"),
 		"the streamed seed link must appear before the closing </body>")
+
+	// Approval link: must open the Sia device page in a NEW tab (the device
+	// "bank" page stays apart from the create flow), so it needs target=_blank.
+	require.Contains(t, body, `href="http://approve.sia" target="_blank"`, "the Sia approval link must open in a new tab")
+	require.Contains(t, body, `rel="noopener noreferrer"`, "the new-tab approval link must be noopener")
+
+	// Once the vault is created, the in-progress shell must be collapsed (the
+	// done fragment clears the Preparing… status) and the seed retrieval must be
+	// a primary CTA button rather than an inline text link.
+	require.Contains(t, body, `getElementById("status")`, "the done fragment must clear the Preparing… status area")
+	require.Contains(t, body, `class="btn primary"`, "seed retrieval must be rendered as a primary CTA button")
+	require.Contains(t, body, "Retrieve my recovery seed", "the seed CTA button must be labelled clearly")
+	require.Contains(t, body, `id="seed-cta"`, "the seed CTA must be addressable for tests/humans")
 }
 
 func TestOOBCreateFailureDoesNotDeliverSeed(t *testing.T) {
