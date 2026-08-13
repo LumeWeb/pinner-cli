@@ -86,6 +86,14 @@ type Catalog interface {
 // detect it with errors.Is(err, ErrConfirmRequired) to surface a confirm flow.
 var ErrConfirmRequired = errors.New("confirmation required")
 
+// ErrHumanRequired is a sentinel signal that an InteractionHumanOnly or
+// InteractionNeedsHandoff operation was invoked by a non-human actor and so
+// was refused at the gate. Such flows demand out-of-band human action a model
+// or app would never complete. Callers detect it with
+// errors.Is(err, ErrHumanRequired) to route the refusal to a human hand-off
+// rather than treating it as a failure.
+var ErrHumanRequired = errors.New("operation requires a human")
+
 // SensitiveSchemaKey is the JSON Schema property marking an arg whose value
 // must be redacted (logs, echoed tool calls) on the model surface. It matches
 // OperationArg.Sensitive, which the CLI surfaces in help text. Marking it in
@@ -297,7 +305,7 @@ func (c *catalogImpl) Invoke(ctx context.Context, name string, input map[string]
 	// particular must not run it, since the flow demands out-of-band human
 	// action the model would never complete.
 	if (op.Interaction() == InteractionHumanOnly || op.Interaction() == InteractionNeedsHandoff) && actor != ActorHuman {
-		return nil, fmt.Errorf("operation %q requires a human: refused for actor %s", name, actor)
+		return nil, fmt.Errorf("operation %q requires a human: refused for actor %s: %w", name, actor, ErrHumanRequired)
 	}
 
 	// Visibility: an op excluded from an actor's surface must not be executable

@@ -38,9 +38,9 @@ import (
 //     confirm flow rather than a failure.
 //
 //   - An InteractionHumanOnly / InteractionNeedsHandoff operation invoked by a
-//     non-human actor is refused by the gate with a "requires a human: refused"
-//     error (no exported sentinel, so it is matched textually). That is mapped
-//     to a NeedsHumanResult with Reason=ReasonInteractiveOnly.
+//     non-human actor is refused by the gate with an error wrapping the
+//     catalog.ErrHumanRequired sentinel. That is mapped to a NeedsHumanResult
+//     with Reason=ReasonInteractiveOnly.
 //
 // On any other error the result is a plain ToolResult{IsError:true} with a
 // cleaned message.
@@ -58,7 +58,7 @@ func DispatchCatalogOp(ctx context.Context, cat catalog.Catalog, actor catalog.A
 		}
 		// An InteractiveOnly/NeedsHandoff op refused for a non-human actor is
 		// a hand-off to the human, not a failure.
-		if isInteractionRefusal(err) {
+		if errors.Is(err, catalog.ErrHumanRequired) {
 			return NeedsHumanResult(NeedsHuman{
 				Reason:     ReasonInteractiveOnly,
 				ResumeTool: resumeTool,
@@ -69,18 +69,6 @@ func DispatchCatalogOp(ctx context.Context, cat catalog.Catalog, actor catalog.A
 	}
 
 	return resultToToolResult(result), nil
-}
-
-// isInteractionRefusal reports whether the error returned by the catalog gate
-// is the "requires a human" refusal for a non-human actor. The catalog has no
-// exported sentinel for this refusal (unlike ErrConfirmRequired); it is a
-// plain fmt.Errorf, so it is matched textually on a stable substring.
-func isInteractionRefusal(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := err.Error()
-	return strings.Contains(msg, "requires a human") && strings.Contains(msg, "refused for actor")
 }
 
 // resultToToolResult converts the typed (any) result returned by the catalog

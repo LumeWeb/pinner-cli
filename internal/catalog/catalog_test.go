@@ -317,6 +317,26 @@ func TestInvokeRefusesHumanOnlyForModel(t *testing.T) {
 	}
 }
 
+// TestInvokeHumanOnlyRefusalWrapsErrHumanRequired is a regression test for the
+// exported ErrHumanRequired sentinel: an InteractionHumanOnly op invoked by a
+// non-human actor (this is a Handoff-capable flow, the same gate refuses both
+// InteractionHumanOnly and InteractionNeedsHandoff) must return an error that
+// errors.Is matches against ErrHumanRequired, and must NOT match the distinct
+// ErrConfirmRequired sentinel, so callers can route refusals precisely.
+func TestInvokeHumanRequiredSentinel(t *testing.T) {
+	c := newTestCatalog(t)
+	_, err := c.Invoke(context.Background(), "account login", map[string]any{}, ActorModel)
+	if err == nil {
+		t.Fatal("HumanOnly op should be refused for ActorModel")
+	}
+	if !errors.Is(err, ErrHumanRequired) {
+		t.Fatalf("err = %v, want errors.Is(err, ErrHumanRequired)", err)
+	}
+	if errors.Is(err, ErrConfirmRequired) {
+		t.Fatalf("err = %v, should NOT be ErrConfirmRequired", err)
+	}
+}
+
 func TestInvokeAllowsHumanOnlyForHuman(t *testing.T) {
 	c := newTestCatalog(t)
 	got, err := c.Invoke(context.Background(), "account login", map[string]any{"cid": "x"}, ActorHuman)
