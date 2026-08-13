@@ -132,11 +132,12 @@ button{font-size:1rem;padding:.6rem 1.2rem;border-radius:6px;border:1px solid #9
 func (s *SeedDrop) consumePOST(w http.ResponseWriter, r *http.Request, token string, item *handoffItem) bool {
 	payload, _ := item.payload.(*seedPayload)
 
-	// Only now — on explicit human confirmation — clear the profile's KeepSeed
-	// marker and remove the at-rest copy. If the human never confirms, the kept
-	// seed remains on disk as the durable recovery backup for a vault they were
-	// creating fresh (no prior key), which is correct.
-	if err := vault.NewProvisioner().MarkSeedRetrieved(payload.profile); err != nil {
+	// Only on explicit human confirmation do we destroy the at-rest recovery
+	// copy. Branch on whether the copy is actually gone — the security-relevant
+	// fact. A marker-clear bookkeeping error (gone==true, err!=nil) must not be
+	// reported as a removal failure.
+	gone, err := vault.NewProvisioner().MarkSeedRetrieved(payload.profile)
+	if !gone {
 		// The at-rest copy could not be removed. Report this truthfully: telling
 		// the human it was removed while the plaintext mnemonic lingers on disk
 		// would leave the vault's only recovery credential silently exposed.
@@ -151,6 +152,10 @@ func (s *SeedDrop) consumePOST(w http.ResponseWriter, r *http.Request, token str
 <p>You have confirmed your recovery seed, but the on-disk copy could <strong>not</strong> be removed. Do not discard anything. Contact your administrator before proceeding — the recovery copy may still exist on this host and must be securely erased.</p>
 </body></html>`)
 		return false // do not consume the token while the at-rest copy survives
+	}
+	if err != nil {
+		// The copy is gone; only the KeepSeed marker-clear failed to persist.
+		s.core.logf().Error("seed removed but keep-seed marker-clear failed", zap.String("profile", payload.profile), zap.Error(err))
 	}
 	s.core.logf().Info("seed drop confirmed; at-rest recovery copy removed", zap.String("profile", payload.profile))
 

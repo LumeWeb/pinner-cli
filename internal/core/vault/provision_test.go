@@ -393,9 +393,11 @@ func TestProvisionerMarkSeedRetrievedRemovesKeptSeed(t *testing.T) {
 	_, err = os.Stat(SeedPath("claimed"))
 	require.NoError(t, err, "the kept seed must be on disk before retrieval")
 
-	// The human claims the one-time seed. This is exactly what the SeedDrop GET
-	// path invokes after serving it.
-	require.NoError(t, p.MarkSeedRetrieved("claimed"))
+	// The human claims the one-time seed. This is exactly what the SeedDrop
+	// confirmation path invokes.
+	gone, err := p.MarkSeedRetrieved("claimed")
+	require.NoError(t, err)
+	require.True(t, gone, "the at-rest copy must be reported as gone")
 
 	// The at-rest copy is removed and the marker cleared.
 	_, statErr := os.Stat(SeedPath("claimed"))
@@ -404,9 +406,14 @@ func TestProvisionerMarkSeedRetrievedRemovesKeptSeed(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, reg.Profiles["claimed"].KeepSeed, "the keep-seed marker must be cleared once retrieved")
 
-	// Unknown and already-cleared profiles are no-ops (no panic, no error).
-	require.NoError(t, p.MarkSeedRetrieved("does-not-exist"))
-	require.NoError(t, p.MarkSeedRetrieved("claimed"))
+	// Unknown and already-cleared profiles report gone with nil error (no
+	// panic, no removal failure).
+	gone, err = p.MarkSeedRetrieved("does-not-exist")
+	require.NoError(t, err)
+	require.True(t, gone, "an unknown profile has no at-rest copy; it is trivially gone")
+	gone, err = p.MarkSeedRetrieved("claimed")
+	require.NoError(t, err)
+	require.True(t, gone, "an already-cleared profile's missing file is not a removal failure")
 }
 
 // TestProvisionerCreatePendingRollsBackSeedOnRegistryFailure verifies that a

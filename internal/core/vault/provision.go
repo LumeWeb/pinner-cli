@@ -400,49 +400,47 @@ func (p *Provisioner) Create(ctx context.Context, req CreateRequest) (*CreateRes
 	}, nil
 }
 
-// MarkSeedRetrieved clears a profile's KeepSeed flag and removes the kept
-// create-backup seed once the human has claimed the one-time seed retrieval
-// (the SeedDrop GET that displays it). The plaintext recovery mnemonic must not
-// persist at rest indefinitely: it is a one-time retrieval credential, not a
-// permanent backup. After retrieval it is removed immediately (same post-use
-// semantics as restore), and the profile is un-marked so reconcileLocked treats
-// any straggler as ordinary consumed residue. Unknown or already-un-kept
-// profiles are no-ops.
-func (p *Provisioner) MarkSeedRetrieved(profile string) error {
+// MarkSeedRetrieved removes the kept create-backup seed once the human has
+// claimed the one-time seed retrieval, and clears the profile's KeepSeed flag.
+// It reports whether the at-rest plaintext copy is gone — the security-relevant
+// fact the caller must act on — separately from any bookkeeping error:
+//
+//	gone == false, err != nil: removal failed; the plaintext mnemonic is still
+//	    on disk. The caller must keep the token live and warn the human.
+//	gone == true: the copy is gone (or never existed). Any err is only a
+//	    KeepSeed marker-clear bookkeeping failure, never a removal failure, so
+//	    the caller can safely report retrieval and consume the token.
+func (p *Provisioner) MarkSeedRetrieved(profile string) (gone bool, err error) {
 	unlock, err := lockRegistry()
 	if err != nil {
-		return fmt.Errorf("failed to lock registry: %w", err)
+		return false, fmt.Errorf("failed to lock registry: %w", err)
 	}
 	defer unlock()
 
 	reg, err := LoadRegistry()
 	if err != nil {
-		return err
+		return false, err
 	}
 	prof, ok := reg.Profiles[profile]
-	if !ok {
-		return nil // unknown profile: nothing to flip
-	}
-	// Remove the at-rest copy FIRST, and only clear/save KeepSeed after a
-	// successful removal. If removal fails, KeepSeed stays true so
-	// reconcileLocked preserves the surviving copy; clearing it first would let
-	// a later reconcile silently delete the very copy the caller believes is
-	// still on disk (contradicting the truthful-reporting guarantee).
+
+	// Remove the at-rest copy FIRST. A missing file is already the desired end
+	// state (gone). A genuine removal failure leaves gone=false so the caller
+	// does not report the copy as gone while the plaintext mnemonic is at rest.
 	if err := os.Remove(SeedPath(profile)); err != nil && !os.IsNotExist(err) {
-		// Surface genuine removal failures (permission, IO) so the caller can
-		// keep the token live and report truthfully instead of silently leaving
-		// the plaintext mnemonic at rest. A missing file (already removed) is
-		// the desired end state, not an error.
-		return fmt.Errorf("failed to remove at-rest recovery copy: %w", err)
+		return false, fmt.Errorf("failed to remove at-rest recovery copy: %w", err)
 	}
-	if prof.KeepSeed {
+
+	// The copy is gone. Clearing KeepSeed is bookkeeping; a marker-save failure
+	// must NOT be reported as a removal failure (the plaintext is already gone).
+	// Keep the marker set would let reconcile preserve nothing, so best-effort it.
+	if ok && prof.KeepSeed {
 		prof.KeepSeed = false
 		reg.Profiles[profile] = prof
 		if err := SaveRegistry(reg); err != nil {
-			return fmt.Errorf("failed to clear keep-seed marker: %w", err)
+			return true, fmt.Errorf("removed at-rest copy but failed to persist keep-seed clear: %w", err)
 		}
 	}
-	return nil
+	return true, nil
 }
 
 // finishRestoreLocked performs the local commit that turns a pending profile
