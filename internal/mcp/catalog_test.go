@@ -1,18 +1,15 @@
 package mcp
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
+	"go.lumeweb.com/pinner-cli/internal/catalogops"
 )
 
 func TestHumanTitle(t *testing.T) {
@@ -30,126 +27,11 @@ func TestHumanTitle(t *testing.T) {
 	}
 }
 
-func TestReadOnlyAndDestructiveClassification(t *testing.T) {
-	assert.True(t, isReadOnlyName([]string{"pinner", "list"}))
-	assert.True(t, isReadOnlyName([]string{"pinner", "status"}))
-	assert.False(t, isReadOnlyName([]string{"pinner", "upload"}))
-	assert.False(t, isReadOnlyName([]string{"pinner", "rm"}))
-
-	assert.True(t, isDestructiveName([]string{"pinner", "unpin"}))
-	assert.True(t, isDestructiveName([]string{"pinner", "vault", "rm"}))
-	assert.True(t, isDestructiveName([]string{"pinner", "admin", "billing", "credits", "purge"}))
-	assert.True(t, isDestructiveName([]string{"pinner", "admin", "billing", "subscribers", "cancel"}))
-	assert.False(t, isDestructiveName([]string{"pinner", "list"}))
-}
-
 func TestBuildInstructionsEmbedsCount(t *testing.T) {
 	got := buildInstructions(42)
 	require.Contains(t, got, "42 tools")
 	require.Contains(t, got, "curated set of common Pinner tools")
 	require.Contains(t, got, "progressive disclosure")
-}
-
-// TestCommandAnnotationsRegistered verifies that RegisterFromCommand sets the
-// title, read-only, and destructive hints on catalog entries for a realistic
-// command tree.
-func TestCommandAnnotationsRegistered(t *testing.T) {
-	root := &cli.Command{
-		Name: "pinner",
-		Commands: []*cli.Command{
-			{
-				Name:        "upload",
-				Description: "Upload a file to IPFS",
-				Flags:       []cli.Flag{&cli.StringFlag{Name: "path", Required: true}},
-				Action:      func(context.Context, *cli.Command) error { return nil },
-			},
-			{
-				Name:        "unpin",
-				Description: "Remove a pinned CID",
-				Flags:       []cli.Flag{&cli.BoolFlag{Name: "force"}},
-				Action:      func(context.Context, *cli.Command) error { return nil },
-			},
-			{
-				Name: "websites",
-				Commands: []*cli.Command{
-					{
-						Name: "domains",
-						Commands: []*cli.Command{
-							{
-								Name:        "create",
-								Description: "Create a website domain",
-								Action:      func(context.Context, *cli.Command) error { return nil },
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-
-	catalog := NewToolCatalog()
-	handler := PinnerToolHandler(func(context.Context, ToolRequest) (ToolResult, error) { return ToolResult{}, nil })
-	err := catalog.RegisterFromCommand(root, true, nil, handler)
-	require.NoError(t, err)
-
-	upload, ok := catalog.Get("pinner_upload")
-	require.True(t, ok)
-	assert.Equal(t, "Upload", upload.Title)
-	assert.False(t, upload.ReadOnly)
-	assert.False(t, upload.Destructive)
-
-	unpin, ok := catalog.Get("pinner_unpin")
-	require.True(t, ok)
-	assert.Equal(t, "Unpin", unpin.Title)
-	assert.True(t, unpin.Destructive)
-	assert.False(t, unpin.ReadOnly)
-
-	create, ok := catalog.Get("pinner_websites_domains_create")
-	require.True(t, ok)
-	assert.Equal(t, "Websites Domains Create", create.Title)
-}
-
-// TestDescribeToolCarriesAnnotations verifies that describe_tool output
-// includes the annotation fields.
-func TestDescribeToolCarriesAnnotations(t *testing.T) {
-	root := &cli.Command{
-		Name: "pinner",
-		Commands: []*cli.Command{
-			{
-				Name:        "status",
-				Description: "Show account status",
-				Action:      func(context.Context, *cli.Command) error { return nil },
-			},
-			{
-				Name: "vault",
-				Commands: []*cli.Command{
-					{
-						Name:        "rm",
-						Description: "Remove a vault file",
-						Action:      func(context.Context, *cli.Command) error { return nil },
-					},
-				},
-			},
-		},
-	}
-
-	catalog := NewToolCatalog()
-	err := catalog.RegisterFromCommand(root, true, nil,
-		func(context.Context, ToolRequest) (ToolResult, error) { return ToolResult{}, nil })
-	require.NoError(t, err)
-
-	detail, err := catalog.Describe("pinner_status")
-	require.NoError(t, err)
-	assert.True(t, detail.ReadOnly)
-	assert.False(t, detail.Destructive)
-	assert.Equal(t, "Status", detail.Title)
-
-	detail, err = catalog.Describe("pinner_vault_rm")
-	require.NoError(t, err)
-	assert.False(t, detail.ReadOnly)
-	assert.True(t, detail.Destructive)
-	assert.Equal(t, "Vault Rm", detail.Title)
-	assert.True(t, strings.HasPrefix(detail.Description, "Remove a vault file"))
 }
 
 // TestEnumStringFlagEmitsEnum verifies that a flag built with EnumStringFlag
@@ -172,11 +54,12 @@ func TestEnumStringFlagEmitsEnum(t *testing.T) {
 	assert.False(t, hasEnum)
 }
 
-// TestSensitiveStringFlagSchemaAndNames verifies that a flag built with
-// SensitiveStringFlag is (a) emitted into the schema as a plain string and
-// (b) reported by sensitiveFlagNames so the adapter can redact its value,
-// while a plain string flag is neither.
-func TestSensitiveStringFlagSchemaAndNames(t *testing.T) {
+// TestSensitiveStringFlagSchema verifies that a flag built with
+// SensitiveStringFlag is emitted into the schema as a plain string. (The
+// value-redaction behavior itself is covered in logging_test.go via maskArgs /
+// logToolCallStart; the legacy sensitiveFlagNames helper was removed with the
+// CLI-tree walk.)
+func TestSensitiveStringFlagSchema(t *testing.T) {
 	flags := []cli.Flag{
 		SensitiveStringFlag(&cli.StringFlag{Name: "password", Usage: "Password", Aliases: []string{"p"}}),
 		&cli.StringFlag{Name: "email", Usage: "Email"},
@@ -190,298 +73,6 @@ func TestSensitiveStringFlagSchemaAndNames(t *testing.T) {
 	passwordSchema, ok := props["password"].(map[string]any)
 	require.True(t, ok, "password flag must appear in schema")
 	assert.Equal(t, "string", passwordSchema["type"])
-
-	names := sensitiveFlagNames(flags)
-	assert.Equal(t, []string{"password"}, names, "only the sensitive flag name is reported")
-}
-
-// TestSensitiveFlagNamesOmitsNonSensitive verifies sensitiveFlagNames ignores
-// flags that do not implement SensitiveProvider.
-func TestSensitiveFlagNamesOmitsNonSensitive(t *testing.T) {
-	flags := []cli.Flag{
-		&cli.StringFlag{Name: "email", Usage: "Email"},
-		&cli.BoolFlag{Name: "force", Usage: "Force"},
-	}
-	assert.Empty(t, sensitiveFlagNames(flags))
-}
-
-// TestSensitiveFlagRedactedFromArgTrace verifies the schema-derived redaction
-// end to end: a tool whose command declares a SensitiveStringFlag must have
-// its value masked (****) in the "invoking in-process" trace instead of the
-// previously hardcoded flag-name list.
-func TestSensitiveFlagRedactedFromArgTrace(t *testing.T) {
-	root := &cli.Command{
-		Name: "pinner",
-		Commands: []*cli.Command{
-			{
-				Name: "auth",
-				Commands: []*cli.Command{
-					{
-						Name: "login",
-						Flags: []cli.Flag{
-							SensitiveStringFlag(&cli.StringFlag{
-								Name:    "password",
-								Aliases: []string{"p"},
-								Usage:   "Password",
-							}),
-							&cli.StringFlag{Name: "email", Usage: "Email"},
-						},
-						Action: func(context.Context, *cli.Command) error { return nil },
-					},
-				},
-			},
-		},
-	}
-
-	catalog, err := buildCatalog(root, true, nil, nil, nil, nil, nil, nil)
-	require.NoError(t, err)
-
-	entry, ok := catalog.Get("pinner_auth_login")
-	require.True(t, ok)
-	require.Equal(t, []string{"password"}, entry.SensitiveFlags,
-		"sensitive flag must be derived onto the catalog entry")
-
-	// Swap the package logger for a capture buffer so we can assert on the
-	// arg-trace line without polluting stderr.
-	var buf bytes.Buffer
-	oldLog := log
-	log = zap.New(zapcore.NewCore(
-		zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()),
-		zapcore.AddSync(&buf),
-		zapcore.InfoLevel,
-	))
-	t.Cleanup(func() { log = oldLog })
-
-	_, err = entry.Handler(context.Background(), ToolRequest{
-		Name: "pinner_auth_login",
-		Arguments: map[string]any{
-			"email":    "user@example.com",
-			"password": "supersecret123",
-		},
-	})
-	require.NoError(t, err)
-
-	trace := buf.String()
-	assert.Contains(t, trace, "--password")
-	assert.Contains(t, trace, "****")
-	assert.NotContains(t, trace, "supersecret123", "password value must not be logged verbatim")
-	assert.Contains(t, trace, "user@example.com", "non-sensitive value is not redacted")
-}
-
-// TestRootSensitiveFlagRedactedFromSubcommand verifies that a root-level
-// global sensitive flag (e.g. the global --auth-token) is unioned onto every
-// subcommand's SensitiveFlags, so an agent passing it to any tool has its
-// value redacted from the arg trace. This is a regression guard: root/global
-// flags were previously dropped, leaking the live auth token verbatim.
-func TestRootSensitiveFlagRedactedFromSubcommand(t *testing.T) {
-	root := &cli.Command{
-		Name: "pinner",
-		Flags: []cli.Flag{
-			SensitiveStringFlag(&cli.StringFlag{Name: "auth-token", Usage: "Auth token"}),
-			&cli.StringFlag{Name: "email", Usage: "Email"},
-		},
-		Commands: []*cli.Command{
-			{Name: "status", Action: func(context.Context, *cli.Command) error { return nil }},
-		},
-	}
-
-	catalog, err := buildCatalog(root, true, nil, nil, nil, nil, nil, nil)
-	require.NoError(t, err)
-
-	status, ok := catalog.Get("pinner_status")
-	require.True(t, ok)
-	require.Contains(t, status.SensitiveFlags, "auth-token",
-		"root-level sensitive flag must be unioned onto the subcommand entry")
-
-	// Render and assert the token is redacted from the arg trace.
-	var buf bytes.Buffer
-	oldLog := log
-	log = zap.New(zapcore.NewCore(
-		zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()),
-		zapcore.AddSync(&buf),
-		zapcore.InfoLevel,
-	))
-	t.Cleanup(func() { log = oldLog })
-
-	_, err = status.Handler(context.Background(), ToolRequest{
-		Name: "pinner_status",
-		Arguments: map[string]any{
-			"auth-token": "LIVE-AUTH-TOKEN-123",
-			"email":      "user@example.com",
-		},
-	})
-	require.NoError(t, err)
-
-	trace := buf.String()
-	assert.Contains(t, trace, "--auth-token")
-	assert.Contains(t, trace, "****")
-	assert.NotContains(t, trace, "LIVE-AUTH-TOKEN-123", "root auth token must be redacted")
-	assert.Contains(t, trace, "user@example.com", "non-sensitive value is not redacted")
-}
-
-// TestInheritedSensitiveFlagRedactedAcrossNesting verifies that a sensitive
-// flag declared on an intermediate parent command (e.g. vault --password used
-// by a nested action) is accumulated into the SensitiveFlags of tools nested
-// 2+ levels deep, so its value is redacted from arg-trace logs. Regression
-// guard: inherited flags were made visible in the schema, but without also
-// threading inherited sensitive names, the adapter's redaction (driven only by
-// entry.SensitiveFlags) would have left the value in plaintext.
-func TestInheritedSensitiveFlagRedactedAcrossNesting(t *testing.T) {
-	root := &cli.Command{
-		Name: "pinner",
-		Commands: []*cli.Command{
-			{
-				Name: "vault",
-				Flags: []cli.Flag{
-					SensitiveStringFlag(&cli.StringFlag{Name: "password", Usage: "Vault password"}),
-				},
-				Commands: []*cli.Command{
-					{
-						Name: "profile",
-						Commands: []*cli.Command{
-							{Name: "use", Action: func(context.Context, *cli.Command) error { return nil }},
-						},
-					},
-				},
-			},
-		},
-	}
-
-	catalog, err := buildCatalog(root, true, nil, nil, nil, nil, nil, nil)
-	require.NoError(t, err)
-
-	entry, ok := catalog.Get("pinner_vault_profile_use")
-	require.True(t, ok)
-	require.Contains(t, entry.SensitiveFlags, "password",
-		"grandparent sensitive flag must be accumulated onto the nested tool entry")
-
-	// The value must be redacted from the arg trace.
-	var buf bytes.Buffer
-	oldLog := log
-	log = zap.New(zapcore.NewCore(
-		zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()),
-		zapcore.AddSync(&buf),
-		zapcore.InfoLevel,
-	))
-	t.Cleanup(func() { log = oldLog })
-
-	_, err = entry.Handler(context.Background(), ToolRequest{
-		Name: "pinner_vault_profile_use",
-		Arguments: map[string]any{
-			"password": "LIVE-VAULT-PASSWORD-456",
-			"profile":  "default",
-		},
-	})
-	require.NoError(t, err)
-
-	trace := buf.String()
-	assert.Contains(t, trace, "****")
-	assert.NotContains(t, trace, "LIVE-VAULT-PASSWORD-456", "inherited sensitive value must be redacted")
-}
-
-// TestUnionSensitiveFlagsDedupes verifies unionSensitiveFlags preserves order
-// and drops duplicate names shared across the root and a subcommand.
-func TestUnionSensitiveFlagsDedupes(t *testing.T) {
-	got := unionSensitiveFlags([]string{"password", "key"}, []string{"key", "auth-token"})
-	assert.Equal(t, []string{"password", "key", "auth-token"}, got)
-}
-
-// TestClassifyInteraction verifies the deterministic interaction classification
-// for both stdin-input and interactive command paths.
-func TestClassifyInteraction(t *testing.T) {
-	cases := []struct {
-		loc  []string
-		want Interaction
-	}{
-		{[]string{"pinner", "upload"}, InteractionAgentSafe}, // upload guarded by isStdinPipe
-		{[]string{"pinner", "pin"}, InteractionAgentSafe},
-		{[]string{"pinner", "vault", "create"}, InteractionAgentSafe},
-		{[]string{"pinner", "vault", "restore"}, InteractionAgentSafe}, // OOB hand-off, not stdin
-		{[]string{"pinner", "setup"}, InteractionInteractive},
-		{[]string{"pinner", "list"}, InteractionAgentSafe},
-		{[]string{"pinner", "admin", "billing", "subscribers", "list-users"}, InteractionAgentSafe},
-	}
-	for _, c := range cases {
-		assert.Equal(t, c.want, classifyInteraction(c.loc), "classifyInteraction(%v)", c.loc)
-	}
-}
-
-// TestInteractionRegisteredOnCommandTree verifies RegisterFromCommand sets the
-// Interaction field on catalog entries from the command path.
-func TestInteractionRegisteredOnCommandTree(t *testing.T) {
-	root := &cli.Command{
-		Name: "pinner",
-		Commands: []*cli.Command{
-			{Name: "setup", Action: func(context.Context, *cli.Command) error { return nil }},
-			{
-				Name: "vault",
-				Commands: []*cli.Command{
-					{Name: "restore", Action: func(context.Context, *cli.Command) error { return nil }},
-					{Name: "create", Action: func(context.Context, *cli.Command) error { return nil }},
-				},
-			},
-			{Name: "list", Action: func(context.Context, *cli.Command) error { return nil }},
-		},
-	}
-	catalog := NewToolCatalog()
-	err := catalog.RegisterFromCommand(root, true, nil,
-		func(context.Context, ToolRequest) (ToolResult, error) { return ToolResult{}, nil })
-	require.NoError(t, err)
-
-	restore, _ := catalog.Get("pinner_vault_restore")
-	require.NotNil(t, restore)
-	assert.Equal(t, InteractionAgentSafe, restore.Interaction)
-
-	setup, _ := catalog.Get("pinner_setup")
-	require.NotNil(t, setup)
-	assert.Equal(t, InteractionInteractive, setup.Interaction)
-
-	create, _ := catalog.Get("pinner_vault_create")
-	require.NotNil(t, create)
-	assert.Equal(t, InteractionAgentSafe, create.Interaction)
-}
-
-// TestSearchHidesInteractiveTools verifies interactive (human-only) tools are
-// omitted from search_tools while agent_safe tools stay discoverable with
-// their interaction signal (including the OOB vault restore).
-func TestSearchHidesInteractiveTools(t *testing.T) {
-	root := &cli.Command{
-		Name: "pinner",
-		Commands: []*cli.Command{
-			{Name: "setup", Description: "Run the setup wizard", Action: func(context.Context, *cli.Command) error { return nil }},
-			{
-				Name: "vault",
-				Commands: []*cli.Command{
-					{Name: "restore", Description: "Restore a vault", Action: func(context.Context, *cli.Command) error { return nil }},
-				},
-			},
-			{Name: "status", Description: "Show status", Action: func(context.Context, *cli.Command) error { return nil }},
-		},
-	}
-	catalog := NewToolCatalog()
-	err := catalog.RegisterFromCommand(root, true, nil,
-		func(context.Context, ToolRequest) (ToolResult, error) { return ToolResult{}, nil })
-	require.NoError(t, err)
-
-	summaries := catalog.Search("", "")
-	var names []string
-	var restoreSummary *ToolSummary
-	for i := range summaries {
-		names = append(names, summaries[i].Name)
-		if summaries[i].Name == "pinner_vault_restore" {
-			restoreSummary = &summaries[i]
-		}
-	}
-	assert.NotContains(t, names, "pinner_setup", "interactive tool must be hidden from search_tools")
-	assert.Contains(t, names, "pinner_vault_restore")
-	assert.Contains(t, names, "pinner_status")
-	require.NotNil(t, restoreSummary, "restore must remain discoverable")
-	assert.Equal(t, InteractionAgentSafe, restoreSummary.Interaction)
-
-	// Describe must still surface the interaction label for a discoverable tool.
-	detail, err := catalog.Describe("pinner_vault_restore")
-	require.NoError(t, err)
-	assert.Equal(t, InteractionAgentSafe, detail.Interaction)
 }
 
 func TestStringSliceFlagEmitsArraySchema(t *testing.T) {
@@ -504,32 +95,24 @@ func TestStringSliceFlagEmitsArraySchema(t *testing.T) {
 // MCP transport. The non-stdin OOB hand-off is already permitted by the
 // bypassGate, so the signal must stay stdin_input.
 func TestVaultRestoreInteractionStaysAgentSafeThroughBuildCatalog(t *testing.T) {
-	root := &cli.Command{
-		Name: "pinner",
-		Commands: []*cli.Command{
-			{
-				Name: "vault",
-				Commands: []*cli.Command{
-					{Name: "restore", Action: func(context.Context, *cli.Command) error { return nil }},
-				},
-			},
-		},
-	}
-
-	// With an OOB restore coordinator wired, restore must be routed through the
-	// catalog-op out-of-band handler and remain agent_safe (not stdin-gated): the
-	// seed is supplied by the human on the one-time /restore/<token> page, never
-	// through --seed-stdin on the MCP channel.
+	// With an OOB restore coordinator wired, the compiled vault.restore entry
+	// must be routed through the catalog-op out-of-band handler and remain
+	// agent_safe (not stdin-gated): the seed is supplied by the human on the
+	// one-time /restore/<token> page, never through --seed-stdin on the MCP
+	// channel.
 	oobRestore := NewOOBRestore(nil, time.Minute)
 	t.Cleanup(func() { oobRestore.Stop(context.Background()) })
 	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
 	reg := NewHandoffRegistry()
-	catalog, err := buildCatalog(root, true, nil, nil, oobRestore, nil, reg, handles)
+	catalog, err := buildCatalog(compilerRoot(), true, nil, nil, oobRestore, nil, reg, handles,
+		withCatalogDeps(func() *CatalogDepsBundle {
+			return &CatalogDepsBundle{VaultSetup: catalogops.VaultDeps{}}
+		}))
 	require.NoError(t, err)
-	restore, ok := catalog.Get("pinner_vault_restore")
-	require.True(t, ok)
+	restore, ok := catalog.Get(compiledVaultRestoreToolName)
+	require.True(t, ok, "compiled vault.restore must be present in compiler mode")
 	assert.Equal(t, InteractionAgentSafe, restore.Interaction,
-		"buildCatalog must route vault restore through the agent-safe OOB hand-off handler, not stdin-gate it")
+		"buildCatalog must route compiled vault restore through the agent-safe OOB hand-off handler, not stdin-gate it")
 }
 
 // TestSSOToolsDiscoverableInCatalog verifies the out-of-band sign-in tools are
@@ -575,150 +158,4 @@ func TestSSOToolsDiscoverableInCatalog(t *testing.T) {
 	assert.Equal(t, CategoryCore, d.Category)
 	_, ok := catalog.Get("pinner_auth_resume")
 	assert.True(t, ok, "pinner_auth_resume must be registered for describe/invoke")
-}
-
-// TestInheritedParentFlagsInSchema verifies that a flag declared only on a
-// parent command (e.g. the vault command's --profile, which every vault
-// subcommand needs) is inherited into the subcommand tool's input schema.
-// Regression guard for real-world feedback: agents had to guess the profile
-// arg form because it was hidden in the _args array instead of being a
-// first-class schema property.
-func TestInheritedParentFlagsInSchema(t *testing.T) {
-	root := &cli.Command{
-		Name: "pinner",
-		Commands: []*cli.Command{
-			{
-				Name:  "vault",
-				Flags: []cli.Flag{&cli.StringFlag{Name: "profile", Usage: "Vault profile name"}},
-				Commands: []*cli.Command{
-					{
-						Name:   "create",
-						Action: func(context.Context, *cli.Command) error { return nil },
-					},
-					{
-						Name:   "restore",
-						Flags:  []cli.Flag{&cli.BoolFlag{Name: "seed-stdin"}},
-						Action: func(context.Context, *cli.Command) error { return nil },
-					},
-				},
-			},
-		},
-	}
-
-	catalog := NewToolCatalog()
-	err := catalog.RegisterFromCommand(root, true, nil,
-		func(context.Context, ToolRequest) (ToolResult, error) { return ToolResult{}, nil })
-	require.NoError(t, err)
-
-	// The inherited --profile flag must be a first-class property on both.
-	for _, tool := range []string{"pinner_vault_create", "pinner_vault_restore"} {
-		d, err := catalog.Describe(tool)
-		require.NoError(t, err)
-		var doc map[string]any
-		require.NoError(t, json.Unmarshal(d.InputSchema, &doc))
-		props := doc["properties"].(map[string]any)
-		p, ok := props["profile"].(map[string]any)
-		require.True(t, ok, "%s must expose the inherited profile flag in its schema", tool)
-		assert.Equal(t, "string", p["type"], "%s profile property must be a string", tool)
-	}
-
-	// The restore tool ALSO keeps its own flag alongside the inherited one.
-	d, err := catalog.Describe("pinner_vault_restore")
-	require.NoError(t, err)
-	var doc map[string]any
-	require.NoError(t, json.Unmarshal(d.InputSchema, &doc))
-	props := doc["properties"].(map[string]any)
-	_, hasSeedStdin := props["seed-stdin"]
-	assert.True(t, hasSeedStdin, "restore tool keeps its own flag too")
-}
-
-// TestChildFlagOverridesInherited verifies that when a subcommand declares a
-// flag with the same name as an inherited parent flag, the child's declaration
-// wins (no duplicate property in the schema).
-func TestChildFlagOverridesInherited(t *testing.T) {
-	root := &cli.Command{
-		Name: "tool",
-		Flags: []cli.Flag{
-			&cli.StringFlag{Name: "token", Usage: "parent token"},
-		},
-		Commands: []*cli.Command{
-			{
-				Name:  "child",
-				Flags: []cli.Flag{&cli.StringFlag{Name: "token", Usage: "child token"}},
-				Action: func(context.Context, *cli.Command) error {
-					return nil
-				},
-			},
-		},
-	}
-
-	catalog := NewToolCatalog()
-	err := catalog.RegisterFromCommand(root, true, nil,
-		func(context.Context, ToolRequest) (ToolResult, error) { return ToolResult{}, nil })
-	require.NoError(t, err)
-
-	d, err := catalog.Describe("tool_child")
-	require.NoError(t, err)
-	var doc map[string]any
-	require.NoError(t, json.Unmarshal(d.InputSchema, &doc))
-	props := doc["properties"].(map[string]any)
-
-	// The property must exist exactly once and carry the child's usage.
-	tokens, ok := props["token"].(map[string]any)
-	require.True(t, ok)
-	assert.Equal(t, "child token", tokens["description"])
-	assert.Equal(t, 1, len(props), "no duplicate/extra properties beyond token")
-}
-
-// TestInheritedFlagsAccumulateAcrossNesting verifies that inherited flags are
-// accumulated down the whole command tree, not just one level down. A tool
-// nested 2+ levels deep (root → vault → profile → use) must still expose the
-// grandparent vault --profile flag in its schema, because its action reads it.
-func TestInheritedFlagsAccumulateAcrossNesting(t *testing.T) {
-	root := &cli.Command{
-		Name: "pinner",
-		Commands: []*cli.Command{
-			{
-				Name:  "vault",
-				Flags: []cli.Flag{&cli.StringFlag{Name: "profile", Usage: "Vault profile name"}},
-				Commands: []*cli.Command{
-					{
-						Name: "profile",
-						Commands: []*cli.Command{
-							{
-								Name:   "use",
-								Action: func(context.Context, *cli.Command) error { return nil },
-							},
-						},
-					},
-					{
-						Name:   "status",
-						Action: func(context.Context, *cli.Command) error { return nil },
-					},
-				},
-			},
-		},
-	}
-
-	catalog := NewToolCatalog()
-	err := catalog.RegisterFromCommand(root, true, nil,
-		func(context.Context, ToolRequest) (ToolResult, error) { return ToolResult{}, nil })
-	require.NoError(t, err)
-
-	// The 3-level-deep tool accumulates the grandparent's profile flag.
-	d, err := catalog.Describe("pinner_vault_profile_use")
-	require.NoError(t, err)
-	var doc map[string]any
-	require.NoError(t, json.Unmarshal(d.InputSchema, &doc))
-	props := doc["properties"].(map[string]any)
-	p, ok := props["profile"].(map[string]any)
-	require.True(t, ok, "nested tool must accumulate the grandparent profile flag")
-	assert.Equal(t, "string", p["type"])
-
-	// A 2-level tool also gets it.
-	d2, err := catalog.Describe("pinner_vault_status")
-	require.NoError(t, err)
-	require.NoError(t, json.Unmarshal(d2.InputSchema, &doc))
-	_, ok = doc["properties"].(map[string]any)["profile"]
-	assert.True(t, ok, "two-level tool must inherit the immediate parent's flag too")
 }
