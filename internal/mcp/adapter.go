@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/urfave/cli/v3"
+	opcat "go.lumeweb.com/pinner-cli/internal/catalog"
 	"go.lumeweb.com/pinner-cli/internal/mcp/oauthstore"
 	"go.uber.org/zap"
 )
@@ -41,6 +42,15 @@ const vaultRestoreToolName = "pinner_vault_restore"
 // carries seed-drop behavior (a one-time browser hand-off for the recovery
 // seed).
 const vaultCreateToolName = "pinner_vault_create"
+
+// compiledVaultCreateToolName / compiledVaultRestoreToolName are the
+// compiler-backed names of the vault setup operations. They are surfaced by
+// the operation catalog (not the CLI tree) and must route through the same
+// out-of-band setup handlers as the legacy names so the create_url /
+// restore_url + resume-handle hand-off contract is honored on the compiled
+// surface.
+const compiledVaultCreateToolName = "vault.create"
+const compiledVaultRestoreToolName = "vault.restore"
 
 // ansiEscapeRE matches ANSI/VT escape sequences (SGR color codes, cursor
 // movement, erase, reset) so agent-facing tool output is always clean plain
@@ -215,22 +225,33 @@ adapter.`,
 			// stdin-input command must be redirected rather than consume
 			// protocol bytes); it mirrors the transport decision below.
 			stdioMode := mcpString(cmd, "tunnel", "MCP_TUNNEL_PROVIDER") != "openai" && !cmd.Bool("http")
-			srv, catalog, err := OfficialMCPServer(root, hasRootAction, nil, stdioMode, seedDrop, oobRestore, oobCreate, handoffReg, authHandles)
-			if err != nil {
-				return err
-			}
 
 			// Resolve the optional custom tools (upload backends, apps, prompts)
-			// so they are captured in mcpServerOptions, then register every
-			// custom/direct tool, resource, and prompt in one place. Keeping the
-			// registration in registerCustomTools (custom_tools.go) rather than
-			// inline keeps this closure focused on transport only.
+			// and the catalog-deps bundle before the server is built so a
+			// WithCatalogOps option can be threaded into buildCatalog as
+			// withCatalogDeps (making the compiler-backed operation surface
+			// live in production rather than dead code).
 			mcpOpts := &mcpServerOptions{}
 			for _, opt := range opts {
 				if opt != nil {
 					opt(mcpOpts)
 				}
 			}
+			var catalogOpts []buildCatalogOpt
+			if mcpOpts.catalogDeps != nil {
+				catalogOpts = append(catalogOpts, withCatalogDeps(mcpOpts.catalogDeps))
+			}
+
+			// Build the server after resolving the command tree and wiring the
+			// seed/restore coordinators into the tool handlers. stdioMode tells
+			// the invoke-tool gate that os.Stdin is the MCP transport pipe (so a
+			// stdin-input command must be redirected rather than consume
+			// protocol bytes); it mirrors the transport decision below.
+			srv, catalog, err := OfficialMCPServer(root, hasRootAction, nil, stdioMode, seedDrop, oobRestore, oobCreate, handoffReg, authHandles, catalogOpts...)
+			if err != nil {
+				return err
+			}
+
 			if err := registerCustomTools(customToolDeps{
 				srv:             srv,
 				catalog:         catalog,
@@ -591,6 +612,11 @@ type mcpServerOptions struct {
 	// pinnerPins, when set, wires the "Create a Pin" MCP App (ui:// view,
 	// app-only status helper) using a live pinning provider built at setup.
 	pinnerPins PinningProviderFactory
+	// catalogDeps, when set, supplies the operation-catalog dependency graph
+	// (config manager + core service factories) so the MCP surface can be
+	// populated from the operation catalog instead of (or alongside) the CLI
+	// command-tree walk. Nil leaves the catalog purely legacy-derived.
+	catalogDeps func() *CatalogDepsBundle
 }
 
 // MCPServerOption configures the MCP command served by MCPCommand.
@@ -656,6 +682,18 @@ func WithDataURIUpload(handler DataURIUploadHandler) MCPServerOption {
 	}
 }
 
+// WithCatalogOps supplies the operation-catalog dependency graph (config
+// manager + core service factories) so the MCP surface can be populated from
+// the operation catalog. The factory is a closure built at Action time when
+// config and services are available (mirroring WizardDepsFactory); it returns
+// a fresh bundle per call so a test/global override stays live. Without it the
+// catalog remains purely legacy-derived from the CLI command tree.
+func WithCatalogOps(factory func() *CatalogDepsBundle) MCPServerOption {
+	return func(o *mcpServerOptions) {
+		o.catalogDeps = factory
+	}
+}
+
 // WizardDepsFactory builds wizard dependencies at Action time, when config
 // and services are available. Called inside the MCP command's Action.
 type WizardDepsFactory func() (WebsitesWizardDeps, SetupWizardDeps, DomainWizardDeps, error)
@@ -667,8 +705,40 @@ type WizardDepsFactory func() (WebsitesWizardDeps, SetupWizardDeps, DomainWizard
 // one-time seed/restore/create URLs for vault-create/vault-restore agent output
 // so the human can retrieve or supply a recovery seed in a browser without it
 // transiting the MCP channel.
-func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate, handoffReg *HandoffRegistry, authHandles *AsyncHandleStore) (*ToolCatalog, error) {
+func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate, handoffReg *HandoffRegistry, authHandles *AsyncHandleStore, opts ...buildCatalogOpt) (*ToolCatalog, error) {
 	catalog := NewToolCatalog()
+
+	// Apply the functional options. Currently the only option is withCatalogDeps,
+	// which stores the operation-catalog dependency factory on catalog.CatalogDeps
+	// for a later unit to consume; no population behavior changes here.
+	cfg := &buildCatalogConfig{}
+	for _, opt := range opts {
+		if err := opt(cfg); err != nil {
+			return nil, err
+		}
+	}
+	if cfg.catalogDeps != nil {
+		catalog.CatalogDeps = cfg.catalogDeps
+	}
+
+	// Compiled operation surface. When catalogDeps is set, buildCatalog derives
+	// the MCP tool surface from the operation catalog (compiler-backed
+	// descriptions/schemas) in addition to the legacy CLI-tree walk. compiledOps
+	// records which tool names are catalog-backed so the tool handler routes
+	// them through catalog.Catalog.Invoke instead of the CLI argv dispatcher.
+	var (
+		opsCat      opcat.Catalog
+		compiledOps map[string]bool
+	)
+	if cfg.catalogDeps != nil {
+		if deps := cfg.catalogDeps(); deps != nil {
+			oc, err := AssembleCatalogOps(deps)
+			if err != nil {
+				return nil, err
+			}
+			opsCat = oc
+		}
+	}
 
 	// runMu serializes root.Run calls. A shallow copy of root gives each
 	// invocation isolated Writer/ErrWriter, but subcommand flag state is shared
@@ -688,6 +758,15 @@ func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string, seedDr
 		// Guard against recursive MCP invocation.
 		if slices.Contains(args, "mcp") {
 			return ToolResult{}, fmt.Errorf("cannot invoke MCP from within MCP")
+		}
+
+		// Catalog-backed operations dispatch through the operation catalog's
+		// Invoke gate (typed arguments + Safety/Interaction/Visibility
+		// enforcement), not the CLI argv dispatcher. Route them here so the
+		// compiler-produced descriptions/schemas are the single surface these
+		// tools present.
+		if opsCat != nil && compiledOps[request.Name] {
+			return DispatchCatalogOp(ctx, opsCat, opcat.ActorModel, request.Name, request.Arguments, request.Name)
 		}
 
 		// Force agent mode for every MCP tool invocation: structured JSON
@@ -837,6 +916,37 @@ func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string, seedDr
 		createEntry.Handler = vaultCreateSetupHandler(oobCreate, handoffReg, authHandles)
 		createEntry.Interaction = InteractionAgentSafe
 		catalog.Add(createEntry)
+	}
+
+	// When a catalog-deps bundle was supplied, append the compiler-derived
+	// operation surface (auth, vault-setup, vault, pins, websites, dns, ipns,
+	// api-keys, operations) on top of the legacy CLI-tree tools. These entries
+	// carry the catalogops AgentDescription/typed schemas and dispatch through
+	// the operation catalog's Invoke gate at runtime (see compiledOps routing
+	// in toolHandler). markCurated promotes any matching name to tools/list.
+	if opsCat != nil {
+		names, err := populateCatalogSurface(catalog, opsCat)
+		if err != nil {
+			return nil, err
+		}
+		compiledOps = names
+		// Route the compiled vault.create / vault.restore entries through the
+		// same out-of-band setup handlers as the legacy names, so a model
+		// invoking the compiled vault-setup tool receives the full create_url /
+		// restore_url + resume-handle + needs_human hand-off its
+		// AgentDescription promises, rather than a bare JSON-serialized
+		// VaultCreateHandoff/VaultRestoreHandoff{Profile} plaintext.
+		if restoreEntry, ok := catalog.Get(compiledVaultRestoreToolName); ok {
+			restoreEntry.Handler = vaultRestoreSetupHandler(oobRestore, handoffReg, authHandles)
+			restoreEntry.Interaction = InteractionAgentSafe
+			catalog.Add(restoreEntry)
+		}
+		if createEntry, ok := catalog.Get(compiledVaultCreateToolName); ok {
+			createEntry.Handler = vaultCreateSetupHandler(oobCreate, handoffReg, authHandles)
+			createEntry.Interaction = InteractionAgentSafe
+			catalog.Add(createEntry)
+		}
+		markCurated(catalog)
 	}
 
 	return catalog, nil
