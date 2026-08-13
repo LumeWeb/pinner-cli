@@ -15,9 +15,13 @@ import (
 type ToolCategory string
 
 const (
-	CategoryCore   ToolCategory = "core"
-	CategoryAdmin  ToolCategory = "admin"
-	CategoryWizard ToolCategory = "wizard"
+	CategoryCore       ToolCategory = "core"
+	CategoryAccount    ToolCategory = "account"
+	CategoryVault      ToolCategory = "vault"
+	CategoryIPNS       ToolCategory = "ipns"
+	CategoryOperations ToolCategory = "operations"
+	CategoryAdmin      ToolCategory = "admin"
+	CategoryWizard     ToolCategory = "wizard"
 )
 
 // Interaction classifies how a tool behaves when invoked by an agent over the

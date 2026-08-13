@@ -32,7 +32,7 @@ func NewAuthSSODescriptor(oob *OutOfBandLogin, handles *AsyncHandleStore, reg *H
 		Name:        "auth_sso",
 		Title:       "Sign In (Out-of-Band)",
 		Description: "Start an out-of-band (OOB) browser sign-in for SSO authentication. Returns immediately with an approval URL the human opens, and a resume handle for the auth_resume tool. Non-blocking, and never asks the human for a password or OTP on this channel. Start here to authenticate.",
-		Category:    CategoryCore,
+		Category:    CategoryAccount,
 		InputSchema: toolSchemaFor[authSSOArgs](),
 		Handler: func(ctx context.Context, req ToolRequest) (ToolResult, error) {
 			if oob == nil || handles == nil || reg == nil {
@@ -141,5 +141,6 @@ func NewAuthResumeDescriptor(reg *HandoffRegistry, handles *AsyncHandleStore) To
 		UnknownHandleDetail: "unknown handle; start a new login with auth_sso",
 		ExpiredHandleDetail: "the sign-in handle expired before the human completed approval; start a fresh login with auth_sso and have the user approve promptly",
 		DeadHandleReason:    ReasonSSOApproval,
+		Category:            CategoryAccount,
 	}, reg, handles)
 }

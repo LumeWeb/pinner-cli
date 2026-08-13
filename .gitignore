@@ -45,3 +45,6 @@ completions/
 
 # Git worktrees
 .worktrees/
+
+# Scratch diagnostic scripts (live e2e checks); not part of the build
+docs/mcp_e2e_check.py

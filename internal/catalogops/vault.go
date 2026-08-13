@@ -168,7 +168,7 @@ func vaultStat(d VaultDeps) catalog.Operation {
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			vaultPath := catalog.StrArg(input, "path", "")
 			if vaultPath == "" {
-				return nil, fmt.Errorf("vault.stat: missing required argument path")
+				return nil, fmt.Errorf("vault_stat: missing required argument path")
 			}
 			profileName, err := vault.ResolveProfile(catalog.StrArg(input, "profile", ""))
 			if err != nil {
@@ -208,7 +208,7 @@ func vaultVerify(d VaultDeps) catalog.Operation {
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			vaultPath := catalog.StrArg(input, "path", "")
 			if vaultPath == "" {
-				return nil, fmt.Errorf("vault.verify: missing required argument path")
+				return nil, fmt.Errorf("vault_verify: missing required argument path")
 			}
 			profileName, err := vault.ResolveProfile(catalog.StrArg(input, "profile", ""))
 			if err != nil {
@@ -267,7 +267,7 @@ func vaultRm(d VaultDeps) catalog.Operation {
 			// programmatic/MCP callers who bypass the CLI gate from deleting a
 			// file with no confirmation state effective.
 			if !catalog.BoolArg(input, "confirm", false) {
-				return nil, fmt.Errorf("vault.rm requires confirmation (pass --force/confirm)")
+				return nil, fmt.Errorf("vault_rm: confirmation is required to remove the file")
 			}
 			profileName, err := vault.ResolveProfile(catalog.StrArg(input, "profile", ""))
 			if err != nil {
@@ -380,21 +380,21 @@ func vaultShare(d VaultDeps) catalog.Operation {
 		Name:        "vault_share",
 		Title:       "Share a vault file",
 		Summary:     "Generate a shareable link for a vault file",
-		Description: "Generate a shareable download link for a vault file. Returns the share URL and its expiry time. Control the expiry with --expiry (e.g. 7d, 30d, 1h, or 0 for never). Does NOT upload or modify the file itself.",
+		Description: "Generate a shareable download link for a vault file. Returns the share URL and its expiry time. Control the expiry with the expiry field (e.g. 7d, 30d, 1h, or 0 for never). Does NOT upload or modify the file itself.",
 		Category:    "vault",
 		Safety:      catalog.SafetyRead,
 		Interaction: catalog.InteractionAgentSafe,
 		Visibility:  catalog.VisibilityBoth,
 		Positional:  "<path>",
 		Args: []catalog.OperationArg{
-			{Name: "path", Type: catalog.ArgTypeString, Required: true, Help: "Vault path to share (positional)"},
+			{Name: "path", Type: catalog.ArgTypeString, Required: true, Help: "Vault path to share (positional)", AgentHelp: "The vault:/ path to the file to share."},
 			{Name: "expiry", Type: catalog.ArgTypeString, Default: "7d", Help: "Share link expiry (e.g. 7d, 30d, 1h, or 0 for never)"},
-			{Name: "profile", Type: catalog.ArgTypeString, Help: "Vault profile name (defaults to active profile)"},
+			{Name: "profile", Type: catalog.ArgTypeString, Help: "Vault profile name (defaults to the active profile)"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			vaultPath := catalog.StrArg(input, "path", "")
 			if vaultPath == "" {
-				return nil, fmt.Errorf("vault.share: missing required argument path")
+				return nil, fmt.Errorf("vault_share: missing required argument path")
 			}
 			validUntil, err := parseVaultExpiry(catalog.StrArg(input, "expiry", "7d"))
 			if err != nil {
@@ -434,23 +434,23 @@ func vaultForget(d VaultDeps) catalog.Operation {
 		Name:        "vault_forget",
 		Title:       "Forget a vault profile",
 		Summary:     "Remove a vault profile and its local data",
-		Description: "Permanently removes a vault profile from this machine: the registry entry and its local data (state, cache DB, and any pending recovery seed) are deleted. DESTRUCTIVE and irreversible: the on-disk credential for accessing the vault is gone. Remote vault data on Sia is not deleted. Requires an explicit --profile (never auto-resolves) and --force to confirm.",
+		Description: "Permanently removes a vault profile from this machine: the registry entry and its local data (state, cache DB, and any pending recovery seed) are deleted. DESTRUCTIVE and irreversible: the on-disk credential for accessing the vault is gone. Remote vault data on Sia is not deleted. Requires an explicit profile (never auto-resolves) and confirm=true to proceed.",
 		Category:    "vault",
 		Safety:      catalog.SafetyDestructive,
 		Interaction: catalog.InteractionAgentSafe,
 		Visibility:  catalog.VisibilityBoth,
 		Positional:  "",
 		Args: []catalog.OperationArg{
-			{Name: "profile", Type: catalog.ArgTypeString, Required: true, Help: "Vault profile to forget (required; must not auto-resolve a default)"},
-			{Name: "confirm", Type: catalog.ArgTypeBool, Default: "false", Help: "Confirm the destructive operation (CLI maps --force here)"},
+			{Name: "profile", Type: catalog.ArgTypeString, Required: true, Help: "Vault profile to forget; must not auto-resolve a default", AgentHelp: "The name of the vault profile to remove. Always required; this tool never auto-resolves a default profile."},
+			{Name: "confirm", Type: catalog.ArgTypeBool, Required: true, Help: "Confirm the destructive operation", AgentHelp: "Must be true to forget the profile; this permanently deletes local vault data and cannot be undone."},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			if !catalog.BoolArg(input, "confirm", false) {
-				return nil, fmt.Errorf("vault.forget requires confirmation (pass --force/confirm)")
+				return nil, fmt.Errorf("vault_forget: confirm is required to forget a vault profile")
 			}
 			profileName := catalog.StrArg(input, "profile", "")
 			if profileName == "" {
-				return nil, fmt.Errorf("vault_forget: --profile <name> is required to forget a vault profile")
+				return nil, fmt.Errorf("vault_forget: profile is required to forget a vault profile")
 			}
 			if err := vault.RemoveProfile(profileName); err != nil {
 				return nil, err
@@ -475,19 +475,19 @@ func vaultProfileUse(d VaultDeps) catalog.Operation {
 		Name:        "vault_profile_use",
 		Title:       "Set default vault profile",
 		Summary:     "Set the default profile for vault commands",
-		Description: "Sets the profile used by default when neither --profile nor the PINNER_PROFILE env var selects one. An explicit --profile or PINNER_PROFILE still take precedence.",
+		Description: "Sets the profile used by default when neither the profile argument nor the PINNER_PROFILE environment variable selects one. An explicit profile argument or PINNER_PROFILE still take precedence.",
 		Category:    "vault",
 		Safety:      catalog.SafetyMutate,
 		Interaction: catalog.InteractionAgentSafe,
 		Visibility:  catalog.VisibilityBoth,
 		Positional:  "<name>",
 		Args: []catalog.OperationArg{
-			{Name: "name", Type: catalog.ArgTypeString, Required: true, Help: "Profile name to set as default (positional)"},
+			{Name: "name", Type: catalog.ArgTypeString, Required: true, Help: "Profile name to set as default (positional)", AgentHelp: "The vault profile name to set as the default for subsequent vault operations."},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			name := catalog.StrArg(input, "name", "")
 			if name == "" {
-				return nil, fmt.Errorf("vault.profile.use: missing required argument name")
+				return nil, fmt.Errorf("vault_profile_use: missing required argument name")
 			}
 			if err := vault.ValidateProfileName(name); err != nil {
 				return nil, err

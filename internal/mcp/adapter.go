@@ -793,6 +793,13 @@ const mcpInstructionsBase = `This server exposes a curated set of common Pinner 
 
 For authentication, prefer the out-of-band flow: call auth_sso, give the returned approval URL to the human, then poll auth_resume with the returned handle until it reports done. This avoids an invalid or missing API key blocking work.
 
+Common flows start here:
+- auth:     auth_status -> auth_sso -> auth_resume (then auth_status to verify)
+- vault:    vault_create -> vault_create_resume -> vault_status; restore via vault_restore -> vault_restore_resume
+- pins:     pins_add / pins_list / pins_status
+- search:   search_tools({ "query": "<one keyword>" })
+- filter:   search_tools({ "category": "vault", "query": "<one keyword>" })
+
 Some internal commands are human-only or read piped stdin; when an agent invokes one via invoke_tool, the server returns a structured needs_human redirect instead of blocking. Commands that prompt interactively are hidden from search_tools entirely.
 
 Less common CLI tools remain available through progressive disclosure:

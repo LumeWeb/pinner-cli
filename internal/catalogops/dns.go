@@ -233,7 +233,7 @@ func dnsZonesDelete(d DNSDeps) catalog.Operation {
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			if !catalog.BoolArg(input, "confirm", false) {
-				return nil, fmt.Errorf("dns.zones.delete requires confirmation (pass --force/confirm)")
+				return nil, fmt.Errorf("dns_zones_delete: confirmation is required to delete a zone")
 			}
 			svc, svcErr := d.service(input)
 			if svcErr != nil {
@@ -556,7 +556,7 @@ func dnsRecordsDelete(d DNSDeps) catalog.Operation {
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			if !catalog.BoolArg(input, "confirm", false) {
-				return nil, fmt.Errorf("dns.records.delete requires confirmation (pass --force/confirm)")
+				return nil, fmt.Errorf("dns_records_delete: confirmation is required to delete a record")
 			}
 			svc, svcErr := d.service(input)
 			if svcErr != nil {
