@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/urfave/cli/v3"
+	opcat "go.lumeweb.com/pinner-cli/internal/catalog"
 	"go.lumeweb.com/pinner-cli/internal/mcp/oauthstore"
 	"go.uber.org/zap"
 )
@@ -700,6 +701,25 @@ func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string, seedDr
 		catalog.CatalogDeps = cfg.catalogDeps
 	}
 
+	// Compiled operation surface. When catalogDeps is set, buildCatalog derives
+	// the MCP tool surface from the operation catalog (compiler-backed
+	// descriptions/schemas) in addition to the legacy CLI-tree walk. compiledOps
+	// records which tool names are catalog-backed so the tool handler routes
+	// them through catalog.Catalog.Invoke instead of the CLI argv dispatcher.
+	var (
+		opsCat      opcat.Catalog
+		compiledOps map[string]bool
+	)
+	if cfg.catalogDeps != nil {
+		if deps := cfg.catalogDeps(); deps != nil {
+			oc, err := AssembleCatalogOps(deps)
+			if err != nil {
+				return nil, err
+			}
+			opsCat = oc
+		}
+	}
+
 	// runMu serializes root.Run calls. A shallow copy of root gives each
 	// invocation isolated Writer/ErrWriter, but subcommand flag state is shared
 	// in the Commands slice, so concurrent Run calls race on those pointers.
@@ -718,6 +738,15 @@ func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string, seedDr
 		// Guard against recursive MCP invocation.
 		if slices.Contains(args, "mcp") {
 			return ToolResult{}, fmt.Errorf("cannot invoke MCP from within MCP")
+		}
+
+		// Catalog-backed operations dispatch through the operation catalog's
+		// Invoke gate (typed arguments + Safety/Interaction/Visibility
+		// enforcement), not the CLI argv dispatcher. Route them here so the
+		// compiler-produced descriptions/schemas are the single surface these
+		// tools present.
+		if opsCat != nil && compiledOps[request.Name] {
+			return DispatchCatalogOp(ctx, opsCat, opcat.ActorModel, request.Name, request.Arguments, request.Name)
 		}
 
 		// Force agent mode for every MCP tool invocation: structured JSON
@@ -867,6 +896,21 @@ func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string, seedDr
 		createEntry.Handler = vaultCreateSetupHandler(oobCreate, handoffReg, authHandles)
 		createEntry.Interaction = InteractionAgentSafe
 		catalog.Add(createEntry)
+	}
+
+	// When a catalog-deps bundle was supplied, append the compiler-derived
+	// operation surface (auth, vault-setup, vault, pins, websites, dns, ipns,
+	// api-keys, operations) on top of the legacy CLI-tree tools. These entries
+	// carry the catalogops AgentDescription/typed schemas and dispatch through
+	// the operation catalog's Invoke gate at runtime (see compiledOps routing
+	// in toolHandler). markCurated promotes any matching name to tools/list.
+	if opsCat != nil {
+		names, err := populateCatalogSurface(catalog, opsCat)
+		if err != nil {
+			return nil, err
+		}
+		compiledOps = names
+		markCurated(catalog)
 	}
 
 	return catalog, nil
