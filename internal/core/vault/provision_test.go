@@ -199,6 +199,94 @@ func TestProvisionerRestoreSurfacesApprovalError(t *testing.T) {
 	require.Contains(t, err.Error(), "approval/registration failed")
 }
 
+// TestProvisionerCreateActivatesAndReturnsSeed verifies Create drives the Sia
+// approval + registration (like restore) but GENERATES a fresh seed and keeps
+// it on disk for backup, then activates the profile atomically. The seed is
+// returned host-side for a seed_url yet never touches the channel.
+func TestProvisionerCreateActivatesAndReturnsSeed(t *testing.T) {
+	isolateVaultPaths(t)
+	p := NewProvisioner()
+	appKeyHex := validAppKeyHex(t)
+
+	var approvalURLs []string
+	conn := &stubConn{appKeyHex: appKeyHex}
+	res, err := p.Create(context.Background(), CreateRequest{
+		Profile:       "created",
+		IndexerURL:    "http://indexer",
+		NewConnection: func(_, _ string) ConnectionFlow { return conn },
+		OnApprovalURL: func(url string) { approvalURLs = append(approvalURLs, url) },
+	})
+	require.NoError(t, err)
+	require.Equal(t, "created", res.Profile)
+	require.NotEmpty(t, res.Seed, "create must generate a fresh seed to deliver out")
+	require.Equal(t, 1, conn.requests, "create must issue exactly one connection request")
+	require.Equal(t, []string{"http://approve"}, approvalURLs, "the approval URL must be surfaced")
+
+	// The vault must be ACTIVE immediately (non-empty VaultID), not pending.
+	reg, err := LoadRegistry()
+	require.NoError(t, err)
+	prof, ok := reg.Profiles["created"]
+	require.True(t, ok, "created profile must be registered")
+	require.Equal(t, VaultID(appKeyHex), prof.VaultID, "create must activate the vault immediately")
+
+	// The seed file must persist for backup (KeepSeed), unlike restore.
+	b, err := os.ReadFile(SeedPath("created"))
+	require.NoError(t, err)
+	require.Equal(t, strings.TrimSpace(res.Seed), strings.TrimSpace(string(b)))
+}
+
+// TestProvisionerCreateSurfacesApprovalError verifies a failed approval cleans
+// up the freshly generated seed so a later retry is not blocked by an orphaned
+// pending seed, and no active profile is left behind.
+func TestProvisionerCreateSurfacesApprovalError(t *testing.T) {
+	isolateVaultPaths(t)
+	p := NewProvisioner()
+
+	_, err := p.Create(context.Background(), CreateRequest{
+		Profile:       "failcreate",
+		IndexerURL:    "http://indexer",
+		NewConnection: func(_, _ string) ConnectionFlow { return &stubConn{appKeyHex: "x", waitErr: errors.New("no approval")} },
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "approval/registration failed")
+
+	// The generated seed must be rolled back so a retry is possible.
+	_, statErr := os.Stat(SeedPath("failcreate"))
+	require.True(t, os.IsNotExist(statErr), "a failed create must not leave an orphaned seed blocking a retry")
+	reg, err := LoadRegistry()
+	require.NoError(t, err)
+	_, ok := reg.Profiles["failcreate"]
+	require.False(t, ok, "a failed create must not register a profile")
+}
+
+// TestProvisionerCreateRejectsActiveProfile verifies create fails fast on an
+// already-active profile without spending a browser approval.
+func TestProvisionerCreateRejectsActiveProfile(t *testing.T) {
+	isolateVaultPaths(t)
+	p := NewProvisioner()
+	// Activate a profile via restore first.
+	pend, err := p.CreatePending(CreateRequest{Profile: "act"})
+	require.NoError(t, err)
+	_, err = p.Restore(context.Background(), RestoreRequest{
+		Profile:       "act",
+		Mnemonic:      pend.Seed,
+		IndexerURL:    "http://indexer",
+		NewConnection: func(_, _ string) ConnectionFlow { return &stubConn{appKeyHex: validAppKeyHex(t)} },
+		NoSync:        true,
+	})
+	require.NoError(t, err)
+
+	conn := &stubConn{appKeyHex: validAppKeyHex(t)}
+	_, err = p.Create(context.Background(), CreateRequest{
+		Profile:       "act",
+		IndexerURL:    "http://indexer",
+		NewConnection: func(_, _ string) ConnectionFlow { return conn },
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "already exists as an active vault")
+	require.Equal(t, 0, conn.requests, "no approval should be spent on a known-active profile")
+}
+
 // TestProvisionerCreatePendingRollsBackSeedOnRegistryFailure verifies that a
 // failed registry write does not leave an orphaned seed file that would brick
 // the profile (the stat guard treats a residual seed as an existing pending

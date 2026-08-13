@@ -43,10 +43,30 @@ type PendingCreate struct {
 	Seed string
 }
 
-// CreateRequest describes a pending-vault create.
+// CreateRequest describes a vault create.
 type CreateRequest struct {
 	Profile    string
 	DeviceName string
+	// IndexerURL is the Sia indexer to register the new device against.
+	IndexerURL string
+	// NewConnection, when set, builds the Sia approval connection flow (a test
+	// seam; defaults to NewConnectionFlow). Mirrors RestoreRequest.
+	NewConnection func(indexerURL, mnemonic string) ConnectionFlow
+	// OnApprovalURL, when set, is invoked with the browser approval URL after
+	// the connection request is issued but before the service blocks waiting
+	// for approval. Mirrors RestoreRequest.
+	OnApprovalURL func(url string)
+}
+
+// CreateResult is the typed result of a successful create: the freshly
+// generated, now-active profile and the plaintext recovery mnemonic. Seed is
+// host-side presentation only (delivered over a one-time seed_url) and is
+// never placed on the MCP/CLI channel.
+type CreateResult struct {
+	Profile  string
+	VaultID  string
+	SeedPath string
+	Seed     string
 }
 
 // RestoreRequest describes a full restore completion given an already-known
@@ -74,6 +94,11 @@ type RestoreRequest struct {
 	// may leave it nil. The service itself never writes to a presentation
 	// surface.
 	OnApprovalURL func(url string)
+	// KeepSeed, when true, leaves the on-disk recovery seed file in place after
+	// a successful completion. Restore defaults to false (it consumes the seed
+	// the human supplied). Create sets it true so the freshly generated seed
+	// stays as the durable backup the human is about to retrieve via seeddrop.
+	KeepSeed bool
 }
 
 // ConnectionFlow is the subset of Connection needed to complete a restore:
@@ -235,22 +260,10 @@ func (p *Provisioner) Restore(ctx context.Context, req RestoreRequest) (*Restore
 		connBuilder = NewConnectionFlow
 	}
 
-	// Single Connection shared for Request + WaitAndRegister; the SDK requires
-	// both on the same builder or the pending request is lost.
-	conn := connBuilder(req.IndexerURL, mnemonic)
-	approvalURL, err := conn.Request(ctx)
+	appKeyHex, vaultID, err := p.driveApproval(ctx, req, connBuilder, mnemonic)
 	if err != nil {
-		return nil, fmt.Errorf("failed to request connection: %w", err)
+		return nil, err
 	}
-	if req.OnApprovalURL != nil {
-		req.OnApprovalURL(approvalURL)
-	}
-	appKeyHex, err := conn.WaitAndRegister(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("approval/registration failed: %w", err)
-	}
-
-	vaultID := VaultID(appKeyHex)
 
 	// The vault ID derives from the app key, which is only known after
 	// WaitAndRegister, so a cross-profile dedup cannot run before the approval:
@@ -267,6 +280,119 @@ func (p *Provisioner) Restore(ctx context.Context, req RestoreRequest) (*Restore
 	// concurrently since the pre-approval guard is rejected before any of it
 	// mutates local state (the loser cannot clobber the winner's credentials).
 	return p.finishRestoreLocked(ctx, req, appKeyHex, vaultID)
+}
+
+// driveApproval runs the shared Sia browser-approval step used by both create
+// and restore: request a connection on a single shared builder, surface the
+// approval URL, then wait-for-approval + register, returning the hex app key
+// and the derived vault ID. The SDK requires Request and WaitAndRegister on the
+// same builder or the pending request is lost, so this owns the whole sequence.
+func (p *Provisioner) driveApproval(ctx context.Context, req RestoreRequest, connBuilder func(indexerURL, mnemonic string) ConnectionFlow, mnemonic string) (appKeyHex, vaultID string, err error) {
+	conn := connBuilder(req.IndexerURL, mnemonic)
+	approvalURL, err := conn.Request(ctx)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to request connection: %w", err)
+	}
+	if req.OnApprovalURL != nil {
+		req.OnApprovalURL(approvalURL)
+	}
+	appKeyHex, err = conn.WaitAndRegister(ctx)
+	if err != nil {
+		return "", "", fmt.Errorf("approval/registration failed: %w", err)
+	}
+	return appKeyHex, VaultID(appKeyHex), nil
+}
+
+// Create provisions and activates a new vault in one flow, symmetric with
+// Restore. The only difference is seed origin: create GENERATES a fresh
+// recovery mnemonic (seed OUT), restore consumes a user-supplied one (seed IN).
+// Both then drive the identical Sia browser approval -> device registration ->
+// atomic activation path (driveApproval + finishRestoreLocked).
+//
+// Create writes the fresh seed to a 0600 file before the approval (a later
+// failure cannot orphan the vault unrecoverably), keeps it in place on success
+// (KeepSeed), and returns it host-side so the caller can hand it to the human
+// over a one-time seed_url. The plaintext mnemonic is never placed on the
+// MCP/CLI channel.
+func (p *Provisioner) Create(ctx context.Context, req CreateRequest) (*CreateResult, error) {
+	if err := ValidateProfileName(req.Profile); err != nil {
+		return nil, err
+	}
+	if req.IndexerURL == "" {
+		return nil, fmt.Errorf("indexer URL is required")
+	}
+
+	// Reject creating over an already-active profile before issuing any
+	// browser approval (fail-fast: avoid spending an approval on a known-active
+	// profile). The authoritative guard is re-applied under the registry lock
+	// in finishRestoreLocked before any local state is mutated.
+	reg, err := LoadRegistry()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load registry: %w", err)
+	}
+	if prof, ok := reg.Profiles[req.Profile]; ok && prof.VaultID != "" {
+		return nil, fmt.Errorf("profile %q already exists as an active vault; use a different profile name", req.Profile)
+	}
+	// A pending seed file is the human's only path into a pending vault; never
+	// overwrite it.
+	if _, err := os.Stat(SeedPath(req.Profile)); err == nil {
+		return nil, fmt.Errorf("a pending recovery seed already exists for profile %q; restore it to complete the vault, or remove %s to start over", req.Profile, SeedPath(req.Profile))
+	}
+
+	// Generate the fresh seed and persist it to a 0600 file before the remote
+	// approval, so a failure mid-flow cannot orphan the vault.
+	mnemonic := NewSeedPhrase()
+	seedPath := SeedPath(req.Profile)
+	seedDir := ProfileDir(req.Profile)
+	if err := os.MkdirAll(seedDir, 0700); err != nil {
+		return nil, fmt.Errorf("failed to create seed directory: %w", err)
+	}
+	seedData := []byte(mnemonic + "\n")
+	if err := os.WriteFile(seedPath, seedData, 0600); err != nil {
+		return nil, fmt.Errorf("failed to save recovery seed: %w", err)
+	}
+
+	// Drive the same approval + registration as restore.
+	appKeyHex, vaultID, err := p.driveApproval(ctx, RestoreRequest{
+		Profile:       req.Profile,
+		IndexerURL:    req.IndexerURL,
+		DeviceName:    req.DeviceName,
+		NewConnection: req.NewConnection,
+		OnApprovalURL: req.OnApprovalURL,
+		NoSync:        true, // fresh vault has nothing to sync
+		KeepSeed:      true, // leave the durable backup in place
+	}, func(ixURL, mnem string) ConnectionFlow {
+		if req.NewConnection != nil {
+			return req.NewConnection(ixURL, mnem)
+		}
+		return NewConnectionFlow(ixURL, mnem)
+	}, mnemonic)
+	if err != nil {
+		// The seed was persisted before approval; on a failure the caller can
+		// surface it, but we must not leave an orphaned pending seed blocking a
+		// retry unless it is the human's path in (it is a fresh, never-used
+		// key, so removing it is safe and matches CreatePending's rollback).
+		_ = os.Remove(SeedPath(req.Profile))
+		return nil, err
+	}
+
+	// Commit the active transition atomically, reusing the restore completion.
+	if _, err := p.finishRestoreLocked(ctx, RestoreRequest{
+		Profile:    req.Profile,
+		IndexerURL: req.IndexerURL,
+		DeviceName: req.DeviceName,
+		NoSync:     true,
+		KeepSeed:   true,
+	}, appKeyHex, vaultID); err != nil {
+		return nil, err
+	}
+
+	return &CreateResult{
+		Profile:  req.Profile,
+		VaultID:  vaultID,
+		SeedPath: seedPath,
+		Seed:     mnemonic,
+	}, nil
 }
 
 // finishRestoreLocked performs the local commit that turns a pending profile
@@ -388,8 +514,12 @@ func (p *Provisioner) finishRestoreLocked(ctx context.Context, req RestoreReques
 	}
 
 	// Consume the one-time recovery seed on any successful restore. The
-	// plaintext master mnemonic must not persist on disk after use.
-	_ = os.Remove(SeedPath(req.Profile))
+	// plaintext master mnemonic must not persist on disk after use. Create
+	// (KeepSeed) intentionally leaves it as the durable backup the human is
+	// about to retrieve.
+	if !req.KeepSeed {
+		_ = os.Remove(SeedPath(req.Profile))
+	}
 
 	return &RestoreResult{
 		Profile:  req.Profile,
