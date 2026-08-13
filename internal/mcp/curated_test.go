@@ -15,7 +15,7 @@ func TestMarkCuratedStampsDirectVisible(t *testing.T) {
 		}})
 	}
 	// Non-curated entries stay hidden.
-	for _, name := range []string{"pinner_setup", "pinner_pins", "pinner_auth", "dns.zones.list", "vault.sync", "operations.list", "websites.create"} {
+	for _, name := range []string{"pinner_setup", "pinner_pins", "pinner_auth", "dns_zones_list", "vault_sync", "operations_list", "websites_create"} {
 		catalog.Add(&ToolEntry{Name: name, Handler: func(_ context.Context, _ ToolRequest) (ToolResult, error) {
 			return ToolResult{Text: "ok"}, nil
 		}})
@@ -28,7 +28,7 @@ func TestMarkCuratedStampsDirectVisible(t *testing.T) {
 		require.True(t, ok, name)
 		require.True(t, entry.DirectVisible, name)
 	}
-	for _, name := range []string{"pinner_setup", "pinner_pins", "pinner_auth", "dns.zones.list", "vault.sync", "operations.list", "websites.create"} {
+	for _, name := range []string{"pinner_setup", "pinner_pins", "pinner_auth", "dns_zones_list", "vault_sync", "operations_list", "websites_create"} {
 		entry, ok := catalog.Get(name)
 		require.True(t, ok, name)
 		require.False(t, entry.DirectVisible, name)
@@ -37,7 +37,7 @@ func TestMarkCuratedStampsDirectVisible(t *testing.T) {
 
 func TestRegisterOfficialCuratedToolsRegistersOnlyDirectVisible(t *testing.T) {
 	catalog := NewToolCatalog()
-	for _, name := range []string{"pinner_status", "pinner_admin_pprof", "websites_wizard_start", "pinner_auth_sso"} {
+	for _, name := range []string{"pinner_status", "pinner_admin_pprof", "websites_wizard_start", "auth_sso"} {
 		catalog.Add(&ToolEntry{
 			Name:        name,
 			Title:       name,
@@ -53,7 +53,7 @@ func TestRegisterOfficialCuratedToolsRegistersOnlyDirectVisible(t *testing.T) {
 	if e, ok := catalog.Get("pinner_status"); ok {
 		e.DirectVisible = true
 	}
-	if e, ok := catalog.Get("pinner_auth_sso"); ok {
+	if e, ok := catalog.Get("auth_sso"); ok {
 		e.DirectVisible = true
 	}
 
@@ -70,7 +70,7 @@ func TestMarkCuratedPromotesWizardTools(t *testing.T) {
 	for _, name := range []string{
 		"domains_wizard_start", "domains_wizard_step",
 		"websites_wizard_start", "websites_wizard_step",
-		"auth.status", "vault.ls",
+		"auth_status", "vault_ls",
 	} {
 		catalog.Add(&ToolEntry{Name: name, Handler: func(_ context.Context, _ ToolRequest) (ToolResult, error) {
 			return ToolResult{Text: "ok"}, nil
@@ -86,4 +86,3 @@ func TestMarkCuratedPromotesWizardTools(t *testing.T) {
 		require.True(t, entry.DirectVisible, "wizard tool %s must be directly visible after markCurated", name)
 	}
 }
-

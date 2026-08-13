@@ -11,7 +11,7 @@ import (
 // the existing authenticated vault service.
 type ChatGPTVaultPutHandler func(context.Context, io.Reader, int64, string) (any, error)
 
-// ChatGPTVaultPutInput is the typed argument shape for pinner_vault_put_file.
+// ChatGPTVaultPutInput is the typed argument shape for vault_put_file.
 type ChatGPTVaultPutInput struct {
 	File      ChatGPTFileInput `json:"file" jsonschema:"description=OpenAI file object with a temporary download URL."`
 	VaultPath string           `json:"vault_path" jsonschema:"description=Vault destination path, e.g. vault:/docs/report.pdf."`
@@ -20,7 +20,7 @@ type ChatGPTVaultPutInput struct {
 func ChatGPTVaultPutDescriptor(handler ChatGPTVaultPutHandler) ToolDescriptor {
 	relayTimeout := 5 * time.Minute
 	return ToolDescriptor{
-		Name:        "pinner_vault_put_file",
+		Name:        "vault_put_file",
 		Title:       "Put a ChatGPT file in the Pinner vault",
 		Description: "Store a user-selected ChatGPT file in the encrypted Pinner vault. Pinner fetches the temporary file URL locally and writes it through the existing authenticated vault service.",
 		Category:    CategoryCore,

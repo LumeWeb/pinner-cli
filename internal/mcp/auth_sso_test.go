@@ -19,7 +19,7 @@ func requireHandoff(t *testing.T, r ToolResult) map[string]any {
 	return sc
 }
 
-// TestAuthSSOStartsOutOfBandLogin verifies pinner_auth_sso returns a
+// TestAuthSSOStartsOutOfBandLogin verifies auth_sso returns a
 // non-blocking needs_human hand-off with the approval URL and a resume handle.
 func TestAuthSSOStartsOutOfBandLogin(t *testing.T) {
 	oob := newOOBForTest(t)
@@ -28,7 +28,7 @@ func TestAuthSSOStartsOutOfBandLogin(t *testing.T) {
 	desc := NewAuthSSODescriptor(oob, handles, reg)
 
 	result, err := desc.Handler(context.Background(), ToolRequest{
-		Name:      "pinner_auth_sso",
+		Name:      "auth_sso",
 		Arguments: map[string]any{"email": "agent@example.com"},
 	})
 	require.NoError(t, err)
@@ -37,7 +37,7 @@ func TestAuthSSOStartsOutOfBandLogin(t *testing.T) {
 	assert.Equal(t, ReasonSSOApproval, sc["reason"])
 	assert.NotEmpty(t, sc["action_url"], "approval URL must be present")
 	assert.NotEmpty(t, sc["handle"], "resume handle must be present")
-	assert.Equal(t, "pinner_auth_resume", sc["resume_tool"])
+	assert.Equal(t, "auth_resume", sc["resume_tool"])
 	assert.Contains(t, result.Text, "sso_approval")
 }
 
@@ -50,7 +50,7 @@ func TestAuthResumeReportsPendingBeforeCompletion(t *testing.T) {
 
 	start := NewAuthSSODescriptor(oob, handles, reg)
 	startResult, err := start.Handler(context.Background(), ToolRequest{
-		Name:      "pinner_auth_sso",
+		Name:      "auth_sso",
 		Arguments: map[string]any{"email": "agent@example.com"},
 	})
 	require.NoError(t, err)
@@ -59,13 +59,13 @@ func TestAuthResumeReportsPendingBeforeCompletion(t *testing.T) {
 
 	resume := NewAuthResumeDescriptor(reg, handles)
 	result, err := resume.Handler(context.Background(), ToolRequest{
-		Name:      "pinner_auth_resume",
+		Name:      "auth_resume",
 		Arguments: map[string]any{"handle": handle},
 	})
 	require.NoError(t, err)
 	resumeSC := requireHandoff(t, result)
 	// Still pending: not done yet, same handle, resume_tool is still resume.
-	assert.Equal(t, "pinner_auth_resume", resumeSC["resume_tool"])
+	assert.Equal(t, "auth_resume", resumeSC["resume_tool"])
 }
 
 // TestAuthResumeUnknownHandleErrors verifies an invalid handle fast-fails
@@ -76,7 +76,7 @@ func TestAuthResumeUnknownHandleErrors(t *testing.T) {
 	desc := NewAuthResumeDescriptor(reg, handles)
 
 	result, err := desc.Handler(context.Background(), ToolRequest{
-		Name:      "pinner_auth_resume",
+		Name:      "auth_resume",
 		Arguments: map[string]any{"handle": "does-not-exist"},
 	})
 	require.NoError(t, err)
@@ -85,7 +85,7 @@ func TestAuthResumeUnknownHandleErrors(t *testing.T) {
 	// just surface. The description distinguishes the unknown case.
 	sc := requireHandoff(t, result)
 	assert.Equal(t, ReasonSSOApproval, sc["reason"])
-	assert.Equal(t, "pinner_auth_sso", sc["resume_tool"])
+	assert.Equal(t, "auth_sso", sc["resume_tool"])
 	assert.Contains(t, sc["detail"].(string), "unknown handle")
 	assert.Contains(t, sc["detail"].(string), "start a new login")
 }
@@ -100,13 +100,13 @@ func TestAuthResumeExpiredHandleSteersRestart(t *testing.T) {
 	handles.now = func() time.Time { return time.Now().Add(2 * DefaultSessionTTL) }
 
 	result, err := desc.Handler(context.Background(), ToolRequest{
-		Name:      "pinner_auth_resume",
+		Name:      "auth_resume",
 		Arguments: map[string]any{"handle": handle},
 	})
 	require.NoError(t, err)
 	sc := requireHandoff(t, result)
 	assert.Equal(t, ReasonSSOApproval, sc["reason"])
-	assert.Equal(t, "pinner_auth_sso", sc["resume_tool"])
+	assert.Equal(t, "auth_sso", sc["resume_tool"])
 	assert.Contains(t, sc["detail"].(string), "expired")
 	assert.Contains(t, sc["detail"].(string), "fresh login")
 }
@@ -116,7 +116,7 @@ func TestAuthResumeExpiredHandleSteersRestart(t *testing.T) {
 func TestAuthSSONotConfigured(t *testing.T) {
 	desc := NewAuthSSODescriptor(nil, nil, nil)
 	result, err := desc.Handler(context.Background(), ToolRequest{
-		Name:      "pinner_auth_sso",
+		Name:      "auth_sso",
 		Arguments: map[string]any{},
 	})
 	require.NoError(t, err)

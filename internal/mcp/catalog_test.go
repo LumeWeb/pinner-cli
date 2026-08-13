@@ -118,7 +118,7 @@ func TestVaultRestoreInteractionStaysAgentSafeThroughBuildCatalog(t *testing.T) 
 // TestSSOToolsDiscoverableInCatalog verifies the out-of-band sign-in tools are
 // surfaced through progressive discovery, not just as direct (tools/list)
 // descriptors. Previously a catalog search for "sso"/"oob"/"resume" returned
-// zero results even though pinner_auth_sso and pinner_auth_resume existed as
+// zero results even though auth_sso and auth_resume existed as
 // direct tools, so an agent that relies on search_tools could never find them.
 func TestSSOToolsDiscoverableInCatalog(t *testing.T) {
 	catalog := NewToolCatalog()
@@ -133,29 +133,29 @@ func TestSSOToolsDiscoverableInCatalog(t *testing.T) {
 		for _, s := range summaries {
 			names = append(names, s.Name)
 		}
-		assert.Contains(t, names, "pinner_auth_sso", "search %q must find pinner_auth_sso", q)
-		assert.Contains(t, names, "pinner_auth_resume", "search %q must find pinner_auth_resume", q)
+		assert.Contains(t, names, "auth_sso", "search %q must find auth_sso", q)
+		assert.Contains(t, names, "auth_resume", "search %q must find auth_resume", q)
 	}
 
 	// Both are agent-safe (non-blocking) and present in the full listing.
 	var ssoCount, resumeCount int
 	for _, s := range catalog.Search("", "") {
 		switch s.Name {
-		case "pinner_auth_sso":
+		case "auth_sso":
 			ssoCount++
 			assert.Equal(t, InteractionAgentSafe, s.Interaction)
-		case "pinner_auth_resume":
+		case "auth_resume":
 			resumeCount++
 			assert.Equal(t, InteractionAgentSafe, s.Interaction)
 		}
 	}
-	assert.Equal(t, 1, ssoCount, "pinner_auth_sso must be listed exactly once")
-	assert.Equal(t, 1, resumeCount, "pinner_auth_resume must be listed exactly once")
+	assert.Equal(t, 1, ssoCount, "auth_sso must be listed exactly once")
+	assert.Equal(t, 1, resumeCount, "auth_resume must be listed exactly once")
 
 	// describe_tool / invoke_tool must also resolve them.
-	d, err := catalog.Describe("pinner_auth_sso")
+	d, err := catalog.Describe("auth_sso")
 	require.NoError(t, err)
 	assert.Equal(t, CategoryCore, d.Category)
-	_, ok := catalog.Get("pinner_auth_resume")
-	assert.True(t, ok, "pinner_auth_resume must be registered for describe/invoke")
+	_, ok := catalog.Get("auth_resume")
+	assert.True(t, ok, "auth_resume must be registered for describe/invoke")
 }

@@ -774,7 +774,7 @@ func (s *captureAuthService) LoginWithOTP(ctx context.Context, intermediateJWT, 
 func (s *captureAuthService) Status(ctx context.Context) (*auth.StatusResult, error) { return nil, nil }
 
 // TestOOBLoginHumanEmailOverridesAgentEmail verifies the account identifier on
-// the login page is editable: even though pinner_auth_sso prefilled an email
+// the login page is editable: even though auth_sso prefilled an email
 // via Begin, the human can change it on the form and the posted value is what
 // LoginCheck authenticates against (a normal username/password account).
 func TestOOBLoginHumanEmailOverridesAgentEmail(t *testing.T) {
@@ -806,7 +806,7 @@ func TestOOBLoginHumanEmailOverridesAgentEmail(t *testing.T) {
 
 // TestOOBResumeDoneAfterHumanEditsEmail is the regression test for the
 // reported "sign-in still pending after the human completed approval" bug.
-// The resume (pinner_auth_resume) passes the ORIGINAL prefill email from the
+// The resume (auth_resume) passes the ORIGINAL prefill email from the
 // handle store, while the stored request now carries the human-edited email.
 // pendingOutcome must key on the session id (the unique resume handle), not
 // the email, so a human-edited login still resolves to done instead of
@@ -834,7 +834,7 @@ func TestOOBResumeDoneAfterHumanEditsEmail(t *testing.T) {
 	o.loginPage(rec, req)
 	require.NotEqual(t, http.StatusForbidden, rec.Code, "human-edited login must complete")
 
-	// Resume passes the ORIGINAL prefill email (as pinner_auth_resume does via
+	// Resume passes the ORIGINAL prefill email (as auth_resume does via
 	// the handle store). It must still resolve to done.
 	_, done, err := o.pendingOutcome("session-edit", "agent@example.com")
 	require.NoError(t, err)

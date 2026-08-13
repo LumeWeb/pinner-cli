@@ -100,7 +100,7 @@ func TestDestructiveDeleteConfirmGuards(t *testing.T) {
 	ctx := context.Background()
 	deps := WebsitesDeps{}
 	for _, op := range WebsitesOperations(deps) {
-		if op.Name() != "websites.delete" {
+		if op.Name() != "websites_delete" {
 			continue
 		}
 		if _, err := op.Handler().Execute(ctx, map[string]any{}); err == nil {
@@ -109,7 +109,7 @@ func TestDestructiveDeleteConfirmGuards(t *testing.T) {
 	}
 	dnsDeps := DNSDeps{}
 	for _, op := range DNSOperations(dnsDeps) {
-		if op.Name() != "dns.zones.delete" && op.Name() != "dns.records.delete" {
+		if op.Name() != "dns_zones_delete" && op.Name() != "dns_records_delete" {
 			continue
 		}
 		if _, err := op.Handler().Execute(ctx, map[string]any{}); err == nil {
@@ -119,7 +119,7 @@ func TestDestructiveDeleteConfirmGuards(t *testing.T) {
 	// vault.forget is SafetyDestructive and declares a confirm arg; its handler
 	// must refuse to delete the profile without confirmation.
 	for _, op := range VaultOperations(VaultDeps{}) {
-		if op.Name() == "vault.forget" {
+		if op.Name() == "vault_forget" {
 			if _, err := op.Handler().Execute(ctx, map[string]any{}); err == nil {
 				t.Fatal("vault.forget: expected confirmation error, got nil")
 			}

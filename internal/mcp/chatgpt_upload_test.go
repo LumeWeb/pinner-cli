@@ -14,7 +14,7 @@ func TestChatGPTUploadDescriptor(t *testing.T) {
 		return map[string]string{"status": "completed"}, nil
 	})
 
-	require.Equal(t, "pinner_upload_file", desc.Name)
+	require.Equal(t, "upload_file", desc.Name)
 	require.Equal(t, []string{"file"}, desc.Meta["openai/fileParams"])
 
 	var schema map[string]any
@@ -52,7 +52,7 @@ func TestChatGPTVaultPutDescriptor(t *testing.T) {
 	desc := ChatGPTVaultPutDescriptor(func(context.Context, io.Reader, int64, string) (any, error) {
 		return map[string]string{"path": "vault:/report.pdf"}, nil
 	})
-	require.Equal(t, "pinner_vault_put_file", desc.Name)
+	require.Equal(t, "vault_put_file", desc.Name)
 	require.Equal(t, []string{"file"}, desc.Meta["openai/fileParams"])
 	var schema map[string]any
 	require.NoError(t, json.Unmarshal(desc.InputSchema, &schema))

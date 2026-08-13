@@ -46,8 +46,8 @@ const vaultCreateToolName = "pinner_vault_create"
 // out-of-band setup handlers as the legacy names so the create_url /
 // restore_url + resume-handle hand-off contract is honored on the compiled
 // surface.
-const compiledVaultCreateToolName = "vault.create"
-const compiledVaultRestoreToolName = "vault.restore"
+const compiledVaultCreateToolName = "vault_create"
+const compiledVaultRestoreToolName = "vault_restore"
 
 // ansiEscapeRE matches ANSI/VT escape sequences (SGR color codes, cursor
 // movement, erase, reset) so agent-facing tool output is always clean plain
@@ -766,7 +766,7 @@ func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string, seedDr
 			return nil, err
 		}
 		_ = names // populateCatalogSurface registers the compiled entries; the name set is informational only.
-		// Route the compiled vault.create / vault.restore entries through the
+		// Route the compiled vault_create / vault_restore entries through the
 		// out-of-band setup handlers, so a model invoking the compiled
 		// vault-setup tool receives the full create_url / restore_url +
 		// resume-handle + needs_human hand-off its AgentDescription promises,
@@ -789,9 +789,9 @@ func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string, seedDr
 }
 
 // mcpInstructionsBase is sent to MCP clients in the initialize response.
-const mcpInstructionsBase = `This server exposes a curated set of common Pinner tools directly, including upload, pin, list, status, download, vault, website, website/domain wizard tools, and the agent-facing out-of-band sign-in tools (pinner_auth_sso and pinner_auth_resume). Setup wizard tools are not exposed because they accept credentials.
+const mcpInstructionsBase = `This server exposes a curated set of common Pinner tools directly, including upload, pin, list, status, download, vault, website, website/domain wizard tools, and the agent-facing out-of-band sign-in tools (auth_sso and auth_resume). Setup wizard tools are not exposed because they accept credentials.
 
-For authentication, prefer the out-of-band flow: call pinner_auth_sso, give the returned approval URL to the human, then poll pinner_auth_resume with the returned handle until it reports done. This avoids an invalid or missing API key blocking work.
+For authentication, prefer the out-of-band flow: call auth_sso, give the returned approval URL to the human, then poll auth_resume with the returned handle until it reports done. This avoids an invalid or missing API key blocking work.
 
 Some internal commands are human-only or read piped stdin; when an agent invokes one via invoke_tool, the server returns a structured needs_human redirect instead of blocking. Commands that prompt interactively are hidden from search_tools entirely.
 
@@ -800,7 +800,7 @@ Less common CLI tools remain available through progressive disclosure:
 2. describe_tool({ "name": "..." }): Get the full input schema for one internal tool.
 3. invoke_tool({ "name": "...", "arguments": { ... } }): Execute one internal tool.
 
-The internal catalog has %d tools. Local path arguments refer to the MCP server host, not the remote agent's filesystem. Upload and vault copy therefore require a host-side file handoff. ChatGPT file attachments can use the directly visible pinner_upload_file tool; Pinner fetches the temporary file URL locally and uses its existing authenticated TUS path. Large uploads use TUS internally; the SDK result includes an upload location for resume/status management. TUS is never anonymous. Vault cat returns bounded base64 JSON in agent mode and never writes raw bytes to the MCP transport.`
+The internal catalog has %d tools. Local path arguments refer to the MCP server host, not the remote agent's filesystem. Upload and vault copy therefore require a host-side file handoff. ChatGPT file attachments can use the directly visible upload_file tool; Pinner fetches the temporary file URL locally and uses its existing authenticated TUS path. Large uploads use TUS internally; the SDK result includes an upload location for resume/status management. TUS is never anonymous. Vault cat returns bounded base64 JSON in agent mode and never writes raw bytes to the MCP transport.`
 
 // buildInstructions returns the MCP server instructions with the real catalog
 // tool count substituted, so the guidance given to agents stays accurate as

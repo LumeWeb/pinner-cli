@@ -335,9 +335,9 @@ func TestResumeTemplateDeadHandleSteersRestart(t *testing.T) {
 // tools are distinguishable in a host UI.
 func TestResumeToolsHaveDistinctFlowTitles(t *testing.T) {
 	descs := map[string]string{
-		"pinner_auth_resume":          NewAuthResumeDescriptor(nil, nil).Title,
-		"pinner_vault_create_resume":  NewVaultCreateResumeDescriptor(nil, nil).Title,
-		"pinner_vault_restore_resume": NewVaultRestoreResumeDescriptor(nil, nil).Title,
+		"auth_resume":          NewAuthResumeDescriptor(nil, nil).Title,
+		"vault_create_resume":  NewVaultCreateResumeDescriptor(nil, nil).Title,
+		"vault_restore_resume": NewVaultRestoreResumeDescriptor(nil, nil).Title,
 	}
 	seen := map[string]string{}
 	for name, title := range descs {

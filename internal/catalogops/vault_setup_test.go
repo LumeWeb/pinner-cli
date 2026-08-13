@@ -36,7 +36,7 @@ func TestVaultCreateOpReturnsProfileHandoff(t *testing.T) {
 	ops := VaultSetupOperations(deps)
 	var createOp catalog.Operation
 	for _, op := range ops {
-		if op.Name() == "vault.create" {
+		if op.Name() == "vault_create" {
 			createOp = op
 		}
 	}
@@ -64,7 +64,7 @@ func TestVaultCreateOpReturnsProfileHandoff(t *testing.T) {
 func TestVaultCreateOpRequiresProfile(t *testing.T) {
 	isolateVaultHome(t)
 	deps := VaultDeps{Provisioner: func() *vault.Provisioner { return vault.NewProvisioner() }}
-	createOp := setupOpNamed(t, deps, "vault.create")
+	createOp := setupOpNamed(t, deps, "vault_create")
 
 	// The schema must declare profile required so the shared required-arg gate
 	// and MCP JSON schema mark it mandatory, not merely the handler's manual
@@ -87,7 +87,7 @@ func TestVaultCreateOpRequiresProfile(t *testing.T) {
 func TestVaultCreateOpFailsWithoutProvisioner(t *testing.T) {
 	isolateVaultHome(t)
 	// No Provisioner wired: the op must fail cleanly rather than panic.
-	createOp := setupOpNamed(t, VaultDeps{}, "vault.create")
+	createOp := setupOpNamed(t, VaultDeps{}, "vault_create")
 	_, err := createOp.Handler().Execute(context.Background(), map[string]any{"profile": "x"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "provisioning")
@@ -95,7 +95,7 @@ func TestVaultCreateOpFailsWithoutProvisioner(t *testing.T) {
 
 func TestVaultRestoreOpResolvesProfile(t *testing.T) {
 	isolateVaultHome(t)
-	restoreOp := setupOpNamed(t, VaultDeps{}, "vault.restore")
+	restoreOp := setupOpNamed(t, VaultDeps{}, "vault_restore")
 
 	// No profile/env/registry-default: resolves to "default".
 	res, err := restoreOp.Handler().Execute(context.Background(), map[string]any{})

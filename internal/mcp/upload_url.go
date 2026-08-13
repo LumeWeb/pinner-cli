@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// RelayURLUploadInput is the typed argument shape for pinner_upload_url.
+// RelayURLUploadInput is the typed argument shape for upload_url.
 type RelayURLUploadInput struct {
 	URL  string `json:"url" jsonschema:"format=uri,description=Public HTTPS URL to fetch and upload."`
 	Name string `json:"name,omitempty" jsonschema:"description=Optional upload name."`
@@ -19,7 +19,7 @@ type RelayURLUploadInput struct {
 // clients that are not co-located with Pinner and cannot pass a host path.
 func RelayURLUploadDescriptor(handler RelayURLUploadHandler, allowedHosts []string) ToolDescriptor {
 	return ToolDescriptor{
-		Name:        "pinner_upload_url",
+		Name:        "upload_url",
 		Title:       "Upload a file from a URL",
 		Description: "Fetch a public HTTPS URL locally and upload it to Pinner through the authenticated upload path. Do not put Pinner's credentials in the URL; Pinner fetches it with its own stored auth. Intended for remote HTTP clients that cannot reference a local path.",
 		Category:    CategoryCore,

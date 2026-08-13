@@ -70,6 +70,6 @@ func ErrorResult(code, text string, extra map[string]any) ToolResult {
 // the server does not have. It steers the agent to the OOB sign-in flow.
 func RequiresAuthResult(detail string) ToolResult {
 	return StatusResult(StatusRequiresAuth,
-		"Authentication required. Start a sign-in with pinner_auth_sso, have the user approve, then retry.",
-		map[string]any{"resume_tool": "pinner_auth_sso", "detail": detail})
+		"Authentication required. Start a sign-in with auth_sso, have the user approve, then retry.",
+		map[string]any{"resume_tool": "auth_sso", "detail": detail})
 }

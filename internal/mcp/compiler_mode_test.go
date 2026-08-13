@@ -45,7 +45,7 @@ func TestOfficialMCPServerForwardsCatalogDeps(t *testing.T) {
 		withCatalogDeps(func() *CatalogDepsBundle { return &CatalogDepsBundle{Auth: catalogops.AuthDeps{}} }))
 	require.NoError(t, err)
 	require.NotNil(t, srv2)
-	_, ok := cat2.Get("auth.status")
+	_, ok := cat2.Get("auth_status")
 	require.True(t, ok, "compiled op must be present when withCatalogDeps is supplied to OfficialMCPServer")
 }
 
@@ -114,7 +114,7 @@ func TestCompilerModeProvidesCompiledSurface(t *testing.T) {
 	require.NoError(t, err)
 
 	// Compiled op present and discoverable via the compiler-backed surface.
-	entry, ok := tc.Get("auth.status")
+	entry, ok := tc.Get("auth_status")
 	require.True(t, ok, "compiled auth.status should be present in compiler mode")
 	require.NotNil(t, entry.Handler)
 
@@ -125,7 +125,7 @@ func TestCompilerModeProvidesCompiledSurface(t *testing.T) {
 
 	// The compiled op dispatches through the catalog gate without a hard error
 	// (missing required args surface as a clean ToolResult error, not a panic).
-	res, err := entry.Handler(context.Background(), ToolRequest{Name: "auth.status", Arguments: map[string]any{}})
+	res, err := entry.Handler(context.Background(), ToolRequest{Name: "auth_status", Arguments: map[string]any{}})
 	require.NoError(t, err)
 	require.True(t, res.IsError, "executing auth.status with nil deps should fail cleanly, not panic")
 }

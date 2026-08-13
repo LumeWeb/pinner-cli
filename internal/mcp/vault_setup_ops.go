@@ -10,7 +10,7 @@ import (
 
 // This file turns pinner_vault_create and pinner_vault_restore into clean,
 // CLI-free out-of-band hand-offs by routing them through the catalog
-// operations (catalogops.vault.create / vault.restore) that drive the core
+// operations (catalogops.vault_create / vault_restore) that drive the core
 // vault.Provisioner, and then having the MCP layer mint the one-time OOB URL
 // and the resume handle.
 //
@@ -36,9 +36,9 @@ func vaultSetupOps() (create, restore catalog.Operation) {
 	}
 	for _, op := range catalogops.VaultSetupOperations(deps) {
 		switch op.Name() {
-		case "vault.create":
+		case "vault_create":
 			create = op
-		case "vault.restore":
+		case "vault_restore":
 			restore = op
 		}
 	}
@@ -72,7 +72,7 @@ func vaultHandoffResult(resumeTool, urlKey, url, handle, detail string) ToolResu
 }
 
 // vaultCreateSetupHandler builds the PinnerToolHandler for pinner_vault_create.
-// It runs the vault.create catalog operation (provisioning a fresh vault that
+// It runs the vault_create catalog operation (provisioning a fresh vault that
 // SSO-activates like restore), then mints a one-time create_url (OOBCreate.Register)
 // and a resume handle whose continuation polls that OOB create, returning a
 // needs_human hand-off with create_url + handle + resume_tool. The freshly
@@ -118,12 +118,12 @@ func vaultCreateSetupHandler(oobCreate *OOBCreate, reg *HandoffRegistry, handles
 		handle := handles.Create("pending", map[string]any{handleDataToken: token})
 		reg.Begin(handle, vaultCreateResumeContinuation(oobCreate, handles, reg))
 		return vaultHandoffResult(vaultCreateResumeToolName, "create_url", createURL, handle,
-			"Ask the user to open create_url in a browser, approve the Sia device connection, then retrieve the one-time recovery seed. Then call pinner_vault_create_resume with the handle. The seed never crosses the MCP channel."), nil
+			"Ask the user to open create_url in a browser, approve the Sia device connection, then retrieve the one-time recovery seed. Then call vault_create_resume with the handle. The seed never crosses the MCP channel."), nil
 	}
 }
 
 // vaultRestoreSetupHandler builds the PinnerToolHandler for pinner_vault_restore.
-// It runs the vault.restore catalog operation (resolving the target profile),
+// It runs the vault_restore catalog operation (resolving the target profile),
 // then mints a one-time restore_url (OOBRestore.Register) and a resume handle
 // whose continuation polls that OOB restore, returning a needs_human hand-off
 // with restore_url + handle + resume_tool. The seed is only ever entered by the
@@ -164,6 +164,6 @@ func vaultRestoreSetupHandler(oobRestore *OOBRestore, reg *HandoffRegistry, hand
 		handle := handles.Create("pending", map[string]any{handleDataToken: token})
 		reg.Begin(handle, vaultRestoreResumeContinuation(oobRestore, handles, reg))
 		return vaultHandoffResult(vaultRestoreResumeToolName, "restore_url", restoreURL, handle,
-			"Ask the user to open restore_url in a browser and enter the recovery seed to complete the restore. Then call pinner_vault_restore_resume with the handle. The seed never crosses the MCP channel."), nil
+			"Ask the user to open restore_url in a browser and enter the recovery seed to complete the restore. Then call vault_restore_resume with the handle. The seed never crosses the MCP channel."), nil
 	}
 }

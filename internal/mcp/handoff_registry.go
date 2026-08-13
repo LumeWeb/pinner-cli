@@ -16,7 +16,7 @@ import (
 //   - a start-point op mints a handle and registers a per-handle continuation,
 //   - the matching named *_resume tool dispatches on that handle.
 //
-// Each flow exposes its own named *_resume tool (e.g. pinner_auth_resume,
+// Each flow exposes its own named *_resume tool (e.g. auth_resume,
 // pinner_vault_resume) so an LLM can recognize the flow from the tool name.
 // Only the internals are shared via NewResumeTool.
 
@@ -192,7 +192,7 @@ type resumeArgs struct {
 // domain-flavored so an agent sees the right restart instruction for the flow
 // it is in (SSO says "start a fresh login", vault says "start a fresh setup").
 type ResumeToolSpec struct {
-	// Name is the tool name (e.g. "pinner_auth_resume").
+	// Name is the tool name (e.g. "auth_resume").
 	Name string
 	// Title is the short human/agent-facing title shown in tools/list. It must
 	// be flow-specific (e.g. "Auth Sign-In Resume", "Vault Create Resume") so
@@ -242,7 +242,7 @@ func (s ResumeToolSpec) deadHandleReason() HandoffReason {
 //
 // A domain supplies its tool spec (name, description, restart steering, and
 // dead-handle guidance text). Example: SSO calls
-// NewResumeTool(ResumeToolSpec{Name: "pinner_auth_resume", ...}, reg, handles).
+// NewResumeTool(ResumeToolSpec{Name: "auth_resume", ...}, reg, handles).
 func NewResumeTool(spec ResumeToolSpec, reg *HandoffRegistry, handles *AsyncHandleStore) ToolDescriptor {
 	return ToolDescriptor{
 		Name:        spec.Name,

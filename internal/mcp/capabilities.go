@@ -44,7 +44,7 @@ func CurrentCapabilities(chatGPTUpload, chatGPTVault, relayURL, draftXFile bool)
 // feature-detection hook for hosts that stage on draft MCP file metadata.
 func NewCapabilitiesDescriptor(chatGPTUpload, chatGPTVault, relayURL, draftXFile bool) ToolDescriptor {
 	return ToolDescriptor{
-		Name:        "pinner_capabilities",
+		Name:        "capabilities",
 		Title:       "Pinner file-input capabilities",
 		Description: "Report which file-input modes this Pinner MCP server supports: local path, ChatGPT file params, relay URL fetch, and draft x-mcp-file metadata. Use this to decide how to hand files to Pinner without assumptions.",
 		Category:    CategoryCore,

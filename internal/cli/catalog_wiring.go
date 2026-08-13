@@ -118,7 +118,7 @@ func newPinsCommand() *cli.Command {
 // operation input, destructive gate, field-required gate). The compiler's flags
 // and help text are preserved.
 func mountCatalogCommand(cmd *cli.Command) *cli.Command {
-	group := "pins."
+	group := "pins_"
 	canonicalLeaf := cmd.Name
 	if strings.HasPrefix(cmd.Name, group) {
 		canonicalLeaf = strings.TrimPrefix(cmd.Name, group)
@@ -246,7 +246,7 @@ func catalogActionAdapter(op catalog.Operation, group string) cli.ActionFunc {
 		// bypass the typed-count prompt, which still requires --force or --yes.
 		// This is CLI-only: catalogops stays IO-agnostic, and the MCP/programmatic
 		// path is non-interactive (passes --force).
-		if op.Name() == "pins.rm" && c.Bool(FlagAll) && !c.Bool(FlagDryRun) && !c.Bool(FlagYes) && !c.Bool(FlagForce) {
+		if op.Name() == "pins_rm" && c.Bool(FlagAll) && !c.Bool(FlagDryRun) && !c.Bool(FlagYes) && !c.Bool(FlagForce) {
 			svc, svcErr := catalogPinningDeps().Service(input)
 			if svcErr != nil {
 				return svcErr

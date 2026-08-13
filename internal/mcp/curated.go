@@ -6,26 +6,25 @@ package mcp
 // the catalog stamps each entry's DirectVisible flag (see markCurated). Keep
 // the names in a stable, human-reviewable order.
 //
-// These are the compiled dotted names produced by the operation catalog, plus
-// the website/domain wizard start/step tools. The legacy CLI-tree walk is not
-// run in the MCP surface, so there are no pinner_* names to curate. Custom
-// transport tools that set DirectVisible at registration (auth SSO/resume,
-// vault create/restore resume, upload backends) are not listed here; the
-// wizard tools are listed because RegisterWizardTools does not set
-// DirectVisible itself.
+// These are the compiled underscore names produced by the operation catalog,
+// plus the website/domain wizard start/step tools. The legacy CLI-tree walk is
+// not run in the MCP surface. Custom transport tools that set DirectVisible at
+// registration (auth sso/resume, vault create/restore resume, upload backends)
+// are not listed here; the wizard tools are listed because RegisterWizardTools
+// does not set DirectVisible itself.
 var compiledCuratedToolNames = []string{
-	"auth.status",
-	"auth.logout",
-	"pins.add",
-	"pins.list",
-	"pins.status",
-	"pins.rm",
-	"vault.ls",
-	"vault.status",
-	"vault.stat",
-	"websites.list",
-	"websites.get",
-	"websites.validate",
+	"auth_status",
+	"auth_logout",
+	"pins_add",
+	"pins_list",
+	"pins_status",
+	"pins_rm",
+	"vault_ls",
+	"vault_status",
+	"vault_stat",
+	"websites_list",
+	"websites_get",
+	"websites_validate",
 	"domains_wizard_start",
 	"domains_wizard_step",
 	"websites_wizard_start",

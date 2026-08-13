@@ -31,7 +31,7 @@ func APIKeysOperations(d APIKeysDeps) []catalog.Operation {
 
 func apiKeysList(d APIKeysDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name: "api-keys.list", Title: "List API keys", Summary: "List all API keys",
+		Name: "api_keys_list", Title: "List API keys", Summary: "List all API keys",
 		Description: "List all API keys for your account, optionally filtered by name.",
 		Category:    "account", Safety: catalog.SafetyRead, Interaction: catalog.InteractionAgentSafe, Visibility: catalog.VisibilityBoth,
 		Positional: "",
@@ -54,7 +54,7 @@ func apiKeysList(d APIKeysDeps) catalog.Operation {
 
 func apiKeysCreate(d APIKeysDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name: "api-keys.create", Title: "Create an API key", Summary: "Create a new API key",
+		Name: "api_keys_create", Title: "Create an API key", Summary: "Create a new API key",
 		Description: "Create a new API key for your account.",
 		Category:    "account", Safety: catalog.SafetyMutate, Interaction: catalog.InteractionAgentSafe, Visibility: catalog.VisibilityBoth,
 		Positional: "<name>",
@@ -68,7 +68,7 @@ func apiKeysCreate(d APIKeysDeps) catalog.Operation {
 			}
 			name := catalog.StrArg(input, "name", "")
 			if name == "" {
-				return nil, fmt.Errorf("api-keys.create: key name is required")
+				return nil, fmt.Errorf("api_keys_create: key name is required")
 			}
 			return svc.CreateAPIKey(ctx, name)
 		}),
@@ -77,7 +77,7 @@ func apiKeysCreate(d APIKeysDeps) catalog.Operation {
 
 func apiKeysDelete(d APIKeysDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name: "api-keys.delete", Title: "Delete an API key", Summary: "Delete an API key",
+		Name: "api_keys_delete", Title: "Delete an API key", Summary: "Delete an API key",
 		Description: "Delete an API key by name or UUID. Blocked if the key is the one currently used for auth unless --force.",
 		Category:    "account", Safety: catalog.SafetyDestructive, Interaction: catalog.InteractionAgentSafe, Visibility: catalog.VisibilityBoth,
 		Positional: "<id>",
@@ -91,7 +91,7 @@ func apiKeysDelete(d APIKeysDeps) catalog.Operation {
 			}
 			id := catalog.StrArg(input, "id", "")
 			if id == "" {
-				return nil, fmt.Errorf("api-keys.delete: key name or UUID is required")
+				return nil, fmt.Errorf("api_keys_delete: key name or UUID is required")
 			}
 			if err := svc.DeleteAPIKey(ctx, id, catalog.BoolArg(input, "force", false)); err != nil {
 				return nil, err

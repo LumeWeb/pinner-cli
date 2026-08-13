@@ -33,7 +33,7 @@ func buildPinAppServer(t *testing.T, pins PinningProvider) *mcp.Server {
 	t.Helper()
 	catalog := NewToolCatalog()
 	catalog.Add(&ToolEntry{
-		Name:          "pins.add",
+		Name:          "pins_add",
 		Description:   "Pin an existing CID via the Pinner.xyz API.",
 		DirectVisible: true,
 		InputSchema:   json.RawMessage(`{"type":"object","properties":{"cid":{"type":"string"},"name":{"type":"string"}},"required":["cid"]}`),
@@ -75,7 +75,7 @@ func TestRegisterPinAppWire(t *testing.T) {
 		t.Fatalf("pin create resource not listed; got %#v", res.Resources)
 	}
 
-	// Tools: pins.add carries _meta.ui; pinner_pin_status is the app-only
+	// Tools: pins.add carries _meta.ui; pin_status is the app-only
 	// helper whose _meta.ui.visibility marks it "app" (the UI-capable host hides
 	// it from the model surface).
 	tres, err := cs.ListTools(ctx, nil)
@@ -85,9 +85,9 @@ func TestRegisterPinAppWire(t *testing.T) {
 	var pinTool, statusTool *mcp.Tool
 	for _, x := range tres.Tools {
 		switch x.Name {
-		case "pins.add":
+		case "pins_add":
 			pinTool = x
-		case "pinner_pin_status":
+		case "pin_status":
 			statusTool = x
 		}
 	}
@@ -108,18 +108,18 @@ func TestRegisterPinAppWire(t *testing.T) {
 	// The app-only helper is model-shadowed: it must not expose the "model"
 	// visibility, only "app".
 	if statusTool == nil {
-		t.Fatalf("pinner_pin_status helper not registered")
+		t.Fatalf("pin_status helper not registered")
 	}
 	stUI, ok := statusTool.Meta["ui"].(map[string]any)
 	if !ok {
-		t.Fatalf("_meta.ui missing on pinner_pin_status: %T", statusTool.Meta["ui"])
+		t.Fatalf("_meta.ui missing on pin_status: %T", statusTool.Meta["ui"])
 	}
 	vis, ok := stUI["visibility"].([]any)
 	if !ok {
-		t.Fatalf("_meta.ui.visibility missing on pinner_pin_status: %T", stUI["visibility"])
+		t.Fatalf("_meta.ui.visibility missing on pin_status: %T", stUI["visibility"])
 	}
 	if len(vis) != 1 || vis[0] != "app" {
-		t.Fatalf("pinner_pin_status visibility = %#v, want [app]", vis)
+		t.Fatalf("pin_status visibility = %#v, want [app]", vis)
 	}
 }
 
@@ -131,7 +131,7 @@ func TestPinStatusHelperInvoke(t *testing.T) {
 	cs := connectOfficialClient(t, srv)
 
 	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
-		Name:      "pinner_pin_status",
+		Name:      "pin_status",
 		Arguments: map[string]any{"cid": "bafykztest"},
 	})
 	if err != nil {
@@ -172,7 +172,7 @@ func TestPinCreateResourceRead(t *testing.T) {
 		`id="cid"`,
 		`type="module"`,
 		"const CLIENT_B64",
-		"pinner_pin_status",
+		"pin_status",
 	} {
 		if !strings.Contains(html, want) {
 			t.Errorf("rendered pin app HTML missing %q", want)
@@ -295,7 +295,7 @@ func TestRegisterPinAppOnCompilerSurface(t *testing.T) {
 	if _, err := populateCatalogSurface(tc, cat); err != nil {
 		t.Fatalf("populateCatalogSurface: %v", err)
 	}
-	if _, ok := tc.Get("pins.add"); !ok {
+	if _, ok := tc.Get("pins_add"); !ok {
 		t.Fatalf("pins.add must be present on the compiler surface (legacy pinner_pin is gone)")
 	}
 
@@ -332,7 +332,7 @@ func TestRegisterPinAppOnCompilerSurface(t *testing.T) {
 func TestPinAppModuleTargetsExistingTool(t *testing.T) {
 	appHTML := renderPinCreateAppHTML()
 
-	// The app-only polling helper pinner_pin_status is a valid, still-registered
+	// The app-only polling helper pin_status is a valid, still-registered
 	// tool (see pinStatusDescriptor); only the removed pinner_pin (with no
 	// _status suffix) must be absent.
 	for _, probe := range []string{`"pinner_pin"`, `pinner_pin,`, `pinner_pin `} {
@@ -340,7 +340,7 @@ func TestPinAppModuleTargetsExistingTool(t *testing.T) {
 			t.Fatalf("app module must not reference the removed pinner_pin tool, found %q", probe)
 		}
 	}
-	if !strings.Contains(appHTML, `"pins.add"`) {
+	if !strings.Contains(appHTML, `"pins_add"`) {
 		t.Fatalf("app module must invoke the compiled pins.add tool")
 	}
 	if !strings.Contains(appHTML, "cids:") {

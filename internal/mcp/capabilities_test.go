@@ -32,7 +32,7 @@ func TestCapabilitiesReport(t *testing.T) {
 
 func TestCapabilitiesDescriptorSerializes(t *testing.T) {
 	desc := NewCapabilitiesDescriptor(true, false, true, true)
-	require.Equal(t, "pinner_capabilities", desc.Name)
+	require.Equal(t, "capabilities", desc.Name)
 	res, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{}})
 	require.NoError(t, err)
 	require.NotNil(t, res.StructuredContent)
@@ -44,5 +44,5 @@ func TestCapabilitiesDescriptorSerializes(t *testing.T) {
 func TestCapabilitiesDescriptorIsDirectVisible(t *testing.T) {
 	desc := NewCapabilitiesDescriptor(false, false, true, true)
 	tool := officialTool(desc)
-	require.Equal(t, "pinner_capabilities", tool.Name)
+	require.Equal(t, "capabilities", tool.Name)
 }

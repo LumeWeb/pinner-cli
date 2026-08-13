@@ -87,7 +87,7 @@ func toolEntryFromDescriptor(desc ToolDescriptor) *ToolEntry {
 		SensitiveFlags: desc.SensitiveFlags,
 		Handler:        desc.Handler,
 		// Direct auth tools are non-blocking and safe for agent invocation:
-		// pinner_auth_sso returns a needs_human hand-off, pinner_auth_resume
+		// auth_sso returns a needs_human hand-off, auth_resume
 		// polls. Ensure discovery treats them as callable, not interactive.
 		Interaction: InteractionAgentSafe,
 	}
