@@ -169,13 +169,21 @@ func TestOAuthFullFlow(t *testing.T) {
 	protected.ServeHTTP(rec, bad)
 	assert.Equal(t, http.StatusUnauthorized, rec.Code)
 
-	// Authorization: wrong secret-as-password is rejected.
+	// Authorization: wrong secret-as-password is rejected with a 401, and the
+	// response is a branded retry form page (not a bare text/JSON body) so a
+	// human who mistyped the shared secret can try again.
 	rec = httptest.NewRecorder()
 	o.authorizePOST(rec, formPost(map[string]string{
 		"client_id": "cli", "redirect_uri": "http://localhost/cb",
 		"state": "st", "password": "wrong",
 	}))
 	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+	assert.Contains(t, rec.Header().Get("Content-Type"), "text/html")
+	assert.Contains(t, rec.Body.String(), "Invalid auth secret")
+	assert.Contains(t, rec.Body.String(), "name=\"password\"")
+	assert.Contains(t, rec.Body.String(), "action=")
+	// The retry form must preserve the authorize request so resubmission works.
+	assert.Contains(t, rec.Body.String(), `name="client_id"`)
 
 	// Correct secret-as-password issues a PKCE-bound code and redirects.
 	verifier, challenge := testPKCE()
