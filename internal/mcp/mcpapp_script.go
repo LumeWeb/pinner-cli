@@ -29,7 +29,11 @@ type appModuleData struct {
 // a failure is a programming error and panics (mirroring how the embedded
 // ext-apps client panics when absent). text/template (not html/template) is
 // used so the JS is emitted verbatim with no HTML escaping.
-func mcpAppModule(appTemplate string, data appModuleData) string {
+//
+// data may be an appModuleData or any struct embedding it (e.g.
+// appFlowData) so an app that uses the shared flow template can inject its
+// flow-specific config alongside the common client values.
+func mcpAppModule(appTemplate string, data any) string {
 	tpl, err := template.New("mcpapp").ParseFS(appsAssets,
 		"appsassets/mcp_bootstrap.js.tmpl",
 		"appsassets/"+appTemplate)

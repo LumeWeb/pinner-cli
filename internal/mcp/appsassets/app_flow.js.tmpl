@@ -1,0 +1,123 @@
+// Shared "start an out-of-band flow, surface the human-only URL, poll the
+// app-only status helper until done" module (Go text/template).
+//
+// The Create Vault, Restore Vault, and Sign In apps all follow the same shape:
+// click start -> call the <start> tool -> on a needs_human hand-off surface
+// the URL, then poll the <status> tool by handle until terminal. Only the
+// tool names, element ids, URL fields, and message copy differ, so this one
+// template is reused and parameterized by appFlowData instead of being
+// re-authored ~85 lines per app.
+//
+// Dead-handle vs live-pending are distinguished by HANDLE PRESENCE (never by
+// URL presence): a live pending poll carries sc.handle; a dead/expired/failed
+// or not-configured hand-off carries none. The status helpers share this
+// contract (see NewResumeTool), so the view stops polling a dead handle and
+// surfaces the restart detail instead of retrying for ~90s.
+//
+// SECURITY: for the vault flows the recovery seed lives only on the human-only
+// one-time page opened in the browser. It never appears in this module, in the
+// tool result, or anywhere on the MCP channel.
+{{template "mcpBootstrap" .}}
+const CLIENT_B64 = "{{.ClientB64}}";
+
+const startBtn = $("#{{.StartBtnID}}");
+const urlEl = $("#{{.UrlElID}}");
+const statusEl = $("#{{.StatusElID}}");
+
+extAppsConnect(CLIENT_B64, "{{.Name}}", "{{.Version}}").then((app) => {
+  startBtn.addEventListener("click", () => {
+    if (startBtn.disabled) return; // in-flight guard: no concurrent runs
+    startBtn.disabled = true;
+    startFlow(app);
+  });
+}).catch((err) => {
+  setStatus(statusEl, "error", "Could not connect to host: " +
+    (err && err.message ? err.message : err));
+});
+
+function finishFlow() {
+  startBtn.disabled = false;
+}
+
+function startFlow(app) {
+  setStatus(statusEl, "pending", "Starting {{.ActionLabel}}...");
+  app.callServerTool({ name: "{{.StartTool}}", arguments: {} }).then((res) => {
+    const sc = res && res.structuredContent;
+    if (!sc || sc.status !== "needs_human") {
+      setStatus(statusEl, "error",
+        "{{.StartErrorMsg}}" + (res && res.isError ? " (error)" : ""));
+      if (sc && sc.status === "done") {
+        setStatus(statusEl, "ok", "{{.AlreadyDoneMsg}}");
+      }
+      finishFlow();
+      return;
+    }
+    let url = null;
+    for (const f of {{.URLFieldsJS}}) { if (sc[f]) { url = sc[f]; break; } }
+    if (url) {
+      urlEl.textContent = url;
+      urlEl.setAttribute("href", url);
+    }
+    // The status helper is keyed by handle and rejects an undefined handle with
+    // "handle is required", so a needs_human hand-off without a handle (the
+    // not-configured branch) can never be polled. Surface the detail and stop
+    // instead of sending the poll loop into ~90s of futile retries.
+    if (!sc.handle) {
+      setStatus(statusEl, "error",
+        (sc.detail || "{{.NoHandlePrefix}}") + " Click {{.RetryWord}} to retry.");
+      finishFlow();
+      return;
+    }
+    setStatus(statusEl, "pending", "{{.PendingStartMsg}}");
+    pollStatus(app, sc.handle, 60);
+  }).catch((err) => {
+    setStatus(statusEl, "error", "Could not start {{.ActionLabel}}: " +
+      (err && err.message ? err.message : err));
+    finishFlow();
+  });
+}
+
+function pollStatus(app, handle, attempts) {
+  let max = attempts || 60;
+  return app.callServerTool({
+    name: "{{.StatusTool}}",
+    arguments: { handle },
+  }).then((res) => {
+    const sc = res && res.structuredContent;
+    const status = sc && sc.status;
+    if (status === "done") {
+      setStatus(statusEl, "ok", "{{.DoneMsg}}");
+      finishFlow();
+      return;
+    }
+    // {{.StatusTool}} reports needs_human for both a live pending flow (polls
+    // carry a handle but no URL) and a dead/expired/failed/no-continuation
+    // handle (the helper clears the handle and steers toward restart via
+    // resume_tool/detail). Distinguish dead by the ABSENCE of sc.handle, never
+    // by URL absence, so a live pending flow keeps polling. Stop polling a
+    // dead handle so the restart guidance surfaces instead of retrying for
+    // ~90s.
+    if (status === "needs_human" && !sc.handle) {
+      const detail = sc.detail || "{{.DeadDetailPrefix}}";
+      setStatus(statusEl, "error", detail + " Click {{.RetryWord}} to retry.");
+      finishFlow();
+      return;
+    }
+    if (status === "needs_human") {
+      setStatus(statusEl, "pending", "{{.PendingWaitMsg}}");
+    }
+    if (--max <= 0) {
+      setStatus(statusEl, "info", "{{.TimeoutWaitMsg}}");
+      finishFlow();
+      return;
+    }
+    window.setTimeout(() => pollStatus(app, handle, max), 1500);
+  }).catch(() => {
+    if (--max > 0) {
+      window.setTimeout(() => pollStatus(app, handle, max), 1500);
+    } else {
+      setStatus(statusEl, "info", "{{.TimeoutPollMsg}}");
+      finishFlow();
+    }
+  });
+}
