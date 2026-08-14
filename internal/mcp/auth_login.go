@@ -280,13 +280,29 @@ func (o *OutOfBandLogin) acceptedOrigins() []string {
 // request id and the URL the human must open. The stdio path starts the
 // loopback server on demand; a non-empty baseURL (tunnel/public) is used when
 // the server is remote.
+// Begin starts an out-of-band login for a wizard session and returns the
+// one-time approval URL plus the opaque request id it embeds. The request id is
+// distinct from the session id so a session may host multiple in-flight logins
+// (e.g. different emails). Tool hand-offs that need the approval-link token to
+// equal the resume handle use BeginWithID instead.
 func (o *OutOfBandLogin) Begin(sessionID, email string) (id, url string, err error) {
+	return o.BeginWithID(randomID(), sessionID, email)
+}
+
+// BeginWithID starts an out-of-band login whose request id (the token embedded
+// in the approval URL and shown in logs as `id`) is caller-controlled. Tool
+// hand-offs (auth_sso) pass a single generated identifier for BOTH requestID
+// and sessionID so that the token an agent naturally grabs from the approval
+// link is the same value it must pass to auth_resume — eliminating the
+// "which id do I resume with" ambiguity that produced 'unknown handle'.
+// sessionID is the resume handle auth_resume validates against.
+func (o *OutOfBandLogin) BeginWithID(requestID, sessionID, email string) (id, url string, err error) {
 	if err := o.start(); err != nil {
 		return "", "", err
 	}
 	o.startReaper()
 	req := &loginRequest{
-		id:        randomID(),
+		id:        requestID,
 		csrfToken: randomID(),
 		sessionID: sessionID,
 		email:     email,
