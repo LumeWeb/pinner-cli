@@ -168,3 +168,22 @@ func TestVaultCreateStatusHelperPendingCarriesHandle(t *testing.T) {
 	require.False(t, hasHandle, "a dead handle must not carry a handle")
 	require.Equal(t, compiledVaultCreateToolName, deadSC["resume_tool"])
 }
+
+// TestVaultCreateNotConfiguredReturnsNoHandle pins the server-side contract
+// the Create Vault view's start-guard relies on: when the OOB create
+// coordinator is absent, vault_create returns a needs_human not-configured
+// hand-off with NO handle (the view cannot poll it and must surface the detail
+// instead). This guards against the view sending {handle: undefined} into the
+// status helper, which would otherwise retry "handle is required" for ~90s.
+func TestVaultCreateNotConfiguredReturnsNoHandle(t *testing.T) {
+	reg := NewHandoffRegistry()
+	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+
+	handler := vaultCreateSetupHandler(nil, reg, handles)
+	r, err := handler(context.Background(), ToolRequest{Name: compiledVaultCreateToolName})
+	require.NoError(t, err)
+	sc := requireHandoff(t, r) // needs_human (ReasonInteractiveOnly)
+	_, hasHandle := sc["handle"]
+	require.False(t, hasHandle, "not-configured hand-off must not carry a handle")
+	require.Contains(t, sc["detail"], "not configured", "not-configured detail should be surfaced")
+}
