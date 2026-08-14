@@ -193,7 +193,44 @@ func officialToolHandler(handler PinnerToolHandler) mcp.ToolHandler {
 				Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}},
 			}, nil
 		}
+		annotateAppOnHandoff(req.Params.Name, requestCaps(req), &result)
 		return officialToolResult(result), nil
+	}
+}
+
+// annotateAppOnHandoff appends companion-app context to a needs_human tool
+// result for a model-visible tool that has an attached MCP App. Per the MCP
+// Apps spec, the app chrome lives on the tool metadata (ui:// resource) and is
+// fetched by UI-capable hosts; the model always reads content[].text. Without
+// an annotation, a text-only host (e.g. a plain MCP bridge) cannot tell the
+// user that an interactive page exists alongside the raw URL/handle flow. We
+// therefore surface the companion app in the text (and, when the calling
+// client supports MCP Apps, we say the page renders inline). This is additive:
+// non-app tools and non-needs_human results pass through unchanged.
+func annotateAppOnHandoff(toolName string, caps *RequestCaps, result *ToolResult) {
+	if result == nil || result.IsError || result.Elicitation != nil {
+		return
+	}
+	app, ok := appInfoForTool(toolName)
+	if !ok {
+		return
+	}
+	sc, ok := result.StructuredContent.(map[string]any)
+	if !ok {
+		return
+	}
+	if status, _ := sc["status"].(string); status != StatusNeedsHuman {
+		return
+	}
+	if caps != nil && caps.SupportsApps() {
+		result.Text += " A companion interactive page (\"" + app.Title + "\") will render in your client for this step."
+	} else {
+		result.Text += " A companion interactive page (" + app.Title + "; " + app.URI + ") is also available in Apps-capable clients; the URL above is the direct fallback."
+	}
+	// Mirror the app reference into structured content for clients that
+	// consume structuredContent as well as text.
+	sc["app"] = map[string]any{
+		"uri": app.URI, "name": app.Name, "title": app.Title,
 	}
 }
 
@@ -475,6 +512,13 @@ func registerOfficialInvokeTool(srv *mcp.Server, catalog *ToolCatalog, stdioMode
 		if err != nil {
 			return ToolResult{IsError: true, Text: err.Error()}, nil
 		}
+		// invoke_tool dispatches to the inner catalog handler directly, so the
+		// outer officialToolHandler's annotation (keyed on req.Params.Name ==
+		// "invoke_tool") never sees the real tool. Annotate here with the
+		// resolved inner name so companion-app metadata reaches text-only hosts
+		// for non-DirectVisible tools (e.g. vault_create/vault_restore) that are
+		// only reachable through this meta-tool.
+		annotateAppOnHandoff(in.Name, request.Caps, &result)
 		return result, nil
 	})
 
