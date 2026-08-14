@@ -16,11 +16,11 @@ templ accountPasswordPage(token, csrf, action string) {
 			<form method="post" action={ action } autocomplete="off">
 				<input type="hidden" name="csrf" value={ csrf }/>
 				<label for="current_password">Current password</label>
-				<input type="password" name="current_password" id="current_password" required autocomplete="current-password" />
+				<input type="password" name="current_password" id="current_password" required autocomplete="current-password"/>
 				<label for="new_password">New password</label>
-				<input type="password" name="new_password" id="new_password" required autocomplete="new-password" />
+				<input type="password" name="new_password" id="new_password" required autocomplete="new-password"/>
 				<label for="confirm_password">Confirm new password</label>
-				<input type="password" name="confirm_password" id="confirm_password" required autocomplete="new-password" />
+				<input type="password" name="confirm_password" id="confirm_password" required autocomplete="new-password"/>
 				<button type="submit">Change password</button>
 			</form>
 			<div class="seed-foot">One-time page. It expires if unused.</div>
@@ -39,9 +39,9 @@ templ accountEmailPage(token, csrf, action string) {
 			<form method="post" action={ action } autocomplete="off">
 				<input type="hidden" name="csrf" value={ csrf }/>
 				<label for="email">New email</label>
-				<input type="email" name="email" id="email" required autocomplete="email" />
+				<input type="email" name="email" id="email" required autocomplete="email"/>
 				<label for="password">Current password</label>
-				<input type="password" name="password" id="password" required autocomplete="current-password" />
+				<input type="password" name="password" id="password" required autocomplete="current-password"/>
 				<button type="submit">Change email</button>
 			</form>
 			<div class="seed-foot">One-time page. It expires if unused.</div>
