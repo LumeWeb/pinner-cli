@@ -218,5 +218,27 @@ export function createPinMachine(cfg: PinConfig, callTool: CallTool) {
   );
 }
 
-export const PIN_STATES = ["form", "form_error", "submitting", "polling", "ok", "info", "error", "timeout"] as const;
-export type PinState = (typeof PIN_STATES)[number];
+// Pin machine states as a string enum. Values are plain strings (robot3 keys),
+// so enum members compare directly against service.machine.current.
+export enum PinState {
+  Form = "form",
+  FormError = "form_error",
+  Submitting = "submitting",
+  Polling = "polling",
+  Ok = "ok",
+  Info = "info",
+  Error = "error",
+  Timeout = "timeout",
+}
+
+/** All pin states, for iteration / membership checks. */
+export const PIN_STATES: readonly PinState[] = [
+  PinState.Form,
+  PinState.FormError,
+  PinState.Submitting,
+  PinState.Polling,
+  PinState.Ok,
+  PinState.Info,
+  PinState.Error,
+  PinState.Timeout,
+];

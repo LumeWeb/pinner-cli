@@ -181,6 +181,25 @@ export function createFlowMachine(cfg: FlowConfig, callTool: CallTool) {
   );
 }
 
-// Re-exported so the DOM bootstrap and Go tests share one vocabulary.
-export const FLOW_STATES = ["idle", "starting", "polling", "ok", "dead", "error", "timeout"] as const;
-export type FlowState = (typeof FLOW_STATES)[number];
+// Flow machine states as a string enum. Values are plain strings (robot3 keys),
+// so enum members compare directly against service.machine.current.
+export enum FlowState {
+  Idle = "idle",
+  Starting = "starting",
+  Polling = "polling",
+  Ok = "ok",
+  Dead = "dead",
+  Error = "error",
+  Timeout = "timeout",
+}
+
+/** All flow states, for iteration / membership checks. */
+export const FLOW_STATES: readonly FlowState[] = [
+  FlowState.Idle,
+  FlowState.Starting,
+  FlowState.Polling,
+  FlowState.Ok,
+  FlowState.Dead,
+  FlowState.Error,
+  FlowState.Timeout,
+];

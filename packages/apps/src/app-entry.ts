@@ -4,10 +4,10 @@
 // tested there, so these entries stay thin.
 
 import { createMachine, interpret } from "robot3";
-import { createFlowMachine, type CallTool, type FlowConfig, type FlowState } from "@/flow";
+import { createFlowMachine, type CallTool, type FlowConfig, FlowState } from "@/flow";
 import { bootApp } from "@/boot";
 import { APP_VERSION } from "@/version";
-import { byId, setStatus } from "@/dom";
+import { byId, setStatus, StatusClass } from "@/dom";
 
 /** Minimal host bridge; in the real iframe this is the ext-apps App. */
 export interface AppBridge {
@@ -15,11 +15,23 @@ export interface AppBridge {
 }
 
 /** Terminal flow states (no more polling or user action needed until retry). */
-export const FLOW_TERMINAL: readonly FlowState[] = ["ok", "dead", "error", "timeout"];
+export const FLOW_TERMINAL: readonly FlowState[] = [
+  FlowState.Ok,
+  FlowState.Dead,
+  FlowState.Error,
+  FlowState.Timeout,
+];
 
-/** Read the current state of a robot3 service as the typed FlowState union. */
-export function currentFlowState(service: { machine?: { current?: string } }): FlowState {
-  return ((service.machine?.current ?? "") as FlowState);
+/**
+ * Read the current state of a robot3 service as the typed FlowState union.
+ * The service exposes machine.current (a plain string); coerce it onto the
+ * enum at this single boundary so consumers never cast or compare literals.
+ */
+export interface MachineCurrent {
+  machine?: { current?: string };
+}
+export function currentFlowState(service: MachineCurrent): FlowState {
+  return (service.machine?.current ?? FlowState.Idle) as FlowState;
 }
 
 /**
@@ -58,7 +70,7 @@ export function runAppEntry(opts: AppEntryOptions) {
     const urlEl = opts.elements.urlEl;
     const statusEl = opts.elements.statusEl;
 
-    const pending = stateName === "starting" || stateName === "polling";
+    const pending = stateName === FlowState.Starting || stateName === FlowState.Polling;
     const terminal = FLOW_TERMINAL.includes(stateName);
     // During an in-flight run the button is disabled (no concurrent runs). On a
     // terminal state it is re-enabled so the user can click "retry" / start
@@ -66,21 +78,21 @@ export function runAppEntry(opts: AppEntryOptions) {
     if (btn) btn.disabled = pending;
 
     switch (stateName) {
-      case "ok":
-        setStatus(statusEl, "ok", ctx.alreadyDone ? opts.config.alreadyDoneMsg : opts.config.doneMsg);
+      case FlowState.Ok:
+        setStatus(statusEl, StatusClass.Ok, ctx.alreadyDone ? opts.config.alreadyDoneMsg : opts.config.doneMsg);
         break;
-      case "dead":
-        setStatus(statusEl, "error", ctx.detail || opts.config.deadDetailPrefix);
+      case FlowState.Dead:
+        setStatus(statusEl, StatusClass.Error, ctx.detail || opts.config.deadDetailPrefix);
         break;
-      case "error":
-        setStatus(statusEl, "error", opts.config.startErrorMsg);
+      case FlowState.Error:
+        setStatus(statusEl, StatusClass.Error, opts.config.startErrorMsg);
         break;
-      case "timeout":
-        setStatus(statusEl, "info", opts.config.timeoutMsg);
+      case FlowState.Timeout:
+        setStatus(statusEl, StatusClass.Info, opts.config.timeoutMsg);
         break;
-      case "starting":
-      case "polling":
-        setStatus(statusEl, "pending", opts.config.pendingMsg);
+      case FlowState.Starting:
+      case FlowState.Polling:
+        setStatus(statusEl, StatusClass.Pending, opts.config.pendingMsg);
         break;
       default:
         break;

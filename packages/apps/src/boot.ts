@@ -6,7 +6,7 @@
 
 import { connectApp, type AppIdentity } from "./connect";
 import type { CallTool } from "./flow";
-import { setStatus } from "./dom";
+import { setStatus, StatusClass } from "./dom";
 
 /**
  * Connect the app to the host and invoke `main(callTool)` with a working
@@ -24,7 +24,7 @@ export async function bootApp(
   } catch (err) {
     const msg = err && (err as Error).message ? (err as Error).message : String(err);
     if (statusEl) {
-      setStatus(statusEl, "error", "Could not connect to host: " + msg);
+      setStatus(statusEl, StatusClass.Error, "Could not connect to host: " + msg);
     } else {
       console.error("MCP app could not connect to host:", err);
     }

@@ -11,19 +11,24 @@
 //   #out-status the result Status <code>.
 
 import { interpret } from "robot3";
-import { createPinMachine, type PinConfig, type PinContext, type PinState } from "@/pin";
+import { createPinMachine, type PinConfig, type PinContext, PinState } from "@/pin";
 import type { CallTool } from "@/flow";
-import type { AppDefinition } from "@/app-entry";
+import type { AppDefinition, MachineCurrent } from "@/app-entry";
 import { bootApp } from "@/boot";
 import { APP_VERSION } from "@/version";
-import { byId, setStatus } from "@/dom";
+import { byId, setStatus, StatusClass } from "@/dom";
 
 /** Terminal pin states (no more polling or user action needed until reset). */
-const PIN_TERMINAL: readonly PinState[] = ["ok", "info", "error", "timeout"];
+const PIN_TERMINAL: readonly PinState[] = [
+  PinState.Ok,
+  PinState.Info,
+  PinState.Error,
+  PinState.Timeout,
+];
 
 /** Read the current state of a robot3 service as the typed PinState union. */
-function currentPinState(service: { machine?: { current?: string } }): PinState {
-  return (service.machine?.current ?? "") as PinState;
+function currentPinState(service: MachineCurrent): PinState {
+  return (service.machine?.current ?? PinState.Form) as PinState;
 }
 
 /** Element ids referenced by the Go-rendered Create Pin HTML shell. */
@@ -50,7 +55,7 @@ export interface PinElements {
 
 export interface PinRender {
   /** Status-element class+message to stamp; null/null leaves the element alone. */
-  statusState: "pending" | "ok" | "info" | "error" | null;
+  statusState: StatusClass | null;
   statusMsg: string | null;
   /** Whether to refresh the #out-cid readout from ctx.outCid. */
   setOutCid: boolean;
@@ -64,32 +69,32 @@ export interface PinRender {
  */
 export function renderPin(state: PinState, ctx: PinContext, cfg: PinConfig): PinRender {
   switch (state) {
-    case "form_error":
-      return { statusState: "error", statusMsg: cfg.cidRequiredMsg, setOutCid: false, setOutStatus: false };
-    case "submitting":
-      return { statusState: "pending", statusMsg: cfg.pinningPrefix + ctx.cid + " ...", setOutCid: false, setOutStatus: false };
-    case "polling":
+    case PinState.FormError:
+      return { statusState: StatusClass.Error, statusMsg: cfg.cidRequiredMsg, setOutCid: false, setOutStatus: false };
+    case PinState.Submitting:
+      return { statusState: StatusClass.Pending, statusMsg: cfg.pinningPrefix + ctx.cid + " ...", setOutCid: false, setOutStatus: false };
+    case PinState.Polling:
       // First entry right after pins_add ok: the pins_add result readout.
-      if (ctx.fresh) return { statusState: "ok", statusMsg: cfg.scheduledMsg, setOutCid: true, setOutStatus: true };
+      if (ctx.fresh) return { statusState: StatusClass.Ok, statusMsg: cfg.scheduledMsg, setOutCid: true, setOutStatus: true };
       // A transport-error retry shows "Checking pin status...".
-      if (ctx.pollError) return { statusState: "pending", statusMsg: cfg.checkingMsg, setOutCid: false, setOutStatus: false };
+      if (ctx.pollError) return { statusState: StatusClass.Pending, statusMsg: cfg.checkingMsg, setOutCid: false, setOutStatus: false };
       // Normal non-terminal poll: refresh #out-status only, no status message.
       return { statusState: null, statusMsg: null, setOutCid: false, setOutStatus: true };
-    case "ok":
-      return { statusState: "ok", statusMsg: cfg.pinnedMsg, setOutCid: false, setOutStatus: true };
-    case "info":
-      return { statusState: "info", statusMsg: cfg.currentStatusPrefix + ctx.status, setOutCid: false, setOutStatus: true };
-    case "timeout":
+    case PinState.Ok:
+      return { statusState: StatusClass.Ok, statusMsg: cfg.pinnedMsg, setOutCid: false, setOutStatus: true };
+    case PinState.Info:
+      return { statusState: StatusClass.Info, statusMsg: cfg.currentStatusPrefix + ctx.status, setOutCid: false, setOutStatus: true };
+    case PinState.Timeout:
       return {
-        statusState: "info",
+        statusState: StatusClass.Info,
         statusMsg: ctx.pollError
           ? cfg.timeoutMsg
           : cfg.timeoutLastPrefix + (ctx.status || "unknown") + cfg.timeoutLastSuffix,
         setOutCid: false,
         setOutStatus: false,
       };
-    case "error":
-      return { statusState: "error", statusMsg: cfg.failedMsg, setOutCid: true, setOutStatus: true };
+    case PinState.Error:
+      return { statusState: StatusClass.Error, statusMsg: cfg.failedMsg, setOutCid: true, setOutStatus: true };
     default:
       return { statusState: null, statusMsg: null, setOutCid: false, setOutStatus: false };
   }

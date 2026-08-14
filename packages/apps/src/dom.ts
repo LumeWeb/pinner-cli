@@ -3,7 +3,12 @@
 // keep that lookup/write mechanical work in one place.
 
 /** Status readout classes shared by flow and pin apps. */
-export type StatusClass = "ok" | "error" | "info" | "pending";
+export enum StatusClass {
+  Ok = "ok",
+  Error = "error",
+  Info = "info",
+  Pending = "pending",
+}
 
 /**
  * Resolve a typed element by id. Returns `null` when the Go-rendered shell is
