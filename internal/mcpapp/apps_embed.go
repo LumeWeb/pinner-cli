@@ -32,11 +32,12 @@ var bundleNames = map[string]string{
 	"auth-sso":       "appsassets/dist/auth-sso.js",
 	"vault-browser":  "appsassets/dist/vault-browser.js",
 	"pin-list":       "appsassets/dist/pin-list.js",
+	"auth-status":    "appsassets/dist/auth-status.js",
 }
 
 // AppModuleJS returns the embedded, self-contained ESM module source for the
 // named MCP App (one of "pin", "vault-create", "vault-restore", "auth-sso",
-// "vault-browser", "pin-list"), ready to inline into a <script type="module">. An
+// "vault-browser", "pin-list", "auth-status"), ready to inline into a <script type="module">. An
 // unknown name, or a bundle that has not been built by `pnpm build`, is a
 // programming/build error.
 func AppModuleJS(app string) string {
