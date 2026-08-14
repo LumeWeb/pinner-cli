@@ -470,7 +470,7 @@ func dnsRecordsUpdate(d DNSDeps) catalog.Operation {
 		Name:        "dns_records_update",
 		Title:       "Update a DNS record",
 		Summary:     "Update a DNS record",
-		Description: "Update an existing DNS record, identified by the zone's domain plus name and type. Change its content, ttl, or disabled state; fields not provided are left unchanged. Returns the updated record.",
+		Description: "Update an existing DNS record, identified by the zone's domain plus name and type. Change its content, ttl, or disabled state. ttl and disabled are optional: when omitted they are left unchanged. content is required (the API updates content). Returns the updated record.",
 		Category:    "core",
 		Safety:      catalog.SafetyMutate,
 		Interaction: catalog.InteractionAgentSafe,
@@ -480,9 +480,9 @@ func dnsRecordsUpdate(d DNSDeps) catalog.Operation {
 			{Name: "zone", Type: catalog.ArgTypeString, Required: true, Help: "Domain name or numeric zone ID"},
 			{Name: "name", Type: catalog.ArgTypeString, Required: true, Help: "Record name (or @ for apex)"},
 			{Name: "type", Type: catalog.ArgTypeString, Required: true, Help: "Record type"},
-			{Name: "content", Type: catalog.ArgTypeString, Help: "New record content"},
-			{Name: "ttl", Type: catalog.ArgTypeInt, Default: "3600", Help: "New TTL in seconds (default 3600)"},
-			{Name: "disabled", Type: catalog.ArgTypeBool, Default: "false", Help: "New disabled state"},
+			{Name: "content", Type: catalog.ArgTypeString, Required: true, Help: "New record content"},
+			{Name: "ttl", Type: catalog.ArgTypeInt, Help: "New TTL in seconds (omit to leave unchanged)"},
+			{Name: "disabled", Type: catalog.ArgTypeBool, Help: "New disabled state (omit to leave unchanged)"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			svc, svcErr := d.service(input)
@@ -507,18 +507,25 @@ func dnsRecordsUpdate(d DNSDeps) catalog.Operation {
 				return nil, err
 			}
 
-			ttlVal := catalog.IntArg(input, "ttl", 3600)
-			if ttlVal == 0 {
-				ttlVal = 3600
-			}
-			disabled := catalog.BoolArg(input, "disabled", false)
-
 			record := ipfs.RecordRequest{
-				Name:     name,
-				Type:     recordType,
-				Content:  content,
-				Ttl:      &ttlVal,
-				Disabled: &disabled,
+				Name:    name,
+				Type:    recordType,
+				Content: content,
+				// ttl/disabled are omitempty pointers: leave nil when the user
+				// did not provide them so the field is omitted from the wire and
+				// the server leaves it unchanged. TTL is never 0 on the wire, so
+				// a normalized ttl of 0 means "not provided"; disabled presence
+				// is conveyed by the adapter when the caller set the flag.
+				Ttl:      nil,
+				Disabled: nil,
+			}
+			if ttlVal := catalog.IntArg(input, "ttl", 0); ttlVal > 0 {
+				record.Ttl = &ttlVal
+			}
+			if raw, ok := input["disabled"]; ok {
+				if disabledVal, ok := raw.(bool); ok {
+					record.Disabled = &disabledVal
+				}
 			}
 
 			zoneID, err := resolveZoneID(ctx, svc, arg)
@@ -552,7 +559,7 @@ func dnsRecordsDelete(d DNSDeps) catalog.Operation {
 			{Name: "zone", Type: catalog.ArgTypeString, Required: true, Help: "Domain name or numeric zone ID"},
 			{Name: "name", Type: catalog.ArgTypeString, Required: true, Help: "Record name (or @ for apex)"},
 			{Name: "type", Type: catalog.ArgTypeString, Required: true, Help: "Record type"},
-			{Name: "confirm", Type: catalog.ArgTypeBool, Default: "false", Help: "Confirm the destructive operation (CLI maps --force here)"},
+			{Name: "confirm", Type: catalog.ArgTypeBool, Required: true, Help: "Confirm the destructive operation", AgentHelp: "Must be true to delete the record; this is destructive and cannot be undone."},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			if !catalog.BoolArg(input, "confirm", false) {
