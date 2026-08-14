@@ -157,12 +157,12 @@ func TestIPNSKeysDeleteConfirmDefaultSatisfiesSharedRoute(t *testing.T) {
 }
 
 // TestDNSRecordTypeEnum verifies the type Enum is on dns_records_create only
-// (where A/AAAA/CNAME/MX/NS/TXT are the full creation set). get/update/delete
-// must remain free-form because they target existing records that may be other
-// types (SRV, CAA, PTR, SOA, ...) and the DNS service passes type through
-// unvalidated.
+// and covers the full backend-addressable set (A/AAAA/CNAME/MX/NS/TXT plus the
+// extended SRV/CAA/PTR/SOA). get/update/delete remain free-form because they
+// target existing records that may be other types and the DNS service passes
+// type through unvalidated.
 func TestDNSRecordTypeEnum(t *testing.T) {
-	want := []string{"A", "AAAA", "CNAME", "MX", "NS", "TXT"}
+	want := []string{"A", "AAAA", "CNAME", "MX", "NS", "TXT", "SRV", "CAA", "PTR", "SOA"}
 	for _, o := range DNSOperations(DNSDeps{}) {
 		name := o.Name()
 		a := argByName(t, o, "type")
@@ -331,6 +331,43 @@ func TestDNSRecordsDeleteConfirmRequired(t *testing.T) {
 		}
 		if !a.Required || a.Default != "" {
 			t.Errorf("%s confirm must be Required with no Default, got Required=%v Default=%q", name, a.Required, a.Default)
+		}
+	}
+}
+
+// TestDNSRecordExtendedTypeValidation covers the expanded SRV/CAA/SOA/PTR
+// record types: valid content passes, malformed content is rejected.
+func TestDNSRecordExtendedTypeValidation(t *testing.T) {
+	valid := []struct{ typ, content string }{
+		{"SRV", "10 60 5060 sip.example.com"},
+		{"SRV", "0 0 443 _https._tcp.example.com"},
+		{"CAA", "0 issue letsencrypt.org"},
+		{"CAA", "128 issuewild example.com"},
+		{"CAA", "0 iodef mailto:security@example.com"},
+		{"CAA", "0 issue"}, // RFC 8659 empty-value form
+		{"SOA", "ns1.example.com hostmaster.example.com 2024010101 7200 3600 1209600 3600"},
+		{"PTR", "host.example.com"},
+	}
+	for _, tc := range valid {
+		if err := validateDNSRecord(tc.typ, tc.content); err != nil {
+			t.Errorf("validateDNSRecord(%s, %q) unexpected error: %v", tc.typ, tc.content, err)
+		}
+	}
+
+	invalid := []struct{ typ, content string }{
+		{"SRV", "10 60 5060"},                               // missing target
+		{"SRV", "a 60 5060 sip.example.com"},                // non-numeric priority
+		{"SRV", "10 60 0 sip.example.com"},                  // port 0
+		{"CAA", "issue"},                                    // missing flags
+		{"CAA", "256 issue letsencrypt.org"},                // flags > 255
+		{"CAA", "0 bogustag example.com"},                   // unknown tag
+		{"SOA", "ns1.example.com hostmaster.example.com 1"}, // too few fields
+		{"SOA", "ns1.example.com 2024010101 7200"},          // rname not present as domain
+		{"PTR", "not a domain"},
+	}
+	for _, tc := range invalid {
+		if err := validateDNSRecord(tc.typ, tc.content); err == nil {
+			t.Errorf("validateDNSRecord(%s, %q) expected error, got nil", tc.typ, tc.content)
 		}
 	}
 }
