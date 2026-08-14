@@ -1185,3 +1185,105 @@ func containsOp(ops []Operation, name string) bool {
 	}
 	return false
 }
+
+// TestNullableBoolTriState pins the core contract of ArgTypeNullableBool: the
+// Handler input preserves absent, true, and false as three distinct states
+// (nil / &true / &false) through Invoke's normalization, unlike ArgTypeBool
+// which collapses absence to false.
+func TestNullableBoolTriState(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		input map[string]any
+		want  *bool // nil == unset
+	}{
+		{"absent stays nil", map[string]any{}, nil},
+		{"json null stays nil", map[string]any{"flag": nil}, nil},
+		{"explicit true", map[string]any{"flag": true}, ptr(true)},
+		{"explicit false", map[string]any{"flag": false}, ptr(false)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := &captureHandler{}
+			c := NewCatalog()
+			if err := c.Add(NewOperation(OperationSpec{
+				Name: "tristate", Title: "T", Summary: "t",
+				Category: "c", Safety: SafetyMutate,
+				Interaction: InteractionAgentSafe, Visibility: VisibilityModel,
+				Args:    []OperationArg{{Name: "flag", Type: ArgTypeNullableBool}},
+				Handler: h,
+			})); err != nil {
+				t.Fatalf("Add: %v", err)
+			}
+			if _, err := c.Invoke(context.Background(), "tristate", tc.input, ActorModel); err != nil {
+				t.Fatalf("Invoke: %v", err)
+			}
+			got, ok := h.got["flag"].(*bool)
+			if !ok {
+				t.Fatalf("handler flag type = %T, want *bool (got %#v)", h.got["flag"], h.got["flag"])
+			}
+			switch {
+			case tc.want == nil && got != nil:
+				t.Fatalf("want nil, got <&%v>", *got)
+			case tc.want != nil && got == nil:
+				t.Fatalf("want <&%v>, got nil", *tc.want)
+			case tc.want != nil && *got != *tc.want:
+				t.Fatalf("want <&%v>, got <&%v>", *tc.want, *got)
+			}
+		})
+	}
+
+	// BoolArgPtr must surface the same tri-state from a normalized input map.
+	h := &captureHandler{}
+	c := NewCatalog()
+	if err := c.Add(NewOperation(OperationSpec{
+		Name: "tristate2", Title: "T", Summary: "t",
+		Category: "c", Safety: SafetyMutate,
+		Interaction: InteractionAgentSafe, Visibility: VisibilityModel,
+		Args:    []OperationArg{{Name: "flag", Type: ArgTypeNullableBool}},
+		Handler: h,
+	})); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if _, err := c.Invoke(context.Background(), "tristate2", map[string]any{"flag": true}, ActorModel); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got := BoolArgPtr(h.got, "flag"); got == nil || !*got {
+		t.Fatalf("BoolArgPtr(true) = %v, want &true", got)
+	}
+	if got := BoolArgPtr(map[string]any{}, "flag"); got != nil {
+		t.Fatalf("BoolArgPtr(absent) = %v, want nil", got)
+	}
+}
+
+// TestNullableBoolSchema verifies the nullable-bool arg emits a schema type of
+// ["boolean","null"] and stays out of the required set (it is optional).
+func TestNullableBoolSchema(t *testing.T) {
+	args := []OperationArg{
+		{Name: "hosting", Type: ArgTypeNullableBool},
+		{Name: "name", Type: ArgTypeString, Required: true},
+	}
+	raw := inputSchemaFromArgs("n", args)
+	var sch struct {
+		Type       string                     `json:"type"`
+		Required   []string                   `json:"required"`
+		Properties map[string]json.RawMessage `json:"properties"`
+	}
+	if err := json.Unmarshal(raw, &sch); err != nil {
+		t.Fatalf("unmarshal schema: %v", err)
+	}
+	var prop struct {
+		Type []string `json:"type"`
+	}
+	if err := json.Unmarshal(sch.Properties["hosting"], &prop); err != nil {
+		t.Fatalf("unmarshal hosting prop: %v", err)
+	}
+	if len(prop.Type) != 2 || prop.Type[0] != "boolean" || prop.Type[1] != "null" {
+		t.Fatalf("hosting type = %v, want [boolean null]", prop.Type)
+	}
+	for _, r := range sch.Required {
+		if r == "hosting" {
+			t.Fatalf("nullable bool must not be required")
+		}
+	}
+}
+
+func ptr(b bool) *bool { return &b }

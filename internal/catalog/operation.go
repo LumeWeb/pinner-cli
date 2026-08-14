@@ -50,6 +50,13 @@ const (
 	ArgTypeString ArgType = iota
 	// ArgTypeBool is a boolean argument.
 	ArgTypeBool
+	// ArgTypeNullableBool is a tri-state boolean argument: its value may be
+	// absent (nil), true, or false, and the Handler receives a *bool so it can
+	// distinguish "omitted" from "explicitly false". Unlike ArgTypeBool — whose
+	// absence is collapsed to false by normalizeInputDefaults — a nullable bool
+	// preserves the absent state, which operations need when omission means
+	// "leave unchanged" or "use the backend default" rather than "false".
+	ArgTypeNullableBool
 	// ArgTypeInt is an integer argument.
 	ArgTypeInt
 	// ArgTypeFloat is a floating-point argument.

@@ -58,6 +58,22 @@ func BoolArg(input map[string]any, key string, def bool) bool {
 	return def
 }
 
+// BoolArgPtr reads a nullable-bool (ArgTypeNullableBool) argument as a *bool,
+// preserving the three states: nil when omitted or null, and &true / &false for
+// explicit values. Handlers use it when omission is meaningful (e.g. "leave
+// unchanged" on update, or "use the backend default" on create).
+func BoolArgPtr(input map[string]any, key string) *bool {
+	if v, ok := input[key].(*bool); ok {
+		return v
+	}
+	// Tolerate a plain bool that skipped the nullable coercion (e.g. a caller
+	// that builds input without running normalizeInputDefaults).
+	if b, ok := input[key].(bool); ok {
+		return &b
+	}
+	return nil
+}
+
 // StrSliceArg reads a []string slice arg from input (values may arrive as []any,
 // e.g. after JSON decoding). Returns nil when absent or of an unexpected type.
 func StrSliceArg(input map[string]any, key string) []string {
