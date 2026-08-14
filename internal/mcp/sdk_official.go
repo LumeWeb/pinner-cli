@@ -316,6 +316,12 @@ func registerOfficialSearchTools(srv *mcp.Server, catalog *ToolCatalog) error {
 		if isOnboardingQuery(strings.ToLower(strings.TrimSpace(in.Query))) && in.Category == "" {
 			res := catalog.Onboarding()
 			res.Hint = "These are the primary start-here tools for the four flows (auth, vault_create, vault_restore, pins). Call agent_guide for the full ordered chains, or search with category=core|account|vault|ipns|operations|admin (or category=wizard for wizards) to browse a specific domain."
+			// Honor the documented limit contract on the onboarding path too:
+			// cap the result set to in.Limit when it is > 0.
+			if in.Limit > 0 && len(res.Tools) > in.Limit {
+				res.Tools = res.Tools[:in.Limit]
+				res.Total = len(res.Tools)
+			}
 			data, err = json.Marshal(res)
 		} else {
 			tools := catalog.Search(in.Query, in.Category, in.Limit)

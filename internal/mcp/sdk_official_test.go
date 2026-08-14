@@ -220,6 +220,22 @@ func TestOfficialSearchToolsOnboardingEnvelope(t *testing.T) {
 			require.True(t, isPrimaryTool(s.Name), "onboarding (query %q) must only return primary tools, got %q", q, s.Name)
 		}
 	}
+
+	// The documented limit contract must hold on the onboarding path too.
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "search_tools",
+		Arguments: map[string]any{"query": "", "limit": 1},
+	})
+	require.NoError(t, err)
+	require.False(t, res.IsError)
+	text := requireText(t, res)
+	var limited struct {
+		Tools []ToolSummary `json:"tools"`
+		Total int           `json:"total"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(text), &limited))
+	require.Len(t, limited.Tools, 1, "onboarding limit=1 must return exactly 1 tool")
+	require.Equal(t, 1, limited.Total)
 }
 
 func TestOfficialSearchToolsKeywordEnvelopeNoHint(t *testing.T) {
