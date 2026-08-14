@@ -104,6 +104,35 @@ describe("auth-status machine", () => {
     expect(ctx().errorMsg).toBe("");
     expect(ctx().status?.authenticated).toBe(true);
   });
+
+  it("a server error result (isError with structuredContent.error, no top-level error) lands in error", async () => {
+    // Regression: real server/SDK error results flag isError and carry the
+    // message inside structuredContent ({status:"error",error:<code>}), with no
+    // top-level .error string. The machine must treat them as failures rather
+    // than silently rendering a readout.
+    boot();
+    service.send({ type: "refresh" });
+    await until(service, () => gate.length === 1);
+    gate[0].resolve({
+      isError: true,
+      structuredContent: { status: "error", error: "not authenticated" },
+    } as ToolResult);
+
+    await untilState(service, AuthStatusState.Error);
+    expect(ctx().errorMsg).toContain("not authenticated");
+    expect(ctx().status).toBeNull();
+  });
+
+  it("a bare isError result with no message falls back to a generic error", async () => {
+    boot();
+    service.send({ type: "refresh" });
+    await until(service, () => gate.length === 1);
+    gate[0].resolve({ isError: true } as ToolResult);
+
+    await untilState(service, AuthStatusState.Error);
+    expect(ctx().errorMsg).toContain("could not read account status");
+    expect(ctx().status).toBeNull();
+  });
 });
 
 describe("auth-status render", () => {

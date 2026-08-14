@@ -15,6 +15,7 @@
 
 import { createMachine, invoke, reduce, state, transition } from "robot3";
 import type { CallTool, ToolResult } from "./flow";
+import { rejectToError, toolError } from "./flow";
 
 export interface AuthStatusConfig {
   /** MCP tool returning the auth status envelope ({status:"ok", value:Status}). */
@@ -100,13 +101,10 @@ export function createAuthStatusMachine(cfg: AuthStatusConfig, callTool: CallToo
   // robot3 fires its native `error` event and the machine lands deterministically
   // in the error state.
   const load = async (_ctx: AuthStatusContext): Promise<{ res: ToolResult }> => {
-    const res = await callTool({ name: cfg.statusTool, arguments: {} }).then(
-      (r) => r,
-      (e) => ({ isError: true, error: String(e) } as ToolResult),
-    );
-    const err = res && res.isError && typeof (res as { error?: unknown }).error === "string"
-      ? ((res as { error: string }).error || "")
-      : "";
+    const res = await callTool({ name: cfg.statusTool, arguments: {} }).then((r) => r, rejectToError);
+    // Any result flagged isError is a failure; surface it rather than render a
+    // misleading readout (see toolError for message extraction).
+    const err = toolError(res, "could not read account status");
     if (err) {
       throw new Error(err);
     }
