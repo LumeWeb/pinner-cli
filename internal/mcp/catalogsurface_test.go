@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -100,7 +101,11 @@ func TestCompiledReadOpDispatchesThroughInvokeGate(t *testing.T) {
 	require.Contains(t, res.Text, "ran:vault.get")
 	sc := res.StructuredContent.(map[string]any)
 	require.Equal(t, StatusOk, sc["status"])
-	require.Equal(t, "ran:vault.get", sc["value"])
+	raw, ok := sc["value"].(json.RawMessage)
+	require.True(t, ok, "value should be a json.RawMessage")
+	var val string
+	require.NoError(t, json.Unmarshal(raw, &val))
+	require.Equal(t, "ran:vault.get", val)
 }
 
 func TestCompiledDestructiveOpReturnsNeedsHumanForModelActor(t *testing.T) {

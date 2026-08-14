@@ -82,19 +82,18 @@ func DispatchCatalogOp(ctx context.Context, cat catalog.Catalog, actor catalog.A
 }
 
 // resultToToolResult converts the typed (any) result returned by the catalog
-// gate into an SDK-neutral ToolResult. The single canonical form for a
-// successful result is a flat object whose "status" is the transport code
-// ("ok") and whose remaining keys are the result's own fields, e.g.
+// gate into an SDK-neutral ToolResult. Every successful result is wrapped in
+// the single canonical envelope {"status":"ok","value":<result>}, regardless
+// of whether the result is an object, array, or scalar, e.g.
 //
-//	auth_status -> {"status":"ok","authenticated":true,"email":"a@b.com"}
+//	auth_status -> {"status":"ok","value":{"authenticated":true,...}}
+//	pins_list   -> {"status":"ok","value":[...] }
+//	auth_login  -> {"status":"ok","value":{"status":"logged_in","message":...}}
 //
-// The Text channel carries the same JSON so both content forms agree (one
-// canonical shape, not a conflated pair). The "value" wrapper is only used
-// when the result cannot be flattened cleanly: a scalar (string) result, a
-// non-object, or a result that already carries its own top-level "status"
-// field (e.g. auth_login returns {"status":"logged_in",...}) — promoting that
-// result field would collide with the transport "status" the handoff logic
-// reads, so it stays nested under "value".
+// Keeping the result under "value" gives every tool the same envelope shape,
+// and lets a result carry its own "status" field (e.g. auth_login ->
+// {"status":"logged_in"}) without colliding with the transport "status":"ok".
+// The Text channel holds the same JSON as StructuredContent so both agree.
 func resultToToolResult(result any) ToolResult {
 	switch v := result.(type) {
 	case ToolResult:
@@ -105,43 +104,25 @@ func resultToToolResult(result any) ToolResult {
 		}
 		return ToolResult{Text: `{"status":"ok"}`, StructuredContent: map[string]any{"status": StatusOk}}
 	}
-	if s, ok := result.(string); ok {
-		sc := map[string]any{"status": StatusOk, "value": s}
-		b, _ := json.Marshal(sc)
-		return ToolResult{Text: string(b), StructuredContent: sc}
-	}
 	b, err := json.Marshal(result)
 	if err != nil {
 		return ToolResult{IsError: true, Text: "unable to serialize catalog result"}
 	}
-	var m map[string]any
 	// A marshaled "null" is a genuine empty result: emit the bare envelope.
 	if string(b) == "null" {
 		sc := map[string]any{"status": StatusOk}
 		jb, _ := json.Marshal(sc)
 		return ToolResult{Text: string(jb), StructuredContent: sc}
 	}
-	if err := json.Unmarshal(b, &m); err != nil || m == nil {
-		// Non-object (scalar number/bool, top-level array): keep the value under
-		// the envelope rather than dropping it to a bare {"status":"ok"}.
-		sc := map[string]any{"status": StatusOk, "value": json.RawMessage(b)}
-		return ToolResult{Text: string(b), StructuredContent: sc}
+	// Every non-empty result lives under "value" inside the same {status, value}
+	// envelope, uniformly for objects, arrays, and scalars.
+	var value any
+	if json.Valid(b) {
+		value = json.RawMessage(b)
 	}
-	// A result that already carries a top-level "status" is self-enveloped:
-	// promote it as-is to avoid colliding with the transport status.
-	if _, has := m["status"]; has {
-		sc := map[string]any{"status": StatusOk, "value": m}
-		jb, _ := json.Marshal(sc)
-		return ToolResult{Text: string(jb), StructuredContent: sc}
-	}
-	// Flatten the result's fields next to the transport status: one canonical
-	// flat object, and Text carries the identical JSON.
-	flat := map[string]any{"status": StatusOk}
-	for k, v := range m {
-		flat[k] = v
-	}
-	fb, _ := json.Marshal(flat)
-	return ToolResult{Text: string(fb), StructuredContent: flat}
+	sc := map[string]any{"status": StatusOk, "value": value}
+	jb, _ := json.Marshal(sc)
+	return ToolResult{Text: string(jb), StructuredContent: sc}
 }
 
 // cleanMessage returns a single-line, non-empty error message for surfacing as
