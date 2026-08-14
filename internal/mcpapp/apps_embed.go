@@ -3,6 +3,7 @@ package mcpapp
 import (
 	"embed"
 	"io/fs"
+	"regexp"
 	"strconv"
 
 	"go.lumeweb.com/pinner-cli/build"
@@ -50,13 +51,33 @@ func AppModuleJS(app string) string {
 	return string(data)
 }
 
+// semverRaw matches a bare semver core (MAJOR.MINOR.PATCH with optional leading
+// "v", optional -prerelease/+build suffix). Anything else (e.g. "develop",
+// commit hashes) is not valid for the MCP ui/initialize handshake.
+var semverRaw = regexp.MustCompile(`^v?([0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)$`)
+
+// semverNormalize coerces the raw build version into a value the MCP ext-apps
+// host accepts as a valid semver app version. A version already shaped as
+// MAJOR.MINOR.PATCH (optionally "v"-prefixed) passes through (v stripped); any
+// non-semver value (e.g. "develop" when built without ldflags) falls back to
+// "1.0.0" so the handshake never advertises an invalid version and leaves the
+// app inert.
+func semverNormalize(raw string) string {
+	if m := semverRaw.FindStringSubmatch(raw); m != nil {
+		return m[1]
+	}
+	return "1.0.0"
+}
+
 // AppVersionGlobal returns a module-scope assignment that exposes the CLI's
 // build version (stamped by ldflags via build.Default.GetVersion; "develop"
 // when unset) to the bundled app. The app advertises this as its version
 // during the ui/initialize handshake, so apps inherit the binary version
-// instead of carrying a hardcoded per-app version.
+// instead of carrying a hardcoded per-app version. The value is normalized to
+// valid semver so the ext-apps host never rejects the handshake on an
+// un-stamped build.
 func AppVersionGlobal() string {
-	return "window.__PINNER_CLI_VERSION__ = " + strconv.Quote(build.Default.GetVersion()) + ";"
+	return "window.__PINNER_CLI_VERSION__ = " + strconv.Quote(semverNormalize(build.Default.GetVersion())) + ";"
 }
 
 // AppModule returns the inline module script for an MCP App: the embedded,

@@ -86,3 +86,28 @@ func TestAppModuleInjectsVersionGlobal(t *testing.T) {
 		t.Errorf("AppModule output is not self-contained")
 	}
 }
+
+// TestSemverNormalize pins that advertised app versions are always valid semver
+// (the ext-apps host rejects non-semver), passing through real build versions
+// and falling back to "1.0.0" for un-stamped/non-semver values like "develop".
+func TestSemverNormalize(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"v0.2.1", "0.2.1"},
+		{"0.2.1", "0.2.1"},
+		{"1.0.0", "1.0.0"},
+		{"v1.2.3-rc.1", "1.2.3-rc.1"},
+		{"v1.2.3+build.5", "1.2.3+build.5"},
+		{"develop", "1.0.0"},
+		{"", "1.0.0"},
+		{"abcdef1234567890", "1.0.0"}, // un-stamped dev/commit-ish value
+		{"master", "1.0.0"},
+	}
+	for _, c := range cases {
+		if got := semverNormalize(c.in); got != c.want {
+			t.Errorf("semverNormalize(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
