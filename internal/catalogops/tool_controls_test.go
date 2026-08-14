@@ -344,6 +344,7 @@ func TestDNSRecordExtendedTypeValidation(t *testing.T) {
 		{"CAA", "0 issue letsencrypt.org"},
 		{"CAA", "128 issuewild example.com"},
 		{"CAA", "0 iodef mailto:security@example.com"},
+		{"CAA", "0 issue"}, // RFC 8659 empty-value form
 		{"SOA", "ns1.example.com hostmaster.example.com 2024010101 7200 3600 1209600 3600"},
 		{"PTR", "host.example.com"},
 	}
@@ -357,7 +358,7 @@ func TestDNSRecordExtendedTypeValidation(t *testing.T) {
 		{"SRV", "10 60 5060"},                               // missing target
 		{"SRV", "a 60 5060 sip.example.com"},                // non-numeric priority
 		{"SRV", "10 60 0 sip.example.com"},                  // port 0
-		{"CAA", "0 issue"},                                  // missing value
+		{"CAA", "issue"},                                    // missing flags
 		{"CAA", "256 issue letsencrypt.org"},                // flags > 255
 		{"CAA", "0 bogustag example.com"},                   // unknown tag
 		{"SOA", "ns1.example.com hostmaster.example.com 1"}, // too few fields
