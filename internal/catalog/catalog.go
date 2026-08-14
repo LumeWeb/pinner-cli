@@ -94,6 +94,13 @@ var ErrConfirmRequired = errors.New("confirmation required")
 // rather than treating it as a failure.
 var ErrHumanRequired = errors.New("operation requires a human")
 
+// ErrSelector is a sentinel signal that a SelectionGroup resolved to the wrong
+// number of selected members. A SelectionGroup requires exactly one member to
+// be selected; zero or more-than-one is an ambiguous or incomplete selector
+// (e.g. pins_rm given both cids and all=true, or neither). Callers detect it
+// with errors.Is(err, ErrSelector) to surface a selector contract violation.
+var ErrSelector = errors.New("selector group must select exactly one member")
+
 // SensitiveSchemaKey is the JSON Schema property marking an arg whose value
 // must be redacted (logs, echoed tool calls) on the model surface. It matches
 // OperationArg.Sensitive, which the CLI surfaces in help text. Marking it in
@@ -778,7 +785,83 @@ func normalizeInputDefaults(args []OperationArg, input map[string]any) (map[stri
 			}
 		}
 	}
+	if err := enforceSelectionGroups(args, out); err != nil {
+		return nil, err
+	}
 	return out, nil
+}
+
+// enforceSelectionGroups validates that every non-empty SelectionGroup has at
+// most one selected member. Selection is decided per-type against the
+// already-normalized values: a bool counts only when true (a default-filled or
+// explicit false is NOT a selection — a mode is on/absent, never a data arg), a
+// slice counts only when non-empty, and a numeric/scalar counts only when
+// non-zero/non-empty. More than one selected member is a selector-contract
+// violation surfaced as ErrSelector — the destructive-ambiguity direction that
+// a frontend cannot safely resolve (e.g. pins_rm given both cids and all=true,
+// where the handler would otherwise silently unpin-all). The empty direction
+// (zero selected) is intentionally NOT rejected here: it is an incomplete input
+// the operation's own handler validates with a descriptive message, so the gate
+// does not shadow that. Running here (inside normalizeInputDefaults) means both
+// Catalog.Invoke and direct NormalizeOperationInput callers share one
+// enforcement point.
+func enforceSelectionGroups(args []OperationArg, out map[string]any) error {
+	// Group members by SelectionGroup, preserving stable order.
+	groups := map[string][]OperationArg{}
+	var order []string
+	for _, a := range args {
+		if a.SelectionGroup == "" {
+			continue
+		}
+		if _, seen := groups[a.SelectionGroup]; !seen {
+			order = append(order, a.SelectionGroup)
+		}
+		groups[a.SelectionGroup] = append(groups[a.SelectionGroup], a)
+	}
+	for _, g := range order {
+		var selected []string
+		for _, a := range groups[g] {
+			if selectorMemberSelected(a, out[a.Name]) {
+				selected = append(selected, a.Name)
+			}
+		}
+		if len(selected) > 1 {
+			return fmt.Errorf("%w: group %q selected %v", ErrSelector, g, selected)
+		}
+	}
+	return nil
+}
+
+// selectorMemberSelected reports whether a normalized selector member value
+// counts as selected for its ArgType. Bool requires the value to be true (a
+// false is not a selection), slice requires non-empty, and string/numeric/scalar
+// require a present, non-zero/non-empty value (a default-filled zero is not a
+// selection). time.Duration is a named int64 so its own case is required — it
+// never matches the int64 type-switch arm.
+func selectorMemberSelected(a OperationArg, value any) bool {
+	switch a.Type {
+	case ArgTypeBool:
+		b, _ := value.(bool)
+		return b
+	case ArgTypeStringSlice:
+		s, _ := value.([]string)
+		return len(s) > 0
+	default: // String, Int, Float, Duration, etc.
+		switch v := value.(type) {
+		case string:
+			return v != ""
+		case int:
+			return v != 0
+		case int64:
+			return v != 0
+		case float64:
+			return v != 0
+		case time.Duration:
+			return v != 0
+		default:
+			return value != nil
+		}
+	}
 }
 
 // defaultValue parses an OperationArg's string Default into the Go value of the
