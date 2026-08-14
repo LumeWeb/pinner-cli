@@ -42,29 +42,6 @@ func renderPinCreateAppHTML() string {
 	return renderMcpAppDoc("Create a Pin", pinCreateAppForm(), pinAppModule(extAppsClientBase64()))
 }
 
-// attachPinAppMeta wires pins_add (the compiler-backed pin-creation operation
-// from the operation catalog) to its ui:// app resource so a UI-capable host
-// renders the create-pin view for it. Plain hosts keep the tool's text result.
-// The entry's existing metadata is extended. pins_add is the curated pin tool
-// on the compiler surface.
-func attachPinAppMeta(catalog *ToolCatalog) error {
-	entry, ok := catalog.Get("pins_add")
-	if !ok {
-		return fmt.Errorf("pins_add not in catalog")
-	}
-	meta, err := marshalToolMeta(AppToolMeta{ResourceURI: PinCreateAppURI})
-	if err != nil {
-		return err
-	}
-	if entry.Meta == nil {
-		entry.Meta = map[string]any{}
-	}
-	for k, v := range meta {
-		entry.Meta[k] = v
-	}
-	return nil
-}
-
 // pinStatusDescriptor builds the app-only pin status helper. It is visible to
 // the app only (never the model) and shares the pin create view; the pin app
 // calls it via callServerTool to poll until a terminal state.
@@ -90,10 +67,11 @@ func pinStatusDescriptor(pins PinningProvider) ToolDescriptor {
 	}
 }
 
-// RegisterPinApp wires the complete "Create a Pin" MCP App:
-//   - attaches the ui:// view to the curated pins_add tool,
-//   - registers the ui://pins/create.html HTML resource,
-//   - registers the app-only pin_status polling helper.
+// RegisterPinApp wires the complete "Create a Pin" MCP App: attaches the
+// ui:// view to the curated pins_add tool, registers the ui://pins/create.html
+// HTML resource, and registers the app-only pin_status polling helper. It is
+// expressed through the shared RegisterAppView lib layer so the pin app stays
+// a single declarative spec rather than hand-written registration plumbing.
 //
 // Returns an error if the pin tool is missing from the catalog. App wiring is
 // additive: existing curated tools and plain-host text results are preserved.
@@ -108,31 +86,16 @@ func RegisterPinApp(srv *mcp.Server, catalog *ToolCatalog, pins PinningProvider)
 		return fmt.Errorf("nil pinning provider")
 	}
 
-	if err := attachPinAppMeta(catalog); err != nil {
-		return err
-	}
-
-	if err := RegisterAppResource(srv, AppResource{
-		URI:         PinCreateAppURI,
-		Name:        "create-pin",
-		Title:       "Create a Pin",
-		Description: "Create a pin for an existing CID via the Pinner.xyz API.",
-		Meta: AppResourceMeta{
-			PrefersBorder: boolPtr(true),
-		},
-		HTML: renderPinCreateAppHTML(),
-	}); err != nil {
-		return err
-	}
-
-	if err := RegisterAppTool(srv, pinStatusDescriptor(pins), AppToolMeta{
-		ResourceURI: PinCreateAppURI,
-		Visibility:  []ToolVisibility{ToolVisibilityApp},
-	}); err != nil {
-		return err
-	}
-
-	return nil
+	return RegisterAppView(srv, catalog, AppView{
+		URI:           PinCreateAppURI,
+		Name:          "create-pin",
+		Title:         "Create a Pin",
+		Description:   "Create a pin for an existing CID via the Pinner.xyz API.",
+		HTML:          renderPinCreateAppHTML(),
+		PrefersBorder: true,
+		AttachTo:      []string{"pins_add"},
+		Helpers:       []ToolDescriptor{pinStatusDescriptor(pins)},
+	})
 }
 
 // boolPtr returns a pointer to b (nil-safe convenience for optional flags).
