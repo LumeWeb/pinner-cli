@@ -165,12 +165,77 @@ func (c *ToolCatalog) Entries() []*ToolEntry {
 	return entries
 }
 
-// Search finds tools matching the query. The matching strategy is layered:
+// isOnboardingQuery reports whether a query selects the onboarding listing.
+// Both an empty query and the literal "help" keyword do. It is the single
+// routing predicate the search_tools handler uses to pick between the search
+// surface (keyword matching) and the onboarding surface (curated start-here
+// listing).
+func isOnboardingQuery(query string) bool {
+	return query == "" || query == "help"
+}
+
+// SearchResult is the wire envelope for the keyword-search path of the
+// search_tools meta-tool: the matching tools plus their count.
+type SearchResult struct {
+	Tools []ToolSummary `json:"tools"`
+	Total int           `json:"total"`
+}
+
+// OnboardingResult is the wire envelope for the onboarding path (empty/help
+// query, no category): the curated primary start-here tools matching the
+// agent_guide flows, plus a hint pointing the agent onward.
+type OnboardingResult struct {
+	Tools []ToolSummary `json:"tools"`
+	Total int           `json:"total"`
+	// Hint is presented guidance for the onboarding listing: where to get the
+	// full flows (agent_guide) and how to browse a specific domain (category).
+	Hint string `json:"hint,omitempty"`
+}
+
+// Onboarding returns the curated "start here" listing for an empty/help
+// search: exactly the tool steps in the four agent_guide primary flows (auth,
+// vault_create, vault_restore, pins), so a fresh agent sees a bounded set to
+// begin with instead of the full catalog dump. It is the onboarding surface,
+// distinct from Search; the handler routes to it via isOnboardingQuery when
+// no category filter is given.
+func (c *ToolCatalog) Onboarding() OnboardingResult {
+	var tools []ToolSummary
+	c.mu.RLock()
+	for _, t := range c.tools {
+		if t.Interaction == InteractionInteractive {
+			continue
+		}
+		if t.Category == CategoryWizard {
+			continue
+		}
+		if !isPrimaryTool(t.Name) {
+			continue
+		}
+		tools = append(tools, ToolSummary{
+			Name:        t.Name,
+			Description: t.Description,
+			Category:    t.Category,
+			Interaction: t.Interaction,
+		})
+	}
+	c.mu.RUnlock()
+
+	sort.Slice(tools, func(i, j int) bool {
+		if tools[i].Category != tools[j].Category {
+			return tools[i].Category < tools[j].Category
+		}
+		return tools[i].Name < tools[j].Name
+	})
+
+	return OnboardingResult{Tools: tools, Total: len(tools)}
+}
+
+// Search finds tools matching a non-empty keyword query. This is the pure
+// keyword-search surface; onboarding (empty/help) is handled by Onboarding.
 //
-//  1. Empty query (or "help") returns a bounded, ordered result: the curated
-//     primary tools first (auth/vault/pins flows), then the remainder sorted
-//     by category then name. This is an onboarding listing, not a raw dump.
-//  2. Non-empty query ranks each tool:
+// The matching strategy is layered:
+//
+//  1. Each tool is ranked:
 //     0 = exact name match
 //     1 = name starts with query
 //     2 = name contains query
@@ -180,6 +245,10 @@ func (c *ToolCatalog) Entries() []*ToolEntry {
 //     are token-based (the query must appear as its own word, so "auth" does
 //     not match "authenticated") and capped so name hits always dominate.
 //
+// An empty query with an explicit category browses that whole category
+// (every tools in it matches, ordered by category then name); the handler
+// routes pure onboarding (empty/help, no category) to Onboarding instead.
+//
 // Wizard tools (CategoryWizard) are excluded by default so an agent cannot
 // stumble onto an interactive flow; they are only returned when category is
 // explicitly "wizard". limit caps the number of results returned (<=0 means
@@ -188,9 +257,6 @@ func (c *ToolCatalog) Entries() []*ToolEntry {
 // If category is non-empty, only tools in that category are considered.
 func (c *ToolCatalog) Search(query, category string, limit int) []ToolSummary {
 	query = strings.ToLower(strings.TrimSpace(query))
-	// Both an empty query and the explicit "help" keyword trigger the
-	// onboarding listing (primary tools first) rather than keyword matching.
-	onboarding := query == "" || query == "help"
 
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -223,11 +289,6 @@ func (c *ToolCatalog) Search(query, category string, limit int) []ToolSummary {
 			Interaction: t.Interaction,
 		}
 
-		if onboarding {
-			results = append(results, ranked{summary: summary, rank: 0})
-			continue
-		}
-
 		nameLower := strings.ToLower(t.Name)
 		descLower := strings.ToLower(t.Description)
 		rank := matchRank(query, nameLower, descLower)
@@ -237,17 +298,6 @@ func (c *ToolCatalog) Search(query, category string, limit int) []ToolSummary {
 	}
 
 	sort.Slice(results, func(i, j int) bool {
-		// Onboarding (empty/help) listing: put primary tools ahead of the rest.
-		if onboarding {
-			pi, pj := isPrimaryTool(results[i].summary.Name), isPrimaryTool(results[j].summary.Name)
-			if pi != pj {
-				return pi
-			}
-			if results[i].summary.Category != results[j].summary.Category {
-				return results[i].summary.Category < results[j].summary.Category
-			}
-			return results[i].summary.Name < results[j].summary.Name
-		}
 		if results[i].rank != results[j].rank {
 			return results[i].rank < results[j].rank
 		}
@@ -268,13 +318,15 @@ func (c *ToolCatalog) Search(query, category string, limit int) []ToolSummary {
 }
 
 // isPrimaryTool reports whether a tool belongs to the curated "start here"
-// set surfaced ahead of the full listing on an empty/help search. These are
-// the primary flows an agent actually starts from: auth, vault, and pins.
+// set surfaced on an empty/help search. It mirrors exactly the tool steps in
+// the four agent_guide primary flows (auth, vault_create, vault_restore,
+// pins), so a fresh agent sees the tools it needs to begin.
 func isPrimaryTool(name string) bool {
 	switch name {
 	case "auth_status", "auth_sso", "auth_resume",
 		"vault_create", "vault_create_resume", "vault_status",
-		"pins_add", "pins_list", "pins_status":
+		"vault_restore", "vault_restore_resume",
+		"pins_add", "pins_list", "pins_status", "pins_rm":
 		return true
 	}
 	return false

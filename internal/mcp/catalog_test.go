@@ -230,29 +230,59 @@ func TestSearchHidesWizardsByDefault(t *testing.T) {
 	}
 }
 
-// TestSearchEmptyQueryPrimaryFirst verifies an empty query (or "help")
-// returns an onboarding listing with primary tools ahead of the rest.
-func TestSearchEmptyQueryPrimaryFirst(t *testing.T) {
+// TestOnboardingPrimaryOnly verifies the onboarding surface returns ONLY the
+// curated primary start-here tools (matching the agent_guide flows), not the
+// full catalog dump. account_status is in the seed catalog but is not a
+// primary flow tool, so it must be excluded.
+func TestOnboardingPrimaryOnly(t *testing.T) {
 	c := seedDiscoveryCatalog()
 
-	for _, q := range []string{"", "help"} {
-		summaries := c.Search(q, "", 0)
-		require.NotEmpty(t, summaries, "onboarding listing must not be empty for query %q", q)
+	res := c.Onboarding()
+	require.NotEmpty(t, res.Tools, "onboarding listing must not be empty")
+	assert.Equal(t, res.Total, len(res.Tools))
 
-		// auth_sso is a primary tool and must appear before account_status
-		// (a non-primary core tool) regardless of alphabetic order.
-		idxSSO, idxStatus := -1, -1
-		for i, s := range summaries {
-			switch s.Name {
-			case "auth_sso":
-				idxSSO = i
-			case "account_status":
-				idxStatus = i
-			}
-		}
-		require.GreaterOrEqual(t, idxSSO, 0, "auth_sso should be in the onboarding listing")
-		require.GreaterOrEqual(t, idxStatus, 0, "account_status should be in the onboarding listing")
-		assert.Less(t, idxSSO, idxStatus, "primary tool auth_sso must rank before non-primary account_status (query %q)", q)
+	// Every returned tool must be a primary tool.
+	for _, s := range res.Tools {
+		assert.True(t, isPrimaryTool(s.Name), "onboarding must only return primary tools, got %q", s.Name)
+	}
+
+	// The seed catalog's primary tools (auth_sso, auth_resume, pins_add) must
+	// all be present; the non-primary account_status must not be.
+	names := make([]string, 0, len(res.Tools))
+	for _, s := range res.Tools {
+		names = append(names, s.Name)
+	}
+	assert.Contains(t, names, "auth_sso")
+	assert.Contains(t, names, "auth_resume")
+	assert.Contains(t, names, "pins_add")
+	assert.NotContains(t, names, "account_status", "non-primary account_status must not appear in onboarding")
+}
+
+// TestSearchEmptyQueryIsRaw verifies Search is now a pure matcher: an empty
+// query with no category is the raw search surface (it does NOT special-case
+// onboarding), so it returns the full non-hidden catalog.
+func TestSearchEmptyQueryIsRaw(t *testing.T) {
+	c := seedDiscoveryCatalog()
+
+	summaries := c.Search("", "", 0)
+	// Seed has 7 tools; the interactive one and the two wizards are hidden, so
+	// an empty raw search returns the 4 non-hidden tools across categories.
+	require.Len(t, summaries, 4, "empty raw search should return all non-hidden tools")
+}
+
+// TestSearchCategoryStillBrowsesWholeCategory verifies that an empty query with
+// an explicit category filter still returns the whole category (not just the
+// primary subset), so category browsing via empty query keeps working.
+func TestSearchCategoryStillBrowsesWholeCategory(t *testing.T) {
+	c := seedDiscoveryCatalog()
+
+	// Category "account" holds auth_sso, auth_resume (primary) and the
+	// interactive payments_card_interactive (hidden). Non-primary interactive
+	// tool is excluded, but auth_sso/auth_resume should be present.
+	summaries := c.Search("", string(CategoryAccount), 0)
+	require.NotEmpty(t, summaries, "category browsing via empty query must return tools")
+	for _, s := range summaries {
+		assert.Equal(t, CategoryAccount, s.Category)
 	}
 }
 

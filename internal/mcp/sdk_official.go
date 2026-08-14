@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -279,7 +280,7 @@ func registerOfficialSearchTools(srv *mcp.Server, catalog *ToolCatalog) error {
 	schema := &metaToolSchema{}
 	schema.property("query", map[string]any{
 		"type":        "string",
-		"description": "A single keyword to search for in tool names (and, as a whole word only, descriptions). Name matches rank above description matches, so e.g. 'auth' finds the auth_* tools, not every tool whose description happens to contain a word starting with auth. Leave empty (or use 'help') for an onboarding listing with primary tools first.",
+		"description": "A single keyword to search for in tool names (and, as a whole word only, descriptions). Name matches rank above description matches, so e.g. 'auth' finds the auth_* tools, not every tool whose description happens to contain a word starting with auth. Leave empty (or use 'help') for an onboarding listing of just the primary start-here tools (auth/vault/pins flows), with a hint pointing at agent_guide and category browsing.",
 	})
 	schema.property("category", map[string]any{
 		"type":        "string",
@@ -293,7 +294,7 @@ func registerOfficialSearchTools(srv *mcp.Server, catalog *ToolCatalog) error {
 	// Discovery workflow. This description documents the full search ->
 	// describe -> invoke loop and the dual-surface policy (some file-I/O
 	// tools are host-curated and not in this catalog).
-	discoveryNote := "Search the internal tool catalog by a single keyword. No boolean (AND/OR) syntax: pass one keyword at a time (e.g. 'pin', not 'pin OR upload'). Name matches are ranked exact, then starts-with, contains, subsequence, then whole-word description matches; tools that never match are omitted. Use the 'category' filter to narrow scope and 'limit' to cap results. Leave query empty or use 'help' to list primary tools (auth/vault/pins) first. Workflow: after discovering a tool here, call describe_tool(name) for its input schema, then invoke_tool(name, arguments). File upload and capability tools (upload_data, upload_url, capabilities) are host-curated and not listed in this catalog; they are exposed directly on the tool surface. Interactive wizard flows (category 'wizard') are excluded unless you filter for them specifically."
+	discoveryNote := "Search the internal tool catalog by a single keyword. No boolean (AND/OR) syntax: pass one keyword at a time (e.g. 'pin', not 'pin OR upload'). Name matches are ranked exact, then starts-with, contains, subsequence, then whole-word description matches; tools that never match are omitted. Use the 'category' filter to narrow scope and 'limit' to cap results. Leave query empty or use 'help' for an onboarding listing of just the primary start-here tools, which also carries a hint pointing at agent_guide for the full flows and at category browsing for a specific domain. Workflow: after discovering a tool here, call describe_tool(name) for its input schema, then invoke_tool(name, arguments). File upload and capability tools (upload_data, upload_url, capabilities) are host-curated and not listed in this catalog; they are exposed directly on the tool surface. Interactive wizard flows (category 'wizard') are excluded unless you filter for them specifically."
 
 	tool := &mcp.Tool{
 		Name:        "search_tools",
@@ -306,8 +307,20 @@ func registerOfficialSearchTools(srv *mcp.Server, catalog *ToolCatalog) error {
 		if err != nil {
 			return ToolResult{}, err
 		}
-		summaries := catalog.Search(in.Query, in.Category, in.Limit)
-		data, err := json.Marshal(map[string]any{"tools": summaries, "total": len(summaries)})
+
+		// Route between the two discovery surfaces. Pure onboarding (empty/help
+		// query, no category) returns the curated primary start-here tools plus
+		// a pointer onward; anything else is a keyword search (an empty query
+		// with an explicit category browses that whole category).
+		var data []byte
+		if isOnboardingQuery(strings.ToLower(strings.TrimSpace(in.Query))) && in.Category == "" {
+			res := catalog.Onboarding()
+			res.Hint = "These are the primary start-here tools for the four flows (auth, vault_create, vault_restore, pins). Call agent_guide for the full ordered chains, or search with category=core|account|vault|ipns|operations|admin (or category=wizard for wizards) to browse a specific domain."
+			data, err = json.Marshal(res)
+		} else {
+			tools := catalog.Search(in.Query, in.Category, in.Limit)
+			data, err = json.Marshal(SearchResult{Tools: tools, Total: len(tools)})
+		}
 		if err != nil {
 			return ToolResult{}, err
 		}
