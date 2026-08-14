@@ -160,7 +160,11 @@ func TestManagerSetAuthTokenLiveReload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManager(login): %v", err)
 	}
-	if err := login.SetAuthToken("tok-live"); err != nil {
+	// SetAuthToken persists via configmanager's temp-file + os.Rename, which can
+	// hit 'Access is denied' when the server-side fsnotify watcher momentarily
+	// holds config.yaml open (Windows exclusive-open rename semantics). Retry the
+	// benign lock race like SetBaseEndpoint does below.
+	if err := retryOnWindowsRename(func() error { return login.SetAuthToken("tok-live") }); err != nil {
 		t.Fatalf("SetAuthToken: %v", err)
 	}
 
