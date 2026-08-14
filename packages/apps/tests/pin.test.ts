@@ -5,10 +5,10 @@
 
 import { beforeEach, describe, expect, it } from "vitest";
 import { interpret } from "robot3";
-import { createPinMachine, type PinConfig, type PinContext, type PinState } from "@/pin";
+import { createPinMachine, type PinConfig, type PinContext, PinState } from "@/pin";
 import { renderPin, currentPinState } from "@/pin-bootstrap";
 import type { CallTool, ToolResult } from "@/flow";
-import { flush } from "./helpers";
+import { until, untilState } from "./helpers";
 
 const baseConfig: PinConfig = {
   addTool: "pins_add",
@@ -66,9 +66,8 @@ describe("pin flow machine", () => {
 
   it("submit valid → pins_add -> scheduled readout -> poll -> pinned", async () => {
     sendSubmit("Qm1", "file");
-    await Promise.resolve();
-    // submitting invoke pending → paused at submitting
-    expect(state()).toBe("submitting");
+    // submitting invoke pending → pause at submitting
+    await untilState(service, PinState.Submitting);
 
     // Only pins_add should have been called (no status poll yet).
     expect(calls.map((c) => c.name)).toEqual(["pins_add"]);
@@ -76,8 +75,7 @@ describe("pin flow machine", () => {
 
     // Resolve pins_add → ok → first polling entry (fresh: "Pin scheduled.").
     gate[0].resolve(pinsAddOk("Qm1", "queued"));
-    await flush(service);
-    expect(state()).toBe("polling");
+    await untilState(service, PinState.Polling);
     expect(renderPin(state(), ctx(), baseConfig).statusMsg).toBe("Pin scheduled.");
     expect(renderPin(state(), ctx(), baseConfig).statusState).toBe("ok");
     // pins_add readout: out-cid = value.CID, out-status = value.Status.
@@ -89,18 +87,16 @@ describe("pin flow machine", () => {
     expect(poll).toBeTruthy();
     expect(calls.filter((c) => c.name === "pin_status").length).toBe(1);
     poll!.resolve(pinsStatus("pinned"));
-    await flush(service);
-    expect(state()).toBe("ok");
+    await untilState(service, PinState.Ok);
     expect(renderPin(state(), ctx(), baseConfig).statusMsg).toBe("Pinned.");
     expect(ctx().outStatus).toBe("pinned");
   });
 
   it("missing status is NON-terminal: keeps polling until terminal", async () => {
     sendSubmit("Qm2", "");
-    await Promise.resolve();
+    await untilState(service, PinState.Submitting);
     gate[0].resolve(pinsAddOk("Qm2", "queued"));
-    await flush(service);
-    expect(state()).toBe("polling");
+    await untilState(service, PinState.Polling);
 
     let pollIdx = 0;
     function nextPoll(): GatedCall {
@@ -109,39 +105,39 @@ describe("pin flow machine", () => {
 
     // Poll 1: missing status (IsError result) → NOT terminal → keep polling.
     nextPoll().resolve(pinsStatus(undefined));
-    await flush(service);
+    await until(service, () => gate.filter((g) => g.tool === "pin_status").length > 1);
     expect(state()).toBe("polling");
     // Non-terminal poll refreshes #out-status only, leaves status element alone.
     expect(renderPin(state(), ctx(), baseConfig).statusMsg).toBeNull();
 
     // Poll 2: missing again → budget decrements.
     nextPoll().resolve(pinsStatus(undefined));
-    await flush(service);
+    await until(service, () => gate.filter((g) => g.tool === "pin_status").length > 2);
     expect(state()).toBe("polling");
 
     // Poll 3: pinned → terminal ok despite earlier missing statuses.
     nextPoll().resolve(pinsStatus("pinned"));
-    await flush(service);
-    expect(state()).toBe("ok");
+    await untilState(service, PinState.Ok);
     expect(calls.filter((c) => c.name === "pin_status").length).toBe(3);
   });
 
   it("missing status until budget exhausted → timeout (last-status message)", async () => {
     sendSubmit("Qm3", "");
-    await Promise.resolve();
+    await untilState(service, PinState.Submitting);
     gate[0].resolve(pinsAddOk("Qm3", "queued"));
-    await flush(service);
-    expect(state()).toBe("polling");
+    await untilState(service, PinState.Polling);
 
     for (let i = 0; i < baseConfig.maxAttempts; i++) {
       const p = gate.filter((g) => g.tool === "pin_status")[i];
       expect(p, `poll entry #${i} should exist`).toBeTruthy();
       // First two poll with a defined-but-non-terminal status, last without.
       p!.resolve(pinsStatus(i < 2 ? "queued" : undefined));
-      await flush(service);
-      if (i < baseConfig.maxAttempts - 1) expect(state()).toBe("polling");
+      if (i < baseConfig.maxAttempts - 1) {
+        await until(service, () => gate.filter((g) => g.tool === "pin_status").length > i + 1);
+        expect(state()).toBe("polling");
+      }
     }
-    expect(state()).toBe("timeout");
+    await untilState(service, PinState.Timeout);
     expect(renderPin(state(), ctx(), baseConfig).statusState).toBe("info");
     expect(renderPin(state(), ctx(), baseConfig).statusMsg).toBe(
       "Timed out polling pin status (last: unknown).",
@@ -150,13 +146,11 @@ describe("pin flow machine", () => {
 
   it("pins_add isError → error terminal with Pin failed. readout", async () => {
     sendSubmit("Qm4", "");
-    await Promise.resolve();
-    expect(state()).toBe("submitting");
+    await untilState(service, PinState.Submitting);
 
     // isError pins_add result → error (no pin_status polling starts).
     gate[0].resolve({ isError: true, structuredContent: { status: "ok", value: { Status: "failed" } } });
-    await flush(service);
-    expect(state()).toBe("error");
+    await untilState(service, PinState.Error);
     expect(renderPin(state(), ctx(), baseConfig).statusMsg).toBe("Pin failed.");
     expect(renderPin(state(), ctx(), baseConfig).statusState).toBe("error");
     // Even on error, renderResult still surfaced the value readout (CID fallback).
@@ -166,16 +160,14 @@ describe("pin flow machine", () => {
 
   it("empty CID → form_error without calling any tool", async () => {
     sendSubmit("", "");
-    await Promise.resolve();
-    expect(state()).toBe("form_error");
+    await untilState(service, PinState.FormError);
     expect(calls.length).toBe(0);
     expect(renderPin(state(), ctx(), baseConfig).statusMsg).toBe("A CID is required.");
     expect(renderPin(state(), ctx(), baseConfig).statusState).toBe("error");
 
     // Form stays submittable: a subsequent valid submit proceeds.
     sendSubmit("Qm5", "");
-    await Promise.resolve();
-    expect(state()).toBe("submitting");
+    await untilState(service, PinState.Submitting);
   });
 
   it("pins_add rejection → error terminal", async () => {
@@ -184,7 +176,6 @@ describe("pin flow machine", () => {
     });
     service = interpret(machine, () => {});
     sendSubmit("Qm6", "");
-    await flush(service);
-    expect(state()).toBe("error");
+    await untilState(service, PinState.Error);
   });
 });

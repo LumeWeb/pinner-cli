@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { interpret } from "robot3";
 import { createFlowMachine, type CallTool, type FlowConfig, FlowState, type ToolResult } from "@/flow";
 import { currentFlowState, renderFlow } from "@/app-entry";
-import { flush } from "./helpers";
+import { until, untilState } from "./helpers";
 
 const baseConfig: FlowConfig = {
   startTool: "start_t",
@@ -60,25 +60,22 @@ describe("flow machine", () => {
 
     service.send("start");
     // starting invoke pending → pause at starting
-    await Promise.resolve();
-    expect(state()).toBe("starting");
+    await untilState(service, FlowState.Starting);
 
     // resolve the start call → needs_human with handle+url
     const startEntry = gate.find((g) => g.op === "start");
     expect(startEntry).toBeTruthy();
     startEntry!.resolve(needsHuman("h-1", "https://x.test/approve"));
 
-    // flush: should land in polling (handle present)
-    await flush(service);
-    expect(state()).toBe("polling");
+    // wait until the start hand-off lands in polling (handle present)
+    await untilState(service, FlowState.Polling);
 
     // resolve the first poll → done
     const pollEntry = gate.find((g) => g.op === "poll");
     expect(pollEntry).toBeTruthy();
     pollEntry!.resolve({ structuredContent: { status: "done" } });
 
-    await flush(service);
-    expect(state()).toBe("ok");
+    await untilState(service, FlowState.Ok);
     // Reached ok via POLLING (start only handed off a handle): not already-done.
     expect((service.context as any).alreadyDone).toBe(false);
   });
@@ -93,13 +90,11 @@ describe("flow machine", () => {
     service = interpret(machine, () => {});
 
     service.send("start");
-    await Promise.resolve();
-    expect(state()).toBe("starting");
+    await untilState(service, FlowState.Starting);
 
     gate.find((g) => g.op === "start")!.resolve(needsHuman(undefined, undefined, "not configured"));
 
-    await flush(service);
-    expect(state()).toBe("dead");
+    await untilState(service, FlowState.Dead);
     expect(gate.some((g) => g.op === "poll")).toBe(false); // never polled a handle-less hand-off
   });
 
@@ -113,14 +108,12 @@ describe("flow machine", () => {
     service = interpret(machine, () => {});
 
     service.send("start");
-    await Promise.resolve();
+    await untilState(service, FlowState.Starting);
     gate.find((g) => g.op === "start")!.resolve(needsHuman("h-1", "https://x.test/approve"));
-    await flush(service);
-    expect(state()).toBe("polling");
+    await untilState(service, FlowState.Polling);
 
     gate.find((g) => g.op === "poll")!.resolve(needsHuman(undefined)); // handle dropped
-    await flush(service);
-    expect(state()).toBe("dead");
+    await untilState(service, FlowState.Dead);
   });
 
   it("poll loop reaches timeout after maxAttempts", async () => {
@@ -133,22 +126,26 @@ describe("flow machine", () => {
     service = interpret(machine, () => {});
 
     service.send("start");
-    await Promise.resolve();
+    await untilState(service, FlowState.Starting);
     gate.find((g) => g.op === "start")!.resolve(needsHuman("h-1", "https://x.test/approve"));
-    await flush(service);
-    expect(state()).toBe("polling");
+    await untilState(service, FlowState.Polling);
 
     // Each poll resolves pending-with-handle; the counter decrements per poll
     // until it hits 0 → timeout. Polls are appended in order, so resolve them
-    // one at a time by index.
+    // one at a time by index, waiting for the machine to issue the next poll
+    // before the next iteration reads it from the gate.
     for (let i = 0; i < baseConfig.maxAttempts; i++) {
-      // The i-th poll is the (i+1)-th "poll" entry total.
       const entry = gate.filter((g) => g.op === "poll")[i];
       expect(entry, `poll entry #${i} should exist`).toBeTruthy();
       entry!.resolve(needsHuman("h-1"));
-      await flush(service);
+      if (i < baseConfig.maxAttempts - 1) {
+        await until(
+          service,
+          () => gate.filter((g) => g.op === "poll").length > i + 1,
+        );
+      }
     }
-    expect(state()).toBe("timeout");
+    await untilState(service, FlowState.Timeout);
   });
 
   it("start already done → ok without polling", async () => {
@@ -160,10 +157,9 @@ describe("flow machine", () => {
     machine = createFlowMachine(baseConfig, scriptedCall);
     service = interpret(machine, () => {});
     service.send("start");
-    await Promise.resolve();
+    await untilState(service, FlowState.Starting);
     gate.find((g) => g.op === "start")!.resolve({ structuredContent: { status: "done" } });
-    await flush(service);
-    expect(state()).toBe("ok");
+    await untilState(service, FlowState.Ok);
     expect(gate.some((g) => g.op === "poll")).toBe(false);
     // Start reported the flow already-complete: the UI should show
     // "alreadyDoneMsg" ("Already signed in.") not "doneMsg" ("Signed in.").
@@ -177,8 +173,7 @@ describe("flow machine", () => {
     machine = createFlowMachine(baseConfig, rejecting);
     service = interpret(machine, () => {});
     service.send("start");
-    await flush(service);
-    expect(state()).toBe("error");
+    await untilState(service, FlowState.Error);
   });
 
   it("poll transport rejection is NON-terminal: retries until timeout", async () => {
@@ -196,7 +191,7 @@ describe("flow machine", () => {
     machine = createFlowMachine(baseConfig, scriptedCall);
     service = interpret(machine, () => {});
     service.send("start");
-    await flush(service, 300);
+    await untilState(service, FlowState.Timeout);
 
     // The view retried the full budget (never went terminal on a rejection)
     // and ended in `timeout`, not `error`.
