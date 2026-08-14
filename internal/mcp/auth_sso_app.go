@@ -22,13 +22,34 @@ func renderAuthSSOAppHTML() string {
 	return renderMcpAppDoc("Sign In", authSSOAppForm(), authSSOAppModule(extAppsClientBase64()))
 }
 
-// authSSOAppModule renders the sign-in app's ESM module source: the shared
-// ext-apps bootstrap plus the SSO start/poll logic.
+// authSSOAppModule renders the sign-in app's ESM module source using the
+// shared out-of-band flow template. The shared flow supplies the in-flight
+// guard, the start guard against a handle-less not-configured hand-off, and
+// the handle-presence dead-handle predicate that the standalone SSO view
+// previously lacked.
 func authSSOAppModule(clientBase64 string) string {
-	return mcpAppModule("auth_sso_app.js.tmpl", appModuleData{
-		ClientB64: clientBase64,
-		Name:      "AuthSSO",
-		Version:   "1.0.0",
+	return renderAppFlowModule(clientBase64, appFlowSpec{
+		Name:       "AuthSSO",
+		Version:    "1.0.0",
+		StartTool:  "auth_sso",
+		StatusTool: "auth_sso_status",
+		StartBtnID: "sso-start",
+		UrlElID:    "sso-url",
+		StatusElID: "sso-status",
+		// The approval URL / action_url is the human-only page where sign-in is
+		// completed in the browser.
+		URLFields:        []string{"action_url"},
+		ActionLabel:      "sign-in",
+		StartErrorMsg:    "Auth did not return an approval handoff.",
+		AlreadyDoneMsg:   "Already signed in.",
+		NoHandlePrefix:   "Could not start sign-in.",
+		PendingStartMsg:  "Sign-in pending. Open the approval link in your browser.",
+		DeadDetailPrefix: "Sign-in no longer active.",
+		PendingWaitMsg:   "Waiting for approval in the browser...",
+		DoneMsg:          "Signed in.",
+		TimeoutWaitMsg:   "Timed out waiting for approval. Click start to retry.",
+		TimeoutPollMsg:   "Timed out polling sign-in status.",
+		RetryWord:        "sign in",
 	})
 }
 

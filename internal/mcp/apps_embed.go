@@ -26,17 +26,6 @@ import (
 //go:embed appsassets
 var appsAssets embed.FS
 
-// extAppsClientSrc returns the embedded ext-apps client module, inlined into
-// the served ui:// HTML document so the sandboxed iframe needs no network
-// request. Absence at build time is a hard error.
-func extAppsClientSrc() string {
-	data, err := fs.ReadFile(appsAssets, "appsassets/ext-apps-client.js")
-	if err != nil {
-		panic("mcp: embedded ext-apps client missing: " + err.Error())
-	}
-	return string(data)
-}
-
 // extAppsClientBase64 returns the embedded ext-apps client module encoded as
 // base64. The ui:// view inlines it and loads it at runtime via a Blob URL so
 // the minified bundle is served verbatim (never HTML-escaped or parsed by Go).
