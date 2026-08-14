@@ -1,16 +1,14 @@
 // Create Pin MCP App — entrypoint bundle.
 //
-// This is the TS port of pin_app.js.tmpl's behavior. Unlike the four OOB
-// start->poll->done apps (which share the flow machine), Create Pin is a
-// form-driven flow, so it wires the dedicated pin machine (src/pin.ts) onto
-// the elements of the Go-rendered Create Pin HTML shell. Config (tool names,
-// element ids, message copy) stays data-driven here, matching how the other
-// entries keep their per-app values thin.
+// Create Pin is a form-driven flow, so it wires the dedicated pin machine
+// (src/pin.ts) onto the elements of the Go-rendered Create Pin HTML shell.
+// Config (tool names, element ids, message copy) stays data-driven here,
+// matching how the other entries keep their per-app values thin.
 
-import { runPinEntry } from "../pin-bootstrap";
-import { bootApp } from "../boot";
-import type { PinConfig } from "../pin";
-import type { CallTool } from "../flow";
+import { runPinEntry } from "@/pin-bootstrap";
+import { bootApp } from "@/boot";
+import type { PinConfig } from "@/pin";
+import type { CallTool } from "@/flow";
 
 export interface PinDefinition {
   name: string;

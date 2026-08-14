@@ -124,8 +124,8 @@ export function createFlowMachine(cfg: FlowConfig, callTool: CallTool) {
 
   // A single poll. A transient transport rejection is NOT terminal: return a
   // non-terminal outcome with a decremented budget so the loop retries until
-  // the attempt budget is exhausted (matching app_flow.js.tmpl's .catch
-  // retry path). A real `done` result carries its structuredContent.
+  // the attempt budget is exhausted. A real `done` result carries its
+  // structuredContent.
   const pollOnce = async (ctx: FlowContext) => {
     let res: ToolResult;
     try {

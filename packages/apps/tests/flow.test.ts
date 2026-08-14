@@ -4,7 +4,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { interpret } from "robot3";
-import { createFlowMachine, type CallTool, type FlowConfig, type ToolResult } from "../src/flow";
+import { createFlowMachine, type CallTool, type FlowConfig, type ToolResult } from "@/flow";
 
 const baseConfig: FlowConfig = {
   startTool: "start_t",

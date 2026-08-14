@@ -5,9 +5,9 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { interpret } from "robot3";
-import { createPinMachine, type PinConfig, type PinContext } from "../src/pin";
-import { renderPin } from "../src/pin-bootstrap";
-import type { CallTool, ToolResult } from "../src/flow";
+import { createPinMachine, type PinConfig, type PinContext } from "@/pin";
+import { renderPin } from "@/pin-bootstrap";
+import type { CallTool, ToolResult } from "@/flow";
 
 const baseConfig: PinConfig = {
   addTool: "pins_add",

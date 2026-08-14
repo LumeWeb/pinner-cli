@@ -1,9 +1,8 @@
 // Per-app flow configuration + element wiring map. Each MCP app is one
 // entrypoint with its own bundle; this is the single place its tool names,
-// element ids, and message copy live (mirrors the old per-app .js.tmpl config,
-// now typed and in a real file).
+// element ids, and message copy live.
 
-import type { FlowConfig } from "../flow";
+import type { FlowConfig } from "@/flow";
 
 export interface AppDefinition {
   name: string;

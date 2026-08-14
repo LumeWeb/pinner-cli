@@ -1,6 +1,6 @@
 // Auth SSO Sign In MCP App — entrypoint bundle.
-import { runAppEntry } from "../app-entry";
-import { bootApp } from "../boot";
+import { runAppEntry } from "@/app-entry";
+import { bootApp } from "@/boot";
 import { toFlowConfig, type AppDefinition } from "./common";
 
 const def: AppDefinition = {

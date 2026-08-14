@@ -1,7 +1,6 @@
 // Pure pin-flow state machine for the "Create a Pin" MCP App, authored with
-// robot3. This is the TS port of `pin_app.js.tmpl`'s submit -> pins_add ->
-// renderResult -> poll pin_status loop, written as a robot3 machine exactly
-// like flow.ts ports `app_flow.js.tmpl`.
+// robot3. It drives the submit -> pins_add -> renderResult -> poll pin_status
+// lifecycle as a robot3 machine (mirroring the OOB flow machine in flow.ts).
 //
 // The machine is deliberately free of DOM and MCP-transport concerns so it can
 // be unit-tested in node with a stubbed callTool. The DOM bootstrap
@@ -20,7 +19,7 @@
 //                repeated transport failures.
 //   error      — terminal: pins_add returned isError (or the call rejected).
 //
-// Faithful details from pin_app.js.tmpl:
+// Poll semantics:
 //   - A terminal status (pinned/failed/error) wins even on the final allowed
 //     attempt — it does NOT decrement the budget (guards ordered first).
 //   - A *missing* status (an IsError result, e.g. ErrPinNotFound right after a
@@ -133,8 +132,7 @@ export function createPinMachine(cfg: PinConfig, callTool: CallTool) {
 
   // Apply a single poll outcome (status readout + remaining budget + flags).
   // `status` reflects ONLY the current poll's status (cleared when missing), so
-  // the timeout message correctly reads `(last: <current-or-unknown>)` exactly
-  // like the template's per-invocation `st` variable.
+  // the timeout message correctly reads `(last: <current-or-unknown>)`.
   const setPollOutcome = reduce((ctx: PinContext, ev: any) => ({
     ...ctx,
     status: dStatus(ev) ?? "",

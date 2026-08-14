@@ -1,10 +1,8 @@
 // Production boot: connect the app to the host over postMessage, then wire the
-// per-app machine to the DOM with a real `callServerTool` bridge. This is the
-// TS equivalent of the old `extAppsConnect(...).then(...)` from
-// mcp_bootstrap.js.tmpl — except the host client (App + PostMessageTransport)
-// is imported directly and bundled self-contained by tsdown, so there is no
-// base64/Blob loading. On connection failure the shared status element shows
-// the "Could not connect to host" error, matching the template behavior.
+// per-app machine to the DOM with a real `callServerTool` bridge. The host
+// client (App + PostMessageTransport) is imported directly and bundled
+// self-contained by tsdown. On connection failure the shared status element
+// shows the "Could not connect to host" error.
 
 import { connectApp, type AppIdentity } from "./connect";
 import type { CallTool } from "./flow";

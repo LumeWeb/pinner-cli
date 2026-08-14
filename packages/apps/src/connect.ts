@@ -1,8 +1,6 @@
-// Host connection bridge — the TS port of `mcp_bootstrap.js.tmpl`'s
-// `extAppsConnect`, but consuming `App`/`PostMessageTransport` directly from
+// Host connection bridge. Consumes `App`/`PostMessageTransport` directly from
 // the @modelcontextprotocol/ext-apps package (bundled self-contained by tsdown)
-// instead of loading a base64 Blob at runtime. Retires the `CLIENT_B64` +
-// `atob` + `import(createObjectURL)` mechanism entirely.
+// to establish the postMessage bridge to the MCP host.
 //
 // The sandboxed ui:// iframe cannot resolve file imports, so the bundle tsdown
 // emits (with deps.alwaysBundle) must be fully self-contained; the whole

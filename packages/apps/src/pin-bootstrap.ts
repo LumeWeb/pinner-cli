@@ -1,8 +1,8 @@
 // DOM bootstrap for the "Create a Pin" flow: adapt the robot3 pin machine onto
-// the elements of the Go-rendered Create Pin HTML shell, and reproduce the
-// renderResult readout of pin_app.js.tmpl.
+// the elements of the Go-rendered Create Pin HTML shell, producing the
+// status / result CID / result Status readout.
 //
-// Element contract (matches pins_app_templ.go):
+// Element contract:
 //   #pin-form   the <form> that submits the pin.
 //   #cid        the CID <input>.
 //   #name       the optional Name <input>.
@@ -34,8 +34,8 @@ export interface PinRender {
 }
 
 /**
- * Map a machine state + context onto the status/result readout, reproducing
- * pin_app.js.tmpl's renderResult + pollStatus DOM writes.
+ * Map a machine state + context onto the status/result readout (status state,
+ * status message, out-CID, and out-Status writes).
  */
 export function renderPin(state: string, ctx: PinContext, cfg: PinConfig): PinRender {
   switch (state) {
@@ -101,7 +101,7 @@ export function runPinEntry(opts: PinEntryOptions) {
     const name = opts.elements.nameInput.value.trim();
     const st: string = (service.machine as any)?.current ?? "";
     // From a terminal state, reset first so a follow-up submission starts a
-    // fresh flow (matches the template's re-submittable form after finish).
+    // fresh flow (the form stays re-submittable after completion).
     if (TERMINAL.includes(st)) service.send({ type: "reset" });
     service.send({ type: "submit", cid, name });
   });

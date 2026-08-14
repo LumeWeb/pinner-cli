@@ -37,10 +37,9 @@ export function runAppEntry(opts: AppEntryOptions) {
     const stateName = state as string;
     const pending = stateName === "starting" || stateName === "polling";
     const terminal = ["ok", "dead", "error", "timeout"].includes(stateName);
-    // During an in-flight run the button is disabled (no concurrent runs,
-    // matching the template's `if (startBtn.disabled) return;` guard). On a
-    // terminal state it is re-enabled (like finishFlow) so the user can click
-    // "retry" / start again.
+    // During an in-flight run the button is disabled (no concurrent runs). On a
+    // terminal state it is re-enabled so the user can click "retry" / start
+    // again.
     if (btn) btn.disabled = pending;
 
     if (stateName === "ok") statusEl.className = "status ok", (statusEl.textContent = opts.config.doneMsg);
