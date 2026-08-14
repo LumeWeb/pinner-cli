@@ -128,7 +128,7 @@ func TestSSOToolsDiscoverableInCatalog(t *testing.T) {
 	catalog.Add(toolEntryFromDescriptor(NewAuthResumeDescriptor(nil, nil)))
 
 	for _, q := range []string{"sso", "oob", "resume", "sign-in", "out-of-band", "auth"} {
-		summaries := catalog.Search(q, "")
+		summaries := catalog.Search(q, "", 0)
 		names := make([]string, 0, len(summaries))
 		for _, s := range summaries {
 			names = append(names, s.Name)
@@ -139,7 +139,7 @@ func TestSSOToolsDiscoverableInCatalog(t *testing.T) {
 
 	// Both are agent-safe (non-blocking) and present in the full listing.
 	var ssoCount, resumeCount int
-	for _, s := range catalog.Search("", "") {
+	for _, s := range catalog.Search("", "", 0) {
 		switch s.Name {
 		case "auth_sso":
 			ssoCount++
