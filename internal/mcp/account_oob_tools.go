@@ -39,7 +39,7 @@ type accountPasswordResetArgs struct {
 // change in a browser so the password never reaches this channel. If the
 // account is not signed in (or the coordinator is unwired) it steers to
 // auth_sso instead of hanging.
-func NewAccountPasswordUpdateDescriptor(oob *OOBAccountPasswordChange, svc AuthService, handles *AsyncHandleStore, reg *HandoffRegistry) ToolDescriptor {
+func NewAccountPasswordUpdateDescriptor(oob *OOBAccountChange, svc AuthService, handles *AsyncHandleStore, reg *HandoffRegistry) ToolDescriptor {
 	return ToolDescriptor{
 		Name:        "account_password_update",
 		Title:       "Change Password (Out-of-Band)",
@@ -70,7 +70,7 @@ func NewAccountPasswordUpdateDescriptor(oob *OOBAccountPasswordChange, svc AuthS
 				}), nil
 			}
 
-			url := oob.Register()
+			url := oob.Register(opChangePassword)
 			if url == "" {
 				return ToolResult{IsError: true, Text: "failed to mint the password-change page"}, nil
 			}
@@ -78,6 +78,53 @@ func NewAccountPasswordUpdateDescriptor(oob *OOBAccountPasswordChange, svc AuthS
 				Reason:     ReasonSSOApproval,
 				ActionURL:  url,
 				Detail:     "Ask the user to open this URL in a browser and enter their current and new password. The password is entered on that page, never on this channel, and never here.",
+			}), nil
+		},
+	}
+}
+
+// NewAccountEmailChangeDescriptor returns the account_email_change tool: mint
+// an out-of-band email-change page for the authenticated account. It returns a
+// needs_human hand-off with the page URL; the human enters the new email +
+// current password in a browser so the password never reaches this channel. If
+// the account is not signed in (or the coordinator is unwired) it steers to
+// auth_sso instead of hanging.
+func NewAccountEmailChangeDescriptor(oob *OOBAccountChange, svc AuthService) ToolDescriptor {
+	return ToolDescriptor{
+		Name:        "account_email_change",
+		Title:       "Change Email (Out-of-Band)",
+		Description: "Start an out-of-band (OOB) email change. Returns a short-lived page URL the human opens in a browser to enter the new email and their current password; the password never reaches this channel. The account must be signed in first. Start here to change your email.",
+		Category:    CategoryAccount,
+		Destructive: true,
+		InputSchema: toolSchemaFor[accountPasswordUpdateArgs](),
+		Handler: func(ctx context.Context, req ToolRequest) (ToolResult, error) {
+			if oob == nil || svc == nil {
+				return NeedsHumanResult(NeedsHuman{
+					Reason: ReasonInteractiveOnly,
+					Detail: "Out-of-band email change is not configured for this server. Use the web app to change your email.",
+				}), nil
+			}
+			if _, err := decodeToolArgs[accountPasswordUpdateArgs](req); err != nil {
+				return ToolResult{IsError: true, Text: err.Error()}, nil
+			}
+
+			// Enforce an authenticated session: UpdateEmail requires one.
+			if _, err := svc.Status(ctx); err != nil {
+				return NeedsHumanResult(NeedsHuman{
+					Reason:     ReasonSSOApproval,
+					ResumeTool: "auth_sso",
+					Detail:     "You must be signed in to change your email. Please sign in first (auth_sso), then run account_email_change again.",
+				}), nil
+			}
+
+			url := oob.Register(opChangeEmail)
+			if url == "" {
+				return ToolResult{IsError: true, Text: "failed to mint the email-change page"}, nil
+			}
+			return NeedsHumanResult(NeedsHuman{
+				Reason:    ReasonSSOApproval,
+				ActionURL: url,
+				Detail:    "Ask the user to open this URL in a browser and enter their new email and current password. The password is entered on that page, never on this channel.",
 			}), nil
 		},
 	}

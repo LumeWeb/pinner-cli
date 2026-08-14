@@ -57,6 +57,7 @@ func (s stubAuthService) LoginWithOTP(ctx context.Context, intermediateJWT, otp,
 }
 func (s stubAuthService) Status(ctx context.Context) (*auth.StatusResult, error) { return nil, nil }
 func (s stubAuthService) UpdatePassword(ctx context.Context, currentPassword, newPassword string) error { return nil }
+func (s stubAuthService) UpdateEmail(ctx context.Context, email, currentPassword string) error { return nil }
 func (s stubAuthService) RequestPasswordReset(ctx context.Context, email string) error { return nil }
 
 func newOOBForTest(t *testing.T) *OutOfBandLogin {
@@ -775,6 +776,7 @@ func (s *captureAuthService) LoginWithOTP(ctx context.Context, intermediateJWT, 
 }
 func (s *captureAuthService) Status(ctx context.Context) (*auth.StatusResult, error) { return nil, nil }
 func (s *captureAuthService) UpdatePassword(ctx context.Context, currentPassword, newPassword string) error { return nil }
+func (s *captureAuthService) UpdateEmail(ctx context.Context, email, currentPassword string) error { return nil }
 func (s *captureAuthService) RequestPasswordReset(ctx context.Context, email string) error { return nil }
 
 // TestOOBLoginHumanEmailOverridesAgentEmail verifies the account identifier on

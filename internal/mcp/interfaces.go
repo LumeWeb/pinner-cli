@@ -29,6 +29,10 @@ type AuthService interface {
 	// Used by the out-of-band password change page, always from the
 	// authenticated session, so the password never transits the MCP/LLM channel.
 	UpdatePassword(ctx context.Context, currentPassword, newPassword string) error
+	// UpdateEmail changes the account email given the current password for
+	// verification. Used by the out-of-band email change page, always from the
+	// authenticated session, so the password never transits the MCP/LLM channel.
+	UpdateEmail(ctx context.Context, email, currentPassword string) error
 	// RequestPasswordReset sends a password reset link to the account's email
 	// (unauthenticated, so it works for a forgotten password). The human
 	// completes the reset via the emailed link in the web app.

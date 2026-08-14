@@ -36,10 +36,11 @@ type customToolDeps struct {
 	seedDrop   *SeedDrop
 	oobRestore *OOBRestore
 	oobCreate  *OOBCreate
-	// accountOOB backs the out-of-band account password change (hosted browser
-	// form -> authenticated UpdatePassword). It enforces an authenticated
-	// session; the password never transits the MCP/LLM channel.
-	accountOOB *OOBAccountPasswordChange
+	// accountOOB backs the out-of-band account credential change coordinator
+	// (hosted browser forms -> authenticated UpdatePassword/UpdateEmail). It
+	// enforces an authenticated session; the secret never transits the MCP/LLM
+	// channel.
+	accountOOB *OOBAccountChange
 	// accountWebAppURL is the account web app base URL surfaced by the password
 	// reset tool's hand-off.
 	accountWebAppURL string
@@ -121,8 +122,11 @@ func registerCustomTools(deps customToolDeps) error {
 	accountUpdate.DirectVisible = true
 	accountReset := NewAccountPasswordResetDescriptor(deps.wizardS.AuthService, deps.accountWebAppURL)
 	accountReset.DirectVisible = true
+	accountEmail := NewAccountEmailChangeDescriptor(deps.accountOOB, deps.wizardS.AuthService)
+	accountEmail.DirectVisible = true
 	deps.catalog.Add(toolEntryFromDescriptor(accountUpdate))
 	deps.catalog.Add(toolEntryFromDescriptor(accountReset))
+	deps.catalog.Add(toolEntryFromDescriptor(accountEmail))
 
 	// Vault create/restore OOB hand-offs ride the SAME generic handoff-resume
 	// framework: the invoke path (buildCatalog) mints a handle and registers a

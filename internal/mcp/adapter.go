@@ -193,7 +193,7 @@ adapter.`,
 				oob        *OutOfBandLogin
 				oobRestore *OOBRestore
 				oobCreate  *OOBCreate
-				accountOOB *OOBAccountPasswordChange
+				accountOOB *OOBAccountChange
 				catalog    *ToolCatalog
 				err        error
 				// Wizard deps are hoisted so registerCustomTools can hand them
@@ -215,7 +215,7 @@ adapter.`,
 				oob = wizardS.OutOfBand.WithLogger(log)
 				oobRestore = NewOOBRestore(wizardS.Restore, DefaultRestoreTTL).WithLogger(log)
 				oobCreate = NewOOBCreate(wizardS.Create, seedDrop, DefaultCreateTTL).WithLogger(log)
-				accountOOB = NewOOBAccountPasswordChange(wizardS.AuthService, DefaultAccountPasswordTTL).WithLogger(log)
+				accountOOB = NewOOBAccountChange(wizardS.AuthService, DefaultAccountChangeTTL).WithLogger(log)
 			}
 
 			// Build the server after resolving the command tree and wiring the
@@ -314,7 +314,7 @@ func oauthStorePath() string {
 // login URL on the public/tunnel URL rather than an unreachable loopback.
 // seedDrop and oobRestore, when provided, mount the one-time seed and restore
 // URLs on the same shared mux. oobCreate mounts the one-time create URL.
-func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *OutOfBandLogin, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate, accountOOB *OOBAccountPasswordChange) error {
+func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *OutOfBandLogin, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate, accountOOB *OOBAccountChange) error {
 	provider := mcpString(cmd, "tunnel", "MCP_TUNNEL_PROVIDER")
 	domain := mcpString(cmd, "domain", "MCP_DOMAIN")
 	token := mcpString(cmd, "token", "MCP_TUNNEL_TOKEN")

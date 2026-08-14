@@ -323,6 +323,10 @@ func (m *mockAuthService) UpdatePassword(_ context.Context, _, _ string) error {
 	return nil
 }
 
+func (m *mockAuthService) UpdateEmail(_ context.Context, _, _ string) error {
+	return nil
+}
+
 func (m *mockAuthService) RequestPasswordReset(_ context.Context, _ string) error {
 	return nil
 }

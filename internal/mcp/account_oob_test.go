@@ -47,15 +47,21 @@ func (s *testAccountAuthService) UpdatePassword(ctx context.Context, currentPass
 	s.updateNew = newPassword
 	return s.updateErr
 }
+func (s *testAccountAuthService) UpdateEmail(ctx context.Context, email, currentPassword string) error {
+	s.updateCalls++
+	s.updateCurrent = currentPassword
+	s.updateNew = email
+	return s.updateErr
+}
 func (s *testAccountAuthService) RequestPasswordReset(ctx context.Context, email string) error {
 	s.resetCalls = append(s.resetCalls, email)
 	return nil
 }
 
-// buildAccountPwServer returns a wired OOBAccountPasswordChange + mux on which
-// /account/password/ routes are served.
-func buildAccountPwServer(svc AuthService) (*OOBAccountPasswordChange, *http.ServeMux) {
-	c := NewOOBAccountPasswordChange(svc, time.Minute)
+// buildAccountPwServer returns a wired OOBAccountChange + mux on which
+// /account/ routes are served.
+func buildAccountPwServer(svc AuthService) (*OOBAccountChange, *http.ServeMux) {
+	c := NewOOBAccountChange(svc, time.Minute)
 	c.SetBaseURL("http://127.0.0.1:9999")
 	mux := http.NewServeMux()
 	c.registerHandlers(mux)
@@ -83,7 +89,7 @@ func fetchAccountPwCSRF(t *testing.T, mux *http.ServeMux, url string) string {
 // password route with the loopback Origin set so the core's same-origin check
 // admits it (mirroring create_oob_test.go).
 func accountPwPOST(mux *http.ServeMux, token, form string) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(http.MethodPost, "/account/password/"+token, strings.NewReader(form))
+	req := httptest.NewRequest(http.MethodPost, "/account/"+token, strings.NewReader(form))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Origin", "http://127.0.0.1:9999")
 	w := httptest.NewRecorder()
@@ -102,9 +108,9 @@ func tokenFromURL(t *testing.T, url string) string {
 // URL whose GET renders the password form.
 func TestAccountPasswordChangeRegistersPage(t *testing.T) {
 	c, mux := buildAccountPwServer(&testAccountAuthService{})
-	url := c.Register()
+	url := c.Register(opChangePassword)
 	require.NotEmpty(t, url)
-	require.Contains(t, url, "/account/password/")
+	require.Contains(t, url, "/account/")
 
 	req := httptest.NewRequest(http.MethodGet, url, nil)
 	w := httptest.NewRecorder()
@@ -122,7 +128,7 @@ func TestAccountPasswordChangeRegistersPage(t *testing.T) {
 func TestAccountPasswordChangeConsumeSuccess(t *testing.T) {
 	svc := &testAccountAuthService{}
 	c, mux := buildAccountPwServer(svc)
-	url := c.Register()
+	url := c.Register(opChangePassword)
 	csrf := fetchAccountPwCSRF(t, mux, url)
 
 	form := "csrf=" + urlEncode(csrf) + "&current_password=" + urlEncode("oldpass") + "&new_password=" + urlEncode("newpass") + "&confirm_password=" + urlEncode("newpass")
@@ -141,7 +147,7 @@ func TestAccountPasswordChangeConsumeSuccess(t *testing.T) {
 func TestAccountPasswordChangeConsumeMismatch(t *testing.T) {
 	svc := &testAccountAuthService{}
 	c, mux := buildAccountPwServer(svc)
-	url := c.Register()
+	url := c.Register(opChangePassword)
 	csrf := fetchAccountPwCSRF(t, mux, url)
 
 	form := "csrf=" + urlEncode(csrf) + "&current_password=" + urlEncode("oldpass") + "&new_password=" + urlEncode("newpass") + "&confirm_password=" + urlEncode("different")
@@ -157,7 +163,7 @@ func TestAccountPasswordChangeConsumeMismatch(t *testing.T) {
 func TestAccountPasswordChangeRejectsBadCSRF(t *testing.T) {
 	svc := &testAccountAuthService{}
 	c, mux := buildAccountPwServer(svc)
-	url := c.Register()
+	url := c.Register(opChangePassword)
 
 	form := "csrf=wrong&current_password=old&new_password=new&confirm_password=new"
 	w := accountPwPOST(mux, tokenFromURL(t, url), form)
@@ -172,7 +178,7 @@ func TestAccountPasswordChangeRejectsBadCSRF(t *testing.T) {
 func TestAccountPasswordChangeUpdateError(t *testing.T) {
 	svc := &testAccountAuthService{updateErr: context.DeadlineExceeded}
 	c, mux := buildAccountPwServer(svc)
-	url := c.Register()
+	url := c.Register(opChangePassword)
 	csrf := fetchAccountPwCSRF(t, mux, url)
 
 	form := "csrf=" + urlEncode(csrf) + "&current_password=old&new_password=new&confirm_password=new"
@@ -214,7 +220,7 @@ func TestAccountPasswordUpdateReturnsHandoff(t *testing.T) {
 	assert.Equal(t, ReasonSSOApproval, sc["reason"])
 	u, _ := sc["action_url"].(string)
 	require.NotEmpty(t, u)
-	assert.Contains(t, u, "/account/password/")
+	assert.Contains(t, u, "/account/")
 }
 
 // TestAccountPasswordUpdateNotConfigured verifies a nil coordinator returns a
