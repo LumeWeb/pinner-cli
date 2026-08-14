@@ -133,7 +133,7 @@ func flagFor(a OperationArg) cli.Flag {
 	required := isRequiredArg(a)
 
 	switch a.Type {
-	case ArgTypeBool:
+	case ArgTypeBool, ArgTypeNullableBool:
 		return &cli.BoolFlag{Name: a.Name, Usage: help, Value: a.Default == "true", Required: required}
 	case ArgTypeInt:
 		return &cli.IntFlag{Name: a.Name, Usage: help, DefaultText: a.Default, Required: required}
@@ -214,6 +214,12 @@ func valueFor(cmd *cli.Command, a OperationArg) (any, bool) {
 	switch a.Type {
 	case ArgTypeBool:
 		return cmd.Bool(a.Name), false
+	case ArgTypeNullableBool:
+		// Reached only when cmd.IsSet(a.Name) was true (the caller guards on
+		// it), so the flag was explicitly provided; surface its value as a *bool
+		// so the Handler gets the same tri-state shape as the MCP surface.
+		v := cmd.Bool(a.Name)
+		return &v, false
 	case ArgTypeInt:
 		// An explicit 0 is a legitimate value (e.g. --ttl 0); presence is
 		// determined by cmd.IsSet (checked by the caller), not by magnitude.

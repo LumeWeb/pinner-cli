@@ -168,7 +168,7 @@ func validateOperation(op Operation) error {
 // validateDefault checks that a non-empty string Default parses for its ArgType.
 func validateDefault(a OperationArg) error {
 	switch a.Type {
-	case ArgTypeBool:
+	case ArgTypeBool, ArgTypeNullableBool:
 		if a.Default != "true" && a.Default != "false" {
 			return fmt.Errorf("invalid bool default %q", a.Default)
 		}
@@ -433,6 +433,15 @@ func resolveArg(a OperationArg, raw any, present bool) (value any, st argState, 
 			return nil, stateInvalid, fmt.Errorf("expected bool, got %T", raw)
 		}
 		return b, stateFilled, nil
+	case ArgTypeNullableBool:
+		switch v := raw.(type) {
+		case bool:
+			return &v, stateFilled, nil
+		case *bool:
+			return v, stateFilled, nil
+		default:
+			return nil, stateInvalid, fmt.Errorf("expected bool, got %T", raw)
+		}
 	case ArgTypeInt:
 		// The CLI gives int; an MCP caller's int arrives as float64; a Go
 		// caller through Invoke may pass any native integer type or
@@ -604,6 +613,10 @@ func zeroShape(t ArgType) any {
 		return float64(0)
 	case ArgTypeBool:
 		return false
+	case ArgTypeNullableBool:
+		// A nil *bool is the "omitted" state: the Handler can distinguish it
+		// from an explicit false, which is the whole point of a nullable bool.
+		return (*bool)(nil)
 	case ArgTypeDuration:
 		return time.Duration(0)
 	default:
@@ -843,6 +856,11 @@ func selectorMemberSelected(a OperationArg, value any) bool {
 	case ArgTypeBool:
 		b, _ := value.(bool)
 		return b
+	case ArgTypeNullableBool:
+		// Treated like a bool in selection groups: only an explicit true is a
+		// selected member. nil / false / omitted are all "not selected".
+		p, _ := value.(*bool)
+		return p != nil && *p
 	case ArgTypeStringSlice:
 		s, _ := value.([]string)
 		return len(s) > 0
@@ -871,6 +889,9 @@ func defaultValue(a OperationArg) any {
 	switch a.Type {
 	case ArgTypeBool:
 		return a.Default == "true"
+	case ArgTypeNullableBool:
+		v := a.Default == "true"
+		return &v
 	case ArgTypeInt:
 		n, _ := strconv.Atoi(a.Default)
 		return n
@@ -1068,6 +1089,10 @@ func selectionConstraint(a OperationArg) map[string]any {
 	switch a.Type {
 	case ArgTypeBool:
 		return map[string]any{"const": true}
+	case ArgTypeNullableBool:
+		// Selected only when true (its nil/false are valid "not selected"
+		// values), mirroring selectorMemberSelected.
+		return map[string]any{"const": true}
 	case ArgTypeStringSlice:
 		return map[string]any{"minItems": 1}
 	default:
@@ -1075,14 +1100,19 @@ func selectionConstraint(a OperationArg) map[string]any {
 	}
 }
 
-// jsonType maps an ArgType to its JSON Schema type string. Slices become
-// "array"; everything else maps to its scalar JSON type.
-func jsonType(t ArgType) string {
+// jsonType maps an ArgType to its JSON Schema "type". Slices become "array";
+// everything else maps to its scalar JSON type. A nullable bool maps to the
+// array ["boolean","null"] so the schema admits both an explicit boolean and
+// JSON null (the "omitted" state survives as null, mirroring the *bool shape
+// the Handler receives).
+func jsonType(t ArgType) any {
 	switch t {
 	case ArgTypeString:
 		return "string"
 	case ArgTypeBool:
 		return "boolean"
+	case ArgTypeNullableBool:
+		return []string{"boolean", "null"}
 	case ArgTypeInt:
 		return "integer"
 	case ArgTypeFloat:
