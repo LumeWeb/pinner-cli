@@ -193,6 +193,7 @@ adapter.`,
 				oob        *OutOfBandLogin
 				oobRestore *OOBRestore
 				oobCreate  *OOBCreate
+				accountOOB *OOBAccountChange
 				catalog    *ToolCatalog
 				err        error
 				// Wizard deps are hoisted so registerCustomTools can hand them
@@ -214,6 +215,7 @@ adapter.`,
 				oob = wizardS.OutOfBand.WithLogger(log)
 				oobRestore = NewOOBRestore(wizardS.Restore, DefaultRestoreTTL).WithLogger(log)
 				oobCreate = NewOOBCreate(wizardS.Create, seedDrop, DefaultCreateTTL).WithLogger(log)
+				accountOOB = NewOOBAccountChange(wizardS.AuthService, DefaultAccountChangeTTL).WithLogger(log)
 			}
 
 			// Build the server after resolving the command tree and wiring the
@@ -259,6 +261,8 @@ adapter.`,
 				seedDrop:        seedDrop,
 				oobRestore:      oobRestore,
 				oobCreate:       oobCreate,
+				accountOOB:      accountOOB,
+				accountWebAppURL: accountWebAppURL(wizardS.CfgMgr),
 				resourceFactory: resourceFactory,
 				opts:            mcpOpts,
 				hasWizard:       hasWizard,
@@ -271,7 +275,7 @@ adapter.`,
 
 			if mcpString(cmd, "tunnel", "MCP_TUNNEL_PROVIDER") == "openai" {
 				log.Debug("serving MCP server through embedded OpenAI Secure MCP Tunnel")
-				return serveHTTP(ctx, srv, cmd, oob, seedDrop, oobRestore, oobCreate)
+				return serveHTTP(ctx, srv, cmd, oob, seedDrop, oobRestore, oobCreate, accountOOB)
 			}
 
 			if !cmd.Bool("http") {
@@ -279,7 +283,7 @@ adapter.`,
 				return RunOfficialStdio(ctx, srv, os.Stdin, os.Stdout)
 			}
 
-			return serveHTTP(ctx, srv, cmd, oob, seedDrop, oobRestore, oobCreate)
+			return serveHTTP(ctx, srv, cmd, oob, seedDrop, oobRestore, oobCreate, accountOOB)
 		},
 	}
 }
@@ -310,7 +314,7 @@ func oauthStorePath() string {
 // login URL on the public/tunnel URL rather than an unreachable loopback.
 // seedDrop and oobRestore, when provided, mount the one-time seed and restore
 // URLs on the same shared mux. oobCreate mounts the one-time create URL.
-func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *OutOfBandLogin, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate) error {
+func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *OutOfBandLogin, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate, accountOOB *OOBAccountChange) error {
 	provider := mcpString(cmd, "tunnel", "MCP_TUNNEL_PROVIDER")
 	domain := mcpString(cmd, "domain", "MCP_DOMAIN")
 	token := mcpString(cmd, "token", "MCP_TUNNEL_TOKEN")
@@ -392,6 +396,9 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 	}
 	if oobCreate != nil {
 		oobCreate.SetBaseURL(baseURL)
+	}
+	if accountOOB != nil {
+		accountOOB.SetBaseURL(baseURL)
 	}
 	var oauth *oauthServer
 	if enableOAuth {
@@ -477,6 +484,15 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 	if oobCreate != nil {
 		oobCreate.registerHandlers(mux)
 	}
+	// Mount the one-time account password-change route on the shared mux so a
+	// remote human can change their password in a browser at the public/tunnel
+	// URL, never through the MCP channel. Like the other OOB routes it is
+	// mounted outside the bearer-token guards (the human must open it in a
+	// browser); the unguessable /account/password/<token> path plus the
+	// per-token CSRF form token are the access control.
+	if accountOOB != nil {
+		accountOOB.registerHandlers(mux)
+	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
 			http.NotFound(w, r)
@@ -500,6 +516,9 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 			// and reaper goroutine do not leak for the process lifetime after a
 			// wizard login has completed.
 			oob.Stop(shCtx)
+		}
+		if accountOOB != nil {
+			accountOOB.Stop(shCtx)
 		}
 		if tunnel != nil {
 			_ = tunnel.Stop(shCtx)
@@ -543,6 +562,9 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 		}
 		if oobCreate != nil {
 			oobCreate.SetBaseURL(url)
+		}
+		if accountOOB != nil {
+			accountOOB.SetBaseURL(url)
 		}
 		if oauth != nil {
 			oauthURL, err := tunnel.OAuthBaseURL(publicURL, url)

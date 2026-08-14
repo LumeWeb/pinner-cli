@@ -132,6 +132,13 @@ type AuthService interface {
 	// UpdatePassword changes the account password given the current password.
 	UpdatePassword(ctx context.Context, currentPassword, newPassword string) error
 
+	// RequestPasswordReset initiates the password reset process by emailing a
+	// reset link/token to the account's verified address. It is unauthenticated
+	// (no account token is required), so it works even when the password is
+	// forgotten. The human completes the reset out-of-band in a browser / via
+	// the emailed link; the new password never transits this channel.
+	RequestPasswordReset(ctx context.Context, email string) error
+
 	// GetSubscriptionStatus returns the account's active subscription status.
 	GetSubscriptionStatus(ctx context.Context) (*portalsdk.SubscriptionStatus, error)
 }
@@ -592,6 +599,22 @@ func (s *AuthServiceDefault) UpdatePassword(ctx context.Context, currentPassword
 	}
 	if err := client.UpdatePassword(ctx, currentPassword, newPassword); err != nil {
 		return fmt.Errorf("failed to update password: %w", err)
+	}
+	return nil
+}
+
+// RequestPasswordReset initiates the password reset flow by sending an email
+// reset link/token to the account's verified address. It uses the plain
+// (unauthenticated) account client because the reset endpoint is reachable
+// without a token; this is what makes it usable for a forgotten password. The
+// human completes the reset out-of-band via the emailed link; the new password
+// never transits the MCP/LLM channel.
+func (s *AuthServiceDefault) RequestPasswordReset(ctx context.Context, email string) error {
+	if s.accountClient == nil {
+		return fmt.Errorf("account client is not configured")
+	}
+	if err := s.accountClient.RequestPasswordReset(ctx, email); err != nil {
+		return fmt.Errorf("failed to request password reset: %w", err)
 	}
 	return nil
 }

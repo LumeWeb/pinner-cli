@@ -1,0 +1,72 @@
+package mcp
+
+// Out-of-band account credential change pages, rendered with the shared Pinner
+// brand identity (brandLayout + brand.css) so they match the sign-in, vault,
+// and spent-link pages.
+
+// accountPasswordPage is the one-time change-password GET page. The human
+// enters their current + new password here; the POST runs the authenticated
+// UpdatePassword host-side so the passwords never transit the MCP/LLM channel.
+// csrf is a per-token secret required back on POST (double-submit CSRF).
+templ accountPasswordPage(token, csrf, action string) {
+	@brandLayout("Change Pinner account password") {
+		<div class="card">
+			<h1>Change your password</h1>
+			<p>Enter your current password and choose a new one. The change is applied to your Pinner account from your browser, directly on this machine; the MCP/agent channel never sees your password.</p>
+			<form method="post" action={ action } autocomplete="off">
+				<input type="hidden" name="csrf" value={ csrf }/>
+				<label for="current_password">Current password</label>
+				<input type="password" name="current_password" id="current_password" required autocomplete="current-password" />
+				<label for="new_password">New password</label>
+				<input type="password" name="new_password" id="new_password" required autocomplete="new-password" />
+				<label for="confirm_password">Confirm new password</label>
+				<input type="password" name="confirm_password" id="confirm_password" required autocomplete="new-password" />
+				<button type="submit">Change password</button>
+			</form>
+			<div class="seed-foot">One-time page. It expires if unused.</div>
+		</div>
+	}
+}
+
+// accountEmailPage is the one-time change-email GET page. The human enters the
+// new email + current password here; the POST runs the authenticated UpdateEmail
+// host-side so the password never transits the MCP/LLM channel.
+templ accountEmailPage(token, csrf, action string) {
+	@brandLayout("Change Pinner account email") {
+		<div class="card">
+			<h1>Change your email</h1>
+			<p>Enter your new email address and your current password to confirm. The change is applied to your Pinner account from your browser, directly on this machine; the MCP/agent channel never sees your password.</p>
+			<form method="post" action={ action } autocomplete="off">
+				<input type="hidden" name="csrf" value={ csrf }/>
+				<label for="email">New email</label>
+				<input type="email" name="email" id="email" required autocomplete="email" />
+				<label for="password">Current password</label>
+				<input type="password" name="password" id="password" required autocomplete="current-password" />
+				<button type="submit">Change email</button>
+			</form>
+			<div class="seed-foot">One-time page. It expires if unused.</div>
+		</div>
+	}
+}
+
+// accountChangeChangedPage confirms the credential was updated.
+templ accountChangeChangedPage(op accountChangeOp) {
+	@brandLayout("Change complete") {
+		<div class="card">
+			<h1>{ accountChangeChangedTitle(op) }</h1>
+			<p>Your Pinner account has been updated. You can close this window.</p>
+		</div>
+	}
+}
+
+// accountChangeErrorPage reports a failed change. errMsg is escaped by templ so
+// arbitrary backend text cannot be reflected as markup.
+templ accountChangeErrorPage(errMsg string) {
+	@brandLayout("Change failed") {
+		<div class="card">
+			<h1>Change failed</h1>
+			<p class="status error" role="alert">{ errMsg }</p>
+			<p>You can close this window and try again from the app, or open a fresh change page.</p>
+		</div>
+	}
+}
