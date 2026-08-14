@@ -194,9 +194,10 @@ func websitesGet(d WebsitesDeps) catalog.Operation {
 // websitesCreate is the `websites create` operation. Returns *ipfs.WebsiteItem.
 //
 // The <domain> positional and --cid are required (this handler errors if
-// either is missing). --target-type defaults to "ipfs". --dns-hosting /
-// --no-dns-hosting map onto DnsHostingEnabled: each explicitly enables or
-// disables; otherwise the field is left nil.
+// either is missing). --target-type defaults to "ipfs". The nullable
+// --dns-hosting maps onto DnsHostingEnabled (true = managed, false =
+// self-managed); omitted leaves it nil so the backend applies its default
+// (managed DNS).
 func websitesCreate(d WebsitesDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
 		Name:        "websites_create",
@@ -212,8 +213,7 @@ func websitesCreate(d WebsitesDeps) catalog.Operation {
 			{Name: "website", Type: catalog.ArgTypeString, Required: true, Help: "Domain for the new website", AgentHelp: "The custom domain the website should serve under."},
 			{Name: "cid", Type: catalog.ArgTypeString, Required: true, Help: "IPFS CID to serve", AgentHelp: "The IPFS CID the website should serve."},
 			{Name: "target-type", Type: catalog.ArgTypeString, Default: "ipfs", Help: "Target type (ipfs|ipns)"},
-			{Name: "dns-hosting", Type: catalog.ArgTypeBool, Default: "false", Help: "Let Pinner manage DNS for this website"},
-			{Name: "no-dns-hosting", Type: catalog.ArgTypeBool, Default: "false", Help: "Disable Pinner-managed DNS for this website"},
+			{Name: "dns-hosting", Type: catalog.ArgTypeNullableBool, Help: "Let Pinner manage DNS for this website (true = managed, false = self-managed, omit = managed default)", AgentHelp: "true lets Pinner manage DNS; false leaves DNS self-managed. Omit to use the default (Pinner-managed DNS)."},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			svc, svcErr := d.service(input)
@@ -237,13 +237,9 @@ func websitesCreate(d WebsitesDeps) catalog.Operation {
 				TargetHash: cid,
 				TargetType: targetType,
 			}
-			if catalog.BoolArg(input, "dns-hosting", false) {
-				v := true
-				req.DnsHostingEnabled = &v
-			} else if catalog.BoolArg(input, "no-dns-hosting", false) {
-				v := false
-				req.DnsHostingEnabled = &v
-			}
+			// nil (omitted) lets the backend apply its default (managed DNS);
+			// true/false map onto Pinner-managed / self-managed explicitly.
+			req.DnsHostingEnabled = catalog.BoolArgPtr(input, "dns-hosting")
 			// *ipfs.WebsiteItem
 			return svc.CreateWithOptions(ctx, req)
 		}),
@@ -254,14 +250,14 @@ func websitesCreate(d WebsitesDeps) catalog.Operation {
 //
 // At least one optional field is required; this handler also enforces the
 // --target-type-required-with--cid business rule. Flag mapping: rename-to ->
-// req.Domain, cid -> req.TargetHash, target-type -> req.TargetType,
-// dns-hosting/no-dns-hosting -> req.DnsHostingEnabled.
+// req.Domain, cid -> req.TargetHash, target-type -> req.TargetType, nullable
+// dns-hosting -> req.DnsHostingEnabled (nil = leave unchanged).
 func websitesUpdate(d WebsitesDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
 		Name:        "websites_update",
 		Title:       "Update a website",
 		Summary:     "Update a website",
-		Description: "Update an existing website: change its cid, target-type (ipfs|ipns), rename its domain via rename-to, or toggle dns-hosting. Selects the site by the website field, then applies whichever optional fields are set (at least one is required). Returns the updated website object.",
+		Description: "Update an existing website: change its cid, target-type (ipfs|ipns), rename its domain via rename-to, or set dns-hosting (true = Pinner-managed, false = self-managed, omit = unchanged). Selects the site by the website field, then applies whichever optional fields are set (at least one is required). Returns the updated website object.",
 		Category:    "core",
 		Safety:      catalog.SafetyMutate,
 		Interaction: catalog.InteractionAgentSafe,
@@ -272,8 +268,7 @@ func websitesUpdate(d WebsitesDeps) catalog.Operation {
 			{Name: "rename-to", Type: catalog.ArgTypeString, Help: "New domain for the website"},
 			{Name: "cid", Type: catalog.ArgTypeString, Help: "New target CID"},
 			{Name: "target-type", Type: catalog.ArgTypeString, Help: "New target type (ipfs|ipns)"},
-			{Name: "dns-hosting", Type: catalog.ArgTypeBool, Default: "false", Help: "Enable Pinner-managed DNS"},
-			{Name: "no-dns-hosting", Type: catalog.ArgTypeBool, Default: "false", Help: "Disable Pinner-managed DNS"},
+			{Name: "dns-hosting", Type: catalog.ArgTypeNullableBool, Help: "Set Pinner-managed DNS (true = managed, false = self-managed, omit = leave unchanged)", AgentHelp: "true enables Pinner-managed DNS; false disables it (self-managed). Omit to leave the current DNS hosting state unchanged."},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			svc, svcErr := d.service(input)
@@ -302,13 +297,9 @@ func websitesUpdate(d WebsitesDeps) catalog.Operation {
 			if req.TargetHash != nil && req.TargetType == nil {
 				return nil, fmt.Errorf("--target-type is required when --cid is provided")
 			}
-			if catalog.BoolArg(input, "dns-hosting", false) {
-				v := true
-				req.DnsHostingEnabled = &v
-			} else if catalog.BoolArg(input, "no-dns-hosting", false) {
-				v := false
-				req.DnsHostingEnabled = &v
-			}
+			// nil (omitted) means "leave DNS hosting unchanged"; true/false
+			// toggle it on/off explicitly.
+			req.DnsHostingEnabled = catalog.BoolArgPtr(input, "dns-hosting")
 			// *ipfs.WebsiteItem
 			return svc.UpdateWithOptions(ctx, id, req)
 		}),

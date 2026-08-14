@@ -210,8 +210,8 @@ func websitesActionAdapter(op catalog.Operation) cli.ActionFunc {
 		// At-least-one-field gate for update (mirrors requireUpdateFields).
 		if op.Name() == "websites_update" {
 			if !c.IsSet(FlagRenameTo) && !c.IsSet(FlagCID) && !c.IsSet(FlagTargetType) &&
-				!c.IsSet(FlagDNSHosting) && !c.IsSet(FlagNoDNSHosting) {
-				return fmt.Errorf("at least one field must be provided for update (--rename-to, --cid, --target-type, --dns-hosting, --no-dns-hosting)")
+				!c.IsSet(FlagDNSHosting) {
+				return fmt.Errorf("at least one field must be provided for update (--rename-to, --cid, --target-type, --dns-hosting)")
 			}
 		}
 

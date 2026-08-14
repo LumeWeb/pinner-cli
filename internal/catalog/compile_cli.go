@@ -163,7 +163,8 @@ func actionFor(op Operation) cli.ActionFunc {
 
 		input := make(map[string]any, len(op.Args()))
 		for _, a := range op.Args() {
-			if !cmd.IsSet(a.Name) {
+			value, set, empty := cliArgValue(cmd, a)
+			if !set {
 				// Requiredness uses the shared isRequiredArg predicate (same one
 				// Invoke and the schema builder use): an arg is only mandatory
 				// when Required AND has no default; otherwise normalizeInputDefaults
@@ -173,7 +174,6 @@ func actionFor(op Operation) cli.ActionFunc {
 				}
 				continue
 			}
-			value, empty := valueFor(cmd, a)
 			if isRequiredArg(a) && empty {
 				return fmt.Errorf("required argument --%s was empty", a.Name)
 			}
@@ -208,31 +208,55 @@ func actionFor(op Operation) cli.ActionFunc {
 	}
 }
 
-// valueFor reads a parsed flag value from cmd for the given arg, returning the
-// value plus whether it is "empty" (used for required-arg validation).
-func valueFor(cmd *cli.Command, a OperationArg) (any, bool) {
+// cliArgValue is the single source of truth for how each ArgType surfaces from
+// a parsed urfave command into the operation input map. Both the compiled
+// command path (actionFor) and the wiring adapters (FlagValue) delegate to it,
+// so a new ArgType needs exactly one mapping instead of a copy per presentation
+// adapter.
+//
+// It returns:
+//   - value: the input-map value. When not set, nullable bool yields nil
+//     (tri-state "absent"); every other type yields its flag's zero value,
+//     which matches what the wiring adapters have always placed in the map.
+//   - set:   whether the flag was explicitly provided (cmd.IsSet).
+//   - empty: for required-arg validation, whether a provided value is "empty"
+//     (only meaningful for string / string-slice types).
+func cliArgValue(cmd *cli.Command, a OperationArg) (value any, set bool, empty bool) {
+	set = cmd.IsSet(a.Name)
 	switch a.Type {
 	case ArgTypeBool:
-		return cmd.Bool(a.Name), false
+		return cmd.Bool(a.Name), set, false
 	case ArgTypeNullableBool:
-		// Reached only when cmd.IsSet(a.Name) was true (the caller guards on
-		// it), so the flag was explicitly provided; surface its value as a *bool
-		// so the Handler gets the same tri-state shape as the MCP surface.
+		// Preserve tri-state: absent flag -> nil, provided -> &bool. c.Bool
+		// alone cannot distinguish --flag=false from an absent flag, so gate
+		// on set so the Handler sees the same shape as the MCP surface.
+		if !set {
+			return nil, false, false
+		}
 		v := cmd.Bool(a.Name)
-		return &v, false
+		return &v, true, false
 	case ArgTypeInt:
 		// An explicit 0 is a legitimate value (e.g. --ttl 0); presence is
-		// determined by cmd.IsSet (checked by the caller), not by magnitude.
-		return cmd.Int(a.Name), false
+		// determined by set, not by magnitude.
+		return cmd.Int(a.Name), set, false
 	case ArgTypeFloat:
-		return cmd.Float(a.Name), false
+		return cmd.Float(a.Name), set, false
 	case ArgTypeDuration:
-		return cmd.Duration(a.Name), false
+		return cmd.Duration(a.Name), set, false
 	case ArgTypeStringSlice:
 		v := cmd.StringSlice(a.Name)
-		return v, len(v) == 0
+		return v, set, len(v) == 0
 	default: // ArgTypeString
 		v := cmd.String(a.Name)
-		return v, v == ""
+		return v, set, v == ""
 	}
+}
+
+// FlagValue maps a parsed urfave command to the operation-input value for an
+// argument, delegating to cliArgValue. It exists for the CLI wiring adapters
+// (catalog_wiring and friends) which place a value for every declared arg into
+// the input map and do not gate on flag presence themselves.
+func FlagValue(cmd *cli.Command, a OperationArg) any {
+	v, _, _ := cliArgValue(cmd, a)
+	return v
 }

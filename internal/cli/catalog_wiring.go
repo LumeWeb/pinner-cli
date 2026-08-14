@@ -379,21 +379,12 @@ func renderCatalogDryRun(output Output, _ *cli.Command, r *catalogops.DryRunResu
 
 // ---- CLI-input helpers (pkg/cli layer only; not in internal/catalogops) ----
 
-// flagValue reads a compiled flag's value for the given operation arg into the
-// input map, matching the catalog compiler's flag-to-input mapping so the
-// adapter and compiler agree. Bool, Int, String, and StringSlice are covered;
-// the pins domain uses only these.
+// flagValue maps a parsed urfave command to the operation-input value for an
+// argument. It delegates to the catalog's single shared mapping (FlagValue) so
+// the wiring adapters and the compiled command path share one source of truth
+// per ArgType; the adapter and compiler cannot drift.
 func flagValue(c *cli.Command, a catalog.OperationArg) any {
-	switch a.Type {
-	case catalog.ArgTypeBool:
-		return c.Bool(a.Name)
-	case catalog.ArgTypeInt:
-		return c.Int(a.Name)
-	case catalog.ArgTypeStringSlice:
-		return c.StringSlice(a.Name)
-	default: // ArgTypeString
-		return c.String(a.Name)
-	}
+	return catalog.FlagValue(c, a)
 }
 
 // positionalCID returns the first positional argument, if any (used for
