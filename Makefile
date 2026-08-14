@@ -31,11 +31,23 @@ LDFLAGS := -X '$(PKG).Version=$(VERSION)' \
 generate:
 	go generate ./...
 
-build: generate
+# jsbuild builds the MCP App JS bundles (packages/apps via tsdown) into
+# self-contained ESM files and copies them to internal/mcpapp/appsassets/dist/
+# so Go embeds them. Requires pnpm on PATH. Go build/test embed these bundles,
+# so jsbuild must run before any go build/test.
+jsbuild:
+	cd packages/apps && pnpm install --frozen-lockfile && pnpm build && cd ../.. && \
+	mkdir -p internal/mcpapp/appsassets/dist && \
+	cp packages/apps/dist/*.js internal/mcpapp/appsassets/dist/
+
+build: generate jsbuild
 	CGO_ENABLED=1 go build -ldflags="$(LDFLAGS)" -o pinner ./cmd/pinner
 
-install: generate
+install: generate jsbuild
 	CGO_ENABLED=1 go install -ldflags="$(LDFLAGS)" ./cmd/pinner
+
+test: jsbuild
+	go test ./...
 
 clean:
 	rm -f pinner

@@ -1,0 +1,19 @@
+{
+  "name": "@pinner/apps",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build-apps.mjs",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/ext-apps": "catalog:",
+    "robot3": "catalog:"
+  },
+  "devDependencies": {
+    "tsdown": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

@@ -1,0 +1,37 @@
+# js-bundle: build the MCP App JS bundles (packages/apps) and copy them into
+# internal/mcpapp/appsassets/dist/ so Go's //go:embed picks them up. Every Go
+# build/test step embeds these bundles and the AppModuleJS seam panics if they
+# are absent, so this action must run before any `go build`/`go test`.
+name: Build JS bundles
+description: Builds packages/apps self-contained bundles and stages them for Go embedding
+
+runs:
+  using: 'composite'
+  steps:
+    - uses: pnpm/action-setup@v5
+      with:
+        # Version comes from the `packageManager` field in package.json
+        # (pnpm@10.33.2). Do NOT also pass `version` here — pnpm/action-setup@v5
+        # rejects multiple version specs with "Multiple versions of pnpm".
+        run_install: false
+
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+        cache: 'pnpm'
+        cache-dependency-path: pnpm-lock.yaml
+
+    - name: Install JS deps
+      run: pnpm install --frozen-lockfile
+      shell: bash
+
+    - name: Build JS bundles
+      # Root `build` script filters to @pinner/apps (see package.json).
+      run: pnpm build
+      shell: bash
+
+    - name: Stage bundles for Go embedding
+      run: |
+        mkdir -p internal/mcpapp/appsassets/dist
+        cp packages/apps/dist/*.js internal/mcpapp/appsassets/dist/
+      shell: bash

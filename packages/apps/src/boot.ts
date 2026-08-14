@@ -1,0 +1,46 @@
+// Production boot: connect the app to the host over postMessage, then wire the
+// per-app machine to the DOM with a real `callServerTool` bridge. The host
+// client (App + PostMessageTransport) is imported directly and bundled
+// self-contained by tsdown. On connection failure the shared status element
+// shows the "Could not connect to host" error.
+
+import { connectApp, type AppIdentity } from "./connect";
+import type { CallTool } from "./flow";
+import { setStatus, StatusClass } from "./dom";
+import { APP_VERSION } from "./version";
+
+/** Finish mounting an app: run synchronously with a caller-supplied callTool
+ * (tests/demo) or connect to the host over postMessage via bootApp, advertising
+ * the CLI build version. Shared by the flow and pin mount helpers. */
+export function mountApp(opts: {
+  name: string;
+  statusEl: HTMLElement | null;
+  wire: (ct: CallTool) => unknown;
+  callTool?: CallTool;
+}): unknown {
+  if (opts.callTool) return opts.wire(opts.callTool);
+  return bootApp({ name: opts.name, version: APP_VERSION }, opts.wire, opts.statusEl);
+}
+
+/**
+ * Connect the app to the host and invoke `main(callTool)` with a working
+ * `callServerTool` bridge. If connection fails, the status element (if any) is
+ * stamped with an error so the user sees why the app is inert.
+ */
+export async function bootApp(
+  identity: AppIdentity,
+  main: (callTool: CallTool) => void,
+  statusEl: HTMLElement | null,
+): Promise<void> {
+  try {
+    const app = await connectApp(identity);
+    main(app.callServerTool.bind(app));
+  } catch (err) {
+    const msg = err && (err as Error).message ? (err as Error).message : String(err);
+    if (statusEl) {
+      setStatus(statusEl, StatusClass.Error, "Could not connect to host: " + msg);
+    } else {
+      console.error("MCP app could not connect to host:", err);
+    }
+  }
+}

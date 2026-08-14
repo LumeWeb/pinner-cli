@@ -20,38 +20,7 @@ const AuthSSOAppURI = "ui://auth/sso.html"
 // ESM module (shared ext-apps bootstrap + SSO logic) come from
 // renderMcpAppDoc; only the visible body form is authored in templ.
 func renderAuthSSOAppHTML() string {
-	return mcpapp.RenderMcpAppDoc("Sign In", mcpapp.AuthSSOAppForm(), authSSOAppModule(mcpapp.ExtAppsClientBase64()))
-}
-
-// authSSOAppModule renders the sign-in app's ESM module source using the
-// shared out-of-band flow template. The shared flow supplies the in-flight
-// guard, the start guard against a handle-less not-configured hand-off, and
-// the handle-presence dead-handle predicate that the standalone SSO view
-// previously lacked.
-func authSSOAppModule(clientBase64 string) string {
-	return mcpapp.RenderAppFlowModule(clientBase64, mcpapp.AppFlowSpec{
-		Name:       "AuthSSO",
-		Version:    "1.0.0",
-		StartTool:  "auth_sso",
-		StatusTool: "auth_sso_status",
-		StartBtnID: "sso-start",
-		UrlElID:    "sso-url",
-		StatusElID: "sso-status",
-		// The approval URL / action_url is the human-only page where sign-in is
-		// completed in the browser.
-		URLFields:        []string{"action_url"},
-		ActionLabel:      "sign-in",
-		StartErrorMsg:    "Auth did not return an approval handoff.",
-		AlreadyDoneMsg:   "Already signed in.",
-		NoHandlePrefix:   "Could not start sign-in.",
-		PendingStartMsg:  "Sign-in pending. Open the approval link in your browser.",
-		DeadDetailPrefix: "Sign-in no longer active.",
-		PendingWaitMsg:   "Waiting for approval in the browser...",
-		DoneMsg:          "Signed in.",
-		TimeoutWaitMsg:   "Timed out waiting for approval. Click start to retry.",
-		TimeoutPollMsg:   "Timed out polling sign-in status.",
-		RetryWord:        "sign in",
-	})
+	return mcpapp.RenderMcpAppDoc("Sign In", mcpapp.AuthSSOAppForm(), mcpapp.AppModule("auth-sso"))
 }
 
 // authSSOStatusDescriptor builds the app-only auth status helper. It reuses the
