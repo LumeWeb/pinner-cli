@@ -132,13 +132,19 @@ func accountActionAdapter(op catalog.Operation) cli.ActionFunc {
 		}
 
 		// --open convenience: print, then spawn the default browser at the URL.
+		// Human-readable browser messages must never pollute stdout in
+		// --json / --agent modes (they would corrupt the structured result);
+		// the browser still opens, only the chatter is suppressed.
 		if shouldOpen(c) {
+			output := setupOutput(c)
 			if url := accountResultURL(result); url != "" {
 				if perr := openURL(url); perr != nil {
 					// Non-fatal: the URL is printed regardless.
-					setupOutput(c).Printfln("Could not auto-open the browser: %v", perr)
-				} else {
-					setupOutput(c).Printfln("Opened %s in your browser.", url)
+					if !output.IsJSON() {
+						output.Printfln("Could not auto-open the browser: %v", perr)
+					}
+				} else if !output.IsJSON() {
+					output.Printfln("Opened %s in your browser.", url)
 				}
 			}
 		}
