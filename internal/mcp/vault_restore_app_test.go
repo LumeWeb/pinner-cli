@@ -151,3 +151,22 @@ func TestVaultRestoreStatusHelperPendingCarriesHandle(t *testing.T) {
 	require.False(t, hasHandle, "a dead handle must not carry a handle")
 	require.Equal(t, compiledVaultRestoreToolName, deadSC["resume_tool"])
 }
+
+// TestVaultRestoreNotConfiguredReturnsNoHandle pins the server-side contract
+// the Restore Vault view's start-guard relies on: when the OOB restore
+// coordinator is absent, vault_restore returns a needs_human not-configured
+// hand-off with NO handle (the view cannot poll it and must surface the detail
+// instead). This guards against the view sending {handle: undefined} into the
+// status helper, which would otherwise retry "handle is required" for ~90s.
+func TestVaultRestoreNotConfiguredReturnsNoHandle(t *testing.T) {
+	reg := NewHandoffRegistry()
+	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+
+	handler := vaultRestoreSetupHandler(nil, reg, handles)
+	r, err := handler(context.Background(), ToolRequest{Name: compiledVaultRestoreToolName})
+	require.NoError(t, err)
+	sc := requireHandoff(t, r) // needs_human (ReasonInteractiveOnly)
+	_, hasHandle := sc["handle"]
+	require.False(t, hasHandle, "not-configured hand-off must not carry a handle")
+	require.Contains(t, sc["detail"], "not configured", "not-configured detail should be surfaced")
+}

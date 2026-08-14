@@ -50,6 +50,16 @@ function startRestore(app) {
       urlEl.textContent = url;
       urlEl.setAttribute("href", url);
     }
+    // The status helper is keyed by handle and rejects an undefined handle with
+    // "handle is required", so a needs_human hand-off without a handle (the
+    // not-configured branch) can never be polled. Surface the detail and stop
+    // instead of sending the poll loop into ~90s of futile retries.
+    if (!sc.handle) {
+      setStatus(statusEl, "error",
+        (sc.detail || "Could not start vault restore.") + " Click start to retry.");
+      finishPolling();
+      return;
+    }
     setStatus(statusEl, "pending",
       "Open the restore link and enter your recovery seed to complete the restore.");
     pollStatus(app, sc.handle, 60);
