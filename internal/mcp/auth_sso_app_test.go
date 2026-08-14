@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
@@ -118,4 +119,41 @@ func TestAuthSSOStatusHelperPendingToDone(t *testing.T) {
 	doneSC := done.StructuredContent.(map[string]any)
 	require.Equal(t, StatusDone, doneSC["status"])
 	require.False(t, done.IsError)
+}
+
+// TestAuthSSOStatusHelperDeadHandleSteersRestart pins the server-side contract
+// the Sign In view's poll loop depends on: for an unknown or expired handle,
+// auth_sso_status returns needs_human WITHOUT an action_url and steers toward
+// restart via resume_tool/detail. The view stops polling on exactly this shape
+// (a live pending hand-off always carries an action_url; a dead one never does).
+func TestAuthSSOStatusHelperDeadHandleSteersRestart(t *testing.T) {
+	reg := NewHandoffRegistry()
+	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+
+	status := authSSOStatusDescriptor(reg, handles)
+
+	// Unknown handle: no continuation and no session store entry.
+	r, err := status.Handler(context.Background(), ToolRequest{
+		Name:      "auth_sso_status",
+		Arguments: map[string]any{"handle": "does-not-exist"},
+	})
+	require.NoError(t, err)
+	sc := requireHandoff(t, r) // needs_human
+	_, hasURL := sc["action_url"]
+	require.False(t, hasURL, "dead handle must not carry an action_url")
+	require.Equal(t, "auth_sso", sc["resume_tool"], "dead handle steers to restart via auth_sso")
+
+	// Expired handle: session token stored, but TTL elapsed. Simulate by moving
+	// the store clock past the item's expiry.
+	tokenHandle := handles.Create("pending", map[string]any{})
+	handles.now = func() time.Time { return time.Now().Add(DefaultSessionTTL + time.Minute) }
+	r, err = status.Handler(context.Background(), ToolRequest{
+		Name:      "auth_sso_status",
+		Arguments: map[string]any{"handle": tokenHandle},
+	})
+	require.NoError(t, err)
+	sc2 := requireHandoff(t, r)
+	_, hasURL2 := sc2["action_url"]
+	require.False(t, hasURL2, "expired handle must not carry an action_url")
+	require.Equal(t, "auth_sso", sc2["resume_tool"])
 }

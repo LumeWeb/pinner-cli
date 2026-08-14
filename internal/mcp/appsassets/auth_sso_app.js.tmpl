@@ -56,6 +56,18 @@ function pollStatus(app, handle, attempts) {
       setStatus(statusEl, "ok", "Signed in.");
       return;
     }
+    // auth_sso_status reports needs_human both while a sign-in is still live
+    // (it carries an action_url to approve) and when the handle has become a
+    // dead end (unknown/expired/failed/no continuation). A pending hand-off
+    // always includes an action_url; a dead/expired/failed one never does and
+    // steers toward restart via resume_tool/detail. When polling cannot
+    // succeed, surface the restart guidance instead of retrying for ~90s.
+    if (status === "needs_human" && !sc.action_url) {
+      const detail = sc.detail || "Sign-in no longer active.";
+      const restart = sc.resume_tool || "auth_sso";
+      setStatus(statusEl, "info", detail + " Click start to " + restart + " again.");
+      return;
+    }
     if (status === "needs_human") {
       setStatus(statusEl, "pending", "Waiting for approval in the browser...");
     }
