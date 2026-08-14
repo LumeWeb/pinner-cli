@@ -120,13 +120,16 @@ func registerCustomTools(deps customToolDeps) error {
 	deps.catalog.Add(toolEntryFromDescriptor(vaultCreateResume))
 	deps.catalog.Add(toolEntryFromDescriptor(vaultRestoreResume))
 
-	// Pair vault_create with its "Create Vault" MCP App view
-	// (ui://vault/create.html) so a UI-capable host renders the flow in a
-	// panel. The compiled vault_create tool is in the catalog from
-	// buildCatalog. Must run before the curated registration loop reads
-	// _meta.ui.
+	// Pair vault_create / vault_restore with their "Create Vault" / "Restore
+	// Vault" MCP App views (ui://vault/create.html / ui://vault/restore.html)
+	// so a UI-capable host renders the flows in a panel. The compiled
+	// vault_create / vault_restore tools are in the catalog from buildCatalog.
+	// Must run before the curated registration loop reads _meta.ui.
 	if err := RegisterVaultCreateApp(deps.srv, deps.catalog, deps.handoffReg, deps.authHandles); err != nil {
 		return fmt.Errorf("failed to register vault create app: %w", err)
+	}
+	if err := RegisterVaultRestoreApp(deps.srv, deps.catalog, deps.handoffReg, deps.authHandles); err != nil {
+		return fmt.Errorf("failed to register vault restore app: %w", err)
 	}
 
 	// Stamp which tools are part of the direct tools/list surface. This must
