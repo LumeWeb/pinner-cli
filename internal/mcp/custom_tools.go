@@ -97,6 +97,14 @@ func registerCustomTools(deps customToolDeps) error {
 	deps.catalog.Add(toolEntryFromDescriptor(authSSO))
 	deps.catalog.Add(toolEntryFromDescriptor(authResume))
 
+	// Pair the auth_sso tool with its "Sign In" MCP App view (ui://auth/sso.html)
+	// so a UI-capable host renders the SSO approval in a panel. This must run
+	// after auth_sso is added to the catalog (AttachTo requires it) and before
+	// the curated registration loop reads _meta.ui.
+	if err := RegisterAuthSSOApp(deps.srv, deps.catalog, deps.handoffReg, deps.authHandles); err != nil {
+		return fmt.Errorf("failed to register auth SSO app: %w", err)
+	}
+
 	// Vault create/restore OOB hand-offs ride the SAME generic handoff-resume
 	// framework: the invoke path (buildCatalog) mints a handle and registers a
 	// per-domain continuation against it when it attaches a seed_url /
