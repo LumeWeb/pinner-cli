@@ -350,7 +350,7 @@ func dnsRecordsCreate(d DNSDeps) catalog.Operation {
 		Name:        "dns_records_create",
 		Title:       "Create a DNS record",
 		Summary:     "Create a DNS record",
-		Description: "Create a DNS record (A/AAAA/CNAME/MX/NS/TXT) in the specified zone. name is optional (omit or use @ for the apex); type and content are required; ttl defaults to 3600. Returns the created record.",
+		Description: "Create a DNS record (A/AAAA/CNAME/MX/NS/TXT/SRV/CAA/PTR/SOA) in the specified zone. name is optional (omit or use @ for the apex); type and content are required; ttl defaults to 3600. Returns the created record.",
 		Category:    "core",
 		Safety:      catalog.SafetyMutate,
 		Interaction: catalog.InteractionAgentSafe,
@@ -359,7 +359,7 @@ func dnsRecordsCreate(d DNSDeps) catalog.Operation {
 		Args: []catalog.OperationArg{
 			{Name: "zone", Type: catalog.ArgTypeString, Required: true, Help: "Domain name or numeric zone ID"},
 			{Name: "name", Type: catalog.ArgTypeString, Help: "Record name (omit or use @ for apex)"},
-			{Name: "type", Type: catalog.ArgTypeString, Required: true, Enum: []string{"A", "AAAA", "CNAME", "MX", "NS", "TXT"}, Help: "Record type (A, AAAA, CNAME, MX, NS, TXT)"},
+			{Name: "type", Type: catalog.ArgTypeString, Required: true, Enum: []string{"A", "AAAA", "CNAME", "MX", "NS", "TXT", "SRV", "CAA", "PTR", "SOA"}, Help: "Record type (A, AAAA, CNAME, MX, NS, TXT, SRV, CAA, PTR, SOA)"},
 			{Name: "content", Type: catalog.ArgTypeString, Required: true, Help: "Record content (IP, domain, or text)"},
 			{Name: "ttl", Type: catalog.ArgTypeInt, Default: "3600", Help: "TTL in seconds (default 3600)"},
 			{Name: "disabled", Type: catalog.ArgTypeBool, Default: "false", Help: "Disable the record"},
@@ -649,7 +649,7 @@ func validateDNSRecord(recordType, content string) error {
 		if !isValidIPv6(content) {
 			return fmt.Errorf("invalid IPv6 address for AAAA record")
 		}
-	case "CNAME", "MX", "NS":
+	case "CNAME", "MX", "NS", "PTR":
 		if !isValidDomain(content) {
 			return fmt.Errorf("invalid domain for %s record", recordType)
 		}
@@ -657,8 +657,85 @@ func validateDNSRecord(recordType, content string) error {
 		if len(content) > 255 {
 			return fmt.Errorf("TXT record content too long (max 255 characters)")
 		}
+	case "SRV":
+		if err := validateSRV(content); err != nil {
+			return err
+		}
+	case "CAA":
+		if err := validateCAA(content); err != nil {
+			return err
+		}
+	case "SOA":
+		if err := validateSOA(content); err != nil {
+			return err
+		}
 	default:
 		return fmt.Errorf("unsupported record type: %s", recordType)
+	}
+	return nil
+}
+
+// validateSRV validates SRV record content: "<priority> <weight> <port> <target>"
+// in whitespace-separated form (as PowerDNS stores it).
+func validateSRV(content string) error {
+	fields := strings.Fields(content)
+	if len(fields) != 4 {
+		return fmt.Errorf("SRV record content must be \"priority weight port target\" (e.g. \"10 60 5060 sip.example.com\")")
+	}
+	priority, e1 := strconv.ParseUint(fields[0], 10, 16)
+	weight, e2 := strconv.ParseUint(fields[1], 10, 16)
+	port, e3 := strconv.ParseUint(fields[2], 10, 16)
+	if e1 != nil || e2 != nil || e3 != nil {
+		return fmt.Errorf("SRV priority, weight, and port must be integers (0-65535)")
+	}
+	if priority > 65535 || weight > 65535 {
+		return fmt.Errorf("SRV priority and weight must be between 0 and 65535")
+	}
+	if port == 0 || port > 65535 {
+		return fmt.Errorf("SRV port must be between 1 and 65535")
+	}
+	if !isValidDomain(fields[3]) {
+		return fmt.Errorf("SRV target must be a domain (e.g. sip.example.com)")
+	}
+	return nil
+}
+
+// validateCAA validates CAA record content: "<flags> <tag> <value>".
+func validateCAA(content string) error {
+	fields := strings.Fields(content)
+	if len(fields) < 3 {
+		return fmt.Errorf("CAA record content must be \"flags tag value\" (e.g. \"0 issue letsencrypt.org\")")
+	}
+	flags, err := strconv.ParseUint(fields[0], 10, 8)
+	if err != nil || flags > 255 {
+		return fmt.Errorf("CAA flags must be an integer between 0 and 255")
+	}
+	tag := strings.ToLower(strings.TrimSuffix(fields[1], "."))
+	switch tag {
+	case "issue", "issuewild", "iodef":
+	default:
+		return fmt.Errorf("CAA tag must be one of issue, issuewild, or iodef (got %q)", fields[1])
+	}
+	return nil
+}
+
+// validateSOA validates SOA record content:
+// "<mname> <rname> <serial> <refresh> <retry> <expire> <minimum>".
+func validateSOA(content string) error {
+	fields := strings.Fields(content)
+	if len(fields) != 7 {
+		return fmt.Errorf("SOA record content must be \"mname rname serial refresh retry expire minimum\" (7 fields)")
+	}
+	if !isValidDomain(fields[0]) {
+		return fmt.Errorf("SOA primary nameserver (mname) must be a domain")
+	}
+	if !isValidDomain(fields[1]) {
+		return fmt.Errorf("SOA responsible party (rname) must be a domain")
+	}
+	for _, f := range fields[2:] {
+		if _, err := strconv.ParseUint(f, 10, 32); err != nil {
+			return fmt.Errorf("SOA serial/refresh/retry/expire/minimum must be non-negative integers")
+		}
 	}
 	return nil
 }
