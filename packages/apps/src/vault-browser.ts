@@ -150,11 +150,22 @@ export function createVaultBrowserMachine(cfg: VaultBrowserConfig, callTool: Cal
       one(cfg.statusTool, {}),
       one(cfg.listTool, { path: ctx.path }),
     ]);
-    // Error results carry a top-level error string (or an isError marker).
-    const asErr = (r: ToolResult | undefined): string =>
-      r && r.isError && typeof (r as { error?: unknown }).error === "string"
-        ? ((r as { error: string }).error || "")
-        : "";
+    // any result flagged isError is a failure. The message lives in one of:
+    //   - a top-level .error string (set by the local one() rejection handler),
+    //   - structuredContent.error (Go ErrorResult emits {status:"error",error:code}),
+    //   - otherwise a generic fallback, so a failed call never falls through
+    //     to render a misleading empty listing.
+    const asErr = (r: ToolResult | undefined): string => {
+      if (!r || !r.isError) return "";
+      const top = (r as { error?: unknown }).error;
+      const sc = r.structuredContent as Record<string, unknown> | undefined;
+      const scErr = sc?.error;
+      // Message priority: local reject .error, then server structuredContent.error,
+      // then a generic fallback so a failed call never renders as an empty dir.
+      if (typeof top === "string" && top) return top;
+      if (typeof scErr === "string" && scErr) return scErr;
+      return "vault operation failed";
+    };
     const firstError = asErr(statusRes) || asErr(listRes);
     if (firstError) {
       throw new Error(firstError);

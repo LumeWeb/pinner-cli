@@ -8,6 +8,7 @@ import { interpret, type Service } from "robot3";
 import { createVaultBrowserMachine, BrowserState, type VaultBrowserConfig, type VaultBrowserContext, type VaultListItem } from "@/vault-browser";
 import {
   parentPath,
+  joinDirPath,
   renderVaultBrowser,
   runVaultBrowserEntry,
   currentBrowserState,
@@ -141,6 +142,35 @@ describe("vault-browser machine", () => {
     expect(ctx().items).toHaveLength(1);
   });
 
+  it("a server error result (isError with structuredContent.error, no top-level error) lands in error", async () => {
+    // Regression: real server/SDK error results flag isError and carry the
+    // message inside structuredContent ({status:"error",error:<code>}), with no
+    // top-level .error string. The machine must treat them as failures rather
+    // than silently rendering an empty directory.
+    service.send({ type: "load", path: "vault:/" });
+    await until(service, () => gate.length === 2);
+    gate.find((g) => g.tool === "vault_status")!.resolve(statusEnvelope());
+    gate.find((g) => g.tool === "vault_ls")!.resolve({
+      isError: true,
+      structuredContent: { status: "error", error: "profile not unlocked" },
+    } as ToolResult);
+
+    await untilState(service, BrowserState.Error);
+    expect(ctx().errorMsg).toContain("profile not unlocked");
+    expect(ctx().items).toHaveLength(0);
+  });
+
+  it("a bare isError result with no message falls back to a generic error", async () => {
+    service.send({ type: "load", path: "vault:/" });
+    await until(service, () => gate.length === 2);
+    gate.find((g) => g.tool === "vault_status")!.resolve(statusEnvelope());
+    gate.find((g) => g.tool === "vault_ls")!.resolve({ isError: true } as ToolResult);
+
+    await untilState(service, BrowserState.Error);
+    expect(ctx().errorMsg).toContain("vault operation failed");
+    expect(ctx().items).toHaveLength(0);
+  });
+
   it("empty directory surfaces the empty label on the ready readout", async () => {
     service.send({ type: "load", path: "vault:/" });
     await until(service, () => gate.length === 2);
@@ -196,6 +226,22 @@ describe("parentPath", () => {
   });
 });
 
+describe("joinDirPath", () => {
+  it("joins a child onto the root and nested paths", () => {
+    expect(joinDirPath("vault:/", "docs")).toBe("vault:/docs");
+    expect(joinDirPath("vault:/docs", "media")).toBe("vault:/docs/media");
+  });
+
+  it("does not duplicate a trailing slash", () => {
+    expect(joinDirPath("vault:/docs/", "media")).toBe("vault:/docs/media");
+  });
+
+  it("preserves an explicit profile authority", () => {
+    expect(joinDirPath("vault://work/docs/", "media")).toBe("vault://work/docs/media");
+    expect(joinDirPath("vault://work", "media")).toBe("vault://work/media");
+  });
+});
+
 describe("runVaultBrowserEntry", () => {
   // Minimal element harness: DOM-free stand-ins that record what the adapter
   // would write, so we can drive it with a programmatic load() and callTool.
@@ -239,5 +285,65 @@ describe("runVaultBrowserEntry", () => {
     gate.find((g) => g.tool === "vault_ls")!.resolve(listEnvelope([{ name: "d", type: "dir" }]));
     await untilState(run.service, BrowserState.Ready);
     expect(run.state).toBe(BrowserState.Ready);
+  }, 5_000);
+
+  it("wires a click handler on dir rows that loads into that directory", async () => {
+    // Regression: dir rows must be clickable so the human can drill into a
+    // directory. Rendered dir rows get a click listener that issues load() with
+    // the child path joined onto the currently listed path.
+    const gate: GateEntry[] = [];
+    const calls: { name: string; arguments: Record<string, unknown> }[] = [];
+    const callTool: CallTool = async (req) => {
+      calls.push(req);
+      return await new Promise<ToolResult>((resolve) => gate.push({ tool: req.name, resolve }));
+    };
+
+    // Fake row element capturing click handlers; listEl captures rendered rows.
+    const clickHandlers: Record<string, (() => void) | undefined> = {};
+    const makeRow = (name: string) => ({
+      name,
+      addEventListener: (t: string, fn: () => void) => {
+        if (t === "click") clickHandlers[name] = fn;
+      },
+    });
+    let renderedRows: unknown[] = [];
+    const elements = {
+      statusEl: { textContent: "" } as unknown as HTMLElement,
+      pathEl: { textContent: "" } as unknown as HTMLElement,
+      listEl: { replaceChildren: (...n: unknown[]) => { renderedRows = n; } },
+      emptyEl: { textContent: "", style: { display: "" } } as unknown as HTMLElement,
+      upBtn: { disabled: true, addEventListener: () => {} },
+      rootBtn: { disabled: true, addEventListener: () => {} },
+      refreshBtn: { disabled: true, addEventListener: () => {} },
+      createRow: (item: VaultListItem) => makeRow(item.name),
+    } as unknown as VaultBrowserElements;
+
+    const run = runVaultBrowserEntry({ config: baseConfig, callTool, elements });
+
+    await until({ machine: { current: "" } }, () => gate.length === 2, 2_000);
+    gate.find((g) => g.tool === "vault_status")!.resolve(statusEnvelope());
+    gate.find((g) => g.tool === "vault_ls")!.resolve(
+      listEnvelope([{ name: "reports", type: "dir" }, { name: "notes.md", type: "file", size: 42 }]),
+    );
+    await untilState(run.service, BrowserState.Ready);
+
+    // A dir row was rendered and is clickable; a file row is not.
+    expect(renderedRows.map((r) => (r as { name: string }).name)).toEqual(["reports", "notes.md"]);
+    expect(typeof clickHandlers["reports"]).toBe("function");
+    expect(clickHandlers["notes.md"]).toBeUndefined();
+
+    // Clicking the dir row issues a fresh vault_ls load at the joined child path.
+    clickHandlers["reports"]!();
+    await until({ machine: { current: "" } }, () => gate.filter((g) => g.tool === "vault_ls").length === 2, 2_000);
+    const lsCalls = calls.filter((c) => c.name === "vault_ls");
+    expect(lsCalls[lsCalls.length - 1].arguments).toEqual({ path: "vault:/reports" });
+
+    // Resolve the navigate's fresh status + list calls so the load settles.
+    const statusCalls = gate.filter((g) => g.tool === "vault_status");
+    statusCalls[statusCalls.length - 1].resolve(statusEnvelope());
+    const listCalls = gate.filter((g) => g.tool === "vault_ls");
+    listCalls[listCalls.length - 1].resolve(listEnvelope([{ name: "inner", type: "dir" }]));
+    await untilState(run.service, BrowserState.Ready);
+    expect((elements.pathEl as { textContent: string }).textContent).toBe("vault:/reports");
   }, 5_000);
 });

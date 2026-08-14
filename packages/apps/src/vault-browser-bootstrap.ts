@@ -121,6 +121,24 @@ export function parentPath(path: string): string {
 }
 
 /**
+ * Append a child name (directory or file) to a vault path, preserving the
+ * scheme and any explicit profile authority, with a single `/` separator.
+ * `vault:/` + `docs` -> `vault:/docs`; `vault://profile/docs/` + `media` ->
+ * `vault://profile/docs/media`.
+ */
+export function joinDirPath(path: string, name: string): string {
+  let p = path;
+  // Preserve an explicit authority: vault://profile/... stays vault://profile/<rest>.
+  const authority = p.startsWith("vault://") ? "vault://" + p.slice("vault://".length).split("/")[0] : null;
+  if (authority) {
+    p = "vault:" + p.slice(authority.length);
+  }
+  const slash = p.endsWith("/") ? "" : "/";
+  const joined = p + slash + name;
+  return authority ? authority + joined.slice("vault:".length) : joined;
+}
+
+/**
  * Map a machine state + context onto the browser readout. In the ready state
  * the full status + listing are surfaced; loading/error drive the status line
  * and clear the listing.
@@ -202,9 +220,20 @@ export function runVaultBrowserEntry(opts: VaultBrowserEntryOptions) {
     }
 
     // Rebuild the listing. Always clear so a stale prior path never lingers.
+    // Dir rows are clickable so the human can drill into a directory; up/root/
+    // refresh handle the other navigation moves. Wiring lives here (not in the
+    // row builders) so both the default and any entry-provided createRow render
+    // navigable rows, and the click target is derived from the currently listed
+    // path.
     const rows = r.items.map((item) => {
       const create = opts.elements.createRow;
-      return create ? create(item) : defaultRow(item);
+      const row = create ? create(item) : defaultRow(item);
+      if (item.type === "dir" && typeof (row as HTMLElement).addEventListener === "function") {
+        (row as HTMLElement).addEventListener("click", () =>
+          sendLoad(joinDirPath(current, item.name)),
+        );
+      }
+      return row;
     });
     opts.elements.listEl.replaceChildren(...rows);
     opts.elements.emptyEl.style.display = r.empty ? "" : "none";
