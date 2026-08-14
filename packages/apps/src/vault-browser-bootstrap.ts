@@ -236,7 +236,10 @@ export function runVaultBrowserEntry(opts: VaultBrowserEntryOptions) {
       return row;
     });
     opts.elements.listEl.replaceChildren(...rows);
-    opts.elements.emptyEl.style.display = r.empty ? "" : "none";
+    // The empty placeholder is authored with the HTML `hidden` attribute, so
+    // toggle that boolean attribute directly; the UA's `[hidden]{display:none}`
+    // rule keeps it hidden when `hidden` is present, regardless of inline style.
+    opts.elements.emptyEl.hidden = !r.empty;
   });
 
   const sendLoad = (path: string) => service.send({ type: "load", path });

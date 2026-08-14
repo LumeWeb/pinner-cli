@@ -258,7 +258,7 @@ describe("runVaultBrowserEntry", () => {
         statusEl: el({ textContent: "" }) as unknown as HTMLElement,
         pathEl: el({ textContent: "" }) as unknown as HTMLElement,
         listEl: { replaceChildren: (...n: unknown[]) => {} },
-        emptyEl: el({ style: { display: "" } }) as unknown as HTMLElement & { style: { display: string } },
+        emptyEl: el({ hidden: true }) as unknown as HTMLElement,
         upBtn: el({ disabled: true }),
         rootBtn: el({ disabled: true }),
         refreshBtn: el({ disabled: true }),
@@ -311,7 +311,7 @@ describe("runVaultBrowserEntry", () => {
       statusEl: { textContent: "" } as unknown as HTMLElement,
       pathEl: { textContent: "" } as unknown as HTMLElement,
       listEl: { replaceChildren: (...n: unknown[]) => { renderedRows = n; } },
-      emptyEl: { textContent: "", style: { display: "" } } as unknown as HTMLElement,
+      emptyEl: { textContent: "", hidden: true } as unknown as HTMLElement,
       upBtn: { disabled: true, addEventListener: () => {} },
       rootBtn: { disabled: true, addEventListener: () => {} },
       refreshBtn: { disabled: true, addEventListener: () => {} },
@@ -345,5 +345,32 @@ describe("runVaultBrowserEntry", () => {
     listCalls[listCalls.length - 1].resolve(listEnvelope([{ name: "inner", type: "dir" }]));
     await untilState(run.service, BrowserState.Ready);
     expect((elements.pathEl as { textContent: string }).textContent).toBe("vault:/reports");
+  }, 5_000);
+
+  it("reveals the empty placeholder (hidden=false) when a directory is empty", async () => {
+    const gate: GateEntry[] = [];
+    const calls: { name: string; arguments: Record<string, unknown> }[] = [];
+    const callTool: CallTool = async (req) => {
+      calls.push({ name: req.name, arguments: req.arguments });
+      return await new Promise<ToolResult>((resolve) => gate.push({ tool: req.name, resolve }));
+    };
+    const elements = {
+      statusEl: { textContent: "" } as unknown as HTMLElement,
+      pathEl: { textContent: "" } as unknown as HTMLElement,
+      listEl: { replaceChildren: () => {} },
+      emptyEl: { textContent: "", hidden: true } as unknown as HTMLElement,
+      upBtn: { disabled: true, addEventListener: () => {} },
+      rootBtn: { disabled: true, addEventListener: () => {} },
+      refreshBtn: { disabled: true, addEventListener: () => {} },
+    } as unknown as VaultBrowserElements;
+
+    const run = runVaultBrowserEntry({ config: baseConfig, callTool, elements });
+
+    await until({ machine: { current: "" } }, () => gate.length === 2, 2_000);
+    gate.find((g) => g.tool === "vault_status")!.resolve(statusEnvelope());
+    gate.find((g) => g.tool === "vault_ls")!.resolve(listEnvelope([]));
+    await untilState(run.service, BrowserState.Ready);
+
+    expect((elements.emptyEl as { hidden: boolean }).hidden).toBe(false);
   }, 5_000);
 });

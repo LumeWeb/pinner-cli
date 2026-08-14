@@ -191,7 +191,7 @@ describe("runPinListEntry", () => {
       statusEl: { textContent: "" } as unknown as HTMLElement,
       countEl: { textContent: "" } as unknown as HTMLElement,
       tableEl: { replaceChildren: () => {} },
-      emptyEl: { style: { display: "" } } as unknown as HTMLElement & { style: { display: string } },
+      emptyEl: { hidden: true } as unknown as HTMLElement,
       refreshBtn: { disabled: true, addEventListener: () => {} } as unknown as PinListElements["refreshBtn"],
     };
     const run = runPinListEntry({ config: baseConfig, callTool, elements: els });
@@ -203,5 +203,26 @@ describe("runPinListEntry", () => {
     await untilState(run.service, PinListState.Ready);
     expect(run.state).toBe(PinListState.Ready);
     expect(els.countEl.textContent).toBe("2 pins");
+  }, 5_000);
+
+  it("reveals the empty placeholder (hidden=false) when the list is empty", async () => {
+    const gate: GateEntry[] = [];
+    const callTool: CallTool = async (req) =>
+      await new Promise<ToolResult>((resolve) => gate.push({ tool: req.name, resolve }));
+    const els: PinListElements = {
+      statusEl: { textContent: "" } as unknown as HTMLElement,
+      countEl: { textContent: "" } as unknown as HTMLElement,
+      tableEl: { replaceChildren: () => {} },
+      // Starts hidden (empty placeholder authored with the `hidden` attribute).
+      emptyEl: { hidden: true } as unknown as HTMLElement,
+      refreshBtn: { disabled: true, addEventListener: () => {} } as unknown as PinListElements["refreshBtn"],
+    };
+    const run = runPinListEntry({ config: baseConfig, callTool, elements: els });
+
+    await until({ machine: { current: "" } } as never, () => gate.length === 1, 2_000);
+    gate[0].resolve(listEnvelope([]));
+    await untilState(run.service, PinListState.Ready);
+    expect(run.state).toBe(PinListState.Ready);
+    expect((els.emptyEl as { hidden: boolean }).hidden).toBe(false);
   }, 5_000);
 });

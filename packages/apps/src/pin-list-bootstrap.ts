@@ -144,7 +144,10 @@ export function runPinListEntry(opts: PinListEntryOptions) {
       if (el) rows.push(el);
     }
     opts.elements.tableEl.replaceChildren(...rows);
-    opts.elements.emptyEl.style.display = r.empty ? "" : "none";
+    // The empty placeholder is authored with the HTML `hidden` attribute, so
+    // toggle that boolean attribute directly; the UA's `[hidden]{display:none}`
+    // rule keeps it hidden when `hidden` is present, regardless of inline style.
+    opts.elements.emptyEl.hidden = !r.empty;
   });
 
   const sendRefresh = () => service.send({ type: "refresh" });
