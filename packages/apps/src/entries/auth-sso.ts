@@ -32,7 +32,7 @@ export const def: FlowAppEntry = {
  * wires on success, stamping the status element on connect failure.
  */
 export function mount(root: Document = document, callTool?: CallTool) {
-  return mountFlowApp(def, def.copy, root, callTool);
+  return mountFlowApp(def, root, callTool);
 }
 
 export { def as authSsoDefinition };

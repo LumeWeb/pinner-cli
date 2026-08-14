@@ -14,8 +14,7 @@ import { interpret } from "robot3";
 import { createPinMachine, isPinTerminal, type PinConfig, type PinContext, PinState } from "@/pin";
 import type { CallTool } from "@/flow";
 import type { AppDefinition, MachineCurrent } from "@/app-entry";
-import { bootApp } from "@/boot";
-import { APP_VERSION } from "@/version";
+import { mountApp } from "@/boot";
 import { byId, setStatus, StatusClass } from "@/dom";
 
 /** Read the current state of a robot3 service as the typed PinState union. */
@@ -159,6 +158,5 @@ export function mountPinApp(def: PinAppEntry, root: Document, callTool?: CallToo
         outStatus: byId<HTMLElement>(root, def.ids.outStatus)!,
       },
     });
-  if (callTool) return wire(callTool);
-  bootApp({ name: def.name, version: APP_VERSION }, wire, statusEl);
+  return mountApp({ name: def.name, statusEl, wire, callTool });
 }

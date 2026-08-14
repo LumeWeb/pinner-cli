@@ -2,10 +2,11 @@
 // to pause an `invoke` mid-flight and assert the intermediate state, per the
 // robot3 testing pattern (see react-state-machine-steps skill).
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { interpret } from "robot3";
 import { createFlowMachine, type CallTool, type FlowConfig, FlowState, type ToolResult } from "@/flow";
 import { currentFlowState, renderFlow } from "@/app-entry";
+import { flush } from "./helpers";
 
 const baseConfig: FlowConfig = {
   startTool: "start_t",
@@ -46,8 +47,6 @@ describe("flow machine", () => {
     machine = createFlowMachine(baseConfig, callTool);
     service = interpret(machine, () => {});
   });
-
-  afterEach(() => {});
 
   it("idle → start → polling with a handle, then done", async () => {
     const gate: { op: "start" | "poll"; resolve: (r: ToolResult) => void }[] = [];
@@ -250,10 +249,3 @@ describe("renderFlow", () => {
     expect(renderFlow(FlowState.Dead, {}, empty).statusState).not.toBeNull();
   });
 });
-
-/** Drive robot3's microtask/promise queue until the machine settles. */
-async function flush(service: any, rounds = 50): Promise<void> {
-  for (let i = 0; i < rounds; i++) {
-    await new Promise<void>((r) => setTimeout(r, 0));
-  }
-}

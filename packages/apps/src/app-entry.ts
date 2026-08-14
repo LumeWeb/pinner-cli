@@ -5,9 +5,9 @@
 
 import { createMachine, interpret } from "robot3";
 import { createFlowMachine, type CallTool, type FlowConfig, FlowState, isFlowTerminal } from "@/flow";
-import { bootApp } from "@/boot";
-import { APP_VERSION } from "@/version";
+import { mountApp } from "@/boot";
 import { byId, setStatus, StatusClass } from "@/dom";
+import type { FlowAppEntry } from "@/entries/common";
 
 /** Minimal host bridge; in the real iframe this is the ext-apps App. */
 export interface AppBridge {
@@ -176,15 +176,10 @@ export type FlowConfigCore = Omit<
  * synchronously with a caller-supplied `callTool` (tests/demo) or connect to
  * the host over postMessage via bootApp, advertising the CLI build version.
  */
-export function mountFlowApp<Ids extends FlowElementIds>(
-  def: AppDefinition<FlowConfigCore & Partial<FlowConfig>, Ids>,
-  copy: FlowCopy,
-  root: Document,
-  callTool?: CallTool,
-) {
+export function mountFlowApp(def: FlowAppEntry, root: Document, callTool?: CallTool) {
   const config: FlowConfig = {
     ...def.config,
-    ...copy,
+    ...def.copy,
     maxAttempts: def.config.maxAttempts ?? 60,
     pollDelayMs: def.config.pollDelayMs ?? 1500,
   } as FlowConfig;
@@ -199,6 +194,5 @@ export function mountFlowApp<Ids extends FlowElementIds>(
         statusEl: statusEl!,
       },
     });
-  if (callTool) return wire(callTool);
-  bootApp({ name: def.name, version: APP_VERSION }, wire, statusEl);
+  return mountApp({ name: def.name, statusEl, wire, callTool });
 }

@@ -7,6 +7,20 @@
 import { connectApp, type AppIdentity } from "./connect";
 import type { CallTool } from "./flow";
 import { setStatus, StatusClass } from "./dom";
+import { APP_VERSION } from "./version";
+
+/** Finish mounting an app: run synchronously with a caller-supplied callTool
+ * (tests/demo) or connect to the host over postMessage via bootApp, advertising
+ * the CLI build version. Shared by the flow and pin mount helpers. */
+export function mountApp(opts: {
+  name: string;
+  statusEl: HTMLElement | null;
+  wire: (ct: CallTool) => unknown;
+  callTool?: CallTool;
+}): unknown {
+  if (opts.callTool) return opts.wire(opts.callTool);
+  return bootApp({ name: opts.name, version: APP_VERSION }, opts.wire, opts.statusEl);
+}
 
 /**
  * Connect the app to the host and invoke `main(callTool)` with a working

@@ -3,11 +3,12 @@
 // `invoke` mid-flight and assert the intermediate state, per the robot3
 // testing pattern (see react-state-machine-steps skill).
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { interpret } from "robot3";
 import { createPinMachine, type PinConfig, type PinContext, type PinState } from "@/pin";
 import { renderPin, currentPinState } from "@/pin-bootstrap";
 import type { CallTool, ToolResult } from "@/flow";
+import { flush } from "./helpers";
 
 const baseConfig: PinConfig = {
   addTool: "pins_add",
@@ -62,8 +63,6 @@ describe("pin flow machine", () => {
     machine = createPinMachine(baseConfig, scriptedCall());
     service = interpret(machine, () => {});
   });
-
-  afterEach(() => {});
 
   it("submit valid → pins_add -> scheduled readout -> poll -> pinned", async () => {
     sendSubmit("Qm1", "file");
@@ -189,10 +188,3 @@ describe("pin flow machine", () => {
     expect(state()).toBe("error");
   });
 });
-
-/** Drive robot3's microtask/promise queue until the machine settles. */
-async function flush(service: any, rounds = 50): Promise<void> {
-  for (let i = 0; i < rounds; i++) {
-    await new Promise<void>((r) => setTimeout(r, 0));
-  }
-}
