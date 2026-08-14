@@ -1,0 +1,14 @@
+{
+  "name": "pinner-cli",
+  "private": true,
+  "packageManager": "pnpm@10.33.2",
+  "scripts": {
+    "build": "pnpm --filter @pinner/apps build",
+    "test": "pnpm --filter @pinner/apps test"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "tsdown": "catalog:",
+    "vitest": "catalog:"
+  }
+}

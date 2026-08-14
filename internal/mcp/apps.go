@@ -40,7 +40,7 @@ type PinStatusView struct {
 // renderMcpAppDoc; only the visible body form is authored in templ. Served
 // verbatim so the sandboxed iframe needs no network request.
 func renderPinCreateAppHTML() string {
-	return mcpapp.RenderMcpAppDoc("Create a Pin", mcpapp.PinCreateAppForm(), mcpapp.PinAppModule(mcpapp.ExtAppsClientBase64()))
+	return mcpapp.RenderMcpAppDoc("Create a Pin", mcpapp.PinCreateAppForm(), mcpapp.AppModuleJS("pin"))
 }
 
 // pinStatusDescriptor builds the app-only pin status helper. It is visible to

@@ -48,3 +48,9 @@ completions/
 
 # Scratch diagnostic scripts (live e2e checks); not part of the build
 docs/mcp_e2e_check.py
+
+# Node / pnpm workspace (JS app bundle build; never published)
+node_modules/
+.pnpm-store/
+**/dist/
+

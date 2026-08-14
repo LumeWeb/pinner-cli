@@ -5,91 +5,94 @@ import (
 	"testing"
 )
 
-// These tests assert on the rendered app-flow ESM module. The flow JS is not
-// executed by Go tests (it runs in the host iframe), so these pin the static
-// wiring the view depends on: the correct start/status tool names, the shared
-// handle-presence dead-handle predicate, the start guard against a handle-less
-// not-configured hand-off, and the in-flight guard. Any of these regressing
-// silently breaks the browser view, so they are asserted here.
+// These tests verify the served MCP App documents are wired end-to-end: the
+// HTML shell from the .templ bodies plus the self-contained ESM bundle built by
+// the JS toolchain (packages/apps) and embedded via mcpapp.AppModuleJS.
+//
+// The app JS behavioral logic (in-flight guard, handle-presence dead-handle
+// predicate, start guard, distinct per-app tool names) is tested by the
+// packages/apps vitest suite against the real TS source — not by re-asserting
+// rendered JS strings here. This file therefore checks the minimal Go-side
+// contract: the right bundle was embedded and inlined, and the app's tool
+// names + element ids are present in the served document (so the bundle and
+// the templ body agree).
 
-func TestAppFlowModulesWired(t *testing.T) {
-	b64 := "dGVzdA==" // dummy base64; content is not parsed
-	mods := map[string]string{
-		"vault_create":  vaultCreateAppModule(b64),
-		"vault_restore": vaultRestoreAppModule(b64),
-		"auth_sso":      authSSOAppModule(b64),
+func appModuleFor(t *testing.T, uri string) string {
+	t.Helper()
+	switch uri {
+	case "ui://vault/create.html":
+		return renderVaultCreateAppHTML()
+	case "ui://vault/restore.html":
+		return renderVaultRestoreAppHTML()
+	case "ui://auth/sso.html":
+		return renderAuthSSOAppHTML()
+	default:
+		t.Fatalf("unknown app URI %q", uri)
+		return ""
+	}
+}
+
+func TestAppFlowDocumentsWired(t *testing.T) {
+	cases := []struct {
+		uri      string
+		title    string
+		btnID    string
+		startTool string
+		statusTool string
+		urlField string // a URL field the app is wired to read, must appear in the bundle
+	}{
+		{"ui://vault/create.html", "Create Vault", "vault-create-start", "vault_create", "vault_create_status", "create_url"},
+		{"ui://vault/restore.html", "Restore Vault", "vault-restore-start", "vault_restore", "vault_restore_status", "restore_url"},
+		{"ui://auth/sso.html", "Sign In", "sso-start", "auth_sso", "auth_sso_status", "action_url"},
 	}
 
-	wantTool := map[string]string{
-		"vault_create":  "vault_create_status",
-		"vault_restore": "vault_restore_status",
-		"auth_sso":      "auth_sso_status",
-	}
-	wantStart := map[string]string{
-		"vault_create":  "vault_create",
-		"vault_restore": "vault_restore",
-		"auth_sso":      "auth_sso",
-	}
-	wantBtn := map[string]string{
-		"vault_create":  "vault-create-start",
-		"vault_restore": "vault-restore-start",
-		"auth_sso":      "sso-start",
-	}
-
-	for name, mod := range mods {
-		t.Run(name, func(t *testing.T) {
-			// Client base64 injected and bootstrap pulled in.
-			if !strings.Contains(mod, `CLIENT_B64 = "`) {
-				t.Fatalf("module missing CLIENT_B64 injection")
+	for _, c := range cases {
+		t.Run(c.title, func(t *testing.T) {
+			doc := appModuleFor(t, c.uri)
+			// Valid document shell.
+			for _, want := range []string{"<!doctype html>", "<script type=\"module\">", "</body></html>"} {
+				if !strings.Contains(doc, want) {
+					t.Fatalf("doc missing %q", want)
+				}
 			}
-			// Start + status tools wired.
-			if !strings.Contains(mod, `name: "`+wantStart[name]+`"`) {
-				t.Fatalf("missing start tool %q", wantStart[name])
+			// The templ body's start button is present and the bundle binds it.
+			if !strings.Contains(doc, `id="`+c.btnID+`"`) {
+				t.Fatalf("doc missing start button id %q", c.btnID)
 			}
-			if !strings.Contains(mod, `name: "`+wantTool[name]+`"`) {
-				t.Fatalf("missing status tool %q", wantTool[name])
-			}
-			// Start button bound.
-			if !strings.Contains(mod, `$("#`+wantBtn[name]+`")`) {
-				t.Fatalf("missing start button %q", wantBtn[name])
-			}
-			// Shared guards that every flow must have.
-			for _, guard := range []string{
-				// in-flight guard: no concurrent runs
-				`if (startBtn.disabled) return;`,
-				// start guard: stop when the hand-off carries no handle
-				`if (!sc.handle) {`,
-				// dead-handle predicate: stop polling when the handle is gone
-				`status === "needs_human" && !sc.handle`,
-			} {
-				if !strings.Contains(mod, guard) {
-					t.Fatalf("module missing guard %q", guard)
+			// The embedded bundle targets the right start/status tools and reads
+			// the right URL field (so Go-side tool wiring and the JS agree).
+			for _, probe := range []string{c.startTool, c.statusTool, c.urlField} {
+				if !strings.Contains(doc, probe) {
+					t.Fatalf("app document missing tool/field %q (bundle not wired?)", probe)
 				}
 			}
 		})
 	}
 }
 
-// TestAppFlowModulesDistinctToolNames ensures the three apps are not collapsed
-// onto one another's status tool (a config mix-up would break two flows).
-func TestAppFlowModulesDistinctToolNames(t *testing.T) {
-	b64 := "dGVzdA=="
-	for _, own := range []string{"vault_create_status", "vault_restore_status", "auth_sso_status"} {
-		for _, foreign := range []string{"vault_create_status", "vault_restore_status", "auth_sso_status"} {
-			if own == foreign {
+// TestAppFlowDocumentsDistinctToolNames ensures each app's bundle targets its
+// OWN status tool and not a sibling's (a config mix-up would break two flows).
+func TestAppFlowDocumentsDistinctToolNames(t *testing.T) {
+	docs := map[string]string{
+		"vault_create":  renderVaultCreateAppHTML(),
+		"vault_restore": renderVaultRestoreAppHTML(),
+		"auth_sso":      renderAuthSSOAppHTML(),
+	}
+	statusTool := map[string]string{
+		"vault_create":  "vault_create_status",
+		"vault_restore": "vault_restore_status",
+		"auth_sso":      "auth_sso_status",
+	}
+	for own, doc := range docs {
+		if !strings.Contains(doc, statusTool[own]) {
+			t.Fatalf("app %q missing its own status tool %q", own, statusTool[own])
+		}
+		for foreign, st := range statusTool {
+			if foreign == own {
 				continue
 			}
-			var mod string
-			switch {
-			case strings.HasPrefix(own, "vault_create"):
-				mod = vaultCreateAppModule(b64)
-			case strings.HasPrefix(own, "vault_restore"):
-				mod = vaultRestoreAppModule(b64)
-			default:
-				mod = authSSOAppModule(b64)
-			}
-			if strings.Contains(mod, `name: "`+foreign+`"`) {
-				t.Fatalf("module %q mistakenly references foreign status tool %q", own, foreign)
+			if strings.Contains(doc, st) {
+				t.Fatalf("app %q mistakenly references sibling status tool %q", own, st)
 			}
 		}
 	}

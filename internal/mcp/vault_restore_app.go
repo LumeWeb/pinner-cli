@@ -21,35 +21,7 @@ const VaultRestoreAppURI = "ui://vault/restore.html"
 // the ESM module (shared ext-apps bootstrap + restore logic) come from
 // renderMcpAppDoc; only the visible body form is authored in templ.
 func renderVaultRestoreAppHTML() string {
-	return mcpapp.RenderMcpAppDoc("Restore Vault", mcpapp.VaultRestoreAppForm(), vaultRestoreAppModule(mcpapp.ExtAppsClientBase64()))
-}
-
-// vaultRestoreAppModule renders the vault-restore app's ESM module source using
-// the shared out-of-band flow template.
-func vaultRestoreAppModule(clientBase64 string) string {
-	return mcpapp.RenderAppFlowModule(clientBase64, mcpapp.AppFlowSpec{
-		Name:       "VaultRestore",
-		Version:    "1.0.0",
-		StartTool:  compiledVaultRestoreToolName,
-		StatusTool: "vault_restore_status",
-		StartBtnID: "vault-restore-start",
-		UrlElID:    "vault-restore-url",
-		StatusElID: "vault-restore-status",
-		// The restore URL / restore_url is the human-only page where the recovery
-		// seed is entered; action_url is the legacy alias.
-		URLFields:        []string{"restore_url", "action_url"},
-		ActionLabel:      "vault restore",
-		StartErrorMsg:    "Vault restore did not return a setup handoff.",
-		AlreadyDoneMsg:   "Vault already restored.",
-		NoHandlePrefix:   "Could not start vault restore.",
-		PendingStartMsg:  "Open the restore link and enter your recovery seed to complete the restore.",
-		DeadDetailPrefix: "The vault restore session is no longer valid.",
-		PendingWaitMsg:   "Waiting for the recovery seed submission...",
-		DoneMsg:          "Vault restored.",
-		TimeoutWaitMsg:   "Timed out waiting. Click start to retry.",
-		TimeoutPollMsg:   "Timed out polling vault restore status.",
-		RetryWord:        "start",
-	})
+	return mcpapp.RenderMcpAppDoc("Restore Vault", mcpapp.VaultRestoreAppForm(), mcpapp.AppModuleJS("vault-restore"))
 }
 
 // vaultRestoreStatusDescriptor builds the app-only vault-restore status helper.

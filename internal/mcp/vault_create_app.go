@@ -21,36 +21,7 @@ const VaultCreateAppURI = "ui://vault/create.html"
 // the ESM module (shared ext-apps bootstrap + create logic) come from
 // renderMcpAppDoc; only the visible body form is authored in templ.
 func renderVaultCreateAppHTML() string {
-	return mcpapp.RenderMcpAppDoc("Create Vault", mcpapp.VaultCreateAppForm(), vaultCreateAppModule(mcpapp.ExtAppsClientBase64()))
-}
-
-// vaultCreateAppModule renders the vault-create app's ESM module source using
-// the shared out-of-band flow template.
-func vaultCreateAppModule(clientBase64 string) string {
-	return mcpapp.RenderAppFlowModule(clientBase64, mcpapp.AppFlowSpec{
-		Name:       "VaultCreate",
-		Version:    "1.0.0",
-		StartTool:  compiledVaultCreateToolName,
-		StatusTool: "vault_create_status",
-		StartBtnID: "vault-create-start",
-		UrlElID:    "vault-create-url",
-		StatusElID: "vault-create-status",
-		// The setup URL / create_url is the human-only page where the Sia device
-		// approval and one-time seed reveal happen; action_url is the legacy
-		// alias.
-		URLFields:        []string{"create_url", "action_url"},
-		ActionLabel:      "vault create",
-		StartErrorMsg:    "Vault create did not return a setup handoff.",
-		AlreadyDoneMsg:   "Vault already active.",
-		NoHandlePrefix:   "Could not start vault create.",
-		PendingStartMsg:  "Open the setup link, approve the Sia device, and save the recovery seed shown.",
-		DeadDetailPrefix: "The vault create session is no longer valid.",
-		PendingWaitMsg:   "Waiting for the device approval and seed save...",
-		DoneMsg:          "Vault created and seed saved.",
-		TimeoutWaitMsg:   "Timed out waiting. Click start to retry.",
-		TimeoutPollMsg:   "Timed out polling vault create status.",
-		RetryWord:        "start",
-	})
+	return mcpapp.RenderMcpAppDoc("Create Vault", mcpapp.VaultCreateAppForm(), mcpapp.AppModuleJS("vault-create"))
 }
 
 // vaultCreateStatusDescriptor builds the app-only vault-create status helper.
