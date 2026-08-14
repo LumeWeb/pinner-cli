@@ -242,3 +242,14 @@ export const PIN_STATES: readonly PinState[] = [
   PinState.Error,
   PinState.Timeout,
 ];
+
+/** Terminal pin states (no more polling or user action needed until reset). */
+export const PIN_TERMINAL: readonly PinState[] = [
+  PinState.Ok,
+  PinState.Info,
+  PinState.Error,
+  PinState.Timeout,
+];
+
+/** Whether a pin state is terminal and awaiting a fresh submission. */
+export const isPinTerminal = (s: PinState): boolean => PIN_TERMINAL.includes(s);

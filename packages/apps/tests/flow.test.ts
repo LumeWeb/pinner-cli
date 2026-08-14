@@ -4,7 +4,8 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { interpret } from "robot3";
-import { createFlowMachine, type CallTool, type FlowConfig, type ToolResult } from "@/flow";
+import { createFlowMachine, type CallTool, type FlowConfig, FlowState, type ToolResult } from "@/flow";
+import { currentFlowState, renderFlow } from "@/app-entry";
 
 const baseConfig: FlowConfig = {
   startTool: "start_t",
@@ -36,7 +37,7 @@ describe("flow machine", () => {
   let callTool: CallTool;
   let machine: ReturnType<typeof createFlowMachine>;
   let service: any;
-  const state = () => (service.machine as any).current as string;
+  const state = (): FlowState => currentFlowState(service);
 
   beforeEach(() => {
     calls = [];
@@ -202,6 +203,42 @@ describe("flow machine", () => {
     // and ended in `timeout`, not `error`.
     expect(polls).toBe(baseConfig.maxAttempts);
     expect(state()).toBe("timeout");
+  });
+});
+
+describe("renderFlow", () => {
+  it("already-complete start renders alreadyDoneMsg, not doneMsg", () => {
+    const ok = renderFlow(FlowState.Ok, { alreadyDone: true }, baseConfig);
+    expect(ok.statusState).toBe("ok");
+    expect(ok.statusMsg).toBe(baseConfig.alreadyDoneMsg);
+    expect(ok.pending).toBe(false);
+  });
+
+  it("done-after-polling renders doneMsg", () => {
+    const ok = renderFlow(FlowState.Ok, { alreadyDone: false }, baseConfig);
+    expect(ok.statusMsg).toBe(baseConfig.doneMsg);
+  });
+
+  it("pending states are mid-flight and stamp the pending message", () => {
+    for (const st of [FlowState.Starting, FlowState.Polling]) {
+      const r = renderFlow(st, {}, baseConfig);
+      expect(r.pending).toBe(true);
+      expect(r.statusState).toBe("pending");
+      expect(r.statusMsg).toBe(baseConfig.pendingMsg);
+    }
+  });
+
+  it("terminal error/dead/timeout map to their messages", () => {
+    expect(renderFlow(FlowState.Dead, {}, baseConfig).statusMsg).toBe(baseConfig.deadDetailPrefix);
+    expect(renderFlow(FlowState.Dead, { detail: "custom" }, baseConfig).statusMsg).toBe("custom");
+    expect(renderFlow(FlowState.Error, {}, baseConfig).statusMsg).toBe(baseConfig.startErrorMsg);
+    expect(renderFlow(FlowState.Timeout, {}, baseConfig).statusMsg).toBe(baseConfig.timeoutMsg);
+  });
+
+  it("idle leaves the status element alone and not pending", () => {
+    const r = renderFlow(FlowState.Idle, {}, baseConfig);
+    expect(r.statusState).toBeNull();
+    expect(r.pending).toBe(false);
   });
 });
 

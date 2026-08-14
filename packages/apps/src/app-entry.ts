@@ -4,7 +4,7 @@
 // tested there, so these entries stay thin.
 
 import { createMachine, interpret } from "robot3";
-import { createFlowMachine, type CallTool, type FlowConfig, FlowState } from "@/flow";
+import { createFlowMachine, type CallTool, type FlowConfig, FlowState, isFlowTerminal } from "@/flow";
 import { bootApp } from "@/boot";
 import { APP_VERSION } from "@/version";
 import { byId, setStatus, StatusClass } from "@/dom";
@@ -13,14 +13,6 @@ import { byId, setStatus, StatusClass } from "@/dom";
 export interface AppBridge {
   callServerTool: CallTool;
 }
-
-/** Terminal flow states (no more polling or user action needed until retry). */
-export const FLOW_TERMINAL: readonly FlowState[] = [
-  FlowState.Ok,
-  FlowState.Dead,
-  FlowState.Error,
-  FlowState.Timeout,
-];
 
 /**
  * Read the current state of a robot3 service as the typed FlowState union.
@@ -57,46 +49,67 @@ export interface AppEntryOptions {
   };
 }
 
+// Flow-render model: map a flow state + context onto the status/button readout,
+// mirroring the pin consumer's renderPin. Produces the status class/message and
+// the pending flag; a null statusState means "leave the status element alone"
+// (idle). The url readout is refreshed independently in runAppEntry.
+export interface FlowRender {
+  statusState: StatusClass | null;
+  statusMsg: string | null;
+  /** Whether the flow is mid-flight (starting/polling) — disables the button. */
+  pending: boolean;
+}
+
+/** Map a flow state + context onto the status/button readout. */
+export function renderFlow(
+  state: FlowState,
+  ctx: { detail?: string; alreadyDone?: boolean },
+  cfg: FlowConfig,
+): FlowRender {
+  switch (state) {
+    case FlowState.Ok:
+      return {
+        statusState: StatusClass.Ok,
+        statusMsg: ctx.alreadyDone ? cfg.alreadyDoneMsg : cfg.doneMsg,
+        pending: false,
+      };
+    case FlowState.Dead:
+      return {
+        statusState: StatusClass.Error,
+        statusMsg: ctx.detail || cfg.deadDetailPrefix,
+        pending: false,
+      };
+    case FlowState.Error:
+      return { statusState: StatusClass.Error, statusMsg: cfg.startErrorMsg, pending: false };
+    case FlowState.Timeout:
+      return { statusState: StatusClass.Info, statusMsg: cfg.timeoutMsg, pending: false };
+    case FlowState.Starting:
+    case FlowState.Polling:
+      return { statusState: StatusClass.Pending, statusMsg: cfg.pendingMsg, pending: true };
+    default:
+      return { statusState: null, statusMsg: null, pending: false };
+  }
+}
+
 /**
  * Wire a flow machine to the given elements. Returns an object with `start`
  * (programmatic trigger for tests/demo) and `state` getter.
  */
 export function runAppEntry(opts: AppEntryOptions) {
   const machine = createFlowMachine(opts.config, opts.callTool);
-  const service = interpret(machine, (s: any) => {
-    const stateName: FlowState = currentFlowState(s);
-    const ctx = s.context as { url: string; detail: string; alreadyDone: boolean };
+  const service = interpret(machine, (s) => {
+    const stateName = currentFlowState(s);
+    const ctx = s.context;
     const btn = opts.elements.startBtn;
     const urlEl = opts.elements.urlEl;
     const statusEl = opts.elements.statusEl;
 
-    const pending = stateName === FlowState.Starting || stateName === FlowState.Polling;
-    const terminal = FLOW_TERMINAL.includes(stateName);
+    const r = renderFlow(stateName, ctx, opts.config);
     // During an in-flight run the button is disabled (no concurrent runs). On a
     // terminal state it is re-enabled so the user can click "retry" / start
     // again.
-    if (btn) btn.disabled = pending;
-
-    switch (stateName) {
-      case FlowState.Ok:
-        setStatus(statusEl, StatusClass.Ok, ctx.alreadyDone ? opts.config.alreadyDoneMsg : opts.config.doneMsg);
-        break;
-      case FlowState.Dead:
-        setStatus(statusEl, StatusClass.Error, ctx.detail || opts.config.deadDetailPrefix);
-        break;
-      case FlowState.Error:
-        setStatus(statusEl, StatusClass.Error, opts.config.startErrorMsg);
-        break;
-      case FlowState.Timeout:
-        setStatus(statusEl, StatusClass.Info, opts.config.timeoutMsg);
-        break;
-      case FlowState.Starting:
-      case FlowState.Polling:
-        setStatus(statusEl, StatusClass.Pending, opts.config.pendingMsg);
-        break;
-      default:
-        break;
-    }
+    if (btn) btn.disabled = r.pending;
+    if (r.statusState && r.statusMsg) setStatus(statusEl, r.statusState, r.statusMsg);
 
     if (ctx.url) {
       urlEl.textContent = ctx.url;
@@ -109,7 +122,7 @@ export function runAppEntry(opts: AppEntryOptions) {
       const st = currentFlowState(service);
       // From a terminal state the machine's `retry` transition returns to idle;
       // a subsequent click (now that the button is re-enabled) sends `start`.
-      if (FLOW_TERMINAL.includes(st)) {
+      if (isFlowTerminal(st)) {
         service.send("retry");
       } else {
         service.send("start");

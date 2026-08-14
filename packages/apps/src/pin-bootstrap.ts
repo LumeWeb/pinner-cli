@@ -11,23 +11,15 @@
 //   #out-status the result Status <code>.
 
 import { interpret } from "robot3";
-import { createPinMachine, type PinConfig, type PinContext, PinState } from "@/pin";
+import { createPinMachine, isPinTerminal, type PinConfig, type PinContext, PinState } from "@/pin";
 import type { CallTool } from "@/flow";
 import type { AppDefinition, MachineCurrent } from "@/app-entry";
 import { bootApp } from "@/boot";
 import { APP_VERSION } from "@/version";
 import { byId, setStatus, StatusClass } from "@/dom";
 
-/** Terminal pin states (no more polling or user action needed until reset). */
-const PIN_TERMINAL: readonly PinState[] = [
-  PinState.Ok,
-  PinState.Info,
-  PinState.Error,
-  PinState.Timeout,
-];
-
 /** Read the current state of a robot3 service as the typed PinState union. */
-function currentPinState(service: MachineCurrent): PinState {
+export function currentPinState(service: MachineCurrent): PinState {
   return (service.machine?.current ?? PinState.Form) as PinState;
 }
 
@@ -112,9 +104,9 @@ export interface PinEntryOptions {
  */
 export function runPinEntry(opts: PinEntryOptions) {
   const machine = createPinMachine(opts.config, opts.callTool);
-  const service = interpret(machine, (s: any) => {
-    const state: PinState = currentPinState(s);
-    const ctx = s.context as PinContext;
+  const service = interpret(machine, (s) => {
+    const state = currentPinState(s);
+    const ctx = s.context;
     const r = renderPin(state, ctx, opts.config);
     if (r.statusState && r.statusMsg) setStatus(opts.elements.statusEl, r.statusState, r.statusMsg);
     if (r.setOutCid && ctx.outCid) opts.elements.outCid.textContent = ctx.outCid;
@@ -128,7 +120,7 @@ export function runPinEntry(opts: PinEntryOptions) {
     const st = currentPinState(service);
     // From a terminal state, reset first so a follow-up submission starts a
     // fresh flow (the form stays re-submittable after completion).
-    if (PIN_TERMINAL.includes(st)) service.send({ type: "reset" });
+    if (isPinTerminal(st)) service.send({ type: "reset" });
     service.send({ type: "submit", cid, name });
   });
 
@@ -136,7 +128,7 @@ export function runPinEntry(opts: PinEntryOptions) {
     /** Programmatic submit with explicit cid/name (used by tests/demo). */
     submit: (cid: string, name = "") => {
       const st = currentPinState(service);
-      if (PIN_TERMINAL.includes(st)) service.send({ type: "reset" });
+      if (isPinTerminal(st)) service.send({ type: "reset" });
       service.send({ type: "submit", cid, name });
     },
     get state(): PinState {

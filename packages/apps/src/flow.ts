@@ -203,3 +203,20 @@ export const FLOW_STATES: readonly FlowState[] = [
   FlowState.Error,
   FlowState.Timeout,
 ];
+
+/** States where an out-of-band flow is mid-flight (button disabled). */
+export const FLOW_PENDING: readonly FlowState[] = [FlowState.Starting, FlowState.Polling];
+
+/** Terminal flow states (no more polling or user action needed until retry). */
+export const FLOW_TERMINAL: readonly FlowState[] = [
+  FlowState.Ok,
+  FlowState.Dead,
+  FlowState.Error,
+  FlowState.Timeout,
+];
+
+/** Whether a flow state is mid-flight (starting/polling). */
+export const isFlowPending = (s: FlowState): boolean => FLOW_PENDING.includes(s);
+
+/** Whether a flow state is terminal and awaiting a retry. */
+export const isFlowTerminal = (s: FlowState): boolean => FLOW_TERMINAL.includes(s);
