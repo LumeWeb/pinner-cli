@@ -5,7 +5,12 @@ import (
 	"strings"
 	"testing"
 
+	ipfs "go.lumeweb.com/ipfs-sdk"
+
 	"go.lumeweb.com/pinner-cli/internal/catalog"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
+	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
+	"go.lumeweb.com/pinner-cli/internal/core/dns"
 )
 
 // argByName returns the named OperationArg from an operation, or nil.
@@ -180,6 +185,152 @@ func TestDNSRecordTypeEnum(t *testing.T) {
 			if len(a.Enum) != 0 {
 				t.Errorf("%s type must NOT be Enum-constrained (existing records may be other types), got %v", name, a.Enum)
 			}
+		}
+	}
+}
+
+// mockDNSServiceForOps is a minimal dns.Service stub sufficient to exercise
+// the catalog DNS record handlers (zone resolution + update).
+type mockDNSServiceForOps struct {
+	updateRecordFunc func(ctx context.Context, id, name, recordType string, record ipfs.RecordRequest) (*ipfs.RecordResponse, error)
+}
+
+func (m *mockDNSServiceForOps) SetAuthToken(string)         {}
+func (m *mockDNSServiceForOps) RequireAuthenticated() error { return nil }
+func (m *mockDNSServiceForOps) CreateZone(ctx context.Context, d string, ns []string) (*ipfs.ZoneResponse, error) {
+	return nil, nil
+}
+func (m *mockDNSServiceForOps) ListZones(ctx context.Context) ([]ipfs.ZoneListResponse, error) {
+	return nil, nil
+}
+func (m *mockDNSServiceForOps) GetZone(ctx context.Context, id string) (*ipfs.ZoneResponse, error) {
+	return nil, nil
+}
+func (m *mockDNSServiceForOps) DeleteZone(ctx context.Context, id string) error { return nil }
+func (m *mockDNSServiceForOps) ValidateZone(ctx context.Context, id string) (*ipfs.ValidationResponse, error) {
+	return nil, nil
+}
+func (m *mockDNSServiceForOps) CreateRecord(ctx context.Context, id string, r ipfs.RecordRequest) (*ipfs.RecordResponse, error) {
+	return nil, nil
+}
+func (m *mockDNSServiceForOps) ListRecords(ctx context.Context, id string) ([]ipfs.RecordResponse, error) {
+	return nil, nil
+}
+func (m *mockDNSServiceForOps) GetRecord(ctx context.Context, id, name, recordType string) (*ipfs.RecordResponse, error) {
+	return nil, nil
+}
+func (m *mockDNSServiceForOps) UpdateRecord(ctx context.Context, id, name, recordType string, record ipfs.RecordRequest) (*ipfs.RecordResponse, error) {
+	if m.updateRecordFunc != nil {
+		return m.updateRecordFunc(ctx, id, name, recordType, record)
+	}
+	return &ipfs.RecordResponse{ZoneId: 1, Name: name, Type: recordType, Content: record.Content}, nil
+}
+func (m *mockDNSServiceForOps) DeleteRecord(ctx context.Context, id, name, recordType string) error {
+	return nil
+}
+
+// TestDNSRecordsUpdateOmitsUnchangedFields guards the dns_records_update root
+// fix: ttl and disabled are omitempty on the wire, so omitting them must leave
+// them unchanged (Handler sends nil pointers), while providing them sets them.
+// This restores the documented "fields not provided are left unchanged"
+// contract that the previous default-filling (ttl=3600, disabled=false) broke.
+func TestDNSRecordsUpdateOmitsUnchangedFields(t *testing.T) {
+	var op catalog.Operation
+	for _, o := range DNSOperations(DNSDeps{}) {
+		if o.Name() == "dns_records_update" {
+			op = o
+			break
+		}
+	}
+	if op == nil {
+		t.Fatal("dns_records_update operation not found")
+	}
+
+	verify := func(t *testing.T, input map[string]any, wantTtlNil, wantDisabledNil bool, wantTtl int, wantDisabled bool) {
+		t.Helper()
+		var got ipfs.RecordRequest
+		mock := &mockDNSServiceForOps{
+			updateRecordFunc: func(_ context.Context, _, _, _ string, record ipfs.RecordRequest) (*ipfs.RecordResponse, error) {
+				got = record
+				return &ipfs.RecordResponse{ZoneId: 1, Name: "www", Type: "A", Content: record.Content}, nil
+			},
+		}
+		deps := DNSDeps{
+			CfgMgr: func() config.Manager { return configmocks.NewMockManager(t) },
+			ServiceFactory: func(_ config.Manager, _ bool, _ ...dns.Option) dns.Service {
+				return mock
+			},
+		}
+		var op catalog.Operation
+		for _, o := range DNSOperations(deps) {
+			if o.Name() == "dns_records_update" {
+				op = o
+				break
+			}
+		}
+		_, err := op.Handler().Execute(context.Background(), input)
+		if err != nil {
+			t.Fatalf("update handler: %v", err)
+		}
+		if (got.Ttl == nil) != wantTtlNil {
+			t.Errorf("ttl nil=%v, want nil=%v (value=%v)", got.Ttl == nil, wantTtlNil, got.Ttl)
+		}
+		if got.Ttl != nil && *got.Ttl != wantTtl {
+			t.Errorf("ttl=%d, want %d", *got.Ttl, wantTtl)
+		}
+		if (got.Disabled == nil) != wantDisabledNil {
+			t.Errorf("disabled nil=%v, want nil=%v (value=%v)", got.Disabled == nil, wantDisabledNil, got.Disabled)
+		}
+		if got.Disabled != nil && *got.Disabled != wantDisabled {
+			t.Errorf("disabled=%v, want %v", *got.Disabled, wantDisabled)
+		}
+	}
+
+	base := map[string]any{"zone": "123", "name": "www", "type": "A", "content": "1.2.3.4"}
+
+	t.Run("omits ttl and disabled when not provided", func(t *testing.T) {
+		verify(t, base, true, true, 0, false)
+	})
+	t.Run("sets ttl when provided", func(t *testing.T) {
+		in := mapsCopy(base)
+		in["ttl"] = 300
+		verify(t, in, false, true, 300, false)
+	})
+	t.Run("sets disabled when provided", func(t *testing.T) {
+		in := mapsCopy(base)
+		in["disabled"] = true
+		verify(t, in, true, false, 0, true)
+	})
+}
+
+func mapsCopy(m map[string]any) map[string]any {
+	out := make(map[string]any, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
+}
+
+func forDNSOp(name string) catalog.Operation {
+	for _, o := range DNSOperations(DNSDeps{}) {
+		if o.Name() == name {
+			return o
+		}
+	}
+	return nil
+}
+
+// TestDNSRecordsDeleteConfirmRequired verifies the destructive DNS deletes
+// declare a shared-Required confirm (no default), consistent with zones delete
+// and websites_delete, so the MCP schema requires confirmation.
+func TestDNSRecordsDeleteConfirmRequired(t *testing.T) {
+	for _, name := range []string{"dns_zones_delete", "dns_records_delete"} {
+		a := argByName(t, forDNSOp(name), "confirm")
+		if a == nil {
+			t.Fatalf("%s missing confirm arg", name)
+		}
+		if !a.Required || a.Default != "" {
+			t.Errorf("%s confirm must be Required with no Default, got Required=%v Default=%q", name, a.Required, a.Default)
 		}
 	}
 }

@@ -170,6 +170,15 @@ func dnsCatalogActionAdapter(c *cli.Command, group, leaf string) cli.ActionFunc 
 			input[a.Name] = flagValue(cmd, a)
 		}
 
+		// dns_records_update: disabled is an omitempty field on the wire, and
+		// omitting it must leave the record's current disabled state unchanged.
+		// flagValue returns false for an unset bool, so drop the key entirely
+		// when the flag was not given; the handler then leaves it nil (unchanged)
+		// instead of forcing re-enable.
+		if canonicalName == "dns_records_update" && !cmd.IsSet(FlagDisabled) {
+			delete(input, "disabled")
+		}
+
 		// The per-invocation --auth-token flag takes precedence over the config
 		// token. Only set it when provided so deps.service() falls back to the
 		// config-read GetAuthToken.
