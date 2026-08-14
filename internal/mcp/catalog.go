@@ -493,11 +493,11 @@ func titleWord(s string) string {
 // matchRank returns -1 if the query does not match the tool at any level.
 // Otherwise it returns a lower-is-better rank:
 //
-//		0 = exact name match
-//		1 = name starts with query
-//		2 = name contains query
-//	    3 = name is a subsequence match of query
-//	    4 = description contains query as a whole token
+//	0 = exact name match
+//	1 = name starts with query
+//	2 = name contains query
+//	3 = name is a subsequence match of query within a single name segment
+//	4 = description contains query as a whole token
 func matchRank(query, name, desc string) int {
 	if name == query {
 		return 0
@@ -508,7 +508,7 @@ func matchRank(query, name, desc string) int {
 	if strings.Contains(name, query) {
 		return 2
 	}
-	if isSubsequence(query, name) {
+	if matchSegmentSubsequence(query, name) {
 		return 3
 	}
 	// Description matches are whole-token only: "auth" must not match
@@ -556,9 +556,37 @@ func isAlphaNum(r rune) bool {
 	return r >= 'a' && r <= 'z' || r >= '0' && r <= '9'
 }
 
+// matchSegmentSubsequence reports whether src is a subsequence of any single
+// underscore- or hyphen-delimited segment of name. Fuzzy subsequence matching
+// is deliberately scoped to one segment so a query does not match by scattering
+// its letters across unrelated segments: e.g. "auth" contains a,u,t in "vault"
+// and h in "share", but matches no single segment of "vault_share", so it no
+// longer shows up as noise after the real auth_* tools. Genuine within-segment
+// abbreviations still match: "pload" matches "upload".
+func matchSegmentSubsequence(src, name string) bool {
+	src = strings.ToLower(strings.TrimSpace(src))
+	if src == "" {
+		return false
+	}
+	for _, seg := range segmentize(name) {
+		if isSubsequence(src, seg) {
+			return true
+		}
+	}
+	return false
+}
+
+// segmentize splits a tool name into its underscore- and hyphen-delimited
+// words (e.g. "vault_cache_rebuild" -> ["vault", "cache", "rebuild"]).
+func segmentize(name string) []string {
+	return strings.FieldsFunc(name, func(r rune) bool {
+		return r == '_' || r == '-'
+	})
+}
+
 // isSubsequence checks whether every character in src appears in target in
 // the same order, but not necessarily contiguously. For example,
-// isSubsequence("pload", "pinner_upload") returns true.
+// isSubsequence("pload", "upload") returns true.
 func isSubsequence(src, target string) bool {
 	if len(src) == 0 {
 		return true

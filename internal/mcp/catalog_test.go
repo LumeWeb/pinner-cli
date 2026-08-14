@@ -353,3 +353,48 @@ func TestJSONSearchResultShape(t *testing.T) {
 	require.Contains(t, parsed, "tools")
 	require.Contains(t, parsed, "total")
 }
+
+// TestSearchSubsequenceScopedToSegment verifies fuzzy subsequence matching is
+// scoped to a single underscore/hyphen segment of the tool name. A query like
+// "auth" must NOT match vault tools by scattering a,u,t across "vault" and h
+// across a later segment (the v8 audit noise), while a genuine within-segment
+// abbreviation like "pload" -> "upload" still matches.
+func TestSearchSubsequenceScopedToSegment(t *testing.T) {
+	// Noise: "auth" is a subsequence of the full "vault_share" /
+	// "vault_cache_rebuild" names (letters span multiple segments), but must not
+	// match any single segment.
+	for _, name := range []string{"vault_share", "vault_cache_rebuild", "vault_cache_clear"} {
+		assert.False(t, matchSegmentSubsequence("auth", name),
+			"%q must not subsequence-match across segments", name)
+	}
+
+	// Auth tools match via the "auth" segment.
+	for _, name := range []string{"auth_sso", "auth_status", "auth_resume"} {
+		assert.True(t, matchSegmentSubsequence("auth", name), "%q should match 'auth' in its auth segment", name)
+	}
+
+	// Genuine within-segment abbreviations still work. "pload" matches the
+	// "upload" segment of "pinner_upload".
+	assert.True(t, matchSegmentSubsequence("pload", "pinner_upload"),
+		"'pload' should match the upload segment of pinner_upload")
+	assert.True(t, matchSegmentSubsequence("rebuild", "vault_cache_rebuild"),
+		"'rebuild' should match its own segment")
+	assert.False(t, matchSegmentSubsequence("xyz", "pinner_upload"),
+		"unrelated letters must not match")
+}
+
+// TestSearchAuthReturnsNoVaultNoise feeds the actual noise tools into a catalog
+// and asserts a search for "auth" does not surface them at all.
+func TestSearchAuthReturnsNoVaultNoise(t *testing.T) {
+	c := NewToolCatalog()
+	c.Add(entry("auth_sso", "Start out-of-band sign-in", CategoryAccount, InteractionAgentSafe))
+	c.Add(entry("vault_share", "Share a vault path", CategoryVault, InteractionAgentSafe))
+	c.Add(entry("vault_cache_rebuild", "Rebuild the vault cache", CategoryVault, InteractionAgentSafe))
+	c.Add(entry("pins_list", "List pins", CategoryCore, InteractionAgentSafe))
+
+	summaries := c.Search("auth", "", 0)
+	for _, s := range summaries {
+		assert.True(t, s.Name == "auth_sso",
+			"query 'auth' must only match auth_* tools, got %q", s.Name)
+	}
+}
