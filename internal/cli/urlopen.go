@@ -33,9 +33,13 @@ func openURL(url string) error {
 
 	case "windows":
 		// cmd /c start "" <url> handles URLs with & and spaces. Empty first
-		// quoted arg is the (optional) window title. Escape existing quotes.
+		// quoted arg is the (optional) window title. The URL must be quoted:
+		// in cmd, & is a command separator and spaces split arguments, so an
+		// unquoted URL with a query string (&) or spaces breaks into a second
+		// failing command while cmd.Start() itself succeeds. Strip embedded
+		// quotes, then wrap in quotes so cmd treats the URL as one token.
 		safe := strings.NewReplacer("\"", "").Replace(url)
-		cmd := exec.Command("cmd", "/c", "start", "", safe)
+		cmd := exec.Command("cmd", "/c", "start", "", "\""+safe+"\"")
 		if err := cmd.Start(); err == nil {
 			return nil
 		}
