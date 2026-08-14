@@ -14,6 +14,7 @@
 
 import { createMachine, invoke, reduce, state, transition } from "robot3";
 import type { CallTool, ToolResult } from "./flow";
+import { rejectToError, toolError } from "./flow";
 
 export interface PinListConfig {
   /** MCP tool returning the pin list envelope ({status:"ok", value:[...]}). */
@@ -101,13 +102,10 @@ export function createPinListMachine(cfg: PinListConfig, callTool: CallTool) {
   // robot3 fires its native `error` event and the machine lands deterministically
   // in the error state.
   const load = async (_ctx: PinListContext): Promise<{ listRes: ToolResult }> => {
-    const listRes = await callTool({ name: cfg.listTool, arguments: {} }).then(
-      (r) => r,
-      (e) => ({ isError: true, error: String(e) } as ToolResult),
-    );
-    const err = listRes && listRes.isError && typeof (listRes as { error?: unknown }).error === "string"
-      ? ((listRes as { error: string }).error || "")
-      : "";
+    const listRes = await callTool({ name: cfg.listTool, arguments: {} }).then((r) => r, rejectToError);
+    // Any result flagged isError is a failure; a failed call must surface the
+    // error rather than render a misleading "No pins yet." empty readout.
+    const err = toolError(listRes, "could not load pins");
     if (err) {
       throw new Error(err);
     }

@@ -99,6 +99,35 @@ describe("pin-list machine", () => {
     expect(ctx().pins).toHaveLength(1);
   });
 
+  it("a server error result (isError with structuredContent.error, no top-level error) lands in error", async () => {
+    // Regression: real server/SDK error results flag isError and carry the
+    // message inside structuredContent ({status:"error",error:<code>}), with no
+    // top-level .error string. The machine must treat them as failures rather
+    // than silently rendering a misleading "No pins yet." empty readout.
+    boot();
+    service.send({ type: "refresh" });
+    await until(service, () => gate.length === 1);
+    gate[0].resolve({
+      isError: true,
+      structuredContent: { status: "error", error: "not authorized" },
+    } as ToolResult);
+
+    await untilState(service, PinListState.Error);
+    expect(ctx().errorMsg).toContain("not authorized");
+    expect(ctx().pins).toHaveLength(0);
+  });
+
+  it("a bare isError result with no message falls back to a generic error", async () => {
+    boot();
+    service.send({ type: "refresh" });
+    await until(service, () => gate.length === 1);
+    gate[0].resolve({ isError: true } as ToolResult);
+
+    await untilState(service, PinListState.Error);
+    expect(ctx().errorMsg).toContain("could not load pins");
+    expect(ctx().pins).toHaveLength(0);
+  });
+
   it("an empty list lands in ready and renders the empty label", async () => {
     boot();
     service.send({ type: "refresh" });

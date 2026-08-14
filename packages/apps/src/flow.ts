@@ -51,6 +51,33 @@ export interface ToolResult {
   structuredContent?: Record<string, unknown>;
 }
 
+/**
+ * Normalize an MCP tool result into an error message, or "" when the result is
+ * not an error. A result is treated as an error iff it is flagged `isError`.
+ * The message is read from the top-level `.error` (e.g. a local rejection
+ * handler), then from `structuredContent.error` (the Go ErrorResult shape
+ * `{status:"error", error:<code>}`), then a caller-supplied generic fallback —
+ * so a failed call is never silently treated as a success (e.g. rendering an
+ * empty listing).
+ */
+export function toolError(r: ToolResult | undefined, fallback: string): string {
+  if (!r || !r.isError) return "";
+  const top = (r as { error?: unknown }).error;
+  const sc = r.structuredContent as Record<string, unknown> | undefined;
+  const scErr = sc?.error;
+  if (typeof top === "string" && top) return top;
+  if (typeof scErr === "string" && scErr) return scErr;
+  return fallback;
+}
+
+/**
+ * Wrap a rejected callTool promise as an error ToolResult carrying the reason
+ * as a top-level `.error` string, so `toolError` recovers it downstream.
+ */
+export function rejectToError(e: unknown): ToolResult {
+  return { isError: true, error: String(e) } as ToolResult;
+}
+
 /** Async MCP tool caller. */
 export type CallTool = (req: { name: string; arguments: Record<string, unknown> }) => Promise<ToolResult>;
 
