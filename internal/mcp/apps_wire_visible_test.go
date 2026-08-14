@@ -147,3 +147,53 @@ func TestOfficialToolHandlerAnnotatesHandoffEndToEnd(t *testing.T) {
 	require.Contains(t, uiText, "will render in your client")
 	require.Contains(t, uiText, "https://example.com/account/password/tok", "URL must be preserved")
 }
+
+// TestInvokeToolAnnotatesAppBackedHandoff regresses the invoke_tool meta-path:
+// a non-DirectVisible, app-backed catalog tool (e.g. vault_create/vault_restore)
+// is dispatched by the invoke_tool closure directly to the inner catalog
+// handler, so the outer officialToolHandler annotation (keyed on the wired name
+// "invoke_tool") never sees the real tool. The closure must annotate with the
+// resolved inner name so a text-only host still learns the companion app exists.
+func TestInvokeToolAnnotatesAppBackedHandoff(t *testing.T) {
+	registerTestAppView(t, "vault_create", AppViewInfo{
+		URI: "ui://vault/create.html", Name: "create-vault", Title: "Create Vault",
+	})
+	defer unregisterTestAppView(t, "vault_create")
+
+	catalog := NewToolCatalog()
+	catalog.Add(&ToolEntry{
+		Name:        "vault_create",
+		Description: "Create a vault (agent-safe OOB hand-off)",
+		Category:    CategoryCore,
+		Interaction: InteractionAgentSafe,
+		InputSchema: json.RawMessage(`{"type":"object"}`),
+		Handler: func(context.Context, ToolRequest) (ToolResult, error) {
+			// Mirrors the compiled vault_create OOB start handler: mint a URL
+			// and return a needs_human hand-off.
+			return NeedsHumanResult(NeedsHuman{
+				Reason:    ReasonSSOApproval,
+				ActionURL: "https://example.com/vault/create/tok",
+				Detail:    "Open the URL to finish creating the vault.",
+			}), nil
+		},
+	})
+
+	srv, err := OfficialServerFromCatalog(catalog, "", false, nil, nil, nil)
+	require.NoError(t, err)
+	cs := connectOfficialClient(t, srv)
+
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "invoke_tool",
+		Arguments: map[string]any{
+			"name":      "vault_create",
+			"arguments": map[string]any{},
+		},
+	})
+	require.NoError(t, err)
+	require.False(t, res.IsError)
+	require.NotNil(t, res.Content, "expected text content")
+	text := requireText(t, res)
+	require.Contains(t, text, "Create Vault", "companion-app title must annotate invoke_tool-dispatched hand-off")
+	require.Contains(t, text, "is also available in Apps-capable clients", "text-only client expects fallback wording")
+	require.Contains(t, text, "https://example.com/vault/create/tok", "raw URL must be preserved")
+}

@@ -512,6 +512,13 @@ func registerOfficialInvokeTool(srv *mcp.Server, catalog *ToolCatalog, stdioMode
 		if err != nil {
 			return ToolResult{IsError: true, Text: err.Error()}, nil
 		}
+		// invoke_tool dispatches to the inner catalog handler directly, so the
+		// outer officialToolHandler's annotation (keyed on req.Params.Name ==
+		// "invoke_tool") never sees the real tool. Annotate here with the
+		// resolved inner name so companion-app metadata reaches text-only hosts
+		// for non-DirectVisible tools (e.g. vault_create/vault_restore) that are
+		// only reachable through this meta-tool.
+		annotateAppOnHandoff(in.Name, request.Caps, &result)
 		return result, nil
 	})
 
