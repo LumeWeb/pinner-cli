@@ -290,9 +290,9 @@ func pinsRemove(d PinsDeps) catalog.Operation {
 		Visibility:  catalog.VisibilityBoth,
 		Positional:  "<cid...>",
 		Args: []catalog.OperationArg{
-			{Name: "cids", Type: catalog.ArgTypeStringSlice, Help: "Content identifiers to unpin", AgentHelp: "Concrete CIDs to unpin. Omit only when removing all pins (all=true). Do not pass CLI positional/file/stdin syntax; supply the values here."},
+			{Name: "cids", Type: catalog.ArgTypeStringSlice, SelectionGroup: "remove", Help: "Content identifiers to unpin", AgentHelp: "Concrete CIDs to unpin. Omit only when removing all pins (all=true). Do not pass CLI positional/file/stdin syntax; supply the values here."},
 			{Name: "confirm", Type: catalog.ArgTypeBool, Required: true, Help: "Confirm the destructive unpin", AgentHelp: "Must be true to remove pins; this is destructive and cannot be undone."},
-			{Name: "all", Type: catalog.ArgTypeBool, Default: "false", Help: "Remove all pins"},
+			{Name: "all", Type: catalog.ArgTypeBool, SelectionGroup: "remove", Default: "false", Help: "Remove all pins"},
 			{Name: "status", Type: catalog.ArgTypeString, Help: "When all=true, only unpin pins with this status (e.g. failed)"},
 			{Name: "parallel", Type: catalog.ArgTypeInt, Default: "0", Help: "Maximum number of parallel unpin operations for a batch"},
 			{Name: "continue", Type: catalog.ArgTypeBool, Default: "false", Help: "Continue unpinning remaining CIDs when one fails"},

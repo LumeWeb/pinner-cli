@@ -72,6 +72,11 @@ type OperationArg struct {
 	Help          string // human help (CLI)
 	AgentHelp     string // agent-oriented help (MCP); audience separation
 	AgentRequired bool   // required on the MCP surface only; never the CLI
+	// SelectionGroup groups mutually-exclusive selector members: exactly one
+	// arg in a group may be selected per invocation (e.g. pins_rm's "cids" and
+	// "all"). Empty selects membership in no group. Enforcement is centralized
+	// in the normalize path so CLI, MCP, and direct Invoke all agree.
+	SelectionGroup string
 }
 
 // Handler.Execute runs the business operation against core. It never touches

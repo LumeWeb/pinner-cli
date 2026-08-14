@@ -283,7 +283,16 @@ func catalogActionAdapter(op catalog.Operation, group string) cli.ActionFunc {
 		dctx, cancel := applyDefaultTimeout(ctx)
 		defer cancel()
 
-		result, err := op.Handler().Execute(dctx, input)
+		// Route through the same normalize path as Catalog.Invoke so required-arg
+		// validation, declared defaults, and SelectionGroup enforcement apply
+		// identically on the CLI surface. This is the single selector-contract
+		// chokepoint; without it the CLI would bypass the gate and hit the
+		// Handler with an unresolved cids+all conflict.
+		normalized, err := catalog.NormalizeOperationInput(op, input)
+		if err != nil {
+			return err
+		}
+		result, err := op.Handler().Execute(dctx, normalized)
 		if err != nil {
 			return err
 		}
