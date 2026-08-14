@@ -132,6 +132,15 @@ func registerCustomTools(deps customToolDeps) error {
 		return fmt.Errorf("failed to register vault restore app: %w", err)
 	}
 
+	// Pair the read-only vault_status tool with the "Vault browser" MCP App view
+	// (ui://vault/browser.html) so a UI-capable host renders a readable status +
+	// listing panel. The view only reads via the existing vault_status /
+	// vault_ls catalog tools and registers no helper. Must run before the
+	// curated registration loop reads _meta.ui, like the create/restore apps.
+	if err := RegisterVaultBrowserApp(deps.srv, deps.catalog); err != nil {
+		return fmt.Errorf("failed to register vault browser app: %w", err)
+	}
+
 	// Stamp which tools are part of the direct tools/list surface. This must
 	// run after the wizard tools and SSO tools are added to the catalog (both
 	// are created after buildCatalog returns), so the compiled curated names

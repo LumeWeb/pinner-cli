@@ -26,16 +26,18 @@ var AppsAssets embed.FS
 // bundleNames maps an app name to its embedded bundle filename under
 // appsassets/dist/.
 var bundleNames = map[string]string{
-	"pin":          "appsassets/dist/pin.js",
-	"vault-create": "appsassets/dist/vault-create.js",
-	"vault-restore": "appsassets/dist/vault-restore.js",
-	"auth-sso":     "appsassets/dist/auth-sso.js",
+	"pin":            "appsassets/dist/pin.js",
+	"vault-create":   "appsassets/dist/vault-create.js",
+	"vault-restore":  "appsassets/dist/vault-restore.js",
+	"auth-sso":       "appsassets/dist/auth-sso.js",
+	"vault-browser":  "appsassets/dist/vault-browser.js",
 }
 
 // AppModuleJS returns the embedded, self-contained ESM module source for the
-// named MCP App (one of "pin", "vault-create", "vault-restore", "auth-sso"),
-// ready to inline into a <script type="module">. An unknown name, or a bundle
-// that has not been built by `pnpm build`, is a programming/build error.
+// named MCP App (one of "pin", "vault-create", "vault-restore", "auth-sso",
+// "vault-browser"), ready to inline into a <script type="module">. An unknown
+// name, or a bundle that has not been built by `pnpm build`, is a
+// programming/build error.
 func AppModuleJS(app string) string {
 	file, ok := bundleNames[app]
 	if !ok {
