@@ -167,18 +167,30 @@ func (c *ToolCatalog) Entries() []*ToolEntry {
 
 // Search finds tools matching the query. The matching strategy is layered:
 //
-//  1. Empty query returns all tools (sorted by category then name).
+//  1. Empty query (or "help") returns a bounded, ordered result: the curated
+//     primary tools first (auth/vault/pins flows), then the remainder sorted
+//     by category then name. This is an onboarding listing, not a raw dump.
 //  2. Non-empty query ranks each tool:
 //     0 = exact name match
 //     1 = name starts with query
 //     2 = name contains query
 //     3 = name is a subsequence match of query
-//     4 = description contains query
-//     Tools that do not match at any level are excluded.
+//     4 = description contains query as a whole token
+//     Tools that do not match at any level are excluded. Description matches
+//     are token-based (the query must appear as its own word, so "auth" does
+//     not match "authenticated") and capped so name hits always dominate.
+//
+// Wizard tools (CategoryWizard) are excluded by default so an agent cannot
+// stumble onto an interactive flow; they are only returned when category is
+// explicitly "wizard". limit caps the number of results returned (<=0 means
+// no cap).
 //
 // If category is non-empty, only tools in that category are considered.
-func (c *ToolCatalog) Search(query, category string) []ToolSummary {
+func (c *ToolCatalog) Search(query, category string, limit int) []ToolSummary {
 	query = strings.ToLower(strings.TrimSpace(query))
+	// Both an empty query and the explicit "help" keyword trigger the
+	// onboarding listing (primary tools first) rather than keyword matching.
+	onboarding := query == "" || query == "help"
 
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -195,6 +207,11 @@ func (c *ToolCatalog) Search(query, category string) []ToolSummary {
 		if t.Interaction == InteractionInteractive {
 			continue
 		}
+		// Wizards are interactive by nature; keep them out of general keyword
+		// search unless the category filter names them explicitly.
+		if t.Category == CategoryWizard && category != string(CategoryWizard) {
+			continue
+		}
 		if category != "" && string(t.Category) != category {
 			continue
 		}
@@ -206,7 +223,7 @@ func (c *ToolCatalog) Search(query, category string) []ToolSummary {
 			Interaction: t.Interaction,
 		}
 
-		if query == "" {
+		if onboarding {
 			results = append(results, ranked{summary: summary, rank: 0})
 			continue
 		}
@@ -220,6 +237,17 @@ func (c *ToolCatalog) Search(query, category string) []ToolSummary {
 	}
 
 	sort.Slice(results, func(i, j int) bool {
+		// Onboarding (empty/help) listing: put primary tools ahead of the rest.
+		if onboarding {
+			pi, pj := isPrimaryTool(results[i].summary.Name), isPrimaryTool(results[j].summary.Name)
+			if pi != pj {
+				return pi
+			}
+			if results[i].summary.Category != results[j].summary.Category {
+				return results[i].summary.Category < results[j].summary.Category
+			}
+			return results[i].summary.Name < results[j].summary.Name
+		}
 		if results[i].rank != results[j].rank {
 			return results[i].rank < results[j].rank
 		}
@@ -233,7 +261,108 @@ func (c *ToolCatalog) Search(query, category string) []ToolSummary {
 	for i, r := range results {
 		summaries[i] = r.summary
 	}
+	if limit > 0 && len(summaries) > limit {
+		summaries = summaries[:limit]
+	}
 	return summaries
+}
+
+// isPrimaryTool reports whether a tool belongs to the curated "start here"
+// set surfaced ahead of the full listing on an empty/help search. These are
+// the primary flows an agent actually starts from: auth, vault, and pins.
+func isPrimaryTool(name string) bool {
+	switch name {
+	case "auth_status", "auth_sso", "auth_resume",
+		"vault_create", "vault_create_resume", "vault_status",
+		"pins_add", "pins_list", "pins_status":
+		return true
+	}
+	return false
+}
+
+// Suggest returns up to max tool names close to the given (unknown) name,
+// ordered by ascending Levenshtein distance then name. It lets describe_tool
+// and invoke_tool answer with "did you mean ...?" instead of a bare
+// unknown-tool error. Tools that Search deliberately hides — wizards and
+// interactive/human-only tools — are excluded so suggestions never surface a
+// tool the agent could not discover. Distance uses a local zero-dependency
+// Levenshtein (the same subsequence/rank family we forked rather than
+// importing a fuzzy-search library).
+func (c *ToolCatalog) Suggest(name string, max int) []string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	target := strings.ToLower(name)
+	type scored struct {
+		dist int
+		name string
+	}
+	all := make([]scored, 0, len(c.tools))
+	for _, t := range c.tools {
+		if t.Category == CategoryWizard || t.Interaction == InteractionInteractive {
+			continue
+		}
+		d := levenshtein(strings.ToLower(t.Name), target)
+		all = append(all, scored{dist: d, name: t.Name})
+	}
+	sort.Slice(all, func(i, j int) bool {
+		if all[i].dist != all[j].dist {
+			return all[i].dist < all[j].dist
+		}
+		return all[i].name < all[j].name
+	})
+	var out []string
+	for _, s := range all {
+		if max > 0 && len(out) >= max {
+			break
+		}
+		out = append(out, s.name)
+	}
+	return out
+}
+
+// levenshtein returns the edit distance between two strings (case-sensitive;
+// callers pass lowercased inputs). It is a compact, dependency-free
+// implementation; the repo avoids pulling a fuzzy-search library (and its
+// golang.org/x/text dependency) for a static ~67-tool catalog.
+func levenshtein(a, b string) int {
+	la, lb := len(a), len(b)
+	if la == 0 {
+		return lb
+	}
+	if lb == 0 {
+		return la
+	}
+	prev := make([]int, lb+1)
+	cur := make([]int, lb+1)
+	for j := 0; j <= lb; j++ {
+		prev[j] = j
+	}
+	for i := 1; i <= la; i++ {
+		cur[0] = i
+		for j := 1; j <= lb; j++ {
+			cost := 1
+			if a[i-1] == b[j-1] {
+				cost = 0
+			}
+			cur[j] = min3(prev[j]+1, cur[j-1]+1, prev[j-1]+cost)
+		}
+		prev, cur = cur, prev
+	}
+	return prev[lb]
+}
+
+func min3(a, b, c int) int {
+	if a < b {
+		if a < c {
+			return a
+		}
+		return c
+	}
+	if b < c {
+		return b
+	}
+	return c
 }
 
 // Describe returns the full detail (including input schema) for a single tool.
@@ -312,11 +441,11 @@ func titleWord(s string) string {
 // matchRank returns -1 if the query does not match the tool at any level.
 // Otherwise it returns a lower-is-better rank:
 //
-//	0 = exact name match
-//	1 = name starts with query
-//	2 = name contains query
-//	3 = name is a subsequence match of query
-//	4 = description contains query
+//		0 = exact name match
+//		1 = name starts with query
+//		2 = name contains query
+//	    3 = name is a subsequence match of query
+//	    4 = description contains query as a whole token
 func matchRank(query, name, desc string) int {
 	if name == query {
 		return 0
@@ -330,10 +459,49 @@ func matchRank(query, name, desc string) int {
 	if isSubsequence(query, name) {
 		return 3
 	}
-	if strings.Contains(desc, query) {
+	// Description matches are whole-token only: "auth" must not match
+	// "authenticated" or "authorized". This keeps description hits from
+	// drowning a keyword search with semantically unrelated tools.
+	if descContainsToken(desc, query) {
 		return 4
 	}
 	return -1
+}
+
+// descContainsToken reports whether query appears in desc as a complete
+// word/phrase, i.e. bounded on both sides by a non-alphanumeric boundary (or
+// start/end of string). It is case-insensitive on both sides. Unlike a raw
+// substring search, "auth" does not match within the longer word
+// "authenticated", because the char before/after "auth" would be alphanumeric
+// ("e"/"e"), not a boundary. Hyphenated phrases like "sign-in" match their
+// own hyphenated occurrence because the query's internal punctuation is
+// preserved (only the outer bounds must be word boundaries).
+func descContainsToken(desc, query string) bool {
+	if query == "" {
+		return false
+	}
+	lowerDesc := strings.ToLower(desc)
+	lowerQuery := strings.ToLower(query)
+	start := 0
+	for {
+		idx := strings.Index(lowerDesc[start:], lowerQuery)
+		if idx < 0 {
+			return false
+		}
+		abs := start + idx
+		beforeOK := abs == 0 || !isAlphaNum(rune(lowerDesc[abs-1]))
+		after := abs + len(lowerQuery)
+		afterOK := after >= len(lowerDesc) || !isAlphaNum(rune(lowerDesc[after]))
+		if beforeOK && afterOK {
+			return true
+		}
+		start = abs + 1
+	}
+}
+
+// isAlphaNum reports whether r is an ASCII letter or digit (token body char).
+func isAlphaNum(r rune) bool {
+	return r >= 'a' && r <= 'z' || r >= '0' && r <= '9'
 }
 
 // isSubsequence checks whether every character in src appears in target in

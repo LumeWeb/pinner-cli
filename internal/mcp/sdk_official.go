@@ -260,6 +260,8 @@ func (s *metaToolSchema) raw() json.RawMessage {
 type searchToolsInput struct {
 	Query    string `json:"query,omitempty" jsonschema:"description=A single keyword to search for in tool names and descriptions."`
 	Category string `json:"category,omitempty" jsonschema:"description=Filter by category: core, account, vault, ipns, operations, admin, or wizard."`
+	// Limit caps the number of results returned. Leave unset/0 for no cap.
+	Limit int `json:"limit,omitempty" jsonschema:"description=Optional maximum number of results to return. Leave unset for no limit."`
 }
 
 // describeToolInput is the typed argument shape for describe_tool.
@@ -277,16 +279,25 @@ func registerOfficialSearchTools(srv *mcp.Server, catalog *ToolCatalog) error {
 	schema := &metaToolSchema{}
 	schema.property("query", map[string]any{
 		"type":        "string",
-		"description": "A single keyword to search for in tool names and descriptions. Supports subsequence matching (e.g. 'pload' matches 'upload'). Leave empty to return all tools.",
+		"description": "A single keyword to search for in tool names (and, as a whole word only, descriptions). Name matches rank above description matches, so e.g. 'auth' finds the auth_* tools, not every tool whose description happens to contain a word starting with auth. Leave empty (or use 'help') for an onboarding listing with primary tools first.",
 	})
 	schema.property("category", map[string]any{
 		"type":        "string",
-		"description": "Filter by category: 'core' (user commands incl. pins/dns/websites), 'account' (auth, api keys), 'vault', 'ipns', 'operations', 'admin', or 'wizard'. Leave empty to search all categories.",
+		"description": "Filter by category: 'core' (user commands incl. pins/dns/websites), 'account' (auth, api keys), 'vault', 'ipns', 'operations', 'admin', or 'wizard'. Wizards are hidden from general search unless you set category to 'wizard' explicitly. Leave empty to search all categories.",
 	})
+	schema.property("limit", map[string]any{
+		"type":        "integer",
+		"description": "Optional maximum number of results to return. Leave unset for no limit.",
+	})
+
+	// Discovery workflow. This description documents the full search ->
+	// describe -> invoke loop and the dual-surface policy (some file-I/O
+	// tools are host-curated and not in this catalog).
+	discoveryNote := "Search the internal tool catalog by a single keyword. No boolean (AND/OR) syntax: pass one keyword at a time (e.g. 'pin', not 'pin OR upload'). Name matches are ranked exact, then starts-with, contains, subsequence, then whole-word description matches; tools that never match are omitted. Use the 'category' filter to narrow scope and 'limit' to cap results. Leave query empty or use 'help' to list primary tools (auth/vault/pins) first. Workflow: after discovering a tool here, call describe_tool(name) for its input schema, then invoke_tool(name, arguments). File upload and capability tools (upload_data, upload_url, capabilities) are host-curated and not listed in this catalog; they are exposed directly on the tool surface. Interactive wizard flows (category 'wizard') are excluded unless you filter for them specifically."
 
 	tool := &mcp.Tool{
 		Name:        "search_tools",
-		Description: "Search the internal tool catalog by a single keyword. Matching is substring/subsequence on the tool name, then ranked: exact name match ranks highest, then name-starts-with, name-contains, name-subsequence, and finally description-contains; tools that never match are omitted. There is no boolean (AND/OR) syntax: pass one keyword at a time (e.g. 'pin', not 'pin OR upload'). Use the 'category' filter (core/account/vault/ipns/operations/admin/wizard) to narrow scope, and describe_tool for a tool's full input schema. Leave query empty to list all tools.",
+		Description: discoveryNote,
 		InputSchema: schema.raw(),
 	}
 
@@ -295,7 +306,7 @@ func registerOfficialSearchTools(srv *mcp.Server, catalog *ToolCatalog) error {
 		if err != nil {
 			return ToolResult{}, err
 		}
-		summaries := catalog.Search(in.Query, in.Category)
+		summaries := catalog.Search(in.Query, in.Category, in.Limit)
 		data, err := json.Marshal(map[string]any{"tools": summaries, "total": len(summaries)})
 		if err != nil {
 			return ToolResult{}, err
@@ -329,7 +340,18 @@ func registerOfficialDescribeTool(srv *mcp.Server, catalog *ToolCatalog) error {
 		}
 		detail, err := catalog.Describe(in.Name)
 		if err != nil {
-			return ToolResult{IsError: true, Text: err.Error()}, nil
+			// Unknown tool: answer with "did you mean ...?" so the agent can
+			// recover without a separate search round-trip.
+			suggestions := catalog.Suggest(in.Name, 3)
+			resp := map[string]any{
+				"error":   err.Error(),
+				"suggest": suggestions,
+			}
+			if len(suggestions) > 0 {
+				resp["message"] = "unknown tool. did you mean one of these?"
+			}
+			out, _ := json.Marshal(resp)
+			return ToolResult{IsError: true, Text: string(out)}, nil
 		}
 		data, err := json.Marshal(detail)
 		if err != nil {
@@ -354,7 +376,7 @@ func registerOfficialInvokeTool(srv *mcp.Server, catalog *ToolCatalog, stdioMode
 
 	tool := &mcp.Tool{
 		Name:        "invoke_tool",
-		Description: "Execute a tool by name with the given arguments. Use describe_tool first to discover the required argument schema. The arguments object must match the tool's inputSchema.",
+		Description: "Execute a tool by name with the given arguments. This is the third step of the discovery workflow: search_tools(name) to find a tool, describe_tool(name) for its input schema, then invoke_tool(name, arguments). The arguments object must match the tool's inputSchema returned by describe_tool.",
 		InputSchema: schema.raw(),
 	}
 
@@ -372,7 +394,18 @@ func registerOfficialInvokeTool(srv *mcp.Server, catalog *ToolCatalog, stdioMode
 		}
 		entry, ok := catalog.Get(in.Name)
 		if !ok {
-			return ToolResult{IsError: true, Text: fmt.Sprintf("unknown tool: %s", in.Name)}, nil
+			// Unknown tool: offer nearest names so the agent can recover
+			// without a separate search round-trip.
+			suggestions := catalog.Suggest(in.Name, 3)
+			resp := map[string]any{
+				"error":   fmt.Sprintf("unknown tool: %s", in.Name),
+				"suggest": suggestions,
+			}
+			if len(suggestions) > 0 {
+				resp["message"] = "unknown tool. did you mean one of these?"
+			}
+			out, _ := json.Marshal(resp)
+			return ToolResult{IsError: true, Text: string(out)}, nil
 		}
 
 		// Steer agents away from commands they cannot run safely over the MCP
