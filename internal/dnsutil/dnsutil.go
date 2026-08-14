@@ -162,14 +162,17 @@ func validateSRV(content string) error {
 	return nil
 }
 
-// validateCAA validates CAA record content: "<flags> <tag> <value>".
+// validateCAA validates CAA record content: "<flags> <tag> [value]". Only the
+// flags and tag are required per RFC 8659; the value is optional (a value-less
+// "0 issue" record blocks all CA issuance).
 func validateCAA(content string) error {
 	fields := strings.Fields(content)
-	if len(fields) < 3 {
-		return fmt.Errorf("CAA record content must be \"flags tag value\" (e.g. \"0 issue letsencrypt.org\")")
+	if len(fields) < 2 {
+		return fmt.Errorf("CAA record content must be \"flags tag [value]\" (e.g. \"0 issue letsencrypt.org\")")
 	}
-	flags, err := strconv.ParseUint(fields[0], 10, 8)
-	if err != nil || flags > 255 {
+	// ParseUint with bitSize 8 already rejects values outside 0-255, so no
+	// separate range check is needed.
+	if _, err := strconv.ParseUint(fields[0], 10, 8); err != nil {
 		return fmt.Errorf("CAA flags must be an integer between 0 and 255")
 	}
 	tag := strings.ToLower(strings.TrimSuffix(fields[1], "."))

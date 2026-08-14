@@ -61,6 +61,7 @@ func TestValidateDNSRecordExtendedAndBase(t *testing.T) {
 		{"PTR", "host.example.com"},
 		{"SRV", "10 60 5060 sip.example.com"},
 		{"CAA", "0 issue letsencrypt.org"},
+		{"CAA", "0 issue"}, // RFC 8659 empty-value form: blocks all issuance
 		{"SOA", "ns1.example.com hostmaster.example.com 2024010101 7200 3600 1209600 3600"},
 		{"a", "1.2.3.4"}, // lowercase type is normalized
 	}
@@ -76,7 +77,8 @@ func TestValidateDNSRecordExtendedAndBase(t *testing.T) {
 		{"CNAME", "single"},
 		{"TXT", string(make([]byte, 256))},
 		{"SRV", "10 60 5060"},
-		{"CAA", "0 issue"},
+		{"CAA", "issue"}, // missing flags
+		{"CAA", "0 bogustag example.com"},
 		{"SOA", "ns1.example.com hostmaster.example.com 1"},
 		{"BOGUS", "whatever"},
 	}
