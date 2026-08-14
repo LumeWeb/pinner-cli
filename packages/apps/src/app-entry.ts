@@ -4,13 +4,22 @@
 // tested there, so these entries stay thin.
 
 import { createMachine, interpret } from "robot3";
-import { createFlowMachine, type CallTool, type FlowConfig } from "@/flow";
+import { createFlowMachine, type CallTool, type FlowConfig, type FlowState } from "@/flow";
 import { bootApp } from "@/boot";
 import { APP_VERSION } from "@/version";
+import { byId, setStatus } from "@/dom";
 
 /** Minimal host bridge; in the real iframe this is the ext-apps App. */
 export interface AppBridge {
   callServerTool: CallTool;
+}
+
+/** Terminal flow states (no more polling or user action needed until retry). */
+export const FLOW_TERMINAL: readonly FlowState[] = ["ok", "dead", "error", "timeout"];
+
+/** Read the current state of a robot3 service as the typed FlowState union. */
+export function currentFlowState(service: { machine?: { current?: string } }): FlowState {
+  return ((service.machine?.current ?? "") as FlowState);
 }
 
 /**
@@ -43,27 +52,39 @@ export interface AppEntryOptions {
 export function runAppEntry(opts: AppEntryOptions) {
   const machine = createFlowMachine(opts.config, opts.callTool);
   const service = interpret(machine, (s: any) => {
-    const state: string = s.machine?.current ?? "";
+    const stateName: FlowState = currentFlowState(s);
     const ctx = s.context as { url: string; detail: string; alreadyDone: boolean };
     const btn = opts.elements.startBtn;
     const urlEl = opts.elements.urlEl;
     const statusEl = opts.elements.statusEl;
 
-    const stateName = state as string;
     const pending = stateName === "starting" || stateName === "polling";
-    const terminal = ["ok", "dead", "error", "timeout"].includes(stateName);
+    const terminal = FLOW_TERMINAL.includes(stateName);
     // During an in-flight run the button is disabled (no concurrent runs). On a
     // terminal state it is re-enabled so the user can click "retry" / start
     // again.
     if (btn) btn.disabled = pending;
 
-    if (stateName === "ok")
-      (statusEl.className = "status ok"),
-      (statusEl.textContent = ctx.alreadyDone ? opts.config.alreadyDoneMsg : opts.config.doneMsg);
-    else if (stateName === "dead") statusEl.className = "status error", (statusEl.textContent = (ctx.detail || opts.config.deadDetailPrefix));
-    else if (stateName === "error") statusEl.className = "status error", (statusEl.textContent = opts.config.startErrorMsg);
-    else if (stateName === "timeout") statusEl.className = "status info", (statusEl.textContent = opts.config.timeoutMsg);
-    else if (pending) statusEl.className = "status pending", (statusEl.textContent = opts.config.pendingMsg);
+    switch (stateName) {
+      case "ok":
+        setStatus(statusEl, "ok", ctx.alreadyDone ? opts.config.alreadyDoneMsg : opts.config.doneMsg);
+        break;
+      case "dead":
+        setStatus(statusEl, "error", ctx.detail || opts.config.deadDetailPrefix);
+        break;
+      case "error":
+        setStatus(statusEl, "error", opts.config.startErrorMsg);
+        break;
+      case "timeout":
+        setStatus(statusEl, "info", opts.config.timeoutMsg);
+        break;
+      case "starting":
+      case "polling":
+        setStatus(statusEl, "pending", opts.config.pendingMsg);
+        break;
+      default:
+        break;
+    }
 
     if (ctx.url) {
       urlEl.textContent = ctx.url;
@@ -73,10 +94,10 @@ export function runAppEntry(opts: AppEntryOptions) {
 
   if (opts.elements.startBtn) {
     opts.elements.startBtn.addEventListener("click", () => {
-      const st: string = (service.machine as any)?.current ?? "";
+      const st = currentFlowState(service);
       // From a terminal state the machine's `retry` transition returns to idle;
       // a subsequent click (now that the button is re-enabled) sends `start`.
-      if (["ok", "dead", "error", "timeout"].includes(st)) {
+      if (FLOW_TERMINAL.includes(st)) {
         service.send("retry");
       } else {
         service.send("start");
@@ -86,8 +107,8 @@ export function runAppEntry(opts: AppEntryOptions) {
 
   return {
     start: () => service.send("start"),
-    get state(): string {
-      return (service.machine as any)?.current ?? "";
+    get state(): FlowState {
+      return currentFlowState(service);
     },
     service,
   };
@@ -138,15 +159,15 @@ export function mountFlowApp<Ids extends FlowElementIds>(
     maxAttempts: def.config.maxAttempts ?? 60,
     pollDelayMs: def.config.pollDelayMs ?? 1500,
   } as FlowConfig;
-  const statusEl = root.getElementById(def.ids.statusEl) as HTMLElement | null;
+  const statusEl = byId<HTMLElement>(root, def.ids.statusEl);
   const wire = (ct: CallTool) =>
     runAppEntry({
       config,
       callTool: ct,
       elements: {
-        startBtn: root.getElementById(def.ids.startBtn) as HTMLElement & { disabled?: boolean },
-        urlEl: root.getElementById(def.ids.urlEl) as HTMLElement,
-        statusEl: statusEl as HTMLElement,
+        startBtn: byId<HTMLElement & { disabled?: boolean }>(root, def.ids.startBtn)!,
+        urlEl: byId<HTMLElement>(root, def.ids.urlEl)!,
+        statusEl: statusEl!,
       },
     });
   if (callTool) return wire(callTool);

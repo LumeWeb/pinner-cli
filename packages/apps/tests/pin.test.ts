@@ -5,7 +5,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { interpret } from "robot3";
-import { createPinMachine, type PinConfig, type PinContext } from "@/pin";
+import { createPinMachine, type PinConfig, type PinContext, type PinState } from "@/pin";
 import { renderPin } from "@/pin-bootstrap";
 import type { CallTool, ToolResult } from "@/flow";
 
@@ -45,7 +45,7 @@ describe("pin flow machine", () => {
   let gate: GatedCall[];
   let machine: ReturnType<typeof createPinMachine>;
   let service: any;
-  const state = () => (service.machine as any).current as string;
+  const state = (): PinState => (service.machine as any).current as PinState;
   const ctx = () => service.context as PinContext;
   const sendSubmit = (cid: string, name = "") => service.send({ type: "submit", cid, name });
 

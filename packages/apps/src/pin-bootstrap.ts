@@ -11,11 +11,20 @@
 //   #out-status the result Status <code>.
 
 import { interpret } from "robot3";
-import { createPinMachine, type PinConfig, type PinContext } from "@/pin";
+import { createPinMachine, type PinConfig, type PinContext, type PinState } from "@/pin";
 import type { CallTool } from "@/flow";
 import type { AppDefinition } from "@/app-entry";
 import { bootApp } from "@/boot";
 import { APP_VERSION } from "@/version";
+import { byId, setStatus } from "@/dom";
+
+/** Terminal pin states (no more polling or user action needed until reset). */
+const PIN_TERMINAL: readonly PinState[] = ["ok", "info", "error", "timeout"];
+
+/** Read the current state of a robot3 service as the typed PinState union. */
+function currentPinState(service: { machine?: { current?: string } }): PinState {
+  return (service.machine?.current ?? "") as PinState;
+}
 
 /** Element ids referenced by the Go-rendered Create Pin HTML shell. */
 export type PinElementIds = {
@@ -53,7 +62,7 @@ export interface PinRender {
  * Map a machine state + context onto the status/result readout (status state,
  * status message, out-CID, and out-Status writes).
  */
-export function renderPin(state: string, ctx: PinContext, cfg: PinConfig): PinRender {
+export function renderPin(state: PinState, ctx: PinContext, cfg: PinConfig): PinRender {
   switch (state) {
     case "form_error":
       return { statusState: "error", statusMsg: cfg.cidRequiredMsg, setOutCid: false, setOutStatus: false };
@@ -99,38 +108,34 @@ export interface PinEntryOptions {
 export function runPinEntry(opts: PinEntryOptions) {
   const machine = createPinMachine(opts.config, opts.callTool);
   const service = interpret(machine, (s: any) => {
-    const state: string = s.machine?.current ?? "";
+    const state: PinState = currentPinState(s);
     const ctx = s.context as PinContext;
     const r = renderPin(state, ctx, opts.config);
-    if (r.statusState && r.statusMsg) {
-      opts.elements.statusEl.className = "status " + r.statusState;
-      opts.elements.statusEl.textContent = r.statusMsg;
-    }
+    if (r.statusState && r.statusMsg) setStatus(opts.elements.statusEl, r.statusState, r.statusMsg);
     if (r.setOutCid && ctx.outCid) opts.elements.outCid.textContent = ctx.outCid;
     if (r.setOutStatus && ctx.outStatus) opts.elements.outStatus.textContent = ctx.outStatus;
   });
 
-  const TERMINAL = ["ok", "info", "error", "timeout"];
   opts.elements.form.addEventListener("submit", (ev) => {
     ev.preventDefault();
     const cid = opts.elements.cidInput.value.trim();
     const name = opts.elements.nameInput.value.trim();
-    const st: string = (service.machine as any)?.current ?? "";
+    const st = currentPinState(service);
     // From a terminal state, reset first so a follow-up submission starts a
     // fresh flow (the form stays re-submittable after completion).
-    if (TERMINAL.includes(st)) service.send({ type: "reset" });
+    if (PIN_TERMINAL.includes(st)) service.send({ type: "reset" });
     service.send({ type: "submit", cid, name });
   });
 
   return {
     /** Programmatic submit with explicit cid/name (used by tests/demo). */
     submit: (cid: string, name = "") => {
-      const st: string = (service.machine as any)?.current ?? "";
-      if (TERMINAL.includes(st)) service.send({ type: "reset" });
+      const st = currentPinState(service);
+      if (PIN_TERMINAL.includes(st)) service.send({ type: "reset" });
       service.send({ type: "submit", cid, name });
     },
-    get state(): string {
-      return (service.machine as any)?.current ?? "";
+    get state(): PinState {
+      return currentPinState(service);
     },
     service,
   };
@@ -143,18 +148,18 @@ export function runPinEntry(opts: PinEntryOptions) {
  * the CLI build version.
  */
 export function mountPinApp(def: PinAppEntry, root: Document, callTool?: CallTool) {
-  const statusEl = root.getElementById(def.ids.status) as HTMLElement | null;
+  const statusEl = byId<HTMLElement>(root, def.ids.status);
   const wire = (ct: CallTool) =>
     runPinEntry({
       config: def.config,
       callTool: ct,
       elements: {
-        form: root.getElementById(def.ids.form) as HTMLFormElement,
-        cidInput: root.getElementById(def.ids.cid) as HTMLInputElement,
-        nameInput: root.getElementById(def.ids.name) as HTMLInputElement,
-        statusEl: statusEl as HTMLElement,
-        outCid: root.getElementById(def.ids.outCid) as HTMLElement,
-        outStatus: root.getElementById(def.ids.outStatus) as HTMLElement,
+        form: byId<HTMLFormElement>(root, def.ids.form)!,
+        cidInput: byId<HTMLInputElement>(root, def.ids.cid)!,
+        nameInput: byId<HTMLInputElement>(root, def.ids.name)!,
+        statusEl: statusEl!,
+        outCid: byId<HTMLElement>(root, def.ids.outCid)!,
+        outStatus: byId<HTMLElement>(root, def.ids.outStatus)!,
       },
     });
   if (callTool) return wire(callTool);
