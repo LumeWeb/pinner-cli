@@ -119,6 +119,21 @@ type AuthService interface {
 
 	// GetLoginToken returns a login JWT token, exchanging an API key if needed.
 	GetLoginToken(ctx context.Context) (string, error)
+
+	// GetAccount returns the authenticated account's profile (email, name, id,
+	// verification + 2FA state).
+	GetAccount(ctx context.Context) (*portalsdk.AccountInfo, error)
+
+	// UpdateEmail changes the account email. The user's current password is
+	// required for verification. On success a verification email is sent to the
+	// new address.
+	UpdateEmail(ctx context.Context, email, currentPassword string) error
+
+	// UpdatePassword changes the account password given the current password.
+	UpdatePassword(ctx context.Context, currentPassword, newPassword string) error
+
+	// GetSubscriptionStatus returns the account's active subscription status.
+	GetSubscriptionStatus(ctx context.Context) (*portalsdk.SubscriptionStatus, error)
 }
 
 // AuthServiceOption configures an AuthService.
@@ -541,6 +556,57 @@ func (s *AuthServiceDefault) GetLoginToken(ctx context.Context) (string, error) 
 	}
 
 	return token, nil
+}
+
+// GetAccount returns the authenticated account's profile.
+func (s *AuthServiceDefault) GetAccount(ctx context.Context) (*portalsdk.AccountInfo, error) {
+	client, err := s.GetAuthenticatedClient(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("authentication failed: %w", err)
+	}
+	info, err := client.GetAccount(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get account info: %w", err)
+	}
+	return info, nil
+}
+
+// UpdateEmail changes the account email. The user's current password is
+// required for verification; a verification email is sent to the new address.
+func (s *AuthServiceDefault) UpdateEmail(ctx context.Context, email, currentPassword string) error {
+	client, err := s.GetAuthenticatedClient(ctx)
+	if err != nil {
+		return fmt.Errorf("authentication failed: %w", err)
+	}
+	if err := client.UpdateEmail(ctx, email, currentPassword); err != nil {
+		return fmt.Errorf("failed to update email: %w", err)
+	}
+	return nil
+}
+
+// UpdatePassword changes the account password given the current password.
+func (s *AuthServiceDefault) UpdatePassword(ctx context.Context, currentPassword, newPassword string) error {
+	client, err := s.GetAuthenticatedClient(ctx)
+	if err != nil {
+		return fmt.Errorf("authentication failed: %w", err)
+	}
+	if err := client.UpdatePassword(ctx, currentPassword, newPassword); err != nil {
+		return fmt.Errorf("failed to update password: %w", err)
+	}
+	return nil
+}
+
+// GetSubscriptionStatus returns the account's active subscription status.
+func (s *AuthServiceDefault) GetSubscriptionStatus(ctx context.Context) (*portalsdk.SubscriptionStatus, error) {
+	client, err := s.GetAuthenticatedClient(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("authentication failed: %w", err)
+	}
+	status, err := client.GetSubscriptionStatus(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get subscription status: %w", err)
+	}
+	return status, nil
 }
 
 // GetJWTPurpose extracts the purpose from a JWT token's audience claim.

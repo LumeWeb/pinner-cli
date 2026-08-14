@@ -23,6 +23,7 @@ type CatalogDepsBundle struct {
 	CfgMgr func() config.Manager
 
 	Auth      catalogops.AuthDeps
+	Account   catalogops.AccountDeps
 	Vault     catalogops.VaultDeps
 	VaultSetup catalogops.VaultDeps
 	Pins      catalogops.PinsDeps

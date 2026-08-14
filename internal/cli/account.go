@@ -10,21 +10,34 @@ import (
 )
 
 func newAccountCommand() *cli.Command {
+	// Catalog-driven account subcommands (info, email, password, subscription,
+	// portal) compile to both the CLI and MCP surfaces; merge them under the
+	// `account` parent alongside the hand-written otp/api-keys subcommands.
+	catalogCmds := accountWiringParent()
 	return &cli.Command{
 		Name:     "account",
 		Category: "Setup",
 		Usage:    "Manage account settings",
-		Description: `Manage your Pinner.xyz account settings including 2FA configuration.
+		Description: `Manage your Pinner.xyz account settings including profile, email,
+password, subscription, 2FA configuration, and API keys.
 
 Examples:
+  pinner account info
+  pinner account email you@example.com --password currentpass
+  pinner account password
+  pinner account subscription
+  pinner account subscription --open
+  pinner account portal --open
   pinner account otp enable
-  pinner account otp enable --otp 123456
-  pinner account otp disable
   pinner account otp disable --password mypassword`,
-		Commands: []*cli.Command{
-			newAccountOTPCommand(),
-			newAccountAPIKeysCommand(),
-		},
+		Commands: append(
+			[]*cli.Command{
+				newAccountOTPCommand(),
+				// api-keys is catalog-driven but kept as its own parent.
+				newAccountAPIKeysCommand(),
+			},
+			catalogCmds...,
+		),
 	}
 }
 
