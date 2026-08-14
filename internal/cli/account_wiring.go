@@ -88,7 +88,7 @@ func accountWiringParent() []*cli.Command {
 			// at the returned web URL); it is not part of the data contract and
 			// never appears on the MCP surface. Add it to read commands that
 			// surface a web URL.
-			if op.Name() == "account_subscription" || op.Name() == "account_portal" {
+			if op.Name() == "account_subscription" {
 				c.Flags = append(c.Flags, &cli.BoolFlag{
 					Name:  "open",
 					Usage: "Open the subscription page in your default browser",
@@ -168,8 +168,6 @@ func accountResultURL(result any) string {
 	switch r := result.(type) {
 	case *catalogops.AccountSubscriptionResult:
 		return r.WebURL
-	case *catalogops.AccountPortalResult:
-		return r.URL
 	}
 	return ""
 }
@@ -235,15 +233,6 @@ func renderAccountResult(_ context.Context, c *cli.Command, op catalog.Operation
 		}
 		if r.WebURL != "" {
 			output.Printfln("Manage subscription: %s", r.WebURL)
-		}
-		return nil
-
-	case *catalogops.AccountPortalResult:
-		if output.IsJSON() {
-			return output.PrintJSON(r)
-		}
-		if r.URL != "" {
-			output.Printfln("%s", r.URL)
 		}
 		return nil
 

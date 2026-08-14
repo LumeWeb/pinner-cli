@@ -27,7 +27,6 @@ Examples:
   pinner account password
   pinner account subscription
   pinner account subscription --open
-  pinner account portal --open
   pinner account otp enable
   pinner account otp disable --password mypassword`,
 		Commands: append(

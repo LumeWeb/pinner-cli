@@ -39,6 +39,7 @@ require (
 	go.sia.tech/core v0.21.7
 	go.sia.tech/indexd v0.2.3-0.20260519120331-4eab507a9847
 	go.sia.tech/siastorage v0.1.0
+	go.uber.org/mock v0.6.0
 	go.uber.org/zap v1.28.0
 	golang.org/x/sys v0.47.0
 	gopkg.in/yaml.v3 v3.0.1

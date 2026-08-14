@@ -1,8 +1,8 @@
 // Package catalogops implements the account domain operations for the operation
-// catalog: account info, update email, update password, subscription status, and
-// the "manage subscription" web-portal deep-link. Each operation drives the core
-// auth service and returns typed data; rendering happens in the frontend wiring
-// layer.
+// catalog: account info, update email, update password, and subscription status
+// (which also carries the web-app manage-subscription deep-link). Each operation
+// drives the core auth service and returns typed data; rendering happens in the
+// frontend wiring layer.
 //
 // These are catalog operations (not hand-written CLI subcommands) so the same
 // definition compiles to BOTH the urfave CLI surface and the MCP tool surface —
@@ -100,7 +100,6 @@ func AccountOperations(d AccountDeps) []catalog.Operation {
 		accountUpdateEmail(d),
 		accountUpdatePassword(d),
 		accountSubscription(d),
-		accountPortal(d),
 	}
 }
 
@@ -141,14 +140,6 @@ type AccountSubscriptionResult struct {
 	UpdatedAt    *string `json:"updated_at,omitempty"`
 	Message      string  `json:"message,omitempty"`
 	WebURL       string  `json:"web_url"` // deep-link to the web app subscription page
-}
-
-// AccountPortalResult is the data returned by the account_portal operation: the
-// web-portal deep-link the user opens to manage their subscription. The CLI's
-// --open conveniences also spawn the default browser via the wiring layer.
-type AccountPortalResult struct {
-	URL     string `json:"url"`
-	Message string `json:"message,omitempty"`
 }
 
 // accountInfo is the `account info` operation: reads the account profile.
@@ -292,31 +283,6 @@ func accountSubscription(d AccountDeps) catalog.Operation {
 				out.Message = "Not subscribed. Open the web app to choose a plan and subscribe."
 			}
 			return out, nil
-		}),
-	})
-}
-
-// accountPortal is the `account portal` operation: returns the web-app URL the
-// user opens to manage their subscription. It is the deep-link primitive the
-// CLI --open convenience consumes (the wiring layer spawns the browser).
-func accountPortal(d AccountDeps) catalog.Operation {
-	return catalog.NewOperation(catalog.OperationSpec{
-		Name:             "account_portal",
-		Title:            "Manage subscription (web portal)",
-		Summary:          "Get the deep-link to manage your subscription in the web app",
-		Description:      "Return the URL of the web-app subscription page where you sign in and manage (or start) your Pinner.xyz subscription.",
-		AgentDescription: "Call account_portal to obtain the web_url the human opens in a browser to manage their subscription. This is a deep-link (data) — the agent cannot complete checkout itself; direct the human to open the returned url.",
-		Category:         "account",
-		Safety:           catalog.SafetyRead,
-		Interaction:      catalog.InteractionAgentSafe,
-		Visibility:       catalog.VisibilityBoth,
-		Positional:       "",
-		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			url := d.portalURL()
-			if url == "" {
-				return nil, fmt.Errorf("account_portal: could not derive the web portal URL from the configured account endpoint")
-			}
-			return &AccountPortalResult{URL: url, Message: "Open this URL in your browser to manage your subscription."}, nil
 		}),
 	})
 }
