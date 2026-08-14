@@ -8,6 +8,7 @@ import (
 	"context"
 
 	mock "github.com/stretchr/testify/mock"
+	"go.lumeweb.com/pinner-cli/internal/core/pinning"
 )
 
 // NewMockStatusService creates a new instance of MockStatusService. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
@@ -82,31 +83,31 @@ func (_c *MockStatusService_RequireAuthenticated_Call) RunAndReturn(run func() e
 }
 
 // Status provides a mock function for the type MockStatusService
-func (_mock *MockStatusService) Status(ctx context.Context, cid string, watch bool) (*PinStatus, *OperationStatusResult, error) {
+func (_mock *MockStatusService) Status(ctx context.Context, cid string, watch bool) (*pinning.PinStatus, *pinning.OperationStatusResult, error) {
 	ret := _mock.Called(ctx, cid, watch)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Status")
 	}
 
-	var r0 *PinStatus
-	var r1 *OperationStatusResult
+	var r0 *pinning.PinStatus
+	var r1 *pinning.OperationStatusResult
 	var r2 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, bool) (*PinStatus, *OperationStatusResult, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, bool) (*pinning.PinStatus, *pinning.OperationStatusResult, error)); ok {
 		return returnFunc(ctx, cid, watch)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, bool) *PinStatus); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, bool) *pinning.PinStatus); ok {
 		r0 = returnFunc(ctx, cid, watch)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*PinStatus)
+			r0 = ret.Get(0).(*pinning.PinStatus)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, string, bool) *OperationStatusResult); ok {
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, bool) *pinning.OperationStatusResult); ok {
 		r1 = returnFunc(ctx, cid, watch)
 	} else {
 		if ret.Get(1) != nil {
-			r1 = ret.Get(1).(*OperationStatusResult)
+			r1 = ret.Get(1).(*pinning.OperationStatusResult)
 		}
 	}
 	if returnFunc, ok := ret.Get(2).(func(context.Context, string, bool) error); ok {
@@ -153,12 +154,12 @@ func (_c *MockStatusService_Status_Call) Run(run func(ctx context.Context, cid s
 	return _c
 }
 
-func (_c *MockStatusService_Status_Call) Return(pinStatus *PinStatus, operationStatusResult *OperationStatusResult, err error) *MockStatusService_Status_Call {
+func (_c *MockStatusService_Status_Call) Return(pinStatus *pinning.PinStatus, operationStatusResult *pinning.OperationStatusResult, err error) *MockStatusService_Status_Call {
 	_c.Call.Return(pinStatus, operationStatusResult, err)
 	return _c
 }
 
-func (_c *MockStatusService_Status_Call) RunAndReturn(run func(ctx context.Context, cid string, watch bool) (*PinStatus, *OperationStatusResult, error)) *MockStatusService_Status_Call {
+func (_c *MockStatusService_Status_Call) RunAndReturn(run func(ctx context.Context, cid string, watch bool) (*pinning.PinStatus, *pinning.OperationStatusResult, error)) *MockStatusService_Status_Call {
 	_c.Call.Return(run)
 	return _c
 }

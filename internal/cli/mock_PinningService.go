@@ -8,6 +8,7 @@ import (
 	"context"
 
 	mock "github.com/stretchr/testify/mock"
+	"go.lumeweb.com/pinner-cli/internal/core/pinning"
 )
 
 // NewMockPinningService creates a new instance of MockPinningService. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
@@ -38,23 +39,23 @@ func (_m *MockPinningService) EXPECT() *MockPinningService_Expecter {
 }
 
 // List provides a mock function for the type MockPinningService
-func (_mock *MockPinningService) List(ctx context.Context, nameFilter string, limit int, statusFilter string) ([]Pin, error) {
+func (_mock *MockPinningService) List(ctx context.Context, nameFilter string, limit int, statusFilter string) ([]pinning.Pin, error) {
 	ret := _mock.Called(ctx, nameFilter, limit, statusFilter)
 
 	if len(ret) == 0 {
 		panic("no return value specified for List")
 	}
 
-	var r0 []Pin
+	var r0 []pinning.Pin
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int, string) ([]Pin, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int, string) ([]pinning.Pin, error)); ok {
 		return returnFunc(ctx, nameFilter, limit, statusFilter)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int, string) []Pin); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int, string) []pinning.Pin); ok {
 		r0 = returnFunc(ctx, nameFilter, limit, statusFilter)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).([]Pin)
+			r0 = ret.Get(0).([]pinning.Pin)
 		}
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, string, int, string) error); ok {
@@ -107,34 +108,34 @@ func (_c *MockPinningService_List_Call) Run(run func(ctx context.Context, nameFi
 	return _c
 }
 
-func (_c *MockPinningService_List_Call) Return(pins []Pin, err error) *MockPinningService_List_Call {
+func (_c *MockPinningService_List_Call) Return(pins []pinning.Pin, err error) *MockPinningService_List_Call {
 	_c.Call.Return(pins, err)
 	return _c
 }
 
-func (_c *MockPinningService_List_Call) RunAndReturn(run func(ctx context.Context, nameFilter string, limit int, statusFilter string) ([]Pin, error)) *MockPinningService_List_Call {
+func (_c *MockPinningService_List_Call) RunAndReturn(run func(ctx context.Context, nameFilter string, limit int, statusFilter string) ([]pinning.Pin, error)) *MockPinningService_List_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // Pin provides a mock function for the type MockPinningService
-func (_mock *MockPinningService) Pin(ctx context.Context, cid string, name string, wait bool) (*PinResult, error) {
+func (_mock *MockPinningService) Pin(ctx context.Context, cid string, name string, wait bool) (*pinning.PinResult, error) {
 	ret := _mock.Called(ctx, cid, name, wait)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Pin")
 	}
 
-	var r0 *PinResult
+	var r0 *pinning.PinResult
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, bool) (*PinResult, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, bool) (*pinning.PinResult, error)); ok {
 		return returnFunc(ctx, cid, name, wait)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, bool) *PinResult); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, bool) *pinning.PinResult); ok {
 		r0 = returnFunc(ctx, cid, name, wait)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*PinResult)
+			r0 = ret.Get(0).(*pinning.PinResult)
 		}
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, string, string, bool) error); ok {
@@ -187,37 +188,37 @@ func (_c *MockPinningService_Pin_Call) Run(run func(ctx context.Context, cid str
 	return _c
 }
 
-func (_c *MockPinningService_Pin_Call) Return(pinResult *PinResult, err error) *MockPinningService_Pin_Call {
+func (_c *MockPinningService_Pin_Call) Return(pinResult *pinning.PinResult, err error) *MockPinningService_Pin_Call {
 	_c.Call.Return(pinResult, err)
 	return _c
 }
 
-func (_c *MockPinningService_Pin_Call) RunAndReturn(run func(ctx context.Context, cid string, name string, wait bool) (*PinResult, error)) *MockPinningService_Pin_Call {
+func (_c *MockPinningService_Pin_Call) RunAndReturn(run func(ctx context.Context, cid string, name string, wait bool) (*pinning.PinResult, error)) *MockPinningService_Pin_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // PinBatch provides a mock function for the type MockPinningService
-func (_mock *MockPinningService) PinBatch(ctx context.Context, cids []string, name string, opts BatchOptions) (*BatchResult, error) {
+func (_mock *MockPinningService) PinBatch(ctx context.Context, cids []string, name string, opts pinning.BatchOptions) (*pinning.BatchResult, error) {
 	ret := _mock.Called(ctx, cids, name, opts)
 
 	if len(ret) == 0 {
 		panic("no return value specified for PinBatch")
 	}
 
-	var r0 *BatchResult
+	var r0 *pinning.BatchResult
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, []string, string, BatchOptions) (*BatchResult, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, []string, string, pinning.BatchOptions) (*pinning.BatchResult, error)); ok {
 		return returnFunc(ctx, cids, name, opts)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, []string, string, BatchOptions) *BatchResult); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, []string, string, pinning.BatchOptions) *pinning.BatchResult); ok {
 		r0 = returnFunc(ctx, cids, name, opts)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*BatchResult)
+			r0 = ret.Get(0).(*pinning.BatchResult)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, []string, string, BatchOptions) error); ok {
+	if returnFunc, ok := ret.Get(1).(func(context.Context, []string, string, pinning.BatchOptions) error); ok {
 		r1 = returnFunc(ctx, cids, name, opts)
 	} else {
 		r1 = ret.Error(1)
@@ -234,12 +235,12 @@ type MockPinningService_PinBatch_Call struct {
 //   - ctx context.Context
 //   - cids []string
 //   - name string
-//   - opts BatchOptions
+//   - opts pinning.BatchOptions
 func (_e *MockPinningService_Expecter) PinBatch(ctx interface{}, cids interface{}, name interface{}, opts interface{}) *MockPinningService_PinBatch_Call {
 	return &MockPinningService_PinBatch_Call{Call: _e.mock.On("PinBatch", ctx, cids, name, opts)}
 }
 
-func (_c *MockPinningService_PinBatch_Call) Run(run func(ctx context.Context, cids []string, name string, opts BatchOptions)) *MockPinningService_PinBatch_Call {
+func (_c *MockPinningService_PinBatch_Call) Run(run func(ctx context.Context, cids []string, name string, opts pinning.BatchOptions)) *MockPinningService_PinBatch_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -253,9 +254,9 @@ func (_c *MockPinningService_PinBatch_Call) Run(run func(ctx context.Context, ci
 		if args[2] != nil {
 			arg2 = args[2].(string)
 		}
-		var arg3 BatchOptions
+		var arg3 pinning.BatchOptions
 		if args[3] != nil {
-			arg3 = args[3].(BatchOptions)
+			arg3 = args[3].(pinning.BatchOptions)
 		}
 		run(
 			arg0,
@@ -267,12 +268,12 @@ func (_c *MockPinningService_PinBatch_Call) Run(run func(ctx context.Context, ci
 	return _c
 }
 
-func (_c *MockPinningService_PinBatch_Call) Return(batchResult *BatchResult, err error) *MockPinningService_PinBatch_Call {
+func (_c *MockPinningService_PinBatch_Call) Return(batchResult *pinning.BatchResult, err error) *MockPinningService_PinBatch_Call {
 	_c.Call.Return(batchResult, err)
 	return _c
 }
 
-func (_c *MockPinningService_PinBatch_Call) RunAndReturn(run func(ctx context.Context, cids []string, name string, opts BatchOptions) (*BatchResult, error)) *MockPinningService_PinBatch_Call {
+func (_c *MockPinningService_PinBatch_Call) RunAndReturn(run func(ctx context.Context, cids []string, name string, opts pinning.BatchOptions) (*pinning.BatchResult, error)) *MockPinningService_PinBatch_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -322,23 +323,23 @@ func (_c *MockPinningService_RequireAuthenticated_Call) RunAndReturn(run func() 
 }
 
 // Status provides a mock function for the type MockPinningService
-func (_mock *MockPinningService) Status(ctx context.Context, cid string, watch bool) (*PinStatus, error) {
+func (_mock *MockPinningService) Status(ctx context.Context, cid string, watch bool) (*pinning.PinStatus, error) {
 	ret := _mock.Called(ctx, cid, watch)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Status")
 	}
 
-	var r0 *PinStatus
+	var r0 *pinning.PinStatus
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, bool) (*PinStatus, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, bool) (*pinning.PinStatus, error)); ok {
 		return returnFunc(ctx, cid, watch)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, bool) *PinStatus); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, bool) *pinning.PinStatus); ok {
 		r0 = returnFunc(ctx, cid, watch)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*PinStatus)
+			r0 = ret.Get(0).(*pinning.PinStatus)
 		}
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, string, bool) error); ok {
@@ -385,34 +386,34 @@ func (_c *MockPinningService_Status_Call) Run(run func(ctx context.Context, cid 
 	return _c
 }
 
-func (_c *MockPinningService_Status_Call) Return(pinStatus *PinStatus, err error) *MockPinningService_Status_Call {
+func (_c *MockPinningService_Status_Call) Return(pinStatus *pinning.PinStatus, err error) *MockPinningService_Status_Call {
 	_c.Call.Return(pinStatus, err)
 	return _c
 }
 
-func (_c *MockPinningService_Status_Call) RunAndReturn(run func(ctx context.Context, cid string, watch bool) (*PinStatus, error)) *MockPinningService_Status_Call {
+func (_c *MockPinningService_Status_Call) RunAndReturn(run func(ctx context.Context, cid string, watch bool) (*pinning.PinStatus, error)) *MockPinningService_Status_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // Unpin provides a mock function for the type MockPinningService
-func (_mock *MockPinningService) Unpin(ctx context.Context, cid string, confirm bool) (*UnpinResult, error) {
+func (_mock *MockPinningService) Unpin(ctx context.Context, cid string, confirm bool) (*pinning.UnpinResult, error) {
 	ret := _mock.Called(ctx, cid, confirm)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Unpin")
 	}
 
-	var r0 *UnpinResult
+	var r0 *pinning.UnpinResult
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, bool) (*UnpinResult, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, bool) (*pinning.UnpinResult, error)); ok {
 		return returnFunc(ctx, cid, confirm)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, bool) *UnpinResult); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, bool) *pinning.UnpinResult); ok {
 		r0 = returnFunc(ctx, cid, confirm)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*UnpinResult)
+			r0 = ret.Get(0).(*pinning.UnpinResult)
 		}
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, string, bool) error); ok {
@@ -459,37 +460,37 @@ func (_c *MockPinningService_Unpin_Call) Run(run func(ctx context.Context, cid s
 	return _c
 }
 
-func (_c *MockPinningService_Unpin_Call) Return(unpinResult *UnpinResult, err error) *MockPinningService_Unpin_Call {
+func (_c *MockPinningService_Unpin_Call) Return(unpinResult *pinning.UnpinResult, err error) *MockPinningService_Unpin_Call {
 	_c.Call.Return(unpinResult, err)
 	return _c
 }
 
-func (_c *MockPinningService_Unpin_Call) RunAndReturn(run func(ctx context.Context, cid string, confirm bool) (*UnpinResult, error)) *MockPinningService_Unpin_Call {
+func (_c *MockPinningService_Unpin_Call) RunAndReturn(run func(ctx context.Context, cid string, confirm bool) (*pinning.UnpinResult, error)) *MockPinningService_Unpin_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // UnpinAll provides a mock function for the type MockPinningService
-func (_mock *MockPinningService) UnpinAll(ctx context.Context, statusFilter string, opts BatchOptions) (*BatchResult, error) {
+func (_mock *MockPinningService) UnpinAll(ctx context.Context, statusFilter string, opts pinning.BatchOptions) (*pinning.BatchResult, error) {
 	ret := _mock.Called(ctx, statusFilter, opts)
 
 	if len(ret) == 0 {
 		panic("no return value specified for UnpinAll")
 	}
 
-	var r0 *BatchResult
+	var r0 *pinning.BatchResult
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, BatchOptions) (*BatchResult, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, pinning.BatchOptions) (*pinning.BatchResult, error)); ok {
 		return returnFunc(ctx, statusFilter, opts)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, BatchOptions) *BatchResult); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, pinning.BatchOptions) *pinning.BatchResult); ok {
 		r0 = returnFunc(ctx, statusFilter, opts)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*BatchResult)
+			r0 = ret.Get(0).(*pinning.BatchResult)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, string, BatchOptions) error); ok {
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, pinning.BatchOptions) error); ok {
 		r1 = returnFunc(ctx, statusFilter, opts)
 	} else {
 		r1 = ret.Error(1)
@@ -505,12 +506,12 @@ type MockPinningService_UnpinAll_Call struct {
 // UnpinAll is a helper method to define mock.On call
 //   - ctx context.Context
 //   - statusFilter string
-//   - opts BatchOptions
+//   - opts pinning.BatchOptions
 func (_e *MockPinningService_Expecter) UnpinAll(ctx interface{}, statusFilter interface{}, opts interface{}) *MockPinningService_UnpinAll_Call {
 	return &MockPinningService_UnpinAll_Call{Call: _e.mock.On("UnpinAll", ctx, statusFilter, opts)}
 }
 
-func (_c *MockPinningService_UnpinAll_Call) Run(run func(ctx context.Context, statusFilter string, opts BatchOptions)) *MockPinningService_UnpinAll_Call {
+func (_c *MockPinningService_UnpinAll_Call) Run(run func(ctx context.Context, statusFilter string, opts pinning.BatchOptions)) *MockPinningService_UnpinAll_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -520,9 +521,9 @@ func (_c *MockPinningService_UnpinAll_Call) Run(run func(ctx context.Context, st
 		if args[1] != nil {
 			arg1 = args[1].(string)
 		}
-		var arg2 BatchOptions
+		var arg2 pinning.BatchOptions
 		if args[2] != nil {
-			arg2 = args[2].(BatchOptions)
+			arg2 = args[2].(pinning.BatchOptions)
 		}
 		run(
 			arg0,
@@ -533,37 +534,37 @@ func (_c *MockPinningService_UnpinAll_Call) Run(run func(ctx context.Context, st
 	return _c
 }
 
-func (_c *MockPinningService_UnpinAll_Call) Return(batchResult *BatchResult, err error) *MockPinningService_UnpinAll_Call {
+func (_c *MockPinningService_UnpinAll_Call) Return(batchResult *pinning.BatchResult, err error) *MockPinningService_UnpinAll_Call {
 	_c.Call.Return(batchResult, err)
 	return _c
 }
 
-func (_c *MockPinningService_UnpinAll_Call) RunAndReturn(run func(ctx context.Context, statusFilter string, opts BatchOptions) (*BatchResult, error)) *MockPinningService_UnpinAll_Call {
+func (_c *MockPinningService_UnpinAll_Call) RunAndReturn(run func(ctx context.Context, statusFilter string, opts pinning.BatchOptions) (*pinning.BatchResult, error)) *MockPinningService_UnpinAll_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // UnpinBatch provides a mock function for the type MockPinningService
-func (_mock *MockPinningService) UnpinBatch(ctx context.Context, cids []string, opts BatchOptions) (*BatchResult, error) {
+func (_mock *MockPinningService) UnpinBatch(ctx context.Context, cids []string, opts pinning.BatchOptions) (*pinning.BatchResult, error) {
 	ret := _mock.Called(ctx, cids, opts)
 
 	if len(ret) == 0 {
 		panic("no return value specified for UnpinBatch")
 	}
 
-	var r0 *BatchResult
+	var r0 *pinning.BatchResult
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, []string, BatchOptions) (*BatchResult, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, []string, pinning.BatchOptions) (*pinning.BatchResult, error)); ok {
 		return returnFunc(ctx, cids, opts)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, []string, BatchOptions) *BatchResult); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, []string, pinning.BatchOptions) *pinning.BatchResult); ok {
 		r0 = returnFunc(ctx, cids, opts)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*BatchResult)
+			r0 = ret.Get(0).(*pinning.BatchResult)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, []string, BatchOptions) error); ok {
+	if returnFunc, ok := ret.Get(1).(func(context.Context, []string, pinning.BatchOptions) error); ok {
 		r1 = returnFunc(ctx, cids, opts)
 	} else {
 		r1 = ret.Error(1)
@@ -579,12 +580,12 @@ type MockPinningService_UnpinBatch_Call struct {
 // UnpinBatch is a helper method to define mock.On call
 //   - ctx context.Context
 //   - cids []string
-//   - opts BatchOptions
+//   - opts pinning.BatchOptions
 func (_e *MockPinningService_Expecter) UnpinBatch(ctx interface{}, cids interface{}, opts interface{}) *MockPinningService_UnpinBatch_Call {
 	return &MockPinningService_UnpinBatch_Call{Call: _e.mock.On("UnpinBatch", ctx, cids, opts)}
 }
 
-func (_c *MockPinningService_UnpinBatch_Call) Run(run func(ctx context.Context, cids []string, opts BatchOptions)) *MockPinningService_UnpinBatch_Call {
+func (_c *MockPinningService_UnpinBatch_Call) Run(run func(ctx context.Context, cids []string, opts pinning.BatchOptions)) *MockPinningService_UnpinBatch_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -594,9 +595,9 @@ func (_c *MockPinningService_UnpinBatch_Call) Run(run func(ctx context.Context, 
 		if args[1] != nil {
 			arg1 = args[1].([]string)
 		}
-		var arg2 BatchOptions
+		var arg2 pinning.BatchOptions
 		if args[2] != nil {
-			arg2 = args[2].(BatchOptions)
+			arg2 = args[2].(pinning.BatchOptions)
 		}
 		run(
 			arg0,
@@ -607,12 +608,12 @@ func (_c *MockPinningService_UnpinBatch_Call) Run(run func(ctx context.Context, 
 	return _c
 }
 
-func (_c *MockPinningService_UnpinBatch_Call) Return(batchResult *BatchResult, err error) *MockPinningService_UnpinBatch_Call {
+func (_c *MockPinningService_UnpinBatch_Call) Return(batchResult *pinning.BatchResult, err error) *MockPinningService_UnpinBatch_Call {
 	_c.Call.Return(batchResult, err)
 	return _c
 }
 
-func (_c *MockPinningService_UnpinBatch_Call) RunAndReturn(run func(ctx context.Context, cids []string, opts BatchOptions) (*BatchResult, error)) *MockPinningService_UnpinBatch_Call {
+func (_c *MockPinningService_UnpinBatch_Call) RunAndReturn(run func(ctx context.Context, cids []string, opts pinning.BatchOptions) (*pinning.BatchResult, error)) *MockPinningService_UnpinBatch_Call {
 	_c.Call.Return(run)
 	return _c
 }
