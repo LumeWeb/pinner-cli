@@ -83,14 +83,17 @@ func webRegisterURL(cfgMgrFactory ConfigManagerFactory) (string, error) {
 
 func register(ctx context.Context, cmd argsFlagGetterWithBool, output Output, cfgMgrFactory ConfigManagerFactory, authServiceFactory AuthServiceFactory) error {
 	// --open: surface the registration page URL and launch the default browser
-	// so the user can sign up in the web app. The URL is always printed first so
-	// it remains usable even if no browser opener is available.
+	// so the user can sign up in the web app. Human-readable browser messages
+	// are suppressed in --json mode so structured output stays parseable; the
+	// browser still opens.
 	if cmd.Bool("open") {
 		if url, err := webRegisterURL(cfgMgrFactory); err != nil {
 			return fmt.Errorf("failed to determine registration page: %w", err)
 		} else {
-			output.Printfln("Open the registration page: %s", url)
-			if perr := openURL(url); perr != nil {
+			if !output.IsJSON() {
+				output.Printfln("Open the registration page: %s", url)
+			}
+			if perr := openURL(url); perr != nil && !output.IsJSON() {
 				output.Printfln("Could not auto-open the browser: %v", perr)
 			}
 		}
