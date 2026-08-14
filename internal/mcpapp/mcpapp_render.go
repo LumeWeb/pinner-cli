@@ -1,4 +1,4 @@
-package mcp
+package mcpapp
 
 import (
 	"bytes"
@@ -15,7 +15,7 @@ import (
 // Apps may add app-specific rules AFTER this base theme (later rules win), but
 // the core :root tokens, element resets and the shared status/result component
 // styles live here so they are not re-authored per app.
-const mcpAppThemeCSS = `
+const McpAppThemeCSS = `
 :root {
 	--color-text-primary: #d4d4d8;
 	--color-background: #1e1e24;
@@ -74,7 +74,7 @@ button {
 // because templ treats <script>/<style> content as raw text and does not
 // evaluate expressions inside them, and because the shell is identical across
 // apps. Served verbatim so the sandboxed iframe needs no network request.
-func renderMcpAppDoc(title string, body templ.Component, moduleJS string) string {
+func RenderMcpAppDoc(title string, body templ.Component, moduleJS string) string {
 	ctx := context.Background()
 	var b bytes.Buffer
 	b.WriteString("<!doctype html><html lang=\"en\"><head>")
@@ -82,7 +82,7 @@ func renderMcpAppDoc(title string, body templ.Component, moduleJS string) string
 	b.WriteString("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/>")
 	b.WriteString("<title>" + title + "</title>")
 	b.WriteString("<style>")
-	b.WriteString(mcpAppThemeCSS)
+	b.WriteString(McpAppThemeCSS)
 	b.WriteString("</style>")
 	b.WriteString("</head><body>")
 	_ = body.Render(ctx, &b)

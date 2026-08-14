@@ -1,4 +1,4 @@
-package mcp
+package mcpapp
 
 // authSSOAppForm renders the visible "Sign In" view body: a start button, the
 // approval URL readout (deep-linked to the human), and a live status line that
@@ -6,7 +6,7 @@ package mcp
 // (shared inline theme) and the ESM module <script> (shared ext-apps
 // bootstrap + SSO logic) are supplied by renderMcpAppDoc, so this templ
 // authors only the app-specific markup.
-templ authSSOAppForm() {
+templ AuthSSOAppForm() {
 	<h1>Sign In</h1>
 	<button id="sso-start" type="button">Start sign-in</button>
 	<div class="result">

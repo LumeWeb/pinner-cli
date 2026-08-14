@@ -1,4 +1,4 @@
-package mcp
+package mcpapp
 
 // vaultRestoreAppForm renders the visible "Restore Vault" view body: a start
 // button, the restore URL readout (deep-linked to the human-only one-time page
@@ -7,7 +7,7 @@ package mcp
 // inline theme) and the ESM module <script> (shared ext-apps bootstrap +
 // restore logic) are supplied by renderMcpAppDoc, so this templ authors only
 // the app-specific markup.
-templ vaultRestoreAppForm() {
+templ VaultRestoreAppForm() {
 	<h1>Restore Vault</h1>
 	<button id="vault-restore-start" type="button">Start vault restore</button>
 	<div class="result">

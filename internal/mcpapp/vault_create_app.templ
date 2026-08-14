@@ -1,4 +1,4 @@
-package mcp
+package mcpapp
 
 // vaultCreateAppForm renders the visible "Create Vault" view body: a start
 // button, the create URL readout (deep-linked to the human-only one-time page
@@ -7,7 +7,7 @@ package mcp
 // document <head> (shared inline theme) and the ESM module <script> (shared
 // ext-apps bootstrap + create logic) are supplied by renderMcpAppDoc, so this
 // templ authors only the app-specific markup.
-templ vaultCreateAppForm() {
+templ VaultCreateAppForm() {
 	<h1>Create Vault</h1>
 	<button id="vault-create-start" type="button">Start vault create</button>
 	<div class="result">

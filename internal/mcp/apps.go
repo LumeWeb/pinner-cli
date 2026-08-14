@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"go.lumeweb.com/pinner-cli/internal/mcpapp"
 )
 
 // MCP Apps (ext-apps) product views. Each App pairs one or more existing tools
@@ -39,7 +40,7 @@ type PinStatusView struct {
 // renderMcpAppDoc; only the visible body form is authored in templ. Served
 // verbatim so the sandboxed iframe needs no network request.
 func renderPinCreateAppHTML() string {
-	return renderMcpAppDoc("Create a Pin", pinCreateAppForm(), pinAppModule(extAppsClientBase64()))
+	return mcpapp.RenderMcpAppDoc("Create a Pin", mcpapp.PinCreateAppForm(), mcpapp.PinAppModule(mcpapp.ExtAppsClientBase64()))
 }
 
 // pinStatusDescriptor builds the app-only pin status helper. It is visible to

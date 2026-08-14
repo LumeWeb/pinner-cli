@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"go.lumeweb.com/pinner-cli/internal/mcpapp"
 )
 
 // This file wires the "Sign In" (auth SSO) MCP App onto the shared AppView lib
@@ -19,7 +20,7 @@ const AuthSSOAppURI = "ui://auth/sso.html"
 // ESM module (shared ext-apps bootstrap + SSO logic) come from
 // renderMcpAppDoc; only the visible body form is authored in templ.
 func renderAuthSSOAppHTML() string {
-	return renderMcpAppDoc("Sign In", authSSOAppForm(), authSSOAppModule(extAppsClientBase64()))
+	return mcpapp.RenderMcpAppDoc("Sign In", mcpapp.AuthSSOAppForm(), authSSOAppModule(mcpapp.ExtAppsClientBase64()))
 }
 
 // authSSOAppModule renders the sign-in app's ESM module source using the
@@ -28,7 +29,7 @@ func renderAuthSSOAppHTML() string {
 // the handle-presence dead-handle predicate that the standalone SSO view
 // previously lacked.
 func authSSOAppModule(clientBase64 string) string {
-	return renderAppFlowModule(clientBase64, appFlowSpec{
+	return mcpapp.RenderAppFlowModule(clientBase64, mcpapp.AppFlowSpec{
 		Name:       "AuthSSO",
 		Version:    "1.0.0",
 		StartTool:  "auth_sso",

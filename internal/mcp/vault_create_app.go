@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"go.lumeweb.com/pinner-cli/internal/mcpapp"
 )
 
 // This file wires the "Create Vault" MCP App onto the shared AppView lib
@@ -20,13 +21,13 @@ const VaultCreateAppURI = "ui://vault/create.html"
 // the ESM module (shared ext-apps bootstrap + create logic) come from
 // renderMcpAppDoc; only the visible body form is authored in templ.
 func renderVaultCreateAppHTML() string {
-	return renderMcpAppDoc("Create Vault", vaultCreateAppForm(), vaultCreateAppModule(extAppsClientBase64()))
+	return mcpapp.RenderMcpAppDoc("Create Vault", mcpapp.VaultCreateAppForm(), vaultCreateAppModule(mcpapp.ExtAppsClientBase64()))
 }
 
 // vaultCreateAppModule renders the vault-create app's ESM module source using
 // the shared out-of-band flow template.
 func vaultCreateAppModule(clientBase64 string) string {
-	return renderAppFlowModule(clientBase64, appFlowSpec{
+	return mcpapp.RenderAppFlowModule(clientBase64, mcpapp.AppFlowSpec{
 		Name:       "VaultCreate",
 		Version:    "1.0.0",
 		StartTool:  compiledVaultCreateToolName,
