@@ -293,6 +293,68 @@ func (_c *MockAuthService_GetAPIEndpoint_Call) RunAndReturn(run func() string) *
 	return _c
 }
 
+// GetAccount provides a mock function for the type MockAuthService
+func (_mock *MockAuthService) GetAccount(ctx context.Context) (*account.AccountInfo, error) {
+	ret := _mock.Called(ctx)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetAccount")
+	}
+
+	var r0 *account.AccountInfo
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context) (*account.AccountInfo, error)); ok {
+		return returnFunc(ctx)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context) *account.AccountInfo); ok {
+		r0 = returnFunc(ctx)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*account.AccountInfo)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context) error); ok {
+		r1 = returnFunc(ctx)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockAuthService_GetAccount_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetAccount'
+type MockAuthService_GetAccount_Call struct {
+	*mock.Call
+}
+
+// GetAccount is a helper method to define mock.On call
+//   - ctx context.Context
+func (_e *MockAuthService_Expecter) GetAccount(ctx interface{}) *MockAuthService_GetAccount_Call {
+	return &MockAuthService_GetAccount_Call{Call: _e.mock.On("GetAccount", ctx)}
+}
+
+func (_c *MockAuthService_GetAccount_Call) Run(run func(ctx context.Context)) *MockAuthService_GetAccount_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockAuthService_GetAccount_Call) Return(accountInfo *account.AccountInfo, err error) *MockAuthService_GetAccount_Call {
+	_c.Call.Return(accountInfo, err)
+	return _c
+}
+
+func (_c *MockAuthService_GetAccount_Call) RunAndReturn(run func(ctx context.Context) (*account.AccountInfo, error)) *MockAuthService_GetAccount_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // GetAuthenticatedClient provides a mock function for the type MockAuthService
 func (_mock *MockAuthService) GetAuthenticatedClient(ctx context.Context) (account.AccountAPI, error) {
 	ret := _mock.Called(ctx)
@@ -411,6 +473,68 @@ func (_c *MockAuthService_GetLoginToken_Call) Return(s string, err error) *MockA
 }
 
 func (_c *MockAuthService_GetLoginToken_Call) RunAndReturn(run func(ctx context.Context) (string, error)) *MockAuthService_GetLoginToken_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetSubscriptionStatus provides a mock function for the type MockAuthService
+func (_mock *MockAuthService) GetSubscriptionStatus(ctx context.Context) (*account.SubscriptionStatus, error) {
+	ret := _mock.Called(ctx)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetSubscriptionStatus")
+	}
+
+	var r0 *account.SubscriptionStatus
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context) (*account.SubscriptionStatus, error)); ok {
+		return returnFunc(ctx)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context) *account.SubscriptionStatus); ok {
+		r0 = returnFunc(ctx)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*account.SubscriptionStatus)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context) error); ok {
+		r1 = returnFunc(ctx)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockAuthService_GetSubscriptionStatus_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetSubscriptionStatus'
+type MockAuthService_GetSubscriptionStatus_Call struct {
+	*mock.Call
+}
+
+// GetSubscriptionStatus is a helper method to define mock.On call
+//   - ctx context.Context
+func (_e *MockAuthService_Expecter) GetSubscriptionStatus(ctx interface{}) *MockAuthService_GetSubscriptionStatus_Call {
+	return &MockAuthService_GetSubscriptionStatus_Call{Call: _e.mock.On("GetSubscriptionStatus", ctx)}
+}
+
+func (_c *MockAuthService_GetSubscriptionStatus_Call) Run(run func(ctx context.Context)) *MockAuthService_GetSubscriptionStatus_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockAuthService_GetSubscriptionStatus_Call) Return(subscriptionStatus *account.SubscriptionStatus, err error) *MockAuthService_GetSubscriptionStatus_Call {
+	_c.Call.Return(subscriptionStatus, err)
+	return _c
+}
+
+func (_c *MockAuthService_GetSubscriptionStatus_Call) RunAndReturn(run func(ctx context.Context) (*account.SubscriptionStatus, error)) *MockAuthService_GetSubscriptionStatus_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -781,6 +905,132 @@ func (_c *MockAuthService_Status_Call) Return(statusResult *auth.StatusResult, e
 }
 
 func (_c *MockAuthService_Status_Call) RunAndReturn(run func(ctx context.Context) (*auth.StatusResult, error)) *MockAuthService_Status_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// UpdateEmail provides a mock function for the type MockAuthService
+func (_mock *MockAuthService) UpdateEmail(ctx context.Context, email string, currentPassword string) error {
+	ret := _mock.Called(ctx, email, currentPassword)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpdateEmail")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string) error); ok {
+		r0 = returnFunc(ctx, email, currentPassword)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockAuthService_UpdateEmail_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UpdateEmail'
+type MockAuthService_UpdateEmail_Call struct {
+	*mock.Call
+}
+
+// UpdateEmail is a helper method to define mock.On call
+//   - ctx context.Context
+//   - email string
+//   - currentPassword string
+func (_e *MockAuthService_Expecter) UpdateEmail(ctx interface{}, email interface{}, currentPassword interface{}) *MockAuthService_UpdateEmail_Call {
+	return &MockAuthService_UpdateEmail_Call{Call: _e.mock.On("UpdateEmail", ctx, email, currentPassword)}
+}
+
+func (_c *MockAuthService_UpdateEmail_Call) Run(run func(ctx context.Context, email string, currentPassword string)) *MockAuthService_UpdateEmail_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockAuthService_UpdateEmail_Call) Return(err error) *MockAuthService_UpdateEmail_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockAuthService_UpdateEmail_Call) RunAndReturn(run func(ctx context.Context, email string, currentPassword string) error) *MockAuthService_UpdateEmail_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// UpdatePassword provides a mock function for the type MockAuthService
+func (_mock *MockAuthService) UpdatePassword(ctx context.Context, currentPassword string, newPassword string) error {
+	ret := _mock.Called(ctx, currentPassword, newPassword)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpdatePassword")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string) error); ok {
+		r0 = returnFunc(ctx, currentPassword, newPassword)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockAuthService_UpdatePassword_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UpdatePassword'
+type MockAuthService_UpdatePassword_Call struct {
+	*mock.Call
+}
+
+// UpdatePassword is a helper method to define mock.On call
+//   - ctx context.Context
+//   - currentPassword string
+//   - newPassword string
+func (_e *MockAuthService_Expecter) UpdatePassword(ctx interface{}, currentPassword interface{}, newPassword interface{}) *MockAuthService_UpdatePassword_Call {
+	return &MockAuthService_UpdatePassword_Call{Call: _e.mock.On("UpdatePassword", ctx, currentPassword, newPassword)}
+}
+
+func (_c *MockAuthService_UpdatePassword_Call) Run(run func(ctx context.Context, currentPassword string, newPassword string)) *MockAuthService_UpdatePassword_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockAuthService_UpdatePassword_Call) Return(err error) *MockAuthService_UpdatePassword_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockAuthService_UpdatePassword_Call) RunAndReturn(run func(ctx context.Context, currentPassword string, newPassword string) error) *MockAuthService_UpdatePassword_Call {
 	_c.Call.Return(run)
 	return _c
 }

@@ -48,6 +48,7 @@ func AssembleCatalogOps(deps *CatalogDepsBundle) (catalog.Catalog, error) {
 		ops  []catalog.Operation
 	}{
 		{"auth", catalogops.AuthOperations(deps.Auth)},
+		{"account", catalogops.AccountOperations(deps.Account)},
 		{"vault-setup", catalogops.VaultSetupOperations(deps.VaultSetup)},
 		{"vault", catalogops.VaultOperations(deps.Vault)},
 		{"pins", catalogops.PinsOperations(deps.Pins)},

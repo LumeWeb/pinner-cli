@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"strings"
+
 	"go.lumeweb.com/pinner-cli/internal/catalogops"
 	"go.lumeweb.com/pinner-cli/internal/core/auth"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
@@ -69,5 +71,28 @@ func buildCatalogOpsDeps() *mcpadapter.CatalogDepsBundle {
 		IPNS:       catalogops.IPNSDeps(catalogIPNSDeps()),
 		APIKeys:    catalogops.APIKeysDeps(catalogAPIKeysDeps()),
 		Operations: catalogops.OperationsDeps(catalogOperationsDeps()),
+		Account: catalogops.AccountDeps{
+			// Live config manager: resolved per invocation, never frozen.
+			CfgMgr: func() config.Manager {
+				cfgMgr, err := configManagerFactory()
+				if err != nil {
+					return nil
+				}
+				return cfgMgr
+			},
+			// Auth service for the live config's account endpoint, honoring the
+			// per-invocation --auth-token override threaded via the input map.
+			AuthService: func(cfgMgr config.Manager, token string) auth.AuthService {
+				endpoint := cfgMgr.Config().GetAccountEndpointSecure()
+				if token != "" {
+					return defaultAuthServiceFactoryWithToken(cfgMgr, endpoint, token)
+				}
+				return defaultAuthServiceFactory(cfgMgr, endpoint)
+			},
+			// Web-app subscription page URL: https://account.<portal>/account/subscription.
+			PortalURL: func(cfgMgr config.Manager) string {
+				return strings.TrimSuffix(cfgMgr.Config().GetAccountEndpointSecure(), "/") + "/account/subscription"
+			},
+		},
 	}
 }
