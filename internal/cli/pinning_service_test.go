@@ -194,6 +194,53 @@ func TestPinningService_List(t *testing.T) {
 		assert.Equal(t, "req-123", pins[0].RequestID)
 	})
 
+	t.Run("honors limit via LsWithLimit and does not use LsSync", func(t *testing.T) {
+		cfgMgr := configmocks.NewMockManager(t)
+		cfgMgr.EXPECT().Config().Maybe().Return(&config.Config{
+			AuthToken: testAuthToken,
+		})
+
+		client := climocks.NewMockPinningClient(t)
+
+		mockPin := NewMockPinStatusGetter(t, testCID, "test-name", go_pinning_service_http_client.StatusPinned)
+		client.EXPECT().LsWithLimit(mock.Anything, 5, mock.Anything).Return(
+			[]go_pinning_service_http_client.PinStatusGetter{mockPin},
+			nil,
+		)
+
+		output := newTestOutput()
+		service := NewPinningService(cfgMgr, output, "https://api.test.com", WithPinningClient(client))
+
+		pins, err := service.List(context.Background(), "", 5, "")
+		require.NoError(t, err)
+		assert.Len(t, pins, 1)
+		assert.Equal(t, "test-name", pins[0].Name)
+	})
+
+	t.Run("name and status filters are forwarded on the limit path", func(t *testing.T) {
+		cfgMgr := configmocks.NewMockManager(t)
+		cfgMgr.EXPECT().Config().Maybe().Return(&config.Config{
+			AuthToken: testAuthToken,
+		})
+
+		client := climocks.NewMockPinningClient(t)
+
+		mockPin := NewMockPinStatusGetter(t, testCID, "filtered", go_pinning_service_http_client.StatusPinned)
+		client.EXPECT().LsWithLimit(
+			mock.Anything, 10,
+			// name filter + status filter options are forwarded as variadic opts
+			mock.Anything, mock.Anything,
+		).Return([]go_pinning_service_http_client.PinStatusGetter{mockPin}, nil)
+
+		output := newTestOutput()
+		service := NewPinningService(cfgMgr, output, "https://api.test.com", WithPinningClient(client))
+
+		pins, err := service.List(context.Background(), "filtered", 10, "pinned")
+		require.NoError(t, err)
+		assert.Len(t, pins, 1)
+		assert.Equal(t, "filtered", pins[0].Name)
+	})
+
 	t.Run("returns error when not authenticated", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
 		output := newTestOutput()
