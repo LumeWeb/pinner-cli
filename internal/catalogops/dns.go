@@ -359,7 +359,7 @@ func dnsRecordsCreate(d DNSDeps) catalog.Operation {
 		Args: []catalog.OperationArg{
 			{Name: "zone", Type: catalog.ArgTypeString, Required: true, Help: "Domain name or numeric zone ID"},
 			{Name: "name", Type: catalog.ArgTypeString, Help: "Record name (omit or use @ for apex)"},
-			{Name: "type", Type: catalog.ArgTypeString, Required: true, Help: "Record type (A, AAAA, CNAME, MX, NS, TXT)"},
+			{Name: "type", Type: catalog.ArgTypeString, Required: true, Enum: []string{"A", "AAAA", "CNAME", "MX", "NS", "TXT"}, Help: "Record type (A, AAAA, CNAME, MX, NS, TXT)"},
 			{Name: "content", Type: catalog.ArgTypeString, Required: true, Help: "Record content (IP, domain, or text)"},
 			{Name: "ttl", Type: catalog.ArgTypeInt, Default: "3600", Help: "TTL in seconds (default 3600)"},
 			{Name: "disabled", Type: catalog.ArgTypeBool, Default: "false", Help: "Disable the record"},

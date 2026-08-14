@@ -209,7 +209,7 @@ func websitesCreate(d WebsitesDeps) catalog.Operation {
 		Visibility:  catalog.VisibilityBoth,
 		Positional:  "<domain>",
 		Args: []catalog.OperationArg{
-			{Name: "website", Type: catalog.ArgTypeString, Help: "Domain for the new website"},
+			{Name: "website", Type: catalog.ArgTypeString, Required: true, Help: "Domain for the new website", AgentHelp: "The custom domain the website should serve under."},
 			{Name: "cid", Type: catalog.ArgTypeString, Required: true, Help: "IPFS CID to serve", AgentHelp: "The IPFS CID the website should serve."},
 			{Name: "target-type", Type: catalog.ArgTypeString, Default: "ipfs", Help: "Target type (ipfs|ipns)"},
 			{Name: "dns-hosting", Type: catalog.ArgTypeBool, Default: "false", Help: "Let Pinner manage DNS for this website"},
@@ -379,7 +379,7 @@ func websitesDelete(d WebsitesDeps) catalog.Operation {
 		Visibility:  catalog.VisibilityBoth,
 		Positional:  "<domain>",
 		Args: []catalog.OperationArg{
-			{Name: "website", Type: catalog.ArgTypeString, Help: "Website ID or domain to delete"},
+			{Name: "website", Type: catalog.ArgTypeString, Required: true, Help: "Website ID or domain to delete"},
 			{Name: "confirm", Type: catalog.ArgTypeBool, Required: true, Help: "Confirm the destructive delete", AgentHelp: "Must be true to delete the website; this is destructive and cannot be undone."},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {

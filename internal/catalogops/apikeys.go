@@ -55,7 +55,7 @@ func apiKeysList(d APIKeysDeps) catalog.Operation {
 func apiKeysCreate(d APIKeysDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
 		Name: "api_keys_create", Title: "Create an API key", Summary: "Create a new API key",
-		Description: "Create a new API key for your account.",
+		Description: "Create a new API key for your account. The created key value (the secret) is returned exactly once in the response: it cannot be retrieved again, only deleted and recreated. Treat it as a credential: store it securely, never log the full value, and revoke it (api_keys_delete) if exposed.",
 		Category:    "account", Safety: catalog.SafetyMutate, Interaction: catalog.InteractionAgentSafe, Visibility: catalog.VisibilityBoth,
 		Positional: "<name>",
 		Args: []catalog.OperationArg{
