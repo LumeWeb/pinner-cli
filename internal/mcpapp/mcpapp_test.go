@@ -54,3 +54,35 @@ func TestAppModuleJSRendersIntoDoc(t *testing.T) {
 		}
 	}
 }
+
+// TestAppModuleInjectsVersionGlobal proves AppModule (the wrapper the render
+// functions actually use) prefixes the embedded bundle with the CLI version
+// global, so apps inherit the binary version instead of a hardcoded per-app
+// version during the ui/initialize handshake.
+func TestAppModuleInjectsVersionGlobal(t *testing.T) {
+	module := AppModule("pin")
+	if !strings.Contains(module, "window.__PINNER_CLI_VERSION__") {
+		t.Fatalf("AppModule did not inject the version global")
+	}
+	// The version value must be non-empty and quoted.
+	idx := strings.Index(module, "window.__PINNER_CLI_VERSION__ = ")
+	if idx < 0 {
+		t.Fatalf("version global not found")
+	}
+	rest := module[idx+len("window.__PINNER_CLI_VERSION__ = "):]
+	end := strings.IndexByte(rest, ';')
+	if end <= 0 {
+		t.Fatalf("version assignment unterminated")
+	}
+	quoted := rest[:end]
+	if len(quoted) < 3 || quoted[0] != '"' || quoted[len(quoted)-1] != '"' {
+		t.Fatalf("version not a quoted string literal: %q", quoted)
+	}
+	if val := strings.Trim(quoted, `"`); val == "" {
+		t.Fatalf("version global is empty")
+	}
+	// The bundle must still be inline-module-ready after the prefix.
+	if strings.Contains(module, "\nimport ") {
+		t.Errorf("AppModule output is not self-contained")
+	}
+}

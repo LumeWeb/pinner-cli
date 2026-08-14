@@ -20,7 +20,7 @@ const AuthSSOAppURI = "ui://auth/sso.html"
 // ESM module (shared ext-apps bootstrap + SSO logic) come from
 // renderMcpAppDoc; only the visible body form is authored in templ.
 func renderAuthSSOAppHTML() string {
-	return mcpapp.RenderMcpAppDoc("Sign In", mcpapp.AuthSSOAppForm(), mcpapp.AppModuleJS("auth-sso"))
+	return mcpapp.RenderMcpAppDoc("Sign In", mcpapp.AuthSSOAppForm(), mcpapp.AppModule("auth-sso"))
 }
 
 // authSSOStatusDescriptor builds the app-only auth status helper. It reuses the

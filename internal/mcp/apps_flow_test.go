@@ -7,7 +7,7 @@ import (
 
 // These tests verify the served MCP App documents are wired end-to-end: the
 // HTML shell from the .templ bodies plus the self-contained ESM bundle built by
-// the JS toolchain (packages/apps) and embedded via mcpapp.AppModuleJS.
+// the JS toolchain (packages/apps) and embedded via mcpapp.AppModule.
 //
 // The app JS behavioral logic (in-flight guard, handle-presence dead-handle
 // predicate, start guard, distinct per-app tool names) is tested by the

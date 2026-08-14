@@ -21,7 +21,7 @@ const VaultCreateAppURI = "ui://vault/create.html"
 // the ESM module (shared ext-apps bootstrap + create logic) come from
 // renderMcpAppDoc; only the visible body form is authored in templ.
 func renderVaultCreateAppHTML() string {
-	return mcpapp.RenderMcpAppDoc("Create Vault", mcpapp.VaultCreateAppForm(), mcpapp.AppModuleJS("vault-create"))
+	return mcpapp.RenderMcpAppDoc("Create Vault", mcpapp.VaultCreateAppForm(), mcpapp.AppModule("vault-create"))
 }
 
 // vaultCreateStatusDescriptor builds the app-only vault-create status helper.

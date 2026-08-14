@@ -11,8 +11,24 @@
 //   #out-status the result Status <code>.
 
 import { interpret } from "robot3";
-import { createPinMachine, type PinConfig, type PinContext } from "./pin";
-import type { CallTool } from "./flow";
+import { createPinMachine, type PinConfig, type PinContext } from "@/pin";
+import type { CallTool } from "@/flow";
+import type { AppDefinition } from "@/app-entry";
+import { bootApp } from "@/boot";
+import { APP_VERSION } from "@/version";
+
+/** Element ids referenced by the Go-rendered Create Pin HTML shell. */
+export type PinElementIds = {
+  form: string;
+  cid: string;
+  name: string;
+  status: string;
+  outCid: string;
+  outStatus: string;
+};
+
+/** Data the Create Pin app entry contributes, handed to mountPinApp verbatim. */
+export type PinAppEntry = AppDefinition<PinConfig, PinElementIds>;
 
 export interface PinElements {
   form: { addEventListener(type: "submit", listener: (ev: SubmitEvent) => void): void };
@@ -118,4 +134,29 @@ export function runPinEntry(opts: PinEntryOptions) {
     },
     service,
   };
+}
+
+/**
+ * Mount the Create Pin app entrypoint: wire the pin machine to the Go-rendered
+ * elements, and either run synchronously with a caller-supplied `callTool`
+ * (tests/demo) or connect to the host over postMessage via bootApp, advertising
+ * the CLI build version.
+ */
+export function mountPinApp(def: PinAppEntry, root: Document, callTool?: CallTool) {
+  const statusEl = root.getElementById(def.ids.status) as HTMLElement | null;
+  const wire = (ct: CallTool) =>
+    runPinEntry({
+      config: def.config,
+      callTool: ct,
+      elements: {
+        form: root.getElementById(def.ids.form) as HTMLFormElement,
+        cidInput: root.getElementById(def.ids.cid) as HTMLInputElement,
+        nameInput: root.getElementById(def.ids.name) as HTMLInputElement,
+        statusEl: statusEl as HTMLElement,
+        outCid: root.getElementById(def.ids.outCid) as HTMLElement,
+        outStatus: root.getElementById(def.ids.outStatus) as HTMLElement,
+      },
+    });
+  if (callTool) return wire(callTool);
+  bootApp({ name: def.name, version: APP_VERSION }, wire, statusEl);
 }

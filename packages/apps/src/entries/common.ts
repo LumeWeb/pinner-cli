@@ -1,27 +1,14 @@
-// Per-app flow configuration + element wiring map. Each MCP app is one
-// entrypoint with its own bundle; this is the single place its tool names,
-// element ids, and message copy live.
+// Flow-app entry data: each OOB "start -> poll -> done" MCP App is one
+// entrypoint with its own bundle, and differs only in its tool names, element
+// ids, and message copy. This file names that data so an entry stays a plain
+// object consumed by the shared mountFlowApp helper.
 
-import type { FlowConfig } from "@/flow";
+import type { FlowConfigCore, FlowCopy, FlowElementIds } from "@/app-entry";
 
-export interface AppDefinition {
+/** Data an OOB flow app entry contributes, handed to mountFlowApp verbatim. */
+export interface FlowAppEntry {
   name: string;
-  config: Omit<FlowConfig, "actionLabel" | "startErrorMsg" | "alreadyDoneMsg" | "noHandlePrefix" | "pendingMsg" | "doneMsg" | "deadDetailPrefix" | "timeoutMsg" | "retryWord">;
-  /** Element ids referenced by the Go-rendered HTML shell. */
-  ids: {
-    startBtn: string;
-    urlEl: string;
-    statusEl: string;
-  };
-  /** Message copy. */
-  copy: Pick<FlowConfig, "actionLabel" | "startErrorMsg" | "alreadyDoneMsg" | "noHandlePrefix" | "pendingMsg" | "doneMsg" | "deadDetailPrefix" | "timeoutMsg" | "retryWord">;
-}
-
-export function toFlowConfig(def: AppDefinition): FlowConfig {
-  return {
-    ...def.config,
-    ...def.copy,
-    maxAttempts: def.config.maxAttempts ?? 60,
-    pollDelayMs: def.config.pollDelayMs ?? 1500,
-  };
+  config: FlowConfigCore & { maxAttempts?: number; pollDelayMs?: number };
+  ids: FlowElementIds;
+  copy: FlowCopy;
 }

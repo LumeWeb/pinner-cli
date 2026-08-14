@@ -3,6 +3,9 @@ package mcpapp
 import (
 	"embed"
 	"io/fs"
+	"strconv"
+
+	"go.lumeweb.com/pinner-cli/build"
 )
 
 // AppsAssets holds the static assets for MCP Apps (ext-apps) views: the
@@ -45,4 +48,20 @@ func AppModuleJS(app string) string {
 		panic("mcp: embedded app bundle is empty for " + app)
 	}
 	return string(data)
+}
+
+// AppVersionGlobal returns a module-scope assignment that exposes the CLI's
+// build version (stamped by ldflags via build.Default.GetVersion; "develop"
+// when unset) to the bundled app. The app advertises this as its version
+// during the ui/initialize handshake, so apps inherit the binary version
+// instead of carrying a hardcoded per-app version.
+func AppVersionGlobal() string {
+	return "window.__PINNER_CLI_VERSION__ = " + strconv.Quote(build.Default.GetVersion()) + ";"
+}
+
+// AppModule returns the inline module script for an MCP App: the embedded,
+// self-contained bundle prefixed with the CLI version global. Use this when
+// rendering an app document so the version handshake is always present.
+func AppModule(app string) string {
+	return AppVersionGlobal() + AppModuleJS(app)
 }

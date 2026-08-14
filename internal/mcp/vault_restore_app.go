@@ -21,7 +21,7 @@ const VaultRestoreAppURI = "ui://vault/restore.html"
 // the ESM module (shared ext-apps bootstrap + restore logic) come from
 // renderMcpAppDoc; only the visible body form is authored in templ.
 func renderVaultRestoreAppHTML() string {
-	return mcpapp.RenderMcpAppDoc("Restore Vault", mcpapp.VaultRestoreAppForm(), mcpapp.AppModuleJS("vault-restore"))
+	return mcpapp.RenderMcpAppDoc("Restore Vault", mcpapp.VaultRestoreAppForm(), mcpapp.AppModule("vault-restore"))
 }
 
 // vaultRestoreStatusDescriptor builds the app-only vault-restore status helper.
