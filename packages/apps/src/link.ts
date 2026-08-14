@@ -53,7 +53,11 @@ export function renderLink(
         pending: false,
       };
     case LinkState.Norl:
-      return { status: "error", message: cfg.noUrlMsg, pending: false };
+      return {
+        status: "error",
+        message: ctx.alreadyDone ? cfg.alreadyDoneMsg : cfg.noUrlMsg,
+        pending: false,
+      };
     case LinkState.Error:
       return { status: "error", message: cfg.startErrorMsg, pending: false };
     case LinkState.Starting:

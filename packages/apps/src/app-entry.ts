@@ -246,10 +246,19 @@ export function mountLinkApp(def: LinkAppEntry, root: Document, callTool?: CallT
       const r = renderLink(st, ctx, config);
       if (startBtn) startBtn.disabled = r.pending;
       if (r.status) setStatus(statusEl, r.status as StatusClass, r.message ?? "");
+      // Stamp or clear the deep-link readout on every transition so a reset /
+      // error can't leave a stale (possibly expired) page link rendered and
+      // clickable.
       if (ctx.url) {
         urlEl.textContent = config.openLabel;
         urlEl.setAttribute("href", ctx.url);
         urlEl.classList.add("link-ready");
+        urlEl.style.display = "block";
+      } else {
+        urlEl.textContent = "";
+        urlEl.removeAttribute("href");
+        urlEl.classList.remove("link-ready");
+        urlEl.style.display = "none";
       }
     });
     if (startBtn) {

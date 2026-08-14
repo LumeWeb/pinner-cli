@@ -60,7 +60,7 @@ describe("link machine", () => {
     expect(calls.length).toBe(1); // one-shot: no status call
   });
 
-  it("renders wrong when the start tool steers elsewhere (no URL)", async () => {
+  it("renders a sign-in-first message when the start tool steers elsewhere (reason, no URL)", async () => {
     const gate: { resolve: (r: ToolResult) => void }[] = [];
     async function scriptedCall(): Promise<ToolResult> {
       return await new Promise<ToolResult>((resolve) => gate.push({ resolve }));
@@ -71,10 +71,27 @@ describe("link machine", () => {
     service.send("start");
     await untilState(service, LinkState.Starting);
 
-    // Steer-to-sign-in: needs_human with reason but no action_url.
+    // Steer-to-sign-in: needs_human with reason but no action_url -> alreadyDone.
     gate[0].resolve(linkResult(undefined, "sso_approval"));
     await untilState(service, LinkState.Norl);
     expect(state()).toBe(LinkState.Norl);
+    const r = renderLink(currentLinkState(service), service.context as any, baseConfig);
+    expect(r.status).toBe("error");
+    expect(r.message).toBe(baseConfig.alreadyDoneMsg);
+  });
+
+  it("renders noUrlMsg when the start tool mints nothing and no steer reason", async () => {
+    const gate: { resolve: (r: ToolResult) => void }[] = [];
+    async function scriptedCall(): Promise<ToolResult> {
+      return await new Promise<ToolResult>((resolve) => gate.push({ resolve }));
+    }
+    machine = createLinkMachine(baseConfig, scriptedCall);
+    service = interpret(machine, () => {});
+
+    service.send("start");
+    await untilState(service, LinkState.Starting);
+    gate[0].resolve({ structuredContent: {} });
+    await untilState(service, LinkState.Norl);
     const r = renderLink(currentLinkState(service), service.context as any, baseConfig);
     expect(r.status).toBe("error");
     expect(r.message).toBe(baseConfig.noUrlMsg);

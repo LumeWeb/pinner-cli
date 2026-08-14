@@ -33,10 +33,9 @@ type OOBAccountChange struct {
 	svc  AuthService
 	core handoffEndpoint
 
-	// mu guards the per-token CSRF tokens and outcomes.
-	mu       sync.Mutex
-	csrf     map[string]string
-	outcomes map[string]*accountChangeOutcome
+	// mu guards the outcome records.
+	mu        sync.Mutex
+	outcomes  map[string]*accountChangeOutcome
 }
 
 // accountChangeOp selects which account credential the OOB page changes.
@@ -73,7 +72,6 @@ func NewOOBAccountChange(svc AuthService, ttl time.Duration) *OOBAccountChange {
 	}
 	c := &OOBAccountChange{
 		svc:      svc,
-		csrf:     map[string]string{},
 		outcomes: map[string]*accountChangeOutcome{},
 	}
 	c.core = *newHandoff("account", c, ttl)
@@ -99,11 +97,11 @@ func (c *OOBAccountChange) registerHandlers(mux *http.ServeMux) {
 // Register mints a one-time, expiring URL that lets the human change the given
 // account credential in the browser. Non-blocking: the change runs on POST.
 func (c *OOBAccountChange) Register(op accountChangeOp) string {
+	// The CSRF secret rides inside the minted handoff item: mint derives the
+	// outbound token from the same payload, so POST reads payload.csrf (on the
+	// item) rather than a separately-keyed lookup. No coordinator state is
+	// written here and nothing is leaked on every invocation.
 	csrf := strongRandomID()
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	token := strongRandomID()
-	c.csrf[token] = csrf
 	return c.core.mint(&accountChangePayload{op: op, csrf: csrf})
 }
 
