@@ -46,10 +46,15 @@ func NewAuthSSODescriptor(oob *OutOfBandLogin, handles *AsyncHandleStore, reg *H
 				return ToolResult{IsError: true, Text: err.Error()}, nil
 			}
 
-			// The handle doubles as the OOB session id so resume can
-			// reconstruct the (sessionID, email) key from stored handle data.
+			// The handle doubles as the OOB session id AND the request id so
+			// every client-facing identifier for this login is the same value:
+			// the resume handle, the approval-link token, and what auth_resume
+			// validates against. A single identifier per login removes the
+			// "which id do I resume with" ambiguity that previously caused
+			// auth_resume to report "unknown handle" when an agent used the
+			// approval-link token (which was a different, request-only id).
 			handle := handles.Create("pending", map[string]any{"email": in.Email})
-			_, url, err := oob.Begin(handle, in.Email)
+			_, url, err := oob.BeginWithID(handle, handle, in.Email)
 			if err != nil {
 				// Do not leave an orphaned handle in the store with no
 				// continuation registered; retire it so a future resume does
