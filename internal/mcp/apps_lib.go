@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -51,6 +52,37 @@ type AppView struct {
 	Helpers []ToolDescriptor
 }
 
+// AppViewInfo is the minimal companion-app description the server emits into a
+// model-visible needs_human result so a text-only host can still tell the user
+// an interactive MCP App exists alongside the raw URL/handle flow.
+type AppViewInfo struct {
+	// URI is the ui:// resource URI, e.g. "ui://auth/sso.html".
+	URI string
+	// Name is the stable resource slug, e.g. "auth-sso".
+	Name string
+	// Title is the human-facing view title, e.g. "Sign In".
+	Title string
+}
+
+// appViewsByTool maps a model-visible tool name to its attached MCP App view.
+// Populated by RegisterAppView from AppView.AttachTo. It is the server's own
+// record of "this tool renders an app", used to annotate needs_human results
+// with the companion-app context. Guarded by appViewsMu because app
+// registration is additive but may run alongside handlers in tests.
+var (
+	appViewsMu     sync.RWMutex
+	appViewsByTool = map[string]AppViewInfo{}
+)
+
+// appInfoForTool returns the companion-app info registered for toolName, or the
+// zero value if the tool has no attached app.
+func appInfoForTool(toolName string) (AppViewInfo, bool) {
+	appViewsMu.RLock()
+	defer appViewsMu.RUnlock()
+	info, ok := appViewsByTool[toolName]
+	return info, ok
+}
+
 // RegisterAppView wires a complete ui:// MCP App in one call:
 //
 //   - attaches _meta.ui (resource URI) to every model tool named in AttachTo,
@@ -79,10 +111,14 @@ func RegisterAppView(srv *mcp.Server, catalog *ToolCatalog, v AppView) error {
 		return fmt.Errorf("mcp: app view %q requires html", v.URI)
 	}
 
+	info := AppViewInfo{URI: v.URI, Name: v.Name, Title: v.Title}
 	for _, toolName := range v.AttachTo {
 		if err := attachAppMeta(catalog, toolName, v.URI); err != nil {
 			return err
 		}
+		appViewsMu.Lock()
+		appViewsByTool[toolName] = info
+		appViewsMu.Unlock()
 	}
 
 	if err := RegisterAppResource(srv, AppResource{
