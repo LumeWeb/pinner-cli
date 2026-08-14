@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -207,5 +208,72 @@ func TestResolveDefaultConfigPath(t *testing.T) {
 func TestDefaultConfigPath_NoTilde(t *testing.T) {
 	if strings.HasPrefix(DefaultConfigPath, "~") {
 		t.Fatalf("DefaultConfigPath should be resolved, got %q (starts with ~)", DefaultConfigPath)
+	}
+}
+
+// TestSaveWithRetry_HealthyPersist verifies the retry wrapper delegates straight
+// through on a persist that succeeds on the first call (all platforms).
+func TestSaveWithRetry_HealthyPersist(t *testing.T) {
+	calls := 0
+	err := saveWithRetry(func() error {
+		calls++
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("saveWithRetry on healthy persist: %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("healthy persist called %d times, want 1", calls)
+	}
+}
+
+// TestSaveWithRetry_NonTransientError verifies a non-transient error is returned
+// without an unbounded retry (all platforms).
+func TestSaveWithRetry_NonTransientError(t *testing.T) {
+	sentinel := fmt.Errorf("disk full")
+	calls := 0
+	err := saveWithRetry(func() error {
+		calls++
+		return sentinel
+	})
+	if err != sentinel {
+		t.Fatalf("saveWithRetry returned %v, want %v", err, sentinel)
+	}
+	if calls != 1 {
+		t.Fatalf("non-transient persist called %d times, want 1", calls)
+	}
+}
+
+// TestSaveWithRetry_WindowsTransientClears verifies the Windows retry loop: a
+// persist that transiently fails with a permission error (ERROR_ACCESS_DENIED)
+// clears and succeeds. Only exercised on Windows where the retry path is active.
+func TestSaveWithRetry_WindowsTransientClears(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows-only transient-lock retry behavior")
+	}
+	calls := 0
+	err := saveWithRetry(func() error {
+		calls++
+		if calls < 3 {
+			return os.ErrPermission
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("saveWithRetry should clear the transient lock: %v", err)
+	}
+	if calls < 3 {
+		t.Fatalf("expected at least 3 persist attempts before clearing, got %d", calls)
+	}
+}
+
+// TestIsWindowsTransientLock verifies the ERROR_ACCESS_DENIED mapping: os.ErrPermission
+// (which os.IsPermission reports) is recognized as a transient lock.
+func TestIsWindowsTransientLock(t *testing.T) {
+	if !isWindowsTransientLock(os.ErrPermission) {
+		t.Fatal("os.ErrPermission should be detected as a transient lock (ERROR_ACCESS_DENIED)")
+	}
+	if isWindowsTransientLock(fmt.Errorf("some other error")) {
+		t.Fatal("non-permission errors must not be treated as a transient lock")
 	}
 }

@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"time"
 
 	"go.lumeweb.com/configmanager"
 	"go.lumeweb.com/configmanager/source"
@@ -179,7 +181,42 @@ func isFileNotFoundError(err error) bool {
 
 // Save persists the current configuration to disk.
 func (m *managerImpl) Save() error {
-	return m.Manager.Persist() //nolint:staticcheck // explicit to avoid recursion
+	// Windows: configmanager persists via temp-file + os.Rename, which fails
+	// with a transient "Access is denied" (ERROR_ACCESS_DENIED) when the
+	// koanf/fsnotify directory watcher briefly holds the destination open
+	// during a reload. Persist is idempotent (re-encodes the whole file), so a
+	// bounded retry on that transient error is safe. Non-Windows rename is
+	// atomic and needs no retry.
+	return saveWithRetry(func() error { return m.Manager.Persist() }) //nolint:staticcheck // explicit to avoid recursion
+}
+
+// saveWithRetry runs a Windows-only bounded retry around an idempotent persist
+// function, treating ERROR_ACCESS_DENIED (os.IsPermission) as a transient lock
+// to retry rather than a hard failure. On non-Windows platforms it delegates
+// directly. See go-filesystem-patterns: os.Rename — Windows Transient Lock.
+func saveWithRetry(persist func() error) error {
+	if runtime.GOOS != "windows" {
+		return persist()
+	}
+	const maxRetries = 10
+	for i := 0; i < maxRetries; i++ {
+		if err := persist(); err != nil {
+			if isWindowsTransientLock(err) {
+				time.Sleep(time.Millisecond * 50 * time.Duration(i+1))
+				continue
+			}
+			return err
+		}
+		return nil
+	}
+	return persist() // final attempt
+}
+
+// isWindowsTransientLock reports whether err is the transient
+// ERROR_ACCESS_DENIED from a Windows os.Rename while a watched file is briefly
+// held open. os.IsPermission maps ERROR_ACCESS_DENIED to a permission error.
+func isWindowsTransientLock(err error) bool {
+	return os.IsPermission(err)
 }
 
 // SetAuthToken sets the authentication token in the config.
