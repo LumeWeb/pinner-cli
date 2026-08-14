@@ -4,6 +4,13 @@
 // tested there, so these entries stay thin.
 
 import { createMachine, interpret } from "robot3";
+import {
+  createLinkMachine,
+  currentLinkState,
+  LinkState,
+  type LinkConfig,
+  renderLink,
+} from "@/link";
 import { createFlowMachine, type CallTool, type FlowConfig, FlowState, isFlowTerminal } from "@/flow";
 import { mountApp } from "@/boot";
 import { byId, setStatus, StatusClass } from "@/dom";
@@ -194,5 +201,69 @@ export function mountFlowApp(def: FlowAppEntry, root: Document, callTool?: CallT
         statusEl: statusEl!,
       },
     });
+  return mountApp({ name: def.name, statusEl, wire, callTool });
+}
+
+/** Element ids every link app's Go-rendered shell references. */
+export type LinkElementIds = {
+  startBtn: string;
+  urlEl: string;
+  statusEl: string;
+};
+
+/** Messages a link app contributes on top of LinkConfig core. */
+export type LinkCopy = Pick<
+  LinkConfig,
+  "startLabel" | "openLabel" | "startErrorMsg" | "noUrlMsg" | "alreadyDoneMsg" | "doneMsg"
+>;
+
+export type LinkConfigCore = Omit<LinkConfig, keyof LinkCopy>;
+
+/** Data a link app entry contributes, handed to mountLinkApp verbatim. */
+export interface LinkAppEntry {
+  name: string;
+  config: LinkConfigCore;
+  ids: LinkElementIds;
+  copy: LinkCopy;
+}
+
+/**
+ * Mount a one-shot deep-link app: call the start tool once, render the returned
+ * action_url as a clickable link, and mark done when the page is opened. Used
+ * for synchronous out-of-band changes (password / email) with no poll loop.
+ */
+export function mountLinkApp(def: LinkAppEntry, root: Document, callTool?: CallTool) {
+  const config: LinkConfig = { ...def.config, ...def.copy } as LinkConfig;
+  const statusEl = byId<HTMLElement>(root, def.ids.statusEl);
+  const startBtn = byId<HTMLElement & { disabled?: boolean }>(root, def.ids.startBtn)!;
+  const urlEl = byId<HTMLElement>(root, def.ids.urlEl)!;
+
+  const wire = (ct: CallTool) => {
+    const machine = createLinkMachine(config, ct);
+    const service = interpret(machine, (s) => {
+      const st = currentLinkState(s);
+      const ctx = s.context;
+      const r = renderLink(st, ctx, config);
+      if (startBtn) startBtn.disabled = r.pending;
+      if (r.status) setStatus(statusEl, r.status as StatusClass, r.message ?? "");
+      if (ctx.url) {
+        urlEl.textContent = config.openLabel;
+        urlEl.setAttribute("href", ctx.url);
+        urlEl.classList.add("link-ready");
+      }
+    });
+    if (startBtn) {
+      startBtn.addEventListener("click", () => {
+        const st = currentLinkState(service);
+        if (st === LinkState.Ok || st === LinkState.Norl || st === LinkState.Error) {
+          service.send("retry");
+        } else {
+          service.send("start");
+        }
+      });
+    }
+    return { service };
+  };
+
   return mountApp({ name: def.name, statusEl, wire, callTool });
 }

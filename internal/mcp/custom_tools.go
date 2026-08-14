@@ -128,6 +128,19 @@ func registerCustomTools(deps customToolDeps) error {
 	deps.catalog.Add(toolEntryFromDescriptor(accountReset))
 	deps.catalog.Add(toolEntryFromDescriptor(accountEmail))
 
+	// Pair the account_password_update / account_email_change tools with their
+	// "Change Password" / "Change Email" MCP App views (ui://account/password.html
+	// / ui://account/email.html) so a UI-capable host renders the one-shot deep
+	// link in a panel. These are link apps with no poll loop: the change runs
+	// synchronously in the browser. Must run after the tools are added (AttachTo
+	// requires them) and before the curated registration loop reads _meta.ui.
+	if err := RegisterAccountPasswordApp(deps.srv, deps.catalog); err != nil {
+		return fmt.Errorf("failed to register account password app: %w", err)
+	}
+	if err := RegisterAccountEmailApp(deps.srv, deps.catalog); err != nil {
+		return fmt.Errorf("failed to register account email app: %w", err)
+	}
+
 	// Vault create/restore OOB hand-offs ride the SAME generic handoff-resume
 	// framework: the invoke path (buildCatalog) mints a handle and registers a
 	// per-domain continuation against it when it attaches a seed_url /
