@@ -36,6 +36,13 @@ type customToolDeps struct {
 	seedDrop   *SeedDrop
 	oobRestore *OOBRestore
 	oobCreate  *OOBCreate
+	// accountOOB backs the out-of-band account password change (hosted browser
+	// form -> authenticated UpdatePassword). It enforces an authenticated
+	// session; the password never transits the MCP/LLM channel.
+	accountOOB *OOBAccountPasswordChange
+	// accountWebAppURL is the account web app base URL surfaced by the password
+	// reset tool's hand-off.
+	accountWebAppURL string
 	// resourceFactory, when non-nil, builds the pinner:// resource providers.
 	resourceFactory ResourceProvidersFactory
 	// opts carries the optional custom tools wired by MCPServerOption (upload,
@@ -104,6 +111,18 @@ func registerCustomTools(deps customToolDeps) error {
 	if err := RegisterAuthSSOApp(deps.srv, deps.catalog, deps.handoffReg, deps.authHandles); err != nil {
 		return fmt.Errorf("failed to register auth SSO app: %w", err)
 	}
+
+	// Out-of-band account credential tools: change the password (hosted browser
+	// form -> authenticated UpdatePassword, requires an authenticated session)
+	// and reset the password via an emailed link to the webapp. Direct-surface
+	// tools like the SSO pair; when the coordinator/service are absent they
+	// return a structured not-configured hand-off instead of hanging.
+	accountUpdate := NewAccountPasswordUpdateDescriptor(deps.accountOOB, deps.wizardS.AuthService, deps.authHandles, deps.handoffReg)
+	accountUpdate.DirectVisible = true
+	accountReset := NewAccountPasswordResetDescriptor(deps.wizardS.AuthService, deps.accountWebAppURL)
+	accountReset.DirectVisible = true
+	deps.catalog.Add(toolEntryFromDescriptor(accountUpdate))
+	deps.catalog.Add(toolEntryFromDescriptor(accountReset))
 
 	// Vault create/restore OOB hand-offs ride the SAME generic handoff-resume
 	// framework: the invoke path (buildCatalog) mints a handle and registers a

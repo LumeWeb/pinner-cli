@@ -56,6 +56,8 @@ func (s stubAuthService) LoginWithOTP(ctx context.Context, intermediateJWT, otp,
 	return nil, nil
 }
 func (s stubAuthService) Status(ctx context.Context) (*auth.StatusResult, error) { return nil, nil }
+func (s stubAuthService) UpdatePassword(ctx context.Context, currentPassword, newPassword string) error { return nil }
+func (s stubAuthService) RequestPasswordReset(ctx context.Context, email string) error { return nil }
 
 func newOOBForTest(t *testing.T) *OutOfBandLogin {
 	t.Helper()
@@ -772,6 +774,8 @@ func (s *captureAuthService) LoginWithOTP(ctx context.Context, intermediateJWT, 
 	return nil, nil
 }
 func (s *captureAuthService) Status(ctx context.Context) (*auth.StatusResult, error) { return nil, nil }
+func (s *captureAuthService) UpdatePassword(ctx context.Context, currentPassword, newPassword string) error { return nil }
+func (s *captureAuthService) RequestPasswordReset(ctx context.Context, email string) error { return nil }
 
 // TestOOBLoginHumanEmailOverridesAgentEmail verifies the account identifier on
 // the login page is editable: even though auth_sso prefilled an email
