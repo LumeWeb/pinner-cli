@@ -319,3 +319,150 @@ func TestAppResourceReadMetaNotShared(t *testing.T) {
 		t.Fatalf("list _meta gained read-time key 'extra': %#v", r.Meta)
 	}
 }
+
+// uiClientMeta builds a request _meta map that advertises the MCP Apps
+// capability, the way a UI-capable host (e.g. Claude) sends it per request in
+// the stateless model. Values are the generic JSON-map form that the SDK
+// decodes after wire transit.
+func uiClientMeta() mcp.Meta {
+	return mcp.Meta{
+		mcp.MetaKeyProtocolVersion: "2026-07-28",
+		mcp.MetaKeyClientInfo: map[string]any{
+			"name":    "test-host",
+			"version": "1.0.0",
+		},
+		mcp.MetaKeyClientCapabilities: map[string]any{
+			"extensions": map[string]any{
+				EXTENSION_ID: map[string]any{"mimeTypes": []any{RESOURCE_MIME_TYPE, "text/plain"}},
+			},
+		},
+	}
+}
+
+// textClientMeta builds a request _meta map for a client with no optional
+// capabilities (a text-only host with no MCP Apps support).
+func textClientMeta() mcp.Meta {
+	return mcp.Meta{
+		mcp.MetaKeyProtocolVersion: "2026-07-28",
+		mcp.MetaKeyClientInfo: map[string]any{
+			"name":    "text-agent",
+			"version": "0.9.0",
+		},
+		mcp.MetaKeyClientCapabilities: map[string]any{},
+	}
+}
+
+func TestRequestCapsFromUIClient(t *testing.T) {
+	req := &mcp.CallToolRequest{Params: &mcp.CallToolParamsRaw{Name: "x", Meta: uiClientMeta()}}
+	rc := requestCaps(req)
+	if rc == nil {
+		t.Fatal("expected non-nil RequestCaps")
+	}
+	if rc.ProtocolVersion != "2026-07-28" {
+		t.Fatalf("ProtocolVersion = %q", rc.ProtocolVersion)
+	}
+	if rc.ClientName != "test-host" || rc.ClientVersion != "1.0.0" {
+		t.Fatalf("clientInfo = %q %q", rc.ClientName, rc.ClientVersion)
+	}
+	if rc.UI == nil {
+		t.Fatal("expected UI caps for MCP Apps advertising client")
+	}
+	if !rc.SupportsApps() {
+		t.Fatal("expected SupportsApps() true")
+	}
+	// The per-request counterpart must mirror the typed helper.
+	if !rc.UI.SupportsApps() {
+		t.Fatal("expected rc.UI.SupportsApps() true")
+	}
+}
+
+func TestRequestCapsFromTextClient(t *testing.T) {
+	req := &mcp.CallToolRequest{Params: &mcp.CallToolParamsRaw{Name: "x", Meta: textClientMeta()}}
+	rc := requestCaps(req)
+	if rc == nil {
+		t.Fatal("expected non-nil RequestCaps")
+	}
+	if rc.ProtocolVersion != "2026-07-28" {
+		t.Fatalf("ProtocolVersion = %q", rc.ProtocolVersion)
+	}
+	if rc.ClientName != "text-agent" {
+		t.Fatalf("ClientName = %q", rc.ClientName)
+	}
+	if rc.UI != nil {
+		t.Fatalf("expected nil UI caps for text-only client, got %#v", rc.UI)
+	}
+	if rc.SupportsApps() {
+		t.Fatal("expected SupportsApps() false for text-only client")
+	}
+}
+
+func TestRequestCapsNilSafe(t *testing.T) {
+	var rc *RequestCaps
+	if rc.SupportsApps() {
+		t.Fatal("nil RequestCaps should not support apps")
+	}
+	// A request with no _meta and no session yields empty-but-non-nil caps.
+	req := &mcp.CallToolRequest{Params: &mcp.CallToolParamsRaw{Name: "x"}}
+	got := requestCaps(req)
+	if got == nil {
+		t.Fatal("expected non-nil RequestCaps even with no meta")
+	}
+	if got.ProtocolVersion != "" || got.ClientName != "" || got.UI != nil {
+		t.Fatalf("expected empty caps, got %#v", got)
+	}
+}
+
+func TestOfficialServerOptionsAdvertisesUI(t *testing.T) {
+	so := officialServerOptions(&OfficialServerOptions{})
+	if so == nil {
+		t.Fatal("expected non-nil ServerOptions")
+	}
+	if so.Capabilities == nil {
+		t.Fatal("expected non-nil Capabilities")
+	}
+	if _, ok := so.Capabilities.Extensions[EXTENSION_ID]; !ok {
+		t.Fatalf("extension %s not advertised on construction", EXTENSION_ID)
+	}
+	// Nil options still advertise UI (Pinner ships app tooling by default).
+	soNil := officialServerOptions(nil)
+	if soNil.Capabilities == nil {
+		t.Fatal("expected UI advertisement even for nil options")
+	}
+	if _, ok := soNil.Capabilities.Extensions[EXTENSION_ID]; !ok {
+		t.Fatalf("extension %s not advertised for nil options", EXTENSION_ID)
+	}
+}
+
+// TestOfficialToolHandlerPopulatesCaps verifies the SDK seam threads the
+// per-request capability view into the SDK-neutral ToolRequest seen by the
+// handler, so a UI-capable and a text-only client are distinguishable per
+// call without any session state.
+func TestOfficialToolHandlerPopulatesCaps(t *testing.T) {
+	got := make(map[string]*RequestCaps)
+	saw := make(chan struct{}, 1)
+	handler := officialToolHandler(func(_ context.Context, tr ToolRequest) (ToolResult, error) {
+		got["caps"] = tr.Caps
+		select {
+		case saw <- struct{}{}:
+		default:
+		}
+		return ToolResult{Text: "ok"}, nil
+	})
+
+	run := func(req *mcp.CallToolRequest) {
+		if _, err := handler(context.Background(), req); err != nil {
+			t.Fatalf("handler: %v", err)
+		}
+		<-saw
+	}
+
+	run(&mcp.CallToolRequest{Params: &mcp.CallToolParamsRaw{Name: "x", Arguments: json.RawMessage(`{}`), Meta: uiClientMeta()}})
+	if got["caps"] == nil || !got["caps"].SupportsApps() {
+		t.Fatalf("expected UI caps for UI client, got %#v", got["caps"])
+	}
+
+	run(&mcp.CallToolRequest{Params: &mcp.CallToolParamsRaw{Name: "x", Arguments: json.RawMessage(`{}`), Meta: textClientMeta()}})
+	if got["caps"] == nil || got["caps"].SupportsApps() {
+		t.Fatalf("expected non-UI caps for text client, got %#v", got["caps"])
+	}
+}
