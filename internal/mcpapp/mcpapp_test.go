@@ -30,7 +30,7 @@ func TestRenderMcpAppDoc(t *testing.T) {
 // embedded and inlines into the served document. A missing/empty bundle (JS
 // not built before Go) panics, so a passing test also proves `pnpm build` ran.
 func TestAppModuleJSEmbedded(t *testing.T) {
-	for _, app := range []string{"pin", "vault-create", "vault-restore", "auth-sso"} {
+	for _, app := range []string{"pin", "vault-create", "vault-restore", "auth-sso", "vault-browser", "pin-list", "auth-status"} {
 		src := AppModuleJS(app)
 		if strings.TrimSpace(src) == "" {
 			t.Fatalf("app bundle %q is empty", app)

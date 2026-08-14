@@ -296,3 +296,230 @@ func TestPinAppModuleTargetsExistingTool(t *testing.T) {
 		t.Fatalf("app module must pass cids (array) to pins.add")
 	}
 }
+
+// buildVaultBrowserServer constructs a catalog with the read-only vault tools
+// and registers the vault-browser app, the way the adapter does for the other
+// views. Returns the ready server.
+func buildVaultBrowserServer(t *testing.T) *mcp.Server {
+	t.Helper()
+	catalog := NewToolCatalog()
+	catalog.Add(&ToolEntry{
+		Name:          "vault_status",
+		Description:   "Show vault status.",
+		DirectVisible: true,
+		InputSchema:   json.RawMessage(`{"type":"object","properties":{}}`),
+		Handler: func(_ context.Context, _ ToolRequest) (ToolResult, error) {
+			return ToolResult{Text: "{\"status\":\"ok\"}"}, nil
+		},
+	})
+	catalog.Add(&ToolEntry{
+		Name:          "vault_ls",
+		Description:   "List vault files.",
+		DirectVisible: true,
+		InputSchema:   json.RawMessage(`{"type":"object","properties":{"path":{"type":"string"}}}`),
+		Handler: func(_ context.Context, _ ToolRequest) (ToolResult, error) {
+			return ToolResult{Text: "[]"}, nil
+		},
+	})
+
+	srv := NewOfficialServer(nil)
+	if err := RegisterVaultBrowserApp(srv, catalog); err != nil {
+		t.Fatalf("RegisterVaultBrowserApp: %v", err)
+	}
+	if err := RegisterOfficialCuratedTools(srv, catalog); err != nil {
+		t.Fatalf("RegisterOfficialCuratedTools: %v", err)
+	}
+	return srv
+}
+
+// TestRegisterVaultBrowserAppWire verifies the read-only vault browser view is
+// exposed as a ui:// resource and that the vault_status read tool it renders
+// for carries the app's _meta.ui pointer (the seam a UI-capable host uses to
+// show the panel instead of dumping raw JSON).
+func TestRegisterVaultBrowserAppWire(t *testing.T) {
+	srv := buildVaultBrowserServer(t)
+	cs := connectOfficialClient(t, srv)
+	ctx := context.Background()
+
+	// The ui://vault/browser.html view must be listed as a resource.
+	res, err := cs.ListResources(ctx, nil)
+	if err != nil {
+		t.Fatalf("ListResources: %v", err)
+	}
+	var found bool
+	for _, r := range res.Resources {
+		if r.URI == VaultBrowserAppURI {
+			found = true
+			if r.MIMEType != RESOURCE_MIME_TYPE {
+				t.Fatalf("resource MIME = %q, want %q", r.MIMEType, RESOURCE_MIME_TYPE)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("vault browser resource not listed")
+	}
+
+	// vault_status must carry the attached _meta.ui pointing at the view; the
+	// browser app registers no app-only helper, so there is no extra tool.
+	tres, err := cs.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
+	}
+	for _, x := range tres.Tools {
+		if x.Name == "vault_status" {
+			if x.Meta == nil {
+				t.Fatalf("vault_status has no _meta after registering the browser app")
+			}
+			// The flat legacy key and the nested resourceUri both point at the view.
+			if x.Meta["ui/resourceUri"] != VaultBrowserAppURI {
+				t.Fatalf("vault_status missing _meta.ui/resourceUri=%q; got %#v", VaultBrowserAppURI, x.Meta)
+			}
+			return
+		}
+	}
+	t.Fatalf("vault_status tool not found after registering the browser app")
+}
+
+// buildPinListServer constructs a catalog with the read-only pins_list tool and
+// registers the pin-list app, the way the adapter does for the other views.
+// Returns the ready server.
+func buildPinListServer(t *testing.T) *mcp.Server {
+	t.Helper()
+	catalog := NewToolCatalog()
+	catalog.Add(&ToolEntry{
+		Name:          "pins_list",
+		Description:   "List pinned content.",
+		DirectVisible: true,
+		InputSchema:   json.RawMessage(`{"type":"object","properties":{"name":{"type":"string"},"limit":{"type":"integer"},"status":{"type":"string"}}}`),
+		Handler: func(_ context.Context, _ ToolRequest) (ToolResult, error) {
+			return ToolResult{Text: "[]"}, nil
+		},
+	})
+
+	srv := NewOfficialServer(nil)
+	if err := RegisterPinListApp(srv, catalog); err != nil {
+		t.Fatalf("RegisterPinListApp: %v", err)
+	}
+	if err := RegisterOfficialCuratedTools(srv, catalog); err != nil {
+		t.Fatalf("RegisterOfficialCuratedTools: %v", err)
+	}
+	return srv
+}
+
+// TestRegisterPinListAppWire verifies the read-only pin list view is exposed as
+// a ui:// resource and that the pins_list read tool it renders for carries the
+// app's _meta.ui pointer (the seam a UI-capable host uses to show the panel
+// instead of dumping raw JSON).
+func TestRegisterPinListAppWire(t *testing.T) {
+	srv := buildPinListServer(t)
+	cs := connectOfficialClient(t, srv)
+	ctx := context.Background()
+
+	res, err := cs.ListResources(ctx, nil)
+	if err != nil {
+		t.Fatalf("ListResources: %v", err)
+	}
+	var found bool
+	for _, r := range res.Resources {
+		if r.URI == PinListAppURI {
+			found = true
+			if r.MIMEType != RESOURCE_MIME_TYPE {
+				t.Fatalf("resource MIME = %q, want %q", r.MIMEType, RESOURCE_MIME_TYPE)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("pin list resource not listed")
+	}
+
+	tres, err := cs.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
+	}
+	for _, x := range tres.Tools {
+		if x.Name == "pins_list" {
+			if x.Meta == nil {
+				t.Fatalf("pins_list has no _meta after registering the pin list app")
+			}
+			if x.Meta["ui/resourceUri"] != PinListAppURI {
+				t.Fatalf("pins_list missing _meta.ui/resourceUri=%q; got %#v", PinListAppURI, x.Meta)
+			}
+			return
+		}
+	}
+	t.Fatalf("pins_list tool not found after registering the pin list app")
+}
+
+// buildAuthStatusServer constructs a catalog with the read-only auth_status
+// tool and registers the auth-status app, the way the adapter does for the
+// other views. Returns the ready server.
+func buildAuthStatusServer(t *testing.T) *mcp.Server {
+	t.Helper()
+	catalog := NewToolCatalog()
+	catalog.Add(&ToolEntry{
+		Name:          "auth_status",
+		Description:   "Check authentication status.",
+		DirectVisible: true,
+		InputSchema:   json.RawMessage(`{"type":"object","properties":{}}`),
+		Handler: func(_ context.Context, _ ToolRequest) (ToolResult, error) {
+			return ToolResult{Text: `{"authenticated":true}`}, nil
+		},
+	})
+
+	srv := NewOfficialServer(nil)
+	if err := RegisterAuthStatusApp(srv, catalog); err != nil {
+		t.Fatalf("RegisterAuthStatusApp: %v", err)
+	}
+	if err := RegisterOfficialCuratedTools(srv, catalog); err != nil {
+		t.Fatalf("RegisterOfficialCuratedTools: %v", err)
+	}
+	return srv
+}
+
+// TestRegisterAuthStatusAppWire verifies the read-only account view is exposed
+// as a ui:// resource and that the auth_status read tool it renders for carries
+// the app's _meta.ui pointer (the seam a UI-capable host uses to show the panel
+// instead of dumping raw JSON).
+func TestRegisterAuthStatusAppWire(t *testing.T) {
+	srv := buildAuthStatusServer(t)
+	cs := connectOfficialClient(t, srv)
+	ctx := context.Background()
+
+	res, err := cs.ListResources(ctx, nil)
+	if err != nil {
+		t.Fatalf("ListResources: %v", err)
+	}
+	var found bool
+	for _, r := range res.Resources {
+		if r.URI == AuthStatusAppURI {
+			found = true
+			if r.MIMEType != RESOURCE_MIME_TYPE {
+				t.Fatalf("resource MIME = %q, want %q", r.MIMEType, RESOURCE_MIME_TYPE)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("auth status resource not listed")
+	}
+
+	tres, err := cs.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
+	}
+	for _, x := range tres.Tools {
+		if x.Name == "auth_status" {
+			if x.Meta == nil {
+				t.Fatalf("auth_status has no _meta after registering the auth status app")
+			}
+			if x.Meta["ui/resourceUri"] != AuthStatusAppURI {
+				t.Fatalf("auth_status missing _meta.ui/resourceUri=%q; got %#v", AuthStatusAppURI, x.Meta)
+			}
+			return
+		}
+	}
+	t.Fatalf("auth_status tool not found after registering the auth status app")
+}
+

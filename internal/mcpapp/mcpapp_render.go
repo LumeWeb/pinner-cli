@@ -63,6 +63,17 @@ button {
 	line-height: 1.6;
 }
 .result code { color: var(--color-accent); }
+/* Shared read-only table primitive (shadcn table): bordered, muted header,
+   hover rows. Apps render <table class="table"> with <thead>/<tbody>. */
+.table { width: 100%; font-size: 0.875rem; color: var(--color-text-primary); }
+.table thead tr { border-bottom: 1px solid var(--color-border); }
+.table th { padding: 8px 12px; text-align: left; font-size: 0.75rem; font-weight: 500; color: #a1a1aa; }
+.table tbody tr { border-bottom: 1px solid var(--color-border); }
+.table tbody tr:last-child { border-bottom: 0; }
+.table tbody tr:hover { background: rgba(255,255,255,0.03); }
+.table td { padding: 8px 12px; vertical-align: middle; }
+.table .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.8rem; }
+.table .muted { color: #a1a1aa; }
 `
 
 // renderMcpAppDoc renders a complete, self-contained ui:// MCP App document.
