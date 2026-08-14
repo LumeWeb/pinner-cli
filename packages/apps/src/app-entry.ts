@@ -44,7 +44,7 @@ export function runAppEntry(opts: AppEntryOptions) {
   const machine = createFlowMachine(opts.config, opts.callTool);
   const service = interpret(machine, (s: any) => {
     const state: string = s.machine?.current ?? "";
-    const ctx = s.context as { url: string; detail: string };
+    const ctx = s.context as { url: string; detail: string; alreadyDone: boolean };
     const btn = opts.elements.startBtn;
     const urlEl = opts.elements.urlEl;
     const statusEl = opts.elements.statusEl;
@@ -57,7 +57,9 @@ export function runAppEntry(opts: AppEntryOptions) {
     // again.
     if (btn) btn.disabled = pending;
 
-    if (stateName === "ok") statusEl.className = "status ok", (statusEl.textContent = opts.config.doneMsg);
+    if (stateName === "ok")
+      (statusEl.className = "status ok"),
+      (statusEl.textContent = ctx.alreadyDone ? opts.config.alreadyDoneMsg : opts.config.doneMsg);
     else if (stateName === "dead") statusEl.className = "status error", (statusEl.textContent = (ctx.detail || opts.config.deadDetailPrefix));
     else if (stateName === "error") statusEl.className = "status error", (statusEl.textContent = opts.config.startErrorMsg);
     else if (stateName === "timeout") statusEl.className = "status info", (statusEl.textContent = opts.config.timeoutMsg);

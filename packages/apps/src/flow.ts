@@ -59,6 +59,10 @@ export interface FlowContext {
   handle: string;
   detail: string;
   attempts: number;
+  /** True when `ok` was reached because the start tool immediately reported the
+   * flow already-complete (status "done" on start), so the UI shows
+   * `alreadyDoneMsg` instead of `doneMsg`. */
+  alreadyDone: boolean;
 }
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -114,9 +118,13 @@ export function createFlowMachine(cfg: FlowConfig, callTool: CallTool) {
     attempts: remainingOf(ev),
   }));
 
-  const armStart = reduce((ctx: FlowContext) => ({ ...ctx, handle: "", url: "", detail: "", attempts: cfg.maxAttempts }));
+  const armStart = reduce((ctx: FlowContext) => ({ ...ctx, handle: "", url: "", detail: "", attempts: cfg.maxAttempts, alreadyDone: false }));
 
-  const reset = reduce((ctx: FlowContext) => ({ ...ctx, handle: "", url: "", detail: "" }));
+  const reset = reduce((ctx: FlowContext) => ({ ...ctx, handle: "", url: "", detail: "", alreadyDone: false }));
+
+  // Mark that `ok` was reached via an already-complete start hand-off, so the
+  // UI renders alreadyDoneMsg ("Already signed in.") rather than doneMsg.
+  const markAlreadyDone = reduce((ctx: FlowContext) => ({ ...ctx, alreadyDone: true }));
 
   // --- invoke fns ----------------------------------------------------------
 
@@ -148,7 +156,7 @@ export function createFlowMachine(cfg: FlowConfig, callTool: CallTool) {
 
       starting: invoke(
         startFlow,
-        transition("done", "ok", guard(hasStatus("done"))),
+        transition("done", "ok", guard(hasStatus("done")), markAlreadyDone),
         transition("done", "dead", guard(hasStatus("needs_human")), guard(withoutHandle), setDetail),
         transition("done", "polling", guard(hasStatus("needs_human")), guard(hasHandle), setUrl, setHandle),
         transition("done", "error"),
@@ -169,7 +177,7 @@ export function createFlowMachine(cfg: FlowConfig, callTool: CallTool) {
       error: state(transition("retry", "idle", reset)),
       timeout: state(transition("retry", "idle", reset)),
     },
-    () => ({ url: "", handle: "", detail: "", attempts: cfg.maxAttempts }),
+    () => ({ url: "", handle: "", detail: "", attempts: cfg.maxAttempts, alreadyDone: false }),
   );
 }
 

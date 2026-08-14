@@ -79,6 +79,8 @@ describe("flow machine", () => {
 
     await flush(service);
     expect(state()).toBe("ok");
+    // Reached ok via POLLING (start only handed off a handle): not already-done.
+    expect((service.context as any).alreadyDone).toBe(false);
   });
 
   it("start returns needs_human WITHOUT handle → dead (no futile polling)", async () => {
@@ -163,6 +165,9 @@ describe("flow machine", () => {
     await flush(service);
     expect(state()).toBe("ok");
     expect(gate.some((g) => g.op === "poll")).toBe(false);
+    // Start reported the flow already-complete: the UI should show
+    // "alreadyDoneMsg" ("Already signed in.") not "doneMsg" ("Signed in.").
+    expect((service.context as any).alreadyDone).toBe(true);
   });
 
   it("start tool rejects → error terminal", async () => {
