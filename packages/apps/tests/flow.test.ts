@@ -240,6 +240,15 @@ describe("renderFlow", () => {
     expect(r.statusState).toBeNull();
     expect(r.pending).toBe(false);
   });
+
+  it("empty messages still resolve to a real state so the status is stamped", () => {
+    // Matches runAppEntry's apply guard: it stamps whenever statusState is set
+    // (not when the message is truthy), so an empty doneMsg/deadDetailPrefix
+    // must NOT fall back to "leave the element alone".
+    const empty = { ...baseConfig, doneMsg: "", deadDetailPrefix: "" };
+    expect(renderFlow(FlowState.Ok, { alreadyDone: false }, empty).statusState).not.toBeNull();
+    expect(renderFlow(FlowState.Dead, {}, empty).statusState).not.toBeNull();
+  });
 });
 
 /** Drive robot3's microtask/promise queue until the machine settles. */

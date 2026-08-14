@@ -109,7 +109,11 @@ export function runAppEntry(opts: AppEntryOptions) {
     // terminal state it is re-enabled so the user can click "retry" / start
     // again.
     if (btn) btn.disabled = r.pending;
-    if (r.statusState && r.statusMsg) setStatus(statusEl, r.statusState, r.statusMsg);
+    // Stamp the status readout whenever a real state resolves (incl. empty
+    // messages — e.g. an empty deadDetailPrefix/doneMsg still clears the text
+    // and sets the class), matching the pre-refactor unconditional write. Idle
+    // (statusState null) leaves the element untouched.
+    if (r.statusState) setStatus(statusEl, r.statusState, r.statusMsg ?? "");
 
     if (ctx.url) {
       urlEl.textContent = ctx.url;
