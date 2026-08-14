@@ -150,6 +150,15 @@ func registerCustomTools(deps customToolDeps) error {
 		return fmt.Errorf("failed to register pin list app: %w", err)
 	}
 
+	// Pair the read-only auth_status tool with the "Account" MCP App view
+	// (ui://auth/status.html) so a UI-capable host renders a readable
+	// authentication/account strip. The view only reads via the existing
+	// auth_status catalog tool and registers no helper. Must run before the
+	// curated registration loop reads _meta.ui, like the other apps.
+	if err := RegisterAuthStatusApp(deps.srv, deps.catalog); err != nil {
+		return fmt.Errorf("failed to register auth status app: %w", err)
+	}
+
 	// Stamp which tools are part of the direct tools/list surface. This must
 	// run after the wizard tools and SSO tools are added to the catalog (both
 	// are created after buildCatalog returns), so the compiled curated names

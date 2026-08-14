@@ -452,3 +452,74 @@ func TestRegisterPinListAppWire(t *testing.T) {
 	t.Fatalf("pins_list tool not found after registering the pin list app")
 }
 
+// buildAuthStatusServer constructs a catalog with the read-only auth_status
+// tool and registers the auth-status app, the way the adapter does for the
+// other views. Returns the ready server.
+func buildAuthStatusServer(t *testing.T) *mcp.Server {
+	t.Helper()
+	catalog := NewToolCatalog()
+	catalog.Add(&ToolEntry{
+		Name:          "auth_status",
+		Description:   "Check authentication status.",
+		DirectVisible: true,
+		InputSchema:   json.RawMessage(`{"type":"object","properties":{}}`),
+		Handler: func(_ context.Context, _ ToolRequest) (ToolResult, error) {
+			return ToolResult{Text: `{"authenticated":true}`}, nil
+		},
+	})
+
+	srv := NewOfficialServer(nil)
+	if err := RegisterAuthStatusApp(srv, catalog); err != nil {
+		t.Fatalf("RegisterAuthStatusApp: %v", err)
+	}
+	if err := RegisterOfficialCuratedTools(srv, catalog); err != nil {
+		t.Fatalf("RegisterOfficialCuratedTools: %v", err)
+	}
+	return srv
+}
+
+// TestRegisterAuthStatusAppWire verifies the read-only account view is exposed
+// as a ui:// resource and that the auth_status read tool it renders for carries
+// the app's _meta.ui pointer (the seam a UI-capable host uses to show the panel
+// instead of dumping raw JSON).
+func TestRegisterAuthStatusAppWire(t *testing.T) {
+	srv := buildAuthStatusServer(t)
+	cs := connectOfficialClient(t, srv)
+	ctx := context.Background()
+
+	res, err := cs.ListResources(ctx, nil)
+	if err != nil {
+		t.Fatalf("ListResources: %v", err)
+	}
+	var found bool
+	for _, r := range res.Resources {
+		if r.URI == AuthStatusAppURI {
+			found = true
+			if r.MIMEType != RESOURCE_MIME_TYPE {
+				t.Fatalf("resource MIME = %q, want %q", r.MIMEType, RESOURCE_MIME_TYPE)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("auth status resource not listed")
+	}
+
+	tres, err := cs.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
+	}
+	for _, x := range tres.Tools {
+		if x.Name == "auth_status" {
+			if x.Meta == nil {
+				t.Fatalf("auth_status has no _meta after registering the auth status app")
+			}
+			if x.Meta["ui/resourceUri"] != AuthStatusAppURI {
+				t.Fatalf("auth_status missing _meta.ui/resourceUri=%q; got %#v", AuthStatusAppURI, x.Meta)
+			}
+			return
+		}
+	}
+	t.Fatalf("auth_status tool not found after registering the auth status app")
+}
+

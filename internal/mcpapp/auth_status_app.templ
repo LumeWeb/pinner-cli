@@ -1,0 +1,18 @@
+package mcpapp
+
+// authStatusAppForm renders the visible "Account" view body: a status line, an
+// authenticated/not-authenticated outcome label, and the account message. The
+// refresh is wired by the auth-status ESM bundle. The document <head> (shared
+// inline theme) and the ESM module <script> (shared ext-apps bootstrap +
+// auth-status logic) are supplied by renderMcpAppDoc, so this templ authors
+// only the app-specific markup.
+templ AuthStatusAppForm() {
+	<h1>Account</h1>
+	<div id="authstatus-status" class="status"></div>
+	<div class="result">
+		<strong id="authstatus-outcome">—</strong>
+		<br/>
+		<span id="authstatus-message" class="muted"></span>
+	</div>
+	<button type="button" id="authstatus-refresh" disabled>Refresh</button>
+}
