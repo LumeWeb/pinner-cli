@@ -189,6 +189,79 @@ func TestOfficialCatalogHiddenButSearchable(t *testing.T) {
 	require.Equal(t, "Read account status", payload.Tools[0].Description)
 }
 
+func TestOfficialSearchToolsOnboardingEnvelope(t *testing.T) {
+	srv, catalog := newOfficialTestServer(t)
+	// Register a primary flow tool so the onboarding envelope is non-empty and
+	// the primary-only guarantee is exercised end to end. The server closes
+	// over the same *ToolCatalog, so this is visible to the handler.
+	catalog.Add(entry("pins_list", "List pinned CIDs", CategoryCore, InteractionAgentSafe))
+	cs := connectOfficialClient(t, srv)
+
+	// Empty query and "help" both route to the onboarding surface.
+	for _, q := range []string{"", "help"} {
+		res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+			Name:      "search_tools",
+			Arguments: map[string]any{"query": q},
+		})
+		require.NoError(t, err)
+		require.False(t, res.IsError)
+		text := requireText(t, res)
+
+		var payload struct {
+			Tools []ToolSummary `json:"tools"`
+			Total int           `json:"total"`
+			Hint  string        `json:"hint"`
+		}
+		require.NoError(t, json.Unmarshal([]byte(text), &payload))
+		require.NotEmpty(t, payload.Tools, "onboarding (query %q) must return tools", q)
+		require.Equal(t, payload.Total, len(payload.Tools))
+		require.NotEmpty(t, payload.Hint, "onboarding (query %q) must include a hint", q)
+		for _, s := range payload.Tools {
+			require.True(t, isPrimaryTool(s.Name), "onboarding (query %q) must only return primary tools, got %q", q, s.Name)
+		}
+	}
+
+	// The documented limit contract must hold on the onboarding path too.
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "search_tools",
+		Arguments: map[string]any{"query": "", "limit": 1},
+	})
+	require.NoError(t, err)
+	require.False(t, res.IsError)
+	text := requireText(t, res)
+	var limited struct {
+		Tools []ToolSummary `json:"tools"`
+		Total int           `json:"total"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(text), &limited))
+	require.Len(t, limited.Tools, 1, "onboarding limit=1 must return exactly 1 tool")
+	require.Equal(t, 1, limited.Total)
+}
+
+func TestOfficialSearchToolsKeywordEnvelopeNoHint(t *testing.T) {
+	srv, _ := newOfficialTestServer(t)
+	cs := connectOfficialClient(t, srv)
+
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "search_tools",
+		Arguments: map[string]any{"query": "status"},
+	})
+	require.NoError(t, err)
+	require.False(t, res.IsError)
+	text := requireText(t, res)
+
+	var payload struct {
+		Tools []ToolSummary `json:"tools"`
+		Total int           `json:"total"`
+		Hint  string        `json:"hint"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(text), &payload))
+	require.NotEmpty(t, payload.Tools, "keyword search must return matches")
+	require.Empty(t, payload.Hint, "keyword search must not include the onboarding hint")
+	// The hint field must be absent (omitempty), not just empty.
+	require.NotContains(t, text, "onboarding", "keyword search must not carry onboarding guidance")
+}
+
 func TestOfficialDescribeToolReturnsInputSchema(t *testing.T) {
 	srv, _ := newOfficialTestServer(t)
 	cs := connectOfficialClient(t, srv)
