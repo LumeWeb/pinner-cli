@@ -152,13 +152,32 @@ func ipnsKeysGet(d IPNSDeps) catalog.Operation {
 func ipnsKeysDelete(d IPNSDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
 		Name: "ipns_keys_delete", Title: "Delete an IPNS key", Summary: "Delete an IPNS key",
-		Description: "Delete an IPNS key by ID. This permanently removes the key.",
+		Description: "Delete an IPNS key by ID. DESTRUCTIVE and irreversible: this permanently removes the key and breaks any website publishing under it until republished. Requires confirm=true.",
 		Category:    "ipns", Safety: catalog.SafetyDestructive, Interaction: catalog.InteractionAgentSafe, Visibility: catalog.VisibilityBoth,
 		Positional: "<id>",
 		Args: []catalog.OperationArg{
 			{Name: "id", Type: catalog.ArgTypeString, Required: true, Help: "Key ID"},
+			// Confirm is declared so the destructive confirm hand-off on the MCP
+			// surface has a field to set on resume. It is AgentRequired (MCP-only)
+			// with Default set so the CLI adapter injects a real value: the CLI's
+			// --confirm flag defaults to true via this Default (see
+			// ipns_wiring.go's ipnsActionAdapter, which populates every arg), so a
+			// CLI delete passes the handler gate and the documented
+			// delete-without-force contract is preserved. On the MCP surface the
+			// model surface is still protected regardless, because the central
+			// SafetyDestructive gate refuses destructive ops for a model actor
+			// until a human confirms.
+			{Name: "confirm", Type: catalog.ArgTypeBool, AgentRequired: true, Default: "true", Help: "Confirm the destructive delete", AgentHelp: "Must be true to delete the key; this is destructive and cannot be undone. Only a human sets this on confirmation; a model alone cannot confirm a destructive delete."},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
+			// Enforce confirm here, not just on the MCP schema: a human or app
+			// actor outside the model ActorModel gate could otherwise pass
+			// confirm:false and still delete. Mirrors websites_delete and
+			// dns_records_delete. The CLI never sets confirm (see ipns_wiring),
+			// so this does not affect the CLI path.
+			if !catalog.BoolArg(input, "confirm", false) {
+				return nil, fmt.Errorf("ipns_keys_delete: confirmation is required to delete the key")
+			}
 			svc, err := d.service(input)
 			if err != nil {
 				return nil, err

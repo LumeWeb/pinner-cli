@@ -161,12 +161,22 @@ func ipnsActionAdapter(op catalog.Operation) cli.ActionFunc {
 		// registers a --force flag for it, but the ipns keys delete command
 		// deletes keys without requiring --force. To keep that contract (and not
 		// break existing scripts), the CLI path does not gate on --force here.
+		// The delete op's confirm arg defaults to true, so the normalize step
+		// below fills confirm=true and the handler gate passes.
+
+		// Route through the same normalize path as the generic adapter and
+		// Catalog.Invoke so required-arg validation, declared defaults, and
+		// SelectionGroup enforcement apply identically on the CLI surface.
+		normalized, err := catalog.NormalizeOperationInput(op, input)
+		if err != nil {
+			return err
+		}
 
 		// Apply the configured per-command timeout.
 		dctx, cancel := applyDefaultTimeout(ctx)
 		defer cancel()
 
-		result, err := op.Handler().Execute(dctx, input)
+		result, err := op.Handler().Execute(dctx, normalized)
 		if err != nil {
 			return err
 		}
