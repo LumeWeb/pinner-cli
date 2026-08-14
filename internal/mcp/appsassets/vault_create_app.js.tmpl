@@ -1,0 +1,80 @@
+// Vault Create MCP App module (Go text/template).
+//
+// Pulls in the shared ext-apps bootstrap first, then authors ONLY the vault
+// create behavior: start an out-of-band vault create, surface the human-only
+// setup URL (where the Sia device approval and one-time seed reveal happen),
+// and poll the app-only vault_create_status helper until done. Values injected
+// by mcpAppModule: .ClientB64, .Name, .Version.
+//
+// SECURITY: the recovery seed lives only on the human-only one-time page
+// opened in the browser. It never appears in this module, in the tool result,
+// or anywhere on the MCP channel.
+{{template "mcpBootstrap" .}}
+const CLIENT_B64 = "{{.ClientB64}}";
+
+const startBtn = $("#vault-create-start");
+const urlEl = $("#vault-create-url");
+const statusEl = $("#vault-create-status");
+
+extAppsConnect(CLIENT_B64, "{{.Name}}", "{{.Version}}").then((app) => {
+  startBtn.addEventListener("click", () => startCreate(app));
+}).catch((err) => {
+  setStatus(statusEl, "error", "Could not connect to host: " +
+    (err && err.message ? err.message : err));
+});
+
+function startCreate(app) {
+  setStatus(statusEl, "pending", "Starting vault create...");
+  app.callServerTool({ name: "vault_create", arguments: {} }).then((res) => {
+    const sc = res && res.structuredContent;
+    if (!sc || sc.status !== "needs_human") {
+      setStatus(statusEl, "error",
+        "Vault create did not return a setup handoff. " +
+        (res && res.isError ? " (error)" : ""));
+      if (sc && sc.status === "done") {
+        setStatus(statusEl, "ok", "Vault already active.");
+      }
+      return;
+    }
+    const url = sc.create_url || sc.action_url;
+    if (url) {
+      urlEl.textContent = url;
+      urlEl.setAttribute("href", url);
+    }
+    setStatus(statusEl, "pending",
+      "Open the setup link, approve the Sia device, and save the recovery seed shown.");
+    pollStatus(app, sc.handle, 60);
+  }).catch((err) => {
+    setStatus(statusEl, "error", "Could not start vault create: " +
+      (err && err.message ? err.message : err));
+  });
+}
+
+function pollStatus(app, handle, attempts) {
+  let max = attempts || 60;
+  return app.callServerTool({
+    name: "vault_create_status",
+    arguments: { handle },
+  }).then((res) => {
+    const sc = res && res.structuredContent;
+    const status = sc && sc.status;
+    if (status === "done") {
+      setStatus(statusEl, "ok", "Vault created and seed saved.");
+      return;
+    }
+    if (status === "needs_human") {
+      setStatus(statusEl, "pending", "Waiting for the device approval and seed save...");
+    }
+    if (--max <= 0) {
+      setStatus(statusEl, "info", "Timed out waiting. Click start to retry.");
+      return;
+    }
+    window.setTimeout(() => pollStatus(app, handle, max), 1500);
+  }).catch(() => {
+    if (--max > 0) {
+      window.setTimeout(() => pollStatus(app, handle, max), 1500);
+    } else {
+      setStatus(statusEl, "info", "Timed out polling vault create status.");
+    }
+  });
+}

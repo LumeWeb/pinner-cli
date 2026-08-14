@@ -120,6 +120,15 @@ func registerCustomTools(deps customToolDeps) error {
 	deps.catalog.Add(toolEntryFromDescriptor(vaultCreateResume))
 	deps.catalog.Add(toolEntryFromDescriptor(vaultRestoreResume))
 
+	// Pair vault_create with its "Create Vault" MCP App view
+	// (ui://vault/create.html) so a UI-capable host renders the flow in a
+	// panel. The compiled vault_create tool is in the catalog from
+	// buildCatalog. Must run before the curated registration loop reads
+	// _meta.ui.
+	if err := RegisterVaultCreateApp(deps.srv, deps.catalog, deps.handoffReg, deps.authHandles); err != nil {
+		return fmt.Errorf("failed to register vault create app: %w", err)
+	}
+
 	// Stamp which tools are part of the direct tools/list surface. This must
 	// run after the wizard tools and SSO tools are added to the catalog (both
 	// are created after buildCatalog returns), so the compiled curated names
