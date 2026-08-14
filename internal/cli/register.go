@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/urfave/cli/v3"
 
@@ -29,6 +30,9 @@ Examples:
   # Non-interactive with flags
   pinner register --email user@example.com --first-name John --last-name Doe
 
+  # Open the registration page in your default browser
+  pinner register --open
+
   # Mix: provide email, prompt for other fields
   pinner register user@example.com`,
 		ArgsUsage: "[email]",
@@ -53,6 +57,10 @@ Examples:
 				Aliases: []string{"p"},
 				Usage:   "Password (if not provided, you will be prompted)",
 			}),
+			&cli.BoolFlag{
+				Name:  "open",
+				Usage: "Open the registration page in your default browser",
+			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			output := setupOutput(cmd)
@@ -61,7 +69,36 @@ Examples:
 	}
 }
 
+// webRegisterURL derives the web-app registration page URL from the configured
+// account endpoint (e.g. https://account.pinner.xyz/register), matching the
+// account-subdomain web app used for the subscription deep-link.
+func webRegisterURL(cfgMgrFactory ConfigManagerFactory) (string, error) {
+	cfgMgr, err := cfgMgrFactory()
+	if err != nil {
+		return "", err
+	}
+	base := strings.TrimSuffix(cfgMgr.Config().GetAccountEndpointSecure(), "/")
+	return base + "/register", nil
+}
+
 func register(ctx context.Context, cmd argsFlagGetterWithBool, output Output, cfgMgrFactory ConfigManagerFactory, authServiceFactory AuthServiceFactory) error {
+	// --open: surface the registration page URL and launch the default browser
+	// so the user can sign up in the web app. Human-readable browser messages
+	// are suppressed in --json mode so structured output stays parseable; the
+	// browser still opens.
+	if cmd.Bool("open") {
+		if url, err := webRegisterURL(cfgMgrFactory); err != nil {
+			return fmt.Errorf("failed to determine registration page: %w", err)
+		} else {
+			if !output.IsJSON() {
+				output.Printfln("Open the registration page: %s", url)
+			}
+			if perr := openURL(url); perr != nil && !output.IsJSON() {
+				output.Printfln("Could not auto-open the browser: %v", perr)
+			}
+		}
+	}
+
 	email := cmd.String(FlagEmail)
 	// Fall back to positional arg if --email flag is not set: pinner register user@example.com
 	if email == "" && cmd.Args().Len() > 0 {
