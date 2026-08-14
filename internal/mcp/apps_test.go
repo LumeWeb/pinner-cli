@@ -381,3 +381,74 @@ func TestRegisterVaultBrowserAppWire(t *testing.T) {
 	t.Fatalf("vault_status tool not found after registering the browser app")
 }
 
+// buildPinListServer constructs a catalog with the read-only pins_list tool and
+// registers the pin-list app, the way the adapter does for the other views.
+// Returns the ready server.
+func buildPinListServer(t *testing.T) *mcp.Server {
+	t.Helper()
+	catalog := NewToolCatalog()
+	catalog.Add(&ToolEntry{
+		Name:          "pins_list",
+		Description:   "List pinned content.",
+		DirectVisible: true,
+		InputSchema:   json.RawMessage(`{"type":"object","properties":{"name":{"type":"string"},"limit":{"type":"integer"},"status":{"type":"string"}}}`),
+		Handler: func(_ context.Context, _ ToolRequest) (ToolResult, error) {
+			return ToolResult{Text: "[]"}, nil
+		},
+	})
+
+	srv := NewOfficialServer(nil)
+	if err := RegisterPinListApp(srv, catalog); err != nil {
+		t.Fatalf("RegisterPinListApp: %v", err)
+	}
+	if err := RegisterOfficialCuratedTools(srv, catalog); err != nil {
+		t.Fatalf("RegisterOfficialCuratedTools: %v", err)
+	}
+	return srv
+}
+
+// TestRegisterPinListAppWire verifies the read-only pin list view is exposed as
+// a ui:// resource and that the pins_list read tool it renders for carries the
+// app's _meta.ui pointer (the seam a UI-capable host uses to show the panel
+// instead of dumping raw JSON).
+func TestRegisterPinListAppWire(t *testing.T) {
+	srv := buildPinListServer(t)
+	cs := connectOfficialClient(t, srv)
+	ctx := context.Background()
+
+	res, err := cs.ListResources(ctx, nil)
+	if err != nil {
+		t.Fatalf("ListResources: %v", err)
+	}
+	var found bool
+	for _, r := range res.Resources {
+		if r.URI == PinListAppURI {
+			found = true
+			if r.MIMEType != RESOURCE_MIME_TYPE {
+				t.Fatalf("resource MIME = %q, want %q", r.MIMEType, RESOURCE_MIME_TYPE)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("pin list resource not listed")
+	}
+
+	tres, err := cs.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
+	}
+	for _, x := range tres.Tools {
+		if x.Name == "pins_list" {
+			if x.Meta == nil {
+				t.Fatalf("pins_list has no _meta after registering the pin list app")
+			}
+			if x.Meta["ui/resourceUri"] != PinListAppURI {
+				t.Fatalf("pins_list missing _meta.ui/resourceUri=%q; got %#v", PinListAppURI, x.Meta)
+			}
+			return
+		}
+	}
+	t.Fatalf("pins_list tool not found after registering the pin list app")
+}
+

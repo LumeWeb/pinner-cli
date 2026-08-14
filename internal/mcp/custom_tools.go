@@ -141,6 +141,15 @@ func registerCustomTools(deps customToolDeps) error {
 		return fmt.Errorf("failed to register vault browser app: %w", err)
 	}
 
+	// Pair the read-only pins_list tool with the "Pin list" MCP App view
+	// (ui://pins/list.html) so a UI-capable host renders a readable table of
+	// the account's pins and their status. The view only reads via the
+	// existing pins_list catalog tool and registers no helper. Must run before
+	// the curated registration loop reads _meta.ui, like the other apps.
+	if err := RegisterPinListApp(deps.srv, deps.catalog); err != nil {
+		return fmt.Errorf("failed to register pin list app: %w", err)
+	}
+
 	// Stamp which tools are part of the direct tools/list surface. This must
 	// run after the wizard tools and SSO tools are added to the catalog (both
 	// are created after buildCatalog returns), so the compiled curated names
