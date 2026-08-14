@@ -15,6 +15,12 @@ type PinningClient interface {
 	// LsSync lists pins synchronously with optional filters.
 	LsSync(ctx context.Context, opts ...go_pinning_service_http_client.LsOption) ([]go_pinning_service_http_client.PinStatusGetter, error)
 
+	// LsWithLimit lists pins but stops once `limit` results have been received,
+	// canceling the underlying request. boxo's LsSync drains every page (the
+	// Limit option is only a page size), so this is the only way to honor a
+	// true total cap without over-fetching.
+	LsWithLimit(ctx context.Context, limit int, opts ...go_pinning_service_http_client.LsOption) ([]go_pinning_service_http_client.PinStatusGetter, error)
+
 	// GetStatusByID retrieves pin status by request ID.
 	GetStatusByID(ctx context.Context, pinID string) (go_pinning_service_http_client.PinStatusGetter, error)
 

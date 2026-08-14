@@ -332,6 +332,93 @@ func (_c *MockPinningClient_LsSync_Call) RunAndReturn(run func(ctx context.Conte
 	return _c
 }
 
+// LsWithLimit provides a mock function for the type MockPinningClient
+func (_mock *MockPinningClient) LsWithLimit(ctx context.Context, limit int, opts ...go_pinning_service_http_client.LsOption) ([]go_pinning_service_http_client.PinStatusGetter, error) {
+	// go_pinning_service_http_client.LsOption
+	_va := make([]interface{}, len(opts))
+	for _i := range opts {
+		_va[_i] = opts[_i]
+	}
+	var _ca []interface{}
+	_ca = append(_ca, ctx, limit)
+	_ca = append(_ca, _va...)
+	ret := _mock.Called(_ca...)
+
+	if len(ret) == 0 {
+		panic("no return value specified for LsWithLimit")
+	}
+
+	var r0 []go_pinning_service_http_client.PinStatusGetter
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int, ...go_pinning_service_http_client.LsOption) ([]go_pinning_service_http_client.PinStatusGetter, error)); ok {
+		return returnFunc(ctx, limit, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int, ...go_pinning_service_http_client.LsOption) []go_pinning_service_http_client.PinStatusGetter); ok {
+		r0 = returnFunc(ctx, limit, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]go_pinning_service_http_client.PinStatusGetter)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, int, ...go_pinning_service_http_client.LsOption) error); ok {
+		r1 = returnFunc(ctx, limit, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockPinningClient_LsWithLimit_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'LsWithLimit'
+type MockPinningClient_LsWithLimit_Call struct {
+	*mock.Call
+}
+
+// LsWithLimit is a helper method to define mock.On call
+//   - ctx context.Context
+//   - limit int
+//   - opts ...go_pinning_service_http_client.LsOption
+func (_e *MockPinningClient_Expecter) LsWithLimit(ctx interface{}, limit interface{}, opts ...interface{}) *MockPinningClient_LsWithLimit_Call {
+	return &MockPinningClient_LsWithLimit_Call{Call: _e.mock.On("LsWithLimit",
+		append([]interface{}{ctx, limit}, opts...)...)}
+}
+
+func (_c *MockPinningClient_LsWithLimit_Call) Run(run func(ctx context.Context, limit int, opts ...go_pinning_service_http_client.LsOption)) *MockPinningClient_LsWithLimit_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 int
+		if args[1] != nil {
+			arg1 = args[1].(int)
+		}
+		var arg2 []go_pinning_service_http_client.LsOption
+		variadicArgs := make([]go_pinning_service_http_client.LsOption, len(args)-2)
+		for i, a := range args[2:] {
+			if a != nil {
+				variadicArgs[i] = a.(go_pinning_service_http_client.LsOption)
+			}
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockPinningClient_LsWithLimit_Call) Return(pinStatusGetters []go_pinning_service_http_client.PinStatusGetter, err error) *MockPinningClient_LsWithLimit_Call {
+	_c.Call.Return(pinStatusGetters, err)
+	return _c
+}
+
+func (_c *MockPinningClient_LsWithLimit_Call) RunAndReturn(run func(ctx context.Context, limit int, opts ...go_pinning_service_http_client.LsOption) ([]go_pinning_service_http_client.PinStatusGetter, error)) *MockPinningClient_LsWithLimit_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Replace provides a mock function for the type MockPinningClient
 func (_mock *MockPinningClient) Replace(ctx context.Context, pinID string, cid1 cid.Cid, opts ...go_pinning_service_http_client.AddOption) (go_pinning_service_http_client.PinStatusGetter, error) {
 	// go_pinning_service_http_client.AddOption

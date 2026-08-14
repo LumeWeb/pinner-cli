@@ -112,6 +112,35 @@ func (c *BoxoPinningClient) LsSync(ctx context.Context, opts ...go_pinning_servi
 	return result, err
 }
 
+// LsWithLimit implements PinningClient.LsWithLimit.
+//
+// boxo's Ls pages through every result regardless of the Limit option (limit
+// is only the per-request page size), so calling LsSync with a small limit
+// still returns the whole set. This instead drives boxo's streaming Ls and
+// stops reading once `limit` results arrive, canceling the request. The stream
+// can't be retried once partially consumed, so this uses a single attempt.
+func (c *BoxoPinningClient) LsWithLimit(ctx context.Context, limit int, opts ...go_pinning_service_http_client.LsOption) ([]go_pinning_service_http_client.PinStatusGetter, error) {
+	lsCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	resCh, errCh := c.client.GoLs(lsCtx, opts...)
+	var out []go_pinning_service_http_client.PinStatusGetter
+	for r := range resCh {
+		out = append(out, r)
+		if len(out) >= limit {
+			cancel()
+			break
+		}
+	}
+
+	// The background goroutine always sends exactly one value. Reaching the cap
+	// cancels Ls, which reports context.Canceled - expected, not a failure.
+	if err := <-errCh; err != nil && !errors.Is(err, context.Canceled) {
+		return nil, err
+	}
+	return out, nil
+}
+
 // GetStatusByID implements PinningClient.GetStatusByID.
 func (c *BoxoPinningClient) GetStatusByID(ctx context.Context, pinID string) (go_pinning_service_http_client.PinStatusGetter, error) {
 	var result go_pinning_service_http_client.PinStatusGetter

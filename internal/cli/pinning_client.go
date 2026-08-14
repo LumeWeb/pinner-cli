@@ -186,14 +186,23 @@ func (s *PinningServiceDefault) List(ctx context.Context, nameFilter string, lim
 	if nameFilter != "" {
 		opts = append(opts, go_pinning_service_http_client.PinOpts.FilterName(nameFilter))
 	}
-	if limit > 0 {
-		opts = append(opts, go_pinning_service_http_client.PinOpts.Limit(limit))
-	}
 	if statusFilter != "" {
 		opts = append(opts, go_pinning_service_http_client.PinOpts.FilterStatus(go_pinning_service_http_client.Status(statusFilter)))
 	}
 
-	results, err := s.pinningClient.LsSync(ctx, opts...)
+	// boxo's Ls drives cursor pagination internally and drains every page, so
+	// the Limit option only caps each page and the full result set always comes
+	// back. When a total cap is requested we must stop the stream once the cap
+	// is reached rather than page through every pin.
+	var (
+		results []go_pinning_service_http_client.PinStatusGetter
+		err     error
+	)
+	if limit > 0 {
+		results, err = s.pinningClient.LsWithLimit(ctx, limit, opts...)
+	} else {
+		results, err = s.pinningClient.LsSync(ctx, opts...)
+	}
 	if err != nil {
 		return nil, wrapPinningError("List pins", err, ErrPinningFailed)
 	}
