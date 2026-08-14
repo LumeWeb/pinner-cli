@@ -125,18 +125,27 @@ func (c *BoxoPinningClient) LsWithLimit(ctx context.Context, limit int, opts ...
 
 	resCh, errCh := c.client.GoLs(lsCtx, opts...)
 	var out []go_pinning_service_http_client.PinStatusGetter
+	reached := false
 	for r := range resCh {
 		out = append(out, r)
 		if len(out) >= limit {
+			reached = true
 			cancel()
 			break
 		}
 	}
 
-	// The background goroutine always sends exactly one value. Reaching the cap
-	// cancels Ls, which reports context.Canceled - expected, not a failure.
-	if err := <-errCh; err != nil && !errors.Is(err, context.Canceled) {
-		return nil, err
+	// If we reached the cap the request was intentionally aborted, so the error
+	// the background goroutine reports is cancellation - expected, not failure.
+	// boxo may wrap the cancellation (e.g. as an httperr), so don't rely on
+	// errors.Is(err, context.Canceled); treat reaching the cap as success and
+	// only surface errCh when the stream closed before the cap was hit.
+	if !reached {
+		if err := <-errCh; err != nil {
+			return nil, err
+		}
+	} else {
+		<-errCh // drain the background goroutine; cancellation is expected
 	}
 	return out, nil
 }
