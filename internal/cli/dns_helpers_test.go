@@ -108,7 +108,9 @@ func TestValidateDNSRecord(t *testing.T) {
 		{"valid NS trailing dot", "NS", "ns1.example.com.", false, ""},
 		{"valid TXT record", "TXT", "some text", false, ""},
 		{"TXT too long", "TXT", string(make([]byte, 256)), true, "too long"},
-		{"unsupported type", "SRV", "whatever", true, "unsupported record type"},
+		{"unsupported type", "BOGUS", "whatever", true, "unsupported record type"},
+		{"valid SRV", "SRV", "10 60 5060 sip.example.com", false, ""},
+		{"malformed SRV", "SRV", "10 60 5060", true, "SRV record content"},
 		{"lowercase type", "a", "1.2.3.4", false, ""},
 	}
 

@@ -3,14 +3,11 @@ package cli
 import (
 	"context"
 	"fmt"
-	"net"
-	"net/mail"
 	"strconv"
-	"strings"
 
 	ipfs "go.lumeweb.com/ipfs-sdk"
-	"go.lumeweb.com/ipfs-sdk/dnsname"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner-cli/internal/dnsutil"
 )
 
 // NOTE: the DNS command tree (newDNSCommand) is catalog-driven and lives in
@@ -579,113 +576,25 @@ func validateCID(cid string) error {
 	return nil
 }
 
-func validateDomain(domain string) error {
-	if domain == "" {
-		return fmt.Errorf("domain cannot be empty")
-	}
+// validateDomain validates a domain string (non-empty, parseable address).
+func validateDomain(domain string) error { return dnsutil.ValidateDomain(domain) }
 
-	if _, err := mail.ParseAddress("user@" + domain); err != nil {
-		return fmt.Errorf("invalid domain format: %w", err)
-	}
-
-	return nil
-}
-
+// validateDNSRecord validates a record type/content pair before sending to the
+// API. Implementation is shared with the catalog layer via internal/dnsutil.
 func validateDNSRecord(recordType, content string) error {
-	switch strings.ToUpper(recordType) {
-	case "A":
-		if !isValidIPv4(content) {
-			return fmt.Errorf("invalid IPv4 address for A record")
-		}
-	case "AAAA":
-		if !isValidIPv6(content) {
-			return fmt.Errorf("invalid IPv6 address for AAAA record")
-		}
-	case "CNAME", "MX", "NS":
-		if !isValidDomain(content) {
-			return fmt.Errorf("invalid domain for %s record", recordType)
-		}
-	case "TXT":
-		if len(content) > 255 {
-			return fmt.Errorf("TXT record content too long (max 255 characters)")
-		}
-	default:
-		return fmt.Errorf("unsupported record type: %s", recordType)
-	}
-
-	return nil
+	return dnsutil.ValidateDNSRecord(recordType, content)
 }
 
-func isValidIPv4(ip string) bool {
-	parsedIP := net.ParseIP(ip)
-	if parsedIP == nil {
-		return false
-	}
-	return parsedIP.To4() != nil
-}
+func isValidIPv4(ip string) bool { return dnsutil.IsValidIPv4(ip) }
 
-func isValidIPv6(ip string) bool {
-	parsedIP := net.ParseIP(ip)
-	if parsedIP == nil {
-		return false
-	}
-	return parsedIP.To4() == nil && parsedIP.To16() != nil
-}
+func isValidIPv6(ip string) bool { return dnsutil.IsValidIPv6(ip) }
 
-func isValidDomain(domain string) bool {
-	if domain == "" {
-		return false
-	}
-
-	// A single trailing dot denotes an absolute/FQDN name and is valid
-	// (e.g. "ns1.example.com."). The terminating dot is the DNS root
-	// separator, not an empty label. Strip it before validating labels.
-	trimmed := dnsname.TrimDot(domain)
-	if trimmed == "" {
-		return false
-	}
-
-	parts := strings.Split(trimmed, ".")
-	if len(parts) < 2 {
-		return false
-	}
-
-	for _, part := range parts {
-		if part == "" {
-			return false
-		}
-	}
-
-	return true
-}
+func isValidDomain(domain string) bool { return dnsutil.IsValidDomain(domain) }
 
 // validateDNSRecordName validates a DNS record name before sending to the API.
 // @ is only valid as the sole character (apex shorthand).
-func validateDNSRecordName(name string) error {
-	name = dnsname.TrimDot(name)
-	if name == "" || name == "@" {
-		return nil
-	}
-	if strings.Contains(name, "@") {
-		return fmt.Errorf("invalid DNS record name: \"@\" must be used alone for apex records; did you mean to omit --name or use --name @?")
-	}
-	return nil
-}
+func validateDNSRecordName(name string) error { return dnsutil.ValidateDNSRecordName(name) }
 
-func parseCommaSeparated(input string) []string {
-	if input == "" {
-		return nil
-	}
-
-	parts := strings.Split(input, ",")
-	result := make([]string, 0, len(parts))
-
-	for _, part := range parts {
-		trimmed := strings.TrimSpace(part)
-		if trimmed != "" {
-			result = append(result, trimmed)
-		}
-	}
-
-	return result
-}
+// parseCommaSeparated splits a comma-separated string into a trimmed,
+// non-empty []string (used for nameservers).
+func parseCommaSeparated(input string) []string { return dnsutil.ParseCommaSeparated(input) }
