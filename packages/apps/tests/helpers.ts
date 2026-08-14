@@ -1,12 +1,8 @@
 // Shared test helpers for the apps MCP-bundle vitest suites.
 
-/** Minimal shape of a robot3 service we need to observe a machine's current state. */
-interface ServiceLike {
-  machine?: { current?: unknown };
-}
-
-function currentOf(service: ServiceLike): string {
-  return String(service.machine?.current);
+/** A robot3 service exposing its machine's current state as `S`. */
+export interface StatefulService<S extends string> {
+  machine: { current: S };
 }
 
 /**
@@ -18,17 +14,19 @@ function currentOf(service: ServiceLike): string {
  * in an unintended state throws here instead of letting a later assertion
  * silently pass against the wrong state.
  */
-export async function untilState(
-  service: ServiceLike,
-  expected: string,
+export async function untilState<S extends string>(
+  service: StatefulService<S>,
+  expected: S,
   timeoutMs = 500,
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if (currentOf(service) === expected) return;
+    if (service.machine.current === expected) return;
     await new Promise<void>((r) => setTimeout(r, 0));
   }
-  throw new Error(`machine did not settle at '${expected}' (last state: ${currentOf(service)})`);
+  throw new Error(
+    `machine did not settle at '${expected}' (last state: ${service.machine.current})`,
+  );
 }
 
 /**
@@ -36,15 +34,15 @@ export async function untilState(
  * loudly on timeout. Use this for loops that drain several polls before a
  * target state, where a single named state isn't known up front.
  */
-export async function until(
-  service: ServiceLike,
-  predicate: (state: string) => boolean,
+export async function until<S extends string>(
+  service: StatefulService<S>,
+  predicate: (state: S) => boolean,
   timeoutMs = 500,
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if (predicate(currentOf(service))) return;
+    if (predicate(service.machine.current)) return;
     await new Promise<void>((r) => setTimeout(r, 0));
   }
-  throw new Error(`machine did not settle (last state: ${currentOf(service)})`);
+  throw new Error(`machine did not settle (last state: ${service.machine.current})`);
 }

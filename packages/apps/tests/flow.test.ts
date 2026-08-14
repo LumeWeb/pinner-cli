@@ -3,7 +3,7 @@
 // robot3 testing pattern (see react-state-machine-steps skill).
 
 import { beforeEach, describe, expect, it } from "vitest";
-import { interpret } from "robot3";
+import { interpret, type Service } from "robot3";
 import { createFlowMachine, type CallTool, type FlowConfig, FlowState, type ToolResult } from "@/flow";
 import { currentFlowState, renderFlow } from "@/app-entry";
 import { until, untilState } from "./helpers";
@@ -37,7 +37,7 @@ describe("flow machine", () => {
   let calls: { name: string; arguments: Record<string, unknown> }[];
   let callTool: CallTool;
   let machine: ReturnType<typeof createFlowMachine>;
-  let service: any;
+  let service: Service<ReturnType<typeof createFlowMachine>>;
   const state = (): FlowState => currentFlowState(service);
 
   beforeEach(() => {
