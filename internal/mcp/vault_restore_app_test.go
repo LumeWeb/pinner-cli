@@ -89,7 +89,7 @@ func TestVaultRestoreStatusHelperPendingToDone(t *testing.T) {
 	requireHandoff(t, r)
 
 	// Submit the restore form the way a browser POST would.
-	postReq := httptest.NewRequest("POST", url, strings.NewReader("mnemonic=secret+words"))
+	postReq := httptest.NewRequest("POST", url, strings.NewReader("mnemonic=alpha+beta+gamma"))
 	postReq.Header.Set("Origin", "http://127.0.0.1:9999")
 	postReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	postRec := httptest.NewRecorder()
@@ -104,5 +104,5 @@ func TestVaultRestoreStatusHelperPendingToDone(t *testing.T) {
 	})
 	require.NoError(t, err)
 	requireVaultDone(t, r)
-	require.NotContains(t, r.Text, "secret words")
+	require.NotContains(t, r.Text, "alpha beta gamma", "the submitted mnemonic must never be echoed back")
 }

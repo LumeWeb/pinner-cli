@@ -17,11 +17,19 @@ const urlEl = $("#vault-restore-url");
 const statusEl = $("#vault-restore-status");
 
 extAppsConnect(CLIENT_B64, "{{.Name}}", "{{.Version}}").then((app) => {
-  startBtn.addEventListener("click", () => startRestore(app));
+  startBtn.addEventListener("click", () => {
+    if (startBtn.disabled) return; // in-flight guard: no concurrent runs
+    startBtn.disabled = true;
+    startRestore(app);
+  });
 }).catch((err) => {
   setStatus(statusEl, "error", "Could not connect to host: " +
     (err && err.message ? err.message : err));
 });
+
+function finishPolling() {
+  startBtn.disabled = false;
+}
 
 function startRestore(app) {
   setStatus(statusEl, "pending", "Starting vault restore...");
@@ -34,6 +42,7 @@ function startRestore(app) {
       if (sc && sc.status === "done") {
         setStatus(statusEl, "ok", "Vault already restored.");
       }
+      finishPolling();
       return;
     }
     const url = sc.restore_url || sc.action_url;
@@ -47,6 +56,7 @@ function startRestore(app) {
   }).catch((err) => {
     setStatus(statusEl, "error", "Could not start vault restore: " +
       (err && err.message ? err.message : err));
+    finishPolling();
   });
 }
 
@@ -60,6 +70,19 @@ function pollStatus(app, handle, attempts) {
     const status = sc && sc.status;
     if (status === "done") {
       setStatus(statusEl, "ok", "Vault restored.");
+      finishPolling();
+      return;
+    }
+    // vault_restore_status reports needs_human both while a restore is still
+    // live (carries a restore_url/action_url to act on) and when the handle has
+    // become a dead end (unknown/expired/failed/no continuation). A pending
+    // hand-off always includes a URL; a dead one never does and steers toward
+    // restart via resume_tool/detail. Stop polling so a dead handle surfaces
+    // the restart guidance instead of retrying for ~90s.
+    if (status === "needs_human" && !(sc.restore_url || sc.action_url)) {
+      const detail = sc.detail || "The vault restore session is no longer valid.";
+      setStatus(statusEl, "error", detail + " Click start to retry.");
+      finishPolling();
       return;
     }
     if (status === "needs_human") {
@@ -67,6 +90,7 @@ function pollStatus(app, handle, attempts) {
     }
     if (--max <= 0) {
       setStatus(statusEl, "info", "Timed out waiting. Click start to retry.");
+      finishPolling();
       return;
     }
     window.setTimeout(() => pollStatus(app, handle, max), 1500);
@@ -75,6 +99,7 @@ function pollStatus(app, handle, attempts) {
       window.setTimeout(() => pollStatus(app, handle, max), 1500);
     } else {
       setStatus(statusEl, "info", "Timed out polling vault restore status.");
+      finishPolling();
     }
   });
 }
