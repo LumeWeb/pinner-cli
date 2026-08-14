@@ -123,3 +123,48 @@ func TestVaultCreateStatusHelperPendingToDone(t *testing.T) {
 	requireVaultDone(t, r)
 	require.NotContains(t, r.Text, "fresh generated seed phrase")
 }
+
+// TestVaultCreateStatusHelperPendingCarriesHandle pins the server-side contract
+// the Create Vault view's dead-handle detection relies on: a live pending poll
+// from vault_create_status returns needs_human WITH a handle and WITHOUT any
+// URL (the create_url/action_url only appears in the vault_create start-tool
+// result), while a dead/expired/unknown handle returns needs_human with no
+// handle. The view uses handle presence (never URL presence) to tell pending
+// from dead, so a live flow keeps polling instead of being falsely declared
+// dead on its first poll.
+func TestVaultCreateStatusHelperPendingCarriesHandle(t *testing.T) {
+	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	reg := NewHandoffRegistry()
+	oob, _, _ := buildCreateServer()
+
+	createURL := oob.Register("default")
+	token := vaultTokenFromURL(createURL)
+	require.NotEmpty(t, token)
+	handle := handles.Create("pending", map[string]any{handleDataToken: token})
+	reg.Begin(handle, vaultCreateResumeContinuation(oob, handles, reg))
+
+	status := vaultCreateStatusDescriptor(reg, handles)
+
+	// Live pending: needs_human with a handle, and no URL in the result.
+	r, err := status.Handler(context.Background(), ToolRequest{
+		Name:      "vault_create_status",
+		Arguments: map[string]any{"handle": handle},
+	})
+	require.NoError(t, err)
+	sc := requireHandoff(t, r)
+	require.Equal(t, handle, sc["handle"], "live pending must carry the handle")
+	_, hasCreate := sc["create_url"]
+	_, hasAction := sc["action_url"]
+	require.False(t, hasCreate || hasAction, "live pending must not carry a URL in the status result")
+
+	// Dead/unknown handle: needs_human with no handle (and a restart steer).
+	r, err = status.Handler(context.Background(), ToolRequest{
+		Name:      "vault_create_status",
+		Arguments: map[string]any{"handle": "does-not-exist"},
+	})
+	require.NoError(t, err)
+	deadSC := requireHandoff(t, r)
+	_, hasHandle := deadSC["handle"]
+	require.False(t, hasHandle, "a dead handle must not carry a handle")
+	require.Equal(t, compiledVaultCreateToolName, deadSC["resume_tool"])
+}

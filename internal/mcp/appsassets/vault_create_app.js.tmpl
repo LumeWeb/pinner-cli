@@ -73,13 +73,14 @@ function pollStatus(app, handle, attempts) {
       finishPolling();
       return;
     }
-    // vault_create_status reports needs_human both while a create is still
-    // live (carries a create_url/action_url to act on) and when the handle has
-    // become a dead end (unknown/expired/failed/no continuation). A pending
-    // hand-off always includes a URL; a dead one never does and steers toward
-    // restart via resume_tool/detail. Stop polling so a dead handle surfaces
-    // the restart guidance instead of retrying for ~90s.
-    if (status === "needs_human" && !(sc.create_url || sc.action_url)) {
+    // vault_create_status reports needs_human for both a live pending create
+    // (polls carry a handle but no URL — the create_url only appears in the
+    // start-tool result) and a dead/expired/failed/no-continuation handle (the
+    // helper clears the handle and steers toward restart via resume_tool/
+    // detail). Distinguish dead by the ABSENCE of sc.handle, never by URL
+    // absence, so a live pending flow keeps polling. Stop polling a dead
+    // handle so the restart guidance surfaces instead of retrying for ~90s.
+    if (status === "needs_human" && !sc.handle) {
       const detail = sc.detail || "The vault create session is no longer valid.";
       setStatus(statusEl, "error", detail + " Click start to retry.");
       finishPolling();
