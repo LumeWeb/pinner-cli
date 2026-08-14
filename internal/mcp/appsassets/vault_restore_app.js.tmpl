@@ -1,0 +1,117 @@
+// Vault Restore MCP App module (Go text/template).
+//
+// Pulls in the shared ext-apps bootstrap first, then authors ONLY the vault
+// restore behavior: start an out-of-band vault restore, surface the human-only
+// restore URL (where the recovery seed is entered), and poll the app-only
+// vault_restore_status helper until done. Values injected by mcpAppModule:
+// .ClientB64, .Name, .Version.
+//
+// SECURITY: the recovery seed is entered by the human only on the human-only
+// one-time restore page. It never appears in this module, in the tool result,
+// or anywhere on the MCP channel.
+{{template "mcpBootstrap" .}}
+const CLIENT_B64 = "{{.ClientB64}}";
+
+const startBtn = $("#vault-restore-start");
+const urlEl = $("#vault-restore-url");
+const statusEl = $("#vault-restore-status");
+
+extAppsConnect(CLIENT_B64, "{{.Name}}", "{{.Version}}").then((app) => {
+  startBtn.addEventListener("click", () => {
+    if (startBtn.disabled) return; // in-flight guard: no concurrent runs
+    startBtn.disabled = true;
+    startRestore(app);
+  });
+}).catch((err) => {
+  setStatus(statusEl, "error", "Could not connect to host: " +
+    (err && err.message ? err.message : err));
+});
+
+function finishPolling() {
+  startBtn.disabled = false;
+}
+
+function startRestore(app) {
+  setStatus(statusEl, "pending", "Starting vault restore...");
+  app.callServerTool({ name: "vault_restore", arguments: {} }).then((res) => {
+    const sc = res && res.structuredContent;
+    if (!sc || sc.status !== "needs_human") {
+      setStatus(statusEl, "error",
+        "Vault restore did not return a setup handoff. " +
+        (res && res.isError ? " (error)" : ""));
+      if (sc && sc.status === "done") {
+        setStatus(statusEl, "ok", "Vault already restored.");
+      }
+      finishPolling();
+      return;
+    }
+    const url = sc.restore_url || sc.action_url;
+    if (url) {
+      urlEl.textContent = url;
+      urlEl.setAttribute("href", url);
+    }
+    // The status helper is keyed by handle and rejects an undefined handle with
+    // "handle is required", so a needs_human hand-off without a handle (the
+    // not-configured branch) can never be polled. Surface the detail and stop
+    // instead of sending the poll loop into ~90s of futile retries.
+    if (!sc.handle) {
+      setStatus(statusEl, "error",
+        (sc.detail || "Could not start vault restore.") + " Click start to retry.");
+      finishPolling();
+      return;
+    }
+    setStatus(statusEl, "pending",
+      "Open the restore link and enter your recovery seed to complete the restore.");
+    pollStatus(app, sc.handle, 60);
+  }).catch((err) => {
+    setStatus(statusEl, "error", "Could not start vault restore: " +
+      (err && err.message ? err.message : err));
+    finishPolling();
+  });
+}
+
+function pollStatus(app, handle, attempts) {
+  let max = attempts || 60;
+  return app.callServerTool({
+    name: "vault_restore_status",
+    arguments: { handle },
+  }).then((res) => {
+    const sc = res && res.structuredContent;
+    const status = sc && sc.status;
+    if (status === "done") {
+      setStatus(statusEl, "ok", "Vault restored.");
+      finishPolling();
+      return;
+    }
+    // vault_restore_status reports needs_human for both a live pending restore
+    // (polls carry a handle but no URL — the restore_url/action_url only
+    // appears in the vault_restore start-tool result) and a dead/expired/
+    // failed/no-continuation handle (the helper clears the handle and steers
+    // toward restart via resume_tool/detail). Distinguish dead by the ABSENCE
+    // of sc.handle, never by URL absence, so a live pending flow keeps
+    // polling. Stop polling a dead handle so the restart guidance surfaces
+    // instead of retrying for ~90s.
+    if (status === "needs_human" && !sc.handle) {
+      const detail = sc.detail || "The vault restore session is no longer valid.";
+      setStatus(statusEl, "error", detail + " Click start to retry.");
+      finishPolling();
+      return;
+    }
+    if (status === "needs_human") {
+      setStatus(statusEl, "pending", "Waiting for the recovery seed submission...");
+    }
+    if (--max <= 0) {
+      setStatus(statusEl, "info", "Timed out waiting. Click start to retry.");
+      finishPolling();
+      return;
+    }
+    window.setTimeout(() => pollStatus(app, handle, max), 1500);
+  }).catch(() => {
+    if (--max > 0) {
+      window.setTimeout(() => pollStatus(app, handle, max), 1500);
+    } else {
+      setStatus(statusEl, "info", "Timed out polling vault restore status.");
+      finishPolling();
+    }
+  });
+}
