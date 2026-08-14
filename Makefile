@@ -24,12 +24,22 @@ LDFLAGS := -X '$(PKG).Version=$(VERSION)' \
            -X '$(PKG).Platform=$(PLATFORM)' \
            -X '$(PKG).Architecture=$(ARCH)'
 
-# generate regenerates checked-in code from source generators (templ pages via
-# the //go:generate templ generate directive in internal/mcp/embed.go). It
-# runs before build/install so a change to a *.templ file is never built with
-# stale generated *_templ.go output. Requires the templ CLI on PATH.
+# generate regenerates the templ-derived *_templ.go files. It runs before
+# build/install so a change to a *.templ file is never built with stale
+# generated output. Requires the templ CLI on PATH.
+#
+# We invoke `templ generate` directly from the repo root (not `go generate
+# ./...`) deliberately: templ files live in two packages (internal/mcp and
+# internal/mcpapp) and each carries a //go:generate templ generate directive.
+# Because `templ generate` recurses the whole repo by default, running it via
+# `go generate ./...` executes that directive twice from two different
+# directories (go:generate runs the command with the package dir as cwd),
+# which is redundant and, depending on the templ version and tree state, can
+# fail trying to write a *_templ.go for a templ source in the "wrong" package
+# dir. A single `templ generate` anchored at the repo root covers every *.templ
+# file exactly once and always emits output next to its source.
 generate:
-	go generate ./...
+	templ generate
 
 # jsbuild builds the MCP App JS bundles (packages/apps via tsdown) into
 # self-contained ESM files and copies them to internal/mcpapp/appsassets/dist/
