@@ -15,6 +15,35 @@ type ToolRequest struct {
 	// form submission apart from a first-time call so they can re-present the
 	// native form instead of falling back to plain text.
 	InputResponses bool
+	// Caps is the per-request capability view of the calling client, derived
+	// from the request _meta (stateless MCP) or the legacy initialize
+	// handshake. It lets a single server adapt behavior per request (e.g. a
+	// tool handler returning a real result vs a UI placeholder) without
+	// reintroducing session state. Nil on code paths that do not carry a
+	// client (e.g. tests invoking handlers directly).
+	Caps *RequestCaps
+}
+
+// RequestCaps is the SDK-neutral per-request capability view of the calling
+// client. MCP is stateless: capabilities travel with each request rather than
+// being bound to a connection, so this is re-derived for every invocation.
+type RequestCaps struct {
+	// ProtocolVersion is the MCP protocol version the client sent on this
+	// request. Empty when the client did not advertise one.
+	ProtocolVersion string
+	// ClientName and ClientVersion identify the calling client (clientInfo).
+	ClientName    string
+	ClientVersion string
+	// UI is the typed MCP Apps capability when the client advertises
+	// io.modelcontextprotocol/ui, else nil.
+	UI *ClientUICapabilities
+}
+
+// SupportsApps reports whether the calling client can render MCP Apps
+// (RESOURCE_MIME_TYPE ui:// resources). It is the per-request counterpart to
+// ClientUICapabilities.SupportsApps.
+func (c *RequestCaps) SupportsApps() bool {
+	return c != nil && c.UI != nil && c.UI.SupportsApps()
 }
 
 // ToolResult is the SDK-neutral result of a catalog tool.

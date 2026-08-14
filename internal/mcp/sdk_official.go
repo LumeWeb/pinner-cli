@@ -54,11 +54,18 @@ type OfficialServerOptions struct {
 	Instructions string
 }
 
+// officialServerOptions maps Pinner options onto the official SDK. Pinner
+// ships MCP Apps tooling, so the io.modelcontextprotocol/ui extension is
+// advertised on the server capabilities (surfaced via server/discover) for
+// every server.
 func officialServerOptions(opts *OfficialServerOptions) *mcp.ServerOptions {
-	if opts == nil {
-		return nil
+	so := &mcp.ServerOptions{
+		Capabilities: AdvertiseUICapability(&mcp.ServerCapabilities{}),
 	}
-	return &mcp.ServerOptions{Instructions: opts.Instructions}
+	if opts != nil {
+		so.Instructions = opts.Instructions
+	}
+	return so
 }
 
 // NewOfficialServer builds an official-SDK MCP server pre-configured with
@@ -177,6 +184,7 @@ func officialToolHandler(handler PinnerToolHandler) mcp.ToolHandler {
 			Name:           req.Params.Name,
 			Arguments:      args,
 			InputResponses: len(req.Params.InputResponses) > 0,
+			Caps:           requestCaps(req),
 		})
 		logToolCallEnd(log, req.Params.Name, startedAt, result, err)
 		if err != nil {
@@ -187,6 +195,23 @@ func officialToolHandler(handler PinnerToolHandler) mcp.ToolHandler {
 		}
 		return officialToolResult(result), nil
 	}
+}
+
+// requestCaps builds the SDK-neutral per-request capability view of the
+// calling client from an official SDK call-tool request. MCP is stateless: the
+// capabilities arrive in the request _meta (with a legacy initialize-handshake
+// fallback), so this is re-derived for every invocation rather than stored on
+// a session.
+func requestCaps(req *mcp.CallToolRequest) *RequestCaps {
+	rc := &RequestCaps{ProtocolVersion: req.ProtocolVersion()}
+	if ci := req.ClientInfo(); ci != nil {
+		rc.ClientName = ci.Name
+		rc.ClientVersion = ci.Version
+	}
+	if cc := req.ClientCapabilities(); cc != nil {
+		rc.UI = GetClientUICapability(cc.Extensions)
+	}
+	return rc
 }
 
 // officialToolResult converts a Pinner-owned tool result into an official SDK
