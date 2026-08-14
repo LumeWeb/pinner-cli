@@ -1,4 +1,4 @@
-package mcp
+package mcpapp
 
 import (
 	"embed"
@@ -6,7 +6,7 @@ import (
 	"io/fs"
 )
 
-// appsAssets holds the vendored static assets for MCP Apps (ext-apps) views.
+// AppsAssets holds the vendored static assets for MCP Apps (ext-apps) views.
 //
 // appsassets/ext-apps-client.js is the official, self-contained ESM bundle from
 // @modelcontextprotocol/ext-apps v1.7.5's `dist/src/app-with-deps.js`, which
@@ -24,13 +24,13 @@ import (
 // Re-vendor by bumping the version and re-copying the bundled file.
 //
 //go:embed appsassets
-var appsAssets embed.FS
+var AppsAssets embed.FS
 
-// extAppsClientBase64 returns the embedded ext-apps client module encoded as
+// ExtAppsClientBase64 returns the embedded ext-apps client module encoded as
 // base64. The ui:// view inlines it and loads it at runtime via a Blob URL so
 // the minified bundle is served verbatim (never HTML-escaped or parsed by Go).
-func extAppsClientBase64() string {
-	data, err := fs.ReadFile(appsAssets, "appsassets/ext-apps-client.js")
+func ExtAppsClientBase64() string {
+	data, err := fs.ReadFile(AppsAssets, "appsassets/ext-apps-client.js")
 	if err != nil {
 		panic("mcp: embedded ext-apps client missing: " + err.Error())
 	}

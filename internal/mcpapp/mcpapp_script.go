@@ -1,4 +1,4 @@
-package mcp
+package mcpapp
 
 import (
 	"bytes"
@@ -11,7 +11,7 @@ import (
 // {{template "mcpBootstrap" .}} and injects its values through appModuleData.
 
 // appModuleData carries the values templated into every inline MCP App module.
-type appModuleData struct {
+type AppModuleData struct {
 	// ClientB64 is the base64 of the embedded ext-apps client bundle. Large and
 	// binary, so it is injected at render time rather than authored in the JS.
 	ClientB64 string
@@ -33,8 +33,8 @@ type appModuleData struct {
 // data may be an appModuleData or any struct embedding it (e.g.
 // appFlowData) so an app that uses the shared flow template can inject its
 // flow-specific config alongside the common client values.
-func mcpAppModule(appTemplate string, data any) string {
-	tpl, err := template.New("mcpapp").ParseFS(appsAssets,
+func McpAppModule(appTemplate string, data any) string {
+	tpl, err := template.New("mcpapp").ParseFS(AppsAssets,
 		"appsassets/mcp_bootstrap.js.tmpl",
 		"appsassets/"+appTemplate)
 	if err != nil {

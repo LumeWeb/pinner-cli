@@ -1,11 +1,11 @@
-package mcp
+package mcpapp
 
 // pinCreateAppForm renders the visible "Create a Pin" view body: the CID/name
 // form, the live status line, and the result readout. The document <head>
 // (shared inline theme) and the ESM module <script> (shared ext-apps
 // bootstrap + pin logic) are supplied by renderMcpAppDoc, so this templ
 // authors only the app-specific markup.
-templ pinCreateAppForm() {
+templ PinCreateAppForm() {
 	<h1>Create a Pin</h1>
 	<form id="pin-form">
 		<label for="cid">CID</label>
