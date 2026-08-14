@@ -2,7 +2,6 @@ template: testify
 template-data:
   unroll-variadic: true
 filename: "{{.InterfaceName}}.go"
-include-auto-generated: true
 packages:
   go.lumeweb.com/pinner-cli/internal/core/config:
     config:
@@ -18,30 +17,78 @@ packages:
       AuthService:
         config:
           filename: "mock_AuthService.go"
+  go.lumeweb.com/pinner-cli/internal/core/uploads:
+    config:
+      dir: ./internal/cli
+      pkgname: "cli"
+    interfaces:
+      Service:
+        config:
+          structname: "MockUploadService"
+          filename: "mock_UploadService.go"
+  go.lumeweb.com/pinner-cli/internal/core/download:
+    config:
+      dir: ./internal/cli
+      pkgname: "cli"
+    interfaces:
+      Service:
+        config:
+          structname: "MockDownloadService"
+          filename: "mock_DownloadService.go"
+  go.lumeweb.com/pinner-cli/internal/core/operations:
+    config:
+      dir: ./internal/cli
+      pkgname: "cli"
+    interfaces:
+      Service:
+        config:
+          structname: "MockOperationsService"
+          filename: "mock_OperationsService.go"
+  go.lumeweb.com/pinner-cli/internal/core/apikeys:
+    config:
+      dir: ./internal/cli
+      pkgname: "cli"
+    interfaces:
+      Service:
+        config:
+          structname: "MockAPIKeyService"
+          filename: "mock_APIKeyService.go"
+  go.lumeweb.com/pinner-cli/internal/core/pinning:
+    config:
+      dir: ./internal/cli
+      pkgname: "cli"
+    interfaces:
+      PinningService:
+        config:
+          filename: "mock_PinningService.go"
+      StatusService:
+        config:
+          filename: "mock_StatusService.go"
+  go.lumeweb.com/pinner-cli/internal/core/admin:
+    config:
+      dir: ./internal/cli
+      pkgname: "cli"
+    interfaces:
+      QuotaAdminService:
+        config:
+          filename: "mock_QuotaAdminService.go"
+      BillingAdminService:
+        config:
+          filename: "mock_BillingAdminService.go"
+      WebsiteAdminService:
+        config:
+          filename: "mock_WebsiteAdminService.go"
+      ProfilingAdminService:
+        config:
+          filename: "mock_ProfilingAdminService.go"
   go.lumeweb.com/pinner-cli/internal/cli:
     config:
-      filename: "mock_{{.InterfaceName}}.go"
-      dir: "{{.InterfaceDir}}"
-      pkgname: "{{.SrcPackageName}}"
+      dir: ./internal/cli
+      pkgname: "cli"
     interfaces:
-      AuthPrompter: {}
-      PinningService: {}
-      UploadService: {}
-      DownloadService: {}
-      QuotaAdminService: {}
-      BillingAdminService: {}
-      WebsiteAdminService: {}
-      ProfilingAdminService: {}
-      StatusService: {}
-      OperationsService: {}
-      APIKeyService: {}
-  go.lumeweb.com/pinner-cli/internal/catalog:
-    config:
-      dir: ./internal/catalog/mocks
-      pkgname: "mocks"
-    interfaces:
-      Catalog: {}
-      Compiler: {}
+      AuthPrompter:
+        config:
+          filename: "mock_AuthPrompter.go"
   go.lumeweb.com/pinner-cli/internal/cli/internal:
     config:
       dir: ./internal/cli/internal/mocks

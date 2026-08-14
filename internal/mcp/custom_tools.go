@@ -36,6 +36,14 @@ type customToolDeps struct {
 	seedDrop   *SeedDrop
 	oobRestore *OOBRestore
 	oobCreate  *OOBCreate
+	// accountOOB backs the out-of-band account credential change coordinator
+	// (hosted browser forms -> authenticated UpdatePassword/UpdateEmail). It
+	// enforces an authenticated session; the secret never transits the MCP/LLM
+	// channel.
+	accountOOB *OOBAccountChange
+	// accountWebAppURL is the account web app base URL surfaced by the password
+	// reset tool's hand-off.
+	accountWebAppURL string
 	// resourceFactory, when non-nil, builds the pinner:// resource providers.
 	resourceFactory ResourceProvidersFactory
 	// opts carries the optional custom tools wired by MCPServerOption (upload,
@@ -103,6 +111,34 @@ func registerCustomTools(deps customToolDeps) error {
 	// the curated registration loop reads _meta.ui.
 	if err := RegisterAuthSSOApp(deps.srv, deps.catalog, deps.handoffReg, deps.authHandles); err != nil {
 		return fmt.Errorf("failed to register auth SSO app: %w", err)
+	}
+
+	// Out-of-band account credential tools: change the password (hosted browser
+	// form -> authenticated UpdatePassword, requires an authenticated session)
+	// and reset the password via an emailed link to the webapp. Direct-surface
+	// tools like the SSO pair; when the coordinator/service are absent they
+	// return a structured not-configured hand-off instead of hanging.
+	accountUpdate := NewAccountPasswordUpdateDescriptor(deps.accountOOB, deps.wizardS.AuthService, deps.authHandles, deps.handoffReg)
+	accountUpdate.DirectVisible = true
+	accountReset := NewAccountPasswordResetDescriptor(deps.wizardS.AuthService, deps.accountWebAppURL)
+	accountReset.DirectVisible = true
+	accountEmail := NewAccountEmailChangeDescriptor(deps.accountOOB, deps.wizardS.AuthService)
+	accountEmail.DirectVisible = true
+	deps.catalog.Add(toolEntryFromDescriptor(accountUpdate))
+	deps.catalog.Add(toolEntryFromDescriptor(accountReset))
+	deps.catalog.Add(toolEntryFromDescriptor(accountEmail))
+
+	// Pair the account_password_update / account_email_change tools with their
+	// "Change Password" / "Change Email" MCP App views (ui://account/password.html
+	// / ui://account/email.html) so a UI-capable host renders the one-shot deep
+	// link in a panel. These are link apps with no poll loop: the change runs
+	// synchronously in the browser. Must run after the tools are added (AttachTo
+	// requires them) and before the curated registration loop reads _meta.ui.
+	if err := RegisterAccountPasswordApp(deps.srv, deps.catalog); err != nil {
+		return fmt.Errorf("failed to register account password app: %w", err)
+	}
+	if err := RegisterAccountEmailApp(deps.srv, deps.catalog); err != nil {
+		return fmt.Errorf("failed to register account email app: %w", err)
 	}
 
 	// Vault create/restore OOB hand-offs ride the SAME generic handoff-resume
