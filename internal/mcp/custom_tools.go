@@ -173,6 +173,11 @@ func registerCustomTools(deps customToolDeps) error {
 	)); err != nil {
 		return err
 	}
+	// Always expose the static agent guide so a model can orient to the four
+	// primary flows without probing each tool's description.
+	if err := RegisterOfficialDescriptor(deps.srv, NewAgentGuideDescriptor()); err != nil {
+		return err
+	}
 	if opts.prompts {
 		if err := RegisterOfficialPrompts(deps.srv, PromptDescriptors()); err != nil {
 			return err

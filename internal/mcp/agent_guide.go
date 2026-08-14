@@ -1,0 +1,65 @@
+package mcp
+
+import (
+	"context"
+)
+
+// GuideFlow describes one chained flow an agent can drive end-to-end.
+type GuideFlow struct {
+	Name   string   `json:"name"`   // flow identifier, e.g. auth
+	Title  string   `json:"title"`  // short human label
+	Steps  []string `json:"steps"`  // ordered tools / milestones in the flow
+	Detail string   `json:"detail"` // one-line guidance
+}
+
+// AgentGuide is the structured payload returned by the agent_guide tool.
+type AgentGuide struct {
+	Summary string      `json:"summary"`
+	Flows   []GuideFlow `json:"flows"`
+}
+
+// NewAgentGuideDescriptor returns a static, no-input tool that orients an agent
+// to the four primary Pinner flows and how to chain them. It is the "start
+// here" surface added in the v5 audit: deterministic structured guidance, so a
+// model does not have to discover the flows by probing tool descriptions.
+func NewAgentGuideDescriptor() ToolDescriptor {
+	guide := AgentGuide{
+		Summary: "Start here. Drive Pinner through these four primary flows; each step is a tool. Check the current state first, then follow the matching flow.",
+		Flows: []GuideFlow{
+			{
+				Name:   "auth",
+				Title:  "Authenticate",
+				Steps:  []string{"auth_status", "auth_sso", "auth_resume", "auth_status"},
+				Detail: "Run auth_status; if unauthenticated, call auth_sso and poll auth_resume with the returned handle until the human completes the browser sign-in.",
+			},
+			{
+				Name:   "vault_create",
+				Title:  "Create a vault",
+				Steps:  []string{"vault_create", "vault_create_resume", "vault_status"},
+				Detail: "Call vault_create with a profile name; poll vault_create_resume with the returned handle; confirm with vault_status until unlocked.",
+			},
+			{
+				Name:   "vault_restore",
+				Title:  "Restore a vault",
+				Steps:  []string{"vault_restore", "vault_restore_resume", "vault_status"},
+				Detail: "Call vault_restore; poll vault_restore_resume with the returned handle; confirm with vault_status until unlocked.",
+			},
+			{
+				Name:   "pins",
+				Title:  "Manage pins",
+				Steps:  []string{"pins_add", "pins_list", "pins_status", "pins_rm"},
+				Detail: "pins_add takes required cids; pins_status takes one cid; pins_rm requires confirm and exactly one of cids or all.",
+			},
+		},
+	}
+	return ToolDescriptor{
+		Name:        "agent_guide",
+		Title:       "Pinner agent guide",
+		Description: "Orientation for autonomous agents: the four primary Pinner flows (auth, vault_create, vault_restore, pins) as ordered tool chains. Call this first to learn how to drive Pinner before probing individual tools.",
+		Category:    CategoryCore,
+		InputSchema: toolSchemaFor[NoInput](),
+		Handler: func(ctx context.Context, request ToolRequest) (ToolResult, error) {
+			return ToolResult{StructuredContent: guide, Text: "Pinner agent guide."}, nil
+		},
+	}
+}
