@@ -222,6 +222,42 @@ func (s *UploadServiceDefault) Upload(ctx context.Context, filesystem fs.FS, nam
 		}
 	}
 
+	// Apply the requested pin Name so the pin carries the caller's label rather
+	// than the server default (the in-CAR filename is the object name, not the
+	// pin's Name metadata). This runs whenever a pinning service is wired in,
+	// i.e. the CLI waited path (upload.go only injects one when waiting) and
+	// the MCP path (root.go always injects one). The call is synchronous: the
+	// pinning service is only present on the one-shot CLI when the process stays
+	// alive for the waited path, and the MCP server is long-lived, so a
+	// background goroutine is never needed.
+	//
+	// The name-set is best-effort on every path: it is a post-upload metadata
+	// label, never part of the upload's core success, so a failure must never
+	// turn an already-succeeded upload into an error. It runs on a fresh context
+	// with its own upload timeout (decoupled from the nearly-exhausted upload
+	// deadline, still propagating Ctrl+C) so a hanging pinning backend cannot
+	// block the process indefinitely; failures are downgraded to a warning.
+	//
+	// It is retried briefly: on the fire-and-forget path the pin may not have
+	// registered in the pinning API yet, so UpdatePin's LsSync can report
+	// ErrPinNotFound and silently drop the caller's name. A short fixed-delay
+	// retry gives the pin time to appear before we give up and warn.
+	if name != "" && s.pinningService != nil && sdkResult.CID != "" {
+		nameCtx, cancel := s.freshTimeoutCtx(ctx)
+		err := retry.Do(func() error {
+			return s.setPinName(nameCtx, sdkResult.CID, name)
+		},
+			retry.Context(nameCtx),
+			retry.Attempts(3),
+			retry.Delay(2*time.Second),
+			retry.LastErrorOnly(true),
+		)
+		cancel()
+		if err != nil {
+			s.output.PrintVerbosef("warning: could not set pin name %q on %s: %v", name, sdkResult.CID, err)
+		}
+	}
+
 	duration := time.Since(startTime)
 
 	return &UploadResult{
@@ -230,6 +266,15 @@ func (s *UploadServiceDefault) Upload(ctx context.Context, filesystem fs.FS, nam
 		Duration: duration,
 		Location: sdkResult.Location,
 	}, nil
+}
+
+// setPinName writes the caller-supplied name to the pin's Name metadata in a
+// single synchronous UpdatePin call.
+func (s *UploadServiceDefault) setPinName(ctx context.Context, cidStr, name string) error {
+	if err := s.pinningService.UpdatePin(ctx, cidStr, name, nil, false); err != nil {
+		return fmt.Errorf("%w: failed to set pin name %q on %s", err, name, cidStr)
+	}
+	return nil
 }
 
 // resolveAuthToken returns the auth token to use for uploads.
@@ -266,6 +311,34 @@ func (s *UploadServiceDefault) wrapUploadError(err error) error {
 	return WrapAuthError("Upload", err)
 }
 
+// freshTimeoutCtx builds a context with its own upload-timeout deadline,
+// decoupled from the parent's (possibly nearly-exhausted) deadline while still
+// propagating user-initiated cancellation (Ctrl+C/SIGINT). Because the parent
+// deadline may be mostly consumed by the upload, post-upload work (pin
+// polling, name application) uses a fresh timeout rather than inheriting the
+// parent's; only a user cancel aborts it.
+func (s *UploadServiceDefault) freshTimeoutCtx(ctx context.Context) (context.Context, context.CancelFunc) {
+	// base is the user-cancel propagation root. It is deliberately bound once
+	// and never reassigned, so the watcher goroutine below captures an
+	// immutable value: rebinding the same variable after spawning the goroutine
+	// would race the goroutine's read of it (detected by -race in CI).
+	base, cancel := context.WithCancel(context.Background())
+	go func() {
+		select {
+		case <-ctx.Done():
+			if ctx.Err() == context.Canceled {
+				cancel()
+			}
+		case <-base.Done():
+		}
+	}()
+	child, timeoutCancel := context.WithTimeout(base, s.configMgr.Config().GetUploadTimeout())
+	return child, func() {
+		timeoutCancel()
+		cancel()
+	}
+}
+
 // waitForPin waits for a file to be pinned by first waiting for the account
 // operation to complete, then verifying the pin exists in the pinning API.
 //
@@ -277,20 +350,10 @@ func (s *UploadServiceDefault) wrapUploadError(err error) error {
 func (s *UploadServiceDefault) waitForPin(ctx context.Context, rootCID string, authToken string) error {
 	accountClient := portalsdk.NewClient(portalsdk.WithEndpoint(s.accountEndpoint), portalsdk.WithJWT(authToken))
 
-	// Create a fresh context with its own timeout, decoupled from the upload's
-	// context deadline (which may be mostly consumed by the upload itself).
-	// Propagate user-initiated cancellation (Ctrl+C/SIGINT) but not the
-	// parent's deadline expiry, so pin polling gets its own full timeout.
-	pinCtx, cancel := context.WithCancel(context.Background())
+	// Fresh context with its own timeout, decoupled from the upload's deadline
+	// while propagating user cancellation.
+	pinCtx, cancel := s.freshTimeoutCtx(ctx)
 	defer cancel()
-	go func() {
-		<-ctx.Done()
-		if ctx.Err() == context.Canceled {
-			cancel()
-		}
-	}()
-	pinCtx, timeoutCancel := context.WithTimeout(pinCtx, s.configMgr.Config().GetUploadTimeout())
-	defer timeoutCancel()
 
 	operations, _, err := accountClient.ListOperations(pinCtx, portalsdk.WithFilters(filter.FieldEqual("cid", rootCID)))
 	if err != nil {

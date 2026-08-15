@@ -132,12 +132,14 @@ For more help on any command: pinner <command> --help`,
 			// Freezing the startup token as an override would defeat live reload.
 			websitesSvc := websites.DefaultFactory(cfgMgr, secure)
 			authSvc := defaultAuthServiceFactory(cfgMgr, cfgMgr.Config().GetAccountEndpointSecure())
-			uploadSvc := defaultUploadServiceFactory(cfgMgr, output, WithUploadAuthService(authSvc))
-
-			// Build the pinning backend for the "Create a Pin" MCP App. Reuse
-			// the CLI's PinningService (which reads cfgMgr live at request time)
-			// and adapt its Status into the SDK-neutral PinningProvider.
+			// Build the pinning backend early so the upload path can apply the
+			// requested pin Name after upload (and the "Create a Pin" MCP App can
+			// reuse it). Reuse the CLI's PinningService, which reads cfgMgr live
+			// at request time.
 			pinningSvc := defaultPinningServiceFactory(cfgMgr, secure)
+			uploadSvc := defaultUploadServiceFactory(cfgMgr, output, WithUploadAuthService(authSvc), WithUploadPinningService(pinningSvc))
+
+			// Adapt the pinning backend into the SDK-neutral PinningProvider.
 			pinProvider = func() (mcpadapter.PinningProvider, error) {
 				return &pinStatusAdapter{pins: pinningSvc}, nil
 			}
