@@ -21,6 +21,7 @@
  */
 
 @source "./../**/*.templ";
+@source "../../mcp/**/*.templ";
 @source "../../../packages/apps/src/**/*.ts";
 
 @theme {
