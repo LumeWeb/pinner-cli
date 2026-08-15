@@ -32,6 +32,10 @@ func TestBuildInstructionsEmbedsCount(t *testing.T) {
 	require.Contains(t, got, "42 tools")
 	require.Contains(t, got, "curated set of common Pinner tools")
 	require.Contains(t, got, "progressive disclosure")
+	// The two-tier surface is documented so clients that read tools/list learn
+	// an absent tool is reachable via discovery, not missing/broken.
+	require.Contains(t, got, "intentionally two-tier")
+	require.Contains(t, got, "reachable via search_tools -> describe_tool -> invoke_tool")
 }
 
 // TestEnumStringFlagEmitsEnum verifies that a flag built with EnumStringFlag
@@ -91,7 +95,7 @@ func TestStringSliceFlagEmitsArraySchema(t *testing.T) {
 // even when an OOB restore coordinator is wired. The Interaction enum drives
 // the invoke_tool stdin gate (sdk_official.go), which switches on
 // entry.Interaction: if it became agent_safe, a --seed-stdin invocation would
-// fall through the switch and run io.ReadAll(os.Stdin) — desyncing the stdio
+// fall through the switch and run io.ReadAll(os.Stdin), desyncing the stdio
 // MCP transport. The non-stdin OOB hand-off is already permitted by the
 // bypassGate, so the signal must stay stdin_input.
 func TestVaultRestoreInteractionStaysAgentSafeThroughBuildCatalog(t *testing.T) {
