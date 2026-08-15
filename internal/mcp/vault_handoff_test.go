@@ -469,6 +469,18 @@ func TestVaultCreateStartHandoffIncludesHandleAndResumeTool(t *testing.T) {
 	require.NotEmpty(t, sc["handle"])
 	assert.Equal(t, vaultCreateResumeToolName, sc["resume_tool"])
 
+	// A text-only tool-calling agent reads only the Text field, not
+	// StructuredContent, so the plain-text result must also carry the
+	// create_url and handle — otherwise it's a dead end (no link to relay to
+	// the human, no handle to poll with). Regression for the vault_create
+	// report; mirrors how auth_sso surfaces its URL/handle in text.
+	createURL := sc["create_url"].(string)
+	handle := sc["handle"].(string)
+	require.Contains(t, res.Text, createURL,
+		"vault_create text must include create_url so a text-only agent can relay the approval link")
+	require.Contains(t, res.Text, handle,
+		"vault_create text must include the handle so a text-only agent can poll vault_create_resume")
+
 	// The create must not have written a pending seed file or registered a
 	// pending profile at invoke time; both happen out-of-band on browser POST.
 	_, statErr := os.Stat(vault.SeedPath("testcreate"))

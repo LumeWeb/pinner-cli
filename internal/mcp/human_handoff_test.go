@@ -36,3 +36,27 @@ func TestNeedsHumanResultShape(t *testing.T) {
 	_, hasURL := sc["action_url"]
 	assert.False(t, hasURL, "action_url omitted when empty")
 }
+
+// TestNeedsHumanTextCarriesAllFields locks in the contract for the shared
+// needsHumanText helper: the plain-text rendering of a needs_human hand-off
+// must carry the URL, the handle and the resume tool whenever they are present,
+// so a text-only tool-calling agent (which reads only Text, not
+// StructuredContent) can relay the link and poll the handle without any extra
+// parsing. Both NeedsHumanResult and vaultHandoffResult build their Text through
+// this helper.
+func TestNeedsHumanTextCarriesAllFields(t *testing.T) {
+	text := needsHumanText(ReasonCredentialEntry, "https://example.com/approve", "hndl789", "vault_create_resume", "open it")
+	assert.Contains(t, text, "open https://example.com/approve")
+	assert.Contains(t, text, "resume with vault_create_resume")
+	assert.Contains(t, text, "handle hndl789")
+
+	// Missing pieces are simply omitted — no dangling punctuation.
+	text = needsHumanText(ReasonSSOApproval, "https://example.com/login/tok", "", "auth_resume", "")
+	assert.Contains(t, text, "open https://example.com/login/tok")
+	assert.Contains(t, text, "resume with auth_resume")
+	assert.NotContains(t, text, "handle ")
+
+	// detail rides along at the end when present.
+	text = needsHumanText(ReasonSSOApproval, "", "", "", "just a steer")
+	assert.Contains(t, text, " - just a steer")
+}

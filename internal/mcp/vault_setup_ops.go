@@ -65,8 +65,13 @@ func vaultHandoffResult(resumeTool, urlKey, url, handle, detail string) ToolResu
 		sc["resume_tool"] = resumeTool
 	}
 	sc["detail"] = detail
+	// The plain-text result carries the URL, handle and resume tool via the
+	// shared needsHumanText helper, so a text-only tool-calling agent — which
+	// reads only the Text, not StructuredContent — still gets a working link to
+	// relay and a handle to poll with. StructuredContent retains the canonical
+	// vault OOB keys (create_url / restore_url) alongside.
 	return ToolResult{
-		Text:              "needs_human: " + string(ReasonCredentialEntry) + " - " + detail,
+		Text:              needsHumanText(ReasonCredentialEntry, url, handle, resumeTool, detail),
 		StructuredContent: sc,
 	}
 }
