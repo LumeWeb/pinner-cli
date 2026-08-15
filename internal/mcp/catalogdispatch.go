@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"regexp"
 	"strings"
 
 	"go.lumeweb.com/pinner-cli/internal/catalog"
@@ -137,17 +138,25 @@ func cleanMessage(err error) string {
 // translateAgentGuidance rewrites CLI-only shell commands embedded in error
 // messages into the corresponding agent-facing MCP tool names. The vault core
 // package intentionally words errors for the `pinner` CLI (e.g. "Run 'pinner
-// vault setup'"), but an agent has no such command — pointing it at a shell
-// invocation is a dead end. Map the known CLI-isms to the real tools so the
-// error tells the agent what to call next.
+// vault setup'", "Run 'pinner vault create --profile X' or 'pinner vault
+// restore --profile X'"), but an agent has no such command — pointing it at a
+// shell invocation is a dead end. Map the known CLI-isms to the real tools so
+// the error tells the agent what to call next.
 func translateAgentGuidance(msg string) string {
 	replacer := strings.NewReplacer(
 		"Run 'pinner vault setup' to create one",
 		"no vault profile exists; create one with vault_create (or restore one with vault_restore)",
-		"Run 'pinner vault create --profile <name>'",
-		"create it with vault_create (profile NAME)",
-		"Run 'pinner vault restore --profile <name>'",
-		"restore it with vault_restore (profile NAME)",
 	)
-	return replacer.Replace(msg)
+	msg = replacer.Replace(msg)
+
+	// The create/restore producers (internal/core/vault/registry.go and
+	// vault_service.go) interpolate the real profile name and combine both
+	// commands in one sentence, e.g.
+	//   ... Run 'pinner vault create --profile alice' or 'pinner vault restore --profile alice'
+	//   ... Provision it with 'pinner vault create --profile alice' or 'pinner vault restore --profile alice'
+	// The profile is already named earlier in the message, so rewrite the whole
+	// quoted pair to name the two tools without repeating the CLI flags.
+	createRestoreRe := regexp.MustCompile(`'pinner vault create --profile [^']+' or 'pinner vault restore --profile [^']+'`)
+	msg = createRestoreRe.ReplaceAllString(msg, "vault_create or vault_restore")
+	return msg
 }

@@ -28,6 +28,20 @@ func TestTranslateAgentGuidance(t *testing.T) {
 			in:   "profile %q is missing its state file",
 			want: "profile %q is missing its state file",
 		},
+		{
+			// Mirrors internal/core/vault/registry.go:184 exactly (real profile
+			// name interpolated, create+restore combined in one sentence).
+			name: "registry no-state-file combines create+restore",
+			in:   `profile "alice" has no state file. Run 'pinner vault create --profile alice' or 'pinner vault restore --profile alice'`,
+			want: `profile "alice" has no state file. Run vault_create or vault_restore`,
+		},
+		{
+			// Mirrors internal/core/vault/vault_service.go:105 exactly ("Provision
+			// it with" prefix, real profile name, both commands).
+			name: "vault-service no-app-key provision wording",
+			in:   `profile "alice" has no app key. Provision it with 'pinner vault create --profile alice' or 'pinner vault restore --profile alice'`,
+			want: `profile "alice" has no app key. Provision it with vault_create or vault_restore`,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
