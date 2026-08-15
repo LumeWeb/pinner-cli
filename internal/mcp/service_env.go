@@ -142,6 +142,11 @@ func quoteServiceEnvValue(value string) string {
 	return `"` + strings.ReplaceAll(strings.ReplaceAll(value, `\`, `\\`), `"`, `\"`) + `"`
 }
 
+// getenv is the process env lookup seam, overridable in tests to control the
+// "current" value serviceEnvValue falls back to when the service env file omits
+// a key.
+var getenv = os.Getenv
+
 func serviceEnvValue(env ServiceEnvironment, key string, current string) string {
 	if value, ok := env[key]; ok && value != "" {
 		return value

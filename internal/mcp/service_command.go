@@ -307,7 +307,7 @@ func bootstrapServiceEnvironment(cmd *cli.Command, envFile string) error {
 	env := ServiceEnvironment{
 		"MCP_TUNNEL_PROVIDER": string(provider),
 	}
-	// Mirror the keys read by the MCP server (see adapter.go mcpString).
+	// Mirror the keys read via the MCP command's flag Sources (see adapter.go).
 	setIf := func(key, flag string) {
 		if v := strings.TrimSpace(cmd.String(flag)); v != "" {
 			env[key] = v

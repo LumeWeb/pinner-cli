@@ -75,6 +75,88 @@ func setPackageLogger(l *zap.Logger) {
 	log = l
 }
 
+// mcpServerFlags returns the flags for the `mcp` command. Env-backed flags
+// declare their MCP_* environment variable via Sources so the urfave/cli
+// framework resolves flag -> env -> default with no ad-hoc env parsing; the
+// values are read back with cmd.String / cmd.Bool / cmd.Int in the action and
+// serveHTTP.
+func mcpServerFlags() []cli.Flag {
+	return []cli.Flag{
+		&cli.BoolFlag{
+			Name:  "http",
+			Value: false,
+			Usage: "Serve over the streamable-HTTP transport instead of stdio (endpoint /mcp)",
+		},
+		&cli.StringFlag{
+			Name:    "host",
+			Value:   "127.0.0.1",
+			Usage:   "Local bind host for the HTTP transport",
+			Sources: cli.EnvVars("MCP_HOST"),
+		},
+		&cli.IntFlag{
+			Name:    "port",
+			Value:   0,
+			Usage:   "Local bind port for the HTTP transport (0 picks a free port)",
+			Sources: cli.EnvVars("MCP_PORT"),
+		},
+		&cli.StringFlag{
+			Name:    "tunnel",
+			Usage:   "Tunnel provider: ngrok, cloudflared, or openai (OpenAI requires --tunnel-id and runtime credentials)",
+			Sources: cli.EnvVars("MCP_TUNNEL_PROVIDER"),
+		},
+		&cli.StringFlag{
+			Name:    "domain",
+			Usage:   "Custom domain for the tunnel (required for cloudflared, optional for ngrok on paid accounts)",
+			Sources: cli.EnvVars("MCP_DOMAIN"),
+		},
+		&cli.StringFlag{
+			Name:    "token",
+			Usage:   "Tunnel provider account token (e.g. ngrok authtoken). May also be set via the provider env var or config file",
+			Sources: cli.EnvVars("MCP_TUNNEL_TOKEN", "NGROK_AUTHTOKEN"),
+		},
+		&cli.StringFlag{
+			Name:    "tunnel-name",
+			Usage:   "Cloudflare tunnel resource name (default: pinner-mcp)",
+			Sources: cli.EnvVars("MCP_TUNNEL_NAME"),
+		},
+		&cli.StringFlag{
+			Name:    "tunnel-id",
+			Usage:   "OpenAI Secure MCP Tunnel ID (required with --tunnel openai)",
+			Sources: cli.EnvVars("MCP_TUNNEL_ID"),
+		},
+		&cli.StringFlag{
+			Name:    "auth-token",
+			Usage:   "Shared secret used to authorize public HTTP MCP endpoints. In OAuth mode (--oauth) the resource owner enters it on the login page as a password; otherwise it is accepted directly as a Bearer token. Required for ngrok and cloudflared; not used by the embedded OpenAI tunnel",
+			Sources: cli.EnvVars("MCP_AUTH_TOKEN"),
+		},
+		&cli.BoolFlag{
+			Name:    "oauth",
+			Usage:   "Enable the OAuth 2.1 handshake (authorize/token/discovery endpoints). Without this, --auth-token is accepted directly as a Bearer token. Use --oauth to let OAuth-expecting MCP clients (ChatGPT, Claude.ai, Copilot, Vertex) authorize",
+			Sources: cli.EnvVars("MCP_OAUTH"),
+		},
+		&cli.StringFlag{
+			Name:    "public-url",
+			Usage:   "Public base URL advertised in OAuth discovery metadata (issuer, authorize/token endpoints). Defaults to the tunnel URL when --tunnel is set, or the loopback address otherwise",
+			Sources: cli.EnvVars("MCP_PUBLIC_URL"),
+		},
+		&cli.BoolFlag{
+			Name:    "cors",
+			Usage:   "Enable CORS for the HTTP transport, reflecting the request Origin (Access-Control-Allow-Origin echoes the client's Origin; Vary: Origin is set). Useful for browser-based MCP clients. Applies to all mounted endpoints (MCP and out-of-band)",
+			Sources: cli.EnvVars("MCP_CORS"),
+		},
+		&cli.StringFlag{
+			Name:  "log-level",
+			Value: "info",
+			Usage: "Log level for the MCP server and its out-of-band auth components: debug, info, warn, error",
+		},
+		&cli.StringFlag{
+			Name:  "log-format",
+			Value: "json",
+			Usage: "Log encoding for the MCP server: json (default) or console",
+		},
+	}
+}
+
 // MCPCommand returns a *cli.Command that serves the command tree as an MCP
 // server over stdio. It should be appended to the root command's Commands.
 func MCPCommand(root *cli.Command, wizardFactory WizardDepsFactory, resourceFactory ResourceProvidersFactory, opts ...MCPServerOption) *cli.Command {
@@ -95,70 +177,7 @@ Tool invocations are executed in-process by running the command tree
 directly; no subprocess fork. Commands are exposed as-is;
 agent-friendly behavior is the responsibility of each command, not this
 adapter.`,
-		Flags: []cli.Flag{
-			&cli.BoolFlag{
-				Name:  "http",
-				Value: false,
-				Usage: "Serve over the streamable-HTTP transport instead of stdio (endpoint /mcp)",
-			},
-			&cli.StringFlag{
-				Name:  "host",
-				Value: "127.0.0.1",
-				Usage: "Local bind host for the HTTP transport",
-			},
-			&cli.IntFlag{
-				Name:  "port",
-				Value: 0,
-				Usage: "Local bind port for the HTTP transport (0 picks a free port)",
-			},
-			&cli.StringFlag{
-				Name:  "tunnel",
-				Usage: "Tunnel provider: ngrok, cloudflared, or openai (OpenAI requires --tunnel-id and runtime credentials)",
-			},
-			&cli.StringFlag{
-				Name:  "domain",
-				Usage: "Custom domain for the tunnel (required for cloudflared, optional for ngrok on paid accounts)",
-			},
-			&cli.StringFlag{
-				Name:  "token",
-				Usage: "Tunnel provider account token (e.g. ngrok authtoken). May also be set via the provider env var or config file",
-			},
-			&cli.StringFlag{
-				Name:  "tunnel-name",
-				Usage: "Cloudflare tunnel resource name (default: pinner-mcp)",
-			},
-			&cli.StringFlag{
-				Name:  "tunnel-id",
-				Usage: "OpenAI Secure MCP Tunnel ID (required with --tunnel openai)",
-			},
-			&cli.StringFlag{
-				Name:  "auth-token",
-				Usage: "Shared secret used to authorize public HTTP MCP endpoints. In OAuth mode (--oauth) the resource owner enters it on the login page as a password; otherwise it is accepted directly as a Bearer token. Required for ngrok and cloudflared; not used by the embedded OpenAI tunnel",
-			},
-			&cli.BoolFlag{
-				Name:  "oauth",
-				Usage: "Enable the OAuth 2.1 handshake (authorize/token/discovery endpoints). Without this, --auth-token is accepted directly as a Bearer token. Use --oauth to let OAuth-expecting MCP clients (ChatGPT, Claude.ai, Copilot, Vertex) authorize",
-			},
-			&cli.StringFlag{
-				Name:  "public-url",
-				Usage: "Public base URL advertised in OAuth discovery metadata (issuer, authorize/token endpoints). Defaults to the tunnel URL when --tunnel is set, or the loopback address otherwise",
-			},
-			&cli.BoolFlag{
-				Name:    "cors",
-				Usage:   "Enable CORS for the HTTP transport, reflecting the request Origin (Access-Control-Allow-Origin echoes the client's Origin; Vary: Origin is set). Useful for browser-based MCP clients. Applies to all mounted endpoints (MCP and out-of-band)",
-				Sources: cli.EnvVars("MCP_CORS"),
-			},
-			&cli.StringFlag{
-				Name:  "log-level",
-				Value: "info",
-				Usage: "Log level for the MCP server and its out-of-band auth components: debug, info, warn, error",
-			},
-			&cli.StringFlag{
-				Name:  "log-format",
-				Value: "json",
-				Usage: "Log encoding for the MCP server: json (default) or console",
-			},
-		},
+		Flags: mcpServerFlags(),
 		Commands: []*cli.Command{ManagedServiceCommand()},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			// Build the MCP logger from the user's flags. It is installed as
@@ -229,7 +248,7 @@ adapter.`,
 			// the invoke-tool gate that os.Stdin is the MCP transport pipe (so a
 			// stdin-input command must be redirected rather than consume
 			// protocol bytes); it mirrors the transport decision below.
-			stdioMode := mcpString(cmd, "tunnel", "MCP_TUNNEL_PROVIDER") != "openai" && !cmd.Bool("http")
+			stdioMode := cmd.String("tunnel") != "openai" && !cmd.Bool("http")
 
 			// Resolve the optional custom tools (upload backends, apps, prompts)
 			// and the catalog-deps bundle before the server is built so a
@@ -279,7 +298,7 @@ adapter.`,
 				return err
 			}
 
-			if mcpString(cmd, "tunnel", "MCP_TUNNEL_PROVIDER") == "openai" {
+			if cmd.String("tunnel") == "openai" {
 				log.Debug("serving MCP server through embedded OpenAI Secure MCP Tunnel")
 				return serveHTTP(ctx, srv, cmd, oob, seedDrop, oobRestore, oobCreate, accountOOB)
 			}
@@ -321,17 +340,14 @@ func oauthStorePath() string {
 // seedDrop and oobRestore, when provided, mount the one-time seed and restore
 // URLs on the same shared mux. oobCreate mounts the one-time create URL.
 func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *OutOfBandLogin, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate, accountOOB *OOBAccountChange) error {
-	provider := mcpString(cmd, "tunnel", "MCP_TUNNEL_PROVIDER")
-	domain := mcpString(cmd, "domain", "MCP_DOMAIN")
-	token := mcpString(cmd, "token", "MCP_TUNNEL_TOKEN")
-	tunnelName := mcpString(cmd, "tunnel-name", "MCP_TUNNEL_NAME")
-	if token == "" && provider == "ngrok" {
-		token = strings.TrimSpace(os.Getenv("NGROK_AUTHTOKEN"))
-	}
-	tunnelID := mcpString(cmd, "tunnel-id", "MCP_TUNNEL_ID")
-	authToken := mcpString(cmd, "auth-token", "MCP_AUTH_TOKEN")
-	publicURL := mcpString(cmd, "public-url", "MCP_PUBLIC_URL")
-	enableOAuth := mcpBool(cmd, "oauth", "MCP_OAUTH")
+	provider := cmd.String("tunnel")
+	domain := cmd.String("domain")
+	token := cmd.String("token")
+	tunnelName := cmd.String("tunnel-name")
+	tunnelID := cmd.String("tunnel-id")
+	authToken := cmd.String("auth-token")
+	publicURL := cmd.String("public-url")
+	enableOAuth := cmd.Bool("oauth")
 	// --cors sources from the MCP_CORS env via the flag's Sources declaration.
 	enableCORS := cmd.Bool("cors")
 
@@ -348,15 +364,8 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 
 	// Bind a concrete local address up front. Port 0 asks the OS for an
 	// available ephemeral port.
-	host := mcpString(cmd, "host", "MCP_HOST")
+	host := cmd.String("host")
 	port := cmd.Int("port")
-	if port == 0 {
-		if value := os.Getenv("MCP_PORT"); value != "" {
-			if parsed, parseErr := strconv.Atoi(value); parseErr == nil {
-				port = parsed
-			}
-		}
-	}
 	listener, err := net.Listen("tcp", net.JoinHostPort(host, strconv.Itoa(port)))
 	if err != nil {
 		return fmt.Errorf("failed to bind MCP HTTP server on %s:%d: %w", host, port, err)
