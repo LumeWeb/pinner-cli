@@ -3,83 +3,29 @@ package mcpapp
 import (
 	"bytes"
 	"context"
+	_ "embed"
 
 	"github.com/a-h/templ"
 )
 
-// mcpAppThemeCSS is the shared visual theme for ui:// MCP Apps. Every app view
-// is served as a single self-contained document to a sandboxed iframe, so it
-// must inline its CSS (no network request). Centralizing it here keeps every
-// app on the same visual identity with a single source of truth.
+// McpAppThemeCSS is the shared visual theme for ui:// MCP Apps, compiled from
+// css/input.css by the Tailwind v4 compiler at build time (pnpm build:css). It
+// is the single source of the app identity: the @theme tokens (dark zinc
+// surface, blue accent, status palette) plus the @utility component classes the
+// templ bodies and JS bundles reference. The output is tree-shaken to exactly
+// the utilities used across apps, so it stays small.
 //
-// Apps may add app-specific rules AFTER this base theme (later rules win), but
-// the core :root tokens, element resets and the shared status/result component
-// styles live here so they are not re-authored per app.
-const McpAppThemeCSS = `
-:root {
-	--color-text-primary: #d4d4d8;
-	--color-background: #1e1e24;
-	--color-border: #33333d;
-	--color-accent: #4f8cff;
-	--font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-}
-* { box-sizing: border-box; }
-body {
-	margin: 0;
-	font-family: var(--font-sans);
-	color: var(--color-text-primary);
-	background: var(--color-background);
-	padding: 24px;
-}
-h1 { font-size: 1.25rem; margin: 0 0 16px; }
-label { display: block; font-size: 0.85rem; margin: 12px 0 4px; }
-input {
-	width: 100%;
-	padding: 8px 10px;
-	border: 1px solid var(--color-border);
-	border-radius: 6px;
-	background: rgba(255,255,255,0.04);
-	color: var(--color-text-primary);
-	font: inherit;
-}
-button {
-	margin-top: 16px;
-	padding: 9px 16px;
-	border: 0;
-	border-radius: 6px;
-	background: var(--color-accent);
-	color: #fff;
-	font: inherit;
-	cursor: pointer;
-}
-.status { margin-top: 14px; min-height: 1.2em; font-size: 0.9rem; }
-.status.pending { color: #f5c542; }
-.status.ok { color: #4ade80; }
-.status.info { color: #93c5fd; }
-.status.error { color: #f87171; }
-.result {
-	margin-top: 14px; padding: 12px;
-	border: 1px solid var(--color-border); border-radius: 6px;
-	line-height: 1.6;
-}
-.result code { color: var(--color-accent); }
-/* Shared read-only table primitive (shadcn table): bordered, muted header,
-   hover rows. Apps render <table class="table"> with <thead>/<tbody>. */
-.table { width: 100%; font-size: 0.875rem; color: var(--color-text-primary); }
-.table thead tr { border-bottom: 1px solid var(--color-border); }
-.table th { padding: 8px 12px; text-align: left; font-size: 0.75rem; font-weight: 500; color: #a1a1aa; }
-.table tbody tr { border-bottom: 1px solid var(--color-border); }
-.table tbody tr:last-child { border-bottom: 0; }
-.table tbody tr:hover { background: rgba(255,255,255,0.03); }
-.table td { padding: 8px 12px; vertical-align: middle; }
-.table .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.8rem; }
-.table .muted { color: #a1a1aa; }
-`
+// Every app view is served as a single self-contained document to a sandboxed
+// iframe, so the stylesheet is inlined (no network request, no runtime JIT);
+// the compiler only pins the class surface at build time.
+//
+//go:embed css/tailwind.css
+var McpAppThemeCSS string
 
 // renderMcpAppDoc renders a complete, self-contained ui:// MCP App document.
 // It is the single shared shell for every MCP App view: doctype, <head> with
-// the shared inline theme, the app's <body> (authored in templ), and the
-// app's ESM <script> module (authored in Go via the shared bootstrap).
+// the shared inline Tailwind theme, the app's <body> (authored in templ), and
+// the app's ESM <script> module (authored in Go via the shared bootstrap).
 //
 // templ owns the <body> markup; the head and module script are assembled here
 // because templ treats <script>/<style> content as raw text and does not

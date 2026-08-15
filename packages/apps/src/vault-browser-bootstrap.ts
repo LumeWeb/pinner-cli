@@ -266,6 +266,7 @@ export function runVaultBrowserEntry(opts: VaultBrowserEntryOptions) {
 /** Default row builder when the entry supplies none (tests/demo). */
 function defaultRow(item: VaultListItem): HTMLElement {
   const li = document.createElement("li");
+  li.className = "browser-row";
   const isDir = item.type === "dir";
   li.textContent = `${isDir ? "[dir] " : ""}${item.name}${isDir ? "/" : ""}`;
   return li;

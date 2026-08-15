@@ -2,15 +2,17 @@ package mcpapp
 
 // AccountEmailAppForm renders the visible "Change Email" view body: a start
 // button, a deep-link readout for the one-time email change page, and a status
-// line. The document <head> (shared inline theme) and the ESM module <script>
-// (shared ext-apps bootstrap + account-email logic) are supplied by
+// line. The document <head> (shared inline Tailwind theme) and the ESM module
+// <script> (shared ext-apps bootstrap + account-email logic) are supplied by
 // renderMcpAppDoc, so this templ authors only the app-specific markup.
 templ AccountEmailAppForm() {
-	<h1>Change Email</h1>
-	<p class="muted">Mint a one-time page to change your Pinner email. The change runs in your browser; your password never reaches this chat.</p>
-	<button type="button" id="em-start">Start email change</button>
-	<div class="result">
-		<a id="em-url" href="#" class="link" style="display:none"></a>
+	<div class="app-shell">
+		<h1 class="app-title">Change Email</h1>
+		<p class="muted">Mint a one-time page to change your Pinner email. The change runs in your browser; your password never reaches this chat.</p>
+		<button type="button" id="em-start" class="btn-primary">Start email change</button>
+		<div class="card">
+			<a id="em-url" href="#" class="link-ready" style="display:none"></a>
+		</div>
+		<div id="em-status" class="status"></div>
 	</div>
-	<div id="em-status" class="status"></div>
 }

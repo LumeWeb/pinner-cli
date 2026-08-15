@@ -35,3 +35,10 @@ runs:
         mkdir -p internal/mcpapp/appsassets/dist
         cp packages/apps/dist/*.js internal/mcpapp/appsassets/dist/
       shell: bash
+
+    - name: Build MCP Apps Tailwind theme
+      # Compile internal/mcpapp/css/input.css -> internal/mcpapp/css/tailwind.css
+      # (embedded by Go via go:embed). Same rationale as the bundles: must exist
+      # before any go build/test.
+      run: pnpm build:css
+      shell: bash

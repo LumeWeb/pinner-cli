@@ -3,26 +3,27 @@ package mcpapp
 // pinListAppForm renders the visible "Pin list" view body: a status line, a
 // count summary, a refresh button, and the pin table. The table rows and the
 // refresh are wired by the pin-list ESM bundle. The document <head> (shared
-// inline theme) and the ESM module <script> (shared ext-apps bootstrap +
-// pin-list logic) are supplied by renderMcpAppDoc, so this templ authors only
-// the app-specific markup. The shared theme provides the shadcn-style `.table`
-// primitive used here.
+// inline Tailwind theme) and the ESM module <script> (shared ext-apps
+// bootstrap + pin-list logic) are supplied by renderMcpAppDoc, so this templ
+// authors only the app-specific markup with Tailwind utilities.
 templ PinListAppForm() {
-	<h1>Pins</h1>
-	<div id="pinlist-status" class="status"></div>
-	<div class="browser-tools">
-		<span id="pinlist-count" class="path-label"></span>
-		<button type="button" id="pinlist-refresh" disabled>Refresh</button>
+	<div class="app-shell">
+		<h1 class="app-title">Pins</h1>
+		<div id="pinlist-status" class="status"></div>
+		<div class="browser-bar justify-between">
+			<span id="pinlist-count" class="browser-path"></span>
+			<button type="button" id="pinlist-refresh" class="btn-primary !mt-0" disabled>Refresh</button>
+		</div>
+		<table class="table mt-4">
+			<thead>
+				<tr>
+					<th class="table-head">Name</th>
+					<th class="table-head">Status</th>
+					<th class="table-head">Created</th>
+				</tr>
+			</thead>
+			<tbody id="pinlist-table"></tbody>
+		</table>
+		<p id="pinlist-empty" class="browser-empty" hidden></p>
 	</div>
-	<table class="table" style="margin-top:16px">
-		<thead>
-			<tr>
-				<th>Name</th>
-				<th>Status</th>
-				<th>Created</th>
-			</tr>
-		</thead>
-		<tbody id="pinlist-table"></tbody>
-	</table>
-	<p id="pinlist-empty" class="browser-empty" hidden></p>
 }

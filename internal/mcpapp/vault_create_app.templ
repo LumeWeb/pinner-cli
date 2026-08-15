@@ -4,14 +4,16 @@ package mcpapp
 // button, the create URL readout (deep-linked to the human-only one-time page
 // where the Sia device approval and seed reveal happen), and a live status
 // line that polls the app-only vault_create_status helper until done. The
-// document <head> (shared inline theme) and the ESM module <script> (shared
-// ext-apps bootstrap + create logic) are supplied by renderMcpAppDoc, so this
-// templ authors only the app-specific markup.
+// document <head> (shared inline Tailwind theme) and the ESM module <script>
+// (shared ext-apps bootstrap + create logic) are supplied by renderMcpAppDoc,
+// so this templ authors only the app-specific markup.
 templ VaultCreateAppForm() {
-	<h1>Create Vault</h1>
-	<button id="vault-create-start" type="button">Start vault create</button>
-	<div class="result">
-		Setup: <a id="vault-create-url" href="#" target="_blank" rel="noopener">pending</a>
+	<div class="app-shell">
+		<h1 class="app-title">Create Vault</h1>
+		<button id="vault-create-start" type="button" class="btn-primary">Start vault create</button>
+		<div class="card">
+			Setup: <a id="vault-create-url" href="#" target="_blank" rel="noopener" class="muted underline underline-offset-2">pending</a>
+		</div>
+		<div id="vault-create-status" class="status"></div>
 	</div>
-	<div id="vault-create-status" class="status"></div>
 }

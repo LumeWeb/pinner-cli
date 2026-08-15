@@ -3,20 +3,22 @@ package mcpapp
 // vaultBrowserAppForm renders the visible "Vault browser" view body: a status
 // line, the current path label, an up/root/refresh button row, and the listing
 // container. Navigation buttons and the listing are wired by the vault-browser
-// ESM bundle. The document <head> (shared inline theme) and the ESM module
-// <script> (shared ext-apps bootstrap + browser logic) are supplied by
+// ESM bundle. The document <head> (shared inline Tailwind theme) and the ESM
+// module <script> (shared ext-apps bootstrap + browser logic) are supplied by
 // renderMcpAppDoc, so this templ authors only the app-specific markup.
 templ VaultBrowserAppForm() {
-	<h1>Vault</h1>
-	<div id="vault-status" class="status"></div>
-	<div class="browser-path">
-		<span id="vault-path" class="path-label">vault:/</span>
-		<div class="browser-tools">
-			<button type="button" id="vault-up" disabled>Up</button>
-			<button type="button" id="vault-root" disabled>Root</button>
-			<button type="button" id="vault-refresh" disabled>Refresh</button>
+	<div class="app-shell">
+		<h1 class="app-title">Vault</h1>
+		<div id="vault-status" class="status"></div>
+		<div class="browser-bar justify-between">
+			<span id="vault-path" class="browser-path">vault:/</span>
+			<div class="flex gap-2">
+				<button type="button" id="vault-up" class="btn-primary !mt-0" disabled>Up</button>
+				<button type="button" id="vault-root" class="btn-primary !mt-0" disabled>Root</button>
+				<button type="button" id="vault-refresh" class="btn-primary !mt-0" disabled>Refresh</button>
+			</div>
 		</div>
+		<ul id="vault-list" class="browser-list"></ul>
+		<p id="vault-empty" class="browser-empty" hidden></p>
 	</div>
-	<ul id="vault-list" class="browser-list"></ul>
-	<p id="vault-empty" class="browser-empty" hidden></p>
 }

@@ -4,11 +4,14 @@
   "packageManager": "pnpm@10.33.2",
   "scripts": {
     "build": "pnpm --filter @pinner/apps build",
+    "build:css": "tailwindcss -i internal/mcpapp/css/input.css -o internal/mcpapp/css/tailwind.css --minify",
     "test": "pnpm --filter @pinner/apps test"
   },
   "devDependencies": {
-    "typescript": "catalog:",
+    "@tailwindcss/cli": "^4.3.3",
+    "tailwindcss": "^4.3.3",
     "tsdown": "catalog:",
+    "typescript": "catalog:",
     "vitest": "catalog:"
   }
 }

@@ -54,3 +54,6 @@ node_modules/
 .pnpm-store/
 **/dist/
 
+# Compiled MCP Apps Tailwind theme (produced by `make cssbuild`; Go embeds it)
+internal/mcpapp/css/tailwind.css
+

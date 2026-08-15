@@ -50,13 +50,20 @@ jsbuild:
 	mkdir -p internal/mcpapp/appsassets/dist && \
 	cp packages/apps/dist/*.js internal/mcpapp/appsassets/dist/
 
-build: generate jsbuild
+# cssbuild compiles the MCP Apps Tailwind theme (internal/mcpapp/css/input.css)
+# into the embedded stylesheet (internal/mcpapp/css/tailwind.css) that every
+# ui:// app inlines. Requires pnpm on PATH. Must run before any go build so the
+# go:embed picks up the freshly compiled CSS.
+cssbuild:
+	pnpm build:css
+
+build: generate jsbuild cssbuild
 	CGO_ENABLED=1 go build -ldflags="$(LDFLAGS)" -o pinner ./cmd/pinner
 
-install: generate jsbuild
+install: generate jsbuild cssbuild
 	CGO_ENABLED=1 go install -ldflags="$(LDFLAGS)" ./cmd/pinner
 
-test: jsbuild
+test: jsbuild cssbuild
 	go test ./...
 
 clean:
