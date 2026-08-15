@@ -528,6 +528,46 @@ func resolveArg(a OperationArg, raw any, present bool) (value any, st argState, 
 			return nil, stateInvalid, fmt.Errorf("value %q not in enum %v", s, a.Enum)
 		}
 		return s, stateFilled, nil
+	case ArgTypeFlexibleID:
+		// A string-or-integer id (e.g. the numeric id ipns_keys_list emits).
+		// Accept a string as-is; accept any JSON/native integer by rendering
+		// its decimal form so a StrArg/StrFlexibleArg reader always sees a
+		// string. This bridges the drift where the backend key id is an int
+		// while the arg the handler reads is a string.
+		switch v := raw.(type) {
+		case string:
+			if v == "" {
+				return v, stateEmpty, nil
+			}
+			return v, stateFilled, nil
+		case int:
+			return strconv.FormatInt(int64(v), 10), stateFilled, nil
+		case int8:
+			return strconv.FormatInt(int64(v), 10), stateFilled, nil
+		case int32:
+			return strconv.FormatInt(int64(v), 10), stateFilled, nil
+		case int64:
+			return strconv.FormatInt(v, 10), stateFilled, nil
+		case uint:
+			return strconv.FormatUint(uint64(v), 10), stateFilled, nil
+		case uint64:
+			return strconv.FormatUint(v, 10), stateFilled, nil
+		case float64:
+			// JSON has no integer type, so an int arrives as float64. Reject
+			// fractional values (a bare decimal is not a valid id) and render
+			// the integer form.
+			if v != math.Trunc(v) {
+				return nil, stateInvalid, fmt.Errorf("expected string or integer, got %v", v)
+			}
+			return strconv.FormatInt(int64(v), 10), stateFilled, nil
+		case json.Number:
+			if i, err := v.Int64(); err == nil {
+				return strconv.FormatInt(i, 10), stateFilled, nil
+			}
+			return nil, stateInvalid, fmt.Errorf("expected string or integer, got %v", raw)
+		default:
+			return nil, stateInvalid, fmt.Errorf("expected string or integer, got %T", raw)
+		}
 	case ArgTypeBool:
 		b, ok := raw.(bool)
 		if !ok {
@@ -706,7 +746,7 @@ func zeroShape(t ArgType) any {
 	switch t {
 	case ArgTypeStringSlice:
 		return []string{}
-	case ArgTypeString:
+	case ArgTypeString, ArgTypeFlexibleID:
 		return ""
 	case ArgTypeInt:
 		return 0
@@ -1222,6 +1262,10 @@ func jsonType(t ArgType) any {
 		return "string"
 	case ArgTypeStringSlice:
 		return "array"
+	case ArgTypeFlexibleID:
+		// Accept a string or integer id so a model can pass either the form
+		// ipns_keys_list emits (integer) or a string id/name.
+		return []string{"string", "integer"}
 	default:
 		return "string"
 	}
