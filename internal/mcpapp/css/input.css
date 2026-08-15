@@ -47,7 +47,15 @@
 /*
  * Base reset for the sandboxed document. Tailwind v4 ships its own preflight
  * when `@import "tailwindcss"` is used, so we only need the body surface here.
+ * Filling the height matters: hosts (e.g. Grok) size the app iframe to the
+ * reported content height, and a thin strip below the content stays
+ * transparent (white) unless html/body span the full frame and carry the dark
+ * surface.
  */
+html,
+body {
+  height: 100%;
+}
 body {
   margin: 0;
   font-family: var(--font-sans);
