@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rs/cors"
 	"github.com/urfave/cli/v3"
 	opcat "go.lumeweb.com/pinner-cli/internal/catalog"
 	"go.lumeweb.com/pinner-cli/internal/mcp/oauthstore"
@@ -142,6 +143,11 @@ adapter.`,
 				Name:  "public-url",
 				Usage: "Public base URL advertised in OAuth discovery metadata (issuer, authorize/token endpoints). Defaults to the tunnel URL when --tunnel is set, or the loopback address otherwise",
 			},
+			&cli.BoolFlag{
+				Name:    "cors",
+				Usage:   "Enable CORS for the HTTP transport, reflecting the request Origin (Access-Control-Allow-Origin echoes the client's Origin; Vary: Origin is set). Useful for browser-based MCP clients. Applies to all mounted endpoints (MCP and out-of-band)",
+				Sources: cli.EnvVars("MCP_CORS"),
+			},
 			&cli.StringFlag{
 				Name:  "log-level",
 				Value: "info",
@@ -252,23 +258,23 @@ adapter.`,
 			}
 
 			if err := registerCustomTools(customToolDeps{
-				srv:             srv,
-				catalog:         catalog,
-				store:           store,
-				oob:             oob,
-				authHandles:     authHandles,
-				handoffReg:      handoffReg,
-				seedDrop:        seedDrop,
-				oobRestore:      oobRestore,
-				oobCreate:       oobCreate,
-				accountOOB:      accountOOB,
+				srv:              srv,
+				catalog:          catalog,
+				store:            store,
+				oob:              oob,
+				authHandles:      authHandles,
+				handoffReg:       handoffReg,
+				seedDrop:         seedDrop,
+				oobRestore:       oobRestore,
+				oobCreate:        oobCreate,
+				accountOOB:       accountOOB,
 				accountWebAppURL: accountWebAppURL(wizardS.CfgMgr),
-				resourceFactory: resourceFactory,
-				opts:            mcpOpts,
-				hasWizard:       hasWizard,
-				wizardW:         wizardW,
-				wizardS:         wizardS,
-				wizardD:         wizardD,
+				resourceFactory:  resourceFactory,
+				opts:             mcpOpts,
+				hasWizard:        hasWizard,
+				wizardW:          wizardW,
+				wizardS:          wizardS,
+				wizardD:          wizardD,
 			}); err != nil {
 				return err
 			}
@@ -326,6 +332,8 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 	authToken := mcpString(cmd, "auth-token", "MCP_AUTH_TOKEN")
 	publicURL := mcpString(cmd, "public-url", "MCP_PUBLIC_URL")
 	enableOAuth := mcpBool(cmd, "oauth", "MCP_OAUTH")
+	// --cors sources from the MCP_CORS env via the flag's Sources declaration.
+	enableCORS := cmd.Bool("cors")
 
 	if provider == "openai" {
 		if enableOAuth {
@@ -500,8 +508,20 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 		}
 		fmt.Fprintln(w, "pinner MCP server. Point your MCP client at /mcp")
 	})
+	// When --cors is set, wrap the whole mux so browser-based MCP clients can
+	// reach every mounted endpoint (MCP, OAuth, and the out-of-band pages). The
+	// origin is reflected dynamically: the request's Origin is echoed back as
+	// Access-Control-Allow-Origin (with Vary: Origin), so any host the client
+	// sends is admitted without a static allow-list. The method/header/exposed
+	// sets cover the streamable-HTTP transport and the MCP session + protocol
+	// headers a browser client sends.
+	var handler http.Handler = mux
+	if enableCORS {
+		handler = corsHandler(mux)
+	}
+
 	httpSrv := &http.Server{
-		Handler:           mux,
+		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -599,6 +619,39 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 	}
 	shutdown(context.Background())
 	return nil
+}
+
+// corsHandler wraps next with CORS middleware that reflects the request Origin
+// dynamically: Access-Control-Allow-Origin echoes whatever Origin header the
+// client sent (with Vary: Origin), so no static allow-list is needed. The
+// allowed methods/headers and exposed headers cover the streamable-HTTP MCP
+// transport as seen by a browser client. Preflight OPTIONS requests are
+// answered by the middleware. reflect-origin + no AllowCredentials deliberately
+// mirrors an Access-Control-Allow-Origin: <origin> response (never "*").
+func corsHandler(next http.Handler) http.Handler {
+	return cors.New(cors.Options{
+		AllowOriginFunc: func(origin string) bool {
+			// Admit any request Origin and reflect it back; the browser's
+			// same-origin policy plus the transport auth still gate access.
+			return true
+		},
+		AllowedMethods: []string{
+			http.MethodGet,
+			http.MethodPost,
+			http.MethodDelete,
+			http.MethodOptions,
+		},
+		AllowedHeaders: []string{
+			"Content-Type",
+			"Authorization",
+			"Mcp-Session-Id",
+			"MCP-Protocol-Version",
+			"Last-Event-ID",
+		},
+		ExposedHeaders: []string{
+			"Mcp-Session-Id",
+		},
+	}).Handler(next)
 }
 
 // tunnelFor returns a Tunnel for the named provider, or nil if provider is
