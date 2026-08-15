@@ -356,8 +356,109 @@ func NormalizeOperationInput(op Operation, input map[string]any) (map[string]any
 	if m := firstMissingRequiredArg(op.Args(), input); m != nil {
 		return nil, fmt.Errorf("missing required argument %q", m.Name)
 	}
-	return normalizeInputDefaults(op.Args(), input)
+	if key := unknownOperationArg(op.Args(), input); key != "" {
+		valid := make([]string, 0, len(op.Args())*2)
+		for _, a := range op.Args() {
+			valid = append(valid, a.Name)
+			if alias := camelCase(a.Name); alias != a.Name {
+				valid = append(valid, alias)
+			}
+		}
+		return nil, fmt.Errorf("unrecognized argument %q (valid: %s)", key, strings.Join(valid, ", "))
+	}
+	normalized, err := normalizeInputDefaults(op.Args(), input)
+	if err != nil {
+		return nil, err
+	}
+	// Strip reserved plumbing keys that no catalog handler reads, so they are
+	// recognized for the strict unknown-argument check above yet never leak
+	// into a handler's input map. ReservedAuthTokenKey is deliberately NOT
+	// stripped: the catalogops service selectors (e.g. websites.go via
+	// authTokenFromInput) read it from the normalized input passed to the
+	// Handler to honor the per-invocation --auth-token override, which would
+	// otherwise fall back to config.
+	//
+	// The strip is guarded by isDeclaredArgKey so a reserved key name that an
+	// operation legitimately declares as an OperationArg (e.g. an op with an
+	// arg literally named "request_state") always wins over the transport
+	// reservation: its declared value must reach the Handler rather than be
+	// mistaken for plumbing and deleted.
+	if !isDeclaredArgKey(op.Args(), ReservedRequestStateKey) {
+		delete(normalized, ReservedRequestStateKey)
+	}
+	return normalized, nil
 }
+
+// isDeclaredArgKey reports whether key matches an operation arg's declared
+// name or its camelCase alias. It is used to disambiguate a reserved plumbing
+// key (auth_token / request_state) from an operation that declares an arg with
+// the same literal name, so the declared arg always takes precedence and is
+// never stripped as transport plumbing.
+func isDeclaredArgKey(args []OperationArg, key string) bool {
+	for _, a := range args {
+		if a.Name == key {
+			return true
+		}
+		if alias := camelCase(a.Name); alias == key {
+			return true
+		}
+	}
+	return false
+}
+
+// unknownOperationArg returns the first input key that matches no declared
+// operation arg (in either its kebab-case name or camelCase alias) and no
+// reserved input key, or "" when every input key is recognized. This turns a
+// typo'd/unknown parameter (e.g. `limit` when the declared arg is
+// `page-size`) into a loud error instead of a silent no-op where the handler
+// reads from a default.
+func unknownOperationArg(args []OperationArg, input map[string]any) string {
+	known := make(map[string]struct{}, len(args)*2)
+	for _, a := range args {
+		known[a.Name] = struct{}{}
+		if alias := camelCase(a.Name); alias != a.Name {
+			known[alias] = struct{}{}
+		}
+	}
+	for r := range reservedInputKeys {
+		known[r] = struct{}{}
+	}
+	for k := range input {
+		if _, ok := known[k]; !ok {
+			return k
+		}
+	}
+	return ""
+}
+
+// ReservedInputKeys are input-map keys that plumbing layers (the CLI
+// --auth-token override, the MCP transport's cross-round request_state
+// recovery token) inject into an operation's input but that are not declared
+// OperationArgs. NormalizeOperationInput treats them as recognized so strict
+// unknown-argument rejection does not reject legitimate transport plumbing.
+//
+// Boundary note: the MCP SDK's officialToolHandler also merges per-elicitation
+// ids into args (args[id]=content) on a retried input_required round-trip. Those
+// are intentionally NOT reserved here: only non-catalog wizard handles emit
+// elicitations (they decode via decodeToolArgs, which is lenient), and no
+// catalog-reachable operation emits a form elicitation, so a legitimate
+// elicitation id can never reach this strict check. A client-forged id on a
+// catalog call is an unrecognized argument and SHOULD be rejected. Keep this
+// reserved set in sync with the injection sites in internal/mcp/sdk_official.go.
+var reservedInputKeys = map[string]struct{}{
+	ReservedAuthTokenKey:    {},
+	ReservedRequestStateKey: {},
+}
+
+// ReservedAuthTokenKey is the shared name of the reserved --auth-token input
+// key. It lives here (the transport-agnostic layer) so operation packages can
+// reference it without an import cycle.
+const ReservedAuthTokenKey = "auth_token"
+
+// ReservedRequestStateKey is the reserved input key the MCP transport injects
+// on a retried tool call carrying the client-echoed request_state token, used
+// to recover cross-round session context after an input_required result.
+const ReservedRequestStateKey = "request_state"
 
 // argState is the classification of what a supplied argument value means.
 // Every consumer, required-arg enforcement, default filling, and shape
@@ -649,7 +750,7 @@ func requiredArgNames(args []OperationArg) []string {
 }
 
 // mcpRequiredNames lists the args the MCP surface must require: the shared
-// required set plus any AgentRequired arg. AgentRequired is MCP-only — it is
+// required set plus any AgentRequired arg. AgentRequired is MCP-only; it is
 // never part of requiredArgNames, so the CLI compiler never turns it into a
 // required urfave flag. But the MCP JSON-Schema and dispatch must still reject
 // an agent that omits it.
@@ -682,7 +783,7 @@ func firstMissingMCPRequiredArg(args []OperationArg, input map[string]any) *Oper
 
 // ValidateMCPRequired is the AgentRequired enforcement point for the MCP
 // dispatch layer (DispatchCatalogOp). AgentRequired marks an arg required on the
-// MCP surface only — it is deliberately absent from the shared
+// MCP surface only; it is deliberately absent from the shared
 // NormalizeOperationInput, which the CLI path uses, so AgentRequired can never
 // leak into a non-MCP invocation. Returns an error naming the first missing
 // MCP-required arg, or nil when all are satisfied.
@@ -807,10 +908,10 @@ func normalizeInputDefaults(args []OperationArg, input map[string]any) (map[stri
 // enforceSelectionGroups validates that every non-empty SelectionGroup has at
 // most one selected member. Selection is decided per-type against the
 // already-normalized values: a bool counts only when true (a default-filled or
-// explicit false is NOT a selection — a mode is on/absent, never a data arg), a
+// explicit false is NOT a selection; a mode is on/absent, never a data arg), a
 // slice counts only when non-empty, and a numeric/scalar counts only when
 // non-zero/non-empty. More than one selected member is a selector-contract
-// violation surfaced as ErrSelector — the destructive-ambiguity direction that
+// violation surfaced as ErrSelector; the destructive-ambiguity direction that
 // a frontend cannot safely resolve (e.g. pins_rm given both cids and all=true,
 // where the handler would otherwise silently unpin-all). The empty direction
 // (zero selected) is intentionally NOT rejected here: it is an incomplete input
@@ -849,7 +950,7 @@ func enforceSelectionGroups(args []OperationArg, out map[string]any) error {
 // counts as selected for its ArgType. Bool requires the value to be true (a
 // false is not a selection), slice requires non-empty, and string/numeric/scalar
 // require a present, non-zero/non-empty value (a default-filled zero is not a
-// selection). time.Duration is a named int64 so its own case is required — it
+// selection). time.Duration is a named int64 so its own case is required; it
 // never matches the int64 type-switch arm.
 func selectorMemberSelected(a OperationArg, value any) bool {
 	switch a.Type {

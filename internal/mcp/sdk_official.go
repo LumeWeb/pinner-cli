@@ -25,6 +25,7 @@ import (
 	"strings"
 	"time"
 
+	"go.lumeweb.com/pinner-cli/internal/catalog"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/urfave/cli/v3"
 	"github.com/yosida95/uritemplate/v3"
@@ -202,8 +203,8 @@ func officialToolHandler(handler PinnerToolHandler) mcp.ToolHandler {
 		// input_required result, so handlers can re-establish context (e.g. a
 		// session id) even if the client did not echo the original arguments.
 		if req.Params.RequestState != "" {
-			if _, ok := args["request_state"]; !ok {
-				args["request_state"] = req.Params.RequestState
+			if _, ok := args[catalog.ReservedRequestStateKey]; !ok {
+				args[catalog.ReservedRequestStateKey] = req.Params.RequestState
 			}
 		}
 		startedAt := time.Now()
