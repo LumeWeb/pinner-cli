@@ -87,6 +87,40 @@ func TestPopulateCatalogSurfaceRegistersCompiledTools(t *testing.T) {
 	require.True(t, del.Destructive, "SafetyDestructive op must map to Destructive")
 }
 
+// TestSearchSurfacesSafetyTier guards the cheap discovery pass: search_tools /
+// onboarding summaries must expose the safety tier (readOnlyHint/destructiveHint)
+// alongside interaction, so a framework author can gate autonomy without a
+// per-tool describe_tool round-trip.
+func TestSearchSurfacesSafetyTier(t *testing.T) {
+	tc := NewToolCatalog()
+	_, err := populateCatalogSurface(tc, sampleCatalog())
+	require.NoError(t, err)
+
+	summaries := tc.Search("vault", "", 0)
+	require.Len(t, summaries, 2, "vault category should expose get + delete")
+
+	byName := map[string]ToolSummary{}
+	for _, s := range summaries {
+		byName[s.Name] = s
+	}
+
+	get := byName["vault.get"]
+	require.True(t, get.ReadOnly, "SafetyRead summary must set readOnlyHint")
+	require.False(t, get.Destructive, "SafetyRead summary must not set destructiveHint")
+
+	del := byName["vault.delete"]
+	require.False(t, del.ReadOnly, "SafetyDestructive summary must not set readOnlyHint")
+	require.True(t, del.Destructive, "SafetyDestructive summary must set destructiveHint")
+
+	// Onboarding must also carry the tier for curated primary tools.
+	onb := tc.Onboarding()
+	for _, s := range onb.Tools {
+		if s.Name == "vault.delete" {
+			require.True(t, s.Destructive, "onboarding summary must set destructiveHint")
+		}
+	}
+}
+
 func TestCompiledReadOpDispatchesThroughInvokeGate(t *testing.T) {
 	tc := NewToolCatalog()
 	_, err := populateCatalogSurface(tc, sampleCatalog())

@@ -93,6 +93,11 @@ type ToolSummary struct {
 	Name        string       `json:"name"`
 	Description string       `json:"description"`
 	Category    ToolCategory `json:"category,omitempty"`
+	// ReadOnly/Destructive surface the operation's Safety classification on the
+	// cheap discovery pass (search_tools / onboarding) so a framework author can
+	// gate autonomy on the safety tier without a per-tool describe_tool round-trip.
+	ReadOnly    bool `json:"readOnlyHint,omitempty"`
+	Destructive bool `json:"destructiveHint,omitempty"`
 	// Interaction tells an agent whether direct invocation is safe
 	// (agent_safe), prompts interactively (interactive), or reads piped stdin
 	// (stdin_input). Interactive tools are omitted from search_tools entirely;
@@ -224,6 +229,8 @@ func (c *ToolCatalog) Onboarding() OnboardingResult {
 			Name:        t.Name,
 			Description: t.Description,
 			Category:    t.Category,
+			ReadOnly:    t.ReadOnly,
+			Destructive: t.Destructive,
 			Interaction: t.Interaction,
 		})
 	}
@@ -295,6 +302,8 @@ func (c *ToolCatalog) Search(query, category string, limit int) []ToolSummary {
 			Name:        t.Name,
 			Description: t.Description,
 			Category:    t.Category,
+			ReadOnly:    t.ReadOnly,
+			Destructive: t.Destructive,
 			Interaction: t.Interaction,
 		}
 
