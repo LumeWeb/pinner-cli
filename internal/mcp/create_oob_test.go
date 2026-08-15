@@ -152,6 +152,14 @@ func TestOOBCreateStreamsApprovalAndSeed(t *testing.T) {
 	require.Contains(t, body, `getElementById("status")`, "the done fragment must clear the Preparing… status area")
 	require.Contains(t, body, `class="btn primary"`, "seed retrieval must be rendered as a primary CTA button")
 	require.Contains(t, body, "Retrieve my recovery seed", "the seed CTA button must be labelled clearly")
+
+	// Collapse: the seed backup must be a <details> box (collapsible) so the
+	// done page is compact, and the created status must carry the vault ID in a
+	// <code> that the brand CSS allows to wrap (no container overflow).
+	require.Contains(t, body, `<details class="seed-backup" id="seed-link" open>`, "seed backup must be a collapsible <details>")
+	require.Contains(t, body, `<summary>Back up your one-time recovery seed</summary>`, "seed backup details needs a summary")
+	require.Contains(t, body, `vault ID`)
+	require.Contains(t, body, `<div class="status done">`, "the created result must be a .status.done panel")
 	require.Contains(t, body, `id="seed-cta"`, "the seed CTA must be addressable for tests/humans")
 }
 
