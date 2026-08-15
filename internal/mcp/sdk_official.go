@@ -134,8 +134,6 @@ func RunOfficialStdio(ctx context.Context, srv *mcp.Server, r io.ReadCloser, w i
 // tool. The raw CLI-generated input schema is preserved verbatim; annotations
 // annotations (readOnlyHint/destructiveHint/title) are carried in ToolAnnotations.
 func officialTool(desc ToolDescriptor) *mcp.Tool {
-	meta := desc.Meta
-
 	// OpenAI per-tool auth declaration. Pinner's whole MCP server sits behind a
 	// protected resource, so a tool with no explicit policy defaults to oauth2
 	// with no application scopes. Emit the `_meta["securitySchemes"]` mirror,
@@ -145,8 +143,15 @@ func officialTool(desc ToolDescriptor) *mcp.Tool {
 	if len(schemes) == 0 {
 		schemes = []SecurityScheme{{Type: "oauth2", Scopes: []string{}}}
 	}
-	if meta == nil {
-		meta = map[string]any{}
+
+	// Copy the caller's Meta into a fresh map before adding securitySchemes.
+	// desc.Meta aliases the live catalog ToolEntry.Meta (via descriptorFromTool
+	// / toolDescriptor), so writing in place would permanently pollute the
+	// source-of-truth registry state and leave a stale `securitySchemes` key
+	// that survives re-registration. This converter never mutates what it reads.
+	meta := make(map[string]any, len(desc.Meta)+1)
+	for k, v := range desc.Meta {
+		meta[k] = v
 	}
 	meta["securitySchemes"] = schemes
 

@@ -88,3 +88,28 @@ func TestOfficialToolWireJSONHasSecuritySchemesUnderMeta(t *testing.T) {
 	require.True(t, ok, "wire tool must serialize _meta")
 	require.Contains(t, meta, "securitySchemes", "_meta must carry securitySchemes")
 }
+
+// TestOfficialToolDoesNotMutateCallerMeta guards against the wire converter
+// side-effecting the shared catalog source-of-truth: desc.Meta aliases the live
+// ToolEntry.Meta, so officialTool must build a fresh map rather than inject
+// securitySchemes in place. Otherwise the key permanently pollutes the entry
+// and survives re-registration.
+func TestOfficialToolDoesNotMutateCallerMeta(t *testing.T) {
+	entry := ToolEntry{
+		Name:        "pins_add",
+		InputSchema: json.RawMessage(`{}`),
+		// Simulates app/metadata that a tool carries through curated
+		// registration (aliased by descriptorFromTool into desc.Meta).
+		Meta: map[string]any{"ui": map[string]any{"resourceUri": "ui://pins/add.html"}},
+	}
+	desc := descriptorFromTool(&entry)
+
+	officialTool(desc)
+
+	// The tool result must NOT see securitySchemes on the shared entry; the
+	// converter's emission must have been into its own copy.
+	_, mutated := entry.Meta["securitySchemes"]
+	require.False(t, mutated, "officialTool must not inject securitySchemes into the caller's Meta")
+	// Pre-existing keys must be preserved on the source (untouched).
+	require.Contains(t, entry.Meta, "ui")
+}
