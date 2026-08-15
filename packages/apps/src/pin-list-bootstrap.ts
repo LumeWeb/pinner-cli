@@ -172,17 +172,18 @@ export function runPinListEntry(opts: PinListEntryOptions) {
 /** Default row builder when the entry supplies none (tests/demo, prod default). */
 function defaultRow(pin: PinRow): HTMLElement {
   const tr = document.createElement("tr");
+  tr.className = "table-row";
   const name = pin.name || shortCid(pin.cid);
   const status = pin.status || "—";
   const created = pin.created ? new Date(pin.created).toLocaleString() : "—";
   for (const [text, cls] of [
-    [name, ""],
-    [status, "muted"],
-    [created, "muted"],
+    [name, "table-cell"],
+    [status, "table-cell muted"],
+    [created, "table-cell muted"],
   ] as const) {
     const td = document.createElement("td");
     td.textContent = text;
-    if (cls) td.className = cls;
+    td.className = cls;
     tr.appendChild(td);
   }
   return tr;

@@ -3,14 +3,16 @@ package mcpapp
 // authSSOAppForm renders the visible "Sign In" view body: a start button, the
 // approval URL readout (deep-linked to the human), and a live status line that
 // polls the app-only auth_sso_status helper until done. The document <head>
-// (shared inline theme) and the ESM module <script> (shared ext-apps
+// (shared inline Tailwind theme) and the ESM module <script> (shared ext-apps
 // bootstrap + SSO logic) are supplied by renderMcpAppDoc, so this templ
 // authors only the app-specific markup.
 templ AuthSSOAppForm() {
-	<h1>Sign In</h1>
-	<button id="sso-start" type="button">Start sign-in</button>
-	<div class="result">
-		Approval: <a id="sso-url" href="#" target="_blank" rel="noopener">pending</a>
+	<div class="app-shell">
+		<h1 class="app-title">Sign In</h1>
+		<button id="sso-start" type="button" class="btn-primary">Start sign-in</button>
+		<div class="card">
+			Approval: <a id="sso-url" href="#" target="_blank" rel="noopener" class="muted underline underline-offset-2">pending</a>
+		</div>
+		<div id="sso-status" class="status"></div>
 	</div>
-	<div id="sso-status" class="status"></div>
 }

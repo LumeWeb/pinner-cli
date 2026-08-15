@@ -26,6 +26,22 @@ func TestRenderMcpAppDoc(t *testing.T) {
 	}
 }
 
+// TestMcpAppThemeCSSEmbedded pins that the compiled Tailwind theme is embedded
+// and inlined into every app document. A missing/empty tailwind.css (CSS not
+// compiled before Go) would leave apps unstyled, so a passing test also proves
+// `make cssbuild` (pnpm build:css) ran.
+func TestMcpAppThemeCSSEmbedded(t *testing.T) {
+	if strings.TrimSpace(McpAppThemeCSS) == "" {
+		t.Fatal("embedded app theme CSS is empty — run `make cssbuild` before building Go")
+	}
+	doc := RenderMcpAppDoc("Test", PinListAppForm(), "/* module */")
+	for _, want := range []string{"<style>", "app-shell", "text-status-ok", "text-status-error"} {
+		if !strings.Contains(doc, want) {
+			t.Errorf("rendered doc missing %q (theme not inlined?)", want)
+		}
+	}
+}
+
 // TestAppModuleJSEmbedded pins that each app's self-contained bundle is
 // embedded and inlines into the served document. A missing/empty bundle (JS
 // not built before Go) panics, so a passing test also proves `pnpm build` ran.

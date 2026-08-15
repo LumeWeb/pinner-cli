@@ -2,22 +2,24 @@ package mcpapp
 
 // pinCreateAppForm renders the visible "Create a Pin" view body: the CID/name
 // form, the live status line, and the result readout. The document <head>
-// (shared inline theme) and the ESM module <script> (shared ext-apps
+// (shared inline Tailwind theme) and the ESM module <script> (shared ext-apps
 // bootstrap + pin logic) are supplied by renderMcpAppDoc, so this templ
 // authors only the app-specific markup.
 templ PinCreateAppForm() {
-	<h1>Create a Pin</h1>
-	<form id="pin-form">
-		<label for="cid">CID</label>
-		<input id="cid" name="cid" placeholder="bafy..." autocomplete="off" spellcheck="false"/>
-		<label for="name">Name (optional)</label>
-		<input id="name" name="name" placeholder="my-file" autocomplete="off"/>
-		<button type="submit">Pin</button>
-	</form>
-	<div id="pin-status" class="status"></div>
-	<div class="result">
-		CID: <code id="out-cid">—</code>
-		<br/>
-		Status: <code id="out-status">—</code>
+	<div class="app-shell">
+		<h1 class="app-title">Create a Pin</h1>
+		<form id="pin-form" class="mt-2">
+			<label for="cid" class="form-label">CID</label>
+			<input id="cid" name="cid" class="form-input" placeholder="bafy..." autocomplete="off" spellcheck="false"/>
+			<label for="name" class="form-label">Name (optional)</label>
+			<input id="name" name="name" class="form-input" placeholder="my-file" autocomplete="off"/>
+			<button type="submit" class="btn-primary">Pin</button>
+		</form>
+		<div id="pin-status" class="status"></div>
+		<div class="card">
+			CID: <code id="out-cid" class="mono text-primary">—</code>
+			<br/>
+			Status: <code id="out-status" class="mono text-primary">—</code>
+		</div>
 	</div>
 }
