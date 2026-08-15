@@ -134,12 +134,33 @@ func RunOfficialStdio(ctx context.Context, srv *mcp.Server, r io.ReadCloser, w i
 // tool. The raw CLI-generated input schema is preserved verbatim; annotations
 // annotations (readOnlyHint/destructiveHint/title) are carried in ToolAnnotations.
 func officialTool(desc ToolDescriptor) *mcp.Tool {
+	// OpenAI per-tool auth declaration. Pinner's whole MCP server sits behind a
+	// protected resource, so a tool with no explicit policy defaults to oauth2
+	// with no application scopes. Emit the `_meta["securitySchemes"]` mirror,
+	// which is the go-sdk serializable form and what ChatGPT reads for clients
+	// that support _meta. (The go-sdk Tool struct has no top-level field.)
+	schemes := desc.SecuritySchemes
+	if len(schemes) == 0 {
+		schemes = []SecurityScheme{{Type: "oauth2", Scopes: []string{}}}
+	}
+
+	// Copy the caller's Meta into a fresh map before adding securitySchemes.
+	// desc.Meta aliases the live catalog ToolEntry.Meta (via descriptorFromTool
+	// / toolDescriptor), so writing in place would permanently pollute the
+	// source-of-truth registry state and leave a stale `securitySchemes` key
+	// that survives re-registration. This converter never mutates what it reads.
+	meta := make(map[string]any, len(desc.Meta)+1)
+	for k, v := range desc.Meta {
+		meta[k] = v
+	}
+	meta["securitySchemes"] = schemes
+
 	tool := &mcp.Tool{
 		Name:        desc.Name,
 		Description: desc.Description,
 		Title:       desc.Title,
 		InputSchema: json.RawMessage(desc.InputSchema),
-		Meta:        desc.Meta,
+		Meta:        meta,
 	}
 	if desc.ReadOnly || desc.Destructive || desc.Title != "" {
 		tool.Annotations = &mcp.ToolAnnotations{

@@ -69,6 +69,10 @@ type ToolEntry struct {
 	// curated registration. SDK-neutral; the wire seam encodes it onto the
 	// tool. Extended, never replaced, when attaching app metadata.
 	Meta map[string]any
+	// SecuritySchemes declares the tool's auth policy for OpenAI/ChatGPT
+	// per-tool `securitySchemes`. Nil means the wire seam applies the server
+	// default (oauth2, no scopes).
+	SecuritySchemes []SecurityScheme
 	// SensitiveFlags lists the long flag names whose values are credential
 	// material and must be redacted from the in-process arg-trace log. It is
 	// derived from the command's flag declarations (SensitiveProvider) at
