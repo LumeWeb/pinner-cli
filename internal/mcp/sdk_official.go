@@ -763,9 +763,17 @@ func RegisterOfficialPrompts(srv *mcp.Server, prompts []PromptDescriptor) error 
 // a public tunnel (remote clients send the tunnel's hostname as the Host
 // header); it must be kept false when serving only on the loopback directly.
 func NewStreamableHTTPHandler(getServer func(*http.Request) *mcp.Server, disableLocalhostProtection bool) http.Handler {
-	var opts *mcp.StreamableHTTPOptions
+	// MCP Apps require stateless streamable-HTTP serving. A stateless server
+	// does not read or set Mcp-Session-Id and uses a temporary session per
+	// request, which is how the reference ext-apps debug-server (and the MCP
+	// Apps spec's sessionless direction, SEP-2567) behaves. Hosts that drive an
+	// MCP Apps tool re-establish the stream for each interaction; the stateful
+	// Mcp-Session-Id flow previously served here prevents the app view from
+	// working correctly. Serve stateless so app rendering, resource reads, and
+	// tool calls behave end-to-end.
+	opts := &mcp.StreamableHTTPOptions{Stateless: true}
 	if disableLocalhostProtection {
-		opts = &mcp.StreamableHTTPOptions{DisableLocalhostProtection: true}
+		opts.DisableLocalhostProtection = true
 	}
 	return mcp.NewStreamableHTTPHandler(getServer, opts)
 }
