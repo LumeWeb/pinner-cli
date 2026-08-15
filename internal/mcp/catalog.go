@@ -65,6 +65,11 @@ type ToolEntry struct {
 	// handlers).
 	Interaction Interaction
 	InputSchema json.RawMessage
+	// OutputSchema is the JSON Schema describing the tool's StructuredContent
+	// (the shape of a successful CallToolResult). The wire seam emits it as the
+	// official tool's `outputSchema` so the descriptor matches what the handler
+	// actually returns. When nil, no outputSchema is declared on the wire.
+	OutputSchema json.RawMessage
 	// Meta carries arbitrary tool metadata (e.g. MCP Apps `_meta.ui`) through
 	// curated registration. SDK-neutral; the wire seam encodes it onto the
 	// tool. Extended, never replaced, when attaching app metadata.

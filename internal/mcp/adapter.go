@@ -177,7 +177,7 @@ Tool invocations are executed in-process by running the command tree
 directly; no subprocess fork. Commands are exposed as-is;
 agent-friendly behavior is the responsibility of each command, not this
 adapter.`,
-		Flags: mcpServerFlags(),
+		Flags:    mcpServerFlags(),
 		Commands: []*cli.Command{ManagedServiceCommand()},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			// Build the MCP logger from the user's flags. It is installed as
@@ -856,20 +856,38 @@ func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string, seedDr
 		// resume-handle + needs_human hand-off its AgentDescription promises,
 		// rather than a bare JSON-serialized
 		// VaultCreateHandoff/VaultRestoreHandoff{Profile} plaintext.
-		if restoreEntry, ok := catalog.Get(compiledVaultRestoreToolName); ok {
-			restoreEntry.Handler = vaultRestoreSetupHandler(oobRestore, handoffReg, authHandles)
-			restoreEntry.Interaction = InteractionAgentSafe
-			catalog.Add(restoreEntry)
-		}
-		if createEntry, ok := catalog.Get(compiledVaultCreateToolName); ok {
-			createEntry.Handler = vaultCreateSetupHandler(oobCreate, handoffReg, authHandles)
-			createEntry.Interaction = InteractionAgentSafe
-			catalog.Add(createEntry)
-		}
+		routeVaultSetupHandlers(catalog,
+			vaultCreateSetupHandler(oobCreate, handoffReg, authHandles),
+			vaultRestoreSetupHandler(oobRestore, handoffReg, authHandles),
+		)
 		markCurated(catalog)
 	}
 
 	return catalog, nil
+}
+
+// routeVaultSetupHandlers swaps the compiled vault_create / vault_restore
+// entries onto their out-of-band setup handlers. Beyond re-pointing the
+// handler, it re-declares each entry's OutputSchema: catalogDescriptorToEntry
+// stamps the {status:ok,value} success envelope on every compiled op, but the
+// setup handlers return the NeedsHumanResult shape (status:needs_human plus
+// reason/action_url/handle/resume_tool/detail), so the success envelope would
+// misdescribe what these two tools actually emit. Routing them onto the
+// needs_human schema keeps each tool's declared output matching its emitted
+// StructuredContent.
+func routeVaultSetupHandlers(catalog *ToolCatalog, create, restore PinnerToolHandler) {
+	if restoreEntry, ok := catalog.Get(compiledVaultRestoreToolName); ok {
+		restoreEntry.Handler = restore
+		restoreEntry.Interaction = InteractionAgentSafe
+		restoreEntry.OutputSchema = catalogNeedsHumanOutputSchema
+		catalog.Add(restoreEntry)
+	}
+	if createEntry, ok := catalog.Get(compiledVaultCreateToolName); ok {
+		createEntry.Handler = create
+		createEntry.Interaction = InteractionAgentSafe
+		createEntry.OutputSchema = catalogNeedsHumanOutputSchema
+		catalog.Add(createEntry)
+	}
 }
 
 // mcpInstructionsBase is sent to MCP clients in the initialize response.

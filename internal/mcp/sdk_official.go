@@ -162,6 +162,13 @@ func officialTool(desc ToolDescriptor) *mcp.Tool {
 		InputSchema: json.RawMessage(desc.InputSchema),
 		Meta:        meta,
 	}
+	// Emit the tool's output schema when the descriptor declares one, so a tool
+	// that returns StructuredContent advertises the shape of that content on
+	// the wire (OpenAI guidance: declare an output schema for structured
+	// output). `any` accepts a json.RawMessage, which is preserved verbatim.
+	if len(desc.OutputSchema) > 0 && json.Valid(desc.OutputSchema) {
+		tool.OutputSchema = json.RawMessage(desc.OutputSchema)
+	}
 	if desc.ReadOnly || desc.Destructive || desc.Title != "" {
 		tool.Annotations = &mcp.ToolAnnotations{
 			Title:           desc.Title,

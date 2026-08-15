@@ -90,7 +90,12 @@ type ToolDescriptor struct {
 	// curated registration loop.
 	DirectVisible bool
 	InputSchema   json.RawMessage
-	Meta          map[string]any
+	// OutputSchema is the JSON Schema describing the tool's StructuredContent
+	// (the shape of a successful CallToolResult). The wire seam emits it as the
+	// official tool's `outputSchema` so the descriptor matches what the handler
+	// actually returns. When nil, no outputSchema is declared on the wire.
+	OutputSchema json.RawMessage
+	Meta         map[string]any
 	// SecuritySchemes declares the tool's auth policy. When nil, the wire seam
 	// applies the server default (oauth2, no scopes) because Pinner's MCP
 	// server is a protected resource.
@@ -112,6 +117,7 @@ func descriptorFromTool(entry *ToolEntry) ToolDescriptor {
 		Destructive:     entry.Destructive,
 		DirectVisible:   entry.DirectVisible,
 		InputSchema:     entry.InputSchema,
+		OutputSchema:    entry.OutputSchema,
 		Meta:            entry.Meta,
 		SecuritySchemes: entry.SecuritySchemes,
 		SensitiveFlags:  entry.SensitiveFlags,
@@ -133,6 +139,7 @@ func toolEntryFromDescriptor(desc ToolDescriptor) *ToolEntry {
 		Destructive:     desc.Destructive,
 		DirectVisible:   desc.DirectVisible,
 		InputSchema:     desc.InputSchema,
+		OutputSchema:    desc.OutputSchema,
 		Meta:            desc.Meta,
 		SecuritySchemes: desc.SecuritySchemes,
 		SensitiveFlags:  desc.SensitiveFlags,
