@@ -1,3 +1,4 @@
+import { entryBoot, boot } from "@/loader";
 // Account (auth status) MCP App — entrypoint bundle.
 //
 // The account strip is a read-only surface: it loads the authentication status
@@ -8,8 +9,6 @@
 // thin.
 
 import { mountAuthStatusApp, type AuthStatusAppEntry } from "@/auth-status-bootstrap";
-import type { CallTool } from "@/flow";
-
 export const def: AuthStatusAppEntry = {
   name: "AuthStatus",
   config: {
@@ -28,13 +27,5 @@ export const def: AuthStatusAppEntry = {
   },
 };
 
-/**
- * Mount the app. With a caller-supplied `callTool` (tests/demo) wires
- * synchronously; otherwise boot connects to the host over postMessage and
- * wires on success, stamping the status element on connect failure.
- */
-export function mount(root: Document = document, callTool?: CallTool) {
-  return mountAuthStatusApp(def, root, callTool);
-}
-
-export { def as authStatusDefinition };
+export default entryBoot(def, mountAuthStatusApp);
+boot(entryBoot(def, mountAuthStatusApp));

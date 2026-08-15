@@ -1,3 +1,4 @@
+import { entryBoot, boot } from "@/loader";
 // Account email change MCP App — one-shot deep-link entrypoint.
 //
 // The account_email_change tool mints a one-time browser page where the human
@@ -5,7 +6,6 @@
 // that page via authenticated UpdateEmail. There is nothing to poll, so this
 // app uses the link (one-shot) mount: click -> mint -> show the page URL.
 import { mountLinkApp } from "@/app-entry";
-import type { CallTool } from "@/flow";
 import type { LinkAppEntry } from "@/app-entry";
 
 export const def: LinkAppEntry = {
@@ -25,8 +25,5 @@ export const def: LinkAppEntry = {
   },
 };
 
-export function mount(root: Document = document, callTool?: CallTool) {
-  return mountLinkApp(def, root, callTool);
-}
-
-export { def as accountEmailDefinition };
+export default entryBoot(def, mountLinkApp);
+boot(entryBoot(def, mountLinkApp));
