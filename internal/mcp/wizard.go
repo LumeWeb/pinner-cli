@@ -1003,7 +1003,7 @@ func NewDomainSession(store *SessionStore, deps DomainWizardDeps) (*Session, err
 // mandatory form fields. Steps with all-optional fields (e.g. ValidateInput's
 // optional `retry`, DomainVerifyInput) auto-advance on the StepResponse path,
 // so only a schema with at least one REQUIRED field triggers a native form
-// elicitation — preserving the invariant that auto-advancing steps never
+// elicitation. This preserves the invariant that auto-advancing steps never
 // require a form.
 func schemaRequiresInput(schema *jsonschema.Schema) bool {
 	if schema == nil {
@@ -1158,16 +1158,6 @@ func registerWizardStep(catalog *ToolCatalog, name, description string, store *S
 		info, err := AdvanceSession(ctx, sess, input)
 		if err != nil {
 			resp := buildStepResponse(sess)
-			// If this call was a form-elicitiation retry (the client submitted
-			// InputResponses) and the active step still needs input, re-present
-			// the native form so the client stays on it rather than ejecting
-			// into raw StepResponse JSON. The session remains in the same step,
-			// so the user can correct the invalid submission and retry.
-			if req.InputResponses {
-				if spec := rePresentFormOnFailure(sessionID, resp, err, time.Now()); spec != nil {
-					return ToolResult{Elicitation: spec}, nil
-				}
-			}
 			resp.Error = err.Error()
 			resp.Message = fmt.Sprintf("step '%s' failed the session remains in state '%s', you may retry", resp.CurrentStep, resp.CurrentStep)
 			return marshalWizardResponse(resp)
@@ -1184,17 +1174,11 @@ func registerWizardStep(catalog *ToolCatalog, name, description string, store *S
 			resp.Message = completionMessage
 			return marshalWizardResponse(resp)
 		}
-		if schemaRequiresInput(resp.NextStepSchema) {
-			// Next step needs input: ask the client for it natively via the
-			// 2026-07-28 form elicitation instead of returning StepResponse
-			// JSON the model must parse. The accepted fields arrive back under
-			// the "input" key on the retried call, so downstream reading is
-			// unchanged. Steps whose schema has no fields (NoInput) stay on the
-			// StepResponse path so auto-advancing steps never require a form.
-			if spec := elicitForStep(sessionID, resp, time.Now()); spec != nil {
-				return ToolResult{Elicitation: spec}, nil
-			}
-		}
+		// Always return the in-band StepResponse carrying next_step_schema.
+		// The wizard is driven by the agent passing JSON `input` to each step
+		// call. The agent-facing templates (prompttemplates/*.tmpl) must match
+		// this contract and must not instruct clients to wait for an
+		// input_required form, which is never emitted.
 		return marshalWizardResponse(resp)
 	}))
 }

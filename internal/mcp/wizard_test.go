@@ -1797,3 +1797,64 @@ func TestSetupWizard_FullFlowSkip(t *testing.T) {
 	resp := mcpadapter.BuildStepResponseForTest(sess)
 	assert.True(t, resp.Complete)
 }
+
+// TestSetupWizard_FirstStepThroughHandler reproduces the audit finding that
+// the FIRST setup_wizard_step call after setup_wizard_start fails with a bare
+// generic client error ("Error occurred during tool execution") while the
+// backend session mutates successfully. Unlike the other wizard tests, it
+// drives the actual registered tool handlers (registerWizardStart /
+// registerWizardStep) the way a real client does, so the response-body
+// construction path (including the input_required elicitation decision) is
+// exercised rather than AdvanceSession alone.
+func TestSetupWizard_FirstStepThroughHandler(t *testing.T) {
+	t.Parallel()
+
+	cfgMgr := newConfigMgr(t, true)
+	authSvc := &mockAuthService{}
+	store := mcpadapter.NewSessionStore()
+	deps := mcpadapter.SetupWizardDeps{
+		CfgMgr:       cfgMgr,
+		AuthService:  authSvc,
+		SetupFactory: testSetupFactory,
+	}
+
+	cat := mcpadapter.NewToolCatalog()
+	require.NoError(t, mcpadapter.RegisterWizardTools(cat, store, mcpadapter.WebsitesWizardDeps{WebsitesFactory: testWebsitesFactory}, deps, mcpadapter.DomainWizardDeps{DomainFactory: testDomainFactory}))
+
+	startEntry, ok := cat.Get("setup_wizard_start")
+	require.True(t, ok)
+	startRes, err := startEntry.Handler(context.Background(), mcpadapter.ToolRequest{Name: "setup_wizard_start"})
+	require.NoError(t, err)
+	t.Logf("start result text: %s", startRes.Text)
+
+	var startResp struct {
+		SessionID string `json:"session_id"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(startRes.Text), &startResp))
+	require.NotEmpty(t, startResp.SessionID)
+
+	stepEntry, ok := cat.Get("setup_wizard_step")
+	require.True(t, ok)
+
+	// First step call: auth -> skip. This is the call that fails in production.
+	stepRes, err := stepEntry.Handler(context.Background(), mcpadapter.ToolRequest{
+		Name: "setup_wizard_step",
+		Arguments: map[string]any{
+			"session_id": startResp.SessionID,
+			"input":      map[string]any{"choice": "skip"},
+		},
+	})
+	require.NoError(t, err)
+	t.Logf("first step: is_error=%v elicitation=%v text=%q", stepRes.IsError, stepRes.Elicitation != nil, stepRes.Text)
+	if stepRes.Elicitation != nil {
+		t.Logf("first step ELICITATION message=%q formSchema=%v", stepRes.Elicitation.Message, stepRes.Elicitation.FormSchema)
+	}
+
+	// The pact the wizard is documented to honor (prompttemplates/setup.tmpl:
+	// "call setup_wizard_step with the appropriate input") is that a step
+	// returns a plain StepResponse the model can parse and act on. Regression:
+	// the first transition must not force an input_required form round-trip.
+	require.False(t, stepRes.Elicitation != nil, "first step must return a StepResponse, not an input_required elicitation")
+	require.False(t, stepRes.IsError, "first step must not error")
+	require.Contains(t, stepRes.Text, "current_step")
+}
