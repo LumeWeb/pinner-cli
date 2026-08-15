@@ -17,6 +17,19 @@ func TestStrArg(t *testing.T) {
 	assert.Equal(t, "def", StrArg(map[string]any{"k": 42}, "k", "def"))
 }
 
+// TestStrFlexibleArg covers coercing a string-like id that may arrive as a
+// JSON integer (float64/int) from a list call into the string id a get/delete
+// input schema expects, plus fallback to default for absent/uncoercible values.
+func TestStrFlexibleArg(t *testing.T) {
+	assert.Equal(t, "def", StrFlexibleArg(map[string]any{}, "id", "def"))
+	assert.Equal(t, "1", StrFlexibleArg(map[string]any{"id": float64(1)}, "id", "def"))
+	assert.Equal(t, "1", StrFlexibleArg(map[string]any{"id": 1}, "id", "def"))
+	assert.Equal(t, "1", StrFlexibleArg(map[string]any{"id": int64(1)}, "id", "def"))
+	assert.Equal(t, "1", StrFlexibleArg(map[string]any{"id": "1"}, "id", "def"))
+	// Any non-empty string passes through unchanged; only absent values default.
+	assert.Equal(t, "x", StrFlexibleArg(map[string]any{"id": "x"}, "id", "def"))
+}
+
 // TestIntArg verifies coercion from the numeric shapes produced by flags
 // (int) and JSON decoding (json.Number, float64), plus numeric strings.
 func TestIntArg(t *testing.T) {
