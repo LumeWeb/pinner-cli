@@ -252,7 +252,7 @@ func catalogActionAdapter(op catalog.Operation, group string) cli.ActionFunc {
 				return svcErr
 			}
 			statusFilter, _ := input["status"].(string)
-			pins, err := svc.List(ctx, "", 0, statusFilter)
+			pins, err := svc.List(ctx, "", 0, statusFilter, "")
 			if err != nil {
 				return err
 			}

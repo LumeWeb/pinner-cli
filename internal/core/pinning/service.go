@@ -100,8 +100,10 @@ type PinningService interface {
 	// Pin multiple CIDs in batch
 	PinBatch(ctx context.Context, cids []string, name string, opts BatchOptions) (*BatchResult, error)
 
-	// List pinned content with optional filters
-	List(ctx context.Context, nameFilter string, limit int, statusFilter string) ([]Pin, error)
+	// List pinned content with optional filters. search (when non-empty) is a
+	// server-side name substring match (match=partial) composed with the other
+	// filters; nameFilter is an exact name match.
+	List(ctx context.Context, nameFilter string, limit int, statusFilter string, search string) ([]Pin, error)
 
 	// Get status of a pin
 	Status(ctx context.Context, cid string, watch bool) (*PinStatus, error)

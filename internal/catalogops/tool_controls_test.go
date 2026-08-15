@@ -384,6 +384,7 @@ func TestServerSideListOpsExposeSearch(t *testing.T) {
 		"api_keys_list":    APIKeysOperations(APIKeysDeps{}),
 		"operations_list":  OperationsOperations(OperationsDeps{}),
 		"ipns_keys_list":   IPNSOperations(IPNSDeps{}),
+		"pins_list":        PinsOperations(PinsDeps{}),
 	}
 	for name, ops := range listOps {
 		var op catalog.Operation

@@ -134,9 +134,10 @@ func pinsList(d PinsDeps) catalog.Operation {
 		Visibility:  catalog.VisibilityBoth,
 		Positional:  "",
 		Args: []catalog.OperationArg{
-			{Name: "name", Type: catalog.ArgTypeString, Help: "Filter pins by name"},
+			{Name: "name", Type: catalog.ArgTypeString, Help: "Filter pins by exact name"},
 			{Name: "limit", Type: catalog.ArgTypeInt, Default: "0", Help: "Maximum number of pins to return (0 = no limit)"},
 			{Name: "status", Type: catalog.ArgTypeString, Help: "Filter pins by status (e.g. pinned, unpinned, failed)"},
+			{Name: "search", Type: catalog.ArgTypeString, Help: "Full-text search evaluated server-side against pin name (substring)"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			svc, svcErr := d.service(input)
@@ -146,7 +147,7 @@ func pinsList(d PinsDeps) catalog.Operation {
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
-			pins, err := svc.List(ctx, catalog.StrArg(input, "name", ""), catalog.IntArg(input, "limit", 0), catalog.StrArg(input, "status", ""))
+			pins, err := svc.List(ctx, catalog.StrArg(input, "name", ""), catalog.IntArg(input, "limit", 0), catalog.StrArg(input, "status", ""), catalog.SearchArg(input))
 			if err != nil {
 				return nil, err
 			}
@@ -329,7 +330,7 @@ func pinsRemove(d PinsDeps) catalog.Operation {
 				if catalog.BoolArg(input, "dry-run", false) {
 					// Report the request IDs that would be unpinned without
 					// mutating state. Naming them requires a read-only List.
-					pins, err := svc.List(ctx, "", 0, statusFilter)
+					pins, err := svc.List(ctx, "", 0, statusFilter, "")
 					if err != nil {
 						return nil, err
 					}

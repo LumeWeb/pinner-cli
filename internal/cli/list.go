@@ -80,7 +80,7 @@ func list(ctx context.Context, cmd flagGetterWithInt, output Output, cfgMgr conf
 	if watch {
 		return output.Watch(ctx,
 			func(ctx context.Context) (any, error) {
-				return pinningService.List(ctx, nameFilter, limit, statusFilter)
+				return pinningService.List(ctx, nameFilter, limit, statusFilter, "")
 			},
 			func(data any) (string, []string, [][]string) {
 				pins := data.([]Pin)
@@ -97,7 +97,7 @@ func list(ctx context.Context, cmd flagGetterWithInt, output Output, cfgMgr conf
 		)
 	}
 
-	pins, err := pinningService.List(setupCtx, nameFilter, limit, statusFilter)
+	pins, err := pinningService.List(setupCtx, nameFilter, limit, statusFilter, "")
 	if err != nil {
 		return err
 	}
