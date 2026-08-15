@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"go.lumeweb.com/pinner-cli/internal/catalog"
@@ -41,16 +42,46 @@ func compiledHandler(cat catalog.Catalog, name string) PinnerToolHandler {
 // how every other tool is promoted to tools/list.
 func catalogDescriptorToEntry(d catalog.ToolDescriptor, cat catalog.Catalog) *ToolEntry {
 	entry := toolEntryFromDescriptor(ToolDescriptor{
-		Name:        d.Name,
-		Title:       d.Title,
-		Description: d.Description,
-		Category:    ToolCategory(d.Category),
-		InputSchema: d.InputSchema,
-		ReadOnly:    d.Safety == catalog.SafetyRead,
-		Destructive: d.Safety == catalog.SafetyDestructive,
-		Handler:     compiledHandler(cat, d.Name),
+		Name:         d.Name,
+		Title:        d.Title,
+		Description:  d.Description,
+		Category:     ToolCategory(d.Category),
+		InputSchema:  d.InputSchema,
+		OutputSchema: outputSchemaForCompiled(d.Safety, d.Interaction),
+		ReadOnly:     d.Safety == catalog.SafetyRead,
+		Destructive:  d.Safety == catalog.SafetyDestructive,
+		Handler:      compiledHandler(cat, d.Name),
 	})
 	return entry
+}
+
+// outputSchemaForCompiled selects the output schema for a compiled operation
+// from its Safety/Interaction classification, so the declared shape matches
+// what the operation actually emits for a model actor (the MCP surface runs as
+// ActorModel). DispatchCatalogOp maps the catalog gate's refusals onto the
+// needs_human hand-off shape, so the effective StructuredContent range is:
+//
+//   - InteractionHumanOnly / InteractionNeedsHandoff: Catalog.Invoke always
+//     refuses a model actor (ErrHumanRequired) before a handler runs, so these
+//     tools return only the needs_human hand-off on the model path.
+//
+//   - SafetyDestructive: Catalog.Invoke refuses a model actor with
+//     ErrConfirmRequired on first invocation (manual-confirm hand-off), then —
+//     after human confirmation resumes — the op runs and returns the
+//     {status:ok,value} success envelope. Both shapes are emitted, so a union
+//     (anyOf) schema is declared.
+//
+//   - Otherwise (SafetyRead / SafetyMutate, agent-safe): the op runs directly
+//     and returns only the {status:ok,value} success envelope.
+func outputSchemaForCompiled(safety catalog.Safety, interaction catalog.Interaction) json.RawMessage {
+	switch {
+	case interaction == catalog.InteractionHumanOnly || interaction == catalog.InteractionNeedsHandoff:
+		return catalogNeedsHumanOutputSchema
+	case safety == catalog.SafetyDestructive:
+		return catalogOutputUnionSchema
+	default:
+		return catalogOutputSchema
+	}
 }
 
 // populateCatalogSurface compiles every model-visible operation from cat and

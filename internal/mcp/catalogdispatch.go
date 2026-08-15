@@ -7,12 +7,117 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/invopop/jsonschema"
 	"go.lumeweb.com/pinner-cli/internal/catalog"
 )
 
 // This file provides the generic operation-catalog dispatch seam: a typed MCP
 // ToolRequest is routed through the catalog's Catalog.Invoke gate (not around
 // it) so Interaction, Visibility, Safety, and required-arg enforcement all run,
+
+// catalogEnvelopeSchema is the typed shape of a catalog tool's *success*
+// StructuredContent: an object whose `status` is always "ok" and whose optional
+// `value` holds the op result. Only the success path emits this {status,value}
+// envelope (resultToToolResult); error results carry no StructuredContent
+// (they are signaled by the wire IsError flag) and needs_human results use a
+// different shape entirely (NeedsHumanResult), so neither belongs here. The
+// type is reflected into catalogOutputSchema with the project's
+// invopop/jsonschema reflector, keeping schema generation consistent with every
+// other tool schema and free of ad-hoc JSON strings.
+type catalogEnvelopeSchema struct {
+	Status string `json:"status" jsonschema:"required,description=Always ok on success"`
+	Value  any    `json:"value,omitempty" jsonschema:"description=Operation result"`
+}
+
+// catalogEnvelopeReflector derives the envelope schema. AllowAdditionalProperties
+// keeps the schema open so the dynamic per-operation `value` and any transport
+// fields validate — unlike closed input schemas, the output envelope must
+// accept the concrete op result the handler returns.
+var catalogEnvelopeReflector = &jsonschema.Reflector{
+	DoNotReference:            true,
+	Anonymous:                 true,
+	AllowAdditionalProperties: true,
+}
+
+// catalogOutputSchema is the JSON Schema describing the StructuredContent that
+// a catalog-dispatched tool emits on success: the canonical {status:"ok", value}
+// envelope from resultToToolResult. Error and needs_human responses are not
+// described here — errors carry no structured content (IsError signals them),
+// and needs_human uses catalogNeedsHumanOutputSchema — so the declared schema
+// matches the shape the handler actually returns on the success path.
+var catalogOutputSchema = func() json.RawMessage {
+	b, err := json.Marshal(catalogEnvelopeReflector.Reflect(catalogEnvelopeSchema{}))
+	if err != nil {
+		// Only possible on an un-marshalable struct; the envelope is fully
+		// serializable, so this cannot happen in practice.
+		panic(err)
+	}
+	return b
+}()
+
+// catalogNeedsHumanSchema is the typed shape of a NeedsHumanResult's
+// StructuredContent: a {status:"needs_human", reason, ...} object (see
+// NeedsHumanResult). It is the declared output schema for tools whose handler
+// returns the needs_human hand-off shape (the vault_create / vault_restore
+// setup swaps) rather than the {status,value} success envelope. The URL key is
+// tool-specific: SSO/account tools emit action_url, while the vault setup
+// hand-offs emit create_url / restore_url (vaultHandoffResult) — so the schema
+// declares both sets, keeping every emitting tool's shape covered.
+type catalogNeedsHumanSchema struct {
+	Status     string `json:"status" jsonschema:"required,description=Always needs_human"`
+	Reason     string `json:"reason" jsonschema:"required,description=Why human action is required"`
+	ActionURL  string `json:"action_url,omitempty" jsonschema:"description=Short-lived URL the human opens (SSO and account hand-offs)"`
+	CreateURL  string `json:"create_url,omitempty" jsonschema:"description=Out-of-band vault create URL (vault_create hand-off)"`
+	RestoreURL string `json:"restore_url,omitempty" jsonschema:"description=Out-of-band vault restore URL (vault_restore hand-off)"`
+	Handle     string `json:"handle,omitempty" jsonschema:"description=Async handle for a matching resume/status tool"`
+	ResumeTool string `json:"resume_tool,omitempty" jsonschema:"description=Tool name to poll or resume with"`
+	Detail     string `json:"detail,omitempty" jsonschema:"description=Optional human-readable context"`
+}
+
+// catalogNeedsHumanReflector derives the needs_human schema with the same
+// open-additional-properties policy as the success envelope.
+var catalogNeedsHumanReflector = &jsonschema.Reflector{
+	DoNotReference:            true,
+	Anonymous:                 true,
+	AllowAdditionalProperties: true,
+}
+
+// catalogNeedsHumanOutputSchema is the JSON Schema describing a NeedsHumanResult
+// StructuredContent. It is emitted as the outputSchema for the tools whose
+// handlers are swapped post-compile to return the needs_human hand-off (see
+// adapter.go), so their declared schema matches what they actually return.
+var catalogNeedsHumanOutputSchema = func() json.RawMessage {
+	b, err := json.Marshal(catalogNeedsHumanReflector.Reflect(catalogNeedsHumanSchema{}))
+	if err != nil {
+		panic(err)
+	}
+	return b
+}()
+
+// catalogOutputUnionSchema is the JSON Schema a destructive or interactive-only
+// compiled operation emits: an anyOf of the success envelope
+// ({status:"ok", value}) and the needs_human hand-off shape. A destructive
+// operation invoked by a model is first refused with ErrConfirmRequired (mapped
+// to the needs_human hand-off by DispatchCatalogOp), and only after human
+// confirmation resumes does it run and return the {status:ok,value} success
+// envelope — so its declared output schema must admit both shapes. The two
+// members reuse the typed envelope and needs_human schemas above, keeping schema
+// generation consistent and free of ad-hoc JSON. See outputSchemaForCompiled for
+// per-classification selection.
+var catalogOutputUnionSchema = func() json.RawMessage {
+	s := &jsonschema.Schema{
+		AnyOf: []*jsonschema.Schema{
+			catalogEnvelopeReflector.Reflect(catalogEnvelopeSchema{}),
+			catalogNeedsHumanReflector.Reflect(catalogNeedsHumanSchema{}),
+		},
+	}
+	b, err := json.Marshal(s)
+	if err != nil {
+		panic(err)
+	}
+	return b
+}()
+
 // and then the typed result (any) is converted into an SDK-neutral ToolResult.
 //
 // It mirrors the pattern in vault_setup_ops.go (NormalizeOperationInput +
