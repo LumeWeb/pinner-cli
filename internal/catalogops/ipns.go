@@ -140,7 +140,7 @@ func ipnsKeysGet(d IPNSDeps) catalog.Operation {
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
-			id := catalog.StrArg(input, "id", "")
+			id := catalog.StrFlexibleArg(input, "id", "")
 			if id == "" {
 				return nil, fmt.Errorf("ipns_keys_get: key ID is required")
 			}
@@ -185,7 +185,7 @@ func ipnsKeysDelete(d IPNSDeps) catalog.Operation {
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
-			id := catalog.StrArg(input, "id", "")
+			id := catalog.StrFlexibleArg(input, "id", "")
 			if id == "" {
 				return nil, fmt.Errorf("ipns_keys_delete: key ID is required")
 			}

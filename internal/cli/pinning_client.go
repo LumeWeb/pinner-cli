@@ -466,6 +466,17 @@ func (s *PinningServiceDefault) watchPinStatus(ctx context.Context, cidStr strin
 				})
 				lastStatus = status
 			}
+
+			// Terminate once the pin settles instead of polling forever. An
+			// MCP agent cannot press Ctrl+C, so without this a watch on an
+			// already-pinned CID blocks indefinitely. Mirrors the request-level
+			// watch below (StatusPinned/StatusFailed exit).
+			switch go_pinning_service_http_client.Status(status.Status) {
+			case go_pinning_service_http_client.StatusPinned:
+				return status, nil
+			case go_pinning_service_http_client.StatusFailed:
+				return nil, fmt.Errorf("pin failed for CID %s: %w", cidStr, ErrPinningFailed)
+			}
 		}
 	}
 }

@@ -155,8 +155,8 @@ func (s *OperationsServiceDefault) List(ctx context.Context, opts OperationsList
 			StatusDisplayName:    op.StatusDisplayName,
 			StatusMessage:        op.StatusMessage,
 			ProgressPercent:      op.ProgressPercent,
-			StartedAt:            op.StartedAt.Format(time.DateTime),
-			UpdatedAt:            op.UpdatedAt.Format(time.DateTime),
+			StartedAt:            op.StartedAt.Format(time.RFC3339),
+			UpdatedAt:            op.UpdatedAt.Format(time.RFC3339),
 			CurrentStep:          op.CurrentStep,
 			TotalSteps:           op.TotalSteps,
 		}

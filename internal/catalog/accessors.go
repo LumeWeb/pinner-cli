@@ -23,6 +23,34 @@ func StrArg(input map[string]any, key, def string) string {
 	return def
 }
 
+// StrFlexibleArg reads a string arg from input that may arrive as a string OR
+// a number, defaulting to def when absent or uncoercible. String-like ids
+// emitted as JSON integers by a list call (e.g. ipns_keys_list's numeric id)
+// round-trip into the string id a get/delete input schema expects.
+func StrFlexibleArg(input map[string]any, key, def string) string {
+	if v, ok := input[key]; ok && v != nil {
+		switch n := v.(type) {
+		case string:
+			if n != "" {
+				return n
+			}
+		case float64:
+			return strconv.FormatInt(int64(n), 10)
+		case float32:
+			return strconv.FormatInt(int64(n), 10)
+		case int:
+			return strconv.Itoa(n)
+		case int64:
+			return strconv.FormatInt(n, 10)
+		case jsonNumber:
+			if i, err := n.Int64(); err == nil {
+				return strconv.FormatInt(i, 10)
+			}
+		}
+	}
+	return def
+}
+
 // IntArg reads an int arg from input, defaulting to def when absent. Values may
 // arrive as json.Number, float64, int64, int, or string.
 func IntArg(input map[string]any, key string, def int) int {
