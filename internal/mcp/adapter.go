@@ -339,6 +339,20 @@ func oauthStorePath() string {
 // login URL on the public/tunnel URL rather than an unreachable loopback.
 // seedDrop and oobRestore, when provided, mount the one-time seed and restore
 // URLs on the same shared mux. oobCreate mounts the one-time create URL.
+//
+// mcpHostProtectionDisabled reports whether the go-sdk's DNS-rebinding guard
+// must be disabled for this serve. When the server is reached over a
+// non-loopback public origin, remote clients send that hostname as the Host
+// header while the server sees a loopback local address, which the guard would
+// reject with 403. Disable it whenever the server is exposed publicly: when a
+// tunnel fronts the loopback listener (`tunnelActive`), or when the user
+// explicitly serves HTTP with a --public-url (e.g. behind their own external
+// reverse proxy or a manually managed tunnel). Keep it on for direct loopback
+// serving. See serveHTTP for the caller.
+func mcpHostProtectionDisabled(tunnelActive, httpMode bool, publicURL string) bool {
+	return tunnelActive || (httpMode && publicURL != "")
+}
+
 func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *OutOfBandLogin, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate, accountOOB *OOBAccountChange) error {
 	provider := cmd.String("tunnel")
 	domain := cmd.String("domain")
@@ -433,12 +447,8 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 	// the pre-created listener so the ephemeral port is stable and known to
 	// the tunnel before any client connects.
 	mux := http.NewServeMux()
-	// When a public tunnel fronts the loopback listener, remote clients send the
-	// tunnel hostname as the Host header while the server sees a loopback local
-	// address, which the go-sdk's DNS-rebinding guard would reject with 403.
-	// Disable that guard only when a tunnel is active; keep it on for direct
-	// loopback serving.
-	var mcpHandler http.Handler = NewOfficialStreamableHandler(srv, tunnel != nil)
+	disableHostProtection := mcpHostProtectionDisabled(tunnel != nil, cmd.Bool("http"), publicURL)
+	var mcpHandler http.Handler = NewOfficialStreamableHandler(srv, disableHostProtection)
 	switch {
 	case oauth != nil:
 		// OAuth handshake: /mcp only accepts tokens issued through the flow.
