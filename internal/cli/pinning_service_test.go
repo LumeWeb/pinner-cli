@@ -192,6 +192,9 @@ func TestPinningService_List(t *testing.T) {
 		assert.Equal(t, "QmUNLLsPACCz1vLxQVkXqqLX5R1X345qqfHbsf67hvA3Nn", pins[0].CID)
 		assert.Equal(t, "test-name", pins[0].Name)
 		assert.Equal(t, "req-123", pins[0].RequestID)
+		// Created must be ISO 8601 (RFC3339, "T" separator) to match
+		// operations_list/operations_get and pins_status, not space-separated.
+		assert.Contains(t, pins[0].Created, "T", "pins_list Created must be RFC3339, got %q", pins[0].Created)
 	})
 
 	t.Run("honors limit via LsWithLimit and does not use LsSync", func(t *testing.T) {
