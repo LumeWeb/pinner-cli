@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -530,4 +531,45 @@ func requireText(t *testing.T, res *mcp.CallToolResult) string {
 	tc, ok := res.Content[0].(*mcp.TextContent)
 	require.True(t, ok, "expected text content")
 	return tc.Text
+}
+
+// TestStreamableHandlerIsStateless guards the stateless-streamable-HTTP fix:
+// MCP Apps require stateless serving (no Mcp-Session-Id, temporary session per
+// request), mirroring the reference ext-apps debug-server. A stateless handler
+// must not set Mcp-Session-Id on responses and must reject GET/DELETE with 405,
+// which is the distinguishing stateless behavior.
+func TestStreamableHandlerIsStateless(t *testing.T) {
+	srv, _ := newOfficialTestServer(t)
+	handler := NewOfficialStreamableHandler(srv, true)
+	ts := httptest.NewServer(handler)
+	defer ts.Close()
+
+	do := func(method, body string) (*http.Response, string) {
+		var r io.Reader
+		if body != "" {
+			r = strings.NewReader(body)
+		}
+		req, err := http.NewRequest(method, ts.URL+"/mcp", r)
+		require.NoError(t, err)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json, text/event-stream")
+		resp, err := ts.Client().Do(req)
+		require.NoError(t, err)
+		b, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		return resp, string(b)
+	}
+
+	// Initialize must succeed (200) and must NOT set Mcp-Session-Id (stateless).
+	resp, _ := do(http.MethodPost, `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}`)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Empty(t, resp.Header.Get("Mcp-Session-Id"), "stateless server must not emit Mcp-Session-Id")
+
+	// GET (SSE re-establish) is not supported in stateless mode.
+	getResp, _ := do(http.MethodGet, "")
+	require.Equal(t, http.StatusMethodNotAllowed, getResp.StatusCode, "stateless server must reject GET with 405")
+
+	// DELETE is not supported in stateless mode.
+	delResp, _ := do(http.MethodDelete, "")
+	require.Equal(t, http.StatusMethodNotAllowed, delResp.StatusCode, "stateless server must reject DELETE with 405")
 }
