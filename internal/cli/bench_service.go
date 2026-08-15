@@ -14,20 +14,18 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/avast/retry-go/v4"
+	"github.com/avast/retry-go/v5"
 	"github.com/docker/go-units"
-	"go.lumeweb.com/pinner-cli/internal/core/config"
 	benchpkg "go.lumeweb.com/pinner-cli/internal/core/bench"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
 	portalsdk "go.lumeweb.com/portal-sdk"
 	"go.lumeweb.com/queryutil/filter"
 	"testing/fstest"
 )
 
-
 // Bench models and the BenchService contract are re-exported from core. The
 // impl (BenchServiceDefault) stays in pkg/cli because it is irreducibly
 // presentation-coupled (interactive progress reporting, signal handling).
-
 
 type BenchStage = benchpkg.BenchStage
 type BenchError = benchpkg.BenchError
@@ -117,7 +115,14 @@ func (s *BenchServiceDefault) Run(ctx context.Context, opts BenchOptions) (*Benc
 		// Retry unpin; the pin may take a moment to propagate to the
 		// pinning API after the operation completes.
 		var batchResult *BatchResult
-		err := retry.Do(func() error {
+		err := retry.New(
+			retry.Context(ctx),
+			retry.Attempts(5),
+			retry.Delay(time.Second),
+			retry.DelayType(retry.BackOffDelay),
+			retry.MaxDelay(10*time.Second),
+			retry.LastErrorOnly(true),
+		).Do(func() error {
 			var err error
 			batchResult, err = s.pinningService.UnpinBatch(ctx, uploadedCIDs, batchOpts)
 			if err != nil {
@@ -131,14 +136,7 @@ func (s *BenchServiceDefault) Run(ctx context.Context, opts BenchOptions) (*Benc
 				return fmt.Errorf("all %d unpins failed", len(batchResult.Failed))
 			}
 			return nil
-		},
-			retry.Context(ctx),
-			retry.Attempts(5),
-			retry.Delay(time.Second),
-			retry.DelayType(retry.BackOffDelay),
-			retry.MaxDelay(10*time.Second),
-			retry.LastErrorOnly(true),
-		)
+		})
 		if err != nil {
 			if !s.output.IsJSON() {
 				s.output.Printfln("Cleanup error: %v", err)
@@ -277,7 +275,17 @@ func (s *BenchServiceDefault) pollOperationStages(ctx context.Context, cid strin
 
 	// Find the operation for this CID with retry (operation may not be visible immediately)
 	s.output.PrintVerbosef("  Bench: looking up operation for CID %s", cid)
-	err := retry.Do(func() error {
+	err := retry.New(
+		retry.Context(ctx),
+		retry.Attempts(10),
+		retry.Delay(pollInterval),
+		retry.DelayType(retry.BackOffDelay),
+		retry.MaxDelay(5*time.Second),
+		retry.LastErrorOnly(true),
+		retry.OnRetry(func(n uint, err error) {
+			s.output.PrintVerbosef("  Bench: retry %d looking up operation: %v", n+1, err)
+		}),
+	).Do(func() error {
 		operations, _, err := s.accountClient.ListOperations(ctx, portalsdk.WithFilters(filter.FieldEqual("cid", cid)))
 		if err != nil {
 			if isUnrecoverableError(err) {
@@ -290,17 +298,7 @@ func (s *BenchServiceDefault) pollOperationStages(ctx context.Context, cid strin
 		}
 		operationID = int64(operations[0].Id)
 		return nil
-	},
-		retry.Context(ctx),
-		retry.Attempts(10),
-		retry.Delay(pollInterval),
-		retry.DelayType(retry.BackOffDelay),
-		retry.MaxDelay(5*time.Second),
-		retry.LastErrorOnly(true),
-		retry.OnRetry(func(n uint, err error) {
-			s.output.PrintVerbosef("  Bench: retry %d looking up operation: %v", n+1, err)
-		}),
-	)
+	})
 	if err != nil {
 		s.output.PrintVerbosef("  Bench: failed to find operation: %v", err)
 		return stages, fmt.Sprintf("failed to find operation: %v", err)

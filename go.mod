@@ -6,7 +6,7 @@ require (
 	github.com/LumeWeb/cli-docs v0.0.0-20260613190900-4a7a99d4f66c
 	github.com/Oudwins/zog v0.22.0
 	github.com/a-h/templ v0.3.1020
-	github.com/avast/retry-go/v4 v4.7.0
+	github.com/avast/retry-go/v5 v5.0.0
 	github.com/docker/go-units v0.5.0
 	github.com/gammazero/workerpool v1.2.1
 	github.com/ggwhite/go-masker v1.1.0
@@ -57,6 +57,7 @@ require (
 	github.com/alecthomas/units v0.0.0-20240927000941-0f3dac36c52b // indirect
 	github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
 	github.com/apt304/sse-go v0.0.3 // indirect
+	github.com/avast/retry-go/v4 v4.7.0 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/bdragon300/tusgo v0.1.3-0.20250807091306-5a1233754936 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
