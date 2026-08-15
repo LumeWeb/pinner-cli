@@ -19,6 +19,8 @@ var compiledCuratedToolNames = []string{
 	"pins_list",
 	"pins_status",
 	"pins_rm",
+	"vault_create",
+	"vault_restore",
 	"vault_ls",
 	"vault_status",
 	"vault_stat",

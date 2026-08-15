@@ -5,6 +5,7 @@ package catalogops
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 
@@ -165,7 +166,7 @@ func pinsAdd(d PinsDeps) catalog.Operation {
 		Name:        "pins_add",
 		Title:       "Add a pin",
 		Summary:     "Pin existing content by CID",
-		Description: "Pin content that already exists on IPFS by providing its cids, optionally with a name, metadata (key=value pairs), parallel batch control, and the choice of waiting for confirmation. This is the programmatic pin-create path; supply concrete CID values in the cids field.",
+		Description: "Pin content that already exists on IPFS by providing its cids, optionally with a name, metadata (key=value pairs), parallel batch control, and the choice of waiting for confirmation. This is the programmatic pin-create path; supply concrete CID values in the cids field. By default wait is true and the call blocks until the pin is confirmed, which can time out on a large/queued batch; pass wait=false to submit and return immediately, then poll with pins_status using the returned name/pin id.",
 		Category:    "core",
 		Safety:      catalog.SafetyMutate,
 		Interaction: catalog.InteractionAgentSafe,
@@ -226,7 +227,7 @@ func pinsAdd(d PinsDeps) catalog.Operation {
 			if len(cids) == 1 {
 				r, err := svc.Pin(ctx, cids[0], name, wait)
 				if err != nil {
-					return nil, err
+					return nil, pinWaitHint(err, wait)
 				}
 				result = r
 				pinned = []string{cids[0]}
@@ -238,7 +239,7 @@ func pinsAdd(d PinsDeps) catalog.Operation {
 					Progress:   true,
 				})
 				if err != nil {
-					return nil, err
+					return nil, pinWaitHint(err, wait)
 				}
 				result = r
 				pinned = cids
@@ -267,6 +268,17 @@ func pinsAdd(d PinsDeps) catalog.Operation {
 			return result, nil
 		}),
 	})
+}
+
+// pinWaitHint annotates a pin wait timeout with an actionable next step. When a
+// pin with wait=true exceeds the caller's deadline, the underlying client
+// surfaces a bare "context deadline exceeded" with no way forward. Return that
+// error with guidance to retry fire-and-forget and poll, instead of a dead end.
+func pinWaitHint(err error, wait bool) error {
+	if wait && errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Errorf("timed out waiting for the pin to be confirmed: %w; retry the same cids with wait=false to submit without blocking, then poll with pins_status until the pin is done", err)
+	}
+	return err
 }
 
 // pinsRemove is the `pins rm` operation (unpin CIDs, or unpin all).

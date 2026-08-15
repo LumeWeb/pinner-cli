@@ -475,7 +475,7 @@ func vaultProfileUse(d VaultDeps) catalog.Operation {
 		Name:        "vault_profile_use",
 		Title:       "Set default vault profile",
 		Summary:     "Set the default profile for vault commands",
-		Description: "Sets the profile used by default when neither the profile argument nor the PINNER_PROFILE environment variable selects one. An explicit profile argument or the PINNER_PROFILE environment variable (a host-side setting, not settable by an agent) still take precedence.",
+		Description: "Sets the profile used by default when neither an explicit name argument nor the PINNER_PROFILE environment variable selects one. An explicit name argument or the PINNER_PROFILE environment variable (a host-side setting, not settable by an agent) still take precedence.",
 		Category:    "vault",
 		Safety:      catalog.SafetyMutate,
 		Interaction: catalog.InteractionAgentSafe,

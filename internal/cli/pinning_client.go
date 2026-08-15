@@ -219,6 +219,20 @@ func (s *PinningServiceDefault) List(ctx context.Context, nameFilter string, lim
 		}
 	})
 
+	// The Pinning Service API accepts a `name` filter but some servers ignore it
+	// on list, returning every pin. Enforce the documented "filter by name"
+	// contract client-side so pins_list actually narrows results regardless of
+	// server behavior.
+	if nameFilter != "" {
+		kept := pins[:0]
+		for _, p := range pins {
+			if p.Name == nameFilter {
+				kept = append(kept, p)
+			}
+		}
+		pins = kept
+	}
+
 	return pins, nil
 }
 

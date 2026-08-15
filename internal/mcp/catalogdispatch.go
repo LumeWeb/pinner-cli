@@ -131,5 +131,23 @@ func cleanMessage(err error) string {
 	if err == nil {
 		return "operation failed"
 	}
-	return strings.TrimSpace(err.Error())
+	return strings.TrimSpace(translateAgentGuidance(err.Error()))
+}
+
+// translateAgentGuidance rewrites CLI-only shell commands embedded in error
+// messages into the corresponding agent-facing MCP tool names. The vault core
+// package intentionally words errors for the `pinner` CLI (e.g. "Run 'pinner
+// vault setup'"), but an agent has no such command — pointing it at a shell
+// invocation is a dead end. Map the known CLI-isms to the real tools so the
+// error tells the agent what to call next.
+func translateAgentGuidance(msg string) string {
+	replacer := strings.NewReplacer(
+		"Run 'pinner vault setup' to create one",
+		"no vault profile exists; create one with vault_create (or restore one with vault_restore)",
+		"Run 'pinner vault create --profile <name>'",
+		"create it with vault_create (profile NAME)",
+		"Run 'pinner vault restore --profile <name>'",
+		"restore it with vault_restore (profile NAME)",
+	)
+	return replacer.Replace(msg)
 }
