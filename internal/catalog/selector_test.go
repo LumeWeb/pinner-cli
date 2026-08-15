@@ -3,6 +3,7 @@ package catalog
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -170,5 +171,93 @@ func TestSelectorGroupViaNormalizeOperationInput(t *testing.T) {
 	}
 	if v, _ := got["all"].(bool); v {
 		t.Fatalf("all should default to false, got %v", got["all"])
+	}
+}
+
+// TestNormalizeOperationInputRejectsUnknownArg verifies that an unrecognized
+// parameter (e.g. a typo like `limit` when the declared arg is `page-size`) is
+// rejected loudly instead of silently ignored as a no-op. Declared args, their
+// camelCase aliases, and the reserved plumbing keys must still be accepted.
+func TestNormalizeOperationInputRejectsUnknownArg(t *testing.T) {
+	op := NewOperation(OperationSpec{
+		Name: "ops.list", Title: "List", Summary: "list",
+		Category: "ops", Safety: SafetyRead,
+		Interaction: InteractionAgentSafe, Visibility: VisibilityBoth,
+		Args: []OperationArg{
+			{Name: "page-size", Type: ArgTypeInt, Default: "0"},
+			{Name: "watch", Type: ArgTypeBool, Default: "false"},
+		},
+		Handler: &captureHandler{},
+	})
+
+	// Declared arg (kebab) and camelCase alias pass.
+	for _, in := range []map[string]any{
+		{"page-size": 25},
+		{"pageSize": 25},
+		{"watch": true},
+		{},
+	} {
+		if _, err := NormalizeOperationInput(op, in); err != nil {
+			t.Fatalf("valid input %v rejected: %v", in, err)
+		}
+	}
+
+	// Reserved plumbing keys pass the strict check, but only the auth-token
+	// override is intended to reach a handler. request_state is a transport-only
+	// key and must be stripped from the returned input so it never leaks into a
+	// handler's map.
+	out, err := NormalizeOperationInput(op, map[string]any{
+		ReservedAuthTokenKey:    "tok",
+		ReservedRequestStateKey: "state",
+	})
+	if err != nil {
+		t.Fatalf("reserved keys rejected: %v", err)
+	}
+	if _, ok := out[ReservedAuthTokenKey]; !ok {
+		t.Fatal("auth-token override must remain in normalized input for the handler's service selector")
+	}
+	if _, ok := out[ReservedRequestStateKey]; ok {
+		t.Fatal("request_state must be stripped from normalized input, not reach the handler")
+	}
+
+	// An unknown/typo'd key must be rejected loudly.
+	_, err = NormalizeOperationInput(op, map[string]any{"limit": 5})
+	if err == nil {
+		t.Fatal("unknown argument 'limit' must be rejected, not silently ignored")
+	}
+	if !strings.Contains(err.Error(), `"limit"`) {
+		t.Fatalf("error should name the unknown argument, got %v", err)
+	}
+}
+
+// TestNormalizeOperationInputReservedKeyArgCollision verifies that a key whose
+// name collides with a reserved plumbing key (request_state) is NOT stripped
+// when an operation declares it as a real OperationArg: the declared arg must
+// win over the transport reservation so its value reaches the Handler.
+func TestNormalizeOperationInputReservedKeyArgCollision(t *testing.T) {
+	// An op that genuinely declares an arg named request_state (transport
+	// reservation name, but declared here as a real data arg).
+	op := NewOperation(OperationSpec{
+		Name: "ops.collide", Title: "Collide", Summary: "declared request_state arg",
+		Category: "ops", Safety: SafetyRead,
+		Interaction: InteractionAgentSafe, Visibility: VisibilityBoth,
+		Args: []OperationArg{
+			{Name: "request_state", Type: ArgTypeString},
+		},
+		Handler: &captureHandler{},
+	})
+
+	out, err := NormalizeOperationInput(op, map[string]any{"request_state": "declared-value"})
+	if err != nil {
+		t.Fatalf("declared request_state arg rejected: %v", err)
+	}
+	// Guard must keep the declared arg's value rather than stripping it as
+	// transport plumbing.
+	got, ok := out["request_state"]
+	if !ok {
+		t.Fatal("declared request_state arg was stripped from normalized input")
+	}
+	if got != "declared-value" {
+		t.Fatalf("declared request_state arg value corrupted: got %v, want %q", got, "declared-value")
 	}
 }
