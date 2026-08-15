@@ -17,6 +17,7 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -189,7 +190,15 @@ func officialToolHandler(handler PinnerToolHandler) mcp.ToolHandler {
 	return func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := map[string]any{}
 		if req.Params.Arguments != nil {
-			if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
+			// Decode with UseNumber so JSON integers arrive as json.Number
+			// instead of float64. Plain json.Unmarshal maps an integer to
+			// float64, which silently loses precision for any value above
+			// 2^53; for an id like ipns_keys_get/delete's that could address
+			// (or with delete, remove) the wrong key. json.Number is exact,
+			// and the catalog normalizer converts it losslessly.
+			dec := json.NewDecoder(bytes.NewReader(req.Params.Arguments))
+			dec.UseNumber()
+			if err := dec.Decode(&args); err != nil {
 				return &mcp.CallToolResult{
 					IsError: true,
 					Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("invalid arguments: %v", err)}},

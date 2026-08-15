@@ -61,6 +61,40 @@ func TestFlexibleIDRejectsNonID(t *testing.T) {
 	}
 }
 
+// TestFlexibleIDPreservesLargeJsonNumber is the precision regression test for
+// ids above 2^53. MCP argument decoding uses UseNumber, so a large JSON
+// integer id arrives as json.Number (exact), which the normalizer must convert
+// losslessly instead of losing the low bits through float64. A silent float64
+// round-trip would produce a WRONG key id, which for ipns_keys_delete could
+// delete the wrong key.
+func TestFlexibleIDPreservesLargeJsonNumber(t *testing.T) {
+	// 2^53+1 is not exactly representable as float64; as json.Number it is
+	// exact and must be preserved verbatim.
+	big := json.Number("9007199254740993")
+	normalized, err := NormalizeOperationInput(idOp(), map[string]any{"id": big})
+	require.NoError(t, err, "large json.Number id must be accepted")
+	assert.Equal(t, "9007199254740993", StrFlexibleArg(normalized, "id", ""))
+}
+
+// TestFlexibleIDRejectsFloatingPrecisionLoss guards the direct float64 path
+// (e.g. a Go caller through Invoke passing a float64, or values beyond int64
+// range that int64(v) cannot represent back exactly). A float64 id must
+// round-trip through int64 exactly; values that would truncate or overflow are
+// rejected rather than silently corrupted.
+func TestFlexibleIDRejectsFloatingPrecisionLoss(t *testing.T) {
+	// Above int64 range: int64(v) overflows, the float no longer round-trips,
+	// and the normalizer must reject it (not wrap to a wrong id).
+	for _, v := range []float64{float64(1 << 63), float64(1<<63) + float64(1<<40)} {
+		_, err := NormalizeOperationInput(idOp(), map[string]any{"id": v})
+		require.Error(t, err, "float64 id %v (out of exact int64 range) must be rejected", v)
+	}
+
+	// A large but exactly-representable in-range integer is still accepted.
+	normalized, err := NormalizeOperationInput(idOp(), map[string]any{"id": float64(1 << 43)})
+	require.NoError(t, err)
+	assert.Equal(t, "8796093022208", StrFlexibleArg(normalized, "id", ""))
+}
+
 // TestFlexibleIDSchemaAdvertisesStringAndInteger locks the MCP JSON Schema
 // contract: the id property must admit both a string and an integer so a model
 // can pass either the integer form ipns_keys_list emits or a string id/name.
