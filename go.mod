@@ -24,6 +24,7 @@ require (
 	github.com/openai/tunnel-client v0.0.12-dev.0.20260807232812-7136b51d2f54
 	github.com/pressly/goose/v3 v3.27.3
 	github.com/pterm/pterm v0.12.84-0.20260430213317-32e5000d4c27
+	github.com/rs/cors v1.11.1
 	github.com/samber/lo v1.53.0
 	github.com/shopspring/decimal v1.4.0
 	github.com/stretchr/testify v1.11.1
@@ -39,7 +40,6 @@ require (
 	go.sia.tech/core v0.21.7
 	go.sia.tech/indexd v0.2.3-0.20260519120331-4eab507a9847
 	go.sia.tech/siastorage v0.1.0
-	go.uber.org/mock v0.6.0
 	go.uber.org/zap v1.28.0
 	golang.org/x/sys v0.47.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -176,7 +176,6 @@ require (
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/quic-go/quic-go v0.60.0 // indirect
 	github.com/quic-go/webtransport-go v0.11.1 // indirect
-	github.com/rs/cors v1.11.1 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/segmentio/asm v1.2.1 // indirect
 	github.com/segmentio/encoding v0.5.4 // indirect
