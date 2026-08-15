@@ -65,6 +65,22 @@ func sampleCatalog() catalog.Catalog {
 		},
 		Handler: markerHandler{marker: "ran:pins.mcp.add"},
 	}))
+	// A primary (curated) destructive op so Onboarding exercises the safety
+	// tier on a tool that actually appears in the onboarding listing.
+	_ = c.Add(catalog.NewOperation(catalog.OperationSpec{
+		Name:        "pins_rm",
+		Title:       "Remove pins",
+		Summary:     "remove pins",
+		Description: "remove pins from the pin set",
+		Category:    "pins",
+		Safety:      catalog.SafetyDestructive,
+		Interaction: catalog.InteractionAgentSafe,
+		Visibility:  catalog.VisibilityModel,
+		Args: []catalog.OperationArg{
+			{Name: "cids", Type: catalog.ArgTypeStringSlice, Required: true, Help: "cids to unpin"},
+		},
+		Handler: markerHandler{marker: "ran:pins_rm"},
+	}))
 	return c
 }
 
@@ -112,13 +128,18 @@ func TestSearchSurfacesSafetyTier(t *testing.T) {
 	require.False(t, del.ReadOnly, "SafetyDestructive summary must not set readOnlyHint")
 	require.True(t, del.Destructive, "SafetyDestructive summary must set destructiveHint")
 
-	// Onboarding must also carry the tier for curated primary tools.
+	// Onboarding must also carry the tier for curated primary tools. pins_rm
+	// is a primary destructive tool (isPrimaryTool) that appears in the
+	// onboarding listing; assert it is present so this cannot silently no-op.
 	onb := tc.Onboarding()
+	var sawPinsRM bool
 	for _, s := range onb.Tools {
-		if s.Name == "vault.delete" {
+		if s.Name == "pins_rm" {
+			sawPinsRM = true
 			require.True(t, s.Destructive, "onboarding summary must set destructiveHint")
 		}
 	}
+	require.True(t, sawPinsRM, "pins_rm must appear in onboarding listing")
 }
 
 func TestCompiledReadOpDispatchesThroughInvokeGate(t *testing.T) {
