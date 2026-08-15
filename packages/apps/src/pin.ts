@@ -58,9 +58,9 @@ export interface PinConfig {
 export interface PinContext {
   cid: string;
   name: string;
-  /** Rendered CID readout (from value.CID, falling back to the submitted cid). */
+  /** Rendered CID readout (from value.cid, falling back to the submitted cid). */
   outCid: string;
-  /** Rendered status readout (from value.Status / last poll status). */
+  /** Rendered status readout (from value.status / last poll status). */
   outStatus: string;
   /** Last status observed from pin_status. */
   status: string;
@@ -106,13 +106,13 @@ export function createPinMachine(cfg: PinConfig, callTool: CallTool) {
     name: ev.name ?? "",
   }));
 
-  // renderResult: out-cid from value.CID (fallback submitted cid), out-status
-  // from value.Status. This runs on the pins_add `done` transition.
+  // renderResult: out-cid from value.cid (fallback submitted cid), out-status
+  // from value.status. This runs on the pins_add `done` transition.
   const setAddResult = reduce((ctx: PinContext, ev: any) => {
     const sc = dSc(ev);
     const value = sc && typeof sc === "object" ? sc.value : undefined;
-    const rawCid = value && value.CID;
-    const rawStatus = value && value.Status;
+    const rawCid = value && value.cid;
+    const rawStatus = value && value.status;
     return {
       ...ctx,
       outCid: rawCid != null ? String(rawCid) : ctx.cid,
