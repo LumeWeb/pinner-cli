@@ -48,6 +48,10 @@ func TestOperationsServiceDefault_List(t *testing.T) {
 		assert.Equal(t, 1, result.Operations[0].ID)
 		assert.Equal(t, cid, result.Operations[0].CID)
 		assert.Equal(t, "completed", result.Operations[0].Status)
+		// List timestamps must match Get/Watch's RFC3339 (ISO 8601) format so an
+		// agent feeding a list row into a later call never sees a format drift.
+		assert.Equal(t, now.Format(time.RFC3339), result.Operations[0].StartedAt)
+		assert.Equal(t, now.Format(time.RFC3339), result.Operations[0].UpdatedAt)
 	})
 
 	t.Run("returns multiple operations", func(t *testing.T) {
