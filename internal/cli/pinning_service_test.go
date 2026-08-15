@@ -326,6 +326,57 @@ func TestPinningService_Status(t *testing.T) {
 		assert.Equal(t, "pinned", status.Status)
 	})
 
+	t.Run("watch terminates when pin is already pinned", func(t *testing.T) {
+		cfgMgr := configmocks.NewMockManager(t)
+		cfgMgr.EXPECT().Config().Maybe().Return(&config.Config{
+			AuthToken: testAuthToken,
+		})
+
+		client := climocks.NewMockPinningClient(t)
+
+		mockPin := NewMockPin(t, testCID, "test-name")
+		mockResult := NewMockPinStatusGetterWithPin(t, mockPin, go_pinning_service_http_client.StatusPinned)
+
+		client.EXPECT().LsSync(mock.Anything, mock.Anything).Return(
+			[]go_pinning_service_http_client.PinStatusGetter{mockResult},
+			nil,
+		)
+
+		output := newTestOutput()
+		service := NewPinningService(cfgMgr, output, "https://api.test.com", WithPinningClient(client))
+
+		// watch=true on an already-pinned CID must return (not hang). The first
+		// Status call returns pinned, which terminates the watch loop.
+		status, err := service.Status(context.Background(), "QmUNLLsPACCz1vLxQVkXqqLX5R1X345qqfHbsf67hvA3Nn", true)
+		require.NoError(t, err)
+		assert.Equal(t, "QmUNLLsPACCz1vLxQVkXqqLX5R1X345qqfHbsf67hvA3Nn", status.CID)
+		assert.Equal(t, "pinned", status.Status)
+	})
+
+	t.Run("watch returns error when pin failed", func(t *testing.T) {
+		cfgMgr := configmocks.NewMockManager(t)
+		cfgMgr.EXPECT().Config().Maybe().Return(&config.Config{
+			AuthToken: testAuthToken,
+		})
+
+		client := climocks.NewMockPinningClient(t)
+
+		mockPin := NewMockPin(t, testCID, "test-name")
+		mockResult := NewMockPinStatusGetterWithPin(t, mockPin, go_pinning_service_http_client.StatusFailed)
+
+		client.EXPECT().LsSync(mock.Anything, mock.Anything).Return(
+			[]go_pinning_service_http_client.PinStatusGetter{mockResult},
+			nil,
+		)
+
+		output := newTestOutput()
+		service := NewPinningService(cfgMgr, output, "https://api.test.com", WithPinningClient(client))
+
+		_, err := service.Status(context.Background(), "QmUNLLsPACCz1vLxQVkXqqLX5R1X345qqfHbsf67hvA3Nn", true)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "pin failed")
+	})
+
 	t.Run("returns error when not authenticated", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
 		output := newTestOutput()
