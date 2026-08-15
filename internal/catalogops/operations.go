@@ -36,6 +36,7 @@ func operationsList(d OperationsDeps) catalog.Operation {
 		Category:    "operations", Safety: catalog.SafetyRead, Interaction: catalog.InteractionAgentSafe, Visibility: catalog.VisibilityBoth,
 		Positional: "",
 		Args: []catalog.OperationArg{
+			{Name: "search", Type: catalog.ArgTypeString, Help: "Full-text search evaluated server-side against operation type, status, protocol, or CID; composes with the filters below"},
 			{Name: "status", Type: catalog.ArgTypeString, Help: "Filter by status (pending, running, completed, failed, error)"},
 			{Name: "operation", Type: catalog.ArgTypeString, Help: "Filter by operation type (e.g. upload, pin)"},
 			{Name: "protocol", Type: catalog.ArgTypeString, Help: "Filter by protocol (e.g. ipfs)"},
@@ -62,6 +63,7 @@ func operationsList(d OperationsDeps) catalog.Operation {
 				pageSize = 10
 			}
 			return svc.List(ctx, operations.ListOptions{
+				Search:          catalog.SearchArg(input),
 				StatusFilter:    catalog.StrArg(input, "status", ""),
 				OperationFilter: catalog.StrArg(input, "operation", ""),
 				ProtocolFilter:  catalog.StrArg(input, "protocol", ""),

@@ -55,6 +55,9 @@ type OperationsListResult struct {
 
 // ListOptions filters and paginates an operations listing.
 type ListOptions struct {
+	// Search is a full-text search term evaluated server-side against the
+	// operation's searchable fields. Empty disables it.
+	Search          string
 	StatusFilter    string
 	OperationFilter string
 	ProtocolFilter  string
