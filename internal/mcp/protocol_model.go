@@ -60,6 +60,22 @@ type ToolResult struct {
 // PinnerToolHandler executes a catalog tool without depending on an MCP SDK.
 type PinnerToolHandler func(context.Context, ToolRequest) (ToolResult, error)
 
+// SecurityScheme describes a tool's authentication policy to the host. It is
+// the SDK-neutral form of the OpenAI per-tool `securitySchemes` declaration:
+// whether a tool may run anonymously (`noauth`) or requires an OAuth 2.0 access
+// token (`oauth2`), and which scopes the token must carry. Pinner runs its whole
+// MCP server behind a protected resource, so tools default to oauth2 with no
+// application scopes; individual tools that may run anonymously declare noauth.
+type SecurityScheme struct {
+	// Type is "noauth" or "oauth2".
+	Type string `json:"type"`
+	// Scopes enumerates the OAuth scopes the tool requires. Empty for a
+	// server where the auth server issues no distinct application scopes.
+	// Always serialized (even empty) so the oauth2 declaration carries an
+	// explicit `scopes` array per the OpenAI tool-auth contract.
+	Scopes []string `json:"scopes"`
+}
+
 // ToolDescriptor describes a Pinner-owned tool.
 type ToolDescriptor struct {
 	Name        string
@@ -75,6 +91,10 @@ type ToolDescriptor struct {
 	DirectVisible bool
 	InputSchema   json.RawMessage
 	Meta          map[string]any
+	// SecuritySchemes declares the tool's auth policy. When nil, the wire seam
+	// applies the server default (oauth2, no scopes) because Pinner's MCP
+	// server is a protected resource.
+	SecuritySchemes []SecurityScheme
 	// SensitiveFlags mirrors ToolEntry.SensitiveFlags so descriptor-registered
 	// tools that carry credential-bearing flags surface them to the redaction
 	// path through the shared converters.
@@ -84,16 +104,17 @@ type ToolDescriptor struct {
 
 func descriptorFromTool(entry *ToolEntry) ToolDescriptor {
 	return ToolDescriptor{
-		Name:           entry.Name,
-		Title:          entry.Title,
-		Description:    entry.Description,
-		Category:       entry.Category,
-		ReadOnly:       entry.ReadOnly,
-		Destructive:    entry.Destructive,
-		DirectVisible:  entry.DirectVisible,
-		InputSchema:    entry.InputSchema,
-		Meta:           entry.Meta,
-		SensitiveFlags: entry.SensitiveFlags,
+		Name:            entry.Name,
+		Title:           entry.Title,
+		Description:     entry.Description,
+		Category:        entry.Category,
+		ReadOnly:        entry.ReadOnly,
+		Destructive:     entry.Destructive,
+		DirectVisible:   entry.DirectVisible,
+		InputSchema:     entry.InputSchema,
+		Meta:            entry.Meta,
+		SecuritySchemes: entry.SecuritySchemes,
+		SensitiveFlags:  entry.SensitiveFlags,
 	}
 }
 
@@ -104,17 +125,18 @@ func descriptorFromTool(entry *ToolEntry) ToolDescriptor {
 // sync. The entry keeps its handler so invoke_tool can call it.
 func toolEntryFromDescriptor(desc ToolDescriptor) *ToolEntry {
 	return &ToolEntry{
-		Name:           desc.Name,
-		Title:          desc.Title,
-		Description:    desc.Description,
-		Category:       desc.Category,
-		ReadOnly:       desc.ReadOnly,
-		Destructive:    desc.Destructive,
-		DirectVisible:  desc.DirectVisible,
-		InputSchema:    desc.InputSchema,
-		Meta:           desc.Meta,
-		SensitiveFlags: desc.SensitiveFlags,
-		Handler:        desc.Handler,
+		Name:            desc.Name,
+		Title:           desc.Title,
+		Description:     desc.Description,
+		Category:        desc.Category,
+		ReadOnly:        desc.ReadOnly,
+		Destructive:     desc.Destructive,
+		DirectVisible:   desc.DirectVisible,
+		InputSchema:     desc.InputSchema,
+		Meta:            desc.Meta,
+		SecuritySchemes: desc.SecuritySchemes,
+		SensitiveFlags:  desc.SensitiveFlags,
+		Handler:         desc.Handler,
 		// Direct auth tools are non-blocking and safe for agent invocation:
 		// auth_sso returns a needs_human hand-off, auth_resume
 		// polls. Ensure discovery treats them as callable, not interactive.
