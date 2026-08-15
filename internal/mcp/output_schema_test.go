@@ -65,6 +65,35 @@ func TestOutputSchemaInvalidRejected(t *testing.T) {
 	require.Nil(t, tool.OutputSchema, "invalid OutputSchema must not be emitted")
 }
 
+// TestOutputUnionSchemaObjectRoot guards the destructive-op output schema. The
+// union (anyOf) of the success envelope and the needs_human hand-off must be
+// object-rooted: it describes the StructuredContent of a tool result (always a
+// JSON object), and 2025-era (15.x) model connectors reject a tools/list
+// outputSchema whose root is a bare {"anyOf":[...]} with no "type":"object".
+// Every anyOf branch already requires "type":"object", so the root type does
+// not change what validates — it just makes the schema well-formed for the MCP
+// tool contract.
+func TestOutputUnionSchemaObjectRoot(t *testing.T) {
+	var raw struct {
+		Type  string `json:"type"`
+		AnyOf []any  `json:"anyOf"`
+	}
+	require.NoError(t, json.Unmarshal(catalogOutputUnionSchema, &raw))
+	require.Equal(t, "object", raw.Type, "destructive output union must declare an object root")
+	require.Len(t, raw.AnyOf, 2, "union must have the success-envelope and needs_human branches")
+
+	// Every branch must itself be an object schema (so the root object type is
+	// consistent with what the members admit).
+	var branches []struct {
+		Type string `json:"type"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(mustJSON(t, raw.AnyOf)), &branches))
+	require.Len(t, branches, 2)
+	for i, branch := range branches {
+		require.Equal(t, "object", branch.Type, "union branch %d must be an object schema", i)
+	}
+}
+
 // TestCatalogSurfaceOutputSchemaEnvelope verifies every compiled catalog
 // operation carries the canonical envelope output schema, matching the
 // StructuredContent that resultToToolResult produces at runtime. This is the

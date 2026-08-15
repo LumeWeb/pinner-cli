@@ -104,8 +104,17 @@ var catalogNeedsHumanOutputSchema = func() json.RawMessage {
 // members reuse the typed envelope and needs_human schemas above, keeping schema
 // generation consistent and free of ad-hoc JSON. See outputSchemaForCompiled for
 // per-classification selection.
+//
+// The root is explicitly object-typed: an outputSchema describes the
+// StructuredContent of a tool result, which is always a JSON object, and the
+// MCP tool schema contract requires an object-rooted output schema. Without the
+// top-level type:object the root serializes to a bare anyOf object, which is
+// neither a valid object schema nor accepted by 2025-era (15.x) model connectors
+// that import tools/list. Every anyOf branch already requires type:object, so
+// adding the root type does not change which values validate.
 var catalogOutputUnionSchema = func() json.RawMessage {
 	s := &jsonschema.Schema{
+		Type:  "object",
 		AnyOf: []*jsonschema.Schema{
 			catalogEnvelopeReflector.Reflect(catalogEnvelopeSchema{}),
 			catalogNeedsHumanReflector.Reflect(catalogNeedsHumanSchema{}),
