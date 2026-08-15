@@ -149,6 +149,24 @@ func TestLocalhostProtectionTunnelScoped(t *testing.T) {
 		"localhost protection must be disabled when a tunnel is active")
 }
 
+// TestMcpHostProtectionDisabled pins the DNS-rebinding-guard decision used by
+// serveHTTP: disabled when a tunnel fronts the loopback, disabled when serving
+// HTTP with an explicit --public-url, and kept on for direct loopback serving.
+func TestMcpHostProtectionDisabled(t *testing.T) {
+	require.True(t, mcpHostProtectionDisabled(true, false, ""), "active tunnel disables protection")
+	require.True(t, mcpHostProtectionDisabled(true, true, "https://public.example.com"), "active tunnel + public-url disables protection")
+
+	// --http with --public-url disables protection (manual/external public reverse proxy).
+	require.True(t, mcpHostProtectionDisabled(false, true, "https://ccd-stem-supplies-hansen.trycloudflare.com"), "http + public-url disables protection")
+
+	// Plain --http on loopback with no public URL keeps protection on.
+	require.False(t, mcpHostProtectionDisabled(false, true, ""), "http without public-url keeps protection on")
+	// Neither tunnel nor http: direct loopback serving keeps protection on.
+	require.False(t, mcpHostProtectionDisabled(false, false, ""), "loopback keeping protection on")
+	// A public-url alone (no --http) keeps protection on.
+	require.False(t, mcpHostProtectionDisabled(false, false, "https://public.example.com"), "public-url without http keeps protection on")
+}
+
 func TestOfficialMetaToolsListed(t *testing.T) {
 	srv, _ := newOfficialTestServer(t)
 	cs := connectOfficialClient(t, srv)
