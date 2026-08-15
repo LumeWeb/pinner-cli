@@ -215,7 +215,7 @@ func (s *PinningServiceDefault) List(ctx context.Context, nameFilter string, lim
 			CID:       pin.GetCid().String(),
 			Name:      pin.GetName(),
 			Status:    r.GetStatus().String(),
-			Created:   r.GetCreated().Format(time.DateTime),
+			Created:   r.GetCreated().Format(time.RFC3339),
 			RequestID: r.GetRequestId(),
 			Metadata:  pin.GetMeta(),
 		}
