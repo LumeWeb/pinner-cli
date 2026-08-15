@@ -462,7 +462,11 @@ func (s *vaultService) List(ctx context.Context, vaultPath string) ([]ListItem, 
 		return nil, fmt.Errorf("failed to resolve directory %s: %w", dirPath, err)
 	}
 
-	var items []ListItem
+	// Initialize a non-nil empty slice so an empty listing serializes as [] in
+	// the tool envelope ({"status":"ok","value":[]}) rather than null, matching
+	// every other list tool (pins_list, websites_list, ...). A nil slice would
+	// marshal to null and the MCP result converter drops the value key.
+	items := make([]ListItem, 0)
 
 	// List subdirectories (direct children only)
 	prefix := dirPath

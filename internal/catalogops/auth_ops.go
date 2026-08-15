@@ -60,6 +60,8 @@ func AuthOperations(d AuthDeps) []catalog.Operation {
 type AuthStatusResult struct {
 	Authenticated bool   `json:"authenticated"`
 	PortalURL     string `json:"portal_url,omitempty"`
+	Email         string `json:"email,omitempty"`
+	UserID        int    `json:"user_id,omitempty"`
 	Message       string `json:"message,omitempty"`
 }
 
@@ -117,6 +119,12 @@ func authStatus(d AuthDeps) catalog.Operation {
 			out := &AuthStatusResult{Authenticated: true}
 			if res != nil {
 				out.PortalURL = res.PortalURL
+			}
+			// Surface the token subject and account email the description
+			// promises, reusing the account endpoint account_info reads from.
+			if acct, aerr := svc.GetAccount(ctx); aerr == nil && acct != nil {
+				out.Email = acct.Email
+				out.UserID = acct.Id
 			}
 			return out, nil
 		}),

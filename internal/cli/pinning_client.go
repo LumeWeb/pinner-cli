@@ -152,7 +152,9 @@ func (s *PinningServiceDefault) Pin(ctx context.Context, cidStr, name string, wa
 
 	parsedCid, err := cid.Decode(cidStr)
 	if err != nil {
-		return nil, fmt.Errorf("invalid CID: %w", ErrInvalidCID)
+		// ErrInvalidCID already reads "invalid CID"; wrapping it with a
+		// "invalid CID: " prefix duplicated the message on the wire.
+		return nil, ErrInvalidCID
 	}
 
 	opts := []go_pinning_service_http_client.AddOption{}
@@ -246,7 +248,7 @@ func (s *PinningServiceDefault) Status(ctx context.Context, cidStr string, watch
 
 	parsedCid, err := cid.Decode(cidStr)
 	if err != nil {
-		return nil, fmt.Errorf("invalid CID: %w", ErrInvalidCID)
+		return nil, ErrInvalidCID
 	}
 
 	results, err := s.pinningClient.LsSync(ctx, go_pinning_service_http_client.PinOpts.FilterCIDs(parsedCid))
@@ -294,7 +296,7 @@ func (s *PinningServiceDefault) Unpin(ctx context.Context, cidStr string, confir
 
 	parsedCid, err := cid.Decode(cidStr)
 	if err != nil {
-		return nil, fmt.Errorf("invalid CID: %w", ErrInvalidCID)
+		return nil, ErrInvalidCID
 	}
 
 	results, err := s.pinningClient.LsSync(ctx, go_pinning_service_http_client.PinOpts.FilterCIDs(parsedCid))
