@@ -3,6 +3,7 @@ package catalog
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -76,20 +77,21 @@ func TestFlexibleIDPreservesLargeJsonNumber(t *testing.T) {
 	assert.Equal(t, "9007199254740993", StrFlexibleArg(normalized, "id", ""))
 }
 
-// TestFlexibleIDRejectsFloatingPrecisionLoss guards the direct float64 path
-// (e.g. a Go caller through Invoke passing a float64, or values beyond int64
-// range that int64(v) cannot represent back exactly). A float64 id must
-// round-trip through int64 exactly; values that would truncate or overflow are
-// rejected rather than silently corrupted.
-func TestFlexibleIDRejectsFloatingPrecisionLoss(t *testing.T) {
-	// Above int64 range: int64(v) overflows, the float no longer round-trips,
-	// and the normalizer must reject it (not wrap to a wrong id).
-	for _, v := range []float64{float64(1 << 63), float64(1<<63) + float64(1<<40)} {
+// TestFlexibleIDRejectsOutOfRangeFloat guards the direct float64 path (e.g. a
+// Go caller through Invoke passing a float64) against values that overflow
+// int64. The int64 range is enforced with explicit float comparisons that are
+// platform-independent, rather than via an int64(v) round-trip: Go leaves
+// out-of-range float->int conversions implementation-defined (wraps on amd64,
+// clamps on arm64/macOS), so a round-trip test is not a portable guard.
+func TestFlexibleIDRejectsOutOfRangeFloat(t *testing.T) {
+	// At and above 2^63 (the float64 value of MaxInt64): out of int64 range,
+	// must be rejected rather than wrapped or clamped to a wrong id.
+	for _, v := range []float64{float64(1 << 63), float64(1<<63) + float64(1<<40), float64(math.MaxInt64)} {
 		_, err := NormalizeOperationInput(idOp(), map[string]any{"id": v})
-		require.Error(t, err, "float64 id %v (out of exact int64 range) must be rejected", v)
+		require.Error(t, err, "float64 id %v (out of int64 range) must be rejected", v)
 	}
 
-	// A large but exactly-representable in-range integer is still accepted.
+	// A large but in-range exactly-representable integer is still accepted.
 	normalized, err := NormalizeOperationInput(idOp(), map[string]any{"id": float64(1 << 43)})
 	require.NoError(t, err)
 	assert.Equal(t, "8796093022208", StrFlexibleArg(normalized, "id", ""))

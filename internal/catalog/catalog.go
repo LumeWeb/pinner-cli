@@ -554,19 +554,20 @@ func resolveArg(a OperationArg, raw any, present bool) (value any, st argState, 
 			return strconv.FormatUint(v, 10), stateFilled, nil
 		case float64:
 			// JSON has no integer type, so an int arrives as float64. Reject
-			// fractional values (a bare decimal is not a valid id). float64
-			// only represents integers exactly up to 2^53, so a straight
-			// int64(v) above that would silently truncate the id to a wrong
-			// key id (possibly deleting the wrong key). Reject any value
-			// whose int64 truncation does not round-trip exactly.
+			// fractional values (a bare decimal is not a valid id). Enforce
+			// the int64 range explicitly with float comparisons (math.MinInt64
+			// / MaxInt64 promote to their representable float64 bounds) rather
+			// than by converting and round-tripping: int64(v) for an
+			// out-of-range v is implementation-defined in Go (it wraps on some
+			// platforms and clamps on others), so a round-trip test is not a
+			// reliable overflow guard.
 			if v != math.Trunc(v) {
 				return nil, stateInvalid, fmt.Errorf("expected string or integer, got %v", v)
 			}
-			i := int64(v)
-			if float64(i) != v {
-				return nil, stateInvalid, fmt.Errorf("integer id %v exceeds exact integer precision", v)
+			if v < math.MinInt64 || v >= math.MaxInt64 {
+				return nil, stateInvalid, fmt.Errorf("integer id %v out of range", v)
 			}
-			return strconv.FormatInt(i, 10), stateFilled, nil
+			return strconv.FormatInt(int64(v), 10), stateFilled, nil
 		case json.Number:
 			if i, err := v.Int64(); err == nil {
 				return strconv.FormatInt(i, 10), stateFilled, nil
