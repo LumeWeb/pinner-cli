@@ -16,20 +16,20 @@ import (
 
 // Pin represents a pinned item
 type Pin struct {
-	CID       string
-	Name      string
-	Status    string
-	Created   string
-	RequestID string
-	Metadata  map[string]string
+	CID       string            `json:"cid"`
+	Name      string            `json:"name"`
+	Status    string            `json:"status"`
+	Created   string            `json:"created"`
+	RequestID string            `json:"request_id"`
+	Metadata  map[string]string `json:"metadata"`
 }
 
 // PinStatus represents the status of a pin
 type PinStatus struct {
-	CID       string
-	Status    string
-	Delegates []string
-	Created   string
+	CID       string   `json:"cid"`
+	Status    string   `json:"status"`
+	Delegates []string `json:"delegates"`
+	Created   string   `json:"created"`
 }
 
 // OperationStatusResult represents the status of an account operation.
@@ -52,14 +52,14 @@ type OperationStatusResult struct {
 
 // PinResult represents the result of a pin operation
 type PinResult struct {
-	CID       string
-	RequestID string
-	Status    string
+	CID       string `json:"cid"`
+	RequestID string `json:"request_id"`
+	Status    string `json:"status"`
 }
 
 // UnpinResult represents the result of an unpin operation
 type UnpinResult struct {
-	CID string
+	CID string `json:"cid"`
 }
 
 // BatchOptions configures batch operations

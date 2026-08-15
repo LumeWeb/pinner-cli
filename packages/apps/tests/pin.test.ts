@@ -28,7 +28,7 @@ const baseConfig: PinConfig = {
 };
 
 function pinsAddOk(cid: string, status = "queued"): ToolResult {
-  return { structuredContent: { status: "ok", value: { CID: cid, Status: status } } };
+  return { structuredContent: { status: "ok", value: { cid: cid, status: status } } };
 }
 function pinsStatus(status?: string): ToolResult {
   return status === undefined
@@ -78,7 +78,7 @@ describe("pin flow machine", () => {
     await untilState(service, PinState.Polling);
     expect(renderPin(state(), ctx(), baseConfig).statusMsg).toBe("Pin scheduled.");
     expect(renderPin(state(), ctx(), baseConfig).statusState).toBe("ok");
-    // pins_add readout: out-cid = value.CID, out-status = value.Status.
+    // pins_add readout: out-cid = value.cid, out-status = value.status.
     expect(ctx().outCid).toBe("Qm1");
     expect(ctx().outStatus).toBe("queued");
 
@@ -149,7 +149,7 @@ describe("pin flow machine", () => {
     await untilState(service, PinState.Submitting);
 
     // isError pins_add result → error (no pin_status polling starts).
-    gate[0].resolve({ isError: true, structuredContent: { status: "ok", value: { Status: "failed" } } });
+    gate[0].resolve({ isError: true, structuredContent: { status: "ok", value: { status: "failed" } } });
     await untilState(service, PinState.Error);
     expect(renderPin(state(), ctx(), baseConfig).statusMsg).toBe("Pin failed.");
     expect(renderPin(state(), ctx(), baseConfig).statusState).toBe("error");
