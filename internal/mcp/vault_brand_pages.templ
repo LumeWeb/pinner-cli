@@ -11,9 +11,9 @@ package mcp
 // ordered-list numbers are rendered that could get copied along with the words.
 templ seedDropPage(profile, mnemonic, action string) {
 	@brandLayout("Vault recovery seed") {
-		<div class="card">
-			<h1>Vault recovery seed</h1>
-			<p>Profile: <strong>{ profile }</strong></p>
+		<div class="brand-card">
+			<h1 class="brand-card-title">Vault recovery seed</h1>
+			<p class="brand-card-text">Profile: <strong>{ profile }</strong></p>
 			<p class="seed-warn">This is the only way back into this vault. Write it down and store it somewhere safe. Do not share it.</p>
 			<div class="seed-card" data-seed={ " " + mnemonic }>
 				<div class="seed-grid" aria-label="Recovery seed words">
@@ -29,9 +29,9 @@ templ seedDropPage(profile, mnemonic, action string) {
 					<code class="seed-code">{ mnemonic }</code>
 				</noscript>
 			</div>
-			<p>Only click <em>I have stored my recovery seed</em> once you have safely saved it. After you confirm, this link is invalidated and the on-disk copy is removed.</p>
+			<p class="brand-card-text">Only click <em>I have stored my recovery seed</em> once you have safely saved it. After you confirm, this link is invalidated and the on-disk copy is removed.</p>
 			<form method="post" action={ action }>
-				<button type="submit">I have stored my recovery seed</button>
+				<button class="brand-btn" type="submit">I have stored my recovery seed</button>
 			</form>
 		</div>
 	}
@@ -40,9 +40,9 @@ templ seedDropPage(profile, mnemonic, action string) {
 // seedDropConfirmedPage confirms the drop was consumed and the copy removed.
 templ seedDropConfirmedPage() {
 	@brandLayout("Recovery seed confirmed") {
-		<div class="card">
-			<h1>Recovery seed confirmed</h1>
-			<p>Your recovery seed is confirmed. This link is no longer active and the on-disk copy has been removed. You can now close this window.</p>
+		<div class="brand-card">
+			<h1 class="brand-card-title">Recovery seed confirmed</h1>
+			<p class="brand-card-text">Your recovery seed is confirmed. This link is no longer active and the on-disk copy has been removed. You can now close this window.</p>
 		</div>
 	}
 }
@@ -51,10 +51,10 @@ templ seedDropConfirmedPage() {
 // removed; the token stays live so the human can retry.
 templ seedDropRemovalFailedPage() {
 	@brandLayout("Recovery seed — removal failed") {
-		<div class="card">
-			<h1>Recovery seed not fully removed</h1>
+		<div class="brand-card">
+			<h1 class="brand-card-title">Recovery seed not fully removed</h1>
 			<p class="seed-warn">You have confirmed your recovery seed, but the on-disk copy could <strong>not</strong> be removed. Do not discard anything.</p>
-			<p>Contact your administrator before proceeding — the recovery copy may still exist on this host and must be securely erased.</p>
+			<p class="brand-card-text">Contact your administrator before proceeding — the recovery copy may still exist on this host and must be securely erased.</p>
 		</div>
 	}
 }
@@ -63,15 +63,15 @@ templ seedDropRemovalFailedPage() {
 // starts vault creation. It generates a fresh seed (never the MCP channel).
 templ createVaultPage(profile, token string) {
 	@brandLayout("Create Pinner Vault") {
-		<div class="card">
-			<h1>Create Pinner Vault</h1>
-			<p>Profile: <strong>{ profile }</strong></p>
-			<p>A fresh recovery seed is generated and shown exactly once for you to back up.</p>
+		<div class="brand-card">
+			<h1 class="brand-card-title">Create Pinner Vault</h1>
+			<p class="brand-card-text">Profile: <strong>{ profile }</strong></p>
+			<p class="brand-card-text">A fresh recovery seed is generated and shown exactly once for you to back up.</p>
 			<p class="seed-warn">This creates a new vault identity. The MCP/agent channel never sees the recovery seed.</p>
 			<form method="post" action={ "/create/" + token }>
-				<button type="submit">Create vault</button>
+				<button class="brand-btn" type="submit">Create vault</button>
 			</form>
-			<div class="seed-foot">One-time page. It expires if unused.</div>
+			<div class="brand-foot">One-time page. It expires if unused.</div>
 		</div>
 	}
 }
@@ -81,17 +81,17 @@ templ createVaultPage(profile, token string) {
 // goes only to the local vault process, never the MCP/agent channel.
 templ restoreVaultPage(profile, token string) {
 	@brandLayout("Restore Pinner Vault") {
-		<div class="card">
-			<h1>Restore Pinner Vault</h1>
-			<p>Profile: <strong>{ profile }</strong></p>
-			<p>Enter your recovery phrase to restore this vault. It is sent from your browser directly to the vault process on this machine and is used once.</p>
+		<div class="brand-card">
+			<h1 class="brand-card-title">Restore Pinner Vault</h1>
+			<p class="brand-card-text">Profile: <strong>{ profile }</strong></p>
+			<p class="brand-card-text">Enter your recovery phrase to restore this vault. It is sent from your browser directly to the vault process on this machine and is used once.</p>
 			<p class="seed-warn">This recovery phrase is the only way back into the vault. Enter it only on a trusted device. The MCP/agent channel never sees it.</p>
 			<form method="post" action={ "/restore/" + token }>
-				<label for="mnemonic">Recovery phrase</label>
-				<textarea name="mnemonic" id="mnemonic" required autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="word1 word2 word3 ..."></textarea>
-				<button type="submit">Restore vault</button>
+				<label class="brand-label" for="mnemonic">Recovery phrase</label>
+				<textarea class="brand-input" name="mnemonic" id="mnemonic" required autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="word1 word2 word3 ..."></textarea>
+				<button class="brand-btn" type="submit">Restore vault</button>
 			</form>
-			<div class="seed-foot">One-time page. It expires if unused.</div>
+			<div class="brand-foot">One-time page. It expires if unused.</div>
 		</div>
 	}
 }
@@ -101,15 +101,15 @@ templ restoreVaultPage(profile, token string) {
 // connection page in a new tab (the "bank" device page stays separate from the
 // create/restore flow the human is on).
 templ createVaultApproval(approvalURL string) {
-	<p>To finish creating this vault, approve the device connection at:</p>
+	<p class="brand-card-text">To finish creating this vault, approve the device connection at:</p>
 	<p class="seed-code"><a href={ approvalURL } target="_blank" rel="noopener noreferrer">{ approvalURL }</a></p>
-	<p>Waiting for your approval…</p>
+	<p class="brand-card-text">Waiting for your approval…</p>
 }
 
 templ restoreVaultApproval(approvalURL string) {
-	<p>To finish restoring this vault, approve the device connection at:</p>
+	<p class="brand-card-text">To finish restoring this vault, approve the device connection at:</p>
 	<p class="seed-code"><a href={ approvalURL } target="_blank" rel="noopener noreferrer">{ approvalURL }</a></p>
-	<p>Waiting for your approval…</p>
+	<p class="brand-card-text">Waiting for your approval…</p>
 }
 
 // createVaultDone streams the seed-drop retrieval link once the vault is active.
@@ -125,14 +125,14 @@ templ createVaultDone(profile, vaultID, seedURL string) {
 		var s = document.getElementById("status");
 		if (s) { s.innerHTML = ""; }
 	</script>
-	<div class="status done">
+	<div class="status-done">
 		<h2>Vault created</h2>
-		<p>Profile <code>{ profile }</code> is active (vault ID <code>{ vaultID }</code>).</p>
+		<p class="brand-card-text">Profile <code>{ profile }</code> is active (vault ID <code>{ vaultID }</code>).</p>
 	</div>
 	<details class="seed-backup" id="seed-link" open>
 		<summary>Back up your one-time recovery seed</summary>
-		<p>This is the only way back into this vault. Retrieve it now and store it somewhere safe. The recovery phrase never leaves your browser.</p>
-		<a class="btn primary" href={ seedURL } id="seed-cta">Retrieve my recovery seed</a>
+		<p class="brand-card-text">This is the only way back into this vault. Retrieve it now and store it somewhere safe. The recovery phrase never leaves your browser.</p>
+		<a class="brand-btn-link" href={ seedURL } id="seed-cta">Retrieve my recovery seed</a>
 	</details>
 }
 
@@ -142,19 +142,19 @@ templ restoreVaultDone(profile, vaultID string) {
 		var s = document.getElementById("status");
 		if (s) { s.innerHTML = ""; }
 	</script>
-	<div class="status done">
+	<div class="status-done">
 		<h2>Vault restored</h2>
-		<p>Profile <code>{ profile }</code> is ready (vault ID <code>{ vaultID }</code>).</p>
+		<p class="brand-card-text">Profile <code>{ profile }</code> is ready (vault ID <code>{ vaultID }</code>).</p>
 	</div>
 }
 
 // createVaultError / restoreVaultError stream a failure into the status area.
 templ createVaultError(errMsg string) {
 	<h2>Vault create failed</h2>
-	<p class="status error" id="create-error" role="alert">{ errMsg }</p>
+	<p class="status-error" id="create-error" role="alert">{ errMsg }</p>
 }
 
 templ restoreVaultError(errMsg string) {
 	<h2>Restore failed</h2>
-	<p class="status error" id="restore-error" role="alert">{ errMsg }</p>
+	<p class="status-error" id="restore-error" role="alert">{ errMsg }</p>
 }

@@ -1,61 +1,77 @@
 @import "tailwindcss";
 
 /*
- * MCP Apps — Tailwind v4 theme.
+ * Pinner — centralized brand theme for all in-product surfaces.
  *
- * Each ui:// app is served to a sandboxed iframe as a single self-contained
- * document with its compiled CSS inlined (no network request at runtime). The
- * Tailwind compiler runs at build time (pnpm build:css) and scans the templ
- * bodies and the shared app bundles for the utility classes actually used, so
- * the emitted stylesheet is small and starts from zero custom CSS.
+ * This is the SINGLE canonical theme source for the MCP Apps (ui:// views,
+ * served inlined in a sandboxed iframe) AND the out-of-band (OOB) browser
+ * pages (OAuth/authorize, login, vault seed-drop, account credential change).
+ * Both compile from this one input via `pnpm build:css`; there is no
+ * parallel hand-written stylesheet to drift.
  *
- * The theme below is the port of the previous hand-written MCP Apps identity
- * (dark zinc surface #1e1e24, zinc text, blue accent #4f8cff, status palette)
- * onto Tailwind v4 @theme tokens + a few @utility component classes. Markup in
- * the templ bodies and in the JS bundles uses these token-backed utilities.
+ * Identity: the Pinner brand from the pinner.xyz web app — dark-teal surface
+ * (#0d1d1c), teal accent (#abeedb), dark-teal CTA cards (#0d2d2a) with white
+ * text. The OOB brand.css palette is the canonical source; see
+ * internal/mcp/static/brand.css (kept only as the reference, removed once
+ * fully migrated).
+ *
+ * The Tailwind compiler runs `@source` across the MCP and OOB templ bodies and
+ * the shared JS bundles, so the emitted tailwind.css tree-shakes to exactly
+ * the utilities either surface uses.
  */
 
-@source "../../../packages/apps/src/**/*.ts";
 @source "./../**/*.templ";
+@source "../../mcp/**/*.templ";
+@source "../../../packages/apps/src/**/*.ts";
 
 @theme {
-  /* Core surfaces */
-  --color-background: #1e1e24;
-  --color-foreground: #d4d4d8;
-  --color-card: #16161c;
-  --color-card-foreground: #d4d4d8;
+  /* ---- Pinner brand surface (was OOB brand.css :root) ------------------- */
+  --color-background: #0d1d1c;
+  --color-background-deep: #051413;
+  --color-card: #0d2d2a;
+  --color-foreground: #f8f8f8;
+  --color-muted: #bdc2c1;
+  --color-muted-foreground: #bdc2c1;
+  --color-accent: #abeedb;
+  --color-teal: #adf0dd;
+  --color-teal-muted: #75ac9e;
+  --color-border: #1f3a37;
+  --color-danger: #ff6647;
 
-  /* Hairline borders & inputs */
-  --color-border: #33333d;
-  --color-muted: rgba(255, 255, 255, 0.04);
-  --color-muted-foreground: #a1a1aa;
-  --color-ring: #4f8cff;
+  /* CTAs use the dark-teal home-card color with white text (live-site
+     button treatment), not the accent token. */
+  --color-primary: #0d2d2a;
+  --color-primary-foreground: #f8f8f8;
 
-  /* Accent */
-  --color-primary: #4f8cff;
-  --color-primary-foreground: #0b0b0f;
-
-  /* Status palette */
+  /* ---- Status palette (shared readout colors) --------------------------- */
   --color-status-pending: #f5c542;
-  --color-status-ok: #4ade80;
-  --color-status-info: #93c5fd;
-  --color-status-error: #f87171;
+  --color-status-ok: #abeedb;
+  --color-status-info: #9dd0ff;
+  --color-status-error: #ff6647;
 
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-sans: "Poppins", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 /*
- * Base reset for the sandboxed document. Tailwind v4 ships its own preflight
- * when `@import "tailwindcss"` is used, so we only need the body surface here.
+ * Base reset for a self-contained document (MCP app iframe). Filling the
+ * height matters: hosts (e.g. Grok) size the app iframe to the reported
+ * content height, and a thin strip below the content stays transparent
+ * (white) unless html/body span the full frame and carry the dark surface.
  */
+html,
+body {
+  height: 100%;
+}
 body {
   margin: 0;
   font-family: var(--font-sans);
   color: var(--color-foreground);
   background: var(--color-background);
+  box-sizing: border-box;
 }
 
-/* App shell: view padding + heading + muted helper text. */
+/* ---- MCP app shell (ui:// views) ----------------------------------------- */
 @utility app-shell {
   @apply bg-background text-foreground font-sans p-6;
 }
@@ -63,26 +79,17 @@ body {
   @apply text-xl font-semibold mb-4;
 }
 
-/* Form primitives. */
-@utility form-label {
-  @apply block text-sm text-foreground mb-1;
-}
-@utility form-input {
-  @apply w-full px-2.5 py-2 border border-border rounded-md bg-muted text-foreground font-sans placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring;
-}
-
-/* Primary action button + secondary text button. */
-@utility btn-primary {
-  @apply mt-4 px-4 py-2.5 rounded-md bg-primary text-primary-foreground font-sans font-semibold cursor-pointer transition-colors hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed;
-}
-
-/* Read-only result / info card. */
+/* ---- Shared card: dark-teal brand card ---------------------------------- */
 @utility card {
-  @apply mt-3.5 p-3 border border-border rounded-md leading-relaxed;
+  @apply mt-3.5 p-3 border border-border rounded-md leading-relaxed bg-card text-foreground;
 }
 
-/* Live status line. The color variant is applied dynamically by the app's
-   status machine (text-status-ok/error/info/pending). */
+/* ---- Shared primary action button (brand dark-teal CTA) ------------------ */
+@utility btn-primary {
+  @apply mt-4 px-4 py-2.5 rounded-md bg-primary text-primary-foreground font-sans font-semibold cursor-pointer transition-colors hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2;
+}
+
+/* ---- Live status line (MCP). Color variant applied by the app's machine. */
 @utility status {
   @apply mt-3.5 min-h-[1.2em] text-sm;
 }
@@ -92,7 +99,15 @@ body {
   @apply text-muted-foreground;
 }
 
-/* Shared read-only table primitive (see pin-list + vault surfaces). */
+/* ---- Form primitives (MCP) ------------------------------------------------ */
+@utility form-label {
+  @apply block text-sm text-muted-foreground mb-1;
+}
+@utility form-input {
+  @apply w-full px-2.5 py-2 border border-border rounded-md bg-background-deep text-foreground font-sans placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent;
+}
+
+/* ---- Tables (MCP pin-list + vault) --------------------------------------- */
 @utility table {
   @apply w-full text-sm text-foreground;
 }
@@ -103,13 +118,13 @@ body {
   @apply py-2 px-3 text-left;
 }
 @utility table-row {
-  @apply border-b border-border last:border-b-0 hover:bg-muted;
+  @apply border-b border-border last:border-b-0 hover:bg-muted/10;
 }
+
+/* ---- Browser nav + list (MCP vault) --------------------------------------- */
 @utility mono {
   @apply font-mono text-[0.8rem];
 }
-
-/* Browser navigation row + list primitives. */
 @utility browser-bar {
   @apply flex items-center gap-2 mt-3.5;
 }
@@ -120,7 +135,7 @@ body {
   @apply list-none p-0 mt-2 space-y-1;
 }
 @utility browser-row {
-  @apply px-3 py-2 rounded-md cursor-pointer hover:bg-muted text-sm;
+  @apply px-3 py-2 rounded-md cursor-pointer hover:bg-muted/10 text-sm;
 }
 @utility browser-empty {
   @apply mt-3 text-sm text-muted-foreground;
@@ -128,5 +143,89 @@ body {
 
 /* Deep-link (one-shot) ready link. */
 @utility link-ready {
-  @apply block mt-1 text-primary underline underline-offset-2 break-all;
+  @apply block mt-1 text-accent underline underline-offset-2 break-all;
+}
+
+/* ---- Out-of-band (OOB) browser-page components --------------------------- */
+/* These back brandLayout and the OAuth/login/vault pages that run as real
+   browser pages (not the sandboxed MCP iframe). They share the brand tokens
+   above so identity is identical to the MCP surfaces. */
+
+/* Brand mark + folded-pin logo. */
+@utility brand-mark {
+  @apply flex items-center mb-8 rounded;
+}
+@utility brand-logo {
+  @apply block w-9 h-9 drop-shadow-[0_0_0.5rem_rgba(173,240,221,0.25)];
+}
+
+/* OOB page body is a centered flex column (brandLayout). */
+@utility brand-body {
+  @apply min-h-screen flex flex-col items-center justify-center p-8 text-foreground font-sans;
+  background: radial-gradient(1200px 600px at 70% -10%, var(--color-card) 0%, var(--color-background) 55%, var(--color-background-deep) 100%);
+}
+
+/* OOB centered auth card (larger than the compact MCP `card`). */
+@utility brand-card {
+  @apply w-full max-w-[26rem] p-8 rounded-xl bg-card/60 border border-border text-foreground backdrop-blur;
+}
+@utility brand-card-title {
+  @apply text-[1.35rem] font-semibold mb-2;
+}
+@utility brand-card-text {
+  @apply my-1 text-muted-foreground text-sm leading-relaxed;
+}
+
+/* OOB form fields (auth + seed). */
+@utility brand-input {
+  @apply w-full px-3 py-2.5 rounded-lg bg-background-deep border border-border text-foreground text-[0.95rem] font-sans outline-none placeholder:text-muted-foreground focus:border-accent;
+}
+@utility brand-label {
+  @apply block text-xs text-muted-foreground mt-4 mb-1 tracking-wide;
+}
+
+/* OOB primary CTA (dark-teal card bg, white text). */
+@utility brand-btn {
+  @apply w-full mt-5 px-4 py-3 rounded-lg bg-card text-foreground font-sans font-semibold cursor-pointer transition-colors inline-flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-default;
+}
+
+/* OOB status readout variants. */
+@utility status-error {
+  @apply mt-4 px-3.5 py-2.5 rounded-lg text-sm bg-danger/15 text-danger border border-danger/30;
+}
+@utility status-done {
+  @apply mt-4 px-3.5 py-2.5 rounded-lg text-sm bg-accent/10 text-accent border border-accent/30;
+}
+
+/* OOB footnote. */
+@utility brand-foot {
+  @apply text-[0.78rem] text-teal-muted mt-6 text-center;
+}
+@utility brand-foot-code {
+  @apply bg-background-deep px-1.5 py-0.5 rounded text-muted-foreground;
+}
+
+/* Vault seed-drop components. */
+@utility seed-card {
+  @apply my-4 py-3 px-3.5 rounded-lg bg-background-deep border border-border;
+}
+@utility seed-grid {
+  @apply grid grid-cols-3 gap-1.5;
+}
+@utility seed-word {
+  @apply font-mono text-[0.82rem] text-foreground bg-accent/5 border border-accent/10 rounded py-1.5 px-2 text-center select-none cursor-default;
+}
+@utility seed-copy {
+  @apply w-full mt-3 py-2 px-3 rounded-lg border border-border bg-transparent text-muted-foreground font-sans text-[0.82rem] font-medium cursor-pointer transition-colors inline-flex items-center justify-center gap-1.5 hover:bg-accent/10 hover:text-teal focus-visible:bg-accent/10;
+}
+@utility seed-warn {
+  @apply my-3.5 px-3.5 py-2.5 rounded-lg text-sm bg-accent/10 border border-accent/30 text-accent;
+}
+@utility seed-backup {
+  @apply mt-4 border border-border rounded-lg py-2.5 px-3.5 bg-background-deep;
+}
+
+/* OOB button-as-link CTA (seed retrieval). */
+@utility brand-btn-link {
+  @apply inline-flex items-center justify-center gap-2 mt-2 py-2.5 px-4 rounded-lg bg-accent text-background-deep font-semibold no-underline w-full transition-colors hover:bg-[#c6f6e9];
 }

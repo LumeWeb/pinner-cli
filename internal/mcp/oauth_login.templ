@@ -17,9 +17,9 @@ type oauthAuthorizeData struct {
 
 templ oauthLoginPage(data oauthAuthorizeData) {
 	@brandLayout("Authorize pinner MCP access") {
-		<div class="card">
-			<h1>Authorize pinner MCP access</h1>
-			<p>
+		<div class="brand-card">
+			<h1 class="brand-card-title">Authorize pinner MCP access</h1>
+			<p class="brand-card-text">
 				Client <strong>{ data.ClientID }</strong> is requesting access to this MCP
 				server, which executes CLI tools in-process. Enter the shared auth secret
 				to authorize.
@@ -32,12 +32,12 @@ templ oauthLoginPage(data oauthAuthorizeData) {
 				<input type="hidden" name="code_challenge" value={ data.CodeChallenge }/>
 				<input type="hidden" name="code_challenge_method" value={ data.CodeChallengeMethod }/>
 				<input type="hidden" name="resource" value={ data.Resource }/>
-				<label for="password">Auth secret</label>
-				<input type="password" id="password" name="password" required autofocus autocomplete="current-password"/>
+				<label class="brand-label" for="password">Auth secret</label>
+				<input class="brand-input" type="password" id="password" name="password" required autofocus autocomplete="current-password"/>
 				if data.Error != "" {
-					<p class="error">{ data.Error }</p>
+					<p class="status-error">{ data.Error }</p>
 				}
-				<button type="submit">Authorize</button>
+				<button class="brand-btn" type="submit">Authorize</button>
 			</form>
 		</div>
 	}

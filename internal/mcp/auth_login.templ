@@ -12,27 +12,27 @@ type authLoginPageData struct {
 
 templ authLoginPage(data authLoginPageData) {
 	@brandLayout("Sign in to Pinner") {
-		<div class="card">
-			<h1>Sign in to Pinner</h1>
-			<p>
+		<div class="brand-card">
+			<h1 class="brand-card-title">Sign in to Pinner</h1>
+			<p class="brand-card-text">
 				Authenticate to enable this MCP server. Enter the account email and
 				password. Credentials are entered here and never exposed to the
 				requesting client.
 			</p>
 			<form method="post" action={ data.Action }>
 				<input type="hidden" name="csrf" value={ data.CSRFToken }/>
-				<label for="email">Email</label>
-				<input type="email" id="email" name="email" value={ data.Email } required autofocus autocomplete="email" spellcheck="false"/>
-				<label for="password">Password</label>
-				<input type="password" id="password" name="password" required autocomplete="current-password"/>
+				<label class="brand-label" for="email">Email</label>
+				<input class="brand-input" type="email" id="email" name="email" value={ data.Email } required autofocus autocomplete="email" spellcheck="false"/>
+				<label class="brand-label" for="password">Password</label>
+				<input class="brand-input" type="password" id="password" name="password" required autocomplete="current-password"/>
 				if data.OTPStage {
-					<label for="otp">Two-factor code</label>
-					<input type="text" id="otp" name="otp" required autocomplete="one-time-code" inputmode="numeric" pattern="[0-9]*"/>
+					<label class="brand-label" for="otp">Two-factor code</label>
+					<input class="brand-input" type="text" id="otp" name="otp" required autocomplete="one-time-code" inputmode="numeric" pattern="[0-9]*"/>
 				}
 				if data.Error != "" {
-					<p class="error">{ data.Error }</p>
+					<p class="status-error">{ data.Error }</p>
 				}
-				<button type="submit">{ "Authorize" }</button>
+				<button class="brand-btn" type="submit">{ "Authorize" }</button>
 			</form>
 		</div>
 	}
@@ -41,9 +41,9 @@ templ authLoginPage(data authLoginPageData) {
 // authSuccessPage confirms an out-of-band login completed.
 templ authSuccessPage() {
 	@brandLayout("Signed in") {
-		<div class="card">
-			<h1>Signed in</h1>
-			<p>Authentication complete. You can close this tab and return to your client.</p>
+		<div class="brand-card">
+			<h1 class="brand-card-title">Signed in</h1>
+			<p class="brand-card-text">Authentication complete. You can close this tab and return to your client.</p>
 		</div>
 	}
 }
