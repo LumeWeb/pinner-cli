@@ -373,6 +373,41 @@ func TestDNSRecordsDeleteConfirmRequired(t *testing.T) {
 	}
 }
 
+// TestServerSideListOpsExposeSearch is the standardization contract: every
+// *_list catalog operation whose backend supports server-side search exposes a
+// generic `search` argument (full-text, evaluated server-side), separate from
+// and composing with its structured filters. Ops whose backend has no
+// server-side search yet deliberately do not declare `search`, so agents never
+// see a search that would be silently ignored.
+func TestServerSideListOpsExposeSearch(t *testing.T) {
+	listOps := map[string][]catalog.Operation{
+		"api_keys_list":    APIKeysOperations(APIKeysDeps{}),
+		"operations_list":  OperationsOperations(OperationsDeps{}),
+		"ipns_keys_list":   IPNSOperations(IPNSDeps{}),
+		"pins_list":        PinsOperations(PinsDeps{}),
+	}
+	for name, ops := range listOps {
+		var op catalog.Operation
+		for _, o := range ops {
+			if o.Name() == name {
+				op = o
+				break
+			}
+		}
+		if op == nil {
+			t.Fatalf("%s operation not found", name)
+		}
+		a := argByName(t, op, "search")
+		if a == nil {
+			t.Errorf("%s must declare a search arg so every server-side-searchable list tool supports text search", name)
+			continue
+		}
+		if a.Type != catalog.ArgTypeString {
+			t.Errorf("%s search arg must be ArgTypeString, got %v", name, a.Type)
+		}
+	}
+}
+
 // TestDNSRecordExtendedTypeValidation covers the expanded SRV/CAA/SOA/PTR
 // record types: valid content passes, malformed content is rejected.
 func TestDNSRecordExtendedTypeValidation(t *testing.T) {

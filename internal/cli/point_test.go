@@ -69,7 +69,7 @@ func TestPoint(t *testing.T) {
 				svc.createKeyFunc = func(ctx context.Context, name string, key *string) (*ipfs.IPNSKeyResponse, error) {
 					return nil, fmt.Errorf("key already exists")
 				}
-				svc.listKeysFunc = func(ctx context.Context) ([]ipfs.IPNSKeyResponse, error) {
+				svc.listKeysFunc = func(ctx context.Context, _ ...ipfs.ListKeyOption) ([]ipfs.IPNSKeyResponse, error) {
 					return []ipfs.IPNSKeyResponse{{Id: 1, Name: "vitalik.eth", IpnsName: "k51qzi5uexisting", PeerId: "12D3KooW...", Created: time.Now()}}, nil
 				}
 				svc.publishFunc = func(ctx context.Context, cid, keyName string, ttl *string) (*ipfs.IPNSPublishResponse, error) {
@@ -166,7 +166,7 @@ func TestUnpoint(t *testing.T) {
 			name:   "successful unpoint",
 			domain: "vitalik.eth",
 			setupIPNS: func(svc *mockIPNSServiceForCLI) {
-				svc.listKeysFunc = func(ctx context.Context) ([]ipfs.IPNSKeyResponse, error) {
+				svc.listKeysFunc = func(ctx context.Context, _ ...ipfs.ListKeyOption) ([]ipfs.IPNSKeyResponse, error) {
 					return []ipfs.IPNSKeyResponse{{Id: 1, Name: "vitalik.eth", IpnsName: "k51qzi5uqu5djx", PeerId: "12D3KooW...", Created: time.Now()}}, nil
 				}
 				svc.deleteKeyFunc = func(ctx context.Context, id string) error { return nil }
@@ -182,7 +182,7 @@ func TestUnpoint(t *testing.T) {
 			name:   "key not found",
 			domain: "nexist.eth",
 			setupIPNS: func(svc *mockIPNSServiceForCLI) {
-				svc.listKeysFunc = func(ctx context.Context) ([]ipfs.IPNSKeyResponse, error) {
+				svc.listKeysFunc = func(ctx context.Context, _ ...ipfs.ListKeyOption) ([]ipfs.IPNSKeyResponse, error) {
 					return []ipfs.IPNSKeyResponse{}, nil
 				}
 			},
@@ -227,7 +227,7 @@ func TestUnpoint(t *testing.T) {
 
 func TestUnpointJSON(t *testing.T) {
 	ipnsSvc := &mockIPNSServiceForCLI{
-		listKeysFunc: func(ctx context.Context) ([]ipfs.IPNSKeyResponse, error) {
+		listKeysFunc: func(ctx context.Context, _ ...ipfs.ListKeyOption) ([]ipfs.IPNSKeyResponse, error) {
 			return []ipfs.IPNSKeyResponse{{Id: 1, Name: "vitalik.eth", IpnsName: "k51qzi5uqu5djx", PeerId: "12D3KooW...", Created: time.Now()}}, nil
 		},
 		deleteKeyFunc: func(ctx context.Context, id string) error { return nil },

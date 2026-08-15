@@ -82,7 +82,7 @@ func unpinAll(ctx context.Context, cmd flagGetterWithInt, output Output, cfgMgr 
 	dryRun := cmd.Bool(FlagDryRun)
 	yes := cmd.Bool(FlagForce) || cmd.Bool(FlagYes)
 
-	pins, err := pinningService.List(ctx, "", 0, statusFilter)
+	pins, err := pinningService.List(ctx, "", 0, statusFilter, "")
 	if err != nil {
 		return err
 	}

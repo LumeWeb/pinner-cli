@@ -10,6 +10,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/catalog"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
 	"go.lumeweb.com/pinner-cli/internal/core/ipns"
+	ipfs "go.lumeweb.com/ipfs-sdk"
 )
 
 // IPNSDeps are the dependencies the IPNS operations need at construction time.
@@ -76,9 +77,12 @@ func IPNSOperations(d IPNSDeps) []catalog.Operation {
 func ipnsKeysList(d IPNSDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
 		Name: "ipns_keys_list", Title: "List IPNS keys", Summary: "List all IPNS keys",
-		Description: "List all IPNS keys for the authenticated account.",
+		Description: "List all IPNS keys for the authenticated account, optionally narrowing by a server-side name substring search.",
 		Category:    "ipns", Safety: catalog.SafetyRead, Interaction: catalog.InteractionAgentSafe, Visibility: catalog.VisibilityBoth,
-		Positional: "", Args: nil,
+		Positional: "",
+		Args: []catalog.OperationArg{
+			{Name: "search", Type: catalog.ArgTypeString, Help: "Full-text search evaluated server-side against key name"},
+		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			svc, err := d.service(input)
 			if err != nil {
@@ -86,6 +90,9 @@ func ipnsKeysList(d IPNSDeps) catalog.Operation {
 			}
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
+			}
+			if search := catalog.SearchArg(input); search != "" {
+				return svc.ListKeys(ctx, ipfs.ListKeyOption{}.WithFilterName(search))
 			}
 			return svc.ListKeys(ctx)
 		}),

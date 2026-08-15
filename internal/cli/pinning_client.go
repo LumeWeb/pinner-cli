@@ -13,6 +13,7 @@ import (
 	"github.com/ipfs/go-cid"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/samber/lo"
+	ipfs "go.lumeweb.com/ipfs-sdk"
 	"go.lumeweb.com/pinner-cli/internal/cli/internal"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
 	portalsdk "go.lumeweb.com/portal-sdk"
@@ -70,6 +71,14 @@ func WithPinningClientFactory(factory internal.PinningClientFactory) PinningServ
 	}
 }
 
+// WithSDKPinningService sets the ipfs-sdk pinning service used for server-side
+// list search (useful for testing the match=partial path without a live endpoint).
+func WithSDKPinningService(svc ipfs.PinningService) PinningServiceOption {
+	return func(s *PinningServiceDefault) {
+		s.sdkPinningSvc = svc
+	}
+}
+
 // WithAuthToken sets an auth token override that takes precedence over config.
 func WithAuthToken(token string) PinningServiceOption {
 	return func(s *PinningServiceDefault) {
@@ -94,6 +103,9 @@ func NewPinResult(cid, requestID, status string) *PinResult {
 // PinningServiceDefault provides pinning operations using the IPFS pinning service API.
 type PinningServiceDefault struct {
 	pinningClient internal.PinningClient
+	// sdkPinningSvc lists pins via the ipfs-sdk pinning service, which can send
+	// the spec's match=partial substring name filter server-side (boxo cannot).
+	sdkPinningSvc ipfs.PinningService
 	configMgr     config.Manager
 	output        Output
 	apiEndpoint   string
@@ -129,9 +141,21 @@ func NewPinningService(cfgMgr config.Manager, output Output, apiEndpoint string,
 			return s
 		}
 		s.pinningClient = s.clientFactory(apiEndpoint, authToken)
+		s.sdkPinningSvc = newSDKPinningService(apiEndpoint, authToken)
 	}
 
 	return s
+}
+
+// newSDKPinningService builds the ipfs-sdk pinning service used for server-side
+// list search. On failure it returns nil; the service then falls back to the
+// boxo client's list which still works but without match=partial search.
+func newSDKPinningService(apiEndpoint, authToken string) ipfs.PinningService {
+	client, err := ipfs.NewClient(apiEndpoint, authToken)
+	if err != nil {
+		return nil
+	}
+	return client.Pinning()
 }
 
 // RequireAuthenticated checks if the service is authenticated and returns an error if not.
@@ -176,14 +200,91 @@ func (s *PinningServiceDefault) Pin(ctx context.Context, cidStr, name string, wa
 	return NewPinResult(cidStr, result.GetRequestId(), result.GetStatus().String()), nil
 }
 
-// List returns a list of pinned content with optional filters.
-func (s *PinningServiceDefault) List(ctx context.Context, nameFilter string, limit int, statusFilter string) ([]Pin, error) {
+// List returns a list of pinned content with optional filters. nameFilter is
+// an exact name match; search is a server-side substring name match
+// (match=partial) composed with the other filters. Both filters, plus status,
+// are evaluated server-side via the ipfs-sdk pinning service so results are
+// never post-filtered client-side.
+func (s *PinningServiceDefault) List(ctx context.Context, nameFilter string, limit int, statusFilter string, search string) ([]Pin, error) {
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
 
 	s.output.PrintVerbosef("Using API endpoint: %s", s.apiEndpoint)
 
+	if s.sdkPinningSvc != nil {
+		pins, err := s.listViaSDK(ctx, nameFilter, limit, statusFilter, search)
+		if err != nil {
+			return nil, wrapPinningError("List pins", err, ErrPinningFailed)
+		}
+		return pins, nil
+	}
+
+	// No SDK pinning service (auth/build failure): fall back to boxo, which
+	// cannot send match=partial, so search is unavailable on this path. Keep the
+	// exact name/status filters server-side.
+	s.output.PrintVerbosef("ipfs-sdk pinning service unavailable; listing via boxo without substring search")
+	pins, err := s.listViaBoxo(ctx, nameFilter, limit, statusFilter)
+	if err != nil {
+		return nil, wrapPinningError("List pins", err, ErrPinningFailed)
+	}
+	return pins, nil
+}
+
+// listViaSDK lists pins through the ipfs-sdk pinning service, sending the
+// name/status/search filters as server-side query params (name, status,
+// match=partial for search).
+func (s *PinningServiceDefault) listViaSDK(ctx context.Context, nameFilter string, limit int, statusFilter string, search string) ([]Pin, error) {
+	opts := []ipfs.ListOption{}
+	if search != "" {
+		// Server-side substring name search (IPFS Pinning Services spec's
+		// match=partial), via the SDK's name-partial helper so the match
+		// strategy type stays encapsulated.
+		opts = append(opts, ipfs.WithFilterNamePartial(search))
+	} else if nameFilter != "" {
+		// Exact name match (default match strategy per spec).
+		opts = append(opts, ipfs.WithFilterName(nameFilter))
+	}
+	if statusFilter != "" {
+		opts = append(opts, ipfs.WithFilterStatus(ipfs.PinStatusEnum(statusFilter)))
+	}
+	if limit > 0 {
+		opts = append(opts, ipfs.WithLimit(int32(limit)))
+	}
+
+	statuses, err := s.sdkPinningSvc.ListPins(ctx, opts...)
+	if err != nil {
+		return nil, err
+	}
+
+	return lo.Map(statuses, func(ps ipfs.PinStatus, _ int) Pin {
+		name := ""
+		if ps.Pin.Name != nil {
+			name = *ps.Pin.Name
+		}
+		return Pin{
+			CID:       ps.Pin.Cid,
+			Name:      name,
+			Status:    string(ps.PinStatusEnum),
+			Created:   ps.Created.Format(time.RFC3339),
+			RequestID: ps.Requestid,
+			Metadata:  mapMeta(ps.Pin.Meta),
+		}
+	}), nil
+}
+
+// mapMeta converts the SDK's *PinMeta metadata to a plain map.
+func mapMeta(meta *ipfs.PinMeta) map[string]string {
+	if meta == nil {
+		return map[string]string{}
+	}
+	return map[string]string(*meta)
+}
+
+// listViaBoxo lists pins through the boxo client. It preserves the historical
+// behavior (server-side name/status filters; no match=partial substring search)
+// as a fallback when the SDK pinning service could not be constructed.
+func (s *PinningServiceDefault) listViaBoxo(ctx context.Context, nameFilter string, limit int, statusFilter string) ([]Pin, error) {
 	opts := []go_pinning_service_http_client.LsOption{}
 	if nameFilter != "" {
 		opts = append(opts, go_pinning_service_http_client.PinOpts.FilterName(nameFilter))
@@ -192,10 +293,6 @@ func (s *PinningServiceDefault) List(ctx context.Context, nameFilter string, lim
 		opts = append(opts, go_pinning_service_http_client.PinOpts.FilterStatus(go_pinning_service_http_client.Status(statusFilter)))
 	}
 
-	// boxo's Ls drives cursor pagination internally and drains every page, so
-	// the Limit option only caps each page and the full result set always comes
-	// back. When a total cap is requested we must stop the stream once the cap
-	// is reached rather than page through every pin.
 	var (
 		results []go_pinning_service_http_client.PinStatusGetter
 		err     error
@@ -206,10 +303,10 @@ func (s *PinningServiceDefault) List(ctx context.Context, nameFilter string, lim
 		results, err = s.pinningClient.LsSync(ctx, opts...)
 	}
 	if err != nil {
-		return nil, wrapPinningError("List pins", err, ErrPinningFailed)
+		return nil, err
 	}
 
-	pins := lo.Map(results, func(r go_pinning_service_http_client.PinStatusGetter, _ int) Pin {
+	return lo.Map(results, func(r go_pinning_service_http_client.PinStatusGetter, _ int) Pin {
 		pin := r.GetPin()
 		return Pin{
 			CID:       pin.GetCid().String(),
@@ -219,23 +316,7 @@ func (s *PinningServiceDefault) List(ctx context.Context, nameFilter string, lim
 			RequestID: r.GetRequestId(),
 			Metadata:  pin.GetMeta(),
 		}
-	})
-
-	// The Pinning Service API accepts a `name` filter but some servers ignore it
-	// on list, returning every pin. Enforce the documented "filter by name"
-	// contract client-side so pins_list actually narrows results regardless of
-	// server behavior.
-	if nameFilter != "" {
-		kept := pins[:0]
-		for _, p := range pins {
-			if p.Name == nameFilter {
-				kept = append(kept, p)
-			}
-		}
-		pins = kept
-	}
-
-	return pins, nil
+	}), nil
 }
 
 // Status returns the status of a pin.
@@ -663,7 +744,7 @@ func (s *PinningServiceDefault) UnpinAll(ctx context.Context, statusFilter strin
 
 	s.output.PrintVerbosef("Using API endpoint: %s", s.apiEndpoint)
 
-	pins, err := s.List(ctx, "", 0, statusFilter)
+	pins, err := s.List(ctx, "", 0, statusFilter, "")
 	if err != nil {
 		return nil, err
 	}

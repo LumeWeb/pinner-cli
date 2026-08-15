@@ -114,6 +114,13 @@ func (s *OperationsServiceDefault) List(ctx context.Context, opts OperationsList
 		listOpts = append(listOpts, portalsdk.WithFilters(filters...))
 	}
 
+	// Search is separate from the structured filters: it is a full-text term
+	// evaluated server-side against the operation's searchable fields and
+	// composes (AND) with any filters above.
+	if opts.Search != "" {
+		listOpts = append(listOpts, portalsdk.WithSearch(opts.Search))
+	}
+
 	if opts.Sort != "" {
 		sorts := parseSortOptions(opts.Sort)
 		if len(sorts) > 0 {

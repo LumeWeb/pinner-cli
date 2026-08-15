@@ -17,6 +17,8 @@ import (
 	climocks "go.lumeweb.com/pinner-cli/internal/cli/internal/mocks"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
 	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
+	ipfs "go.lumeweb.com/ipfs-sdk"
+	servicemocks "go.lumeweb.com/ipfs-sdk/mocks/services"
 )
 
 const testAuthToken = "test-token"
@@ -186,7 +188,7 @@ func TestPinningService_List(t *testing.T) {
 		output := newTestOutput()
 		service := NewPinningService(cfgMgr, output, "https://api.test.com", WithPinningClient(client))
 
-		pins, err := service.List(context.Background(), "", 0, "")
+		pins, err := service.List(context.Background(), "", 0, "", "")
 		require.NoError(t, err)
 		assert.Len(t, pins, 1)
 		assert.Equal(t, "QmUNLLsPACCz1vLxQVkXqqLX5R1X345qqfHbsf67hvA3Nn", pins[0].CID)
@@ -214,7 +216,7 @@ func TestPinningService_List(t *testing.T) {
 		output := newTestOutput()
 		service := NewPinningService(cfgMgr, output, "https://api.test.com", WithPinningClient(client))
 
-		pins, err := service.List(context.Background(), "", 5, "")
+		pins, err := service.List(context.Background(), "", 5, "", "")
 		require.NoError(t, err)
 		assert.Len(t, pins, 1)
 		assert.Equal(t, "test-name", pins[0].Name)
@@ -238,7 +240,7 @@ func TestPinningService_List(t *testing.T) {
 		output := newTestOutput()
 		service := NewPinningService(cfgMgr, output, "https://api.test.com", WithPinningClient(client))
 
-		pins, err := service.List(context.Background(), "filtered", 10, "pinned")
+		pins, err := service.List(context.Background(), "filtered", 10, "pinned", "")
 		require.NoError(t, err)
 		assert.Len(t, pins, 1)
 		assert.Equal(t, "filtered", pins[0].Name)
@@ -255,7 +257,7 @@ func TestPinningService_List(t *testing.T) {
 			apiEndpoint:   "https://api.test.com",
 		}
 
-		_, err := service.List(context.Background(), "", 0, "")
+		_, err := service.List(context.Background(), "", 0, "", "")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "not authenticated")
 	})
@@ -276,7 +278,7 @@ func TestPinningService_List(t *testing.T) {
 		output := newTestOutput()
 		service := NewPinningService(cfgMgr, output, "https://api.test.com", WithPinningClient(client))
 
-		_, err := service.List(context.Background(), "", 0, "")
+		_, err := service.List(context.Background(), "", 0, "", "")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "List pins failed")
 	})
@@ -297,7 +299,7 @@ func TestPinningService_List(t *testing.T) {
 		output := newTestOutput()
 		service := NewPinningService(cfgMgr, output, "https://api.test.com", WithPinningClient(client))
 
-		_, err := service.List(context.Background(), "", 0, "")
+		_, err := service.List(context.Background(), "", 0, "", "")
 		require.Error(t, err)
 		assert.True(t, errors.Is(err, ErrNotAuthenticated))
 	})
@@ -1017,4 +1019,57 @@ func (m *mockPinStatusGetter) String() string {
 
 func (m *mockPinStatusGetter) MarshalJSON() ([]byte, error) {
 	return m.pin.MarshalJSON()
+}
+
+func ptrStr(s string) *string { return &s }
+
+// TestPinsListSendsPartialMatch is the server-side guard for pins_list search:
+// when List receives a non-empty search it must reach the ipfs-sdk pinning
+// service with a match=partial name filter, and never fall back to boxo or
+// post-filter client-side.
+func TestPinsListSendsPartialMatch(t *testing.T) {
+	cfgMgr := configmocks.NewMockManager(t)
+	cfgMgr.EXPECT().Config().Maybe().Return(&config.Config{AuthToken: testAuthToken})
+
+	boxoClient := climocks.NewMockPinningClient(t)
+	boxoClient.EXPECT().LsSync(mock.Anything, mock.Anything, mock.Anything).Maybe()
+
+	sdkSvc := servicemocks.NewMockPinningService(t)
+	sdkSvc.EXPECT().ListPins(mock.Anything, mock.Anything).
+		Return([]ipfs.PinStatus{
+			{Pin: ipfs.Pin{Cid: "QmXxx", Name: ptrStr("do")}, PinStatusEnum: ipfs.StatusPinned, Created: time.Now()},
+		}, nil).
+		Run(func(_ctx context.Context, opts ...ipfs.ListOption) {
+			var (
+				name  *string
+				match *ipfs.TextMatchingStrategy
+			)
+			for _, o := range opts {
+				if o.Name != nil {
+					n := string(*o.Name)
+					name = &n
+				}
+				if o.Match != nil {
+					m := ipfs.TextMatchingStrategy(*o.Match)
+					match = &m
+				}
+			}
+			if name == nil || *name != "do" {
+				t.Errorf("ListPins must receive WithFilterNamePartial(\"do\"), got name=%v", name)
+			}
+			if match == nil || *match != ipfs.MatchPartial {
+				t.Errorf("ListPins must receive match=partial for substring search, got match=%v", match)
+			}
+		})
+
+	output := newTestOutput()
+	service := NewPinningService(cfgMgr, output, "https://api.test.com",
+		WithPinningClient(boxoClient),
+		WithSDKPinningService(sdkSvc),
+	)
+
+	pins, err := service.List(context.Background(), "", 0, "", "do")
+	require.NoError(t, err)
+	require.Len(t, pins, 1)
+	assert.Equal(t, "do", pins[0].Name)
 }

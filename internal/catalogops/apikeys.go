@@ -36,14 +36,14 @@ func apiKeysList(d APIKeysDeps) catalog.Operation {
 		Category:    "account", Safety: catalog.SafetyRead, Interaction: catalog.InteractionAgentSafe, Visibility: catalog.VisibilityBoth,
 		Positional: "",
 		Args: []catalog.OperationArg{
-			{Name: "search", Type: catalog.ArgTypeString, Help: "Search API keys by name"},
+			{Name: "search", Type: catalog.ArgTypeString, Help: "Full-text search evaluated server-side against key name"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			svc := d.Service(input)
 			if svc == nil {
 				return nil, fmt.Errorf("api-keys service unavailable")
 			}
-			keys, total, err := svc.ListAPIKeys(ctx, catalog.StrArg(input, "search", ""))
+			keys, total, err := svc.ListAPIKeys(ctx, catalog.SearchArg(input))
 			if err != nil {
 				return nil, err
 			}

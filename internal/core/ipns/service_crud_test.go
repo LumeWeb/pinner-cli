@@ -16,7 +16,7 @@ import (
 
 // mockIPNSSDKService implements ipfs.IPNSService for testing the ipnsService wrapper.
 type mockIPNSSDKService struct {
-	listKeysFunc    func(ctx context.Context) ([]ipfs.IPNSKeyResponse, error)
+	listKeysFunc    func(ctx context.Context, opts ...ipfs.ListKeyOption) ([]ipfs.IPNSKeyResponse, error)
 	getKeyFunc      func(ctx context.Context, id string) (*ipfs.IPNSKeyResponse, error)
 	createKeyFunc   func(ctx context.Context, name string, opts ...ipfs.CreateKeyOption) (*ipfs.IPNSKeyResponse, error)
 	deleteKeyFunc   func(ctx context.Context, id string) error
@@ -26,9 +26,9 @@ type mockIPNSSDKService struct {
 	waitResolveFunc func(ctx context.Context, name string, expectedCID string, opts ...ipfs.PollOption) (*ipfs.IPNSResolveResponse, error)
 }
 
-func (m *mockIPNSSDKService) ListKeys(ctx context.Context) ([]ipfs.IPNSKeyResponse, error) {
+func (m *mockIPNSSDKService) ListKeys(ctx context.Context, opts ...ipfs.ListKeyOption) ([]ipfs.IPNSKeyResponse, error) {
 	if m.listKeysFunc != nil {
-		return m.listKeysFunc(ctx)
+		return m.listKeysFunc(ctx, opts...)
 	}
 	return nil, nil
 }
@@ -328,7 +328,7 @@ func TestIPNSService_Publish_WithTTL_Success(t *testing.T) {
 
 func TestIPNSService_Publish_KeyResolutionError(t *testing.T) {
 	sdkMock := &mockIPNSSDKService{
-		listKeysFunc: func(ctx context.Context) ([]ipfs.IPNSKeyResponse, error) {
+		listKeysFunc: func(ctx context.Context, _ ...ipfs.ListKeyOption) ([]ipfs.IPNSKeyResponse, error) {
 			return nil, errors.New("service unavailable")
 		},
 	}
@@ -370,7 +370,7 @@ func TestIPNSService_Republish_Success(t *testing.T) {
 
 func TestIPNSService_Republish_KeyResolutionError(t *testing.T) {
 	sdkMock := &mockIPNSSDKService{
-		listKeysFunc: func(ctx context.Context) ([]ipfs.IPNSKeyResponse, error) {
+		listKeysFunc: func(ctx context.Context, _ ...ipfs.ListKeyOption) ([]ipfs.IPNSKeyResponse, error) {
 			return nil, errors.New("service unavailable")
 		},
 	}

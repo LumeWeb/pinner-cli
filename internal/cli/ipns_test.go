@@ -41,7 +41,7 @@ func setupIPNSHandlerTest(t *testing.T) (*mockIPNSServiceForCLI, *configmocks.Mo
 func TestIpnsKeysList_Success(t *testing.T) {
 	mockSvc, cfgMgr := setupIPNSHandlerTest(t)
 	now := time.Now()
-	mockSvc.listKeysFunc = func(ctx context.Context) ([]ipfs.IPNSKeyResponse, error) {
+	mockSvc.listKeysFunc = func(ctx context.Context, _ ...ipfs.ListKeyOption) ([]ipfs.IPNSKeyResponse, error) {
 		return []ipfs.IPNSKeyResponse{
 			{Id: 1, Name: "my-key", IpnsName: "k51qzi5uqu5djx123", PeerId: "12D3KooWABC123", Created: now},
 			{Id: 2, Name: "another-key", IpnsName: "k51qzi5uqu5djx456", PeerId: "12D3KooWDEF456", Created: now},
@@ -56,7 +56,7 @@ func TestIpnsKeysList_Success(t *testing.T) {
 
 func TestIpnsKeysList_Empty(t *testing.T) {
 	mockSvc, cfgMgr := setupIPNSHandlerTest(t)
-	mockSvc.listKeysFunc = func(ctx context.Context) ([]ipfs.IPNSKeyResponse, error) {
+	mockSvc.listKeysFunc = func(ctx context.Context, _ ...ipfs.ListKeyOption) ([]ipfs.IPNSKeyResponse, error) {
 		return []ipfs.IPNSKeyResponse{}, nil
 	}
 
@@ -68,7 +68,7 @@ func TestIpnsKeysList_Empty(t *testing.T) {
 
 func TestIpnsKeysList_ServiceError(t *testing.T) {
 	mockSvc, cfgMgr := setupIPNSHandlerTest(t)
-	mockSvc.listKeysFunc = func(ctx context.Context) ([]ipfs.IPNSKeyResponse, error) {
+	mockSvc.listKeysFunc = func(ctx context.Context, _ ...ipfs.ListKeyOption) ([]ipfs.IPNSKeyResponse, error) {
 		return nil, errors.New("server error")
 	}
 
@@ -165,7 +165,7 @@ func TestIpnsKeysGet_Success(t *testing.T) {
 func TestIpnsKeysGet_ByName(t *testing.T) {
 	mockSvc, cfgMgr := setupIPNSHandlerTest(t)
 	now := time.Now()
-	mockSvc.listKeysFunc = func(ctx context.Context) ([]ipfs.IPNSKeyResponse, error) {
+	mockSvc.listKeysFunc = func(ctx context.Context, _ ...ipfs.ListKeyOption) ([]ipfs.IPNSKeyResponse, error) {
 		return []ipfs.IPNSKeyResponse{{Id: 2, Name: "my-key", IpnsName: "k51qzi5uqu5djx456", PeerId: "12D3KooWDEF456", Created: now}}, nil
 	}
 	mockSvc.getKeyFunc = func(ctx context.Context, id string) (*ipfs.IPNSKeyResponse, error) {
@@ -220,7 +220,7 @@ func TestIpnsKeysDelete_Success(t *testing.T) {
 func TestIpnsKeysDelete_ByName(t *testing.T) {
 	mockSvc, cfgMgr := setupIPNSHandlerTest(t)
 	now := time.Now()
-	mockSvc.listKeysFunc = func(ctx context.Context) ([]ipfs.IPNSKeyResponse, error) {
+	mockSvc.listKeysFunc = func(ctx context.Context, _ ...ipfs.ListKeyOption) ([]ipfs.IPNSKeyResponse, error) {
 		return []ipfs.IPNSKeyResponse{{Id: 3, Name: "my-key", IpnsName: "k51qzi5uqu5djx456", PeerId: "12D3KooWDEF456", Created: now}}, nil
 	}
 	mockSvc.deleteKeyFunc = func(ctx context.Context, id string) error {
@@ -409,7 +409,7 @@ func TestIpnsResolve_NotFound(t *testing.T) {
 
 func TestResolveIPNSKeyID_ByName(t *testing.T) {
 	mockSvc := &mockIPNSServiceForCLI{}
-	mockSvc.listKeysFunc = func(ctx context.Context) ([]ipfs.IPNSKeyResponse, error) {
+	mockSvc.listKeysFunc = func(ctx context.Context, _ ...ipfs.ListKeyOption) ([]ipfs.IPNSKeyResponse, error) {
 		return []ipfs.IPNSKeyResponse{
 			{Id: 7, Name: "my-key"},
 			{Id: 8, Name: "other-key"},
@@ -422,7 +422,7 @@ func TestResolveIPNSKeyID_ByName(t *testing.T) {
 
 func TestResolveIPNSKeyID_NotFound(t *testing.T) {
 	mockSvc := &mockIPNSServiceForCLI{}
-	mockSvc.listKeysFunc = func(ctx context.Context) ([]ipfs.IPNSKeyResponse, error) {
+	mockSvc.listKeysFunc = func(ctx context.Context, _ ...ipfs.ListKeyOption) ([]ipfs.IPNSKeyResponse, error) {
 		return []ipfs.IPNSKeyResponse{}, nil
 	}
 	_, err := ipns.ResolveKeyID(context.Background(), mockSvc, "missing-key")
@@ -432,7 +432,7 @@ func TestResolveIPNSKeyID_NotFound(t *testing.T) {
 
 func TestResolveIPNSKeyID_ListError(t *testing.T) {
 	mockSvc := &mockIPNSServiceForCLI{}
-	mockSvc.listKeysFunc = func(ctx context.Context) ([]ipfs.IPNSKeyResponse, error) {
+	mockSvc.listKeysFunc = func(ctx context.Context, _ ...ipfs.ListKeyOption) ([]ipfs.IPNSKeyResponse, error) {
 		return nil, errors.New("service down")
 	}
 	_, err := ipns.ResolveKeyID(context.Background(), mockSvc, "my-key")
@@ -451,7 +451,7 @@ func TestResolveIPNSKeyIDToString_NumericID(t *testing.T) {
 
 func TestResolveIPNSKeyIDToString_ByName(t *testing.T) {
 	mockSvc := &mockIPNSServiceForCLI{}
-	mockSvc.listKeysFunc = func(ctx context.Context) ([]ipfs.IPNSKeyResponse, error) {
+	mockSvc.listKeysFunc = func(ctx context.Context, _ ...ipfs.ListKeyOption) ([]ipfs.IPNSKeyResponse, error) {
 		return []ipfs.IPNSKeyResponse{{Id: 7, Name: "my-key"}}, nil
 	}
 	id, err := resolveIPNSKeyIDToString(context.Background(), mockSvc, "my-key")
