@@ -97,7 +97,7 @@ func OpenFileURL(ctx context.Context, rawURL string, opts FileRelayOptions) (io.
 	}
 	u, _ := url.Parse(rawURL)
 	if len(opts.AllowedHosts) > 0 && !hostAllowed(u.Hostname(), opts.AllowedHosts) {
-		return nil, 0, fmt.Errorf("%w: download host is not allowed", ErrInvalidFileReference)
+		return nil, 0, fmt.Errorf("%w: download host %q is not on the allowed list; supply a URL whose host is allow-listed for this client (this download mechanism may not be supported for your client)", ErrInvalidFileReference, u.Hostname())
 	}
 
 	// SSRF defense-in-depth: never dial private / link-local IPs, even when the
@@ -143,7 +143,7 @@ func OpenFileURL(ctx context.Context, rawURL string, opts FileRelayOptions) (io.
 	}
 	if resp.ContentLength < 0 {
 		resp.Body.Close()
-		return nil, 0, fmt.Errorf("%w: download size is unknown", ErrInvalidFileReference)
+		return nil, 0, fmt.Errorf("%w: download size is unknown (%q did not advertise a Content-Length; only URLs with a known fixed size qualify, streaming/chunked responses are not supported)", ErrInvalidFileReference, rawURL)
 	}
 	if resp.ContentLength > maxBytes {
 		resp.Body.Close()
