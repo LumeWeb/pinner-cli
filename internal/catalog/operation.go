@@ -65,6 +65,14 @@ const (
 	ArgTypeDuration
 	// ArgTypeStringSlice is a slice of strings argument.
 	ArgTypeStringSlice
+	// ArgTypeFlexibleID is a string argument that also accepts a JSON integer
+	// (e.g. a numeric id emitted by ipns_keys_list, whose backend ids are ints).
+	// It coerce-renders any accepted numeric to its decimal string form so a
+	// Handler reading via StrArg/StrFlexibleArg always receives a string, and
+	// it advertises ["string","integer"] in the MCP JSON Schema so a model can
+	// pass either the id's integer form or a string form without being
+	// rejected by the normalizer.
+	ArgTypeFlexibleID
 )
 
 // OperationArg describes one input. It drives both the JSON Schema (MCP) and

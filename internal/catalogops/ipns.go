@@ -130,7 +130,7 @@ func ipnsKeysGet(d IPNSDeps) catalog.Operation {
 		Category:    "ipns", Safety: catalog.SafetyRead, Interaction: catalog.InteractionAgentSafe, Visibility: catalog.VisibilityBoth,
 		Positional: "<id>",
 		Args: []catalog.OperationArg{
-			{Name: "id", Type: catalog.ArgTypeString, Required: true, Help: "Key ID"},
+			{Name: "id", Type: catalog.ArgTypeFlexibleID, Required: true, Help: "Key ID"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			svc, err := d.service(input)
@@ -156,7 +156,7 @@ func ipnsKeysDelete(d IPNSDeps) catalog.Operation {
 		Category:    "ipns", Safety: catalog.SafetyDestructive, Interaction: catalog.InteractionAgentSafe, Visibility: catalog.VisibilityBoth,
 		Positional: "<id>",
 		Args: []catalog.OperationArg{
-			{Name: "id", Type: catalog.ArgTypeString, Required: true, Help: "Key ID"},
+			{Name: "id", Type: catalog.ArgTypeFlexibleID, Required: true, Help: "Key ID"},
 			// Confirm is declared so the destructive confirm hand-off on the MCP
 			// surface has a field to set on resume. It is AgentRequired (MCP-only)
 			// with Default set so the CLI adapter injects a real value: the CLI's

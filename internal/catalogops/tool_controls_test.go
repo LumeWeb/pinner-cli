@@ -156,6 +156,44 @@ func TestIPNSKeysDeleteConfirmDefaultSatisfiesSharedRoute(t *testing.T) {
 	}
 }
 
+// TestIPNSKeysIDArgsAcceptIntegerRoundtrip is the regression guard for the
+// get/delete-by-id bug: ipns_keys_list emits each key's id as a JSON integer
+// (the ipfs-sdk IPNSKeyResponse.Id is an int), but the get/delete id args were
+// typed ArgTypeString, so the normalizer rejected the integer with "expected
+// string, got int" before the handler's StrFlexibleArg ran. The id args must be
+// ArgTypeFlexibleID so an integer id passes normalize and is coerced to its
+// string form.
+func TestIPNSKeysIDArgsAcceptIntegerRoundtrip(t *testing.T) {
+	for _, name := range []string{"ipns_keys_get", "ipns_keys_delete"} {
+		var op catalog.Operation
+		for _, o := range IPNSOperations(IPNSDeps{}) {
+			if o.Name() == name {
+				op = o
+				break
+			}
+		}
+		if op == nil {
+			t.Fatalf("%s operation not found", name)
+		}
+		a := argByName(t, op, "id")
+		if a == nil {
+			t.Fatalf("%s missing id arg", name)
+		}
+		if a.Type != catalog.ArgTypeFlexibleID {
+			t.Errorf("%s id arg must be ArgTypeFlexibleID so an integer id from ipns_keys_list is accepted; got %v", name, a.Type)
+		}
+		// The exact round-trip that was broken: an integer id must pass the
+		// shared normalize seam and coerce to its string form.
+		normalized, err := catalog.NormalizeOperationInput(op, map[string]any{"id": 42})
+		if err != nil {
+			t.Fatalf("%s with integer id must normalize (was rejected before ArgTypeFlexibleID): %v", name, err)
+		}
+		if got := catalog.StrFlexibleArg(normalized, "id", ""); got != "42" {
+			t.Fatalf("%s integer id must coerce to string form, got %q", name, got)
+		}
+	}
+}
+
 // TestDNSRecordTypeEnum verifies the type Enum is on dns_records_create only
 // and covers the full backend-addressable set (A/AAAA/CNAME/MX/NS/TXT plus the
 // extended SRV/CAA/PTR/SOA). get/update/delete remain free-form because they

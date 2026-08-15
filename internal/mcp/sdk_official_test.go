@@ -591,3 +591,37 @@ func TestStreamableHandlerIsStateless(t *testing.T) {
 	delResp, _ := do(http.MethodDelete, "")
 	require.Equal(t, http.StatusMethodNotAllowed, delResp.StatusCode, "stateless server must reject DELETE with 405")
 }
+
+// TestOfficialHandlerPreservesLargeIntID is the end-to-end regression guard for
+// MCP id precision: a JSON integer id above 2^53 (which plain json.Unmarshal
+// would corrupt to float64) must arrive at the handler's argument map as an
+// exact json.Number, so the catalog normalizer can coerce it losslessly.
+// Previously the handler used json.Unmarshal, mapping the id to float64 and
+// silently truncating the low bits -- for ipns_keys_delete that could delete
+// the wrong key.
+func TestOfficialHandlerPreservesLargeIntID(t *testing.T) {
+	const bigID = "9007199254740993" // 2^53+1: not exactly representable as float64
+
+	var got map[string]any
+	inner := PinnerToolHandler(func(_ context.Context, r ToolRequest) (ToolResult, error) {
+		got = r.Arguments
+		return ToolResult{Text: "ok"}, nil
+	})
+	h := officialToolHandler(inner)
+
+	res, err := h(context.Background(), &mcp.CallToolRequest{
+		Params: &mcp.CallToolParamsRaw{
+			Name:      "ipns_keys_get",
+			Arguments: json.RawMessage(`{"id":` + bigID + `}`),
+		},
+	})
+	require.NoError(t, err)
+	require.False(t, res.IsError, "large integer id must not be rejected")
+
+	// The id must have survived decoding as an exact json.Number, not a
+	// truncated float64.
+	num, ok := got["id"].(json.Number)
+	require.True(t, ok, "id must decode as json.Number with UseNumber, got %T", got["id"])
+	require.Equal(t, bigID, num.String(), "large integer id must be preserved exactly, not truncated by float64")
+}
+
