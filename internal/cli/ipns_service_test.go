@@ -23,7 +23,7 @@ func TestIPNSService_ListKeys(t *testing.T) {
 			authToken: "test-jwt-token",
 			setupMocks: func(svc *mockIPNSServiceForCLI) {
 				fixedTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
-				svc.listKeysFunc = func(ctx context.Context) ([]ipfs.IPNSKeyResponse, error) {
+				svc.listKeysFunc = func(ctx context.Context, _ ...ipfs.ListKeyOption) ([]ipfs.IPNSKeyResponse, error) {
 					return []ipfs.IPNSKeyResponse{
 						{
 							Id:       1,
@@ -86,7 +86,7 @@ func TestIPNSService_ListKeys(t *testing.T) {
 
 type mockIPNSServiceForCLI struct {
 	requireAuthenticatedErr error
-	listKeysFunc            func(ctx context.Context) ([]ipfs.IPNSKeyResponse, error)
+	listKeysFunc            func(ctx context.Context, opts ...ipfs.ListKeyOption) ([]ipfs.IPNSKeyResponse, error)
 	createKeyFunc           func(ctx context.Context, name string, key *string) (*ipfs.IPNSKeyResponse, error)
 	getKeyFunc              func(ctx context.Context, id string) (*ipfs.IPNSKeyResponse, error)
 	deleteKeyFunc           func(ctx context.Context, id string) error
@@ -97,9 +97,9 @@ type mockIPNSServiceForCLI struct {
 
 func (m *mockIPNSServiceForCLI) SetAuthToken(token string) {}
 
-func (m *mockIPNSServiceForCLI) ListKeys(ctx context.Context) ([]ipfs.IPNSKeyResponse, error) {
+func (m *mockIPNSServiceForCLI) ListKeys(ctx context.Context, opts ...ipfs.ListKeyOption) ([]ipfs.IPNSKeyResponse, error) {
 	if m.listKeysFunc != nil {
-		return m.listKeysFunc(ctx)
+		return m.listKeysFunc(ctx, opts...)
 	}
 	return []ipfs.IPNSKeyResponse{
 		{
@@ -187,11 +187,11 @@ func (u *unauthenticatedIPNSService) RequireAuthenticated() error {
 	return ErrNotAuthenticated
 }
 
-func (u *unauthenticatedIPNSService) ListKeys(ctx context.Context) ([]ipfs.IPNSKeyResponse, error) {
+func (u *unauthenticatedIPNSService) ListKeys(ctx context.Context, opts ...ipfs.ListKeyOption) ([]ipfs.IPNSKeyResponse, error) {
 	if err := u.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	return u.mockIPNSServiceForCLI.ListKeys(ctx)
+	return u.mockIPNSServiceForCLI.ListKeys(ctx, opts...)
 }
 
 func (u *unauthenticatedIPNSService) CreateKey(ctx context.Context, name string, key *string) (*ipfs.IPNSKeyResponse, error) {

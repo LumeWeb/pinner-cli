@@ -20,7 +20,7 @@ type Service interface {
 	// SetAuthToken hot-updates the auth token on a running service without
 	// reconstructing it (used by long-lived consumers on config live-reload).
 	SetAuthToken(token string)
-	ListKeys(ctx context.Context) ([]ipfs.IPNSKeyResponse, error)
+	ListKeys(ctx context.Context, opts ...ipfs.ListKeyOption) ([]ipfs.IPNSKeyResponse, error)
 	CreateKey(ctx context.Context, name string, key *string) (*ipfs.IPNSKeyResponse, error)
 	GetKey(ctx context.Context, id string) (*ipfs.IPNSKeyResponse, error)
 	DeleteKey(ctx context.Context, id string) error
@@ -108,7 +108,7 @@ func (s *service) requireService() (ipfs.IPNSService, error) {
 	return s.service, nil
 }
 
-func (s *service) ListKeys(ctx context.Context) ([]ipfs.IPNSKeyResponse, error) {
+func (s *service) ListKeys(ctx context.Context, opts ...ipfs.ListKeyOption) ([]ipfs.IPNSKeyResponse, error) {
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
@@ -116,7 +116,7 @@ func (s *service) ListKeys(ctx context.Context) ([]ipfs.IPNSKeyResponse, error) 
 	if err != nil {
 		return nil, err
 	}
-	return svc.ListKeys(ctx)
+	return svc.ListKeys(ctx, opts...)
 }
 
 func (s *service) CreateKey(ctx context.Context, name string, key *string) (*ipfs.IPNSKeyResponse, error) {
@@ -207,7 +207,7 @@ func (s *service) Resolve(ctx context.Context, name string) (*ipfs.IPNSResolveRe
 // of the full service avoids re-entrant locking when called from
 // Publish/Republish (which already hold the service read lock).
 type keyLister interface {
-	ListKeys(ctx context.Context) ([]ipfs.IPNSKeyResponse, error)
+	ListKeys(ctx context.Context, opts ...ipfs.ListKeyOption) ([]ipfs.IPNSKeyResponse, error)
 }
 
 func ResolveKeyID(ctx context.Context, svc keyLister, arg string) (int, error) {
