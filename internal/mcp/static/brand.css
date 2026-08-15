@@ -130,6 +130,11 @@ button.processing .btn-label { opacity: .85; }
 }
 .status.error { background: rgba(255, 102, 71, .12); color: var(--brand-danger); border: 1px solid rgba(255, 102, 71, .3); }
 .status.done { background: rgba(173, 240, 221, .1); color: var(--brand-accent); border: 1px solid rgba(173, 240, 221, .3); }
+/* Long opaque tokens (e.g. a vault ID like vault:<hex>) must wrap inside the
+   status box instead of overflowing the card. This keeps the profile/vault-id
+   line contained regardless of token length. */
+.status { overflow-wrap: anywhere; }
+.status code, .card code { overflow-wrap: anywhere; word-break: break-word; }
 
 .foot { color: var(--brand-teal-muted); font-size: .78rem; margin-top: 1.5rem; text-align: center; }
 .foot code { background: var(--brand-bg-deep); padding: .1rem .35rem; border-radius: .3rem; color: var(--brand-muted); }
@@ -149,6 +154,24 @@ button.processing .btn-label { opacity: .85; }
   color: var(--brand-accent);
   font-size: .88rem;
 }
+
+/* Seed backup step on the create-done page: a collapsible <details> box so
+   the page collapses to the compact "Vault created" confirmation until the
+   human is ready to retrieve and store the one-time recovery seed. */
+.seed-backup {
+  margin-top: 1.1rem;
+  border: 1px solid var(--brand-border);
+  border-radius: .5rem;
+  padding: .7rem .85rem;
+  background: var(--brand-bg-deep);
+}
+.seed-backup summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--brand-text);
+}
+.seed-backup[open] summary { margin-bottom: .5rem; }
+.seed-backup p { margin: 0 0 .75rem; }
 
 /* Seed mnemonic display / approval URL: monospace block for exact copy. */
 .seed-code {

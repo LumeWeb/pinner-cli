@@ -119,7 +119,9 @@ templ restoreVaultApproval(approvalURL string) {
 templ createVaultDone(profile, vaultID, seedURL string) {
 	<script>
 		// Replace the in-progress status area with the created result so the
-		// "Preparing your new vault…" shell does not linger below the result.
+		// "Preparing your new vault…" shell and the streamed approval step do not
+		// linger below the result. The page collapses to the compact created
+		// state; the seed backup is a collapsible <details> below it.
 		var s = document.getElementById("status");
 		if (s) { s.innerHTML = ""; }
 	</script>
@@ -127,8 +129,11 @@ templ createVaultDone(profile, vaultID, seedURL string) {
 		<h2>Vault created</h2>
 		<p>Profile <code>{ profile }</code> is active (vault ID <code>{ vaultID }</code>).</p>
 	</div>
-	<p id="seed-link">Back up your one-time recovery seed before continuing:</p>
-	<a class="btn primary" href={ seedURL } id="seed-cta">Retrieve my recovery seed</a>
+	<details class="seed-backup" id="seed-link" open>
+		<summary>Back up your one-time recovery seed</summary>
+		<p>This is the only way back into this vault. Retrieve it now and store it somewhere safe. The recovery phrase never leaves your browser.</p>
+		<a class="btn primary" href={ seedURL } id="seed-cta">Retrieve my recovery seed</a>
+	</details>
 }
 
 // restoreVaultDone confirms restoration completed.
