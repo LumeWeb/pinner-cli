@@ -1,3 +1,4 @@
+import { entryBoot, boot } from "@/loader";
 // Pin list MCP App — entrypoint bundle.
 //
 // The pin list is a read-only surface: it loads the authenticated account's
@@ -7,8 +8,6 @@
 // data-driven here, matching how the other entries stay thin.
 
 import { mountPinListApp, type PinListAppEntry } from "@/pin-list-bootstrap";
-import type { CallTool } from "@/flow";
-
 export const def: PinListAppEntry = {
   name: "PinList",
   config: {
@@ -27,13 +26,5 @@ export const def: PinListAppEntry = {
   },
 };
 
-/**
- * Mount the app. With a caller-supplied `callTool` (tests/demo) wires
- * synchronously; otherwise boot connects to the host over postMessage and
- * wires on success, stamping the status element on connect failure.
- */
-export function mount(root: Document = document, callTool?: CallTool) {
-  return mountPinListApp(def, root, callTool);
-}
-
-export { def as pinListDefinition };
+export default entryBoot(def, mountPinListApp);
+boot(entryBoot(def, mountPinListApp));

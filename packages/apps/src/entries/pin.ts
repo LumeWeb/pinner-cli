@@ -1,3 +1,4 @@
+import { entryBoot, boot } from "@/loader";
 // Create Pin MCP App — entrypoint bundle.
 //
 // Create Pin is a form-driven flow, so it wires the dedicated pin machine
@@ -6,8 +7,6 @@
 // matching how the other entries keep their per-app values thin.
 
 import { mountPinApp, type PinAppEntry } from "@/pin-bootstrap";
-import type { CallTool } from "@/flow";
-
 export const def: PinAppEntry = {
   name: "CreatePin",
   config: {
@@ -36,13 +35,5 @@ export const def: PinAppEntry = {
   },
 };
 
-/**
- * Mount the app. With a caller-supplied `callTool` (tests/demo) wires
- * synchronously; otherwise boot connects to the host over postMessage and
- * wires on success, stamping the status element on connect failure.
- */
-export function mount(root: Document = document, callTool?: CallTool) {
-  return mountPinApp(def, root, callTool);
-}
-
-export { def as pinDefinition };
+export default entryBoot(def, mountPinApp);
+boot(entryBoot(def, mountPinApp));

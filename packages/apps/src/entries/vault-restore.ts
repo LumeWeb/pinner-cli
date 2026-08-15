@@ -1,6 +1,6 @@
+import { entryBoot, boot } from "@/loader";
 // Restore Vault MCP App — entrypoint bundle.
 import { mountFlowApp } from "@/app-entry";
-import type { CallTool } from "@/flow";
 import type { FlowAppEntry } from "./common";
 
 export const def: FlowAppEntry = {
@@ -26,13 +26,5 @@ export const def: FlowAppEntry = {
   },
 };
 
-/**
- * Mount the app. With a caller-supplied `callTool` (tests/demo) wires
- * synchronously; otherwise boot connects to the host over postMessage and
- * wires on success, stamping the status element on connect failure.
- */
-export function mount(root: Document = document, callTool?: CallTool) {
-  return mountFlowApp(def, root, callTool);
-}
-
-export { def as vaultRestoreDefinition };
+export default entryBoot(def, mountFlowApp);
+boot(entryBoot(def, mountFlowApp));
