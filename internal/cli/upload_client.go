@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/avast/retry-go/v4"
+	"github.com/avast/retry-go/v5"
 	ipfs "go.lumeweb.com/ipfs-sdk"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
 	portalsdk "go.lumeweb.com/portal-sdk"
@@ -244,14 +244,14 @@ func (s *UploadServiceDefault) Upload(ctx context.Context, filesystem fs.FS, nam
 	// retry gives the pin time to appear before we give up and warn.
 	if name != "" && s.pinningService != nil && sdkResult.CID != "" {
 		nameCtx, cancel := s.freshTimeoutCtx(ctx)
-		err := retry.Do(func() error {
-			return s.setPinName(nameCtx, sdkResult.CID, name)
-		},
+		err := retry.New(
 			retry.Context(nameCtx),
 			retry.Attempts(3),
 			retry.Delay(2*time.Second),
 			retry.LastErrorOnly(true),
-		)
+		).Do(func() error {
+			return s.setPinName(nameCtx, sdkResult.CID, name)
+		})
 		cancel()
 		if err != nil {
 			s.output.PrintVerbosef("warning: could not set pin name %q on %s: %v", name, sdkResult.CID, err)
@@ -374,7 +374,14 @@ func (s *UploadServiceDefault) waitForPin(ctx context.Context, rootCID string, a
 
 	if s.pinningService != nil {
 		s.output.PrintVerbosef("Account operation completed, verifying pin status for CID %s", rootCID)
-		err := retry.Do(func() error {
+		err := retry.New(
+			retry.Context(pinCtx),
+			retry.Attempts(10),
+			retry.Delay(2*time.Second),
+			retry.DelayType(retry.BackOffDelay),
+			retry.MaxDelay(30*time.Second),
+			retry.LastErrorOnly(true),
+		).Do(func() error {
 			status, err := s.pinningService.Status(pinCtx, rootCID, false)
 			if err != nil {
 				return err
@@ -383,14 +390,7 @@ func (s *UploadServiceDefault) waitForPin(ctx context.Context, rootCID string, a
 				return fmt.Errorf("pin status is %s, expected pinned", status.Status)
 			}
 			return nil
-		},
-			retry.Context(pinCtx),
-			retry.Attempts(10),
-			retry.Delay(2*time.Second),
-			retry.DelayType(retry.BackOffDelay),
-			retry.MaxDelay(30*time.Second),
-			retry.LastErrorOnly(true),
-		)
+		})
 		if err != nil {
 			return fmt.Errorf("Pin verification failed for CID %s: %w. Check 'pinner status %s'", rootCID, err, rootCID)
 		}

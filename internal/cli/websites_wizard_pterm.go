@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/avast/retry-go/v4"
+	"github.com/avast/retry-go/v5"
 	"github.com/manifoldco/promptui"
 	"github.com/pterm/pterm"
 	"github.com/pterm/pterm/putils"
@@ -289,7 +289,17 @@ func (ui *PTermWebsitesUI) executeManagedDNSValidation(ctx context.Context, w *W
 	}
 
 	var lastErr error
-	err := retry.Do(
+	err := retry.New(
+		retry.Context(ctx),
+		retry.Attempts(5),
+		retry.Delay(2*time.Second),
+		retry.MaxDelay(15*time.Second),
+		retry.DelayType(retry.BackOffDelay),
+		retry.LastErrorOnly(true),
+		retry.OnRetry(func(n uint, err error) {
+			pterm.Debug.Printf("Validation attempt %d failed: %v\n", n+1, err)
+		}),
+	).Do(
 		func() error {
 			lastErr = w.executeValidate(ctx)
 			if lastErr != nil {
@@ -304,15 +314,6 @@ func (ui *PTermWebsitesUI) executeManagedDNSValidation(ctx context.Context, w *W
 			}
 			return nil
 		},
-		retry.Context(ctx),
-		retry.Attempts(5),
-		retry.Delay(2*time.Second),
-		retry.MaxDelay(15*time.Second),
-		retry.DelayType(retry.BackOffDelay),
-		retry.LastErrorOnly(true),
-		retry.OnRetry(func(n uint, err error) {
-			pterm.Debug.Printf("Validation attempt %d failed: %v\n", n+1, err)
-		}),
 	)
 	ui.Stop()
 

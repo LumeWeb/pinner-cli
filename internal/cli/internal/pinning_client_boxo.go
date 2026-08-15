@@ -7,7 +7,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/avast/retry-go/v4"
+	"github.com/avast/retry-go/v5"
 	go_pinning_service_http_client "github.com/ipfs/boxo/pinning/remote/client"
 	"github.com/ipfs/go-cid"
 )
@@ -73,12 +73,7 @@ func NewBoxoPinningClient(endpoint, authToken string, opts ...BoxoClientOption) 
 // Add implements PinningClient.Add.
 func (c *BoxoPinningClient) Add(ctx context.Context, cid cid.Cid, opts ...go_pinning_service_http_client.AddOption) (go_pinning_service_http_client.PinStatusGetter, error) {
 	var result go_pinning_service_http_client.PinStatusGetter
-	err := retry.Do(
-		func() error {
-			var err error
-			result, err = c.client.Add(ctx, cid, opts...)
-			return err
-		},
+	err := retry.New(
 		retry.Attempts(c.config.MaxRetries),
 		retry.DelayType(retry.BackOffDelay),
 		retry.MaxJitter(c.config.MaxJitter),
@@ -87,6 +82,12 @@ func (c *BoxoPinningClient) Add(ctx context.Context, cid cid.Cid, opts ...go_pin
 		retry.RetryIf(func(err error) bool {
 			return isRetryableError(err)
 		}),
+	).Do(
+		func() error {
+			var err error
+			result, err = c.client.Add(ctx, cid, opts...)
+			return err
+		},
 	)
 	return result, err
 }
@@ -94,12 +95,7 @@ func (c *BoxoPinningClient) Add(ctx context.Context, cid cid.Cid, opts ...go_pin
 // LsSync implements PinningClient.LsSync.
 func (c *BoxoPinningClient) LsSync(ctx context.Context, opts ...go_pinning_service_http_client.LsOption) ([]go_pinning_service_http_client.PinStatusGetter, error) {
 	var result []go_pinning_service_http_client.PinStatusGetter
-	err := retry.Do(
-		func() error {
-			var err error
-			result, err = c.client.LsSync(ctx, opts...)
-			return err
-		},
+	err := retry.New(
 		retry.Attempts(c.config.MaxRetries),
 		retry.DelayType(retry.BackOffDelay),
 		retry.MaxJitter(c.config.MaxJitter),
@@ -108,6 +104,12 @@ func (c *BoxoPinningClient) LsSync(ctx context.Context, opts ...go_pinning_servi
 		retry.RetryIf(func(err error) bool {
 			return isRetryableError(err)
 		}),
+	).Do(
+		func() error {
+			var err error
+			result, err = c.client.LsSync(ctx, opts...)
+			return err
+		},
 	)
 	return result, err
 }
@@ -153,12 +155,7 @@ func (c *BoxoPinningClient) LsWithLimit(ctx context.Context, limit int, opts ...
 // GetStatusByID implements PinningClient.GetStatusByID.
 func (c *BoxoPinningClient) GetStatusByID(ctx context.Context, pinID string) (go_pinning_service_http_client.PinStatusGetter, error) {
 	var result go_pinning_service_http_client.PinStatusGetter
-	err := retry.Do(
-		func() error {
-			var err error
-			result, err = c.client.GetStatusByID(ctx, pinID)
-			return err
-		},
+	err := retry.New(
 		retry.Attempts(c.config.MaxRetries),
 		retry.DelayType(retry.BackOffDelay),
 		retry.MaxJitter(c.config.MaxJitter),
@@ -167,16 +164,19 @@ func (c *BoxoPinningClient) GetStatusByID(ctx context.Context, pinID string) (go
 		retry.RetryIf(func(err error) bool {
 			return isRetryableError(err)
 		}),
+	).Do(
+		func() error {
+			var err error
+			result, err = c.client.GetStatusByID(ctx, pinID)
+			return err
+		},
 	)
 	return result, err
 }
 
 // DeleteByID implements PinningClient.DeleteByID.
 func (c *BoxoPinningClient) DeleteByID(ctx context.Context, pinID string) error {
-	return retry.Do(
-		func() error {
-			return c.client.DeleteByID(ctx, pinID)
-		},
+	return retry.New(
 		retry.Attempts(c.config.MaxRetries),
 		retry.DelayType(retry.BackOffDelay),
 		retry.MaxJitter(c.config.MaxJitter),
@@ -185,18 +185,17 @@ func (c *BoxoPinningClient) DeleteByID(ctx context.Context, pinID string) error 
 		retry.RetryIf(func(err error) bool {
 			return isRetryableError(err)
 		}),
+	).Do(
+		func() error {
+			return c.client.DeleteByID(ctx, pinID)
+		},
 	)
 }
 
 // Replace implements PinningClient.Replace.
 func (c *BoxoPinningClient) Replace(ctx context.Context, pinID string, cid cid.Cid, opts ...go_pinning_service_http_client.AddOption) (go_pinning_service_http_client.PinStatusGetter, error) {
 	var result go_pinning_service_http_client.PinStatusGetter
-	err := retry.Do(
-		func() error {
-			var err error
-			result, err = c.client.Replace(ctx, pinID, cid, opts...)
-			return err
-		},
+	err := retry.New(
 		retry.Attempts(c.config.MaxRetries),
 		retry.DelayType(retry.BackOffDelay),
 		retry.MaxJitter(c.config.MaxJitter),
@@ -205,6 +204,12 @@ func (c *BoxoPinningClient) Replace(ctx context.Context, pinID string, cid cid.C
 		retry.RetryIf(func(err error) bool {
 			return isRetryableError(err)
 		}),
+	).Do(
+		func() error {
+			var err error
+			result, err = c.client.Replace(ctx, pinID, cid, opts...)
+			return err
+		},
 	)
 	return result, err
 }

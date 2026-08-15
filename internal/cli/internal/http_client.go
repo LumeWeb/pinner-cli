@@ -7,7 +7,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/avast/retry-go/v4"
+	"github.com/avast/retry-go/v5"
 )
 
 // RetryConfig holds configuration for retry behavior.
@@ -50,7 +50,14 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	var resp *http.Response
 	var err error
 
-	retryErr := retry.Do(
+	retryErr := retry.New(
+		retry.Attempts(t.maxRetries),
+		retry.DelayType(retry.BackOffDelay),
+		retry.MaxJitter(5*time.Second),
+		retry.MaxDelay(t.maxDelay),
+		retry.LastErrorOnly(true),
+		retry.Context(req.Context()),
+	).Do(
 		func() error {
 			resp, err = t.base.RoundTrip(req)
 			if err != nil {
@@ -67,12 +74,6 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 			return nil
 		},
-		retry.Attempts(t.maxRetries),
-		retry.DelayType(retry.BackOffDelay),
-		retry.MaxJitter(5*time.Second),
-		retry.MaxDelay(t.maxDelay),
-		retry.LastErrorOnly(true),
-		retry.Context(req.Context()),
 	)
 
 	if retryErr != nil {
