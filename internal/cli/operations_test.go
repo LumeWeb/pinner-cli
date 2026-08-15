@@ -1441,3 +1441,34 @@ func TestWatchCatalogOperationsList_RequiresAuth(t *testing.T) {
 	assert.Contains(t, err.Error(), "not authenticated")
 }
 
+// TestWatchCatalogOperationsList_ForwardsSearch verifies the watch path threads
+// the `search` arg from the input map into the ListOptions handed to the
+// service, so `operations_list --watch --search foo` does not silently drop the
+// server-side search filter (Kody regression: it was reconstructed without
+// Search).
+func TestWatchCatalogOperationsList_ForwardsSearch(t *testing.T) {
+	opsSvc := NewMockOperationsService(t)
+	opsSvc.EXPECT().RequireAuthenticated().Return(nil)
+	opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{
+		Search:   "foo",
+		Page:     1,
+		PageSize: 10,
+	}).Return(&OperationsListResult{
+		Operations: []OperationListItem{
+			{ID: 1, CID: "QmTest", Status: "completed", Operation: "pin", OperationDisplayName: "Pin", Protocol: "ipfs", ProtocolDisplayName: "IPFS", ProgressPercent: 100, StartedAt: "2024-01-01"},
+		},
+		Total: 1,
+	}, nil)
+
+	prev := operationsCatalogDepsVar
+	operationsCatalogDepsVar = catalogops.OperationsDeps{
+		Service: func(map[string]any) operations.Service { return opsSvc },
+	}
+	defer func() { operationsCatalogDepsVar = prev }()
+
+	var buf bytes.Buffer
+	cmd := &cli.Command{Writer: &buf}
+	err := watchCatalogOperationsList(context.Background(), cmd, nil, map[string]any{"search": "foo"})
+	require.NoError(t, err)
+}
+
