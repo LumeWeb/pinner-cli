@@ -45,13 +45,13 @@ func createVaultProgressStart(profile string) string {
 <title>Create Pinner Vault · Pinner</title>
 <link rel="stylesheet" href="%s"/>
 </head>
-<body>
+<body class="brand-body">
 <a class="brand-mark" href="https://pinner.xyz" target="_blank" rel="noopener" aria-label="Pinner — pinner.xyz">
 <img class="brand-logo" src="%s" alt="Pinner logo" width="36" height="36"/>
 </a>
-<div class="card">
-<h1>Create Pinner Vault</h1>
-<p>Profile: <strong>%s</strong></p>
+<div class="brand-card">
+<h1 class="brand-card-title">Create Pinner Vault</h1>
+<p class="brand-card-text">Profile: <strong>%s</strong></p>
 <div id="status">Preparing your new vault…</div>
 `, brandCSSURL(), brandLogoURL(), htmlEscapeText(profile))
 }
@@ -66,13 +66,13 @@ func restoreVaultProgressStart(profile string) string {
 <title>Restoring Pinner Vault · Pinner</title>
 <link rel="stylesheet" href="%s"/>
 </head>
-<body>
+<body class="brand-body">
 <a class="brand-mark" href="https://pinner.xyz" target="_blank" rel="noopener" aria-label="Pinner — pinner.xyz">
 <img class="brand-logo" src="%s" alt="Pinner logo" width="36" height="36"/>
 </a>
-<div class="card">
-<h1>Restoring Pinner Vault</h1>
-<p>Profile: <strong>%s</strong></p>
+<div class="brand-card">
+<h1 class="brand-card-title">Restoring Pinner Vault</h1>
+<p class="brand-card-text">Profile: <strong>%s</strong></p>
 <div id="status">Starting restore…</div>
 `, brandCSSURL(), brandLogoURL(), htmlEscapeText(profile))
 }
@@ -82,9 +82,9 @@ func restoreVaultProgressStart(profile string) string {
 // double-submit guard script, and </body></html>. Must be streamed AFTER all
 // fragments.
 func progressPageEnd() string {
-	return `<div class="seed-foot">This page reflects the on-host vault state. The recovery phrase never leaves your browser.</div>
+	return `<div class="brand-foot">This page reflects the on-host vault state. The recovery phrase never leaves your browser.</div>
 </div>
-<div class="foot">This server runs tools in-process under your PINNER account.</div>
+<div class="brand-foot">This server runs tools in-process under your PINNER account.</div>
 <script>
 document.addEventListener("submit", function (e) {
 	var f = e.target;

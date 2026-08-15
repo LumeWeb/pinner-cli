@@ -30,9 +30,9 @@ func (r handoffNotActiveReason) String() string { return string(r) }
 // fresh flow from their client.
 templ handoffNotActivePage(reason handoffNotActiveReason, detail string) {
 	@brandLayout(reason.handoffTitle()) {
-		<div class="card">
-			<h1>This link is no longer active</h1>
-			<p>
+		<div class="brand-card">
+			<h1 class="brand-card-title">This link is no longer active</h1>
+			<p class="brand-card-text">
 				if reason == handoffExpired {
 					This link expired before it was completed.
 				} else {
