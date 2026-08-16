@@ -367,7 +367,7 @@ func TestMcpInstallHTTPCompositeWritesRemoteEntry(t *testing.T) {
 
 	w := NewInstallWizard(ui, state, tempPathResolver(root, projectDir))
 	// Inject the fake collector: the real tunnel is not exercised in this test.
-	w.collectHTTP = fakeHTTPCollector("https://mcp.example.com", "s3cr3t-token")
+	w.collectHTTP = fakeHTTPCollector("https://mcp.example.com", "test-auth-token")
 
 	if _, err := w.Run(ctx); err != nil {
 		t.Fatalf("wizard run failed: %v", err)
@@ -384,8 +384,8 @@ func TestMcpInstallHTTPCompositeWritesRemoteEntry(t *testing.T) {
 	}
 	headers, _ := entry["headers"].(map[string]any)
 	auth, _ := headers["Authorization"]
-	if auth != "Bearer s3cr3t-token" {
-		t.Errorf("entry headers[Authorization] = %v, want 'Bearer s3cr3t-token'", auth)
+	if auth != "Bearer test-auth-token" {
+		t.Errorf("entry headers[Authorization] = %v, want 'Bearer test-auth-token'", auth)
 	}
 	// An http entry must not carry a command/args (stdio-only fields).
 	if _, hasCmd := entry["command"]; hasCmd {
@@ -409,7 +409,7 @@ func TestMcpInstallHTTPCompositeSkipsStdioOnlyAgent(t *testing.T) {
 	}
 
 	w := NewInstallWizard(ui, state, tempPathResolver(root, projectDir))
-	w.collectHTTP = fakeHTTPCollector("https://mcp.example.com", "s3cr3t-token")
+	w.collectHTTP = fakeHTTPCollector("https://mcp.example.com", "test-auth-token")
 
 	if _, err := w.Run(ctx); err != nil {
 		t.Fatalf("wizard run failed: %v", err)

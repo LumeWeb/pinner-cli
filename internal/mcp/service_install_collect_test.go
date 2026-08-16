@@ -25,3 +25,47 @@ func TestCollectHTTPInstallNonInteractiveMissingEnvErrors(t *testing.T) {
 	require.Contains(t, err.Error(), "pass --tunnel")
 	require.NoFileExists(t, path, "no env file should be written when non-interactive setup is refused")
 }
+
+func TestResolveServicePublicURLFillsCloudflaredDomain(t *testing.T) {
+	// A named cloudflared tunnel with a custom domain has a deterministic
+	// public URL after the service starts; resolveServicePublicURL must derive
+	// and persist it rather than leaving MCP_PUBLIC_URL empty (which would make
+	// the HTTP install fail despite a working tunnel).
+	dir := t.TempDir()
+	path := filepath.Join(dir, "mcp.env")
+
+	env := ServiceEnvironment{
+		"MCP_TUNNEL_PROVIDER": string(TunnelProviderCloudflared),
+		"MCP_DOMAIN":          "https://mcp.example.com",
+		"MCP_AUTH_TOKEN":      "test-token",
+	}
+	require.NoError(t, WriteServiceEnvironment(path, env))
+
+	loaded, err := LoadServiceEnvironment(path)
+	require.NoError(t, err)
+	require.Equal(t, "", loaded["MCP_PUBLIC_URL"], "precondition: MCP_PUBLIC_URL unset")
+
+	resolveServicePublicURL(path, loaded)
+	require.Equal(t, "https://mcp.example.com", loaded["MCP_PUBLIC_URL"])
+
+	// And it must be persisted back so later runs see it.
+	reloaded, err := LoadServiceEnvironment(path)
+	require.NoError(t, err)
+	require.Equal(t, "https://mcp.example.com", reloaded["MCP_PUBLIC_URL"])
+}
+
+func TestResolveServicePublicURLLeavesDynamicTunnelUnset(t *testing.T) {
+	// Dynamic providers (ngrok free random subdomain, OpenAI) or a missing
+	// domain have no stable derivable URL — MCP_PUBLIC_URL must stay unset so
+	// the caller surfaces the limitation rather than writing a wrong URL.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "mcp.env")
+
+	env := ServiceEnvironment{"MCP_TUNNEL_PROVIDER": string(TunnelProviderNgrok)}
+	require.NoError(t, WriteServiceEnvironment(path, env))
+
+	loaded, err := LoadServiceEnvironment(path)
+	require.NoError(t, err)
+	resolveServicePublicURL(path, loaded)
+	require.Equal(t, "", loaded["MCP_PUBLIC_URL"], "no domain -> no derived URL")
+}
