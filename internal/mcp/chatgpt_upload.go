@@ -8,8 +8,8 @@ import (
 
 // UploadHandler is the vendor-agnostic stream-to-upload executor: it uploads
 // bytes from a reader through the authenticated Pinner path, owning auth and
-// the underlying SDK/TUS. It is shared by every file-input mode (ChatGPT file
-// objects, URL relay, draft data: URIs, and async uploads); only the source of
+// the underlying SDK/TUS. It is shared by every file-input mode (file object,
+// URL relay, draft data: URIs, and async uploads); only the source of
 // the bytes differs, never this contract.
 type UploadHandler func(context.Context, io.Reader, int64, string, bool) (any, error)
 
@@ -68,7 +68,7 @@ func syncUploadBudget(size int64) time.Duration {
 }
 
 // chatgptFileMeta is the OpenAI file-parameter annotation attached to tools
-// that accept a ChatGPT file object, signalling the host to pass the value
+// that accept a file object, signalling the host to pass the value
 // from a user-attached file rather than from model context.
 func chatgptFileMeta() map[string]any {
 	return map[string]any{"openai/fileParams": []string{"file"}}
@@ -84,7 +84,7 @@ func chatgptRelayOptions(timeout time.Duration) FileRelayOptions {
 	}
 }
 
-// openChatGPTInput validates a ChatGPT file input and opens its download
+// openChatGPTInput validates a file input and opens its download
 // stream, returning the resolved reference, an owned reader, and byte size.
 // It centralizes the input→reference→validate→open sequence shared by the
 // upload, vault, and async handlers.

@@ -14,22 +14,22 @@ func TestUploadFileAvailable(t *testing.T) {
 
 	t.Run("HTTP requires both the coordinator and a reachable HTTP mux", func(t *testing.T) {
 		// Plain HTTP / ngrok / cloudflared: mux mounted, remote upload_file OK.
-		require.True(t, uploadFileAvailable(false, false, true, false, true))
-		// No coordinator wired: nothing to mint.
-		require.False(t, uploadFileAvailable(false, false, false, false, true))
+		require.True(t, uploadFileAvailable(false, false, true, false, false))
+		// No coordinator wired: nothing to mint on the HTTP mux.
+		require.False(t, uploadFileAvailable(false, false, false, false, false))
 	})
 
 	t.Run("openai tunnel requires the relay executor (no reachable mux)", func(t *testing.T) {
 		// Embedded openai tunnel: only MCP RPC, no reachable HTTP mux — mint
 		// (curl) is impossible, but a wired relay executor (url/data) works.
-		require.True(t, uploadFileAvailable(false, false, true, true, false))
-		require.True(t, uploadFileAvailable(false, false, false, true, false))
+		require.True(t, uploadFileAvailable(false, false, true, true, true))
+		require.True(t, uploadFileAvailable(false, false, false, true, true))
 		// No relay executor wired on the openai tunnel: nothing works.
-		require.False(t, uploadFileAvailable(false, false, true, false, false))
+		require.False(t, uploadFileAvailable(false, false, true, false, true))
 	})
 
 	t.Run("HTTP does not need a relay executor", func(t *testing.T) {
 		// curl path is independent of the relay executor.
-		require.True(t, uploadFileAvailable(false, false, true, false, true))
+		require.True(t, uploadFileAvailable(false, false, true, false, false))
 	})
 }

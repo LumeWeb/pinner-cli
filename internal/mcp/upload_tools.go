@@ -28,7 +28,7 @@ func NewAsyncUploadTools(mgr *UploadTaskManager) []ToolDescriptor {
 		{
 			Name:        "upload_file_async",
 			Title:       "Start an async external-file upload",
-			Description: "Start uploading a ChatGPT file reference in the background and return an opaque handle. Poll upload_status, cancel with upload_cancel, and list with upload_list. Pinner fetches the temporary URL locally and uses its authenticated TUS path.",
+			Description: "Start uploading a file reference in the background and return an opaque handle. Poll upload_status, cancel with upload_cancel, and list with upload_list. Pinner fetches the temporary URL locally and uses its authenticated TUS path.",
 			Category:    CategoryCore,
 			InputSchema: toolSchemaFor[ChatGPTFileAsyncInput](),
 			Meta:        chatgptFileMeta(),

@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// fakeVaultPutHandler is a controllable ChatGPTVaultPutHandler for app tests.
+// fakeVaultPutHandler is a controllable VaultPutHandler for app tests.
 type fakeVaultPutHandler struct {
 	gotVaultPath string
 	gotBody      string
@@ -52,7 +52,7 @@ func buildVaultUploadAppServerEx(t *testing.T, fake *fakeVaultPutHandler) (*mcp.
 	srv := NewOfficialServer(nil)
 	vu := NewVaultHTTPUpload(fake.Put, 1<<20)
 
-	vaultPutDesc := ChatGPTVaultPutDescriptor(fake.Put)
+	vaultPutDesc := NewVaultPutFileDescriptor(false, false, nil, vu, fake.Put, nil, 0)
 	catalog.Add(toolEntryFromDescriptor(vaultPutDesc))
 	if err := RegisterVaultUploadApp(srv, catalog, vu); err != nil {
 		t.Fatalf("RegisterVaultUploadApp: %v", err)
@@ -342,20 +342,19 @@ func TestRegisterVaultUploadAppNilCoordinator(t *testing.T) {
 }
 
 // TestVaultUploadMintRejectsUnsafePath verifies the presigned-upload flow
-// refuses to mint an endpoint that could write anywhere else in the vault:
-// out-of-scope destinations, directories, and traversal paths are all rejected
-// before any token exists, so a leaked/forwarded PUT URL can never target
-// them.
+// refuses to mint an endpoint for a destination that is not a well-formed
+// vault FILE path: directories and traversal paths are all rejected before
+// any token exists. Any well-formed vault file path (including paths outside
+// a single "uploads" folder) is an allowed mint destination — there is no
+// folder restriction.
 func TestVaultUploadMintRejectsUnsafePath(t *testing.T) {
 	fake := &fakeVaultPutHandler{}
 	srv := buildVaultUploadAppServer(t, fake)
 	cs := connectOfficialClient(t, srv)
 
 	badPaths := []string{
-		"vault:/secret.db",               // outside the uploads scope
-		"vault:/uploads",                 // directory, not a file
 		"vault:/uploads/",                // directory (trailing slash)
-		"vault:/uploads/../../secret.db", // traversal out of scope
+		"vault:/uploads/../../secret.db", // traversal
 		"vault:/uploads/..",              // .. as the leaf filename
 		"vault:/uploads/.",               // . as the leaf filename
 		"vault://work/uploads/x.pdf",     // profile-authority path unsupported

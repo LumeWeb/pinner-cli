@@ -353,14 +353,14 @@ adapter.`,
 			// The vaultUpload coordinator mirrors curlUpload for the "Upload to
 			// Vault" MCP App: it mints a one-time presigned PUT endpoint bound
 			// to a vault destination path, and the raw PUT body is drained
-			// through the authenticated vault write (chatGPTVaultPut)
+			// through the authenticated vault write (vaultPutHandler)
 			// synchronously. It is only wired when that vault write handler is
 			// present, and must exist here (before registerCustomTools and
 			// serveHTTP) so both the app helper and the transport-mounted PUT
 			// route can be registered against the same instance.
 			var vaultUpload *vaultHTTPUpload
-			if mcpOpts.chatGPTVaultPut != nil {
-				vaultUpload = NewVaultHTTPUpload(mcpOpts.chatGPTVaultPut, effectiveRelayMaxBytes(mcpOpts.maxRelayBytes))
+			if mcpOpts.vaultPutHandler != nil {
+				vaultUpload = NewVaultHTTPUpload(mcpOpts.vaultPutHandler, effectiveRelayMaxBytes(mcpOpts.maxRelayBytes))
 				// Allow configured MCP-host origins to PUT across origins (the
 				// vault app iframe can be served from a host origin that is not
 				// the Pinner server origin); the endpoint's own origin is
@@ -404,7 +404,6 @@ adapter.`,
 				// cloudflared). The embedded openai tunnel exposes no reachable
 				// HTTP mux — all RPC flows through the tunnel protocol — so the
 				// remote upload_file branch must not be advertised there.
-				remoteUploadSupported: curlUpload != nil && cmd.String("tunnel") != "openai",
 				tunnelOpenAI:          cmd.String("tunnel") == "openai",
 				hasWizard:             hasWizard,
 				wizardW:               wizardW,
@@ -851,7 +850,7 @@ type mcpServerOptions struct {
 	// prompts enables registration of the prompt templates.
 	prompts           bool
 	uploadHandler     UploadHandler
-	chatGPTVaultPut   ChatGPTVaultPutHandler
+	vaultPutHandler   VaultPutHandler
 	uploadTasks       *UploadTaskManager
 	relayURLUpload    RelayURLUploadHandler
 	relayAllowedHosts []string
@@ -911,10 +910,11 @@ func WithUploadHandler(handler UploadHandler) MCPServerOption {
 	}
 }
 
-// WithChatGPTVaultPut registers the direct ChatGPT vault file-input tool.
-func WithChatGPTVaultPut(handler ChatGPTVaultPutHandler) MCPServerOption {
+// WithVaultPutHandler registers the authenticated vault write executor used by
+// the vault_put_file tool's relay (OpenAI tunnel) source modes.
+func WithVaultPutHandler(handler VaultPutHandler) MCPServerOption {
 	return func(o *mcpServerOptions) {
-		o.chatGPTVaultPut = handler
+		o.vaultPutHandler = handler
 	}
 }
 
@@ -968,10 +968,10 @@ func WithLocalPathUpload(handler LocalPathUploadHandler) MCPServerOption {
 	}
 }
 
-// WithLocalPathVaultPut registers the SDIO local-path vault upload tool
-// (vault_put_path), which writes a host-side file/directory/archive into the
-// encrypted vault directly. It is only meaningful when the MCP server is
-// co-located with the caller's files.
+// WithLocalPathVaultPut registers the SDIO local-path vault write used by the
+// unified vault_put_file tool's stdio source mode, which writes a host-side
+// file/directory/archive into the encrypted vault directly. It is only
+// meaningful when the MCP server is co-located with the caller's files.
 func WithLocalPathVaultPut(handler LocalPathVaultPutHandler) MCPServerOption {
 	return func(o *mcpServerOptions) {
 		o.localPathVaultPut = handler
@@ -1152,7 +1152,7 @@ Less common CLI tools remain available through progressive disclosure:
 2. describe_tool({ "name": "..." }): Get the full input schema for one internal tool.
 3. invoke_tool({ "name": "...", "arguments": { ... } }): Execute one internal tool.
 
-The internal catalog has %d tools. Local path arguments refer to the MCP server host, not the remote agent's filesystem. Upload and vault copy therefore require a host-side file handoff. ChatGPT file attachments can use the directly visible upload_file tool; Pinner fetches the temporary file URL locally and uses its existing authenticated TUS path. Large uploads use TUS internally; the SDK result includes an upload location for resume/status management. TUS is never anonymous. Vault cat returns bounded base64 JSON in agent mode and never writes raw bytes to the MCP transport.`
+The internal catalog has %d tools. Local path arguments refer to the MCP server host, not the remote agent's filesystem. Upload and vault copy therefore require a host-side file handoff. File attachments can use the directly visible upload_file (IPFS) and vault_put_file (vault) tools over the banner-visible source modes; Pinner fetches the temporary file URL locally and uses its existing authenticated TUS path. Large uploads use TUS internally; the SDK result includes an upload location for resume/status management. TUS is never anonymous. Vault cat returns bounded base64 JSON in agent mode and never writes raw bytes to the MCP transport.`
 
 // buildInstructions returns the MCP server instructions with the real catalog
 // tool count substituted, so the guidance given to agents stays accurate as

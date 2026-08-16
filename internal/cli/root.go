@@ -111,20 +111,20 @@ For more help on any command: pinner <command> --help`,
 	// once a cfgMgr/output/secure are available.
 	var pinProvider mcpadapter.PinningProviderFactory
 	// uploadHandler is the single vendor-agnostic stream→upload executor shared
-	// by every file-input tool (ChatGPT file object, URL relay, draft data: URI,
+	// by every file-input tool (file object, URL relay, draft data: URI,
 	// async). Only the byte source differs; the authenticated upload contract is
-	// the same. It is also assigned to the vendor-typed ChatGPT handler (a type
-	// alias of UploadHandler) that the vendored pinner_upload_file tool needs.
+	// the same. It is also assigned to the type-alias handler (a type alias
+	// of UploadHandler) that the vendored pinner_upload_file tool needs.
 	var uploadHandler mcpadapter.UploadHandler
-	var chatGPTVaultPut mcpadapter.ChatGPTVaultPutHandler
+	var vaultPutHandler mcpadapter.VaultPutHandler
 	// localPathUpload is the co-located (stdio/local-mode) handler that backs
 	// the consolidated upload_file tool's co-located branch: it uploads
 	// a host-side file/directory/archive. It is built inside the wizard factory
 	// (where uploadSvc lives) and read by the WithLocalPathUpload option below.
 	var localPathUpload mcpadapter.LocalPathUploadHandler
-	// localPathVaultPut is the vault_put_path (SDIO/local-mode) handler: it
-	// writes a host-side file/directory/archive into the encrypted vault. It
-	// is built inside the wizard factory (where the vault service is
+	// localPathVaultPut is the vault_put_file (SDIO/local-mode path branch)
+	// handler: it writes a host-side file/directory/archive into the encrypted
+	// vault. It is built inside the wizard factory (where the vault service is
 	// available) and read by the WithLocalPathVaultPut option below.
 	var localPathVaultPut mcpadapter.LocalPathVaultPutHandler
 	root.Commands = append(root.Commands, mcpadapter.MCPCommand(root,
@@ -284,7 +284,7 @@ For more help on any command: pinner <command> --help`,
 				}
 				return result, nil
 			}
-			chatGPTVaultPut = func(ctx context.Context, reader io.Reader, size int64, path string) (any, error) {
+			vaultPutHandler = func(ctx context.Context, reader io.Reader, size int64, path string) (any, error) {
 				profile, err := vault.ResolveProfile("")
 				if err != nil {
 					return nil, err
@@ -297,7 +297,7 @@ For more help on any command: pinner <command> --help`,
 				return vaultSvc.Put(ctx, reader, size, path, nil)
 			}
 
-			// localPathVaultPut is the vault_put_path handler (SDIO/local
+			// localPathVaultPut is the vault_put_file path-mode handler (SDIO/local
 			// mode). It writes a host-side file/directory/archive into the
 			// encrypted vault: a directory is walked into one vault object
 			// per file via mcpadapter.DirToVault; a file is written as a
@@ -443,11 +443,11 @@ For more help on any command: pinner <command> --help`,
 			}
 			return uploadHandler(ctx, reader, size, name, wait)
 		}),
-		mcpadapter.WithChatGPTVaultPut(func(ctx context.Context, reader io.Reader, size int64, path string) (any, error) {
-			if chatGPTVaultPut == nil {
-				return nil, notInitErr("ChatGPT vault")
+		mcpadapter.WithVaultPutHandler(func(ctx context.Context, reader io.Reader, size int64, path string) (any, error) {
+			if vaultPutHandler == nil {
+				return nil, notInitErr("vault upload")
 			}
-			return chatGPTVaultPut(ctx, reader, size, path)
+			return vaultPutHandler(ctx, reader, size, path)
 		}),
 		mcpadapter.WithUploadTaskManager(mcpadapter.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
 			if uploadHandler == nil {
@@ -484,7 +484,7 @@ For more help on any command: pinner <command> --help`,
 			}
 			return localPathUpload(ctx, path, name, wait, archiveMode)
 		}),
-		// vault_put_path: SDIO/local-mode put of a host-side file, directory,
+		// vault_put_file: path mode put of a host-side file, directory,
 		// or archive into the encrypted vault. Only meaningful when the MCP
 		// server is co-located with the caller's files (stdio/local); the
 		// handler homes the file-vs-directory-vs-archive decision via the
@@ -521,7 +521,7 @@ For more help on any command: pinner <command> --help`,
 
 // checkArchiveTreeSize opens the archive at srcPath as a virtual filesystem and
 // rejects it up front if the aggregate of all regular-file sizes (or any single
-// entry) exceeds maxBytes. It lets the vault_put_path archive convert path
+// entry) exceeds maxBytes. It lets the vault_put_file archive convert path
 // enforce the operator-set max_mcp_upload_size cap BEFORE materializing an
 // archive into a temp dir and into memory, so an oversized archive or
 // decompression bomb cannot bypass the cap. Returns nil when the archive fits.
@@ -541,7 +541,7 @@ func checkArchiveTreeSize(ctx context.Context, srcPath string, maxBytes int64) e
 
 // materializeArchive extracts the archive at srcPath into the existing local
 // directory dstDir by walking its virtual filesystem (from ipfs-content) and
-// writing each entry out to disk. It is used by the vault_put_path archive
+// writing each entry out to disk. It is used by the vault_put_file archive
 // convert path, which must hand DirToVault a real local directory. Returns the
 // first error encountered; on error dstDir may be partially populated (the
 // caller is responsible for cleanup via os.RemoveAll).

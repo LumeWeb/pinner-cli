@@ -48,13 +48,13 @@ func NewAgentGuideDescriptor() ToolDescriptor {
 				Name:   "upload",
 				Title:  "Upload a file to IPFS",
 				Steps:  []string{"capabilities", "upload_file", "upload_status"},
-				Detail: "Check capabilities; if upload_file is available, call it to upload a file — a host path in co-located stdio mode, or a minted one-time presigned HTTP PUT endpoint in remote mode — then monitor with upload_status for the CID.",
+				Detail: "Check capabilities; if upload_file is available, call it with a transport-scoped source (host path in co-located stdio mode, a minted one-time presigned HTTP PUT endpoint in remote mode, or url/data on the OpenAI tunnel), then monitor with upload_status for the CID.",
 			},
 			{
 				Name:   "vault_upload",
-				Title:  "Upload a local file/directory to a vault",
-				Steps:  []string{"capabilities", "vault_put_path", "upload_status"},
-				Detail: "Check capabilities; if local_path is available and the target vault is unlocked, pass a host-side file/directory/archive path to vault_put_path, then monitor with upload_status for the CID.",
+				Title:  "Store a file in a vault",
+				Steps:  []string{"capabilities", "vault_put_file", "upload_status"},
+				Detail: "Check capabilities; if vault_put_file is available and the target vault is unlocked, call it with a transport-scoped source (host path in co-located stdio mode, a minted presigned PUT in remote mode, or url/data on the OpenAI tunnel) plus the destination vault_path, then monitor with upload_status for the CID.",
 			},
 			{
 				Name:   "pins",
