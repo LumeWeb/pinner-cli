@@ -9,6 +9,8 @@ import "encoding/json"
 // drops a file on a name collision.
 type FileMetadata struct {
 	ID            string         `json:"id"`            // stable per-file UUID
+	VersionID     string         `json:"version_id,omitempty"` // opaque version handle (syncs)
+	Seq           uint           `json:"seq,omitempty"`       // monotonic per-UUID version ordering
 	Name          string         `json:"name"`
 	Directory     string         `json:"directory,omitempty"` // vault dir path, e.g. "/reports/2024"
 	MediaType     string         `json:"media_type"`

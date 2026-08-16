@@ -118,10 +118,13 @@ func TestPut_CreateBeforeDestroyOrder(t *testing.T) {
 		t.Fatalf("create prior file: %v", err)
 	}
 
-	// Call svc.Put; this should:
-	//  1. Delete the prior DB row
-	//  2. Commit the new record
-	//  3. Delete the prior object from the indexer (fake records it)
+	// Manual prior record with a known ObjectKey (64-char hex).
+	// (priorKey/prior defined above.)
+
+	// Call svc.Put (overwrite). With versioning this should:
+	//  1. Insert a NEW version row (same UUID as the prior current winner)
+	//  2. Demote the prior row to is_current=0 (it keeps its ObjectKey = history)
+	//  3. NOT call DeleteObject (prior content is preserved as an older version)
 	newMeta := map[string]any{"source": "test"}
 	data := bytes.NewReader([]byte("new content"))
 	rec, err := svc.Put(ctx, data, int64(data.Len()), "vault:/docs/report.pdf", newMeta)
@@ -129,30 +132,55 @@ func TestPut_CreateBeforeDestroyOrder(t *testing.T) {
 		t.Fatalf("Put failed: %v", err)
 	}
 
-	// Verify the new record was committed with the expected ObjectKey
-	// (zero hash of empty slabs via NewEmptyObject)
 	if rec.Name != "report.pdf" {
 		t.Errorf("record.Name = %q, want %q", rec.Name, "report.pdf")
 	}
 
-	// Verify the prior object's key was passed to DeleteObject
-	if len(fake.deleted) != 1 {
-		t.Fatalf("expected 1 DeleteObject call, got %d", len(fake.deleted))
-	}
-	if fake.deleted[0] != priorKey {
-		t.Errorf("DeleteObject(%q) call 0, want %q", fake.deleted[0], priorKey)
+	// Versioning preserves prior content: overwriting must NOT reclaim the prior
+	// object from the indexer.
+	if len(fake.deleted) != 0 {
+		t.Fatalf("expected 0 DeleteObject calls on overwrite (versioning preserves history), got %d: %v", len(fake.deleted), fake.deleted)
 	}
 
-	// Verify DB state: only one record for this (name, directory_id)
-	var count int64
-	db.Model(&File{}).Where("name = ? AND directory_id = ?", "report.pdf", dirID).Count(&count)
-	if count != 1 {
-		t.Errorf("expected 1 file record after overwrite, got %d", count)
+	// Verify DB state: two version rows now share the (name, directory_id) —
+	// the prior row (non-current, retains its ObjectKey) and the new current row.
+	var rows []File
+	db.Where("name = ? AND directory_id = ?", "report.pdf", dirID).Order("seq ASC").Find(&rows)
+	if len(rows) != 2 {
+		t.Fatalf("expected 2 version rows after overwrite, got %d", len(rows))
+	}
+	// The older row (lower seq) is the preserved prior version with the old key.
+	priorVersion := File{}
+	newVersion := File{}
+	for i := range rows {
+		if rows[i].ObjectKey == priorKey {
+			priorVersion = rows[i]
+		} else {
+			newVersion = rows[i]
+		}
+	}
+	if priorVersion.ObjectKey != priorKey || priorVersion.IsCurrent {
+		t.Errorf("prior version should retain %q and be non-current, got key=%q is_current=%v", priorKey, priorVersion.ObjectKey, priorVersion.IsCurrent)
+	}
+	if !newVersion.IsCurrent {
+		t.Errorf("new version should be the current winner, got is_current=%v", newVersion.IsCurrent)
+	}
+	// The new (current) version must have a non-empty opaque version id. The
+	// prior row was inserted directly (legacy shape) and may legitimately have
+	// version_id="" (pre-versioning rows are null-version). Seq must still
+	// increase — the new version is newer.
+	if newVersion.VersionID == "" {
+		t.Errorf("new version should have a non-empty version_id, got %q", newVersion.VersionID)
+	}
+	if priorVersion.VersionID == newVersion.VersionID {
+		t.Errorf("version rows must not share a version_id, both %q", newVersion.VersionID)
+	}
+	if newVersion.Seq <= priorVersion.Seq {
+		t.Errorf("new version seq (%d) should be > prior version seq (%d)", newVersion.Seq, priorVersion.Seq)
 	}
 
 	// Re-upload identical content so objectKey == prior.ObjectKey.
 	// The fake SDK returns an empty object whose ID is the hash of an empty slab list.
-	// Use the first Put's returned record key since we can't predict the hash exactly.
 	sameKey := rec.ObjectKey
 
 	prior2 := File{
@@ -175,7 +203,7 @@ func TestPut_CreateBeforeDestroyOrder(t *testing.T) {
 	}
 	_ = rec2
 
-	// Verify DeleteObject was NOT called (identical content → guard skips)
+	// Versioning never reclaims on overwrite, identical or not.
 	if len(fake.deleted) != 0 {
 		t.Errorf("expected 0 DeleteObject calls for same-key re-upload, got %d: %v", len(fake.deleted), fake.deleted)
 	}
@@ -233,9 +261,10 @@ func TestPut_ContentDigestInMetadata(t *testing.T) {
 	}
 }
 
-// TestPut_DeleteObjectNonFatal verifies that a DeleteObject failure after the
-// new record is committed does NOT propagate as an error to the caller.
-func TestPut_DeleteObjectNonFatal(t *testing.T) {
+// TestPut_DoesNotDeletePriorOnOverwrite verifies that overwriting a path (a new
+// version) does NOT reclaim the prior object from the indexer — versioning
+// preserves every version's content, so Put never calls DeleteObject.
+func TestPut_DoesNotDeletePriorOnOverwrite(t *testing.T) {
 	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "vault.db")
 	db, err := OpenDB(dbPath)
@@ -248,7 +277,7 @@ func TestPut_DeleteObjectNonFatal(t *testing.T) {
 		}
 	}()
 
-	fake := &fakeSDK{t: t, delErr: io.ErrUnexpectedEOF} // simulate DeleteObject failure
+	fake := &fakeSDK{t: t} // delErr exercises the (now-unreachable) cleanup path
 	svc := &vaultService{
 		db:     db,
 		sdk:    fake,
@@ -273,15 +302,14 @@ func TestPut_DeleteObjectNonFatal(t *testing.T) {
 		t.Fatalf("create prior: %v", err)
 	}
 
-	// Put should succeed despite DeleteObject failure
-	_, err = svc.Put(ctx, bytes.NewReader([]byte("data")), 4, "vault:/docs/report.pdf", nil)
-	if err != nil {
-		t.Fatalf("Put should succeed despite DeleteObject failure, got: %v", err)
+	// Put must succeed (a new version is inserted).
+	if _, err = svc.Put(ctx, bytes.NewReader([]byte("data")), 4, "vault:/docs/report.pdf", nil); err != nil {
+		t.Fatalf("Put failed: %v", err)
 	}
 
-	// Verify DeleteObject was called (attempted cleanup)
-	if len(fake.deleted) != 1 {
-		t.Errorf("expected 1 DeleteObject call, got %d", len(fake.deleted))
+	// Versioning preserves history: DeleteObject is NOT called on overwrite.
+	if len(fake.deleted) != 0 {
+		t.Errorf("overwrite must not call DeleteObject (versioning preserves history), got %d call(s)", len(fake.deleted))
 	}
 }
 
@@ -327,12 +355,15 @@ func TestPut_ConcurrentSamePath(t *testing.T) {
 		}
 	}
 
-	// Exactly one LIVE row (and one current row) must exist for the path.
+	// With versioning, two concurrent Puts to the SAME NEW path converge on ONE
+	// identity (the loser adopts the winner's UUID via the partial-unique-index
+	// conflict + adoptPreflight), producing TWO version rows (each Put is a new
+	// version) with exactly ONE current winner.
 	var live, current int64
 	db.Model(&File{}).Where("name = ? AND directory_id IS NULL AND deleted_at IS NULL", "concurrent.txt").Count(&live)
 	db.Model(&File{}).Where("name = ? AND directory_id IS NULL AND is_current = 1 AND deleted_at IS NULL", "concurrent.txt").Count(&current)
-	if live != 1 || current != 1 {
-		t.Errorf("concurrent Put to same path left live=%d current=%d rows; want 1/1", live, current)
+	if live != 2 || current != 1 {
+		t.Errorf("concurrent Put to same path left live=%d current=%d rows; want 2/1 (two versions, one current)", live, current)
 	}
 }
 

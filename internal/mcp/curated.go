@@ -24,6 +24,8 @@ var compiledCuratedToolNames = []string{
 	"vault_ls",
 	"vault_status",
 	"vault_stat",
+	"vault_version_ls",
+	"vault_version_get",
 	"websites_list",
 	"websites_get",
 	"websites_validate",

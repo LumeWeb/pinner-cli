@@ -19,9 +19,16 @@ type Directory struct {
 // intentionally non-unique so two distinct content-addressed objects with the
 // same name both remain visible instead of one being dropped. ObjectKey is the
 // Sia object ID (content-addressed hash of slabs), stored as hex.
+//
+// Versioning: one row per version. A logical file (one UUID) has one row per
+// overwrite (each new PUT with different content inserts a fresh row). seq is the
+// monotonic per-UUID ordering (canonical newest); version_id is the opaque public
+// handle callers reference; is_current marks the live winner for its (name, dir).
 type File struct {
 	ID            uint   `gorm:"primaryKey"`
-	UUID          string `gorm:"uniqueIndex"` // stable identity, from metadata
+	UUID          string `gorm:"index:idx_files_uuid_version,unique"` // stable identity + version
+	VersionID     string `gorm:"index:idx_files_uuid_version,unique"` // opaque public version handle
+	Seq           uint   // monotonic per-UUID ordering (canonical "newest")
 	Name          string // e.g., "report.pdf" (non-unique)
 	DirectoryID   *uint  // FK to directories, NULL = root
 	IsCurrent     bool   `gorm:"default:false"` // 1 = the live winner for its (name, dir)

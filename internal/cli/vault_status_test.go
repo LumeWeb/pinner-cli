@@ -39,6 +39,18 @@ func (s *statusStubVaultService) VerifyDeep(context.Context, string) (*vault.Ver
 	return nil, nil
 }
 func (s *statusStubVaultService) Remove(context.Context, string) error { return nil }
+func (s *statusStubVaultService) VersionList(context.Context, string) ([]*vault.File, error) {
+	return nil, nil
+}
+func (s *statusStubVaultService) VersionGet(context.Context, string, string) (*vault.File, error) {
+	return nil, nil
+}
+func (s *statusStubVaultService) VersionDownload(context.Context, string, string, io.Writer) error {
+	return nil
+}
+func (s *statusStubVaultService) VersionRestore(context.Context, string, string) (*vault.File, error) {
+	return nil, nil
+}
 func (s *statusStubVaultService) Share(context.Context, string, time.Time) (string, error) {
 	return "", nil
 }

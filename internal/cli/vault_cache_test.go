@@ -106,6 +106,18 @@ func (s *cacheSyncStub) VerifyDeep(context.Context, string) (*vault.VerifyResult
 	return nil, nil
 }
 func (s *cacheSyncStub) Remove(context.Context, string) error { return nil }
+func (s *cacheSyncStub) VersionList(context.Context, string) ([]*vault.File, error) {
+	return nil, nil
+}
+func (s *cacheSyncStub) VersionGet(context.Context, string, string) (*vault.File, error) {
+	return nil, nil
+}
+func (s *cacheSyncStub) VersionDownload(context.Context, string, string, io.Writer) error {
+	return nil
+}
+func (s *cacheSyncStub) VersionRestore(context.Context, string, string) (*vault.File, error) {
+	return nil, nil
+}
 func (s *cacheSyncStub) Share(context.Context, string, time.Time) (string, error) {
 	return "", nil
 }

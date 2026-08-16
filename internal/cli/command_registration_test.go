@@ -76,6 +76,7 @@ func TestCommandRegistration_VaultSubcommands(t *testing.T) {
 	expectedVaultSubs := []string{
 		"create", "restore", "ls", "stat", "cat", "verify", "rm",
 		"cp", "share", "sync", "profile", "status", "cache", "forget",
+		"version", // vault version ls/get/restore (catalog-compiled, nested)
 	}
 	names := commandNames(vaultCmd.Commands)
 	nameSet := make(map[string]bool, len(names))

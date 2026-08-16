@@ -329,6 +329,52 @@ func renderVaultResult(_ context.Context, c *cli.Command, op catalog.Operation, 
 		output.Printfln("Cache cleared.")
 		return nil
 
+	case *catalogops.VaultVersionListResult:
+		if output.IsJSON() {
+			return output.PrintJSON(r)
+		}
+		if len(r.Versions) == 0 {
+			output.Printfln("No versions found for %s.", r.Path)
+			return nil
+		}
+		rows := make([][]string, len(r.Versions))
+		for i, v := range r.Versions {
+			cur := ""
+			if v.IsCurrent {
+				cur = "*"
+			}
+			rows[i] = []string{v.VersionID, fmt.Sprintf("%d", v.Seq), cur, fmt.Sprintf("%d", v.Size), v.UpdatedAt}
+		}
+		output.PrintTable([]string{"Version ID", "Seq", "Current", "Size", "Updated"}, rows)
+		output.Printfln("* = current live version")
+		return nil
+
+	case *catalogops.VaultVersionGetResult:
+		if output.IsJSON() {
+			return output.PrintJSON(r)
+		}
+		cur := "no"
+		if r.IsCurrent {
+			cur = "yes"
+		}
+		output.PrintFields(FieldGroup{
+			Title: "Vault File Version",
+			Fields: []Field{
+				{"Path", r.Path}, {"Version ID", r.VersionID}, {"Seq", fmt.Sprintf("%d", r.Seq)},
+				{"Current", cur}, {"Size", fmt.Sprintf("%d bytes", r.Size)},
+				{"Media Type", r.MediaType}, {"Content Digest", r.ContentDigest},
+				{"Object ID", r.ObjectKey}, {"Created", r.CreatedAt}, {"Updated", r.UpdatedAt},
+			},
+		})
+		return nil
+
+	case *catalogops.VaultVersionRestoreResult:
+		if output.IsJSON() {
+			return output.PrintJSON(r)
+		}
+		output.Printfln("Restored %s to version %s (%d bytes) as the new current version.", r.Path, r.RestoredTo, r.Size)
+		return nil
+
 	default:
 		if result == nil {
 			return nil

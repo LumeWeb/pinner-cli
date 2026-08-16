@@ -62,6 +62,9 @@ func VaultOperations(d VaultDeps) []catalog.Operation {
 		vaultLs(d),
 		vaultStat(d),
 		vaultVerify(d),
+		vaultVersionLs(d),
+		vaultVersionGet(d),
+		vaultVersionRestore(d),
 		vaultRm(d),
 		vaultSync(d),
 		vaultShare(d),
@@ -225,6 +228,202 @@ func vaultVerify(d VaultDeps) catalog.Operation {
 			}
 			// *vault.VerifyResult (cheap metadata-declared digest check)
 			return svc.Verify(ctx, vaultPath)
+		}),
+	})
+}
+
+// ---------------------------------------------------------------------------
+// vault version ls / get / restore
+// ---------------------------------------------------------------------------
+
+// VaultVersion is a single version in a vault_version_ls result.
+type VaultVersion struct {
+	VersionID     string `json:"version_id"`
+	Seq           uint   `json:"seq"`
+	ObjectKey     string `json:"object_key"`
+	Size          int64  `json:"size,omitempty"`
+	MediaType     string `json:"media_type,omitempty"`
+	ContentDigest string `json:"content_digest,omitempty"`
+	IsCurrent     bool   `json:"is_current"`
+	CreatedAt     string `json:"created_at"`
+	UpdatedAt     string `json:"updated_at,omitempty"`
+}
+
+// VaultVersionListResult is the data returned by vault_version_ls: the
+// requested path and its version history (newest first).
+type VaultVersionListResult struct {
+	Path     string         `json:"path"`
+	Versions []VaultVersion `json:"versions"`
+}
+
+// VaultVersionGetResult is the data returned by vault_version_get: the
+// requested version's record.
+type VaultVersionGetResult struct {
+	Path          string `json:"path"`
+	VaultVersion  `json:",inline"`
+}
+
+// VaultVersionRestoreResult is the data returned by vault_version_restore:
+// the new (restored) version that became the live current winner.
+type VaultVersionRestoreResult struct {
+	Path        string `json:"path"`
+	RestoredTo  string `json:"restored_to"` // new version_id
+	ObjectKey   string `json:"object_key"`
+	ContentDigest string `json:"content_digest,omitempty"`
+	Size        int64  `json:"size"`
+}
+
+func vaultVersionLs(d VaultDeps) catalog.Operation {
+	return catalog.NewOperation(catalog.OperationSpec{
+		Name:        "vault_version_ls",
+		Title:       "List vault file versions",
+		Summary:     "List version history of a vault file",
+		Description: "List every stored version of a vault file, newest first (seq descending). Each version carries its version_id, size, digest, and whether it is the current live winner. Overwrites preserve prior content as versions, so this surfaces the file's full history.\n\nTo retrieve an old version's content, pass its version_id to vault_version_get (metadata) or use vault cat with a version id. To restore an old version as the new current, use vault_version_restore.",
+		Category:    "vault",
+		Safety:      catalog.SafetyRead,
+		Interaction: catalog.InteractionAgentSafe,
+		Visibility:  catalog.VisibilityBoth,
+		Positional:  "<path>",
+		Args: []catalog.OperationArg{
+			{Name: "path", Type: catalog.ArgTypeString, Required: true, Help: "Vault path whose versions to list", AgentHelp: "The vault:/ path whose version history to list."},
+			{Name: "profile", Type: catalog.ArgTypeString, Help: "Vault profile name (defaults to active profile)"},
+		},
+		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
+			vaultPath := catalog.StrArg(input, "path", "")
+			if vaultPath == "" {
+				return nil, fmt.Errorf("vault_version_ls: missing required argument path")
+			}
+			profileName, err := vault.ResolveProfile(catalog.StrArg(input, "profile", ""))
+			if err != nil {
+				return nil, err
+			}
+			svc, err := d.service(profileName)
+			if err != nil {
+				return nil, err
+			}
+			defer svc.Close()
+			versions, err := svc.VersionList(ctx, vaultPath)
+			if err != nil {
+				return nil, err
+			}
+			res := &VaultVersionListResult{Path: vaultPath, Versions: make([]VaultVersion, 0, len(versions))}
+			for _, f := range versions {
+				res.Versions = append(res.Versions, VaultVersion{
+					VersionID:     f.VersionID,
+					Seq:           f.Seq,
+					ObjectKey:     f.ObjectKey,
+					Size:          f.Size,
+					MediaType:     f.MediaType,
+					ContentDigest: f.ContentDigest,
+					IsCurrent:     f.IsCurrent,
+					CreatedAt:     f.CreatedAt.UTC().Format(time.RFC3339),
+					UpdatedAt:     f.UpdatedAt.UTC().Format(time.RFC3339),
+				})
+			}
+			return res, nil
+		}),
+	})
+}
+
+func vaultVersionGet(d VaultDeps) catalog.Operation {
+	return catalog.NewOperation(catalog.OperationSpec{
+		Name:        "vault_version_get",
+		Title:       "Get vault file version",
+		Summary:     "Get metadata for one version of a vault file",
+		Description: "Return the metadata record (size, digest, object id, created time) for a specific version of a vault file, addressed by its version_id (obtainable from vault_version_ls). Read-only; does not stream content.\n\nTo get the CONTENT of a historical version, use vault cat with the version id on the path.",
+		Category:    "vault",
+		Safety:      catalog.SafetyRead,
+		Interaction: catalog.InteractionAgentSafe,
+		Visibility:  catalog.VisibilityBoth,
+		Positional:  "<path> <version_id>",
+		Args: []catalog.OperationArg{
+			{Name: "path", Type: catalog.ArgTypeString, Required: true, Help: "Vault path of the file", AgentHelp: "The vault:/ path of the file."},
+			{Name: "version_id", Type: catalog.ArgTypeString, Required: true, Help: "Version id to inspect (from vault_version_ls)", AgentHelp: "The version_id to inspect (from vault_version_ls)."},
+			{Name: "profile", Type: catalog.ArgTypeString, Help: "Vault profile name (defaults to active profile)"},
+		},
+		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
+			vaultPath := catalog.StrArg(input, "path", "")
+			versionID := catalog.StrArg(input, "version_id", "")
+			if vaultPath == "" || versionID == "" {
+				return nil, fmt.Errorf("vault_version_get: missing required argument (path, version_id)")
+			}
+			profileName, err := vault.ResolveProfile(catalog.StrArg(input, "profile", ""))
+			if err != nil {
+				return nil, err
+			}
+			svc, err := d.service(profileName)
+			if err != nil {
+				return nil, err
+			}
+			defer svc.Close()
+			f, err := svc.VersionGet(ctx, vaultPath, versionID)
+			if err != nil {
+				return nil, err
+			}
+			return &VaultVersionGetResult{
+				Path: vaultPath,
+				VaultVersion: VaultVersion{
+					VersionID:     f.VersionID,
+					Seq:           f.Seq,
+					ObjectKey:     f.ObjectKey,
+					Size:          f.Size,
+					MediaType:     f.MediaType,
+					ContentDigest: f.ContentDigest,
+					IsCurrent:     f.IsCurrent,
+					CreatedAt:     f.CreatedAt.UTC().Format(time.RFC3339),
+					UpdatedAt:     f.UpdatedAt.UTC().Format(time.RFC3339),
+				},
+			}, nil
+		}),
+	})
+}
+
+func vaultVersionRestore(d VaultDeps) catalog.Operation {
+	return catalog.NewOperation(catalog.OperationSpec{
+		Name:        "vault_version_restore",
+		Title:       "Restore a vault file version",
+		Summary:     "Restore an old version as the current file",
+		Description: "Restore a specific historical version of a vault file as the new live current version. The old version's content is copied and re-uploaded as a NEW version (the current winner is replaced; all prior versions, including the one restored, remain in history). Requires confirm=true (destructive to the current live content).",
+		Category:    "vault",
+		Safety:      catalog.SafetyDestructive,
+		Interaction: catalog.InteractionAgentSafe,
+		Visibility:  catalog.VisibilityBoth,
+		Positional:  "<path> <version_id>",
+		Args: []catalog.OperationArg{
+			{Name: "path", Type: catalog.ArgTypeString, Required: true, Help: "Vault path of the file", AgentHelp: "The vault:/ path of the file to restore into."},
+			{Name: "version_id", Type: catalog.ArgTypeString, Required: true, Help: "Version id to restore (from vault_version_ls)", AgentHelp: "The version_id to restore (from vault_version_ls)."},
+			{Name: "confirm", Type: catalog.ArgTypeBool, Default: "false", Required: true, Help: "Must be true to restore (destructive to current content)", AgentHelp: "Set to true to confirm the destructive restore."},
+			{Name: "profile", Type: catalog.ArgTypeString, Help: "Vault profile name (defaults to active profile)"},
+		},
+		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
+			vaultPath := catalog.StrArg(input, "path", "")
+			versionID := catalog.StrArg(input, "version_id", "")
+			if vaultPath == "" || versionID == "" {
+				return nil, fmt.Errorf("vault_version_restore: missing required argument (path, version_id)")
+			}
+			if !catalog.BoolArg(input, "confirm", false) {
+				return nil, fmt.Errorf("vault_version_restore: confirm=true is required (restore is destructive to current live content)")
+			}
+			profileName, err := vault.ResolveProfile(catalog.StrArg(input, "profile", ""))
+			if err != nil {
+				return nil, err
+			}
+			svc, err := d.service(profileName)
+			if err != nil {
+				return nil, err
+			}
+			defer svc.Close()
+			f, err := svc.VersionRestore(ctx, vaultPath, versionID)
+			if err != nil {
+				return nil, err
+			}
+			return &VaultVersionRestoreResult{
+				Path:          vaultPath,
+				RestoredTo:    f.VersionID,
+				ObjectKey:     f.ObjectKey,
+				ContentDigest: f.ContentDigest,
+				Size:          f.Size,
+			}, nil
 		}),
 	})
 }

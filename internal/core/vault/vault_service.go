@@ -2,6 +2,7 @@ package vault
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -208,10 +209,23 @@ func (s *vaultService) Put(ctx context.Context, r io.Reader, size int64, vaultPa
 		mintedFresh = true
 	}
 
-	// Build file metadata
+	// Build file metadata. Version identity is computed UP FRONT (before the
+	// object is pinned) so the encrypted object metadata — the cross-device sync
+	// vehicle — carries the same version_id/seq as the local row. version_id is
+	// random/opaque (public handle); seq is the monotonic per-UUID ordering,
+	// derived from the local cache so it survives cache rebuilds on the writing
+	// device. (A cross-process write racing between this read and the commit is
+	// reconciled inside the transaction below; version_id, not seq, is the
+	// disambiguator.)
 	now := time.Now().UTC().Format(time.RFC3339)
+	versionID := newVersionID()
+	var curSeq uint
+	s.db.Model(&File{}).Where("uuid = ?", fileID).Select("COALESCE(MAX(seq),0)").Scan(&curSeq)
+	versionSeq := curSeq + 1
 	fileMeta := FileMetadata{
 		ID:        fileID,
+		VersionID: versionID,
+		Seq:       versionSeq,
 		Name:      vp.Name,
 		Directory: vp.Directory,
 		MediaType: mediaType,
@@ -255,9 +269,9 @@ func (s *vaultService) Put(ctx context.Context, r io.Reader, size int64, vaultPa
 	// one transaction so the partial unique index idx_files_live_name_dir
 	// enforces at most one current live row per path.
 
-	// Capture the prior object key (if this is an overwrite) BEFORE we write,
-	// so we can best-effort clean up the orphaned prior content after.
-	priorObjectKey := ""
+	// Capture the prior object key is NOT needed: with versioning we preserve
+	// every version's content (each prior current row retains its ObjectKey),
+	// so no post-write orphan deletion occurs on overwrite.
 	var record *File
 	nowTs := time.Now().UTC()
 	// Persist the user-supplied metadata map on the local File row so it
@@ -271,7 +285,16 @@ func (s *vaultService) Put(ctx context.Context, r io.Reader, size int64, vaultPa
 		UUID:          fileID,
 		Name:          vp.Name,
 		DirectoryID:   dirID,
-		IsCurrent:     true,
+		// A freshly-minted path inserts as is_current=true so the partial
+		// unique index idx_files_live_name_dir (which only constrains
+		// is_current=1) still fires when a concurrent writer claims the same
+		// brand-new path, letting the retry/adopt loop converge instead of
+		// leaving an orphaned invisible version. An overwrite path is NOT
+		// current at insert: setting is_current would collide with the
+		// existing winner's own live row, so promoteCurrent below does that
+		// final demote+promote. (adoptPreflight resets this to false on the
+		// adopt path so the adopted row never races the winner's live row.)
+		IsCurrent:     mintedFresh,
 		ObjectKey:     objectKey.String(),
 		Size:          size,
 		MediaType:     mediaType,
@@ -280,7 +303,6 @@ func (s *vaultService) Put(ctx context.Context, r io.Reader, size int64, vaultPa
 		CreatedAt:     nowTs,
 		UpdatedAt:     nowTs,
 	}
-
 	// The store below is wrapped in a bounded retry to resolve the concurrent-
 	// create race WITHOUT ever running network I/O inside the single-connection
 	// SQLite write transaction. OpenDB caps the pool at SetMaxOpenConns(1), so
@@ -316,40 +338,39 @@ func (s *vaultService) Put(ctx context.Context, r io.Reader, size int64, vaultPa
 		}
 
 		err = s.db.Transaction(func(tx *gorm.DB) error {
-			var prior File
-			switch tx.Where("uuid = ?", rec.UUID).First(&prior).Error {
-			case nil:
-				priorObjectKey = prior.ObjectKey
-				// Update the existing UUID row (overwrite). Mark it current; the
-				// promotion below demotes any other live current row in the group.
-				prior.ObjectKey = rec.ObjectKey
-				prior.Size = rec.Size
-				prior.MediaType = rec.MediaType
-				prior.ContentDigest = rec.ContentDigest
-				prior.Metadata = datatypes.JSON(userMetaJSON)
-				prior.IsCurrent = true
-				prior.UpdatedAt = rec.UpdatedAt
-				prior.DeletedAt = nil // resurrect if it was tombstoned
-				if err := tx.Save(&prior).Error; err != nil {
-					return err
-				}
-				rec = prior
-				return promoteCurrent(tx, vp.Name, dirID, rec.ID)
-			case gorm.ErrRecordNotFound:
-				// A concurrent writer can win the (name, directory) path between
-				// adoptPreflight and this insert, tripping the partial unique
-				// index. This is not fatal: return the conflict so the retry
-				// loop above re-runs adoptPreflight, which now resolves the
-				// winner and re-pins the object OUTSIDE the transaction, and
-				// then takes the overwrite path here. No network I/O happens
-				// under the single-connection write lock.
-				if err := tx.Create(&rec).Error; err != nil {
-					return err
-				}
-				return promoteCurrent(tx, vp.Name, dirID, rec.ID)
-			default:
-				return fmt.Errorf("failed to query existing file by uuid %q", rec.UUID)
+			// Versioning: EVERY Put inserts a fresh version row and promotes it
+			// to the live current winner for its (name, dir). The prior current
+			// row is demoted by promoteCurrent but RETAINS its ObjectKey, so its
+			// content survives as an older version. We never mutate a version
+			// row in place: that is what previously destroyed history.
+			//
+			// version_id comes from the encrypted object metadata (set up front,
+			// so the local row matches what other devices sync down). seq is
+			// re-derived inside the single-connection write transaction so two
+			// concurrent Puts to the same logical file can't race to the same
+			// seq (take the max of the up-front read and the committed max, in
+			// case a cross-process writer landed between).
+			var maxSeq uint
+			if err := tx.Model(&File{}).
+				Where("uuid = ?", rec.UUID).
+				Select("COALESCE(MAX(seq), 0)").
+				Scan(&maxSeq).Error; err != nil {
+				return fmt.Errorf("failed to compute next version seq: %w", err)
 			}
+			if versionSeq > maxSeq {
+				maxSeq = versionSeq
+			}
+			rec.Seq = maxSeq + 1
+			rec.VersionID = versionID
+
+			// Insert the new version row. On a concurrent-create conflict
+			// (partial unique index on (name, dir, is_current)) the caller's
+			// retry loop re-runs adoptPreflight OUTSIDE the transaction, adopts
+			// the winner's UUID, and re-inserts as a new version of that group.
+			if err := tx.Create(&rec).Error; err != nil {
+				return err
+			}
+			return promoteCurrent(tx, vp.Name, dirID, rec.ID)
 		})
 		if err == nil {
 			record = &rec
@@ -365,21 +386,6 @@ func (s *vaultService) Put(ctx context.Context, r io.Reader, size int64, vaultPa
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to store file record after %d attempts: %w", maxAdoptRetries, err)
-	}
-
-	// Best-effort cleanup of a prior object that is no longer referenced by any
-	// LIVE local row (only when the overwritten UUID row had different content).
-	if priorObjectKey != "" && priorObjectKey != objectKey.String() {
-		priorHash, perr := parseHash256(priorObjectKey)
-		if perr == nil {
-			var refs int64
-			s.db.Model(&File{}).Where("object_key = ? AND deleted_at IS NULL", priorObjectKey).Count(&refs)
-			if refs == 0 {
-				if delErr := sdk.DeleteObject(ctx, priorHash); delErr != nil {
-					_ = delErr // non-fatal; orphaned content can be reclaimed later
-				}
-			}
-		}
 	}
 
 	return record, nil
@@ -812,6 +818,152 @@ func (s *vaultService) Share(ctx context.Context, vaultPath string, validUntil t
 	return NormalizeShareURL(shareURL), nil
 }
 
+// VersionList returns every live version row for the file at vaultPath, newest
+// first. It resolves the current (live) winner for the path to establish the
+// stable UUID group, then returns every non-tombstoned version row sharing that
+// UUID. This is the read counterpart to the versioning write path: overwrites
+// mint new version rows, so listing returns the full history.
+func (s *vaultService) VersionList(ctx context.Context, vaultPath string) ([]*File, error) {
+	vp, err := ParseVaultPath(vaultPath)
+	if err != nil {
+		return nil, err
+	}
+	vp, err = RequireActiveProfile(vp)
+	if err != nil {
+		return nil, err
+	}
+
+	// Resolve the current winner to pin down the UUID group. A logical file
+	// (one UUID) may have many version rows; listing a path returns that
+	// UUID's history. A missing file (never existed) is an empty list, not an
+	// error, matching List's semantics.
+	current, err := s.resolveFile(vp)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	var rows []*File
+	if err := s.db.Where("uuid = ? AND deleted_at IS NULL", current.UUID).
+		Order("seq DESC, id DESC").Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("failed to list versions for %s: %w", vaultPath, err)
+	}
+	return rows, nil
+}
+
+// resolveVersionGroup resolves the file at vaultPath to its UUID group and the
+// requested version row (by version_id). It returns gorm.ErrRecordNotFound when
+// the version is missing so callers can map it to ErrNotFound.
+func (s *vaultService) resolveVersionGroup(vp *VaultPath, versionID string) (string, *File, error) {
+	current, err := s.resolveFile(vp)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return "", nil, fmt.Errorf("%w: %s", ErrNotFound, vp.Raw)
+		}
+		return "", nil, err
+	}
+	var row File
+	if err := s.db.Where("uuid = ? AND version_id = ? AND deleted_at IS NULL", current.UUID, versionID).
+		First(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", nil, fmt.Errorf("%w: version %q of %s", ErrNotFound, versionID, vp.Raw)
+		}
+		return "", nil, fmt.Errorf("failed to resolve version %q of %s: %w", versionID, vp.Raw, err)
+	}
+	return current.UUID, &row, nil
+}
+
+// VersionGet returns the specific version record of the file at vaultPath.
+func (s *vaultService) VersionGet(ctx context.Context, vaultPath string, versionID string) (*File, error) {
+	vp, err := ParseVaultPath(vaultPath)
+	if err != nil {
+		return nil, err
+	}
+	vp, err = RequireActiveProfile(vp)
+	if err != nil {
+		return nil, err
+	}
+	_, row, err := s.resolveVersionGroup(vp, versionID)
+	if err != nil {
+		return nil, err
+	}
+	return row, nil
+}
+
+// VersionDownload streams a specific version's content (by version_id) to the
+// writer, downloading the version's own content-addressed ObjectKey. This lets a
+// user/agent retrieve archival content that is no longer the live winner.
+func (s *vaultService) VersionDownload(ctx context.Context, vaultPath string, versionID string, w io.Writer) error {
+	vp, err := ParseVaultPath(vaultPath)
+	if err != nil {
+		return err
+	}
+	vp, err = RequireActiveProfile(vp)
+	if err != nil {
+		return err
+	}
+	_, row, err := s.resolveVersionGroup(vp, versionID)
+	if err != nil {
+		return err
+	}
+
+	objHash, err := parseHash256(row.ObjectKey)
+	if err != nil {
+		return fmt.Errorf("failed to parse object key: %w", err)
+	}
+	sdk, err := s.ensureSDK()
+	if err != nil {
+		return fmt.Errorf("failed to create Sia SDK: %w", err)
+	}
+	obj, err := sdk.Object(ctx, objHash)
+	if err != nil {
+		return fmt.Errorf("failed to get object from indexer: %w", err)
+	}
+	reader, err := sdk.Download(obj)
+	if err != nil {
+		return fmt.Errorf("failed to start download: %w", err)
+	}
+	defer reader.Close()
+	_, err = io.Copy(w, reader)
+	return err
+}
+
+// VersionRestore re-uploads a specific version's content as a NEW current
+// version of the file at vaultPath. The historical version's bytes are copied
+// via a fresh Put, which mints a new version row (new ObjectKey + version_id)
+// and promotes it to current; all prior version rows are preserved. This is a
+// restore-as-new-version (not an in-place pointer flip), matching s3d's
+// CopyObject semantics.
+func (s *vaultService) VersionRestore(ctx context.Context, vaultPath string, versionID string) (*File, error) {
+	vp, err := ParseVaultPath(vaultPath)
+	if err != nil {
+		return nil, err
+	}
+	// Resolve the target version up front (validates it exists and gives its
+	// declared Size, which Put streams against). An empty/broken version
+	// errors here before any write occurs.
+	_, row, err := s.resolveVersionGroup(vp, versionID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Stream the historical version's bytes into Put via a pipe, rather than
+	// buffering the whole object in RAM. Put consumes the reader once
+	// (io.TeeReader -> sdk.Upload) and mints a new version row that reuses
+	// the same logical file's UUID group (findCurrentFile resolves the
+	// current winner by path). A failed/truncated historical download is
+	// propagated via CloseWithError so Put's io.Copy surfaces it as a read
+	// error and the restore aborts instead of committing a partial/empty
+	// version as the new current winner.
+	pr, pw := io.Pipe()
+	go func() {
+		pw.CloseWithError(s.VersionDownload(ctx, vp.Raw, versionID, pw))
+	}()
+	return s.Put(ctx, pr, row.Size, vp.Raw, nil)
+}
+
 // Status reports live vault health and usage. Remote fields come from a real
 // probe of the indexer account endpoint (never inferred from local state);
 // local fields come from the local index cache.
@@ -974,6 +1126,8 @@ func upsertFromMeta(tx *gorm.DB, existing *File, meta FileMetadata, objectKey st
 	existing.Name = meta.Name
 	existing.DirectoryID = dirID // reflect a move/rename from the object metadata
 	existing.ObjectKey = objectKey
+	existing.VersionID = meta.VersionID // may change for legacy->versioned; keep in sync
+	existing.Seq = meta.Seq
 	existing.Size = meta.Size
 	existing.MediaType = meta.MediaType
 	existing.ContentDigest = meta.ContentDigest
@@ -1076,7 +1230,9 @@ func (s *vaultService) adoptPreflight(ctx context.Context, obj *siastorage.Objec
 
 	// Adopt the winner's UUID. Scope to the current live winner (findCurrentFile
 	// already does), so we never force-promote a historical row and violate
-	// idx_files_live_name_dir.
+	// idx_files_live_name_dir. The caller's user metadata (rec.Metadata) is
+	// carried forward so the adopted row — the new current winner — surfaces the
+	// same metadata as the overwrite branch and the re-pinned object.
 	*rec = File{
 		UUID:          current.UUID,
 		Name:          name,
@@ -1085,11 +1241,14 @@ func (s *vaultService) adoptPreflight(ctx context.Context, obj *siastorage.Objec
 		Size:          fileMeta.Size,
 		MediaType:     fileMeta.MediaType,
 		ContentDigest: fileMeta.ContentDigest,
-		IsCurrent:     true,
+		Metadata:      rec.Metadata,
+		IsCurrent:     false, // promoteCurrent promotes this adopted row after insert
 		UpdatedAt:     time.Now().UTC(),
 	}
-	// Carry forward the winner's prior object key (if any) for post-commit
-	// orphan cleanup, and the prior row's created-at.
+	// Carry forward the prior row's created-at (stable identity's birth time).
+	// The winner's prior ObjectKey is intentionally NOT carried: the adopted
+	// object re-pin below stamps the new content, and the winner's old row
+	// (now demoted by promoteCurrent) retains its own ObjectKey as history.
 	rec.CreatedAt = current.CreatedAt
 
 	// Re-stamp the remote object metadata with the adopted identity and re-pin
@@ -1136,6 +1295,21 @@ func parseHash256(hexStr string) (types.Hash256, error) {
 		return types.Hash256{}, fmt.Errorf("invalid object key %q: %w", hexStr, err)
 	}
 	return h, nil
+}
+
+// newVersionID returns a random, opaque version handle for a file version.
+// It mirrors s3d's version-id model: random opaque hex (never sequential, never
+// guessable, collision-free). Version IDs are the public handle callers pass to
+// vault_version_show/restore --version <id>; seq (not version_id) is the
+// canonical ordering within a UUID group.
+func newVersionID() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		// crypto/rand never fails on supported platforms; fall back to a
+		// UUID-based handle so a (theoretical) RNG failure cannot wedge a Put.
+		return uuid.NewString()
+	}
+	return hex.EncodeToString(b)
 }
 
 // marshalCursor serializes a slabs.Cursor to JSON string.
