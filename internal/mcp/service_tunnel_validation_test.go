@@ -16,7 +16,9 @@ func TestValidateCloudflaredRequiresProvisionedState(t *testing.T) {
 	envPath := filepath.Join(dir, "mcp.env")
 	require.NoError(t, WriteServiceEnvironment(envPath, ServiceEnvironment{
 		"MCP_TUNNEL_PROVIDER": "cloudflared",
-		"MCP_AUTH_TOKEN":      "secret",
+		// A long, explicitly test-only placeholder so a real credential is
+		// never committed; validateServiceEnvironment only checks for presence.
+		"MCP_AUTH_TOKEN": "<fixture-token-from-env>",
 	}))
 
 	// No provisioned tunnel state -> validation fails with an actionable error.
@@ -48,6 +50,7 @@ func TestValidateCloudflaredRequiresAuthToken(t *testing.T) {
 	envPath := filepath.Join(dir, "mcp.env")
 	require.NoError(t, WriteServiceEnvironment(envPath, ServiceEnvironment{
 		"MCP_TUNNEL_PROVIDER": "cloudflared",
+		"MCP_DOMAIN":          "mcp.example.com",
 		// no MCP_AUTH_TOKEN
 	}))
 

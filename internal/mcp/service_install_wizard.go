@@ -134,24 +134,42 @@ func RunServiceInstallWizard(ctx context.Context, cmd *cli.Command, envFile stri
 						s.ApiKey = strings.TrimSpace(key)
 					}
 				case TunnelProviderCloudflared:
-					// If a tunnel is already provisioned, reuse it rather than
-					// prompting again. Otherwise deep-link a token and provision
-					// the named tunnel + DNS route via the SDK, persisting the
-					// scoped credential.
-					if s.TunnelToken == "" {
-						if existing, lerr := LoadCloudflareTunnelState(); lerr == nil && existing != nil {
-							s.Domain = existing.Hostname
-							s.TunnelName = existing.TunnelName
-							s.TunnelToken = existing.Token
-						} else {
-							state, perr := provisionCloudflaredForWizard(ctx, cmd, cloudflare.New)
-							if perr != nil {
-								return perr
-							}
-							s.Domain = state.Hostname
-							s.TunnelName = state.TunnelName
-							s.TunnelToken = state.Token
+					// Reuse an already-provisioned tunnel when one exists;
+					// otherwise deep-link a token and provision the named
+					// tunnel + DNS route via the SDK, persisting the scoped
+					// credential.
+					//
+					// Gate on whether a provisioned tunnel actually exists
+					// (LoadCloudflareTunnelState) rather than on s.Domain or
+					// s.TunnelToken being empty: seedFromFlagsAndEnv pre-fills
+					// s.Domain from the --domain flag (env MCP_DOMAIN) and
+					// s.TunnelToken from --token (env MCP_TUNNEL_TOKEN /
+					// NGROK_AUTHTOKEN), so a shell exporting either would
+					// incorrectly skip both reuse and provisioning and leave
+					// the environment without a tunnel.
+					existing, lerr := LoadCloudflareTunnelState()
+					if lerr == nil && existing != nil {
+						// A tunnel is provisioned: reuse it rather than requiring
+						// the user to re-pass --domain/MCP_DOMAIN. If the caller
+						// explicitly requested a different hostname, fail loudly
+						// rather than silently serving a domain that differs from
+						// the one that was provisioned and validated.
+						if s.Domain != "" && !strings.EqualFold(s.Domain, existing.Hostname) {
+							return fmt.Errorf("requested domain %q does not match provisioned tunnel hostname %q; re-run `pinner mcp tunnel install --domain %s` to re-provision", s.Domain, existing.Hostname, s.Domain)
 						}
+						s.Domain = existing.Hostname
+						s.TunnelName = existing.TunnelName
+						s.TunnelToken = existing.Token
+					} else if existing == nil {
+						// No tunnel provisioned yet (lerr is os.ErrNotExist or
+						// nil): provision a new one.
+						state, _, perr := provisionCloudflaredForWizard(ctx, cmd, cloudflare.New)
+						if perr != nil {
+							return perr
+						}
+						s.Domain = state.Hostname
+						s.TunnelName = state.TunnelName
+						s.TunnelToken = state.Token
 					}
 				case TunnelProviderNgrok:
 					if s.TunnelName == "" {

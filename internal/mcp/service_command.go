@@ -235,6 +235,12 @@ func validateServiceEnvironment(envFile string) (TunnelProvider, error) {
 		if _, err := LoadCloudflareTunnelState(); err != nil {
 			return "", fmt.Errorf("no provisioned Cloudflare tunnel found: run `pinner mcp tunnel install` or `pinner mcp service install` first (%v)", err)
 		}
+		// The tunnel's public hostname is the domain but must be present in
+		// the env file; rejecting a missing MCP_DOMAIN up front avoids a
+		// delayed serve-time failure in cloudflaredTunnel.Start.
+		if strings.TrimSpace(env["MCP_DOMAIN"]) == "" {
+			return "", errors.New("MCP_DOMAIN is required for cloudflared")
+		}
 		if strings.TrimSpace(env["MCP_AUTH_TOKEN"]) == "" {
 			return "", errors.New("MCP_AUTH_TOKEN is required for public HTTP MCP tunnels (use --auth-token or set it in the environment)")
 		}
