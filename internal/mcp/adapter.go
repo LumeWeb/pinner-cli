@@ -25,6 +25,7 @@ import (
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/build"
 	opcat "go.lumeweb.com/pinner-cli/internal/catalog"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
 	"go.lumeweb.com/pinner-cli/internal/mcp/oauthstore"
 	"go.uber.org/zap"
 )
@@ -187,8 +188,8 @@ func mcpServerFlags() []cli.Flag {
 		},
 		&cli.StringFlag{
 			Name:    "tunnel-id",
-			Usage:   "OpenAI Secure MCP Tunnel ID (required with --tunnel openai)",
-			Sources: cli.EnvVars("MCP_TUNNEL_ID"),
+			Usage:   "OpenAI Secure MCP Tunnel ID (required with --tunnel openai). May also be set via CONTROL_PLANE_TUNNEL_ID or the pinner config manager",
+			Sources: cli.EnvVars("MCP_TUNNEL_ID", "CONTROL_PLANE_TUNNEL_ID"),
 		},
 		&cli.StringFlag{
 			Name:    "auth-token",
@@ -415,7 +416,7 @@ adapter.`,
 
 			if cmd.String("tunnel") == "openai" {
 				log.Debug("serving MCP server through embedded OpenAI Secure MCP Tunnel")
-				return serveHTTP(ctx, srv, cmd, oob, seedDrop, oobRestore, oobCreate, accountOOB, curlUpload, vaultUpload)
+				return serveHTTP(ctx, srv, cmd, oob, seedDrop, oobRestore, oobCreate, accountOOB, curlUpload, vaultUpload, wizardS.CfgMgr)
 			}
 
 			if !cmd.Bool("http") {
@@ -423,7 +424,7 @@ adapter.`,
 				return RunOfficialStdio(ctx, srv, os.Stdin, os.Stdout)
 			}
 
-			return serveHTTP(ctx, srv, cmd, oob, seedDrop, oobRestore, oobCreate, accountOOB, curlUpload, vaultUpload)
+			return serveHTTP(ctx, srv, cmd, oob, seedDrop, oobRestore, oobCreate, accountOOB, curlUpload, vaultUpload, wizardS.CfgMgr)
 		},
 	}
 }
@@ -470,7 +471,7 @@ func mcpHostProtectionDisabled(tunnelActive, httpMode bool, publicURL string) bo
 	return tunnelActive || (httpMode && publicURL != "")
 }
 
-func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *OutOfBandLogin, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate, accountOOB *OOBAccountChange, curlUpload *httpUpload, vaultUpload *vaultHTTPUpload) error {
+func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *OutOfBandLogin, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate, accountOOB *OOBAccountChange, curlUpload *httpUpload, vaultUpload *vaultHTTPUpload, cfgMgr config.Manager) error {
 	provider := cmd.String("tunnel")
 	domain := cmd.String("domain")
 	token := cmd.String("token")
@@ -486,11 +487,8 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 		if enableOAuth {
 			return fmt.Errorf("--oauth is not supported with the embedded OpenAI Secure MCP Tunnel; use ngrok or cloudflared for Pinner OAuth")
 		}
-		apiKey := os.Getenv("CONTROL_PLANE_API_KEY")
-		if apiKey == "" {
-			apiKey = os.Getenv("OPENAI_API_KEY")
-		}
-		return runEmbeddedOpenAITunnel(ctx, srv, tunnelID, apiKey)
+		resolvedID, resolvedKey := resolveOpenAICredentials(cmd, cfgMgr)
+		return runEmbeddedOpenAITunnel(ctx, srv, resolvedID, resolvedKey)
 	}
 
 	// Bind a concrete local address up front. Port 0 asks the OS for an

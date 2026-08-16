@@ -60,7 +60,7 @@ func managedServiceFlags() []cli.Flag {
 		&cli.StringFlag{Name: serviceEnvFileFlag, Usage: "MCP service environment file"},
 		&cli.BoolFlag{Name: serviceSystemFlag, Usage: "Use a system-wide service (not supported yet)"},
 		&cli.StringFlag{Name: serviceTunnelFlag, Usage: "Tunnel provider: ngrok, cloudflared, or openai", Sources: cli.EnvVars("MCP_TUNNEL_PROVIDER")},
-		&cli.StringFlag{Name: serviceTunnelIDFlag, Usage: "OpenAI Secure MCP Tunnel ID (required with --tunnel openai)", Sources: cli.EnvVars("MCP_TUNNEL_ID")},
+		&cli.StringFlag{Name: serviceTunnelIDFlag, Usage: "OpenAI Secure MCP Tunnel ID (required with --tunnel openai). May also be set via CONTROL_PLANE_TUNNEL_ID or the pinner config manager", Sources: cli.EnvVars("MCP_TUNNEL_ID", "CONTROL_PLANE_TUNNEL_ID")},
 		&cli.StringFlag{Name: serviceTunnelTokenFlag, Usage: "Tunnel provider account token (e.g. ngrok authtoken)", Sources: cli.EnvVars("MCP_TUNNEL_TOKEN", "NGROK_AUTHTOKEN")},
 		&cli.StringFlag{Name: serviceApiKeyFlag, Usage: "OpenAI Secure MCP Tunnel control-plane API key (persisted as CONTROL_PLANE_API_KEY)", Sources: cli.EnvVars("CONTROL_PLANE_API_KEY", "OPENAI_API_KEY")},
 		&cli.StringFlag{Name: serviceDomainFlag, Usage: "Custom domain for the tunnel (required for cloudflared, optional for ngrok on paid accounts)", Sources: cli.EnvVars("MCP_DOMAIN")},
