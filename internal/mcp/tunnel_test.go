@@ -133,6 +133,25 @@ func TestRequiresTokenDefaultConfigPath(t *testing.T) {
 	require.False(t, NewNgrokTunnel("", "").RequiresToken())
 }
 
+// TestMissingTokenError locks in the provider-specific setup/token errors that
+// serveHTTP surfaces when RequiresToken() is true. It also guards the contract
+// that these are plain error returns: no provider path may open a browser or
+// emit onboarding guidance from the server runtime (that is the installer's
+// job). The msg is checked via ErrorContains so both concrete tunnels return
+// their own actionable guidance without per-provider branching in the caller.
+func TestMissingTokenError(t *testing.T) {
+	ng := NewNgrokTunnel("", "")
+	require.True(t, ng.RequiresToken(), "bare ngrok tunnel requires a token")
+	require.ErrorContains(t, ng.MissingTokenError(), "ngrok tunnel requires an account token")
+
+	// A cloudflared tunnel with no provisioned state file requires its
+	// tunnel to be provisioned, not a token.
+	cf := &cloudflaredTunnel{statePath: filepath.Join(t.TempDir(), "missing.json"), name: "t"}
+	require.True(t, cf.RequiresToken(), "unprovisioned cloudflared tunnel requires setup")
+	require.ErrorContains(t, cf.MissingTokenError(), "cloudflared tunnel is not provisioned")
+	require.ErrorContains(t, cf.MissingTokenError(), "pinner mcp tunnel install")
+}
+
 func TestURLForOrigin(t *testing.T) {
 	u, err := urlForOrigin("127.0.0.1:8893")
 	require.NoError(t, err)

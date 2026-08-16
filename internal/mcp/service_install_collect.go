@@ -54,7 +54,7 @@ func CollectHTTPInstall(ctx context.Context, cmd *cli.Command, envFile string, w
 		return nil, fmt.Errorf("inspect MCP service environment file %q: %w", envFile, err)
 	}
 
-	provider, err := validateServiceEnvironment(envFile)
+	provider, err := validateServiceEnvironment(envFile, false)
 	if err != nil {
 		// A freshly bootstrapped file that fails completeness validation would
 		// otherwise strand the user with a partial/corrupt env file on re-run.

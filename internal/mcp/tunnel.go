@@ -35,6 +35,11 @@ type Tunnel interface {
 	// RequiresToken reports whether the provider needs an account token
 	// (e.g. an ngrok authtoken) before it can start.
 	RequiresToken() bool
+	// MissingTokenError returns the provider-specific error to surface when
+	// RequiresToken() is true. Each provider owns how it guides the operator to
+	// obtain or provision the credential; the caller (e.g. serveHTTP) just
+	// returns it instead of branching per provider.
+	MissingTokenError() error
 	// OAuthBaseURL returns the externally reachable base URL for OAuth discovery.
 	OAuthBaseURL(explicitURL, tunnelURL string) (string, error)
 }
@@ -63,6 +68,14 @@ func (b *tunnelBase) getState() (bool, string) {
 
 // errUnavailable is a sentinel returned by URL when the tunnel is not ready.
 var errUnavailable = fmt.Errorf("tunnel not ready")
+
+// missingTokenError builds the generic "account token required" error for a
+// provider, used by MissingTokenError implementations that have no additional
+// provisioning step (e.g. ngrok): the operator provides the token via --token,
+// an env var, the provider's config file, or the installer.
+func missingTokenError(name string) error {
+	return fmt.Errorf("%s tunnel requires an account token: pass --token or set the provider token (see --help)", name)
+}
 
 // waitCtx waits for a command to exit, honoring ctx cancellation.
 func waitCtx(ctx context.Context, cmd *exec.Cmd) error {

@@ -77,6 +77,13 @@ func (c *cloudflaredTunnel) RequiresToken() bool {
 	return errors.Is(err, os.ErrNotExist)
 }
 
+// MissingTokenError implements Tunnel. For cloudflared, "requires token" means
+// the named tunnel is not provisioned at all, so the operator must provision it
+// (which writes the tunnel-scoped credential) rather than supply a token.
+func (c *cloudflaredTunnel) MissingTokenError() error {
+	return fmt.Errorf("cloudflared tunnel is not provisioned: run `pinner mcp tunnel install` (or `pinner mcp service install`) to create the tunnel and its credentials")
+}
+
 func (c *cloudflaredTunnel) OAuthBaseURL(explicitURL, tunnelURL string) (string, error) {
 	if explicitURL != "" {
 		return explicitURL, nil

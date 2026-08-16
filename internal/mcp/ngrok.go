@@ -87,6 +87,14 @@ func (n *ngrokTunnel) RequiresToken() bool {
 	return !ngrokConfigHasAuthtoken()
 }
 
+// MissingTokenError implements Tunnel. ngrok has no additional provisioning
+// step beyond supplying the account authtoken, so this is the generic error.
+// serveHTTP deliberately does not deep-link or open a browser here: the server
+// runtime does not guide the operator, the installer/validate commands do.
+func (n *ngrokTunnel) MissingTokenError() error {
+	return missingTokenError(n.Name())
+}
+
 // OAuthBaseURL implements Tunnel.
 func (n *ngrokTunnel) OAuthBaseURL(explicitURL, tunnelURL string) (string, error) {
 	if explicitURL != "" {

@@ -66,7 +66,7 @@ func TestResolveManagedServiceRejectsInsecureEnvironmentFile(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, []byte("MCP_TUNNEL_PROVIDER=openai\n"), 0644))
 	cmd := &cli.Command{Flags: []cli.Flag{&cli.StringFlag{Name: serviceEnvFileFlag}}}
 	require.NoError(t, cmd.Set("env-file", path))
-	_, err := resolveManagedService(context.Background(), cmd, true)
+	_, err := resolveManagedService(context.Background(), cmd, true, false)
 	require.ErrorContains(t, err, "group/world-readable")
 }
 
@@ -76,7 +76,7 @@ func TestResolveManagedServiceLifecycleSkipsProviderValidation(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, []byte("MCP_TUNNEL_PROVIDER=ngrok\n"), 0600))
 	cmd := &cli.Command{Flags: []cli.Flag{&cli.StringFlag{Name: serviceEnvFileFlag}}}
 	require.NoError(t, cmd.Set("env-file", path))
-	_, err := resolveManagedService(context.Background(), cmd, false)
+	_, err := resolveManagedService(context.Background(), cmd, false, false)
 	require.NoError(t, err)
 }
 
@@ -198,6 +198,13 @@ func TestValidateOpenAIRequiresKeyInFileNotJustEnv(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("file permission bits are not enforced on Windows")
 	}
+	// The missing-key path calls openTunnelDeepLink to open the OpenAI API keys
+	// page. Stub the opener so test execution never spawns a real browser,
+	// keeping CI hermetic.
+	origOpener := tunnelDeepLinkOpener
+	defer func() { tunnelDeepLinkOpener = origOpener }()
+	tunnelDeepLinkOpener = func(string) error { return nil }
+
 	dir := t.TempDir()
 	path := filepath.Join(dir, "mcp.env")
 	require.NoError(t, os.WriteFile(path, []byte(
@@ -211,6 +218,46 @@ func TestValidateOpenAIRequiresKeyInFileNotJustEnv(t *testing.T) {
 	require.NoError(t, cmd.Set(serviceEnvFileFlag, path))
 	_, _, err := resolveManagedServiceForInstall(context.Background(), cmd)
 	require.ErrorContains(t, err, "CONTROL_PLANE_API_KEY", "env-only key must not satisfy file validation")
+}
+
+func TestValidateHeadlessDoesNotSpawnBrowser(t *testing.T) {
+	// Kody regression: validateServiceEnvironment reached by the headless
+	// `pinner mcp service validate` command must NOT open a browser for missing
+	// credentials. The nonInteractive flag must keep it print-only; the
+	// interactive path (nonInteractive=false) may open one.
+	if runtime.GOOS == "windows" {
+		t.Skip("file permission bits are not enforced on Windows")
+	}
+	t.Setenv("CONTROL_PLANE_API_KEY", "")
+	t.Setenv("OPENAI_API_KEY", "")
+
+	// Force the interactive global off so the interactive-path assertion below
+	// is deterministic regardless of any other test's global mutation.
+	oldNonInteractive := wizard.NonInteractive
+	defer func() { wizard.NonInteractive = oldNonInteractive }()
+	wizard.NonInteractive = false
+
+	opened := false
+	origOpener := tunnelDeepLinkOpener
+	defer func() { tunnelDeepLinkOpener = origOpener }()
+	tunnelDeepLinkOpener = func(string) error { opened = true; return nil }
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "mcp.env")
+	require.NoError(t, os.WriteFile(path, []byte(
+		"MCP_TUNNEL_PROVIDER=openai\n"+
+			"MCP_TUNNEL_ID=tunnel_0123456789abcdef0123456789abcdef\n"), 0600))
+
+	// Headless validation: missing API key, but the browser must stay closed.
+	_, err := validateServiceEnvironment(path, true)
+	require.Error(t, err)
+	require.False(t, opened, "headless validate must not open a browser")
+
+	// Interactive validation of the same file MAY open the browser.
+	opened = false
+	_, err = validateServiceEnvironment(path, false)
+	require.Error(t, err)
+	require.True(t, opened, "interactive validate opens the deep link")
 }
 
 func TestValidateNgrokDoesNotRequireBinaryOnPath(t *testing.T) {
@@ -229,7 +276,7 @@ func TestValidateNgrokDoesNotRequireBinaryOnPath(t *testing.T) {
 
 	cmd := &cli.Command{Flags: managedServiceFlags()}
 	require.NoError(t, cmd.Set(serviceEnvFileFlag, path))
-	svc, err := resolveManagedService(context.Background(), cmd, true)
+	svc, err := resolveManagedService(context.Background(), cmd, true, false)
 	require.NoError(t, err)
 	require.NotNil(t, svc)
 }
@@ -249,7 +296,7 @@ func TestValidateCloudflaredRequiresBinaryOnPath(t *testing.T) {
 
 	cmd := &cli.Command{Flags: managedServiceFlags()}
 	require.NoError(t, cmd.Set(serviceEnvFileFlag, path))
-	_, err := resolveManagedService(context.Background(), cmd, true)
+	_, err := resolveManagedService(context.Background(), cmd, true, false)
 	require.ErrorContains(t, err, "executable not found on PATH")
 }
 
