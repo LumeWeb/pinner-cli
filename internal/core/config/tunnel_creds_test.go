@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -99,7 +100,10 @@ func TestTunnelCredentialConfigFileNotWorldReadable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat config: %v", err)
 	}
-	if info.Mode().Perm()&0077 != 0 {
+	// Windows has no Unix permission bits: os.Chmod(0600) only toggles the
+	// read-only attribute and Stat reports 0666 there. Skip the strict mode
+	// assertion on Windows; the 0600 invariant is enforced on Unix platforms.
+	if runtime.GOOS != "windows" && info.Mode().Perm()&0077 != 0 {
 		t.Errorf("config file %q is group/world readable: %v", configPath, info.Mode().Perm())
 	}
 }
