@@ -311,27 +311,38 @@ func TestJSONCPreservesCommentsOnSetAndRemove(t *testing.T) {
 
 func TestJSONCWeirdServerNameIsLiteralKey(t *testing.T) {
 	// Server names are arbitrary strings; any gjson/sjson path metacharacter in
-	// them ('.', '[', '#') must be treated as a literal key, not a path operator.
-	dir := t.TempDir()
-	agent, _ := Agent(AgentClaudeCode)
-	path := filepath.Join(dir, "config.json")
-	cfg := McpServerConfig{URL: "https://example.com/mcp"}
+	// them must be treated as a literal key, not a path operator. This table
+	// covers EVERY character escapePathSegment escapes (not just . [ ] #) so a
+	// future library bump that stops unescaping one of them fails here instead
+	// of silently corrupting the server name or making removal a no-op.
+	meta := []string{".", "*", "?", "|", "\\", "[", "]", "(", ")", "#", "\"", "'"}
+	for _, m := range meta {
+		t.Run("meta-"+m, func(t *testing.T) {
+			dir := t.TempDir()
+			agent, _ := Agent(AgentClaudeCode)
+			path := filepath.Join(dir, "config.json")
+			cfg := McpServerConfig{URL: "https://example.com/mcp"}
 
-	const name = "pinner.prod[1]#v2"
-	if err := WriteServerConfig(agent, path, name, cfg, false); err != nil {
-		t.Fatalf("WriteServerConfig with metachar name: %v", err)
-	}
-	m := readServerMap(t, FormatJSON, path, agent.ConfigKey)
-	if _, ok := m[name]; !ok {
-		t.Fatalf("server %q not written as a literal key; servers=%v", name, m)
-	}
-	// Removing it must find it again as a literal key.
-	if err := RemoveServer(agent, path, name); err != nil {
-		t.Fatalf("RemoveServer with metachar name: %v", err)
-	}
-	m = readServerMap(t, FormatJSON, path, agent.ConfigKey)
-	if _, ok := m[name]; ok {
-		t.Errorf("server %q still present after removal", name)
+			// A name with the metacharacter in the middle so it is never the
+			// whole segment, plus a trailing alnum so the key is unambiguous.
+			name := "pinner" + m + "v2"
+			if err := WriteServerConfig(agent, path, name, cfg, false); err != nil {
+				t.Fatalf("WriteServerConfig with meta %q: %v", m, err)
+			}
+			mm := readServerMap(t, FormatJSON, path, agent.ConfigKey)
+			if _, ok := mm[name]; !ok {
+				t.Fatalf("server %q not written as a literal key; servers=%v", name, mm)
+			}
+
+			// Removing it must find it again as a literal key and delete it.
+			if err := RemoveServer(agent, path, name); err != nil {
+				t.Fatalf("RemoveServer with meta %q: %v", m, err)
+			}
+			mm = readServerMap(t, FormatJSON, path, agent.ConfigKey)
+			if _, ok := mm[name]; ok {
+				t.Errorf("server %q still present after removal", name)
+			}
+		})
 	}
 }
 

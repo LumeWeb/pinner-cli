@@ -82,6 +82,14 @@ func requireObjectSegments(doc, configKey string) error {
 // server names (which may contain '.', '[', '#', '(', ')', quotes, etc.) are
 // treated as a literal key rather than parsed as path operators. Every
 // gjson/sjson metacharacter is escaped with a backslash.
+//
+// VERIFIED against sjson v1.2.5 / gjson v1.19.0: each character in the set
+// below round-trips through both libraries on a single path segment — sjson
+// SetRaw/Delete persist the literal key with no stray backslash, and gjson Get
+// (the exists-guard in jsoncRemoveServer) resolves the escaped path back to it.
+// If either library is bumped, re-run the round-trip probe in
+// TestJSONCWeirdServerNameIsLiteralKey (it exercises every char in the set) and
+// trim the set to only the metacharacters both versions actually unescape.
 func escapePathSegment(segment string) string {
 	var b strings.Builder
 	for _, r := range segment {
