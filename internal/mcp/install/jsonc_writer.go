@@ -29,3 +29,26 @@ func writeFileAtomic(path string, data []byte) error {
 	}
 	return os.Rename(tmpName, path)
 }
+
+// bytesTrimSpace trims ASCII whitespace from both ends of b, returning a subslice.
+func bytesTrimSpace(b []byte) []byte {
+	start := 0
+	for start < len(b) {
+		c := b[start]
+		if c == ' ' || c == '	' || c == '\n' || c == '\r' {
+			start++
+			continue
+		}
+		break
+	}
+	end := len(b)
+	for end > start {
+		c := b[end-1]
+		if c == ' ' || c == '	' || c == '\n' || c == '\r' {
+			end--
+			continue
+		}
+		break
+	}
+	return b[start:end]
+}

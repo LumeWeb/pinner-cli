@@ -1,10 +1,12 @@
 package install
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/tidwall/gjson"
 )
 
 // writeTestServer writes a server entry to the given path via WriteServerConfig
@@ -35,8 +37,25 @@ func extForFormat(f ConfigFormat) string {
 }
 
 // readServerMap reads a config file and returns the server map at configKey.
+// JSON/JSONC files are read via gjson (path-query) since they may contain
+// comments; YAML/TOML are read as maps.
 func readServerMap(t *testing.T, format ConfigFormat, path, configKey string) map[string]any {
 	t.Helper()
+	if format == FormatJSON {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		res := gjson.GetBytes(raw, configKey)
+		if !res.Exists() || !res.IsObject() {
+			t.Fatalf("no servers map at key %q (raw=%s)", configKey, raw)
+		}
+		m := map[string]any{}
+		for k, v := range res.Map() {
+			m[k] = parseGjsonResult(v)
+		}
+		return m
+	}
 	root, err := readRoot(format, path)
 	if err != nil {
 		t.Fatalf("readRoot: %v", err)
@@ -46,6 +65,26 @@ func readServerMap(t *testing.T, format ConfigFormat, path, configKey string) ma
 		t.Fatalf("no servers map at key %q (root=%v)", configKey, root)
 	}
 	return servers
+}
+
+// parseGjsonResult converts a gjson.Result into plain Go values.
+func parseGjsonResult(r gjson.Result) any {
+	if r.IsObject() {
+		m := map[string]any{}
+		for k, v := range r.Map() {
+			m[k] = parseGjsonResult(v)
+		}
+		return m
+	}
+	if r.IsArray() {
+		arr := r.Array()
+		out := make([]any, 0, len(arr))
+		for _, v := range arr {
+			out = append(out, parseGjsonResult(v))
+		}
+		return out
+	}
+	return r.Value()
 }
 
 func TestWriteJSONRoundTrip(t *testing.T) {
@@ -103,10 +142,16 @@ func TestWriteJSONCMergesExistingComments(t *testing.T) {
 		"command": []string{"pinner", "mcp", "serve"},
 		"enabled": true,
 	})
-	// Comments are dropped in v1's clean rewrite but the structure is preserved.
+	// The merge is surgical: the existing comment and other server are preserved,
+	// and the file remains valid JSONC (comments are now kept, not stripped).
 	raw, _ := os.ReadFile(path)
-	if !json.Valid(raw) {
-		t.Errorf("written file is not valid JSON after merge")
+	if !strings.Contains(string(raw), "// opencode config") {
+		t.Errorf("existing comment was not preserved after merge")
+	}
+	// The result must still parse as a valid JSON/JSONC document (sjson output
+	// is readable; gjson tolerates the preserved comment).
+	if !gjson.Valid(strings.ReplaceAll(string(raw), "// opencode config", "")) {
+		t.Errorf("written file is not valid JSON after merge:\n%s", raw)
 	}
 }
 
@@ -211,6 +256,150 @@ func TestRemoveServerMissingFileIsNoOp(t *testing.T) {
 	path := filepath.Join(dir, "does-not-exist.json")
 	if err := RemoveServer(agent, path, "srvA"); err != nil {
 		t.Fatalf("RemoveServer on missing file: %v", err)
+	}
+}
+
+func TestJSONCPreservesCommentsOnSetAndRemove(t *testing.T) {
+	// The headline behaviour of the library-backed JSONC path: a user's comments
+	// and formatting survive both an insert and a remove around the target key.
+	dir := t.TempDir()
+	agent, _ := Agent(AgentOpenCode)
+	path := filepath.Join(dir, agent.LocalConfigPath)
+	existing := `{
+  // top-level note
+  "mcp": {
+    // keep me
+    "other": { "type": "remote", "url": "https://other.example", "enabled": true }
+  }
+}
+`
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(existing), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Insert a new server; both existing comments must survive.
+	cfg := McpServerConfig{Command: "pinner", Args: []string{"mcp", "serve"}}
+	if err := WriteServerConfig(agent, path, "pinner", cfg, true); err != nil {
+		t.Fatalf("WriteServerConfig: %v", err)
+	}
+	raw, _ := os.ReadFile(path)
+	for _, comment := range []string{"// top-level note", "// keep me"} {
+		if !strings.Contains(string(raw), comment) {
+			t.Errorf("comment %q lost after insert", comment)
+		}
+	}
+
+	// Remove the injected server; the user's comments (and other server) survive.
+	if err := RemoveServer(agent, path, "pinner"); err != nil {
+		t.Fatalf("RemoveServer: %v", err)
+	}
+	raw, _ = os.ReadFile(path)
+	for _, comment := range []string{"// top-level note", "// keep me"} {
+		if !strings.Contains(string(raw), comment) {
+			t.Errorf("comment %q lost after remove", comment)
+		}
+	}
+	m := readServerMap(t, FormatJSON, path, "mcp")
+	if _, ok := m["other"]; !ok {
+		t.Errorf("'other' server lost after remove")
+	}
+	if _, ok := m["pinner"]; ok {
+		t.Errorf("'pinner' still present after remove")
+	}
+}
+
+func TestJSONCWeirdServerNameIsLiteralKey(t *testing.T) {
+	// Server names are arbitrary strings; any gjson/sjson path metacharacter in
+	// them must be treated as a literal key, not a path operator. This table
+	// covers EVERY character escapePathSegment escapes (not just . [ ] #).
+	//
+	// VERIFIED against sjson v1.2.5 / gjson v1.19.0: every character in this
+	// set (including ( ) " ' and \) round-trips through the same escaped path
+	// used by all three code paths — sjson.SetRaw on write, the
+	// gjson.Get exists-guard in jsoncRemoveServer, and sjson.Delete on remove.
+	// Each resolves to the exact literal key with no stray backslash, and the
+	// resolved key's identity is asserted below on the write side. If either
+	// library is bumped and stops unescaping one of these, this test fails
+	// instead of silently corrupting the server name or no-op'ing the remove.
+	meta := []string{".", "*", "?", "|", "\\", "[", "]", "(", ")", "#", "\"", "'"}
+	for _, m := range meta {
+		t.Run("meta-"+m, func(t *testing.T) {
+			dir := t.TempDir()
+			agent, _ := Agent(AgentClaudeCode)
+			path := filepath.Join(dir, "config.json")
+			cfg := McpServerConfig{URL: "https://example.com/mcp"}
+
+			// A name with the metacharacter in the middle so it is never the
+			// whole segment, plus a trailing alnum so the key is unambiguous.
+			name := "pinner" + m + "v2"
+			if err := WriteServerConfig(agent, path, name, cfg, false); err != nil {
+				t.Fatalf("WriteServerConfig with meta %q: %v", m, err)
+			}
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read %s: %v", path, err)
+			}
+			// The exact escaped path jsoncRemoveServer will compute must resolve
+			// to the entry (proving the exists-guard matches), and the resolved
+			// key must equal the literal name with no stray backslash.
+			target := string(agent.ConfigKey) + "." + escapePathSegment(name)
+			if !gjson.GetBytes(raw, target).Exists() {
+				t.Fatalf("escaped path %q did not resolve for meta %q; raw=%s", target, m, raw)
+			}
+			resolved := gjson.GetBytes(raw, string(agent.ConfigKey))
+			if _, ok := resolved.Map()[name]; !ok {
+				t.Fatalf("resolved key for meta %q is not the literal %q; keys=%v", m, name, resolved.Map())
+			}
+			mm := readServerMap(t, FormatJSON, path, agent.ConfigKey)
+			if _, ok := mm[name]; !ok {
+				t.Fatalf("server %q not written as a literal key; servers=%v", name, mm)
+			}
+
+			// Removing it must find it again as a literal key and delete it.
+			if err := RemoveServer(agent, path, name); err != nil {
+				t.Fatalf("RemoveServer with meta %q: %v", m, err)
+			}
+			mm = readServerMap(t, FormatJSON, path, agent.ConfigKey)
+			if _, ok := mm[name]; ok {
+				t.Errorf("server %q still present after removal", name)
+			}
+		})
+	}
+}
+
+func TestJSONCPreservesCommentsAcrossNestedConfigKey(t *testing.T) {
+	// zed uses a nested-style config key; comments above the key must survive.
+	dir := t.TempDir()
+	agent, _ := Agent(AgentZed)
+	agent.ConfigKey = "nested.servers"
+	path := filepath.Join(dir, "settings.json")
+	existing := `{
+  // keep this header note
+  "nested": {
+    "servers": { "other": { "command": "old" } }
+  }
+}
+`
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(existing), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := McpServerConfig{Command: "pinner"}
+	if err := WriteServerConfig(agent, path, "srv", cfg, false); err != nil {
+		t.Fatalf("WriteServerConfig: %v", err)
+	}
+	raw, _ := os.ReadFile(path)
+	if !strings.Contains(string(raw), "// keep this header note") {
+		t.Errorf("header comment lost on nested-key insert")
+	}
+	m := readServerMap(t, FormatJSON, path, "nested.servers")
+	if _, ok := m["other"]; !ok {
+		t.Errorf("'other' lost after nested insert")
 	}
 }
 
