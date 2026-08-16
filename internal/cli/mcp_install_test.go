@@ -253,6 +253,8 @@ func TestMcpInstallNonInteractiveClaudeCodeStdio(t *testing.T) {
 	projectDir := t.TempDir()
 
 	fake := newMcpInstallFlagFake()
+	fake.set["scope"] = true
+	fake.set["transport"] = true
 	fake.vals["scope"] = scopeGlobal
 	fake.vals["transport"] = string(install.TransportStdio)
 	fake.bools["non-interactive"] = true
@@ -283,6 +285,8 @@ func TestMcpInstallNonInteractiveClaudeCodeStdio(t *testing.T) {
 func TestMcpInstallNonInteractiveHTTPWithoutServiceErrors(t *testing.T) {
 	ctx := context.Background()
 	fake := newMcpInstallFlagFake()
+	fake.set["scope"] = true
+	fake.set["transport"] = true
 	fake.vals["scope"] = scopeGlobal
 	fake.vals["transport"] = string(install.TransportHTTP)
 	fake.bools["non-interactive"] = true
@@ -432,5 +436,60 @@ func TestMcpInstallHTTPCompositeSkipsStdioOnlyAgent(t *testing.T) {
 	globalPath := filepath.Join(root, "global", string(install.AgentClaudeDesktop)+".json")
 	if _, err := os.Stat(globalPath); !os.IsNotExist(err) {
 		t.Errorf("claude-desktop http install should not have written a config; stat err=%v", err)
+	}
+}
+
+func TestMcpInstallInteractivePromptsForScopeAndTransport(t *testing.T) {
+	// When --scope / --transport are NOT passed, the wizard must prompt for
+	// them (regression guard: previously the non-empty flag defaults made the
+	// Choose Scope / Choose Transport steps always skip in interactive mode).
+	ctx := context.Background()
+	root := t.TempDir()
+	projectDir := t.TempDir()
+
+	ui := newMockInstallUI()
+	ui.SelectAgentsResult = []install.AgentKey{install.AgentClaudeCode}
+	ui.SelectScopeResult = scopeGlobal
+	ui.SelectTransportResult = install.TransportStdio
+
+	// Flags unset on the fake -> transport/scope empty -> prompts render.
+	fake := newMcpInstallFlagFake()
+	fake.stringSlice["agent"] = []string{"claude-code"}
+
+	if err := runMcpInstall(ctx, fake, ui, tempPathResolver(root, projectDir)); err != nil {
+		t.Fatalf("runMcpInstall failed: %v", err)
+	}
+	if !ui.WasCalled("SelectScope") || !ui.WasCalled("SelectTransport") {
+		t.Errorf("expected SelectScope and SelectTransport prompts when flags are unset")
+	}
+}
+
+func TestMcpInstallConfigureTunnelSkipsWhenNoHTTPCapableAgent(t *testing.T) {
+	// A selection of only stdio-only agents (claude-desktop) with an http
+	// transport must NOT start the tunnel/service collector — writing no
+	// http-capable entry means the collection would be an orphan.
+	ctx := context.Background()
+	root := t.TempDir()
+	projectDir := t.TempDir()
+	ui := newMockInstallUI()
+
+	state := &InstallState{
+		Agents:    []install.AgentKey{install.AgentClaudeDesktop},
+		Scope:     scopeGlobal,
+		Transport: install.TransportHTTP,
+	}
+
+	collectCalls := 0
+	w := NewInstallWizard(ui, state, tempPathResolver(root, projectDir))
+	w.collectHTTP = func(context.Context, *InstallState) error {
+		collectCalls++
+		return nil
+	}
+
+	if _, err := w.Run(ctx); err != nil {
+		t.Fatalf("wizard run failed: %v", err)
+	}
+	if collectCalls != 0 {
+		t.Errorf("tunnel collector called %d times; want 0 for a stdio-only selection", collectCalls)
 	}
 }

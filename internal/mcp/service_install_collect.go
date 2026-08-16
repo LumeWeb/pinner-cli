@@ -5,22 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/urfave/cli/v3"
 )
-
-// ServiceEnvFile returns the default resolved MCP service environment file path
-// (~/.config/pinner/mcp.env), mirroring the default resolveServiceEnvFile uses
-// when --env-file is unset. It is the accessor the `pinner mcp install` HTTP
-// composite uses to default the env file path for CollectHTTPInstall.
-func ServiceEnvFile() string {
-	envFile := ""
-	if dir, err := os.UserConfigDir(); err == nil {
-		envFile = filepath.Join(dir, "pinner", defaultMCPEnvFileName)
-	}
-	return expandServicePath(envFile)
-}
 
 // CollectHTTPInstall populates (creating if needed) the MCP service env file
 // from flags (bootstrap) or the interactive wizard, optionally installs and
@@ -50,6 +37,11 @@ func CollectHTTPInstall(ctx context.Context, cmd *cli.Command, envFile string, w
 			if err := bootstrapServiceEnvironment(cmd, envFile); err != nil {
 				return nil, err
 			}
+		} else if cmd.Bool("non-interactive") {
+			// A headless install cannot run the interactive tunnel wizard and an
+			// existing env file is required. Fail clearly rather than block on a
+			// prompt that will hang or error in a non-TTY context.
+			return nil, fmt.Errorf("no MCP service environment file found at %q; pass --tunnel (ngrok|cloudflared|openai) and its credentials, or provide a pre-existing env file, to configure the tunnel non-interactively", envFile)
 		} else if err := RunServiceInstallWizard(ctx, cmd, envFile); err != nil {
 			return nil, err
 		}

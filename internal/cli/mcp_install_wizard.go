@@ -176,10 +176,15 @@ func (w *InstallWizard) getSteps() []wizard.Step[*InstallState] {
 		},
 		wizard.StepFunc[*InstallState]{
 			Name_: "Configure Tunnel",
-			// Only runs for the remote (http) transport. Skipped for stdio and for
-			// agents coerced to stdio (e.g. a stdio-only selection).
+			// Only runs for the remote (http) transport AND only when at least
+			// one selected agent actually supports http. Otherwise (e.g. a
+			// stdio-only selection like claude-desktop, or no http-capable
+			// agent after coercion) we must not start a tunnel/service that no
+			// written config entry will consume — that would leave an orphan
+			// background service running.
 			SkipFunc: func(s *InstallState) bool {
-				return s.Transport != install.TransportHTTP
+				return s.Transport != install.TransportHTTP ||
+					!anySupportsTransport(s.Agents, install.TransportHTTP)
 			},
 			ExecuteFunc: func(ctx context.Context, s *InstallState) error {
 				// The injected collector populates s.PublicURL / s.AuthToken from

@@ -157,13 +157,12 @@ func runMcpInstall(ctx context.Context, cmd mcpInstallFlagGetter, ui InstallUI, 
 	// Wire the real HTTP composite collector when run with the actual cli
 	// command (production). Tests pass a fake flag-getter and inject their own
 	// fake collector instead of a real *cli.Command, so no tunnel is touched.
+	// envFile is left empty so CollectHTTPInstall resolves it via
+	// resolveServiceEnvFile(cmd), which honors --env-file and expands "~/" —
+	// pre-reading cmd.String("env-file") here would bypass that expansion.
 	if realCmd, ok := cmd.(*cli.Command); ok {
-		envFile := cmd.String("env-file")
-		if envFile == "" {
-			envFile = mcpadapter.ServiceEnvFile()
-		}
 		w.collectHTTP = func(ctx context.Context, s *InstallState) error {
-			env, err := mcpadapter.CollectHTTPInstall(ctx, realCmd, envFile, s.UseService)
+			env, err := mcpadapter.CollectHTTPInstall(ctx, realCmd, "", s.UseService)
 			if err != nil {
 				return err
 			}
