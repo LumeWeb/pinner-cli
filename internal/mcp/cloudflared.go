@@ -4,12 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
 )
@@ -17,14 +14,14 @@ import (
 // cloudflaredTunnel serves a local MCP HTTP server through a Cloudflare named
 // tunnel bound to a custom hostname.
 //
-// It runs a locally-managed tunnel: the provisioner (tunnel install / service
-// install wizard) creates the named tunnel + DNS route through the Cloudflare
-// SDK and persists the scoped credentials to CloudflareTunnelState. At Start
-// time the runtime writes the cloudflared credentials file and generates a
-// config.yml whose ingress routes the hostname at the MCP server's actual
-// bound local origin port, then runs:
-//
-//	cloudflared tunnel run --config <config.yml>
+// It runs an in-process, embedded cloudflared (the cloudflared Go library)
+// rather than shelling out to a cloudflared binary: the provisioner (tunnel
+// install / service install wizard) creates the named tunnel + DNS route
+// through the Cloudflare SDK and persists the scoped credentials to
+// CloudflareTunnelState. At Start time the runtime builds a connection
+// Credentials struct from that persisted state and launches a named tunnel
+// whose ingress routes the provisioned hostname to the MCP server's actual
+// bound local origin port, then runs the tunnel daemon in-process.
 //
 // This frees the user from manually running `cloudflared tunnel login` or
 // holding an origin cert, and because the ingress is local it supports the MCP
@@ -39,9 +36,10 @@ type cloudflaredTunnel struct {
 	state *CloudflareTunnelState
 	// statePath overrides where the tunnel state is loaded from (tests).
 	statePath string
-	cmd       *exec.Cmd
-	// done is closed by the single cmd.Wait() goroutine when the cloudflared
-	// process has been reaped. It is a broadcast exit signal: any number of
+	// cancel cancels the in-process tunnel daemon's context.
+	cancel context.CancelFunc
+	// done is closed by the single daemon goroutine when the embedded
+	// cloudflared has shut down. It is a broadcast exit signal: any number of
 	// readers (the readiness probe and Stop) can observe closure with a
 	// non-blocking select.
 	done chan struct{}
@@ -95,27 +93,24 @@ func (c *cloudflaredTunnel) URL() (string, error) {
 	return url, nil
 }
 
-// Stop implements Tunnel. It sends an interrupt to the cloudflared process,
-// escalating to SIGKILL if it does not exit within the context deadline.
+// Stop implements Tunnel. It cancels the in-process cloudflared daemon and
+// waits for it to exit, or returns when the context deadline expires.
 func (c *cloudflaredTunnel) Stop(ctx context.Context) error {
 	c.mu.Lock()
-	cmd := c.cmd
+	cancel := c.cancel
 	done := c.done
 	c.mu.Unlock()
-	if cmd == nil || cmd.Process == nil {
+	if cancel == nil {
 		return nil
 	}
 
-	_ = cmd.Process.Signal(os.Interrupt)
+	cancel()
 
 	if done != nil {
 		select {
 		case <-done:
 			return nil
 		case <-ctx.Done():
-			if ctx.Err() != context.Canceled {
-				_ = cmd.Process.Kill()
-			}
 			return ctx.Err()
 		}
 	}
@@ -135,8 +130,9 @@ func (c *cloudflaredTunnel) loadState() (*CloudflareTunnelState, error) {
 	return LoadCloudflareTunnelState()
 }
 
-// Start implements Tunnel. It writes the credentials file + config.yml for the
-// provisioned tunnel and runs `cloudflared tunnel run --config`.
+// Start implements Tunnel. It loads the provisioned tunnel state and launches
+// an in-process cloudflared named tunnel routing the custom hostname to the
+// given local origin.
 func (c *cloudflaredTunnel) Start(ctx context.Context, localAddr string) error {
 	state, err := c.loadState()
 	if err != nil {
@@ -164,49 +160,22 @@ func (c *cloudflaredTunnel) Start(ctx context.Context, localAddr string) error {
 		return err
 	}
 
-	// Write the credentials file (tunnel-scoped secret) at a private path.
-	credsPath, err := state.credentialsFilePath()
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(credsPath), 0o700); err != nil {
-		return fmt.Errorf("create pinner config dir: %w", err)
-	}
-	if err := os.WriteFile(credsPath, state.credentialsJSON(), 0o600); err != nil {
-		return fmt.Errorf("write cloudflared credentials file: %w", err)
-	}
-
-	// Generate a config.yml routing our hostname to the actual bound origin.
-	configPath := filepath.Join(filepath.Dir(credsPath), "config.yml")
-	cfg, err := state.configYAML(origin)
-	if err != nil {
-		return err
-	}
-	if err := os.WriteFile(configPath, cfg, 0o600); err != nil {
-		return fmt.Errorf("write cloudflared config: %w", err)
-	}
-
-	// Resolve the cloudflared binary as the single source of truth: first on
-	// PATH, then in the per-user pinner bin dir if it was fetched via
-	// `pinner mcp tunnel install` (which is not on PATH).
-	cloudflaredPath, err := resolveCloudflaredPath()
-	if err != nil {
-		return fmt.Errorf("cloudflared executable not found: %w (see https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/)", err)
-	}
-
-	cmd := exec.CommandContext(ctx, cloudflaredPath, "tunnel", "run", "--config", configPath)
-	cmd.Stdout = io.Discard
-	cmd.Stderr = io.Discard
-
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("failed to start cloudflared: %w", err)
-	}
-
 	done := make(chan struct{})
-	go func() { _ = cmd.Wait(); close(done) }()
+	// The daemon runs detached from the caller's cancellation so the readiness
+	// probe below can observe it; Stop cancels this context to shut it down.
+	daemonCtx, cancel := context.WithCancel(ctx)
+	go func() {
+		defer close(done)
+		if daemonErr := startEmbeddedCloudflared(daemonCtx, state, origin); daemonErr != nil && daemonCtx.Err() == nil {
+			// The daemon failed on its own (not because we cancelled it).
+			// There is no error channel to the caller here; the readiness
+			// probe will observe the exit via done and report accordingly.
+			_ = daemonErr
+		}
+	}()
 
 	c.mu.Lock()
-	c.cmd = cmd
+	c.cancel = cancel
 	c.done = done
 	c.state = state
 	c.mu.Unlock()
@@ -216,9 +185,8 @@ func (c *cloudflaredTunnel) Start(ctx context.Context, localAddr string) error {
 	// even if the CLI --domain flag differs from the provisioned state.
 	publicURL := "https://" + bareHostname(state.Hostname)
 	if err := c.waitReady(ctx, publicURL); err != nil {
-		shCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		c.Stop(shCtx)
+		cancel()
+		<-done
 		return err
 	}
 	c.setReady(publicURL)
@@ -226,7 +194,7 @@ func (c *cloudflaredTunnel) Start(ctx context.Context, localAddr string) error {
 }
 
 // waitReady polls the public URL until it responds over the tunnel, the
-// cloudflared process exits (done closes), or the deadline expires.
+// embedded cloudflared daemon exits (done closes), or the deadline expires.
 func (c *cloudflaredTunnel) waitReady(ctx context.Context, publicURL string) error {
 	deadline := time.Now().Add(30 * time.Second)
 	client := &http.Client{Timeout: 3 * time.Second}
@@ -251,7 +219,7 @@ func (c *cloudflaredTunnel) waitReady(ctx context.Context, publicURL string) err
 	}
 }
 
-// exited reports whether the cloudflared process has been reaped.
+// exited reports whether the embedded cloudflared daemon has shut down.
 func (c *cloudflaredTunnel) exited() bool {
 	select {
 	case <-c.done:
@@ -262,46 +230,11 @@ func (c *cloudflaredTunnel) exited() bool {
 }
 
 // urlForOrigin normalizes a host:port local address into the http:// URL used
-// as the ingress service in the generated cloudflared config.yml.
+// as the ingress service of the embedded named tunnel.
 func urlForOrigin(localAddr string) (string, error) {
 	host, port, err := splitHostPort(localAddr)
 	if err != nil {
 		return "", fmt.Errorf("invalid local address %q: %w", localAddr, err)
 	}
 	return "http://" + net.JoinHostPort(host, port), nil
-}
-
-// cloudflaredBinDir returns the per-user directory pinner installs a
-// downloaded cloudflared binary to.
-func cloudflaredBinDir() (string, error) {
-	dataDir, err := os.UserConfigDir()
-	if err != nil {
-		return "", fmt.Errorf("resolve user config directory: %w", err)
-	}
-	dir := filepath.Join(dataDir, "pinner", "bin")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", fmt.Errorf("create bin dir: %w", err)
-	}
-	return dir, nil
-}
-
-// resolveCloudflaredPath returns the path to a usable cloudflared binary: the
-// one on PATH if present, otherwise a downloaded copy under the pinner bin dir.
-func resolveCloudflaredPath() (string, error) {
-	if p, err := exec.LookPath("cloudflared"); err == nil {
-		return p, nil
-	}
-	dir, err := cloudflaredBinDir()
-	if err != nil {
-		return "", err
-	}
-	path := filepath.Join(dir, cloudflaredExeName())
-	// Require a regular, runnable file (per the platform's notion of
-	// executable) so a corrupt download in the pinner bin dir is not silently
-	// selected (which would otherwise fail cryptically at exec time); fall
-	// through to the installer guidance instead.
-	if info, err := os.Stat(path); err == nil && isRunnableBinary(info) {
-		return path, nil
-	}
-	return "", fmt.Errorf("cloudflared not installed; run `pinner mcp tunnel install` to fetch it")
 }

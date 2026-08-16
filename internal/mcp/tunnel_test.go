@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -169,26 +168,15 @@ func TestURLForOrigin(t *testing.T) {
 	require.Error(t, err)
 }
 
-// TestCloudflaredStopAfterExit guards the exit-detection path: once the
-// cloudflared process has been reaped (done closed), a subsequent Stop must
-// return promptly instead of blocking, and waitReady must observe the exit
-// rather than spinning to its deadline.
+// TestCloudflaredStopAfterExit guards the exit-detection path of the embedded
+// tunnel: once the in-process daemon has shut down (done closed), waitReady
+// must observe the exit rather than spinning to its deadline, and a subsequent
+// Stop must return promptly instead of blocking.
 func TestCloudflaredStopAfterExit(t *testing.T) {
-	// Spawn a short-lived child we can real-reap.
-	cmd := exec.Command("sh", "-c", "exit 0")
-	require.NoError(t, cmd.Start())
-
 	done := make(chan struct{})
-	go func() { _ = cmd.Wait(); close(done) }()
+	close(done) // daemon already exited
 
-	// Wait for the reap to land so the tunnel is in the exited state.
-	select {
-	case <-done:
-	case <-time.After(3 * time.Second):
-		t.Fatal("child was not reaped in time")
-	}
-
-	c := &cloudflaredTunnel{cmd: cmd, done: done}
+	c := &cloudflaredTunnel{done: done}
 
 	// waitReady must fail fast with the exit error, not time out.
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -200,4 +188,23 @@ func TestCloudflaredStopAfterExit(t *testing.T) {
 	started := time.Now()
 	assert.NoError(t, c.Stop(ctx))
 	assert.Less(t, time.Since(started), 3*time.Second, "Stop blocked after process exit")
+}
+
+// TestCloudflaredStopBeforeStart guards the not-started path: Stop on a tunnel
+// whose daemon was never launched must be a no-op rather than a panic or hang.
+func TestCloudflaredStopBeforeStart(t *testing.T) {
+	c := &cloudflaredTunnel{}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	assert.NoError(t, c.Stop(ctx))
+}
+
+// TestCloudflaredStartMissingState guards the provisioning gate: Start without
+// a provisioned tunnel state (beyond a --domain) must report a clear error
+// rather than attempt to build a tunnel from empty credentials.
+func TestCloudflaredStartMissingState(t *testing.T) {
+	c := &cloudflaredTunnel{domain: "mcp.example.com"}
+	err := c.Start(context.Background(), "127.0.0.1:8893")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "no provisioned cloudflare tunnel found")
 }
