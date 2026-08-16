@@ -42,6 +42,10 @@ type Config struct {
 	UploadTimeout time.Duration `config:"upload_timeout" desc:"Timeout for upload/download/benchmark operations (e.g., 5m, 10m)"`
 
 	SyncTimeout time.Duration `config:"sync_timeout" desc:"Timeout for reconciliation/cleanup/sync operations (e.g., 1m, 2m)"`
+
+	// MaxMCPUploadSize is the maximum allowed size in bytes for MCP file uploads.
+	// Defaults to 1 GiB when unset.
+	MaxMCPUploadSize uint64 `config:"max_mcp_upload_size" desc:"Max MCP upload size in bytes (default 1 GiB)"`
 }
 
 // Config keys used throughout the package.
@@ -89,6 +93,9 @@ const (
 // DefaultMemoryLimitMB is the default memory limit in megabytes for CAR generation.
 const DefaultMemoryLimitMB = 100
 
+// DefaultMaxMCPUploadSize is the default maximum MCP upload size in bytes (1 GiB).
+const DefaultMaxMCPUploadSize uint64 = 1 << 30
+
 var _ configmanager.ConfigSchemaProvider = (*Config)(nil)
 var _ source.ConfigDefaults = (*Config)(nil)
 
@@ -123,17 +130,21 @@ func (c *Config) Schema() z.ZogSchema {
 		"DefaultTimeout": z.Int().GTE(1).LTE(3600).Optional(),
 		"UploadTimeout":  z.Int().GTE(1).LTE(3600).Optional(),
 		"SyncTimeout":    z.Int().GTE(1).LTE(3600).Optional(),
+		"MaxMCPUploadSize": z.UintLike[uint64]().
+			GTE(1).
+			Optional(),
 	})
 }
 
 func (c *Config) Defaults() map[string]any {
 	return map[string]any{
-		"MaxRetries":     3,
-		"MemoryLimit":    DefaultMemoryLimitMB,
-		"Secure":         true,
-		"DefaultTimeout": time.Duration(DefaultTimeoutSeconds) * time.Second,
-		"UploadTimeout":  time.Duration(DefaultUploadTimeoutSeconds) * time.Second,
-		"SyncTimeout":    time.Duration(DefaultSyncTimeoutSeconds) * time.Second,
+		"MaxRetries":       3,
+		"MemoryLimit":      DefaultMemoryLimitMB,
+		"Secure":           true,
+		"DefaultTimeout":   time.Duration(DefaultTimeoutSeconds) * time.Second,
+		"UploadTimeout":    time.Duration(DefaultUploadTimeoutSeconds) * time.Second,
+		"SyncTimeout":      time.Duration(DefaultSyncTimeoutSeconds) * time.Second,
+		"MaxMCPUploadSize": DefaultMaxMCPUploadSize,
 	}
 }
 
@@ -156,6 +167,15 @@ func (c *Config) GetSyncTimeout() time.Duration {
 		return c.SyncTimeout
 	}
 	return time.Duration(DefaultSyncTimeoutSeconds) * time.Second
+}
+
+// GetMaxMCPUploadSize returns the maximum MCP upload size in bytes.
+// If MaxMCPUploadSize is not set, returns the default (1 GiB).
+func (c *Config) GetMaxMCPUploadSize() uint64 {
+	if c.MaxMCPUploadSize == 0 {
+		return DefaultMaxMCPUploadSize
+	}
+	return c.MaxMCPUploadSize
 }
 
 // IsAuthenticated checks if the client has valid authentication credentials.
