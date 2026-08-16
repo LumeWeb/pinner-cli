@@ -312,9 +312,16 @@ func TestJSONCPreservesCommentsOnSetAndRemove(t *testing.T) {
 func TestJSONCWeirdServerNameIsLiteralKey(t *testing.T) {
 	// Server names are arbitrary strings; any gjson/sjson path metacharacter in
 	// them must be treated as a literal key, not a path operator. This table
-	// covers EVERY character escapePathSegment escapes (not just . [ ] #) so a
-	// future library bump that stops unescaping one of them fails here instead
-	// of silently corrupting the server name or making removal a no-op.
+	// covers EVERY character escapePathSegment escapes (not just . [ ] #).
+	//
+	// VERIFIED against sjson v1.2.5 / gjson v1.19.0: every character in this
+	// set (including ( ) " ' and \) round-trips through the same escaped path
+	// used by all three code paths — sjson.SetRaw on write, the
+	// gjson.Get exists-guard in jsoncRemoveServer, and sjson.Delete on remove.
+	// Each resolves to the exact literal key with no stray backslash, and the
+	// resolved key's identity is asserted below on the write side. If either
+	// library is bumped and stops unescaping one of these, this test fails
+	// instead of silently corrupting the server name or no-op'ing the remove.
 	meta := []string{".", "*", "?", "|", "\\", "[", "]", "(", ")", "#", "\"", "'"}
 	for _, m := range meta {
 		t.Run("meta-"+m, func(t *testing.T) {
@@ -328,6 +335,21 @@ func TestJSONCWeirdServerNameIsLiteralKey(t *testing.T) {
 			name := "pinner" + m + "v2"
 			if err := WriteServerConfig(agent, path, name, cfg, false); err != nil {
 				t.Fatalf("WriteServerConfig with meta %q: %v", m, err)
+			}
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read %s: %v", path, err)
+			}
+			// The exact escaped path jsoncRemoveServer will compute must resolve
+			// to the entry (proving the exists-guard matches), and the resolved
+			// key must equal the literal name with no stray backslash.
+			target := string(agent.ConfigKey) + "." + escapePathSegment(name)
+			if !gjson.GetBytes(raw, target).Exists() {
+				t.Fatalf("escaped path %q did not resolve for meta %q; raw=%s", target, m, raw)
+			}
+			resolved := gjson.GetBytes(raw, string(agent.ConfigKey))
+			if _, ok := resolved.Map()[name]; !ok {
+				t.Fatalf("resolved key for meta %q is not the literal %q; keys=%v", m, name, resolved.Map())
 			}
 			mm := readServerMap(t, FormatJSON, path, agent.ConfigKey)
 			if _, ok := mm[name]; !ok {
