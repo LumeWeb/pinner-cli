@@ -234,7 +234,16 @@ func validateServiceEnvironment(envFile string) (TunnelProvider, error) {
 	case TunnelProviderCloudflared:
 		state, err := LoadCloudflareTunnelState()
 		if err != nil {
-			return "", fmt.Errorf("no provisioned Cloudflare tunnel found: run `pinner mcp tunnel install` or `pinner mcp service install` first (%v)", err)
+			// Distinguish a genuinely absent state file from one that exists
+			// but is corrupt/unreadable: the latter should surface the raw
+			// error (the state likely holds a real provisioned tunnel) rather
+			// than misleading the user into re-provisioning, which the
+			// double-provision guard would then reject while orphaning the
+			// existing tunnel + CNAME.
+			if errors.Is(err, os.ErrNotExist) {
+				return "", errors.New("no provisioned Cloudflare tunnel found: run `pinner mcp tunnel install` or `pinner mcp service install` first")
+			}
+			return "", fmt.Errorf("load provisioned Cloudflare tunnel state (file exists but is unreadable/corrupt): %w", err)
 		}
 		// The tunnel's public hostname is the domain and must be present in,
 		// and consistent with, the env file. Rejecting a missing OR mismatched

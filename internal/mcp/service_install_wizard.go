@@ -109,6 +109,20 @@ func RunServiceInstallWizard(ctx context.Context, cmd *cli.Command, envFile stri
 			}
 		}
 	}
+	// Register a deferred rollback for the whole wizard run, not just the
+	// env-file write step: a fresh tunnel can be provisioned mid-wizard, and if
+	// any later step fails — or `resolveManagedServiceForInstall` (our caller)
+	// fails post-wizard validation, e.g. resolveCloudflaredPath — the billed
+	// tunnel + DNS CNAME + state file would otherwise be orphaned while the
+	// double-provision guard blocks re-runs. rollback stays armed until the
+	// env write succeeds; it is a no-op when no tunnel was provisioned
+	// (provisionedAPIKey == "").
+	rollback := true
+	defer func() {
+		if rollback {
+			rollbackTunnel()
+		}
+	}()
 
 	steps := []wizard.Step[*ServiceInstallState]{
 		wizard.StepFunc[*ServiceInstallState]{
@@ -243,12 +257,14 @@ func RunServiceInstallWizard(ctx context.Context, cmd *cli.Command, envFile stri
 				seedFromFlagsAndEnv(cmd, s, envFile)
 				env := serviceInstallStateToEnv(s)
 				if err := WriteServiceEnvironment(s.EnvFile, env); err != nil {
-					// A fresh cloudflared tunnel may have been provisioned in
-					// the previous step; roll it back so a failed env write
-					// does not orphan the tunnel + CNAME + state file.
-					rollbackTunnel()
+					// The deferred rollback (registered at the top of
+					// RunServiceInstallWizard) tears down any freshly
+					// provisioned tunnel + CNAME + state file on return.
 					return fmt.Errorf("write MCP service environment file: %w", err)
 				}
+				// Env write succeeded — arm the rollback off so a normal,
+				// successful wizard run does not tear down the tunnel.
+				rollback = false
 				return nil
 			},
 		},
