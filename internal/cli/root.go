@@ -127,7 +127,13 @@ For more help on any command: pinner <command> --help`,
 	// vault. It is built inside the wizard factory (where the vault service is
 	// available) and read by the WithLocalPathVaultPut option below.
 	var localPathVaultPut mcpadapter.LocalPathVaultPutHandler
-	root.Commands = append(root.Commands, mcpadapter.MCPCommand(root,
+	// Build the `mcp` command. It must be captured (not appended inline) so the
+	// `pinner mcp install` golden-path subcommand can be attached to its
+	// Commands below: NewMcpInstallCommand lives in internal/cli and cannot be
+	// referenced from the internal/mcp package (internal/cli imports
+	// internal/mcp, so importing internal/cli there would form a cycle). Root
+	// is the join point where both sides exist.
+	mcpCmd := mcpadapter.MCPCommand(root,
 		func() (mcpadapter.WebsitesWizardDeps, mcpadapter.SetupWizardDeps, mcpadapter.DomainWizardDeps, error) {
 			cfgMgr, err := configManagerFactory()
 			if err != nil {
@@ -514,7 +520,13 @@ For more help on any command: pinner <command> --help`,
 		// invocations. The bundle resolves config and services lazily per
 		// request via buildCatalogOpsDeps, so live token reload is preserved.
 		mcpadapter.WithCatalogOps(buildCatalogOpsDeps),
-	))
+	)
+
+	// Attach the `pinner mcp install` golden-path subcommand to the `mcp`
+	// command tree, then register `mcp` on the root. Both symbols are
+	// internal/cli-local here, so no import cycle is introduced.
+	mcpCmd.Commands = append(mcpCmd.Commands, NewMcpInstallCommand())
+	root.Commands = append(root.Commands, mcpCmd)
 
 	return root
 }
