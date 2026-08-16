@@ -40,13 +40,11 @@ Examples:
 			},
 			&cli.StringFlag{
 				Name:  "scope",
-				Usage: "Install scope: global or project",
-				Value: "global",
+				Usage: "Install scope: global or project (prompted when omitted)",
 			},
 			&cli.StringFlag{
 				Name:  "transport",
-				Usage: "MCP transport: stdio (default) or http",
-				Value: string(install.TransportStdio),
+				Usage: "MCP transport: stdio (default) or http (prompted when omitted, defaults to stdio)",
 			},
 			&cli.BoolFlag{
 				Name:  "non-interactive",
@@ -76,11 +74,13 @@ type mcpInstallFlagGetter interface {
 // temp-dir resolver.
 func runMcpInstall(ctx context.Context, cmd mcpInstallFlagGetter, ui InstallUI, resolvePath pathResolver) error {
 	nonInteractive := cmd.Bool("non-interactive")
-	transport := install.Transport(cmd.String("transport"))
-	scope := cmd.String("scope")
 	useService := cmd.Bool("service")
 	agentStrs := cmd.StringSlice("agent")
 
+	// The flags default to empty so (a) the wizard can prompt for scope and
+	// transport in interactive mode, and (b) only an explicitly-passed flag
+	// overrides the prompt. stdio is the semantic default when transport is
+	// omitted entirely.
 	wizard.NonInteractive = nonInteractive
 
 	// Parse agent list.
@@ -105,6 +105,18 @@ func runMcpInstall(ctx context.Context, cmd mcpInstallFlagGetter, ui InstallUI, 
 		resolved = append(resolved, a)
 	}
 	agents = resolved
+
+	// Only carry flag values into state when they were explicitly set, leaving
+	// scope/transport empty for the interactive wizard steps to prompt. stdio is
+	// the semantic default when transport is omitted.
+	transport := install.Transport("")
+	if cmd.IsSet("transport") {
+		transport = install.Transport(cmd.String("transport"))
+	}
+	scope := ""
+	if cmd.IsSet("scope") {
+		scope = cmd.String("scope")
+	}
 
 	// Non-interactive rules.
 	if nonInteractive {

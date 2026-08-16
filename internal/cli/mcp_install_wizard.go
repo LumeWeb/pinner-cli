@@ -226,7 +226,14 @@ func (w *InstallWizard) writeConfig(s *InstallState) error {
 			serverCfg.Env = s.Env
 		}
 	} else {
-		// Remote (http/sse) composite — populated by Plan C.
+		// Remote (http/sse) composite.
+		// Only require a URL if at least one selected agent will actually
+		// consume the http entry (i.e. not all were skipped for being
+		// stdio-only). Never write a broken {type,http,url:""} when a real
+		// http entry is expected but no public URL was produced.
+		if s.PublicURL == "" && anySupportsTransport(s.Agents, s.Transport) {
+			return fmt.Errorf("http install requires a service public URL, which is not configured; use --service or pass --public-url, or choose a stdio transport")
+		}
 		serverCfg.Type = s.Transport
 		serverCfg.URL = s.PublicURL
 		if s.AuthToken != "" {
