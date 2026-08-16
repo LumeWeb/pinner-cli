@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	coreconfig "go.lumeweb.com/pinner-cli/internal/core/config"
 )
 
 // restrictFilePermissions sets the file to 0600 on Unix (no-op on Windows).
@@ -47,26 +49,20 @@ type ProfileState struct {
 	CreatedAt string `json:"created_at"` // RFC3339
 }
 
-// pinnerConfigDir returns the pinner config directory, using the OS-native
-// config location. Falls back to ~/.config/pinner if UserConfigDir fails.
+// pinnerConfigDir returns the pinner config directory. When PINNER_HOME is set
+// it is $PINNER_HOME; otherwise the OS-native config location is used (falls
+// back to a legacy path if UserConfigDir fails). Delegates to the shared
+// resolver so config and vault converge on the same volume root.
 func pinnerConfigDir() string {
-	base, err := os.UserConfigDir()
-	if err != nil || base == "" {
-		home, _ := os.UserHomeDir()
-		base = filepath.Join(home, ".config")
-	}
-	return filepath.Join(base, "pinner")
+	return coreconfig.PinnerConfigDir()
 }
 
-// pinnerDataDir returns the pinner data/cache directory, using the OS-native
-// cache location. Falls back to ~/.cache/pinner if UserCacheDir fails.
+// pinnerDataDir returns the pinner data/cache directory (vault cache + seeds).
+// When PINNER_HOME is set it is $PINNER_HOME/vaults; otherwise the OS-native
+// cache location is used. Delegates to the shared resolver so config and vault
+// converge on the same volume root.
 func pinnerDataDir() string {
-	base, err := os.UserCacheDir()
-	if err != nil || base == "" {
-		home, _ := os.UserHomeDir()
-		base = filepath.Join(home, ".cache")
-	}
-	return filepath.Join(base, "pinner", "vaults")
+	return coreconfig.PinnerDataDir()
 }
 
 // RegistryPath returns the path to the vault registry file.
