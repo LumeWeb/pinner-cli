@@ -12,7 +12,20 @@ import (
 	"strings"
 
 	"github.com/urfave/cli/v3"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
 )
+
+// serviceConfigManager builds a lazy config manager for the service install
+// path, used only to persist tunnel credentials entered during install to the
+// last-resort store. It returns nil on failure so the install proceeds without
+// persistence rather than failing on an optional optimization.
+func serviceConfigManager() config.Manager {
+	mgr, err := config.NewManager(config.DefaultConfigPath)
+	if err != nil {
+		return nil
+	}
+	return mgr
+}
 
 // TunnelProvider identifies the tunnel backend used to expose the MCP server.
 type TunnelProvider string
@@ -275,12 +288,16 @@ func resolveManagedServiceForInstall(ctx context.Context, cmd *cli.Command) (str
 	created := false
 	if _, err := os.Stat(envFile); errors.Is(err, os.ErrNotExist) {
 		created = true
+		// A lazy config manager (nil on failure) is threaded into the wizard and
+		// bootstrap so any tunnel credential the user supplies is persisted to
+		// the last-resort store and auto-detected on later runs.
+		cfgMgr := serviceConfigManager()
 		if cmd.String(serviceTunnelFlag) != "" {
-			if err := bootstrapServiceEnvironment(cmd, envFile); err != nil {
+			if err := bootstrapServiceEnvironment(cmd, envFile, cfgMgr); err != nil {
 				return "", nil, err
 			}
 		} else {
-			if err := RunServiceInstallWizard(ctx, cmd, envFile); err != nil {
+			if err := RunServiceInstallWizard(ctx, cmd, envFile, cfgMgr); err != nil {
 				return "", nil, err
 			}
 		}
@@ -305,8 +322,10 @@ func resolveManagedServiceForInstall(ctx context.Context, cmd *cli.Command) (str
 }
 
 // bootstrapServiceEnvironment writes a fresh 0600 env file from the tunnel
-// config provided via flags. It requires MCP_TUNNEL_PROVIDER.
-func bootstrapServiceEnvironment(cmd *cli.Command, envFile string) error {
+// config provided via flags. It requires MCP_TUNNEL_PROVIDER. cfgMgr, when
+// non-nil, also persists any supplied ngrok/openai credential to the last-resort
+// config-manager store so later runs auto-detect it.
+func bootstrapServiceEnvironment(cmd *cli.Command, envFile string, cfgMgr config.Manager) error {
 	provider, err := parseTunnelProvider(cmd.String(serviceTunnelFlag))
 	if err != nil {
 		if provider == "" {
@@ -343,6 +362,15 @@ func bootstrapServiceEnvironment(cmd *cli.Command, envFile string) error {
 		return fmt.Errorf("bootstrap MCP service environment file: %w", err)
 	}
 	fmt.Printf("Created MCP service environment file %s (0600).\n", envFile)
+
+	// Persist credentials supplied via flags to the last-resort store so the
+	// values survive to later runs even if the env file is regenerated.
+	if provider == TunnelProviderOpenAI {
+		persistTunnelCredential(cfgMgr, "openai", "tunnel_id", env["MCP_TUNNEL_ID"])
+		persistTunnelCredential(cfgMgr, "openai", "api_key", env["CONTROL_PLANE_API_KEY"])
+	} else if provider == TunnelProviderNgrok {
+		persistTunnelCredential(cfgMgr, "ngrok", "token", env["MCP_TUNNEL_TOKEN"])
+	}
 	return nil
 }
 

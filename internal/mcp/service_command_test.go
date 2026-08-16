@@ -106,7 +106,7 @@ func TestInstallBootstrapsMissingEnvFile(t *testing.T) {
 	require.NoError(t, cmd.Set(servicePortFlag, "4321"))
 
 	// Bootstrap writes the file without requiring the tunnel binary on PATH.
-	require.NoError(t, bootstrapServiceEnvironment(cmd, path))
+	require.NoError(t, bootstrapServiceEnvironment(cmd, path, nil))
 
 	info, err := os.Stat(path)
 	require.NoError(t, err)
@@ -139,7 +139,7 @@ func TestInstallBootstrapRequiresProvider(t *testing.T) {
 	cmd := &cli.Command{Flags: managedServiceFlags()}
 	require.NoError(t, cmd.Set(serviceEnvFileFlag, path))
 
-	err := bootstrapServiceEnvironment(cmd, path)
+	err := bootstrapServiceEnvironment(cmd, path, nil)
 	require.ErrorContains(t, err, "--tunnel")
 	require.NoFileExists(t, path, "no env file should be written without a provider")
 }

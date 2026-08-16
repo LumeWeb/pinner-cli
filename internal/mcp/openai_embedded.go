@@ -20,11 +20,13 @@ func runEmbeddedOpenAITunnel(ctx context.Context, server *mcp.Server, tunnelID, 
 		return errors.New("OpenAI Secure MCP Tunnel requires an MCP server")
 	}
 	if !openAITunnelID.MatchString(tunnelID) {
-		return fmt.Errorf("invalid OpenAI tunnel ID %q: expected tunnel_ followed by 32 lowercase hexadecimal characters", tunnelID)
+		openTunnelDeepLink("openai", "tunnel_id")
+		return fmt.Errorf("invalid OpenAI tunnel ID %q: expected tunnel_ followed by 32 lowercase hexadecimal characters (create one in the OpenAI Tunnels page)", tunnelID)
 	}
 	apiKey = strings.TrimSpace(apiKey)
 	if apiKey == "" {
-		return errors.New("OpenAI Secure MCP Tunnel requires CONTROL_PLANE_API_KEY or OPENAI_API_KEY")
+		openTunnelDeepLink("openai", "api_key")
+		return errors.New("OpenAI Secure MCP Tunnel requires CONTROL_PLANE_API_KEY or OPENAI_API_KEY (create a Runtime API key in the OpenAI API keys page)")
 	}
 
 	serverTransport, clientTransport := mcp.NewInMemoryTransports()

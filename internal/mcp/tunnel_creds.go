@@ -44,6 +44,18 @@ func tunnelCfgCredential(cfgMgr config.Manager, provider, key string) func() str
 	}
 }
 
+// persistTunnelCredential writes a tunnel credential to the config manager as
+// a best-effort last-resort store. It is a no-op when the manager is nil or the
+// value is empty, and failures are swallowed: the env file remains the source
+// of truth and the config-manager store is only an optimization so later runs
+// auto-detect the value without re-prompting.
+func persistTunnelCredential(cfgMgr config.Manager, provider, key, value string) {
+	if cfgMgr == nil || strings.TrimSpace(value) == "" {
+		return
+	}
+	_ = cfgMgr.SetTunnelCredential(provider, key, value)
+}
+
 // hasProviderConfig reports whether the named tunnel provider has a config file
 // that the provider (or its SDK) reads on startup to authenticate. We only
 // probe for the file's existence -- the provider performs the actual parsing --

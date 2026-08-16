@@ -512,6 +512,9 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 			if provider == string(TunnelProviderCloudflared) {
 				return fmt.Errorf("cloudflared tunnel is not provisioned: run `pinner mcp tunnel install` (or `pinner mcp service install`) to create the tunnel and its credentials")
 			}
+			if provider == string(TunnelProviderNgrok) {
+				openTunnelDeepLink("ngrok", "authtoken")
+			}
 			return fmt.Errorf("%s tunnel requires an account token: pass --token or set the provider token (see --help)", provider)
 		}
 		// Exposing the endpoint through a public tunnel makes the MCP HTTP

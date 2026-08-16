@@ -10,6 +10,7 @@ import (
 	"github.com/pterm/pterm"
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/internal/cli/wizard"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
 )
 
 // ServiceInstallState accumulates the tunnel configuration collected by the
@@ -77,8 +78,10 @@ func (t textUI) Text(label string) (string, error) {
 // writes the resulting environment file. Flags and environment variables are
 // seeded into the state up front; prompts only collect values the user has not
 // already provided via flags/env (so --oauth/--public-url/--host/--port and
-// MCP_AUTH_TOKEN are never silently dropped).
-func RunServiceInstallWizard(ctx context.Context, cmd *cli.Command, envFile string) error {
+// MCP_AUTH_TOKEN are never silently dropped). cfgMgr, when non-nil, is used both
+// to deep-link on missing provider credentials and to persist any credential the
+// user enters so later runs auto-detect it (see set-up-once semantics).
+func RunServiceInstallWizard(ctx context.Context, cmd *cli.Command, envFile string, cfgMgr config.Manager) error {
 	ui := NewServiceInstallWizardUI()
 	state := &ServiceInstallState{EnvFile: envFile}
 	// Pre-seed scalar values from flags/env so the wizard never re-prompts for
@@ -112,6 +115,7 @@ func RunServiceInstallWizard(ctx context.Context, cmd *cli.Command, envFile stri
 				switch s.Provider {
 				case TunnelProviderOpenAI:
 					if s.TunnelID == "" {
+						openTunnelDeepLink("openai", "tunnel_id")
 						id, err := text.Text("OpenAI Secure MCP Tunnel ID")
 						if err != nil {
 							return err
@@ -126,12 +130,17 @@ func RunServiceInstallWizard(ctx context.Context, cmd *cli.Command, envFile stri
 					// environment). s.ApiKey is pre-seeded from the --api-key flag
 					// (whose env Sources include CONTROL_PLANE_API_KEY/OPENAI_API_KEY).
 					if s.ApiKey == "" {
+						openTunnelDeepLink("openai", "api_key")
 						key, err := textUI{mask: "*"}.Text("OpenAI Secure MCP Tunnel control-plane API key")
 						if err != nil {
 							return err
 						}
 						s.ApiKey = strings.TrimSpace(key)
 					}
+					// Persist what the user supplied to the last-resort config
+					// manager so later runs auto-detect it without re-prompting.
+					persistTunnelCredential(cfgMgr, "openai", "tunnel_id", s.TunnelID)
+					persistTunnelCredential(cfgMgr, "openai", "api_key", s.ApiKey)
 				case TunnelProviderCloudflared:
 					if s.Domain == "" {
 						domain, err := text.Text("Tunnel domain (required)")
@@ -163,12 +172,17 @@ func RunServiceInstallWizard(ctx context.Context, cmd *cli.Command, envFile stri
 					// Sources include both vars), so only prompt when it is empty so
 					// the written env file actually passes validation.
 					if s.TunnelToken == "" {
+						openTunnelDeepLink("ngrok", "authtoken")
 						tok, err := textUI{mask: "*"}.Text("ngrok authtoken / MCP tunnel token")
 						if err != nil {
 							return err
 						}
 						s.TunnelToken = strings.TrimSpace(tok)
 					}
+					// Persist the token to the last-resort config manager so later
+					// runs auto-detect it (RequiresToken on the embedded tunnel
+					// accepts a config-manager-sourced token).
+					persistTunnelCredential(cfgMgr, "ngrok", "token", s.TunnelToken)
 				}
 				// Prefer the MCP_AUTH_TOKEN environment variable over an
 				// interactive prompt so the secret is never typed into or
