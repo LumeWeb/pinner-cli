@@ -274,7 +274,40 @@ func registerCustomTools(deps customToolDeps) error {
 		if deps.coLocated {
 			pathFn = opts.localPathUpload
 		}
-		if err := RegisterOfficialDescriptor(deps.srv, NewUploadFileDescriptor(deps.coLocated, pathFn, deps.curlUpload)); err != nil {
+		uploadFileDesc := NewUploadFileDescriptor(deps.coLocated, pathFn, deps.curlUpload)
+
+		// Pair upload_file with its "Upload to IPFS" MCP App view
+		// (ui://uploads/ipfs.html) so a UI-capable host renders a file-picker
+		// panel. RegisterAppView attaches _meta.ui to a catalog entry, so the
+		// tool must be indexed first. The app is only meaningfully available
+		// when a presigned httpUpload coordinator can mint a PUT endpoint for
+		// the Uppy XHR uploader (deps.curlUpload != nil); in co-located stdio
+		// local-path mode there is no presigned endpoint, so the app is not
+		// registered and upload_file simply serves the out-of-band local path
+		// surface. Gating on both uploadFileAvailable and curlUpload != nil
+		// keeps attachAppMeta from ever running when the tool is absent (e.g.
+		// --tunnel openai) or when no mint URL could be produced.
+		if deps.curlUpload != nil {
+			deps.catalog.Add(toolEntryFromDescriptor(uploadFileDesc))
+			if err := RegisterIPFSUploadApp(deps.srv, deps.catalog, deps.curlUpload); err != nil {
+				return err
+			}
+			// Copy the app-view _meta (registered above onto the catalog entry)
+			// onto the descriptor served directly to hosts, so a UI-capable host
+			// reading upload_file from tools/list (the RegisterOfficialDescriptor
+			// surface) still sees the file-picker panel. The direct surface and
+			// the catalog entry are distinct objects; without this copy the
+			// direct tool would miss _meta.ui.
+			if entry, ok := deps.catalog.Get("upload_file"); ok {
+				if uploadFileDesc.Meta == nil {
+					uploadFileDesc.Meta = map[string]any{}
+				}
+				for k, v := range entry.Meta {
+					uploadFileDesc.Meta[k] = v
+				}
+			}
+		}
+		if err := RegisterOfficialDescriptor(deps.srv, uploadFileDesc); err != nil {
 			return err
 		}
 	}

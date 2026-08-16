@@ -11,7 +11,7 @@
 // Output: dist/<app>.js for pin, vault-create, vault-restore, auth-sso.
 import { build } from "tsdown";
 
-const APPS = ["pin", "vault-create", "vault-restore", "auth-sso", "vault-browser", "pin-list", "auth-status", "account-password", "account-email"];
+const APPS = ["pin", "vault-create", "vault-restore", "auth-sso", "vault-browser", "pin-list", "auth-status", "account-password", "account-email", "ipfs-upload"];
 
 for (const app of APPS) {
   await build({

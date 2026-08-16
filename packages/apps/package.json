@@ -9,6 +9,8 @@
   },
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "catalog:",
+    "@uppy/core": "^5.2.0",
+    "@uppy/xhr-upload": "^5.2.0",
     "robot3": "catalog:"
   },
   "devDependencies": {
