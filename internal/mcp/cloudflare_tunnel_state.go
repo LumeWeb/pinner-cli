@@ -9,9 +9,8 @@ import (
 )
 
 // tunnelStateFileName is the JSON file the tunnel installer / service install
-// wizard persist a provisioned tunnel to. The cloudflared runtime reads it at
-// Start time to build the credentials file and config.yml (which reference the
-// actual bound local origin port).
+// wizard persist a provisioned tunnel to. The embedded cloudflared runtime
+// reads it at Start time to build the in-process named tunnel's credentials.
 const tunnelStateFileName = "tunnel-state.json"
 
 // CloudflareTunnelState is the persisted, tunnel-scoped credential set for a
@@ -96,72 +95,6 @@ func SaveCloudflareTunnelState(s *CloudflareTunnelState) error {
 		return fmt.Errorf("write tunnel state %q: %w", path, err)
 	}
 	return nil
-}
-
-// credentialsJSON returns the cloudflared "credentials file" JSON for a
-// locally-managed tunnel. This is what cloudflared expects at
-// credentials-file in config.yml.
-func (s *CloudflareTunnelState) credentialsJSON() []byte {
-	// Field names are fixed by cloudflared; do not rename.
-	return []byte(fmt.Sprintf(
-		`{"AccountTag":%q,"TunnelID":%q,"TunnelName":%q,"TunnelSecret":%q}`,
-		s.AccountID, s.TunnelID, s.TunnelName, s.Secret,
-	))
-}
-
-// configYAML returns a cloudflared config.yml for a locally-managed tunnel that
-// routes hostname to the given local origin (host:port). The origin port is the
-// MCP server's actual bound port, so it is always correct regardless of which
-// ephemeral port the OS assigned. The hostname is normalized to its bare form
-// (scheme stripped) because cloudflared's ingress hosts are bare hostnames, not
-// URLs. Every interpolated value is emitted through %q so a hostile hostname or
-// other value cannot break out of the YAML scalar and inject ingress rules.
-func (s *CloudflareTunnelState) configYAML(origin string) ([]byte, error) {
-	credsPath, err := s.credentialsFilePath()
-	if err != nil {
-		return nil, err
-	}
-	host := bareHostname(s.Hostname)
-	if !validIngressHostname(host) {
-		return nil, fmt.Errorf("invalid tunnel hostname %q: must be a bare DNS hostname (letters, digits, dots, hyphens)", host)
-	}
-	// indentation is significant in YAML; keep the template literal exact.
-	return []byte(fmt.Sprintf(
-		"tunnel: %q\ncredentials-file: %q\n\n"+
-			"ingress:\n"+
-			"  - hostname: %q\n    service: %q\n"+
-			"  - service: http_status:404\n",
-		s.TunnelID, credsPath, host, origin,
-	)), nil
-}
-
-// validIngressHostname reports whether h is a safe bare hostname for the
-// cloudflared ingress table. It rejects anything containing whitespace,
-// control characters, or characters outside the DNS hostname set so a
-// user-supplied --domain cannot smuggle YAML directives or extra ingress keys.
-func validIngressHostname(h string) bool {
-	if h == "" {
-		return false
-	}
-	for _, r := range h {
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
-			(r >= '0' && r <= '9') || r == '.' || r == '-' {
-			continue
-		}
-		return false
-	}
-	return true
-}
-
-// credentialsFilePath returns where the credentials file is written for the
-// current provider. It propagates the os.UserConfigDir error rather than
-// silently building a path at the filesystem root when resolution fails.
-func (s *CloudflareTunnelState) credentialsFilePath() (string, error) {
-	dir, err := os.UserConfigDir()
-	if err != nil {
-		return "", fmt.Errorf("resolve user config directory: %w", err)
-	}
-	return filepath.Join(dir, "pinner", s.TunnelID+".json"), nil
 }
 
 // bareHostname strips a leading http(s):// scheme so hostname comparisons and
