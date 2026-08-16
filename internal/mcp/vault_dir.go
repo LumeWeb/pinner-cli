@@ -45,6 +45,9 @@ func DirToVault(ctx context.Context, dir string, dstBase string, put VaultPutFun
 		if err != nil {
 			return err
 		}
+		if err := ctx.Err(); err != nil {
+			return err // aborted (client disconnect, timeout); stop the walk promptly
+		}
 		if p == "." {
 			return nil // the walk root itself; nothing to write
 		}
@@ -75,7 +78,10 @@ func DirToVault(ctx context.Context, dir string, dstBase string, put VaultPutFun
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		// Preserve partial progress: res.Files already records every file
+		// written before the failure, so the caller can reconcile/skip them
+		// on retry rather than losing track of orphaned vault objects.
+		return res, err
 	}
 	return res, nil
 }
