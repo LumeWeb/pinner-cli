@@ -18,6 +18,20 @@ var ErrNotFound = errors.New("vault object not found")
 // SDK (which would resurrect a closed service and touch the network again).
 var ErrVaultClosed = errors.New("vault service is closed")
 
+// File status lifecycle values (per-file recoverability on the permissionless
+// network). Default is FileStatusOK. A file transitions to FileStatusLost when
+// Verify/VerifyDeep detect the object's slabs are unrecoverable (e.g.
+// GC'd/unpinned on the indexer) and back to FileStatusOK on a subsequent
+// successful verify or re-pin. Lost files stay listed (never tombstoned).
+const (
+	// FileStatusOK is the default: the object is pinned and present.
+	FileStatusOK = "ok"
+	// FileStatusPending is uploaded to the indexer but not yet confirmed pinned.
+	FileStatusPending = "pending"
+	// FileStatusLost means the object/slabs are terminally unrecoverable.
+	FileStatusLost = "lost"
+)
+
 // VaultService is the interface for vault operations.
 type VaultService interface {
 	// CheckReady verifies that the indexer has finished propagating the
@@ -33,6 +47,11 @@ type VaultService interface {
 
 	// List lists files and directories at the given vault path.
 	List(ctx context.Context, vaultPath string) ([]ListItem, error)
+
+	// Search returns live vault FILES matching the filter (metadata-first:
+	// name substring, tag AND, provenance, status, time). Empty filters match
+	// every live file. Results are ordered newest-first by creation time.
+	Search(ctx context.Context, f SearchFilter) ([]SearchItem, error)
 
 	// Stat returns metadata about a file or directory.
 	Stat(ctx context.Context, vaultPath string) (*StatResult, error)
@@ -76,8 +95,53 @@ type VaultService interface {
 	// live current winner, preserving all prior versions' history).
 	VersionRestore(ctx context.Context, vaultPath string, versionID string) (*File, error)
 
+	// SetProvenance stamps the existing file at vaultPath with the given
+	// best-effort audit fields (created_by, agent_id, session_id). It updates
+	// the local File row AND re-stamps + re-pins the Sia object's encrypted
+	// metadata so the provenance syncs to every device. Fields left empty are
+	// preserved (only non-empty values override). Returns the updated record.
+	SetProvenance(ctx context.Context, vaultPath, createdBy, agentID, sessionID string) (*File, error)
+
+	// AddTags adds one or more tags to the file at vaultPath. Tags are
+	// normalized (lowercased, deduplicated) and stored durably: merged into the
+	// Sia object's sealed FileMetadata.Metadata['tags'] array (re-pinned) AND
+	// reconciled into the local file_tags join in one transaction. Missing
+	// tags are created; the tag's used_at is bumped. Already-present tags are
+	// idempotent (no-op, used_at still bumped). Returns the updated record.
+	AddTags(ctx context.Context, vaultPath string, tags []string) (*File, error)
+
+	// RemoveTags removes one or more tags from the file at vaultPath. It is the
+	// durable counterpart of AddTags: the tags are removed from the object's
+	// sealed Metadata['tags'] array (re-pinned) and the local file_tags joins
+	// are deleted in the same transaction. Tags that the file does not have are
+	// ignored (idempotent). A tag left with zero file_tags links is pruned.
+	// Returns the updated record.
+	RemoveTags(ctx context.Context, vaultPath string, tags []string) (*File, error)
+
+	// SetTags replaces the file's full tag set at vaultPath with exactly the
+	// given tags (normalized). It is the durable replace-all operation: the
+	// resulting set is written to the object's sealed Metadata['tags'] array
+	// (re-pinned) and the local file_tags join is fully reconciled. Returns the
+	// updated record.
+	SetTags(ctx context.Context, vaultPath string, tags []string) (*File, error)
+
+	// TagList returns every distinct tag name currently in use across the
+	// vault, ordered most-recently-used first (used_at DESC). Tags whose last
+	// file_tags link was removed are pruned, so a name here always maps to at
+	// least one file.
+	TagList(ctx context.Context) ([]string, error)
+
 	// Share generates a time-limited sia:// share URL for a file.
 	Share(ctx context.Context, vaultPath string, validUntil time.Time) (string, error)
+
+	// ShareAccept resolves an expiring sia:// share URL issued by another
+	// agent/profile, downloads the shared content via the accepting profile's
+	// SDK, and pins a self-contained COPY into this profile's vault at
+	// vaultPath (A2A copy-once pin-to-indexer). It appends an audit row to the
+	// share ledger. The share URL is read-only and time-limited: none of its
+	// content is shared by reference — the accepting profile owns a new copy.
+	// Returns the newly-created File record.
+	ShareAccept(ctx context.Context, vaultPath, shareURL, targetPrincipal string) (*File, error)
 
 	// Sync pulls changes from the indexer into the local cache. It processes
 	// up to one batch of events (100) per call and always advances the cursor
@@ -103,6 +167,7 @@ type ListItem struct {
 	Type      string `json:"type"` // "file" or "dir"
 	Size      int64  `json:"size,omitempty"`
 	MediaType string `json:"media_type,omitempty"`
+	Status    string `json:"status,omitempty"` // files only: "ok" | "pending" | "lost"
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at,omitempty"`
 }
@@ -116,8 +181,57 @@ type StatResult struct {
 	MediaType     string         `json:"media_type,omitempty"`
 	ContentDigest string         `json:"content_digest,omitempty"`
 	ObjectID      string         `json:"object_id,omitempty"`
+	Status        string         `json:"status,omitempty"`     // "ok" | "pending" | "lost"
+	LostReason    string         `json:"lost_reason,omitempty"` // detail when Status == "lost"
+	CreatedBy     string         `json:"created_by,omitempty"` // provenance
+	AgentID       string         `json:"agent_id,omitempty"`   // provenance
+	SessionID     string         `json:"session_id,omitempty"` // provenance
 	CreatedAt     string         `json:"created_at"`
 	UpdatedAt     string         `json:"updated_at,omitempty"`
+	Metadata      map[string]any `json:"metadata,omitempty"`
+	// Tags are the file's first-class tags (normalized, most-recently used not
+	// ranked here; they surface the live set). Empty when the file has none.
+	Tags []string `json:"tags,omitempty"`
+}
+
+// SearchFilter narrows a vault search. All fields are ANDed; empty fields are
+// ignored. Tags are ANDed too (a result must match EVERY tag). Name is a
+// case-insensitive substring of the file name. Dir restricts results to files
+// under the given vault directory (inclusive). Search is metadata-first (no
+// full-text engine): name, tags, provenance, status, and time.
+type SearchFilter struct {
+	// Name is a case-insensitive substring of the file name. Empty = any.
+	Name string
+	// Dir restricts to files under this vault directory (inclusive prefix).
+	Dir string
+	// Tags requires a file to carry EVERY listed tag (AND semantics).
+	Tags []string
+	// CreatedBy/AgentID/SessionID are exact (case-sensitive) provenance matches.
+	CreatedBy string
+	AgentID   string
+	SessionID string
+	// Status restricts to a specific file status ("ok" | "pending" | "lost").
+	Status string
+	// Since restricts to files created at or after this time (UTC). Zero = any.
+	Since time.Time
+}
+
+// SearchItem is one file result from Search. It carries a full vault path and
+// the same metadata surfaced by Stat, so the result is directly actionable.
+type SearchItem struct {
+	Path          string         `json:"path"`
+	Name          string         `json:"name"`
+	Size          int64          `json:"size,omitempty"`
+	MediaType     string         `json:"media_type,omitempty"`
+	ContentDigest string         `json:"content_digest,omitempty"`
+	ObjectID      string         `json:"object_id,omitempty"`
+	Status        string         `json:"status,omitempty"`
+	CreatedBy     string         `json:"created_by,omitempty"`
+	AgentID       string         `json:"agent_id,omitempty"`
+	SessionID     string         `json:"session_id,omitempty"`
+	CreatedAt     string         `json:"created_at"`
+	UpdatedAt     string         `json:"updated_at,omitempty"`
+	Tags          []string       `json:"tags,omitempty"`
 	Metadata      map[string]any `json:"metadata,omitempty"`
 }
 
@@ -154,4 +268,8 @@ type StatusResult struct {
 	// LastSyncTime is the RFC3339 time the sync cursor was last persisted, or
 	// empty if the profile has never synced.
 	LastSyncTime string `json:"last_sync_time,omitempty"`
+	// LostCount is the number of live current files flagged as lost (slabs
+	// unrecoverable). Surfaced so `vault_status` aggregates recoverable/lost
+	// content.
+	LostCount int64 `json:"lost_count"`
 }

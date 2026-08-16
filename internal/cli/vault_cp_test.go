@@ -8,14 +8,15 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"go.lumeweb.com/pinner-cli/internal/core/vault"
 )
 
 // cpFakeVaultService is a VaultService that records Get/Put traffic so a vault
-// cp invocation can be asserted without a live Sia indexer.
+// cp invocation can be asserted without a live Sia indexer. It embeds
+// NopVaultService for every no-op method and overrides only the ones it uses.
 type cpFakeVaultService struct {
+	NopVaultService
 	label    string
 	content  []byte // bytes served by Get
 	getPaths []string
@@ -23,7 +24,6 @@ type cpFakeVaultService struct {
 	onGet    func(io.Writer) // optional hook invoked during Get (for perms asserts)
 }
 
-func (s *cpFakeVaultService) CheckReady(context.Context) error { return nil }
 func (s *cpFakeVaultService) Put(_ context.Context, r io.Reader, _ int64, path string, _ map[string]any) (*vault.File, error) {
 	s.putPaths = append(s.putPaths, path)
 	data, err := io.ReadAll(r)
@@ -40,38 +40,12 @@ func (s *cpFakeVaultService) Get(_ context.Context, path string, w io.Writer) er
 	_, err := w.Write(s.content)
 	return err
 }
-func (s *cpFakeVaultService) List(context.Context, string) ([]vault.ListItem, error) { return nil, nil }
 func (s *cpFakeVaultService) Stat(context.Context, string) (*vault.StatResult, error) {
 	return nil, vault.ErrNotFound
 }
-func (s *cpFakeVaultService) Cat(context.Context, string, io.Writer) error { return nil }
-func (s *cpFakeVaultService) Verify(context.Context, string) (*vault.VerifyResult, error) {
-	return nil, nil
-}
-func (s *cpFakeVaultService) VerifyDeep(context.Context, string) (*vault.VerifyResult, error) {
-	return nil, nil
-}
-func (s *cpFakeVaultService) Remove(context.Context, string) error { return nil }
-func (s *cpFakeVaultService) VersionList(context.Context, string) ([]*vault.File, error) {
-	return nil, nil
-}
-func (s *cpFakeVaultService) VersionGet(context.Context, string, string) (*vault.File, error) {
-	return nil, nil
-}
-func (s *cpFakeVaultService) VersionDownload(context.Context, string, string, io.Writer) error {
-	return nil
-}
-func (s *cpFakeVaultService) VersionRestore(context.Context, string, string) (*vault.File, error) {
-	return nil, nil
-}
-func (s *cpFakeVaultService) Share(context.Context, string, time.Time) (string, error) {
-	return "", nil
-}
-func (s *cpFakeVaultService) Sync(context.Context) (int, bool, error) { return 0, false, nil }
 func (s *cpFakeVaultService) Status(context.Context) (*vault.StatusResult, error) {
 	return &vault.StatusResult{}, nil
 }
-func (s *cpFakeVaultService) Close() error { return nil }
 
 // cpCmdHarness overrides the vault service factory to return a fake per profile
 // name, seeds config/home, and runs `pinner vault cp <args>` through the real

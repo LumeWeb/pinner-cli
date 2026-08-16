@@ -102,6 +102,9 @@ func (f *versionSDK) DeleteObject(_ context.Context, _ types.Hash256) error { re
 func (f *versionSDK) CreateSharedObjectURL(_ context.Context, _ types.Hash256, _ time.Time) (string, error) {
 	return "", nil
 }
+func (f *versionSDK) DownloadSharedObject(_ context.Context, _ string, _ ...siastorage.DownloadOption) (io.ReadCloser, error) {
+	return io.NopCloser(bytes.NewReader(nil)), nil
+}
 func (f *versionSDK) Close() error { return nil }
 
 // lastUpload returns the bytes of the most recent Upload call.
@@ -383,6 +386,72 @@ func TestVersion_RestorePropagatesDownloadError(t *testing.T) {
 	}
 	if !rows[0].IsCurrent || rows[0].VersionID != "version-v1" {
 		t.Fatalf("original row altered by failed restore: current=%v version=%q", rows[0].IsCurrent, rows[0].VersionID)
+	}
+}
+
+// TestVersion_RestorePreservesTagsAndProvenance asserts that restoring an old
+// version mints a new current winner that KEEPS the live file's tags and
+// provenance (created_by/agent/session), rather than coming up empty (which
+// would silently drop the label set from the restored row).
+func TestVersion_RestorePreservesTagsAndProvenance(t *testing.T) {
+	ctx := context.Background()
+	const path = "vault:/docs/doc.txt"
+
+	fake := newVersionSDK(t)
+	svc, db := openVaultTestService(t, fake)
+
+	dirID, err := svc.getOrCreateDirectory("/docs")
+	if err != nil {
+		t.Fatalf("getOrCreateDirectory: %v", err)
+	}
+
+	keyV1 := fake.registerContent(mustHash(t, "00000000000000000000000000000000000000000000000000000000000000aa"), []byte("v1 content"))
+	keyV2 := fake.registerContent(mustHash(t, "00000000000000000000000000000000000000000000000000000000000000bb"), []byte("v2 content"))
+
+	c1 := File{UUID: "uuid-doc", Name: "doc.txt", DirectoryID: dirID, IsCurrent: false,
+		VersionID: "version-v1", Seq: 1, ObjectKey: keyV1, Size: int64(len("v1 content"))}
+	c2 := File{UUID: "uuid-doc", Name: "doc.txt", DirectoryID: dirID, IsCurrent: true,
+		VersionID: "version-v2", Seq: 2, ObjectKey: keyV2, Size: int64(len("v2 content")),
+		CreatedBy: "derrick", AgentID: "agent-7", SessionID: "session-9"}
+	for _, f := range []File{c1, c2} {
+		if err := db.Create(&f).Error; err != nil {
+			t.Fatalf("seed version row: %v", err)
+		}
+	}
+	// Attach a tag to the current winner's row. Re-read it by (name,dir) to get
+	// the real auto-increment ID (the loop var `f` above is a copy).
+	var c2row File
+	if err := db.Where("name = ? AND is_current = 1", "doc.txt").First(&c2row).Error; err != nil {
+		t.Fatalf("re-load current winner: %v", err)
+	}
+	if err := reconcileTagsTx(db, c2row.ID, []string{"finance", "draft"}); err != nil {
+		t.Fatalf("reconcileTagsTx: %v", err)
+	}
+
+	restored, err := svc.VersionRestore(ctx, path, "version-v1")
+	if err != nil {
+		t.Fatalf("VersionRestore: %v", err)
+	}
+
+	// The restored winner row must carry over provenance from the live file.
+	if restored.CreatedBy != "derrick" || restored.AgentID != "agent-7" || restored.SessionID != "session-9" {
+		t.Errorf("restored row lost provenance: got (%q,%q,%q), want (derrick,agent-7,session-9)",
+			restored.CreatedBy, restored.AgentID, restored.SessionID)
+	}
+
+	// And the restored winner's tags must be persisted to the local join.
+	gotTags, err := svc.currentTags(restored.ID)
+	if err != nil {
+		t.Fatalf("currentTags(restored): %v", err)
+	}
+	want := []string{"draft", "finance"} // normalizeTags + reconcileTagsTx order-sort
+	if len(gotTags) != len(want) {
+		t.Fatalf("restored tags = %v, want %v", gotTags, want)
+	}
+	for i := range want {
+		if gotTags[i] != want[i] {
+			t.Fatalf("restored tags = %v, want %v", gotTags, want)
+		}
 	}
 }
 

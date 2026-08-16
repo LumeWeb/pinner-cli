@@ -11,6 +11,7 @@ import (
 	"io"
 	"mime"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -35,8 +36,22 @@ type sdkClient interface {
 	Download(obj siastorage.Object, opts ...siastorage.DownloadOption) (io.ReadCloser, error)
 	DeleteObject(ctx context.Context, key types.Hash256) error
 	CreateSharedObjectURL(ctx context.Context, objectKey types.Hash256, validUntil time.Time) (string, error)
+	DownloadSharedObject(ctx context.Context, sharedURL string, opts ...siastorage.DownloadOption) (io.ReadCloser, error)
 	Close() error
 	AppKey() types.PrivateKey
+}
+
+// byteCounter is an io.Writer that tallies the total bytes written to it. It
+// is used in ShareAccept to measure the true size of a streamed shared object
+// (which the Sia SDK exposes only as an io.ReadCloser) without buffering it in
+// memory.
+type byteCounter struct {
+	n *int64
+}
+
+func (c *byteCounter) Write(p []byte) (int, error) {
+	*c.n += int64(len(p))
+	return len(p), nil
 }
 
 // vaultService implements VaultService.
@@ -222,16 +237,38 @@ func (s *vaultService) Put(ctx context.Context, r io.Reader, size int64, vaultPa
 	var curSeq uint
 	s.db.Model(&File{}).Where("uuid = ?", fileID).Select("COALESCE(MAX(seq),0)").Scan(&curSeq)
 	versionSeq := curSeq + 1
+	// Best-effort provenance, user-attested by the writing client. If the
+	// caller's opaque metadata map carries created_by/agent_id/session_id keys,
+	// promote them to first-class provenance fields so they are queryable and
+	// sync to other devices; they remain in the opaque map too (unchanged).
+	createdBy, agentID, sessionID := provenanceFromMetadata(metadata)
+	// Best-effort tag promotion: if the caller's opaque metadata map carries a
+	// 'tags' key ([]string or []any of strings), normalize it and seed the
+	// object's Metadata['tags'] array so the tags are durable (re-pinned with
+	// the object) and searchable. Enables `--tags` at upload.
+	putTags := tagsFromMetadata(metadata)
 	fileMeta := FileMetadata{
-		ID:        fileID,
-		VersionID: versionID,
-		Seq:       versionSeq,
-		Name:      vp.Name,
-		Directory: vp.Directory,
-		MediaType: mediaType,
-		Size:      size,
-		CreatedAt: now,
-		Metadata:  metadata,
+		ID:          fileID,
+		VersionID:   versionID,
+		Seq:         versionSeq,
+		Name:        vp.Name,
+		Directory:   vp.Directory,
+		MediaType:   mediaType,
+		Size:        size,
+		CreatedAt:   now,
+		Metadata:    metadata,
+		Status:      FileStatusOK,
+		CreatedBy:   createdBy,
+		AgentID:     agentID,
+		SessionID:   sessionID,
+	}
+	// Seed the planar tags array in the sealed object metadata so sync-down
+	// reconstructs file_tags on every device without an extra call.
+	if len(putTags) > 0 {
+		if fileMeta.Metadata == nil {
+			fileMeta.Metadata = map[string]any{}
+		}
+		fileMeta.Metadata["tags"] = putTags
 	}
 
 	// Create Sia object and attach metadata
@@ -294,12 +331,16 @@ func (s *vaultService) Put(ctx context.Context, r io.Reader, size int64, vaultPa
 		// existing winner's own live row, so promoteCurrent below does that
 		// final demote+promote. (adoptPreflight resets this to false on the
 		// adopt path so the adopted row never races the winner's live row.)
-		IsCurrent:     mintedFresh,
+		IsCurrent: mintedFresh, // promoteCurrent demotes the prior current + promotes this row atomically
 		ObjectKey:     objectKey.String(),
 		Size:          size,
 		MediaType:     mediaType,
 		ContentDigest: contentDigest,
 		Metadata:      datatypes.JSON(userMetaJSON),
+		Status:        FileStatusOK,
+		CreatedBy:     createdBy,
+		AgentID:       agentID,
+		SessionID:     sessionID,
 		CreatedAt:     nowTs,
 		UpdatedAt:     nowTs,
 	}
@@ -369,6 +410,18 @@ func (s *vaultService) Put(ctx context.Context, r io.Reader, size int64, vaultPa
 			// the winner's UUID, and re-inserts as a new version of that group.
 			if err := tx.Create(&rec).Error; err != nil {
 				return err
+			}
+			// Reconcile the freshly-Put file's tag joins inside the SAME write
+			// transaction as the row insert, so a tag-cache write failure
+			// cannot leave the object pinned + row committed with the caller
+			// seeing a failed Put (which would prompt a duplicate-version
+			// retry). Tags are authoritative in the sealed object metadata; the
+			// local file_tags join is a cache seeded here so vault_tag_ls /
+			// search are correct immediately after an upload with --tags.
+			if len(putTags) > 0 {
+				if rerr := reconcileTagsTx(tx, rec.ID, putTags); rerr != nil {
+					return rerr
+				}
 			}
 			return promoteCurrent(tx, vp.Name, dirID, rec.ID)
 		})
@@ -521,11 +574,179 @@ func (s *vaultService) List(ctx context.Context, vaultPath string) ([]ListItem, 
 			Type:      "file",
 			Size:      f.Size,
 			MediaType: f.MediaType,
+			Status:    f.Status,
 			CreatedAt: f.CreatedAt.Format(time.RFC3339),
 			UpdatedAt: f.UpdatedAt.Format(time.RFC3339),
 		})
 	}
 
+	return items, nil
+}
+
+// Search returns live vault FILES matching the filter, newest-first by
+// creation time. It is metadata-first (no full-text engine): an optional name
+// substring (case-insensitive), tag AND membership, exact provenance fields,
+// status, and a creation-time floor, all ANDed. Each result carries a full
+// vault path plus the same metadata Stat surfaces, so results are directly
+// actionable.
+func (s *vaultService) Search(_ context.Context, f SearchFilter) ([]SearchItem, error) {
+	q := s.db.Table("files").
+		Select("files.*").
+		Joins("LEFT JOIN directories ON directories.id = files.directory_id").
+		Where("files.is_current = 1 AND files.deleted_at IS NULL")
+
+	if len(f.Tags) > 0 {
+		// AND semantics: a matching file must link to EVERY distinct tag.
+		// Dedupe so COUNT(DISTINCT tags.name) == len(deduped) is exact.
+		want := make([]string, 0, len(f.Tags))
+		seen := map[string]struct{}{}
+		for _, t := range f.Tags {
+			n := strings.ToLower(strings.TrimSpace(t))
+			if n == "" {
+				continue
+			}
+			if _, ok := seen[n]; ok {
+				continue
+			}
+			seen[n] = struct{}{}
+			want = append(want, n)
+		}
+		if len(want) > 0 {
+			sub := s.db.Table("tags").
+				Select("ft.file_id").
+				Joins("JOIN file_tags ft ON ft.tag_id = tags.id").
+				Where("tags.name IN ?", want).
+				Group("ft.file_id").
+				Having("COUNT(DISTINCT tags.name) = ?", len(want))
+			q = q.Where("files.id IN (?)", sub)
+		}
+	}
+	if f.Name != "" {
+		q = q.Where("files.name LIKE ? ESCAPE '\\'", "%"+escapeLike(f.Name)+"%")
+	}
+	if f.Dir != "" {
+		// Accept both "vault:/docs" (scheme) and "/docs" (scheme-less): reduce
+		// to the directory path stored on directories.path.
+		dir := f.Dir
+		if IsVaultPath(dir) {
+			if vp, err := ParseVaultPath(dir); err == nil {
+				dir = vp.Directory
+				if vp.Name != "" && !vp.IsDir {
+					dir = JoinDirPath(vp.Directory, vp.Name)
+				}
+			}
+		}
+		dir = strings.TrimSuffix(dir, "/")
+		if dir == "" {
+			dir = "/"
+		}
+		// Escape the directory path before building the LIKE prefix so a directory
+		// whose name contains LIKE metacharacters (% or _) cannot match unrelated
+		// sibling paths (mirrors escapeLike on the Name filter above). The prefix
+		// is escaped as a whole (dir + "/") exactly once for the LIKE pattern.
+		prefix := dir + "/"
+		q = q.Where("(directories.path = ? OR directories.path LIKE ? ESCAPE '\\')", dir, escapeLike(prefix)+"%")
+	}
+	if f.CreatedBy != "" {
+		q = q.Where("files.created_by = ?", f.CreatedBy)
+	}
+	if f.AgentID != "" {
+		q = q.Where("files.agent_id = ?", f.AgentID)
+	}
+	if f.SessionID != "" {
+		q = q.Where("files.session_id = ?", f.SessionID)
+	}
+	if f.Status != "" {
+		q = q.Where("files.status = ?", f.Status)
+	}
+	if !f.Since.IsZero() {
+		q = q.Where("files.created_at >= ?", f.Since)
+	}
+
+	// Bound results so a metadata search over a large vault never loads every
+	// match into memory at once; the tag/path assembly below is batched so a
+	// result set of N rows needs a constant number of queries (not 2N+1).
+	const searchLimit = 500
+	var records []File
+	if err := q.Order("files.created_at DESC").Limit(searchLimit).Find(&records).Error; err != nil {
+		return nil, fmt.Errorf("search failed: %w", err)
+	}
+	if len(records) == 0 {
+		return []SearchItem{}, nil
+	}
+
+	// Batch-load directory paths in one query so building the full vault path
+	// does not issue a per-result row lookup.
+	dirByID := map[uint]string{}
+	{
+		ids := make([]uint, 0, len(records))
+		for _, rec := range records {
+			if rec.DirectoryID != nil {
+				ids = append(ids, *rec.DirectoryID)
+			}
+		}
+		if len(ids) > 0 {
+			var dirs []Directory
+			if err := s.db.Where("id IN ?", ids).Find(&dirs).Error; err == nil {
+				for _, d := range dirs {
+					dirByID[d.ID] = d.Path
+				}
+			}
+		}
+	}
+
+	// Batch-load each result row's tags in one query joining file_tags + tags.
+	tagsByID := map[uint][]string{}
+	{
+		ids := make([]uint, 0, len(records))
+		for _, rec := range records {
+			ids = append(ids, rec.ID)
+		}
+		type tagRow struct {
+			FileID uint
+			Name   string
+		}
+		var rows []tagRow
+		if err := s.db.Table("file_tags").
+			Select("file_tags.file_id, tags.name").
+			Joins("JOIN tags ON tags.id = file_tags.tag_id").
+			Where("file_tags.file_id IN ?", ids).
+			Scan(&rows).Error; err == nil {
+			for _, r := range rows {
+				tagsByID[r.FileID] = append(tagsByID[r.FileID], r.Name)
+			}
+		}
+	}
+
+	items := make([]SearchItem, 0, len(records))
+	for _, rec := range records {
+		path := rec.Name
+		if rec.DirectoryID != nil {
+			if p, ok := dirByID[*rec.DirectoryID]; ok {
+				path = JoinDirPath(p, rec.Name)
+			}
+		}
+		var metaOut map[string]any
+		if len(rec.Metadata) > 0 {
+			_ = json.Unmarshal(rec.Metadata, &metaOut) // best-effort
+		}
+		items = append(items, SearchItem{
+			Path:          VaultScheme + path,
+			Name:          rec.Name,
+			Size:          rec.Size,
+			MediaType:     rec.MediaType,
+			ContentDigest: rec.ContentDigest,
+			ObjectID:      rec.ObjectKey,
+			Status:        rec.Status,
+			CreatedBy:     rec.CreatedBy,
+			AgentID:       rec.AgentID,
+			SessionID:     rec.SessionID,
+			CreatedAt:     rec.CreatedAt.Format(time.RFC3339),
+			UpdatedAt:     rec.UpdatedAt.Format(time.RFC3339),
+			Tags:          tagsByID[rec.ID],
+			Metadata:      metaOut,
+		})
+	}
 	return items, nil
 }
 
@@ -582,6 +803,10 @@ func (s *vaultService) Stat(ctx context.Context, vaultPath string) (*StatResult,
 	if len(record.Metadata) > 0 {
 		_ = json.Unmarshal(record.Metadata, &metaOut) // best-effort: malformed local metadata is surfaced empty, not an error
 	}
+	// Load the file's first-class tags from the local join (a cache of the
+	// authoritative Metadata['tags'] array in the object). Best-effort: a
+	// read failure yields an empty tag list rather than failing Stat.
+	tags, _ := s.currentTags(record.ID)
 	return &StatResult{
 		Type:          "file",
 		Name:          record.Name,
@@ -590,9 +815,15 @@ func (s *vaultService) Stat(ctx context.Context, vaultPath string) (*StatResult,
 		MediaType:     record.MediaType,
 		ContentDigest: record.ContentDigest,
 		ObjectID:      record.ObjectKey,
+		Status:        record.Status,
+		LostReason:    record.LostReason,
+		CreatedBy:     record.CreatedBy,
+		AgentID:       record.AgentID,
+		SessionID:     record.SessionID,
 		CreatedAt:     record.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:     record.UpdatedAt.Format(time.RFC3339),
 		Metadata:      metaOut,
+		Tags:          tags,
 	}, nil
 }
 
@@ -620,6 +851,12 @@ func (s *vaultService) Verify(ctx context.Context, vaultPath string) (*VerifyRes
 		}
 	}
 	res.DigestMatch = objDigest != "" && objDigest == res.ContentDigest
+	// Only a matching digest proves the object is present and correct; a
+	// divergence (present-but-corrupt object) must NOT clear lost state, or a
+	// recovering-but-still-broken file would drop out of vault_status --lost.
+	if res.DigestMatch {
+		s.clearLostStatus(ctx, vaultPath)
+	}
 	return res, nil
 }
 
@@ -649,7 +886,42 @@ func (s *vaultService) VerifyDeep(ctx context.Context, vaultPath string) (*Verif
 	}
 	computedDigest := hex.EncodeToString(hasher.Sum(nil))
 	res.DigestMatch = computedDigest == res.ContentDigest
+	// Only a matching digest proves the bytes are present and correct; a
+	// divergence must NOT clear lost state, or a recovering-but-still-broken
+	// file would drop out of vault_status --lost.
+	if res.DigestMatch {
+		s.clearLostStatus(ctx, vaultPath)
+	}
 	return res, nil
+}
+
+// clearLostStatus resets a file's lifecycle status back to ok and clears its
+// lost_reason after a successful verify. It is best-effort (a failed status
+// write must not fail the verify operation itself); the next verify will
+// re-derive state.
+func (s *vaultService) clearLostStatus(ctx context.Context, vaultPath string) {
+	vp, err := ParseVaultPath(vaultPath)
+	if err != nil {
+		return
+	}
+	vp, err = RequireActiveProfile(vp)
+	if err != nil {
+		return
+	}
+	dirID, err := s.getDirectoryID(vp.Directory)
+	if err != nil {
+		return
+	}
+	// Scope to the EXACT current file (name within its directory), never
+	// clearing lost state for same-named files living in other directories.
+	if rec, err := s.findCurrentFile(vp.Name, dirID); err == nil {
+		_ = s.db.Model(&File{}).
+			Where("id = ?", rec.ID).
+			Updates(map[string]any{
+				"status":      FileStatusOK,
+				"lost_reason": "",
+			}).Error
+	}
 }
 
 // resolveVerifyObject resolves the file record and its indexer object. It
@@ -696,6 +968,22 @@ func (s *vaultService) resolveVerifyObject(ctx context.Context, vaultPath string
 		if errors.Is(err, slabs.ErrObjectNotFound) {
 			result.ObjectExists = false
 			result.DigestMatch = false
+			// Mark the local row lost so the lifecycle state is visible in
+			// vault_ls / vault_status / vault_stat even before anyone re-verifies.
+			// A lost file stays listed (never tombstoned) so an agent can
+			// enumerate and recover it. The lost_reason records the terminal
+			// slab-unavailable detail.
+			if uerr := s.db.Model(&File{}).
+				Where("id = ?", record.ID).
+				Updates(map[string]any{
+					"status":      FileStatusLost,
+					"lost_reason": slabs.ErrObjectNotFound.Error(),
+					"updated_at":  time.Now().UTC(),
+				}).Error; uerr != nil {
+				// A failed status write must not mask the genuine verify result;
+				// surface it as an error so the caller knows state diverged.
+				return nil, siastorage.Object{}, false, fmt.Errorf("failed to mark file lost: %w", uerr)
+			}
 			return result, siastorage.Object{}, false, nil
 		}
 		return nil, siastorage.Object{}, false, fmt.Errorf("failed to fetch object from indexer: %w", err)
@@ -816,6 +1104,119 @@ func (s *vaultService) Share(ctx context.Context, vaultPath string, validUntil t
 	}
 
 	return NormalizeShareURL(shareURL), nil
+}
+
+// ShareAccept implements the A2A copy-once pin-to-indexer primitive. The SDK's
+// share URL is a time-limited, read-only bearer of a single object's content;
+// local SQLite cannot gate a permissionless Sia blob, so accepting a share
+// means resolving it and pinning a SELF-CONTAINED copy into this profile's
+// vault (never a reference). A write-only audit row is appended to the share
+// ledger recording the accept.
+func (s *vaultService) ShareAccept(ctx context.Context, vaultPath, shareURL, targetPrincipal string) (*File, error) {
+	vp, err := ParseVaultPath(vaultPath)
+	if err != nil {
+		return nil, err
+	}
+	vp, err = RequireActiveProfile(vp)
+	if err != nil {
+		return nil, err
+	}
+	if vp.IsDir {
+		return nil, fmt.Errorf("destination must be a file path, not a directory")
+	}
+	if shareURL == "" {
+		return nil, fmt.Errorf("share_url is required")
+	}
+
+	sdk, err := s.ensureSDK()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Sia SDK: %w", err)
+	}
+
+	// Resolve the share URL. The URL embeds the decryption key, so the
+	// accepting SDK needs no extra secrets.
+	rc, err := sdk.DownloadSharedObject(ctx, shareURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve shared object: %w", err)
+	}
+	defer rc.Close()
+
+	// Refuse to silently overwrite an existing live file at the destination.
+	// Accepting into an existing path would demote its current content + full
+	// version history with no confirmation; the caller must remove the target
+	// first. A missing destination directory is fine (Put creates it).
+	if dirID, derr := s.getDirectoryID(vp.Directory); derr == nil {
+		if _, ferr := s.findCurrentFile(vp.Name, dirID); ferr == nil {
+			return nil, fmt.Errorf("destination already exists (refusing to overwrite): %s", vp.FullPath())
+		}
+	}
+
+	// Stream the shared content straight into Put via a pipe rather than
+	// materializing the whole object in RAM (mirrors VersionRestore), so a
+	// large share cannot OOM the process. The shared object's true size is
+	// unknown until it streams (the Sia SDK exposes DownloadSharedObject only
+	// as an io.ReadCloser), so we count bytes as they pass through the pipe
+	// and reconcile the stored Size on the row + object after the upload. A
+	// failed download is propagated via CloseWithError so Put refuses the
+	// object instead of pinning partial/empty content.
+
+	// Pin a self-contained copy into this profile: a NEW object + NEW file
+	// row, fully owned by the accepting profile (never shared by reference).
+	// The shared object's true size is unknown until it streams (the Sia SDK
+	// surfaces DownloadSharedObject only as an io.ReadCloser), so bytes are
+	// counted as they pass through the pipe and the resulting Size is written
+	// back onto the row after the upload; a failed download is propagated via
+	// CloseWithError so Put refuses the object instead of pinning partial or
+	// empty content.
+	pr, pw := io.Pipe()
+	var n int64
+	counter := &byteCounter{n: &n}
+	go func() {
+		// Copy the shared stream into the pipe while tallying the real byte
+		// count (TeeReader feeds the counter as bytes pass through). A failed
+		// download is propagated via CloseWithError so Put refuses the object
+		// rather than pinning partial or empty content.
+		var werr error
+		_, werr = io.Copy(pw, io.TeeReader(rc, counter))
+		pw.CloseWithError(werr)
+	}()
+	f, err := s.Put(ctx, pr, 0, vp.FullPath(), nil)
+	if err != nil {
+		// Put bailed before draining the pipe (e.g. upload failure): the
+		// writer goroutine would block forever in pw.Write holding the Sia
+		// download open. Unblock it by failing the reader side.
+		pr.CloseWithError(err)
+		return nil, fmt.Errorf("failed to pin shared content copy: %w", err)
+	}
+
+	// Reconcile the true size (counted during the stream) onto BOTH the local
+	// row and the sealed object metadata, so stat/ls and cross-device sync all
+	// report the actual byte count rather than the 0 placeholder Put sealed at
+	// upload time (the shared object's size is unknown until it streams).
+	if n > 0 {
+		if f.Size != n {
+			if uerr := s.db.Model(&File{}).Where("id = ?", f.ID).Update("size", n).Error; uerr == nil {
+				f.Size = n
+			}
+		}
+		if oerr := s.resealObjectSize(ctx, sdk, f.ObjectKey, n); oerr != nil {
+			return nil, fmt.Errorf("failed to update shared copy size in object metadata: %w", oerr)
+		}
+	}
+
+	// Append a write-only audit row to the share ledger.
+	if err := s.db.Create(&ShareLedger{
+		SharedVaultPath: vp.FullPath(),
+		ObjectKey:       f.ObjectKey,
+		Expiry:          nil,
+		TargetPrincipal: targetPrincipal,
+		CreatedBy:       f.CreatedBy,
+		CreatedAt:       time.Now().UTC(),
+	}).Error; err != nil {
+		return nil, fmt.Errorf("failed to record share accept in ledger: %w", err)
+	}
+
+	return f, nil
 }
 
 // VersionList returns every live version row for the file at vaultPath, newest
@@ -949,6 +1350,21 @@ func (s *vaultService) VersionRestore(ctx context.Context, vaultPath string, ver
 		return nil, err
 	}
 
+	// Preserve the live file's tags + provenance onto the restored winner row.
+	// A restore mints a NEW current version; without this the new row would come
+	// up with empty provenance and no tags, silently dropping the label set.
+	var meta map[string]any
+	if rec, err := s.resolveFile(vp); err == nil {
+		meta = map[string]any{
+			"created_by": rec.CreatedBy,
+			"agent_id":   rec.AgentID,
+			"session_id": rec.SessionID,
+		}
+		if tags, err := s.currentTags(rec.ID); err == nil && len(tags) > 0 {
+			meta["tags"] = tags
+		}
+	}
+
 	// Stream the historical version's bytes into Put via a pipe, rather than
 	// buffering the whole object in RAM. Put consumes the reader once
 	// (io.TeeReader -> sdk.Upload) and mints a new version row that reuses
@@ -961,7 +1377,149 @@ func (s *vaultService) VersionRestore(ctx context.Context, vaultPath string, ver
 	go func() {
 		pw.CloseWithError(s.VersionDownload(ctx, vp.Raw, versionID, pw))
 	}()
-	return s.Put(ctx, pr, row.Size, vp.Raw, nil)
+	return s.Put(ctx, pr, row.Size, vp.Raw, meta)
+}
+
+// SetProvenance stamps the live current file at vaultPath with the given
+// best-effort audit fields (created_by / agent_id / session_id). It updates the
+// local File row AND re-stamps + re-pins the Sia object's encrypted metadata so
+// the provenance syncs to every device like any other FileMetadata field.
+//
+// Only non-empty values override; empty fields are preserved. The op is
+// best-effort (no signing authority on a permissionless network) but is durable
+// for the object: the metadata re-pin is an in-place upsert at the same content
+// address, so it propagates on the next sync-down without minting a version.
+func (s *vaultService) SetProvenance(ctx context.Context, vaultPath, createdBy, agentID, sessionID string) (*File, error) {
+	vp, err := ParseVaultPath(vaultPath)
+	if err != nil {
+		return nil, err
+	}
+	vp, err = RequireActiveProfile(vp)
+	if err != nil {
+		return nil, err
+	}
+	record, err := s.resolveFile(vp)
+	if err != nil {
+		return nil, err
+	}
+
+	objHash, err := parseHash256(record.ObjectKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse object key: %w", err)
+	}
+	sdk, err := s.ensureSDK()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Sia SDK: %w", err)
+	}
+	obj, err := sdk.Object(ctx, objHash)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch object from indexer: %w", err)
+	}
+
+	// Decode the object's current sealed metadata (preserving whatever the
+	// object carries), BUT seed provenance from the local row (the durable
+	// record) so preserve-empty semantics survive even if the object's stored
+	// sidecar is empty or stale. Only non-empty args override.
+	var meta FileMetadata
+	if raw := obj.Metadata(); len(raw) > 0 {
+		if m, merr := ParseFileMetadata(raw); merr == nil {
+			meta = m
+		}
+	}
+	if meta.CreatedBy == "" {
+		meta.CreatedBy = record.CreatedBy
+	}
+	if meta.AgentID == "" {
+		meta.AgentID = record.AgentID
+	}
+	if meta.SessionID == "" {
+		meta.SessionID = record.SessionID
+	}
+	if createdBy != "" {
+		meta.CreatedBy = createdBy
+	}
+	if agentID != "" {
+		meta.AgentID = agentID
+	}
+	if sessionID != "" {
+		meta.SessionID = sessionID
+	}
+	metaJSON, err := meta.JSON()
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode metadata: %w", err)
+	}
+	obj.UpdateMetadata(metaJSON)
+	if perr := sdk.PinObject(ctx, obj); perr != nil {
+		return nil, fmt.Errorf("failed to re-pin object with provenance: %w", perr)
+	}
+
+	// Persist locally (in-place; NOT a new version — provenance is a metadata
+	// mutation, not a content change).
+	if uerr := s.db.Model(&File{}).Where("id = ?", record.ID).Updates(map[string]any{
+		"created_by": meta.CreatedBy,
+		"agent_id":   meta.AgentID,
+		"session_id": meta.SessionID,
+		"updated_at": time.Now().UTC(),
+	}).Error; uerr != nil {
+		return nil, fmt.Errorf("failed to persist provenance: %w", uerr)
+	}
+	record.CreatedBy = meta.CreatedBy
+	record.AgentID = meta.AgentID
+	record.SessionID = meta.SessionID
+	return &record, nil
+}
+
+// resealObjectSize re-seals a just-accepted object's FileMetadata with the
+// real byte count and re-pins it in place. ShareAccept streams the shared
+// content into Put with a size placeholder (the Sia SDK exposes the shared
+// object's size only once it streams), so after the stream completes this
+// corrects the sealed Size so cross-device sync-down reports the true size
+// instead of the placeholder.
+func (s *vaultService) resealObjectSize(ctx context.Context, sdk sdkClient, objectKeyHex string, size int64) error {
+	objHash, err := parseHash256(objectKeyHex)
+	if err != nil {
+		return fmt.Errorf("failed to parse object key: %w", err)
+	}
+	obj, err := sdk.Object(ctx, objHash)
+	if err != nil {
+		return fmt.Errorf("failed to fetch object from indexer: %w", err)
+	}
+	var meta FileMetadata
+	if raw := obj.Metadata(); len(raw) > 0 {
+		if m, merr := ParseFileMetadata(raw); merr == nil {
+			meta = m
+		}
+	}
+	meta.Size = size
+	metaJSON, err := meta.JSON()
+	if err != nil {
+		return fmt.Errorf("failed to encode metadata: %w", err)
+	}
+	obj.UpdateMetadata(metaJSON)
+	if perr := sdk.PinObject(ctx, obj); perr != nil {
+		return fmt.Errorf("failed to re-pin object with corrected size: %w", perr)
+	}
+	return nil
+}
+
+// provenanceFromMetadata extracts best-effort provenance keys created_by /
+// agent_id / session_id from a caller-supplied opaque metadata map, so a Put
+// can promote them to first-class (queryable, syncable) fields. Values are read
+// as strings when present; absent or non-string values yield empty strings (the
+// caller keeps them empty, which the sealed metadata omits via omitempty).
+func provenanceFromMetadata(metadata map[string]any) (createdBy, agentID, sessionID string) {
+	if metadata == nil {
+		return "", "", ""
+	}
+	asStr := func(k string) string {
+		if v, ok := metadata[k]; ok {
+			if s, ok := v.(string); ok {
+				return s
+			}
+		}
+		return ""
+	}
+	return asStr("created_by"), asStr("agent_id"), asStr("session_id")
 }
 
 // Status reports live vault health and usage. Remote fields come from a real
@@ -1009,6 +1567,15 @@ func (s *vaultService) Status(ctx context.Context) (*StatusResult, error) {
 		totalBytes = 0
 	}
 	res.TotalBytes = totalBytes
+
+	// Lost-file aggregate: count live current files flagged as lost so
+	// vault_status surfaces how much content is unrecoverable.
+	var lost int64
+	if err := s.db.Model(&File{}).
+		Where("is_current = 1 AND deleted_at IS NULL AND status = ?", FileStatusLost).
+		Count(&lost).Error; err == nil {
+		res.LostCount = lost
+	}
 
 	// Last sync time from the most recent cursor row.
 	var cursor SyncDownCursor
@@ -1131,6 +1698,24 @@ func upsertFromMeta(tx *gorm.DB, existing *File, meta FileMetadata, objectKey st
 	existing.Size = meta.Size
 	existing.MediaType = meta.MediaType
 	existing.ContentDigest = meta.ContentDigest
+	// Carry provenance (but NOT lifecycle status) from the object's sealed
+	// metadata so audit fields survive cache rebuilds and sync to every device.
+	// Status is deliberately left untouched on the existing-row path: a file
+	// marked "lost" locally (Verify is a DB-only write that never re-pins the
+	// object) must not be silently reset to "ok" when a later sync re-processes
+	// the object, whose sealed metadata still carries the "ok" stamped at Put
+	// time. Lost state is only cleared by an explicit digest-matching Verify or
+	// a fresh Put — never by a passive re-sync. Fresh rows (sync-down to a new
+	// device) still seed status from the object via sync.go's create branch.
+	if meta.CreatedBy != "" {
+		existing.CreatedBy = meta.CreatedBy
+	}
+	if meta.AgentID != "" {
+		existing.AgentID = meta.AgentID
+	}
+	if meta.SessionID != "" {
+		existing.SessionID = meta.SessionID
+	}
 	existing.UpdatedAt = updatedAt
 	if meta.Metadata != nil {
 		// Persist the user metadata carried in the object's FileMetadata so the
@@ -1149,7 +1734,27 @@ func upsertFromMeta(tx *gorm.DB, existing *File, meta FileMetadata, objectKey st
 	if existing.DeletedAt != nil {
 		existing.DeletedAt = nil // resurrect: object re-appeared after a tombstone
 	}
-	return tx.Save(existing).Error
+	if err := tx.Save(existing).Error; err != nil {
+		return err
+	}
+	// Reconcile the file_tags join from the object's authoritative sealed
+	// Metadata['tags'] array in the same transaction. This is what makes tags
+	// survive cache rebuilds and sync to every device: the local join is always
+	// derived from the object metadata here, never an independent authority.
+	var objTags []string
+	if m, ok := meta.Metadata["tags"]; ok {
+		switch v := m.(type) {
+		case []string:
+			objTags = v
+		case []any:
+			for _, item := range v {
+				if s, ok := item.(string); ok {
+					objTags = append(objTags, s)
+				}
+			}
+		}
+	}
+	return reconcileTagsTx(tx, existing.ID, normalizeTags(objTags))
 }
 
 // findCurrentFile resolves the current (winner) live file for a (name, dir).
@@ -1243,6 +1848,10 @@ func (s *vaultService) adoptPreflight(ctx context.Context, obj *siastorage.Objec
 		ContentDigest: fileMeta.ContentDigest,
 		Metadata:      rec.Metadata,
 		IsCurrent:     false, // promoteCurrent promotes this adopted row after insert
+		Status:        FileStatusOK,
+		CreatedBy:     fileMeta.CreatedBy,
+		AgentID:       fileMeta.AgentID,
+		SessionID:     fileMeta.SessionID,
 		UpdatedAt:     time.Now().UTC(),
 	}
 	// Carry forward the prior row's created-at (stable identity's birth time).
@@ -1335,3 +1944,378 @@ func escapeLike(s string) string {
 	s = strings.ReplaceAll(s, "_", "\\_")
 	return s
 }
+
+// ===========================================================================
+// First-class tagging
+//
+// Tags live durably in the Sia object's sealed FileMetadata under
+// Metadata['tags'] as a planar []string. The local `file_tags` join is a CACHE
+// of that array (reconciled on every durable tag mutation and on sync-down), so
+// a cache rebuild can never clobber remote tags. Every durable mutation goes
+// through the re-pin-and-write path: re-read the object -> decode FileMetadata
+// -> merge Metadata['tags'] -> re-encode -> UpdateMetadata -> PinObject -> then
+// reconcile the local join in one transaction. We NEVER edit only the join
+// table.
+// ===========================================================================
+
+// normalizeTags lowercases and deduplicates a raw tag list, returning a stable
+// (sorted) planar slice. Empty entries are dropped; a nil/empty input yields an
+// empty (non-nil) slice so callers can distinguish "clear all" from "unchanged".
+func normalizeTags(raw []string) []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(raw))
+	for _, t := range raw {
+		t = strings.TrimSpace(strings.ToLower(t))
+		if t == "" {
+			continue
+		}
+		if _, ok := seen[t]; ok {
+			continue
+		}
+		seen[t] = struct{}{}
+		out = append(out, t)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// tagsFromMetadata extracts a planar tag list from a caller-supplied opaque
+// metadata map's 'tags' key ([]string or []any of strings). Returns nil when
+// absent or uncoercible. Used by Put to promote --tags at upload time.
+func tagsFromMetadata(metadata map[string]any) []string {
+	if metadata == nil {
+		return nil
+	}
+	raw, ok := metadata["tags"]
+	if !ok || raw == nil {
+		return nil
+	}
+	var str []string
+	switch v := raw.(type) {
+	case []string:
+		str = v
+	case []any:
+		for _, item := range v {
+			if s, ok := item.(string); ok {
+				str = append(str, s)
+			}
+		}
+	default:
+		// A single string is tolerated as a one-element tag list for ergonomics.
+		if s, ok := raw.(string); ok && s != "" {
+			str = []string{s}
+		} else {
+			return nil
+		}
+	}
+	norm := normalizeTags(str)
+	if len(norm) == 0 {
+		return nil
+	}
+	return norm
+}
+
+// currentTags returns the file's live tag names (sorted), read from the local
+// file_tags join. It is the local cache read used to seed mutations so a stale
+// or empty object sidecar never drops tags that are already durably attached.
+func (s *vaultService) currentTags(fileID uint) ([]string, error) {
+	var names []string
+	err := s.db.Table("file_tags").
+		Joins("JOIN tags ON tags.id = file_tags.tag_id").
+		Where("file_tags.file_id = ?", fileID).
+		Order("tags.name ASC").
+		Pluck("tags.name", &names).Error
+	return names, err
+}
+
+// reconcileTagsTx reconciles the local file_tags join for fileID to EXACTLY the
+// given (already-normalized, sorted) tags, in the given transaction. It creates
+// missing tag rows, bumps used_at on every applied tag, inserts the file_tags
+// joins, and prunes tag rows left with zero file_tags links. Callers only use
+// this inside a write transaction (durable mutation paths and sync-down), never
+// as a standalone writer.
+func reconcileTagsTx(tx *gorm.DB, fileID uint, tags []string) error {
+	// Existing joins for this file.
+	var joins []FileTag
+	var tagByName = map[string]uint{}
+	var tagRows []Tag
+	if err := tx.Model(&Tag{}).Where("id IN (SELECT tag_id FROM file_tags WHERE file_id = ?)", fileID).Find(&tagRows).Error; err != nil {
+		return err
+	}
+	for _, tg := range tagRows {
+		tagByName[tg.Name] = tg.ID
+	}
+	if err := tx.Where("file_id = ?", fileID).Find(&joins).Error; err != nil {
+		return err
+	}
+	have := map[uint]struct{}{}
+	for _, j := range joins {
+		have[j.TagID] = struct{}{}
+	}
+
+	now := time.Now().UTC()
+
+	// Resolve/create tag rows.
+	tagIDFor := func(name string) (uint, error) {
+		if id, ok := tagByName[name]; ok {
+			return id, nil
+		}
+		// Case-insensitive unique by name (index COLLATE NOCASE): look it up
+		// once more to handle a tag created outside this reconcile (e.g. by a
+		// concurrent caller) with different case.
+		var existing Tag
+		if err := tx.Where("name = ? COLLATE NOCASE", name).First(&existing).Error; err == nil {
+			tagByName[name] = existing.ID
+			return existing.ID, nil
+		}
+		tg := Tag{Name: name, CreatedAt: now, UsedAt: now}
+		if err := tx.Create(&tg).Error; err != nil {
+			return 0, err
+		}
+		tagByName[name] = tg.ID
+		return tg.ID, nil
+	}
+
+	// Insert missing joins + bump used_at for every tag that should remain.
+	for _, name := range tags {
+		tid, err := tagIDFor(name)
+		if err != nil {
+			return err
+		}
+		if _, ok := have[tid]; !ok {
+			if err := tx.Create(&FileTag{FileID: fileID, TagID: tid, CreatedAt: now}).Error; err != nil {
+				return err
+			}
+		}
+		if err := tx.Model(&Tag{}).Where("id = ?", tid).Update("used_at", now).Error; err != nil {
+			return err
+		}
+	}
+
+	// Delete joins no longer wanted, tracking whether anything was removed so
+	// the (expensive) dead-tag prune below only runs when it can change state.
+	removed := false
+	for tid := range have {
+		keep := false
+		for _, name := range tags {
+			if tgID, ok := tagByName[name]; ok && tgID == tid {
+				keep = true
+				break
+			}
+		}
+		if !keep {
+			if err := tx.Where("file_id = ? AND tag_id = ?", fileID, tid).Delete(&FileTag{}).Error; err != nil {
+				return err
+			}
+			removed = true
+		}
+	}
+
+	// Prune tags left with zero file_tags links (dead tags). Only when we
+	// actually removed a join: running this on every reconcile (including the
+	// common no-change sync-down) forces a full-table scan of tags per file.
+	if removed {
+		if err := tx.Exec(`DELETE FROM tags WHERE id NOT IN (SELECT DISTINCT tag_id FROM file_tags)`).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// reconcileTags is the non-transactional wrapper around reconcileTagsTx, used
+// by Put to seed the freshly-uploaded file's tag joins. It runs its own write
+// transaction.
+func (s *vaultService) reconcileTags(fileID uint, tags []string) error {
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		return reconcileTagsTx(tx, fileID, tags)
+	})
+}
+
+// resolveTagsChange implements the shared durable re-pin-and-write path for the
+// three tag mutations. It resolves the file, fetches the object, seeds the
+// current Metadata['tags'] set (from the object sidecar, falling back to the
+// local join for durability against a stale object), applies `mutate` to compute
+// the new normalized set, re-encodes + re-pins the object metadata, and finally
+// reconciles the local join in one transaction. `mutate` returns the new tag
+// set. Returns the updated File record.
+func (s *vaultService) resolveTagsChange(ctx context.Context, vp *VaultPath, mutate func(current []string) ([]string, error)) (*File, error) {
+	record, err := s.resolveFile(vp)
+	if err != nil {
+		return nil, err
+	}
+
+	objHash, err := parseHash256(record.ObjectKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse object key: %w", err)
+	}
+	sdk, err := s.ensureSDK()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Sia SDK: %w", err)
+	}
+	obj, err := sdk.Object(ctx, objHash)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch object from indexer: %w", err)
+	}
+
+	// Seed current tags: prefer the object's sealed Metadata['tags'], falling
+	// back to the local join (the durable local record) if the object sidecar
+	// is empty or stale. This preserves tags across a re-pin even when the
+	// indexer returns a cached/stale object.
+	objTags, _ := tagsFromObjectMetadata(obj)
+	current := objTags
+	if len(current) == 0 {
+		if local, lerr := s.currentTags(record.ID); lerr == nil {
+			current = local
+		}
+	}
+
+	newTags, err := mutate(current)
+	if err != nil {
+		return nil, err
+	}
+	newTags = normalizeTags(newTags)
+
+	// Decode/re-seed the full FileMetadata so re-pinning does not drop other
+	// fields (provenance, status, content digest...) carried by the object.
+	var meta FileMetadata
+	if raw := obj.Metadata(); len(raw) > 0 {
+		if m, merr := ParseFileMetadata(raw); merr == nil {
+			meta = m
+		}
+	}
+	if meta.Metadata == nil {
+		meta.Metadata = map[string]any{}
+	}
+	if len(newTags) > 0 {
+		meta.Metadata["tags"] = newTags
+	} else {
+		delete(meta.Metadata, "tags")
+	}
+	metaJSON, err := meta.JSON()
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode metadata: %w", err)
+	}
+	obj.UpdateMetadata(metaJSON)
+	if perr := sdk.PinObject(ctx, obj); perr != nil {
+		return nil, fmt.Errorf("failed to re-pin object with tags: %w", perr)
+	}
+
+	// Reconcile the local join in one transaction (tags here are authoritative).
+	if terr := s.db.Transaction(func(tx *gorm.DB) error {
+		return reconcileTagsTx(tx, record.ID, newTags)
+	}); terr != nil {
+		return nil, fmt.Errorf("failed to persist tags: %w", terr)
+	}
+
+	// Carry the authoritative resulting tag set back on the returned record so
+	// catalog handlers can surface it without a redundant Stat round-trip.
+	record.Tags = newTags
+
+	return &record, nil
+}
+
+// tagsFromObjectMetadata extracts the planar tag list from an object's sealed
+// FileMetadata.Metadata['tags'], returning nil when absent/unparsable.
+func tagsFromObjectMetadata(obj siastorage.Object) ([]string, error) {
+	raw := obj.Metadata()
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	m, err := ParseFileMetadata(raw)
+	if err != nil {
+		return nil, err
+	}
+	return tagsFromMetadata(m.Metadata), nil
+}
+
+// TagList returns every distinct tag name currently in use, most-recently-used
+// first (used_at DESC). Dead tags are pruned on mutation, so a name here maps
+// to at least one file.
+func (s *vaultService) TagList(_ context.Context) ([]string, error) {
+	var names []string
+	err := s.db.Model(&Tag{}).
+		Order("used_at DESC, name ASC").
+		Pluck("name", &names).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to list tags: %w", err)
+	}
+	if names == nil {
+		names = []string{}
+	}
+	return names, nil
+}
+
+// AddTags adds one or more tags to the file, durably (re-pin + local reconcile).
+// Already-present tags are idempotent (used_at still bumped). Returns the
+// updated record.
+func (s *vaultService) AddTags(ctx context.Context, vaultPath string, tags []string) (*File, error) {
+	vp, err := ParseVaultPath(vaultPath)
+	if err != nil {
+		return nil, err
+	}
+	vp, err = RequireActiveProfile(vp)
+	if err != nil {
+		return nil, err
+	}
+	toAdd := normalizeTags(tags)
+	if len(toAdd) == 0 {
+		return nil, fmt.Errorf("AddTags: no valid tags supplied")
+	}
+	return s.resolveTagsChange(ctx, vp, func(current []string) ([]string, error) {
+		combined := make([]string, 0, len(current)+len(toAdd))
+		combined = append(combined, current...)
+		combined = append(combined, toAdd...)
+		return normalizeTags(combined), nil
+	})
+}
+
+// RemoveTags removes one or more tags durably. Tags the file does not have are
+// ignored. A tag left with zero file_tags links is pruned. Returns the updated
+// record.
+func (s *vaultService) RemoveTags(ctx context.Context, vaultPath string, tags []string) (*File, error) {
+	vp, err := ParseVaultPath(vaultPath)
+	if err != nil {
+		return nil, err
+	}
+	vp, err = RequireActiveProfile(vp)
+	if err != nil {
+		return nil, err
+	}
+	toRemove := normalizeTags(tags)
+	if len(toRemove) == 0 {
+		return s.resolveTagsChange(ctx, vp, func(current []string) ([]string, error) {
+			return current, nil
+		})
+	}
+	rm := map[string]struct{}{}
+	for _, t := range toRemove {
+		rm[t] = struct{}{}
+	}
+	return s.resolveTagsChange(ctx, vp, func(current []string) ([]string, error) {
+		kept := make([]string, 0, len(current))
+		for _, t := range current {
+			if _, drop := rm[t]; !drop {
+				kept = append(kept, t)
+			}
+		}
+		return kept, nil
+	})
+}
+
+// SetTags replaces the file's full tag set durably with exactly the given tags.
+// Returns the updated record.
+func (s *vaultService) SetTags(ctx context.Context, vaultPath string, tags []string) (*File, error) {
+	vp, err := ParseVaultPath(vaultPath)
+	if err != nil {
+		return nil, err
+	}
+	vp, err = RequireActiveProfile(vp)
+	if err != nil {
+		return nil, err
+	}
+	newSet := normalizeTags(tags)
+	return s.resolveTagsChange(ctx, vp, func(_ []string) ([]string, error) {
+		return newSet, nil
+	})
+}
+

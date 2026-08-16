@@ -54,6 +54,23 @@ func (d VaultDeps) service(profileName string) (vault.VaultService, error) {
 	return d.Service(profileName, indexerURL)
 }
 
+// withService resolves the active profile from input, builds a VaultService
+// for it, and invokes fn with it, guaranteeing Close() on every exit path
+// (including fn's error path). It collapses the ResolveProfile + d.service +
+// defer svc.Close() preamble repeated by every vault handler.
+func withService(ctx context.Context, d VaultDeps, input map[string]any, fn func(ctx context.Context, svc vault.VaultService) (any, error)) (any, error) {
+	profileName, err := vault.ResolveProfile(catalog.StrArg(input, "profile", ""))
+	if err != nil {
+		return nil, err
+	}
+	svc, err := d.service(profileName)
+	if err != nil {
+		return nil, err
+	}
+	defer svc.Close()
+	return fn(ctx, svc)
+}
+
 // VaultOperations returns the catalog operations for the vault domain that can
 // be represented as data-returning handlers driving core services.
 func VaultOperations(d VaultDeps) []catalog.Operation {
@@ -65,9 +82,16 @@ func VaultOperations(d VaultDeps) []catalog.Operation {
 		vaultVersionLs(d),
 		vaultVersionGet(d),
 		vaultVersionRestore(d),
+		vaultSetProvenance(d),
+		vaultSearch(d),
+		vaultTagAdd(d),
+		vaultTagRm(d),
+		vaultTagSet(d),
+		vaultTagLs(d),
 		vaultRm(d),
 		vaultSync(d),
 		vaultShare(d),
+		vaultShareAccept(d),
 		vaultForget(d),
 		vaultProfileUse(d),
 		vaultCacheRebuild(d),
@@ -429,6 +453,289 @@ func vaultVersionRestore(d VaultDeps) catalog.Operation {
 }
 
 // ---------------------------------------------------------------------------
+// vault set provenance
+// ---------------------------------------------------------------------------
+
+// VaultSetProvenanceResult is the data returned by vault_set_provenance: the
+// path stamped and the resulting provenance fields.
+type VaultSetProvenanceResult struct {
+	Path      string `json:"path"`
+	CreatedBy string `json:"created_by,omitempty"`
+	AgentID   string `json:"agent_id,omitempty"`
+	SessionID string `json:"session_id,omitempty"`
+}
+
+func vaultSetProvenance(d VaultDeps) catalog.Operation {
+	return catalog.NewOperation(catalog.OperationSpec{
+		Name:        "vault_set_provenance",
+		Title:       "Stamp provenance on a vault file",
+		Summary:     "Set provenance (created_by / agent_id / session_id) on a file",
+		Description: "Stamp best-effort audit fields (created_by, agent_id, session_id) on the live current version of a vault file. Updates the local row AND re-stamps + re-pins the Sia object's encrypted metadata so the provenance syncs to every device. Only non-empty values override; empty fields on an existing file are preserved. Does NOT create a new version (provenance is a metadata mutation, not a content change). Use to record which agent/session wrote a file, enabling 'who touched this' audit chains.",
+		Category:    "vault",
+		Safety:      catalog.SafetyMutate,
+		Interaction: catalog.InteractionAgentSafe,
+		Visibility:  catalog.VisibilityBoth,
+		Positional:  "<path>",
+		Args: []catalog.OperationArg{
+			{Name: "path", Type: catalog.ArgTypeString, Required: true, Help: "Vault path to stamp", AgentHelp: "The vault:/ path of the file to stamp with provenance."},
+			{Name: "created_by", Type: catalog.ArgTypeString, Help: "Created-by principal (user/identity)", AgentHelp: "The principal that created/owns the file."},
+			{Name: "agent_id", Type: catalog.ArgTypeString, Help: "Originating agent id", AgentHelp: "The id of the agent that wrote the file."},
+			{Name: "session_id", Type: catalog.ArgTypeString, Help: "Agent session id", AgentHelp: "The id of the agent session that wrote the file."},
+			{Name: "profile", Type: catalog.ArgTypeString, Help: "Vault profile name (defaults to active profile)"},
+		},
+		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
+			vaultPath := catalog.StrArg(input, "path", "")
+			if vaultPath == "" {
+				return nil, fmt.Errorf("vault_set_provenance: missing required argument path")
+			}
+			profileName, err := vault.ResolveProfile(catalog.StrArg(input, "profile", ""))
+			if err != nil {
+				return nil, err
+			}
+			svc, err := d.service(profileName)
+			if err != nil {
+				return nil, err
+			}
+			defer svc.Close()
+			f, err := svc.SetProvenance(ctx, vaultPath,
+				catalog.StrArg(input, "created_by", ""),
+				catalog.StrArg(input, "agent_id", ""),
+				catalog.StrArg(input, "session_id", ""),
+			)
+			if err != nil {
+				return nil, err
+			}
+			return &VaultSetProvenanceResult{
+				Path:      vaultPath,
+				CreatedBy: f.CreatedBy,
+				AgentID:   f.AgentID,
+				SessionID: f.SessionID,
+			}, nil
+		}),
+	})
+}
+
+// ---------------------------------------------------------------------------
+// vault tag add / rm / set / ls
+// ---------------------------------------------------------------------------
+
+// VaultTagResult is returned by vault_tag_add/rm/set: the path and the file's
+// resulting full tag set.
+type VaultTagResult struct {
+	Path string   `json:"path"`
+	Tags []string `json:"tags"`
+}
+
+// VaultTagListResult is returned by vault_tag_ls: every distinct tag in use
+// across the vault, ordered most-recently-used first.
+type VaultTagListResult struct {
+	Tags []string `json:"tags"`
+}
+
+// VaultSearchResult is returned by vault_search: the matching files.
+type VaultSearchResult struct {
+	Query   string               `json:"query,omitempty"`
+	Count   int                  `json:"count"`
+	Results []string             `json:"results"` // full vault paths, newest-first
+	Detail  map[string]vaultItem `json:"-"`
+}
+
+type vaultItem struct {
+	Path  string   `json:"path"`
+	Size  int64    `json:"size,omitempty"`
+	Tags  []string `json:"tags,omitempty"`
+}
+
+func vaultSearch(d VaultDeps) catalog.Operation {
+	return catalog.NewOperation(catalog.OperationSpec{
+		Name:        "vault_search",
+		Title:       "Search vault files",
+		Summary:     "Search vault files by name, tag, provenance, or status",
+		Description: "Search the vault for live files matching the given filters, combined with AND semantics. Supports a name substring (case-insensitive), one or more tags (a file must have ALL of them), a directory prefix, exact provenance fields (created_by, agent, session), a status filter (ok/pending/lost), and a created-since timestamp. Metadata-first; no full-text engine. Results return the full vault paths, newest-first. Read-only.",
+		Category:    "vault",
+		Safety:      catalog.SafetyRead,
+		Interaction: catalog.InteractionAgentSafe,
+		Visibility:  catalog.VisibilityBoth,
+		Args: []catalog.OperationArg{
+			{Name: "query", Type: catalog.ArgTypeString, Help: "Case-insensitive substring of the file name", AgentHelp: "A substring of the file name to match (case-insensitive)."},
+			{Name: "tag", Type: catalog.ArgTypeStringSlice, Help: "Require ALL of these tags (repeatable; AND)", AgentHelp: "One or more tags; a file must have all of them. Repeat for multiple."},
+			{Name: "dir", Type: catalog.ArgTypeString, Help: "Restrict to files under this vault directory", AgentHelp: "A vault directory to restrict results to (inclusive)."},
+			{Name: "created_by", Type: catalog.ArgTypeString, Help: "Exact creating principal/identity"},
+			{Name: "agent", Type: catalog.ArgTypeString, Help: "Exact originating agent ID"},
+			{Name: "session", Type: catalog.ArgTypeString, Help: "Exact agent session ID"},
+			{Name: "status", Type: catalog.ArgTypeString, Enum: []string{"ok", "pending", "lost"}, Help: "Only files with this status"},
+			{Name: "since", Type: catalog.ArgTypeString, Help: "Only files created at/after this time (RFC3339, e.g. 2026-08-01T00:00:00Z)"},
+			{Name: "profile", Type: catalog.ArgTypeString, Help: "Vault profile name (defaults to the active profile)"},
+		},
+		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
+			f := vault.SearchFilter{
+				Name:      catalog.StrArg(input, "query", ""),
+				Tags:      catalog.StrSliceArg(input, "tag"),
+				Dir:       catalog.StrArg(input, "dir", ""),
+				CreatedBy: catalog.StrArg(input, "created_by", ""),
+				AgentID:   catalog.StrArg(input, "agent", ""),
+				SessionID: catalog.StrArg(input, "session", ""),
+				Status:    catalog.StrArg(input, "status", ""),
+			}
+			if sinceStr := catalog.StrArg(input, "since", ""); sinceStr != "" {
+				since, err := time.Parse(time.RFC3339, sinceStr)
+				if err != nil {
+					return nil, fmt.Errorf("vault_search: invalid since %q: %w", sinceStr, err)
+				}
+				f.Since = since
+			}
+			if f.Status != "" && f.Status != "ok" && f.Status != "pending" && f.Status != "lost" {
+				return nil, fmt.Errorf("vault_search: invalid status %q (want ok|pending|lost)", f.Status)
+			}
+			profileName, err := vault.ResolveProfile(catalog.StrArg(input, "profile", ""))
+			if err != nil {
+				return nil, err
+			}
+			svc, err := d.service(profileName)
+			if err != nil {
+				return nil, err
+			}
+			defer svc.Close()
+			items, err := svc.Search(ctx, f)
+			if err != nil {
+				return nil, err
+			}
+			paths := make([]string, 0, len(items))
+			detail := make(map[string]vaultItem, len(items))
+			for _, it := range items {
+				paths = append(paths, it.Path)
+				detail[it.Path] = vaultItem{Path: it.Path, Size: it.Size, Tags: it.Tags}
+			}
+			return &VaultSearchResult{Query: f.Name, Count: len(items), Results: paths, Detail: detail}, nil
+		}),
+	})
+}
+
+func vaultTagAdd(d VaultDeps) catalog.Operation {
+	return catalog.NewOperation(catalog.OperationSpec{
+		Name:        "vault_tag_add",
+		Title:       "Add tags to a vault file",
+		Summary:     "Add tags to a vault file (durable)",
+		Description: "Add one or more tags to a vault file. Durable: tags are written to the Sia object's sealed metadata (in-place re-pin at the same content address) AND the local tag index, so they sync to every device without creating a new version. Repeat the --tag flag for multiple tags. Tags are normalized (lowercased, deduped).",
+		Category:    "vault",
+		Safety:      catalog.SafetyMutate,
+		Interaction: catalog.InteractionAgentSafe,
+		Visibility:  catalog.VisibilityBoth,
+		Positional:  "<path>",
+		Args: []catalog.OperationArg{
+			{Name: "path", Type: catalog.ArgTypeString, Required: true, Help: "Vault path to tag", AgentHelp: "The vault:/ path of the file to tag."},
+			{Name: "tags", Type: catalog.ArgTypeStringSlice, Required: true, Help: "Tag(s) to add (repeatable)", AgentHelp: "One or more tags to add to the file."},
+			{Name: "profile", Type: catalog.ArgTypeString, Help: "Vault profile name (defaults to active profile)"},
+		},
+		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
+			vaultPath := catalog.StrArg(input, "path", "")
+			tags := catalog.StrSliceArg(input, "tags")
+			if vaultPath == "" || len(tags) == 0 {
+				return nil, fmt.Errorf("vault_tag_add: missing required argument (path, tags)")
+			}
+			return withService(ctx, d, input, func(ctx context.Context, svc vault.VaultService) (any, error) {
+				f, err := svc.AddTags(ctx, vaultPath, tags)
+				if err != nil {
+					return nil, err
+				}
+				return &VaultTagResult{Path: vaultPath, Tags: f.Tags}, nil
+			})
+		}),
+	})
+}
+
+func vaultTagRm(d VaultDeps) catalog.Operation {
+	return catalog.NewOperation(catalog.OperationSpec{
+		Name:        "vault_tag_rm",
+		Title:       "Remove tags from a vault file",
+		Summary:     "Remove tags from a vault file (durable)",
+		Description: "Remove one or more tags from a vault file. Durable (same re-pin-and-write path as vault_tag_add). Tags that become unused by any file are pruned from the tag index. Repeat --tag for multiple tags.",
+		Category:    "vault",
+		Safety:      catalog.SafetyMutate,
+		Interaction: catalog.InteractionAgentSafe,
+		Visibility:  catalog.VisibilityBoth,
+		Positional:  "<path>",
+		Args: []catalog.OperationArg{
+			{Name: "path", Type: catalog.ArgTypeString, Required: true, Help: "Vault path", AgentHelp: "The vault:/ path of the file."},
+			{Name: "tags", Type: catalog.ArgTypeStringSlice, Required: true, Help: "Tag(s) to remove (repeatable)", AgentHelp: "One or more tags to remove from the file."},
+			{Name: "profile", Type: catalog.ArgTypeString, Help: "Vault profile name (defaults to active profile)"},
+		},
+		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
+			vaultPath := catalog.StrArg(input, "path", "")
+			tags := catalog.StrSliceArg(input, "tags")
+			if vaultPath == "" || len(tags) == 0 {
+				return nil, fmt.Errorf("vault_tag_rm: missing required argument (path, tags)")
+			}
+			return withService(ctx, d, input, func(ctx context.Context, svc vault.VaultService) (any, error) {
+				f, err := svc.RemoveTags(ctx, vaultPath, tags)
+				if err != nil {
+					return nil, err
+				}
+				return &VaultTagResult{Path: vaultPath, Tags: f.Tags}, nil
+			})
+		}),
+	})
+}
+
+func vaultTagSet(d VaultDeps) catalog.Operation {
+	return catalog.NewOperation(catalog.OperationSpec{
+		Name:        "vault_tag_set",
+		Title:       "Set tags on a vault file",
+		Summary:     "Replace a vault file's full tag set (durable)",
+		Description: "Replace a vault file's tag set with exactly the given tags (remove-all-then-add). Durable (same re-pin-and-write path as vault_tag_add). Pass an empty set to clear all tags. Repeat --tag for multiple tags.",
+		Category:    "vault",
+		Safety:      catalog.SafetyMutate,
+		Interaction: catalog.InteractionAgentSafe,
+		Visibility:  catalog.VisibilityBoth,
+		Positional:  "<path>",
+		Args: []catalog.OperationArg{
+			{Name: "path", Type: catalog.ArgTypeString, Required: true, Help: "Vault path", AgentHelp: "The vault:/ path of the file."},
+			{Name: "tags", Type: catalog.ArgTypeStringSlice, Help: "Full tag set (repeatable; empty clears all)", AgentHelp: "The exact tag set; omit to clear all tags."},
+			{Name: "profile", Type: catalog.ArgTypeString, Help: "Vault profile name (defaults to active profile)"},
+		},
+		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
+			vaultPath := catalog.StrArg(input, "path", "")
+			if vaultPath == "" {
+				return nil, fmt.Errorf("vault_tag_set: missing required argument path")
+			}
+			tags := catalog.StrSliceArg(input, "tags")
+			return withService(ctx, d, input, func(ctx context.Context, svc vault.VaultService) (any, error) {
+				f, err := svc.SetTags(ctx, vaultPath, tags)
+				if err != nil {
+					return nil, err
+				}
+				return &VaultTagResult{Path: vaultPath, Tags: f.Tags}, nil
+			})
+		}),
+	})
+}
+
+func vaultTagLs(d VaultDeps) catalog.Operation {
+	return catalog.NewOperation(catalog.OperationSpec{
+		Name:        "vault_tag_ls",
+		Title:       "List vault tags",
+		Summary:     "List every distinct tag in use",
+		Description: "List every distinct tag currently in use across the vault, ordered most-recently-used first. Read-only. Use with vault_search --tag to find 'everything tagged X'.",
+		Category:    "vault",
+		Safety:      catalog.SafetyRead,
+		Interaction: catalog.InteractionAgentSafe,
+		Visibility:  catalog.VisibilityBoth,
+		Args: []catalog.OperationArg{
+			{Name: "profile", Type: catalog.ArgTypeString, Help: "Vault profile name (defaults to active profile)"},
+		},
+		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
+			return withService(ctx, d, input, func(ctx context.Context, svc vault.VaultService) (any, error) {
+				tags, err := svc.TagList(ctx)
+				if err != nil {
+					return nil, err
+				}
+				return &VaultTagListResult{Tags: tags}, nil
+			})
+		}),
+	})
+}
+
+// ---------------------------------------------------------------------------
 // vault rm (destructive)
 // ---------------------------------------------------------------------------
 
@@ -613,6 +920,56 @@ func vaultShare(d VaultDeps) catalog.Operation {
 				return nil, err
 			}
 			return &VaultShareResult{ShareURL: shareURL, Expires: validUntil.Format(time.RFC3339)}, nil
+		}),
+	})
+}
+
+// VaultShareAcceptResult is returned by vault_share_accept: the newly-pinned
+// self-contained copy in the accepting profile.
+type VaultShareAcceptResult struct {
+	Path      string `json:"path"`
+	ObjectKey string `json:"object_key"`
+	Size      int64  `json:"size"`
+}
+
+func vaultShareAccept(d VaultDeps) catalog.Operation {
+	return catalog.NewOperation(catalog.OperationSpec{
+		Name:        "vault_share_accept",
+		Title:       "Accept a vault share",
+		Summary:     "Accept a share URL and pin a copy",
+		Description: "Accept a time-limited sia:// share URL issued by another agent/profile, download the shared content, and pin a self-contained COPY into this profile's vault at the given path. The accepting profile owns a new object; nothing is shared by reference. An audit row is appended to the share ledger. Read-only, expiring share links only ever yield a copy — there is no persistent grant or access change.",
+		Category:    "vault",
+		Safety:      catalog.SafetyMutate,
+		Interaction: catalog.InteractionAgentSafe,
+		Visibility:  catalog.VisibilityBoth,
+		Positional:  "<path>",
+		Args: []catalog.OperationArg{
+			{Name: "share_url", Type: catalog.ArgTypeString, Required: true, Help: "The sia:// share URL to accept", AgentHelp: "The sia:// share URL you received. It is time-limited and grants read access to a single object."},
+			{Name: "path", Type: catalog.ArgTypeString, Required: true, Help: "Where to store the accepted copy", AgentHelp: "The vault:/ destination path where the accepted copy should be pinned."},
+			{Name: "target_principal", Type: catalog.ArgTypeString, Help: "Optional principal/source identity recorded in the share ledger"},
+			{Name: "profile", Type: catalog.ArgTypeString, Help: "Vault profile to accept into (defaults to the active profile)"},
+		},
+		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
+			shareURL := catalog.StrArg(input, "share_url", "")
+			vaultPath := catalog.StrArg(input, "path", "")
+			if shareURL == "" || vaultPath == "" {
+				return nil, fmt.Errorf("vault_share_accept: missing required argument (share_url, path)")
+			}
+			targetPrincipal := catalog.StrArg(input, "target_principal", "")
+			profileName, err := vault.ResolveProfile(catalog.StrArg(input, "profile", ""))
+			if err != nil {
+				return nil, err
+			}
+			svc, err := d.service(profileName)
+			if err != nil {
+				return nil, err
+			}
+			defer svc.Close()
+			f, err := svc.ShareAccept(ctx, vaultPath, shareURL, targetPrincipal)
+			if err != nil {
+				return nil, err
+			}
+			return &VaultShareAcceptResult{Path: vaultPath, ObjectKey: f.ObjectKey, Size: f.Size}, nil
 		}),
 	})
 }

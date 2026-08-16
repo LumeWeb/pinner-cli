@@ -32,6 +32,8 @@ type fakeSDK struct {
 	delErr         error  // error to return from DeleteObject (nil = success)
 	objErr         error  // error to return from Object (nil = success)
 	pinnedMeta     []byte // metadata attached to the most recently pinned object
+	shareContent   []byte // content served by DownloadSharedObject (nil = empty)
+	metaContentDigest string // if set, stamped into Object metadata for Verify digest matching
 }
 
 func (f *fakeSDK) Account(_ context.Context) (app.AccountResponse, error) {
@@ -56,13 +58,27 @@ func (f *fakeSDK) Object(_ context.Context, _ types.Hash256) (siastorage.Object,
 	if f.objErr != nil {
 		return siastorage.Object{}, f.objErr
 	}
-	return siastorage.NewEmptyObject(), nil
+	obj := siastorage.NewEmptyObject()
+	if f.metaContentDigest != "" {
+		// Stamp a content digest into the object metadata so Verify's shallow
+		// integrity path can match it against the local row.
+		meta := FileMetadata{ContentDigest: f.metaContentDigest}
+		if raw, merr := meta.JSON(); merr == nil {
+			obj.UpdateMetadata(raw)
+		}
+	}
+	return obj, nil
 }
 func (f *fakeSDK) ObjectEvents(_ context.Context, _ slabs.Cursor, _ int) ([]siastorage.ObjectEvent, error) {
 	return nil, nil
 }
 func (f *fakeSDK) Download(_ siastorage.Object, _ ...siastorage.DownloadOption) (io.ReadCloser, error) {
 	f.downloadCalled = true
+	if f.shareContent != nil {
+		// Serve the shared content so ShareAccept (and Cat of the accepted
+		// copy) can round-trip the bytes that were uploaded.
+		return io.NopCloser(bytes.NewReader(f.shareContent)), nil
+	}
 	return io.NopCloser(bytes.NewReader(nil)), nil
 }
 func (f *fakeSDK) DeleteObject(_ context.Context, key types.Hash256) error {
@@ -70,7 +86,10 @@ func (f *fakeSDK) DeleteObject(_ context.Context, key types.Hash256) error {
 	return f.delErr
 }
 func (f *fakeSDK) CreateSharedObjectURL(_ context.Context, _ types.Hash256, _ time.Time) (string, error) {
-	return "", nil
+	return "sia://shared", nil
+}
+func (f *fakeSDK) DownloadSharedObject(_ context.Context, _ string, _ ...siastorage.DownloadOption) (io.ReadCloser, error) {
+	return io.NopCloser(bytes.NewReader(f.shareContent)), nil
 }
 func (f *fakeSDK) Close() error { return nil }
 

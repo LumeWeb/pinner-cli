@@ -4,11 +4,9 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"io"
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"go.lumeweb.com/pinner-cli/internal/core/vault"
 )
@@ -80,47 +78,15 @@ func TestVaultCacheClear_RemovesDB(t *testing.T) {
 
 // cacheSyncStub is a VaultService whose Sync drives the passed counter and
 // full flag sequence so the rebuild loop can be exercised deterministically.
+// All non-Sync methods are no-ops via NopVaultService.
 type cacheSyncStub struct {
+	NopVaultService
 	full    []bool // per-call full results
 	n       []int  // per-call applied counts
 	syncErr error  // if set, Sync returns this error
 	i       int
 }
 
-func (s *cacheSyncStub) CheckReady(context.Context) error { return nil }
-func (s *cacheSyncStub) Put(context.Context, io.Reader, int64, string, map[string]any) (*vault.File, error) {
-	return nil, nil
-}
-func (s *cacheSyncStub) Get(context.Context, string, io.Writer) error { return nil }
-func (s *cacheSyncStub) List(context.Context, string) ([]vault.ListItem, error) {
-	return nil, nil
-}
-func (s *cacheSyncStub) Stat(context.Context, string) (*vault.StatResult, error) {
-	return nil, nil
-}
-func (s *cacheSyncStub) Cat(context.Context, string, io.Writer) error { return nil }
-func (s *cacheSyncStub) Verify(context.Context, string) (*vault.VerifyResult, error) {
-	return nil, nil
-}
-func (s *cacheSyncStub) VerifyDeep(context.Context, string) (*vault.VerifyResult, error) {
-	return nil, nil
-}
-func (s *cacheSyncStub) Remove(context.Context, string) error { return nil }
-func (s *cacheSyncStub) VersionList(context.Context, string) ([]*vault.File, error) {
-	return nil, nil
-}
-func (s *cacheSyncStub) VersionGet(context.Context, string, string) (*vault.File, error) {
-	return nil, nil
-}
-func (s *cacheSyncStub) VersionDownload(context.Context, string, string, io.Writer) error {
-	return nil
-}
-func (s *cacheSyncStub) VersionRestore(context.Context, string, string) (*vault.File, error) {
-	return nil, nil
-}
-func (s *cacheSyncStub) Share(context.Context, string, time.Time) (string, error) {
-	return "", nil
-}
 func (s *cacheSyncStub) Sync(context.Context) (int, bool, error) {
 	if s.syncErr != nil {
 		return 0, false, s.syncErr
@@ -129,8 +95,6 @@ func (s *cacheSyncStub) Sync(context.Context) (int, bool, error) {
 	s.i++
 	return s.n[i], s.full[i], nil
 }
-func (s *cacheSyncStub) Status(context.Context) (*vault.StatusResult, error) { return nil, nil }
-func (s *cacheSyncStub) Close() error                                        { return nil }
 
 // TestVaultCacheRebuild_LoopsOnFull asserts the rebuild drains until a
 // non-full batch, summing applied counts (the convergence property).

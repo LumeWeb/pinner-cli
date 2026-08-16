@@ -87,8 +87,16 @@ func newVaultCatalogCommands() []*cli.Command {
 	}
 
 	// Leaf commands compiled flat with dotted names; nest the two-level ones.
+	// A flat leaf whose name is later used as a two-level parent (e.g. the
+	// one-level `vault_share` issuing command and the two-level
+	// `vault_share_accept`) is folded INTO that parent: the parent keeps its
+	// top-level Action (so `vault share <path>` still issues) while the accept
+	// leaf nests under it (`vault share accept ...`). urfave/cli runs a
+	// command's Action when no matching subcommand name is supplied, so the two
+	// coexist as one `share` entry.
 	parents := map[string]*cli.Command{}
 	var out []*cli.Command
+	flatLeaf := map[string]*cli.Command{} // mounted flat leaf by display name
 	for _, c := range compiled {
 		canonical := c.Name // e.g. "vault_cache_rebuild", BEFORE mount mutates it
 		mounted := mountVaultCatalogCommand(c)
@@ -99,13 +107,32 @@ func newVaultCatalogCommands() []*cli.Command {
 			parent, ok := parents[parentName]
 			if !ok {
 				parent = &cli.Command{Name: parentName, Category: "Vault", Usage: vaultParentUsage(parentName), Commands: []*cli.Command{}}
+				if flat, exists := flatLeaf[parentName]; exists {
+					// Fold the flat leaf into the parent as its top-level Action.
+					parent.Action = flat.Action
+					parent.Flags = append(parent.Flags, flat.Flags...)
+					parent.Usage = flat.Usage
+					parent.ArgsUsage = flat.ArgsUsage
+					out = removeCommand(out, flat)
+				}
 				parents[parentName] = parent
 				out = append(out, parent)
 			}
 			parent.Commands = append(parent.Commands, mounted)
 			continue
 		}
+		flatLeaf[rest] = mounted
 		out = append(out, mounted)
+	}
+	return out
+}
+
+// removeCommand returns out with cmd removed (matched by pointer identity).
+func removeCommand(out []*cli.Command, cmd *cli.Command) []*cli.Command {
+	for i, c := range out {
+		if c == cmd {
+			return append(out[:i], out[i+1:]...)
+		}
 	}
 	return out
 }
@@ -297,6 +324,13 @@ func renderVaultResult(_ context.Context, c *cli.Command, op catalog.Operation, 
 		output.Printfln("Share link expires: %s", r.Expires)
 		return nil
 
+	case *catalogops.VaultShareAcceptResult:
+		if output.IsJSON() {
+			return output.PrintJSON(map[string]any{"path": r.Path, "object_key": r.ObjectKey, "size": r.Size})
+		}
+		output.Printfln("Accepted copy pinned at %s (%d bytes, object %s)", r.Path, r.Size, r.ObjectKey)
+		return nil
+
 	case *catalogops.VaultForgetResult:
 		if output.IsJSON() {
 			return output.PrintJSON(map[string]any{"profile": r.Profile, "state": "forgotten"})
@@ -373,6 +407,59 @@ func renderVaultResult(_ context.Context, c *cli.Command, op catalog.Operation, 
 			return output.PrintJSON(r)
 		}
 		output.Printfln("Restored %s to version %s (%d bytes) as the new current version.", r.Path, r.RestoredTo, r.Size)
+		return nil
+
+	case *catalogops.VaultSetProvenanceResult:
+		if output.IsJSON() {
+			return output.PrintJSON(r)
+		}
+		output.PrintFields(FieldGroup{
+			Title: "Provenance",
+			Fields: []Field{
+				{"Path", r.Path},
+				{"Created By", r.CreatedBy},
+				{"Agent ID", r.AgentID},
+				{"Session ID", r.SessionID},
+			},
+		})
+		return nil
+
+	case *catalogops.VaultTagResult:
+		if output.IsJSON() {
+			return output.PrintJSON(r)
+		}
+		output.Printfln("Tagged %s: %v", r.Path, r.Tags)
+		return nil
+
+	case *catalogops.VaultTagListResult:
+		if output.IsJSON() {
+			return output.PrintJSON(r)
+		}
+		if len(r.Tags) == 0 {
+			output.Printfln("No tags.")
+			return nil
+		}
+		rows := make([][]string, len(r.Tags))
+		for i, t := range r.Tags {
+			rows[i] = []string{t}
+		}
+		output.PrintTable([]string{"Tag"}, rows)
+		return nil
+
+	case *catalogops.VaultSearchResult:
+		if output.IsJSON() {
+			return output.PrintJSON(map[string]any{"count": r.Count, "results": r.Results})
+		}
+		if r.Count == 0 {
+			output.Printfln("No matching files.")
+			return nil
+		}
+		rows := make([][]string, 0, r.Count)
+		for _, p := range r.Results {
+			item := r.Detail[p]
+			rows = append(rows, []string{p, formatBytes(int(item.Size)), strings.Join(item.Tags, ",")})
+		}
+		output.PrintTable([]string{"Path", "Size", "Tags"}, rows)
 		return nil
 
 	default:
