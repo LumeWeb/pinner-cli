@@ -343,6 +343,11 @@ adapter.`,
 			var curlUpload *httpUpload
 			if mcpOpts.uploadTasks != nil {
 				curlUpload = NewHTTPUpload(mcpOpts.uploadTasks, effectiveRelayMaxBytes(mcpOpts.maxRelayBytes))
+				// Allow configured MCP-host origins to PUT across origins (the
+				// ui:// app iframe can be served from a host origin that is not
+				// the Pinner server origin); the endpoint's own origin is
+				// always reflected too.
+				curlUpload.AddTrustedOrigins(mcpOpts.uploadTrustedOrigins...)
 			}
 
 			// Build the server after resolving the command tree and wiring the
@@ -821,6 +826,12 @@ type mcpServerOptions struct {
 	dataURIUpload     DataURIUploadHandler
 	localPathUpload   LocalPathUploadHandler
 	localPathVaultPut LocalPathVaultPutHandler
+	// uploadTrustedOrigins are additional origins (beyond the server's own
+	// base/loopback origin) that the presigned PUT routes reflect over CORS for
+	// the Uppy XHR uploader. Configured for deployments where the ui:// app
+	// iframe is served from an MCP host origin distinct from the Pinner server
+	// origin. See loopbackServer.AddTrustedOrigins.
+	uploadTrustedOrigins []string
 	// maxRelayBytes is the per-tool cap (in bytes) for MCP file uploads,
 	// overriding the package default (512 MiB). 0 means "use the default".
 	// It is honored across the relay URL, data URI, and capability-report
@@ -878,6 +889,20 @@ func WithChatGPTVaultPut(handler ChatGPTVaultPutHandler) MCPServerOption {
 func WithUploadTaskManager(mgr *UploadTaskManager) MCPServerOption {
 	return func(o *mcpServerOptions) {
 		o.uploadTasks = mgr
+	}
+}
+
+// WithUploadTrustedOrigins adds origins (beyond the server's own base/loopback
+// origin) that the presigned PUT routes reflect over CORS for the Uppy XHR
+// uploader. Use when the ui:// app iframe is served from an MCP host origin
+// distinct from the Pinner server origin and that host is trusted; without
+// this, only the server's own origin is reflected, so a cross-origin host
+// cannot PUT. Trusted origins are appended to the endpoint's own origin, never
+// replacing it, and are still scoped to the unguessable one-time token + (for
+// the vault) the uploads path scope.
+func WithUploadTrustedOrigins(origins ...string) MCPServerOption {
+	return func(o *mcpServerOptions) {
+		o.uploadTrustedOrigins = append(o.uploadTrustedOrigins, origins...)
 	}
 }
 

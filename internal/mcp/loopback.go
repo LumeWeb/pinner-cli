@@ -24,10 +24,15 @@ import (
 // The OOB login, seed drop, and restore coordinators each embed a loopbackServer
 // and supply their own routing via a register func.
 type loopbackServer struct {
-	mu       sync.Mutex
-	baseURL  string
-	listener net.Listener
-	srv      *http.Server
+	mu      sync.Mutex
+	baseURL string
+	// trustedOrigins are additional browser-accepted origins (beyond the
+	// server's own base/loopback origin) that the server reflects over CORS
+	// for browser form POSTs and the Uppy XHR upload PUTs. Added via
+	// loopbackServer.AddTrustedOrigins.
+	trustedOrigins []string
+	listener       net.Listener
+	srv            *http.Server
 }
 
 // SetBaseURL stores the externally reachable base URL (the public/tunnel URL in
@@ -99,8 +104,10 @@ func (l *loopbackServer) urlLocked(prefix, token string) string {
 	return "http://" + l.loopbackAddrLocked() + "/" + prefix + "/" + token
 }
 
-// acceptedOrigins returns the origins allowed to POST to a browser form: the
-// configured base URL in HTTP mode, or the loopback origin in stdio mode.
+// acceptedOrigins returns the origins allowed to POST to a browser form (and,
+// via the upload coordinators, the origins corsUpload reflects for the Uppy
+// XHR PUT): the configured base URL in HTTP mode, or the loopback origin in
+// stdio mode, plus any explicitly-trusted origins added via AddTrustedOrigins.
 func (l *loopbackServer) acceptedOrigins() []string {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -108,8 +115,34 @@ func (l *loopbackServer) acceptedOrigins() []string {
 	if origin == "" {
 		origin = "http://" + l.loopbackAddrLocked()
 	}
-	if origin == "" {
-		return nil
+	var out []string
+	if origin != "" {
+		out = append(out, origin)
 	}
-	return []string{origin}
+	return append(out, l.trustedOrigins...)
+}
+
+// AddTrustedOrigins extends the browser-accepted origin allowlist with
+// additional trusted origins (e.g. the origin of an MCP host that serves the
+// app iframe), which corsUpload reflects in addition to the server's own
+// origin. Deduplicates and never mutates the shared slice.
+func (l *loopbackServer) AddTrustedOrigins(origins ...string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for _, o := range origins {
+		o = strings.TrimRight(o, "/")
+		if o == "" {
+			continue
+		}
+		seen := false
+		for _, ex := range l.trustedOrigins {
+			if strings.EqualFold(ex, o) {
+				seen = true
+				break
+			}
+		}
+		if !seen {
+			l.trustedOrigins = append(l.trustedOrigins, o)
+		}
+	}
 }

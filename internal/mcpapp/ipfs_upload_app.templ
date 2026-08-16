@@ -1,0 +1,23 @@
+package mcpapp
+
+// IPFSUploadAppForm renders the visible "Upload to IPFS" view body: the file
+// picker / name / wait form, the live status line, and the result readout.
+// The document <head> (shared inline Tailwind theme) and the ESM module
+// <script> (shared ext-apps bootstrap + upload logic) are supplied by
+// renderMcpAppDoc, so this templ authors only the app-specific markup.
+templ IPFSUploadAppForm() {
+	<div class="app-shell">
+		<h1 class="app-title">Upload to IPFS</h1>
+		<form id="ipfs-upload-form" class="mt-2">
+			<label for="file" class="form-label">File</label>
+			<input id="file" name="file" class="form-input" type="file"/>
+			<label for="name" class="form-label">Name (optional)</label>
+			<input id="name" name="name" class="form-input" placeholder="my-file" autocomplete="off"/>
+			<button type="submit" class="btn-primary" id="start">Upload</button>
+		</form>
+		<div id="ipfs-upload-status" class="status"></div>
+		<div class="card">
+			CID: <code id="out-cid" class="mono text-accent">—</code>
+		</div>
+	</div>
+}

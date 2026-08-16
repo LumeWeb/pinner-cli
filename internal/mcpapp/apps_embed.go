@@ -35,6 +35,7 @@ var bundleNames = map[string]string{
 	"auth-status":    "appsassets/dist/auth-status.js",
 	"account-password": "appsassets/dist/account-password.js",
 	"account-email":    "appsassets/dist/account-email.js",
+	"ipfs-upload":      "appsassets/dist/ipfs-upload.js",
 }
 
 // AppModuleJS returns the embedded, self-contained ESM module source for the
