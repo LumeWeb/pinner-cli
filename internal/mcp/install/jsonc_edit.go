@@ -78,13 +78,15 @@ func requireObjectSegments(doc, configKey string) error {
 	return nil
 }
 
-// escapePathSegment escapes a single sjson path segment so arbitrary server
-// names (which may contain '.', '*', '?', etc.) are treated as a literal key.
+// escapePathSegment escapes a single gjson/sjson path segment so arbitrary
+// server names (which may contain '.', '[', '#', '(', ')', quotes, etc.) are
+// treated as a literal key rather than parsed as path operators. Every
+// gjson/sjson metacharacter is escaped with a backslash.
 func escapePathSegment(segment string) string {
 	var b strings.Builder
 	for _, r := range segment {
 		switch r {
-		case '.', '*', '?', '|', '\\':
+		case '.', '*', '?', '|', '\\', '[', ']', '(', ')', '#', '"', '\'':
 			b.WriteByte('\\')
 		}
 		b.WriteRune(r)
