@@ -46,6 +46,54 @@ type Config struct {
 	// MaxMCPUploadSize is the maximum allowed size in bytes for MCP file uploads.
 	// Defaults to 1 GiB when unset.
 	MaxMCPUploadSize uint64 `config:"max_mcp_upload_size" desc:"Max MCP upload size in bytes (default 1 GiB)"`
+
+	// Tunnels holds last-resort tunnel provider credentials. These are only used
+	// when no external source (flag, provider env var, or provider config file)
+	// supplies them. The config file is written 0600, so secrets stored here are
+	// not world-readable. See TunnelCredential/SetTunnelCredential on Manager.
+	Tunnels TunnelConfig `config:"tunnels" desc:"Tunnel provider credentials (last-resort store)"`
+}
+
+// TunnelConfig is the last-resort credential store for MCP tunnel providers.
+// Each field maps to a stable config key under the "tunnels" namespace so the
+// ResolveCredential chain can fall back to the config manager after flags, env,
+// and provider config files.
+type TunnelConfig struct {
+	// NgrokToken is a last-resort ngrok authtoken.
+	NgrokToken string `config:"ngrok_token" desc:"Last-resort ngrok authtoken"`
+	// OpenAITunnelID is a last-resort OpenAI Secure MCP Tunnel ID.
+	OpenAITunnelID string `config:"openai_tunnel_id" desc:"Last-resort OpenAI Secure MCP Tunnel ID"`
+	// OpenAIAPIKey is a last-resort OpenAI runtime (control-plane) API key.
+	OpenAIAPIKey string `config:"openai_api_key" desc:"Last-resort OpenAI runtime (control-plane) API key"`
+}
+
+// Tunnel config keys (namespace "tunnels").
+const (
+	ConfigKeyTunnelsNgrokToken     = "tunnels.ngrok_token"
+	ConfigKeyTunnelsOpenAITunnelID = "tunnels.openai_tunnel_id"
+	ConfigKeyTunnelsOpenAIAPIKey   = "tunnels.openai_api_key"
+)
+
+// TunnelCredentialKey maps a provider + logical key to its config-manager key.
+// Supported (provider, key) pairs:
+//
+//	("ngrok", "token")  -> tunnels.ngrok_token
+//	("openai", "tunnel_id") -> tunnels.openai_tunnel_id
+//	("openai", "api_key")   -> tunnels.openai_api_key
+//
+// Returns "" for unknown pairs so callers fail fast rather than silently
+// persisting to a misspelled key.
+func TunnelCredentialKey(provider, key string) string {
+	switch provider + "." + key {
+	case "ngrok.token":
+		return ConfigKeyTunnelsNgrokToken
+	case "openai.tunnel_id":
+		return ConfigKeyTunnelsOpenAITunnelID
+	case "openai.api_key":
+		return ConfigKeyTunnelsOpenAIAPIKey
+	default:
+		return ""
+	}
 }
 
 // Config keys used throughout the package.
@@ -133,6 +181,11 @@ func (c *Config) Schema() z.ZogSchema {
 		"MaxMCPUploadSize": z.UintLike[uint64]().
 			GTE(1).
 			Optional(),
+		"Tunnels": z.Struct(z.Shape{
+			"NgrokToken":     z.String().Optional(),
+			"OpenAITunnelID": z.String().Optional(),
+			"OpenAIAPIKey":   z.String().Optional(),
+		}).Optional(),
 	})
 }
 

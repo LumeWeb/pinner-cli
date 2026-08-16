@@ -140,6 +140,12 @@ type Manager interface {
 	SetAPIEndpoint(endpoint string) error
 	SetMaxRetries(retries int) error
 	SetSecure(secure bool) error
+	// TunnelCredential returns the last-resort tunnel credential for the given
+	// provider + logical key (e.g. ("ngrok","token")), or "" when unset.
+	TunnelCredential(provider, key string) string
+	// SetTunnelCredential persists a last-resort tunnel credential for the given
+	// provider + logical key to the config file.
+	SetTunnelCredential(provider, key, value string) error
 	RequireAuthenticated() error
 	Reset() error
 }
@@ -283,6 +289,34 @@ func (m *managerImpl) SetMaxRetries(retries int) error {
 func (m *managerImpl) SetSecure(secure bool) error {
 	if err := m.Manager.Set(context.Background(), ConfigKeySecure, secure); err != nil { //nolint:staticcheck // explicit to avoid recursion
 		return fmt.Errorf("failed to set secure: %w", err)
+	}
+	return m.Save()
+}
+
+// TunnelCredential returns the last-resort tunnel credential for the given
+// provider + logical key, or "" when the pair is unknown or unset.
+func (m *managerImpl) TunnelCredential(provider, key string) string {
+	cfgKey := TunnelCredentialKey(provider, key)
+	if cfgKey == "" {
+		return ""
+	}
+	v, err := m.Manager.GetString(cfgKey) //nolint:staticcheck // explicit to avoid recursion
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(v)
+}
+
+// SetTunnelCredential persists a last-resort tunnel credential for the given
+// provider + logical key to the config file. It is a no-op error for unknown
+// (provider, key) pairs.
+func (m *managerImpl) SetTunnelCredential(provider, key, value string) error {
+	cfgKey := TunnelCredentialKey(provider, key)
+	if cfgKey == "" {
+		return fmt.Errorf("unsupported tunnel credential pair %q.%q", provider, key)
+	}
+	if err := m.Manager.Set(context.Background(), cfgKey, value); err != nil { //nolint:staticcheck // explicit to avoid recursion
+		return fmt.Errorf("failed to set tunnel credential %s: %w", cfgKey, err)
 	}
 	return m.Save()
 }
