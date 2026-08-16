@@ -36,6 +36,11 @@ type customToolDeps struct {
 	seedDrop   *SeedDrop
 	oobRestore *OOBRestore
 	oobCreate  *OOBCreate
+	// curlUpload, when non-nil, backs the presigned HTTP PUT upload route (the
+	// httpUpload coordinator): it mints a one-time endpoint whose PUT body
+	// streams into the async UploadTaskManager. It feeds the consolidated
+	// upload_file tool in remote (HTTP/tunnel) mode.
+	curlUpload *httpUpload
 	// accountOOB backs the out-of-band account credential change coordinator
 	// (hosted browser forms -> authenticated UpdatePassword/UpdateEmail). It
 	// enforces an authenticated session; the secret never transits the MCP/LLM
@@ -49,6 +54,21 @@ type customToolDeps struct {
 	// opts carries the optional custom tools wired by MCPServerOption (upload,
 	// apps, prompts).
 	opts *mcpServerOptions
+	// coLocated reports whether the server is running in pure stdio/local mode
+	// (no HTTP transport, no tunnel). The local-path upload tools
+	// (upload_path, vault_put_path) read arbitrary host paths, so they are only
+	// safe — and only meaningful — when the caller shares the host. They are
+	// never registered over a remote transport, where a network client could
+	// use them to read/exfiltrate server-side files.
+	coLocated bool
+	// remoteUploadSupported reports whether the presigned HTTP PUT upload route
+	// (httpUpload) is actually reachable by a remote agent. It is false for the
+	// embedded OpenAI Secure MCP Tunnel, which carries only MCP RPC through an
+	// in-memory transport to the tunnel client — there is no reachable HTTP
+	// mux on which to mount the PUT route, and the minted endpoint would fall
+	// back to an unreachable loopback URL. When false, the consolidated
+	// upload_file tool's remote branch is not registered for that transport.
+	remoteUploadSupported bool
 	// wizard deps are built from wizardFactory at Action time. All three are
 	// nil when no wizard factory is configured.
 	hasWizard bool
@@ -229,12 +249,37 @@ func registerCustomTools(deps customToolDeps) error {
 		}
 	}
 	if opts.relayURLUpload != nil {
-		if err := RegisterOfficialDescriptor(deps.srv, RelayURLUploadDescriptor(opts.relayURLUpload, opts.relayAllowedHosts)); err != nil {
+		if err := RegisterOfficialDescriptor(deps.srv, RelayURLUploadDescriptor(opts.relayURLUpload, opts.relayAllowedHosts, opts.maxRelayBytes)); err != nil {
 			return err
 		}
 	}
 	if opts.dataURIUpload != nil {
-		if err := RegisterOfficialDescriptor(deps.srv, DataURIUploadDescriptor(opts.dataURIUpload)); err != nil {
+		if err := RegisterOfficialDescriptor(deps.srv, DataURIUploadDescriptor(opts.dataURIUpload, opts.maxRelayBytes)); err != nil {
+			return err
+		}
+	}
+	// Consolidated upload_file: a single transport-aware IPFS upload tool.
+	// The caller does not pick a mechanism — registration routes by transport.
+	//   - co-located (stdio/local): upload a host-side path via the local-path
+	//     handler (opts.localPathUpload).
+	//   - remote (HTTP/tunnel): mint a one-time presigned HTTP PUT endpoint via
+	//     the httpUpload coordinator (deps.curlUpload).
+	// Register it whenever at least one upload path is available. The remote
+	// branch additionally requires remoteUploadSupported: the openai tunnel
+	// carries only MCP RPC (no reachable HTTP mux), so a minted presigned PUT
+	// would be an unreachable loopback URL — the tool must not advertise a
+	// branch no agent could use.
+	if uploadFileAvailable(deps.coLocated, opts.localPathUpload != nil, deps.curlUpload != nil, deps.remoteUploadSupported) {
+		var pathFn UploadFileHandler
+		if deps.coLocated {
+			pathFn = opts.localPathUpload
+		}
+		if err := RegisterOfficialDescriptor(deps.srv, NewUploadFileDescriptor(deps.coLocated, pathFn, deps.curlUpload)); err != nil {
+			return err
+		}
+	}
+	if deps.coLocated && opts.localPathVaultPut != nil {
+		if err := RegisterOfficialDescriptor(deps.srv, LocalPathVaultPutDescriptor(opts.localPathVaultPut)); err != nil {
 			return err
 		}
 	}
@@ -253,6 +298,9 @@ func registerCustomTools(deps customToolDeps) error {
 		opts.chatGPTVaultPut != nil,
 		opts.relayURLUpload != nil,
 		opts.dataURIUpload != nil,
+		deps.coLocated && (opts.localPathUpload != nil || opts.localPathVaultPut != nil),
+		uploadFileAvailable(deps.coLocated, opts.localPathUpload != nil, deps.curlUpload != nil, deps.remoteUploadSupported),
+		opts.maxRelayBytes,
 	)); err != nil {
 		return err
 	}
@@ -267,4 +315,25 @@ func registerCustomTools(deps customToolDeps) error {
 		}
 	}
 	return nil
+}
+
+// uploadFileAvailable reports whether the consolidated upload_file tool has at
+// least one usable branch for the running transport:
+//
+//   - co-located (stdio/local): the local-path upload handler is wired.
+//   - remote (HTTP/tunnel): the presigned HTTP PUT coordinator is wired AND the
+//     transport actually exposes a reachable HTTP mux (remoteUploadSupported).
+//     The embedded OpenAI Secure MCP Tunnel carries only MCP RPC through an
+//     in-memory transport to the tunnel client — there is no reachable HTTP
+//     mux on which to mount the PUT route, so a minted endpoint would fall
+//     back to an unreachable loopback URL. The tool must not be advertised
+//     (in registration or capabilities) for a branch no agent could use.
+//
+// It is the single decision used both when registering the tool and when
+// reporting the upload_file capability, so the two can never drift.
+func uploadFileAvailable(coLocated, localPathWired, curlWired, remoteUploadSupported bool) bool {
+	if coLocated {
+		return localPathWired
+	}
+	return curlWired && remoteUploadSupported
 }

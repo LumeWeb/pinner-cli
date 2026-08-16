@@ -13,7 +13,7 @@ import (
 func TestDataURIUploadDescriptorRequiresFile(t *testing.T) {
 	desc := DataURIUploadDescriptor(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
 		return nil, nil
-	})
+	}, 0)
 	_, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{}})
 	require.ErrorContains(t, err, "file (data URI) is required")
 }
@@ -31,7 +31,7 @@ func TestDataURIUploadDescriptorUploads(t *testing.T) {
 		b, _ := io.ReadAll(reader)
 		gotData = string(b)
 		return map[string]string{"cid": "QmData"}, nil
-	})
+	}, 0)
 	res, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{"file": uri}})
 	require.NoError(t, err)
 	require.Equal(t, "note.txt", gotName)
@@ -43,7 +43,7 @@ func TestDataURIUploadDescriptorUploads(t *testing.T) {
 func TestDataURIUploadDescriptorExposesXFileMeta(t *testing.T) {
 	desc := DataURIUploadDescriptor(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
 		return nil, nil
-	})
+	}, 0)
 	meta, ok := desc.Meta["x-mcp-file"].(map[string]any)
 	require.True(t, ok)
 	f, ok := meta["file"].(map[string]any)

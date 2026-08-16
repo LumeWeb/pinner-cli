@@ -17,7 +17,8 @@ type RelayURLUploadInput struct {
 // fetch a caller-supplied HTTPS URL, then stream it through the existing
 // authenticated TUS path. This is the generic relay fallback for HTTP-mode
 // clients that are not co-located with Pinner and cannot pass a host path.
-func RelayURLUploadDescriptor(handler RelayURLUploadHandler, allowedHosts []string) ToolDescriptor {
+func RelayURLUploadDescriptor(handler RelayURLUploadHandler, allowedHosts []string, maxBytes int64) ToolDescriptor {
+	maxBytes = effectiveRelayMaxBytes(maxBytes)
 	return ToolDescriptor{
 		Name:        "upload_url",
 		Title:       "Upload a file from a URL",
@@ -34,7 +35,7 @@ func RelayURLUploadDescriptor(handler RelayURLUploadHandler, allowedHosts []stri
 			}
 			body, size, err := OpenFileURL(ctx, in.URL, FileRelayOptions{
 				AllowedHosts:   allowedHosts,
-				MaxBytes:       defaultRelayMaxBytes,
+				MaxBytes:       maxBytes,
 				RequestTimeout: 2 * time.Minute,
 			})
 			if err != nil {
@@ -47,10 +48,7 @@ func RelayURLUploadDescriptor(handler RelayURLUploadHandler, allowedHosts []stri
 			transferCtx, cancel := context.WithTimeout(ctx, syncUploadBudget(size))
 			defer cancel()
 			result, err := handler(transferCtx, body, size, in.Name, in.Wait)
-			if err != nil {
-				return ToolResult{}, err
-			}
-			return ToolResult{StructuredContent: result, Text: "URL uploaded."}, nil
+			return wrapResult(result, err, "URL uploaded.")
 		},
 	}
 }

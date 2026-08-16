@@ -19,12 +19,12 @@ type AgentGuide struct {
 }
 
 // NewAgentGuideDescriptor returns a static, no-input tool that orients an agent
-// to the four primary Pinner flows and how to chain them. It is the "start
-// here" surface added in the v5 audit: deterministic structured guidance, so a
-// model does not have to discover the flows by probing tool descriptions.
+// to the primary Pinner flows and how to chain them. It is the "start here"
+// surface added in the v5 audit: deterministic structured guidance, so a model
+// does not have to discover the flows by probing tool descriptions.
 func NewAgentGuideDescriptor() ToolDescriptor {
 	guide := AgentGuide{
-		Summary: "Start here. Drive Pinner through these four primary flows; each step is a tool. Check the current state first, then follow the matching flow.",
+		Summary: "Start here. Drive Pinner through these primary flows; each step is a tool. Check the current state first, then follow the matching flow.",
 		Flows: []GuideFlow{
 			{
 				Name:   "auth",
@@ -45,6 +45,18 @@ func NewAgentGuideDescriptor() ToolDescriptor {
 				Detail: "Call vault_restore; poll vault_restore_resume with the returned handle; confirm with vault_status until unlocked.",
 			},
 			{
+				Name:   "upload",
+				Title:  "Upload a file to IPFS",
+				Steps:  []string{"capabilities", "upload_file", "upload_status"},
+				Detail: "Check capabilities; if upload_file is available, call it to upload a file — a host path in co-located stdio mode, or a minted one-time presigned HTTP PUT endpoint in remote mode — then monitor with upload_status for the CID.",
+			},
+			{
+				Name:   "vault_upload",
+				Title:  "Upload a local file/directory to a vault",
+				Steps:  []string{"capabilities", "vault_put_path", "upload_status"},
+				Detail: "Check capabilities; if local_path is available and the target vault is unlocked, pass a host-side file/directory/archive path to vault_put_path, then monitor with upload_status for the CID.",
+			},
+			{
 				Name:   "pins",
 				Title:  "Manage pins",
 				Steps:  []string{"pins_add", "pins_list", "pins_status", "pins_rm"},
@@ -55,7 +67,7 @@ func NewAgentGuideDescriptor() ToolDescriptor {
 	return ToolDescriptor{
 		Name:        "agent_guide",
 		Title:       "Pinner agent guide",
-		Description: "Orientation for autonomous agents: the four primary Pinner flows (auth, vault_create, vault_restore, pins) as ordered tool chains. Call this first to learn how to drive Pinner before probing individual tools.",
+		Description: "Orientation for autonomous agents: the primary Pinner flows (auth, vault_create, vault_restore, upload, vault_upload, pins) as ordered tool chains. Call this first to learn how to drive Pinner before probing individual tools.",
 		Category:    CategoryCore,
 		InputSchema: toolSchemaFor[NoInput](),
 		Handler: func(ctx context.Context, request ToolRequest) (ToolResult, error) {

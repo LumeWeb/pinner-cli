@@ -140,9 +140,6 @@ func chatGPTUploadTool(handler ChatGPTUploadHandler) PinnerToolHandler {
 		transferCtx, cancel := context.WithTimeout(ctx, syncUploadBudget(size))
 		defer cancel()
 		result, err := handler(transferCtx, body, size, name, in.Wait)
-		if err != nil {
-			return ToolResult{}, err
-		}
-		return ToolResult{StructuredContent: result, Text: "ChatGPT file upload completed or was queued."}, nil
+		return wrapResult(result, err, "ChatGPT file upload completed or was queued.")
 	}
 }

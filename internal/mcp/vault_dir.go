@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -37,9 +38,50 @@ type VaultPutFunc func(ctx context.Context, reader io.Reader, size int64, vaultP
 // object per file, mapping each to dstBase/<relpath> (vault path grammar).
 // Directories are skipped (vault has no empty-dir objects); only regular
 // files are written. put is called once per file with an opened reader.
-func DirToVault(ctx context.Context, dir string, dstBase string, put VaultPutFunc) (*DirToVaultPutResult, error) {
+func DirToVault(ctx context.Context, dir string, dstBase string, put VaultPutFunc, caps ...int64) (*DirToVaultPutResult, error) {
+	// maxBytes caps the per-entry size when walking a directory/archive tree.
+	// A non-positive value means "no cap". The local-path vault handlers pass
+	// the operator-set max_mcp_upload_size here so a directory or archive
+	// cannot smuggle an entry over the same cap applied to single files.
+	var maxBytes int64
+	for _, c := range caps {
+		maxBytes = c
+	}
 	res := &DirToVaultPutResult{Base: strings.TrimRight(dstBase, "/")}
 	base := res.Base
+
+	// Pre-flight aggregate check: when a cap is supplied, sum all regular-file
+	// sizes before transferring anything, aborting if the total (or any single
+	// file) exceeds maxBytes. This matches the relay/DataURI/curl surfaces,
+	// which cap total transfer size and reject upfront. Doing it here avoids
+	// writing a partial tree only to discover mid-walk that it is oversized.
+	if maxBytes > 0 {
+		var total int64
+		err := fs.WalkDir(os.DirFS(dir), ".", func(p string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() {
+				return nil
+			}
+			// Stat via the full host path, mirroring the transfer walk below.
+			fi, serr := os.Stat(filepath.Join(dir, p))
+			if serr != nil {
+				return serr
+			}
+			if fi.Size() > maxBytes {
+				return fmt.Errorf("file %s (%d bytes) exceeds max_mcp_upload_size (%d)", filepath.Join(dir, p), fi.Size(), maxBytes)
+			}
+			total += fi.Size()
+			if total > maxBytes {
+				return fmt.Errorf("total size %d bytes exceeds max_mcp_upload_size (%d)", total, maxBytes)
+			}
+			return nil
+		})
+		if err != nil {
+			return res, err
+		}
+	}
 
 	err := fs.WalkDir(os.DirFS(dir), ".", func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -59,6 +101,9 @@ func DirToVault(ctx context.Context, dir string, dstBase string, put VaultPutFun
 		fi, err := os.Stat(full)
 		if err != nil {
 			return err
+		}
+		if maxBytes > 0 && fi.Size() > maxBytes {
+			return fmt.Errorf("file %s (%d bytes) exceeds max_mcp_upload_size (%d)", full, fi.Size(), maxBytes)
 		}
 		f, err := os.Open(full)
 		if err != nil {

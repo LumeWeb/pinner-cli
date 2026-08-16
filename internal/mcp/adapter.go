@@ -266,6 +266,19 @@ adapter.`,
 				catalogOpts = append(catalogOpts, withCatalogDeps(mcpOpts.catalogDeps))
 			}
 
+			// The one-time HTTP upload coordinator rides the SAME async
+			// UploadTaskManager that backs upload_status / upload_cancel /
+			// upload_list (mcpOpts.uploadTasks), so a minted PUT handle plugs
+			// straight into that surface. It is only wired when that manager is
+			// present. It needs the byte cap so an oversized PUT is bounded, and
+			// it must exist here (before registerCustomTools and serveHTTP) so
+			// both the tool descriptor and the transport-mounted PUT route can be
+			// registered against the same instance.
+			var curlUpload *httpUpload
+			if mcpOpts.uploadTasks != nil {
+				curlUpload = NewHTTPUpload(mcpOpts.uploadTasks, effectiveRelayMaxBytes(mcpOpts.maxRelayBytes))
+			}
+
 			// Build the server after resolving the command tree and wiring the
 			// seed/restore coordinators into the tool handlers. stdioMode tells
 			// the invoke-tool gate that os.Stdin is the MCP transport pipe (so a
@@ -286,21 +299,33 @@ adapter.`,
 				seedDrop:         seedDrop,
 				oobRestore:       oobRestore,
 				oobCreate:        oobCreate,
+				curlUpload:       curlUpload,
 				accountOOB:       accountOOB,
 				accountWebAppURL: accountWebAppURL(wizardS.CfgMgr),
 				resourceFactory:  resourceFactory,
 				opts:             mcpOpts,
-				hasWizard:        hasWizard,
-				wizardW:          wizardW,
-				wizardS:          wizardS,
-				wizardD:          wizardD,
+				// Local-path upload tools read arbitrary host paths, so they are
+				// only wired in pure co-located stdio mode (no HTTP transport,
+				// no tunnel). Over HTTP/tunnel the caller is remote, so the
+				// tools are not registered at all.
+				coLocated: !cmd.Bool("http") && cmd.String("tunnel") == "",
+				// The presigned HTTP PUT upload route is only reachable when
+				// the shared HTTP mux is actually mounted (plain HTTP, ngrok,
+				// cloudflared). The embedded openai tunnel exposes no reachable
+				// HTTP mux — all RPC flows through the tunnel protocol — so the
+				// remote upload_file branch must not be advertised there.
+				remoteUploadSupported: curlUpload != nil && cmd.String("tunnel") != "openai",
+				hasWizard:             hasWizard,
+				wizardW:               wizardW,
+				wizardS:               wizardS,
+				wizardD:               wizardD,
 			}); err != nil {
 				return err
 			}
 
 			if cmd.String("tunnel") == "openai" {
 				log.Debug("serving MCP server through embedded OpenAI Secure MCP Tunnel")
-				return serveHTTP(ctx, srv, cmd, oob, seedDrop, oobRestore, oobCreate, accountOOB)
+				return serveHTTP(ctx, srv, cmd, oob, seedDrop, oobRestore, oobCreate, accountOOB, curlUpload)
 			}
 
 			if !cmd.Bool("http") {
@@ -308,7 +333,7 @@ adapter.`,
 				return RunOfficialStdio(ctx, srv, os.Stdin, os.Stdout)
 			}
 
-			return serveHTTP(ctx, srv, cmd, oob, seedDrop, oobRestore, oobCreate, accountOOB)
+			return serveHTTP(ctx, srv, cmd, oob, seedDrop, oobRestore, oobCreate, accountOOB, curlUpload)
 		},
 	}
 }
@@ -339,6 +364,8 @@ func oauthStorePath() string {
 // login URL on the public/tunnel URL rather than an unreachable loopback.
 // seedDrop and oobRestore, when provided, mount the one-time seed and restore
 // URLs on the same shared mux. oobCreate mounts the one-time create URL.
+// curlUpload, when provided, mounts the one-time upload PUT route on the
+// shared mux (the httpUpload coordinator in HTTP/tunnel mode).
 //
 // mcpHostProtectionDisabled reports whether the go-sdk's DNS-rebinding guard
 // must be disabled for this serve. When the server is reached over a
@@ -353,7 +380,7 @@ func mcpHostProtectionDisabled(tunnelActive, httpMode bool, publicURL string) bo
 	return tunnelActive || (httpMode && publicURL != "")
 }
 
-func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *OutOfBandLogin, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate, accountOOB *OOBAccountChange) error {
+func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *OutOfBandLogin, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate, accountOOB *OOBAccountChange, curlUpload *httpUpload) error {
 	provider := cmd.String("tunnel")
 	domain := cmd.String("domain")
 	token := cmd.String("token")
@@ -430,6 +457,9 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 	}
 	if accountOOB != nil {
 		accountOOB.SetBaseURL(baseURL)
+	}
+	if curlUpload != nil {
+		curlUpload.SetBaseURL(baseURL)
 	}
 	var oauth *oauthServer
 	if enableOAuth {
@@ -520,6 +550,14 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 	if accountOOB != nil {
 		accountOOB.registerHandlers(mux)
 	}
+	// Mount the one-time upload PUT route on the shared mux so an agent can
+	// stream a file with curl to the public/tunnel URL. Like the OOB routes it
+	// is mounted outside the bearer-token guards (curl cannot present the MCP
+	// auth header per request as a browser would); the unguessable
+	// /upload/<token> path plus single-use expiry is the access control.
+	if curlUpload != nil {
+		curlUpload.registerHandlers(mux)
+	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
 			http.NotFound(w, r)
@@ -558,6 +596,9 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 		}
 		if accountOOB != nil {
 			accountOOB.Stop(shCtx)
+		}
+		if curlUpload != nil {
+			curlUpload.Stop(shCtx)
 		}
 		if tunnel != nil {
 			_ = tunnel.Stop(shCtx)
@@ -604,6 +645,9 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 		}
 		if accountOOB != nil {
 			accountOOB.SetBaseURL(url)
+		}
+		if curlUpload != nil {
+			curlUpload.SetBaseURL(url)
 		}
 		if oauth != nil {
 			oauthURL, err := tunnel.OAuthBaseURL(publicURL, url)
@@ -700,6 +744,13 @@ type mcpServerOptions struct {
 	relayURLUpload    RelayURLUploadHandler
 	relayAllowedHosts []string
 	dataURIUpload     DataURIUploadHandler
+	localPathUpload   LocalPathUploadHandler
+	localPathVaultPut LocalPathVaultPutHandler
+	// maxRelayBytes is the per-tool cap (in bytes) for MCP file uploads,
+	// overriding the package default (512 MiB). 0 means "use the default".
+	// It is honored across the relay URL, data URI, and capability-report
+	// surfaces. Resolved lazily from the config manager at server setup.
+	maxRelayBytes int64
 	// pinnerPins, when set, wires the "Create a Pin" MCP App (ui:// view,
 	// app-only status helper) using a live pinning provider built at setup.
 	pinnerPins PinningProviderFactory
@@ -770,6 +821,52 @@ func WithRelayURLUpload(handler RelayURLUploadHandler, allowedHosts []string) MC
 func WithDataURIUpload(handler DataURIUploadHandler) MCPServerOption {
 	return func(o *mcpServerOptions) {
 		o.dataURIUpload = handler
+	}
+}
+
+// WithLocalPathUpload registers the co-located local-path upload handler that
+// backs the consolidated upload_file tool's co-located branch.
+// which uploads a host-side file/directory/archive directly. It is only
+// meaningful when the MCP server is co-located with the caller's files.
+func WithLocalPathUpload(handler LocalPathUploadHandler) MCPServerOption {
+	return func(o *mcpServerOptions) {
+		o.localPathUpload = handler
+	}
+}
+
+// WithLocalPathVaultPut registers the SDIO local-path vault upload tool
+// (vault_put_path), which writes a host-side file/directory/archive into the
+// encrypted vault directly. It is only meaningful when the MCP server is
+// co-located with the caller's files.
+func WithLocalPathVaultPut(handler LocalPathVaultPutHandler) MCPServerOption {
+	return func(o *mcpServerOptions) {
+		o.localPathVaultPut = handler
+	}
+}
+
+// WithMaxMCPUploadSize sets the per-tool cap (in bytes) for MCP file uploads.
+// The wiring supplies this from the config's max_mcp_upload_size, which
+// defaults to 1 GiB when unset (see core.Config.GetMaxMCPUploadSize). The cap
+// is honored across the relay URL, data URI, curl-upload, and local-path
+// upload surfaces, and reported in the capability report.
+//
+// supplier is resolved lazily at server setup (inside the MCP command's
+// Action), when the config manager is available — the same call pattern the
+// wizard factory and catalog-ops bundle use. This keeps config reads out of
+// command-construction time. If supplier is nil or panics (e.g. config not
+// yet available), the option is a no-op and the package's fallback default
+// (512 MiB, effectiveRelayMaxBytes) is kept.
+func WithMaxMCPUploadSize(supplier func() uint64) MCPServerOption {
+	return func(o *mcpServerOptions) {
+		if supplier == nil {
+			return
+		}
+		defer func() {
+			if r := recover(); r != nil {
+				o.maxRelayBytes = 0
+			}
+		}()
+		o.maxRelayBytes = int64(supplier())
 	}
 }
 

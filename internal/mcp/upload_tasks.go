@@ -17,7 +17,7 @@ import (
 // any stream the caller provides.
 
 // DefaultUploadName is the fallback upload name used across every file-input
-// tool (upload_data, upload_curl, async uploads) and the CLI's local-path
+// tool (upload_data, upload_file, async uploads) and the CLI's local-path
 // handlers when the caller supplies no explicit name. Exported so users and
 // the CLI layer can reference the same default.
 const DefaultUploadName = "upload"
