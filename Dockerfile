@@ -32,6 +32,10 @@ ARG VERSION=0.0.0-dev
 ARG GIT_COMMIT=""
 ARG GIT_BRANCH=""
 ARG BUILD_TIME=""
+# TARGETOS/TARGETARCH are auto-injected by buildx when --platform is set, so the
+# image reports the true build architecture instead of a hardcoded value.
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
 
 # -tags netgo osusergo: use the pure-Go net resolver and os/user, avoiding
 # libc-dependent resolv/nss lookups so the binary is fully static.
@@ -45,8 +49,8 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
         -X 'go.lumeweb.com/pinner-cli/build.GitBranch=${GIT_BRANCH}' \
         -X 'go.lumeweb.com/pinner-cli/build.BuildTime=${BUILD_TIME}' \
         -X 'go.lumeweb.com/pinner-cli/build.GoVersion=$(go version)' \
-        -X 'go.lumeweb.com/pinner-cli/build.Platform=linux' \
-        -X 'go.lumeweb.com/pinner-cli/build.Architecture=amd64'" \
+        -X 'go.lumeweb.com/pinner-cli/build.Platform=${TARGETOS}' \
+        -X 'go.lumeweb.com/pinner-cli/build.Architecture=${TARGETARCH}'" \
       -o /out/pinner ./cmd/pinner
 
 # ---- Runtime stage: minimal, non-root ----
