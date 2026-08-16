@@ -118,20 +118,20 @@ func (m *MockInstallUI) ReportBuild(agent install.AgentKey, msg string) error {
 // temp root, so tests never touch the user's real config files. local paths are
 // projectDir-relative, global paths live under the temp root.
 func tempPathResolver(root, projectDir string) pathResolver {
-	return func(agent install.AgentConfig, local bool, pd string) string {
+	return func(agent install.Agent, local bool, pd string) string {
 		if local {
-			return filepath.Join(projectDir, agent.LocalConfigPath)
+			return filepath.Join(projectDir, agent.LocalProjectPath())
 		}
-		return filepath.Join(root, "global", string(agent.Key)+".json")
+		return filepath.Join(root, "global", string(agent.Key())+".json")
 	}
 }
 
 // readGlobalJSON reads a temp-root global config written for the given agent and
-// decodes it as JSON, returning the map under the agent's ConfigKey.
+// decodes it as JSON, returning the map under the agent's server key.
 func readGlobalJSON(t *testing.T, root string, agentKey install.AgentKey) map[string]any {
 	t.Helper()
-	agent, ok := install.Agent(agentKey)
-	if !ok {
+	agent := install.Lookup(agentKey)
+	if agent == nil {
 		t.Fatalf("unknown agent %s", agentKey)
 	}
 	path := filepath.Join(root, "global", string(agentKey)+".json")
@@ -143,7 +143,7 @@ func readGlobalJSON(t *testing.T, root string, agentKey install.AgentKey) map[st
 	if err := json.Unmarshal(data, &rootMap); err != nil {
 		t.Fatalf("parse global config: %v", err)
 	}
-	servers, _ := rootMap[agent.ConfigKey].(map[string]any)
+	servers, _ := rootMap[agent.ServerKey(false)].(map[string]any)
 	entry, _ := servers["pinner"].(map[string]any)
 	return entry
 }

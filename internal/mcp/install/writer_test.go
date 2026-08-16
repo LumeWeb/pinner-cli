@@ -10,19 +10,17 @@ import (
 )
 
 // writeTestServer writes a server entry to the given path via WriteServerConfig
-// and returns the written config's server map under the given config key.
-func writeTestServer(t *testing.T, agent AgentConfig, dir, serverName string, cfg McpServerConfig, local bool) map[string]any {
+// and returns the written config's server map under the agent's server key.
+func writeTestServer(t *testing.T, agent Agent, dir, serverName string, cfg McpServerConfig, local bool) map[string]any {
 	t.Helper()
-	path := filepath.Join(dir, agent.LocalConfigPath)
+	path := filepath.Join(dir, "config."+extForFormat(agent.Format()))
 	if local {
-		path = filepath.Join(dir, agent.LocalConfigPath)
-	} else {
-		path = filepath.Join(dir, "config."+extForFormat(agent.Format))
+		path = filepath.Join(dir, agent.LocalProjectPath())
 	}
 	if err := WriteServerConfig(agent, path, serverName, cfg, local); err != nil {
-		t.Fatalf("%s: WriteServerConfig: %v", agent.Key, err)
+		t.Fatalf("%s: WriteServerConfig: %v", agent.Key(), err)
 	}
-	return readServerMap(t, agent.Format, path, agent.LocalKey())
+	return readServerMap(t, agent.Format(), path, agent.ServerKey(local))
 }
 
 func extForFormat(f ConfigFormat) string {
@@ -89,7 +87,7 @@ func parseGjsonResult(r gjson.Result) any {
 
 func TestWriteJSONRoundTrip(t *testing.T) {
 	dir := t.TempDir()
-	agent, _ := Agent(AgentClaudeCode)
+	agent := Lookup(AgentClaudeCode)
 	cfg := McpServerConfig{
 		Type:    TransportHTTP,
 		URL:     "https://example.com/mcp",
@@ -105,8 +103,8 @@ func TestWriteJSONRoundTrip(t *testing.T) {
 
 func TestWriteJSONCMergesExistingComments(t *testing.T) {
 	dir := t.TempDir()
-	agent, _ := Agent(AgentOpenCode)
-	path := filepath.Join(dir, agent.LocalConfigPath) // opencode.jsonc
+	agent := Lookup(AgentOpenCode)
+	path := filepath.Join(dir, agent.LocalProjectPath()) // opencode.jsonc
 	existing := `{
   // opencode config
   "mcp": {
@@ -157,14 +155,13 @@ func TestWriteJSONCMergesExistingComments(t *testing.T) {
 
 func TestWriteYAMLRoundTrip(t *testing.T) {
 	dir := t.TempDir()
-	agent, _ := Agent(AgentCodex)
-	agent.Format = FormatYAML // parameterize format check on YAML
+	agent := MustAgentWithFormat(AgentCodex, FormatYAML) // parameterize format on YAML
 	path := filepath.Join(dir, "config.yaml")
 	cfg := McpServerConfig{Command: "pinner", Args: []string{"mcp", "serve"}, AutoApproveSet: true, AutoApproveTools: []string{}}
 	if err := WriteServerConfig(agent, path, "mypinner", cfg, false); err != nil {
 		t.Fatalf("WriteServerConfig: %v", err)
 	}
-	servers := readServerMap(t, FormatYAML, path, agent.ConfigKey)
+	servers := readServerMap(t, FormatYAML, path, agent.ServerKey(false))
 	entry := servers["mypinner"].(map[string]any)
 	assertMapEqual(t, "yaml-entry", entry, map[string]any{
 		"command":                     "pinner",
@@ -175,7 +172,7 @@ func TestWriteYAMLRoundTrip(t *testing.T) {
 
 func TestWriteTOMLRoundTrip(t *testing.T) {
 	dir := t.TempDir()
-	agent, _ := Agent(AgentCodex)
+	agent := Lookup(AgentCodex)
 	path := filepath.Join(dir, "config.toml")
 	cfg := McpServerConfig{
 		URL:              "https://example.com/mcp",
@@ -186,7 +183,7 @@ func TestWriteTOMLRoundTrip(t *testing.T) {
 	if err := WriteServerConfig(agent, path, "mypinner", cfg, false); err != nil {
 		t.Fatalf("WriteServerConfig: %v", err)
 	}
-	servers := readServerMap(t, FormatTOML, path, agent.ConfigKey)
+	servers := readServerMap(t, FormatTOML, path, agent.ServerKey(false))
 	entry := servers["mypinner"].(map[string]any)
 	assertMapEqual(t, "toml-entry", entry, map[string]any{
 		"type":                        "http",
@@ -198,7 +195,7 @@ func TestWriteTOMLRoundTrip(t *testing.T) {
 
 func TestWriteMergesAndReplaces(t *testing.T) {
 	dir := t.TempDir()
-	agent, _ := Agent(AgentGeminiCLI)
+	agent := Lookup(AgentGeminiCLI)
 	path := filepath.Join(dir, "settings.json")
 	cfg1 := McpServerConfig{URL: "https://one.example"}
 	cfg2 := McpServerConfig{URL: "https://two.example"}
@@ -214,7 +211,7 @@ func TestWriteMergesAndReplaces(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	servers := readServerMap(t, FormatJSON, path, agent.ConfigKey)
+	servers := readServerMap(t, FormatJSON, path, agent.ServerKey(false))
 	if len(servers) != 2 {
 		t.Errorf("servers = %d entries, want 2 (other keys must be preserved on replace)", len(servers))
 	}
@@ -228,7 +225,7 @@ func TestWriteMergesAndReplaces(t *testing.T) {
 
 func TestRemoveServer(t *testing.T) {
 	dir := t.TempDir()
-	agent, _ := Agent(AgentClaudeCode)
+	agent := Lookup(AgentClaudeCode)
 	path := filepath.Join(dir, "config.json")
 	cfg := McpServerConfig{URL: "https://example.com/mcp"}
 	if err := WriteServerConfig(agent, path, "srvA", cfg, false); err != nil {
@@ -241,7 +238,7 @@ func TestRemoveServer(t *testing.T) {
 	if err := RemoveServer(agent, path, "srvA"); err != nil {
 		t.Fatalf("RemoveServer: %v", err)
 	}
-	servers := readServerMap(t, FormatJSON, path, agent.ConfigKey)
+	servers := readServerMap(t, FormatJSON, path, agent.ServerKey(false))
 	if _, ok := servers["srvA"]; ok {
 		t.Errorf("srvA still present after removal")
 	}
@@ -252,7 +249,7 @@ func TestRemoveServer(t *testing.T) {
 
 func TestRemoveServerMissingFileIsNoOp(t *testing.T) {
 	dir := t.TempDir()
-	agent, _ := Agent(AgentClaudeCode)
+	agent := Lookup(AgentClaudeCode)
 	path := filepath.Join(dir, "does-not-exist.json")
 	if err := RemoveServer(agent, path, "srvA"); err != nil {
 		t.Fatalf("RemoveServer on missing file: %v", err)
@@ -263,8 +260,8 @@ func TestJSONCPreservesCommentsOnSetAndRemove(t *testing.T) {
 	// The headline behaviour of the library-backed JSONC path: a user's comments
 	// and formatting survive both an insert and a remove around the target key.
 	dir := t.TempDir()
-	agent, _ := Agent(AgentOpenCode)
-	path := filepath.Join(dir, agent.LocalConfigPath)
+	agent := Lookup(AgentOpenCode)
+	path := filepath.Join(dir, agent.LocalProjectPath())
 	existing := `{
   // top-level note
   "mcp": {
@@ -328,7 +325,7 @@ func TestJSONCWeirdServerNameIsLiteralKey(t *testing.T) {
 	for _, m := range meta {
 		t.Run("meta-"+m, func(t *testing.T) {
 			dir := t.TempDir()
-			agent, _ := Agent(AgentClaudeCode)
+			agent := Lookup(AgentClaudeCode)
 			path := filepath.Join(dir, "config.json")
 			cfg := McpServerConfig{URL: "https://example.com/mcp"}
 
@@ -345,15 +342,15 @@ func TestJSONCWeirdServerNameIsLiteralKey(t *testing.T) {
 			// The exact escaped path jsoncRemoveServer will compute must resolve
 			// to the entry (proving the exists-guard matches), and the resolved
 			// key must equal the literal name with no stray backslash.
-			target := string(agent.ConfigKey) + "." + escapePathSegment(name)
+			target := string(agent.ServerKey(false)) + "." + escapePathSegment(name)
 			if !gjson.GetBytes(raw, target).Exists() {
 				t.Fatalf("escaped path %q did not resolve for meta %q; raw=%s", target, m, raw)
 			}
-			resolved := gjson.GetBytes(raw, string(agent.ConfigKey))
+			resolved := gjson.GetBytes(raw, string(agent.ServerKey(false)))
 			if _, ok := resolved.Map()[name]; !ok {
 				t.Fatalf("resolved key for meta %q is not the literal %q; keys=%v", m, name, resolved.Map())
 			}
-			mm := readServerMap(t, FormatJSON, path, agent.ConfigKey)
+			mm := readServerMap(t, FormatJSON, path, agent.ServerKey(false))
 			if _, ok := mm[name]; !ok {
 				t.Fatalf("server %q not written as a literal key; servers=%v", name, mm)
 			}
@@ -362,7 +359,7 @@ func TestJSONCWeirdServerNameIsLiteralKey(t *testing.T) {
 			if err := RemoveServer(agent, path, name); err != nil {
 				t.Fatalf("RemoveServer with meta %q: %v", m, err)
 			}
-			mm = readServerMap(t, FormatJSON, path, agent.ConfigKey)
+			mm = readServerMap(t, FormatJSON, path, agent.ServerKey(false))
 			if _, ok := mm[name]; ok {
 				t.Errorf("server %q still present after removal", name)
 			}
@@ -373,8 +370,7 @@ func TestJSONCWeirdServerNameIsLiteralKey(t *testing.T) {
 func TestJSONCPreservesCommentsAcrossNestedConfigKey(t *testing.T) {
 	// zed uses a nested-style config key; comments above the key must survive.
 	dir := t.TempDir()
-	agent, _ := Agent(AgentZed)
-	agent.ConfigKey = "nested.servers"
+	agent := MustAgentWithKey(AgentZed, "nested.servers")
 	path := filepath.Join(dir, "settings.json")
 	existing := `{
   // keep this header note
@@ -405,7 +401,7 @@ func TestJSONCPreservesCommentsAcrossNestedConfigKey(t *testing.T) {
 
 func TestWriteLocalVSConfigKey(t *testing.T) {
 	dir := t.TempDir()
-	agent, _ := Agent(AgentVSCode)
+	agent := Lookup(AgentVSCode)
 	path := filepath.Join(dir, ".vscode", "mcp.json")
 	cfg := McpServerConfig{URL: "https://example.com/mcp"}
 	if err := WriteServerConfig(agent, path, "mypinner", cfg, true); err != nil {
@@ -418,10 +414,8 @@ func TestWriteLocalVSConfigKey(t *testing.T) {
 }
 
 func TestDotNotationConfigKey(t *testing.T) {
-	// Zed uses a top-level key; simulate a dot-notation key to cover resolution.
-	agent, _ := Agent(AgentZed)
-	agent.ConfigKey = "nested.servers"
-	agent.LocalConfigKey = ""
+	// Zed uses a top-level key; a dot-notation key is covered by a custom agent.
+	agent := MustAgentWithKey(AgentZed, "nested.servers")
 	dir := t.TempDir()
 	path := filepath.Join(dir, "settings.json")
 	cfg := McpServerConfig{Command: "pinner"}
@@ -437,7 +431,7 @@ func TestDotNotationConfigKey(t *testing.T) {
 }
 
 func TestDetectGlobal(t *testing.T) {
-	agent, _ := Agent(AgentClaudeCode)
+	agent := Lookup(AgentClaudeCode)
 	if DetectGlobal(agent) {
 		t.Skip("global config exists on this machine; not asserting")
 	}
@@ -459,7 +453,7 @@ func TestWriteRefusesToClobberNonMapConfigKey(t *testing.T) {
 	// not be silently replaced with an empty map (data loss). WriteServerConfig
 	// should return an error instead of clobbering it.
 	dir := t.TempDir()
-	agent, _ := Agent(AgentClaudeCode)
+	agent := Lookup(AgentClaudeCode)
 	path := filepath.Join(dir, "config.json")
 	existing := `{"mcpServers": "not-a-map"}`
 	if err := os.WriteFile(path, []byte(existing), 0o644); err != nil {
@@ -475,4 +469,20 @@ func TestWriteRefusesToClobberNonMapConfigKey(t *testing.T) {
 	if string(raw) != existing {
 		t.Errorf("config file was modified on refusal:\n got: %s\nwant: %s", raw, existing)
 	}
+}
+
+// MustAgentWithFormat returns a clone of the agent with a different config
+// format (for format parameterization tests).
+func MustAgentWithFormat(key AgentKey, format ConfigFormat) Agent {
+	spec := agentSpecs[key]
+	spec.format = format
+	return newAgent(spec)
+}
+
+// MustAgentWithKey returns a clone of the agent with a different config key
+// (for config-key parameterization tests).
+func MustAgentWithKey(key AgentKey, configKey string) Agent {
+	spec := agentSpecs[key]
+	spec.configKey = configKey
+	return newAgent(spec)
 }

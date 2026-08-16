@@ -46,15 +46,15 @@ type InstallState struct {
 // pathResolver maps an agent + scope to the on-disk config path. It is
 // injectable so tests can redirect writes into temp dirs without touching the
 // user's real agent config files.
-type pathResolver func(agent install.AgentConfig, local bool, projectDir string) string
+type pathResolver func(agent install.Agent, local bool, projectDir string) string
 
 // defaultPathResolver resolves a config path the way a real install should:
-// local -> projectDir/LocalConfigPath; global -> agent.ConfigPath().
-func defaultPathResolver(agent install.AgentConfig, local bool, projectDir string) string {
+// local -> projectDir/LocalProjectPath; global -> agent.GlobalConfigPath().
+func defaultPathResolver(agent install.Agent, local bool, projectDir string) string {
 	if local {
-		return filepath.Join(projectDir, agent.LocalConfigPath)
+		return filepath.Join(projectDir, agent.LocalProjectPath())
 	}
-	return agent.ConfigPath()
+	return agent.GlobalConfigPath()
 }
 
 // httpCollector is the injectable seam the HTTP composite uses to populate
@@ -160,7 +160,7 @@ func (w *InstallWizard) getSteps() []wizard.Step[*InstallState] {
 				// stdio (e.g. claude-desktop is stdio-only).
 				if !anySupportsTransport(s.Agents, install.TransportHTTP) {
 					for _, a := range s.Agents {
-						if cfg, ok := install.Agent(a); ok && !supportsTransport(cfg, install.TransportHTTP) {
+						if cfg := install.Lookup(a); cfg != nil && !supportsTransport(cfg, install.TransportHTTP) {
 							_ = w.ui.ReportBuild(a, "only supports stdio; using stdio")
 						}
 					}
@@ -241,7 +241,7 @@ func (w *InstallWizard) candidates() (candidates []install.AgentKey, detected []
 	for _, d := range detected {
 		candidates = append(candidates, d)
 	}
-	for _, a := range install.AllAgents {
+	for _, a := range install.AllAgentsKey() {
 		if !detectedSet[a] {
 			candidates = append(candidates, a)
 		}
@@ -282,8 +282,8 @@ func (w *InstallWizard) writeConfig(s *InstallState) error {
 	}
 
 	for _, key := range s.Agents {
-		agentCfg, ok := install.Agent(key)
-		if !ok {
+		agentCfg := install.Lookup(key)
+		if agentCfg == nil {
 			_ = w.ui.ReportBuild(key, "unknown agent; skipping")
 			continue
 		}
@@ -302,7 +302,7 @@ func (w *InstallWizard) writeConfig(s *InstallState) error {
 		}
 
 		// project scope when requested and supported
-		if s.Scope == scopeProject && agentCfg.LocalConfigPath != "" {
+		if s.Scope == scopeProject && agentCfg.LocalProjectPath() != "" {
 			if err := w.writeOne(s, agentCfg, serverCfg, true); err != nil {
 				return err
 			}
@@ -312,7 +312,7 @@ func (w *InstallWizard) writeConfig(s *InstallState) error {
 }
 
 // writeOne writes a single server entry and reports it.
-func (w *InstallWizard) writeOne(s *InstallState, agentCfg install.AgentConfig, serverCfg install.McpServerConfig, local bool) error {
+func (w *InstallWizard) writeOne(s *InstallState, agentCfg install.Agent, serverCfg install.McpServerConfig, local bool) error {
 	path := w.resolvePath(agentCfg, local, s.ProjectDir)
 	if path == "" {
 		return nil
@@ -320,13 +320,13 @@ func (w *InstallWizard) writeOne(s *InstallState, agentCfg install.AgentConfig, 
 	// Ensure the parent directory exists for local (project) paths.
 	if local {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			return fmt.Errorf("%s: create dir: %w", agentCfg.Key, err)
+			return fmt.Errorf("%s: create dir: %w", agentCfg.Key(), err)
 		}
 	}
 	if err := install.WriteServerConfig(agentCfg, path, defaultServerName, serverCfg, local); err != nil {
-		return fmt.Errorf("%s: write config: %w", agentCfg.Key, err)
+		return fmt.Errorf("%s: write config: %w", agentCfg.Key(), err)
 	}
-	return w.ui.ReportWritten(agentCfg.Key, path, local)
+	return w.ui.ReportWritten(agentCfg.Key(), path, local)
 }
 
 // resolveBinary returns the absolute path to the running pinner binary,
@@ -347,7 +347,7 @@ func resolveBinary() (string, error) {
 // anySupportsProject reports whether any selected agent supports project scope.
 func anySupportsProject(agents []install.AgentKey) bool {
 	for _, a := range agents {
-		if cfg, ok := install.Agent(a); ok && cfg.LocalConfigPath != "" {
+		if cfg := install.Lookup(a); cfg != nil && cfg.LocalProjectPath() != "" {
 			return true
 		}
 	}
@@ -357,21 +357,16 @@ func anySupportsProject(agents []install.AgentKey) bool {
 // anySupportsTransport reports whether any selected agent supports the given transport.
 func anySupportsTransport(agents []install.AgentKey, t install.Transport) bool {
 	for _, a := range agents {
-		if cfg, ok := install.Agent(a); ok && supportsTransport(cfg, t) {
+		if cfg := install.Lookup(a); cfg != nil && supportsTransport(cfg, t) {
 			return true
 		}
 	}
 	return false
 }
 
-// supportsTransport reports whether a single agent config supports the transport.
-func supportsTransport(cfg install.AgentConfig, t install.Transport) bool {
-	for _, st := range cfg.SupportedTransports {
-		if st == t {
-			return true
-		}
-	}
-	return false
+// supportsTransport reports whether a single agent supports the transport.
+func supportsTransport(cfg install.Agent, t install.Transport) bool {
+	return cfg.SupportsTransport(t)
 }
 
 // currentDir returns the process working directory.

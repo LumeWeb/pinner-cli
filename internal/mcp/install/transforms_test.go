@@ -8,11 +8,14 @@ import (
 // transformRunner applies an agent's Transform and returns the concrete map.
 func transformRunner(t *testing.T, key AgentKey, serverName string, cfg McpServerConfig, local bool) map[string]any {
 	t.Helper()
-	agent, ok := Agent(key)
-	if !ok {
-		t.Fatalf("Agent(%q) not found", key)
+	agent := Lookup(key)
+	if agent == nil {
+		t.Fatalf("Lookup(%q) not found", key)
 	}
-	got := agent.Transform(serverName, cfg, local)
+	got, err := agent.Transform(serverName, cfg, local)
+	if err != nil {
+		t.Fatalf("%s: transform: %v", key, err)
+	}
 	m, ok := got.(map[string]any)
 	if !ok {
 		t.Fatalf("%s: transform returned %T, want map[string]any", key, got)
