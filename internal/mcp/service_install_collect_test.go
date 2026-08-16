@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -76,11 +77,19 @@ func TestCollectHTTPInstallOneShotResolvesNamedDomainURL(t *testing.T) {
 	// custom domain but no explicit --public-url must derive MCP_PUBLIC_URL
 	// from MCP_DOMAIN; otherwise runMcpInstall fails despite a valid tunnel.
 	// validateServiceEnvironment requires the tunnel binary on PATH (LookPath),
-	// so put a stub executable there — it is never executed in the one-shot
-	// (wantService=false) path.
+	// so put a stub executable there (it is never executed in the one-shot
+	// (wantService=false) path). Windows LookPath only matches executables with a
+	// PATHEXT extension (.exe/.cmd/.bat), so use ngrok.cmd there instead of the
+	// Unix shell stub.
 	binDir := t.TempDir()
-	stub := filepath.Join(binDir, "ngrok")
-	require.NoError(t, os.WriteFile(stub, []byte("#!/bin/sh\nexit 0\n"), 0o755))
+	stubName := "ngrok"
+	stubContent := []byte("#!/bin/sh\nexit 0\n")
+	if runtime.GOOS == "windows" {
+		stubName = "ngrok.cmd"
+		stubContent = []byte("@echo off\r\n")
+	}
+	stub := filepath.Join(binDir, stubName)
+	require.NoError(t, os.WriteFile(stub, stubContent, 0o755))
 	t.Setenv("PATH", binDir)
 
 	dir := t.TempDir()
