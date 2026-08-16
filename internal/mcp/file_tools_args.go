@@ -49,3 +49,13 @@ func decodeArgsFor[T any](name string, configured bool, request ToolRequest) (T,
 	}
 	return decodeToolArgs[T](request)
 }
+
+// wrapResult converts a handler's (result, err) into a ToolResult with the given
+// success text, collapsing the error-propagation boilerplate shared by every
+// direct-registered tool handler.
+func wrapResult(result any, err error, text string) (ToolResult, error) {
+	if err != nil {
+		return ToolResult{}, err
+	}
+	return ToolResult{StructuredContent: result, Text: text}, nil
+}

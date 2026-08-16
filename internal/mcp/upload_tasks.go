@@ -16,6 +16,12 @@ import (
 // Pinner owns the auth and the underlying TUS path; the upload source may be
 // any stream the caller provides.
 
+// DefaultUploadName is the fallback upload name used across every file-input
+// tool (upload_data, upload_curl, async uploads) and the CLI's local-path
+// handlers when the caller supplies no explicit name. Exported so users and
+// the CLI layer can reference the same default.
+const DefaultUploadName = "upload"
+
 // UploadTaskState is the lifecycle state of an async upload handle.
 type UploadTaskState string
 
@@ -123,7 +129,7 @@ func (m *UploadTaskManager) Start(ctx context.Context, reader io.ReadCloser, siz
 		return "", errors.New("upload executor is not configured")
 	}
 	if name == "" {
-		name = "upload"
+		name = DefaultUploadName
 	}
 	id := newTaskID()
 	task := &UploadTask{
