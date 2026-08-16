@@ -13,6 +13,10 @@ import (
 // writes it back. It creates the file/dir if missing. Format dispatch is by
 // agent.Format. The server entry is written under the agent's config key
 // (LocalKey for a local config, ConfigKey otherwise).
+//
+// JSON/JSONC configs are edited surgically in place (via sjson) so the user's
+// existing comments, formatting, and unrelated fields are preserved. YAML and
+// TOML configs are re-serialized wholesale.
 func WriteServerConfig(agent AgentConfig, path string, serverName string, serverCfg McpServerConfig, local bool) error {
 	key := agent.ConfigKey
 	if local {
@@ -23,6 +27,13 @@ func WriteServerConfig(agent AgentConfig, path string, serverName string, server
 		return fmt.Errorf("%s: no transform defined", agent.Key)
 	}
 	entry := agent.Transform(serverName, serverCfg, local)
+
+	if isJSONFormat(agent.Format) {
+		if err := writeJSONCEntry(agent.Key, path, key, serverName, entry); err != nil {
+			return err
+		}
+		return nil
+	}
 
 	root, err := readRoot(agent.Format, path)
 	if err != nil {
@@ -42,9 +53,14 @@ func WriteServerConfig(agent AgentConfig, path string, serverName string, server
 }
 
 // RemoveServer removes a server entry by name from the config at path. It is a
-// no-op (returning nil) when the config file does not exist.
+// no-op (returning nil) when the config file does not exist or the entry is not
+// present. JSON/JSONC configs are edited surgically; YAML/TOML are re-serialized.
 func RemoveServer(agent AgentConfig, path string, serverName string) error {
 	key := agent.ConfigKey
+
+	if isJSONFormat(agent.Format) {
+		return removeJSONCEntry(agent.Key, path, key, serverName)
+	}
 
 	root, err := readRoot(agent.Format, path)
 	if err != nil {
@@ -80,19 +96,22 @@ func DetectGlobal(agent AgentConfig) bool {
 	return err == nil
 }
 
-// readRoot loads a config file into a map[string]any tree by format.
+// readRoot loads a YAML or TOML config file into a map[string]any tree. JSON
+// and JSONC configs are never read as maps in production — writes go through the
+// surgical sjson path in jsonc_edit.go instead.
 func readRoot(format ConfigFormat, path string) (map[string]any, error) {
 	switch format {
 	case FormatYAML:
 		return readYAMLFile(path)
 	case FormatTOML:
 		return readTOMLFile(path)
-	default: // FormatJSON and FormatJSONC share the JSON path
-		return readJSONFile(path)
+	default:
+		return nil, fmt.Errorf("readRoot: format %q does not use map read", format)
 	}
 }
 
-// writeRoot serializes a map[string]any tree to path by format.
+// writeRoot serializes a YAML or TOML map[string]any tree to path. JSON and
+// JSONC configs are edited surgically via the sjson path in jsonc_edit.go.
 func writeRoot(format ConfigFormat, path string, root map[string]any) error {
 	switch format {
 	case FormatYAML:
@@ -100,7 +119,7 @@ func writeRoot(format ConfigFormat, path string, root map[string]any) error {
 	case FormatTOML:
 		return writeTOMLFile(path, root)
 	default:
-		return writeJSONFile(path, root)
+		return fmt.Errorf("writeRoot: format %q does not use map write", format)
 	}
 }
 
