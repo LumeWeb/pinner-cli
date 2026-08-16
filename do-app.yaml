@@ -28,8 +28,11 @@ services:
       failure_threshold: 3
     envs:
       - key: MCP_AUTH_TOKEN
-        # SECRET values are encrypted by DO on first submission. Replace before deploy.
-        value: "CHANGE_ME_GENERATE_WITH: openssl rand -base64 32"
+        # SECRET values are encrypted by DO on first submission and are NOT
+        # renderable via the app-spec. Set a real value in the DO dashboard
+        # before/at deploy (openssl rand -base64 32); never commit a known
+        # placeholder, or the public MCP endpoint is unauthenticated.
+        value: ""
         type: SECRET
       - key: MCP_OAUTH
         value: "1"
