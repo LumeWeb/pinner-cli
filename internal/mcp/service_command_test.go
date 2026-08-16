@@ -213,6 +213,46 @@ func TestValidateOpenAIRequiresKeyInFileNotJustEnv(t *testing.T) {
 	require.ErrorContains(t, err, "CONTROL_PLANE_API_KEY", "env-only key must not satisfy file validation")
 }
 
+func TestValidateNgrokDoesNotRequireBinaryOnPath(t *testing.T) {
+	// ngrok is embedded via the Go SDK, so `pinner mcp service validate` must
+	// succeed for ngrok even when no `ngrok` binary is installed. The binary
+	// check is now reserved for cloudflared, which still runs as a subprocess.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "mcp.env")
+	require.NoError(t, os.WriteFile(path, []byte(
+		"MCP_TUNNEL_PROVIDER=ngrok\n"+
+			"MCP_AUTH_TOKEN=test-auth-token-abc123\n"+
+			"MCP_TUNNEL_TOKEN=test-ngrok-token-xyz789\n"), 0600))
+	if runtime.GOOS != "windows" {
+		t.Setenv("PATH", t.TempDir()) // no ngrok binary reachable
+	}
+
+	cmd := &cli.Command{Flags: managedServiceFlags()}
+	require.NoError(t, cmd.Set(serviceEnvFileFlag, path))
+	svc, err := resolveManagedService(context.Background(), cmd, true)
+	require.NoError(t, err)
+	require.NotNil(t, svc)
+}
+
+func TestValidateCloudflaredRequiresBinaryOnPath(t *testing.T) {
+	// cloudflared remains a subprocess provider, so validation must still fail
+	// when the binary is unreachable.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "mcp.env")
+	require.NoError(t, os.WriteFile(path, []byte(
+		"MCP_TUNNEL_PROVIDER=cloudflared\n"+
+			"MCP_AUTH_TOKEN=test-auth-token-abc123\n"+
+			"MCP_DOMAIN=mcp.example.com\n"), 0600))
+	if runtime.GOOS != "windows" {
+		t.Setenv("PATH", t.TempDir()) // no cloudflared binary reachable
+	}
+
+	cmd := &cli.Command{Flags: managedServiceFlags()}
+	require.NoError(t, cmd.Set(serviceEnvFileFlag, path))
+	_, err := resolveManagedService(context.Background(), cmd, true)
+	require.ErrorContains(t, err, "executable not found on PATH")
+}
+
 func TestParseTunnelProviderEnum(t *testing.T) {
 	for _, tc := range []struct {
 		raw  string
