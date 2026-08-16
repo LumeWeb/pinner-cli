@@ -352,7 +352,7 @@ func websitesEnableIPNS(d WebsitesDeps) catalog.Operation {
 // WebsiteDeleteResult is the typed data returned by the delete operation so
 // the frontend can render the deleted website's identifier.
 type WebsiteDeleteResult struct {
-	ID string
+	ID string `json:"id"`
 }
 
 // websitesDelete is the `websites delete` operation. DESTRUCTIVE. The core
