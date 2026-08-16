@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"go.lumeweb.com/configmanager"
@@ -140,6 +141,12 @@ type Manager interface {
 	SetAPIEndpoint(endpoint string) error
 	SetMaxRetries(retries int) error
 	SetSecure(secure bool) error
+	// TunnelCredential returns the last-resort tunnel credential for the given
+	// provider + logical key (e.g. ("ngrok","token")), or "" when unset.
+	TunnelCredential(provider, key string) string
+	// SetTunnelCredential persists a last-resort tunnel credential for the given
+	// provider + logical key to the config file.
+	SetTunnelCredential(provider, key, value string) error
 	RequireAuthenticated() error
 	Reset() error
 }
@@ -239,9 +246,23 @@ func isFileNotFoundError(err error) bool {
 		strings.Contains(msg, "The system cannot find the file specified")
 }
 
-// Save persists the current configuration to disk.
+// Save persists the current configuration to disk and locks the file down to
+// 0600 so any stored secrets (e.g. tunnel credentials) are never group/world
+// readable. This runs on every persist (all setters call Save), not just the
+// credential setter, because configmanager persists via a temp file +
+// os.Rename that recreates the file under the process umask (typically 0644);
+// centralizing the chmod here keeps the 0600 invariant across all writes.
 func (m *managerImpl) Save() error {
-	return m.Manager.Persist() //nolint:staticcheck // explicit to avoid recursion
+	if err := m.Manager.Persist(); err != nil { //nolint:staticcheck // explicit to avoid recursion
+		return err
+	}
+	// Windows has no Unix permission bits; skip there.
+	if runtime.GOOS != "windows" {
+		if err := os.Chmod(m.configPath, 0o600); err != nil {
+			return fmt.Errorf("failed to lock down config file perms: %w", err)
+		}
+	}
+	return nil
 }
 
 // SetAuthToken sets the authentication token in the config.
@@ -284,6 +305,37 @@ func (m *managerImpl) SetSecure(secure bool) error {
 	if err := m.Manager.Set(context.Background(), ConfigKeySecure, secure); err != nil { //nolint:staticcheck // explicit to avoid recursion
 		return fmt.Errorf("failed to set secure: %w", err)
 	}
+	return m.Save()
+}
+
+// TunnelCredential returns the last-resort tunnel credential for the given
+// provider + logical key, or "" when the pair is unknown or unset.
+func (m *managerImpl) TunnelCredential(provider, key string) string {
+	cfgKey := TunnelCredentialKey(provider, key)
+	if cfgKey == "" {
+		return ""
+	}
+	v, err := m.Manager.GetString(cfgKey) //nolint:staticcheck // explicit to avoid recursion
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(v)
+}
+
+// SetTunnelCredential persists a last-resort tunnel credential for the given
+// provider + logical key to the config file. It is a no-op error for unknown
+// (provider, key) pairs.
+func (m *managerImpl) SetTunnelCredential(provider, key, value string) error {
+	cfgKey := TunnelCredentialKey(provider, key)
+	if cfgKey == "" {
+		return fmt.Errorf("unsupported tunnel credential pair %q.%q", provider, key)
+	}
+	if err := m.Manager.Set(context.Background(), cfgKey, value); err != nil { //nolint:staticcheck // explicit to avoid recursion
+		return fmt.Errorf("failed to set tunnel credential %s: %w", cfgKey, err)
+	}
+	// Save() re-locks config.yaml to 0600 on every persist, so pre-existing
+	// world-readable files (e.g. created by an older version under a broader
+	// umask) are locked down before they hold a secret.
 	return m.Save()
 }
 

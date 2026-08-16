@@ -2518,6 +2518,69 @@ func (_c *MockManager_SetSecure_Call) RunAndReturn(run func(secure bool) error) 
 	return _c
 }
 
+// SetTunnelCredential provides a mock function for the type MockManager
+func (_mock *MockManager) SetTunnelCredential(provider string, key string, value string) error {
+	ret := _mock.Called(provider, key, value)
+
+	if len(ret) == 0 {
+		panic("no return value specified for SetTunnelCredential")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(string, string, string) error); ok {
+		r0 = returnFunc(provider, key, value)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockManager_SetTunnelCredential_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SetTunnelCredential'
+type MockManager_SetTunnelCredential_Call struct {
+	*mock.Call
+}
+
+// SetTunnelCredential is a helper method to define mock.On call
+//   - provider string
+//   - key string
+//   - value string
+func (_e *MockManager_Expecter) SetTunnelCredential(provider interface{}, key interface{}, value interface{}) *MockManager_SetTunnelCredential_Call {
+	return &MockManager_SetTunnelCredential_Call{Call: _e.mock.On("SetTunnelCredential", provider, key, value)}
+}
+
+func (_c *MockManager_SetTunnelCredential_Call) Run(run func(provider string, key string, value string)) *MockManager_SetTunnelCredential_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 string
+		if args[0] != nil {
+			arg0 = args[0].(string)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockManager_SetTunnelCredential_Call) Return(err error) *MockManager_SetTunnelCredential_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockManager_SetTunnelCredential_Call) RunAndReturn(run func(provider string, key string, value string) error) *MockManager_SetTunnelCredential_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // SetupSync provides a mock function for the type MockManager
 func (_mock *MockManager) SetupSync(opts ...configmanager.ConfigOption) error {
 	// configmanager.ConfigOption
@@ -2680,6 +2743,63 @@ func (_c *MockManager_Subscribe_Call) Return(fn func()) *MockManager_Subscribe_C
 }
 
 func (_c *MockManager_Subscribe_Call) RunAndReturn(run func(pattern string, callback configmanager.SubscriptionCallback) func()) *MockManager_Subscribe_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// TunnelCredential provides a mock function for the type MockManager
+func (_mock *MockManager) TunnelCredential(provider string, key string) string {
+	ret := _mock.Called(provider, key)
+
+	if len(ret) == 0 {
+		panic("no return value specified for TunnelCredential")
+	}
+
+	var r0 string
+	if returnFunc, ok := ret.Get(0).(func(string, string) string); ok {
+		r0 = returnFunc(provider, key)
+	} else {
+		r0 = ret.Get(0).(string)
+	}
+	return r0
+}
+
+// MockManager_TunnelCredential_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'TunnelCredential'
+type MockManager_TunnelCredential_Call struct {
+	*mock.Call
+}
+
+// TunnelCredential is a helper method to define mock.On call
+//   - provider string
+//   - key string
+func (_e *MockManager_Expecter) TunnelCredential(provider interface{}, key interface{}) *MockManager_TunnelCredential_Call {
+	return &MockManager_TunnelCredential_Call{Call: _e.mock.On("TunnelCredential", provider, key)}
+}
+
+func (_c *MockManager_TunnelCredential_Call) Run(run func(provider string, key string)) *MockManager_TunnelCredential_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 string
+		if args[0] != nil {
+			arg0 = args[0].(string)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockManager_TunnelCredential_Call) Return(s string) *MockManager_TunnelCredential_Call {
+	_c.Call.Return(s)
+	return _c
+}
+
+func (_c *MockManager_TunnelCredential_Call) RunAndReturn(run func(provider string, key string) string) *MockManager_TunnelCredential_Call {
 	_c.Call.Return(run)
 	return _c
 }
