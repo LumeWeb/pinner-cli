@@ -11,6 +11,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/catalogops"
 	"go.lumeweb.com/pinner-cli/internal/core/auth"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner-cli/internal/urlopen"
 )
 
 // account_wiring.go adapts the account catalog operations
@@ -138,7 +139,7 @@ func accountActionAdapter(op catalog.Operation) cli.ActionFunc {
 		if shouldOpen(c) {
 			output := setupOutput(c)
 			if url := accountResultURL(result); url != "" {
-				if perr := openURL(url); perr != nil {
+				if perr := urlopen.Open(url); perr != nil {
 					// Non-fatal: the URL is printed regardless.
 					if !output.IsJSON() {
 						output.Printfln("Could not auto-open the browser: %v", perr)

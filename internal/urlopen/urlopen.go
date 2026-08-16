@@ -1,4 +1,8 @@
-package cli
+// Package urlopen opens URLs in the user's default browser, cross-platform.
+// It is a stdlib-only leaf package so both internal/cli and internal/mcp can
+// import it without an import cycle (cli imports mcp, so mcp cannot import
+// cli directly).
+package urlopen
 
 import (
 	"errors"
@@ -8,9 +12,9 @@ import (
 	"strings"
 )
 
-// openURL opens the given URL in the user's default browser, cross-platform.
-// It is best-effort: on failure it returns an error the caller can surface, and
-// the caller always prints the URL first so the user can open it manually.
+// Open opens the given URL in the user's default browser, cross-platform.
+// It is best-effort: on failure it returns an error the caller can surface,
+// and the caller always prints the URL first so the user can open it manually.
 //
 // Portability notes:
 //   - darwin:  `open <url>`
@@ -20,11 +24,11 @@ import (
 //     installed we fall back to sensible-browser (Debian family) and then
 //     x-www-browser (generic X11) so headless/minimal systems still work.
 //
-// The command is launched detached (Start, not Run) so the CLI does not block
-// on the browser process.
-func openURL(url string) error {
+// The command is launched detached (Start, not Run) so the caller does not
+// block on the browser process.
+func Open(url string) error {
 	if url == "" {
-		return errors.New("openURL: empty URL")
+		return errors.New("urlopen: empty URL")
 	}
 
 	switch runtime.GOOS {
@@ -38,8 +42,8 @@ func openURL(url string) error {
 		// unquoted URL with a query string (&) or spaces breaks into a second
 		// failing command while cmd.Start() itself succeeds. Strip embedded
 		// quotes, then wrap in quotes so cmd treats the URL as one token.
-		safe := strings.NewReplacer("\"", "").Replace(url)
-		cmd := exec.Command("cmd", "/c", "start", "", "\""+safe+"\"")
+		safe := strings.NewReplacer(`"`, "").Replace(url)
+		cmd := exec.Command("cmd", "/c", "start", "", `"`+safe+`"`)
 		if err := cmd.Start(); err == nil {
 			return nil
 		}
