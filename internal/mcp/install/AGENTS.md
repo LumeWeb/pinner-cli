@@ -69,17 +69,29 @@ periodic diff with `add-mcp/src/agents.ts`.
 - **Global/local path resolution is single-path, not candidate-based.** The reference's
   `resolveConfigPath` picks the first *existing* config among several candidates (e.g. kilo's
   `kilo.jsonc`/`kilo.json` chain, opencode's `.json` fallback). Pinner writes to the single
-  declared `ConfigPath()`/`LocalConfigPath` per agent.
+  declared `GlobalConfigPath()`/`LocalProjectPath()` per agent.
 - **Codex approval is opt-in.** Auto-approve mode is emitted only when `AutoApproveSet` is true;
   the reference likewise leaves the entry untouched unless auto-approve was requested.
 
 ## Adding an agent (checklist)
 
-1. Add the `AgentKey` constant and entry to `AllAgents` in `types.go`.
-2. Add the table entry in `agents.go` (paths/format/configKey/transports).
-3. Add the `Transform` in `transforms.go` (build a fresh map with only recognized keys).
+1. Add the `AgentKey` constant in `types.go`.
+2. Add the spec entry in `agents.go` (`agentSpecs` — paths/format/configKey/transports/transformName),
+   and add the key to `allAgentKeys` for registry ordering.
+3. Add the `Transform` in `transforms.go` (build a fresh map with only recognized keys) and bind it
+   under a name in the `transformTable` (`agent.go`).
 4. Add path helpers in `agents.go` if the agent has OS/env-dependent paths.
 5. Add transform + writer round-trip tests in `transforms_test.go` / `writer_test.go`, and
    path-helper tests in `paths_test.go`.
-6. The CLI `--agent` help text and error messages derive from `install.AllAgents`, so no manual
-   list edit is needed — just update the table above.
+6. The CLI `--agent` help text and error messages derive from the registry
+   (`install.AllAgentsKey()` / `install.Lookup`), so no manual list edit is needed — just update the
+   spec table above.
+
+## Architecture
+
+Agents are modeled as an `Agent` interface (`registry.go`) whose behavior is implemented by the
+single `declaredAgent` type (`agent.go`) backed by pure-data `agentSpec`s (`agents.go`). All agents
+live in a `Registry` (`install.Default`) — query by `Lookup(key)`, enumerate with `All()`/`Keys()`,
+and detect installed agents via `DetectProject`/`DetectGlobal`. The old `AgentConfig`
+data-struct-with-function-fields and the global `agentTable` map are gone; behavior lives behind
+the interface instead of as loose package funcs.

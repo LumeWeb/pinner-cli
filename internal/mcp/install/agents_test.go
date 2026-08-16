@@ -4,100 +4,91 @@ import (
 	"testing"
 )
 
-// TestAgentTableIntegrity verifies every key in AllAgents resolves through
-// Agent(), supports stdio, has non-empty config paths and a valid format.
+// TestAgentTableIntegrity verifies every key in the registry resolves through
+// Lookup, supports stdio, has non-empty config paths and a valid format.
 // The supported set is not pinned to a magic count — it is whatever the
-// canonical agentTable declares; AllAgents consistency with the table is
-// asserted by TestAllAgentsKeysUnique.
+// canonical specs declare.
 func TestAgentTableIntegrity(t *testing.T) {
 	seen := map[AgentKey]bool{}
-	for _, key := range AllAgents {
+	for _, key := range AllAgentsKey() {
 		if seen[key] {
-			t.Errorf("AllAgents contains duplicate key %q", key)
+			t.Errorf("registry contains duplicate key %q", key)
 			continue
 		}
 		seen[key] = true
 
-		agent, ok := Agent(key)
-		if !ok {
-			t.Errorf("Agent(%q) not found in table", key)
+		agent := Lookup(key)
+		if agent == nil {
+			t.Errorf("Lookup(%q) not found", key)
 			continue
 		}
-		if agent.Key == "" {
-			t.Errorf("agent %q: empty Key", key)
+		if agent.Key() == "" {
+			t.Errorf("agent %q: empty Key()", key)
 		}
-		if agent.DisplayName == "" {
-			t.Errorf("agent %q: empty DisplayName", key)
+		if agent.DisplayName() == "" {
+			t.Errorf("agent %q: empty DisplayName()", key)
 		}
-		if agent.ConfigPath == nil {
-			t.Errorf("agent %q: nil ConfigPath", key)
-		} else if agent.ConfigPath() == "" {
-			t.Errorf("agent %q: empty ConfigPath()", key)
+		if agent.GlobalConfigPath() == "" {
+			t.Errorf("agent %q: empty GlobalConfigPath()", key)
 		}
-		switch agent.Format {
+		switch agent.Format() {
 		case FormatJSON, FormatYAML, FormatTOML:
 		default:
-			t.Errorf("agent %q: invalid format %q", key, agent.Format)
+			t.Errorf("agent %q: invalid format %q", key, agent.Format())
 		}
-		if agent.Transform == nil {
-			t.Errorf("agent %q: nil Transform", key)
+		if agent.Transform("s", McpServerConfig{}, false) == nil {
+			t.Errorf("agent %q: transform produced nil entry", key)
 		}
-		if len(agent.SupportedTransports) == 0 {
-			t.Errorf("agent %q: no supported transports", key)
+		if !agent.SupportsTransport(TransportStdio) {
+			t.Errorf("agent %q: does not support stdio", key)
 		}
-		hasStdio := false
-		for _, tr := range agent.SupportedTransports {
-			if tr == TransportStdio {
-				hasStdio = true
-			}
-		}
-		if !hasStdio {
-			t.Errorf("agent %q: SupportedTransports does not include stdio", key)
-		}
-		if agent.ConfigKey == "" {
-			t.Errorf("agent %q: empty ConfigKey", key)
+		if agent.ServerKey(false) == "" {
+			t.Errorf("agent %q: empty ServerKey(false)", key)
 		}
 	}
 }
 
-// TestUnknownAgent verifies that an unknown key returns ok=false.
+// TestUnknownAgent verifies that an unknown key returns nil.
 func TestUnknownAgent(t *testing.T) {
-	if _, ok := Agent(AgentKey("not-a-real-agent")); ok {
-		t.Errorf("Agent(unknown) returned ok=true, want false")
+	if Lookup(AgentKey("not-a-real-agent")) != nil {
+		t.Errorf("Lookup(unknown) returned non-nil, want nil")
 	}
 }
 
-// TestAllAgentsKeysUnique verifies agent keys are unique across the table.
+// TestAllAgentsKeysUnique verifies agent keys are unique across the registry.
 func TestAllAgentsKeysUnique(t *testing.T) {
-	table := map[AgentKey]AgentConfig{}
-	for _, key := range AllAgents {
-		agent, _ := Agent(key)
-		table[key] = agent
+	keys := AllAgentsKey()
+	table := map[AgentKey]Agent{}
+	for _, key := range keys {
+		table[key] = Lookup(key)
 	}
-	if len(table) != len(AllAgents) {
-		t.Errorf("agent table has %d unique keys but AllAgents has %d entries", len(table), len(AllAgents))
+	if len(table) != len(keys) {
+		t.Errorf("registry has %d unique keys but AllAgentsKey has %d entries", len(table), len(keys))
 	}
-	for key := range agentTable {
+	for key := range agentSpecs {
 		found := false
-		for _, k := range AllAgents {
+		for _, k := range keys {
 			if k == key {
 				found = true
 			}
 		}
 		if !found {
-			t.Errorf("agent %q present in table but missing from AllAgents", key)
+			t.Errorf("agent %q present in specs but missing from registry order", key)
 		}
 	}
 }
 
 // TestClaudeDesktopStdioOnly verifies claude-desktop only advertises stdio.
 func TestClaudeDesktopStdioOnly(t *testing.T) {
-	agent, ok := Agent(AgentClaudeDesktop)
-	if !ok {
+	agent := Lookup(AgentClaudeDesktop)
+	if agent == nil {
 		t.Fatalf("claude-desktop missing")
 	}
-	if len(agent.SupportedTransports) != 1 || agent.SupportedTransports[0] != TransportStdio {
-		t.Errorf("claude-desktop transports = %v, want [stdio]", agent.SupportedTransports)
+	if agent.SupportsTransport(TransportHTTP) || agent.SupportsTransport(TransportSSE) {
+		t.Errorf("claude-desktop should only support stdio")
+	}
+	if !agent.SupportsTransport(TransportStdio) {
+		t.Errorf("claude-desktop should support stdio")
 	}
 }
 
@@ -114,18 +105,18 @@ func TestKeySpecifics(t *testing.T) {
 		{AgentClaudeCode, "mcpServers"},
 	}
 	for _, tc := range cases {
-		agent, ok := Agent(tc.key)
-		if !ok {
+		agent := Lookup(tc.key)
+		if agent == nil {
 			t.Errorf("%s: not found", tc.key)
 			continue
 		}
-		if agent.ConfigKey != tc.configKey {
-			t.Errorf("%s: ConfigKey = %q, want %q", tc.key, agent.ConfigKey, tc.configKey)
+		if agent.ServerKey(false) != tc.configKey {
+			t.Errorf("%s: ServerKey(false) = %q, want %q", tc.key, agent.ServerKey(false), tc.configKey)
 		}
 	}
 	// VS Code local key is still "servers".
-	vs, _ := Agent(AgentVSCode)
-	if vs.LocalKey() != "servers" {
-		t.Errorf("vscode LocalKey() = %q, want servers", vs.LocalKey())
+	vs := Lookup(AgentVSCode)
+	if vs.ServerKey(true) != "servers" {
+		t.Errorf("vscode ServerKey(true) = %q, want servers", vs.ServerKey(true))
 	}
 }

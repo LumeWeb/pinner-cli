@@ -10,44 +10,34 @@ import (
 )
 
 // WriteServerConfig merges the server entry into the agent config at path and
-// writes it back. It creates the file/dir if missing. Format dispatch is by
-// agent.Format. The server entry is written under the agent's config key
-// (LocalKey for a local config, ConfigKey otherwise).
+// writes it back. It creates the file/dir if missing. Format dispatch is by the
+// agent's Format. The server entry is written under the agent's server key
+// (ServerKey(true) for a local config, ServerKey(false) otherwise).
 //
 // JSON/JSONC configs are edited surgically in place (via sjson) so the user's
-// existing comments, formatting, and unrelated fields are preserved. YAML and
+// existing comments, formatting, and unrelated fields are preserved; YAML and
 // TOML configs are re-serialized wholesale.
-func WriteServerConfig(agent AgentConfig, path string, serverName string, serverCfg McpServerConfig, local bool) error {
-	key := agent.ConfigKey
-	if local {
-		key = agent.LocalKey()
-	}
-
-	if agent.Transform == nil {
-		return fmt.Errorf("%s: no transform defined", agent.Key)
-	}
+func WriteServerConfig(agent Agent, path string, serverName string, serverCfg McpServerConfig, local bool) error {
+	key := agent.ServerKey(local)
 	entry := agent.Transform(serverName, serverCfg, local)
 
-	if isJSONFormat(agent.Format) {
-		if err := writeJSONCEntry(agent.Key, path, key, serverName, entry); err != nil {
-			return err
-		}
-		return nil
+	if isJSONFormat(agent.Format()) {
+		return writeJSONCEntry(agent.Key(), path, key, serverName, entry)
 	}
 
-	root, err := readRoot(agent.Format, path)
+	root, err := readRoot(agent.Format(), path)
 	if err != nil {
-		return fmt.Errorf("%s: read %s: %w", agent.Key, path, err)
+		return fmt.Errorf("%s: read %s: %w", agent.Key(), path, err)
 	}
 
 	servers, err := getOrCreateServers(root, key)
 	if err != nil {
-		return fmt.Errorf("%s: %w", agent.Key, err)
+		return fmt.Errorf("%s: %w", agent.Key(), err)
 	}
 	servers[serverName] = entry
 
-	if err := writeRoot(agent.Format, path, root); err != nil {
-		return fmt.Errorf("%s: write %s: %w", agent.Key, path, err)
+	if err := writeRoot(agent.Format(), path, root); err != nil {
+		return fmt.Errorf("%s: write %s: %w", agent.Key(), path, err)
 	}
 	return nil
 }
@@ -55,16 +45,16 @@ func WriteServerConfig(agent AgentConfig, path string, serverName string, server
 // RemoveServer removes a server entry by name from the config at path. It is a
 // no-op (returning nil) when the config file does not exist or the entry is not
 // present. JSON/JSONC configs are edited surgically; YAML/TOML are re-serialized.
-func RemoveServer(agent AgentConfig, path string, serverName string) error {
-	key := agent.ConfigKey
+func RemoveServer(agent Agent, path string, serverName string) error {
+	key := agent.ServerKey(false)
 
-	if isJSONFormat(agent.Format) {
-		return removeJSONCEntry(agent.Key, path, key, serverName)
+	if isJSONFormat(agent.Format()) {
+		return removeJSONCEntry(agent.Key(), path, key, serverName)
 	}
 
-	root, err := readRoot(agent.Format, path)
+	root, err := readRoot(agent.Format(), path)
 	if err != nil {
-		return fmt.Errorf("%s: read %s: %w", agent.Key, path, err)
+		return fmt.Errorf("%s: read %s: %w", agent.Key(), path, err)
 	}
 	// A missing file yields an empty map — nothing to remove.
 	if len(root) == 0 {
@@ -79,16 +69,13 @@ func RemoveServer(agent AgentConfig, path string, serverName string) error {
 		return nil
 	}
 	delete(servers, serverName)
-	return writeRoot(agent.Format, path, root)
+	return writeRoot(agent.Format(), path, root)
 }
 
 // DetectGlobal reports whether a global install of the agent is present (its
 // config file exists).
-func DetectGlobal(agent AgentConfig) bool {
-	if agent.ConfigPath == nil {
-		return false
-	}
-	path := agent.ConfigPath()
+func DetectGlobal(agent Agent) bool {
+	path := agent.GlobalConfigPath()
 	if path == "" {
 		return false
 	}

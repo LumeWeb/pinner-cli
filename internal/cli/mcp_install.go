@@ -20,7 +20,7 @@ import (
 // command tree after MCPCommand returns (internal/cli already imports
 // internal/mcp; the join point is root.go, not adapter.go).
 func NewMcpInstallCommand() *cli.Command {
-	// Supported-agent lists are derived once from install.AllAgents so help text
+	// Supported-agent lists are derived once from the install registry so help text
 	// and error messages cannot drift from the agent table.
 	supportedKeys := strings.Join(agentNames(), ", ")
 	supportedDisplay := strings.Join(agentDisplayNames(), ", ")
@@ -45,7 +45,7 @@ Examples:
 		Flags: append([]cli.Flag{
 			&cli.StringSliceFlag{
 				Name: "agent",
-				// Derived from install.AllAgents (single source of truth).
+				// Derived from the install registry (single source of truth).
 				Usage: "Comma-separated list of agents to install to (" + supportedKeys + "); defaults to detection when omitted",
 			},
 			&cli.StringFlag{
@@ -113,7 +113,7 @@ func runMcpInstall(ctx context.Context, cmd mcpInstallFlagGetter, ui InstallUI, 
 	// Validate agent keys.
 	resolved := make([]install.AgentKey, 0, len(agents))
 	for _, a := range agents {
-		if _, ok := install.Agent(a); !ok {
+		if install.Lookup(a) == nil {
 			return fmt.Errorf("unknown agent %q (supported: %s)", a, strings.Join(agentNames(), ", "))
 		}
 		resolved = append(resolved, a)
@@ -205,18 +205,18 @@ func dedupeAgents(agents []install.AgentKey) []install.AgentKey {
 
 // agentNames returns the human-readable list of supported agent keys.
 func agentNames() []string {
-	return lo.Map(install.AllAgents, func(a install.AgentKey, _ int) string {
+	return lo.Map(install.AllAgentsKey(), func(a install.AgentKey, _ int) string {
 		return string(a)
 	})
 }
 
-// agentDisplayNames returns the user-facing display names in AllAgents order.
-// Deriving them from the agent table (single source of truth) keeps help text
-// and error messages from drifting from the supported set. Every AllAgents key
+// agentDisplayNames returns the user-facing display names in registry order.
+// Deriving them from the registry (single source of truth) keeps help text
+// and error messages from drifting from the supported set. Every registry key
 // is guaranteed to resolve in the table (see TestAgentTableIntegrity).
 func agentDisplayNames() []string {
-	return lo.Map(install.AllAgents, func(a install.AgentKey, _ int) string {
-		cfg, _ := install.Agent(a)
-		return cfg.DisplayName
+	return lo.Map(install.AllAgentsKey(), func(a install.AgentKey, _ int) string {
+		cfg := install.Lookup(a)
+		return cfg.DisplayName()
 	})
 }
