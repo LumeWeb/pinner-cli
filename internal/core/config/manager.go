@@ -37,14 +37,36 @@ const (
 	configFileName = "config.yaml"
 	// legacyConfigSubdir is the legacy ~/.config path segment kept for BC.
 	legacyConfigSubdir = ".config"
+	// PinnerHomeEnv is the environment variable that overrides the root Pinner
+	// data directory. When set, both the config file and the vault cache are
+	// derived from it, so a single mounted volume (PaaS) can host all
+	// persistent Pinner state:
+	//   $PINNER_HOME/config.yaml
+	//   $PINNER_HOME/vaults/...
+	PinnerHomeEnv = "PINNER_HOME"
 )
+
+// PinnerHome returns the PINNER_HOME override root, or "" when unset.
+// It is the single source of truth for the container/PaaS volume root so
+// the config resolver and the vault resolver converge on one location.
+func PinnerHome() string {
+	return os.Getenv(PinnerHomeEnv)
+}
 
 // resolveDefaultConfigPath determines the config file path using the OS-native
 // config directory, with backward compatibility for the legacy ~/.config path.
+//
+// When PINNER_HOME is set, the config file always lives at
+// $PINNER_HOME/config.yaml (highest priority). Otherwise it falls through to
+// the OS-native config dir.
+//
 // It returns an empty string when no user config or home directory is
 // resolvable, letting callers fail fast instead of silently using a
 // CWD-relative path.
 func resolveDefaultConfigPath() string {
+	if root := PinnerHome(); root != "" {
+		return filepath.Join(root, configDirName, configFileName)
+	}
 	// BC: check legacy Linux path first on all platforms
 	if home, err := os.UserHomeDir(); err == nil && home != "" {
 		legacy := filepath.Join(home, legacyConfigSubdir, configDirName, configFileName)
@@ -64,6 +86,46 @@ func resolveDefaultConfigPath() string {
 		dir = filepath.Join(home, legacyConfigSubdir)
 	}
 	return filepath.Join(dir, configDirName, configFileName)
+}
+
+// PinnerConfigDir returns the Pinner config directory root. When PINNER_HOME is
+// set it is $PINNER_HOME; otherwise the OS-native config dir is used. This is
+// shared by the config manager and the vault registry so both honor the same
+// volume root.
+func PinnerConfigDir() string {
+	if root := PinnerHome(); root != "" {
+		return filepath.Join(root, configDirName)
+	}
+	return filepath.Join(configDirForOS(), configDirName)
+}
+
+// PinnerDataDir returns the Pinner data/cache directory root. When PINNER_HOME
+// is set it is $PINNER_HOME; otherwise the OS-native cache dir is used.
+func PinnerDataDir() string {
+	if root := PinnerHome(); root != "" {
+		return filepath.Join(root, configDirName, "vaults")
+	}
+	return filepath.Join(configCacheDirForOS(), configDirName, "vaults")
+}
+
+// configDirForOS returns the OS-native user config base dir (or ~/.config).
+func configDirForOS() string {
+	base, err := os.UserConfigDir()
+	if err != nil || base == "" {
+		home, _ := os.UserHomeDir()
+		base = filepath.Join(home, ".config")
+	}
+	return base
+}
+
+// configCacheDirForOS returns the OS-native user cache base dir (or ~/.cache).
+func configCacheDirForOS() string {
+	base, err := os.UserCacheDir()
+	if err != nil || base == "" {
+		home, _ := os.UserHomeDir()
+		base = filepath.Join(home, ".cache")
+	}
+	return base
 }
 
 // Manager extends configmanager.Manager with CLI-specific configuration methods.
