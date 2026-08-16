@@ -1,7 +1,6 @@
 package vault
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -40,6 +39,19 @@ type sdkClient interface {
 	DownloadSharedObject(ctx context.Context, sharedURL string, opts ...siastorage.DownloadOption) (io.ReadCloser, error)
 	Close() error
 	AppKey() types.PrivateKey
+}
+
+// byteCounter is an io.Writer that tallies the total bytes written to it. It
+// is used in ShareAccept to measure the true size of a streamed shared object
+// (which the Sia SDK exposes only as an io.ReadCloser) without buffering it in
+// memory.
+type byteCounter struct {
+	n *int64
+}
+
+func (c *byteCounter) Write(p []byte) (int, error) {
+	*c.n += int64(len(p))
+	return len(p), nil
 }
 
 // vaultService implements VaultService.
@@ -1115,17 +1127,13 @@ func (s *vaultService) ShareAccept(ctx context.Context, vaultPath, shareURL, tar
 		return nil, fmt.Errorf("failed to create Sia SDK: %w", err)
 	}
 
-	// Resolve the share URL and stream the shared object's content. The URL
-	// embeds the decryption key, so the accepting SDK needs no extra secrets.
+	// Resolve the share URL. The URL embeds the decryption key, so the
+	// accepting SDK needs no extra secrets.
 	rc, err := sdk.DownloadSharedObject(ctx, shareURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve shared object: %w", err)
 	}
 	defer rc.Close()
-	content, err := io.ReadAll(rc)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read shared object content: %w", err)
-	}
 
 	// Refuse to silently overwrite an existing live file at the destination.
 	// Accepting into an existing path would demote its current content + full
@@ -1137,11 +1145,48 @@ func (s *vaultService) ShareAccept(ctx context.Context, vaultPath, shareURL, tar
 		}
 	}
 
-	// Pin a self-contained copy into this profile: a NEW object + NEW file row,
-	// fully owned by the accepting profile (never shared by reference).
-	f, err := s.Put(ctx, bytes.NewReader(content), int64(len(content)), vp.FullPath(), nil)
+	// Stream the shared content straight into Put via a pipe rather than
+	// materializing the whole object in RAM (mirrors VersionRestore), so a
+	// large share cannot OOM the process. The shared object's true size is
+	// unknown until it streams (the Sia SDK exposes DownloadSharedObject only
+	// as an io.ReadCloser), so we count bytes as they pass through the pipe
+	// and reconcile the stored Size on the row + object after the upload. A
+	// failed download is propagated via CloseWithError so Put refuses the
+	// object instead of pinning partial/empty content.
+
+	// Pin a self-contained copy into this profile: a NEW object + NEW file
+	// row, fully owned by the accepting profile (never shared by reference).
+	// The shared object's true size is unknown until it streams (the Sia SDK
+	// surfaces DownloadSharedObject only as an io.ReadCloser), so bytes are
+	// counted as they pass through the pipe and the resulting Size is written
+	// back onto the row after the upload; a failed download is propagated via
+	// CloseWithError so Put refuses the object instead of pinning partial or
+	// empty content.
+	pr, pw := io.Pipe()
+	var n int64
+	counter := &byteCounter{n: &n}
+	go func() {
+		// Copy the shared stream into the pipe while tallying the real byte
+		// count (TeeReader feeds the counter as bytes pass through). Put
+		// cannot return until it drains the pipe, so n is settled before the
+		// next statement reads it; a failed download is propagated via
+		// CloseWithError so Put refuses the object instead of pinning partial
+		// or empty content.
+		var werr error
+		_, werr = io.Copy(pw, io.TeeReader(rc, counter))
+		pw.CloseWithError(werr)
+	}()
+	f, err := s.Put(ctx, pr, 0, vp.FullPath(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to pin shared content copy: %w", err)
+	}
+
+	// Reconcile the true size (counted during the stream) onto the row so
+	// stat/ls/sync report the actual byte count rather than a 0 placeholder.
+	if n > 0 && f.Size != n {
+		if uerr := s.db.Model(&File{}).Where("id = ?", f.ID).Update("size", n).Error; uerr == nil {
+			f.Size = n
+		}
 	}
 
 	// Append a write-only audit row to the share ledger.

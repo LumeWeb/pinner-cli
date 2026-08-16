@@ -58,6 +58,12 @@ func TestShareAcceptPinsCopyAndLedgers(t *testing.T) {
 		t.Fatalf("accepted copy content = %q, want shared content", got.String())
 	}
 
+	// The streamed accept must record the true shared byte count (reconciled
+	// after the pipe drains), not the 0 placeholder passed to Put.
+	if f.Size != int64(len("shared-content-from-another-profile")) {
+		t.Fatalf("accepted file size = %d, want %d", f.Size, len("shared-content-from-another-profile"))
+	}
+
 	// The original file row must be untouched (ShareAccept pins a NEW object —
 	// it never overwrites an existing path).
 	origStat, err := svc.Stat(ctx, "vault:/docs/orig.txt")
