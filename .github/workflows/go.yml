@@ -131,6 +131,29 @@ jobs:
             ghcr.io/goreleaser/goreleaser-cross:v1.26 \
             release --snapshot --clean --skip=docker
 
+      - name: Build MCP bundles (.mcpb)
+        run: |
+          # The goreleaser publishers pipe (which builds .mcpb at release time)
+          # is skipped in snapshot builds, so pack one bundle per compiled
+          # binary here. This makes a set of .mcpb files available as CI
+          # artifacts on every PR/merge to develop, not just at release.
+          npm install --prefix /opt/runner-mcpb -g @anthropic-ai/mcpb >/dev/null 2>&1 \
+            && echo "/opt/runner-mcpb/bin" >> "$GITHUB_PATH"
+          SNAP_VERSION="$(git describe --tags --always --dirty 2>/dev/null || git rev-parse --short HEAD)"
+          # One bundle per supported desktop target (goos/arch tuple).
+          PLATFORMS="linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64"
+          for pair in $PLATFORMS; do
+            goos="${pair%/*}"; goarch="${pair#*/}"
+            bin="$(find dist -type f \( -name 'pinner' -o -name 'pinner.exe' \) -not -path '*/mcpb/*' -path "*${goos}_${goarch}*" 2>/dev/null | head -n1)"
+            if [ -z "$bin" ]; then
+              echo "::warning::no ${goos}/${goarch} binary found in dist/; skipping .mcpb"
+              continue
+            fi
+            echo ">> packing ${goos}/${goarch} from $bin"
+            ./scripts/mcpb-pack.sh "$bin" "$goos" "$goarch" "$SNAP_VERSION"
+          done
+          echo ">> MCP bundles produced:" && ls -lh dist/mcpb/*.mcpb
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:

@@ -45,6 +45,13 @@ the GitHub release as assets:
 The release job (`release.yml`) passes `PROJECT_DIR` into the goreleaser-cross
 container so the publisher can resolve `scripts/mcpb-pack.sh`.
 
+Bundles are **also** produced on every CI run (pull requests and merges to
+`develop`) by the `snapshot` job in `go.yml`: after goreleaser-cross builds the
+binaries, it packs one `.mcpb` per platform into `dist/mcpb/` and uploads the
+whole `dist/` tree as a workflow artifact (`pinner-cli-snapshot`). The
+goreleaser `publishers` pipe is skipped in snapshot builds, so this step is
+what makes `.mcpb` files available as CI artifacts outside of releases.
+
 ## Building manually
 
 ```bash
