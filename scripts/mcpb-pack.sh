@@ -28,9 +28,13 @@ TEMPLATE="$REPO_ROOT/mcpb/manifest.json.tmpl"
 STAGE_DIR="$REPO_ROOT/dist/mcpb/pinner-${OS}-${ARCH}"
 OUT_FILE="$REPO_ROOT/dist/mcpb/pinner-${OS}-${ARCH}.mcpb"
 
-# Windows binaries get a .exe; note the MCPB spec auto-appends .exe on Windows,
-# so the manifest entry point stays "server/pinner" and the on-disk file gains
-# the extension.
+# Windows output binary name: on disk the file carries a .exe extension (the
+# toolchain requires it to be treated as an executable). The MCPB spec's
+# manifest must declare the entry point/command WITHOUT the extension
+# ("server/pinner"): the spec states that apps automatically append `.exe`
+# on Windows when resolving the command. Declaring ".exe" in the base command
+# would therefore resolve to "server/pinner.exe.exe" and fail to launch.
+# So `EXE` is used only for the on-disk filename below, never for the manifest.
 EXE=""
 if [ "$OS" = "windows" ]; then
     EXE=".exe"
@@ -50,10 +54,11 @@ echo ">> Packing Pinner MCPB for $OS/$ARCH (version $VERSION)"
 rm -rf "$STAGE_DIR"
 mkdir -p "$STAGE_DIR/server"
 
-# Render the manifest. The template uses {{VERSION}}, {{OS}}, {{EXE}} markers.
+# Render the manifest. The template uses {{VERSION}} and {{OS}} markers; the
+# entry point/command are always "server/pinner" (apps auto-append .exe on
+# Windows), so no extension marker is rendered into the manifest.
 sed -e "s/{{VERSION}}/${VERSION}/g" \
     -e "s/{{OS}}/${PLATFORM_OS}/g" \
-    -e "s/{{EXE}}/${EXE}/g" \
     "$TEMPLATE" > "$STAGE_DIR/manifest.json"
 
 # Place the binary at the declared entry point and make it executable.
