@@ -214,10 +214,26 @@ func (cu *curlUpload) putHandler(w http.ResponseWriter, r *http.Request) {
 	// in its own goroutine, so this blocks only until the body has been fully
 	// handed off to the async upload — not on pinning. We wait here because
 	// the server closes r.Body on handler return and the body must cross this
-	// boundary first. If the executor already errored and closed the pipe
-	// reader, io.Copy returns an error; the handle is still returned (202) so
-	// the agent can surface the failure via upload_status.
-	_, _ = io.Copy(pw, r.Body)
+	// boundary first.
+	_, err = io.Copy(pw, r.Body)
+	if err != nil {
+		// The body was not fully received — either it exceeded cu.maxBytes
+		// (http.MaxBytesReader fails with *http.MaxBytesError at the read
+		// boundary) or the transfer itself failed. Acknowledging 202 with a
+		// handle would silently pin/return a truncated file. Cancel the task
+		// FIRST: doing so closes the pipe reader (tt.closeReader), which aborts
+		// the executor's in-flight read before it can consume the partial bytes
+		// as a "complete" stream. Only then close the pipe writer.
+		_ = cu.tasks.Cancel(id)
+		_ = pw.Close()
+		status := http.StatusInternalServerError
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			status = http.StatusRequestEntityTooLarge
+		}
+		http.Error(w, "request body not fully received", status)
+		return
+	}
 	// Signal EOF to the executor's pipe reader; it finishes the upload and
 	// closes pr via the manager's close-once guard.
 	_ = pw.Close()

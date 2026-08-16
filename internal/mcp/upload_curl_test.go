@@ -119,6 +119,36 @@ func TestCurlUploadEndpointExpired(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, resp.StatusCode)
 }
 
+// TestCurlUploadOversizeBodyRejected verifies that a PUT body exceeding the
+// endpoint's maxBytes cap is rejected with 413 (not silently accepted as 202
+// with a handle pinned to a truncated stream), so the agent never gets a
+// "completed" handle for a file that was cut off mid-transfer.
+func TestCurlUploadOversizeBodyRejected(t *testing.T) {
+	mgr := NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
+		// The executor drains whatever the pipe hands it; whether it sees the
+		// full body or an aborted (cancelled) read, the handler must never have
+		// returned a handle for it.
+		_, _ = io.Copy(io.Discard, reader)
+		return map[string]any{"cid": "QmX"}, nil
+	}, 0)
+
+	// Tight cap (32 bytes) so the oversize body trips MaxBytesReader immediately.
+	cu := NewCurlUpload(mgr, 32)
+	defer cu.Stop(context.Background())
+
+	url := cu.mint("big.txt", time.Minute)
+	require.NotEmpty(t, url)
+
+	body := strings.Repeat("x", 1024) // well over the 32-byte cap
+	resp, err := http.DefaultClient.Do(mustPut(t, url, body))
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	// The endpoint must refuse with 413, NOT ack 202 with an upload_handle
+	// that would point the agent at a truncated file.
+	require.Equal(t, http.StatusRequestEntityTooLarge, resp.StatusCode)
+}
+
 func mustPut(t *testing.T, url, body string) *http.Request {
 	t.Helper()
 	req, err := http.NewRequest(http.MethodPut, url, strings.NewReader(body))
