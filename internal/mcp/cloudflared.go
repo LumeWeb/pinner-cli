@@ -145,8 +145,8 @@ func (c *cloudflaredTunnel) Start(ctx context.Context, localAddr string) error {
 		}
 		return err
 	}
-	if state.Hostname == "" || state.TunnelID == "" || state.Secret == "" {
-		return fmt.Errorf("provisioned cloudflare tunnel is incomplete (missing hostname/tunnel id/secret); re-run `pinner mcp tunnel install`")
+	if state.Hostname == "" || state.TunnelID == "" || state.Secret == "" || state.AccountID == "" {
+		return fmt.Errorf("provisioned cloudflare tunnel is incomplete (missing hostname/tunnel id/secret/account); re-run `pinner mcp tunnel install`")
 	}
 
 	// The provisioned state carries the public hostname; a separately-supplied
