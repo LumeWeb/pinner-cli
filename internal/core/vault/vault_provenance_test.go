@@ -124,8 +124,10 @@ func TestVerifyMarksLostOnObjectNotFound(t *testing.T) {
 		t.Errorf("stored.LostReason is empty; want a terminal detail")
 	}
 
-	// Recover: a subsequent successful verify clears the lost state.
+	// Recover: a subsequent successful verify (object present AND digest
+	// matching) clears the lost state.
 	fake.objErr = nil
+	fake.metaContentDigest = stored.ContentDigest
 	if _, err := svc.Verify(ctx, "vault:/docs/lost.txt"); err != nil {
 		t.Fatalf("Verify after recovery failed: %v", err)
 	}
@@ -137,6 +139,66 @@ func TestVerifyMarksLostOnObjectNotFound(t *testing.T) {
 	}
 	if stored.LostReason != "" {
 		t.Errorf("stored.LostReason = %q, want empty after recovery", stored.LostReason)
+	}
+}
+
+// TestVerifyDigestMismatchKeepsLostStatus verifies that a file whose object
+// re-appears with a divergent/empty content digest (present-but-corrupt) does
+// NOT have its lost state cleared. Guarding clearLostStatus behind
+// DigestMatch keeps a still-broken file visible in vault_status --lost instead
+// of silently resetting it to ok and hiding the integrity failure.
+func TestVerifyDigestMismatchKeepsLostStatus(t *testing.T) {
+	ctx := context.Background()
+	db, err := OpenDB(filepath.Join(t.TempDir(), "vault.db"))
+	if err != nil {
+		t.Fatalf("OpenDB failed: %v", err)
+	}
+	defer func() {
+		if sqlDB, err := db.DB(); err == nil {
+			sqlDB.Close()
+		}
+	}()
+
+	fake := &fakeSDK{t: t}
+	svc := &vaultService{db: db, sdk: fake, appKey: types.PrivateKey{}}
+	defer svc.Close()
+
+	rec, err := svc.Put(ctx, bytes.NewReader([]byte("content")), 7, "vault:/docs/lost.txt", nil)
+	if err != nil {
+		t.Fatalf("Put failed: %v", err)
+	}
+
+	// Mark the file lost (simulating a prior failed verify / disappeared object).
+	if err := db.Model(&File{}).Where("uuid = ?", rec.UUID).Updates(map[string]any{
+		"status": FileStatusLost, "lost_reason": "object missing",
+	}).Error; err != nil {
+		t.Fatalf("mark lost: %v", err)
+	}
+
+	// Object exists again, but its metadata carries no matching content digest
+	// (fakeSDK.Object returns NewEmptyObject with empty metadata), so the
+	// integrity check fails: DigestMatch=false.
+	res, err := svc.Verify(ctx, "vault:/docs/lost.txt")
+	if err != nil {
+		t.Fatalf("Verify failed: %v", err)
+	}
+	if !res.ObjectExists {
+		t.Fatalf("test setup: expected object to exist for divergence case")
+	}
+	if res.DigestMatch {
+		t.Fatalf("test setup: expected DigestMatch=false for divergent metadata")
+	}
+
+	// The lost state MUST persist; a divergent object is not a valid recovery.
+	var stored File
+	if err := db.Where("uuid = ?", rec.UUID).First(&stored).Error; err != nil {
+		t.Fatalf("reload stored row: %v", err)
+	}
+	if stored.Status != FileStatusLost {
+		t.Errorf("stored.Status = %q, want %q (divergent object must stay lost)", stored.Status, FileStatusLost)
+	}
+	if stored.LostReason == "" {
+		t.Errorf("stored.LostReason is empty; want preserved lost detail on digest mismatch")
 	}
 }
 

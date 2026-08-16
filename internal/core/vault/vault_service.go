@@ -851,9 +851,12 @@ func (s *vaultService) Verify(ctx context.Context, vaultPath string) (*VerifyRes
 		}
 	}
 	res.DigestMatch = objDigest != "" && objDigest == res.ContentDigest
-	// A successful shallow verify proves the object is present and matching;
-	// clear any prior lost state so a recovering file returns to ok.
-	s.clearLostStatus(ctx, vaultPath)
+	// Only a matching digest proves the object is present and correct; a
+	// divergence (present-but-corrupt object) must NOT clear lost state, or a
+	// recovering-but-still-broken file would drop out of vault_status --lost.
+	if res.DigestMatch {
+		s.clearLostStatus(ctx, vaultPath)
+	}
 	return res, nil
 }
 
@@ -883,9 +886,12 @@ func (s *vaultService) VerifyDeep(ctx context.Context, vaultPath string) (*Verif
 	}
 	computedDigest := hex.EncodeToString(hasher.Sum(nil))
 	res.DigestMatch = computedDigest == res.ContentDigest
-	// A successful deep verify proves actual bytes are present and matching;
-	// clear any prior lost state so a recovering file returns to ok.
-	s.clearLostStatus(ctx, vaultPath)
+	// Only a matching digest proves the bytes are present and correct; a
+	// divergence must NOT clear lost state, or a recovering-but-still-broken
+	// file would drop out of vault_status --lost.
+	if res.DigestMatch {
+		s.clearLostStatus(ctx, vaultPath)
+	}
 	return res, nil
 }
 

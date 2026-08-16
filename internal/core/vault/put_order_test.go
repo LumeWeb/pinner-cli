@@ -33,6 +33,7 @@ type fakeSDK struct {
 	objErr         error  // error to return from Object (nil = success)
 	pinnedMeta     []byte // metadata attached to the most recently pinned object
 	shareContent   []byte // content served by DownloadSharedObject (nil = empty)
+	metaContentDigest string // if set, stamped into Object metadata for Verify digest matching
 }
 
 func (f *fakeSDK) Account(_ context.Context) (app.AccountResponse, error) {
@@ -57,7 +58,16 @@ func (f *fakeSDK) Object(_ context.Context, _ types.Hash256) (siastorage.Object,
 	if f.objErr != nil {
 		return siastorage.Object{}, f.objErr
 	}
-	return siastorage.NewEmptyObject(), nil
+	obj := siastorage.NewEmptyObject()
+	if f.metaContentDigest != "" {
+		// Stamp a content digest into the object metadata so Verify's shallow
+		// integrity path can match it against the local row.
+		meta := FileMetadata{ContentDigest: f.metaContentDigest}
+		if raw, merr := meta.JSON(); merr == nil {
+			obj.UpdateMetadata(raw)
+		}
+	}
+	return obj, nil
 }
 func (f *fakeSDK) ObjectEvents(_ context.Context, _ slabs.Cursor, _ int) ([]siastorage.ObjectEvent, error) {
 	return nil, nil
