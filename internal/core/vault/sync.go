@@ -154,6 +154,15 @@ func (s *vaultService) Sync(ctx context.Context) (applied int, full bool, err er
 		if fileID == "" {
 			fileID = "obj-" + ev.Key.String()
 		}
+		// Version identity (decision #2 — key sync on (UUID, version_id) so
+		// multi-version history is consistent across devices). New clients stamp
+		// version_id/seq into object metadata; legacy objects have neither and
+		// resolve to the null version (version_id="", seq=0).
+		versionID := fileMeta.VersionID
+		versionSeq := fileMeta.Seq
+		if versionID == "" {
+			versionID = ""
+		}
 
 		// Resolve the object's target directory from its metadata so files
 		// uploaded to a nested path on one device sync into the same directory
@@ -164,25 +173,25 @@ func (s *vaultService) Sync(ctx context.Context) (applied int, full bool, err er
 			return applied, full, fmt.Errorf("failed to resolve directory for %s: %w", ev.Key.String(), err)
 		}
 
-		// Find existing by stable identity (UUID). Identity is NOT the name:
-		// two distinct content-addressed objects may share a name, and both
-		// are tracked as separate rows (only one is the "current" winner for
-		// its (name, dir); the others persist as historical rows). A rename is
-		// a metadata update on the same UUID row.
+		// Find existing by (stable identity, version). Identity is NOT the name:
+		// two distinct content-addressed objects may share a name, and each
+		// version of a logical file is its own row keyed by (UUID, version_id).
+		// A rename is a metadata update on the same (UUID, version_id) row; a
+		// new content version syncs in as a NEW row under the same UUID.
 		//
 		// The write and the is_current promotion happen atomically so the
 		// partial unique index idx_files_live_name_dir keeps exactly one current
 		// live winner per path even as sync applies out-of-order events.
 		txErr := s.db.Transaction(func(tx *gorm.DB) error {
 			var existing File
-			result := tx.Where("uuid = ?", fileID).First(&existing)
+			result := tx.Where("uuid = ? AND version_id = ?", fileID, versionID).First(&existing)
 			if result.Error == gorm.ErrRecordNotFound {
-				// New object not yet tracked; create its own row keyed by UUID,
-				// placed at root for MVP. It starts non-current so a second
-				// distinct object with the same name is a separate (historical)
-				// row that coexists without violating idx_files_live_name_dir;
+				// New version not yet tracked; create its own row keyed by
+				// (UUID, version_id). It starts non-current so a second
+				// distinct row (different version/object) with the same name
+				// coexists without violating idx_files_live_name_dir;
 				// promoteCurrent below then makes THIS object the new winner and
-				// demotes the prior one. No distinct object is ever dropped.
+				// demotes the prior one. No distinct version is ever dropped.
 				now := time.Now().UTC()
 				var metaJSON datatypes.JSON
 				if fileMeta.Metadata != nil {
@@ -196,6 +205,8 @@ func (s *vaultService) Sync(ctx context.Context) (applied int, full bool, err er
 				}
 				existing = File{
 					UUID:          fileID,
+					VersionID:     versionID,
+					Seq:           versionSeq,
 					Name:          fileMeta.Name,
 					DirectoryID:   dirID, // resolved from object metadata (root = nil)
 					IsCurrent:     false,

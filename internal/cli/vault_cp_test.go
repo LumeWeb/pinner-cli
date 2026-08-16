@@ -52,6 +52,18 @@ func (s *cpFakeVaultService) VerifyDeep(context.Context, string) (*vault.VerifyR
 	return nil, nil
 }
 func (s *cpFakeVaultService) Remove(context.Context, string) error { return nil }
+func (s *cpFakeVaultService) VersionList(context.Context, string) ([]*vault.File, error) {
+	return nil, nil
+}
+func (s *cpFakeVaultService) VersionGet(context.Context, string, string) (*vault.File, error) {
+	return nil, nil
+}
+func (s *cpFakeVaultService) VersionDownload(context.Context, string, string, io.Writer) error {
+	return nil
+}
+func (s *cpFakeVaultService) VersionRestore(context.Context, string, string) (*vault.File, error) {
+	return nil, nil
+}
 func (s *cpFakeVaultService) Share(context.Context, string, time.Time) (string, error) {
 	return "", nil
 }

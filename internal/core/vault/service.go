@@ -58,6 +58,24 @@ type VaultService interface {
 	// Remove deletes a file from the vault (local DB + indexer).
 	Remove(ctx context.Context, vaultPath string) error
 
+	// VersionList returns every version row for the file at vaultPath,
+	// newest first (seq descending). Only live (non-tombstoned) versions are
+	// returned. The current/live winner is included (IsCurrent=true).
+	VersionList(ctx context.Context, vaultPath string) ([]*File, error)
+
+	// VersionGet returns the specific version record (by version_id) of the
+	// file at vaultPath. Returns ErrNotFound if the version does not exist.
+	VersionGet(ctx context.Context, vaultPath string, versionID string) (*File, error)
+
+	// VersionDownload streams a specific version's content (by version_id) to
+	// the writer. Returns ErrNotFound if the version does not exist.
+	VersionDownload(ctx context.Context, vaultPath string, versionID string, w io.Writer) error
+
+	// VersionRestore re-uploads a specific version's content as a NEW current
+	// version of the file (content is copied; the restored version becomes the
+	// live current winner, preserving all prior versions' history).
+	VersionRestore(ctx context.Context, vaultPath string, versionID string) (*File, error)
+
 	// Share generates a time-limited sia:// share URL for a file.
 	Share(ctx context.Context, vaultPath string, validUntil time.Time) (string, error)
 
