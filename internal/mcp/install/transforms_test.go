@@ -173,8 +173,10 @@ func TestTransformGeminiNoOAuth(t *testing.T) {
 
 func TestTransformCodexRemoteDefaultHttpHeaders(t *testing.T) {
 	cfg := McpServerConfig{
-		URL:     "https://example.com/mcp",
-		Headers: map[string]string{"Authorization": "Bearer x"},
+		URL:              "https://example.com/mcp",
+		Headers:          map[string]string{"Authorization": "Bearer x"},
+		AutoApproveSet:   true,
+		AutoApproveTools: []string{},
 	}
 	got := transformRunner(t, AgentCodex, "server", cfg, false)
 	assertMapEqual(t, "codex-remote", got, map[string]any{
@@ -185,8 +187,23 @@ func TestTransformCodexRemoteDefaultHttpHeaders(t *testing.T) {
 	})
 }
 
+func TestTransformCodexNoAutoApproveOmitsApproval(t *testing.T) {
+	// When auto-approve was not requested (AutoApproveSet=false), the entry must
+	// not carry any approval mode — matching the reference's opt-in behavior.
+	cfg := McpServerConfig{
+		URL:     "https://example.com/mcp",
+		Headers: map[string]string{"Authorization": "Bearer x"},
+	}
+	got := transformRunner(t, AgentCodex, "server", cfg, false)
+	assertMapEqual(t, "codex-no-approval", got, map[string]any{
+		"type":         "http",
+		"url":          "https://example.com/mcp",
+		"http_headers": map[string]string{"Authorization": "Bearer x"},
+	})
+}
+
 func TestTransformCodexRemoteExplicitType(t *testing.T) {
-	cfg := McpServerConfig{Type: TransportSSE, URL: "https://example.com/sse"}
+	cfg := McpServerConfig{Type: TransportSSE, URL: "https://example.com/sse", AutoApproveSet: true, AutoApproveTools: []string{}}
 	got := transformRunner(t, AgentCodex, "server", cfg, false)
 	assertMapEqual(t, "codex-remote-type", got, map[string]any{
 		"type":                        "sse",
@@ -197,9 +214,11 @@ func TestTransformCodexRemoteExplicitType(t *testing.T) {
 
 func TestTransformCodexLocalEnv(t *testing.T) {
 	cfg := McpServerConfig{
-		Command: "pinner",
-		Args:    []string{"mcp", "serve"},
-		Env:     map[string]string{"KEY": "value"},
+		Command:          "pinner",
+		Args:             []string{"mcp", "serve"},
+		Env:              map[string]string{"KEY": "value"},
+		AutoApproveSet:   true,
+		AutoApproveTools: []string{},
 	}
 	got := transformRunner(t, AgentCodex, "server", cfg, true)
 	assertMapEqual(t, "codex-local", got, map[string]any{
@@ -213,6 +232,7 @@ func TestTransformCodexLocalEnv(t *testing.T) {
 func TestTransformCodexAutoApproveTools(t *testing.T) {
 	cfg := McpServerConfig{
 		URL:              "https://example.com/mcp",
+		AutoApproveSet:   true,
 		AutoApproveTools: []string{"toolA", "toolB"},
 	}
 	got := transformRunner(t, AgentCodex, "server", cfg, false)
@@ -277,5 +297,245 @@ func TestTransformZedLocalSourceCustom(t *testing.T) {
 		"source":  "custom",
 		"command": "pinner",
 		"args":    []string{"mcp", "serve"},
+	})
+}
+
+func TestTransformAntigravityRemoteServerURL(t *testing.T) {
+	cfg := McpServerConfig{
+		URL:     "https://example.com/mcp",
+		Headers: map[string]string{"Authorization": "Bearer x"},
+	}
+	for _, key := range []AgentKey{AgentAntigravity, AgentWindsurf} {
+		got := transformRunner(t, key, "server", cfg, false)
+		assertMapEqual(t, string(key), got, map[string]any{
+			"serverUrl": "https://example.com/mcp",
+			"headers":   map[string]string{"Authorization": "Bearer x"},
+		})
+	}
+}
+
+func TestTransformAntigravityLocal(t *testing.T) {
+	cfg := McpServerConfig{Command: "pinner", Args: []string{"mcp", "serve"}, Env: map[string]string{"K": "v"}}
+	got := transformRunner(t, AgentAntigravity, "server", cfg, false)
+	assertMapEqual(t, "antigravity-local", got, map[string]any{
+		"command": "pinner",
+		"args":    []string{"mcp", "serve"},
+		"env":     map[string]string{"K": "v"},
+	})
+}
+
+func TestTransformClineRemoteStreamableHttp(t *testing.T) {
+	cfg := McpServerConfig{
+		Type:    TransportHTTP,
+		URL:     "https://example.com/mcp",
+		Headers: map[string]string{"Authorization": "Bearer x"},
+	}
+	for _, key := range []AgentKey{AgentCline, AgentClineCLI} {
+		got := transformRunner(t, key, "server", cfg, false)
+		assertMapEqual(t, string(key), got, map[string]any{
+			"url":      "https://example.com/mcp",
+			"type":     "streamableHttp",
+			"disabled": false,
+			"headers":  map[string]string{"Authorization": "Bearer x"},
+		})
+	}
+}
+
+func TestTransformClineRemoteSSE(t *testing.T) {
+	cfg := McpServerConfig{Type: TransportSSE, URL: "https://example.com/sse"}
+	got := transformRunner(t, AgentCline, "server", cfg, false)
+	assertMapEqual(t, "cline-sse", got, map[string]any{
+		"url":      "https://example.com/sse",
+		"type":     "sse",
+		"disabled": false,
+	})
+}
+
+func TestTransformClineLocal(t *testing.T) {
+	cfg := McpServerConfig{Command: "pinner", Args: []string{"mcp", "serve"}, Env: map[string]string{"K": "v"}}
+	got := transformRunner(t, AgentCline, "server", cfg, false)
+	assertMapEqual(t, "cline-local", got, map[string]any{
+		"command":  "pinner",
+		"args":     []string{"mcp", "serve"},
+		"disabled": false,
+		"env":      map[string]string{"K": "v"},
+	})
+}
+
+func TestTransformGooseRemoteStreamableHTTP(t *testing.T) {
+	cfg := McpServerConfig{
+		Type:    TransportHTTP,
+		URL:     "https://example.com/mcp",
+		Headers: map[string]string{"Authorization": "Bearer x"},
+	}
+	got := transformRunner(t, AgentGoose, "my-server", cfg, false)
+	assertMapEqual(t, "goose-remote", got, map[string]any{
+		"name":        "my-server",
+		"description": "",
+		"type":        "streamable_http",
+		"uri":         "https://example.com/mcp",
+		"headers":     map[string]string{"Authorization": "Bearer x"},
+		"enabled":     true,
+		"timeout":     300,
+	})
+}
+
+func TestTransformGooseRemoteSSE(t *testing.T) {
+	cfg := McpServerConfig{Type: TransportSSE, URL: "https://example.com/sse"}
+	got := transformRunner(t, AgentGoose, "my-server", cfg, false)
+	assertMapEqual(t, "goose-sse", got, map[string]any{
+		"name": "my-server", "description": "", "type": "sse",
+		"uri": "https://example.com/sse", "headers": map[string]string(nil),
+		"enabled": true, "timeout": 300,
+	})
+}
+
+func TestTransformGooseLocal(t *testing.T) {
+	cfg := McpServerConfig{Command: "pinner", Args: []string{"mcp", "serve"}, Env: map[string]string{"K": "v"}}
+	got := transformRunner(t, AgentGoose, "my-server", cfg, false)
+	assertMapEqual(t, "goose-local", got, map[string]any{
+		"name": "my-server", "description": "",
+		"cmd": "pinner", "args": []string{"mcp", "serve"},
+		"enabled": true, "envs": map[string]string{"K": "v"},
+		"type": "stdio", "timeout": 300,
+	})
+}
+
+func TestTransformCopilotGlobalRemote(t *testing.T) {
+	cfg := McpServerConfig{
+		Type:    TransportHTTP,
+		URL:     "https://example.com/mcp",
+		Headers: map[string]string{"Authorization": "Bearer x"},
+	}
+	got := transformRunner(t, AgentGitHubCopilotCLI, "server", cfg, false)
+	assertMapEqual(t, "copilot-global-remote", got, map[string]any{
+		"type":    "http",
+		"url":     "https://example.com/mcp",
+		"tools":   []string{"*"},
+		"headers": map[string]string{"Authorization": "Bearer x"},
+	})
+}
+
+func TestTransformCopilotGlobalLocal(t *testing.T) {
+	cfg := McpServerConfig{Command: "pinner", Args: []string{"mcp", "serve"}}
+	got := transformRunner(t, AgentGitHubCopilotCLI, "server", cfg, false)
+	assertMapEqual(t, "copilot-global-local", got, map[string]any{
+		"type":    "stdio",
+		"command": "pinner",
+		"args":    []string{"mcp", "serve"},
+		"tools":   []string{"*"},
+	})
+}
+
+func TestTransformCopilotProjectUsesStandardShape(t *testing.T) {
+	// Project-level (.vscode/mcp.json) config shares VS Code's schema.
+	cfg := McpServerConfig{Command: "pinner", Args: []string{"mcp"}}
+	got := transformRunner(t, AgentGitHubCopilotCLI, "server", cfg, true)
+	assertMapEqual(t, "copilot-project", got, map[string]any{
+		"command": "pinner",
+		"args":    []string{"mcp"},
+	})
+}
+
+func TestTransformGrokBuildRemote(t *testing.T) {
+	cfg := McpServerConfig{
+		URL:     "https://example.com/mcp",
+		Headers: map[string]string{"Authorization": "Bearer x"},
+	}
+	got := transformRunner(t, AgentGrokBuild, "server", cfg, false)
+	assertMapEqual(t, "grok-remote", got, map[string]any{
+		"url":     "https://example.com/mcp",
+		"headers": map[string]string{"Authorization": "Bearer x"},
+	})
+}
+
+func TestTransformGrokBuildLocal(t *testing.T) {
+	cfg := McpServerConfig{Command: "pinner", Args: []string{"mcp", "serve"}}
+	got := transformRunner(t, AgentGrokBuild, "server", cfg, false)
+	assertMapEqual(t, "grok-local", got, map[string]any{
+		"command": "pinner",
+		"args":    []string{"mcp", "serve"},
+	})
+}
+
+func TestTransformKiloCodeLocalDiscriminator(t *testing.T) {
+	cfg := McpServerConfig{Command: "pinner", Args: []string{"mcp", "serve"}, Env: map[string]string{"K": "v"}}
+	got := transformRunner(t, AgentKiloCode, "server", cfg, true)
+	assertMapEqual(t, "kilo-local", got, map[string]any{
+		"type":        "local",
+		"command":     []string{"pinner", "mcp", "serve"},
+		"enabled":     true,
+		"environment": map[string]string{"K": "v"},
+	})
+}
+
+func TestTransformKiloCodeRemote(t *testing.T) {
+	cfg := McpServerConfig{URL: "https://example.com/mcp"}
+	got := transformRunner(t, AgentKiloCode, "server", cfg, false)
+	assertMapEqual(t, "kilo-remote", got, map[string]any{
+		"type":    "remote",
+		"url":     "https://example.com/mcp",
+		"enabled": true,
+	})
+}
+
+func TestTransformKimiCodeRemoteHTTP(t *testing.T) {
+	cfg := McpServerConfig{
+		Type:    TransportHTTP,
+		URL:     "https://example.com/mcp",
+		Headers: map[string]string{"Authorization": "Bearer x"},
+	}
+	got := transformRunner(t, AgentKimiCode, "server", cfg, false)
+	assertMapEqual(t, "kimi-remote", got, map[string]any{
+		"transport": "http",
+		"url":       "https://example.com/mcp",
+		"headers":   map[string]string{"Authorization": "Bearer x"},
+	})
+}
+
+func TestTransformKimiCodeRemoteSSE(t *testing.T) {
+	cfg := McpServerConfig{Type: TransportSSE, URL: "https://example.com/sse"}
+	got := transformRunner(t, AgentKimiCode, "server", cfg, false)
+	assertMapEqual(t, "kimi-sse", got, map[string]any{
+		"transport": "sse",
+		"url":       "https://example.com/sse",
+	})
+}
+
+func TestTransformKimiCodeLocal(t *testing.T) {
+	cfg := McpServerConfig{Command: "pinner", Args: []string{"mcp", "serve"}, Env: map[string]string{"K": "v"}}
+	got := transformRunner(t, AgentKimiCode, "server", cfg, false)
+	assertMapEqual(t, "kimi-local", got, map[string]any{
+		"transport": "stdio",
+		"command":   "pinner",
+		"args":      []string{"mcp", "serve"},
+		"env":       map[string]string{"K": "v"},
+	})
+}
+
+func TestTransformKiroCLIRemoteNoType(t *testing.T) {
+	cfg := McpServerConfig{Type: TransportHTTP, URL: "https://example.com/mcp", Headers: map[string]string{"Authorization": "Bearer x"}}
+	got := transformRunner(t, AgentKiroCLI, "server", cfg, false)
+	assertMapEqual(t, "kiro-remote", got, map[string]any{
+		"url":     "https://example.com/mcp",
+		"headers": map[string]string{"Authorization": "Bearer x"},
+	})
+}
+
+func TestTransformKiroCLILocal(t *testing.T) {
+	cfg := McpServerConfig{Command: "pinner", Args: []string{"mcp", "serve"}}
+	got := transformRunner(t, AgentKiroCLI, "server", cfg, false)
+	assertMapEqual(t, "kiro-local", got, map[string]any{
+		"command": "pinner",
+		"args":    []string{"mcp", "serve"},
+	})
+}
+
+func TestTransformMCPorterStandard(t *testing.T) {
+	cfg := McpServerConfig{Command: "pinner", Args: []string{"mcp"}}
+	got := transformRunner(t, AgentMCPorter, "server", cfg, false)
+	assertMapEqual(t, "mcporter-local", got, map[string]any{
+		"command": "pinner",
+		"args":    []string{"mcp"},
 	})
 }

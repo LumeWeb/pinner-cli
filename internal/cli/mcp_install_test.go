@@ -493,3 +493,78 @@ func TestMcpInstallConfigureTunnelSkipsWhenNoHTTPCapableAgent(t *testing.T) {
 		t.Errorf("tunnel collector called %d times; want 0 for a stdio-only selection", collectCalls)
 	}
 }
+
+// readGlobalRaw reads the temp-root global config file for an agent and returns
+// its raw bytes. Format-independent, so it works for Codex (TOML) too.
+func readGlobalRaw(t *testing.T, root string, agentKey install.AgentKey) []byte {
+	t.Helper()
+	path := filepath.Join(root, "global", string(agentKey)+".json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read global config %s: %v", path, err)
+	}
+	return data
+}
+
+func TestMcpInstallAutoApproveWritesCodexApproval(t *testing.T) {
+	// --auto-approve must reach the Codex config: the written entry should
+	// carry the approve-all approval mode. Without the flag it must be absent.
+	ctx := context.Background()
+	root := t.TempDir()
+	ui := newMockInstallUI()
+
+	// With auto-approve requested.
+	with := &InstallState{
+		Agents:      []install.AgentKey{install.AgentCodex},
+		Scope:       scopeGlobal,
+		Transport:   install.TransportStdio,
+		AutoApprove: true,
+	}
+	w := NewInstallWizard(ui, with, tempPathResolver(root, ""))
+	if _, err := w.Run(ctx); err != nil {
+		t.Fatalf("wizard run failed: %v", err)
+	}
+	raw := string(readGlobalRaw(t, root, install.AgentCodex))
+	if !strings.Contains(raw, `default_tools_approval_mode = "approve"`) {
+		t.Errorf("codex config missing approval mode with --auto-approve:\n%s", raw)
+	}
+
+	// Without auto-approve requested — no approval mode.
+	root2 := t.TempDir()
+	without := &InstallState{
+		Agents:    []install.AgentKey{install.AgentCodex},
+		Scope:     scopeGlobal,
+		Transport: install.TransportStdio,
+	}
+	w2 := NewInstallWizard(ui, without, tempPathResolver(root2, ""))
+	if _, err := w2.Run(ctx); err != nil {
+		t.Fatalf("wizard run failed: %v", err)
+	}
+	raw2 := string(readGlobalRaw(t, root2, install.AgentCodex))
+	if strings.Contains(raw2, `default_tools_approval_mode`) {
+		t.Errorf("codex config should not contain approval mode without --auto-approve:\n%s", raw2)
+	}
+}
+
+func TestMcpInstallAutoApproveIgnoredForNonCodex(t *testing.T) {
+	// The --auto-approve flag only affects Codex; writing to a JSON agent
+	// (claude-code) must not inject any approval fields into its entry.
+	ctx := context.Background()
+	root := t.TempDir()
+	ui := newMockInstallUI()
+
+	state := &InstallState{
+		Agents:      []install.AgentKey{install.AgentClaudeCode},
+		Scope:       scopeGlobal,
+		Transport:   install.TransportStdio,
+		AutoApprove: true,
+	}
+	w := NewInstallWizard(ui, state, tempPathResolver(root, ""))
+	if _, err := w.Run(ctx); err != nil {
+		t.Fatalf("wizard run failed: %v", err)
+	}
+	entry := readGlobalJSON(t, root, install.AgentClaudeCode)
+	if _, has := entry["default_tools_approval_mode"]; has {
+		t.Errorf("claude-code entry must not carry approval mode:\n%v", entry)
+	}
+}

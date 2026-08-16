@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/samber/lo"
 	"github.com/urfave/cli/v3"
+
 	"go.lumeweb.com/pinner-cli/internal/cli/wizard"
 	mcpadapter "go.lumeweb.com/pinner-cli/internal/mcp"
 	"go.lumeweb.com/pinner-cli/internal/mcp/install"
@@ -18,13 +20,16 @@ import (
 // command tree after MCPCommand returns (internal/cli already imports
 // internal/mcp; the join point is root.go, not adapter.go).
 func NewMcpInstallCommand() *cli.Command {
+	// Supported-agent lists are derived once from install.AllAgents so help text
+	// and error messages cannot drift from the agent table.
+	supportedKeys := strings.Join(agentNames(), ", ")
+	supportedDisplay := strings.Join(agentDisplayNames(), ", ")
 	return &cli.Command{
 		Name:     "install",
 		Category: "MCP",
 		Usage:    "Install the pinner MCP server into a coding agent's config",
-		Description: `Write an MCP server entry for pinner into one or more coding agents'
-configuration files (Claude Code, Claude Desktop, VS Code, Cursor, Codex, Gemini
-CLI, OpenCode, Zed). Detects installed agents and walks you through selection,
+		Description: fmt.Sprintf(`Write an MCP server entry for pinner into one or more coding agents'
+configuration files (%s). Detects installed agents and walks you through selection,
 scope, and transport interactively. In non-interactive/agent (MCP) contexts,
 provide --agent (and --transport/--scope) explicitly.
 
@@ -33,14 +38,15 @@ Examples:
   pinner mcp install --agent claude-code
   pinner mcp install --agent claude-code,vscode --transport stdio --no-interactive
   pinner mcp install --agent claude-code --scope project
-  pinner mcp install --agent claude-code --transport http --service`,
+  pinner mcp install --agent claude-code --transport http --service`, supportedDisplay),
 		// Shared tunnel/env flags (--env-file, --tunnel, --auth-token,
 		// --public-url, ...) so the HTTP composite sources MCP_AUTH_TOKEN /
 		// MCP_PUBLIC_URL / MCP_TUNNEL_PROVIDER identically to `pinner mcp service`.
 		Flags: append([]cli.Flag{
 			&cli.StringSliceFlag{
-				Name:  "agent",
-				Usage: "Comma-separated list of agents to install to (claude-code, claude-desktop, vscode, cursor, codex, gemini-cli, opencode, zed)",
+				Name: "agent",
+				// Derived from install.AllAgents (single source of truth).
+				Usage: "Comma-separated list of agents to install to (" + supportedKeys + "); defaults to detection when omitted",
 			},
 			&cli.StringFlag{
 				Name:  "scope",
@@ -57,6 +63,10 @@ Examples:
 			&cli.BoolFlag{
 				Name:  "service",
 				Usage: "Install against the managed pinner MCP service (http)",
+			},
+			&cli.BoolFlag{
+				Name:  "auto-approve",
+				Usage: "Request Codex auto-approve all tools for the pinner MCP server (none by default)",
 			},
 		}, mcpadapter.ServiceInstallFlags()...),
 		Action: func(ctx context.Context, cmd *cli.Command) error {
@@ -134,10 +144,11 @@ func runMcpInstall(ctx context.Context, cmd mcpInstallFlagGetter, ui InstallUI, 
 
 	// Build the state.
 	state := &InstallState{
-		Agents:     agents,
-		Scope:      scope,
-		Transport:  transport,
-		UseService: useService,
+		Agents:      agents,
+		Scope:       scope,
+		Transport:   transport,
+		UseService:  useService,
+		AutoApprove: cmd.Bool("auto-approve"),
 	}
 	if len(agents) == 0 {
 		// Interactive: leave agents empty; the Select step will prompt.
@@ -194,9 +205,18 @@ func dedupeAgents(agents []install.AgentKey) []install.AgentKey {
 
 // agentNames returns the human-readable list of supported agent keys.
 func agentNames() []string {
-	names := make([]string, 0, len(install.AllAgents))
-	for _, a := range install.AllAgents {
-		names = append(names, string(a))
-	}
-	return names
+	return lo.Map(install.AllAgents, func(a install.AgentKey, _ int) string {
+		return string(a)
+	})
+}
+
+// agentDisplayNames returns the user-facing display names in AllAgents order.
+// Deriving them from the agent table (single source of truth) keeps help text
+// and error messages from drifting from the supported set. Every AllAgents key
+// is guaranteed to resolve in the table (see TestAgentTableIntegrity).
+func agentDisplayNames() []string {
+	return lo.Map(install.AllAgents, func(a install.AgentKey, _ int) string {
+		cfg, _ := install.Agent(a)
+		return cfg.DisplayName
+	})
 }

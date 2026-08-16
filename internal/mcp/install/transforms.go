@@ -168,10 +168,15 @@ func transportType(cfg McpServerConfig) string {
 	return "http"
 }
 
-// applyCodexApproval adds Codex approval settings to an entry.
+// applyCodexApproval adds Codex approval settings only when auto-approve was
+// explicitly requested (AutoApproveSet), mirroring the reference which leaves
+// the entry untouched when approval is not requested.
 //   - AutoApproveTools empty → approve all via default_tools_approval_mode.
 //   - AutoApproveTools non-empty → per-tool {name:{approval_mode:"approve"}}.
 func applyCodexApproval(entry map[string]any, cfg McpServerConfig) {
+	if !cfg.AutoApproveSet {
+		return
+	}
 	if len(cfg.AutoApproveTools) == 0 {
 		entry["default_tools_approval_mode"] = "approve"
 		return
@@ -181,4 +186,203 @@ func applyCodexApproval(entry map[string]any, cfg McpServerConfig) {
 		tools[name] = map[string]any{"approval_mode": "approve"}
 	}
 	entry["tools"] = tools
+}
+
+// transformAntigravity converts into the Antigravity / Windsurf mcpServers shape.
+//
+// Remote: {serverUrl, headers?}
+// Local:  {command, args, env?}
+func transformAntigravity(_ string, cfg McpServerConfig, local bool) any {
+	if cfg.IsRemote() {
+		entry := map[string]any{
+			"serverUrl": cfg.URL,
+		}
+		if len(cfg.Headers) > 0 {
+			entry["headers"] = cfg.Headers
+		}
+		return entry
+	}
+	entry := map[string]any{
+		"command": cfg.Command,
+		"args":    cfg.Args,
+	}
+	if len(cfg.Env) > 0 {
+		entry["env"] = cfg.Env
+	}
+	return entry
+}
+
+// transformCline converts into the Cline (VS Code / CLI) mcpServers shape.
+//
+// Remote: {url, type: sse|streamableHttp, disabled:false, headers?}
+// Local:  {command, args, disabled:false, env?}
+func transformCline(_ string, cfg McpServerConfig, local bool) any {
+	if cfg.IsRemote() {
+		entry := map[string]any{
+			"url":      cfg.URL,
+			"type":     transportClineType(cfg),
+			"disabled": false,
+		}
+		if len(cfg.Headers) > 0 {
+			entry["headers"] = cfg.Headers
+		}
+		return entry
+	}
+	entry := map[string]any{
+		"command":  cfg.Command,
+		"args":     cfg.Args,
+		"disabled": false,
+	}
+	if len(cfg.Env) > 0 {
+		entry["env"] = cfg.Env
+	}
+	return entry
+}
+
+// transportClineType maps sse→"sse" and everything else→"streamableHttp",
+// matching Cline's remote transport discriminator.
+func transportClineType(cfg McpServerConfig) string {
+	if cfg.Type == TransportSSE {
+		return "sse"
+	}
+	return "streamableHttp"
+}
+
+// transformGoose converts into Goose's extensions entry shape (YAML).
+//
+// Remote: {name, description:"", type: sse|streamable_http, uri, headers, enabled:true, timeout}
+// Local:  {name, description:"", cmd, args, enabled:true, envs, type:"stdio", timeout}
+// Goose nests each server under a top-level "extensions" config key.
+func transformGoose(serverName string, cfg McpServerConfig, _ bool) any {
+	if cfg.IsRemote() {
+		remoteType := "streamable_http"
+		if cfg.Type == TransportSSE {
+			remoteType = "sse"
+		}
+		return map[string]any{
+			"name":        serverName,
+			"description": "",
+			"type":        remoteType,
+			"uri":         cfg.URL,
+			"headers":     cfg.Headers,
+			"enabled":     true,
+			"timeout":     300,
+		}
+	}
+	return map[string]any{
+		"name":        serverName,
+		"description": "",
+		"cmd":         cfg.Command,
+		"args":        cfg.Args,
+		"enabled":     true,
+		"envs":        cfg.Env,
+		"type":        "stdio",
+		"timeout":     300,
+	}
+}
+
+// transformGitHubCopilotCLI converts into the GitHub Copilot CLI config shape.
+//
+// local (project .vscode/mcp.json): raw server config (shares VS Code schema).
+// Remote (global): {type, url, tools:["*"], headers?}
+// Local (global):  {type:"stdio", command, args, tools:["*"], env?}
+func transformGitHubCopilotCLI(_ string, cfg McpServerConfig, local bool) any {
+	if local {
+		// Project-level config shares VS Code's mcp.json schema.
+		return transformStandard("", cfg, true)
+	}
+	if cfg.IsRemote() {
+		entry := map[string]any{
+			"type":  transportType(cfg),
+			"url":   cfg.URL,
+			"tools": []string{"*"},
+		}
+		if len(cfg.Headers) > 0 {
+			entry["headers"] = cfg.Headers
+		}
+		return entry
+	}
+	entry := map[string]any{
+		"type":    "stdio",
+		"command": cfg.Command,
+		"args":    cfg.Args,
+		"tools":   []string{"*"},
+	}
+	if len(cfg.Env) > 0 {
+		entry["env"] = cfg.Env
+	}
+	return entry
+}
+
+// transformGrokBuild converts into Grok Build's mcp_servers TOML entry shape.
+//
+// Remote: {url, headers?, tool_timeout_sec?}
+// Local:  standard {command, args, env?}
+func transformGrokBuild(_ string, cfg McpServerConfig, local bool) any {
+	if cfg.IsRemote() {
+		entry := map[string]any{
+			"url": cfg.URL,
+		}
+		if len(cfg.Headers) > 0 {
+			entry["headers"] = cfg.Headers
+		}
+		return entry
+	}
+	return stdioEntry(cfg)
+}
+
+// transformKiloCode converts into the Kilo Code mcp entry shape, which matches
+// OpenCode's local/remote discriminator schema. Timeout is omitted here since
+// the install golden path doesn't set one (Kilo falls back to its own default).
+func transformKiloCode(_ string, cfg McpServerConfig, local bool) any {
+	return transformOpenCode("", cfg, local)
+}
+
+// transformKimiCode converts into Kimi Code's mcpServers entry shape.
+//
+// Remote: {transport: http|sse, url, headers?}
+// Local:  {transport:"stdio", command, args, env?}
+func transformKimiCode(_ string, cfg McpServerConfig, local bool) any {
+	if cfg.IsRemote() {
+		transport := "http"
+		if cfg.Type == TransportSSE {
+			transport = "sse"
+		}
+		entry := map[string]any{
+			"transport": transport,
+			"url":       cfg.URL,
+		}
+		if len(cfg.Headers) > 0 {
+			entry["headers"] = cfg.Headers
+		}
+		return entry
+	}
+	entry := map[string]any{
+		"transport": "stdio",
+		"command":   cfg.Command,
+		"args":      cfg.Args,
+	}
+	if len(cfg.Env) > 0 {
+		entry["env"] = cfg.Env
+	}
+	return entry
+}
+
+// transformKiroCLI converts into the Kiro CLI mcpServers entry shape. Kiro
+// infers transport from field presence (command for stdio, url for remote) and
+// ignores any type field, so no transport field is emitted.
+//
+// Remote: {url, headers?}
+// Local:  standard {command, args, env?}
+func transformKiroCLI(_ string, cfg McpServerConfig, local bool) any {
+	if cfg.IsRemote() {
+		entry := map[string]any{
+			"url": cfg.URL,
+		}
+		if len(cfg.Headers) > 0 {
+			entry["headers"] = cfg.Headers
+		}
+		return entry
+	}
+	return stdioEntry(cfg)
 }

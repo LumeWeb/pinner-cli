@@ -37,6 +37,10 @@ type InstallState struct {
 	PublicURL  string
 	AuthToken  string
 	UseService bool
+
+	// Codex auto-approve opt-in (--auto-approve): when true the written Codex
+	// entry requests approval for all tools. Other agents ignore it.
+	AutoApprove bool
 }
 
 // pathResolver maps an agent + scope to the on-disk config path. It is
@@ -268,6 +272,13 @@ func (w *InstallWizard) writeConfig(s *InstallState) error {
 		if s.AuthToken != "" {
 			serverCfg.Headers = map[string]string{"Authorization": "Bearer " + s.AuthToken}
 		}
+	}
+
+	// Codex auto-approve opt-in: when requested, carry it on the server config so
+	// the Codex transform emits the approval mode. Other agents ignore these fields.
+	if s.AutoApprove {
+		serverCfg.AutoApproveSet = true
+		serverCfg.AutoApproveTools = nil // nil = approve all
 	}
 
 	for _, key := range s.Agents {
