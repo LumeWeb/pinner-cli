@@ -1698,16 +1698,15 @@ func upsertFromMeta(tx *gorm.DB, existing *File, meta FileMetadata, objectKey st
 	existing.Size = meta.Size
 	existing.MediaType = meta.MediaType
 	existing.ContentDigest = meta.ContentDigest
-	// Carry lifecycle + provenance from the object's sealed metadata so status
-	// and audit fields survive cache rebuilds and sync to every device. These
-	// are omitempty in FileMetadata, so absent values leave the local row's
-	// stored value untouched (empty string => no spurious overwrite).
-	if meta.Status != "" {
-		existing.Status = meta.Status
-	}
-	if meta.LostReason != "" {
-		existing.LostReason = meta.LostReason
-	}
+	// Carry provenance (but NOT lifecycle status) from the object's sealed
+	// metadata so audit fields survive cache rebuilds and sync to every device.
+	// Status is deliberately left untouched on the existing-row path: a file
+	// marked "lost" locally (Verify is a DB-only write that never re-pins the
+	// object) must not be silently reset to "ok" when a later sync re-processes
+	// the object, whose sealed metadata still carries the "ok" stamped at Put
+	// time. Lost state is only cleared by an explicit digest-matching Verify or
+	// a fresh Put — never by a passive re-sync. Fresh rows (sync-down to a new
+	// device) still seed status from the object via sync.go's create branch.
 	if meta.CreatedBy != "" {
 		existing.CreatedBy = meta.CreatedBy
 	}
@@ -2093,7 +2092,9 @@ func reconcileTagsTx(tx *gorm.DB, fileID uint, tags []string) error {
 		}
 	}
 
-	// Delete joins no longer wanted.
+	// Delete joins no longer wanted, tracking whether anything was removed so
+	// the (expensive) dead-tag prune below only runs when it can change state.
+	removed := false
 	for tid := range have {
 		keep := false
 		for _, name := range tags {
@@ -2106,12 +2107,17 @@ func reconcileTagsTx(tx *gorm.DB, fileID uint, tags []string) error {
 			if err := tx.Where("file_id = ? AND tag_id = ?", fileID, tid).Delete(&FileTag{}).Error; err != nil {
 				return err
 			}
+			removed = true
 		}
 	}
 
-	// Prune tags left with zero file_tags links (dead tags).
-	if err := tx.Exec(`DELETE FROM tags WHERE id NOT IN (SELECT DISTINCT tag_id FROM file_tags)`).Error; err != nil {
-		return err
+	// Prune tags left with zero file_tags links (dead tags). Only when we
+	// actually removed a join: running this on every reconcile (including the
+	// common no-change sync-down) forces a full-table scan of tags per file.
+	if removed {
+		if err := tx.Exec(`DELETE FROM tags WHERE id NOT IN (SELECT DISTINCT tag_id FROM file_tags)`).Error; err != nil {
+			return err
+		}
 	}
 	return nil
 }

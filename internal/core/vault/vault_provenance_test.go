@@ -5,6 +5,7 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"go.sia.tech/core/types"
 	"go.sia.tech/indexd/slabs"
@@ -202,6 +203,67 @@ func TestVerifyDigestMismatchKeepsLostStatus(t *testing.T) {
 	}
 }
 
+// TestSyncUpsertDoesNotClobberLostStatus verifies that a sync-down re-process
+// of an object whose sealed metadata stamps Status "ok" does NOT reset a
+// locally-lost file back to ok. Lost is a DB-only local write (Verify never
+// re-pins the object), so carrying the object's stale "ok" forward would hide
+// the unrecoverable file from vault_status --lost.
+func TestSyncUpsertDoesNotClobberLostStatus(t *testing.T) {
+	db, err := OpenDB(filepath.Join(t.TempDir(), "vault.db"))
+	if err != nil {
+		t.Fatalf("OpenDB failed: %v", err)
+	}
+	defer func() {
+		if sqlDB, err := db.DB(); err == nil {
+			sqlDB.Close()
+		}
+	}()
+
+	fake := &fakeSDK{t: t}
+	svc := &vaultService{db: db, sdk: fake, appKey: types.PrivateKey{}}
+	defer svc.Close()
+
+	dirID, err := svc.getOrCreateDirectory("/docs")
+	if err != nil {
+		t.Fatalf("getOrCreateDirectory: %v", err)
+	}
+
+	// Seed a locally-lost row (as Verify would leave it: DB-only, never re-pinned).
+	lostRow := File{
+		UUID: "uuid-lost", Name: "lost.txt", DirectoryID: dirID, IsCurrent: true,
+		ObjectKey: "abcdef", Size: 7, ContentDigest: "cdigest",
+		Status: FileStatusLost, LostReason: "object missing",
+	}
+	if err := db.Create(&lostRow).Error; err != nil {
+		t.Fatalf("seed lost row: %v", err)
+	}
+
+	// A sync re-process carries an object whose sealed metadata stamps Status
+	// "ok" (Put always writes "ok"). upto the fix this clobbered the lost marker.
+	meta := FileMetadata{
+		ID: "uuid-lost", Name: "lost.txt", Size: 7,
+		ContentDigest: "cdigest", Status: FileStatusOK, // Put-stamped default
+	}
+	existing := lostRow
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return upsertFromMeta(tx, &existing, meta, "abcdef", time.Now().UTC(), dirID)
+	}); err != nil {
+		t.Fatalf("upsertFromMeta: %v", err)
+	}
+
+	// The lost marker must survive the object's stale "ok" metadata.
+	var stored File
+	if err := db.Where("uuid = ?", "uuid-lost").First(&stored).Error; err != nil {
+		t.Fatalf("reload stored row: %v", err)
+	}
+	if stored.Status != FileStatusLost {
+		t.Errorf("sync upsert reset lost -> %q, want %q preserved", stored.Status, FileStatusLost)
+	}
+	if stored.LostReason != "object missing" {
+		t.Errorf("sync upsert dropped LostReason = %q, want preserved", stored.LostReason)
+	}
+}
+
 // TestSetProvenanceRePinsMetadataAndPersists verifies SetProvenance updates the
 // local row AND re-stamps + re-pins the Sia object's encrypted metadata, and
 // that only non-empty values override (empty fields preserved).
@@ -335,3 +397,4 @@ func assertHasProvenanceColumns(t *testing.T, db *gorm.DB) {
 		}
 	}
 }
+
