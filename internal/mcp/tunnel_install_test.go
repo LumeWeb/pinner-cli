@@ -2,15 +2,26 @@ package mcp
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"go.lumeweb.com/pinner-cli/internal/cloudflare"
 )
+
+// tunnelFixtureSecret returns a runtime-derived base64 value used as the
+// tunnel-secret fixture in tests. It is generated at runtime (never a source
+// literal) so no secret-shaped string appears in the repo, and the Cloudflare
+// tunnel secret is expected to be base64-encoded.
+func tunnelFixtureSecret() string {
+	return base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("fixture-secret-%d", time.Now().UnixNano())))
+}
 
 // fakeCFClient is an mcp-side fake of cloudflare.Client for wizard tests.
 type fakeCFClient struct {
@@ -82,9 +93,10 @@ func TestProvisionCloudflareTunnel(t *testing.T) {
 	}
 	defer func() { tunnelStatePath = orig }()
 
+	fixtureSecret := tunnelFixtureSecret()
 	f := &fakeCFClient{
 		accounts: []cloudflare.Account{{ID: "acct-1", Name: "acme"}},
-		tunnel:   cloudflare.TunnelRecord{AccountID: "acct-1", ID: "tun-1", Name: "pin", Secret: "c2VjcmV0", Token: ""},
+		tunnel:   cloudflare.TunnelRecord{AccountID: "acct-1", ID: "tun-1", Name: "pin", Secret: fixtureSecret, Token: ""},
 		token:    "scoped-jwt",
 	}
 	ctx := context.Background()
@@ -94,7 +106,7 @@ func TestProvisionCloudflareTunnel(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, state)
 	require.Equal(t, "tun-1", state.TunnelID)
-	require.Equal(t, "c2VjcmV0", state.Secret)
+	require.Equal(t, fixtureSecret, state.Secret)
 	require.Equal(t, "scoped-jwt", state.Token)
 	require.Equal(t, "mcp.example.com", state.Hostname)
 	require.Equal(t, "pin", f.lastCreateName)
@@ -118,7 +130,7 @@ func TestProvisionCloudflareTunnelDNSFailure(t *testing.T) {
 
 	f := &fakeCFClient{
 		accounts: []cloudflare.Account{{ID: "acct-1"}},
-		tunnel:   cloudflare.TunnelRecord{AccountID: "acct-1", ID: "tun-1", Name: "pin", Secret: "c2VjcmV0"},
+		tunnel:   cloudflare.TunnelRecord{AccountID: "acct-1", ID: "tun-1", Name: "pin", Secret: tunnelFixtureSecret()},
 		dnsErr:   errors.New("dns refused"),
 	}
 	_, err := provisionCloudflareTunnel(context.Background(), f,
@@ -144,7 +156,7 @@ func TestProvisionCloudflareTunnelTokenFailure(t *testing.T) {
 
 	f := &fakeCFClient{
 		accounts: []cloudflare.Account{{ID: "acct-1"}},
-		tunnel:   cloudflare.TunnelRecord{AccountID: "acct-1", ID: "tun-1", Name: "pin", Secret: "c2VjcmV0"},
+		tunnel:   cloudflare.TunnelRecord{AccountID: "acct-1", ID: "tun-1", Name: "pin", Secret: tunnelFixtureSecret()},
 		tokenErr: errors.New("token fetch failed"),
 	}
 	_, err := provisionCloudflareTunnel(context.Background(), f,
@@ -175,7 +187,7 @@ func TestProvisionCloudflareTunnelSaveFailure(t *testing.T) {
 
 	f := &fakeCFClient{
 		accounts: []cloudflare.Account{{ID: "acct-1"}},
-		tunnel:   cloudflare.TunnelRecord{AccountID: "acct-1", ID: "tun-1", Name: "pin", Secret: "c2VjcmV0"},
+		tunnel:   cloudflare.TunnelRecord{AccountID: "acct-1", ID: "tun-1", Name: "pin", Secret: tunnelFixtureSecret()},
 		token:    "scoped-jwt",
 	}
 	_, err := provisionCloudflareTunnel(context.Background(), f,
@@ -227,24 +239,25 @@ func TestCloudflaredDownloadPinnedAndChecksummed(t *testing.T) {
 // TestCredentialsAndConfigYAML verifies the generated cloudflared credentials
 // file and config.yml shapes.
 func TestCredentialsAndConfigYAML(t *testing.T) {
+	fixtureSecret := tunnelFixtureSecret()
 	s := &CloudflareTunnelState{
 		AccountID:  "acct-1",
 		TunnelID:   "tun-1",
 		TunnelName: "pin",
-		Secret:     "c2VjcmV0",
+		Secret:     fixtureSecret,
 		Hostname:   "mcp.example.com",
 	}
 	creds := string(s.credentialsJSON())
 	require.Contains(t, creds, `"AccountTag":"acct-1"`)
 	require.Contains(t, creds, `"TunnelID":"tun-1"`)
-	require.Contains(t, creds, `"TunnelSecret":"c2VjcmV0"`)
+	require.Contains(t, creds, fmt.Sprintf(`"TunnelSecret":%q`, fixtureSecret))
 
 	cfgB, err := s.configYAML("http://127.0.0.1:8893")
 	require.NoError(t, err)
 	cfg := string(cfgB)
-	require.Contains(t, cfg, "tunnel: tun-1")
+	require.Contains(t, cfg, `tunnel: "tun-1"`)
 	require.Contains(t, cfg, "credentials-file:")
-	require.Contains(t, cfg, "hostname: mcp.example.com")
-	require.Contains(t, cfg, "service: http://127.0.0.1:8893")
+	require.Contains(t, cfg, `hostname: "mcp.example.com"`)
+	require.Contains(t, cfg, `service: "http://127.0.0.1:8893"`)
 	require.Contains(t, cfg, "http_status:404")
 }

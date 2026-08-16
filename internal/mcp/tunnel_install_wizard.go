@@ -181,6 +181,12 @@ func provisionCloudflaredForWizard(ctx context.Context, cmd *cli.Command, cfNew 
 	if name == "" {
 		name = "pinner-mcp"
 	}
+	// Refuse to double-provision: if a tunnel is already provisioned, surface
+	// it so the user can tear it down instead of silently orphaning the prior
+	// tunnel + DNS CNAME (and overwriting tunnel-state.json) on a re-run.
+	if prior, lerr := LoadCloudflareTunnelState(); lerr == nil && prior != nil {
+		return nil, "", fmt.Errorf("a tunnel (%s, hostname %s) is already provisioned; run `pinner mcp tunnel status`, then clean it up before re-provisioning", prior.TunnelID, prior.Hostname)
+	}
 	fmt.Printf("Provisioning Cloudflare tunnel %q for %q ...\n", name, hostname)
 	state, err := provisionCloudflareTunnel(ctx, c, account, zone, name, hostname)
 	if err != nil {
