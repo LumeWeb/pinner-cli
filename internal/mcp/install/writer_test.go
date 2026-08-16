@@ -260,8 +260,8 @@ func TestJSONCPreservesCommentsOnSetAndRemove(t *testing.T) {
 	// The headline behaviour of the library-backed JSONC path: a user's comments
 	// and formatting survive both an insert and a remove around the target key.
 	dir := t.TempDir()
-	agent, _ := Agent(AgentOpenCode)
-	path := filepath.Join(dir, agent.LocalConfigPath)
+	agent := Lookup(AgentOpenCode)
+	path := filepath.Join(dir, agent.LocalProjectPath())
 	existing := `{
   // top-level note
   "mcp": {
@@ -325,7 +325,7 @@ func TestJSONCWeirdServerNameIsLiteralKey(t *testing.T) {
 	for _, m := range meta {
 		t.Run("meta-"+m, func(t *testing.T) {
 			dir := t.TempDir()
-			agent, _ := Agent(AgentClaudeCode)
+			agent := Lookup(AgentClaudeCode)
 			path := filepath.Join(dir, "config.json")
 			cfg := McpServerConfig{URL: "https://example.com/mcp"}
 
@@ -342,15 +342,15 @@ func TestJSONCWeirdServerNameIsLiteralKey(t *testing.T) {
 			// The exact escaped path jsoncRemoveServer will compute must resolve
 			// to the entry (proving the exists-guard matches), and the resolved
 			// key must equal the literal name with no stray backslash.
-			target := string(agent.ConfigKey) + "." + escapePathSegment(name)
+			target := string(agent.ServerKey(false)) + "." + escapePathSegment(name)
 			if !gjson.GetBytes(raw, target).Exists() {
 				t.Fatalf("escaped path %q did not resolve for meta %q; raw=%s", target, m, raw)
 			}
-			resolved := gjson.GetBytes(raw, string(agent.ConfigKey))
+			resolved := gjson.GetBytes(raw, string(agent.ServerKey(false)))
 			if _, ok := resolved.Map()[name]; !ok {
 				t.Fatalf("resolved key for meta %q is not the literal %q; keys=%v", m, name, resolved.Map())
 			}
-			mm := readServerMap(t, FormatJSON, path, agent.ConfigKey)
+			mm := readServerMap(t, FormatJSON, path, agent.ServerKey(false))
 			if _, ok := mm[name]; !ok {
 				t.Fatalf("server %q not written as a literal key; servers=%v", name, mm)
 			}
@@ -359,7 +359,7 @@ func TestJSONCWeirdServerNameIsLiteralKey(t *testing.T) {
 			if err := RemoveServer(agent, path, name); err != nil {
 				t.Fatalf("RemoveServer with meta %q: %v", m, err)
 			}
-			mm = readServerMap(t, FormatJSON, path, agent.ConfigKey)
+			mm = readServerMap(t, FormatJSON, path, agent.ServerKey(false))
 			if _, ok := mm[name]; ok {
 				t.Errorf("server %q still present after removal", name)
 			}
@@ -370,8 +370,7 @@ func TestJSONCWeirdServerNameIsLiteralKey(t *testing.T) {
 func TestJSONCPreservesCommentsAcrossNestedConfigKey(t *testing.T) {
 	// zed uses a nested-style config key; comments above the key must survive.
 	dir := t.TempDir()
-	agent, _ := Agent(AgentZed)
-	agent.ConfigKey = "nested.servers"
+	agent := MustAgentWithKey(AgentZed, "nested.servers")
 	path := filepath.Join(dir, "settings.json")
 	existing := `{
   // keep this header note
