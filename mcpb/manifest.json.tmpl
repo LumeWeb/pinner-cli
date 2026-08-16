@@ -1,0 +1,46 @@
+{
+  "manifest_version": "0.3",
+  "name": "pinner-mcp",
+  "display_name": "Pinner MCP",
+  "version": "{{VERSION}}",
+  "description": "Pin content to IPFS, deploy websites, and manage vaults, DNS, and IPNS through Pinner.xyz.",
+  "author": {
+    "name": "Pinner",
+    "email": "support@pinner.xyz",
+    "url": "https://pinner.xyz"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/LumeWeb/pinner-cli"
+  },
+  "homepage": "https://pinner.xyz",
+  "documentation": "https://github.com/LumeWeb/pinner-cli",
+  "support": "https://github.com/LumeWeb/pinner-cli/issues",
+  "keywords": ["pinner", "ipfs", "mcp", "storage", "website-hosting"],
+  "license": "MIT",
+  "server": {
+    "type": "binary",
+    "entry_point": "server/pinner{{EXE}}",
+    "mcp_config": {
+      "command": "server/pinner{{EXE}}",
+      "args": ["mcp"],
+      "env": {
+        "PINNER_API_TOKEN": "${user_config.pinner_api_token}"
+      }
+    }
+  },
+  "user_config": {
+    "pinner_api_token": {
+      "type": "string",
+      "title": "Pinner API Token",
+      "description": "Your Pinner.xyz API token (get one at https://pinner.xyz/dashboard/keys)",
+      "sensitive": true,
+      "required": true
+    }
+  },
+  "tools_generated": true,
+  "compatibility": {
+    "claude_desktop": ">=1.0.0",
+    "platforms": ["{{OS}}"]
+  }
+}
