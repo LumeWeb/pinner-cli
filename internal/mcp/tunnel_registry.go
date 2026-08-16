@@ -3,6 +3,8 @@ package mcp
 import (
 	"fmt"
 	"sync"
+
+	"go.lumeweb.com/pinner-cli/internal/core/config"
 )
 
 // TunnelConfig is the set of tunnel/account parameters shared by every tunnel
@@ -30,6 +32,10 @@ type TunnelConfig struct {
 	// loaded from at Start time. Empty uses the default per-user path; set in
 	// tests to point at a fixture.
 	StatePath string
+	// ConfigMgr is the optional pinner config manager consulted as the
+	// last-resort credential store (e.g. an ngrok authtoken persisted via
+	// SetTunnelCredential). A nil manager degrades to no store.
+	ConfigMgr config.Manager
 }
 
 // TunnelProviderSpec describes one tunnel provider's runtime + installation
@@ -83,7 +89,7 @@ func (r *tunnelRegistry) spec(p TunnelProvider) (*TunnelProviderSpec, bool) {
 
 // TunnelFor returns a Tunnel for the named provider, or nil if provider is
 // empty (no tunnel). It delegates to the provider registry.
-func TunnelFor(provider, domain, token, name, tunnelID string) (Tunnel, error) {
+func TunnelFor(provider, domain, token, name, tunnelID string, cfgMgr config.Manager) (Tunnel, error) {
 	if provider == "" {
 		return nil, nil
 	}
@@ -92,9 +98,10 @@ func TunnelFor(provider, domain, token, name, tunnelID string) (Tunnel, error) {
 		return nil, fmt.Errorf("unknown tunnel provider %q", provider)
 	}
 	return spec.NewTunnel(TunnelConfig{
-		Domain:   domain,
-		Token:    token,
-		Name:     name,
-		TunnelID: tunnelID,
+		Domain:    domain,
+		Token:     token,
+		Name:      name,
+		TunnelID:  tunnelID,
+		ConfigMgr: cfgMgr,
 	})
 }

@@ -6,10 +6,10 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	"golang.ngrok.com/ngrok/v2"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
 )
 
 // ngrokTunnel serves a local MCP HTTP server through a tunnel powered by the
@@ -32,6 +32,11 @@ type ngrokTunnel struct {
 	domain string
 	token  string
 
+	// cfgMgr is the optional pinner config manager used as the last-resort
+	// credential store. A nil manager (tests, unwired runtime) degrades to no
+	// store, mirroring resolveNgrokToken/tunnelCfgCredential semantics.
+	cfgMgr config.Manager
+
 	// agent and fwd are the embedded pieces created in Start.
 	agent ngrok.Agent
 	fwd   ngrok.EndpointForwarder
@@ -42,9 +47,16 @@ type ngrokTunnel struct {
 // the account authtoken (may be empty if already configured via
 // `ngrok config add-authtoken`, the NGROK_AUTHTOKEN environment variable, or
 // the pinner config manager). domain, when set, is a custom hostname; ngrok
-// requires a paid account for custom domains.
+// requires a paid account for custom domains. cfgMgr, when non-nil, is consulted
+// as the last-resort credential store for the ngrok token.
 func NewNgrokTunnel(domain, token string) Tunnel {
-	return &ngrokTunnel{domain: domain, token: token}
+	return NewNgrokTunnelWithConfig(domain, token, nil)
+}
+
+// NewNgrokTunnelWithConfig returns an ngrok tunnel that consults cfgMgr (when
+// non-nil) as the last-resort credential store for the ngrok authtoken.
+func NewNgrokTunnelWithConfig(domain, token string, cfgMgr config.Manager) Tunnel {
+	return &ngrokTunnel{domain: domain, token: token, cfgMgr: cfgMgr}
 }
 
 // Name implements Tunnel.
@@ -57,13 +69,22 @@ func (n *ngrokTunnel) SupportsCustomDomain() bool { return true }
 // cases (even the free tier), but it may be supplied via --token, the
 // NGROK_AUTHTOKEN env var, or the ngrok config file. We report true only when
 // none of those sources is present, so the CLI does not falsely reject a user
-// who has configured ngrok out of band (the config-file probe is centralized
-// in hasProviderConfig).
+// who has configured ngrok out of band. The config file must actually declare
+// a usable agent authtoken (ngrokConfigHasAuthtoken). An empty or
+// partially-written config file carries no credential and must not be treated
+// as satisfying the token requirement, or the agent would start
+// unauthenticated.
 func (n *ngrokTunnel) RequiresToken() bool {
 	if n.token != "" || os.Getenv("NGROK_AUTHTOKEN") != "" {
 		return false
 	}
-	return !hasProviderConfig("ngrok")
+	// A token persisted to the pinner config-manager last-resort store (e.g. by
+	// `service install` or the wizard) also satisfies the requirement, so the
+	// user is not re-prompted and the runtime is not rejected.
+	if n.cfgMgr != nil && n.cfgMgr.TunnelCredential("ngrok", "token") != "" {
+		return false
+	}
+	return !ngrokConfigHasAuthtoken()
 }
 
 // OAuthBaseURL implements Tunnel.
@@ -118,8 +139,10 @@ func (n *ngrokTunnel) Start(ctx context.Context, localAddr string) error {
 	// own (--token or NGROK_AUTHTOKEN). When absent, leave the agent to load
 	// the ngrok config file itself (hasProviderConfig/RequiresToken already
 	// account for it). Never pass an empty token (that would clobber the
-	// config-file credential).
-	if tok := ngrokToken(n.token); tok != "" {
+	// config-file credential). resolveNgrokToken applies the same stale-store
+	// guard as serveHTTP: a stale/revoked config-manager token must not be
+	// forced via WithAuthtoken when the config file carries a valid authtoken.
+	if tok := resolveNgrokToken(n.token, n.cfgMgr); tok != "" {
 		agentOpts = append(agentOpts, ngrok.WithAuthtoken(tok))
 	}
 
@@ -153,9 +176,20 @@ func (n *ngrokTunnel) Start(ctx context.Context, localAddr string) error {
 	n.stop = stop
 	n.mu.Unlock()
 
-	// The public URL is known from the returned forwarder; wait briefly for the
-	// tunnel to accept traffic before reporting it live, mirroring the previous
-	// readiness semantics (never print a URL that is not yet reachable).
+	if n.domain != "" {
+		// A custom-domain URL is pre-assigned before Forward, so the tunnel is
+		// live as soon as agent.Forward succeeds. Do NOT require public
+		// reachability (the customer's DNS/CNAME may not be pointed at ngrok
+		// yet): probing would time out and tear down a tunnel that was
+		// actually created, breaking the paid custom-domain feature.
+		n.setReady(fwd.URL().String())
+		return nil
+	}
+
+	// Provider-assigned (free-tier) URL: the public address is only known from
+	// the returned forwarder. Wait briefly for it to accept traffic before
+	// reporting live, mirroring the previous readiness semantics (never print a
+	// URL that is not yet reachable).
 	if err := n.waitReady(ctx, fwd.URL().String()); err != nil {
 		shCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -190,28 +224,28 @@ func (n *ngrokTunnel) waitReady(ctx context.Context, publicURL string) error {
 			return fmt.Errorf("timed out waiting for ngrok tunnel %s to become ready", publicURL)
 		}
 		resp, err := client.Get(publicURL)
-		if err == nil {
+		// Close the body whenever a response was returned, even on error
+		// (timeout/redirect/partial-response gives a non-nil resp WITH a
+		// non-nil err); failing to close leaks the body/connection across the
+		// up-to-30s startup window.
+		if resp != nil {
 			_ = resp.Body.Close()
-			// Only a success/redirect status means the tunnel is actually
-			// delivering traffic to the local origin. ngrok's edge answers
-			// with its own 502/404 gateway pages before upstream connectivity
-			// is established, so those must not count as "ready".
-			if resp.StatusCode >= 200 && resp.StatusCode < 400 {
-				return nil
-			}
+		}
+		if err != nil {
+			// Not yet reachable or origin unavailable; keep polling.
+			time.Sleep(300 * time.Millisecond)
+			continue
+		}
+		// A 2xx or 3xx response means the tunnel is delivering traffic to the
+		// local origin: many live MCP origins redirect GET / to a login/OAuth
+		// page, and ngrok's edge answers pre-live with its own 502/404 gateway
+		// pages (4xx/5xx), so a redirect is a valid "live" signal while the
+		// gateway errors are not.
+		if resp.StatusCode >= 200 && resp.StatusCode < 400 {
+			return nil
 		}
 		time.Sleep(300 * time.Millisecond)
 	}
-}
-
-// ngrokToken returns the ngrok authtoken from the explicit token or the
-// NGROK_AUTHTOKEN environment variable (config-file tokens are loaded by the
-// SDK itself and are not surfaced here).
-func ngrokToken(explicit string) string {
-	if v := strings.TrimSpace(explicit); v != "" {
-		return v
-	}
-	return strings.TrimSpace(os.Getenv("NGROK_AUTHTOKEN"))
 }
 
 // localURL builds an http:// origin from a host:port pair for the ngrok

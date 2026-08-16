@@ -9,6 +9,14 @@ import (
 )
 
 func TestEmbeddedOpenAITunnelValidatesConfiguration(t *testing.T) {
+	// The invalid-config paths call openTunnelDeepLink to open the OpenAI
+	// setup pages in a browser. Stub the opener so test execution never
+	// spawns a real browser (a non-hermetic side effect that can hang CI),
+	// regardless of the global wizard.NonInteractive setting.
+	origOpener := tunnelDeepLinkOpener
+	defer func() { tunnelDeepLinkOpener = origOpener }()
+	tunnelDeepLinkOpener = func(string) error { return nil }
+
 	tests := []struct {
 		name   string
 		tunnel string
@@ -33,6 +41,6 @@ func TestEmbeddedOpenAITunnelRequiresServer(t *testing.T) {
 }
 
 func TestTunnelForRejectsOpenAIHTTPMode(t *testing.T) {
-	_, err := tunnelFor("openai", "", "key", "", "tunnel_0123456789abcdef0123456789abcdef")
+	_, err := tunnelFor("openai", "", "key", "", "tunnel_0123456789abcdef0123456789abcdef", nil)
 	require.ErrorContains(t, err, "embedded")
 }

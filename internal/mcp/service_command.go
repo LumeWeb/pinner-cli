@@ -24,6 +24,12 @@ func serviceConfigManager() config.Manager {
 	if err != nil {
 		return nil
 	}
+	// Load the existing config before any Save()/SetTunnelCredential so
+	// persistence never rewrites config.yaml from an unloaded in-memory state
+	// (which would silently drop pre-existing keys).
+	if err := mgr.Load(); err != nil {
+		return nil
+	}
 	return mgr
 }
 

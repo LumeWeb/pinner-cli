@@ -37,26 +37,6 @@ func TestSplitHostPort(t *testing.T) {
 	}
 }
 
-func TestNgrokToken(t *testing.T) {
-	// Explicit token wins.
-	assert.Equal(t, "explicit", ngrokToken("explicit"))
-
-	// Empty explicit falls back to NGROK_AUTHTOKEN.
-	t.Setenv("NGROK_AUTHTOKEN", "envtok")
-	assert.Equal(t, "envtok", ngrokToken(""))
-
-	// Explicit wins over env.
-	assert.Equal(t, "explicit", ngrokToken("explicit"))
-
-	// Both empty -> empty.
-	t.Setenv("NGROK_AUTHTOKEN", "")
-	assert.Equal(t, "", ngrokToken(""))
-
-	// Whitespace explicit is treated as empty, so it falls back to env.
-	t.Setenv("NGROK_AUTHTOKEN", "envtok")
-	assert.Equal(t, "envtok", ngrokToken("   "))
-}
-
 func TestNgrokLocalURL(t *testing.T) {
 	assert.Equal(t, "http://127.0.0.1:8893", localURL("127.0.0.1", "8893"))
 	assert.Equal(t, "http://localhost:7000", localURL("localhost", "7000"))
@@ -64,19 +44,19 @@ func TestNgrokLocalURL(t *testing.T) {
 }
 
 func TestTunnelFor(t *testing.T) {
-	tng, err := tunnelFor("ngrok", "", "tok", "", "")
+	tng, err := tunnelFor("ngrok", "", "tok", "", "", nil)
 	require.NoError(t, err)
 	assert.Equal(t, "ngrok", tng.Name())
 	assert.True(t, tng.SupportsCustomDomain())
 
-	tcf, err := tunnelFor("cloudflared", "mcp.example.com", "", "", "")
+	tcf, err := tunnelFor("cloudflared", "mcp.example.com", "", "", "", nil)
 	require.NoError(t, err)
 	assert.Equal(t, "cloudflared", tcf.Name())
 
-	_, err = tunnelFor("bogus", "", "", "", "")
+	_, err = tunnelFor("bogus", "", "", "", "", nil)
 	require.Error(t, err)
 
-	nilT, err := tunnelFor("", "", "", "", "")
+	nilT, err := tunnelFor("", "", "", "", "", nil)
 	require.NoError(t, err)
 	assert.Nil(t, nilT)
 }
@@ -100,6 +80,26 @@ func TestRequiresToken(t *testing.T) {
 	// No token, no env, no config file: token required.
 	t.Setenv("NGROK_CONFIG", filepath.Join(dir, "missing.yml"))
 	require.True(t, NewNgrokTunnel("", "").RequiresToken())
+
+	// A config file that exists but declares no usable agent authtoken (empty
+	// or broken; authtoken nested under tunnels/endpoints) must NOT satisfy the
+	// token requirement, or the embedded agent would start unauthenticated.
+	emptyCfg := filepath.Join(dir, "empty.yml")
+	require.NoError(t, os.WriteFile(emptyCfg, []byte("version: 2\nagent:\n"), 0o600))
+	t.Setenv("NGROK_CONFIG", emptyCfg)
+	require.True(t, NewNgrokTunnel("", "").RequiresToken(), "config file with no agent authtoken must still require a token")
+
+	nestedCfg := filepath.Join(dir, "nested.yml")
+	require.NoError(t, os.WriteFile(nestedCfg, []byte(
+		"version: 2\nlog:\n  level: debug\ntunnels:\n  test:\n    authtoken: not-an-agent-token\n"), 0o600))
+	t.Setenv("NGROK_CONFIG", nestedCfg)
+	require.True(t, NewNgrokTunnel("", "").RequiresToken(), "authtoken nested under non-agent block must not count")
+
+	// A token persisted to the pinner config-manager store satisfies the
+	// token requirement (no re-prompt / no rejection).
+	t.Setenv("NGROK_CONFIG", filepath.Join(dir, "missing.yml"))
+	mgr := newTestConfigManager(t, "storedtok")
+	require.False(t, NewNgrokTunnelWithConfig("", "", mgr).RequiresToken(), "config-manager stored token satisfies the requirement")
 }
 
 func TestRequiresTokenDefaultConfigPath(t *testing.T) {
