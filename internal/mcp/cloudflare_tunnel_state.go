@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // tunnelStateFileName is the JSON file the tunnel installer / service install
@@ -23,9 +24,20 @@ type CloudflareTunnelState struct {
 	AccountID  string         `json:"account_id"` // credentials AccountTag
 	TunnelID   string         `json:"tunnel_id"`
 	TunnelName string         `json:"tunnel_name"`
-	Secret     string         `json:"secret"`
-	Token      string         `json:"token"`
-	Hostname   string         `json:"hostname"`
+	// Secret and Token are credentials (the tunnel credentials secret and the
+	// scoped run token). They are populated ONLY at runtime from the Cloudflare
+	// API response / tunnel provisioning, never from source and never from
+	// literals. Code paths that construct a state must not hard-code these
+	// values; tests must likewise use fixtures that are clearly not real
+	// credentials.
+	Secret   string `json:"secret"`
+	Token    string `json:"token"`
+	Hostname string `json:"hostname"`
+	// ZoneID and DNSRecordID capture the proxied DNS route created for the
+	// hostname so a later failure (e.g. an env-file write) can roll the route
+	// back alongside the tunnel instead of orphaning the CNAME.
+	ZoneID      string `json:"zone_id"`
+	DNSRecordID string `json:"dns_record_id"`
 }
 
 // tunnelStatePath returns the per-user path to the tunnel state file, under
@@ -100,21 +112,49 @@ func (s *CloudflareTunnelState) credentialsJSON() []byte {
 // configYAML returns a cloudflared config.yml for a locally-managed tunnel that
 // routes hostname to the given local origin (host:port). The origin port is the
 // MCP server's actual bound port, so it is always correct regardless of which
-// ephemeral port the OS assigned.
-func (s *CloudflareTunnelState) configYAML(origin string) []byte {
+// ephemeral port the OS assigned. The hostname is normalized to its bare form
+// (scheme stripped) because cloudflared's ingress hosts are bare hostnames, not
+// URLs.
+func (s *CloudflareTunnelState) configYAML(origin string) ([]byte, error) {
+	credsPath, err := s.credentialsFilePath()
+	if err != nil {
+		return nil, err
+	}
 	// indentation is significant in YAML; keep the template literal exact.
 	return []byte(fmt.Sprintf(
 		"tunnel: %s\ncredentials-file: %s\n\n"+
 			"ingress:\n"+
 			"  - hostname: %s\n    service: %s\n"+
 			"  - service: http_status:404\n",
-		s.TunnelID, s.credentialsFilePath(), s.Hostname, origin,
-	))
+		s.TunnelID, credsPath, bareHostname(s.Hostname), origin,
+	)), nil
 }
 
 // credentialsFilePath returns where the credentials file is written for the
-// current provider.
-func (s *CloudflareTunnelState) credentialsFilePath() string {
-	dir, _ := os.UserConfigDir()
-	return filepath.Join(dir, "pinner", s.TunnelID+".json")
+// current provider. It propagates the os.UserConfigDir error rather than
+// silently building a path at the filesystem root when resolution fails.
+func (s *CloudflareTunnelState) credentialsFilePath() (string, error) {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve user config directory: %w", err)
+	}
+	return filepath.Join(dir, "pinner", s.TunnelID+".json"), nil
+}
+
+// bareHostname strips a leading http(s):// scheme so hostname comparisons and
+// cloudflared ingress hosts are always bare (e.g. "mcp.example.com"), never
+// scheme-qualified URLs. It also strips a trailing path/hash fragment if a
+// caller passed a full URL.
+func bareHostname(h string) string {
+	h = strings.TrimSpace(h)
+	for _, p := range []string{"https://", "http://"} {
+		if len(h) >= len(p) && strings.EqualFold(h[:len(p)], p) {
+			h = h[len(p):]
+			break
+		}
+	}
+	if i := strings.IndexAny(h, "/?#"); i >= 0 {
+		h = h[:i]
+	}
+	return h
 }

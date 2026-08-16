@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 )
@@ -139,13 +138,6 @@ func (c *cloudflaredTunnel) loadState() (*CloudflareTunnelState, error) {
 // Start implements Tunnel. It writes the credentials file + config.yml for the
 // provisioned tunnel and runs `cloudflared tunnel run --config`.
 func (c *cloudflaredTunnel) Start(ctx context.Context, localAddr string) error {
-	if c.domain == "" {
-		return fmt.Errorf("cloudflared requires a custom domain (--domain); the free quick-tunnel mode is not supported because it cannot stream Server-Sent Events")
-	}
-	if _, err := exec.LookPath("cloudflared"); err != nil {
-		return fmt.Errorf("cloudflared executable not found on PATH: %w (see https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/)", err)
-	}
-
 	state, err := c.loadState()
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -157,6 +149,15 @@ func (c *cloudflaredTunnel) Start(ctx context.Context, localAddr string) error {
 		return fmt.Errorf("provisioned cloudflare tunnel is incomplete (missing hostname/tunnel id/secret); re-run `pinner mcp tunnel install`")
 	}
 
+	// The provisioned state carries the public hostname; a separately-supplied
+	// --domain is optional and, when present, must agree with the state so we
+	// never serve a hostname different from the one that was validated.
+	// Compare bare hostnames so an https:// prefix on either side does not
+	// produce a false mismatch.
+	if c.domain != "" && !strings.EqualFold(bareHostname(c.domain), bareHostname(state.Hostname)) {
+		return fmt.Errorf("--domain %q does not match the provisioned tunnel hostname %q; re-run `pinner mcp tunnel install`", c.domain, state.Hostname)
+	}
+
 	// Build the local origin URL the tunnel will forward to.
 	origin, err := urlForOrigin(localAddr)
 	if err != nil {
@@ -164,7 +165,10 @@ func (c *cloudflaredTunnel) Start(ctx context.Context, localAddr string) error {
 	}
 
 	// Write the credentials file (tunnel-scoped secret) at a private path.
-	credsPath := state.credentialsFilePath()
+	credsPath, err := state.credentialsFilePath()
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(credsPath), 0o700); err != nil {
 		return fmt.Errorf("create pinner config dir: %w", err)
 	}
@@ -174,11 +178,23 @@ func (c *cloudflaredTunnel) Start(ctx context.Context, localAddr string) error {
 
 	// Generate a config.yml routing our hostname to the actual bound origin.
 	configPath := filepath.Join(filepath.Dir(credsPath), "config.yml")
-	if err := os.WriteFile(configPath, state.configYAML(origin), 0o600); err != nil {
+	cfg, err := state.configYAML(origin)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(configPath, cfg, 0o600); err != nil {
 		return fmt.Errorf("write cloudflared config: %w", err)
 	}
 
-	cmd := exec.CommandContext(ctx, cloudflaredBinPath(), "tunnel", "run", "--config", configPath)
+	// Resolve the cloudflared binary as the single source of truth: first on
+	// PATH, then in the per-user pinner bin dir if it was fetched via
+	// `pinner mcp tunnel install` (which is not on PATH).
+	cloudflaredPath, err := resolveCloudflaredPath()
+	if err != nil {
+		return fmt.Errorf("cloudflared executable not found: %w (see https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/)", err)
+	}
+
+	cmd := exec.CommandContext(ctx, cloudflaredPath, "tunnel", "run", "--config", configPath)
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
 
@@ -198,7 +214,7 @@ func (c *cloudflaredTunnel) Start(ctx context.Context, localAddr string) error {
 	// The public URL derives from the provisioned hostname (not c.domain), so a
 	// runtime restart converges on the exact hostname the tunnel was created for
 	// even if the CLI --domain flag differs from the provisioned state.
-	publicURL := "https://" + strings.TrimPrefix(state.Hostname, "https://")
+	publicURL := "https://" + bareHostname(state.Hostname)
 	if err := c.waitReady(ctx, publicURL); err != nil {
 		shCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -255,18 +271,6 @@ func urlForOrigin(localAddr string) (string, error) {
 	return "http://" + net.JoinHostPort(host, port), nil
 }
 
-// cloudflaredBinPath resolves the cloudflared binary for runtime invocation,
-// preferring the version on PATH (system or user install) with a fallback to
-// the binary installed by `pinner mcp tunnel install` in the per-user pinner
-// bin dir. Falls back to the bare name if resolution fails so the exec still
-// produces a useful PATH error.
-func cloudflaredBinPath() string {
-	if p, err := resolveCloudflaredPath(); err == nil {
-		return p
-	}
-	return "cloudflared"
-}
-
 // cloudflaredBinDir returns the per-user directory pinner installs a
 // downloaded cloudflared binary to.
 func cloudflaredBinDir() (string, error) {
@@ -292,15 +296,12 @@ func resolveCloudflaredPath() (string, error) {
 		return "", err
 	}
 	path := filepath.Join(dir, cloudflaredExeName())
-	if _, err := os.Stat(path); err == nil {
+	// Require a regular, runnable file (per the platform's notion of
+	// executable) so a corrupt download in the pinner bin dir is not silently
+	// selected (which would otherwise fail cryptically at exec time); fall
+	// through to the installer guidance instead.
+	if info, err := os.Stat(path); err == nil && isRunnableBinary(info) {
 		return path, nil
 	}
 	return "", fmt.Errorf("cloudflared not installed; run `pinner mcp tunnel install` to fetch it")
-}
-
-func cloudflaredExeName() string {
-	if runtime.GOOS == "windows" {
-		return "cloudflared.exe"
-	}
-	return "cloudflared"
 }

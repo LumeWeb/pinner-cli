@@ -16,6 +16,28 @@ func TestNewRejectsEmptyToken(t *testing.T) {
 	require.Contains(t, err.Error(), "API token is empty")
 }
 
+// TestZoneHostnameMatches covers the FindZone candidate predicate: a tunnel
+// hostname maps to either an exact zone name or a subdomain nested beneath it,
+// ignoring case and an optional https:// scheme.
+func TestZoneHostnameMatches(t *testing.T) {
+	cases := []struct {
+		zoneName string
+		domain   string
+		want     bool
+	}{
+		{"example.com", "example.com", true},             // exact apex
+		{"example.com", "mcp.example.com", true},         // subdomain
+		{"example.com", "a.b.example.com", true},         // nested subdomain
+		{"example.com", "https://mcp.example.com", true}, // scheme tolerated
+		{"example.com", "EXAMPLE.com", true},             // case-insensitive
+		{"example.com", "notexample.com", false},         // suffix lookalike
+		{"example.com", "other.org", false},              // unrelated
+	}
+	for _, c := range cases {
+		require.Equal(t, c.want, zoneHostnameMatches(c.zoneName, c.domain), "zone=%q domain=%q", c.zoneName, c.domain)
+	}
+}
+
 // fakeClient is an in-memory Client for tests. It records calls and returns
 // canned results, so install/service wizard tests never touch the network.
 type fakeClient struct {
@@ -37,6 +59,9 @@ type fakeClient struct {
 	// deletedTunnels records tunnel IDs passed to DeleteTunnel, so tests can
 	// assert mid-provision orphan cleanup.
 	deletedTunnels []string
+	// deletedRoutes records DNS record IDs passed to DeleteDNSRoute so tests
+	// can assert the hostname route is rolled back on failure.
+	deletedRoutes []string
 }
 
 func (f *fakeClient) VerifyToken(context.Context) error { return f.verifyErr }
@@ -65,12 +90,21 @@ func (f *fakeClient) GetTunnelToken(_ context.Context, a Account, tunnelID strin
 	return f.token, f.tokenErr
 }
 
-func (f *fakeClient) CreateDNSRoute(_ context.Context, a Account, z Zone, host, tunnelID string) error {
+func (f *fakeClient) CreateDNSRoute(_ context.Context, a Account, z Zone, host, tunnelID string) (string, error) {
 	f.lastAccount = a
 	f.lastZone = z
 	f.lastHost = host
 	f.lastTunnel = tunnelID
-	return f.dnsErr
+	if f.dnsErr != nil {
+		return "", f.dnsErr
+	}
+	return "dns-record-1", nil
+}
+
+func (f *fakeClient) DeleteDNSRoute(_ context.Context, z Zone, recordID string) error {
+	f.lastZone = z
+	f.deletedRoutes = append(f.deletedRoutes, recordID)
+	return nil
 }
 
 func (f *fakeClient) DeleteTunnel(_ context.Context, a Account, tunnelID string) error {

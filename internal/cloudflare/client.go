@@ -72,8 +72,12 @@ type Client interface {
 	// GetTunnelToken returns the scoped JWT used to run a specific tunnel.
 	GetTunnelToken(ctx context.Context, account Account, tunnelID string) (string, error)
 	// CreateDNSRoute points hostname (a subdomain of a zone in account) at the
-	// named tunnel, proxied through Cloudflare.
-	CreateDNSRoute(ctx context.Context, account Account, zone Zone, hostname, tunnelID string) error
+	// named tunnel, proxied through Cloudflare. It returns the created DNS
+	// record ID so a caller can remove the route again on failure.
+	CreateDNSRoute(ctx context.Context, account Account, zone Zone, hostname, tunnelID string) (string, error)
+	// DeleteDNSRoute removes a DNS record (by its record ID) from zone. Used to
+	// best-effort clean up a route created mid-provision when a later step fails.
+	DeleteDNSRoute(ctx context.Context, zone Zone, recordID string) error
 	// DeleteTunnel removes a named tunnel from account. Used to best-effort
 	// clean up a tunnel created mid-provision when a later step fails.
 	DeleteTunnel(ctx context.Context, account Account, tunnelID string) error
@@ -121,16 +125,31 @@ func (c *cfClient) ListAccounts(ctx context.Context) ([]Account, error) {
 	return out, nil
 }
 
+// zoneHostnameMatches reports whether the tunnel hostname `domain` belongs to
+// the DNS zone `zoneName`. The passed domain is the public hostname (often a
+// subdomain like mcp.example.com) while the matching Cloudflare zone is the
+// parent (example.com), so we accept either an exact zone-name match or a
+// hostname nested beneath it, ignoring case and an optional https:// scheme.
+func zoneHostnameMatches(zoneName, domain string) bool {
+	zn := strings.ToLower(zoneName)
+	dn := strings.ToLower(strings.TrimPrefix(domain, "https://"))
+	return dn == zn || strings.HasSuffix(dn, "."+zn)
+}
+
 // FindZone implements Client. It scopes the lookup to the selected account so
 // a token with access to multiple accounts cannot resolve the tunnel's public
 // zone to a different account than the one the tunnel was created in.
 func (c *cfClient) FindZone(ctx context.Context, account Account, domain string) (Zone, error) {
+	// ListZonesContext auto-paginates internally (it fans out across pages when
+	// TotalPages >= 2), so a single call already returns every zone the token
+	// can see. The account.ID filter below then guarantees the match is scoped
+	// to the account the tunnel was provisioned in.
 	zones, err := c.api.ListZonesContext(ctx)
 	if err != nil {
 		return Zone{}, fmt.Errorf("resolve zone for %q: %w", domain, err)
 	}
 	for _, z := range zones.Result {
-		if z.Account.ID == account.ID && strings.EqualFold(z.Name, domain) {
+		if z.Account.ID == account.ID && zoneHostnameMatches(z.Name, domain) {
 			return Zone{ID: z.ID, Name: z.Name}, nil
 		}
 	}
@@ -173,8 +192,9 @@ func (c *cfClient) GetTunnelToken(ctx context.Context, account Account, tunnelID
 }
 
 // CreateDNSRoute implements Client. It creates a proxied CNAME pointing
-// hostname at the tunnel's <tunnel-id>.cfargotunnel.com target.
-func (c *cfClient) CreateDNSRoute(ctx context.Context, account Account, zone Zone, hostname, tunnelID string) error {
+// hostname at the tunnel's <tunnel-id>.cfargotunnel.com target and returns the
+// created DNS record ID so the caller can roll the route back on failure.
+func (c *cfClient) CreateDNSRoute(ctx context.Context, account Account, zone Zone, hostname, tunnelID string) (string, error) {
 	proxied := true
 	params := cf.CreateDNSRecordParams{
 		Type:    "CNAME",
@@ -182,8 +202,19 @@ func (c *cfClient) CreateDNSRoute(ctx context.Context, account Account, zone Zon
 		Content: tunnelID + ".cfargotunnel.com",
 		Proxied: &proxied,
 	}
-	if _, err := c.api.CreateDNSRecord(ctx, cf.ZoneIdentifier(zone.ID), params); err != nil {
-		return fmt.Errorf("create DNS route %q -> tunnel %q: %w", hostname, tunnelID, err)
+	record, err := c.api.CreateDNSRecord(ctx, cf.ZoneIdentifier(zone.ID), params)
+	if err != nil {
+		return "", fmt.Errorf("create DNS route %q -> tunnel %q: %w", hostname, tunnelID, err)
+	}
+	return record.ID, nil
+}
+
+// DeleteDNSRoute implements Client. It removes a DNS record by ID from a zone
+// so a mid-provision failure never leaves the hostname occupied by a proxied
+// CNAME pointing at a deleted tunnel.
+func (c *cfClient) DeleteDNSRoute(ctx context.Context, zone Zone, recordID string) error {
+	if err := c.api.DeleteDNSRecord(ctx, cf.ZoneIdentifier(zone.ID), recordID); err != nil {
+		return fmt.Errorf("delete DNS route record %q in zone %q: %w", recordID, zone.Name, err)
 	}
 	return nil
 }
