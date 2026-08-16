@@ -8,6 +8,7 @@ import (
 	"github.com/urfave/cli/v3"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp"
+	"go.lumeweb.com/pinner-cli/internal/urlopen"
 )
 
 func newRegisterCommand() *cli.Command {
@@ -93,7 +94,7 @@ func register(ctx context.Context, cmd argsFlagGetterWithBool, output Output, cf
 			if !output.IsJSON() {
 				output.Printfln("Open the registration page: %s", url)
 			}
-			if perr := openURL(url); perr != nil && !output.IsJSON() {
+			if perr := urlopen.Open(url); perr != nil && !output.IsJSON() {
 				output.Printfln("Could not auto-open the browser: %v", perr)
 			}
 		}
