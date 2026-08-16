@@ -1,0 +1,83 @@
+# Google Cloud Run service spec for the Pinner MCP server (CORRECTED).
+# Deploy from a PUBLICLY-pullable image (not a private GHCR repo):
+#
+#   gcloud run services replace cloud-run.yaml --region=$REGION
+#   gcloud run secrets versions add pinner-mcp-token --data-file=token.txt   # then grant your run SA roles/secretmanager.secretAccessor
+#
+# PREREQUISITES
+# 1) ghcr.io/lumeweb/pinner:latest MUST be a *public* container (GHCR anonymous
+#    pull currently returns 403 DENIED -> Cloud Run cannot pull it). Either make
+#    the repo public or deploy from a project Artifact Registry image.
+# 2) A Secret Manager secret named "pinner-mcp-token" (project number PROJECT_NUMBER)
+#    must exist so the secretKeyRef below resolves. Grant the Run service account
+#    (default <PROJECT_NUMBER>-compute@developer.gserviceaccount.com)
+#    the Secret Manager Secret Accessor role.
+# 3) --set-secrets is NOT supported by "replace"; use the run.googleapis.com/secrets
+#    annotation below (or gcloud run services update --set-secrets).
+
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: pinner
+  # Cloud Run commonly adds this on export (optional in submit YAML):
+  # namespace: PROJECT_NUMBER
+  # labels:
+  #   cloud.googleapis.com/location: REGION
+spec:
+  template:
+    metadata:
+      annotations:
+      # Revision-level scaling knobs (valid Cloud Run annotations):
+        autoscaling.knative.dev/minScale: "0"
+        autoscaling.knative.dev/maxScale: "3"
+        run.googleapis.com/startup-cpu-boost: "true"
+      # Map the env secretKeyRef name below to a real Secret Manager secret.
+      # Without this annotation the secret-referencing env var does not resolve.
+        run.googleapis.com/secrets: "pinner-mcp-token:projects/PROJECT_NUMBER/secrets/pinner-mcp-token"
+    spec:
+      # Valid: integer 1..1000 (Cloud Run max). 50 concurrent per instance.
+      containerConcurrency: 50
+      # Valid: integer 1..3600 seconds. 300s is fine for long MCP calls.
+      timeoutSeconds: 300
+      containers:
+        - image: ghcr.io/lumeweb/pinner:latest   # must be PUBLIC
+          # Cloud Run injects $PORT; container listens on 0.0.0.0:8080 (/mcp).
+          ports:
+            - containerPort: 8080
+          env:
+            - name: MCP_OAUTH
+              value: "1"
+            - name: MCP_CORS
+              value: "1"
+            - name: PINNER_HOME
+              value: /data
+            - name: MCP_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  # name = SECRET_LOOKUP_NAME (must match run.googleapis.com/secrets key)
+                  name: pinner-mcp-token
+                  # key = the Secret Manager *version* (Cloud Run recommends pinning
+                  # a specific version for env-var secrets rather than 'latest').
+                  key: latest
+          # /healthz exists and is auth-free (internal/mcp/healthz). Keep active
+          # so Cloud Run marks the instance Ready.
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+          resources:
+            limits:
+              cpu: "1"
+              memory: 512Mi
+      # To make the SQLite vault cache survive cold starts, add a Cloud Run
+      # volume (GCS FUSE or NFS) mounted at /data instead of relying on PINNER_HOME
+      # pointing at the ephemeral filesystem:
+      # volumeMounts:
+      #   - name: pinner-data
+      #     mountPath: /data
+      # volumes:
+      #   - name: pinner-data
+      #     csi:
+      #       driver: gcsfuse.run.googleapis.com
+      #       volumeAttributes:
+      #         bucketName: pinner-<project>-data

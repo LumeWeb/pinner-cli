@@ -1,0 +1,30 @@
+# Railway deployment config (config-as-code).
+# Reference: https://docs.railway.com/config-as-code/reference
+# Schema:    https://railway.com/railway.schema.json
+#
+# Deploy with `railway up` from this repo (Railway uses the repo's Dockerfile),
+# or create a service from the published GHCR image.
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+# Wait for /healthz to return 200 before routing traffic.
+healthcheckPath = "/healthz"
+healthcheckTimeout = 120
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
+
+# NOTE: Railway config-as-code does NOT support setting environment variables.
+# The old `[[deploy.environment]]` (name/value) tables were removed — they are
+# not part of the Railway config schema and would be rejected/ignored.
+#
+# Set these in the Railway dashboard under the service's "Variables" tab
+# (or via `railway variable set KEY=value`), or drop a `.env` file in the repo
+# root and let Railway import its contents into service variables:
+#   MCP_AUTH_TOKEN = <generate with: openssl rand -base64 32>
+#   MCP_OAUTH      = 1
+#   MCP_CORS       = 1
+#
+# Railway injects RAILWAY_PUBLIC_DOMAIN and $PORT automatically at runtime.
