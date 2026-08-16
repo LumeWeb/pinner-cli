@@ -3,6 +3,7 @@ module go.lumeweb.com/pinner-cli // v0.2.1
 go 1.26.2
 
 require (
+	github.com/BurntSushi/toml v1.4.0
 	github.com/LumeWeb/cli-docs v0.0.0-20260613190900-4a7a99d4f66c
 	github.com/Oudwins/zog v0.22.0
 	github.com/a-h/templ v0.3.1020
