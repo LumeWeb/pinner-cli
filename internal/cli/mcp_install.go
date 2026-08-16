@@ -64,6 +64,10 @@ Examples:
 				Name:  "service",
 				Usage: "Install against the managed pinner MCP service (http)",
 			},
+			&cli.BoolFlag{
+				Name:  "auto-approve",
+				Usage: "Request Codex auto-approve all tools for the pinner MCP server (none by default)",
+			},
 		}, mcpadapter.ServiceInstallFlags()...),
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			return runMcpInstall(ctx, cmd, nil, nil)
@@ -140,10 +144,11 @@ func runMcpInstall(ctx context.Context, cmd mcpInstallFlagGetter, ui InstallUI, 
 
 	// Build the state.
 	state := &InstallState{
-		Agents:     agents,
-		Scope:      scope,
-		Transport:  transport,
-		UseService: useService,
+		Agents:      agents,
+		Scope:       scope,
+		Transport:   transport,
+		UseService:  useService,
+		AutoApprove: cmd.Bool("auto-approve"),
 	}
 	if len(agents) == 0 {
 		// Interactive: leave agents empty; the Select step will prompt.
