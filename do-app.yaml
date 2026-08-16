@@ -27,15 +27,20 @@ services:
       success_threshold: 1
       failure_threshold: 3
     envs:
-      - key: MCP_AUTH_TOKEN
-        # SECRET values are encrypted by DO on first submission and are NOT
-        # renderable via the app-spec. Set a real value in the DO dashboard
-        # before/at deploy (openssl rand -base64 32); never commit a known
-        # placeholder, or the public MCP endpoint is unauthenticated.
-        value: ""
-        type: SECRET
+      # MCP_AUTH_TOKEN is intentionally NOT declared here. An empty value is
+      # treated by the runtime as "no secret configured" and leaves the public
+      # /mcp endpoint unauthenticated; a committed placeholder is worse. App
+      # Platform cannot render a real secret from a committed spec, so set a
+      # non-empty value in the DO dashboard (App > Settings > Env Vars) BEFORE
+      # the first deploy, e.g.  $(openssl rand -base64 32) — otherwise the
+      # endpoint executes catalog tools with no authentication.
       - key: MCP_OAUTH
-        value: "1"
+        # OAuth stays OFF (0) because the app-spec cannot render a real token.
+        # The runtime hard-fails with "--oauth requires --auth-token" when an
+        # empty token is combined with MCP_OAUTH=1, so the deploy would serve
+        # nothing. After setting a real MCP_AUTH_TOKEN in the DO dashboard,
+        # flip this to "1" to enable OAuth-aware clients.
+        value: "0"
         type: GENERAL
       - key: MCP_CORS
         value: "1"
