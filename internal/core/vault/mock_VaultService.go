@@ -328,6 +328,74 @@ func (_c *MockVaultService_List_Call) RunAndReturn(run func(ctx context.Context,
 	return _c
 }
 
+// Search provides a mock function for the type MockVaultService
+func (_mock *MockVaultService) Search(ctx context.Context, filter SearchFilter) ([]SearchItem, error) {
+	ret := _mock.Called(ctx, filter)
+
+	if len(ret) == 0 {
+		panic("no return value specified for Search")
+	}
+
+	var r0 []SearchItem
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, SearchFilter) ([]SearchItem, error)); ok {
+		return returnFunc(ctx, filter)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, SearchFilter) []SearchItem); ok {
+		r0 = returnFunc(ctx, filter)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]SearchItem)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, SearchFilter) error); ok {
+		r1 = returnFunc(ctx, filter)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockVaultService_Search_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Search'
+type MockVaultService_Search_Call struct {
+	*mock.Call
+}
+
+// Search is a helper method to define mock.On call
+//   - ctx context.Context
+//   - filter SearchFilter
+func (_e *MockVaultService_Expecter) Search(ctx any, filter any) *MockVaultService_Search_Call {
+	return &MockVaultService_Search_Call{Call: _e.mock.On("Search", ctx, filter)}
+}
+
+func (_c *MockVaultService_Search_Call) Run(run func(ctx context.Context, filter SearchFilter)) *MockVaultService_Search_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 SearchFilter
+		if args[1] != nil {
+			arg1 = args[1].(SearchFilter)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockVaultService_Search_Call) Return(searchItems []SearchItem, err error) *MockVaultService_Search_Call {
+	_c.Call.Return(searchItems, err)
+	return _c
+}
+
+func (_c *MockVaultService_Search_Call) RunAndReturn(run func(ctx context.Context, filter SearchFilter) ([]SearchItem, error)) *MockVaultService_Search_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Put provides a mock function for the type MockVaultService
 func (_mock *MockVaultService) Put(ctx context.Context, r io.Reader, size int64, vaultPath string, metadata map[string]any) (*File, error) {
 	ret := _mock.Called(ctx, r, size, vaultPath, metadata)
@@ -683,6 +751,356 @@ func (_c *MockVaultService_VersionRestore_Call) RunAndReturn(run func(ctx contex
 	return _c
 }
 
+// SetProvenance provides a mock function for the type MockVaultService
+func (_mock *MockVaultService) SetProvenance(ctx context.Context, vaultPath string, createdBy string, agentID string, sessionID string) (*File, error) {
+	ret := _mock.Called(ctx, vaultPath, createdBy, agentID, sessionID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for SetProvenance")
+	}
+
+	var r0 *File
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, string, string) (*File, error)); ok {
+		return returnFunc(ctx, vaultPath, createdBy, agentID, sessionID)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, string, string) *File); ok {
+		r0 = returnFunc(ctx, vaultPath, createdBy, agentID, sessionID)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*File)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, string, string, string) error); ok {
+		r1 = returnFunc(ctx, vaultPath, createdBy, agentID, sessionID)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockVaultService_SetProvenance_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SetProvenance'
+type MockVaultService_SetProvenance_Call struct {
+	*mock.Call
+}
+
+// SetProvenance is a helper method to define mock.On call
+//   - ctx context.Context
+//   - vaultPath string
+//   - createdBy string
+//   - agentID string
+//   - sessionID string
+func (_e *MockVaultService_Expecter) SetProvenance(ctx any, vaultPath any, createdBy any, agentID any, sessionID any) *MockVaultService_SetProvenance_Call {
+	return &MockVaultService_SetProvenance_Call{Call: _e.mock.On("SetProvenance", ctx, vaultPath, createdBy, agentID, sessionID)}
+}
+
+func (_c *MockVaultService_SetProvenance_Call) Run(run func(ctx context.Context, vaultPath string, createdBy string, agentID string, sessionID string)) *MockVaultService_SetProvenance_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		var arg3 string
+		if args[3] != nil {
+			arg3 = args[3].(string)
+		}
+		var arg4 string
+		if args[4] != nil {
+			arg4 = args[4].(string)
+		}
+		run(arg0, arg1, arg2, arg3, arg4)
+	})
+	return _c
+}
+
+func (_c *MockVaultService_SetProvenance_Call) Return(file *File, err error) *MockVaultService_SetProvenance_Call {
+	_c.Call.Return(file, err)
+	return _c
+}
+
+func (_c *MockVaultService_SetProvenance_Call) RunAndReturn(run func(ctx context.Context, vaultPath string, createdBy string, agentID string, sessionID string) (*File, error)) *MockVaultService_SetProvenance_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// AddTags provides a mock function for the type MockVaultService
+func (_mock *MockVaultService) AddTags(ctx context.Context, vaultPath string, tags []string) (*File, error) {
+	ret := _mock.Called(ctx, vaultPath, tags)
+
+	if len(ret) == 0 {
+		panic("no return value specified for AddTags")
+	}
+
+	var r0 *File
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, []string) (*File, error)); ok {
+		return returnFunc(ctx, vaultPath, tags)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, []string) *File); ok {
+		r0 = returnFunc(ctx, vaultPath, tags)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*File)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, []string) error); ok {
+		r1 = returnFunc(ctx, vaultPath, tags)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockVaultService_AddTags_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'AddTags'
+type MockVaultService_AddTags_Call struct {
+	*mock.Call
+}
+
+// AddTags is a helper method to define mock.On call
+//   - ctx context.Context
+//   - vaultPath string
+//   - tags []string
+func (_e *MockVaultService_Expecter) AddTags(ctx any, vaultPath any, tags any) *MockVaultService_AddTags_Call {
+	return &MockVaultService_AddTags_Call{Call: _e.mock.On("AddTags", ctx, vaultPath, tags)}
+}
+
+func (_c *MockVaultService_AddTags_Call) Run(run func(ctx context.Context, vaultPath string, tags []string)) *MockVaultService_AddTags_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 []string
+		if args[2] != nil {
+			arg2 = args[2].([]string)
+		}
+		run(arg0, arg1, arg2)
+	})
+	return _c
+}
+
+func (_c *MockVaultService_AddTags_Call) Return(file *File, err error) *MockVaultService_AddTags_Call {
+	_c.Call.Return(file, err)
+	return _c
+}
+
+func (_c *MockVaultService_AddTags_Call) RunAndReturn(run func(ctx context.Context, vaultPath string, tags []string) (*File, error)) *MockVaultService_AddTags_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// RemoveTags provides a mock function for the type MockVaultService
+func (_mock *MockVaultService) RemoveTags(ctx context.Context, vaultPath string, tags []string) (*File, error) {
+	ret := _mock.Called(ctx, vaultPath, tags)
+
+	if len(ret) == 0 {
+		panic("no return value specified for RemoveTags")
+	}
+
+	var r0 *File
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, []string) (*File, error)); ok {
+		return returnFunc(ctx, vaultPath, tags)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, []string) *File); ok {
+		r0 = returnFunc(ctx, vaultPath, tags)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*File)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, []string) error); ok {
+		r1 = returnFunc(ctx, vaultPath, tags)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockVaultService_RemoveTags_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'RemoveTags'
+type MockVaultService_RemoveTags_Call struct {
+	*mock.Call
+}
+
+// RemoveTags is a helper method to define mock.On call
+//   - ctx context.Context
+//   - vaultPath string
+//   - tags []string
+func (_e *MockVaultService_Expecter) RemoveTags(ctx any, vaultPath any, tags any) *MockVaultService_RemoveTags_Call {
+	return &MockVaultService_RemoveTags_Call{Call: _e.mock.On("RemoveTags", ctx, vaultPath, tags)}
+}
+
+func (_c *MockVaultService_RemoveTags_Call) Run(run func(ctx context.Context, vaultPath string, tags []string)) *MockVaultService_RemoveTags_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 []string
+		if args[2] != nil {
+			arg2 = args[2].([]string)
+		}
+		run(arg0, arg1, arg2)
+	})
+	return _c
+}
+
+func (_c *MockVaultService_RemoveTags_Call) Return(file *File, err error) *MockVaultService_RemoveTags_Call {
+	_c.Call.Return(file, err)
+	return _c
+}
+
+func (_c *MockVaultService_RemoveTags_Call) RunAndReturn(run func(ctx context.Context, vaultPath string, tags []string) (*File, error)) *MockVaultService_RemoveTags_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// SetTags provides a mock function for the type MockVaultService
+func (_mock *MockVaultService) SetTags(ctx context.Context, vaultPath string, tags []string) (*File, error) {
+	ret := _mock.Called(ctx, vaultPath, tags)
+
+	if len(ret) == 0 {
+		panic("no return value specified for SetTags")
+	}
+
+	var r0 *File
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, []string) (*File, error)); ok {
+		return returnFunc(ctx, vaultPath, tags)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, []string) *File); ok {
+		r0 = returnFunc(ctx, vaultPath, tags)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*File)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, []string) error); ok {
+		r1 = returnFunc(ctx, vaultPath, tags)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockVaultService_SetTags_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SetTags'
+type MockVaultService_SetTags_Call struct {
+	*mock.Call
+}
+
+// SetTags is a helper method to define mock.On call
+//   - ctx context.Context
+//   - vaultPath string
+//   - tags []string
+func (_e *MockVaultService_Expecter) SetTags(ctx any, vaultPath any, tags any) *MockVaultService_SetTags_Call {
+	return &MockVaultService_SetTags_Call{Call: _e.mock.On("SetTags", ctx, vaultPath, tags)}
+}
+
+func (_c *MockVaultService_SetTags_Call) Run(run func(ctx context.Context, vaultPath string, tags []string)) *MockVaultService_SetTags_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 []string
+		if args[2] != nil {
+			arg2 = args[2].([]string)
+		}
+		run(arg0, arg1, arg2)
+	})
+	return _c
+}
+
+func (_c *MockVaultService_SetTags_Call) Return(file *File, err error) *MockVaultService_SetTags_Call {
+	_c.Call.Return(file, err)
+	return _c
+}
+
+func (_c *MockVaultService_SetTags_Call) RunAndReturn(run func(ctx context.Context, vaultPath string, tags []string) (*File, error)) *MockVaultService_SetTags_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// TagList provides a mock function for the type MockVaultService
+func (_mock *MockVaultService) TagList(ctx context.Context) ([]string, error) {
+	ret := _mock.Called(ctx)
+
+	if len(ret) == 0 {
+		panic("no return value specified for TagList")
+	}
+
+	var r0 []string
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context) ([]string, error)); ok {
+		return returnFunc(ctx)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context) []string); ok {
+		r0 = returnFunc(ctx)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]string)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context) error); ok {
+		r1 = returnFunc(ctx)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockVaultService_TagList_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'TagList'
+type MockVaultService_TagList_Call struct {
+	*mock.Call
+}
+
+// TagList is a helper method to define mock.On call
+//   - ctx context.Context
+func (_e *MockVaultService_Expecter) TagList(ctx any) *MockVaultService_TagList_Call {
+	return &MockVaultService_TagList_Call{Call: _e.mock.On("TagList", ctx)}
+}
+
+func (_c *MockVaultService_TagList_Call) Run(run func(ctx context.Context)) *MockVaultService_TagList_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		run(arg0)
+	})
+	return _c
+}
+
+func (_c *MockVaultService_TagList_Call) Return(tags []string, err error) *MockVaultService_TagList_Call {
+	_c.Call.Return(tags, err)
+	return _c
+}
+
+func (_c *MockVaultService_TagList_Call) RunAndReturn(run func(ctx context.Context) ([]string, error)) *MockVaultService_TagList_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Remove provides a mock function for the type MockVaultService
 func (_mock *MockVaultService) Remove(ctx context.Context, vaultPath string) error {
 	ret := _mock.Called(ctx, vaultPath)
@@ -808,6 +1226,81 @@ func (_c *MockVaultService_Share_Call) Return(s string, err error) *MockVaultSer
 }
 
 func (_c *MockVaultService_Share_Call) RunAndReturn(run func(ctx context.Context, vaultPath string, validUntil time.Time) (string, error)) *MockVaultService_Share_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// ShareAccept provides a mock function for the type MockVaultService
+func (_mock *MockVaultService) ShareAccept(ctx context.Context, vaultPath string, shareURL string, targetPrincipal string) (*File, error) {
+	ret := _mock.Called(ctx, vaultPath, shareURL, targetPrincipal)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ShareAccept")
+	}
+
+	var r0 *File
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, string) (*File, error)); ok {
+		return returnFunc(ctx, vaultPath, shareURL, targetPrincipal)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, string) *File); ok {
+		r0 = returnFunc(ctx, vaultPath, shareURL, targetPrincipal)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*File)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, string, string) error); ok {
+		r1 = returnFunc(ctx, vaultPath, shareURL, targetPrincipal)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockVaultService_ShareAccept_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ShareAccept'
+type MockVaultService_ShareAccept_Call struct {
+	*mock.Call
+}
+
+// ShareAccept is a helper method to define mock.On call
+//   - ctx context.Context
+//   - vaultPath string
+//   - shareURL string
+//   - targetPrincipal string
+func (_e *MockVaultService_Expecter) ShareAccept(ctx any, vaultPath any, shareURL any, targetPrincipal any) *MockVaultService_ShareAccept_Call {
+	return &MockVaultService_ShareAccept_Call{Call: _e.mock.On("ShareAccept", ctx, vaultPath, shareURL, targetPrincipal)}
+}
+
+func (_c *MockVaultService_ShareAccept_Call) Run(run func(ctx context.Context, vaultPath string, shareURL string, targetPrincipal string)) *MockVaultService_ShareAccept_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		var arg3 string
+		if args[3] != nil {
+			arg3 = args[3].(string)
+		}
+		run(arg0, arg1, arg2, arg3)
+	})
+	return _c
+}
+
+func (_c *MockVaultService_ShareAccept_Call) Return(file *File, err error) *MockVaultService_ShareAccept_Call {
+	_c.Call.Return(file, err)
+	return _c
+}
+
+func (_c *MockVaultService_ShareAccept_Call) RunAndReturn(run func(ctx context.Context, vaultPath string, shareURL string, targetPrincipal string) (*File, error)) *MockVaultService_ShareAccept_Call {
 	_c.Call.Return(run)
 	return _c
 }

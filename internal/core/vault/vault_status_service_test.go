@@ -1,6 +1,7 @@
 package vault
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -42,6 +43,9 @@ func (f *statusFakeSDK) Download(_ siastorage.Object, _ ...siastorage.DownloadOp
 func (f *statusFakeSDK) DeleteObject(_ context.Context, _ types.Hash256) error { return nil }
 func (f *statusFakeSDK) CreateSharedObjectURL(_ context.Context, _ types.Hash256, _ time.Time) (string, error) {
 	return "", nil
+}
+func (f *statusFakeSDK) DownloadSharedObject(_ context.Context, _ string, _ ...siastorage.DownloadOption) (io.ReadCloser, error) {
+	return io.NopCloser(bytes.NewReader(nil)), nil
 }
 func (f *statusFakeSDK) Close() error { return nil }
 

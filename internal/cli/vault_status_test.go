@@ -4,61 +4,24 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"io"
 	"os"
 	"regexp"
 	"testing"
-	"time"
 
 	"go.lumeweb.com/pinner-cli/internal/core/vault"
 )
 
 // statusStubVaultService is a minimal VaultService whose Status returns a
 // canned result, used to drive `vault status` command rendering without a
-// live Sia indexer.
+// live Sia indexer. All other methods are no-ops via NopVaultService.
 type statusStubVaultService struct {
+	NopVaultService
 	res *vault.StatusResult
 }
 
-func (s *statusStubVaultService) CheckReady(context.Context) error { return nil }
-func (s *statusStubVaultService) Put(context.Context, io.Reader, int64, string, map[string]any) (*vault.File, error) {
-	return nil, nil
-}
-func (s *statusStubVaultService) Get(context.Context, string, io.Writer) error { return nil }
-func (s *statusStubVaultService) List(context.Context, string) ([]vault.ListItem, error) {
-	return nil, nil
-}
-func (s *statusStubVaultService) Stat(context.Context, string) (*vault.StatResult, error) {
-	return nil, nil
-}
-func (s *statusStubVaultService) Cat(context.Context, string, io.Writer) error { return nil }
-func (s *statusStubVaultService) Verify(context.Context, string) (*vault.VerifyResult, error) {
-	return nil, nil
-}
-func (s *statusStubVaultService) VerifyDeep(context.Context, string) (*vault.VerifyResult, error) {
-	return nil, nil
-}
-func (s *statusStubVaultService) Remove(context.Context, string) error { return nil }
-func (s *statusStubVaultService) VersionList(context.Context, string) ([]*vault.File, error) {
-	return nil, nil
-}
-func (s *statusStubVaultService) VersionGet(context.Context, string, string) (*vault.File, error) {
-	return nil, nil
-}
-func (s *statusStubVaultService) VersionDownload(context.Context, string, string, io.Writer) error {
-	return nil
-}
-func (s *statusStubVaultService) VersionRestore(context.Context, string, string) (*vault.File, error) {
-	return nil, nil
-}
-func (s *statusStubVaultService) Share(context.Context, string, time.Time) (string, error) {
-	return "", nil
-}
-func (s *statusStubVaultService) Sync(context.Context) (int, bool, error) { return 0, false, nil }
 func (s *statusStubVaultService) Status(context.Context) (*vault.StatusResult, error) {
 	return s.res, nil
 }
-func (s *statusStubVaultService) Close() error { return nil }
 
 // statusCmdHarness seeds an empty registry (so profile resolution succeeds),
 // overrides the vault service factory with a stub, and runs the vault status

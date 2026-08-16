@@ -160,9 +160,6 @@ func (s *vaultService) Sync(ctx context.Context) (applied int, full bool, err er
 		// resolve to the null version (version_id="", seq=0).
 		versionID := fileMeta.VersionID
 		versionSeq := fileMeta.Seq
-		if versionID == "" {
-			versionID = ""
-		}
 
 		// Resolve the object's target directory from its metadata so files
 		// uploaded to a nested path on one device sync into the same directory
@@ -215,8 +212,18 @@ func (s *vaultService) Sync(ctx context.Context) (applied int, full bool, err er
 					MediaType:     fileMeta.MediaType,
 					ContentDigest: fileMeta.ContentDigest,
 					Metadata:      metaJSON,
-					CreatedAt:     now,
-					UpdatedAt:     now,
+					// Lifecycle fields carried from the object's sealed FileMetadata
+					// so a first-time sync-down on another device preserves the
+					// status/provenance stamped by Put (mirrors the upsert path; an
+					// empty string is left empty, matching Put's provenance row, and
+					// status defaults to ok only when the object omits it).
+					Status:     fileMeta.Status,
+					LostReason: fileMeta.LostReason,
+					CreatedBy:  fileMeta.CreatedBy,
+					AgentID:    fileMeta.AgentID,
+					SessionID:  fileMeta.SessionID,
+					CreatedAt:  now,
+					UpdatedAt:  now,
 				}
 				if err := tx.Create(&existing).Error; err != nil {
 					// A unique-index collision (two distinct objects claiming the
@@ -228,7 +235,12 @@ func (s *vaultService) Sync(ctx context.Context) (applied int, full bool, err er
 					}
 					return err
 				}
-			} else if result.Error != nil {
+				// Reconcile the new row's tag joins from the object's sealed
+				// Metadata['tags'] array (same transaction; see upsertFromMeta).
+				if rerr := reconcileTagsTx(tx, existing.ID, normalizeTags(tagsFromMetadata(fileMeta.Metadata))); rerr != nil {
+					return rerr
+				}
+				} else if result.Error != nil {
 				return result.Error
 			} else {
 				if err := upsertFromMeta(tx, &existing, fileMeta, ev.Key.String(), ev.UpdatedAt, dirID); err != nil {
