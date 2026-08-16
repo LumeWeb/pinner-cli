@@ -70,14 +70,14 @@ func (d DNSDeps) service(input map[string]any) (dns.Service, error) {
 
 // DNSZoneDeleteResult is the data returned by the zones delete handler.
 type DNSZoneDeleteResult struct {
-	Zone string // the domain/ID argument that was deleted
+	Zone string `json:"zone"` // the domain/ID argument that was deleted
 }
 
 // DNSRecordDeleteResult is the data returned by the records delete handler.
 type DNSRecordDeleteResult struct {
-	ZoneID string
-	Name   string
-	Type   string
+	ZoneID string `json:"zone_id"`
+	Name   string `json:"name"`
+	Type   string `json:"type"`
 }
 
 // DNSOperations returns the catalog operations for the DNS domain (the

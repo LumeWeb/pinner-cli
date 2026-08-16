@@ -34,20 +34,20 @@ type PinStatus struct {
 
 // OperationStatusResult represents the status of an account operation.
 type OperationStatusResult struct {
-	ID                   int
-	Operation            string
-	OperationDisplayName string
-	Protocol             string
-	ProtocolDisplayName  string
-	Status               string
-	StatusDisplayName    string
-	StatusMessage        string
-	CID                  string
-	ProgressPercent      float32
-	StartedAt            string
-	UpdatedAt            string
-	Error                string
-	Source               string
+	ID                   int     `json:"id"`
+	Operation            string  `json:"operation"`
+	OperationDisplayName string  `json:"operation_display_name"`
+	Protocol             string  `json:"protocol"`
+	ProtocolDisplayName  string  `json:"protocol_display_name"`
+	Status               string  `json:"status"`
+	StatusDisplayName    string  `json:"status_display_name"`
+	StatusMessage        string  `json:"status_message"`
+	CID                  string  `json:"cid"`
+	ProgressPercent      float32 `json:"progress_percent"`
+	StartedAt            string  `json:"started_at"`
+	UpdatedAt            string  `json:"updated_at"`
+	Error                string  `json:"error"`
+	Source               string  `json:"source"`
 }
 
 // PinResult represents the result of a pin operation

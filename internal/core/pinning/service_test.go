@@ -51,3 +51,25 @@ func TestPinJSONWireShape(t *testing.T) {
 	require.NoError(t, err)
 	require.JSONEq(t, `{"cid":"bafyQmTest"}`, string(b4))
 }
+
+// TestOperationStatusResultJSONWireShape locks the snake_case JSON contract for
+// OperationStatusResult (the operations_status / pins_status account-operation
+// payload). It shares the operations field family, so it must serialize as
+// snake_case (id, operation, progress_percent, ...) and never fall back to Go's
+// PascalCase field-name-as-key default (ProgressPercent, OperationDisplayName).
+func TestOperationStatusResultJSONWireShape(t *testing.T) {
+	res := OperationStatusResult{
+		ID: 207, Operation: "ipfs.post.upload", OperationDisplayName: "Upload",
+		Protocol: "ipfs", ProtocolDisplayName: "IPFS", Status: "processing",
+		StatusDisplayName: "Processing", StatusMessage: "Processing Upload",
+		CID: "bafy", ProgressPercent: 42.5,
+		StartedAt: "2026-06-28T22:45:25Z", UpdatedAt: "2026-06-28T22:50:12Z",
+		Error: "", Source: "ipfs",
+	}
+	b, err := json.Marshal(res)
+	require.NoError(t, err)
+	require.JSONEq(t,
+		`{"id":207,"operation":"ipfs.post.upload","operation_display_name":"Upload","protocol":"ipfs","protocol_display_name":"IPFS","status":"processing","status_display_name":"Processing","status_message":"Processing Upload","cid":"bafy","progress_percent":42.5,"started_at":"2026-06-28T22:45:25Z","updated_at":"2026-06-28T22:50:12Z","error":"","source":"ipfs"}`,
+		string(b),
+	)
+}

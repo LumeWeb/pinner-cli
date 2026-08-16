@@ -92,9 +92,9 @@ func (h handler) Execute(ctx context.Context, input map[string]any) (any, error)
 // instead returns what it WOULD have done. It is pure data. The CLI wiring
 // layer renders it as a dry-run preview; the MCP layer renders it as a result.
 type DryRunResult struct {
-	Operation string
-	CIDs      []string
-	Options   map[string]string
+	Operation string            `json:"operation"`
+	CIDs      []string          `json:"cids"`
+	Options   map[string]string `json:"options"`
 }
 
 // dryRun builds a DryRunResult describing what a dry-run of the given
