@@ -29,12 +29,17 @@ STAGE_DIR="$REPO_ROOT/dist/mcpb/pinner-${OS}-${ARCH}"
 OUT_FILE="$REPO_ROOT/dist/mcpb/pinner-${OS}-${ARCH}.mcpb"
 
 # Windows output binary name: on disk the file carries a .exe extension (the
-# toolchain requires it to be treated as an executable). The MCPB spec's
-# manifest must declare the entry point/command WITHOUT the extension
-# ("server/pinner"): the spec states that apps automatically append `.exe`
-# on Windows when resolving the command. Declaring ".exe" in the base command
-# would therefore resolve to "server/pinner.exe.exe" and fail to launch.
-# So `EXE` is used only for the on-disk filename below, never for the manifest.
+# toolchain requires it to be treated as an executable).
+#
+# Manifest naming (verified against the MCPB SDK source, src/shared/config.ts):
+# the SDK does NOT auto-append .exe on Windows — the mcp_config command is
+# executed exactly as resolved (platform_overrides applied, variables
+# substituted). So the base command/entry_point stay "server/pinner", and the
+# Windows bundle's .mcpb manifest declares the real file via
+# platform_overrides.win32.command = "server/pinner.exe". This matches the
+# spec's documented cross-platform binary example. `EXE` below is used only to
+# name the on-disk file (server/pinner.exe); the manifest carries the win32
+# override statically, so no extension marker is rendered into the manifest.
 EXE=""
 if [ "$OS" = "windows" ]; then
     EXE=".exe"
@@ -100,6 +105,9 @@ if [ "$UPLOAD" = "--upload" ]; then
     : "${GITHUB_TOKEN:?GITHUB_TOKEN required for release upload}"
     ASSET_NAME="pinner-mcp-${OS}-${ARCH}-${VERSION}.mcpb"
     echo ">> Uploading $ASSET_NAME to GitHub release $VERSION"
-    gh release upload "${VERSION}" "$OUT_FILE" --clobber --repo LumeWeb/pinner-cli 2>&1 || true
+    if ! gh release upload "${VERSION}" "$OUT_FILE" --clobber --repo LumeWeb/pinner-cli 2>&1; then
+        echo "!! failed to upload $ASSET_NAME to release $VERSION" >&2
+        exit 1
+    fi
     echo ">> Uploaded $ASSET_NAME"
 fi

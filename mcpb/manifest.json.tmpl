@@ -27,6 +27,11 @@
       "args": ["mcp"],
       "env": {
         "PINNER_API_TOKEN": "${user_config.pinner_api_token}"
+      },
+      "platform_overrides": {
+        "win32": {
+          "command": "server/pinner.exe"
+        }
       }
     }
   },
