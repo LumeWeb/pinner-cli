@@ -232,7 +232,12 @@ For more help on any command: pinner <command> --help`,
 				// Directory: upload the tree rooted at path. Reject up front if
 				// the aggregate (or any single entry) exceeds the cap.
 				if info.IsDir() {
-					if err := mcpadapter.CheckTreeSize(os.DirFS(path), maxBytes, mcpadapter.TreeSizeAggregate); err != nil {
+					// CheckDirectorySize follows symlinks (os.Stat) so the
+					// pre-flight size matches the bytes uploadSvc.Upload will
+					// actually read through the DirFS — an fs.WalkDir over
+					// os.DirFS would lstat entries and let a symlink pointing
+					// at an oversized file bypass the cap.
+					if err := mcpadapter.CheckDirectorySize(path, maxBytes, mcpadapter.TreeSizeAggregate); err != nil {
 						return nil, err
 					}
 					result, err := uploadSvc.Upload(ctx, os.DirFS(path), name, wait)
@@ -574,13 +579,25 @@ func materializeArchive(ctx context.Context, srcPath, dstDir string) error {
 		if d.IsDir() {
 			return os.MkdirAll(cleanDest, 0o755)
 		}
-		data, err := fs.ReadFile(vfs, p)
+		// Stream each entry to disk rather than buffering it fully in memory
+		// via fs.ReadFile. A single entry can be as large as the operator-set
+		// max_mcp_upload_size cap (1 GiB by default), and buffering every entry
+		// would press down on a long-lived server's RAM. Open the entry and
+		// io.Copy it to the destination file in bounded chunks.
+		srcEntry, err := vfs.Open(p)
 		if err != nil {
 			return err
 		}
+		defer srcEntry.Close()
 		if err := os.MkdirAll(filepath.Dir(cleanDest), 0o755); err != nil {
 			return err
 		}
-		return os.WriteFile(cleanDest, data, 0o644)
+		out, err := os.OpenFile(cleanDest, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+		if err != nil {
+			return err
+		}
+		defer out.Close()
+		_, err = io.Copy(out, srcEntry)
+		return err
 	})
 }

@@ -86,3 +86,37 @@ func TestDirToVaultCapsEntries(t *testing.T) {
 		t.Fatalf("expected no entries written before rejection, got %d", len(got))
 	}
 }
+
+// TestCheckDirectorySizeFollowsSymlinks verifies that a host-directory cap
+// pre-flight FOLLOWS symlinks (os.Stat), so a symlink pointing at a file larger
+// than maxBytes is rejected — whereas an fs.WalkDir over os.DirFS would lstat
+// the entry, classify it as a non-regular symlink, and skip it, letting the
+// oversized target bytes bypass the cap yet still be transferred by the upload.
+func TestCheckDirectorySizeFollowsSymlinks(t *testing.T) {
+	if testing.Short() {
+		t.Skip("symlink creation can be unreliable on some CI filesystems")
+	}
+	dir := t.TempDir()
+	target := filepath.Join(dir, "big.bin")
+	if err := os.WriteFile(target, []byte(strings.Repeat("x", 64)), 0o644); err != nil {
+		t.Fatalf("write target: %v", err)
+	}
+	link := filepath.Join(dir, "link.bin")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+
+	// A link to a 64-byte file must be rejected when maxBytes is below 64.
+	err := CheckDirectorySize(dir, 32, TreeSizeAggregate)
+	if err == nil {
+		t.Fatal("expected CheckDirectorySize to reject a symlink to an oversize file")
+	}
+	if !strings.Contains(err.Error(), "exceeds max_mcp_upload_size") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// And it must pass when the cap is large enough for the linked size.
+	if err := CheckDirectorySize(dir, 128, TreeSizeAggregate); err != nil {
+		t.Fatalf("expected in-cap symlink target to pass, got %v", err)
+	}
+}

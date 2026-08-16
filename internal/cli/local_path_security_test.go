@@ -89,8 +89,35 @@ func TestCheckArchiveTreeSizeRejectsOverCap(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected checkArchiveTreeSize to reject an over-cap archive")
 	}
-	// And above the per-entry cap too (single 512-byte entry > 256).
+	// Above the per-entry cap too (single 512-byte entry > 256).
 	if err := checkArchiveTreeSize(context.Background(), src, 256); err == nil {
 		t.Fatal("expected checkArchiveTreeSize to reject an over-cap archive")
+	}
+}
+
+// TestMaterializeArchiveStreamsEntries verifies a valid archive is extracted
+// entry-by-entry (streamed) with correct contents on disk, exercising the
+// io.Copy path that replaced buffering each entry fully in memory.
+func TestMaterializeArchiveStreamsEntries(t *testing.T) {
+	src := filepath.Join(t.TempDir(), "payload.zip")
+	if err := os.WriteFile(src, zipWith(t, map[string]string{
+		"dir/a.txt": "alpha",
+		"b.txt":     strings.Repeat("beta", 200),
+	}).Bytes(), 0o644); err != nil {
+		t.Fatalf("write payload zip: %v", err)
+	}
+
+	dst := t.TempDir()
+	if err := materializeArchive(context.Background(), src, dst); err != nil {
+		t.Fatalf("materialize archive: %v", err)
+	}
+
+	got, err := os.ReadFile(filepath.Join(dst, "dir", "a.txt"))
+	if err != nil || string(got) != "alpha" {
+		t.Fatalf("dir/a.txt = %q, %v; want alpha", got, err)
+	}
+	got, err = os.ReadFile(filepath.Join(dst, "b.txt"))
+	if err != nil || string(got) != strings.Repeat("beta", 200) {
+		t.Fatalf("b.txt content mismatch (len %d), %v", len(got), err)
 	}
 }
