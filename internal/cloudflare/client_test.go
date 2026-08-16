@@ -29,6 +29,8 @@ func TestZoneHostnameMatches(t *testing.T) {
 		{"example.com", "mcp.example.com", true},         // subdomain
 		{"example.com", "a.b.example.com", true},         // nested subdomain
 		{"example.com", "https://mcp.example.com", true}, // scheme tolerated
+		{"example.com", "http://mcp.example.com", true},  // http scheme tolerated
+		{"example.com", "HTTP://mcp.example.com", true},  // uppercase scheme tolerated
 		{"example.com", "EXAMPLE.com", true},             // case-insensitive
 		{"example.com", "notexample.com", false},         // suffix lookalike
 		{"example.com", "other.org", false},              // unrelated

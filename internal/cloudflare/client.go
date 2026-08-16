@@ -129,10 +129,16 @@ func (c *cfClient) ListAccounts(ctx context.Context) ([]Account, error) {
 // the DNS zone `zoneName`. The passed domain is the public hostname (often a
 // subdomain like mcp.example.com) while the matching Cloudflare zone is the
 // parent (example.com), so we accept either an exact zone-name match or a
-// hostname nested beneath it, ignoring case and an optional https:// scheme.
+// hostname nested beneath it, ignoring case and an optional http(s):// scheme.
 func zoneHostnameMatches(zoneName, domain string) bool {
 	zn := strings.ToLower(zoneName)
-	dn := strings.ToLower(strings.TrimPrefix(domain, "https://"))
+	dn := strings.ToLower(domain)
+	// Strip a leading scheme case-insensitively (after lowercasing) so both
+	// "https://mcp.example.com" and "HTTP://mcp.example.com" resolve to the
+	// same zone as the bare hostname.
+	for _, prefix := range []string{"https://", "http://"} {
+		dn = strings.TrimPrefix(dn, prefix)
+	}
 	return dn == zn || strings.HasSuffix(dn, "."+zn)
 }
 

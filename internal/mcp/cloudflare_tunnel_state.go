@@ -114,20 +114,43 @@ func (s *CloudflareTunnelState) credentialsJSON() []byte {
 // MCP server's actual bound port, so it is always correct regardless of which
 // ephemeral port the OS assigned. The hostname is normalized to its bare form
 // (scheme stripped) because cloudflared's ingress hosts are bare hostnames, not
-// URLs.
+// URLs. Every interpolated value is emitted through %q so a hostile hostname or
+// other value cannot break out of the YAML scalar and inject ingress rules.
 func (s *CloudflareTunnelState) configYAML(origin string) ([]byte, error) {
 	credsPath, err := s.credentialsFilePath()
 	if err != nil {
 		return nil, err
 	}
+	host := bareHostname(s.Hostname)
+	if !validIngressHostname(host) {
+		return nil, fmt.Errorf("invalid tunnel hostname %q: must be a bare DNS hostname (letters, digits, dots, hyphens)", host)
+	}
 	// indentation is significant in YAML; keep the template literal exact.
 	return []byte(fmt.Sprintf(
-		"tunnel: %s\ncredentials-file: %s\n\n"+
+		"tunnel: %q\ncredentials-file: %q\n\n"+
 			"ingress:\n"+
-			"  - hostname: %s\n    service: %s\n"+
+			"  - hostname: %q\n    service: %q\n"+
 			"  - service: http_status:404\n",
-		s.TunnelID, credsPath, bareHostname(s.Hostname), origin,
+		s.TunnelID, credsPath, host, origin,
 	)), nil
+}
+
+// validIngressHostname reports whether h is a safe bare hostname for the
+// cloudflared ingress table. It rejects anything containing whitespace,
+// control characters, or characters outside the DNS hostname set so a
+// user-supplied --domain cannot smuggle YAML directives or extra ingress keys.
+func validIngressHostname(h string) bool {
+	if h == "" {
+		return false
+	}
+	for _, r := range h {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') || r == '.' || r == '-' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 // credentialsFilePath returns where the credentials file is written for the
