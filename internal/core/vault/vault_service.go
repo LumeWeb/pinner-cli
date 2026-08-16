@@ -1,7 +1,6 @@
 package vault
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -286,7 +285,16 @@ func (s *vaultService) Put(ctx context.Context, r io.Reader, size int64, vaultPa
 		UUID:          fileID,
 		Name:          vp.Name,
 		DirectoryID:   dirID,
-		IsCurrent:     false, // promoteCurrent demotes the prior current + promotes this row atomically
+		// A freshly-minted path inserts as is_current=true so the partial
+		// unique index idx_files_live_name_dir (which only constrains
+		// is_current=1) still fires when a concurrent writer claims the same
+		// brand-new path, letting the retry/adopt loop converge instead of
+		// leaving an orphaned invisible version. An overwrite path is NOT
+		// current at insert: setting is_current would collide with the
+		// existing winner's own live row, so promoteCurrent below does that
+		// final demote+promote. (adoptPreflight resets this to false on the
+		// adopt path so the adopted row never races the winner's live row.)
+		IsCurrent:     mintedFresh,
 		ObjectKey:     objectKey.String(),
 		Size:          size,
 		MediaType:     mediaType,
@@ -352,7 +360,7 @@ func (s *vaultService) Put(ctx context.Context, r io.Reader, size int64, vaultPa
 			if versionSeq > maxSeq {
 				maxSeq = versionSeq
 			}
-			rec.Seq = maxSeq
+			rec.Seq = maxSeq + 1
 			rec.VersionID = versionID
 
 			// Insert the new version row. On a concurrent-create conflict
@@ -933,19 +941,25 @@ func (s *vaultService) VersionRestore(ctx context.Context, vaultPath string, ver
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.VersionGet(ctx, vaultPath, versionID); err != nil {
+	// Resolve the target version up front (validates it exists and gives its
+	// declared Size, which Put streams against). An empty/broken version
+	// errors here before any write occurs.
+	_, row, err := s.resolveVersionGroup(vp, versionID)
+	if err != nil {
 		return nil, err
 	}
 
-	// Stream the historical version's bytes and re-upload them via Put. Put
-	// preserves the same logical file's UUID group (findCurrentFile resolves the
-	// current winner by path) and mints a new version row. An empty/broken
-	// version downloads as an error before any write occurs.
-	var buf bytes.Buffer
-	if err := s.VersionDownload(ctx, vp.Raw, versionID, &buf); err != nil {
-		return nil, fmt.Errorf("failed to read version %q for restore: %w", versionID, err)
-	}
-	return s.Put(ctx, bytes.NewReader(buf.Bytes()), int64(buf.Len()), vp.Raw, nil)
+	// Stream the historical version's bytes into Put via a pipe, rather than
+	// buffering the whole object in RAM. Put consumes the reader once
+	// (io.TeeReader -> sdk.Upload) and mints a new version row that reuses
+	// the same logical file's UUID group (findCurrentFile resolves the
+	// current winner by path).
+	pr, pw := io.Pipe()
+	go func() {
+		_ = s.VersionDownload(ctx, vp.Raw, versionID, pw)
+		pw.Close()
+	}()
+	return s.Put(ctx, pr, row.Size, vp.Raw, nil)
 }
 
 // Status reports live vault health and usage. Remote fields come from a real
@@ -1214,7 +1228,9 @@ func (s *vaultService) adoptPreflight(ctx context.Context, obj *siastorage.Objec
 
 	// Adopt the winner's UUID. Scope to the current live winner (findCurrentFile
 	// already does), so we never force-promote a historical row and violate
-	// idx_files_live_name_dir.
+	// idx_files_live_name_dir. The caller's user metadata (rec.Metadata) is
+	// carried forward so the adopted row — the new current winner — surfaces the
+	// same metadata as the overwrite branch and the re-pinned object.
 	*rec = File{
 		UUID:          current.UUID,
 		Name:          name,
@@ -1223,6 +1239,7 @@ func (s *vaultService) adoptPreflight(ctx context.Context, obj *siastorage.Objec
 		Size:          fileMeta.Size,
 		MediaType:     fileMeta.MediaType,
 		ContentDigest: fileMeta.ContentDigest,
+		Metadata:      rec.Metadata,
 		IsCurrent:     false, // promoteCurrent promotes this adopted row after insert
 		UpdatedAt:     time.Now().UTC(),
 	}
