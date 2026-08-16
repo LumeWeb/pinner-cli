@@ -158,3 +158,33 @@ func TestCurlUploadToolDescriptor(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "invalid ttl")
 }
+
+// TestCurlUploadPrunesExpiredTokens verifies that minting a fresh endpoint
+// sweeps expired, never-used tokens out of the map so a long-lived server does
+// not accumulate permanent entries (a Kody finding).
+func TestCurlUploadPrunesExpiredTokens(t *testing.T) {
+	cu := NewCurlUpload(nil, 0)
+	defer cu.Stop(context.Background())
+
+	// Pin the clock so we can advance it deterministically.
+	base := time.Now()
+	cu.setNow(func() time.Time { return base })
+
+	url1 := cu.mint("first.txt", time.Minute)
+	require.NotEmpty(t, url1)
+	_ = url1
+
+	cu.mu.Lock()
+	require.Len(t, cu.tokens, 1)
+	cu.mu.Unlock()
+
+	// Advance past the first token's TTL, then mint a second endpoint. The
+	// expired first token must be pruned by the sweep inside mint().
+	base = base.Add(2 * time.Minute)
+	url2 := cu.mint("second.txt", time.Minute)
+	require.NotEmpty(t, url2)
+
+	cu.mu.Lock()
+	defer cu.mu.Unlock()
+	require.Len(t, cu.tokens, 1, "expired first token must be pruned on the next mint")
+}

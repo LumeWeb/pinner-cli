@@ -123,7 +123,16 @@ func (cu *curlUpload) mint(name string, ttl time.Duration) string {
 	}
 	token := newCurlToken()
 	cu.mu.Lock()
-	cu.tokens[token] = curlToken{name: name, expiresAt: cu.now().Add(ttl)}
+	// Prune expired minted-but-never-used tokens so a long-lived server does not
+	// accumulate permanent map entries (tokens are otherwise only removed when a
+	// matching PUT is claimed).
+	now := cu.now()
+	for t, tkn := range cu.tokens {
+		if now.After(tkn.expiresAt) {
+			delete(cu.tokens, t)
+		}
+	}
+	cu.tokens[token] = curlToken{name: name, expiresAt: now.Add(ttl)}
 	cu.mu.Unlock()
 	cu.loopback.mu.Lock()
 	defer cu.loopback.mu.Unlock()
