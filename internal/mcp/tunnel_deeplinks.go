@@ -47,18 +47,26 @@ func tunnelDeepLink(provider, missing string) string {
 // best-effort: the caller always prints the URL first.
 var tunnelDeepLinkOpener = func(url string) error { return urlopen.Open(url) }
 
+// printTunnelDeepLink prints the deep-link URL for a missing provider value to
+// stderr without opening a browser. It is the read-only counterpart to
+// openTunnelDeepLink, used by headless commands (e.g. `pinner mcp service
+// validate`) that must never spawn a browser as a side effect.
+func printTunnelDeepLink(provider, missing string) {
+	if u := tunnelDeepLink(provider, missing); u != "" {
+		fmt.Fprintf(os.Stderr, "Open %s to get your %s: %s\n", provider, missing, u)
+	}
+}
+
 // openTunnelDeepLink prints the deep-link URL for a missing provider value and
 // opens it in the user's browser when interactive. In --agent/non-interactive
 // mode it only prints the URL (never spawns a browser). It is safe to call even
 // when no deep link exists for the pair.
 func openTunnelDeepLink(provider, missing string) {
-	u := tunnelDeepLink(provider, missing)
-	if u == "" {
-		return
-	}
-	fmt.Fprintf(os.Stderr, "Open %s to get your %s: %s\n", provider, missing, u)
+	printTunnelDeepLink(provider, missing)
 	if wizard.NonInteractive {
 		return
 	}
-	_ = tunnelDeepLinkOpener(u)
+	if u := tunnelDeepLink(provider, missing); u != "" {
+		_ = tunnelDeepLinkOpener(u)
+	}
 }

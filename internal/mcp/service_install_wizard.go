@@ -96,13 +96,20 @@ func RunServiceInstallWizard(ctx context.Context, cmd *cli.Command, envFile stri
 					return nil
 				}
 				sel := selectUI{}
+				// Present each provider with a short, neutral summary of what it
+				// needs so the user can choose without us assuming a preference.
 				_, choice, err := sel.Select("MCP tunnel provider (exposes the remote MCP endpoint)", []string{
-					string(TunnelProviderCloudflared),
-					string(TunnelProviderNgrok),
-					string(TunnelProviderOpenAI),
+					"cloudflared - public domain via Cloudflare (runs an external binary; needs a domain)",
+					"ngrok - public URL via ngrok (needs an authtoken from the ngrok dashboard)",
+					"openai - OpenAI Secure MCP Tunnel for ChatGPT/Connectors (needs a tunnel ID and control-plane API key)",
 				})
 				if err != nil {
 					return err
+				}
+				// The select returns the descriptive label; the provider token is
+				// the leading identifier before " - ".
+				if i := strings.Index(choice, " - "); i > 0 {
+					choice = choice[:i]
 				}
 				s.Provider, err = parseTunnelProvider(choice)
 				return err

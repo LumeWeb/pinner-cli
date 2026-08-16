@@ -78,7 +78,7 @@ func managedServiceFlags() []cli.Flag {
 	return []cli.Flag{
 		&cli.StringFlag{Name: serviceEnvFileFlag, Usage: "MCP service environment file"},
 		&cli.BoolFlag{Name: serviceSystemFlag, Usage: "Use a system-wide service (not supported yet)"},
-		&cli.StringFlag{Name: serviceTunnelFlag, Usage: "Tunnel provider: ngrok, cloudflared, or openai", Sources: cli.EnvVars("MCP_TUNNEL_PROVIDER")},
+		&cli.StringFlag{Name: serviceTunnelFlag, Usage: "Tunnel provider: ngrok, cloudflared, or openai. openai requires --tunnel-id; ngrok requires --token or NGROK_AUTHTOKEN", Sources: cli.EnvVars("MCP_TUNNEL_PROVIDER")},
 		&cli.StringFlag{Name: serviceTunnelIDFlag, Usage: "OpenAI Secure MCP Tunnel ID (required with --tunnel openai). May also be set via CONTROL_PLANE_TUNNEL_ID or the pinner config manager", Sources: cli.EnvVars("MCP_TUNNEL_ID", "CONTROL_PLANE_TUNNEL_ID")},
 		&cli.StringFlag{Name: serviceTunnelTokenFlag, Usage: "Tunnel provider account token (e.g. ngrok authtoken)", Sources: cli.EnvVars("MCP_TUNNEL_TOKEN", "NGROK_AUTHTOKEN")},
 		&cli.StringFlag{Name: serviceApiKeyFlag, Usage: "OpenAI Secure MCP Tunnel control-plane API key (persisted as CONTROL_PLANE_API_KEY)", Sources: cli.EnvVars("CONTROL_PLANE_API_KEY", "OPENAI_API_KEY")},
@@ -119,7 +119,9 @@ func ManagedServiceCommand() *cli.Command {
 }
 
 func serviceValidateAction(ctx context.Context, cmd *cli.Command) error {
-	_, err := resolveManagedService(ctx, cmd, true)
+	// Headless read-only validate: never spawn a browser for missing
+	// credentials, only print the deep-link URL.
+	_, err := resolveManagedService(ctx, cmd, true, true)
 	return err
 }
 
@@ -140,7 +142,7 @@ func serviceInstallAction(ctx context.Context, cmd *cli.Command) error {
 }
 
 func serviceUninstallAction(ctx context.Context, cmd *cli.Command) error {
-	svc, err := resolveManagedService(ctx, cmd, false)
+	svc, err := resolveManagedService(ctx, cmd, false, false)
 	if err != nil {
 		return err
 	}
@@ -148,7 +150,7 @@ func serviceUninstallAction(ctx context.Context, cmd *cli.Command) error {
 }
 
 func serviceStartAction(ctx context.Context, cmd *cli.Command) error {
-	svc, err := resolveManagedService(ctx, cmd, false)
+	svc, err := resolveManagedService(ctx, cmd, false, false)
 	if err != nil {
 		return err
 	}
@@ -156,7 +158,7 @@ func serviceStartAction(ctx context.Context, cmd *cli.Command) error {
 }
 
 func serviceStopAction(ctx context.Context, cmd *cli.Command) error {
-	svc, err := resolveManagedService(ctx, cmd, false)
+	svc, err := resolveManagedService(ctx, cmd, false, false)
 	if err != nil {
 		return err
 	}
@@ -164,7 +166,7 @@ func serviceStopAction(ctx context.Context, cmd *cli.Command) error {
 }
 
 func serviceRestartAction(ctx context.Context, cmd *cli.Command) error {
-	svc, err := resolveManagedService(ctx, cmd, false)
+	svc, err := resolveManagedService(ctx, cmd, false, false)
 	if err != nil {
 		return err
 	}
@@ -172,7 +174,7 @@ func serviceRestartAction(ctx context.Context, cmd *cli.Command) error {
 }
 
 func serviceStatusAction(ctx context.Context, cmd *cli.Command) error {
-	svc, err := resolveManagedService(ctx, cmd, false)
+	svc, err := resolveManagedService(ctx, cmd, false, false)
 	if err != nil {
 		return err
 	}
@@ -185,7 +187,7 @@ func serviceStatusAction(ctx context.Context, cmd *cli.Command) error {
 }
 
 func serviceLogsAction(ctx context.Context, cmd *cli.Command) error {
-	svc, err := resolveManagedService(ctx, cmd, false)
+	svc, err := resolveManagedService(ctx, cmd, false, false)
 	if err != nil {
 		return err
 	}
@@ -215,7 +217,7 @@ func resolveServiceEnvFile(cmd *cli.Command) (string, error) {
 // runtime (not the caller's process environment), so required credentials must
 // be present in the file itself — never just in os.Getenv, which would let an
 // install report success while the running service gets an empty value.
-func validateServiceEnvironment(envFile string) (TunnelProvider, error) {
+func validateServiceEnvironment(envFile string, nonInteractive bool) (TunnelProvider, error) {
 	info, err := os.Stat(envFile)
 	if err != nil {
 		return "", fmt.Errorf("MCP service environment file %q is unavailable: %w", envFile, err)
@@ -235,23 +237,37 @@ func validateServiceEnvironment(envFile string) (TunnelProvider, error) {
 	if err != nil {
 		return "", err
 	}
+	// Validation is a read-only command: when nonInteractive (headless service
+	// validate / --agent) never spawn a browser, only print the deep-link URL.
+	// Interactive install/wizard paths may open the browser to guide the user.
+	deeplink := func(operation, missing string) {
+		if nonInteractive {
+			printTunnelDeepLink(operation, missing)
+			return
+		}
+		openTunnelDeepLink(operation, missing)
+	}
 	switch provider {
 	case TunnelProviderOpenAI:
 		tunnelID := strings.TrimSpace(env["MCP_TUNNEL_ID"])
 		if tunnelID == "" {
-			return "", errors.New("MCP_TUNNEL_ID is required for the OpenAI tunnel")
+			deeplink("openai", "tunnel_id")
+			return "", fmt.Errorf("MCP_TUNNEL_ID is required for the OpenAI tunnel (create one in the OpenAI Tunnels page)")
 		}
 		if !openAITunnelID.MatchString(tunnelID) {
+			deeplink("openai", "tunnel_id")
 			return "", fmt.Errorf("invalid OpenAI tunnel ID %q", tunnelID)
 		}
 		if strings.TrimSpace(env["CONTROL_PLANE_API_KEY"]) == "" && strings.TrimSpace(env["OPENAI_API_KEY"]) == "" {
-			return "", fmt.Errorf("CONTROL_PLANE_API_KEY or OPENAI_API_KEY must be present in %s for the OpenAI tunnel (use --api-key to persist it)", envFile)
+			deeplink("openai", "api_key")
+			return "", fmt.Errorf("CONTROL_PLANE_API_KEY or OPENAI_API_KEY must be present in %s for the OpenAI tunnel (use --api-key to persist it; create a Runtime API key in the OpenAI API keys page)", envFile)
 		}
 	case TunnelProviderNgrok, TunnelProviderCloudflared:
 		if strings.TrimSpace(env["MCP_AUTH_TOKEN"]) == "" {
 			return "", errors.New("MCP_AUTH_TOKEN is required for public HTTP MCP tunnels")
 		}
 		if provider == TunnelProviderNgrok && strings.TrimSpace(env["NGROK_AUTHTOKEN"]) == "" && strings.TrimSpace(env["MCP_TUNNEL_TOKEN"]) == "" {
+			deeplink("ngrok", "authtoken")
 			return "", errors.New("NGROK_AUTHTOKEN or MCP_TUNNEL_TOKEN is required for the ngrok tunnel")
 		}
 		// Only cloudflared runs as an external subprocess; ngrok is embedded
@@ -268,7 +284,7 @@ func validateServiceEnvironment(envFile string) (TunnelProvider, error) {
 	return provider, nil
 }
 
-func resolveManagedService(_ context.Context, cmd *cli.Command, validate bool) (*SystemdUserService, error) {
+func resolveManagedService(_ context.Context, cmd *cli.Command, validate, nonInteractive bool) (*SystemdUserService, error) {
 	envFile, err := resolveServiceEnvFile(cmd)
 	if err != nil {
 		return nil, err
@@ -276,7 +292,7 @@ func resolveManagedService(_ context.Context, cmd *cli.Command, validate bool) (
 	if !validate {
 		return newManagedService(cmd, envFile, "")
 	}
-	provider, err := validateServiceEnvironment(envFile)
+	provider, err := validateServiceEnvironment(envFile, nonInteractive)
 	if err != nil {
 		return nil, err
 	}
@@ -310,7 +326,7 @@ func resolveManagedServiceForInstall(ctx context.Context, cmd *cli.Command) (str
 	} else if err != nil {
 		return "", nil, fmt.Errorf("inspect MCP service environment file %q: %w", envFile, err)
 	}
-	provider, err := validateServiceEnvironment(envFile)
+	provider, err := validateServiceEnvironment(envFile, false)
 	if err != nil {
 		// A freshly bootstrapped file that fails completeness validation would
 		// otherwise strand the user with a partial/corrupt env file on re-run.

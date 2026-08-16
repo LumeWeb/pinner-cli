@@ -516,13 +516,12 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 			return err
 		}
 		if tpl.RequiresToken() {
-			if provider == string(TunnelProviderCloudflared) {
-				return fmt.Errorf("cloudflared tunnel is not provisioned: run `pinner mcp tunnel install` (or `pinner mcp service install`) to create the tunnel and its credentials")
-			}
-			if provider == string(TunnelProviderNgrok) {
-				openTunnelDeepLink("ngrok", "authtoken")
-			}
-			return fmt.Errorf("%s tunnel requires an account token: pass --token or set the provider token (see --help)", provider)
+			// Each provider owns its missing-token guidance via
+			// MissingTokenError; no per-provider branching here. serveHTTP is
+			// the long-running server runtime and must never open a browser
+			// or emit onboarding guidance: the installer/validate commands do
+			// that. It just returns a clean, actionable error.
+			return tpl.MissingTokenError()
 		}
 		// Exposing the endpoint through a public tunnel makes the MCP HTTP
 		// endpoint reachable by anyone who learns the URL. The server
