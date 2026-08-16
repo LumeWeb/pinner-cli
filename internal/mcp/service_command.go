@@ -13,7 +13,12 @@ import (
 
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner-cli/internal/service"
 )
+
+// defaultMCPServiceName is the systemd unit / service identifier (without the
+// per-backend extension; backends append their own, e.g. ".service").
+const defaultMCPServiceName = "pinner-mcp"
 
 // serviceConfigManager builds a lazy config manager for the service install
 // path, used only to persist tunnel credentials entered during install to the
@@ -297,7 +302,7 @@ func validateServiceEnvironment(envFile string, nonInteractive bool) (TunnelProv
 	return provider, nil
 }
 
-func resolveManagedService(_ context.Context, cmd *cli.Command, validate, nonInteractive bool) (*SystemdUserService, error) {
+func resolveManagedService(_ context.Context, cmd *cli.Command, validate, nonInteractive bool) (service.Service, error) {
 	envFile, err := resolveServiceEnvFile(cmd)
 	if err != nil {
 		return nil, err
@@ -315,7 +320,7 @@ func resolveManagedService(_ context.Context, cmd *cli.Command, validate, nonInt
 // resolveManagedServiceForInstall bootstraps the env file (from flags when a
 // --tunnel flag is given, or via the interactive wizard otherwise) when it does
 // not yet exist, then resolves the managed service with validation.
-func resolveManagedServiceForInstall(ctx context.Context, cmd *cli.Command) (string, *SystemdUserService, error) {
+func resolveManagedServiceForInstall(ctx context.Context, cmd *cli.Command) (string, service.Service, error) {
 	envFile, err := resolveServiceEnvFile(cmd)
 	if err != nil {
 		return "", nil, err
@@ -409,10 +414,27 @@ func bootstrapServiceEnvironment(cmd *cli.Command, envFile string, cfgMgr config
 	return nil
 }
 
-func newManagedService(cmd *cli.Command, envFile string, provider TunnelProvider) (*SystemdUserService, error) {
+func newManagedService(cmd *cli.Command, envFile string, provider TunnelProvider) (service.Service, error) {
+	cfg, err := serviceConfigForInstall(cmd, envFile, provider)
+	if err != nil {
+		return nil, err
+	}
+	// service.New auto-detects the host's init system from the per-platform
+	// backend registry (systemd on Linux, launchd on macOS, SCM on Windows).
+	return service.New(cfg)
+}
+
+// serviceConfigForInstall builds the service.Config for the managed MCP
+// service: the pinner executable run as `pinner mcp`, with the tunnel env file
+// delivered to the unit. Public HTTP tunnel providers (ngrok, cloudflared)
+// pass --http so the server is exposed over HTTP; the embedded OpenAI tunnel
+// speaks the MCP transport directly and must not add --http. Returns the pure
+// config so tests can assert the ExecStart arguments without touching a live
+// service backend.
+func serviceConfigForInstall(cmd *cli.Command, envFile string, provider TunnelProvider) (service.Config, error) {
 	execPath, err := os.Executable()
 	if err != nil {
-		return nil, fmt.Errorf("resolve pinner executable: %w", err)
+		return service.Config{}, fmt.Errorf("resolve pinner executable: %w", err)
 	}
 	args := []string{"mcp"}
 	// Public HTTP tunnel providers (ngrok, cloudflared) expose the server over
@@ -423,13 +445,17 @@ func newManagedService(cmd *cli.Command, envFile string, provider TunnelProvider
 	}
 	dir, err := os.UserConfigDir()
 	if err != nil {
-		return nil, fmt.Errorf("resolve user config directory: %w", err)
+		return service.Config{}, fmt.Errorf("resolve user config directory: %w", err)
 	}
-	return NewSystemdUserService(ServiceSpec{
-		Name: defaultMCPServiceName, Description: "Pinner MCP service", ExecPath: execPath,
-		Arguments: args, EnvFile: envFile,
-		UnitPath: filepath.Join(dir, "systemd", "user", defaultMCPServiceName), UserMode: true,
-	}), nil
+	return service.Config{
+		Name:        defaultMCPServiceName,
+		Description: "Pinner MCP service",
+		ExecPath:    execPath,
+		Arguments:   args,
+		EnvFile:     envFile,
+		ServiceFile: filepath.Join(dir, "systemd", "user", defaultMCPServiceName+".service"),
+		UserMode:    true,
+	}, nil
 }
 
 func expandServicePath(path string) string {
