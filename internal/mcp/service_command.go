@@ -221,18 +221,25 @@ func validateServiceEnvironment(envFile string) (TunnelProvider, error) {
 		if strings.TrimSpace(env["CONTROL_PLANE_API_KEY"]) == "" && strings.TrimSpace(env["OPENAI_API_KEY"]) == "" {
 			return "", fmt.Errorf("CONTROL_PLANE_API_KEY or OPENAI_API_KEY must be present in %s for the OpenAI tunnel (use --api-key to persist it)", envFile)
 		}
-	case TunnelProviderNgrok, TunnelProviderCloudflared:
+	case TunnelProviderNgrok:
 		if strings.TrimSpace(env["MCP_AUTH_TOKEN"]) == "" {
 			return "", errors.New("MCP_AUTH_TOKEN is required for public HTTP MCP tunnels")
 		}
-		if provider == TunnelProviderNgrok && strings.TrimSpace(env["NGROK_AUTHTOKEN"]) == "" && strings.TrimSpace(env["MCP_TUNNEL_TOKEN"]) == "" {
+		if strings.TrimSpace(env["NGROK_AUTHTOKEN"]) == "" && strings.TrimSpace(env["MCP_TUNNEL_TOKEN"]) == "" {
 			return "", errors.New("NGROK_AUTHTOKEN or MCP_TUNNEL_TOKEN is required for the ngrok tunnel")
 		}
-		if _, err := exec.LookPath(string(provider)); err != nil {
-			return "", fmt.Errorf("%s executable not found on PATH: %w", provider, err)
+		if _, err := exec.LookPath("ngrok"); err != nil {
+			return "", fmt.Errorf("ngrok executable not found on PATH: %w", err)
 		}
-		if provider == TunnelProviderCloudflared && strings.TrimSpace(env["MCP_DOMAIN"]) == "" {
-			return "", errors.New("MCP_DOMAIN is required for cloudflared")
+	case TunnelProviderCloudflared:
+		if _, err := LoadCloudflareTunnelState(); err != nil {
+			return "", fmt.Errorf("no provisioned Cloudflare tunnel found: run `pinner mcp tunnel install` or `pinner mcp service install` first (%v)", err)
+		}
+		if strings.TrimSpace(env["MCP_AUTH_TOKEN"]) == "" {
+			return "", errors.New("MCP_AUTH_TOKEN is required for public HTTP MCP tunnels (use --auth-token or set it in the environment)")
+		}
+		if _, err := exec.LookPath("cloudflared"); err != nil {
+			return "", fmt.Errorf("cloudflared executable not found on PATH: %w", err)
 		}
 	}
 	return provider, nil

@@ -10,6 +10,7 @@ import (
 	"github.com/pterm/pterm"
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/internal/cli/wizard"
+	"go.lumeweb.com/pinner-cli/internal/cloudflare"
 )
 
 // ServiceInstallState accumulates the tunnel configuration collected by the
@@ -133,22 +134,24 @@ func RunServiceInstallWizard(ctx context.Context, cmd *cli.Command, envFile stri
 						s.ApiKey = strings.TrimSpace(key)
 					}
 				case TunnelProviderCloudflared:
-					if s.Domain == "" {
-						domain, err := text.Text("Tunnel domain (required)")
-						if err != nil {
-							return err
+					// If a tunnel is already provisioned, reuse it rather than
+					// prompting again. Otherwise deep-link a token and provision
+					// the named tunnel + DNS route via the SDK, persisting the
+					// scoped credential.
+					if s.TunnelToken == "" {
+						if existing, lerr := LoadCloudflareTunnelState(); lerr == nil && existing != nil {
+							s.Domain = existing.Hostname
+							s.TunnelName = existing.TunnelName
+							s.TunnelToken = existing.Token
+						} else {
+							state, perr := provisionCloudflaredForWizard(ctx, cmd, cloudflare.New)
+							if perr != nil {
+								return perr
+							}
+							s.Domain = state.Hostname
+							s.TunnelName = state.TunnelName
+							s.TunnelToken = state.Token
 						}
-						s.Domain = strings.TrimSpace(domain)
-					}
-					if s.TunnelName == "" {
-						name, err := text.Text("Cloudflare tunnel resource name (default: pinner-mcp)")
-						if err != nil {
-							return err
-						}
-						s.TunnelName = strings.TrimSpace(name)
-					}
-					if s.TunnelName == "" {
-						s.TunnelName = "pinner-mcp"
 					}
 				case TunnelProviderNgrok:
 					if s.TunnelName == "" {

@@ -699,6 +699,40 @@ Pinner embeds the official `github.com/openai/tunnel-client` Go SDK and connects
 
 `--tunnel ngrok` and `--tunnel cloudflared` remain public tunnel providers.
 
+#### Cloudflare tunnel installer (`pinner mcp tunnel install`)
+
+For cloudflared, Pinner manages the tunnel through the Cloudflare API (via the
+official `github.com/cloudflare/cloudflare-go` SDK) rather than the manual
+`cloudflared tunnel login` + origin-cert flow. `pinner mcp tunnel install`
+guides you end-to-end:
+
+1. **Scoped API token via deep-link** — Pinner opens a Cloudflare dashboard
+   template URL pre-filled with the minimal scope needed to manage one tunnel:
+   `Account:Cloudflare Tunnel:Edit`, `Zone:DNS:Edit`, `Zone:Zone:Read`. You
+   create the token in the dashboard and paste it back.
+2. **Account + DNS zone** — Pinner lists the accounts the token can act on and
+   resolves the zone hosting your public hostname.
+3. **Provision** — Pinner creates the named tunnel, routes the DNS CNAME to it,
+   and persists the tunnel-scoped credential (account tag, tunnel id, secret,
+   run token) to a private `~/.config/pinner/tunnel-state.json`.
+4. **Install cloudflared** — if the binary is missing, Pinner installs it via
+   the platform package manager (Homebrew / apt / dnf / winget) or downloads
+   the official release for your OS/arch.
+5. **Environment** — Pinner writes `MCP_TUNNEL_PROVIDER=cloudflared`,
+   `MCP_DOMAIN`, and `MCP_TUNNEL_TOKEN` to the MCP service environment file.
+
+```bash
+pinner mcp tunnel install --domain mcp.example.com --auth-token "$PINNER_MCP_SECRET"
+```
+
+The runtime then runs cloudflared as a locally-managed tunnel with a generated
+config, exposing the MCP server's actual bound port — no dashboard config, no
+origin cert. To register it as a service after provisioning:
+
+```bash
+pinner mcp service install
+```
+
 ### Managed MCP service on Linux
 
 Pinner can install a rootless systemd user service. The service reads tunnel credentials from an explicit environment file because systemd user services must not depend on the interactive shell environment:
@@ -719,7 +753,7 @@ pinner mcp service status
 pinner mcp service logs --follow
 ```
 
-For ngrok, use `MCP_TUNNEL_PROVIDER=ngrok`, `MCP_AUTH_TOKEN`, and `NGROK_AUTHTOKEN`. For cloudflared, use `MCP_TUNNEL_PROVIDER=cloudflared`, `MCP_AUTH_TOKEN`, and `MCP_DOMAIN`. The service unit references `~/.config/pinner/mcp.env`; secrets are not placed in `ExecStart` arguments. This is a user service and does not require root. A VPS or homelab host may need systemd lingering enabled by its operator for the service to continue after logout.
+For ngrok, use `MCP_TUNNEL_PROVIDER=ngrok`, `MCP_AUTH_TOKEN`, and `NGROK_AUTHTOKEN`. For cloudflared, run `pinner mcp tunnel install` first to provision the tunnel and set the environment; the service uses the provisioned tunnel state and `MCP_TUNNEL_PROVIDER=cloudflared`. The service unit references `~/.config/pinner/mcp.env`; secrets are not placed in `ExecStart` arguments. This is a user service and does not require root. A VPS or homelab host may need systemd lingering enabled by its operator for the service to continue after logout.
 
 `pinner mcp service --system` is not implemented. Pinner does not invoke sudo or capture passwords.
 
