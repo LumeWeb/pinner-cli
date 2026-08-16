@@ -274,7 +274,10 @@ func runTunnelInstallWizard(ctx context.Context, cmd *cli.Command, ui *serviceIn
 		if !rollback {
 			return
 		}
-		if c, cerr := cloudflare.New(apiToken); cerr == nil {
+		// Use the injected cfNew factory (the same one used to provision) so
+		// tests that inject a fake client get a fake cleanup client, not a
+		// real network call to Cloudflare.
+		if c, cerr := cfNew(apiToken); cerr == nil {
 			if state.DNSRecordID != "" {
 				_ = c.DeleteDNSRoute(context.WithoutCancel(ctx), cloudflare.Zone{ID: state.ZoneID}, state.DNSRecordID)
 			}
