@@ -12,20 +12,34 @@ package install
 type AgentKey string
 
 const (
-	AgentClaudeCode    AgentKey = "claude-code"
-	AgentClaudeDesktop AgentKey = "claude-desktop"
-	AgentVSCode        AgentKey = "vscode"
-	AgentCursor        AgentKey = "cursor"
-	AgentCodex         AgentKey = "codex"
-	AgentGeminiCLI     AgentKey = "gemini-cli"
-	AgentOpenCode      AgentKey = "opencode"
-	AgentZed           AgentKey = "zed"
+	AgentClaudeCode       AgentKey = "claude-code"
+	AgentClaudeDesktop    AgentKey = "claude-desktop"
+	AgentVSCode           AgentKey = "vscode"
+	AgentCursor           AgentKey = "cursor"
+	AgentCodex            AgentKey = "codex"
+	AgentGeminiCLI        AgentKey = "gemini-cli"
+	AgentOpenCode         AgentKey = "opencode"
+	AgentZed              AgentKey = "zed"
+	AgentAntigravity      AgentKey = "antigravity"
+	AgentCline            AgentKey = "cline"
+	AgentClineCLI         AgentKey = "cline-cli"
+	AgentGoose            AgentKey = "goose"
+	AgentGitHubCopilotCLI AgentKey = "github-copilot-cli"
+	AgentGrokBuild        AgentKey = "grok-build"
+	AgentKiloCode         AgentKey = "kilo-code"
+	AgentKimiCode         AgentKey = "kimi-code"
+	AgentKiroCLI          AgentKey = "kiro-cli"
+	AgentMCPorter         AgentKey = "mcporter"
+	AgentWindsurf         AgentKey = "windsurf"
 )
 
 // AllAgents is the ordered set of supported agents.
 var AllAgents = []AgentKey{
 	AgentClaudeCode, AgentClaudeDesktop, AgentVSCode, AgentCursor,
 	AgentCodex, AgentGeminiCLI, AgentOpenCode, AgentZed,
+	AgentAntigravity, AgentCline, AgentClineCLI, AgentGoose,
+	AgentGitHubCopilotCLI, AgentGrokBuild, AgentKiloCode, AgentKimiCode,
+	AgentKiroCLI, AgentMCPorter, AgentWindsurf,
 }
 
 // Transport is the MCP server transport.
@@ -60,7 +74,8 @@ type McpServerConfig struct {
 
 	// Optional, capability-gated:
 	OAuthScopes      []string `json:"-"`
-	AutoApproveTools []string `json:"-"` // [] = approve all
+	AutoApproveTools []string `json:"-"` // per-tool approve list (empty [] = approve all)
+	AutoApproveSet   bool     `json:"-"` // true when auto-approve was explicitly requested
 }
 
 // IsRemote reports whether this config describes a remote (http/sse) server.

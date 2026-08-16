@@ -5,13 +5,11 @@ import (
 )
 
 // TestAgentTableIntegrity verifies every key in AllAgents resolves through
-// Agent(), supports stdio, has non-empty config paths and a valid format, and
-// that AllAgents contains exactly the 8 supported agents.
+// Agent(), supports stdio, has non-empty config paths and a valid format.
+// The supported set is not pinned to a magic count — it is whatever the
+// canonical agentTable declares; AllAgents consistency with the table is
+// asserted by TestAllAgentsKeysUnique.
 func TestAgentTableIntegrity(t *testing.T) {
-	if len(AllAgents) != 8 {
-		t.Fatalf("AllAgents = %d entries, want 8", len(AllAgents))
-	}
-
 	seen := map[AgentKey]bool{}
 	for _, key := range AllAgents {
 		if seen[key] {

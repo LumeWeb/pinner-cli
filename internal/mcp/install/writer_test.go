@@ -115,7 +115,7 @@ func TestWriteYAMLRoundTrip(t *testing.T) {
 	agent, _ := Agent(AgentCodex)
 	agent.Format = FormatYAML // parameterize format check on YAML
 	path := filepath.Join(dir, "config.yaml")
-	cfg := McpServerConfig{Command: "pinner", Args: []string{"mcp", "serve"}}
+	cfg := McpServerConfig{Command: "pinner", Args: []string{"mcp", "serve"}, AutoApproveSet: true, AutoApproveTools: []string{}}
 	if err := WriteServerConfig(agent, path, "mypinner", cfg, false); err != nil {
 		t.Fatalf("WriteServerConfig: %v", err)
 	}
@@ -133,8 +133,10 @@ func TestWriteTOMLRoundTrip(t *testing.T) {
 	agent, _ := Agent(AgentCodex)
 	path := filepath.Join(dir, "config.toml")
 	cfg := McpServerConfig{
-		URL:     "https://example.com/mcp",
-		Headers: map[string]string{"Authorization": "Bearer x"},
+		URL:              "https://example.com/mcp",
+		Headers:          map[string]string{"Authorization": "Bearer x"},
+		AutoApproveSet:   true,
+		AutoApproveTools: []string{},
 	}
 	if err := WriteServerConfig(agent, path, "mypinner", cfg, false); err != nil {
 		t.Fatalf("WriteServerConfig: %v", err)
