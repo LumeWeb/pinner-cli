@@ -256,3 +256,31 @@ scoops:
       homepage: https://pinner.xyz
       description: "CLI for pinning content to IPFS, and deploying websites via Pinner.xyz"
       license: MIT
+
+# Build and attach Pinner MCP Bundles (.mcpb) to the GitHub release.
+#
+# A .mcpb is a zip of a server binary + a manifest.json describing how to run
+# it as a local MCP server (one-click install into Claude Desktop / other
+# MCPB-supporting apps). Because the binary is platform-specific, each OS/arch
+# gets its own bundle. This runs as a custom publisher over the compiled
+# binaries (all present in dist/ after the cross build), producing a .mcpb per
+# platform and uploading it to the release created by the release pipe.
+#
+# PROJECT_DIR is expected to be set in the release environment to the absolute
+# path of the repository root (the goreleaser-cross release job sets it to
+# $PWD). The pack script derives the manifest template location itself, so it
+# only needs the binary path, os, arch, and version.
+publishers:
+    - name: pinner-mcpb
+      ids:
+          - pinner-cli-linux-amd64
+          - pinner-cli-linux-arm64
+          - pinner-cli-darwin-amd64
+          - pinner-cli-darwin-arm64
+          - pinner-cli-windows-amd64
+          - pinner-cli-windows-arm64
+      dir: "{{ .Env.PROJECT_DIR }}"
+      cmd: |
+          scripts/mcpb-pack.sh "{{ .ArtifactPath }}" "{{ .Os }}" "{{ .Arch }}" "{{ .Version }}" --upload
+      env:
+          - GITHUB_TOKEN={{ .Env.GITHUB_TOKEN }}
