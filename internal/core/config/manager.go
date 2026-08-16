@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"go.lumeweb.com/configmanager"
@@ -245,9 +246,23 @@ func isFileNotFoundError(err error) bool {
 		strings.Contains(msg, "The system cannot find the file specified")
 }
 
-// Save persists the current configuration to disk.
+// Save persists the current configuration to disk and locks the file down to
+// 0600 so any stored secrets (e.g. tunnel credentials) are never group/world
+// readable. This runs on every persist (all setters call Save), not just the
+// credential setter, because configmanager persists via a temp file +
+// os.Rename that recreates the file under the process umask (typically 0644);
+// centralizing the chmod here keeps the 0600 invariant across all writes.
 func (m *managerImpl) Save() error {
-	return m.Manager.Persist() //nolint:staticcheck // explicit to avoid recursion
+	if err := m.Manager.Persist(); err != nil { //nolint:staticcheck // explicit to avoid recursion
+		return err
+	}
+	// Windows has no Unix permission bits; skip there.
+	if runtime.GOOS != "windows" {
+		if err := os.Chmod(m.configPath, 0o600); err != nil {
+			return fmt.Errorf("failed to lock down config file perms: %w", err)
+		}
+	}
+	return nil
 }
 
 // SetAuthToken sets the authentication token in the config.
@@ -318,6 +333,9 @@ func (m *managerImpl) SetTunnelCredential(provider, key, value string) error {
 	if err := m.Manager.Set(context.Background(), cfgKey, value); err != nil { //nolint:staticcheck // explicit to avoid recursion
 		return fmt.Errorf("failed to set tunnel credential %s: %w", cfgKey, err)
 	}
+	// Save() re-locks config.yaml to 0600 on every persist, so pre-existing
+	// world-readable files (e.g. created by an older version under a broader
+	// umask) are locked down before they hold a secret.
 	return m.Save()
 }
 
