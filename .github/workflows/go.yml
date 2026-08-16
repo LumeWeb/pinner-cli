@@ -129,7 +129,7 @@ jobs:
             -w /go/src/go.lumeweb.com/pinner-cli \
             -e GO_VERSION \
             ghcr.io/goreleaser/goreleaser-cross:v1.26 \
-            release --snapshot --clean
+            release --snapshot --clean --skip=docker
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
