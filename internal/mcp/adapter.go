@@ -511,6 +511,9 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 			return err
 		}
 		if tpl.RequiresToken() {
+			if provider == string(TunnelProviderCloudflared) {
+				return fmt.Errorf("cloudflared tunnel is not provisioned: run `pinner mcp tunnel install` (or `pinner mcp service install`) to create the tunnel and its credentials")
+			}
 			return fmt.Errorf("%s tunnel requires an account token: pass --token or set the provider token (see --help)", provider)
 		}
 		// Exposing the endpoint through a public tunnel makes the MCP HTTP
@@ -829,20 +832,9 @@ func corsHandler(next http.Handler) http.Handler {
 }
 
 // tunnelFor returns a Tunnel for the named provider, or nil if provider is
-// empty (no tunnel).
+// empty (no tunnel). It delegates to the provider registry.
 func tunnelFor(provider, domain, token, name, tunnelID string) (Tunnel, error) {
-	switch provider {
-	case "":
-		return nil, nil
-	case "ngrok":
-		return NewNgrokTunnel(domain, token), nil
-	case "cloudflared":
-		return NewCloudflaredTunnel(domain, name), nil
-	case "openai":
-		return nil, fmt.Errorf("OpenAI Secure MCP Tunnel is embedded and does not use an HTTP tunnel")
-	default:
-		return nil, fmt.Errorf("unknown tunnel provider %q (supported: ngrok, cloudflared, openai)", provider)
-	}
+	return TunnelFor(provider, domain, token, name, tunnelID)
 }
 
 // mcpServerOptions carries resolved MCP command configuration.
