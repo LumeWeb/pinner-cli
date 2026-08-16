@@ -16,9 +16,13 @@ pinner-<os>-<arch>.mcpb
 ```
 
 The manifest describes the server (`server.type: "binary"`, entry point
-`pinner mcp`), the required user config (Pinner API token), and the platform
-compatibility. On install, the app prompts the user for their API token and
-registers the server.
+`pinner mcp`), the required user config (Pinner API token), the platform
+compatibility, and links to the applicable privacy policy. On install, the app
+prompts the user for their API token and registers the server.
+
+> `privacy_policies` is required by the manifest spec because the server
+> connects to the Pinner service (pinner.xyz), which processes user data. It
+> points at the hosted privacy policy at `/privacy-policy/`.
 
 ## Why per-platform bundles
 
