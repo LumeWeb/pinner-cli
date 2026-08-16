@@ -168,7 +168,7 @@ func mcpServerFlags() []cli.Flag {
 		},
 		&cli.StringFlag{
 			Name:    "tunnel",
-			Usage:   "Tunnel provider: ngrok, cloudflared, or openai (OpenAI requires --tunnel-id and runtime credentials)",
+			Usage:   "Tunnel provider: ngrok, cloudflared, or openai. openai requires --tunnel-id; ngrok requires --token or NGROK_AUTHTOKEN",
 			Sources: cli.EnvVars("MCP_TUNNEL_PROVIDER"),
 		},
 		&cli.StringFlag{
@@ -504,13 +504,23 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 
 	var tunnel Tunnel
 	if provider != "" {
-		tpl, err := tunnelFor(provider, domain, token, tunnelName, tunnelID)
+		// Resolve the ngrok authtoken from the full cascade, guarding against a
+		// stale/revoked last-resort config-manager token overriding a valid
+		// credential the embedded agent would load from ngrok's own config file.
+		// See resolveNgrokToken.
+		if provider == string(TunnelProviderNgrok) {
+			token = resolveNgrokToken(token, cfgMgr)
+		}
+		tpl, err := tunnelFor(provider, domain, token, tunnelName, tunnelID, cfgMgr)
 		if err != nil {
 			return err
 		}
 		if tpl.RequiresToken() {
 			if provider == string(TunnelProviderCloudflared) {
 				return fmt.Errorf("cloudflared tunnel is not provisioned: run `pinner mcp tunnel install` (or `pinner mcp service install`) to create the tunnel and its credentials")
+			}
+			if provider == string(TunnelProviderNgrok) {
+				openTunnelDeepLink("ngrok", "authtoken")
 			}
 			return fmt.Errorf("%s tunnel requires an account token: pass --token or set the provider token (see --help)", provider)
 		}
@@ -831,8 +841,8 @@ func corsHandler(next http.Handler) http.Handler {
 
 // tunnelFor returns a Tunnel for the named provider, or nil if provider is
 // empty (no tunnel). It delegates to the provider registry.
-func tunnelFor(provider, domain, token, name, tunnelID string) (Tunnel, error) {
-	return TunnelFor(provider, domain, token, name, tunnelID)
+func tunnelFor(provider, domain, token, name, tunnelID string, cfgMgr config.Manager) (Tunnel, error) {
+	return TunnelFor(provider, domain, token, name, tunnelID, cfgMgr)
 }
 
 // mcpServerOptions carries resolved MCP command configuration.

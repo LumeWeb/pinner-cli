@@ -34,8 +34,12 @@ func CollectHTTPInstall(ctx context.Context, cmd *cli.Command, envFile string, w
 	created := false
 	if _, err := os.Stat(envFile); errors.Is(err, os.ErrNotExist) {
 		created = true
+		// A lazy config manager (nil on failure) is threaded into the wizard and
+		// bootstrap so any tunnel credential the user supplies is persisted to
+		// the last-resort store and auto-detected on later runs.
+		cfgMgr := serviceConfigManager()
 		if cmd.String(serviceTunnelFlag) != "" {
-			if err := bootstrapServiceEnvironment(cmd, envFile); err != nil {
+			if err := bootstrapServiceEnvironment(cmd, envFile, cfgMgr); err != nil {
 				return nil, err
 			}
 		} else if cmd.Bool("non-interactive") {
@@ -43,7 +47,7 @@ func CollectHTTPInstall(ctx context.Context, cmd *cli.Command, envFile string, w
 			// existing env file is required. Fail clearly rather than block on a
 			// prompt that will hang or error in a non-TTY context.
 			return nil, fmt.Errorf("no MCP service environment file found at %q; pass --tunnel (ngrok|cloudflared|openai) and its credentials, or provide a pre-existing env file, to configure the tunnel non-interactively", envFile)
-		} else if err := RunServiceInstallWizard(ctx, cmd, envFile); err != nil {
+		} else if err := RunServiceInstallWizard(ctx, cmd, envFile, cfgMgr); err != nil {
 			return nil, err
 		}
 	} else if err != nil {

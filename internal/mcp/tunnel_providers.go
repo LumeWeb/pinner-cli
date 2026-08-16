@@ -46,5 +46,5 @@ func init() {
 // newNgrokTunnel adapts the existing ngrok runtime to the registry's
 // TunnelConfig shape.
 func newNgrokTunnel(cfg TunnelConfig) Tunnel {
-	return NewNgrokTunnel(cfg.Domain, cfg.Token)
+	return NewNgrokTunnelWithConfig(cfg.Domain, cfg.Token, cfg.ConfigMgr)
 }
