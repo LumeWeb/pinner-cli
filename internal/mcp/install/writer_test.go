@@ -262,3 +262,26 @@ func TestIsRemote(t *testing.T) {
 		t.Errorf("local config should IsRemote()==false")
 	}
 }
+
+func TestWriteRefusesToClobberNonMapConfigKey(t *testing.T) {
+	// A malformed config where the config-key path holds a non-map value must
+	// not be silently replaced with an empty map (data loss). WriteServerConfig
+	// should return an error instead of clobbering it.
+	dir := t.TempDir()
+	agent, _ := Agent(AgentClaudeCode)
+	path := filepath.Join(dir, "config.json")
+	existing := `{"mcpServers": "not-a-map"}`
+	if err := os.WriteFile(path, []byte(existing), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := McpServerConfig{URL: "https://example.com/mcp"}
+	err := WriteServerConfig(agent, path, "mypinner", cfg, false)
+	if err == nil {
+		t.Fatal("WriteServerConfig succeeded; expected refusal to overwrite non-map config key")
+	}
+	// The original content must be preserved on disk.
+	raw, _ := os.ReadFile(path)
+	if string(raw) != existing {
+		t.Errorf("config file was modified on refusal:\n got: %s\nwant: %s", raw, existing)
+	}
+}

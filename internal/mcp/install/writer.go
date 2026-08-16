@@ -29,7 +29,10 @@ func WriteServerConfig(agent AgentConfig, path string, serverName string, server
 		return fmt.Errorf("%s: read %s: %w", agent.Key, path, err)
 	}
 
-	servers := getOrCreateServers(root, key)
+	servers, err := getOrCreateServers(root, key)
+	if err != nil {
+		return fmt.Errorf("%s: %w", agent.Key, err)
+	}
 	servers[serverName] = entry
 
 	if err := writeRoot(agent.Format, path, root); err != nil {
@@ -102,10 +105,13 @@ func writeRoot(format ConfigFormat, path string, root map[string]any) error {
 }
 
 // getOrCreateServers resolves configKey (dot-notation allowed) and returns the
-// servers sub-map, creating it if missing.
-func getOrCreateServers(root map[string]any, configKey string) map[string]any {
+// servers sub-map, creating the path if missing. It returns an error rather
+// than overwrite an existing non-map value at any segment of the config key, so
+// a malformed config (e.g. mcpServers holding a string) is never silently
+// replaced with an empty map and the user's data lost.
+func getOrCreateServers(root map[string]any, configKey string) (map[string]any, error) {
 	if servers := resolveServers(root, configKey); servers != nil {
-		return servers
+		return servers, nil
 	}
 	parent := root
 	keys := strings.Split(configKey, ".")
@@ -113,14 +119,22 @@ func getOrCreateServers(root map[string]any, configKey string) map[string]any {
 	for _, k := range keys[:len(keys)-1] {
 		next, ok := parent[k].(map[string]any)
 		if !ok {
+			if _, exists := parent[k]; exists {
+				return nil, fmt.Errorf("config key %q is not an object; refusing to overwrite", configKey)
+			}
 			next = map[string]any{}
 			parent[k] = next
 		}
 		parent = next
 	}
+	if existing, ok := parent[last]; ok {
+		if _, isMap := existing.(map[string]any); !isMap {
+			return nil, fmt.Errorf("config key %q is not an object; refusing to overwrite", configKey)
+		}
+	}
 	servers := map[string]any{}
 	parent[last] = servers
-	return servers
+	return servers, nil
 }
 
 // resolveServers walks configKey (dot-notation) and returns the servers map, or

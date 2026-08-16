@@ -59,7 +59,6 @@ type McpServerConfig struct {
 	Env     map[string]string `json:"env,omitempty"`
 
 	// Optional, capability-gated:
-	TimeoutMs        int      `json:"-"` // request timeout in ms (0 = omit)
 	OAuthScopes      []string `json:"-"`
 	AutoApproveTools []string `json:"-"` // [] = approve all
 }
