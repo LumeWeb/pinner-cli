@@ -1,6 +1,9 @@
 package install
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -36,8 +39,8 @@ func TestAgentTableIntegrity(t *testing.T) {
 		default:
 			t.Errorf("agent %q: invalid format %q", key, agent.Format())
 		}
-		if agent.Transform("s", McpServerConfig{}, false) == nil {
-			t.Errorf("agent %q: transform produced nil entry", key)
+		if _, err := agent.Transform("s", McpServerConfig{}, false); err != nil {
+			t.Errorf("agent %q: transform error: %v", key, err)
 		}
 		if !agent.SupportsTransport(TransportStdio) {
 			t.Errorf("agent %q: does not support stdio", key)
@@ -52,6 +55,33 @@ func TestAgentTableIntegrity(t *testing.T) {
 func TestUnknownAgent(t *testing.T) {
 	if Lookup(AgentKey("not-a-real-agent")) != nil {
 		t.Errorf("Lookup(unknown) returned non-nil, want nil")
+	}
+}
+
+// TestUnknownTransformNameReturnsError verifies that an agent spec referencing a
+// mistyped/missing transform returns a descriptive error rather than panicking
+// (both through Transform and through the WriteServerConfig pipeline).
+func TestUnknownTransformNameReturnsError(t *testing.T) {
+	spec := agentSpecs[AgentClaudeCode]
+	spec.transformName = "no-such-transform"
+	agent := newAgent(spec)
+
+	_, err := agent.Transform("s", McpServerConfig{}, false)
+	if err == nil {
+		t.Fatal("Transform with unknown transform name should return an error")
+	}
+	if want := `unknown transform "no-such-transform"`; !strings.Contains(err.Error(), want) {
+		t.Errorf("error = %q, want it to contain %q", err.Error(), want)
+	}
+
+	// The writer must propagate the error without writing a partial entry.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	if err := WriteServerConfig(agent, path, "srv", McpServerConfig{Command: "pinner"}, false); err == nil {
+		t.Fatal("WriteServerConfig with unknown transform should fail")
+	}
+	if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+		t.Errorf("config file should not be written when the transform is unknown; stat err=%v", statErr)
 	}
 }
 

@@ -12,7 +12,10 @@ func transformRunner(t *testing.T, key AgentKey, serverName string, cfg McpServe
 	if agent == nil {
 		t.Fatalf("Lookup(%q) not found", key)
 	}
-	got := agent.Transform(serverName, cfg, local)
+	got, err := agent.Transform(serverName, cfg, local)
+	if err != nil {
+		t.Fatalf("%s: transform: %v", key, err)
+	}
 	m, ok := got.(map[string]any)
 	if !ok {
 		t.Fatalf("%s: transform returned %T, want map[string]any", key, got)

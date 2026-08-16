@@ -30,8 +30,10 @@ type Agent interface {
 	// SupportsTransport reports whether the agent supports the transport.
 	SupportsTransport(t Transport) bool
 	// Transform converts the canonical server config into this agent's native
-	// entry (a map for JSON/YAML, a map for TOML encoding).
-	Transform(serverName string, cfg McpServerConfig, local bool) any
+	// entry (a map for JSON/YAML, a map for TOML encoding). It returns an error
+	// when the agent's transform is unknown or cannot be applied, so an install
+	// never panics or writes a partial entry.
+	Transform(serverName string, cfg McpServerConfig, local bool) (any, error)
 }
 
 // Registry hosts the supported coding agents. It is the query surface for an

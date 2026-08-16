@@ -1,5 +1,7 @@
 package install
 
+import "fmt"
+
 // transformFunc converts a canonical server config into an agent's native entry.
 type transformFunc func(serverName string, cfg McpServerConfig, local bool) any
 
@@ -95,8 +97,12 @@ func (a *declaredAgent) SupportsTransport(t Transport) bool {
 	return false
 }
 
-// Transform delegates to the named transform in the table.
-func (a *declaredAgent) Transform(serverName string, cfg McpServerConfig, local bool) any {
-	fn := transformTable[a.spec.transformName]
-	return fn(serverName, cfg, local)
+// Transform delegates to the named transform in the table. An unknown or
+// mistyped transform name returns a descriptive error instead of panicking.
+func (a *declaredAgent) Transform(serverName string, cfg McpServerConfig, local bool) (any, error) {
+	fn, ok := transformTable[a.spec.transformName]
+	if !ok {
+		return nil, fmt.Errorf("%s: unknown transform %q", a.spec.key, a.spec.transformName)
+	}
+	return fn(serverName, cfg, local), nil
 }

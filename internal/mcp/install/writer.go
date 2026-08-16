@@ -19,7 +19,10 @@ import (
 // TOML configs are re-serialized wholesale.
 func WriteServerConfig(agent Agent, path string, serverName string, serverCfg McpServerConfig, local bool) error {
 	key := agent.ServerKey(local)
-	entry := agent.Transform(serverName, serverCfg, local)
+	entry, err := agent.Transform(serverName, serverCfg, local)
+	if err != nil {
+		return fmt.Errorf("%s: %w", agent.Key(), err)
+	}
 
 	if isJSONFormat(agent.Format()) {
 		return writeJSONCEntry(agent.Key(), path, key, serverName, entry)
