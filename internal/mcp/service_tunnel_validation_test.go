@@ -18,6 +18,7 @@ func TestValidateCloudflaredRequiresProvisionedState(t *testing.T) {
 	envPath := filepath.Join(dir, "mcp.env")
 	require.NoError(t, WriteServiceEnvironment(envPath, ServiceEnvironment{
 		"MCP_TUNNEL_PROVIDER": "cloudflared",
+		"MCP_DOMAIN":          "mcp.example.com",
 		// A long, explicitly test-only placeholder so a real credential is
 		// never committed; validateServiceEnvironment only checks for presence.
 		// Derived at runtime (not a literal) so no token-shaped string appears

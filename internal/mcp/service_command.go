@@ -251,8 +251,12 @@ func validateServiceEnvironment(envFile string) (TunnelProvider, error) {
 		if strings.TrimSpace(env["MCP_AUTH_TOKEN"]) == "" {
 			return "", errors.New("MCP_AUTH_TOKEN is required for public HTTP MCP tunnels (use --auth-token or set it in the environment)")
 		}
-		if _, err := exec.LookPath("cloudflared"); err != nil {
-			return "", fmt.Errorf("cloudflared executable not found on PATH: %w", err)
+		// Use the bin-dir-aware resolver (PATH first, then the pinned pinner
+		// bin dir) so a cloudflared installed by `pinner mcp tunnel install`
+		// to a non-PATH location is still accepted, matching the runtime Start
+		// path lookups.
+		if _, err := resolveCloudflaredPath(); err != nil {
+			return "", fmt.Errorf("cloudflared executable not found: %w", err)
 		}
 	}
 	return provider, nil
