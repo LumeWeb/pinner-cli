@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/urfave/cli/v3"
@@ -29,27 +30,43 @@ func provisionCloudflareTunnel(ctx context.Context, c cloudflare.Client, account
 	if err != nil {
 		return nil, err
 	}
-	if err := c.CreateDNSRoute(ctx, account, zone, hostname, rec.ID); err != nil {
-		// Best-effort delete the orphaned tunnel so a mid-provision failure
-		// (DNS, token, save) never leaks an unused Cloudflare tunnel.
-		_ = c.DeleteTunnel(ctx, account, rec.ID)
+	// Route the hostname at the tunnel, capturing the created DNS record ID so
+	// a later failure can roll the route back too (otherwise the proxied CNAME
+	// stays behind and blocks clean re-provisioning).
+	// Use a cancellation-exempt context for rollback deletes: if the failure we
+	// are cleaning up after was itself a context cancellation (e.g. SIGINT), the
+	// delete calls must still run, or the billed tunnel + CNAME are orphaned.
+	cleanupCtx := context.WithoutCancel(ctx)
+	recordID, err := c.CreateDNSRoute(ctx, account, zone, hostname, rec.ID)
+	if err != nil {
+		_ = c.DeleteTunnel(cleanupCtx, account, rec.ID)
 		return nil, err
+	}
+	// cleanup tears down both the DNS route and the tunnel so a mid-provision
+	// failure (token fetch, state save) never orphans a billed Cloudflare
+	// tunnel or leaves its hostname occupied.
+	cleanup := func() {
+		_ = c.DeleteDNSRoute(cleanupCtx, zone, recordID)
+		_ = c.DeleteTunnel(cleanupCtx, account, rec.ID)
 	}
 	token, err := c.GetTunnelToken(ctx, account, rec.ID)
 	if err != nil {
-		_ = c.DeleteTunnel(ctx, account, rec.ID)
+		cleanup()
 		return nil, err
 	}
 	state := &CloudflareTunnelState{
-		Provider:   TunnelProviderCloudflared,
-		AccountID:  rec.AccountID,
-		TunnelID:   rec.ID,
-		TunnelName: rec.Name,
-		Secret:     rec.Secret,
-		Token:      token,
-		Hostname:   hostname,
+		Provider:    TunnelProviderCloudflared,
+		AccountID:   rec.AccountID,
+		TunnelID:    rec.ID,
+		TunnelName:  rec.Name,
+		Secret:      rec.Secret,
+		Token:       token,
+		Hostname:    hostname,
+		ZoneID:      zone.ID,
+		DNSRecordID: recordID,
 	}
 	if err := SaveCloudflareTunnelState(state); err != nil {
+		cleanup()
 		return nil, err
 	}
 	return state, nil
@@ -90,12 +107,16 @@ func resolveCloudflareAccount(ctx context.Context, c cloudflare.Client) (cloudfl
 // having them paste the generated token back. It errors in non-interactive
 // mode when no token is supplied.
 func obtainCloudflareAPIToken(ctx context.Context, cmd *cli.Command) (string, error) {
-	// Read the dedicated Cloudflare token flag (sourced only from
-	// CLOUDFLARE_API_TOKEN) first, then the --api-key alias, so a different
-	// provider's control-plane credential can never be routed to Cloudflare.
-	apiToken := strings.TrimSpace(cmd.String(cloudflareTokenFlag))
-	if apiToken == "" {
+	// Prefer an explicitly-passed --api-key so a value the user typed on the
+	// CLI always wins over an ambient CLOUDFLARE_API_TOKEN in the environment
+	// (which can be stale). Fall back to the dedicated cloudflare flag (env
+	// CLOUDFLARE_API_TOKEN) only when --api-key was not explicitly set.
+	apiToken := ""
+	if cmd.IsSet(serviceApiKeyFlag) {
 		apiToken = strings.TrimSpace(cmd.String(serviceApiKeyFlag))
+	}
+	if apiToken == "" {
+		apiToken = strings.TrimSpace(cmd.String(cloudflareTokenFlag))
 	}
 	if apiToken != "" {
 		return apiToken, nil
@@ -122,37 +143,39 @@ func obtainCloudflareAPIToken(ctx context.Context, cmd *cli.Command) (string, er
 
 // provisionCloudflaredForWizard deep-links a token, resolves the account/zone,
 // provisions the tunnel + DNS route, and persists the tunnel state. It is
-// shared by the tunnel install wizard and the service install wizard.
-func provisionCloudflaredForWizard(ctx context.Context, cmd *cli.Command, cfNew func(string) (cloudflare.Client, error)) (*CloudflareTunnelState, error) {
+// shared by the tunnel install wizard and the service install wizard. It also
+// returns the Cloudflare API token used, so a caller can authenticate a clean-up
+// client (the tunnel-scoped run token is not a valid API token).
+func provisionCloudflaredForWizard(ctx context.Context, cmd *cli.Command, cfNew func(string) (cloudflare.Client, error)) (*CloudflareTunnelState, string, error) {
 	apiToken, err := obtainCloudflareAPIToken(ctx, cmd)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	c, err := cfNew(apiToken)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if err := c.VerifyToken(ctx); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	account, err := resolveCloudflareAccount(ctx, c)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	hostname := strings.TrimSpace(cmd.String(serviceDomainFlag))
 	if hostname == "" {
 		hostname, err = textUI{}.Text("Public hostname to expose (e.g. mcp.example.com)")
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 		hostname = strings.TrimSpace(hostname)
 	}
 	if hostname == "" {
-		return nil, errors.New("a public hostname is required")
+		return nil, "", errors.New("a public hostname is required")
 	}
 	zone, err := c.FindZone(ctx, account, hostname)
 	if err != nil {
-		return nil, fmt.Errorf("resolve DNS zone for %q: %w (is the domain's nameservers pointing at Cloudflare?)", hostname, err)
+		return nil, "", fmt.Errorf("resolve DNS zone for %q: %w (is the domain's nameservers pointing at Cloudflare?)", hostname, err)
 	}
 	name := strings.TrimSpace(cmd.String(serviceTunnelNameFlag))
 	if name == "" {
@@ -161,10 +184,10 @@ func provisionCloudflaredForWizard(ctx context.Context, cmd *cli.Command, cfNew 
 	fmt.Printf("Provisioning Cloudflare tunnel %q for %q ...\n", name, hostname)
 	state, err := provisionCloudflareTunnel(ctx, c, account, zone, name, hostname)
 	if err != nil {
-		return nil, fmt.Errorf("provision cloudflare tunnel: %w", err)
+		return nil, "", fmt.Errorf("provision cloudflare tunnel: %w", err)
 	}
 	fmt.Printf("Tunnel provisioned (id %s).\n", state.TunnelID)
-	return state, nil
+	return state, apiToken, nil
 }
 
 // runTunnelInstallWizard drives the interactive `pinner mcp tunnel install`
@@ -188,7 +211,7 @@ func runTunnelInstallWizard(ctx context.Context, cmd *cli.Command, ui *serviceIn
 
 	// 2-5. Deep-link token, verify, account, zone, provision. Shared with the
 	// service install wizard.
-	state, err := provisionCloudflaredForWizard(ctx, cmd, cfNew)
+	state, apiToken, err := provisionCloudflaredForWizard(ctx, cmd, cfNew)
 	if err != nil {
 		return err
 	}
@@ -206,16 +229,46 @@ func runTunnelInstallWizard(ctx context.Context, cmd *cli.Command, ui *serviceIn
 			return err
 		}
 	}
+	// The public tunnel requires a shared secret protecting the exposed MCP
+	// endpoint; validateServiceEnvironment refuses a cloudflared env file
+	// without MCP_AUTH_TOKEN. Mirror the service-install wizard and prompt for
+	// a masked token when none was given via --auth-token, aborting before the
+	// env file is written (and thus before a later `pinner mcp service
+	// install` would reject it) if it cannot be obtained.
 	authToken := strings.TrimSpace(cmd.String(serviceAuthTokenFlag))
+	if authToken == "" {
+		secret, err := textUI{mask: "*"}.Text("Shared secret authorizing the public MCP endpoint (required)")
+		if err != nil {
+			return err
+		}
+		authToken = strings.TrimSpace(secret)
+	}
+	if authToken == "" {
+		return errors.New("an MCP auth token is required for the public tunnel; pass --auth-token")
+	}
 	env := ServiceEnvironment{
 		"MCP_TUNNEL_PROVIDER": string(TunnelProviderCloudflared),
 		"MCP_DOMAIN":          state.Hostname,
 		"MCP_TUNNEL_TOKEN":    state.Token,
-	}
-	if authToken != "" {
-		env["MCP_AUTH_TOKEN"] = authToken
+		"MCP_AUTH_TOKEN":      authToken,
 	}
 	if err := WriteServiceEnvironment(envFile, env); err != nil {
+		// The tunnel + DNS route were provisioned and persisted above; roll
+		// them both back so a failed env write does not leave an orphaned,
+		// billed tunnel pair behind (re-running the wizard would otherwise
+		// double it). Authenticate the clean-up client with the original Cloudflare
+		// API token — the tunnel-scoped run token is not a valid API token.
+		if st, lerr := LoadCloudflareTunnelState(); lerr == nil && st != nil {
+			if c, cerr := cloudflare.New(apiToken); cerr == nil {
+				if st.DNSRecordID != "" {
+					_ = c.DeleteDNSRoute(context.WithoutCancel(ctx), cloudflare.Zone{ID: st.ZoneID}, st.DNSRecordID)
+				}
+				_ = c.DeleteTunnel(context.WithoutCancel(ctx), cloudflare.Account{ID: st.AccountID}, st.TunnelID)
+			}
+			if p, perr := tunnelStatePath(); perr == nil {
+				_ = os.Remove(p)
+			}
+		}
 		return fmt.Errorf("write MCP service environment file: %w", err)
 	}
 	fmt.Printf("Wrote MCP service environment file %s.\n", envFile)

@@ -54,6 +54,7 @@ func tunnelCommand() *cli.Command {
 // service install wizards (token, domain, tunnel-name, auth-token, env-file).
 func serviceInstallFlags() []cli.Flag {
 	return []cli.Flag{
+		&cli.StringFlag{Name: serviceTunnelFlag, Usage: "Tunnel provider: ngrok, cloudflared, or openai", Sources: cli.EnvVars("MCP_TUNNEL_PROVIDER")},
 		&cli.StringFlag{Name: cloudflareTokenFlag, Usage: "Cloudflare API token (scoped to Tunnel:Edit/DNS:Edit/Zone:Read)", Sources: cli.EnvVars("CLOUDFLARE_API_TOKEN")},
 		&cli.StringFlag{Name: serviceApiKeyFlag, Usage: "Alias for the Cloudflare API token", Sources: cli.EnvVars("CLOUDFLARE_API_TOKEN")},
 		&cli.StringFlag{Name: serviceDomainFlag, Usage: "Public hostname to expose (e.g. mcp.example.com)", Sources: cli.EnvVars("MCP_DOMAIN")},

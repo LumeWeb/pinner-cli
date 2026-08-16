@@ -5,6 +5,9 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,12 +18,35 @@ import (
 	"time"
 )
 
-// cloudflaredDownloadBase is the GitHub release URL prefix for cloudflared.
-const cloudflaredDownloadBase = "https://github.com/cloudflare/cloudflared/releases/latest/download/"
+// cloudflaredVersion pins the cloudflared release this installer verifies
+// against. The download URL is pinned to this tag so the embedded SHA-256
+// checksums (cloudflaredChecksums) always match the fetched artifact — a
+// "latest" URL would drift between releases and break the verification.
+const cloudflaredVersion = "2026.8.2"
+
+// cloudflaredDownloadBase is the GitHub release URL prefix for the pinned
+// cloudflared version.
+const cloudflaredDownloadBase = "https://github.com/cloudflare/cloudflared/releases/download/" + cloudflaredVersion + "/"
+
+// cloudflaredChecksums pins the SHA-256 of each cloudflared artifact (the raw
+// binary on Linux/Windows, the .tgz on macOS) for the platform combinations
+// this installer supports. Computed from the official cloudflared release
+// v2026.8.2. Verifying before writing the artifact prevents a tampered release
+// asset from becoming code executed with the user's privileges.
+var cloudflaredChecksums = map[string]string{
+	"linux/amd64":   "fcfb02b575a52ca1af2e3267af4e1517bcdeb30ac48c834c69abaed3c0576ad2",
+	"linux/arm64":   "7747d94570fb390cf47dcb4f9555c193c6355cda9793f0d878d9049e5d6a7790",
+	"linux/386":     "39845d980a4b74b9c84530a28d8fea1fe6c476de26460275602162b349f1cbef",
+	"linux/arm":     "19809425f60a6261241dfa66a42b4115bab07c295396a3c4d5d7c247fc4e1412",
+	"darwin/amd64":  "f1727723c586500e2092368ae21871b3df7ddfd2cb097f22d81bee4a9c458bb4",
+	"darwin/arm64":  "9042c2c5d8b2de78e60f313d5fb31b6c5c1cebde787a3caf1f2c9588084ac442",
+	"windows/amd64": "c29eee2b121f5436a642eed69fd9767da7e7b8c510fa50aaa130337f931357b5",
+	"windows/386":   "6acb072357618fa16c53c43e05438ed728aacd47119f1c6c3aa1a668c3299b43",
+}
 
 // cloudflaredDownloadURL returns the direct-download URL for cloudflared on the
-// given OS/arch, or an error if unsupported. macOS and some platforms ship a
-// .tgz; Linux/Windows ship a raw binary.
+// given OS/arch, or an error if unsupported. macOS ships a .tgz; Linux/Windows
+// ship a raw binary.
 func cloudflaredDownloadURL(goos, goarch string) (string, error) {
 	switch goos {
 	case "linux":
@@ -61,40 +87,13 @@ func ensureCloudflaredBinary(ctx context.Context) (string, error) {
 		return p, nil
 	}
 
-	// Prefer a platform installer when its package manager is present.
-	switch runtime.GOOS {
-	case "darwin":
-		if _, err := exec.LookPath("brew"); err == nil {
-			cmd := exec.CommandContext(ctx, "brew", "install", "cloudflared")
-			if err := cmd.Run(); err == nil {
-				if p, perr := exec.LookPath("cloudflared"); perr == nil {
-					return p, nil
-				}
-			}
-		}
-	case "linux":
-		for _, pm := range []struct{ bin, args []string }{
-			{[]string{"apt-get"}, []string{"install", "-y", "cloudflared"}},
-			{[]string{"dnf"}, []string{"install", "-y", "cloudflared"}},
-		} {
-			if _, err := exec.LookPath(pm.bin[0]); err == nil {
-				pmArgs := append(pm.bin, pm.args...)
-				cmd := exec.CommandContext(ctx, pmArgs[0], pmArgs[1:]...)
-				if err := cmd.Run(); err == nil {
-					if p, perr := exec.LookPath("cloudflared"); perr == nil {
-						return p, nil
-					}
-				}
-			}
-		}
-	case "windows":
-		if _, err := exec.LookPath("winget"); err == nil {
-			cmd := exec.CommandContext(ctx, "winget", "install", "Cloudflare.cloudflared", "--accept-source-agreements", "--accept-package-agreements")
-			if err := cmd.Run(); err == nil {
-				if p, perr := exec.LookPath("cloudflared"); perr == nil {
-					return p, nil
-				}
-			}
+	// Prefer a platform installer when its package manager is present. The
+	// per-OS strategy lives in build-tagged files (cloudflared_install_{os}.go)
+	// so each platform's install detection stays in its own compilation unit
+	// rather than a runtime.GOOS switch.
+	if installCloudflaredViaPlatformPackageManager(ctx) {
+		if p, perr := exec.LookPath("cloudflared"); perr == nil {
+			return p, nil
 		}
 	}
 
@@ -133,6 +132,17 @@ func downloadCloudflared(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("read cloudflared download: %w", err)
 	}
+
+	// Verify the fetched artifact against the pinned SHA-256 before we extract
+	// or write it, so a tampered or corrupt release asset cannot become code
+	// executed with the user's privileges.
+	if sum, ok := cloudflaredChecksums[runtime.GOOS+"/"+runtime.GOARCH]; ok {
+		got := sha256.Sum256(body)
+		if hex.EncodeToString(got[:]) != sum {
+			return "", errors.New("cloudflared download failed checksum verification")
+		}
+	}
+
 	bin, err := extractCloudflaredArchive(body)
 	if err != nil {
 		return "", err
