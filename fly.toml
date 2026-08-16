@@ -1,0 +1,44 @@
+# Fly.io config for the Pinner MCP server — CORRECTED to deploy from the prebuilt GHCR image.
+#
+# This now deploys the published image ghcr.io/lumeweb/pinner:latest (no local build).
+# Required setup before `fly deploy`:
+#   fly launch --image ghcr.io/lumeweb/pinner:latest --no-deploy
+#   fly volumes create pinner_data --size 1          # create the volume the [mounts] block references
+#   fly secrets set MCP_AUTH_TOKEN="$(openssl rand -base64 32)"
+#   fly deploy
+
+app = "pinner"
+primary_region = "iad"
+
+# Deploy an existing prebuilt public image — NO build step happens at deploy time.
+# (Fly docs: "Specify a Docker image"; an empty [build] table does NOT pull an image,
+#  flyctl would instead attempt a local Dockerfile/buildpacks build.)
+[build]
+  image = "ghcr.io/lumeweb/pinner:latest"
+
+[env]
+  MCP_OAUTH = "1"
+  MCP_CORS = "1"
+  PINNER_HOME = "/data"
+  # Public URL for OAuth discovery (set to your fly.dev or custom domain):
+  # MCP_PUBLIC_URL = "https://pinner.fly.dev"
+
+# source = name of the Fly Volume (must pre-exist, created with `fly volumes create pinner_data`)
+# destination = mount point on the Machine (cannot be "/")
+[[mounts]]
+  source = "pinner_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    interval = "10s"
+    timeout = "2s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/healthz"

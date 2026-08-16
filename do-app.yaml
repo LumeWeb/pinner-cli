@@ -1,0 +1,45 @@
+# DigitalOcean App Platform spec for the Pinner MCP server — CORRECTED to deploy from GHCR.
+#
+# NOTE: App Platform containers have NO persistent local storage and DO NOT support
+# volumes. The original `mount:` block was invalid/unsupported and has been removed.
+# For persistence use DO Spaces (object storage) or a DO Managed Database instead.
+# Apply with: doctl apps create --spec do-app.yaml  (or paste in DO dashboard > Create App > Container image).
+
+name: pinner
+services:
+  - name: pinner
+    image:
+      # Valid registry_type values: DOCR | DOCKER_HUB | GHCR  (NOT "OTHER").
+      registry_type: GHCR
+      # For GHCR, "registry" is the GitHub org/owner of the image, NOT the host "ghcr.io".
+      registry: lumeweb
+      # The image repository name under that org (ghcr.io/lumeweb/pinner).
+      repository: pinner
+      tag: latest
+    http_port: 8080
+    instance_count: 1
+    instance_size_slug: basic-xxs
+    health_check:
+      http_path: /healthz
+      initial_delay_seconds: 15
+      period_seconds: 30
+      timeout_seconds: 5
+      success_threshold: 1
+      failure_threshold: 3
+    envs:
+      - key: MCP_AUTH_TOKEN
+        # SECRET values are encrypted by DO on first submission. Replace before deploy.
+        value: "CHANGE_ME_GENERATE_WITH: openssl rand -base64 32"
+        type: SECRET
+      - key: MCP_OAUTH
+        value: "1"
+        type: GENERAL
+      - key: MCP_CORS
+        value: "1"
+        type: GENERAL
+      - key: PINNER_HOME
+        value: /data
+        type: GENERAL
+    # REMOVED: `mount:` is NOT a valid app-spec key and App Platform does not support
+    # volumes (ephemeral local filesystem only, capped at 4 GiB). Use Spaces / Managed DB
+    # for any persistent data.

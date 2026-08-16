@@ -1,0 +1,41 @@
+# Render Blueprint for the Pinner MCP server, deployed from the published
+# GHCR image (no build). Apply via Blueprint (render.yaml) in the Render
+# dashboard or API.
+#
+# Key fix vs the earlier draft: to deploy a PREBUILT image from a registry you
+# must use `runtime: image` (not `runtime: docker`). `runtime: docker` is only
+# for building an image from a Dockerfile in a repo and requires `repo`.
+#   - runtime docs: https://render.com/docs/blueprint-spec#runtime
+#   - image field:  https://render.com/docs/blueprint-spec#image
+#   - prebuilt img: https://render.com/docs/deploying-an-image
+#
+# Other notes:
+#  - `autoDeploy` is a DEPRECATED field (use `autoDeployTrigger`), and even via
+#    autoDeployTrigger it has NO effect for image-backed services — image-backed
+#    services redeploy manually or via webhook. Removed.
+#  - `plan: starter`, `healthCheckPath`, `envVars[].sync`, and `disk` are all
+#    valid per the Blueprint spec.
+#  - MCP_AUTH_TOKEN is a secret: prefer `generateValue: true` over a hardcoded
+#    placeholder.
+
+services:
+  - type: web
+    name: pinner
+    runtime: image
+    image:
+      url: ghcr.io/lumeweb/pinner:latest
+    plan: starter
+    healthCheckPath: /healthz
+    envVars:
+      - key: MCP_AUTH_TOKEN
+        generateValue: true
+      - key: MCP_OAUTH
+        value: "1"
+      - key: MCP_CORS
+        value: "1"
+      - key: PINNER_HOME
+        value: /data
+    disk:
+      name: pinner-data
+      mountPath: /data
+      sizeGB: 1

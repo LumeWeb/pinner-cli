@@ -1,0 +1,72 @@
+# Koyeb AppSpec for the Pinner MCP server, deployed from the published GHCR
+# image (no build). Apply with:  koyeb app deploy --file koyeb.yaml
+#
+# Koyeb injects $PORT for web services and provides a public HTTPS domain.
+# Configure the HTTP health check on /healthz so the deployment is promoted only
+# once the MCP server is ready.
+#
+# Notes on Koyeb AppSpec structure:
+#  - The `app` block only takes `name` (and optional `domains`). `regions` is a
+#    SERVICE-level field, not an app-level field.
+#  - Service `type`, `instance_types`, and `scaling` are expected fields.
+#  - `routes` needs BOTH `path` and `port`.
+#  - `health_checks` is the right key; each entry needs a port (+ optionally
+#    `type: http` and `path`).
+#  - Env secrets are referenced by NAME via `secret:` (not a boolean); plaintext
+#    values use `value`. Create Koyeb secrets first:  koyeb secret create <name>
+#  - Volumes must be created first (koyeb volume create <name> --size N --region
+#    was) and are attached by their ID via `volumes[].id` + mount `path` (NOT
+#    `name`). Koyeb volumes are region-scoped and must match the service region.
+
+app:
+  name: pinner
+
+services:
+  - name: pinner
+    type: web
+    docker:
+      image: ghcr.io/lumeweb/pinner:latest
+
+    # Instance + scaling (required by Koyeb).
+    instance_types:
+      - type: nano
+    scaling:
+      min: 1
+      max: 1
+    regions:
+      - was
+
+    # Expose the streamable-HTTP MCP endpoint over HTTPS.
+    ports:
+      - port: 8080
+        protocol: http
+    routes:
+      - path: /
+        port: 8080
+
+    # HTTP health check (path must return 2xx) driving deployment health.
+    health_checks:
+      - port: 8080
+        type: http
+        path: /healthz
+        interval: 60
+        timeout: 5
+        grace_period: 5
+
+    # Environment. MCP_AUTH_TOKEN is a secret: reference it by NAME via
+    # `secret:` (create it first with  koyeb secret create mcp-auth-token ).
+    env:
+      - key: MCP_AUTH_TOKEN
+        secret: mcp-auth-token
+      - key: MCP_OAUTH
+        value: "1"
+      - key: MCP_CORS
+        value: "1"
+
+    # Persistent storage. Create the volume first:
+    #   koyeb volume create pinner-data --size 1 --region was
+    # then attach it by its ID here (not by name). Mount at /data and point
+    # PINNER_HOME there.
+    volumes:
+      - id: <PINNER_DATA_VOLUME_ID>
+        path: /data
