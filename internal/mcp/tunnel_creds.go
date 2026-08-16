@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"go.lumeweb.com/pinner-cli/internal/core/config"
 )
 
 // ResolveCredential returns the first non-empty value produced by the given
@@ -27,6 +29,19 @@ func ResolveCredential(providers ...func() string) string {
 		}
 	}
 	return ""
+}
+
+// tunnelCfgCredential returns a ResolveCredential source thunk that reads the
+// last-resort tunnel credential for the given provider + logical key from the
+// pinner config manager. A nil manager (common in tests and when wizard deps
+// are unwired) degrades to an empty source so the chain continues.
+func tunnelCfgCredential(cfgMgr config.Manager, provider, key string) func() string {
+	return func() string {
+		if cfgMgr == nil {
+			return ""
+		}
+		return cfgMgr.TunnelCredential(provider, key)
+	}
 }
 
 // hasProviderConfig reports whether the named tunnel provider has a config file
