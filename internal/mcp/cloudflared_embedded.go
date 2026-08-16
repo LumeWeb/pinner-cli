@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"crypto/tls"
+	"encoding/base64"
 	"fmt"
 	"runtime"
 	"time"
@@ -47,9 +48,13 @@ var startTunnelDaemon = func(
 // tunnel. QuickTunnelUrl is left empty, which is exactly the distinction
 // between a named tunnel and a trycloudflared quick tunnel.
 //
-// state.Secret is already a base64-encoded tunnel secret (see
-// internal/cloudflare NewTunnelSecret); cloudflared expects the tunnel secret
-// as base64 []byte, so it is passed through verbatim.
+// state.Secret is stored base64 (see internal/cloudflare NewTunnelSecret,
+// which base64.StdEncoding-encodes 32 random bytes). cloudflared's
+// connection.Credentials.TunnelSecret holds the RAW secret bytes used for the
+// edge-registration HMAC (the exec path previously wrote the base64 string to
+// a credentials file, which cloudflared's loader then base64-decoded; the
+// in-process struct must decode it here instead), so it is decoded before
+// assignment.
 func buildCloudflaredTunnelProperties(state *CloudflareTunnelState) (*connection.TunnelProperties, error) {
 	if state == nil {
 		return nil, fmt.Errorf("nil tunnel state")
@@ -64,10 +69,14 @@ func buildCloudflaredTunnelProperties(state *CloudflareTunnelState) (*connection
 	if err != nil {
 		return nil, fmt.Errorf("provisioned tunnel id %q is not a valid UUID: %w", state.TunnelID, err)
 	}
+	rawSecret, err := base64.StdEncoding.DecodeString(state.Secret)
+	if err != nil {
+		return nil, fmt.Errorf("provisioned tunnel secret is not valid base64: %w", err)
+	}
 	return &connection.TunnelProperties{
 		Credentials: connection.Credentials{
 			AccountTag:   state.AccountID,
-			TunnelSecret: []byte(state.Secret),
+			TunnelSecret: rawSecret,
 			TunnelID:     tunnelID,
 			Endpoint:     "",
 		},

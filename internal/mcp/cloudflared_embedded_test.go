@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"encoding/base64"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -28,11 +29,15 @@ func TestBuildCloudflaredTunnelPropertiesNamed(t *testing.T) {
 	require.NoError(t, err)
 
 	// A named tunnel, not a quick tunnel: QuickTunnelUrl must stay empty and
-	// the credential fields must map 1:1 from the persisted state.
+	// the credential fields must map from the persisted state. state.Secret is
+	// stored base64 and must be DECODED to the raw bytes cloudflared uses for
+	// the edge-registration HMAC.
+	state := fixtureTunnelState()
+	rawSecret, _ := base64.StdEncoding.DecodeString(state.Secret)
 	assert.Empty(t, props.QuickTunnelUrl)
-	assert.Equal(t, fixtureTunnelState().AccountID, props.Credentials.AccountTag)
-	assert.Equal(t, fixtureTunnelState().TunnelID, props.Credentials.TunnelID.String())
-	assert.Equal(t, []byte(fixtureTunnelState().Secret), props.Credentials.TunnelSecret)
+	assert.Equal(t, state.AccountID, props.Credentials.AccountTag)
+	assert.Equal(t, state.TunnelID, props.Credentials.TunnelID.String())
+	assert.Equal(t, rawSecret, props.Credentials.TunnelSecret)
 	assert.Empty(t, props.Credentials.Endpoint)
 }
 
@@ -42,6 +47,14 @@ func TestBuildCloudflaredTunnelPropertiesInvalidTunnelID(t *testing.T) {
 	_, err := buildCloudflaredTunnelProperties(state)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not a valid UUID")
+}
+
+func TestBuildCloudflaredTunnelPropertiesInvalidSecret(t *testing.T) {
+	state := fixtureTunnelState()
+	state.Secret = "!!!not-base64!!!"
+	_, err := buildCloudflaredTunnelProperties(state)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not valid base64")
 }
 
 func TestBuildCloudflaredTunnelPropertiesNilState(t *testing.T) {
