@@ -196,8 +196,13 @@ func provisionCloudflaredForWizard(ctx context.Context, cmd *cli.Command, cfNew 
 	// Refuse to double-provision: if a tunnel is already provisioned, surface
 	// it so the user can tear it down instead of silently orphaning the prior
 	// tunnel + DNS CNAME (and overwriting tunnel-state.json) on a re-run.
+	// Distinguish a corrupt/unreadable state file from a genuinely absent one:
+	// a non-ErrNotExist load error likely points at a real provisioned tunnel,
+	// so surface it rather than silently re-provisioning over it.
 	if prior, lerr := LoadCloudflareTunnelState(); lerr == nil && prior != nil {
 		return nil, "", fmt.Errorf("a tunnel (%s, hostname %s) is already provisioned; run `pinner mcp tunnel status`, then clean it up before re-provisioning", prior.TunnelID, prior.Hostname)
+	} else if lerr != nil && !errors.Is(lerr, os.ErrNotExist) {
+		return nil, "", fmt.Errorf("load provisioned Cloudflare tunnel state (file exists but is unreadable/corrupt): %w", lerr)
 	}
 	fmt.Printf("Provisioning Cloudflare tunnel %q for %q ...\n", name, hostname)
 	state, err := provisionCloudflareTunnel(ctx, c, account, zone, name, hostname)
