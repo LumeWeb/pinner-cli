@@ -437,9 +437,9 @@ For more help on any command: pinner <command> --help`,
 			}
 			return pinProvider()
 		}),
-		mcpadapter.WithChatGPTUpload(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
+		mcpadapter.WithUploadHandler(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
 			if uploadHandler == nil {
-				return nil, notInitErr("ChatGPT upload")
+				return nil, notInitErr("file upload")
 			}
 			return uploadHandler(ctx, reader, size, name, wait)
 		}),
@@ -451,7 +451,7 @@ For more help on any command: pinner <command> --help`,
 		}),
 		mcpadapter.WithUploadTaskManager(mcpadapter.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
 			if uploadHandler == nil {
-				return nil, notInitErr("ChatGPT upload")
+				return nil, notInitErr("file upload")
 			}
 			return uploadHandler(ctx, reader, size, name, wait)
 		}, 0)),

@@ -100,46 +100,9 @@ func openChatGPTInput(ctx context.Context, in ChatGPTFileInput, timeout time.Dur
 	return ref, body, size, nil
 }
 
-// ChatGPTUploadInput is the typed argument shape for upload_file.
-type ChatGPTUploadInput struct {
-	File ChatGPTFileInput `json:"file" jsonschema:"description=OpenAI file object with a temporary download URL."`
-	Name string           `json:"name,omitempty" jsonschema:"description=Optional upload name (defaults to the file name)."`
-	Wait bool             `json:"wait,omitempty" jsonschema:"description=Wait for pinning to complete before returning."`
-}
+// The standalone ChatGPTUploadDescriptor and chatGPTUploadTool were superseded
+// by the unified, transport-aware upload_file (NewUploadFileDescriptor), which
+// routes the OpenAI-tunnel url/data sources through the shared UploadHandler
+// executor. The shared helpers above (UploadHandler, chatgptFileMeta,
+// chatgptRelayOptions, openChatGPTInput) remain for the vault and async paths.
 
-// ChatGPTUploadDescriptor creates the directly visible tool descriptor. The
-// OpenAI metadata is additive and ignored by clients that do not understand it.
-func ChatGPTUploadDescriptor(handler ChatGPTUploadHandler) ToolDescriptor {
-	return ToolDescriptor{
-		Name:        "upload_file",
-		Title:       "Upload a ChatGPT file to Pinner",
-		Description: "Upload a user-selected ChatGPT file to Pinner. ChatGPT supplies the file reference; Pinner fetches it locally and uses its existing authenticated upload path.",
-		Category:    CategoryCore,
-		InputSchema: toolSchemaFor[ChatGPTUploadInput](),
-		Meta:        chatgptFileMeta(),
-		Handler:     chatGPTUploadTool(handler),
-	}
-}
-
-func chatGPTUploadTool(handler ChatGPTUploadHandler) PinnerToolHandler {
-	return func(ctx context.Context, request ToolRequest) (ToolResult, error) {
-		in, err := decodeArgsFor[ChatGPTUploadInput]("ChatGPT upload", handler != nil, request)
-		if err != nil {
-			return ToolResult{}, err
-		}
-		ref, body, size, err := openChatGPTInput(ctx, in.File, chatgptOpenTimeout)
-		if err != nil {
-			return ToolResult{}, err
-		}
-		defer body.Close()
-		name := ref.FileName
-		if in.Name != "" {
-			name = in.Name
-		}
-		// Bound the upload phase; see syncUploadBudget.
-		transferCtx, cancel := context.WithTimeout(ctx, syncUploadBudget(size))
-		defer cancel()
-		result, err := handler(transferCtx, body, size, name, in.Wait)
-		return wrapResult(result, err, "ChatGPT file upload completed or was queued.")
-	}
-}

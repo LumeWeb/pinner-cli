@@ -405,6 +405,7 @@ adapter.`,
 				// HTTP mux — all RPC flows through the tunnel protocol — so the
 				// remote upload_file branch must not be advertised there.
 				remoteUploadSupported: curlUpload != nil && cmd.String("tunnel") != "openai",
+				tunnelOpenAI:          cmd.String("tunnel") == "openai",
 				hasWizard:             hasWizard,
 				wizardW:               wizardW,
 				wizardS:               wizardS,
@@ -849,7 +850,7 @@ func tunnelFor(provider, domain, token, name, tunnelID string) (Tunnel, error) {
 type mcpServerOptions struct {
 	// prompts enables registration of the prompt templates.
 	prompts           bool
-	chatGPTUpload     ChatGPTUploadHandler
+	uploadHandler     UploadHandler
 	chatGPTVaultPut   ChatGPTVaultPutHandler
 	uploadTasks       *UploadTaskManager
 	relayURLUpload    RelayURLUploadHandler
@@ -901,10 +902,12 @@ func WithPinningProvider(provider PinningProviderFactory) MCPServerOption {
 	}
 }
 
-// WithChatGPTUpload registers the direct ChatGPT file-input tool.
-func WithChatGPTUpload(handler ChatGPTUploadHandler) MCPServerOption {
+// WithUploadHandler registers the authenticated IPFS upload executor used by
+// the upload_file tool's relay/data source modes (OpenAI tunnel) and the async
+// upload manager. Passing nil disables the relay path.
+func WithUploadHandler(handler UploadHandler) MCPServerOption {
 	return func(o *mcpServerOptions) {
-		o.chatGPTUpload = handler
+		o.uploadHandler = handler
 	}
 }
 
