@@ -109,14 +109,14 @@ func RunServiceInstallWizard(ctx context.Context, cmd *cli.Command, envFile stri
 			}
 		}
 	}
-	// Register a deferred rollback for the whole wizard run, not just the
-	// env-file write step: a fresh tunnel can be provisioned mid-wizard, and if
-	// any later step fails — or `resolveManagedServiceForInstall` (our caller)
-	// fails post-wizard validation, e.g. resolveCloudflaredPath — the billed
-	// tunnel + DNS CNAME + state file would otherwise be orphaned while the
-	// double-provision guard blocks re-runs. rollback stays armed until the
-	// env write succeeds; it is a no-op when no tunnel was provisioned
-	// (provisionedAPIKey == "").
+	// Register a deferred rollback covering failures *inside* this wizard run
+	// (any step after a fresh tunnel is provisioned, e.g. the env-file write).
+	// rollback stays armed until the env write succeeds; it is a no-op when no
+	// tunnel was provisioned (provisionedAPIKey == ""). Note this defer runs
+	// when this function returns, so it cannot cover the caller's follow-up
+	// validation; that gap is closed separately by ensuring the cloudflared
+	// binary inside this wizard (see the TunnelProviderCloudflared step), which
+	// is the only post-wizard validation input not already guaranteed here.
 	rollback := true
 	defer func() {
 		if rollback {
@@ -172,6 +172,16 @@ func RunServiceInstallWizard(ctx context.Context, cmd *cli.Command, envFile stri
 						s.ApiKey = strings.TrimSpace(key)
 					}
 				case TunnelProviderCloudflared:
+					// Ensure the cloudflared binary is available up front so
+					// the post-wizard validation (resolveCloudflaredPath) in
+					// resolveManagedServiceForInstall cannot fail after we
+					// provision + persist a billed tunnel. This runs before any
+					// provisioning, so a failure here orphans nothing and the
+					// user is told to fix the install rather than hit a
+					// post-write validation error.
+					if _, err := ensureCloudflaredBinary(ctx); err != nil {
+						return fmt.Errorf("cloudflared binary not available: %w", err)
+					}
 					// Reuse an already-provisioned tunnel when one exists;
 					// otherwise deep-link a token and provision the named
 					// tunnel + DNS route via the SDK, persisting the scoped
