@@ -1,0 +1,97 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "xyz.pinner/mcp",
+  "title": "Pinner MCP",
+  "description": "Pinner.xyz MCP server: pin to IPFS, deploy websites, and manage vaults, DNS, and IPNS.",
+  "repository": {
+    "url": "https://github.com/LumeWeb/pinner-cli",
+    "source": "github",
+    "id": "1127538562"
+  },
+  "version": "0.2.1",
+  "packages": [
+    {
+      "registryType": "oci",
+      "identifier": "ghcr.io/lumeweb/pinner:0.2.1",
+      "runtimeHint": "docker",
+      "transport": {
+        "type": "streamable-http",
+        "url": "https://{MCP_PUBLIC_URL}/mcp"
+      },
+      "runtimeArguments": [
+        {
+          "type": "named",
+          "name": "--mount",
+          "value": "type=volume,source={volume_name},target=/data",
+          "description": "Mount a persistent volume so the SQLite vault cache and config survive redeploys. Root it at the PINNER_HOME directory.",
+          "isRequired": true,
+          "isRepeated": false,
+          "variables": {
+            "volume_name": {
+              "description": "Name of the persistent Docker volume for Pinner state",
+              "format": "string",
+              "isRequired": true
+            }
+          }
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "MCP_AUTH_TOKEN",
+          "description": "Shared secret accepted as a Bearer token (or the OAuth resource-owner password when MCP_OAUTH is enabled)",
+          "format": "string",
+          "isSecret": true,
+          "isRequired": true
+        },
+        {
+          "name": "MCP_OAUTH",
+          "description": "Enable the OAuth 2.1 handshake for OAuth-expecting MCP clients (Claude.ai, ChatGPT, Copilot, Vertex)",
+          "format": "boolean",
+          "isSecret": false,
+          "isRequired": false
+        },
+        {
+          "name": "MCP_PUBLIC_URL",
+          "description": "Public base URL advertised in OAuth discovery metadata. Set to the deployed public HTTPS URL",
+          "format": "string",
+          "isSecret": false,
+          "isRequired": true
+        },
+        {
+          "name": "MCP_CORS",
+          "description": "Enable CORS for browser-based MCP clients, reflecting the request Origin",
+          "format": "boolean",
+          "isSecret": false,
+          "isRequired": false
+        },
+        {
+          "name": "MCP_HOST",
+          "description": "Local bind host for the HTTP transport",
+          "format": "string",
+          "isSecret": false,
+          "isRequired": false
+        },
+        {
+          "name": "PORT",
+          "description": "Bind port (PaaS-universal). Mapped to MCP_PORT by the entrypoint when unset",
+          "format": "string",
+          "isSecret": false,
+          "isRequired": false
+        },
+        {
+          "name": "LOG_LEVEL",
+          "description": "Log level: debug, info, warn, error",
+          "format": "string",
+          "isSecret": false,
+          "isRequired": false
+        }
+      ]
+    }
+  ],
+  "_meta": {
+    "io.modelcontextprotocol.registry/publisher-provided": {
+      "tool": "goreleaser",
+      "publisher": "xyz.pinner"
+    }
+  }
+}

@@ -10,6 +10,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -22,6 +23,7 @@ import (
 
 	"github.com/rs/cors"
 	"github.com/urfave/cli/v3"
+	"go.lumeweb.com/pinner-cli/build"
 	opcat "go.lumeweb.com/pinner-cli/internal/catalog"
 	"go.lumeweb.com/pinner-cli/internal/mcp/oauthstore"
 	"go.uber.org/zap"
@@ -59,6 +61,70 @@ var ansiEscapeRE = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*(
 
 // stripANSI removes ANSI/VT escape sequences from s.
 func stripANSI(s string) string { return ansiEscapeRE.ReplaceAllString(s, "") }
+
+// healthzHandler is the unauthenticated liveness probe used by PaaS/container
+// health checks (Railway, Koyeb, Render, Fly, Cloud Run, DO). It always returns
+// 200 {"ok":true} once the transport mux is serving. It is deliberately outside
+// the bearer-token/OAuth guards so orchestrators can probe without credentials.
+func healthzHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.Header().Set("Allow", "GET, HEAD")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+// serverCardTools mirrors the curated, directly-visible MCP tool surface. It is
+// served verbatim in the /.well-known/mcp/server-card.json static card so MCP
+// directories (Smithery et al.) can index Pinner's capabilities without a live
+// scan (which may be blocked by auth). Keep this list aligned with the curated
+// tool names promoted to DirectVisible at registration.
+var serverCardTools = []map[string]any{
+	{"name": "pins_add", "description": "Pin content to IPFS"},
+	{"name": "pins_list", "description": "List pinned items"},
+	{"name": "pins_status", "description": "Get pin status"},
+	{"name": "pins_rm", "description": "Unpin content"},
+	{"name": "vault_create", "description": "Create a new encrypted vault"},
+	{"name": "vault_restore", "description": "Restore a vault from a recovery seed"},
+	{"name": "vault_status", "description": "Get vault status"},
+	{"name": "vault_ls", "description": "List files in the vault"},
+	{"name": "auth_status", "description": "Check authentication status"},
+	{"name": "auth_sso", "description": "Sign in via out-of-band SSO"},
+	{"name": "websites_list", "description": "List deployed websites"},
+	{"name": "websites_validate", "description": "Validate a website deployment"},
+	{"name": "upload_file", "description": "Upload a file to IPFS"},
+	{"name": "search_tools", "description": "Search the tool catalog"},
+	{"name": "describe_tool", "description": "Get a tool's input schema"},
+	{"name": "invoke_tool", "description": "Invoke a catalog tool"},
+}
+
+// serverCardHandler serves the static MCP server card used by directory
+// scanners (Smithery, etc.). It is unauthenticated like /healthz.
+func serverCardHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.Header().Set("Allow", "GET, HEAD")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	card := map[string]any{
+		"serverInfo": map[string]any{
+			"name":    "pinner",
+			"version": build.Version,
+		},
+		"authentication": map[string]any{
+			"required": true,
+			"schemes":  []string{"bearer"},
+		},
+		"tools":     serverCardTools,
+		"resources": []any{},
+		"prompts":   []any{},
+	}
+	w.Header().Set("Content-Type", "application/json")
+	enc := json.NewEncoder(w)
+	_ = enc.Encode(card)
+}
 
 // log is the package-level zap logger for the MCP adapter and its out-of-band
 // auth coordinators. It is a settable variable so a user-configured logger
@@ -558,6 +624,15 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 	if curlUpload != nil {
 		curlUpload.registerHandlers(mux)
 	}
+	// Liveness probe for PaaS/container health checks (Railway, Koyeb, Render,
+	// Fly, Cloud Run, DO). It is intentionally unauthenticated and outside the
+	// bearer-token guard so orchestrators can probe readiness without
+	// credentials. Returns 200 {"ok":true} always once the mux is serving.
+	mux.HandleFunc("/healthz", healthzHandler)
+	// Static server card for MCP directory scanning (Smithery and others probe
+	// /.well-known/mcp/server-card.json to index tools without a live scan).
+	// Mounted unauthenticated like healthz so directory scanners can read it.
+	mux.HandleFunc("/.well-known/mcp/server-card.json", serverCardHandler)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
 			http.NotFound(w, r)
