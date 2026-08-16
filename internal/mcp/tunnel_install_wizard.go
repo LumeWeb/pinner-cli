@@ -107,19 +107,31 @@ func resolveCloudflareAccount(ctx context.Context, c cloudflare.Client) (cloudfl
 // having them paste the generated token back. It errors in non-interactive
 // mode when no token is supplied.
 func obtainCloudflareAPIToken(ctx context.Context, cmd *cli.Command) (string, error) {
-	// Prefer an explicitly-passed --api-key so a value the user typed on the
-	// CLI always wins over an ambient CLOUDFLARE_API_TOKEN in the environment
-	// (which can be stale). Fall back to the dedicated cloudflare flag (env
-	// CLOUDFLARE_API_TOKEN) only when --api-key was not explicitly set.
-	apiToken := ""
-	if cmd.IsSet(serviceApiKeyFlag) {
-		apiToken = strings.TrimSpace(cmd.String(serviceApiKeyFlag))
+	// Both --cloudflare-api-token and its alias --api-key source the same
+	// CLOUDFLARE_API_TOKEN env var, so when that var is present cmd.String()
+	// returns the env value for both even if neither flag was typed on the
+	// CLI. An explicitly-passed flag must still win over an ambient (possibly
+	// stale) token, so we compare each flag value against the raw env var: a
+	// value that differs from the env is a genuine CLI override; otherwise we
+	// fall back to the env value (identical either way). Precedence:
+	// --cloudflare-api-token > --api-key > env.
+	envToken := strings.TrimSpace(os.Getenv("CLOUDFLARE_API_TOKEN"))
+	apiToken := strings.TrimSpace(cmd.String(cloudflareTokenFlag))
+	apiKey := strings.TrimSpace(cmd.String(serviceApiKeyFlag))
+	// A CLI-typed value differs from the ambient env; honor it first.
+	if apiToken != "" && apiToken != envToken {
+		return apiToken, nil
 	}
-	if apiToken == "" {
-		apiToken = strings.TrimSpace(cmd.String(cloudflareTokenFlag))
+	if apiKey != "" && apiKey != envToken {
+		return apiKey, nil
 	}
+	// Nothing differs from env; any of the flag/env values (they are the same)
+	// is an acceptable token.
 	if apiToken != "" {
 		return apiToken, nil
+	}
+	if apiKey != "" {
+		return apiKey, nil
 	}
 	tokenURL := cloudflare.BuildTokenTemplateURL("Pinner MCP Tunnel")
 	if wizard.NonInteractive || cmd.Bool("agent") {
@@ -222,9 +234,15 @@ func runTunnelInstallWizard(ctx context.Context, cmd *cli.Command, ui *serviceIn
 		return err
 	}
 
-	// 6. Ensure the cloudflared binary is available.
-	if _, err := ensureCloudflaredBinary(ctx); err != nil {
+	// 6. Ensure the cloudflared binary is available. Capture the resolved
+	// path because a bin-dir download install is NOT placed on PATH: the
+	// follow-up `pinner mcp service install` uses resolveCloudflaredPath
+	// (bin-dir aware), but the user should still be told where it landed.
+	cfBin := ""
+	if p, err := ensureCloudflaredBinary(ctx); err != nil {
 		fmt.Printf("warning: %v\n", err)
+	} else {
+		cfBin = p
 	}
 
 	// 7. Write the service environment file (provider/domain/tunnel-token).
@@ -278,6 +296,12 @@ func runTunnelInstallWizard(ctx context.Context, cmd *cli.Command, ui *serviceIn
 		return fmt.Errorf("write MCP service environment file: %w", err)
 	}
 	fmt.Printf("Wrote MCP service environment file %s.\n", envFile)
+	if cfBin != "" {
+		// If cloudflared landed in the packed pinner bin dir rather than on
+		// PATH, tell the user: service install resolves it via the bin dir,
+		// but the end user may want it reachable as a plain command.
+		fmt.Printf("cloudflared binary at %s\n", cfBin)
+	}
 	fmt.Printf("Run `pinner mcp service install` to register it, or `pinner mcp --tunnel cloudflared --auth-token <secret>` to run it now.\n")
 	return nil
 }

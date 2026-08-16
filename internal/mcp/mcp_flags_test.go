@@ -98,3 +98,51 @@ func TestMCPServerFlagsFlagOverridesEnv(t *testing.T) {
 	require.Equal(t, "ngrok", tunnel)
 	require.Equal(t, 9999, port)
 }
+
+// TestObtainCloudflareAPITokenExplicitBeatsEnv verifies that an explicitly
+// passed --cloudflare-api-token wins over the shared CLOUDFLARE_API_TOKEN
+// environment source even though the sibling --api-key alias also sources the
+// same env var (which previously made cmd.IsSet(api-key) true and ignored the
+// explicit token).
+func TestObtainCloudflareAPITokenExplicitBeatsEnv(t *testing.T) {
+	t.Setenv("CLOUDFLARE_API_TOKEN", "stale-env-token")
+
+	var got string
+	cmd := &cli.Command{
+		Flags: serviceInstallFlags(),
+		Action: func(ctx context.Context, c *cli.Command) error {
+			v, err := obtainCloudflareAPIToken(ctx, c)
+			if err != nil {
+				return err
+			}
+			got = v
+			return nil
+		},
+	}
+	require.NoError(t, cmd.Run(context.Background(), []string{
+		"pinner", "mcp", "tunnel", "install",
+		"--cloudflare-api-token", "cli-override-token",
+	}))
+	require.Equal(t, "cli-override-token", got)
+}
+
+// TestObtainCloudflareAPITokenEnvFallback verifies that with no explicit flag
+// on the CLI, the ambient CLOUDFLARE_API_TOKEN env value is used.
+func TestObtainCloudflareAPITokenEnvFallback(t *testing.T) {
+	t.Setenv("CLOUDFLARE_API_TOKEN", "env-token")
+
+	var got string
+	cmd := &cli.Command{
+		Flags: serviceInstallFlags(),
+		Action: func(ctx context.Context, c *cli.Command) error {
+			v, err := obtainCloudflareAPIToken(ctx, c)
+			if err != nil {
+				return err
+			}
+			got = v
+			return nil
+		},
+	}
+	require.NoError(t, cmd.Run(context.Background(), []string{"pinner", "mcp", "tunnel", "install"}))
+	require.Equal(t, "env-token", got)
+}
