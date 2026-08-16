@@ -4,7 +4,10 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/urfave/cli/v3"
 	contentfs "go.lumeweb.com/ipfs-content/fs"
@@ -19,6 +22,12 @@ import (
 func Run(ctx context.Context, args []string) error {
 	cmd := NewRootCommand()
 	return cmd.Run(ctx, args)
+}
+
+// notInitErr returns the "not initialized" error shared by every lazily-wired
+// MCP dependency guard, so the message format cannot drift across call sites.
+func notInitErr(label string) error {
+	return fmt.Errorf("%s dependencies are not initialized", label)
 }
 
 // NewRootCommand creates and returns the root CLI command.
@@ -108,6 +117,16 @@ For more help on any command: pinner <command> --help`,
 	// alias of UploadHandler) that the vendored pinner_upload_file tool needs.
 	var uploadHandler mcpadapter.UploadHandler
 	var chatGPTVaultPut mcpadapter.ChatGPTVaultPutHandler
+	// localPathUpload is the co-located (stdio/local-mode) handler that backs
+	// the consolidated upload_file tool's co-located branch: it uploads
+	// a host-side file/directory/archive. It is built inside the wizard factory
+	// (where uploadSvc lives) and read by the WithLocalPathUpload option below.
+	var localPathUpload mcpadapter.LocalPathUploadHandler
+	// localPathVaultPut is the vault_put_path (SDIO/local-mode) handler: it
+	// writes a host-side file/directory/archive into the encrypted vault. It
+	// is built inside the wizard factory (where the vault service is
+	// available) and read by the WithLocalPathVaultPut option below.
+	var localPathVaultPut mcpadapter.LocalPathVaultPutHandler
 	root.Commands = append(root.Commands, mcpadapter.MCPCommand(root,
 		func() (mcpadapter.WebsitesWizardDeps, mcpadapter.SetupWizardDeps, mcpadapter.DomainWizardDeps, error) {
 			cfgMgr, err := configManagerFactory()
@@ -156,7 +175,7 @@ For more help on any command: pinner <command> --help`,
 			})
 			uploadHandler = func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
 				if name == "" {
-					name = "upload"
+					name = mcpadapter.DefaultUploadName
 				}
 				file, err := os.CreateTemp("", "pinner-mcp-upload-*")
 				if err != nil {
@@ -177,6 +196,89 @@ For more help on any command: pinner <command> --help`,
 				}
 				return result, nil
 			}
+			// resolvePath stats path, returns a not-exist error, and applies the
+			// upload name defaulting (filepath.Base, else "upload") when name is
+			// empty. Shared by localPathUpload and localPathVaultPut.
+			resolvePath := func(path, name string) (info os.FileInfo, resolved string, err error) {
+				info, err = os.Stat(path)
+				if err != nil {
+					if os.IsNotExist(err) {
+						return nil, "", fmt.Errorf("path does not exist: %s", path)
+					}
+					return nil, "", err
+				}
+				if name == "" {
+					name = filepath.Base(path)
+					if name == "" || name == "." || name == string(filepath.Separator) {
+						name = mcpadapter.DefaultUploadName
+					}
+				}
+				return info, name, nil
+			}
+
+			// localPathUpload is the co-located (stdio/local-mode) handler that
+			// backs the consolidated upload_file tool's co-located branch. It
+			// homes the file-vs-directory-vs-archive decision here, in the CLI
+			// layer where uploadSvc lives, so MCP only owns the tool surface.
+			localPathUpload = func(ctx context.Context, path, name string, wait bool, archiveMode string) (any, error) {
+				// Operator-set per-tool cap, applied to every local-path surface
+				// (single file, directory tree, or archive) so none can bypass
+				// the same total-transfer limit enforced on relay/DataURI/curl.
+				maxBytes := int64(cfgMgr.Config().GetMaxMCPUploadSize())
+				info, name, err := resolvePath(path, name)
+				if err != nil {
+					return nil, err
+				}
+				// Directory: upload the tree rooted at path. Reject up front if
+				// the aggregate (or any single entry) exceeds the cap.
+				if info.IsDir() {
+					if err := mcpadapter.CheckTreeSize(os.DirFS(path), maxBytes, mcpadapter.TreeSizeAggregate); err != nil {
+						return nil, err
+					}
+					result, err := uploadSvc.Upload(ctx, os.DirFS(path), name, wait)
+					if err != nil {
+						return nil, err
+					}
+					return result, nil
+				}
+				// Regular file (or unknown). Open it; *os.File satisfies the
+				// ReaderAtSeeker contract contentArchive needs for extraction.
+				file, err := os.Open(path)
+				if err != nil {
+					return nil, err
+				}
+				defer file.Close()
+				// In convert mode (default), sniff for an archive and upload its
+				// extracted contents; otherwise upload the single file as-is.
+				if mcpadapter.ParseArchiveMode(archiveMode) == mcpadapter.ArchiveConvert {
+					if _, isArc, serr := mcpadapter.SniffArchive(file); serr == nil && isArc {
+						vfs, closer, aerr := mcpadapter.OpenArchiveFS(ctx, file)
+						if aerr == nil {
+							defer closer()
+							if err := mcpadapter.CheckTreeSize(vfs, maxBytes, mcpadapter.TreeSizeAggregate); err != nil {
+								return nil, err
+							}
+							result, uerr := uploadSvc.Upload(ctx, vfs, name, wait)
+							if uerr != nil {
+								return nil, uerr
+							}
+							return result, nil
+						}
+					}
+				}
+				// Not an archive (or preserve mode): upload the file directly.
+				// Enforce the operator-set max_mcp_upload_size cap before transfer so
+				// the local-path surface cannot bypass the same limit applied to the
+				// relay/DataURI/curl surfaces.
+				if info.Size() > maxBytes {
+					return nil, fmt.Errorf("file %s (%d bytes) exceeds max_mcp_upload_size (%d)", path, info.Size(), maxBytes)
+				}
+				result, err := uploadSvc.Upload(ctx, contentfs.NewSingleFileFS(file, name), name, wait)
+				if err != nil {
+					return nil, err
+				}
+				return result, nil
+			}
 			chatGPTVaultPut = func(ctx context.Context, reader io.Reader, size int64, path string) (any, error) {
 				profile, err := vault.ResolveProfile("")
 				if err != nil {
@@ -188,6 +290,84 @@ For more help on any command: pinner <command> --help`,
 				}
 				defer vaultSvc.Close()
 				return vaultSvc.Put(ctx, reader, size, path, nil)
+			}
+
+			// localPathVaultPut is the vault_put_path handler (SDIO/local
+			// mode). It writes a host-side file/directory/archive into the
+			// encrypted vault: a directory is walked into one vault object
+			// per file via mcpadapter.DirToVault; a file is written as a
+			// single vault object, except in archive_mode=convert where an
+			// archive is extracted to a temp dir and then written per-file
+			// the same way. The vault service is built here, where profile
+			// resolution and service construction are available.
+			localPathVaultPut = func(ctx context.Context, path, vaultPath, archiveMode string) (any, error) {
+				// Operator-set per-tool cap, applied to every entry (single
+				// file, directory tree, or archive) so no local-path surface
+				// bypasses the same limit enforced on the other upload tools.
+				maxBytes := int64(cfgMgr.Config().GetMaxMCPUploadSize())
+				info, _, err := resolvePath(path, "")
+				if err != nil {
+					return nil, err
+				}
+				profile, err := vault.ResolveProfile("")
+				if err != nil {
+					return nil, err
+				}
+				vaultSvc, err := newVaultService(profile)
+				if err != nil {
+					return nil, err
+				}
+				defer vaultSvc.Close()
+				put := func(ctx context.Context, r io.Reader, size int64, vp string) (any, error) {
+					return vaultSvc.Put(ctx, r, size, vp, nil)
+				}
+				if info.IsDir() {
+					return mcpadapter.DirToVault(ctx, path, vaultPath, put, maxBytes)
+				}
+				// Regular file (or unknown). In convert mode, sniff for an
+				// archive and materialize its contents to a temp dir, then
+				// write each entry as a vault object under vaultPath.
+				if mcpadapter.ParseArchiveMode(archiveMode) == mcpadapter.ArchiveConvert {
+					file, err := os.Open(path)
+					if err != nil {
+						return nil, err
+					}
+					_, isArc, serr := mcpadapter.SniffArchive(file)
+					file.Close()
+					if serr == nil && isArc {
+						// Enforce the operator-set max_mcp_upload_size cap on the
+						// archive's extracted contents BEFORE materializing, so an
+						// archive larger than the cap (or a decompression bomb)
+						// cannot be fully extracted into the temp dir and into
+						// memory first. Reject it up front on the aggregate of all
+						// regular-file sizes, mirroring the upload convert path.
+						if cerr := checkArchiveTreeSize(ctx, path, maxBytes); cerr != nil {
+							return nil, cerr
+						}
+						tmp, err := os.MkdirTemp("", "pinner-vault-archive-*")
+						if err != nil {
+							return nil, err
+						}
+						defer os.RemoveAll(tmp)
+						if err := materializeArchive(ctx, path, tmp); err != nil {
+							return nil, err
+						}
+						return mcpadapter.DirToVault(ctx, tmp, vaultPath, put, maxBytes)
+					}
+				}
+				// Not an archive (or preserve mode): put the file as a single
+				// vault object. Enforce the operator-set max_mcp_upload_size cap so
+				// the local-path surface cannot bypass the limit applied to the
+				// relay/DataURI/curl surfaces.
+				if info.Size() > maxBytes {
+					return nil, fmt.Errorf("file %s (%d bytes) exceeds max_mcp_upload_size (%d)", path, info.Size(), maxBytes)
+				}
+				f, err := os.Open(path)
+				if err != nil {
+					return nil, err
+				}
+				defer f.Close()
+				return vaultSvc.Put(ctx, f, info.Size(), vaultPath, nil)
 			}
 
 			// Wire the resource factory with the services we just built.
@@ -248,25 +428,25 @@ For more help on any command: pinner <command> --help`,
 		mcpadapter.WithPrompts(),
 		mcpadapter.WithPinningProvider(func() (mcpadapter.PinningProvider, error) {
 			if pinProvider == nil {
-				return nil, fmt.Errorf("pinning provider dependencies are not initialized")
+				return nil, notInitErr("pinning provider")
 			}
 			return pinProvider()
 		}),
 		mcpadapter.WithChatGPTUpload(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
 			if uploadHandler == nil {
-				return nil, fmt.Errorf("ChatGPT upload dependencies are not initialized")
+				return nil, notInitErr("ChatGPT upload")
 			}
 			return uploadHandler(ctx, reader, size, name, wait)
 		}),
 		mcpadapter.WithChatGPTVaultPut(func(ctx context.Context, reader io.Reader, size int64, path string) (any, error) {
 			if chatGPTVaultPut == nil {
-				return nil, fmt.Errorf("ChatGPT vault dependencies are not initialized")
+				return nil, notInitErr("ChatGPT vault")
 			}
 			return chatGPTVaultPut(ctx, reader, size, path)
 		}),
 		mcpadapter.WithUploadTaskManager(mcpadapter.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
 			if uploadHandler == nil {
-				return nil, fmt.Errorf("ChatGPT upload dependencies are not initialized")
+				return nil, notInitErr("ChatGPT upload")
 			}
 			return uploadHandler(ctx, reader, size, name, wait)
 		}, 0)),
@@ -278,15 +458,50 @@ For more help on any command: pinner <command> --help`,
 		// by passing an explicit allowlist here.
 		mcpadapter.WithRelayURLUpload(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
 			if uploadHandler == nil {
-				return nil, fmt.Errorf("upload dependencies are not initialized")
+				return nil, notInitErr("upload")
 			}
 			return uploadHandler(ctx, reader, size, name, wait)
 		}, nil),
 		mcpadapter.WithDataURIUpload(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
 			if uploadHandler == nil {
-				return nil, fmt.Errorf("upload dependencies are not initialized")
+				return nil, notInitErr("upload")
 			}
 			return uploadHandler(ctx, reader, size, name, wait)
+		}),
+		// Local-path handler for the consolidated upload_file tool's co-located
+		// branch: upload of a host-side file, directory, or archive. Only
+		// meaningful when the MCP server is co-located with the caller's files
+		// (stdio/local); the handler homes the file-vs-directory-vs-archive
+		// decision via uploadSvc + ipfs-content.
+		mcpadapter.WithLocalPathUpload(func(ctx context.Context, path, name string, wait bool, archiveMode string) (any, error) {
+			if localPathUpload == nil {
+				return nil, notInitErr("local path upload")
+			}
+			return localPathUpload(ctx, path, name, wait, archiveMode)
+		}),
+		// vault_put_path: SDIO/local-mode put of a host-side file, directory,
+		// or archive into the encrypted vault. Only meaningful when the MCP
+		// server is co-located with the caller's files (stdio/local); the
+		// handler homes the file-vs-directory-vs-archive decision via the
+		// vault service + ipfs-content.
+		mcpadapter.WithLocalPathVaultPut(func(ctx context.Context, path, vaultPath, archiveMode string) (any, error) {
+			if localPathVaultPut == nil {
+				return nil, notInitErr("local path vault")
+			}
+			return localPathVaultPut(ctx, path, vaultPath, archiveMode)
+		}),
+		// Honor the configured max_mcp_upload_size (default 1 GiB when unset)
+		// as the per-tool file-upload cap for the relay URL, data URI, the
+		// consolidated upload_file (local + presigned) surfaces, and vault.
+		// Resolved lazily from the config manager at server setup, mirroring
+		// the wizard factory pattern; the local-path handlers also enforce the
+		// same cap on single-file sources before transfer.
+		mcpadapter.WithMaxMCPUploadSize(func() uint64 {
+			cfgMgr, err := configManagerFactory()
+			if err != nil {
+				return 0
+			}
+			return cfgMgr.Config().GetMaxMCPUploadSize()
 		}),
 		// Wire the production operation-catalog deps bundle so the
 		// compiler-derived MCP surface (auth, vault-setup, vault, pins,
@@ -297,4 +512,75 @@ For more help on any command: pinner <command> --help`,
 	))
 
 	return root
+}
+
+// checkArchiveTreeSize opens the archive at srcPath as a virtual filesystem and
+// rejects it up front if the aggregate of all regular-file sizes (or any single
+// entry) exceeds maxBytes. It lets the vault_put_path archive convert path
+// enforce the operator-set max_mcp_upload_size cap BEFORE materializing an
+// archive into a temp dir and into memory, so an oversized archive or
+// decompression bomb cannot bypass the cap. Returns nil when the archive fits.
+func checkArchiveTreeSize(ctx context.Context, srcPath string, maxBytes int64) error {
+	arc, err := os.Open(srcPath)
+	if err != nil {
+		return err
+	}
+	defer arc.Close()
+	vfs, closer, err := mcpadapter.OpenArchiveFS(ctx, arc)
+	if err != nil {
+		return err
+	}
+	defer closer()
+	return mcpadapter.CheckTreeSize(vfs, maxBytes, mcpadapter.TreeSizeAggregate)
+}
+
+// materializeArchive extracts the archive at srcPath into the existing local
+// directory dstDir by walking its virtual filesystem (from ipfs-content) and
+// writing each entry out to disk. It is used by the vault_put_path archive
+// convert path, which must hand DirToVault a real local directory. Returns the
+// first error encountered; on error dstDir may be partially populated (the
+// caller is responsible for cleanup via os.RemoveAll).
+func materializeArchive(ctx context.Context, srcPath, dstDir string) error {
+	src, err := os.Open(srcPath)
+	if err != nil {
+		return err
+	}
+	defer src.Close()
+	vfs, closer, err := mcpadapter.OpenArchiveFS(ctx, src)
+	if err != nil {
+		return err
+	}
+	defer closer()
+	return fs.WalkDir(vfs, ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		// Zip-Slip guard: entry paths come from an untrusted archive, so reject
+		// any that could escape dstDir (absolute paths, "..", or backslash
+		// tricks). filepath.IsLocal verifies the path is relative, has a single
+		// non-empty element come after a leading dot, and contains no ".." or
+		// volume name. We additionally re-verify the joined, cleaned result is
+		// still inside dstDir as a defense-in-depth check against any
+		// separator/alias edge on Windows.
+		rel := filepath.Clean(filepath.FromSlash(p))
+		if !filepath.IsLocal(rel) {
+			return fmt.Errorf("archive entry escapes destination directory: %q", p)
+		}
+		dest := filepath.Join(dstDir, rel)
+		cleanDest := filepath.Clean(dest)
+		if !strings.HasPrefix(cleanDest, dstDir+string(filepath.Separator)) && cleanDest != dstDir {
+			return fmt.Errorf("archive entry escapes destination directory: %q", p)
+		}
+		if d.IsDir() {
+			return os.MkdirAll(cleanDest, 0o755)
+		}
+		data, err := fs.ReadFile(vfs, p)
+		if err != nil {
+			return err
+		}
+		if err := os.MkdirAll(filepath.Dir(cleanDest), 0o755); err != nil {
+			return err
+		}
+		return os.WriteFile(cleanDest, data, 0o644)
+	})
 }

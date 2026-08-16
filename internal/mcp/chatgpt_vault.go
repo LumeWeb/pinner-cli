@@ -43,10 +43,7 @@ func ChatGPTVaultPutDescriptor(handler ChatGPTVaultPutHandler) ToolDescriptor {
 			writeCtx, cancel := context.WithTimeout(ctx, relayTimeout)
 			defer cancel()
 			result, err := handler(writeCtx, body, size, in.VaultPath)
-			if err != nil {
-				return ToolResult{}, err
-			}
-			return ToolResult{StructuredContent: result, Text: "ChatGPT file stored in the vault."}, nil
+			return wrapResult(result, err, "ChatGPT file stored in the vault.")
 		},
 	}
 }

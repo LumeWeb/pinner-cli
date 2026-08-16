@@ -19,6 +19,17 @@ const (
 	maxRelayRedirects    = 3
 )
 
+// effectiveRelayMaxBytes returns maxBytes if positive, else the package
+// default relay cap. A maxBytes of 0 means "not configured", so callers that
+// thread a config-driven cap through can keep the established 512 MiB default
+// behavior when the option is unset.
+func effectiveRelayMaxBytes(maxBytes int64) int64 {
+	if maxBytes > 0 {
+		return maxBytes
+	}
+	return int64(defaultRelayMaxBytes)
+}
+
 var (
 	ErrInvalidFileReference = errors.New("invalid file reference")
 	ErrFileTooLarge         = errors.New("file exceeds relay limit")

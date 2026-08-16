@@ -20,7 +20,8 @@ type DataURIUploadInput struct {
 // it. Bytes are decoded by Pinner from the data URI, never re-emitted into the
 // model context. The base64 payload is streamed to the upload handler, not
 // materialized in memory.
-func DataURIUploadDescriptor(handler DataURIUploadHandler) ToolDescriptor {
+func DataURIUploadDescriptor(handler DataURIUploadHandler, maxBytes int64) ToolDescriptor {
+	maxBytes = effectiveRelayMaxBytes(maxBytes)
 	return ToolDescriptor{
 		Name:        "upload_data",
 		Title:       "Upload a file from a data URI",
@@ -38,7 +39,7 @@ func DataURIUploadDescriptor(handler DataURIUploadHandler) ToolDescriptor {
 			if in.File == "" {
 				return ToolResult{}, fmt.Errorf("file (data URI) is required")
 			}
-			reader, opt, err := parseFileDataURI(in.File, defaultRelayMaxBytes)
+			reader, opt, err := parseFileDataURI(in.File, maxBytes)
 			if err != nil {
 				return ToolResult{}, err
 			}
@@ -47,16 +48,13 @@ func DataURIUploadDescriptor(handler DataURIUploadHandler) ToolDescriptor {
 				name = opt.Name
 			}
 			if name == "" {
-				name = "upload"
+				name = DefaultUploadName
 			}
 			// Bound the upload phase; see syncUploadBudget.
 			transferCtx, cancel := context.WithTimeout(ctx, syncUploadBudget(opt.Size))
 			defer cancel()
 			result, err := handler(transferCtx, reader, opt.Size, name, in.Wait)
-			if err != nil {
-				return ToolResult{}, err
-			}
-			return ToolResult{StructuredContent: result, Text: "Data URI uploaded."}, nil
+			return wrapResult(result, err, "Data URI uploaded.")
 		},
 	}
 }

@@ -17,7 +17,7 @@ import (
 // non-empty URL carrying the /upload/ route, over the stdio loopback transport
 // (baseURL unset → a random-port listener is created and stopped after).
 func TestCurlUploadMint(t *testing.T) {
-	cu := NewCurlUpload(nil, 0)
+	cu := NewHTTPUpload(nil, 0)
 	defer cu.Stop(context.Background())
 
 	url := cu.mint("myfile.txt", time.Minute)
@@ -42,7 +42,7 @@ func TestCurlUploadPutHandler(t *testing.T) {
 		return map[string]any{"cid": "QmCurl", "bytes": len(b)}, nil
 	}, 0)
 
-	cu := NewCurlUpload(mgr, 1024)
+	cu := NewHTTPUpload(mgr, 1024)
 	defer cu.Stop(context.Background())
 
 	url := cu.mint("uploaded.txt", time.Minute)
@@ -87,7 +87,7 @@ func TestCurlUploadPutHandler(t *testing.T) {
 // TestCurlUploadPutRejectsWrongMethod: a GET (or any non-PUT) against a minted
 // endpoint must be rejected with 405, not accepted.
 func TestCurlUploadPutRejectsWrongMethod(t *testing.T) {
-	cu := NewCurlUpload(nil, 0)
+	cu := NewHTTPUpload(nil, 0)
 	defer cu.Stop(context.Background())
 	url := cu.mint("m.txt", time.Minute)
 	require.NotEmpty(t, url)
@@ -105,7 +105,7 @@ func TestCurlUploadEndpointExpired(t *testing.T) {
 		io.Copy(io.Discard, reader)
 		return map[string]any{"cid": "QmX"}, nil
 	}, 0)
-	cu := NewCurlUpload(mgr, 1024)
+	cu := NewHTTPUpload(mgr, 1024)
 	defer cu.Stop(context.Background())
 
 	url := cu.mint("e.txt", time.Minute)
@@ -133,7 +133,7 @@ func TestCurlUploadOversizeBodyRejected(t *testing.T) {
 	}, 0)
 
 	// Tight cap (32 bytes) so the oversize body trips MaxBytesReader immediately.
-	cu := NewCurlUpload(mgr, 32)
+	cu := NewHTTPUpload(mgr, 32)
 	defer cu.Stop(context.Background())
 
 	url := cu.mint("big.txt", time.Minute)
@@ -156,19 +156,19 @@ func mustPut(t *testing.T, url, body string) *http.Request {
 	return req
 }
 
-// TestCurlUploadToolDescriptor verifies the upload_curl tool descriptor mints
-// an endpoint and returns a curl command + handle-poll hints in the structured
-// content, and that a bad TTL is rejected.
+// TestCurlUploadToolDescriptor verifies the unified upload_file tool mints an
+// endpoint (remote branch) and returns a curl command + handle-poll hints in
+// the structured content, and that a bad TTL is rejected.
 func TestCurlUploadToolDescriptor(t *testing.T) {
 	mgr := NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
 		io.Copy(io.Discard, reader)
 		return map[string]any{"cid": "QmD"}, nil
 	}, 0)
-	cu := NewCurlUpload(mgr, 1024)
+	cu := NewHTTPUpload(mgr, 1024)
 	defer cu.Stop(context.Background())
 
-	desc := CurlUploadDescriptor(cu)
-	require.Equal(t, "upload_curl", desc.Name)
+	desc := NewUploadFileDescriptor(false, nil, cu)
+	require.Equal(t, "upload_file", desc.Name)
 
 	res, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{
 		"name": "fromcurltool",
@@ -193,7 +193,7 @@ func TestCurlUploadToolDescriptor(t *testing.T) {
 // sweeps expired, never-used tokens out of the map so a long-lived server does
 // not accumulate permanent entries (a Kody finding).
 func TestCurlUploadPrunesExpiredTokens(t *testing.T) {
-	cu := NewCurlUpload(nil, 0)
+	cu := NewHTTPUpload(nil, 0)
 	defer cu.Stop(context.Background())
 
 	// Pin the clock so we can advance it deterministically.
