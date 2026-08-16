@@ -38,7 +38,7 @@ func TestValidateCloudflaredRequiresProvisionedState(t *testing.T) {
 	require.NoError(t, SaveCloudflareTunnelState(&CloudflareTunnelState{
 		Provider:  TunnelProviderCloudflared,
 		AccountID: "acct-1", TunnelID: "tun-1", TunnelName: "pin",
-		Secret: "c2VjcmV0", Token: "jwt", Hostname: "mcp.example.com",
+		Secret: tunnelFixtureSecret(), Token: "jwt", Hostname: "mcp.example.com",
 	}))
 	_, err = validateServiceEnvironment(envPath)
 	if _, lpErr := exec.LookPath("cloudflared"); lpErr == nil {
@@ -64,10 +64,67 @@ func TestValidateCloudflaredRequiresAuthToken(t *testing.T) {
 	require.NoError(t, SaveCloudflareTunnelState(&CloudflareTunnelState{
 		Provider:  TunnelProviderCloudflared,
 		AccountID: "acct-1", TunnelID: "tun-1", TunnelName: "pin",
-		Secret: "c2VjcmV0", Token: "jwt", Hostname: "mcp.example.com",
+		Secret: tunnelFixtureSecret(), Token: "jwt", Hostname: "mcp.example.com",
 	}))
 
 	_, err := validateServiceEnvironment(envPath)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "MCP_AUTH_TOKEN is required")
+}
+
+// TestValidateCloudflaredDomainMismatch verifies that validation rejects an env
+// file whose MCP_DOMAIN does not match the provisioned tunnel hostname, so the
+// running tunnel can never silently serve a different domain than the env file
+// declares.
+func TestValidateCloudflaredDomainMismatch(t *testing.T) {
+	dir := t.TempDir()
+	envPath := filepath.Join(dir, "mcp.env")
+	require.NoError(t, WriteServiceEnvironment(envPath, ServiceEnvironment{
+		"MCP_TUNNEL_PROVIDER": "cloudflared",
+		"MCP_DOMAIN":          "other.example.com",
+		"MCP_AUTH_TOKEN":      fmt.Sprintf("fixture-token-%d", time.Now().UnixNano()),
+	}))
+
+	orig := tunnelStatePath
+	tunnelStatePath = func() (string, error) { return filepath.Join(dir, "tunnel-state.json"), nil }
+	defer func() { tunnelStatePath = orig }()
+	require.NoError(t, SaveCloudflareTunnelState(&CloudflareTunnelState{
+		Provider:  TunnelProviderCloudflared,
+		AccountID: "acct-1", TunnelID: "tun-1", TunnelName: "pin",
+		Secret: tunnelFixtureSecret(), Token: "jwt", Hostname: "mcp.example.com",
+	}))
+
+	_, err := validateServiceEnvironment(envPath)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "does not match the provisioned tunnel hostname")
+}
+
+// TestValidateCloudflaredDomainMatch verifies that a matching MCP_DOMAIN is
+// accepted (scheme/case-insensitive), so a valid config round-trips.
+func TestValidateCloudflaredDomainMatch(t *testing.T) {
+	dir := t.TempDir()
+	envPath := filepath.Join(dir, "mcp.env")
+	require.NoError(t, WriteServiceEnvironment(envPath, ServiceEnvironment{
+		"MCP_TUNNEL_PROVIDER": "cloudflared",
+		"MCP_DOMAIN":          "HTTPS://MCP.Example.com",
+		"MCP_AUTH_TOKEN":      fmt.Sprintf("fixture-token-%d", time.Now().UnixNano()),
+	}))
+
+	orig := tunnelStatePath
+	tunnelStatePath = func() (string, error) { return filepath.Join(dir, "tunnel-state.json"), nil }
+	defer func() { tunnelStatePath = orig }()
+	require.NoError(t, SaveCloudflareTunnelState(&CloudflareTunnelState{
+		Provider:  TunnelProviderCloudflared,
+		AccountID: "acct-1", TunnelID: "tun-1", TunnelName: "pin",
+		Secret: tunnelFixtureSecret(), Token: "jwt", Hostname: "mcp.example.com",
+	}))
+
+	_, err := validateServiceEnvironment(envPath)
+	if _, lpErr := exec.LookPath("cloudflared"); lpErr == nil {
+		require.NoError(t, err)
+	} else {
+		// Not on PATH: validation fails on the exec lookup, not on the domain.
+		require.Error(t, err)
+		require.NotContains(t, err.Error(), "does not match")
+	}
 }

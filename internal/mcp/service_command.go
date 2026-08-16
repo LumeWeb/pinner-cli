@@ -232,14 +232,21 @@ func validateServiceEnvironment(envFile string) (TunnelProvider, error) {
 			return "", fmt.Errorf("ngrok executable not found on PATH: %w", err)
 		}
 	case TunnelProviderCloudflared:
-		if _, err := LoadCloudflareTunnelState(); err != nil {
+		state, err := LoadCloudflareTunnelState()
+		if err != nil {
 			return "", fmt.Errorf("no provisioned Cloudflare tunnel found: run `pinner mcp tunnel install` or `pinner mcp service install` first (%v)", err)
 		}
-		// The tunnel's public hostname is the domain but must be present in
-		// the env file; rejecting a missing MCP_DOMAIN up front avoids a
-		// delayed serve-time failure in cloudflaredTunnel.Start.
-		if strings.TrimSpace(env["MCP_DOMAIN"]) == "" {
+		// The tunnel's public hostname is the domain and must be present in,
+		// and consistent with, the env file. Rejecting a missing OR mismatched
+		// MCP_DOMAIN up front avoids a delayed serve-time failure where the
+		// running tunnel serves a different hostname than the env file
+		// declares.
+		domain := strings.TrimSpace(env["MCP_DOMAIN"])
+		if domain == "" {
 			return "", errors.New("MCP_DOMAIN is required for cloudflared")
+		}
+		if !strings.EqualFold(bareHostname(domain), bareHostname(state.Hostname)) {
+			return "", fmt.Errorf("MCP_DOMAIN %q does not match the provisioned tunnel hostname %q; re-run `pinner mcp tunnel install`", domain, state.Hostname)
 		}
 		if strings.TrimSpace(env["MCP_AUTH_TOKEN"]) == "" {
 			return "", errors.New("MCP_AUTH_TOKEN is required for public HTTP MCP tunnels (use --auth-token or set it in the environment)")
