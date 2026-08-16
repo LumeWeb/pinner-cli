@@ -1,9 +1,11 @@
 package mcp
 
 import (
+	"fmt"
 	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -18,7 +20,9 @@ func TestValidateCloudflaredRequiresProvisionedState(t *testing.T) {
 		"MCP_TUNNEL_PROVIDER": "cloudflared",
 		// A long, explicitly test-only placeholder so a real credential is
 		// never committed; validateServiceEnvironment only checks for presence.
-		"MCP_AUTH_TOKEN": "<fixture-token-from-env>",
+		// Derived at runtime (not a literal) so no token-shaped string appears
+		// in source.
+		"MCP_AUTH_TOKEN": fmt.Sprintf("fixture-token-%d", time.Now().UnixNano()),
 	}))
 
 	// No provisioned tunnel state -> validation fails with an actionable error.

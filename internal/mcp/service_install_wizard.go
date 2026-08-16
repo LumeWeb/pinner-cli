@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
@@ -160,9 +161,9 @@ func RunServiceInstallWizard(ctx context.Context, cmd *cli.Command, envFile stri
 						s.Domain = existing.Hostname
 						s.TunnelName = existing.TunnelName
 						s.TunnelToken = existing.Token
-					} else if existing == nil {
-						// No tunnel provisioned yet (lerr is os.ErrNotExist or
-						// nil): provision a new one.
+					} else if errors.Is(lerr, os.ErrNotExist) || (lerr == nil && existing == nil) {
+						// No tunnel provisioned yet (no persisted state, or a
+						// nil error with nil state): provision a new one.
 						state, _, perr := provisionCloudflaredForWizard(ctx, cmd, cloudflare.New)
 						if perr != nil {
 							return perr
@@ -170,6 +171,12 @@ func RunServiceInstallWizard(ctx context.Context, cmd *cli.Command, envFile stri
 						s.Domain = state.Hostname
 						s.TunnelName = state.TunnelName
 						s.TunnelToken = state.Token
+					} else {
+						// Existing state exists but is corrupt or unreadable
+						// (parse failure, permission, I/O). Surface it rather
+						// than silently provisioning a fresh tunnel that would
+						// orphan the existing tunnel and its DNS CNAME.
+						return fmt.Errorf("load provisioned Cloudflare tunnel state: %w", lerr)
 					}
 				case TunnelProviderNgrok:
 					if s.TunnelName == "" {
