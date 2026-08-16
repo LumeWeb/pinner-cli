@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/pterm/pterm"
+	"github.com/pterm/pterm/putils"
 	"go.lumeweb.com/pinner-cli/internal/cli/wizard"
 	"go.lumeweb.com/pinner-cli/internal/mcp/install"
 )
@@ -42,6 +43,31 @@ func NewPTermInstallUI(welcomeText, completionText string) *PTermInstallUI {
 	return &PTermInstallUI{
 		PTermUI: wizard.NewPTermUI(welcomeText, completionText),
 	}
+}
+
+// ShowWelcome renders the mcp install welcome banner, mirroring the sibling
+// wizards (setup, websites, domains) so the ASCII brand mark is never blank.
+func (ui *PTermInstallUI) ShowWelcome() error {
+	if err := pterm.DefaultBigText.WithLetters(
+		putils.LettersFromStringWithStyle("MCP", pterm.NewStyle(pterm.FgCyan)),
+	).Render(); err != nil {
+		return fmt.Errorf("failed to render welcome banner: %w", err)
+	}
+
+	pterm.Println()
+
+	pterm.DefaultHeader.WithFullWidth().Println("MCP Install Wizard")
+	pterm.Println()
+
+	pterm.DefaultParagraph.Println(
+		"This wizard will guide you through installing the pinner MCP server into " +
+			"your coding agents' configuration files (Claude Code, Claude Desktop, VS " +
+			"Code, Cursor, Codex, Gemini CLI, OpenCode, Zed).",
+	)
+
+	pterm.Println()
+
+	return nil
 }
 
 // SelectAgents implements the interactive multi-select over candidate agents,
