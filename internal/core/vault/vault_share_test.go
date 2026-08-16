@@ -64,6 +64,15 @@ func TestShareAcceptPinsCopyAndLedgers(t *testing.T) {
 		t.Fatalf("accepted file size = %d, want %d", f.Size, len("shared-content-from-another-profile"))
 	}
 
+	// The re-seal step must push the corrected size into the object's sealed
+	// FileMetadata (the final PinObject carries it), so a sync-down on another
+	// device reports the same size rather than the 0 placeholder.
+	if m, merr := ParseFileMetadata(fake.pinnedMeta); merr != nil {
+		t.Fatalf("parse re-sealed metadata: %v", merr)
+	} else if m.Size != int64(len("shared-content-from-another-profile")) {
+		t.Fatalf("sealed object size = %d, want %d", m.Size, len("shared-content-from-another-profile"))
+	}
+
 	// The original file row must be untouched (ShareAccept pins a NEW object —
 	// it never overwrites an existing path).
 	origStat, err := svc.Stat(ctx, "vault:/docs/orig.txt")

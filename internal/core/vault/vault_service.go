@@ -1167,25 +1167,34 @@ func (s *vaultService) ShareAccept(ctx context.Context, vaultPath, shareURL, tar
 	counter := &byteCounter{n: &n}
 	go func() {
 		// Copy the shared stream into the pipe while tallying the real byte
-		// count (TeeReader feeds the counter as bytes pass through). Put
-		// cannot return until it drains the pipe, so n is settled before the
-		// next statement reads it; a failed download is propagated via
-		// CloseWithError so Put refuses the object instead of pinning partial
-		// or empty content.
+		// count (TeeReader feeds the counter as bytes pass through). A failed
+		// download is propagated via CloseWithError so Put refuses the object
+		// rather than pinning partial or empty content.
 		var werr error
 		_, werr = io.Copy(pw, io.TeeReader(rc, counter))
 		pw.CloseWithError(werr)
 	}()
 	f, err := s.Put(ctx, pr, 0, vp.FullPath(), nil)
 	if err != nil {
+		// Put bailed before draining the pipe (e.g. upload failure): the
+		// writer goroutine would block forever in pw.Write holding the Sia
+		// download open. Unblock it by failing the reader side.
+		pr.CloseWithError(err)
 		return nil, fmt.Errorf("failed to pin shared content copy: %w", err)
 	}
 
-	// Reconcile the true size (counted during the stream) onto the row so
-	// stat/ls/sync report the actual byte count rather than a 0 placeholder.
-	if n > 0 && f.Size != n {
-		if uerr := s.db.Model(&File{}).Where("id = ?", f.ID).Update("size", n).Error; uerr == nil {
-			f.Size = n
+	// Reconcile the true size (counted during the stream) onto BOTH the local
+	// row and the sealed object metadata, so stat/ls and cross-device sync all
+	// report the actual byte count rather than the 0 placeholder Put sealed at
+	// upload time (the shared object's size is unknown until it streams).
+	if n > 0 {
+		if f.Size != n {
+			if uerr := s.db.Model(&File{}).Where("id = ?", f.ID).Update("size", n).Error; uerr == nil {
+				f.Size = n
+			}
+		}
+		if oerr := s.resealObjectSize(ctx, sdk, f.ObjectKey, n); oerr != nil {
+			return nil, fmt.Errorf("failed to update shared copy size in object metadata: %w", oerr)
 		}
 	}
 
@@ -1452,6 +1461,39 @@ func (s *vaultService) SetProvenance(ctx context.Context, vaultPath, createdBy, 
 	record.AgentID = meta.AgentID
 	record.SessionID = meta.SessionID
 	return &record, nil
+}
+
+// resealObjectSize re-seals a just-accepted object's FileMetadata with the
+// real byte count and re-pins it in place. ShareAccept streams the shared
+// content into Put with a size placeholder (the Sia SDK exposes the shared
+// object's size only once it streams), so after the stream completes this
+// corrects the sealed Size so cross-device sync-down reports the true size
+// instead of the placeholder.
+func (s *vaultService) resealObjectSize(ctx context.Context, sdk sdkClient, objectKeyHex string, size int64) error {
+	objHash, err := parseHash256(objectKeyHex)
+	if err != nil {
+		return fmt.Errorf("failed to parse object key: %w", err)
+	}
+	obj, err := sdk.Object(ctx, objHash)
+	if err != nil {
+		return fmt.Errorf("failed to fetch object from indexer: %w", err)
+	}
+	var meta FileMetadata
+	if raw := obj.Metadata(); len(raw) > 0 {
+		if m, merr := ParseFileMetadata(raw); merr == nil {
+			meta = m
+		}
+	}
+	meta.Size = size
+	metaJSON, err := meta.JSON()
+	if err != nil {
+		return fmt.Errorf("failed to encode metadata: %w", err)
+	}
+	obj.UpdateMetadata(metaJSON)
+	if perr := sdk.PinObject(ctx, obj); perr != nil {
+		return fmt.Errorf("failed to re-pin object with corrected size: %w", perr)
+	}
+	return nil
 }
 
 // provenanceFromMetadata extracts best-effort provenance keys created_by /
