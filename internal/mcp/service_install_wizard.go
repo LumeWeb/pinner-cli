@@ -155,7 +155,7 @@ func RunServiceInstallWizard(ctx context.Context, cmd *cli.Command, envFile stri
 						// explicitly requested a different hostname, fail loudly
 						// rather than silently serving a domain that differs from
 						// the one that was provisioned and validated.
-						if s.Domain != "" && !strings.EqualFold(s.Domain, existing.Hostname) {
+						if s.Domain != "" && !strings.EqualFold(bareHostname(s.Domain), bareHostname(existing.Hostname)) {
 							return fmt.Errorf("requested domain %q does not match provisioned tunnel hostname %q; re-run `pinner mcp tunnel install --domain %s` to re-provision", s.Domain, existing.Hostname, s.Domain)
 						}
 						s.Domain = existing.Hostname
