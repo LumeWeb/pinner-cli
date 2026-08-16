@@ -261,7 +261,7 @@ func (w *InstallWizard) writeConfig(s *InstallState) error {
 		// stdio-only). Never write a broken {type,http,url:""} when a real
 		// http entry is expected but no public URL was produced.
 		if s.PublicURL == "" && anySupportsTransport(s.Agents, s.Transport) {
-			return fmt.Errorf("http install is not yet supported by this build; use stdio (the default) instead")
+			return fmt.Errorf("http install requires a service public URL; use --service or pass --public-url, or choose stdio")
 		}
 		serverCfg.Type = s.Transport
 		serverCfg.URL = s.PublicURL
