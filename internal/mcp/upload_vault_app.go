@@ -82,7 +82,7 @@ func vaultUploadSubmitDescriptor(vu *vaultHTTPUpload) ToolDescriptor {
 // the ui:// view to the vault_put_file tool, registers the ui://uploads/vault.html
 // HTML resource, and registers the app-only vault_upload_submit mint helper. The
 // vault write is provided by the vaultHTTPUpload coordinator (which carries the
-// authenticated ChatGPTVaultPutHandler for the actual write).
+// authenticated VaultPutHandler for the actual write).
 func RegisterVaultUploadApp(srv *mcp.Server, catalog *ToolCatalog, vu *vaultHTTPUpload) error {
 	if srv == nil {
 		return fmt.Errorf("nil official server")

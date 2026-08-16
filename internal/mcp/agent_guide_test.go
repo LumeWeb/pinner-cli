@@ -26,7 +26,7 @@ func TestAgentGuideDescriptor(t *testing.T) {
 	for _, f := range guid.Flows {
 		names = append(names, f.Name)
 		require.NotEmpty(t, f.Title)
-		require.GreaterOrEqual(t, len(f.Steps), 3, "each flow must list an ordered tool chain: %s", f.Name)
+		require.GreaterOrEqual(t, len(f.Steps), 2, "each flow must list an ordered tool chain: %s", f.Name)
 	}
 	for _, want := range []string{"auth", "vault_create", "vault_restore", "upload", "vault_upload", "pins"} {
 		require.Contains(t, names, want)

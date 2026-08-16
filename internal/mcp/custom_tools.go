@@ -60,20 +60,12 @@ type customToolDeps struct {
 	// apps, prompts).
 	opts *mcpServerOptions
 	// coLocated reports whether the server is running in pure stdio/local mode
-	// (no HTTP transport, no tunnel). The local-path upload tools
-	// (upload_path, vault_put_path) read arbitrary host paths, so they are only
-	// safe — and only meaningful — when the caller shares the host. They are
-	// never registered over a remote transport, where a network client could
-	// use them to read/exfiltrate server-side files.
+	// (no HTTP transport, no tunnel). The local-path source modes of
+	// upload_file and vault_put_file read arbitrary host paths, so they are
+	// only safe — and only meaningful — when the caller shares the host. They
+	// are never registered over a remote transport, where a network client
+	// could use them to read/exfiltrate server-side files.
 	coLocated bool
-	// remoteUploadSupported reports whether the presigned HTTP PUT upload route
-	// (httpUpload) is actually reachable by a remote agent. It is false for the
-	// embedded OpenAI Secure MCP Tunnel, which carries only MCP RPC through an
-	// in-memory transport to the tunnel client — there is no reachable HTTP
-	// mux on which to mount the PUT route, and the minted endpoint would fall
-	// back to an unreachable loopback URL. When false, the consolidated
-	// upload_file tool's remote branch is not registered for that transport.
-	remoteUploadSupported bool
 	// tunnelOpenAI reports whether the server is running through the embedded
 	// OpenAI Secure MCP Tunnel, which exposes no reachable HTTP mux (all RPC
 	// flows through the tunnel protocol). It distinguishes the OpenAI tunnel
@@ -101,7 +93,7 @@ type customToolDeps struct {
 //     DirectVisible tools instead of a separate RegisterOfficialDescriptor path
 //   - markCurated + RegisterOfficialCuratedTools, the direct tools/list surface
 //   - pinner:// resources and templates
-//   - the upload-backend tools (ChatGPT, relay URL, data URI, async)
+//   - the upload-backend tools (relay URL, data URI, async)
 //   - the capability-detection tool and (optionally) the prompt templates
 func registerCustomTools(deps customToolDeps) error {
 	if deps.hasWizard {
@@ -251,34 +243,33 @@ func registerCustomTools(deps customToolDeps) error {
 	if opts == nil {
 		opts = &mcpServerOptions{}
 	}
-	if opts.chatGPTVaultPut != nil {
-		vaultPutDesc := ChatGPTVaultPutDescriptor(opts.chatGPTVaultPut)
-		// Index vault_put_file in the catalog as well as the direct surface so
-		// the "Upload to Vault" MCP App can attach its ui:// view via AttachTo.
-		deps.catalog.Add(toolEntryFromDescriptor(vaultPutDesc))
+	if vaultPutFileAvailable(deps.coLocated, opts.localPathVaultPut != nil, deps.vaultUpload != nil, opts.vaultPutHandler != nil, deps.tunnelOpenAI) {
+		var pathFn LocalPathVaultPutHandler
+		if deps.coLocated {
+			pathFn = opts.localPathVaultPut
+		}
+		vaultPutDesc := NewVaultPutFileDescriptor(deps.coLocated, deps.tunnelOpenAI, pathFn, deps.vaultUpload, opts.vaultPutHandler, opts.relayAllowedHosts, opts.maxRelayBytes)
 		// Pair vault_put_file with its "Upload to Vault" MCP App view
-		// (ui://uploads/vault.html) so a UI-capable host renders a file picker.
-		// The app mints a one-time presigned PUT endpoint (vaultUpload) whose
-		// raw PUT body the iframe's Uppy XHR uploader writes out of band into
-		// the encrypted vault. It is only reachable when the presigned
-		// coordinator is wired, so registration follows vaultUpload.
+		// (ui://uploads/vault.html) when the presigned vault-upload coordinator
+		// can mint a PUT endpoint for the Uppy XHR uploader. The app must be
+		// indexed in the catalog before its view attaches _meta.ui.
 		if deps.vaultUpload != nil {
+			deps.catalog.Add(toolEntryFromDescriptor(vaultPutDesc))
 			if err := RegisterVaultUploadApp(deps.srv, deps.catalog, deps.vaultUpload); err != nil {
 				return err
 			}
-		}
-		// Copy the app-view _meta (registered above onto the catalog entry)
-		// onto the descriptor served directly to hosts, so a UI-capable host
-		// reading vault_put_file from tools/list (the RegisterOfficialDescriptor
-		// surface) still sees the file-picker panel. The direct surface and the
-		// catalog entry are distinct objects; without this copy the direct tool
-		// would miss _meta.ui even though the catalog entry has it.
-		if entry, ok := deps.catalog.Get("vault_put_file"); ok {
-			if vaultPutDesc.Meta == nil {
-				vaultPutDesc.Meta = map[string]any{}
-			}
-			for k, v := range entry.Meta {
-				vaultPutDesc.Meta[k] = v
+			// Copy the app-view _meta (registered above onto the catalog entry)
+			// onto the descriptor served directly to hosts, so a UI-capable host
+			// reading vault_put_file from tools/list still sees the file-picker
+			// panel. The direct surface and the catalog entry are distinct
+			// objects; without this copy the direct tool would miss _meta.ui.
+			if entry, ok := deps.catalog.Get("vault_put_file"); ok {
+				if vaultPutDesc.Meta == nil {
+					vaultPutDesc.Meta = map[string]any{}
+				}
+				for k, v := range entry.Meta {
+					vaultPutDesc.Meta[k] = v
+				}
 			}
 		}
 		if err := RegisterOfficialDescriptor(deps.srv, vaultPutDesc); err != nil {
@@ -305,7 +296,7 @@ func registerCustomTools(deps customToolDeps) error {
 	//     (opts.uploadHandler), since no reachable HTTP mux exists.
 	// Register it whenever at least one upload path is available for the
 	// running transport.
-	if uploadFileAvailable(deps.coLocated, opts.localPathUpload != nil, deps.curlUpload != nil, opts.uploadHandler != nil, deps.remoteUploadSupported) {
+	if uploadFileAvailable(deps.coLocated, opts.localPathUpload != nil, deps.curlUpload != nil, opts.uploadHandler != nil, deps.tunnelOpenAI) {
 		var pathFn UploadFileHandler
 		if deps.coLocated {
 			pathFn = opts.localPathUpload
@@ -349,11 +340,6 @@ func registerCustomTools(deps customToolDeps) error {
 			return err
 		}
 	}
-	if deps.coLocated && opts.localPathVaultPut != nil {
-		if err := RegisterOfficialDescriptor(deps.srv, LocalPathVaultPutDescriptor(opts.localPathVaultPut)); err != nil {
-			return err
-		}
-	}
 	if opts.uploadTasks != nil {
 		for _, desc := range NewAsyncUploadTools(opts.uploadTasks) {
 			if err := RegisterOfficialDescriptor(deps.srv, desc); err != nil {
@@ -365,12 +351,11 @@ func registerCustomTools(deps customToolDeps) error {
 	// without assuming draft MCP file support is negotiated. Each capability
 	// reflects whether its handler is actually wired.
 	if err := RegisterOfficialDescriptor(deps.srv, NewCapabilitiesDescriptor(
-		opts.uploadHandler != nil,
-		opts.chatGPTVaultPut != nil,
-		opts.relayURLUpload != nil,
-		opts.dataURIUpload != nil,
-		deps.coLocated && (opts.localPathUpload != nil || opts.localPathVaultPut != nil),
-		uploadFileAvailable(deps.coLocated, opts.localPathUpload != nil, deps.curlUpload != nil, opts.uploadHandler != nil, deps.remoteUploadSupported),
+		deps.coLocated,
+		deps.tunnelOpenAI,
+		uploadFileAvailable(deps.coLocated, opts.localPathUpload != nil, deps.curlUpload != nil, opts.uploadHandler != nil, deps.tunnelOpenAI),
+		vaultPutFileAvailable(deps.coLocated, opts.localPathVaultPut != nil, deps.vaultUpload != nil, opts.vaultPutHandler != nil, deps.tunnelOpenAI),
+		opts.dataURIUpload != nil, // the data: URI upload tool carries the draft x-mcp-file metadata
 		opts.maxRelayBytes,
 	)); err != nil {
 		return err
@@ -389,32 +374,48 @@ func registerCustomTools(deps customToolDeps) error {
 }
 
 // uploadFileAvailable reports whether the consolidated upload_file tool has at
-// least one usable branch for the running transport:
+// least one real file-input branch for the running transport:
 //
-//   - co-located (stdio/local): the local-path upload handler is wired.
-//   - remote (HTTP/tunnel): the presigned HTTP PUT coordinator is wired AND the
-//     transport actually exposes a reachable HTTP mux (remoteUploadSupported).
-//     The embedded OpenAI Secure MCP Tunnel carries only MCP RPC through an
-//     in-memory transport to the tunnel client — there is no reachable HTTP
-//     mux on which to mount the PUT route, so a minted endpoint would fall
-//     back to an unreachable loopback URL. The tool must not be advertised
-//     (in registration or capabilities) for a branch no agent could use.
+//   - co-located (stdio): a local path upload handler is wired.
+//   - HTTP / real tunnel: a reachable presigned HTTP PUT coordinator is wired
+//     (the shared mux is reachable, so mint is usable).
+//   - OpenAI tunnel: a file-relay executor is wired (no reachable HTTP mux —
+//     all RPC flows through the tunnel protocol — so only the url/data relay
+//     path can carry bytes).
 //
 // It is the single decision used both when registering the tool and when
 // reporting the upload_file capability, so the two can never drift.
-//
-// The tool is available when its transport has at least one real file-input
-// mechanism:
-//   - co-located (stdio): a local path handler is wired.
-//   - HTTP / real tunnel: a reachable presigned HTTP PUT coordinator is wired.
-//   - OpenAI tunnel: a file-relay executor is wired (no reachable HTTP mux, so
-//     only the url/data relay path can carry bytes).
-func uploadFileAvailable(coLocated, localPathWired, curlWired, relayWired, remoteUploadSupported bool) bool {
+func uploadFileAvailable(coLocated, localPathWired, curlWired, relayWired, tunnelOpenAI bool) bool {
 	if coLocated {
 		return localPathWired
 	}
-	if curlWired && remoteUploadSupported {
+	if curlWired && !tunnelOpenAI {
 		return true
 	}
-	return !remoteUploadSupported && relayWired
+	return tunnelOpenAI && relayWired
+}
+
+// vaultPutFileAvailable reports whether the unified vault_put_file tool has at
+// least one usable branch for the running transport, mirroring
+// uploadFileAvailable for the vault surface:
+//
+//   - co-located (stdio): a local-path vault handler is wired.
+//   - HTTP / real tunnel: a reachable presigned vault-upload coordinator
+//     (vaultHTTPUpload) is wired AND the transport exposes a reachable HTTP
+//     mux. The embedded OpenAI tunnel has no reachable mux, so its minted URL
+//     would fall back to an unreachable loopback — the tool must not be
+//     advertised for a branch no agent could use.
+//   - OpenAI tunnel: a vault relay write executor is wired (only the url/data
+//     path can carry bytes).
+//
+// It is the single decision used both when registering the tool and when
+// reporting the vault_put_file capability, so the two can never drift.
+func vaultPutFileAvailable(coLocated, localPathWired, mintWired, relayWired, tunnelOpenAI bool) bool {
+	if coLocated {
+		return localPathWired
+	}
+	if mintWired && !tunnelOpenAI {
+		return true
+	}
+	return tunnelOpenAI && relayWired
 }

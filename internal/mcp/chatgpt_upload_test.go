@@ -2,7 +2,6 @@ package mcp
 
 import (
 	"context"
-	"encoding/json"
 	"io"
 	"testing"
 
@@ -114,16 +113,4 @@ func TestUploadFileDescriptorOpenAIRejectsMint(t *testing.T) {
 		"source": map[string]any{"mode": "mint"},
 	}})
 	require.Error(t, err)
-}
-
-func TestChatGPTVaultPutDescriptor(t *testing.T) {
-	desc := ChatGPTVaultPutDescriptor(func(context.Context, io.Reader, int64, string) (any, error) {
-		return map[string]string{"path": "vault:/report.pdf"}, nil
-	})
-	require.Equal(t, "vault_put_file", desc.Name)
-	require.Equal(t, []string{"file"}, desc.Meta["openai/fileParams"])
-	var schema map[string]any
-	require.NoError(t, json.Unmarshal(desc.InputSchema, &schema))
-	properties := schema["properties"].(map[string]any)
-	require.Contains(t, properties, "vault_path")
 }

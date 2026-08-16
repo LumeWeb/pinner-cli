@@ -8,66 +8,83 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCapabilitiesReport(t *testing.T) {
-	// All handlers configured => every mode advertised.
-	r := CurrentCapabilities(true, true, true, true, true, true, 0)
-	require.True(t, r.ChatGPTFile)
-	require.True(t, r.RelayURL)
-	require.True(t, r.DraftXFile)
-	require.True(t, r.LocalPath)
+func TestCapabilitiesReportStdio(t *testing.T) {
+	// Co-located stdio: transport=stdio, single source mode "path".
+	r := CurrentCapabilities(true, false, true, true, true, 0)
+	require.Equal(t, TransportStdio, r.Transport)
+	require.Equal(t, []FileInputCapability{CapabilityLocalPath}, r.SourceModes)
 	require.True(t, r.UploadFile)
+	require.True(t, r.VaultPutFile)
 	require.EqualValues(t, int64(defaultRelayMaxBytes), r.RelayMaxBytes)
-
-	// No handlers wired => capabilities reflect that nothing is available.
-	// A consumer must not see a mode whose tool would fail at invocation time.
-	r2 := CurrentCapabilities(false, false, false, false, false, false, 0)
-	require.False(t, r2.ChatGPTFile)
-	require.False(t, r2.RelayURL)
-	require.False(t, r2.DraftXFile)
-	require.False(t, r2.LocalPath)
-	require.False(t, r2.UploadFile)
-
-	// Relay + data-URI wired, no ChatGPT => those two advertised only.
-	r3 := CurrentCapabilities(false, false, true, true, false, false, 0)
-	require.False(t, r3.ChatGPTFile)
-	require.True(t, r3.RelayURL)
-	require.True(t, r3.DraftXFile)
-	require.False(t, r3.LocalPath)
-	require.False(t, r3.UploadFile)
 }
 
-func TestCurrentCapabilitiesReflectsLocalPathAndUploadFile(t *testing.T) {
-	// Local-path and unified upload_file capabilities are only advertised when
-	// their handlers are wired in.
-	r := CurrentCapabilities(false, false, false, false, true, true, 0)
-	require.True(t, r.LocalPath)
+func TestCapabilitiesReportHTTP(t *testing.T) {
+	// Remote HTTP/tunnel with reachable mux: transport=http, mode "mint".
+	r := CurrentCapabilities(false, false, true, true, true, 0)
+	require.Equal(t, TransportHTTP, r.Transport)
+	require.Equal(t, []FileInputCapability{CapabilityMint}, r.SourceModes)
 	require.True(t, r.UploadFile)
+	require.True(t, r.VaultPutFile)
+}
 
-	// Local path can be offered via upload/vault; upload_file (the unified
-	// tool) is advertised whenever either its co-located path handler or its
-	// remote presigned coordinator is available.
-	onlyLocal := CurrentCapabilities(false, false, false, false, true, false, 0)
-	require.True(t, onlyLocal.LocalPath)
-	require.False(t, onlyLocal.UploadFile)
+func TestCapabilitiesReportOpenAI(t *testing.T) {
+	// Embedded openai tunnel with an upload tool registered: transport=openai,
+	// modes url+data are backed and advertised.
+	r := CurrentCapabilities(false, true, true, false, false, 0)
+	require.Equal(t, TransportOpenAI, r.Transport)
+	require.Equal(t, []FileInputCapability{CapabilityRelayURL, CapabilityDataURI}, r.SourceModes)
+	require.True(t, r.UploadFile)
+	require.False(t, r.VaultPutFile)
+	require.False(t, r.DraftXFile)
+}
 
-	onlyUploadFile := CurrentCapabilities(false, false, false, false, false, true, 0)
-	require.False(t, onlyUploadFile.LocalPath)
-	require.True(t, onlyUploadFile.UploadFile)
+func TestCapabilitiesReportHTTPWithoutCurlCoordinator(t *testing.T) {
+	// A plain HTTP server (or non-OpenAI tunnel) with no presigned curl
+	// coordinator wired still advertises transport=http (not "openai"), but
+	// with no upload/vault tool registered there is no mint source to back, so
+	// source_modes is empty rather than claiming "mint" a tool can't service.
+	r := CurrentCapabilities(false, false, false, false, false, 0)
+	require.Equal(t, TransportHTTP, r.Transport)
+	require.Empty(t, r.SourceModes)
+	require.False(t, r.UploadFile)
+	require.False(t, r.VaultPutFile)
+}
+
+func TestCapabilitiesReportToolFlags(t *testing.T) {
+	// UploadFile/VaultPutFile reflect registration availability regardless of
+	// transport; SourceModes are advertised only when a tool backs them.
+	stdioBoth := CurrentCapabilities(true, false, true, true, true, 0)
+	require.True(t, stdioBoth.UploadFile)
+	require.True(t, stdioBoth.VaultPutFile)
+	require.True(t, stdioBoth.DraftXFile)
+	// At least one upload tool is registered => the stdio path mode is advertised.
+	require.Equal(t, []FileInputCapability{CapabilityLocalPath}, stdioBoth.SourceModes)
+
+	openaiOnlyUpload := CurrentCapabilities(false, true, true, false, false, 0)
+	require.Equal(t, TransportOpenAI, openaiOnlyUpload.Transport)
+	require.True(t, openaiOnlyUpload.UploadFile)
+	require.False(t, openaiOnlyUpload.VaultPutFile)
+	// The upload tool backs url/data on the OpenAI tunnel.
+	require.Equal(t, []FileInputCapability{CapabilityRelayURL, CapabilityDataURI}, openaiOnlyUpload.SourceModes)
+
+	// Neither upload tool registered => no source mode is advertised, even
+	// though the transport would nominally allow one.
+	none := CurrentCapabilities(false, false, false, false, false, 0)
+	require.Empty(t, none.SourceModes)
 }
 
 func TestCurrentCapabilitiesHonorsMaxBytes(t *testing.T) {
 	// A configured cap (1 GiB) is reported verbatim.
-	got := CurrentCapabilities(false, false, true, true, false, false, 1<<30)
+	got := CurrentCapabilities(true, false, true, true, true, 1<<30)
 	require.EqualValues(t, int64(1<<30), got.RelayMaxBytes)
 
-	// 0 means "use the package default" (512 MiB), so callers that thread
-	// config through but leave it unset keep the established behavior.
-	zero := CurrentCapabilities(false, false, true, true, false, false, 0)
+	// 0 means "use the package default" (512 MiB).
+	zero := CurrentCapabilities(true, false, true, true, true, 0)
 	require.EqualValues(t, int64(defaultRelayMaxBytes), zero.RelayMaxBytes)
 }
 
 func TestCapabilitiesDescriptorSerializes(t *testing.T) {
-	desc := NewCapabilitiesDescriptor(true, false, true, true, false, false, 0)
+	desc := NewCapabilitiesDescriptor(true, false, true, true, true, 0)
 	require.Equal(t, "capabilities", desc.Name)
 	res, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{}})
 	require.NoError(t, err)
@@ -75,10 +92,23 @@ func TestCapabilitiesDescriptorSerializes(t *testing.T) {
 	// Indexable as a map
 	_, err = json.Marshal(res.StructuredContent)
 	require.NoError(t, err)
+	// The JSON shape exposes transport + source_modes.
+	raw, _ := json.Marshal(res.StructuredContent)
+	var m map[string]any
+	require.NoError(t, json.Unmarshal(raw, &m))
+	require.Equal(t, "stdio", m["transport"])
+	require.Equal(t, []any{"path"}, m["source_modes"])
 }
 
 func TestCapabilitiesDescriptorIsDirectVisible(t *testing.T) {
-	desc := NewCapabilitiesDescriptor(false, false, true, true, false, false, 0)
+	desc := NewCapabilitiesDescriptor(false, false, false, false, false, 0)
 	tool := officialTool(desc)
 	require.Equal(t, "capabilities", tool.Name)
+}
+
+func TestSourceModesForAllTransports(t *testing.T) {
+	require.Equal(t, []FileInputCapability{CapabilityLocalPath}, sourceModesFor(TransportStdio))
+	require.Equal(t, []FileInputCapability{CapabilityMint}, sourceModesFor(TransportHTTP))
+	require.Equal(t, []FileInputCapability{CapabilityRelayURL, CapabilityDataURI}, sourceModesFor(TransportOpenAI))
+	require.Nil(t, sourceModesFor(TransportKind("bogus")))
 }

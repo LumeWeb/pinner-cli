@@ -17,7 +17,7 @@ import (
 // vaultHTTPUpload lets a sandboxed MCP App write a picked file into the
 // encrypted vault WITHOUT pushing the bytes through the MCP/LLM tool channel.
 // It mirrors the httpUpload coordinator used for IPFS/curl uploads, but for
-// the vault the underlying write (ChatGPTVaultPutHandler) is synchronous, so a
+// the vault the underlying write (VaultPutHandler) is synchronous, so a
 // PUT drains the request body through that handler and returns the vault
 // result directly in the response - no async task handle or poll round-trip.
 //
@@ -48,7 +48,7 @@ type vaultHTTPToken struct {
 }
 
 // NewVaultHTTPUpload builds a vault presigned-upload coordinator. put is the
-// authenticated vault write (same signature as ChatGPTVaultPutHandler) that a
+// authenticated vault write (same signature as VaultPutHandler) that a
 // minted PUT drains into; a nil put makes mint() register tokens but reject
 // the actual write, keeping the coordinator constructible for tests.
 func NewVaultHTTPUpload(put func(ctx context.Context, r io.Reader, size int64, vaultPath string) (any, error), maxBytes int64) *vaultHTTPUpload {
@@ -100,7 +100,7 @@ func (vu *vaultHTTPUpload) allowedUploadOrigins() []string { return vu.loopback.
 // ensures the loopback listener is running in stdio mode so the URL is always
 // reachable.
 func (vu *vaultHTTPUpload) mint(vaultPath string, ttl time.Duration) (string, error) {
-	if err := validateVaultUploadPath(vaultPath); err != nil {
+	if err := validateVaultFilePath(vaultPath); err != nil {
 		return "", err
 	}
 	if err := vu.loopback.ensureLoopback(vu.registerHandlers); err != nil {
@@ -125,23 +125,14 @@ func (vu *vaultHTTPUpload) mint(vaultPath string, ttl time.Duration) (string, er
 	return vu.loopback.urlLocked("vault-upload", token), nil
 }
 
-// vaultUploadPathScope is the destination namespace the app's file picker may
-// write into. Restricting minted PUTs to a single scope is the security
-// boundary here: the /vault-upload/<token> PUT route is mounted outside the
-// bearer-token guards (a browser XHR cannot present the MCP auth header per
-// request), so the ONLY thing standing between an unauthenticated PUT and a
-// write into the user's encrypted vault is the one-time token bound to the
-// destination path at mint time. Constraining that path to this scope keeps a
-// leaked/forwarded URL from writing anywhere else in the vault.
-const vaultUploadPathScope = "vault:/uploads/"
-
-// validateVaultUploadPath rejects a vault destination the presigned-upload
-// flow would write into unless it is a well-formed FILE path confined to the
-// vaultUploadPathScope and free of parent-relative traversal. It is a hard
-// invariant enforced by both the mint helper (before minting) and the
-// coordinator's mint() itself, so a token can never be bound to a path outside
-// the allowed namespace even if a future caller forgets to validate.
-func validateVaultUploadPath(vaultPath string) error {
+// validateVaultFilePath rejects a vault destination unless it is a well-formed
+// FILE path (not a directory), free of parent-relative traversal, and not
+// addressed through a profile authority. It deliberately does NOT confine the
+// path to a single vault folder: a caller may write any file into any vault
+// directory (e.g. vault:/docs/f.pdf). This is enforced by the vault_put_file
+// tool on every source branch and by the mint coordinator before it binds a
+// one-time upload URL to a destination.
+func validateVaultFilePath(vaultPath string) error {
 	vp, err := vault.ParseVaultPath(vaultPath)
 	if err != nil {
 		return err
@@ -152,14 +143,11 @@ func validateVaultUploadPath(vaultPath string) error {
 	if vp.IsDir || vp.Name == "" {
 		return fmt.Errorf("vault upload destination must be a file path, not a directory")
 	}
-	if !strings.HasPrefix(vaultPath, vaultUploadPathScope) {
-		return fmt.Errorf("vault upload destination %q is outside the allowed %s scope", vaultPath, vaultUploadPathScope)
-	}
 	// Reject parent-relative traversal: after ParseVaultPath normalizes the
 	// directory to a leading-/ absolute form, any remaining ".." segment is an
-	// attempt to escape the uploads scope. Also reject ".." or "." in the leaf
+	// attempt to escape the destination. Also reject ".." or "." in the leaf
 	// name segment — a filename of ".." is not a directory traversal in itself
-	// but combined with the scope prefix it can resolve to an unintended path.
+	// but combined with a directory it can resolve to an unintended path.
 	names := append(strings.Split(vp.Directory, "/"), vp.Name)
 	for _, seg := range names {
 		if seg == ".." || seg == "." {
