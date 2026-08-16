@@ -244,7 +244,7 @@ directly; no subprocess fork. Commands are exposed as-is;
 agent-friendly behavior is the responsibility of each command, not this
 adapter.`,
 		Flags:    mcpServerFlags(),
-		Commands: []*cli.Command{ManagedServiceCommand()},
+		Commands: []*cli.Command{ManagedServiceCommand(), tunnelCommand()},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			// Build the MCP logger from the user's flags. It is installed as
 			// the package logger so every component (adapter, catalog, and the
