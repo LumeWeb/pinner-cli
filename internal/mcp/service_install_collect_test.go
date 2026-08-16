@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -68,4 +69,36 @@ func TestResolveServicePublicURLLeavesDynamicTunnelUnset(t *testing.T) {
 	require.NoError(t, err)
 	resolveServicePublicURL(path, loaded)
 	require.Equal(t, "", loaded["MCP_PUBLIC_URL"], "no domain -> no derived URL")
+}
+
+func TestCollectHTTPInstallOneShotResolvesNamedDomainURL(t *testing.T) {
+	// A one-shot (non --service) http install with a named ngrok tunnel and a
+	// custom domain but no explicit --public-url must derive MCP_PUBLIC_URL
+	// from MCP_DOMAIN; otherwise runMcpInstall fails despite a valid tunnel.
+	// validateServiceEnvironment requires the tunnel binary on PATH (LookPath),
+	// so put a stub executable there — it is never executed in the one-shot
+	// (wantService=false) path.
+	binDir := t.TempDir()
+	stub := filepath.Join(binDir, "ngrok")
+	require.NoError(t, os.WriteFile(stub, []byte("#!/bin/sh\nexit 0\n"), 0o755))
+	t.Setenv("PATH", binDir)
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "mcp.env")
+	cmd := &cli.Command{Flags: managedServiceFlags()}
+	require.NoError(t, cmd.Set(serviceEnvFileFlag, path))
+	require.NoError(t, cmd.Set(serviceTunnelFlag, string(TunnelProviderNgrok)))
+	require.NoError(t, cmd.Set(serviceDomainFlag, "https://mcp.example.com"))
+	require.NoError(t, cmd.Set(serviceAuthTokenFlag, "test-auth-token"))
+	require.NoError(t, cmd.Set(serviceTunnelTokenFlag, "test-ngrok-token"))
+
+	env, err := CollectHTTPInstall(context.Background(), cmd, path, false)
+	require.NoError(t, err)
+	require.Equal(t, "https://mcp.example.com", env["MCP_PUBLIC_URL"],
+		"one-shot install should derive the named-tunnel public URL")
+
+	// And it must be persisted so later runs/install reads see it.
+	reloaded, err := LoadServiceEnvironment(path)
+	require.NoError(t, err)
+	require.Equal(t, "https://mcp.example.com", reloaded["MCP_PUBLIC_URL"])
 }

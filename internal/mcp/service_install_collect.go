@@ -77,14 +77,14 @@ func CollectHTTPInstall(ctx context.Context, cmd *cli.Command, envFile string, w
 		if err := svc.Start(ctx); err != nil {
 			return nil, err
 		}
-		// The managed service tunnels a deterministic hostname for named/custom
-		// domains (cloudflared: the provisioned hostname; ngrok: the custom
-		// domain). The public URL is only known after Start in that it derives
-		// from the provisioned hostname, so resolve it now and persist it back
-		// to the env file — otherwise the caller reads an empty MCP_PUBLIC_URL
-		// and the HTTP install fails despite a working tunnel.
-		resolveServicePublicURL(envFile, env)
 	}
+
+	// Derive MCP_PUBLIC_URL from a named MCP_DOMAIN for BOTH managed and
+	// one-shot installs: a named cloudflared/ngrok tunnel has a deterministic
+	// public URL regardless of --service, so the HTTP install should resolve it
+	// in either mode. resolveServicePublicURL is a no-op when the URL is already
+	// set, no domain is configured, or the tunnel is dynamic (no stable URL).
+	resolveServicePublicURL(envFile, env)
 
 	return env, nil
 }
