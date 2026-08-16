@@ -227,27 +227,15 @@ func runTunnelInstallWizard(ctx context.Context, cmd *cli.Command, ui *serviceIn
 		return fmt.Errorf("tunnel install currently supports only cloudflared (got %q); use `pinner mcp service install` for other providers", provider)
 	}
 
-	// 2-5. Deep-link token, verify, account, zone, provision. Shared with the
-	// service install wizard.
-	state, apiToken, err := provisionCloudflaredForWizard(ctx, cmd, cfNew)
-	if err != nil {
-		return err
-	}
-
-	// 6. Ensure the cloudflared binary is available. Capture the resolved
-	// path because a bin-dir download install is NOT placed on PATH: the
-	// follow-up `pinner mcp service install` uses resolveCloudflaredPath
-	// (bin-dir aware), but the user should still be told where it landed.
-	cfBin := ""
-	if p, err := ensureCloudflaredBinary(ctx); err != nil {
-		fmt.Printf("warning: %v\n", err)
-	} else {
-		cfBin = p
-	}
-
-	// 7. Write the service environment file (provider/domain/tunnel-token).
+	// 2. Resolve the service env file path and the MCP_AUTH_TOKEN BEFORE
+	// provisioning. Both are fallible (env-path resolution, an interactive
+	// prompt, or an empty token can error), and doing them first means a
+	// cancellation/error here cannot orphan a freshly-provisioned tunnel and
+	// its persisted state file (which would trip the already-provisioned
+	// guard on re-runs).
 	envFile := cmd.String(serviceEnvFileFlag)
 	if envFile == "" {
+		var err error
 		envFile, err = resolveServiceEnvFile(cmd)
 		if err != nil {
 			return err
@@ -256,9 +244,7 @@ func runTunnelInstallWizard(ctx context.Context, cmd *cli.Command, ui *serviceIn
 	// The public tunnel requires a shared secret protecting the exposed MCP
 	// endpoint; validateServiceEnvironment refuses a cloudflared env file
 	// without MCP_AUTH_TOKEN. Mirror the service-install wizard and prompt for
-	// a masked token when none was given via --auth-token, aborting before the
-	// env file is written (and thus before a later `pinner mcp service
-	// install` would reject it) if it cannot be obtained.
+	// a masked token when none was given via --auth-token.
 	authToken := strings.TrimSpace(cmd.String(serviceAuthTokenFlag))
 	if authToken == "" {
 		secret, err := textUI{mask: "*"}.Text("Shared secret authorizing the public MCP endpoint (required)")
@@ -270,6 +256,47 @@ func runTunnelInstallWizard(ctx context.Context, cmd *cli.Command, ui *serviceIn
 	if authToken == "" {
 		return errors.New("an MCP auth token is required for the public tunnel; pass --auth-token")
 	}
+
+	// 3-6. Deep-link token, verify, account, zone, provision. Shared with the
+	// service install wizard.
+	state, apiToken, err := provisionCloudflaredForWizard(ctx, cmd, cfNew)
+	if err != nil {
+		return err
+	}
+
+	// If any step after provisioning fails, roll back the provisioned tunnel,
+	// its DNS route, and the persisted state file so a re-run is not blocked
+	// by an orphaned, billed tunnel. Authenticate the clean-up client with the
+	// original Cloudflare API token — the tunnel-scoped run token is not a
+	// valid API token.
+	rollback := true
+	defer func() {
+		if !rollback {
+			return
+		}
+		if c, cerr := cloudflare.New(apiToken); cerr == nil {
+			if state.DNSRecordID != "" {
+				_ = c.DeleteDNSRoute(context.WithoutCancel(ctx), cloudflare.Zone{ID: state.ZoneID}, state.DNSRecordID)
+			}
+			_ = c.DeleteTunnel(context.WithoutCancel(ctx), cloudflare.Account{ID: state.AccountID}, state.TunnelID)
+		}
+		if p, perr := tunnelStatePath(); perr == nil {
+			_ = os.Remove(p)
+		}
+	}()
+
+	// 7. Ensure the cloudflared binary is available. Capture the resolved
+	// path because a bin-dir download install is NOT placed on PATH: the
+	// follow-up `pinner mcp service install` uses resolveCloudflaredPath
+	// (bin-dir aware), but the user should still be told where it landed.
+	cfBin := ""
+	if p, err := ensureCloudflaredBinary(ctx); err != nil {
+		fmt.Printf("warning: %v\n", err)
+	} else {
+		cfBin = p
+	}
+
+	// 8. Write the service environment file (provider/domain/tunnel-token).
 	env := ServiceEnvironment{
 		"MCP_TUNNEL_PROVIDER": string(TunnelProviderCloudflared),
 		"MCP_DOMAIN":          state.Hostname,
@@ -277,24 +304,9 @@ func runTunnelInstallWizard(ctx context.Context, cmd *cli.Command, ui *serviceIn
 		"MCP_AUTH_TOKEN":      authToken,
 	}
 	if err := WriteServiceEnvironment(envFile, env); err != nil {
-		// The tunnel + DNS route were provisioned and persisted above; roll
-		// them both back so a failed env write does not leave an orphaned,
-		// billed tunnel pair behind (re-running the wizard would otherwise
-		// double it). Authenticate the clean-up client with the original Cloudflare
-		// API token — the tunnel-scoped run token is not a valid API token.
-		if st, lerr := LoadCloudflareTunnelState(); lerr == nil && st != nil {
-			if c, cerr := cloudflare.New(apiToken); cerr == nil {
-				if st.DNSRecordID != "" {
-					_ = c.DeleteDNSRoute(context.WithoutCancel(ctx), cloudflare.Zone{ID: st.ZoneID}, st.DNSRecordID)
-				}
-				_ = c.DeleteTunnel(context.WithoutCancel(ctx), cloudflare.Account{ID: st.AccountID}, st.TunnelID)
-			}
-			if p, perr := tunnelStatePath(); perr == nil {
-				_ = os.Remove(p)
-			}
-		}
 		return fmt.Errorf("write MCP service environment file: %w", err)
 	}
+	rollback = false
 	fmt.Printf("Wrote MCP service environment file %s.\n", envFile)
 	if cfBin != "" {
 		// If cloudflared landed in the packed pinner bin dir rather than on
