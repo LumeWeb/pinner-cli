@@ -78,6 +78,9 @@ func TestGooseConfigPathPlatform(t *testing.T) {
 		}
 		return
 	}
+	// gooseConfigPath honors $XDG_CONFIG_HOME when set (e.g. on GH Actions
+	// runners), so clear it to assert the $HOME fallback deterministically.
+	t.Setenv("XDG_CONFIG_HOME", "")
 	want := filepath.Join(home, ".config", "goose", "config.yaml")
 	if got := gooseConfigPath(); got != want {
 		t.Errorf("gooseConfigPath = %q, want %q", got, want)
