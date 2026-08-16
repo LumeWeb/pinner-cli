@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/samber/lo"
 	"github.com/urfave/cli/v3"
+
 	"go.lumeweb.com/pinner-cli/internal/cli/wizard"
 	mcpadapter "go.lumeweb.com/pinner-cli/internal/mcp"
 	"go.lumeweb.com/pinner-cli/internal/mcp/install"
@@ -198,22 +200,18 @@ func dedupeAgents(agents []install.AgentKey) []install.AgentKey {
 
 // agentNames returns the human-readable list of supported agent keys.
 func agentNames() []string {
-	names := make([]string, 0, len(install.AllAgents))
-	for _, a := range install.AllAgents {
-		names = append(names, string(a))
-	}
-	return names
+	return lo.Map(install.AllAgents, func(a install.AgentKey, _ int) string {
+		return string(a)
+	})
 }
 
 // agentDisplayNames returns the user-facing display names in AllAgents order.
 // Deriving them from the agent table (single source of truth) keeps help text
-// and error messages from drifting from the supported set.
+// and error messages from drifting from the supported set. Every AllAgents key
+// is guaranteed to resolve in the table (see TestAgentTableIntegrity).
 func agentDisplayNames() []string {
-	names := make([]string, 0, len(install.AllAgents))
-	for _, a := range install.AllAgents {
-		if cfg, ok := install.Agent(a); ok {
-			names = append(names, cfg.DisplayName)
-		}
-	}
-	return names
+	return lo.Map(install.AllAgents, func(a install.AgentKey, _ int) string {
+		cfg, _ := install.Agent(a)
+		return cfg.DisplayName
+	})
 }
