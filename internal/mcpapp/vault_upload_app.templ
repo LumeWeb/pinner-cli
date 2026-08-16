@@ -1,0 +1,23 @@
+package mcpapp
+
+// VaultUploadAppForm renders the visible "Upload to Vault" view body: the file
+// picker / vault destination path form, the live status line, and the result
+// readout. The document <head> (shared inline Tailwind theme) and the ESM
+// module <script> (shared ext-apps bootstrap + upload logic) are supplied by
+// renderMcpAppDoc, so this templ authors only the app-specific markup.
+templ VaultUploadAppForm() {
+	<div class="app-shell">
+		<h1 class="app-title">Upload to Vault</h1>
+		<form id="vault-upload-form" class="mt-2">
+			<label for="vfile" class="form-label">File</label>
+			<input id="vfile" name="vfile" class="form-input" type="file"/>
+			<label for="vault-path" class="form-label">Vault path</label>
+			<input id="vault-path" name="vault-path" class="form-input" placeholder="vault:/uploads/document.pdf" autocomplete="off" spellcheck="false"/>
+			<button type="submit" class="btn-primary" id="vstart">Upload</button>
+		</form>
+		<div id="vault-upload-status" class="status"></div>
+		<div class="card">
+			Stored at: <code id="out-path" class="mono text-accent">—</code>
+		</div>
+	</div>
+}

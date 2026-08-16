@@ -350,6 +350,24 @@ adapter.`,
 				curlUpload.AddTrustedOrigins(mcpOpts.uploadTrustedOrigins...)
 			}
 
+			// The vaultUpload coordinator mirrors curlUpload for the "Upload to
+			// Vault" MCP App: it mints a one-time presigned PUT endpoint bound
+			// to a vault destination path, and the raw PUT body is drained
+			// through the authenticated vault write (chatGPTVaultPut)
+			// synchronously. It is only wired when that vault write handler is
+			// present, and must exist here (before registerCustomTools and
+			// serveHTTP) so both the app helper and the transport-mounted PUT
+			// route can be registered against the same instance.
+			var vaultUpload *vaultHTTPUpload
+			if mcpOpts.chatGPTVaultPut != nil {
+				vaultUpload = NewVaultHTTPUpload(mcpOpts.chatGPTVaultPut, effectiveRelayMaxBytes(mcpOpts.maxRelayBytes))
+				// Allow configured MCP-host origins to PUT across origins (the
+				// vault app iframe can be served from a host origin that is not
+				// the Pinner server origin); the endpoint's own origin is
+				// always reflected too.
+				vaultUpload.AddTrustedOrigins(mcpOpts.uploadTrustedOrigins...)
+			}
+
 			// Build the server after resolving the command tree and wiring the
 			// seed/restore coordinators into the tool handlers. stdioMode tells
 			// the invoke-tool gate that os.Stdin is the MCP transport pipe (so a
@@ -371,6 +389,7 @@ adapter.`,
 				oobRestore:       oobRestore,
 				oobCreate:        oobCreate,
 				curlUpload:       curlUpload,
+				vaultUpload:      vaultUpload,
 				accountOOB:       accountOOB,
 				accountWebAppURL: accountWebAppURL(wizardS.CfgMgr),
 				resourceFactory:  resourceFactory,
@@ -396,7 +415,7 @@ adapter.`,
 
 			if cmd.String("tunnel") == "openai" {
 				log.Debug("serving MCP server through embedded OpenAI Secure MCP Tunnel")
-				return serveHTTP(ctx, srv, cmd, oob, seedDrop, oobRestore, oobCreate, accountOOB, curlUpload)
+				return serveHTTP(ctx, srv, cmd, oob, seedDrop, oobRestore, oobCreate, accountOOB, curlUpload, vaultUpload)
 			}
 
 			if !cmd.Bool("http") {
@@ -404,7 +423,7 @@ adapter.`,
 				return RunOfficialStdio(ctx, srv, os.Stdin, os.Stdout)
 			}
 
-			return serveHTTP(ctx, srv, cmd, oob, seedDrop, oobRestore, oobCreate, accountOOB, curlUpload)
+			return serveHTTP(ctx, srv, cmd, oob, seedDrop, oobRestore, oobCreate, accountOOB, curlUpload, vaultUpload)
 		},
 	}
 }
@@ -451,7 +470,7 @@ func mcpHostProtectionDisabled(tunnelActive, httpMode bool, publicURL string) bo
 	return tunnelActive || (httpMode && publicURL != "")
 }
 
-func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *OutOfBandLogin, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate, accountOOB *OOBAccountChange, curlUpload *httpUpload) error {
+func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *OutOfBandLogin, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate, accountOOB *OOBAccountChange, curlUpload *httpUpload, vaultUpload *vaultHTTPUpload) error {
 	provider := cmd.String("tunnel")
 	domain := cmd.String("domain")
 	token := cmd.String("token")
@@ -531,6 +550,9 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 	}
 	if curlUpload != nil {
 		curlUpload.SetBaseURL(baseURL)
+	}
+	if vaultUpload != nil {
+		vaultUpload.SetBaseURL(baseURL)
 	}
 	var oauth *oauthServer
 	if enableOAuth {
@@ -629,6 +651,9 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 	if curlUpload != nil {
 		curlUpload.registerHandlers(mux)
 	}
+	if vaultUpload != nil {
+		vaultUpload.registerHandlers(mux)
+	}
 	// Liveness probe for PaaS/container health checks (Railway, Koyeb, Render,
 	// Fly, Cloud Run, DO). It is intentionally unauthenticated and outside the
 	// bearer-token guard so orchestrators can probe readiness without
@@ -680,6 +705,9 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 		if curlUpload != nil {
 			curlUpload.Stop(shCtx)
 		}
+		if vaultUpload != nil {
+			vaultUpload.Stop(shCtx)
+		}
 		if tunnel != nil {
 			_ = tunnel.Stop(shCtx)
 		}
@@ -728,6 +756,9 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 		}
 		if curlUpload != nil {
 			curlUpload.SetBaseURL(url)
+		}
+		if vaultUpload != nil {
+			vaultUpload.SetBaseURL(url)
 		}
 		if oauth != nil {
 			oauthURL, err := tunnel.OAuthBaseURL(publicURL, url)

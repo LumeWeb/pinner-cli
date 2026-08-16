@@ -41,6 +41,11 @@ type customToolDeps struct {
 	// streams into the async UploadTaskManager. It feeds the consolidated
 	// upload_file tool in remote (HTTP/tunnel) mode.
 	curlUpload *httpUpload
+	// vaultUpload, when non-nil, backs the presigned HTTP PUT vault-write route
+	// (the vaultHTTPUpload coordinator). It mints a one-time endpoint bound to
+	// a destination vault path whose PUT body streams into the authenticated
+	// vault write synchronously. It feeds the "Upload to Vault" MCP App.
+	vaultUpload *vaultHTTPUpload
 	// accountOOB backs the out-of-band account credential change coordinator
 	// (hosted browser forms -> authenticated UpdatePassword/UpdateEmail). It
 	// enforces an authenticated session; the secret never transits the MCP/LLM
@@ -244,7 +249,36 @@ func registerCustomTools(deps customToolDeps) error {
 		}
 	}
 	if opts.chatGPTVaultPut != nil {
-		if err := RegisterOfficialDescriptor(deps.srv, ChatGPTVaultPutDescriptor(opts.chatGPTVaultPut)); err != nil {
+		vaultPutDesc := ChatGPTVaultPutDescriptor(opts.chatGPTVaultPut)
+		// Index vault_put_file in the catalog as well as the direct surface so
+		// the "Upload to Vault" MCP App can attach its ui:// view via AttachTo.
+		deps.catalog.Add(toolEntryFromDescriptor(vaultPutDesc))
+		// Pair vault_put_file with its "Upload to Vault" MCP App view
+		// (ui://uploads/vault.html) so a UI-capable host renders a file picker.
+		// The app mints a one-time presigned PUT endpoint (vaultUpload) whose
+		// raw PUT body the iframe's Uppy XHR uploader writes out of band into
+		// the encrypted vault. It is only reachable when the presigned
+		// coordinator is wired, so registration follows vaultUpload.
+		if deps.vaultUpload != nil {
+			if err := RegisterVaultUploadApp(deps.srv, deps.catalog, deps.vaultUpload); err != nil {
+				return err
+			}
+		}
+		// Copy the app-view _meta (registered above onto the catalog entry)
+		// onto the descriptor served directly to hosts, so a UI-capable host
+		// reading vault_put_file from tools/list (the RegisterOfficialDescriptor
+		// surface) still sees the file-picker panel. The direct surface and the
+		// catalog entry are distinct objects; without this copy the direct tool
+		// would miss _meta.ui even though the catalog entry has it.
+		if entry, ok := deps.catalog.Get("vault_put_file"); ok {
+			if vaultPutDesc.Meta == nil {
+				vaultPutDesc.Meta = map[string]any{}
+			}
+			for k, v := range entry.Meta {
+				vaultPutDesc.Meta[k] = v
+			}
+		}
+		if err := RegisterOfficialDescriptor(deps.srv, vaultPutDesc); err != nil {
 			return err
 		}
 	}
