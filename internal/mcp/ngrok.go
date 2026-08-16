@@ -2,36 +2,47 @@ package mcp
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
+	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"strings"
 	"time"
+
+	"golang.ngrok.com/ngrok/v2"
 )
 
-// ngrokTunnel serves a local MCP HTTP server through ngrok. It supports the
-// free tier (a provider-assigned *.ngrok-free.app dev domain) and custom
-// domains on paid accounts (--url https://<domain>).
+// ngrokTunnel serves a local MCP HTTP server through a tunnel powered by the
+// ngrok Go SDK, embedded in this process (no `ngrok` agent subprocess). It
+// supports the free tier (a provider-assigned *.ngrok-free.app dev domain) and
+// custom domains on paid accounts (--url https://<domain>).
 //
-// The assigned public URL is discovered through ngrok's local Agent HTTP API
-// (http://127.0.0.1:4040/api/endpoints), which returns structured JSON, rather
-// than by scraping the agent's human log output.
+// The tunnel runs inside the agent built by ngrok.NewAgent, which itself reads
+// the NGROK_AUTHTOKEN environment variable and the ngrok config file
+// (~/.config/ngrok/ngrok.yml etc.) automatically. We only pass an explicit
+// authtoken when one is supplied via --token or NGROK_AUTHTOKEN; otherwise the
+// agent inherits any config-file credential, so a user who has run
+// `ngrok config add-authtoken` needs no further setup.
+//
+// Unlike the previous subprocess-based tunnel, the assigned public URL comes
+// directly from the forwarder returned by agent.Forward — there is no need to
+// poll the ngrok Agent HTTP API or scrape logs.
 type ngrokTunnel struct {
 	tunnelBase
 	domain string
 	token  string
-	cmd    *exec.Cmd
-	done   chan struct{}
+
+	// agent and fwd are the embedded pieces created in Start.
+	agent ngrok.Agent
+	fwd   ngrok.EndpointForwarder
+	stop  context.CancelFunc
 }
 
-// NewNgrokTunnel returns a tunnel powered by the ngrok agent. token is the
-// account authtoken (may be empty if already configured via
-// `ngrok config add-authtoken` or the NGROK_AUTHTOKEN environment variable).
-// domain, when set, is a custom hostname; ngrok requires a paid account for
-// custom domains.
+// NewNgrokTunnel returns a tunnel powered by the embedded ngrok SDK. token is
+// the account authtoken (may be empty if already configured via
+// `ngrok config add-authtoken`, the NGROK_AUTHTOKEN environment variable, or
+// the pinner config manager). domain, when set, is a custom hostname; ngrok
+// requires a paid account for custom domains.
 func NewNgrokTunnel(domain, token string) Tunnel {
 	return &ngrokTunnel{domain: domain, token: token}
 }
@@ -43,13 +54,11 @@ func (n *ngrokTunnel) Name() string { return "ngrok" }
 func (n *ngrokTunnel) SupportsCustomDomain() bool { return true }
 
 // RequiresToken implements Tunnel. ngrok needs an account authtoken in all
-// cases (even the free tier), but it may be supplied three ways: via --token,
-// via the NGROK_AUTHTOKEN env var, or saved in the ngrok config file by
-// `ngrok config add-authtoken`. We only report true when none of those token
-// sources is present, so the CLI does not falsely reject a user who has
-// configured ngrok out of band. The ngrok config-file probe is centralized in
-// hasProviderConfig (which honors NGROK_CONFIG and the per-OS default paths,
-// including the Windows LOCALAPPDATA quirk) rather than duplicated here.
+// cases (even the free tier), but it may be supplied via --token, the
+// NGROK_AUTHTOKEN env var, or the ngrok config file. We report true only when
+// none of those sources is present, so the CLI does not falsely reject a user
+// who has configured ngrok out of band (the config-file probe is centralized
+// in hasProviderConfig).
 func (n *ngrokTunnel) RequiresToken() bool {
 	if n.token != "" || os.Getenv("NGROK_AUTHTOKEN") != "" {
 		return false
@@ -57,7 +66,7 @@ func (n *ngrokTunnel) RequiresToken() bool {
 	return !hasProviderConfig("ngrok")
 }
 
-// URL implements Tunnel.
+// OAuthBaseURL implements Tunnel.
 func (n *ngrokTunnel) OAuthBaseURL(explicitURL, tunnelURL string) (string, error) {
 	if explicitURL != "" {
 		return explicitURL, nil
@@ -65,6 +74,7 @@ func (n *ngrokTunnel) OAuthBaseURL(explicitURL, tunnelURL string) (string, error
 	return tunnelURL, nil
 }
 
+// URL implements Tunnel.
 func (n *ngrokTunnel) URL() (string, error) {
 	ready, url := n.getState()
 	if !ready {
@@ -73,154 +83,139 @@ func (n *ngrokTunnel) URL() (string, error) {
 	return url, nil
 }
 
-// Stop implements Tunnel.
+// Stop implements Tunnel. It closes the ngrok forwarder, bounded by ctx so a
+// stuck teardown cannot block the caller indefinitely.
 func (n *ngrokTunnel) Stop(ctx context.Context) error {
 	n.mu.Lock()
-	cmd := n.cmd
-	done := n.done
+	fwd := n.fwd
+	stop := n.stop
 	n.mu.Unlock()
-	if cmd == nil || cmd.Process == nil {
+	if fwd == nil {
 		return nil
 	}
-	if done != nil {
-		select {
-		case <-done:
-			return nil
-		default:
-		}
+	// Cancel the Forward context first so the agent begins a graceful
+	// session teardown, then close the forwarder with the same deadline.
+	if stop != nil {
+		stop()
 	}
-	_ = cmd.Process.Signal(os.Interrupt)
-	if done == nil {
-		return nil
+	if err := fwd.CloseWithContext(ctx); err != nil && ctx.Err() == nil {
+		return fmt.Errorf("stop ngrok tunnel: %w", err)
 	}
-	select {
-	case <-done:
-		return nil
-	case <-ctx.Done():
-		_ = cmd.Process.Kill()
-		return ctx.Err()
-	}
+	return nil
 }
 
-// Start implements Tunnel.
+// Start implements Tunnel. It builds an embedded ngrok agent, forwards the
+// given local address through it, and records the assigned public URL once the
+// tunnel is live.
 func (n *ngrokTunnel) Start(ctx context.Context, localAddr string) error {
-	if _, err := exec.LookPath("ngrok"); err != nil {
-		return fmt.Errorf("ngrok executable not found on PATH: %w (see https://ngrok.com/download)", err)
-	}
-
-	_, port, err := splitHostPort(localAddr)
+	host, port, err := splitHostPort(localAddr)
 	if err != nil {
 		return fmt.Errorf("invalid local address %q: %w", localAddr, err)
 	}
 
-	args := []string{"http", port}
-	if n.domain != "" {
-		args = append(args, "--url", "https://"+strings.TrimPrefix(n.domain, "https://"))
+	agentOpts := []ngrok.AgentOption{}
+	// Pass an explicit authtoken only when one is resolvable from a source we
+	// own (--token or NGROK_AUTHTOKEN). When absent, leave the agent to load
+	// the ngrok config file itself (hasProviderConfig/RequiresToken already
+	// account for it). Never pass an empty token (that would clobber the
+	// config-file credential).
+	if tok := ngrokToken(n.token); tok != "" {
+		agentOpts = append(agentOpts, ngrok.WithAuthtoken(tok))
 	}
-	// Disable the agent log so the human output can never be mistaken for
-	// the transport; the assigned URL comes from the Agent API instead.
-	args = append(args, "--log", "false")
 
-	cmd := exec.CommandContext(ctx, "ngrok", args...)
-	if n.token != "" {
-		cmd.Env = append(os.Environ(), "NGROK_AUTHTOKEN="+n.token)
+	agent, err := ngrok.NewAgent(agentOpts...)
+	if err != nil {
+		return fmt.Errorf("construct ngrok agent: %w", err)
 	}
-	cmd.Stdout = io.Discard
-	cmd.Stderr = io.Discard
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("failed to start ngrok: %w", err)
+
+	upstream := ngrok.WithUpstream(localURL(host, port))
+
+	forwardOpts := []ngrok.EndpointOption{}
+	if n.domain != "" {
+		// Strip any scheme/path so the ngrok SDK gets a bare hostname. Users
+		// may configure a scheme-qualified custom domain (e.g. --domain
+		// https://mcp.example.com), which ngrok.WithURL rejects as malformed.
+		forwardOpts = append(forwardOpts, ngrok.WithURL(bareHostname(n.domain)))
+	}
+
+	// A child context lets Stop cancel cleanly without tearing down the parent
+	// (which may be the service's long-lived context).
+	runCtx, stop := context.WithCancel(ctx)
+	fwd, err := agent.Forward(runCtx, upstream, forwardOpts...)
+	if err != nil {
+		stop()
+		return fmt.Errorf("start ngrok tunnel: %w", err)
 	}
 
 	n.mu.Lock()
-	n.cmd = cmd
-	n.done = make(chan struct{})
-	done := n.done
+	n.agent = agent
+	n.fwd = fwd
+	n.stop = stop
 	n.mu.Unlock()
-	go func() { _ = cmd.Wait(); close(done) }()
 
-	if n.domain != "" {
-		// The public URL is known up front; no discovery needed.
-		n.setReady("https://" + strings.TrimPrefix(n.domain, "https://"))
-		return nil
+	// The public URL is known from the returned forwarder; wait briefly for the
+	// tunnel to accept traffic before reporting it live, mirroring the previous
+	// readiness semantics (never print a URL that is not yet reachable).
+	if err := n.waitReady(ctx, fwd.URL().String()); err != nil {
+		shCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = n.Stop(shCtx)
+		return err
 	}
-
-	// Wait for the assigned free-tier URL to appear in the Agent API.
-	n.mu.Lock()
-	localPortCopy := port
-	n.mu.Unlock()
-	return n.waitForEndpoint(ctx, localPortCopy)
+	n.setReady(fwd.URL().String())
+	return nil
 }
 
-// waitForEndpoint polls the ngrok Agent API until an HTTP endpoint reports a
-// public URL matching localPort, or the context/startup deadline expires.
-func (n *ngrokTunnel) waitForEndpoint(ctx context.Context, localPort string) error {
+// waitReady polls the public URL until it responds over the tunnel, the
+// forwarder exits, or the context/deadline expires.
+func (n *ngrokTunnel) waitReady(ctx context.Context, publicURL string) error {
 	deadline := time.Now().Add(30 * time.Second)
-	client := &http.Client{Timeout: 2 * time.Second}
+	client := &http.Client{Timeout: 3 * time.Second}
 	for {
 		n.mu.Lock()
-		done := n.done
+		fwd := n.fwd
 		n.mu.Unlock()
+		if fwd == nil {
+			return fmt.Errorf("ngrok tunnel not started")
+		}
 		select {
-		case <-done:
-			return fmt.Errorf("ngrok exited before the tunnel became ready")
+		case <-fwd.Done():
+			return fmt.Errorf("ngrok tunnel exited before becoming ready")
 		default:
 		}
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("timed out waiting for ngrok tunnel to become ready")
+			return fmt.Errorf("timed out waiting for ngrok tunnel %s to become ready", publicURL)
 		}
-		if url, ok := ngrokEndpointURL(client, "http://127.0.0.1:4040/api/endpoints", localPort); ok {
-			n.setReady(url)
-			return nil
+		resp, err := client.Get(publicURL)
+		if err == nil {
+			_ = resp.Body.Close()
+			// Only a success/redirect status means the tunnel is actually
+			// delivering traffic to the local origin. ngrok's edge answers
+			// with its own 502/404 gateway pages before upstream connectivity
+			// is established, so those must not count as "ready".
+			if resp.StatusCode >= 200 && resp.StatusCode < 400 {
+				return nil
+			}
 		}
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(300 * time.Millisecond)
 	}
 }
 
-// ngrokEndpointURL parses the ngrok Agent API endpoint list and returns the
-// public URL of the matching tunnel. When localPort is non-empty, only
-// endpoints forwarding to that local port are considered, which keeps the
-// lookup correct if more than one tunnel runs under the same agent. Returns
-// the https URL in preference to http. Uses structured JSON only.
-func ngrokEndpointURL(client *http.Client, apiURL, localPort string) (string, bool) {
-	resp, err := client.Get(apiURL)
-	if err != nil {
-		return "", false
+// ngrokToken returns the ngrok authtoken from the explicit token or the
+// NGROK_AUTHTOKEN environment variable (config-file tokens are loaded by the
+// SDK itself and are not surfaced here).
+func ngrokToken(explicit string) string {
+	if v := strings.TrimSpace(explicit); v != "" {
+		return v
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return "", false
-	}
+	return strings.TrimSpace(os.Getenv("NGROK_AUTHTOKEN"))
+}
 
-	var body struct {
-		Endpoints []struct {
-			URL      string `json:"url"`
-			Upstream struct {
-				URL string `json:"url"`
-			} `json:"upstream"`
-		} `json:"endpoints"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		return "", false
-	}
-
-	for _, e := range body.Endpoints {
-		if localPort != "" && !strings.Contains(e.Upstream.URL, ":"+localPort) {
-			continue
-		}
-		if strings.HasPrefix(e.URL, "https://") {
-			return e.URL, true
-		}
-	}
-	for _, e := range body.Endpoints {
-		if localPort != "" && !strings.Contains(e.Upstream.URL, ":"+localPort) {
-			continue
-		}
-		if strings.HasPrefix(e.URL, "http://") {
-			return e.URL, true
-		}
-	}
-	return "", false
+// localURL builds an http:// origin from a host:port pair for the ngrok
+// upstream.
+func localURL(host, port string) string {
+	return "http://" + net.JoinHostPort(host, port)
 }

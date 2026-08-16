@@ -2,8 +2,6 @@ package mcp
 
 import (
 	"context"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -39,54 +37,30 @@ func TestSplitHostPort(t *testing.T) {
 	}
 }
 
-func TestNgrokEndpointURL(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{
-		  "endpoints": [
-			{
-			  "name": "command_line",
-			  "url": "http://abc123.ngrok-free.app",
-			  "upstream": { "url": "http://127.0.0.1:8893" }
-			},
-			{
-			  "name": "command_line (https)",
-			  "url": "https://abc123.ngrok-free.app",
-			  "upstream": { "url": "http://127.0.0.1:8893" }
-			}
-		  ]
-		}`))
-	}))
+func TestNgrokToken(t *testing.T) {
+	// Explicit token wins.
+	assert.Equal(t, "explicit", ngrokToken("explicit"))
 
-	client := srv.Client()
-	url, ok := ngrokEndpointURL(client, srv.URL, "8893")
-	require.True(t, ok)
-	assert.Equal(t, "https://abc123.ngrok-free.app", url)
+	// Empty explicit falls back to NGROK_AUTHTOKEN.
+	t.Setenv("NGROK_AUTHTOKEN", "envtok")
+	assert.Equal(t, "envtok", ngrokToken(""))
 
-	// Empty port matches no endpoint.
-	_, ok = ngrokEndpointURL(client, srv.URL, "9999")
-	assert.False(t, ok)
+	// Explicit wins over env.
+	assert.Equal(t, "explicit", ngrokToken("explicit"))
+
+	// Both empty -> empty.
+	t.Setenv("NGROK_AUTHTOKEN", "")
+	assert.Equal(t, "", ngrokToken(""))
+
+	// Whitespace explicit is treated as empty, so it falls back to env.
+	t.Setenv("NGROK_AUTHTOKEN", "envtok")
+	assert.Equal(t, "envtok", ngrokToken("   "))
 }
 
-func TestNgrokEndpointURLChoosesHTTPS(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"endpoints":[
-			{"url":"http://x.ngrok-free.app","upstream":{"url":"http://127.0.0.1:7000"}},
-			{"url":"https://x.ngrok-free.app","upstream":{"url":"http://127.0.0.1:7000"}}
-		]}`))
-	}))
-	url, ok := ngrokEndpointURL(srv.Client(), srv.URL, "7000")
-	require.True(t, ok)
-	assert.Equal(t, "https://x.ngrok-free.app", url)
-}
-
-func TestNgrokWaitForEndpointFailsWhenProcessExits(t *testing.T) {
-	n := &ngrokTunnel{done: make(chan struct{})}
-	close(n.done)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	err := n.waitForEndpoint(ctx, "7000")
-	assert.ErrorContains(t, err, "ngrok exited before")
+func TestNgrokLocalURL(t *testing.T) {
+	assert.Equal(t, "http://127.0.0.1:8893", localURL("127.0.0.1", "8893"))
+	assert.Equal(t, "http://localhost:7000", localURL("localhost", "7000"))
+	assert.Equal(t, "http://[::1]:8080", localURL("::1", "8080"))
 }
 
 func TestTunnelFor(t *testing.T) {
@@ -166,6 +140,26 @@ func TestURLForOrigin(t *testing.T) {
 
 	_, err = urlForOrigin("notaport")
 	require.Error(t, err)
+}
+
+// TestNgrokCustomDomainNormalization guards the https:// stripping applied to
+// ngrok custom domains before ngrok.WithURL (bareHostname). A scheme-qualified
+// domain must become a bare hostname or the SDK rejects it as malformed.
+func TestNgrokCustomDomainNormalization(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{"mcp.example.com", "mcp.example.com"},
+		{"https://mcp.example.com", "mcp.example.com"},
+		{"http://mcp.example.com", "mcp.example.com"},
+		{"https://mcp.example.com/", "mcp.example.com"},
+		{"  https://mcp.example.com  ", "mcp.example.com"},
+	}
+	for _, tc := range tests {
+		got := bareHostname(tc.in)
+		assert.Equal(t, tc.want, got, "bareHostname(%q)", tc.in)
+	}
 }
 
 // TestCloudflaredStopAfterExit guards the exit-detection path of the embedded

@@ -235,11 +235,15 @@ func validateServiceEnvironment(envFile string) (TunnelProvider, error) {
 		if provider == TunnelProviderNgrok && strings.TrimSpace(env["NGROK_AUTHTOKEN"]) == "" && strings.TrimSpace(env["MCP_TUNNEL_TOKEN"]) == "" {
 			return "", errors.New("NGROK_AUTHTOKEN or MCP_TUNNEL_TOKEN is required for the ngrok tunnel")
 		}
-		if _, err := exec.LookPath(string(provider)); err != nil {
-			return "", fmt.Errorf("%s executable not found on PATH: %w", provider, err)
-		}
-		if provider == TunnelProviderCloudflared && strings.TrimSpace(env["MCP_DOMAIN"]) == "" {
-			return "", errors.New("MCP_DOMAIN is required for cloudflared")
+		// Only cloudflared runs as an external subprocess; ngrok is embedded
+		// via the Go SDK and needs no binary on PATH.
+		if provider == TunnelProviderCloudflared {
+			if _, err := exec.LookPath(string(provider)); err != nil {
+				return "", fmt.Errorf("%s executable not found on PATH: %w", provider, err)
+			}
+			if strings.TrimSpace(env["MCP_DOMAIN"]) == "" {
+				return "", errors.New("MCP_DOMAIN is required for cloudflared")
+			}
 		}
 	}
 	return provider, nil

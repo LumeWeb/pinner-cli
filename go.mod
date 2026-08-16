@@ -44,6 +44,7 @@ require (
 	go.sia.tech/indexd v0.2.3-0.20260519120331-4eab507a9847
 	go.sia.tech/siastorage v0.1.0
 	go.uber.org/zap v1.28.0
+	golang.ngrok.com/ngrok/v2 v2.2.0
 	golang.org/x/sys v0.47.0
 	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/datatypes v1.2.7
@@ -272,6 +273,7 @@ require (
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	go.yaml.in/yaml/v4 v4.0.0-rc.2 // indirect
 	go4.org v0.0.0-20230225012048-214862532bf5 // indirect
+	golang.ngrok.com/muxado/v2 v2.0.1 // indirect
 	golang.org/x/crypto v0.54.0 // indirect
 	golang.org/x/exp v0.0.0-20260718201538-764159d718ef // indirect
 	golang.org/x/mod v0.38.0 // indirect
