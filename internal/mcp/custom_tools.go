@@ -74,6 +74,14 @@ type customToolDeps struct {
 	// back to an unreachable loopback URL. When false, the consolidated
 	// upload_file tool's remote branch is not registered for that transport.
 	remoteUploadSupported bool
+	// tunnelOpenAI reports whether the server is running through the embedded
+	// OpenAI Secure MCP Tunnel, which exposes no reachable HTTP mux (all RPC
+	// flows through the tunnel protocol). It distinguishes the OpenAI tunnel
+	// from a plain HTTP server or a non-OpenAI tunnel even when no presigned
+	// curl coordinator is wired, so the transport advertised by capabilities
+	// and the upload tools is derived from reachability rather than from
+	// whether a coordinator happens to be registered.
+	tunnelOpenAI bool
 	// wizard deps are built from wizardFactory at Action time. All three are
 	// nil when no wizard factory is configured.
 	hasWizard bool
@@ -243,11 +251,6 @@ func registerCustomTools(deps customToolDeps) error {
 	if opts == nil {
 		opts = &mcpServerOptions{}
 	}
-	if opts.chatGPTUpload != nil {
-		if err := RegisterOfficialDescriptor(deps.srv, ChatGPTUploadDescriptor(opts.chatGPTUpload)); err != nil {
-			return err
-		}
-	}
 	if opts.chatGPTVaultPut != nil {
 		vaultPutDesc := ChatGPTVaultPutDescriptor(opts.chatGPTVaultPut)
 		// Index vault_put_file in the catalog as well as the direct surface so
@@ -294,21 +297,22 @@ func registerCustomTools(deps customToolDeps) error {
 	}
 	// Consolidated upload_file: a single transport-aware IPFS upload tool.
 	// The caller does not pick a mechanism — registration routes by transport.
-	//   - co-located (stdio/local): upload a host-side path via the local-path
+	//   - co-located (stdio/local): source mode path via the local-path
 	//     handler (opts.localPathUpload).
-	//   - remote (HTTP/tunnel): mint a one-time presigned HTTP PUT endpoint via
-	//     the httpUpload coordinator (deps.curlUpload).
-	// Register it whenever at least one upload path is available. The remote
-	// branch additionally requires remoteUploadSupported: the openai tunnel
-	// carries only MCP RPC (no reachable HTTP mux), so a minted presigned PUT
-	// would be an unreachable loopback URL — the tool must not advertise a
-	// branch no agent could use.
-	if uploadFileAvailable(deps.coLocated, opts.localPathUpload != nil, deps.curlUpload != nil, deps.remoteUploadSupported) {
+	//   - remote (HTTP/tunnel): source mode mint via the presigned httpUpload
+	//     coordinator (deps.curlUpload).
+	//   - openai tunnel: source mode url/data via the file-relay executor
+	//     (opts.uploadHandler), since no reachable HTTP mux exists.
+	// Register it whenever at least one upload path is available for the
+	// running transport.
+	if uploadFileAvailable(deps.coLocated, opts.localPathUpload != nil, deps.curlUpload != nil, opts.uploadHandler != nil, deps.remoteUploadSupported) {
 		var pathFn UploadFileHandler
 		if deps.coLocated {
 			pathFn = opts.localPathUpload
 		}
-		uploadFileDesc := NewUploadFileDescriptor(deps.coLocated, pathFn, deps.curlUpload)
+		// relayFn is the authenticated file executor for the openai-tunnel
+		// url/data source modes.
+		uploadFileDesc := NewUploadFileDescriptor(deps.coLocated, deps.tunnelOpenAI, pathFn, deps.curlUpload, opts.uploadHandler, opts.relayAllowedHosts, opts.maxRelayBytes)
 
 		// Pair upload_file with its "Upload to IPFS" MCP App view
 		// (ui://uploads/ipfs.html) so a UI-capable host renders a file-picker
@@ -361,12 +365,12 @@ func registerCustomTools(deps customToolDeps) error {
 	// without assuming draft MCP file support is negotiated. Each capability
 	// reflects whether its handler is actually wired.
 	if err := RegisterOfficialDescriptor(deps.srv, NewCapabilitiesDescriptor(
-		opts.chatGPTUpload != nil,
+		opts.uploadHandler != nil,
 		opts.chatGPTVaultPut != nil,
 		opts.relayURLUpload != nil,
 		opts.dataURIUpload != nil,
 		deps.coLocated && (opts.localPathUpload != nil || opts.localPathVaultPut != nil),
-		uploadFileAvailable(deps.coLocated, opts.localPathUpload != nil, deps.curlUpload != nil, deps.remoteUploadSupported),
+		uploadFileAvailable(deps.coLocated, opts.localPathUpload != nil, deps.curlUpload != nil, opts.uploadHandler != nil, deps.remoteUploadSupported),
 		opts.maxRelayBytes,
 	)); err != nil {
 		return err
@@ -398,9 +402,19 @@ func registerCustomTools(deps customToolDeps) error {
 //
 // It is the single decision used both when registering the tool and when
 // reporting the upload_file capability, so the two can never drift.
-func uploadFileAvailable(coLocated, localPathWired, curlWired, remoteUploadSupported bool) bool {
+//
+// The tool is available when its transport has at least one real file-input
+// mechanism:
+//   - co-located (stdio): a local path handler is wired.
+//   - HTTP / real tunnel: a reachable presigned HTTP PUT coordinator is wired.
+//   - OpenAI tunnel: a file-relay executor is wired (no reachable HTTP mux, so
+//     only the url/data relay path can carry bytes).
+func uploadFileAvailable(coLocated, localPathWired, curlWired, relayWired, remoteUploadSupported bool) bool {
 	if coLocated {
 		return localPathWired
 	}
-	return curlWired && remoteUploadSupported
+	if curlWired && remoteUploadSupported {
+		return true
+	}
+	return !remoteUploadSupported && relayWired
 }
