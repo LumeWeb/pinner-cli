@@ -87,6 +87,29 @@ func RunServiceInstallWizard(ctx context.Context, cmd *cli.Command, envFile stri
 	// something already explicit.
 	seedFromFlagsAndEnv(cmd, state, envFile)
 
+	// If this wizard run provisions a fresh Cloudflare tunnel and a later step
+	// fails (e.g. the env-file write), roll it back so a re-run is not blocked
+	// by an orphaned tunnel + CNAME + stale state file. provisionedAPIKey is
+	// the Cloudflare API token used at provision time (the tunnel-scoped run
+	// token is not a valid API token for resource cleanup).
+	var provisionedAPIKey string
+	rollbackTunnel := func() {
+		if provisionedAPIKey == "" {
+			return
+		}
+		if st, lerr := LoadCloudflareTunnelState(); lerr == nil && st != nil {
+			if c, cerr := cloudflare.New(provisionedAPIKey); cerr == nil {
+				if st.DNSRecordID != "" {
+					_ = c.DeleteDNSRoute(context.WithoutCancel(ctx), cloudflare.Zone{ID: st.ZoneID}, st.DNSRecordID)
+				}
+				_ = c.DeleteTunnel(context.WithoutCancel(ctx), cloudflare.Account{ID: st.AccountID}, st.TunnelID)
+			}
+			if p, perr := tunnelStatePath(); perr == nil {
+				_ = os.Remove(p)
+			}
+		}
+	}
+
 	steps := []wizard.Step[*ServiceInstallState]{
 		wizard.StepFunc[*ServiceInstallState]{
 			Name_: "Tunnel provider",
@@ -164,13 +187,16 @@ func RunServiceInstallWizard(ctx context.Context, cmd *cli.Command, envFile stri
 					} else if errors.Is(lerr, os.ErrNotExist) || (lerr == nil && existing == nil) {
 						// No tunnel provisioned yet (no persisted state, or a
 						// nil error with nil state): provision a new one.
-						state, _, perr := provisionCloudflaredForWizard(ctx, cmd, cloudflare.New)
+						state, apiKey, perr := provisionCloudflaredForWizard(ctx, cmd, cloudflare.New)
 						if perr != nil {
 							return perr
 						}
 						s.Domain = state.Hostname
 						s.TunnelName = state.TunnelName
 						s.TunnelToken = state.Token
+						// Remember the API token so the env-write step can roll
+						// the tunnel back if it fails.
+						provisionedAPIKey = apiKey
 					} else {
 						// Existing state exists but is corrupt or unreadable
 						// (parse failure, permission, I/O). Surface it rather
@@ -217,6 +243,10 @@ func RunServiceInstallWizard(ctx context.Context, cmd *cli.Command, envFile stri
 				seedFromFlagsAndEnv(cmd, s, envFile)
 				env := serviceInstallStateToEnv(s)
 				if err := WriteServiceEnvironment(s.EnvFile, env); err != nil {
+					// A fresh cloudflared tunnel may have been provisioned in
+					// the previous step; roll it back so a failed env write
+					// does not orphan the tunnel + CNAME + state file.
+					rollbackTunnel()
 					return fmt.Errorf("write MCP service environment file: %w", err)
 				}
 				return nil
