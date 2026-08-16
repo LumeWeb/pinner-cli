@@ -53,12 +53,20 @@ func defaultPathResolver(agent install.AgentConfig, local bool, projectDir strin
 	return agent.ConfigPath()
 }
 
+// httpCollector is the injectable seam the HTTP composite uses to populate
+// s.PublicURL / s.AuthToken from the tunnel/service environment. The wizard
+// steps run on *InstallState only (no *cli.Command); runMcpInstall wires the
+// real collector (which has cmd and calls mcpadapter.CollectHTTPInstall), while
+// tests inject a fake that sets the values directly and touches no real tunnel.
+type httpCollector func(ctx context.Context, s *InstallState) error
+
 // InstallWizard manages the mcp install process.
 // This is the business logic layer - fully testable without UI dependencies.
 type InstallWizard struct {
 	ui          InstallUI
 	state       *InstallState
 	resolvePath pathResolver
+	collectHTTP httpCollector
 }
 
 // NewInstallWizard creates a new mcp install wizard.
@@ -70,6 +78,9 @@ func NewInstallWizard(ui InstallUI, state *InstallState, resolvePath pathResolve
 		ui:          ui,
 		state:       state,
 		resolvePath: resolvePath,
+		// Default no-op; runMcpInstall replaces it with the real collector that
+		// drives CollectHTTPInstall. Kept non-nil so http installs never panic.
+		collectHTTP: func(context.Context, *InstallState) error { return nil },
 	}
 }
 
@@ -161,6 +172,19 @@ func (w *InstallWizard) getSteps() []wizard.Step[*InstallState] {
 				}
 				s.Transport = t
 				return nil
+			},
+		},
+		wizard.StepFunc[*InstallState]{
+			Name_: "Configure Tunnel",
+			// Only runs for the remote (http) transport. Skipped for stdio and for
+			// agents coerced to stdio (e.g. a stdio-only selection).
+			SkipFunc: func(s *InstallState) bool {
+				return s.Transport != install.TransportHTTP
+			},
+			ExecuteFunc: func(ctx context.Context, s *InstallState) error {
+				// The injected collector populates s.PublicURL / s.AuthToken from
+				// the tunnel/service environment (real: CollectHTTPInstall).
+				return w.collectHTTP(ctx, s)
 			},
 		},
 		wizard.StepFunc[*InstallState]{

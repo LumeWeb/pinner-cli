@@ -7,6 +7,7 @@ import (
 
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/internal/cli/wizard"
+	mcpadapter "go.lumeweb.com/pinner-cli/internal/mcp"
 	"go.lumeweb.com/pinner-cli/internal/mcp/install"
 )
 
@@ -33,7 +34,10 @@ Examples:
   pinner mcp install --agent claude-code,vscode --transport stdio --no-interactive
   pinner mcp install --agent claude-code --scope project
   pinner mcp install --agent claude-code --transport http --service`,
-		Flags: []cli.Flag{
+		// Shared tunnel/env flags (--env-file, --tunnel, --auth-token,
+		// --public-url, ...) so the HTTP composite sources MCP_AUTH_TOKEN /
+		// MCP_PUBLIC_URL / MCP_TUNNEL_PROVIDER identically to `pinner mcp service`.
+		Flags: append([]cli.Flag{
 			&cli.StringSliceFlag{
 				Name:  "agent",
 				Usage: "Comma-separated list of agents to install to (claude-code, claude-desktop, vscode, cursor, codex, gemini-cli, opencode, zed)",
@@ -54,7 +58,7 @@ Examples:
 				Name:  "service",
 				Usage: "Install against the managed pinner MCP service (http)",
 			},
-		},
+		}, mcpadapter.ServiceInstallFlags()...),
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			return runMcpInstall(ctx, cmd, nil, nil)
 		},
@@ -149,6 +153,29 @@ func runMcpInstall(ctx context.Context, cmd mcpInstallFlagGetter, ui InstallUI, 
 	}
 
 	w := NewInstallWizard(ui, state, resolvePath)
+
+	// Wire the real HTTP composite collector when run with the actual cli
+	// command (production). Tests pass a fake flag-getter and inject their own
+	// fake collector instead of a real *cli.Command, so no tunnel is touched.
+	if realCmd, ok := cmd.(*cli.Command); ok {
+		envFile := cmd.String("env-file")
+		if envFile == "" {
+			envFile = mcpadapter.ServiceEnvFile()
+		}
+		w.collectHTTP = func(ctx context.Context, s *InstallState) error {
+			env, err := mcpadapter.CollectHTTPInstall(ctx, realCmd, envFile, s.UseService)
+			if err != nil {
+				return err
+			}
+			s.PublicURL = env["MCP_PUBLIC_URL"]
+			s.AuthToken = env["MCP_AUTH_TOKEN"]
+			if s.PublicURL == "" {
+				return fmt.Errorf("tunnel collection produced no MCP_PUBLIC_URL; check the tunnel provider")
+			}
+			return nil
+		}
+	}
+
 	_, err := w.Run(ctx)
 	return err
 }

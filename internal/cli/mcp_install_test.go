@@ -253,8 +253,6 @@ func TestMcpInstallNonInteractiveClaudeCodeStdio(t *testing.T) {
 	projectDir := t.TempDir()
 
 	fake := newMcpInstallFlagFake()
-	fake.set["scope"] = true
-	fake.set["transport"] = true
 	fake.vals["scope"] = scopeGlobal
 	fake.vals["transport"] = string(install.TransportStdio)
 	fake.bools["non-interactive"] = true
@@ -285,8 +283,6 @@ func TestMcpInstallNonInteractiveClaudeCodeStdio(t *testing.T) {
 func TestMcpInstallNonInteractiveHTTPWithoutServiceErrors(t *testing.T) {
 	ctx := context.Background()
 	fake := newMcpInstallFlagFake()
-	fake.set["scope"] = true
-	fake.set["transport"] = true
 	fake.vals["scope"] = scopeGlobal
 	fake.vals["transport"] = string(install.TransportHTTP)
 	fake.bools["non-interactive"] = true
@@ -341,27 +337,100 @@ func TestMcpInstallClaudeDesktopSkippedForHTTP(t *testing.T) {
 	}
 }
 
-func TestMcpInstallInteractivePromptsForScopeAndTransport(t *testing.T) {
-	// When --scope / --transport are NOT passed, the wizard must prompt for
-	// them (regression guard: previously the non-empty flag defaults made the
-	// Choose Scope / Choose Transport steps always skip in interactive mode).
+// fakeHTTPCollector returns an httpCollector that injects a canned tunnel env
+// into the state, simulating what the real CollectHTTPInstall returns — so the
+// HTTP composite is testable without touching a real tunnel or systemd.
+func fakeHTTPCollector(publicURL, authToken string) httpCollector {
+	return func(_ context.Context, s *InstallState) error {
+		s.PublicURL = publicURL
+		s.AuthToken = authToken
+		return nil
+	}
+}
+
+func TestMcpInstallHTTPCompositeWritesRemoteEntry(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
 	projectDir := t.TempDir()
-
 	ui := newMockInstallUI()
-	ui.SelectAgentsResult = []install.AgentKey{install.AgentClaudeCode}
-	ui.SelectScopeResult = scopeGlobal
-	ui.SelectTransportResult = install.TransportStdio
 
-	// Flags unset on the fake -> transport/scope empty -> prompts render.
-	fake := newMcpInstallFlagFake()
-	fake.stringSlice["agent"] = []string{"claude-code"}
-
-	if err := runMcpInstall(ctx, fake, ui, tempPathResolver(root, projectDir)); err != nil {
-		t.Fatalf("runMcpInstall failed: %v", err)
+	state := &InstallState{
+		Agents:     []install.AgentKey{install.AgentClaudeCode},
+		Scope:      scopeGlobal,
+		Transport:  install.TransportHTTP,
+		UseService: false,
 	}
-	if !ui.WasCalled("SelectScope") || !ui.WasCalled("SelectTransport") {
-		t.Errorf("expected SelectScope and SelectTransport prompts when flags are unset")
+
+	w := NewInstallWizard(ui, state, tempPathResolver(root, projectDir))
+	// Inject the fake collector: the real tunnel is not exercised in this test.
+	w.collectHTTP = fakeHTTPCollector("https://mcp.example.com", "s3cr3t-token")
+
+	if _, err := w.Run(ctx); err != nil {
+		t.Fatalf("wizard run failed: %v", err)
+	}
+
+	// The remote (http) entry must carry type=http, url, and the Bearer auth
+	// header that the wizard builds from AuthToken.
+	entry := readGlobalJSON(t, root, install.AgentClaudeCode)
+	if entry["type"] != "http" {
+		t.Errorf("entry type = %v, want http", entry["type"])
+	}
+	if entry["url"] != "https://mcp.example.com" {
+		t.Errorf("entry url = %v, want tunnel public URL", entry["url"])
+	}
+	headers, _ := entry["headers"].(map[string]any)
+	auth, _ := headers["Authorization"]
+	if auth != "Bearer s3cr3t-token" {
+		t.Errorf("entry headers[Authorization] = %v, want 'Bearer s3cr3t-token'", auth)
+	}
+	// An http entry must not carry a command/args (stdio-only fields).
+	if _, hasCmd := entry["command"]; hasCmd {
+		t.Errorf("http entry should not contain a command")
+	}
+}
+
+func TestMcpInstallHTTPCompositeSkipsStdioOnlyAgent(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	projectDir := t.TempDir()
+	ui := newMockInstallUI()
+
+	// claude-code supports http; claude-desktop is stdio-only and must be
+	// skipped for an http install.
+	state := &InstallState{
+		Agents:     []install.AgentKey{install.AgentClaudeCode, install.AgentClaudeDesktop},
+		Scope:      scopeGlobal,
+		Transport:  install.TransportHTTP,
+		UseService: false,
+	}
+
+	w := NewInstallWizard(ui, state, tempPathResolver(root, projectDir))
+	w.collectHTTP = fakeHTTPCollector("https://mcp.example.com", "s3cr3t-token")
+
+	if _, err := w.Run(ctx); err != nil {
+		t.Fatalf("wizard run failed: %v", err)
+	}
+
+	// claude-code gets the remote entry.
+	entry := readGlobalJSON(t, root, install.AgentClaudeCode)
+	if entry["url"] != "https://mcp.example.com" {
+		t.Errorf("claude-code url = %v, want tunnel public URL", entry["url"])
+	}
+
+	// claude-desktop must be skipped with a clear message and no config file.
+	ui.mu.Lock()
+	reported := false
+	for _, b := range ui.ReportBuildCalls {
+		if b.Agent == install.AgentClaudeDesktop && strings.Contains(b.Msg, "does not support http") {
+			reported = true
+		}
+	}
+	ui.mu.Unlock()
+	if !reported {
+		t.Errorf("expected a 'does not support http' build message for claude-desktop")
+	}
+	globalPath := filepath.Join(root, "global", string(install.AgentClaudeDesktop)+".json")
+	if _, err := os.Stat(globalPath); !os.IsNotExist(err) {
+		t.Errorf("claude-desktop http install should not have written a config; stat err=%v", err)
 	}
 }

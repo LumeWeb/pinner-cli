@@ -73,6 +73,13 @@ func managedServiceFlags() []cli.Flag {
 	}
 }
 
+// ServiceInstallFlags returns the tunnel/environment flags shared by the
+// `pinner mcp service` command and the `pinner mcp install` HTTP composite.
+// The install command appends these so flag -> env sourcing
+// (MCP_AUTH_TOKEN, MCP_PUBLIC_URL, MCP_TUNNEL_PROVIDER, ...) resolves the same
+// way for both paths, without duplicating any flag names.
+func ServiceInstallFlags() []cli.Flag { return managedServiceFlags() }
+
 // ManagedServiceCommand returns the rootless MCP service lifecycle command.
 func ManagedServiceCommand() *cli.Command {
 	return &cli.Command{
