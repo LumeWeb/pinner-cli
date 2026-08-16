@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"errors"
 	"io"
 	"path/filepath"
 	"sync"
@@ -43,6 +44,7 @@ type versionSDK struct {
 	lastObjectHash types.Hash256 // hash passed to the most recent Object() call
 	uploads        [][]byte      // every byte stream Upload received, in order
 	downloads      int           // number of Download calls served
+	downloadErr    error         // injected error to fail Download mid-read (nil = serve normally)
 }
 
 func newVersionSDK(t *testing.T) *versionSDK {
@@ -89,6 +91,11 @@ func (f *versionSDK) Download(_ siastorage.Object, _ ...siastorage.DownloadOptio
 	defer f.mu.Unlock()
 	f.downloads++
 	content := f.objs[f.lastObjectHash]
+	if f.downloadErr != nil {
+		// Serve a reader that fails mid-read, simulating a truncated/failed
+		// historical-object download (some bytes then an error).
+		return io.NopCloser(&partialErrReader{Reader: bytes.NewReader(content), Err: f.downloadErr}), nil
+	}
 	return io.NopCloser(bytes.NewReader(content)), nil
 }
 func (f *versionSDK) DeleteObject(_ context.Context, _ types.Hash256) error { return nil }
@@ -336,6 +343,63 @@ func TestVersion_RestoreReuploadsOldContentAsNewVersion(t *testing.T) {
 	if fake.downloads == 0 {
 		t.Error("VersionRestore never invoked SDK.Download — content was not retrieved")
 	}
+}
+
+// TestVersion_RestorePropagatesDownloadError verifies that a failed/truncated
+// historical download surfaces as a VersionRestore error and does NOT mint a
+// partial/empty version as the new current winner. Regression for the
+// CloseWithError propagation.
+func TestVersion_RestorePropagatesDownloadError(t *testing.T) {
+	ctx := context.Background()
+	const path = "vault:/docs/doc.txt"
+
+	fake := newVersionSDK(t)
+	svc, db := openVaultTestService(t, fake)
+
+	dirID, err := svc.getOrCreateDirectory("/docs")
+	if err != nil {
+		t.Fatalf("getOrCreateDirectory: %v", err)
+	}
+	keyV1 := fake.registerContent(mustHash(t, "00000000000000000000000000000000000000000000000000000000000000aa"), []byte("v1 content"))
+	if err := db.Create(&File{UUID: "uuid-doc", Name: "doc.txt", DirectoryID: dirID, IsCurrent: true,
+		VersionID: "version-v1", Seq: 1, ObjectKey: keyV1, Size: int64(len("v1 content"))}).Error; err != nil {
+		t.Fatalf("seed version row: %v", err)
+	}
+
+	// Inject a mid-read failure into the historical download.
+	fake.downloadErr = errors.New("simulated download failure after partial bytes")
+
+	if _, err := svc.VersionRestore(ctx, path, "version-v1"); err == nil {
+		t.Fatal("VersionRestore succeeded on a failed download; want an error")
+	}
+
+	// No new (current) version row may have been minted from the partial stream.
+	rows, err := svc.VersionList(ctx, path)
+	if err != nil {
+		t.Fatalf("VersionList: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("failed restore minted %d version rows, want 1 (original only)", len(rows))
+	}
+	if !rows[0].IsCurrent || rows[0].VersionID != "version-v1" {
+		t.Fatalf("original row altered by failed restore: current=%v version=%q", rows[0].IsCurrent, rows[0].VersionID)
+	}
+}
+
+// partialErrReader wraps an inner reader and injects err once the underlying
+// content has been fully consumed, simulating a download that fails after
+// emitting some bytes (a truncated/failed historical-object read).
+type partialErrReader struct {
+	io.Reader
+	Err error
+}
+
+func (r *partialErrReader) Read(p []byte) (int, error) {
+	n, err := r.Reader.Read(p)
+	if err == io.EOF && r.Err != nil {
+		return n, r.Err
+	}
+	return n, err
 }
 
 // mustHash parses a 64-hex-char string into a types.Hash256, failing the test on

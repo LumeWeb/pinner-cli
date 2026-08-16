@@ -953,11 +953,13 @@ func (s *vaultService) VersionRestore(ctx context.Context, vaultPath string, ver
 	// buffering the whole object in RAM. Put consumes the reader once
 	// (io.TeeReader -> sdk.Upload) and mints a new version row that reuses
 	// the same logical file's UUID group (findCurrentFile resolves the
-	// current winner by path).
+	// current winner by path). A failed/truncated historical download is
+	// propagated via CloseWithError so Put's io.Copy surfaces it as a read
+	// error and the restore aborts instead of committing a partial/empty
+	// version as the new current winner.
 	pr, pw := io.Pipe()
 	go func() {
-		_ = s.VersionDownload(ctx, vp.Raw, versionID, pw)
-		pw.Close()
+		pw.CloseWithError(s.VersionDownload(ctx, vp.Raw, versionID, pw))
 	}()
 	return s.Put(ctx, pr, row.Size, vp.Raw, nil)
 }
