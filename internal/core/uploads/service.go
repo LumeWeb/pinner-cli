@@ -11,12 +11,15 @@ import (
 	"time"
 )
 
-// UploadResult contains information about an upload operation.
+// UploadResult contains information about an upload operation. JSON tags make
+// the wire form idiomatic (lowercase snake_case) so MCP structured content and
+// text surfacing agree with every other tool in the catalog (the CID is the
+// identifier a caller needs to correlate a write).
 type UploadResult struct {
-	CID      string
-	Size     int64
-	Duration time.Duration
-	Location string
+	CID      string        `json:"cid"`
+	Size     int64         `json:"size"`
+	Duration time.Duration `json:"duration"`
+	Location string        `json:"location,omitempty"`
 }
 
 // Service defines the interface for uploading content to IPFS.

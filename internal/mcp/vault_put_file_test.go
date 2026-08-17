@@ -43,7 +43,8 @@ func TestVaultPutFileDescriptorStdioPath(t *testing.T) {
 	require.Equal(t, "/host/abs/file.bin", gotPath)
 	require.Equal(t, "vault:/uploads/file.bin", gotVaultPath)
 	require.Equal(t, "preserve", gotMode)
-	require.Equal(t, "Stored in the vault.", res.Text)
+	// Text surfaces the result as canonical JSON (the vault path), not prose.
+	require.JSONEq(t, `{"status":"ok","vault_path":"vault:/uploads/file.bin"}`, res.Text)
 }
 
 func TestVaultPutFileDescriptorStdioRejectsMint(t *testing.T) {

@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -285,6 +286,59 @@ func TestDownloadFileDropSink(t *testing.T) {
 	body, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
 	require.Equal(t, "dropped bytes", string(body))
+}
+
+// TestDownloadFileTextSurfacesDestination pins the download reporting fix: a
+// text-only agent reads only content[].text, so the destination (output_path
+// for local, fetch_url for drop) must appear there as canonical JSON — not just
+// in structured content.
+func TestDownloadFileTextSurfacesDestination(t *testing.T) {
+	t.Run("local", func(t *testing.T) {
+		root := t.TempDir()
+		desc := NewDownloadFileDescriptor(
+			IPFSDownloadHandler(func(ctx context.Context, ipfsPath string, w io.Writer) error {
+				_, err := w.Write([]byte("bytes"))
+				return err
+			}),
+			nil, root, 0, false,
+		)
+		res, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{
+			"ipfs_path":   "bafyabc/doc.txt",
+			"sink":        "local",
+			"output_path": "dl.bin",
+		}})
+		require.NoError(t, err)
+		require.False(t, res.IsError)
+		// Text must carry the destination output_path (canonical JSON), not prose.
+		require.True(t, json.Valid([]byte(res.Text)), "Text must be JSON: %s", res.Text)
+		require.Contains(t, res.Text, `"status":"ok"`)
+		require.Contains(t, res.Text, `"sink":"local"`)
+		require.Contains(t, res.Text, `"output_path":`)
+		require.Contains(t, res.Text, `dl.bin`)
+		require.Contains(t, res.Text, `"name":"dl.bin"`)
+	})
+
+	t.Run("drop", func(t *testing.T) {
+		hd := NewHTTPDownload()
+		root := t.TempDir()
+		desc := NewDownloadFileDescriptor(
+			IPFSDownloadHandler(func(ctx context.Context, ipfsPath string, w io.Writer) error {
+				_, err := w.Write([]byte("bytes"))
+				return err
+			}),
+			hd, root, 0, false,
+		)
+		res, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{
+			"ipfs_path": "bafyabc/x.bin",
+			"sink":      "drop",
+		}})
+		require.NoError(t, err)
+		require.False(t, res.IsError)
+		// Text must carry the filedrop fetch_url so a text-only agent can pull it.
+		require.Contains(t, res.Text, `"status":"ok"`)
+		require.Contains(t, res.Text, `"sink":"drop"`)
+		require.Contains(t, res.Text, "/download/")
+	})
 }
 
 func TestDownloadFileDropHiddenOnOpenAITunnel(t *testing.T) {
