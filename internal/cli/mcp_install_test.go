@@ -11,6 +11,7 @@ import (
 	"sync"
 	"testing"
 
+	"atomicgo.dev/keyboard/keys"
 	"go.lumeweb.com/pinner-cli/internal/cli/wizard"
 	mcpadapter "go.lumeweb.com/pinner-cli/internal/mcp"
 	"go.lumeweb.com/pinner-cli/internal/mcp/install"
@@ -708,6 +709,19 @@ func TestNewAgentMultiselectPassesOptionsToWidget(t *testing.T) {
 	}
 	if !reflect.DeepEqual(p.DefaultOptions, preChecked) {
 		t.Errorf("widget DefaultOptions = %v, want %v", p.DefaultOptions, preChecked)
+	}
+	// UX guardrails: the standard multiselect convention must hold. With the
+	// search filter enabled (pterm's default) a leading space is swallowed by
+	// the filter box instead of toggling a row, and only Enter/Tab advance —
+	// disables the filter and binds space=select, enter=confirm.
+	if p.Filter {
+		t.Error("widget Filter must be disabled: with filter on, a leading space triggers search instead of toggling")
+	}
+	if p.KeySelect != keys.Space {
+		t.Errorf("widget KeySelect = %v, want %v (space must toggle a row)", p.KeySelect, keys.Space)
+	}
+	if p.KeyConfirm != keys.Enter {
+		t.Errorf("widget KeyConfirm = %v, want %v (enter must advance)", p.KeyConfirm, keys.Enter)
 	}
 }
 
