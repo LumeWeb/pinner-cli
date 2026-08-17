@@ -4,50 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
 )
-
-func newPinsAddCommand() *cli.Command {
-	return &cli.Command{
-		Name:  "add",
-		Usage: "Pin existing content by CID (see: pinner pin)",
-		Description: `Pin content that is already on IPFS by providing its CID.
-Optionally set metadata key-value pairs at pin time using --meta.
-
-Examples:
-  pinner pins add bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e
-  pinner pins add bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --name "my file"
-  pinner pins add bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --no-wait
-  pinner pins add bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --meta owner=alice --meta env=prod
-  pinner pins add bafybeig...abc bafybeig...def bafybeig...ghi --parallel 5
-  pinner pins add --file cids.txt
-  pinner pins add bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --dry-run
-
-Does NOT upload new local files (use 'upload') and does NOT change metadata after the fact (use 'pins update'). Use 'pins rm' to remove.`,
-		ArgsUsage: "<cid...>",
-		Flags: []cli.Flag{
-			NameFlag("Custom name for the pin"),
-			NoWaitFlag(),
-			WaitFlagHidden(),
-			FileFlag(),
-			ParallelFlag(),
-			ContinueFlag(),
-			DryRunFlag(),
-			MetaFlag(),
-		},
-		Action: func(ctx context.Context, c *cli.Command) error {
-			output := setupOutput(c)
-			cfgMgr, err := defaultConfigManagerFactory()
-			if err != nil {
-				return err
-			}
-			authToken := GetAuthToken(c, cfgMgr)
-			secure := GetSecureSetting(c, cfgMgr)
-			return pinsAdd(ctx, newCLICommandWrapper(c), output, cfgMgr, authToken, secure, defaultPinningServiceFactory)
-		},
-	}
-}
 
 func pinsAdd(ctx context.Context, cmd interface {
 	cidGetter

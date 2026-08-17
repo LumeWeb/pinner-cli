@@ -38,7 +38,8 @@ func isHiddenFlag(f cli.Flag) bool {
 // produce commands with equivalent core flags.
 func TestIntegration_AliasEquivalence_PinAndPinsAdd(t *testing.T) {
 	pinCmd := newPinCommand()
-	pinsAddCmd := newPinsAddCommand()
+	pinsAddCmd := findCommand(newPinsCommand().Commands, "add")
+	require.NotNil(t, pinsAddCmd, "pins command should compile an 'add' subcommand")
 
 	pinFlags := getFlagNames(pinCmd)
 	pinsAddFlags := getFlagNames(pinsAddCmd)
@@ -63,7 +64,8 @@ func TestIntegration_AliasEquivalence_PinAndPinsAdd(t *testing.T) {
 // produce commands with equivalent core flags.
 func TestIntegration_AliasEquivalence_UnpinAndPinsRm(t *testing.T) {
 	unpinCmd := newUnpinCommand()
-	pinsRmCmd := newPinsRmCommand()
+	pinsRmCmd := findCommand(newPinsCommand().Commands, "rm")
+	require.NotNil(t, pinsRmCmd, "pins command should compile an 'rm' subcommand")
 
 	unpinFlags := getFlagNames(unpinCmd)
 	pinsRmFlags := getFlagNames(pinsRmCmd)
@@ -86,26 +88,33 @@ func TestIntegration_AliasEquivalence_UnpinAndPinsRm(t *testing.T) {
 }
 
 // TestIntegration_AliasEquivalence_ListAndPinsLs verifies that `list` and `pins ls`
-// produce commands with equivalent core flags.
+// produce commands with equivalent filtering flags.
 func TestIntegration_AliasEquivalence_ListAndPinsLs(t *testing.T) {
 	listCmd := newListCommand()
-	pinsLsCmd := newPinsLsCommand()
+	pinsLsCmd := findCommand(newPinsCommand().Commands, "ls")
+	require.NotNil(t, pinsLsCmd, "pins command should compile an 'ls' subcommand")
 
 	listFlags := getFlagNames(listCmd)
 	pinsLsFlags := getFlagNames(pinsLsCmd)
 
-	// Both must have --name, --limit, --status, --watch
-	for _, required := range []string{FlagName, FlagLimit, FlagStatus, FlagWatch} {
+	// Both must have --name, --limit, --status filters
+	for _, required := range []string{FlagName, FlagLimit, FlagStatus} {
 		assert.Contains(t, listFlags, required, "list command should have --%s flag", required)
 		assert.Contains(t, pinsLsFlags, required, "pins ls command should have --%s flag", required)
 	}
+
+	// list adds --watch; the catalog-compiled pins ls exposes server-side
+	// --search instead.
+	assert.Contains(t, listFlags, FlagWatch, "list command should have --watch flag")
+	assert.Contains(t, pinsLsFlags, "search", "pins ls command should have --search flag")
 }
 
 // TestIntegration_AliasEquivalence_StatusAndPinsStatus verifies that `status` and `pins status`
 // produce commands with equivalent core flags.
 func TestIntegration_AliasEquivalence_StatusAndPinsStatus(t *testing.T) {
 	statusCmd := newStatusCommand()
-	pinsStatusCmd := newPinsStatusCommand()
+	pinsStatusCmd := findCommand(newPinsCommand().Commands, "status")
+	require.NotNil(t, pinsStatusCmd, "pins command should compile a 'status' subcommand")
 
 	statusFlags := getFlagNames(statusCmd)
 	pinsStatusFlags := getFlagNames(pinsStatusCmd)
@@ -131,18 +140,23 @@ func TestIntegration_MetadataRemoved(t *testing.T) {
 }
 
 // TestIntegration_NoWaitBehavior verifies that upload and pins add commands have
-// --no-wait as the primary flag (not --wait), and that --wait is hidden.
+// --no-wait as the primary flag. The hand-written upload/pin commands hide the
+// backward-compat --wait; the catalog-compiled pins add exposes both --no-wait
+// and --wait as first-class flags (wait is the catalog arg, no-wait is the CLI
+// convenience alias).
 func TestIntegration_NoWaitBehavior(t *testing.T) {
 	tests := []struct {
-		name string
-		cmd  *cli.Command
+		name       string
+		cmd        *cli.Command
+		waitHidden bool
 	}{
-		{"upload", newUploadCommand()},
-		{"pin", newPinCommand()},
-		{"pins add", newPinsAddCommand()},
+		{"upload", newUploadCommand(), true},
+		{"pin", newPinCommand(), true},
+		{"pins add", findCommand(newPinsCommand().Commands, "add"), false},
 	}
 
 	for _, tt := range tests {
+		require.NotNil(t, tt.cmd, "%s command should resolve", tt.name)
 		t.Run(tt.name, func(t *testing.T) {
 			flags := tt.cmd.Flags
 
@@ -151,10 +165,16 @@ func TestIntegration_NoWaitBehavior(t *testing.T) {
 			require.True(t, found, "command should have --no-wait flag")
 			assert.False(t, isHiddenFlag(noWaitFlag), "--no-wait should be visible")
 
-			// --wait should be present but hidden
+			// --wait should be present; hidden only on the hand-written commands,
+			// visible on the catalog-compiled pins add (where it is the declared
+			// operation arg).
 			waitFlag, found := findFlagByName(flags, FlagWait)
 			require.True(t, found, "command should have --wait flag for backward compat")
-			assert.True(t, isHiddenFlag(waitFlag), "--wait should be hidden")
+			if tt.waitHidden {
+				assert.True(t, isHiddenFlag(waitFlag), "--wait should be hidden on %s", tt.name)
+			} else {
+				assert.False(t, isHiddenFlag(waitFlag), "--wait should be visible on %s", tt.name)
+			}
 		})
 	}
 }
@@ -167,9 +187,9 @@ func TestIntegration_MetaFlagOnCreationAndUpdate(t *testing.T) {
 		cmd     *cli.Command
 		hasMeta bool
 	}{
-		{"pins add", newPinsAddCommand(), true},
+		{"pins add", findCommand(newPinsCommand().Commands, "add"), true},
 		{"upload", newUploadCommand(), true},
-		{"pins update", newPinsUpdateCommand(), true},
+		{"pins update", findCommand(newPinsCommand().Commands, "update"), true},
 		{"pin", newPinCommand(), false}, // pin does not have --meta
 	}
 
@@ -187,7 +207,8 @@ func TestIntegration_MetaFlagOnCreationAndUpdate(t *testing.T) {
 
 // TestIntegration_ClearMetaOnUpdate verifies that pins update has --clear-meta flag.
 func TestIntegration_ClearMetaOnUpdate(t *testing.T) {
-	cmd := newPinsUpdateCommand()
+	cmd := findCommand(newPinsCommand().Commands, "update")
+	require.NotNil(t, cmd, "pins command should compile an 'update' subcommand")
 	flagNames := getFlagNames(cmd)
 
 	assert.Contains(t, flagNames, FlagClearMeta, "pins update should have --clear-meta flag")
@@ -203,7 +224,7 @@ func TestIntegration_ForceFlagOnDestructiveCommands(t *testing.T) {
 		cmd  *cli.Command
 	}{
 		{"unpin", newUnpinCommand()},
-		{"pins rm", newPinsRmCommand()},
+		{"pins rm", findCommand(newPinsCommand().Commands, "rm")},
 		{"unpin all", newUnpinAllCommand()},
 	}
 
@@ -225,11 +246,14 @@ func TestIntegration_HiddenFlags(t *testing.T) {
 		assert.True(t, isHiddenFlag(confirmFlag), "--confirm should be hidden on unpin")
 	})
 
-	t.Run("pins rm --confirm is hidden", func(t *testing.T) {
-		cmd := newPinsRmCommand()
+	t.Run("pins rm --confirm is a usable flag", func(t *testing.T) {
+		cmd := findCommand(newPinsCommand().Commands, "rm")
+		require.NotNil(t, cmd, "pins command should compile an 'rm' subcommand")
 		confirmFlag, found := findFlagByName(cmd.Flags, FlagConfirm)
 		require.True(t, found, "pins rm should have --confirm flag")
-		assert.True(t, isHiddenFlag(confirmFlag), "--confirm should be hidden on pins rm")
+		// On the catalog-compiled pins rm, --confirm is the operation's declared
+		// confirm arg (visible), not a hidden backward-compat alias.
+		assert.False(t, isHiddenFlag(confirmFlag), "--confirm should be visible on pins rm")
 	})
 
 	t.Run("unpin all --yes is visible", func(t *testing.T) {
@@ -295,7 +319,8 @@ func TestIntegration_PinsSubcommands(t *testing.T) {
 
 // TestIntegration_PinsRmFlags verifies that pins rm has --all, --force, --status flags.
 func TestIntegration_PinsRmFlags(t *testing.T) {
-	cmd := newPinsRmCommand()
+	cmd := findCommand(newPinsCommand().Commands, "rm")
+	require.NotNil(t, cmd, "pins command should compile an 'rm' subcommand")
 	flagNames := getFlagNames(cmd)
 
 	assert.Contains(t, flagNames, FlagAll, "pins rm should have --all flag")
@@ -309,7 +334,8 @@ func TestIntegration_PinsRmFlags(t *testing.T) {
 // TestIntegration_PinsUpdateFlags verifies that pins update has --name, --meta,
 // --clear-meta, and --dry-run flags.
 func TestIntegration_PinsUpdateFlags(t *testing.T) {
-	cmd := newPinsUpdateCommand()
+	cmd := findCommand(newPinsCommand().Commands, "update")
+	require.NotNil(t, cmd, "pins command should compile an 'update' subcommand")
 	flagNames := getFlagNames(cmd)
 
 	assert.Contains(t, flagNames, FlagName, "pins update should have --name flag")

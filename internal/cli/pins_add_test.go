@@ -13,7 +13,8 @@ import (
 )
 
 func TestNewPinsAddCommandProperties(t *testing.T) {
-	cmd := newPinsAddCommand()
+	cmd := findCommand(newPinsCommand().Commands, "add")
+	require.NotNil(t, cmd, "pins command should compile an 'add' subcommand")
 	assert.Equal(t, "add", cmd.Name)
 	assert.NotNil(t, cmd.Action)
 	assert.NotEmpty(t, cmd.Flags)
@@ -21,7 +22,8 @@ func TestNewPinsAddCommandProperties(t *testing.T) {
 }
 
 func TestPinsAddCommand_Flags(t *testing.T) {
-	cmd := newPinsAddCommand()
+	cmd := findCommand(newPinsCommand().Commands, "add")
+	require.NotNil(t, cmd, "pins command should compile an 'add' subcommand")
 	flagNames := getFlagNames(cmd)
 	require.Contains(t, flagNames, "name")
 	require.Contains(t, flagNames, "no-wait")

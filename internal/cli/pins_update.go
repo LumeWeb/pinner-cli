@@ -4,44 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
 )
-
-func newPinsUpdateCommand() *cli.Command {
-	return &cli.Command{
-		Name:  "update",
-		Usage: "Update pin name and metadata",
-		Description: `Update name and/or metadata for a pin. Metadata is a set of
-key-value pairs (e.g., owner=alice, env=prod) that help you organize and filter pins.
-
-Examples:
-  pinner pins update bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --name "renamed"
-  pinner pins update bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --meta owner=alice --meta env=prod
-  pinner pins update bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --clear-meta
-  pinner pins update bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --clear-meta --meta fresh=start
-  pinner pins update bafybeigqaforwjgcx45jnh7dgyfgqqm2lei4hurrrnsizrpgyxz3egtd7e --name "renamed" --meta env=prod
-
-Does NOT pin new content (use 'pin'/'pins add') and does NOT delete the pin (use 'unpin'/'pins rm').`,
-		ArgsUsage: "<cid>",
-		Flags: []cli.Flag{
-			NameFlag("Rename the pin"),
-			MetaFlag(),
-			ClearMetaFlag(),
-			DryRunFlag(),
-		},
-		Action: func(ctx context.Context, c *cli.Command) error {
-			output := setupOutput(c)
-			cfgMgr, err := defaultConfigManagerFactory()
-			if err != nil {
-				return err
-			}
-			authToken := GetAuthToken(c, cfgMgr)
-			secure := GetSecureSetting(c, cfgMgr)
-			return pinsUpdate(ctx, newCLICommandWrapper(c), output, cfgMgr, authToken, secure, defaultPinningServiceFactory)
-		},
-	}
-}
 
 func pinsUpdate(ctx context.Context, cmd interface {
 	cidGetter

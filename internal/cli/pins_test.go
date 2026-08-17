@@ -27,9 +27,20 @@ func TestNewPinsCommand(t *testing.T) {
 	})
 }
 
+// compiledPinsSubcommand returns the catalog-compiled "pins" subcommand with the
+// given leaf name, or fails the test if it is absent. The pins group's
+// subcommands are compiled from the operation catalog (catalogops.PinsOperations)
+// rather than hand-written constructors.
+func compiledPinsSubcommand(t *testing.T, name string) *cli.Command {
+	t.Helper()
+	cmd := findCommand(newPinsCommand().Commands, name)
+	require.NotNil(t, cmd, "pins command should compile a %q subcommand", name)
+	return cmd
+}
+
 func TestNewPinsAddCommand(t *testing.T) {
 	t.Run("creates pins add command with correct flags", func(t *testing.T) {
-		cmd := newPinsAddCommand()
+		cmd := compiledPinsSubcommand(t, "add")
 
 		assert.Equal(t, "add", cmd.Name)
 		assert.Equal(t, "<cid...>", cmd.ArgsUsage)
@@ -46,7 +57,7 @@ func TestNewPinsAddCommand(t *testing.T) {
 
 func TestNewPinsRmCommand(t *testing.T) {
 	t.Run("creates pins rm command with correct flags", func(t *testing.T) {
-		cmd := newPinsRmCommand()
+		cmd := compiledPinsSubcommand(t, "rm")
 
 		assert.Equal(t, "rm", cmd.Name)
 		assert.Equal(t, "<cid...>", cmd.ArgsUsage)
@@ -65,7 +76,7 @@ func TestNewPinsRmCommand(t *testing.T) {
 
 func TestNewPinsLsCommand(t *testing.T) {
 	t.Run("creates pins ls command with correct flags", func(t *testing.T) {
-		cmd := newPinsLsCommand()
+		cmd := compiledPinsSubcommand(t, "ls")
 
 		assert.Equal(t, "ls", cmd.Name)
 
@@ -76,13 +87,13 @@ func TestNewPinsLsCommand(t *testing.T) {
 		assert.Contains(t, flagNames, FlagName)
 		assert.Contains(t, flagNames, FlagLimit)
 		assert.Contains(t, flagNames, FlagStatus)
-		assert.Contains(t, flagNames, FlagWatch)
+		assert.Contains(t, flagNames, "search")
 	})
 }
 
 func TestNewPinsStatusCommand(t *testing.T) {
 	t.Run("creates pins status command with correct flags", func(t *testing.T) {
-		cmd := newPinsStatusCommand()
+		cmd := compiledPinsSubcommand(t, "status")
 
 		assert.Equal(t, "status", cmd.Name)
 		assert.Equal(t, "<cid>", cmd.ArgsUsage)
@@ -97,7 +108,7 @@ func TestNewPinsStatusCommand(t *testing.T) {
 
 func TestNewPinsUpdateCommand(t *testing.T) {
 	t.Run("creates pins update command with correct flags", func(t *testing.T) {
-		cmd := newPinsUpdateCommand()
+		cmd := compiledPinsSubcommand(t, "update")
 
 		assert.Equal(t, "update", cmd.Name)
 		assert.Equal(t, "<cid>", cmd.ArgsUsage)
@@ -113,7 +124,7 @@ func TestNewPinsUpdateCommand(t *testing.T) {
 	})
 
 	t.Run("pins update has action", func(t *testing.T) {
-		cmd := newPinsUpdateCommand()
+		cmd := compiledPinsSubcommand(t, "update")
 		assert.NotNil(t, cmd.Action)
 	})
 }
