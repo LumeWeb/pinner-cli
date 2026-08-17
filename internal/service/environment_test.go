@@ -11,10 +11,10 @@ import (
 )
 
 func TestParseEnvironment(t *testing.T) {
-	env, err := ParseEnvironment(strings.NewReader("# comment\nTOKEN=abc\nEMPTY=\"\"\nQUOTED=\"hello world\"\n"))
+	env, err := ParseEnvironment(strings.NewReader("# comment\nFOO=abc\nEMPTY=\"\"\nQUOTED=\"hello world\"\n"))
 	require.NoError(t, err)
 	require.Equal(t, Environment{
-		"TOKEN":  "abc",
+		"FOO":    "abc",
 		"EMPTY":  "",
 		"QUOTED": "hello world",
 	}, env)
@@ -31,8 +31,8 @@ func TestWriteEnvironment(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config", "mcp.env")
 	require.NoError(t, WriteEnvironment(path, Environment{
-		"TOKEN": "secret value",
-		"PLAIN": "value",
+		"FOO": "placeholder-value",
+		"BAR": "value",
 	}))
 
 	info, err := os.Stat(path)
@@ -46,18 +46,18 @@ func TestWriteEnvironment(t *testing.T) {
 
 	env, err := LoadEnvironment(path)
 	require.NoError(t, err)
-	require.Equal(t, Environment{"TOKEN": "secret value", "PLAIN": "value"}, env)
+	require.Equal(t, Environment{"FOO": "placeholder-value", "BAR": "value"}, env)
 }
 
 func TestWriteEnvironmentRejectsNewlinesAndSymlinks(t *testing.T) {
 	dir := t.TempDir()
 	path := dir + "/mcp.env"
-	require.ErrorContains(t, WriteEnvironment(path, Environment{"TOKEN": "bad\nvalue"}), "newline")
+	require.ErrorContains(t, WriteEnvironment(path, Environment{"FOO": "bad\nvalue"}), "newline")
 
 	target := dir + "/target"
-	require.NoError(t, os.WriteFile(target, []byte("TOKEN=old\n"), 0600))
+	require.NoError(t, os.WriteFile(target, []byte("FOO=old\n"), 0600))
 	require.NoError(t, os.Symlink(target, path))
-	require.ErrorContains(t, WriteEnvironment(path, Environment{"TOKEN": "new"}), "symlink")
+	require.ErrorContains(t, WriteEnvironment(path, Environment{"FOO": "new"}), "symlink")
 }
 
 func TestValidEnvKey(t *testing.T) {
