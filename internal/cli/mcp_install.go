@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/samber/lo"
@@ -184,13 +185,63 @@ func runMcpInstall(ctx context.Context, cmd mcpInstallFlagGetter, ui InstallUI, 
 			}
 			return nil
 		}
+
+		// In production, "Configure Tunnel" also runs the flattened tunnel-config
+		// sub-steps (provider, credentials, env write) into s.Service BEFORE the
+		// collector resolves the public URL. This replaces the former nested
+		// RunServiceInstallWizard — a second, independent wizard that printed a
+		// second "Do you want to continue" prompt and restarted step numbering
+		// at 1. The sub-steps share the outer wizard's state and run as one step,
+		// and _only_ when a fresh interactive tunnel actually needs configuring;
+		// otherwise (existing env file, --tunnel flag, or headless) the collector
+		// alone handles it exactly as before.
+		w.tunnelConfigurer = func(ctx context.Context, s *InstallState) error {
+			envFile, err := mcpadapter.ResolveServiceEnvFile(realCmd)
+			if err != nil {
+				return err
+			}
+			if !needsFreshTunnelPrompt(realCmd, envFile) {
+				return nil
+			}
+			service := s.Service
+			if service == nil {
+				service = &mcpadapter.ServiceInstallState{EnvFile: envFile}
+				s.Service = service
+			}
+			cfgMgr := mcpadapter.ServiceConfigManager()
+			for _, step := range mcpadapter.ServiceInstallSteps(service, realCmd, envFile, cfgMgr) {
+				if step.ShouldSkip(service) {
+					continue
+				}
+				if err := step.Execute(ctx, service); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
 	}
 
 	_, err := w.Run(ctx)
 	return err
 }
 
-// dedupeAgents removes duplicate agent keys preserving order.
+// needsFreshTunnelPrompt reports whether mcp install must run the interactive
+// tunnel-config steps: only when a NEW service env file has to be created
+// interactively — i.e. no existing env file, no --tunnel flag (which bootstraps
+// from flags), and the run is not headless. In every other case the collector
+// (CollectHTTPInstall) handles the existing/flag/non-interactive path on its
+// own, exactly as before the flatten.
+func needsFreshTunnelPrompt(cmd *cli.Command, envFile string) bool {
+	if cmd.String("tunnel") != "" {
+		return false
+	}
+	if wizard.NonInteractive {
+		return false
+	}
+	_, err := os.Stat(envFile)
+	return err != nil && os.IsNotExist(err)
+}
+
 func dedupeAgents(agents []install.AgentKey) []install.AgentKey {
 	seen := map[install.AgentKey]bool{}
 	out := make([]install.AgentKey, 0, len(agents))

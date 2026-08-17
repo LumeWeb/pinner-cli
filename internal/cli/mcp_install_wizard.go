@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"go.lumeweb.com/pinner-cli/internal/cli/wizard"
+	mcpadapter "go.lumeweb.com/pinner-cli/internal/mcp"
 	"go.lumeweb.com/pinner-cli/internal/mcp/install"
 )
 
@@ -37,6 +38,14 @@ type InstallState struct {
 	PublicURL  string
 	AuthToken  string
 	UseService bool
+
+	// Service accumulates the tunnel configuration collected by the spliced
+	// tunnel-config steps (Provider, creds, env). It is the data-contract fix
+	// that lets mcp install own HTTP/tunnel configuration as first-class steps
+	// instead of embedding a second, independent wizard. Populated in
+	// production by the spliced mcp.ServiceInstallSteps; nil in stdio installs
+	// and in tests that inject a fake collectHTTP.
+	Service *mcpadapter.ServiceInstallState
 
 	// Codex auto-approve opt-in (--auto-approve): when true the written Codex
 	// entry requests approval for all tools. Other agents ignore it.
@@ -71,6 +80,14 @@ type InstallWizard struct {
 	state       *InstallState
 	resolvePath pathResolver
 	collectHTTP httpCollector
+
+	// tunnelConfigurer, when non-nil (production), runs the flattened
+	// tunnel-config sub-steps (provider, credentials, env write) into s.Service
+	// before the collector resolves the public URL. It replaces the former
+	// nested RunServiceInstallWizard (a second, independent wizard) so there is
+	// no double "Do you want to continue" prompt and no restart-at-1 numbering.
+	// Always nil in tests, which inject collectHTTP only.
+	tunnelConfigurer func(ctx context.Context, s *InstallState) error
 }
 
 // NewInstallWizard creates a new mcp install wizard.
@@ -98,15 +115,7 @@ func (w *InstallWizard) State() *InstallState { return w.state }
 
 // getSteps returns the ordered list of install steps.
 func (w *InstallWizard) getSteps() []wizard.Step[*InstallState] {
-	return []wizard.Step[*InstallState]{
-		wizard.StepFunc[*InstallState]{
-			Name_: "Detect Agents",
-			ExecuteFunc: func(_ context.Context, s *InstallState) error {
-				// Detection only supplies candidates; selection happens next
-				// step. Nothing to persist here.
-				return nil
-			},
-		},
+	steps := []wizard.Step[*InstallState]{
 		wizard.StepFunc[*InstallState]{
 			Name_: "Select Agents",
 			ExecuteFunc: func(ctx context.Context, s *InstallState) error {
@@ -186,23 +195,29 @@ func (w *InstallWizard) getSteps() []wizard.Step[*InstallState] {
 			},
 		},
 		wizard.StepFunc[*InstallState]{
-			Name_: "Configure Tunnel",
-			// Only runs for the remote (http) transport AND only when at least
-			// one selected agent actually supports http. Otherwise (e.g. a
-			// stdio-only selection like claude-desktop, or no http-capable
-			// agent after coercion) we must not start a tunnel/service that no
-			// written config entry will consume — that would leave an orphan
-			// background service running.
-			SkipFunc: func(s *InstallState) bool {
-				return s.Transport != install.TransportHTTP ||
-					!anySupportsTransport(s.Agents, install.TransportHTTP)
-			},
+			Name_:    "Configure Tunnel",
+			SkipFunc: httpTunnelSkipped,
 			ExecuteFunc: func(ctx context.Context, s *InstallState) error {
+				// In production the tunnel-configurer runs the flattened
+				// tunnel-config sub-steps (provider, credentials, env write) into
+				// s.Service before the collector resolves the public URL. Tests
+				// inject only collectHTTP and leave tunnelConfigurer nil. This
+				// always runs as ONE step of the outer wizard — no nested wizard,
+				// so there is no second "Do you want to continue" prompt and the
+				// step numbering never restarts.
+				if w.tunnelConfigurer != nil {
+					if err := w.tunnelConfigurer(ctx, s); err != nil {
+						return err
+					}
+				}
 				// The injected collector populates s.PublicURL / s.AuthToken from
 				// the tunnel/service environment (real: CollectHTTPInstall).
 				return w.collectHTTP(ctx, s)
 			},
 		},
+	}
+
+	steps = append(steps,
 		wizard.StepFunc[*InstallState]{
 			Name_: "Resolve Binary",
 			SkipFunc: func(s *InstallState) bool {
@@ -225,7 +240,20 @@ func (w *InstallWizard) getSteps() []wizard.Step[*InstallState] {
 				return w.writeConfig(s)
 			},
 		},
-	}
+	)
+
+	return steps
+}
+
+// httpTunnelSkipped reports whether the HTTP/tunnel steps should be skipped for
+// the current selection: they only run for the remote (http) transport AND only
+// when at least one selected agent actually supports http. Otherwise (e.g. a
+// stdio-only selection like claude-desktop, or no http-capable agent after
+// coercion) we must not start a tunnel/service that no written config entry will
+// consume — that would leave an orphan background service running.
+func httpTunnelSkipped(s *InstallState) bool {
+	return s.Transport != install.TransportHTTP ||
+		!anySupportsTransport(s.Agents, install.TransportHTTP)
 }
 
 // candidates returns the selectable agents (detected first, then the rest).

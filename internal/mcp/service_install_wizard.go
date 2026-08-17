@@ -88,7 +88,21 @@ func RunServiceInstallWizard(ctx context.Context, cmd *cli.Command, envFile stri
 	// something already explicit.
 	seedFromFlagsAndEnv(cmd, state, envFile)
 
-	steps := []wizard.Step[*ServiceInstallState]{
+	_, err := wizard.Run(ctx, ui, ServiceInstallSteps(state, cmd, envFile, cfgMgr), state)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// ServiceInstallSteps returns the ordered steps that collect and persist the
+// MCP service (tunnel) configuration into state. It is exported so a host
+// wizard (mcp install) can splice these steps directly into its own run and
+// share its welcome, numbering, and completion, instead of nesting a second,
+// independent wizard (which double-prints the continue prompt and renumbers
+// from 1). RunServiceInstallWizard runs them standalone.
+func ServiceInstallSteps(state *ServiceInstallState, cmd *cli.Command, envFile string, cfgMgr config.Manager) []wizard.Step[*ServiceInstallState] {
+	return []wizard.Step[*ServiceInstallState]{
 		wizard.StepFunc[*ServiceInstallState]{
 			Name_: "Tunnel provider",
 			ExecuteFunc: func(_ context.Context, s *ServiceInstallState) error {
@@ -216,12 +230,6 @@ func RunServiceInstallWizard(ctx context.Context, cmd *cli.Command, envFile stri
 			},
 		},
 	}
-
-	_, err := wizard.Run(ctx, ui, steps, state)
-	if err != nil {
-		return err
-	}
-	return nil
 }
 
 // seedFromFlagsAndEnv copies values the user already supplied via flags (which

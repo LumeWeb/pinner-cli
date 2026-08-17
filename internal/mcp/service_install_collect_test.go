@@ -28,6 +28,42 @@ func TestCollectHTTPInstallNonInteractiveMissingEnvErrors(t *testing.T) {
 	require.NoFileExists(t, path, "no env file should be written when non-interactive setup is refused")
 }
 
+// TestServiceInstallStepsShape guards the extraction of the tunnel-config steps
+// from RunServiceInstallWizard into the reusable ServiceInstallSteps list (the
+// flatten refactor). It asserts the step names/order, that a pre-seeded provider
+// skips the provider prompt, and that the write step writes the env file — the
+// exact behavior RunServiceInstallWizard ran standalone, now shared with mcp
+// install.
+func TestServiceInstallStepsShape(t *testing.T) {
+	dir := t.TempDir()
+	envFile := filepath.Join(dir, "mcp.env")
+	cmd := &cli.Command{Flags: managedServiceFlags()}
+
+	state := &ServiceInstallState{EnvFile: envFile}
+	steps := ServiceInstallSteps(state, cmd, envFile, nil)
+
+	require.Len(t, steps, 3, "expected tunnel provider, tunnel config, and env-write steps")
+	var names []string
+	for _, s := range steps {
+		names = append(names, s.Name())
+	}
+	require.Equal(t, []string{"Tunnel provider", "Tunnel-specific configuration", "Write service environment file"}, names)
+
+	// A provider already seeded (from flags/env) must not prompt again: the
+	// provider step has no SkipFunc but early-returns inside Execute. Executing
+	// with a seeded provider must return immediately without touching the
+	// interactive selectUI (which would block/fail in a non-TTY test), proving
+	// the seeded-path is taken.
+	state.Provider = TunnelProviderCloudflared
+	require.NoError(t, steps[0].Execute(context.Background(), state), "provider step should no-op when provider is already set")
+	require.Equal(t, TunnelProviderCloudflared, state.Provider, "provider must not be overwritten")
+
+	// The write step persists the collected state to the env file.
+	state.Domain = "mcp.example.com"
+	require.NoError(t, steps[2].Execute(context.Background(), state))
+	require.FileExists(t, envFile, "write step should persist the env file")
+}
+
 func TestResolveServicePublicURLFillsCloudflaredDomain(t *testing.T) {
 	// A named cloudflared tunnel with a custom domain has a deterministic
 	// public URL after the service starts; resolveServicePublicURL must derive
