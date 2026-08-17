@@ -48,6 +48,23 @@ func NewServiceInstallWizardUI() *serviceInstallWizardUI {
 	return &serviceInstallWizardUI{PTermUI: wizard.NewPTermUI("", "")}
 }
 
+// tunnelProviderChoiceLabels returns the ordered "label - descriptor" options
+// for the tunnel-provider select, with the default provider (ngrok) FIRST so the
+// interactive select highlights it. ngrok is default because it needs only an
+// authtoken and no extra setup — the least-friction path for exposing the remote
+// MCP endpoint. Keep the leading identifier before " - " equal to the provider
+// token so the step can parse the selection back with parseTunnelProvider.
+// Descriptors are written for an end user (what it gives you + what you must
+// have), not implementation details. Single-sourced here so the wizard and any
+// test share the list.
+func tunnelProviderChoiceLabels() []string {
+	return []string{
+		"ngrok - a public URL, from an authtoken you get free at ngrok.com",
+		"cloudflared - a public URL under your own Cloudflare domain",
+		"openai - connects to ChatGPT/Connectors via an OpenAI Secure MCP Tunnel ID (needs a control-plane API key)",
+	}
+}
+
 // Select runs an interactive single-choice prompt, gated by NonInteractive.
 type selectUI struct{}
 
@@ -117,13 +134,9 @@ func ServiceInstallSteps(state *ServiceInstallState, cmd *cli.Command, envFile s
 					return nil
 				}
 				sel := selectUI{}
-				// Present each provider with a short, neutral summary of what it
-				// needs so the user can choose without us assuming a preference.
-				_, choice, err := sel.Select("MCP tunnel provider (exposes the remote MCP endpoint)", []string{
-					"cloudflared - public domain via Cloudflare (runs an external binary; needs a domain)",
-					"ngrok - public URL via ngrok (needs an authtoken from the ngrok dashboard)",
-					"openai - OpenAI Secure MCP Tunnel for ChatGPT/Connectors (needs a tunnel ID and control-plane API key)",
-				})
+				// ngrok is listed first so the interactive select defaults to it (see
+				// tunnelProviderChoiceLabels).
+				_, choice, err := sel.Select("MCP tunnel provider (exposes the remote MCP endpoint)", tunnelProviderChoiceLabels())
 				if err != nil {
 					return err
 				}

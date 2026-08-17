@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -210,4 +211,31 @@ func TestCollectHTTPInstallOneShotResolvesNamedDomainURL(t *testing.T) {
 	reloaded, err := LoadServiceEnvironment(path)
 	require.NoError(t, err)
 	require.Equal(t, "https://mcp.example.com", reloaded["MCP_PUBLIC_URL"])
+}
+
+// TestTunnelProviderChoiceLabelsDefaultIsNgrok guards the tunnel provider select
+// defaults and copy: ngrok must be listed FIRST so the interactive select
+// highlights it as the default — not cloudflared. It also verifies every
+// option's leading token (before " - ") parses back to a valid provider, so the
+// select -> parse round-trip can never silently fail, and that the descriptions
+// are end-user friendly (no internal jargon like "embedded" / "external binary").
+func TestTunnelProviderChoiceLabelsDefaultIsNgrok(t *testing.T) {
+	labels := tunnelProviderChoiceLabels()
+	require.NotEmpty(t, labels, "must present at least one provider")
+	require.True(t, strings.HasPrefix(labels[0], "ngrok - "),
+		"ngrok must be the first (default) provider option, got %q", labels[0])
+
+	jargon := []string{"embedded", "external binary"}
+	for _, label := range labels {
+		for _, j := range jargon {
+			require.NotContains(t, label, j,
+				"provider description %q should not surface the implementation detail %q", label, j)
+		}
+		sep := strings.Index(label, " - ")
+		require.Positive(t, sep, "option %q must use the 'token - descriptor' form", label)
+		token := label[:sep]
+		prov, err := parseTunnelProvider(token)
+		require.NoError(t, err, "option token %q should parse to a valid provider", token)
+		require.NotEqual(t, TunnelProvider(""), prov, "option token %q must map to a known provider", token)
+	}
 }
