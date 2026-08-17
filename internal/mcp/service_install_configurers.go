@@ -6,23 +6,24 @@ import (
 	"os"
 	"strings"
 
+	"go.lumeweb.com/pinner-cli/internal/cli/wizard"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
 )
 
 // The provider Configurer functions implement the install-time tunnel
 // configuration collection for each provider. They live here (package mcp)
 // rather than in the tunnel sub-package because they are tightly coupled to
-// the wizard-facing types (textUI, *ServiceInstallState) that belong in the
+// the wizard-facing types (wizard.Prompter, *ServiceInstallState) that belong in the
 // parent package. They are registered into the provider registry (see
 // tunnel_providers.go) and dispatched by the install wizard.
 
 // openAIConfigurer collects the OpenAI tunnel ID and control-plane API key into
 // s, prompting for any value not already supplied via flags/env. It validates
 // the tunnel ID and persists both credentials to the last-resort config manager.
-func openAIConfigurer(_ context.Context, text textUI, s *ServiceInstallState, cfgMgr config.Manager) error {
+func openAIConfigurer(_ context.Context, p wizard.Prompter, s *ServiceInstallState, cfgMgr config.Manager) error {
 	if s.TunnelID == "" {
 		OpenTunnelDeepLink("openai", "tunnel_id")
-		id, err := text.Text("OpenAI Secure MCP Tunnel ID")
+		id, err := p.Text("OpenAI Secure MCP Tunnel ID", "")
 		if err != nil {
 			return err
 		}
@@ -37,7 +38,7 @@ func openAIConfigurer(_ context.Context, text textUI, s *ServiceInstallState, cf
 	// CONTROL_PLANE_API_KEY/OPENAI_API_KEY).
 	if s.ApiKey == "" {
 		OpenTunnelDeepLink("openai", "api_key")
-		key, err := textUI{mask: "*"}.Text("OpenAI Secure MCP Tunnel control-plane API key")
+		key, err := p.Text("OpenAI Secure MCP Tunnel control-plane API key", "*")
 		if err != nil {
 			return err
 		}
@@ -54,7 +55,7 @@ func openAIConfigurer(_ context.Context, text textUI, s *ServiceInstallState, cf
 // name into s. When a Cloudflare named tunnel is already provisioned it honors
 // that state (hostname, resource name) instead of re-prompting — the provisioned
 // state is the single source of truth for what the runtime serves.
-func cloudflaredConfigurer(_ context.Context, text textUI, s *ServiceInstallState, cfgMgr config.Manager) error {
+func cloudflaredConfigurer(_ context.Context, p wizard.Prompter, s *ServiceInstallState, cfgMgr config.Manager) error {
 	// Each field is gated independently: a provisioned state with a TunnelName
 	// but no hostname yet (e.g. before the DNS route exists) still resolves the
 	// tunnel name instead of re-prompting for a value the state already has.
@@ -69,14 +70,14 @@ func cloudflaredConfigurer(_ context.Context, text textUI, s *ServiceInstallStat
 		}
 	}
 	if s.Domain == "" {
-		domain, err := text.Text("Tunnel domain (required)")
+		domain, err := p.Text("Tunnel domain (required)", "")
 		if err != nil {
 			return err
 		}
 		s.Domain = strings.TrimSpace(domain)
 	}
 	if s.TunnelName == "" {
-		name, err := text.Text("Cloudflare tunnel resource name (default: pinner-mcp)")
+		name, err := p.Text("Cloudflare tunnel resource name (default: pinner-mcp)", "")
 		if err != nil {
 			return err
 		}
@@ -106,7 +107,7 @@ func cloudflaredConfigurer(_ context.Context, text textUI, s *ServiceInstallStat
 // writes it as MCP_PUBLIC_URL, "identifying what the user has" instead of
 // guessing. Only when no API key is available (or the query fails) does it fall
 // back to asking the operator to paste the URL.
-func ngrokConfigurer(ctx context.Context, text textUI, s *ServiceInstallState, cfgMgr config.Manager) error {
+func ngrokConfigurer(ctx context.Context, p wizard.Prompter, s *ServiceInstallState, cfgMgr config.Manager) error {
 	// Pre-resolve the authtoken from existing sources before prompting: the
 	// ngrok config file (a user who ran `ngrok config add-authtoken` needs no
 	// further setup — the SDK loads that credential at runtime), then the pinner
@@ -124,7 +125,7 @@ func ngrokConfigurer(ctx context.Context, text textUI, s *ServiceInstallState, c
 	// passes validation.
 	if s.TunnelToken == "" {
 		OpenTunnelDeepLink("ngrok", "authtoken")
-		tok, err := textUI{mask: "*"}.Text("ngrok authtoken / MCP tunnel token")
+		tok, err := p.Text("ngrok authtoken / MCP tunnel token", "*")
 		if err != nil {
 			return err
 		}
@@ -135,7 +136,7 @@ func ngrokConfigurer(ctx context.Context, text textUI, s *ServiceInstallState, c
 	// config-manager-sourced token).
 	PersistTunnelCredential(cfgMgr, "ngrok", "token", s.TunnelToken)
 
-	if _, err := resolveNgrokURL(ctx, text, s, cfgMgr); err != nil {
+	if _, err := resolveNgrokURL(ctx, p, s, cfgMgr); err != nil {
 		return err
 	}
 
@@ -153,7 +154,7 @@ func ngrokConfigurer(ctx context.Context, text textUI, s *ServiceInstallState, c
 // paid one) — "identify what the user has and go based on that". It falls back
 // to prompting the operator for the URL when no API key is available. It
 // returns the resolved public URL.
-func resolveNgrokURL(ctx context.Context, text textUI, s *ServiceInstallState, cfgMgr config.Manager) (string, error) {
+func resolveNgrokURL(ctx context.Context, p wizard.Prompter, s *ServiceInstallState, cfgMgr config.Manager) (string, error) {
 	if s.PublicURL != "" {
 		return s.PublicURL, nil
 	}
@@ -200,7 +201,7 @@ func resolveNgrokURL(ctx context.Context, text textUI, s *ServiceInstallState, c
 		// no authtoken. Direct the operator to the domains page and ask for the
 		// URL they see there.
 		OpenTunnelDeepLink("ngrok", "domain")
-		u, perr := text.Text("ngrok public base URL (from dashboard.ngrok.com/domains, e.g. https://you.ngrok-free.dev)")
+		u, perr := p.Text("ngrok public base URL (from dashboard.ngrok.com/domains, e.g. https://you.ngrok-free.dev)", "")
 		if perr != nil {
 			return "", perr
 		}

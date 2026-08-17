@@ -19,6 +19,27 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/service"
 )
 
+// testPrompter is a wizard.Prompter stub for configurer tests. The configurers
+// run with wizard.NonInteractive=true, so any prompt they reach must fail with
+// an "interactive" error (mirroring the production pterm prompter under
+// non-interactive mode) rather than blocking on a real TTY. Tests that expect a
+// value to resolve from config/env without prompting therefore get a pass, while
+// tests that assert a prompt IS required see the non-interactive error.
+type testPrompter struct{}
+
+func (testPrompter) Select(string, []string) (int, string, error) {
+	return 0, "", errors.New("interactive prompt requested in non-interactive mode")
+}
+func (testPrompter) MultiSelect(string, []string, []string) ([]string, error) {
+	return nil, errors.New("interactive prompt requested in non-interactive mode")
+}
+func (testPrompter) Confirm(string, bool) (bool, error) {
+	return false, errors.New("interactive prompt requested in non-interactive mode")
+}
+func (testPrompter) Text(string, string) (string, error) {
+	return "", errors.New("interactive prompt requested in non-interactive mode")
+}
+
 // stubNgrokAPI returns an *http.Client that routes api.ngrok.com requests to a
 // handler scripted by handler, letting tests exercise the reserved_domains
 // client without network access. It stubs the tunnel sub-package's shared HTTP
@@ -87,7 +108,7 @@ func TestServiceInstallStepsShape(t *testing.T) {
 	// A provider already seeded (from flags/env) must not prompt again: the
 	// provider step has no SkipFunc but early-returns inside Execute. Executing
 	// with a seeded provider must return immediately without touching the
-	// interactive selectUI (which would block/fail in a non-TTY test), proving
+	// interactive prompt (which would block/fail in a non-TTY test), proving
 	// the seeded-path is taken.
 	state.Provider = TunnelProviderCloudflared
 	require.NoError(t, steps[0].Execute(context.Background(), state), "provider step should no-op when provider is already set")
@@ -97,6 +118,55 @@ func TestServiceInstallStepsShape(t *testing.T) {
 	state.Domain = "mcp.example.com"
 	require.NoError(t, steps[2].Execute(context.Background(), state))
 	require.FileExists(t, envFile, "write step should persist the env file")
+}
+
+// recordingPrompter records prompter calls so a test can assert that prompts
+// flow through the shared channel rather than private pterm widgets.
+type recordingPrompter struct {
+	selectLabels []string
+	provider     string // value Select returns for the provider list
+}
+
+func (r *recordingPrompter) Select(label string, _ []string) (int, string, error) {
+	r.selectLabels = append(r.selectLabels, label)
+	return 0, r.provider, nil
+}
+func (r *recordingPrompter) MultiSelect(string, []string, []string) ([]string, error) {
+	return nil, nil
+}
+func (r *recordingPrompter) Confirm(string, bool) (bool, error) { return false, nil }
+func (r *recordingPrompter) Text(label, _ string) (string, error) {
+	return "", errors.New("unexpected Text call")
+}
+
+// TestServiceInstallStepsPromptsThroughChannel guards the root fix for "we never
+// get to pick the tunnel": the tunnel provider selection must be routed through
+// the wizard's shared prompt channel (PrompterFrom(ctx)), NOT through a private
+// raw-pterm widget. When the provider step runs with a bound prompter and an
+// unset provider, the provider Select must hit the prompter — so a host wizard
+// embedding these steps renders the provider pick on its own terminal channel.
+func TestServiceInstallStepsPromptsThroughChannel(t *testing.T) {
+	dir := t.TempDir()
+	envFile := filepath.Join(dir, "mcp.env")
+	cmd := &cli.Command{Flags: managedServiceFlags()}
+
+	// Provider unset -> the provider step must prompt through the channel.
+	state := &ServiceInstallState{EnvFile: envFile}
+	steps := ServiceInstallSteps(state, cmd, envFile, nil)
+
+	p := &recordingPrompter{provider: string(TunnelProviderNgrok) + " - ngrok (free and easiest)"}
+	ctx := wizard.WithPrompter(context.Background(), p)
+
+	// Execute ONLY the tunnel provider step (steps[0]) so the test is hermetic:
+	// the token/config steps (which resolve the public URL, hitting the ngrok
+	// API) are covered by their own tests. The provider pick is the fix under
+	// test here.
+	require.NoError(t, steps[0].Execute(ctx, state))
+
+	require.Equal(t, []string{"MCP tunnel provider (exposes the remote MCP endpoint)"}, p.selectLabels,
+		"tunnel provider pick must go through the shared prompter channel (so it renders inside a host wizard)")
+	require.Equal(t, TunnelProviderNgrok, state.Provider,
+		"selected provider must be parsed into state from the channel selection")
 }
 
 // TestTunnelConfigStepSkipsNgrokTokenPromptWhenConfigured guards the
@@ -350,7 +420,7 @@ func TestCloudflaredConfigurerResolvesNameWithoutHostname(t *testing.T) {
 	wizard.NonInteractive = true
 	defer func() { wizard.NonInteractive = prior }()
 
-	require.NoError(t, cloudflaredConfigurer(context.Background(), textUI{}, state, nil),
+	require.NoError(t, cloudflaredConfigurer(context.Background(), testPrompter{}, state, nil),
 		"tunnel name must resolve from the provisioned state without prompting")
 	require.Equal(t, "provisioned-named-tunnel", state.TunnelName,
 		"tunnel name should come from the provisioned state even when the hostname is absent")
@@ -378,7 +448,7 @@ func TestNgrokConfigurerResolvesPublicURLFromAPI(t *testing.T) {
 	wizard.NonInteractive = true
 	defer func() { wizard.NonInteractive = prior }()
 
-	require.NoError(t, ngrokConfigurer(context.Background(), textUI{}, state, nil),
+	require.NoError(t, ngrokConfigurer(context.Background(), testPrompter{}, state, nil),
 		"ngrok configurer must resolve the URL from the API without prompting")
 	require.Equal(t, "https://you.ngrok-free.dev", state.PublicURL,
 		"MCP_PUBLIC_URL must be the account's free dev domain from the ngrok API")
@@ -411,7 +481,7 @@ func TestNgrokConfigurerHonorsOperatorDomain(t *testing.T) {
 	wizard.NonInteractive = true
 	defer func() { wizard.NonInteractive = prior }()
 
-	require.NoError(t, ngrokConfigurer(context.Background(), textUI{}, state, nil))
+	require.NoError(t, ngrokConfigurer(context.Background(), testPrompter{}, state, nil))
 	require.Equal(t, "https://my-app.ngrok.app", state.PublicURL,
 		"operator's --domain present in the reserved set must be chosen over the free dev domain")
 }
@@ -440,7 +510,7 @@ func TestNgrokConfigurerResolvesURLFromAuthtoken(t *testing.T) {
 	wizard.NonInteractive = true
 	defer func() { wizard.NonInteractive = prior }()
 
-	require.NoError(t, ngrokConfigurer(context.Background(), textUI{}, state, nil))
+	require.NoError(t, ngrokConfigurer(context.Background(), testPrompter{}, state, nil))
 	require.Equal(t, "https://you.ngrok-free.dev", state.PublicURL,
 		"no-API-key free-account install must resolve the URL from the authtoken")
 }
@@ -466,7 +536,7 @@ func TestNgrokConfigurerRejectsEphemeralAuthtokenURL(t *testing.T) {
 	wizard.NonInteractive = true
 	defer func() { wizard.NonInteractive = prior }()
 
-	err := ngrokConfigurer(context.Background(), textUI{}, state, nil)
+	err := ngrokConfigurer(context.Background(), testPrompter{}, state, nil)
 	require.Error(t, err,
 		"an ephemeral ngrok URL must not be persisted; the configurer must fall through to the prompt")
 	require.Contains(t, err.Error(), "interactive")
@@ -520,7 +590,7 @@ func TestNgrokConfigurerPromptsForURLWithoutAPIKey(t *testing.T) {
 	wizard.NonInteractive = true
 	defer func() { wizard.NonInteractive = prior }()
 
-	err := ngrokConfigurer(context.Background(), textUI{}, state, nil)
+	err := ngrokConfigurer(context.Background(), testPrompter{}, state, nil)
 	require.Error(t, err,
 		"without an ngrok API key or authtoken the configurer must require an interactive URL prompt")
 	require.Contains(t, err.Error(), "interactive",

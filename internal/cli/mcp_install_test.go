@@ -888,6 +888,28 @@ func TestMcpInstallTransportSkipsOAuthForStdio(t *testing.T) {
 	}
 }
 
+// TestMcpInstallResolveBinaryStepIsHidden guards that the "Resolve Binary" step
+// is internal plumbing (resolving the local binary to launch) and must never
+// render as a visible wizard step — it is marked Hidden. Resolving the binary is
+// incidental to the install, not a user-facing decision, so showing it (and its
+// "Skipped: ... already configured" banner on http installs) is noise.
+func TestMcpInstallResolveBinaryStepIsHidden(t *testing.T) {
+	ui := newMockInstallUI()
+	w := NewInstallWizard(ui, &InstallState{}, tempPathResolver(t.TempDir(), t.TempDir()))
+	var sawResolveBinary bool
+	for _, step := range w.getSteps() {
+		if step.Name() == "Resolve Binary" {
+			sawResolveBinary = true
+			if !step.Hidden() {
+				t.Error("Resolve Binary must be a Hidden step (internal plumbing)")
+			}
+		}
+	}
+	if !sawResolveBinary {
+		t.Error("expected a Resolve Binary step to exist (hidden, not removed)")
+	}
+}
+
 // TestApplyOAuthSecureDefault pins the production-only fresh-path default-on
 // (previously buried in runMcpInstall's tunnel configurer closure, which the
 // fake-flag-getter tests never reach). A remote (http) install that has NOT
