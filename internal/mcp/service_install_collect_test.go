@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -385,14 +386,103 @@ func TestNgrokConfigurerHonorsOperatorDomain(t *testing.T) {
 		"operator's --domain present in the reserved set must be chosen over the free dev domain")
 }
 
-// TestNgrokConfigurerPromptsForURLWithoutAPIKey guards the fallback: with no
-// API key the configurer cannot query what the account has, so it must fall
-// back to a URL prompt (errors in non-interactive mode) rather than silently
-// leaving MCP_PUBLIC_URL empty.
-func TestNgrokConfigurerPromptsForURLWithoutAPIKey(t *testing.T) {
+// TestNgrokConfigurerResolvesURLFromAuthtoken guards the new temp-tunnel
+// fallback: with no API key but an authtoken present, the configurer resolves
+// MCP_PUBLIC_URL from a short-lived embedded ngrok tunnel (the account's stable
+// free dev domain) — no API key required and no manual paste. This is the
+// free-account path that previously stranded the install with "no MCP_PUBLIC_URL".
+func TestNgrokConfigurerResolvesURLFromAuthtoken(t *testing.T) {
+	// Stub the SDK URL resolver: no network, deterministic free dev URL.
+	orig := resolveNgrokSDKURL
+	resolveNgrokSDKURL = func(_ context.Context, token string) (string, error) {
+		require.Equal(t, "tun-token", token, "the authtoken must be passed to the SDK resolver")
+		return "https://you.ngrok-free.dev", nil
+	}
+	defer func() { resolveNgrokSDKURL = orig }()
+
 	state := &ServiceInstallState{
 		Provider:    TunnelProviderNgrok,
 		TunnelToken: "tun-token",
+		AuthToken:   "auth",
+		// No NgrokAPIKey, no NGROK_API_KEY env -> authtoken fallback must fire.
+	}
+	prior := wizard.NonInteractive
+	wizard.NonInteractive = true
+	defer func() { wizard.NonInteractive = prior }()
+
+	require.NoError(t, ngrokConfigurer(context.Background(), textUI{}, state, nil))
+	require.Equal(t, "https://you.ngrok-free.dev", state.PublicURL,
+		"no-API-key free-account install must resolve the URL from the authtoken")
+}
+
+// TestNgrokConfigurerRejectsEphemeralAuthtokenURL guards finding 3: a bare
+// tunnel on some free accounts is assigned an EPHEMERAL *.ngrok-free.app URL
+// that rotates per session. Such a URL must NOT be persisted as MCP_PUBLIC_URL
+// (it would point at a dead endpoint), so the configurer falls through to the
+// interactive prompt instead of installing a rotating URL.
+func TestNgrokConfigurerRejectsEphemeralAuthtokenURL(t *testing.T) {
+	orig := resolveNgrokSDKURL
+	resolveNgrokSDKURL = func(_ context.Context, _ string) (string, error) {
+		return "https://abc123.ngrok-free.app", nil
+	}
+	defer func() { resolveNgrokSDKURL = orig }()
+
+	state := &ServiceInstallState{
+		Provider:    TunnelProviderNgrok,
+		TunnelToken: "tun-token",
+		AuthToken:   "auth",
+	}
+	prior := wizard.NonInteractive
+	wizard.NonInteractive = true
+	defer func() { wizard.NonInteractive = prior }()
+
+	err := ngrokConfigurer(context.Background(), textUI{}, state, nil)
+	require.Error(t, err,
+		"an ephemeral ngrok URL must not be persisted; the configurer must fall through to the prompt")
+	require.Contains(t, err.Error(), "interactive")
+	require.Empty(t, state.PublicURL, "ephemeral URL must not be stored")
+}
+
+// TestIsStableNgrokDevURL pins the stability guard: only *.ngrok-free.dev hosts
+// (the account's persistent reserved dev domain) are accepted; ephemeral
+// *.ngrok-free.app, custom domains, and malformed input are rejected.
+func TestIsStableNgrokDevURL(t *testing.T) {
+	stable := []string{
+		"https://unlagging-overtheatrically-ayesha.ngrok-free.dev",
+		"https://example.ngrok-free.dev",
+		"http://example.ngrok-free.dev",
+	}
+	for _, u := range stable {
+		require.Truef(t, isStableNgrokDevURL(u), "want stable: %s", u)
+	}
+	ephemeral := []string{
+		"https://abc123.ngrok-free.app",
+		"https://abc123.ngrok.app",
+		"https://mcp.example.com",
+		"",
+		"not-a-url",
+		"https://ngrok-free.dev", // bare TLD, no subdomain
+	}
+	for _, u := range ephemeral {
+		require.Falsef(t, isStableNgrokDevURL(u), "want rejected: %q", u)
+	}
+}
+
+// TestNgrokConfigurerPromptsForURLWithoutAPIKey guards the last-resort fallback:
+// with no API key AND no resolvable authtoken, the configurer cannot discover the
+// URL and must fall back to a URL prompt (errors in non-interactive mode) rather
+// than silently leaving MCP_PUBLIC_URL empty.
+func TestNgrokConfigurerPromptsForURLWithoutAPIKey(t *testing.T) {
+	// Both the API path and the authtoken path yield nothing -> must prompt.
+	orig := resolveNgrokSDKURL
+	resolveNgrokSDKURL = func(_ context.Context, _ string) (string, error) {
+		return "", errors.New("no account")
+	}
+	defer func() { resolveNgrokSDKURL = orig }()
+
+	state := &ServiceInstallState{
+		Provider:    TunnelProviderNgrok,
+		TunnelToken: "", // no authtoken at all
 		AuthToken:   "auth",
 		// No NgrokAPIKey, no NGROK_API_KEY env -> must prompt for the URL.
 	}
@@ -402,7 +492,7 @@ func TestNgrokConfigurerPromptsForURLWithoutAPIKey(t *testing.T) {
 
 	err := ngrokConfigurer(context.Background(), textUI{}, state, nil)
 	require.Error(t, err,
-		"without an ngrok API key the configurer must require an interactive URL prompt")
+		"without an ngrok API key or authtoken the configurer must require an interactive URL prompt")
 	require.Contains(t, err.Error(), "interactive",
 		"with no API key and no discovered domain the configurer must request an interactive prompt for the URL")
 }
