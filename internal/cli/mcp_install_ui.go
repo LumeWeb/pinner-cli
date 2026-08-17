@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 
+	"atomicgo.dev/keyboard/keys"
 	"github.com/pterm/pterm"
 	"github.com/pterm/pterm/putils"
 	"go.lumeweb.com/pinner-cli/internal/cli/wizard"
@@ -98,7 +99,15 @@ func (ui *PTermInstallUI) ShowWelcome() error {
 func newAgentMultiselect(options, preChecked []string) *pterm.InteractiveMultiselectPrinter {
 	return pterm.DefaultInteractiveMultiselect.
 		WithOptions(options).
-		WithDefaultOptions(preChecked)
+		WithDefaultOptions(preChecked).
+		// pterm loads the multiselect with a search-as-you-type filter enabled
+		// (Filter defaults to true). In that mode a leading space is swallowed
+		// by the filter box instead of toggling a row, which breaks the standard
+		// multiselect convention. Disable the filter and use the conventional
+		// keys: space toggles a row, enter advances to the next step.
+		WithFilter(false).
+		WithKeySelect(keys.Space).
+		WithKeyConfirm(keys.Enter)
 }
 
 // SelectAgents implements the interactive multi-select over candidate agents,
