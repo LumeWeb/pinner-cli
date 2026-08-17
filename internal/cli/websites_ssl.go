@@ -5,53 +5,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
 
 	ipfs "go.lumeweb.com/ipfs-sdk"
 )
-
-func newWebsitesSSLCommand() *cli.Command {
-	return &cli.Command{
-		Name:        "ssl",
-		Usage:       "View SSL certificate status for websites",
-		Description: `View the TLS/SSL certificate status for your website domains. Contains the 'status' subcommand, which returns certificate state (active/pending/error), issuance date and errors. Read-only: there is no command to request or force a certificate here.`,
-		Commands: []*cli.Command{
-			newWebsitesSSLStatusCommand(),
-		},
-	}
-}
-
-func newWebsitesSSLStatusCommand() *cli.Command {
-	return &cli.Command{
-		Name:  "status",
-		Usage: "Get SSL certificate status for a website",
-		Description: `Get SSL certificate status for a website domain.
-
-This command retrieves the current SSL certificate status including:
-  - Certificate status (active, pending, error, etc.)
-  - Certificate issuance date
-  - Last update timestamp
-  - Any error messages
-
-Examples:
-  pinner websites ssl status example.com
-  pinner websites ssl status example.com --json
-  pinner websites ssl status example.com --watch
-
-This concerns the HTTPS certificate only, not the website's overall status or DNS validation. For general configuration use 'websites get <domain>'; for DNS correctness use 'websites validate'.`,
-		ArgsUsage: "<domain>",
-		Flags: []cli.Flag{
-			&cli.BoolFlag{
-				Name:  "watch",
-				Usage: "Watch for SSL status changes",
-			},
-		},
-		Action: withContext(func(ctx context.Context, cc *commandContext) error {
-			return websitesSSLStatus(ctx, cc.Cmd, cc.Output, cc.CfgMgr, cc.AuthToken, cc.Secure)
-		}),
-	}
-}
 
 func websitesSSLStatus(ctx context.Context, cmd websitesCommandGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
 	setupCtx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
