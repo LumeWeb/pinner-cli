@@ -381,11 +381,11 @@ func TestExecuteDropSinkDefaultsReportedTTL(t *testing.T) {
 	require.Equal(t, defaultHTTPDownloadTTL.String(), sc.TTL, "reported TTL must be the effective default, not 0s")
 }
 
-// A sink=drop larger than the download cap must fail at the GET (the
-// serve closure enforces the size cap), not silently deliver all bytes. The
-// GET writes StatusOK before streaming, so an over-limit serve error surfaces
-// as a truncated/empty body (the honest fail-don't-fabricate signal) rather
-// than the full payload.
+// A sink=drop larger than the download cap must fail with a detectable 413 at
+// the GET, NOT a clean 200 carrying a silently truncated body. The deferred
+// response writer withholds the status until the first body byte, so the
+// over-cap error (returned before any bytes are committed) maps to a 413 the
+// puller can detect.
 func TestDownloadFileDropSinkEnforcesSizeCap(t *testing.T) {
 	hd := NewHTTPDownload()
 	root := t.TempDir()
@@ -412,5 +412,7 @@ func TestDownloadFileDropSinkEnforcesSizeCap(t *testing.T) {
 	require.NoError(t, err)
 	body, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
-	require.NotEqual(t, "xxxxxxxxxxxxxxxx", string(body), "over-limit GET must not deliver the full payload")
+	require.Equal(t, http.StatusRequestEntityTooLarge, resp.StatusCode,
+		"over-limit GET must return 413, not a truncated 200")
+	require.NotEqual(t, "xxxxxxxxxxxxxxxx", string(body), "no payload should be delivered for an over-limit GET")
 }

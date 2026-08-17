@@ -141,8 +141,16 @@ func newDownloadToken() string {
 // validates the token (must exist, not expired, not already used), consumes it
 // so a re-GET is rejected, sets a Content-Disposition attachment name so a
 // browser saves the correct filename, then streams the resolved bytes to the
-// response. On any stream error it fails the request rather than returning a
-// truncated body as if it were complete.
+// response.
+//
+// The response status is NOT committed until the first body byte is written.
+// If the stream fails (oversize file hitting the size cap, or a source error)
+// before any bytes have been sent, the request is answered with an honest
+// error status (413 for an over-cap download, 500 otherwise) instead of a
+// clean 200 carrying a silently truncated body that would look complete. If
+// the error happens after some bytes are already committed, the connection is
+// left with a short/truncated body — the length-mismatch signal — rather than
+// fabricating completion.
 func (hd *httpDownload) getHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
@@ -171,15 +179,59 @@ func (hd *httpDownload) getHandler(w http.ResponseWriter, r *http.Request) {
 	if tkn.size > 0 {
 		w.Header().Set("Content-Length", itoa(tkn.size))
 	}
-	w.WriteHeader(http.StatusOK)
 
-	if err := tkn.serve(r.Context(), w); err != nil {
-		// The body may already be partially written; we cannot change the
-		// status. Close the connection is not directly possible here, but we
-		// log nothing and let the partial transfer fail — the caller sees the
-		// truncated length mismatch. (Upload side uses the same fail-don't-
-		// fabricate-completion stance.)
+	dw := &deferredResponseWriter{ResponseWriter: w}
+	if err := tkn.serve(r.Context(), dw); err != nil {
+		if dw.wroteHeader {
+			// Some body bytes are already committed; we cannot change the
+			// status or Content-Length now. The short body (vs any advertised
+			// Content-Length, or vs the expected size for a known-size mint)
+			// is the length-mismatch failure signal; do not fabricate success.
+			return
+		}
+		// Nothing committed yet — send an honest error status the puller can
+		// detect, instead of a truncated 200.
+		code := http.StatusInternalServerError
+		if isDownloadTooLarge(err) {
+			code = http.StatusRequestEntityTooLarge
+		}
+		http.Error(w, err.Error(), code)
 		return
+	}
+	dw.finish()
+}
+
+// deferredResponseWriter forwards to an underlying http.ResponseWriter but
+// withholds the status write until the first body byte (or a finish call), so
+// a stream failure that occurs before any body bytes are committed can still
+// be mapped to an error status code.
+type deferredResponseWriter struct {
+	http.ResponseWriter
+	wroteHeader bool
+	status      int
+}
+
+func (dw *deferredResponseWriter) WriteHeader(code int) {
+	if dw.wroteHeader {
+		return
+	}
+	dw.wroteHeader = true
+	dw.status = code
+	dw.ResponseWriter.WriteHeader(code)
+}
+
+func (dw *deferredResponseWriter) Write(p []byte) (int, error) {
+	if !dw.wroteHeader {
+		dw.WriteHeader(http.StatusOK)
+	}
+	return dw.ResponseWriter.Write(p)
+}
+
+// finish flushes a default 200 status if the stream completed without ever
+// writing a body byte (a valid, empty download).
+func (dw *deferredResponseWriter) finish() {
+	if !dw.wroteHeader {
+		dw.WriteHeader(http.StatusOK)
 	}
 }
 
