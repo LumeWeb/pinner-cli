@@ -901,6 +901,11 @@ type mcpServerOptions struct {
 	// the ui:// app. Configured for deployments where the app iframe is served
 	// from an MCP-host origin distinct from the Pinner server origin.
 	downloadTrustedOrigins []string
+	// downloadRoot confines download_file / vault_get_file local-sink writes to
+	// a single host directory. Resolved lazily from config at registration; a
+	// caller-supplied output_path is resolved relative to it and rejected if it
+	// escapes. Empty means "use config default (<config-dir>/downloads)".
+	downloadRoot func() string
 	// uploadTrustedOrigins are additional origins (beyond the server's own
 	// base/loopback origin) that the presigned PUT routes reflect over CORS for
 	// the Uppy XHR uploader. Configured for deployments where the ui:// app
@@ -976,6 +981,17 @@ func WithIPFSDownload(handler IPFSDownloadHandler) MCPServerOption {
 func WithVaultGet(handler VaultGetHandler) MCPServerOption {
 	return func(o *mcpServerOptions) {
 		o.vaultGet = handler
+	}
+}
+
+// WithDownloadRoot sets the supplier for the host directory that confines
+// download_file / vault_get_file local-sink writes. The supplier is called at
+// registration (and must return an absolute path); a caller-supplied
+// output_path is resolved relative to it and rejected if it escapes. When nil,
+// the config default (<config-dir>/downloads) is used.
+func WithDownloadRoot(supplier func() string) MCPServerOption {
+	return func(o *mcpServerOptions) {
+		o.downloadRoot = supplier
 	}
 }
 

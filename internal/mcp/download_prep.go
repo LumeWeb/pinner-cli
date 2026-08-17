@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"go.lumeweb.com/pinner-cli/internal/core/config"
 )
 
 // IPFSDownloadHandler streams a single IPFS node (CID or CID/path) to dest.
@@ -82,20 +84,58 @@ func sinkDefaultName(source string) string {
 	return base
 }
 
-// resolveLocalOutputPath expands a caller-supplied (or absent) output path for
-// sink=local, mirroring vault cp's directory-expansion: a trailing slash or an
-// existing directory joins the source-derived filename; otherwise the path is
-// used verbatim. It never writes — it only decides the destination.
-func resolveLocalOutputPath(outputPath, sourceName string) string {
+// resolveLocalOutputPath confines a caller-supplied (or absent) output path for
+// sink=local to a configured download root, resolving it to a concrete host
+// path and rejecting any attempt to escape the root.
+//
+// Security invariant: local-sink writes are confined to downloadRoot. The
+// caller's output_path is a RELATIVE path within the root (subdirectories are
+// allowed and created); an absolute path, a drive root, or any path whose
+// cleaned lexical form escapes the root (via ".." or a Windows drive/cross-drive
+// input) is rejected. This prevents a compromised MCP agent from overwriting
+// arbitrary server files or redirecting decrypted vault/IPFS content elsewhere
+// on the host — the mirror of upload's local-path gating.
+//
+// Implementation: `filepath.Join(root, rel)` replaces the root when rel is
+// absolute (or a Windows volume path), and lexically resolves `..`; the returned
+// path is confined only if `filepath.Rel(root, joined)` stays inside root (does
+// not start with ".."). That single containment check rejects every escape —
+// absolute inputs, drive inputs, and `..` traversal alike.
+//
+// It never writes — it only decides the destination and validates containment;
+// the returned error rejects the request before any byte is read or written.
+func resolveLocalOutputPath(downloadRoot, outputPath, sourceName string) (string, error) {
 	name := sinkDefaultName(sourceName)
-	if outputPath == "" {
-		outputPath = name
-	} else if outputPath == "." || strings.HasSuffix(outputPath, string(filepath.Separator)) || strings.HasSuffix(outputPath, "/") {
-		outputPath = filepath.Join(outputPath, name)
-	} else if fi, err := os.Stat(outputPath); err == nil && fi.IsDir() {
-		outputPath = filepath.Join(outputPath, name)
+	if name == "" {
+		name = defaultSourceName
 	}
-	return outputPath
+	root := filepath.Clean(downloadRoot)
+	if root == "" || root == "." {
+		return "", fmt.Errorf("download root is not configured")
+	}
+	rel := outputPath
+	if rel == "" || rel == "." || rel == string(filepath.Separator) {
+		// Absent path, or an explicit "this directory": the destination is the
+		// root directory itself, so the source-derived filename is appended
+		// (mirroring vault cp's directory-expansion).
+		rel = name
+	}
+	// Reject any caller-supplied ABSOLUTE path outright. filepath.Join does not
+	// reset on a leading separator (Join("a", "/b") = "a/b"), so an absolute
+	// input would otherwise silently collapse INTO the root; a Windows
+	// volume/drive path (C:\... or a bare "C:") is likewise never a valid
+	// relative target and must not be merged.
+	if filepath.IsAbs(rel) || filepath.VolumeName(rel) != "" {
+		return "", fmt.Errorf("download output path %q must be relative to the configured download root %q", outputPath, root)
+	}
+	// Clean both the requested path and the root, then join.
+	clean := filepath.Clean(filepath.Join(root, rel))
+	// The candidate is confined if and only if it is lexically inside root.
+	relFromRoot, err := filepath.Rel(root, clean)
+	if err != nil || relFromRoot == ".." || strings.HasPrefix(relFromRoot, ".."+string(filepath.Separator)) || filepath.IsAbs(relFromRoot) {
+		return "", fmt.Errorf("download output path %q escapes the configured download root %q", outputPath, root)
+	}
+	return clean, nil
 }
 
 // writeLocalDownload streams the source bytes to a host-side output path
@@ -147,9 +187,13 @@ type downloadResult struct {
 	Error    string `json:"error,omitempty"`
 }
 
-// executeLocalSink resolves bytes to a host path and returns a local result.
-func executeLocalSink(ctx context.Context, source, sourceName, outputPath string, resolve func(ctx context.Context, w io.Writer) error) (downloadResult, error) {
-	final := resolveLocalOutputPath(outputPath, sourceName)
+// executeLocalSink resolves bytes to a root-confined host path and returns a
+// local result. It rejects any output path that escapes downloadRoot.
+func executeLocalSink(ctx context.Context, source, sourceName, outputPath, downloadRoot string, resolve func(ctx context.Context, w io.Writer) error) (downloadResult, error) {
+	final, err := resolveLocalOutputPath(downloadRoot, outputPath, sourceName)
+	if err != nil {
+		return downloadResult{}, err
+	}
 	size, err := writeLocalDownload(ctx, final, resolve)
 	if err != nil {
 		return downloadResult{}, err
@@ -195,3 +239,17 @@ func executeDropSink(ctx context.Context, source, sourceName string, hd *httpDow
 
 // defaultSourceName is a shared fallback for an empty derived name.
 const defaultSourceName = "download"
+
+// resolveDownloadRoot returns the host directory confining download_file /
+// vault_get_file local-sink writes. It prefers the operator-supplied supplier
+// (from WithDownloadRoot), falling back to the config default
+// (<config-dir>/downloads). The value is returned verbatim — Clean/containment
+// is applied by resolveLocalOutputPath at invocation time.
+func resolveDownloadRoot(supplier func() string) string {
+	if supplier != nil {
+		if r := supplier(); r != "" {
+			return r
+		}
+	}
+	return config.DefaultDownloadRoot()
+}

@@ -517,6 +517,16 @@ For more help on any command: pinner <command> --help`,
 			}
 			return vaultGet(ctx, vaultPath, w)
 		}),
+		// Confine download_file / vault_get_file local-sink writes to the
+		// configured download root (default <config-dir>/downloads). Resolved
+		// lazily from the config manager at server setup.
+		mcpadapter.WithDownloadRoot(func() string {
+			cfgMgr, err := configManagerFactory()
+			if err != nil {
+				return ""
+			}
+			return cfgMgr.Config().GetDownloadRoot()
+		}),
 		mcpadapter.WithUploadTaskManager(mcpadapter.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
 			if uploadHandler == nil {
 				return nil, notInitErr("file upload")

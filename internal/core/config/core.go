@@ -3,6 +3,7 @@ package config
 import (
 	"net"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -46,6 +47,14 @@ type Config struct {
 	// MaxMCPUploadSize is the maximum allowed size in bytes for MCP file uploads.
 	// Defaults to 1 GiB when unset.
 	MaxMCPUploadSize uint64 `config:"max_mcp_upload_size" desc:"Max MCP upload size in bytes (default 1 GiB)"`
+
+	// DownloadRoot confines MCP download_file / vault_get_file local-sink writes
+	// to a single host directory. A caller-supplied output_path is resolved
+	// relative to this root and rejected (with a traversal check) if it escapes
+	// it, so a compromised MCP agent cannot overwrite arbitrary server files or
+	// redirect decrypted vault/IPFS content elsewhere on the host. Defaults to
+	// <config-dir>/downloads when unset.
+	DownloadRoot string `config:"download_root" desc:"Host directory that confines MCP download local-sink writes (default <config-dir>/downloads)"`
 
 	// Tunnels holds last-resort tunnel provider credentials. These are only used
 	// when no external source (flag, provider env var, or provider config file)
@@ -181,6 +190,9 @@ func (c *Config) Schema() z.ZogSchema {
 		"MaxMCPUploadSize": z.UintLike[uint64]().
 			GTE(1).
 			Optional(),
+		"DownloadRoot": z.String().
+			Max(4096).
+			Optional(),
 		"Tunnels": z.Struct(z.Shape{
 			"NgrokToken":     z.String().Optional(),
 			"OpenAITunnelID": z.String().Optional(),
@@ -229,6 +241,25 @@ func (c *Config) GetMaxMCPUploadSize() uint64 {
 		return DefaultMaxMCPUploadSize
 	}
 	return c.MaxMCPUploadSize
+}
+
+// DefaultDownloadRoot returns the host directory that confines MCP download
+// local-sink writes. It is a "downloads" directory under the Pinner config
+// root, so it honors PINNER_HOME and the OS-native config dir and is stable
+// across the purely-Go and Docker/PaaS (PINNER_HOME=/data) deployments.
+func DefaultDownloadRoot() string {
+	return filepath.Join(PinnerConfigDir(), "downloads")
+}
+
+// GetDownloadRoot returns the directory that confines MCP download local-sink
+// writes. When DownloadRoot is unset, returns the package default
+// (<config-dir>/downloads). The value is returned verbatim (Clean is applied by
+// the resolver); it is the operator's responsibility to set an absolute path.
+func (c *Config) GetDownloadRoot() string {
+	if c.DownloadRoot == "" {
+		return DefaultDownloadRoot()
+	}
+	return c.DownloadRoot
 }
 
 // IsAuthenticated checks if the client has valid authentication credentials.

@@ -21,18 +21,20 @@ type VaultGetFileInput struct {
 	// Name is an optional filename override. Defaults to the vault file's base
 	// name.
 	Name string `json:"name,omitempty" jsonschema:"description=Optional filename for the downloaded file (defaults to the vault file's base name)."`
-	// OutputPath is the host-side destination for sink=local.
-	OutputPath string `json:"output_path,omitempty" jsonschema:"description=Host-side destination file path for sink=local (e.g. /data/out/report.pdf). If omitted, the file is written to the current working directory using the source name."`
+	// OutputPath is the destination for sink=local, resolved RELATIVE to the
+	// configured download root (default <config-dir>/downloads).
+	OutputPath string `json:"output_path,omitempty" jsonschema:"description=Destination path for sink=local, relative to the configured download root (subdirectories are created). If omitted, the source name is used at the root. Paths that escape the root are rejected."`
 	// TTL is the filedrop GET lifetime for sink=drop (e.g. 5m; default 5m).
 	TTL string `json:"ttl,omitempty" jsonschema:"description=Filedrop GET endpoint lifetime for sink=drop (e.g. 5m; default 5 minutes)."`
 }
 
 // NewVaultGetFileDescriptor builds the unified, sink-aware vault_get_file tool.
 // It retrieves a single encrypted vault file and routes the decrypted bytes to
-// the requested sink (local host write on every transport, or a filedrop GET
-// on HTTP / real tunnel). The vault service lives in the CLI layer, exposed to
-// MCP as a VaultGetHandler closure — mirror of VaultPutHandler.
-func NewVaultGetFileDescriptor(getFn VaultGetHandler, hd *httpDownload, tunnelOpenAI bool) ToolDescriptor {
+// the requested sink (local host write confined under downloadRoot on every
+// transport, or a filedrop GET on HTTP / real tunnel). The vault service lives
+// in the CLI layer, exposed to MCP as a VaultGetHandler closure — mirror of
+// VaultPutHandler.
+func NewVaultGetFileDescriptor(getFn VaultGetHandler, hd *httpDownload, downloadRoot string, tunnelOpenAI bool) ToolDescriptor {
 	return ToolDescriptor{
 		Name:        "vault_get_file",
 		Title:       "Download a file from the Pinner vault",
@@ -63,7 +65,7 @@ func NewVaultGetFileDescriptor(getFn VaultGetHandler, hd *httpDownload, tunnelOp
 				if getFn == nil {
 					return ToolResult{}, errors.New("vault get handler is not configured")
 				}
-				res, err := executeLocalSink(ctx, in.VaultPath, name, in.OutputPath, func(ctx context.Context, w io.Writer) error {
+				res, err := executeLocalSink(ctx, in.VaultPath, name, in.OutputPath, downloadRoot, func(ctx context.Context, w io.Writer) error {
 					return getFn(ctx, in.VaultPath, w)
 				})
 				return wrapResult(res, err, "Downloaded from the vault.")

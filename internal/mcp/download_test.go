@@ -121,15 +121,64 @@ func TestSinkDefaultName(t *testing.T) {
 }
 
 func TestResolveLocalOutputPath(t *testing.T) {
-	// Bare name → CWD.
-	require.Equal(t, "f.pdf", resolveLocalOutputPath("", "f.pdf"))
-	// Trailing slash joins the name.
-	require.Equal(t, filepath.Join("/data/out", "f.pdf"), resolveLocalOutputPath("/data/out/", "f.pdf"))
-	// Existing directory joins the name.
-	dir := t.TempDir()
-	require.Equal(t, filepath.Join(dir, "f.pdf"), resolveLocalOutputPath(dir, "f.pdf"))
-	// Leaf file path used verbatim.
-	require.Equal(t, "/tmp/x.bin", resolveLocalOutputPath("/tmp/x.bin", "f.pdf"))
+	root := t.TempDir()
+	// Omitted output_path → source-derived name at the root.
+	got, err := resolveLocalOutputPath(root, "", "f.pdf")
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(root, "f.pdf"), got)
+	// Relative subdir path is confined to the root (subdirs created later).
+	got, err = resolveLocalOutputPath(root, "sub/f.pdf", "f.pdf")
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(root, "sub", "f.pdf"), got)
+	// Exactly the root dir is OK.
+	got, err = resolveLocalOutputPath(root, ".", "f.pdf")
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(root, "f.pdf"), got)
+}
+
+func TestResolveLocalOutputPathRejectsEscape(t *testing.T) {
+	root := t.TempDir()
+	attempts := []string{
+		"../escape.txt",        // parent traversal
+		"sub/../../escape.txt", // deeper traversal
+		"/etc/passwd",          // absolute path
+		"..",                   // exactly parent
+	}
+	for _, a := range attempts {
+		_, err := resolveLocalOutputPath(root, a, "f.pdf")
+		require.Error(t, err, "expected escape rejection for %q", a)
+	}
+	// Empty root is not configured.
+	_, err := resolveLocalOutputPath("", "f.pdf", "f.pdf")
+	require.Error(t, err)
+}
+
+func TestExecuteLocalSinkConfinesToRoot(t *testing.T) {
+	root := t.TempDir()
+	src := "vault:/docs/secret.pdf"
+	name := "secret.pdf"
+	// An absolute output_path that would escape the root must be rejected.
+	_, err := executeLocalSink(context.Background(), src, name, "/etc/evil.pdf", root, func(ctx context.Context, w io.Writer) error {
+		_, _ = w.Write([]byte("x"))
+		return nil
+	})
+	require.Error(t, err)
+	// A traversal is rejected too.
+	_, err = executeLocalSink(context.Background(), src, name, "../evil.pdf", root, func(ctx context.Context, w io.Writer) error {
+		_, _ = w.Write([]byte("x"))
+		return nil
+	})
+	require.Error(t, err)
+	// A legitimate relative path lands inside the root.
+	res, err := executeLocalSink(context.Background(), src, name, "docs/secret.pdf", root, func(ctx context.Context, w io.Writer) error {
+		_, _ = w.Write([]byte("plaintext"))
+		return nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(root, "docs", "secret.pdf"), res.Output)
+	data, err := os.ReadFile(res.Output)
+	require.NoError(t, err)
+	require.Equal(t, "plaintext", string(data))
 }
 
 func TestDownloadSinksAllowed(t *testing.T) {
@@ -158,33 +207,48 @@ func TestWriteLocalDownload(t *testing.T) {
 // ---- download_file / vault_get_file tool descriptors ----
 
 func TestDownloadFileLocalSink(t *testing.T) {
+	root := t.TempDir()
 	ipp := IPFSDownloadHandler(func(ctx context.Context, ipfsPath string, w io.Writer) error {
 		require.Equal(t, "bafyabc/doc.txt", ipfsPath)
 		_, err := w.Write([]byte("ipfs bytes"))
 		return err
 	})
-	desc := NewDownloadFileDescriptor(ipp, nil, false)
-	out := filepath.Join(t.TempDir(), "dl.bin")
+	desc := NewDownloadFileDescriptor(ipp, nil, root, false)
 	res, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{
 		"ipfs_path":   "bafyabc/doc.txt",
 		"sink":        "local",
-		"output_path": out,
+		"output_path": "dl.bin",
 	}})
 	require.NoError(t, err)
 	require.False(t, res.IsError, "unexpected error result")
-	data, err := os.ReadFile(out)
+	data, err := os.ReadFile(filepath.Join(root, "dl.bin"))
 	require.NoError(t, err)
 	require.Equal(t, "ipfs bytes", string(data))
 }
 
+func TestDownloadFileLocalSinkRejectsEscape(t *testing.T) {
+	root := t.TempDir()
+	ipp := IPFSDownloadHandler(func(ctx context.Context, ipfsPath string, w io.Writer) error { return nil })
+	desc := NewDownloadFileDescriptor(ipp, nil, root, false)
+	_, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{
+		"ipfs_path":   "bafyabc/doc.txt",
+		"sink":        "local",
+		"output_path": "../../../etc/evil",
+	}})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "escapes the configured download root")
+}
+
 func TestDownloadFileDropSink(t *testing.T) {
 	hd := NewHTTPDownload()
+	root := t.TempDir()
 	desc := NewDownloadFileDescriptor(
 		IPFSDownloadHandler(func(ctx context.Context, ipfsPath string, w io.Writer) error {
 			_, err := w.Write([]byte("dropped bytes"))
 			return err
 		}),
 		hd,
+		root,
 		false,
 	)
 	res, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{
@@ -208,9 +272,11 @@ func TestDownloadFileDropSink(t *testing.T) {
 
 func TestDownloadFileDropHiddenOnOpenAITunnel(t *testing.T) {
 	hd := NewHTTPDownload()
+	root := t.TempDir()
 	desc := NewDownloadFileDescriptor(
 		IPFSDownloadHandler(func(ctx context.Context, ipfsPath string, w io.Writer) error { return nil }),
 		hd,
+		root,
 		true, // tunnelOpenAI
 	)
 	_, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{
@@ -223,7 +289,8 @@ func TestDownloadFileDropHiddenOnOpenAITunnel(t *testing.T) {
 
 func TestDownloadFileRequiresPathAndValidSink(t *testing.T) {
 	i := IPFSDownloadHandler(func(ctx context.Context, ipfsPath string, w io.Writer) error { return nil })
-	desc := NewDownloadFileDescriptor(i, nil, false)
+	root := t.TempDir()
+	desc := NewDownloadFileDescriptor(i, nil, root, false)
 	// Missing ipfs_path.
 	_, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{"sink": "local"}})
 	require.Error(t, err)
@@ -233,21 +300,21 @@ func TestDownloadFileRequiresPathAndValidSink(t *testing.T) {
 }
 
 func TestVaultGetFileLocalSink(t *testing.T) {
+	root := t.TempDir()
 	vg := VaultGetHandler(func(ctx context.Context, vaultPath string, w io.Writer) error {
 		require.Equal(t, "vault:/docs/f.pdf", vaultPath)
 		_, err := w.Write([]byte("vault plaintext"))
 		return err
 	})
-	desc := NewVaultGetFileDescriptor(vg, nil, false)
-	out := filepath.Join(t.TempDir(), "f.pdf")
+	desc := NewVaultGetFileDescriptor(vg, nil, root, false)
 	res, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{
 		"vault_path":  "vault:/docs/f.pdf",
 		"sink":        "local",
-		"output_path": out,
+		"output_path": "docs/f.pdf",
 	}})
 	require.NoError(t, err)
 	require.False(t, res.IsError, "unexpected error: %s", res.Text)
-	data, err := os.ReadFile(out)
+	data, err := os.ReadFile(filepath.Join(root, "docs", "f.pdf"))
 	require.NoError(t, err)
 	require.Equal(t, "vault plaintext", string(data))
 }

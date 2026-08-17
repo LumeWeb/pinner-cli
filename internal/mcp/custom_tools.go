@@ -296,7 +296,8 @@ func registerCustomTools(deps customToolDeps) error {
 	// exists, but the drop sink is only honored on transports with a reachable
 	// HTTP mux (tunnelOpenAI=false) — see downloadFileDescription.
 	if opts.ipfsDownload != nil {
-		dlDesc := NewDownloadFileDescriptor(opts.ipfsDownload, deps.downloadDrop, deps.tunnelOpenAI)
+		downloadRoot := resolveDownloadRoot(opts.downloadRoot)
+		dlDesc := NewDownloadFileDescriptor(opts.ipfsDownload, deps.downloadDrop, downloadRoot, deps.tunnelOpenAI)
 		// Pair download_file with its "Download from IPFS" MCP App view
 		// (ui://downloads/ipfs.html) so a UI-capable host renders a download
 		// panel. RegisterAppView attaches _meta.ui to a catalog entry, so the
@@ -327,7 +328,8 @@ func registerCustomTools(deps customToolDeps) error {
 	//     vault file's decrypted bytes to a host-side path.
 	//   - sink=drop (HTTP / real tunnel): deps.downloadDrop mints a filedrop.
 	if opts.vaultGet != nil {
-		dlDesc := NewVaultGetFileDescriptor(opts.vaultGet, deps.downloadDrop, deps.tunnelOpenAI)
+		downloadRoot := resolveDownloadRoot(opts.downloadRoot)
+		dlDesc := NewVaultGetFileDescriptor(opts.vaultGet, deps.downloadDrop, downloadRoot, deps.tunnelOpenAI)
 		deps.catalog.Add(toolEntryFromDescriptor(dlDesc))
 		if err := RegisterVaultDownloadApp(deps.srv, deps.catalog); err != nil {
 			return err

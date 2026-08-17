@@ -109,9 +109,14 @@ export function runDownloadEntry(opts: DownloadEntryOptions) {
       opts.elements.outLink.href = ctx.fetchUrl;
       opts.elements.outLink.textContent = "Save file";
       opts.elements.outLink.style.display = "";
+      // Unhide the containing result card (its inline style is display:none).
+      opts.elements.outLink.closest?.(".card")?.setAttribute("style", "");
     }
     if (r.setOutPath && ctx.outputPathResult) {
       opts.elements.outPath.textContent = ctx.outputPathResult;
+      opts.elements.outPath.style.display = "";
+      // Unhide the containing result card.
+      opts.elements.outPath.closest?.(".card")?.setAttribute("style", "");
     }
   });
 
