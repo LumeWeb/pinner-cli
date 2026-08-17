@@ -153,104 +153,14 @@ func ServiceInstallSteps(state *ServiceInstallState, cmd *cli.Command, envFile s
 			Name_: "Tunnel-specific configuration",
 			ExecuteFunc: func(_ context.Context, s *ServiceInstallState) error {
 				text := textUI{}
-				switch s.Provider {
-				case TunnelProviderOpenAI:
-					if s.TunnelID == "" {
-						openTunnelDeepLink("openai", "tunnel_id")
-						id, err := text.Text("OpenAI Secure MCP Tunnel ID")
-						if err != nil {
-							return err
-						}
-						s.TunnelID = strings.TrimSpace(id)
+				// Dispatch provider-specific collection (IDs, domains,
+				// credentials) through the provider registry's Configurer
+				// instead of a switch on the provider value, so each provider
+				// owns its install behaviour and the step stays provider-agnostic.
+				if spec, ok := providers.spec(s.Provider); ok && spec.Configurer != nil {
+					if err := spec.Configurer(context.Background(), text, s, cfgMgr); err != nil {
+						return err
 					}
-					if !openAITunnelID.MatchString(s.TunnelID) {
-						return fmt.Errorf("invalid OpenAI tunnel ID %q", s.TunnelID)
-					}
-					// The control-plane API key must be persisted to the file (the
-					// running service reads only the env file, not this process's
-					// environment). s.ApiKey is pre-seeded from the --api-key flag
-					// (whose env Sources include CONTROL_PLANE_API_KEY/OPENAI_API_KEY).
-					if s.ApiKey == "" {
-						openTunnelDeepLink("openai", "api_key")
-						key, err := textUI{mask: "*"}.Text("OpenAI Secure MCP Tunnel control-plane API key")
-						if err != nil {
-							return err
-						}
-						s.ApiKey = strings.TrimSpace(key)
-					}
-					// Persist what the user supplied to the last-resort config
-					// manager so later runs auto-detect it without re-prompting.
-					persistTunnelCredential(cfgMgr, "openai", "tunnel_id", s.TunnelID)
-					persistTunnelCredential(cfgMgr, "openai", "api_key", s.ApiKey)
-				case TunnelProviderCloudflared:
-					// If a Cloudflare named tunnel is already provisioned, honor its
-					// hostname as the domain and its resource name instead of
-					// re-prompting (the provisioned state is the single source of
-					// truth for what the runtime serves).
-					if s.Domain == "" || s.TunnelName == "" {
-						if st, err := LoadCloudflareTunnelState(); err == nil && st.Hostname != "" {
-							if s.Domain == "" {
-								s.Domain = st.Hostname
-							}
-							if s.TunnelName == "" && st.TunnelName != "" {
-								s.TunnelName = st.TunnelName
-							}
-						}
-					}
-					if s.Domain == "" {
-						domain, err := text.Text("Tunnel domain (required)")
-						if err != nil {
-							return err
-						}
-						s.Domain = strings.TrimSpace(domain)
-					}
-					if s.TunnelName == "" {
-						name, err := text.Text("Cloudflare tunnel resource name (default: pinner-mcp)")
-						if err != nil {
-							return err
-						}
-						s.TunnelName = strings.TrimSpace(name)
-					}
-					if s.TunnelName == "" {
-						s.TunnelName = "pinner-mcp"
-					}
-				case TunnelProviderNgrok:
-					if s.TunnelName == "" {
-						name, err := text.Text("Tunnel resource name (optional)")
-						if err != nil {
-							return err
-						}
-						s.TunnelName = strings.TrimSpace(name)
-					}
-					// Pre-resolve the authtoken from existing sources before
-					// prompting: the ngrok config file (a user who ran `ngrok
-					// config add-authtoken` needs no further setup — the SDK loads
-					// that credential at runtime), then the pinner config-manager
-					// last-resort store. Only prompt when no usable token exists, so
-					// an already-configured ngrok install never re-asks for the
-					// secret. NGROK_AUTHTOKEN / --token are already folded into
-					// s.TunnelToken by seedServiceFromFlagsAndEnv.
-					if s.TunnelToken == "" {
-						s.TunnelToken = ResolveCredential(
-							ngrokConfigAuthtoken,
-							tunnelCfgCredential(cfgMgr, "ngrok", "token"),
-						)
-					}
-					// ngrok validation requires NGROK_AUTHTOKEN or MCP_TUNNEL_TOKEN;
-					// only prompt when the value is still empty so the written env
-					// file actually passes validation.
-					if s.TunnelToken == "" {
-						openTunnelDeepLink("ngrok", "authtoken")
-						tok, err := textUI{mask: "*"}.Text("ngrok authtoken / MCP tunnel token")
-						if err != nil {
-							return err
-						}
-						s.TunnelToken = strings.TrimSpace(tok)
-					}
-					// Persist the token to the last-resort config manager so later
-					// runs auto-detect it (RequiresToken on the embedded tunnel
-					// accepts a config-manager-sourced token).
-					persistTunnelCredential(cfgMgr, "ngrok", "token", s.TunnelToken)
 				}
 				// Prefer the MCP_AUTH_TOKEN environment variable over an
 				// interactive prompt so the secret is never typed into or

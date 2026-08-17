@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"context"
 	"fmt"
 	"sync"
 
@@ -57,6 +58,13 @@ type TunnelProviderSpec struct {
 	// return an error to decline construction (e.g. a provider that is not
 	// runtime-tunnel driven).
 	NewTunnel func(cfg TunnelConfig) (Tunnel, error)
+	// Configurer collects the provider's install-time tunnel configuration
+	// (IDs, domains, credentials) into the install state, prompting via text
+	// only for values that cannot be resolved automatically and persisting any
+	// supplied credential to cfgMgr as the last-resort store. The install
+	// wizard dispatches here on the provider registry instead of a switch on
+	// the provider value. Nil falls back to no provider-specific collection.
+	Configurer func(ctx context.Context, text textUI, s *ServiceInstallState, cfgMgr config.Manager) error
 }
 
 // tunnelRegistry is the process-wide provider registry.
