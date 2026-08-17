@@ -2,7 +2,6 @@ package wizard
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/pterm/pterm"
 )
@@ -24,14 +23,17 @@ func NewPTermUI(welcomeText, completionText string) *PTermUI {
 }
 
 func (p *PTermUI) ShowWelcome() error {
+	// The welcome/continue confirmation is interactive-only. In non-interactive
+	// mode (agent/MCP or --non-interactive), skip the continue prompt entirely
+	// rather than failing, so a fully flag-driven install runs through.
+	if NonInteractive {
+		return nil
+	}
 	if p.WelcomeText != "" {
 		pterm.DefaultHeader.WithFullWidth().Println(p.WelcomeText)
 		pterm.Println()
 		pterm.DefaultParagraph.Println(p.WelcomeText)
 		pterm.Println()
-	}
-	if NonInteractive {
-		return fmt.Errorf("interactive prompt requested in non-interactive mode")
 	}
 	_, err := pterm.DefaultInteractiveContinue.Show()
 	return err

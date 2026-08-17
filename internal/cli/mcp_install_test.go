@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -77,6 +78,10 @@ func (m *MockInstallUI) SelectAgents(_ []install.AgentKey, _ []install.AgentKey)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.SelectAgentsResult, m.SelectAgentsErr
+}
+
+func (m *MockInstallUI) NoAgentsDetected() {
+	m.RecordCall("NoAgentsDetected")
 }
 
 func (m *MockInstallUI) SelectScope(_ []install.AgentKey) (string, error) {
@@ -566,5 +571,154 @@ func TestMcpInstallAutoApproveIgnoredForNonCodex(t *testing.T) {
 	entry := readGlobalJSON(t, root, install.AgentClaudeCode)
 	if _, has := entry["default_tools_approval_mode"]; has {
 		t.Errorf("claude-code entry must not carry approval mode:\n%v", entry)
+	}
+}
+
+// TestNewAgentMultiselectPassesOptionsToWidget verifies the production pterm
+// wiring directly: the multiselect printer returned by newAgentMultiselect must
+// actually carry the candidate options in configured state. This is the exact
+// seam that was broken ("step 'Select Agents' failed: no options provided") —
+// if the `.WithOptions(options)` call were dropped, the printer's Options would
+// be empty and every interactive SelectAgents would fail.
+func TestNewAgentMultiselectPassesOptionsToWidget(t *testing.T) {
+	options := []string{"claude-code", "vscode", "codex"}
+	preChecked := []string{"vscode"}
+
+	p := newAgentMultiselect(options, preChecked)
+	if p == nil {
+		t.Fatal("newAgentMultiselect returned nil")
+	}
+	if !reflect.DeepEqual(p.Options, options) {
+		t.Errorf("widget Options = %v, want %v (candidates dropped from WithOptions?)", p.Options, options)
+	}
+	if !reflect.DeepEqual(p.DefaultOptions, preChecked) {
+		t.Errorf("widget DefaultOptions = %v, want %v", p.DefaultOptions, preChecked)
+	}
+}
+
+// TestPTermInstallUISelectAgentsPassesCandidatesToWidget guards the exact
+// regression behind "Error: step 'Select Agents' failed: no options provided":
+// SelectAgents computed the candidate names but never handed them to the pterm
+// multiselect widget, so the widget always got an empty options list and
+// failed. This drives the REAL PTermInstallUI (not the mock) through an
+// injected spy widget and asserts the options that reach the widget are the
+// detected agents followed by the remaining supported agents — non-empty under
+// any detection outcome, with detected entries pre-checked.
+func TestPTermInstallUISelectAgentsPassesCandidatesToWidget(t *testing.T) {
+	ui := NewPTermInstallUI("", "")
+	candidates := []install.AgentKey{
+		install.AgentClaudeCode,    // detected -> pre-checked
+		install.AgentVSCode,        // detected -> pre-checked
+		install.AgentCodex,         // not detected -> offered unchecked
+		install.AgentClaudeDesktop, // not detected -> offered unchecked
+	}
+	detected := []install.AgentKey{install.AgentClaudeCode, install.AgentVSCode}
+
+	var gotOptions, gotDefaults []string
+	ui.selectAgents = func(label string, options, preChecked []string) ([]string, error) {
+		gotOptions = options
+		gotDefaults = preChecked
+		// Simulate the user accepting the pre-checked selection.
+		return append([]string(nil), preChecked...), nil
+	}
+
+	selected, err := ui.SelectAgents(candidates, detected)
+	if err != nil {
+		t.Fatalf("SelectAgents unexpectedly failed: %v", err)
+	}
+
+	// The widget must have received exactly the candidate names (never empty).
+	if len(gotOptions) != len(candidates) {
+		t.Fatalf("widget received %d options, want %d (candidates dropped?): %v", len(gotOptions), len(candidates), gotOptions)
+	}
+	for i, c := range candidates {
+		if gotOptions[i] != string(c) {
+			t.Errorf("option[%d] = %q, want %q", i, gotOptions[i], c)
+		}
+	}
+
+	// Detected agents must be the pre-checked defaults; none detected => none.
+	if len(gotDefaults) != len(detected) {
+		t.Errorf("pre-checked defaults = %v, want %v (detected set mismatch)", gotDefaults, detected)
+	}
+	for _, d := range detected {
+		found := false
+		for _, gd := range gotDefaults {
+			if gd == string(d) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("detected agent %q not pre-checked in widget defaults %v", d, gotDefaults)
+		}
+	}
+
+	// The user accepting the defaults returns the detected set.
+	if len(selected) != len(detected) {
+		t.Errorf("selected = %v, want detected set %v", selected, detected)
+	}
+}
+
+// TestPTermInstallUISelectAgentsWithNoDetectedAgentsStillOffersCandidates
+// covers the empty-detection case: even when nothing is detected on disk, the
+// widget must still be offered every supported agent as a selectable option,
+// so the flow never fails with "no options provided".
+func TestPTermInstallUISelectAgentsWithNoDetectedAgentsStillOffersCandidates(t *testing.T) {
+	ui := NewPTermInstallUI("", "")
+	candidates := install.AllAgentsKey()
+	var gotOptions []string
+	ui.selectAgents = func(_ string, options, preChecked []string) ([]string, error) {
+		gotOptions = options
+		return []string{string(install.AgentClaudeCode)}, nil
+	}
+
+	if _, err := ui.SelectAgents(candidates, nil); err != nil {
+		t.Fatalf("SelectAgents failed with no detected agents: %v", err)
+	}
+	if len(gotOptions) != len(candidates) {
+		t.Errorf("no-detection case: widget got %d options, want all %d supported agents", len(gotOptions), len(candidates))
+	}
+}
+
+// TestMcpInstallWizardNoDetectedAgentsShowsGuidance guards the end-to-end
+// "no agent to install to" flow: when no supported coding agent is detected on
+// disk, the wizard must print generic guidance (via NoAgentsDetected) and still
+// offer the multi-select — never hard-fail with pterm's "no options provided".
+// Detection is forced empty by chdir'ing into an empty dir and clearing every
+// agent path env var, so the test is deterministic on any runner.
+func TestMcpInstallWizardNoDetectedAgentsShowsGuidance(t *testing.T) {
+	empty := t.TempDir()
+	t.Setenv("HOME", empty)
+	// Scrub agent path env vars so global detection is empty regardless of the
+	// runner's environment.
+	for _, k := range []string{"XDG_CONFIG_HOME", "APPDATA", "LOCALAPPDATA",
+		"CODEX_HOME", "CLINE_DIR", "GROK_HOME", "KIMI_CODE_HOME", "XDG_CONFIG_HOME"} {
+		t.Setenv(k, "")
+	}
+	t.Chdir(empty)
+
+	ctx := context.Background()
+	ui := newMockInstallUI()
+	ui.SelectAgentsResult = []install.AgentKey{install.AgentClaudeCode}
+	ui.SelectScopeResult = scopeGlobal
+	ui.SelectTransportResult = install.TransportStdio
+
+	state := &InstallState{} // no agents, no scope, no transport -> full interactive
+	w := NewInstallWizard(ui, state, tempPathResolver(empty, ""))
+
+	if _, err := w.Run(ctx); err != nil {
+		t.Fatalf("wizard run failed with no agents detected: %v", err)
+	}
+
+	// Guidance must have been shown before selection.
+	if !ui.WasCalled("NoAgentsDetected") {
+		t.Error("expected NoAgentsDetected guidance when no agents detected")
+	}
+	if !ui.WasCalled("SelectAgents") {
+		t.Error("expected SelectAgents prompt even with no agents detected")
+	}
+	if len(state.Agents) != 1 || state.Agents[0] != install.AgentClaudeCode {
+		t.Errorf("selected agent = %v, want [claude-code]", state.Agents)
 	}
 }
