@@ -78,15 +78,23 @@ func TestFlattenedNgrokCollectorHandoff(t *testing.T) {
 	})
 
 	dir := t.TempDir()
-	envFile := filepath.Join(dir, "pinner", "mcp.env")
-	// Point the OS config dir at the temp root so resolveServiceEnvFile (used by
-	// both the sub-steps and the production collector, which passes envFile="")
-	// resolves to the same file the sub-steps write — faithful to production.
-	t.Setenv("XDG_CONFIG_HOME", dir)
+	// Point the OS config dir at the temp root on every platform so
+	// resolveServiceEnvFile (used by both the sub-steps and the production
+	// collector, which passes envFile="") resolves to the same file the
+	// sub-steps write — faithful to production. os.UserConfigDir() honors
+	// XDG_CONFIG_HOME on Linux, $HOME/Library/Application Support on macOS, and
+	// %AppData% on Windows.
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, ".config"))
+	t.Setenv("HOME", dir)
+	t.Setenv("APPDATA", filepath.Join(dir, "AppData", "Roaming"))
 
 	// A real command shadow carrying the shared service flags, as production
 	// builds for `mcp install` and `mcp service`.
 	realCmd := &cli.Command{Flags: managedServiceFlags()}
+	// Derive the env file from the same resolver the collector uses so the two
+	// phases agree on the path regardless of platform.
+	envFile, err := ResolveServiceEnvFile(realCmd)
+	require.NoError(t, err)
 
 	prior := wizard.NonInteractive
 	wizard.NonInteractive = true
@@ -96,7 +104,7 @@ func TestFlattenedNgrokCollectorHandoff(t *testing.T) {
 	state := &ServiceInstallState{
 		EnvFile:     envFile,
 		Provider:    TunnelProviderNgrok,
-		NgrokAPIKey: "ngrok_key",
+		NgrokAPIKey: "ngrok_key_123",
 		AuthToken:   "auth",
 		OAuth:       true,
 	}
