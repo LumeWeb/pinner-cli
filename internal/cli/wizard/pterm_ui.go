@@ -2,6 +2,7 @@ package wizard
 
 import (
 	"context"
+	"strings"
 
 	"github.com/pterm/pterm"
 )
@@ -46,6 +47,15 @@ func (p *PTermUI) ShowStepProgress(_ context.Context, current, total int, stepNa
 
 func (p *PTermUI) ShowStepSkipped(_ context.Context, stepName string) error {
 	pterm.Info.Printf("Skipped: %s (already configured)\n", stepName)
+	return nil
+}
+
+func (p *PTermUI) ShowStepSeeded(_ context.Context, stepName string, sources []string) error {
+	flags := make([]string, 0, len(sources))
+	for _, s := range sources {
+		flags = append(flags, "--"+s)
+	}
+	pterm.Info.Printf("Seeded: %s (from %s)\n", stepName, strings.Join(flags, ", "))
 	return nil
 }
 

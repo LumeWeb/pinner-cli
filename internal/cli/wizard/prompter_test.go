@@ -53,10 +53,13 @@ func TestRun_HiddenStepExecutesButDoesNotRender(t *testing.T) {
 	require.Equal(t, []string{"Visible", "Resolve Binary"}, executed,
 		"hidden steps execute; a hidden+skipped step does not run")
 
-	// Only the visible step renders a banner. Neither hidden step appears.
+	// Only the visible step renders a banner, numbered against the count of
+	// VISIBLE steps (1 of 1), not the raw slice length (which includes the two
+	// hidden steps). Hidden steps never render and never create gaps or inflate
+	// the "of N" total.
 	expected := []string{
 		"ShowWelcome",
-		"ShowStepProgress(1,3,Visible)",
+		"ShowStepProgress(1,1,Visible)",
 		"ShowCompletion",
 	}
 	require.True(t, mock.VerifyCalls(expected), "hidden steps must not render any progress/skipped banner")
