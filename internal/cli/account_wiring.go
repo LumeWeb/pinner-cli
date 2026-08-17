@@ -11,6 +11,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/catalogops"
 	"go.lumeweb.com/pinner-cli/internal/core/auth"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner-cli/internal/mcp"
 	"go.lumeweb.com/pinner-cli/internal/urlopen"
 )
 
@@ -53,6 +54,45 @@ func accountCatalogDeps() catalogops.AccountDeps {
 
 var accountCatalogDepsVar = catalogops.AccountDeps(accountCatalogDeps())
 
+// accountOTPDisableWired returns the `otp disable` subcommand. It keeps the
+// hand-written command shape (the --password sensitive flag with the
+// Stdin/env source chain) but routes its Action through the catalog's
+// account_otp_disable operation via accountActionAdapter, so the disable flow
+// is catalog-driven (reaching core auth.DisableOTP and rendering
+// AccountOTPDisableResult) just like the account operations, while the op is
+// NOT emitted as a flat top-level `otp-disable` under the account parent.
+func accountOTPDisableWired() *cli.Command {
+	var op catalog.Operation
+	for _, cand := range catalogops.AccountOperations(accountCatalogDepsVar) {
+		if cand.Name() == "account_otp_disable" {
+			op = cand
+			break
+		}
+	}
+	cmd := &cli.Command{
+		Name:  "disable",
+		Usage: "Disable two-factor authentication",
+		Description: `Disable 2FA for your account. Provide your current password via --password (or PINNER_PASSWORD / stdin); the password is not prompted interactively.
+
+WARNING: This reduces your account security. Consider re-enabling 2FA.`,
+		Flags: []cli.Flag{
+			mcp.SensitiveStringFlag(&cli.StringFlag{
+				Name:    FlagPassword,
+				Aliases: []string{"p"},
+				Usage:   "Password for verification (WARNING: insecure, prefer stdin or prompt)",
+				Sources: cli.NewValueSourceChain(
+					Stdin(),
+					cli.EnvVar("PINNER_PASSWORD"),
+				),
+			}),
+		},
+	}
+	if op != nil {
+		cmd.Action = accountActionAdapter(op)
+	}
+	return cmd
+}
+
 // accountWiringParent builds the catalog-driven subcommands for the `account`
 // parent (info, email, password, subscription, portal). newAccountCommand
 // merges these with the existing hand-written otp/api-keys subcommands.
@@ -72,6 +112,13 @@ func accountWiringParent() []*cli.Command {
 	for _, c := range compiled {
 		canonical := c.Name // e.g. "account_info"
 		leaf := canonical[len("account_"):]
+		// The OTP ops (account_otp_disable) are NOT emitted as flat account
+		// subcommands: they nest under the existing hand-written `otp` parent
+		// (account otp disable) to preserve the CLI surface, so skip them
+		// here to avoid a duplicate flat `otp-disable` command.
+		if strings.HasPrefix(leaf, "otp") {
+			continue
+		}
 		// Catalog canonical names use underscores; expose the CLI command with
 		// kebab-case names (update_email -> update-email), matching the other
 		// hand-written subcommands (otp, api-keys).
@@ -215,6 +262,17 @@ func renderAccountResult(_ context.Context, c *cli.Command, op catalog.Operation
 			return nil
 		}
 		output.Printfln("Password updated.")
+		return nil
+
+	case *catalogops.AccountOTPDisableResult:
+		if output.IsJSON() {
+			return output.PrintJSON(r)
+		}
+		if r.Message != "" {
+			output.Printfln("%s", r.Message)
+			return nil
+		}
+		output.Printfln("Two-factor authentication disabled.")
 		return nil
 
 	case *catalogops.AccountSubscriptionResult:

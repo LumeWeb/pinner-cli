@@ -5,8 +5,6 @@ import (
 	"fmt"
 
 	"github.com/urfave/cli/v3"
-
-	"go.lumeweb.com/pinner-cli/internal/mcp"
 )
 
 func newAccountCommand() *cli.Command {
@@ -70,30 +68,12 @@ After successful verification, 2FA will be required for all future logins.`,
 					return accountOTPEnable(ctx, newCLICommandWrapper(cmd), output, defaultConfigManagerFactory, defaultAuthServiceFactory)
 				},
 			},
-			{
-				Name:  "disable",
-				Usage: "Disable two-factor authentication",
-				Description: `Disable 2FA for your account. This will:
-  1. Prompt for your password for verification
-  2. Remove 2FA requirement from your account
-
-WARNING: This reduces your account security. Consider re-enabling 2FA.`,
-				Flags: []cli.Flag{
-					mcp.SensitiveStringFlag(&cli.StringFlag{
-						Name:    FlagPassword,
-						Aliases: []string{"p"},
-						Usage:   "Password for verification (WARNING: insecure, prefer stdin or prompt)",
-						Sources: cli.NewValueSourceChain(
-							Stdin(),
-							cli.EnvVar("PINNER_PASSWORD"),
-						),
-					}),
-				},
-				Action: func(ctx context.Context, cmd *cli.Command) error {
-					output := setupOutput(cmd)
-					return accountOTPDisable(ctx, newCLICommandWrapper(cmd), output, defaultConfigManagerFactory, defaultAuthServiceFactory)
-				},
-			},
+			// disable is catalog-driven: the command shape (name, usage,
+			// --password sensitive flag) is preserved here, but its Action is
+			// wired through the account_otp_disable catalog operation so the
+			// flow is defined once and compiled to both the CLI and MCP
+			// surfaces. See accountOTPDisableWired in account_wiring.go.
+			accountOTPDisableWired(),
 		},
 	}
 }
@@ -132,37 +112,5 @@ func accountOTPEnable(ctx context.Context, cmd flagGetter, output Output, cfgMgr
 		return err
 	}
 	renderOTPEnabled(output)
-	return nil
-}
-
-func accountOTPDisable(ctx context.Context, cmd flagGetter, output Output, cfgMgrFactory ConfigManagerFactory, authServiceFactory AuthServiceFactory) error {
-	cfgMgr, err := cfgMgrFactory()
-	if err != nil {
-		return fmt.Errorf("failed to initialize config manager: %w", err)
-	}
-
-	apiEndpoint := cfgMgr.Config().GetAPIEndpoint()
-	authService := authServiceFactory(cfgMgr, apiEndpoint)
-
-	password := cmd.String("password")
-
-	// If no password was provided, prompt for it interactively.
-	if password == "" {
-		if agentMode {
-			return ErrNonInteractive
-		}
-		prompter := &promptuiPrompter{}
-		password, err = prompter.Password("Password")
-		if err != nil {
-			return fmt.Errorf("failed to read password: %w", err)
-		}
-	}
-
-	res, err := authService.DisableOTP(ctx, password)
-	if err != nil {
-		return err
-	}
-	renderOTPDisabled(output)
-	_ = res
 	return nil
 }

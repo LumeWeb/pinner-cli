@@ -99,6 +99,7 @@ func AccountOperations(d AccountDeps) []catalog.Operation {
 		accountInfo(d),
 		accountUpdateEmail(d),
 		accountUpdatePassword(d),
+		accountOTPDisable(d),
 		accountSubscription(d),
 	}
 }
@@ -124,6 +125,12 @@ type AccountUpdateEmailResult struct {
 
 // AccountUpdatePasswordResult reports a successful password change.
 type AccountUpdatePasswordResult struct {
+	Message string `json:"message"`
+}
+
+// AccountOTPDisableResult reports a successful two-factor authentication
+// disable.
+type AccountOTPDisableResult struct {
 	Message string `json:"message"`
 }
 
@@ -244,6 +251,37 @@ func accountUpdatePassword(d AccountDeps) catalog.Operation {
 				return nil, fmt.Errorf("account_update_password: %w", err)
 			}
 			return &AccountUpdatePasswordResult{Message: "Password updated."}, nil
+		}),
+	})
+}
+
+// accountOTPDisable is the `account otp disable` operation: disables
+// two-factor authentication, requiring the current account password for
+// verification.
+func accountOTPDisable(d AccountDeps) catalog.Operation {
+	return catalog.NewOperation(catalog.OperationSpec{
+		Name:             "account_otp_disable",
+		Title:            "Disable two-factor authentication",
+		Summary:          "Disable 2FA on your account",
+		Description:      "Disables two-factor authentication on your account. Your current account password is required to verify.",
+		AgentDescription: "Call account_otp_disable to turn off the account's two-factor authentication. Requires the user's current account password.",
+		Category:         "account",
+		Safety:           catalog.SafetyMutate,
+		Interaction:      catalog.InteractionAgentSafe,
+		Visibility:       catalog.VisibilityBoth,
+		Positional:       "",
+		Args: []catalog.OperationArg{
+			{Name: "password", Type: catalog.ArgTypeString, Required: true, Sensitive: true, Help: "Current account password for verification", AgentHelp: "The user's current account password, used to verify disabling two-factor authentication."},
+		},
+		Handler: authClientHandler(d, func(ctx context.Context, svc auth.AuthService, input map[string]any) (any, error) {
+			pw := catalog.StrArg(input, "password", "")
+			if pw == "" {
+				return nil, fmt.Errorf("account_otp_disable: password is required")
+			}
+			if _, err := svc.DisableOTP(ctx, pw); err != nil {
+				return nil, fmt.Errorf("account_otp_disable: %w", err)
+			}
+			return &AccountOTPDisableResult{Message: "Two-factor authentication disabled."}, nil
 		}),
 	})
 }
