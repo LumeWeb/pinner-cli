@@ -64,6 +64,33 @@ func TestServiceInstallStepsShape(t *testing.T) {
 	require.FileExists(t, envFile, "write step should persist the env file")
 }
 
+// TestSeedServiceFromFlagsAndEnv guards the flatten: an interactive `mcp install
+// --transport http` with credentials supplied via flags/env (but no --tunnel and
+// no existing env file) must NOT re-prompt for them. The tunnelConfigurer pre-
+// seeds the embedded service state via SeedServiceFromFlagsAndEnv before running
+// the steps, matching RunServiceInstallWizard; a missing pre-seed would re-prompt
+// for secrets the user already provided.
+func TestSeedServiceFromFlagsAndEnv(t *testing.T) {
+	cmd := &cli.Command{Flags: managedServiceFlags()}
+	require.NoError(t, cmd.Set(serviceAuthTokenFlag, "flag-auth-token"))
+	require.NoError(t, cmd.Set(serviceTunnelTokenFlag, "flag-ngrok-token"))
+	require.NoError(t, cmd.Set(serviceDomainFlag, "flag.example.com"))
+	require.NoError(t, cmd.Set(serviceEnvFileFlag, "mcp.env"))
+
+	state := &ServiceInstallState{}
+	SeedServiceFromFlagsAndEnv(cmd, state, "mcp.env")
+
+	require.Equal(t, "flag-auth-token", state.AuthToken, "flag-provided auth token seeded")
+	require.Equal(t, "flag-ngrok-token", state.TunnelToken, "flag-provided tunnel token seeded")
+	require.Equal(t, "flag.example.com", state.Domain, "flag-provided domain seeded")
+
+	// Values already present must not be overwritten by seeding.
+	state2 := &ServiceInstallState{AuthToken: "pre-existing", Domain: "kept.example.com"}
+	SeedServiceFromFlagsAndEnv(cmd, state2, "mcp.env")
+	require.Equal(t, "pre-existing", state2.AuthToken, "seeding must not clobber explicit state")
+	require.Equal(t, "kept.example.com", state2.Domain, "seeding must not clobber explicit state")
+}
+
 func TestResolveServicePublicURLFillsCloudflaredDomain(t *testing.T) {
 	// A named cloudflared tunnel with a custom domain has a deterministic
 	// public URL after the service starts; resolveServicePublicURL must derive

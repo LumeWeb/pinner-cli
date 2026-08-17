@@ -209,6 +209,11 @@ func runMcpInstall(ctx context.Context, cmd mcpInstallFlagGetter, ui InstallUI, 
 				s.Service = service
 			}
 			cfgMgr := mcpadapter.ServiceConfigManager()
+			// Pre-seed provider/credentials from flags & env BEFORE the steps so
+			// an explicit --auth-token/--token/--domain (or MCP_AUTH_TOKEN /
+			// NGROK_AUTHTOKEN) is not re-prompted — matching RunServiceInstallWizard,
+			// which seeds before running its steps.
+			mcpadapter.SeedServiceFromFlagsAndEnv(realCmd, service, envFile)
 			for _, step := range mcpadapter.ServiceInstallSteps(service, realCmd, envFile, cfgMgr) {
 				if step.ShouldSkip(service) {
 					continue

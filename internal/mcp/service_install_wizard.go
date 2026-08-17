@@ -86,7 +86,7 @@ func RunServiceInstallWizard(ctx context.Context, cmd *cli.Command, envFile stri
 	state := &ServiceInstallState{EnvFile: envFile}
 	// Pre-seed scalar values from flags/env so the wizard never re-prompts for
 	// something already explicit.
-	seedFromFlagsAndEnv(cmd, state, envFile)
+	seedServiceFromFlagsAndEnv(cmd, state, envFile)
 
 	_, err := wizard.Run(ctx, ui, ServiceInstallSteps(state, cmd, envFile, cfgMgr), state)
 	if err != nil {
@@ -221,7 +221,7 @@ func ServiceInstallSteps(state *ServiceInstallState, cmd *cli.Command, envFile s
 		wizard.StepFunc[*ServiceInstallState]{
 			Name_: "Write service environment file",
 			ExecuteFunc: func(_ context.Context, s *ServiceInstallState) error {
-				seedFromFlagsAndEnv(cmd, s, envFile)
+				seedServiceFromFlagsAndEnv(cmd, s, envFile)
 				env := serviceInstallStateToEnv(s)
 				if err := WriteServiceEnvironment(s.EnvFile, env); err != nil {
 					return fmt.Errorf("write MCP service environment file: %w", err)
@@ -232,11 +232,19 @@ func ServiceInstallSteps(state *ServiceInstallState, cmd *cli.Command, envFile s
 	}
 }
 
-// seedFromFlagsAndEnv copies values the user already supplied via flags (which
-// the framework resolves against each flag's declared env Sources) into the
-// wizard state so the interactive prompts never overwrite or silently drop an
-// explicit option.
-func seedFromFlagsAndEnv(cmd *cli.Command, s *ServiceInstallState, _ string) {
+// SeedServiceFromFlagsAndEnv copies values the user already supplied via flags
+// (which the framework resolves against each flag's declared env Sources) into
+// the wizard state so the interactive prompts never overwrite or silently drop
+// an explicit option. It must run BEFORE the tunnel-config steps so a
+// --auth-token/--token/--domain (or MCP_AUTH_TOKEN/NGROK_AUTHTOKEN) provided on
+// the command line is not re-prompted. Exported so the mcp install wizard can
+// pre-seed the embedded service state it splices.
+func SeedServiceFromFlagsAndEnv(cmd *cli.Command, s *ServiceInstallState, envFile string) {
+	seedServiceFromFlagsAndEnv(cmd, s, envFile)
+}
+
+// seedServiceFromFlagsAndEnv is SeedServiceFromFlagsAndEnv's internal form.
+func seedServiceFromFlagsAndEnv(cmd *cli.Command, s *ServiceInstallState, _ string) {
 	if s.Provider == "" {
 		if p, err := parseTunnelProvider(cmd.String(serviceTunnelFlag)); err == nil {
 			s.Provider = p
