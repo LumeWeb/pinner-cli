@@ -28,6 +28,11 @@ type InstallUI interface {
 	SelectScope(agents []install.AgentKey) (string, error)
 	// SelectTransport prompts for the MCP transport.
 	SelectTransport(agents []install.AgentKey) (install.Transport, error)
+	// ConfirmOAuth asks whether to enable the OAuth 2.1 handshake for the MCP
+	// server. It is asked for a remote (http) transport; the default answer is
+	// yes. OAuth lets OAuth-expecting MCP clients (ChatGPT, Claude.ai, Copilot,
+	// Vertex) authorize instead of using the shared token directly as a Bearer.
+	ConfirmOAuth() (bool, error)
 	// ConfirmHTTP confirms an http install before it is written.
 	ConfirmHTTP(agents []install.AgentKey) (bool, error)
 
@@ -177,6 +182,21 @@ func (ui *PTermInstallUI) SelectTransport(agents []install.AgentKey) (install.Tr
 	}
 	_ = agents
 	return install.Transport(result), nil
+}
+
+// ConfirmOAuth asks whether to enable OAuth for the remote MCP server, defaulting
+// to yes.
+func (ui *PTermInstallUI) ConfirmOAuth() (bool, error) {
+	if wizard.NonInteractive {
+		// No interactive terminal: default to the OAuth-enabled path so remote
+		// clients that expect the OAuth handshake work out of the box.
+		return true, nil
+	}
+	ok, err := pterm.DefaultInteractiveConfirm.WithDefaultValue(true).Show()
+	if err != nil {
+		return false, handleInterrupt(err)
+	}
+	return ok, nil
 }
 
 // ConfirmHTTP confirms an http install.

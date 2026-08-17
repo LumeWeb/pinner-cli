@@ -151,6 +151,14 @@ func runMcpInstall(ctx context.Context, cmd mcpInstallFlagGetter, ui InstallUI, 
 		UseService:  useService,
 		AutoApprove: cmd.Bool("auto-approve"),
 	}
+	// Seed OAuth from an explicit --oauth flag (env MCP_OAUTH, declared by the
+	// shared ServiceInstallFlags). When set it wins over the interactive default
+	// (yes); when unset it is left for the transport-step prompt on remote
+	// installs, or defaults to true by the service seed.
+	if cmd.IsSet("oauth") {
+		state.OAuth = cmd.Bool("oauth")
+		state.OAuthIsSet = true
+	}
 	if len(agents) == 0 {
 		// Interactive: leave agents empty; the Select step will prompt.
 	} else if scope == scopeProject {
@@ -222,6 +230,10 @@ func runMcpInstall(ctx context.Context, cmd mcpInstallFlagGetter, ui InstallUI, 
 				service = &mcpadapter.ServiceInstallState{EnvFile: envFile}
 				s.Service = service
 			}
+			// Fold the operator's OAuth choice from the transport step (default
+			// yes) into the service state so MCP_OAUTH is written. An explicit
+			// --oauth flag (seeded below) overrides the prompted default.
+			service.OAuth = s.OAuth
 			// We are on the fresh path, so the spliced write step creates the env
 			// file this run. Report created=true (via both the return value and
 			// service.EnvFileCreated) so the outer step and the collector clean up a

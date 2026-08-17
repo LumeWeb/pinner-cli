@@ -53,6 +53,8 @@ type MockInstallUI struct {
 	SelectScopeErr        error
 	SelectTransportResult install.Transport
 	SelectTransportErr    error
+	ConfirmOAuthResult    bool
+	ConfirmOAuthErr       error
 	ConfirmHTTPResult     bool
 	ConfirmHTTPErr        error
 
@@ -105,6 +107,18 @@ func (m *MockInstallUI) ConfirmHTTP(_ []install.AgentKey) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.ConfirmHTTPResult, m.ConfirmHTTPErr
+}
+
+// ConfirmOAuth returns the configured OAuth answer, defaulting to true (the
+// production default is yes).
+func (m *MockInstallUI) ConfirmOAuth() (bool, error) {
+	m.RecordCall("ConfirmOAuth")
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.ConfirmOAuthErr != nil {
+		return false, m.ConfirmOAuthErr
+	}
+	return m.ConfirmOAuthResult, nil
 }
 
 func (m *MockInstallUI) ReportWritten(agent install.AgentKey, path string, local bool) error {
@@ -821,5 +835,105 @@ func TestMcpInstallWizardNoDetectedAgentsShowsGuidance(t *testing.T) {
 	}
 	if len(state.Agents) != 1 || state.Agents[0] != install.AgentClaudeCode {
 		t.Errorf("selected agent = %v, want [claude-code]", state.Agents)
+	}
+}
+
+// TestMcpInstallTransportPromptsOAuthForHTTP guards the Choose Transport step:
+// selecting a remote (http) transport must ask the operator whether to enable
+// OAuth (default yes) and record it into InstallState.OAuth, so the service env
+// writes MCP_OAUTH. OAuth is meaningless for stdio and must NOT be asked there.
+func TestMcpInstallTransportPromptsOAuthForHTTP(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	ui := newMockInstallUI()
+	ui.SelectAgentsResult = []install.AgentKey{install.AgentClaudeCode}
+	ui.SelectScopeResult = scopeGlobal
+	ui.SelectTransportResult = install.TransportHTTP
+	// OAuth default in the mock mirrors the production default (yes).
+	ui.ConfirmOAuthResult = true
+
+	state := &InstallState{PublicURL: "https://you.ngrok-free.dev", AuthToken: "auth"}
+	w := NewInstallWizard(ui, state, tempPathResolver(root, t.TempDir()))
+	w.collectHTTP = func(context.Context, *InstallState) error { return nil }
+
+	if _, err := w.Run(ctx); err != nil {
+		t.Fatalf("wizard run failed: %v", err)
+	}
+	if !ui.WasCalled("ConfirmOAuth") {
+		t.Error("expected ConfirmOAuth prompt for an http transport")
+	}
+	if !state.OAuth {
+		t.Error("http transport with OAuth default yes must set state.OAuth = true")
+	}
+}
+
+// TestMcpInstallTransportSkipsOAuthForStdio guards that stdio does not ask about
+// OAuth (it is a local process, so OAuth is meaningless).
+func TestMcpInstallTransportSkipsOAuthForStdio(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	ui := newMockInstallUI()
+	ui.SelectAgentsResult = []install.AgentKey{install.AgentClaudeCode}
+	ui.SelectScopeResult = scopeGlobal
+	ui.SelectTransportResult = install.TransportStdio
+
+	state := &InstallState{}
+	w := NewInstallWizard(ui, state, tempPathResolver(root, t.TempDir()))
+
+	if _, err := w.Run(ctx); err != nil {
+		t.Fatalf("wizard run failed: %v", err)
+	}
+	if ui.WasCalled("ConfirmOAuth") {
+		t.Error("stdio transport must not prompt for OAuth")
+	}
+	if state.OAuth {
+		t.Error("stdio transport must leave OAuth unset")
+	}
+}
+
+// TestMcpInstallTransportSkipsOAuthPromptWhenFlagExplicit guards Kody finding:
+// an explicit --oauth flag must both win over the interactive default AND
+// suppress the ConfirmOAuth prompt. Previously the transport step overwrote an
+// explicit --oauth.choice with the prompt's (true) default, so
+// `--transport http --oauth=false` still asked and forced OAuth on.
+func TestMcpInstallTransportSkipsOAuthPromptWhenFlagExplicit(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	ui := newMockInstallUI()
+	ui.SelectAgentsResult = []install.AgentKey{install.AgentClaudeCode}
+	ui.SelectScopeResult = scopeGlobal
+	ui.SelectTransportResult = install.TransportHTTP
+	// Prompt default would be true, but explicit --oauth=false must suppress it.
+	ui.ConfirmOAuthResult = true
+
+	envFile := filepath.Join(root, "mcp.env")
+
+	state := &InstallState{PublicURL: "https://my-app.ngrok.app", AuthToken: "auth"}
+	// Mirror what runMcpInstall seeds when --oauth is explicitly set.
+	state.OAuth = false
+	state.OAuthIsSet = true
+	state.Agents = []install.AgentKey{install.AgentClaudeCode}
+	state.Scope = scopeGlobal
+
+	w := NewInstallWizard(ui, state, tempPathResolver(root, t.TempDir()))
+	w.tunnelConfigurer = func(_ context.Context, s *InstallState) (bool, error) {
+		// Mirror the production fold: the tunnel configurer pushes the transport
+		// step's OAuth choice into the service state (MCP_OAUTH).
+		svc := &mcpadapter.ServiceInstallState{EnvFile: envFile, PublicURL: "https://my-app.ngrok.app", AuthToken: "auth", OAuth: s.OAuth}
+		s.Service = svc
+		return true, nil
+	}
+
+	if _, err := w.Run(ctx); err != nil {
+		t.Fatalf("wizard run failed: %v", err)
+	}
+	if ui.WasCalled("ConfirmOAuth") {
+		t.Error("ConfirmOAuth must NOT be prompted when --oauth was explicitly set")
+	}
+	if state.OAuth {
+		t.Error("explicit --oauth=false must win over the prompt default (true)")
+	}
+	if state.Service == nil || state.Service.OAuth {
+		t.Error("explicit --oauth=false must flow into the service state (MCP_OAUTH=false)")
 	}
 }

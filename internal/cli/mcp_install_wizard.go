@@ -38,6 +38,14 @@ type InstallState struct {
 	PublicURL  string
 	AuthToken  string
 	UseService bool
+	// OAuth records the operator's choice to enable the OAuth 2.1 handshake for
+	// the remote MCP server (prompted by the transport step, default yes). It is
+	// folded into the service state (MCP_OAUTH) when the tunnel config runs.
+	OAuth bool
+	// OAuthIsSet reports whether OAuth came from an explicit --oauth flag (not
+	// the interactive default), so the transport step does not re-prompt over an
+	// explicit operator choice.
+	OAuthIsSet bool
 
 	// Service accumulates the tunnel configuration collected by the spliced
 	// tunnel-config steps (Provider, creds, env). It is the data-contract fix
@@ -200,6 +208,19 @@ func (w *InstallWizard) getSteps() []wizard.Step[*InstallState] {
 					t = install.TransportStdio
 				}
 				s.Transport = t
+				// A remote (http) transport serves a public MCP endpoint, where
+				// OAuth is the default-secured way for clients to authorize. Ask
+				// the operator whether to enable it (default yes) so the service
+				// env sets MCP_OAUTH accordingly. OAuth is meaningless for stdio
+				// (a local process), and is not asked when the operator already
+				// made an explicit --oauth choice.
+				if t != install.TransportStdio && !s.OAuthIsSet {
+					oauth, err := w.ui.ConfirmOAuth()
+					if err != nil {
+						return err
+					}
+					s.OAuth = oauth
+				}
 				return nil
 			},
 		},

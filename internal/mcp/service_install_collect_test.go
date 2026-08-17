@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -85,7 +86,10 @@ func TestTunnelConfigStepSkipsNgrokTokenPromptWhenConfigured(t *testing.T) {
 
 	envFile := filepath.Join(dir, "mcp.env")
 	cmd := &cli.Command{Flags: managedServiceFlags()}
-	state := &ServiceInstallState{EnvFile: envFile, Provider: TunnelProviderNgrok, TunnelName: "test", AuthToken: "test-auth"}
+	// PublicURL is pre-set so the step's URL resolution short-circuits and this
+	// test isolates the token-skip behavior (the URL path is covered by its own
+	// tests).
+	state := &ServiceInstallState{EnvFile: envFile, Provider: TunnelProviderNgrok, TunnelName: "test", AuthToken: "test-auth", PublicURL: "https://you.ngrok-free.dev"}
 	steps := ServiceInstallSteps(state, cmd, envFile, nil)
 
 	prior := wizard.NonInteractive
@@ -320,4 +324,85 @@ func TestCloudflaredConfigurerResolvesNameWithoutHostname(t *testing.T) {
 	require.Equal(t, "provisioned-named-tunnel", state.TunnelName,
 		"tunnel name should come from the provisioned state even when the hostname is absent")
 	require.Equal(t, "mcp.example.com", state.Domain, "pre-supplied domain must be preserved")
+}
+
+// TestNgrokConfigurerResolvesPublicURLFromAPI guards the "identify what the
+// user has" path: when an ngrok API key is supplied and the API reports a free
+// dev domain, the configurer must resolve MCP_PUBLIC_URL from that (so the
+// interactive install no longer fails with "no MCP_PUBLIC_URL") without
+// prompting. This is the regression guard for the free-ngrok install failure.
+func TestNgrokConfigurerResolvesPublicURLFromAPI(t *testing.T) {
+	stubNgrokAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"reserved_domains":[{"id":"rd_1","domain":"you.ngrok-free.dev","cname_target":null}],"next_page_uri":null}`))
+	})
+
+	state := &ServiceInstallState{
+		Provider:    TunnelProviderNgrok,
+		TunnelToken: "tun-token", // pre-supplied so the token prompt is skipped
+		NgrokAPIKey: "ngrok_key",
+		AuthToken:   "auth",
+	}
+	prior := wizard.NonInteractive
+	wizard.NonInteractive = true
+	defer func() { wizard.NonInteractive = prior }()
+
+	require.NoError(t, ngrokConfigurer(context.Background(), textUI{}, state, nil),
+		"ngrok configurer must resolve the URL from the API without prompting")
+	require.Equal(t, "https://you.ngrok-free.dev", state.PublicURL,
+		"MCP_PUBLIC_URL must be the account's free dev domain from the ngrok API")
+	require.Equal(t, "", state.TunnelName,
+		"ngrok must NOT populate a tunnel resource name (no such prompt)")
+}
+
+// TestNgrokConfigurerHonorsOperatorDomain guards that the operator's explicit
+// --domain (MCP_DOMAIN), when it exists in the account's reserved-domain set,
+// is published as MCP_PUBLIC_URL ahead of the free dev domain. This is the
+// paid-account path that previously resolved to the free dev domain because
+// s.Domain was never threaded into the ngrok URL resolution.
+func TestNgrokConfigurerHonorsOperatorDomain(t *testing.T) {
+	stubNgrokAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"reserved_domains":[
+			{"id":"rd_1","domain":"my-app.ngrok.app","cname_target":"tunnel.ngrok.io"},
+			{"id":"rd_2","domain":"you.ngrok-free.dev","cname_target":null}
+		],"next_page_uri":null}`))
+	})
+
+	state := &ServiceInstallState{
+		Provider:    TunnelProviderNgrok,
+		TunnelToken: "tun-token",
+		NgrokAPIKey: "ngrok_key",
+		AuthToken:   "auth",
+		Domain:      "my-app.ngrok.app", // operator's explicit --domain
+	}
+	prior := wizard.NonInteractive
+	wizard.NonInteractive = true
+	defer func() { wizard.NonInteractive = prior }()
+
+	require.NoError(t, ngrokConfigurer(context.Background(), textUI{}, state, nil))
+	require.Equal(t, "https://my-app.ngrok.app", state.PublicURL,
+		"operator's --domain present in the reserved set must be chosen over the free dev domain")
+}
+
+// TestNgrokConfigurerPromptsForURLWithoutAPIKey guards the fallback: with no
+// API key the configurer cannot query what the account has, so it must fall
+// back to a URL prompt (errors in non-interactive mode) rather than silently
+// leaving MCP_PUBLIC_URL empty.
+func TestNgrokConfigurerPromptsForURLWithoutAPIKey(t *testing.T) {
+	state := &ServiceInstallState{
+		Provider:    TunnelProviderNgrok,
+		TunnelToken: "tun-token",
+		AuthToken:   "auth",
+		// No NgrokAPIKey, no NGROK_API_KEY env -> must prompt for the URL.
+	}
+	prior := wizard.NonInteractive
+	wizard.NonInteractive = true
+	defer func() { wizard.NonInteractive = prior }()
+
+	err := ngrokConfigurer(context.Background(), textUI{}, state, nil)
+	require.Error(t, err,
+		"without an ngrok API key the configurer must require an interactive URL prompt")
+	require.Contains(t, err.Error(), "interactive",
+		"with no API key and no discovered domain the configurer must request an interactive prompt for the URL")
 }
