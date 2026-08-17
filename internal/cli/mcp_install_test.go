@@ -477,7 +477,7 @@ func TestMcpInstallConfigureTunnelRunsConfigurerThenCollector(t *testing.T) {
 	w.collectHTTP = func(_ context.Context, s *InstallState) error {
 		collectRan = true
 		s.PublicURL = "https://mcp.example.com"
-		s.AuthToken = "secret"
+		s.AuthToken = "DUMMY_AUTH_TOKEN_NOT_A_SECRET"
 		return nil
 	}
 
