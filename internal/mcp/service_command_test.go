@@ -38,18 +38,6 @@ func TestServicePort(t *testing.T) {
 	require.Equal(t, 0, servicePort(ServiceEnvironment{"MCP_PORT": "invalid"}))
 }
 
-func TestSystemdUnitKeepsSecretsOutOfExecStart(t *testing.T) {
-	unit := renderSystemdUserUnit(ServiceSpec{
-		ExecPath:  "/usr/local/bin/pinner",
-		Arguments: []string{"mcp", "--tunnel", "openai"},
-		EnvFile:   "/home/user/.config/pinner/mcp.env",
-	})
-	require.Contains(t, unit, "EnvironmentFile=/home/user/.config/pinner/mcp.env")
-	require.NotContains(t, unit, "CONTROL_PLANE_API_KEY")
-	require.NotContains(t, unit, "OPENAI_API_KEY")
-	require.NotContains(t, unit, "MCP_AUTH_TOKEN")
-}
-
 func TestServiceProviderRequirements(t *testing.T) {
 	require.True(t, openAITunnelID.MatchString("tunnel_0123456789abcdef0123456789abcdef"))
 	require.False(t, openAITunnelID.MatchString("tunnel_invalid"))
@@ -68,16 +56,6 @@ func TestResolveManagedServiceRejectsInsecureEnvironmentFile(t *testing.T) {
 	require.NoError(t, cmd.Set("env-file", path))
 	_, err := resolveManagedService(context.Background(), cmd, true, false)
 	require.ErrorContains(t, err, "group/world-readable")
-}
-
-func TestResolveManagedServiceLifecycleSkipsProviderValidation(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "mcp.env")
-	require.NoError(t, os.WriteFile(path, []byte("MCP_TUNNEL_PROVIDER=ngrok\n"), 0600))
-	cmd := &cli.Command{Flags: []cli.Flag{&cli.StringFlag{Name: serviceEnvFileFlag}}}
-	require.NoError(t, cmd.Set("env-file", path))
-	_, err := resolveManagedService(context.Background(), cmd, false, false)
-	require.NoError(t, err)
 }
 
 func TestServiceEnvironmentPrecedence(t *testing.T) {
@@ -127,10 +105,9 @@ func TestInstallBootstrapsMissingEnvFile(t *testing.T) {
 	require.Equal(t, "4321", env["MCP_PORT"])
 
 	// Non-OpenAI tunnel providers expose the server over HTTP.
-	svc, err := newManagedService(cmd, path, "cloudflared")
+	cfg, err := serviceConfigForInstall(cmd, path, "cloudflared")
 	require.NoError(t, err)
-	unit := renderSystemdUserUnit(svc.spec)
-	require.Contains(t, unit, "--http")
+	require.Contains(t, cfg.Arguments, "--http")
 }
 
 func TestInstallBootstrapRequiresProvider(t *testing.T) {
@@ -159,34 +136,6 @@ func TestInstallRejectsExistingInsecureEnvFile(t *testing.T) {
 	}
 	_, _, err := resolveManagedServiceForInstall(context.Background(), cmd)
 	require.ErrorContains(t, err, "group/world-readable")
-}
-
-func TestInstallBootstrapOpenAIPassesProvider(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "mcp.env")
-
-	cmd := &cli.Command{Flags: managedServiceFlags()}
-	require.NoError(t, cmd.Set(serviceEnvFileFlag, path))
-	require.NoError(t, cmd.Set(serviceTunnelFlag, "openai"))
-	require.NoError(t, cmd.Set(serviceTunnelIDFlag, "tunnel_0123456789abcdef0123456789abcdef"))
-	// The control-plane API key must be persisted to the env file (not just the
-	// process environment) because the installed systemd service reads ONLY the
-	// env file at runtime.
-	require.NoError(t, cmd.Set(serviceApiKeyFlag, "test-cp-api-key-abc123"))
-
-	envFile, svc, err := resolveManagedServiceForInstall(context.Background(), cmd)
-	require.NoError(t, err)
-	require.Equal(t, path, envFile)
-	require.NotNil(t, svc)
-	// OpenAI runs an embedded tunnel, so the unit must NOT pass --http.
-	unit := renderSystemdUserUnit(svc.spec)
-	require.NotContains(t, unit, "--http")
-
-	// The bootstrap must have persisted the API key into the file the service
-	// will actually read.
-	env, err := LoadServiceEnvironment(path)
-	require.NoError(t, err)
-	require.Equal(t, "test-cp-api-key-abc123", env["CONTROL_PLANE_API_KEY"])
 }
 
 func TestValidateOpenAIRequiresKeyInFileNotJustEnv(t *testing.T) {
@@ -264,6 +213,8 @@ func TestValidateNgrokDoesNotRequireBinaryOnPath(t *testing.T) {
 	// ngrok is embedded via the Go SDK, so `pinner mcp service validate` must
 	// succeed for ngrok even when no `ngrok` binary is installed. The binary
 	// check is now reserved for cloudflared, which still runs as a subprocess.
+	// Assert via validateServiceEnvironment (the pure validator) so this runs on
+	// every platform regardless of which service backend is compiled.
 	dir := t.TempDir()
 	path := filepath.Join(dir, "mcp.env")
 	require.NoError(t, os.WriteFile(path, []byte(
@@ -274,11 +225,8 @@ func TestValidateNgrokDoesNotRequireBinaryOnPath(t *testing.T) {
 		t.Setenv("PATH", t.TempDir()) // no ngrok binary reachable
 	}
 
-	cmd := &cli.Command{Flags: managedServiceFlags()}
-	require.NoError(t, cmd.Set(serviceEnvFileFlag, path))
-	svc, err := resolveManagedService(context.Background(), cmd, true, false)
+	_, err := validateServiceEnvironment(path, false)
 	require.NoError(t, err)
-	require.NotNil(t, svc)
 }
 
 func TestValidateCloudflaredRequiresBinaryOnPath(t *testing.T) {
