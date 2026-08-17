@@ -53,6 +53,15 @@ type Result struct {
 }
 
 func Run[S any](ctx context.Context, ui UI, steps []Step[S], state S) (Result, error) {
+	// Guarantee a prompt channel is bound for every step. The wizard owns the
+	// single terminal channel: any step, top-level or spliced in, must ask the
+	// user through it. A host that pre-binds a custom Prompter is respected; a
+	// host (or embedded sub-wizard) that did not gets the production pterm
+	// channel here, so spliced steps never fall back to their own widgets.
+	if PrompterFrom(ctx) == nil {
+		ctx = WithPrompter(ctx, NewPtermPrompter())
+	}
+
 	if err := ui.ShowWelcome(); err != nil {
 		return Result{}, err
 	}
@@ -61,9 +70,9 @@ func Run[S any](ctx context.Context, ui UI, steps []Step[S], state S) (Result, e
 
 	for i, step := range steps {
 		hidden := step.Hidden()
-		// The prompter (if the runner bound one) flows into every step via ctx so
-		// spliced sub-wizard steps ask the user through the SAME terminal channel
-		// as the host — never through their own pterm widgets.
+		// The prompter bound above flows into every step via ctx so spliced
+		// sub-wizard steps ask the user through the SAME terminal channel as
+		// the host — never through their own pterm widgets.
 		stepCtx := ctx
 		if !hidden {
 			if err := ui.ShowStepProgress(ctx, i+1, len(steps), step.Name()); err != nil {

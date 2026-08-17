@@ -2,6 +2,8 @@ package wizard
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -33,8 +35,8 @@ func TestRun_HiddenStepExecutesButDoesNotRender(t *testing.T) {
 			},
 		},
 		StepFunc[*string]{
-			Name_:   "Hidden, skipped",
-			Hidden_: true,
+			Name_:    "Hidden, skipped",
+			Hidden_:  true,
 			SkipFunc: func(*string) bool { return true },
 			ExecuteFunc: func(_ context.Context, _ *string) error {
 				executed = append(executed, "hidden-skip-should-not-run")
@@ -70,7 +72,7 @@ func (t *testPrompter) Select(string, []string) (int, string, error) { t.selects
 func (t *testPrompter) MultiSelect(string, []string, []string) ([]string, error) {
 	return nil, nil
 }
-func (t *testPrompter) Confirm(string, bool) (bool, error) { return false, nil }
+func (t *testPrompter) Confirm(string, bool) (bool, error)  { return false, nil }
 func (t *testPrompter) Text(string, string) (string, error) { t.texts++; return "", nil }
 
 // TestRun_PrompterFlowsToEveryStep guards that a prompter bound to the run ctx
@@ -114,4 +116,44 @@ func TestRun_PrompterFlowsToEveryStep(t *testing.T) {
 // prompter was bound, so step authors can guard cleanly.
 func TestPrompterFromNil(t *testing.T) {
 	require.Nil(t, PrompterFrom(context.Background()))
+}
+
+// TestRun_AutoBindsDefaultPrompter pins that Run guarantees a prompt channel
+// for every step even when the host did not pre-bind one: a spliced sub-wizard
+// step calling PrompterFrom(ctx) must get the production pterm channel (never a
+// nil panic). Without this, every host wizard would have to remember to bind a
+// prompter, and an embedded step that forgot would crash with a nil method
+// call — the exact double-rendering bug. In non-interactive runs the default
+// channel errors cleanly rather than prompting, so the test stays hermetic.
+func TestRun_AutoBindsDefaultPrompter(t *testing.T) {
+	mock := NewMockUI()
+	prior := NonInteractive
+	NonInteractive = true
+	defer func() { NonInteractive = prior }()
+
+	steps := []Step[*string]{
+		StepFunc[*string]{
+			Name_: "spliced",
+			ExecuteFunc: func(ctx context.Context, _ *string) error {
+				// Run must have bound a default channel; the pterm impl under
+				// NonInteractive returns an "interactive" error, proving both
+				// that a channel is bound AND that it is the real production
+				// one rather than a nil no-op.
+				if PrompterFrom(ctx) == nil {
+					return errors.New("no prompter bound by Run")
+				}
+				_, _, err := PrompterFrom(ctx).Select("pick", []string{"x"})
+				if err == nil || !strings.Contains(err.Error(), "interactive") {
+					return errors.New("expected non-interactive error from the auto-bound pterm channel")
+				}
+				return nil
+			},
+		},
+	}
+
+	s := ""
+	// Deliberately no WithPrompter: Run must bind the default.
+	_, err := Run(context.Background(), mock, steps, &s)
+	require.NoError(t, err,
+		"Run must auto-bind a default prompter so spliced steps get a channel")
 }
