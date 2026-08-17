@@ -75,7 +75,7 @@ func (ui *PTermInstallUI) ShowWelcome() error {
 	pterm.Println()
 
 	pterm.DefaultParagraph.Println(
-		"This wizard will guide you through installing the pinner MCP server into " +
+		"This wizard will guide you through installing the Pinner MCP server into " +
 			"your coding agents' configuration files (Claude Code, Claude Desktop, VS " +
 			"Code, Cursor, Codex, Gemini CLI, OpenCode, Zed).",
 	)
@@ -116,7 +116,7 @@ func (ui *PTermInstallUI) SelectAgents(candidates []install.AgentKey, detected [
 		defaults = append(defaults, string(d))
 	}
 
-	selected, err := ui.selectAgents("Select agents to install 'pinner' MCP server into", names, defaults)
+	selected, err := ui.selectAgents("Select agents to install 'Pinner' MCP server into", names, defaults)
 	if err != nil {
 		return nil, handleInterrupt(err)
 	}
@@ -136,13 +136,13 @@ func (ui *PTermInstallUI) SelectAgents(candidates []install.AgentKey, detected [
 func (ui *PTermInstallUI) NoAgentsDetected() {
 	pterm.Warning.Println("No supported coding agents were detected on this machine.")
 	pterm.Println()
-	pterm.Println("You can install the pinner MCP server two ways:")
+	pterm.Println("You can install the Pinner MCP server two ways:")
 	pterm.Println()
-	pterm.Println("  • stdio  (local)  pinner runs the MCP server as a child process. Select the")
+	pterm.Println("  • stdio  (local)  Pinner runs the MCP server as a child process. Select the")
 	pterm.Println("          agent below (e.g. claude-code, vscode, cursor) and the wizard writes")
 	pterm.Println("          that agent's config file pointing at `pinner mcp serve`.")
 	pterm.Println()
-	pterm.Println("  • http   (remote) a managed pinner MCP service you reach over a tunnel. This")
+	pterm.Println("  • http   (remote) a managed Pinner MCP service you reach over a tunnel. This")
 	pterm.Println("          needs no local agent config. Rerun with --transport http --service and")
 	pterm.Println("          point any MCP client at the public URL it prints.")
 	pterm.Println()
