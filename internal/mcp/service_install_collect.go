@@ -9,6 +9,7 @@ import (
 
 	"github.com/urfave/cli/v3"
 
+	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
 	"go.lumeweb.com/pinner-cli/internal/service"
 )
 
@@ -122,14 +123,14 @@ func resolveServicePublicURL(envFile string, env ServiceEnvironment) {
 		return
 	}
 	host := ""
-	switch TunnelProvider(env["MCP_TUNNEL_PROVIDER"]) {
-	case TunnelProviderCloudflared, TunnelProviderNgrok:
+	switch tunnel.TunnelProvider(env["MCP_TUNNEL_PROVIDER"]) {
+	case tunnel.TunnelProviderCloudflared, tunnel.TunnelProviderNgrok:
 		host = strings.TrimSpace(env["MCP_DOMAIN"])
 	}
 	if host == "" {
 		return
 	}
-	host = BareHostname(host)
+	host = tunnel.BareHostname(host)
 	if host == "" {
 		return
 	}

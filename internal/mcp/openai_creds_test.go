@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
 )
 
 const testTunnelID = "tunnel_0123456789abcdef0123456789abcdef"
@@ -30,7 +31,7 @@ func newTestConfigMgr(t *testing.T) config.Manager {
 
 func TestResolveOpenAICredentialsFromTunnelIDFlag(t *testing.T) {
 	cmd := newCmdWithTunnelID(t, testTunnelID)
-	id, _ := ResolveOpenAICredentials(cmd, nil)
+	id, _ := tunnel.ResolveOpenAICredentials(cmd, nil)
 	assert.Equal(t, testTunnelID, id)
 }
 
@@ -38,21 +39,21 @@ func TestResolveOpenAICredentialsEnvironment(t *testing.T) {
 	t.Run("tunnel id from CONTROL_PLANE_TUNNEL_ID", func(t *testing.T) {
 		cmd := newCmdWithTunnelID(t, "")
 		t.Setenv("CONTROL_PLANE_TUNNEL_ID", testTunnelID)
-		id, _ := ResolveOpenAICredentials(cmd, nil)
+		id, _ := tunnel.ResolveOpenAICredentials(cmd, nil)
 		assert.Equal(t, testTunnelID, id)
 	})
 
 	t.Run("tunnel id flag beats env", func(t *testing.T) {
 		cmd := newCmdWithTunnelID(t, testTunnelID)
 		t.Setenv("CONTROL_PLANE_TUNNEL_ID", "tunnel_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-		id, _ := ResolveOpenAICredentials(cmd, nil)
+		id, _ := tunnel.ResolveOpenAICredentials(cmd, nil)
 		assert.Equal(t, testTunnelID, id)
 	})
 
 	t.Run("api key from CONTROL_PLANE_API_KEY", func(t *testing.T) {
 		cmd := newCmdWithTunnelID(t, testTunnelID)
 		t.Setenv("CONTROL_PLANE_API_KEY", "sk-control")
-		_, key := ResolveOpenAICredentials(cmd, nil)
+		_, key := tunnel.ResolveOpenAICredentials(cmd, nil)
 		assert.Equal(t, "sk-control", key)
 	})
 
@@ -60,7 +61,7 @@ func TestResolveOpenAICredentialsEnvironment(t *testing.T) {
 		cmd := newCmdWithTunnelID(t, testTunnelID)
 		t.Setenv("CONTROL_PLANE_API_KEY", "")
 		t.Setenv("OPENAI_API_KEY", "sk-openai")
-		_, key := ResolveOpenAICredentials(cmd, nil)
+		_, key := tunnel.ResolveOpenAICredentials(cmd, nil)
 		assert.Equal(t, "sk-openai", key)
 	})
 }
@@ -71,7 +72,7 @@ func TestResolveOpenAICredentialsConfigManagerLastResort(t *testing.T) {
 	require.NoError(t, mgr.SetTunnelCredential("openai", "tunnel_id", testTunnelID))
 	require.NoError(t, mgr.SetTunnelCredential("openai", "api_key", "sk-cfgmgr"))
 
-	id, key := ResolveOpenAICredentials(cmd, mgr)
+	id, key := tunnel.ResolveOpenAICredentials(cmd, mgr)
 	assert.Equal(t, testTunnelID, id)
 	assert.Equal(t, "sk-cfgmgr", key)
 }
@@ -81,7 +82,7 @@ func TestResolveOpenAICredentialsEmptyWithoutSources(t *testing.T) {
 	t.Setenv("CONTROL_PLANE_TUNNEL_ID", "")
 	t.Setenv("CONTROL_PLANE_API_KEY", "")
 	t.Setenv("OPENAI_API_KEY", "")
-	id, key := ResolveOpenAICredentials(cmd, nil)
+	id, key := tunnel.ResolveOpenAICredentials(cmd, nil)
 	assert.Equal(t, "", id)
 	assert.Equal(t, "", key)
 }

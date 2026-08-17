@@ -30,7 +30,7 @@ defined in `service_install_wizard.go`), and this package must not import the pa
 import cycle — `internal/mcp` imports `internal/mcp/tunnel`). The parent owns the
 registration `init()` (`tunnel_providers.go`), the per-provider install configurers
 (`service_install_configurers.go`), and the service/install commands that consume this
-package through the `tunnel_shim.go` re-export bridge.
+package directly via `tunnel.*` (the parent no longer carries a re-export shim).
 
 ## Import constraints (must not regress)
 
@@ -48,8 +48,9 @@ Export only what the parent invokes. Today the parent reaches this package for: 
 (`LoadCloudflareTunnelState`, `SaveCloudflareTunnelState`), credential and deep-link
 helpers (`ResolveCredential`, `PersistTunnelCredential`, `OpenTunnelDeepLink`, ...),
 the embedded OpenAI runtime (`RunEmbeddedOpenAITunnel`, `ResolveOpenAICredentials`), and
-ngrok account/URL resolution (`ResolveNgrokPublicURL`, `IsStableNgrokDevURL`, ...). The
-`tunnel_shim.go` in the parent re-exports these for in-package callers.
+ngrok account/URL resolution (`ResolveNgrokPublicURL`, `IsStableNgrokDevURL`, ...).
+Parent-package callers reference these directly as `tunnel.*`; the temporary
+re-export bridge the parent used during the sub-package extraction was removed.
 
 ## Testing / verification
 

@@ -89,9 +89,9 @@ func TestServiceInstallStepsShape(t *testing.T) {
 	// with a seeded provider must return immediately without touching the
 	// interactive selectUI (which would block/fail in a non-TTY test), proving
 	// the seeded-path is taken.
-	state.Provider = TunnelProviderCloudflared
+	state.Provider = tunnel.TunnelProviderCloudflared
 	require.NoError(t, steps[0].Execute(context.Background(), state), "provider step should no-op when provider is already set")
-	require.Equal(t, TunnelProviderCloudflared, state.Provider, "provider must not be overwritten")
+	require.Equal(t, tunnel.TunnelProviderCloudflared, state.Provider, "provider must not be overwritten")
 
 	// The write step persists the collected state to the env file.
 	state.Domain = "mcp.example.com"
@@ -120,7 +120,7 @@ func TestTunnelConfigStepSkipsNgrokTokenPromptWhenConfigured(t *testing.T) {
 	// PublicURL is pre-set so the step's URL resolution short-circuits and this
 	// test isolates the token-skip behavior (the URL path is covered by its own
 	// tests).
-	state := &ServiceInstallState{EnvFile: envFile, Provider: TunnelProviderNgrok, TunnelName: "test", AuthToken: "test-auth", PublicURL: "https://you.ngrok-free.dev"}
+	state := &ServiceInstallState{EnvFile: envFile, Provider: tunnel.TunnelProviderNgrok, TunnelName: "test", AuthToken: "test-auth", PublicURL: "https://you.ngrok-free.dev"}
 	steps := ServiceInstallSteps(state, cmd, envFile, nil)
 
 	prior := wizard.NonInteractive
@@ -143,7 +143,7 @@ func TestTunnelConfigStepStillPromptsNgrokTokenWithoutConfig(t *testing.T) {
 
 	envFile := filepath.Join(t.TempDir(), "mcp.env")
 	cmd := &cli.Command{Flags: managedServiceFlags()}
-	state := &ServiceInstallState{EnvFile: envFile, Provider: TunnelProviderNgrok, TunnelName: "test"}
+	state := &ServiceInstallState{EnvFile: envFile, Provider: tunnel.TunnelProviderNgrok, TunnelName: "test"}
 	steps := ServiceInstallSteps(state, cmd, envFile, nil)
 
 	prior := wizard.NonInteractive
@@ -227,7 +227,7 @@ func TestResolveServicePublicURLFillsCloudflaredDomain(t *testing.T) {
 	path := filepath.Join(dir, "mcp.env")
 
 	env := ServiceEnvironment{
-		"MCP_TUNNEL_PROVIDER": string(TunnelProviderCloudflared),
+		"MCP_TUNNEL_PROVIDER": string(tunnel.TunnelProviderCloudflared),
 		"MCP_DOMAIN":          "https://mcp.example.com",
 		"MCP_AUTH_TOKEN":      "test-token",
 	}
@@ -253,7 +253,7 @@ func TestResolveServicePublicURLLeavesDynamicTunnelUnset(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "mcp.env")
 
-	env := ServiceEnvironment{"MCP_TUNNEL_PROVIDER": string(TunnelProviderNgrok)}
+	env := ServiceEnvironment{"MCP_TUNNEL_PROVIDER": string(tunnel.TunnelProviderNgrok)}
 	require.NoError(t, service.WriteEnvironment(path, env))
 
 	loaded, err := service.LoadEnvironment(path)
@@ -286,7 +286,7 @@ func TestCollectHTTPInstallOneShotResolvesNamedDomainURL(t *testing.T) {
 	path := filepath.Join(dir, "mcp.env")
 	cmd := &cli.Command{Flags: managedServiceFlags()}
 	require.NoError(t, cmd.Set(serviceEnvFileFlag, path))
-	require.NoError(t, cmd.Set(serviceTunnelFlag, string(TunnelProviderNgrok)))
+	require.NoError(t, cmd.Set(serviceTunnelFlag, string(tunnel.TunnelProviderNgrok)))
 	require.NoError(t, cmd.Set(serviceDomainFlag, "https://mcp.example.com"))
 	require.NoError(t, cmd.Set(serviceAuthTokenFlag, "test-auth-token"))
 	require.NoError(t, cmd.Set(serviceTunnelTokenFlag, "test-ngrok-token"))
@@ -325,7 +325,7 @@ func TestTunnelProviderChoiceLabelsDefaultIsNgrok(t *testing.T) {
 		token := label[:sep]
 		prov, err := parseTunnelProvider(token)
 		require.NoError(t, err, "option token %q should parse to a valid provider", token)
-		require.NotEqual(t, TunnelProvider(""), prov, "option token %q must map to a known provider", token)
+		require.NotEqual(t, tunnel.TunnelProvider(""), prov, "option token %q must map to a known provider", token)
 	}
 }
 
@@ -345,7 +345,7 @@ func TestCloudflaredConfigurerResolvesNameWithoutHostname(t *testing.T) {
 	tunnel.TunnelStatePath = func() (string, error) { return statePath, nil }
 	defer func() { tunnel.TunnelStatePath = orig }()
 
-	state := &ServiceInstallState{Provider: TunnelProviderCloudflared, Domain: "mcp.example.com"}
+	state := &ServiceInstallState{Provider: tunnel.TunnelProviderCloudflared, Domain: "mcp.example.com"}
 	prior := wizard.NonInteractive
 	wizard.NonInteractive = true
 	defer func() { wizard.NonInteractive = prior }()
@@ -369,7 +369,7 @@ func TestNgrokConfigurerResolvesPublicURLFromAPI(t *testing.T) {
 	})
 
 	state := &ServiceInstallState{
-		Provider:    TunnelProviderNgrok,
+		Provider:    tunnel.TunnelProviderNgrok,
 		TunnelToken: "tun-token", // pre-supplied so the token prompt is skipped
 		NgrokAPIKey: "ngrok_key",
 		AuthToken:   "auth",
@@ -401,7 +401,7 @@ func TestNgrokConfigurerHonorsOperatorDomain(t *testing.T) {
 	})
 
 	state := &ServiceInstallState{
-		Provider:    TunnelProviderNgrok,
+		Provider:    tunnel.TunnelProviderNgrok,
 		TunnelToken: "tun-token",
 		NgrokAPIKey: "ngrok_key",
 		AuthToken:   "auth",
@@ -431,7 +431,7 @@ func TestNgrokConfigurerResolvesURLFromAuthtoken(t *testing.T) {
 	defer func() { tunnel.ResolveNgrokSDKURL = orig }()
 
 	state := &ServiceInstallState{
-		Provider:    TunnelProviderNgrok,
+		Provider:    tunnel.TunnelProviderNgrok,
 		TunnelToken: "tun-token",
 		AuthToken:   "auth",
 		// No NgrokAPIKey, no NGROK_API_KEY env -> authtoken fallback must fire.
@@ -458,7 +458,7 @@ func TestNgrokConfigurerRejectsEphemeralAuthtokenURL(t *testing.T) {
 	defer func() { tunnel.ResolveNgrokSDKURL = orig }()
 
 	state := &ServiceInstallState{
-		Provider:    TunnelProviderNgrok,
+		Provider:    tunnel.TunnelProviderNgrok,
 		TunnelToken: "tun-token",
 		AuthToken:   "auth",
 	}
@@ -483,7 +483,7 @@ func TestIsStableNgrokDevURL(t *testing.T) {
 		"http://example.ngrok-free.dev",
 	}
 	for _, u := range stable {
-		require.Truef(t, IsStableNgrokDevURL(u), "want stable: %s", u)
+		require.Truef(t, tunnel.IsStableNgrokDevURL(u), "want stable: %s", u)
 	}
 	ephemeral := []string{
 		"https://abc123.ngrok-free.app",
@@ -494,7 +494,7 @@ func TestIsStableNgrokDevURL(t *testing.T) {
 		"https://ngrok-free.dev", // bare TLD, no subdomain
 	}
 	for _, u := range ephemeral {
-		require.Falsef(t, IsStableNgrokDevURL(u), "want rejected: %q", u)
+		require.Falsef(t, tunnel.IsStableNgrokDevURL(u), "want rejected: %q", u)
 	}
 }
 
@@ -511,7 +511,7 @@ func TestNgrokConfigurerPromptsForURLWithoutAPIKey(t *testing.T) {
 	defer func() { tunnel.ResolveNgrokSDKURL = orig }()
 
 	state := &ServiceInstallState{
-		Provider:    TunnelProviderNgrok,
+		Provider:    tunnel.TunnelProviderNgrok,
 		TunnelToken: "", // no authtoken at all
 		AuthToken:   "auth",
 		// No NgrokAPIKey, no NGROK_API_KEY env -> must prompt for the URL.
@@ -550,7 +550,7 @@ func TestFlattenedNgrokWritesPublicURL(t *testing.T) {
 
 	state := &ServiceInstallState{
 		EnvFile:     envFile,
-		Provider:    TunnelProviderNgrok,
+		Provider:    tunnel.TunnelProviderNgrok,
 		NgrokAPIKey: "api-key", // API key present -> resolve URL from API
 		AuthToken:   "auth",
 		OAuth:       new(true),
@@ -617,7 +617,7 @@ func TestFlattenedNgrokCollectorHandoff(t *testing.T) {
 	// Phase 1: the flattened sub-steps (what w.tunnelConfigurer runs).
 	state := &ServiceInstallState{
 		EnvFile:     envFile,
-		Provider:    TunnelProviderNgrok,
+		Provider:    tunnel.TunnelProviderNgrok,
 		NgrokAPIKey: "api-key",
 		AuthToken:   "auth",
 		OAuth:       new(true),
@@ -637,5 +637,5 @@ func TestFlattenedNgrokCollectorHandoff(t *testing.T) {
 	require.Equal(t, "https://you.ngrok-free.dev", env["MCP_PUBLIC_URL"],
 		"the collector must surface the URL the configurer wrote (no 'no MCP_PUBLIC_URL' failure)")
 	require.Equal(t, "true", env["MCP_OAUTH"])
-	require.Equal(t, string(TunnelProviderNgrok), env["MCP_TUNNEL_PROVIDER"])
+	require.Equal(t, string(tunnel.TunnelProviderNgrok), env["MCP_TUNNEL_PROVIDER"])
 }

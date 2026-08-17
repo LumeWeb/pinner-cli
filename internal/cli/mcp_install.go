@@ -13,6 +13,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/cli/wizard"
 	mcpadapter "go.lumeweb.com/pinner-cli/internal/mcp"
 	"go.lumeweb.com/pinner-cli/internal/mcp/install"
+	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
 	"go.lumeweb.com/pinner-cli/internal/service"
 )
 
@@ -371,11 +372,11 @@ func seedServiceFromEnvFile(envFile string, s *mcpadapter.ServiceInstallState) {
 		// The env file only ever contains a provider token written by
 		// serviceInstallStateToEnv (one of the three known providers), so it
 		// round-trips directly.
-		switch mcpadapter.TunnelProvider(env["MCP_TUNNEL_PROVIDER"]) {
-		case mcpadapter.TunnelProviderNgrok,
-			mcpadapter.TunnelProviderCloudflared,
-			mcpadapter.TunnelProviderOpenAI:
-			s.Provider = mcpadapter.TunnelProvider(env["MCP_TUNNEL_PROVIDER"])
+		switch tunnel.TunnelProvider(env["MCP_TUNNEL_PROVIDER"]) {
+		case tunnel.TunnelProviderNgrok,
+			tunnel.TunnelProviderCloudflared,
+			tunnel.TunnelProviderOpenAI:
+			s.Provider = tunnel.TunnelProvider(env["MCP_TUNNEL_PROVIDER"])
 		}
 	}
 	set(&s.TunnelID, "MCP_TUNNEL_ID")

@@ -55,8 +55,8 @@ func TestServicePort(t *testing.T) {
 }
 
 func TestServiceProviderRequirements(t *testing.T) {
-	require.True(t, OpenAITunnelID.MatchString("tunnel_0123456789abcdef0123456789abcdef"))
-	require.False(t, OpenAITunnelID.MatchString("tunnel_invalid"))
+	require.True(t, tunnel.OpenAITunnelID.MatchString("tunnel_0123456789abcdef0123456789abcdef"))
+	require.False(t, tunnel.OpenAITunnelID.MatchString("tunnel_invalid"))
 }
 
 func TestResolveManagedServiceRejectsInsecureEnvironmentFile(t *testing.T) {
@@ -369,14 +369,14 @@ func TestValidateCloudflaredRequiresBinaryOnPath(t *testing.T) {
 func TestParseTunnelProviderEnum(t *testing.T) {
 	for _, tc := range []struct {
 		raw  string
-		want TunnelProvider
+		want tunnel.TunnelProvider
 		err  bool
 	}{
-		{raw: "openai", want: TunnelProviderOpenAI},
-		{raw: "OPENAI", want: TunnelProviderOpenAI},
-		{raw: " openai ", want: TunnelProviderOpenAI},
-		{raw: "ngrok", want: TunnelProviderNgrok},
-		{raw: "cloudflared", want: TunnelProviderCloudflared},
+		{raw: "openai", want: tunnel.TunnelProviderOpenAI},
+		{raw: "OPENAI", want: tunnel.TunnelProviderOpenAI},
+		{raw: " openai ", want: tunnel.TunnelProviderOpenAI},
+		{raw: "ngrok", want: tunnel.TunnelProviderNgrok},
+		{raw: "cloudflared", want: tunnel.TunnelProviderCloudflared},
 		{raw: "clouflare", err: true},
 		{raw: "", err: true},
 	} {
@@ -392,7 +392,7 @@ func TestParseTunnelProviderEnum(t *testing.T) {
 
 func TestServiceInstallStateToEnv(t *testing.T) {
 	env := serviceInstallStateToEnv(&ServiceInstallState{
-		Provider:   TunnelProviderCloudflared,
+		Provider:   tunnel.TunnelProviderCloudflared,
 		Domain:     "mcp.example.com",
 		TunnelName: "pinner-mcp",
 		AuthToken:  "test-auth-token-abc123",
@@ -413,7 +413,7 @@ func TestServiceInstallStateToEnv(t *testing.T) {
 
 func TestServiceInstallStateToEnvWritesNgrokToken(t *testing.T) {
 	env := serviceInstallStateToEnv(&ServiceInstallState{
-		Provider:    TunnelProviderNgrok,
+		Provider:    tunnel.TunnelProviderNgrok,
 		TunnelName:  "pinner-mcp",
 		AuthToken:   "test-auth-token-abc123",
 		TunnelToken: "test-ngrok-token-xyz789",
@@ -428,7 +428,7 @@ func TestServiceInstallStateToEnvWritesNgrokToken(t *testing.T) {
 // value explicitly, so this one must too.
 func TestServiceInstallStateToEnvWritesOAuthFalse(t *testing.T) {
 	env := serviceInstallStateToEnv(&ServiceInstallState{
-		Provider: TunnelProviderCloudflared,
+		Provider: tunnel.TunnelProviderCloudflared,
 		OAuth:    new(false),
 	})
 	require.Equal(t, "false", env["MCP_OAUTH"], "explicit --oauth=false must be persisted as MCP_OAUTH=false")
@@ -442,7 +442,7 @@ func TestServiceInstallStateToEnvWritesOAuthFalse(t *testing.T) {
 // path's default-on doctrine.
 func TestServiceInstallStateToEnvOmitsOAuthWhenUndecided(t *testing.T) {
 	env := serviceInstallStateToEnv(&ServiceInstallState{
-		Provider: TunnelProviderCloudflared,
+		Provider: tunnel.TunnelProviderCloudflared,
 	})
 	require.NotContains(t, env, "MCP_OAUTH", "undecided OAuth must omit the key, not force MCP_OAUTH=false")
 }
@@ -454,12 +454,12 @@ func TestServiceInstallStateToEnvOmitsOAuthWhenUndecided(t *testing.T) {
 // re-apply the saved port on a later run.
 func TestServiceInstallStateToEnvWritesPort(t *testing.T) {
 	env := serviceInstallStateToEnv(&ServiceInstallState{
-		Provider: TunnelProviderCloudflared,
+		Provider: tunnel.TunnelProviderCloudflared,
 		Port:     new(0),
 	})
 	require.Equal(t, "0", env["MCP_PORT"], "explicit --port 0 must be persisted as MCP_PORT=0, not dropped")
 	// A nil port is the "no decision" case and writes nothing.
-	env2 := serviceInstallStateToEnv(&ServiceInstallState{Provider: TunnelProviderCloudflared})
+	env2 := serviceInstallStateToEnv(&ServiceInstallState{Provider: tunnel.TunnelProviderCloudflared})
 	require.NotContains(t, env2, "MCP_PORT", "undecided port must not write MCP_PORT")
 }
 
@@ -506,7 +506,7 @@ func TestSeedFromFlagsAndEnvSourcesFlagsAndEnv(t *testing.T) {
 	}))
 
 	require.NotNil(t, captured)
-	require.Equal(t, TunnelProviderCloudflared, captured.Provider)
+	require.Equal(t, tunnel.TunnelProviderCloudflared, captured.Provider)
 	require.Equal(t, "mcp.example.com", captured.Domain)
 	require.Equal(t, "127.0.0.1", captured.Host)
 	require.Equal(t, "env-secret", captured.AuthToken, "auth token must source from MCP_AUTH_TOKEN env")
@@ -564,7 +564,7 @@ func TestInstallBootstrapOpenAIPassesProvider(t *testing.T) {
 	require.Equal(t, path, envFile)
 	require.NotNil(t, svc)
 	// OpenAI runs an embedded tunnel, so the unit must NOT pass --http.
-	cfg, err := serviceConfigForInstall(cmd, path, TunnelProviderOpenAI)
+	cfg, err := serviceConfigForInstall(cmd, path, tunnel.TunnelProviderOpenAI)
 	require.NoError(t, err)
 	require.NotContains(t, cfg.Arguments, "--http")
 
@@ -587,7 +587,7 @@ func TestServiceConfigForInstallPassesEnvFileUntouched(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, []byte("NOT A KEY VALUE LINE\n"), 0600))
 	cmd := &cli.Command{}
 
-	cfg, err := serviceConfigForInstall(cmd, path, TunnelProviderOpenAI)
+	cfg, err := serviceConfigForInstall(cmd, path, tunnel.TunnelProviderOpenAI)
 	require.NoError(t, err)
 	require.Equal(t, path, cfg.EnvFile)
 	require.Nil(t, cfg.EnvVars)
