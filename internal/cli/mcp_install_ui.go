@@ -19,6 +19,11 @@ type InstallUI interface {
 	// SelectAgents prompts for a multi-select of supported agents. Candidates
 	// are offered in display order with detected agents pre-checked.
 	SelectAgents(candidates []install.AgentKey, detected []install.AgentKey) ([]install.AgentKey, error)
+	// NoAgentsDetected informs the user that no supported coding agent was
+	// found on disk and explains their options (stdio write vs http/service).
+	// It is non-blocking: selection still follows so a manual target can be
+	// picked.
+	NoAgentsDetected()
 	// SelectScope prompts for a global vs project scope.
 	SelectScope(agents []install.AgentKey) (string, error)
 	// SelectTransport prompts for the MCP transport.
@@ -36,12 +41,22 @@ type InstallUI interface {
 // This is the production UI layer - tests use mocks.
 type PTermInstallUI struct {
 	*wizard.PTermUI
+
+	// selectAgents is the interactive multi-select used by SelectAgents:
+	// (label, options, preChecked) -> (selected, err). It is injectable so the
+	// test can spy on the exact options handed to the widget (a regression
+	// guard for "built the candidate list but never passed it to pterm" wiring
+	// bugs). Defaults to pterm.DefaultInteractiveMultiselect.
+	selectAgents func(label string, options, preChecked []string) ([]string, error)
 }
 
 // NewPTermInstallUI creates a new PTerm-based install UI.
 func NewPTermInstallUI(welcomeText, completionText string) *PTermInstallUI {
 	return &PTermInstallUI{
 		PTermUI: wizard.NewPTermUI(welcomeText, completionText),
+		selectAgents: func(label string, options, preChecked []string) ([]string, error) {
+			return newAgentMultiselect(options, preChecked).Show(label)
+		},
 	}
 }
 
@@ -70,6 +85,17 @@ func (ui *PTermInstallUI) ShowWelcome() error {
 	return nil
 }
 
+// newAgentMultiselect builds the pterm multiselect printer configured with the
+// candidate options and the pre-checked (detected) defaults. Extracted so the
+// production wiring — that the candidate options are actually passed to the
+// widget — can be tested directly. Dropping `.WithOptions(options)` here is the
+// regression that caused "step 'Select Agents' failed: no options provided".
+func newAgentMultiselect(options, preChecked []string) *pterm.InteractiveMultiselectPrinter {
+	return pterm.DefaultInteractiveMultiselect.
+		WithOptions(options).
+		WithDefaultOptions(preChecked)
+}
+
 // SelectAgents implements the interactive multi-select over candidate agents,
 // pre-checking the ones that were detected on disk.
 func (ui *PTermInstallUI) SelectAgents(candidates []install.AgentKey, detected []install.AgentKey) ([]install.AgentKey, error) {
@@ -90,9 +116,7 @@ func (ui *PTermInstallUI) SelectAgents(candidates []install.AgentKey, detected [
 		defaults = append(defaults, string(d))
 	}
 
-	selected, err := pterm.DefaultInteractiveMultiselect.
-		WithDefaultOptions(defaults).
-		Show("Select agents to install 'pinner' MCP server into")
+	selected, err := ui.selectAgents("Select agents to install 'pinner' MCP server into", names, defaults)
 	if err != nil {
 		return nil, handleInterrupt(err)
 	}
@@ -103,6 +127,28 @@ func (ui *PTermInstallUI) SelectAgents(candidates []install.AgentKey, detected [
 	}
 	_ = detectedSet
 	return result, nil
+}
+
+// NoAgentsDetected informs the user that no supported coding agent was found on
+// disk and explains their two install paths (stdio vs http). It prints static
+// guidance and returns — the caller still presents the interactive select so a
+// manual target can be chosen for a stdio install.
+func (ui *PTermInstallUI) NoAgentsDetected() {
+	pterm.Warning.Println("No supported coding agents were detected on this machine.")
+	pterm.Println()
+	pterm.Println("You can install the pinner MCP server two ways:")
+	pterm.Println()
+	pterm.Println("  • stdio  (local)  pinner runs the MCP server as a child process. Select the")
+	pterm.Println("          agent below (e.g. claude-code, vscode, cursor) and the wizard writes")
+	pterm.Println("          that agent's config file pointing at `pinner mcp serve`.")
+	pterm.Println()
+	pterm.Println("  • http   (remote) a managed pinner MCP service you reach over a tunnel. This")
+	pterm.Println("          needs no local agent config. Rerun with --transport http --service and")
+	pterm.Println("          point any MCP client at the public URL it prints.")
+	pterm.Println()
+	pterm.Println("Select an agent below for a stdio install, or press Esc/cancel and rerun with")
+	pterm.Println("--transport http --service.")
+	pterm.Println()
 }
 
 // SelectScope prompts for a global or project scope.

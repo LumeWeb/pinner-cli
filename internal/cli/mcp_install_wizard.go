@@ -116,6 +116,13 @@ func (w *InstallWizard) getSteps() []wizard.Step[*InstallState] {
 					return nil
 				}
 				candidates, detected := w.candidates()
+				if len(detected) == 0 {
+					// No supported coding agent was found on disk. Explain the
+					// two install paths (stdio local write vs http remote
+					// service) before offering the manual multi-select, so the
+					// user is not dropped into a bare list they cannot use.
+					w.ui.NoAgentsDetected()
+				}
 				selected, err := w.ui.SelectAgents(candidates, detected)
 				if err != nil {
 					return err
