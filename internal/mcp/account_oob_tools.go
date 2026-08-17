@@ -51,7 +51,7 @@ func NewAccountPasswordUpdateDescriptor(oob *OOBAccountChange, svc AuthService, 
 			if oob == nil || svc == nil {
 				return NeedsHumanResult(NeedsHuman{
 					Reason: ReasonInteractiveOnly,
-					Detail: "Out-of-band password change is not configured for this server. Use the CLI (pinner account update_password) to change your password.",
+					Detail: "Out-of-band password change is not configured for this server. Use the CLI (pinner account update-password) to change your password.",
 				}), nil
 			}
 			in, err := decodeToolArgs[accountPasswordUpdateArgs](req)
