@@ -38,14 +38,11 @@ type InstallState struct {
 	PublicURL  string
 	AuthToken  string
 	UseService bool
-	// OAuth records the operator's choice to enable the OAuth 2.1 handshake for
-	// the remote MCP server (prompted by the transport step, default yes). It is
-	// folded into the service state (MCP_OAUTH) when the tunnel config runs.
-	OAuth bool
-	// OAuthIsSet reports whether OAuth came from an explicit --oauth flag (not
-	// the interactive default), so the transport step does not re-prompt over an
-	// explicit operator choice.
-	OAuthIsSet bool
+	// OAuth is intentionally NOT stored on InstallState: the operator's OAuth
+	// decision (--oauth flag, persisted MCP_OAUTH, or the secure default-on)
+	// lives entirely in the tunnel service state (ServiceInstallState.OAuth,
+	// a tri-state that becomes the MCP_OAUTH env key) — see the tunnel
+	// configurer in runMcpInstall.
 
 	// Service accumulates the tunnel configuration collected by the spliced
 	// tunnel-config steps (Provider, creds, env). It is the data-contract fix
@@ -215,18 +212,15 @@ func (w *InstallWizard) getSteps() []wizard.Step[*InstallState] {
 			Name_:    "Configure Tunnel",
 			SkipFunc: httpTunnelSkipped,
 			ExecuteFunc: func(ctx context.Context, s *InstallState) error {
-				// A remote (http) transport serves a public MCP endpoint. OAuth is
-				// the secure default way for clients (ChatGPT, Claude.ai, Copilot,
-				// Vertex) to authorize there, so it is enabled by default and is
-				// NOT prompted: a bare "Please confirm [Y/n]" mid-wizard with no
-				// question context is confusing friction, and the value already
-				// defaults to yes. Only an explicit --oauth flag overrides it. This
-				// lives here (not in "Choose Transport") so it also applies when the
-				// transport was flag-supplied via --transport http and that step was
-				// skipped; this step runs for every http install.
-				if s.Transport != install.TransportStdio && !s.OAuthIsSet {
-					s.OAuth = true
-				}
+				// A remote (http) transport serves a public MCP endpoint. OAuth
+				// (the handshake for ChatGPT/Claude.ai/Vertex/Copilot) is the
+				// secure default and is NOT prompted here: a bare
+				// "Please confirm [Y/n]" mid-wizard with no context is confusing
+				// friction. The secure default-on is applied later, on the fresh
+				// tunnel-config path, at the LOWEST priority (an explicit
+				// --oauth flag or a persisted MCP_OAUTH always wins) — see
+				// runMcpInstall's tunnel configurer. This step runs for every
+				// http install whether transport was prompted or flag-supplied.
 				// In production the tunnel-configurer runs the flattened
 				// tunnel-config sub-steps (provider, credentials, env write) into
 				// s.Service before the collector resolves the public URL. Tests

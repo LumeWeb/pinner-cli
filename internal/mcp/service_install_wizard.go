@@ -32,21 +32,17 @@ type ServiceInstallState struct {
 	ApiKey      string
 	PublicURL   string
 	Host        string
-	OAuth       bool
-	Port        int
-	// OAuthIsSet reports that OAuth was explicitly decided this run (via an
-	// explicit --oauth flag, its MCP_OAUTH source env var, or the mcp install
-	// Configure Tunnel step). When false (e.g. a standalone install that never
-	// touched OAuth), serviceInstallStateToEnv omits the MCP_OAUTH key entirely
-	// so the runtime secure-default (on) applies — it must not force false.
-	// When true, the effective value is persisted (MCP_OAUTH=true|false).
-	OAuthIsSet bool
-	// PortIsSet reports that the operator explicitly passed --port this run
-	// (including --port 0, the "pick a free port" sentinel). When true, a
-	// persisted MCP_PORT must not be folded back in — an explicit --port 0 is
-	// the operator's intent to use a free port and must not revert to the saved
-	// value.
-	PortIsSet bool
+	// OAuth is the operator's decision on the OAuth 2.1 handshake for the
+	// remote MCP endpoint. It is tri-state: nil means OAuth was NOT decided
+	// this run; &true/&false is an explicit decision. The serializer persists
+	// MCP_OAUTH only when non-nil, and the env-fold seeds a persisted value
+	// only when nil — so an undecided standalone install omits the key (letting
+	// the runtime secure default apply) while an explicit opt-out is preserved.
+	OAuth *bool
+	// Port is the operator's decision on the MCP port. Tri-state like OAuth:
+	// nil means undecided; &N (including &0, the "pick a free port" sentinel) is
+	// an explicit decision. MCP_PORT is persisted only when non-nil.
+	Port *int
 
 	// EnvFileCreated reports that the env file at EnvFile was freshly written
 	// by this install run. A host wizard (mcp install) sets it in the flattened
@@ -241,18 +237,18 @@ func seedServiceFromFlagsAndEnv(cmd *cli.Command, s *ServiceInstallState, _ stri
 	set(servicePublicURLFlag, &s.PublicURL)
 	set(serviceHostFlag, &s.Host)
 	if cmd.IsSet(serviceOAuthFlag) {
-		s.OAuth = cmd.Bool(serviceOAuthFlag)
-		s.OAuthIsSet = true
+		v := cmd.Bool(serviceOAuthFlag)
+		s.OAuth = &v
 	} else if strings.EqualFold(cmd.String(serviceOAuthFlag), "true") {
-		s.OAuth = true
-		s.OAuthIsSet = true
+		v := true
+		s.OAuth = &v
 	}
 	if cmd.IsSet(servicePortFlag) {
-		s.Port = cmd.Int(servicePortFlag)
-		s.PortIsSet = true
+		n := cmd.Int(servicePortFlag)
+		s.Port = &n
 	} else if v := strings.TrimSpace(cmd.String(servicePortFlag)); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
-			s.Port = n
+			s.Port = &n
 		}
 	}
 }
@@ -285,21 +281,16 @@ func serviceInstallStateToEnv(s *ServiceInstallState) ServiceEnvironment {
 	if v := s.Host; v != "" {
 		env["MCP_HOST"] = v
 	}
-	// Persist MCP_OAUTH only when OAuth was actually decided this run: either
-	// the secure default-on for a remote install (s.OAuth true) or an explicit
-	// operator decision carried by OAuthIsSet (whether true or false). A
-	// standalone install that never touched OAuth must OMIT the key so the
-	// runtime secure default (on) applies — writing MCP_OAUTH=false there would
-	// diverge from the mcp install path's default-on doctrine.
-	if s.OAuth || s.OAuthIsSet {
-		if s.OAuth {
-			env["MCP_OAUTH"] = "true"
-		} else {
-			env["MCP_OAUTH"] = "false"
-		}
+	// MCP_OAUTH / MCP_PORT are persisted only when the operator DECIDED them
+	// this run (tri-state: non-nil). An undecided value is omitted so the key
+	// is preserved as-is in an existing file, or left to the runtime secure
+	// default (authentication on) on a fresh file. A nil-false or nil-zero is
+	// a legitimate decision (opt-out / --port 0) and is written verbatim.
+	if s.OAuth != nil {
+		env["MCP_OAUTH"] = strconv.FormatBool(*s.OAuth)
 	}
-	if s.Port != 0 || s.PortIsSet {
-		env["MCP_PORT"] = strconv.Itoa(s.Port)
+	if s.Port != nil {
+		env["MCP_PORT"] = strconv.Itoa(*s.Port)
 	}
 	return env
 }
