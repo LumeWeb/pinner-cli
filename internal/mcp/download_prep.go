@@ -124,8 +124,13 @@ func resolveLocalOutputPath(downloadRoot, outputPath, sourceName string) (string
 	// reset on a leading separator (Join("a", "/b") = "a/b"), so an absolute
 	// input would otherwise silently collapse INTO the root; a Windows
 	// volume/drive path (C:\... or a bare "C:") is likewise never a valid
-	// relative target and must not be merged.
-	if filepath.IsAbs(rel) || filepath.VolumeName(rel) != "" {
+	// relative target. Because filepath.IsAbs on Windows only treats paths with
+	// a drive letter as absolute (a POSIX-style "/etc/..." or a bare "\\x"
+	// root-relative path is reported relative on the current drive), we also
+	// reject any rel that begins with a path separator — such a path is never a
+	// valid relative destination and must not be merged.
+	if filepath.IsAbs(rel) || filepath.VolumeName(rel) != "" ||
+		strings.HasPrefix(rel, "/") || strings.HasPrefix(rel, "\\") {
 		return "", fmt.Errorf("download output path %q must be relative to the configured download root %q", outputPath, root)
 	}
 	// Clean both the requested path and the root, then join.
@@ -145,7 +150,7 @@ func resolveLocalOutputPath(downloadRoot, outputPath, sourceName string) (string
 // The destination directory is created if missing. An existing destination is
 // overwritten by the rename (the caller is expected to gate on --force-style
 // semantics at the tool boundary if desired).
-func writeLocalDownload(ctx context.Context, outputPath string, resolve func(ctx context.Context, w io.Writer) error) (int64, error) {
+func writeLocalDownload(ctx context.Context, outputPath string, maxBytes int64, resolve func(ctx context.Context, w io.Writer) error) (int64, error) {
 	dir := filepath.Dir(outputPath)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return 0, fmt.Errorf("create destination directory: %w", err)
@@ -156,7 +161,10 @@ func writeLocalDownload(ctx context.Context, outputPath string, resolve func(ctx
 	}
 	tmpPath := tmp.Name()
 	defer os.Remove(tmpPath) // no-op after successful rename
-	if err := resolve(ctx, tmp); err != nil {
+	// Enforce the download size cap at the stream: over-limit bytes fail
+	// loudly (and the temp file is removed by the defer) rather than landing a
+	// truncated file as if it were complete.
+	if err := resolve(ctx, &sizeLimitedWriter{w: tmp, maxBytes: maxBytes}); err != nil {
 		tmp.Close()
 		return 0, err
 	}
@@ -189,12 +197,12 @@ type downloadResult struct {
 
 // executeLocalSink resolves bytes to a root-confined host path and returns a
 // local result. It rejects any output path that escapes downloadRoot.
-func executeLocalSink(ctx context.Context, source, sourceName, outputPath, downloadRoot string, resolve func(ctx context.Context, w io.Writer) error) (downloadResult, error) {
+func executeLocalSink(ctx context.Context, source, sourceName, outputPath, downloadRoot string, maxBytes int64, resolve func(ctx context.Context, w io.Writer) error) (downloadResult, error) {
 	final, err := resolveLocalOutputPath(downloadRoot, outputPath, sourceName)
 	if err != nil {
 		return downloadResult{}, err
 	}
-	size, err := writeLocalDownload(ctx, final, resolve)
+	size, err := writeLocalDownload(ctx, final, maxBytes, resolve)
 	if err != nil {
 		return downloadResult{}, err
 	}
@@ -209,8 +217,13 @@ func executeLocalSink(ctx context.Context, source, sourceName, outputPath, downl
 }
 
 // executeDropSink mints a one-time filedrop GET and returns a drop result. The
-// ttl string is parsed (default applied inside mint when <= 0 / unparsable).
-func executeDropSink(ctx context.Context, source, sourceName string, hd *httpDownload, ttl string, resolve func(ctx context.Context, w io.Writer) error) (downloadResult, error) {
+// ttl string is parsed; when omitted/invalid/<=0 the default is applied so the
+// reported TTL matches what mint actually enforces (mint does the same default
+// internally, but reporting "0s" would mislead a consumer into treating a live
+// endpoint as already expired). The serve closure enforces maxBytes (<=0 =
+// unlimited) so an over-limit GET fails loudly instead of streaming a partial
+// file.
+func executeDropSink(ctx context.Context, source, sourceName string, hd *httpDownload, ttl string, maxBytes int64, resolve func(ctx context.Context, w io.Writer) error) (downloadResult, error) {
 	if hd == nil {
 		return downloadResult{}, errors.New("filedrop GET coordinator is not configured for sink=drop")
 	}
@@ -220,10 +233,16 @@ func executeDropSink(ctx context.Context, source, sourceName string, hd *httpDow
 			d = parsed
 		}
 	}
-	// The serve closure mirrors the same resolve the local sink uses; the size
-	// is unknown up front (we do not pre-buffer), so report 0 unless the tool
-	// supplies it later.
-	fetchURL, err := hd.mint(sourceName, 0, resolve, d)
+	if d <= 0 {
+		d = defaultHTTPDownloadTTL
+	}
+	// The serve closure mirrors the same resolve the local sink uses, wrapped
+	// with the size cap; the size is unknown up front (we do not pre-buffer),
+	// so report 0 unless the tool supplies it later.
+	capped := func(ctx context.Context, w io.Writer) error {
+		return resolve(ctx, &sizeLimitedWriter{w: w, maxBytes: maxBytes})
+	}
+	fetchURL, err := hd.mint(sourceName, 0, capped, d)
 	if err != nil {
 		return downloadResult{}, err
 	}
@@ -235,6 +254,26 @@ func executeDropSink(ctx context.Context, source, sourceName string, hd *httpDow
 		Name:     sourceName,
 		TTL:      d.String(),
 	}, nil
+}
+
+// sizeLimitedWriter wraps an io.Writer with a hard byte cap. Unlike
+// io.LimitWriter (which silently discards bytes past the cap — corrupting a
+// download), it returns an error the moment a write would exceed maxBytes, so
+// an over-limit stream fails loudly instead of landing a truncated file. A
+// maxBytes <= 0 means "no limit".
+type sizeLimitedWriter struct {
+	w        io.Writer
+	maxBytes int64
+	written  int64
+}
+
+func (lw *sizeLimitedWriter) Write(p []byte) (int, error) {
+	if lw.maxBytes > 0 && lw.written+int64(len(p)) > lw.maxBytes {
+		return 0, fmt.Errorf("download exceeds max_mcp_upload_size (%d bytes)", lw.maxBytes)
+	}
+	n, err := lw.w.Write(p)
+	lw.written += int64(n)
+	return n, err
 }
 
 // defaultSourceName is a shared fallback for an empty derived name.

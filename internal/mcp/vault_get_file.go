@@ -34,7 +34,7 @@ type VaultGetFileInput struct {
 // transport, or a filedrop GET on HTTP / real tunnel). The vault service lives
 // in the CLI layer, exposed to MCP as a VaultGetHandler closure — mirror of
 // VaultPutHandler.
-func NewVaultGetFileDescriptor(getFn VaultGetHandler, hd *httpDownload, downloadRoot string, tunnelOpenAI bool) ToolDescriptor {
+func NewVaultGetFileDescriptor(getFn VaultGetHandler, hd *httpDownload, downloadRoot string, maxDownloadBytes int64, tunnelOpenAI bool) ToolDescriptor {
 	return ToolDescriptor{
 		Name:        "vault_get_file",
 		Title:       "Download a file from the Pinner vault",
@@ -65,12 +65,12 @@ func NewVaultGetFileDescriptor(getFn VaultGetHandler, hd *httpDownload, download
 				if getFn == nil {
 					return ToolResult{}, errors.New("vault get handler is not configured")
 				}
-				res, err := executeLocalSink(ctx, in.VaultPath, name, in.OutputPath, downloadRoot, func(ctx context.Context, w io.Writer) error {
+				res, err := executeLocalSink(ctx, in.VaultPath, name, in.OutputPath, downloadRoot, maxDownloadBytes, func(ctx context.Context, w io.Writer) error {
 					return getFn(ctx, in.VaultPath, w)
 				})
 				return wrapResult(res, err, "Downloaded from the vault.")
 			case SinkDrop:
-				res, err := executeDropSink(ctx, in.VaultPath, name, hd, in.TTL, func(ctx context.Context, w io.Writer) error {
+				res, err := executeDropSink(ctx, in.VaultPath, name, hd, in.TTL, maxDownloadBytes, func(ctx context.Context, w io.Writer) error {
 					return getFn(ctx, in.VaultPath, w)
 				})
 				return wrapResult(res, err, "Filedrop minted; pull the bytes from fetch_url.")

@@ -44,7 +44,7 @@ type DownloadFileInput struct {
 // On the OpenAI tunnel, only sink=local is honored (no reachable HTTP mux for
 // a drop). The handler validates the sink against downloadSinksAllowed before
 // any byte is read or written.
-func NewDownloadFileDescriptor(ipfsFn IPFSDownloadHandler, hd *httpDownload, downloadRoot string, tunnelOpenAI bool) ToolDescriptor {
+func NewDownloadFileDescriptor(ipfsFn IPFSDownloadHandler, hd *httpDownload, downloadRoot string, maxDownloadBytes int64, tunnelOpenAI bool) ToolDescriptor {
 	return ToolDescriptor{
 		Name:        "download_file",
 		Title:       "Download IPFS content to a file",
@@ -77,12 +77,12 @@ func NewDownloadFileDescriptor(ipfsFn IPFSDownloadHandler, hd *httpDownload, dow
 				if ipfsFn == nil {
 					return ToolResult{}, errors.New("IPFS download handler is not configured")
 				}
-				res, err := executeLocalSink(ctx, in.IPFSPath, name, in.OutputPath, downloadRoot, func(ctx context.Context, w io.Writer) error {
+				res, err := executeLocalSink(ctx, in.IPFSPath, name, in.OutputPath, downloadRoot, maxDownloadBytes, func(ctx context.Context, w io.Writer) error {
 					return ipfsFn(ctx, in.IPFSPath, w)
 				})
 				return wrapResult(res, err, "Downloaded from IPFS.")
 			case SinkDrop:
-				res, err := executeDropSink(ctx, in.IPFSPath, name, hd, in.TTL, func(ctx context.Context, w io.Writer) error {
+				res, err := executeDropSink(ctx, in.IPFSPath, name, hd, in.TTL, maxDownloadBytes, func(ctx context.Context, w io.Writer) error {
 					return ipfsFn(ctx, in.IPFSPath, w)
 				})
 				return wrapResult(res, err, "Filedrop minted; pull the bytes from fetch_url.")

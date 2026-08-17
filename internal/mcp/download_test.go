@@ -158,19 +158,19 @@ func TestExecuteLocalSinkConfinesToRoot(t *testing.T) {
 	src := "vault:/docs/secret.pdf"
 	name := "secret.pdf"
 	// An absolute output_path that would escape the root must be rejected.
-	_, err := executeLocalSink(context.Background(), src, name, "/etc/evil.pdf", root, func(ctx context.Context, w io.Writer) error {
+	_, err := executeLocalSink(context.Background(), src, name, "/etc/evil.pdf", root, 0, func(ctx context.Context, w io.Writer) error {
 		_, _ = w.Write([]byte("x"))
 		return nil
 	})
 	require.Error(t, err)
 	// A traversal is rejected too.
-	_, err = executeLocalSink(context.Background(), src, name, "../evil.pdf", root, func(ctx context.Context, w io.Writer) error {
+	_, err = executeLocalSink(context.Background(), src, name, "../evil.pdf", root, 0, func(ctx context.Context, w io.Writer) error {
 		_, _ = w.Write([]byte("x"))
 		return nil
 	})
 	require.Error(t, err)
 	// A legitimate relative path lands inside the root.
-	res, err := executeLocalSink(context.Background(), src, name, "docs/secret.pdf", root, func(ctx context.Context, w io.Writer) error {
+	res, err := executeLocalSink(context.Background(), src, name, "docs/secret.pdf", root, 0, func(ctx context.Context, w io.Writer) error {
 		_, _ = w.Write([]byte("plaintext"))
 		return nil
 	})
@@ -193,7 +193,7 @@ func TestDownloadSinksAllowed(t *testing.T) {
 func TestWriteLocalDownload(t *testing.T) {
 	dir := t.TempDir()
 	out := filepath.Join(dir, "sub", "out.bin")
-	n, err := writeLocalDownload(context.Background(), out, func(ctx context.Context, w io.Writer) error {
+	n, err := writeLocalDownload(context.Background(), out, 0, func(ctx context.Context, w io.Writer) error {
 		_, err := w.Write([]byte("hello world"))
 		return err
 	})
@@ -202,6 +202,22 @@ func TestWriteLocalDownload(t *testing.T) {
 	data, err := os.ReadFile(out)
 	require.NoError(t, err)
 	require.Equal(t, "hello world", string(data))
+}
+
+func TestWriteLocalDownloadExceedsCap(t *testing.T) {
+	dir := t.TempDir()
+	out := filepath.Join(dir, "out.bin")
+	// Cap smaller than the stream; the write must fail loudly and must NOT
+	// leave a final file (the temp is cleaned up), so no truncated download
+	// is presented as complete.
+	_, err := writeLocalDownload(context.Background(), out, 4, func(ctx context.Context, w io.Writer) error {
+		_, err := w.Write([]byte("hello world"))
+		return err
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "exceeds max_mcp_upload_size")
+	_, statErr := os.Stat(out)
+	require.Error(t, statErr, "final destination must not exist after an over-limit write")
 }
 
 // ---- download_file / vault_get_file tool descriptors ----
@@ -213,7 +229,7 @@ func TestDownloadFileLocalSink(t *testing.T) {
 		_, err := w.Write([]byte("ipfs bytes"))
 		return err
 	})
-	desc := NewDownloadFileDescriptor(ipp, nil, root, false)
+	desc := NewDownloadFileDescriptor(ipp, nil, root, 0, false)
 	res, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{
 		"ipfs_path":   "bafyabc/doc.txt",
 		"sink":        "local",
@@ -229,7 +245,7 @@ func TestDownloadFileLocalSink(t *testing.T) {
 func TestDownloadFileLocalSinkRejectsEscape(t *testing.T) {
 	root := t.TempDir()
 	ipp := IPFSDownloadHandler(func(ctx context.Context, ipfsPath string, w io.Writer) error { return nil })
-	desc := NewDownloadFileDescriptor(ipp, nil, root, false)
+	desc := NewDownloadFileDescriptor(ipp, nil, root, 0, false)
 	_, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{
 		"ipfs_path":   "bafyabc/doc.txt",
 		"sink":        "local",
@@ -249,6 +265,7 @@ func TestDownloadFileDropSink(t *testing.T) {
 		}),
 		hd,
 		root,
+		0,
 		false,
 	)
 	res, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{
@@ -277,6 +294,7 @@ func TestDownloadFileDropHiddenOnOpenAITunnel(t *testing.T) {
 		IPFSDownloadHandler(func(ctx context.Context, ipfsPath string, w io.Writer) error { return nil }),
 		hd,
 		root,
+		0,
 		true, // tunnelOpenAI
 	)
 	_, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{
@@ -290,7 +308,7 @@ func TestDownloadFileDropHiddenOnOpenAITunnel(t *testing.T) {
 func TestDownloadFileRequiresPathAndValidSink(t *testing.T) {
 	i := IPFSDownloadHandler(func(ctx context.Context, ipfsPath string, w io.Writer) error { return nil })
 	root := t.TempDir()
-	desc := NewDownloadFileDescriptor(i, nil, root, false)
+	desc := NewDownloadFileDescriptor(i, nil, root, 0, false)
 	// Missing ipfs_path.
 	_, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{"sink": "local"}})
 	require.Error(t, err)
@@ -306,7 +324,7 @@ func TestVaultGetFileLocalSink(t *testing.T) {
 		_, err := w.Write([]byte("vault plaintext"))
 		return err
 	})
-	desc := NewVaultGetFileDescriptor(vg, nil, root, false)
+	desc := NewVaultGetFileDescriptor(vg, nil, root, 0, false)
 	res, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{
 		"vault_path":  "vault:/docs/f.pdf",
 		"sink":        "local",
@@ -334,4 +352,65 @@ func TestHTTPDownloadCORSNotLeakedToUntrustedOrigin(t *testing.T) {
 	io.Copy(io.Discard, resp.Body)
 	resp.Body.Close()
 	require.NotContains(t, resp.Header.Get("Access-Control-Allow-Origin"), "evil.example")
+}
+
+// An omitted ttl must report the effective default (5m) so a consumer does not
+// mistake a still-live endpoint for an expired one.
+func TestExecuteDropSinkDefaultsReportedTTL(t *testing.T) {
+	hd := NewHTTPDownload()
+	root := t.TempDir()
+	desc := NewDownloadFileDescriptor(
+		IPFSDownloadHandler(func(ctx context.Context, ipfsPath string, w io.Writer) error {
+			_, err := w.Write([]byte("bytes"))
+			return err
+		}),
+		hd,
+		root,
+		0,
+		false,
+	)
+	res, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{
+		"ipfs_path": "bafyabc/x.bin",
+		"sink":      "drop",
+		// ttl omitted
+	}})
+	require.NoError(t, err)
+	require.False(t, res.IsError, "unexpected error: %s", res.Text)
+	sc, ok := res.StructuredContent.(downloadResult)
+	require.True(t, ok)
+	require.Equal(t, defaultHTTPDownloadTTL.String(), sc.TTL, "reported TTL must be the effective default, not 0s")
+}
+
+// A sink=drop larger than the download cap must fail at the GET (the
+// serve closure enforces the size cap), not silently deliver all bytes. The
+// GET writes StatusOK before streaming, so an over-limit serve error surfaces
+// as a truncated/empty body (the honest fail-don't-fabricate signal) rather
+// than the full payload.
+func TestDownloadFileDropSinkEnforcesSizeCap(t *testing.T) {
+	hd := NewHTTPDownload()
+	root := t.TempDir()
+	desc := NewDownloadFileDescriptor(
+		IPFSDownloadHandler(func(ctx context.Context, ipfsPath string, w io.Writer) error {
+			_, err := w.Write([]byte("xxxxxxxxxxxxxxxx")) // 16 bytes > cap 8
+			return err
+		}),
+		hd,
+		root,
+		8, // maxDownloadBytes
+		false,
+	)
+	res, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{
+		"ipfs_path": "bafyabc/x.bin",
+		"sink":      "drop",
+	}})
+	require.NoError(t, err)
+	sc, ok := res.StructuredContent.(downloadResult)
+	require.True(t, ok)
+	require.False(t, res.IsError, "mint itself succeeds; the cap is enforced at GET: %s", res.Text)
+
+	resp, err := http.Get(sc.FetchURL)
+	require.NoError(t, err)
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	require.NotEqual(t, "xxxxxxxxxxxxxxxx", string(body), "over-limit GET must not deliver the full payload")
 }
