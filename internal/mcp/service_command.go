@@ -19,6 +19,12 @@ import (
 // path, used only to persist tunnel credentials entered during install to the
 // last-resort store. It returns nil on failure so the install proceeds without
 // persistence rather than failing on an optional optimization.
+// ServiceConfigManager returns a lazily-initialized config manager (nil on
+// failure) used to persist user-supplied tunnel credentials to the last-resort
+// store so later runs auto-detect them. Exported so the mcp install wizard can
+// pass a manager to the spliced ServiceInstallSteps.
+func ServiceConfigManager() config.Manager { return serviceConfigManager() }
+
 func serviceConfigManager() config.Manager {
 	mgr, err := config.NewManager(config.DefaultConfigPath)
 	if err != nil {
@@ -209,6 +215,13 @@ func resolveServiceEnvFile(cmd *cli.Command) (string, error) {
 		envFile = filepath.Join(dir, "pinner", defaultMCPEnvFileName)
 	}
 	return expandServicePath(envFile), nil
+}
+
+// ResolveServiceEnvFile is the exported form of resolveServiceEnvFile, used by
+// the mcp install wizard when it splices the tunnel-config steps so they can
+// write to the concrete on-disk env file path.
+func ResolveServiceEnvFile(cmd *cli.Command) (string, error) {
+	return resolveServiceEnvFile(cmd)
 }
 
 // validateServiceEnvironment checks the env file permissions and contents and

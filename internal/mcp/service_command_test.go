@@ -386,7 +386,7 @@ func TestSeedFromFlagsAndEnvSourcesFlagsAndEnv(t *testing.T) {
 		Flags: managedServiceFlags(),
 		Action: func(ctx context.Context, c *cli.Command) error {
 			s := &ServiceInstallState{}
-			seedFromFlagsAndEnv(c, s, "")
+			seedServiceFromFlagsAndEnv(c, s, "")
 			captured = s
 			return nil
 		},

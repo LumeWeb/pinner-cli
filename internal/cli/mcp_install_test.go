@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -11,6 +12,7 @@ import (
 	"testing"
 
 	"go.lumeweb.com/pinner-cli/internal/cli/wizard"
+	mcpadapter "go.lumeweb.com/pinner-cli/internal/mcp"
 	"go.lumeweb.com/pinner-cli/internal/mcp/install"
 )
 
@@ -441,6 +443,105 @@ func TestMcpInstallHTTPCompositeSkipsStdioOnlyAgent(t *testing.T) {
 	globalPath := filepath.Join(root, "global", string(install.AgentClaudeDesktop)+".json")
 	if _, err := os.Stat(globalPath); !os.IsNotExist(err) {
 		t.Errorf("claude-desktop http install should not have written a config; stat err=%v", err)
+	}
+}
+
+// TestMcpInstallConfigureTunnelRunsConfigurerThenCollector guards the flatten:
+// when w.tunnelConfigurer is wired (as production does), the "Configure Tunnel"
+// step runs it into s.Service BEFORE the collector resolves the URL, and the
+// whole wizard shows exactly ONE welcome. A nested RunServiceInstallWizard would
+// have shown a second "Do you want to continue" and restarted step numbering; a
+// configurer model cannot do either, so counting ShowWelcome guards that no
+// nested wizard is re-introduced.
+func TestMcpInstallConfigureTunnelRunsConfigurerThenCollector(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	ui := newMockInstallUI()
+
+	state := &InstallState{
+		Agents:     []install.AgentKey{install.AgentClaudeCode},
+		Scope:      scopeGlobal,
+		Transport:  install.TransportHTTP,
+		UseService: false,
+	}
+
+	w := NewInstallWizard(ui, state, tempPathResolver(root, ""))
+	w.tunnelConfigurer = func(_ context.Context, s *InstallState) (bool, error) {
+		s.Service = &mcpadapter.ServiceInstallState{
+			EnvFile:  filepath.Join(root, "mcp.env"),
+			Provider: mcpadapter.TunnelProviderNgrok,
+		}
+		return false, nil
+	}
+	var collectRan bool
+	w.collectHTTP = func(_ context.Context, s *InstallState) error {
+		collectRan = true
+		s.PublicURL = "https://mcp.example.com"
+		s.AuthToken = "DUMMY_AUTH_TOKEN_NOT_A_SECRET"
+		return nil
+	}
+
+	if _, err := w.Run(ctx); err != nil {
+		t.Fatalf("wizard run failed: %v", err)
+	}
+
+	if n := ui.CallCount("ShowWelcome"); n != 1 {
+		t.Fatalf("expected exactly one ShowWelcome (no nested wizard), got %d", n)
+	}
+	if state.Service == nil || state.Service.Provider != mcpadapter.TunnelProviderNgrok {
+		t.Errorf("tunnelConfigurer did not populate s.Service: %+v", state.Service)
+	}
+	if !collectRan {
+		t.Error("collector did not run after the tunnel configurer")
+	}
+	// writeConfig read the URL the collector produced.
+	entry := readGlobalJSON(t, root, install.AgentClaudeCode)
+	if entry["url"] != "https://mcp.example.com" {
+		t.Errorf("entry url = %v, want https://mcp.example.com", entry["url"])
+	}
+}
+
+// TestMcpInstallConfigureTunnelCleansUpFreshEnvOnConfigurerError guards that a
+// mid-config failure after the spliced write step removes the freshly-created
+// env file (which may hold the user's secret) — the collector is never reached,
+// so this is the Configure Tunnel step's own cleanup responsibility.
+func TestMcpInstallConfigureTunnelCleansUpFreshEnvOnConfigurerError(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	envFile := filepath.Join(root, "mcp.env")
+	ui := newMockInstallUI()
+
+	state := &InstallState{
+		Agents:     []install.AgentKey{install.AgentClaudeCode},
+		Scope:      scopeGlobal,
+		Transport:  install.TransportHTTP,
+		UseService: false,
+	}
+
+	w := NewInstallWizard(ui, state, tempPathResolver(root, ""))
+	var collectRan bool
+	w.tunnelConfigurer = func(_ context.Context, s *InstallState) (bool, error) {
+		// Simulate the spliced write step having created the env file (fresh
+		// path, created=true), then a config sub-step failing.
+		if err := os.WriteFile(envFile, []byte("MCP_TUNNEL_PROVIDER=ngrok\n"), 0o600); err != nil {
+			return true, err
+		}
+		s.Service = &mcpadapter.ServiceInstallState{EnvFile: envFile}
+		return true, errors.New("tunnel config failed")
+	}
+	w.collectHTTP = func(_ context.Context, s *InstallState) error {
+		collectRan = true
+		return nil
+	}
+
+	if _, err := w.Run(ctx); err == nil {
+		t.Fatal("expected wizard run to fail")
+	}
+	if collectRan {
+		t.Error("collector must not run when the tunnel configurer errored")
+	}
+	if _, err := os.Stat(envFile); !os.IsNotExist(err) {
+		t.Fatalf("freshly-created env file should be removed on configurer error, stat err = %v", err)
 	}
 }
 

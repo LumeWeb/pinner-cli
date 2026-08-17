@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/samber/lo"
@@ -173,7 +174,14 @@ func runMcpInstall(ctx context.Context, cmd mcpInstallFlagGetter, ui InstallUI, 
 	// pre-reading cmd.String("env-file") here would bypass that expansion.
 	if realCmd, ok := cmd.(*cli.Command); ok {
 		w.collectHTTP = func(ctx context.Context, s *InstallState) error {
-			env, err := mcpadapter.CollectHTTPInstall(ctx, realCmd, "", s.UseService)
+			// In the flattened path the spliced tunnel-config steps wrote the
+			// env file before the collector runs, so it exists here and the
+			// collector would otherwise think it was pre-existing and skip its
+			// validation-failure cleanup. Tell it we created it so a freshly-
+			// written-but-invalid env file (holding the user's secret) is still
+			// removed — recovering the standalone cleanup semantics.
+			created := s.Service != nil && s.Service.EnvFileCreated
+			env, err := mcpadapter.CollectHTTPInstallWithCreated(ctx, realCmd, "", s.UseService, created)
 			if err != nil {
 				return err
 			}
@@ -184,13 +192,81 @@ func runMcpInstall(ctx context.Context, cmd mcpInstallFlagGetter, ui InstallUI, 
 			}
 			return nil
 		}
+
+		// In production, "Configure Tunnel" also runs the flattened tunnel-config
+		// sub-steps (provider, credentials, env write) into s.Service BEFORE the
+		// collector resolves the public URL. This replaces the former nested
+		// RunServiceInstallWizard — a second, independent wizard that printed a
+		// second "Do you want to continue" prompt and restarted step numbering
+		// at 1. The sub-steps share the outer wizard's state and run as one step,
+		// and _only_ when a fresh interactive tunnel actually needs configuring;
+		// otherwise (existing env file, --tunnel flag, or headless) the collector
+		// alone handles it exactly as before.
+		//
+		// It returns (created, error): created is true only when this run wrote the
+		// service env file (i.e. the fresh path ran). On a later failure the partial
+		// file holding the user's secret is removed: by the Configure Tunnel step
+		// for a mid-config error (collector not reached), and by the collector's own
+		// validation-failure cleanup via the EnvFileCreated hint (threaded through
+		// collectHTTP below) for a validation failure.
+		w.tunnelConfigurer = func(ctx context.Context, s *InstallState) (bool, error) {
+			envFile, err := mcpadapter.ResolveServiceEnvFile(realCmd)
+			if err != nil {
+				return false, err
+			}
+			if !needsFreshTunnelPrompt(realCmd, envFile) {
+				return false, nil
+			}
+			service := s.Service
+			if service == nil {
+				service = &mcpadapter.ServiceInstallState{EnvFile: envFile}
+				s.Service = service
+			}
+			// We are on the fresh path, so the spliced write step creates the env
+			// file this run. Report created=true (via both the return value and
+			// service.EnvFileCreated) so the outer step and the collector clean up a
+			// partial file on failure.
+			created := true
+			service.EnvFileCreated = true
+			cfgMgr := mcpadapter.ServiceConfigManager()
+			// Pre-seed provider/credentials from flags & env BEFORE the steps so
+			// an explicit --auth-token/--token/--domain (or MCP_AUTH_TOKEN /
+			// NGROK_AUTHTOKEN) is not re-prompted — matching RunServiceInstallWizard,
+			// which seeds before running its steps.
+			mcpadapter.SeedServiceFromFlagsAndEnv(realCmd, service, envFile)
+			for _, step := range mcpadapter.ServiceInstallSteps(service, realCmd, envFile, cfgMgr) {
+				if step.ShouldSkip(service) {
+					continue
+				}
+				if err := step.Execute(ctx, service); err != nil {
+					return created, err
+				}
+			}
+			return created, nil
+		}
 	}
 
 	_, err := w.Run(ctx)
 	return err
 }
 
-// dedupeAgents removes duplicate agent keys preserving order.
+// needsFreshTunnelPrompt reports whether mcp install must run the interactive
+// tunnel-config steps: only when a NEW service env file has to be created
+// interactively — i.e. no existing env file, no --tunnel flag (which bootstraps
+// from flags), and the run is not headless. In every other case the collector
+// (CollectHTTPInstall) handles the existing/flag/non-interactive path on its
+// own, exactly as before the flatten.
+func needsFreshTunnelPrompt(cmd *cli.Command, envFile string) bool {
+	if cmd.String("tunnel") != "" {
+		return false
+	}
+	if wizard.NonInteractive {
+		return false
+	}
+	_, err := os.Stat(envFile)
+	return err != nil && os.IsNotExist(err)
+}
+
 func dedupeAgents(agents []install.AgentKey) []install.AgentKey {
 	seen := map[install.AgentKey]bool{}
 	out := make([]install.AgentKey, 0, len(agents))

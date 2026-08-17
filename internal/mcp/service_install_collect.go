@@ -21,8 +21,23 @@ import (
 // `pinner mcp service install` command takes).
 //
 // envFile may be "" to resolve the default via resolveServiceEnvFile(cmd),
-// which honors the --env-file flag and expands "~/".
+// which honors the --env-file flag and expands "~/" in paths.
 func CollectHTTPInstall(ctx context.Context, cmd *cli.Command, envFile string, wantService bool) (ServiceEnvironment, error) {
+	return collectHTTPInstall(ctx, cmd, envFile, wantService, false)
+}
+
+// CollectHTTPInstallWithCreated is CollectHTTPInstall with an explicit
+// envFileCreated hint. It is used by the flattened mcp install flow: the spliced
+// tunnel-config steps write the env file before the collector runs, so the
+// collector's os.Stat check reports the file as pre-existing and skips its own
+// validation-failure cleanup. Passing envFileCreated=true restores that cleanup
+// (a freshly-created-but-invalid env file holding the user's secret is removed
+// on validation failure, exactly as in the standalone path).
+func CollectHTTPInstallWithCreated(ctx context.Context, cmd *cli.Command, envFile string, wantService, envFileCreated bool) (ServiceEnvironment, error) {
+	return collectHTTPInstall(ctx, cmd, envFile, wantService, envFileCreated)
+}
+
+func collectHTTPInstall(ctx context.Context, cmd *cli.Command, envFile string, wantService, envFileCreated bool) (ServiceEnvironment, error) {
 	if envFile == "" {
 		var err error
 		envFile, err = resolveServiceEnvFile(cmd)
@@ -31,7 +46,7 @@ func CollectHTTPInstall(ctx context.Context, cmd *cli.Command, envFile string, w
 		}
 	}
 
-	created := false
+	created := envFileCreated
 	if _, err := os.Stat(envFile); errors.Is(err, os.ErrNotExist) {
 		created = true
 		// A lazy config manager (nil on failure) is threaded into the wizard and
@@ -47,8 +62,10 @@ func CollectHTTPInstall(ctx context.Context, cmd *cli.Command, envFile string, w
 			// existing env file is required. Fail clearly rather than block on a
 			// prompt that will hang or error in a non-TTY context.
 			return nil, fmt.Errorf("no MCP service environment file found at %q; pass --tunnel (ngrok|cloudflared|openai) and its credentials, or provide a pre-existing env file, to configure the tunnel non-interactively", envFile)
-		} else if err := RunServiceInstallWizard(ctx, cmd, envFile, cfgMgr); err != nil {
-			return nil, err
+		} else if !envFileCreated { // STANDALONE: run the wizard. Flattened path already ran the tunnel config steps.
+			if err := RunServiceInstallWizard(ctx, cmd, envFile, cfgMgr); err != nil {
+				return nil, err
+			}
 		}
 	} else if err != nil {
 		return nil, fmt.Errorf("inspect MCP service environment file %q: %w", envFile, err)

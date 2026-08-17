@@ -28,6 +28,106 @@ func TestCollectHTTPInstallNonInteractiveMissingEnvErrors(t *testing.T) {
 	require.NoFileExists(t, path, "no env file should be written when non-interactive setup is refused")
 }
 
+// TestServiceInstallStepsShape guards the extraction of the tunnel-config steps
+// from RunServiceInstallWizard into the reusable ServiceInstallSteps list (the
+// flatten refactor). It asserts the step names/order, that a pre-seeded provider
+// skips the provider prompt, and that the write step writes the env file — the
+// exact behavior RunServiceInstallWizard ran standalone, now shared with mcp
+// install.
+func TestServiceInstallStepsShape(t *testing.T) {
+	dir := t.TempDir()
+	envFile := filepath.Join(dir, "mcp.env")
+	cmd := &cli.Command{Flags: managedServiceFlags()}
+
+	state := &ServiceInstallState{EnvFile: envFile}
+	steps := ServiceInstallSteps(state, cmd, envFile, nil)
+
+	require.Len(t, steps, 3, "expected tunnel provider, tunnel config, and env-write steps")
+	var names []string
+	for _, s := range steps {
+		names = append(names, s.Name())
+	}
+	require.Equal(t, []string{"Tunnel provider", "Tunnel-specific configuration", "Write service environment file"}, names)
+
+	// A provider already seeded (from flags/env) must not prompt again: the
+	// provider step has no SkipFunc but early-returns inside Execute. Executing
+	// with a seeded provider must return immediately without touching the
+	// interactive selectUI (which would block/fail in a non-TTY test), proving
+	// the seeded-path is taken.
+	state.Provider = TunnelProviderCloudflared
+	require.NoError(t, steps[0].Execute(context.Background(), state), "provider step should no-op when provider is already set")
+	require.Equal(t, TunnelProviderCloudflared, state.Provider, "provider must not be overwritten")
+
+	// The write step persists the collected state to the env file.
+	state.Domain = "mcp.example.com"
+	require.NoError(t, steps[2].Execute(context.Background(), state))
+	require.FileExists(t, envFile, "write step should persist the env file")
+}
+
+// TestSeedServiceFromFlagsAndEnv guards the flatten: an interactive `mcp install
+// --transport http` with credentials supplied via flags/env (but no --tunnel and
+// no existing env file) must NOT re-prompt for them. The tunnelConfigurer pre-
+// seeds the embedded service state via SeedServiceFromFlagsAndEnv before running
+// the steps, matching RunServiceInstallWizard; a missing pre-seed would re-prompt
+// for secrets the user already provided.
+func TestSeedServiceFromFlagsAndEnv(t *testing.T) {
+	cmd := &cli.Command{Flags: managedServiceFlags()}
+	require.NoError(t, cmd.Set(serviceAuthTokenFlag, "flag-auth-token"))
+	require.NoError(t, cmd.Set(serviceTunnelTokenFlag, "flag-ngrok-token"))
+	require.NoError(t, cmd.Set(serviceDomainFlag, "flag.example.com"))
+	require.NoError(t, cmd.Set(serviceEnvFileFlag, "mcp.env"))
+
+	state := &ServiceInstallState{}
+	SeedServiceFromFlagsAndEnv(cmd, state, "mcp.env")
+
+	require.Equal(t, "flag-auth-token", state.AuthToken, "flag-provided auth token seeded")
+	require.Equal(t, "flag-ngrok-token", state.TunnelToken, "flag-provided tunnel token seeded")
+	require.Equal(t, "flag.example.com", state.Domain, "flag-provided domain seeded")
+
+	// Values already present must not be overwritten by seeding.
+	state2 := &ServiceInstallState{AuthToken: "pre-existing", Domain: "kept.example.com"}
+	SeedServiceFromFlagsAndEnv(cmd, state2, "mcp.env")
+	require.Equal(t, "pre-existing", state2.AuthToken, "seeding must not clobber explicit state")
+	require.Equal(t, "kept.example.com", state2.Domain, "seeding must not clobber explicit state")
+}
+
+// TestCollectHTTPInstallWithCreatedCleanup guards the flattened mcp install
+// path: the spliced tunnel-config steps write the env file (with the user's
+// secret) BEFORE the collector runs, so CollectHTTPInstall sees it as
+// pre-existing and would skip its validation-failure cleanup — leaving a
+// partial env file holding MCP_AUTH_TOKEN on disk and dead-ending the next run
+// (needsFreshTunnelPrompt reads file-exists). CollectHTTPInstallWithCreated
+// with envFileCreated=true must remove the freshly-written-but-invalid file on
+// validation failure, while envFileCreated=false (pre-existing) must keep it
+// untouched — preserving the standalone "never touch a pre-existing file"
+// invariant.
+func TestCollectHTTPInstallWithCreatedCleanup(t *testing.T) {
+	writeInvalid := func(path string) {
+		// ngrok requires MCP_AUTH_TOKEN; omitting it fails validation
+		// deterministically without depending on any tunnel binary on PATH.
+		require.NoError(t, os.WriteFile(path, []byte("MCP_TUNNEL_PROVIDER=ngrok\n"), 0o600))
+	}
+
+	cmd := &cli.Command{Flags: managedServiceFlags()}
+
+	// envFileCreated=true ↔ flattened path freshly wrote the file: must remove.
+	dir1 := t.TempDir()
+	created := filepath.Join(dir1, "mcp.env")
+	writeInvalid(created)
+	_, err := CollectHTTPInstallWithCreated(context.Background(), cmd, created, false, true)
+	require.Error(t, err, "invalid ngrok env must fail validation")
+	require.Contains(t, err.Error(), "MCP_AUTH_TOKEN")
+	require.NoFileExists(t, created, "a freshly-created-but-invalid env file must be removed (no secret left on disk)")
+
+	// envFileCreated=false ↔ pre-existing file (standalone path): must keep it.
+	dir2 := t.TempDir()
+	preexisting := filepath.Join(dir2, "mcp.env")
+	writeInvalid(preexisting)
+	_, err = CollectHTTPInstallWithCreated(context.Background(), cmd, preexisting, false, false)
+	require.Error(t, err, "invalid ngrok env must fail validation")
+	require.FileExists(t, preexisting, "a pre-existing env file must never be removed")
+}
+
 func TestResolveServicePublicURLFillsCloudflaredDomain(t *testing.T) {
 	// A named cloudflared tunnel with a custom domain has a deterministic
 	// public URL after the service starts; resolveServicePublicURL must derive
