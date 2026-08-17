@@ -165,10 +165,7 @@ func dnsCatalogActionAdapter(c *cli.Command, group, leaf string) cli.ActionFunc 
 			return fmt.Errorf("catalog command %q not found", canonicalName)
 		}
 
-		input := map[string]any{}
-		for _, a := range op.Args() {
-			input[a.Name] = flagValue(cmd, a)
-		}
+		input := catalog.FlagsToInput(cmd, op)
 
 		// dns_records_update: disabled is an omitempty field on the wire, and
 		// omitting it must leave the record's current disabled state unchanged.

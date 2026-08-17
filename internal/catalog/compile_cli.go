@@ -132,20 +132,29 @@ func flagFor(a OperationArg) cli.Flag {
 	// JSON-Schema builder.
 	required := isRequiredArg(a)
 
+	sources := flagSources(a)
 	switch a.Type {
 	case ArgTypeBool, ArgTypeNullableBool:
-		return &cli.BoolFlag{Name: a.Name, Usage: help, Value: a.Default == "true", Required: required}
+		return &cli.BoolFlag{Name: a.Name, Usage: help, Value: a.Default == "true", Required: required, Sources: sources}
 	case ArgTypeInt:
-		return &cli.IntFlag{Name: a.Name, Usage: help, DefaultText: a.Default, Required: required}
+		return &cli.IntFlag{Name: a.Name, Usage: help, DefaultText: a.Default, Required: required, Sources: sources}
 	case ArgTypeFloat:
-		return &cli.Float64Flag{Name: a.Name, Usage: help, DefaultText: a.Default, Required: required}
+		return &cli.Float64Flag{Name: a.Name, Usage: help, DefaultText: a.Default, Required: required, Sources: sources}
 	case ArgTypeDuration:
-		return &cli.DurationFlag{Name: a.Name, Usage: help, DefaultText: a.Default, Required: required}
+		return &cli.DurationFlag{Name: a.Name, Usage: help, DefaultText: a.Default, Required: required, Sources: sources}
 	case ArgTypeStringSlice:
-		return &cli.StringSliceFlag{Name: a.Name, Usage: help, DefaultText: a.Default, Required: required}
+		return &cli.StringSliceFlag{Name: a.Name, Usage: help, DefaultText: a.Default, Required: required, Sources: sources}
 	default: // ArgTypeString
-		return &cli.StringFlag{Name: a.Name, Usage: help, DefaultText: a.Default, Required: required}
+		return &cli.StringFlag{Name: a.Name, Usage: help, DefaultText: a.Default, Required: required, Sources: sources}
 	}
+}
+
+// flagSources maps an arg's declared environment Sources onto the urfave flag's
+// value-source chain. An empty set yields an empty chain (no env source), so
+// this restores the legacy per-flag EnvVars capability for catalog ops without
+// changing flags that declare no sources.
+func flagSources(a OperationArg) cli.ValueSourceChain {
+	return cli.EnvVars(a.Sources...)
 }
 
 // actionFor returns the urfave ActionFunc adapter that dispatches to the
@@ -259,4 +268,21 @@ func cliArgValue(cmd *cli.Command, a OperationArg) (value any, set bool, empty b
 func FlagValue(cmd *cli.Command, a OperationArg) any {
 	v, _, _ := cliArgValue(cmd, a)
 	return v
+}
+
+// FlagsToInput builds the operation input map for every declared argument from
+// a parsed urfave command, applying the same flag->value mapping as FlagValue.
+// It is the single canonical construction used by the CLI action adapters so
+// they do not each hand-iterate over op.Args(); MCP never calls it (the MCP
+// layer reads only the flag *schema*, never flag values).
+func FlagsToInput(cmd *cli.Command, op Operation) map[string]any {
+	args := op.Args()
+	if len(args) == 0 {
+		return nil
+	}
+	input := make(map[string]any, len(args))
+	for _, a := range args {
+		input[a.Name] = FlagValue(cmd, a)
+	}
+	return input
 }

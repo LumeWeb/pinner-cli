@@ -98,10 +98,7 @@ func apiKeysParent() *cli.Command {
 // for delete, then invokes the handler and renders the result.
 func apiKeysActionAdapter(op catalog.Operation) cli.ActionFunc {
 	return func(ctx context.Context, c *cli.Command) error {
-		input := map[string]any{}
-		for _, a := range op.Args() {
-			input[a.Name] = flagValue(c, a)
-		}
+		input := catalog.FlagsToInput(c, op)
 
 		// The per-invocation --auth-token override takes precedence over the
 		// config token. Put it in the input so the Service closure honors it;

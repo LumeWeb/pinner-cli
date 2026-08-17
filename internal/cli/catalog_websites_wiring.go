@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/urfave/cli/v3"
@@ -89,28 +90,68 @@ func newWebsitesCatalogCommands() []*cli.Command {
 	}
 
 	// Leaf commands compile flat with dotted names; nest the two-level ones
-	// (websites.ssl.status -> ssl -> status).
+	// (websites.ssl.status -> ssl -> status) and the three-level ones
+	// (websites.domains.dane.republish -> domains -> dane -> republish).
 	parents := map[string]*cli.Command{}
 	var out []*cli.Command
 	for _, c := range compiled {
 		mounted := mountWebsitesCatalogCommand(c)
 		rest := strings.TrimPrefix(c.Name, "websites_")
-		// Only nest genuine two-level ops (ssl_status). websites_enable_ipns is
-		// a single-level leaf whose underscore is part of the leaf name, so it
-		// must NOT be split (it would mount as `websites enable ipns` and clobber
-		// the enable-ipns remap in mountWebsitesCatalogCommand).
+		// Only nest genuine multi-level ops (ssl_status, domains_*).
+		// websites_enable_ipns is a single-level leaf whose underscore is part
+		// of the leaf name, so it must NOT be split (it would mount as
+		// `websites enable ipns` and clobber the enable-ipns remap in
+		// mountWebsitesCatalogCommand).
 		if idx := strings.Index(rest, "_"); idx > 0 && rest != "enable_ipns" {
-			// Two-level: parent_child (ssl_status)
+			// parent_child... : ssl_status -> ssl -> status, domains_list ->
+			// domains -> list, domains_dane_republish -> domains -> dane ->
+			// republish.
 			parentName := rest[:idx]
+			remainder := rest[idx+1:]
 			parent, ok := parents[parentName]
 			if !ok {
 				parent = &cli.Command{Name: parentName, Category: "Management", Usage: "Manage website " + parentName, Commands: []*cli.Command{}}
+				// The domains parent exposes a singular `domain` alias alongside
+				// the canonical plural name.
+				if parentName == "domains" {
+					parent.Usage = "Manage domain bindings for a website"
+					parent.Aliases = []string{"domain"}
+				}
 				parents[parentName] = parent
 				out = append(out, parent)
 			}
+
+			// The DANE republish op maps its dotted name to a three-level path:
+			// websites.domains.dane.republish -> domains -> dane -> republish.
+			if parentName == "domains" && remainder == "dane_republish" {
+				var dane *cli.Command
+				for _, sub := range parent.Commands {
+					if sub.Name == "dane" {
+						dane = sub
+						break
+					}
+				}
+				if dane == nil {
+					dane = &cli.Command{Name: "dane", Category: "Management", Usage: "Manage a domain's DANE TLSA records", Commands: []*cli.Command{}}
+					parent.Commands = append(parent.Commands, dane)
+				}
+				mounted.Name = "republish"
+				dane.Commands = append(dane.Commands, mounted)
+				continue
+			}
+
 			// The leaf keeps only its final segment when nested under a parent
-			// (websites_ssl_status -> ssl -> status).
-			mounted.Name = rest[idx+1:]
+			// (websites_ssl_status -> ssl -> status). Underscores in a leaf
+			// name render as hyphens on the CLI (domains_dns_requirements ->
+			// domains dns-requirements), matching the historical command names.
+			mounted.Name = strings.ReplaceAll(remainder, "_", "-")
+			// The domains leaves expose the conventional `rm`/`ls` aliases.
+			if remainder == "remove" {
+				mounted.Aliases = []string{"rm"}
+			}
+			if remainder == "list" {
+				mounted.Aliases = []string{"ls"}
+			}
 			parent.Commands = append(parent.Commands, mounted)
 			continue
 		}
@@ -169,15 +210,23 @@ func mountWebsitesCatalogCommand(cmd *cli.Command) *cli.Command {
 // resolved positional <domain>, applies the CLI-only gates (destructive
 // --force for delete, at-least-one-field for update), and renders the
 // handler's result through renderWebsitesResult.
+
+// applyPositionalArgs maps supplied CLI positional arguments into the
+// operation's declared string arguments by name, delegating the canonical
+// mapping rule (right-aligned to declared <arg> slots, surplus rejection) to
+// the catalog framework so every frontend interprets a Positional declaration
+// identically. The adapter only translates the urfave args into a []string.
+// Flag-populated values are never overwritten.
+func applyPositionalArgs(op catalog.Operation, input map[string]any, args cli.Args) error {
+	return catalog.MapPositionalArgs(op.Args(), op.Positional(), args.Slice(), input)
+}
+
 func websitesActionAdapter(op catalog.Operation) cli.ActionFunc {
 	return func(ctx context.Context, c *cli.Command) error {
 		output := setupOutput(c)
 
 		// Build the input map from the compiler-declared flags.
-		input := map[string]any{}
-		for _, a := range op.Args() {
-			input[a.Name] = flagValue(c, a)
-		}
+		input := catalog.FlagsToInput(c, op)
 
 		// Thread the per-invocation --auth-token flag into the operation's
 		// service construction (flag -> config precedence, mirroring the
@@ -187,13 +236,13 @@ func websitesActionAdapter(op catalog.Operation) cli.ActionFunc {
 			input[catalogops.AuthTokenInputKey] = tok
 		}
 
-		// Map the positional <domain> into the operation's "website" input.
-		// The catalog CLI compiler reads flags only, so the adapter resolves
-		// the positional <domain> into the declared string arg.
-		if c.Args().Len() > 0 && hasArg(op, "website") {
-			if catalog.StrArg(input, "website", "") == "" {
-				input["website"] = c.Args().First()
-			}
+		// Map the positional arguments into the operation's declared string
+		// args by position order (op.Positional() describes them, e.g.
+		// "<domain>", "[<website>] <domain>", or "<website>"). The catalog CLI
+		// compiler reads flags only, so the adapter resolves any supplied
+		// positionals into their declared input names.
+		if err := applyPositionalArgs(op, input, c.Args()); err != nil {
+			return err
 		}
 
 		// Destructive gate (websites delete). Enforce --force when a target is
@@ -253,10 +302,35 @@ func websitesActionAdapter(op catalog.Operation) cli.ActionFunc {
 
 		result, err := op.Handler().Execute(dctx, input)
 		if err != nil {
+			renderVerifyGuidance(output, op, err)
 			return err
 		}
 		return renderWebsitesResult(ctx, c, op, result)
 	}
+}
+
+// renderVerifyGuidance renders actionable DNS self-service next-steps next to
+// a `websites domains verify` error, so a failed/indeterminate validation tells
+// the user what to do (mirrors the removed legacy handler). It renders only in
+// human (non-JSON) output — in --json mode the error document stays machine
+// clean, and it no-ops for every non-verify operation.
+func renderVerifyGuidance(output Output, op catalog.Operation, err error) {
+	if op.Name() == "websites_domains_verify" && !output.IsJSON() {
+		renderDNSSelfServiceGuidance(output, err)
+	}
+}
+
+// isNilPointerResult reports whether v is a non-nil interface wrapping a nil
+// POINTER (a typed nil pointer). It deliberately ignores slice/map/chan/func
+// kinds: a nil slice or map is a legitimate empty result, not a nil-pointer
+// deref hazard. Used to guard renderers that dereference single-object
+// pointer results against handlers that return (nil, nil).
+func isNilPointerResult(v any) bool {
+	rv := reflect.ValueOf(v)
+	if rv.Kind() == reflect.Ptr {
+		return rv.IsNil()
+	}
+	return false
 }
 
 // renderWebsitesResult is the catalog.RenderFunc that renders a websites
@@ -264,6 +338,16 @@ func websitesActionAdapter(op catalog.Operation) cli.ActionFunc {
 // rendering home for catalog-driven websites commands.
 func renderWebsitesResult(_ context.Context, c *cli.Command, op catalog.Operation, result any) error {
 	output := setupOutput(c)
+
+	// Guard against a typed-nil single-object result (interface non-nil,
+	// underlying POINTER nil): a handler returning (nil, nil) yields a typed
+	// nil here, and the pointer branches below would dereference it and panic.
+	// Slices/maps are excluded — a nil slice legitimately means an empty
+	// result set (e.g. `websites domains list` with no domains) and is handled
+	// by the renderer's empty-state branches.
+	if result != nil && isNilPointerResult(result) {
+		return fmt.Errorf("%s returned no result", op.Name())
+	}
 
 	switch r := result.(type) {
 	case []ipfs.WebsiteItem:
@@ -365,12 +449,135 @@ func renderWebsitesResult(_ context.Context, c *cli.Command, op catalog.Operatio
 		output.Printfln("Website deleted successfully")
 		return nil
 
+	case []ipfs.DomainResponse:
+		// websites domains list: a website's domain bindings.
+		if output.IsJSON() {
+			if r == nil {
+				r = []ipfs.DomainResponse{}
+			}
+			return output.PrintJSON(map[string]any{"count": len(r), "domains": r})
+		}
+		if len(r) == 0 {
+			output.Printfln("No domains found")
+			return nil
+		}
+		output.Printfln("Found %d domain(s)", len(r))
+		headers := []string{"ID", "DOMAIN", "NAMESPACE", "STATUS", "ZONE NAME"}
+		rows := make([][]string, len(r))
+		for i, d := range r {
+			zoneName := ""
+			if d.ZoneName != nil {
+				zoneName = *d.ZoneName
+			}
+			status := ""
+			if d.Status != nil {
+				status = *d.Status
+			}
+			rows[i] = []string{
+				fmt.Sprintf("%d", d.Id), d.Domain, d.Namespace, status, zoneName,
+			}
+		}
+		output.PrintTable(headers, rows)
+		return nil
+
+	case *ipfs.DomainResponse:
+		// websites domains add/verify/update/dns-requirements all return a
+		// DomainResponse. The dns-requirements command renders the delegation
+		// bundle; the others render the binding fields. Guard against a typed
+		// nil before dereferencing (mirrors the removed legacy checks).
+		if r == nil {
+			return fmt.Errorf("no result returned for %s", op.Name())
+		}
+		if output.IsJSON() {
+			return output.PrintJSON(r)
+		}
+		if op.Name() == "websites_domains_dns_requirements" {
+			renderDomainDelegation(output, r, r.DnsHostingEnabled)
+			return nil
+		}
+		renderDomainResponse(output, r)
+		return nil
+
+	case *ipfs.DomainDANERepublishResponse:
+		// websites domains dane republish.
+		if output.IsJSON() {
+			return output.PrintJSON(r)
+		}
+		renderDomainDANEResponse(output, r)
+		return nil
+
+	case *catalogops.WebsiteDomainsRemoveResult:
+		// websites domains remove.
+		if output.IsJSON() {
+			return output.PrintJSON(map[string]any{"deleted": r.Deleted, "domain_id": r.DomainID})
+		}
+		output.Printfln("Domain removed successfully")
+		return nil
+
 	default:
 		if result == nil {
 			return nil
 		}
 		return fmt.Errorf("catalog command %q returned an unroutable result type %T", op.Name(), result)
 	}
+}
+
+// renderDomainResponse renders the fields of a single domain binding (used by
+// websites domains add/verify/update).
+func renderDomainResponse(output Output, r *ipfs.DomainResponse) {
+	status := ""
+	if r.Status != nil {
+		status = *r.Status
+	}
+	zoneName := ""
+	if r.ZoneName != nil {
+		zoneName = *r.ZoneName
+	}
+	fields := []Field{
+		{"ID", fmt.Sprintf("%d", r.Id)},
+		{"Domain", r.Domain},
+		{"Namespace", r.Namespace},
+		{"Status", status},
+		{"Zone Name", zoneName},
+		// Surface the per-domain DNS hosting state so the user can verify
+		// --dns-hosting on update actually applied. (The API does not echo the
+		// primary flag back in DomainResponse, so it cannot be rendered here.)
+		{"DNS Hosting", fmt.Sprintf("%v", r.DnsHostingEnabled)},
+	}
+	if r.Delegation != nil && r.Delegation.Dnssec != nil {
+		fields = append(fields, Field{"DNSSEC", *r.Delegation.Dnssec})
+		if r.Delegation.DnssecError != nil && *r.Delegation.DnssecError != "" {
+			fields = append(fields, Field{"DNSSEC Error", *r.Delegation.DnssecError})
+		}
+	}
+	output.PrintFields(FieldGroup{Fields: fields})
+}
+
+// renderDomainDANEResponse renders the result of websites domains dane
+// republish.
+func renderDomainDANEResponse(output Output, r *ipfs.DomainDANERepublishResponse) {
+	status := ""
+	if r.Status != nil {
+		status = *r.Status
+	}
+	ownerName := ""
+	if r.OwnerName != nil {
+		ownerName = *r.OwnerName
+	}
+	tlsaRecord := ""
+	if r.TlsaRecord != nil {
+		tlsaRecord = *r.TlsaRecord
+	}
+	output.PrintFields(FieldGroup{
+		Fields: []Field{
+			{"ID", fmt.Sprintf("%d", r.Id)},
+			{"Domain", r.Domain},
+			{"Namespace", r.Namespace},
+			{"Status", status},
+			{"Owner Name", ownerName},
+			{"TLSA Record", tlsaRecord},
+		},
+	})
 }
 
 // renderWebsiteItemHuman renders the fields of a single website (used by get,

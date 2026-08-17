@@ -7,10 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 
 	ipfs "go.lumeweb.com/ipfs-sdk"
-	"go.lumeweb.com/ipfs-sdk/dnsname"
 
 	"go.lumeweb.com/pinner-cli/internal/catalog"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
@@ -85,37 +83,25 @@ func WebsitesOperations(d WebsitesDeps) []catalog.Operation {
 		websitesValidate(d),
 		websitesSSLStatus(d),
 		websitesConfig(d),
+		websitesDomainsList(d),
+		websitesDomainsAdd(d),
+		websitesDomainsRemove(d),
+		websitesDomainsVerify(d),
+		websitesDomainsDNSRequirements(d),
+		websitesDomainsDANERepublish(d),
+		websitesDomainsUpdate(d),
 	}
 }
 
-// resolveWebsiteID resolves an ID-or-domain argument to a numeric website ID
-// string. If the arg parses as a number it is returned as-is; otherwise the
-// service lists websites and matches the domain (case-insensitively,
-// DNS-normalized).
-func resolveWebsiteID(ctx context.Context, svc websites.Service, arg string) (string, error) {
-	if _, err := strconv.Atoi(arg); err == nil {
-		return arg, nil
-	}
-	list, err := svc.List(ctx)
-	if err != nil {
-		return "", fmt.Errorf("failed to look up website by domain: %w", err)
-	}
-	for _, w := range list {
-		if dnsname.Equal(w.Domain, arg) {
-			return strconv.Itoa(w.Id), nil
-		}
-	}
-	return "", fmt.Errorf("website not found for domain %q", arg)
-}
-
-// resolveRequiredWebsiteID is resolveWebsiteID plus a required-argument gate
-// (an empty positional is an error).
+// resolveRequiredWebsiteID reads the <website> positional (ID or domain) and
+// resolves it to a numeric website ID via the core resolver, erroring when the
+// argument is empty.
 func resolveRequiredWebsiteID(ctx context.Context, svc websites.Service, input map[string]any) (string, error) {
 	arg := catalog.StrArg(input, "website", "")
 	if arg == "" {
 		return "", fmt.Errorf("website ID or domain is required")
 	}
-	return resolveWebsiteID(ctx, svc, arg)
+	return websites.ResolveWebsiteID(ctx, svc, arg)
 }
 
 // websitesList is the `websites list` operation. Returns []ipfs.WebsiteItem.

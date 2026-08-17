@@ -309,3 +309,48 @@ func requiredFlag(f cli.Flag) bool {
 	}
 	return false
 }
+
+// TestFlagsToInput pins the shared flag->input-map construction used by every
+// CLI wiring adapter (websites, vault, dns, ipns, account, apikeys, operations):
+// it must place a value for each declared arg from a urfave-parsed command,
+// mirroring FlagValue, and return nil when the op declares no args.
+func TestFlagsToInput(t *testing.T) {
+	op := NewOperation(OperationSpec{
+		Name: "test_thing",
+		Args: []OperationArg{
+			{Name: "name", Type: ArgTypeString},
+			{Name: "count", Type: ArgTypeInt},
+			{Name: "enabled", Type: ArgTypeNullableBool},
+		},
+	})
+
+	cmd := &cli.Command{
+		Name: "test_thing",
+		Flags: []cli.Flag{
+			&cli.StringFlag{Name: "name"},
+			&cli.IntFlag{Name: "count"},
+			&cli.BoolFlag{Name: "enabled"},
+		},
+		Action: func(ctx context.Context, c *cli.Command) error { return nil },
+	}
+	if err := cmd.Run(context.Background(), []string{"test_thing", "--name", "x", "--count", "3"}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	input := FlagsToInput(cmd, op)
+	if input["name"] != "x" {
+		t.Errorf("name = %v, want x", input["name"])
+	}
+	if input["count"] != 3 {
+		t.Errorf("count = %v, want 3", input["count"])
+	}
+	// enabled not supplied: nullable-bool surfaces nil (absent).
+	if input["enabled"] != nil {
+		t.Errorf("enabled = %v, want nil (absent)", input["enabled"])
+	}
+
+	// An op with no args returns nil.
+	if got := FlagsToInput(cmd, NewOperation(OperationSpec{Name: "no_args"})); got != nil {
+		t.Errorf("no-arg op returned %v, want nil", got)
+	}
+}

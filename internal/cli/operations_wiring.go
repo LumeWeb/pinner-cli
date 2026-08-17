@@ -94,10 +94,7 @@ func newOperationsCommandCatalog() *cli.Command {
 func operationsActionAdapter(op catalog.Operation) cli.ActionFunc {
 	return func(ctx context.Context, c *cli.Command) error {
 
-		input := map[string]any{}
-		for _, a := range op.Args() {
-			input[a.Name] = flagValue(c, a)
-		}
+		input := catalog.FlagsToInput(c, op)
 
 		// Thread the per-invocation --auth-token override into the operation
 		// input so the Service closure honors it (flag over config).

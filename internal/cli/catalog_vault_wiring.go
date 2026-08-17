@@ -177,22 +177,16 @@ func mountVaultCatalogCommand(cmd *cli.Command) *cli.Command {
 func vaultActionAdapter(op catalog.Operation) cli.ActionFunc {
 	return func(ctx context.Context, c *cli.Command) error {
 		// Build the input map from the compiler-declared flags.
-		input := map[string]any{}
-		for _, a := range op.Args() {
-			input[a.Name] = flagValue(c, a)
-		}
+		input := catalog.FlagsToInput(c, op)
 
-		// Map the positional arg into the operation's path/name input.
+		// Map the positional argument into the operation's path/name input.
 		// The catalog CLI compiler reads flags only, so the adapter resolves
-		// the positional <path>/<name> into the declared string arg.
-		if c.Args().Len() > 0 && (op.Positional() == "<path>" || op.Positional() == "<name>") {
-			argName := "path"
-			if !hasArg(op, "path") && hasArg(op, "name") {
-				argName = "name"
-			}
-			if catalog.StrArg(input, argName, "") == "" {
-				input[argName] = c.Args().First()
-			}
+		// the positional <path>/<name> into the declared string arg. The
+		// mapping rule (right-aligned, surplus rejection, name resolution from
+		// the Positional declaration) lives in the catalog framework and is
+		// shared with every frontend.
+		if err := catalog.MapPositionalArgs(op.Args(), op.Positional(), c.Args().Slice(), input); err != nil {
+			return err
 		}
 
 		// Map the --profile flag (used broadly by vault commands) into the

@@ -415,6 +415,32 @@ func TestCommandRegistration_WebsitesSSLSubcommands(t *testing.T) {
 	}
 }
 
+func TestCommandRegistration_WebsitesDomainsSubcommands(t *testing.T) {
+	root := NewRootCommand()
+	websites := findCommand(root.Commands, "websites")
+	require.NotNil(t, websites, "websites command should exist")
+
+	domains := findCommand(websites.Commands, "domains")
+	require.NotNil(t, domains, "websites domains command should exist")
+
+	expectedSubs := []string{"list", "add", "remove", "verify", "dns-requirements", "update", "dane", "wizard"}
+	names := commandNames(domains.Commands)
+	nameSet := make(map[string]bool, len(names))
+	for _, n := range names {
+		nameSet[n] = true
+	}
+
+	for _, expected := range expectedSubs {
+		assert.True(t, nameSet[expected], "websites domains should have subcommand %q", expected)
+	}
+
+	// The catalog-compiled dane parent nests the republish leaf three levels deep.
+	dane := findCommand(domains.Commands, "dane")
+	require.NotNil(t, dane, "websites domains dane command should exist")
+	assert.Equal(t, []string{"republish"}, commandNames(dane.Commands),
+		"websites domains dane should have exactly the republish subcommand")
+}
+
 func TestCommandRegistration_OperationsSubcommands(t *testing.T) {
 	root := NewRootCommand()
 	ops := findCommand(root.Commands, "operations")
