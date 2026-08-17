@@ -297,6 +297,27 @@ func registerCustomTools(deps customToolDeps) error {
 	// HTTP mux (tunnelOpenAI=false) — see downloadFileDescription.
 	if opts.ipfsDownload != nil {
 		dlDesc := NewDownloadFileDescriptor(opts.ipfsDownload, deps.downloadDrop, deps.tunnelOpenAI)
+		// Pair download_file with its "Download from IPFS" MCP App view
+		// (ui://downloads/ipfs.html) so a UI-capable host renders a download
+		// panel. RegisterAppView attaches _meta.ui to a catalog entry, so the
+		// tool must be indexed first. Like upload_file, the app (sink=local or
+		// sink=drop) is meaningful on every transport, so it is always paired
+		// when the tool is registered.
+		deps.catalog.Add(toolEntryFromDescriptor(dlDesc))
+		if err := RegisterIPFSDownloadApp(deps.srv, deps.catalog); err != nil {
+			return err
+		}
+		// Copy the app-view _meta (registered above onto the catalog entry)
+		// onto the descriptor served directly to hosts, so a UI-capable host
+		// reading download_file from tools/list still sees the panel.
+		if entry, ok := deps.catalog.Get("download_file"); ok {
+			if dlDesc.Meta == nil {
+				dlDesc.Meta = map[string]any{}
+			}
+			for k, v := range entry.Meta {
+				dlDesc.Meta[k] = v
+			}
+		}
 		if err := RegisterOfficialDescriptor(deps.srv, dlDesc); err != nil {
 			return err
 		}
@@ -307,6 +328,18 @@ func registerCustomTools(deps customToolDeps) error {
 	//   - sink=drop (HTTP / real tunnel): deps.downloadDrop mints a filedrop.
 	if opts.vaultGet != nil {
 		dlDesc := NewVaultGetFileDescriptor(opts.vaultGet, deps.downloadDrop, deps.tunnelOpenAI)
+		deps.catalog.Add(toolEntryFromDescriptor(dlDesc))
+		if err := RegisterVaultDownloadApp(deps.srv, deps.catalog); err != nil {
+			return err
+		}
+		if entry, ok := deps.catalog.Get("vault_get_file"); ok {
+			if dlDesc.Meta == nil {
+				dlDesc.Meta = map[string]any{}
+			}
+			for k, v := range entry.Meta {
+				dlDesc.Meta[k] = v
+			}
+		}
 		if err := RegisterOfficialDescriptor(deps.srv, dlDesc); err != nil {
 			return err
 		}
@@ -393,7 +426,7 @@ func registerCustomTools(deps customToolDeps) error {
 	)); err != nil {
 		return err
 	}
-	// Always expose the static agent guide so a model can orient to the four
+	// Always expose the static agent guide so a model can orient to the
 	// primary flows without probing each tool's description.
 	if err := RegisterOfficialDescriptor(deps.srv, NewAgentGuideDescriptor()); err != nil {
 		return err

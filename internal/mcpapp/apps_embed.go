@@ -37,6 +37,8 @@ var bundleNames = map[string]string{
 	"account-email":    "appsassets/dist/account-email.js",
 	"ipfs-upload":      "appsassets/dist/ipfs-upload.js",
 	"vault-upload":     "appsassets/dist/vault-upload.js",
+	"ipfs-download":    "appsassets/dist/ipfs-download.js",
+	"vault-download":   "appsassets/dist/vault-download.js",
 }
 
 // AppModuleJS returns the embedded, self-contained ESM module source for the
