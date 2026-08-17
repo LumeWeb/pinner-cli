@@ -215,8 +215,33 @@ func resolveNgrokURL(ctx context.Context, text textUI, s *ServiceInstallState, c
 		apiKey = ""
 	}
 	if publicURL == "" {
-		// No API key, or the account has no discoverable domain. Direct the
-		// operator to the domains page and ask for the URL they see there.
+		// No API key (or the account's reserved-domain set gave nothing). For a
+		// free account the persistent public URL is the single stable dev domain
+		// (host ending in *.ngrok-free.dev). It is resolvable with just the
+		// authtoken (which the configurer already resolved into s.TunnelToken)
+		// via a short-lived embedded ngrok tunnel — but only if the tunnel's
+		// assigned URL is actually that stable dev domain. A bare ngrok tunnel on
+		// the free tier often returns an EPHEMERAL *.ngrok-free.app subdomain that
+		// rotates every session; installing that as MCP_PUBLIC_URL would write a
+		// dead endpoint. So we only accept a stable *.ngrok-free.dev URL here and
+		// reject everything else, falling through to the manual prompt rather
+		// than persisting a rotating URL.
+		if tok := s.TunnelToken; tok != "" {
+			if u, sdkErr := resolveNgrokSDKURL(ctx, tok); sdkErr == nil {
+				if isStableNgrokDevURL(u) {
+					publicURL = u
+				} else if u != "" {
+					fmt.Fprintf(os.Stderr, "ngrok authtoken tunnel returned an unstable URL (%s); not persisting it\n", u)
+				}
+			} else {
+				fmt.Fprintf(os.Stderr, "ngrok authtoken URL lookup failed (%v)\n", sdkErr)
+			}
+		}
+	}
+	if publicURL == "" {
+		// Still nothing: no API key and the authtoken lookup failed or there is
+		// no authtoken. Direct the operator to the domains page and ask for the
+		// URL they see there.
 		openTunnelDeepLink("ngrok", "domain")
 		u, perr := text.Text("ngrok public base URL (from dashboard.ngrok.com/domains, e.g. https://you.ngrok-free.dev)")
 		if perr != nil {
