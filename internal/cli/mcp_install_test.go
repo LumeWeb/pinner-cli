@@ -17,6 +17,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/cli/wizard"
 	mcpadapter "go.lumeweb.com/pinner-cli/internal/mcp"
 	"go.lumeweb.com/pinner-cli/internal/mcp/install"
+	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
 )
 
 // mcpInstallFlagFake is a test fake implementing mcpInstallFlagGetter.
@@ -472,7 +473,7 @@ func TestMcpInstallConfigureTunnelRunsConfigurerThenCollector(t *testing.T) {
 	w.tunnelConfigurer = func(_ context.Context, s *InstallState) (bool, error) {
 		s.Service = &mcpadapter.ServiceInstallState{
 			EnvFile:  filepath.Join(root, "mcp.env"),
-			Provider: mcpadapter.TunnelProviderNgrok,
+			Provider: tunnel.TunnelProviderNgrok,
 		}
 		return false, nil
 	}
@@ -491,7 +492,7 @@ func TestMcpInstallConfigureTunnelRunsConfigurerThenCollector(t *testing.T) {
 	if n := ui.CallCount("ShowWelcome"); n != 1 {
 		t.Fatalf("expected exactly one ShowWelcome (no nested wizard), got %d", n)
 	}
-	if state.Service == nil || state.Service.Provider != mcpadapter.TunnelProviderNgrok {
+	if state.Service == nil || state.Service.Provider != tunnel.TunnelProviderNgrok {
 		t.Errorf("tunnelConfigurer did not populate s.Service: %+v", state.Service)
 	}
 	if !collectRan {
@@ -1043,7 +1044,7 @@ func TestSeedServiceFromEnvFile_FoldsKnownValues(t *testing.T) {
 	writeEnv(t, envFile, partialEnv)
 	s := &mcpadapter.ServiceInstallState{}
 	seedServiceFromEnvFile(envFile, s)
-	if s.Provider != mcpadapter.TunnelProviderNgrok {
+	if s.Provider != tunnel.TunnelProviderNgrok {
 		t.Errorf("provider = %q, want ngrok", s.Provider)
 	}
 	if s.AuthToken != "repro-auth" {

@@ -30,14 +30,14 @@ func TestEmbeddedOpenAITunnelValidatesConfiguration(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			server := mcp.NewServer(&mcp.Implementation{Name: "test", Version: "test"}, nil)
-			err := RunEmbeddedOpenAITunnel(context.Background(), server, tt.tunnel, tt.key)
+			err := tunnel.RunEmbeddedOpenAITunnel(context.Background(), server, tt.tunnel, tt.key)
 			require.ErrorContains(t, err, tt.want)
 		})
 	}
 }
 
 func TestEmbeddedOpenAITunnelRequiresServer(t *testing.T) {
-	err := RunEmbeddedOpenAITunnel(context.Background(), nil, "tunnel_0123456789abcdef0123456789abcdef", "key")
+	err := tunnel.RunEmbeddedOpenAITunnel(context.Background(), nil, "tunnel_0123456789abcdef0123456789abcdef", "key")
 	require.ErrorContains(t, err, "requires an MCP server")
 }
 

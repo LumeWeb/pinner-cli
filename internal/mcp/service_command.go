@@ -13,6 +13,7 @@ import (
 
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
 	"go.lumeweb.com/pinner-cli/internal/service"
 )
 
@@ -44,15 +45,12 @@ func serviceConfigManager() config.Manager {
 	return mgr
 }
 
-// TunnelProvider identifies the tunnel backend used to expose the MCP server.
-// (Type alias to the tunnel sub-package; see tunnel_shim.go.)
-
 // parseTunnelProvider normalizes a raw provider string into the typed enum,
 // returning an error for unknown values.
-func parseTunnelProvider(raw string) (TunnelProvider, error) {
-	switch TunnelProvider(strings.ToLower(strings.TrimSpace(raw))) {
-	case TunnelProviderOpenAI, TunnelProviderNgrok, TunnelProviderCloudflared:
-		return TunnelProvider(strings.ToLower(strings.TrimSpace(raw))), nil
+func parseTunnelProvider(raw string) (tunnel.TunnelProvider, error) {
+	switch tunnel.TunnelProvider(strings.ToLower(strings.TrimSpace(raw))) {
+	case tunnel.TunnelProviderOpenAI, tunnel.TunnelProviderNgrok, tunnel.TunnelProviderCloudflared:
+		return tunnel.TunnelProvider(strings.ToLower(strings.TrimSpace(raw))), nil
 	case "":
 		return "", errors.New("MCP_TUNNEL_PROVIDER is required in the service environment file")
 	default:
@@ -236,7 +234,7 @@ func ResolveServiceEnvFile(cmd *cli.Command) (string, error) {
 // runtime (not the caller's process environment), so required credentials must
 // be present in the file itself — never just in os.Getenv, which would let an
 // install report success while the running service gets an empty value.
-func validateServiceEnvironment(envFile string, nonInteractive bool) (TunnelProvider, error) {
+func validateServiceEnvironment(envFile string, nonInteractive bool) (tunnel.TunnelProvider, error) {
 	info, err := os.Stat(envFile)
 	if err != nil {
 		return "", fmt.Errorf("MCP service environment file %q is unavailable: %w", envFile, err)
@@ -261,19 +259,19 @@ func validateServiceEnvironment(envFile string, nonInteractive bool) (TunnelProv
 	// Interactive install/wizard paths may open the browser to guide the user.
 	deeplink := func(operation, missing string) {
 		if nonInteractive {
-			PrintTunnelDeepLink(operation, missing)
+			tunnel.PrintTunnelDeepLink(operation, missing)
 			return
 		}
-		OpenTunnelDeepLink(operation, missing)
+		tunnel.OpenTunnelDeepLink(operation, missing)
 	}
 	switch provider {
-	case TunnelProviderOpenAI:
+	case tunnel.TunnelProviderOpenAI:
 		tunnelID := strings.TrimSpace(env["MCP_TUNNEL_ID"])
 		if tunnelID == "" {
 			deeplink("openai", "tunnel_id")
 			return "", fmt.Errorf("MCP_TUNNEL_ID is required for the OpenAI tunnel (create one in the OpenAI Tunnels page)")
 		}
-		if !OpenAITunnelID.MatchString(tunnelID) {
+		if !tunnel.OpenAITunnelID.MatchString(tunnelID) {
 			deeplink("openai", "tunnel_id")
 			return "", fmt.Errorf("invalid OpenAI tunnel ID %q", tunnelID)
 		}
@@ -281,17 +279,17 @@ func validateServiceEnvironment(envFile string, nonInteractive bool) (TunnelProv
 			deeplink("openai", "api_key")
 			return "", fmt.Errorf("CONTROL_PLANE_API_KEY or OPENAI_API_KEY must be present in %s for the OpenAI tunnel (use --api-key to persist it; create a Runtime API key in the OpenAI API keys page)", envFile)
 		}
-	case TunnelProviderNgrok, TunnelProviderCloudflared:
+	case tunnel.TunnelProviderNgrok, tunnel.TunnelProviderCloudflared:
 		if strings.TrimSpace(env["MCP_AUTH_TOKEN"]) == "" {
 			return "", errors.New("MCP_AUTH_TOKEN is required for public HTTP MCP tunnels")
 		}
-		if provider == TunnelProviderNgrok && strings.TrimSpace(env["NGROK_AUTHTOKEN"]) == "" && strings.TrimSpace(env["MCP_TUNNEL_TOKEN"]) == "" {
+		if provider == tunnel.TunnelProviderNgrok && strings.TrimSpace(env["NGROK_AUTHTOKEN"]) == "" && strings.TrimSpace(env["MCP_TUNNEL_TOKEN"]) == "" {
 			deeplink("ngrok", "authtoken")
 			return "", errors.New("NGROK_AUTHTOKEN or MCP_TUNNEL_TOKEN is required for the ngrok tunnel")
 		}
 		// Only cloudflared runs as an external subprocess; ngrok is embedded
 		// via the Go SDK and needs no binary on PATH.
-		if provider == TunnelProviderCloudflared {
+		if provider == tunnel.TunnelProviderCloudflared {
 			if _, err := exec.LookPath(string(provider)); err != nil {
 				return "", fmt.Errorf("%s executable not found on PATH: %w", provider, err)
 			}
@@ -477,11 +475,11 @@ func bootstrapServiceEnvironment(cmd *cli.Command, envFile string, cfgMgr config
 
 	// Persist credentials supplied via flags to the last-resort store so the
 	// values survive to later runs even if the env file is regenerated.
-	if provider == TunnelProviderOpenAI {
-		PersistTunnelCredential(cfgMgr, "openai", "tunnel_id", env["MCP_TUNNEL_ID"])
-		PersistTunnelCredential(cfgMgr, "openai", "api_key", env["CONTROL_PLANE_API_KEY"])
-	} else if provider == TunnelProviderNgrok {
-		PersistTunnelCredential(cfgMgr, "ngrok", "token", env["MCP_TUNNEL_TOKEN"])
+	if provider == tunnel.TunnelProviderOpenAI {
+		tunnel.PersistTunnelCredential(cfgMgr, "openai", "tunnel_id", env["MCP_TUNNEL_ID"])
+		tunnel.PersistTunnelCredential(cfgMgr, "openai", "api_key", env["CONTROL_PLANE_API_KEY"])
+	} else if provider == tunnel.TunnelProviderNgrok {
+		tunnel.PersistTunnelCredential(cfgMgr, "ngrok", "token", env["MCP_TUNNEL_TOKEN"])
 	}
 	return nil
 }
@@ -490,7 +488,7 @@ func bootstrapServiceEnvironment(cmd *cli.Command, envFile string, cfgMgr config
 // Env handling is entirely per-backend: the config carries only the env file
 // path, and each platform file consumes it (systemd: EnvironmentFile, launchd:
 // sources it via a wrapper, Windows SCM: loads it into the service registry).
-func newManagedService(cmd *cli.Command, envFile string, provider TunnelProvider) (service.Service, error) {
+func newManagedService(cmd *cli.Command, envFile string, provider tunnel.TunnelProvider) (service.Service, error) {
 	cfg, err := serviceConfigForInstall(cmd, envFile, provider)
 	if err != nil {
 		return nil, err
@@ -510,7 +508,7 @@ func newManagedService(cmd *cli.Command, envFile string, provider TunnelProvider
 // OpenAI tunnel speaks the MCP transport directly and must not add --http.
 // Returns the pure config so tests can assert the ExecStart arguments without
 // touching a live service backend.
-func serviceConfigForInstall(cmd *cli.Command, envFile string, provider TunnelProvider) (service.Config, error) {
+func serviceConfigForInstall(cmd *cli.Command, envFile string, provider tunnel.TunnelProvider) (service.Config, error) {
 	execPath, err := os.Executable()
 	if err != nil {
 		return service.Config{}, fmt.Errorf("resolve pinner executable: %w", err)
@@ -519,7 +517,7 @@ func serviceConfigForInstall(cmd *cli.Command, envFile string, provider TunnelPr
 	// Public HTTP tunnel providers (ngrok, cloudflared) expose the server over
 	// HTTP; the embedded OpenAI tunnel speaks the transport directly, so it
 	// must not add --http.
-	if provider != "" && provider != TunnelProviderOpenAI {
+	if provider != "" && provider != tunnel.TunnelProviderOpenAI {
 		args = append(args, "--http")
 	}
 	return service.Config{

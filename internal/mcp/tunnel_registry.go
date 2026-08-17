@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
 )
 
 // TunnelProviderSpec describes one tunnel provider's runtime + installation
@@ -16,17 +17,17 @@ import (
 type TunnelProviderSpec struct {
 	// Provider is the canonical TunnelProvider value (also the
 	// MCP_TUNNEL_PROVIDER string used in the service environment file).
-	Provider TunnelProvider
+	Provider tunnel.TunnelProvider
 	// Label is a human-friendly name shown in wizards / help.
 	Label string
 	// RequiresToken reports whether the provider needs an account token before
 	// it can start. This may inspect the environment (e.g. an existing ngrok
 	// config file), so it is a method, not a bool.
-	RequiresToken func(TunnelConfig) bool
+	RequiresToken func(tunnel.TunnelConfig) bool
 	// NewTunnel builds a running Tunnel for the provider from cfg. It may
 	// return an error to decline construction (e.g. a provider that is not
 	// runtime-tunnel driven).
-	NewTunnel func(cfg TunnelConfig) (Tunnel, error)
+	NewTunnel func(cfg tunnel.TunnelConfig) (tunnel.Tunnel, error)
 	// Configurer collects the provider's install-time tunnel configuration
 	// (IDs, domains, credentials) into the install state, prompting via text
 	// only for values that cannot be resolved automatically and persisting any
@@ -39,10 +40,10 @@ type TunnelProviderSpec struct {
 // tunnelRegistry is the process-wide provider registry.
 type tunnelRegistry struct {
 	mu sync.RWMutex
-	m  map[TunnelProvider]*TunnelProviderSpec
+	m  map[tunnel.TunnelProvider]*TunnelProviderSpec
 }
 
-var providers = &tunnelRegistry{m: make(map[TunnelProvider]*TunnelProviderSpec)}
+var providers = &tunnelRegistry{m: make(map[tunnel.TunnelProvider]*TunnelProviderSpec)}
 
 // RegisterTunnelProvider registers a tunnel provider spec. Registering the
 // same provider twice overwrites the prior entry (idempotent re-registration
@@ -57,7 +58,7 @@ func RegisterTunnelProvider(spec *TunnelProviderSpec) {
 }
 
 // spec returns the registered spec for a provider.
-func (r *tunnelRegistry) spec(p TunnelProvider) (*TunnelProviderSpec, bool) {
+func (r *tunnelRegistry) spec(p tunnel.TunnelProvider) (*TunnelProviderSpec, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	s, ok := r.m[p]
@@ -66,15 +67,15 @@ func (r *tunnelRegistry) spec(p TunnelProvider) (*TunnelProviderSpec, bool) {
 
 // TunnelFor returns a Tunnel for the named provider, or nil if provider is
 // empty (no tunnel). It delegates to the provider registry.
-func TunnelFor(provider, domain, token, name, tunnelID string, cfgMgr config.Manager) (Tunnel, error) {
+func TunnelFor(provider, domain, token, name, tunnelID string, cfgMgr config.Manager) (tunnel.Tunnel, error) {
 	if provider == "" {
 		return nil, nil
 	}
-	spec, ok := providers.spec(TunnelProvider(provider))
+	spec, ok := providers.spec(tunnel.TunnelProvider(provider))
 	if !ok {
 		return nil, fmt.Errorf("unknown tunnel provider %q", provider)
 	}
-	return spec.NewTunnel(TunnelConfig{
+	return spec.NewTunnel(tunnel.TunnelConfig{
 		Domain:    domain,
 		Token:     token,
 		Name:      name,

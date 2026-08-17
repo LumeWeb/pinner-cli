@@ -27,6 +27,7 @@ import (
 	opcat "go.lumeweb.com/pinner-cli/internal/catalog"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
 	"go.lumeweb.com/pinner-cli/internal/mcp/oauthstore"
+	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
 	"go.uber.org/zap"
 )
 
@@ -487,8 +488,8 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 		if enableOAuth {
 			return fmt.Errorf("--oauth is not supported with the embedded OpenAI Secure MCP Tunnel; use ngrok or cloudflared for Pinner OAuth")
 		}
-		resolvedID, resolvedKey := ResolveOpenAICredentials(cmd, cfgMgr)
-		return RunEmbeddedOpenAITunnel(ctx, srv, resolvedID, resolvedKey)
+		resolvedID, resolvedKey := tunnel.ResolveOpenAICredentials(cmd, cfgMgr)
+		return tunnel.RunEmbeddedOpenAITunnel(ctx, srv, resolvedID, resolvedKey)
 	}
 
 	// Bind a concrete local address up front. Port 0 asks the OS for an
@@ -502,14 +503,14 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 	defer listener.Close()
 	localAddr := listener.Addr().String()
 
-	var tunnel Tunnel
+	var tun tunnel.Tunnel
 	if provider != "" {
 		// Resolve the ngrok authtoken from the full cascade, guarding against a
 		// stale/revoked last-resort config-manager token overriding a valid
 		// credential the embedded agent would load from ngrok's own config file.
 		// See resolveNgrokToken.
-		if provider == string(TunnelProviderNgrok) {
-			token = ResolveNgrokToken(token, cfgMgr)
+		if provider == string(tunnel.TunnelProviderNgrok) {
+			token = tunnel.ResolveNgrokToken(token, cfgMgr)
 		}
 		tpl, err := tunnelFor(provider, domain, token, tunnelName, tunnelID, cfgMgr)
 		if err != nil {
@@ -530,7 +531,7 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 		if authToken == "" {
 			return fmt.Errorf("--tunnel requires --auth-token: the public endpoint executes tools without authentication")
 		}
-		tunnel = tpl
+		tun = tpl
 	}
 
 	// OAuth is explicitly enabled with --oauth and requires a shared secret
@@ -580,7 +581,7 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 	// the pre-created listener so the ephemeral port is stable and known to
 	// the tunnel before any client connects.
 	mux := http.NewServeMux()
-	disableHostProtection := mcpHostProtectionDisabled(tunnel != nil, cmd.Bool("http"), publicURL)
+	disableHostProtection := mcpHostProtectionDisabled(tun != nil, cmd.Bool("http"), publicURL)
 	var mcpHandler http.Handler = NewOfficialStreamableHandler(srv, disableHostProtection)
 	switch {
 	case oauth != nil:
@@ -718,8 +719,8 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 		if vaultUpload != nil {
 			vaultUpload.Stop(shCtx)
 		}
-		if tunnel != nil {
-			_ = tunnel.Stop(shCtx)
+		if tun != nil {
+			_ = tun.Stop(shCtx)
 		}
 		_ = httpSrv.Shutdown(shCtx)
 	}
@@ -733,12 +734,12 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 		}
 	}()
 
-	if tunnel != nil {
-		if err := tunnel.Start(ctx, localAddr); err != nil {
+	if tun != nil {
+		if err := tun.Start(ctx, localAddr); err != nil {
 			shutdown(context.Background())
 			return err
 		}
-		url, err := tunnel.URL()
+		url, err := tun.URL()
 		if err != nil {
 			shutdown(context.Background())
 			return err
@@ -771,7 +772,7 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 			vaultUpload.SetBaseURL(url)
 		}
 		if oauth != nil {
-			oauthURL, err := tunnel.OAuthBaseURL(publicURL, url)
+			oauthURL, err := tun.OAuthBaseURL(publicURL, url)
 			if err != nil {
 				shutdown(context.Background())
 				return err
@@ -840,7 +841,7 @@ func corsHandler(next http.Handler) http.Handler {
 
 // tunnelFor returns a Tunnel for the named provider, or nil if provider is
 // empty (no tunnel). It delegates to the provider registry.
-func tunnelFor(provider, domain, token, name, tunnelID string, cfgMgr config.Manager) (Tunnel, error) {
+func tunnelFor(provider, domain, token, name, tunnelID string, cfgMgr config.Manager) (tunnel.Tunnel, error) {
 	return TunnelFor(provider, domain, token, name, tunnelID, cfgMgr)
 }
 

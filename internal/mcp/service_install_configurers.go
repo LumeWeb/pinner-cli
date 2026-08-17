@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
 )
 
 // The provider Configurer functions implement the install-time tunnel
@@ -21,14 +22,14 @@ import (
 // the tunnel ID and persists both credentials to the last-resort config manager.
 func openAIConfigurer(_ context.Context, text textUI, s *ServiceInstallState, cfgMgr config.Manager) error {
 	if s.TunnelID == "" {
-		OpenTunnelDeepLink("openai", "tunnel_id")
+		tunnel.OpenTunnelDeepLink("openai", "tunnel_id")
 		id, err := text.Text("OpenAI Secure MCP Tunnel ID")
 		if err != nil {
 			return err
 		}
 		s.TunnelID = strings.TrimSpace(id)
 	}
-	if !OpenAITunnelID.MatchString(s.TunnelID) {
+	if !tunnel.OpenAITunnelID.MatchString(s.TunnelID) {
 		return fmt.Errorf("invalid OpenAI tunnel ID %q", s.TunnelID)
 	}
 	// The control-plane API key must be persisted to the file (the running
@@ -36,7 +37,7 @@ func openAIConfigurer(_ context.Context, text textUI, s *ServiceInstallState, cf
 	// s.ApiKey is pre-seeded from the --api-key flag (whose env Sources include
 	// CONTROL_PLANE_API_KEY/OPENAI_API_KEY).
 	if s.ApiKey == "" {
-		OpenTunnelDeepLink("openai", "api_key")
+		tunnel.OpenTunnelDeepLink("openai", "api_key")
 		key, err := textUI{mask: "*"}.Text("OpenAI Secure MCP Tunnel control-plane API key")
 		if err != nil {
 			return err
@@ -45,8 +46,8 @@ func openAIConfigurer(_ context.Context, text textUI, s *ServiceInstallState, cf
 	}
 	// Persist what the user supplied to the last-resort config manager so later
 	// runs auto-detect it without re-prompting.
-	PersistTunnelCredential(cfgMgr, "openai", "tunnel_id", s.TunnelID)
-	PersistTunnelCredential(cfgMgr, "openai", "api_key", s.ApiKey)
+	tunnel.PersistTunnelCredential(cfgMgr, "openai", "tunnel_id", s.TunnelID)
+	tunnel.PersistTunnelCredential(cfgMgr, "openai", "api_key", s.ApiKey)
 	return nil
 }
 
@@ -59,7 +60,7 @@ func cloudflaredConfigurer(_ context.Context, text textUI, s *ServiceInstallStat
 	// but no hostname yet (e.g. before the DNS route exists) still resolves the
 	// tunnel name instead of re-prompting for a value the state already has.
 	if s.Domain == "" || s.TunnelName == "" {
-		if st, err := LoadCloudflareTunnelState(); err == nil {
+		if st, err := tunnel.LoadCloudflareTunnelState(); err == nil {
 			if s.Domain == "" {
 				s.Domain = st.Hostname
 			}
@@ -114,16 +115,16 @@ func ngrokConfigurer(ctx context.Context, text textUI, s *ServiceInstallState, c
 	// NGROK_AUTHTOKEN / --token are already folded into s.TunnelToken by
 	// seedServiceFromFlagsAndEnv.
 	if s.TunnelToken == "" {
-		s.TunnelToken = ResolveCredential(
-			NgrokConfigAuthtoken,
-			TunnelCfgCredential(cfgMgr, "ngrok", "token"),
+		s.TunnelToken = tunnel.ResolveCredential(
+			tunnel.NgrokConfigAuthtoken,
+			tunnel.TunnelCfgCredential(cfgMgr, "ngrok", "token"),
 		)
 	}
 	// ngrok validation requires NGROK_AUTHTOKEN or MCP_TUNNEL_TOKEN; only
 	// prompt when the value is still empty so the written env file actually
 	// passes validation.
 	if s.TunnelToken == "" {
-		OpenTunnelDeepLink("ngrok", "authtoken")
+		tunnel.OpenTunnelDeepLink("ngrok", "authtoken")
 		tok, err := textUI{mask: "*"}.Text("ngrok authtoken / MCP tunnel token")
 		if err != nil {
 			return err
@@ -133,7 +134,7 @@ func ngrokConfigurer(ctx context.Context, text textUI, s *ServiceInstallState, c
 	// Persist the token to the last-resort config manager so later runs
 	// auto-detect it (RequiresToken on the embedded tunnel accepts a
 	// config-manager-sourced token).
-	PersistTunnelCredential(cfgMgr, "ngrok", "token", s.TunnelToken)
+	tunnel.PersistTunnelCredential(cfgMgr, "ngrok", "token", s.TunnelToken)
 
 	if _, err := resolveNgrokURL(ctx, text, s, cfgMgr); err != nil {
 		return err
@@ -157,17 +158,17 @@ func resolveNgrokURL(ctx context.Context, text textUI, s *ServiceInstallState, c
 	if s.PublicURL != "" {
 		return s.PublicURL, nil
 	}
-	apiKey := ResolveCredential(
+	apiKey := tunnel.ResolveCredential(
 		func() string { return s.NgrokAPIKey },
 		func() string { return os.Getenv("NGROK_API_KEY") },
-		TunnelCfgCredential(cfgMgr, "ngrok", "api_key"),
+		tunnel.TunnelCfgCredential(cfgMgr, "ngrok", "api_key"),
 	)
-	publicURL, _, err := ResolveNgrokPublicURL(ctx, apiKey, s.Domain)
+	publicURL, _, err := tunnel.ResolveNgrokPublicURL(ctx, apiKey, s.Domain)
 	if err != nil {
 		// An API key was provided but the query failed (network / rejected key).
 		// Surface the reason, then fall back to prompting rather than stranding
 		// the install.
-		PrintTunnelDeepLink("ngrok", "api_key")
+		tunnel.PrintTunnelDeepLink("ngrok", "api_key")
 		fmt.Fprintf(os.Stderr, "ngrok API lookup failed (%v); enter the public URL below instead\n", err)
 		apiKey = ""
 	}
@@ -184,8 +185,8 @@ func resolveNgrokURL(ctx context.Context, text textUI, s *ServiceInstallState, c
 		// reject everything else, falling through to the manual prompt rather
 		// than persisting a rotating URL.
 		if tok := s.TunnelToken; tok != "" {
-			if u, sdkErr := ResolveNgrokSDKURL(ctx, tok); sdkErr == nil {
-				if IsStableNgrokDevURL(u) {
+			if u, sdkErr := tunnel.ResolveNgrokSDKURL(ctx, tok); sdkErr == nil {
+				if tunnel.IsStableNgrokDevURL(u) {
 					publicURL = u
 				} else if u != "" {
 					fmt.Fprintf(os.Stderr, "ngrok authtoken tunnel returned an unstable URL (%s); not persisting it\n", u)
@@ -199,7 +200,7 @@ func resolveNgrokURL(ctx context.Context, text textUI, s *ServiceInstallState, c
 		// Still nothing: no API key and the authtoken lookup failed or there is
 		// no authtoken. Direct the operator to the domains page and ask for the
 		// URL they see there.
-		OpenTunnelDeepLink("ngrok", "domain")
+		tunnel.OpenTunnelDeepLink("ngrok", "domain")
 		u, perr := text.Text("ngrok public base URL (from dashboard.ngrok.com/domains, e.g. https://you.ngrok-free.dev)")
 		if perr != nil {
 			return "", perr
@@ -211,6 +212,6 @@ func resolveNgrokURL(ctx context.Context, text textUI, s *ServiceInstallState, c
 		publicURL = u
 	}
 	s.PublicURL = publicURL
-	PersistTunnelCredential(cfgMgr, "ngrok", "api_key", apiKey)
+	tunnel.PersistTunnelCredential(cfgMgr, "ngrok", "api_key", apiKey)
 	return publicURL, nil
 }

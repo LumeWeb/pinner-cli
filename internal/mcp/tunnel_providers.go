@@ -16,39 +16,39 @@ import (
 // package, and the tunnel sub-package must not import the parent (import cycle).
 func init() {
 	RegisterTunnelProvider(&TunnelProviderSpec{
-		Provider: TunnelProviderCloudflared,
+		Provider: tunnel.TunnelProviderCloudflared,
 		Label:    "Cloudflare",
-		RequiresToken: func(_ TunnelConfig) bool {
+		RequiresToken: func(_ tunnel.TunnelConfig) bool {
 			// cloudflared requires a provisioned tunnel-scoped credential to
 			// run; the actual check happens at Start once the binary is
 			// present. We report true so the CLI gates on install.
 			return true
 		},
-		NewTunnel: func(cfg TunnelConfig) (Tunnel, error) {
+		NewTunnel: func(cfg tunnel.TunnelConfig) (tunnel.Tunnel, error) {
 			return tunnel.NewCloudflaredTunnel(cfg)
 		},
 		Configurer: cloudflaredConfigurer,
 	})
 
 	RegisterTunnelProvider(&TunnelProviderSpec{
-		Provider: TunnelProviderNgrok,
+		Provider: tunnel.TunnelProviderNgrok,
 		Label:    "ngrok",
-		RequiresToken: func(cfg TunnelConfig) bool {
+		RequiresToken: func(cfg tunnel.TunnelConfig) bool {
 			return newNgrokTunnel(cfg).RequiresToken()
 		},
-		NewTunnel: func(cfg TunnelConfig) (Tunnel, error) {
+		NewTunnel: func(cfg tunnel.TunnelConfig) (tunnel.Tunnel, error) {
 			return newNgrokTunnel(cfg), nil
 		},
 		Configurer: ngrokConfigurer,
 	})
 
 	RegisterTunnelProvider(&TunnelProviderSpec{
-		Provider: TunnelProviderOpenAI,
+		Provider: tunnel.TunnelProviderOpenAI,
 		Label:    "OpenAI Secure MCP Tunnel",
-		RequiresToken: func(_ TunnelConfig) bool {
+		RequiresToken: func(_ tunnel.TunnelConfig) bool {
 			return false
 		},
-		NewTunnel: func(_ TunnelConfig) (Tunnel, error) {
+		NewTunnel: func(_ tunnel.TunnelConfig) (tunnel.Tunnel, error) {
 			return nil, fmt.Errorf("OpenAI Secure MCP Tunnel is embedded and does not use an HTTP tunnel")
 		},
 		Configurer: openAIConfigurer,
@@ -57,6 +57,6 @@ func init() {
 
 // newNgrokTunnel adapts the existing ngrok runtime to the registry's
 // TunnelConfig shape.
-func newNgrokTunnel(cfg TunnelConfig) Tunnel {
+func newNgrokTunnel(cfg tunnel.TunnelConfig) tunnel.Tunnel {
 	return tunnel.NewNgrokTunnelWithConfig(cfg.Domain, cfg.Token, cfg.ConfigMgr)
 }

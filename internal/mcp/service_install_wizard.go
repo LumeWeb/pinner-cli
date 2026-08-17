@@ -11,6 +11,7 @@ import (
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/internal/cli/wizard"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
 	"go.lumeweb.com/pinner-cli/internal/service"
 )
 
@@ -18,7 +19,7 @@ import (
 // interactive install wizard and written to the service environment file.
 type ServiceInstallState struct {
 	EnvFile     string
-	Provider    TunnelProvider
+	Provider    tunnel.TunnelProvider
 	TunnelID    string
 	Domain      string
 	TunnelName  string
