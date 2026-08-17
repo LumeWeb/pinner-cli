@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -13,11 +12,11 @@ import (
 	"testing"
 
 	"atomicgo.dev/keyboard/keys"
-	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/internal/cli/wizard"
 	mcpadapter "go.lumeweb.com/pinner-cli/internal/mcp"
 	"go.lumeweb.com/pinner-cli/internal/mcp/install"
 	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
+	"go.lumeweb.com/pinner-cli/internal/service"
 )
 
 // mcpInstallFlagFake is a test fake implementing mcpInstallFlagGetter.
@@ -450,14 +449,13 @@ func TestMcpInstallHTTPCompositeSkipsStdioOnlyAgent(t *testing.T) {
 	}
 }
 
-// TestMcpInstallConfigureTunnelRunsConfigurerThenCollector guards the flatten:
-// when w.tunnelConfigurer is wired (as production does), the "Configure Tunnel"
-// step runs it into s.Service BEFORE the collector resolves the URL, and the
-// whole wizard shows exactly ONE welcome. A nested RunServiceInstallWizard would
-// have shown a second "Do you want to continue" and restarted step numbering; a
-// configurer model cannot do either, so counting ShowWelcome guards that no
-// nested wizard is re-introduced.
-func TestMcpInstallConfigureTunnelRunsConfigurerThenCollector(t *testing.T) {
+// TestMcpInstallTunnelStepsThenCollector guards the flatten: when real tunnel
+// steps are spliced (as production does), they run into s.Service BEFORE the
+// collector resolves the URL, and the whole wizard shows exactly ONE welcome. A
+// nested RunServiceInstallWizard would have shown a second "Do you want to
+// continue" and restarted step numbering; a spliced-step model cannot do either,
+// so counting ShowWelcome guards that no nested wizard is re-introduced.
+func TestMcpInstallTunnelStepsThenCollector(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
 	ui := newMockInstallUI()
@@ -470,12 +468,17 @@ func TestMcpInstallConfigureTunnelRunsConfigurerThenCollector(t *testing.T) {
 	}
 
 	w := NewInstallWizard(ui, state, tempPathResolver(root, ""))
-	w.tunnelConfigurer = func(_ context.Context, s *InstallState) (bool, error) {
-		s.Service = &mcpadapter.ServiceInstallState{
-			EnvFile:  filepath.Join(root, "mcp.env"),
-			Provider: tunnel.TunnelProviderNgrok,
-		}
-		return false, nil
+	w.tunnelSteps = []wizard.Step[*InstallState]{
+		wizard.StepFunc[*InstallState]{
+			Name_: "Tunnel provider",
+			ExecuteFunc: func(_ context.Context, s *InstallState) error {
+				s.Service = &mcpadapter.ServiceInstallState{
+					EnvFile:  filepath.Join(root, "mcp.env"),
+					Provider: tunnel.TunnelProviderNgrok,
+				}
+				return nil
+			},
+		},
 	}
 	var collectRan bool
 	w.collectHTTP = func(_ context.Context, s *InstallState) error {
@@ -493,10 +496,10 @@ func TestMcpInstallConfigureTunnelRunsConfigurerThenCollector(t *testing.T) {
 		t.Fatalf("expected exactly one ShowWelcome (no nested wizard), got %d", n)
 	}
 	if state.Service == nil || state.Service.Provider != tunnel.TunnelProviderNgrok {
-		t.Errorf("tunnelConfigurer did not populate s.Service: %+v", state.Service)
+		t.Errorf("tunnel steps did not populate s.Service: %+v", state.Service)
 	}
 	if !collectRan {
-		t.Error("collector did not run after the tunnel configurer")
+		t.Error("collector did not run after the tunnel steps")
 	}
 	// writeConfig read the URL the collector produced.
 	entry := readGlobalJSON(t, root, install.AgentClaudeCode)
@@ -505,47 +508,224 @@ func TestMcpInstallConfigureTunnelRunsConfigurerThenCollector(t *testing.T) {
 	}
 }
 
-// TestMcpInstallConfigureTunnelCleansUpFreshEnvOnConfigurerError guards that a
-// mid-config failure after the spliced write step removes the freshly-created
-// env file (which may hold the user's secret) — the collector is never reached,
-// so this is the Configure Tunnel step's own cleanup responsibility.
-func TestMcpInstallConfigureTunnelCleansUpFreshEnvOnConfigurerError(t *testing.T) {
-	ctx := context.Background()
-	root := t.TempDir()
-	envFile := filepath.Join(root, "mcp.env")
-	ui := newMockInstallUI()
-
-	state := &InstallState{
-		Agents:     []install.AgentKey{install.AgentClaudeCode},
-		Scope:      scopeGlobal,
-		Transport:  install.TransportHTTP,
-		UseService: false,
+// TestMcpInstallBuildTunnelStepsProducesVisibleSteps guards the flatten:
+// production's buildMcpTunnelSteps returns the 3 REAL VISIBLE tunnel-config
+// steps (Tunnel provider / Tunnel-specific configuration / Write service
+// environment file) — not one opaque "Configure Tunnel" step — so the operator
+// actually sees the service install wizard. Each must be a non-hidden host
+// step operating on s.Service.
+func TestMcpInstallBuildTunnelStepsProducesVisibleSteps(t *testing.T) {
+	cmd := NewMcpInstallCommand()
+	steps := buildMcpTunnelSteps(cmd)
+	if len(steps) != 3 {
+		t.Fatalf("buildMcpTunnelSteps returned %d steps, want 3 (provider, config, env write)", len(steps))
 	}
-
-	w := NewInstallWizard(ui, state, tempPathResolver(root, ""))
-	var collectRan bool
-	w.tunnelConfigurer = func(_ context.Context, s *InstallState) (bool, error) {
-		// Simulate the spliced write step having created the env file (fresh
-		// path, created=true), then a config sub-step failing.
-		if err := os.WriteFile(envFile, []byte("MCP_TUNNEL_PROVIDER=ngrok\n"), 0o600); err != nil {
-			return true, err
+	names := []string{
+		steps[0].Name(),
+		steps[1].Name(),
+		steps[2].Name(),
+	}
+	want := []string{"Tunnel provider", "Tunnel-specific configuration", "Write service environment file"}
+	for i := range want {
+		if names[i] != want[i] {
+			t.Errorf("tunnel step[%d] name = %q, want %q", i, names[i], want[i])
 		}
-		s.Service = &mcpadapter.ServiceInstallState{EnvFile: envFile}
-		return true, errors.New("tunnel config failed")
+		if steps[i].Hidden() {
+			t.Errorf("tunnel step %q must be VISIBLE (not hidden)", names[i])
+		}
 	}
-	w.collectHTTP = func(_ context.Context, s *InstallState) error {
-		collectRan = true
-		return nil
-	}
+}
 
-	if _, err := w.Run(ctx); err == nil {
-		t.Fatal("expected wizard run to fail")
+// TestMcpInstallTunnelConfigSeeded guards the fix for non-interactive
+// `--service --tunnel` bootstraps: the "Tunnel-specific configuration" step
+// must render "Seeded" (and thus skip its provider Configurer prompt) whenever
+// every credential that Configurer asks for is already resolved from
+// switches/env, instead of aborting with an "interactive prompt requested"
+// error.
+func TestMcpInstallTunnelConfigSeeded(t *testing.T) {
+	cases := []struct {
+		name   string
+		svc    *mcpadapter.ServiceInstallState
+		seeded bool
+	}{
+		// Provider credentials alone are NOT enough: the config step's Execute
+		// always collects the shared auth token, so a missing AuthToken keeps
+		// the step un-seeded and prompts for it (otherwise a --token-seeded
+		// ngrok install would write an env that fails the MCP_AUTH_TOKEN check).
+		{"nil service stays undecided", nil, false},
+		{"empty provider stays undecided", &mcpadapter.ServiceInstallState{}, false},
+		{"openai complete", &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderOpenAI, TunnelID: "tunnel_" + strings.Repeat("a", 32), ApiKey: "k", AuthToken: "a"}, true},
+		{"openai missing api key", &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderOpenAI, TunnelID: "tunnel_" + strings.Repeat("a", 32), AuthToken: "a"}, false},
+		{"openai missing tunnel id", &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderOpenAI, ApiKey: "k", AuthToken: "a"}, false},
+		{"openai malformed tunnel id", &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderOpenAI, TunnelID: "t_1", ApiKey: "k", AuthToken: "a"}, false},
+		{"openai missing auth token", &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderOpenAI, TunnelID: "tunnel_" + strings.Repeat("a", 32), ApiKey: "k"}, false},
+		{"cloudflared complete", &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderCloudflared, Domain: "d.example", TunnelName: "pin", AuthToken: "a"}, true},
+		{"cloudflared missing domain", &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderCloudflared, TunnelName: "pin", AuthToken: "a"}, false},
+		{"cloudflared missing auth token", &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderCloudflared, Domain: "d.example", TunnelName: "pin"}, false},
+		{"ngrok complete", &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderNgrok, TunnelToken: "tok", AuthToken: "a", PublicURL: "https://u.ngrok-free.dev"}, true},
+		{"ngrok missing token", &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderNgrok, AuthToken: "a", PublicURL: "https://u.ngrok-free.dev"}, false},
+		{"ngrok missing auth token", &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderNgrok, TunnelToken: "tok", PublicURL: "https://u.ngrok-free.dev"}, false},
+		{"ngrok missing public url", &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderNgrok, TunnelToken: "tok", AuthToken: "a"}, false},
 	}
-	if collectRan {
-		t.Error("collector must not run when the tunnel configurer errored")
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, full := tunnelConfigSeeded(context.Background(), &InstallState{Service: tc.svc})
+			if full != tc.seeded {
+				t.Errorf("tunnelConfigSeeded fullyDecided = %v, want %v", full, tc.seeded)
+			}
+		})
+	}
+}
+
+// TestMcpInstallTunnelProviderSeeded guards the provider step's seed: --tunnel
+// (or a persisted provider) makes the provider step render "Seeded".
+func TestMcpInstallTunnelProviderSeeded(t *testing.T) {
+	if _, full := tunnelProviderSeeded(context.Background(), &InstallState{}); full {
+		t.Error("no service state must not be seeded")
+	}
+	if _, full := tunnelProviderSeeded(context.Background(), &InstallState{Service: &mcpadapter.ServiceInstallState{}}); full {
+		t.Error("empty provider must not be seeded")
+	}
+	if _, full := tunnelProviderSeeded(context.Background(), &InstallState{Service: &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderNgrok}}); !full {
+		t.Error("a resolved provider must be seeded")
+	}
+}
+
+// TestMcpInstallTunnelWriteStepIsAtomicOnEnvFailure guards that the spliced
+// write step never leaves a partial service env file behind when the write
+// fails: the real service write path is atomic (temp file + rename), so a
+// failure surfaces without a partly-written file holding a secret.
+func TestMcpInstallTunnelWriteStepIsAtomicOnEnvFailure(t *testing.T) {
+	envFile := filepath.Join(t.TempDir(), "mcp.env")
+	// A newline in a value forces WriteEnvironment to reject the write after
+	// creating its temp file, exercising the atomic path.
+	if err := service.WriteEnvironment(envFile, service.Environment{
+		"MCP_TUNNEL_PROVIDER": "ngrok\nMCP_SHOULD_NOT_WRITE=1",
+	}); err == nil {
+		t.Fatal("expected WriteEnvironment to reject a newline-containing value")
 	}
 	if _, err := os.Stat(envFile); !os.IsNotExist(err) {
-		t.Fatalf("freshly-created env file should be removed on configurer error, stat err = %v", err)
+		t.Fatalf("failed write must not leave a partial env file; stat err = %v", err)
+	}
+}
+
+// TestMcpInstallEnvWriteFreshnessGuards the splined env-write step's freshness
+// handling. On a FRESH path (no pre-existing file) the step writes the env
+// from the service state. On a re-run against a pre-existing operator env file
+// it must NOT rewrite from the lossy serviceInstallStateToEnv map (which would
+// rename NGROK_AUTHTOKEN→MCP_TUNNEL_TOKEN and drop unmodeled keys) — instead
+// Execute reconciles ONLY explicit flag overrides. The freshness predicate
+// (isFreshServiceEnvFile / serviceEnvFileIsFresh) is what decides the branch
+// in Execute.
+func TestMcpInstallEnvWriteFreshnessGuards(t *testing.T) {
+	root := t.TempDir()
+	envFile := filepath.Join(root, "mcp.env")
+	cmd := NewMcpInstallCommand() // registers shared service flags incl. --env-file
+	if err := cmd.Set("env-file", envFile); err != nil {
+		t.Fatalf("set --env-file: %v", err)
+	}
+
+	// No file yet → fresh.
+	if !serviceEnvFileIsFresh(cmd, &InstallState{}) {
+		t.Error("missing env file must be reported fresh (write step runs)")
+	}
+
+	// Create the file → no longer fresh.
+	if err := os.WriteFile(envFile, []byte("MCP_TUNNEL_PROVIDER=ngrok\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if serviceEnvFileIsFresh(cmd, &InstallState{}) {
+		t.Error("pre-existing env file must NOT be reported fresh (write step skips)")
+	}
+
+	// The variant used when a service is already initialized (prefers
+	// s.Service.EnvFile) behaves identically.
+	if serviceEnvFileIsFresh(cmd, &InstallState{Service: &mcpadapter.ServiceInstallState{EnvFile: envFile}}) {
+		t.Error("pre-existing initialized env file must not be fresh")
+	}
+
+	// Finding 10: the Tunnel-specific configuration step must gate on the fresh
+	// path too. On a re-run against a pre-existing (even partial) env file the
+	// write step is skipped and the collector reads only the on-disk file, so
+	// prompting for a secret into s.Service would silently discard it. The
+	// config step's skip must therefore agree with the write step's non-fresh
+	// condition: it RUNS on a fresh path (collects creds) and SKIPS on a
+	// pre-existing file.
+	freshCmd := NewMcpInstallCommand()
+	freshPath := filepath.Join(root, "fresh.env")
+	if err := freshCmd.Set("env-file", freshPath); err != nil {
+		t.Fatalf("set --env-file (fresh): %v", err)
+	}
+	cfgStepSkipFresh := !isFreshServiceEnvFile(serviceEnvFile(freshCmd, &InstallState{}))
+	if cfgStepSkipFresh {
+		t.Error("config step must run (not skip) on a fresh install so it can collect creds")
+	}
+	cfgStepSkipExisting := !isFreshServiceEnvFile(serviceEnvFile(cmd, &InstallState{Service: &mcpadapter.ServiceInstallState{EnvFile: envFile}}))
+	if !cfgStepSkipExisting {
+		t.Error("config step must skip on a re-run against a pre-existing env file (prompted value would be discarded)")
+	}
+}
+
+// TestMcpInstallEnvWriteNeverSkipsOnHttp guards finding 12: the "Write service
+// environment file" step's SkipFunc must be side-effect-free and must NOT skip
+// on an http install with a pre-existing file. It also guards finding 13: on a
+// re-run against a pre-existing file the step's Execute must be a NO-OP — it
+// neither rewrites nor reconciles the operator's file. Reconcile of explicit
+// --oauth/--port/--host/--public-url overrides is deferred to the collector's
+// SUCCESS path (runMcpInstall), so a collector failure cannot leave half-applied
+// overrides on the stored env file.
+func TestMcpInstallEnvWriteNeverSkipsOnHttp(t *testing.T) {
+	root := t.TempDir()
+	envFile := filepath.Join(root, "mcp.env")
+	if err := os.WriteFile(envFile, []byte("MCP_TUNNEL_PROVIDER=ngrok\nMCP_PUBLIC_URL=https://old.ngrok-free.dev\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := NewMcpInstallCommand()
+	if err := cmd.Set("env-file", envFile); err != nil {
+		t.Fatalf("set --env-file: %v", err)
+	}
+
+	steps := buildMcpTunnelSteps(cmd)
+	if len(steps) != 3 {
+		t.Fatalf("buildMcpTunnelSteps returned %d steps, want 3", len(steps))
+	}
+	writeStep := steps[2]
+	if writeStep.Name() != "Write service environment file" {
+		t.Fatalf("steps[2] = %q, want the env-write step", writeStep.Name())
+	}
+
+	// http install + pre-existing file: the SkipFunc must be false so Execute
+	// runs; it must not short-circuit via a side-effecting skip.
+	s := &InstallState{
+		Agents:    []install.AgentKey{install.AgentClaudeCode},
+		Transport: install.TransportHTTP,
+		Service:   &mcpadapter.ServiceInstallState{EnvFile: envFile},
+	}
+	if writeStep.ShouldSkip(s) {
+		t.Error("env-write step must NOT skip on an http install with a pre-existing file")
+	}
+
+	// Finding 13: executing the write step on a non-fresh file is a NO-OP. It
+	// must not rewrite or reconcile the file (no overlay of the operator's
+	// stored env), because reconcile is deferred to the collector's success
+	// path. Simulate an operator explicit override flag and confirm Execute
+	// leaves the on-disk file byte-for-byte untouched.
+	before, _ := os.ReadFile(envFile)
+	if err := cmd.Set("public-url", "https://NEW.ngrok-free.dev"); err != nil {
+		t.Fatalf("set --public-url: %v", err)
+	}
+	if err := writeStep.Execute(context.Background(), s); err != nil {
+		t.Fatalf("write step execute on non-fresh path: %v", err)
+	}
+	after, _ := os.ReadFile(envFile)
+	if string(before) != string(after) {
+		t.Errorf("env-write step mutated a pre-existing file on the non-fresh path; reconcile must be deferred to collector success:\nbefore=%q\nafter=%q", before, after)
+	}
+
+	// A non-http (stdio) install still skips it.
+	s.Transport = install.TransportStdio
+	if !writeStep.ShouldSkip(s) {
+		t.Error("env-write step must skip on a stdio (non-http) install")
 	}
 }
 
@@ -999,43 +1179,6 @@ const partialEnv = "" +
 
 const completeEnv = partialEnv +
 	"MCP_PUBLIC_URL=https://you.ngrok-free.dev\n"
-
-func TestNeedsFreshTunnelPrompt_PartialExistingEnvNeedsConfig(t *testing.T) {
-	root := t.TempDir()
-	envFile := filepath.Join(root, "mcp.env")
-	writeEnv(t, envFile, partialEnv)
-	cmd := &cli.Command{}
-	if !needsFreshTunnelPrompt(cmd, envFile) {
-		t.Fatal("a partial existing env file (no MCP_PUBLIC_URL) MUST still run the interactive tunnel config")
-	}
-}
-
-func TestNeedsFreshTunnelPrompt_CompleteExistingEnvSkipsConfig(t *testing.T) {
-	root := t.TempDir()
-	envFile := filepath.Join(root, "mcp.env")
-	writeEnv(t, envFile, completeEnv)
-	cmd := &cli.Command{}
-	if needsFreshTunnelPrompt(cmd, envFile) {
-		t.Fatal("an existing env file with MCP_PUBLIC_URL already configured should skip the interactive prompt")
-	}
-}
-
-func TestNeedsFreshTunnelPrompt_MissingEnvNeedsConfig(t *testing.T) {
-	cmd := &cli.Command{}
-	envFile := filepath.Join(t.TempDir(), "mcp.env") // does not exist
-	if !needsFreshTunnelPrompt(cmd, envFile) {
-		t.Fatal("a missing env file must run the interactive tunnel config")
-	}
-}
-
-func TestNeedsFreshTunnelPrompt_TunnelFlagSkips(t *testing.T) {
-	envFile := filepath.Join(t.TempDir(), "mcp.env") // missing
-	cmd := NewMcpInstallCommand()                    // registers the shared service flags incl. --tunnel
-	cmd.Set("tunnel", "ngrok")
-	if needsFreshTunnelPrompt(cmd, envFile) {
-		t.Fatal("--tunnel flag must skip the interactive prompt (bootstraps from flags)")
-	}
-}
 
 // TestIsFreshServiceEnvFile_MissingIsFresh guards that a genuinely-new env file
 // (this run creates it) is flagged fresh, so a freshly-written-but-invalid file

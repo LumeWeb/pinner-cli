@@ -184,9 +184,42 @@ func runMcpInstall(ctx context.Context, cmd mcpInstallFlagGetter, ui InstallUI, 
 			// written-but-invalid env file (holding the user's secret) is still
 			// removed — recovering the standalone cleanup semantics.
 			created := s.Service != nil && s.Service.EnvFileCreated
-			env, err := mcpadapter.CollectHTTPInstallWithCreated(ctx, realCmd, "", s.UseService, created)
+			ef := serviceEnvFile(realCmd, s)
+
+			// Re-run: apply the operator's explicit override flags to the
+			// pre-existing file BEFORE validation/install/start so the service
+			// and the config we write agree; snapshot so a failed install never
+			// leaves half-applied overrides behind. Fresh installs (created)
+			// write the file this run — nothing to reconcile.
+			var snapshot []byte
+			if !created && ef != "" {
+				snapshot, _ = os.ReadFile(ef)
+				if err := mcpadapter.ReconcileServiceEnvironmentFromFlags(realCmd, ef); err != nil {
+					return err
+				}
+			}
+
+			env, sideEffect, err := mcpadapter.CollectHTTPInstallWithCreated(ctx, realCmd, "", s.UseService, created)
 			if err != nil {
+				// Roll the file back ONLY if the install failed before any
+				// service Install/Start side effect. If the managed service was
+				// started with the reconciled config, leaving it in place lets
+				// the overrides persist consistently with the running service;
+				// rolling back there would divorce the next run from what
+				// actually launched.
+				if snapshot != nil && !sideEffect {
+					_ = os.WriteFile(ef, snapshot, 0o600)
+				}
 				return err
+			}
+
+			if snapshot != nil {
+				merged, lerr := service.LoadEnvironment(ef)
+				if lerr != nil {
+					_ = os.WriteFile(ef, snapshot, 0o600)
+					return fmt.Errorf("re-read reconciled service environment %q: %w", ef, lerr)
+				}
+				env = merged
 			}
 			s.PublicURL = env["MCP_PUBLIC_URL"]
 			s.AuthToken = env["MCP_AUTH_TOKEN"]
@@ -196,99 +229,274 @@ func runMcpInstall(ctx context.Context, cmd mcpInstallFlagGetter, ui InstallUI, 
 			return nil
 		}
 
-		// In production, "Configure Tunnel" also runs the flattened tunnel-config
-		// sub-steps (provider, credentials, env write) into s.Service BEFORE the
-		// collector resolves the public URL. This replaces the former nested
-		// RunServiceInstallWizard — a second, independent wizard that printed a
-		// second "Do you want to continue" prompt and restarted step numbering
-		// at 1. The sub-steps share the outer wizard's state and run as one step,
-		// and _only_ when a fresh interactive tunnel actually needs configuring;
-		// otherwise (existing env file, --tunnel flag, or headless) the collector
-		// alone handles it exactly as before.
-		//
-		// It returns (created, error): created is true only when this run wrote the
-		// service env file (i.e. the fresh path ran). On a later failure the partial
-		// file holding the user's secret is removed: by the Configure Tunnel step
-		// for a mid-config error (collector not reached), and by the collector's own
-		// validation-failure cleanup via the EnvFileCreated hint (threaded through
-		// collectHTTP below) for a validation failure.
-		w.tunnelConfigurer = func(ctx context.Context, s *InstallState) (bool, error) {
-			envFile, err := mcpadapter.ResolveServiceEnvFile(realCmd)
-			if err != nil {
-				return false, err
-			}
-			service := s.Service
-			if service == nil {
-				service = &mcpadapter.ServiceInstallState{EnvFile: envFile}
-				s.Service = service
-			}
-			if !needsFreshTunnelPrompt(realCmd, envFile) {
-				// Skip path: the interactive config is not run, so the collector
-				// would read the existing env file unchanged. Persist any install
-				// flags the operator set EXPLICITLY (--oauth, --port, --host,
-				// --public-url, ...) over the saved values so a re-run does not
-				// silently drop them. Only rewrites when there is an existing
-				// file to reconcile — a fresh --tunnel bootstrap is created by
-				// the collector instead. An unset --oauth leaves whatever
-				// MCP_OAUTH the file already has (no secure-default clobber).
-				if _, statErr := os.Stat(envFile); statErr == nil {
-					if err := mcpadapter.ReconcileServiceEnvironmentFromFlags(realCmd, envFile); err != nil {
-						return false, err
-					}
-				}
-				return false, nil
-			}
-			// We are on the fresh path: the spliced write step creates the env file
-			// this run only when it did not already exist. Report created=true only
-			// in that case (via both the return value and service.EnvFileCreated) so
-			// the outer step and the collector clean up a partial file on failure.
-			// A PRE-EXISTING partial file (provider + credentials but no
-			// MCP_PUBLIC_URL, e.g. from an earlier failed run) must NOT be flagged
-			// created: it holds the operator's stored secrets, and the collector's
-			// validation-failure cleanup would otherwise delete it.
-			wasFresh := isFreshServiceEnvFile(envFile)
-			created := wasFresh
-			service.EnvFileCreated = wasFresh
-			cfgMgr := mcpadapter.ServiceConfigManager()
-			// Pre-seed provider/credentials from flags & env BEFORE the steps so
-			// an explicit --auth-token/--token/--domain (or MCP_AUTH_TOKEN /
-			// NGROK_AUTHTOKEN) is not re-prompted — matching RunServiceInstallWizard,
-			// which seeds before running its steps. Values already persisted in an
-			// existing env file (e.g. a partial file from an earlier run that had
-			// provider + credentials but no MCP_PUBLIC_URL) are folded in next, so
-			// a re-run reuses what's known and only resolves the still-missing
-			// public URL instead of re-prompting for everything.
-			mcpadapter.SeedServiceFromFlagsAndEnv(realCmd, service, envFile)
-			seedServiceFromEnvFile(envFile, service)
-			// Secure default-on: a remote (http) install on the fresh path with
-			// OAuth still undecided enables the handshake. Lowest priority — an
-			// explicit --oauth flag (seeded above) or a persisted MCP_OAUTH
-			// (folded into a non-nil tri-state by seedServiceFromEnvFile) wins.
-			// The skip path above returns early, so a re-run against an existing
-			// file never reaches this default; neither does a standalone wizard.
-			applyOAuthSecureDefault(s.Transport, service)
-			for _, step := range mcpadapter.ServiceInstallSteps(service, realCmd, envFile, cfgMgr) {
-				if step.ShouldSkip(service) {
-					continue
-				}
-				if err := step.Execute(ctx, service); err != nil {
-					return created, err
-				}
-			}
-			return created, nil
-		}
+		// In production, splice the flat tunnel-config steps (provider,
+		// credentials, env write) in as VISIBLE host steps operating on
+		// s.Service, replacing the former opaque single "Configure Tunnel" step
+		// that ran them invisibly. Each wraps the matching
+		// mcpadapter.ServiceInstallSteps step, is seeded by the
+		// --tunnel/--tunnel-id/--domain/--auth-token switches (a fully-seeded
+		// step renders "Seeded from --..."), and skips itself for non-http
+		// installs. The collector still resolves the public URL afterwards via
+		// the Resolve public URL step.
+		w.tunnelSteps = buildMcpTunnelSteps(realCmd)
 	}
 
 	// Bind the shared prompt channel so the spliced tunnel-config steps
-	// (ServiceInstallSteps) ask the user through the SAME terminal channel as
-	// this host wizard, instead of spawning independent pterm widgets that
-	// fight it for the terminal. A caller may pre-bind a test prompter; we only
-	// default to the production one when none is present.
+	// (ServiceInstallSteps) ask the user through the SAME terminal channel
+	// as this host wizard, instead of spawning independent pterm widgets
+	// that fight it for the terminal. A caller may pre-bind a test
+	// prompter; we only default to the production one when none is present.
 	if wizard.PrompterFrom(ctx) == nil {
 		ctx = wizard.WithPrompter(ctx, wizard.NewPtermPrompter())
 	}
 	_, err := w.Run(ctx)
 	return err
+}
+
+// buildMcpTunnelSteps builds the wrapped, VISIBLE tunnel-config host steps for
+// an http `mcp install`. Each wraps a matching mcpadapter.ServiceInstallSteps
+// step so it operates on s.Service through the shared wizard channel and is
+// skipped for non-http installs (httpTunnelSkipped). The same orchestration
+// the former single "Configure Tunnel" step ran in its configurer is spread
+// across the three steps:
+//
+//   - Tunnel provider: folds --tunnel into s.Service.Provider; fully decided
+//     when a provider switch (or the seeded provider) is already known.
+//   - Tunnel-specific configuration: folds --tunnel-id/--domain/--auth-token
+//     (etc.) into the service state so the configurer only prompts for fields
+//     a switch did not supply.
+//   - Write service environment file: computes created/EnvFileCreated and
+//     applies the secure OAuth default-on on the fresh path before writing.
+//
+// Suitable for a --tunnel bootstrap or a re-run against persisted config, the
+// steps' own Seed logic decides each one: a step is fully decided by switches
+// (or already-in-file values) → renders "Seeded" and skips its prompt; a
+// partially-decided step prompts only for the remainder. Cleanup semantics:
+// a mid-config error removes a freshly-written partial env file (the secret
+// just typed), while the collector's validation-failure cleanup removes an
+// invalid file it created (via EnvFileCreated threaded through collectHTTP).
+func buildMcpTunnelSteps(realCmd *cli.Command) []wizard.Step[*InstallState] {
+	// Resolved once, closed over by every wrapped step so they share the same
+	// service env file and config manager on one s.Service.
+	svcInit := func(s *InstallState) *mcpadapter.ServiceInstallState {
+		if s.Service != nil {
+			return s.Service
+		}
+		envFile, err := mcpadapter.ResolveServiceEnvFile(realCmd)
+		if err != nil {
+			// Defer the error to first use; ResolveServiceEnvFile failing here
+			// is surfaced when the first tunnel step ensures the service state.
+			s.Service = &mcpadapter.ServiceInstallState{}
+			s.serviceEnvErr = err
+			return s.Service
+		}
+		s.Service = &mcpadapter.ServiceInstallState{EnvFile: envFile}
+		return s.Service
+	}
+
+	inner := mcpadapter.ServiceInstallSteps(&mcpadapter.ServiceInstallState{}, realCmd, "", mcpadapter.ServiceConfigManager())
+
+	wrap := func(hostName string, inner wizard.Step[*mcpadapter.ServiceInstallState], seed wizard.SeedFunc[*InstallState], extraSkip func(*InstallState) bool, preExecute func(context.Context, *InstallState, *mcpadapter.ServiceInstallState) error, postExecute func(context.Context, *InstallState, *mcpadapter.ServiceInstallState, error) error) wizard.Step[*InstallState] {
+		return wizard.StepFunc[*InstallState]{
+			Name_: hostName,
+			SeedFunc_: func(ctx context.Context, s *InstallState) ([]string, bool) {
+				svc := svcInit(s)
+				if s.serviceEnvErr != nil {
+					// Surface env resolution failure before prompting.
+					return nil, false
+				}
+				// Fold flags + persisted env values into the service state
+				// before deciding whether to prompt.
+				mcpadapter.SeedServiceFromFlagsAndEnv(realCmd, svc, svc.EnvFile)
+				seedServiceFromEnvFile(svc.EnvFile, svc)
+				if seed != nil {
+					return seed(ctx, s)
+				}
+				return nil, false
+			},
+			SkipFunc: func(s *InstallState) bool {
+				if httpTunnelSkipped(s) {
+					return true
+				}
+				if s.serviceEnvErr != nil {
+					// Env file resolution failed: skip further tunnel steps,
+					// the error surfaces in Write service env / collector.
+					return true
+				}
+				if inner.ShouldSkip(s.Service) {
+					return true
+				}
+				if extraSkip != nil && extraSkip(s) {
+					return true
+				}
+				return false
+			},
+			ExecuteFunc: func(ctx context.Context, s *InstallState) error {
+				svc := svcInit(s)
+				if s.serviceEnvErr != nil {
+					return s.serviceEnvErr
+				}
+				if preExecute != nil {
+					if err := preExecute(ctx, s, svc); err != nil {
+						return err
+					}
+				}
+				var runErr error
+				runErr = inner.Execute(ctx, s.Service)
+				if postExecute != nil {
+					if err := postExecute(ctx, s, svc, runErr); err != nil {
+						return err
+					}
+				}
+				return runErr
+			},
+		}
+	}
+
+	// Pre-Execute orchestration for the env-write step: a fresh install that
+	// writes the env file this run sets EnvFileCreated (so the collector's
+	// validation-failure cleanup can remove a partial file holding a secret
+	// the user just typed). On that SAME fresh path — and only there — a
+	// remote (http) install with OAuth still undecided enables the secure
+	// handshake default-on. applyOAuthSecureDefault MUST NOT run on a re-run
+	// against a pre-existing file: that file may already hold an operator
+	// config that never opted into the handshake, and silently rewriting
+	// MCP_OAUTH=true into it would corrupt stored state. A PRE-EXISTING
+	// partial file is also never flagged created — it holds stored secrets
+	// and must not be deleted on a later failure.
+	preWrite := func(_ context.Context, s *InstallState, svc *mcpadapter.ServiceInstallState) error {
+		if s.Transport == install.TransportHTTP && isFreshServiceEnvFile(svc.EnvFile) {
+			svc.EnvFileCreated = true
+			applyOAuthSecureDefault(s.Transport, svc)
+		}
+		return nil
+	}
+	// Post-Execute cleanup for the env-write step: if the write itself fails
+	// after creating a fresh file that may already hold a secret the user just
+	// typed, remove it so no partial credential file is left behind and the
+	// next run prompts fresh. A pre-existing file (test condition or a prior
+	// partial run) is never removed. The collector's own validation-failure
+	// cleanup (via EnvFileCreated) covers a failure AFTER a successful write.
+	cleanupWriteErr := func(_ context.Context, s *InstallState, _ *mcpadapter.ServiceInstallState, err error) error {
+		if err != nil && s.Service != nil && s.Service.EnvFileCreated {
+			_ = os.Remove(s.Service.EnvFile)
+		}
+		return err
+	}
+
+	return []wizard.Step[*InstallState]{
+		wrap("Tunnel provider", tunnelStepAt(inner, 0), tunnelProviderSeeded, nil, nil, nil),
+		// The config step prompts for provider credentials + the shared auth
+		// token into s.Service. On a re-run against a pre-existing (even
+		// partial) env file the write step is skipped and the collector reads
+		// ONLY the on-disk file, so any prompted value would be silently
+		// discarded. Gate Execute on the fresh path too (mirroring the removed
+		// needsFreshTunnelPrompt gate): flag-seeded values still flow via Seed
+		// and are reconciled into the existing file by the write step.
+		wrap("Tunnel-specific configuration", tunnelStepAt(inner, 1), tunnelConfigSeeded,
+			func(s *InstallState) bool { return !isFreshServiceEnvFile(serviceEnvFile(realCmd, s)) },
+			nil, nil),
+		// The env-write step NEVER skips for http (only for a non-http install
+		// or a tapped serviceEnvErr). On the FRESH path it writes the env from
+		// the service state and (via preWrite) sets EnvFileCreated + applies
+		// the secure OAuth default-on. On a RE-RUN against a pre-existing
+		// operator env file it is a NO-OP: it must NOT rewrite the file from
+		// the lossy serviceInstallStateToEnv map (which would rename
+		// NGROK_AUTHTOKEN → MCP_TUNNEL_TOKEN, drop unmodeled keys, and overlay
+		// stored secrets), and it must NOT reconcile explicit flag overrides
+		// here either — that atomic rewrite would persist even when the later
+		// collector step fails and aborts the install, leaving half-applied
+		// --oauth/--port/--host/--public-url overrides on the operator's file.
+		// Reconcile is therefore deferred to the collector's SUCCESS path (see
+		// runMcpInstall), so overrides persist only when the install actually
+		// completes.
+		wizard.StepFunc[*InstallState]{
+			Name_: "Write service environment file",
+			SkipFunc: func(s *InstallState) bool {
+				return httpTunnelSkipped(s) || s.serviceEnvErr != nil
+			},
+			ExecuteFunc: func(ctx context.Context, s *InstallState) error {
+				if s.serviceEnvErr != nil {
+					return s.serviceEnvErr
+				}
+				svc := svcInit(s)
+				ef := serviceEnvFile(realCmd, s)
+				if !isFreshServiceEnvFile(ef) && ef != "" {
+					// Re-run against a pre-existing file: no rewrite, no
+					// reconcile. The collector's success path reconciles the
+					// operator's explicit flag overrides so they persist only
+					// when the install completes.
+					return nil
+				}
+				// Fresh path: full service env write + OAuth default + created
+				// flag.
+				if err := preWrite(ctx, s, svc); err != nil {
+					return err
+				}
+				writeStep := tunnelStepAt(inner, 2)
+				return cleanupWriteErr(ctx, s, svc, writeStep.Execute(ctx, svc))
+			},
+		},
+	}
+}
+
+// serviceEnvFile resolves the tunnel service env file path the same way the
+// wrapped steps do — preferring an already-initialized s.Service.EnvFile, else
+// ResolveServiceEnvFile. An empty string means it could not be resolved.
+func serviceEnvFile(realCmd *cli.Command, s *InstallState) string {
+	if s.Service != nil && s.Service.EnvFile != "" {
+		return s.Service.EnvFile
+	}
+	if ef, err := mcpadapter.ResolveServiceEnvFile(realCmd); err == nil {
+		return ef
+	}
+	return ""
+}
+
+// serviceEnvFileIsFresh reports whether the tunnel service env file did NOT
+// exist before this run (so this run creates it fresh).
+func serviceEnvFileIsFresh(realCmd *cli.Command, s *InstallState) bool {
+	return isFreshServiceEnvFile(serviceEnvFile(realCmd, s))
+}
+
+// wrap builds a host step that (a) seeds switch/env values into the service
+// state before deciding whether to prompt, (b) skips for non-http installs or
+// when the wrapped service step skips, and (c) runs the wrapped service step's
+// Execute with optional pre/post hooks for cross-cutting orchestration.
+//
+
+// tunnelProviderSeeded reports whether the --tunnel switch (or persisted env)
+// already decided the tunnel provider, so the provider step renders "Seeded
+// from --tunnel" instead of prompting.
+func tunnelProviderSeeded(_ context.Context, s *InstallState) ([]string, bool) {
+	if s.Service == nil || s.Service.Provider == "" {
+		return nil, false
+	}
+	return []string{"tunnel"}, true
+}
+
+// tunnelConfigSeeded reports whether the tunnel-specific configuration step is
+// FULLY decided from switch/env sources, so the framework renders it "Seeded"
+// and skips its Execute. The wrapped config step dispatches to the provider's
+// Configurer and collects the shared auth token — in a non-interactive
+// `--service --tunnel` bootstrap, leaving either undecided aborts instead of
+// seeding. Completeness is delegated to mcpadapter.IsServiceInstallSeeded, the
+// single per-provider source of truth (next to the Configurers and
+// validateServiceEnvironment), rather than re-derived here as a parallel switch
+// on the provider type.
+func tunnelConfigSeeded(_ context.Context, s *InstallState) ([]string, bool) {
+	if s.Service == nil || !mcpadapter.IsServiceInstallSeeded(s.Service) {
+		return nil, false
+	}
+	return []string{"flags"}, true
+}
+
+// tunnelStepAt returns the i-th step of a ServiceInstallSteps slice for wrapping.
+func tunnelStepAt(steps []wizard.Step[*mcpadapter.ServiceInstallState], i int) wizard.Step[*mcpadapter.ServiceInstallState] {
+	if i < len(steps) {
+		return steps[i]
+	}
+	return wizard.StepFunc[*mcpadapter.ServiceInstallState]{}
 }
 
 // applyOAuthSecureDefault applies the secure OAuth default-on for a remote
@@ -303,36 +511,6 @@ func applyOAuthSecureDefault(transport install.Transport, svc *mcpadapter.Servic
 		def := true
 		svc.OAuth = &def
 	}
-}
-
-// needsFreshTunnelPrompt reports whether mcp install must run the interactive
-// tunnel-config steps: when a NEW service env file has to be created
-// interactively OR the existing env file does not yet provide a usable
-// MCP_PUBLIC_URL (the thing an HTTP install needs). Presence of `--tunnel`
-// (which bootstraps from flags) or a headless run always skips the prompt.
-//
-// "Usable" is judged on the file content, not mere existence: a leftover
-// partial env file (provider + credentials but no public URL, e.g. from an
-// earlier failed run) must NOT count as already-configured — otherwise the
-// interactive URL resolution is silently skipped and the stale URL-less file
-// surfaces a confusing "produced no MCP_PUBLIC_URL" error on every re-run.
-func needsFreshTunnelPrompt(cmd *cli.Command, envFile string) bool {
-	if cmd.String("tunnel") != "" {
-		return false
-	}
-	if wizard.NonInteractive {
-		return false
-	}
-	if _, err := os.Stat(envFile); err != nil {
-		// File missing (or unreadable): a fresh interactive config is needed.
-		return os.IsNotExist(err)
-	}
-	env, err := service.LoadEnvironment(envFile)
-	if err != nil {
-		// Unreadable/corrupt file: treat as needing reconfiguration.
-		return true
-	}
-	return strings.TrimSpace(env["MCP_PUBLIC_URL"]) == ""
 }
 
 // isFreshServiceEnvFile reports whether the MCP service env file did NOT exist

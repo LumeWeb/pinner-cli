@@ -274,7 +274,7 @@ func TestCollectHTTPInstallWithCreatedCleanup(t *testing.T) {
 	dir1 := t.TempDir()
 	created := filepath.Join(dir1, "mcp.env")
 	writeInvalid(created)
-	_, err := CollectHTTPInstallWithCreated(context.Background(), cmd, created, false, true)
+	_, _, err := CollectHTTPInstallWithCreated(context.Background(), cmd, created, false, true)
 	require.Error(t, err, "invalid ngrok env must fail validation")
 	require.Contains(t, err.Error(), "MCP_AUTH_TOKEN")
 	require.NoFileExists(t, created, "a freshly-created-but-invalid env file must be removed (no secret left on disk)")
@@ -283,7 +283,7 @@ func TestCollectHTTPInstallWithCreatedCleanup(t *testing.T) {
 	dir2 := t.TempDir()
 	preexisting := filepath.Join(dir2, "mcp.env")
 	writeInvalid(preexisting)
-	_, err = CollectHTTPInstallWithCreated(context.Background(), cmd, preexisting, false, false)
+	_, _, err = CollectHTTPInstallWithCreated(context.Background(), cmd, preexisting, false, false)
 	require.Error(t, err, "invalid ngrok env must fail validation")
 	require.FileExists(t, preexisting, "a pre-existing env file must never be removed")
 }
@@ -702,10 +702,39 @@ func TestFlattenedNgrokCollectorHandoff(t *testing.T) {
 
 	// Phase 2: the production HTTP collector (what w.collectHTTP runs). It must
 	// see the MCP_PUBLIC_URL the sub-steps wrote, not return it empty.
-	env, err := collectHTTPInstall(context.Background(), realCmd, "", false, true)
+	env, _, err := collectHTTPInstall(context.Background(), realCmd, "", false, true)
 	require.NoError(t, err)
 	require.Equal(t, "https://you.ngrok-free.dev", env["MCP_PUBLIC_URL"],
 		"the collector must surface the URL the configurer wrote (no 'no MCP_PUBLIC_URL' failure)")
 	require.Equal(t, "true", env["MCP_OAUTH"])
 	require.Equal(t, string(tunnel.TunnelProviderNgrok), env["MCP_TUNNEL_PROVIDER"])
+}
+
+func TestIsServiceInstallSeeded(t *testing.T) {
+	cases := []struct {
+		name   string
+		svc    *ServiceInstallState
+		seeded bool
+	}{
+		{"nil stays undecided", nil, false},
+		{"no provider stays undecided", &ServiceInstallState{}, false},
+		{"openai complete", &ServiceInstallState{Provider: tunnel.TunnelProviderOpenAI, TunnelID: "tunnel_" + strings.Repeat("a", 32), ApiKey: "k", AuthToken: "a"}, true},
+		{"openai no api key", &ServiceInstallState{Provider: tunnel.TunnelProviderOpenAI, TunnelID: "tunnel_" + strings.Repeat("a", 32), AuthToken: "a"}, false},
+		{"openai malformed tunnel id", &ServiceInstallState{Provider: tunnel.TunnelProviderOpenAI, TunnelID: "t_1", ApiKey: "k", AuthToken: "a"}, false},
+		{"openai no auth token", &ServiceInstallState{Provider: tunnel.TunnelProviderOpenAI, TunnelID: "tunnel_" + strings.Repeat("a", 32), ApiKey: "k"}, false},
+		{"cloudflared complete", &ServiceInstallState{Provider: tunnel.TunnelProviderCloudflared, Domain: "d.example", TunnelName: "pin", AuthToken: "a"}, true},
+		{"cloudflared no auth token", &ServiceInstallState{Provider: tunnel.TunnelProviderCloudflared, Domain: "d.example", TunnelName: "pin"}, false},
+		{"cloudflared no domain", &ServiceInstallState{Provider: tunnel.TunnelProviderCloudflared, TunnelName: "pin", AuthToken: "a"}, false},
+		{"ngrok complete", &ServiceInstallState{Provider: tunnel.TunnelProviderNgrok, TunnelToken: "tok", AuthToken: "a", PublicURL: "https://u.ngrok-free.dev"}, true},
+		{"ngrok no auth token", &ServiceInstallState{Provider: tunnel.TunnelProviderNgrok, TunnelToken: "tok", PublicURL: "https://u.ngrok-free.dev"}, false},
+		{"ngrok no token", &ServiceInstallState{Provider: tunnel.TunnelProviderNgrok, AuthToken: "a", PublicURL: "https://u.ngrok-free.dev"}, false},
+		{"ngrok no public url", &ServiceInstallState{Provider: tunnel.TunnelProviderNgrok, TunnelToken: "tok", AuthToken: "a"}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := IsServiceInstallSeeded(tc.svc); got != tc.seeded {
+				t.Errorf("IsServiceInstallSeeded = %v, want %v", got, tc.seeded)
+			}
+		})
+	}
 }

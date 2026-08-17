@@ -215,6 +215,27 @@ func SeedServiceFromFlagsAndEnv(cmd *cli.Command, s *ServiceInstallState, envFil
 	seedServiceFromFlagsAndEnv(cmd, s, envFile)
 }
 
+// IsServiceInstallSeeded reports whether the service state already carries every
+// value the tunnel-config step would collect, so a host wizard (mcp install)
+// can render the step "Seeded" and skip its Execute (which would otherwise
+// prompt through the provider Configurer and collect the shared auth token —
+// aborting a non-interactive --service --tunnel bootstrap on a stray prompt).
+//
+// This delegates to the provider's registered ConfigSeeded predicate in the
+// tunnel registry — the SINGLE source of per-provider completeness, kept next
+// to each provider's Configurer instead of a switch on the provider value in
+// the host. Every requirement the install flow would prompt for must be
+// present (the provider's own credentials, the shared auth token every public
+// tunnel needs, any value that only the Configurer resolves such as an ngrok
+// public URL, and shape validation such as the OpenAI tunnel-ID format), or
+// the step stays un-seeded and prompts.
+func IsServiceInstallSeeded(s *ServiceInstallState) bool {
+	if s == nil {
+		return false
+	}
+	return TunnelProviderConfigSeeded(s.Provider, s)
+}
+
 // seedServiceFromFlagsAndEnv is SeedServiceFromFlagsAndEnv's internal form.
 func seedServiceFromFlagsAndEnv(cmd *cli.Command, s *ServiceInstallState, _ string) {
 	if s.Provider == "" {
