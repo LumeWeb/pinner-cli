@@ -183,6 +183,20 @@ func ServiceInstallSteps(state *ServiceInstallState, cmd *cli.Command, envFile s
 					persistTunnelCredential(cfgMgr, "openai", "tunnel_id", s.TunnelID)
 					persistTunnelCredential(cfgMgr, "openai", "api_key", s.ApiKey)
 				case TunnelProviderCloudflared:
+					// If a Cloudflare named tunnel is already provisioned, honor its
+					// hostname as the domain and its resource name instead of
+					// re-prompting (the provisioned state is the single source of
+					// truth for what the runtime serves).
+					if s.Domain == "" || s.TunnelName == "" {
+						if st, err := LoadCloudflareTunnelState(); err == nil && st.Hostname != "" {
+							if s.Domain == "" {
+								s.Domain = st.Hostname
+							}
+							if s.TunnelName == "" && st.TunnelName != "" {
+								s.TunnelName = st.TunnelName
+							}
+						}
+					}
 					if s.Domain == "" {
 						domain, err := text.Text("Tunnel domain (required)")
 						if err != nil {
@@ -208,10 +222,23 @@ func ServiceInstallSteps(state *ServiceInstallState, cmd *cli.Command, envFile s
 						}
 						s.TunnelName = strings.TrimSpace(name)
 					}
+					// Pre-resolve the authtoken from existing sources before
+					// prompting: the ngrok config file (a user who ran `ngrok
+					// config add-authtoken` needs no further setup — the SDK loads
+					// that credential at runtime), then the pinner config-manager
+					// last-resort store. Only prompt when no usable token exists, so
+					// an already-configured ngrok install never re-asks for the
+					// secret. NGROK_AUTHTOKEN / --token are already folded into
+					// s.TunnelToken by seedServiceFromFlagsAndEnv.
+					if s.TunnelToken == "" {
+						s.TunnelToken = ResolveCredential(
+							ngrokConfigAuthtoken,
+							tunnelCfgCredential(cfgMgr, "ngrok", "token"),
+						)
+					}
 					// ngrok validation requires NGROK_AUTHTOKEN or MCP_TUNNEL_TOKEN;
-					// s.TunnelToken is pre-seeded from the --token flag (whose env
-					// Sources include both vars), so only prompt when it is empty so
-					// the written env file actually passes validation.
+					// only prompt when the value is still empty so the written env
+					// file actually passes validation.
 					if s.TunnelToken == "" {
 						openTunnelDeepLink("ngrok", "authtoken")
 						tok, err := textUI{mask: "*"}.Text("ngrok authtoken / MCP tunnel token")

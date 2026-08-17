@@ -10,6 +10,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
+
+	"go.lumeweb.com/pinner-cli/internal/cli/wizard"
 )
 
 func TestCollectHTTPInstallNonInteractiveMissingEnvErrors(t *testing.T) {
@@ -63,6 +65,58 @@ func TestServiceInstallStepsShape(t *testing.T) {
 	state.Domain = "mcp.example.com"
 	require.NoError(t, steps[2].Execute(context.Background(), state))
 	require.FileExists(t, envFile, "write step should persist the env file")
+}
+
+// TestTunnelConfigStepSkipsNgrokTokenPromptWhenConfigured guards the
+// "figure out the env ourselves" behavior: if the ngrok config file already
+// carries a usable agent authtoken (the user ran `ngrok config add-authtoken`),
+// the Tunnel-specific configuration step must resolve that token into state
+// instead of prompting for it. It runs the step in non-interactive mode (where
+// any surviving text prompt would error), so a passing run proves no prompt was
+// reached for a value we could figure out from the existing config.
+func TestTunnelConfigStepSkipsNgrokTokenPromptWhenConfigured(t *testing.T) {
+	dir := t.TempDir()
+	ngrokCfg := filepath.Join(dir, "ngrok.yml")
+	require.NoError(t, os.WriteFile(ngrokCfg, []byte(
+		"version: 2\n"+
+			"agent:\n"+
+			"  authtoken: 2ABCdef123configured\n"), 0600))
+	t.Setenv("NGROK_CONFIG", ngrokCfg)
+
+	envFile := filepath.Join(dir, "mcp.env")
+	cmd := &cli.Command{Flags: managedServiceFlags()}
+	state := &ServiceInstallState{EnvFile: envFile, Provider: TunnelProviderNgrok, TunnelName: "test", AuthToken: "test-auth"}
+	steps := ServiceInstallSteps(state, cmd, envFile, nil)
+
+	prior := wizard.NonInteractive
+	wizard.NonInteractive = true
+	defer func() { wizard.NonInteractive = prior }()
+
+	require.NoError(t, steps[1].Execute(context.Background(), state),
+		"tunnel-config step must not prompt for a token the ngrok config file already provides")
+	require.Equal(t, "2ABCdef123configured", state.TunnelToken,
+		"ngrok authtoken from the config file must be resolved into state (written to env)")
+}
+
+// TestTunnelConfigStepStillPromptsNgrokTokenWithoutConfig guards the inverse:
+// with no ngrok config and no config-manager/fenv token, the step must fall
+// through to the interactive prompt (verified by it erroring in non-interactive
+// mode rather than silently writing a token-empty env that would fail
+// validation).
+func TestTunnelConfigStepStillPromptsNgrokTokenWithoutConfig(t *testing.T) {
+	t.Setenv("NGROK_CONFIG", filepath.Join(t.TempDir(), "absent.yml"))
+
+	envFile := filepath.Join(t.TempDir(), "mcp.env")
+	cmd := &cli.Command{Flags: managedServiceFlags()}
+	state := &ServiceInstallState{EnvFile: envFile, Provider: TunnelProviderNgrok, TunnelName: "test"}
+	steps := ServiceInstallSteps(state, cmd, envFile, nil)
+
+	prior := wizard.NonInteractive
+	wizard.NonInteractive = true
+	defer func() { wizard.NonInteractive = prior }()
+
+	require.Error(t, steps[1].Execute(context.Background(), state),
+		"without any existing ngrok credential the step must require an interactive prompt")
 }
 
 // TestSeedServiceFromFlagsAndEnv guards the flatten: an interactive `mcp install
