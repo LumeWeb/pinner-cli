@@ -49,7 +49,9 @@ func TestLocalPathUploadDescriptorCallsHandler(t *testing.T) {
 	require.True(t, gotWait)
 	require.Equal(t, "preserve", gotMode)
 	require.Equal(t, result, res.StructuredContent)
-	require.Equal(t, "Uploaded.", res.Text)
+	// The Text channel must surface the result (the CID) as canonical JSON so a
+	// text-only agent can see what the write produced — not bare prose.
+	require.JSONEq(t, `{"status":"ok","cid":"QmTest"}`, res.Text)
 	require.False(t, res.IsError)
 }
 
