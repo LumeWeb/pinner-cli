@@ -309,6 +309,15 @@ func buildMcpTunnelSteps(realCmd *cli.Command) []wizard.Step[*InstallState] {
 				// before deciding whether to prompt.
 				mcpadapter.SeedServiceFromFlagsAndEnv(realCmd, svc, svc.EnvFile)
 				seedServiceFromEnvFile(svc.EnvFile, svc)
+				// Record the honest provenance for the "Seeded from ..." banner:
+				// an explicit --tunnel switch wins, otherwise the values came
+				// from a persisted env file. Bare source names — the UI adds the
+				// "--" for flag-like sources.
+				if svc.Provider != "" && realCmd.IsSet("tunnel") {
+					s.tunnelSeedSource = "tunnel"
+				} else if svc.Provider != "" {
+					s.tunnelSeedSource = "env file"
+				}
 				if seed != nil {
 					return seed(ctx, s)
 				}
@@ -472,6 +481,11 @@ func tunnelProviderSeeded(_ context.Context, s *InstallState) ([]string, bool) {
 	if s.Service == nil || s.Service.Provider == "" {
 		return nil, false
 	}
+	// Report the HONEST source: an explicit --tunnel switch, or the persisted
+	// env file — never claim "--tunnel" when the operator did not pass it.
+	if s.tunnelSeedSource != "" {
+		return []string{s.tunnelSeedSource}, true
+	}
 	return []string{"tunnel"}, true
 }
 
@@ -487,6 +501,11 @@ func tunnelProviderSeeded(_ context.Context, s *InstallState) ([]string, bool) {
 func tunnelConfigSeeded(_ context.Context, s *InstallState) ([]string, bool) {
 	if s.Service == nil || !mcpadapter.IsServiceInstallSeeded(s.Service) {
 		return nil, false
+	}
+	// Report the HONEST source: the config step is fully decided from the
+	// operator's switches and/or a persisted env file.
+	if s.tunnelSeedSource != "" {
+		return []string{s.tunnelSeedSource}, true
 	}
 	return []string{"flags"}, true
 }
