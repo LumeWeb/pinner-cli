@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -14,8 +15,36 @@ import (
 	"github.com/urfave/cli/v3"
 
 	"go.lumeweb.com/pinner-cli/internal/cli/wizard"
+	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
 	"go.lumeweb.com/pinner-cli/internal/service"
 )
+
+// stubNgrokAPI returns an *http.Client that routes api.ngrok.com requests to a
+// handler scripted by handler, letting tests exercise the reserved_domains
+// client without network access. It stubs the tunnel sub-package's shared HTTP
+// client (duplicated here from the tunnel test package until Stage 1).
+func stubNgrokAPI(t *testing.T, handler http.HandlerFunc) *http.Client {
+	t.Helper()
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+	orig := tunnel.NgrokAPIHTTPClient
+	tunnel.NgrokAPIHTTPClient = &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+		u := *r.URL
+		u.Scheme = "http"
+		u.Host = srv.Listener.Addr().String()
+		r2 := r.Clone(r.Context())
+		r2.URL = &u
+		rr := httptest.NewRecorder()
+		handler(rr, r2)
+		return rr.Result(), nil
+	})}
+	t.Cleanup(func() { tunnel.NgrokAPIHTTPClient = orig })
+	return tunnel.NgrokAPIHTTPClient
+}
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
 func TestCollectHTTPInstallNonInteractiveMissingEnvErrors(t *testing.T) {
 	// A --no-interactive http install with no pre-existing env file and no
@@ -307,14 +336,14 @@ func TestTunnelProviderChoiceLabelsDefaultIsNgrok(t *testing.T) {
 // the whole block must not be skipped just because the hostname is absent.
 func TestCloudflaredConfigurerResolvesNameWithoutHostname(t *testing.T) {
 	dir := t.TempDir()
-	// tunnelStatePath is a package var; point it at a fixture with a TunnelName
+	// tunnel.TunnelStatePath is a package var; point it at a fixture with a TunnelName
 	// but NO Hostname (pre-DNS-route provisioning state).
 	statePath := filepath.Join(dir, "tunnel-state.json")
 	require.NoError(t, os.WriteFile(statePath, []byte(
 		`{"provider":"cloudflared","tunnel_name":"provisioned-named-tunnel","account_id":"acct","tunnel_id":"tun","secret":"not-a-real-cred"}`+"\n"), 0600))
-	orig := tunnelStatePath
-	tunnelStatePath = func() (string, error) { return statePath, nil }
-	defer func() { tunnelStatePath = orig }()
+	orig := tunnel.TunnelStatePath
+	tunnel.TunnelStatePath = func() (string, error) { return statePath, nil }
+	defer func() { tunnel.TunnelStatePath = orig }()
 
 	state := &ServiceInstallState{Provider: TunnelProviderCloudflared, Domain: "mcp.example.com"}
 	prior := wizard.NonInteractive
@@ -394,12 +423,12 @@ func TestNgrokConfigurerHonorsOperatorDomain(t *testing.T) {
 // free-account path that previously stranded the install with "no MCP_PUBLIC_URL".
 func TestNgrokConfigurerResolvesURLFromAuthtoken(t *testing.T) {
 	// Stub the SDK URL resolver: no network, deterministic free dev URL.
-	orig := resolveNgrokSDKURL
-	resolveNgrokSDKURL = func(_ context.Context, token string) (string, error) {
+	orig := tunnel.ResolveNgrokSDKURL
+	tunnel.ResolveNgrokSDKURL = func(_ context.Context, token string) (string, error) {
 		require.Equal(t, "tun-token", token, "the authtoken must be passed to the SDK resolver")
 		return "https://you.ngrok-free.dev", nil
 	}
-	defer func() { resolveNgrokSDKURL = orig }()
+	defer func() { tunnel.ResolveNgrokSDKURL = orig }()
 
 	state := &ServiceInstallState{
 		Provider:    TunnelProviderNgrok,
@@ -422,11 +451,11 @@ func TestNgrokConfigurerResolvesURLFromAuthtoken(t *testing.T) {
 // (it would point at a dead endpoint), so the configurer falls through to the
 // interactive prompt instead of installing a rotating URL.
 func TestNgrokConfigurerRejectsEphemeralAuthtokenURL(t *testing.T) {
-	orig := resolveNgrokSDKURL
-	resolveNgrokSDKURL = func(_ context.Context, _ string) (string, error) {
+	orig := tunnel.ResolveNgrokSDKURL
+	tunnel.ResolveNgrokSDKURL = func(_ context.Context, _ string) (string, error) {
 		return "https://abc123.ngrok-free.app", nil
 	}
-	defer func() { resolveNgrokSDKURL = orig }()
+	defer func() { tunnel.ResolveNgrokSDKURL = orig }()
 
 	state := &ServiceInstallState{
 		Provider:    TunnelProviderNgrok,
@@ -454,7 +483,7 @@ func TestIsStableNgrokDevURL(t *testing.T) {
 		"http://example.ngrok-free.dev",
 	}
 	for _, u := range stable {
-		require.Truef(t, isStableNgrokDevURL(u), "want stable: %s", u)
+		require.Truef(t, IsStableNgrokDevURL(u), "want stable: %s", u)
 	}
 	ephemeral := []string{
 		"https://abc123.ngrok-free.app",
@@ -465,7 +494,7 @@ func TestIsStableNgrokDevURL(t *testing.T) {
 		"https://ngrok-free.dev", // bare TLD, no subdomain
 	}
 	for _, u := range ephemeral {
-		require.Falsef(t, isStableNgrokDevURL(u), "want rejected: %q", u)
+		require.Falsef(t, IsStableNgrokDevURL(u), "want rejected: %q", u)
 	}
 }
 
@@ -475,11 +504,11 @@ func TestIsStableNgrokDevURL(t *testing.T) {
 // than silently leaving MCP_PUBLIC_URL empty.
 func TestNgrokConfigurerPromptsForURLWithoutAPIKey(t *testing.T) {
 	// Both the API path and the authtoken path yield nothing -> must prompt.
-	orig := resolveNgrokSDKURL
-	resolveNgrokSDKURL = func(_ context.Context, _ string) (string, error) {
+	orig := tunnel.ResolveNgrokSDKURL
+	tunnel.ResolveNgrokSDKURL = func(_ context.Context, _ string) (string, error) {
 		return "", errors.New("no account")
 	}
-	defer func() { resolveNgrokSDKURL = orig }()
+	defer func() { tunnel.ResolveNgrokSDKURL = orig }()
 
 	state := &ServiceInstallState{
 		Provider:    TunnelProviderNgrok,

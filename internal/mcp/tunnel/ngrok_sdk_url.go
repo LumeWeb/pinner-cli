@@ -1,4 +1,4 @@
-package mcp
+package tunnel
 
 import (
 	"context"
@@ -11,12 +11,12 @@ import (
 	"golang.ngrok.com/ngrok/v2"
 )
 
-// isStableNgrokDevURL reports whether u is a stable ngrok dev-domain URL — the
+// IsStableNgrokDevURL reports whether u is a stable ngrok dev-domain URL — the
 // account's persistent reserved dev domain (host ends in .ngrok-free.dev), as
 // opposed to the ephemeral *.ngrok-free.app subdomains a bare free-tier tunnel
 // is assigned, which rotate every session. Only the former is safe to persist
 // as MCP_PUBLIC_URL.
-func isStableNgrokDevURL(u string) bool {
+func IsStableNgrokDevURL(u string) bool {
 	if u == "" {
 		return false
 	}
@@ -28,7 +28,7 @@ func isStableNgrokDevURL(u string) bool {
 	return strings.HasSuffix(h, ".ngrok-free.dev")
 }
 
-// resolveNgrokSDKURL connects a short-lived embedded ngrok agent with the given
+// ResolveNgrokSDKURL connects a short-lived embedded ngrok agent with the given
 // authtoken and returns the assigned public tunnel URL, then tears the temp
 // tunnel down. On a free account the assigned URL is the account's single,
 // stable *.ngrok-free.dev dev domain (deterministic per authtoken), so it can be
@@ -37,7 +37,7 @@ func isStableNgrokDevURL(u string) bool {
 //
 // It is a package variable so tests can substitute a stub without opening a real
 // tunnel.
-var resolveNgrokSDKURL = func(ctx context.Context, token string) (string, error) {
+var ResolveNgrokSDKURL = func(ctx context.Context, token string) (string, error) {
 	return resolveNgrokSDKURLReal(ctx, token)
 }
 

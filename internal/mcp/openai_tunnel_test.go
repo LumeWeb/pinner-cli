@@ -6,6 +6,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
+	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
 )
 
 func TestEmbeddedOpenAITunnelValidatesConfiguration(t *testing.T) {
@@ -13,9 +14,9 @@ func TestEmbeddedOpenAITunnelValidatesConfiguration(t *testing.T) {
 	// setup pages in a browser. Stub the opener so test execution never
 	// spawns a real browser (a non-hermetic side effect that can hang CI),
 	// regardless of the global wizard.NonInteractive setting.
-	origOpener := tunnelDeepLinkOpener
-	defer func() { tunnelDeepLinkOpener = origOpener }()
-	tunnelDeepLinkOpener = func(string) error { return nil }
+	origOpener := tunnel.TunnelDeepLinkOpener
+	defer func() { tunnel.TunnelDeepLinkOpener = origOpener }()
+	tunnel.TunnelDeepLinkOpener = func(string) error { return nil }
 
 	tests := []struct {
 		name   string
@@ -29,14 +30,14 @@ func TestEmbeddedOpenAITunnelValidatesConfiguration(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			server := mcp.NewServer(&mcp.Implementation{Name: "test", Version: "test"}, nil)
-			err := runEmbeddedOpenAITunnel(context.Background(), server, tt.tunnel, tt.key)
+			err := RunEmbeddedOpenAITunnel(context.Background(), server, tt.tunnel, tt.key)
 			require.ErrorContains(t, err, tt.want)
 		})
 	}
 }
 
 func TestEmbeddedOpenAITunnelRequiresServer(t *testing.T) {
-	err := runEmbeddedOpenAITunnel(context.Background(), nil, "tunnel_0123456789abcdef0123456789abcdef", "key")
+	err := RunEmbeddedOpenAITunnel(context.Background(), nil, "tunnel_0123456789abcdef0123456789abcdef", "key")
 	require.ErrorContains(t, err, "requires an MCP server")
 }
 

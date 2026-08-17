@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/internal/cli/wizard"
+	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
 	"go.lumeweb.com/pinner-cli/internal/service"
 )
 
@@ -54,8 +55,8 @@ func TestServicePort(t *testing.T) {
 }
 
 func TestServiceProviderRequirements(t *testing.T) {
-	require.True(t, openAITunnelID.MatchString("tunnel_0123456789abcdef0123456789abcdef"))
-	require.False(t, openAITunnelID.MatchString("tunnel_invalid"))
+	require.True(t, OpenAITunnelID.MatchString("tunnel_0123456789abcdef0123456789abcdef"))
+	require.False(t, OpenAITunnelID.MatchString("tunnel_invalid"))
 }
 
 func TestResolveManagedServiceRejectsInsecureEnvironmentFile(t *testing.T) {
@@ -267,9 +268,9 @@ func TestValidateOpenAIRequiresKeyInFileNotJustEnv(t *testing.T) {
 	// The missing-key path calls openTunnelDeepLink to open the OpenAI API keys
 	// page. Stub the opener so test execution never spawns a real browser,
 	// keeping CI hermetic.
-	origOpener := tunnelDeepLinkOpener
-	defer func() { tunnelDeepLinkOpener = origOpener }()
-	tunnelDeepLinkOpener = func(string) error { return nil }
+	origOpener := tunnel.TunnelDeepLinkOpener
+	defer func() { tunnel.TunnelDeepLinkOpener = origOpener }()
+	tunnel.TunnelDeepLinkOpener = func(string) error { return nil }
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "mcp.env")
@@ -304,9 +305,9 @@ func TestValidateHeadlessDoesNotSpawnBrowser(t *testing.T) {
 	wizard.NonInteractive = false
 
 	opened := false
-	origOpener := tunnelDeepLinkOpener
-	defer func() { tunnelDeepLinkOpener = origOpener }()
-	tunnelDeepLinkOpener = func(string) error { opened = true; return nil }
+	origOpener := tunnel.TunnelDeepLinkOpener
+	defer func() { tunnel.TunnelDeepLinkOpener = origOpener }()
+	tunnel.TunnelDeepLinkOpener = func(string) error { opened = true; return nil }
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "mcp.env")

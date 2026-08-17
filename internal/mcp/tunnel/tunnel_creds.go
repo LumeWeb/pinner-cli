@@ -1,4 +1,4 @@
-package mcp
+package tunnel
 
 import (
 	"os"
@@ -33,11 +33,11 @@ func ResolveCredential(providers ...func() string) string {
 	return ""
 }
 
-// tunnelCfgCredential returns a ResolveCredential source thunk that reads the
+// TunnelCfgCredential returns a ResolveCredential source thunk that reads the
 // last-resort tunnel credential for the given provider + logical key from the
 // pinner config manager. A nil manager (common in tests and when wizard deps
 // are unwired) degrades to an empty source so the chain continues.
-func tunnelCfgCredential(cfgMgr config.Manager, provider, key string) func() string {
+func TunnelCfgCredential(cfgMgr config.Manager, provider, key string) func() string {
 	return func() string {
 		if cfgMgr == nil {
 			return ""
@@ -46,7 +46,7 @@ func tunnelCfgCredential(cfgMgr config.Manager, provider, key string) func() str
 	}
 }
 
-// resolveNgrokToken resolves the ngrok authtoken for the runtime path from the
+// ResolveNgrokToken resolves the ngrok authtoken for the runtime path from the
 // explicit --token flag and NGROK_AUTHTOKEN env, falling back to the pinner
 // config-manager last-resort store ONLY when no explicit credential is present
 // AND the ngrok SDK has no usable authtoken of its own to load from its config
@@ -55,32 +55,32 @@ func tunnelCfgCredential(cfgMgr config.Manager, provider, key string) func() str
 // from ngrok's own config file, which would break the tunnel with an auth
 // error. Conversely, an empty/broken ngrok config file must NOT suppress the
 // config-manager fallback and silently start the agent unauthenticated.
-func resolveNgrokToken(token string, cfgMgr config.Manager) string {
+func ResolveNgrokToken(token string, cfgMgr config.Manager) string {
 	explicit := ResolveCredential(
 		func() string { return token },
 		func() string { return os.Getenv("NGROK_AUTHTOKEN") },
 	)
-	if explicit == "" && !ngrokConfigHasAuthtoken() {
+	if explicit == "" && !NgrokConfigHasAuthtoken() {
 		// Only the config-manager last-resort store can satisfy the credential;
 		// prefer it over leaving the agent unauthenticated.
-		explicit = tunnelCfgCredential(cfgMgr, "ngrok", "token")()
+		explicit = TunnelCfgCredential(cfgMgr, "ngrok", "token")()
 	}
 	return explicit
 }
 
-// persistTunnelCredential writes a tunnel credential to the config manager as
+// PersistTunnelCredential writes a tunnel credential to the config manager as
 // a best-effort last-resort store. It is a no-op when the manager is nil or the
 // value is empty, and failures are swallowed: the env file remains the source
 // of truth and the config-manager store is only an optimization so later runs
 // auto-detect the value without re-prompting.
-func persistTunnelCredential(cfgMgr config.Manager, provider, key, value string) {
+func PersistTunnelCredential(cfgMgr config.Manager, provider, key, value string) {
 	if cfgMgr == nil || strings.TrimSpace(value) == "" {
 		return
 	}
 	_ = cfgMgr.SetTunnelCredential(provider, key, value)
 }
 
-// hasProviderConfig reports whether the named tunnel provider has a config file
+// HasProviderConfig reports whether the named tunnel provider has a config file
 // that the provider (or its SDK) reads on startup to authenticate. We only
 // probe for the file's existence -- the provider performs the actual parsing --
 // so this is the existence signal used to decide whether a token prompt is
@@ -95,7 +95,7 @@ func persistTunnelCredential(cfgMgr config.Manager, provider, key, value string)
 //
 // The Windows LOCALAPPDATA (not the os.UserConfigDir Roaming path) is what
 // `ngrok config add-authtoken` actually writes, so it must be probed to match.
-func hasProviderConfig(provider string) bool {
+func HasProviderConfig(provider string) bool {
 	if provider != "ngrok" {
 		return false
 	}
@@ -167,7 +167,7 @@ type ngrokConfigFile struct {
 	Authtoken string `yaml:"authtoken"`
 }
 
-// ngrokConfigAuthtoken parses the ngrok config with a real YAML decoder and
+// NgrokConfigAuthtoken parses the ngrok config with a real YAML decoder and
 // returns the usable agent authtoken value, or "" when none is present. The
 // agent credential is `agent.authtoken` (the direct child of `agent`), with a
 // top-level `authtoken` scalar accepted for legacy configs. An authtoken nested
@@ -176,7 +176,7 @@ type ngrokConfigFile struct {
 // are structurally excluded rather than by indentation heuristics. Install
 // wizards use the value to pre-populate the service env file from an out-of-band
 // `ngrok config add-authtoken`, so a configured ngrok is never re-prompted.
-func ngrokConfigAuthtoken() string {
+func NgrokConfigAuthtoken() string {
 	path := ngrokConfigPath()
 	if path == "" {
 		return ""
@@ -196,12 +196,12 @@ func ngrokConfigAuthtoken() string {
 	return strings.TrimSpace(cfg.Authtoken)
 }
 
-// ngrokConfigHasAuthtoken reports whether the ngrok config file actually
+// NgrokConfigHasAuthtoken reports whether the ngrok config file actually
 // declares an agent authtoken (the SDK loads it on startup). Unlike
-// hasProviderConfig, which only checks file existence, this inspects the file
+// HasProviderConfig, which only checks file existence, this inspects the file
 // contents: an empty or partially-written config file carries no usable
 // credential, so it must not suppress the config-manager last-resort token and
 // silently start the agent unauthenticated.
-func ngrokConfigHasAuthtoken() bool {
-	return ngrokConfigAuthtoken() != ""
+func NgrokConfigHasAuthtoken() bool {
+	return NgrokConfigAuthtoken() != ""
 }

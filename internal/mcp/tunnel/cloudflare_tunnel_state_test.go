@@ -1,4 +1,4 @@
-package mcp
+package tunnel
 
 import (
 	"testing"
@@ -23,6 +23,6 @@ func TestBareHostname(t *testing.T) {
 		{"  https://mcp.example.com  ", "mcp.example.com"},
 	}
 	for _, tc := range tests {
-		require.Equal(t, tc.want, bareHostname(tc.in), "bareHostname(%q)", tc.in)
+		require.Equal(t, tc.want, BareHostname(tc.in), "BareHostname(%q)", tc.in)
 	}
 }

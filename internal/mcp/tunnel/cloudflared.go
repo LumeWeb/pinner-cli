@@ -1,4 +1,4 @@
-package mcp
+package tunnel
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// cloudflaredTunnel serves a local MCP HTTP server through a Cloudflare named
+// CloudflaredTunnel serves a local MCP HTTP server through a Cloudflare named
 // tunnel bound to a custom hostname.
 //
 // It runs an in-process, embedded cloudflared (the cloudflared Go library)
@@ -27,7 +27,7 @@ import (
 // holding an origin cert, and because the ingress is local it supports the MCP
 // server's ephemeral port. The tunnel-scoped credential (the persisted
 // secret/token) is the authorization for exactly this tunnel.
-type cloudflaredTunnel struct {
+type CloudflaredTunnel struct {
 	tunnelBase
 	domain string
 	name   string
@@ -45,29 +45,29 @@ type cloudflaredTunnel struct {
 	done chan struct{}
 }
 
-// newCloudflaredTunnel returns a cloudflared tunnel for the given custom
+// NewCloudflaredTunnel returns a cloudflared tunnel for the given custom
 // domain. It matches the provider registry's NewTunnel signature.
-func newCloudflaredTunnel(cfg TunnelConfig) (Tunnel, error) {
+func NewCloudflaredTunnel(cfg TunnelConfig) (Tunnel, error) {
 	name := cfg.Name
 	if name == "" {
 		name = "pinner-mcp"
 	}
-	return &cloudflaredTunnel{domain: cfg.Domain, name: name, statePath: cfg.StatePath}, nil
+	return &CloudflaredTunnel{domain: cfg.Domain, name: name, statePath: cfg.StatePath}, nil
 }
 
 // Name implements Tunnel.
-func (c *cloudflaredTunnel) Name() string { return "cloudflared" }
+func (c *CloudflaredTunnel) Name() string { return "cloudflared" }
 
 // SupportsCustomDomain implements Tunnel. A custom domain is required: named
 // tunnels are bound to a hostname DNS-routed through Cloudflare.
-func (c *cloudflaredTunnel) SupportsCustomDomain() bool { return true }
+func (c *CloudflaredTunnel) SupportsCustomDomain() bool { return true }
 
 // RequiresToken implements Tunnel. A provisioned tunnel-scoped credential is
 // required to run a named tunnel. We require a token only when the tunnel state
 // file is missing entirely (os.ErrNotExist); any other stat error (e.g. a
 // malformed path or permission problem) is surfaced by the caller rather than
 // falsely gating access to an already-provisioned tunnel.
-func (c *cloudflaredTunnel) RequiresToken() bool {
+func (c *CloudflaredTunnel) RequiresToken() bool {
 	var err error
 	if c.statePath != "" {
 		_, err = os.Stat(c.statePath)
@@ -80,11 +80,11 @@ func (c *cloudflaredTunnel) RequiresToken() bool {
 // MissingTokenError implements Tunnel. For cloudflared, "requires token" means
 // the named tunnel is not provisioned at all, so the operator must provision it
 // (which writes the tunnel-scoped credential) rather than supply a token.
-func (c *cloudflaredTunnel) MissingTokenError() error {
+func (c *CloudflaredTunnel) MissingTokenError() error {
 	return fmt.Errorf("cloudflared tunnel is not provisioned: run `pinner mcp tunnel install` (or `pinner mcp service install`) to create the tunnel and its credentials")
 }
 
-func (c *cloudflaredTunnel) OAuthBaseURL(explicitURL, tunnelURL string) (string, error) {
+func (c *CloudflaredTunnel) OAuthBaseURL(explicitURL, tunnelURL string) (string, error) {
 	if explicitURL != "" {
 		return explicitURL, nil
 	}
@@ -92,7 +92,7 @@ func (c *cloudflaredTunnel) OAuthBaseURL(explicitURL, tunnelURL string) (string,
 }
 
 // URL implements Tunnel.
-func (c *cloudflaredTunnel) URL() (string, error) {
+func (c *CloudflaredTunnel) URL() (string, error) {
 	ready, url := c.getState()
 	if !ready {
 		return "", errUnavailable
@@ -102,7 +102,7 @@ func (c *cloudflaredTunnel) URL() (string, error) {
 
 // Stop implements Tunnel. It cancels the in-process cloudflared daemon and
 // waits for it to exit, or returns when the context deadline expires.
-func (c *cloudflaredTunnel) Stop(ctx context.Context) error {
+func (c *CloudflaredTunnel) Stop(ctx context.Context) error {
 	c.mu.Lock()
 	cancel := c.cancel
 	done := c.done
@@ -126,7 +126,7 @@ func (c *cloudflaredTunnel) Stop(ctx context.Context) error {
 
 // loadState resolves and validates the persisted tunnel state, honoring the
 // test-only override path.
-func (c *cloudflaredTunnel) loadState() (*CloudflareTunnelState, error) {
+func (c *CloudflaredTunnel) loadState() (*CloudflareTunnelState, error) {
 	if c.statePath != "" {
 		b, rerr := os.ReadFile(c.statePath)
 		if rerr != nil {
@@ -140,7 +140,7 @@ func (c *cloudflaredTunnel) loadState() (*CloudflareTunnelState, error) {
 // Start implements Tunnel. It loads the provisioned tunnel state and launches
 // an in-process cloudflared named tunnel routing the custom hostname to the
 // given local origin.
-func (c *cloudflaredTunnel) Start(ctx context.Context, localAddr string) error {
+func (c *CloudflaredTunnel) Start(ctx context.Context, localAddr string) error {
 	state, err := c.loadState()
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -157,12 +157,12 @@ func (c *cloudflaredTunnel) Start(ctx context.Context, localAddr string) error {
 	// never serve a hostname different from the one that was validated.
 	// Compare bare hostnames so an https:// prefix on either side does not
 	// produce a false mismatch.
-	if c.domain != "" && !strings.EqualFold(bareHostname(c.domain), bareHostname(state.Hostname)) {
+	if c.domain != "" && !strings.EqualFold(BareHostname(c.domain), BareHostname(state.Hostname)) {
 		return fmt.Errorf("--domain %q does not match the provisioned tunnel hostname %q; re-run `pinner mcp tunnel install`", c.domain, state.Hostname)
 	}
 
 	// Build the local origin URL the tunnel will forward to.
-	origin, err := urlForOrigin(localAddr)
+	origin, err := UrlForOrigin(localAddr)
 	if err != nil {
 		return err
 	}
@@ -190,7 +190,7 @@ func (c *cloudflaredTunnel) Start(ctx context.Context, localAddr string) error {
 	// The public URL derives from the provisioned hostname (not c.domain), so a
 	// runtime restart converges on the exact hostname the tunnel was created for
 	// even if the CLI --domain flag differs from the provisioned state.
-	publicURL := "https://" + bareHostname(state.Hostname)
+	publicURL := "https://" + BareHostname(state.Hostname)
 	if err := c.waitReady(ctx, publicURL); err != nil {
 		cancel()
 		<-done
@@ -202,7 +202,7 @@ func (c *cloudflaredTunnel) Start(ctx context.Context, localAddr string) error {
 
 // waitReady polls the public URL until it responds over the tunnel, the
 // embedded cloudflared daemon exits (done closes), or the deadline expires.
-func (c *cloudflaredTunnel) waitReady(ctx context.Context, publicURL string) error {
+func (c *CloudflaredTunnel) waitReady(ctx context.Context, publicURL string) error {
 	deadline := time.Now().Add(30 * time.Second)
 	client := &http.Client{Timeout: 3 * time.Second}
 	for {
@@ -227,7 +227,7 @@ func (c *cloudflaredTunnel) waitReady(ctx context.Context, publicURL string) err
 }
 
 // exited reports whether the embedded cloudflared daemon has shut down.
-func (c *cloudflaredTunnel) exited() bool {
+func (c *CloudflaredTunnel) exited() bool {
 	select {
 	case <-c.done:
 		return true
@@ -236,10 +236,10 @@ func (c *cloudflaredTunnel) exited() bool {
 	}
 }
 
-// urlForOrigin normalizes a host:port local address into the http:// URL used
+// UrlForOrigin normalizes a host:port local address into the http:// URL used
 // as the ingress service of the embedded named tunnel.
-func urlForOrigin(localAddr string) (string, error) {
-	host, port, err := splitHostPort(localAddr)
+func UrlForOrigin(localAddr string) (string, error) {
+	host, port, err := SplitHostPort(localAddr)
 	if err != nil {
 		return "", fmt.Errorf("invalid local address %q: %w", localAddr, err)
 	}

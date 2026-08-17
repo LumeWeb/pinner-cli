@@ -1,4 +1,4 @@
-package mcp
+package tunnel
 
 import (
 	"context"
@@ -115,7 +115,7 @@ func startEmbeddedCloudflared(ctx context.Context, state *CloudflareTunnelState,
 		return fmt.Errorf("create client config: %w", err)
 	}
 
-	host := bareHostname(state.Hostname)
+	host := BareHostname(state.Hostname)
 	ing, err := buildCloudflaredIngress(host, origin)
 	if err != nil {
 		return fmt.Errorf("parse ingress: %w", err)

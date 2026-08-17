@@ -1,4 +1,4 @@
-package mcp
+package tunnel
 
 import (
 	"context"
@@ -34,7 +34,7 @@ type ngrokTunnel struct {
 
 	// cfgMgr is the optional pinner config manager used as the last-resort
 	// credential store. A nil manager (tests, unwired runtime) degrades to no
-	// store, mirroring resolveNgrokToken/tunnelCfgCredential semantics.
+	// store, mirroring ResolveNgrokToken/TunnelCfgCredential semantics.
 	cfgMgr config.Manager
 
 	// agent and fwd are the embedded pieces created in Start.
@@ -70,7 +70,7 @@ func (n *ngrokTunnel) SupportsCustomDomain() bool { return true }
 // NGROK_AUTHTOKEN env var, or the ngrok config file. We report true only when
 // none of those sources is present, so the CLI does not falsely reject a user
 // who has configured ngrok out of band. The config file must actually declare
-// a usable agent authtoken (ngrokConfigHasAuthtoken). An empty or
+// a usable agent authtoken (NgrokConfigHasAuthtoken). An empty or
 // partially-written config file carries no credential and must not be treated
 // as satisfying the token requirement, or the agent would start
 // unauthenticated.
@@ -84,7 +84,7 @@ func (n *ngrokTunnel) RequiresToken() bool {
 	if n.cfgMgr != nil && n.cfgMgr.TunnelCredential("ngrok", "token") != "" {
 		return false
 	}
-	return !ngrokConfigHasAuthtoken()
+	return !NgrokConfigHasAuthtoken()
 }
 
 // MissingTokenError implements Tunnel. ngrok has no additional provisioning
@@ -137,7 +137,7 @@ func (n *ngrokTunnel) Stop(ctx context.Context) error {
 // given local address through it, and records the assigned public URL once the
 // tunnel is live.
 func (n *ngrokTunnel) Start(ctx context.Context, localAddr string) error {
-	host, port, err := splitHostPort(localAddr)
+	host, port, err := SplitHostPort(localAddr)
 	if err != nil {
 		return fmt.Errorf("invalid local address %q: %w", localAddr, err)
 	}
@@ -145,12 +145,12 @@ func (n *ngrokTunnel) Start(ctx context.Context, localAddr string) error {
 	agentOpts := []ngrok.AgentOption{}
 	// Pass an explicit authtoken only when one is resolvable from a source we
 	// own (--token or NGROK_AUTHTOKEN). When absent, leave the agent to load
-	// the ngrok config file itself (hasProviderConfig/RequiresToken already
+	// the ngrok config file itself (HasProviderConfig/RequiresToken already
 	// account for it). Never pass an empty token (that would clobber the
-	// config-file credential). resolveNgrokToken applies the same stale-store
+	// config-file credential). ResolveNgrokToken applies the same stale-store
 	// guard as serveHTTP: a stale/revoked config-manager token must not be
 	// forced via WithAuthtoken when the config file carries a valid authtoken.
-	if tok := resolveNgrokToken(n.token, n.cfgMgr); tok != "" {
+	if tok := ResolveNgrokToken(n.token, n.cfgMgr); tok != "" {
 		agentOpts = append(agentOpts, ngrok.WithAuthtoken(tok))
 	}
 
@@ -159,14 +159,14 @@ func (n *ngrokTunnel) Start(ctx context.Context, localAddr string) error {
 		return fmt.Errorf("construct ngrok agent: %w", err)
 	}
 
-	upstream := ngrok.WithUpstream(localURL(host, port))
+	upstream := ngrok.WithUpstream(LocalURL(host, port))
 
 	forwardOpts := []ngrok.EndpointOption{}
 	if n.domain != "" {
 		// Strip any scheme/path so the ngrok SDK gets a bare hostname. Users
 		// may configure a scheme-qualified custom domain (e.g. --domain
 		// https://mcp.example.com), which ngrok.WithURL rejects as malformed.
-		forwardOpts = append(forwardOpts, ngrok.WithURL(bareHostname(n.domain)))
+		forwardOpts = append(forwardOpts, ngrok.WithURL(BareHostname(n.domain)))
 	}
 
 	// A child context lets Stop cancel cleanly without tearing down the parent
@@ -256,8 +256,8 @@ func (n *ngrokTunnel) waitReady(ctx context.Context, publicURL string) error {
 	}
 }
 
-// localURL builds an http:// origin from a host:port pair for the ngrok
+// LocalURL builds an http:// origin from a host:port pair for the ngrok
 // upstream.
-func localURL(host, port string) string {
+func LocalURL(host, port string) string {
 	return "http://" + net.JoinHostPort(host, port)
 }

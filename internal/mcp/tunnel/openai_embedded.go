@@ -1,4 +1,4 @@
-package mcp
+package tunnel
 
 import (
 	"context"
@@ -13,19 +13,19 @@ import (
 	"github.com/pterm/pterm"
 )
 
-var openAITunnelID = regexp.MustCompile(`^tunnel_[0-9a-f]{32}$`)
+var OpenAITunnelID = regexp.MustCompile(`^tunnel_[0-9a-f]{32}$`)
 
-func runEmbeddedOpenAITunnel(ctx context.Context, server *mcp.Server, tunnelID, apiKey string) error {
+func RunEmbeddedOpenAITunnel(ctx context.Context, server *mcp.Server, tunnelID, apiKey string) error {
 	if server == nil {
 		return errors.New("OpenAI Secure MCP Tunnel requires an MCP server")
 	}
-	if !openAITunnelID.MatchString(tunnelID) {
-		openTunnelDeepLink("openai", "tunnel_id")
+	if !OpenAITunnelID.MatchString(tunnelID) {
+		OpenTunnelDeepLink("openai", "tunnel_id")
 		return fmt.Errorf("invalid OpenAI tunnel ID %q: expected tunnel_ followed by 32 lowercase hexadecimal characters (create one in the OpenAI Tunnels page)", tunnelID)
 	}
 	apiKey = strings.TrimSpace(apiKey)
 	if apiKey == "" {
-		openTunnelDeepLink("openai", "api_key")
+		OpenTunnelDeepLink("openai", "api_key")
 		return errors.New("OpenAI Secure MCP Tunnel requires CONTROL_PLANE_API_KEY or OPENAI_API_KEY (create a Runtime API key in the OpenAI API keys page)")
 	}
 

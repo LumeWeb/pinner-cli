@@ -1,4 +1,4 @@
-package mcp
+package tunnel
 
 import (
 	"os"
@@ -41,8 +41,8 @@ func TestResolveCredential(t *testing.T) {
 
 func TestHasProviderConfigNgrok(t *testing.T) {
 	// Non-ngrok providers have no own config file in this tree.
-	assert.False(t, hasProviderConfig("openai"))
-	assert.False(t, hasProviderConfig("cloudflared"))
+	assert.False(t, HasProviderConfig("openai"))
+	assert.False(t, HasProviderConfig("cloudflared"))
 
 	t.Run("NGROK_CONFIG override", func(t *testing.T) {
 		t.Setenv("NGROK_CONFIG", "")
@@ -50,10 +50,10 @@ func TestHasProviderConfigNgrok(t *testing.T) {
 		existing := filepath.Join(dir, "ngrok.yml")
 		require.NoError(t, os.WriteFile(existing, []byte("agent:\n  authtoken: x\n"), 0o600))
 		t.Setenv("NGROK_CONFIG", existing)
-		assert.True(t, hasProviderConfig("ngrok"))
+		assert.True(t, HasProviderConfig("ngrok"))
 
 		t.Setenv("NGROK_CONFIG", filepath.Join(dir, "missing.yml"))
-		assert.False(t, hasProviderConfig("ngrok"))
+		assert.False(t, HasProviderConfig("ngrok"))
 	})
 
 	t.Run("default per-OS config paths", func(t *testing.T) {
@@ -75,12 +75,12 @@ func TestHasProviderConfigNgrok(t *testing.T) {
 		}
 
 		// Absent -> false.
-		assert.False(t, hasProviderConfig("ngrok"))
+		assert.False(t, HasProviderConfig("ngrok"))
 
 		// Present at the default location -> true.
 		require.NoError(t, os.MkdirAll(filepath.Dir(cfg), 0o700))
 		require.NoError(t, os.WriteFile(cfg, []byte("agent:\n  authtoken: x\n"), 0o600))
-		assert.True(t, hasProviderConfig("ngrok"))
+		assert.True(t, HasProviderConfig("ngrok"))
 	})
 }
 
@@ -104,20 +104,20 @@ func TestResolveNgrokToken(t *testing.T) {
 	t.Run("explicit flag wins over config manager", func(t *testing.T) {
 		t.Setenv("NGROK_CONFIG", filepath.Join(t.TempDir(), "missing.yml"))
 		mgr := newTestConfigManager(t, "cfgmgrtok")
-		assert.Equal(t, "flagtok", resolveNgrokToken("flagtok", mgr))
+		assert.Equal(t, "flagtok", ResolveNgrokToken("flagtok", mgr))
 	})
 
 	t.Run("env wins over config manager", func(t *testing.T) {
 		t.Setenv("NGROK_CONFIG", filepath.Join(t.TempDir(), "missing.yml"))
 		t.Setenv("NGROK_AUTHTOKEN", "envtok")
 		mgr := newTestConfigManager(t, "cfgmgrtok")
-		assert.Equal(t, "envtok", resolveNgrokToken("", mgr))
+		assert.Equal(t, "envtok", ResolveNgrokToken("", mgr))
 	})
 
 	t.Run("config manager is last resort when no config file", func(t *testing.T) {
 		t.Setenv("NGROK_CONFIG", filepath.Join(t.TempDir(), "missing.yml"))
 		mgr := newTestConfigManager(t, "cfgmgrtok")
-		assert.Equal(t, "cfgmgrtok", resolveNgrokToken("", mgr))
+		assert.Equal(t, "cfgmgrtok", ResolveNgrokToken("", mgr))
 	})
 
 	t.Run("existing config file with authtoken inhibits stale config manager token", func(t *testing.T) {
@@ -129,7 +129,7 @@ func TestResolveNgrokToken(t *testing.T) {
 		require.NoError(t, os.WriteFile(cfg, []byte("version: 2\nagent:\n  authtoken: 2abcDEF\n"), 0o600))
 		t.Setenv("NGROK_CONFIG", cfg)
 		mgr := newTestConfigManager(t, "staletok")
-		assert.Equal(t, "", resolveNgrokToken("", mgr))
+		assert.Equal(t, "", ResolveNgrokToken("", mgr))
 	})
 
 	t.Run("empty/broken config file does not suppress config manager token", func(t *testing.T) {
@@ -141,36 +141,36 @@ func TestResolveNgrokToken(t *testing.T) {
 		require.NoError(t, os.WriteFile(cfg, []byte("version: 2\nagent:\n"), 0o600))
 		t.Setenv("NGROK_CONFIG", cfg)
 		mgr := newTestConfigManager(t, "cfgmgrtok")
-		assert.Equal(t, "cfgmgrtok", resolveNgrokToken("", mgr))
+		assert.Equal(t, "cfgmgrtok", ResolveNgrokToken("", mgr))
 	})
 
 	t.Run("no credential source returns empty", func(t *testing.T) {
 		t.Setenv("NGROK_CONFIG", filepath.Join(t.TempDir(), "missing.yml"))
-		assert.Equal(t, "", resolveNgrokToken("", nil))
+		assert.Equal(t, "", ResolveNgrokToken("", nil))
 	})
 }
 
 func TestNgrokConfigHasAuthtoken(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "missing.yml")
 	t.Setenv("NGROK_CONFIG", missing)
-	assert.False(t, ngrokConfigHasAuthtoken(), "missing file -> no authtoken")
+	assert.False(t, NgrokConfigHasAuthtoken(), "missing file -> no authtoken")
 
 	dir := t.TempDir()
 
 	cfg := filepath.Join(dir, "with.yml")
 	require.NoError(t, os.WriteFile(cfg, []byte("version: 2\nagent:\n  authtoken: 2abcDEF\n"), 0o600))
 	t.Setenv("NGROK_CONFIG", cfg)
-	assert.True(t, ngrokConfigHasAuthtoken(), "authtoken under agent block detected")
+	assert.True(t, NgrokConfigHasAuthtoken(), "authtoken under agent block detected")
 
 	cfg = filepath.Join(dir, "empty.yml")
 	require.NoError(t, os.WriteFile(cfg, []byte("version: 2\nagent:\n"), 0o600))
 	t.Setenv("NGROK_CONFIG", cfg)
-	assert.False(t, ngrokConfigHasAuthtoken(), "file without authtoken value -> false")
+	assert.False(t, NgrokConfigHasAuthtoken(), "file without authtoken value -> false")
 
 	cfg = filepath.Join(dir, "blank.yml")
 	require.NoError(t, os.WriteFile(cfg, []byte(""), 0o600))
 	t.Setenv("NGROK_CONFIG", cfg)
-	assert.False(t, ngrokConfigHasAuthtoken(), "empty file -> false")
+	assert.False(t, NgrokConfigHasAuthtoken(), "empty file -> false")
 
 	// An authtoken nested under a non-agent block (tunnels/endpoints/log) is
 	// NOT a usable agent credential and must be ignored.
@@ -178,7 +178,7 @@ func TestNgrokConfigHasAuthtoken(t *testing.T) {
 	require.NoError(t, os.WriteFile(cfg, []byte(
 		"version: 2\nlog:\n  level: debug\ntunnels:\n  test:\n    authtoken: 3xYz\n"), 0o600))
 	t.Setenv("NGROK_CONFIG", cfg)
-	assert.False(t, ngrokConfigHasAuthtoken(), "authtoken under non-agent block must not be treated as agent credential")
+	assert.False(t, NgrokConfigHasAuthtoken(), "authtoken under non-agent block must not be treated as agent credential")
 
 	// An authtoken nested under a SUB-block of agent (agent.tunnels.<name>,
 	// agent.endpoints) is not agent.authtoken and must be ignored, even though
@@ -187,26 +187,26 @@ func TestNgrokConfigHasAuthtoken(t *testing.T) {
 	require.NoError(t, os.WriteFile(cfg, []byte(
 		"version: 2\nagent:\n  tunnels:\n    web:\n      authtoken: 5xYz\n  authtoken: 6aBcD\n"), 0o600))
 	t.Setenv("NGROK_CONFIG", cfg)
-	assert.True(t, ngrokConfigHasAuthtoken(), "real agent.authtoken after a nested agent sub-block is still detected")
+	assert.True(t, NgrokConfigHasAuthtoken(), "real agent.authtoken after a nested agent sub-block is still detected")
 
 	cfg = filepath.Join(dir, "agent-nested-only.yml")
 	require.NoError(t, os.WriteFile(cfg, []byte(
 		"version: 2\nagent:\n  tunnels:\n    web:\n      authtoken: 5xYz\n"), 0o600))
 	t.Setenv("NGROK_CONFIG", cfg)
-	assert.False(t, ngrokConfigHasAuthtoken(), "authtoken nested under agent sub-block must not count as agent credential")
+	assert.False(t, NgrokConfigHasAuthtoken(), "authtoken nested under agent sub-block must not count as agent credential")
 
 	// A top-level authtoken (no agent: block) is a usable credential.
 	cfg = filepath.Join(dir, "top.yml")
 	require.NoError(t, os.WriteFile(cfg, []byte("authtoken: 4abc\n"), 0o600))
 	t.Setenv("NGROK_CONFIG", cfg)
-	assert.True(t, ngrokConfigHasAuthtoken(), "top-level authtoken detected")
+	assert.True(t, NgrokConfigHasAuthtoken(), "top-level authtoken detected")
 
 	// An explicitly empty authtoken (`authtoken: ""`) carries no credential and
 	// must be treated as absent so the config-manager fallback is not dropped.
 	cfg = filepath.Join(dir, "emptyval.yml")
 	require.NoError(t, os.WriteFile(cfg, []byte("version: 2\nagent:\n  authtoken: \"\"\n"), 0o600))
 	t.Setenv("NGROK_CONFIG", cfg)
-	assert.False(t, ngrokConfigHasAuthtoken(), "explicitly empty quoted authtoken -> false")
+	assert.False(t, NgrokConfigHasAuthtoken(), "explicitly empty quoted authtoken -> false")
 }
 
 // TestNgrokConfigAuthtoken covers the value extraction used by the install
@@ -216,25 +216,25 @@ func TestNgrokConfigHasAuthtoken(t *testing.T) {
 // explicitly empty).
 func TestNgrokConfigAuthtoken(t *testing.T) {
 	t.Setenv("NGROK_CONFIG", filepath.Join(t.TempDir(), "missing.yml"))
-	assert.Equal(t, "", ngrokConfigAuthtoken(), "missing file -> empty value")
+	assert.Equal(t, "", NgrokConfigAuthtoken(), "missing file -> empty value")
 
 	dir := t.TempDir()
 	cfg := filepath.Join(dir, "with.yml")
 	require.NoError(t, os.WriteFile(cfg, []byte(
 		"version: 2\nagent:\n  authtoken: 2abcDEF_tok\n"), 0o600))
 	t.Setenv("NGROK_CONFIG", cfg)
-	assert.Equal(t, "2abcDEF_tok", ngrokConfigAuthtoken(), "agent.authtoken value extracted")
+	assert.Equal(t, "2abcDEF_tok", NgrokConfigAuthtoken(), "agent.authtoken value extracted")
 
 	cfg = filepath.Join(dir, "top.yml")
 	require.NoError(t, os.WriteFile(cfg, []byte("authtoken: 4abcQuoted\n"), 0o600))
 	t.Setenv("NGROK_CONFIG", cfg)
-	assert.Equal(t, "4abcQuoted", ngrokConfigAuthtoken(), "top-level authtoken value extracted")
+	assert.Equal(t, "4abcQuoted", NgrokConfigAuthtoken(), "top-level authtoken value extracted")
 
 	// A quoted value is stripped to its raw token.
 	cfg = filepath.Join(dir, "quoted.yml")
 	require.NoError(t, os.WriteFile(cfg, []byte("agent:\n  authtoken: \"5xYz\"\n"), 0o600))
 	t.Setenv("NGROK_CONFIG", cfg)
-	assert.Equal(t, "5xYz", ngrokConfigAuthtoken(), "quoted authtoken value unquoted")
+	assert.Equal(t, "5xYz", NgrokConfigAuthtoken(), "quoted authtoken value unquoted")
 
 	// Nested under an agent sub-block (agent.tunnels.<name>) is not an agent
 	// credential and yields no value.
@@ -242,18 +242,18 @@ func TestNgrokConfigAuthtoken(t *testing.T) {
 	require.NoError(t, os.WriteFile(cfg, []byte(
 		"version: 2\nagent:\n  tunnels:\n    web:\n      authtoken: 5xYz\n"), 0o600))
 	t.Setenv("NGROK_CONFIG", cfg)
-	assert.Equal(t, "", ngrokConfigAuthtoken(), "authtoken under agent sub-block -> empty value")
+	assert.Equal(t, "", NgrokConfigAuthtoken(), "authtoken under agent sub-block -> empty value")
 
 	// Real agent.authtoken after a nested sub-block is still extracted.
 	cfg = filepath.Join(dir, "agent-nested.yml")
 	require.NoError(t, os.WriteFile(cfg, []byte(
 		"version: 2\nagent:\n  tunnels:\n    web:\n      authtoken: 5xYz\n  authtoken: 6aBcD\n"), 0o600))
 	t.Setenv("NGROK_CONFIG", cfg)
-	assert.Equal(t, "6aBcD", ngrokConfigAuthtoken(), "real agent.authtoken value extracted after nested sub-block")
+	assert.Equal(t, "6aBcD", NgrokConfigAuthtoken(), "real agent.authtoken value extracted after nested sub-block")
 
 	// An explicitly empty quoted authtoken carries no value.
 	cfg = filepath.Join(dir, "emptyval.yml")
 	require.NoError(t, os.WriteFile(cfg, []byte("version: 2\nagent:\n  authtoken: \"\"\n"), 0o600))
 	t.Setenv("NGROK_CONFIG", cfg)
-	assert.Equal(t, "", ngrokConfigAuthtoken(), "explicitly empty quoted authtoken -> empty value")
+	assert.Equal(t, "", NgrokConfigAuthtoken(), "explicitly empty quoted authtoken -> empty value")
 }
