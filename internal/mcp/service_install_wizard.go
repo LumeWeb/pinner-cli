@@ -34,6 +34,19 @@ type ServiceInstallState struct {
 	Host        string
 	OAuth       bool
 	Port        int
+	// OAuthIsSet reports that OAuth was explicitly decided this run (via an
+	// explicit --oauth flag, its MCP_OAUTH source env var, or the mcp install
+	// Configure Tunnel step). When false (e.g. a standalone install that never
+	// touched OAuth), serviceInstallStateToEnv omits the MCP_OAUTH key entirely
+	// so the runtime secure-default (on) applies — it must not force false.
+	// When true, the effective value is persisted (MCP_OAUTH=true|false).
+	OAuthIsSet bool
+	// PortIsSet reports that the operator explicitly passed --port this run
+	// (including --port 0, the "pick a free port" sentinel). When true, a
+	// persisted MCP_PORT must not be folded back in — an explicit --port 0 is
+	// the operator's intent to use a free port and must not revert to the saved
+	// value.
+	PortIsSet bool
 
 	// EnvFileCreated reports that the env file at EnvFile was freshly written
 	// by this install run. A host wizard (mcp install) sets it in the flattened
@@ -229,11 +242,14 @@ func seedServiceFromFlagsAndEnv(cmd *cli.Command, s *ServiceInstallState, _ stri
 	set(serviceHostFlag, &s.Host)
 	if cmd.IsSet(serviceOAuthFlag) {
 		s.OAuth = cmd.Bool(serviceOAuthFlag)
+		s.OAuthIsSet = true
 	} else if strings.EqualFold(cmd.String(serviceOAuthFlag), "true") {
 		s.OAuth = true
+		s.OAuthIsSet = true
 	}
 	if cmd.IsSet(servicePortFlag) {
 		s.Port = cmd.Int(servicePortFlag)
+		s.PortIsSet = true
 	} else if v := strings.TrimSpace(cmd.String(servicePortFlag)); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			s.Port = n
@@ -269,10 +285,20 @@ func serviceInstallStateToEnv(s *ServiceInstallState) ServiceEnvironment {
 	if v := s.Host; v != "" {
 		env["MCP_HOST"] = v
 	}
-	if s.OAuth {
-		env["MCP_OAUTH"] = "true"
+	// Persist MCP_OAUTH only when OAuth was actually decided this run: either
+	// the secure default-on for a remote install (s.OAuth true) or an explicit
+	// operator decision carried by OAuthIsSet (whether true or false). A
+	// standalone install that never touched OAuth must OMIT the key so the
+	// runtime secure default (on) applies — writing MCP_OAUTH=false there would
+	// diverge from the mcp install path's default-on doctrine.
+	if s.OAuth || s.OAuthIsSet {
+		if s.OAuth {
+			env["MCP_OAUTH"] = "true"
+		} else {
+			env["MCP_OAUTH"] = "false"
+		}
 	}
-	if s.Port != 0 {
+	if s.Port != 0 || s.PortIsSet {
 		env["MCP_PORT"] = strconv.Itoa(s.Port)
 	}
 	return env

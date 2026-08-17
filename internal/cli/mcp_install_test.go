@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"atomicgo.dev/keyboard/keys"
+	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/internal/cli/wizard"
 	mcpadapter "go.lumeweb.com/pinner-cli/internal/mcp"
 	"go.lumeweb.com/pinner-cli/internal/mcp/install"
@@ -54,8 +55,6 @@ type MockInstallUI struct {
 	SelectScopeErr        error
 	SelectTransportResult install.Transport
 	SelectTransportErr    error
-	ConfirmOAuthResult    bool
-	ConfirmOAuthErr       error
 	ConfirmHTTPResult     bool
 	ConfirmHTTPErr        error
 
@@ -108,18 +107,6 @@ func (m *MockInstallUI) ConfirmHTTP(_ []install.AgentKey) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.ConfirmHTTPResult, m.ConfirmHTTPErr
-}
-
-// ConfirmOAuth returns the configured OAuth answer, defaulting to true (the
-// production default is yes).
-func (m *MockInstallUI) ConfirmOAuth() (bool, error) {
-	m.RecordCall("ConfirmOAuth")
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.ConfirmOAuthErr != nil {
-		return false, m.ConfirmOAuthErr
-	}
-	return m.ConfirmOAuthResult, nil
 }
 
 func (m *MockInstallUI) ReportWritten(agent install.AgentKey, path string, local bool) error {
@@ -852,19 +839,21 @@ func TestMcpInstallWizardNoDetectedAgentsShowsGuidance(t *testing.T) {
 	}
 }
 
-// TestMcpInstallTransportPromptsOAuthForHTTP guards the Choose Transport step:
-// selecting a remote (http) transport must ask the operator whether to enable
-// OAuth (default yes) and record it into InstallState.OAuth, so the service env
-// writes MCP_OAUTH. OAuth is meaningless for stdio and must NOT be asked there.
-func TestMcpInstallTransportPromptsOAuthForHTTP(t *testing.T) {
+// TestMcpInstallTransportDefaultsOAuthForHTTP guards the Choose Transport step:
+// selecting a remote (http) transport must enable OAuth by default (secure
+// default for public MCP endpoints) WITHOUT prompting — a bare "Please confirm
+// [Y/n]" mid-wizard with no question context is confusing friction, and the
+// value already defaults to yes. OAuth is meaningless for stdio and must stay
+// unset there.
+func TestMcpInstallTransportDefaultsOAuthForHTTP(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
 	ui := newMockInstallUI()
 	ui.SelectAgentsResult = []install.AgentKey{install.AgentClaudeCode}
 	ui.SelectScopeResult = scopeGlobal
 	ui.SelectTransportResult = install.TransportHTTP
-	// OAuth default in the mock mirrors the production default (yes).
-	ui.ConfirmOAuthResult = true
+	// The mock's ConfirmOAuth must not be plumbed: the transport step no longer
+	// asks, so this assertion below catches any re-introduced prompt.
 
 	state := &InstallState{PublicURL: "https://you.ngrok-free.dev", AuthToken: "auth"}
 	w := NewInstallWizard(ui, state, tempPathResolver(root, t.TempDir()))
@@ -873,8 +862,8 @@ func TestMcpInstallTransportPromptsOAuthForHTTP(t *testing.T) {
 	if _, err := w.Run(ctx); err != nil {
 		t.Fatalf("wizard run failed: %v", err)
 	}
-	if !ui.WasCalled("ConfirmOAuth") {
-		t.Error("expected ConfirmOAuth prompt for an http transport")
+	if ui.WasCalled("ConfirmOAuth") {
+		t.Error("http transport must NOT prompt for OAuth — it defaults on silently")
 	}
 	if !state.OAuth {
 		t.Error("http transport with OAuth default yes must set state.OAuth = true")
@@ -905,20 +894,17 @@ func TestMcpInstallTransportSkipsOAuthForStdio(t *testing.T) {
 	}
 }
 
-// TestMcpInstallTransportSkipsOAuthPromptWhenFlagExplicit guards Kody finding:
-// an explicit --oauth flag must both win over the interactive default AND
-// suppress the ConfirmOAuth prompt. Previously the transport step overwrote an
-// explicit --oauth.choice with the prompt's (true) default, so
-// `--transport http --oauth=false` still asked and forced OAuth on.
-func TestMcpInstallTransportSkipsOAuthPromptWhenFlagExplicit(t *testing.T) {
+// TestMcpInstallTransportRespectsExplicitOAuth guards that an explicit --oauth
+// flag wins over the transport step's default: `--transport http --oauth=false`
+// must leave OAuth off (the interactive default is on), and the transport step
+// must never overwrite it.
+func TestMcpInstallTransportRespectsExplicitOAuth(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
 	ui := newMockInstallUI()
 	ui.SelectAgentsResult = []install.AgentKey{install.AgentClaudeCode}
 	ui.SelectScopeResult = scopeGlobal
 	ui.SelectTransportResult = install.TransportHTTP
-	// Prompt default would be true, but explicit --oauth=false must suppress it.
-	ui.ConfirmOAuthResult = true
 
 	envFile := filepath.Join(root, "mcp.env")
 
@@ -941,13 +927,255 @@ func TestMcpInstallTransportSkipsOAuthPromptWhenFlagExplicit(t *testing.T) {
 	if _, err := w.Run(ctx); err != nil {
 		t.Fatalf("wizard run failed: %v", err)
 	}
-	if ui.WasCalled("ConfirmOAuth") {
-		t.Error("ConfirmOAuth must NOT be prompted when --oauth was explicitly set")
-	}
 	if state.OAuth {
-		t.Error("explicit --oauth=false must win over the prompt default (true)")
+		t.Error("explicit --oauth=false must win over the transport default (true)")
 	}
 	if state.Service == nil || state.Service.OAuth {
 		t.Error("explicit --oauth=false must flow into the service state (MCP_OAUTH=false)")
+	}
+}
+
+// TestMcpInstallTransportFeedsOAuthDefaultWhenFlagSupplied guards that the
+// secure OAuth default (true) applies even when the transport was supplied via
+// --transport http and the "Choose Transport" step is therefore SKIPPED. The
+// default lives in "Configure Tunnel" (which runs for every http install), not
+// in the transport step, so a flag-driven http run does not silently leave
+// OAuth off and write no MCP_OAUTH.
+func TestMcpInstallTransportFeedsOAuthDefaultWhenFlagSupplied(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	ui := newMockInstallUI()
+
+	envFile := filepath.Join(root, "mcp.env")
+
+	// State mirrors runMcpInstall when --transport http is passed: Transport is
+	// already set to http BEFORE the wizard runs, so "Choose Transport" is
+	// skipped. No --oauth flag was given (OAuthIsSet false).
+	state := &InstallState{
+		Agents:    []install.AgentKey{install.AgentClaudeCode},
+		Scope:     scopeGlobal,
+		Transport: install.TransportHTTP,
+		PublicURL: "https://my-app.ngrok.app",
+		AuthToken: "auth",
+	}
+
+	w := NewInstallWizard(ui, state, tempPathResolver(root, t.TempDir()))
+	w.tunnelConfigurer = func(_ context.Context, s *InstallState) (bool, error) {
+		svc := &mcpadapter.ServiceInstallState{EnvFile: envFile, PublicURL: "https://my-app.ngrok.app", AuthToken: "auth", OAuth: s.OAuth}
+		s.Service = svc
+		return true, nil
+	}
+
+	if _, err := w.Run(ctx); err != nil {
+		t.Fatalf("wizard run failed: %v", err)
+	}
+	// "Choose Transport" was skipped (transport was pre-set), so the OAuth
+	// default must come from the Configure Tunnel step, not the prompt.
+	if ui.WasCalled("SelectTransport") {
+		t.Error("transport was flag-supplied; the Choose Transport step should have been skipped")
+	}
+	if !state.OAuth {
+		t.Error("flag-supplied --transport http must default OAuth ON (no --oauth given)")
+	}
+	if state.Service == nil || !state.Service.OAuth {
+		t.Error("the OAuth default must flow into the service state (MCP_OAUTH=true)")
+	}
+}
+
+func writeEnv(t *testing.T, path, body string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+const partialEnv = "" +
+	"MCP_TUNNEL_PROVIDER=ngrok\n" +
+	"MCP_AUTH_TOKEN=repro-auth\n" +
+	"NGROK_AUTHTOKEN=repro-ngrok\n"
+
+const completeEnv = partialEnv +
+	"MCP_PUBLIC_URL=https://you.ngrok-free.dev\n"
+
+func TestNeedsFreshTunnelPrompt_PartialExistingEnvNeedsConfig(t *testing.T) {
+	root := t.TempDir()
+	envFile := filepath.Join(root, "mcp.env")
+	writeEnv(t, envFile, partialEnv)
+	cmd := &cli.Command{}
+	if !needsFreshTunnelPrompt(cmd, envFile) {
+		t.Fatal("a partial existing env file (no MCP_PUBLIC_URL) MUST still run the interactive tunnel config")
+	}
+}
+
+func TestNeedsFreshTunnelPrompt_CompleteExistingEnvSkipsConfig(t *testing.T) {
+	root := t.TempDir()
+	envFile := filepath.Join(root, "mcp.env")
+	writeEnv(t, envFile, completeEnv)
+	cmd := &cli.Command{}
+	if needsFreshTunnelPrompt(cmd, envFile) {
+		t.Fatal("an existing env file with MCP_PUBLIC_URL already configured should skip the interactive prompt")
+	}
+}
+
+func TestNeedsFreshTunnelPrompt_MissingEnvNeedsConfig(t *testing.T) {
+	cmd := &cli.Command{}
+	envFile := filepath.Join(t.TempDir(), "mcp.env") // does not exist
+	if !needsFreshTunnelPrompt(cmd, envFile) {
+		t.Fatal("a missing env file must run the interactive tunnel config")
+	}
+}
+
+func TestNeedsFreshTunnelPrompt_TunnelFlagSkips(t *testing.T) {
+	envFile := filepath.Join(t.TempDir(), "mcp.env") // missing
+	cmd := NewMcpInstallCommand()                    // registers the shared service flags incl. --tunnel
+	cmd.Set("tunnel", "ngrok")
+	if needsFreshTunnelPrompt(cmd, envFile) {
+		t.Fatal("--tunnel flag must skip the interactive prompt (bootstraps from flags)")
+	}
+}
+
+// TestIsFreshServiceEnvFile_MissingIsFresh guards that a genuinely-new env file
+// (this run creates it) is flagged fresh, so a freshly-written-but-invalid file
+// holding the user's secret is still cleaned up on failure.
+func TestIsFreshServiceEnvFile_MissingIsFresh(t *testing.T) {
+	envFile := filepath.Join(t.TempDir(), "mcp.env") // does not exist
+	if !isFreshServiceEnvFile(envFile) {
+		t.Fatal("a missing env file must be treated as freshly created this run")
+	}
+}
+
+// TestIsFreshServiceEnvFile_PreexistingIsNotFresh guards the Kody finding: a
+// PRE-EXISTING partial env file being re-configured to add MCP_PUBLIC_URL must
+// NOT be flagged created, otherwise the collector's validation-failure cleanup
+// would delete it and destroy the operator's stored credentials.
+func TestIsFreshServiceEnvFile_PreexistingIsNotFresh(t *testing.T) {
+	root := t.TempDir()
+	envFile := filepath.Join(root, "mcp.env")
+	writeEnv(t, envFile, partialEnv) // exists, holds provider + credentials
+	if isFreshServiceEnvFile(envFile) {
+		t.Fatal("a pre-existing env file must NOT be treated as freshly created (its secrets must survive a failed re-config)")
+	}
+}
+
+func TestSeedServiceFromEnvFile_FoldsKnownValues(t *testing.T) {
+	root := t.TempDir()
+	envFile := filepath.Join(root, "mcp.env")
+	writeEnv(t, envFile, partialEnv)
+	s := &mcpadapter.ServiceInstallState{}
+	seedServiceFromEnvFile(envFile, s, false)
+	if s.Provider != mcpadapter.TunnelProviderNgrok {
+		t.Errorf("provider = %q, want ngrok", s.Provider)
+	}
+	if s.AuthToken != "repro-auth" {
+		t.Errorf("authToken = %q, want repro-auth", s.AuthToken)
+	}
+	if s.TunnelToken != "repro-ngrok" {
+		t.Errorf("tunnelToken = %q, want repro-ngrok (from NGROK_AUTHTOKEN)", s.TunnelToken)
+	}
+	if s.PublicURL != "" {
+		t.Errorf("publicURL = %q, want empty (the missing piece)", s.PublicURL)
+	}
+}
+
+func TestSeedServiceFromEnvFile_LeavesPreSetValues(t *testing.T) {
+	root := t.TempDir()
+	envFile := filepath.Join(root, "mcp.env")
+	writeEnv(t, envFile, completeEnv)
+	s := &mcpadapter.ServiceInstallState{TunnelToken: "already-set"}
+	seedServiceFromEnvFile(envFile, s, false)
+	if s.TunnelToken != "already-set" {
+		t.Errorf("tunnelToken = %q, want already-set preserved", s.TunnelToken)
+	}
+	if s.PublicURL != "https://you.ngrok-free.dev" {
+		t.Errorf("publicURL = %q, want seeded from env", s.PublicURL)
+	}
+	// OAuth is deliberately NOT folded from the env file: it is a security/UX
+	// choice owned by the operator's --oauth flag / transport step, not by a
+	// stale MCP_OAUTH in a partial file.
+	if s.OAuth {
+		t.Error("seedServiceFromEnvFile must not fold OAuth from the env file")
+	}
+}
+
+// TestSeedServiceFromEnvFile_DoesNotClobberExplicitOAuth guards the Kody
+// finding: MCP_OAUTH=true in a leftover partial env file must NOT override an
+// explicit --oauth=false (which the transport step already folded into
+// s.OAuth before seeding). Re-adding an unconditional OAuth fold makes this
+// fail.
+func TestSeedServiceFromEnvFile_DoesNotClobberExplicitOAuth(t *testing.T) {
+	root := t.TempDir()
+	envFile := filepath.Join(root, "mcp.env")
+	writeEnv(t, envFile, partialEnv+"MCP_OAUTH=true\n")
+	s := &mcpadapter.ServiceInstallState{OAuth: false} // folded from --oauth=false
+	seedServiceFromEnvFile(envFile, s, true)           // --oauth was explicitly passed this run
+	if s.OAuth {
+		t.Error("MCP_OAUTH=true in a stale partial file must not override an explicit --oauth=false")
+	}
+}
+
+// TestSeedServiceFromEnvFile_PreservesPersistedOAuthWhenUnset guards the
+// reviewer finding: a persisted MCP_OAUTH=false in a partial env file must be
+// folded back into s.OAuth when the operator did NOT pass --oauth this run,
+// instead of being clobbered by the transport step's secure default-on (true).
+// This keeps the fresh re-config path symmetric with the skip path, which
+// already preserves a persisted MCP_OAUTH when --oauth is unset.
+func TestSeedServiceFromEnvFile_PreservesPersistedOAuthWhenUnset(t *testing.T) {
+	root := t.TempDir()
+	envFile := filepath.Join(root, "mcp.env")
+	writeEnv(t, envFile, partialEnv+"MCP_OAUTH=false\n")
+
+	// No --oauth this run: s.OAuth holds the transport-step default (true).
+	// The persisted MCP_OAUTH=false must win over that default.
+	s := &mcpadapter.ServiceInstallState{OAuth: true}
+	seedServiceFromEnvFile(envFile, s, false)
+	if s.OAuth {
+		t.Error("persisted MCP_OAUTH=false must be folded back, not clobbered by the default-on")
+	}
+
+	// Explicit --oauth=true this run must win over the persisted false.
+	s2 := &mcpadapter.ServiceInstallState{OAuth: true}
+	seedServiceFromEnvFile(envFile, s2, true)
+	if !s2.OAuth {
+		t.Error("an explicit --oauth=true must override a persisted MCP_OAUTH=false")
+	}
+}
+
+// TestSeedServiceFromEnvFile_FoldsPort guards that MCP_PORT persisted in an
+// existing env file (e.g. from an earlier run where the operator set --port) is
+// folded back into s.Port, so a re-run's "Write service environment file" step
+// does not silently drop the operator's port. An explicitly-set s.Port wins.
+func TestSeedServiceFromEnvFile_FoldsPort(t *testing.T) {
+	root := t.TempDir()
+	envFile := filepath.Join(root, "mcp.env")
+	writeEnv(t, envFile, partialEnv+"MCP_PORT=4321\n")
+
+	s := &mcpadapter.ServiceInstallState{}
+	seedServiceFromEnvFile(envFile, s, false)
+	if s.Port != 4321 {
+		t.Errorf("port = %d, want 4321 folded from MCP_PORT", s.Port)
+	}
+
+	// An explicit port this run must not be clobbered by the stale file value.
+	s2 := &mcpadapter.ServiceInstallState{Port: 9999}
+	seedServiceFromEnvFile(envFile, s2, false)
+	if s2.Port != 9999 {
+		t.Errorf("explicit port = %d, want 9999 preserved", s2.Port)
+	}
+
+	// An explicit --port 0 ("pick a free port") must NOT fold the saved port
+	// back in; otherwise the operator could never revert to auto-assignment.
+	s4 := &mcpadapter.ServiceInstallState{PortIsSet: true}
+	seedServiceFromEnvFile(envFile, s4, false)
+	if s4.Port != 0 {
+		t.Errorf("explicit --port 0 must not fold the saved port, got port = %d", s4.Port)
+	}
+
+	// A malformed MCP_PORT is ignored (fresh config handles it).
+	bad := filepath.Join(root, "bad.env")
+	writeEnv(t, bad, partialEnv+"MCP_PORT=not-a-number\n")
+	s3 := &mcpadapter.ServiceInstallState{}
+	seedServiceFromEnvFile(bad, s3, false)
+	if s3.Port != 0 {
+		t.Errorf("malformed MCP_PORT must be ignored, got port = %d", s3.Port)
 	}
 }

@@ -368,6 +368,87 @@ func resolveManagedServiceForInstall(ctx context.Context, cmd *cli.Command) (str
 	return envFile, svc, nil
 }
 
+// explicitServiceEnvFromFlags returns the service env keys the operator set
+// EXPLICITLY on the CLI or via their MCP_* source env vars. Only explicitly-set
+// keys are included so the result can be safely overlaid onto an EXISTING env
+// file without clobbering values a prior run persisted. This is the single
+// source of truth for "which install flags override saved config"; every path
+// that must honor operator intent (fresh bootstrap AND re-run reconcile) goes
+// through it.
+//
+// OAuth is deliberately NOT defaulted here: the secure default-on is applied
+// only when creating a fresh file (see bootstrapServiceEnvironment). On a
+// re-run, an unset --oauth must leave whatever MCP_OAUTH the file already has.
+func explicitServiceEnvFromFlags(cmd *cli.Command) (service.Environment, error) {
+	provider, err := parseTunnelProvider(cmd.String(serviceTunnelFlag))
+	if err != nil && provider == "" {
+		provider = ""
+	} else if err != nil {
+		return nil, err
+	}
+	env := service.Environment{}
+	setIf := func(key, flag string) {
+		// Persist only non-empty values. A flag that IsSet but evaluates empty
+		// (e.g. --public-url "" ) must NOT overwrite a saved non-empty value in
+		// an existing env file — doing so would take a working install to a
+		// broken/unconfigurable state. OAuth/Port are handled below from their
+		// typed (bool/int) values, so they are unaffected by this guard.
+		if cmd.IsSet(flag) {
+			if v := strings.TrimSpace(cmd.String(flag)); v != "" {
+				env[key] = v
+			}
+		}
+	}
+	if provider != "" {
+		env["MCP_TUNNEL_PROVIDER"] = string(provider)
+	}
+	setIf("MCP_TUNNEL_ID", serviceTunnelIDFlag)
+	setIf("CONTROL_PLANE_API_KEY", serviceApiKeyFlag)
+	setIf("MCP_DOMAIN", serviceDomainFlag)
+	setIf("MCP_TUNNEL_NAME", serviceTunnelNameFlag)
+	setIf("MCP_AUTH_TOKEN", serviceAuthTokenFlag)
+	setIf("MCP_TUNNEL_TOKEN", serviceTunnelTokenFlag)
+	setIf("MCP_PUBLIC_URL", servicePublicURLFlag)
+	setIf("MCP_HOST", serviceHostFlag)
+	if cmd.IsSet(serviceOAuthFlag) {
+		if cmd.Bool(serviceOAuthFlag) {
+			env["MCP_OAUTH"] = "true"
+		} else {
+			env["MCP_OAUTH"] = "false"
+		}
+	}
+	if cmd.IsSet(servicePortFlag) {
+		env["MCP_PORT"] = strconv.Itoa(cmd.Int(servicePortFlag))
+	}
+	return env, nil
+}
+
+// ReconcileServiceEnvironmentFromFlags overlays the operator's explicitly-set
+// install flags onto an existing service env file, preserving every other key.
+// Used on the skip path of mcp install: a re-run against an existing complete
+// env file must let an explicit --oauth / --port / --host / --public-url win
+// over what a prior run persisted, instead of silently ignoring it.
+func ReconcileServiceEnvironmentFromFlags(cmd *cli.Command, envFile string) error {
+	overlay, err := explicitServiceEnvFromFlags(cmd)
+	if err != nil {
+		return err
+	}
+	if len(overlay) == 0 {
+		return nil
+	}
+	env, err := service.LoadEnvironment(envFile)
+	if err != nil {
+		return fmt.Errorf("load service environment %q for reconcile: %w", envFile, err)
+	}
+	for k, v := range overlay {
+		env[k] = v
+	}
+	if err := service.WriteEnvironment(envFile, env); err != nil {
+		return fmt.Errorf("reconcile MCP service environment file: %w", err)
+	}
+	return nil
+}
+
 // bootstrapServiceEnvironment writes a fresh 0600 env file from the tunnel
 // config provided via flags. It requires MCP_TUNNEL_PROVIDER. cfgMgr, when
 // non-nil, also persists any supplied ngrok/openai credential to the last-resort
@@ -381,28 +462,18 @@ func bootstrapServiceEnvironment(cmd *cli.Command, envFile string, cfgMgr config
 		return err
 	}
 
-	env := ServiceEnvironment{
-		"MCP_TUNNEL_PROVIDER": string(provider),
+	env, err := explicitServiceEnvFromFlags(cmd)
+	if err != nil {
+		return err
 	}
-	// Mirror the keys read via the MCP command's flag Sources (see adapter.go).
-	setIf := func(key, flag string) {
-		if v := strings.TrimSpace(cmd.String(flag)); v != "" {
-			env[key] = v
-		}
-	}
-	setIf("MCP_TUNNEL_ID", serviceTunnelIDFlag)
-	setIf("CONTROL_PLANE_API_KEY", serviceApiKeyFlag)
-	setIf("MCP_DOMAIN", serviceDomainFlag)
-	setIf("MCP_TUNNEL_NAME", serviceTunnelNameFlag)
-	setIf("MCP_AUTH_TOKEN", serviceAuthTokenFlag)
-	setIf("MCP_TUNNEL_TOKEN", serviceTunnelTokenFlag)
-	setIf("MCP_PUBLIC_URL", servicePublicURLFlag)
-	setIf("MCP_HOST", serviceHostFlag)
-	if cmd.IsSet(serviceOAuthFlag) && cmd.Bool(serviceOAuthFlag) {
+	env["MCP_TUNNEL_PROVIDER"] = string(provider)
+	// OAuth is the secure default for a public remote MCP endpoint: a brand-new
+	// file defaults to enabling it (an explicit --oauth=false overrides via the
+	// explicit overlay above). This ensures a headless `--tunnel` bootstrap does
+	// not leave a public endpoint authenticated only by the shared token as a
+	// Bearer.
+	if _, set := env["MCP_OAUTH"]; !set {
 		env["MCP_OAUTH"] = "true"
-	}
-	if cmd.IsSet(servicePortFlag) {
-		env["MCP_PORT"] = strconv.Itoa(cmd.Int(servicePortFlag))
 	}
 
 	if err := service.WriteEnvironment(envFile, env); err != nil {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/samber/lo"
@@ -12,6 +13,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/cli/wizard"
 	mcpadapter "go.lumeweb.com/pinner-cli/internal/mcp"
 	"go.lumeweb.com/pinner-cli/internal/mcp/install"
+	"go.lumeweb.com/pinner-cli/internal/service"
 )
 
 // NewMcpInstallCommand creates the `pinner mcp install` command that writes an
@@ -222,30 +224,57 @@ func runMcpInstall(ctx context.Context, cmd mcpInstallFlagGetter, ui InstallUI, 
 			if err != nil {
 				return false, err
 			}
-			if !needsFreshTunnelPrompt(realCmd, envFile) {
-				return false, nil
-			}
 			service := s.Service
 			if service == nil {
 				service = &mcpadapter.ServiceInstallState{EnvFile: envFile}
 				s.Service = service
 			}
-			// Fold the operator's OAuth choice from the transport step (default
-			// yes) into the service state so MCP_OAUTH is written. An explicit
-			// --oauth flag (seeded below) overrides the prompted default.
+			// Fold the operator's OAuth choice from the Configure Tunnel step
+			// (default yes) into the service state so MCP_OAUTH is written. This
+			// happens BEFORE the skip check so the value is available even when
+			// the interactive config is skipped. OAuthIsSet mirrors the explicit
+			// --oauth decision so the env serializer knows to persist the
+			// value (including false) rather than omit it.
 			service.OAuth = s.OAuth
-			// We are on the fresh path, so the spliced write step creates the env
-			// file this run. Report created=true (via both the return value and
-			// service.EnvFileCreated) so the outer step and the collector clean up a
-			// partial file on failure.
-			created := true
-			service.EnvFileCreated = true
+			service.OAuthIsSet = s.OAuthIsSet
+			if !needsFreshTunnelPrompt(realCmd, envFile) {
+				// Skip path: the interactive config is not run, so the collector
+				// would read the existing env file unchanged. Persist any install
+				// flags the operator set EXPLICITLY (--oauth, --port, --host,
+				// --public-url, ...) over the saved values so a re-run does not
+				// silently drop them. Only rewrites when there is an existing
+				// file to reconcile — a fresh --tunnel bootstrap is created by
+				// the collector instead. An unset --oauth leaves whatever
+				// MCP_OAUTH the file already has (no secure-default clobber).
+				if _, statErr := os.Stat(envFile); statErr == nil {
+					if err := mcpadapter.ReconcileServiceEnvironmentFromFlags(realCmd, envFile); err != nil {
+						return false, err
+					}
+				}
+				return false, nil
+			}
+			// We are on the fresh path: the spliced write step creates the env file
+			// this run only when it did not already exist. Report created=true only
+			// in that case (via both the return value and service.EnvFileCreated) so
+			// the outer step and the collector clean up a partial file on failure.
+			// A PRE-EXISTING partial file (provider + credentials but no
+			// MCP_PUBLIC_URL, e.g. from an earlier failed run) must NOT be flagged
+			// created: it holds the operator's stored secrets, and the collector's
+			// validation-failure cleanup would otherwise delete it.
+			wasFresh := isFreshServiceEnvFile(envFile)
+			created := wasFresh
+			service.EnvFileCreated = wasFresh
 			cfgMgr := mcpadapter.ServiceConfigManager()
 			// Pre-seed provider/credentials from flags & env BEFORE the steps so
 			// an explicit --auth-token/--token/--domain (or MCP_AUTH_TOKEN /
 			// NGROK_AUTHTOKEN) is not re-prompted — matching RunServiceInstallWizard,
-			// which seeds before running its steps.
+			// which seeds before running its steps. Values already persisted in an
+			// existing env file (e.g. a partial file from an earlier run that had
+			// provider + credentials but no MCP_PUBLIC_URL) are folded in next, so
+			// a re-run reuses what's known and only resolves the still-missing
+			// public URL instead of re-prompting for everything.
 			mcpadapter.SeedServiceFromFlagsAndEnv(realCmd, service, envFile)
+			seedServiceFromEnvFile(envFile, service, s.OAuthIsSet)
 			for _, step := range mcpadapter.ServiceInstallSteps(service, realCmd, envFile, cfgMgr) {
 				if step.ShouldSkip(service) {
 					continue
@@ -263,11 +292,16 @@ func runMcpInstall(ctx context.Context, cmd mcpInstallFlagGetter, ui InstallUI, 
 }
 
 // needsFreshTunnelPrompt reports whether mcp install must run the interactive
-// tunnel-config steps: only when a NEW service env file has to be created
-// interactively — i.e. no existing env file, no --tunnel flag (which bootstraps
-// from flags), and the run is not headless. In every other case the collector
-// (CollectHTTPInstall) handles the existing/flag/non-interactive path on its
-// own, exactly as before the flatten.
+// tunnel-config steps: when a NEW service env file has to be created
+// interactively OR the existing env file does not yet provide a usable
+// MCP_PUBLIC_URL (the thing an HTTP install needs). Presence of `--tunnel`
+// (which bootstraps from flags) or a headless run always skips the prompt.
+//
+// "Usable" is judged on the file content, not mere existence: a leftover
+// partial env file (provider + credentials but no public URL, e.g. from an
+// earlier failed run) must NOT count as already-configured — otherwise the
+// interactive URL resolution is silently skipped and the stale URL-less file
+// surfaces a confusing "produced no MCP_PUBLIC_URL" error on every re-run.
 func needsFreshTunnelPrompt(cmd *cli.Command, envFile string) bool {
 	if cmd.String("tunnel") != "" {
 		return false
@@ -275,8 +309,109 @@ func needsFreshTunnelPrompt(cmd *cli.Command, envFile string) bool {
 	if wizard.NonInteractive {
 		return false
 	}
-	_, err := os.Stat(envFile)
-	return err != nil && os.IsNotExist(err)
+	if _, err := os.Stat(envFile); err != nil {
+		// File missing (or unreadable): a fresh interactive config is needed.
+		return os.IsNotExist(err)
+	}
+	env, err := service.LoadEnvironment(envFile)
+	if err != nil {
+		// Unreadable/corrupt file: treat as needing reconfiguration.
+		return true
+	}
+	return strings.TrimSpace(env["MCP_PUBLIC_URL"]) == ""
+}
+
+// isFreshServiceEnvFile reports whether the MCP service env file did NOT exist
+// before this run. It drives the created flag threaded into the collector's
+// validation-failure cleanup: a file we created this run may be removed on
+// failure (it may hold a partial secret), but a PRE-EXISTING file — even a
+// partial one being re-configured to add MCP_PUBLIC_URL — must never be
+// deleted, because it holds the operator's stored credentials.
+func isFreshServiceEnvFile(envFile string) bool {
+	if _, err := os.Stat(envFile); err != nil {
+		// Missing file: this run creates it, so it is fresh. An unreadable but
+		// existing file is NOT fresh (it holds real state we must not delete).
+		return os.IsNotExist(err)
+	}
+	return false
+}
+
+// seedServiceFromEnvFile folds values already persisted in an existing MCP
+// service env file (if any) into the service state for fields not yet set, so
+// a re-run against a partial env file (e.g. provider + credentials but no
+// MCP_PUBLIC_URL from an earlier failed run) reuses what is known and only the
+// genuinely-missing public URL is resolved by the interactive steps — instead
+// of re-prompting for every value. A missing or unreadable file, or one whose
+// values are malformed, is ignored (a fresh config path handles it).
+//
+// oauthIsSet reports whether the operator explicitly passed --oauth this run.
+// When false, a persisted MCP_OAUTH is folded into s.OAuth (preserving an
+// earlier explicit choice instead of clobbering it with the transport step's
+// secure default-on); when true, the explicit flag value in s.OAuth wins.
+func seedServiceFromEnvFile(envFile string, s *mcpadapter.ServiceInstallState, oauthIsSet bool) {
+	if s == nil {
+		return
+	}
+	env, err := service.LoadEnvironment(envFile)
+	if err != nil {
+		return
+	}
+	set := func(dst *string, key string) {
+		if *dst == "" {
+			*dst = strings.TrimSpace(env[key])
+		}
+	}
+	if s.Provider == "" {
+		// The env file only ever contains a provider token written by
+		// serviceInstallStateToEnv (one of the three known providers), so it
+		// round-trips directly.
+		switch mcpadapter.TunnelProvider(env["MCP_TUNNEL_PROVIDER"]) {
+		case mcpadapter.TunnelProviderNgrok,
+			mcpadapter.TunnelProviderCloudflared,
+			mcpadapter.TunnelProviderOpenAI:
+			s.Provider = mcpadapter.TunnelProvider(env["MCP_TUNNEL_PROVIDER"])
+		}
+	}
+	set(&s.TunnelID, "MCP_TUNNEL_ID")
+	set(&s.ApiKey, "CONTROL_PLANE_API_KEY")
+	set(&s.Domain, "MCP_DOMAIN")
+	set(&s.TunnelName, "MCP_TUNNEL_NAME")
+	set(&s.AuthToken, "MCP_AUTH_TOKEN")
+	// ngrok token: prefer MCP_TUNNEL_TOKEN, then NGROK_AUTHTOKEN.
+	set(&s.TunnelToken, "MCP_TUNNEL_TOKEN")
+	if s.TunnelToken == "" {
+		set(&s.TunnelToken, "NGROK_AUTHTOKEN")
+	}
+	set(&s.PublicURL, "MCP_PUBLIC_URL")
+	set(&s.Host, "MCP_HOST")
+	// Fold MCP_PORT back into s.Port when the operator did not set it this run,
+	// so a re-run's "Write service environment file" step does not silently drop
+	// a port an earlier run persisted (serviceInstallStateToEnv only writes
+	// MCP_PORT when s.Port != 0). An explicit --port (PortIsSet), including an
+	// explicit --port 0 meaning "pick a free port", must win over the saved
+	// value — otherwise --port 0 could not revert to auto-assignment.
+	if s.Port == 0 && !s.PortIsSet {
+		if p, err := strconv.Atoi(strings.TrimSpace(env["MCP_PORT"])); err == nil && p > 0 {
+			s.Port = p
+		}
+	}
+	// Fold a persisted MCP_OAUTH back into s.OAuth ONLY when the operator did
+	// not explicitly pass --oauth this run. This makes the two install paths
+	// symmetric: the skip path preserves a persisted MCP_OAUTH when --oauth is
+	// unset (ReconcileServiceEnvironmentFromFlags writes nothing for unset
+	// flags), and the fresh re-config path here does the same instead of
+	// clobbering a persisted MCP_OAUTH=false with the transport step's secure
+	// default-on. When the operator DID pass --oauth, that explicit value wins
+	// and a possibly-stale persisted value must not override it (an
+	// MCP_OAUTH=true left in a partial file must not clobber --oauth=false).
+	if !oauthIsSet {
+		switch strings.TrimSpace(env["MCP_OAUTH"]) {
+		case "true":
+			s.OAuth = true
+		case "false":
+			s.OAuth = false
+		}
+	}
 }
 
 func dedupeAgents(agents []install.AgentKey) []install.AgentKey {
