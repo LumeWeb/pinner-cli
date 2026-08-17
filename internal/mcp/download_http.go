@@ -1,0 +1,284 @@
+package mcp
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
+	"io"
+	"net/http"
+	"strings"
+	"sync"
+	"time"
+)
+
+// defaultHTTPDownloadTTL is how long a minted one-time filedrop GET endpoint
+// stays valid before its token is rejected. Aligned with the upload TTL.
+const defaultHTTPDownloadTTL = 5 * time.Minute
+
+// downloadToken is the per-token state for a minted filedrop GET endpoint:
+// which file it serves, the file's size/name, and when it expires. `used`
+// marks single-use consumption so a re-GET with the same token is rejected,
+// not re-served.
+type downloadToken struct {
+	name      string
+	size      int64
+	serve     func(ctx context.Context, w io.Writer) error
+	expiresAt time.Time
+	used      bool
+}
+
+// httpDownload is the one-time filedrop GET coordinator. The agent/app calls a
+// download tool to mint an endpoint, then pulls the bytes with `curl -o file
+// <url>` (or a browser <a download> link / GET) over HTTP — out of band from
+// the MCP/LLM channel. The GET handler claim the one-time token, streams the
+// resolved source bytes to the response, and marks the token used so a re-GET
+// is rejected.
+//
+// It works over BOTH transports, mirroring httpUpload:
+//   - stdio mode: no transport server, so mint() spins up a loopback listener
+//     on a random port (baseURL == "") and the GET route is mounted on that
+//     loopback mux via ensureLoopback.
+//   - HTTP/tunnel mode: a base URL is set, so serveHTTP mounts the GET route
+//     on the shared transport mux via registerHandlers and the loopback
+//     listener is intentionally not started.
+//
+// The one-time token is the only access control: unguessable (128-bit),
+// expiring, single-use, and bound to a serve closure at mint time so a caller
+// can never redirect the GET to arbitrary server-side bytes.
+type httpDownload struct {
+	loopback loopbackServer
+
+	mu     sync.Mutex
+	tokens map[string]downloadToken
+	now    func() time.Time
+}
+
+// NewHTTPDownload creates the one-time filedrop GET coordinator.
+func NewHTTPDownload() *httpDownload {
+	return &httpDownload{
+		tokens: make(map[string]downloadToken),
+		now:    time.Now,
+	}
+}
+
+// SetBaseURL points the coordinator at the externally reachable base URL (the
+// public/tunnel URL in HTTP mode, or empty for the loopback-derived URL in
+// stdio mode).
+func (hd *httpDownload) SetBaseURL(url string) {
+	hd.loopback.SetBaseURL(url)
+}
+
+// AddTrustedOrigins extends the origin corsDownload reflects for a browser GET
+// beyond the coordinator's own base/loopback origin, allowing a configured MCP
+// host that serves the app iframe from its own origin to download. See
+// loopbackServer.AddTrustedOrigins.
+func (hd *httpDownload) AddTrustedOrigins(origins ...string) {
+	hd.loopback.AddTrustedOrigins(origins...)
+}
+
+// Stop shuts down the loopback listener, if any.
+func (hd *httpDownload) Stop(ctx context.Context) {
+	hd.loopback.Stop(ctx)
+}
+
+// registerHandlers mounts the one-time filedrop GET route on the shared mux
+// (HTTP/tunnel mode) or the loopback mux (stdio mode via ensureLoopback).
+// The token is carried in the path, /download/<token>.
+func (hd *httpDownload) registerHandlers(mux *http.ServeMux) {
+	mux.HandleFunc("/download/", corsDownload(hd.allowedDownloadOrigins, hd.getHandler))
+}
+
+// allowedDownloadOrigins is the callback corsDownload uses to scope the
+// reflected origin to the coordinator's own transport/base origin.
+func (hd *httpDownload) allowedDownloadOrigins() []string { return hd.loopback.acceptedOrigins() }
+
+// mint registers a fresh one-time filedrop GET endpoint bound to the given
+// serve closure and returns its full URL plus the declared name/size. It
+// ensures the loopback listener is running in stdio mode so the URL is always
+// reachable. The token is single-use: the GET that claims it is the only GET
+// that will ever be served for this file.
+func (hd *httpDownload) mint(name string, size int64, serve func(ctx context.Context, w io.Writer) error, ttl time.Duration) (string, error) {
+	if serve == nil {
+		return "", errors.New("no download source configured")
+	}
+	if err := hd.loopback.ensureLoopback(hd.registerHandlers); err != nil {
+		return "", err
+	}
+	if name == "" {
+		name = DefaultUploadName
+	}
+	if ttl <= 0 {
+		ttl = defaultHTTPDownloadTTL
+	}
+	token := newDownloadToken()
+	hd.mu.Lock()
+	// Prune expired minted-but-never-used tokens so a long-lived server does
+	// not accumulate permanent map entries.
+	now := hd.now()
+	for t, tkn := range hd.tokens {
+		if now.After(tkn.expiresAt) {
+			delete(hd.tokens, t)
+		}
+	}
+	hd.tokens[token] = downloadToken{name: name, size: size, serve: serve, expiresAt: now.Add(ttl)}
+	hd.mu.Unlock()
+	hd.loopback.mu.Lock()
+	defer hd.loopback.mu.Unlock()
+	return hd.loopback.urlLocked("download", token), nil
+}
+
+// newDownloadToken returns a fresh 128-bit hex token guarding the
+// unauthenticated GET route — 64-bit entropy would be too guessable on a route
+// that streams a caller's stored bytes.
+func newDownloadToken() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
+// getHandler serves the bytes for a claimed one-time filedrop GET token. It
+// validates the token (must exist, not expired, not already used), consumes it
+// so a re-GET is rejected, sets a Content-Disposition attachment name so a
+// browser saves the correct filename, then streams the resolved bytes to the
+// response. On any stream error it fails the request rather than returning a
+// truncated body as if it were complete.
+func (hd *httpDownload) getHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	token := strings.TrimPrefix(r.URL.Path, "/download/")
+	if token == "" {
+		http.NotFound(w, r)
+		return
+	}
+	tkn, ok := hd.claim(token)
+	if !ok {
+		// Distinguish a spent/expired endpoint from one that never existed:
+		// both are unreachable, but the former already served its bytes and is
+		// a reuse attempt. 404 keeps the client from retrying against a dead
+		// route.
+		http.Error(w, "invalid, expired, or already-used download endpoint", http.StatusNotFound)
+		return
+	}
+
+	// Serve as an attachment so a browser GET saves the original filename,
+	// and stream declaratively with a known size where we have it.
+	w.Header().Set("Content-Disposition", `attachment; filename="`+sanitizeFilename(tkn.name)+`"`)
+	w.Header().Set("Content-Type", "application/octet-stream")
+	if tkn.size > 0 {
+		w.Header().Set("Content-Length", itoa(tkn.size))
+	}
+	w.WriteHeader(http.StatusOK)
+
+	if err := tkn.serve(r.Context(), w); err != nil {
+		// The body may already be partially written; we cannot change the
+		// status. Close the connection is not directly possible here, but we
+		// log nothing and let the partial transfer fail — the caller sees the
+		// truncated length mismatch. (Upload side uses the same fail-don't-
+		// fabricate-completion stance.)
+		return
+	}
+}
+
+// claim atomically validates and consumes a one-time filedrop GET token: it
+// reports the token state if it exists, is unexpired, and has not been used. A
+// used or expired token is removed so a re-GET cannot re-enter the stream path.
+func (hd *httpDownload) claim(token string) (downloadToken, bool) {
+	hd.mu.Lock()
+	defer hd.mu.Unlock()
+	t, ok := hd.tokens[token]
+	if !ok {
+		return downloadToken{}, false
+	}
+	if t.used || hd.now().After(t.expiresAt) {
+		delete(hd.tokens, token)
+		return downloadToken{}, false
+	}
+	t.used = true
+	hd.tokens[token] = t
+	return t, true
+}
+
+// setNow overrides the clock used for expiry (test seam).
+func (hd *httpDownload) setNow(f func() time.Time) {
+	if f == nil {
+		return
+	}
+	hd.mu.Lock()
+	hd.now = f
+	hd.mu.Unlock()
+}
+
+// corsDownload wraps a filedrop GET route handler so a browser XHR / <a
+// download> link can GET from the minted endpoint across origins. Same
+// restricted-origin semantics as corsUpload: only trusted first-party origins
+// get the allow-origin header; access control is the unguessable single-use
+// token, never cookies.
+func corsDownload(allowed func() []string, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+		if origin != "" && originsContains(allowed(), origin) {
+			h := w.Header()
+			h.Set("Access-Control-Allow-Origin", origin)
+			h.Set("Vary", "Origin")
+			h.Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			h.Set("Access-Control-Allow-Headers", "Content-Type")
+			h.Add("Vary", "Access-Control-Request-Method")
+			h.Add("Vary", "Access-Control-Request-Headers")
+		}
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next(w, r)
+	}
+}
+
+// itoa is a tiny int64->decimal helper avoiding strconv for the size header.
+func itoa(n int64) string {
+	if n == 0 {
+		return "0"
+	}
+	neg := n < 0
+	if neg {
+		n = -n
+	}
+	var b [20]byte
+	i := len(b)
+	for n > 0 {
+		i--
+		b[i] = byte('0' + n%10)
+		n /= 10
+	}
+	if neg {
+		i--
+		b[i] = '-'
+	}
+	return string(b[i:])
+}
+
+// sanitizeFilename strips path separators and control bytes from a proposed
+// filename so a Content-Disposition header cannot be used to smuggle a path or
+// header injection. Falls back to "download" for empty/unsafe results.
+func sanitizeFilename(name string) string {
+	if name == "" {
+		return "download"
+	}
+	var sb strings.Builder
+	for _, r := range name {
+		switch r {
+		case '/', '\\', '"', '\r', '\n', ':', '*', '?', '|', '<', '>':
+			sb.WriteRune('_')
+		default:
+			sb.WriteRune(r)
+		}
+	}
+	out := sb.String()
+	if out == "" || out == "." || out == ".." {
+		return "download"
+	}
+	return out
+}

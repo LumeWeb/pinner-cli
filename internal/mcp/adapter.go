@@ -370,6 +370,18 @@ adapter.`,
 				vaultUpload.AddTrustedOrigins(mcpOpts.uploadTrustedOrigins...)
 			}
 
+			// The httpDownload filedrop coordinator serves one-time GET endpoints
+			// that stream a downloaded file's bytes out of band. It is wired when
+			// either download executor (IPFS or vault) is present, and must exist
+			// here (before registerCustomTools and serveHTTP) so both the tool
+			// descriptor's drop branch and the transport-mounted GET route can be
+			// registered against the same instance.
+			var dl *httpDownload
+			if mcpOpts.ipfsDownload != nil || mcpOpts.vaultGet != nil {
+				dl = NewHTTPDownload()
+				dl.AddTrustedOrigins(mcpOpts.downloadTrustedOrigins...)
+			}
+
 			// Build the server after resolving the command tree and wiring the
 			// seed/restore coordinators into the tool handlers. stdioMode tells
 			// the invoke-tool gate that os.Stdin is the MCP transport pipe (so a
@@ -392,6 +404,7 @@ adapter.`,
 				oobCreate:        oobCreate,
 				curlUpload:       curlUpload,
 				vaultUpload:      vaultUpload,
+				downloadDrop:     dl,
 				accountOOB:       accountOOB,
 				accountWebAppURL: accountWebAppURL(wizardS.CfgMgr),
 				resourceFactory:  resourceFactory,
@@ -417,7 +430,7 @@ adapter.`,
 
 			if cmd.String("tunnel") == "openai" {
 				log.Debug("serving MCP server through embedded OpenAI Secure MCP Tunnel")
-				return serveHTTP(ctx, srv, cmd, oob, seedDrop, oobRestore, oobCreate, accountOOB, curlUpload, vaultUpload, wizardS.CfgMgr)
+				return serveHTTP(ctx, srv, cmd, oob, seedDrop, oobRestore, oobCreate, accountOOB, curlUpload, vaultUpload, dl, wizardS.CfgMgr)
 			}
 
 			if !cmd.Bool("http") {
@@ -425,7 +438,7 @@ adapter.`,
 				return RunOfficialStdio(ctx, srv, os.Stdin, os.Stdout)
 			}
 
-			return serveHTTP(ctx, srv, cmd, oob, seedDrop, oobRestore, oobCreate, accountOOB, curlUpload, vaultUpload, wizardS.CfgMgr)
+			return serveHTTP(ctx, srv, cmd, oob, seedDrop, oobRestore, oobCreate, accountOOB, curlUpload, vaultUpload, dl, wizardS.CfgMgr)
 		},
 	}
 }
@@ -472,7 +485,7 @@ func mcpHostProtectionDisabled(tunnelActive, httpMode bool, publicURL string) bo
 	return tunnelActive || (httpMode && publicURL != "")
 }
 
-func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *OutOfBandLogin, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate, accountOOB *OOBAccountChange, curlUpload *httpUpload, vaultUpload *vaultHTTPUpload, cfgMgr config.Manager) error {
+func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *OutOfBandLogin, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate, accountOOB *OOBAccountChange, curlUpload *httpUpload, vaultUpload *vaultHTTPUpload, dl *httpDownload, cfgMgr config.Manager) error {
 	provider := cmd.String("tunnel")
 	domain := cmd.String("domain")
 	token := cmd.String("token")
@@ -564,6 +577,9 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 	}
 	if vaultUpload != nil {
 		vaultUpload.SetBaseURL(baseURL)
+	}
+	if dl != nil {
+		dl.SetBaseURL(baseURL)
 	}
 	var oauth *oauthServer
 	if enableOAuth {
@@ -665,6 +681,14 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 	if vaultUpload != nil {
 		vaultUpload.registerHandlers(mux)
 	}
+	// Mount the one-time filedrop GET route on the shared mux so a download's
+	// bytes can be pulled over HTTP out of band. Like the upload routes it is
+	// mounted outside the bearer-token guards (curl -o / a browser GET cannot
+	// present the MCP auth header); the unguessable /download/<token> path
+	// plus single-use expiry is the access control.
+	if dl != nil {
+		dl.registerHandlers(mux)
+	}
 	// Liveness probe for PaaS/container health checks (Railway, Koyeb, Render,
 	// Fly, Cloud Run, DO). It is intentionally unauthenticated and outside the
 	// bearer-token guard so orchestrators can probe readiness without
@@ -719,6 +743,9 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 		if vaultUpload != nil {
 			vaultUpload.Stop(shCtx)
 		}
+		if dl != nil {
+			dl.Stop(shCtx)
+		}
 		if tun != nil {
 			_ = tun.Stop(shCtx)
 		}
@@ -770,6 +797,9 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 		}
 		if vaultUpload != nil {
 			vaultUpload.SetBaseURL(url)
+		}
+		if dl != nil {
+			dl.SetBaseURL(url)
 		}
 		if oauth != nil {
 			oauthURL, err := tun.OAuthBaseURL(publicURL, url)
@@ -857,6 +887,20 @@ type mcpServerOptions struct {
 	dataURIUpload     DataURIUploadHandler
 	localPathUpload   LocalPathUploadHandler
 	localPathVaultPut LocalPathVaultPutHandler
+	// ipfsDownload is the authenticated IPFS download executor used by the
+	// download_file tool's local sink (it streams a CID's bytes to a writer).
+	// Homing it in the CLI layer mirrors upload; the tool never decides the
+	// mechanism.
+	ipfsDownload IPFSDownloadHandler
+	// vaultGet is the authenticated vault-read executor used by the
+	// vault_get_file tool's sinks (it streams a vault file's decrypted bytes
+	// to a writer). Mirror of vaultPutHandler.
+	vaultGet VaultGetHandler
+	// downloadTrustedOrigins are additional origins (beyond the server's own
+	// base/loopback origin) that the filedrop GET routes reflect over CORS for
+	// the ui:// app. Configured for deployments where the app iframe is served
+	// from an MCP-host origin distinct from the Pinner server origin.
+	downloadTrustedOrigins []string
 	// uploadTrustedOrigins are additional origins (beyond the server's own
 	// base/loopback origin) that the presigned PUT routes reflect over CORS for
 	// the Uppy XHR uploader. Configured for deployments where the ui:// app
@@ -915,6 +959,23 @@ func WithUploadHandler(handler UploadHandler) MCPServerOption {
 func WithVaultPutHandler(handler VaultPutHandler) MCPServerOption {
 	return func(o *mcpServerOptions) {
 		o.vaultPutHandler = handler
+	}
+}
+
+// WithIPFSDownload registers the authenticated IPFS download executor used by
+// the download_file tool's local sink. Passing nil disables the download tool.
+func WithIPFSDownload(handler IPFSDownloadHandler) MCPServerOption {
+	return func(o *mcpServerOptions) {
+		o.ipfsDownload = handler
+	}
+}
+
+// WithVaultGet registers the authenticated vault-read executor used by the
+// vault_get_file tool's sinks (it streams a vault file's decrypted bytes to a
+// writer). Mirror of WithVaultPutHandler. Passing nil disables the tool.
+func WithVaultGet(handler VaultGetHandler) MCPServerOption {
+	return func(o *mcpServerOptions) {
+		o.vaultGet = handler
 	}
 }
 

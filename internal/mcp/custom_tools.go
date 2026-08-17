@@ -46,6 +46,11 @@ type customToolDeps struct {
 	// a destination vault path whose PUT body streams into the authenticated
 	// vault write synchronously. It feeds the "Upload to Vault" MCP App.
 	vaultUpload *vaultHTTPUpload
+	// downloadDrop, when non-nil, backs the one-time filedrop GET route (the
+	// httpDownload coordinator). It serves downloaded bytes out of band to a
+	// consumer that shares no disk with the server. It feeds the access
+	// download_file / vault_get_file drop branches.
+	downloadDrop *httpDownload
 	// accountOOB backs the out-of-band account credential change coordinator
 	// (hosted browser forms -> authenticated UpdatePassword/UpdateEmail). It
 	// enforces an authenticated session; the secret never transits the MCP/LLM
@@ -281,6 +286,31 @@ func registerCustomTools(deps customToolDeps) error {
 			return err
 		}
 	}
+	// Consolidated download_file: a single sink-aware IPFS download tool.
+	//   - sink=local (every transport): opts.ipfsDownload streams the CID bytes
+	//     to a host-side path on the MCP server's own disk.
+	//   - sink=drop (HTTP / real tunnel): deps.downloadDrop mints a one-time
+	//     filedrop GET.
+	// Register it whenever the IPFS download executor is wired. The filedrop
+	// coordinator (downloadDrop) is wired alongside when any download executor
+	// exists, but the drop sink is only honored on transports with a reachable
+	// HTTP mux (tunnelOpenAI=false) — see downloadFileDescription.
+	if opts.ipfsDownload != nil {
+		dlDesc := NewDownloadFileDescriptor(opts.ipfsDownload, deps.downloadDrop, deps.tunnelOpenAI)
+		if err := RegisterOfficialDescriptor(deps.srv, dlDesc); err != nil {
+			return err
+		}
+	}
+	// Consolidated vault_get_file: a single sink-aware vault download tool.
+	//   - sink=local (every transport): opts.vaultGet streams the encrypted
+	//     vault file's decrypted bytes to a host-side path.
+	//   - sink=drop (HTTP / real tunnel): deps.downloadDrop mints a filedrop.
+	if opts.vaultGet != nil {
+		dlDesc := NewVaultGetFileDescriptor(opts.vaultGet, deps.downloadDrop, deps.tunnelOpenAI)
+		if err := RegisterOfficialDescriptor(deps.srv, dlDesc); err != nil {
+			return err
+		}
+	}
 	if opts.dataURIUpload != nil {
 		if err := RegisterOfficialDescriptor(deps.srv, DataURIUploadDescriptor(opts.dataURIUpload, opts.maxRelayBytes)); err != nil {
 			return err
@@ -355,6 +385,9 @@ func registerCustomTools(deps customToolDeps) error {
 		deps.tunnelOpenAI,
 		uploadFileAvailable(deps.coLocated, opts.localPathUpload != nil, deps.curlUpload != nil, opts.uploadHandler != nil, deps.tunnelOpenAI),
 		vaultPutFileAvailable(deps.coLocated, opts.localPathVaultPut != nil, deps.vaultUpload != nil, opts.vaultPutHandler != nil, deps.tunnelOpenAI),
+		opts.ipfsDownload != nil,
+		opts.vaultGet != nil,
+		deps.downloadDrop != nil,
 		opts.dataURIUpload != nil, // the data: URI upload tool carries the draft x-mcp-file metadata
 		opts.maxRelayBytes,
 	)); err != nil {
