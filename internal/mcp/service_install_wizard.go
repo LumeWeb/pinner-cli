@@ -28,6 +28,13 @@ type ServiceInstallState struct {
 	Host        string
 	OAuth       bool
 	Port        int
+
+	// EnvFileCreated reports that the env file at EnvFile was freshly written
+	// by this install run. A host wizard (mcp install) sets it in the flattened
+	// path so CollectHTTPInstall's validation-failure cleanup fires even though
+	// the file exists by the time the collector runs. A pre-existing env file
+	// must never have this set.
+	EnvFileCreated bool
 }
 
 // serviceInstallWizardUI renders progress and prompts using pterm, reusing the

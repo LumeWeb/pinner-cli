@@ -87,7 +87,16 @@ type InstallWizard struct {
 	// nested RunServiceInstallWizard (a second, independent wizard) so there is
 	// no double "Do you want to continue" prompt and no restart-at-1 numbering.
 	// Always nil in tests, which inject collectHTTP only.
-	tunnelConfigurer func(ctx context.Context, s *InstallState) error
+	//
+	// It returns (created, error): created is true only when this run freshly
+	// wrote the service env file via the spliced write step. Failure cleanup is
+	// then split by who owns what: a mid-config error (collector not reached)
+	// is handled by the Configure Tunnel step removing the partial file (which
+	// holds the secret the user just typed), while a collector validation
+	// failure is handled inside CollectHTTPInstall via the EnvFileCreated hint
+	// (see CollectHTTPInstallWithCreated) — restoring the standalone "remove
+	// what we created" semantics.
+	tunnelConfigurer func(ctx context.Context, s *InstallState) (bool, error)
 }
 
 // NewInstallWizard creates a new mcp install wizard.
@@ -206,9 +215,26 @@ func (w *InstallWizard) getSteps() []wizard.Step[*InstallState] {
 				// so there is no second "Do you want to continue" prompt and the
 				// step numbering never restarts.
 				if w.tunnelConfigurer != nil {
-					if err := w.tunnelConfigurer(ctx, s); err != nil {
+					created, err := w.tunnelConfigurer(ctx, s)
+					if err != nil {
+						// A mid-config failure after the spliced write step could
+						// leave a partial env file (containing the secret just
+						// typed) on disk; the collector was never reached, so
+						// clean it up here.
+						cleanupEnvFileOnError(created, s)
 						return err
 					}
+					// The collector (CollectHTTPInstallWithCreated) now knows this
+					// run created the env file, so ITS validation-failure cleanup
+					// removes a freshly-written-but-invalid file — carrying the
+					// standalone "remove what we created" semantic. We must NOT
+					// add a cleanup here: a service install/start failure after a
+					// VALID env file must keep the file (retry-able), and the
+					// collector already handles the invalid-file case.
+					if err := w.collectHTTP(ctx, s); err != nil {
+						return err
+					}
+					return nil
 				}
 				// The injected collector populates s.PublicURL / s.AuthToken from
 				// the tunnel/service environment (real: CollectHTTPInstall).
@@ -254,6 +280,19 @@ func (w *InstallWizard) getSteps() []wizard.Step[*InstallState] {
 func httpTunnelSkipped(s *InstallState) bool {
 	return s.Transport != install.TransportHTTP ||
 		!anySupportsTransport(s.Agents, install.TransportHTTP)
+}
+
+// cleanupEnvFileOnError removes a freshly-created service env file after a
+// failed tunnel configuration/validation, so the secret the user just typed
+// (MCP_AUTH_TOKEN / NGROK_AUTHTOKEN) is not left on disk and the next run can
+// prompt fresh instead of re-failing on a stale partial file. It only ever
+// touches a file this run created (created true); a pre-existing env file is
+// never removed.
+func cleanupEnvFileOnError(created bool, s *InstallState) {
+	if !created || s == nil || s.Service == nil || s.Service.EnvFile == "" {
+		return
+	}
+	_ = os.Remove(s.Service.EnvFile)
 }
 
 // candidates returns the selectable agents (detected first, then the rest).

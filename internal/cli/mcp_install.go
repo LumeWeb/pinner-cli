@@ -174,7 +174,14 @@ func runMcpInstall(ctx context.Context, cmd mcpInstallFlagGetter, ui InstallUI, 
 	// pre-reading cmd.String("env-file") here would bypass that expansion.
 	if realCmd, ok := cmd.(*cli.Command); ok {
 		w.collectHTTP = func(ctx context.Context, s *InstallState) error {
-			env, err := mcpadapter.CollectHTTPInstall(ctx, realCmd, "", s.UseService)
+			// In the flattened path the spliced tunnel-config steps wrote the
+			// env file before the collector runs, so it exists here and the
+			// collector would otherwise think it was pre-existing and skip its
+			// validation-failure cleanup. Tell it we created it so a freshly-
+			// written-but-invalid env file (holding the user's secret) is still
+			// removed — recovering the standalone cleanup semantics.
+			created := s.Service != nil && s.Service.EnvFileCreated
+			env, err := mcpadapter.CollectHTTPInstallWithCreated(ctx, realCmd, "", s.UseService, created)
 			if err != nil {
 				return err
 			}
@@ -195,19 +202,32 @@ func runMcpInstall(ctx context.Context, cmd mcpInstallFlagGetter, ui InstallUI, 
 		// and _only_ when a fresh interactive tunnel actually needs configuring;
 		// otherwise (existing env file, --tunnel flag, or headless) the collector
 		// alone handles it exactly as before.
-		w.tunnelConfigurer = func(ctx context.Context, s *InstallState) error {
+		//
+		// It returns (created, error): created is true only when this run wrote the
+		// service env file (i.e. the fresh path ran). On a later failure the partial
+		// file holding the user's secret is removed: by the Configure Tunnel step
+		// for a mid-config error (collector not reached), and by the collector's own
+		// validation-failure cleanup via the EnvFileCreated hint (threaded through
+		// collectHTTP below) for a validation failure.
+		w.tunnelConfigurer = func(ctx context.Context, s *InstallState) (bool, error) {
 			envFile, err := mcpadapter.ResolveServiceEnvFile(realCmd)
 			if err != nil {
-				return err
+				return false, err
 			}
 			if !needsFreshTunnelPrompt(realCmd, envFile) {
-				return nil
+				return false, nil
 			}
 			service := s.Service
 			if service == nil {
 				service = &mcpadapter.ServiceInstallState{EnvFile: envFile}
 				s.Service = service
 			}
+			// We are on the fresh path, so the spliced write step creates the env
+			// file this run. Report created=true (via both the return value and
+			// service.EnvFileCreated) so the outer step and the collector clean up a
+			// partial file on failure.
+			created := true
+			service.EnvFileCreated = true
 			cfgMgr := mcpadapter.ServiceConfigManager()
 			// Pre-seed provider/credentials from flags & env BEFORE the steps so
 			// an explicit --auth-token/--token/--domain (or MCP_AUTH_TOKEN /
@@ -219,10 +239,10 @@ func runMcpInstall(ctx context.Context, cmd mcpInstallFlagGetter, ui InstallUI, 
 					continue
 				}
 				if err := step.Execute(ctx, service); err != nil {
-					return err
+					return created, err
 				}
 			}
-			return nil
+			return created, nil
 		}
 	}
 

@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -465,12 +466,12 @@ func TestMcpInstallConfigureTunnelRunsConfigurerThenCollector(t *testing.T) {
 	}
 
 	w := NewInstallWizard(ui, state, tempPathResolver(root, ""))
-	w.tunnelConfigurer = func(_ context.Context, s *InstallState) error {
+	w.tunnelConfigurer = func(_ context.Context, s *InstallState) (bool, error) {
 		s.Service = &mcpadapter.ServiceInstallState{
 			EnvFile:  filepath.Join(root, "mcp.env"),
 			Provider: mcpadapter.TunnelProviderNgrok,
 		}
-		return nil
+		return false, nil
 	}
 	var collectRan bool
 	w.collectHTTP = func(_ context.Context, s *InstallState) error {
@@ -497,6 +498,50 @@ func TestMcpInstallConfigureTunnelRunsConfigurerThenCollector(t *testing.T) {
 	entry := readGlobalJSON(t, root, install.AgentClaudeCode)
 	if entry["url"] != "https://mcp.example.com" {
 		t.Errorf("entry url = %v, want https://mcp.example.com", entry["url"])
+	}
+}
+
+// TestMcpInstallConfigureTunnelCleansUpFreshEnvOnConfigurerError guards that a
+// mid-config failure after the spliced write step removes the freshly-created
+// env file (which may hold the user's secret) — the collector is never reached,
+// so this is the Configure Tunnel step's own cleanup responsibility.
+func TestMcpInstallConfigureTunnelCleansUpFreshEnvOnConfigurerError(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	envFile := filepath.Join(root, "mcp.env")
+	ui := newMockInstallUI()
+
+	state := &InstallState{
+		Agents:     []install.AgentKey{install.AgentClaudeCode},
+		Scope:      scopeGlobal,
+		Transport:  install.TransportHTTP,
+		UseService: false,
+	}
+
+	w := NewInstallWizard(ui, state, tempPathResolver(root, ""))
+	var collectRan bool
+	w.tunnelConfigurer = func(_ context.Context, s *InstallState) (bool, error) {
+		// Simulate the spliced write step having created the env file (fresh
+		// path, created=true), then a config sub-step failing.
+		if err := os.WriteFile(envFile, []byte("MCP_TUNNEL_PROVIDER=ngrok\n"), 0o600); err != nil {
+			return true, err
+		}
+		s.Service = &mcpadapter.ServiceInstallState{EnvFile: envFile}
+		return true, errors.New("tunnel config failed")
+	}
+	w.collectHTTP = func(_ context.Context, s *InstallState) error {
+		collectRan = true
+		return nil
+	}
+
+	if _, err := w.Run(ctx); err == nil {
+		t.Fatal("expected wizard run to fail")
+	}
+	if collectRan {
+		t.Error("collector must not run when the tunnel configurer errored")
+	}
+	if _, err := os.Stat(envFile); !os.IsNotExist(err) {
+		t.Fatalf("freshly-created env file should be removed on configurer error, stat err = %v", err)
 	}
 }
 

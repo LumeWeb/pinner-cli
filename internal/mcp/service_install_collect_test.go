@@ -91,6 +91,43 @@ func TestSeedServiceFromFlagsAndEnv(t *testing.T) {
 	require.Equal(t, "kept.example.com", state2.Domain, "seeding must not clobber explicit state")
 }
 
+// TestCollectHTTPInstallWithCreatedCleanup guards the flattened mcp install
+// path: the spliced tunnel-config steps write the env file (with the user's
+// secret) BEFORE the collector runs, so CollectHTTPInstall sees it as
+// pre-existing and would skip its validation-failure cleanup — leaving a
+// partial env file holding MCP_AUTH_TOKEN on disk and dead-ending the next run
+// (needsFreshTunnelPrompt reads file-exists). CollectHTTPInstallWithCreated
+// with envFileCreated=true must remove the freshly-written-but-invalid file on
+// validation failure, while envFileCreated=false (pre-existing) must keep it
+// untouched — preserving the standalone "never touch a pre-existing file"
+// invariant.
+func TestCollectHTTPInstallWithCreatedCleanup(t *testing.T) {
+	writeInvalid := func(path string) {
+		// ngrok requires MCP_AUTH_TOKEN; omitting it fails validation
+		// deterministically without depending on any tunnel binary on PATH.
+		require.NoError(t, os.WriteFile(path, []byte("MCP_TUNNEL_PROVIDER=ngrok\n"), 0o600))
+	}
+
+	cmd := &cli.Command{Flags: managedServiceFlags()}
+
+	// envFileCreated=true ↔ flattened path freshly wrote the file: must remove.
+	dir1 := t.TempDir()
+	created := filepath.Join(dir1, "mcp.env")
+	writeInvalid(created)
+	_, err := CollectHTTPInstallWithCreated(context.Background(), cmd, created, false, true)
+	require.Error(t, err, "invalid ngrok env must fail validation")
+	require.Contains(t, err.Error(), "MCP_AUTH_TOKEN")
+	require.NoFileExists(t, created, "a freshly-created-but-invalid env file must be removed (no secret left on disk)")
+
+	// envFileCreated=false ↔ pre-existing file (standalone path): must keep it.
+	dir2 := t.TempDir()
+	preexisting := filepath.Join(dir2, "mcp.env")
+	writeInvalid(preexisting)
+	_, err = CollectHTTPInstallWithCreated(context.Background(), cmd, preexisting, false, false)
+	require.Error(t, err, "invalid ngrok env must fail validation")
+	require.FileExists(t, preexisting, "a pre-existing env file must never be removed")
+}
+
 func TestResolveServicePublicURLFillsCloudflaredDomain(t *testing.T) {
 	// A named cloudflared tunnel with a custom domain has a deterministic
 	// public URL after the service starts; resolveServicePublicURL must derive
