@@ -153,14 +153,6 @@ func runMcpInstall(ctx context.Context, cmd mcpInstallFlagGetter, ui InstallUI, 
 		UseService:  useService,
 		AutoApprove: cmd.Bool("auto-approve"),
 	}
-	// Seed OAuth from an explicit --oauth flag (env MCP_OAUTH, declared by the
-	// shared ServiceInstallFlags). When set it wins over the interactive default
-	// (yes); when unset it is left for the transport-step prompt on remote
-	// installs, or defaults to true by the service seed.
-	if cmd.IsSet("oauth") {
-		state.OAuth = cmd.Bool("oauth")
-		state.OAuthIsSet = true
-	}
 	if len(agents) == 0 {
 		// Interactive: leave agents empty; the Select step will prompt.
 	} else if scope == scopeProject {
@@ -229,14 +221,6 @@ func runMcpInstall(ctx context.Context, cmd mcpInstallFlagGetter, ui InstallUI, 
 				service = &mcpadapter.ServiceInstallState{EnvFile: envFile}
 				s.Service = service
 			}
-			// Fold the operator's OAuth choice from the Configure Tunnel step
-			// (default yes) into the service state so MCP_OAUTH is written. This
-			// happens BEFORE the skip check so the value is available even when
-			// the interactive config is skipped. OAuthIsSet mirrors the explicit
-			// --oauth decision so the env serializer knows to persist the
-			// value (including false) rather than omit it.
-			service.OAuth = s.OAuth
-			service.OAuthIsSet = s.OAuthIsSet
 			if !needsFreshTunnelPrompt(realCmd, envFile) {
 				// Skip path: the interactive config is not run, so the collector
 				// would read the existing env file unchanged. Persist any install
@@ -274,7 +258,14 @@ func runMcpInstall(ctx context.Context, cmd mcpInstallFlagGetter, ui InstallUI, 
 			// a re-run reuses what's known and only resolves the still-missing
 			// public URL instead of re-prompting for everything.
 			mcpadapter.SeedServiceFromFlagsAndEnv(realCmd, service, envFile)
-			seedServiceFromEnvFile(envFile, service, s.OAuthIsSet)
+			seedServiceFromEnvFile(envFile, service)
+			// Secure default-on: a remote (http) install on the fresh path with
+			// OAuth still undecided enables the handshake. Lowest priority — an
+			// explicit --oauth flag (seeded above) or a persisted MCP_OAUTH
+			// (folded into a non-nil tri-state by seedServiceFromEnvFile) wins.
+			// The skip path above returns early, so a re-run against an existing
+			// file never reaches this default; neither does a standalone wizard.
+			applyOAuthSecureDefault(s.Transport, service)
 			for _, step := range mcpadapter.ServiceInstallSteps(service, realCmd, envFile, cfgMgr) {
 				if step.ShouldSkip(service) {
 					continue
@@ -289,6 +280,20 @@ func runMcpInstall(ctx context.Context, cmd mcpInstallFlagGetter, ui InstallUI, 
 
 	_, err := w.Run(ctx)
 	return err
+}
+
+// applyOAuthSecureDefault applies the secure OAuth default-on for a remote
+// (http) MCP install: when the operator has NOT decided OAuth this run (nil
+// tri-state), enable the handshake. It runs on the fresh tunnel-config path at
+// the LOWEST priority — an explicit --oauth flag or a persisted MCP_OAUTH
+// folded into a non-nil tri-state always wins. stdio is a local process and
+// stays undecided. Extracted from the runMcpInstall configurer closure so this
+// security behavior is directly unit-testable.
+func applyOAuthSecureDefault(transport install.Transport, svc *mcpadapter.ServiceInstallState) {
+	if transport != install.TransportStdio && svc.OAuth == nil {
+		def := true
+		svc.OAuth = &def
+	}
 }
 
 // needsFreshTunnelPrompt reports whether mcp install must run the interactive
@@ -344,11 +349,12 @@ func isFreshServiceEnvFile(envFile string) bool {
 // of re-prompting for every value. A missing or unreadable file, or one whose
 // values are malformed, is ignored (a fresh config path handles it).
 //
-// oauthIsSet reports whether the operator explicitly passed --oauth this run.
-// When false, a persisted MCP_OAUTH is folded into s.OAuth (preserving an
-// earlier explicit choice instead of clobbering it with the transport step's
-// secure default-on); when true, the explicit flag value in s.OAuth wins.
-func seedServiceFromEnvFile(envFile string, s *mcpadapter.ServiceInstallState, oauthIsSet bool) {
+// The seed folds a persisted value back in ONLY for a still-undecided key:
+//   - MCP_PORT folds into s.Port when s.Port == nil (an explicit --port 0 is a
+//     non-nil decision — the "pick a free port" sentinel — and wins over saved).
+//   - MCP_OAUTH folds into s.OAuth when s.OAuth == nil, preserving an earlier
+//     explicit choice instead of letting a later secure-default-on clobber it.
+func seedServiceFromEnvFile(envFile string, s *mcpadapter.ServiceInstallState) {
 	if s == nil {
 		return
 	}
@@ -384,32 +390,32 @@ func seedServiceFromEnvFile(envFile string, s *mcpadapter.ServiceInstallState, o
 	}
 	set(&s.PublicURL, "MCP_PUBLIC_URL")
 	set(&s.Host, "MCP_HOST")
-	// Fold MCP_PORT back into s.Port when the operator did not set it this run,
-	// so a re-run's "Write service environment file" step does not silently drop
-	// a port an earlier run persisted (serviceInstallStateToEnv only writes
-	// MCP_PORT when s.Port != 0). An explicit --port (PortIsSet), including an
-	// explicit --port 0 meaning "pick a free port", must win over the saved
-	// value — otherwise --port 0 could not revert to auto-assignment.
-	if s.Port == 0 && !s.PortIsSet {
+	// Fold MCP_PORT back in ONLY when the operator did not decide it this run
+	// (s.Port == nil), so a re-run against a partial file reuses a persisted
+	// port instead of silently dropping it. An explicit --port — including
+	// --port 0, the "pick a free port" sentinel — is a non-nil decision and
+	// wins over the saved value, so --port 0 can revert to auto-assignment.
+	if s.Port == nil {
 		if p, err := strconv.Atoi(strings.TrimSpace(env["MCP_PORT"])); err == nil && p > 0 {
-			s.Port = p
+			s.Port = &p
 		}
 	}
-	// Fold a persisted MCP_OAUTH back into s.OAuth ONLY when the operator did
-	// not explicitly pass --oauth this run. This makes the two install paths
-	// symmetric: the skip path preserves a persisted MCP_OAUTH when --oauth is
-	// unset (ReconcileServiceEnvironmentFromFlags writes nothing for unset
-	// flags), and the fresh re-config path here does the same instead of
-	// clobbering a persisted MCP_OAUTH=false with the transport step's secure
-	// default-on. When the operator DID pass --oauth, that explicit value wins
-	// and a possibly-stale persisted value must not override it (an
-	// MCP_OAUTH=true left in a partial file must not clobber --oauth=false).
-	if !oauthIsSet {
+	// Fold a persisted MCP_OAUTH back in ONLY when OAuth was not decided this
+	// run (s.OAuth == nil). This keeps the two install paths symmetric: the
+	// skip path preserves a persisted MCP_OAUTH when --oauth is unset
+	// (ReconcileServiceEnvironmentFromFlags writes nothing for unset flags),
+	// and the fresh re-config path here does the same instead of clobbering a
+	// persisted MCP_OAUTH=false with the secure default-on applied later. An
+	// explicit --oauth is a non-nil decision and wins, so a stale
+	// MCP_OAUTH=true left in a partial file cannot clobber --oauth=false.
+	if s.OAuth == nil {
 		switch strings.TrimSpace(env["MCP_OAUTH"]) {
 		case "true":
-			s.OAuth = true
+			v := true
+			s.OAuth = &v
 		case "false":
-			s.OAuth = false
+			v := false
+			s.OAuth = &v
 		}
 	}
 }

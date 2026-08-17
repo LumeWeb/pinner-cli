@@ -397,8 +397,8 @@ func TestServiceInstallStateToEnv(t *testing.T) {
 		AuthToken:  "test-auth-token-abc123",
 		PublicURL:  "https://mcp.example.com",
 		Host:       "127.0.0.1",
-		OAuth:      true,
-		Port:       4321,
+		OAuth:      new(true),
+		Port:       new(4321),
 	})
 	require.Equal(t, "cloudflared", env["MCP_TUNNEL_PROVIDER"])
 	require.Equal(t, "mcp.example.com", env["MCP_DOMAIN"])
@@ -422,21 +422,20 @@ func TestServiceInstallStateToEnvWritesNgrokToken(t *testing.T) {
 }
 
 // TestServiceInstallStateToEnvWritesOAuthFalse guards the skip/fresh symmetry:
-// an EXPLICIT --oauth=false (OAuthIsSet=true) must be persisted as
-// MCP_OAUTH=false, not dropped — the other two writer paths (bootstrap and
-// reconcile) both persist the false value explicitly, so this one must too.
+// an EXPLICIT --oauth=false must be persisted as MCP_OAUTH=false, not dropped —
+// the other two writer paths (bootstrap and reconcile) both persist the false
+// value explicitly, so this one must too.
 func TestServiceInstallStateToEnvWritesOAuthFalse(t *testing.T) {
 	env := serviceInstallStateToEnv(&ServiceInstallState{
-		Provider:   TunnelProviderCloudflared,
-		OAuth:      false,
-		OAuthIsSet: true,
+		Provider: TunnelProviderCloudflared,
+		OAuth:    new(false),
 	})
 	require.Equal(t, "false", env["MCP_OAUTH"], "explicit --oauth=false must be persisted as MCP_OAUTH=false")
 }
 
 // TestServiceInstallStateToEnvOmitsOAuthWhenUndecided guards the standalone
-// wizard path: when OAuth was never touched (no explicit --oauth, no secure
-// default-on for a remote install, OAuthIsSet false), serviceInstallStateToEnv
+// wizard path: when OAuth was never decided (nil tri-state — no explicit
+// --oauth, no secure default-on for a remote install), serviceInstallStateToEnv
 // must OMIT the MCP_OAUTH key entirely so the runtime secure default (on)
 // applies. Writing MCP_OAUTH=false here would diverge from the mcp install
 // path's default-on doctrine.
@@ -447,21 +446,20 @@ func TestServiceInstallStateToEnvOmitsOAuthWhenUndecided(t *testing.T) {
 	require.NotContains(t, env, "MCP_OAUTH", "undecided OAuth must omit the key, not force MCP_OAUTH=false")
 }
 
-// TestServiceInstallStateToEnvWritesPortIsSet guards that an explicit --port 0
+// TestServiceInstallStateToEnvWritesPort guards that an explicit --port 0
 // ("pick a free port") is persisted as MCP_PORT=0 on the fresh re-config path.
-// Without PortIsSet, serviceInstallStateToEnv would drop the key entirely
-// (s.Port == 0), silently losing the operator's explicit auto-assign choice and
-// re-applying the saved port on a later run.
-func TestServiceInstallStateToEnvWritesPortIsSet(t *testing.T) {
+// A non-nil tri-state Port carries the explicit decision even when it is zero;
+// were it treated as "not set", serviceInstallStateToEnv would drop the key and
+// re-apply the saved port on a later run.
+func TestServiceInstallStateToEnvWritesPort(t *testing.T) {
 	env := serviceInstallStateToEnv(&ServiceInstallState{
-		Provider:  TunnelProviderCloudflared,
-		Port:      0,
-		PortIsSet: true,
+		Provider: TunnelProviderCloudflared,
+		Port:     new(0),
 	})
 	require.Equal(t, "0", env["MCP_PORT"], "explicit --port 0 must be persisted as MCP_PORT=0, not dropped")
-	// Without PortIsSet, a zero port is the "no port" case and writes nothing.
+	// A nil port is the "no decision" case and writes nothing.
 	env2 := serviceInstallStateToEnv(&ServiceInstallState{Provider: TunnelProviderCloudflared})
-	require.NotContains(t, env2, "MCP_PORT", "no explicit port must not write MCP_PORT")
+	require.NotContains(t, env2, "MCP_PORT", "undecided port must not write MCP_PORT")
 }
 
 func TestServiceInstallWizardNonInteractiveErrors(t *testing.T) {
@@ -512,8 +510,10 @@ func TestSeedFromFlagsAndEnvSourcesFlagsAndEnv(t *testing.T) {
 	require.Equal(t, "127.0.0.1", captured.Host)
 	require.Equal(t, "env-secret", captured.AuthToken, "auth token must source from MCP_AUTH_TOKEN env")
 	require.Equal(t, "https://env.example.com", captured.PublicURL)
-	require.True(t, captured.OAuth, "MCP_OAUTH env must seed OAuth")
-	require.Equal(t, 5555, captured.Port, "MCP_PORT env must seed port")
+	require.NotNil(t, captured.OAuth, "MCP_OAUTH env must seed OAuth")
+	require.True(t, *captured.OAuth, "MCP_OAUTH env must seed OAuth")
+	require.NotNil(t, captured.Port, "MCP_PORT env must seed port")
+	require.Equal(t, 5555, *captured.Port, "MCP_PORT env must seed port")
 }
 
 func TestInstallRemovesFreshFileOnValidationFailure(t *testing.T) {
