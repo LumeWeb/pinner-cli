@@ -279,6 +279,14 @@ func runMcpInstall(ctx context.Context, cmd mcpInstallFlagGetter, ui InstallUI, 
 		}
 	}
 
+	// Bind the shared prompt channel so the spliced tunnel-config steps
+	// (ServiceInstallSteps) ask the user through the SAME terminal channel as
+	// this host wizard, instead of spawning independent pterm widgets that
+	// fight it for the terminal. A caller may pre-bind a test prompter; we only
+	// default to the production one when none is present.
+	if wizard.PrompterFrom(ctx) == nil {
+		ctx = wizard.WithPrompter(ctx, wizard.NewPtermPrompter())
+	}
 	_, err := w.Run(ctx)
 	return err
 }

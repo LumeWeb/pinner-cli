@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 
+	"go.lumeweb.com/pinner-cli/internal/cli/wizard"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
 	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
 )
@@ -29,12 +30,13 @@ type TunnelProviderSpec struct {
 	// runtime-tunnel driven).
 	NewTunnel func(cfg tunnel.TunnelConfig) (tunnel.Tunnel, error)
 	// Configurer collects the provider's install-time tunnel configuration
-	// (IDs, domains, credentials) into the install state, prompting via text
-	// only for values that cannot be resolved automatically and persisting any
-	// supplied credential to cfgMgr as the last-resort store. The install
-	// wizard dispatches here on the provider registry instead of a switch on
-	// the provider value. Nil falls back to no provider-specific collection.
-	Configurer func(ctx context.Context, text textUI, s *ServiceInstallState, cfgMgr config.Manager) error
+	// (IDs, domains, credentials) into the install state, prompting via the
+	// shared wizard.Prompter channel only for values that cannot be resolved
+	// automatically and persisting any supplied credential to cfgMgr as the
+	// last-resort store. The install wizard dispatches here on the provider
+	// registry instead of a switch on the provider value. Nil falls back to no
+	// provider-specific collection.
+	Configurer func(ctx context.Context, p wizard.Prompter, s *ServiceInstallState, cfgMgr config.Manager) error
 }
 
 // tunnelRegistry is the process-wide provider registry.

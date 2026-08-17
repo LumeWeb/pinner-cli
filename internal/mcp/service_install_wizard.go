@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/pterm/pterm"
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/internal/cli/wizard"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
@@ -82,38 +81,6 @@ func tunnelProviderChoiceLabels() []string {
 }
 
 // Select runs an interactive single-choice prompt, gated by NonInteractive.
-type selectUI struct{}
-
-func (selectUI) Select(label string, options []string) (int, string, error) {
-	if wizard.NonInteractive {
-		return 0, "", errors.New("interactive prompt requested in non-interactive mode")
-	}
-	sel, _ := pterm.DefaultInteractiveSelect.WithOptions(options).WithDefaultText(label).Show()
-	if sel == "" {
-		return 0, "", errors.New("no option selected")
-	}
-	for i, o := range options {
-		if o == sel {
-			return i, sel, nil
-		}
-	}
-	return 0, sel, nil
-}
-
-// Text runs an interactive text prompt (masked for sensitive values).
-type textUI struct{ mask string }
-
-func (t textUI) Text(label string) (string, error) {
-	if wizard.NonInteractive {
-		return "", errors.New("interactive prompt requested in non-interactive mode")
-	}
-	input := pterm.DefaultInteractiveTextInput.WithDefaultText(label)
-	if t.mask != "" {
-		input = input.WithMask(t.mask)
-	}
-	return input.Show()
-}
-
 // RunServiceInstallWizard drives the interactive tunnel configuration wizard and
 // writes the resulting environment file. Flags and environment variables are
 // seeded into the state up front; prompts only collect values the user has not
@@ -124,6 +91,9 @@ func (t textUI) Text(label string) (string, error) {
 func RunServiceInstallWizard(ctx context.Context, cmd *cli.Command, envFile string, cfgMgr config.Manager) error {
 	ui := NewServiceInstallWizardUI()
 	state := &ServiceInstallState{EnvFile: envFile}
+	// Bind the pterm prompter so the wizard's steps ask the user through the
+	// shared prompt channel (like any other wizard), never via private widgets.
+	ctx = wizard.WithPrompter(ctx, wizard.NewPtermPrompter())
 	// Pre-seed scalar values from flags/env so the wizard never re-prompts for
 	// something already explicit.
 	seedServiceFromFlagsAndEnv(cmd, state, envFile)
@@ -133,6 +103,35 @@ func RunServiceInstallWizard(ctx context.Context, cmd *cli.Command, envFile stri
 		return err
 	}
 	return nil
+}
+
+// serviceInstallStepsPrompter returns the prompt channel bound to ctx, or a
+// nil-guard prompter when none is bound. A step only *reaches* the prompter when
+// it genuinely needs user input; when no channel is bound (e.g. a direct step
+// drive in a non-interactive test where every value resolves from config/env),
+// the missing channel surfaces as a clear error only if a prompt is attempted.
+func serviceInstallStepsPrompter(ctx context.Context) wizard.Prompter {
+	if p := wizard.PrompterFrom(ctx); p != nil {
+		return p
+	}
+	return nilPrompt{}
+}
+
+// nilPrompt is a wizard.Prompter that errors on any method call: a step reached
+// it meaning it needs input, but no prompt channel is bound to the run context.
+type nilPrompt struct{}
+
+func (nilPrompt) Select(string, []string) (int, string, error) {
+	return 0, "", errors.New("interactive prompt requested but no prompt channel is bound")
+}
+func (nilPrompt) MultiSelect(string, []string, []string) ([]string, error) {
+	return nil, errors.New("interactive prompt requested but no prompt channel is bound")
+}
+func (nilPrompt) Confirm(string, bool) (bool, error) {
+	return false, errors.New("interactive prompt requested but no prompt channel is bound")
+}
+func (nilPrompt) Text(string, string) (string, error) {
+	return "", errors.New("interactive prompt requested but no prompt channel is bound")
 }
 
 // ServiceInstallSteps returns the ordered steps that collect and persist the
@@ -145,14 +144,14 @@ func ServiceInstallSteps(state *ServiceInstallState, cmd *cli.Command, envFile s
 	return []wizard.Step[*ServiceInstallState]{
 		wizard.StepFunc[*ServiceInstallState]{
 			Name_: "Tunnel provider",
-			ExecuteFunc: func(_ context.Context, s *ServiceInstallState) error {
+			ExecuteFunc: func(ctx context.Context, s *ServiceInstallState) error {
 				if s.Provider != "" {
 					return nil
 				}
-				sel := selectUI{}
+				p := serviceInstallStepsPrompter(ctx)
 				// ngrok is listed first so the interactive select defaults to it (see
 				// tunnelProviderChoiceLabels).
-				_, choice, err := sel.Select("MCP tunnel provider (exposes the remote MCP endpoint)", tunnelProviderChoiceLabels())
+				_, choice, err := p.Select("MCP tunnel provider (exposes the remote MCP endpoint)", tunnelProviderChoiceLabels())
 				if err != nil {
 					return err
 				}
@@ -167,14 +166,14 @@ func ServiceInstallSteps(state *ServiceInstallState, cmd *cli.Command, envFile s
 		},
 		wizard.StepFunc[*ServiceInstallState]{
 			Name_: "Tunnel-specific configuration",
-			ExecuteFunc: func(_ context.Context, s *ServiceInstallState) error {
-				text := textUI{}
+			ExecuteFunc: func(ctx context.Context, s *ServiceInstallState) error {
+				p := serviceInstallStepsPrompter(ctx)
 				// Dispatch provider-specific collection (IDs, domains,
 				// credentials) through the provider registry's Configurer
 				// instead of a switch on the provider value, so each provider
 				// owns its install behaviour and the step stays provider-agnostic.
 				if spec, ok := providers.spec(s.Provider); ok && spec.Configurer != nil {
-					if err := spec.Configurer(context.Background(), text, s, cfgMgr); err != nil {
+					if err := spec.Configurer(ctx, p, s, cfgMgr); err != nil {
 						return err
 					}
 				}
@@ -182,7 +181,7 @@ func ServiceInstallSteps(state *ServiceInstallState, cmd *cli.Command, envFile s
 				// interactive prompt so the secret is never typed into or
 				// echoed from the terminal session.
 				if s.AuthToken == "" {
-					secret, err := textUI{mask: "*"}.Text("Shared auth token / secret for the public MCP endpoint")
+					secret, err := p.Text("Shared auth token / secret for the public MCP endpoint", "*")
 					if err != nil {
 						return err
 					}

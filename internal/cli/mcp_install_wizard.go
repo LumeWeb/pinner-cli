@@ -259,7 +259,8 @@ func (w *InstallWizard) getSteps() []wizard.Step[*InstallState] {
 
 	steps = append(steps,
 		wizard.StepFunc[*InstallState]{
-			Name_: "Resolve Binary",
+			Name_:   "Resolve Binary",
+			Hidden_: true, // internal plumbing: resolving the local binary to launch is never a user-facing step
 			SkipFunc: func(s *InstallState) bool {
 				// Only needed for stdio installs.
 				return s.Transport != "" && s.Transport != install.TransportStdio
