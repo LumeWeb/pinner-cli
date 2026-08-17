@@ -10,7 +10,22 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/internal/cli/wizard"
+	"go.lumeweb.com/pinner-cli/internal/service"
 )
+
+// requireServiceBackend skips the test when the running platform has no service
+// backend compiled yet. The systemd (linux), launchd (darwin), and SCM
+// (windows) backends each register into the service registry; until a platform's
+// backend lands, tests that construct a live backend through newManagedService
+// (which calls service.New) cannot run there. This lets the backend-construction
+// tests run on every platform as its backend arrives without a per-OS skip.
+func requireServiceBackend(t *testing.T) {
+	t.Helper()
+	var zero service.Config
+	if _, err := service.New(zero); err != nil {
+		t.Skipf("no service backend for this platform: %v", err)
+	}
+}
 
 func TestManagedServiceCommandHasLifecycleCommands(t *testing.T) {
 	cmd := ManagedServiceCommand()
@@ -95,7 +110,7 @@ func TestInstallBootstrapsMissingEnvFile(t *testing.T) {
 		require.Equal(t, os.FileMode(0600), info.Mode().Perm(), "env file must be 0600")
 	}
 
-	env, err := LoadServiceEnvironment(path)
+	env, err := service.LoadEnvironment(path)
 	require.NoError(t, err)
 	require.Equal(t, "cloudflared", env["MCP_TUNNEL_PROVIDER"])
 	require.Equal(t, "mcp.example.com", env["MCP_DOMAIN"])
@@ -371,4 +386,64 @@ func TestInstallRemovesFreshFileOnValidationFailure(t *testing.T) {
 	_, _, err := resolveManagedServiceForInstall(context.Background(), cmd)
 	require.Error(t, err)
 	require.NoFileExists(t, path, "freshly created env file must be removed when validation fails")
+}
+
+func TestResolveManagedServiceLifecycleSkipsProviderValidation(t *testing.T) {
+	requireServiceBackend(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "mcp.env")
+	require.NoError(t, os.WriteFile(path, []byte("MCP_TUNNEL_PROVIDER=ngrok\n"), 0600))
+	cmd := &cli.Command{Flags: []cli.Flag{&cli.StringFlag{Name: serviceEnvFileFlag}}}
+	require.NoError(t, cmd.Set("env-file", path))
+	_, err := resolveManagedService(context.Background(), cmd, false, false)
+	require.NoError(t, err)
+}
+
+func TestInstallBootstrapOpenAIPassesProvider(t *testing.T) {
+	requireServiceBackend(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "mcp.env")
+
+	cmd := &cli.Command{Flags: managedServiceFlags()}
+	require.NoError(t, cmd.Set(serviceEnvFileFlag, path))
+	require.NoError(t, cmd.Set(serviceTunnelFlag, "openai"))
+	require.NoError(t, cmd.Set(serviceTunnelIDFlag, "tunnel_0123456789abcdef0123456789abcdef"))
+	// The control-plane API key must be persisted to the env file (not just the
+	// process environment) because the installed service reads ONLY the
+	// env file at runtime.
+	require.NoError(t, cmd.Set(serviceApiKeyFlag, "test-cp-api-key-abc123"))
+
+	envFile, svc, err := resolveManagedServiceForInstall(context.Background(), cmd)
+	require.NoError(t, err)
+	require.Equal(t, path, envFile)
+	require.NotNil(t, svc)
+	// OpenAI runs an embedded tunnel, so the unit must NOT pass --http.
+	cfg, err := serviceConfigForInstall(cmd, path, TunnelProviderOpenAI)
+	require.NoError(t, err)
+	require.NotContains(t, cfg.Arguments, "--http")
+
+	// The bootstrap must have persisted the API key into the file the service
+	// will actually read.
+	env, err := service.LoadEnvironment(path)
+	require.NoError(t, err)
+	require.Equal(t, "test-cp-api-key-abc123", env["CONTROL_PLANE_API_KEY"])
+}
+
+func TestServiceConfigForInstallPassesEnvFileUntouched(t *testing.T) {
+	// The shared config builder is pure path-passing: it references the env
+	// file by path and does NOT parse or fail on its contents. Env handling
+	// (and any strictness) is per-backend in each platform file — systemd
+	// (EnvironmentFile=), launchd (sources it via a wrapper), Windows SCM
+	// (loads it into the registry). So a corrupt env file must not error here,
+	// and EnvVars must stay empty.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "mcp.env")
+	require.NoError(t, os.WriteFile(path, []byte("NOT A KEY VALUE LINE\n"), 0600))
+	cmd := &cli.Command{}
+
+	cfg, err := serviceConfigForInstall(cmd, path, TunnelProviderOpenAI)
+	require.NoError(t, err)
+	require.Equal(t, path, cfg.EnvFile)
+	require.Nil(t, cfg.EnvVars)
+	require.FileExists(t, path)
 }

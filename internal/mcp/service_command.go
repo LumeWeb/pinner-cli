@@ -254,7 +254,7 @@ func validateServiceEnvironment(envFile string, nonInteractive bool) (TunnelProv
 	if runtime.GOOS != "windows" && info.Mode().Perm()&0077 != 0 {
 		return "", fmt.Errorf("MCP service environment file %q is group/world-readable; run chmod 600 %s", envFile, envFile)
 	}
-	env, err := LoadServiceEnvironment(envFile)
+	env, err := service.LoadEnvironment(envFile)
 	if err != nil {
 		return "", err
 	}
@@ -405,7 +405,7 @@ func bootstrapServiceEnvironment(cmd *cli.Command, envFile string, cfgMgr config
 		env["MCP_PORT"] = strconv.Itoa(cmd.Int(servicePortFlag))
 	}
 
-	if err := WriteServiceEnvironment(envFile, env); err != nil {
+	if err := service.WriteEnvironment(envFile, env); err != nil {
 		return fmt.Errorf("bootstrap MCP service environment file: %w", err)
 	}
 	fmt.Printf("Created MCP service environment file %s (0600).\n", envFile)
@@ -421,6 +421,10 @@ func bootstrapServiceEnvironment(cmd *cli.Command, envFile string, cfgMgr config
 	return nil
 }
 
+// newManagedService builds the service for the given env file and provider.
+// Env handling is entirely per-backend: the config carries only the env file
+// path, and each platform file consumes it (systemd: EnvironmentFile, launchd:
+// sources it via a wrapper, Windows SCM: loads it into the service registry).
 func newManagedService(cmd *cli.Command, envFile string, provider TunnelProvider) (service.Service, error) {
 	cfg, err := serviceConfigForInstall(cmd, envFile, provider)
 	if err != nil {
@@ -432,12 +436,15 @@ func newManagedService(cmd *cli.Command, envFile string, provider TunnelProvider
 }
 
 // serviceConfigForInstall builds the service.Config for the managed MCP
-// service: the pinner executable run as `pinner mcp`, with the tunnel env file
-// delivered to the unit. Public HTTP tunnel providers (ngrok, cloudflared)
-// pass --http so the server is exposed over HTTP; the embedded OpenAI tunnel
-// speaks the MCP transport directly and must not add --http. Returns the pure
-// config so tests can assert the ExecStart arguments without touching a live
-// service backend.
+// service: the pinner executable run as `pinner mcp`, referencing the tunnel
+// credentials via envFile (a path). Each platform backend chooses its own
+// service-file path (systemd user unit on Linux, LaunchAgent plist on macOS,
+// SCM on Windows), so no ServiceFile is pinned here, and loads the env file
+// itself in its own platform file. Public HTTP tunnel providers (ngrok,
+// cloudflared) pass --http so the server is exposed over HTTP; the embedded
+// OpenAI tunnel speaks the MCP transport directly and must not add --http.
+// Returns the pure config so tests can assert the ExecStart arguments without
+// touching a live service backend.
 func serviceConfigForInstall(cmd *cli.Command, envFile string, provider TunnelProvider) (service.Config, error) {
 	execPath, err := os.Executable()
 	if err != nil {
@@ -450,17 +457,12 @@ func serviceConfigForInstall(cmd *cli.Command, envFile string, provider TunnelPr
 	if provider != "" && provider != TunnelProviderOpenAI {
 		args = append(args, "--http")
 	}
-	dir, err := os.UserConfigDir()
-	if err != nil {
-		return service.Config{}, fmt.Errorf("resolve user config directory: %w", err)
-	}
 	return service.Config{
 		Name:        defaultMCPServiceName,
 		Description: "Pinner MCP service",
 		ExecPath:    execPath,
 		Arguments:   args,
 		EnvFile:     envFile,
-		ServiceFile: filepath.Join(dir, "systemd", "user", defaultMCPServiceName+".service"),
 		UserMode:    true,
 	}, nil
 }

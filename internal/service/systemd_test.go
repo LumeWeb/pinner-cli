@@ -31,6 +31,20 @@ func TestRenderSystemdUnit(t *testing.T) {
 	require.Contains(t, unit, "WantedBy=default.target")
 }
 
+func TestRenderSystemdUnitEmitsEnvVars(t *testing.T) {
+	// Config.EnvVars is part of the documented contract and must be emitted as
+	// Environment= lines even when no EnvFile is set (callers that pass
+	// variables directly must not silently lose them).
+	unit := renderSystemdUnit(Config{
+		Name:      "pinner-mcp",
+		ExecPath:  "/opt/bin/pinner",
+		Arguments: []string{"mcp"},
+		EnvVars:   map[string]string{"MCP_AUTH_TOKEN": "tok-123", "VAR": "a b"},
+	})
+	require.Contains(t, unit, "Environment=MCP_AUTH_TOKEN=tok-123")
+	require.Contains(t, unit, `Environment=VAR="a b"`)
+}
+
 func TestSystemdUnitKeepsSecretsOutOfExecStart(t *testing.T) {
 	// Secrets are delivered via EnvironmentFile=, never as ExecStart arguments.
 	unit := renderSystemdUnit(Config{

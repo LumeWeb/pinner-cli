@@ -14,6 +14,7 @@ import (
 	"github.com/urfave/cli/v3"
 
 	"go.lumeweb.com/pinner-cli/internal/cli/wizard"
+	"go.lumeweb.com/pinner-cli/internal/service"
 )
 
 func TestCollectHTTPInstallNonInteractiveMissingEnvErrors(t *testing.T) {
@@ -201,9 +202,9 @@ func TestResolveServicePublicURLFillsCloudflaredDomain(t *testing.T) {
 		"MCP_DOMAIN":          "https://mcp.example.com",
 		"MCP_AUTH_TOKEN":      "test-token",
 	}
-	require.NoError(t, WriteServiceEnvironment(path, env))
+	require.NoError(t, service.WriteEnvironment(path, env))
 
-	loaded, err := LoadServiceEnvironment(path)
+	loaded, err := service.LoadEnvironment(path)
 	require.NoError(t, err)
 	require.Equal(t, "", loaded["MCP_PUBLIC_URL"], "precondition: MCP_PUBLIC_URL unset")
 
@@ -211,7 +212,7 @@ func TestResolveServicePublicURLFillsCloudflaredDomain(t *testing.T) {
 	require.Equal(t, "https://mcp.example.com", loaded["MCP_PUBLIC_URL"])
 
 	// And it must be persisted back so later runs see it.
-	reloaded, err := LoadServiceEnvironment(path)
+	reloaded, err := service.LoadEnvironment(path)
 	require.NoError(t, err)
 	require.Equal(t, "https://mcp.example.com", reloaded["MCP_PUBLIC_URL"])
 }
@@ -224,9 +225,9 @@ func TestResolveServicePublicURLLeavesDynamicTunnelUnset(t *testing.T) {
 	path := filepath.Join(dir, "mcp.env")
 
 	env := ServiceEnvironment{"MCP_TUNNEL_PROVIDER": string(TunnelProviderNgrok)}
-	require.NoError(t, WriteServiceEnvironment(path, env))
+	require.NoError(t, service.WriteEnvironment(path, env))
 
-	loaded, err := LoadServiceEnvironment(path)
+	loaded, err := service.LoadEnvironment(path)
 	require.NoError(t, err)
 	resolveServicePublicURL(path, loaded)
 	require.Equal(t, "", loaded["MCP_PUBLIC_URL"], "no domain -> no derived URL")
@@ -267,7 +268,7 @@ func TestCollectHTTPInstallOneShotResolvesNamedDomainURL(t *testing.T) {
 		"one-shot install should derive the named-tunnel public URL")
 
 	// And it must be persisted so later runs/install reads see it.
-	reloaded, err := LoadServiceEnvironment(path)
+	reloaded, err := service.LoadEnvironment(path)
 	require.NoError(t, err)
 	require.Equal(t, "https://mcp.example.com", reloaded["MCP_PUBLIC_URL"])
 }
