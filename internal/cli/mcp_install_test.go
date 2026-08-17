@@ -589,6 +589,17 @@ func TestMcpInstallTunnelProviderSeeded(t *testing.T) {
 	if _, full := tunnelProviderSeeded(context.Background(), &InstallState{Service: &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderNgrok}}); !full {
 		t.Error("a resolved provider must be seeded")
 	}
+	// The source banner must be HONEST: a provider folded from a persisted env
+	// file must NOT claim "--tunnel" (the operator never passed it). The shared
+	// SeedFunc records the source; the banner repeats it verbatim.
+	s := &InstallState{
+		Service:          &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderNgrok},
+		tunnelSeedSource: "env file",
+	}
+	src, _ := tunnelProviderSeeded(context.Background(), s)
+	if len(src) != 1 || src[0] != "env file" {
+		t.Errorf("seed source = %v, want [env file] (must not claim --tunnel)", src)
+	}
 }
 
 // TestMcpInstallTunnelWriteStepIsAtomicOnEnvFailure guards that the spliced
