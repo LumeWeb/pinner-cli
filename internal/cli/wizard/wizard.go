@@ -7,6 +7,11 @@ import (
 
 type Step[S any] interface {
 	Name() string
+	// Hidden steps execute normally but are not rendered as a wizard step
+	// (no ShowStepProgress / ShowStepSkipped banner). Used for internal
+	// plumbing that belongs to the flow but should never appear to the user
+	// (e.g. resolving the local binary path for a stdio install).
+	Hidden() bool
 	ShouldSkip(state S) bool
 	Execute(ctx context.Context, state S) error
 	ShouldRetry(state S) bool
@@ -14,12 +19,14 @@ type Step[S any] interface {
 
 type StepFunc[S any] struct {
 	Name_       string
+	Hidden_     bool
 	SkipFunc    func(state S) bool
 	ExecuteFunc func(ctx context.Context, state S) error
 	RetryFunc   func(state S) bool
 }
 
 func (sf StepFunc[S]) Name() string             { return sf.Name_ }
+func (sf StepFunc[S]) Hidden() bool             { return sf.Hidden_ }
 func (sf StepFunc[S]) ShouldSkip(state S) bool  { return sf.SkipFunc != nil && sf.SkipFunc(state) }
 func (sf StepFunc[S]) ShouldRetry(state S) bool { return sf.RetryFunc != nil && sf.RetryFunc(state) }
 func (sf StepFunc[S]) Execute(ctx context.Context, state S) error {
@@ -53,29 +60,40 @@ func Run[S any](ctx context.Context, ui UI, steps []Step[S], state S) (Result, e
 	result := Result{StepsTotal: len(steps)}
 
 	for i, step := range steps {
-		if err := ui.ShowStepProgress(ctx, i+1, len(steps), step.Name()); err != nil {
-			return Result{}, err
+		hidden := step.Hidden()
+		// The prompter (if the runner bound one) flows into every step via ctx so
+		// spliced sub-wizard steps ask the user through the SAME terminal channel
+		// as the host — never through their own pterm widgets.
+		stepCtx := ctx
+		if !hidden {
+			if err := ui.ShowStepProgress(ctx, i+1, len(steps), step.Name()); err != nil {
+				return Result{}, err
+			}
 		}
 
 		if step.ShouldSkip(state) {
-			if err := ui.ShowStepSkipped(ctx, step.Name()); err != nil {
-				return Result{}, err
+			if !hidden {
+				if err := ui.ShowStepSkipped(ctx, step.Name()); err != nil {
+					return Result{}, err
+				}
 			}
 			result.StepsSkipped++
 			continue
 		}
 
-		if err := step.Execute(ctx, state); err != nil {
+		if err := step.Execute(stepCtx, state); err != nil {
 			return result, fmt.Errorf("step '%s' failed: %w", step.Name(), err)
 		}
 		result.StepsCompleted++
 
 		for step.ShouldRetry(state) {
-			if err := ui.ShowStepRetrying(ctx, step.Name()); err != nil {
-				return Result{}, err
+			if !hidden {
+				if err := ui.ShowStepRetrying(ctx, step.Name()); err != nil {
+					return Result{}, err
+				}
 			}
 
-			if err := step.Execute(ctx, state); err != nil {
+			if err := step.Execute(stepCtx, state); err != nil {
 				return result, fmt.Errorf("step '%s' failed: %w", step.Name(), err)
 			}
 			result.StepsRetried++
