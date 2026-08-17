@@ -57,6 +57,18 @@ func NewAgentGuideDescriptor() ToolDescriptor {
 				Detail: "Check capabilities; if vault_put_file is available and the target vault is unlocked, call it with a transport-scoped source (host path in co-located stdio mode, a minted presigned PUT in remote mode, or url/data on the OpenAI tunnel) plus the destination vault_path, then monitor with upload_status for the CID.",
 			},
 			{
+				Name:   "download",
+				Title:  "Download IPFS content to a file",
+				Steps:  []string{"capabilities", "download_file"},
+				Detail: "Check capabilities' download_sink_modes; call download_file with ipfs_path (CID or CID/path) and a supported sink. sink=local writes the bytes to a host-side output_path on the MCP server's own disk (available on every transport); sink=drop (when advertised) returns a one-time HTTP GET filedrop link to pull from out of band with curl -o or a browser.",
+			},
+			{
+				Name:   "vault_download",
+				Title:  "Download a file from a vault",
+				Steps:  []string{"capabilities", "vault_get_file"},
+				Detail: "Check capabilities' download_sink_modes and that the vault is unlocked; call vault_get_file with vault_path and a supported sink. sink=local writes the decrypted bytes to a host-side output_path on the MCP server's own disk; sink=drop (when advertised) returns a one-time HTTP GET filedrop link.",
+			},
+			{
 				Name:   "pins",
 				Title:  "Manage pins",
 				Steps:  []string{"pins_add", "pins_list", "pins_status", "pins_rm"},
@@ -67,7 +79,7 @@ func NewAgentGuideDescriptor() ToolDescriptor {
 	return ToolDescriptor{
 		Name:        "agent_guide",
 		Title:       "Pinner agent guide",
-		Description: "Orientation for autonomous agents: the primary Pinner flows (auth, vault_create, vault_restore, upload, vault_upload, pins) as ordered tool chains. Call this first to learn how to drive Pinner before probing individual tools.",
+		Description: "Orientation for autonomous agents: the primary Pinner flows (auth, vault_create, vault_restore, upload, vault_upload, download, vault_download, pins) as ordered tool chains. Call this first to learn how to drive Pinner before probing individual tools.",
 		Category:    CategoryCore,
 		InputSchema: toolSchemaFor[NoInput](),
 		Handler: func(ctx context.Context, request ToolRequest) (ToolResult, error) {

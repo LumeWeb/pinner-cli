@@ -12,6 +12,7 @@ import (
 	"github.com/urfave/cli/v3"
 	contentfs "go.lumeweb.com/ipfs-content/fs"
 	"go.lumeweb.com/pinner-cli/build"
+	"go.lumeweb.com/pinner-cli/internal/core/auth"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
 	"go.lumeweb.com/pinner-cli/internal/core/vault"
 	"go.lumeweb.com/pinner-cli/internal/core/websites"
@@ -117,6 +118,14 @@ For more help on any command: pinner <command> --help`,
 	// of UploadHandler) that the vendored pinner_upload_file tool needs.
 	var uploadHandler mcpadapter.UploadHandler
 	var vaultPutHandler mcpadapter.VaultPutHandler
+	// ipfsDownload is the IPFS download executor used by download_file's sinks.
+	// It is built inside the wizard factory (where cfgMgr/secure are available)
+	// and read by the WithIPFSDownload option below — mirror of uploadHandler.
+	var ipfsDownload mcpadapter.IPFSDownloadHandler
+	// vaultGet is the vault-read executor used by vault_get_file's sinks. It is
+	// built inside the wizard factory (where the vault service is available)
+	// and read by the WithVaultGet option below — mirror of vaultPutHandler.
+	var vaultGet mcpadapter.VaultGetHandler
 	// localPathUpload is the co-located (stdio/local-mode) handler that backs
 	// the consolidated upload_file tool's co-located branch: it uploads
 	// a host-side file/directory/archive. It is built inside the wizard factory
@@ -303,6 +312,47 @@ For more help on any command: pinner <command> --help`,
 				return vaultSvc.Put(ctx, reader, size, path, nil)
 			}
 
+			// vaultGet is the vault_get_file sink executor: it streams a single
+			// encrypted vault file's decrypted bytes to w. The vault path is
+			// resolved against the active profile at call time (mirroring
+			// vaultPutHandler); the tool surface owns sink selection and path
+			// validation.
+			vaultGet = func(ctx context.Context, vaultPath string, w io.Writer) error {
+				profile, err := vault.ResolveProfile("")
+				if err != nil {
+					return err
+				}
+				vaultSvc, err := newVaultService(profile)
+				if err != nil {
+					return err
+				}
+				defer vaultSvc.Close()
+				return vaultSvc.Get(ctx, vaultPath, w)
+			}
+
+			// ipfsDownload is the download_file sink executor: it streams a
+			// single IPFS node (CID or CID/path) to w via the authenticated
+			// download service. The service reads the auth token live from
+			// cfgMgr at request time (matching the other long-lived MCP
+			// services), so a `pinner login` that relocates the token applies
+			// without a restart.
+			ipfsDownload = func(ctx context.Context, ipfsPath string, w io.Writer) error {
+				authSvc := auth.NewAuthService(cfgMgr, cfgMgr.Config().GetAccountEndpointSecure(), nil)
+				var svcOpts []DownloadServiceOption
+				svcOpts = append(svcOpts, WithDownloadAuthService(authSvc), WithDownloadIPFSEndpoint(cfgMgr.Config().GetIPFSEndpointWithSecure(secure)))
+				downloadSvc := defaultDownloadServiceFactory(cfgMgr, output, svcOpts...)
+				if err := downloadSvc.RequireAuthenticated(); err != nil {
+					return err
+				}
+				reader, err := downloadSvc.Cat(ctx, ipfsPath)
+				if err != nil {
+					return err
+				}
+				defer reader.Close()
+				_, err = io.Copy(w, reader)
+				return err
+			}
+
 			// localPathVaultPut is the vault_put_file path-mode handler (SDIO/local
 			// mode). It writes a host-side file/directory/archive into the
 			// encrypted vault: a directory is walked into one vault object
@@ -454,6 +504,28 @@ For more help on any command: pinner <command> --help`,
 				return nil, notInitErr("vault upload")
 			}
 			return vaultPutHandler(ctx, reader, size, path)
+		}),
+		mcpadapter.WithIPFSDownload(func(ctx context.Context, ipfsPath string, w io.Writer) error {
+			if ipfsDownload == nil {
+				return notInitErr("IPFS download")
+			}
+			return ipfsDownload(ctx, ipfsPath, w)
+		}),
+		mcpadapter.WithVaultGet(func(ctx context.Context, vaultPath string, w io.Writer) error {
+			if vaultGet == nil {
+				return notInitErr("vault download")
+			}
+			return vaultGet(ctx, vaultPath, w)
+		}),
+		// Confine download_file / vault_get_file local-sink writes to the
+		// configured download root (default <config-dir>/downloads). Resolved
+		// lazily from the config manager at server setup.
+		mcpadapter.WithDownloadRoot(func() string {
+			cfgMgr, err := configManagerFactory()
+			if err != nil {
+				return ""
+			}
+			return cfgMgr.Config().GetDownloadRoot()
 		}),
 		mcpadapter.WithUploadTaskManager(mcpadapter.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
 			if uploadHandler == nil {
