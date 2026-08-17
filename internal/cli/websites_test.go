@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
 	ipfs "go.lumeweb.com/ipfs-sdk"
+	"go.lumeweb.com/pinner-cli/internal/core/websites"
 )
 
 // mockWebsitesServiceForCLI is a mock implementation of the CLI WebsitesService interface for testing
@@ -1709,7 +1710,7 @@ func websitesEnableIPNSWithService(ctx context.Context, cmd interface {
 		return fmt.Errorf("website ID or domain is required")
 	}
 
-	id, err := resolveWebsiteID(ctx, websitesService, idArg)
+	id, err := websites.ResolveWebsiteID(ctx, websitesService, idArg)
 	if err != nil {
 		return err
 	}
@@ -1850,7 +1851,7 @@ func TestValidationRecordValue(t *testing.T) {
 func TestResolveWebsiteID(t *testing.T) {
 	t.Run("numeric ID returned as-is", func(t *testing.T) {
 		mockSvc := &mockWebsitesServiceForCLI{}
-		id, err := resolveWebsiteID(context.Background(), mockSvc, "42")
+		id, err := websites.ResolveWebsiteID(context.Background(), mockSvc, "42")
 		require.NoError(t, err)
 		require.Equal(t, "42", id)
 	})
@@ -1863,7 +1864,7 @@ func TestResolveWebsiteID(t *testing.T) {
 				{Id: 8, Domain: "other.com"},
 			}, nil
 		}
-		id, err := resolveWebsiteID(context.Background(), mockSvc, "example.com")
+		id, err := websites.ResolveWebsiteID(context.Background(), mockSvc, "example.com")
 		require.NoError(t, err)
 		require.Equal(t, "7", id)
 	})
@@ -1873,7 +1874,7 @@ func TestResolveWebsiteID(t *testing.T) {
 		mockSvc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
 			return []ipfs.WebsiteItem{}, nil
 		}
-		_, err := resolveWebsiteID(context.Background(), mockSvc, "missing.com")
+		_, err := websites.ResolveWebsiteID(context.Background(), mockSvc, "missing.com")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "website not found for domain")
 	})
@@ -1883,7 +1884,7 @@ func TestResolveWebsiteID(t *testing.T) {
 		mockSvc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
 			return nil, errors.New("service down")
 		}
-		_, err := resolveWebsiteID(context.Background(), mockSvc, "example.com")
+		_, err := websites.ResolveWebsiteID(context.Background(), mockSvc, "example.com")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to look up website by domain")
 	})

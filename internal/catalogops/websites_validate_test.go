@@ -53,8 +53,8 @@ func TestWebsiteValidateIDAndDomainResolveIdentically(t *testing.T) {
 		{Id: 11, Domain: "example.test"},
 	}
 
-	// Numeric-ID input: resolveWebsiteID must pass the raw ID straight through.
-	res, err := resolveWebsiteID(context.Background(), &fakeWebsitesService{items: items}, "11")
+	// Numeric-ID input: ResolveWebsiteID must pass the raw ID straight through.
+	res, err := websites.ResolveWebsiteID(context.Background(), &fakeWebsitesService{items: items}, "11")
 	if err != nil {
 		t.Fatalf("resolve ID: %v", err)
 	}
@@ -62,8 +62,8 @@ func TestWebsiteValidateIDAndDomainResolveIdentically(t *testing.T) {
 		t.Fatalf("numeric resolve: got %q, want 11", res)
 	}
 
-	// Domain input: resolveWebsiteID must look it up and return the SAME ID.
-	res, err = resolveWebsiteID(context.Background(), &fakeWebsitesService{items: items}, "example.test")
+	// Domain input: ResolveWebsiteID must look it up and return the SAME ID.
+	res, err = websites.ResolveWebsiteID(context.Background(), &fakeWebsitesService{items: items}, "example.test")
 	if err != nil {
 		t.Fatalf("resolve domain: %v", err)
 	}

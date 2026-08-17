@@ -134,10 +134,7 @@ func mountIPNSCatalogCommand(cmd *cli.Command) *cli.Command {
 // and invokes the handler, then renders the result.
 func ipnsActionAdapter(op catalog.Operation) cli.ActionFunc {
 	return func(ctx context.Context, c *cli.Command) error {
-		input := map[string]any{}
-		for _, a := range op.Args() {
-			input[a.Name] = flagValue(c, a)
-		}
+		input := catalog.FlagsToInput(c, op)
 
 		// The per-invocation --auth-token override takes precedence over the
 		// config token. Put it in the input so IPNSDeps.service() honors it;

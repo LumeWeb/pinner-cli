@@ -181,10 +181,7 @@ func catalogActionAdapter(op catalog.Operation, group string) cli.ActionFunc {
 
 		// Build the input map from the compiler-declared flags plus the
 		// resolved CLI inputs (positional/file/stdin → "cids"/"cid").
-		input := map[string]any{}
-		for _, a := range op.Args() {
-			input[a.Name] = flagValue(c, a)
-		}
+		input := catalog.FlagsToInput(c, op)
 
 		// The per-invocation --auth-token flag takes precedence over the config
 		// token. Only set it when provided so deps.service() falls back to the
@@ -378,14 +375,6 @@ func renderCatalogDryRun(output Output, _ *cli.Command, r *catalogops.DryRunResu
 }
 
 // ---- CLI-input helpers (pkg/cli layer only; not in internal/catalogops) ----
-
-// flagValue maps a parsed urfave command to the operation-input value for an
-// argument. It delegates to the catalog's single shared mapping (FlagValue) so
-// the wiring adapters and the compiled command path share one source of truth
-// per ArgType; the adapter and compiler cannot drift.
-func flagValue(c *cli.Command, a catalog.OperationArg) any {
-	return catalog.FlagValue(c, a)
-}
 
 // positionalCID returns the first positional argument, if any (used for
 // the <cid> single-CID operations status/update).

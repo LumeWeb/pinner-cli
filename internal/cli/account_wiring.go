@@ -157,10 +157,7 @@ func accountWiringParent() []*cli.Command {
 // `--open` convenience on read commands that return a web URL.
 func accountActionAdapter(op catalog.Operation) cli.ActionFunc {
 	return func(ctx context.Context, c *cli.Command) error {
-		input := map[string]any{}
-		for _, a := range op.Args() {
-			input[a.Name] = flagValue(c, a)
-		}
+		input := catalog.FlagsToInput(c, op)
 
 		// Per-invocation --auth-token override.
 		if tok := c.String(FlagAuthToken); tok != "" {

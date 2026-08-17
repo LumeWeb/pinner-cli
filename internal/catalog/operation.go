@@ -92,6 +92,11 @@ type OperationArg struct {
 	// "all"). Empty selects membership in no group. Enforcement is centralized
 	// in the normalize path so CLI, MCP, and direct Invoke all agree.
 	SelectionGroup string
+	// Sources names env vars that also source this arg's value on the CLI
+	// surface (restores legacy flag EnvVars support, e.g. PINNER_DOMAIN_NAMESPACE).
+	// Empty means the arg is a plain flag with no env source. MCP and direct
+	// Invoke ignore Sources.
+	Sources []string
 }
 
 // Handler.Execute runs the business operation against core. It never touches

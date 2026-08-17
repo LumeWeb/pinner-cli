@@ -3,6 +3,7 @@ module go.lumeweb.com/pinner-cli // v0.2.1
 go 1.26.2
 
 require (
+	atomicgo.dev/keyboard v0.2.9
 	github.com/BurntSushi/toml v1.4.0
 	github.com/LumeWeb/cli-docs v0.0.0-20260613190900-4a7a99d4f66c
 	github.com/Oudwins/zog v0.22.0
@@ -47,6 +48,7 @@ require (
 	go.sia.tech/siastorage v0.1.0
 	go.uber.org/zap v1.28.0
 	golang.ngrok.com/ngrok/v2 v2.2.0
+	golang.org/x/sync v0.22.0
 	golang.org/x/sys v0.47.0
 	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/datatypes v1.2.7
@@ -56,7 +58,6 @@ require (
 
 require (
 	atomicgo.dev/cursor v0.2.0 // indirect
-	atomicgo.dev/keyboard v0.2.9 // indirect
 	atomicgo.dev/schedule v0.1.0 // indirect
 	filippo.io/edwards25519 v1.2.0 // indirect
 	github.com/Jorropo/jsync v1.0.1 // indirect
@@ -283,7 +284,6 @@ require (
 	golang.org/x/mod v0.38.0 // indirect
 	golang.org/x/net v0.57.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
-	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/term v0.45.0 // indirect
 	golang.org/x/text v0.40.0 // indirect
 	golang.org/x/time v0.15.0 // indirect

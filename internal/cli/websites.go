@@ -4,13 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/urfave/cli/v3"
 	ipfs "go.lumeweb.com/ipfs-sdk"
-	"go.lumeweb.com/ipfs-sdk/dnsname"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner-cli/internal/core/websites"
 )
 
 // stripValidationPrefix strips the "key=" prefix from a validation token value.
@@ -59,22 +58,27 @@ func validationRecordValue(website *ipfs.WebsiteItem) string {
 func newWebsitesCommand() *cli.Command {
 	// The websites parent is catalog-driven: the core website CRUD + status
 	// subcommands (list, create, get, update, enable-ipns, delete, validate,
-	// ssl status, config) are compiled from the canonical operation catalog
-	// (internal/catalogops) — see catalog_websites_wiring.go. The commands
-	// that are fundamentally interactive/IO or domain-delegation-focused are
-	// NOT representable as pure data-returning handlers and remain hand-written:
-	//   - websites wizard        — interactive stepwise creation session.
-	//   - websites domains ...   — domain binding + DANE delegation tree
-	//                              (list/add/rm/verify/dns-requirements/dane
-	//                              republish/update + wizard), driven by the
-	//                              core websites domain-binding service but
-	//                              with wizard/IO coupling that is out of scope
-	//                              for this catalog migration pass.
+	// ssl status, config) and the domains tree (list/add/remove/verify/
+	// dns-requirements/dane republish/update) are compiled from the canonical
+	// operation catalog (internal/catalogops) — see catalog_websites_wiring.go.
+	// The commands that are fundamentally interactive/IO are NOT representable
+	// as pure data-returning handlers and remain hand-written:
+	//   - websites wizard    — interactive stepwise creation session, mounted at
+	//                          the top level of the websites parent.
+	//   - domains wizard     — interactive domain-addition session, mounted
+	//                          under the catalog-emitted `domains` parent.
 	cmds := newWebsitesCatalogCommands()
-	cmds = append(cmds,
-		newWebsitesWizardCommand(),
-		newWebsitesDomainsCommand(),
-	)
+	cmds = append(cmds, newWebsitesWizardCommand())
+
+	// The domains tree is now catalog-compiled, but the interactive domains
+	// wizard stays hand-written: find the catalog `domains` parent and mount it
+	// there.
+	for _, c := range cmds {
+		if c.Name == "domains" {
+			c.Commands = append(c.Commands, newWebsitesDomainsWizardCommand())
+			break
+		}
+	}
 
 	return &cli.Command{
 		Name:     "websites",
@@ -94,7 +98,7 @@ func resolveRequiredArg(ctx context.Context, websitesService WebsitesService, cm
 		return "", fmt.Errorf("website ID or domain is required")
 	}
 
-	return resolveWebsiteID(ctx, websitesService, args.First())
+	return websites.ResolveWebsiteID(ctx, websitesService, args.First())
 }
 
 func printWebsiteUpdateResult(output Output, website *ipfs.WebsiteItem, message string) {
@@ -195,31 +199,10 @@ func websitesList(ctx context.Context, cmd websitesCommandGetter, output Output,
 	return nil
 }
 
-// resolveWebsiteID resolves an ID or domain argument to a numeric website ID string.
-// If arg is numeric, it's returned as-is. Otherwise, it searches by domain via List.
-func resolveWebsiteID(ctx context.Context, websitesService WebsitesService, arg string) (string, error) {
-	if _, err := strconv.Atoi(arg); err == nil {
-		return arg, nil
-	}
-
-	websites, err := websitesService.List(ctx)
-	if err != nil {
-		return "", fmt.Errorf("failed to look up website by domain: %w", err)
-	}
-
-	for _, w := range websites {
-		if dnsname.Equal(w.Domain, arg) {
-			return fmt.Sprintf("%d", w.Id), nil
-		}
-	}
-
-	return "", fmt.Errorf("website not found for domain %q", arg)
-}
-
 // resolveAndGetWebsite resolves a website by ID or domain name.
 // If arg is a numeric ID, it fetches directly. Otherwise, it searches by domain.
 func resolveAndGetWebsite(ctx context.Context, websitesService WebsitesService, arg string) (*ipfs.WebsiteItem, error) {
-	id, err := resolveWebsiteID(ctx, websitesService, arg)
+	id, err := websites.ResolveWebsiteID(ctx, websitesService, arg)
 	if err != nil {
 		return nil, err
 	}
@@ -637,7 +620,7 @@ func doWebsitesValidate(ctx context.Context, cmd websitesCommandGetter, output O
 
 	arg := args.First()
 
-	id, err := resolveWebsiteID(ctx, websitesService, arg)
+	id, err := websites.ResolveWebsiteID(ctx, websitesService, arg)
 	if err != nil {
 		return err
 	}
