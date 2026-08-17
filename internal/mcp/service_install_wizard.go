@@ -89,6 +89,22 @@ func tunnelProviderChoiceLabels() []string {
 		"openai - connects to ChatGPT/Connectors via an OpenAI Secure MCP Tunnel ID (needs a control-plane API key)",
 	}
 }
+// providerChoiceLabel returns the full choice label for a provider token (the
+// text the interactive Select highlights as the current default on a re-run),
+// or "" if the provider is unknown/unset. It derives from
+// tunnelProviderChoiceLabels — the single source of the label strings — by
+// matching the leading provider token (the identifier before " - "), so the
+// labels never drift between the option list and the highlighted default.
+func providerChoiceLabel(p tunnel.TunnelProvider) string {
+	prefix := string(p) + " - "
+	for _, label := range tunnelProviderChoiceLabels() {
+		if strings.HasPrefix(label, prefix) {
+			return label
+		}
+	}
+	return ""
+}
+
 
 // Select runs an interactive single-choice prompt, gated by NonInteractive.
 // RunServiceInstallWizard drives the interactive tunnel configuration wizard and
@@ -155,13 +171,16 @@ func ServiceInstallSteps(state *ServiceInstallState, cmd *cli.Command, envFile s
 		wizard.StepFunc[*ServiceInstallState]{
 			Name_: "Tunnel provider",
 			ExecuteFunc: func(ctx context.Context, s *ServiceInstallState) error {
-				if s.Provider != "" {
+				// Headless: reuse a resolved provider instead of prompting.
+				if s.Provider != "" && wizard.NonInteractive {
 					return nil
 				}
 				p := serviceInstallStepsPrompter(ctx)
 				// ngrok is listed first so the interactive select defaults to it (see
 				// tunnelProviderChoiceLabels).
-				_, choice, err := p.Select("MCP tunnel provider (exposes the remote MCP endpoint)", tunnelProviderChoiceLabels(), "")
+				options := tunnelProviderChoiceLabels()
+				def := providerChoiceLabel(s.Provider)
+				_, choice, err := p.Select("MCP tunnel provider (exposes the remote MCP endpoint)", options, def)
 				if err != nil {
 					return err
 				}
@@ -229,8 +248,13 @@ func ServiceInstallSteps(state *ServiceInstallState, cmd *cli.Command, envFile s
 				// Prefer the MCP_AUTH_TOKEN environment variable over an
 				// interactive prompt so the secret is never typed into or
 				// echoed from the terminal session.
-				if s.AuthToken == "" {
-					secret, err := p.Text("Shared auth token / secret for the public MCP endpoint", "*", "")
+				// Prefer the MCP_AUTH_TOKEN environment variable over an
+				// interactive prompt so the secret is never typed into or echoed from
+				// the terminal session. On an interactive re-run the current value
+				// pre-fills the masked prompt as an editable default; headless reuses
+				// a resolved token without re-prompting.
+				if s.AuthToken == "" || !wizard.NonInteractive {
+					secret, err := p.Text("Shared auth token / secret for the public MCP endpoint", "*", s.AuthToken)
 					if err != nil {
 						return err
 					}
@@ -324,7 +348,12 @@ func seedServiceFromFlagsAndEnv(cmd *cli.Command, s *ServiceInstallState, _ stri
 }
 
 func serviceInstallStateToEnv(s *ServiceInstallState) ServiceEnvironment {
-	env := ServiceEnvironment{"MCP_TUNNEL_PROVIDER": string(s.Provider)}
+	env := ServiceEnvironment{}
+	// Provider is written only when decided; an undecided (empty) provider must
+	// not clobber a persisted value on a re-run reconcile.
+	if s.Provider != "" {
+		env["MCP_TUNNEL_PROVIDER"] = string(s.Provider)
+	}
 	if v := s.TunnelID; v != "" {
 		env["MCP_TUNNEL_ID"] = v
 	}

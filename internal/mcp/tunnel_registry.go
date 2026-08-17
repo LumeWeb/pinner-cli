@@ -64,6 +64,19 @@ type TunnelProviderSpec struct {
 	// missing auth token never takes the skip path). Nil falls back to
 	// "not seeded" (always prompt).
 	ConfigSeeded func(s *ServiceInstallState) bool
+	// EnvKeys lists the MCP service-env keys this provider owns — its
+	// identity/credential keys, EXCLUDING the shared
+	// MCP_TUNNEL_PROVIDER / MCP_AUTH_TOKEN / MCP_PUBLIC_URL / MCP_HOST that
+	// every provider writes. A re-run reconcile removes the PREVIOUS provider's
+	// EnvKeys from the file when the operator switches providers, so no orphaned
+	// credentials survive for a tunnel that no longer exists.
+	EnvKeys []string
+	// CleanState zeroes every install-state field the CURRENT provider does not
+	// own. After a seed fold loads every persisted value into the state (from
+	// any provider), this scrubs fields of other providers so a reconcile
+	// overlay (built from the state) never resurrects another provider's
+	// credentials. Nil leaves the state untouched (provider owns everything).
+	CleanState func(s *ServiceInstallState)
 }
 
 // tunnelRegistry is the process-wide provider registry.
@@ -128,4 +141,31 @@ func TunnelFor(provider, domain, token, name, tunnelID string, cfgMgr config.Man
 		TunnelID:  tunnelID,
 		ConfigMgr: cfgMgr,
 	})
+}
+
+// TunnelProviderEnvKeys returns the MCP service-env keys owned by a provider,
+// per that provider's registered EnvKeys. Used to purge a previous provider's
+// orphaned keys from the env file on a provider-switch re-run. Unknown/empty
+// providers map to no keys.
+func TunnelProviderEnvKeys(provider tunnel.TunnelProvider) []string {
+	spec, ok := providers.spec(provider)
+	if !ok {
+		return nil
+	}
+	return spec.EnvKeys
+}
+
+// TunnelProviderCleanState zeroes the install-state fields NOT owned by the
+// provider, per that provider's registered CleanState scrubber. After a seed
+// fold loads every persisted value into the state (from any provider), this
+// scrubs other providers' fields so a reconcile overlay never resurrects their
+// credentials. Unknown/empty providers and providers without a scrubber leave
+// the state untouched.
+func TunnelProviderCleanState(provider tunnel.TunnelProvider, s *ServiceInstallState) {
+	if provider == "" || s == nil {
+		return
+	}
+	if spec, ok := providers.spec(provider); ok && spec.CleanState != nil {
+		spec.CleanState(s)
+	}
 }

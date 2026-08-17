@@ -148,11 +148,12 @@ func runMcpInstall(ctx context.Context, cmd mcpInstallFlagGetter, ui InstallUI, 
 
 	// Build the state.
 	state := &InstallState{
-		Agents:      agents,
-		Scope:       scope,
-		Transport:   transport,
-		UseService:  useService,
-		AutoApprove: cmd.Bool("auto-approve"),
+		Agents:         agents,
+		Scope:          scope,
+		Transport:      transport,
+		UseService:     useService,
+		AutoApprove:    cmd.Bool("auto-approve"),
+		NonInteractive: nonInteractive,
 	}
 	if len(agents) == 0 {
 		// Interactive: leave agents empty; the Select step will prompt.
@@ -194,8 +195,28 @@ func runMcpInstall(ctx context.Context, cmd mcpInstallFlagGetter, ui InstallUI, 
 			var snapshot []byte
 			if !created && ef != "" {
 				snapshot, _ = os.ReadFile(ef)
+				// Capture the provider as it exists on disk BEFORE the flags
+				// reconcile overwrites MCP_TUNNEL_PROVIDER, so a --tunnel
+				// switch against a different provider still purges the old
+				// provider's orphaned keys in the install-state reconcile.
+				var prevProvider tunnel.TunnelProvider
+				if prev, lerr := service.LoadEnvironment(ef); lerr == nil {
+					prevProvider = tunnel.TunnelProvider(prev["MCP_TUNNEL_PROVIDER"])
+				}
 				if err := mcpadapter.ReconcileServiceEnvironmentFromFlags(realCmd, ef); err != nil {
 					return err
+				}
+				// On an INTERACTIVE re-run the config step ran and folded the
+				// operator's (kept-or-changed) tunnel credentials into
+				// s.Service. Overlay them onto the existing file too, so a
+				// re-run genuinely reconfigures instead of discarding prompted
+				// values (the write step is a no-op on a pre-existing file).
+				// Headless re-runs have no prompted values — the flag reconcile
+				// above already covered their overrides.
+				if !s.NonInteractive && s.Service != nil {
+					if err := mcpadapter.ReconcileServiceEnvironmentFromInstallState(ef, s.Service, prevProvider); err != nil {
+						return err
+					}
 				}
 			}
 
@@ -396,14 +417,23 @@ func buildMcpTunnelSteps(realCmd *cli.Command) []wizard.Step[*InstallState] {
 	return []wizard.Step[*InstallState]{
 		wrap("Tunnel provider", tunnelStepAt(inner, 0), tunnelProviderSeeded, nil, nil, nil),
 		// The config step prompts for provider credentials + the shared auth
-		// token into s.Service. On a re-run against a pre-existing (even
-		// partial) env file the write step is skipped and the collector reads
-		// ONLY the on-disk file, so any prompted value would be silently
-		// discarded. Gate Execute on the fresh path too (mirroring the removed
-		// needsFreshTunnelPrompt gate): flag-seeded values still flow via Seed
-		// and are reconciled into the existing file by the write step.
+		// token into s.Service. On a HEADLESS re-run against a pre-existing
+		// (even partial) env file it is skipped and the collector reads ONLY
+		// the on-disk file, so any flag-seeded value silently re-applies via
+		// the collector's flag reconcile. On an INTERACTIVE re-run it must NOT
+		// skip: the operator is reconfiguring and the Configurer must run,
+		// pre-filled with the persisted values as editable defaults, so they
+		// can change the tunnel credentials. (wizard.Run checks ShouldSkip
+		// before Seed — skipping here would make the editable-reconfigure
+		// path dead code.) The prompted values are reconciled onto the file
+		// by the collector's success path.
 		wrap("Tunnel-specific configuration", tunnelStepAt(inner, 1), tunnelConfigSeeded,
-			func(s *InstallState) bool { return !isFreshServiceEnvFile(serviceEnvFile(realCmd, s)) },
+			func(s *InstallState) bool {
+				if s.NonInteractive {
+					return !isFreshServiceEnvFile(serviceEnvFile(realCmd, s))
+				}
+				return false
+			},
 			nil, nil),
 		// The env-write step NEVER skips for http (only for a non-http install
 		// or a tapped serviceEnvErr). On the FRESH path it writes the env from
@@ -481,12 +511,15 @@ func tunnelProviderSeeded(_ context.Context, s *InstallState) ([]string, bool) {
 	if s.Service == nil || s.Service.Provider == "" {
 		return nil, false
 	}
-	// Report the HONEST source: an explicit --tunnel switch, or the persisted
-	// env file — never claim "--tunnel" when the operator did not pass it.
-	if s.tunnelSeedSource != "" {
+	// A provider decided by an explicit --tunnel switch (or a headless run,
+	// which cannot prompt) is fully decided and renders "Seeded". A provider
+	// folded from a persisted env file on an INTERACTIVE run only PREFILLS the
+	// prompt: the operator must be able to change it on a re-install, so the
+	// step stays un-seeded and prompts with the current provider highlighted.
+	if s.tunnelSeedSource != "env file" || s.NonInteractive {
 		return []string{s.tunnelSeedSource}, true
 	}
-	return []string{"tunnel"}, true
+	return nil, false
 }
 
 // tunnelConfigSeeded reports whether the tunnel-specific configuration step is
@@ -502,12 +535,16 @@ func tunnelConfigSeeded(_ context.Context, s *InstallState) ([]string, bool) {
 	if s.Service == nil || !mcpadapter.IsServiceInstallSeeded(s.Service) {
 		return nil, false
 	}
-	// Report the HONEST source: the config step is fully decided from the
-	// operator's switches and/or a persisted env file.
-	if s.tunnelSeedSource != "" {
+	// The config step is fully decided (renders "Seeded") when the credentials
+	// came from an explicit switch, or on a headless run that cannot prompt. A
+	// fully-configured persisted env file on an INTERACTIVE re-run only PREFILLS
+	// the editable prompts — the operator must be able to change the config on
+	// a re-install, so the step stays un-seeded and prompts with the current
+	// values as defaults.
+	if s.tunnelSeedSource != "env file" || s.NonInteractive {
 		return []string{s.tunnelSeedSource}, true
 	}
-	return []string{"flags"}, true
+	return nil, false
 }
 
 // tunnelStepAt returns the i-th step of a ServiceInstallSteps slice for wrapping.

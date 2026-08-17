@@ -35,6 +35,10 @@ func init() {
 			// AuthToken.
 			return s != nil && s.Domain != "" && s.TunnelName != "" && s.AuthToken != ""
 		},
+		EnvKeys: []string{"MCP_DOMAIN", "MCP_TUNNEL_NAME"},
+		CleanState: func(s *ServiceInstallState) {
+			s.TunnelToken, s.TunnelID, s.ApiKey = "", "", ""
+		},
 	})
 
 	RegisterTunnelProvider(&TunnelProviderSpec{
@@ -55,6 +59,10 @@ func init() {
 			// resolveNgrokURL still runs (otherwise the env would lack
 			// MCP_PUBLIC_URL entirely).
 			return s != nil && s.TunnelToken != "" && s.AuthToken != "" && s.PublicURL != ""
+		},
+		EnvKeys: []string{"MCP_TUNNEL_TOKEN", "NGROK_AUTHTOKEN", "NGROK_API_KEY"},
+		CleanState: func(s *ServiceInstallState) {
+			s.Domain, s.TunnelName, s.TunnelID, s.ApiKey = "", "", "", ""
 		},
 	})
 
@@ -86,6 +94,10 @@ func init() {
 				s.ApiKey != "" &&
 				s.AuthToken != "" &&
 				tunnel.OpenAITunnelID.MatchString(s.TunnelID)
+		},
+		EnvKeys: []string{"MCP_TUNNEL_ID", "CONTROL_PLANE_API_KEY"},
+		CleanState: func(s *ServiceInstallState) {
+			s.Domain, s.TunnelName, s.TunnelToken = "", "", ""
 		},
 	})
 }

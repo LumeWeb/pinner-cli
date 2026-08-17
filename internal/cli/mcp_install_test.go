@@ -544,32 +544,41 @@ func TestMcpInstallBuildTunnelStepsProducesVisibleSteps(t *testing.T) {
 // error.
 func TestMcpInstallTunnelConfigSeeded(t *testing.T) {
 	cases := []struct {
-		name   string
-		svc    *mcpadapter.ServiceInstallState
-		seeded bool
+		name     string
+		svc      *mcpadapter.ServiceInstallState
+		src      string
+		headless bool
+		seeded   bool
 	}{
 		// Provider credentials alone are NOT enough: the config step's Execute
 		// always collects the shared auth token, so a missing AuthToken keeps
 		// the step un-seeded and prompts for it (otherwise a --token-seeded
 		// ngrok install would write an env that fails the MCP_AUTH_TOKEN check).
-		{"nil service stays undecided", nil, false},
-		{"empty provider stays undecided", &mcpadapter.ServiceInstallState{}, false},
-		{"openai complete", &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderOpenAI, TunnelID: "tunnel_" + strings.Repeat("a", 32), ApiKey: "k", AuthToken: "a"}, true},
-		{"openai missing api key", &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderOpenAI, TunnelID: "tunnel_" + strings.Repeat("a", 32), AuthToken: "a"}, false},
-		{"openai missing tunnel id", &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderOpenAI, ApiKey: "k", AuthToken: "a"}, false},
-		{"openai malformed tunnel id", &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderOpenAI, TunnelID: "t_1", ApiKey: "k", AuthToken: "a"}, false},
-		{"openai missing auth token", &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderOpenAI, TunnelID: "tunnel_" + strings.Repeat("a", 32), ApiKey: "k"}, false},
-		{"cloudflared complete", &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderCloudflared, Domain: "d.example", TunnelName: "pin", AuthToken: "a"}, true},
-		{"cloudflared missing domain", &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderCloudflared, TunnelName: "pin", AuthToken: "a"}, false},
-		{"cloudflared missing auth token", &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderCloudflared, Domain: "d.example", TunnelName: "pin"}, false},
-		{"ngrok complete", &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderNgrok, TunnelToken: "tok", AuthToken: "a", PublicURL: "https://u.ngrok-free.dev"}, true},
-		{"ngrok missing token", &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderNgrok, AuthToken: "a", PublicURL: "https://u.ngrok-free.dev"}, false},
-		{"ngrok missing auth token", &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderNgrok, TunnelToken: "tok", PublicURL: "https://u.ngrok-free.dev"}, false},
-		{"ngrok missing public url", &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderNgrok, TunnelToken: "tok", AuthToken: "a"}, false},
+		{"nil service stays undecided", nil, "", false, false},
+		{"empty provider stays undecided", &mcpadapter.ServiceInstallState{}, "", false, false},
+		{"openai complete", &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderOpenAI, TunnelID: "tunnel_" + strings.Repeat("a", 32), ApiKey: "k", AuthToken: "a"}, "", false, true},
+		{"openai missing api key", &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderOpenAI, TunnelID: "tunnel_" + strings.Repeat("a", 32), AuthToken: "a"}, "", false, false},
+		{"openai missing tunnel id", &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderOpenAI, ApiKey: "k", AuthToken: "a"}, "", false, false},
+		{"openai malformed tunnel id", &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderOpenAI, TunnelID: "t_1", ApiKey: "k", AuthToken: "a"}, "", false, false},
+		{"openai missing auth token", &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderOpenAI, TunnelID: "tunnel_" + strings.Repeat("a", 32), ApiKey: "k"}, "", false, false},
+		{"cloudflared complete", &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderCloudflared, Domain: "d.example", TunnelName: "pin", AuthToken: "a"}, "", false, true},
+		{"cloudflared missing domain", &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderCloudflared, TunnelName: "pin", AuthToken: "a"}, "", false, false},
+		{"cloudflared missing auth token", &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderCloudflared, Domain: "d.example", TunnelName: "pin"}, "", false, false},
+		{"ngrok complete", &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderNgrok, TunnelToken: "tok", AuthToken: "a", PublicURL: "https://u.ngrok-free.dev"}, "", false, true},
+		{"ngrok missing token", &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderNgrok, AuthToken: "a", PublicURL: "https://u.ngrok-free.dev"}, "", false, false},
+		{"ngrok missing auth token", &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderNgrok, TunnelToken: "tok", PublicURL: "https://u.ngrok-free.dev"}, "", false, false},
+		{"ngrok missing public url", &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderNgrok, TunnelToken: "tok", AuthToken: "a"}, "", false, false},
+		// Interactive re-run: a fully-configured persisted env file must stay
+		// un-seeded so the operator can change the config (editable defaults).
+		{"interactive env-file re-run stays re-promptable", &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderNgrok, TunnelToken: "tok", AuthToken: "a", PublicURL: "https://u.ngrok-free.dev"}, "env file", false, false},
+		// Headless: the same persisted config is reused silently (no prompt).
+		{"headless env-file re-run reuses config", &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderNgrok, TunnelToken: "tok", AuthToken: "a", PublicURL: "https://u.ngrok-free.dev"}, "env file", true, true},
+		// An explicit switch seed fully decides the step.
+		{"switch-seeded config", &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderNgrok, TunnelToken: "tok", AuthToken: "a", PublicURL: "https://u.ngrok-free.dev"}, "tunnel", false, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, full := tunnelConfigSeeded(context.Background(), &InstallState{Service: tc.svc})
+			_, full := tunnelConfigSeeded(context.Background(), &InstallState{Service: tc.svc, tunnelSeedSource: tc.src, NonInteractive: tc.headless})
 			if full != tc.seeded {
 				t.Errorf("tunnelConfigSeeded fullyDecided = %v, want %v", full, tc.seeded)
 			}
@@ -589,16 +598,29 @@ func TestMcpInstallTunnelProviderSeeded(t *testing.T) {
 	if _, full := tunnelProviderSeeded(context.Background(), &InstallState{Service: &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderNgrok}}); !full {
 		t.Error("a resolved provider must be seeded")
 	}
-	// The source banner must be HONEST: a provider folded from a persisted env
-	// file must NOT claim "--tunnel" (the operator never passed it). The shared
-	// SeedFunc records the source; the banner repeats it verbatim.
-	s := &InstallState{
+	// The source banner must be HONEST and the step must stay RE-PROMPTABLE on an
+	// interactive re-run. A provider folded from a persisted env file must NOT
+	// claim "--tunnel" (the operator never passed it), and on an interactive run
+	// the provider step must stay un-seeded so the operator can change it.
+	envSec := &InstallState{
 		Service:          &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderNgrok},
 		tunnelSeedSource: "env file",
 	}
-	src, _ := tunnelProviderSeeded(context.Background(), s)
-	if len(src) != 1 || src[0] != "env file" {
-		t.Errorf("seed source = %v, want [env file] (must not claim --tunnel)", src)
+	if _, full := tunnelProviderSeeded(context.Background(), envSec); full {
+		t.Error("interactive re-run with an env-file provider must stay un-seeded (prompt, editable)")
+	}
+	// Headless reuses the persisted provider without prompting.
+	envSec.NonInteractive = true
+	if src, full := tunnelProviderSeeded(context.Background(), envSec); !full || len(src) != 1 || src[0] != "env file" {
+		t.Errorf("headless env-file provider should be seeded from [env file], got full=%v src=%v", full, src)
+	}
+	// An explicit --tunnel switch fully seeds the step (the banner names it).
+	switchSec := &InstallState{
+		Service:          &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderNgrok},
+		tunnelSeedSource: "tunnel",
+	}
+	if src, full := tunnelProviderSeeded(context.Background(), switchSec); !full || len(src) != 1 || src[0] != "tunnel" {
+		t.Errorf("switch-seeded provider should be seeded from [tunnel], got full=%v src=%v", full, src)
 	}
 }
 
@@ -655,25 +677,33 @@ func TestMcpInstallEnvWriteFreshnessGuards(t *testing.T) {
 		t.Error("pre-existing initialized env file must not be fresh")
 	}
 
-	// Finding 10: the Tunnel-specific configuration step must gate on the fresh
-	// path too. On a re-run against a pre-existing (even partial) env file the
-	// write step is skipped and the collector reads only the on-disk file, so
-	// prompting for a secret into s.Service would silently discard it. The
-	// config step's skip must therefore agree with the write step's non-fresh
-	// condition: it RUNS on a fresh path (collects creds) and SKIPS on a
-	// pre-existing file.
+	// The config step now runs BOTH on a fresh install (collects creds) and on
+	// an INTERACTIVE re-run (the operator reconfigures; prompted values are
+	// reconciled onto the file by the collector's success path). It only skips
+	// on a HEADLESS re-run against a pre-existing file, where it cannot prompt
+	// and the collector reuses the on-disk config via the flag reconcile.
 	freshCmd := NewMcpInstallCommand()
-	freshPath := filepath.Join(root, "fresh.env")
-	if err := freshCmd.Set("env-file", freshPath); err != nil {
+	if err := freshCmd.Set("env-file", filepath.Join(root, "fresh.env")); err != nil {
 		t.Fatalf("set --env-file (fresh): %v", err)
 	}
 	cfgStepSkipFresh := !isFreshServiceEnvFile(serviceEnvFile(freshCmd, &InstallState{}))
 	if cfgStepSkipFresh {
 		t.Error("config step must run (not skip) on a fresh install so it can collect creds")
 	}
-	cfgStepSkipExisting := !isFreshServiceEnvFile(serviceEnvFile(cmd, &InstallState{Service: &mcpadapter.ServiceInstallState{EnvFile: envFile}}))
-	if !cfgStepSkipExisting {
-		t.Error("config step must skip on a re-run against a pre-existing env file (prompted value would be discarded)")
+
+	configExtraSkip := func(s *InstallState) bool {
+		if s.NonInteractive {
+			return !isFreshServiceEnvFile(serviceEnvFile(cmd, s))
+		}
+		return false
+	}
+	existingState := &InstallState{Service: &mcpadapter.ServiceInstallState{EnvFile: envFile}}
+	if configExtraSkip(existingState) {
+		t.Error("config step must RUN (not skip) on an interactive re-run so the operator can reconfigure")
+	}
+	headlessState := &InstallState{Service: &mcpadapter.ServiceInstallState{EnvFile: envFile}, NonInteractive: true}
+	if !configExtraSkip(headlessState) {
+		t.Error("config step must SKIP on a headless re-run against a pre-existing env file (cannot prompt)")
 	}
 }
 

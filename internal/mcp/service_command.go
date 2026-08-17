@@ -441,6 +441,63 @@ func ReconcileServiceEnvironmentFromFlags(cmd *cli.Command, envFile string) erro
 	return nil
 }
 
+// ReconcileServiceEnvironmentFromInstallState overlays the tunnel credentials
+// an operator just prompted/confirmed in an interactive re-run (s) onto the
+// existing service env file, preserving every other key (MCP_OAUTH, MCP_PORT,
+// unmodeled keys, secrets from prior runs). This is what makes a re-run act as
+// a real reconfiguration: without it the config step's prompted values would be
+// discarded because the write step is a no-op on a pre-existing file.
+//
+// prevProvider must be the MCP_TUNNEL_PROVIDER that was on disk BEFORE any flag
+// reconcile ran in this install — NOT re-read from the file after the flags
+// reconcile, which may already have overwritten it with the --tunnel switch
+// value. Passing the pre-reconcile provider lets a provider switch purge the
+// previous provider's orphaned keys even when the flags reconcile already
+// wrote the new provider into the file.
+//
+// Per-provider key ownership (what to purge) and state-field ownership (what to
+// scrub from the overlay) come from the provider registry — NEVER a switch on
+// the provider value here.
+func ReconcileServiceEnvironmentFromInstallState(envFile string, s *ServiceInstallState, prevProvider tunnel.TunnelProvider) error {
+	switching := prevProvider != "" && s.Provider != "" && prevProvider != s.Provider
+	if switching {
+		// Scrub the previous provider's fields out of the state so the overlay
+		// below does not resurrect them (a seed fold loads every persisted
+		// value, regardless of provider, into s).
+		TunnelProviderCleanState(s.Provider, s)
+		// MCP_PUBLIC_URL is the endpoint RESOLVED for the previous provider
+		// (ngrok derives it from its API/SDK, cloudflared/openai from their
+		// own config). A URL resolved under a different provider is never valid
+		// for the new one — clear it from the state so the overlay omits it and
+		// the collector re-derives the correct endpoint. Provider-agnostic.
+		s.PublicURL = ""
+	}
+	overlay := serviceInstallStateToEnv(s)
+	if len(overlay) == 0 {
+		return nil
+	}
+	env, err := service.LoadEnvironment(envFile)
+	if err != nil {
+		return fmt.Errorf("load service environment %q for reconcile: %w", envFile, err)
+	}
+	if switching {
+		// A provider switch must purge the previous provider's modeled keys —
+		// including its resolved MCP_PUBLIC_URL, which would otherwise short-
+		// circuit the collector's derivation — so the file carries no orphaned
+		// credentials/endpoint for a tunnel that no longer exists.
+		for _, k := range append(TunnelProviderEnvKeys(prevProvider), "MCP_PUBLIC_URL") {
+			delete(env, k)
+		}
+	}
+	for k, v := range overlay {
+		env[k] = v
+	}
+	if err := service.WriteEnvironment(envFile, env); err != nil {
+		return fmt.Errorf("reconcile MCP service environment file: %w", err)
+	}
+	return nil
+}
+
 // bootstrapServiceEnvironment writes a fresh 0600 env file from the tunnel
 // config provided via flags. It requires MCP_TUNNEL_PROVIDER. cfgMgr, when
 // non-nil, also persists any supplied ngrok/openai credential to the last-resort

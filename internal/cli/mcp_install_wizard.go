@@ -58,11 +58,17 @@ type InstallState struct {
 	serviceEnvErr error
 
 	// tunnelSeedSource is the honest provenance of the seeded tunnel values,
-	// set by the shared tunnel-step SeedFunc for the seed banners: "--tunnel"
+	// set by the shared tunnel-step SeedFunc for the seed banners: "tunnel"
 	// when an explicit switch decided the provider this run, else "env file"
 	// when they were folded from a persisted service env file. The banners must
 	// not claim "--tunnel" when the operator never passed it.
 	tunnelSeedSource string
+
+	// NonInteractive reports whether the run is headless (no interactive
+	// prompts possible). Used to decide whether a persisted env file fully
+	// seeds the tunnel steps (non-interactive: reuse silently) or just prefills
+	// editable prompts (interactive: let the operator reconfigure on re-run).
+	NonInteractive bool
 
 	// Codex auto-approve opt-in (--auto-approve): when true the written Codex
 	// entry requests approval for all tools. Other agents ignore it.

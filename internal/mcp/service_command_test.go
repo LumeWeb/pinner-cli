@@ -228,6 +228,191 @@ func TestReconcileDoesNotClobberWithExplicitEmpty(t *testing.T) {
 	require.Equal(t, "saved-token", env["MCP_AUTH_TOKEN"], "whitespace-only --auth-token must not clobber the saved token")
 }
 
+// TestReconcileFromInstallStateOverlaysPromptedTunnelValues guards the
+// interactive re-run reconfiguration path: after the config step prompts,
+// ReconcileServiceEnvironmentFromInstallState overlays the operator's
+// kept-or-changed tunnel credentials onto the existing file while preserving
+// every other key (MCP_OAUTH, MCP_PORT, unmodeled/secret keys).
+func TestReconcileFromInstallStateOverlaysPromptedTunnelValues(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "mcp.env")
+	require.NoError(t, service.WriteEnvironment(path, service.Environment{
+		"MCP_TUNNEL_PROVIDER": "cloudflared",
+		"MCP_AUTH_TOKEN":      "saved-token",
+		"MCP_PUBLIC_URL":      "https://old.example.com",
+		"MCP_OAUTH":           "true",
+		"MCP_CUSTOM":          "keep-me",
+	}))
+
+	// Operator re-ran interactively with the SAME provider (no switch): kept the
+	// auth token, changed the domain and public URL, left OAuth custom unset
+	// (not part of the Configurer).
+	err := ReconcileServiceEnvironmentFromInstallState(path, &ServiceInstallState{
+		Provider:  tunnel.TunnelProviderCloudflared,
+		AuthToken: "saved-token",
+		Domain:    "new.example.com",
+		PublicURL: "https://new.example.com",
+	}, tunnel.TunnelProviderCloudflared)
+	require.NoError(t, err)
+
+	env, err := service.LoadEnvironment(path)
+	require.NoError(t, err)
+	require.Equal(t, "cloudflared", env["MCP_TUNNEL_PROVIDER"], "provider must be preserved")
+	require.Equal(t, "new.example.com", env["MCP_DOMAIN"], "changed domain must be persisted")
+	require.Equal(t, "https://new.example.com", env["MCP_PUBLIC_URL"], "changed public URL must be persisted")
+	require.Equal(t, "saved-token", env["MCP_AUTH_TOKEN"], "kept auth token must be preserved")
+	require.Equal(t, "true", env["MCP_OAUTH"], "unmodeled/untouched key must be preserved")
+	require.Equal(t, "keep-me", env["MCP_CUSTOM"], "custom unmodeled key must be preserved")
+}
+
+// TestReconcileFromInstallStatePurgesStaleURLOnSwitch guards that switching the
+// tunnel provider clears the PREVIOUS provider's resolved MCP_PUBLIC_URL, so
+// the collector re-derives the correct endpoint for the new provider instead of
+// advertising the old provider's dead URL (resolveServicePublicURL returns
+// early on a pre-set MCP_PUBLIC_URL).
+func TestReconcileFromInstallStatePurgesStaleURLOnSwitch(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "mcp.env")
+	// Existing ngrok install with its resolved URL.
+	require.NoError(t, service.WriteEnvironment(path, service.Environment{
+		"MCP_TUNNEL_PROVIDER": "ngrok",
+		"MCP_TUNNEL_TOKEN":    "old-tok",
+		"MCP_AUTH_TOKEN":      "saved-token",
+		"MCP_PUBLIC_URL":      "https://dead.ngrok-free.dev",
+		"MCP_OAUTH":           "true",
+	}))
+
+	// Operator re-ran interactively and switched to cloudflared.
+	err := ReconcileServiceEnvironmentFromInstallState(path, &ServiceInstallState{
+		Provider:  tunnel.TunnelProviderCloudflared,
+		Domain:    "mcp.new-example.com",
+		AuthToken: "saved-token",
+		PublicURL: "https://dead.ngrok-free.dev", // stale fold that must NOT survive
+	}, tunnel.TunnelProviderNgrok)
+	require.NoError(t, err)
+
+	env, err := service.LoadEnvironment(path)
+	require.NoError(t, err)
+	require.Equal(t, "cloudflared", env["MCP_TUNNEL_PROVIDER"])
+	_, hasOldURL := env["MCP_PUBLIC_URL"]
+	require.False(t, hasOldURL, "the previous provider's resolved MCP_PUBLIC_URL must be purged on a switch so the new provider derives its own")
+	_, hasToken := env["MCP_TUNNEL_TOKEN"]
+	require.False(t, hasToken, "ngrok's MCP_TUNNEL_TOKEN must be purged on a switch")
+	require.Equal(t, "mcp.new-example.com", env["MCP_DOMAIN"])
+	require.Equal(t, "saved-token", env["MCP_AUTH_TOKEN"])
+	require.Equal(t, "true", env["MCP_OAUTH"], "unmodeled key must be preserved")
+}
+
+// TestReconcileFromInstallStateEmptyDoesNotClobber guards that a service state
+// with no decided tunnel values is a no-op (file untouched).
+func TestReconcileFromInstallStateEmptyDoesNotClobber(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "mcp.env")
+	require.NoError(t, service.WriteEnvironment(path, service.Environment{
+		"MCP_TUNNEL_PROVIDER": "cloudflared",
+		"MCP_PUBLIC_URL":      "https://mcp.example.com",
+	}))
+	before, err := os.ReadFile(path)
+	require.NoError(t, err)
+
+	err = ReconcileServiceEnvironmentFromInstallState(path, &ServiceInstallState{}, "")
+	require.NoError(t, err)
+
+	after, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, string(before), string(after), "an empty service state must not rewrite the file")
+}
+
+// TestReconcileFromInstallStatePurgesOldProviderKeys guards that switching the
+// tunnel provider on a re-run deletes the previous provider's modeled keys so
+// the env file does not carry orphaned credentials for a tunnel that no longer
+// exists.
+func TestReconcileFromInstallStatePurgesOldProviderKeys(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "mcp.env")
+	// Existing cloudflared install.
+	require.NoError(t, service.WriteEnvironment(path, service.Environment{
+		"MCP_TUNNEL_PROVIDER": "cloudflared",
+		"MCP_DOMAIN":          "old.example.com",
+		"MCP_TUNNEL_NAME":     "pin-mcp",
+		"MCP_AUTH_TOKEN":      "saved-token",
+		"MCP_PUBLIC_URL":      "https://old.example.com",
+		"MCP_OAUTH":           "true",
+	}))
+
+	// Operator re-ran interactively and switched to ngrok.
+	err := ReconcileServiceEnvironmentFromInstallState(path, &ServiceInstallState{
+		Provider:    tunnel.TunnelProviderNgrok,
+		AuthToken:   "saved-token",
+		TunnelToken: "new-tok",
+		PublicURL:   "https://new.ngrok-free.dev",
+	}, tunnel.TunnelProviderCloudflared)
+	require.NoError(t, err)
+
+	env, err := service.LoadEnvironment(path)
+	require.NoError(t, err)
+	require.Equal(t, "ngrok", env["MCP_TUNNEL_PROVIDER"])
+	require.Equal(t, "new-tok", env["MCP_TUNNEL_TOKEN"])
+	_, hasDomain := env["MCP_DOMAIN"]
+	require.False(t, hasDomain, "cloudflared's MCP_DOMAIN must be purged on a provider switch")
+	_, hasName := env["MCP_TUNNEL_NAME"]
+	require.False(t, hasName, "cloudflared's MCP_TUNNEL_NAME must be purged on a provider switch")
+	require.Equal(t, "saved-token", env["MCP_AUTH_TOKEN"], "shared auth token must be preserved")
+	require.Equal(t, "true", env["MCP_OAUTH"], "unmodeled key must be preserved")
+}
+
+// TestReconcileFromInstallStatePurgesOldProviderViaPassedPrev guards the
+// --tunnel switch scenario from runMcpInstall: the flags reconcile already
+// overwrote the file's MCP_TUNNEL_PROVIDER with the new provider before the
+// install-state reconcile runs, so the purge must target the provider captured
+// BEFORE that reconcile (passed in) rather than re-reading the file (which now
+// says the NEW provider and would skip the purge).
+func TestReconcileFromInstallStatePurgesOldProviderViaPassedPrev(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "mcp.env")
+	require.NoError(t, service.WriteEnvironment(path, service.Environment{
+		"MCP_TUNNEL_PROVIDER": "cloudflared",
+		"MCP_DOMAIN":          "old.example.com",
+		"MCP_TUNNEL_NAME":     "pin-mcp",
+		"MCP_AUTH_TOKEN":      "saved-token",
+		"MCP_PUBLIC_URL":      "https://old.example.com",
+	}))
+
+	// Simulate runMcpInstall ordering: the flags reconcile wrote the new
+	// provider into the file first (e.g. --tunnel ngrok), so re-reading the
+	// file gives the NEW provider.
+	ReconcileServiceEnvironmentFromFlagsMust := func() {
+		cmd := &cli.Command{Flags: managedServiceFlags()}
+		require.NoError(t, cmd.Set(serviceTunnelFlag, "ngrok"))
+		require.NoError(t, ReconcileServiceEnvironmentFromFlags(cmd, path))
+	}
+	ReconcileServiceEnvironmentFromFlagsMust()
+	onDisk, err := service.LoadEnvironment(path)
+	require.NoError(t, err)
+	require.Equal(t, "ngrok", onDisk["MCP_TUNNEL_PROVIDER"], "precondition: flags reconcile set the provider to ngrok")
+
+	// The install-state reconcile receives the provider captured BEFORE the
+	// flags reconcile (cloudflared) — it must still purge cloudflared's keys
+	// even though the file now claims ngrok.
+	err = ReconcileServiceEnvironmentFromInstallState(path, &ServiceInstallState{
+		Provider:    tunnel.TunnelProviderNgrok,
+		AuthToken:   "saved-token",
+		TunnelToken: "new-tok",
+		PublicURL:   "https://new.ngrok-free.dev",
+	}, tunnel.TunnelProviderCloudflared)
+	require.NoError(t, err)
+
+	env, err := service.LoadEnvironment(path)
+	require.NoError(t, err)
+	require.Equal(t, "ngrok", env["MCP_TUNNEL_PROVIDER"])
+	_, hasDomain := env["MCP_DOMAIN"]
+	require.False(t, hasDomain, "cloudflared's MCP_DOMAIN must be purged even after the flags reconcile set ngrok")
+	_, hasName := env["MCP_TUNNEL_NAME"]
+	require.False(t, hasName, "cloudflared's MCP_TUNNEL_NAME must be purged even after the flags reconcile set ngrok")
+	require.Equal(t, "new-tok", env["MCP_TUNNEL_TOKEN"])
+	require.Equal(t, "saved-token", env["MCP_AUTH_TOKEN"])
+}
+
 func TestInstallBootstrapRequiresProvider(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "mcp.env")

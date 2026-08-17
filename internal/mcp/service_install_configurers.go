@@ -103,15 +103,18 @@ func cloudflaredConfigurer(_ context.Context, p wizard.Prompter, s *ServiceInsta
 			}
 		}
 	}
-	if s.Domain == "" {
-		domain, err := p.Text("Tunnel domain (required)", "", "")
+	// Always prompt on an interactive (re-)install, pre-filled with the current
+	// value so the operator can keep or change it; headless reuses a resolved
+	// value and only prompts when genuinely missing.
+	if s.Domain == "" || !wizard.NonInteractive {
+		domain, err := p.Text("Tunnel domain (required)", "", s.Domain)
 		if err != nil {
 			return err
 		}
 		s.Domain = strings.TrimSpace(domain)
 	}
-	if s.TunnelName == "" {
-		name, err := p.Text("Cloudflare tunnel resource name (default: pinner-mcp)", "", "")
+	if s.TunnelName == "" || !wizard.NonInteractive {
+		name, err := p.Text("Cloudflare tunnel resource name (default: pinner-mcp)", "", s.TunnelName)
 		if err != nil {
 			return err
 		}
@@ -154,12 +157,15 @@ func ngrokConfigurer(ctx context.Context, p wizard.Prompter, s *ServiceInstallSt
 			tunnel.TunnelCfgCredential(cfgMgr, "ngrok", "token"),
 		)
 	}
-	// ngrok validation requires NGROK_AUTHTOKEN or MCP_TUNNEL_TOKEN; only
-	// prompt when the value is still empty so the written env file actually
-	// passes validation.
-	if s.TunnelToken == "" {
-		tunnel.OpenTunnelDeepLink("ngrok", "authtoken")
-		tok, err := p.Text("ngrok authtoken / MCP tunnel token", "*", "")
+	// ngrok validation requires NGROK_AUTHTOKEN or MCP_TUNNEL_TOKEN. On an
+	// interactive (re-)install, prompt pre-filled with the resolved token as an
+	// editable (masked) default so the operator can keep or change it; headless
+	// reuses a resolved token and only prompts when genuinely missing.
+	if s.TunnelToken == "" || !wizard.NonInteractive {
+		if s.TunnelToken == "" {
+			tunnel.OpenTunnelDeepLink("ngrok", "authtoken")
+		}
+		tok, err := p.Text("ngrok authtoken / MCP tunnel token", "*", s.TunnelToken)
 		if err != nil {
 			return err
 		}
@@ -235,7 +241,7 @@ func resolveNgrokURL(ctx context.Context, p wizard.Prompter, s *ServiceInstallSt
 		// no authtoken. Direct the operator to the domains page and ask for the
 		// URL they see there.
 		tunnel.OpenTunnelDeepLink("ngrok", "domain")
-		u, perr := p.Text("ngrok public base URL (from dashboard.ngrok.com/domains, e.g. https://you.ngrok-free.dev)", "", "")
+		u, perr := p.Text("ngrok public base URL (from dashboard.ngrok.com/domains, e.g. https://you.ngrok-free.dev)", "", s.PublicURL)
 		if perr != nil {
 			return "", perr
 		}
