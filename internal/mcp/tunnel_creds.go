@@ -6,6 +6,8 @@ import (
 	"runtime"
 	"strings"
 
+	"gopkg.in/yaml.v3"
+
 	"go.lumeweb.com/pinner-cli/internal/core/config"
 )
 
@@ -144,100 +146,62 @@ func ngrokConfigPath() string {
 	}
 }
 
+// ngrokAgentConfig mirrors the `agent:` block of the ngrok config file. Only
+// the agent-level authtoken is consumed; nested sub-blocks (tunnels/endpoints)
+// are opaque maps we never read into, so an `authtoken` under them is naturally
+// excluded from being the agent's own credential.
+type ngrokAgentConfig struct {
+	Authtoken string         `yaml:"authtoken"`
+	Tunnels   map[string]any `yaml:"tunnels"`
+	Endpoints map[string]any `yaml:"endpoints"`
+}
+
+// ngrokConfigFile is the subset of the ngrok agent config file (as written by
+// `ngrok config add-authtoken` and read by the ngrok SDK on startup) that
+// pinner needs.
+type ngrokConfigFile struct {
+	Version string           `yaml:"version"`
+	Region  string           `yaml:"region"`
+	Agent   ngrokAgentConfig `yaml:"agent"`
+	// Legacy top-level authtoken accepted for older configs.
+	Authtoken string `yaml:"authtoken"`
+}
+
+// ngrokConfigAuthtoken parses the ngrok config with a real YAML decoder and
+// returns the usable agent authtoken value, or "" when none is present. The
+// agent credential is `agent.authtoken` (the direct child of `agent`), with a
+// top-level `authtoken` scalar accepted for legacy configs. An authtoken nested
+// under a sub-block (e.g. agent.tunnels.<name>, agent.endpoints, log) is NOT
+// the agent's credential: the yaml struct only reads the direct keys, so those
+// are structurally excluded rather than by indentation heuristics. Install
+// wizards use the value to pre-populate the service env file from an out-of-band
+// `ngrok config add-authtoken`, so a configured ngrok is never re-prompted.
+func ngrokConfigAuthtoken() string {
+	path := ngrokConfigPath()
+	if path == "" {
+		return ""
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	var cfg ngrokConfigFile
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		// A malformed or partially-written config carries no usable credential.
+		return ""
+	}
+	if v := strings.TrimSpace(cfg.Agent.Authtoken); v != "" {
+		return v
+	}
+	return strings.TrimSpace(cfg.Authtoken)
+}
+
 // ngrokConfigHasAuthtoken reports whether the ngrok config file actually
 // declares an agent authtoken (the SDK loads it on startup). Unlike
 // hasProviderConfig, which only checks file existence, this inspects the file
 // contents: an empty or partially-written config file carries no usable
 // credential, so it must not suppress the config-manager last-resort token and
 // silently start the agent unauthenticated.
-//
-// The ngrok config is YAML of the form
-//
-//	version: 2
-//	agent:
-//	  authtoken: 2ABC...
-//
-// We do a lightweight line scan (no YAML dependency) matching an authtoken
-// value under the agent block or at top level.
 func ngrokConfigHasAuthtoken() bool {
-	path := ngrokConfigPath()
-	if path == "" {
-		return false
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return false
-	}
-	// We track the current YAML block (indentation-scoped) so an `authtoken`
-	// key nested under agent.tunnels.<name>, agent.endpoints, tunnels, or log
-	// is NOT mistaken for a usable agent credential. Only a top-level
-	// `authtoken` scalar or a leaf key that is a DIRECT child of `agent:` counts.
-	inAgent := false
-	// agentChildIndent is the indent of agent's direct children; establishes
-	// the flat scope an agent.authtoken must sit at. Any key deeper than that
-	// is inside a nested sub-block (e.g. agent.tunnels.<name>) and never an
-	// agent.authtoken.
-	agentChildIndent := -1
-	for _, raw := range strings.Split(string(data), "\n") {
-		line := strings.TrimSpace(raw)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		indent := len(raw) - len(line)
-		isSection := strings.HasSuffix(line, ":") && strings.Index(line, ":") == len(line)-1
-		if indent == 0 {
-			// A top-level section header opens (or closes) a block; a top-level
-			// scalar (e.g. `version: 2`, or a top-level `authtoken: x`) does
-			// not. Only section headers reset the agent scope.
-			if isSection {
-				inAgent = line == "agent:"
-				agentChildIndent = -1
-				continue
-			}
-			// A top-level scalar authtoken is a usable credential regardless of
-			// any agent block.
-			if usableAuthtoken(line) {
-				return true
-			}
-			continue
-		}
-		// Indented key.
-		if !inAgent {
-			// Under a non-agent block (tunnels/endpoints/log).
-			continue
-		}
-		if agentChildIndent < 0 {
-			agentChildIndent = indent
-		}
-		if indent > agentChildIndent {
-			// Deeper than agent's direct children: inside a nested sub-block
-			// (agent.tunnels.<name>, agent.endpoints), never an agent.authtoken.
-			continue
-		}
-		// A direct child of agent (indent == agentChildIndent).
-		if isSection {
-			// A nested block header (e.g. agent.tunnels:) is not an authtoken,
-			// but does not itself end agent scope; deeper keys are handled above.
-			continue
-		}
-		if usableAuthtoken(line) {
-			return true
-		}
-	}
-	return false
-}
-
-// usableAuthtoken reports whether a YAML key:value line is an `authtoken` with
-// a non-empty value. Surrounding quotes are stripped, so an explicitly empty
-// `authtoken: ""` carries no credential (the SDK loads empty values as absent).
-func usableAuthtoken(line string) bool {
-	idx := strings.Index(line, ":")
-	if idx < 0 {
-		return false
-	}
-	if strings.TrimSpace(line[:idx]) != "authtoken" {
-		return false
-	}
-	v := strings.TrimSpace(line[idx+1:])
-	return strings.Trim(v, `"'`) != ""
+	return ngrokConfigAuthtoken() != ""
 }

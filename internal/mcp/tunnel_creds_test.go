@@ -208,3 +208,52 @@ func TestNgrokConfigHasAuthtoken(t *testing.T) {
 	t.Setenv("NGROK_CONFIG", cfg)
 	assert.False(t, ngrokConfigHasAuthtoken(), "explicitly empty quoted authtoken -> false")
 }
+
+// TestNgrokConfigAuthtoken covers the value extraction used by the install
+// wizard to pre-populate the env file ("figure out the env ourselves"): it must
+// return the exact authtoken for a usable config and "" when no usable
+// agent-level authtoken is present (missing file, nested under a sub-block, or
+// explicitly empty).
+func TestNgrokConfigAuthtoken(t *testing.T) {
+	t.Setenv("NGROK_CONFIG", filepath.Join(t.TempDir(), "missing.yml"))
+	assert.Equal(t, "", ngrokConfigAuthtoken(), "missing file -> empty value")
+
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "with.yml")
+	require.NoError(t, os.WriteFile(cfg, []byte(
+		"version: 2\nagent:\n  authtoken: 2abcDEF_tok\n"), 0o600))
+	t.Setenv("NGROK_CONFIG", cfg)
+	assert.Equal(t, "2abcDEF_tok", ngrokConfigAuthtoken(), "agent.authtoken value extracted")
+
+	cfg = filepath.Join(dir, "top.yml")
+	require.NoError(t, os.WriteFile(cfg, []byte("authtoken: 4abcQuoted\n"), 0o600))
+	t.Setenv("NGROK_CONFIG", cfg)
+	assert.Equal(t, "4abcQuoted", ngrokConfigAuthtoken(), "top-level authtoken value extracted")
+
+	// A quoted value is stripped to its raw token.
+	cfg = filepath.Join(dir, "quoted.yml")
+	require.NoError(t, os.WriteFile(cfg, []byte("agent:\n  authtoken: \"5xYz\"\n"), 0o600))
+	t.Setenv("NGROK_CONFIG", cfg)
+	assert.Equal(t, "5xYz", ngrokConfigAuthtoken(), "quoted authtoken value unquoted")
+
+	// Nested under an agent sub-block (agent.tunnels.<name>) is not an agent
+	// credential and yields no value.
+	cfg = filepath.Join(dir, "agent-nested-only.yml")
+	require.NoError(t, os.WriteFile(cfg, []byte(
+		"version: 2\nagent:\n  tunnels:\n    web:\n      authtoken: 5xYz\n"), 0o600))
+	t.Setenv("NGROK_CONFIG", cfg)
+	assert.Equal(t, "", ngrokConfigAuthtoken(), "authtoken under agent sub-block -> empty value")
+
+	// Real agent.authtoken after a nested sub-block is still extracted.
+	cfg = filepath.Join(dir, "agent-nested.yml")
+	require.NoError(t, os.WriteFile(cfg, []byte(
+		"version: 2\nagent:\n  tunnels:\n    web:\n      authtoken: 5xYz\n  authtoken: 6aBcD\n"), 0o600))
+	t.Setenv("NGROK_CONFIG", cfg)
+	assert.Equal(t, "6aBcD", ngrokConfigAuthtoken(), "real agent.authtoken value extracted after nested sub-block")
+
+	// An explicitly empty quoted authtoken carries no value.
+	cfg = filepath.Join(dir, "emptyval.yml")
+	require.NoError(t, os.WriteFile(cfg, []byte("version: 2\nagent:\n  authtoken: \"\"\n"), 0o600))
+	t.Setenv("NGROK_CONFIG", cfg)
+	assert.Equal(t, "", ngrokConfigAuthtoken(), "explicitly empty quoted authtoken -> empty value")
+}
