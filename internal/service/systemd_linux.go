@@ -287,6 +287,9 @@ func renderSystemdUnit(cfg Config) string {
 		fmt.Fprintf(&b, " %s", systemdEscape(arg))
 	}
 	b.WriteString("\nRestart=on-failure\nRestartSec=5\nNoNewPrivileges=true\nPrivateTmp=true\nUMask=0077\n")
+	// Secrets normally live in the 0600 EnvironmentFile referenced here, never
+	// inlined. Config.EnvVars is still honored for callers that pass variables
+	// without a file (e.g. tests or programmatic use), so don't drop them.
 	if cfg.EnvFile != "" {
 		fmt.Fprintf(&b, "EnvironmentFile=%s\n", systemdEscape(cfg.EnvFile))
 	}

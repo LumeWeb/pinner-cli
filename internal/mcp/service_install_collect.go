@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"github.com/urfave/cli/v3"
+
+	"go.lumeweb.com/pinner-cli/internal/service"
 )
 
 // CollectHTTPInstall populates (creating if needed) the MCP service env file
@@ -82,7 +84,7 @@ func collectHTTPInstall(ctx context.Context, cmd *cli.Command, envFile string, w
 		return nil, err
 	}
 
-	env, err := LoadServiceEnvironment(envFile)
+	env, err := service.LoadEnvironment(envFile)
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +134,7 @@ func resolveServicePublicURL(envFile string, env ServiceEnvironment) {
 		return
 	}
 	env["MCP_PUBLIC_URL"] = "https://" + host
-	if err := WriteServiceEnvironment(envFile, env); err != nil {
+	if err := service.WriteEnvironment(envFile, env); err != nil {
 		// Non-fatal: the resolved env is still returned to the caller even if
 		// persisting it back fails; a stale file is recovered on the next run.
 		return
