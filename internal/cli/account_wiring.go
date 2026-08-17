@@ -72,7 +72,10 @@ func accountWiringParent() []*cli.Command {
 	for _, c := range compiled {
 		canonical := c.Name // e.g. "account_info"
 		leaf := canonical[len("account_"):]
-		c.Name = leaf
+		// Catalog canonical names use underscores; expose the CLI command with
+		// kebab-case names (update_email -> update-email), matching the other
+		// hand-written subcommands (otp, api-keys).
+		c.Name = strings.ReplaceAll(leaf, "_", "-")
 		c.Category = "Management"
 		relaxFlagRequired(c)
 

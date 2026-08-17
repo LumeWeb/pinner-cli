@@ -18,17 +18,16 @@ func newAccountCommand() *cli.Command {
 		Name:     "account",
 		Category: "Setup",
 		Usage:    "Manage account settings",
-		Description: `Manage your Pinner.xyz account settings including profile, email,
-password, subscription, 2FA configuration, and API keys.
+		Description: `Manage your Pinner.xyz account profile, email, password, subscription, 2FA configuration, and API keys.
 
-Examples:
-  pinner account info
-  pinner account email you@example.com --password currentpass
-  pinner account password
-  pinner account subscription
-  pinner account subscription --open
-  pinner account otp enable
-  pinner account otp disable --password mypassword`,
+		Examples:
+		pinner account info
+		pinner account update-email you@example.com --password currentpass
+		pinner account update-password
+		pinner account subscription
+		pinner account subscription --open
+		pinner account otp enable
+		pinner account otp disable --password mypassword`,
 		Commands: append(
 			[]*cli.Command{
 				newAccountOTPCommand(),
