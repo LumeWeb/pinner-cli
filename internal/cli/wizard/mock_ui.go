@@ -107,6 +107,11 @@ func (m *MockUI) ShowStepRetrying(_ context.Context, stepName string) error {
 	return m.errorIfSet()
 }
 
+func (m *MockUI) ShowStepSeeded(_ context.Context, stepName string, sources []string) error {
+	m.RecordCall(fmt.Sprintf("ShowStepSeeded(%s,%v)", stepName, sources))
+	return m.errorIfSet()
+}
+
 func (m *MockUI) ShowCompletion() error {
 	m.RecordCall("ShowCompletion")
 	m.CompletionShown = true

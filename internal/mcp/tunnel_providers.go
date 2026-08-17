@@ -28,6 +28,12 @@ func init() {
 			return tunnel.NewCloudflaredTunnel(cfg)
 		},
 		Configurer: cloudflaredConfigurer,
+		ConfigSeeded: func(s *ServiceInstallState) bool {
+			// cloudflaredConfigurer prompts for Domain + TunnelName; the
+			// tunnel-config step additionally always collects the shared
+			// AuthToken.
+			return s != nil && s.Domain != "" && s.TunnelName != "" && s.AuthToken != ""
+		},
 	})
 
 	RegisterTunnelProvider(&TunnelProviderSpec{
@@ -40,6 +46,15 @@ func init() {
 			return newNgrokTunnel(cfg), nil
 		},
 		Configurer: ngrokConfigurer,
+		ConfigSeeded: func(s *ServiceInstallState) bool {
+			// ngrokConfigurer prompts for the tunnel token AND resolves a
+			// public URL; the tunnel-config step additionally always collects
+			// the shared AuthToken. Requiring PublicURL up front means a
+			// --token bootstrap without a determinable URL stays un-seeded so
+			// resolveNgrokURL still runs (otherwise the env would lack
+			// MCP_PUBLIC_URL entirely).
+			return s != nil && s.TunnelToken != "" && s.AuthToken != "" && s.PublicURL != ""
+		},
 	})
 
 	RegisterTunnelProvider(&TunnelProviderSpec{
@@ -52,6 +67,19 @@ func init() {
 			return nil, fmt.Errorf("OpenAI Secure MCP Tunnel is embedded and does not use an HTTP tunnel")
 		},
 		Configurer: openAIConfigurer,
+		ConfigSeeded: func(s *ServiceInstallState) bool {
+			// openAIConfigurer prompts for TunnelID + ApiKey and VALIDATES the
+			// tunnel ID shape via MatchString — a malformed ID must never take
+			// the skip path (it would silently write MCP_TUNNEL_ID and fail
+			// later as an obscure error). The tunnel-config step additionally
+			// always collects the shared AuthToken, so a public OpenAI endpoint
+			// is never left unprotected by a shared secret.
+			return s != nil &&
+				s.TunnelID != "" &&
+				s.ApiKey != "" &&
+				s.AuthToken != "" &&
+				tunnel.OpenAITunnelID.MatchString(s.TunnelID)
+		},
 	})
 }
 

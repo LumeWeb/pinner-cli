@@ -26,7 +26,8 @@ import (
 // envFile may be "" to resolve the default via resolveServiceEnvFile(cmd),
 // which honors the --env-file flag and expands "~/" in paths.
 func CollectHTTPInstall(ctx context.Context, cmd *cli.Command, envFile string, wantService bool) (ServiceEnvironment, error) {
-	return collectHTTPInstall(ctx, cmd, envFile, wantService, false)
+	env, _, err := collectHTTPInstall(ctx, cmd, envFile, wantService, false)
+	return env, err
 }
 
 // CollectHTTPInstallWithCreated is CollectHTTPInstall with an explicit
@@ -36,16 +37,22 @@ func CollectHTTPInstall(ctx context.Context, cmd *cli.Command, envFile string, w
 // validation-failure cleanup. Passing envFileCreated=true restores that cleanup
 // (a freshly-created-but-invalid env file holding the user's secret is removed
 // on validation failure, exactly as in the standalone path).
-func CollectHTTPInstallWithCreated(ctx context.Context, cmd *cli.Command, envFile string, wantService, envFileCreated bool) (ServiceEnvironment, error) {
+//
+// The additional return, serviceSideEffect, reports whether the collector
+// entered the managed-service Install/Start block (a side effect on the running
+// service may have occurred) before failing. Callers that reconcile an env file
+// before collecting use it to decide whether a failed install leaves the
+// reconciled file in place (service started with it) or may be rolled back.
+func CollectHTTPInstallWithCreated(ctx context.Context, cmd *cli.Command, envFile string, wantService, envFileCreated bool) (ServiceEnvironment, bool, error) {
 	return collectHTTPInstall(ctx, cmd, envFile, wantService, envFileCreated)
 }
 
-func collectHTTPInstall(ctx context.Context, cmd *cli.Command, envFile string, wantService, envFileCreated bool) (ServiceEnvironment, error) {
+func collectHTTPInstall(ctx context.Context, cmd *cli.Command, envFile string, wantService, envFileCreated bool) (ServiceEnvironment, bool, error) {
 	if envFile == "" {
 		var err error
 		envFile, err = resolveServiceEnvFile(cmd)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 	}
 
@@ -58,20 +65,20 @@ func collectHTTPInstall(ctx context.Context, cmd *cli.Command, envFile string, w
 		cfgMgr := serviceConfigManager()
 		if cmd.String(serviceTunnelFlag) != "" {
 			if err := bootstrapServiceEnvironment(cmd, envFile, cfgMgr); err != nil {
-				return nil, err
+				return nil, false, err
 			}
 		} else if cmd.Bool("non-interactive") {
 			// A headless install cannot run the interactive tunnel wizard and an
 			// existing env file is required. Fail clearly rather than block on a
 			// prompt that will hang or error in a non-TTY context.
-			return nil, fmt.Errorf("no MCP service environment file found at %q; pass --tunnel (ngrok|cloudflared|openai) and its credentials, or provide a pre-existing env file, to configure the tunnel non-interactively", envFile)
+			return nil, false, fmt.Errorf("no MCP service environment file found at %q; pass --tunnel (ngrok|cloudflared|openai) and its credentials, or provide a pre-existing env file, to configure the tunnel non-interactively", envFile)
 		} else if !envFileCreated { // STANDALONE: run the wizard. Flattened path already ran the tunnel config steps.
 			if err := RunServiceInstallWizard(ctx, cmd, envFile, cfgMgr); err != nil {
-				return nil, err
+				return nil, false, err
 			}
 		}
 	} else if err != nil {
-		return nil, fmt.Errorf("inspect MCP service environment file %q: %w", envFile, err)
+		return nil, false, fmt.Errorf("inspect MCP service environment file %q: %w", envFile, err)
 	}
 
 	provider, err := validateServiceEnvironment(envFile, false)
@@ -82,24 +89,29 @@ func collectHTTPInstall(ctx context.Context, cmd *cli.Command, envFile string, w
 		if created {
 			_ = os.Remove(envFile)
 		}
-		return nil, err
+		return nil, false, err
 	}
 
 	env, err := service.LoadEnvironment(envFile)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
+	serviceSideEffect := false
 	if wantService {
 		svc, err := newManagedService(cmd, envFile, provider)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
+		// From here on the managed service may be installed/started against the
+		// on-disk env; callers must not roll back a reconciling env file past
+		// this point.
+		serviceSideEffect = true
 		if err := svc.Install(ctx); err != nil {
-			return nil, err
+			return nil, serviceSideEffect, err
 		}
 		if err := svc.Start(ctx); err != nil {
-			return nil, err
+			return nil, serviceSideEffect, err
 		}
 	}
 
@@ -110,7 +122,7 @@ func collectHTTPInstall(ctx context.Context, cmd *cli.Command, envFile string, w
 	// set, no domain is configured, or the tunnel is dynamic (no stable URL).
 	resolveServicePublicURL(envFile, env)
 
-	return env, nil
+	return env, serviceSideEffect, nil
 }
 
 // resolveServicePublicURL fills MCP_PUBLIC_URL in env (and persists it to

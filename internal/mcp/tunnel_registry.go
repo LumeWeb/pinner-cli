@@ -37,6 +37,18 @@ type TunnelProviderSpec struct {
 	// registry instead of a switch on the provider value. Nil falls back to no
 	// provider-specific collection.
 	Configurer func(ctx context.Context, p wizard.Prompter, s *ServiceInstallState, cfgMgr config.Manager) error
+	// ConfigSeeded reports whether the install state already carries every
+	// value this provider's install flow would collect (the Configurer's
+	// fields PLUS the shared auth token the tunnel-config step unconditionally
+	// prompts for), so a host wizard can render the tunnel-config step
+	// "Seeded" and skip its prompt instead of dispatching to Configurer. Kept
+	// here next to Configurer so per-provider completeness lives in the
+	// registry with the provider's own behaviour — not a switch in the host.
+	// Every requirement that would otherwise prompt must be present, or the
+	// step stays un-seeded and prompts (e.g. an invalid OpenAI tunnel ID or a
+	// missing auth token never takes the skip path). Nil falls back to
+	// "not seeded" (always prompt).
+	ConfigSeeded func(s *ServiceInstallState) bool
 }
 
 // tunnelRegistry is the process-wide provider registry.
@@ -65,6 +77,23 @@ func (r *tunnelRegistry) spec(p tunnel.TunnelProvider) (*TunnelProviderSpec, boo
 	defer r.mu.RUnlock()
 	s, ok := r.m[p]
 	return s, ok
+}
+
+// TunnelProviderConfigSeeded reports whether the given service state is already
+// install-complete for the provider per that provider's registered ConfigSeeded
+// predicate. It delegates to the registry — the single source of per-provider
+// completeness — rather than switch-casing on the provider value in callers.
+// Unknown/empty providers and providers without a ConfigSeeded predicate are
+// never treated as seeded (they always prompt).
+func TunnelProviderConfigSeeded(provider tunnel.TunnelProvider, s *ServiceInstallState) bool {
+	if provider == "" || s == nil {
+		return false
+	}
+	spec, ok := providers.spec(provider)
+	if !ok || spec.ConfigSeeded == nil {
+		return false
+	}
+	return spec.ConfigSeeded(s)
 }
 
 // TunnelFor returns a Tunnel for the named provider, or nil if provider is
