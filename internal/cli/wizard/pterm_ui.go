@@ -24,9 +24,9 @@ func NewPTermUI(welcomeText, completionText string) *PTermUI {
 }
 
 func (p *PTermUI) ShowWelcome() error {
-	pterm.DefaultHeader.WithFullWidth().Println(p.WelcomeText)
-	pterm.Println()
 	if p.WelcomeText != "" {
+		pterm.DefaultHeader.WithFullWidth().Println(p.WelcomeText)
+		pterm.Println()
 		pterm.DefaultParagraph.Println(p.WelcomeText)
 		pterm.Println()
 	}
