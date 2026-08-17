@@ -11,6 +11,7 @@ import (
 	"github.com/urfave/cli/v3"
 
 	"go.lumeweb.com/pinner-cli/internal/cli/wizard"
+	"go.lumeweb.com/pinner-cli/internal/service"
 )
 
 // TestFlattenedNgrokWritesPublicURL reproduces the reported glitch end-to-end
@@ -58,7 +59,7 @@ func TestFlattenedNgrokWritesPublicURL(t *testing.T) {
 
 	// And loading it back must yield a non-empty MCP_PUBLIC_URL (the collector's
 	// precondition), not the reported "no MCP_PUBLIC_URL" failure.
-	env, err := LoadServiceEnvironment(envFile)
+	env, err := service.LoadEnvironment(envFile)
 	require.NoError(t, err)
 	require.Equal(t, "https://you.ngrok-free.dev", env["MCP_PUBLIC_URL"])
 	require.Equal(t, "true", env["MCP_OAUTH"], "OAuth choice must be written")

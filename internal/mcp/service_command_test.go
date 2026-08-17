@@ -118,11 +118,113 @@ func TestInstallBootstrapsMissingEnvFile(t *testing.T) {
 	require.Equal(t, "pinner-mcp", env["MCP_TUNNEL_NAME"])
 	require.Equal(t, "https://mcp.example.com", env["MCP_PUBLIC_URL"])
 	require.Equal(t, "4321", env["MCP_PORT"])
+	// OAuth is the secure default for a public remote endpoint: a headless
+	// --tunnel bootstrap must write MCP_OAUTH=true even when --oauth is unset.
+	require.Equal(t, "true", env["MCP_OAUTH"], "headless bootstrap must default OAuth on")
 
 	// Non-OpenAI tunnel providers expose the server over HTTP.
 	cfg, err := serviceConfigForInstall(cmd, path, "cloudflared")
 	require.NoError(t, err)
 	require.Contains(t, cfg.Arguments, "--http")
+}
+
+func TestInstallBootstrapHonorsExplicitOAuthFalse(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "mcp.env")
+	cmd := &cli.Command{Flags: managedServiceFlags()}
+	require.NoError(t, cmd.Set(serviceEnvFileFlag, path))
+	require.NoError(t, cmd.Set(serviceTunnelFlag, "cloudflared"))
+	require.NoError(t, cmd.Set(serviceDomainFlag, "mcp.example.com"))
+	require.NoError(t, cmd.Set(serviceAuthTokenFlag, "test-auth-token-abc123"))
+	require.NoError(t, cmd.Set(servicePublicURLFlag, "https://mcp.example.com"))
+	require.NoError(t, cmd.Set(serviceOAuthFlag, "false"))
+
+	require.NoError(t, bootstrapServiceEnvironment(cmd, path, nil))
+
+	env, err := service.LoadEnvironment(path)
+	require.NoError(t, err)
+	// An explicit --oauth=false must be persisted as MCP_OAUTH=false (not the
+	// secure default true, and not silently dropped).
+	require.Equal(t, "false", env["MCP_OAUTH"], "explicit --oauth=false must persist MCP_OAUTH=false on headless bootstrap")
+}
+
+// TestReconcileExplicitOAuthFlagOverExistingFile guards the mcp install skip
+// path: re-running against an existing COMPLETE env file (which has a public
+// URL and therefore never re-runs the interactive config) must still let an
+// explicit --oauth flag override what a prior run persisted. Without this, the
+// collector reads the existing file unchanged and an explicit --oauth=false is
+// silently dropped, leaving the earlier MCP_OAUTH=true intact.
+func TestReconcileExplicitOAuthFlagOverExistingFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "mcp.env")
+	// Existing complete file from a prior run: OAuth ON, full URL so the skip
+	// path is taken.
+	require.NoError(t, service.WriteEnvironment(path, service.Environment{
+		"MCP_TUNNEL_PROVIDER": "cloudflared",
+		"MCP_AUTH_TOKEN":      "saved-token",
+		"MCP_PUBLIC_URL":      "https://mcp.example.com",
+		"MCP_OAUTH":           "true",
+	}))
+
+	cmd := &cli.Command{Flags: managedServiceFlags()}
+	require.NoError(t, cmd.Set(serviceEnvFileFlag, path))
+	require.NoError(t, cmd.Set(serviceOAuthFlag, "false"))
+
+	require.NoError(t, ReconcileServiceEnvironmentFromFlags(cmd, path))
+
+	env, err := service.LoadEnvironment(path)
+	require.NoError(t, err)
+	require.Equal(t, "false", env["MCP_OAUTH"], "explicit --oauth=false on a re-run must override the persisted MCP_OAUTH=true")
+	// Keys the operator did not touch must be preserved.
+	require.Equal(t, "saved-token", env["MCP_AUTH_TOKEN"])
+	require.Equal(t, "https://mcp.example.com", env["MCP_PUBLIC_URL"])
+}
+
+// TestReconcilePreservesPersistedOAuthWhenFlagUnset guards that a re-run with
+// NO --oauth flag leaves whatever MCP_OAUTH the file already has untouched — the
+// secure-default is only applied when creating a fresh file, never as a clobber
+// over saved config.
+func TestReconcilePreservesPersistedOAuthWhenFlagUnset(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "mcp.env")
+	require.NoError(t, service.WriteEnvironment(path, service.Environment{
+		"MCP_TUNNEL_PROVIDER": "cloudflared",
+		"MCP_PUBLIC_URL":      "https://mcp.example.com",
+		"MCP_OAUTH":           "false",
+	}))
+	cmd := &cli.Command{Flags: managedServiceFlags()}
+	require.NoError(t, cmd.Set(serviceEnvFileFlag, path))
+
+	// No explicit --oauth: nothing to overlay, file must be byte-identical.
+	require.NoError(t, ReconcileServiceEnvironmentFromFlags(cmd, path))
+	env, err := service.LoadEnvironment(path)
+	require.NoError(t, err)
+	require.Equal(t, "false", env["MCP_OAUTH"], "re-run without --oauth must preserve the persisted MCP_OAUTH=false")
+}
+
+// TestReconcileDoesNotClobberWithExplicitEmpty guards that an explicitly-passed
+// but EMPTY flag (e.g. --public-url "" or --auth-token "") does NOT overwrite a
+// saved non-empty value in an existing env file. Writing an empty value would
+// take a working install to a broken/unconfigurable state.
+func TestReconcileDoesNotClobberWithExplicitEmpty(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "mcp.env")
+	require.NoError(t, service.WriteEnvironment(path, service.Environment{
+		"MCP_TUNNEL_PROVIDER": "cloudflared",
+		"MCP_AUTH_TOKEN":      "saved-token",
+		"MCP_PUBLIC_URL":      "https://mcp.example.com",
+	}))
+
+	cmd := &cli.Command{Flags: managedServiceFlags()}
+	require.NoError(t, cmd.Set(serviceEnvFileFlag, path))
+	require.NoError(t, cmd.Set(servicePublicURLFlag, ""))    // explicitly empty
+	require.NoError(t, cmd.Set(serviceAuthTokenFlag, "   ")) // whitespace-only
+
+	require.NoError(t, ReconcileServiceEnvironmentFromFlags(cmd, path))
+	env, err := service.LoadEnvironment(path)
+	require.NoError(t, err)
+	require.Equal(t, "https://mcp.example.com", env["MCP_PUBLIC_URL"], "explicit empty --public-url must not clobber the saved URL")
+	require.Equal(t, "saved-token", env["MCP_AUTH_TOKEN"], "whitespace-only --auth-token must not clobber the saved token")
 }
 
 func TestInstallBootstrapRequiresProvider(t *testing.T) {
@@ -317,6 +419,49 @@ func TestServiceInstallStateToEnvWritesNgrokToken(t *testing.T) {
 	})
 	require.Equal(t, "ngrok", env["MCP_TUNNEL_PROVIDER"])
 	require.Equal(t, "test-ngrok-token-xyz789", env["MCP_TUNNEL_TOKEN"], "ngrok credential must be written as MCP_TUNNEL_TOKEN")
+}
+
+// TestServiceInstallStateToEnvWritesOAuthFalse guards the skip/fresh symmetry:
+// an EXPLICIT --oauth=false (OAuthIsSet=true) must be persisted as
+// MCP_OAUTH=false, not dropped — the other two writer paths (bootstrap and
+// reconcile) both persist the false value explicitly, so this one must too.
+func TestServiceInstallStateToEnvWritesOAuthFalse(t *testing.T) {
+	env := serviceInstallStateToEnv(&ServiceInstallState{
+		Provider:   TunnelProviderCloudflared,
+		OAuth:      false,
+		OAuthIsSet: true,
+	})
+	require.Equal(t, "false", env["MCP_OAUTH"], "explicit --oauth=false must be persisted as MCP_OAUTH=false")
+}
+
+// TestServiceInstallStateToEnvOmitsOAuthWhenUndecided guards the standalone
+// wizard path: when OAuth was never touched (no explicit --oauth, no secure
+// default-on for a remote install, OAuthIsSet false), serviceInstallStateToEnv
+// must OMIT the MCP_OAUTH key entirely so the runtime secure default (on)
+// applies. Writing MCP_OAUTH=false here would diverge from the mcp install
+// path's default-on doctrine.
+func TestServiceInstallStateToEnvOmitsOAuthWhenUndecided(t *testing.T) {
+	env := serviceInstallStateToEnv(&ServiceInstallState{
+		Provider: TunnelProviderCloudflared,
+	})
+	require.NotContains(t, env, "MCP_OAUTH", "undecided OAuth must omit the key, not force MCP_OAUTH=false")
+}
+
+// TestServiceInstallStateToEnvWritesPortIsSet guards that an explicit --port 0
+// ("pick a free port") is persisted as MCP_PORT=0 on the fresh re-config path.
+// Without PortIsSet, serviceInstallStateToEnv would drop the key entirely
+// (s.Port == 0), silently losing the operator's explicit auto-assign choice and
+// re-applying the saved port on a later run.
+func TestServiceInstallStateToEnvWritesPortIsSet(t *testing.T) {
+	env := serviceInstallStateToEnv(&ServiceInstallState{
+		Provider:  TunnelProviderCloudflared,
+		Port:      0,
+		PortIsSet: true,
+	})
+	require.Equal(t, "0", env["MCP_PORT"], "explicit --port 0 must be persisted as MCP_PORT=0, not dropped")
+	// Without PortIsSet, a zero port is the "no port" case and writes nothing.
+	env2 := serviceInstallStateToEnv(&ServiceInstallState{Provider: TunnelProviderCloudflared})
+	require.NotContains(t, env2, "MCP_PORT", "no explicit port must not write MCP_PORT")
 }
 
 func TestServiceInstallWizardNonInteractiveErrors(t *testing.T) {

@@ -208,19 +208,6 @@ func (w *InstallWizard) getSteps() []wizard.Step[*InstallState] {
 					t = install.TransportStdio
 				}
 				s.Transport = t
-				// A remote (http) transport serves a public MCP endpoint, where
-				// OAuth is the default-secured way for clients to authorize. Ask
-				// the operator whether to enable it (default yes) so the service
-				// env sets MCP_OAUTH accordingly. OAuth is meaningless for stdio
-				// (a local process), and is not asked when the operator already
-				// made an explicit --oauth choice.
-				if t != install.TransportStdio && !s.OAuthIsSet {
-					oauth, err := w.ui.ConfirmOAuth()
-					if err != nil {
-						return err
-					}
-					s.OAuth = oauth
-				}
 				return nil
 			},
 		},
@@ -228,6 +215,18 @@ func (w *InstallWizard) getSteps() []wizard.Step[*InstallState] {
 			Name_:    "Configure Tunnel",
 			SkipFunc: httpTunnelSkipped,
 			ExecuteFunc: func(ctx context.Context, s *InstallState) error {
+				// A remote (http) transport serves a public MCP endpoint. OAuth is
+				// the secure default way for clients (ChatGPT, Claude.ai, Copilot,
+				// Vertex) to authorize there, so it is enabled by default and is
+				// NOT prompted: a bare "Please confirm [Y/n]" mid-wizard with no
+				// question context is confusing friction, and the value already
+				// defaults to yes. Only an explicit --oauth flag overrides it. This
+				// lives here (not in "Choose Transport") so it also applies when the
+				// transport was flag-supplied via --transport http and that step was
+				// skipped; this step runs for every http install.
+				if s.Transport != install.TransportStdio && !s.OAuthIsSet {
+					s.OAuth = true
+				}
 				// In production the tunnel-configurer runs the flattened
 				// tunnel-config sub-steps (provider, credentials, env write) into
 				// s.Service before the collector resolves the public URL. Tests
