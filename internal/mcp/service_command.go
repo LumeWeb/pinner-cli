@@ -77,6 +77,12 @@ const (
 	serviceTunnelNameFlag  = "tunnel-name"
 	serviceAuthTokenFlag   = "auth-token"
 	serviceOAuthFlag       = "oauth"
+	// serviceNgrokAPIKeyFlag is the ngrok REST API key, distinct from the
+	// authtoken (--token / NGROK_AUTHTOKEN). The REST API (api.ngrok.com) only
+	// accepts an API key as its bearer credential, and it is what the install
+	// wizard uses to discover the account's public (dev/reserved) domain so it
+	// can resolve MCP_PUBLIC_URL from what the user actually has.
+	serviceNgrokAPIKeyFlag = "ngrok-api-key"
 	servicePublicURLFlag   = "public-url"
 	serviceHostFlag        = "host"
 	servicePortFlag        = "port"
@@ -92,6 +98,7 @@ func managedServiceFlags() []cli.Flag {
 		&cli.StringFlag{Name: serviceTunnelFlag, Usage: "Tunnel provider: ngrok, cloudflared, or openai. openai requires --tunnel-id; ngrok requires --token or NGROK_AUTHTOKEN", Sources: cli.EnvVars("MCP_TUNNEL_PROVIDER")},
 		&cli.StringFlag{Name: serviceTunnelIDFlag, Usage: "OpenAI Secure MCP Tunnel ID (required with --tunnel openai). May also be set via CONTROL_PLANE_TUNNEL_ID or the pinner config manager", Sources: cli.EnvVars("MCP_TUNNEL_ID", "CONTROL_PLANE_TUNNEL_ID")},
 		&cli.StringFlag{Name: serviceTunnelTokenFlag, Usage: "Tunnel provider account token (e.g. ngrok authtoken)", Sources: cli.EnvVars("MCP_TUNNEL_TOKEN", "NGROK_AUTHTOKEN")},
+		&cli.StringFlag{Name: serviceNgrokAPIKeyFlag, Usage: "ngrok REST API key (distinct from the authtoken; used to resolve the account's public domain)", Sources: cli.EnvVars("NGROK_API_KEY")},
 		&cli.StringFlag{Name: serviceApiKeyFlag, Usage: "OpenAI Secure MCP Tunnel control-plane API key (persisted as CONTROL_PLANE_API_KEY)", Sources: cli.EnvVars("CONTROL_PLANE_API_KEY", "OPENAI_API_KEY")},
 		&cli.StringFlag{Name: serviceDomainFlag, Usage: "Custom domain for the tunnel (required for cloudflared, optional for ngrok on paid accounts)", Sources: cli.EnvVars("MCP_DOMAIN")},
 		&cli.StringFlag{Name: serviceTunnelNameFlag, Usage: "Cloudflare tunnel resource name (default: pinner-mcp)", Sources: cli.EnvVars("MCP_TUNNEL_NAME")},

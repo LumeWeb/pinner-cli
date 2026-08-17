@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"go.lumeweb.com/pinner-cli/internal/core/config"
@@ -130,18 +131,25 @@ func cloudflaredConfigurer(_ context.Context, text textUI, s *ServiceInstallStat
 	return nil
 }
 
-// ngrokConfigurer collects the ngrok tunnel resource name and authtoken into s.
-// It pre-resolves the authtoken from existing sources before prompting (the
-// ngrok config file / NGROK_AUTHTOKEN / the pinner config-manager last-resort
-// store), so an already-configured ngrok install never re-asks for the secret.
-func ngrokConfigurer(_ context.Context, text textUI, s *ServiceInstallState, cfgMgr config.Manager) error {
-	if s.TunnelName == "" {
-		name, err := text.Text("Tunnel resource name (optional)")
-		if err != nil {
-			return err
-		}
-		s.TunnelName = strings.TrimSpace(name)
-	}
+// ngrokConfigurer collects the ngrok authtoken and resolves the account's
+// public URL into s. It pre-resolves the authtoken from existing sources before
+// prompting (the ngrok config file / NGROK_AUTHTOKEN / the pinner config-manager
+// last-resort store), so an already-configured ngrok install never re-asks for
+// the secret.
+//
+// There is deliberately NO "tunnel resource name" prompt: ngrok serves the same
+// authtoken-bound account domain regardless of any local name, so a name is
+// meaningless for installation and would only confuse (especially on the free
+// tier's single auto-assigned dev domain).
+//
+// Public URL resolution: when the operator has not already supplied one (via
+// --public-url / MCP_PUBLIC_URL), the configurer queries the ngrok REST API
+// (with the optional NGROK_API_KEY, distinct from the authtoken) to discover
+// the account's public domain — the free dev domain or a named domain — and
+// writes it as MCP_PUBLIC_URL, "identifying what the user has" instead of
+// guessing. Only when no API key is available (or the query fails) does it fall
+// back to asking the operator to paste the URL.
+func ngrokConfigurer(ctx context.Context, text textUI, s *ServiceInstallState, cfgMgr config.Manager) error {
 	// Pre-resolve the authtoken from existing sources before prompting: the
 	// ngrok config file (a user who ran `ngrok config add-authtoken` needs no
 	// further setup — the SDK loads that credential at runtime), then the pinner
@@ -169,5 +177,58 @@ func ngrokConfigurer(_ context.Context, text textUI, s *ServiceInstallState, cfg
 	// auto-detect it (RequiresToken on the embedded tunnel accepts a
 	// config-manager-sourced token).
 	persistTunnelCredential(cfgMgr, "ngrok", "token", s.TunnelToken)
+
+	if _, err := resolveNgrokURL(ctx, text, s, cfgMgr); err != nil {
+		return err
+	}
+
+	// The account type status is surfaced here for the operator: it tells the
+	// user what the ngrok API reported their account as (free dev domain vs a
+	// named/custom domain), which is the "identify what the user has" signal.
+	// It is informational only and is not written to the env file.
 	return nil
+}
+
+// resolveNgrokURL fills s.PublicURL / MCP_PUBLIC_URL for an ngrok install. It
+// first honors an operator-supplied URL (already folded into s.PublicURL), then
+// asks the ngrok REST API what the account actually has and derives the public
+// URL from that (a free dev domain on a free account, or a named domain on a
+// paid one) — "identify what the user has and go based on that". It falls back
+// to prompting the operator for the URL when no API key is available. It
+// returns the resolved public URL.
+func resolveNgrokURL(ctx context.Context, text textUI, s *ServiceInstallState, cfgMgr config.Manager) (string, error) {
+	if s.PublicURL != "" {
+		return s.PublicURL, nil
+	}
+	apiKey := ResolveCredential(
+		func() string { return s.NgrokAPIKey },
+		func() string { return os.Getenv("NGROK_API_KEY") },
+		tunnelCfgCredential(cfgMgr, "ngrok", "api_key"),
+	)
+	publicURL, _, err := resolveNgrokPublicURL(ctx, apiKey, s.Domain)
+	if err != nil {
+		// An API key was provided but the query failed (network / rejected key).
+		// Surface the reason, then fall back to prompting rather than stranding
+		// the install.
+		printTunnelDeepLink("ngrok", "api_key")
+		fmt.Fprintf(os.Stderr, "ngrok API lookup failed (%v); enter the public URL below instead\n", err)
+		apiKey = ""
+	}
+	if publicURL == "" {
+		// No API key, or the account has no discoverable domain. Direct the
+		// operator to the domains page and ask for the URL they see there.
+		openTunnelDeepLink("ngrok", "domain")
+		u, perr := text.Text("ngrok public base URL (from dashboard.ngrok.com/domains, e.g. https://you.ngrok-free.dev)")
+		if perr != nil {
+			return "", perr
+		}
+		u = strings.TrimSpace(u)
+		if u == "" {
+			return "", fmt.Errorf("an ngrok public base URL is required for an HTTP install")
+		}
+		publicURL = u
+	}
+	s.PublicURL = publicURL
+	persistTunnelCredential(cfgMgr, "ngrok", "api_key", apiKey)
+	return publicURL, nil
 }

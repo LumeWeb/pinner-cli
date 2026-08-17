@@ -23,6 +23,11 @@ type ServiceInstallState struct {
 	TunnelName  string
 	AuthToken   string
 	TunnelToken string
+	// NgrokAPIKey is the ngrok REST API key (distinct from the authtoken in
+	// TunnelToken). It is config-time only: the install wizard uses it to query
+	// the ngrok API for the account's public (dev/reserved) domain so it can
+	// resolve PublicURL. It is never written to the service environment file.
+	NgrokAPIKey string
 	ApiKey      string
 	PublicURL   string
 	Host        string
@@ -218,6 +223,7 @@ func seedServiceFromFlagsAndEnv(cmd *cli.Command, s *ServiceInstallState, _ stri
 	set(serviceTunnelNameFlag, &s.TunnelName)
 	set(serviceAuthTokenFlag, &s.AuthToken)
 	set(serviceTunnelTokenFlag, &s.TunnelToken)
+	set(serviceNgrokAPIKeyFlag, &s.NgrokAPIKey)
 	set(servicePublicURLFlag, &s.PublicURL)
 	set(serviceHostFlag, &s.Host)
 	if cmd.IsSet(serviceOAuthFlag) {
