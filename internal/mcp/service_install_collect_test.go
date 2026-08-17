@@ -293,3 +293,31 @@ func TestTunnelProviderChoiceLabelsDefaultIsNgrok(t *testing.T) {
 		require.NotEqual(t, TunnelProvider(""), prov, "option token %q must map to a known provider", token)
 	}
 }
+
+// TestCloudflaredConfigurerResolvesNameWithoutHostname guards the cloudflared
+// auto-fill: a provisioned tunnel state with a TunnelName but no Hostname yet
+// (e.g. before the DNS route exists) must still resolve the tunnel name instead
+// of re-prompting. The Hostname and TunnelName fills are gated independently —
+// the whole block must not be skipped just because the hostname is absent.
+func TestCloudflaredConfigurerResolvesNameWithoutHostname(t *testing.T) {
+	dir := t.TempDir()
+	// tunnelStatePath is a package var; point it at a fixture with a TunnelName
+	// but NO Hostname (pre-DNS-route provisioning state).
+	statePath := filepath.Join(dir, "tunnel-state.json")
+	require.NoError(t, os.WriteFile(statePath, []byte(
+		`{"provider":"cloudflared","tunnel_name":"provisioned-named-tunnel","account_id":"acct","tunnel_id":"tun","secret":"not-a-real-cred"}`+"\n"), 0600))
+	orig := tunnelStatePath
+	tunnelStatePath = func() (string, error) { return statePath, nil }
+	defer func() { tunnelStatePath = orig }()
+
+	state := &ServiceInstallState{Provider: TunnelProviderCloudflared, Domain: "mcp.example.com"}
+	prior := wizard.NonInteractive
+	wizard.NonInteractive = true
+	defer func() { wizard.NonInteractive = prior }()
+
+	require.NoError(t, cloudflaredConfigurer(context.Background(), textUI{}, state, nil),
+		"tunnel name must resolve from the provisioned state without prompting")
+	require.Equal(t, "provisioned-named-tunnel", state.TunnelName,
+		"tunnel name should come from the provisioned state even when the hostname is absent")
+	require.Equal(t, "mcp.example.com", state.Domain, "pre-supplied domain must be preserved")
+}

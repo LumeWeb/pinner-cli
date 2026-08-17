@@ -97,8 +97,11 @@ func openAIConfigurer(_ context.Context, text textUI, s *ServiceInstallState, cf
 // that state (hostname, resource name) instead of re-prompting — the provisioned
 // state is the single source of truth for what the runtime serves.
 func cloudflaredConfigurer(_ context.Context, text textUI, s *ServiceInstallState, cfgMgr config.Manager) error {
+	// Each field is gated independently: a provisioned state with a TunnelName
+	// but no hostname yet (e.g. before the DNS route exists) still resolves the
+	// tunnel name instead of re-prompting for a value the state already has.
 	if s.Domain == "" || s.TunnelName == "" {
-		if st, err := LoadCloudflareTunnelState(); err == nil && st.Hostname != "" {
+		if st, err := LoadCloudflareTunnelState(); err == nil {
 			if s.Domain == "" {
 				s.Domain = st.Hostname
 			}
