@@ -30,7 +30,7 @@ func newTestConfigMgr(t *testing.T) config.Manager {
 
 func TestResolveOpenAICredentialsFromTunnelIDFlag(t *testing.T) {
 	cmd := newCmdWithTunnelID(t, testTunnelID)
-	id, _ := resolveOpenAICredentials(cmd, nil)
+	id, _ := ResolveOpenAICredentials(cmd, nil)
 	assert.Equal(t, testTunnelID, id)
 }
 
@@ -38,21 +38,21 @@ func TestResolveOpenAICredentialsEnvironment(t *testing.T) {
 	t.Run("tunnel id from CONTROL_PLANE_TUNNEL_ID", func(t *testing.T) {
 		cmd := newCmdWithTunnelID(t, "")
 		t.Setenv("CONTROL_PLANE_TUNNEL_ID", testTunnelID)
-		id, _ := resolveOpenAICredentials(cmd, nil)
+		id, _ := ResolveOpenAICredentials(cmd, nil)
 		assert.Equal(t, testTunnelID, id)
 	})
 
 	t.Run("tunnel id flag beats env", func(t *testing.T) {
 		cmd := newCmdWithTunnelID(t, testTunnelID)
 		t.Setenv("CONTROL_PLANE_TUNNEL_ID", "tunnel_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-		id, _ := resolveOpenAICredentials(cmd, nil)
+		id, _ := ResolveOpenAICredentials(cmd, nil)
 		assert.Equal(t, testTunnelID, id)
 	})
 
 	t.Run("api key from CONTROL_PLANE_API_KEY", func(t *testing.T) {
 		cmd := newCmdWithTunnelID(t, testTunnelID)
 		t.Setenv("CONTROL_PLANE_API_KEY", "sk-control")
-		_, key := resolveOpenAICredentials(cmd, nil)
+		_, key := ResolveOpenAICredentials(cmd, nil)
 		assert.Equal(t, "sk-control", key)
 	})
 
@@ -60,7 +60,7 @@ func TestResolveOpenAICredentialsEnvironment(t *testing.T) {
 		cmd := newCmdWithTunnelID(t, testTunnelID)
 		t.Setenv("CONTROL_PLANE_API_KEY", "")
 		t.Setenv("OPENAI_API_KEY", "sk-openai")
-		_, key := resolveOpenAICredentials(cmd, nil)
+		_, key := ResolveOpenAICredentials(cmd, nil)
 		assert.Equal(t, "sk-openai", key)
 	})
 }
@@ -71,7 +71,7 @@ func TestResolveOpenAICredentialsConfigManagerLastResort(t *testing.T) {
 	require.NoError(t, mgr.SetTunnelCredential("openai", "tunnel_id", testTunnelID))
 	require.NoError(t, mgr.SetTunnelCredential("openai", "api_key", "sk-cfgmgr"))
 
-	id, key := resolveOpenAICredentials(cmd, mgr)
+	id, key := ResolveOpenAICredentials(cmd, mgr)
 	assert.Equal(t, testTunnelID, id)
 	assert.Equal(t, "sk-cfgmgr", key)
 }
@@ -81,7 +81,7 @@ func TestResolveOpenAICredentialsEmptyWithoutSources(t *testing.T) {
 	t.Setenv("CONTROL_PLANE_TUNNEL_ID", "")
 	t.Setenv("CONTROL_PLANE_API_KEY", "")
 	t.Setenv("OPENAI_API_KEY", "")
-	id, key := resolveOpenAICredentials(cmd, nil)
+	id, key := ResolveOpenAICredentials(cmd, nil)
 	assert.Equal(t, "", id)
 	assert.Equal(t, "", key)
 }

@@ -1,4 +1,4 @@
-package mcp
+package tunnel
 
 import (
 	"encoding/base64"

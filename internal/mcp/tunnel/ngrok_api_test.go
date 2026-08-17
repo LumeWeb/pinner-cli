@@ -1,4 +1,4 @@
-package mcp
+package tunnel
 
 import (
 	"context"
@@ -16,8 +16,8 @@ func stubNgrokAPI(t *testing.T, handler http.HandlerFunc) *http.Client {
 	t.Helper()
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
-	orig := ngrokAPIHTTPClient
-	ngrokAPIHTTPClient = &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+	orig := NgrokAPIHTTPClient
+	NgrokAPIHTTPClient = &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
 		// Rewrite the absolute api.ngrok.com URL to the test server.
 		u := *r.URL
 		u.Scheme = "http"
@@ -28,8 +28,8 @@ func stubNgrokAPI(t *testing.T, handler http.HandlerFunc) *http.Client {
 		handler(rr, r2)
 		return rr.Result(), nil
 	})}
-	t.Cleanup(func() { ngrokAPIHTTPClient = orig })
-	return ngrokAPIHTTPClient
+	t.Cleanup(func() { NgrokAPIHTTPClient = orig })
+	return NgrokAPIHTTPClient
 }
 
 type roundTripperFunc func(*http.Request) (*http.Response, error)
@@ -79,37 +79,37 @@ func TestClassifyNgrokAccountAndResolve(t *testing.T) {
 	cases := []struct {
 		name    string
 		domains []ngrokReservedDomain
-		wantT   ngrokAccountType
+		wantT   NgrokAccountType
 		wantURL string
 	}{
 		{
 			name:    "free dev domain",
 			domains: []ngrokReservedDomain{{Domain: "you.ngrok-free.dev"}},
-			wantT:   ngrokAccountFree,
+			wantT:   NgrokAccountFree,
 			wantURL: "https://you.ngrok-free.dev",
 		},
 		{
 			name:    "named ngrok domain is paid",
 			domains: []ngrokReservedDomain{{Domain: "my-app.ngrok.app", CNAMETarget: str("tunnel.ngrok.io")}},
-			wantT:   ngrokAccountPaid,
+			wantT:   NgrokAccountPaid,
 			wantURL: "https://my-app.ngrok.app",
 		},
 		{
 			name:    "custom hostname is paid",
 			domains: []ngrokReservedDomain{{Domain: "app.example.com", CNAMETarget: str("cname.example.com")}},
-			wantT:   ngrokAccountPaid,
+			wantT:   NgrokAccountPaid,
 			wantURL: "https://app.example.com",
 		},
 		{
 			name:    "free dev preferred over named when both present",
 			domains: []ngrokReservedDomain{{Domain: "custom.ngrok.app", CNAMETarget: str("x")}, {Domain: "you.ngrok-free.dev"}},
-			wantT:   ngrokAccountPaid, // presence of a named domain -> paid account
+			wantT:   NgrokAccountPaid, // presence of a named domain -> paid account
 			wantURL: "https://you.ngrok-free.dev",
 		},
 		{
 			name:    "empty set",
 			domains: []ngrokReservedDomain{},
-			wantT:   ngrokAccountUnknown,
+			wantT:   NgrokAccountUnknown,
 			wantURL: "",
 		},
 	}
@@ -127,17 +127,17 @@ func TestClassifyNgrokAccountAndResolve(t *testing.T) {
 // treated as "nothing to query" (no error, unknown account), so callers fall
 // back to prompting instead of failing the install.
 func TestResolveNgrokPublicURLNoKeyIsUnambiguous(t *testing.T) {
-	url, typ, err := resolveNgrokPublicURL(context.Background(), "   ", "")
+	url, typ, err := ResolveNgrokPublicURL(context.Background(), "   ", "")
 	require.NoError(t, err)
 	require.Equal(t, "", url)
-	require.Equal(t, ngrokAccountUnknown, typ)
+	require.Equal(t, NgrokAccountUnknown, typ)
 }
 
 // TestResolveNgrokPublicURLPreferDomain guards Kody finding (paid user's custom
 // --domain must win): when the operator requested a specific domain (MCP_DOMAIN
 // / --domain) and it exists in the reserved-domain set — even alongside the
 // account's free dev domain — the custom hostname is honored as the public URL
-// instead of the free dev domain. Previously resolveNgrokPublicURL hardcoded
+// instead of the free dev domain. Previously ResolveNgrokPublicURL hardcoded
 // prefer="", so the operator's explicit choice was silently dropped.
 func TestResolveNgrokPublicURLPreferDomain(t *testing.T) {
 	stubNgrokAPI(t, func(w http.ResponseWriter, r *http.Request) {
@@ -147,15 +147,15 @@ func TestResolveNgrokPublicURLPreferDomain(t *testing.T) {
 			{"id":"rd_2","domain":"you.ngrok-free.dev","cname_target":null}
 		],"next_page_uri":null}`))
 	})
-	url, typ, err := resolveNgrokPublicURL(context.Background(), "ngrok_key", "my-app.ngrok.app")
+	url, typ, err := ResolveNgrokPublicURL(context.Background(), "ngrok_key", "my-app.ngrok.app")
 	require.NoError(t, err)
 	require.Equal(t, "https://my-app.ngrok.app", url,
 		"operator's chosen --domain must be preferred over the free dev domain")
-	require.Equal(t, ngrokAccountPaid, typ)
+	require.Equal(t, NgrokAccountPaid, typ)
 
 	// A free account holding only its dev domain, with no preferred domain set,
 	// still resolves to the dev domain.
-	url, _, err = resolveNgrokPublicURL(context.Background(), "ngrok_key", "")
+	url, _, err = ResolveNgrokPublicURL(context.Background(), "ngrok_key", "")
 	require.NoError(t, err)
 	require.Equal(t, "https://you.ngrok-free.dev", url)
 }

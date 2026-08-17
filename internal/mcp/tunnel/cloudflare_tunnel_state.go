@@ -1,4 +1,4 @@
-package mcp
+package tunnel
 
 import (
 	"encoding/json"
@@ -39,10 +39,10 @@ type CloudflareTunnelState struct {
 	DNSRecordID string `json:"dns_record_id"`
 }
 
-// tunnelStatePath returns the per-user path to the tunnel state file, under
+// TunnelStatePath returns the per-user path to the tunnel state file, under
 // the same config directory used for the MCP service env file. It is a package
 // variable so tests can redirect it to a temp dir.
-var tunnelStatePath = func() (string, error) {
+var TunnelStatePath = func() (string, error) {
 	dir, err := os.UserConfigDir()
 	if err != nil {
 		return "", fmt.Errorf("resolve user config directory: %w", err)
@@ -53,7 +53,7 @@ var tunnelStatePath = func() (string, error) {
 // LoadCloudflareTunnelState loads the provisioned tunnel state, returning
 // os.ErrNotExist if none has been provisioned.
 func LoadCloudflareTunnelState() (*CloudflareTunnelState, error) {
-	path, err := tunnelStatePath()
+	path, err := TunnelStatePath()
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +80,7 @@ func SaveCloudflareTunnelState(s *CloudflareTunnelState) error {
 	if s == nil {
 		return fmt.Errorf("nil tunnel state")
 	}
-	path, err := tunnelStatePath()
+	path, err := TunnelStatePath()
 	if err != nil {
 		return err
 	}
@@ -97,11 +97,11 @@ func SaveCloudflareTunnelState(s *CloudflareTunnelState) error {
 	return nil
 }
 
-// bareHostname strips a leading http(s):// scheme so hostname comparisons and
+// BareHostname strips a leading http(s):// scheme so hostname comparisons and
 // cloudflared ingress hosts are always bare (e.g. "mcp.example.com"), never
 // scheme-qualified URLs. It also strips a trailing path/hash fragment if a
 // caller passed a full URL.
-func bareHostname(h string) string {
+func BareHostname(h string) string {
 	h = strings.TrimSpace(h)
 	for _, p := range []string{"https://", "http://"} {
 		if len(h) >= len(p) && strings.EqualFold(h[:len(p)], p) {

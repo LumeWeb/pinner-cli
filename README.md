@@ -683,6 +683,10 @@ pinner mcp --http --tunnel ngrok \
   --oauth
 ```
 
+The tunnel provider subsystem (ngrok / cloudflared / OpenAI Secure MCP Tunnel runtimes,
+credential resolution, provider deep-links) lives in its own package,
+`internal/mcp/tunnel`.
+
 `--oauth` is explicit. Without it, `--auth-token` enables only direct `Authorization: Bearer <auth-token>` validation. With it, the server exposes RFC 9728 protected-resource metadata, RFC 8414 authorization-server metadata, RFC 7591 client registration, PKCE authorization-code exchange, and refresh tokens. The shared `--auth-token` is entered on the authorization page as the password.
 
 Use `--public-url https://your-public-host.example` when the advertised URL cannot be derived from the tunnel. The public URL must be reachable by the MCP client for discovery, `/oauth/register`, `/oauth/token`, and the authorization flow. The server stores registrations and tokens in memory; restarting it requires clients to authorize again.

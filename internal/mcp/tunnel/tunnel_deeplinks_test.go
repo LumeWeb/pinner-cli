@@ -1,4 +1,4 @@
-package mcp
+package tunnel
 
 import (
 	"testing"
@@ -38,16 +38,16 @@ func TestOpenTunnelDeepLinkOpensInInteractiveMode(t *testing.T) {
 	defer func() { wizard.NonInteractive = oldNonInteractive }()
 	wizard.NonInteractive = false
 
-	origOpener := tunnelDeepLinkOpener
-	defer func() { tunnelDeepLinkOpener = origOpener }()
+	origOpener := TunnelDeepLinkOpener
+	defer func() { TunnelDeepLinkOpener = origOpener }()
 
 	var opened string
-	tunnelDeepLinkOpener = func(u string) error {
+	TunnelDeepLinkOpener = func(u string) error {
 		opened = u
 		return nil
 	}
 
-	openTunnelDeepLink("ngrok", "authtoken")
+	OpenTunnelDeepLink("ngrok", "authtoken")
 	assert.Equal(t, "https://dashboard.ngrok.com/get-started/your-authtoken", opened)
 }
 
@@ -56,16 +56,16 @@ func TestOpenTunnelDeepLinkDoesNotOpenInNonInteractive(t *testing.T) {
 	defer func() { wizard.NonInteractive = oldNonInteractive }()
 	wizard.NonInteractive = true
 
-	origOpener := tunnelDeepLinkOpener
-	defer func() { tunnelDeepLinkOpener = origOpener }()
+	origOpener := TunnelDeepLinkOpener
+	defer func() { TunnelDeepLinkOpener = origOpener }()
 
 	opened := false
-	tunnelDeepLinkOpener = func(u string) error {
+	TunnelDeepLinkOpener = func(u string) error {
 		opened = true
 		return nil
 	}
 
-	openTunnelDeepLink("openai", "tunnel_id")
+	OpenTunnelDeepLink("openai", "tunnel_id")
 	require.False(t, opened, "non-interactive mode must not spawn a browser")
 }
 
@@ -74,15 +74,15 @@ func TestOpenTunnelDeepLinkUnknownPairIsNoop(t *testing.T) {
 	defer func() { wizard.NonInteractive = oldNonInteractive }()
 	wizard.NonInteractive = false
 
-	origOpener := tunnelDeepLinkOpener
-	defer func() { tunnelDeepLinkOpener = origOpener }()
+	origOpener := TunnelDeepLinkOpener
+	defer func() { TunnelDeepLinkOpener = origOpener }()
 
 	opened := false
-	tunnelDeepLinkOpener = func(u string) error {
+	TunnelDeepLinkOpener = func(u string) error {
 		opened = true
 		return nil
 	}
 
-	openTunnelDeepLink("cloudflared", "authtoken")
+	OpenTunnelDeepLink("cloudflared", "authtoken")
 	require.False(t, opened, "unknown pair should not open anything")
 }

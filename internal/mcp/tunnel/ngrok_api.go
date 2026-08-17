@@ -1,4 +1,4 @@
-package mcp
+package tunnel
 
 import (
 	"context"
@@ -10,20 +10,20 @@ import (
 	"time"
 )
 
-// ngrokAccountType classifies an ngrok account by what its reserved-domain set
+// NgrokAccountType classifies an ngrok account by what its reserved-domain set
 // actually contains (free vs paid), driving how the install resolves a public
 // URL.
-type ngrokAccountType string
+type NgrokAccountType string
 
 const (
-	// ngrokAccountUnknown means the account type could not be determined.
-	ngrokAccountUnknown ngrokAccountType = ""
-	// ngrokAccountFree is a free account: it has exactly one auto-assigned dev
+	// NgrokAccountUnknown means the account type could not be determined.
+	NgrokAccountUnknown NgrokAccountType = ""
+	// NgrokAccountFree is a free account: it has exactly one auto-assigned dev
 	// domain on an *.ngrok-free.* suffix and no named/custom domains.
-	ngrokAccountFree ngrokAccountType = "free"
-	// ngrokAccountPaid is a paid account: it may hold named *.ngrok.* domains
+	NgrokAccountFree NgrokAccountType = "free"
+	// NgrokAccountPaid is a paid account: it may hold named *.ngrok.* domains
 	// and/or user-owned (custom) hostnames.
-	ngrokAccountPaid ngrokAccountType = "paid"
+	NgrokAccountPaid NgrokAccountType = "paid"
 )
 
 // ngrokReservedDomain mirrors the subset of the ngrok API's ReservedDomain
@@ -44,11 +44,11 @@ type ngrokReservedDomainList struct {
 	NextPageURI     *string               `json:"next_page_uri"`
 }
 
-// ngrokAPIHTTPClient is the HTTP client used for ngrok REST API calls. It is a
+// NgrokAPIHTTPClient is the HTTP client used for ngrok REST API calls. It is a
 // package variable so tests can substitute a stub transport without touching
 // the network. The API requires the `ngrok-version: 2` header and a bearer API
 // key (distinct from the authtoken).
-var ngrokAPIHTTPClient = &http.Client{Timeout: 15 * time.Second}
+var NgrokAPIHTTPClient = &http.Client{Timeout: 15 * time.Second}
 
 // ngrokReservedDomains fetches the account's reserved domains from the ngrok
 // REST API (https://api.ngrok.com/reserved_domains) using the given REST API
@@ -65,7 +65,7 @@ func ngrokReservedDomains(ctx context.Context, apiKey string) ([]ngrokReservedDo
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 		req.Header.Set("ngrok-version", "2")
 
-		resp, err := ngrokAPIHTTPClient.Do(req)
+		resp, err := NgrokAPIHTTPClient.Do(req)
 		if err != nil {
 			return nil, fmt.Errorf("ngrok API: %w", err)
 		}
@@ -132,7 +132,7 @@ func isDevDomainSuffix(host string) bool {
 // classifyNgrokAccount derives the account type from its reserved-domain set.
 // A free account's set is its single *.ngrok-free.* dev domain; the presence of
 // any named/custom (non-dev) domain marks a paid account.
-func classifyNgrokAccount(domains []ngrokReservedDomain) ngrokAccountType {
+func classifyNgrokAccount(domains []ngrokReservedDomain) NgrokAccountType {
 	hasDev, hasNamed := false, false
 	for _, d := range domains {
 		if d.Domain == "" {
@@ -146,15 +146,15 @@ func classifyNgrokAccount(domains []ngrokReservedDomain) ngrokAccountType {
 	}
 	switch {
 	case hasNamed:
-		return ngrokAccountPaid
+		return NgrokAccountPaid
 	case hasDev:
-		return ngrokAccountFree
+		return NgrokAccountFree
 	default:
-		return ngrokAccountUnknown
+		return NgrokAccountUnknown
 	}
 }
 
-// resolveNgrokPublicURL maps an ngrok account's reserved-domain set to the
+// ResolveNgrokPublicURL maps an ngrok account's reserved-domain set to the
 // public base URL to advertise for the MCP server, with a stable deterministic
 // preference:
 //
@@ -166,11 +166,11 @@ func classifyNgrokAccount(domains []ngrokReservedDomain) ngrokAccountType {
 //
 // prefer, when non-empty, selects a domain of exact match first. It returns the
 // chosen base URL ("https://<host>") or "" when the set yields nothing usable.
-func resolveNgrokPublicURLFromDomains(domains []ngrokReservedDomain, prefer string) (string, ngrokAccountType) {
+func resolveNgrokPublicURLFromDomains(domains []ngrokReservedDomain, prefer string) (string, NgrokAccountType) {
 	accountType := classifyNgrokAccount(domains)
 	if prefer != "" {
 		for _, d := range domains {
-			if d.Domain != "" && strings.EqualFold(d.Domain, bareHostname(prefer)) {
+			if d.Domain != "" && strings.EqualFold(d.Domain, BareHostname(prefer)) {
 				return "https://" + d.Domain, accountType
 			}
 		}
@@ -191,20 +191,20 @@ func resolveNgrokPublicURLFromDomains(domains []ngrokReservedDomain, prefer stri
 	return "", accountType
 }
 
-// resolveNgrokPublicURL queries the ngrok REST API for the account's reserved
+// ResolveNgrokPublicURL queries the ngrok REST API for the account's reserved
 // domains and derives the public base URL for the MCP endpoint, along with the
 // account type. prefer is the operator's requested domain (MCP_DOMAIN /
 // --domain): when it matches a reserved domain it is honored first. It returns
-// ("", ngrokAccountUnknown, nil) when the API key is empty (nothing to query)
+// ("", NgrokAccountUnknown, nil) when the API key is empty (nothing to query)
 // rather than an error, so callers fall back to a prompt; a non-empty key that
 // the API rejects returns an error.
-func resolveNgrokPublicURL(ctx context.Context, apiKey string, prefer string) (string, ngrokAccountType, error) {
+func ResolveNgrokPublicURL(ctx context.Context, apiKey string, prefer string) (string, NgrokAccountType, error) {
 	if strings.TrimSpace(apiKey) == "" {
-		return "", ngrokAccountUnknown, nil
+		return "", NgrokAccountUnknown, nil
 	}
 	domains, err := ngrokReservedDomains(ctx, strings.TrimSpace(apiKey))
 	if err != nil {
-		return "", ngrokAccountUnknown, err
+		return "", NgrokAccountUnknown, err
 	}
 	url, t := resolveNgrokPublicURLFromDomains(domains, prefer)
 	return url, t, nil

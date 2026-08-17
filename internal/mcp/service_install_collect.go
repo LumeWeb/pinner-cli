@@ -129,7 +129,7 @@ func resolveServicePublicURL(envFile string, env ServiceEnvironment) {
 	if host == "" {
 		return
 	}
-	host = bareHostname(host)
+	host = BareHostname(host)
 	if host == "" {
 		return
 	}

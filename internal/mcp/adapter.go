@@ -487,8 +487,8 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 		if enableOAuth {
 			return fmt.Errorf("--oauth is not supported with the embedded OpenAI Secure MCP Tunnel; use ngrok or cloudflared for Pinner OAuth")
 		}
-		resolvedID, resolvedKey := resolveOpenAICredentials(cmd, cfgMgr)
-		return runEmbeddedOpenAITunnel(ctx, srv, resolvedID, resolvedKey)
+		resolvedID, resolvedKey := ResolveOpenAICredentials(cmd, cfgMgr)
+		return RunEmbeddedOpenAITunnel(ctx, srv, resolvedID, resolvedKey)
 	}
 
 	// Bind a concrete local address up front. Port 0 asks the OS for an
@@ -509,7 +509,7 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 		// credential the embedded agent would load from ngrok's own config file.
 		// See resolveNgrokToken.
 		if provider == string(TunnelProviderNgrok) {
-			token = resolveNgrokToken(token, cfgMgr)
+			token = ResolveNgrokToken(token, cfgMgr)
 		}
 		tpl, err := tunnelFor(provider, domain, token, tunnelName, tunnelID, cfgMgr)
 		if err != nil {

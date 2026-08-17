@@ -1,4 +1,4 @@
-package mcp
+package tunnel
 
 import (
 	"context"
@@ -89,8 +89,8 @@ func waitCtx(ctx context.Context, cmd *exec.Cmd) error {
 	}
 }
 
-// splitHostPort splits a "host:port" address into its parts.
-func splitHostPort(addr string) (string, string, error) {
+// SplitHostPort splits a "host:port" address into its parts.
+func SplitHostPort(addr string) (string, string, error) {
 	if addr == "" {
 		return "", "", fmt.Errorf("empty address")
 	}

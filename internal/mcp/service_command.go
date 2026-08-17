@@ -45,13 +45,7 @@ func serviceConfigManager() config.Manager {
 }
 
 // TunnelProvider identifies the tunnel backend used to expose the MCP server.
-type TunnelProvider string
-
-const (
-	TunnelProviderOpenAI      TunnelProvider = "openai"
-	TunnelProviderNgrok       TunnelProvider = "ngrok"
-	TunnelProviderCloudflared TunnelProvider = "cloudflared"
-)
+// (Type alias to the tunnel sub-package; see tunnel_shim.go.)
 
 // parseTunnelProvider normalizes a raw provider string into the typed enum,
 // returning an error for unknown values.
@@ -267,10 +261,10 @@ func validateServiceEnvironment(envFile string, nonInteractive bool) (TunnelProv
 	// Interactive install/wizard paths may open the browser to guide the user.
 	deeplink := func(operation, missing string) {
 		if nonInteractive {
-			printTunnelDeepLink(operation, missing)
+			PrintTunnelDeepLink(operation, missing)
 			return
 		}
-		openTunnelDeepLink(operation, missing)
+		OpenTunnelDeepLink(operation, missing)
 	}
 	switch provider {
 	case TunnelProviderOpenAI:
@@ -279,7 +273,7 @@ func validateServiceEnvironment(envFile string, nonInteractive bool) (TunnelProv
 			deeplink("openai", "tunnel_id")
 			return "", fmt.Errorf("MCP_TUNNEL_ID is required for the OpenAI tunnel (create one in the OpenAI Tunnels page)")
 		}
-		if !openAITunnelID.MatchString(tunnelID) {
+		if !OpenAITunnelID.MatchString(tunnelID) {
 			deeplink("openai", "tunnel_id")
 			return "", fmt.Errorf("invalid OpenAI tunnel ID %q", tunnelID)
 		}
@@ -484,10 +478,10 @@ func bootstrapServiceEnvironment(cmd *cli.Command, envFile string, cfgMgr config
 	// Persist credentials supplied via flags to the last-resort store so the
 	// values survive to later runs even if the env file is regenerated.
 	if provider == TunnelProviderOpenAI {
-		persistTunnelCredential(cfgMgr, "openai", "tunnel_id", env["MCP_TUNNEL_ID"])
-		persistTunnelCredential(cfgMgr, "openai", "api_key", env["CONTROL_PLANE_API_KEY"])
+		PersistTunnelCredential(cfgMgr, "openai", "tunnel_id", env["MCP_TUNNEL_ID"])
+		PersistTunnelCredential(cfgMgr, "openai", "api_key", env["CONTROL_PLANE_API_KEY"])
 	} else if provider == TunnelProviderNgrok {
-		persistTunnelCredential(cfgMgr, "ngrok", "token", env["MCP_TUNNEL_TOKEN"])
+		PersistTunnelCredential(cfgMgr, "ngrok", "token", env["MCP_TUNNEL_TOKEN"])
 	}
 	return nil
 }

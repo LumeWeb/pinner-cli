@@ -1,4 +1,4 @@
-package mcp
+package tunnel
 
 import (
 	"os"
@@ -7,7 +7,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/core/config"
 )
 
-// resolveOpenAICredentials returns the OpenAI Secure MCP Tunnel ID and
+// ResolveOpenAICredentials returns the OpenAI Secure MCP Tunnel ID and
 // control-plane API key, auto-detected across flag, env var, and (last resort)
 // the pinner config manager. The user is only asked for a value when none of
 // the sources provides it (that prompting happens in the wizard); this function
@@ -28,16 +28,16 @@ import (
 // OpenAI has no on-disk config-file source in this tree, so the chain is
 // flag/env/config-manager only. A nil config manager (tests, unwired wizard
 // deps) simply drops the last-resort source.
-func resolveOpenAICredentials(cmd *cli.Command, cfgMgr config.Manager) (tunnelID, apiKey string) {
+func ResolveOpenAICredentials(cmd *cli.Command, cfgMgr config.Manager) (tunnelID, apiKey string) {
 	tunnelID = ResolveCredential(
 		func() string { return cmd.String("tunnel-id") },
 		func() string { return os.Getenv("CONTROL_PLANE_TUNNEL_ID") },
-		tunnelCfgCredential(cfgMgr, "openai", "tunnel_id"),
+		TunnelCfgCredential(cfgMgr, "openai", "tunnel_id"),
 	)
 	apiKey = ResolveCredential(
 		func() string { return os.Getenv("CONTROL_PLANE_API_KEY") },
 		func() string { return os.Getenv("OPENAI_API_KEY") },
-		tunnelCfgCredential(cfgMgr, "openai", "api_key"),
+		TunnelCfgCredential(cfgMgr, "openai", "api_key"),
 	)
 	return tunnelID, apiKey
 }
