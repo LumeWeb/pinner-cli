@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
 
 // toolMetaSecuritySchemes returns the _meta["securitySchemes"] value of the
@@ -31,7 +32,7 @@ func toolMetaSecuritySchemes(t *testing.T, tool *mcp.Tool) []map[string]any {
 // ChatGPT/admins can see the tool requires an account, and that it is mirrored
 // under _meta["securitySchemes"].
 func TestOfficialToolSecuritySchemesDefault(t *testing.T) {
-	tool := officialTool(model.ToolDescriptor{
+	tool := sdk.Tool(model.ToolDescriptor{
 		Name:        "pins_list",
 		Description: "list pins",
 		InputSchema: json.RawMessage(`{}`),
@@ -45,7 +46,7 @@ func TestOfficialToolSecuritySchemesDefault(t *testing.T) {
 	require.Empty(t, scopes, "Pinner advertises no application-level scopes")
 
 	// Existing _meta keys (e.g. a companion app) must be preserved.
-	tool = officialTool(model.ToolDescriptor{
+	tool = sdk.Tool(model.ToolDescriptor{
 		Name:        "auth_sso",
 		InputSchema: json.RawMessage(`{}`),
 		Meta:        map[string]any{"ui": map[string]any{"resourceUri": "ui://auth/sso.html"}},
@@ -58,7 +59,7 @@ func TestOfficialToolSecuritySchemesDefault(t *testing.T) {
 // TestOfficialToolSecuritySchemesExplicit verifies that a descriptor-declared
 // policy (a noauth tool) is honored verbatim instead of the default.
 func TestOfficialToolSecuritySchemesExplicit(t *testing.T) {
-	tool := officialTool(model.ToolDescriptor{
+	tool := sdk.Tool(model.ToolDescriptor{
 		Name:        "search_public",
 		Description: "anonymous search",
 		InputSchema: json.RawMessage(`{}`),
@@ -81,7 +82,7 @@ func TestOfficialToolSecuritySchemesExplicit(t *testing.T) {
 // serializable shape ChatGPT reads). The go-sdk Tool struct has no top-level
 // securitySchemes field, so _meta is the supported emission point.
 func TestOfficialToolWireJSONHasSecuritySchemesUnderMeta(t *testing.T) {
-	tool := officialTool(model.ToolDescriptor{Name: "vault_status", InputSchema: json.RawMessage(`{}`)})
+	tool := sdk.Tool(model.ToolDescriptor{Name: "vault_status", InputSchema: json.RawMessage(`{}`)})
 	b, err := json.Marshal(tool)
 	require.NoError(t, err)
 	var obj map[string]any
@@ -106,7 +107,7 @@ func TestOfficialToolDoesNotMutateCallerMeta(t *testing.T) {
 	}
 	desc := model.DescriptorFromTool(&entry)
 
-	officialTool(desc)
+	sdk.Tool(desc)
 
 	// The tool result must NOT see securitySchemes on the shared entry; the
 	// converter's emission must have been into its own copy.

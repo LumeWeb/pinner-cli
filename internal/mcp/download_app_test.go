@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
 
 // buildDownloadServers constructs a catalog with the download tools and
@@ -19,7 +20,7 @@ func buildDownloadServers(t *testing.T) *mcp.Server {
 	t.Helper()
 	catalog := NewToolCatalog()
 	addDownloadToolEntries(t, catalog)
-	srv := NewOfficialServer(nil)
+	srv := sdk.NewServer(nil)
 	if err := RegisterIPFSDownloadApp(srv, catalog); err != nil {
 		t.Fatalf("RegisterIPFSDownloadApp: %v", err)
 	}

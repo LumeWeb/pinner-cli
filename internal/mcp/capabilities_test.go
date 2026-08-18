@@ -10,6 +10,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
 
 func TestCapabilitiesReportStdio(t *testing.T) {
@@ -152,7 +153,7 @@ func TestCapabilitiesDescriptorSerializes(t *testing.T) {
 
 func TestCapabilitiesDescriptorIsDirectVisible(t *testing.T) {
 	desc := NewCapabilitiesDescriptor(false, false, false, false, false, false, false, false, 0)
-	tool := officialTool(desc)
+	tool := sdk.Tool(desc)
 	require.Equal(t, "capabilities", tool.Name)
 }
 

@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
 
 // newAccountAppsServer builds an official server with the account credential
@@ -16,7 +17,7 @@ import (
 func newAccountAppsServer(t *testing.T) *mcp.Server {
 	t.Helper()
 	catalog := NewToolCatalog()
-	srv := NewOfficialServer(nil)
+	srv := sdk.NewServer(nil)
 
 	oob := NewOOBAccountChange(&testAccountAuthService{}, DefaultAccountChangeTTL)
 	oob.SetBaseURL("http://127.0.0.1:9999")

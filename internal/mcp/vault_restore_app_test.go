@@ -13,6 +13,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
 
 // TestRegisterVaultRestoreAppWire verifies the Restore Vault app registers its
@@ -21,7 +22,7 @@ import (
 func TestRegisterVaultRestoreAppWire(t *testing.T) {
 	catalog := NewToolCatalog()
 	catalog.Add(modelTool(compiledVaultRestoreToolName))
-	srv := NewOfficialServer(nil)
+	srv := sdk.NewServer(nil)
 
 	if err := RegisterVaultRestoreApp(srv, catalog, handoff.NewHandoffRegistry(), session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)); err != nil {
 		t.Fatalf("RegisterVaultRestoreApp: %v", err)

@@ -21,6 +21,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
 
 // newOfficialTestServer builds an official-SDK server with one catalog entry
@@ -46,10 +47,10 @@ func newOfficialTestServer(t *testing.T) (*mcp.Server, *ToolCatalog) {
 	resourceKey := "pinner://account/status"
 	provider[resourceKey] = `{"authenticated":true}`
 
-	srv := NewOfficialServer(nil)
+	srv := sdk.NewServer(nil)
 	require.NoError(t, RegisterOfficialMetaTools(srv, catalog, false, nil, nil, nil))
 
-	require.NoError(t, RegisterOfficialResources(srv,
+	require.NoError(t, sdk.RegisterResources(srv,
 		[]model.ResourceDescriptor{
 			{
 				URI:         resourceKey,
@@ -74,7 +75,7 @@ func newOfficialTestServer(t *testing.T) (*mcp.Server, *ToolCatalog) {
 		},
 	))
 
-	require.NoError(t, RegisterOfficialPrompts(srv, []model.PromptDescriptor{
+	require.NoError(t, sdk.RegisterPrompts(srv, []model.PromptDescriptor{
 		{
 			Name:        "website-onboarding",
 			Title:       "Website Onboarding Wizard",
@@ -128,7 +129,7 @@ func TestOfficialServerFromCatalog(t *testing.T) {
 func TestLocalhostProtectionTunnelScoped(t *testing.T) {
 	srv, _ := newOfficialTestServer(t)
 	handler := func(disable bool) http.Handler {
-		return NewOfficialStreamableHandler(srv, disable)
+		return sdk.NewStreamableHandler(srv, disable)
 	}
 
 	// Simulate the tunnel case: local address is loopback, Host header is the
@@ -369,7 +370,7 @@ func TestOfficialInvokeToolRedirectsInteractiveOnly(t *testing.T) {
 		},
 	})
 
-	srv := NewOfficialServer(nil)
+	srv := sdk.NewServer(nil)
 	require.NoError(t, RegisterOfficialMetaTools(srv, catalog, false, nil, nil, nil))
 	cs := connectOfficialClient(t, srv)
 
@@ -483,7 +484,7 @@ func TestOfficialInvokeVaultRestoreRoutesAgentSafeHandoff(t *testing.T) {
 	require.Equal(t, model.InteractionAgentSafe, restore.Interaction,
 		"buildCatalog must route compiled vault restore through the agent-safe OOB hand-off handler")
 
-	srv := NewOfficialServer(nil)
+	srv := sdk.NewServer(nil)
 	require.NoError(t, RegisterOfficialMetaTools(srv, catalog, true, nil, oobRestore, nil))
 	cs := connectOfficialClient(t, srv)
 
@@ -565,7 +566,7 @@ func requireText(t *testing.T, res *mcp.CallToolResult) string {
 // which is the distinguishing stateless behavior.
 func TestStreamableHandlerIsStateless(t *testing.T) {
 	srv, _ := newOfficialTestServer(t)
-	handler := NewOfficialStreamableHandler(srv, true)
+	handler := sdk.NewStreamableHandler(srv, true)
 	ts := httptest.NewServer(handler)
 	defer ts.Close()
 

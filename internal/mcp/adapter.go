@@ -36,6 +36,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
 
 // ToolDelimiter separates command path segments in MCP tool names.
@@ -442,7 +443,7 @@ adapter.`,
 
 			if !cmd.Bool("http") {
 				log.Debug("serving MCP server over stdio (official SDK)")
-				return RunOfficialStdio(ctx, srv, os.Stdin, os.Stdout)
+				return sdk.RunStdio(ctx, srv, os.Stdin, os.Stdout)
 			}
 
 			return serveHTTP(ctx, srv, cmd, oob, seedDrop, oobRestore, oobCreate, accountOOB, curlUpload, vaultUpload, dl, wizardS.CfgMgr)
@@ -492,7 +493,7 @@ func mcpHostProtectionDisabled(tunnelActive, httpMode bool, publicURL string) bo
 	return tunnelActive || (httpMode && publicURL != "")
 }
 
-func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *OutOfBandLogin, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate, accountOOB *OOBAccountChange, curlUpload *httpUpload, vaultUpload *vaultHTTPUpload, dl *httpDownload, cfgMgr config.Manager) error {
+func serveHTTP(ctx context.Context, srv *sdk.Server, cmd *cli.Command, oob *OutOfBandLogin, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate, accountOOB *OOBAccountChange, curlUpload *httpUpload, vaultUpload *vaultHTTPUpload, dl *httpDownload, cfgMgr config.Manager) error {
 	provider := cmd.String("tunnel")
 	domain := cmd.String("domain")
 	token := cmd.String("token")
@@ -605,7 +606,7 @@ func serveHTTP(ctx context.Context, srv *OfficialServer, cmd *cli.Command, oob *
 	// the tunnel before any client connects.
 	mux := http.NewServeMux()
 	disableHostProtection := mcpHostProtectionDisabled(tun != nil, cmd.Bool("http"), publicURL)
-	var mcpHandler http.Handler = NewOfficialStreamableHandler(srv, disableHostProtection)
+	var mcpHandler http.Handler = sdk.NewStreamableHandler(srv, disableHostProtection)
 	switch {
 	case oauth != nil:
 		// OAuth handshake: /mcp only accepts tokens issued through the flow.

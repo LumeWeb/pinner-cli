@@ -8,13 +8,14 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
 
 // upload_file is unified across transports; these replace the removed
 // ChatGPTUploadDescriptor-based tests. See upload_file.go for the descriptor.
 
 func TestRegisterOfficialDescriptorRequiresHandler(t *testing.T) {
-	srv := NewOfficialServer(nil)
+	srv := sdk.NewServer(nil)
 	err := RegisterOfficialDescriptor(srv, model.ToolDescriptor{Name: "test"})
 	require.ErrorContains(t, err, "requires name and handler")
 }

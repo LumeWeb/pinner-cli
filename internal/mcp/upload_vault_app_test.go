@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
 
 // fakeVaultPutHandler is a controllable VaultPutHandler for app tests.
@@ -51,7 +52,7 @@ func buildVaultUploadAppServerEx(t *testing.T, fake *fakeVaultPutHandler) (*mcp.
 		fake = &fakeVaultPutHandler{}
 	}
 	catalog := NewToolCatalog()
-	srv := NewOfficialServer(nil)
+	srv := sdk.NewServer(nil)
 	vu := NewVaultHTTPUpload(fake.Put, 1<<20)
 
 	vaultPutDesc := NewVaultPutFileDescriptor(false, false, nil, vu, fake.Put, nil, 0)
@@ -335,7 +336,7 @@ func TestVaultUploadTokenIsSingleUse(t *testing.T) {
 }
 
 func TestRegisterVaultUploadAppNilCoordinator(t *testing.T) {
-	srv := NewOfficialServer(nil)
+	srv := sdk.NewServer(nil)
 	catalog := NewToolCatalog()
 	catalog.Add(&model.ToolEntry{Name: "vault_put_file", DirectVisible: true})
 	if err := RegisterVaultUploadApp(srv, catalog, nil); err == nil {

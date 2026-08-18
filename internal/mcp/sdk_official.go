@@ -21,15 +21,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/urfave/cli/v3"
-	"github.com/yosida95/uritemplate/v3"
 	"go.lumeweb.com/pinner-cli/internal/catalog"
+	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 
@@ -43,54 +41,13 @@ import (
 // empty (e.g. during `go test`).
 const officialSDKVersion = "v1.4.1"
 
-// OfficialServer is the SDK-neutral alias for the official MCP server type. It
-// lets the rest of the package (which must not import the official SDK) carry
-// an official server through the public serving path without a name collision.
-type OfficialServer = mcp.Server
-
-// OfficialImplementation returns the Pinner server implementation descriptor
-// used to initialize an official-SDK server.
-func OfficialImplementation() *mcp.Implementation {
-	return &mcp.Implementation{
-		Name:    "pinner",
-		Version: "0.0.0-dev",
-	}
-}
-
-// OfficialServerOptions is the SDK-neutral surface for official server
-// options. Zero fields map to official SDK defaults.
-type OfficialServerOptions struct {
-	Instructions string
-}
-
-// officialServerOptions maps Pinner options onto the official SDK. Pinner
-// ships MCP Apps tooling, so the io.modelcontextprotocol/ui extension is
-// advertised on the server capabilities (surfaced via server/discover) for
-// every server.
-func officialServerOptions(opts *OfficialServerOptions) *mcp.ServerOptions {
-	so := &mcp.ServerOptions{
-		Capabilities: AdvertiseUICapability(&mcp.ServerCapabilities{}),
-	}
-	if opts != nil {
-		so.Instructions = opts.Instructions
-	}
-	return so
-}
-
-// NewOfficialServer builds an official-SDK MCP server pre-configured with
-// Pinner's identity. Feature registration is performed separately with
-// RegisterOfficialMetaTools, RegisterOfficialResources and RegisterOfficialPrompts.
-func NewOfficialServer(opts *OfficialServerOptions) *mcp.Server {
-	return mcp.NewServer(OfficialImplementation(), officialServerOptions(opts))
-}
-
 // OfficialServerFromCatalog builds the official server with Pinner's
 // progressive-disclosure meta-tools. The catalog remains internal.
 func OfficialServerFromCatalog(catalog *ToolCatalog, instructions string, stdioMode bool, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate) (*mcp.Server, error) {
 	if catalog == nil {
 		return nil, fmt.Errorf("nil tool catalog")
 	}
-	srv := NewOfficialServer(&OfficialServerOptions{Instructions: instructions})
+	srv := sdk.NewServer(&sdk.ServerOptions{Instructions: instructions})
 	if err := RegisterOfficialMetaTools(srv, catalog, stdioMode, seedDrop, oobRestore, oobCreate); err != nil {
 		return nil, err
 	}
@@ -115,77 +72,6 @@ func OfficialMCPServer(root *cli.Command, hasRootAction bool, prefix []string, s
 		return nil, nil, err
 	}
 	return srv, catalog, nil
-}
-
-// officialStdioTransport builds a transport bound to the given stdin/stdout
-// readers/writers. os.Stdin/os.Stdout satisfy io.ReadCloser / io.WriteCloser
-// respectively, so callers typically pass them directly.
-func officialStdioTransport(r io.ReadCloser, w io.WriteCloser) *mcp.IOTransport {
-	return &mcp.IOTransport{Reader: r, Writer: w}
-}
-
-// RunOfficialStdio serves an official-SDK MCP server over the stdio transport
-// bound to the given stdin/stdout, blocking until ctx is cancelled or the
-// client closes the stream. This keeps the official SDK types out of
-// adapter.go's public Serving path.
-func RunOfficialStdio(ctx context.Context, srv *mcp.Server, r io.ReadCloser, w io.WriteCloser) error {
-	if srv == nil {
-		return fmt.Errorf("nil official server")
-	}
-	return srv.Run(ctx, officialStdioTransport(r, w))
-}
-
-// ---------------------------------------------------------------------------
-// Tool conversion
-// ---------------------------------------------------------------------------
-
-// officialTool converts a Pinner-owned tool descriptor into an official SDK
-// tool. The raw CLI-generated input schema is preserved verbatim; annotations
-// annotations (readOnlyHint/destructiveHint/title) are carried in ToolAnnotations.
-func officialTool(desc model.ToolDescriptor) *mcp.Tool {
-	// OpenAI per-tool auth declaration. Pinner's whole MCP server sits behind a
-	// protected resource, so a tool with no explicit policy defaults to oauth2
-	// with no application scopes. Emit the `_meta["securitySchemes"]` mirror,
-	// which is the go-sdk serializable form and what ChatGPT reads for clients
-	// that support _meta. (The go-sdk Tool struct has no top-level field.)
-	schemes := desc.SecuritySchemes
-	if len(schemes) == 0 {
-		schemes = []model.SecurityScheme{{Type: "oauth2", Scopes: []string{}}}
-	}
-
-	// Copy the caller's Meta into a fresh map before adding securitySchemes.
-	// desc.Meta aliases the live catalog ToolEntry.Meta (via model.DescriptorFromTool
-	// / model.ToolDescriptorFromEntry), so writing in place would permanently pollute the
-	// source-of-truth registry state and leave a stale `securitySchemes` key
-	// that survives re-registration. This converter never mutates what it reads.
-	meta := make(map[string]any, len(desc.Meta)+1)
-	for k, v := range desc.Meta {
-		meta[k] = v
-	}
-	meta["securitySchemes"] = schemes
-
-	tool := &mcp.Tool{
-		Name:        desc.Name,
-		Description: desc.Description,
-		Title:       desc.Title,
-		InputSchema: json.RawMessage(desc.InputSchema),
-		Meta:        meta,
-	}
-	// Emit the tool's output schema when the descriptor declares one, so a tool
-	// that returns StructuredContent advertises the shape of that content on
-	// the wire (OpenAI guidance: declare an output schema for structured
-	// output). `any` accepts a json.RawMessage, which is preserved verbatim.
-	if len(desc.OutputSchema) > 0 && json.Valid(desc.OutputSchema) {
-		tool.OutputSchema = json.RawMessage(desc.OutputSchema)
-	}
-	if desc.ReadOnly || desc.Destructive || desc.Title != "" {
-		tool.Annotations = &mcp.ToolAnnotations{
-			Title:           desc.Title,
-			ReadOnlyHint:    desc.ReadOnly,
-			DestructiveHint: &desc.Destructive,
-		}
-	}
-	return tool
 }
 
 // PinnerToolHandler → mcp.ToolHandler. The arguments arrive on the wire as
@@ -589,7 +475,7 @@ func RegisterOfficialDescriptor(srv *mcp.Server, desc model.ToolDescriptor) erro
 	if desc.Name == "" || desc.Handler == nil {
 		return fmt.Errorf("direct tool requires name and handler")
 	}
-	return registerTool(srv, officialTool(desc), desc.Handler)
+	return registerTool(srv, sdk.Tool(desc), desc.Handler)
 }
 
 // RegisterOfficialCuratedTools exposes the catalog's directly-visible tools
@@ -607,197 +493,9 @@ func RegisterOfficialCuratedTools(srv *mcp.Server, catalog *ToolCatalog) error {
 		if !entry.DirectVisible {
 			continue
 		}
-		if err := registerTool(srv, officialTool(model.ToolDescriptorFromEntry(entry)), entry.Handler); err != nil {
+		if err := registerTool(srv, sdk.Tool(model.ToolDescriptorFromEntry(entry)), entry.Handler); err != nil {
 			return err
 		}
 	}
 	return nil
-}
-
-// ---------------------------------------------------------------------------
-// Resource conversion
-// ---------------------------------------------------------------------------
-
-// officialResource converts a Pinner-owned resource descriptor into an
-// official SDK resource.
-func officialResource(desc model.ResourceDescriptor) *mcp.Resource {
-	r := &mcp.Resource{
-		URI:         desc.URI,
-		Name:        desc.Name,
-		Title:       desc.Title,
-		Description: desc.Description,
-		MIMEType:    desc.MIMEType,
-	}
-	return r
-}
-
-// officialResourceHandler adapts a Pinner-owned resource handler to the
-// official SDK handler shape. req.Params.URI carries the concrete URI.
-func officialResourceHandler(handler model.ResourceHandler) mcp.ResourceHandler {
-	return func(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
-		result, err := handler(ctx, model.ResourceRequest{
-			URI:       req.Params.URI,
-			Arguments: map[string]string{},
-		})
-		if err != nil {
-			return nil, err
-		}
-		return &mcp.ReadResourceResult{
-			Contents: []*mcp.ResourceContents{
-				{URI: result.URI, MIMEType: result.MIMEType, Text: result.Text},
-			},
-		}, nil
-	}
-}
-
-// officialResourceTemplateHandler adapts a Pinner-owned resource-template
-// handler. The official SDK resolves the template and passes the concrete URI;
-// template variables are not populated automatically, so the handler receives
-// the parsed URI variables via Arguments.
-func officialResourceTemplateHandler(template string, handler model.ResourceHandler) mcp.ResourceHandler {
-	parsed, err := uritemplate.New(template)
-	if err != nil {
-		panic(fmt.Sprintf("invalid resource template %q: %v", template, err))
-	}
-	return func(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
-		arguments := map[string]string{}
-		matches := parsed.Regexp().FindStringSubmatch(req.Params.URI)
-		if matches != nil {
-			for i, name := range parsed.Varnames() {
-				if i+1 < len(matches) {
-					arguments[name] = matches[i+1]
-				}
-			}
-		}
-		result, err := handler(ctx, model.ResourceRequest{
-			URI:       req.Params.URI,
-			Arguments: arguments,
-		})
-		if err != nil {
-			return nil, err
-		}
-		return &mcp.ReadResourceResult{
-			Contents: []*mcp.ResourceContents{
-				{URI: result.URI, MIMEType: result.MIMEType, Text: result.Text},
-			},
-		}, nil
-	}
-}
-
-// RegisterOfficialResources registers static resources and resource templates
-// on an official-SDK server.
-func RegisterOfficialResources(srv *mcp.Server, resources []model.ResourceDescriptor, templates []model.ResourceTemplateDescriptor) error {
-	if srv == nil {
-		return fmt.Errorf("nil official server")
-	}
-	for _, r := range resources {
-		srv.AddResource(officialResource(r), officialResourceHandler(r.Handler))
-	}
-	for _, t := range templates {
-		srv.AddResourceTemplate(&mcp.ResourceTemplate{
-			URITemplate: t.URITemplate,
-			Name:        t.Name,
-			Title:       t.Title,
-			Description: t.Description,
-			MIMEType:    t.MIMEType,
-		}, officialResourceTemplateHandler(t.URITemplate, t.Handler))
-	}
-	return nil
-}
-
-// ---------------------------------------------------------------------------
-// Prompt conversion
-// ---------------------------------------------------------------------------
-
-// officialPrompt converts a Pinner-owned prompt descriptor into an official
-// SDK prompt.
-func officialPrompt(desc model.PromptDescriptor) *mcp.Prompt {
-	p := &mcp.Prompt{
-		Name:        desc.Name,
-		Title:       desc.Title,
-		Description: desc.Description,
-	}
-	for _, a := range desc.Arguments {
-		p.Arguments = append(p.Arguments, &mcp.PromptArgument{
-			Name:        a.Name,
-			Title:       a.Title,
-			Description: a.Description,
-			Required:    a.Required,
-		})
-	}
-	return p
-}
-
-// officialMessageContent converts a Pinner-owned prompt message into official
-// SDK content (text or embedded resource), preserving role and text verbatim.
-func officialMessageContent(msg model.PromptMessage) (mcp.Role, mcp.Content) {
-	if msg.EmbeddedResource != nil {
-		return mcp.Role(msg.Role), &mcp.EmbeddedResource{
-			Resource: &mcp.ResourceContents{
-				URI:      msg.EmbeddedResource.URI,
-				MIMEType: msg.EmbeddedResource.MIMEType,
-				Text:     msg.EmbeddedResource.Text,
-			},
-		}
-	}
-	return mcp.Role(msg.Role), &mcp.TextContent{Text: msg.Text}
-}
-
-// officialPromptHandler adapts a Pinner-owned prompt handler to the official
-// SDK prompt-handler shape. The official SDK delivers arguments as
-// map[string]string for downstream command execution.
-func officialPromptHandler(handler func(context.Context, model.PromptRequest) (model.PromptResult, error)) mcp.PromptHandler {
-	return func(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
-		result, err := handler(ctx, model.PromptRequest{Arguments: req.Params.Arguments})
-		if err != nil {
-			return nil, err
-		}
-		out := &mcp.GetPromptResult{Description: result.Description}
-		for _, m := range result.Messages {
-			role, content := officialMessageContent(m)
-			out.Messages = append(out.Messages, &mcp.PromptMessage{Role: role, Content: content})
-		}
-		return out, nil
-	}
-}
-
-// RegisterOfficialPrompts registers prompt templates on an official-SDK server.
-func RegisterOfficialPrompts(srv *mcp.Server, prompts []model.PromptDescriptor) error {
-	if srv == nil {
-		return fmt.Errorf("nil official server")
-	}
-	for _, p := range prompts {
-		srv.AddPrompt(officialPrompt(p), officialPromptHandler(p.Handler))
-	}
-	return nil
-}
-
-// NewStreamableHTTPHandler returns the official SDK streamable-HTTP handler
-// bound to the given server. disableLocalhostProtection turns off the go-sdk's
-// DNS-rebinding guard, which rejects requests arriving via a loopback local
-// address that carry a non-loopback Host header (403 "invalid Host header").
-// This is required when the server listens on 127.0.0.1 but is reached through
-// a public tunnel (remote clients send the tunnel's hostname as the Host
-// header); it must be kept false when serving only on the loopback directly.
-func NewStreamableHTTPHandler(getServer func(*http.Request) *mcp.Server, disableLocalhostProtection bool) http.Handler {
-	// MCP Apps require stateless streamable-HTTP serving. A stateless server
-	// does not read or set Mcp-Session-Id and uses a temporary session per
-	// request, which is how the reference ext-apps debug-server (and the MCP
-	// Apps spec's sessionless direction, SEP-2567) behaves. Hosts that drive an
-	// MCP Apps tool re-establish the stream for each interaction; the stateful
-	// Mcp-Session-Id flow previously served here prevents the app view from
-	// working correctly. Serve stateless so app rendering, resource reads, and
-	// tool calls behave end-to-end.
-	opts := &mcp.StreamableHTTPOptions{Stateless: true}
-	if disableLocalhostProtection {
-		opts.DisableLocalhostProtection = true
-	}
-	return mcp.NewStreamableHTTPHandler(getServer, opts)
-}
-
-// NewOfficialStreamableHandler builds the official streamable-HTTP handler for
-// an OfficialServer. This is what the shared serving path uses so it can stay
-// SDK-neutral.
-func NewOfficialStreamableHandler(srv *OfficialServer, disableLocalhostProtection bool) http.Handler {
-	return NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return srv }, disableLocalhostProtection)
 }

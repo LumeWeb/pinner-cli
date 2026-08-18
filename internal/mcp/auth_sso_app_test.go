@@ -12,6 +12,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
 
 // newAuthSSOAppServer builds an official server with auth_sso/auth_resume in
@@ -19,7 +20,7 @@ import (
 func newAuthSSOAppServer(t *testing.T) *mcp.Server {
 	t.Helper()
 	catalog := NewToolCatalog()
-	srv := NewOfficialServer(nil)
+	srv := sdk.NewServer(nil)
 	reg := handoff.NewHandoffRegistry()
 	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 
