@@ -122,7 +122,7 @@ func RegisterAppView(srv *sdk.Server, catalog *ToolCatalog, v AppView) error {
 		appViewsMu.Unlock()
 	}
 
-	if err := RegisterAppResource(srv, AppResource{
+	if err := sdk.RegisterAppResource(srv, sdk.AppResource{
 		URI:         v.URI,
 		Name:        v.Name,
 		Title:       v.Title,
@@ -136,7 +136,7 @@ func RegisterAppView(srv *sdk.Server, catalog *ToolCatalog, v AppView) error {
 	}
 
 	for _, h := range v.Helpers {
-		if err := RegisterAppTool(srv, h, model.AppToolMeta{
+		if err := sdk.RegisterAppTool(srv, h, model.AppToolMeta{
 			ResourceURI: v.URI,
 			Visibility:  []model.ToolVisibility{model.ToolVisibilityApp},
 		}); err != nil {
@@ -155,7 +155,7 @@ func attachAppMeta(catalog *ToolCatalog, toolName, resourceURI string) error {
 	if !ok {
 		return fmt.Errorf("mcp: app view tool %q not in catalog", toolName)
 	}
-	meta, err := marshalToolMeta(model.AppToolMeta{ResourceURI: resourceURI})
+	meta, err := sdk.MarshalToolMeta(model.AppToolMeta{ResourceURI: resourceURI})
 	if err != nil {
 		return err
 	}
