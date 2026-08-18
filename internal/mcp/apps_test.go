@@ -11,6 +11,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/catalogops"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
 
 // fakePins is a controllable PinningProvider for app tests.
@@ -42,7 +43,7 @@ func buildPinAppServer(t *testing.T, pins PinningProvider) *mcp.Server {
 		},
 	})
 
-	srv := NewOfficialServer(nil)
+	srv := sdk.NewServer(nil)
 	if err := RegisterPinApp(srv, catalog, pins); err != nil {
 		t.Fatalf("RegisterPinApp: %v", err)
 	}
@@ -251,7 +252,7 @@ func TestRegisterPinAppOnCompilerSurface(t *testing.T) {
 	}
 
 	// The pin app must wire without error against the compiler surface.
-	srv := NewOfficialServer(nil)
+	srv := sdk.NewServer(nil)
 	if err := RegisterPinApp(srv, tc, &fakePins{status: "pinned"}); err != nil {
 		t.Fatalf("RegisterPinApp on compiler surface must succeed, got: %v", err)
 	}
@@ -324,7 +325,7 @@ func buildVaultBrowserServer(t *testing.T) *mcp.Server {
 		},
 	})
 
-	srv := NewOfficialServer(nil)
+	srv := sdk.NewServer(nil)
 	if err := RegisterVaultBrowserApp(srv, catalog); err != nil {
 		t.Fatalf("RegisterVaultBrowserApp: %v", err)
 	}
@@ -399,7 +400,7 @@ func buildPinListServer(t *testing.T) *mcp.Server {
 		},
 	})
 
-	srv := NewOfficialServer(nil)
+	srv := sdk.NewServer(nil)
 	if err := RegisterPinListApp(srv, catalog); err != nil {
 		t.Fatalf("RegisterPinListApp: %v", err)
 	}
@@ -470,7 +471,7 @@ func buildAuthStatusServer(t *testing.T) *mcp.Server {
 		},
 	})
 
-	srv := NewOfficialServer(nil)
+	srv := sdk.NewServer(nil)
 	if err := RegisterAuthStatusApp(srv, catalog); err != nil {
 		t.Fatalf("RegisterAuthStatusApp: %v", err)
 	}

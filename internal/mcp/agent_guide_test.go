@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
 
 func TestAgentGuideDescriptor(t *testing.T) {
@@ -41,6 +42,6 @@ func TestAgentGuideDescriptor(t *testing.T) {
 
 func TestAgentGuideDescriptorIsDirectVisible(t *testing.T) {
 	desc := NewAgentGuideDescriptor()
-	tool := officialTool(desc)
+	tool := sdk.Tool(desc)
 	require.Equal(t, "agent_guide", tool.Name)
 }

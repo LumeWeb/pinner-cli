@@ -11,6 +11,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
 
 // customToolDeps bundles everything the custom/direct-tool registration needs.
@@ -246,7 +247,7 @@ func registerCustomTools(deps customToolDeps) error {
 		provs := deps.resourceFactory(deps.store)
 		provs.Sessions = deps.store
 		resources, templates := ResourceDescriptors(provs)
-		if err := RegisterOfficialResources(deps.srv, resources, templates); err != nil {
+		if err := sdk.RegisterResources(deps.srv, resources, templates); err != nil {
 			return err
 		}
 	}
@@ -441,7 +442,7 @@ func registerCustomTools(deps customToolDeps) error {
 		return err
 	}
 	if opts.prompts {
-		if err := RegisterOfficialPrompts(deps.srv, PromptDescriptors()); err != nil {
+		if err := sdk.RegisterPrompts(deps.srv, PromptDescriptors()); err != nil {
 			return err
 		}
 	}

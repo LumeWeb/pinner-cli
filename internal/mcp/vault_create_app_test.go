@@ -13,6 +13,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
 
 // TestRegisterVaultCreateAppWire verifies the Create Vault app registers its
@@ -21,7 +22,7 @@ import (
 func TestRegisterVaultCreateAppWire(t *testing.T) {
 	catalog := NewToolCatalog()
 	catalog.Add(modelTool(compiledVaultCreateToolName))
-	srv := NewOfficialServer(nil)
+	srv := sdk.NewServer(nil)
 
 	if err := RegisterVaultCreateApp(srv, catalog, handoff.NewHandoffRegistry(), session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)); err != nil {
 		t.Fatalf("RegisterVaultCreateApp: %v", err)

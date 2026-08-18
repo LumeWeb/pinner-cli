@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
 
 // buildAppViewServer builds an official server + catalog with a couple of
@@ -20,7 +21,7 @@ func buildAppViewServer(t *testing.T, v AppView, catalogTools ...*model.ToolEntr
 	for _, e := range catalogTools {
 		catalog.Add(e)
 	}
-	srv := NewOfficialServer(nil)
+	srv := sdk.NewServer(nil)
 	if err := RegisterAppView(srv, catalog, v); err != nil {
 		t.Fatalf("RegisterAppView: %v", err)
 	}
@@ -116,7 +117,7 @@ func TestRegisterAppViewWire(t *testing.T) {
 func TestRegisterAppViewErrors(t *testing.T) {
 	catalog := NewToolCatalog()
 	catalog.Add(modelTool("thing_start"))
-	srv := NewOfficialServer(nil)
+	srv := sdk.NewServer(nil)
 
 	cases := []struct {
 		name string

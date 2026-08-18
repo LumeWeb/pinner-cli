@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
 
 func TestMarkCuratedStampsDirectVisible(t *testing.T) {
@@ -59,7 +60,7 @@ func TestRegisterOfficialCuratedToolsRegistersOnlyDirectVisible(t *testing.T) {
 		e.DirectVisible = true
 	}
 
-	server := NewOfficialServer(nil)
+	server := sdk.NewServer(nil)
 	require.NoError(t, RegisterOfficialCuratedTools(server, catalog))
 }
 

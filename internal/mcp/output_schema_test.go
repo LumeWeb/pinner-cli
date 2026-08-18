@@ -10,6 +10,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/catalog"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
 
 // TestOfficialToolOutputSchemaAbsent verifies that a descriptor without an
@@ -17,7 +18,7 @@ import (
 // the field for tools whose structured shape isn't described, while still
 // emitting it for tools that opt in (see TestOfficialToolOutputSchemaPresent).
 func TestOfficialToolOutputSchemaAbsent(t *testing.T) {
-	tool := officialTool(model.ToolDescriptor{
+	tool := sdk.Tool(model.ToolDescriptor{
 		Name:        "plain_tool",
 		Description: "no structured output declared",
 		InputSchema: json.RawMessage(`{"type":"object"}`),
@@ -41,7 +42,7 @@ func TestOfficialToolOutputSchemaPresent(t *testing.T) {
 		},
 		"required": ["status"]
 	}`)
-	tool := officialTool(model.ToolDescriptor{
+	tool := sdk.Tool(model.ToolDescriptor{
 		Name:         "structured_tool",
 		Description:  "returns structured output",
 		InputSchema:  json.RawMessage(`{"type":"object"}`),
@@ -59,7 +60,7 @@ func TestOfficialToolOutputSchemaPresent(t *testing.T) {
 // TestOutputSchemaInvalidRejected verifies that a malformed OutputSchema is not
 // emitted (it would produce invalid JSON on the wire).
 func TestOutputSchemaInvalidRejected(t *testing.T) {
-	tool := officialTool(model.ToolDescriptor{
+	tool := sdk.Tool(model.ToolDescriptor{
 		Name:         "bad_schema",
 		InputSchema:  json.RawMessage(`{"type":"object"}`),
 		OutputSchema: json.RawMessage(`{not valid json`),

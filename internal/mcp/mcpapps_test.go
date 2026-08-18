@@ -8,6 +8,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
 
 func TestMCPAppsConstants(t *testing.T) {
@@ -132,7 +133,7 @@ func TestGetClientUICapabilityUnsupported(t *testing.T) {
 }
 
 func TestAdvertiseUICapability(t *testing.T) {
-	caps := AdvertiseUICapability(&mcp.ServerCapabilities{})
+	caps := sdk.AdvertiseUICapability(&mcp.ServerCapabilities{})
 	if caps == nil {
 		t.Fatal("expected non-nil caps")
 	}
@@ -156,7 +157,7 @@ func TestAdvertiseUICapability(t *testing.T) {
 }
 
 func TestAdvertiseUICapabilityNilSafe(t *testing.T) {
-	if AdvertiseUICapability(nil) != nil {
+	if sdk.AdvertiseUICapability(nil) != nil {
 		t.Fatal("expected nil for nil input")
 	}
 }
@@ -165,7 +166,7 @@ func TestAdvertiseUICapabilityNilSafe(t *testing.T) {
 // ready server.
 func buildAppServer(t *testing.T) *mcp.Server {
 	t.Helper()
-	srv := NewOfficialServer(nil)
+	srv := sdk.NewServer(nil)
 
 	handler := model.PinnerToolHandler(func(_ context.Context, _ model.ToolRequest) (model.ToolResult, error) {
 		return model.ToolResult{Text: "vault listing fallback"}, nil
@@ -411,27 +412,6 @@ func TestRequestCapsNilSafe(t *testing.T) {
 	}
 	if got.ProtocolVersion != "" || got.ClientName != "" || got.UI != nil {
 		t.Fatalf("expected empty caps, got %#v", got)
-	}
-}
-
-func TestOfficialServerOptionsAdvertisesUI(t *testing.T) {
-	so := officialServerOptions(&OfficialServerOptions{})
-	if so == nil {
-		t.Fatal("expected non-nil ServerOptions")
-	}
-	if so.Capabilities == nil {
-		t.Fatal("expected non-nil Capabilities")
-	}
-	if _, ok := so.Capabilities.Extensions[EXTENSION_ID]; !ok {
-		t.Fatalf("extension %s not advertised on construction", EXTENSION_ID)
-	}
-	// Nil options still advertise UI (Pinner ships app tooling by default).
-	soNil := officialServerOptions(nil)
-	if soNil.Capabilities == nil {
-		t.Fatal("expected UI advertisement even for nil options")
-	}
-	if _, ok := soNil.Capabilities.Extensions[EXTENSION_ID]; !ok {
-		t.Fatalf("extension %s not advertised for nil options", EXTENSION_ID)
 	}
 }
 

@@ -13,6 +13,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
 
 // buildIPFSUploadAppServer constructs the catalog + server the way the adapter
@@ -31,7 +32,7 @@ func buildIPFSUploadAppServer(t *testing.T) (*mcp.Server, *httpUpload) {
 	t.Cleanup(func() { cu.Stop(context.Background()) })
 
 	catalog := NewToolCatalog()
-	srv := NewOfficialServer(nil)
+	srv := sdk.NewServer(nil)
 
 	// Mirror the production registration sequence in registerCustomTools.
 	uploadFileDesc := model.ToolDescriptor{
@@ -245,7 +246,7 @@ func TestIPFSUploadPollHelper(t *testing.T) {
 }
 
 func TestRegisterIPFSUploadAppNilCoordinator(t *testing.T) {
-	srv := NewOfficialServer(nil)
+	srv := sdk.NewServer(nil)
 	catalog := NewToolCatalog()
 	if err := RegisterIPFSUploadApp(srv, catalog, nil); err == nil {
 		t.Fatalf("RegisterIPFSUploadApp with nil coordinator must fail")
