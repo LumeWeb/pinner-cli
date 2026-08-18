@@ -27,10 +27,18 @@ const ImplementationVersion = "0.0.0-dev"
 // the go-sdk import.
 type Server = mcp.Server
 
-// mcpAppsMIMEType is the resource MIME type the MCP Apps extension uses.
+// MCP Apps protocol constants (mirroring @modelcontextprotocol/ext-apps).
 const (
+	// MCPAppsMIMEType is the MIME type of MCP Apps (mcp-app) resources.
 	MCPAppsMIMEType = "text/html;profile=mcp-app"
-	UICapabilityID  = "io.modelcontextprotocol/ui"
+	// MCPAppsResourceURIMetaKey is the legacy flat _meta key pointing a tool at
+	// its UI resource. Kept so older hosts that do not read the nested
+	// _meta.ui shape still find the UI.
+	MCPAppsResourceURIMetaKey = "ui/resourceUri"
+	// UICapabilityID is the capability extension identifier under which clients
+	// advertise MCP Apps support (in client capabilities `extensions`) and
+	// servers advertise it back (in server capabilities `extensions`).
+	UICapabilityID = "io.modelcontextprotocol/ui"
 )
 
 // Implementation returns the Pinner server implementation descriptor used to

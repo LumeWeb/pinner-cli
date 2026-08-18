@@ -98,7 +98,7 @@ func officialToolHandler(handler model.PinnerToolHandler) mcp.ToolHandler {
 				}, nil
 			}
 		}
-		for id, content := range acceptedElicitations(req) {
+		for id, content := range sdk.AcceptedElicitations(req) {
 			args[id] = content
 		}
 		// Recover cross-round state the client echoed back on a retry after an
@@ -187,7 +187,7 @@ func requestCaps(req *mcp.CallToolRequest) *model.RequestCaps {
 // carries an Elicitation it is converted into an input_required response.
 func officialToolResult(result model.ToolResult) *mcp.CallToolResult {
 	if result.Elicitation != nil {
-		return callToolResultFromElicitation(*result.Elicitation)
+		return sdk.CallToolResultFromElicitation(*result.Elicitation)
 	}
 	return &mcp.CallToolResult{
 		IsError:           result.IsError,
