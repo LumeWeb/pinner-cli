@@ -153,6 +153,16 @@ func (e *erasedField[S, T]) resolve(ctx context.Context, src ValueSource, s S, h
 			options = derived
 		}
 
+		// A field whose choice list is derived via OptionsFunc is never a
+		// free-text field: an empty derived list is a dead-end (there is
+		// nothing to choose), so it errors like a Multi field with no options
+		// rather than silently falling through to a Text prompt. The Text
+		// fallback below is reserved for fields with no OptionsFunc and no
+		// static Options — those are genuinely free-text by design.
+		if e.f.OptionsFunc != nil && len(options) == 0 {
+			return rf, fmt.Errorf("wizard.Gather: select field %q has no options to choose from", e.f.Name)
+		}
+
 		if e.f.Prompt.Multi {
 			// Multi-select: checked option labels -> ParseMulti -> T.
 			if e.f.ParseMulti == nil {

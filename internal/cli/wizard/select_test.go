@@ -147,3 +147,66 @@ func TestFieldMultiSelectNoOptions(t *testing.T) {
 	require.ErrorContains(t, err, "has no options to choose from")
 	require.Len(t, mp.multiLabels, 0, "MultiSelect must not be invoked when there are no options")
 }
+
+// TestFieldOptionsFuncNoOptions guards that a non-Multi select field whose
+// OptionsFunc returns an empty list errors instead of dead-ending the operator
+// in a free-text prompt. A field with a derived choice list is never free-text:
+// an empty derived list is a dead-end, mirroring the Multi path.
+func TestFieldOptionsFuncNoOptions(t *testing.T) {
+	old := NonInteractive
+	NonInteractive = false
+	defer func() { NonInteractive = old }()
+
+	mp := &multiPrompter{} // records Select calls (and would answer Text with "")
+	ctx := WithPrompter(context.Background(), mp)
+
+	f := FieldSpec[*optionsState, string]{
+		Name:     "choice",
+		Parse:    func(v string) (string, bool) { return v, v != "" },
+		Validate: func(v string) bool { return v != "" },
+		Get:      func(s *optionsState) string { return s.choice },
+		Set:      func(s *optionsState, v string) { s.choice = v },
+		Decide:   func(s *optionsState) *string { return nil },
+		Commit:   func(s *optionsState, v string) { s.choice = v },
+		Prompt:   &Prompt[string]{Label: "Choice"},
+		OptionsFunc: func(_ context.Context, _ ValueSource, _ *optionsState) ([]string, error) {
+			return nil, nil // an empty derived choice list
+		},
+	}
+
+	_, _, err := GatherAny(ctx, &fakeSrc{}, &optionsState{},
+		[]AnyField[*optionsState]{erase(f.Field())})
+	require.Error(t, err)
+	require.ErrorContains(t, err, "has no options to choose from")
+	require.Len(t, mp.selectLabels, 0, "Select must not be invoked when the derived list is empty")
+}
+
+// TestFieldFreeTextStillPrompts guards the converse: a field with NO OptionsFunc
+// and NO static Options is genuinely free-text and still opens a Text prompt —
+// the empty-options error applies only to options-derived fields.
+func TestFieldFreeTextStillPrompts(t *testing.T) {
+	old := NonInteractive
+	NonInteractive = false
+	defer func() { NonInteractive = old }()
+
+	mp := &textMockPrompter{text: "typed.example.com"}
+	ctx := WithPrompter(context.Background(), mp)
+
+	f := FieldSpec[*optionsState, string]{
+		Name:     "choice",
+		Parse:    func(v string) (string, bool) { return v, v != "" },
+		Validate: func(v string) bool { return v != "" },
+		Get:      func(s *optionsState) string { return s.choice },
+		Set:      func(s *optionsState, v string) { s.choice = v },
+		Decide:   func(s *optionsState) *string { return nil },
+		Commit:   func(s *optionsState, v string) { s.choice = v },
+		Prompt:   &Prompt[string]{Label: "Choice"},
+	}
+
+	st := &optionsState{}
+	_, _, err := GatherAny(ctx, &fakeSrc{}, st,
+		[]AnyField[*optionsState]{erase(f.Field())})
+	require.NoError(t, err)
+	require.Equal(t, "typed.example.com", st.choice,
+		"a field with no options source is free-text and must still prompt")
+}
