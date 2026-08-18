@@ -50,6 +50,16 @@ type ServiceInstallState struct {
 	// the file exists by the time the collector runs. A pre-existing env file
 	// must never have this set.
 	EnvFileCreated bool
+
+	// decisions is the Decided channel of the two-channel provenance model (see
+	// wizard/field.go). For each install field it records an operator decision
+	// made this run via a CLI switch or an interactive prompt, distinct from
+	// the flat Operational field above (which may also hold a value folded from
+	// the persisted env file or derived by a provider). A missing key means the
+	// field was not decided this run, even when its Operational value is
+	// non-empty. Populated by Commit / flags / prompts, never by the env fold.
+	// See service_install_fields.go.
+	decisions map[tunnelFieldKey]*string
 }
 
 // serviceInstallWizardUI renders progress and prompts using pterm, reusing the
