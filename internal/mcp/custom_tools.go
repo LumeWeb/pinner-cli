@@ -9,6 +9,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
@@ -32,7 +33,7 @@ type customToolDeps struct {
 	// template can poll it.
 	oob         *OutOfBandLogin
 	authHandles *session.AsyncHandleStore
-	handoffReg  *HandoffRegistry
+	handoffReg  *handoff.HandoffRegistry
 	// seedDrop, oobRestore, and oobCreate back the vault create/restore OOB
 	// hand-offs. seedDrop is the vault-create seed-drop coordinator, oobRestore
 	// is the vault-restore coordinator, and oobCreate is the vault-create

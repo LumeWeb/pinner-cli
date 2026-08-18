@@ -10,6 +10,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
 )
 
@@ -45,7 +46,7 @@ type accountPasswordResetArgs struct {
 // change in a browser so the password never reaches this channel. If the
 // account is not signed in (or the coordinator is unwired) it steers to
 // auth_sso instead of hanging.
-func NewAccountPasswordUpdateDescriptor(oob *OOBAccountChange, svc AuthService, handles *session.AsyncHandleStore, reg *HandoffRegistry) model.ToolDescriptor {
+func NewAccountPasswordUpdateDescriptor(oob *OOBAccountChange, svc AuthService, handles *session.AsyncHandleStore, reg *handoff.HandoffRegistry) model.ToolDescriptor {
 	return model.ToolDescriptor{
 		Name:        "account_password_update",
 		Title:       "Change Password (Out-of-Band)",

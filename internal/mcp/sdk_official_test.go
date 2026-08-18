@@ -19,6 +19,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
@@ -470,7 +471,7 @@ func TestOfficialInvokeVaultRestoreRoutesAgentSafeHandoff(t *testing.T) {
 	oobRestore := NewOOBRestore(nil, time.Minute)
 	t.Cleanup(func() { oobRestore.Stop(context.Background()) })
 	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
-	reg := NewHandoffRegistry()
+	reg := handoff.NewHandoffRegistry()
 	catalog, err := buildCatalog(compilerRoot(), true, nil, nil, oobRestore, nil, reg, handles,
 		withCatalogDeps(func() *CatalogDepsBundle {
 			return &CatalogDepsBundle{VaultSetup: catalogops.VaultDeps{}}

@@ -19,6 +19,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
@@ -34,12 +35,12 @@ func requireVaultDone(t *testing.T, r model.ToolResult) {
 }
 
 // TestVaultCreateResumePendingToDone verifies vault_create_resume (the
-// shared NewResumeTool template with the create continuation registered) polls
+// shared handoff.NewResumeTool template with the create continuation registered) polls
 // a create hand-off from pending to done as the vault is created/activated and
 // the fresh seed is retrieved from its one-time seeddrop.
 func TestVaultCreateResumePendingToDone(t *testing.T) {
 	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
-	reg := NewHandoffRegistry()
+	reg := handoff.NewHandoffRegistry()
 	oob, mux, _ := buildCreateServer()
 
 	// Simulate a create start: mint an OOB create URL, then register the create
@@ -143,7 +144,7 @@ func extractSeedURL(t *testing.T, body string) string {
 // RestoreRunner (no network).
 func TestVaultRestoreResumePendingToDone(t *testing.T) {
 	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
-	reg := NewHandoffRegistry()
+	reg := handoff.NewHandoffRegistry()
 	oob, mux, runner := buildRestoreServer()
 
 	url := oob.Register("default")
@@ -190,7 +191,7 @@ func TestVaultRestoreResumePendingToDone(t *testing.T) {
 // maps to StatusDone, matching the OOB page's error banner.
 func TestVaultRestoreResumeFailedSteersRestart(t *testing.T) {
 	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
-	reg := NewHandoffRegistry()
+	reg := handoff.NewHandoffRegistry()
 	oob, mux, runner := buildRestoreServer()
 	runner.err = errors.New("approval/registration failed: seed rejected")
 
@@ -232,7 +233,7 @@ func TestVaultRestoreResumePendingDuringApproval(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
 	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
-	reg := NewHandoffRegistry()
+	reg := handoff.NewHandoffRegistry()
 	oob := NewOOBRestore(&fakeRestoreRunner{profile: "default", started: started, release: release}, time.Minute)
 	oob.SetBaseURL("http://127.0.0.1:9999")
 	mux := http.NewServeMux()
@@ -296,7 +297,7 @@ func TestVaultRestoreResumePendingDuringApproval(t *testing.T) {
 // coordinator map, so settled restores do not accumulate.
 func TestVaultRestoreResumeFreesOutcome(t *testing.T) {
 	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
-	reg := NewHandoffRegistry()
+	reg := handoff.NewHandoffRegistry()
 	oob, mux, _ := buildRestoreServer()
 
 	url := oob.Register("default")
@@ -335,7 +336,7 @@ func TestVaultRestoreResumeFreesOutcome(t *testing.T) {
 // to pinner_vault_restore instead of retrying a dead handle.
 func TestVaultRestoreResumeDeadHandleSteersRestart(t *testing.T) {
 	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
-	reg := NewHandoffRegistry()
+	reg := handoff.NewHandoffRegistry()
 	resume := NewVaultRestoreResumeDescriptor(reg, handles)
 
 	// Unknown handle.
@@ -365,7 +366,7 @@ func TestVaultRestoreResumeDeadHandleSteersRestart(t *testing.T) {
 // passed to vault_create_resume steers back to pinner_vault_create.
 func TestVaultCreateResumeDeadHandleSteersRestart(t *testing.T) {
 	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
-	reg := NewHandoffRegistry()
+	reg := handoff.NewHandoffRegistry()
 	resume := NewVaultCreateResumeDescriptor(reg, handles)
 
 	r, err := resume.Handler(context.Background(), model.ToolRequest{
@@ -405,7 +406,7 @@ func TestVaultRestoreStartHandoffIncludesHandleAndResumeTool(t *testing.T) {
 
 	oob, _, _ := buildRestoreServer()
 	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
-	reg := NewHandoffRegistry()
+	reg := handoff.NewHandoffRegistry()
 	catalog, err := buildCatalog(compilerRoot(), true, nil, nil, oob, nil, reg, handles,
 		withCatalogDeps(func() *CatalogDepsBundle {
 			return &CatalogDepsBundle{VaultSetup: catalogops.VaultDeps{}}
@@ -449,7 +450,7 @@ func TestVaultCreateStartHandoffIncludesHandleAndResumeTool(t *testing.T) {
 
 	oobCreate, _, _ := buildCreateServer()
 	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
-	reg := NewHandoffRegistry()
+	reg := handoff.NewHandoffRegistry()
 	catalog, err := buildCatalog(compilerRoot(), true, nil, nil, nil, oobCreate, reg, handles,
 		withCatalogDeps(func() *CatalogDepsBundle {
 			return &CatalogDepsBundle{VaultSetup: catalogops.VaultDeps{}}
@@ -513,7 +514,7 @@ func TestVaultCreateSetupHandlerMintsOneTimeCreateURL(t *testing.T) {
 
 	oob, _, _ := buildCreateServer()
 	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
-	reg := NewHandoffRegistry()
+	reg := handoff.NewHandoffRegistry()
 
 	handler := vaultCreateSetupHandler(oob, reg, handles)
 	res, err := handler(context.Background(), model.ToolRequest{
@@ -549,7 +550,7 @@ func TestVaultCreateSetupHandlerMintsOneTimeCreateURL(t *testing.T) {
 // handoffUsed vs handoffExpired distinction.
 func TestVaultCreateResumeExpiredTokenSteersRestart(t *testing.T) {
 	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
-	reg := NewHandoffRegistry()
+	reg := handoff.NewHandoffRegistry()
 	oob, _, _ := buildCreateServer()
 
 	url := oob.Register("default")
@@ -598,7 +599,7 @@ func TestVaultCreateResumeExpiredTokenSteersRestart(t *testing.T) {
 // restored".
 func TestVaultRestoreResumeExpiredTokenSteersRestart(t *testing.T) {
 	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
-	reg := NewHandoffRegistry()
+	reg := handoff.NewHandoffRegistry()
 	oob, _, _ := buildRestoreServer()
 
 	url := oob.Register("default")
@@ -637,7 +638,7 @@ func TestVaultRestoreResumeExpiredTokenSteersRestart(t *testing.T) {
 // expired and consumed tokens are handled.
 func TestVaultResumeAbsentTokenSteersRestart(t *testing.T) {
 	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
-	reg := NewHandoffRegistry()
+	reg := handoff.NewHandoffRegistry()
 	oob, _, _ := buildCreateServer()
 
 	// A token that was never minted is absent from the coordinator.

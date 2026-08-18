@@ -12,6 +12,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
@@ -41,11 +42,11 @@ func TestOfficialMCPServerForwardsCatalogDeps(t *testing.T) {
 	// Without the option, buildCatalog fails fast: there is no legacy walk and
 	// no compiler surface, so a caller that forgot WithCatalogOps gets an
 	// explicit error instead of a silently-empty model catalog.
-	_, _, err := OfficialMCPServer(root, true, nil, false, nil, nil, nil, NewHandoffRegistry(), session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions))
+	_, _, err := OfficialMCPServer(root, true, nil, false, nil, nil, nil, handoff.NewHandoffRegistry(), session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions))
 	require.Error(t, err, "missing catalog-deps bundle must fail fast, not silently serve an empty surface")
 
 	// With the option, the compiler surface is live.
-	srv2, cat2, err := OfficialMCPServer(root, true, nil, false, nil, nil, nil, NewHandoffRegistry(), session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions),
+	srv2, cat2, err := OfficialMCPServer(root, true, nil, false, nil, nil, nil, handoff.NewHandoffRegistry(), session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions),
 		withCatalogDeps(func() *CatalogDepsBundle { return &CatalogDepsBundle{Auth: catalogops.AuthDeps{}} }))
 	require.NoError(t, err)
 	require.NotNil(t, srv2)
@@ -71,7 +72,7 @@ func TestCompiledVaultCreateHonorsOOBHandoff(t *testing.T) {
 
 	oob, _, _ := buildCreateServer()
 	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
-	reg := NewHandoffRegistry()
+	reg := handoff.NewHandoffRegistry()
 
 	srv, cat, err := OfficialMCPServer(compilerRoot(), true, nil, false, nil, nil, oob, reg, handles,
 		withCatalogDeps(func() *CatalogDepsBundle { return &CatalogDepsBundle{Auth: catalogops.AuthDeps{}} }))

@@ -11,6 +11,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
@@ -22,7 +23,7 @@ func TestRegisterVaultRestoreAppWire(t *testing.T) {
 	catalog.Add(modelTool(compiledVaultRestoreToolName))
 	srv := NewOfficialServer(nil)
 
-	if err := RegisterVaultRestoreApp(srv, catalog, NewHandoffRegistry(), session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)); err != nil {
+	if err := RegisterVaultRestoreApp(srv, catalog, handoff.NewHandoffRegistry(), session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)); err != nil {
 		t.Fatalf("RegisterVaultRestoreApp: %v", err)
 	}
 	if err := RegisterOfficialCuratedTools(srv, catalog); err != nil {
@@ -73,7 +74,7 @@ func TestRegisterVaultRestoreAppWire(t *testing.T) {
 // then done. It must never surface the seed.
 func TestVaultRestoreStatusHelperPendingToDone(t *testing.T) {
 	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
-	reg := NewHandoffRegistry()
+	reg := handoff.NewHandoffRegistry()
 	oob, mux, runner := buildRestoreServer()
 
 	url := oob.Register("default")
@@ -121,7 +122,7 @@ func TestVaultRestoreStatusHelperPendingToDone(t *testing.T) {
 // being falsely declared dead on its first poll.
 func TestVaultRestoreStatusHelperPendingCarriesHandle(t *testing.T) {
 	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
-	reg := NewHandoffRegistry()
+	reg := handoff.NewHandoffRegistry()
 	oob, _, _ := buildRestoreServer()
 
 	url := oob.Register("default")
@@ -163,7 +164,7 @@ func TestVaultRestoreStatusHelperPendingCarriesHandle(t *testing.T) {
 // instead). This guards against the view sending {handle: undefined} into the
 // status helper, which would otherwise retry "handle is required" for ~90s.
 func TestVaultRestoreNotConfiguredReturnsNoHandle(t *testing.T) {
-	reg := NewHandoffRegistry()
+	reg := handoff.NewHandoffRegistry()
 	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 
 	handler := vaultRestoreSetupHandler(nil, reg, handles)

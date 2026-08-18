@@ -9,6 +9,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
@@ -28,7 +29,7 @@ import (
 // This test drives the real auth_sso -> (human approves) -> auth_resume path and
 // asserts the approval-link token is usable as the resume handle.
 func TestAuthSSOBlueprintCanResumeWithTheLinkToken(t *testing.T) {
-	reg := NewHandoffRegistry()
+	reg := handoff.NewHandoffRegistry()
 	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 	oob := newOOBForTest(t)
 
