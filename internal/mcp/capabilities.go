@@ -2,6 +2,10 @@ package mcp
 
 import (
 	"context"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // FileInputCapability enumera the ways a host can hand a file to Pinner.
@@ -120,7 +124,7 @@ func CurrentCapabilities(coLocated, tunnelOpenAI, uploadFile, vaultPutFile, down
 		UploadFile:        uploadFile,
 		VaultPutFile:      vaultPutFile,
 		DraftXFile:        draftXFile,
-		RelayMaxBytes:     effectiveRelayMaxBytes(maxBytes),
+		RelayMaxBytes:     ieo.EffectiveRelayMaxBytes(maxBytes),
 	}
 }
 
@@ -128,16 +132,16 @@ func CurrentCapabilities(coLocated, tunnelOpenAI, uploadFile, vaultPutFile, down
 // transport and the file-input source modes / file-output sink modes available.
 // It is cheap and safe to expose directly, and is the feature-detection hook
 // for hosts that stage on draft MCP file metadata.
-func NewCapabilitiesDescriptor(coLocated, tunnelOpenAI, uploadFile, vaultPutFile, downloadFile, vaultGetFile, dropWired, draftXFile bool, maxBytes int64) ToolDescriptor {
-	return ToolDescriptor{
+func NewCapabilitiesDescriptor(coLocated, tunnelOpenAI, uploadFile, vaultPutFile, downloadFile, vaultGetFile, dropWired, draftXFile bool, maxBytes int64) model.ToolDescriptor {
+	return model.ToolDescriptor{
 		Name:        "capabilities",
 		Title:       "Pinner file-input/output capabilities",
 		Description: "Report the running MCP transport and which file-input source modes and file-output sink modes this Pinner MCP server accepts. The upload_file / vault_put_file tools take a single transport-scoped source: path in co-located stdio mode, mint in HTTP/tunnel mode (a one-time presigned PUT for out-of-band curl), or url/data on the OpenAI tunnel (relayed through MCP). The download_file / vault_get_file tools take a single sink: local (write to a host-side path on the MCP server's own disk — available on every transport) or drop (a one-time HTTP GET filedrop link — only when a reachable HTTP mux exists). Read source_modes and download_sink_modes to pick the right voice without probing tool descriptions.",
-		Category:    CategoryCore,
+		Category:    model.CategoryCore,
 		InputSchema: toolSchemaFor[NoInput](),
-		Handler: func(ctx context.Context, request ToolRequest) (ToolResult, error) {
+		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
 			report := CurrentCapabilities(coLocated, tunnelOpenAI, uploadFile, vaultPutFile, downloadFile, vaultGetFile, dropWired, draftXFile, maxBytes)
-			return ToolResult{StructuredContent: report, Text: "Pinner capabilities."}, nil
+			return model.ToolResult{StructuredContent: report, Text: "Pinner capabilities."}, nil
 		},
 	}
 }

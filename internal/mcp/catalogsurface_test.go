@@ -7,6 +7,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.lumeweb.com/pinner-cli/internal/catalog"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // markerHandler is a test-only catalog Operation.Handler that returns its
@@ -149,13 +151,13 @@ func TestCompiledReadOpDispatchesThroughInvokeGate(t *testing.T) {
 
 	entry, ok := tc.Get("vault.get")
 	require.True(t, ok)
-	res, err := entry.Handler(context.Background(), ToolRequest{Name: "vault.get", Arguments: map[string]any{"name": "v"}})
+	res, err := entry.Handler(context.Background(), model.ToolRequest{Name: "vault.get", Arguments: map[string]any{"name": "v"}})
 	require.NoError(t, err)
 	require.False(t, res.IsError)
 	// A scalar string result is wrapped in the canonical {status, value} envelope.
 	require.Contains(t, res.Text, "ran:vault.get")
 	sc := res.StructuredContent.(map[string]any)
-	require.Equal(t, StatusOk, sc["status"])
+	require.Equal(t, model.StatusOk, sc["status"])
 	raw, ok := sc["value"].(json.RawMessage)
 	require.True(t, ok, "value should be a json.RawMessage")
 	var val string
@@ -170,13 +172,13 @@ func TestCompiledDestructiveOpReturnsNeedsHumanForModelActor(t *testing.T) {
 
 	entry, ok := tc.Get("vault.delete")
 	require.True(t, ok)
-	res, err := entry.Handler(context.Background(), ToolRequest{Name: "vault.delete", Arguments: map[string]any{"name": "v"}})
+	res, err := entry.Handler(context.Background(), model.ToolRequest{Name: "vault.delete", Arguments: map[string]any{"name": "v"}})
 	require.NoError(t, err)
 	sc, ok := res.StructuredContent.(map[string]any)
 	require.True(t, ok, "needs_human result should carry structured content")
 	// Destructive + model actor must surface a needs_human confirm hand-off, not a hard error.
-	require.Equal(t, StatusNeedsHuman, sc["status"])
-	require.Equal(t, ReasonConfirmation, sc["reason"])
+	require.Equal(t, model.StatusNeedsHuman, sc["status"])
+	require.Equal(t, model.ReasonConfirmation, sc["reason"])
 	require.False(t, res.IsError, "needs_human is a graceful redirect, not an error")
 }
 
@@ -187,7 +189,7 @@ func TestCompiledOpMissingRequiredArgFailsCleanly(t *testing.T) {
 
 	entry, ok := tc.Get("vault.get")
 	require.True(t, ok)
-	res, err := entry.Handler(context.Background(), ToolRequest{Name: "vault.get", Arguments: map[string]any{}})
+	res, err := entry.Handler(context.Background(), model.ToolRequest{Name: "vault.get", Arguments: map[string]any{}})
 	require.NoError(t, err)
 	require.True(t, res.IsError, "missing required arg is surfaced as a clean ToolResult error")
 	require.NotEmpty(t, res.Text)
@@ -202,13 +204,13 @@ func TestAgentRequiredArgEnforcedAtMCPDispatch(t *testing.T) {
 	require.True(t, ok)
 
 	// Missing the AgentRequired arg: the MCP dispatch layer must reject it.
-	res, err := entry.Handler(context.Background(), ToolRequest{Name: "pins.mcp.add", Arguments: map[string]any{}})
+	res, err := entry.Handler(context.Background(), model.ToolRequest{Name: "pins.mcp.add", Arguments: map[string]any{}})
 	require.NoError(t, err)
 	require.True(t, res.IsError, "AgentRequired arg must be enforced at MCP dispatch")
 	require.Contains(t, res.Text, "cids")
 
 	// Supplying it succeeds.
-	res, err = entry.Handler(context.Background(), ToolRequest{Name: "pins.mcp.add", Arguments: map[string]any{"cids": []string{"bafy"}}})
+	res, err = entry.Handler(context.Background(), model.ToolRequest{Name: "pins.mcp.add", Arguments: map[string]any{"cids": []string{"bafy"}}})
 	require.NoError(t, err)
 	require.False(t, res.IsError)
 	require.Contains(t, res.Text, "ran:pins.mcp.add")

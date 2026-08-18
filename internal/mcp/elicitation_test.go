@@ -11,10 +11,14 @@ import (
 	"github.com/invopop/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 func TestCallToolResultFromElicitationForm(t *testing.T) {
-	res := callToolResultFromElicitation(FormElicitation("input", "Needs domain", map[string]any{
+	res := callToolResultFromElicitation(model.FormElicitation("input", "Needs domain", map[string]any{
 		"type": "object", "properties": map[string]any{"domain": map[string]any{"type": "string"}},
 	}))
 	require.NotNil(t, res)
@@ -27,7 +31,7 @@ func TestCallToolResultFromElicitationForm(t *testing.T) {
 }
 
 func TestCallToolResultFromElicitationURL(t *testing.T) {
-	res := callToolResultFromElicitation(ElicitationSpec{
+	res := callToolResultFromElicitation(model.ElicitationSpec{
 		ID: "auth", Message: "Complete login", URL: "https://example.com/oauth", ElicitationID: "flow-1",
 	})
 	el := res.InputRequests["auth"].(*mcp.ElicitParams)
@@ -41,28 +45,28 @@ func TestCallToolResultFromElicitationURL(t *testing.T) {
 // SDK seam converts it to an input_required result, then a retry delivers the
 // accepted form content back as the "input" argument.
 func TestOfficialToolHandlerElicitationRoundTrip(t *testing.T) {
-	closed := make(chan ToolResult, 1)
+	closed := make(chan model.ToolResult, 1)
 
 	// localInput is the typed step input decoded from the merged arguments.
 	type localInput struct {
 		Input json.RawMessage `json:"input"`
 	}
-	stepHandler := PinnerToolHandler(func(_ context.Context, req ToolRequest) (ToolResult, error) {
+	stepHandler := model.PinnerToolHandler(func(_ context.Context, req model.ToolRequest) (model.ToolResult, error) {
 		in, err := decodeToolArgs[localInput](req)
 		if err != nil {
-			return ToolResult{}, err
+			return model.ToolResult{}, err
 		}
 		var domain struct {
 			Domain string `json:"domain"`
 		}
 		if len(in.Input) > 0 {
 			if err := json.Unmarshal(in.Input, &domain); err != nil {
-				return ToolResult{}, err
+				return model.ToolResult{}, err
 			}
-			closed <- ToolResult{Text: "got " + domain.Domain}
-			return ToolResult{Text: "accepted"}, nil
+			closed <- model.ToolResult{Text: "got " + domain.Domain}
+			return model.ToolResult{Text: "accepted"}, nil
 		}
-		return ToolResult{Elicitation: &ElicitationSpec{
+		return model.ToolResult{Elicitation: &model.ElicitationSpec{
 			ID:         "input",
 			Message:    "Enter domain",
 			FormSchema: map[string]any{"type": "object"},
@@ -100,10 +104,10 @@ func TestElicitationRequestStateCarriesSession(t *testing.T) {
 		Input        json.RawMessage `json:"input"`
 		RequestState string          `json:"request_state"`
 	}
-	stepHandler := PinnerToolHandler(func(_ context.Context, req ToolRequest) (ToolResult, error) {
+	stepHandler := model.PinnerToolHandler(func(_ context.Context, req model.ToolRequest) (model.ToolResult, error) {
 		in, err := decodeToolArgs[stepInput](req)
 		if err != nil {
-			return ToolResult{}, err
+			return model.ToolResult{}, err
 		}
 		sess := in.SessionID
 		if sess == "" {
@@ -114,11 +118,11 @@ func TestElicitationRequestStateCarriesSession(t *testing.T) {
 		}
 		if len(in.Input) > 0 {
 			if err := json.Unmarshal(in.Input, &domain); err != nil {
-				return ToolResult{}, err
+				return model.ToolResult{}, err
 			}
-			return ToolResult{Text: "session " + sess + " got " + domain.Domain}, nil
+			return model.ToolResult{Text: "session " + sess + " got " + domain.Domain}, nil
 		}
-		return ToolResult{Elicitation: &ElicitationSpec{
+		return model.ToolResult{Elicitation: &model.ElicitationSpec{
 			ID: "input", Message: "Enter domain", RequestState: "sess-42",
 		}}, nil
 	})
@@ -191,9 +195,9 @@ func TestSchemaRequiresInput(t *testing.T) {
 // submission instead of falling back to plain StepResponse JSON.
 func TestOfficialToolHandlerFlagsFormRetry(t *testing.T) {
 	got := make(chan bool, 1)
-	stepHandler := PinnerToolHandler(func(_ context.Context, req ToolRequest) (ToolResult, error) {
+	stepHandler := model.PinnerToolHandler(func(_ context.Context, req model.ToolRequest) (model.ToolResult, error) {
 		got <- req.InputResponses
-		return ToolResult{Text: "ok"}, nil
+		return model.ToolResult{Text: "ok"}, nil
 	})
 	handler := officialToolHandler(stepHandler)
 
@@ -228,7 +232,7 @@ func TestElicitForStep(t *testing.T) {
 	require.NotEmpty(t, spec.RequestState, "requestState must be set")
 	// The requestState is a signed token: verifying it returns the session id
 	// (and any tamper fails closed).
-	got, err := verifyWizardRequestState(spec.RequestState, now)
+	got, err := session.VerifyWizardRequestState(spec.RequestState, now)
 	require.NoError(t, err)
 	require.Equal(t, "sess-9", got, "signed requestState must carry the session id")
 	require.NotEqual(t, "sess-9", spec.RequestState, "requestState must be opaque/signed, not the raw id")
@@ -236,15 +240,15 @@ func TestElicitForStep(t *testing.T) {
 	// (the segment before the final '.' separator), which always breaks the MAC
 	// and is deterministic regardless of the MAC's own base64url chars.
 	dot := strings.LastIndex(spec.RequestState, ".")
-	body := spec.RequestState[len(requestStatePrefix):dot]
+	body := spec.RequestState[len(session.RequestStatePrefix):dot]
 	first := body[0]
 	replace := byte('A')
 	if first == 'A' {
 		replace = 'B'
 	}
-	flipped := spec.RequestState[:len(requestStatePrefix)] + string(replace) + body[1:] + spec.RequestState[dot:]
+	flipped := spec.RequestState[:len(session.RequestStatePrefix)] + string(replace) + body[1:] + spec.RequestState[dot:]
 	require.NotEqual(t, spec.RequestState, flipped, "helper must have changed the token")
-	_, err = verifyWizardRequestState(flipped, now)
+	_, err = session.VerifyWizardRequestState(flipped, now)
 	require.Error(t, err, "tampered requestState must be rejected")
 
 	var schema map[string]any
@@ -269,7 +273,7 @@ func TestRePresentFormOnFailure(t *testing.T) {
 	require.Contains(t, spec.Message, "Step 'domain' needs input", "message must name the step")
 	require.Contains(t, spec.Message, "domain is required", "message must carry the validation error")
 	// The session id still rides the signed requestState.
-	got, err := verifyWizardRequestState(spec.RequestState, now)
+	got, err := session.VerifyWizardRequestState(spec.RequestState, now)
 	require.NoError(t, err)
 	require.Equal(t, "sess-9", got)
 

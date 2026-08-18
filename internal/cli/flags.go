@@ -5,7 +5,7 @@ import (
 
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
-	"go.lumeweb.com/pinner-cli/internal/mcp"
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/flag"
 )
 
 // Flag name constants
@@ -220,7 +220,7 @@ func GlobalFlags() []cli.Flag {
 			Name:  FlagUnmask,
 			Usage: "Show sensitive data (tokens, passwords, secrets) unmasked",
 		},
-		mcp.SensitiveStringFlag(&cli.StringFlag{
+		flag.SensitiveStringFlag(&cli.StringFlag{
 			Name:    FlagAuthToken,
 			Usage:   "Auth token to override config",
 			Sources: cli.EnvVars("PINNER_AUTH_TOKEN"),

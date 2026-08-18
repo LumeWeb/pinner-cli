@@ -1,4 +1,4 @@
-package mcp
+package ieo
 
 import (
 	"encoding/base64"
@@ -16,13 +16,13 @@ type fileDataURIOption struct {
 	Size     int64
 }
 
-// parseFileDataURI parses an RFC 2397 data: URI in the SEP-2356 file-input
+// ParseFileDataURI parses an RFC 2397 data: URI in the SEP-2356 file-input
 // wire form: `data:;name=<pct-encoded>;size=<n>;mime=<type>;base64,<b64>`.
 // Only the base64 form is accepted (files are binary; the text form is not
 // used by the file-input drafts). It returns a reader that streams the decoded
 // bytes so the full payload is never materialized in memory; the reader enforces
 // the declared size and the hard cap as it is drained.
-func parseFileDataURI(uri string, maxBytes int64) (io.Reader, fileDataURIOption, error) {
+func ParseFileDataURI(uri string, maxBytes int64) (io.Reader, fileDataURIOption, error) {
 	if !strings.HasPrefix(uri, "data:") {
 		return nil, fileDataURIOption{}, fmt.Errorf("%w: not a data: URI", ErrInvalidFileReference)
 	}
@@ -181,9 +181,9 @@ func (r *boundedDataReader) Read(p []byte) (int, error) {
 
 // readDataURI fully drains a parsed data: URI into memory. It is a convenience
 // for small callers/tests that need the concrete payload; production handlers
-// should stream from the reader returned by parseFileDataURI.
+// should stream from the reader returned by ParseFileDataURI.
 func readDataURI(uri string, maxBytes int64) ([]byte, fileDataURIOption, error) {
-	r, opt, err := parseFileDataURI(uri, maxBytes)
+	r, opt, err := ParseFileDataURI(uri, maxBytes)
 	if err != nil {
 		return nil, opt, err
 	}

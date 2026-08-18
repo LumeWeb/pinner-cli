@@ -29,6 +29,12 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/oauthstore"
 	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
 	"go.uber.org/zap"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // ToolDelimiter separates command path segments in MCP tool names.
@@ -261,10 +267,10 @@ adapter.`,
 			}
 			log.Debug("building MCP server with progressive disclosure", zap.String("app", root.Name))
 
-			store := NewSessionStore()
+			store := session.NewSessionStore()
 			// Async handle store backs the agent-facing SSO/auth tools and any
 			// long-running operations that mint resume handles.
-			authHandles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+			authHandles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 			// HandoffRegistry maps a resume handle to its domain-specific
 			// continuation so the shared *_resume tool template dispatches any
 			// hand-off flow (SSO, vault seed create/restore) to the right
@@ -344,7 +350,7 @@ adapter.`,
 			// registered against the same instance.
 			var curlUpload *httpUpload
 			if mcpOpts.uploadTasks != nil {
-				curlUpload = NewHTTPUpload(mcpOpts.uploadTasks, effectiveRelayMaxBytes(mcpOpts.maxRelayBytes))
+				curlUpload = NewHTTPUpload(mcpOpts.uploadTasks, ieo.EffectiveRelayMaxBytes(mcpOpts.maxRelayBytes))
 				// Allow configured MCP-host origins to PUT across origins (the
 				// ui:// app iframe can be served from a host origin that is not
 				// the Pinner server origin); the endpoint's own origin is
@@ -362,7 +368,7 @@ adapter.`,
 			// route can be registered against the same instance.
 			var vaultUpload *vaultHTTPUpload
 			if mcpOpts.vaultPutHandler != nil {
-				vaultUpload = NewVaultHTTPUpload(mcpOpts.vaultPutHandler, effectiveRelayMaxBytes(mcpOpts.maxRelayBytes))
+				vaultUpload = NewVaultHTTPUpload(mcpOpts.vaultPutHandler, ieo.EffectiveRelayMaxBytes(mcpOpts.maxRelayBytes))
 				// Allow configured MCP-host origins to PUT across origins (the
 				// vault app iframe can be served from a host origin that is not
 				// the Pinner server origin); the endpoint's own origin is
@@ -419,11 +425,11 @@ adapter.`,
 				// cloudflared). The embedded openai tunnel exposes no reachable
 				// HTTP mux — all RPC flows through the tunnel protocol — so the
 				// remote upload_file branch must not be advertised there.
-				tunnelOpenAI:          cmd.String("tunnel") == "openai",
-				hasWizard:             hasWizard,
-				wizardW:               wizardW,
-				wizardS:               wizardS,
-				wizardD:               wizardD,
+				tunnelOpenAI: cmd.String("tunnel") == "openai",
+				hasWizard:    hasWizard,
+				wizardW:      wizardW,
+				wizardS:      wizardS,
+				wizardD:      wizardD,
 			}); err != nil {
 				return err
 			}
@@ -910,7 +916,7 @@ type mcpServerOptions struct {
 	// base/loopback origin) that the presigned PUT routes reflect over CORS for
 	// the Uppy XHR uploader. Configured for deployments where the ui:// app
 	// iframe is served from an MCP host origin distinct from the Pinner server
-	// origin. See loopbackServer.AddTrustedOrigins.
+	// origin. See LoopbackServer.AddTrustedOrigins.
 	uploadTrustedOrigins []string
 	// maxRelayBytes is the per-tool cap (in bytes) for MCP file uploads,
 	// overriding the package default (512 MiB). 0 means "use the default".
@@ -932,7 +938,7 @@ type MCPServerOption func(*mcpServerOptions)
 
 // ResourceProvidersFactory builds ResourceProviders at Action time, when the
 // session store and other runtime deps are available.
-type ResourceProvidersFactory func(store *SessionStore) ResourceProviders
+type ResourceProvidersFactory func(store *session.SessionStore) ResourceProviders
 
 // WithPrompts attaches MCP prompt templates (website-onboarding, setup).
 func WithPrompts() MCPServerOption {
@@ -1066,7 +1072,7 @@ func WithLocalPathVaultPut(handler LocalPathVaultPutHandler) MCPServerOption {
 // wizard factory and catalog-ops bundle use. This keeps config reads out of
 // command-construction time. If supplier is nil or panics (e.g. config not
 // yet available), the option is a no-op and the package's fallback default
-// (512 MiB, effectiveRelayMaxBytes) is kept.
+// (512 MiB, ieo.EffectiveRelayMaxBytes) is kept.
 func WithMaxMCPUploadSize(supplier func() uint64) MCPServerOption {
 	return func(o *mcpServerOptions) {
 		if supplier == nil {
@@ -1104,7 +1110,7 @@ type WizardDepsFactory func() (WebsitesWizardDeps, SetupWizardDeps, DomainWizard
 // one-time seed/restore/create URLs for vault-create/vault-restore agent output
 // so the human can retrieve or supply a recovery seed in a browser without it
 // transiting the MCP channel.
-func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate, handoffReg *HandoffRegistry, authHandles *AsyncHandleStore, opts ...buildCatalogOpt) (*ToolCatalog, error) {
+func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate, handoffReg *HandoffRegistry, authHandles *session.AsyncHandleStore, opts ...buildCatalogOpt) (*ToolCatalog, error) {
 	catalog := NewToolCatalog()
 
 	// Apply the functional options. Currently the only option is withCatalogDeps,
@@ -1193,16 +1199,16 @@ func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string, seedDr
 // misdescribe what these two tools actually emit. Routing them onto the
 // needs_human schema keeps each tool's declared output matching its emitted
 // StructuredContent.
-func routeVaultSetupHandlers(catalog *ToolCatalog, create, restore PinnerToolHandler) {
+func routeVaultSetupHandlers(catalog *ToolCatalog, create, restore model.PinnerToolHandler) {
 	if restoreEntry, ok := catalog.Get(compiledVaultRestoreToolName); ok {
 		restoreEntry.Handler = restore
-		restoreEntry.Interaction = InteractionAgentSafe
+		restoreEntry.Interaction = model.InteractionAgentSafe
 		restoreEntry.OutputSchema = catalogNeedsHumanOutputSchema
 		catalog.Add(restoreEntry)
 	}
 	if createEntry, ok := catalog.Get(compiledVaultCreateToolName); ok {
 		createEntry.Handler = create
-		createEntry.Interaction = InteractionAgentSafe
+		createEntry.Interaction = model.InteractionAgentSafe
 		createEntry.OutputSchema = catalogNeedsHumanOutputSchema
 		catalog.Add(createEntry)
 	}

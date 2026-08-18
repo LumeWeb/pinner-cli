@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 func TestUploadTaskManagerLifecycle(t *testing.T) {
@@ -144,14 +146,14 @@ func TestAsyncUploadStatusToolMissingHandle(t *testing.T) {
 		return nil, nil
 	}, 0)
 	descs := NewAsyncUploadTools(mgr)
-	var status *ToolDescriptor
+	var status *model.ToolDescriptor
 	for i := range descs {
 		if descs[i].Name == "upload_status" {
 			status = &descs[i]
 		}
 	}
 	require.NotNil(t, status)
-	_, err := status.Handler(context.Background(), ToolRequest{Arguments: map[string]any{}})
+	_, err := status.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{}})
 	require.ErrorContains(t, err, "handle is required")
 }
 

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // VaultGetFileInput is the typed argument shape for the unified vault_get_file
@@ -34,23 +36,23 @@ type VaultGetFileInput struct {
 // transport, or a filedrop GET on HTTP / real tunnel). The vault service lives
 // in the CLI layer, exposed to MCP as a VaultGetHandler closure — mirror of
 // VaultPutHandler.
-func NewVaultGetFileDescriptor(getFn VaultGetHandler, hd *httpDownload, downloadRoot string, maxDownloadBytes int64, tunnelOpenAI bool) ToolDescriptor {
-	return ToolDescriptor{
+func NewVaultGetFileDescriptor(getFn VaultGetHandler, hd *httpDownload, downloadRoot string, maxDownloadBytes int64, tunnelOpenAI bool) model.ToolDescriptor {
+	return model.ToolDescriptor{
 		Name:        "vault_get_file",
 		Title:       "Download a file from the Pinner vault",
 		Description: vaultGetFileDescription(hd != nil, tunnelOpenAI),
-		Category:    CategoryCore,
+		Category:    model.CategoryCore,
 		InputSchema: toolSchemaFor[VaultGetFileInput](),
-		Handler: func(ctx context.Context, request ToolRequest) (ToolResult, error) {
+		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
 			in, err := decodeToolArgs[VaultGetFileInput](request)
 			if err != nil {
-				return ToolResult{}, err
+				return model.ToolResult{}, err
 			}
 			if in.VaultPath == "" {
-				return ToolResult{}, fmt.Errorf("vault_path is required")
+				return model.ToolResult{}, fmt.Errorf("vault_path is required")
 			}
 			if err := downloadSinksAllowed(in.Sink, hd != nil, tunnelOpenAI); err != nil {
-				return ToolResult{}, err
+				return model.ToolResult{}, err
 			}
 			name := in.Name
 			if name == "" {
@@ -63,7 +65,7 @@ func NewVaultGetFileDescriptor(getFn VaultGetHandler, hd *httpDownload, download
 			switch in.Sink {
 			case SinkLocal:
 				if getFn == nil {
-					return ToolResult{}, errors.New("vault get handler is not configured")
+					return model.ToolResult{}, errors.New("vault get handler is not configured")
 				}
 				res, err := executeLocalSink(ctx, in.VaultPath, name, in.OutputPath, downloadRoot, maxDownloadBytes, func(ctx context.Context, w io.Writer) error {
 					return getFn(ctx, in.VaultPath, w)
@@ -75,7 +77,7 @@ func NewVaultGetFileDescriptor(getFn VaultGetHandler, hd *httpDownload, download
 				})
 				return wrapResult(res, err, "Filedrop minted; pull the bytes from fetch_url.")
 			default:
-				return ToolResult{}, fmt.Errorf("unknown sink %q", in.Sink)
+				return model.ToolResult{}, fmt.Errorf("unknown sink %q", in.Sink)
 			}
 		},
 	}

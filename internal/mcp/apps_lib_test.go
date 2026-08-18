@@ -7,12 +7,14 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // buildAppViewServer builds an official server + catalog with a couple of
 // model-visible tools, then registers the given view via the shared
 // RegisterAppView lib layer.
-func buildAppViewServer(t *testing.T, v AppView, catalogTools ...*ToolEntry) *mcp.Server {
+func buildAppViewServer(t *testing.T, v AppView, catalogTools ...*model.ToolEntry) *mcp.Server {
 	t.Helper()
 	catalog := NewToolCatalog()
 	for _, e := range catalogTools {
@@ -28,8 +30,8 @@ func buildAppViewServer(t *testing.T, v AppView, catalogTools ...*ToolEntry) *mc
 	return srv
 }
 
-func modelTool(name string) *ToolEntry {
-	return &ToolEntry{
+func modelTool(name string) *model.ToolEntry {
+	return &model.ToolEntry{
 		Name:          name,
 		Title:         name,
 		Description:   "test tool " + name,
@@ -52,12 +54,12 @@ func TestRegisterAppViewWire(t *testing.T) {
 		HTML:          "<!doctype html><html><body>hi</body></html>",
 		PrefersBorder: true,
 		AttachTo:      []string{"thing_start", "thing_alt"},
-		Helpers: []ToolDescriptor{{
+		Helpers: []model.ToolDescriptor{{
 			Name:        "thing_status",
 			Description: "app-only status",
 			InputSchema: json.RawMessage(`{"type":"object"}`),
-			Handler: func(_ context.Context, _ ToolRequest) (ToolResult, error) {
-				return ToolResult{Text: `{"status":"done"}`}, nil
+			Handler: func(_ context.Context, _ model.ToolRequest) (model.ToolResult, error) {
+				return model.ToolResult{Text: `{"status":"done"}`}, nil
 			},
 		}},
 	}

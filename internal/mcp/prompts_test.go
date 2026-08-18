@@ -7,6 +7,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // TestWebsiteOnboardingHandlerRendersSteps verifies the website-onboarding
@@ -14,7 +16,7 @@ import (
 // embedded templates, with the embedded resource references at the right
 // positions.
 func TestWebsiteOnboardingHandlerRendersSteps(t *testing.T) {
-	res, err := websiteOnboardingHandler(context.Background(), PromptRequest{
+	res, err := websiteOnboardingHandler(context.Background(), model.PromptRequest{
 		Arguments: map[string]string{},
 	})
 	require.NoError(t, err)
@@ -59,7 +61,7 @@ func TestWebsiteOnboardingHandlerRendersSteps(t *testing.T) {
 // target_type, and dns_mode renders the "filled" step variants with the
 // supplied values instead of the "ask" variants.
 func TestWebsiteOnboardingPrefillVariant(t *testing.T) {
-	res, err := websiteOnboardingHandler(context.Background(), PromptRequest{
+	res, err := websiteOnboardingHandler(context.Background(), model.PromptRequest{
 		Arguments: map[string]string{
 			ArgDomain:        "example.com",
 			ArgTargetType:    "ipns",
@@ -95,7 +97,7 @@ func TestWebsiteOnboardingPrefillVariant(t *testing.T) {
 // TestSetupHandlerRendersSteps verifies the setup prompt handler renders all
 // its steps from the embedded templates.
 func TestSetupHandlerRendersSteps(t *testing.T) {
-	res, err := setupHandler(context.Background(), PromptRequest{Arguments: map[string]string{}})
+	res, err := setupHandler(context.Background(), model.PromptRequest{Arguments: map[string]string{}})
 	require.NoError(t, err)
 
 	var text []string

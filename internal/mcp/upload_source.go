@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"path"
 	"time"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 )
 
 // TransportKind describes which MCP transport the server runs under. It decides
@@ -151,11 +153,11 @@ func (r *SourceResolver) OpenBytes(ctx context.Context, s UploadSource) (body io
 	}
 	maxBytes := r.RelayMaxBytes
 	if maxBytes == 0 {
-		maxBytes = defaultRelayMaxBytes
+		maxBytes = ieo.EffectiveRelayMaxBytes(0)
 	}
 	switch s.Mode {
 	case SourceURL:
-		body, size, err = OpenFileURL(ctx, s.URL, FileRelayOptions{
+		body, size, err = ieo.OpenFileURL(ctx, s.URL, ieo.FileRelayOptions{
 			HTTPClient:     r.RelayHTTPClient,
 			AllowedHosts:   r.RelayAllowedHosts,
 			MaxBytes:       maxBytes,
@@ -166,7 +168,7 @@ func (r *SourceResolver) OpenBytes(ctx context.Context, s UploadSource) (body io
 		}
 		return body, size, relayURLName(s.URL), nil
 	case SourceData:
-		reader, opt, derr := parseFileDataURI(s.Data, maxBytes)
+		reader, opt, derr := ieo.ParseFileDataURI(s.Data, maxBytes)
 		if derr != nil {
 			return nil, 0, "", derr
 		}

@@ -7,7 +7,7 @@ import (
 
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
-	"go.lumeweb.com/pinner-cli/internal/mcp"
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/flag"
 	"go.lumeweb.com/portal-sdk/admin"
 )
 
@@ -323,7 +323,7 @@ Examples:
 				Usage:    "User ID",
 				Required: true,
 			},
-			mcp.EnumStringFlag(FlagMode, "Cancel mode: immediate, end_of_billing_period", false, "end_of_billing_period", "immediate", "end_of_billing_period"),
+			flag.EnumStringFlag(FlagMode, "Cancel mode: immediate, end_of_billing_period", false, "end_of_billing_period", "immediate", "end_of_billing_period"),
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			cfgMgr, output, err := setupCommandContext(cmd)

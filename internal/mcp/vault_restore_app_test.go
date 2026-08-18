@@ -8,6 +8,10 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // TestRegisterVaultRestoreAppWire verifies the Restore Vault app registers its
@@ -18,7 +22,7 @@ func TestRegisterVaultRestoreAppWire(t *testing.T) {
 	catalog.Add(modelTool(compiledVaultRestoreToolName))
 	srv := NewOfficialServer(nil)
 
-	if err := RegisterVaultRestoreApp(srv, catalog, NewHandoffRegistry(), NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)); err != nil {
+	if err := RegisterVaultRestoreApp(srv, catalog, NewHandoffRegistry(), session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)); err != nil {
 		t.Fatalf("RegisterVaultRestoreApp: %v", err)
 	}
 	if err := RegisterOfficialCuratedTools(srv, catalog); err != nil {
@@ -68,7 +72,7 @@ func TestRegisterVaultRestoreAppWire(t *testing.T) {
 // vault_restore_resume, returning pending until the recovery seed is submitted,
 // then done. It must never surface the seed.
 func TestVaultRestoreStatusHelperPendingToDone(t *testing.T) {
-	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 	reg := NewHandoffRegistry()
 	oob, mux, runner := buildRestoreServer()
 
@@ -81,7 +85,7 @@ func TestVaultRestoreStatusHelperPendingToDone(t *testing.T) {
 	status := vaultRestoreStatusDescriptor(reg, handles)
 
 	// Before restore -> pending.
-	r, err := status.Handler(context.Background(), ToolRequest{
+	r, err := status.Handler(context.Background(), model.ToolRequest{
 		Name:      "vault_restore_status",
 		Arguments: map[string]any{"handle": handle},
 	})
@@ -98,7 +102,7 @@ func TestVaultRestoreStatusHelperPendingToDone(t *testing.T) {
 	require.Equal(t, 1, runner.calls)
 
 	// Now the status helper reports done.
-	r, err = status.Handler(context.Background(), ToolRequest{
+	r, err = status.Handler(context.Background(), model.ToolRequest{
 		Name:      "vault_restore_status",
 		Arguments: map[string]any{"handle": handle},
 	})
@@ -116,7 +120,7 @@ func TestVaultRestoreStatusHelperPendingToDone(t *testing.T) {
 // presence) to tell pending from dead, so a live flow keeps polling instead of
 // being falsely declared dead on its first poll.
 func TestVaultRestoreStatusHelperPendingCarriesHandle(t *testing.T) {
-	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 	reg := NewHandoffRegistry()
 	oob, _, _ := buildRestoreServer()
 
@@ -129,7 +133,7 @@ func TestVaultRestoreStatusHelperPendingCarriesHandle(t *testing.T) {
 	status := vaultRestoreStatusDescriptor(reg, handles)
 
 	// Live pending: needs_human with a handle, and no URL in the result.
-	r, err := status.Handler(context.Background(), ToolRequest{
+	r, err := status.Handler(context.Background(), model.ToolRequest{
 		Name:      "vault_restore_status",
 		Arguments: map[string]any{"handle": handle},
 	})
@@ -141,7 +145,7 @@ func TestVaultRestoreStatusHelperPendingCarriesHandle(t *testing.T) {
 	require.False(t, hasRestore || hasAction, "live pending must not carry a URL in the status result")
 
 	// Dead/unknown handle: needs_human with no handle (and a restart steer).
-	r, err = status.Handler(context.Background(), ToolRequest{
+	r, err = status.Handler(context.Background(), model.ToolRequest{
 		Name:      "vault_restore_status",
 		Arguments: map[string]any{"handle": "does-not-exist"},
 	})
@@ -160,10 +164,10 @@ func TestVaultRestoreStatusHelperPendingCarriesHandle(t *testing.T) {
 // status helper, which would otherwise retry "handle is required" for ~90s.
 func TestVaultRestoreNotConfiguredReturnsNoHandle(t *testing.T) {
 	reg := NewHandoffRegistry()
-	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 
 	handler := vaultRestoreSetupHandler(nil, reg, handles)
-	r, err := handler(context.Background(), ToolRequest{Name: compiledVaultRestoreToolName})
+	r, err := handler(context.Background(), model.ToolRequest{Name: compiledVaultRestoreToolName})
 	require.NoError(t, err)
 	sc := requireHandoff(t, r) // needs_human (ReasonInteractiveOnly)
 	_, hasHandle := sc["handle"]

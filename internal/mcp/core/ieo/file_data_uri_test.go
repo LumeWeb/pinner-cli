@@ -1,4 +1,4 @@
-package mcp
+package ieo
 
 import (
 	"encoding/base64"
@@ -57,7 +57,7 @@ func TestParseFileDataURIMismatchedSize(t *testing.T) {
 func TestParseFileDataURIDerivesSizeWhenUnspecified(t *testing.T) {
 	payload := []byte("a payload of some length")
 	uri := "data:;name=x.txt;base64," + base64.StdEncoding.EncodeToString(payload)
-	_, opt, err := parseFileDataURI(uri, 1<<20)
+	_, opt, err := ParseFileDataURI(uri, 1<<20)
 	require.NoError(t, err)
 	// Without a size= declaration, the decoded length must be derived exactly.
 	require.EqualValues(t, len(payload), opt.Size)

@@ -3,17 +3,19 @@ package mcp
 import (
 	"encoding/json"
 	"testing"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // envelopeValue extracts the "value" member of a result's StructuredContent.
-func envelopeValue(t *testing.T, res ToolResult) json.RawMessage {
+func envelopeValue(t *testing.T, res model.ToolResult) json.RawMessage {
 	t.Helper()
 	sc, ok := res.StructuredContent.(map[string]any)
 	if !ok {
 		t.Fatalf("StructuredContent not a map: %T", res.StructuredContent)
 	}
-	if sc["status"] != StatusOk {
-		t.Errorf("transport status = %v, want %q", sc["status"], StatusOk)
+	if sc["status"] != model.StatusOk {
+		t.Errorf("transport status = %v, want %q", sc["status"], model.StatusOk)
 	}
 	raw, ok := sc["value"].(json.RawMessage)
 	if !ok {
@@ -47,8 +49,8 @@ func TestResultToToolResultCanonicalEnvelope(t *testing.T) {
 	if err := json.Unmarshal([]byte(res.Text), &txt); err != nil {
 		t.Fatalf("Text is not valid JSON: %v", err)
 	}
-	if txt["status"] != StatusOk {
-		t.Errorf("Text status = %v, want %q", txt["status"], StatusOk)
+	if txt["status"] != model.StatusOk {
+		t.Errorf("Text status = %v, want %q", txt["status"], model.StatusOk)
 	}
 	if _, has := txt["value"]; !has {
 		t.Errorf("Text missing value wrapper: %s", res.Text)
@@ -134,8 +136,8 @@ func TestResultToToolResultNull(t *testing.T) {
 	if !ok {
 		t.Fatalf("StructuredContent not a map: %T", res.StructuredContent)
 	}
-	if sc["status"] != StatusOk {
-		t.Errorf("status = %v, want %q", sc["status"], StatusOk)
+	if sc["status"] != model.StatusOk {
+		t.Errorf("status = %v, want %q", sc["status"], model.StatusOk)
 	}
 	if _, has := sc["value"]; has {
 		t.Errorf("null result should not carry a value wrapper, got %#v", sc)

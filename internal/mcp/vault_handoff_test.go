@@ -16,17 +16,21 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.lumeweb.com/pinner-cli/internal/catalogops"
 	"go.lumeweb.com/pinner-cli/internal/core/vault"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // ---- resume-tool (template) tests -----------------------------------------
 
 // requireVaultDone extracts a terminal "done" structured result.
-func requireVaultDone(t *testing.T, r ToolResult) {
+func requireVaultDone(t *testing.T, r model.ToolResult) {
 	t.Helper()
 	require.False(t, r.IsError, "expected done result, got error: %s", r.Text)
 	sc, ok := r.StructuredContent.(map[string]any)
 	require.True(t, ok)
-	require.Equal(t, StatusDone, sc["status"])
+	require.Equal(t, model.StatusDone, sc["status"])
 }
 
 // TestVaultCreateResumePendingToDone verifies vault_create_resume (the
@@ -34,7 +38,7 @@ func requireVaultDone(t *testing.T, r ToolResult) {
 // a create hand-off from pending to done as the vault is created/activated and
 // the fresh seed is retrieved from its one-time seeddrop.
 func TestVaultCreateResumePendingToDone(t *testing.T) {
-	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 	reg := NewHandoffRegistry()
 	oob, mux, _ := buildCreateServer()
 
@@ -49,7 +53,7 @@ func TestVaultCreateResumePendingToDone(t *testing.T) {
 	resume := NewVaultCreateResumeDescriptor(reg, handles)
 
 	// Before the create page is acted on: pending needs_human.
-	r, err := resume.Handler(context.Background(), ToolRequest{
+	r, err := resume.Handler(context.Background(), model.ToolRequest{
 		Name:      vaultCreateResumeToolName,
 		Arguments: map[string]any{"handle": handle},
 	})
@@ -74,7 +78,7 @@ func TestVaultCreateResumePendingToDone(t *testing.T) {
 	require.NotEmpty(t, seedURL)
 
 	// Resume now: the vault is active but the seed not yet retrieved -> pending.
-	r, err = resume.Handler(context.Background(), ToolRequest{
+	r, err = resume.Handler(context.Background(), model.ToolRequest{
 		Name:      vaultCreateResumeToolName,
 		Arguments: map[string]any{"handle": handle},
 	})
@@ -87,7 +91,7 @@ func TestVaultCreateResumePendingToDone(t *testing.T) {
 	recSeedGet := httptest.NewRecorder()
 	mux.ServeHTTP(recSeedGet, httptest.NewRequest("GET", seedURL, nil))
 	require.Equal(t, http.StatusOK, recSeedGet.Code)
-	r, err = resume.Handler(context.Background(), ToolRequest{
+	r, err = resume.Handler(context.Background(), model.ToolRequest{
 		Name:      vaultCreateResumeToolName,
 		Arguments: map[string]any{"handle": handle},
 	})
@@ -101,7 +105,7 @@ func TestVaultCreateResumePendingToDone(t *testing.T) {
 	require.Equal(t, http.StatusOK, recSeed.Code)
 
 	// Now resume reports terminal done.
-	r, err = resume.Handler(context.Background(), ToolRequest{
+	r, err = resume.Handler(context.Background(), model.ToolRequest{
 		Name:      vaultCreateResumeToolName,
 		Arguments: map[string]any{"handle": handle},
 	})
@@ -138,7 +142,7 @@ func extractSeedURL(t *testing.T, body string) string {
 // restore form. It models the OOB restore coordinator with a fake
 // RestoreRunner (no network).
 func TestVaultRestoreResumePendingToDone(t *testing.T) {
-	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 	reg := NewHandoffRegistry()
 	oob, mux, runner := buildRestoreServer()
 
@@ -151,7 +155,7 @@ func TestVaultRestoreResumePendingToDone(t *testing.T) {
 	resume := NewVaultRestoreResumeDescriptor(reg, handles)
 
 	// Before restore: pending.
-	r, err := resume.Handler(context.Background(), ToolRequest{
+	r, err := resume.Handler(context.Background(), model.ToolRequest{
 		Name:      vaultRestoreResumeToolName,
 		Arguments: map[string]any{"handle": handle},
 	})
@@ -170,7 +174,7 @@ func TestVaultRestoreResumePendingToDone(t *testing.T) {
 	require.Equal(t, 1, runner.calls)
 
 	// Now resume reports terminal done.
-	r, err = resume.Handler(context.Background(), ToolRequest{
+	r, err = resume.Handler(context.Background(), model.ToolRequest{
 		Name:      vaultRestoreResumeToolName,
 		Arguments: map[string]any{"handle": handle},
 	})
@@ -185,7 +189,7 @@ func TestVaultRestoreResumePendingToDone(t *testing.T) {
 // been restored". The claimed token's outcome is recorded as failed and never
 // maps to StatusDone, matching the OOB page's error banner.
 func TestVaultRestoreResumeFailedSteersRestart(t *testing.T) {
-	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 	reg := NewHandoffRegistry()
 	oob, mux, runner := buildRestoreServer()
 	runner.err = errors.New("approval/registration failed: seed rejected")
@@ -207,14 +211,14 @@ func TestVaultRestoreResumeFailedSteersRestart(t *testing.T) {
 	require.Equal(t, 1, runner.calls)
 
 	// Resume must steer to restart, NOT report done.
-	r, err := resume.Handler(context.Background(), ToolRequest{
+	r, err := resume.Handler(context.Background(), model.ToolRequest{
 		Name:      vaultRestoreResumeToolName,
 		Arguments: map[string]any{"handle": handle},
 	})
 	require.NoError(t, err)
 	sc := requireHandoff(t, r)
 	assert.Equal(t, compiledVaultRestoreToolName, sc["resume_tool"], "a failed restore must steer back to pinner_vault_restore")
-	assert.NotEqual(t, StatusDone, sc["status"], "a failed restore must never report StatusDone")
+	assert.NotEqual(t, model.StatusDone, sc["status"], "a failed restore must never report StatusDone")
 	assert.NotContains(t, r.Text, "secret words")
 	assert.NotContains(t, r.Text, "has been restored", "must not claim the vault was restored on failure")
 }
@@ -227,7 +231,7 @@ func TestVaultRestoreResumeFailedSteersRestart(t *testing.T) {
 func TestVaultRestoreResumePendingDuringApproval(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
-	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 	reg := NewHandoffRegistry()
 	oob := NewOOBRestore(&fakeRestoreRunner{profile: "default", started: started, release: release}, time.Minute)
 	oob.SetBaseURL("http://127.0.0.1:9999")
@@ -256,14 +260,14 @@ func TestVaultRestoreResumePendingDuringApproval(t *testing.T) {
 
 	// Resume while the approval is outstanding: must remain pending (needs_human),
 	// NOT a dead-handle steer to restart.
-	r, err := resume.Handler(context.Background(), ToolRequest{
+	r, err := resume.Handler(context.Background(), model.ToolRequest{
 		Name:      vaultRestoreResumeToolName,
 		Arguments: map[string]any{"handle": handle},
 	})
 	require.NoError(t, err)
 	sc := requireHandoff(t, r)
 	assert.Equal(t, vaultRestoreResumeToolName, sc["resume_tool"], "a mid-approval restore must keep reporting needs_human to the resume tool")
-	assert.NotEqual(t, StatusDone, sc["status"], "a mid-approval restore must not report done")
+	assert.NotEqual(t, model.StatusDone, sc["status"], "a mid-approval restore must not report done")
 	assert.NotEqual(t, compiledVaultRestoreToolName, sc["resume_tool"], "a mid-approval restore must not steer to restart")
 
 	// Let the restore finish. Poll until the continuation observes the settled
@@ -271,12 +275,12 @@ func TestVaultRestoreResumePendingDuringApproval(t *testing.T) {
 	close(release)
 	deadline := time.Now().Add(2 * time.Second)
 	for {
-		r, err = resume.Handler(context.Background(), ToolRequest{
+		r, err = resume.Handler(context.Background(), model.ToolRequest{
 			Name:      vaultRestoreResumeToolName,
 			Arguments: map[string]any{"handle": handle},
 		})
 		require.NoError(t, err)
-		if sc, ok := r.StructuredContent.(map[string]any); ok && sc["status"] == StatusDone {
+		if sc, ok := r.StructuredContent.(map[string]any); ok && sc["status"] == model.StatusDone {
 			break
 		}
 		if time.Now().After(deadline) {
@@ -291,7 +295,7 @@ func TestVaultRestoreResumePendingDuringApproval(t *testing.T) {
 // consumes a terminal result, the per-token outcome record is removed from the
 // coordinator map, so settled restores do not accumulate.
 func TestVaultRestoreResumeFreesOutcome(t *testing.T) {
-	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 	reg := NewHandoffRegistry()
 	oob, mux, _ := buildRestoreServer()
 
@@ -314,7 +318,7 @@ func TestVaultRestoreResumeFreesOutcome(t *testing.T) {
 	oob.mu.Unlock()
 	require.True(t, wasRecorded, "outcome should be recorded once the restore settles")
 
-	_, err := resume.Handler(context.Background(), ToolRequest{
+	_, err := resume.Handler(context.Background(), model.ToolRequest{
 		Name:      vaultRestoreResumeToolName,
 		Arguments: map[string]any{"handle": handle},
 	})
@@ -330,12 +334,12 @@ func TestVaultRestoreResumeFreesOutcome(t *testing.T) {
 // expired handle passed to vault_restore_resume steers the agent back
 // to pinner_vault_restore instead of retrying a dead handle.
 func TestVaultRestoreResumeDeadHandleSteersRestart(t *testing.T) {
-	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 	reg := NewHandoffRegistry()
 	resume := NewVaultRestoreResumeDescriptor(reg, handles)
 
 	// Unknown handle.
-	r, err := resume.Handler(context.Background(), ToolRequest{
+	r, err := resume.Handler(context.Background(), model.ToolRequest{
 		Name:      vaultRestoreResumeToolName,
 		Arguments: map[string]any{"handle": "does-not-exist"},
 	})
@@ -346,8 +350,8 @@ func TestVaultRestoreResumeDeadHandleSteersRestart(t *testing.T) {
 
 	// Expired handle.
 	handle := handles.Create("pending", map[string]any{handleDataToken: "tok"})
-	handles.now = func() time.Time { return time.Now().Add(2 * DefaultSessionTTL) }
-	r, err = resume.Handler(context.Background(), ToolRequest{
+	handles.SetNowFunc(func() time.Time { return time.Now().Add(2 * session.DefaultSessionTTL) })
+	r, err = resume.Handler(context.Background(), model.ToolRequest{
 		Name:      vaultRestoreResumeToolName,
 		Arguments: map[string]any{"handle": handle},
 	})
@@ -360,11 +364,11 @@ func TestVaultRestoreResumeDeadHandleSteersRestart(t *testing.T) {
 // TestVaultCreateResumeDeadHandleSteersRestart verifies an unknown handle
 // passed to vault_create_resume steers back to pinner_vault_create.
 func TestVaultCreateResumeDeadHandleSteersRestart(t *testing.T) {
-	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 	reg := NewHandoffRegistry()
 	resume := NewVaultCreateResumeDescriptor(reg, handles)
 
-	r, err := resume.Handler(context.Background(), ToolRequest{
+	r, err := resume.Handler(context.Background(), model.ToolRequest{
 		Name:      vaultCreateResumeToolName,
 		Arguments: map[string]any{"handle": "nope"},
 	})
@@ -376,12 +380,12 @@ func TestVaultCreateResumeDeadHandleSteersRestart(t *testing.T) {
 // TestVaultResumeNotConfigured verifies the resume templates degrade to a
 // structured not-configured hand-off when the machinery is absent.
 func TestVaultResumeNotConfigured(t *testing.T) {
-	r, err := NewVaultCreateResumeDescriptor(nil, nil).Handler(context.Background(), ToolRequest{
+	r, err := NewVaultCreateResumeDescriptor(nil, nil).Handler(context.Background(), model.ToolRequest{
 		Name: vaultCreateResumeToolName, Arguments: map[string]any{"handle": "x"},
 	})
 	require.NoError(t, err)
 	sc := requireHandoff(t, r)
-	assert.Equal(t, ReasonInteractiveOnly, sc["reason"])
+	assert.Equal(t, model.ReasonInteractiveOnly, sc["reason"])
 }
 
 // ---- start hand-off structured content (full invoke path) -----------------
@@ -400,7 +404,7 @@ func TestVaultRestoreStartHandoffIncludesHandleAndResumeTool(t *testing.T) {
 	}
 
 	oob, _, _ := buildRestoreServer()
-	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 	reg := NewHandoffRegistry()
 	catalog, err := buildCatalog(compilerRoot(), true, nil, nil, oob, nil, reg, handles,
 		withCatalogDeps(func() *CatalogDepsBundle {
@@ -416,7 +420,7 @@ func TestVaultRestoreStartHandoffIncludesHandleAndResumeTool(t *testing.T) {
 	// target profile (no profile/env/registry -> "default") and mints a
 	// one-time restore_url + resume handle from the OOB coordinator, without
 	// relying on CLI stdout.
-	res, err := restoreEntry.Handler(context.Background(), ToolRequest{Name: compiledVaultRestoreToolName, Arguments: map[string]any{}})
+	res, err := restoreEntry.Handler(context.Background(), model.ToolRequest{Name: compiledVaultRestoreToolName, Arguments: map[string]any{}})
 	require.NoError(t, err)
 	require.False(t, res.IsError, "compiled vault.restore must produce a hand-off: %s", res.Text)
 	sc, ok := res.StructuredContent.(map[string]any)
@@ -444,7 +448,7 @@ func TestVaultCreateStartHandoffIncludesHandleAndResumeTool(t *testing.T) {
 	}
 
 	oobCreate, _, _ := buildCreateServer()
-	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 	reg := NewHandoffRegistry()
 	catalog, err := buildCatalog(compilerRoot(), true, nil, nil, nil, oobCreate, reg, handles,
 		withCatalogDeps(func() *CatalogDepsBundle {
@@ -460,7 +464,7 @@ func TestVaultCreateStartHandoffIncludesHandleAndResumeTool(t *testing.T) {
 	// browser), then the MCP layer mints a one-time create_url + resume handle.
 	// No seed is minted or written at invoke time. The mnemonic must never
 	// appear in the result.
-	res, err := createEntry.Handler(context.Background(), ToolRequest{Name: compiledVaultCreateToolName, Arguments: map[string]any{"profile": "testcreate"}})
+	res, err := createEntry.Handler(context.Background(), model.ToolRequest{Name: compiledVaultCreateToolName, Arguments: map[string]any{"profile": "testcreate"}})
 	require.NoError(t, err)
 	require.False(t, res.IsError, "compiled vault.create must produce a hand-off: %s", res.Text)
 	sc, ok := res.StructuredContent.(map[string]any)
@@ -508,11 +512,11 @@ func TestVaultCreateSetupHandlerMintsOneTimeCreateURL(t *testing.T) {
 	}
 
 	oob, _, _ := buildCreateServer()
-	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 	reg := NewHandoffRegistry()
 
 	handler := vaultCreateSetupHandler(oob, reg, handles)
-	res, err := handler(context.Background(), ToolRequest{
+	res, err := handler(context.Background(), model.ToolRequest{
 		Name: compiledVaultCreateToolName,
 		Arguments: map[string]any{
 			"profile": "aliasdev",
@@ -544,7 +548,7 @@ func TestVaultCreateSetupHandlerMintsOneTimeCreateURL(t *testing.T) {
 // elapsed falsely read "seed retrieved". See handoffEndpoint.resolve's
 // handoffUsed vs handoffExpired distinction.
 func TestVaultCreateResumeExpiredTokenSteersRestart(t *testing.T) {
-	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 	reg := NewHandoffRegistry()
 	oob, _, _ := buildCreateServer()
 
@@ -557,7 +561,7 @@ func TestVaultCreateResumeExpiredTokenSteersRestart(t *testing.T) {
 	resume := NewVaultCreateResumeDescriptor(reg, handles)
 
 	// Before expiry: pending.
-	r, err := resume.Handler(context.Background(), ToolRequest{
+	r, err := resume.Handler(context.Background(), model.ToolRequest{
 		Name: vaultCreateResumeToolName, Arguments: map[string]any{"handle": handle},
 	})
 	require.NoError(t, err)
@@ -567,20 +571,20 @@ func TestVaultCreateResumeExpiredTokenSteersRestart(t *testing.T) {
 	oob.setNow(func() time.Time { return time.Now().Add(2 * time.Minute) })
 
 	// The resume must NOT report done — it must steer to a fresh vault create.
-	r, err = resume.Handler(context.Background(), ToolRequest{
+	r, err = resume.Handler(context.Background(), model.ToolRequest{
 		Name: vaultCreateResumeToolName, Arguments: map[string]any{"handle": handle},
 	})
 	require.NoError(t, err)
 	sc := requireHandoff(t, r)
 	assert.Equal(t, compiledVaultCreateToolName, sc["resume_tool"],
 		"expired create token must steer to pinner_vault_create, not report done")
-	assert.NotEqual(t, StatusDone, sc["status"], "expired token must never read as a completed vault create")
+	assert.NotEqual(t, model.StatusDone, sc["status"], "expired token must never read as a completed vault create")
 	assert.NotContains(t, r.Text, "fresh generated seed phrase")
 
 	// The expired continuation + backing handle must be cleared so the agent
 	// is not left polling a dead flow: a follow-up poll now hits the
 	// template's dead-handle branch (unknown handle).
-	r, err = resume.Handler(context.Background(), ToolRequest{
+	r, err = resume.Handler(context.Background(), model.ToolRequest{
 		Name: vaultCreateResumeToolName, Arguments: map[string]any{"handle": handle},
 	})
 	require.NoError(t, err)
@@ -593,7 +597,7 @@ func TestVaultCreateResumeExpiredTokenSteersRestart(t *testing.T) {
 // pinner_vault_restore rather than falsely reporting "vault has been
 // restored".
 func TestVaultRestoreResumeExpiredTokenSteersRestart(t *testing.T) {
-	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 	reg := NewHandoffRegistry()
 	oob, _, _ := buildRestoreServer()
 
@@ -606,7 +610,7 @@ func TestVaultRestoreResumeExpiredTokenSteersRestart(t *testing.T) {
 	resume := NewVaultRestoreResumeDescriptor(reg, handles)
 
 	// Before expiry: pending.
-	r, err := resume.Handler(context.Background(), ToolRequest{
+	r, err := resume.Handler(context.Background(), model.ToolRequest{
 		Name: vaultRestoreResumeToolName, Arguments: map[string]any{"handle": handle},
 	})
 	require.NoError(t, err)
@@ -615,14 +619,14 @@ func TestVaultRestoreResumeExpiredTokenSteersRestart(t *testing.T) {
 	// Advance the clock past the restore TTL so the token is handoffExpired.
 	oob.setNow(func() time.Time { return time.Now().Add(2 * time.Hour) })
 
-	r, err = resume.Handler(context.Background(), ToolRequest{
+	r, err = resume.Handler(context.Background(), model.ToolRequest{
 		Name: vaultRestoreResumeToolName, Arguments: map[string]any{"handle": handle},
 	})
 	require.NoError(t, err)
 	sc := requireHandoff(t, r)
 	assert.Equal(t, compiledVaultRestoreToolName, sc["resume_tool"],
 		"expired restore token must steer to pinner_vault_restore, not report done")
-	assert.NotEqual(t, StatusDone, sc["status"], "expired token must never read as a completed restore")
+	assert.NotEqual(t, model.StatusDone, sc["status"], "expired token must never read as a completed restore")
 }
 
 // TestVaultResumeAbsentTokenSteersRestart covers the Kody edge: a token that
@@ -632,7 +636,7 @@ func TestVaultRestoreResumeExpiredTokenSteersRestart(t *testing.T) {
 // It must terminate the continuation and steer to a fresh start, matching how
 // expired and consumed tokens are handled.
 func TestVaultResumeAbsentTokenSteersRestart(t *testing.T) {
-	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 	reg := NewHandoffRegistry()
 	oob, _, _ := buildCreateServer()
 
@@ -641,20 +645,20 @@ func TestVaultResumeAbsentTokenSteersRestart(t *testing.T) {
 	reg.Begin(handle, vaultCreateResumeContinuation(oob, handles, reg))
 	resume := NewVaultCreateResumeDescriptor(reg, handles)
 
-	r, err := resume.Handler(context.Background(), ToolRequest{
+	r, err := resume.Handler(context.Background(), model.ToolRequest{
 		Name: vaultCreateResumeToolName, Arguments: map[string]any{"handle": handle},
 	})
 	require.NoError(t, err)
 	sc := requireHandoff(t, r)
 	assert.Equal(t, compiledVaultCreateToolName, sc["resume_tool"],
 		"absent token must steer to pinner_vault_create, not pending forever")
-	assert.NotEqual(t, StatusDone, sc["status"], "absent token must never read as a completed create")
+	assert.NotEqual(t, model.StatusDone, sc["status"], "absent token must never read as a completed create")
 
 	// The continuation + backing handle must be cleared so the agent is not
 	// left polling a dead flow: the next poll hits the dead-handle branch.
 	_, _, err = handles.Get(handle)
 	assert.Error(t, err, "absent-token flow must retire the backing handle")
-	r, err = resume.Handler(context.Background(), ToolRequest{
+	r, err = resume.Handler(context.Background(), model.ToolRequest{
 		Name: vaultCreateResumeToolName, Arguments: map[string]any{"handle": handle},
 	})
 	require.NoError(t, err)

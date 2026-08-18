@@ -1,4 +1,4 @@
-package mcp_test
+package flag
 
 import (
 	"context"
@@ -6,8 +6,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
-
-	mcpadapter "go.lumeweb.com/pinner-cli/internal/mcp"
 )
 
 func TestEnumStringFlagRealParse(t *testing.T) {
@@ -15,7 +13,7 @@ func TestEnumStringFlagRealParse(t *testing.T) {
 	cmd := &cli.Command{
 		Name: "cancel",
 		Flags: []cli.Flag{
-			mcpadapter.EnumStringFlag("mode", "cancel mode", false, "end_of_billing_period", "immediate", "end_of_billing_period"),
+			EnumStringFlag("mode", "cancel mode", false, "end_of_billing_period", "immediate", "end_of_billing_period"),
 		},
 		Action: func(ctx context.Context, c *cli.Command) error {
 			got = c.String("mode")

@@ -4,6 +4,12 @@ import (
 	"fmt"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // customToolDeps bundles everything the custom/direct-tool registration needs.
@@ -19,13 +25,13 @@ type customToolDeps struct {
 	// returns); markCurated then stamps which of them are directly visible.
 	catalog *ToolCatalog
 	// store backs wizard sessions and resource providers.
-	store *SessionStore
+	store *session.SessionStore
 	// oob, when non-nil, backs the out-of-band sign-in (SSO) and restore
 	// tools; authHandles stores their pending handles, and handoffReg maps a
 	// handle to its domain-specific resume continuation so the shared resume
 	// template can poll it.
 	oob         *OutOfBandLogin
-	authHandles *AsyncHandleStore
+	authHandles *session.AsyncHandleStore
 	handoffReg  *HandoffRegistry
 	// seedDrop, oobRestore, and oobCreate back the vault create/restore OOB
 	// hand-offs. seedDrop is the vault-create seed-drop coordinator, oobRestore
@@ -132,8 +138,8 @@ func registerCustomTools(deps customToolDeps) error {
 	authSSO.DirectVisible = true
 	authResume := NewAuthResumeDescriptor(deps.handoffReg, deps.authHandles)
 	authResume.DirectVisible = true
-	deps.catalog.Add(toolEntryFromDescriptor(authSSO))
-	deps.catalog.Add(toolEntryFromDescriptor(authResume))
+	deps.catalog.Add(model.ToolEntryFromDescriptor(authSSO))
+	deps.catalog.Add(model.ToolEntryFromDescriptor(authResume))
 
 	// Pair the auth_sso tool with its "Sign In" MCP App view (ui://auth/sso.html)
 	// so a UI-capable host renders the SSO approval in a panel. This must run
@@ -154,9 +160,9 @@ func registerCustomTools(deps customToolDeps) error {
 	accountReset.DirectVisible = true
 	accountEmail := NewAccountEmailChangeDescriptor(deps.accountOOB, deps.wizardS.AuthService)
 	accountEmail.DirectVisible = true
-	deps.catalog.Add(toolEntryFromDescriptor(accountUpdate))
-	deps.catalog.Add(toolEntryFromDescriptor(accountReset))
-	deps.catalog.Add(toolEntryFromDescriptor(accountEmail))
+	deps.catalog.Add(model.ToolEntryFromDescriptor(accountUpdate))
+	deps.catalog.Add(model.ToolEntryFromDescriptor(accountReset))
+	deps.catalog.Add(model.ToolEntryFromDescriptor(accountEmail))
 
 	// Pair the account_password_update / account_email_change tools with their
 	// "Change Password" / "Change Email" MCP App views (ui://account/password.html
@@ -183,8 +189,8 @@ func registerCustomTools(deps customToolDeps) error {
 	vaultCreateResume.DirectVisible = true
 	vaultRestoreResume := NewVaultRestoreResumeDescriptor(deps.handoffReg, deps.authHandles)
 	vaultRestoreResume.DirectVisible = true
-	deps.catalog.Add(toolEntryFromDescriptor(vaultCreateResume))
-	deps.catalog.Add(toolEntryFromDescriptor(vaultRestoreResume))
+	deps.catalog.Add(model.ToolEntryFromDescriptor(vaultCreateResume))
+	deps.catalog.Add(model.ToolEntryFromDescriptor(vaultRestoreResume))
 
 	// Pair vault_create / vault_restore with their "Create Vault" / "Restore
 	// Vault" MCP App views (ui://vault/create.html / ui://vault/restore.html)
@@ -259,7 +265,7 @@ func registerCustomTools(deps customToolDeps) error {
 		// can mint a PUT endpoint for the Uppy XHR uploader. The app must be
 		// indexed in the catalog before its view attaches _meta.ui.
 		if deps.vaultUpload != nil {
-			deps.catalog.Add(toolEntryFromDescriptor(vaultPutDesc))
+			deps.catalog.Add(model.ToolEntryFromDescriptor(vaultPutDesc))
 			if err := RegisterVaultUploadApp(deps.srv, deps.catalog, deps.vaultUpload); err != nil {
 				return err
 			}
@@ -297,14 +303,14 @@ func registerCustomTools(deps customToolDeps) error {
 	// HTTP mux (tunnelOpenAI=false) — see downloadFileDescription.
 	if opts.ipfsDownload != nil {
 		downloadRoot := resolveDownloadRoot(opts.downloadRoot)
-		dlDesc := NewDownloadFileDescriptor(opts.ipfsDownload, deps.downloadDrop, downloadRoot, effectiveRelayMaxBytes(opts.maxRelayBytes), deps.tunnelOpenAI)
+		dlDesc := NewDownloadFileDescriptor(opts.ipfsDownload, deps.downloadDrop, downloadRoot, ieo.EffectiveRelayMaxBytes(opts.maxRelayBytes), deps.tunnelOpenAI)
 		// Pair download_file with its "Download from IPFS" MCP App view
 		// (ui://downloads/ipfs.html) so a UI-capable host renders a download
 		// panel. RegisterAppView attaches _meta.ui to a catalog entry, so the
 		// tool must be indexed first. Like upload_file, the app (sink=local or
 		// sink=drop) is meaningful on every transport, so it is always paired
 		// when the tool is registered.
-		deps.catalog.Add(toolEntryFromDescriptor(dlDesc))
+		deps.catalog.Add(model.ToolEntryFromDescriptor(dlDesc))
 		if err := RegisterIPFSDownloadApp(deps.srv, deps.catalog); err != nil {
 			return err
 		}
@@ -329,8 +335,8 @@ func registerCustomTools(deps customToolDeps) error {
 	//   - sink=drop (HTTP / real tunnel): deps.downloadDrop mints a filedrop.
 	if opts.vaultGet != nil {
 		downloadRoot := resolveDownloadRoot(opts.downloadRoot)
-		dlDesc := NewVaultGetFileDescriptor(opts.vaultGet, deps.downloadDrop, downloadRoot, effectiveRelayMaxBytes(opts.maxRelayBytes), deps.tunnelOpenAI)
-		deps.catalog.Add(toolEntryFromDescriptor(dlDesc))
+		dlDesc := NewVaultGetFileDescriptor(opts.vaultGet, deps.downloadDrop, downloadRoot, ieo.EffectiveRelayMaxBytes(opts.maxRelayBytes), deps.tunnelOpenAI)
+		deps.catalog.Add(model.ToolEntryFromDescriptor(dlDesc))
 		if err := RegisterVaultDownloadApp(deps.srv, deps.catalog); err != nil {
 			return err
 		}
@@ -382,7 +388,7 @@ func registerCustomTools(deps customToolDeps) error {
 		// keeps attachAppMeta from ever running when the tool is absent (e.g.
 		// --tunnel openai) or when no mint URL could be produced.
 		if deps.curlUpload != nil {
-			deps.catalog.Add(toolEntryFromDescriptor(uploadFileDesc))
+			deps.catalog.Add(model.ToolEntryFromDescriptor(uploadFileDesc))
 			if err := RegisterIPFSUploadApp(deps.srv, deps.catalog, deps.curlUpload); err != nil {
 				return err
 			}

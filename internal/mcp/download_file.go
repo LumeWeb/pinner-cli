@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // DownloadFileInput is the typed argument shape for the unified download_file
@@ -44,25 +46,25 @@ type DownloadFileInput struct {
 // On the OpenAI tunnel, only sink=local is honored (no reachable HTTP mux for
 // a drop). The handler validates the sink against downloadSinksAllowed before
 // any byte is read or written.
-func NewDownloadFileDescriptor(ipfsFn IPFSDownloadHandler, hd *httpDownload, downloadRoot string, maxDownloadBytes int64, tunnelOpenAI bool) ToolDescriptor {
-	return ToolDescriptor{
+func NewDownloadFileDescriptor(ipfsFn IPFSDownloadHandler, hd *httpDownload, downloadRoot string, maxDownloadBytes int64, tunnelOpenAI bool) model.ToolDescriptor {
+	return model.ToolDescriptor{
 		Name:        "download_file",
 		Title:       "Download IPFS content to a file",
 		Description: downloadFileDescription(hd != nil, tunnelOpenAI),
-		Category:    CategoryCore,
+		Category:    model.CategoryCore,
 		InputSchema: toolSchemaFor[DownloadFileInput](),
-		Handler: func(ctx context.Context, request ToolRequest) (ToolResult, error) {
+		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
 			in, err := decodeToolArgs[DownloadFileInput](request)
 			if err != nil {
-				return ToolResult{}, err
+				return model.ToolResult{}, err
 			}
 			if in.IPFSPath == "" {
-				return ToolResult{}, fmt.Errorf("ipfs_path is required")
+				return model.ToolResult{}, fmt.Errorf("ipfs_path is required")
 			}
 			// Validate the sink against what this transport actually offers
 			// before reading anything.
 			if err := downloadSinksAllowed(in.Sink, hd != nil, tunnelOpenAI); err != nil {
-				return ToolResult{}, err
+				return model.ToolResult{}, err
 			}
 			name := in.Name
 			if name == "" {
@@ -75,7 +77,7 @@ func NewDownloadFileDescriptor(ipfsFn IPFSDownloadHandler, hd *httpDownload, dow
 			switch in.Sink {
 			case SinkLocal:
 				if ipfsFn == nil {
-					return ToolResult{}, errors.New("IPFS download handler is not configured")
+					return model.ToolResult{}, errors.New("IPFS download handler is not configured")
 				}
 				res, err := executeLocalSink(ctx, in.IPFSPath, name, in.OutputPath, downloadRoot, maxDownloadBytes, func(ctx context.Context, w io.Writer) error {
 					return ipfsFn(ctx, in.IPFSPath, w)
@@ -87,7 +89,7 @@ func NewDownloadFileDescriptor(ipfsFn IPFSDownloadHandler, hd *httpDownload, dow
 				})
 				return wrapResult(res, err, "Filedrop minted; pull the bytes from fetch_url.")
 			default:
-				return ToolResult{}, fmt.Errorf("unknown sink %q", in.Sink)
+				return model.ToolResult{}, fmt.Errorf("unknown sink %q", in.Sink)
 			}
 		},
 	}

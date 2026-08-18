@@ -16,6 +16,10 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
 	"go.lumeweb.com/pinner-cli/internal/catalogops"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // newOfficialTestServer builds an official-SDK server with one catalog entry
@@ -25,15 +29,15 @@ func newOfficialTestServer(t *testing.T) (*mcp.Server, *ToolCatalog) {
 	t.Helper()
 
 	catalog := NewToolCatalog()
-	catalog.Add(&ToolEntry{
+	catalog.Add(&model.ToolEntry{
 		Name:        "pinner_status",
 		Title:       "Status",
 		Description: "Read account status",
-		Category:    CategoryCore,
+		Category:    model.CategoryCore,
 		ReadOnly:    true,
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"json":{"type":"boolean"}}}`),
-		Handler: PinnerToolHandler(func(_ context.Context, request ToolRequest) (ToolResult, error) {
-			return ToolResult{Text: "status-ok:" + request.Name}, nil
+		Handler: model.PinnerToolHandler(func(_ context.Context, request model.ToolRequest) (model.ToolResult, error) {
+			return model.ToolResult{Text: "status-ok:" + request.Name}, nil
 		}),
 	})
 
@@ -45,42 +49,42 @@ func newOfficialTestServer(t *testing.T) (*mcp.Server, *ToolCatalog) {
 	require.NoError(t, RegisterOfficialMetaTools(srv, catalog, false, nil, nil, nil))
 
 	require.NoError(t, RegisterOfficialResources(srv,
-		[]ResourceDescriptor{
+		[]model.ResourceDescriptor{
 			{
 				URI:         resourceKey,
 				Name:        "account-status",
 				Description: "Current auth state",
 				MIMEType:    "application/json",
-				Handler: func(_ context.Context, req ResourceRequest) (ResourceResult, error) {
-					return ResourceResult{URI: req.URI, MIMEType: "application/json", Text: provider[req.URI]}, nil
+				Handler: func(_ context.Context, req model.ResourceRequest) (model.ResourceResult, error) {
+					return model.ResourceResult{URI: req.URI, MIMEType: "application/json", Text: provider[req.URI]}, nil
 				},
 			},
 		},
-		[]ResourceTemplateDescriptor{
+		[]model.ResourceTemplateDescriptor{
 			{
 				URITemplate: "pinner://websites/{domain}/dns-requirements",
 				Name:        "website-dns-requirements",
 				Description: "DNS records for a website",
 				MIMEType:    "application/json",
-				Handler: func(_ context.Context, req ResourceRequest) (ResourceResult, error) {
-					return ResourceResult{URI: req.URI, MIMEType: "application/json", Text: `{"domain":"` + req.Arguments["domain"] + `"}`}, nil
+				Handler: func(_ context.Context, req model.ResourceRequest) (model.ResourceResult, error) {
+					return model.ResourceResult{URI: req.URI, MIMEType: "application/json", Text: `{"domain":"` + req.Arguments["domain"] + `"}`}, nil
 				},
 			},
 		},
 	))
 
-	require.NoError(t, RegisterOfficialPrompts(srv, []PromptDescriptor{
+	require.NoError(t, RegisterOfficialPrompts(srv, []model.PromptDescriptor{
 		{
 			Name:        "website-onboarding",
 			Title:       "Website Onboarding Wizard",
 			Description: "Guides the agent through website onboarding",
-			Arguments: []PromptArgumentDescriptor{
+			Arguments: []model.PromptArgumentDescriptor{
 				{Name: "domain", Description: "Domain name"},
 			},
-			Handler: func(_ context.Context, req PromptRequest) (PromptResult, error) {
-				return PromptResult{Messages: []PromptMessage{
+			Handler: func(_ context.Context, req model.PromptRequest) (model.PromptResult, error) {
+				return model.PromptResult{Messages: []model.PromptMessage{
 					{Role: "user", Text: "overview"},
-					{Role: "user", EmbeddedResource: &ResourceResult{URI: resourceKey, MIMEType: "application/json", Text: "live"}},
+					{Role: "user", EmbeddedResource: &model.ResourceResult{URI: resourceKey, MIMEType: "application/json", Text: "live"}},
 				}}, nil
 			},
 		},
@@ -108,7 +112,9 @@ func connectOfficialClient(t *testing.T, srv *mcp.Server) *mcp.ClientSession {
 
 func TestOfficialServerFromCatalog(t *testing.T) {
 	catalog := NewToolCatalog()
-	catalog.Add(&ToolEntry{Name: "pinner_status", InputSchema: json.RawMessage(`{"type":"object"}`), Handler: func(_ context.Context, _ ToolRequest) (ToolResult, error) { return ToolResult{Text: "ok"}, nil }})
+	catalog.Add(&model.ToolEntry{Name: "pinner_status", InputSchema: json.RawMessage(`{"type":"object"}`), Handler: func(_ context.Context, _ model.ToolRequest) (model.ToolResult, error) {
+		return model.ToolResult{Text: "ok"}, nil
+	}})
 	srv, err := OfficialServerFromCatalog(catalog, "instructions", false, nil, nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, srv)
@@ -213,7 +219,7 @@ func TestOfficialSearchToolsOnboardingEnvelope(t *testing.T) {
 	// Register a primary flow tool so the onboarding envelope is non-empty and
 	// the primary-only guarantee is exercised end to end. The server closes
 	// over the same *ToolCatalog, so this is visible to the handler.
-	catalog.Add(entry("pins_list", "List pinned CIDs", CategoryCore, InteractionAgentSafe))
+	catalog.Add(entry("pins_list", "List pinned CIDs", model.CategoryCore, model.InteractionAgentSafe))
 	cs := connectOfficialClient(t, srv)
 
 	// Empty query and "help" both route to the onboarding surface.
@@ -339,26 +345,26 @@ func TestOfficialInvokeToolRedirectsInteractiveOnly(t *testing.T) {
 	var interactiveCalled, restoreCalled bool
 
 	catalog := NewToolCatalog()
-	catalog.Add(&ToolEntry{
+	catalog.Add(&model.ToolEntry{
 		Name:        "pinner_setup",
 		Description: "Setup wizard",
-		Category:    CategoryCore,
-		Interaction: InteractionInteractive,
+		Category:    model.CategoryCore,
+		Interaction: model.InteractionInteractive,
 		InputSchema: json.RawMessage(`{"type":"object"}`),
-		Handler: func(context.Context, ToolRequest) (ToolResult, error) {
+		Handler: func(context.Context, model.ToolRequest) (model.ToolResult, error) {
 			interactiveCalled = true
-			return ToolResult{Text: "ran"}, nil
+			return model.ToolResult{Text: "ran"}, nil
 		},
 	})
-	catalog.Add(&ToolEntry{
+	catalog.Add(&model.ToolEntry{
 		Name:        "pinner_vault_restore",
 		Description: "Restore a vault",
-		Category:    CategoryCore,
-		Interaction: InteractionAgentSafe,
+		Category:    model.CategoryCore,
+		Interaction: model.InteractionAgentSafe,
 		InputSchema: json.RawMessage(`{"type":"object"}`),
-		Handler: func(context.Context, ToolRequest) (ToolResult, error) {
+		Handler: func(context.Context, model.ToolRequest) (model.ToolResult, error) {
 			restoreCalled = true
-			return ToolResult{Text: "ran"}, nil
+			return model.ToolResult{Text: "ran"}, nil
 		},
 	})
 
@@ -379,7 +385,7 @@ func TestOfficialInvokeToolRedirectsInteractiveOnly(t *testing.T) {
 	sc, ok := res.StructuredContent.(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, "needs_human", sc["status"])
-	require.Equal(t, string(ReasonInteractiveOnly), sc["reason"])
+	require.Equal(t, string(model.ReasonInteractiveOnly), sc["reason"])
 	require.False(t, interactiveCalled, "interactive tool handler must not run")
 
 	// Agent-safe tool (vault restore OOB) runs its handler, with no stdin
@@ -463,7 +469,7 @@ func TestOfficialInvokeVaultRestoreRoutesAgentSafeHandoff(t *testing.T) {
 	// MCP channel).
 	oobRestore := NewOOBRestore(nil, time.Minute)
 	t.Cleanup(func() { oobRestore.Stop(context.Background()) })
-	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 	reg := NewHandoffRegistry()
 	catalog, err := buildCatalog(compilerRoot(), true, nil, nil, oobRestore, nil, reg, handles,
 		withCatalogDeps(func() *CatalogDepsBundle {
@@ -473,7 +479,7 @@ func TestOfficialInvokeVaultRestoreRoutesAgentSafeHandoff(t *testing.T) {
 
 	restore, ok := catalog.Get(compiledVaultRestoreToolName)
 	require.True(t, ok, "compiled vault.restore must be present in compiler mode")
-	require.Equal(t, InteractionAgentSafe, restore.Interaction,
+	require.Equal(t, model.InteractionAgentSafe, restore.Interaction,
 		"buildCatalog must route compiled vault restore through the agent-safe OOB hand-off handler")
 
 	srv := NewOfficialServer(nil)
@@ -494,7 +500,7 @@ func TestOfficialInvokeVaultRestoreRoutesAgentSafeHandoff(t *testing.T) {
 	sc, ok := res.StructuredContent.(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, "needs_human", sc["status"])
-	require.Equal(t, string(ReasonCredentialEntry), sc["reason"])
+	require.Equal(t, string(model.ReasonCredentialEntry), sc["reason"])
 	restoreURL, _ := sc["restore_url"].(string)
 	require.Contains(t, restoreURL, "/restore/", "restore must mint a one-time restore_url from the OOB coordinator")
 	require.NotEmpty(t, sc["handle"])
@@ -603,9 +609,9 @@ func TestOfficialHandlerPreservesLargeIntID(t *testing.T) {
 	const bigID = "9007199254740993" // 2^53+1: not exactly representable as float64
 
 	var got map[string]any
-	inner := PinnerToolHandler(func(_ context.Context, r ToolRequest) (ToolResult, error) {
+	inner := model.PinnerToolHandler(func(_ context.Context, r model.ToolRequest) (model.ToolResult, error) {
 		got = r.Arguments
-		return ToolResult{Text: "ok"}, nil
+		return model.ToolResult{Text: "ok"}, nil
 	})
 	h := officialToolHandler(inner)
 
@@ -624,4 +630,3 @@ func TestOfficialHandlerPreservesLargeIntID(t *testing.T) {
 	require.True(t, ok, "id must decode as json.Number with UseNumber, got %T", got["id"])
 	require.Equal(t, bigID, num.String(), "large integer id must be preserved exactly, not truncated by float64")
 }
-

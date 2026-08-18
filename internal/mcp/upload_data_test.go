@@ -10,13 +10,15 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.lumeweb.com/pinner-cli/internal/core/uploads"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 func TestDataURIUploadDescriptorRequiresFile(t *testing.T) {
 	desc := DataURIUploadDescriptor(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
 		return nil, nil
 	}, 0)
-	_, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{}})
+	_, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{}})
 	require.ErrorContains(t, err, "file (data URI) is required")
 }
 
@@ -34,7 +36,7 @@ func TestDataURIUploadDescriptorUploads(t *testing.T) {
 		gotData = string(b)
 		return map[string]string{"cid": "QmData"}, nil
 	}, 0)
-	res, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{"file": uri}})
+	res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{"file": uri}})
 	require.NoError(t, err)
 	require.Equal(t, "note.txt", gotName)
 	require.EqualValues(t, len(payload), gotSize)
@@ -56,7 +58,7 @@ func TestDataURIUploadDescriptorTextSurfacesCID(t *testing.T) {
 	desc := DataURIUploadDescriptor(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
 		return &uploads.UploadResult{CID: "bafyabci", Size: int64(len(payload))}, nil
 	}, 0)
-	res, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{"file": uri}})
+	res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{"file": uri}})
 	require.NoError(t, err)
 	require.Contains(t, res.Text, "\"cid\":\"bafyabci\"")
 }

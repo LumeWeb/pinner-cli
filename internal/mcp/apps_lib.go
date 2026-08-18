@@ -5,6 +5,8 @@ import (
 	"sync"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // This file is the light lib layer for authoring ui:// MCP Apps. It collapses
@@ -49,7 +51,7 @@ type AppView struct {
 	// registered with ToolVisibilityApp so a UI-capable host exposes them to the
 	// iframe while the model never sees them in text-form hosts or the model
 	// surface.
-	Helpers []ToolDescriptor
+	Helpers []model.ToolDescriptor
 }
 
 // AppViewInfo is the minimal companion-app description the server emits into a

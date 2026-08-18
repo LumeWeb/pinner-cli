@@ -8,6 +8,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.lumeweb.com/pinner-cli/internal/mcpapp"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // This file wires the "Upload to IPFS" MCP App onto the shared AppView lib
@@ -50,16 +52,16 @@ func renderIPFSUploadAppHTML() string {
 // IPFS view. It is visible to the app only (never the model). It returns a
 // one-time presigned PUT URL that the iframe's Uppy XHR uploader writes the
 // file bytes to out of band — no bytes cross this tool or the LLM channel.
-func ipfsUploadSubmitDescriptor(hp *httpUpload) ToolDescriptor {
-	return ToolDescriptor{
+func ipfsUploadSubmitDescriptor(hp *httpUpload) model.ToolDescriptor {
+	return model.ToolDescriptor{
 		Name:        "ipfs_upload_submit",
 		Title:       "Mint a one-time upload endpoint",
 		Description: "Mint a one-time presigned HTTP PUT endpoint the app's Uppy XHR uploader writes file bytes to out of band. App-only helper for the Upload to IPFS view.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"name":{"type":"string"},"ttl":{"type":"string"}}}`),
-		Handler: func(_ context.Context, req ToolRequest) (ToolResult, error) {
+		Handler: func(_ context.Context, req model.ToolRequest) (model.ToolResult, error) {
 			in, err := decodeToolArgs[IPFSUploadSubmitInput](req)
 			if err != nil {
-				return ToolResult{}, err
+				return model.ToolResult{}, err
 			}
 			name := in.Name
 			if name == "" {
@@ -69,7 +71,7 @@ func ipfsUploadSubmitDescriptor(hp *httpUpload) ToolDescriptor {
 			if in.TTL != "" {
 				d, derr := time.ParseDuration(in.TTL)
 				if derr != nil {
-					return ToolResult{}, fmt.Errorf("invalid ttl %q: %w", in.TTL, derr)
+					return model.ToolResult{}, fmt.Errorf("invalid ttl %q: %w", in.TTL, derr)
 				}
 				if d > 0 {
 					ttl = d
@@ -77,15 +79,15 @@ func ipfsUploadSubmitDescriptor(hp *httpUpload) ToolDescriptor {
 			}
 			url := hp.mint(name, ttl)
 			if url == "" {
-				return ToolResult{}, fmt.Errorf("failed to mint one-time upload endpoint")
+				return model.ToolResult{}, fmt.Errorf("failed to mint one-time upload endpoint")
 			}
-			return ToolResult{
+			return model.ToolResult{
 				StructuredContent: map[string]any{
-					"url":            url,
-					"ttl":            ttl.String(),
-					"max_bytes":      hp.maxBytes,
-					"poll_tool":      "ipfs_upload_status",
-					"response_body":  "the 202 body carries an upload_handle the app passes to poll_tool",
+					"url":           url,
+					"ttl":           ttl.String(),
+					"max_bytes":     hp.maxBytes,
+					"poll_tool":     "ipfs_upload_status",
+					"response_body": "the 202 body carries an upload_handle the app passes to poll_tool",
 				},
 				Text: "One-time upload endpoint minted. PUT the file bytes and poll for the CID.",
 			}, nil
@@ -98,25 +100,25 @@ func ipfsUploadSubmitDescriptor(hp *httpUpload) ToolDescriptor {
 // upload_handle returned by the presigned PUT's 202 body, it reports the async
 // upload task state / CID from the shared UploadTaskManager (the same one that
 // backs the model-facing upload_status tool).
-func ipfsUploadStatusDescriptor(hp *httpUpload) ToolDescriptor {
-	return ToolDescriptor{
+func ipfsUploadStatusDescriptor(hp *httpUpload) model.ToolDescriptor {
+	return model.ToolDescriptor{
 		Name:        "ipfs_upload_status",
 		Title:       "Get upload status",
 		Description: "Return the status of an async upload by handle: queued, running, completed (with CID), failed, or cancelled. App-only helper for the Upload to IPFS view.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"handle":{"type":"string"}},"required":["handle"]}`),
-		Handler: func(ctx context.Context, req ToolRequest) (ToolResult, error) {
+		Handler: func(ctx context.Context, req model.ToolRequest) (model.ToolResult, error) {
 			in, err := decodeToolArgs[UploadHandleInput](req)
 			if err != nil {
-				return ToolResult{}, err
+				return model.ToolResult{}, err
 			}
 			if in.Handle == "" {
-				return ToolResult{}, fmt.Errorf("handle is required")
+				return model.ToolResult{}, fmt.Errorf("handle is required")
 			}
 			task, err := hp.tasks.Get(in.Handle)
 			if err != nil {
-				return ToolResult{}, err
+				return model.ToolResult{}, err
 			}
-			return ToolResult{StructuredContent: task, Text: "Upload status."}, nil
+			return model.ToolResult{StructuredContent: task, Text: "Upload status."}, nil
 		},
 	}
 }
@@ -149,7 +151,7 @@ func RegisterIPFSUploadApp(srv *mcp.Server, catalog *ToolCatalog, hp *httpUpload
 		HTML:          renderIPFSUploadAppHTML(),
 		PrefersBorder: true,
 		AttachTo:      []string{"upload_file"},
-		Helpers: []ToolDescriptor{
+		Helpers: []model.ToolDescriptor{
 			ipfsUploadSubmitDescriptor(hp),
 			ipfsUploadStatusDescriptor(hp),
 		},

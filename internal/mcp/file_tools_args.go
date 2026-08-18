@@ -3,6 +3,8 @@ package mcp
 import (
 	"encoding/json"
 	"fmt"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // toolSchemaFor returns the JSON schema for a typed input struct using the
@@ -23,7 +25,7 @@ func toolSchemaFor[T any]() json.RawMessage {
 // typed input struct T. Fields the client omitted keep their Go zero values,
 // so handlers must still distinguish "absent" from "explicit false/empty"
 // where it matters (e.g. the wait flag).
-func decodeToolArgs[T any](request ToolRequest) (T, error) {
+func decodeToolArgs[T any](request model.ToolRequest) (T, error) {
 	var in T
 	if len(request.Arguments) == 0 {
 		return in, nil
@@ -42,7 +44,7 @@ func decodeToolArgs[T any](request ToolRequest) (T, error) {
 // guarding that the tool's handler is wired. Every direct-registered tool
 // shares this prologue, so the nil-handler check and argument decode are
 // folded into one call.
-func decodeArgsFor[T any](name string, configured bool, request ToolRequest) (T, error) {
+func decodeArgsFor[T any](name string, configured bool, request model.ToolRequest) (T, error) {
 	var in T
 	if !configured {
 		return in, fmt.Errorf("%s handler is not configured", name)
@@ -68,11 +70,11 @@ func decodeArgsFor[T any](name string, configured bool, request ToolRequest) (T,
 // The `text` argument is retained only for call-site readability (each caller
 // names its own human message); the actual Text payload is the canonical JSON,
 // not the prose, so a model always sees the structured result.
-func wrapResult(result any, err error, text string) (ToolResult, error) {
+func wrapResult(result any, err error, text string) (model.ToolResult, error) {
 	if err != nil {
-		return ToolResult{}, err
+		return model.ToolResult{}, err
 	}
-	return ToolResult{StructuredContent: result, Text: resultJSONText(result)}, nil
+	return model.ToolResult{StructuredContent: result, Text: resultJSONText(result)}, nil
 }
 
 // resultJSONText renders result as a canonical, text-only-friendly JSON string.

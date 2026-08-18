@@ -6,6 +6,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // newAccountAppsServer builds an official server with the account credential
@@ -25,9 +27,9 @@ func newAccountAppsServer(t *testing.T) *mcp.Server {
 	email.DirectVisible = true
 	reset := NewAccountPasswordResetDescriptor(oob.svc, "https://web.example")
 	reset.DirectVisible = true
-	catalog.Add(toolEntryFromDescriptor(update))
-	catalog.Add(toolEntryFromDescriptor(email))
-	catalog.Add(toolEntryFromDescriptor(reset))
+	catalog.Add(model.ToolEntryFromDescriptor(update))
+	catalog.Add(model.ToolEntryFromDescriptor(email))
+	catalog.Add(model.ToolEntryFromDescriptor(reset))
 
 	require.NoError(t, RegisterAccountPasswordApp(srv, catalog), "RegisterAccountPasswordApp")
 	require.NoError(t, RegisterAccountEmailApp(srv, catalog), "RegisterAccountEmailApp")

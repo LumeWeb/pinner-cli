@@ -10,7 +10,7 @@ import (
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/internal/core/auth"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
-	"go.lumeweb.com/pinner-cli/internal/mcp"
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/flag"
 )
 
 // cleanupTerminal restores terminal state after an interrupt.
@@ -187,7 +187,7 @@ Examples:
 				Usage:   "Email address for login",
 				Sources: cli.EnvVars("PINNER_EMAIL"),
 			},
-			mcp.SensitiveStringFlag(&cli.StringFlag{
+			flag.SensitiveStringFlag(&cli.StringFlag{
 				Name:    FlagPassword,
 				Aliases: []string{"p"},
 				Usage:   "Password for login (WARNING: insecure, prefer stdin or env var)",

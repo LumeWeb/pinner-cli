@@ -12,18 +12,20 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.lumeweb.com/pinner-cli/internal/core/auth"
 	portalsdk "go.lumeweb.com/portal-sdk"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // testAccountAuthService implements the mcp AuthService subset for password OOB
 // tests. It records UpdatePassword/RequestPasswordReset calls and lets tests
 // force Status/UpdatePassword outcomes.
 type testAccountAuthService struct {
-	statusErr       error
-	updateErr       error
-	updateCurrent   string
-	updateNew       string
-	resetCalls      []string
-	updateCalls     int
+	statusErr     error
+	updateErr     error
+	updateCurrent string
+	updateNew     string
+	resetCalls    []string
+	updateCalls   int
 }
 
 func (s *testAccountAuthService) LoginCheck(ctx context.Context, email, password string) (*portalsdk.LoginResult, error) {
@@ -199,11 +201,11 @@ func TestAccountPasswordUpdateRejectsUnauthenticated(t *testing.T) {
 	svc := &testAccountAuthService{statusErr: context.DeadlineExceeded}
 	c, _ := buildAccountPwServer(svc)
 	desc := NewAccountPasswordUpdateDescriptor(c, svc, nil, nil)
-	res, err := desc.Handler(context.Background(), ToolRequest{Name: "account_password_update", Arguments: map[string]any{}})
+	res, err := desc.Handler(context.Background(), model.ToolRequest{Name: "account_password_update", Arguments: map[string]any{}})
 	require.NoError(t, err)
 	sc := res.StructuredContent.(map[string]any)
-	assert.Equal(t, StatusNeedsHuman, sc["status"])
-	assert.Equal(t, ReasonSSOApproval, sc["reason"])
+	assert.Equal(t, model.StatusNeedsHuman, sc["status"])
+	assert.Equal(t, model.ReasonSSOApproval, sc["reason"])
 	assert.Equal(t, "auth_sso", sc["resume_tool"])
 }
 
@@ -213,11 +215,11 @@ func TestAccountPasswordUpdateReturnsHandoff(t *testing.T) {
 	svc := &testAccountAuthService{}
 	c, _ := buildAccountPwServer(svc)
 	desc := NewAccountPasswordUpdateDescriptor(c, svc, nil, nil)
-	res, err := desc.Handler(context.Background(), ToolRequest{Name: "account_password_update", Arguments: map[string]any{}})
+	res, err := desc.Handler(context.Background(), model.ToolRequest{Name: "account_password_update", Arguments: map[string]any{}})
 	require.NoError(t, err)
 	sc := res.StructuredContent.(map[string]any)
-	assert.Equal(t, StatusNeedsHuman, sc["status"])
-	assert.Equal(t, ReasonSSOApproval, sc["reason"])
+	assert.Equal(t, model.StatusNeedsHuman, sc["status"])
+	assert.Equal(t, model.ReasonSSOApproval, sc["reason"])
 	u, _ := sc["action_url"].(string)
 	require.NotEmpty(t, u)
 	assert.Contains(t, u, "/account/")
@@ -227,11 +229,11 @@ func TestAccountPasswordUpdateReturnsHandoff(t *testing.T) {
 // structured not-configured hand-off.
 func TestAccountPasswordUpdateNotConfigured(t *testing.T) {
 	desc := NewAccountPasswordUpdateDescriptor(nil, nil, nil, nil)
-	res, err := desc.Handler(context.Background(), ToolRequest{Name: "account_password_update", Arguments: map[string]any{}})
+	res, err := desc.Handler(context.Background(), model.ToolRequest{Name: "account_password_update", Arguments: map[string]any{}})
 	require.NoError(t, err)
 	sc := res.StructuredContent.(map[string]any)
-	assert.Equal(t, StatusNeedsHuman, sc["status"])
-	assert.Equal(t, ReasonInteractiveOnly, sc["reason"])
+	assert.Equal(t, model.StatusNeedsHuman, sc["status"])
+	assert.Equal(t, model.ReasonInteractiveOnly, sc["reason"])
 }
 
 // TestAccountPasswordResetSendsAndHandsOff verifies account_password_reset calls
@@ -239,11 +241,11 @@ func TestAccountPasswordUpdateNotConfigured(t *testing.T) {
 func TestAccountPasswordResetSendsAndHandsOff(t *testing.T) {
 	svc := &testAccountAuthService{}
 	desc := NewAccountPasswordResetDescriptor(svc, "https://account.pinner.xyz")
-	res, err := desc.Handler(context.Background(), ToolRequest{Name: "account_password_reset", Arguments: map[string]any{"email": "user@example.com"}})
+	res, err := desc.Handler(context.Background(), model.ToolRequest{Name: "account_password_reset", Arguments: map[string]any{"email": "user@example.com"}})
 	require.NoError(t, err)
 	require.Equal(t, []string{"user@example.com"}, svc.resetCalls)
 	sc := res.StructuredContent.(map[string]any)
-	assert.Equal(t, StatusNeedsHuman, sc["status"])
+	assert.Equal(t, model.StatusNeedsHuman, sc["status"])
 	assert.Equal(t, "https://account.pinner.xyz", sc["action_url"])
 }
 
@@ -251,7 +253,7 @@ func TestAccountPasswordResetSendsAndHandsOff(t *testing.T) {
 func TestAccountPasswordResetMissingEmail(t *testing.T) {
 	svc := &testAccountAuthService{}
 	desc := NewAccountPasswordResetDescriptor(svc, "")
-	res, err := desc.Handler(context.Background(), ToolRequest{Name: "account_password_reset", Arguments: map[string]any{}})
+	res, err := desc.Handler(context.Background(), model.ToolRequest{Name: "account_password_reset", Arguments: map[string]any{}})
 	require.NoError(t, err)
 	assert.True(t, res.IsError)
 }

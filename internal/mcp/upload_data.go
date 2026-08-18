@@ -3,6 +3,10 @@ package mcp
 import (
 	"context"
 	"fmt"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // DataURIUploadInput is the typed argument shape for upload_data.
@@ -20,28 +24,28 @@ type DataURIUploadInput struct {
 // it. Bytes are decoded by Pinner from the data URI, never re-emitted into the
 // model context. The base64 payload is streamed to the upload handler, not
 // materialized in memory.
-func DataURIUploadDescriptor(handler DataURIUploadHandler, maxBytes int64) ToolDescriptor {
-	maxBytes = effectiveRelayMaxBytes(maxBytes)
-	return ToolDescriptor{
+func DataURIUploadDescriptor(handler DataURIUploadHandler, maxBytes int64) model.ToolDescriptor {
+	maxBytes = ieo.EffectiveRelayMaxBytes(maxBytes)
+	return model.ToolDescriptor{
 		Name:        "upload_data",
 		Title:       "Upload a file from a data URI",
 		Description: "Upload a file supplied as a SEP-2356 data: file URI (x-mcp-file wire form). Pinner decodes the base64 payload locally and uploads it through the authenticated path. Use this when the host can attach file bytes as a data URI but cannot supply a fetchable URL.",
-		Category:    CategoryCore,
+		Category:    model.CategoryCore,
 		InputSchema: toolSchemaFor[DataURIUploadInput](),
 		// x-mcp-file marks the "file" property as a file-valued input per the
 		// draft spec; the SDK's Meta map carries it without a typed field.
 		Meta: map[string]any{"x-mcp-file": map[string]any{"file": map[string]any{"transferModes": []string{"inline"}}}},
-		Handler: func(ctx context.Context, request ToolRequest) (ToolResult, error) {
+		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
 			in, err := decodeArgsFor[DataURIUploadInput]("data URI upload", handler != nil, request)
 			if err != nil {
-				return ToolResult{}, err
+				return model.ToolResult{}, err
 			}
 			if in.File == "" {
-				return ToolResult{}, fmt.Errorf("file (data URI) is required")
+				return model.ToolResult{}, fmt.Errorf("file (data URI) is required")
 			}
-			reader, opt, err := parseFileDataURI(in.File, maxBytes)
+			reader, opt, err := ieo.ParseFileDataURI(in.File, maxBytes)
 			if err != nil {
-				return ToolResult{}, err
+				return model.ToolResult{}, err
 			}
 			name := in.Name
 			if name == "" {

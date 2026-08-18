@@ -5,6 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // UploadFileInput is the typed argument shape for the unified upload_file tool.
@@ -54,30 +58,30 @@ func uploadFileTransport(coLocated, tunnelOpenAI bool) TransportKind {
 //   - stdio (coLocated): source mode path → pathFn reads the host path.
 //   - HTTP/tunnel: source mode mint → hp mints a presigned PUT.
 //   - OpenAI tunnel (tunnelOpenAI): source mode url/data → relayed through MCP.
-func NewUploadFileDescriptor(coLocated, tunnelOpenAI bool, pathFn UploadFileHandler, hp *httpUpload, relayFn UploadHandler, relayHosts []string, maxRelayBytes int64) ToolDescriptor {
+func NewUploadFileDescriptor(coLocated, tunnelOpenAI bool, pathFn UploadFileHandler, hp *httpUpload, relayFn UploadHandler, relayHosts []string, maxRelayBytes int64) model.ToolDescriptor {
 	transport := uploadFileTransport(coLocated, tunnelOpenAI)
-	return ToolDescriptor{
+	return model.ToolDescriptor{
 		Name:        "upload_file",
 		Title:       "Upload a file to Pinner",
 		Description: uploadFileDescription(transport),
-		Category:    CategoryCore,
+		Category:    model.CategoryCore,
 		InputSchema: toolSchemaFor[UploadFileInput](),
-		Handler: func(ctx context.Context, request ToolRequest) (ToolResult, error) {
+		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
 			in, err := decodeToolArgs[UploadFileInput](request)
 			if err != nil {
-				return ToolResult{}, err
+				return model.ToolResult{}, err
 			}
 			if err := in.Source.Validate(transport); err != nil {
-				return ToolResult{}, err
+				return model.ToolResult{}, err
 			}
 
 			switch transport {
 			case TransportStdio:
 				if in.Source.Mode != SourcePath {
-					return ToolResult{}, fmt.Errorf("source mode %q is not available on the %s transport", in.Source.Mode, transport)
+					return model.ToolResult{}, fmt.Errorf("source mode %q is not available on the %s transport", in.Source.Mode, transport)
 				}
 				if pathFn == nil {
-					return ToolResult{}, errors.New("local path upload is not configured")
+					return model.ToolResult{}, errors.New("local path upload is not configured")
 				}
 				name := in.Name
 				if name == "" {
@@ -87,10 +91,10 @@ func NewUploadFileDescriptor(coLocated, tunnelOpenAI bool, pathFn UploadFileHand
 				return wrapResult(result, err, "Uploaded.")
 			case TransportHTTP:
 				if in.Source.Mode != SourceMint {
-					return ToolResult{}, fmt.Errorf("source mode %q is not available on the %s transport", in.Source.Mode, transport)
+					return model.ToolResult{}, fmt.Errorf("source mode %q is not available on the %s transport", in.Source.Mode, transport)
 				}
 				if hp == nil {
-					return ToolResult{}, errors.New("presigned upload endpoint is not configured for remote mode")
+					return model.ToolResult{}, errors.New("presigned upload endpoint is not configured for remote mode")
 				}
 				name := in.Name
 				if name == "" {
@@ -100,7 +104,7 @@ func NewUploadFileDescriptor(coLocated, tunnelOpenAI bool, pathFn UploadFileHand
 				if in.TTL != "" {
 					d, derr := time.ParseDuration(in.TTL)
 					if derr != nil {
-						return ToolResult{}, fmt.Errorf("invalid ttl %q: %w", in.TTL, derr)
+						return model.ToolResult{}, fmt.Errorf("invalid ttl %q: %w", in.TTL, derr)
 					}
 					if d > 0 {
 						ttl = d
@@ -109,10 +113,10 @@ func NewUploadFileDescriptor(coLocated, tunnelOpenAI bool, pathFn UploadFileHand
 				res := &SourceResolver{Transport: TransportHTTP, HTTPUpload: hp}
 				url, merr := res.MintURL(in.Source, name, ttl)
 				if merr != nil {
-					return ToolResult{}, merr
+					return model.ToolResult{}, merr
 				}
 				curlCmd := fmt.Sprintf("curl -sS -T <your-file> %q", url)
-				return ToolResult{
+				return model.ToolResult{
 					StructuredContent: map[string]any{
 						"url":                url,
 						"curl_command":       curlCmd,
@@ -124,15 +128,15 @@ func NewUploadFileDescriptor(coLocated, tunnelOpenAI bool, pathFn UploadFileHand
 				}, nil
 			default: // TransportOpenAI
 				if in.Source.Mode != SourceURL && in.Source.Mode != SourceData {
-					return ToolResult{}, fmt.Errorf("source mode %q is not available on the OpenAI tunnel transport", in.Source.Mode)
+					return model.ToolResult{}, fmt.Errorf("source mode %q is not available on the OpenAI tunnel transport", in.Source.Mode)
 				}
 				if relayFn == nil {
-					return ToolResult{}, errors.New("file relay upload is not configured")
+					return model.ToolResult{}, errors.New("file relay upload is not configured")
 				}
-				res := &SourceResolver{Transport: TransportOpenAI, RelayAllowedHosts: relayHosts, RelayMaxBytes: effectiveRelayMaxBytes(maxRelayBytes)}
+				res := &SourceResolver{Transport: TransportOpenAI, RelayAllowedHosts: relayHosts, RelayMaxBytes: ieo.EffectiveRelayMaxBytes(maxRelayBytes)}
 				body, size, srcName, oerr := res.OpenBytes(ctx, in.Source)
 				if oerr != nil {
-					return ToolResult{}, oerr
+					return model.ToolResult{}, oerr
 				}
 				defer body.Close()
 				name := in.Name

@@ -4,6 +4,10 @@ import (
 	"context"
 	"strings"
 	"time"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // This file exposes the vault seed create/restore out-of-band hand-offs as
@@ -168,8 +172,8 @@ func (o *OOBRestore) pruneOutcomesLocked(cutoff time.Time) {
 // vaultCreateSetupHandler so the shared vault_create_resume template
 // dispatches to it. The continuation performs its own registry/handle cleanup
 // on every terminal outcome.
-func vaultCreateResumeContinuation(oob *OOBCreate, handles *AsyncHandleStore, reg *HandoffRegistry) ResumeContinuation {
-	return func(ctx context.Context, handle string, data map[string]any) (ToolResult, error) {
+func vaultCreateResumeContinuation(oob *OOBCreate, handles *session.AsyncHandleStore, reg *HandoffRegistry) ResumeContinuation {
+	return func(ctx context.Context, handle string, data map[string]any) (model.ToolResult, error) {
 		token, _ := data[handleDataToken].(string)
 		if oob == nil {
 			return vaultExpiredResult(handles, reg, handle, vaultCreateResumeToolName, compiledVaultCreateToolName,
@@ -183,9 +187,9 @@ func vaultCreateResumeContinuation(oob *OOBCreate, handles *AsyncHandleStore, re
 			oob.forgetOutcome(token)
 			handles.Delete(handle)
 			reg.End(handle)
-			return ToolResult{
+			return model.ToolResult{
 				Text:              "Vault create hand-off complete: the vault is active and the recovery seed has been retrieved.",
-				StructuredContent: map[string]any{"status": StatusDone, "handle": handle},
+				StructuredContent: map[string]any{"status": model.StatusDone, "handle": handle},
 			}, nil
 		case failed:
 			// RunCreate failed (approval/registration error). Do not report done;
@@ -200,8 +204,8 @@ func vaultCreateResumeContinuation(oob *OOBCreate, handles *AsyncHandleStore, re
 			return vaultExpiredResult(handles, reg, handle, vaultCreateResumeToolName, compiledVaultCreateToolName,
 				"The one-time create_url expired before the vault was created and the seed retrieved; start a fresh vault create with vault_create so a new create_url is minted.")
 		case pending:
-			return NeedsHumanResult(NeedsHuman{
-				Reason:     ReasonCredentialEntry,
+			return model.NeedsHumanResult(model.NeedsHuman{
+				Reason:     model.ReasonCredentialEntry,
 				Handle:     handle,
 				ResumeTool: vaultCreateResumeToolName,
 				Detail:     "Ask the user to open the create_url in a browser, approve the Sia device connection, then retrieve the one-time recovery seed. Then call vault_create_resume with the handle.",
@@ -227,8 +231,8 @@ func vaultCreateResumeContinuation(oob *OOBCreate, handles *AsyncHandleStore, re
 // coordinator-state poll (the token going spent); the RestoreRunner only runs
 // in the browser POST handler, never on this channel, so the seed never
 // reaches the agent.
-func vaultRestoreResumeContinuation(oob *OOBRestore, handles *AsyncHandleStore, reg *HandoffRegistry) ResumeContinuation {
-	return func(ctx context.Context, handle string, data map[string]any) (ToolResult, error) {
+func vaultRestoreResumeContinuation(oob *OOBRestore, handles *session.AsyncHandleStore, reg *HandoffRegistry) ResumeContinuation {
+	return func(ctx context.Context, handle string, data map[string]any) (model.ToolResult, error) {
 		token, _ := data[handleDataToken].(string)
 		if oob == nil {
 			return vaultExpiredResult(handles, reg, handle, vaultRestoreResumeToolName, compiledVaultRestoreToolName,
@@ -241,9 +245,9 @@ func vaultRestoreResumeContinuation(oob *OOBRestore, handles *AsyncHandleStore, 
 			oob.forgetOutcome(token)
 			handles.Delete(handle)
 			reg.End(handle)
-			return ToolResult{
+			return model.ToolResult{
 				Text:              "Vault restore hand-off complete: the vault has been restored.",
-				StructuredContent: map[string]any{"status": StatusDone, "handle": handle},
+				StructuredContent: map[string]any{"status": model.StatusDone, "handle": handle},
 			}, nil
 		case failed:
 			// RunRestore failed (wrong mnemonic, approval/registration error). Do
@@ -258,8 +262,8 @@ func vaultRestoreResumeContinuation(oob *OOBRestore, handles *AsyncHandleStore, 
 			return vaultExpiredResult(handles, reg, handle, vaultRestoreResumeToolName, compiledVaultRestoreToolName,
 				"The one-time restore_url expired before the restore was completed; start a fresh vault restore with vault_restore so a new restore_url is minted.")
 		case pending:
-			return NeedsHumanResult(NeedsHuman{
-				Reason:     ReasonCredentialEntry,
+			return model.NeedsHumanResult(model.NeedsHuman{
+				Reason:     model.ReasonCredentialEntry,
 				Handle:     handle,
 				ResumeTool: vaultRestoreResumeToolName,
 				Detail:     "Ask the user to open the restore_url in a browser and enter the recovery seed to complete the restore. Then call vault_restore_resume with the handle.",
@@ -280,7 +284,7 @@ func vaultRestoreResumeContinuation(oob *OOBRestore, handles *AsyncHandleStore, 
 // polling a dead flow, and returns a needs_human steer to the matching start
 // tool. It is NOT a success result; an expired one-time link must read as a
 // restart, never as a completed vault create/restore.
-func vaultExpiredResult(handles *AsyncHandleStore, reg *HandoffRegistry, handle, resumeTool, restartTool, detail string) (ToolResult, error) {
+func vaultExpiredResult(handles *session.AsyncHandleStore, reg *HandoffRegistry, handle, resumeTool, restartTool, detail string) (model.ToolResult, error) {
 	// Clearing the continuation + backing handle means the next poll of the
 	// *_resume tool hits the template's dead-handle branch, which steers to
 	// restart via the tool spec. The agent gets one clean restart instruction
@@ -288,8 +292,8 @@ func vaultExpiredResult(handles *AsyncHandleStore, reg *HandoffRegistry, handle,
 	handles.Delete(handle)
 	reg.End(handle)
 	_ = resumeTool
-	return NeedsHumanResult(NeedsHuman{
-		Reason:     ReasonCredentialEntry,
+	return model.NeedsHumanResult(model.NeedsHuman{
+		Reason:     model.ReasonCredentialEntry,
 		ResumeTool: restartTool,
 		Detail:     detail,
 	}), nil
@@ -298,7 +302,7 @@ func vaultExpiredResult(handles *AsyncHandleStore, reg *HandoffRegistry, handle,
 // NewVaultCreateResumeDescriptor returns the vault_create_resume tool,
 // built from the shared resume template. Name/description and restart steering
 // are create-flavored: a dead handle steers back to vault_create.
-func NewVaultCreateResumeDescriptor(reg *HandoffRegistry, handles *AsyncHandleStore) ToolDescriptor {
+func NewVaultCreateResumeDescriptor(reg *HandoffRegistry, handles *session.AsyncHandleStore) model.ToolDescriptor {
 	return NewResumeTool(ResumeToolSpec{
 		Name:                vaultCreateResumeToolName,
 		Title:               "Vault Create Resume",
@@ -306,15 +310,15 @@ func NewVaultCreateResumeDescriptor(reg *HandoffRegistry, handles *AsyncHandleSt
 		RestartTool:         compiledVaultCreateToolName,
 		UnknownHandleDetail: "unknown handle; start a fresh vault create with vault_create",
 		ExpiredHandleDetail: "the vault create hand-off expired before the vault was created and the seed retrieved; start a fresh vault create with vault_create so a new create_url is minted",
-		DeadHandleReason:    ReasonCredentialEntry,
-		Category:            CategoryVault,
+		DeadHandleReason:    model.ReasonCredentialEntry,
+		Category:            model.CategoryVault,
 	}, reg, handles)
 }
 
 // NewVaultRestoreResumeDescriptor returns the vault_restore_resume tool,
 // built from the shared resume template. Name/description and restart steering
 // are restore-flavored: a dead handle steers back to vault_restore.
-func NewVaultRestoreResumeDescriptor(reg *HandoffRegistry, handles *AsyncHandleStore) ToolDescriptor {
+func NewVaultRestoreResumeDescriptor(reg *HandoffRegistry, handles *session.AsyncHandleStore) model.ToolDescriptor {
 	return NewResumeTool(ResumeToolSpec{
 		Name:                vaultRestoreResumeToolName,
 		Title:               "Vault Restore Resume",
@@ -322,7 +326,7 @@ func NewVaultRestoreResumeDescriptor(reg *HandoffRegistry, handles *AsyncHandleS
 		RestartTool:         compiledVaultRestoreToolName,
 		UnknownHandleDetail: "unknown handle; start a fresh vault restore with vault_restore",
 		ExpiredHandleDetail: "the vault restore hand-off expired before the human completed it; start a fresh vault restore with vault_restore so a new restore_url is minted",
-		DeadHandleReason:    ReasonCredentialEntry,
-		Category:            CategoryVault,
+		DeadHandleReason:    model.ReasonCredentialEntry,
+		Category:            model.CategoryVault,
 	}, reg, handles)
 }

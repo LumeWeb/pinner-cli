@@ -8,6 +8,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // buildDownloadServers constructs a catalog with the download tools and
@@ -33,13 +35,13 @@ func buildDownloadServers(t *testing.T) *mcp.Server {
 func addDownloadToolEntries(t *testing.T, catalog *ToolCatalog) {
 	t.Helper()
 	for _, name := range []string{"download_file", "vault_get_file"} {
-		catalog.Add(&ToolEntry{
+		catalog.Add(&model.ToolEntry{
 			Name:          name,
 			Description:   "download stub",
 			DirectVisible: true,
 			InputSchema:   json.RawMessage(`{"type":"object","properties":{}}`),
-			Handler: func(_ context.Context, _ ToolRequest) (ToolResult, error) {
-				return ToolResult{Text: `{"status":"ok"}`}, nil
+			Handler: func(_ context.Context, _ model.ToolRequest) (model.ToolResult, error) {
+				return model.ToolResult{Text: `{"status":"ok"}`}, nil
 			},
 		})
 	}

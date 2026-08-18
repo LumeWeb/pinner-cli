@@ -8,6 +8,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
 	"go.lumeweb.com/pinner-cli/internal/catalog"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // TestOfficialToolOutputSchemaAbsent verifies that a descriptor without an
@@ -15,7 +17,7 @@ import (
 // the field for tools whose structured shape isn't described, while still
 // emitting it for tools that opt in (see TestOfficialToolOutputSchemaPresent).
 func TestOfficialToolOutputSchemaAbsent(t *testing.T) {
-	tool := officialTool(ToolDescriptor{
+	tool := officialTool(model.ToolDescriptor{
 		Name:        "plain_tool",
 		Description: "no structured output declared",
 		InputSchema: json.RawMessage(`{"type":"object"}`),
@@ -39,7 +41,7 @@ func TestOfficialToolOutputSchemaPresent(t *testing.T) {
 		},
 		"required": ["status"]
 	}`)
-	tool := officialTool(ToolDescriptor{
+	tool := officialTool(model.ToolDescriptor{
 		Name:         "structured_tool",
 		Description:  "returns structured output",
 		InputSchema:  json.RawMessage(`{"type":"object"}`),
@@ -57,7 +59,7 @@ func TestOfficialToolOutputSchemaPresent(t *testing.T) {
 // TestOutputSchemaInvalidRejected verifies that a malformed OutputSchema is not
 // emitted (it would produce invalid JSON on the wire).
 func TestOutputSchemaInvalidRejected(t *testing.T) {
-	tool := officialTool(ToolDescriptor{
+	tool := officialTool(model.ToolDescriptor{
 		Name:         "bad_schema",
 		InputSchema:  json.RawMessage(`{"type":"object"}`),
 		OutputSchema: json.RawMessage(`{not valid json`),
@@ -167,24 +169,24 @@ func (f handlerFunc) Execute(ctx context.Context, input map[string]any) (any, er
 func TestVaultSetupRouteNeedsHumanSchema(t *testing.T) {
 	c := NewToolCatalog()
 	for _, name := range []string{compiledVaultCreateToolName, compiledVaultRestoreToolName} {
-		c.Add(&ToolEntry{
+		c.Add(&model.ToolEntry{
 			Name:         name,
 			InputSchema:  json.RawMessage(`{"type":"object"}`),
 			OutputSchema: catalogOutputSchema, // what catalogDescriptorToEntry would stamp
-			Handler: func(_ context.Context, _ ToolRequest) (ToolResult, error) {
-				return ToolResult{Text: "stale"}, nil
+			Handler: func(_ context.Context, _ model.ToolRequest) (model.ToolResult, error) {
+				return model.ToolResult{Text: "stale"}, nil
 			},
 		})
 	}
 
 	swapped := map[string]bool{}
-	create := func(_ context.Context, _ ToolRequest) (ToolResult, error) {
+	create := func(_ context.Context, _ model.ToolRequest) (model.ToolResult, error) {
 		swapped[compiledVaultCreateToolName] = true
-		return NeedsHumanResult(NeedsHuman{Reason: ReasonConfirmation}), nil
+		return model.NeedsHumanResult(model.NeedsHuman{Reason: model.ReasonConfirmation}), nil
 	}
-	restore := func(_ context.Context, _ ToolRequest) (ToolResult, error) {
+	restore := func(_ context.Context, _ model.ToolRequest) (model.ToolResult, error) {
 		swapped[compiledVaultRestoreToolName] = true
-		return NeedsHumanResult(NeedsHuman{Reason: ReasonConfirmation}), nil
+		return model.NeedsHumanResult(model.NeedsHuman{Reason: model.ReasonConfirmation}), nil
 	}
 
 	routeVaultSetupHandlers(c, create, restore)
@@ -197,11 +199,11 @@ func TestVaultSetupRouteNeedsHumanSchema(t *testing.T) {
 		// The declared shape must be the needs_human envelope.
 		require.JSONEq(t, string(catalogNeedsHumanOutputSchema), string(entry.OutputSchema), name)
 		// The swapped handler is live and produces the needs_human shape.
-		res, err := entry.Handler(context.Background(), ToolRequest{Name: name})
+		res, err := entry.Handler(context.Background(), model.ToolRequest{Name: name})
 		require.NoError(t, err)
 		sc, ok := res.StructuredContent.(map[string]any)
 		require.True(t, ok, name, "needs_human result must carry structured content")
-		require.Equal(t, StatusNeedsHuman, sc["status"], name)
+		require.Equal(t, model.StatusNeedsHuman, sc["status"], name)
 		require.True(t, swapped[name], name)
 	}
 }
@@ -228,16 +230,16 @@ func TestNeedsHumanSchemaCoversVaultHandoffKeys(t *testing.T) {
 	createSC := create.StructuredContent.(map[string]any)
 	_, ok := createSC["create_url"]
 	require.True(t, ok, "create hand-off must emit create_url")
-	require.Equal(t, ReasonCredentialEntry, createSC["reason"])
+	require.Equal(t, model.ReasonCredentialEntry, createSC["reason"])
 
 	restore := vaultHandoffResult("vault_restore_resume", "restore_url", "https://ex/restore", "h2", "restore detail")
 	restoreSC := restore.StructuredContent.(map[string]any)
 	_, ok = restoreSC["restore_url"]
 	require.True(t, ok, "restore hand-off must emit restore_url")
-	require.Equal(t, ReasonCredentialEntry, restoreSC["reason"])
+	require.Equal(t, model.ReasonCredentialEntry, restoreSC["reason"])
 
 	// SSO hand-offs, by contrast, use the generic action_url key.
-	sso := NeedsHumanResult(NeedsHuman{Reason: ReasonConfirmation, ActionURL: "https://ex/sso"})
+	sso := model.NeedsHumanResult(model.NeedsHuman{Reason: model.ReasonConfirmation, ActionURL: "https://ex/sso"})
 	ssoSC := sso.StructuredContent.(map[string]any)
 	_, ok = ssoSC["action_url"]
 	require.True(t, ok, "SSO hand-off must emit action_url")

@@ -10,6 +10,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/internal/catalogops"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/flag"
 )
 
 func TestHumanTitle(t *testing.T) {
@@ -42,7 +47,7 @@ func TestBuildInstructionsEmbedsCount(t *testing.T) {
 // gets its enum emitted into the MCP input schema, while a plain string flag
 // does not.
 func TestEnumStringFlagEmitsEnum(t *testing.T) {
-	schema, err := flagsToSchema([]cli.Flag{EnumStringFlag("mode", "Cancel mode", false, "end_of_billing_period", "immediate", "end_of_billing_period")}, "")
+	schema, err := flag.FlagsToSchema([]cli.Flag{flag.EnumStringFlag("mode", "Cancel mode", false, "end_of_billing_period", "immediate", "end_of_billing_period")}, "")
 	require.NoError(t, err)
 	var doc map[string]any
 	require.NoError(t, json.Unmarshal(schema, &doc))
@@ -50,7 +55,7 @@ func TestEnumStringFlagEmitsEnum(t *testing.T) {
 	mode := props["mode"].(map[string]any)
 	assert.Equal(t, []any{"immediate", "end_of_billing_period"}, mode["enum"])
 
-	schema, err = flagsToSchema([]cli.Flag{&cli.StringFlag{Name: "path", Usage: "Path"}}, "")
+	schema, err = flag.FlagsToSchema([]cli.Flag{&cli.StringFlag{Name: "path", Usage: "Path"}}, "")
 	require.NoError(t, err)
 	require.NoError(t, json.Unmarshal(schema, &doc))
 	props = doc["properties"].(map[string]any)
@@ -65,11 +70,11 @@ func TestEnumStringFlagEmitsEnum(t *testing.T) {
 // CLI-tree walk.)
 func TestSensitiveStringFlagSchema(t *testing.T) {
 	flags := []cli.Flag{
-		SensitiveStringFlag(&cli.StringFlag{Name: "password", Usage: "Password", Aliases: []string{"p"}}),
+		flag.SensitiveStringFlag(&cli.StringFlag{Name: "password", Usage: "Password", Aliases: []string{"p"}}),
 		&cli.StringFlag{Name: "email", Usage: "Email"},
 	}
 
-	schema, err := flagsToSchema(flags, "")
+	schema, err := flag.FlagsToSchema(flags, "")
 	require.NoError(t, err)
 	var doc map[string]any
 	require.NoError(t, json.Unmarshal(schema, &doc))
@@ -80,7 +85,7 @@ func TestSensitiveStringFlagSchema(t *testing.T) {
 }
 
 func TestStringSliceFlagEmitsArraySchema(t *testing.T) {
-	schema, err := flagsToSchema([]cli.Flag{&cli.StringSliceFlag{Name: "tags", Usage: "Tags"}}, "")
+	schema, err := flag.FlagsToSchema([]cli.Flag{&cli.StringSliceFlag{Name: "tags", Usage: "Tags"}}, "")
 	require.NoError(t, err)
 
 	var doc map[string]any
@@ -106,7 +111,7 @@ func TestVaultRestoreInteractionStaysAgentSafeThroughBuildCatalog(t *testing.T) 
 	// channel.
 	oobRestore := NewOOBRestore(nil, time.Minute)
 	t.Cleanup(func() { oobRestore.Stop(context.Background()) })
-	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 	reg := NewHandoffRegistry()
 	catalog, err := buildCatalog(compilerRoot(), true, nil, nil, oobRestore, nil, reg, handles,
 		withCatalogDeps(func() *CatalogDepsBundle {
@@ -115,7 +120,7 @@ func TestVaultRestoreInteractionStaysAgentSafeThroughBuildCatalog(t *testing.T) 
 	require.NoError(t, err)
 	restore, ok := catalog.Get(compiledVaultRestoreToolName)
 	require.True(t, ok, "compiled vault.restore must be present in compiler mode")
-	assert.Equal(t, InteractionAgentSafe, restore.Interaction,
+	assert.Equal(t, model.InteractionAgentSafe, restore.Interaction,
 		"buildCatalog must route compiled vault restore through the agent-safe OOB hand-off handler, not stdin-gate it")
 }
 
@@ -128,8 +133,8 @@ func TestSSOToolsDiscoverableInCatalog(t *testing.T) {
 	catalog := NewToolCatalog()
 	// The descriptors carry the metadata; the handlers no-op on nil oob/handles
 	// for discovery purposes.
-	catalog.Add(toolEntryFromDescriptor(NewAuthSSODescriptor(nil, nil, nil)))
-	catalog.Add(toolEntryFromDescriptor(NewAuthResumeDescriptor(nil, nil)))
+	catalog.Add(model.ToolEntryFromDescriptor(NewAuthSSODescriptor(nil, nil, nil)))
+	catalog.Add(model.ToolEntryFromDescriptor(NewAuthResumeDescriptor(nil, nil)))
 
 	for _, q := range []string{"sso", "oob", "resume", "sign-in", "out-of-band", "auth"} {
 		summaries := catalog.Search(q, "", 0)
@@ -147,10 +152,10 @@ func TestSSOToolsDiscoverableInCatalog(t *testing.T) {
 		switch s.Name {
 		case "auth_sso":
 			ssoCount++
-			assert.Equal(t, InteractionAgentSafe, s.Interaction)
+			assert.Equal(t, model.InteractionAgentSafe, s.Interaction)
 		case "auth_resume":
 			resumeCount++
-			assert.Equal(t, InteractionAgentSafe, s.Interaction)
+			assert.Equal(t, model.InteractionAgentSafe, s.Interaction)
 		}
 	}
 	assert.Equal(t, 1, ssoCount, "auth_sso must be listed exactly once")
@@ -160,7 +165,7 @@ func TestSSOToolsDiscoverableInCatalog(t *testing.T) {
 	// account-domain tool, so it surfaces under CategoryAccount.
 	d, err := catalog.Describe("auth_sso")
 	require.NoError(t, err)
-	assert.Equal(t, CategoryAccount, d.Category)
+	assert.Equal(t, model.CategoryAccount, d.Category)
 	_, ok := catalog.Get("auth_resume")
 	assert.True(t, ok, "auth_resume must be registered for describe/invoke")
 }
@@ -168,8 +173,8 @@ func TestSSOToolsDiscoverableInCatalog(t *testing.T) {
 // entry builds a bare ToolEntry for discovery tests. Handlers are nil and
 // never invoked in these tests; only the search/describe/suggest surface is
 // exercised.
-func entry(name, desc string, cat ToolCategory, inter Interaction) *ToolEntry {
-	return &ToolEntry{
+func entry(name, desc string, cat model.ToolCategory, inter model.Interaction) *model.ToolEntry {
+	return &model.ToolEntry{
 		Name:        name,
 		Description: desc,
 		Category:    cat,
@@ -183,14 +188,14 @@ func entry(name, desc string, cat ToolCategory, inter Interaction) *ToolEntry {
 // search/discovery behaviors without requiring real handlers.
 func seedDiscoveryCatalog() *ToolCatalog {
 	c := NewToolCatalog()
-	c.Add(entry("auth_sso", "Start out-of-band sign-in", CategoryAccount, InteractionAgentSafe))
-	c.Add(entry("auth_resume", "Resume out-of-band sign-in", CategoryAccount, InteractionAgentSafe))
+	c.Add(entry("auth_sso", "Start out-of-band sign-in", model.CategoryAccount, model.InteractionAgentSafe))
+	c.Add(entry("auth_resume", "Resume out-of-band sign-in", model.CategoryAccount, model.InteractionAgentSafe))
 	// Description contains "authenticated" but the name has no "auth" prefix.
-	c.Add(entry("account_status", "Shows the authenticated user's account status", CategoryCore, InteractionAgentSafe))
-	c.Add(entry("pins_add", "Pin a CID to the account", CategoryCore, InteractionAgentSafe))
-	c.Add(entry("payments_card_interactive", "Collect a card number from the human", CategoryAccount, InteractionInteractive))
-	c.Add(entry("website_wizard_start", "Start the interactive website setup wizard", CategoryWizard, InteractionAgentSafe))
-	c.Add(entry("website_wizard_step", "Advance the interactive website setup wizard", CategoryWizard, InteractionAgentSafe))
+	c.Add(entry("account_status", "Shows the authenticated user's account status", model.CategoryCore, model.InteractionAgentSafe))
+	c.Add(entry("pins_add", "Pin a CID to the account", model.CategoryCore, model.InteractionAgentSafe))
+	c.Add(entry("payments_card_interactive", "Collect a card number from the human", model.CategoryAccount, model.InteractionInteractive))
+	c.Add(entry("website_wizard_start", "Start the interactive website setup wizard", model.CategoryWizard, model.InteractionAgentSafe))
+	c.Add(entry("website_wizard_step", "Advance the interactive website setup wizard", model.CategoryWizard, model.InteractionAgentSafe))
 	return c
 }
 
@@ -223,14 +228,14 @@ func TestSearchHidesWizardsByDefault(t *testing.T) {
 	// General search hides wizards.
 	summaries := c.Search("website", "", 0)
 	for _, s := range summaries {
-		assert.NotEqual(t, CategoryWizard, s.Category, "wizard tools must be hidden from general keyword search")
+		assert.NotEqual(t, model.CategoryWizard, s.Category, "wizard tools must be hidden from general keyword search")
 	}
 
 	// Explicit wizard category returns them.
-	wiz := c.Search("", string(CategoryWizard), 0)
+	wiz := c.Search("", string(model.CategoryWizard), 0)
 	assert.NotEmpty(t, wiz, "wizard category filter must return wizard tools")
 	for _, s := range wiz {
-		assert.Equal(t, CategoryWizard, s.Category)
+		assert.Equal(t, model.CategoryWizard, s.Category)
 	}
 }
 
@@ -283,10 +288,10 @@ func TestSearchCategoryStillBrowsesWholeCategory(t *testing.T) {
 	// Category "account" holds auth_sso, auth_resume (primary) and the
 	// interactive payments_card_interactive (hidden). Non-primary interactive
 	// tool is excluded, but auth_sso/auth_resume should be present.
-	summaries := c.Search("", string(CategoryAccount), 0)
+	summaries := c.Search("", string(model.CategoryAccount), 0)
 	require.NotEmpty(t, summaries, "category browsing via empty query must return tools")
 	for _, s := range summaries {
-		assert.Equal(t, CategoryAccount, s.Category)
+		assert.Equal(t, model.CategoryAccount, s.Category)
 	}
 }
 
@@ -315,7 +320,7 @@ func TestSuggestDidYouMean(t *testing.T) {
 
 	// Wizards must never be suggested.
 	for _, s := range c.Suggest("website_wizar", 5) {
-		assert.NotEqual(t, CategoryWizard, func() ToolCategory {
+		assert.NotEqual(t, model.CategoryWizard, func() model.ToolCategory {
 			e, ok := c.Get(s)
 			if !ok {
 				return ""
@@ -329,7 +334,7 @@ func TestSuggestDidYouMean(t *testing.T) {
 	for _, s := range c.Suggest("payments_card_interactiv", 5) {
 		e, ok := c.Get(s)
 		require.True(t, ok, "suggested name %q should resolve", s)
-		assert.NotEqual(t, InteractionInteractive, e.Interaction,
+		assert.NotEqual(t, model.InteractionInteractive, e.Interaction,
 			"interactive tool %q must not be suggested", s)
 	}
 }
@@ -391,10 +396,10 @@ func TestSearchSubsequenceScopedToSegment(t *testing.T) {
 // and asserts a search for "auth" does not surface them at all.
 func TestSearchAuthReturnsNoVaultNoise(t *testing.T) {
 	c := NewToolCatalog()
-	c.Add(entry("auth_sso", "Start out-of-band sign-in", CategoryAccount, InteractionAgentSafe))
-	c.Add(entry("vault_share", "Share a vault path", CategoryVault, InteractionAgentSafe))
-	c.Add(entry("vault_cache_rebuild", "Rebuild the vault cache", CategoryVault, InteractionAgentSafe))
-	c.Add(entry("pins_list", "List pins", CategoryCore, InteractionAgentSafe))
+	c.Add(entry("auth_sso", "Start out-of-band sign-in", model.CategoryAccount, model.InteractionAgentSafe))
+	c.Add(entry("vault_share", "Share a vault path", model.CategoryVault, model.InteractionAgentSafe))
+	c.Add(entry("vault_cache_rebuild", "Rebuild the vault cache", model.CategoryVault, model.InteractionAgentSafe))
+	c.Add(entry("pins_list", "List pins", model.CategoryCore, model.InteractionAgentSafe))
 
 	summaries := c.Search("auth", "", 0)
 	for _, s := range summaries {

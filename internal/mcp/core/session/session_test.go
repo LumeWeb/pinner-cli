@@ -1,9 +1,10 @@
-package mcp
+package session
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -293,7 +294,12 @@ func TestSession_CurrentStep(t *testing.T) {
 func TestSession_NextSchema(t *testing.T) {
 	t.Parallel()
 
-	testSchema := schemaFor[DomainInput]()
+	// Self-contained schema reflector (the session package cannot depend on the
+	// wizard package's schemaFor helper, so reflect an input local to the test).
+	type domainInput struct {
+		Domain string `json:"domain" jsonschema:"description=The domain name for the website (e.g. example.com)"`
+	}
+	testSchema := (&jsonschema.Reflector{DoNotReference: true, Anonymous: true}).ReflectFromType(reflect.TypeOf(domainInput{}))
 
 	steps := []StepDef{
 		{

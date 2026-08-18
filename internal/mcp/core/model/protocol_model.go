@@ -1,4 +1,4 @@
-package mcp
+package model
 
 import (
 	"context"
@@ -107,7 +107,8 @@ type ToolDescriptor struct {
 	Handler        PinnerToolHandler
 }
 
-func descriptorFromTool(entry *ToolEntry) ToolDescriptor {
+// DescriptorFromTool builds the SDK-neutral descriptor for a catalog entry.
+func DescriptorFromTool(entry *ToolEntry) ToolDescriptor {
 	return ToolDescriptor{
 		Name:            entry.Name,
 		Title:           entry.Title,
@@ -124,12 +125,12 @@ func descriptorFromTool(entry *ToolEntry) ToolDescriptor {
 	}
 }
 
-// toolEntryFromDescriptor mirrors descriptorFromTool in the reverse direction.
+// ToolEntryFromDescriptor mirrors DescriptorFromTool in the reverse direction.
 // It lets a tool that is registered as a direct (tools/list) descriptor, such
 // as the out-of-band sign-in tools, ALSO be surfaced through progressive
 // discovery (search_tools/describe_tool) so both discovery surfaces stay in
 // sync. The entry keeps its handler so invoke_tool can call it.
-func toolEntryFromDescriptor(desc ToolDescriptor) *ToolEntry {
+func ToolEntryFromDescriptor(desc ToolDescriptor) *ToolEntry {
 	return &ToolEntry{
 		Name:            desc.Name,
 		Title:           desc.Title,
@@ -225,14 +226,14 @@ type PromptDescriptor struct {
 	Handler     func(context.Context, PromptRequest) (PromptResult, error)
 }
 
-// toolDescriptor returns the SDK-neutral view of a catalog entry.
-func toolDescriptor(entry *ToolEntry) ToolDescriptor {
-	return descriptorFromTool(entry)
+// ToolDescriptorFromEntry returns the SDK-neutral view of a catalog entry.
+func ToolDescriptorFromEntry(entry *ToolEntry) ToolDescriptor {
+	return DescriptorFromTool(entry)
 }
 
-// toolDescriptorForHandler attaches a Pinner-owned handler to a descriptor.
-func toolDescriptorForHandler(entry *ToolEntry, handler PinnerToolHandler) ToolDescriptor {
-	descriptor := descriptorFromTool(entry)
+// ToolDescriptorForHandler attaches a Pinner-owned handler to a descriptor.
+func ToolDescriptorForHandler(entry *ToolEntry, handler PinnerToolHandler) ToolDescriptor {
+	descriptor := DescriptorFromTool(entry)
 	descriptor.Handler = handler
 	return descriptor
 }

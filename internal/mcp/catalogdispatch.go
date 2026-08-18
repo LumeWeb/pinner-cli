@@ -9,6 +9,8 @@ import (
 
 	"github.com/invopop/jsonschema"
 	"go.lumeweb.com/pinner-cli/internal/catalog"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // This file provides the generic operation-catalog dispatch seam: a typed MCP
@@ -114,7 +116,7 @@ var catalogNeedsHumanOutputSchema = func() json.RawMessage {
 // adding the root type does not change which values validate.
 var catalogOutputUnionSchema = func() json.RawMessage {
 	s := &jsonschema.Schema{
-		Type:  "object",
+		Type: "object",
 		AnyOf: []*jsonschema.Schema{
 			catalogEnvelopeReflector.Reflect(catalogEnvelopeSchema{}),
 			catalogNeedsHumanReflector.Reflect(catalogNeedsHumanSchema{}),
@@ -159,7 +161,7 @@ var catalogOutputUnionSchema = func() json.RawMessage {
 //
 // On any other error the result is a plain ToolResult{IsError:true} with a
 // cleaned message.
-func DispatchCatalogOp(ctx context.Context, cat catalog.Catalog, actor catalog.Actor, name string, args map[string]any, resumeTool string) (ToolResult, error) {
+func DispatchCatalogOp(ctx context.Context, cat catalog.Catalog, actor catalog.Actor, name string, args map[string]any, resumeTool string) (model.ToolResult, error) {
 	// AgentRequired args are enforced here, in the MCP dispatch layer, not in
 	// Catalog.Invoke / NormalizeOperationInput — those are shared normalization
 	// seams that the CLI and other non-MCP callers use, and AgentRequired must
@@ -167,7 +169,7 @@ func DispatchCatalogOp(ctx context.Context, cat catalog.Catalog, actor catalog.A
 	// at the MCP surface, just before the op runs.
 	if op, ok := cat.Get(name); ok {
 		if err := catalog.ValidateMCPRequired(op, args); err != nil {
-			return ToolResult{IsError: true, Text: cleanMessage(err)}, nil
+			return model.ToolResult{IsError: true, Text: cleanMessage(err)}, nil
 		}
 	}
 	result, err := cat.Invoke(ctx, name, args, actor)
@@ -175,8 +177,8 @@ func DispatchCatalogOp(ctx context.Context, cat catalog.Catalog, actor catalog.A
 		// A destructive op invoked by a model needs explicit human
 		// confirmation. Surface it as a confirm hand-off, not an error.
 		if errors.Is(err, catalog.ErrConfirmRequired) {
-			return NeedsHumanResult(NeedsHuman{
-				Reason:     ReasonConfirmation,
+			return model.NeedsHumanResult(model.NeedsHuman{
+				Reason:     model.ReasonConfirmation,
 				ResumeTool: resumeTool,
 				Detail:     name + " is destructive and requires explicit human confirmation",
 			}), nil
@@ -184,13 +186,13 @@ func DispatchCatalogOp(ctx context.Context, cat catalog.Catalog, actor catalog.A
 		// An InteractiveOnly/NeedsHandoff op refused for a non-human actor is
 		// a hand-off to the human, not a failure.
 		if errors.Is(err, catalog.ErrHumanRequired) {
-			return NeedsHumanResult(NeedsHuman{
-				Reason:     ReasonInteractiveOnly,
+			return model.NeedsHumanResult(model.NeedsHuman{
+				Reason:     model.ReasonInteractiveOnly,
 				ResumeTool: resumeTool,
 				Detail:     name + " requires a human to complete; resume with " + resumeTool,
 			}), nil
 		}
-		return ToolResult{IsError: true, Text: cleanMessage(err)}, nil
+		return model.ToolResult{IsError: true, Text: cleanMessage(err)}, nil
 	}
 
 	return resultToToolResult(result), nil
@@ -209,25 +211,25 @@ func DispatchCatalogOp(ctx context.Context, cat catalog.Catalog, actor catalog.A
 // and lets a result carry its own "status" field (e.g. auth_login ->
 // {"status":"logged_in"}) without colliding with the transport "status":"ok".
 // The Text channel holds the same JSON as StructuredContent so both agree.
-func resultToToolResult(result any) ToolResult {
+func resultToToolResult(result any) model.ToolResult {
 	switch v := result.(type) {
-	case ToolResult:
+	case model.ToolResult:
 		return v
-	case *ToolResult:
+	case *model.ToolResult:
 		if v != nil {
 			return *v
 		}
-		return ToolResult{Text: `{"status":"ok"}`, StructuredContent: map[string]any{"status": StatusOk}}
+		return model.ToolResult{Text: `{"status":"ok"}`, StructuredContent: map[string]any{"status": model.StatusOk}}
 	}
 	b, err := json.Marshal(result)
 	if err != nil {
-		return ToolResult{IsError: true, Text: "unable to serialize catalog result"}
+		return model.ToolResult{IsError: true, Text: "unable to serialize catalog result"}
 	}
 	// A marshaled "null" is a genuine empty result: emit the bare envelope.
 	if string(b) == "null" {
-		sc := map[string]any{"status": StatusOk}
+		sc := map[string]any{"status": model.StatusOk}
 		jb, _ := json.Marshal(sc)
-		return ToolResult{Text: string(jb), StructuredContent: sc}
+		return model.ToolResult{Text: string(jb), StructuredContent: sc}
 	}
 	// Every non-empty result lives under "value" inside the same {status, value}
 	// envelope, uniformly for objects, arrays, and scalars.
@@ -235,9 +237,9 @@ func resultToToolResult(result any) ToolResult {
 	if json.Valid(b) {
 		value = json.RawMessage(b)
 	}
-	sc := map[string]any{"status": StatusOk, "value": value}
+	sc := map[string]any{"status": model.StatusOk, "value": value}
 	jb, _ := json.Marshal(sc)
-	return ToolResult{Text: string(jb), StructuredContent: sc}
+	return model.ToolResult{Text: string(jb), StructuredContent: sc}
 }
 
 // cleanMessage returns a single-line, non-empty error message for surfacing as

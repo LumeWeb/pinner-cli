@@ -8,6 +8,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.lumeweb.com/pinner-cli/internal/mcpapp"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // This file wires the "Upload to Vault" MCP App onto the shared AppView lib
@@ -45,25 +47,25 @@ func renderVaultUploadAppHTML() string {
 // one-time presigned PUT endpoint (via the vaultHTTPUpload coordinator) bound
 // to the requested vault path and returns the URL for the iframe's Uppy XHR
 // upload to PUT the raw bytes into.
-func vaultUploadSubmitDescriptor(vu *vaultHTTPUpload) ToolDescriptor {
-	return ToolDescriptor{
+func vaultUploadSubmitDescriptor(vu *vaultHTTPUpload) model.ToolDescriptor {
+	return model.ToolDescriptor{
 		Name:        "vault_upload_submit",
 		Title:       "Prepare a vault upload endpoint",
 		Description: "Mint a one-time presigned PUT endpoint that writes the uploaded file body into the encrypted vault at the given path. App-only helper for the Upload to Vault view.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"vault_path":{"type":"string"},"ttl":{"type":"string"}},"required":["vault_path"]}`),
-		Handler: func(ctx context.Context, req ToolRequest) (ToolResult, error) {
+		Handler: func(ctx context.Context, req model.ToolRequest) (model.ToolResult, error) {
 			in, err := decodeToolArgs[VaultUploadSubmitInput](req)
 			if err != nil {
-				return ToolResult{}, err
+				return model.ToolResult{}, err
 			}
 			if in.VaultPath == "" {
-				return ToolResult{}, fmt.Errorf("vault_path is required")
+				return model.ToolResult{}, fmt.Errorf("vault_path is required")
 			}
 			var ttl time.Duration
 			if in.TTL != "" {
 				ttl, err = time.ParseDuration(in.TTL)
 				if err != nil {
-					return ToolResult{}, fmt.Errorf("invalid ttl: %w", err)
+					return model.ToolResult{}, fmt.Errorf("invalid ttl: %w", err)
 				}
 			}
 			// mint validates the destination (file path, inside the uploads
@@ -71,9 +73,9 @@ func vaultUploadSubmitDescriptor(vu *vaultHTTPUpload) ToolDescriptor {
 			// endpoint that could write anywhere else in the vault.
 			url, err := vu.mint(in.VaultPath, ttl)
 			if err != nil {
-				return ToolResult{}, err
+				return model.ToolResult{}, err
 			}
-			return ToolResult{StructuredContent: map[string]any{"url": url, "vault_path": in.VaultPath}, Text: "Upload endpoint prepared."}, nil
+			return model.ToolResult{StructuredContent: map[string]any{"url": url, "vault_path": in.VaultPath}, Text: "Upload endpoint prepared."}, nil
 		},
 	}
 }
@@ -101,6 +103,6 @@ func RegisterVaultUploadApp(srv *mcp.Server, catalog *ToolCatalog, vu *vaultHTTP
 		HTML:          renderVaultUploadAppHTML(),
 		PrefersBorder: true,
 		AttachTo:      []string{"vault_put_file"},
-		Helpers:       []ToolDescriptor{vaultUploadSubmitDescriptor(vu)},
+		Helpers:       []model.ToolDescriptor{vaultUploadSubmitDescriptor(vu)},
 	})
 }

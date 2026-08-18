@@ -1,4 +1,4 @@
-package mcp
+package model
 
 import (
 	"bytes"
@@ -56,14 +56,14 @@ type needsHumanTextData struct {
 	Detail     string
 }
 
-// needsHumanText builds the plain-text rendering of a needs_human hand-off so a
+// NeedsHumanText builds the plain-text rendering of a needs_human hand-off so a
 // text-only tool-calling agent can act on it without parsing StructuredContent.
 // It is the single place the human-facing text is assembled; every needs_human
 // builder (NeedsHumanResult, vaultHandoffResult, resume continuations) routes
 // through it so the text always carries the URL, handle and resume tool the
 // agent needs. The handle is always surfaced when present: a caller that only
 // sees text must still be able to poll the matching resume tool.
-func needsHumanText(reason HandoffReason, url, handle, resumeTool, detail string) string {
+func NeedsHumanText(reason HandoffReason, url, handle, resumeTool, detail string) string {
 	var buf bytes.Buffer
 	if err := needsHumanTextTemplate.Execute(&buf, needsHumanTextData{
 		Reason:     string(reason),
@@ -102,7 +102,7 @@ func NeedsHumanResult(n NeedsHuman) ToolResult {
 		sc["detail"] = n.Detail
 	}
 	return ToolResult{
-		Text:              needsHumanText(n.Reason, n.ActionURL, n.Handle, n.ResumeTool, n.Detail),
+		Text:              NeedsHumanText(n.Reason, n.ActionURL, n.Handle, n.ResumeTool, n.Detail),
 		StructuredContent: sc,
 	}
 }

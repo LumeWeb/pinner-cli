@@ -6,6 +6,10 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // TestAuthSSOBlueprintCanResumeWithTheLinkToken is the TDD regression for the
@@ -25,11 +29,11 @@ import (
 // asserts the approval-link token is usable as the resume handle.
 func TestAuthSSOBlueprintCanResumeWithTheLinkToken(t *testing.T) {
 	reg := NewHandoffRegistry()
-	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 	oob := newOOBForTest(t)
 
 	start := NewAuthSSODescriptor(oob, handles, reg)
-	startResult, err := start.Handler(context.Background(), ToolRequest{Name: "auth_sso"})
+	startResult, err := start.Handler(context.Background(), model.ToolRequest{Name: "auth_sso"})
 	require.NoError(t, err)
 	sc := requireHandoff(t, startResult)
 
@@ -58,12 +62,12 @@ func TestAuthSSOBlueprintCanResumeWithTheLinkToken(t *testing.T) {
 
 	// Resuming with the single identifier must report done.
 	resume := NewAuthResumeDescriptor(reg, handles)
-	done, err := resume.Handler(context.Background(), ToolRequest{
+	done, err := resume.Handler(context.Background(), model.ToolRequest{
 		Name:      "auth_resume",
 		Arguments: map[string]any{"handle": handle},
 	})
 	require.NoError(t, err)
 	require.False(t, done.IsError)
 	doneSC := done.StructuredContent.(map[string]any)
-	require.Equal(t, StatusDone, doneSC["status"])
+	require.Equal(t, model.StatusDone, doneSC["status"])
 }

@@ -26,10 +26,14 @@ import (
 	"strings"
 	"time"
 
-	"go.lumeweb.com/pinner-cli/internal/catalog"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/urfave/cli/v3"
 	"github.com/yosida95/uritemplate/v3"
+	"go.lumeweb.com/pinner-cli/internal/catalog"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // build.Version is stamped by ldflags. Fall back to a dev constant when it is
@@ -98,7 +102,7 @@ func OfficialServerFromCatalog(catalog *ToolCatalog, instructions string, stdioM
 // Resources and prompts are registered by the command action after runtime
 // providers and options are resolved. The descriptor adapters below preserve
 // their wire contracts on the official server.
-func OfficialMCPServer(root *cli.Command, hasRootAction bool, prefix []string, stdioMode bool, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate, handoffReg *HandoffRegistry, authHandles *AsyncHandleStore, catalogOpts ...buildCatalogOpt) (*mcp.Server, *ToolCatalog, error) {
+func OfficialMCPServer(root *cli.Command, hasRootAction bool, prefix []string, stdioMode bool, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate, handoffReg *HandoffRegistry, authHandles *session.AsyncHandleStore, catalogOpts ...buildCatalogOpt) (*mcp.Server, *ToolCatalog, error) {
 	catalog, err := buildCatalog(root, hasRootAction, prefix, seedDrop, oobRestore, oobCreate, handoffReg, authHandles, catalogOpts...)
 	if err != nil {
 		return nil, nil, err
@@ -135,7 +139,7 @@ func RunOfficialStdio(ctx context.Context, srv *mcp.Server, r io.ReadCloser, w i
 // officialTool converts a Pinner-owned tool descriptor into an official SDK
 // tool. The raw CLI-generated input schema is preserved verbatim; annotations
 // annotations (readOnlyHint/destructiveHint/title) are carried in ToolAnnotations.
-func officialTool(desc ToolDescriptor) *mcp.Tool {
+func officialTool(desc model.ToolDescriptor) *mcp.Tool {
 	// OpenAI per-tool auth declaration. Pinner's whole MCP server sits behind a
 	// protected resource, so a tool with no explicit policy defaults to oauth2
 	// with no application scopes. Emit the `_meta["securitySchemes"]` mirror,
@@ -143,12 +147,12 @@ func officialTool(desc ToolDescriptor) *mcp.Tool {
 	// that support _meta. (The go-sdk Tool struct has no top-level field.)
 	schemes := desc.SecuritySchemes
 	if len(schemes) == 0 {
-		schemes = []SecurityScheme{{Type: "oauth2", Scopes: []string{}}}
+		schemes = []model.SecurityScheme{{Type: "oauth2", Scopes: []string{}}}
 	}
 
 	// Copy the caller's Meta into a fresh map before adding securitySchemes.
-	// desc.Meta aliases the live catalog ToolEntry.Meta (via descriptorFromTool
-	// / toolDescriptor), so writing in place would permanently pollute the
+	// desc.Meta aliases the live catalog ToolEntry.Meta (via model.DescriptorFromTool
+	// / model.ToolDescriptorFromEntry), so writing in place would permanently pollute the
 	// source-of-truth registry state and leave a stale `securitySchemes` key
 	// that survives re-registration. This converter never mutates what it reads.
 	meta := make(map[string]any, len(desc.Meta)+1)
@@ -186,7 +190,7 @@ func officialTool(desc ToolDescriptor) *mcp.Tool {
 // the call is a retry after an input_required elicitation, the accepted form
 // content is merged into the arguments under their elicitation id so handlers
 // read form submissions like any other argument.
-func officialToolHandler(handler PinnerToolHandler) mcp.ToolHandler {
+func officialToolHandler(handler model.PinnerToolHandler) mcp.ToolHandler {
 	return func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := map[string]any{}
 		if req.Params.Arguments != nil {
@@ -218,7 +222,7 @@ func officialToolHandler(handler PinnerToolHandler) mcp.ToolHandler {
 		}
 		startedAt := time.Now()
 		logToolCallStart(log, req.Params.Name, args)
-		result, err := handler(ctx, ToolRequest{
+		result, err := handler(ctx, model.ToolRequest{
 			Name:           req.Params.Name,
 			Arguments:      args,
 			InputResponses: len(req.Params.InputResponses) > 0,
@@ -245,7 +249,7 @@ func officialToolHandler(handler PinnerToolHandler) mcp.ToolHandler {
 // therefore surface the companion app in the text (and, when the calling
 // client supports MCP Apps, we say the page renders inline). This is additive:
 // non-app tools and non-needs_human results pass through unchanged.
-func annotateAppOnHandoff(toolName string, caps *RequestCaps, result *ToolResult) {
+func annotateAppOnHandoff(toolName string, caps *model.RequestCaps, result *model.ToolResult) {
 	if result == nil || result.IsError || result.Elicitation != nil {
 		return
 	}
@@ -257,7 +261,7 @@ func annotateAppOnHandoff(toolName string, caps *RequestCaps, result *ToolResult
 	if !ok {
 		return
 	}
-	if status, _ := sc["status"].(string); status != StatusNeedsHuman {
+	if status, _ := sc["status"].(string); status != model.StatusNeedsHuman {
 		return
 	}
 	if caps != nil && caps.SupportsApps() {
@@ -277,8 +281,8 @@ func annotateAppOnHandoff(toolName string, caps *RequestCaps, result *ToolResult
 // capabilities arrive in the request _meta (with a legacy initialize-handshake
 // fallback), so this is re-derived for every invocation rather than stored on
 // a session.
-func requestCaps(req *mcp.CallToolRequest) *RequestCaps {
-	rc := &RequestCaps{ProtocolVersion: req.ProtocolVersion()}
+func requestCaps(req *mcp.CallToolRequest) *model.RequestCaps {
+	rc := &model.RequestCaps{ProtocolVersion: req.ProtocolVersion()}
 	if ci := req.ClientInfo(); ci != nil {
 		rc.ClientName = ci.Name
 		rc.ClientVersion = ci.Version
@@ -292,7 +296,7 @@ func requestCaps(req *mcp.CallToolRequest) *RequestCaps {
 // officialToolResult converts a Pinner-owned tool result into an official SDK
 // result, preserving isError and single text-content semantics. When the result
 // carries an Elicitation it is converted into an input_required response.
-func officialToolResult(result ToolResult) *mcp.CallToolResult {
+func officialToolResult(result model.ToolResult) *mcp.CallToolResult {
 	if result.Elicitation != nil {
 		return callToolResultFromElicitation(*result.Elicitation)
 	}
@@ -306,7 +310,7 @@ func officialToolResult(result ToolResult) *mcp.CallToolResult {
 // registerTool is the single registration seam for Pinner-owned tools. It
 // applies the handler adaptation (officialToolHandler) in one place, so
 // callers no longer hand-roll srv.AddTool(tool, officialToolHandler(handler)).
-func registerTool(srv *mcp.Server, tool *mcp.Tool, handler PinnerToolHandler) error {
+func registerTool(srv *mcp.Server, tool *mcp.Tool, handler model.PinnerToolHandler) error {
 	if srv == nil {
 		return fmt.Errorf("nil official server")
 	}
@@ -402,10 +406,10 @@ func registerOfficialSearchTools(srv *mcp.Server, catalog *ToolCatalog) error {
 		InputSchema: schema.raw(),
 	}
 
-	handler := PinnerToolHandler(func(_ context.Context, request ToolRequest) (ToolResult, error) {
+	handler := model.PinnerToolHandler(func(_ context.Context, request model.ToolRequest) (model.ToolResult, error) {
 		in, err := decodeToolArgs[searchToolsInput](request)
 		if err != nil {
-			return ToolResult{}, err
+			return model.ToolResult{}, err
 		}
 
 		// Route between the two discovery surfaces. Pure onboarding (empty/help
@@ -428,9 +432,9 @@ func registerOfficialSearchTools(srv *mcp.Server, catalog *ToolCatalog) error {
 			data, err = json.Marshal(SearchResult{Tools: tools, Total: len(tools)})
 		}
 		if err != nil {
-			return ToolResult{}, err
+			return model.ToolResult{}, err
 		}
-		return ToolResult{Text: string(data)}, nil
+		return model.ToolResult{Text: string(data)}, nil
 	})
 
 	return registerTool(srv, tool, handler)
@@ -449,13 +453,13 @@ func registerOfficialDescribeTool(srv *mcp.Server, catalog *ToolCatalog) error {
 		InputSchema: schema.raw(),
 	}
 
-	handler := PinnerToolHandler(func(_ context.Context, request ToolRequest) (ToolResult, error) {
+	handler := model.PinnerToolHandler(func(_ context.Context, request model.ToolRequest) (model.ToolResult, error) {
 		in, err := decodeToolArgs[describeToolInput](request)
 		if err != nil {
-			return ToolResult{IsError: true, Text: err.Error()}, nil
+			return model.ToolResult{IsError: true, Text: err.Error()}, nil
 		}
 		if in.Name == "" {
-			return ToolResult{IsError: true, Text: "name is required"}, nil
+			return model.ToolResult{IsError: true, Text: "name is required"}, nil
 		}
 		detail, err := catalog.Describe(in.Name)
 		if err != nil {
@@ -470,13 +474,13 @@ func registerOfficialDescribeTool(srv *mcp.Server, catalog *ToolCatalog) error {
 				resp["message"] = "unknown tool. did you mean one of these?"
 			}
 			out, _ := json.Marshal(resp)
-			return ToolResult{IsError: true, Text: string(out)}, nil
+			return model.ToolResult{IsError: true, Text: string(out)}, nil
 		}
 		data, err := json.Marshal(detail)
 		if err != nil {
-			return ToolResult{}, err
+			return model.ToolResult{}, err
 		}
-		return ToolResult{Text: string(data)}, nil
+		return model.ToolResult{Text: string(data)}, nil
 	})
 
 	return registerTool(srv, tool, handler)
@@ -499,13 +503,13 @@ func registerOfficialInvokeTool(srv *mcp.Server, catalog *ToolCatalog, stdioMode
 		InputSchema: schema.raw(),
 	}
 
-	handler := PinnerToolHandler(func(ctx context.Context, request ToolRequest) (ToolResult, error) {
+	handler := model.PinnerToolHandler(func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
 		in, err := decodeToolArgs[invokeToolInput](request)
 		if err != nil {
-			return ToolResult{IsError: true, Text: err.Error()}, nil
+			return model.ToolResult{IsError: true, Text: err.Error()}, nil
 		}
 		if in.Name == "" {
-			return ToolResult{IsError: true, Text: "name is required"}, nil
+			return model.ToolResult{IsError: true, Text: "name is required"}, nil
 		}
 		toolArgs := in.Arguments
 		if toolArgs == nil {
@@ -524,7 +528,7 @@ func registerOfficialInvokeTool(srv *mcp.Server, catalog *ToolCatalog, stdioMode
 				resp["message"] = "unknown tool. did you mean one of these?"
 			}
 			out, _ := json.Marshal(resp)
-			return ToolResult{IsError: true, Text: string(out)}, nil
+			return model.ToolResult{IsError: true, Text: string(out)}, nil
 		}
 
 		// Steer agents away from commands they cannot run safely over the MCP
@@ -538,17 +542,17 @@ func registerOfficialInvokeTool(srv *mcp.Server, catalog *ToolCatalog, stdioMode
 		// hand-offs (vaultSetupOps), which never touch os.Stdin. So the invoke
 		// gate only redirects interactive (human-only setup) tools.
 		switch entry.Interaction {
-		case InteractionInteractive:
-			return NeedsHumanResult(NeedsHuman{
-				Reason:     ReasonInteractiveOnly,
+		case model.InteractionInteractive:
+			return model.NeedsHumanResult(model.NeedsHuman{
+				Reason:     model.ReasonInteractiveOnly,
 				ResumeTool: "",
 				Detail:     "This command is human-only (it prompts interactively) and has no agent-safe form. Run it via the CLI, or use the curated agent tool for the same workflow.",
 			}), nil
 		}
 
-		result, err := entry.Handler(ctx, ToolRequest{Name: in.Name, Arguments: toolArgs})
+		result, err := entry.Handler(ctx, model.ToolRequest{Name: in.Name, Arguments: toolArgs})
 		if err != nil {
-			return ToolResult{IsError: true, Text: err.Error()}, nil
+			return model.ToolResult{IsError: true, Text: err.Error()}, nil
 		}
 		// invoke_tool dispatches to the inner catalog handler directly, so the
 		// outer officialToolHandler's annotation (keyed on req.Params.Name ==
@@ -575,7 +579,7 @@ func RegisterOfficialToolsFromCatalog(srv *mcp.Server, catalog *ToolCatalog) err
 }
 
 // RegisterOfficialDescriptor adds one Pinner-owned tool directly to tools/list.
-func RegisterOfficialDescriptor(srv *mcp.Server, desc ToolDescriptor) error {
+func RegisterOfficialDescriptor(srv *mcp.Server, desc model.ToolDescriptor) error {
 	if srv == nil {
 		return fmt.Errorf("nil official server")
 	}
@@ -600,7 +604,7 @@ func RegisterOfficialCuratedTools(srv *mcp.Server, catalog *ToolCatalog) error {
 		if !entry.DirectVisible {
 			continue
 		}
-		if err := registerTool(srv, officialTool(toolDescriptor(entry)), entry.Handler); err != nil {
+		if err := registerTool(srv, officialTool(model.ToolDescriptorFromEntry(entry)), entry.Handler); err != nil {
 			return err
 		}
 	}
@@ -613,7 +617,7 @@ func RegisterOfficialCuratedTools(srv *mcp.Server, catalog *ToolCatalog) error {
 
 // officialResource converts a Pinner-owned resource descriptor into an
 // official SDK resource.
-func officialResource(desc ResourceDescriptor) *mcp.Resource {
+func officialResource(desc model.ResourceDescriptor) *mcp.Resource {
 	r := &mcp.Resource{
 		URI:         desc.URI,
 		Name:        desc.Name,
@@ -626,9 +630,9 @@ func officialResource(desc ResourceDescriptor) *mcp.Resource {
 
 // officialResourceHandler adapts a Pinner-owned resource handler to the
 // official SDK handler shape. req.Params.URI carries the concrete URI.
-func officialResourceHandler(handler ResourceHandler) mcp.ResourceHandler {
+func officialResourceHandler(handler model.ResourceHandler) mcp.ResourceHandler {
 	return func(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
-		result, err := handler(ctx, ResourceRequest{
+		result, err := handler(ctx, model.ResourceRequest{
 			URI:       req.Params.URI,
 			Arguments: map[string]string{},
 		})
@@ -647,7 +651,7 @@ func officialResourceHandler(handler ResourceHandler) mcp.ResourceHandler {
 // handler. The official SDK resolves the template and passes the concrete URI;
 // template variables are not populated automatically, so the handler receives
 // the parsed URI variables via Arguments.
-func officialResourceTemplateHandler(template string, handler ResourceHandler) mcp.ResourceHandler {
+func officialResourceTemplateHandler(template string, handler model.ResourceHandler) mcp.ResourceHandler {
 	parsed, err := uritemplate.New(template)
 	if err != nil {
 		panic(fmt.Sprintf("invalid resource template %q: %v", template, err))
@@ -662,7 +666,7 @@ func officialResourceTemplateHandler(template string, handler ResourceHandler) m
 				}
 			}
 		}
-		result, err := handler(ctx, ResourceRequest{
+		result, err := handler(ctx, model.ResourceRequest{
 			URI:       req.Params.URI,
 			Arguments: arguments,
 		})
@@ -679,7 +683,7 @@ func officialResourceTemplateHandler(template string, handler ResourceHandler) m
 
 // RegisterOfficialResources registers static resources and resource templates
 // on an official-SDK server.
-func RegisterOfficialResources(srv *mcp.Server, resources []ResourceDescriptor, templates []ResourceTemplateDescriptor) error {
+func RegisterOfficialResources(srv *mcp.Server, resources []model.ResourceDescriptor, templates []model.ResourceTemplateDescriptor) error {
 	if srv == nil {
 		return fmt.Errorf("nil official server")
 	}
@@ -704,7 +708,7 @@ func RegisterOfficialResources(srv *mcp.Server, resources []ResourceDescriptor, 
 
 // officialPrompt converts a Pinner-owned prompt descriptor into an official
 // SDK prompt.
-func officialPrompt(desc PromptDescriptor) *mcp.Prompt {
+func officialPrompt(desc model.PromptDescriptor) *mcp.Prompt {
 	p := &mcp.Prompt{
 		Name:        desc.Name,
 		Title:       desc.Title,
@@ -723,7 +727,7 @@ func officialPrompt(desc PromptDescriptor) *mcp.Prompt {
 
 // officialMessageContent converts a Pinner-owned prompt message into official
 // SDK content (text or embedded resource), preserving role and text verbatim.
-func officialMessageContent(msg PromptMessage) (mcp.Role, mcp.Content) {
+func officialMessageContent(msg model.PromptMessage) (mcp.Role, mcp.Content) {
 	if msg.EmbeddedResource != nil {
 		return mcp.Role(msg.Role), &mcp.EmbeddedResource{
 			Resource: &mcp.ResourceContents{
@@ -739,9 +743,9 @@ func officialMessageContent(msg PromptMessage) (mcp.Role, mcp.Content) {
 // officialPromptHandler adapts a Pinner-owned prompt handler to the official
 // SDK prompt-handler shape. The official SDK delivers arguments as
 // map[string]string for downstream command execution.
-func officialPromptHandler(handler func(context.Context, PromptRequest) (PromptResult, error)) mcp.PromptHandler {
+func officialPromptHandler(handler func(context.Context, model.PromptRequest) (model.PromptResult, error)) mcp.PromptHandler {
 	return func(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
-		result, err := handler(ctx, PromptRequest{Arguments: req.Params.Arguments})
+		result, err := handler(ctx, model.PromptRequest{Arguments: req.Params.Arguments})
 		if err != nil {
 			return nil, err
 		}
@@ -755,7 +759,7 @@ func officialPromptHandler(handler func(context.Context, PromptRequest) (PromptR
 }
 
 // RegisterOfficialPrompts registers prompt templates on an official-SDK server.
-func RegisterOfficialPrompts(srv *mcp.Server, prompts []PromptDescriptor) error {
+func RegisterOfficialPrompts(srv *mcp.Server, prompts []model.PromptDescriptor) error {
 	if srv == nil {
 		return fmt.Errorf("nil official server")
 	}

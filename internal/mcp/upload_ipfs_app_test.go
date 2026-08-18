@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // buildIPFSUploadAppServer constructs the catalog + server the way the adapter
@@ -32,16 +34,16 @@ func buildIPFSUploadAppServer(t *testing.T) (*mcp.Server, *httpUpload) {
 	srv := NewOfficialServer(nil)
 
 	// Mirror the production registration sequence in registerCustomTools.
-	uploadFileDesc := ToolDescriptor{
+	uploadFileDesc := model.ToolDescriptor{
 		Name:        "upload_file",
 		Title:       "Upload to IPFS",
 		Description: "Upload a file to Pinner over IPFS.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{}}`),
-		Handler: func(_ context.Context, _ ToolRequest) (ToolResult, error) {
-			return ToolResult{Text: "ok"}, nil
+		Handler: func(_ context.Context, _ model.ToolRequest) (model.ToolResult, error) {
+			return model.ToolResult{Text: "ok"}, nil
 		},
 	}
-	catalog.Add(toolEntryFromDescriptor(uploadFileDesc))
+	catalog.Add(model.ToolEntryFromDescriptor(uploadFileDesc))
 	if err := RegisterIPFSUploadApp(srv, catalog, cu); err != nil {
 		t.Fatalf("RegisterIPFSUploadApp: %v", err)
 	}

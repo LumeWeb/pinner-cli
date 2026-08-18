@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/urfave/cli/v3"
-	"go.lumeweb.com/pinner-cli/internal/mcp"
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/flag"
 	portalsdk "go.lumeweb.com/portal-sdk"
 )
 
@@ -32,7 +32,7 @@ After confirmation, authenticate with:
 				Usage:    "Email address",
 				Required: true,
 			},
-			mcp.SensitiveStringFlag(&cli.StringFlag{
+			flag.SensitiveStringFlag(&cli.StringFlag{
 				Name:     FlagToken,
 				Aliases:  []string{"t"},
 				Usage:    "Verification token from email",

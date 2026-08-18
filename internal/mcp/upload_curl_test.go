@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // TestCurlUploadMint verifies that minting a one-time upload endpoint yields a
@@ -170,7 +172,7 @@ func TestCurlUploadToolDescriptor(t *testing.T) {
 	desc := NewUploadFileDescriptor(false, false, nil, cu, nil, nil, 0)
 	require.Equal(t, "upload_file", desc.Name)
 
-	res, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{
+	res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
 		"source": map[string]any{"mode": "mint"},
 		"name":   "fromcurltool",
 		"ttl":    "1m",
@@ -185,7 +187,7 @@ func TestCurlUploadToolDescriptor(t *testing.T) {
 	require.Contains(t, curlCmd, url)
 
 	// Invalid TTL is rejected.
-	_, err = desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{"source": map[string]any{"mode": "mint"}, "ttl": "not-a-duration"}})
+	_, err = desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{"source": map[string]any{"mode": "mint"}, "ttl": "not-a-duration"}})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "invalid ttl")
 }

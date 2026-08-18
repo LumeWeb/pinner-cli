@@ -1,4 +1,4 @@
-package mcp
+package flag
 
 import (
 	"encoding/json"
@@ -8,7 +8,7 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
-// flagsToSchema converts urfave/cli flags into a Pinner-neutral JSON Schema
+// FlagsToSchema converts urfave/cli flags into a Pinner-neutral JSON Schema
 // object for a tool's input. The schema preserves the established wire format
 // used by progressive disclosure (describe_tool).
 //
@@ -20,7 +20,7 @@ import (
 // omitted when empty. Each property carries a "type" plus optional
 // "description"/"default"/"enum" fields. An optional argsUsage string adds
 // an "_args" array property so MCP clients can pass positional CLI arguments.
-func flagsToSchema(flags []cli.Flag, argsUsage string) (json.RawMessage, error) {
+func FlagsToSchema(flags []cli.Flag, argsUsage string) (json.RawMessage, error) {
 	builder := newSchemaBuilder()
 	for _, flag := range flags {
 		if err := builder.addFlag(flag); err != nil {

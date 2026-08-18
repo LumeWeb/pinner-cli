@@ -1,4 +1,4 @@
-package mcp
+package flag
 
 import (
 	"github.com/urfave/cli/v3"

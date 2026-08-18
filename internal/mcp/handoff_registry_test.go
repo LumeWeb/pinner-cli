@@ -8,6 +8,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // TestHandoffRegistryBeginGetEnd verifies the shared continuation registry
@@ -16,8 +20,8 @@ import (
 func TestHandoffRegistryBeginGetEnd(t *testing.T) {
 	reg := NewHandoffRegistry()
 
-	cont := func(ctx context.Context, handle string, data map[string]any) (ToolResult, error) {
-		return ToolResult{Text: "done"}, nil
+	cont := func(ctx context.Context, handle string, data map[string]any) (model.ToolResult, error) {
+		return model.ToolResult{Text: "done"}, nil
 	}
 
 	reg.Begin("h1", cont)
@@ -41,8 +45,8 @@ func TestHandoffRegistryExpiryPrunes(t *testing.T) {
 	reg.ttp = time.Hour
 	reg.now = func() time.Time { return time.Date(2026, 8, 11, 0, 0, 0, 0, time.UTC) }
 
-	reg.Begin("h1", func(ctx context.Context, h string, d map[string]any) (ToolResult, error) {
-		return ToolResult{Text: "done"}, nil
+	reg.Begin("h1", func(ctx context.Context, h string, d map[string]any) (model.ToolResult, error) {
+		return model.ToolResult{Text: "done"}, nil
 	})
 	require.True(t, func() bool { _, ok := reg.Get("h1"); return ok }())
 
@@ -64,8 +68,8 @@ func TestHandoffRegistryBounded(t *testing.T) {
 	reg.maxEntries = 3
 	reg.ttp = time.Hour
 	reg.now = func() time.Time { return time.Date(2026, 8, 11, 0, 0, 0, 0, time.UTC) }
-	cont := func(ctx context.Context, h string, d map[string]any) (ToolResult, error) {
-		return ToolResult{Text: "done"}, nil
+	cont := func(ctx context.Context, h string, d map[string]any) (model.ToolResult, error) {
+		return model.ToolResult{Text: "done"}, nil
 	}
 
 	// Wire a cleanup that records which handles were retired (mirrors the
@@ -98,8 +102,8 @@ func TestBeginCleanupDoesNotHoldLock(t *testing.T) {
 	reg.maxEntries = 1
 	reg.ttp = time.Hour
 	reg.now = func() time.Time { return time.Date(2026, 8, 11, 0, 0, 0, 0, time.UTC) }
-	cont := func(ctx context.Context, h string, d map[string]any) (ToolResult, error) {
-		return ToolResult{Text: "done"}, nil
+	cont := func(ctx context.Context, h string, d map[string]any) (model.ToolResult, error) {
+		return model.ToolResult{Text: "done"}, nil
 	}
 
 	entered := make(chan struct{})
@@ -161,13 +165,13 @@ func TestBeginCleanupDoesNotHoldLock(t *testing.T) {
 // continuation mid-flow and misreport "done"). Only an explicit non-human
 // status is terminal.
 func TestIsTerminalResumeUnknownShapesNotTerminal(t *testing.T) {
-	assert.False(t, isTerminalResume(ToolResult{Text: "bare text, no content"}),
+	assert.False(t, isTerminalResume(model.ToolResult{Text: "bare text, no content"}),
 		"nil structured content must be treated as non-terminal")
-	assert.False(t, isTerminalResume(ToolResult{StructuredContent: "not-a-map"}),
+	assert.False(t, isTerminalResume(model.ToolResult{StructuredContent: "not-a-map"}),
 		"non-map structured content must be treated as non-terminal")
-	assert.False(t, isTerminalResume(ToolResult{StructuredContent: map[string]any{"status": StatusNeedsHuman}}),
+	assert.False(t, isTerminalResume(model.ToolResult{StructuredContent: map[string]any{"status": model.StatusNeedsHuman}}),
 		"needs_human must be non-terminal")
-	assert.True(t, isTerminalResume(ToolResult{StructuredContent: map[string]any{"status": StatusDone}}),
+	assert.True(t, isTerminalResume(model.ToolResult{StructuredContent: map[string]any{"status": model.StatusDone}}),
 		"done must be terminal")
 }
 
@@ -177,12 +181,12 @@ func TestIsTerminalResumeUnknownShapesNotTerminal(t *testing.T) {
 func TestPruneRetiresBackingHandles(t *testing.T) {
 	reg := NewHandoffRegistry()
 	reg.ttp = time.Hour
-	handles := NewAsyncHandleStore(time.Hour, DefaultMaxSessions)
+	handles := session.NewAsyncHandleStore(time.Hour, session.DefaultMaxSessions)
 	reg.now = func() time.Time { return time.Date(2026, 8, 11, 0, 0, 0, 0, time.UTC) }
 
 	base := time.Date(2026, 8, 11, 0, 0, 0, 0, time.UTC)
-	cont := func(ctx context.Context, h string, d map[string]any) (ToolResult, error) {
-		return ToolResult{Text: "done"}, nil
+	cont := func(ctx context.Context, h string, d map[string]any) (model.ToolResult, error) {
+		return model.ToolResult{Text: "done"}, nil
 	}
 	retired := map[string]bool{}
 	reg.SetCleanup(func(handle string) { retired[handle] = true })
@@ -209,7 +213,7 @@ func TestPruneRetiresBackingHandles(t *testing.T) {
 // continuation's own cleanup drops the registry entry on the done path.
 func TestSSOContinuationNoPendingIsDone(t *testing.T) {
 	oob := newOOBForTest(t)
-	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 	reg := NewHandoffRegistry()
 
 	// A handle bound in the store but with NO corresponding OOB request is the
@@ -222,7 +226,7 @@ func TestSSOContinuationNoPendingIsDone(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, res.IsError)
 	sc := res.StructuredContent.(map[string]any)
-	assert.Equal(t, StatusDone, sc["status"], "no pending request must resolve done, not pending")
+	assert.Equal(t, model.StatusDone, sc["status"], "no pending request must resolve done, not pending")
 
 	_, still := reg.Get(handle)
 	assert.False(t, still, "done continuation must drop its registry entry")
@@ -235,7 +239,7 @@ func TestSSOContinuationNoPendingIsDone(t *testing.T) {
 // without any SSO dependency — proving the framework mechanism is generic.
 func TestResumeTemplateDispatchesContinuation(t *testing.T) {
 	reg := NewHandoffRegistry()
-	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 
 	// A generic handoff flow: start tool style, then the shared resume template.
 	resume := NewResumeTool(ResumeToolSpec{
@@ -244,31 +248,31 @@ func TestResumeTemplateDispatchesContinuation(t *testing.T) {
 		RestartTool:         "test_flow_start",
 		UnknownHandleDetail: "unknown; start afresh",
 		ExpiredHandleDetail: "expired; start afresh",
-		DeadHandleReason:    ReasonConfirmation,
+		DeadHandleReason:    model.ReasonConfirmation,
 	}, reg, handles)
 
 	// Pending continuation (needs_human) first, then terminal done.
 	kind := "pending"
 	handle := handles.Create("pending", map[string]any{"flow": "x"})
-	reg.Begin(handle, func(ctx context.Context, h string, data map[string]any) (ToolResult, error) {
+	reg.Begin(handle, func(ctx context.Context, h string, data map[string]any) (model.ToolResult, error) {
 		if kind == "pending" {
-			return NeedsHumanResult(NeedsHuman{
-				Reason:     ReasonConfirmation,
+			return model.NeedsHumanResult(model.NeedsHuman{
+				Reason:     model.ReasonConfirmation,
 				ResumeTool: "test_flow_resume",
 			}), nil
 		}
-		return ToolResult{StructuredContent: map[string]any{"status": StatusDone}}, nil
+		return model.ToolResult{StructuredContent: map[string]any{"status": model.StatusDone}}, nil
 	})
 
 	// First resume: still pending (needs_human).
-	r1, err := resume.Handler(context.Background(), ToolRequest{
+	r1, err := resume.Handler(context.Background(), model.ToolRequest{
 		Name:      "test_flow_resume",
 		Arguments: map[string]any{"handle": handle},
 	})
 	require.NoError(t, err)
 	require.False(t, r1.IsError)
 	sc1 := requireHandoff(t, r1)
-	assert.Equal(t, ReasonConfirmation, sc1["reason"])
+	assert.Equal(t, model.ReasonConfirmation, sc1["reason"])
 
 	// Continuation still registered while pending.
 	_, still := reg.Get(handle)
@@ -276,13 +280,13 @@ func TestResumeTemplateDispatchesContinuation(t *testing.T) {
 
 	// Second resume: done -> continuation dropped.
 	kind = "done"
-	r2, err := resume.Handler(context.Background(), ToolRequest{
+	r2, err := resume.Handler(context.Background(), model.ToolRequest{
 		Name:      "test_flow_resume",
 		Arguments: map[string]any{"handle": handle},
 	})
 	require.NoError(t, err)
 	require.False(t, r2.IsError)
-	assert.Equal(t, StatusDone, r2.StructuredContent.(map[string]any)["status"])
+	assert.Equal(t, model.StatusDone, r2.StructuredContent.(map[string]any)["status"])
 
 	_, after := reg.Get(handle)
 	assert.False(t, after, "terminal resume must drop the continuation")
@@ -293,38 +297,38 @@ func TestResumeTemplateDispatchesContinuation(t *testing.T) {
 // to the restart tool rather than leaving it polling.
 func TestResumeTemplateDeadHandleSteersRestart(t *testing.T) {
 	reg := NewHandoffRegistry()
-	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 
 	resume := NewResumeTool(ResumeToolSpec{
 		Name:                "test_flow_resume",
 		RestartTool:         "test_flow_start",
 		UnknownHandleDetail: "unknown handle; start a new flow",
 		ExpiredHandleDetail: "expired; start a fresh flow",
-		DeadHandleReason:    ReasonConfirmation,
+		DeadHandleReason:    model.ReasonConfirmation,
 	}, reg, handles)
 
 	// A handle that exists in the store but has NO continuation registered.
 	orphan := handles.Create("pending", map[string]any{"flow": "x"})
 
-	result, err := resume.Handler(context.Background(), ToolRequest{
+	result, err := resume.Handler(context.Background(), model.ToolRequest{
 		Name:      "test_flow_resume",
 		Arguments: map[string]any{"handle": orphan},
 	})
 	require.NoError(t, err)
 	sc := requireHandoff(t, result)
-	assert.Equal(t, ReasonConfirmation, sc["reason"])
+	assert.Equal(t, model.ReasonConfirmation, sc["reason"])
 	assert.Equal(t, "test_flow_start", sc["resume_tool"], "dead handle must steer to restart tool")
 
 	// An expired handle steers to restart too, with the expired detail.
 	expired := handles.Create("pending", map[string]any{"flow": "x"})
-	handles.now = func() time.Time { return time.Now().Add(2 * DefaultSessionTTL) }
-	result, err = resume.Handler(context.Background(), ToolRequest{
+	handles.SetNowFunc(func() time.Time { return time.Now().Add(2 * session.DefaultSessionTTL) })
+	result, err = resume.Handler(context.Background(), model.ToolRequest{
 		Name:      "test_flow_resume",
 		Arguments: map[string]any{"handle": expired},
 	})
 	require.NoError(t, err)
 	sc = requireHandoff(t, result)
-	assert.Equal(t, ReasonConfirmation, sc["reason"])
+	assert.Equal(t, model.ReasonConfirmation, sc["reason"])
 	assert.Equal(t, "test_flow_start", sc["resume_tool"])
 	assert.Contains(t, sc["detail"].(string), "expired")
 }

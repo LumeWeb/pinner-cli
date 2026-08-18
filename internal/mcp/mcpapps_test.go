@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 func TestMCPAppsConstants(t *testing.T) {
@@ -165,10 +167,10 @@ func buildAppServer(t *testing.T) *mcp.Server {
 	t.Helper()
 	srv := NewOfficialServer(nil)
 
-	handler := PinnerToolHandler(func(_ context.Context, _ ToolRequest) (ToolResult, error) {
-		return ToolResult{Text: "vault listing fallback"}, nil
+	handler := model.PinnerToolHandler(func(_ context.Context, _ model.ToolRequest) (model.ToolResult, error) {
+		return model.ToolResult{Text: "vault listing fallback"}, nil
 	})
-	err := RegisterAppTool(srv, ToolDescriptor{
+	err := RegisterAppTool(srv, model.ToolDescriptor{
 		Name:        "pinner_vault_ls",
 		Description: "List vault contents with an interactive table",
 		InputSchema: json.RawMessage(`{"type":"object"}`),
@@ -397,7 +399,7 @@ func TestRequestCapsFromTextClient(t *testing.T) {
 }
 
 func TestRequestCapsNilSafe(t *testing.T) {
-	var rc *RequestCaps
+	var rc *model.RequestCaps
 	if rc.SupportsApps() {
 		t.Fatal("nil RequestCaps should not support apps")
 	}
@@ -438,15 +440,15 @@ func TestOfficialServerOptionsAdvertisesUI(t *testing.T) {
 // handler, so a UI-capable and a text-only client are distinguishable per
 // call without any session state.
 func TestOfficialToolHandlerPopulatesCaps(t *testing.T) {
-	got := make(map[string]*RequestCaps)
+	got := make(map[string]*model.RequestCaps)
 	saw := make(chan struct{}, 1)
-	handler := officialToolHandler(func(_ context.Context, tr ToolRequest) (ToolResult, error) {
+	handler := officialToolHandler(func(_ context.Context, tr model.ToolRequest) (model.ToolResult, error) {
 		got["caps"] = tr.Caps
 		select {
 		case saw <- struct{}{}:
 		default:
 		}
-		return ToolResult{Text: "ok"}, nil
+		return model.ToolResult{Text: "ok"}, nil
 	})
 
 	run := func(req *mcp.CallToolRequest) {

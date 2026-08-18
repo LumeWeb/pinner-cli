@@ -1,4 +1,4 @@
-package mcp
+package session
 
 import (
 	"errors"
@@ -69,7 +69,7 @@ func (s *AsyncHandleStore) Create(status string, data map[string]any) string {
 	}
 
 	now := s.now()
-	id := randomID()
+	id := RandomID()
 	s.items[id] = &asyncItem{
 		status:    status,
 		data:      data,
@@ -124,4 +124,16 @@ func (s *AsyncHandleStore) Delete(id string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.items, id)
+}
+
+// SetNowFunc overrides the store's internal clock, primarily for tests that
+// need to simulate expiry. Pass nil to restore the real clock (time.Now).
+func (s *AsyncHandleStore) SetNowFunc(f func() time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if f == nil {
+		s.now = time.Now
+		return
+	}
+	s.now = f
 }

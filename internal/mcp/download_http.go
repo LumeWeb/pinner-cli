@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/transport"
 )
 
 // defaultHTTPDownloadTTL is how long a minted one-time filedrop GET endpoint
@@ -47,7 +49,7 @@ type downloadToken struct {
 // expiring, single-use, and bound to a serve closure at mint time so a caller
 // can never redirect the GET to arbitrary server-side bytes.
 type httpDownload struct {
-	loopback loopbackServer
+	loopback transport.LoopbackServer
 
 	mu     sync.Mutex
 	tokens map[string]downloadToken
@@ -72,7 +74,7 @@ func (hd *httpDownload) SetBaseURL(url string) {
 // AddTrustedOrigins extends the origin corsDownload reflects for a browser GET
 // beyond the coordinator's own base/loopback origin, allowing a configured MCP
 // host that serves the app iframe from its own origin to download. See
-// loopbackServer.AddTrustedOrigins.
+// LoopbackServer.AddTrustedOrigins.
 func (hd *httpDownload) AddTrustedOrigins(origins ...string) {
 	hd.loopback.AddTrustedOrigins(origins...)
 }
@@ -91,7 +93,7 @@ func (hd *httpDownload) registerHandlers(mux *http.ServeMux) {
 
 // allowedDownloadOrigins is the callback corsDownload uses to scope the
 // reflected origin to the coordinator's own transport/base origin.
-func (hd *httpDownload) allowedDownloadOrigins() []string { return hd.loopback.acceptedOrigins() }
+func (hd *httpDownload) allowedDownloadOrigins() []string { return hd.loopback.AcceptedOrigins() }
 
 // mint registers a fresh one-time filedrop GET endpoint bound to the given
 // serve closure and returns its full URL plus the declared name/size. It
@@ -102,7 +104,7 @@ func (hd *httpDownload) mint(name string, size int64, serve func(ctx context.Con
 	if serve == nil {
 		return "", errors.New("no download source configured")
 	}
-	if err := hd.loopback.ensureLoopback(hd.registerHandlers); err != nil {
+	if err := hd.loopback.EnsureLoopback(hd.registerHandlers); err != nil {
 		return "", err
 	}
 	if name == "" {
@@ -123,9 +125,7 @@ func (hd *httpDownload) mint(name string, size int64, serve func(ctx context.Con
 	}
 	hd.tokens[token] = downloadToken{name: name, size: size, serve: serve, expiresAt: now.Add(ttl)}
 	hd.mu.Unlock()
-	hd.loopback.mu.Lock()
-	defer hd.loopback.mu.Unlock()
-	return hd.loopback.urlLocked("download", token), nil
+	return hd.loopback.URLFor("download", token), nil
 }
 
 // newDownloadToken returns a fresh 128-bit hex token guarding the

@@ -1,4 +1,4 @@
-package mcp
+package flag
 
 import (
 	"encoding/json"
@@ -11,7 +11,7 @@ import (
 )
 
 func TestFlagsToSchema_AllSupportedFlagFamilies(t *testing.T) {
-	schema, err := flagsToSchema([]cli.Flag{
+	schema, err := FlagsToSchema([]cli.Flag{
 		&cli.StringFlag{Name: "name", Usage: "Name", Value: "default"},
 		EnumStringFlag("mode", "Mode", true, "fast", "fast", "safe"),
 		&cli.BoolFlag{Name: "enabled", Usage: "Enabled"},
@@ -76,7 +76,7 @@ func TestFlagsToSchema_AllSupportedFlagFamilies(t *testing.T) {
 }
 
 func TestFlagsToSchema_OmitsHiddenAndSpecialFlags(t *testing.T) {
-	schema, err := flagsToSchema([]cli.Flag{
+	schema, err := FlagsToSchema([]cli.Flag{
 		&cli.StringFlag{Name: "hidden", Hidden: true},
 		&cli.BoolFlag{Name: "help"},
 		&cli.BoolFlag{Name: "version"},
@@ -88,7 +88,7 @@ func TestFlagsToSchema_OmitsHiddenAndSpecialFlags(t *testing.T) {
 }
 
 func TestFlagsToSchema_OmitsZeroDefaults(t *testing.T) {
-	schema, err := flagsToSchema([]cli.Flag{
+	schema, err := FlagsToSchema([]cli.Flag{
 		&cli.StringFlag{Name: "string"},
 		&cli.DurationFlag{Name: "duration"},
 		&cli.IntFlag{Name: "count"},
@@ -102,7 +102,7 @@ func TestFlagsToSchema_OmitsZeroDefaults(t *testing.T) {
 }
 
 func TestFlagsToSchema_RejectsUnsupportedFlag(t *testing.T) {
-	_, err := flagsToSchema([]cli.Flag{unsupportedSchemaFlag{}}, "")
+	_, err := FlagsToSchema([]cli.Flag{unsupportedSchemaFlag{}}, "")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unsupported flag type")
 }

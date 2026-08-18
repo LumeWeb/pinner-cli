@@ -56,8 +56,12 @@ func (s stubAuthService) LoginWithOTP(ctx context.Context, intermediateJWT, otp,
 	return nil, nil
 }
 func (s stubAuthService) Status(ctx context.Context) (*auth.StatusResult, error) { return nil, nil }
-func (s stubAuthService) UpdatePassword(ctx context.Context, currentPassword, newPassword string) error { return nil }
-func (s stubAuthService) UpdateEmail(ctx context.Context, email, currentPassword string) error { return nil }
+func (s stubAuthService) UpdatePassword(ctx context.Context, currentPassword, newPassword string) error {
+	return nil
+}
+func (s stubAuthService) UpdateEmail(ctx context.Context, email, currentPassword string) error {
+	return nil
+}
 func (s stubAuthService) RequestPasswordReset(ctx context.Context, email string) error { return nil }
 
 func newOOBForTest(t *testing.T) *OutOfBandLogin {
@@ -112,7 +116,7 @@ var csrfInputRE = regexp.MustCompile(`name="csrf"\s+value="([^"]+)"`)
 // testOrigin returns the loopback origin backing o for the duration of the
 // test (used to assert that same-origin POSTs are accepted).
 func testOrigin(o *OutOfBandLogin) string {
-	orig := o.loopback.acceptedOrigins()
+	orig := o.loopback.AcceptedOrigins()
 	if len(orig) == 0 {
 		return "http://127.0.0.1:0"
 	}
@@ -775,9 +779,15 @@ func (s *captureAuthService) LoginWithOTP(ctx context.Context, intermediateJWT, 
 	return nil, nil
 }
 func (s *captureAuthService) Status(ctx context.Context) (*auth.StatusResult, error) { return nil, nil }
-func (s *captureAuthService) UpdatePassword(ctx context.Context, currentPassword, newPassword string) error { return nil }
-func (s *captureAuthService) UpdateEmail(ctx context.Context, email, currentPassword string) error { return nil }
-func (s *captureAuthService) RequestPasswordReset(ctx context.Context, email string) error { return nil }
+func (s *captureAuthService) UpdatePassword(ctx context.Context, currentPassword, newPassword string) error {
+	return nil
+}
+func (s *captureAuthService) UpdateEmail(ctx context.Context, email, currentPassword string) error {
+	return nil
+}
+func (s *captureAuthService) RequestPasswordReset(ctx context.Context, email string) error {
+	return nil
+}
 
 // TestOOBLoginHumanEmailOverridesAgentEmail verifies the account identifier on
 // the login page is editable: even though auth_sso prefilled an email

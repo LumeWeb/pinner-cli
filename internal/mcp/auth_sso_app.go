@@ -3,6 +3,10 @@ package mcp
 import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.lumeweb.com/pinner-cli/internal/mcpapp"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // This file wires the "Sign In" (auth SSO) MCP App onto the shared AppView lib
@@ -27,7 +31,7 @@ func renderAuthSSOAppHTML() string {
 // shared resume machinery (handle -> continuation -> pending/done) exactly like
 // auth_resume, but is registered with ToolVisibilityApp so only the Sign In
 // view can poll it; the model never sees it. It carries no secrets.
-func authSSOStatusDescriptor(reg *HandoffRegistry, handles *AsyncHandleStore) ToolDescriptor {
+func authSSOStatusDescriptor(reg *HandoffRegistry, handles *session.AsyncHandleStore) model.ToolDescriptor {
 	return NewResumeTool(ResumeToolSpec{
 		Name:                "auth_sso_status",
 		Title:               "Auth Sign-In Status",
@@ -35,8 +39,8 @@ func authSSOStatusDescriptor(reg *HandoffRegistry, handles *AsyncHandleStore) To
 		RestartTool:         "auth_sso",
 		UnknownHandleDetail: "unknown handle; start a new login with auth_sso",
 		ExpiredHandleDetail: "the sign-in handle expired before approval; start a fresh login with auth_sso",
-		DeadHandleReason:    ReasonSSOApproval,
-		Category:            CategoryAccount,
+		DeadHandleReason:    model.ReasonSSOApproval,
+		Category:            model.CategoryAccount,
 	}, reg, handles)
 }
 
@@ -46,7 +50,7 @@ func authSSOStatusDescriptor(reg *HandoffRegistry, handles *AsyncHandleStore) To
 // auth_sso_status polling helper. oob/handles/reg may be nil in a transport
 // without a browser login; the app/tools still register and return a structured
 // not-configured hand-off when invoked.
-func RegisterAuthSSOApp(srv *mcp.Server, catalog *ToolCatalog, reg *HandoffRegistry, handles *AsyncHandleStore) error {
+func RegisterAuthSSOApp(srv *mcp.Server, catalog *ToolCatalog, reg *HandoffRegistry, handles *session.AsyncHandleStore) error {
 	return RegisterAppView(srv, catalog, AppView{
 		URI:           AuthSSOAppURI,
 		Name:          "auth-sso",
@@ -55,6 +59,6 @@ func RegisterAuthSSOApp(srv *mcp.Server, catalog *ToolCatalog, reg *HandoffRegis
 		HTML:          renderAuthSSOAppHTML(),
 		PrefersBorder: true,
 		AttachTo:      []string{"auth_sso"},
-		Helpers:       []ToolDescriptor{authSSOStatusDescriptor(reg, handles)},
+		Helpers:       []model.ToolDescriptor{authSSOStatusDescriptor(reg, handles)},
 	})
 }

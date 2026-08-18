@@ -3,6 +3,8 @@ package mcp
 import (
 	"context"
 	"fmt"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // ChatGPTFileAsyncInput is the typed argument shape for upload_file_async.
@@ -20,22 +22,22 @@ type UploadHandleInput struct {
 // NewAsyncUploadTools returns the async upload-management tool descriptors
 // backed by the given manager. All tools are direct-registered so they are
 // visible in tools/list.
-func NewAsyncUploadTools(mgr *UploadTaskManager) []ToolDescriptor {
+func NewAsyncUploadTools(mgr *UploadTaskManager) []model.ToolDescriptor {
 	if mgr == nil {
 		return nil
 	}
-	return []ToolDescriptor{
+	return []model.ToolDescriptor{
 		{
 			Name:        "upload_file_async",
 			Title:       "Start an async external-file upload",
 			Description: "Start uploading a file reference in the background and return an opaque handle. Poll upload_status, cancel with upload_cancel, and list with upload_list. Pinner fetches the temporary URL locally and uses its authenticated TUS path.",
-			Category:    CategoryCore,
+			Category:    model.CategoryCore,
 			InputSchema: toolSchemaFor[ChatGPTFileAsyncInput](),
 			Meta:        chatgptFileMeta(),
-			Handler: func(ctx context.Context, request ToolRequest) (ToolResult, error) {
+			Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
 				in, err := decodeToolArgs[ChatGPTFileAsyncInput](request)
 				if err != nil {
-					return ToolResult{}, err
+					return model.ToolResult{}, err
 				}
 				// The async fetch and upload must outlive the MCP request that
 				// started them (the handler returns the handle immediately), so
@@ -45,7 +47,7 @@ func NewAsyncUploadTools(mgr *UploadTaskManager) []ToolDescriptor {
 				bg := context.WithoutCancel(ctx)
 				ref, body, size, err := openChatGPTInput(bg, in.File, chatgptOpenTimeout)
 				if err != nil {
-					return ToolResult{}, err
+					return model.ToolResult{}, err
 				}
 				// Default the upload name to the file reference's name, matching
 				// the synchronous path, rather than letting Start fall back to
@@ -60,61 +62,61 @@ func NewAsyncUploadTools(mgr *UploadTaskManager) []ToolDescriptor {
 					// no-slot and no-executor errors), so the caller must not
 					// close it again — double-close of an HTTP body is
 					// unsafe.
-					return ToolResult{}, err
+					return model.ToolResult{}, err
 				}
-				return ToolResult{StructuredContent: map[string]any{"handle": id}, Text: "Async upload started."}, nil
+				return model.ToolResult{StructuredContent: map[string]any{"handle": id}, Text: "Async upload started."}, nil
 			},
 		},
 		{
 			Name:        "upload_status",
 			Title:       "Get async upload status",
 			Description: "Return the current status of an async upload handle: queued, running, completed, failed, or cancelled.",
-			Category:    CategoryCore,
+			Category:    model.CategoryCore,
 			InputSchema: toolSchemaFor[UploadHandleInput](),
-			Handler: func(ctx context.Context, request ToolRequest) (ToolResult, error) {
+			Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
 				in, err := decodeToolArgs[UploadHandleInput](request)
 				if err != nil {
-					return ToolResult{}, err
+					return model.ToolResult{}, err
 				}
 				if in.Handle == "" {
-					return ToolResult{}, fmt.Errorf("handle is required")
+					return model.ToolResult{}, fmt.Errorf("handle is required")
 				}
 				task, err := mgr.Get(in.Handle)
 				if err != nil {
-					return ToolResult{}, err
+					return model.ToolResult{}, err
 				}
-				return ToolResult{StructuredContent: task, Text: "Upload status."}, nil
+				return model.ToolResult{StructuredContent: task, Text: "Upload status."}, nil
 			},
 		},
 		{
 			Name:        "upload_cancel",
 			Title:       "Cancel an async upload",
 			Description: "Cancel a queued or running async upload by handle.",
-			Category:    CategoryCore,
+			Category:    model.CategoryCore,
 			InputSchema: toolSchemaFor[UploadHandleInput](),
-			Handler: func(ctx context.Context, request ToolRequest) (ToolResult, error) {
+			Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
 				in, err := decodeToolArgs[UploadHandleInput](request)
 				if err != nil {
-					return ToolResult{}, err
+					return model.ToolResult{}, err
 				}
 				if in.Handle == "" {
-					return ToolResult{}, fmt.Errorf("handle is required")
+					return model.ToolResult{}, fmt.Errorf("handle is required")
 				}
 				if err := mgr.Cancel(in.Handle); err != nil {
-					return ToolResult{}, err
+					return model.ToolResult{}, err
 				}
-				return ToolResult{StructuredContent: map[string]any{"handle": in.Handle, "cancelled": true}, Text: "Upload cancelled."}, nil
+				return model.ToolResult{StructuredContent: map[string]any{"handle": in.Handle, "cancelled": true}, Text: "Upload cancelled."}, nil
 			},
 		},
 		{
 			Name:        "upload_list",
 			Title:       "List async uploads",
 			Description: "List all tracked async upload handles and their current status.",
-			Category:    CategoryCore,
+			Category:    model.CategoryCore,
 			InputSchema: toolSchemaFor[NoInput](),
-			Handler: func(ctx context.Context, request ToolRequest) (ToolResult, error) {
+			Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
 				tasks := mgr.List()
-				return ToolResult{StructuredContent: map[string]any{"uploads": tasks}, Text: "Uploads."}, nil
+				return model.ToolResult{StructuredContent: map[string]any{"uploads": tasks}, Text: "Uploads."}, nil
 			},
 		},
 	}

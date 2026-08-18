@@ -11,6 +11,8 @@ import (
 	ipfs "go.lumeweb.com/ipfs-sdk"
 
 	mcpadapter "go.lumeweb.com/pinner-cli/internal/mcp"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 )
 
 // --- Domain wizard tests ---
@@ -24,7 +26,7 @@ func TestDomainWizard_FullSession(t *testing.T) {
 			return []ipfs.WebsiteItem{{Id: 7, Domain: "example.com", Status: "active", Created: time.Now()}}, nil
 		},
 	}
-	store := mcpadapter.NewSessionStore()
+	store := session.NewSessionStore()
 
 	deps := mcpadapter.DomainWizardDeps{
 		DomainFactory:   testDomainFactory,
@@ -43,12 +45,12 @@ func TestDomainWizard_FullSession(t *testing.T) {
 	require.NotNil(t, resp.NextStepSchema)
 
 	// Step 1: auth_check: empty input is fine.
-	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
 	require.NoError(t, err)
 	assert.Equal(t, "domain_website", sess.FSM.Current())
 
 	// Step 2: website.
-	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"website_id":"7"}`))
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"website_id":"7"}`))
 	require.NoError(t, err)
 	assert.Equal(t, "domain_name", sess.FSM.Current())
 	w := sess.State().(mcpadapter.DomainWizardState)
@@ -56,31 +58,31 @@ func TestDomainWizard_FullSession(t *testing.T) {
 	assert.Equal(t, "example.com", w.WebsiteDomain())
 
 	// Step 3: domain name.
-	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"domain":"mydomain.com"}`))
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"domain":"mydomain.com"}`))
 	require.NoError(t, err)
 	assert.Equal(t, "domain_namespace", sess.FSM.Current())
 	assert.Equal(t, "mydomain.com", w.Domain())
 
 	// Step 4: namespace.
-	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"namespace":"icann"}`))
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"namespace":"icann"}`))
 	require.NoError(t, err)
 	assert.Equal(t, "domain_bind", sess.FSM.Current())
 	assert.Equal(t, "icann", w.Namespace())
 
 	// Step 5: bind.
-	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"confirm":true}`))
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"confirm":true}`))
 	require.NoError(t, err)
 	assert.Equal(t, "domain_delegation_setup", sess.FSM.Current())
 	assert.NotNil(t, w.Result())
 	assert.Equal(t, "mydomain.com", w.Result().Domain)
 
 	// Step 6: delegation setup: informational.
-	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
 	require.NoError(t, err)
 	assert.Equal(t, "domain_verify", sess.FSM.Current())
 
 	// Step 7: verify.
-	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
 	require.NoError(t, err)
 	assert.Equal(t, "domain_complete", sess.FSM.Current())
 
@@ -94,7 +96,7 @@ func TestDomainWizard_AuthCheckFails(t *testing.T) {
 
 	cfgMgr := newConfigMgr(t, false) // no auth token
 	websitesSvc := &mockWebsitesSvc{}
-	store := mcpadapter.NewSessionStore()
+	store := session.NewSessionStore()
 
 	deps := mcpadapter.DomainWizardDeps{
 		DomainFactory:   testDomainFactory,
@@ -105,7 +107,7 @@ func TestDomainWizard_AuthCheckFails(t *testing.T) {
 	sess, err := mcpadapter.NewDomainSession(store, deps)
 	require.NoError(t, err)
 
-	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "authentication required")
 	// Session stays in auth_check so it can be retried after auth.
@@ -121,7 +123,7 @@ func TestDomainWizard_WebsiteNotFound(t *testing.T) {
 			return []ipfs.WebsiteItem{{Id: 7, Domain: "example.com", Status: "active", Created: time.Now()}}, nil
 		},
 	}
-	store := mcpadapter.NewSessionStore()
+	store := session.NewSessionStore()
 
 	deps := mcpadapter.DomainWizardDeps{
 		DomainFactory:   testDomainFactory,
@@ -131,10 +133,10 @@ func TestDomainWizard_WebsiteNotFound(t *testing.T) {
 
 	sess, err := mcpadapter.NewDomainSession(store, deps)
 	require.NoError(t, err)
-	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
 	require.NoError(t, err)
 
-	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"website_id":"999"}`))
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"website_id":"999"}`))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not found")
 	assert.Equal(t, "domain_website", sess.FSM.Current())
@@ -149,7 +151,7 @@ func TestDomainWizard_InvalidNamespace(t *testing.T) {
 			return []ipfs.WebsiteItem{{Id: 7, Domain: "example.com", Status: "active", Created: time.Now()}}, nil
 		},
 	}
-	store := mcpadapter.NewSessionStore()
+	store := session.NewSessionStore()
 
 	deps := mcpadapter.DomainWizardDeps{
 		DomainFactory:   testDomainFactory,
@@ -159,14 +161,14 @@ func TestDomainWizard_InvalidNamespace(t *testing.T) {
 
 	sess, err := mcpadapter.NewDomainSession(store, deps)
 	require.NoError(t, err)
-	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
 	require.NoError(t, err)
-	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"website_id":"7"}`))
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"website_id":"7"}`))
 	require.NoError(t, err)
-	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"domain":"mydomain.com"}`))
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"domain":"mydomain.com"}`))
 	require.NoError(t, err)
 
-	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"namespace":"invalid"}`))
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"namespace":"invalid"}`))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid namespace")
 	assert.Equal(t, "domain_namespace", sess.FSM.Current())
@@ -181,7 +183,7 @@ func TestDomainWizard_BindWithoutConfirm(t *testing.T) {
 			return []ipfs.WebsiteItem{{Id: 7, Domain: "example.com", Status: "active", Created: time.Now()}}, nil
 		},
 	}
-	store := mcpadapter.NewSessionStore()
+	store := session.NewSessionStore()
 
 	deps := mcpadapter.DomainWizardDeps{
 		DomainFactory:   testDomainFactory,
@@ -191,16 +193,16 @@ func TestDomainWizard_BindWithoutConfirm(t *testing.T) {
 
 	sess, err := mcpadapter.NewDomainSession(store, deps)
 	require.NoError(t, err)
-	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
 	require.NoError(t, err)
-	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"website_id":"7"}`))
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"website_id":"7"}`))
 	require.NoError(t, err)
-	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"domain":"mydomain.com"}`))
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"domain":"mydomain.com"}`))
 	require.NoError(t, err)
-	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"namespace":"icann"}`))
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"namespace":"icann"}`))
 	require.NoError(t, err)
 
-	_, err = mcpadapter.AdvanceSession(context.Background(), sess, json.RawMessage(`{"confirm":false}`))
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"confirm":false}`))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "confirmation required")
 	assert.Equal(t, "domain_bind", sess.FSM.Current())

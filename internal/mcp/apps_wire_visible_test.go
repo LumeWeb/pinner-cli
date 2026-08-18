@@ -7,6 +7,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // registerTestAppView records a synthetic tool→app binding in the package
@@ -29,12 +31,12 @@ func TestAnnotateAppOnHandoffTextOnly(t *testing.T) {
 	})
 	defer unregisterTestAppView(t, "account_password_update")
 
-	res := NeedsHumanResult(NeedsHuman{
-		Reason:    ReasonSSOApproval,
+	res := model.NeedsHumanResult(model.NeedsHuman{
+		Reason:    model.ReasonSSOApproval,
 		ActionURL: "https://example.com/account/password",
 	})
 
-	annotateAppOnHandoff("account_password_update", &RequestCaps{}, &res)
+	annotateAppOnHandoff("account_password_update", &model.RequestCaps{}, &res)
 
 	require.Contains(t, res.Text, "Change Password")
 	require.Contains(t, res.Text, "ui://account/password.html")
@@ -57,11 +59,11 @@ func TestAnnotateAppOnHandoffUICapable(t *testing.T) {
 	})
 	defer unregisterTestAppView(t, "auth_sso")
 
-	caps := &RequestCaps{UI: &ClientUICapabilities{MIMETypes: []string{RESOURCE_MIME_TYPE}}}
+	caps := &model.RequestCaps{UI: &model.ClientUICapabilities{MIMETypes: []string{RESOURCE_MIME_TYPE}}}
 	require.True(t, caps.SupportsApps(), "test capability must support apps")
 
-	res := NeedsHumanResult(NeedsHuman{
-		Reason:     ReasonSSOApproval,
+	res := model.NeedsHumanResult(model.NeedsHuman{
+		Reason:     model.ReasonSSOApproval,
 		ActionURL:  "https://example.com/login/tok",
 		Handle:     "abc",
 		ResumeTool: "auth_resume",
@@ -79,19 +81,19 @@ func TestAnnotateAppOnHandoffUICapable(t *testing.T) {
 // both pass through completely unmodified.
 func TestAnnotateAppOnHandoffNonAppPassthrough(t *testing.T) {
 	// Non-app tool: no registration for "vault_list".
-	resNonApp := NeedsHumanResult(NeedsHuman{Reason: ReasonConfirmation, Detail: "proceed?"})
+	resNonApp := model.NeedsHumanResult(model.NeedsHuman{Reason: model.ReasonConfirmation, Detail: "proceed?"})
 	before := resNonApp.Text
-	annotateAppOnHandoff("vault_list", &RequestCaps{}, &resNonApp)
+	annotateAppOnHandoff("vault_list", &model.RequestCaps{}, &resNonApp)
 	require.Equal(t, before, resNonApp.Text, "non-app tool hand-off must not be annotated")
 
 	// App tool, but a non-needs_human (terminal) result.
 	registerTestAppView(t, "pins_add", AppViewInfo{URI: "ui://pins/create.html", Title: "Create a Pin"})
 	defer unregisterTestAppView(t, "pins_add")
-	resTerminal := ToolResult{
+	resTerminal := model.ToolResult{
 		Text:              "done",
-		StructuredContent: map[string]any{"status": StatusDone},
+		StructuredContent: map[string]any{"status": model.StatusDone},
 	}
-	annotateAppOnHandoff("pins_add", &RequestCaps{}, &resTerminal)
+	annotateAppOnHandoff("pins_add", &model.RequestCaps{}, &resTerminal)
 	require.Equal(t, "done", resTerminal.Text, "terminal result must not be annotated")
 }
 
@@ -114,9 +116,9 @@ func TestOfficialToolHandlerAnnotatesHandoffEndToEnd(t *testing.T) {
 	})
 	defer unregisterTestAppView(t, "account_password_update")
 
-	handler := officialToolHandler(PinnerToolHandler(func(_ context.Context, _ ToolRequest) (ToolResult, error) {
-		return NeedsHumanResult(NeedsHuman{
-			Reason:    ReasonSSOApproval,
+	handler := officialToolHandler(model.PinnerToolHandler(func(_ context.Context, _ model.ToolRequest) (model.ToolResult, error) {
+		return model.NeedsHumanResult(model.NeedsHuman{
+			Reason:    model.ReasonSSOApproval,
 			ActionURL: "https://example.com/account/password/tok",
 		}), nil
 	}))
@@ -161,17 +163,17 @@ func TestInvokeToolAnnotatesAppBackedHandoff(t *testing.T) {
 	defer unregisterTestAppView(t, "vault_create")
 
 	catalog := NewToolCatalog()
-	catalog.Add(&ToolEntry{
+	catalog.Add(&model.ToolEntry{
 		Name:        "vault_create",
 		Description: "Create a vault (agent-safe OOB hand-off)",
-		Category:    CategoryCore,
-		Interaction: InteractionAgentSafe,
+		Category:    model.CategoryCore,
+		Interaction: model.InteractionAgentSafe,
 		InputSchema: json.RawMessage(`{"type":"object"}`),
-		Handler: func(context.Context, ToolRequest) (ToolResult, error) {
+		Handler: func(context.Context, model.ToolRequest) (model.ToolResult, error) {
 			// Mirrors the compiled vault_create OOB start handler: mint a URL
 			// and return a needs_human hand-off.
-			return NeedsHumanResult(NeedsHuman{
-				Reason:    ReasonSSOApproval,
+			return model.NeedsHumanResult(model.NeedsHuman{
+				Reason:    model.ReasonSSOApproval,
 				ActionURL: "https://example.com/vault/create/tok",
 				Detail:    "Open the URL to finish creating the vault.",
 			}), nil
