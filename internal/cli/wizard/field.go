@@ -3,7 +3,6 @@ package wizard
 import (
 	"context"
 	"fmt"
-	"slices"
 )
 
 // This file defines a declarative field-resolution primitive for wizard steps.
@@ -121,6 +120,16 @@ type Field[S any, T any] struct {
 	// stale env file. Precedence 0 returning ok=false just falls through to the
 	// switch / decision / env precedences.
 	Derived func(S) (T, bool)
+
+	// When, when non-nil, gates whether this field is evaluated at all. A
+	// field whose When(s) is false is skipped entirely by Gather — it is
+	// neither resolved nor prompted nor hard-errored — so a field that only
+	// applies under a prior choice (a DNS-mode-specific value, a transport
+	// gated on an agent set) is declared declaratively instead of the step
+	// assembling a different field set by hand. Typical use: read a value the
+	// step or an earlier field wrote to S and return false to suppress this
+	// field. nil = always evaluated.
+	When func(S) bool
 }
 
 // FieldError is returned by Gather when a required field is unresolved on a
@@ -315,7 +324,9 @@ func resolveField[S any, T any](src ValueSource, s S, f *Field[S, T], headless b
 // Gather resolves a set of fields against the value source for a step, driving
 // interactive prompts through the Prompter bound to ctx. It implements the
 // "switch > prompt > env" precedence loop once, so steps declare fields instead
-// of hand-rolling it.
+// of hand-rolling it. It is the typed convenience over GatherAny: the loop,
+// gating (Field.When), derivation (Field.Derived), and prompting all live in
+// GatherAny / AnyField, so a heterogeneous field set resolves the same way.
 //
 // It returns (seededSources, fullyDecided, error):
 //   - seededSources are the distinct source labels used (a switch name, or
@@ -330,86 +341,9 @@ func resolveField[S any, T any](src ValueSource, s S, f *Field[S, T], headless b
 // pointer-S the copied value aliases the same struct, so commits persist.
 // Callers must pass a non-nil, live state.
 func Gather[S any, T any](ctx context.Context, src ValueSource, s S, fields []Field[S, T]) ([]string, bool, error) {
-	headless := NonInteractive
-	seeded := make([]string, 0, len(fields))
-	envUsed := false
-	fullyDecided := true
-
+	anyf := make([]AnyField[S], len(fields))
 	for i := range fields {
-		f := &fields[i]
-
-		oc, err := resolveField(src, s, f, headless)
-		if err != nil {
-			return nil, false, err
-		}
-		if oc.hardError {
-			return nil, false, &FieldError{Name: f.Name}
-		}
-		if oc.usedSource == "env file" {
-			envUsed = true
-		}
-		// Track emitted source labels so the returned seed list holds distinct
-		// entries even when several fields share a source (multiple env-sourced
-		// fields, or a switch reused across fields).
-		if oc.usedSource != "" && !slices.Contains(seeded, oc.usedSource) {
-			seeded = append(seeded, oc.usedSource)
-		}
-
-		if oc.decided || oc.operative {
-			continue
-		}
-
-		// Interactive prompt for a required, still-unresolved field.
-		if !headless && f.Prompt != nil {
-			p := PrompterFrom(ctx)
-			if p == nil {
-				return nil, false, fmt.Errorf("wizard.Gather: field %q needs a prompt but no Prompter is bound to ctx", f.Name)
-			}
-			label := f.Prompt.Label
-			if label == "" {
-				label = f.Name
-			}
-			defStr := ""
-			if f.Prompt.CurrentString != nil {
-				defStr = f.Prompt.CurrentString(f.Operational(s))
-			}
-			var chosenStr string
-			if len(f.Prompt.Options) > 0 {
-				_, selVal, perr := p.Select(label, f.Prompt.Options, defStr)
-				if perr != nil {
-					return nil, false, perr
-				}
-				chosenStr = selVal
-			} else {
-				txt, perr := p.Text(label, f.Prompt.Mask, defStr)
-				if perr != nil {
-					return nil, false, perr
-				}
-				chosenStr = txt
-			}
-			// Commit through settle so the operator's choice is validated by the
-			// single gate: Parse ok-false (malformed option/input) or a
-			// Validate failure bails with an error rather than committing a bad
-			// value (a follow-up run re-prompts, per Field.Validate's contract).
-			chosen, okP := f.Parse(chosenStr)
-			if !okP || !f.settle(&oc, s, chosen, srcPrompt, headless) {
-				return nil, false, fmt.Errorf("wizard.Gather: invalid value entered for field %q", f.Name)
-			}
-			continue
-		}
-
-		// A required field with no source, no derivation, and no prompt ran the
-		// interactive path: it may be derivable by the step's Execute (e.g.
-		// resolveNgrokURL). Mark undecided and let the step derive via
-		// SetOperational afterwards.
-		fullyDecided = false
+		anyf[i] = erase(&fields[i])
 	}
-
-	// Honest-source rule: env-file-sourced values on an interactive run keep the
-	// step un-seeded (defaults are editable, so not fully decided); on headless
-	// they are fully decided.
-	if envUsed && !headless {
-		fullyDecided = false
-	}
-	return seeded, fullyDecided, nil
+	return GatherAny(ctx, src, s, anyf)
 }
