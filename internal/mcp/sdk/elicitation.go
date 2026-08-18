@@ -1,4 +1,4 @@
-package mcp
+package sdk
 
 import (
 	"encoding/json"
@@ -11,26 +11,21 @@ import (
 // ---------------------------------------------------------------------------
 // UI elicitation abstraction
 //
-// The Go SDK v1.7.0 exposes the 2026-07-28 multi-round-trip (MRTR) mechanism at
-// the wire level: a tool handler returns a CallToolResult whose InputRequests
-// map carries *ElicitParams, the SDK marks it resultType "input_required", the
+// The Go SDK exposes the 2026-07-28 multi-round-trip (MRTR) mechanism at the
+// wire level: a tool handler returns a CallToolResult whose InputRequests map
+// carries *ElicitParams, the SDK marks it resultType "input_required", the
 // client renders the requested form and retries the call with the submitted
 // content in CallToolParams.InputResponses.
 //
-// That low-level plumbing is the analog of the TS SDK's
-// inputRequired(...)/acceptedContent(...) builders. This file puts a
-// Pinner-owned, SDK-neutral layer in front of it so our handlers describe "I
-// need form input X" without touching SDK wire types, and read the client's
-// answer without unwrapping raw responses.
+// sdk puts a Pinner-owned, SDK-neutral layer in front of that: handlers
+// describe "I need form input X" via model.ElicitationSpec without touching SDK
+// wire types, and read the client's answer without unwrapping raw responses.
 // ---------------------------------------------------------------------------
 
-// ElicitationSpec is the SDK-neutral interactive-input request type; it lives
-// in core/model. The SDK seam functions below convert it to/from wire types.
-
-// callToolResultFromElicitation builds an SDK CallToolResult that asks the
-// client for the described input. The SDK's MRTR middleware sets
-// resultType "input_required" because InputRequests is non-empty.
-func callToolResultFromElicitation(spec model.ElicitationSpec) *mcp.CallToolResult {
+// CallToolResultFromElicitation builds an SDK CallToolResult that asks the
+// client for the described input. The SDK's MRTR middleware sets resultType
+// "input_required" because InputRequests is non-empty.
+func CallToolResultFromElicitation(spec model.ElicitationSpec) *mcp.CallToolResult {
 	elicit := &mcp.ElicitParams{
 		Mode:    "form",
 		Message: spec.Message,
@@ -52,18 +47,17 @@ func callToolResultFromElicitation(spec model.ElicitationSpec) *mcp.CallToolResu
 	}
 }
 
-// acceptedElicitation reads the accepted form content for the given request id
+// AcceptedElicitation reads the accepted form content for the given request id
 // from a retried call's InputResponses. It returns the submitted fields and
 // true when the user accepted; it returns false for decline/cancel/absent.
-func acceptedElicitation(req *mcp.CallToolRequest, id string) (map[string]any, bool) {
-	content, ok := acceptedElicitationValue(req, id)
-	return content, ok
+func AcceptedElicitation(req *mcp.CallToolRequest, id string) (map[string]any, bool) {
+	return acceptedElicitationValue(req, id)
 }
 
-// acceptedElicitations returns every accepted form submission, keyed by its
+// AcceptedElicitations returns every accepted form submission, keyed by its
 // elicitation id, for a retried call. Handlers use this to receive form input
 // as ordinary arguments on the round-trip retry.
-func acceptedElicitations(req *mcp.CallToolRequest) map[string]any {
+func AcceptedElicitations(req *mcp.CallToolRequest) map[string]any {
 	out := map[string]any{}
 	if req == nil || req.Params == nil || req.Params.InputResponses == nil {
 		return out

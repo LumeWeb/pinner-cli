@@ -400,6 +400,11 @@ adapter.`,
 				return err
 			}
 
+			// Install the hub's tool-handler adapter (officialToolHandler) as the
+			// sdk seam's registration hook so app tools registered via the sdk
+			// bridge reuse the same single handler-adaptation path.
+			sdk.SetToolRegistrar(registerTool)
+
 			if err := registerCustomTools(customToolDeps{
 				srv:              srv,
 				catalog:          catalog,

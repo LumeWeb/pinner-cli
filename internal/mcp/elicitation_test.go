@@ -17,10 +17,11 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
+	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
 
 func TestCallToolResultFromElicitationForm(t *testing.T) {
-	res := callToolResultFromElicitation(model.FormElicitation("input", "Needs domain", map[string]any{
+	res := sdk.CallToolResultFromElicitation(model.FormElicitation("input", "Needs domain", map[string]any{
 		"type": "object", "properties": map[string]any{"domain": map[string]any{"type": "string"}},
 	}))
 	require.NotNil(t, res)
@@ -33,7 +34,7 @@ func TestCallToolResultFromElicitationForm(t *testing.T) {
 }
 
 func TestCallToolResultFromElicitationURL(t *testing.T) {
-	res := callToolResultFromElicitation(model.ElicitationSpec{
+	res := sdk.CallToolResultFromElicitation(model.ElicitationSpec{
 		ID: "auth", Message: "Complete login", URL: "https://example.com/oauth", ElicitationID: "flow-1",
 	})
 	el := res.InputRequests["auth"].(*mcp.ElicitParams)
@@ -173,7 +174,7 @@ func TestInputResponsesWireRoundTrip(t *testing.T) {
 	require.IsType(t, &mcp.ElicitResult{}, raw, "SDK must decode inputResponses to *ElicitResult")
 
 	// And our reader must return the submitted fields through the struct.
-	content, ok := acceptedElicitation(&req, "input")
+	content, ok := sdk.AcceptedElicitation(&req, "input")
 	require.True(t, ok)
 	require.Equal(t, "example.com", content["domain"])
 	require.Equal(t, "free", content["plan"])

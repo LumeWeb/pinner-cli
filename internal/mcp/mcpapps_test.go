@@ -23,50 +23,6 @@ func TestMCPAppsConstants(t *testing.T) {
 	}
 }
 
-func TestMarshalToolMetaTyped(t *testing.T) {
-	meta, err := marshalToolMeta(model.AppToolMeta{ResourceURI: "ui://vault/view.html"})
-	if err != nil {
-		t.Fatalf("marshalToolMeta: %v", err)
-	}
-
-	// Nested _meta.ui shape.
-	ui, ok := meta["ui"].(map[string]any)
-	if !ok {
-		t.Fatalf("_meta.ui missing or wrong type: %T", meta["ui"])
-	}
-	if got := ui["resourceUri"]; got != "ui://vault/view.html" {
-		t.Fatalf("_meta.ui.resourceUri = %#v", got)
-	}
-	// Legacy flat key populated too.
-	if got := meta[RESOURCE_URI_META_KEY]; got != "ui://vault/view.html" {
-		t.Fatalf("legacy flat key = %#v", got)
-	}
-}
-
-func TestMarshalToolMetaVisibility(t *testing.T) {
-	meta, err := marshalToolMeta(model.AppToolMeta{
-		ResourceURI: "ui://shop/cart.html",
-		Visibility:  []model.ToolVisibility{model.ToolVisibilityApp},
-	})
-	if err != nil {
-		t.Fatalf("marshalToolMeta: %v", err)
-	}
-	ui := meta["ui"].(map[string]any)
-	vis, ok := ui["visibility"].([]any)
-	if !ok {
-		t.Fatalf("visibility = %T, want []", ui["visibility"])
-	}
-	if len(vis) != 1 || vis[0] != "app" {
-		t.Fatalf("visibility = %#v, want [app]", vis)
-	}
-}
-
-func TestMarshalToolMetaRequiresURI(t *testing.T) {
-	if _, err := marshalToolMeta(model.AppToolMeta{}); err == nil {
-		t.Fatal("expected error for empty resourceUri")
-	}
-}
-
 func TestGetClientUICapabilityTyped(t *testing.T) {
 	// Simulates the shape a client sends in initialize capabilities extensions.
 	ext := map[string]any{
@@ -167,11 +123,12 @@ func TestAdvertiseUICapabilityNilSafe(t *testing.T) {
 func buildAppServer(t *testing.T) *mcp.Server {
 	t.Helper()
 	srv := sdk.NewServer(nil)
+	sdk.SetToolRegistrar(registerTool)
 
 	handler := model.PinnerToolHandler(func(_ context.Context, _ model.ToolRequest) (model.ToolResult, error) {
 		return model.ToolResult{Text: "vault listing fallback"}, nil
 	})
-	err := RegisterAppTool(srv, model.ToolDescriptor{
+	err := sdk.RegisterAppTool(srv, model.ToolDescriptor{
 		Name:        "pinner_vault_ls",
 		Description: "List vault contents with an interactive table",
 		InputSchema: json.RawMessage(`{"type":"object"}`),
@@ -181,7 +138,7 @@ func buildAppServer(t *testing.T) *mcp.Server {
 		t.Fatalf("RegisterAppTool: %v", err)
 	}
 
-	err = RegisterAppResource(srv, AppResource{
+	err = sdk.RegisterAppResource(srv, sdk.AppResource{
 		URI:         "ui://vault/list.html",
 		Name:        "Vault List View",
 		Title:       "Vault List",
