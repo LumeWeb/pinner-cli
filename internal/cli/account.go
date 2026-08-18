@@ -98,9 +98,6 @@ func accountOTPEnable(ctx context.Context, cmd flagGetter, output Output, cfgMgr
 
 	// If no OTP code was provided, prompt for it interactively.
 	if otpCode == "" {
-		if agentMode {
-			return ErrNonInteractive
-		}
 		prompter := &promptuiPrompter{}
 		otpCode, err = prompter.PromptOTP()
 		if err != nil {

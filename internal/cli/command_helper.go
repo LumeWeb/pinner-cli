@@ -41,9 +41,7 @@ func setupCommandContext(cmd *cli.Command) (config.Manager, Output, error) {
 		return nil, nil, err
 	}
 
-	// --json forces structured output (no ANSI colors). Non-interactive
-	// (prompt-error) mode is set programmatically by the MCP adapter via
-	// SetAgentMode; the human CLI has no non-interactive flag.
+	// --json forces structured output (no ANSI colors).
 	jsonOutput := cmd.Bool(FlagJSON)
 
 	output := NewOutputFormatter(

@@ -10,23 +10,6 @@ type vaultCpResponse struct {
 	ContentDigest string `json:"content_digest"`
 }
 
-// vaultCreateApprovalResponse is the JSON output for `vault create` in agent mode.
-//
-// The mnemonic is NOT included in the JSON. It is written to a 0600 file at
-// SeedPath so it never appears in stdout, logs, or the agent's context window.
-// The agent should instruct the user to read the file and pipe it to restore:
-//
-//	pinner vault restore --profile <name> --seed-stdin < <seed_path>
-//
-// approval_url is intentionally absent: restore issues its own connection
-// request and owns the single browser approval. Create's only job in agent
-// mode is to generate the seed.
-type vaultCreateApprovalResponse struct {
-	Profile  string `json:"profile"`
-	SeedPath string `json:"seed_path"`
-	NextStep string `json:"next_step"`
-}
-
 // vaultProfileEntry is a single profile in the `vault profile list` JSON output.
 type vaultProfileEntry struct {
 	Name      string `json:"name"`
@@ -39,14 +22,6 @@ type vaultProfileEntry struct {
 // vaultProfileListResponse is the JSON output for `vault profile list`.
 type vaultProfileListResponse struct {
 	Profiles []vaultProfileEntry `json:"profiles"`
-}
-
-// vaultRestoreApprovalResponse is the JSON output for `vault restore` in agent mode.
-// It carries no approval URL: the connection request is deferred to the
-// --seed-stdin re-run, which issues the single browser approval.
-type vaultRestoreApprovalResponse struct {
-	Profile  string `json:"profile"`
-	NextStep string `json:"next_step"`
 }
 
 // vaultDeviceInfo is the device sub-object in restore/status JSON output.
