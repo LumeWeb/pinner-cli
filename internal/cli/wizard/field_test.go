@@ -380,4 +380,153 @@ func TestField_InvalidDecisionNotReused(t *testing.T) {
 	})
 }
 
+// derivedField builds a field with a provider-derived hook (precedence 0).
+func derivedField(derived func(s *testState) (string, bool), envKey string, prompt *Prompt[string]) Field[*testState, string] {
+	f := strField("derived", "", envKey, false, prompt)
+	f.Derived = derived
+	return f
+}
+
+// TestField_DerivedFlagWins guards that an explicit operator --flag beats
+// provider derivation: precedence 1 outranks precedence 0, so a derived value
+// must never silently discard a flag the operator actually passed this run.
+func TestField_DerivedFlagWins(t *testing.T) {
+	old := NonInteractive
+	NonInteractive = true
+	defer func() { NonInteractive = old }()
+
+	// A field with a flag AND a Derived hook.
+	f := strField("domain", "domain", "MCP_DOMAIN", false, nil)
+	f.Derived = func(*testState) (string, bool) { return "derived.example.com", true }
+
+	s := &testState{}
+	seed, fully := mustCommit(t, context.Background(),
+		&fakeSrc{flags: map[string]string{"domain": "flagged.example.com"}},
+		s, []Field[*testState, string]{f})
+	require.Equal(t, []string{"domain"}, seed, "the present flag is the operator seed source")
+	require.True(t, fully, "a present flag fully decides the field")
+	require.Equal(t, "flagged.example.com", s.operative,
+		"the explicit flag must win over the derived value")
+	require.NotNil(t, s.decided, "the flag is an operator decision")
+	require.Equal(t, "flagged.example.com", *s.decided)
+}
+
+// TestField_DerivedUnpassedFlagStillDerives guards the other half of the
+// contract: a field whose flag is defined but NOT passed this run still
+// derives — derivation is preempted only by an actually-present switch, not by
+// the mere existence of a flag declaration.
+func TestField_DerivedUnpassedFlagStillDerives(t *testing.T) {
+	old := NonInteractive
+	NonInteractive = true
+	defer func() { NonInteractive = old }()
+
+	f := strField("domain", "domain", "MCP_DOMAIN", false, nil)
+	f.Derived = func(*testState) (string, bool) { return "derived.example.com", true }
+
+	s := &testState{}
+	seed, fully := mustCommit(t, context.Background(),
+		&fakeSrc{}, // no flag present
+		s, []Field[*testState, string]{f})
+	require.Empty(t, seed, "a derived value is not an operator seed source")
+	require.True(t, fully, "headless reuses the derived value")
+	require.Equal(t, "derived.example.com", s.operative,
+		"an un-passed flag must not block derivation")
+	require.Nil(t, s.decided, "the derived value is operational, not a decision")
+}
+
+// TestField_DerivedHeadlessReuses guards precedence 0: a provider-derived value
+// on a headless run settles the field (no hard-error), is reused as the
+// Operational value, and is NOT an operator decision.
+func TestField_DerivedHeadlessReuses(t *testing.T) {
+	old := NonInteractive
+	NonInteractive = true
+	defer func() { NonInteractive = old }()
+
+	s := &testState{}
+	seed, fully := mustCommit(t, context.Background(), &fakeSrc{}, s, []Field[*testState, string]{
+		derivedField(func(*testState) (string, bool) { return "derived.example.com", true }, "MCP_DOMAIN", nil),
+	})
+	require.Empty(t, seed, "a derived value is not an operator seed source")
+	require.True(t, fully, "headless reuses the derived value")
+	require.Equal(t, "derived.example.com", s.operative)
+	require.Nil(t, s.decided, "a derived value is operational, not an operator decision")
+}
+
+// TestField_DerivedFallsThroughBlank guards that a Derived hook returning
+// ok=false falls through to the lower precedences (a switch still decides).
+func TestField_DerivedFallsThroughBlank(t *testing.T) {
+	old := NonInteractive
+	NonInteractive = true
+	defer func() { NonInteractive = old }()
+
+	f := derivedField(func(*testState) (string, bool) { return "", false }, "MCP_DOMAIN", nil)
+	f.Flag = "domain"
+	s := &testState{}
+	mustCommit(t, context.Background(),
+		&fakeSrc{flags: map[string]string{"domain": "flag.example.com"}}, s,
+		[]Field[*testState, string]{f})
+	require.Equal(t, "flag.example.com", *s.decided, "a switch still decides when derivation yields nothing")
+}
+
+// TestField_DerivedWinsOverEnv guards that precedence 0 derivation is used over
+// a stale env-file value — a provider-derived field must never be folded from a
+// stale cross-provider env key.
+func TestField_DerivedWinsOverEnv(t *testing.T) {
+	old := NonInteractive
+	NonInteractive = true
+	defer func() { NonInteractive = old }()
+
+	s := &testState{}
+	mustCommit(t, context.Background(),
+		&fakeSrc{env: map[string]string{"MCP_DOMAIN": "stale.example.com"}}, s,
+		[]Field[*testState, string]{
+			derivedField(func(*testState) (string, bool) { return "derived.example.com", true }, "MCP_DOMAIN", nil),
+		})
+	require.Equal(t, "derived.example.com", s.operative,
+		"the provider-derived value wins over a stale env fold")
+}
+
+// TestField_DerivedInteractivePrefills guards that on an interactive run a
+// derived value prefills the prompt default (CurrentString) and the run stays
+// un-seeded until the operator confirms via the prompt.
+func TestField_DerivedInteractivePrefills(t *testing.T) {
+	old := NonInteractive
+	NonInteractive = false
+	defer func() { NonInteractive = old }()
+
+	var promptedDefault string
+	mock := &textMockPrompter{text: "operator-edited.example.com"}
+	ctx := WithPrompter(context.Background(), mock)
+	prompt := &Prompt[string]{
+		Label:         "Domain",
+		CurrentString: func(v string) string { promptedDefault = v; return v },
+	}
+	s := &testState{}
+	_, fully := mustCommit(t, ctx, &fakeSrc{}, s, []Field[*testState, string]{
+		derivedField(func(*testState) (string, bool) { return "derived.example.com", true }, "MCP_DOMAIN", prompt),
+	})
+	require.Equal(t, "derived.example.com", promptedDefault,
+		"the derived value must prefill the interactive prompt default")
+	require.True(t, fully, "the operator-confirmed derived value is fully decided")
+	require.NotNil(t, s.decided, "the operator confirmation is an operator decision")
+	require.Equal(t, "operator-edited.example.com", *s.decided)
+}
+
+// TestField_DerivedHeadlessFallsThroughDefers guards that a Derived hook that
+// yields nothing on a headless run defers to the step (no hard-error) so the
+// step's Execute can populate the value via SetOperational afterwards.
+func TestField_DerivedHeadlessFallsThroughDefers(t *testing.T) {
+	old := NonInteractive
+	NonInteractive = true
+	defer func() { NonInteractive = old }()
+
+	f := derivedField(func(*testState) (string, bool) { return "", false }, "MCP_PUBLIC_URL", nil)
+	s := &testState{}
+	seeded, fully, err := Gather(context.Background(), &fakeSrc{}, s, []Field[*testState, string]{f})
+	require.NoError(t, err, "an unresolved derived field must defer, not hard-error")
+	require.False(t, fully)
+	require.Empty(t, seeded)
+	require.Equal(t, "", s.operative)
+}
+
 func ptr(s string) *string { return &s }

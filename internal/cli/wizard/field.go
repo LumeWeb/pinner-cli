@@ -3,14 +3,13 @@ package wizard
 import (
 	"context"
 	"fmt"
-	"slices"
 )
 
 // This file defines a declarative field-resolution primitive for wizard steps.
 // A step describes the values it needs and the framework resolves each one in
-// precedence order — CLI switch (and its process-env Sources), interactive
-// prompt, persisted env file — instead of the step hand-rolling a per-field
-// `if s.X == "" || !wizard.NonInteractive` block.
+// precedence order — provider-derived (precedence 0), CLI switch (and its
+// process-env Sources), interactive prompt, persisted env file — instead of the
+// step hand-rolling a per-field conditional on the state and interactivity.
 //
 // Provenance, two channels per value:
 //
@@ -56,10 +55,18 @@ type Prompt[T any] struct {
 	Mask string
 	// Options, when non-empty, renders a single-choice Select instead of a
 	// free-text Text prompt. The current value is highlighted as the default.
+	// Ignored when Field.OptionsFunc supplies the list at prompt time.
 	Options []string
+	// Multi, when true (with Options or OptionLabels), renders a multi-select
+	// (Prompter.MultiSelect) instead of a single Select. The checked option
+	// labels are parsed with Field.ParseMulti into T.
+	Multi bool
 	// CurrentString renders the current Operational value for the editable /
-	// highlighted default. Required when Prompt is set.
+	// highlighted default. Required when Prompt is set and not Multi.
 	CurrentString func(T) string
+	// CurrentSet renders the current Operational value's checked option labels
+	// for a Multi field's pre-checked defaults. Optional.
+	CurrentSet func(T) []string
 }
 
 // Field describes one configurable value a wizard step needs. See the provenance
@@ -71,6 +78,12 @@ type Field[S any, T any] struct {
 	// option) into a T. Return ok=false if the raw string is malformed for this
 	// field. For the common string-valued fields this is an identity parse.
 	Parse func(string) (T, bool)
+
+	// ParseMulti converts the checked option labels of a Multi (multi-select)
+	// field into T. Required only when Prompt.Multi is true; the interactive
+	// path calls it instead of Parse. Parse (single-string) remains the
+	// flag/env path for the same field.
+	ParseMulti func([]string) (T, bool)
 
 	// Decided returns the operator-decision pointer (nil = not decided this run).
 	Decided func(S) *T
@@ -99,6 +112,13 @@ type Field[S any, T any] struct {
 	// nil = not promotable (a pure switch/env field).
 	Prompt *Prompt[T]
 
+	// OptionsFunc, when set, provides the prompt's choice list at prompt time
+	// from the value source and the step state, overriding the static
+	// Prompt.Options. Used for choice sets derived from an API (a website
+	// list) or the filesystem (detected agents). It is called only when the
+	// field actually reaches its interactive prompt.
+	OptionsFunc func(ctx context.Context, src ValueSource, s S) (options []string, err error)
+
 	// ReDerives marks a field whose Operational value is re-derived by the
 	// install when the tunnel provider changes: on a switch, the framework
 	// clears its Operational value (and the reconcile purges its env key) so a
@@ -106,6 +126,31 @@ type Field[S any, T any] struct {
 	// their Operational value across a switch (e.g. Host — a local bind host
 	// that is never stale).
 	ReDerives bool
+
+	// Derived supplies the field's Operational value from the provider's own
+	// derivation (loaded cloudflare provisioned state, an ngrok URL resolved
+	// from the account API, a "pinner-mcp" TunnelName default, a resolved
+	// credential). It runs at precedence 0 — before the CLI switch — and only
+	// when the field carries no operator decision this run. A derived value is
+	// written to the Operational channel only (never Decided) and settles the
+	// field: a headless run reuses it, an interactive run prefills the prompt
+	// with it as the editable default. It is the declarative replacement for a
+	// provider imperatively deriving a value in a step's Execute before/after
+	// Gather — and, like ReDerives, a field with a Derived hook is by
+	// definition re-derived on a provider switch and must not be folded from a
+	// stale env file. Precedence 0 returning ok=false just falls through to the
+	// switch / decision / env precedences.
+	Derived func(S) (T, bool)
+
+	// When, when non-nil, gates whether this field is evaluated at all. A
+	// field whose When(s) is false is skipped entirely by Gather — it is
+	// neither resolved nor prompted nor hard-errored — so a field that only
+	// applies under a prior choice (a DNS-mode-specific value, a transport
+	// gated on an agent set) is declared declaratively instead of the step
+	// assembling a different field set by hand. Typical use: read a value the
+	// step or an earlier field wrote to S and return false to suppress this
+	// field. nil = always evaluated.
+	When func(S) bool
 }
 
 // FieldError is returned by Gather when a required field is unresolved on a
@@ -132,8 +177,11 @@ type fieldOutcome[T any] struct {
 type srcKind int
 
 const (
+	// srcDerived is a provider-derived value (precedence 0). It writes the
+	// Operational channel only — never Decided.
+	srcDerived srcKind = iota
 	// srcFlag is an explicitly-passed CLI switch (incl. its process-env Sources).
-	srcFlag srcKind = iota
+	srcFlag
 	// srcDecided is an operator decision committed by an earlier pass.
 	srcDecided
 	// srcEnv is a value folded from the persisted env file.
@@ -168,12 +216,15 @@ func (f *Field[S, T]) settle(oc *fieldOutcome[T], s S, v T, src srcKind, headles
 		// Already persisted on both channels; reuse exposes it as settled.
 		oc.decided = true
 		oc.operative = true
-	case srcEnv:
-		// Env folds into Operational only, never Decided. It settles the field
-		// only on a headless run (reuse); on interactive it prefills the prompt
-		// and stays un-operative so Gather re-prompts with it as the default.
+	case srcDerived, srcEnv:
+		// Derived and env values fold into Operational only, never Decided.
+		// They settle the field only on a headless run (reuse); on interactive
+		// they prefill the prompt and stay un-operative so Gather re-prompts
+		// with the value as the editable default.
 		f.SetOperational(s, v)
-		oc.usedSource = "env file"
+		if src == srcEnv {
+			oc.usedSource = "env file"
+		}
 		oc.operative = headless
 	}
 	return true
@@ -193,7 +244,12 @@ func classifyOutcome[S any, T any](oc *fieldOutcome[T], f *Field[S, T], s S, hea
 		return // already settled; do not clobber
 	}
 	if headless {
-		if !f.ReDerives {
+		// A field the provider derives — via a Derived hook or a ReDerives
+		// marker — defers to the step's Execute rather than hard-erroring: the
+		// provider populates it via SetOperational after Gather (e.g. an ngrok
+		// URL resolved in Finalize). Any other unresolved required field is
+		// fatal headless (it cannot be prompted).
+		if !f.ReDerives && f.Derived == nil {
 			oc.hardError = true
 		}
 		return
@@ -205,14 +261,42 @@ func classifyOutcome[S any, T any](oc *fieldOutcome[T], f *Field[S, T], s S, hea
 	}
 }
 
-// resolveField applies one field's precedence: switch (incl. Sources) > existing
-// operator decision > headless env fold. Each precedence settles via f.settle
-// (the single validation + provenance gate) and returns on acceptance; anything
-// that does not settle funnels once into classifyOutcome, which owns the
-// hard-error / defer / interactive outcome. It does not prompt; Gather does,
-// since it has the Prompter from ctx.
+// flagPresent reports whether src carries an explicit value for the given flag
+// this run. It is how the precedences decide "the operator supplied a switch":
+// a field whose flag is undefined or simply un-passed does not count as present,
+// so a derived field with an optional flag still derives.
+func flagPresent(src ValueSource, flag string) bool {
+	_, ok := src.Flag(flag)
+	return ok
+}
+
+// resolveField applies one field's precedence: provider-derived (precedence 0) >
+// switch (incl. Sources) > existing operator decision > headless env fold. Each
+// precedence settles via f.settle (the single validation + provenance gate) and
+// returns on acceptance; anything that does not settle funnels once into
+// classifyOutcome, which owns the hard-error / defer / interactive outcome. It
+// does not prompt; Gather does, since it has the Prompter from ctx.
 func resolveField[S any, T any](src ValueSource, s S, f *Field[S, T], headless bool) (fieldOutcome[T], error) {
 	oc := fieldOutcome[T]{}
+
+	// -- precedence 0: provider-derive the Operational value ----------------
+	// Resolves a derived value (cloudflare provisioned state, ngrok URL, a
+	// default) BEFORE the switch, and only when the field carries no operator
+	// decision this run and no explicit --flag was passed. An explicit operator
+	// switch beats provider derivation (precedence 1 > precedence 0), so a
+	// derived value must never silently discard a flag the operator actually
+	// supplied. A defined-but-unpassed flag does not count as present, so an
+	// optional flag still falls through to derivation. A derived value settles
+	// the field (headless reuses it, interactive prefills the prompt default),
+	// so a provider-derived field is never hard-errored for being unresolved
+	// before derivation can fill it — the gap that forced providers to derive
+	// imperatively around Gather. ok=false falls through to the lower
+	// precedences.
+	if f.Derived != nil && !flagPresent(src, f.Flag) && f.Decided(s) == nil {
+		if v, ok := f.Derived(s); ok && f.settle(&oc, s, v, srcDerived, headless) {
+			return oc, nil
+		}
+	}
 
 	// -- precedence 1: CLI switch (incl. process-env Sources) ----------------
 	// A present flag decides the field, valid or not: if it settles we are done;
@@ -241,11 +325,11 @@ func resolveField[S any, T any](src ValueSource, s S, f *Field[S, T], headless b
 	// -- precedence 3: fold the persisted env as the current value ----------
 	// Runs on headless and interactive: a re-run prefills its prompts with (and
 	// on headless reuses) the persisted config. Folds into the Operational
-	// channel only, never Decided, and only for fields not marked ReDerives
-	// (the new provider derives those itself and must not get a stale
-	// cross-provider value). settle's srcEnv rule completes the behavior:
-	// settle-on-headless, prefill-on-interactive.
-	if f.EnvFileKey != "" && !f.ReDerives && f.Decided(s) == nil {
+	// channel only, never Decided, and only for fields not marked ReDerives and
+	// without a Derived hook (the new provider derives those itself and must
+	// not get a stale cross-provider value). settle's srcEnv rule completes the
+	// behavior: settle-on-headless, prefill-on-interactive.
+	if f.EnvFileKey != "" && !f.ReDerives && f.Derived == nil && f.Decided(s) == nil {
 		if raw, ok := src.EnvFile(f.EnvFileKey); ok {
 			if v, parsed := f.Parse(raw); parsed && f.settle(&oc, s, v, srcEnv, headless) {
 				return oc, nil
@@ -261,7 +345,9 @@ func resolveField[S any, T any](src ValueSource, s S, f *Field[S, T], headless b
 // Gather resolves a set of fields against the value source for a step, driving
 // interactive prompts through the Prompter bound to ctx. It implements the
 // "switch > prompt > env" precedence loop once, so steps declare fields instead
-// of hand-rolling it.
+// of hand-rolling it. It is the typed convenience over GatherAny: the loop,
+// gating (Field.When), derivation (Field.Derived), and prompting all live in
+// GatherAny / AnyField, so a heterogeneous field set resolves the same way.
 //
 // It returns (seededSources, fullyDecided, error):
 //   - seededSources are the distinct source labels used (a switch name, or
@@ -276,86 +362,9 @@ func resolveField[S any, T any](src ValueSource, s S, f *Field[S, T], headless b
 // pointer-S the copied value aliases the same struct, so commits persist.
 // Callers must pass a non-nil, live state.
 func Gather[S any, T any](ctx context.Context, src ValueSource, s S, fields []Field[S, T]) ([]string, bool, error) {
-	headless := NonInteractive
-	seeded := make([]string, 0, len(fields))
-	envUsed := false
-	fullyDecided := true
-
+	anyf := make([]AnyField[S], len(fields))
 	for i := range fields {
-		f := &fields[i]
-
-		oc, err := resolveField(src, s, f, headless)
-		if err != nil {
-			return nil, false, err
-		}
-		if oc.hardError {
-			return nil, false, &FieldError{Name: f.Name}
-		}
-		if oc.usedSource == "env file" {
-			envUsed = true
-		}
-		// Track emitted source labels so the returned seed list holds distinct
-		// entries even when several fields share a source (multiple env-sourced
-		// fields, or a switch reused across fields).
-		if oc.usedSource != "" && !slices.Contains(seeded, oc.usedSource) {
-			seeded = append(seeded, oc.usedSource)
-		}
-
-		if oc.decided || oc.operative {
-			continue
-		}
-
-		// Interactive prompt for a required, still-unresolved field.
-		if !headless && f.Prompt != nil {
-			p := PrompterFrom(ctx)
-			if p == nil {
-				return nil, false, fmt.Errorf("wizard.Gather: field %q needs a prompt but no Prompter is bound to ctx", f.Name)
-			}
-			label := f.Prompt.Label
-			if label == "" {
-				label = f.Name
-			}
-			defStr := ""
-			if f.Prompt.CurrentString != nil {
-				defStr = f.Prompt.CurrentString(f.Operational(s))
-			}
-			var chosenStr string
-			if len(f.Prompt.Options) > 0 {
-				_, selVal, perr := p.Select(label, f.Prompt.Options, defStr)
-				if perr != nil {
-					return nil, false, perr
-				}
-				chosenStr = selVal
-			} else {
-				txt, perr := p.Text(label, f.Prompt.Mask, defStr)
-				if perr != nil {
-					return nil, false, perr
-				}
-				chosenStr = txt
-			}
-			// Commit through settle so the operator's choice is validated by the
-			// single gate: Parse ok-false (malformed option/input) or a
-			// Validate failure bails with an error rather than committing a bad
-			// value (a follow-up run re-prompts, per Field.Validate's contract).
-			chosen, okP := f.Parse(chosenStr)
-			if !okP || !f.settle(&oc, s, chosen, srcPrompt, headless) {
-				return nil, false, fmt.Errorf("wizard.Gather: invalid value entered for field %q", f.Name)
-			}
-			continue
-		}
-
-		// A required field with no source, no derivation, and no prompt ran the
-		// interactive path: it may be derivable by the step's Execute (e.g.
-		// resolveNgrokURL). Mark undecided and let the step derive via
-		// SetOperational afterwards.
-		fullyDecided = false
+		anyf[i] = erase(&fields[i])
 	}
-
-	// Honest-source rule: env-file-sourced values on an interactive run keep the
-	// step un-seeded (defaults are editable, so not fully decided); on headless
-	// they are fully decided.
-	if envUsed && !headless {
-		fullyDecided = false
-	}
-	return seeded, fullyDecided, nil
+	return GatherAny(ctx, src, s, anyf)
 }
