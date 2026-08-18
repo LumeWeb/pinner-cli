@@ -33,7 +33,7 @@ import (
 // expiring, and single-use, and it is bound to the vault destination path at
 // mint time so a caller cannot redirect the bytes to an arbitrary path.
 type vaultHTTPUpload struct {
-	loopback loopbackServer
+	loopback LoopbackServer
 
 	mu      sync.Mutex
 	tokens  map[string]vaultHTTPToken
@@ -73,7 +73,7 @@ func (vu *vaultHTTPUpload) SetBaseURL(url string) {
 // AddTrustedOrigins extends the origin corsUpload reflects for the Uppy XHR
 // PUT beyond the coordinator's own base/loopback origin, allowing a configured
 // MCP host that serves the vault app iframe from its own origin to upload. See
-// loopbackServer.AddTrustedOrigins.
+// LoopbackServer.AddTrustedOrigins.
 func (vu *vaultHTTPUpload) AddTrustedOrigins(origins ...string) {
 	vu.loopback.AddTrustedOrigins(origins...)
 }
@@ -91,7 +91,7 @@ func (vu *vaultHTTPUpload) registerHandlers(mux *http.ServeMux) {
 
 // allowedUploadOrigins is the callback corsUpload uses to scope the reflected
 // origin to the vault coordinator's own transport/base origin.
-func (vu *vaultHTTPUpload) allowedUploadOrigins() []string { return vu.loopback.acceptedOrigins() }
+func (vu *vaultHTTPUpload) allowedUploadOrigins() []string { return vu.loopback.AcceptedOrigins() }
 
 // mint validates the destination vault path, registers a fresh one-time
 // vault-upload endpoint bound to it, and returns its full URL. It refuses to
@@ -103,7 +103,7 @@ func (vu *vaultHTTPUpload) mint(vaultPath string, ttl time.Duration) (string, er
 	if err := validateVaultFilePath(vaultPath); err != nil {
 		return "", err
 	}
-	if err := vu.loopback.ensureLoopback(vu.registerHandlers); err != nil {
+	if err := vu.loopback.EnsureLoopback(vu.registerHandlers); err != nil {
 		return "", err
 	}
 	if ttl <= 0 {
@@ -122,7 +122,7 @@ func (vu *vaultHTTPUpload) mint(vaultPath string, ttl time.Duration) (string, er
 	vu.mu.Unlock()
 	vu.loopback.mu.Lock()
 	defer vu.loopback.mu.Unlock()
-	return vu.loopback.urlLocked("vault-upload", token), nil
+	return vu.loopback.URLFor("vault-upload", token), nil
 }
 
 // validateVaultFilePath rejects a vault destination unless it is a well-formed

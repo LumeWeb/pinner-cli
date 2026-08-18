@@ -44,7 +44,7 @@ type httpToken struct {
 //     on the shared transport mux via registerHandlers and the loopback
 //     listener is intentionally not started.
 type httpUpload struct {
-	loopback loopbackServer
+	loopback LoopbackServer
 
 	mu       sync.Mutex
 	tokens   map[string]httpToken
@@ -87,7 +87,7 @@ func (cu *httpUpload) SetBaseURL(url string) {
 // AddTrustedOrigins extends the origin corsUpload reflects for the Uppy XHR
 // PUT beyond the coordinator's own base/loopback origin, allowing a configured
 // MCP host that serves the app iframe from its own origin to upload. See
-// loopbackServer.AddTrustedOrigins.
+// LoopbackServer.AddTrustedOrigins.
 func (cu *httpUpload) AddTrustedOrigins(origins ...string) {
 	cu.loopback.AddTrustedOrigins(origins...)
 }
@@ -149,7 +149,7 @@ func originsContains(allowed []string, origin string) bool {
 
 // allowedUploadOrigins is the callback corsUpload uses to scope the reflected
 // origin to the coordinator's own transport/base origin.
-func (cu *httpUpload) allowedUploadOrigins() []string { return cu.loopback.acceptedOrigins() }
+func (cu *httpUpload) allowedUploadOrigins() []string { return cu.loopback.AcceptedOrigins() }
 
 // registerHandlers mounts the one-time upload PUT route on the shared mux
 // (HTTP/tunnel mode) or the loopback mux (stdio mode via ensureLoopback).
@@ -163,7 +163,7 @@ func (cu *httpUpload) registerHandlers(mux *http.ServeMux) {
 // ensures the loopback listener is running in stdio mode so the URL is always
 // reachable.
 func (cu *httpUpload) mint(name string, ttl time.Duration) string {
-	if err := cu.loopback.ensureLoopback(cu.registerHandlers); err != nil {
+	if err := cu.loopback.EnsureLoopback(cu.registerHandlers); err != nil {
 		return ""
 	}
 	if name == "" {
@@ -187,7 +187,7 @@ func (cu *httpUpload) mint(name string, ttl time.Duration) string {
 	cu.mu.Unlock()
 	cu.loopback.mu.Lock()
 	defer cu.loopback.mu.Unlock()
-	return cu.loopback.urlLocked("upload", token)
+	return cu.loopback.URLFor("upload", token)
 }
 
 // newHTTPToken returns a fresh 128-bit hex token guarding the unauthenticated

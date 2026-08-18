@@ -910,7 +910,7 @@ type mcpServerOptions struct {
 	// base/loopback origin) that the presigned PUT routes reflect over CORS for
 	// the Uppy XHR uploader. Configured for deployments where the ui:// app
 	// iframe is served from an MCP host origin distinct from the Pinner server
-	// origin. See loopbackServer.AddTrustedOrigins.
+	// origin. See LoopbackServer.AddTrustedOrigins.
 	uploadTrustedOrigins []string
 	// maxRelayBytes is the per-tool cap (in bytes) for MCP file uploads,
 	// overriding the package default (512 MiB). 0 means "use the default".

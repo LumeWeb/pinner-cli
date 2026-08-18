@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// loopbackServer owns the mechanics every HTTP-mounted human hand-off needs to
+// LoopbackServer owns the mechanics every HTTP-mounted human hand-off needs to
 // work over both transports:
 //
 //   - stdio mode: there is no transport server, so out-of-band flows spin up a
@@ -21,15 +21,15 @@ import (
 //     the shared transport mux; the loopback listener is intentionally not
 //     started, so there is no redundant port bound.
 //
-// The OOB login, seed drop, and restore coordinators each embed a loopbackServer
+// The OOB login, seed drop, and restore coordinators each embed a LoopbackServer
 // and supply their own routing via a register func.
-type loopbackServer struct {
+type LoopbackServer struct {
 	mu      sync.Mutex
 	baseURL string
 	// trustedOrigins are additional browser-accepted origins (beyond the
 	// server's own base/loopback origin) that the server reflects over CORS
 	// for browser form POSTs and the Uppy XHR upload PUTs. Added via
-	// loopbackServer.AddTrustedOrigins.
+	// LoopbackServer.AddTrustedOrigins.
 	trustedOrigins []string
 	listener       net.Listener
 	srv            *http.Server
@@ -38,16 +38,16 @@ type loopbackServer struct {
 // SetBaseURL stores the externally reachable base URL (the public/tunnel URL in
 // HTTP mode, or empty for the loopback-derived URL in stdio mode). Safe to call
 // after construction once the transport has resolved its public origin.
-func (l *loopbackServer) SetBaseURL(url string) {
+func (l *LoopbackServer) SetBaseURL(url string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.baseURL = strings.TrimRight(url, "/")
 }
 
-// ensureLoopback starts the loopback listener if-and-only-if there is no base
+// EnsureLoopback starts the loopback listener if-and-only-if there is no base
 // URL (stdio mode). It is idempotent. register is called with the fresh mux to
 // mount the coordinator's routes.
-func (l *loopbackServer) ensureLoopback(register func(*http.ServeMux)) error {
+func (l *LoopbackServer) EnsureLoopback(register func(*http.ServeMux)) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	// HTTP/tunnel mode: base URL is set and the shared transport mux serves
@@ -74,7 +74,7 @@ func (l *loopbackServer) ensureLoopback(register func(*http.ServeMux)) error {
 }
 
 // Stop shuts down the loopback listener, if any.
-func (l *loopbackServer) Stop(ctx context.Context) {
+func (l *LoopbackServer) Stop(ctx context.Context) {
 	l.mu.Lock()
 	srv := l.srv
 	l.srv = nil
@@ -87,28 +87,28 @@ func (l *loopbackServer) Stop(ctx context.Context) {
 
 // loopbackAddrLocked returns the "host:port" of the loopback listener, or the
 // placeholder when it has not started. Callers must hold l.mu.
-func (l *loopbackServer) loopbackAddrLocked() string {
+func (l *LoopbackServer) loopbackAddrLocked() string {
 	if l.listener != nil {
 		return l.listener.Addr().String()
 	}
 	return "127.0.0.1:0"
 }
 
-// urlLocked builds a hand-off URL for the given path prefix and token: the
+// URLFor builds a hand-off URL for the given path prefix and token: the
 // configured base URL plus /prefix/token in HTTP mode, or the loopback URL in
 // stdio mode. Callers must hold l.mu.
-func (l *loopbackServer) urlLocked(prefix, token string) string {
+func (l *LoopbackServer) URLFor(prefix, token string) string {
 	if l.baseURL != "" {
 		return l.baseURL + "/" + prefix + "/" + token
 	}
 	return "http://" + l.loopbackAddrLocked() + "/" + prefix + "/" + token
 }
 
-// acceptedOrigins returns the origins allowed to POST to a browser form (and,
+// AcceptedOrigins returns the origins allowed to POST to a browser form (and,
 // via the upload coordinators, the origins corsUpload reflects for the Uppy
 // XHR PUT): the configured base URL in HTTP mode, or the loopback origin in
 // stdio mode, plus any explicitly-trusted origins added via AddTrustedOrigins.
-func (l *loopbackServer) acceptedOrigins() []string {
+func (l *LoopbackServer) AcceptedOrigins() []string {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	origin := l.baseURL
@@ -126,7 +126,7 @@ func (l *loopbackServer) acceptedOrigins() []string {
 // additional trusted origins (e.g. the origin of an MCP host that serves the
 // app iframe), which corsUpload reflects in addition to the server's own
 // origin. Deduplicates and never mutates the shared slice.
-func (l *loopbackServer) AddTrustedOrigins(origins ...string) {
+func (l *LoopbackServer) AddTrustedOrigins(origins ...string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	for _, o := range origins {

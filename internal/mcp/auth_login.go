@@ -113,7 +113,7 @@ type OutOfBandLogin struct {
 	// other hand-offs (seed drop, restore). The login keeps its own request map
 	// and throttle because it is a resumable/polling flow with server-side
 	// state and brute-force protection, not a simple single-use exchange.
-	loopback loopbackServer
+	loopback LoopbackServer
 
 	mu       sync.Mutex
 	requests map[string]*loginRequest
@@ -207,7 +207,7 @@ func (o *OutOfBandLogin) logf() *zap.Logger {
 // stdio. It is idempotent: subsequent calls reuse the existing listener. The
 // loopback listener also serves the static /assets/ (branded login page).
 func (o *OutOfBandLogin) start() error {
-	return o.loopback.ensureLoopback(func(mux *http.ServeMux) {
+	return o.loopback.EnsureLoopback(func(mux *http.ServeMux) {
 		mux.Handle("/assets/", staticAssetHandler())
 		o.registerHandlers(mux)
 	})
@@ -237,7 +237,7 @@ func (o *OutOfBandLogin) SetBaseURL(url string) {
 // the external base URL when a tunnel/public base is configured. Callers must
 // hold o.mu (pendingOutcome calls it inside its critical section).
 func (o *OutOfBandLogin) loginURLLocked(id string) string {
-	return o.loopback.urlLocked("login", id)
+	return o.loopback.URLFor("login", id)
 }
 
 // loginURL returns the localhost URL the human opens for the given request
@@ -252,7 +252,7 @@ func (o *OutOfBandLogin) loginURL(id string) string {
 // Cross-origin requests to the login endpoints must have a matching Origin or
 // Referer, otherwise they are treated as CSRF (see loginPage).
 func (o *OutOfBandLogin) origin() string {
-	orig := o.loopback.acceptedOrigins()
+	orig := o.loopback.AcceptedOrigins()
 	if len(orig) == 0 {
 		return ""
 	}

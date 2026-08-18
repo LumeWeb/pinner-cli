@@ -112,7 +112,7 @@ var csrfInputRE = regexp.MustCompile(`name="csrf"\s+value="([^"]+)"`)
 // testOrigin returns the loopback origin backing o for the duration of the
 // test (used to assert that same-origin POSTs are accepted).
 func testOrigin(o *OutOfBandLogin) string {
-	orig := o.loopback.acceptedOrigins()
+	orig := o.loopback.AcceptedOrigins()
 	if len(orig) == 0 {
 		return "http://127.0.0.1:0"
 	}

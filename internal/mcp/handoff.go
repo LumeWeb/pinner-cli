@@ -24,7 +24,7 @@ import (
 // and supplies a handoffHandler for the GET page and POST consume that are
 // specific to the secret being handled.
 type handoffEndpoint struct {
-	loopback loopbackServer
+	loopback LoopbackServer
 
 	mu    sync.Mutex
 	items map[string]*handoffItem
@@ -133,7 +133,7 @@ func (h *handoffEndpoint) SetBaseURL(url string) {
 // mint registers a payload and returns its one-time URL. It ensures the
 // loopback listener is running in stdio mode so the URL is always reachable.
 func (h *handoffEndpoint) mint(payload any) string {
-	if err := h.loopback.ensureLoopback(h.registerHandlers); err != nil {
+	if err := h.loopback.EnsureLoopback(h.registerHandlers); err != nil {
 		return ""
 	}
 	h.mu.Lock()
@@ -141,7 +141,7 @@ func (h *handoffEndpoint) mint(payload any) string {
 	token := strongRandomID()
 	h.items[token] = &handoffItem{payload: payload, expiresAt: h.now().Add(h.ttl)}
 	h.logf().Debug("one-time hand-off minted", zap.String("prefix", h.prefix))
-	return h.loopback.urlLocked(h.prefix, token)
+	return h.loopback.URLFor(h.prefix, token)
 }
 
 // registerHandlers mounts the /<prefix>/ route on the shared mux.
@@ -173,7 +173,7 @@ func (h *handoffEndpoint) handle(w http.ResponseWriter, r *http.Request) {
 			h.remove(token)
 		}
 	case http.MethodPost:
-		if !sameOrigin(r, h.loopback.acceptedOrigins()...) {
+		if !sameOrigin(r, h.loopback.AcceptedOrigins()...) {
 			w.Header().Set("X-Content-Type-Options", "nosniff")
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
