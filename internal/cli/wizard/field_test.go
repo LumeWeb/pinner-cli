@@ -387,6 +387,53 @@ func derivedField(derived func(s *testState) (string, bool), envKey string, prom
 	return f
 }
 
+// TestField_DerivedFlagWins guards that an explicit operator --flag beats
+// provider derivation: precedence 1 outranks precedence 0, so a derived value
+// must never silently discard a flag the operator actually passed this run.
+func TestField_DerivedFlagWins(t *testing.T) {
+	old := NonInteractive
+	NonInteractive = true
+	defer func() { NonInteractive = old }()
+
+	// A field with a flag AND a Derived hook.
+	f := strField("domain", "domain", "MCP_DOMAIN", false, nil)
+	f.Derived = func(*testState) (string, bool) { return "derived.example.com", true }
+
+	s := &testState{}
+	seed, fully := mustCommit(t, context.Background(),
+		&fakeSrc{flags: map[string]string{"domain": "flagged.example.com"}},
+		s, []Field[*testState, string]{f})
+	require.Equal(t, []string{"domain"}, seed, "the present flag is the operator seed source")
+	require.True(t, fully, "a present flag fully decides the field")
+	require.Equal(t, "flagged.example.com", s.operative,
+		"the explicit flag must win over the derived value")
+	require.NotNil(t, s.decided, "the flag is an operator decision")
+	require.Equal(t, "flagged.example.com", *s.decided)
+}
+
+// TestField_DerivedUnpassedFlagStillDerives guards the other half of the
+// contract: a field whose flag is defined but NOT passed this run still
+// derives — derivation is preempted only by an actually-present switch, not by
+// the mere existence of a flag declaration.
+func TestField_DerivedUnpassedFlagStillDerives(t *testing.T) {
+	old := NonInteractive
+	NonInteractive = true
+	defer func() { NonInteractive = old }()
+
+	f := strField("domain", "domain", "MCP_DOMAIN", false, nil)
+	f.Derived = func(*testState) (string, bool) { return "derived.example.com", true }
+
+	s := &testState{}
+	seed, fully := mustCommit(t, context.Background(),
+		&fakeSrc{}, // no flag present
+		s, []Field[*testState, string]{f})
+	require.Empty(t, seed, "a derived value is not an operator seed source")
+	require.True(t, fully, "headless reuses the derived value")
+	require.Equal(t, "derived.example.com", s.operative,
+		"an un-passed flag must not block derivation")
+	require.Nil(t, s.decided, "the derived value is operational, not a decision")
+}
+
 // TestField_DerivedHeadlessReuses guards precedence 0: a provider-derived value
 // on a headless run settles the field (no hard-error), is reused as the
 // Operational value, and is NOT an operator decision.

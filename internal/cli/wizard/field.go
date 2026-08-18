@@ -231,6 +231,15 @@ func classifyOutcome[S any, T any](oc *fieldOutcome[T], f *Field[S, T], s S, hea
 	}
 }
 
+// flagPresent reports whether src carries an explicit value for the given flag
+// this run. It is how the precedences decide "the operator supplied a switch":
+// a field whose flag is undefined or simply un-passed does not count as present,
+// so a derived field with an optional flag still derives.
+func flagPresent(src ValueSource, flag string) bool {
+	_, ok := src.Flag(flag)
+	return ok
+}
+
 // resolveField applies one field's precedence: provider-derived (precedence 0) >
 // switch (incl. Sources) > existing operator decision > headless env fold. Each
 // precedence settles via f.settle (the single validation + provenance gate) and
@@ -243,12 +252,17 @@ func resolveField[S any, T any](src ValueSource, s S, f *Field[S, T], headless b
 	// -- precedence 0: provider-derive the Operational value ----------------
 	// Resolves a derived value (cloudflare provisioned state, ngrok URL, a
 	// default) BEFORE the switch, and only when the field carries no operator
-	// decision this run. A derived value settles the field (headless reuses it,
-	// interactive prefills the prompt default), so a provider-derived field is
-	// never hard-errored for being unresolved before derivation can fill it —
-	// the gap that forced providers to derive imperatively around Gather.
-	// ok=false falls through to the lower precedences.
-	if f.Derived != nil && f.Decided(s) == nil {
+	// decision this run and no explicit --flag was passed. An explicit operator
+	// switch beats provider derivation (precedence 1 > precedence 0), so a
+	// derived value must never silently discard a flag the operator actually
+	// supplied. A defined-but-unpassed flag does not count as present, so an
+	// optional flag still falls through to derivation. A derived value settles
+	// the field (headless reuses it, interactive prefills the prompt default),
+	// so a provider-derived field is never hard-errored for being unresolved
+	// before derivation can fill it — the gap that forced providers to derive
+	// imperatively around Gather. ok=false falls through to the lower
+	// precedences.
+	if f.Derived != nil && !flagPresent(src, f.Flag) && f.Decided(s) == nil {
 		if v, ok := f.Derived(s); ok && f.settle(&oc, s, v, srcDerived, headless) {
 			return oc, nil
 		}
