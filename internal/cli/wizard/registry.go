@@ -158,6 +158,9 @@ func (e *erasedField[S, T]) resolve(ctx context.Context, src ValueSource, s S, h
 			if e.f.ParseMulti == nil {
 				return rf, fmt.Errorf("wizard.Gather: multi-select field %q needs Field.ParseMulti", e.f.Name)
 			}
+			if len(options) == 0 {
+				return rf, fmt.Errorf("wizard.Gather: multi-select field %q has no options to choose from", e.f.Name)
+			}
 			var pre []string
 			if e.f.Prompt.CurrentSet != nil {
 				pre = e.f.Prompt.CurrentSet(e.f.Operational(s))

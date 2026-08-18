@@ -124,3 +124,26 @@ func TestFieldOptionsFunc(t *testing.T) {
 	require.Equal(t, []string{"api-derived-a", "api-derived-b"}, mp.selectOptions[0],
 		"OptionsFunc must override the static Options list")
 }
+
+// TestFieldMultiSelectNoOptions guards that a multi-select field with zero
+// choices (e.g. no agents detected in the filesystem) returns an error instead
+// of dead-ending the operator in a MultiSelect prompt they cannot resolve.
+func TestFieldMultiSelectNoOptions(t *testing.T) {
+	old := NonInteractive
+	NonInteractive = false
+	defer func() { NonInteractive = old }()
+
+	mp := &multiPrompter{}
+	ctx := WithPrompter(context.Background(), mp)
+
+	f := specAgents()
+	f.OptionsFunc = func(_ context.Context, _ ValueSource, _ *multiState) ([]string, error) {
+		return nil, nil // no agents detected
+	}
+
+	_, _, err := GatherAny(ctx, &fakeSrc{}, &multiState{},
+		[]AnyField[*multiState]{erase(f.Field())})
+	require.Error(t, err)
+	require.ErrorContains(t, err, "has no options to choose from")
+	require.Len(t, mp.multiLabels, 0, "MultiSelect must not be invoked when there are no options")
+}
