@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
+
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
@@ -20,7 +22,7 @@ type RelayURLUploadInput struct {
 // authenticated TUS path. This is the generic relay fallback for HTTP-mode
 // clients that are not co-located with Pinner and cannot pass a host path.
 func RelayURLUploadDescriptor(handler RelayURLUploadHandler, allowedHosts []string, maxBytes int64) model.ToolDescriptor {
-	maxBytes = effectiveRelayMaxBytes(maxBytes)
+	maxBytes = ieo.EffectiveRelayMaxBytes(maxBytes)
 	return model.ToolDescriptor{
 		Name:        "upload_url",
 		Title:       "Upload a file from a URL",
@@ -35,7 +37,7 @@ func RelayURLUploadDescriptor(handler RelayURLUploadHandler, allowedHosts []stri
 			if in.URL == "" {
 				return model.ToolResult{}, fmt.Errorf("url is required")
 			}
-			body, size, err := OpenFileURL(ctx, in.URL, FileRelayOptions{
+			body, size, err := ieo.OpenFileURL(ctx, in.URL, ieo.FileRelayOptions{
 				AllowedHosts:   allowedHosts,
 				MaxBytes:       maxBytes,
 				RequestTimeout: 2 * time.Minute,

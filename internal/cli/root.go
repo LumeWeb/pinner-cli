@@ -17,6 +17,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/core/vault"
 	"go.lumeweb.com/pinner-cli/internal/core/websites"
 	mcpadapter "go.lumeweb.com/pinner-cli/internal/mcp"
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 )
 
@@ -253,7 +254,7 @@ For more help on any command: pinner <command> --help`,
 					// actually read through the DirFS — an fs.WalkDir over
 					// os.DirFS would lstat entries and let a symlink pointing
 					// at an oversized file bypass the cap.
-					if err := mcpadapter.CheckDirectorySize(path, maxBytes, mcpadapter.TreeSizeAggregate); err != nil {
+					if err := ieo.CheckDirectorySize(path, maxBytes, ieo.TreeSizeAggregate); err != nil {
 						return nil, err
 					}
 					result, err := uploadSvc.Upload(ctx, os.DirFS(path), name, wait)
@@ -271,12 +272,12 @@ For more help on any command: pinner <command> --help`,
 				defer file.Close()
 				// In convert mode (default), sniff for an archive and upload its
 				// extracted contents; otherwise upload the single file as-is.
-				if mcpadapter.ParseArchiveMode(archiveMode) == mcpadapter.ArchiveConvert {
-					if _, isArc, serr := mcpadapter.SniffArchive(file); serr == nil && isArc {
-						vfs, closer, aerr := mcpadapter.OpenArchiveFS(ctx, file)
+				if ieo.ParseArchiveMode(archiveMode) == ieo.ArchiveConvert {
+					if _, isArc, serr := ieo.SniffArchive(file); serr == nil && isArc {
+						vfs, closer, aerr := ieo.OpenArchiveFS(ctx, file)
 						if aerr == nil {
 							defer closer()
-							if err := mcpadapter.CheckTreeSize(vfs, maxBytes, mcpadapter.TreeSizeAggregate); err != nil {
+							if err := ieo.CheckTreeSize(vfs, maxBytes, ieo.TreeSizeAggregate); err != nil {
 								return nil, err
 							}
 							result, uerr := uploadSvc.Upload(ctx, vfs, name, wait)
@@ -389,12 +390,12 @@ For more help on any command: pinner <command> --help`,
 				// Regular file (or unknown). In convert mode, sniff for an
 				// archive and materialize its contents to a temp dir, then
 				// write each entry as a vault object under vaultPath.
-				if mcpadapter.ParseArchiveMode(archiveMode) == mcpadapter.ArchiveConvert {
+				if ieo.ParseArchiveMode(archiveMode) == ieo.ArchiveConvert {
 					file, err := os.Open(path)
 					if err != nil {
 						return nil, err
 					}
-					_, isArc, serr := mcpadapter.SniffArchive(file)
+					_, isArc, serr := ieo.SniffArchive(file)
 					file.Close()
 					if serr == nil && isArc {
 						// Enforce the operator-set max_mcp_upload_size cap on the
@@ -616,12 +617,12 @@ func checkArchiveTreeSize(ctx context.Context, srcPath string, maxBytes int64) e
 		return err
 	}
 	defer arc.Close()
-	vfs, closer, err := mcpadapter.OpenArchiveFS(ctx, arc)
+	vfs, closer, err := ieo.OpenArchiveFS(ctx, arc)
 	if err != nil {
 		return err
 	}
 	defer closer()
-	return mcpadapter.CheckTreeSize(vfs, maxBytes, mcpadapter.TreeSizeAggregate)
+	return ieo.CheckTreeSize(vfs, maxBytes, ieo.TreeSizeAggregate)
 }
 
 // materializeArchive extracts the archive at srcPath into the existing local
@@ -636,7 +637,7 @@ func materializeArchive(ctx context.Context, srcPath, dstDir string) error {
 		return err
 	}
 	defer src.Close()
-	vfs, closer, err := mcpadapter.OpenArchiveFS(ctx, src)
+	vfs, closer, err := ieo.OpenArchiveFS(ctx, src)
 	if err != nil {
 		return err
 	}

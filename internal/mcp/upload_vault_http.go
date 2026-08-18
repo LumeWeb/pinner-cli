@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"go.lumeweb.com/pinner-cli/internal/core/vault"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 )
 
 // vaultHTTPUpload lets a sandboxed MCP App write a picked file into the
@@ -53,7 +55,7 @@ type vaultHTTPToken struct {
 // the actual write, keeping the coordinator constructible for tests.
 func NewVaultHTTPUpload(put func(ctx context.Context, r io.Reader, size int64, vaultPath string) (any, error), maxBytes int64) *vaultHTTPUpload {
 	if maxBytes <= 0 {
-		maxBytes = int64(defaultRelayMaxBytes) // package relay cap
+		maxBytes = ieo.EffectiveRelayMaxBytes(0)
 	}
 	return &vaultHTTPUpload{
 		tokens:  map[string]vaultHTTPToken{},

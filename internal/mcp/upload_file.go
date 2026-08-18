@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
+
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
@@ -131,7 +133,7 @@ func NewUploadFileDescriptor(coLocated, tunnelOpenAI bool, pathFn UploadFileHand
 				if relayFn == nil {
 					return model.ToolResult{}, errors.New("file relay upload is not configured")
 				}
-				res := &SourceResolver{Transport: TransportOpenAI, RelayAllowedHosts: relayHosts, RelayMaxBytes: effectiveRelayMaxBytes(maxRelayBytes)}
+				res := &SourceResolver{Transport: TransportOpenAI, RelayAllowedHosts: relayHosts, RelayMaxBytes: ieo.EffectiveRelayMaxBytes(maxRelayBytes)}
 				body, size, srcName, oerr := res.OpenBytes(ctx, in.Source)
 				if oerr != nil {
 					return model.ToolResult{}, oerr

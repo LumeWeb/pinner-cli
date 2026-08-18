@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 )
 
 // buildTreeFS writes a small directory tree and returns an fs.FS rooted at it.
@@ -28,7 +30,7 @@ func buildTreeFS(t *testing.T, files map[string]string) string {
 // rejected regardless of policy.
 func TestCheckTreeSizeRejectsSingleOversize(t *testing.T) {
 	dir := buildTreeFS(t, map[string]string{"big.bin": strings.Repeat("x", 64)})
-	err := CheckTreeSize(os.DirFS(dir), 32, TreeSizeAggregate)
+	err := ieo.CheckTreeSize(os.DirFS(dir), 32, ieo.TreeSizeAggregate)
 	if err == nil || !strings.Contains(err.Error(), "exceeds max_mcp_upload_size") {
 		t.Fatalf("expected per-entry rejection, got %v", err)
 	}
@@ -41,7 +43,7 @@ func TestCheckTreeSizeRejectsAggregate(t *testing.T) {
 		"a.txt": strings.Repeat("x", 24),
 		"b.txt": strings.Repeat("x", 24), // sum = 48 > 40
 	})
-	err := CheckTreeSize(os.DirFS(dir), 40, TreeSizeAggregate)
+	err := ieo.CheckTreeSize(os.DirFS(dir), 40, ieo.TreeSizeAggregate)
 	if err == nil || !strings.Contains(err.Error(), "exceeds max_mcp_upload_size") {
 		t.Fatalf("expected aggregate rejection, got %v", err)
 	}
@@ -53,7 +55,7 @@ func TestCheckTreeSizeAcceptsWithinCap(t *testing.T) {
 		"a.txt": strings.Repeat("x", 24),
 		"b.txt": strings.Repeat("x", 10), // sum = 34 <= 40
 	})
-	if err := CheckTreeSize(os.DirFS(dir), 40, TreeSizeAggregate); err != nil {
+	if err := ieo.CheckTreeSize(os.DirFS(dir), 40, ieo.TreeSizeAggregate); err != nil {
 		t.Fatalf("expected accept, got %v", err)
 	}
 }
@@ -61,7 +63,7 @@ func TestCheckTreeSizeAcceptsWithinCap(t *testing.T) {
 // TestCheckTreeSizeNoCap verifies a non-positive cap is a no-op.
 func TestCheckTreeSizeNoCap(t *testing.T) {
 	dir := buildTreeFS(t, map[string]string{"big.bin": strings.Repeat("x", 64)})
-	if err := CheckTreeSize(os.DirFS(dir), 0, TreeSizeAggregate); err != nil {
+	if err := ieo.CheckTreeSize(os.DirFS(dir), 0, ieo.TreeSizeAggregate); err != nil {
 		t.Fatalf("expected no-op with zero cap, got %v", err)
 	}
 }
@@ -107,7 +109,7 @@ func TestCheckDirectorySizeFollowsSymlinks(t *testing.T) {
 	}
 
 	// A link to a 64-byte file must be rejected when maxBytes is below 64.
-	err := CheckDirectorySize(dir, 32, TreeSizeAggregate)
+	err := ieo.CheckDirectorySize(dir, 32, ieo.TreeSizeAggregate)
 	if err == nil {
 		t.Fatal("expected CheckDirectorySize to reject a symlink to an oversize file")
 	}
@@ -116,7 +118,7 @@ func TestCheckDirectorySizeFollowsSymlinks(t *testing.T) {
 	}
 
 	// And it must pass when the cap is large enough for the linked size.
-	if err := CheckDirectorySize(dir, 128, TreeSizeAggregate); err != nil {
+	if err := ieo.CheckDirectorySize(dir, 128, ieo.TreeSizeAggregate); err != nil {
 		t.Fatalf("expected in-cap symlink target to pass, got %v", err)
 	}
 }

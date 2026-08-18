@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
+
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
@@ -23,7 +25,7 @@ type DataURIUploadInput struct {
 // model context. The base64 payload is streamed to the upload handler, not
 // materialized in memory.
 func DataURIUploadDescriptor(handler DataURIUploadHandler, maxBytes int64) model.ToolDescriptor {
-	maxBytes = effectiveRelayMaxBytes(maxBytes)
+	maxBytes = ieo.EffectiveRelayMaxBytes(maxBytes)
 	return model.ToolDescriptor{
 		Name:        "upload_data",
 		Title:       "Upload a file from a data URI",
@@ -41,7 +43,7 @@ func DataURIUploadDescriptor(handler DataURIUploadHandler, maxBytes int64) model
 			if in.File == "" {
 				return model.ToolResult{}, fmt.Errorf("file (data URI) is required")
 			}
-			reader, opt, err := parseFileDataURI(in.File, maxBytes)
+			reader, opt, err := ieo.ParseFileDataURI(in.File, maxBytes)
 			if err != nil {
 				return model.ToolResult{}, err
 			}

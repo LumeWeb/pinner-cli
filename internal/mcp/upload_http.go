@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 )
 
 // defaultHTTPUploadTTL is how long a minted one-time upload endpoint stays
@@ -67,7 +69,7 @@ func NewHTTPUpload(tasks *UploadTaskManager, maxBytes int64) *httpUpload {
 		tasks = &UploadTaskManager{}
 	}
 	if maxBytes <= 0 {
-		maxBytes = int64(defaultRelayMaxBytes)
+		maxBytes = ieo.EffectiveRelayMaxBytes(0)
 	}
 	return &httpUpload{
 		tokens:   make(map[string]httpToken),

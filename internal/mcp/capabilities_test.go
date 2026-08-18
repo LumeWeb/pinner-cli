@@ -7,6 +7,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
+
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
@@ -20,7 +22,7 @@ func TestCapabilitiesReportStdio(t *testing.T) {
 	require.Equal(t, []FileInputCapability{CapabilityLocalPath}, r.SourceModes)
 	require.True(t, r.UploadFile)
 	require.True(t, r.VaultPutFile)
-	require.EqualValues(t, int64(defaultRelayMaxBytes), r.RelayMaxBytes)
+	require.EqualValues(t, ieo.EffectiveRelayMaxBytes(0), r.RelayMaxBytes)
 	// No download tool registered => no sink advertised.
 	require.False(t, r.DownloadFile)
 	require.False(t, r.VaultGetFile)
@@ -125,7 +127,7 @@ func TestCurrentCapabilitiesHonorsMaxBytes(t *testing.T) {
 
 	// 0 means "use the package default" (512 MiB).
 	zero := CurrentCapabilities(true, false, true, true, false, false, false, true, 0)
-	require.EqualValues(t, int64(defaultRelayMaxBytes), zero.RelayMaxBytes)
+	require.EqualValues(t, ieo.EffectiveRelayMaxBytes(0), zero.RelayMaxBytes)
 }
 
 func TestCapabilitiesDescriptorSerializes(t *testing.T) {

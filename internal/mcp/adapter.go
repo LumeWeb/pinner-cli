@@ -32,6 +32,8 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
+
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
@@ -348,7 +350,7 @@ adapter.`,
 			// registered against the same instance.
 			var curlUpload *httpUpload
 			if mcpOpts.uploadTasks != nil {
-				curlUpload = NewHTTPUpload(mcpOpts.uploadTasks, effectiveRelayMaxBytes(mcpOpts.maxRelayBytes))
+				curlUpload = NewHTTPUpload(mcpOpts.uploadTasks, ieo.EffectiveRelayMaxBytes(mcpOpts.maxRelayBytes))
 				// Allow configured MCP-host origins to PUT across origins (the
 				// ui:// app iframe can be served from a host origin that is not
 				// the Pinner server origin); the endpoint's own origin is
@@ -366,7 +368,7 @@ adapter.`,
 			// route can be registered against the same instance.
 			var vaultUpload *vaultHTTPUpload
 			if mcpOpts.vaultPutHandler != nil {
-				vaultUpload = NewVaultHTTPUpload(mcpOpts.vaultPutHandler, effectiveRelayMaxBytes(mcpOpts.maxRelayBytes))
+				vaultUpload = NewVaultHTTPUpload(mcpOpts.vaultPutHandler, ieo.EffectiveRelayMaxBytes(mcpOpts.maxRelayBytes))
 				// Allow configured MCP-host origins to PUT across origins (the
 				// vault app iframe can be served from a host origin that is not
 				// the Pinner server origin); the endpoint's own origin is
@@ -1070,7 +1072,7 @@ func WithLocalPathVaultPut(handler LocalPathVaultPutHandler) MCPServerOption {
 // wizard factory and catalog-ops bundle use. This keeps config reads out of
 // command-construction time. If supplier is nil or panics (e.g. config not
 // yet available), the option is a no-op and the package's fallback default
-// (512 MiB, effectiveRelayMaxBytes) is kept.
+// (512 MiB, ieo.EffectiveRelayMaxBytes) is kept.
 func WithMaxMCPUploadSize(supplier func() uint64) MCPServerOption {
 	return func(o *mcpServerOptions) {
 		if supplier == nil {

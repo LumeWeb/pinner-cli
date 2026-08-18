@@ -3,6 +3,8 @@ package mcp
 import (
 	"context"
 
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
+
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
@@ -122,7 +124,7 @@ func CurrentCapabilities(coLocated, tunnelOpenAI, uploadFile, vaultPutFile, down
 		UploadFile:        uploadFile,
 		VaultPutFile:      vaultPutFile,
 		DraftXFile:        draftXFile,
-		RelayMaxBytes:     effectiveRelayMaxBytes(maxBytes),
+		RelayMaxBytes:     ieo.EffectiveRelayMaxBytes(maxBytes),
 	}
 }
 

@@ -7,6 +7,8 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
+
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
@@ -301,7 +303,7 @@ func registerCustomTools(deps customToolDeps) error {
 	// HTTP mux (tunnelOpenAI=false) — see downloadFileDescription.
 	if opts.ipfsDownload != nil {
 		downloadRoot := resolveDownloadRoot(opts.downloadRoot)
-		dlDesc := NewDownloadFileDescriptor(opts.ipfsDownload, deps.downloadDrop, downloadRoot, effectiveRelayMaxBytes(opts.maxRelayBytes), deps.tunnelOpenAI)
+		dlDesc := NewDownloadFileDescriptor(opts.ipfsDownload, deps.downloadDrop, downloadRoot, ieo.EffectiveRelayMaxBytes(opts.maxRelayBytes), deps.tunnelOpenAI)
 		// Pair download_file with its "Download from IPFS" MCP App view
 		// (ui://downloads/ipfs.html) so a UI-capable host renders a download
 		// panel. RegisterAppView attaches _meta.ui to a catalog entry, so the
@@ -333,7 +335,7 @@ func registerCustomTools(deps customToolDeps) error {
 	//   - sink=drop (HTTP / real tunnel): deps.downloadDrop mints a filedrop.
 	if opts.vaultGet != nil {
 		downloadRoot := resolveDownloadRoot(opts.downloadRoot)
-		dlDesc := NewVaultGetFileDescriptor(opts.vaultGet, deps.downloadDrop, downloadRoot, effectiveRelayMaxBytes(opts.maxRelayBytes), deps.tunnelOpenAI)
+		dlDesc := NewVaultGetFileDescriptor(opts.vaultGet, deps.downloadDrop, downloadRoot, ieo.EffectiveRelayMaxBytes(opts.maxRelayBytes), deps.tunnelOpenAI)
 		deps.catalog.Add(model.ToolEntryFromDescriptor(dlDesc))
 		if err := RegisterVaultDownloadApp(deps.srv, deps.catalog); err != nil {
 			return err

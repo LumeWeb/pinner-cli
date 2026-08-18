@@ -7,6 +7,8 @@ import (
 	"io"
 	"time"
 
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
+
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
@@ -137,7 +139,7 @@ func NewVaultPutFileDescriptor(coLocated, tunnelOpenAI bool, pathFn LocalPathVau
 				if relayFn == nil {
 					return model.ToolResult{}, errors.New("vault relay write is not configured")
 				}
-				res := &SourceResolver{Transport: TransportOpenAI, RelayAllowedHosts: relayHosts, RelayMaxBytes: effectiveRelayMaxBytes(maxRelayBytes)}
+				res := &SourceResolver{Transport: TransportOpenAI, RelayAllowedHosts: relayHosts, RelayMaxBytes: ieo.EffectiveRelayMaxBytes(maxRelayBytes)}
 				body, size, _, oerr := res.OpenBytes(ctx, in.Source)
 				if oerr != nil {
 					return model.ToolResult{}, oerr
