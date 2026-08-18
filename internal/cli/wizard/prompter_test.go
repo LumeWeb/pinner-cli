@@ -71,12 +71,15 @@ type testPrompter struct {
 	texts   int
 }
 
-func (t *testPrompter) Select(string, []string) (int, string, error) { t.selects++; return 0, "", nil }
+func (t *testPrompter) Select(string, []string, string) (int, string, error) {
+	t.selects++
+	return 0, "", nil
+}
 func (t *testPrompter) MultiSelect(string, []string, []string) ([]string, error) {
 	return nil, nil
 }
-func (t *testPrompter) Confirm(string, bool) (bool, error)  { return false, nil }
-func (t *testPrompter) Text(string, string) (string, error) { t.texts++; return "", nil }
+func (t *testPrompter) Confirm(string, bool) (bool, error)          { return false, nil }
+func (t *testPrompter) Text(string, string, string) (string, error) { t.texts++; return "", nil }
 
 // TestRun_PrompterFlowsToEveryStep guards that a prompter bound to the run ctx
 // via WithPrompter is visible to steps through PrompterFrom — this is the
@@ -93,7 +96,7 @@ func TestRun_PrompterFlowsToEveryStep(t *testing.T) {
 				if got := PrompterFrom(ctx); got != p {
 					t.Fatalf("step A did not receive the bound prompter")
 				}
-				_, _, err := PrompterFrom(ctx).Select("pick", []string{"x"})
+				_, _, err := PrompterFrom(ctx).Select("pick", []string{"x"}, "")
 				return err
 			},
 		},
@@ -101,7 +104,7 @@ func TestRun_PrompterFlowsToEveryStep(t *testing.T) {
 			Name_: "B",
 			ExecuteFunc: func(ctx context.Context, _ *string) error {
 				// A nested/spliced step sees the same channel without re-binding.
-				_, err := PrompterFrom(ctx).Text("token", "*")
+				_, err := PrompterFrom(ctx).Text("token", "*", "")
 				return err
 			},
 		},
@@ -145,7 +148,7 @@ func TestRun_AutoBindsDefaultPrompter(t *testing.T) {
 				if PrompterFrom(ctx) == nil {
 					return errors.New("no prompter bound by Run")
 				}
-				_, _, err := PrompterFrom(ctx).Select("pick", []string{"x"})
+				_, _, err := PrompterFrom(ctx).Select("pick", []string{"x"}, "")
 				if err == nil || !strings.Contains(err.Error(), "interactive") {
 					return errors.New("expected non-interactive error from the auto-bound pterm channel")
 				}
