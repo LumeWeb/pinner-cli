@@ -1,13 +1,13 @@
 package mcp
 
 import (
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.lumeweb.com/pinner-cli/internal/mcpapp"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
 
 // This file wires the "Restore Vault" MCP App onto the shared AppView lib
@@ -31,7 +31,7 @@ func renderVaultRestoreAppHTML() string {
 
 // vaultRestoreStatusDescriptor builds the app-only vault-restore status helper.
 // It reuses the shared resume machinery (handle -> continuation -> pending/done)
-// exactly like vault_restore_resume, but is registered with ToolVisibilityApp so
+// exactly like vault_restore_resume, but is registered with model.ToolVisibilityApp so
 // only the Restore Vault view can poll it; the model never sees it. It carries
 // no secrets (the seed is entered on the human-only page, never here).
 func vaultRestoreStatusDescriptor(reg *handoff.HandoffRegistry, handles *session.AsyncHandleStore) model.ToolDescriptor {
@@ -51,7 +51,7 @@ func vaultRestoreStatusDescriptor(reg *handoff.HandoffRegistry, handles *session
 // shared AppView lib layer: attaches the ui:// view to the vault_restore tool,
 // registers the ui://vault/restore.html HTML resource, and registers the
 // app-only vault_restore_status polling helper.
-func RegisterVaultRestoreApp(srv *mcp.Server, catalog *ToolCatalog, reg *handoff.HandoffRegistry, handles *session.AsyncHandleStore) error {
+func RegisterVaultRestoreApp(srv *sdk.Server, catalog *ToolCatalog, reg *handoff.HandoffRegistry, handles *session.AsyncHandleStore) error {
 	return RegisterAppView(srv, catalog, AppView{
 		URI:           VaultRestoreAppURI,
 		Name:          "vault-restore",

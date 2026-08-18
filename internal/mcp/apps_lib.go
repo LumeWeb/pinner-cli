@@ -4,9 +4,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
-
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
 
 // This file is the light lib layer for authoring ui:// MCP Apps. It collapses
@@ -16,7 +15,7 @@ import (
 // instead of a hand-written RegisterXxxApp function that spawns raw
 // RegisterAppTool / RegisterAppResource plumbing per app.
 //
-// It sits on top of the SDK-neutral seam in mcpapps.go (the typed AppToolMeta /
+// It sits on top of the SDK-neutral seam in mcpapps.go (the typed model.AppToolMeta /
 // AppResource / RegisterAppTool / RegisterAppResource primitives). Add a new
 // app by filling in an AppView and calling RegisterAppView — no direct
 // _meta.ui, resources/list, or CSP manipulation.
@@ -48,7 +47,7 @@ type AppView struct {
 	AttachTo []string
 
 	// Helpers are app-only tools the view calls via callServerTool. They are
-	// registered with ToolVisibilityApp so a UI-capable host exposes them to the
+	// registered with model.ToolVisibilityApp so a UI-capable host exposes them to the
 	// iframe while the model never sees them in text-form hosts or the model
 	// surface.
 	Helpers []model.ToolDescriptor
@@ -96,7 +95,7 @@ func appInfoForTool(toolName string) (AppViewInfo, bool) {
 // empty URI. App wiring is additive: existing tools and their plain-host text
 // results are preserved, and a tool's existing _meta is extended, never
 // replaced.
-func RegisterAppView(srv *mcp.Server, catalog *ToolCatalog, v AppView) error {
+func RegisterAppView(srv *sdk.Server, catalog *ToolCatalog, v AppView) error {
 	if srv == nil {
 		return fmt.Errorf("mcp: nil official server")
 	}
@@ -128,7 +127,7 @@ func RegisterAppView(srv *mcp.Server, catalog *ToolCatalog, v AppView) error {
 		Name:        v.Name,
 		Title:       v.Title,
 		Description: v.Description,
-		Meta: AppResourceMeta{
+		Meta: model.AppResourceMeta{
 			PrefersBorder: boolPtr(v.PrefersBorder),
 		},
 		HTML: v.HTML,
@@ -137,9 +136,9 @@ func RegisterAppView(srv *mcp.Server, catalog *ToolCatalog, v AppView) error {
 	}
 
 	for _, h := range v.Helpers {
-		if err := RegisterAppTool(srv, h, AppToolMeta{
+		if err := RegisterAppTool(srv, h, model.AppToolMeta{
 			ResourceURI: v.URI,
-			Visibility:  []ToolVisibility{ToolVisibilityApp},
+			Visibility:  []model.ToolVisibility{model.ToolVisibilityApp},
 		}); err != nil {
 			return err
 		}
@@ -156,7 +155,7 @@ func attachAppMeta(catalog *ToolCatalog, toolName, resourceURI string) error {
 	if !ok {
 		return fmt.Errorf("mcp: app view tool %q not in catalog", toolName)
 	}
-	meta, err := marshalToolMeta(AppToolMeta{ResourceURI: resourceURI})
+	meta, err := marshalToolMeta(model.AppToolMeta{ResourceURI: resourceURI})
 	if err != nil {
 		return err
 	}

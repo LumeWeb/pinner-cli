@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.lumeweb.com/pinner-cli/internal/mcpapp"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
+	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
 
 // This file wires the "Upload to IPFS" MCP App onto the shared AppView lib
@@ -135,7 +135,7 @@ func ipfsUploadStatusDescriptor(hp *httpUpload) model.ToolDescriptor {
 // The app only makes sense when a presigned upload coordinator is wired
 // (remote HTTP/tunnel, or the ssh/stdio loopback), so registration requires a
 // non-nil `hp`.
-func RegisterIPFSUploadApp(srv *mcp.Server, catalog *ToolCatalog, hp *httpUpload) error {
+func RegisterIPFSUploadApp(srv *sdk.Server, catalog *ToolCatalog, hp *httpUpload) error {
 	if srv == nil {
 		return fmt.Errorf("nil official server")
 	}

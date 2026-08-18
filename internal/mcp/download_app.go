@@ -3,7 +3,7 @@ package mcp
 import (
 	"fmt"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 	"go.lumeweb.com/pinner-cli/internal/mcpapp"
 )
 
@@ -45,7 +45,7 @@ func renderVaultDownloadAppHTML() string {
 // ui://downloads/ipfs.html HTML resource. The view calls download_file over
 // callServerTool and needs no app-only helper because the tool itself returns
 // the fetch_url / output_path for the sink it resolves.
-func RegisterIPFSDownloadApp(srv *mcp.Server, catalog *ToolCatalog) error {
+func RegisterIPFSDownloadApp(srv *sdk.Server, catalog *ToolCatalog) error {
 	if srv == nil {
 		return fmt.Errorf("nil official server")
 	}
@@ -67,7 +67,7 @@ func RegisterIPFSDownloadApp(srv *mcp.Server, catalog *ToolCatalog) error {
 // ui:// view to the vault_get_file tool and registers the
 // ui://downloads/vault.html HTML resource. Like the IPFS variant, it calls
 // vault_get_file over callServerTool and needs no app-only helper.
-func RegisterVaultDownloadApp(srv *mcp.Server, catalog *ToolCatalog) error {
+func RegisterVaultDownloadApp(srv *sdk.Server, catalog *ToolCatalog) error {
 	if srv == nil {
 		return fmt.Errorf("nil official server")
 	}

@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.lumeweb.com/pinner-cli/internal/mcpapp"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
 
 // MCP Apps (ext-apps) product views. Each App pairs one or more existing tools
@@ -78,7 +78,7 @@ func pinStatusDescriptor(pins PinningProvider) model.ToolDescriptor {
 //
 // Returns an error if the pin tool is missing from the catalog. App wiring is
 // additive: existing curated tools and plain-host text results are preserved.
-func RegisterPinApp(srv *mcp.Server, catalog *ToolCatalog, pins PinningProvider) error {
+func RegisterPinApp(srv *sdk.Server, catalog *ToolCatalog, pins PinningProvider) error {
 	if srv == nil {
 		return fmt.Errorf("nil official server")
 	}
