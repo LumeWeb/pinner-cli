@@ -11,7 +11,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/catalogops"
 	"go.lumeweb.com/pinner-cli/internal/core/auth"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
-	"go.lumeweb.com/pinner-cli/internal/mcp"
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/flag"
 	"go.lumeweb.com/pinner-cli/internal/urlopen"
 )
 
@@ -76,7 +76,7 @@ func accountOTPDisableWired() *cli.Command {
 
 WARNING: This reduces your account security. Consider re-enabling 2FA.`,
 		Flags: []cli.Flag{
-			mcp.SensitiveStringFlag(&cli.StringFlag{
+			flag.SensitiveStringFlag(&cli.StringFlag{
 				Name:    FlagPassword,
 				Aliases: []string{"p"},
 				Usage:   "Password for verification (WARNING: insecure, prefer stdin or prompt)",

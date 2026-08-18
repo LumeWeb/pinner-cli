@@ -7,7 +7,7 @@ import (
 
 	"github.com/urfave/cli/v3"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp"
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/flag"
 	"go.lumeweb.com/pinner-cli/internal/urlopen"
 )
 
@@ -53,7 +53,7 @@ Examples:
 				Aliases: []string{"l"},
 				Usage:   "Last name",
 			},
-			mcp.SensitiveStringFlag(&cli.StringFlag{
+			flag.SensitiveStringFlag(&cli.StringFlag{
 				Name:    FlagPassword,
 				Aliases: []string{"p"},
 				Usage:   "Password (if not provided, you will be prompted)",

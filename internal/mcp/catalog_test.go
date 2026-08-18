@@ -14,6 +14,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/flag"
 )
 
 func TestHumanTitle(t *testing.T) {
@@ -46,7 +47,7 @@ func TestBuildInstructionsEmbedsCount(t *testing.T) {
 // gets its enum emitted into the MCP input schema, while a plain string flag
 // does not.
 func TestEnumStringFlagEmitsEnum(t *testing.T) {
-	schema, err := flagsToSchema([]cli.Flag{EnumStringFlag("mode", "Cancel mode", false, "end_of_billing_period", "immediate", "end_of_billing_period")}, "")
+	schema, err := flag.FlagsToSchema([]cli.Flag{flag.EnumStringFlag("mode", "Cancel mode", false, "end_of_billing_period", "immediate", "end_of_billing_period")}, "")
 	require.NoError(t, err)
 	var doc map[string]any
 	require.NoError(t, json.Unmarshal(schema, &doc))
@@ -54,7 +55,7 @@ func TestEnumStringFlagEmitsEnum(t *testing.T) {
 	mode := props["mode"].(map[string]any)
 	assert.Equal(t, []any{"immediate", "end_of_billing_period"}, mode["enum"])
 
-	schema, err = flagsToSchema([]cli.Flag{&cli.StringFlag{Name: "path", Usage: "Path"}}, "")
+	schema, err = flag.FlagsToSchema([]cli.Flag{&cli.StringFlag{Name: "path", Usage: "Path"}}, "")
 	require.NoError(t, err)
 	require.NoError(t, json.Unmarshal(schema, &doc))
 	props = doc["properties"].(map[string]any)
@@ -69,11 +70,11 @@ func TestEnumStringFlagEmitsEnum(t *testing.T) {
 // CLI-tree walk.)
 func TestSensitiveStringFlagSchema(t *testing.T) {
 	flags := []cli.Flag{
-		SensitiveStringFlag(&cli.StringFlag{Name: "password", Usage: "Password", Aliases: []string{"p"}}),
+		flag.SensitiveStringFlag(&cli.StringFlag{Name: "password", Usage: "Password", Aliases: []string{"p"}}),
 		&cli.StringFlag{Name: "email", Usage: "Email"},
 	}
 
-	schema, err := flagsToSchema(flags, "")
+	schema, err := flag.FlagsToSchema(flags, "")
 	require.NoError(t, err)
 	var doc map[string]any
 	require.NoError(t, json.Unmarshal(schema, &doc))
@@ -84,7 +85,7 @@ func TestSensitiveStringFlagSchema(t *testing.T) {
 }
 
 func TestStringSliceFlagEmitsArraySchema(t *testing.T) {
-	schema, err := flagsToSchema([]cli.Flag{&cli.StringSliceFlag{Name: "tags", Usage: "Tags"}}, "")
+	schema, err := flag.FlagsToSchema([]cli.Flag{&cli.StringSliceFlag{Name: "tags", Usage: "Tags"}}, "")
 	require.NoError(t, err)
 
 	var doc map[string]any
