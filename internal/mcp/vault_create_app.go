@@ -1,13 +1,13 @@
 package mcp
 
 import (
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.lumeweb.com/pinner-cli/internal/mcpapp"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
 
 // This file wires the "Create Vault" MCP App onto the shared AppView lib
@@ -31,7 +31,7 @@ func renderVaultCreateAppHTML() string {
 
 // vaultCreateStatusDescriptor builds the app-only vault-create status helper.
 // It reuses the shared resume machinery (handle -> continuation -> pending/done)
-// exactly like vault_create_resume, but is registered with ToolVisibilityApp so
+// exactly like vault_create_resume, but is registered with model.ToolVisibilityApp so
 // only the Create Vault view can poll it; the model never sees it. It carries
 // no secrets (the seed never crosses this channel).
 func vaultCreateStatusDescriptor(reg *handoff.HandoffRegistry, handles *session.AsyncHandleStore) model.ToolDescriptor {
@@ -51,7 +51,7 @@ func vaultCreateStatusDescriptor(reg *handoff.HandoffRegistry, handles *session.
 // shared AppView lib layer: attaches the ui:// view to the vault_create tool,
 // registers the ui://vault/create.html HTML resource, and registers the
 // app-only vault_create_status polling helper.
-func RegisterVaultCreateApp(srv *mcp.Server, catalog *ToolCatalog, reg *handoff.HandoffRegistry, handles *session.AsyncHandleStore) error {
+func RegisterVaultCreateApp(srv *sdk.Server, catalog *ToolCatalog, reg *handoff.HandoffRegistry, handles *session.AsyncHandleStore) error {
 	return RegisterAppView(srv, catalog, AppView{
 		URI:           VaultCreateAppURI,
 		Name:          "vault-create",

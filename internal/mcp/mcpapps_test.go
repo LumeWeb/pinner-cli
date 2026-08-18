@@ -24,7 +24,7 @@ func TestMCPAppsConstants(t *testing.T) {
 }
 
 func TestMarshalToolMetaTyped(t *testing.T) {
-	meta, err := marshalToolMeta(AppToolMeta{ResourceURI: "ui://vault/view.html"})
+	meta, err := marshalToolMeta(model.AppToolMeta{ResourceURI: "ui://vault/view.html"})
 	if err != nil {
 		t.Fatalf("marshalToolMeta: %v", err)
 	}
@@ -44,9 +44,9 @@ func TestMarshalToolMetaTyped(t *testing.T) {
 }
 
 func TestMarshalToolMetaVisibility(t *testing.T) {
-	meta, err := marshalToolMeta(AppToolMeta{
+	meta, err := marshalToolMeta(model.AppToolMeta{
 		ResourceURI: "ui://shop/cart.html",
-		Visibility:  []ToolVisibility{ToolVisibilityApp},
+		Visibility:  []model.ToolVisibility{model.ToolVisibilityApp},
 	})
 	if err != nil {
 		t.Fatalf("marshalToolMeta: %v", err)
@@ -62,7 +62,7 @@ func TestMarshalToolMetaVisibility(t *testing.T) {
 }
 
 func TestMarshalToolMetaRequiresURI(t *testing.T) {
-	if _, err := marshalToolMeta(AppToolMeta{}); err == nil {
+	if _, err := marshalToolMeta(model.AppToolMeta{}); err == nil {
 		t.Fatal("expected error for empty resourceUri")
 	}
 }
@@ -176,7 +176,7 @@ func buildAppServer(t *testing.T) *mcp.Server {
 		Description: "List vault contents with an interactive table",
 		InputSchema: json.RawMessage(`{"type":"object"}`),
 		Handler:     handler,
-	}, AppToolMeta{ResourceURI: "ui://vault/list.html"})
+	}, model.AppToolMeta{ResourceURI: "ui://vault/list.html"})
 	if err != nil {
 		t.Fatalf("RegisterAppTool: %v", err)
 	}
@@ -187,7 +187,7 @@ func buildAppServer(t *testing.T) *mcp.Server {
 		Title:       "Vault List",
 		Description: "Interactive vault listing",
 		HTML:        "<!doctype html><html><body>vault</body></html>",
-		Meta: AppResourceMeta{
+		Meta: model.AppResourceMeta{
 			Domain: "abcd1234.claudemcpcontent.com",
 		},
 	})

@@ -45,45 +45,6 @@ const (
 	EXTENSION_ID = "io.modelcontextprotocol/ui"
 )
 
-// ToolVisibility is who may access an app tool. Mirrors ext-apps'
-// McpUiToolVisibility: "model" = agent-callable, "app" = UI-callable only.
-type ToolVisibility string
-
-const (
-	ToolVisibilityModel ToolVisibility = "model"
-	ToolVisibilityApp   ToolVisibility = "app"
-)
-
-// AppToolMeta is the typed, SDK-neutral form of the `_meta.ui` block we attach
-// to an app tool. Marshaled under `_meta.ui`; the resource URI is also written
-// under the legacy flat key `_meta["ui/resourceUri"]` for older hosts.
-type AppToolMeta struct {
-	// ResourceURI is the ui:// URI of the HTML resource to render for this
-	// tool. Required for an app tool.
-	ResourceURI string
-	// Visibility restricts who can call the tool. Defaults to both "model"
-	// and "app" (everyone) when unset.
-	Visibility []ToolVisibility
-}
-
-// AppResourceCSP is the per-resource Content-Security-Policy domain allowlist.
-type AppResourceCSP struct {
-	// ResourceDomains are origins allowed for network requests (fetch/XHR).
-	ConnectDomains []string `json:"connectDomains,omitempty"`
-	// ResourceDomains are origins allowed to load scripts, styles and images.
-	ResourceDomains []string `json:"resourceDomains,omitempty"`
-	// FrameDomains are origins allowed to nest frames.
-	FrameDomains []string `json:"frameDomains,omitempty"`
-}
-
-// AppResourceMeta is the typed, SDK-neutral form of the `_meta.ui` block on a
-// ui:// resource (served on the resource list entry and the read result).
-type AppResourceMeta struct {
-	CSP           *AppResourceCSP `json:"csp,omitempty"`
-	Domain        string          `json:"domain,omitempty"`
-	PrefersBorder *bool           `json:"prefersBorder,omitempty"`
-}
-
 // appToolMetaJSON is the nested `_meta.ui` wire shape for a tool. Encoded with
 // the resource URI as the recognized key.
 type appToolMetaJSON struct {
@@ -92,8 +53,8 @@ type appToolMetaJSON struct {
 }
 
 // marshalToolMeta produces the full `_meta` map (both the nested ui shape and
-// the legacy flat key) from a typed AppToolMeta.
-func marshalToolMeta(meta AppToolMeta) (mcp.Meta, error) {
+// the legacy flat key) from a typed model.AppToolMeta.
+func marshalToolMeta(meta model.AppToolMeta) (mcp.Meta, error) {
 	if meta.ResourceURI == "" {
 		return nil, fmt.Errorf("app tool requires a ui:// resourceUri")
 	}
@@ -122,7 +83,7 @@ func marshalToolMeta(meta AppToolMeta) (mcp.Meta, error) {
 // hosts still call the tool normally and receive the text fallback from the
 // handler. desc.Meta is extended, never replaced, so existing metadata
 // survives.
-func RegisterAppTool(srv *mcp.Server, desc model.ToolDescriptor, app AppToolMeta) error {
+func RegisterAppTool(srv *mcp.Server, desc model.ToolDescriptor, app model.AppToolMeta) error {
 	if srv == nil {
 		return fmt.Errorf("nil official server")
 	}
@@ -145,7 +106,7 @@ type AppResource struct {
 	Name        string
 	Title       string
 	Description string
-	Meta        AppResourceMeta
+	Meta        model.AppResourceMeta
 	// HTML is the rendered mcp-app document served by resources/read.
 	HTML string
 }
@@ -163,7 +124,7 @@ func RegisterAppResource(srv *mcp.Server, res AppResource) error {
 		return fmt.Errorf("app resource requires a uri")
 	}
 	listMeta := mcp.Meta{}
-	if res.Meta != (AppResourceMeta{}) {
+	if res.Meta != (model.AppResourceMeta{}) {
 		uiJSON, err := json.Marshal(res.Meta)
 		if err != nil {
 			return err

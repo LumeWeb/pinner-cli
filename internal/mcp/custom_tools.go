@@ -3,8 +3,6 @@ package mcp
 import (
 	"fmt"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
-
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
@@ -21,7 +19,7 @@ import (
 type customToolDeps struct {
 	// srv is the official SDK server onto which direct tools/resources/prompts
 	// are registered.
-	srv *mcp.Server
+	srv *sdk.Server
 	// catalog is the internal ToolCatalog carrying every invocable tool. The
 	// wizard and SSO tools are appended here (they are built after buildCatalog
 	// returns); markCurated then stamps which of them are directly visible.

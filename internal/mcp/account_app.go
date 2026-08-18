@@ -1,7 +1,7 @@
 package mcp
 
 import (
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 	"go.lumeweb.com/pinner-cli/internal/mcpapp"
 )
 
@@ -43,7 +43,7 @@ func renderAccountEmailAppHTML() string {
 // account_password_update tool and registers the ui://account/password.html
 // HTML resource. No app-only helper is needed because the change is
 // synchronous and completes in the browser.
-func RegisterAccountPasswordApp(srv *mcp.Server, catalog *ToolCatalog) error {
+func RegisterAccountPasswordApp(srv *sdk.Server, catalog *ToolCatalog) error {
 	return RegisterAppView(srv, catalog, AppView{
 		URI:           AccountPasswordAppURI,
 		Name:          "account-password",
@@ -58,7 +58,7 @@ func RegisterAccountPasswordApp(srv *mcp.Server, catalog *ToolCatalog) error {
 // RegisterAccountEmailApp wires the complete "Change Email" MCP App onto the
 // shared AppView lib layer: attaches the ui:// view to the account_email_change
 // tool and registers the ui://account/email.html HTML resource.
-func RegisterAccountEmailApp(srv *mcp.Server, catalog *ToolCatalog) error {
+func RegisterAccountEmailApp(srv *sdk.Server, catalog *ToolCatalog) error {
 	return RegisterAppView(srv, catalog, AppView{
 		URI:           AccountEmailAppURI,
 		Name:          "account-email",
