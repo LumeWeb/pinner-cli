@@ -9,6 +9,8 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
 )
 
 // UploadFileInput is the typed argument shape for the unified upload_file tool.
@@ -65,9 +67,9 @@ func NewUploadFileDescriptor(coLocated, tunnelOpenAI bool, pathFn UploadFileHand
 		Title:       "Upload a file to Pinner",
 		Description: uploadFileDescription(transport),
 		Category:    model.CategoryCore,
-		InputSchema: toolSchemaFor[UploadFileInput](),
+		InputSchema: toolargs.ToolSchemaFor[UploadFileInput](),
 		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
-			in, err := decodeToolArgs[UploadFileInput](request)
+			in, err := toolargs.DecodeToolArgs[UploadFileInput](request)
 			if err != nil {
 				return model.ToolResult{}, err
 			}
@@ -88,7 +90,7 @@ func NewUploadFileDescriptor(coLocated, tunnelOpenAI bool, pathFn UploadFileHand
 					name = fileBaseName(in.Source.Path)
 				}
 				result, err := pathFn(ctx, in.Source.Path, name, in.Wait, in.ArchiveMode)
-				return wrapResult(result, err, "Uploaded.")
+				return toolargs.WrapResult(result, err, "Uploaded.")
 			case TransportHTTP:
 				if in.Source.Mode != SourceMint {
 					return model.ToolResult{}, fmt.Errorf("source mode %q is not available on the %s transport", in.Source.Mode, transport)
@@ -149,7 +151,7 @@ func NewUploadFileDescriptor(coLocated, tunnelOpenAI bool, pathFn UploadFileHand
 				transferCtx, cancel := context.WithTimeout(ctx, syncUploadBudget(size))
 				defer cancel()
 				result, err := relayFn(transferCtx, body, size, name, in.Wait)
-				return wrapResult(result, err, "Uploaded.")
+				return toolargs.WrapResult(result, err, "Uploaded.")
 			}
 		},
 	}

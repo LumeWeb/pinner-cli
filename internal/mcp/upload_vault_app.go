@@ -10,6 +10,8 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcpapp"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
 )
 
 // This file wires the "Upload to Vault" MCP App onto the shared AppView lib
@@ -54,7 +56,7 @@ func vaultUploadSubmitDescriptor(vu *vaultHTTPUpload) model.ToolDescriptor {
 		Description: "Mint a one-time presigned PUT endpoint that writes the uploaded file body into the encrypted vault at the given path. App-only helper for the Upload to Vault view.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"vault_path":{"type":"string"},"ttl":{"type":"string"}},"required":["vault_path"]}`),
 		Handler: func(ctx context.Context, req model.ToolRequest) (model.ToolResult, error) {
-			in, err := decodeToolArgs[VaultUploadSubmitInput](req)
+			in, err := toolargs.DecodeToolArgs[VaultUploadSubmitInput](req)
 			if err != nil {
 				return model.ToolResult{}, err
 			}

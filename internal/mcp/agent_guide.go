@@ -4,6 +4,8 @@ import (
 	"context"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
 )
 
 // GuideFlow describes one chained flow an agent can drive end-to-end.
@@ -83,7 +85,7 @@ func NewAgentGuideDescriptor() model.ToolDescriptor {
 		Title:       "Pinner agent guide",
 		Description: "Orientation for autonomous agents: the primary Pinner flows (auth, vault_create, vault_restore, upload, vault_upload, download, vault_download, pins) as ordered tool chains. Call this first to learn how to drive Pinner before probing individual tools.",
 		Category:    model.CategoryCore,
-		InputSchema: toolSchemaFor[NoInput](),
+		InputSchema: toolargs.ToolSchemaFor[NoInput](),
 		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
 			return model.ToolResult{StructuredContent: guide, Text: "Pinner agent guide."}, nil
 		},

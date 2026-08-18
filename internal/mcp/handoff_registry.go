@@ -9,6 +9,8 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
 )
 
 // This file provides the generic, internally-shared machinery behind the
@@ -266,7 +268,7 @@ func NewResumeTool(spec ResumeToolSpec, reg *HandoffRegistry, handles *session.A
 		Title:       spec.title(),
 		Description: spec.Description,
 		Category:    spec.CategoryOrDefault(),
-		InputSchema: toolSchemaFor[resumeArgs](),
+		InputSchema: toolargs.ToolSchemaFor[resumeArgs](),
 		Handler: func(ctx context.Context, req model.ToolRequest) (model.ToolResult, error) {
 			if reg == nil || handles == nil {
 				return model.NeedsHumanResult(model.NeedsHuman{
@@ -274,7 +276,7 @@ func NewResumeTool(spec ResumeToolSpec, reg *HandoffRegistry, handles *session.A
 					Detail: "Resume is not configured for this server.",
 				}), nil
 			}
-			in, err := decodeToolArgs[resumeArgs](req)
+			in, err := toolargs.DecodeToolArgs[resumeArgs](req)
 			if err != nil {
 				return model.ToolResult{IsError: true, Text: err.Error()}, nil
 			}

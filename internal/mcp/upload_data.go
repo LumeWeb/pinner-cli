@@ -7,6 +7,8 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
 )
 
 // DataURIUploadInput is the typed argument shape for upload_data.
@@ -31,12 +33,12 @@ func DataURIUploadDescriptor(handler DataURIUploadHandler, maxBytes int64) model
 		Title:       "Upload a file from a data URI",
 		Description: "Upload a file supplied as a SEP-2356 data: file URI (x-mcp-file wire form). Pinner decodes the base64 payload locally and uploads it through the authenticated path. Use this when the host can attach file bytes as a data URI but cannot supply a fetchable URL.",
 		Category:    model.CategoryCore,
-		InputSchema: toolSchemaFor[DataURIUploadInput](),
+		InputSchema: toolargs.ToolSchemaFor[DataURIUploadInput](),
 		// x-mcp-file marks the "file" property as a file-valued input per the
 		// draft spec; the SDK's Meta map carries it without a typed field.
 		Meta: map[string]any{"x-mcp-file": map[string]any{"file": map[string]any{"transferModes": []string{"inline"}}}},
 		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
-			in, err := decodeArgsFor[DataURIUploadInput]("data URI upload", handler != nil, request)
+			in, err := toolargs.DecodeArgsFor[DataURIUploadInput]("data URI upload", handler != nil, request)
 			if err != nil {
 				return model.ToolResult{}, err
 			}
@@ -58,7 +60,7 @@ func DataURIUploadDescriptor(handler DataURIUploadHandler, maxBytes int64) model
 			transferCtx, cancel := context.WithTimeout(ctx, syncUploadBudget(opt.Size))
 			defer cancel()
 			result, err := handler(transferCtx, reader, opt.Size, name, in.Wait)
-			return wrapResult(result, err, "Data URI uploaded.")
+			return toolargs.WrapResult(result, err, "Data URI uploaded.")
 		},
 	}
 }

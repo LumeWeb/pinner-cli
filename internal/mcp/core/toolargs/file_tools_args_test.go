@@ -1,4 +1,4 @@
-package mcp
+package toolargs
 
 import (
 	"encoding/json"
@@ -37,8 +37,8 @@ func TestResultJSONTextCanonicalEnvelope(t *testing.T) {
 		{
 			name: "struct with own status is verbatim",
 			in: struct {
-				Status  string `json:"status"`
-				Sink    string `json:"sink"`
+				Status   string `json:"status"`
+				Sink     string `json:"sink"`
 				FetchURL string `json:"fetch_url"`
 			}{Status: "ok", Sink: "local", FetchURL: "http://x/download"},
 			expect: `{"status":"ok","sink":"local","fetch_url":"http://x/download"}`,
@@ -56,14 +56,14 @@ func TestResultJSONTextCanonicalEnvelope(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := resultJSONText(c.in)
+			got := ResultJSONText(c.in)
 			// Always valid JSON.
 			if !json.Valid([]byte(got)) {
-				t.Fatalf("resultJSONText(%v) = %q, not valid JSON", c.in, got)
+				t.Fatalf("ResultJSONText(%v) = %q, not valid JSON", c.in, got)
 			}
 			// Deterministic, order-stable output for identical input.
 			if got != c.expect {
-				t.Errorf("resultJSONText(%v) = %s, want %s", c.in, got, c.expect)
+				t.Errorf("ResultJSONText(%v) = %s, want %s", c.in, got, c.expect)
 			}
 		})
 	}
@@ -77,9 +77,9 @@ func TestResultJSONTextDeterministic(t *testing.T) {
 		Host string `json:"host"`
 		CID  string `json:"cid"`
 	}{Host: "h", CID: "c"}
-	first := resultJSONText(in)
+	first := ResultJSONText(in)
 	for i := 0; i < 20; i++ {
-		if got := resultJSONText(in); got != first {
+		if got := ResultJSONText(in); got != first {
 			t.Fatalf("non-deterministic output: %q then %q", first, got)
 		}
 	}

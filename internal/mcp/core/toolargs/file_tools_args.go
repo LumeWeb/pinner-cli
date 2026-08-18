@@ -1,4 +1,4 @@
-package mcp
+package toolargs
 
 import (
 	"encoding/json"
@@ -7,12 +7,12 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
-// toolSchemaFor returns the JSON schema for a typed input struct using the
+// ToolSchemaFor returns the JSON schema for a typed input struct using the
 // project's invopop/jsonschema reflector so tool schemas are derived from
 // struct tags (json description, format, required) and stay in sync with the
 // structs, instead of ad-hoc json.RawMessage strings.
-func toolSchemaFor[T any]() json.RawMessage {
-	raw, err := json.Marshal(schemaFor[T]())
+func ToolSchemaFor[T any]() json.RawMessage {
+	raw, err := json.Marshal(SchemaFor[T]())
 	if err != nil {
 		// schemaFor only fails on un-marshalable structs; fall back to an
 		// empty object schema so a bad tag cannot crash tool registration.
@@ -21,11 +21,11 @@ func toolSchemaFor[T any]() json.RawMessage {
 	return raw
 }
 
-// decodeToolArgs unmarshals a tool request's map[string]any arguments into the
+// DecodeToolArgs unmarshals a tool request's map[string]any arguments into the
 // typed input struct T. Fields the client omitted keep their Go zero values,
 // so handlers must still distinguish "absent" from "explicit false/empty"
 // where it matters (e.g. the wait flag).
-func decodeToolArgs[T any](request model.ToolRequest) (T, error) {
+func DecodeToolArgs[T any](request model.ToolRequest) (T, error) {
 	var in T
 	if len(request.Arguments) == 0 {
 		return in, nil
@@ -40,19 +40,19 @@ func decodeToolArgs[T any](request model.ToolRequest) (T, error) {
 	return in, nil
 }
 
-// decodeArgsFor decodes a request's arguments into the typed input struct T,
+// DecodeArgsFor decodes a request's arguments into the typed input struct T,
 // guarding that the tool's handler is wired. Every direct-registered tool
 // shares this prologue, so the nil-handler check and argument decode are
 // folded into one call.
-func decodeArgsFor[T any](name string, configured bool, request model.ToolRequest) (T, error) {
+func DecodeArgsFor[T any](name string, configured bool, request model.ToolRequest) (T, error) {
 	var in T
 	if !configured {
 		return in, fmt.Errorf("%s handler is not configured", name)
 	}
-	return decodeToolArgs[T](request)
+	return DecodeToolArgs[T](request)
 }
 
-// wrapResult converts a handler's (result, err) into a ToolResult on the
+// WrapResult converts a handler's (result, err) into a ToolResult on the
 // success path, collapsing the error-propagation boilerplate shared by every
 // direct-registered file tool handler (upload_file, upload_url, upload_data,
 // vault_put_file, download_file, vault_get_file).
@@ -70,14 +70,14 @@ func decodeArgsFor[T any](name string, configured bool, request model.ToolReques
 // The `text` argument is retained only for call-site readability (each caller
 // names its own human message); the actual Text payload is the canonical JSON,
 // not the prose, so a model always sees the structured result.
-func wrapResult(result any, err error, text string) (model.ToolResult, error) {
+func WrapResult(result any, err error, text string) (model.ToolResult, error) {
 	if err != nil {
 		return model.ToolResult{}, err
 	}
-	return model.ToolResult{StructuredContent: result, Text: resultJSONText(result)}, nil
+	return model.ToolResult{StructuredContent: result, Text: ResultJSONText(result)}, nil
 }
 
-// resultJSONText renders result as a canonical, text-only-friendly JSON string.
+// ResultJSONText renders result as a canonical, text-only-friendly JSON string.
 // It emits a {status:"ok", ...} envelope with the result's fields flattened
 // alongside status, guarded so a result that already carries its own top-level
 // "status" member (e.g. downloadResult{status:"ok",...}) is not clobbered — its
@@ -88,7 +88,7 @@ func wrapResult(result any, err error, text string) (model.ToolResult, error) {
 // Instead, the object's original marshaled bytes are preserved and the transport
 // status is spliced in at the head only when absent, so identical operations
 // yield byte-stable, deterministic text.
-func resultJSONText(result any) string {
+func ResultJSONText(result any) string {
 	// A genuine empty result emits the bare envelope.
 	if result == nil {
 		return `{"status":"ok"}`

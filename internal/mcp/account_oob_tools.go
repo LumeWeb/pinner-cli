@@ -9,6 +9,8 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
 )
 
 // This file exposes the out-of-band account credential tools: changing the
@@ -50,7 +52,7 @@ func NewAccountPasswordUpdateDescriptor(oob *OOBAccountChange, svc AuthService, 
 		Description: "Start an out-of-band (OOB) password change. Returns a short-lived page URL the human opens in a browser to enter their current and new password; the password never reaches this channel. The account must be signed in first. Start here to change your password.",
 		Category:    model.CategoryAccount,
 		Destructive: true,
-		InputSchema: toolSchemaFor[accountPasswordUpdateArgs](),
+		InputSchema: toolargs.ToolSchemaFor[accountPasswordUpdateArgs](),
 		Handler: func(ctx context.Context, req model.ToolRequest) (model.ToolResult, error) {
 			if oob == nil || svc == nil {
 				return model.NeedsHumanResult(model.NeedsHuman{
@@ -58,7 +60,7 @@ func NewAccountPasswordUpdateDescriptor(oob *OOBAccountChange, svc AuthService, 
 					Detail: "Out-of-band password change is not configured for this server. Use the CLI (pinner account update-password) to change your password.",
 				}), nil
 			}
-			in, err := decodeToolArgs[accountPasswordUpdateArgs](req)
+			in, err := toolargs.DecodeToolArgs[accountPasswordUpdateArgs](req)
 			if err != nil {
 				return model.ToolResult{IsError: true, Text: err.Error()}, nil
 			}
@@ -100,7 +102,7 @@ func NewAccountEmailChangeDescriptor(oob *OOBAccountChange, svc AuthService) mod
 		Description: "Start an out-of-band (OOB) email change. Returns a short-lived page URL the human opens in a browser to enter the new email and their current password; the password never reaches this channel. The account must be signed in first. Start here to change your email.",
 		Category:    model.CategoryAccount,
 		Destructive: true,
-		InputSchema: toolSchemaFor[accountPasswordUpdateArgs](),
+		InputSchema: toolargs.ToolSchemaFor[accountPasswordUpdateArgs](),
 		Handler: func(ctx context.Context, req model.ToolRequest) (model.ToolResult, error) {
 			if oob == nil || svc == nil {
 				return model.NeedsHumanResult(model.NeedsHuman{
@@ -108,7 +110,7 @@ func NewAccountEmailChangeDescriptor(oob *OOBAccountChange, svc AuthService) mod
 					Detail: "Out-of-band email change is not configured for this server. Use the web app to change your email.",
 				}), nil
 			}
-			if _, err := decodeToolArgs[accountPasswordUpdateArgs](req); err != nil {
+			if _, err := toolargs.DecodeToolArgs[accountPasswordUpdateArgs](req); err != nil {
 				return model.ToolResult{IsError: true, Text: err.Error()}, nil
 			}
 
@@ -147,7 +149,7 @@ func NewAccountPasswordResetDescriptor(svc AuthService, webAppURL string) model.
 		Title:       "Reset Password (Email Link)",
 		Description: "Send a password reset link to the account's email and hand the human off to the webapp to complete it. Used when the password is forgotten; no password transits this channel.",
 		Category:    model.CategoryAccount,
-		InputSchema: toolSchemaFor[accountPasswordResetArgs](),
+		InputSchema: toolargs.ToolSchemaFor[accountPasswordResetArgs](),
 		Handler: func(ctx context.Context, req model.ToolRequest) (model.ToolResult, error) {
 			if svc == nil {
 				return model.NeedsHumanResult(model.NeedsHuman{
@@ -155,7 +157,7 @@ func NewAccountPasswordResetDescriptor(svc AuthService, webAppURL string) model.
 					Detail: "Password reset is not configured for this server. Use the web app to reset your password.",
 				}), nil
 			}
-			in, err := decodeToolArgs[accountPasswordResetArgs](req)
+			in, err := toolargs.DecodeToolArgs[accountPasswordResetArgs](req)
 			if err != nil {
 				return model.ToolResult{IsError: true, Text: err.Error()}, nil
 			}

@@ -10,6 +10,8 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
 )
 
 // VaultPutHandler is the authenticated vault write executor. It writes bytes
@@ -67,9 +69,9 @@ func NewVaultPutFileDescriptor(coLocated, tunnelOpenAI bool, pathFn LocalPathVau
 		Title:       "Store a file in the Pinner vault",
 		Description: vaultPutFileDescription(transport),
 		Category:    model.CategoryCore,
-		InputSchema: toolSchemaFor[VaultPutFileInput](),
+		InputSchema: toolargs.ToolSchemaFor[VaultPutFileInput](),
 		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
-			in, err := decodeToolArgs[VaultPutFileInput](request)
+			in, err := toolargs.DecodeToolArgs[VaultPutFileInput](request)
 			if err != nil {
 				return model.ToolResult{}, err
 			}
@@ -99,7 +101,7 @@ func NewVaultPutFileDescriptor(coLocated, tunnelOpenAI bool, pathFn LocalPathVau
 					return model.ToolResult{}, errors.New("local path vault handler is not configured")
 				}
 				result, err := pathFn(ctx, in.Source.Path, in.VaultPath, in.ArchiveMode)
-				return wrapResult(result, err, "Stored in the vault.")
+				return toolargs.WrapResult(result, err, "Stored in the vault.")
 			case TransportHTTP:
 				if in.Source.Mode != SourceMint {
 					return model.ToolResult{}, fmt.Errorf("source mode %q is not available on the %s transport", in.Source.Mode, transport)
@@ -148,7 +150,7 @@ func NewVaultPutFileDescriptor(coLocated, tunnelOpenAI bool, pathFn LocalPathVau
 				writeCtx, cancel := context.WithTimeout(ctx, syncUploadBudget(size))
 				defer cancel()
 				result, err := relayFn(writeCtx, body, size, in.VaultPath)
-				return wrapResult(result, err, "Stored in the vault.")
+				return toolargs.WrapResult(result, err, "Stored in the vault.")
 			}
 		},
 	}
