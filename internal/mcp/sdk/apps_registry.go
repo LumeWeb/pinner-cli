@@ -11,19 +11,20 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
-// RegisterToolFunc adapts a Pinner-owned tool handler into the SDK tool
-// handler used by server.AddTool. The hub provides the concrete adapter
-// (officialToolHandler wraps the handler with per-request capability, app, and
+// RegisterToolFunc adapts a Pinner-owned tool descriptor + handler into the
+// SDK tool handler used by server.AddTool. The hub provides the concrete
+// adapter (which wraps the handler with per-request capability, app, and
 // elicitation state logic); sdk is registered after that so the app-registration
 // bridge can reuse the same single registration seam.
-type RegisterToolFunc func(srv *Server, tool *mcp.Tool, handler model.PinnerToolHandler) error
+type RegisterToolFunc func(srv *Server, desc model.ToolDescriptor, handler model.PinnerToolHandler) error
 
 // registerToolFn is the tool-registration adapter used by app tools. The hub
-// installs its adapter (officialToolHandler) via SetToolRegistrar during
-// assembly. It is read on every app-tool registration, so it is guarded by a
-// mutex. Failing fast when unset (rather than a degraded default) ensures a
-// missing SetToolRegistrar is caught loudly at registration, never as silent
-// loss of the elicitation/capability/state adornment app tools depend on.
+// installs its adapter (registerTool, which routes through AdaptToolHandler
+// with the hub's deps) via SetToolRegistrar during assembly. It is read on
+// every app-tool registration, so it is guarded by a mutex. Failing fast when
+// unset (rather than a degraded default) ensures a missing SetToolRegistrar is
+// caught loudly at registration, never as silent loss of the
+// elicitation/capability/state adornment app tools depend on.
 var (
 	registerToolMu sync.RWMutex
 	registerToolFn RegisterToolFunc
@@ -44,7 +45,7 @@ func getToolRegistrar() RegisterToolFunc {
 	registerToolMu.RLock()
 	defer registerToolMu.RUnlock()
 	if registerToolFn == nil {
-		return func(*Server, *mcp.Tool, model.PinnerToolHandler) error {
+		return func(*Server, model.ToolDescriptor, model.PinnerToolHandler) error {
 			return fmt.Errorf("sdk: tool registrar not installed; call sdk.SetToolRegistrar before RegisterAppTool")
 		}
 	}
@@ -82,7 +83,7 @@ func RegisterAppTool(srv *Server, desc model.ToolDescriptor, meta model.AppToolM
 	for k, v := range attached {
 		desc.Meta[k] = v
 	}
-	return getToolRegistrar()(srv, Tool(desc), desc.Handler)
+	return getToolRegistrar()(srv, desc, desc.Handler)
 }
 
 // RegisterAppResource registers a ui:// app resource that serves the given

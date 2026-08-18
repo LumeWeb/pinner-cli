@@ -379,7 +379,7 @@ func TestRequestCapsNilSafe(t *testing.T) {
 func TestOfficialToolHandlerPopulatesCaps(t *testing.T) {
 	got := make(map[string]*model.RequestCaps)
 	saw := make(chan struct{}, 1)
-	handler := officialToolHandler(func(_ context.Context, tr model.ToolRequest) (model.ToolResult, error) {
+	handler := sdk.AdaptToolHandler(sdkHandlerDeps, func(_ context.Context, tr model.ToolRequest) (model.ToolResult, error) {
 		got["caps"] = tr.Caps
 		select {
 		case saw <- struct{}{}:

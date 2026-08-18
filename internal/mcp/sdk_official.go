@@ -1,9 +1,9 @@
 // Official MCP SDK adapter.
 //
-// This file is the only file in the package that imports
-// github.com/modelcontextprotocol/go-sdk. It converts Pinner-owned
-// descriptors (defined in protocol_model.go) into registrations on the
-// official MCP server, preserving Pinner's wire JSON contract exactly:
+// This file is the hub-side adapter that speaks the sdk seam: it converts
+// Pinner-owned descriptors (defined in protocol_model.go) and handlers into
+// registrations on the official MCP server, preserving Pinner's wire JSON
+// contract exactly:
 //
 //   - the three visible meta-tools (search_tools, describe_tool,
 //     invoke_tool) and their serialized schemas;
@@ -11,20 +11,19 @@
 //   - pinner:// resource and resource-template URIs, MIME types and payloads;
 //   - prompt names, arguments, roles, text and embedded resources.
 //
-// The catalog, wizard, resource-provider, prompt and OAuth domain logic must
-// NOT import either MCP SDK. They speak Pinner-owned descriptors and handlers;
-// this adapter is the only bridge to the protocol implementation.
+// All go-sdk types are accessed exclusively through the sdk package, which is
+// the only production package that imports the protocol SDK's mcp types; this
+// file imports no SDK package directly. The catalog, wizard, resource-provider,
+// prompt and OAuth domain logic speak Pinner-owned descriptors and handlers.
 package mcp
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/internal/catalog"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
@@ -41,9 +40,22 @@ import (
 // empty (e.g. during `go test`).
 const officialSDKVersion = "v1.4.1"
 
+// sdkHandlerDeps is the hub's implementation of the behaviors the sdk handler
+// adapter needs: per-request capabilities, request-state echo key, operation
+// logging, and companion-app annotation on needs_human results.
+var sdkHandlerDeps = sdk.HandlerDeps{
+	RequestCaps:             requestCaps,
+	ReservedRequestStateKey: catalog.ReservedRequestStateKey,
+	LogStart:                func(name string, args map[string]any) { logToolCallStart(log, name, args) },
+	LogEnd: func(name string, startedAt time.Time, result model.ToolResult, err error) {
+		logToolCallEnd(log, name, startedAt, result, err)
+	},
+	AnnotateApp: annotateAppOnHandoff,
+}
+
 // OfficialServerFromCatalog builds the official server with Pinner's
 // progressive-disclosure meta-tools. The catalog remains internal.
-func OfficialServerFromCatalog(catalog *ToolCatalog, instructions string, stdioMode bool, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate) (*mcp.Server, error) {
+func OfficialServerFromCatalog(catalog *ToolCatalog, instructions string, stdioMode bool, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate) (*sdk.Server, error) {
 	if catalog == nil {
 		return nil, fmt.Errorf("nil tool catalog")
 	}
@@ -62,7 +74,7 @@ func OfficialServerFromCatalog(catalog *ToolCatalog, instructions string, stdioM
 // Resources and prompts are registered by the command action after runtime
 // providers and options are resolved. The descriptor adapters below preserve
 // their wire contracts on the official server.
-func OfficialMCPServer(root *cli.Command, hasRootAction bool, prefix []string, stdioMode bool, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate, handoffReg *handoff.HandoffRegistry, authHandles *session.AsyncHandleStore, catalogOpts ...buildCatalogOpt) (*mcp.Server, *ToolCatalog, error) {
+func OfficialMCPServer(root *cli.Command, hasRootAction bool, prefix []string, stdioMode bool, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate, handoffReg *handoff.HandoffRegistry, authHandles *session.AsyncHandleStore, catalogOpts ...buildCatalogOpt) (*sdk.Server, *ToolCatalog, error) {
 	catalog, err := buildCatalog(root, hasRootAction, prefix, seedDrop, oobRestore, oobCreate, handoffReg, authHandles, catalogOpts...)
 	if err != nil {
 		return nil, nil, err
@@ -74,59 +86,21 @@ func OfficialMCPServer(root *cli.Command, hasRootAction bool, prefix []string, s
 	return srv, catalog, nil
 }
 
-// PinnerToolHandler → mcp.ToolHandler. The arguments arrive on the wire as
-// raw JSON; unmarshal them into a plain map for the Pinner-owned handler. When
-// the call is a retry after an input_required elicitation, the accepted form
-// content is merged into the arguments under their elicitation id so handlers
-// read form submissions like any other argument.
-func officialToolHandler(handler model.PinnerToolHandler) mcp.ToolHandler {
-	return func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		args := map[string]any{}
-		if req.Params.Arguments != nil {
-			// Decode with UseNumber so JSON integers arrive as json.Number
-			// instead of float64. Plain json.Unmarshal maps an integer to
-			// float64, which silently loses precision for any value above
-			// 2^53; for an id like ipns_keys_get/delete's that could address
-			// (or with delete, remove) the wrong key. json.Number is exact,
-			// and the catalog normalizer converts it losslessly.
-			dec := json.NewDecoder(bytes.NewReader(req.Params.Arguments))
-			dec.UseNumber()
-			if err := dec.Decode(&args); err != nil {
-				return &mcp.CallToolResult{
-					IsError: true,
-					Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("invalid arguments: %v", err)}},
-				}, nil
-			}
-		}
-		for id, content := range sdk.AcceptedElicitations(req) {
-			args[id] = content
-		}
-		// Recover cross-round state the client echoed back on a retry after an
-		// input_required result, so handlers can re-establish context (e.g. a
-		// session id) even if the client did not echo the original arguments.
-		if req.Params.RequestState != "" {
-			if _, ok := args[catalog.ReservedRequestStateKey]; !ok {
-				args[catalog.ReservedRequestStateKey] = req.Params.RequestState
-			}
-		}
-		startedAt := time.Now()
-		logToolCallStart(log, req.Params.Name, args)
-		result, err := handler(ctx, model.ToolRequest{
-			Name:           req.Params.Name,
-			Arguments:      args,
-			InputResponses: len(req.Params.InputResponses) > 0,
-			Caps:           requestCaps(req),
-		})
-		logToolCallEnd(log, req.Params.Name, startedAt, result, err)
-		if err != nil {
-			return &mcp.CallToolResult{
-				IsError: true,
-				Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}},
-			}, nil
-		}
-		annotateAppOnHandoff(req.Params.Name, requestCaps(req), &result)
-		return officialToolResult(result), nil
+// requestCaps builds the SDK-neutral per-request capability view of the
+// calling client from an official SDK call-tool request. MCP is stateless: the
+// capabilities arrive in the request _meta (with a legacy initialize-handshake
+// fallback), so this is re-derived for every invocation rather than stored on
+// a session.
+func requestCaps(req *sdk.CallToolRequest) *model.RequestCaps {
+	rc := &model.RequestCaps{ProtocolVersion: req.ProtocolVersion()}
+	if ci := req.ClientInfo(); ci != nil {
+		rc.ClientName = ci.Name
+		rc.ClientVersion = ci.Version
 	}
+	if cc := req.ClientCapabilities(); cc != nil {
+		rc.UI = GetClientUICapability(cc.Extensions)
+	}
+	return rc
 }
 
 // annotateAppOnHandoff appends companion-app context to a needs_human tool
@@ -165,53 +139,23 @@ func annotateAppOnHandoff(toolName string, caps *model.RequestCaps, result *mode
 	}
 }
 
-// requestCaps builds the SDK-neutral per-request capability view of the
-// calling client from an official SDK call-tool request. MCP is stateless: the
-// capabilities arrive in the request _meta (with a legacy initialize-handshake
-// fallback), so this is re-derived for every invocation rather than stored on
-// a session.
-func requestCaps(req *mcp.CallToolRequest) *model.RequestCaps {
-	rc := &model.RequestCaps{ProtocolVersion: req.ProtocolVersion()}
-	if ci := req.ClientInfo(); ci != nil {
-		rc.ClientName = ci.Name
-		rc.ClientVersion = ci.Version
-	}
-	if cc := req.ClientCapabilities(); cc != nil {
-		rc.UI = GetClientUICapability(cc.Extensions)
-	}
-	return rc
-}
-
-// officialToolResult converts a Pinner-owned tool result into an official SDK
-// result, preserving isError and single text-content semantics. When the result
-// carries an Elicitation it is converted into an input_required response.
-func officialToolResult(result model.ToolResult) *mcp.CallToolResult {
-	if result.Elicitation != nil {
-		return sdk.CallToolResultFromElicitation(*result.Elicitation)
-	}
-	return &mcp.CallToolResult{
-		IsError:           result.IsError,
-		Content:           []mcp.Content{&mcp.TextContent{Text: result.Text}},
-		StructuredContent: result.StructuredContent,
-	}
-}
-
-// registerTool is the single registration seam for Pinner-owned tools. It
-// applies the handler adaptation (officialToolHandler) in one place, so
-// callers no longer hand-roll srv.AddTool(tool, officialToolHandler(handler)).
-func registerTool(srv *mcp.Server, tool *mcp.Tool, handler model.PinnerToolHandler) error {
+// registerTool is the hub's app-tool registration seam (installed via
+// sdk.SetToolRegistrar in adapter.go). It routes app-tool registration through
+// the same handler-adaptation deps as the meta-tools, so app tools attached to
+// a ui:// view reuse the single registration path.
+func registerTool(srv *sdk.Server, desc model.ToolDescriptor, handler model.PinnerToolHandler) error {
 	if srv == nil {
 		return fmt.Errorf("nil official server")
 	}
-	srv.AddTool(tool, officialToolHandler(handler))
-	return nil
+	desc.Handler = handler
+	return sdk.RegisterTool(srv, sdkHandlerDeps, desc)
 }
 
 // RegisterOfficialMetaTools registers the three progressive-disclosure
 // meta-tools (search_tools, describe_tool, invoke_tool) on an official-SDK
 // server. The catalog itself stays hidden; the only tools visible via
 // tools/list are these three, preserving progressive disclosure.
-func RegisterOfficialMetaTools(srv *mcp.Server, catalog *ToolCatalog, stdioMode bool, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate) error {
+func RegisterOfficialMetaTools(srv *sdk.Server, catalog *ToolCatalog, stdioMode bool, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate) error {
 	if srv == nil {
 		return fmt.Errorf("nil official server")
 	}
@@ -269,7 +213,7 @@ type invokeToolInput struct {
 	Arguments map[string]any `json:"arguments,omitempty" jsonschema:"description=Arguments object matching the tool's inputSchema."`
 }
 
-func registerOfficialSearchTools(srv *mcp.Server, catalog *ToolCatalog) error {
+func registerOfficialSearchTools(srv *sdk.Server, catalog *ToolCatalog) error {
 	schema := &metaToolSchema{}
 	schema.property("query", map[string]any{
 		"type":        "string",
@@ -289,13 +233,13 @@ func registerOfficialSearchTools(srv *mcp.Server, catalog *ToolCatalog) error {
 	// tools are host-curated and not in this catalog).
 	discoveryNote := "Search the internal tool catalog by a single keyword. No boolean (AND/OR) syntax: pass one keyword at a time (e.g. 'pin', not 'pin OR upload'). Name matches are ranked exact, then starts-with, contains, then within-segment subsequence (a fuzzy abbreviation within a single word of the name), then whole-word description matches; tools that never match are omitted. Use the 'category' filter to narrow scope and 'limit' to cap results. Leave query empty or use 'help' for an onboarding listing of just the primary start-here tools, which also carries a hint pointing at agent_guide for the full flows and at category browsing for a specific domain. Workflow: after discovering a tool here, call describe_tool(name) for its input schema, then invoke_tool(name, arguments). File upload and capability tools (upload_data, upload_url, capabilities) are host-curated and not listed in this catalog; they are exposed directly on the tool surface. Interactive wizard flows (category 'wizard') are excluded unless you filter for them specifically."
 
-	tool := &mcp.Tool{
+	desc := model.ToolDescriptor{
 		Name:        "search_tools",
 		Description: discoveryNote,
 		InputSchema: schema.raw(),
 	}
 
-	handler := model.PinnerToolHandler(func(_ context.Context, request model.ToolRequest) (model.ToolResult, error) {
+	desc.Handler = model.PinnerToolHandler(func(_ context.Context, request model.ToolRequest) (model.ToolResult, error) {
 		in, err := toolargs.DecodeToolArgs[searchToolsInput](request)
 		if err != nil {
 			return model.ToolResult{}, err
@@ -326,23 +270,23 @@ func registerOfficialSearchTools(srv *mcp.Server, catalog *ToolCatalog) error {
 		return model.ToolResult{Text: string(data)}, nil
 	})
 
-	return registerTool(srv, tool, handler)
+	return sdk.RegisterTool(srv, sdkHandlerDeps, desc)
 }
 
-func registerOfficialDescribeTool(srv *mcp.Server, catalog *ToolCatalog) error {
+func registerOfficialDescribeTool(srv *sdk.Server, catalog *ToolCatalog) error {
 	schema := &metaToolSchema{}
 	schema.property("name", map[string]any{
 		"type":        "string",
 		"description": "Tool name from search_tools result",
 	})
 
-	tool := &mcp.Tool{
+	desc := model.ToolDescriptor{
 		Name:        "describe_tool",
 		Description: "Get the full input schema for a single tool by name. Use the tool name returned by search_tools. The inputSchema field contains the JSON Schema that the tool's arguments must conform to.",
 		InputSchema: schema.raw(),
 	}
 
-	handler := model.PinnerToolHandler(func(_ context.Context, request model.ToolRequest) (model.ToolResult, error) {
+	desc.Handler = model.PinnerToolHandler(func(_ context.Context, request model.ToolRequest) (model.ToolResult, error) {
 		in, err := toolargs.DecodeToolArgs[describeToolInput](request)
 		if err != nil {
 			return model.ToolResult{IsError: true, Text: err.Error()}, nil
@@ -372,10 +316,10 @@ func registerOfficialDescribeTool(srv *mcp.Server, catalog *ToolCatalog) error {
 		return model.ToolResult{Text: string(data)}, nil
 	})
 
-	return registerTool(srv, tool, handler)
+	return sdk.RegisterTool(srv, sdkHandlerDeps, desc)
 }
 
-func registerOfficialInvokeTool(srv *mcp.Server, catalog *ToolCatalog, stdioMode bool, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate) error {
+func registerOfficialInvokeTool(srv *sdk.Server, catalog *ToolCatalog, stdioMode bool, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate) error {
 	schema := &metaToolSchema{}
 	schema.property("name", map[string]any{
 		"type":        "string",
@@ -386,13 +330,13 @@ func registerOfficialInvokeTool(srv *mcp.Server, catalog *ToolCatalog, stdioMode
 		"description": "Arguments object matching the tool's inputSchema. Use describe_tool to see the schema.",
 	})
 
-	tool := &mcp.Tool{
+	desc := model.ToolDescriptor{
 		Name:        "invoke_tool",
 		Description: "Execute a tool by name with the given arguments. This is the third step of the discovery workflow: search_tools(name) to find a tool, describe_tool(name) for its input schema, then invoke_tool(name, arguments). The arguments object must match the tool's inputSchema returned by describe_tool.",
 		InputSchema: schema.raw(),
 	}
 
-	handler := model.PinnerToolHandler(func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
+	desc.Handler = model.PinnerToolHandler(func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
 		in, err := toolargs.DecodeToolArgs[invokeToolInput](request)
 		if err != nil {
 			return model.ToolResult{IsError: true, Text: err.Error()}, nil
@@ -444,7 +388,7 @@ func registerOfficialInvokeTool(srv *mcp.Server, catalog *ToolCatalog, stdioMode
 			return model.ToolResult{IsError: true, Text: err.Error()}, nil
 		}
 		// invoke_tool dispatches to the inner catalog handler directly, so the
-		// outer officialToolHandler's annotation (keyed on req.Params.Name ==
+		// outer adapter's annotation (keyed on req.Params.Name ==
 		// "invoke_tool") never sees the real tool. Annotate here with the
 		// resolved inner name so companion-app metadata reaches text-only hosts
 		// for non-DirectVisible tools (e.g. vault_create/vault_restore) that are
@@ -453,14 +397,14 @@ func registerOfficialInvokeTool(srv *mcp.Server, catalog *ToolCatalog, stdioMode
 		return result, nil
 	})
 
-	return registerTool(srv, tool, handler)
+	return sdk.RegisterTool(srv, sdkHandlerDeps, desc)
 }
 
 // RegisterOfficialToolsFromCatalog registers every catalog entry as an
 // official tool with its Pinner-owned handler. Pinner keeps these hidden from
 // tools/list by design (progressive disclosure); this exists for callers that
 // opt into first-class exposure.
-func RegisterOfficialToolsFromCatalog(srv *mcp.Server, catalog *ToolCatalog) error {
+func RegisterOfficialToolsFromCatalog(srv *sdk.Server, catalog *ToolCatalog) error {
 	if catalog == nil {
 		return fmt.Errorf("nil tool catalog")
 	}
@@ -468,21 +412,21 @@ func RegisterOfficialToolsFromCatalog(srv *mcp.Server, catalog *ToolCatalog) err
 }
 
 // RegisterOfficialDescriptor adds one Pinner-owned tool directly to tools/list.
-func RegisterOfficialDescriptor(srv *mcp.Server, desc model.ToolDescriptor) error {
+func RegisterOfficialDescriptor(srv *sdk.Server, desc model.ToolDescriptor) error {
 	if srv == nil {
 		return fmt.Errorf("nil official server")
 	}
 	if desc.Name == "" || desc.Handler == nil {
 		return fmt.Errorf("direct tool requires name and handler")
 	}
-	return registerTool(srv, sdk.Tool(desc), desc.Handler)
+	return sdk.RegisterTool(srv, sdkHandlerDeps, desc)
 }
 
 // RegisterOfficialCuratedTools exposes the catalog's directly-visible tools
 // (those with DirectVisible set) as standard tools/list tools. Remaining
 // catalog entries stay behind the progressive-disclosure meta-tools
 // (search_tools / describe_tool / invoke_tool) which index the whole catalog.
-func RegisterOfficialCuratedTools(srv *mcp.Server, catalog *ToolCatalog) error {
+func RegisterOfficialCuratedTools(srv *sdk.Server, catalog *ToolCatalog) error {
 	if srv == nil {
 		return fmt.Errorf("nil official server")
 	}
@@ -493,7 +437,9 @@ func RegisterOfficialCuratedTools(srv *mcp.Server, catalog *ToolCatalog) error {
 		if !entry.DirectVisible {
 			continue
 		}
-		if err := registerTool(srv, sdk.Tool(model.ToolDescriptorFromEntry(entry)), entry.Handler); err != nil {
+		desc := model.ToolDescriptorFromEntry(entry)
+		desc.Handler = entry.Handler
+		if err := sdk.RegisterTool(srv, sdkHandlerDeps, desc); err != nil {
 			return err
 		}
 	}

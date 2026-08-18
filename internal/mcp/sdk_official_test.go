@@ -615,7 +615,7 @@ func TestOfficialHandlerPreservesLargeIntID(t *testing.T) {
 		got = r.Arguments
 		return model.ToolResult{Text: "ok"}, nil
 	})
-	h := officialToolHandler(inner)
+	h := sdk.AdaptToolHandler(sdkHandlerDeps, inner)
 
 	res, err := h(context.Background(), &mcp.CallToolRequest{
 		Params: &mcp.CallToolParamsRaw{
