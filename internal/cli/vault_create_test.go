@@ -36,9 +36,12 @@ func TestVaultCreateAgentModeNoProfileDoesNotPrompt(t *testing.T) {
 
 	// Save/restore the global agent-mode flag around the run.
 	wasAgent := IsAgentMode()
+	SetAgentMode(true)
 	t.Cleanup(func() { SetAgentMode(wasAgent) })
 
-	err = Run(context.Background(), []string{"pinner", "vault", "create", "--agent"})
+	// The global --agent flag was removed; agent mode is now set
+	// programmatically (as the MCP adapter does) before Run.
+	err = Run(context.Background(), []string{"pinner", "vault", "create"})
 	if err == nil {
 		t.Fatalf("expected an error from agent-mode vault create without --profile, got nil")
 	}

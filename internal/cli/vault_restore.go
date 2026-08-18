@@ -80,7 +80,7 @@ In non-interactive (--agent) mode pass --seed-stdin to read the mnemonic from st
 			// MCP/CI flag, so a re-run that DOES carry --seed-stdin still has
 			// it set; returning here again would loop forever instead of
 			// completing the restore.
-			if c.Bool(FlagAgent) && !c.Bool("seed-stdin") {
+			if IsAgentMode() && !c.Bool("seed-stdin") {
 				output.PrintJSON(vaultRestoreApprovalResponse{
 					Profile:  profileName,
 					NextStep: "Re-run: pinner vault restore --profile " + profileName + " --seed-stdin < " + vault.SeedPath(profileName) + " (presents the single browser approval)",
@@ -117,7 +117,7 @@ In non-interactive (--agent) mode pass --seed-stdin to read the mnemonic from st
 			}
 			indexerURL := cfgMgr.Config().GetSiaIndexerURL()
 
-			jsonOnly := c.Bool(FlagJSON) || c.Bool(FlagAgent)
+			jsonOnly := c.Bool(FlagJSON)
 			output.Printfln("Restoring vault profile %q...", profileName)
 			res, err := vault.NewProvisioner().Restore(ctx, vault.RestoreRequest{
 				Profile:    profileName,

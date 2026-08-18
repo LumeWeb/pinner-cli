@@ -43,7 +43,7 @@ Does NOT return file metadata or directory listings: use vault stat for metadata
 			// Agent/MCP mode must return structured content. Writing raw bytes to
 			// stdout would corrupt the JSON-RPC transport and binary data cannot be
 			// represented safely as MCP text content.
-			if c.Bool(FlagAgent) {
+			if IsAgentMode() {
 				const maxAgentCatBytes = 4 * 1024 * 1024
 				var content bytes.Buffer
 				bw := &limitedBufferWriter{Buffer: &content, Limit: maxAgentCatBytes + 1}

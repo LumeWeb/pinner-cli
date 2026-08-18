@@ -126,7 +126,7 @@ In non-interactive (--agent) mode the recovery seed is written to a 0600-permiss
 			// is the agent/OOB create path; the browser approval is deferred to
 			// restore, which owns the single connection request. No approval
 			// URL is minted here and the seed never touches stdout.
-			if c.Bool(FlagAgent) {
+			if IsAgentMode() {
 				pend, err := vault.NewProvisioner().CreatePending(vault.CreateRequest{
 					Profile:    profileName,
 					DeviceName: c.String("device-name"),
