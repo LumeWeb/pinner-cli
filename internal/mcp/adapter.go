@@ -34,6 +34,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
@@ -271,11 +272,11 @@ adapter.`,
 			// Async handle store backs the agent-facing SSO/auth tools and any
 			// long-running operations that mint resume handles.
 			authHandles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
-			// HandoffRegistry maps a resume handle to its domain-specific
+			// handoff.HandoffRegistry maps a resume handle to its domain-specific
 			// continuation so the shared *_resume tool template dispatches any
 			// hand-off flow (SSO, vault seed create/restore) to the right
 			// poll logic. One registry is shared by every hand-off flow.
-			handoffReg := NewHandoffRegistry()
+			handoffReg := handoff.NewHandoffRegistry()
 			// When the registry capacity-evicts a still-live continuation,
 			// retire its backing handle too so it cannot be resumed.
 			handoffReg.SetCleanup(authHandles.Delete)
@@ -1110,7 +1111,7 @@ type WizardDepsFactory func() (WebsitesWizardDeps, SetupWizardDeps, DomainWizard
 // one-time seed/restore/create URLs for vault-create/vault-restore agent output
 // so the human can retrieve or supply a recovery seed in a browser without it
 // transiting the MCP channel.
-func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate, handoffReg *HandoffRegistry, authHandles *session.AsyncHandleStore, opts ...buildCatalogOpt) (*ToolCatalog, error) {
+func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate, handoffReg *handoff.HandoffRegistry, authHandles *session.AsyncHandleStore, opts ...buildCatalogOpt) (*ToolCatalog, error) {
 	catalog := NewToolCatalog()
 
 	// Apply the functional options. Currently the only option is withCatalogDeps,

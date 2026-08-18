@@ -11,6 +11,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
@@ -22,7 +23,7 @@ func TestRegisterVaultCreateAppWire(t *testing.T) {
 	catalog.Add(modelTool(compiledVaultCreateToolName))
 	srv := NewOfficialServer(nil)
 
-	if err := RegisterVaultCreateApp(srv, catalog, NewHandoffRegistry(), session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)); err != nil {
+	if err := RegisterVaultCreateApp(srv, catalog, handoff.NewHandoffRegistry(), session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)); err != nil {
 		t.Fatalf("RegisterVaultCreateApp: %v", err)
 	}
 	if err := RegisterOfficialCuratedTools(srv, catalog); err != nil {
@@ -73,7 +74,7 @@ func TestRegisterVaultCreateAppWire(t *testing.T) {
 // confirmed, then done. It must never surface the seed.
 func TestVaultCreateStatusHelperPendingToDone(t *testing.T) {
 	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
-	reg := NewHandoffRegistry()
+	reg := handoff.NewHandoffRegistry()
 	oob, mux, _ := buildCreateServer()
 
 	createURL := oob.Register("default")
@@ -138,7 +139,7 @@ func TestVaultCreateStatusHelperPendingToDone(t *testing.T) {
 // dead on its first poll.
 func TestVaultCreateStatusHelperPendingCarriesHandle(t *testing.T) {
 	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
-	reg := NewHandoffRegistry()
+	reg := handoff.NewHandoffRegistry()
 	oob, _, _ := buildCreateServer()
 
 	createURL := oob.Register("default")
@@ -180,7 +181,7 @@ func TestVaultCreateStatusHelperPendingCarriesHandle(t *testing.T) {
 // instead). This guards against the view sending {handle: undefined} into the
 // status helper, which would otherwise retry "handle is required" for ~90s.
 func TestVaultCreateNotConfiguredReturnsNoHandle(t *testing.T) {
-	reg := NewHandoffRegistry()
+	reg := handoff.NewHandoffRegistry()
 	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 
 	handler := vaultCreateSetupHandler(nil, reg, handles)

@@ -10,6 +10,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
@@ -19,7 +20,7 @@ func newAuthSSOAppServer(t *testing.T) *mcp.Server {
 	t.Helper()
 	catalog := NewToolCatalog()
 	srv := NewOfficialServer(nil)
-	reg := NewHandoffRegistry()
+	reg := handoff.NewHandoffRegistry()
 	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 
 	authSSO := NewAuthSSODescriptor(newOOBForTest(t), handles, reg)
@@ -90,7 +91,7 @@ func TestRegisterAuthSSOAppWire(t *testing.T) {
 // helper returns pending while the human has not approved and done afterward,
 // driving the same OOB continuation the model-facing auth_resume uses.
 func TestAuthSSOStatusHelperPendingToDone(t *testing.T) {
-	reg := NewHandoffRegistry()
+	reg := handoff.NewHandoffRegistry()
 	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 	oob := newOOBForTest(t)
 
@@ -131,7 +132,7 @@ func TestAuthSSOStatusHelperPendingToDone(t *testing.T) {
 // restart via resume_tool/detail. The view stops polling on exactly this shape
 // (a live pending hand-off always carries an action_url; a dead one never does).
 func TestAuthSSOStatusHelperDeadHandleSteersRestart(t *testing.T) {
-	reg := NewHandoffRegistry()
+	reg := handoff.NewHandoffRegistry()
 	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 
 	status := authSSOStatusDescriptor(reg, handles)

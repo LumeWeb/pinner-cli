@@ -8,6 +8,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
 )
 
@@ -33,7 +34,7 @@ type authSSOArgs struct {
 // a structured "not configured" hand-off instead of hanging. It registers a
 // resume continuation so the shared auth_resume template can poll the
 // login to completion.
-func NewAuthSSODescriptor(oob *OutOfBandLogin, handles *session.AsyncHandleStore, reg *HandoffRegistry) model.ToolDescriptor {
+func NewAuthSSODescriptor(oob *OutOfBandLogin, handles *session.AsyncHandleStore, reg *handoff.HandoffRegistry) model.ToolDescriptor {
 	return model.ToolDescriptor{
 		Name:        "auth_sso",
 		Title:       "Sign In (Out-of-Band)",
@@ -95,7 +96,7 @@ func NewAuthSSODescriptor(oob *OutOfBandLogin, handles *session.AsyncHandleStore
 // ("", false, nil) when another resume already consumed the request; that is a
 // completed outcome from the human's perspective, so it is reported done, not
 // misleadingly "still pending".
-func ssoResumeContinuation(oob *OutOfBandLogin, handles *session.AsyncHandleStore, reg *HandoffRegistry) ResumeContinuation {
+func ssoResumeContinuation(oob *OutOfBandLogin, handles *session.AsyncHandleStore, reg *handoff.HandoffRegistry) handoff.ResumeContinuation {
 	return func(ctx context.Context, handle string, data map[string]any) (model.ToolResult, error) {
 		email, _ := data["email"].(string)
 		url, done, loginErr := oob.pendingOutcome(handle, email)
@@ -142,9 +143,9 @@ func ssoResumeContinuation(oob *OutOfBandLogin, handles *session.AsyncHandleStor
 // NewAuthResumeDescriptor returns the auth_resume tool, built from the
 // shared resume template. The name/description, restart steering, and
 // dead-handle guidance are SSO-specific; the dispatch logic (handle validation,
-// expiry, continuation lookup) is shared via NewResumeTool.
-func NewAuthResumeDescriptor(reg *HandoffRegistry, handles *session.AsyncHandleStore) model.ToolDescriptor {
-	return NewResumeTool(ResumeToolSpec{
+// expiry, continuation lookup) is shared via handoff.NewResumeTool.
+func NewAuthResumeDescriptor(reg *handoff.HandoffRegistry, handles *session.AsyncHandleStore) model.ToolDescriptor {
+	return handoff.NewResumeTool(handoff.ResumeToolSpec{
 		Name:                "auth_resume",
 		Title:               "Auth Sign-In Resume",
 		Description:         "Poll a pending out-of-band (OOB) sign in to check whether the human has completed the SSO approval (sign-in). Returns pending (needs_human) until approval is done, then reports done. Pass the handle returned by auth_sso.",

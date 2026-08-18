@@ -6,6 +6,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
@@ -31,8 +32,8 @@ func renderAuthSSOAppHTML() string {
 // shared resume machinery (handle -> continuation -> pending/done) exactly like
 // auth_resume, but is registered with ToolVisibilityApp so only the Sign In
 // view can poll it; the model never sees it. It carries no secrets.
-func authSSOStatusDescriptor(reg *HandoffRegistry, handles *session.AsyncHandleStore) model.ToolDescriptor {
-	return NewResumeTool(ResumeToolSpec{
+func authSSOStatusDescriptor(reg *handoff.HandoffRegistry, handles *session.AsyncHandleStore) model.ToolDescriptor {
+	return handoff.NewResumeTool(handoff.ResumeToolSpec{
 		Name:                "auth_sso_status",
 		Title:               "Auth Sign-In Status",
 		Description:         "Poll a pending out-of-band sign-in by handle. App-only helper for the Sign In view.",
@@ -50,7 +51,7 @@ func authSSOStatusDescriptor(reg *HandoffRegistry, handles *session.AsyncHandleS
 // auth_sso_status polling helper. oob/handles/reg may be nil in a transport
 // without a browser login; the app/tools still register and return a structured
 // not-configured hand-off when invoked.
-func RegisterAuthSSOApp(srv *mcp.Server, catalog *ToolCatalog, reg *HandoffRegistry, handles *session.AsyncHandleStore) error {
+func RegisterAuthSSOApp(srv *mcp.Server, catalog *ToolCatalog, reg *handoff.HandoffRegistry, handles *session.AsyncHandleStore) error {
 	return RegisterAppView(srv, catalog, AppView{
 		URI:           AuthSSOAppURI,
 		Name:          "auth-sso",

@@ -7,6 +7,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
@@ -18,7 +19,7 @@ import (
 // coordinator until the human has completed the browser action.
 //
 // Only the surface is per-domain (the two named *_resume tools); the dispatch
-// machinery is the shared NewResumeTool template and the HandoffRegistry. The
+// machinery is the shared handoff.NewResumeTool template and the handoff.HandoffRegistry. The
 // plaintext recovery seed never transits the MCP/LLM channel: it travels
 // human-browser-to-host only, and the resume tools only report pending vs.
 // done for the token the coordinator minted.
@@ -172,7 +173,7 @@ func (o *OOBRestore) pruneOutcomesLocked(cutoff time.Time) {
 // vaultCreateSetupHandler so the shared vault_create_resume template
 // dispatches to it. The continuation performs its own registry/handle cleanup
 // on every terminal outcome.
-func vaultCreateResumeContinuation(oob *OOBCreate, handles *session.AsyncHandleStore, reg *HandoffRegistry) ResumeContinuation {
+func vaultCreateResumeContinuation(oob *OOBCreate, handles *session.AsyncHandleStore, reg *handoff.HandoffRegistry) handoff.ResumeContinuation {
 	return func(ctx context.Context, handle string, data map[string]any) (model.ToolResult, error) {
 		token, _ := data[handleDataToken].(string)
 		if oob == nil {
@@ -231,7 +232,7 @@ func vaultCreateResumeContinuation(oob *OOBCreate, handles *session.AsyncHandleS
 // coordinator-state poll (the token going spent); the RestoreRunner only runs
 // in the browser POST handler, never on this channel, so the seed never
 // reaches the agent.
-func vaultRestoreResumeContinuation(oob *OOBRestore, handles *session.AsyncHandleStore, reg *HandoffRegistry) ResumeContinuation {
+func vaultRestoreResumeContinuation(oob *OOBRestore, handles *session.AsyncHandleStore, reg *handoff.HandoffRegistry) handoff.ResumeContinuation {
 	return func(ctx context.Context, handle string, data map[string]any) (model.ToolResult, error) {
 		token, _ := data[handleDataToken].(string)
 		if oob == nil {
@@ -284,7 +285,7 @@ func vaultRestoreResumeContinuation(oob *OOBRestore, handles *session.AsyncHandl
 // polling a dead flow, and returns a needs_human steer to the matching start
 // tool. It is NOT a success result; an expired one-time link must read as a
 // restart, never as a completed vault create/restore.
-func vaultExpiredResult(handles *session.AsyncHandleStore, reg *HandoffRegistry, handle, resumeTool, restartTool, detail string) (model.ToolResult, error) {
+func vaultExpiredResult(handles *session.AsyncHandleStore, reg *handoff.HandoffRegistry, handle, resumeTool, restartTool, detail string) (model.ToolResult, error) {
 	// Clearing the continuation + backing handle means the next poll of the
 	// *_resume tool hits the template's dead-handle branch, which steers to
 	// restart via the tool spec. The agent gets one clean restart instruction
@@ -302,8 +303,8 @@ func vaultExpiredResult(handles *session.AsyncHandleStore, reg *HandoffRegistry,
 // NewVaultCreateResumeDescriptor returns the vault_create_resume tool,
 // built from the shared resume template. Name/description and restart steering
 // are create-flavored: a dead handle steers back to vault_create.
-func NewVaultCreateResumeDescriptor(reg *HandoffRegistry, handles *session.AsyncHandleStore) model.ToolDescriptor {
-	return NewResumeTool(ResumeToolSpec{
+func NewVaultCreateResumeDescriptor(reg *handoff.HandoffRegistry, handles *session.AsyncHandleStore) model.ToolDescriptor {
+	return handoff.NewResumeTool(handoff.ResumeToolSpec{
 		Name:                vaultCreateResumeToolName,
 		Title:               "Vault Create Resume",
 		Description:         "Poll a pending vault create hand-off to check whether the human has approved the Sia device connection on the one-time create_url and retrieved the recovery seed. Returns pending (needs_human) until the vault is active and the seed has been retrieved, then reports done. Pass the handle returned by vault_create.",
@@ -318,8 +319,8 @@ func NewVaultCreateResumeDescriptor(reg *HandoffRegistry, handles *session.Async
 // NewVaultRestoreResumeDescriptor returns the vault_restore_resume tool,
 // built from the shared resume template. Name/description and restart steering
 // are restore-flavored: a dead handle steers back to vault_restore.
-func NewVaultRestoreResumeDescriptor(reg *HandoffRegistry, handles *session.AsyncHandleStore) model.ToolDescriptor {
-	return NewResumeTool(ResumeToolSpec{
+func NewVaultRestoreResumeDescriptor(reg *handoff.HandoffRegistry, handles *session.AsyncHandleStore) model.ToolDescriptor {
+	return handoff.NewResumeTool(handoff.ResumeToolSpec{
 		Name:                vaultRestoreResumeToolName,
 		Title:               "Vault Restore Resume",
 		Description:         "Poll a pending vault restore hand-off to check whether the human has completed the out-of-band restore on the one-time restore_url. Returns pending (needs_human) until the restore is done, then reports done. Pass the handle returned by vault_restore.",

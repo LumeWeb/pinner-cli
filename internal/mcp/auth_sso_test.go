@@ -10,6 +10,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
@@ -28,7 +29,7 @@ func requireHandoff(t *testing.T, r model.ToolResult) map[string]any {
 func TestAuthSSOStartsOutOfBandLogin(t *testing.T) {
 	oob := newOOBForTest(t)
 	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
-	reg := NewHandoffRegistry()
+	reg := handoff.NewHandoffRegistry()
 	desc := NewAuthSSODescriptor(oob, handles, reg)
 
 	result, err := desc.Handler(context.Background(), model.ToolRequest{
@@ -50,7 +51,7 @@ func TestAuthSSOStartsOutOfBandLogin(t *testing.T) {
 func TestAuthResumeReportsPendingBeforeCompletion(t *testing.T) {
 	oob := newOOBForTest(t)
 	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
-	reg := NewHandoffRegistry()
+	reg := handoff.NewHandoffRegistry()
 
 	start := NewAuthSSODescriptor(oob, handles, reg)
 	startResult, err := start.Handler(context.Background(), model.ToolRequest{
@@ -76,7 +77,7 @@ func TestAuthResumeReportsPendingBeforeCompletion(t *testing.T) {
 // rather than hanging.
 func TestAuthResumeUnknownHandleErrors(t *testing.T) {
 	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
-	reg := NewHandoffRegistry()
+	reg := handoff.NewHandoffRegistry()
 	desc := NewAuthResumeDescriptor(reg, handles)
 
 	result, err := desc.Handler(context.Background(), model.ToolRequest{
@@ -96,7 +97,7 @@ func TestAuthResumeUnknownHandleErrors(t *testing.T) {
 
 func TestAuthResumeExpiredHandleSteersRestart(t *testing.T) {
 	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
-	reg := NewHandoffRegistry()
+	reg := handoff.NewHandoffRegistry()
 	desc := NewAuthResumeDescriptor(reg, handles)
 
 	// Mint a handle, then force it past its TTL so Get returns ErrHandleExpired.
