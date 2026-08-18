@@ -177,12 +177,51 @@ func ServiceInstallSteps(state *ServiceInstallState, cmd *cli.Command, envFile s
 		wizard.StepFunc[*ServiceInstallState]{
 			Name_: "Tunnel-specific configuration",
 			ExecuteFunc: func(ctx context.Context, s *ServiceInstallState) error {
+				spec, ok := providers.spec(s.Provider)
 				p := serviceInstallStepsPrompter(ctx)
-				// Dispatch provider-specific collection (IDs, domains,
-				// credentials) through the provider registry's Configurer
-				// instead of a switch on the provider value, so each provider
-				// owns its install behaviour and the step stays provider-agnostic.
-				if spec, ok := providers.spec(s.Provider); ok && spec.Configurer != nil {
+
+				// Migrated providers (Fields != nil) resolve their field set —
+				// provider fields PLUS the shared auth token — through the
+				// wizard.Gather primitive, applying one precedence model
+				// (switch > existing decision > headless env fold, prompting
+				// with the current value as an editable default) instead of
+				// hand-rolled `if s.X == ""` prompts. cloudflared/ngrok still
+				// use the legacy Configurer until their provider-derived values
+				// are migrated.
+				if ok && spec.Fields != nil {
+					src := newServiceInstallValueSource(cmd, envFile)
+
+					// Open the provider's setup deep-links for any credential
+					// that is still unresolved, so the browser is ready before
+					// Gather prompts for it (the preprompt UX the imperative
+					// configurers provided).
+					fireProviderDeepLinks(s.Provider, s)
+
+					fields := append([]wizard.Field[*ServiceInstallState, string]{}, spec.Fields(s)...)
+
+					// The shared auth token, preferred from MCP_AUTH_TOKEN (env
+					// fold) over an interactive prompt so the secret is never
+					// typed into or echoed from the terminal session.
+					auth := *tunnelInstallField(fieldAuthToken)
+					auth.Prompt = promptText("Shared auth token / secret for the public MCP endpoint", "*")
+					fields = append(fields, auth)
+
+					if _, _, err := wizard.Gather(ctx, src, s, fields); err != nil {
+						return err
+					}
+
+					// Post-Gather provider side-effects (derived values, last-
+					// resort persistence). Not field-shaped, so it lives here.
+					if spec.Finalize != nil {
+						if err := spec.Finalize(ctx, p, s, cfgMgr); err != nil {
+							return err
+						}
+					}
+					return nil
+				}
+
+				// Legacy imperative path for not-yet-migrated providers.
+				if ok && spec.Configurer != nil {
 					if err := spec.Configurer(ctx, p, s, cfgMgr); err != nil {
 						return err
 					}

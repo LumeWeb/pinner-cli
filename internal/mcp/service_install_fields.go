@@ -3,6 +3,7 @@ package mcp
 import (
 	"strings"
 
+	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/internal/cli/wizard"
 	"go.lumeweb.com/pinner-cli/internal/service"
 )
@@ -281,4 +282,32 @@ func (v *serviceInstallValueSource) EnvFile(key string) (string, bool) {
 		return "", false
 	}
 	return strings.TrimSpace(val), true
+}
+
+// serviceInstallFlags adapts the host's urfave/cli command into the
+// serviceInstallValueSource Flag accessor: a flag is present when it was
+// explicitly set OR its (possibly process-env-sourced) value is non-empty. A
+// present flag is an operator decision for wizard.Gather precedence 1.
+func serviceInstallFlags(cmd *cli.Command) func(name string) (string, bool) {
+	return func(name string) (string, bool) {
+		if cmd == nil {
+			return "", false
+		}
+		v := strings.TrimSpace(cmd.String(name))
+		if v == "" && !cmd.IsSet(name) {
+			return "", false
+		}
+		return v, true
+	}
+}
+
+// newServiceInstallValueSource builds the install flow's wizard.ValueSource
+// from the host command (its flags, incl. process-env Sources) and the persisted
+// env file. Gather resolves each field's Flag against the command and its
+// EnvFileKey against the env file.
+func newServiceInstallValueSource(cmd *cli.Command, envFile string) *serviceInstallValueSource {
+	return &serviceInstallValueSource{
+		envFile: envFile,
+		flags:   serviceInstallFlags(cmd),
+	}
 }

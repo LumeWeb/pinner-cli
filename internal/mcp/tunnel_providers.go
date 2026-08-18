@@ -3,6 +3,7 @@ package mcp
 import (
 	"fmt"
 
+	"go.lumeweb.com/pinner-cli/internal/cli/wizard"
 	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
 )
 
@@ -66,14 +67,20 @@ func init() {
 		NewTunnel: func(_ tunnel.TunnelConfig) (tunnel.Tunnel, error) {
 			return nil, fmt.Errorf("OpenAI Secure MCP Tunnel is embedded and does not use an HTTP tunnel")
 		},
-		Configurer: openAIConfigurer,
+		// OpenAI is the reference migration to the shared field-resolution
+		// primitive: its install config is two clean promptable fields (TunnelID
+		// + ApiKey) with no provider-derived value, so it gathers declaratively
+		// instead of hand-rolling prompts. cloudflared/ngrok still use the
+		// legacy Configurer until their derived values are migrated.
+		Fields:   func(_ *ServiceInstallState) []wizard.Field[*ServiceInstallState, string] { return openAIFields() },
+		Finalize: openAIFinalize,
 		ConfigSeeded: func(s *ServiceInstallState) bool {
-			// openAIConfigurer prompts for TunnelID + ApiKey and VALIDATES the
-			// tunnel ID shape via MatchString — a malformed ID must never take
-			// the skip path (it would silently write MCP_TUNNEL_ID and fail
-			// later as an obscure error). The tunnel-config step additionally
-			// always collects the shared AuthToken, so a public OpenAI endpoint
-			// is never left unprotected by a shared secret.
+			// openAIFields gathers TunnelID + ApiKey and VALIDATES the tunnel ID
+			// shape via MatchString — a malformed ID must never take the skip
+			// path (it would silently write MCP_TUNNEL_ID and fail later as an
+			// obscure error). The tunnel-config step additionally always
+			// gathers the shared AuthToken, so a public OpenAI endpoint is never
+			// left unprotected by a shared secret.
 			return s != nil &&
 				s.TunnelID != "" &&
 				s.ApiKey != "" &&
