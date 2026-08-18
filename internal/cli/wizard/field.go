@@ -8,9 +8,9 @@ import (
 
 // This file defines a declarative field-resolution primitive for wizard steps.
 // A step describes the values it needs and the framework resolves each one in
-// precedence order — CLI switch (and its process-env Sources), interactive
-// prompt, persisted env file — instead of the step hand-rolling a per-field
-// `if s.X == "" || !wizard.NonInteractive` block.
+// precedence order — provider-derived (precedence 0), CLI switch (and its
+// process-env Sources), interactive prompt, persisted env file — instead of the
+// step hand-rolling a per-field conditional on the state and interactivity.
 //
 // Provenance, two channels per value:
 //
@@ -106,6 +106,21 @@ type Field[S any, T any] struct {
 	// their Operational value across a switch (e.g. Host — a local bind host
 	// that is never stale).
 	ReDerives bool
+
+	// Derived supplies the field's Operational value from the provider's own
+	// derivation (loaded cloudflare provisioned state, an ngrok URL resolved
+	// from the account API, a "pinner-mcp" TunnelName default, a resolved
+	// credential). It runs at precedence 0 — before the CLI switch — and only
+	// when the field carries no operator decision this run. A derived value is
+	// written to the Operational channel only (never Decided) and settles the
+	// field: a headless run reuses it, an interactive run prefills the prompt
+	// with it as the editable default. It is the declarative replacement for a
+	// provider imperatively deriving a value in a step's Execute before/after
+	// Gather — and, like ReDerives, a field with a Derived hook is by
+	// definition re-derived on a provider switch and must not be folded from a
+	// stale env file. Precedence 0 returning ok=false just falls through to the
+	// switch / decision / env precedences.
+	Derived func(S) (T, bool)
 }
 
 // FieldError is returned by Gather when a required field is unresolved on a
@@ -132,8 +147,11 @@ type fieldOutcome[T any] struct {
 type srcKind int
 
 const (
+	// srcDerived is a provider-derived value (precedence 0). It writes the
+	// Operational channel only — never Decided.
+	srcDerived srcKind = iota
 	// srcFlag is an explicitly-passed CLI switch (incl. its process-env Sources).
-	srcFlag srcKind = iota
+	srcFlag
 	// srcDecided is an operator decision committed by an earlier pass.
 	srcDecided
 	// srcEnv is a value folded from the persisted env file.
@@ -168,12 +186,15 @@ func (f *Field[S, T]) settle(oc *fieldOutcome[T], s S, v T, src srcKind, headles
 		// Already persisted on both channels; reuse exposes it as settled.
 		oc.decided = true
 		oc.operative = true
-	case srcEnv:
-		// Env folds into Operational only, never Decided. It settles the field
-		// only on a headless run (reuse); on interactive it prefills the prompt
-		// and stays un-operative so Gather re-prompts with it as the default.
+	case srcDerived, srcEnv:
+		// Derived and env values fold into Operational only, never Decided.
+		// They settle the field only on a headless run (reuse); on interactive
+		// they prefill the prompt and stay un-operative so Gather re-prompts
+		// with the value as the editable default.
 		f.SetOperational(s, v)
-		oc.usedSource = "env file"
+		if src == srcEnv {
+			oc.usedSource = "env file"
+		}
 		oc.operative = headless
 	}
 	return true
@@ -193,7 +214,12 @@ func classifyOutcome[S any, T any](oc *fieldOutcome[T], f *Field[S, T], s S, hea
 		return // already settled; do not clobber
 	}
 	if headless {
-		if !f.ReDerives {
+		// A field the provider derives — via a Derived hook or a ReDerives
+		// marker — defers to the step's Execute rather than hard-erroring: the
+		// provider populates it via SetOperational after Gather (e.g. an ngrok
+		// URL resolved in Finalize). Any other unresolved required field is
+		// fatal headless (it cannot be prompted).
+		if !f.ReDerives && f.Derived == nil {
 			oc.hardError = true
 		}
 		return
@@ -205,14 +231,28 @@ func classifyOutcome[S any, T any](oc *fieldOutcome[T], f *Field[S, T], s S, hea
 	}
 }
 
-// resolveField applies one field's precedence: switch (incl. Sources) > existing
-// operator decision > headless env fold. Each precedence settles via f.settle
-// (the single validation + provenance gate) and returns on acceptance; anything
-// that does not settle funnels once into classifyOutcome, which owns the
-// hard-error / defer / interactive outcome. It does not prompt; Gather does,
-// since it has the Prompter from ctx.
+// resolveField applies one field's precedence: provider-derived (precedence 0) >
+// switch (incl. Sources) > existing operator decision > headless env fold. Each
+// precedence settles via f.settle (the single validation + provenance gate) and
+// returns on acceptance; anything that does not settle funnels once into
+// classifyOutcome, which owns the hard-error / defer / interactive outcome. It
+// does not prompt; Gather does, since it has the Prompter from ctx.
 func resolveField[S any, T any](src ValueSource, s S, f *Field[S, T], headless bool) (fieldOutcome[T], error) {
 	oc := fieldOutcome[T]{}
+
+	// -- precedence 0: provider-derive the Operational value ----------------
+	// Resolves a derived value (cloudflare provisioned state, ngrok URL, a
+	// default) BEFORE the switch, and only when the field carries no operator
+	// decision this run. A derived value settles the field (headless reuses it,
+	// interactive prefills the prompt default), so a provider-derived field is
+	// never hard-errored for being unresolved before derivation can fill it —
+	// the gap that forced providers to derive imperatively around Gather.
+	// ok=false falls through to the lower precedences.
+	if f.Derived != nil && f.Decided(s) == nil {
+		if v, ok := f.Derived(s); ok && f.settle(&oc, s, v, srcDerived, headless) {
+			return oc, nil
+		}
+	}
 
 	// -- precedence 1: CLI switch (incl. process-env Sources) ----------------
 	// A present flag decides the field, valid or not: if it settles we are done;
@@ -241,11 +281,11 @@ func resolveField[S any, T any](src ValueSource, s S, f *Field[S, T], headless b
 	// -- precedence 3: fold the persisted env as the current value ----------
 	// Runs on headless and interactive: a re-run prefills its prompts with (and
 	// on headless reuses) the persisted config. Folds into the Operational
-	// channel only, never Decided, and only for fields not marked ReDerives
-	// (the new provider derives those itself and must not get a stale
-	// cross-provider value). settle's srcEnv rule completes the behavior:
-	// settle-on-headless, prefill-on-interactive.
-	if f.EnvFileKey != "" && !f.ReDerives && f.Decided(s) == nil {
+	// channel only, never Decided, and only for fields not marked ReDerives and
+	// without a Derived hook (the new provider derives those itself and must
+	// not get a stale cross-provider value). settle's srcEnv rule completes the
+	// behavior: settle-on-headless, prefill-on-interactive.
+	if f.EnvFileKey != "" && !f.ReDerives && f.Derived == nil && f.Decided(s) == nil {
 		if raw, ok := src.EnvFile(f.EnvFileKey); ok {
 			if v, parsed := f.Parse(raw); parsed && f.settle(&oc, s, v, srcEnv, headless) {
 				return oc, nil
