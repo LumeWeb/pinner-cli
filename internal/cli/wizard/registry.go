@@ -35,6 +35,9 @@ type FieldSpec[S any, T any] struct {
 	ReDerives bool
 	// Parse converts a source string (flag, env, prompt option) into T.
 	Parse func(string) (T, bool)
+	// ParseMulti converts the checked option labels of a Multi field into T.
+	// Required only when Prompt.Multi is true.
+	ParseMulti func([]string) (T, bool)
 	// Validate reports whether T is complete/valid. nil = always valid.
 	Validate func(T) bool
 	// Get reads the current Operational value.
@@ -47,6 +50,8 @@ type FieldSpec[S any, T any] struct {
 	Commit func(S, T)
 	// Prompt is how to ask interactively. nil = not promotable.
 	Prompt *Prompt[T]
+	// OptionsFunc supplies the prompt's choice list at prompt time (API/FS-derived).
+	OptionsFunc func(ctx context.Context, src ValueSource, s S) (options []string, err error)
 	// Derived supplies the Operational value at precedence 0 (see Field.Derived).
 	Derived func(S) (T, bool)
 	// When gates whether the field is evaluated at all (see Field.When).
@@ -59,6 +64,7 @@ func (s FieldSpec[S, T]) Field() *Field[S, T] {
 	return &Field[S, T]{
 		Name:           s.Name,
 		Parse:          s.Parse,
+		ParseMulti:     s.ParseMulti,
 		Decided:        s.Decide,
 		Commit:         s.Commit,
 		Operational:    s.Get,
@@ -67,6 +73,7 @@ func (s FieldSpec[S, T]) Field() *Field[S, T] {
 		EnvFileKey:     s.EnvFileKey,
 		Validate:       s.Validate,
 		Prompt:         s.Prompt,
+		OptionsFunc:    s.OptionsFunc,
 		ReDerives:      s.ReDerives,
 		Derived:        s.Derived,
 		When:           s.When,
@@ -124,8 +131,7 @@ func (e *erasedField[S, T]) resolve(ctx context.Context, src ValueSource, s S, h
 		return rf, nil
 	}
 
-	// Interactive prompt for a required, still-unresolved field (mirrors the
-	// prompt block of the former typed Gather loop).
+	// Interactive prompt for a required, still-unresolved field.
 	if !headless && e.f.Prompt != nil {
 		p := PrompterFrom(ctx)
 		if p == nil {
@@ -135,13 +141,49 @@ func (e *erasedField[S, T]) resolve(ctx context.Context, src ValueSource, s S, h
 		if label == "" {
 			label = e.f.Name
 		}
+
+		// Resolve the choice list: OptionsFunc (API/FS-derived) overrides the
+		// static Prompt.Options. A Multi field keeps its pre-checked defaults.
+		options := e.f.Prompt.Options
+		if e.f.OptionsFunc != nil {
+			derived, oerr := e.f.OptionsFunc(ctx, src, s)
+			if oerr != nil {
+				return rf, oerr
+			}
+			options = derived
+		}
+
+		if e.f.Prompt.Multi {
+			// Multi-select: checked option labels -> ParseMulti -> T.
+			if e.f.ParseMulti == nil {
+				return rf, fmt.Errorf("wizard.Gather: multi-select field %q needs Field.ParseMulti", e.f.Name)
+			}
+			var pre []string
+			if e.f.Prompt.CurrentSet != nil {
+				pre = e.f.Prompt.CurrentSet(e.f.Operational(s))
+			}
+			chosen, merr := p.MultiSelect(label, options, pre)
+			if merr != nil {
+				return rf, merr
+			}
+			val, okP := e.f.ParseMulti(chosen)
+			if !okP || !e.f.settle(&oc, s, val, srcPrompt, headless) {
+				return rf, fmt.Errorf("wizard.Gather: invalid selection entered for field %q", e.f.Name)
+			}
+			rf.decided = oc.decided
+			rf.operative = oc.operative
+			rf.usedSource = oc.usedSource
+			rf.value = oc.value
+			return rf, nil
+		}
+
 		defStr := ""
 		if e.f.Prompt.CurrentString != nil {
 			defStr = e.f.Prompt.CurrentString(e.f.Operational(s))
 		}
 		var chosenStr string
-		if len(e.f.Prompt.Options) > 0 {
-			_, selVal, perr := p.Select(label, e.f.Prompt.Options, defStr)
+		if len(options) > 0 {
+			_, selVal, perr := p.Select(label, options, defStr)
 			if perr != nil {
 				return rf, perr
 			}

@@ -55,10 +55,18 @@ type Prompt[T any] struct {
 	Mask string
 	// Options, when non-empty, renders a single-choice Select instead of a
 	// free-text Text prompt. The current value is highlighted as the default.
+	// Ignored when Field.OptionsFunc supplies the list at prompt time.
 	Options []string
+	// Multi, when true (with Options or OptionLabels), renders a multi-select
+	// (Prompter.MultiSelect) instead of a single Select. The checked option
+	// labels are parsed with Field.ParseMulti into T.
+	Multi bool
 	// CurrentString renders the current Operational value for the editable /
-	// highlighted default. Required when Prompt is set.
+	// highlighted default. Required when Prompt is set and not Multi.
 	CurrentString func(T) string
+	// CurrentSet renders the current Operational value's checked option labels
+	// for a Multi field's pre-checked defaults. Optional.
+	CurrentSet func(T) []string
 }
 
 // Field describes one configurable value a wizard step needs. See the provenance
@@ -70,6 +78,12 @@ type Field[S any, T any] struct {
 	// option) into a T. Return ok=false if the raw string is malformed for this
 	// field. For the common string-valued fields this is an identity parse.
 	Parse func(string) (T, bool)
+
+	// ParseMulti converts the checked option labels of a Multi (multi-select)
+	// field into T. Required only when Prompt.Multi is true; the interactive
+	// path calls it instead of Parse. Parse (single-string) remains the
+	// flag/env path for the same field.
+	ParseMulti func([]string) (T, bool)
 
 	// Decided returns the operator-decision pointer (nil = not decided this run).
 	Decided func(S) *T
@@ -97,6 +111,13 @@ type Field[S any, T any] struct {
 	// Prompt is how to ask interactively when the field needs a decision.
 	// nil = not promotable (a pure switch/env field).
 	Prompt *Prompt[T]
+
+	// OptionsFunc, when set, provides the prompt's choice list at prompt time
+	// from the value source and the step state, overriding the static
+	// Prompt.Options. Used for choice sets derived from an API (a website
+	// list) or the filesystem (detected agents). It is called only when the
+	// field actually reaches its interactive prompt.
+	OptionsFunc func(ctx context.Context, src ValueSource, s S) (options []string, err error)
 
 	// ReDerives marks a field whose Operational value is re-derived by the
 	// install when the tunnel provider changes: on a switch, the framework
