@@ -5,6 +5,8 @@ import (
 	"errors"
 	"sync"
 	"time"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 )
 
 // This file provides the generic, internally-shared machinery behind the
@@ -64,8 +66,8 @@ type registryEntry struct {
 func NewHandoffRegistry() *HandoffRegistry {
 	return &HandoffRegistry{
 		cont:       make(map[string]registryEntry),
-		ttp:        DefaultSessionTTL,
-		maxEntries: DefaultMaxSessions,
+		ttp:        session.DefaultSessionTTL,
+		maxEntries: session.DefaultMaxSessions,
 		now:        time.Now,
 	}
 }
@@ -256,7 +258,7 @@ func (s ResumeToolSpec) deadHandleReason() HandoffReason {
 // A domain supplies its tool spec (name, description, restart steering, and
 // dead-handle guidance text). Example: SSO calls
 // NewResumeTool(ResumeToolSpec{Name: "auth_resume", ...}, reg, handles).
-func NewResumeTool(spec ResumeToolSpec, reg *HandoffRegistry, handles *AsyncHandleStore) ToolDescriptor {
+func NewResumeTool(spec ResumeToolSpec, reg *HandoffRegistry, handles *session.AsyncHandleStore) ToolDescriptor {
 	return ToolDescriptor{
 		Name:        spec.Name,
 		Title:       spec.title(),
@@ -281,7 +283,7 @@ func NewResumeTool(spec ResumeToolSpec, reg *HandoffRegistry, handles *AsyncHand
 			if err != nil {
 				reg.End(in.Handle)
 				detail := spec.UnknownHandleDetail
-				if errors.Is(err, ErrHandleExpired) {
+				if errors.Is(err, session.ErrHandleExpired) {
 					detail = spec.ExpiredHandleDetail
 				}
 				// A hand-off that can no longer be resumed must not leave the

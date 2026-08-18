@@ -7,6 +7,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 )
 
 // requireHandoff extracts the needs_human structured content from a result.
@@ -23,7 +25,7 @@ func requireHandoff(t *testing.T, r ToolResult) map[string]any {
 // non-blocking needs_human hand-off with the approval URL and a resume handle.
 func TestAuthSSOStartsOutOfBandLogin(t *testing.T) {
 	oob := newOOBForTest(t)
-	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 	reg := NewHandoffRegistry()
 	desc := NewAuthSSODescriptor(oob, handles, reg)
 
@@ -45,7 +47,7 @@ func TestAuthSSOStartsOutOfBandLogin(t *testing.T) {
 // needs_human "pending" hand-off while the human has not yet approved.
 func TestAuthResumeReportsPendingBeforeCompletion(t *testing.T) {
 	oob := newOOBForTest(t)
-	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 	reg := NewHandoffRegistry()
 
 	start := NewAuthSSODescriptor(oob, handles, reg)
@@ -71,7 +73,7 @@ func TestAuthResumeReportsPendingBeforeCompletion(t *testing.T) {
 // TestAuthResumeUnknownHandleErrors verifies an invalid handle fast-fails
 // rather than hanging.
 func TestAuthResumeUnknownHandleErrors(t *testing.T) {
-	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 	reg := NewHandoffRegistry()
 	desc := NewAuthResumeDescriptor(reg, handles)
 
@@ -91,13 +93,13 @@ func TestAuthResumeUnknownHandleErrors(t *testing.T) {
 }
 
 func TestAuthResumeExpiredHandleSteersRestart(t *testing.T) {
-	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 	reg := NewHandoffRegistry()
 	desc := NewAuthResumeDescriptor(reg, handles)
 
 	// Mint a handle, then force it past its TTL so Get returns ErrHandleExpired.
 	handle := handles.Create("pending", map[string]any{"email": "a@example.com"})
-	handles.now = func() time.Time { return time.Now().Add(2 * DefaultSessionTTL) }
+	handles.SetNowFunc(func() time.Time { return time.Now().Add(2 * session.DefaultSessionTTL) })
 
 	result, err := desc.Handler(context.Background(), ToolRequest{
 		Name:      "auth_resume",

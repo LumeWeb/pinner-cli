@@ -11,6 +11,8 @@ import (
 	"github.com/invopop/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 )
 
 func TestCallToolResultFromElicitationForm(t *testing.T) {
@@ -228,7 +230,7 @@ func TestElicitForStep(t *testing.T) {
 	require.NotEmpty(t, spec.RequestState, "requestState must be set")
 	// The requestState is a signed token: verifying it returns the session id
 	// (and any tamper fails closed).
-	got, err := verifyWizardRequestState(spec.RequestState, now)
+	got, err := session.VerifyWizardRequestState(spec.RequestState, now)
 	require.NoError(t, err)
 	require.Equal(t, "sess-9", got, "signed requestState must carry the session id")
 	require.NotEqual(t, "sess-9", spec.RequestState, "requestState must be opaque/signed, not the raw id")
@@ -236,15 +238,15 @@ func TestElicitForStep(t *testing.T) {
 	// (the segment before the final '.' separator), which always breaks the MAC
 	// and is deterministic regardless of the MAC's own base64url chars.
 	dot := strings.LastIndex(spec.RequestState, ".")
-	body := spec.RequestState[len(requestStatePrefix):dot]
+	body := spec.RequestState[len(session.RequestStatePrefix):dot]
 	first := body[0]
 	replace := byte('A')
 	if first == 'A' {
 		replace = 'B'
 	}
-	flipped := spec.RequestState[:len(requestStatePrefix)] + string(replace) + body[1:] + spec.RequestState[dot:]
+	flipped := spec.RequestState[:len(session.RequestStatePrefix)] + string(replace) + body[1:] + spec.RequestState[dot:]
 	require.NotEqual(t, spec.RequestState, flipped, "helper must have changed the token")
-	_, err = verifyWizardRequestState(flipped, now)
+	_, err = session.VerifyWizardRequestState(flipped, now)
 	require.Error(t, err, "tampered requestState must be rejected")
 
 	var schema map[string]any
@@ -269,7 +271,7 @@ func TestRePresentFormOnFailure(t *testing.T) {
 	require.Contains(t, spec.Message, "Step 'domain' needs input", "message must name the step")
 	require.Contains(t, spec.Message, "domain is required", "message must carry the validation error")
 	// The session id still rides the signed requestState.
-	got, err := verifyWizardRequestState(spec.RequestState, now)
+	got, err := session.VerifyWizardRequestState(spec.RequestState, now)
 	require.NoError(t, err)
 	require.Equal(t, "sess-9", got)
 

@@ -16,6 +16,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
 	"go.lumeweb.com/pinner-cli/internal/catalogops"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 )
 
 // newOfficialTestServer builds an official-SDK server with one catalog entry
@@ -463,7 +465,7 @@ func TestOfficialInvokeVaultRestoreRoutesAgentSafeHandoff(t *testing.T) {
 	// MCP channel).
 	oobRestore := NewOOBRestore(nil, time.Minute)
 	t.Cleanup(func() { oobRestore.Stop(context.Background()) })
-	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 	reg := NewHandoffRegistry()
 	catalog, err := buildCatalog(compilerRoot(), true, nil, nil, oobRestore, nil, reg, handles,
 		withCatalogDeps(func() *CatalogDepsBundle {
@@ -624,4 +626,3 @@ func TestOfficialHandlerPreservesLargeIntID(t *testing.T) {
 	require.True(t, ok, "id must decode as json.Number with UseNumber, got %T", got["id"])
 	require.Equal(t, bigID, num.String(), "large integer id must be preserved exactly, not truncated by float64")
 }
-

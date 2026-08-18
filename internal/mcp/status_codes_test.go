@@ -5,6 +5,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 )
 
 // TestStatusResultShape verifies the standard status vocabulary helpers.
@@ -42,7 +44,7 @@ func TestRequiresAuthResult(t *testing.T) {
 // TestAsyncStatusPollFlow exercises the async pattern end to end: start a
 // running op, poll pending, then complete.
 func TestAsyncStatusPollFlow(t *testing.T) {
-	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 	handle := handles.Create(StatusRunning, map[string]any{"tool": "doctor"})
 
 	// Poll running.

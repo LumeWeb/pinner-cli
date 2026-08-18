@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 )
 
 // TestAuthSSOBlueprintCanResumeWithTheLinkToken is the TDD regression for the
@@ -25,7 +27,7 @@ import (
 // asserts the approval-link token is usable as the resume handle.
 func TestAuthSSOBlueprintCanResumeWithTheLinkToken(t *testing.T) {
 	reg := NewHandoffRegistry()
-	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 	oob := newOOBForTest(t)
 
 	start := NewAuthSSODescriptor(oob, handles, reg)

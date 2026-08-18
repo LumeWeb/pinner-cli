@@ -8,6 +8,8 @@ import (
 
 	"github.com/invopop/jsonschema"
 	ipfs "go.lumeweb.com/ipfs-sdk"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 )
 
 // Resource URI scheme and well-known URIs.
@@ -117,7 +119,7 @@ type ResourceProviders struct {
 	Account  AccountStatusProvider
 	Websites WebsitesResourceProvider
 	Vault    VaultStatusProvider
-	Sessions *SessionStore
+	Sessions *session.SessionStore
 }
 
 // ResourceDescriptors builds the SDK-neutral pinner:// resource and
@@ -354,7 +356,7 @@ func validationStatusHandler(ws WebsitesResourceProvider) ResourceHandler {
 
 // wizardStateHandler returns the current FSM state + next-step schema for a
 // wizard session.
-func wizardStateHandler(store *SessionStore) ResourceHandler {
+func wizardStateHandler(store *session.SessionStore) ResourceHandler {
 	return func(ctx context.Context, req ResourceRequest) (ResourceResult, error) {
 		sessionID := req.Arguments["session_id"]
 		if sessionID == "" {
@@ -370,10 +372,10 @@ func wizardStateHandler(store *SessionStore) ResourceHandler {
 
 		sess, err := store.Get(sessionID)
 		if err != nil {
-			if err == ErrSessionNotFound {
+			if err == session.ErrSessionNotFound {
 				return ResourceResult{}, fmt.Errorf("wizard session %q not found", sessionID)
 			}
-			if err == ErrSessionExpired {
+			if err == session.ErrSessionExpired {
 				state.Expired = true
 				state.Complete = true
 				raw, _ := json.MarshalIndent(state, "", "  ")

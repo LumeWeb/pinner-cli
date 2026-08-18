@@ -12,6 +12,8 @@ import (
 	"github.com/looplab/fsm"
 	ipfs "go.lumeweb.com/ipfs-sdk"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 )
 
 // --- FSM state constants ---
@@ -273,7 +275,7 @@ type StepResponse struct {
 // BuildStepResponseForTest is an exported wrapper of buildStepResponse for
 // use by external test packages. It constructs a StepResponse from the
 // current session state.
-func BuildStepResponseForTest(sess *Session) StepResponse {
+func BuildStepResponseForTest(sess *session.Session) StepResponse {
 	return buildStepResponse(sess)
 }
 
@@ -389,25 +391,25 @@ type WebsitesWizardDeps struct {
 // buildWebsitesSteps returns the StepDef slice for the websites wizard.
 // Each step's handler decodes JSON input, validates it, and mutates the
 // WebsitesWizardState state stored in the session.
-func buildWebsitesSteps(deps WebsitesWizardDeps) []StepDef {
-	return []StepDef{
+func buildWebsitesSteps(deps WebsitesWizardDeps) []session.StepDef {
+	return []session.StepDef{
 		{
 			Name:  StateWebsitesAuthCheck,
 			Event: EventWebsitesAuthOK,
-			Handler: func(ctx context.Context, sess *Session, _ json.RawMessage) (string, error) {
+			Handler: func(ctx context.Context, sess *session.Session, _ json.RawMessage) (string, error) {
 				if deps.CfgMgr.Config().AuthToken == "" {
 					return "", fmt.Errorf("authentication required: run 'pinner auth' or set --auth-token")
 				}
 				return "", nil
 			},
-			Schema: func(_ *Session) *jsonschema.Schema {
+			Schema: func(_ *session.Session) *jsonschema.Schema {
 				return schemaFor[NoInput]()
 			},
 		},
 		{
 			Name:  StateWebsitesContentSource,
 			Event: EventWebsitesContent,
-			Handler: func(ctx context.Context, sess *Session, input json.RawMessage) (string, error) {
+			Handler: func(ctx context.Context, sess *session.Session, input json.RawMessage) (string, error) {
 				w := sess.State().(WebsitesWizardState)
 				var in ContentSourceInput
 				if err := json.Unmarshal(input, &in); err != nil {
@@ -425,14 +427,14 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []StepDef {
 				w.SetCID(in.CID)
 				return "", nil
 			},
-			Schema: func(_ *Session) *jsonschema.Schema {
+			Schema: func(_ *session.Session) *jsonschema.Schema {
 				return schemaFor[ContentSourceInput]()
 			},
 		},
 		{
 			Name:  StateWebsitesTargetType,
 			Event: EventWebsitesTarget,
-			Handler: func(ctx context.Context, sess *Session, input json.RawMessage) (string, error) {
+			Handler: func(ctx context.Context, sess *session.Session, input json.RawMessage) (string, error) {
 				w := sess.State().(WebsitesWizardState)
 				var in TargetTypeInput
 				if err := json.Unmarshal(input, &in); err != nil {
@@ -444,14 +446,14 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []StepDef {
 				w.SetTargetType(string(in.Type))
 				return "", nil
 			},
-			Schema: func(_ *Session) *jsonschema.Schema {
+			Schema: func(_ *session.Session) *jsonschema.Schema {
 				return schemaFor[TargetTypeInput]()
 			},
 		},
 		{
 			Name:  StateWebsitesDomain,
 			Event: EventWebsitesDomainSet,
-			Handler: func(ctx context.Context, sess *Session, input json.RawMessage) (string, error) {
+			Handler: func(ctx context.Context, sess *session.Session, input json.RawMessage) (string, error) {
 				w := sess.State().(WebsitesWizardState)
 				var in DomainInput
 				if err := json.Unmarshal(input, &in); err != nil {
@@ -463,14 +465,14 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []StepDef {
 				w.SetDomain(in.Domain)
 				return "", nil
 			},
-			Schema: func(_ *Session) *jsonschema.Schema {
+			Schema: func(_ *session.Session) *jsonschema.Schema {
 				return schemaFor[DomainInput]()
 			},
 		},
 		{
 			Name:  StateWebsitesDNSMode,
 			Event: EventWebsitesDNSMode,
-			Handler: func(ctx context.Context, sess *Session, input json.RawMessage) (string, error) {
+			Handler: func(ctx context.Context, sess *session.Session, input json.RawMessage) (string, error) {
 				w := sess.State().(WebsitesWizardState)
 				var in DNSModeInput
 				if err := json.Unmarshal(input, &in); err != nil {
@@ -482,14 +484,14 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []StepDef {
 				w.SetDNSHosting(in.Mode == DNSModeManaged)
 				return "", nil
 			},
-			Schema: func(_ *Session) *jsonschema.Schema {
+			Schema: func(_ *session.Session) *jsonschema.Schema {
 				return schemaFor[DNSModeInput]()
 			},
 		},
 		{
 			Name:  StateWebsitesCreate,
 			Event: EventWebsitesCreated,
-			Handler: func(ctx context.Context, sess *Session, input json.RawMessage) (string, error) {
+			Handler: func(ctx context.Context, sess *session.Session, input json.RawMessage) (string, error) {
 				w := sess.State().(WebsitesWizardState)
 				var in CreateInput
 				if err := json.Unmarshal(input, &in); err != nil {
@@ -518,25 +520,25 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []StepDef {
 				w.SetWebsite(website)
 				return "", nil
 			},
-			Schema: func(_ *Session) *jsonschema.Schema {
+			Schema: func(_ *session.Session) *jsonschema.Schema {
 				return schemaFor[CreateInput]()
 			},
 		},
 		{
 			Name:  StateWebsitesDNSSetup,
 			Event: EventWebsitesDNSSet,
-			Handler: func(_ context.Context, _ *Session, _ json.RawMessage) (string, error) {
+			Handler: func(_ context.Context, _ *session.Session, _ json.RawMessage) (string, error) {
 				// DNS setup is informational; no state mutation needed.
 				return "", nil
 			},
-			Schema: func(_ *Session) *jsonschema.Schema {
+			Schema: func(_ *session.Session) *jsonschema.Schema {
 				return schemaFor[NoInput]()
 			},
 		},
 		{
 			Name:  StateWebsitesValidate,
 			Event: EventWebsitesValidated,
-			Handler: func(ctx context.Context, sess *Session, input json.RawMessage) (string, error) {
+			Handler: func(ctx context.Context, sess *session.Session, input json.RawMessage) (string, error) {
 				w := sess.State().(WebsitesWizardState)
 				var in ValidateInput
 				if len(input) > 0 && string(input) != "null" {
@@ -560,7 +562,7 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []StepDef {
 				w.SetValidationResult(result)
 				return "", nil
 			},
-			Schema: func(_ *Session) *jsonschema.Schema {
+			Schema: func(_ *session.Session) *jsonschema.Schema {
 				return schemaFor[ValidateInput]()
 			},
 		},
@@ -580,25 +582,25 @@ type DomainWizardDeps struct {
 // buildDomainSteps returns the StepDef slice for the domain addition wizard.
 // Each step's handler decodes JSON input, validates it, and mutates the
 // DomainWizardState state stored in the session.
-func buildDomainSteps(deps DomainWizardDeps) []StepDef {
-	return []StepDef{
+func buildDomainSteps(deps DomainWizardDeps) []session.StepDef {
+	return []session.StepDef{
 		{
 			Name:  StateDomainAuthCheck,
 			Event: EventDomainAuthOK,
-			Handler: func(ctx context.Context, sess *Session, _ json.RawMessage) (string, error) {
+			Handler: func(ctx context.Context, sess *session.Session, _ json.RawMessage) (string, error) {
 				if deps.CfgMgr.Config().AuthToken == "" {
 					return "", fmt.Errorf("authentication required: run 'pinner auth' or set --auth-token")
 				}
 				return "", nil
 			},
-			Schema: func(_ *Session) *jsonschema.Schema {
+			Schema: func(_ *session.Session) *jsonschema.Schema {
 				return schemaFor[NoInput]()
 			},
 		},
 		{
 			Name:  StateDomainWebsite,
 			Event: EventDomainWebsite,
-			Handler: func(ctx context.Context, sess *Session, input json.RawMessage) (string, error) {
+			Handler: func(ctx context.Context, sess *session.Session, input json.RawMessage) (string, error) {
 				w := sess.State().(DomainWizardState)
 				var in WebsiteInput
 				if err := json.Unmarshal(input, &in); err != nil {
@@ -626,14 +628,14 @@ func buildDomainSteps(deps DomainWizardDeps) []StepDef {
 				}
 				return "", nil
 			},
-			Schema: func(_ *Session) *jsonschema.Schema {
+			Schema: func(_ *session.Session) *jsonschema.Schema {
 				return schemaFor[WebsiteInput]()
 			},
 		},
 		{
 			Name:  StateDomainName,
 			Event: EventDomainName,
-			Handler: func(_ context.Context, sess *Session, input json.RawMessage) (string, error) {
+			Handler: func(_ context.Context, sess *session.Session, input json.RawMessage) (string, error) {
 				w := sess.State().(DomainWizardState)
 				var in DomainNameInput
 				if err := json.Unmarshal(input, &in); err != nil {
@@ -645,14 +647,14 @@ func buildDomainSteps(deps DomainWizardDeps) []StepDef {
 				w.SetDomain(in.Domain)
 				return "", nil
 			},
-			Schema: func(_ *Session) *jsonschema.Schema {
+			Schema: func(_ *session.Session) *jsonschema.Schema {
 				return schemaFor[DomainNameInput]()
 			},
 		},
 		{
 			Name:  StateDomainNamespace,
 			Event: EventDomainNamespace,
-			Handler: func(_ context.Context, sess *Session, input json.RawMessage) (string, error) {
+			Handler: func(_ context.Context, sess *session.Session, input json.RawMessage) (string, error) {
 				w := sess.State().(DomainWizardState)
 				var in NamespaceInput
 				if err := json.Unmarshal(input, &in); err != nil {
@@ -664,14 +666,14 @@ func buildDomainSteps(deps DomainWizardDeps) []StepDef {
 				w.SetNamespace(string(in.Namespace))
 				return "", nil
 			},
-			Schema: func(_ *Session) *jsonschema.Schema {
+			Schema: func(_ *session.Session) *jsonschema.Schema {
 				return schemaFor[NamespaceInput]()
 			},
 		},
 		{
 			Name:  StateDomainBind,
 			Event: EventDomainBound,
-			Handler: func(ctx context.Context, sess *Session, input json.RawMessage) (string, error) {
+			Handler: func(ctx context.Context, sess *session.Session, input json.RawMessage) (string, error) {
 				w := sess.State().(DomainWizardState)
 				var in BindInput
 				if err := json.Unmarshal(input, &in); err != nil {
@@ -698,14 +700,14 @@ func buildDomainSteps(deps DomainWizardDeps) []StepDef {
 				w.SetResult(domainResp)
 				return "", nil
 			},
-			Schema: func(_ *Session) *jsonschema.Schema {
+			Schema: func(_ *session.Session) *jsonschema.Schema {
 				return schemaFor[BindInput]()
 			},
 		},
 		{
 			Name:  StateDomainDelegationSetup,
 			Event: EventDomainDelegation,
-			Handler: func(ctx context.Context, sess *Session, _ json.RawMessage) (string, error) {
+			Handler: func(ctx context.Context, sess *session.Session, _ json.RawMessage) (string, error) {
 				w := sess.State().(DomainWizardState)
 				if w.Result() == nil {
 					return "", fmt.Errorf("domain not bound yet")
@@ -718,14 +720,14 @@ func buildDomainSteps(deps DomainWizardDeps) []StepDef {
 				}
 				return "", nil
 			},
-			Schema: func(_ *Session) *jsonschema.Schema {
+			Schema: func(_ *session.Session) *jsonschema.Schema {
 				return schemaFor[NoInput]()
 			},
 		},
 		{
 			Name:  StateDomainVerify,
 			Event: EventDomainVerified,
-			Handler: func(ctx context.Context, sess *Session, input json.RawMessage) (string, error) {
+			Handler: func(ctx context.Context, sess *session.Session, input json.RawMessage) (string, error) {
 				w := sess.State().(DomainWizardState)
 				var in DomainVerifyInput
 				if len(input) > 0 && string(input) != "null" {
@@ -749,7 +751,7 @@ func buildDomainSteps(deps DomainWizardDeps) []StepDef {
 				}
 				return "", nil
 			},
-			Schema: func(_ *Session) *jsonschema.Schema {
+			Schema: func(_ *session.Session) *jsonschema.Schema {
 				return schemaFor[DomainVerifyInput]()
 			},
 		},
@@ -811,12 +813,12 @@ type SetupWizardDeps struct {
 }
 
 // buildSetupSteps returns the StepDef slice for the setup wizard.
-func buildSetupSteps(deps SetupWizardDeps) []StepDef {
-	return []StepDef{
+func buildSetupSteps(deps SetupWizardDeps) []session.StepDef {
+	return []session.StepDef{
 		{
 			Name:  StateSetupAuth,
 			Event: EventSetupAuthDone,
-			Handler: func(ctx context.Context, sess *Session, input json.RawMessage) (string, error) {
+			Handler: func(ctx context.Context, sess *session.Session, input json.RawMessage) (string, error) {
 				var in SetupAuthInput
 				if err := json.Unmarshal(input, &in); err != nil {
 					return "", fmt.Errorf("invalid input: %w", err)
@@ -863,14 +865,14 @@ func buildSetupSteps(deps SetupWizardDeps) []StepDef {
 				// Credentials were verified in the browser; advance.
 				return "", nil
 			},
-			Schema: func(_ *Session) *jsonschema.Schema {
+			Schema: func(_ *session.Session) *jsonschema.Schema {
 				return schemaFor[SetupAuthInput]()
 			},
 		},
 		{
 			Name:  StateSetupConfig,
 			Event: EventSetupConfigDone,
-			Handler: func(ctx context.Context, sess *Session, input json.RawMessage) (string, error) {
+			Handler: func(ctx context.Context, sess *session.Session, input json.RawMessage) (string, error) {
 				var in SetupConfigInput
 				if err := json.Unmarshal(input, &in); err != nil {
 					return "", fmt.Errorf("invalid input: %w", err)
@@ -901,14 +903,14 @@ func buildSetupSteps(deps SetupWizardDeps) []StepDef {
 				}
 				return "", nil
 			},
-			Schema: func(_ *Session) *jsonschema.Schema {
+			Schema: func(_ *session.Session) *jsonschema.Schema {
 				return schemaFor[SetupConfigInput]()
 			},
 		},
 		{
 			Name:  StateSetupCompletion,
 			Event: EventSetupCompDone,
-			Handler: func(_ context.Context, _ *Session, input json.RawMessage) (string, error) {
+			Handler: func(_ context.Context, _ *session.Session, input json.RawMessage) (string, error) {
 				var in SetupCompletionInput
 				if len(input) > 0 && string(input) != "null" {
 					if err := json.Unmarshal(input, &in); err != nil {
@@ -919,17 +921,17 @@ func buildSetupSteps(deps SetupWizardDeps) []StepDef {
 				_ = in
 				return "", nil
 			},
-			Schema: func(_ *Session) *jsonschema.Schema {
+			Schema: func(_ *session.Session) *jsonschema.Schema {
 				return schemaFor[SetupCompletionInput]()
 			},
 		},
 		{
 			Name:  StateSetupTutorial,
 			Event: EventSetupTutDone,
-			Handler: func(_ context.Context, _ *Session, _ json.RawMessage) (string, error) {
+			Handler: func(_ context.Context, _ *session.Session, _ json.RawMessage) (string, error) {
 				return "", nil
 			},
-			Schema: func(_ *Session) *jsonschema.Schema {
+			Schema: func(_ *session.Session) *jsonschema.Schema {
 				return schemaFor[NoInput]()
 			},
 		},
@@ -941,7 +943,7 @@ func buildSetupSteps(deps SetupWizardDeps) []StepDef {
 // NewWebsitesSession creates a new wizard session for the websites wizard,
 // with the FSM and step definitions wired up. The returned session is
 // stored in the given SessionStore.
-func NewWebsitesSession(store *SessionStore, deps WebsitesWizardDeps) (*Session, error) {
+func NewWebsitesSession(store *session.SessionStore, deps WebsitesWizardDeps) (*session.Session, error) {
 	wizard := deps.WebsitesFactory()
 	steps := buildWebsitesSteps(deps)
 	fsmInst := fsm.NewFSM(StateWebsitesInit, websitesFSMEvents(), nil)
@@ -960,7 +962,7 @@ func NewWebsitesSession(store *SessionStore, deps WebsitesWizardDeps) (*Session,
 }
 
 // NewSetupSession creates a new wizard session for the setup wizard.
-func NewSetupSession(store *SessionStore, deps SetupWizardDeps) (*Session, error) {
+func NewSetupSession(store *session.SessionStore, deps SetupWizardDeps) (*session.Session, error) {
 	wizard := deps.SetupFactory()
 	steps := buildSetupSteps(deps)
 	fsmInst := fsm.NewFSM(StateSetupInit, setupFSMEvents(), nil)
@@ -980,7 +982,7 @@ func NewSetupSession(store *SessionStore, deps SetupWizardDeps) (*Session, error
 // NewDomainSession creates a new domain addition wizard session, with the
 // FSM and step definitions wired up. The returned session is stored in the
 // given SessionStore.
-func NewDomainSession(store *SessionStore, deps DomainWizardDeps) (*Session, error) {
+func NewDomainSession(store *session.SessionStore, deps DomainWizardDeps) (*session.Session, error) {
 	wizard := deps.DomainFactory()
 	steps := buildDomainSteps(deps)
 	fsmInst := fsm.NewFSM(StateDomainInit, domainFSMEvents(), nil)
@@ -1026,7 +1028,7 @@ func elicitForStep(sessionID string, resp StepResponse, now time.Time) *Elicitat
 	}
 	// Sign the session id so the echoed requestState is integrity-protected
 	// (and expires), per the 2026-07-28 spec's MUST on requestState.
-	state, err := mintWizardRequestState(sessionID, now)
+	state, err := session.MintWizardRequestState(sessionID, now)
 	if err != nil {
 		return nil
 	}
@@ -1054,7 +1056,7 @@ func rePresentFormOnFailure(sessionID string, resp StepResponse, cause error, no
 }
 
 // buildStepResponse constructs a StepResponse from the current session state.
-func buildStepResponse(sess *Session) StepResponse {
+func buildStepResponse(sess *session.Session) StepResponse {
 	resp := StepResponse{
 		SessionID:   sess.ID,
 		CurrentStep: sess.FSM.Current(),
@@ -1112,7 +1114,7 @@ func marshalWizardResponse(resp StepResponse) (ToolResult, error) {
 	return ToolResult{IsError: resp.Error != "", Text: string(raw)}, nil
 }
 
-func registerWizardStart(catalog *ToolCatalog, name, description string, start func() (*Session, error)) {
+func registerWizardStart(catalog *ToolCatalog, name, description string, start func() (*session.Session, error)) {
 	catalog.Add(wizardEntry(name, description, json.RawMessage(`{"type":"object","properties":{}}`), func(_ context.Context, _ ToolRequest) (ToolResult, error) {
 		sess, err := start()
 		if err != nil {
@@ -1122,7 +1124,7 @@ func registerWizardStart(catalog *ToolCatalog, name, description string, start f
 	}))
 }
 
-func registerWizardStep(catalog *ToolCatalog, name, description string, store *SessionStore, completionMessage string) {
+func registerWizardStep(catalog *ToolCatalog, name, description string, store *session.SessionStore, completionMessage string) {
 	catalog.Add(wizardEntry(name, description, wizardStepSchema(), func(ctx context.Context, req ToolRequest) (ToolResult, error) {
 		in, err := decodeToolArgs[WizardStepInput](req)
 		if err != nil {
@@ -1135,7 +1137,7 @@ func registerWizardStep(catalog *ToolCatalog, name, description string, store *S
 			// from the signed requestState we set on the elicitation. Verify it
 			// first so a tampered/forged token fails closed instead of being
 			// used as a session id.
-			verified, err := verifyWizardRequestState(in.RequestState, time.Now())
+			verified, err := session.VerifyWizardRequestState(in.RequestState, time.Now())
 			if err != nil {
 				return marshalWizardResponse(StepResponse{Error: "session_id is required"})
 			}
@@ -1155,7 +1157,7 @@ func registerWizardStep(catalog *ToolCatalog, name, description string, store *S
 			// not be differentiated from an omitted input).
 			input = json.RawMessage(`{}`)
 		}
-		info, err := AdvanceSession(ctx, sess, input)
+		info, err := session.AdvanceSession(ctx, sess, input)
 		if err != nil {
 			resp := buildStepResponse(sess)
 			resp.Error = err.Error()
@@ -1183,12 +1185,12 @@ func registerWizardStep(catalog *ToolCatalog, name, description string, store *S
 	}))
 }
 
-func RegisterWizardTools(catalog *ToolCatalog, store *SessionStore, wDeps WebsitesWizardDeps, sDeps SetupWizardDeps, dDeps DomainWizardDeps) error {
-	registerWizardStart(catalog, "domains_wizard_start", "Start a new domain addition wizard session.", func() (*Session, error) { return NewDomainSession(store, dDeps) })
+func RegisterWizardTools(catalog *ToolCatalog, store *session.SessionStore, wDeps WebsitesWizardDeps, sDeps SetupWizardDeps, dDeps DomainWizardDeps) error {
+	registerWizardStart(catalog, "domains_wizard_start", "Start a new domain addition wizard session.", func() (*session.Session, error) { return NewDomainSession(store, dDeps) })
 	registerWizardStep(catalog, "domains_wizard_step", "Advance a domain addition wizard session by one step.", store, "Domains wizard completed successfully.")
-	registerWizardStart(catalog, "websites_wizard_start", "Start a new websites creation wizard session.", func() (*Session, error) { return NewWebsitesSession(store, wDeps) })
+	registerWizardStart(catalog, "websites_wizard_start", "Start a new websites creation wizard session.", func() (*session.Session, error) { return NewWebsitesSession(store, wDeps) })
 	registerWizardStep(catalog, "websites_wizard_step", "Advance a websites wizard session by one step.", store, "Websites wizard completed successfully.")
-	registerWizardStart(catalog, "setup_wizard_start", "Start a new setup wizard session.", func() (*Session, error) { return NewSetupSession(store, sDeps) })
+	registerWizardStart(catalog, "setup_wizard_start", "Start a new setup wizard session.", func() (*session.Session, error) { return NewSetupSession(store, sDeps) })
 	registerWizardStep(catalog, "setup_wizard_step", "Advance a setup wizard session by one step.", store, "Setup wizard completed successfully.")
 	return nil
 }

@@ -29,6 +29,8 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/oauthstore"
 	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
 	"go.uber.org/zap"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 )
 
 // ToolDelimiter separates command path segments in MCP tool names.
@@ -261,10 +263,10 @@ adapter.`,
 			}
 			log.Debug("building MCP server with progressive disclosure", zap.String("app", root.Name))
 
-			store := NewSessionStore()
+			store := session.NewSessionStore()
 			// Async handle store backs the agent-facing SSO/auth tools and any
 			// long-running operations that mint resume handles.
-			authHandles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+			authHandles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 			// HandoffRegistry maps a resume handle to its domain-specific
 			// continuation so the shared *_resume tool template dispatches any
 			// hand-off flow (SSO, vault seed create/restore) to the right
@@ -419,11 +421,11 @@ adapter.`,
 				// cloudflared). The embedded openai tunnel exposes no reachable
 				// HTTP mux — all RPC flows through the tunnel protocol — so the
 				// remote upload_file branch must not be advertised there.
-				tunnelOpenAI:          cmd.String("tunnel") == "openai",
-				hasWizard:             hasWizard,
-				wizardW:               wizardW,
-				wizardS:               wizardS,
-				wizardD:               wizardD,
+				tunnelOpenAI: cmd.String("tunnel") == "openai",
+				hasWizard:    hasWizard,
+				wizardW:      wizardW,
+				wizardS:      wizardS,
+				wizardD:      wizardD,
 			}); err != nil {
 				return err
 			}
@@ -932,7 +934,7 @@ type MCPServerOption func(*mcpServerOptions)
 
 // ResourceProvidersFactory builds ResourceProviders at Action time, when the
 // session store and other runtime deps are available.
-type ResourceProvidersFactory func(store *SessionStore) ResourceProviders
+type ResourceProvidersFactory func(store *session.SessionStore) ResourceProviders
 
 // WithPrompts attaches MCP prompt templates (website-onboarding, setup).
 func WithPrompts() MCPServerOption {
@@ -1104,7 +1106,7 @@ type WizardDepsFactory func() (WebsitesWizardDeps, SetupWizardDeps, DomainWizard
 // one-time seed/restore/create URLs for vault-create/vault-restore agent output
 // so the human can retrieve or supply a recovery seed in a browser without it
 // transiting the MCP channel.
-func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate, handoffReg *HandoffRegistry, authHandles *AsyncHandleStore, opts ...buildCatalogOpt) (*ToolCatalog, error) {
+func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate, handoffReg *HandoffRegistry, authHandles *session.AsyncHandleStore, opts ...buildCatalogOpt) (*ToolCatalog, error) {
 	catalog := NewToolCatalog()
 
 	// Apply the functional options. Currently the only option is withCatalogDeps,

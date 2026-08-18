@@ -3,6 +3,8 @@ package mcp
 import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.lumeweb.com/pinner-cli/internal/mcpapp"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 )
 
 // This file wires the "Sign In" (auth SSO) MCP App onto the shared AppView lib
@@ -27,7 +29,7 @@ func renderAuthSSOAppHTML() string {
 // shared resume machinery (handle -> continuation -> pending/done) exactly like
 // auth_resume, but is registered with ToolVisibilityApp so only the Sign In
 // view can poll it; the model never sees it. It carries no secrets.
-func authSSOStatusDescriptor(reg *HandoffRegistry, handles *AsyncHandleStore) ToolDescriptor {
+func authSSOStatusDescriptor(reg *HandoffRegistry, handles *session.AsyncHandleStore) ToolDescriptor {
 	return NewResumeTool(ResumeToolSpec{
 		Name:                "auth_sso_status",
 		Title:               "Auth Sign-In Status",
@@ -46,7 +48,7 @@ func authSSOStatusDescriptor(reg *HandoffRegistry, handles *AsyncHandleStore) To
 // auth_sso_status polling helper. oob/handles/reg may be nil in a transport
 // without a browser login; the app/tools still register and return a structured
 // not-configured hand-off when invoked.
-func RegisterAuthSSOApp(srv *mcp.Server, catalog *ToolCatalog, reg *HandoffRegistry, handles *AsyncHandleStore) error {
+func RegisterAuthSSOApp(srv *mcp.Server, catalog *ToolCatalog, reg *HandoffRegistry, handles *session.AsyncHandleStore) error {
 	return RegisterAppView(srv, catalog, AppView{
 		URI:           AuthSSOAppURI,
 		Name:          "auth-sso",

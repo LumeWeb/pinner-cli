@@ -7,6 +7,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 )
 
 // newAuthSSOAppServer builds an official server with auth_sso/auth_resume in
@@ -16,7 +18,7 @@ func newAuthSSOAppServer(t *testing.T) *mcp.Server {
 	catalog := NewToolCatalog()
 	srv := NewOfficialServer(nil)
 	reg := NewHandoffRegistry()
-	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 
 	authSSO := NewAuthSSODescriptor(newOOBForTest(t), handles, reg)
 	authSSO.DirectVisible = true
@@ -87,7 +89,7 @@ func TestRegisterAuthSSOAppWire(t *testing.T) {
 // driving the same OOB continuation the model-facing auth_resume uses.
 func TestAuthSSOStatusHelperPendingToDone(t *testing.T) {
 	reg := NewHandoffRegistry()
-	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 	oob := newOOBForTest(t)
 
 	start := NewAuthSSODescriptor(oob, handles, reg)
@@ -128,7 +130,7 @@ func TestAuthSSOStatusHelperPendingToDone(t *testing.T) {
 // (a live pending hand-off always carries an action_url; a dead one never does).
 func TestAuthSSOStatusHelperDeadHandleSteersRestart(t *testing.T) {
 	reg := NewHandoffRegistry()
-	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 
 	status := authSSOStatusDescriptor(reg, handles)
 
@@ -146,7 +148,7 @@ func TestAuthSSOStatusHelperDeadHandleSteersRestart(t *testing.T) {
 	// Expired handle: session token stored, but TTL elapsed. Simulate by moving
 	// the store clock past the item's expiry.
 	tokenHandle := handles.Create("pending", map[string]any{})
-	handles.now = func() time.Time { return time.Now().Add(DefaultSessionTTL + time.Minute) }
+	handles.SetNowFunc(func() time.Time { return time.Now().Add(session.DefaultSessionTTL + time.Minute) })
 	r, err = status.Handler(context.Background(), ToolRequest{
 		Name:      "auth_sso_status",
 		Arguments: map[string]any{"handle": tokenHandle},

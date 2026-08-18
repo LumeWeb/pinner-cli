@@ -3,6 +3,8 @@ package mcp
 import (
 	"context"
 	"fmt"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 )
 
 // This file exposes the out-of-band (browser) login coordinator as first-class
@@ -27,7 +29,7 @@ type authSSOArgs struct {
 // a structured "not configured" hand-off instead of hanging. It registers a
 // resume continuation so the shared auth_resume template can poll the
 // login to completion.
-func NewAuthSSODescriptor(oob *OutOfBandLogin, handles *AsyncHandleStore, reg *HandoffRegistry) ToolDescriptor {
+func NewAuthSSODescriptor(oob *OutOfBandLogin, handles *session.AsyncHandleStore, reg *HandoffRegistry) ToolDescriptor {
 	return ToolDescriptor{
 		Name:        "auth_sso",
 		Title:       "Sign In (Out-of-Band)",
@@ -89,7 +91,7 @@ func NewAuthSSODescriptor(oob *OutOfBandLogin, handles *AsyncHandleStore, reg *H
 // ("", false, nil) when another resume already consumed the request; that is a
 // completed outcome from the human's perspective, so it is reported done, not
 // misleadingly "still pending".
-func ssoResumeContinuation(oob *OutOfBandLogin, handles *AsyncHandleStore, reg *HandoffRegistry) ResumeContinuation {
+func ssoResumeContinuation(oob *OutOfBandLogin, handles *session.AsyncHandleStore, reg *HandoffRegistry) ResumeContinuation {
 	return func(ctx context.Context, handle string, data map[string]any) (ToolResult, error) {
 		email, _ := data["email"].(string)
 		url, done, loginErr := oob.pendingOutcome(handle, email)
@@ -137,7 +139,7 @@ func ssoResumeContinuation(oob *OutOfBandLogin, handles *AsyncHandleStore, reg *
 // shared resume template. The name/description, restart steering, and
 // dead-handle guidance are SSO-specific; the dispatch logic (handle validation,
 // expiry, continuation lookup) is shared via NewResumeTool.
-func NewAuthResumeDescriptor(reg *HandoffRegistry, handles *AsyncHandleStore) ToolDescriptor {
+func NewAuthResumeDescriptor(reg *HandoffRegistry, handles *session.AsyncHandleStore) ToolDescriptor {
 	return NewResumeTool(ResumeToolSpec{
 		Name:                "auth_resume",
 		Title:               "Auth Sign-In Resume",

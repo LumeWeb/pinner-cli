@@ -26,10 +26,12 @@ import (
 	"strings"
 	"time"
 
-	"go.lumeweb.com/pinner-cli/internal/catalog"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/urfave/cli/v3"
 	"github.com/yosida95/uritemplate/v3"
+	"go.lumeweb.com/pinner-cli/internal/catalog"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 )
 
 // build.Version is stamped by ldflags. Fall back to a dev constant when it is
@@ -98,7 +100,7 @@ func OfficialServerFromCatalog(catalog *ToolCatalog, instructions string, stdioM
 // Resources and prompts are registered by the command action after runtime
 // providers and options are resolved. The descriptor adapters below preserve
 // their wire contracts on the official server.
-func OfficialMCPServer(root *cli.Command, hasRootAction bool, prefix []string, stdioMode bool, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate, handoffReg *HandoffRegistry, authHandles *AsyncHandleStore, catalogOpts ...buildCatalogOpt) (*mcp.Server, *ToolCatalog, error) {
+func OfficialMCPServer(root *cli.Command, hasRootAction bool, prefix []string, stdioMode bool, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate, handoffReg *HandoffRegistry, authHandles *session.AsyncHandleStore, catalogOpts ...buildCatalogOpt) (*mcp.Server, *ToolCatalog, error) {
 	catalog, err := buildCatalog(root, hasRootAction, prefix, seedDrop, oobRestore, oobCreate, handoffReg, authHandles, catalogOpts...)
 	if err != nil {
 		return nil, nil, err

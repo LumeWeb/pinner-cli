@@ -2,9 +2,7 @@ package mcp
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/subtle"
-	"encoding/hex"
 	"fmt"
 	"net"
 	"net/http"
@@ -13,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 	"go.uber.org/zap"
 )
 
@@ -23,7 +22,7 @@ import (
 // frustrating "handle expired" resume failures for someone who is only a little
 // slow. Both the login request and its resume handle must stay alive long
 // enough for a realistic browser round-trip.
-const pendingLoginTTL = DefaultSessionTTL
+const pendingLoginTTL = session.DefaultSessionTTL
 
 // maxLoginAttempts and loginLockout throttle credential attempts against the
 // loopback login endpoint: after maxLoginAttempts consecutive failures an email
@@ -59,8 +58,9 @@ type loginRequest struct {
 	otpRequired  bool
 	// csrfToken is an ephemeral, per-request secret embedded in the rendered
 	// login form and required on POST. It is generated at runtime from
-	// crypto/rand (randomID) when the request is created in Begin, lives only
-	// in memory for the request's lifetime, and is never a hard-coded literal.
+	// crypto/rand (session.RandomID) when the request is created in Begin,
+	// lives only in memory for the request's lifetime, and is never a
+	// hard-coded literal.
 	csrfToken string
 }
 
@@ -286,7 +286,7 @@ func (o *OutOfBandLogin) acceptedOrigins() []string {
 // (e.g. different emails). Tool hand-offs that need the approval-link token to
 // equal the resume handle use BeginWithID instead.
 func (o *OutOfBandLogin) Begin(sessionID, email string) (id, url string, err error) {
-	return o.BeginWithID(randomID(), sessionID, email)
+	return o.BeginWithID(session.RandomID(), sessionID, email)
 }
 
 // BeginWithID starts an out-of-band login whose request id (the token embedded
@@ -303,7 +303,7 @@ func (o *OutOfBandLogin) BeginWithID(requestID, sessionID, email string) (id, ur
 	o.startReaper()
 	req := &loginRequest{
 		id:        requestID,
-		csrfToken: randomID(),
+		csrfToken: session.RandomID(),
 		sessionID: sessionID,
 		email:     email,
 		created:   time.Now(),
@@ -829,22 +829,6 @@ func (o *OutOfBandLogin) pruneSpentLocked() {
 			delete(o.spent, oldest)
 		}
 	}
-}
-
-func randomID() string {
-	b := make([]byte, 8)
-	_, _ = rand.Read(b)
-	return hex.EncodeToString(b)
-}
-
-// strongRandomID returns a 128-bit random identifier (16 bytes, hex-encoded).
-// It backs one-time hand-off URLs that guard high-value secrets (a vault
-// recovery mnemonic), where 64-bit entropy in randomID is too guessable on an
-// otherwise unauthenticated route.
-func strongRandomID() string {
-	b := make([]byte, 16)
-	_, _ = rand.Read(b)
-	return hex.EncodeToString(b)
 }
 
 // sameOrigin reports whether an inbound request originates from one of the

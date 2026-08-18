@@ -10,6 +10,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/internal/catalogops"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 )
 
 func TestHumanTitle(t *testing.T) {
@@ -106,7 +108,7 @@ func TestVaultRestoreInteractionStaysAgentSafeThroughBuildCatalog(t *testing.T) 
 	// channel.
 	oobRestore := NewOOBRestore(nil, time.Minute)
 	t.Cleanup(func() { oobRestore.Stop(context.Background()) })
-	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 	reg := NewHandoffRegistry()
 	catalog, err := buildCatalog(compilerRoot(), true, nil, nil, oobRestore, nil, reg, handles,
 		withCatalogDeps(func() *CatalogDepsBundle {

@@ -8,6 +8,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 )
 
 // TestRegisterVaultRestoreAppWire verifies the Restore Vault app registers its
@@ -18,7 +20,7 @@ func TestRegisterVaultRestoreAppWire(t *testing.T) {
 	catalog.Add(modelTool(compiledVaultRestoreToolName))
 	srv := NewOfficialServer(nil)
 
-	if err := RegisterVaultRestoreApp(srv, catalog, NewHandoffRegistry(), NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)); err != nil {
+	if err := RegisterVaultRestoreApp(srv, catalog, NewHandoffRegistry(), session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)); err != nil {
 		t.Fatalf("RegisterVaultRestoreApp: %v", err)
 	}
 	if err := RegisterOfficialCuratedTools(srv, catalog); err != nil {
@@ -68,7 +70,7 @@ func TestRegisterVaultRestoreAppWire(t *testing.T) {
 // vault_restore_resume, returning pending until the recovery seed is submitted,
 // then done. It must never surface the seed.
 func TestVaultRestoreStatusHelperPendingToDone(t *testing.T) {
-	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 	reg := NewHandoffRegistry()
 	oob, mux, runner := buildRestoreServer()
 
@@ -116,7 +118,7 @@ func TestVaultRestoreStatusHelperPendingToDone(t *testing.T) {
 // presence) to tell pending from dead, so a live flow keeps polling instead of
 // being falsely declared dead on its first poll.
 func TestVaultRestoreStatusHelperPendingCarriesHandle(t *testing.T) {
-	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 	reg := NewHandoffRegistry()
 	oob, _, _ := buildRestoreServer()
 
@@ -160,7 +162,7 @@ func TestVaultRestoreStatusHelperPendingCarriesHandle(t *testing.T) {
 // status helper, which would otherwise retry "handle is required" for ~90s.
 func TestVaultRestoreNotConfiguredReturnsNoHandle(t *testing.T) {
 	reg := NewHandoffRegistry()
-	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 
 	handler := vaultRestoreSetupHandler(nil, reg, handles)
 	r, err := handler(context.Background(), ToolRequest{Name: compiledVaultRestoreToolName})

@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	"go.lumeweb.com/pinner-cli/internal/core/config"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 )
 
 // This file exposes the out-of-band account credential tools: changing the
@@ -39,7 +41,7 @@ type accountPasswordResetArgs struct {
 // change in a browser so the password never reaches this channel. If the
 // account is not signed in (or the coordinator is unwired) it steers to
 // auth_sso instead of hanging.
-func NewAccountPasswordUpdateDescriptor(oob *OOBAccountChange, svc AuthService, handles *AsyncHandleStore, reg *HandoffRegistry) ToolDescriptor {
+func NewAccountPasswordUpdateDescriptor(oob *OOBAccountChange, svc AuthService, handles *session.AsyncHandleStore, reg *HandoffRegistry) ToolDescriptor {
 	return ToolDescriptor{
 		Name:        "account_password_update",
 		Title:       "Change Password (Out-of-Band)",
@@ -75,9 +77,9 @@ func NewAccountPasswordUpdateDescriptor(oob *OOBAccountChange, svc AuthService, 
 				return ToolResult{IsError: true, Text: "failed to mint the password-change page"}, nil
 			}
 			return NeedsHumanResult(NeedsHuman{
-				Reason:     ReasonSSOApproval,
-				ActionURL:  url,
-				Detail:     "Ask the user to open this URL in a browser and enter their current and new password. The password is entered on that page, never on this channel, and never here.",
+				Reason:    ReasonSSOApproval,
+				ActionURL: url,
+				Detail:    "Ask the user to open this URL in a browser and enter their current and new password. The password is entered on that page, never on this channel, and never here.",
 			}), nil
 		},
 	}
@@ -163,9 +165,9 @@ func NewAccountPasswordResetDescriptor(svc AuthService, webAppURL string) ToolDe
 			}
 			actionURL := webAppURL
 			return NeedsHumanResult(NeedsHuman{
-				Reason:     ReasonSSOApproval,
-				ActionURL:  actionURL,
-				Detail:     "Password reset link sent to " + in.Email + ". Ask the user to check their email and open the reset link to set a new password in the web app.",
+				Reason:    ReasonSSOApproval,
+				ActionURL: actionURL,
+				Detail:    "Password reset link sent to " + in.Email + ". Ask the user to check their email and open the reset link to set a new password in the web app.",
 			}), nil
 		},
 	}

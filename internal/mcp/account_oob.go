@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 )
 
 // OOBAccountChange completes an account credential change (password or email)
@@ -34,8 +36,8 @@ type OOBAccountChange struct {
 	core handoffEndpoint
 
 	// mu guards the outcome records.
-	mu        sync.Mutex
-	outcomes  map[string]*accountChangeOutcome
+	mu       sync.Mutex
+	outcomes map[string]*accountChangeOutcome
 }
 
 // accountChangeOp selects which account credential the OOB page changes.
@@ -101,7 +103,7 @@ func (c *OOBAccountChange) Register(op accountChangeOp) string {
 	// outbound token from the same payload, so POST reads payload.csrf (on the
 	// item) rather than a separately-keyed lookup. No coordinator state is
 	// written here and nothing is leaked on every invocation.
-	csrf := strongRandomID()
+	csrf := session.StrongRandomID()
 	return c.core.mint(&accountChangePayload{op: op, csrf: csrf})
 }
 

@@ -8,6 +8,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 )
 
 // TestRegisterVaultCreateAppWire verifies the Create Vault app registers its
@@ -18,7 +20,7 @@ func TestRegisterVaultCreateAppWire(t *testing.T) {
 	catalog.Add(modelTool(compiledVaultCreateToolName))
 	srv := NewOfficialServer(nil)
 
-	if err := RegisterVaultCreateApp(srv, catalog, NewHandoffRegistry(), NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)); err != nil {
+	if err := RegisterVaultCreateApp(srv, catalog, NewHandoffRegistry(), session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)); err != nil {
 		t.Fatalf("RegisterVaultCreateApp: %v", err)
 	}
 	if err := RegisterOfficialCuratedTools(srv, catalog); err != nil {
@@ -68,7 +70,7 @@ func TestRegisterVaultCreateAppWire(t *testing.T) {
 // vault_create_resume, returning pending until the vault is created + seed
 // confirmed, then done. It must never surface the seed.
 func TestVaultCreateStatusHelperPendingToDone(t *testing.T) {
-	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 	reg := NewHandoffRegistry()
 	oob, mux, _ := buildCreateServer()
 
@@ -133,7 +135,7 @@ func TestVaultCreateStatusHelperPendingToDone(t *testing.T) {
 // from dead, so a live flow keeps polling instead of being falsely declared
 // dead on its first poll.
 func TestVaultCreateStatusHelperPendingCarriesHandle(t *testing.T) {
-	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 	reg := NewHandoffRegistry()
 	oob, _, _ := buildCreateServer()
 
@@ -177,7 +179,7 @@ func TestVaultCreateStatusHelperPendingCarriesHandle(t *testing.T) {
 // status helper, which would otherwise retry "handle is required" for ~90s.
 func TestVaultCreateNotConfiguredReturnsNoHandle(t *testing.T) {
 	reg := NewHandoffRegistry()
-	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 
 	handler := vaultCreateSetupHandler(nil, reg, handles)
 	r, err := handler(context.Background(), ToolRequest{Name: compiledVaultCreateToolName})

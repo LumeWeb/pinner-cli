@@ -4,6 +4,8 @@ import (
 	"fmt"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 )
 
 // customToolDeps bundles everything the custom/direct-tool registration needs.
@@ -19,13 +21,13 @@ type customToolDeps struct {
 	// returns); markCurated then stamps which of them are directly visible.
 	catalog *ToolCatalog
 	// store backs wizard sessions and resource providers.
-	store *SessionStore
+	store *session.SessionStore
 	// oob, when non-nil, backs the out-of-band sign-in (SSO) and restore
 	// tools; authHandles stores their pending handles, and handoffReg maps a
 	// handle to its domain-specific resume continuation so the shared resume
 	// template can poll it.
 	oob         *OutOfBandLogin
-	authHandles *AsyncHandleStore
+	authHandles *session.AsyncHandleStore
 	handoffReg  *HandoffRegistry
 	// seedDrop, oobRestore, and oobCreate back the vault create/restore OOB
 	// hand-offs. seedDrop is the vault-create seed-drop coordinator, oobRestore

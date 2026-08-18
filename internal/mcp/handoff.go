@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 )
 
 // handoffEndpoint is the shared core behind every "create or read X secret over
@@ -138,7 +140,7 @@ func (h *handoffEndpoint) mint(payload any) string {
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	token := strongRandomID()
+	token := session.StrongRandomID()
 	h.items[token] = &handoffItem{payload: payload, expiresAt: h.now().Add(h.ttl)}
 	h.logf().Debug("one-time hand-off minted", zap.String("prefix", h.prefix))
 	return h.loopback.URLFor(h.prefix, token)

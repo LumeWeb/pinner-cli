@@ -3,6 +3,8 @@ package mcp
 import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.lumeweb.com/pinner-cli/internal/mcpapp"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 )
 
 // This file wires the "Create Vault" MCP App onto the shared AppView lib
@@ -29,7 +31,7 @@ func renderVaultCreateAppHTML() string {
 // exactly like vault_create_resume, but is registered with ToolVisibilityApp so
 // only the Create Vault view can poll it; the model never sees it. It carries
 // no secrets (the seed never crosses this channel).
-func vaultCreateStatusDescriptor(reg *HandoffRegistry, handles *AsyncHandleStore) ToolDescriptor {
+func vaultCreateStatusDescriptor(reg *HandoffRegistry, handles *session.AsyncHandleStore) ToolDescriptor {
 	return NewResumeTool(ResumeToolSpec{
 		Name:                "vault_create_status",
 		Title:               "Vault Create Status",
@@ -46,7 +48,7 @@ func vaultCreateStatusDescriptor(reg *HandoffRegistry, handles *AsyncHandleStore
 // shared AppView lib layer: attaches the ui:// view to the vault_create tool,
 // registers the ui://vault/create.html HTML resource, and registers the
 // app-only vault_create_status polling helper.
-func RegisterVaultCreateApp(srv *mcp.Server, catalog *ToolCatalog, reg *HandoffRegistry, handles *AsyncHandleStore) error {
+func RegisterVaultCreateApp(srv *mcp.Server, catalog *ToolCatalog, reg *HandoffRegistry, handles *session.AsyncHandleStore) error {
 	return RegisterAppView(srv, catalog, AppView{
 		URI:           VaultCreateAppURI,
 		Name:          "vault-create",

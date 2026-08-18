@@ -8,6 +8,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 )
 
 // TestHandoffRegistryBeginGetEnd verifies the shared continuation registry
@@ -177,7 +179,7 @@ func TestIsTerminalResumeUnknownShapesNotTerminal(t *testing.T) {
 func TestPruneRetiresBackingHandles(t *testing.T) {
 	reg := NewHandoffRegistry()
 	reg.ttp = time.Hour
-	handles := NewAsyncHandleStore(time.Hour, DefaultMaxSessions)
+	handles := session.NewAsyncHandleStore(time.Hour, session.DefaultMaxSessions)
 	reg.now = func() time.Time { return time.Date(2026, 8, 11, 0, 0, 0, 0, time.UTC) }
 
 	base := time.Date(2026, 8, 11, 0, 0, 0, 0, time.UTC)
@@ -209,7 +211,7 @@ func TestPruneRetiresBackingHandles(t *testing.T) {
 // continuation's own cleanup drops the registry entry on the done path.
 func TestSSOContinuationNoPendingIsDone(t *testing.T) {
 	oob := newOOBForTest(t)
-	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 	reg := NewHandoffRegistry()
 
 	// A handle bound in the store but with NO corresponding OOB request is the
@@ -235,7 +237,7 @@ func TestSSOContinuationNoPendingIsDone(t *testing.T) {
 // without any SSO dependency — proving the framework mechanism is generic.
 func TestResumeTemplateDispatchesContinuation(t *testing.T) {
 	reg := NewHandoffRegistry()
-	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 
 	// A generic handoff flow: start tool style, then the shared resume template.
 	resume := NewResumeTool(ResumeToolSpec{
@@ -293,7 +295,7 @@ func TestResumeTemplateDispatchesContinuation(t *testing.T) {
 // to the restart tool rather than leaving it polling.
 func TestResumeTemplateDeadHandleSteersRestart(t *testing.T) {
 	reg := NewHandoffRegistry()
-	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 
 	resume := NewResumeTool(ResumeToolSpec{
 		Name:                "test_flow_resume",
@@ -317,7 +319,7 @@ func TestResumeTemplateDeadHandleSteersRestart(t *testing.T) {
 
 	// An expired handle steers to restart too, with the expired detail.
 	expired := handles.Create("pending", map[string]any{"flow": "x"})
-	handles.now = func() time.Time { return time.Now().Add(2 * DefaultSessionTTL) }
+	handles.SetNowFunc(func() time.Time { return time.Now().Add(2 * session.DefaultSessionTTL) })
 	result, err = resume.Handler(context.Background(), ToolRequest{
 		Name:      "test_flow_resume",
 		Arguments: map[string]any{"handle": expired},

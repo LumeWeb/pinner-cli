@@ -9,6 +9,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/internal/catalogops"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 )
 
 // compilerRoot builds a minimal CLI command tree with one walkable command
@@ -37,11 +39,11 @@ func TestOfficialMCPServerForwardsCatalogDeps(t *testing.T) {
 	// Without the option, buildCatalog fails fast: there is no legacy walk and
 	// no compiler surface, so a caller that forgot WithCatalogOps gets an
 	// explicit error instead of a silently-empty model catalog.
-	_, _, err := OfficialMCPServer(root, true, nil, false, nil, nil, nil, NewHandoffRegistry(), NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions))
+	_, _, err := OfficialMCPServer(root, true, nil, false, nil, nil, nil, NewHandoffRegistry(), session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions))
 	require.Error(t, err, "missing catalog-deps bundle must fail fast, not silently serve an empty surface")
 
 	// With the option, the compiler surface is live.
-	srv2, cat2, err := OfficialMCPServer(root, true, nil, false, nil, nil, nil, NewHandoffRegistry(), NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions),
+	srv2, cat2, err := OfficialMCPServer(root, true, nil, false, nil, nil, nil, NewHandoffRegistry(), session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions),
 		withCatalogDeps(func() *CatalogDepsBundle { return &CatalogDepsBundle{Auth: catalogops.AuthDeps{}} }))
 	require.NoError(t, err)
 	require.NotNil(t, srv2)
@@ -66,7 +68,7 @@ func TestCompiledVaultCreateHonorsOOBHandoff(t *testing.T) {
 	}
 
 	oob, _, _ := buildCreateServer()
-	handles := NewAsyncHandleStore(DefaultSessionTTL, DefaultMaxSessions)
+	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 	reg := NewHandoffRegistry()
 
 	srv, cat, err := OfficialMCPServer(compilerRoot(), true, nil, false, nil, nil, oob, reg, handles,

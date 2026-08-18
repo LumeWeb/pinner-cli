@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 	"time"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 )
 
 // This file exposes the vault seed create/restore out-of-band hand-offs as
@@ -168,7 +170,7 @@ func (o *OOBRestore) pruneOutcomesLocked(cutoff time.Time) {
 // vaultCreateSetupHandler so the shared vault_create_resume template
 // dispatches to it. The continuation performs its own registry/handle cleanup
 // on every terminal outcome.
-func vaultCreateResumeContinuation(oob *OOBCreate, handles *AsyncHandleStore, reg *HandoffRegistry) ResumeContinuation {
+func vaultCreateResumeContinuation(oob *OOBCreate, handles *session.AsyncHandleStore, reg *HandoffRegistry) ResumeContinuation {
 	return func(ctx context.Context, handle string, data map[string]any) (ToolResult, error) {
 		token, _ := data[handleDataToken].(string)
 		if oob == nil {
@@ -227,7 +229,7 @@ func vaultCreateResumeContinuation(oob *OOBCreate, handles *AsyncHandleStore, re
 // coordinator-state poll (the token going spent); the RestoreRunner only runs
 // in the browser POST handler, never on this channel, so the seed never
 // reaches the agent.
-func vaultRestoreResumeContinuation(oob *OOBRestore, handles *AsyncHandleStore, reg *HandoffRegistry) ResumeContinuation {
+func vaultRestoreResumeContinuation(oob *OOBRestore, handles *session.AsyncHandleStore, reg *HandoffRegistry) ResumeContinuation {
 	return func(ctx context.Context, handle string, data map[string]any) (ToolResult, error) {
 		token, _ := data[handleDataToken].(string)
 		if oob == nil {
@@ -280,7 +282,7 @@ func vaultRestoreResumeContinuation(oob *OOBRestore, handles *AsyncHandleStore, 
 // polling a dead flow, and returns a needs_human steer to the matching start
 // tool. It is NOT a success result; an expired one-time link must read as a
 // restart, never as a completed vault create/restore.
-func vaultExpiredResult(handles *AsyncHandleStore, reg *HandoffRegistry, handle, resumeTool, restartTool, detail string) (ToolResult, error) {
+func vaultExpiredResult(handles *session.AsyncHandleStore, reg *HandoffRegistry, handle, resumeTool, restartTool, detail string) (ToolResult, error) {
 	// Clearing the continuation + backing handle means the next poll of the
 	// *_resume tool hits the template's dead-handle branch, which steers to
 	// restart via the tool spec. The agent gets one clean restart instruction
@@ -298,7 +300,7 @@ func vaultExpiredResult(handles *AsyncHandleStore, reg *HandoffRegistry, handle,
 // NewVaultCreateResumeDescriptor returns the vault_create_resume tool,
 // built from the shared resume template. Name/description and restart steering
 // are create-flavored: a dead handle steers back to vault_create.
-func NewVaultCreateResumeDescriptor(reg *HandoffRegistry, handles *AsyncHandleStore) ToolDescriptor {
+func NewVaultCreateResumeDescriptor(reg *HandoffRegistry, handles *session.AsyncHandleStore) ToolDescriptor {
 	return NewResumeTool(ResumeToolSpec{
 		Name:                vaultCreateResumeToolName,
 		Title:               "Vault Create Resume",
@@ -314,7 +316,7 @@ func NewVaultCreateResumeDescriptor(reg *HandoffRegistry, handles *AsyncHandleSt
 // NewVaultRestoreResumeDescriptor returns the vault_restore_resume tool,
 // built from the shared resume template. Name/description and restart steering
 // are restore-flavored: a dead handle steers back to vault_restore.
-func NewVaultRestoreResumeDescriptor(reg *HandoffRegistry, handles *AsyncHandleStore) ToolDescriptor {
+func NewVaultRestoreResumeDescriptor(reg *HandoffRegistry, handles *session.AsyncHandleStore) ToolDescriptor {
 	return NewResumeTool(ResumeToolSpec{
 		Name:                vaultRestoreResumeToolName,
 		Title:               "Vault Restore Resume",

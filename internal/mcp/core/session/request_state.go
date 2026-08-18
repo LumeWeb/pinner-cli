@@ -1,4 +1,4 @@
-package mcp
+package session
 
 import (
 	"crypto/hmac"
@@ -27,6 +27,11 @@ import (
 // must be available to every instance that may receive an echoed value.
 
 const requestStatePrefix = "v1."
+
+// RequestStatePrefix is the versioned wire prefix every signed requestState
+// begins with ("v1.<body>.<mac>"). It is exported for consumers that need to
+// inspect or manipulate the wire shape (e.g. tests).
+const RequestStatePrefix = requestStatePrefix
 
 // requestStateTTL bounds how long a minted requestState stays valid. It MUST
 // exceed the wizard session TTL (DefaultSessionTTL = 30m) because on a form
@@ -134,14 +139,14 @@ var requestStateKey = func() []byte {
 	return key
 }()
 
-// mintWizardRequestState seals a wizard session id into a signed requestState
+// MintWizardRequestState seals a wizard session id into a signed requestState
 // the client echoes back on the elicitation retry.
-func mintWizardRequestState(sessionID string, now time.Time) (string, error) {
+func MintWizardRequestState(sessionID string, now time.Time) (string, error) {
 	return mintRequestState(requestStateKey, sessionID, now)
 }
 
-// verifyWizardRequestState validates the echoed requestState and returns the
+// VerifyWizardRequestState validates the echoed requestState and returns the
 // session id it carries. It fails closed on tampering/expiry.
-func verifyWizardRequestState(state string, now time.Time) (string, error) {
+func VerifyWizardRequestState(state string, now time.Time) (string, error) {
 	return verifyRequestState(requestStateKey, state, now)
 }

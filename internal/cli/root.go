@@ -17,6 +17,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/core/vault"
 	"go.lumeweb.com/pinner-cli/internal/core/websites"
 	mcpadapter "go.lumeweb.com/pinner-cli/internal/mcp"
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 )
 
 // Run executes the CLI application with the given context and arguments.
@@ -433,7 +434,7 @@ For more help on any command: pinner <command> --help`,
 
 			// Wire the resource factory with the services we just built.
 			// Capture cfgMgr (not a config snapshot) so resource reads see latest state.
-			resourceFactory = func(store *mcpadapter.SessionStore) mcpadapter.ResourceProviders {
+			resourceFactory = func(store *session.SessionStore) mcpadapter.ResourceProviders {
 				return mcpadapter.ResourceProviders{
 					Account:  &accountStatusAdapter{cfgMgr: cfgMgr, auth: authSvc},
 					Websites: &websitesResourceAdapter{ws: websitesSvc},
@@ -478,7 +479,7 @@ For more help on any command: pinner <command> --help`,
 			}
 			return wDeps, sDeps, dDeps, nil
 		},
-		func(store *mcpadapter.SessionStore) mcpadapter.ResourceProviders {
+		func(store *session.SessionStore) mcpadapter.ResourceProviders {
 			if resourceFactory != nil {
 				provs := resourceFactory(store)
 				provs.Sessions = store
