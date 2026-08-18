@@ -19,7 +19,7 @@ func newVaultRestoreCommand() *cli.Command {
 		ArgsUsage: "[--profile <name>]",
 		Description: `Restore an existing vault on this device from a recovery seed (mnemonic). Used when setting up a new device or after local credentials are lost. Derives the vault identity, connects to the Sia indexer via browser approval, creates a new local device credential, and rebuilds the vault cache from remote state.
 
-In non-interactive (--agent) mode pass --seed-stdin to read the mnemonic from stdin instead of prompting interactively.`,
+In non-interactive (--seed-stdin) mode the mnemonic is read from stdin instead of prompting interactively.`,
 		Flags: []cli.Flag{
 			&cli.BoolFlag{
 				Name:  "seed-stdin",
@@ -57,8 +57,8 @@ In non-interactive (--agent) mode pass --seed-stdin to read the mnemonic from st
 			}
 
 			// Check if profile already exists. A "pending" profile (empty
-			// VaultID) was created by `vault create --agent` and is waiting
-			// for restore to complete it; allow restore to proceed.
+			// VaultID) is waiting for restore to complete it; allow restore
+			// to proceed.
 			reg, err := vault.LoadRegistry()
 			if err != nil {
 				return fmt.Errorf("failed to load registry: %w", err)
@@ -67,29 +67,7 @@ In non-interactive (--agent) mode pass --seed-stdin to read the mnemonic from st
 				if existing.VaultID != "" {
 					return fmt.Errorf("profile %q already exists. Use 'pinner vault status --profile %s' to check it, or choose a different name", profileName, profileName)
 				}
-				// Pending profile from `vault create --agent`; restore
-				// will complete it. Fall through.
-			}
-
-			// In agent mode, defer the browser-approval connection request to
-			// the seed-carrying re-run so only a single connection request is
-			// ever issued (otherwise the first run orphan-approves and forces
-			// a duplicate approval on the --seed-stdin run). Return before
-			// reading a mnemonic or touching the network; BUT only when no
-			// seed is supplied on this invocation. `--agent` is a global
-			// MCP/CI flag, so a re-run that DOES carry --seed-stdin still has
-			// it set; returning here again would loop forever instead of
-			// completing the restore.
-			if c.Bool(FlagAgent) && !c.Bool("seed-stdin") {
-				output.PrintJSON(vaultRestoreApprovalResponse{
-					Profile:  profileName,
-					NextStep: "Re-run: pinner vault restore --profile " + profileName + " --seed-stdin < " + vault.SeedPath(profileName) + " (presents the single browser approval)",
-				})
-				// The JSON handoff (with next_step) is the complete deliverable
-				// of this invocation; return nil so exit code is 0 and the
-				// MCP/CI consumer receives the stdout JSON, not a non-zero
-				// exit with the output discarded.
-				return nil
+				// Pending profile; restore will complete it. Fall through.
 			}
 
 			// Read mnemonic
@@ -117,7 +95,7 @@ In non-interactive (--agent) mode pass --seed-stdin to read the mnemonic from st
 			}
 			indexerURL := cfgMgr.Config().GetSiaIndexerURL()
 
-			jsonOnly := c.Bool(FlagJSON) || c.Bool(FlagAgent)
+			jsonOnly := c.Bool(FlagJSON)
 			output.Printfln("Restoring vault profile %q...", profileName)
 			res, err := vault.NewProvisioner().Restore(ctx, vault.RestoreRequest{
 				Profile:    profileName,

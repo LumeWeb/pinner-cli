@@ -36,33 +36,8 @@ func handleInterrupt(err error) error {
 	return err
 }
 
-// agentMode disables all interactive prompts. When true, runPrompt and other
-// prompt functions return ErrNonInteractive instead of blocking on stdin.
-// This is set by setupCommandContext when --agent is active and by the MCP
-// adapter before invoking commands.
-var agentMode bool
-
-// ErrNonInteractive is returned when a prompt is requested in agent mode
-// (non-interactive context). The caller should provide the missing value
-// via a flag or environment variable instead.
-var ErrNonInteractive = fmt.Errorf("interactive prompt requested in non-interactive (agent) mode; provide the required value via a flag or environment variable")
-
-// SetAgentMode enables or disables agent (non-interactive) mode.
-func SetAgentMode(enabled bool) {
-	agentMode = enabled
-}
-
-// IsAgentMode reports whether agent (non-interactive) mode is active.
-func IsAgentMode() bool {
-	return agentMode
-}
-
 // runPrompt executes a prompt and handles interrupts, returning the result or error.
-// In agent mode, it returns ErrNonInteractive without attempting to prompt.
 func runPrompt(fn func() (string, error)) (string, error) {
-	if agentMode {
-		return "", ErrNonInteractive
-	}
 	result, err := fn()
 	if err != nil {
 		return "", handleInterrupt(err)

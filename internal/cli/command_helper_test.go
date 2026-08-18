@@ -8,8 +8,7 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
-// TestAgentFlagImpliesJSON verifies that --agent forces JSON output mode,
-// matching the behavior of --json.
+// TestAgentFlagImpliesJSON verifies that --json forces JSON output mode.
 func TestAgentFlagImpliesJSON(t *testing.T) {
 	t.Parallel()
 
@@ -28,17 +27,7 @@ func TestAgentFlagImpliesJSON(t *testing.T) {
 			args:     []string{"test", "--json"},
 			wantJSON: true,
 		},
-		{
-			name:     "--agent: JSON output (agent implies json)",
-			args:     []string{"test", "--agent"},
-			wantJSON: true,
-		},
-		{
-			name:     "--agent and --json: JSON output",
-			args:     []string{"test", "--agent", "--json"},
-			wantJSON: true,
-		},
-	}
+		}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -48,7 +37,7 @@ func TestAgentFlagImpliesJSON(t *testing.T) {
 				Name:  "test",
 				Flags: GlobalFlags(),
 				Action: func(ctx context.Context, c *cli.Command) error {
-					jsonOutput := c.Bool(FlagJSON) || c.Bool(FlagAgent)
+					jsonOutput := c.Bool(FlagJSON)
 					assert.Equal(t, tt.wantJSON, jsonOutput)
 					return nil
 				},
@@ -59,13 +48,12 @@ func TestAgentFlagImpliesJSON(t *testing.T) {
 	}
 }
 
-// TestNewOutputFormatter_AgentMode verifies the output formatter returns
-// jsonFormatter when agent mode (json=true) is active.
-func TestNewOutputFormatter_AgentMode(t *testing.T) {
+// TestNewOutputFormatter_JSON verifies the output formatter returns
+// jsonFormatter when JSON output (json=true) is active.
+func TestNewOutputFormatter_JSON(t *testing.T) {
 	t.Parallel()
 
-	// --agent implies json=true, so NewOutputFormatter(true,...) should
-	// return a jsonFormatter.
+	// json=true, so NewOutputFormatter(true,...) should return a jsonFormatter.
 	formatter := NewOutputFormatter(true, false, false, false)
 	assert.IsType(t, &jsonFormatter{}, formatter)
 }
