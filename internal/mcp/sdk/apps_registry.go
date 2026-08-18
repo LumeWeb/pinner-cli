@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -19,17 +20,36 @@ type RegisterToolFunc func(srv *Server, tool *mcp.Tool, handler model.PinnerTool
 
 // registerToolFn is the tool-registration adapter used by app tools. The hub
 // installs its adapter (officialToolHandler) via SetToolRegistrar during
-// assembly. Failing fast here (rather than a degraded default) ensures a
+// assembly. It is read on every app-tool registration, so it is guarded by a
+// mutex. Failing fast when unset (rather than a degraded default) ensures a
 // missing SetToolRegistrar is caught loudly at registration, never as silent
 // loss of the elicitation/capability/state adornment app tools depend on.
-var registerToolFn RegisterToolFunc = func(*Server, *mcp.Tool, model.PinnerToolHandler) error {
-	return fmt.Errorf("sdk: tool registrar not installed; call sdk.SetToolRegistrar before RegisterAppTool")
-}
+var (
+	registerToolMu sync.RWMutex
+	registerToolFn RegisterToolFunc
+)
 
 // SetToolRegistrar installs the tool-adapter used by app-tool registration.
 // It must be called once during hub assembly (before any server serves) so
 // RegisterAppTool can reuse the hub's handler-adaptation seam.
-func SetToolRegistrar(f RegisterToolFunc) { registerToolFn = f }
+func SetToolRegistrar(f RegisterToolFunc) {
+	registerToolMu.Lock()
+	registerToolFn = f
+	registerToolMu.Unlock()
+}
+
+// getToolRegistrar returns the installed tool-registration adapter, or a
+// fail-fast stub when none was installed.
+func getToolRegistrar() RegisterToolFunc {
+	registerToolMu.RLock()
+	defer registerToolMu.RUnlock()
+	if registerToolFn == nil {
+		return func(*Server, *mcp.Tool, model.PinnerToolHandler) error {
+			return fmt.Errorf("sdk: tool registrar not installed; call sdk.SetToolRegistrar before RegisterAppTool")
+		}
+	}
+	return registerToolFn
+}
 
 // AppResource is a typed, SDK-neutral app HTML resource registration.
 type AppResource struct {
@@ -62,7 +82,7 @@ func RegisterAppTool(srv *Server, desc model.ToolDescriptor, meta model.AppToolM
 	for k, v := range attached {
 		desc.Meta[k] = v
 	}
-	return registerToolFn(srv, Tool(desc), desc.Handler)
+	return getToolRegistrar()(srv, Tool(desc), desc.Handler)
 }
 
 // RegisterAppResource registers a ui:// app resource that serves the given
