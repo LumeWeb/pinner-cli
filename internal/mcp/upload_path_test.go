@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 func TestLocalPathUploadDescriptorRequiresPath(t *testing.T) {
@@ -12,7 +14,7 @@ func TestLocalPathUploadDescriptorRequiresPath(t *testing.T) {
 		return nil, nil
 	}, nil, nil, nil, 0)
 	// An empty source (no mode) must be rejected by validation.
-	_, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{
+	_, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
 		"source": map[string]any{"mode": "path"},
 	}})
 	require.ErrorContains(t, err, "requires path")
@@ -20,7 +22,7 @@ func TestLocalPathUploadDescriptorRequiresPath(t *testing.T) {
 
 func TestLocalPathUploadDescriptorNotConfigured(t *testing.T) {
 	desc := NewUploadFileDescriptor(true, false, nil, nil, nil, nil, 0)
-	_, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{
+	_, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
 		"source": map[string]any{"mode": "path", "path": "/tmp/x"},
 	}})
 	require.ErrorContains(t, err, "local path upload is not configured")
@@ -37,7 +39,7 @@ func TestLocalPathUploadDescriptorCallsHandler(t *testing.T) {
 		gotMode = archiveMode
 		return result, nil
 	}, nil, nil, nil, 0)
-	res, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{
+	res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
 		"source":       map[string]any{"mode": "path", "path": "/host/abs/file.bin"},
 		"name":         "myfile",
 		"wait":         true,
@@ -60,7 +62,7 @@ func TestLocalPathUploadDescriptorRejectsMintInStdio(t *testing.T) {
 		t.Fatal("path handler must not be invoked")
 		return nil, nil
 	}, nil, nil, nil, 0)
-	_, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{
+	_, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
 		"source": map[string]any{"mode": "mint"},
 	}})
 	require.Error(t, err)

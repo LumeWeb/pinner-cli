@@ -14,6 +14,8 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/core/config"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // --- FSM state constants ---
@@ -1018,7 +1020,7 @@ func schemaRequiresInput(schema *jsonschema.Schema) bool {
 // carrying the session id across the round-trip via a signed requestState.
 // Returns nil if the step's schema cannot be encoded (caller falls back to
 // StepResponse).
-func elicitForStep(sessionID string, resp StepResponse, now time.Time) *ElicitationSpec {
+func elicitForStep(sessionID string, resp StepResponse, now time.Time) *model.ElicitationSpec {
 	if !schemaRequiresInput(resp.NextStepSchema) {
 		return nil
 	}
@@ -1032,7 +1034,7 @@ func elicitForStep(sessionID string, resp StepResponse, now time.Time) *Elicitat
 	if err != nil {
 		return nil
 	}
-	return &ElicitationSpec{
+	return &model.ElicitationSpec{
 		ID:           "input",
 		Message:      fmt.Sprintf("Step '%s' needs input.", resp.CurrentStep),
 		FormSchema:   json.RawMessage(schema),
@@ -1044,7 +1046,7 @@ func elicitForStep(sessionID string, resp StepResponse, now time.Time) *Elicitat
 // failed form retry, carrying the validation error in the message so the user
 // can correct the submission instead of seeing a blank form. Returns nil when
 // the step no longer needs input (caller falls back to StepResponse).
-func rePresentFormOnFailure(sessionID string, resp StepResponse, cause error, now time.Time) *ElicitationSpec {
+func rePresentFormOnFailure(sessionID string, resp StepResponse, cause error, now time.Time) *model.ElicitationSpec {
 	spec := elicitForStep(sessionID, resp, now)
 	if spec == nil {
 		return nil
@@ -1085,8 +1087,8 @@ func buildStepResponse(sess *session.Session) StepResponse {
 
 // --- MCP tool registration ---
 
-func wizardEntry(name, description string, schema json.RawMessage, handler PinnerToolHandler) *ToolEntry {
-	return &ToolEntry{Name: name, Description: description, Category: CategoryWizard, InputSchema: schema, Handler: handler}
+func wizardEntry(name, description string, schema json.RawMessage, handler model.PinnerToolHandler) *model.ToolEntry {
+	return &model.ToolEntry{Name: name, Description: description, Category: model.CategoryWizard, InputSchema: schema, Handler: handler}
 }
 
 func wizardStepSchema() json.RawMessage {
@@ -1106,16 +1108,16 @@ type WizardStepInput struct {
 	RequestState string `json:"request_state"`
 }
 
-func marshalWizardResponse(resp StepResponse) (ToolResult, error) {
+func marshalWizardResponse(resp StepResponse) (model.ToolResult, error) {
 	raw, err := json.MarshalIndent(resp, "", "  ")
 	if err != nil {
-		return ToolResult{}, fmt.Errorf("failed to marshal step response: %w", err)
+		return model.ToolResult{}, fmt.Errorf("failed to marshal step response: %w", err)
 	}
-	return ToolResult{IsError: resp.Error != "", Text: string(raw)}, nil
+	return model.ToolResult{IsError: resp.Error != "", Text: string(raw)}, nil
 }
 
 func registerWizardStart(catalog *ToolCatalog, name, description string, start func() (*session.Session, error)) {
-	catalog.Add(wizardEntry(name, description, json.RawMessage(`{"type":"object","properties":{}}`), func(_ context.Context, _ ToolRequest) (ToolResult, error) {
+	catalog.Add(wizardEntry(name, description, json.RawMessage(`{"type":"object","properties":{}}`), func(_ context.Context, _ model.ToolRequest) (model.ToolResult, error) {
 		sess, err := start()
 		if err != nil {
 			return marshalWizardResponse(StepResponse{Error: fmt.Sprintf("failed to create session: %v", err)})
@@ -1125,7 +1127,7 @@ func registerWizardStart(catalog *ToolCatalog, name, description string, start f
 }
 
 func registerWizardStep(catalog *ToolCatalog, name, description string, store *session.SessionStore, completionMessage string) {
-	catalog.Add(wizardEntry(name, description, wizardStepSchema(), func(ctx context.Context, req ToolRequest) (ToolResult, error) {
+	catalog.Add(wizardEntry(name, description, wizardStepSchema(), func(ctx context.Context, req model.ToolRequest) (model.ToolResult, error) {
 		in, err := decodeToolArgs[WizardStepInput](req)
 		if err != nil {
 			return marshalWizardResponse(StepResponse{Error: fmt.Sprintf("invalid step arguments: %v", err)})

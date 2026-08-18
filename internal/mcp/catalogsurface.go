@@ -6,6 +6,8 @@ import (
 	"fmt"
 
 	"go.lumeweb.com/pinner-cli/internal/catalog"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // This file is the bridge between the operation catalog (the compiler-backed
@@ -23,8 +25,8 @@ import (
 // compiledHandler wraps the operation catalog's Invoke gate for a single
 // compiled operation and returns its result as a ToolResult. It is the Handler
 // installed on the ToolEntry for every operation compiled from the catalog.
-func compiledHandler(cat catalog.Catalog, name string) PinnerToolHandler {
-	return func(ctx context.Context, req ToolRequest) (ToolResult, error) {
+func compiledHandler(cat catalog.Catalog, name string) model.PinnerToolHandler {
+	return func(ctx context.Context, req model.ToolRequest) (model.ToolResult, error) {
 		return DispatchCatalogOp(ctx, cat, catalog.ActorModel, name, req.Arguments, name)
 	}
 }
@@ -40,12 +42,12 @@ func compiledHandler(cat catalog.Catalog, name string) PinnerToolHandler {
 //
 // DirectVisible is left to markCurated (the curated product surface), matching
 // how every other tool is promoted to tools/list.
-func catalogDescriptorToEntry(d catalog.ToolDescriptor, cat catalog.Catalog) *ToolEntry {
-	entry := toolEntryFromDescriptor(ToolDescriptor{
+func catalogDescriptorToEntry(d catalog.ToolDescriptor, cat catalog.Catalog) *model.ToolEntry {
+	entry := model.ToolEntryFromDescriptor(model.ToolDescriptor{
 		Name:         d.Name,
 		Title:        d.Title,
 		Description:  d.Description,
-		Category:     ToolCategory(d.Category),
+		Category:     model.ToolCategory(d.Category),
 		InputSchema:  d.InputSchema,
 		OutputSchema: outputSchemaForCompiled(d.Safety, d.Interaction),
 		ReadOnly:     d.Safety == catalog.SafetyRead,

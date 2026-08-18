@@ -10,6 +10,8 @@ import (
 	ipfs "go.lumeweb.com/ipfs-sdk"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // Resource URI scheme and well-known URIs.
@@ -131,8 +133,8 @@ type ResourceProviders struct {
 //   - pinner://websites/{domain}/dns-requirements
 //   - pinner://websites/{id}/validation-status
 //   - pinner://wizard/{session_id}/state
-func ResourceDescriptors(provs ResourceProviders) ([]ResourceDescriptor, []ResourceTemplateDescriptor) {
-	resources := []ResourceDescriptor{
+func ResourceDescriptors(provs ResourceProviders) ([]model.ResourceDescriptor, []model.ResourceTemplateDescriptor) {
+	resources := []model.ResourceDescriptor{
 		{
 			URI:         AccountStatusURI,
 			Name:        "account-status",
@@ -149,7 +151,7 @@ func ResourceDescriptors(provs ResourceProviders) ([]ResourceDescriptor, []Resou
 		},
 	}
 
-	templates := []ResourceTemplateDescriptor{
+	templates := []model.ResourceTemplateDescriptor{
 		{
 			URITemplate: DNSRequirementsTmpl,
 			Name:        "website-dns-requirements",
@@ -182,8 +184,8 @@ func ResourceDescriptors(provs ResourceProviders) ([]ResourceDescriptor, []Resou
 // JSON. Auth state is derived from the live AccountStatusProvider (which reads
 // cfgMgr at request time) plus an optional AuthStatus call for token
 // verification. Quota is the raw map returned by the provider.
-func accountStatusHandler(acct AccountStatusProvider) ResourceHandler {
-	return func(ctx context.Context, req ResourceRequest) (ResourceResult, error) {
+func accountStatusHandler(acct AccountStatusProvider) model.ResourceHandler {
+	return func(ctx context.Context, req model.ResourceRequest) (model.ResourceResult, error) {
 		status := map[string]any{
 			"authenticated": false,
 		}
@@ -217,15 +219,15 @@ func accountStatusHandler(acct AccountStatusProvider) ResourceHandler {
 
 		raw, err := json.MarshalIndent(status, "", "  ")
 		if err != nil {
-			return ResourceResult{}, fmt.Errorf("marshal account status: %w", err)
+			return model.ResourceResult{}, fmt.Errorf("marshal account status: %w", err)
 		}
-		return ResourceResult{URI: AccountStatusURI, MIMEType: "application/json", Text: string(raw)}, nil
+		return model.ResourceResult{URI: AccountStatusURI, MIMEType: "application/json", Text: string(raw)}, nil
 	}
 }
 
 // vaultStatusHandler builds the vault status resource response.
-func vaultStatusHandler(prov VaultStatusProvider) ResourceHandler {
-	return func(ctx context.Context, req ResourceRequest) (ResourceResult, error) {
+func vaultStatusHandler(prov VaultStatusProvider) model.ResourceHandler {
+	return func(ctx context.Context, req model.ResourceRequest) (model.ResourceResult, error) {
 		status := map[string]any{
 			"initialized":    false,
 			"sia_configured": false,
@@ -251,31 +253,31 @@ func vaultStatusHandler(prov VaultStatusProvider) ResourceHandler {
 
 		raw, err := json.MarshalIndent(status, "", "  ")
 		if err != nil {
-			return ResourceResult{}, fmt.Errorf("marshal vault status: %w", err)
+			return model.ResourceResult{}, fmt.Errorf("marshal vault status: %w", err)
 		}
-		return ResourceResult{URI: VaultStatusURI, MIMEType: "application/json", Text: string(raw)}, nil
+		return model.ResourceResult{URI: VaultStatusURI, MIMEType: "application/json", Text: string(raw)}, nil
 	}
 }
 
 // dnsRequirementsHandler builds the list of DNS records the user must add for
 // a website, mirroring the CLI's showDNSRecordInstructions output.
-func dnsRequirementsHandler(ws WebsitesResourceProvider) ResourceHandler {
-	return func(ctx context.Context, req ResourceRequest) (ResourceResult, error) {
+func dnsRequirementsHandler(ws WebsitesResourceProvider) model.ResourceHandler {
+	return func(ctx context.Context, req model.ResourceRequest) (model.ResourceResult, error) {
 		domain := req.Arguments["domain"]
 		if domain == "" {
-			return ResourceResult{}, fmt.Errorf("missing or invalid domain parameter")
+			return model.ResourceResult{}, fmt.Errorf("missing or invalid domain parameter")
 		}
 
 		if ws == nil {
-			return ResourceResult{}, fmt.Errorf("websites provider not configured")
+			return model.ResourceResult{}, fmt.Errorf("websites provider not configured")
 		}
 
 		website, err := ws.GetByDomain(ctx, domain)
 		if err != nil {
-			return ResourceResult{}, fmt.Errorf("resolve website %q: %w", domain, err)
+			return model.ResourceResult{}, fmt.Errorf("resolve website %q: %w", domain, err)
 		}
 		if website == nil {
-			return ResourceResult{}, fmt.Errorf("website %q not found", domain)
+			return model.ResourceResult{}, fmt.Errorf("website %q not found", domain)
 		}
 
 		reqs := buildDNSRequirements(website)
@@ -284,7 +286,7 @@ func dnsRequirementsHandler(ws WebsitesResourceProvider) ResourceHandler {
 		if website.DnsHostingEnabled {
 			cfg, cfgErr := ws.GetConfig(ctx)
 			if cfgErr != nil {
-				return ResourceResult{}, fmt.Errorf("fetch nameserver config: %w", cfgErr)
+				return model.ResourceResult{}, fmt.Errorf("fetch nameserver config: %w", cfgErr)
 			}
 			if cfg != nil && cfg.Nameservers != nil && len(*cfg.Nameservers) > 0 {
 				reqs.Nameservers = *cfg.Nameservers
@@ -300,28 +302,28 @@ func dnsRequirementsHandler(ws WebsitesResourceProvider) ResourceHandler {
 
 		raw, err := json.MarshalIndent(reqs, "", "  ")
 		if err != nil {
-			return ResourceResult{}, fmt.Errorf("marshal dns requirements: %w", err)
+			return model.ResourceResult{}, fmt.Errorf("marshal dns requirements: %w", err)
 		}
-		return ResourceResult{URI: req.URI, MIMEType: "application/json", Text: string(raw)}, nil
+		return model.ResourceResult{URI: req.URI, MIMEType: "application/json", Text: string(raw)}, nil
 	}
 }
 
 // validationStatusHandler calls the live validate API for a website.
-func validationStatusHandler(ws WebsitesResourceProvider) ResourceHandler {
-	return func(ctx context.Context, req ResourceRequest) (ResourceResult, error) {
+func validationStatusHandler(ws WebsitesResourceProvider) model.ResourceHandler {
+	return func(ctx context.Context, req model.ResourceRequest) (model.ResourceResult, error) {
 		id := req.Arguments["id"]
 		if id == "" {
-			return ResourceResult{}, fmt.Errorf("missing or invalid id parameter")
+			return model.ResourceResult{}, fmt.Errorf("missing or invalid id parameter")
 		}
 
 		if ws == nil {
-			return ResourceResult{}, fmt.Errorf("websites provider not configured")
+			return model.ResourceResult{}, fmt.Errorf("websites provider not configured")
 		}
 
 		// Resolve the website first so we can include domain + status.
 		website, err := ws.GetByID(ctx, id)
 		if err != nil {
-			return ResourceResult{}, fmt.Errorf("resolve website id %q: %w", id, err)
+			return model.ResourceResult{}, fmt.Errorf("resolve website id %q: %w", id, err)
 		}
 		var domain, status string
 		if website != nil {
@@ -331,7 +333,7 @@ func validationStatusHandler(ws WebsitesResourceProvider) ResourceHandler {
 
 		result, err := ws.Validate(ctx, id)
 		if err != nil {
-			return ResourceResult{}, fmt.Errorf("validate website %q: %w", id, err)
+			return model.ResourceResult{}, fmt.Errorf("validate website %q: %w", id, err)
 		}
 
 		vs := ValidationStatus{Status: status}
@@ -348,23 +350,23 @@ func validationStatusHandler(ws WebsitesResourceProvider) ResourceHandler {
 
 		raw, err := json.MarshalIndent(vs, "", "  ")
 		if err != nil {
-			return ResourceResult{}, fmt.Errorf("marshal validation status: %w", err)
+			return model.ResourceResult{}, fmt.Errorf("marshal validation status: %w", err)
 		}
-		return ResourceResult{URI: req.URI, MIMEType: "application/json", Text: string(raw)}, nil
+		return model.ResourceResult{URI: req.URI, MIMEType: "application/json", Text: string(raw)}, nil
 	}
 }
 
 // wizardStateHandler returns the current FSM state + next-step schema for a
 // wizard session.
-func wizardStateHandler(store *session.SessionStore) ResourceHandler {
-	return func(ctx context.Context, req ResourceRequest) (ResourceResult, error) {
+func wizardStateHandler(store *session.SessionStore) model.ResourceHandler {
+	return func(ctx context.Context, req model.ResourceRequest) (model.ResourceResult, error) {
 		sessionID := req.Arguments["session_id"]
 		if sessionID == "" {
-			return ResourceResult{}, fmt.Errorf("missing or invalid session_id parameter")
+			return model.ResourceResult{}, fmt.Errorf("missing or invalid session_id parameter")
 		}
 
 		if store == nil {
-			return ResourceResult{}, fmt.Errorf("session store not configured")
+			return model.ResourceResult{}, fmt.Errorf("session store not configured")
 		}
 
 		uri := req.URI
@@ -373,15 +375,15 @@ func wizardStateHandler(store *session.SessionStore) ResourceHandler {
 		sess, err := store.Get(sessionID)
 		if err != nil {
 			if err == session.ErrSessionNotFound {
-				return ResourceResult{}, fmt.Errorf("wizard session %q not found", sessionID)
+				return model.ResourceResult{}, fmt.Errorf("wizard session %q not found", sessionID)
 			}
 			if err == session.ErrSessionExpired {
 				state.Expired = true
 				state.Complete = true
 				raw, _ := json.MarshalIndent(state, "", "  ")
-				return ResourceResult{URI: uri, MIMEType: "application/json", Text: string(raw)}, nil
+				return model.ResourceResult{URI: uri, MIMEType: "application/json", Text: string(raw)}, nil
 			}
-			return ResourceResult{}, fmt.Errorf("lookup session %q: %w", sessionID, err)
+			return model.ResourceResult{}, fmt.Errorf("lookup session %q: %w", sessionID, err)
 		}
 
 		state.Current = sess.FSM.Current()
@@ -392,9 +394,9 @@ func wizardStateHandler(store *session.SessionStore) ResourceHandler {
 
 		raw, err := json.MarshalIndent(state, "", "  ")
 		if err != nil {
-			return ResourceResult{}, fmt.Errorf("marshal wizard state: %w", err)
+			return model.ResourceResult{}, fmt.Errorf("marshal wizard state: %w", err)
 		}
-		return ResourceResult{URI: uri, MIMEType: "application/json", Text: string(raw)}, nil
+		return model.ResourceResult{URI: uri, MIMEType: "application/json", Text: string(raw)}, nil
 	}
 }
 

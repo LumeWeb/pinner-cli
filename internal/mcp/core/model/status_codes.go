@@ -1,4 +1,4 @@
-package mcp
+package model
 
 // This file defines the standard, machine-readable status vocabulary that MCP
 // tool results (and the needs_human hand-off) emit in StructuredContent.

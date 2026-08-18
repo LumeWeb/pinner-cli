@@ -31,6 +31,8 @@ import (
 	"go.uber.org/zap"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // ToolDelimiter separates command path segments in MCP tool names.
@@ -1195,16 +1197,16 @@ func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string, seedDr
 // misdescribe what these two tools actually emit. Routing them onto the
 // needs_human schema keeps each tool's declared output matching its emitted
 // StructuredContent.
-func routeVaultSetupHandlers(catalog *ToolCatalog, create, restore PinnerToolHandler) {
+func routeVaultSetupHandlers(catalog *ToolCatalog, create, restore model.PinnerToolHandler) {
 	if restoreEntry, ok := catalog.Get(compiledVaultRestoreToolName); ok {
 		restoreEntry.Handler = restore
-		restoreEntry.Interaction = InteractionAgentSafe
+		restoreEntry.Interaction = model.InteractionAgentSafe
 		restoreEntry.OutputSchema = catalogNeedsHumanOutputSchema
 		catalog.Add(restoreEntry)
 	}
 	if createEntry, ok := catalog.Get(compiledVaultCreateToolName); ok {
 		createEntry.Handler = create
-		createEntry.Interaction = InteractionAgentSafe
+		createEntry.Interaction = model.InteractionAgentSafe
 		createEntry.OutputSchema = catalogNeedsHumanOutputSchema
 		catalog.Add(createEntry)
 	}

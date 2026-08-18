@@ -3,6 +3,8 @@ package mcp
 import (
 	"context"
 	"fmt"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // Prompt name constants.
@@ -24,13 +26,13 @@ const (
 // messages that instruct the agent to drive the corresponding wizard workflow
 // deterministically, using the wizard tools and pinner:// resources. The
 // message prose is rendered from embedded text/templates (prompttemplates/).
-func PromptDescriptors() []PromptDescriptor {
-	return []PromptDescriptor{
+func PromptDescriptors() []model.PromptDescriptor {
+	return []model.PromptDescriptor{
 		{
 			Name:        PromptWebsiteOnboarding,
 			Title:       "Website Onboarding Wizard",
 			Description: "Guides the agent through the website creation wizard workflow step by step using the websites_wizard_start and websites_wizard_step tools. Embeds references to pinner:// resources for DNS requirements and validation status. Optional arguments pre-fill wizard choices.",
-			Arguments: []PromptArgumentDescriptor{
+			Arguments: []model.PromptArgumentDescriptor{
 				{Name: ArgDomain, Description: "Domain name for the website (e.g. example.com). If omitted, the wizard will ask."},
 				{Name: ArgContentSource, Description: `Content source: "cid" (already have a CID) or "upload" (need to upload first). Default: cid.`},
 				{Name: ArgTargetType, Description: `Content addressing type: "ipfs" or "ipns". Default: ipfs.`},
@@ -51,7 +53,7 @@ func PromptDescriptors() []PromptDescriptor {
 // website-onboarding prompt. It renders a sequence of messages — from the
 // embedded website_onboarding.tmpl templates — that instruct the agent to
 // execute the websites wizard workflow.
-func websiteOnboardingHandler(ctx context.Context, req PromptRequest) (PromptResult, error) {
+func websiteOnboardingHandler(ctx context.Context, req model.PromptRequest) (model.PromptResult, error) {
 	args := req.Arguments
 	domain := args[ArgDomain]
 	contentSource := args[ArgContentSource]
@@ -60,13 +62,13 @@ func websiteOnboardingHandler(ctx context.Context, req PromptRequest) (PromptRes
 
 	// Validate optional arguments if provided.
 	if contentSource != "" && contentSource != "cid" && contentSource != "upload" {
-		return PromptResult{}, fmt.Errorf("invalid content_source %q: expected \"cid\" or \"upload\"", contentSource)
+		return model.PromptResult{}, fmt.Errorf("invalid content_source %q: expected \"cid\" or \"upload\"", contentSource)
 	}
 	if targetType != "" && targetType != "ipfs" && targetType != "ipns" {
-		return PromptResult{}, fmt.Errorf("invalid target_type %q: expected \"ipfs\" or \"ipns\"", targetType)
+		return model.PromptResult{}, fmt.Errorf("invalid target_type %q: expected \"ipfs\" or \"ipns\"", targetType)
 	}
 	if dnsMode != "" && dnsMode != "managed" && dnsMode != "self_managed" {
-		return PromptResult{}, fmt.Errorf("invalid dns_mode %q: expected \"managed\" or \"self_managed\"", dnsMode)
+		return model.PromptResult{}, fmt.Errorf("invalid dns_mode %q: expected \"managed\" or \"self_managed\"", dnsMode)
 	}
 
 	data := sitePromptData{
@@ -76,7 +78,7 @@ func websiteOnboardingHandler(ctx context.Context, req PromptRequest) (PromptRes
 		DNSMode:       dnsMode,
 	}
 
-	var messages []PromptMessage
+	var messages []model.PromptMessage
 
 	// Step 0: Overview and prerequisites.
 	messages = append(messages, textMsg(renderPromptTemplate("website_overview", data)))
@@ -148,7 +150,7 @@ func websiteOnboardingHandler(ctx context.Context, req PromptRequest) (PromptRes
 	// Step 11: Completion.
 	messages = append(messages, textMsg(renderPromptTemplate("website_step_complete", data)))
 
-	return PromptResult{
+	return model.PromptResult{
 		Description: "Website onboarding wizard workflow with embedded resource references",
 		Messages:    messages,
 	}, nil
@@ -156,9 +158,9 @@ func websiteOnboardingHandler(ctx context.Context, req PromptRequest) (PromptRes
 
 // setupHandler is the prompts/get handler for the setup prompt. It renders the
 // message sequence from the embedded setup.tmpl templates.
-func setupHandler(ctx context.Context, req PromptRequest) (PromptResult, error) {
+func setupHandler(ctx context.Context, req model.PromptRequest) (model.PromptResult, error) {
 	data := sitePromptData{}
-	var messages []PromptMessage
+	var messages []model.PromptMessage
 
 	// Step 0: Overview.
 	messages = append(messages, textMsg(renderPromptTemplate("setup_overview", data)))
@@ -186,7 +188,7 @@ func setupHandler(ctx context.Context, req PromptRequest) (PromptResult, error) 
 	messages = append(messages, embeddedMsg(AccountStatusURI))
 	messages = append(messages, textMsg(renderPromptTemplate("setup_step_complete", data)))
 
-	return PromptResult{
+	return model.PromptResult{
 		Description: "Setup wizard workflow with embedded resource references",
 		Messages:    messages,
 	}, nil
@@ -195,16 +197,16 @@ func setupHandler(ctx context.Context, req PromptRequest) (PromptResult, error) 
 // --- Prompt message helpers ---
 
 // textMsg builds a user-role text message.
-func textMsg(text string) PromptMessage {
-	return PromptMessage{Role: "user", Text: text}
+func textMsg(text string) model.PromptMessage {
+	return model.PromptMessage{Role: "user", Text: text}
 }
 
 // embeddedMsg builds a user-role embedded-resource message that instructs the
 // agent to read the resource at runtime.
-func embeddedMsg(uri string) PromptMessage {
-	return PromptMessage{
+func embeddedMsg(uri string) model.PromptMessage {
+	return model.PromptMessage{
 		Role: "user",
-		EmbeddedResource: &ResourceResult{
+		EmbeddedResource: &model.ResourceResult{
 			URI:      uri,
 			MIMEType: "application/json",
 			Text:     "Read this resource at runtime to get live data.",

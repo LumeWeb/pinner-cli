@@ -6,6 +6,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // toolMetaSecuritySchemes returns the _meta["securitySchemes"] value of the
@@ -29,7 +31,7 @@ func toolMetaSecuritySchemes(t *testing.T, tool *mcp.Tool) []map[string]any {
 // ChatGPT/admins can see the tool requires an account, and that it is mirrored
 // under _meta["securitySchemes"].
 func TestOfficialToolSecuritySchemesDefault(t *testing.T) {
-	tool := officialTool(ToolDescriptor{
+	tool := officialTool(model.ToolDescriptor{
 		Name:        "pins_list",
 		Description: "list pins",
 		InputSchema: json.RawMessage(`{}`),
@@ -43,7 +45,7 @@ func TestOfficialToolSecuritySchemesDefault(t *testing.T) {
 	require.Empty(t, scopes, "Pinner advertises no application-level scopes")
 
 	// Existing _meta keys (e.g. a companion app) must be preserved.
-	tool = officialTool(ToolDescriptor{
+	tool = officialTool(model.ToolDescriptor{
 		Name:        "auth_sso",
 		InputSchema: json.RawMessage(`{}`),
 		Meta:        map[string]any{"ui": map[string]any{"resourceUri": "ui://auth/sso.html"}},
@@ -56,11 +58,11 @@ func TestOfficialToolSecuritySchemesDefault(t *testing.T) {
 // TestOfficialToolSecuritySchemesExplicit verifies that a descriptor-declared
 // policy (a noauth tool) is honored verbatim instead of the default.
 func TestOfficialToolSecuritySchemesExplicit(t *testing.T) {
-	tool := officialTool(ToolDescriptor{
+	tool := officialTool(model.ToolDescriptor{
 		Name:        "search_public",
 		Description: "anonymous search",
 		InputSchema: json.RawMessage(`{}`),
-		SecuritySchemes: []SecurityScheme{
+		SecuritySchemes: []model.SecurityScheme{
 			{Type: "noauth"},
 			{Type: "oauth2", Scopes: []string{"pins.read"}},
 		},
@@ -79,7 +81,7 @@ func TestOfficialToolSecuritySchemesExplicit(t *testing.T) {
 // serializable shape ChatGPT reads). The go-sdk Tool struct has no top-level
 // securitySchemes field, so _meta is the supported emission point.
 func TestOfficialToolWireJSONHasSecuritySchemesUnderMeta(t *testing.T) {
-	tool := officialTool(ToolDescriptor{Name: "vault_status", InputSchema: json.RawMessage(`{}`)})
+	tool := officialTool(model.ToolDescriptor{Name: "vault_status", InputSchema: json.RawMessage(`{}`)})
 	b, err := json.Marshal(tool)
 	require.NoError(t, err)
 	var obj map[string]any
@@ -95,14 +97,14 @@ func TestOfficialToolWireJSONHasSecuritySchemesUnderMeta(t *testing.T) {
 // securitySchemes in place. Otherwise the key permanently pollutes the entry
 // and survives re-registration.
 func TestOfficialToolDoesNotMutateCallerMeta(t *testing.T) {
-	entry := ToolEntry{
+	entry := model.ToolEntry{
 		Name:        "pins_add",
 		InputSchema: json.RawMessage(`{}`),
 		// Simulates app/metadata that a tool carries through curated
-		// registration (aliased by descriptorFromTool into desc.Meta).
+		// registration (aliased by model.DescriptorFromTool into desc.Meta).
 		Meta: map[string]any{"ui": map[string]any{"resourceUri": "ui://pins/add.html"}},
 	}
-	desc := descriptorFromTool(&entry)
+	desc := model.DescriptorFromTool(&entry)
 
 	officialTool(desc)
 

@@ -9,90 +9,16 @@ import (
 	"sync"
 
 	"go.uber.org/zap"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
-
-// ToolCategory classifies a tool for filtering during discovery.
-type ToolCategory string
-
-const (
-	CategoryCore       ToolCategory = "core"
-	CategoryAccount    ToolCategory = "account"
-	CategoryVault      ToolCategory = "vault"
-	CategoryIPNS       ToolCategory = "ipns"
-	CategoryOperations ToolCategory = "operations"
-	CategoryAdmin      ToolCategory = "admin"
-	CategoryWizard     ToolCategory = "wizard"
-)
-
-// Interaction classifies how a tool behaves when invoked by an agent over the
-// MCP channel (via invoke_tool). It lets the server steer agents away from
-// commands that would read drained stdin or block on a prompt, and instead
-// return a structured redirect so an agent never hangs on a deep command.
-//
-// The classification comes from the compiler-backed operation surface and is
-// stamped on each ToolEntry at registration time.
-type Interaction string
-
-const (
-	// InteractionAgentSafe marks a tool that is non-blocking for agents: it
-	// either completes, fast-fails, or returns a needs_human redirect. This is
-	// the default.
-	InteractionAgentSafe Interaction = "agent_safe"
-	// InteractionInteractive marks a tool that is purely human-facing (a
-	// wizard/setup flow that prompts interactively). Agents should not invoke
-	// it; invoke_tool redirects, and search_tools hides it.
-	InteractionInteractive Interaction = "interactive"
-)
-
-// ToolEntry is a single tool in the internal catalog. It stores everything
-// the meta-tools need to describe and invoke a tool without exposing it
-// via the standard tools/list endpoint.
-type ToolEntry struct {
-	Name        string
-	Title       string
-	Description string
-	Category    ToolCategory
-	ReadOnly    bool
-	Destructive bool
-	// DirectVisible reports whether the tool is part of the directly-exposed
-	// surface (tools/list) in addition to progressive discovery. The curated
-	// registration loop registers every DirectVisible entry; the search/describe
-	// meta-tools index the whole catalog regardless.
-	DirectVisible bool
-	// Interaction tells agents whether this tool is safe to invoke directly,
-	// prompts interactively, or reads piped stdin. It is set at registration
-	// time (e.g. the compiled surface's Operation metadata or the OOB setup
-	// handlers).
-	Interaction Interaction
-	InputSchema json.RawMessage
-	// OutputSchema is the JSON Schema describing the tool's StructuredContent
-	// (the shape of a successful CallToolResult). The wire seam emits it as the
-	// official tool's `outputSchema` so the descriptor matches what the handler
-	// actually returns. When nil, no outputSchema is declared on the wire.
-	OutputSchema json.RawMessage
-	// Meta carries arbitrary tool metadata (e.g. MCP Apps `_meta.ui`) through
-	// curated registration. SDK-neutral; the wire seam encodes it onto the
-	// tool. Extended, never replaced, when attaching app metadata.
-	Meta map[string]any
-	// SecuritySchemes declares the tool's auth policy for OpenAI/ChatGPT
-	// per-tool `securitySchemes`. Nil means the wire seam applies the server
-	// default (oauth2, no scopes).
-	SecuritySchemes []SecurityScheme
-	// SensitiveFlags lists the long flag names whose values are credential
-	// material and must be redacted from the in-process arg-trace log. It is
-	// derived from the command's flag declarations (SensitiveProvider) at
-	// registration time, so the redaction vocabulary cannot drift from the
-	// CLI.
-	SensitiveFlags []string
-	Handler        PinnerToolHandler
-}
 
 // ToolSummary is the lightweight representation returned by search_tools.
 // It deliberately omits the input schema so that discovery stays cheap.
 type ToolSummary struct {
-	Name        string       `json:"name"`
-	Description string       `json:"description"`
-	Category    ToolCategory `json:"category,omitempty"`
+	Name        string             `json:"name"`
+	Description string             `json:"description"`
+	Category    model.ToolCategory `json:"category,omitempty"`
 	// ReadOnly/Destructive surface the operation's Safety classification on the
 	// cheap discovery pass (search_tools / onboarding) so a framework author can
 	// gate autonomy on the safety tier without a per-tool describe_tool round-trip.
@@ -102,19 +28,19 @@ type ToolSummary struct {
 	// (agent_safe), prompts interactively (interactive), or reads piped stdin
 	// (stdin_input). Interactive tools are omitted from search_tools entirely;
 	// stdin_input tools remain discoverable so agents see the steering signal.
-	Interaction Interaction `json:"interaction,omitempty"`
+	Interaction model.Interaction `json:"interaction,omitempty"`
 }
 
 // ToolDetail is the full representation returned by describe_tool.
 type ToolDetail struct {
-	Name        string          `json:"name"`
-	Title       string          `json:"title,omitempty"`
-	Description string          `json:"description"`
-	Category    ToolCategory    `json:"category,omitempty"`
-	ReadOnly    bool            `json:"readOnlyHint,omitempty"`
-	Destructive bool            `json:"destructiveHint,omitempty"`
-	Interaction Interaction     `json:"interaction,omitempty"`
-	InputSchema json.RawMessage `json:"inputSchema"`
+	Name        string             `json:"name"`
+	Title       string             `json:"title,omitempty"`
+	Description string             `json:"description"`
+	Category    model.ToolCategory `json:"category,omitempty"`
+	ReadOnly    bool               `json:"readOnlyHint,omitempty"`
+	Destructive bool               `json:"destructiveHint,omitempty"`
+	Interaction model.Interaction  `json:"interaction,omitempty"`
+	InputSchema json.RawMessage    `json:"inputSchema"`
 }
 
 // ToolCatalog is an in-memory registry of tools that are discovered through
@@ -124,7 +50,7 @@ type ToolDetail struct {
 // catalog stays internal.
 type ToolCatalog struct {
 	mu    sync.RWMutex
-	tools map[string]*ToolEntry
+	tools map[string]*model.ToolEntry
 	// CatalogDeps, when set, holds the operation-catalog dependency factory
 	// (config manager + core service factories) handed to buildCatalog via the
 	// withCatalogDeps option. It is plumbing only at this stage: nothing in the
@@ -142,19 +68,19 @@ type ToolCatalog struct {
 
 // NewToolCatalog returns an empty catalog.
 func NewToolCatalog() *ToolCatalog {
-	return &ToolCatalog{tools: make(map[string]*ToolEntry)}
+	return &ToolCatalog{tools: make(map[string]*model.ToolEntry)}
 }
 
 // Add registers a tool entry. If a tool with the same name already exists it
 // is replaced.
-func (c *ToolCatalog) Add(entry *ToolEntry) {
+func (c *ToolCatalog) Add(entry *model.ToolEntry) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.tools[entry.Name] = entry
 }
 
 // Get returns the entry for name, or false if not found.
-func (c *ToolCatalog) Get(name string) (*ToolEntry, bool) {
+func (c *ToolCatalog) Get(name string) (*model.ToolEntry, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	entry, ok := c.tools[name]
@@ -169,10 +95,10 @@ func (c *ToolCatalog) Len() int {
 }
 
 // Entries returns a snapshot of all registered tools.
-func (c *ToolCatalog) Entries() []*ToolEntry {
+func (c *ToolCatalog) Entries() []*model.ToolEntry {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	entries := make([]*ToolEntry, 0, len(c.tools))
+	entries := make([]*model.ToolEntry, 0, len(c.tools))
 	for _, entry := range c.tools {
 		entries = append(entries, entry)
 	}
@@ -216,10 +142,10 @@ func (c *ToolCatalog) Onboarding() OnboardingResult {
 	var tools []ToolSummary
 	c.mu.RLock()
 	for _, t := range c.tools {
-		if t.Interaction == InteractionInteractive {
+		if t.Interaction == model.InteractionInteractive {
 			continue
 		}
-		if t.Category == CategoryWizard {
+		if t.Category == model.CategoryWizard {
 			continue
 		}
 		if !isPrimaryTool(t.Name) {
@@ -286,12 +212,12 @@ func (c *ToolCatalog) Search(query, category string, limit int) []ToolSummary {
 	for _, t := range c.tools {
 		// Human-only (interactive) tools are hidden from agent discovery so an
 		// agent cannot even find a trap that would block on a prompt.
-		if t.Interaction == InteractionInteractive {
+		if t.Interaction == model.InteractionInteractive {
 			continue
 		}
 		// Wizards are interactive by nature; keep them out of general keyword
 		// search unless the category filter names them explicitly.
-		if t.Category == CategoryWizard && category != string(CategoryWizard) {
+		if t.Category == model.CategoryWizard && category != string(model.CategoryWizard) {
 			continue
 		}
 		if category != "" && string(t.Category) != category {
@@ -369,7 +295,7 @@ func (c *ToolCatalog) Suggest(name string, max int) []string {
 	}
 	all := make([]scored, 0, len(c.tools))
 	for _, t := range c.tools {
-		if t.Category == CategoryWizard || t.Interaction == InteractionInteractive {
+		if t.Category == model.CategoryWizard || t.Interaction == model.InteractionInteractive {
 			continue
 		}
 		d := levenshtein(strings.ToLower(t.Name), target)
@@ -459,17 +385,17 @@ func (c *ToolCatalog) Describe(name string) (*ToolDetail, error) {
 
 // Invoke dispatches to the named tool's handler and returns the Pinner-neutral
 // result.
-func (c *ToolCatalog) Invoke(ctx context.Context, name string, args map[string]any) (ToolResult, error) {
+func (c *ToolCatalog) Invoke(ctx context.Context, name string, args map[string]any) (model.ToolResult, error) {
 	c.mu.RLock()
 	entry, ok := c.tools[name]
 	c.mu.RUnlock()
 
 	if !ok {
-		return ToolResult{}, fmt.Errorf("unknown tool: %s", name)
+		return model.ToolResult{}, fmt.Errorf("unknown tool: %s", name)
 	}
 
 	log.Info("meta-tool invoke", zap.String("tool", name))
-	return entry.Handler(ctx, ToolRequest{Name: name, Arguments: args})
+	return entry.Handler(ctx, model.ToolRequest{Name: name, Arguments: args})
 }
 
 // humanTitle derives a human-friendly tool title from the command path,

@@ -11,6 +11,8 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/catalogops"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // compilerRoot builds a minimal CLI command tree with one walkable command
@@ -81,9 +83,9 @@ func TestCompiledVaultCreateHonorsOOBHandoff(t *testing.T) {
 	createEntry, ok := cat.Get(compiledVaultCreateToolName)
 	require.True(t, ok, "compiled vault.create must be present in compiler mode")
 	require.NotNil(t, createEntry.Handler)
-	require.Equal(t, InteractionAgentSafe, createEntry.Interaction)
+	require.Equal(t, model.InteractionAgentSafe, createEntry.Interaction)
 
-	res, err := createEntry.Handler(context.Background(), ToolRequest{
+	res, err := createEntry.Handler(context.Background(), model.ToolRequest{
 		Name: compiledVaultCreateToolName,
 		Arguments: map[string]any{
 			"profile": "aliasdev",
@@ -127,7 +129,7 @@ func TestCompilerModeProvidesCompiledSurface(t *testing.T) {
 
 	// The compiled op dispatches through the catalog gate without a hard error
 	// (missing required args surface as a clean ToolResult error, not a panic).
-	res, err := entry.Handler(context.Background(), ToolRequest{Name: "auth_status", Arguments: map[string]any{}})
+	res, err := entry.Handler(context.Background(), model.ToolRequest{Name: "auth_status", Arguments: map[string]any{}})
 	require.NoError(t, err)
 	require.True(t, res.IsError, "executing auth.status with nil deps should fail cleanly, not panic")
 }

@@ -6,12 +6,14 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // vaultPutDescriptor builds a unified vault_put_file descriptor for a given
 // transport wiring, mirroring the production registration shape so the test
 // exercises the exact same routing logic.
-func vaultPutDescriptor(coLocated, remote bool, pathFn LocalPathVaultPutHandler, vu *vaultHTTPUpload, relayFn VaultPutHandler) ToolDescriptor {
+func vaultPutDescriptor(coLocated, remote bool, pathFn LocalPathVaultPutHandler, vu *vaultHTTPUpload, relayFn VaultPutHandler) model.ToolDescriptor {
 	return NewVaultPutFileDescriptor(coLocated, remote, pathFn, vu, relayFn, nil, 0)
 }
 
@@ -20,7 +22,7 @@ func TestVaultPutFileDescriptorRequiresVaultPath(t *testing.T) {
 		t.Fatal("handler must not run without vault_path")
 		return nil, nil
 	}, nil, nil)
-	_, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{
+	_, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
 		"source": map[string]any{"mode": "path", "path": "/tmp/x"},
 	}})
 	require.ErrorContains(t, err, "vault_path is required")
@@ -33,7 +35,7 @@ func TestVaultPutFileDescriptorStdioPath(t *testing.T) {
 		return map[string]any{"vault_path": vaultPath}, nil
 	}, nil, nil)
 
-	res, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{
+	res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
 		"source":       map[string]any{"mode": "path", "path": "/host/abs/file.bin"},
 		"vault_path":   "vault:/uploads/file.bin",
 		"archive_mode": "preserve",
@@ -52,7 +54,7 @@ func TestVaultPutFileDescriptorStdioRejectsMint(t *testing.T) {
 		t.Fatal("path handler must not run for mint")
 		return nil, nil
 	}, nil, nil)
-	_, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{
+	_, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
 		"source":     map[string]any{"mode": "mint"},
 		"vault_path": "vault:/uploads/file.bin",
 	}})
@@ -61,7 +63,7 @@ func TestVaultPutFileDescriptorStdioRejectsMint(t *testing.T) {
 
 func TestVaultPutFileDescriptorStdioPathNotConfigured(t *testing.T) {
 	desc := vaultPutDescriptor(true, false, nil, nil, nil)
-	_, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{
+	_, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
 		"source":     map[string]any{"mode": "path", "path": "/tmp/x"},
 		"vault_path": "vault:/uploads/x.bin",
 	}})
@@ -73,7 +75,7 @@ func TestVaultPutFileDescriptorHTTPMints(t *testing.T) {
 	defer vu.Stop(context.Background())
 	desc := vaultPutDescriptor(false, false, nil, vu, nil)
 
-	res, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{
+	res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
 		"source":     map[string]any{"mode": "mint"},
 		"vault_path": "vault:/uploads/report.pdf",
 		"ttl":        "5m",
@@ -91,7 +93,7 @@ func TestVaultPutFileDescriptorHTTPRejectsPath(t *testing.T) {
 	vu := NewVaultHTTPUpload(nil, 0)
 	defer vu.Stop(context.Background())
 	desc := vaultPutDescriptor(false, false, nil, vu, nil)
-	_, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{
+	_, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
 		"source":     map[string]any{"mode": "path", "path": "/etc/passwd"},
 		"vault_path": "vault:/uploads/passwd",
 	}})
@@ -107,7 +109,7 @@ func TestVaultPutFileDescriptorOpenAIData(t *testing.T) {
 		return map[string]any{"vault_path": vaultPath}, nil
 	})
 
-	res, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{
+	res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
 		"source":     map[string]any{"mode": "data", "data": "data:;name=note.txt;size=2;base64,aGk="},
 		"vault_path": "vault:/uploads/note.txt",
 	}})
@@ -124,7 +126,7 @@ func TestVaultPutFileDescriptorOpenAIRelayHonorsMaxBytes(t *testing.T) {
 		t.Fatal("relay must not receive an oversized upload")
 		return nil, nil
 	}, nil, 4) // cap at 4 bytes
-	_, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{
+	_, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
 		"source":     map[string]any{"mode": "data", "data": "data:;name=big.bin;size=100;base64,YWFhYWFhYWFh"},
 		"vault_path": "vault:/uploads/big.bin",
 	}})
@@ -133,7 +135,7 @@ func TestVaultPutFileDescriptorOpenAIRelayHonorsMaxBytes(t *testing.T) {
 
 func TestVaultPutFileDescriptorOpenAIRejectsPath(t *testing.T) {
 	desc := vaultPutDescriptor(false, true, nil, nil, nil)
-	_, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{
+	_, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
 		"source":     map[string]any{"mode": "path", "path": "/etc/passwd"},
 		"vault_path": "vault:/uploads/passwd",
 	}})
@@ -172,7 +174,7 @@ func TestVaultPutFileRejectsUnsafePathOnEverySourceBranch(t *testing.T) {
 	})
 
 	branches := map[string]struct {
-		desc ToolDescriptor
+		desc model.ToolDescriptor
 		args map[string]any
 	}{
 		"stdio/path": {
@@ -199,7 +201,7 @@ func TestVaultPutFileRejectsUnsafePathOnEverySourceBranch(t *testing.T) {
 			for k, v := range bc.args {
 				args[k] = v
 			}
-			res, err := bc.desc.Handler(context.Background(), ToolRequest{Arguments: args})
+			res, err := bc.desc.Handler(context.Background(), model.ToolRequest{Arguments: args})
 			// Unsafe paths must be rejected before any write: either the
 			// handler surface returns a Go error or an IsError result.
 			require.True(t, err != nil || res.IsError, "%s: unsafe vault path %q must be rejected before write", branch, p)
@@ -213,7 +215,7 @@ func TestVaultPutFileRejectsUnsafePathOnEverySourceBranch(t *testing.T) {
 			acceptSource = map[string]any{"mode": "data", "data": "data:;name=x.txt;size=2;base64,aGk="}
 		}
 		args := map[string]any{"vault_path": anyFolderFile, "source": acceptSource}
-		res, err := bc.desc.Handler(context.Background(), ToolRequest{Arguments: args})
+		res, err := bc.desc.Handler(context.Background(), model.ToolRequest{Arguments: args})
 		require.NoError(t, err, "%s: vault file path %q must be accepted", branch, anyFolderFile)
 		require.False(t, res.IsError)
 	}
@@ -230,7 +232,7 @@ func noopPathFn(ctx context.Context, path, vaultPath, archiveMode string) (any, 
 // just the historical uploads scope.
 func TestVaultPutFileAnyFolderAcrossAllBranches(t *testing.T) {
 	pathBranches := []struct {
-		desc ToolDescriptor
+		desc model.ToolDescriptor
 		args map[string]any
 	}{
 		{
@@ -257,7 +259,7 @@ func TestVaultPutFileAnyFolderAcrossAllBranches(t *testing.T) {
 		for k, v := range bc.args {
 			args[k] = v
 		}
-		res, err := bc.desc.Handler(context.Background(), ToolRequest{Arguments: args})
+		res, err := bc.desc.Handler(context.Background(), model.ToolRequest{Arguments: args})
 		require.NoError(t, err, "vault:/docs/f.pdf must be accepted")
 		require.False(t, res.IsError)
 	}

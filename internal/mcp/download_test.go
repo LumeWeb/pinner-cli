@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // ---- httpDownload filedrop GET coordinator ----
@@ -231,7 +233,7 @@ func TestDownloadFileLocalSink(t *testing.T) {
 		return err
 	})
 	desc := NewDownloadFileDescriptor(ipp, nil, root, 0, false)
-	res, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{
+	res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
 		"ipfs_path":   "bafyabc/doc.txt",
 		"sink":        "local",
 		"output_path": "dl.bin",
@@ -247,7 +249,7 @@ func TestDownloadFileLocalSinkRejectsEscape(t *testing.T) {
 	root := t.TempDir()
 	ipp := IPFSDownloadHandler(func(ctx context.Context, ipfsPath string, w io.Writer) error { return nil })
 	desc := NewDownloadFileDescriptor(ipp, nil, root, 0, false)
-	_, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{
+	_, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
 		"ipfs_path":   "bafyabc/doc.txt",
 		"sink":        "local",
 		"output_path": "../../../etc/evil",
@@ -269,7 +271,7 @@ func TestDownloadFileDropSink(t *testing.T) {
 		0,
 		false,
 	)
-	res, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{
+	res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
 		"ipfs_path": "bafyabc/x.bin",
 		"sink":      "drop",
 	}})
@@ -302,7 +304,7 @@ func TestDownloadFileTextSurfacesDestination(t *testing.T) {
 			}),
 			nil, root, 0, false,
 		)
-		res, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{
+		res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
 			"ipfs_path":   "bafyabc/doc.txt",
 			"sink":        "local",
 			"output_path": "dl.bin",
@@ -328,7 +330,7 @@ func TestDownloadFileTextSurfacesDestination(t *testing.T) {
 			}),
 			hd, root, 0, false,
 		)
-		res, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{
+		res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
 			"ipfs_path": "bafyabc/x.bin",
 			"sink":      "drop",
 		}})
@@ -351,7 +353,7 @@ func TestDownloadFileDropHiddenOnOpenAITunnel(t *testing.T) {
 		0,
 		true, // tunnelOpenAI
 	)
-	_, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{
+	_, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
 		"ipfs_path": "bafyabc/x.bin",
 		"sink":      "drop",
 	}})
@@ -364,10 +366,10 @@ func TestDownloadFileRequiresPathAndValidSink(t *testing.T) {
 	root := t.TempDir()
 	desc := NewDownloadFileDescriptor(i, nil, root, 0, false)
 	// Missing ipfs_path.
-	_, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{"sink": "local"}})
+	_, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{"sink": "local"}})
 	require.Error(t, err)
 	// Unknown sink.
-	_, err = desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{"ipfs_path": "bafy", "sink": "nope"}})
+	_, err = desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{"ipfs_path": "bafy", "sink": "nope"}})
 	require.Error(t, err)
 }
 
@@ -379,7 +381,7 @@ func TestVaultGetFileLocalSink(t *testing.T) {
 		return err
 	})
 	desc := NewVaultGetFileDescriptor(vg, nil, root, 0, false)
-	res, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{
+	res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
 		"vault_path":  "vault:/docs/f.pdf",
 		"sink":        "local",
 		"output_path": "docs/f.pdf",
@@ -423,7 +425,7 @@ func TestExecuteDropSinkDefaultsReportedTTL(t *testing.T) {
 		0,
 		false,
 	)
-	res, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{
+	res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
 		"ipfs_path": "bafyabc/x.bin",
 		"sink":      "drop",
 		// ttl omitted
@@ -453,7 +455,7 @@ func TestDownloadFileDropSinkEnforcesSizeCap(t *testing.T) {
 		8, // maxDownloadBytes
 		false,
 	)
-	res, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{
+	res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
 		"ipfs_path": "bafyabc/x.bin",
 		"sink":      "drop",
 	}})

@@ -13,10 +13,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 func TestCallToolResultFromElicitationForm(t *testing.T) {
-	res := callToolResultFromElicitation(FormElicitation("input", "Needs domain", map[string]any{
+	res := callToolResultFromElicitation(model.FormElicitation("input", "Needs domain", map[string]any{
 		"type": "object", "properties": map[string]any{"domain": map[string]any{"type": "string"}},
 	}))
 	require.NotNil(t, res)
@@ -29,7 +31,7 @@ func TestCallToolResultFromElicitationForm(t *testing.T) {
 }
 
 func TestCallToolResultFromElicitationURL(t *testing.T) {
-	res := callToolResultFromElicitation(ElicitationSpec{
+	res := callToolResultFromElicitation(model.ElicitationSpec{
 		ID: "auth", Message: "Complete login", URL: "https://example.com/oauth", ElicitationID: "flow-1",
 	})
 	el := res.InputRequests["auth"].(*mcp.ElicitParams)
@@ -43,28 +45,28 @@ func TestCallToolResultFromElicitationURL(t *testing.T) {
 // SDK seam converts it to an input_required result, then a retry delivers the
 // accepted form content back as the "input" argument.
 func TestOfficialToolHandlerElicitationRoundTrip(t *testing.T) {
-	closed := make(chan ToolResult, 1)
+	closed := make(chan model.ToolResult, 1)
 
 	// localInput is the typed step input decoded from the merged arguments.
 	type localInput struct {
 		Input json.RawMessage `json:"input"`
 	}
-	stepHandler := PinnerToolHandler(func(_ context.Context, req ToolRequest) (ToolResult, error) {
+	stepHandler := model.PinnerToolHandler(func(_ context.Context, req model.ToolRequest) (model.ToolResult, error) {
 		in, err := decodeToolArgs[localInput](req)
 		if err != nil {
-			return ToolResult{}, err
+			return model.ToolResult{}, err
 		}
 		var domain struct {
 			Domain string `json:"domain"`
 		}
 		if len(in.Input) > 0 {
 			if err := json.Unmarshal(in.Input, &domain); err != nil {
-				return ToolResult{}, err
+				return model.ToolResult{}, err
 			}
-			closed <- ToolResult{Text: "got " + domain.Domain}
-			return ToolResult{Text: "accepted"}, nil
+			closed <- model.ToolResult{Text: "got " + domain.Domain}
+			return model.ToolResult{Text: "accepted"}, nil
 		}
-		return ToolResult{Elicitation: &ElicitationSpec{
+		return model.ToolResult{Elicitation: &model.ElicitationSpec{
 			ID:         "input",
 			Message:    "Enter domain",
 			FormSchema: map[string]any{"type": "object"},
@@ -102,10 +104,10 @@ func TestElicitationRequestStateCarriesSession(t *testing.T) {
 		Input        json.RawMessage `json:"input"`
 		RequestState string          `json:"request_state"`
 	}
-	stepHandler := PinnerToolHandler(func(_ context.Context, req ToolRequest) (ToolResult, error) {
+	stepHandler := model.PinnerToolHandler(func(_ context.Context, req model.ToolRequest) (model.ToolResult, error) {
 		in, err := decodeToolArgs[stepInput](req)
 		if err != nil {
-			return ToolResult{}, err
+			return model.ToolResult{}, err
 		}
 		sess := in.SessionID
 		if sess == "" {
@@ -116,11 +118,11 @@ func TestElicitationRequestStateCarriesSession(t *testing.T) {
 		}
 		if len(in.Input) > 0 {
 			if err := json.Unmarshal(in.Input, &domain); err != nil {
-				return ToolResult{}, err
+				return model.ToolResult{}, err
 			}
-			return ToolResult{Text: "session " + sess + " got " + domain.Domain}, nil
+			return model.ToolResult{Text: "session " + sess + " got " + domain.Domain}, nil
 		}
-		return ToolResult{Elicitation: &ElicitationSpec{
+		return model.ToolResult{Elicitation: &model.ElicitationSpec{
 			ID: "input", Message: "Enter domain", RequestState: "sess-42",
 		}}, nil
 	})
@@ -193,9 +195,9 @@ func TestSchemaRequiresInput(t *testing.T) {
 // submission instead of falling back to plain StepResponse JSON.
 func TestOfficialToolHandlerFlagsFormRetry(t *testing.T) {
 	got := make(chan bool, 1)
-	stepHandler := PinnerToolHandler(func(_ context.Context, req ToolRequest) (ToolResult, error) {
+	stepHandler := model.PinnerToolHandler(func(_ context.Context, req model.ToolRequest) (model.ToolResult, error) {
 		got <- req.InputResponses
-		return ToolResult{Text: "ok"}, nil
+		return model.ToolResult{Text: "ok"}, nil
 	})
 	handler := officialToolHandler(stepHandler)
 

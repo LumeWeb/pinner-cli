@@ -9,6 +9,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"go.lumeweb.com/pinner-cli/internal/catalogops"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // fakePins is a controllable PinningProvider for app tests.
@@ -30,13 +32,13 @@ func (f *fakePins) PinStatus(_ context.Context, cid string) (PinStatusView, erro
 func buildPinAppServer(t *testing.T, pins PinningProvider) *mcp.Server {
 	t.Helper()
 	catalog := NewToolCatalog()
-	catalog.Add(&ToolEntry{
+	catalog.Add(&model.ToolEntry{
 		Name:          "pins_add",
 		Description:   "Pin an existing CID via the Pinner.xyz API.",
 		DirectVisible: true,
 		InputSchema:   json.RawMessage(`{"type":"object","properties":{"cid":{"type":"string"},"name":{"type":"string"}},"required":["cid"]}`),
-		Handler: func(_ context.Context, _ ToolRequest) (ToolResult, error) {
-			return ToolResult{Text: "pin scheduled"}, nil
+		Handler: func(_ context.Context, _ model.ToolRequest) (model.ToolResult, error) {
+			return model.ToolResult{Text: "pin scheduled"}, nil
 		},
 	})
 
@@ -169,8 +171,8 @@ func TestPinCreateResourceRead(t *testing.T) {
 		`id="pin-form"`,
 		`id="cid"`,
 		`type="module"`,
-		"pins_add",    // embedded bundle targets the compiled tool...
-		"pin_status",  // ...and the app-only polling helper
+		"pins_add",       // embedded bundle targets the compiled tool...
+		"pin_status",     // ...and the app-only polling helper
 		"callServerTool", // real host bridge, not a stub
 	} {
 		if !strings.Contains(html, want) {
@@ -194,8 +196,8 @@ func TestPinCreateResourceRead(t *testing.T) {
 func TestPinStatusPollingResilient(t *testing.T) {
 	html := renderPinCreateAppHTML()
 	for _, want := range []string{
-		"pin_status",                 // the polling helper the view targets
-		"callServerTool",             // host bridge present
+		"pin_status",     // the polling helper the view targets
+		"callServerTool", // host bridge present
 		"<!doctype html>",
 		"<script type=\"module\">",
 	} {
@@ -303,22 +305,22 @@ func TestPinAppModuleTargetsExistingTool(t *testing.T) {
 func buildVaultBrowserServer(t *testing.T) *mcp.Server {
 	t.Helper()
 	catalog := NewToolCatalog()
-	catalog.Add(&ToolEntry{
+	catalog.Add(&model.ToolEntry{
 		Name:          "vault_status",
 		Description:   "Show vault status.",
 		DirectVisible: true,
 		InputSchema:   json.RawMessage(`{"type":"object","properties":{}}`),
-		Handler: func(_ context.Context, _ ToolRequest) (ToolResult, error) {
-			return ToolResult{Text: "{\"status\":\"ok\"}"}, nil
+		Handler: func(_ context.Context, _ model.ToolRequest) (model.ToolResult, error) {
+			return model.ToolResult{Text: "{\"status\":\"ok\"}"}, nil
 		},
 	})
-	catalog.Add(&ToolEntry{
+	catalog.Add(&model.ToolEntry{
 		Name:          "vault_ls",
 		Description:   "List vault files.",
 		DirectVisible: true,
 		InputSchema:   json.RawMessage(`{"type":"object","properties":{"path":{"type":"string"}}}`),
-		Handler: func(_ context.Context, _ ToolRequest) (ToolResult, error) {
-			return ToolResult{Text: "[]"}, nil
+		Handler: func(_ context.Context, _ model.ToolRequest) (model.ToolResult, error) {
+			return model.ToolResult{Text: "[]"}, nil
 		},
 	})
 
@@ -387,13 +389,13 @@ func TestRegisterVaultBrowserAppWire(t *testing.T) {
 func buildPinListServer(t *testing.T) *mcp.Server {
 	t.Helper()
 	catalog := NewToolCatalog()
-	catalog.Add(&ToolEntry{
+	catalog.Add(&model.ToolEntry{
 		Name:          "pins_list",
 		Description:   "List pinned content.",
 		DirectVisible: true,
 		InputSchema:   json.RawMessage(`{"type":"object","properties":{"name":{"type":"string"},"limit":{"type":"integer"},"status":{"type":"string"}}}`),
-		Handler: func(_ context.Context, _ ToolRequest) (ToolResult, error) {
-			return ToolResult{Text: "[]"}, nil
+		Handler: func(_ context.Context, _ model.ToolRequest) (model.ToolResult, error) {
+			return model.ToolResult{Text: "[]"}, nil
 		},
 	})
 
@@ -458,13 +460,13 @@ func TestRegisterPinListAppWire(t *testing.T) {
 func buildAuthStatusServer(t *testing.T) *mcp.Server {
 	t.Helper()
 	catalog := NewToolCatalog()
-	catalog.Add(&ToolEntry{
+	catalog.Add(&model.ToolEntry{
 		Name:          "auth_status",
 		Description:   "Check authentication status.",
 		DirectVisible: true,
 		InputSchema:   json.RawMessage(`{"type":"object","properties":{}}`),
-		Handler: func(_ context.Context, _ ToolRequest) (ToolResult, error) {
-			return ToolResult{Text: `{"authenticated":true}`}, nil
+		Handler: func(_ context.Context, _ model.ToolRequest) (model.ToolResult, error) {
+			return model.ToolResult{Text: `{"authenticated":true}`}, nil
 		},
 	})
 
@@ -522,4 +524,3 @@ func TestRegisterAuthStatusAppWire(t *testing.T) {
 	}
 	t.Fatalf("auth_status tool not found after registering the auth status app")
 }
-

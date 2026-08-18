@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"time"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // VaultPutHandler is the authenticated vault write executor. It writes bytes
@@ -56,21 +58,21 @@ type VaultPutFileInput struct {
 // byte is read or written on every source branch, so a directory or traversal
 // destination can never be written regardless of transport. Any vault file
 // path is an allowed destination; there is no single-folder restriction.
-func NewVaultPutFileDescriptor(coLocated, tunnelOpenAI bool, pathFn LocalPathVaultPutHandler, vu *vaultHTTPUpload, relayFn VaultPutHandler, relayHosts []string, maxRelayBytes int64) ToolDescriptor {
+func NewVaultPutFileDescriptor(coLocated, tunnelOpenAI bool, pathFn LocalPathVaultPutHandler, vu *vaultHTTPUpload, relayFn VaultPutHandler, relayHosts []string, maxRelayBytes int64) model.ToolDescriptor {
 	transport := uploadFileTransport(coLocated, tunnelOpenAI)
-	return ToolDescriptor{
+	return model.ToolDescriptor{
 		Name:        "vault_put_file",
 		Title:       "Store a file in the Pinner vault",
 		Description: vaultPutFileDescription(transport),
-		Category:    CategoryCore,
+		Category:    model.CategoryCore,
 		InputSchema: toolSchemaFor[VaultPutFileInput](),
-		Handler: func(ctx context.Context, request ToolRequest) (ToolResult, error) {
+		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
 			in, err := decodeToolArgs[VaultPutFileInput](request)
 			if err != nil {
-				return ToolResult{}, err
+				return model.ToolResult{}, err
 			}
 			if in.VaultPath == "" {
-				return ToolResult{}, fmt.Errorf("vault_path is required")
+				return model.ToolResult{}, fmt.Errorf("vault_path is required")
 			}
 			// SECURITY INVARIANT: validate the destination path before any byte
 			// is read or written — a well-formed FILE path, not a directory,
@@ -80,34 +82,34 @@ func NewVaultPutFileDescriptor(coLocated, tunnelOpenAI bool, pathFn LocalPathVau
 			// historical vault_put_path target vault:/docs/f.pdf). The mint
 			// flow additionally re-validates defensively inside its own mint().
 			if err := in.Source.Validate(transport); err != nil {
-				return ToolResult{}, err
+				return model.ToolResult{}, err
 			}
 			if err := validateVaultFilePath(in.VaultPath); err != nil {
-				return ToolResult{}, err
+				return model.ToolResult{}, err
 			}
 
 			switch transport {
 			case TransportStdio:
 				if in.Source.Mode != SourcePath {
-					return ToolResult{}, fmt.Errorf("source mode %q is not available on the %s transport", in.Source.Mode, transport)
+					return model.ToolResult{}, fmt.Errorf("source mode %q is not available on the %s transport", in.Source.Mode, transport)
 				}
 				if pathFn == nil {
-					return ToolResult{}, errors.New("local path vault handler is not configured")
+					return model.ToolResult{}, errors.New("local path vault handler is not configured")
 				}
 				result, err := pathFn(ctx, in.Source.Path, in.VaultPath, in.ArchiveMode)
 				return wrapResult(result, err, "Stored in the vault.")
 			case TransportHTTP:
 				if in.Source.Mode != SourceMint {
-					return ToolResult{}, fmt.Errorf("source mode %q is not available on the %s transport", in.Source.Mode, transport)
+					return model.ToolResult{}, fmt.Errorf("source mode %q is not available on the %s transport", in.Source.Mode, transport)
 				}
 				if vu == nil {
-					return ToolResult{}, errors.New("presigned vault-upload endpoint is not configured for remote mode")
+					return model.ToolResult{}, errors.New("presigned vault-upload endpoint is not configured for remote mode")
 				}
 				ttl := defaultHTTPUploadTTL
 				if in.TTL != "" {
 					d, derr := time.ParseDuration(in.TTL)
 					if derr != nil {
-						return ToolResult{}, fmt.Errorf("invalid ttl %q: %w", in.TTL, derr)
+						return model.ToolResult{}, fmt.Errorf("invalid ttl %q: %w", in.TTL, derr)
 					}
 					if d > 0 {
 						ttl = d
@@ -115,10 +117,10 @@ func NewVaultPutFileDescriptor(coLocated, tunnelOpenAI bool, pathFn LocalPathVau
 				}
 				url, merr := vu.mint(in.VaultPath, ttl)
 				if merr != nil {
-					return ToolResult{}, merr
+					return model.ToolResult{}, merr
 				}
 				curlCmd := fmt.Sprintf("curl -sS -T <your-file> %q", url)
-				return ToolResult{
+				return model.ToolResult{
 					StructuredContent: map[string]any{
 						"url":          url,
 						"vault_path":   in.VaultPath,
@@ -130,15 +132,15 @@ func NewVaultPutFileDescriptor(coLocated, tunnelOpenAI bool, pathFn LocalPathVau
 				}, nil
 			default: // TransportOpenAI
 				if in.Source.Mode != SourceURL && in.Source.Mode != SourceData {
-					return ToolResult{}, fmt.Errorf("source mode %q is not available on the OpenAI tunnel transport", in.Source.Mode)
+					return model.ToolResult{}, fmt.Errorf("source mode %q is not available on the OpenAI tunnel transport", in.Source.Mode)
 				}
 				if relayFn == nil {
-					return ToolResult{}, errors.New("vault relay write is not configured")
+					return model.ToolResult{}, errors.New("vault relay write is not configured")
 				}
 				res := &SourceResolver{Transport: TransportOpenAI, RelayAllowedHosts: relayHosts, RelayMaxBytes: effectiveRelayMaxBytes(maxRelayBytes)}
 				body, size, _, oerr := res.OpenBytes(ctx, in.Source)
 				if oerr != nil {
-					return ToolResult{}, oerr
+					return model.ToolResult{}, oerr
 				}
 				defer body.Close()
 				writeCtx, cancel := context.WithTimeout(ctx, syncUploadBudget(size))

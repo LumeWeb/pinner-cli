@@ -25,6 +25,8 @@ import (
 	mcpadapter "go.lumeweb.com/pinner-cli/internal/mcp"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // --- Test wizard state ---
@@ -1825,7 +1827,7 @@ func TestSetupWizard_FirstStepThroughHandler(t *testing.T) {
 
 	startEntry, ok := cat.Get("setup_wizard_start")
 	require.True(t, ok)
-	startRes, err := startEntry.Handler(context.Background(), mcpadapter.ToolRequest{Name: "setup_wizard_start"})
+	startRes, err := startEntry.Handler(context.Background(), model.ToolRequest{Name: "setup_wizard_start"})
 	require.NoError(t, err)
 	t.Logf("start result text: %s", startRes.Text)
 
@@ -1839,7 +1841,7 @@ func TestSetupWizard_FirstStepThroughHandler(t *testing.T) {
 	require.True(t, ok)
 
 	// First step call: auth -> skip. This is the call that fails in production.
-	stepRes, err := stepEntry.Handler(context.Background(), mcpadapter.ToolRequest{
+	stepRes, err := stepEntry.Handler(context.Background(), model.ToolRequest{
 		Name: "setup_wizard_step",
 		Arguments: map[string]any{
 			"session_id": startResp.SessionID,

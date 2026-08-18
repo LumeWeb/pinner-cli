@@ -8,6 +8,8 @@ import (
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // logLevelFromString parses a human level name into a zapcore.Level. It
@@ -101,7 +103,7 @@ func logToolCallStart(logger *zap.Logger, name string, args map[string]any) {
 // logToolCallEnd reports the outcome of a tool invocation: duration and, on
 // failure, the error. Success is logged at info; failures at warn so they are
 // surfaced without drowning normal traffic.
-func logToolCallEnd(logger *zap.Logger, name string, startedAt time.Time, result ToolResult, err error) {
+func logToolCallEnd(logger *zap.Logger, name string, startedAt time.Time, result model.ToolResult, err error) {
 	if logger == nil {
 		logger = log
 	}

@@ -2,6 +2,8 @@ package mcp
 
 import (
 	"context"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // GuideFlow describes one chained flow an agent can drive end-to-end.
@@ -22,7 +24,7 @@ type AgentGuide struct {
 // to the primary Pinner flows and how to chain them. It is the "start here"
 // surface added in the v5 audit: deterministic structured guidance, so a model
 // does not have to discover the flows by probing tool descriptions.
-func NewAgentGuideDescriptor() ToolDescriptor {
+func NewAgentGuideDescriptor() model.ToolDescriptor {
 	guide := AgentGuide{
 		Summary: "Start here. Drive Pinner through these primary flows; each step is a tool. Check the current state first, then follow the matching flow.",
 		Flows: []GuideFlow{
@@ -76,14 +78,14 @@ func NewAgentGuideDescriptor() ToolDescriptor {
 			},
 		},
 	}
-	return ToolDescriptor{
+	return model.ToolDescriptor{
 		Name:        "agent_guide",
 		Title:       "Pinner agent guide",
 		Description: "Orientation for autonomous agents: the primary Pinner flows (auth, vault_create, vault_restore, upload, vault_upload, download, vault_download, pins) as ordered tool chains. Call this first to learn how to drive Pinner before probing individual tools.",
-		Category:    CategoryCore,
+		Category:    model.CategoryCore,
 		InputSchema: toolSchemaFor[NoInput](),
-		Handler: func(ctx context.Context, request ToolRequest) (ToolResult, error) {
-			return ToolResult{StructuredContent: guide, Text: "Pinner agent guide."}, nil
+		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
+			return model.ToolResult{StructuredContent: guide, Text: "Pinner agent guide."}, nil
 		},
 	}
 }

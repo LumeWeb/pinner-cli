@@ -6,14 +6,16 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 func TestAgentGuideDescriptor(t *testing.T) {
 	desc := NewAgentGuideDescriptor()
 	require.Equal(t, "agent_guide", desc.Name)
-	require.Equal(t, CategoryCore, desc.Category)
+	require.Equal(t, model.CategoryCore, desc.Category)
 
-	res, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{}})
+	res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{}})
 	require.NoError(t, err)
 	require.NotNil(t, res.StructuredContent)
 

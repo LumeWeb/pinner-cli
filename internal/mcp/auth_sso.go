@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // This file exposes the out-of-band (browser) login coordinator as first-class
@@ -29,23 +31,23 @@ type authSSOArgs struct {
 // a structured "not configured" hand-off instead of hanging. It registers a
 // resume continuation so the shared auth_resume template can poll the
 // login to completion.
-func NewAuthSSODescriptor(oob *OutOfBandLogin, handles *session.AsyncHandleStore, reg *HandoffRegistry) ToolDescriptor {
-	return ToolDescriptor{
+func NewAuthSSODescriptor(oob *OutOfBandLogin, handles *session.AsyncHandleStore, reg *HandoffRegistry) model.ToolDescriptor {
+	return model.ToolDescriptor{
 		Name:        "auth_sso",
 		Title:       "Sign In (Out-of-Band)",
 		Description: "Start an out-of-band (OOB) browser sign-in for SSO authentication. Returns immediately with an approval URL the human opens, and a resume handle for the auth_resume tool. Non-blocking, and never asks the human for a password or OTP on this channel. Start here to authenticate.",
-		Category:    CategoryAccount,
+		Category:    model.CategoryAccount,
 		InputSchema: toolSchemaFor[authSSOArgs](),
-		Handler: func(ctx context.Context, req ToolRequest) (ToolResult, error) {
+		Handler: func(ctx context.Context, req model.ToolRequest) (model.ToolResult, error) {
 			if oob == nil || handles == nil || reg == nil {
-				return NeedsHumanResult(NeedsHuman{
-					Reason: ReasonInteractiveOnly,
+				return model.NeedsHumanResult(model.NeedsHuman{
+					Reason: model.ReasonInteractiveOnly,
 					Detail: "Out-of-band login is not configured for this server. Use the CLI 'pinner auth' to sign in, or run with the transport that provides a browser login.",
 				}), nil
 			}
 			in, err := decodeToolArgs[authSSOArgs](req)
 			if err != nil {
-				return ToolResult{IsError: true, Text: err.Error()}, nil
+				return model.ToolResult{IsError: true, Text: err.Error()}, nil
 			}
 
 			// The handle doubles as the OOB session id AND the request id so
@@ -62,13 +64,13 @@ func NewAuthSSODescriptor(oob *OutOfBandLogin, handles *session.AsyncHandleStore
 				// continuation registered; retire it so a future resume does
 				// not see a live handle with nothing backing it.
 				handles.Delete(handle)
-				return ToolResult{IsError: true, Text: fmt.Sprintf("failed to start out-of-band login: %v", err)}, nil
+				return model.ToolResult{IsError: true, Text: fmt.Sprintf("failed to start out-of-band login: %v", err)}, nil
 			}
 			// Register the SSO-specific poll logic under the handle so the
 			// shared auth_resume template dispatches to it.
 			reg.Begin(handle, ssoResumeContinuation(oob, handles, reg))
-			return NeedsHumanResult(NeedsHuman{
-				Reason:     ReasonSSOApproval,
+			return model.NeedsHumanResult(model.NeedsHuman{
+				Reason:     model.ReasonSSOApproval,
 				ActionURL:  url,
 				Handle:     handle,
 				ResumeTool: "auth_resume",
@@ -92,14 +94,14 @@ func NewAuthSSODescriptor(oob *OutOfBandLogin, handles *session.AsyncHandleStore
 // completed outcome from the human's perspective, so it is reported done, not
 // misleadingly "still pending".
 func ssoResumeContinuation(oob *OutOfBandLogin, handles *session.AsyncHandleStore, reg *HandoffRegistry) ResumeContinuation {
-	return func(ctx context.Context, handle string, data map[string]any) (ToolResult, error) {
+	return func(ctx context.Context, handle string, data map[string]any) (model.ToolResult, error) {
 		email, _ := data["email"].(string)
 		url, done, loginErr := oob.pendingOutcome(handle, email)
 		if loginErr != nil {
 			handles.Delete(handle)
 			reg.End(handle)
-			return NeedsHumanResult(NeedsHuman{
-				Reason:     ReasonSSOApproval,
+			return model.NeedsHumanResult(model.NeedsHuman{
+				Reason:     model.ReasonSSOApproval,
 				ResumeTool: "auth_sso",
 				Detail:     "The out-of-band login failed or expired. Start a fresh login with auth_sso.",
 			}), nil
@@ -113,13 +115,13 @@ func ssoResumeContinuation(oob *OutOfBandLogin, handles *session.AsyncHandleStor
 			if url == "" {
 				handles.Delete(handle)
 				reg.End(handle)
-				return ToolResult{
+				return model.ToolResult{
 					Text:              "Sign-in complete. Authentication is now configured.",
-					StructuredContent: map[string]any{"status": StatusDone, "handle": handle},
+					StructuredContent: map[string]any{"status": model.StatusDone, "handle": handle},
 				}, nil
 			}
-			return NeedsHumanResult(NeedsHuman{
-				Reason:     ReasonSSOApproval,
+			return model.NeedsHumanResult(model.NeedsHuman{
+				Reason:     model.ReasonSSOApproval,
 				ActionURL:  url,
 				Handle:     handle,
 				ResumeTool: "auth_resume",
@@ -128,9 +130,9 @@ func ssoResumeContinuation(oob *OutOfBandLogin, handles *session.AsyncHandleStor
 		}
 		handles.Delete(handle)
 		reg.End(handle)
-		return ToolResult{
+		return model.ToolResult{
 			Text:              "Sign-in complete. Authentication is now configured.",
-			StructuredContent: map[string]any{"status": StatusDone, "handle": handle},
+			StructuredContent: map[string]any{"status": model.StatusDone, "handle": handle},
 		}, nil
 	}
 }
@@ -139,7 +141,7 @@ func ssoResumeContinuation(oob *OutOfBandLogin, handles *session.AsyncHandleStor
 // shared resume template. The name/description, restart steering, and
 // dead-handle guidance are SSO-specific; the dispatch logic (handle validation,
 // expiry, continuation lookup) is shared via NewResumeTool.
-func NewAuthResumeDescriptor(reg *HandoffRegistry, handles *session.AsyncHandleStore) ToolDescriptor {
+func NewAuthResumeDescriptor(reg *HandoffRegistry, handles *session.AsyncHandleStore) model.ToolDescriptor {
 	return NewResumeTool(ResumeToolSpec{
 		Name:                "auth_resume",
 		Title:               "Auth Sign-In Resume",
@@ -147,7 +149,7 @@ func NewAuthResumeDescriptor(reg *HandoffRegistry, handles *session.AsyncHandleS
 		RestartTool:         "auth_sso",
 		UnknownHandleDetail: "unknown handle; start a new login with auth_sso",
 		ExpiredHandleDetail: "the sign-in handle expired before the human completed approval; start a fresh login with auth_sso and have the user approve promptly",
-		DeadHandleReason:    ReasonSSOApproval,
-		Category:            CategoryAccount,
+		DeadHandleReason:    model.ReasonSSOApproval,
+		Category:            model.CategoryAccount,
 	}, reg, handles)
 }

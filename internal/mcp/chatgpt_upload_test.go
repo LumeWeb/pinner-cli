@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // upload_file is unified across transports; these replace the removed
@@ -13,7 +15,7 @@ import (
 
 func TestRegisterOfficialDescriptorRequiresHandler(t *testing.T) {
 	srv := NewOfficialServer(nil)
-	err := RegisterOfficialDescriptor(srv, ToolDescriptor{Name: "test"})
+	err := RegisterOfficialDescriptor(srv, model.ToolDescriptor{Name: "test"})
 	require.ErrorContains(t, err, "requires name and handler")
 }
 
@@ -25,7 +27,7 @@ func TestUploadFileDescriptorStdio(t *testing.T) {
 	}, nil, nil, nil, 0)
 
 	require.Equal(t, "upload_file", desc.Name)
-	res, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{
+	res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
 		"source":       map[string]any{"mode": "path", "path": "/tmp/a.txt"},
 		"name":         "a.txt",
 		"archive_mode": "preserve",
@@ -42,7 +44,7 @@ func TestUploadFileDescriptorStdioRejectsMint(t *testing.T) {
 		t.Fatal("path handler must not be called")
 		return nil, nil
 	}, nil, nil, nil, 0)
-	_, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{
+	_, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
 		"source": map[string]any{"mode": "mint"},
 	}})
 	require.Error(t, err)
@@ -53,7 +55,7 @@ func TestUploadFileDescriptorHTTPMints(t *testing.T) {
 	defer cu.Stop(context.Background())
 	desc := NewUploadFileDescriptor(false, false, nil, cu, nil, nil, 0)
 
-	res, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{
+	res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
 		"source": map[string]any{"mode": "mint"},
 		"ttl":    "5m",
 	}})
@@ -70,7 +72,7 @@ func TestUploadFileDescriptorHTTPRejectsPath(t *testing.T) {
 	cu := NewHTTPUpload(nil, 0)
 	defer cu.Stop(context.Background())
 	desc := NewUploadFileDescriptor(false, false, nil, cu, nil, nil, 0)
-	_, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{
+	_, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
 		"source": map[string]any{"mode": "path", "path": "/etc/passwd"},
 	}})
 	require.Error(t, err, "path source invalid on HTTP transport")
@@ -83,7 +85,7 @@ func TestUploadFileDescriptorOpenAIRelayData(t *testing.T) {
 		return map[string]string{"cid": "QmRelay"}, nil
 	}, nil, 0)
 
-	res, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{
+	res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
 		"source": map[string]any{"mode": "data", "data": "data:;name=note.txt;size=2;base64,aGk="},
 	}})
 	require.NoError(t, err)
@@ -99,7 +101,7 @@ func TestUploadFileDescriptorOpenAIRelayHonorsMaxBytes(t *testing.T) {
 		t.Fatal("relay must not receive an oversized upload")
 		return nil, nil
 	}, nil, 4) // cap at 4 bytes
-	_, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{
+	_, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
 		"source": map[string]any{"mode": "data", "data": "data:;name=big.bin;size=100;base64,YWFhYWFhYWFh"},
 	}})
 	require.Error(t, err)
@@ -109,7 +111,7 @@ func TestUploadFileDescriptorOpenAIRejectsMint(t *testing.T) {
 		t.Fatal("relay must not run for mint")
 		return nil, nil
 	}, nil, 0)
-	_, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{
+	_, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
 		"source": map[string]any{"mode": "mint"},
 	}})
 	require.Error(t, err)

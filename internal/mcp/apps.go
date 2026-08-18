@@ -7,6 +7,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.lumeweb.com/pinner-cli/internal/mcpapp"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // MCP Apps (ext-apps) product views. Each App pairs one or more existing tools
@@ -46,21 +48,21 @@ func renderPinCreateAppHTML() string {
 // pinStatusDescriptor builds the app-only pin status helper. It is visible to
 // the app only (never the model) and shares the pin create view; the pin app
 // calls it via callServerTool to poll until a terminal state.
-func pinStatusDescriptor(pins PinningProvider) ToolDescriptor {
-	return ToolDescriptor{
+func pinStatusDescriptor(pins PinningProvider) model.ToolDescriptor {
+	return model.ToolDescriptor{
 		Name:        "pin_status",
 		Description: "Poll the current status of a pinned CID. App-only helper for the Create a Pin view.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"cid":{"type":"string"}},"required":["cid"]}`),
-		Handler: func(ctx context.Context, req ToolRequest) (ToolResult, error) {
+		Handler: func(ctx context.Context, req model.ToolRequest) (model.ToolResult, error) {
 			cid, _ := req.Arguments["cid"].(string)
 			if cid == "" {
-				return ToolResult{IsError: true, Text: "cid is required"}, nil
+				return model.ToolResult{IsError: true, Text: "cid is required"}, nil
 			}
 			view, err := pins.PinStatus(ctx, cid)
 			if err != nil {
-				return ToolResult{IsError: true, Text: err.Error()}, nil
+				return model.ToolResult{IsError: true, Text: err.Error()}, nil
 			}
-			return ToolResult{
+			return model.ToolResult{
 				Text:              fmt.Sprintf("%s: %s", view.CID, view.Status),
 				StructuredContent: map[string]any{"status": view.Status, "cid": view.CID},
 			}, nil
@@ -95,7 +97,7 @@ func RegisterPinApp(srv *mcp.Server, catalog *ToolCatalog, pins PinningProvider)
 		HTML:          renderPinCreateAppHTML(),
 		PrefersBorder: true,
 		AttachTo:      []string{"pins_add"},
-		Helpers:       []ToolDescriptor{pinStatusDescriptor(pins)},
+		Helpers:       []model.ToolDescriptor{pinStatusDescriptor(pins)},
 	})
 }
 

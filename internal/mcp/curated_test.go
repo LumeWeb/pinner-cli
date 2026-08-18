@@ -5,19 +5,21 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 func TestMarkCuratedStampsDirectVisible(t *testing.T) {
 	catalog := NewToolCatalog()
 	for _, name := range compiledCuratedToolNames {
-		catalog.Add(&ToolEntry{Name: name, Handler: func(_ context.Context, _ ToolRequest) (ToolResult, error) {
-			return ToolResult{Text: "ok"}, nil
+		catalog.Add(&model.ToolEntry{Name: name, Handler: func(_ context.Context, _ model.ToolRequest) (model.ToolResult, error) {
+			return model.ToolResult{Text: "ok"}, nil
 		}})
 	}
 	// Non-curated entries stay hidden.
 	for _, name := range []string{"pinner_setup", "pinner_pins", "pinner_auth", "dns_zones_list", "vault_sync", "operations_list", "websites_create"} {
-		catalog.Add(&ToolEntry{Name: name, Handler: func(_ context.Context, _ ToolRequest) (ToolResult, error) {
-			return ToolResult{Text: "ok"}, nil
+		catalog.Add(&model.ToolEntry{Name: name, Handler: func(_ context.Context, _ model.ToolRequest) (model.ToolResult, error) {
+			return model.ToolResult{Text: "ok"}, nil
 		}})
 	}
 
@@ -38,13 +40,13 @@ func TestMarkCuratedStampsDirectVisible(t *testing.T) {
 func TestRegisterOfficialCuratedToolsRegistersOnlyDirectVisible(t *testing.T) {
 	catalog := NewToolCatalog()
 	for _, name := range []string{"pinner_status", "pinner_admin_pprof", "websites_wizard_start", "auth_sso"} {
-		catalog.Add(&ToolEntry{
+		catalog.Add(&model.ToolEntry{
 			Name:        name,
 			Title:       name,
 			Description: name,
 			InputSchema: []byte(`{"type":"object"}`),
-			Handler: func(_ context.Context, _ ToolRequest) (ToolResult, error) {
-				return ToolResult{Text: "ok"}, nil
+			Handler: func(_ context.Context, _ model.ToolRequest) (model.ToolResult, error) {
+				return model.ToolResult{Text: "ok"}, nil
 			},
 		})
 	}
@@ -72,8 +74,8 @@ func TestMarkCuratedPromotesWizardTools(t *testing.T) {
 		"websites_wizard_start", "websites_wizard_step",
 		"auth_status", "vault_ls",
 	} {
-		catalog.Add(&ToolEntry{Name: name, Handler: func(_ context.Context, _ ToolRequest) (ToolResult, error) {
-			return ToolResult{Text: "ok"}, nil
+		catalog.Add(&model.ToolEntry{Name: name, Handler: func(_ context.Context, _ model.ToolRequest) (model.ToolResult, error) {
+			return model.ToolResult{Text: "ok"}, nil
 		}})
 	}
 	markCurated(catalog)

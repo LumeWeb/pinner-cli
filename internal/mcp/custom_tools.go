@@ -6,6 +6,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // customToolDeps bundles everything the custom/direct-tool registration needs.
@@ -134,8 +136,8 @@ func registerCustomTools(deps customToolDeps) error {
 	authSSO.DirectVisible = true
 	authResume := NewAuthResumeDescriptor(deps.handoffReg, deps.authHandles)
 	authResume.DirectVisible = true
-	deps.catalog.Add(toolEntryFromDescriptor(authSSO))
-	deps.catalog.Add(toolEntryFromDescriptor(authResume))
+	deps.catalog.Add(model.ToolEntryFromDescriptor(authSSO))
+	deps.catalog.Add(model.ToolEntryFromDescriptor(authResume))
 
 	// Pair the auth_sso tool with its "Sign In" MCP App view (ui://auth/sso.html)
 	// so a UI-capable host renders the SSO approval in a panel. This must run
@@ -156,9 +158,9 @@ func registerCustomTools(deps customToolDeps) error {
 	accountReset.DirectVisible = true
 	accountEmail := NewAccountEmailChangeDescriptor(deps.accountOOB, deps.wizardS.AuthService)
 	accountEmail.DirectVisible = true
-	deps.catalog.Add(toolEntryFromDescriptor(accountUpdate))
-	deps.catalog.Add(toolEntryFromDescriptor(accountReset))
-	deps.catalog.Add(toolEntryFromDescriptor(accountEmail))
+	deps.catalog.Add(model.ToolEntryFromDescriptor(accountUpdate))
+	deps.catalog.Add(model.ToolEntryFromDescriptor(accountReset))
+	deps.catalog.Add(model.ToolEntryFromDescriptor(accountEmail))
 
 	// Pair the account_password_update / account_email_change tools with their
 	// "Change Password" / "Change Email" MCP App views (ui://account/password.html
@@ -185,8 +187,8 @@ func registerCustomTools(deps customToolDeps) error {
 	vaultCreateResume.DirectVisible = true
 	vaultRestoreResume := NewVaultRestoreResumeDescriptor(deps.handoffReg, deps.authHandles)
 	vaultRestoreResume.DirectVisible = true
-	deps.catalog.Add(toolEntryFromDescriptor(vaultCreateResume))
-	deps.catalog.Add(toolEntryFromDescriptor(vaultRestoreResume))
+	deps.catalog.Add(model.ToolEntryFromDescriptor(vaultCreateResume))
+	deps.catalog.Add(model.ToolEntryFromDescriptor(vaultRestoreResume))
 
 	// Pair vault_create / vault_restore with their "Create Vault" / "Restore
 	// Vault" MCP App views (ui://vault/create.html / ui://vault/restore.html)
@@ -261,7 +263,7 @@ func registerCustomTools(deps customToolDeps) error {
 		// can mint a PUT endpoint for the Uppy XHR uploader. The app must be
 		// indexed in the catalog before its view attaches _meta.ui.
 		if deps.vaultUpload != nil {
-			deps.catalog.Add(toolEntryFromDescriptor(vaultPutDesc))
+			deps.catalog.Add(model.ToolEntryFromDescriptor(vaultPutDesc))
 			if err := RegisterVaultUploadApp(deps.srv, deps.catalog, deps.vaultUpload); err != nil {
 				return err
 			}
@@ -306,7 +308,7 @@ func registerCustomTools(deps customToolDeps) error {
 		// tool must be indexed first. Like upload_file, the app (sink=local or
 		// sink=drop) is meaningful on every transport, so it is always paired
 		// when the tool is registered.
-		deps.catalog.Add(toolEntryFromDescriptor(dlDesc))
+		deps.catalog.Add(model.ToolEntryFromDescriptor(dlDesc))
 		if err := RegisterIPFSDownloadApp(deps.srv, deps.catalog); err != nil {
 			return err
 		}
@@ -332,7 +334,7 @@ func registerCustomTools(deps customToolDeps) error {
 	if opts.vaultGet != nil {
 		downloadRoot := resolveDownloadRoot(opts.downloadRoot)
 		dlDesc := NewVaultGetFileDescriptor(opts.vaultGet, deps.downloadDrop, downloadRoot, effectiveRelayMaxBytes(opts.maxRelayBytes), deps.tunnelOpenAI)
-		deps.catalog.Add(toolEntryFromDescriptor(dlDesc))
+		deps.catalog.Add(model.ToolEntryFromDescriptor(dlDesc))
 		if err := RegisterVaultDownloadApp(deps.srv, deps.catalog); err != nil {
 			return err
 		}
@@ -384,7 +386,7 @@ func registerCustomTools(deps customToolDeps) error {
 		// keeps attachAppMeta from ever running when the tool is absent (e.g.
 		// --tunnel openai) or when no mint URL could be produced.
 		if deps.curlUpload != nil {
-			deps.catalog.Add(toolEntryFromDescriptor(uploadFileDesc))
+			deps.catalog.Add(model.ToolEntryFromDescriptor(uploadFileDesc))
 			if err := RegisterIPFSUploadApp(deps.srv, deps.catalog, deps.curlUpload); err != nil {
 				return err
 			}

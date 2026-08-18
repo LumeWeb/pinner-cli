@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 func TestCapabilitiesReportStdio(t *testing.T) {
@@ -129,7 +131,7 @@ func TestCurrentCapabilitiesHonorsMaxBytes(t *testing.T) {
 func TestCapabilitiesDescriptorSerializes(t *testing.T) {
 	desc := NewCapabilitiesDescriptor(true, false, true, true, true, true, true, true, 0)
 	require.Equal(t, "capabilities", desc.Name)
-	res, err := desc.Handler(context.Background(), ToolRequest{Arguments: map[string]any{}})
+	res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{}})
 	require.NoError(t, err)
 	require.NotNil(t, res.StructuredContent)
 	// Indexable as a map

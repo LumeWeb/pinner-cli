@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // This file provides the generic, internally-shared machinery behind the
@@ -27,7 +29,7 @@ import (
 // coordinator), registered against the handle when the flow starts. It returns
 // either a NeedsHumanResult (hand-off still pending, so the caller should keep
 // polling) or a terminal done result (completed).
-type ResumeContinuation func(ctx context.Context, handle string, data map[string]any) (ToolResult, error)
+type ResumeContinuation func(ctx context.Context, handle string, data map[string]any) (model.ToolResult, error)
 
 // HandoffRegistry is the shared internal registry of per-handle resume
 // continuations. A start-point tool calls Begin(handle, cont) before returning
@@ -212,18 +214,18 @@ type ResumeToolSpec struct {
 	// DeadHandleReason is the HandoffReason used when steering the agent to
 	// restart after a dead handle. Domain-specific so the steer reads naturally
 	// for the flow (SSO uses ReasonSSOApproval).
-	DeadHandleReason HandoffReason
+	DeadHandleReason model.HandoffReason
 	// Category is the tool category for search/filter. Defaults to CategoryCore
 	// when zero. Auth resumes use CategoryAccount; vault resumes use
 	// CategoryVault so filtering by category surfaces the OOB flow correctly.
-	Category ToolCategory
+	Category model.ToolCategory
 }
 
 // CategoryOrDefault returns the resume tool's category, defaulting to
 // CategoryCore when the spec left it unset.
-func (s ResumeToolSpec) CategoryOrDefault() ToolCategory {
+func (s ResumeToolSpec) CategoryOrDefault() model.ToolCategory {
 	if s.Category == "" {
-		return CategoryCore
+		return model.CategoryCore
 	}
 	return s.Category
 }
@@ -239,11 +241,11 @@ func (s ResumeToolSpec) title() string {
 
 // deadHandleReason returns the domain's HandoffReason for steering an agent
 // away from a dead/unresumable handle, defaulting to ReasonCredentialEntry.
-func (s ResumeToolSpec) deadHandleReason() HandoffReason {
+func (s ResumeToolSpec) deadHandleReason() model.HandoffReason {
 	if s.DeadHandleReason != "" {
 		return s.DeadHandleReason
 	}
-	return ReasonCredentialEntry
+	return model.ReasonCredentialEntry
 }
 
 // NewResumeTool builds a per-domain, named *_resume tool from the shared
@@ -258,26 +260,26 @@ func (s ResumeToolSpec) deadHandleReason() HandoffReason {
 // A domain supplies its tool spec (name, description, restart steering, and
 // dead-handle guidance text). Example: SSO calls
 // NewResumeTool(ResumeToolSpec{Name: "auth_resume", ...}, reg, handles).
-func NewResumeTool(spec ResumeToolSpec, reg *HandoffRegistry, handles *session.AsyncHandleStore) ToolDescriptor {
-	return ToolDescriptor{
+func NewResumeTool(spec ResumeToolSpec, reg *HandoffRegistry, handles *session.AsyncHandleStore) model.ToolDescriptor {
+	return model.ToolDescriptor{
 		Name:        spec.Name,
 		Title:       spec.title(),
 		Description: spec.Description,
 		Category:    spec.CategoryOrDefault(),
 		InputSchema: toolSchemaFor[resumeArgs](),
-		Handler: func(ctx context.Context, req ToolRequest) (ToolResult, error) {
+		Handler: func(ctx context.Context, req model.ToolRequest) (model.ToolResult, error) {
 			if reg == nil || handles == nil {
-				return NeedsHumanResult(NeedsHuman{
-					Reason: ReasonInteractiveOnly,
+				return model.NeedsHumanResult(model.NeedsHuman{
+					Reason: model.ReasonInteractiveOnly,
 					Detail: "Resume is not configured for this server.",
 				}), nil
 			}
 			in, err := decodeToolArgs[resumeArgs](req)
 			if err != nil {
-				return ToolResult{IsError: true, Text: err.Error()}, nil
+				return model.ToolResult{IsError: true, Text: err.Error()}, nil
 			}
 			if in.Handle == "" {
-				return ToolResult{IsError: true, Text: "handle is required"}, nil
+				return model.ToolResult{IsError: true, Text: "handle is required"}, nil
 			}
 			_, data, err := handles.Get(in.Handle)
 			if err != nil {
@@ -288,7 +290,7 @@ func NewResumeTool(spec ResumeToolSpec, reg *HandoffRegistry, handles *session.A
 				}
 				// A hand-off that can no longer be resumed must not leave the
 				// agent retrying a dead handle. Steer it to restart.
-				return NeedsHumanResult(NeedsHuman{
+				return model.NeedsHumanResult(model.NeedsHuman{
 					Reason:     spec.deadHandleReason(),
 					ResumeTool: spec.RestartTool,
 					Detail:     detail,
@@ -298,7 +300,7 @@ func NewResumeTool(spec ResumeToolSpec, reg *HandoffRegistry, handles *session.A
 			if !ok {
 				// No continuation registered: either never started or already
 				// completed. Do not leave the agent polling a futureless handle.
-				return NeedsHumanResult(NeedsHuman{
+				return model.NeedsHumanResult(model.NeedsHuman{
 					Reason:     spec.deadHandleReason(),
 					ResumeTool: spec.RestartTool,
 					Detail:     "This handle has no pending continuation; start a fresh flow.",
@@ -306,8 +308,8 @@ func NewResumeTool(spec ResumeToolSpec, reg *HandoffRegistry, handles *session.A
 			}
 			result, err := cont(ctx, in.Handle, data)
 			if err != nil {
-				return NeedsHumanResult(NeedsHuman{
-					Reason:     ReasonCredentialEntry,
+				return model.NeedsHumanResult(model.NeedsHuman{
+					Reason:     model.ReasonCredentialEntry,
 					ResumeTool: spec.RestartTool,
 					Detail:     "The hand-off failed or expired; start a fresh flow.",
 				}), nil
@@ -330,11 +332,11 @@ func NewResumeTool(spec ResumeToolSpec, reg *HandoffRegistry, handles *session.A
 // "done" for a flow that may still be pending. SSO returns map content for both
 // pending and done, so this is only a safety net for future generic flows
 // (vault seed, OTP).
-func isTerminalResume(result ToolResult) bool {
+func isTerminalResume(result model.ToolResult) bool {
 	sc, ok := result.StructuredContent.(map[string]any)
 	if !ok {
 		return false
 	}
 	status, _ := sc["status"].(string)
-	return status != "" && status != StatusNeedsHuman
+	return status != "" && status != model.StatusNeedsHuman
 }

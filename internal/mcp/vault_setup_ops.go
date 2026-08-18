@@ -8,6 +8,8 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/core/vault"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // This file turns pinner_vault_create and pinner_vault_restore into clean,
@@ -52,10 +54,10 @@ func vaultSetupOps() (create, restore catalog.Operation) {
 // action_url used by SSO. The urlKey is "create_url" for create and
 // "restore_url" for restore. The plaintext mnemonic never appears in either
 // the Text or StructuredContent; only the one-time URL, handle and resume tool.
-func vaultHandoffResult(resumeTool, urlKey, url, handle, detail string) ToolResult {
+func vaultHandoffResult(resumeTool, urlKey, url, handle, detail string) model.ToolResult {
 	sc := map[string]any{
-		"status": StatusNeedsHuman,
-		"reason": ReasonCredentialEntry,
+		"status": model.StatusNeedsHuman,
+		"reason": model.ReasonCredentialEntry,
 	}
 	if url != "" {
 		sc[urlKey] = url
@@ -68,12 +70,12 @@ func vaultHandoffResult(resumeTool, urlKey, url, handle, detail string) ToolResu
 	}
 	sc["detail"] = detail
 	// The plain-text result carries the URL, handle and resume tool via the
-	// shared needsHumanText helper, so a text-only tool-calling agent — which
+	// shared model.NeedsHumanText helper, so a text-only tool-calling agent — which
 	// reads only the Text, not StructuredContent — still gets a working link to
 	// relay and a handle to poll with. StructuredContent retains the canonical
 	// vault OOB keys (create_url / restore_url) alongside.
-	return ToolResult{
-		Text:              needsHumanText(ReasonCredentialEntry, url, handle, resumeTool, detail),
+	return model.ToolResult{
+		Text:              model.NeedsHumanText(model.ReasonCredentialEntry, url, handle, resumeTool, detail),
 		StructuredContent: sc,
 	}
 }
@@ -88,18 +90,18 @@ func vaultHandoffResult(resumeTool, urlKey, url, handle, detail string) ToolResu
 //
 // When the OOB create coordinator is absent, the handler returns a structured
 // not-configured hand-off rather than hanging.
-func vaultCreateSetupHandler(oobCreate *OOBCreate, reg *HandoffRegistry, handles *session.AsyncHandleStore) PinnerToolHandler {
-	return func(ctx context.Context, req ToolRequest) (ToolResult, error) {
+func vaultCreateSetupHandler(oobCreate *OOBCreate, reg *HandoffRegistry, handles *session.AsyncHandleStore) model.PinnerToolHandler {
+	return func(ctx context.Context, req model.ToolRequest) (model.ToolResult, error) {
 		if reg == nil || handles == nil || oobCreate == nil {
-			return NeedsHumanResult(NeedsHuman{
-				Reason:     ReasonInteractiveOnly,
+			return model.NeedsHumanResult(model.NeedsHuman{
+				Reason:     model.ReasonInteractiveOnly,
 				ResumeTool: vaultCreateResumeToolName,
 				Detail:     "Vault create is not configured for this server; the out-of-band create hand-off is unavailable.",
 			}), nil
 		}
 		op, _ := vaultSetupOps()
 		if op == nil {
-			return ToolResult{IsError: true, Text: "vault create: catalog operation unavailable"}, nil
+			return model.ToolResult{IsError: true, Text: "vault create: catalog operation unavailable"}, nil
 		}
 		// Route through the catalog's normalization (camelCase aliasing,
 		// coercion, defaults) before the op handler runs, mirroring the
@@ -107,15 +109,15 @@ func vaultCreateSetupHandler(oobCreate *OOBCreate, reg *HandoffRegistry, handles
 		// for kebab "device-name" is not silently dropped.
 		normalized, err := catalog.NormalizeOperationInput(op, req.Arguments)
 		if err != nil {
-			return ToolResult{IsError: true, Text: "vault create: " + err.Error()}, nil
+			return model.ToolResult{IsError: true, Text: "vault create: " + err.Error()}, nil
 		}
 		result, err := op.Handler().Execute(ctx, normalized)
 		if err != nil {
-			return ToolResult{IsError: true, Text: err.Error()}, nil
+			return model.ToolResult{IsError: true, Text: err.Error()}, nil
 		}
 		handoff, ok := result.(*catalogops.VaultCreateHandoff)
 		if !ok {
-			return ToolResult{IsError: true, Text: "vault create: unexpected result"}, nil
+			return model.ToolResult{IsError: true, Text: "vault create: unexpected result"}, nil
 		}
 		// Mint the one-time OOB create URL for the requested profile. The create
 		// page runs the SSO approval + activation in the browser and, on success,
@@ -138,32 +140,32 @@ func vaultCreateSetupHandler(oobCreate *OOBCreate, reg *HandoffRegistry, handles
 //
 // When the OOB restore coordinator is absent, the handler returns a structured
 // not-configured hand-off rather than hanging.
-func vaultRestoreSetupHandler(oobRestore *OOBRestore, reg *HandoffRegistry, handles *session.AsyncHandleStore) PinnerToolHandler {
-	return func(ctx context.Context, req ToolRequest) (ToolResult, error) {
+func vaultRestoreSetupHandler(oobRestore *OOBRestore, reg *HandoffRegistry, handles *session.AsyncHandleStore) model.PinnerToolHandler {
+	return func(ctx context.Context, req model.ToolRequest) (model.ToolResult, error) {
 		if reg == nil || handles == nil || oobRestore == nil {
-			return NeedsHumanResult(NeedsHuman{
-				Reason:     ReasonInteractiveOnly,
+			return model.NeedsHumanResult(model.NeedsHuman{
+				Reason:     model.ReasonInteractiveOnly,
 				ResumeTool: vaultRestoreResumeToolName,
 				Detail:     "Vault restore is not configured for this server; the out-of-band restore hand-off is unavailable.",
 			}), nil
 		}
 		_, op := vaultSetupOps()
 		if op == nil {
-			return ToolResult{IsError: true, Text: "vault restore: catalog operation unavailable"}, nil
+			return model.ToolResult{IsError: true, Text: "vault restore: catalog operation unavailable"}, nil
 		}
 		// Route through the catalog's normalization (aliasing, coercion,
 		// defaults) before the op handler runs, mirroring Catalog.Invoke.
 		normalized, err := catalog.NormalizeOperationInput(op, req.Arguments)
 		if err != nil {
-			return ToolResult{IsError: true, Text: "vault restore: " + err.Error()}, nil
+			return model.ToolResult{IsError: true, Text: "vault restore: " + err.Error()}, nil
 		}
 		result, err := op.Handler().Execute(ctx, normalized)
 		if err != nil {
-			return ToolResult{IsError: true, Text: err.Error()}, nil
+			return model.ToolResult{IsError: true, Text: err.Error()}, nil
 		}
 		handoff, ok := result.(*catalogops.VaultRestoreHandoff)
 		if !ok {
-			return ToolResult{IsError: true, Text: "vault restore: unexpected result"}, nil
+			return model.ToolResult{IsError: true, Text: "vault restore: unexpected result"}, nil
 		}
 		// Mint the one-time OOB restore URL for the resolved profile.
 		restoreURL := oobRestore.Register(handoff.Profile)

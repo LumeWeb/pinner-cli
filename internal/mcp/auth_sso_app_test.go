@@ -9,6 +9,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // newAuthSSOAppServer builds an official server with auth_sso/auth_resume in
@@ -24,8 +26,8 @@ func newAuthSSOAppServer(t *testing.T) *mcp.Server {
 	authSSO.DirectVisible = true
 	authResume := NewAuthResumeDescriptor(reg, handles)
 	authResume.DirectVisible = true
-	catalog.Add(toolEntryFromDescriptor(authSSO))
-	catalog.Add(toolEntryFromDescriptor(authResume))
+	catalog.Add(model.ToolEntryFromDescriptor(authSSO))
+	catalog.Add(model.ToolEntryFromDescriptor(authResume))
 
 	if err := RegisterAuthSSOApp(srv, catalog, reg, handles); err != nil {
 		t.Fatalf("RegisterAuthSSOApp: %v", err)
@@ -93,7 +95,7 @@ func TestAuthSSOStatusHelperPendingToDone(t *testing.T) {
 	oob := newOOBForTest(t)
 
 	start := NewAuthSSODescriptor(oob, handles, reg)
-	startResult, err := start.Handler(context.Background(), ToolRequest{Name: "auth_sso"})
+	startResult, err := start.Handler(context.Background(), model.ToolRequest{Name: "auth_sso"})
 	require.NoError(t, err)
 	sc := requireHandoff(t, startResult)
 	handle := sc["handle"].(string)
@@ -101,7 +103,7 @@ func TestAuthSSOStatusHelperPendingToDone(t *testing.T) {
 
 	status := authSSOStatusDescriptor(reg, handles)
 	// Not yet approved -> pending (needs_human).
-	pending, err := status.Handler(context.Background(), ToolRequest{
+	pending, err := status.Handler(context.Background(), model.ToolRequest{
 		Name:      "auth_sso_status",
 		Arguments: map[string]any{"handle": handle},
 	})
@@ -113,13 +115,13 @@ func TestAuthSSOStatusHelperPendingToDone(t *testing.T) {
 	require.Equal(t, 200, rec.Code)
 
 	// The helper then reports done.
-	done, err := status.Handler(context.Background(), ToolRequest{
+	done, err := status.Handler(context.Background(), model.ToolRequest{
 		Name:      "auth_sso_status",
 		Arguments: map[string]any{"handle": handle},
 	})
 	require.NoError(t, err)
 	doneSC := done.StructuredContent.(map[string]any)
-	require.Equal(t, StatusDone, doneSC["status"])
+	require.Equal(t, model.StatusDone, doneSC["status"])
 	require.False(t, done.IsError)
 }
 
@@ -135,7 +137,7 @@ func TestAuthSSOStatusHelperDeadHandleSteersRestart(t *testing.T) {
 	status := authSSOStatusDescriptor(reg, handles)
 
 	// Unknown handle: no continuation and no session store entry.
-	r, err := status.Handler(context.Background(), ToolRequest{
+	r, err := status.Handler(context.Background(), model.ToolRequest{
 		Name:      "auth_sso_status",
 		Arguments: map[string]any{"handle": "does-not-exist"},
 	})
@@ -149,7 +151,7 @@ func TestAuthSSOStatusHelperDeadHandleSteersRestart(t *testing.T) {
 	// the store clock past the item's expiry.
 	tokenHandle := handles.Create("pending", map[string]any{})
 	handles.SetNowFunc(func() time.Time { return time.Now().Add(session.DefaultSessionTTL + time.Minute) })
-	r, err = status.Handler(context.Background(), ToolRequest{
+	r, err = status.Handler(context.Background(), model.ToolRequest{
 		Name:      "auth_sso_status",
 		Arguments: map[string]any{"handle": tokenHandle},
 	})

@@ -10,6 +10,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // TestRegisterVaultRestoreAppWire verifies the Restore Vault app registers its
@@ -83,7 +85,7 @@ func TestVaultRestoreStatusHelperPendingToDone(t *testing.T) {
 	status := vaultRestoreStatusDescriptor(reg, handles)
 
 	// Before restore -> pending.
-	r, err := status.Handler(context.Background(), ToolRequest{
+	r, err := status.Handler(context.Background(), model.ToolRequest{
 		Name:      "vault_restore_status",
 		Arguments: map[string]any{"handle": handle},
 	})
@@ -100,7 +102,7 @@ func TestVaultRestoreStatusHelperPendingToDone(t *testing.T) {
 	require.Equal(t, 1, runner.calls)
 
 	// Now the status helper reports done.
-	r, err = status.Handler(context.Background(), ToolRequest{
+	r, err = status.Handler(context.Background(), model.ToolRequest{
 		Name:      "vault_restore_status",
 		Arguments: map[string]any{"handle": handle},
 	})
@@ -131,7 +133,7 @@ func TestVaultRestoreStatusHelperPendingCarriesHandle(t *testing.T) {
 	status := vaultRestoreStatusDescriptor(reg, handles)
 
 	// Live pending: needs_human with a handle, and no URL in the result.
-	r, err := status.Handler(context.Background(), ToolRequest{
+	r, err := status.Handler(context.Background(), model.ToolRequest{
 		Name:      "vault_restore_status",
 		Arguments: map[string]any{"handle": handle},
 	})
@@ -143,7 +145,7 @@ func TestVaultRestoreStatusHelperPendingCarriesHandle(t *testing.T) {
 	require.False(t, hasRestore || hasAction, "live pending must not carry a URL in the status result")
 
 	// Dead/unknown handle: needs_human with no handle (and a restart steer).
-	r, err = status.Handler(context.Background(), ToolRequest{
+	r, err = status.Handler(context.Background(), model.ToolRequest{
 		Name:      "vault_restore_status",
 		Arguments: map[string]any{"handle": "does-not-exist"},
 	})
@@ -165,7 +167,7 @@ func TestVaultRestoreNotConfiguredReturnsNoHandle(t *testing.T) {
 	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 
 	handler := vaultRestoreSetupHandler(nil, reg, handles)
-	r, err := handler(context.Background(), ToolRequest{Name: compiledVaultRestoreToolName})
+	r, err := handler(context.Background(), model.ToolRequest{Name: compiledVaultRestoreToolName})
 	require.NoError(t, err)
 	sc := requireHandoff(t, r) // needs_human (ReasonInteractiveOnly)
 	_, hasHandle := sc["handle"]

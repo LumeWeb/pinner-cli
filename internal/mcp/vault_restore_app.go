@@ -5,6 +5,8 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcpapp"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // This file wires the "Restore Vault" MCP App onto the shared AppView lib
@@ -31,7 +33,7 @@ func renderVaultRestoreAppHTML() string {
 // exactly like vault_restore_resume, but is registered with ToolVisibilityApp so
 // only the Restore Vault view can poll it; the model never sees it. It carries
 // no secrets (the seed is entered on the human-only page, never here).
-func vaultRestoreStatusDescriptor(reg *HandoffRegistry, handles *session.AsyncHandleStore) ToolDescriptor {
+func vaultRestoreStatusDescriptor(reg *HandoffRegistry, handles *session.AsyncHandleStore) model.ToolDescriptor {
 	return NewResumeTool(ResumeToolSpec{
 		Name:                "vault_restore_status",
 		Title:               "Vault Restore Status",
@@ -39,8 +41,8 @@ func vaultRestoreStatusDescriptor(reg *HandoffRegistry, handles *session.AsyncHa
 		RestartTool:         compiledVaultRestoreToolName,
 		UnknownHandleDetail: "unknown handle; start a fresh vault restore with vault_restore",
 		ExpiredHandleDetail: "the vault restore hand-off expired before the human completed it; start a fresh vault restore with vault_restore",
-		DeadHandleReason:    ReasonCredentialEntry,
-		Category:            CategoryVault,
+		DeadHandleReason:    model.ReasonCredentialEntry,
+		Category:            model.CategoryVault,
 	}, reg, handles)
 }
 
@@ -57,6 +59,6 @@ func RegisterVaultRestoreApp(srv *mcp.Server, catalog *ToolCatalog, reg *Handoff
 		HTML:          renderVaultRestoreAppHTML(),
 		PrefersBorder: true,
 		AttachTo:      []string{compiledVaultRestoreToolName},
-		Helpers:       []ToolDescriptor{vaultRestoreStatusDescriptor(reg, handles)},
+		Helpers:       []model.ToolDescriptor{vaultRestoreStatusDescriptor(reg, handles)},
 	})
 }

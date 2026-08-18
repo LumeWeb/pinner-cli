@@ -10,6 +10,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // TestRegisterVaultCreateAppWire verifies the Create Vault app registers its
@@ -83,7 +85,7 @@ func TestVaultCreateStatusHelperPendingToDone(t *testing.T) {
 	status := vaultCreateStatusDescriptor(reg, handles)
 
 	// Not acted on yet -> pending.
-	r, err := status.Handler(context.Background(), ToolRequest{
+	r, err := status.Handler(context.Background(), model.ToolRequest{
 		Name:      "vault_create_status",
 		Arguments: map[string]any{"handle": handle},
 	})
@@ -103,7 +105,7 @@ func TestVaultCreateStatusHelperPendingToDone(t *testing.T) {
 	recSeedGet := httptest.NewRecorder()
 	mux.ServeHTTP(recSeedGet, httptest.NewRequest(http.MethodGet, seedURL, nil))
 	require.Equal(t, http.StatusOK, recSeedGet.Code)
-	r, err = status.Handler(context.Background(), ToolRequest{
+	r, err = status.Handler(context.Background(), model.ToolRequest{
 		Name:      "vault_create_status",
 		Arguments: map[string]any{"handle": handle},
 	})
@@ -117,7 +119,7 @@ func TestVaultCreateStatusHelperPendingToDone(t *testing.T) {
 	mux.ServeHTTP(recSeed, confirmReq)
 	require.Equal(t, http.StatusOK, recSeed.Code)
 
-	r, err = status.Handler(context.Background(), ToolRequest{
+	r, err = status.Handler(context.Background(), model.ToolRequest{
 		Name:      "vault_create_status",
 		Arguments: map[string]any{"handle": handle},
 	})
@@ -148,7 +150,7 @@ func TestVaultCreateStatusHelperPendingCarriesHandle(t *testing.T) {
 	status := vaultCreateStatusDescriptor(reg, handles)
 
 	// Live pending: needs_human with a handle, and no URL in the result.
-	r, err := status.Handler(context.Background(), ToolRequest{
+	r, err := status.Handler(context.Background(), model.ToolRequest{
 		Name:      "vault_create_status",
 		Arguments: map[string]any{"handle": handle},
 	})
@@ -160,7 +162,7 @@ func TestVaultCreateStatusHelperPendingCarriesHandle(t *testing.T) {
 	require.False(t, hasCreate || hasAction, "live pending must not carry a URL in the status result")
 
 	// Dead/unknown handle: needs_human with no handle (and a restart steer).
-	r, err = status.Handler(context.Background(), ToolRequest{
+	r, err = status.Handler(context.Background(), model.ToolRequest{
 		Name:      "vault_create_status",
 		Arguments: map[string]any{"handle": "does-not-exist"},
 	})
@@ -182,7 +184,7 @@ func TestVaultCreateNotConfiguredReturnsNoHandle(t *testing.T) {
 	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 
 	handler := vaultCreateSetupHandler(nil, reg, handles)
-	r, err := handler(context.Background(), ToolRequest{Name: compiledVaultCreateToolName})
+	r, err := handler(context.Background(), model.ToolRequest{Name: compiledVaultCreateToolName})
 	require.NoError(t, err)
 	sc := requireHandoff(t, r) // needs_human (ReasonInteractiveOnly)
 	_, hasHandle := sc["handle"]

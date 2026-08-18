@@ -27,6 +27,8 @@ import (
 	"fmt"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // MCP Apps protocol constants (mirroring @modelcontextprotocol/ext-apps).
@@ -119,7 +121,7 @@ func marshalToolMeta(meta AppToolMeta) (mcp.Meta, error) {
 // hosts still call the tool normally and receive the text fallback from the
 // handler. desc.Meta is extended, never replaced, so existing metadata
 // survives.
-func RegisterAppTool(srv *mcp.Server, desc ToolDescriptor, app AppToolMeta) error {
+func RegisterAppTool(srv *mcp.Server, desc model.ToolDescriptor, app AppToolMeta) error {
 	if srv == nil {
 		return fmt.Errorf("nil official server")
 	}
@@ -232,32 +234,10 @@ func AdvertiseUICapability(caps *mcp.ServerCapabilities) *mcp.ServerCapabilities
 	return caps
 }
 
-// ClientUICapabilities is the typed view of the MCP Apps capability a client
-// advertises during initialization.
-type ClientUICapabilities struct {
-	// MIMETypes lists the resource MIME types the client can render. MCP Apps
-	// support requires RESOURCE_MIME_TYPE to be present.
-	MIMETypes []string
-}
-
-// SupportsApps reports whether the client advertises MCP Apps support (i.e.
-// can render RESOURCE_MIME_TYPE ui:// resources).
-func (c *ClientUICapabilities) SupportsApps() bool {
-	if c == nil {
-		return false
-	}
-	for _, mt := range c.MIMETypes {
-		if mt == RESOURCE_MIME_TYPE {
-			return true
-		}
-	}
-	return false
-}
-
 // GetClientUICapability reads the typed MCP Apps capability from a client's
 // advertised `extensions` (map of extension id -> settings). It returns nil if
 // the client did not advertise MCP Apps.
-func GetClientUICapability(extensions map[string]any) *ClientUICapabilities {
+func GetClientUICapability(extensions map[string]any) *model.ClientUICapabilities {
 	raw, ok := extensions[EXTENSION_ID]
 	if !ok || raw == nil {
 		return nil
@@ -275,7 +255,7 @@ func GetClientUICapability(extensions map[string]any) *ClientUICapabilities {
 		return nil
 	}
 	if parsed.MIMETypes == nil {
-		return &ClientUICapabilities{}
+		return &model.ClientUICapabilities{}
 	}
-	return &ClientUICapabilities{MIMETypes: parsed.MIMETypes}
+	return &model.ClientUICapabilities{MIMETypes: parsed.MIMETypes}
 }

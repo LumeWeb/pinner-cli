@@ -5,6 +5,8 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcpapp"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // This file wires the "Sign In" (auth SSO) MCP App onto the shared AppView lib
@@ -29,7 +31,7 @@ func renderAuthSSOAppHTML() string {
 // shared resume machinery (handle -> continuation -> pending/done) exactly like
 // auth_resume, but is registered with ToolVisibilityApp so only the Sign In
 // view can poll it; the model never sees it. It carries no secrets.
-func authSSOStatusDescriptor(reg *HandoffRegistry, handles *session.AsyncHandleStore) ToolDescriptor {
+func authSSOStatusDescriptor(reg *HandoffRegistry, handles *session.AsyncHandleStore) model.ToolDescriptor {
 	return NewResumeTool(ResumeToolSpec{
 		Name:                "auth_sso_status",
 		Title:               "Auth Sign-In Status",
@@ -37,8 +39,8 @@ func authSSOStatusDescriptor(reg *HandoffRegistry, handles *session.AsyncHandleS
 		RestartTool:         "auth_sso",
 		UnknownHandleDetail: "unknown handle; start a new login with auth_sso",
 		ExpiredHandleDetail: "the sign-in handle expired before approval; start a fresh login with auth_sso",
-		DeadHandleReason:    ReasonSSOApproval,
-		Category:            CategoryAccount,
+		DeadHandleReason:    model.ReasonSSOApproval,
+		Category:            model.CategoryAccount,
 	}, reg, handles)
 }
 
@@ -57,6 +59,6 @@ func RegisterAuthSSOApp(srv *mcp.Server, catalog *ToolCatalog, reg *HandoffRegis
 		HTML:          renderAuthSSOAppHTML(),
 		PrefersBorder: true,
 		AttachTo:      []string{"auth_sso"},
-		Helpers:       []ToolDescriptor{authSSOStatusDescriptor(reg, handles)},
+		Helpers:       []model.ToolDescriptor{authSSOStatusDescriptor(reg, handles)},
 	})
 }
