@@ -7,6 +7,8 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
 )
 
 // This file exposes the out-of-band (browser) login coordinator as first-class
@@ -37,7 +39,7 @@ func NewAuthSSODescriptor(oob *OutOfBandLogin, handles *session.AsyncHandleStore
 		Title:       "Sign In (Out-of-Band)",
 		Description: "Start an out-of-band (OOB) browser sign-in for SSO authentication. Returns immediately with an approval URL the human opens, and a resume handle for the auth_resume tool. Non-blocking, and never asks the human for a password or OTP on this channel. Start here to authenticate.",
 		Category:    model.CategoryAccount,
-		InputSchema: toolSchemaFor[authSSOArgs](),
+		InputSchema: toolargs.ToolSchemaFor[authSSOArgs](),
 		Handler: func(ctx context.Context, req model.ToolRequest) (model.ToolResult, error) {
 			if oob == nil || handles == nil || reg == nil {
 				return model.NeedsHumanResult(model.NeedsHuman{
@@ -45,7 +47,7 @@ func NewAuthSSODescriptor(oob *OutOfBandLogin, handles *session.AsyncHandleStore
 					Detail: "Out-of-band login is not configured for this server. Use the CLI 'pinner auth' to sign in, or run with the transport that provides a browser login.",
 				}), nil
 			}
-			in, err := decodeToolArgs[authSSOArgs](req)
+			in, err := toolargs.DecodeToolArgs[authSSOArgs](req)
 			if err != nil {
 				return model.ToolResult{IsError: true, Text: err.Error()}, nil
 			}

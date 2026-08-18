@@ -15,6 +15,8 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
 )
 
 func TestCallToolResultFromElicitationForm(t *testing.T) {
@@ -52,7 +54,7 @@ func TestOfficialToolHandlerElicitationRoundTrip(t *testing.T) {
 		Input json.RawMessage `json:"input"`
 	}
 	stepHandler := model.PinnerToolHandler(func(_ context.Context, req model.ToolRequest) (model.ToolResult, error) {
-		in, err := decodeToolArgs[localInput](req)
+		in, err := toolargs.DecodeToolArgs[localInput](req)
 		if err != nil {
 			return model.ToolResult{}, err
 		}
@@ -105,7 +107,7 @@ func TestElicitationRequestStateCarriesSession(t *testing.T) {
 		RequestState string          `json:"request_state"`
 	}
 	stepHandler := model.PinnerToolHandler(func(_ context.Context, req model.ToolRequest) (model.ToolResult, error) {
-		in, err := decodeToolArgs[stepInput](req)
+		in, err := toolargs.DecodeToolArgs[stepInput](req)
 		if err != nil {
 			return model.ToolResult{}, err
 		}
@@ -183,9 +185,9 @@ func TestInputResponsesWireRoundTrip(t *testing.T) {
 func TestSchemaRequiresInput(t *testing.T) {
 	require.False(t, schemaRequiresInput(nil))
 	require.False(t, schemaRequiresInput(&jsonschema.Schema{}), "empty schema must be treated as no-input")
-	require.False(t, schemaRequiresInput(schemaFor[ValidateInput]()), "ValidateInput (optional retry only) must not elicit")
-	require.False(t, schemaRequiresInput(schemaFor[SetupCompletionInput]()), "all-optional fields must auto-advance, not elicit")
-	require.True(t, schemaRequiresInput(schemaFor[DomainInput]()), "a step with a required field must elicit")
+	require.False(t, schemaRequiresInput(toolargs.SchemaFor[ValidateInput]()), "ValidateInput (optional retry only) must not elicit")
+	require.False(t, schemaRequiresInput(toolargs.SchemaFor[SetupCompletionInput]()), "all-optional fields must auto-advance, not elicit")
+	require.True(t, schemaRequiresInput(toolargs.SchemaFor[DomainInput]()), "a step with a required field must elicit")
 	require.True(t, schemaRequiresInput(&jsonschema.Schema{Required: []string{"x"}}))
 }
 
@@ -226,7 +228,7 @@ func TestOfficialToolHandlerFlagsFormRetry(t *testing.T) {
 // NoInput steps yield nil so they stay on the StepResponse path.
 func TestElicitForStep(t *testing.T) {
 	now := time.Now()
-	spec := elicitForStep("sess-9", StepResponse{CurrentStep: "domain", NextStepSchema: schemaFor[DomainInput]()}, now)
+	spec := elicitForStep("sess-9", StepResponse{CurrentStep: "domain", NextStepSchema: toolargs.SchemaFor[DomainInput]()}, now)
 	require.NotNil(t, spec, "a step that needs input must elicit")
 	require.Equal(t, "input", spec.ID)
 	require.NotEmpty(t, spec.RequestState, "requestState must be set")
@@ -257,7 +259,7 @@ func TestElicitForStep(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rawSchema, &schema))
 	require.NotEmpty(t, schema["properties"], "form schema must carry the step's fields")
 
-	require.Nil(t, elicitForStep("sess-9", StepResponse{CurrentStep: "dns_setup", NextStepSchema: schemaFor[NoInput]()}, now), "NoInput steps must not elicit")
+	require.Nil(t, elicitForStep("sess-9", StepResponse{CurrentStep: "dns_setup", NextStepSchema: toolargs.SchemaFor[NoInput]()}, now), "NoInput steps must not elicit")
 	require.Nil(t, elicitForStep("sess-9", StepResponse{CurrentStep: "done", NextStepSchema: nil}, now), "nil schema must not elicit")
 }
 
@@ -266,7 +268,7 @@ func TestElicitForStep(t *testing.T) {
 // feedback, not a blank form) and fails over to nil for NoInput steps.
 func TestRePresentFormOnFailure(t *testing.T) {
 	now := time.Now()
-	resp := StepResponse{CurrentStep: "domain", NextStepSchema: schemaFor[DomainInput]()}
+	resp := StepResponse{CurrentStep: "domain", NextStepSchema: toolargs.SchemaFor[DomainInput]()}
 
 	spec := rePresentFormOnFailure("sess-9", resp, errors.New("domain is required"), now)
 	require.NotNil(t, spec, "a step that still needs input must re-present the form")
@@ -277,5 +279,5 @@ func TestRePresentFormOnFailure(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "sess-9", got)
 
-	require.Nil(t, rePresentFormOnFailure("sess-9", StepResponse{CurrentStep: "dns_setup", NextStepSchema: schemaFor[NoInput]()}, errors.New("x"), now), "NoInput steps must not re-present a form")
+	require.Nil(t, rePresentFormOnFailure("sess-9", StepResponse{CurrentStep: "dns_setup", NextStepSchema: toolargs.SchemaFor[NoInput]()}, errors.New("x"), now), "NoInput steps must not re-present a form")
 }

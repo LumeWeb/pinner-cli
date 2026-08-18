@@ -7,6 +7,8 @@ import (
 	"io"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
 )
 
 // DownloadFileInput is the typed argument shape for the unified download_file
@@ -52,9 +54,9 @@ func NewDownloadFileDescriptor(ipfsFn IPFSDownloadHandler, hd *httpDownload, dow
 		Title:       "Download IPFS content to a file",
 		Description: downloadFileDescription(hd != nil, tunnelOpenAI),
 		Category:    model.CategoryCore,
-		InputSchema: toolSchemaFor[DownloadFileInput](),
+		InputSchema: toolargs.ToolSchemaFor[DownloadFileInput](),
 		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
-			in, err := decodeToolArgs[DownloadFileInput](request)
+			in, err := toolargs.DecodeToolArgs[DownloadFileInput](request)
 			if err != nil {
 				return model.ToolResult{}, err
 			}
@@ -82,12 +84,12 @@ func NewDownloadFileDescriptor(ipfsFn IPFSDownloadHandler, hd *httpDownload, dow
 				res, err := executeLocalSink(ctx, in.IPFSPath, name, in.OutputPath, downloadRoot, maxDownloadBytes, func(ctx context.Context, w io.Writer) error {
 					return ipfsFn(ctx, in.IPFSPath, w)
 				})
-				return wrapResult(res, err, "Downloaded from IPFS.")
+				return toolargs.WrapResult(res, err, "Downloaded from IPFS.")
 			case SinkDrop:
 				res, err := executeDropSink(ctx, in.IPFSPath, name, hd, in.TTL, maxDownloadBytes, func(ctx context.Context, w io.Writer) error {
 					return ipfsFn(ctx, in.IPFSPath, w)
 				})
-				return wrapResult(res, err, "Filedrop minted; pull the bytes from fetch_url.")
+				return toolargs.WrapResult(res, err, "Filedrop minted; pull the bytes from fetch_url.")
 			default:
 				return model.ToolResult{}, fmt.Errorf("unknown sink %q", in.Sink)
 			}

@@ -12,6 +12,8 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
 )
 
 // TestHandoffRegistryBeginGetEnd verifies the shared continuation registry
@@ -361,6 +363,6 @@ func TestResumeArgsHandleRequired(t *testing.T) {
 	var sch struct {
 		Required []string `json:"required"`
 	}
-	require.NoError(t, json.Unmarshal(toolSchemaFor[resumeArgs](), &sch))
+	require.NoError(t, json.Unmarshal(toolargs.ToolSchemaFor[resumeArgs](), &sch))
 	assert.Contains(t, sch.Required, "handle", "resume schema must mark handle as required")
 }

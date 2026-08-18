@@ -34,6 +34,8 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
 )
 
 // build.Version is stamped by ldflags. Fall back to a dev constant when it is
@@ -407,7 +409,7 @@ func registerOfficialSearchTools(srv *mcp.Server, catalog *ToolCatalog) error {
 	}
 
 	handler := model.PinnerToolHandler(func(_ context.Context, request model.ToolRequest) (model.ToolResult, error) {
-		in, err := decodeToolArgs[searchToolsInput](request)
+		in, err := toolargs.DecodeToolArgs[searchToolsInput](request)
 		if err != nil {
 			return model.ToolResult{}, err
 		}
@@ -454,7 +456,7 @@ func registerOfficialDescribeTool(srv *mcp.Server, catalog *ToolCatalog) error {
 	}
 
 	handler := model.PinnerToolHandler(func(_ context.Context, request model.ToolRequest) (model.ToolResult, error) {
-		in, err := decodeToolArgs[describeToolInput](request)
+		in, err := toolargs.DecodeToolArgs[describeToolInput](request)
 		if err != nil {
 			return model.ToolResult{IsError: true, Text: err.Error()}, nil
 		}
@@ -504,7 +506,7 @@ func registerOfficialInvokeTool(srv *mcp.Server, catalog *ToolCatalog, stdioMode
 	}
 
 	handler := model.PinnerToolHandler(func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
-		in, err := decodeToolArgs[invokeToolInput](request)
+		in, err := toolargs.DecodeToolArgs[invokeToolInput](request)
 		if err != nil {
 			return model.ToolResult{IsError: true, Text: err.Error()}, nil
 		}

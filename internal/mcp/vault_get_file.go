@@ -7,6 +7,8 @@ import (
 	"io"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
 )
 
 // VaultGetFileInput is the typed argument shape for the unified vault_get_file
@@ -42,9 +44,9 @@ func NewVaultGetFileDescriptor(getFn VaultGetHandler, hd *httpDownload, download
 		Title:       "Download a file from the Pinner vault",
 		Description: vaultGetFileDescription(hd != nil, tunnelOpenAI),
 		Category:    model.CategoryCore,
-		InputSchema: toolSchemaFor[VaultGetFileInput](),
+		InputSchema: toolargs.ToolSchemaFor[VaultGetFileInput](),
 		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
-			in, err := decodeToolArgs[VaultGetFileInput](request)
+			in, err := toolargs.DecodeToolArgs[VaultGetFileInput](request)
 			if err != nil {
 				return model.ToolResult{}, err
 			}
@@ -70,12 +72,12 @@ func NewVaultGetFileDescriptor(getFn VaultGetHandler, hd *httpDownload, download
 				res, err := executeLocalSink(ctx, in.VaultPath, name, in.OutputPath, downloadRoot, maxDownloadBytes, func(ctx context.Context, w io.Writer) error {
 					return getFn(ctx, in.VaultPath, w)
 				})
-				return wrapResult(res, err, "Downloaded from the vault.")
+				return toolargs.WrapResult(res, err, "Downloaded from the vault.")
 			case SinkDrop:
 				res, err := executeDropSink(ctx, in.VaultPath, name, hd, in.TTL, maxDownloadBytes, func(ctx context.Context, w io.Writer) error {
 					return getFn(ctx, in.VaultPath, w)
 				})
-				return wrapResult(res, err, "Filedrop minted; pull the bytes from fetch_url.")
+				return toolargs.WrapResult(res, err, "Filedrop minted; pull the bytes from fetch_url.")
 			default:
 				return model.ToolResult{}, fmt.Errorf("unknown sink %q", in.Sink)
 			}

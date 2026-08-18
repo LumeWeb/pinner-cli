@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"reflect"
 	"strconv"
 	"time"
 
@@ -16,6 +15,8 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
 )
 
 // --- FSM state constants ---
@@ -355,25 +356,7 @@ func domainFSMEvents() []fsm.EventDesc {
 	}
 }
 
-// --- JSON schema helpers ---
-
-// schemaReflector reflects Go struct types into JSON schemas using
-// struct tags for field descriptions, enums, and constraints.
-var schemaReflector = &jsonschema.Reflector{
-	DoNotReference: true,
-	Anonymous:      true,
-}
-
-// schemaFor returns a JSON schema describing the expected input shape for
-// a wizard step, derived from the struct type T via reflection. Struct
-// fields use jsonschema tags (enum, description, required) to control
-// the emitted schema.
-func schemaFor[T any]() *jsonschema.Schema {
-	var v T
-	return schemaReflector.ReflectFromType(reflect.TypeOf(v))
-}
-
-// emptySchema is the schema for steps that take no input.
+// --- Websites wizard step definitions ---
 var emptySchema = &jsonschema.Schema{
 	Type:       "object",
 	Properties: nil,
@@ -405,7 +388,7 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []session.StepDef {
 				return "", nil
 			},
 			Schema: func(_ *session.Session) *jsonschema.Schema {
-				return schemaFor[NoInput]()
+				return toolargs.SchemaFor[NoInput]()
 			},
 		},
 		{
@@ -430,7 +413,7 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []session.StepDef {
 				return "", nil
 			},
 			Schema: func(_ *session.Session) *jsonschema.Schema {
-				return schemaFor[ContentSourceInput]()
+				return toolargs.SchemaFor[ContentSourceInput]()
 			},
 		},
 		{
@@ -449,7 +432,7 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []session.StepDef {
 				return "", nil
 			},
 			Schema: func(_ *session.Session) *jsonschema.Schema {
-				return schemaFor[TargetTypeInput]()
+				return toolargs.SchemaFor[TargetTypeInput]()
 			},
 		},
 		{
@@ -468,7 +451,7 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []session.StepDef {
 				return "", nil
 			},
 			Schema: func(_ *session.Session) *jsonschema.Schema {
-				return schemaFor[DomainInput]()
+				return toolargs.SchemaFor[DomainInput]()
 			},
 		},
 		{
@@ -487,7 +470,7 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []session.StepDef {
 				return "", nil
 			},
 			Schema: func(_ *session.Session) *jsonschema.Schema {
-				return schemaFor[DNSModeInput]()
+				return toolargs.SchemaFor[DNSModeInput]()
 			},
 		},
 		{
@@ -523,7 +506,7 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []session.StepDef {
 				return "", nil
 			},
 			Schema: func(_ *session.Session) *jsonschema.Schema {
-				return schemaFor[CreateInput]()
+				return toolargs.SchemaFor[CreateInput]()
 			},
 		},
 		{
@@ -534,7 +517,7 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []session.StepDef {
 				return "", nil
 			},
 			Schema: func(_ *session.Session) *jsonschema.Schema {
-				return schemaFor[NoInput]()
+				return toolargs.SchemaFor[NoInput]()
 			},
 		},
 		{
@@ -565,7 +548,7 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []session.StepDef {
 				return "", nil
 			},
 			Schema: func(_ *session.Session) *jsonschema.Schema {
-				return schemaFor[ValidateInput]()
+				return toolargs.SchemaFor[ValidateInput]()
 			},
 		},
 	}
@@ -596,7 +579,7 @@ func buildDomainSteps(deps DomainWizardDeps) []session.StepDef {
 				return "", nil
 			},
 			Schema: func(_ *session.Session) *jsonschema.Schema {
-				return schemaFor[NoInput]()
+				return toolargs.SchemaFor[NoInput]()
 			},
 		},
 		{
@@ -631,7 +614,7 @@ func buildDomainSteps(deps DomainWizardDeps) []session.StepDef {
 				return "", nil
 			},
 			Schema: func(_ *session.Session) *jsonschema.Schema {
-				return schemaFor[WebsiteInput]()
+				return toolargs.SchemaFor[WebsiteInput]()
 			},
 		},
 		{
@@ -650,7 +633,7 @@ func buildDomainSteps(deps DomainWizardDeps) []session.StepDef {
 				return "", nil
 			},
 			Schema: func(_ *session.Session) *jsonschema.Schema {
-				return schemaFor[DomainNameInput]()
+				return toolargs.SchemaFor[DomainNameInput]()
 			},
 		},
 		{
@@ -669,7 +652,7 @@ func buildDomainSteps(deps DomainWizardDeps) []session.StepDef {
 				return "", nil
 			},
 			Schema: func(_ *session.Session) *jsonschema.Schema {
-				return schemaFor[NamespaceInput]()
+				return toolargs.SchemaFor[NamespaceInput]()
 			},
 		},
 		{
@@ -703,7 +686,7 @@ func buildDomainSteps(deps DomainWizardDeps) []session.StepDef {
 				return "", nil
 			},
 			Schema: func(_ *session.Session) *jsonschema.Schema {
-				return schemaFor[BindInput]()
+				return toolargs.SchemaFor[BindInput]()
 			},
 		},
 		{
@@ -723,7 +706,7 @@ func buildDomainSteps(deps DomainWizardDeps) []session.StepDef {
 				return "", nil
 			},
 			Schema: func(_ *session.Session) *jsonschema.Schema {
-				return schemaFor[NoInput]()
+				return toolargs.SchemaFor[NoInput]()
 			},
 		},
 		{
@@ -754,7 +737,7 @@ func buildDomainSteps(deps DomainWizardDeps) []session.StepDef {
 				return "", nil
 			},
 			Schema: func(_ *session.Session) *jsonschema.Schema {
-				return schemaFor[DomainVerifyInput]()
+				return toolargs.SchemaFor[DomainVerifyInput]()
 			},
 		},
 	}
@@ -868,7 +851,7 @@ func buildSetupSteps(deps SetupWizardDeps) []session.StepDef {
 				return "", nil
 			},
 			Schema: func(_ *session.Session) *jsonschema.Schema {
-				return schemaFor[SetupAuthInput]()
+				return toolargs.SchemaFor[SetupAuthInput]()
 			},
 		},
 		{
@@ -906,7 +889,7 @@ func buildSetupSteps(deps SetupWizardDeps) []session.StepDef {
 				return "", nil
 			},
 			Schema: func(_ *session.Session) *jsonschema.Schema {
-				return schemaFor[SetupConfigInput]()
+				return toolargs.SchemaFor[SetupConfigInput]()
 			},
 		},
 		{
@@ -924,7 +907,7 @@ func buildSetupSteps(deps SetupWizardDeps) []session.StepDef {
 				return "", nil
 			},
 			Schema: func(_ *session.Session) *jsonschema.Schema {
-				return schemaFor[SetupCompletionInput]()
+				return toolargs.SchemaFor[SetupCompletionInput]()
 			},
 		},
 		{
@@ -934,7 +917,7 @@ func buildSetupSteps(deps SetupWizardDeps) []session.StepDef {
 				return "", nil
 			},
 			Schema: func(_ *session.Session) *jsonschema.Schema {
-				return schemaFor[NoInput]()
+				return toolargs.SchemaFor[NoInput]()
 			},
 		},
 	}
@@ -1128,7 +1111,7 @@ func registerWizardStart(catalog *ToolCatalog, name, description string, start f
 
 func registerWizardStep(catalog *ToolCatalog, name, description string, store *session.SessionStore, completionMessage string) {
 	catalog.Add(wizardEntry(name, description, wizardStepSchema(), func(ctx context.Context, req model.ToolRequest) (model.ToolResult, error) {
-		in, err := decodeToolArgs[WizardStepInput](req)
+		in, err := toolargs.DecodeToolArgs[WizardStepInput](req)
 		if err != nil {
 			return marshalWizardResponse(StepResponse{Error: fmt.Sprintf("invalid step arguments: %v", err)})
 		}

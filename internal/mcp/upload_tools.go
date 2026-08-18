@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
 )
 
 // ChatGPTFileAsyncInput is the typed argument shape for upload_file_async.
@@ -32,10 +34,10 @@ func NewAsyncUploadTools(mgr *UploadTaskManager) []model.ToolDescriptor {
 			Title:       "Start an async external-file upload",
 			Description: "Start uploading a file reference in the background and return an opaque handle. Poll upload_status, cancel with upload_cancel, and list with upload_list. Pinner fetches the temporary URL locally and uses its authenticated TUS path.",
 			Category:    model.CategoryCore,
-			InputSchema: toolSchemaFor[ChatGPTFileAsyncInput](),
+			InputSchema: toolargs.ToolSchemaFor[ChatGPTFileAsyncInput](),
 			Meta:        chatgptFileMeta(),
 			Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
-				in, err := decodeToolArgs[ChatGPTFileAsyncInput](request)
+				in, err := toolargs.DecodeToolArgs[ChatGPTFileAsyncInput](request)
 				if err != nil {
 					return model.ToolResult{}, err
 				}
@@ -72,9 +74,9 @@ func NewAsyncUploadTools(mgr *UploadTaskManager) []model.ToolDescriptor {
 			Title:       "Get async upload status",
 			Description: "Return the current status of an async upload handle: queued, running, completed, failed, or cancelled.",
 			Category:    model.CategoryCore,
-			InputSchema: toolSchemaFor[UploadHandleInput](),
+			InputSchema: toolargs.ToolSchemaFor[UploadHandleInput](),
 			Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
-				in, err := decodeToolArgs[UploadHandleInput](request)
+				in, err := toolargs.DecodeToolArgs[UploadHandleInput](request)
 				if err != nil {
 					return model.ToolResult{}, err
 				}
@@ -93,9 +95,9 @@ func NewAsyncUploadTools(mgr *UploadTaskManager) []model.ToolDescriptor {
 			Title:       "Cancel an async upload",
 			Description: "Cancel a queued or running async upload by handle.",
 			Category:    model.CategoryCore,
-			InputSchema: toolSchemaFor[UploadHandleInput](),
+			InputSchema: toolargs.ToolSchemaFor[UploadHandleInput](),
 			Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
-				in, err := decodeToolArgs[UploadHandleInput](request)
+				in, err := toolargs.DecodeToolArgs[UploadHandleInput](request)
 				if err != nil {
 					return model.ToolResult{}, err
 				}
@@ -113,7 +115,7 @@ func NewAsyncUploadTools(mgr *UploadTaskManager) []model.ToolDescriptor {
 			Title:       "List async uploads",
 			Description: "List all tracked async upload handles and their current status.",
 			Category:    model.CategoryCore,
-			InputSchema: toolSchemaFor[NoInput](),
+			InputSchema: toolargs.ToolSchemaFor[NoInput](),
 			Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
 				tasks := mgr.List()
 				return model.ToolResult{StructuredContent: map[string]any{"uploads": tasks}, Text: "Uploads."}, nil

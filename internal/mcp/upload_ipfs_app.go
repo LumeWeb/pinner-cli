@@ -10,6 +10,8 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcpapp"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
 )
 
 // This file wires the "Upload to IPFS" MCP App onto the shared AppView lib
@@ -59,7 +61,7 @@ func ipfsUploadSubmitDescriptor(hp *httpUpload) model.ToolDescriptor {
 		Description: "Mint a one-time presigned HTTP PUT endpoint the app's Uppy XHR uploader writes file bytes to out of band. App-only helper for the Upload to IPFS view.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"name":{"type":"string"},"ttl":{"type":"string"}}}`),
 		Handler: func(_ context.Context, req model.ToolRequest) (model.ToolResult, error) {
-			in, err := decodeToolArgs[IPFSUploadSubmitInput](req)
+			in, err := toolargs.DecodeToolArgs[IPFSUploadSubmitInput](req)
 			if err != nil {
 				return model.ToolResult{}, err
 			}
@@ -107,7 +109,7 @@ func ipfsUploadStatusDescriptor(hp *httpUpload) model.ToolDescriptor {
 		Description: "Return the status of an async upload by handle: queued, running, completed (with CID), failed, or cancelled. App-only helper for the Upload to IPFS view.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"handle":{"type":"string"}},"required":["handle"]}`),
 		Handler: func(ctx context.Context, req model.ToolRequest) (model.ToolResult, error) {
-			in, err := decodeToolArgs[UploadHandleInput](req)
+			in, err := toolargs.DecodeToolArgs[UploadHandleInput](req)
 			if err != nil {
 				return model.ToolResult{}, err
 			}

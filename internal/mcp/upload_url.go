@@ -8,6 +8,8 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
 )
 
 // RelayURLUploadInput is the typed argument shape for upload_url.
@@ -28,9 +30,9 @@ func RelayURLUploadDescriptor(handler RelayURLUploadHandler, allowedHosts []stri
 		Title:       "Upload a file from a URL",
 		Description: "Fetch a public HTTPS URL locally and upload it to Pinner through the authenticated upload path. Do not put Pinner's credentials in the URL; Pinner fetches it with its own stored auth. Intended for remote HTTP clients that cannot reference a local path.",
 		Category:    model.CategoryCore,
-		InputSchema: toolSchemaFor[RelayURLUploadInput](),
+		InputSchema: toolargs.ToolSchemaFor[RelayURLUploadInput](),
 		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
-			in, err := decodeArgsFor[RelayURLUploadInput]("relay URL upload", handler != nil, request)
+			in, err := toolargs.DecodeArgsFor[RelayURLUploadInput]("relay URL upload", handler != nil, request)
 			if err != nil {
 				return model.ToolResult{}, err
 			}
@@ -52,7 +54,7 @@ func RelayURLUploadDescriptor(handler RelayURLUploadHandler, allowedHosts []stri
 			transferCtx, cancel := context.WithTimeout(ctx, syncUploadBudget(size))
 			defer cancel()
 			result, err := handler(transferCtx, body, size, in.Name, in.Wait)
-			return wrapResult(result, err, "URL uploaded.")
+			return toolargs.WrapResult(result, err, "URL uploaded.")
 		},
 	}
 }
