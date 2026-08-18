@@ -121,7 +121,7 @@ func serviceInstallStepsPrompter(ctx context.Context) wizard.Prompter {
 // it meaning it needs input, but no prompt channel is bound to the run context.
 type nilPrompt struct{}
 
-func (nilPrompt) Select(string, []string) (int, string, error) {
+func (nilPrompt) Select(string, []string, string) (int, string, error) {
 	return 0, "", errors.New("interactive prompt requested but no prompt channel is bound")
 }
 func (nilPrompt) MultiSelect(string, []string, []string) ([]string, error) {
@@ -130,7 +130,7 @@ func (nilPrompt) MultiSelect(string, []string, []string) ([]string, error) {
 func (nilPrompt) Confirm(string, bool) (bool, error) {
 	return false, errors.New("interactive prompt requested but no prompt channel is bound")
 }
-func (nilPrompt) Text(string, string) (string, error) {
+func (nilPrompt) Text(string, string, string) (string, error) {
 	return "", errors.New("interactive prompt requested but no prompt channel is bound")
 }
 
@@ -151,7 +151,7 @@ func ServiceInstallSteps(state *ServiceInstallState, cmd *cli.Command, envFile s
 				p := serviceInstallStepsPrompter(ctx)
 				// ngrok is listed first so the interactive select defaults to it (see
 				// tunnelProviderChoiceLabels).
-				_, choice, err := p.Select("MCP tunnel provider (exposes the remote MCP endpoint)", tunnelProviderChoiceLabels())
+				_, choice, err := p.Select("MCP tunnel provider (exposes the remote MCP endpoint)", tunnelProviderChoiceLabels(), "")
 				if err != nil {
 					return err
 				}
@@ -181,7 +181,7 @@ func ServiceInstallSteps(state *ServiceInstallState, cmd *cli.Command, envFile s
 				// interactive prompt so the secret is never typed into or
 				// echoed from the terminal session.
 				if s.AuthToken == "" {
-					secret, err := p.Text("Shared auth token / secret for the public MCP endpoint", "*")
+					secret, err := p.Text("Shared auth token / secret for the public MCP endpoint", "*", "")
 					if err != nil {
 						return err
 					}

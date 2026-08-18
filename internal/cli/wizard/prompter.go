@@ -10,14 +10,18 @@ import "context"
 // independent rendering systems fighting over one terminal.
 type Prompter interface {
 	// Select presents a single-choice list and returns the chosen index and value.
-	Select(label string, options []string) (int, string, error)
+	// defaultOption, when non-empty, is highlighted as the default/current choice
+	// (used on re-runs so the operator can keep or change the existing value).
+	Select(label string, options []string, defaultOption string) (int, string, error)
 	// MultiSelect presents a toggleable list with pre-checked defaults.
 	MultiSelect(label string, options, preChecked []string) ([]string, error)
 	// Confirm presents a yes/no prompt with a default.
 	Confirm(label string, defaultValue bool) (bool, error)
 	// Text collects a single line. mask, when non-empty (e.g. "*"), hides input
-	// (suitable for secrets); an empty mask reads a plain value.
-	Text(label, mask string) (string, error)
+	// (suitable for secrets); an empty mask reads a plain value. defaultValue,
+	// when non-empty, pre-fills the input (used on re-runs so the operator can
+	// keep or change the existing value).
+	Text(label, mask, defaultValue string) (string, error)
 }
 
 type prompterCtxKey struct{}

@@ -27,7 +27,7 @@ import (
 // tests that assert a prompt IS required see the non-interactive error.
 type testPrompter struct{}
 
-func (testPrompter) Select(string, []string) (int, string, error) {
+func (testPrompter) Select(string, []string, string) (int, string, error) {
 	return 0, "", errors.New("interactive prompt requested in non-interactive mode")
 }
 func (testPrompter) MultiSelect(string, []string, []string) ([]string, error) {
@@ -36,7 +36,7 @@ func (testPrompter) MultiSelect(string, []string, []string) ([]string, error) {
 func (testPrompter) Confirm(string, bool) (bool, error) {
 	return false, errors.New("interactive prompt requested in non-interactive mode")
 }
-func (testPrompter) Text(string, string) (string, error) {
+func (testPrompter) Text(string, string, string) (string, error) {
 	return "", errors.New("interactive prompt requested in non-interactive mode")
 }
 
@@ -127,7 +127,7 @@ type recordingPrompter struct {
 	provider     string // value Select returns for the provider list
 }
 
-func (r *recordingPrompter) Select(label string, _ []string) (int, string, error) {
+func (r *recordingPrompter) Select(label string, _ []string, _ string) (int, string, error) {
 	r.selectLabels = append(r.selectLabels, label)
 	return 0, r.provider, nil
 }
@@ -135,7 +135,7 @@ func (r *recordingPrompter) MultiSelect(string, []string, []string) ([]string, e
 	return nil, nil
 }
 func (r *recordingPrompter) Confirm(string, bool) (bool, error) { return false, nil }
-func (r *recordingPrompter) Text(label, _ string) (string, error) {
+func (r *recordingPrompter) Text(label, _, _ string) (string, error) {
 	return "", errors.New("unexpected Text call")
 }
 

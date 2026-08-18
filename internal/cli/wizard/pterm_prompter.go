@@ -17,23 +17,24 @@ type ptermPrompter struct{}
 func NewPtermPrompter() Prompter { return ptermPrompter{} }
 
 // Select presents a single-choice list via pterm.DefaultInteractiveSelect.
-func (ptermPrompter) Select(label string, options []string) (int, string, error) {
+func (ptermPrompter) Select(label string, options []string, defaultOption string) (int, string, error) {
 	if NonInteractive {
 		return 0, "", errors.New("interactive prompt requested in non-interactive mode")
 	}
-	sel, err := pterm.DefaultInteractiveSelect.WithOptions(options).WithDefaultText(label).Show()
+	sel := pterm.DefaultInteractiveSelect.WithOptions(options).WithDefaultText(label)
+	if defaultOption != "" {
+		sel = sel.WithDefaultOption(defaultOption)
+	}
+	val, err := sel.Show()
 	if err != nil {
 		return 0, "", err
 	}
-	if sel == "" {
-		return 0, "", errors.New("no option selected")
-	}
 	for i, o := range options {
-		if o == sel {
-			return i, sel, nil
+		if o == val {
+			return i, o, nil
 		}
 	}
-	return 0, sel, fmt.Errorf("selected option %q not found in options", sel)
+	return 0, val, fmt.Errorf("selected option %q not found in options", val)
 }
 
 // MultiSelect presents a toggleable multi-select via pterm.DefaultInteractiveMultiselect.
@@ -57,14 +58,18 @@ func (ptermPrompter) Confirm(label string, defaultValue bool) (bool, error) {
 }
 
 // Text collects a single line via pterm.DefaultInteractiveTextInput, masking
-// the input when mask is non-empty (e.g. "*" for secrets).
-func (ptermPrompter) Text(label, mask string) (string, error) {
+// the input when mask is non-empty (e.g. "*" for secrets). defaultValue, when
+// non-empty, pre-fills the input (re-runs allow keeping or changing it).
+func (ptermPrompter) Text(label, mask, defaultValue string) (string, error) {
 	if NonInteractive {
 		return "", errors.New("interactive prompt requested in non-interactive mode")
 	}
 	input := pterm.DefaultInteractiveTextInput.WithDefaultText(label)
 	if mask != "" {
 		input = input.WithMask(mask)
+	}
+	if defaultValue != "" {
+		input = input.WithDefaultValue(defaultValue)
 	}
 	val, err := input.Show()
 	if err != nil {

@@ -24,7 +24,7 @@ import (
 func openAIConfigurer(_ context.Context, p wizard.Prompter, s *ServiceInstallState, cfgMgr config.Manager) error {
 	if s.TunnelID == "" {
 		tunnel.OpenTunnelDeepLink("openai", "tunnel_id")
-		id, err := p.Text("OpenAI Secure MCP Tunnel ID", "")
+		id, err := p.Text("OpenAI Secure MCP Tunnel ID", "", "")
 		if err != nil {
 			return err
 		}
@@ -39,7 +39,7 @@ func openAIConfigurer(_ context.Context, p wizard.Prompter, s *ServiceInstallSta
 	// CONTROL_PLANE_API_KEY/OPENAI_API_KEY).
 	if s.ApiKey == "" {
 		tunnel.OpenTunnelDeepLink("openai", "api_key")
-		key, err := p.Text("OpenAI Secure MCP Tunnel control-plane API key", "*")
+		key, err := p.Text("OpenAI Secure MCP Tunnel control-plane API key", "*", "")
 		if err != nil {
 			return err
 		}
@@ -71,14 +71,14 @@ func cloudflaredConfigurer(_ context.Context, p wizard.Prompter, s *ServiceInsta
 		}
 	}
 	if s.Domain == "" {
-		domain, err := p.Text("Tunnel domain (required)", "")
+		domain, err := p.Text("Tunnel domain (required)", "", "")
 		if err != nil {
 			return err
 		}
 		s.Domain = strings.TrimSpace(domain)
 	}
 	if s.TunnelName == "" {
-		name, err := p.Text("Cloudflare tunnel resource name (default: pinner-mcp)", "")
+		name, err := p.Text("Cloudflare tunnel resource name (default: pinner-mcp)", "", "")
 		if err != nil {
 			return err
 		}
@@ -126,7 +126,7 @@ func ngrokConfigurer(ctx context.Context, p wizard.Prompter, s *ServiceInstallSt
 	// passes validation.
 	if s.TunnelToken == "" {
 		tunnel.OpenTunnelDeepLink("ngrok", "authtoken")
-		tok, err := p.Text("ngrok authtoken / MCP tunnel token", "*")
+		tok, err := p.Text("ngrok authtoken / MCP tunnel token", "*", "")
 		if err != nil {
 			return err
 		}
@@ -202,7 +202,7 @@ func resolveNgrokURL(ctx context.Context, p wizard.Prompter, s *ServiceInstallSt
 		// no authtoken. Direct the operator to the domains page and ask for the
 		// URL they see there.
 		tunnel.OpenTunnelDeepLink("ngrok", "domain")
-		u, perr := p.Text("ngrok public base URL (from dashboard.ngrok.com/domains, e.g. https://you.ngrok-free.dev)", "")
+		u, perr := p.Text("ngrok public base URL (from dashboard.ngrok.com/domains, e.g. https://you.ngrok-free.dev)", "", "")
 		if perr != nil {
 			return "", perr
 		}
