@@ -17,8 +17,14 @@ import (
 // bridge can reuse the same single registration seam.
 type RegisterToolFunc func(srv *Server, tool *mcp.Tool, handler model.PinnerToolHandler) error
 
-// registerToolFn is the tool-registration adapter installed by SetToolRegistrar.
-var registerToolFn RegisterToolFunc
+// registerToolFn is the tool-registration adapter used by app tools. The hub
+// installs its adapter (officialToolHandler) via SetToolRegistrar during
+// assembly. Failing fast here (rather than a degraded default) ensures a
+// missing SetToolRegistrar is caught loudly at registration, never as silent
+// loss of the elicitation/capability/state adornment app tools depend on.
+var registerToolFn RegisterToolFunc = func(*Server, *mcp.Tool, model.PinnerToolHandler) error {
+	return fmt.Errorf("sdk: tool registrar not installed; call sdk.SetToolRegistrar before RegisterAppTool")
+}
 
 // SetToolRegistrar installs the tool-adapter used by app-tool registration.
 // It must be called once during hub assembly (before any server serves) so
@@ -55,9 +61,6 @@ func RegisterAppTool(srv *Server, desc model.ToolDescriptor, meta model.AppToolM
 	}
 	for k, v := range attached {
 		desc.Meta[k] = v
-	}
-	if registerToolFn == nil {
-		return fmt.Errorf("sdk: tool registrar not installed; call sdk.SetToolRegistrar during hub assembly")
 	}
 	return registerToolFn(srv, Tool(desc), desc.Handler)
 }
