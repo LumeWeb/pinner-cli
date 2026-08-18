@@ -17,39 +17,72 @@ import (
 // the wizard-facing types (wizard.Prompter, *ServiceInstallState) that belong in the
 // parent package. They are registered into the provider registry (see
 // tunnel_providers.go) and dispatched by the install wizard.
+//
+// OpenAI is the reference migration to the shared field-resolution primitive
+// (Fields + Finalize): its install config is two clean promptable fields, so it
+// gathers declaratively. cloudflared/ngrok still use the legacy Configurer (see
+// below) until their provider-derived values are migrated.
 
-// openAIConfigurer collects the OpenAI tunnel ID and control-plane API key into
-// s, prompting for any value not already supplied via flags/env. It validates
-// the tunnel ID and persists both credentials to the last-resort config manager.
-func openAIConfigurer(_ context.Context, p wizard.Prompter, s *ServiceInstallState, cfgMgr config.Manager) error {
-	if s.TunnelID == "" {
-		tunnel.OpenTunnelDeepLink("openai", "tunnel_id")
-		id, err := p.Text("OpenAI Secure MCP Tunnel ID", "", "")
-		if err != nil {
-			return err
-		}
-		s.TunnelID = strings.TrimSpace(id)
+// promptText builds a free-text wizard.Prompt[T=string]. The framework passes
+// the field's current Operational value to CurrentString, which renders it as
+// the editable default.
+func promptText(label, mask string) *wizard.Prompt[string] {
+	return &wizard.Prompt[string]{
+		Label:         label,
+		Mask:          mask,
+		CurrentString: func(cur string) string { return cur },
 	}
-	if !tunnel.OpenAITunnelID.MatchString(s.TunnelID) {
-		return fmt.Errorf("invalid OpenAI tunnel ID %q", s.TunnelID)
-	}
-	// The control-plane API key must be persisted to the file (the running
-	// service reads only the env file, not this process's environment).
-	// s.ApiKey is pre-seeded from the --api-key flag (whose env Sources include
-	// CONTROL_PLANE_API_KEY/OPENAI_API_KEY).
-	if s.ApiKey == "" {
-		tunnel.OpenTunnelDeepLink("openai", "api_key")
-		key, err := p.Text("OpenAI Secure MCP Tunnel control-plane API key", "*", "")
-		if err != nil {
-			return err
-		}
-		s.ApiKey = strings.TrimSpace(key)
-	}
-	// Persist what the user supplied to the last-resort config manager so later
-	// runs auto-detect it without re-prompting.
+}
+
+// openAIFields returns the promptable install fields for the OpenAI provider:
+// the Secure MCP Tunnel ID (validated against the OpenAI tunnel-ID shape) and
+// the control-plane API key (masked).
+func openAIFields() []wizard.Field[*ServiceInstallState, string] {
+	tunnelID := *tunnelInstallField(fieldTunnelID)
+	tunnelID.Prompt = promptText("OpenAI Secure MCP Tunnel ID", "")
+	tunnelID.Validate = func(v string) bool { return tunnel.OpenAITunnelID.MatchString(v) }
+
+	apiKey := *tunnelInstallField(fieldApiKey)
+	apiKey.Prompt = promptText("OpenAI Secure MCP Tunnel control-plane API key", "*")
+
+	return []wizard.Field[*ServiceInstallState, string]{tunnelID, apiKey}
+}
+
+// openAIFinalize persists the supplied credentials to the last-resort config
+// manager so later runs auto-detect them without re-prompting.
+func openAIFinalize(_ context.Context, _ wizard.Prompter, s *ServiceInstallState, cfgMgr config.Manager) error {
 	tunnel.PersistTunnelCredential(cfgMgr, "openai", "tunnel_id", s.TunnelID)
 	tunnel.PersistTunnelCredential(cfgMgr, "openai", "api_key", s.ApiKey)
 	return nil
+}
+
+// fieldDeepLink maps an unresolved install field to the setup-page resource the
+// provider opens so an operator can obtain the value (see OpenTunnelDeepLink).
+type fieldDeepLink struct {
+	key     tunnelFieldKey
+	missing string // the resource name for the deep-link (e.g. "tunnel_id")
+}
+
+// providerDeepLinks lists, per provider, which fields open a setup deep-link
+// when they are still unresolved and Gather is about to prompt for them. A
+// provider that still uses the legacy Configurer fires its deep-links inside
+// that function instead. ngrok's public-URL fallback deep-link fires inside
+// resolveNgrokURL, since it is part of that imperative resolution.
+var providerDeepLinks = map[tunnel.TunnelProvider][]fieldDeepLink{
+	tunnel.TunnelProviderOpenAI: {
+		{key: fieldTunnelID, missing: "tunnel_id"},
+		{key: fieldApiKey, missing: "api_key"},
+	},
+}
+
+// fireProviderDeepLinks opens the setup deep-link for each of the provider's
+// fields that is still unresolved (empty), right before Gather prompts for it.
+func fireProviderDeepLinks(p tunnel.TunnelProvider, s *ServiceInstallState) {
+	for _, dl := range providerDeepLinks[p] {
+		if s != nil && s.operational(dl.key) == "" {
+			tunnel.OpenTunnelDeepLink(string(p), dl.missing)
+		}
+	}
 }
 
 // cloudflaredConfigurer collects the cloudflared domain and tunnel resource
