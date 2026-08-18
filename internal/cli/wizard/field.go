@@ -213,7 +213,13 @@ func (f *Field[S, T]) settle(oc *fieldOutcome[T], s S, v T, src srcKind, headles
 			oc.usedSource = f.Flag
 		}
 	case srcDecided:
-		// Already persisted on both channels; reuse exposes it as settled.
+		// A surviving operator decision is reused as settled. Restore the
+		// Operational channel too: a provider switch clears Operational for
+		// fields the new provider re-derives while Decided survives, so without
+		// refreshing it precedence 2 would report the field settled/operative
+		// even though Operational carries empty/stale data — Gather would skip
+		// the prompt and callers would execute on a blank working value.
+		f.SetOperational(s, v)
 		oc.decided = true
 		oc.operative = true
 	case srcDerived, srcEnv:

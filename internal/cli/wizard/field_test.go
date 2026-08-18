@@ -529,4 +529,29 @@ func TestField_DerivedHeadlessFallsThroughDefers(t *testing.T) {
 	require.Equal(t, "", s.operative)
 }
 
+// TestField_DecidedReuseRefreshesOperational guards that a surviving operator
+// decision (precedence 2, srcDecided) restores the Operational channel. A
+// provider switch clears Operational while Decided survives; settling the
+// reused decision must refresh the working value, or callers would execute on
+// a blank Operational despite the field reporting settled.
+func TestField_DecidedReuseRefreshesOperational(t *testing.T) {
+	old := NonInteractive
+	NonInteractive = true
+	defer func() { NonInteractive = old }()
+
+	// A surviving decision; Operational was cleared by a provider switch
+	// (empty working value), and no flag/env/dervied source is present — only
+	// precedence 2 (srcDecided) can settle it.
+	decided := "surviving.example.com"
+	s := &testState{decided: &decided, operative: ""}
+
+	seed, fully := mustCommit(t, context.Background(), &fakeSrc{},
+		s, []Field[*testState, string]{strField("domain", "", "MCP_DOMAIN", false, nil)})
+	require.True(t, fully, "the surviving decision settles the field")
+	require.Empty(t, seed, "a reused decision is not a fresh seed source")
+	require.Equal(t, "surviving.example.com", s.operative,
+		"reusing the decision must restore the Operational working value")
+	require.True(t, s.derived, "SetOperational must be called to sync the channel")
+}
+
 func ptr(s string) *string { return &s }
