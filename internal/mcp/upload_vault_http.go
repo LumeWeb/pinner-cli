@@ -14,6 +14,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/core/vault"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/transport"
 )
 
 // vaultHTTPUpload lets a sandboxed MCP App write a picked file into the
@@ -35,7 +36,7 @@ import (
 // expiring, and single-use, and it is bound to the vault destination path at
 // mint time so a caller cannot redirect the bytes to an arbitrary path.
 type vaultHTTPUpload struct {
-	loopback LoopbackServer
+	loopback transport.LoopbackServer
 
 	mu      sync.Mutex
 	tokens  map[string]vaultHTTPToken
@@ -122,8 +123,6 @@ func (vu *vaultHTTPUpload) mint(vaultPath string, ttl time.Duration) (string, er
 	}
 	vu.tokens[token] = vaultHTTPToken{vaultPath: vaultPath, expiresAt: now.Add(ttl)}
 	vu.mu.Unlock()
-	vu.loopback.mu.Lock()
-	defer vu.loopback.mu.Unlock()
 	return vu.loopback.URLFor("vault-upload", token), nil
 }
 

@@ -1,4 +1,9 @@
-package mcp
+// Package transport provides the SDK-free OOB HTTP loopback transport that
+// HTTP-mounted human hand-offs (OOB login, seed drop, upload/download, restore)
+// use to move secrets and file bytes over a browser-host channel instead of the
+// MCP/LLM channel. The LoopbackServer type owns a loopback listener (stdio mode)
+// or a base URL routed through the shared transport mux (HTTP/tunnel mode).
+package transport
 
 import (
 	"context"
@@ -96,8 +101,10 @@ func (l *LoopbackServer) loopbackAddrLocked() string {
 
 // URLFor builds a hand-off URL for the given path prefix and token: the
 // configured base URL plus /prefix/token in HTTP mode, or the loopback URL in
-// stdio mode. Callers must hold l.mu.
+// stdio mode. It is safe for concurrent use.
 func (l *LoopbackServer) URLFor(prefix, token string) string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	if l.baseURL != "" {
 		return l.baseURL + "/" + prefix + "/" + token
 	}

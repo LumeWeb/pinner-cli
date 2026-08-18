@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/transport"
 )
 
 // defaultHTTPUploadTTL is how long a minted one-time upload endpoint stays
@@ -46,7 +47,7 @@ type httpToken struct {
 //     on the shared transport mux via registerHandlers and the loopback
 //     listener is intentionally not started.
 type httpUpload struct {
-	loopback LoopbackServer
+	loopback transport.LoopbackServer
 
 	mu       sync.Mutex
 	tokens   map[string]httpToken
@@ -187,8 +188,6 @@ func (cu *httpUpload) mint(name string, ttl time.Duration) string {
 	}
 	cu.tokens[token] = httpToken{name: name, expiresAt: now.Add(ttl)}
 	cu.mu.Unlock()
-	cu.loopback.mu.Lock()
-	defer cu.loopback.mu.Unlock()
 	return cu.loopback.URLFor("upload", token)
 }
 

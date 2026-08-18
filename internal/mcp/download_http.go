@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/transport"
 )
 
 // defaultHTTPDownloadTTL is how long a minted one-time filedrop GET endpoint
@@ -47,7 +49,7 @@ type downloadToken struct {
 // expiring, single-use, and bound to a serve closure at mint time so a caller
 // can never redirect the GET to arbitrary server-side bytes.
 type httpDownload struct {
-	loopback LoopbackServer
+	loopback transport.LoopbackServer
 
 	mu     sync.Mutex
 	tokens map[string]downloadToken
@@ -123,8 +125,6 @@ func (hd *httpDownload) mint(name string, size int64, serve func(ctx context.Con
 	}
 	hd.tokens[token] = downloadToken{name: name, size: size, serve: serve, expiresAt: now.Add(ttl)}
 	hd.mu.Unlock()
-	hd.loopback.mu.Lock()
-	defer hd.loopback.mu.Unlock()
 	return hd.loopback.URLFor("download", token), nil
 }
 

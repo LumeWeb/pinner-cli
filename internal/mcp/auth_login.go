@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/transport"
 	"go.uber.org/zap"
 )
 
@@ -113,7 +114,7 @@ type OutOfBandLogin struct {
 	// other hand-offs (seed drop, restore). The login keeps its own request map
 	// and throttle because it is a resumable/polling flow with server-side
 	// state and brute-force protection, not a simple single-use exchange.
-	loopback LoopbackServer
+	loopback transport.LoopbackServer
 
 	mu       sync.Mutex
 	requests map[string]*loginRequest
@@ -182,7 +183,7 @@ func NewOutOfBandLogin(auth AuthService, baseURL, keyName string) *OutOfBandLogi
 		logger:   log,
 	}
 	// Loopback-associated base URL (empty keeps the loopback-derived URL).
-	o.loopback.baseURL = strings.TrimRight(baseURL, "/")
+	o.loopback.SetBaseURL(baseURL)
 	return o
 }
 

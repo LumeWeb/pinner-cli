@@ -10,6 +10,7 @@ import (
 	"go.uber.org/zap"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/transport"
 )
 
 // handoffEndpoint is the shared core behind every "create or read X secret over
@@ -26,7 +27,7 @@ import (
 // and supplies a handoffHandler for the GET page and POST consume that are
 // specific to the secret being handled.
 type handoffEndpoint struct {
-	loopback LoopbackServer
+	loopback transport.LoopbackServer
 
 	mu    sync.Mutex
 	items map[string]*handoffItem
