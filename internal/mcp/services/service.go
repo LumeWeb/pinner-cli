@@ -1,4 +1,4 @@
-package mcp
+package services
 
 // This file defines the mcp↔service bridge surface. The lifecycle backend
 // lives in internal/service (Service interface, System registry, per-platform

@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 
 	"go.lumeweb.com/pinner-cli/internal/cli/wizard"
-	mcpadapter "go.lumeweb.com/pinner-cli/internal/mcp"
 	"go.lumeweb.com/pinner-cli/internal/mcp/install"
+	mcpadapter "go.lumeweb.com/pinner-cli/internal/mcp/services"
 )
 
 // defaultServerName is the server entry name written for pinner.

@@ -27,6 +27,7 @@ import (
 	opcat "go.lumeweb.com/pinner-cli/internal/catalog"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
 	"go.lumeweb.com/pinner-cli/internal/mcp/oauthstore"
+	"go.lumeweb.com/pinner-cli/internal/mcp/services"
 	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
 	"go.uber.org/zap"
 
@@ -241,7 +242,7 @@ directly; no subprocess fork. Commands are exposed as-is;
 agent-friendly behavior is the responsibility of each command, not this
 adapter.`,
 		Flags:    mcpServerFlags(),
-		Commands: []*cli.Command{ManagedServiceCommand()},
+		Commands: []*cli.Command{services.ManagedServiceCommand()},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			// Build the MCP logger from the user's flags. It is installed as
 			// the package logger so every component (adapter, catalog, and the
@@ -873,7 +874,7 @@ func corsHandler(next http.Handler) http.Handler {
 // tunnelFor returns a Tunnel for the named provider, or nil if provider is
 // empty (no tunnel). It delegates to the provider registry.
 func tunnelFor(provider, domain, token, name, tunnelID string, cfgMgr config.Manager) (tunnel.Tunnel, error) {
-	return TunnelFor(provider, domain, token, name, tunnelID, cfgMgr)
+	return services.TunnelFor(provider, domain, token, name, tunnelID, cfgMgr)
 }
 
 // mcpServerOptions carries resolved MCP command configuration.
