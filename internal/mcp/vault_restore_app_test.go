@@ -14,6 +14,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
+	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 )
 
 // TestRegisterVaultRestoreAppWire verifies the Restore Vault app registers its
@@ -39,7 +40,7 @@ func TestRegisterVaultRestoreAppWire(t *testing.T) {
 	for _, r := range res.Resources {
 		if r.URI == VaultRestoreAppURI {
 			found = true
-			require.Equal(t, RESOURCE_MIME_TYPE, r.MIMEType)
+			require.Equal(t, apps.RESOURCE_MIME_TYPE, r.MIMEType)
 		}
 	}
 	require.True(t, found, "vault restore resource not listed")

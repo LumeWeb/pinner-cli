@@ -6,7 +6,7 @@ import (
 
 	ipfs "go.lumeweb.com/ipfs-sdk"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
-	mcpadapter "go.lumeweb.com/pinner-cli/internal/mcp"
+	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 )
 
 // accountStatusAdapter wraps cli.AuthService and config to satisfy the MCP
@@ -108,13 +108,13 @@ type pinStatusAdapter struct {
 	pins PinningService
 }
 
-func (p *pinStatusAdapter) PinStatus(ctx context.Context, cid string) (mcpadapter.PinStatusView, error) {
+func (p *pinStatusAdapter) PinStatus(ctx context.Context, cid string) (apps.PinStatusView, error) {
 	status, err := p.pins.Status(ctx, cid, false)
 	if err != nil {
-		return mcpadapter.PinStatusView{}, err
+		return apps.PinStatusView{}, err
 	}
 	if status == nil {
-		return mcpadapter.PinStatusView{CID: cid}, nil
+		return apps.PinStatusView{CID: cid}, nil
 	}
-	return mcpadapter.PinStatusView{CID: status.CID, Status: status.Status}, nil
+	return apps.PinStatusView{CID: status.CID, Status: status.Status}, nil
 }

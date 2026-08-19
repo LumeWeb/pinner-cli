@@ -1,4 +1,4 @@
-package mcp
+package apps
 
 import (
 	"context"
@@ -41,7 +41,7 @@ type PinStatusView struct {
 // the ESM module (shared ext-apps bootstrap + pin logic) come from
 // mcpapp.RenderMcpAppDoc; only the visible body form is authored in templ. Served
 // verbatim so the sandboxed iframe needs no network request.
-func renderPinCreateAppHTML() string {
+func RenderPinCreateAppHTML() string {
 	return mcpapp.RenderMcpAppDoc("Create a Pin", mcpapp.PinCreateAppForm(), mcpapp.AppModule("pin"))
 }
 
@@ -78,7 +78,7 @@ func pinStatusDescriptor(pins PinningProvider) model.ToolDescriptor {
 //
 // Returns an error if the pin tool is missing from the catalog. App wiring is
 // additive: existing curated tools and plain-host text results are preserved.
-func RegisterPinApp(srv *sdk.Server, catalog *ToolCatalog, pins PinningProvider) error {
+func RegisterPinApp(srv *sdk.Server, catalog AppCatalog, pins PinningProvider) error {
 	if srv == nil {
 		return fmt.Errorf("nil official server")
 	}
@@ -94,7 +94,7 @@ func RegisterPinApp(srv *sdk.Server, catalog *ToolCatalog, pins PinningProvider)
 		Name:          "create-pin",
 		Title:         "Create a Pin",
 		Description:   "Create a pin for an existing CID via the Pinner.xyz API.",
-		HTML:          renderPinCreateAppHTML(),
+		HTML:          RenderPinCreateAppHTML(),
 		PrefersBorder: true,
 		AttachTo:      []string{"pins_add"},
 		Helpers:       []model.ToolDescriptor{pinStatusDescriptor(pins)},

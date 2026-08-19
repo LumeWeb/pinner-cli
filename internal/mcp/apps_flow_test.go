@@ -34,12 +34,12 @@ func appModuleFor(t *testing.T, uri string) string {
 
 func TestAppFlowDocumentsWired(t *testing.T) {
 	cases := []struct {
-		uri      string
-		title    string
-		btnID    string
-		startTool string
+		uri        string
+		title      string
+		btnID      string
+		startTool  string
 		statusTool string
-		urlField string // a URL field the app is wired to read, must appear in the bundle
+		urlField   string // a URL field the app is wired to read, must appear in the bundle
 	}{
 		{"ui://vault/create.html", "Create Vault", "vault-create-start", "vault_create", "vault_create_status", "create_url"},
 		{"ui://vault/restore.html", "Restore Vault", "vault-restore-start", "vault_restore", "vault_restore_status", "restore_url"},

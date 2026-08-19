@@ -10,6 +10,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/catalogops"
 
+	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
@@ -20,17 +21,17 @@ type fakePins struct {
 	err    error
 }
 
-func (f *fakePins) PinStatus(_ context.Context, cid string) (PinStatusView, error) {
+func (f *fakePins) PinStatus(_ context.Context, cid string) (apps.PinStatusView, error) {
 	if f.err != nil {
-		return PinStatusView{}, f.err
+		return apps.PinStatusView{}, f.err
 	}
-	return PinStatusView{CID: cid, Status: f.status}, nil
+	return apps.PinStatusView{CID: cid, Status: f.status}, nil
 }
 
 // buildPinAppServer constructs the catalog + server the way the adapter does,
 // with a single pins.add curated tool, then registers the pin app and the
 // curated loop. Returns the ready server.
-func buildPinAppServer(t *testing.T, pins PinningProvider) *mcp.Server {
+func buildPinAppServer(t *testing.T, pins apps.PinningProvider) *mcp.Server {
 	t.Helper()
 	catalog := NewToolCatalog()
 	catalog.Add(&model.ToolEntry{
@@ -44,7 +45,7 @@ func buildPinAppServer(t *testing.T, pins PinningProvider) *mcp.Server {
 	})
 
 	srv := sdk.NewServer(nil)
-	if err := RegisterPinApp(srv, catalog, pins); err != nil {
+	if err := apps.RegisterPinApp(srv, catalog, pins); err != nil {
 		t.Fatalf("RegisterPinApp: %v", err)
 	}
 	if err := RegisterOfficialCuratedTools(srv, catalog); err != nil {
@@ -65,10 +66,10 @@ func TestRegisterPinAppWire(t *testing.T) {
 	}
 	var foundRes bool
 	for _, r := range res.Resources {
-		if r.URI == PinCreateAppURI {
+		if r.URI == apps.PinCreateAppURI {
 			foundRes = true
-			if r.MIMEType != RESOURCE_MIME_TYPE {
-				t.Fatalf("resource MIME = %q, want %q", r.MIMEType, RESOURCE_MIME_TYPE)
+			if r.MIMEType != apps.RESOURCE_MIME_TYPE {
+				t.Fatalf("resource MIME = %q, want %q", r.MIMEType, apps.RESOURCE_MIME_TYPE)
 			}
 		}
 	}
@@ -99,10 +100,10 @@ func TestRegisterPinAppWire(t *testing.T) {
 	if !ok {
 		t.Fatalf("_meta.ui missing on pins.add: %T", pinTool.Meta["ui"])
 	}
-	if got := ui["resourceUri"]; got != PinCreateAppURI {
-		t.Fatalf("_meta.ui.resourceUri = %#v, want %q", got, PinCreateAppURI)
+	if got := ui["resourceUri"]; got != apps.PinCreateAppURI {
+		t.Fatalf("_meta.ui.resourceUri = %#v, want %q", got, apps.PinCreateAppURI)
 	}
-	if got := pinTool.Meta[RESOURCE_URI_META_KEY]; got != PinCreateAppURI {
+	if got := pinTool.Meta[apps.RESOURCE_URI_META_KEY]; got != apps.PinCreateAppURI {
 		t.Fatalf("legacy flat _meta key = %#v", got)
 	}
 
@@ -157,7 +158,7 @@ func TestPinCreateResourceRead(t *testing.T) {
 	srv := buildPinAppServer(t, &fakePins{status: "pinned"})
 	cs := connectOfficialClient(t, srv)
 
-	res, err := cs.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: PinCreateAppURI})
+	res, err := cs.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: apps.PinCreateAppURI})
 	if err != nil {
 		t.Fatalf("ReadResource: %v", err)
 	}
@@ -195,7 +196,7 @@ func TestPinCreateResourceRead(t *testing.T) {
 // covered by the packages/apps vitest suite against the real TS source; this
 // Go test only asserts the produced artifact carries the build wiring.
 func TestPinStatusPollingResilient(t *testing.T) {
-	html := renderPinCreateAppHTML()
+	html := apps.RenderPinCreateAppHTML()
 	for _, want := range []string{
 		"pin_status",     // the polling helper the view targets
 		"callServerTool", // host bridge present
@@ -220,7 +221,7 @@ func TestPinAppClientBundled(t *testing.T) {
 	srv := buildPinAppServer(t, &fakePins{status: "pinned"})
 	cs := connectOfficialClient(t, srv)
 
-	res, err := cs.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: PinCreateAppURI})
+	res, err := cs.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: apps.PinCreateAppURI})
 	if err != nil {
 		t.Fatalf("ReadResource: %v", err)
 	}
@@ -253,7 +254,7 @@ func TestRegisterPinAppOnCompilerSurface(t *testing.T) {
 
 	// The pin app must wire without error against the compiler surface.
 	srv := sdk.NewServer(nil)
-	if err := RegisterPinApp(srv, tc, &fakePins{status: "pinned"}); err != nil {
+	if err := apps.RegisterPinApp(srv, tc, &fakePins{status: "pinned"}); err != nil {
 		t.Fatalf("RegisterPinApp on compiler surface must succeed, got: %v", err)
 	}
 	// The ui:// resource and app-only helper are registered.
@@ -265,7 +266,7 @@ func TestRegisterPinAppOnCompilerSurface(t *testing.T) {
 	}
 	var found bool
 	for _, r := range res.Resources {
-		if r.URI == PinCreateAppURI {
+		if r.URI == apps.PinCreateAppURI {
 			found = true
 		}
 	}
@@ -282,7 +283,7 @@ func TestRegisterPinAppOnCompilerSurface(t *testing.T) {
 // is asserted by TestRegisterPinAppOnCompilerSurface; this test pins the
 // static module contract so the app can never regress to a removed tool.)
 func TestPinAppModuleTargetsExistingTool(t *testing.T) {
-	appHTML := renderPinCreateAppHTML()
+	appHTML := apps.RenderPinCreateAppHTML()
 
 	// The app-only polling helper pin_status is a valid, still-registered
 	// tool (see pinStatusDescriptor); only the removed pinner_pin (with no
@@ -353,8 +354,8 @@ func TestRegisterVaultBrowserAppWire(t *testing.T) {
 	for _, r := range res.Resources {
 		if r.URI == VaultBrowserAppURI {
 			found = true
-			if r.MIMEType != RESOURCE_MIME_TYPE {
-				t.Fatalf("resource MIME = %q, want %q", r.MIMEType, RESOURCE_MIME_TYPE)
+			if r.MIMEType != apps.RESOURCE_MIME_TYPE {
+				t.Fatalf("resource MIME = %q, want %q", r.MIMEType, apps.RESOURCE_MIME_TYPE)
 			}
 			break
 		}
@@ -427,8 +428,8 @@ func TestRegisterPinListAppWire(t *testing.T) {
 	for _, r := range res.Resources {
 		if r.URI == PinListAppURI {
 			found = true
-			if r.MIMEType != RESOURCE_MIME_TYPE {
-				t.Fatalf("resource MIME = %q, want %q", r.MIMEType, RESOURCE_MIME_TYPE)
+			if r.MIMEType != apps.RESOURCE_MIME_TYPE {
+				t.Fatalf("resource MIME = %q, want %q", r.MIMEType, apps.RESOURCE_MIME_TYPE)
 			}
 			break
 		}
@@ -498,8 +499,8 @@ func TestRegisterAuthStatusAppWire(t *testing.T) {
 	for _, r := range res.Resources {
 		if r.URI == AuthStatusAppURI {
 			found = true
-			if r.MIMEType != RESOURCE_MIME_TYPE {
-				t.Fatalf("resource MIME = %q, want %q", r.MIMEType, RESOURCE_MIME_TYPE)
+			if r.MIMEType != apps.RESOURCE_MIME_TYPE {
+				t.Fatalf("resource MIME = %q, want %q", r.MIMEType, apps.RESOURCE_MIME_TYPE)
 			}
 			break
 		}

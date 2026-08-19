@@ -5,6 +5,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 
+	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
@@ -52,7 +53,7 @@ func vaultCreateStatusDescriptor(reg *handoff.HandoffRegistry, handles *session.
 // registers the ui://vault/create.html HTML resource, and registers the
 // app-only vault_create_status polling helper.
 func RegisterVaultCreateApp(srv *sdk.Server, catalog *ToolCatalog, reg *handoff.HandoffRegistry, handles *session.AsyncHandleStore) error {
-	return RegisterAppView(srv, catalog, AppView{
+	return apps.RegisterAppView(srv, catalog, apps.AppView{
 		URI:           VaultCreateAppURI,
 		Name:          "vault-create",
 		Title:         "Create Vault",

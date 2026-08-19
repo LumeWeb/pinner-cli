@@ -8,6 +8,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
 
+	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
@@ -15,14 +16,14 @@ import (
 // buildAppViewServer builds an official server + catalog with a couple of
 // model-visible tools, then registers the given view via the shared
 // RegisterAppView lib layer.
-func buildAppViewServer(t *testing.T, v AppView, catalogTools ...*model.ToolEntry) *mcp.Server {
+func buildAppViewServer(t *testing.T, v apps.AppView, catalogTools ...*model.ToolEntry) *mcp.Server {
 	t.Helper()
 	catalog := NewToolCatalog()
 	for _, e := range catalogTools {
 		catalog.Add(e)
 	}
 	srv := sdk.NewServer(nil)
-	if err := RegisterAppView(srv, catalog, v); err != nil {
+	if err := apps.RegisterAppView(srv, catalog, v); err != nil {
 		t.Fatalf("RegisterAppView: %v", err)
 	}
 	if err := RegisterOfficialCuratedTools(srv, catalog); err != nil {
@@ -47,7 +48,7 @@ func modelTool(name string) *model.ToolEntry {
 // same URI.
 func TestRegisterAppViewWire(t *testing.T) {
 	const uri = "ui://h2a/thing.html"
-	v := AppView{
+	v := apps.AppView{
 		URI:           uri,
 		Name:          "thing",
 		Title:         "Thing",
@@ -76,7 +77,7 @@ func TestRegisterAppViewWire(t *testing.T) {
 	for _, r := range res.Resources {
 		if r.URI == uri {
 			found = true
-			require.Equal(t, RESOURCE_MIME_TYPE, r.MIMEType)
+			require.Equal(t, apps.RESOURCE_MIME_TYPE, r.MIMEType)
 		}
 	}
 	require.True(t, found, "view resource not listed")
@@ -84,7 +85,7 @@ func TestRegisterAppViewWire(t *testing.T) {
 	// Read returns the served HTML.
 	rr, err := cs.ReadResource(ctx, &mcp.ReadResourceParams{URI: uri})
 	require.NoError(t, err)
-	require.Equal(t, RESOURCE_MIME_TYPE, rr.Contents[0].MIMEType)
+	require.Equal(t, apps.RESOURCE_MIME_TYPE, rr.Contents[0].MIMEType)
 	require.Contains(t, rr.Contents[0].Text, "<body>hi</body>")
 
 	// Every AttachTo tool carries _meta.ui.resourceUri.
@@ -121,13 +122,13 @@ func TestRegisterAppViewErrors(t *testing.T) {
 
 	cases := []struct {
 		name string
-		v    AppView
+		v    apps.AppView
 	}{
-		{"nil server", AppView{URI: "ui://x/1.html", Name: "x", HTML: "x", AttachTo: []string{"thing_start"}}},
-		{"missing attach tool", AppView{URI: "ui://x/1.html", Name: "x", HTML: "x", AttachTo: []string{"nope"}}},
-		{"empty uri", AppView{Name: "x", HTML: "x", AttachTo: []string{"thing_start"}}},
-		{"empty name", AppView{URI: "ui://x/1.html", HTML: "x", AttachTo: []string{"thing_start"}}},
-		{"empty html", AppView{URI: "ui://x/1.html", Name: "x", AttachTo: []string{"thing_start"}}},
+		{"nil server", apps.AppView{URI: "ui://x/1.html", Name: "x", HTML: "x", AttachTo: []string{"thing_start"}}},
+		{"missing attach tool", apps.AppView{URI: "ui://x/1.html", Name: "x", HTML: "x", AttachTo: []string{"nope"}}},
+		{"empty uri", apps.AppView{Name: "x", HTML: "x", AttachTo: []string{"thing_start"}}},
+		{"empty name", apps.AppView{URI: "ui://x/1.html", HTML: "x", AttachTo: []string{"thing_start"}}},
+		{"empty html", apps.AppView{URI: "ui://x/1.html", Name: "x", AttachTo: []string{"thing_start"}}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -137,10 +138,10 @@ func TestRegisterAppViewErrors(t *testing.T) {
 			} else {
 				target = srv
 			}
-			require.Error(t, RegisterAppView(target, catalog, c.v))
+			require.Error(t, apps.RegisterAppView(target, catalog, c.v))
 		})
 	}
 
 	// A nil catalog is also rejected.
-	require.Error(t, RegisterAppView(srv, nil, AppView{URI: "ui://x/1.html", Name: "x", HTML: "x"}))
+	require.Error(t, apps.RegisterAppView(srv, nil, apps.AppView{URI: "ui://x/1.html", Name: "x", HTML: "x"}))
 }

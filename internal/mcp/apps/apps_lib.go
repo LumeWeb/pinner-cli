@@ -1,4 +1,4 @@
-package mcp
+package apps
 
 import (
 	"fmt"
@@ -75,13 +75,40 @@ var (
 	appViewsByTool = map[string]AppViewInfo{}
 )
 
-// appInfoForTool returns the companion-app info registered for toolName, or the
+// AppCatalog is the narrow view of the tool catalog an MCP App needs: look up
+// a model-visible tool by name so the app can attach _meta.ui to it. It is
+// satisfied by the hub's *mcp.ToolCatalog (which exposes Add/Get/Entries and the
+// search/suggest surface) without the apps package importing the hub — the
+// dependency is inverted so apps stays a self-contained framework layer.
+type AppCatalog interface {
+	// Get returns the registered entry for name, or false if absent.
+	Get(name string) (*model.ToolEntry, bool)
+}
+
+// AppInfoForTool returns the companion-app info registered for toolName, or the
 // zero value if the tool has no attached app.
-func appInfoForTool(toolName string) (AppViewInfo, bool) {
+func AppInfoForTool(toolName string) (AppViewInfo, bool) {
 	appViewsMu.RLock()
 	defer appViewsMu.RUnlock()
 	info, ok := appViewsByTool[toolName]
 	return info, ok
+}
+
+// SetAppViewInfo records the companion-app info for a model tool. It is the
+// explicit registry write paired with AppInfoForTool, used by the hub when it
+// needs to associate a tool with a rendered app independently of a full
+// RegisterAppView call (and by tests to seed the registry).
+func SetAppViewInfo(toolName string, info AppViewInfo) {
+	appViewsMu.Lock()
+	defer appViewsMu.Unlock()
+	appViewsByTool[toolName] = info
+}
+
+// DeleteAppViewInfo removes any companion-app registration for a model tool.
+func DeleteAppViewInfo(toolName string) {
+	appViewsMu.Lock()
+	defer appViewsMu.Unlock()
+	delete(appViewsByTool, toolName)
 }
 
 // RegisterAppView wires a complete ui:// MCP App in one call:
@@ -95,7 +122,7 @@ func appInfoForTool(toolName string) (AppViewInfo, bool) {
 // empty URI. App wiring is additive: existing tools and their plain-host text
 // results are preserved, and a tool's existing _meta is extended, never
 // replaced.
-func RegisterAppView(srv *sdk.Server, catalog *ToolCatalog, v AppView) error {
+func RegisterAppView(srv *sdk.Server, catalog AppCatalog, v AppView) error {
 	if srv == nil {
 		return fmt.Errorf("mcp: nil official server")
 	}
@@ -114,7 +141,7 @@ func RegisterAppView(srv *sdk.Server, catalog *ToolCatalog, v AppView) error {
 
 	info := AppViewInfo{URI: v.URI, Name: v.Name, Title: v.Title}
 	for _, toolName := range v.AttachTo {
-		if err := attachAppMeta(catalog, toolName, v.URI); err != nil {
+		if err := AttachAppMeta(catalog, toolName, v.URI); err != nil {
 			return err
 		}
 		appViewsMu.Lock()
@@ -147,10 +174,10 @@ func RegisterAppView(srv *sdk.Server, catalog *ToolCatalog, v AppView) error {
 	return nil
 }
 
-// attachAppMeta attaches the ui:// resource URI to an existing catalog tool's
+// AttachAppMeta attaches the ui:// resource URI to an existing catalog tool's
 // _meta.ui (plus the legacy flat key), extending rather than replacing any
 // existing metadata. The named tool must already be in the catalog.
-func attachAppMeta(catalog *ToolCatalog, toolName, resourceURI string) error {
+func AttachAppMeta(catalog AppCatalog, toolName, resourceURI string) error {
 	entry, ok := catalog.Get(toolName)
 	if !ok {
 		return fmt.Errorf("mcp: app view tool %q not in catalog", toolName)

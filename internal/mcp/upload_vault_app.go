@@ -11,6 +11,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 
+	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
@@ -98,7 +99,7 @@ func RegisterVaultUploadApp(srv *sdk.Server, catalog *ToolCatalog, vu *transfer.
 	if vu == nil {
 		return fmt.Errorf("nil vault upload coordinator")
 	}
-	return RegisterAppView(srv, catalog, AppView{
+	return apps.RegisterAppView(srv, catalog, apps.AppView{
 		URI:           VaultUploadAppURI,
 		Name:          "vault-upload",
 		Title:         "Upload to Vault",
