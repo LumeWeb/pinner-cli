@@ -17,6 +17,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/flag"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/oob"
 	"go.lumeweb.com/pinner-cli/internal/mcp/vault"
 )
 
@@ -112,7 +113,7 @@ func TestVaultRestoreInteractionStaysAgentSafeThroughBuildCatalog(t *testing.T) 
 	// agent_safe (not stdin-gated): the seed is supplied by the human on the
 	// one-time /restore/<token> page, never through --seed-stdin on the MCP
 	// channel.
-	oobRestore := NewOOBRestore(nil, time.Minute)
+	oobRestore := oob.NewOOBRestore(nil, time.Minute)
 	t.Cleanup(func() { oobRestore.Stop(context.Background()) })
 	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 	reg := handoff.NewHandoffRegistry()

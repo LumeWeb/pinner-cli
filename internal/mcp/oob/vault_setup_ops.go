@@ -1,4 +1,4 @@
-package mcp
+package oob
 
 import (
 	"context"
@@ -75,12 +75,12 @@ func vaultSetupOps() (create, restore catalog.Operation) {
 	return create, restore
 }
 
-// vaultHandoffResult builds a needs_human ToolResult that preserves the vault
+// VaultHandoffResult builds a needs_human ToolResult that preserves the vault
 // OOB contract keys (create_url / restore_url), distinct from the generic
 // action_url used by SSO. The urlKey is "create_url" for create and
 // "restore_url" for restore. The plaintext mnemonic never appears in either
 // the Text or StructuredContent; only the one-time URL, handle and resume tool.
-func vaultHandoffResult(resumeTool, urlKey, url, handle, detail string) model.ToolResult {
+func VaultHandoffResult(resumeTool, urlKey, url, handle, detail string) model.ToolResult {
 	sc := map[string]any{
 		"status": model.StatusNeedsHuman,
 		"reason": model.ReasonCredentialEntry,
@@ -106,7 +106,7 @@ func vaultHandoffResult(resumeTool, urlKey, url, handle, detail string) model.To
 	}
 }
 
-// vaultCreateSetupHandler builds the PinnerToolHandler for pinner_vault_create.
+// VaultCreateSetupHandler builds the PinnerToolHandler for pinner_vault_create.
 // It runs the vault_create catalog operation (provisioning a fresh vault that
 // SSO-activates like restore), then mints a one-time create_url (OOBCreate.Register)
 // and a resume handle whose continuation polls that OOB create, returning a
@@ -116,12 +116,12 @@ func vaultHandoffResult(resumeTool, urlKey, url, handle, detail string) model.To
 //
 // When the OOB create coordinator is absent, the handler returns a structured
 // not-configured hand-off rather than hanging.
-func vaultCreateSetupHandler(oobCreate *OOBCreate, reg *handoff.HandoffRegistry, handles *session.AsyncHandleStore) model.PinnerToolHandler {
+func VaultCreateSetupHandler(oobCreate *OOBCreate, reg *handoff.HandoffRegistry, handles *session.AsyncHandleStore) model.PinnerToolHandler {
 	return func(ctx context.Context, req model.ToolRequest) (model.ToolResult, error) {
 		if reg == nil || handles == nil || oobCreate == nil {
 			return model.NeedsHumanResult(model.NeedsHuman{
 				Reason:     model.ReasonInteractiveOnly,
-				ResumeTool: vaultCreateResumeToolName,
+				ResumeTool: VaultCreateResumeToolName,
 				Detail:     "Vault create is not configured for this server; the out-of-band create hand-off is unavailable.",
 			}), nil
 		}
@@ -149,15 +149,15 @@ func vaultCreateSetupHandler(oobCreate *OOBCreate, reg *handoff.HandoffRegistry,
 		// page runs the SSO approval + activation in the browser and, on success,
 		// delivers the freshly generated seed via a one-time seeddrop link.
 		createURL := oobCreate.Register(handoff.Profile)
-		token := vaultTokenFromURL(createURL)
-		handle := handles.Create("pending", map[string]any{handleDataToken: token})
-		reg.Begin(handle, vaultCreateResumeContinuation(oobCreate, handles, reg))
-		return vaultHandoffResult(vaultCreateResumeToolName, "create_url", createURL, handle,
+		token := VaultTokenFromURL(createURL)
+		handle := handles.Create("pending", map[string]any{HandleDataToken: token})
+		reg.Begin(handle, VaultCreateResumeContinuation(oobCreate, handles, reg))
+		return VaultHandoffResult(VaultCreateResumeToolName, "create_url", createURL, handle,
 			"Ask the user to open create_url in a browser, approve the Sia device connection, then retrieve the one-time recovery seed. Then call vault_create_resume with the handle. The seed never crosses the MCP channel."), nil
 	}
 }
 
-// vaultRestoreSetupHandler builds the PinnerToolHandler for pinner_vault_restore.
+// VaultRestoreSetupHandler builds the PinnerToolHandler for pinner_vault_restore.
 // It runs the vault_restore catalog operation (resolving the target profile),
 // then mints a one-time restore_url (OOBRestore.Register) and a resume handle
 // whose continuation polls that OOB restore, returning a needs_human hand-off
@@ -166,12 +166,12 @@ func vaultCreateSetupHandler(oobCreate *OOBCreate, reg *handoff.HandoffRegistry,
 //
 // When the OOB restore coordinator is absent, the handler returns a structured
 // not-configured hand-off rather than hanging.
-func vaultRestoreSetupHandler(oobRestore *OOBRestore, reg *handoff.HandoffRegistry, handles *session.AsyncHandleStore) model.PinnerToolHandler {
+func VaultRestoreSetupHandler(oobRestore *OOBRestore, reg *handoff.HandoffRegistry, handles *session.AsyncHandleStore) model.PinnerToolHandler {
 	return func(ctx context.Context, req model.ToolRequest) (model.ToolResult, error) {
 		if reg == nil || handles == nil || oobRestore == nil {
 			return model.NeedsHumanResult(model.NeedsHuman{
 				Reason:     model.ReasonInteractiveOnly,
-				ResumeTool: vaultRestoreResumeToolName,
+				ResumeTool: VaultRestoreResumeToolName,
 				Detail:     "Vault restore is not configured for this server; the out-of-band restore hand-off is unavailable.",
 			}), nil
 		}
@@ -195,10 +195,10 @@ func vaultRestoreSetupHandler(oobRestore *OOBRestore, reg *handoff.HandoffRegist
 		}
 		// Mint the one-time OOB restore URL for the resolved profile.
 		restoreURL := oobRestore.Register(handoff.Profile)
-		token := vaultTokenFromURL(restoreURL)
-		handle := handles.Create("pending", map[string]any{handleDataToken: token})
-		reg.Begin(handle, vaultRestoreResumeContinuation(oobRestore, handles, reg))
-		return vaultHandoffResult(vaultRestoreResumeToolName, "restore_url", restoreURL, handle,
+		token := VaultTokenFromURL(restoreURL)
+		handle := handles.Create("pending", map[string]any{HandleDataToken: token})
+		reg.Begin(handle, VaultRestoreResumeContinuation(oobRestore, handles, reg))
+		return VaultHandoffResult(VaultRestoreResumeToolName, "restore_url", restoreURL, handle,
 			"Ask the user to open restore_url in a browser and enter the recovery seed to complete the restore. Then call vault_restore_resume with the handle. The seed never crosses the MCP channel."), nil
 	}
 }

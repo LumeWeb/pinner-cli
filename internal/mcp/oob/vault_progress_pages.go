@@ -1,4 +1,4 @@
-package mcp
+package oob
 
 import (
 	"fmt"

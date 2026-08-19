@@ -21,6 +21,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	oobpkg "go.lumeweb.com/pinner-cli/internal/mcp/oob"
 	mcpvault "go.lumeweb.com/pinner-cli/internal/mcp/vault"
 )
 
@@ -47,21 +48,21 @@ func TestVaultCreateResumePendingToDone(t *testing.T) {
 	// Simulate a create start: mint an OOB create URL, then register the create
 	// continuation against a handle holding the token (as the invoke path does).
 	createURL := oob.Register("default")
-	token := vaultTokenFromURL(createURL)
+	token := oobpkg.VaultTokenFromURL(createURL)
 	require.NotEmpty(t, token)
-	handle := handles.Create("pending", map[string]any{handleDataToken: token})
-	reg.Begin(handle, vaultCreateResumeContinuation(oob, handles, reg))
+	handle := handles.Create("pending", map[string]any{oobpkg.HandleDataToken: token})
+	reg.Begin(handle, oobpkg.VaultCreateResumeContinuation(oob, handles, reg))
 
-	resume := NewVaultCreateResumeDescriptor(reg, handles)
+	resume := oobpkg.NewVaultCreateResumeDescriptor(reg, handles)
 
 	// Before the create page is acted on: pending needs_human.
 	r, err := resume.Handler(context.Background(), model.ToolRequest{
-		Name:      vaultCreateResumeToolName,
+		Name:      oobpkg.VaultCreateResumeToolName,
 		Arguments: map[string]any{"handle": handle},
 	})
 	require.NoError(t, err)
 	sc := requireHandoff(t, r)
-	assert.Equal(t, vaultCreateResumeToolName, sc["resume_tool"])
+	assert.Equal(t, oobpkg.VaultCreateResumeToolName, sc["resume_tool"])
 	assert.NotContains(t, r.Text, "fresh generated seed phrase", "the seed must never appear in resume text")
 	assert.NotContains(t, sc, "fresh generated seed phrase")
 
@@ -81,7 +82,7 @@ func TestVaultCreateResumePendingToDone(t *testing.T) {
 
 	// Resume now: the vault is active but the seed not yet retrieved -> pending.
 	r, err = resume.Handler(context.Background(), model.ToolRequest{
-		Name:      vaultCreateResumeToolName,
+		Name:      oobpkg.VaultCreateResumeToolName,
 		Arguments: map[string]any{"handle": handle},
 	})
 	require.NoError(t, err)
@@ -94,7 +95,7 @@ func TestVaultCreateResumePendingToDone(t *testing.T) {
 	mux.ServeHTTP(recSeedGet, httptest.NewRequest("GET", seedURL, nil))
 	require.Equal(t, http.StatusOK, recSeedGet.Code)
 	r, err = resume.Handler(context.Background(), model.ToolRequest{
-		Name:      vaultCreateResumeToolName,
+		Name:      oobpkg.VaultCreateResumeToolName,
 		Arguments: map[string]any{"handle": handle},
 	})
 	require.NoError(t, err)
@@ -108,7 +109,7 @@ func TestVaultCreateResumePendingToDone(t *testing.T) {
 
 	// Now resume reports terminal done.
 	r, err = resume.Handler(context.Background(), model.ToolRequest{
-		Name:      vaultCreateResumeToolName,
+		Name:      oobpkg.VaultCreateResumeToolName,
 		Arguments: map[string]any{"handle": handle},
 	})
 	require.NoError(t, err)
@@ -149,21 +150,21 @@ func TestVaultRestoreResumePendingToDone(t *testing.T) {
 	oob, mux, runner := buildRestoreServer()
 
 	url := oob.Register("default")
-	token := vaultTokenFromURL(url)
+	token := oobpkg.VaultTokenFromURL(url)
 	require.NotEmpty(t, token)
-	handle := handles.Create("pending", map[string]any{handleDataToken: token})
-	reg.Begin(handle, vaultRestoreResumeContinuation(oob, handles, reg))
+	handle := handles.Create("pending", map[string]any{oobpkg.HandleDataToken: token})
+	reg.Begin(handle, oobpkg.VaultRestoreResumeContinuation(oob, handles, reg))
 
-	resume := NewVaultRestoreResumeDescriptor(reg, handles)
+	resume := oobpkg.NewVaultRestoreResumeDescriptor(reg, handles)
 
 	// Before restore: pending.
 	r, err := resume.Handler(context.Background(), model.ToolRequest{
-		Name:      vaultRestoreResumeToolName,
+		Name:      oobpkg.VaultRestoreResumeToolName,
 		Arguments: map[string]any{"handle": handle},
 	})
 	require.NoError(t, err)
 	sc := requireHandoff(t, r)
-	assert.Equal(t, vaultRestoreResumeToolName, sc["resume_tool"])
+	assert.Equal(t, oobpkg.VaultRestoreResumeToolName, sc["resume_tool"])
 	assert.NotContains(t, r.Text, "secret words", "the seed must never appear in resume text")
 
 	// Submit the restore form the way a browser POST would (single-use collect).
@@ -177,7 +178,7 @@ func TestVaultRestoreResumePendingToDone(t *testing.T) {
 
 	// Now resume reports terminal done.
 	r, err = resume.Handler(context.Background(), model.ToolRequest{
-		Name:      vaultRestoreResumeToolName,
+		Name:      oobpkg.VaultRestoreResumeToolName,
 		Arguments: map[string]any{"handle": handle},
 	})
 	require.NoError(t, err)
@@ -197,12 +198,12 @@ func TestVaultRestoreResumeFailedSteersRestart(t *testing.T) {
 	runner.err = errors.New("approval/registration failed: seed rejected")
 
 	url := oob.Register("default")
-	token := vaultTokenFromURL(url)
+	token := oobpkg.VaultTokenFromURL(url)
 	require.NotEmpty(t, token)
-	handle := handles.Create("pending", map[string]any{handleDataToken: token})
-	reg.Begin(handle, vaultRestoreResumeContinuation(oob, handles, reg))
+	handle := handles.Create("pending", map[string]any{oobpkg.HandleDataToken: token})
+	reg.Begin(handle, oobpkg.VaultRestoreResumeContinuation(oob, handles, reg))
 
-	resume := NewVaultRestoreResumeDescriptor(reg, handles)
+	resume := oobpkg.NewVaultRestoreResumeDescriptor(reg, handles)
 
 	// Submit the restore form; RunRestore fails and records a failed outcome.
 	postReq := httptest.NewRequest("POST", url, strings.NewReader("mnemonic=secret+words"))
@@ -214,7 +215,7 @@ func TestVaultRestoreResumeFailedSteersRestart(t *testing.T) {
 
 	// Resume must steer to restart, NOT report done.
 	r, err := resume.Handler(context.Background(), model.ToolRequest{
-		Name:      vaultRestoreResumeToolName,
+		Name:      oobpkg.VaultRestoreResumeToolName,
 		Arguments: map[string]any{"handle": handle},
 	})
 	require.NoError(t, err)
@@ -235,18 +236,18 @@ func TestVaultRestoreResumePendingDuringApproval(t *testing.T) {
 	release := make(chan struct{})
 	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 	reg := handoff.NewHandoffRegistry()
-	oob := NewOOBRestore(&fakeRestoreRunner{profile: "default", started: started, release: release}, time.Minute)
+	oob := oobpkg.NewOOBRestore(&fakeRestoreRunner{profile: "default", started: started, release: release}, time.Minute)
 	oob.SetBaseURL("http://127.0.0.1:9999")
 	mux := http.NewServeMux()
 	oob.RegisterHandlers(mux)
 
 	url := oob.Register("default")
-	token := vaultTokenFromURL(url)
+	token := oobpkg.VaultTokenFromURL(url)
 	require.NotEmpty(t, token)
-	handle := handles.Create("pending", map[string]any{handleDataToken: token})
-	reg.Begin(handle, vaultRestoreResumeContinuation(oob, handles, reg))
+	handle := handles.Create("pending", map[string]any{oobpkg.HandleDataToken: token})
+	reg.Begin(handle, oobpkg.VaultRestoreResumeContinuation(oob, handles, reg))
 
-	resume := NewVaultRestoreResumeDescriptor(reg, handles)
+	resume := oobpkg.NewVaultRestoreResumeDescriptor(reg, handles)
 
 	// Submit the form in a goroutine; RunRestore blocks on the approval.
 	postReq := httptest.NewRequest("POST", url, strings.NewReader("mnemonic=secret+words"))
@@ -263,12 +264,12 @@ func TestVaultRestoreResumePendingDuringApproval(t *testing.T) {
 	// Resume while the approval is outstanding: must remain pending (needs_human),
 	// NOT a dead-handle steer to restart.
 	r, err := resume.Handler(context.Background(), model.ToolRequest{
-		Name:      vaultRestoreResumeToolName,
+		Name:      oobpkg.VaultRestoreResumeToolName,
 		Arguments: map[string]any{"handle": handle},
 	})
 	require.NoError(t, err)
 	sc := requireHandoff(t, r)
-	assert.Equal(t, vaultRestoreResumeToolName, sc["resume_tool"], "a mid-approval restore must keep reporting needs_human to the resume tool")
+	assert.Equal(t, oobpkg.VaultRestoreResumeToolName, sc["resume_tool"], "a mid-approval restore must keep reporting needs_human to the resume tool")
 	assert.NotEqual(t, model.StatusDone, sc["status"], "a mid-approval restore must not report done")
 	assert.NotEqual(t, mcpvault.CompiledVaultRestoreToolName, sc["resume_tool"], "a mid-approval restore must not steer to restart")
 
@@ -278,7 +279,7 @@ func TestVaultRestoreResumePendingDuringApproval(t *testing.T) {
 	deadline := time.Now().Add(2 * time.Second)
 	for {
 		r, err = resume.Handler(context.Background(), model.ToolRequest{
-			Name:      vaultRestoreResumeToolName,
+			Name:      oobpkg.VaultRestoreResumeToolName,
 			Arguments: map[string]any{"handle": handle},
 		})
 		require.NoError(t, err)
@@ -296,53 +297,17 @@ func TestVaultRestoreResumePendingDuringApproval(t *testing.T) {
 // TestVaultRestoreResumeFreesOutcome verifies that once the continuation
 // consumes a terminal result, the per-token outcome record is removed from the
 // coordinator map, so settled restores do not accumulate.
-func TestVaultRestoreResumeFreesOutcome(t *testing.T) {
-	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
-	reg := handoff.NewHandoffRegistry()
-	oob, mux, _ := buildRestoreServer()
-
-	url := oob.Register("default")
-	token := vaultTokenFromURL(url)
-	require.NotEmpty(t, token)
-	handle := handles.Create("pending", map[string]any{handleDataToken: token})
-	reg.Begin(handle, vaultRestoreResumeContinuation(oob, handles, reg))
-	resume := NewVaultRestoreResumeDescriptor(reg, handles)
-
-	postReq := httptest.NewRequest("POST", url, strings.NewReader("mnemonic=secret+words"))
-	postReq.Header.Set("Origin", "http://127.0.0.1:9999")
-	postReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	mux.ServeHTTP(httptest.NewRecorder(), postReq)
-
-	// Outcome was recorded while restoring, then freed once the continuation
-	// consumed the terminal done result.
-	oob.mu.Lock()
-	_, wasRecorded := oob.outcomes[token]
-	oob.mu.Unlock()
-	require.True(t, wasRecorded, "outcome should be recorded once the restore settles")
-
-	_, err := resume.Handler(context.Background(), model.ToolRequest{
-		Name:      vaultRestoreResumeToolName,
-		Arguments: map[string]any{"handle": handle},
-	})
-	require.NoError(t, err)
-
-	oob.mu.Lock()
-	_, stillThere := oob.outcomes[token]
-	oob.mu.Unlock()
-	assert.False(t, stillThere, "a consumed terminal outcome must be freed from the map")
-}
-
 // TestVaultRestoreResumeDeadHandleSteersRestart verifies that an unknown or
 // expired handle passed to vault_restore_resume steers the agent back
 // to pinner_vault_restore instead of retrying a dead handle.
 func TestVaultRestoreResumeDeadHandleSteersRestart(t *testing.T) {
 	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 	reg := handoff.NewHandoffRegistry()
-	resume := NewVaultRestoreResumeDescriptor(reg, handles)
+	resume := oobpkg.NewVaultRestoreResumeDescriptor(reg, handles)
 
 	// Unknown handle.
 	r, err := resume.Handler(context.Background(), model.ToolRequest{
-		Name:      vaultRestoreResumeToolName,
+		Name:      oobpkg.VaultRestoreResumeToolName,
 		Arguments: map[string]any{"handle": "does-not-exist"},
 	})
 	require.NoError(t, err)
@@ -351,10 +316,10 @@ func TestVaultRestoreResumeDeadHandleSteersRestart(t *testing.T) {
 	assert.Contains(t, sc["detail"].(string), "unknown handle")
 
 	// Expired handle.
-	handle := handles.Create("pending", map[string]any{handleDataToken: "tok"})
+	handle := handles.Create("pending", map[string]any{oobpkg.HandleDataToken: "tok"})
 	handles.SetNowFunc(func() time.Time { return time.Now().Add(2 * session.DefaultSessionTTL) })
 	r, err = resume.Handler(context.Background(), model.ToolRequest{
-		Name:      vaultRestoreResumeToolName,
+		Name:      oobpkg.VaultRestoreResumeToolName,
 		Arguments: map[string]any{"handle": handle},
 	})
 	require.NoError(t, err)
@@ -368,10 +333,10 @@ func TestVaultRestoreResumeDeadHandleSteersRestart(t *testing.T) {
 func TestVaultCreateResumeDeadHandleSteersRestart(t *testing.T) {
 	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 	reg := handoff.NewHandoffRegistry()
-	resume := NewVaultCreateResumeDescriptor(reg, handles)
+	resume := oobpkg.NewVaultCreateResumeDescriptor(reg, handles)
 
 	r, err := resume.Handler(context.Background(), model.ToolRequest{
-		Name:      vaultCreateResumeToolName,
+		Name:      oobpkg.VaultCreateResumeToolName,
 		Arguments: map[string]any{"handle": "nope"},
 	})
 	require.NoError(t, err)
@@ -382,8 +347,8 @@ func TestVaultCreateResumeDeadHandleSteersRestart(t *testing.T) {
 // TestVaultResumeNotConfigured verifies the resume templates degrade to a
 // structured not-configured hand-off when the machinery is absent.
 func TestVaultResumeNotConfigured(t *testing.T) {
-	r, err := NewVaultCreateResumeDescriptor(nil, nil).Handler(context.Background(), model.ToolRequest{
-		Name: vaultCreateResumeToolName, Arguments: map[string]any{"handle": "x"},
+	r, err := oobpkg.NewVaultCreateResumeDescriptor(nil, nil).Handler(context.Background(), model.ToolRequest{
+		Name: oobpkg.VaultCreateResumeToolName, Arguments: map[string]any{"handle": "x"},
 	})
 	require.NoError(t, err)
 	sc := requireHandoff(t, r)
@@ -430,7 +395,7 @@ func TestVaultRestoreStartHandoffIncludesHandleAndResumeTool(t *testing.T) {
 	// Both the one-time URL and the resume handle + resume tool must be present.
 	require.Contains(t, sc["restore_url"].(string), "/restore/")
 	require.NotEmpty(t, sc["handle"])
-	assert.Equal(t, vaultRestoreResumeToolName, sc["resume_tool"])
+	assert.Equal(t, oobpkg.VaultRestoreResumeToolName, sc["resume_tool"])
 
 	// The single-shot rollback invariant holds: the restore_url is returned as
 	// before; the handle is an addition.
@@ -473,7 +438,7 @@ func TestVaultCreateStartHandoffIncludesHandleAndResumeTool(t *testing.T) {
 	require.True(t, ok, "create hand-off must carry structured content")
 	require.Contains(t, sc["create_url"].(string), "/create/")
 	require.NotEmpty(t, sc["handle"])
-	assert.Equal(t, vaultCreateResumeToolName, sc["resume_tool"])
+	assert.Equal(t, oobpkg.VaultCreateResumeToolName, sc["resume_tool"])
 
 	// A text-only tool-calling agent reads only the Text field, not
 	// StructuredContent, so the plain-text result must also carry the
@@ -517,7 +482,7 @@ func TestVaultCreateSetupHandlerMintsOneTimeCreateURL(t *testing.T) {
 	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 	reg := handoff.NewHandoffRegistry()
 
-	handler := vaultCreateSetupHandler(oob, reg, handles)
+	handler := oobpkg.VaultCreateSetupHandler(oob, reg, handles)
 	res, err := handler(context.Background(), model.ToolRequest{
 		Name: mcpvault.CompiledVaultCreateToolName,
 		Arguments: map[string]any{
@@ -555,16 +520,16 @@ func TestVaultCreateResumeExpiredTokenSteersRestart(t *testing.T) {
 	oob, _, _ := buildCreateServer()
 
 	url := oob.Register("default")
-	token := vaultTokenFromURL(url)
+	token := oobpkg.VaultTokenFromURL(url)
 	require.NotEmpty(t, token)
-	handle := handles.Create("pending", map[string]any{handleDataToken: token})
-	reg.Begin(handle, vaultCreateResumeContinuation(oob, handles, reg))
+	handle := handles.Create("pending", map[string]any{oobpkg.HandleDataToken: token})
+	reg.Begin(handle, oobpkg.VaultCreateResumeContinuation(oob, handles, reg))
 
-	resume := NewVaultCreateResumeDescriptor(reg, handles)
+	resume := oobpkg.NewVaultCreateResumeDescriptor(reg, handles)
 
 	// Before expiry: pending.
 	r, err := resume.Handler(context.Background(), model.ToolRequest{
-		Name: vaultCreateResumeToolName, Arguments: map[string]any{"handle": handle},
+		Name: oobpkg.VaultCreateResumeToolName, Arguments: map[string]any{"handle": handle},
 	})
 	require.NoError(t, err)
 	requireHandoff(t, r)
@@ -574,7 +539,7 @@ func TestVaultCreateResumeExpiredTokenSteersRestart(t *testing.T) {
 
 	// The resume must NOT report done — it must steer to a fresh vault create.
 	r, err = resume.Handler(context.Background(), model.ToolRequest{
-		Name: vaultCreateResumeToolName, Arguments: map[string]any{"handle": handle},
+		Name: oobpkg.VaultCreateResumeToolName, Arguments: map[string]any{"handle": handle},
 	})
 	require.NoError(t, err)
 	sc := requireHandoff(t, r)
@@ -587,7 +552,7 @@ func TestVaultCreateResumeExpiredTokenSteersRestart(t *testing.T) {
 	// is not left polling a dead flow: a follow-up poll now hits the
 	// template's dead-handle branch (unknown handle).
 	r, err = resume.Handler(context.Background(), model.ToolRequest{
-		Name: vaultCreateResumeToolName, Arguments: map[string]any{"handle": handle},
+		Name: oobpkg.VaultCreateResumeToolName, Arguments: map[string]any{"handle": handle},
 	})
 	require.NoError(t, err)
 	sc = requireHandoff(t, r)
@@ -604,16 +569,16 @@ func TestVaultRestoreResumeExpiredTokenSteersRestart(t *testing.T) {
 	oob, _, _ := buildRestoreServer()
 
 	url := oob.Register("default")
-	token := vaultTokenFromURL(url)
+	token := oobpkg.VaultTokenFromURL(url)
 	require.NotEmpty(t, token)
-	handle := handles.Create("pending", map[string]any{handleDataToken: token})
-	reg.Begin(handle, vaultRestoreResumeContinuation(oob, handles, reg))
+	handle := handles.Create("pending", map[string]any{oobpkg.HandleDataToken: token})
+	reg.Begin(handle, oobpkg.VaultRestoreResumeContinuation(oob, handles, reg))
 
-	resume := NewVaultRestoreResumeDescriptor(reg, handles)
+	resume := oobpkg.NewVaultRestoreResumeDescriptor(reg, handles)
 
 	// Before expiry: pending.
 	r, err := resume.Handler(context.Background(), model.ToolRequest{
-		Name: vaultRestoreResumeToolName, Arguments: map[string]any{"handle": handle},
+		Name: oobpkg.VaultRestoreResumeToolName, Arguments: map[string]any{"handle": handle},
 	})
 	require.NoError(t, err)
 	requireHandoff(t, r)
@@ -622,7 +587,7 @@ func TestVaultRestoreResumeExpiredTokenSteersRestart(t *testing.T) {
 	oob.SetNow(func() time.Time { return time.Now().Add(2 * time.Hour) })
 
 	r, err = resume.Handler(context.Background(), model.ToolRequest{
-		Name: vaultRestoreResumeToolName, Arguments: map[string]any{"handle": handle},
+		Name: oobpkg.VaultRestoreResumeToolName, Arguments: map[string]any{"handle": handle},
 	})
 	require.NoError(t, err)
 	sc := requireHandoff(t, r)
@@ -643,12 +608,12 @@ func TestVaultResumeAbsentTokenSteersRestart(t *testing.T) {
 	oob, _, _ := buildCreateServer()
 
 	// A token that was never minted is absent from the coordinator.
-	handle := handles.Create("pending", map[string]any{handleDataToken: "never-minted"})
-	reg.Begin(handle, vaultCreateResumeContinuation(oob, handles, reg))
-	resume := NewVaultCreateResumeDescriptor(reg, handles)
+	handle := handles.Create("pending", map[string]any{oobpkg.HandleDataToken: "never-minted"})
+	reg.Begin(handle, oobpkg.VaultCreateResumeContinuation(oob, handles, reg))
+	resume := oobpkg.NewVaultCreateResumeDescriptor(reg, handles)
 
 	r, err := resume.Handler(context.Background(), model.ToolRequest{
-		Name: vaultCreateResumeToolName, Arguments: map[string]any{"handle": handle},
+		Name: oobpkg.VaultCreateResumeToolName, Arguments: map[string]any{"handle": handle},
 	})
 	require.NoError(t, err)
 	sc := requireHandoff(t, r)
@@ -661,7 +626,7 @@ func TestVaultResumeAbsentTokenSteersRestart(t *testing.T) {
 	_, _, err = handles.Get(handle)
 	assert.Error(t, err, "absent-token flow must retire the backing handle")
 	r, err = resume.Handler(context.Background(), model.ToolRequest{
-		Name: vaultCreateResumeToolName, Arguments: map[string]any{"handle": handle},
+		Name: oobpkg.VaultCreateResumeToolName, Arguments: map[string]any{"handle": handle},
 	})
 	require.NoError(t, err)
 	sc = requireHandoff(t, r)

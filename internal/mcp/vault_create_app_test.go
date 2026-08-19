@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
+	oobpkg "go.lumeweb.com/pinner-cli/internal/mcp/oob"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
@@ -81,10 +82,10 @@ func TestVaultCreateStatusHelperPendingToDone(t *testing.T) {
 	oob, mux, _ := buildCreateServer()
 
 	createURL := oob.Register("default")
-	token := vaultTokenFromURL(createURL)
+	token := oobpkg.VaultTokenFromURL(createURL)
 	require.NotEmpty(t, token)
-	handle := handles.Create("pending", map[string]any{handleDataToken: token})
-	reg.Begin(handle, vaultCreateResumeContinuation(oob, handles, reg))
+	handle := handles.Create("pending", map[string]any{oobpkg.HandleDataToken: token})
+	reg.Begin(handle, oobpkg.VaultCreateResumeContinuation(oob, handles, reg))
 
 	status := vault.VaultCreateStatusDescriptor(reg, handles)
 
@@ -146,10 +147,10 @@ func TestVaultCreateStatusHelperPendingCarriesHandle(t *testing.T) {
 	oob, _, _ := buildCreateServer()
 
 	createURL := oob.Register("default")
-	token := vaultTokenFromURL(createURL)
+	token := oobpkg.VaultTokenFromURL(createURL)
 	require.NotEmpty(t, token)
-	handle := handles.Create("pending", map[string]any{handleDataToken: token})
-	reg.Begin(handle, vaultCreateResumeContinuation(oob, handles, reg))
+	handle := handles.Create("pending", map[string]any{oobpkg.HandleDataToken: token})
+	reg.Begin(handle, oobpkg.VaultCreateResumeContinuation(oob, handles, reg))
 
 	status := vault.VaultCreateStatusDescriptor(reg, handles)
 
@@ -187,7 +188,7 @@ func TestVaultCreateNotConfiguredReturnsNoHandle(t *testing.T) {
 	reg := handoff.NewHandoffRegistry()
 	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 
-	handler := vaultCreateSetupHandler(nil, reg, handles)
+	handler := oobpkg.VaultCreateSetupHandler(nil, reg, handles)
 	r, err := handler(context.Background(), model.ToolRequest{Name: vault.CompiledVaultCreateToolName})
 	require.NoError(t, err)
 	sc := requireHandoff(t, r) // needs_human (ReasonInteractiveOnly)

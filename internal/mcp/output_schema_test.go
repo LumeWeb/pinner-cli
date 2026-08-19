@@ -10,6 +10,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/catalog"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/oob"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 	"go.lumeweb.com/pinner-cli/internal/mcp/vault"
 )
@@ -212,7 +213,7 @@ func TestVaultSetupRouteNeedsHumanSchema(t *testing.T) {
 
 // TestNeedsHumanSchemaCoversVaultHandoffKeys guards against the descriptor
 // declaring action_url while the vault setup hand-offs actually emit
-// create_url / restore_url (vaultHandoffResult passes urlKey="create_url" or
+// create_url / restore_url (oob.VaultHandoffResult passes urlKey="create_url" or
 // "restore_url", never action_url). The declared needs_human schema must name
 // both vault URL keys so schema-driven clients see the real StructuredContent
 // shape vault_create / vault_restore return.
@@ -226,15 +227,15 @@ func TestNeedsHumanSchemaCoversVaultHandoffKeys(t *testing.T) {
 		require.True(t, ok, "needs_human schema must declare %q", key)
 	}
 
-	// vaultHandoffResult emits the vault OOB URL keys with reason credential
+	// oob.VaultHandoffResult emits the vault OOB URL keys with reason credential
 	// entry, matching exactly what the schema declares.
-	create := vaultHandoffResult("vault_create_resume", "create_url", "https://ex/create", "h1", "create detail")
+	create := oob.VaultHandoffResult("vault_create_resume", "create_url", "https://ex/create", "h1", "create detail")
 	createSC := create.StructuredContent.(map[string]any)
 	_, ok := createSC["create_url"]
 	require.True(t, ok, "create hand-off must emit create_url")
 	require.Equal(t, model.ReasonCredentialEntry, createSC["reason"])
 
-	restore := vaultHandoffResult("vault_restore_resume", "restore_url", "https://ex/restore", "h2", "restore detail")
+	restore := oob.VaultHandoffResult("vault_restore_resume", "restore_url", "https://ex/restore", "h2", "restore detail")
 	restoreSC := restore.StructuredContent.(map[string]any)
 	_, ok = restoreSC["restore_url"]
 	require.True(t, ok, "restore hand-off must emit restore_url")

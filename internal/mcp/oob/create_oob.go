@@ -1,4 +1,4 @@
-package mcp
+package oob
 
 import (
 	"context"
@@ -200,7 +200,7 @@ func (c *OOBCreate) ConsumePOST(w http.ResponseWriter, r *http.Request, token st
 
 	// Vault is active; deliver the fresh seed by minting a one-time seeddrop.
 	seedURL := c.seedDrop.Register(profile, seed)
-	seedToken := vaultTokenFromURL(seedURL)
+	seedToken := VaultTokenFromURL(seedURL)
 	settle(true, "", seedToken)
 	streamComp(createVaultDone(profile, vaultID, seedURL))
 	stream(progressPageEnd())

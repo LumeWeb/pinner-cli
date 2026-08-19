@@ -11,6 +11,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.lumeweb.com/pinner-cli/internal/mcp/oob"
 )
 
 // fakeCreateRunner implements wizard.CreateRunner for tests (no network): RunCreate
@@ -65,13 +66,13 @@ func (f *fakeCreateRunner) RunCreate(ctx context.Context, profile string, onAppr
 	return vaultID, seed, "/seed/path", nil
 }
 
-// buildCreateServer returns a wired OOBCreate (whose internal SeedDrop is also
+// buildCreateServer returns a wired oob.OOBCreate (whose internal oob.SeedDrop is also
 // mounted on the returned mux) and a mux on which /create/ + /seed/ routes are
-// served for direct testing, mirroring how the adapter mounts the shared SeedDrop.
-func buildCreateServer() (*OOBCreate, *http.ServeMux, *fakeCreateRunner) {
+// served for direct testing, mirroring how the adapter mounts the shared oob.SeedDrop.
+func buildCreateServer() (*oob.OOBCreate, *http.ServeMux, *fakeCreateRunner) {
 	runner := &fakeCreateRunner{}
-	seedDrop := NewSeedDrop(time.Minute)
-	c := NewOOBCreate(runner, seedDrop, time.Minute)
+	seedDrop := oob.NewSeedDrop(time.Minute)
+	c := oob.NewOOBCreate(runner, seedDrop, time.Minute)
 	c.SetBaseURL("http://127.0.0.1:9999")
 	seedDrop.SetBaseURL("http://127.0.0.1:9999")
 	mux := http.NewServeMux()

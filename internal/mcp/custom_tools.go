@@ -14,6 +14,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/download"
+	"go.lumeweb.com/pinner-cli/internal/mcp/oob"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 	"go.lumeweb.com/pinner-cli/internal/mcp/upload"
 	"go.lumeweb.com/pinner-cli/internal/mcp/vault"
@@ -46,9 +47,9 @@ type customToolDeps struct {
 	// coordinator. They are threaded here so the resume tools
 	// (vault_create_resume / vault_restore_resume) can poll the
 	// coordinators to completion over the same shared handoffReg + handles.
-	seedDrop   *SeedDrop
-	oobRestore *OOBRestore
-	oobCreate  *OOBCreate
+	seedDrop   *oob.SeedDrop
+	oobRestore *oob.OOBRestore
+	oobCreate  *oob.OOBCreate
 	// curlUpload, when non-nil, backs the presigned HTTP PUT upload route (the
 	// Upload coordinator): it mints a one-time endpoint whose PUT body
 	// streams into the async UploadTaskManager. It feeds the consolidated
@@ -192,9 +193,9 @@ func registerCustomTools(deps customToolDeps) error {
 	// direct-surface tools like the SSO resume tool. When the coordinators or
 	// resume machinery are absent, the templates return a structured
 	// not-configured hand-off instead of hanging.
-	vaultCreateResume := NewVaultCreateResumeDescriptor(deps.handoffReg, deps.authHandles)
+	vaultCreateResume := oob.NewVaultCreateResumeDescriptor(deps.handoffReg, deps.authHandles)
 	vaultCreateResume.DirectVisible = true
-	vaultRestoreResume := NewVaultRestoreResumeDescriptor(deps.handoffReg, deps.authHandles)
+	vaultRestoreResume := oob.NewVaultRestoreResumeDescriptor(deps.handoffReg, deps.authHandles)
 	vaultRestoreResume.DirectVisible = true
 	deps.catalog.Add(model.ToolEntryFromDescriptor(vaultCreateResume))
 	deps.catalog.Add(model.ToolEntryFromDescriptor(vaultRestoreResume))

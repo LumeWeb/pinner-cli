@@ -14,6 +14,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	oobpkg "go.lumeweb.com/pinner-cli/internal/mcp/oob"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 	"go.lumeweb.com/pinner-cli/internal/mcp/vault"
 )
@@ -81,10 +82,10 @@ func TestVaultRestoreStatusHelperPendingToDone(t *testing.T) {
 	oob, mux, runner := buildRestoreServer()
 
 	url := oob.Register("default")
-	token := vaultTokenFromURL(url)
+	token := oobpkg.VaultTokenFromURL(url)
 	require.NotEmpty(t, token)
-	handle := handles.Create("pending", map[string]any{handleDataToken: token})
-	reg.Begin(handle, vaultRestoreResumeContinuation(oob, handles, reg))
+	handle := handles.Create("pending", map[string]any{oobpkg.HandleDataToken: token})
+	reg.Begin(handle, oobpkg.VaultRestoreResumeContinuation(oob, handles, reg))
 
 	status := vault.VaultRestoreStatusDescriptor(reg, handles)
 
@@ -129,10 +130,10 @@ func TestVaultRestoreStatusHelperPendingCarriesHandle(t *testing.T) {
 	oob, _, _ := buildRestoreServer()
 
 	url := oob.Register("default")
-	token := vaultTokenFromURL(url)
+	token := oobpkg.VaultTokenFromURL(url)
 	require.NotEmpty(t, token)
-	handle := handles.Create("pending", map[string]any{handleDataToken: token})
-	reg.Begin(handle, vaultRestoreResumeContinuation(oob, handles, reg))
+	handle := handles.Create("pending", map[string]any{oobpkg.HandleDataToken: token})
+	reg.Begin(handle, oobpkg.VaultRestoreResumeContinuation(oob, handles, reg))
 
 	status := vault.VaultRestoreStatusDescriptor(reg, handles)
 
@@ -170,7 +171,7 @@ func TestVaultRestoreNotConfiguredReturnsNoHandle(t *testing.T) {
 	reg := handoff.NewHandoffRegistry()
 	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 
-	handler := vaultRestoreSetupHandler(nil, reg, handles)
+	handler := oobpkg.VaultRestoreSetupHandler(nil, reg, handles)
 	r, err := handler(context.Background(), model.ToolRequest{Name: vault.CompiledVaultRestoreToolName})
 	require.NoError(t, err)
 	sc := requireHandoff(t, r) // needs_human (ReasonInteractiveOnly)
