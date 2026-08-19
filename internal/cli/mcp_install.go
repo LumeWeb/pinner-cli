@@ -11,8 +11,8 @@ import (
 	"github.com/urfave/cli/v3"
 
 	"go.lumeweb.com/pinner-cli/internal/cli/wizard"
-	mcpadapter "go.lumeweb.com/pinner-cli/internal/mcp"
 	"go.lumeweb.com/pinner-cli/internal/mcp/install"
+	mcpadapter "go.lumeweb.com/pinner-cli/internal/mcp/services"
 	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
 	"go.lumeweb.com/pinner-cli/internal/service"
 )
