@@ -15,6 +15,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
+	"go.lumeweb.com/pinner-cli/internal/mcp/vault"
 )
 
 // TestRegisterVaultCreateAppWire verifies the Create Vault app registers its
@@ -22,11 +23,11 @@ import (
 // app-only vault_create_status helper.
 func TestRegisterVaultCreateAppWire(t *testing.T) {
 	catalog := NewToolCatalog()
-	catalog.Add(modelTool(compiledVaultCreateToolName))
+	catalog.Add(modelTool(vault.CompiledVaultCreateToolName))
 	srv := sdk.NewServer(nil)
 
-	if err := RegisterVaultCreateApp(srv, catalog, handoff.NewHandoffRegistry(), session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)); err != nil {
-		t.Fatalf("RegisterVaultCreateApp: %v", err)
+	if err := vault.RegisterVaultCreateApp(srv, catalog, handoff.NewHandoffRegistry(), session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)); err != nil {
+		t.Fatalf("vault.RegisterVaultCreateApp: %v", err)
 	}
 	if err := RegisterOfficialCuratedTools(srv, catalog); err != nil {
 		t.Fatalf("RegisterOfficialCuratedTools: %v", err)
@@ -38,14 +39,14 @@ func TestRegisterVaultCreateAppWire(t *testing.T) {
 	require.NoError(t, err)
 	var found bool
 	for _, r := range res.Resources {
-		if r.URI == VaultCreateAppURI {
+		if r.URI == vault.VaultCreateAppURI {
 			found = true
 			require.Equal(t, apps.RESOURCE_MIME_TYPE, r.MIMEType)
 		}
 	}
 	require.True(t, found, "vault create resource not listed")
 
-	rr, err := cs.ReadResource(ctx, &mcp.ReadResourceParams{URI: VaultCreateAppURI})
+	rr, err := cs.ReadResource(ctx, &mcp.ReadResourceParams{URI: vault.VaultCreateAppURI})
 	require.NoError(t, err)
 	require.Contains(t, rr.Contents[0].Text, "Create Vault")
 	require.Contains(t, rr.Contents[0].Text, "vault-create-start")
@@ -56,17 +57,17 @@ func TestRegisterVaultCreateAppWire(t *testing.T) {
 	for _, x := range tres.Tools {
 		toolMeta[x.Name] = x
 	}
-	create := toolMeta[compiledVaultCreateToolName]
+	create := toolMeta[vault.CompiledVaultCreateToolName]
 	require.NotNil(t, create, "vault_create not listed")
 	ui, ok := create.Meta["ui"].(map[string]any)
 	require.True(t, ok, "no _meta.ui on vault_create")
-	require.Equal(t, VaultCreateAppURI, ui["resourceUri"])
+	require.Equal(t, vault.VaultCreateAppURI, ui["resourceUri"])
 
 	status := toolMeta["vault_create_status"]
 	require.NotNil(t, status, "vault_create_status helper not listed")
 	sui, ok := status.Meta["ui"].(map[string]any)
 	require.True(t, ok)
-	require.Equal(t, VaultCreateAppURI, sui["resourceUri"])
+	require.Equal(t, vault.VaultCreateAppURI, sui["resourceUri"])
 	require.Contains(t, sui["visibility"], "app")
 }
 
@@ -85,7 +86,7 @@ func TestVaultCreateStatusHelperPendingToDone(t *testing.T) {
 	handle := handles.Create("pending", map[string]any{handleDataToken: token})
 	reg.Begin(handle, vaultCreateResumeContinuation(oob, handles, reg))
 
-	status := vaultCreateStatusDescriptor(reg, handles)
+	status := vault.VaultCreateStatusDescriptor(reg, handles)
 
 	// Not acted on yet -> pending.
 	r, err := status.Handler(context.Background(), model.ToolRequest{
@@ -150,7 +151,7 @@ func TestVaultCreateStatusHelperPendingCarriesHandle(t *testing.T) {
 	handle := handles.Create("pending", map[string]any{handleDataToken: token})
 	reg.Begin(handle, vaultCreateResumeContinuation(oob, handles, reg))
 
-	status := vaultCreateStatusDescriptor(reg, handles)
+	status := vault.VaultCreateStatusDescriptor(reg, handles)
 
 	// Live pending: needs_human with a handle, and no URL in the result.
 	r, err := status.Handler(context.Background(), model.ToolRequest{
@@ -173,7 +174,7 @@ func TestVaultCreateStatusHelperPendingCarriesHandle(t *testing.T) {
 	deadSC := requireHandoff(t, r)
 	_, hasHandle := deadSC["handle"]
 	require.False(t, hasHandle, "a dead handle must not carry a handle")
-	require.Equal(t, compiledVaultCreateToolName, deadSC["resume_tool"])
+	require.Equal(t, vault.CompiledVaultCreateToolName, deadSC["resume_tool"])
 }
 
 // TestVaultCreateNotConfiguredReturnsNoHandle pins the server-side contract
@@ -187,7 +188,7 @@ func TestVaultCreateNotConfiguredReturnsNoHandle(t *testing.T) {
 	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 
 	handler := vaultCreateSetupHandler(nil, reg, handles)
-	r, err := handler(context.Background(), model.ToolRequest{Name: compiledVaultCreateToolName})
+	r, err := handler(context.Background(), model.ToolRequest{Name: vault.CompiledVaultCreateToolName})
 	require.NoError(t, err)
 	sc := requireHandoff(t, r) // needs_human (ReasonInteractiveOnly)
 	_, hasHandle := sc["handle"]

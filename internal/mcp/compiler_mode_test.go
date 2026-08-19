@@ -14,6 +14,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/vault"
 )
 
 // compilerRoot builds a minimal CLI command tree with one walkable command
@@ -81,13 +82,13 @@ func TestCompiledVaultCreateHonorsOOBHandoff(t *testing.T) {
 
 	// The compiled vault.create entry must be present and routed through the
 	// OOB setup handler (its handler is not the generic compiledHandler).
-	createEntry, ok := cat.Get(compiledVaultCreateToolName)
+	createEntry, ok := cat.Get(vault.CompiledVaultCreateToolName)
 	require.True(t, ok, "compiled vault.create must be present in compiler mode")
 	require.NotNil(t, createEntry.Handler)
 	require.Equal(t, model.InteractionAgentSafe, createEntry.Interaction)
 
 	res, err := createEntry.Handler(context.Background(), model.ToolRequest{
-		Name: compiledVaultCreateToolName,
+		Name: vault.CompiledVaultCreateToolName,
 		Arguments: map[string]any{
 			"profile": "aliasdev",
 		},

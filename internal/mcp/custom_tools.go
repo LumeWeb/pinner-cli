@@ -16,6 +16,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/download"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 	"go.lumeweb.com/pinner-cli/internal/mcp/upload"
+	"go.lumeweb.com/pinner-cli/internal/mcp/vault"
 )
 
 // customToolDeps bundles everything the custom/direct-tool registration needs.
@@ -203,10 +204,10 @@ func registerCustomTools(deps customToolDeps) error {
 	// so a UI-capable host renders the flows in a panel. The compiled
 	// vault_create / vault_restore tools are in the catalog from buildCatalog.
 	// Must run before the curated registration loop reads _meta.ui.
-	if err := RegisterVaultCreateApp(deps.srv, deps.catalog, deps.handoffReg, deps.authHandles); err != nil {
+	if err := vault.RegisterVaultCreateApp(deps.srv, deps.catalog, deps.handoffReg, deps.authHandles); err != nil {
 		return fmt.Errorf("failed to register vault create app: %w", err)
 	}
-	if err := RegisterVaultRestoreApp(deps.srv, deps.catalog, deps.handoffReg, deps.authHandles); err != nil {
+	if err := vault.RegisterVaultRestoreApp(deps.srv, deps.catalog, deps.handoffReg, deps.authHandles); err != nil {
 		return fmt.Errorf("failed to register vault restore app: %w", err)
 	}
 
@@ -215,7 +216,7 @@ func registerCustomTools(deps customToolDeps) error {
 	// listing panel. The view only reads via the existing vault_status /
 	// vault_ls catalog tools and registers no helper. Must run before the
 	// curated registration loop reads _meta.ui, like the create/restore apps.
-	if err := RegisterVaultBrowserApp(deps.srv, deps.catalog); err != nil {
+	if err := vault.RegisterVaultBrowserApp(deps.srv, deps.catalog); err != nil {
 		return fmt.Errorf("failed to register vault browser app: %w", err)
 	}
 
@@ -261,11 +262,11 @@ func registerCustomTools(deps customToolDeps) error {
 		opts = &mcpServerOptions{}
 	}
 	if vaultPutFileAvailable(deps.coLocated, opts.localPathVaultPut != nil, deps.vaultUpload != nil, opts.vaultPutHandler != nil, deps.tunnelOpenAI) {
-		var pathFn LocalPathVaultPutHandler
+		var pathFn vault.LocalPathVaultPutHandler
 		if deps.coLocated {
 			pathFn = opts.localPathVaultPut
 		}
-		vaultPutDesc := NewVaultPutFileDescriptor(deps.coLocated, deps.tunnelOpenAI, pathFn, deps.vaultUpload, opts.vaultPutHandler, opts.relayAllowedHosts, opts.maxRelayBytes)
+		vaultPutDesc := vault.NewVaultPutFileDescriptor(deps.coLocated, deps.tunnelOpenAI, pathFn, deps.vaultUpload, opts.vaultPutHandler, opts.relayAllowedHosts, opts.maxRelayBytes)
 		// Pair vault_put_file with its "Upload to Vault" MCP App view
 		// (ui://uploads/vault.html) when the presigned vault-upload coordinator
 		// can mint a PUT endpoint for the Uppy XHR uploader. The app must be
@@ -327,7 +328,7 @@ func registerCustomTools(deps customToolDeps) error {
 	//   - sink=drop (HTTP / real tunnel): deps.downloadDrop mints a filedrop.
 	if opts.vaultGet != nil {
 		downloadRoot := transfer.ResolveDownloadRoot(opts.downloadRoot)
-		dlDesc := NewVaultGetFileDescriptor(opts.vaultGet, deps.downloadDrop, downloadRoot, ieo.EffectiveRelayMaxBytes(opts.maxRelayBytes), deps.tunnelOpenAI)
+		dlDesc := vault.NewVaultGetFileDescriptor(opts.vaultGet, deps.downloadDrop, downloadRoot, ieo.EffectiveRelayMaxBytes(opts.maxRelayBytes), deps.tunnelOpenAI)
 		deps.catalog.Add(model.ToolEntryFromDescriptor(dlDesc))
 		if err := download.RegisterVaultDownloadApp(deps.srv, deps.catalog); err != nil {
 			return err

@@ -9,6 +9,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/vault"
 )
 
 // This file exposes the vault seed create/restore out-of-band hand-offs as
@@ -177,7 +178,7 @@ func vaultCreateResumeContinuation(oob *OOBCreate, handles *session.AsyncHandleS
 	return func(ctx context.Context, handle string, data map[string]any) (model.ToolResult, error) {
 		token, _ := data[handleDataToken].(string)
 		if oob == nil {
-			return vaultExpiredResult(handles, reg, handle, vaultCreateResumeToolName, compiledVaultCreateToolName,
+			return vaultExpiredResult(handles, reg, handle, vaultCreateResumeToolName, vault.CompiledVaultCreateToolName,
 				"Vault create is not configured for this server; start a fresh vault create with vault_create")
 		}
 		done, failed, expired, pending := oob.tokenDone(token)
@@ -196,13 +197,13 @@ func vaultCreateResumeContinuation(oob *OOBCreate, handles *session.AsyncHandleS
 			// RunCreate failed (approval/registration error). Do not report done;
 			// terminate and steer to restart so the human can retry.
 			oob.forgetOutcome(token)
-			return vaultExpiredResult(handles, reg, handle, vaultCreateResumeToolName, compiledVaultCreateToolName,
+			return vaultExpiredResult(handles, reg, handle, vaultCreateResumeToolName, vault.CompiledVaultCreateToolName,
 				"The vault create failed on the one-time page (the Sia device approval/registration errored). Start a fresh vault create with vault_create so a new create_url is minted.")
 		case expired:
 			// One-time link expired before the vault was created and the seed
 			// retrieved. Do not report completion; terminate and steer to a fresh
 			// start.
-			return vaultExpiredResult(handles, reg, handle, vaultCreateResumeToolName, compiledVaultCreateToolName,
+			return vaultExpiredResult(handles, reg, handle, vaultCreateResumeToolName, vault.CompiledVaultCreateToolName,
 				"The one-time create_url expired before the vault was created and the seed retrieved; start a fresh vault create with vault_create so a new create_url is minted.")
 		case pending:
 			return model.NeedsHumanResult(model.NeedsHuman{
@@ -216,7 +217,7 @@ func vaultCreateResumeContinuation(oob *OOBCreate, handles *session.AsyncHandleS
 			// and cannot transition on its own. Do not report done and do not
 			// leave the agent pending forever. Terminate and steer to a fresh
 			// start.
-			return vaultExpiredResult(handles, reg, handle, vaultCreateResumeToolName, compiledVaultCreateToolName,
+			return vaultExpiredResult(handles, reg, handle, vaultCreateResumeToolName, vault.CompiledVaultCreateToolName,
 				"The vault create hand-off is no longer resolvable; start a fresh vault create with vault_create so a new create_url is minted.")
 		}
 	}
@@ -236,7 +237,7 @@ func vaultRestoreResumeContinuation(oob *OOBRestore, handles *session.AsyncHandl
 	return func(ctx context.Context, handle string, data map[string]any) (model.ToolResult, error) {
 		token, _ := data[handleDataToken].(string)
 		if oob == nil {
-			return vaultExpiredResult(handles, reg, handle, vaultRestoreResumeToolName, compiledVaultRestoreToolName,
+			return vaultExpiredResult(handles, reg, handle, vaultRestoreResumeToolName, vault.CompiledVaultRestoreToolName,
 				"Vault restore is not configured for this server; start a fresh vault restore with vault_restore")
 		}
 		done, failed, expired, pending := oob.tokenDone(token)
@@ -256,11 +257,11 @@ func vaultRestoreResumeContinuation(oob *OOBRestore, handles *session.AsyncHandl
 			// human can correct the seed. vaultExpiredResult clears the handle and
 			// the consumed outcome record is freed.
 			oob.forgetOutcome(token)
-			return vaultExpiredResult(handles, reg, handle, vaultRestoreResumeToolName, compiledVaultRestoreToolName,
+			return vaultExpiredResult(handles, reg, handle, vaultRestoreResumeToolName, vault.CompiledVaultRestoreToolName,
 				"The restore failed on the one-time page (the recovery phrase was rejected or the device approval/registration errored). Review the seed and start a fresh vault restore with vault_restore so a new restore_url is minted.")
 		case expired:
 			// One-time link expired before the human completed the restore.
-			return vaultExpiredResult(handles, reg, handle, vaultRestoreResumeToolName, compiledVaultRestoreToolName,
+			return vaultExpiredResult(handles, reg, handle, vaultRestoreResumeToolName, vault.CompiledVaultRestoreToolName,
 				"The one-time restore_url expired before the restore was completed; start a fresh vault restore with vault_restore so a new restore_url is minted.")
 		case pending:
 			return model.NeedsHumanResult(model.NeedsHuman{
@@ -274,7 +275,7 @@ func vaultRestoreResumeContinuation(oob *OOBRestore, handles *session.AsyncHandl
 			// and cannot transition on its own. Do not report done and do not
 			// leave the agent pending forever. Terminate and steer to a fresh
 			// start.
-			return vaultExpiredResult(handles, reg, handle, vaultRestoreResumeToolName, compiledVaultRestoreToolName,
+			return vaultExpiredResult(handles, reg, handle, vaultRestoreResumeToolName, vault.CompiledVaultRestoreToolName,
 				"The vault restore hand-off is no longer resolvable; start a fresh vault restore with vault_restore so a new restore_url is minted.")
 		}
 	}
@@ -308,7 +309,7 @@ func NewVaultCreateResumeDescriptor(reg *handoff.HandoffRegistry, handles *sessi
 		Name:                vaultCreateResumeToolName,
 		Title:               "Vault Create Resume",
 		Description:         "Poll a pending vault create hand-off to check whether the human has approved the Sia device connection on the one-time create_url and retrieved the recovery seed. Returns pending (needs_human) until the vault is active and the seed has been retrieved, then reports done. Pass the handle returned by vault_create.",
-		RestartTool:         compiledVaultCreateToolName,
+		RestartTool:         vault.CompiledVaultCreateToolName,
 		UnknownHandleDetail: "unknown handle; start a fresh vault create with vault_create",
 		ExpiredHandleDetail: "the vault create hand-off expired before the vault was created and the seed retrieved; start a fresh vault create with vault_create so a new create_url is minted",
 		DeadHandleReason:    model.ReasonCredentialEntry,
@@ -324,7 +325,7 @@ func NewVaultRestoreResumeDescriptor(reg *handoff.HandoffRegistry, handles *sess
 		Name:                vaultRestoreResumeToolName,
 		Title:               "Vault Restore Resume",
 		Description:         "Poll a pending vault restore hand-off to check whether the human has completed the out-of-band restore on the one-time restore_url. Returns pending (needs_human) until the restore is done, then reports done. Pass the handle returned by vault_restore.",
-		RestartTool:         compiledVaultRestoreToolName,
+		RestartTool:         vault.CompiledVaultRestoreToolName,
 		UnknownHandleDetail: "unknown handle; start a fresh vault restore with vault_restore",
 		ExpiredHandleDetail: "the vault restore hand-off expired before the human completed it; start a fresh vault restore with vault_restore so a new restore_url is minted",
 		DeadHandleReason:    model.ReasonCredentialEntry,

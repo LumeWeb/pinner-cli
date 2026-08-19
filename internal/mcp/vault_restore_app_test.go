@@ -15,6 +15,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
+	"go.lumeweb.com/pinner-cli/internal/mcp/vault"
 )
 
 // TestRegisterVaultRestoreAppWire verifies the Restore Vault app registers its
@@ -22,11 +23,11 @@ import (
 // the app-only vault_restore_status helper.
 func TestRegisterVaultRestoreAppWire(t *testing.T) {
 	catalog := NewToolCatalog()
-	catalog.Add(modelTool(compiledVaultRestoreToolName))
+	catalog.Add(modelTool(vault.CompiledVaultRestoreToolName))
 	srv := sdk.NewServer(nil)
 
-	if err := RegisterVaultRestoreApp(srv, catalog, handoff.NewHandoffRegistry(), session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)); err != nil {
-		t.Fatalf("RegisterVaultRestoreApp: %v", err)
+	if err := vault.RegisterVaultRestoreApp(srv, catalog, handoff.NewHandoffRegistry(), session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)); err != nil {
+		t.Fatalf("vault.RegisterVaultRestoreApp: %v", err)
 	}
 	if err := RegisterOfficialCuratedTools(srv, catalog); err != nil {
 		t.Fatalf("RegisterOfficialCuratedTools: %v", err)
@@ -38,14 +39,14 @@ func TestRegisterVaultRestoreAppWire(t *testing.T) {
 	require.NoError(t, err)
 	var found bool
 	for _, r := range res.Resources {
-		if r.URI == VaultRestoreAppURI {
+		if r.URI == vault.VaultRestoreAppURI {
 			found = true
 			require.Equal(t, apps.RESOURCE_MIME_TYPE, r.MIMEType)
 		}
 	}
 	require.True(t, found, "vault restore resource not listed")
 
-	rr, err := cs.ReadResource(ctx, &mcp.ReadResourceParams{URI: VaultRestoreAppURI})
+	rr, err := cs.ReadResource(ctx, &mcp.ReadResourceParams{URI: vault.VaultRestoreAppURI})
 	require.NoError(t, err)
 	require.Contains(t, rr.Contents[0].Text, "Restore Vault")
 	require.Contains(t, rr.Contents[0].Text, "vault-restore-start")
@@ -56,17 +57,17 @@ func TestRegisterVaultRestoreAppWire(t *testing.T) {
 	for _, x := range tres.Tools {
 		toolMeta[x.Name] = x
 	}
-	restore := toolMeta[compiledVaultRestoreToolName]
+	restore := toolMeta[vault.CompiledVaultRestoreToolName]
 	require.NotNil(t, restore, "vault_restore not listed")
 	ui, ok := restore.Meta["ui"].(map[string]any)
 	require.True(t, ok, "no _meta.ui on vault_restore")
-	require.Equal(t, VaultRestoreAppURI, ui["resourceUri"])
+	require.Equal(t, vault.VaultRestoreAppURI, ui["resourceUri"])
 
 	status := toolMeta["vault_restore_status"]
 	require.NotNil(t, status, "vault_restore_status helper not listed")
 	sui, ok := status.Meta["ui"].(map[string]any)
 	require.True(t, ok)
-	require.Equal(t, VaultRestoreAppURI, sui["resourceUri"])
+	require.Equal(t, vault.VaultRestoreAppURI, sui["resourceUri"])
 	require.Contains(t, sui["visibility"], "app")
 }
 
@@ -85,7 +86,7 @@ func TestVaultRestoreStatusHelperPendingToDone(t *testing.T) {
 	handle := handles.Create("pending", map[string]any{handleDataToken: token})
 	reg.Begin(handle, vaultRestoreResumeContinuation(oob, handles, reg))
 
-	status := vaultRestoreStatusDescriptor(reg, handles)
+	status := vault.VaultRestoreStatusDescriptor(reg, handles)
 
 	// Before restore -> pending.
 	r, err := status.Handler(context.Background(), model.ToolRequest{
@@ -133,7 +134,7 @@ func TestVaultRestoreStatusHelperPendingCarriesHandle(t *testing.T) {
 	handle := handles.Create("pending", map[string]any{handleDataToken: token})
 	reg.Begin(handle, vaultRestoreResumeContinuation(oob, handles, reg))
 
-	status := vaultRestoreStatusDescriptor(reg, handles)
+	status := vault.VaultRestoreStatusDescriptor(reg, handles)
 
 	// Live pending: needs_human with a handle, and no URL in the result.
 	r, err := status.Handler(context.Background(), model.ToolRequest{
@@ -156,7 +157,7 @@ func TestVaultRestoreStatusHelperPendingCarriesHandle(t *testing.T) {
 	deadSC := requireHandoff(t, r)
 	_, hasHandle := deadSC["handle"]
 	require.False(t, hasHandle, "a dead handle must not carry a handle")
-	require.Equal(t, compiledVaultRestoreToolName, deadSC["resume_tool"])
+	require.Equal(t, vault.CompiledVaultRestoreToolName, deadSC["resume_tool"])
 }
 
 // TestVaultRestoreNotConfiguredReturnsNoHandle pins the server-side contract
@@ -170,7 +171,7 @@ func TestVaultRestoreNotConfiguredReturnsNoHandle(t *testing.T) {
 	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 
 	handler := vaultRestoreSetupHandler(nil, reg, handles)
-	r, err := handler(context.Background(), model.ToolRequest{Name: compiledVaultRestoreToolName})
+	r, err := handler(context.Background(), model.ToolRequest{Name: vault.CompiledVaultRestoreToolName})
 	require.NoError(t, err)
 	sc := requireHandoff(t, r) // needs_human (ReasonInteractiveOnly)
 	_, hasHandle := sc["handle"]

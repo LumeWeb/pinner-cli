@@ -22,6 +22,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
+	"go.lumeweb.com/pinner-cli/internal/mcp/vault"
 )
 
 // newOfficialTestServer builds an official-SDK server with one catalog entry
@@ -479,7 +480,7 @@ func TestOfficialInvokeVaultRestoreRoutesAgentSafeHandoff(t *testing.T) {
 		}))
 	require.NoError(t, err)
 
-	restore, ok := catalog.Get(compiledVaultRestoreToolName)
+	restore, ok := catalog.Get(vault.CompiledVaultRestoreToolName)
 	require.True(t, ok, "compiled vault.restore must be present in compiler mode")
 	require.Equal(t, model.InteractionAgentSafe, restore.Interaction,
 		"buildCatalog must route compiled vault restore through the agent-safe OOB hand-off handler")
@@ -493,7 +494,7 @@ func TestOfficialInvokeVaultRestoreRoutesAgentSafeHandoff(t *testing.T) {
 	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
 		Name: "invoke_tool",
 		Arguments: map[string]any{
-			"name":      compiledVaultRestoreToolName,
+			"name":      vault.CompiledVaultRestoreToolName,
 			"arguments": map[string]any{},
 		},
 	})

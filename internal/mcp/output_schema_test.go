@@ -11,6 +11,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
+	"go.lumeweb.com/pinner-cli/internal/mcp/vault"
 )
 
 // TestOfficialToolOutputSchemaAbsent verifies that a descriptor without an
@@ -169,7 +170,7 @@ func (f handlerFunc) Execute(ctx context.Context, input map[string]any) (any, er
 // StructuredContent.
 func TestVaultSetupRouteNeedsHumanSchema(t *testing.T) {
 	c := NewToolCatalog()
-	for _, name := range []string{compiledVaultCreateToolName, compiledVaultRestoreToolName} {
+	for _, name := range []string{vault.CompiledVaultCreateToolName, vault.CompiledVaultRestoreToolName} {
 		c.Add(&model.ToolEntry{
 			Name:         name,
 			InputSchema:  json.RawMessage(`{"type":"object"}`),
@@ -182,17 +183,17 @@ func TestVaultSetupRouteNeedsHumanSchema(t *testing.T) {
 
 	swapped := map[string]bool{}
 	create := func(_ context.Context, _ model.ToolRequest) (model.ToolResult, error) {
-		swapped[compiledVaultCreateToolName] = true
+		swapped[vault.CompiledVaultCreateToolName] = true
 		return model.NeedsHumanResult(model.NeedsHuman{Reason: model.ReasonConfirmation}), nil
 	}
 	restore := func(_ context.Context, _ model.ToolRequest) (model.ToolResult, error) {
-		swapped[compiledVaultRestoreToolName] = true
+		swapped[vault.CompiledVaultRestoreToolName] = true
 		return model.NeedsHumanResult(model.NeedsHuman{Reason: model.ReasonConfirmation}), nil
 	}
 
 	routeVaultSetupHandlers(c, create, restore)
 
-	for _, name := range []string{compiledVaultCreateToolName, compiledVaultRestoreToolName} {
+	for _, name := range []string{vault.CompiledVaultCreateToolName, vault.CompiledVaultRestoreToolName} {
 		entry, ok := c.Get(name)
 		require.True(t, ok, name)
 		// The success envelope must not leak onto these tools.

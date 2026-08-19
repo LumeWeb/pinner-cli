@@ -15,6 +15,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/download"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
+	"go.lumeweb.com/pinner-cli/internal/mcp/vault"
 )
 
 // fakePins is a controllable PinningProvider for app tests.
@@ -329,8 +330,8 @@ func buildVaultBrowserServer(t *testing.T) *mcp.Server {
 	})
 
 	srv := sdk.NewServer(nil)
-	if err := RegisterVaultBrowserApp(srv, catalog); err != nil {
-		t.Fatalf("RegisterVaultBrowserApp: %v", err)
+	if err := vault.RegisterVaultBrowserApp(srv, catalog); err != nil {
+		t.Fatalf("vault.RegisterVaultBrowserApp: %v", err)
 	}
 	if err := RegisterOfficialCuratedTools(srv, catalog); err != nil {
 		t.Fatalf("RegisterOfficialCuratedTools: %v", err)
@@ -354,7 +355,7 @@ func TestRegisterVaultBrowserAppWire(t *testing.T) {
 	}
 	var found bool
 	for _, r := range res.Resources {
-		if r.URI == VaultBrowserAppURI {
+		if r.URI == vault.VaultBrowserAppURI {
 			found = true
 			if r.MIMEType != apps.RESOURCE_MIME_TYPE {
 				t.Fatalf("resource MIME = %q, want %q", r.MIMEType, apps.RESOURCE_MIME_TYPE)
@@ -378,8 +379,8 @@ func TestRegisterVaultBrowserAppWire(t *testing.T) {
 				t.Fatalf("vault_status has no _meta after registering the browser app")
 			}
 			// The flat legacy key and the nested resourceUri both point at the view.
-			if x.Meta["ui/resourceUri"] != VaultBrowserAppURI {
-				t.Fatalf("vault_status missing _meta.ui/resourceUri=%q; got %#v", VaultBrowserAppURI, x.Meta)
+			if x.Meta["ui/resourceUri"] != vault.VaultBrowserAppURI {
+				t.Fatalf("vault_status missing _meta.ui/resourceUri=%q; got %#v", vault.VaultBrowserAppURI, x.Meta)
 			}
 			return
 		}
