@@ -8,6 +8,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
 
+	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
@@ -15,11 +16,9 @@ import (
 // registerTestAppView records a synthetic tool→app binding in the package
 // registry for an app-backed needs_human scenario, without touching the real
 // catalog. It mirrors what RegisterAppView does for one AttachTo tool.
-func registerTestAppView(t *testing.T, toolName string, info AppViewInfo) {
+func registerTestAppView(t *testing.T, toolName string, info apps.AppViewInfo) {
 	t.Helper()
-	appViewsMu.Lock()
-	defer appViewsMu.Unlock()
-	appViewsByTool[toolName] = info
+	apps.SetAppViewInfo(toolName, info)
 }
 
 // TestAnnotateAppOnHandoffTextOnly pins that a text-only host (no MCP Apps
@@ -27,7 +26,7 @@ func registerTestAppView(t *testing.T, toolName string, info AppViewInfo) {
 // the app and its uri:// resource, so the model can tell the user an
 // interactive page exists even though the host does not render apps.
 func TestAnnotateAppOnHandoffTextOnly(t *testing.T) {
-	registerTestAppView(t, "account_password_update", AppViewInfo{
+	registerTestAppView(t, "account_password_update", apps.AppViewInfo{
 		URI: "ui://account/password.html", Name: "change-password", Title: "Change Password",
 	})
 	defer unregisterTestAppView(t, "account_password_update")
@@ -55,12 +54,12 @@ func TestAnnotateAppOnHandoffTextOnly(t *testing.T) {
 // io.modelcontextprotocol/ui mime-type) is told the companion page will render
 // inline, per the MCP Apps contract, and that the raw URL stays intact.
 func TestAnnotateAppOnHandoffUICapable(t *testing.T) {
-	registerTestAppView(t, "auth_sso", AppViewInfo{
+	registerTestAppView(t, "auth_sso", apps.AppViewInfo{
 		URI: "ui://auth/sso.html", Name: "auth-sso", Title: "Sign In",
 	})
 	defer unregisterTestAppView(t, "auth_sso")
 
-	caps := &model.RequestCaps{UI: &model.ClientUICapabilities{MIMETypes: []string{RESOURCE_MIME_TYPE}}}
+	caps := &model.RequestCaps{UI: &model.ClientUICapabilities{MIMETypes: []string{apps.RESOURCE_MIME_TYPE}}}
 	require.True(t, caps.SupportsApps(), "test capability must support apps")
 
 	res := model.NeedsHumanResult(model.NeedsHuman{
@@ -88,7 +87,7 @@ func TestAnnotateAppOnHandoffNonAppPassthrough(t *testing.T) {
 	require.Equal(t, before, resNonApp.Text, "non-app tool hand-off must not be annotated")
 
 	// App tool, but a non-needs_human (terminal) result.
-	registerTestAppView(t, "pins_add", AppViewInfo{URI: "ui://pins/create.html", Title: "Create a Pin"})
+	registerTestAppView(t, "pins_add", apps.AppViewInfo{URI: "ui://pins/create.html", Title: "Create a Pin"})
 	defer unregisterTestAppView(t, "pins_add")
 	resTerminal := model.ToolResult{
 		Text:              "done",
@@ -101,9 +100,7 @@ func TestAnnotateAppOnHandoffNonAppPassthrough(t *testing.T) {
 // unregisterTestAppView removes a synthetic tool→app binding after a test.
 func unregisterTestAppView(t *testing.T, toolName string) {
 	t.Helper()
-	appViewsMu.Lock()
-	defer appViewsMu.Unlock()
-	delete(appViewsByTool, toolName)
+	apps.DeleteAppViewInfo(toolName)
 }
 
 // TestOfficialToolHandlerAnnotatesHandoffEndToEnd drives the full emission
@@ -112,7 +109,7 @@ func unregisterTestAppView(t *testing.T, toolName string) {
 // calling client's capability level. A text-only client gets the "is also
 // available" fallback; a UI-capable client gets "will render in your client".
 func TestOfficialToolHandlerAnnotatesHandoffEndToEnd(t *testing.T) {
-	registerTestAppView(t, "account_password_update", AppViewInfo{
+	registerTestAppView(t, "account_password_update", apps.AppViewInfo{
 		URI: "ui://account/password.html", Name: "change-password", Title: "Change Password",
 	})
 	defer unregisterTestAppView(t, "account_password_update")
@@ -158,7 +155,7 @@ func TestOfficialToolHandlerAnnotatesHandoffEndToEnd(t *testing.T) {
 // "invoke_tool") never sees the real tool. The closure must annotate with the
 // resolved inner name so a text-only host still learns the companion app exists.
 func TestInvokeToolAnnotatesAppBackedHandoff(t *testing.T) {
-	registerTestAppView(t, "vault_create", AppViewInfo{
+	registerTestAppView(t, "vault_create", apps.AppViewInfo{
 		URI: "ui://vault/create.html", Name: "create-vault", Title: "Create Vault",
 	})
 	defer unregisterTestAppView(t, "vault_create")

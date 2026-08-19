@@ -32,6 +32,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 
+	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
 )
@@ -94,7 +95,7 @@ func requestCaps(req *sdk.CallToolRequest) *model.RequestCaps {
 		rc.ClientVersion = ci.Version
 	}
 	if cc := req.ClientCapabilities(); cc != nil {
-		rc.UI = GetClientUICapability(cc.Extensions)
+		rc.UI = apps.GetClientUICapability(cc.Extensions)
 	}
 	return rc
 }
@@ -112,7 +113,7 @@ func annotateAppOnHandoff(toolName string, caps *model.RequestCaps, result *mode
 	if result == nil || result.IsError || result.Elicitation != nil {
 		return
 	}
-	app, ok := appInfoForTool(toolName)
+	app, ok := apps.AppInfoForTool(toolName)
 	if !ok {
 		return
 	}

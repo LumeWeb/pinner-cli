@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 	"go.lumeweb.com/pinner-cli/internal/mcpapp"
 )
@@ -29,7 +30,7 @@ func renderPinListAppHTML() string {
 // catalog tool over callServerTool; it needs no app-only helper because it only
 // reads and never drives a hand-off.
 func RegisterPinListApp(srv *sdk.Server, catalog *ToolCatalog) error {
-	return RegisterAppView(srv, catalog, AppView{
+	return apps.RegisterAppView(srv, catalog, apps.AppView{
 		URI:           PinListAppURI,
 		Name:          "pin-list",
 		Title:         "Pins",

@@ -9,6 +9,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
+	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 )
 
 // newAccountAppsServer builds an official server with the account credential
@@ -52,7 +53,7 @@ func TestRegisterAccountAppsWire(t *testing.T) {
 	for _, r := range res.Resources {
 		if r.URI == AccountPasswordAppURI || r.URI == AccountEmailAppURI {
 			found[r.URI] = true
-			require.Equal(t, RESOURCE_MIME_TYPE, r.MIMEType)
+			require.Equal(t, apps.RESOURCE_MIME_TYPE, r.MIMEType)
 		}
 	}
 	require.True(t, found[AccountPasswordAppURI], "password resource not listed")

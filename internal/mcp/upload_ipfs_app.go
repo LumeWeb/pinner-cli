@@ -11,6 +11,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 
+	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
@@ -146,7 +147,7 @@ func RegisterIPFSUploadApp(srv *sdk.Server, catalog *ToolCatalog, hp *transfer.U
 	if hp == nil {
 		return fmt.Errorf("nil http upload coordinator")
 	}
-	return RegisterAppView(srv, catalog, AppView{
+	return apps.RegisterAppView(srv, catalog, apps.AppView{
 		URI:           IPFSUploadAppURI,
 		Name:          "ipfs-upload",
 		Title:         "Upload to IPFS",

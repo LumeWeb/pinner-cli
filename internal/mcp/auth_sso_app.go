@@ -5,6 +5,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 
+	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
@@ -52,7 +53,7 @@ func authSSOStatusDescriptor(reg *handoff.HandoffRegistry, handles *session.Asyn
 // without a browser login; the app/tools still register and return a structured
 // not-configured hand-off when invoked.
 func RegisterAuthSSOApp(srv *sdk.Server, catalog *ToolCatalog, reg *handoff.HandoffRegistry, handles *session.AsyncHandleStore) error {
-	return RegisterAppView(srv, catalog, AppView{
+	return apps.RegisterAppView(srv, catalog, apps.AppView{
 		URI:           AuthSSOAppURI,
 		Name:          "auth-sso",
 		Title:         "Sign In",

@@ -3,6 +3,7 @@ package mcp
 import (
 	"fmt"
 
+	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 	"go.lumeweb.com/pinner-cli/internal/mcpapp"
 )
@@ -52,7 +53,7 @@ func RegisterIPFSDownloadApp(srv *sdk.Server, catalog *ToolCatalog) error {
 	if catalog == nil {
 		return fmt.Errorf("nil tool catalog")
 	}
-	return RegisterAppView(srv, catalog, AppView{
+	return apps.RegisterAppView(srv, catalog, apps.AppView{
 		URI:           IPFSDownloadAppURI,
 		Name:          "ipfs-download",
 		Title:         "Download from IPFS",
@@ -74,7 +75,7 @@ func RegisterVaultDownloadApp(srv *sdk.Server, catalog *ToolCatalog) error {
 	if catalog == nil {
 		return fmt.Errorf("nil tool catalog")
 	}
-	return RegisterAppView(srv, catalog, AppView{
+	return apps.RegisterAppView(srv, catalog, apps.AppView{
 		URI:           VaultDownloadAppURI,
 		Name:          "vault-download",
 		Title:         "Download from Vault",

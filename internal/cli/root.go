@@ -17,6 +17,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/core/vault"
 	"go.lumeweb.com/pinner-cli/internal/core/websites"
 	mcpadapter "go.lumeweb.com/pinner-cli/internal/mcp"
+	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
@@ -113,7 +114,7 @@ For more help on any command: pinner <command> --help`,
 	// pinProvider builds the live pinning backend for the "Create a Pin" MCP App
 	// (ui:// view + app-only status helper). Populated inside the wizard factory
 	// once a cfgMgr/output/secure are available.
-	var pinProvider mcpadapter.PinningProviderFactory
+	var pinProvider apps.PinningProviderFactory
 	// uploadHandler is the single vendor-agnostic stream→upload executor shared
 	// by every file-input tool (file object, URL relay, draft data: URI,
 	// async). Only the byte source differs; the authenticated upload contract is
@@ -177,7 +178,7 @@ For more help on any command: pinner <command> --help`,
 			uploadSvc := defaultUploadServiceFactory(cfgMgr, output, WithUploadAuthService(authSvc), WithUploadPinningService(pinningSvc))
 
 			// Adapt the pinning backend into the SDK-neutral PinningProvider.
-			pinProvider = func() (mcpadapter.PinningProvider, error) {
+			pinProvider = func() (apps.PinningProvider, error) {
 				return &pinStatusAdapter{pins: pinningSvc}, nil
 			}
 
@@ -490,7 +491,7 @@ For more help on any command: pinner <command> --help`,
 			return mcpadapter.ResourceProviders{Sessions: store}
 		},
 		mcpadapter.WithPrompts(),
-		mcpadapter.WithPinningProvider(func() (mcpadapter.PinningProvider, error) {
+		mcpadapter.WithPinningProvider(func() (apps.PinningProvider, error) {
 			if pinProvider == nil {
 				return nil, notInitErr("pinning provider")
 			}

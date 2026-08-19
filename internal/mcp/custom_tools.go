@@ -8,6 +8,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 
+	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
@@ -122,7 +123,7 @@ func registerCustomTools(deps customToolDeps) error {
 		if err != nil {
 			return fmt.Errorf("failed to build pinning provider: %w", err)
 		}
-		if err := RegisterPinApp(deps.srv, deps.catalog, pins); err != nil {
+		if err := apps.RegisterPinApp(deps.srv, deps.catalog, pins); err != nil {
 			return fmt.Errorf("failed to register pin app: %w", err)
 		}
 	}

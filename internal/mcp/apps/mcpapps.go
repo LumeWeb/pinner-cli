@@ -5,7 +5,7 @@
 // server-side registration bridge (RegisterAppTool / RegisterAppResource) and
 // the SDK wire conversion live in internal/mcp/sdk. Tool/resource business
 // logic must NOT import the MCP SDK and should use those typed helpers.
-package mcp
+package apps
 
 import (
 	"encoding/json"

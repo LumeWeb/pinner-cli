@@ -13,6 +13,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
+	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 )
 
 // newAuthSSOAppServer builds an official server with auth_sso/auth_resume in
@@ -55,7 +56,7 @@ func TestRegisterAuthSSOAppWire(t *testing.T) {
 	for _, r := range res.Resources {
 		if r.URI == AuthSSOAppURI {
 			found = true
-			require.Equal(t, RESOURCE_MIME_TYPE, r.MIMEType)
+			require.Equal(t, apps.RESOURCE_MIME_TYPE, r.MIMEType)
 		}
 	}
 	require.True(t, found, "auth sso resource not listed")
@@ -63,7 +64,7 @@ func TestRegisterAuthSSOAppWire(t *testing.T) {
 	// Read returns the rendered sign-in document.
 	rr, err := cs.ReadResource(ctx, &mcp.ReadResourceParams{URI: AuthSSOAppURI})
 	require.NoError(t, err)
-	require.Equal(t, RESOURCE_MIME_TYPE, rr.Contents[0].MIMEType)
+	require.Equal(t, apps.RESOURCE_MIME_TYPE, rr.Contents[0].MIMEType)
 	require.Contains(t, rr.Contents[0].Text, "Sign In")
 	require.Contains(t, rr.Contents[0].Text, "sso-start")
 

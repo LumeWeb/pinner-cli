@@ -7,30 +7,31 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
 
 func TestMCPAppsConstants(t *testing.T) {
-	if RESOURCE_MIME_TYPE != "text/html;profile=mcp-app" {
-		t.Fatalf("RESOURCE_MIME_TYPE = %q", RESOURCE_MIME_TYPE)
+	if apps.RESOURCE_MIME_TYPE != "text/html;profile=mcp-app" {
+		t.Fatalf("apps.RESOURCE_MIME_TYPE = %q", apps.RESOURCE_MIME_TYPE)
 	}
-	if RESOURCE_URI_META_KEY != "ui/resourceUri" {
-		t.Fatalf("RESOURCE_URI_META_KEY = %q", RESOURCE_URI_META_KEY)
+	if apps.RESOURCE_URI_META_KEY != "ui/resourceUri" {
+		t.Fatalf("apps.RESOURCE_URI_META_KEY = %q", apps.RESOURCE_URI_META_KEY)
 	}
-	if EXTENSION_ID != "io.modelcontextprotocol/ui" {
-		t.Fatalf("EXTENSION_ID = %q", EXTENSION_ID)
+	if apps.EXTENSION_ID != "io.modelcontextprotocol/ui" {
+		t.Fatalf("apps.EXTENSION_ID = %q", apps.EXTENSION_ID)
 	}
 }
 
 func TestGetClientUICapabilityTyped(t *testing.T) {
 	// Simulates the shape a client sends in initialize capabilities extensions.
 	ext := map[string]any{
-		EXTENSION_ID: map[string]any{
+		apps.EXTENSION_ID: map[string]any{
 			"mimeTypes": []any{"text/html;profile=mcp-app", "text/plain"},
 		},
 	}
-	caps := GetClientUICapability(ext)
+	caps := apps.GetClientUICapability(ext)
 	if caps == nil {
 		t.Fatal("expected non-nil capabilities")
 	}
@@ -60,26 +61,26 @@ func TestGetClientUICapabilityTypedJSON(t *testing.T) {
 		}
 		ext[k] = val
 	}
-	caps := GetClientUICapability(ext)
+	caps := apps.GetClientUICapability(ext)
 	if caps == nil || !caps.SupportsApps() {
 		t.Fatalf("expected supported: %#v", caps)
 	}
 }
 
 func TestGetClientUICapabilityAbsent(t *testing.T) {
-	if caps := GetClientUICapability(map[string]any{}); caps != nil {
+	if caps := apps.GetClientUICapability(map[string]any{}); caps != nil {
 		t.Fatalf("expected nil for absent extension, got %#v", caps)
 	}
-	if caps := GetClientUICapability(nil); caps != nil {
+	if caps := apps.GetClientUICapability(nil); caps != nil {
 		t.Fatalf("expected nil for nil extensions, got %#v", caps)
 	}
 }
 
 func TestGetClientUICapabilityUnsupported(t *testing.T) {
 	ext := map[string]any{
-		EXTENSION_ID: map[string]any{"mimeTypes": []any{"text/plain"}},
+		apps.EXTENSION_ID: map[string]any{"mimeTypes": []any{"text/plain"}},
 	}
-	caps := GetClientUICapability(ext)
+	caps := apps.GetClientUICapability(ext)
 	if caps == nil {
 		t.Fatal("expected non-nil caps (extension present but unsupported)")
 	}
@@ -93,9 +94,9 @@ func TestAdvertiseUICapability(t *testing.T) {
 	if caps == nil {
 		t.Fatal("expected non-nil caps")
 	}
-	raw, ok := caps.Extensions[EXTENSION_ID]
+	raw, ok := caps.Extensions[apps.EXTENSION_ID]
 	if !ok {
-		t.Fatalf("extension %s not advertised", EXTENSION_ID)
+		t.Fatalf("extension %s not advertised", apps.EXTENSION_ID)
 	}
 	data, err := json.Marshal(raw)
 	if err != nil {
@@ -107,7 +108,7 @@ func TestAdvertiseUICapability(t *testing.T) {
 	if err := json.Unmarshal(data, &parsed); err != nil {
 		t.Fatalf("unmarshal ext: %v", err)
 	}
-	if len(parsed.MIMETypes) != 1 || parsed.MIMETypes[0] != RESOURCE_MIME_TYPE {
+	if len(parsed.MIMETypes) != 1 || parsed.MIMETypes[0] != apps.RESOURCE_MIME_TYPE {
 		t.Fatalf("advertised mimeTypes = %#v", parsed.MIMETypes)
 	}
 }
@@ -182,7 +183,7 @@ func TestAppToolWireMeta(t *testing.T) {
 		t.Fatalf("_meta.ui.resourceUri = %#v", got)
 	}
 	// Legacy flat key.
-	if got := tool.Meta[RESOURCE_URI_META_KEY]; got != "ui://vault/list.html" {
+	if got := tool.Meta[apps.RESOURCE_URI_META_KEY]; got != "ui://vault/list.html" {
 		t.Fatalf("legacy flat _meta key = %#v", got)
 	}
 }
@@ -202,8 +203,8 @@ func TestAppResourceWire(t *testing.T) {
 	if r.URI != "ui://vault/list.html" {
 		t.Fatalf("uri = %q", r.URI)
 	}
-	if r.MIMEType != RESOURCE_MIME_TYPE {
-		t.Fatalf("mimeType = %q, want %q", r.MIMEType, RESOURCE_MIME_TYPE)
+	if r.MIMEType != apps.RESOURCE_MIME_TYPE {
+		t.Fatalf("mimeType = %q, want %q", r.MIMEType, apps.RESOURCE_MIME_TYPE)
 	}
 	ui, ok := r.Meta["ui"].(map[string]any)
 	if !ok {
@@ -225,7 +226,7 @@ func TestAppResourceReadHTML(t *testing.T) {
 	if len(res.Contents) != 1 {
 		t.Fatalf("contents = %#v", res.Contents)
 	}
-	if res.Contents[0].MIMEType != RESOURCE_MIME_TYPE {
+	if res.Contents[0].MIMEType != apps.RESOURCE_MIME_TYPE {
 		t.Fatalf("content mimeType = %q", res.Contents[0].MIMEType)
 	}
 	if res.Contents[0].Text != "<!doctype html><html><body>vault</body></html>" {
@@ -293,7 +294,7 @@ func uiClientMeta() mcp.Meta {
 		},
 		mcp.MetaKeyClientCapabilities: map[string]any{
 			"extensions": map[string]any{
-				EXTENSION_ID: map[string]any{"mimeTypes": []any{RESOURCE_MIME_TYPE, "text/plain"}},
+				apps.EXTENSION_ID: map[string]any{"mimeTypes": []any{apps.RESOURCE_MIME_TYPE, "text/plain"}},
 			},
 		},
 	}

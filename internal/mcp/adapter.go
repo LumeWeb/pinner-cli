@@ -39,6 +39,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
+	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 )
 
 // ToolDelimiter separates command path segments in MCP tool names.
@@ -922,7 +923,7 @@ type mcpServerOptions struct {
 	maxRelayBytes int64
 	// pinnerPins, when set, wires the "Create a Pin" MCP App (ui:// view,
 	// app-only status helper) using a live pinning provider built at setup.
-	pinnerPins PinningProviderFactory
+	pinnerPins apps.PinningProviderFactory
 	// catalogDeps, when set, supplies the operation-catalog dependency graph
 	// (config manager + core service factories) so the MCP surface can be
 	// populated from the operation catalog. Since the compiler-backed surface
@@ -948,7 +949,7 @@ func WithPrompts() MCPServerOption {
 // WithPinningProvider wires the "Create a Pin" MCP App (ui:// view + app-only
 // pin status helper) using provider, which builds a live pinning backend at
 // server setup time. Without it, no pin App is registered.
-func WithPinningProvider(provider PinningProviderFactory) MCPServerOption {
+func WithPinningProvider(provider apps.PinningProviderFactory) MCPServerOption {
 	return func(o *mcpServerOptions) {
 		o.pinnerPins = provider
 	}

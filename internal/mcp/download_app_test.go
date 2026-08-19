@@ -11,6 +11,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
+	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 )
 
 // buildDownloadServers constructs a catalog with the download tools and
@@ -63,7 +64,7 @@ func TestRegisterDownloadAppsWire(t *testing.T) {
 	for _, r := range res.Resources {
 		if _, ok := wantURIs[r.URI]; ok {
 			wantURIs[r.URI] = true
-			require.Equal(t, RESOURCE_MIME_TYPE, r.MIMEType)
+			require.Equal(t, apps.RESOURCE_MIME_TYPE, r.MIMEType)
 		}
 	}
 	for uri, seen := range wantURIs {
