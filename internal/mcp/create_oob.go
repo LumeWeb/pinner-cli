@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/a-h/templ"
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.uber.org/zap"
 )
 
@@ -30,7 +31,7 @@ import (
 type OOBCreate struct {
 	runner   CreateRunner
 	seedDrop *SeedDrop
-	core     handoffEndpoint
+	core     handoff.Endpoint
 
 	// mu guards outcomes. outcomes records the terminal + seed-delivery state of
 	// each create attempt so the resume continuation can distinguish a completed
@@ -70,7 +71,7 @@ func NewOOBCreate(runner CreateRunner, seedDrop *SeedDrop, ttl time.Duration) *O
 		ttl = DefaultCreateTTL
 	}
 	c := &OOBCreate{runner: runner, seedDrop: seedDrop, outcomes: map[string]*createOutcome{}}
-	c.core = *newHandoff("create", c, ttl)
+	c.core = *handoff.New("create", c, ttl)
 	return c
 }
 
@@ -87,15 +88,15 @@ func (c *OOBCreate) WithLogger(l *zap.Logger) *OOBCreate {
 }
 
 // registerHandlers mounts the create page + POST routes on the shared mux.
-func (c *OOBCreate) registerHandlers(mux *http.ServeMux) {
-	c.core.registerHandlers(mux)
+func (c *OOBCreate) RegisterHandlers(mux *http.ServeMux) {
+	c.core.RegisterHandlers(mux)
 }
 
 // Register mints a one-time, expiring URL that creates and activates a vault
 // for the given profile. Non-blocking: the create runs only once the human
 // approves on the page.
 func (c *OOBCreate) Register(profile string) string {
-	return c.core.mint(&createPayload{profile: profile})
+	return c.core.Mint(&createPayload{profile: profile})
 }
 
 // Stop shuts down the loopback listener, if any.
@@ -105,15 +106,15 @@ func (c *OOBCreate) Stop(ctx context.Context) {
 
 // consumeOnGET reports that a GET does NOT consume the create token (it is
 // collected on POST; the page must be viewable/reloadable before submit).
-func (c *OOBCreate) consumeOnGET() bool { return false }
+func (c *OOBCreate) ConsumeOnGET() bool { return false }
 
 // renderGET implements handoffHandler: show the one-time create page that starts
 // the vault creation + Sia device approval.
-func (c *OOBCreate) renderGET(w http.ResponseWriter, r *http.Request, token string, item *handoffItem) {
-	payload, _ := item.payload.(*createPayload)
+func (c *OOBCreate) RenderGET(w http.ResponseWriter, r *http.Request, token string, item *handoff.Item) {
+	Payload, _ := item.Payload.(*createPayload)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	_ = createVaultPage(payload.profile, token).Render(r.Context(), w)
+	_ = createVaultPage(Payload.profile, token).Render(r.Context(), w)
 }
 
 // consumePOST implements handoffHandler: run the create (generate seed + Sia
@@ -122,8 +123,8 @@ func (c *OOBCreate) renderGET(w http.ResponseWriter, r *http.Request, token stri
 // onApproval writes + flushes the approval link before Create blocks, then on
 // success the handler mints a one-time seeddrop for the fresh seed and streams
 // that retrieval link.
-func (c *OOBCreate) consumePOST(w http.ResponseWriter, r *http.Request, token string, item *handoffItem) (consumed bool) {
-	payload, _ := item.payload.(*createPayload)
+func (c *OOBCreate) ConsumePOST(w http.ResponseWriter, r *http.Request, token string, item *handoff.Item) (consumed bool) {
+	Payload, _ := item.Payload.(*createPayload)
 
 	// Missing runner or seeddrop is a server misconfiguration: do NOT consume
 	// the token (nothing ran) so the one-time URL stays valid.
@@ -135,12 +136,12 @@ func (c *OOBCreate) consumePOST(w http.ResponseWriter, r *http.Request, token st
 		return
 	}
 
-	profile := payload.profile
+	profile := Payload.profile
 
 	// Claim the token atomically BEFORE the blocking create (which can wait
 	// minutes on a Sia approval), so a concurrent or repeated POST is rejected
 	// instead of issuing a second approval or registering a second device.
-	if !c.core.claim(token) {
+	if !c.core.Claim(token) {
 		w.Header().Set("Cache-Control", "no-store")
 		http.Error(w, "A vault create is already in progress or this link was already used.", http.StatusGone)
 		return
@@ -205,13 +206,13 @@ func (c *OOBCreate) consumePOST(w http.ResponseWriter, r *http.Request, token st
 	return
 }
 
-func (c *OOBCreate) count() int {
-	return c.core.count()
+func (c *OOBCreate) Count() int {
+	return c.core.Count()
 }
 
 // setNow overrides the clock used for expiry (test seam).
-func (c *OOBCreate) setNow(f func() time.Time) {
-	c.core.setNow(f)
+func (c *OOBCreate) SetNow(f func() time.Time) {
+	c.core.SetNow(f)
 }
 
 // tokenDone reports the create coordinator token's state for the resume
@@ -231,11 +232,11 @@ func (c *OOBCreate) tokenDone(token string) (done, failed, expired, pending bool
 	if token == "" {
 		return false, false, false, false
 	}
-	item, reason := c.core.resolve(token)
+	item, reason := c.core.Resolve(token)
 	if item != nil {
 		return false, false, false, true // still live: nothing approved/received yet
 	}
-	if reason == handoffExpired {
+	if reason == handoff.ReasonExpired {
 		return false, false, true, false
 	}
 	c.mu.Lock()

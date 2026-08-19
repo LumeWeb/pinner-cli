@@ -11,6 +11,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/catalogops"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
+	"go.lumeweb.com/pinner-cli/internal/mcp/auth"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
@@ -473,8 +474,8 @@ func buildAuthStatusServer(t *testing.T) *mcp.Server {
 	})
 
 	srv := sdk.NewServer(nil)
-	if err := RegisterAuthStatusApp(srv, catalog); err != nil {
-		t.Fatalf("RegisterAuthStatusApp: %v", err)
+	if err := auth.RegisterAuthStatusApp(srv, catalog); err != nil {
+		t.Fatalf("auth.RegisterAuthStatusApp: %v", err)
 	}
 	if err := RegisterOfficialCuratedTools(srv, catalog); err != nil {
 		t.Fatalf("RegisterOfficialCuratedTools: %v", err)
@@ -497,7 +498,7 @@ func TestRegisterAuthStatusAppWire(t *testing.T) {
 	}
 	var found bool
 	for _, r := range res.Resources {
-		if r.URI == AuthStatusAppURI {
+		if r.URI == auth.AuthStatusAppURI {
 			found = true
 			if r.MIMEType != apps.RESOURCE_MIME_TYPE {
 				t.Fatalf("resource MIME = %q, want %q", r.MIMEType, apps.RESOURCE_MIME_TYPE)
@@ -518,8 +519,8 @@ func TestRegisterAuthStatusAppWire(t *testing.T) {
 			if x.Meta == nil {
 				t.Fatalf("auth_status has no _meta after registering the auth status app")
 			}
-			if x.Meta["ui/resourceUri"] != AuthStatusAppURI {
-				t.Fatalf("auth_status missing _meta.ui/resourceUri=%q; got %#v", AuthStatusAppURI, x.Meta)
+			if x.Meta["ui/resourceUri"] != auth.AuthStatusAppURI {
+				t.Fatalf("auth_status missing _meta.ui/resourceUri=%q; got %#v", auth.AuthStatusAppURI, x.Meta)
 			}
 			return
 		}

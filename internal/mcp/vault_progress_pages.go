@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"fmt"
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"strings"
 )
 
@@ -53,7 +54,7 @@ func createVaultProgressStart(profile string) string {
 <h1 class="brand-card-title">Create Pinner Vault</h1>
 <p class="brand-card-text">Profile: <strong>%s</strong></p>
 <div id="status">Preparing your new vault…</div>
-`, brandCSSURL(), brandLogoURL(), htmlEscapeText(profile))
+`, handoff.BrandCSSURL(), handoff.BrandLogoURL(), htmlEscapeText(profile))
 }
 
 // restoreVaultProgressStart opens the restore-progress page.
@@ -74,7 +75,7 @@ func restoreVaultProgressStart(profile string) string {
 <h1 class="brand-card-title">Restoring Pinner Vault</h1>
 <p class="brand-card-text">Profile: <strong>%s</strong></p>
 <div id="status">Starting restore…</div>
-`, brandCSSURL(), brandLogoURL(), htmlEscapeText(profile))
+`, handoff.BrandCSSURL(), handoff.BrandLogoURL(), htmlEscapeText(profile))
 }
 
 // progressPageEnd closes the document opened by the progress start helpers: the

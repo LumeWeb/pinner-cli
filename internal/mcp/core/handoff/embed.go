@@ -1,4 +1,4 @@
-package mcp
+package handoff
 
 //go:generate templ generate
 
@@ -58,11 +58,11 @@ func init() {
 	AssetVersion = hex.EncodeToString(h.Sum(nil))[:12]
 }
 
-// brandCSSURL returns the cache-busted URL for the brand stylesheet. Page
+// BrandCSSURL returns the cache-busted URL for the brand stylesheet. Page
 // templates call this so the shared compiled theme is reliably re-fetched on
 // change. It is a function, not a var, because AssetVersion is computed in
 // init() — a package var would bake in the empty value at init order.
-func brandCSSURL() string {
+func BrandCSSURL() string {
 	return brandCSSPath + "?v=" + AssetVersion
 }
 
@@ -71,9 +71,9 @@ func brandCSSURL() string {
 // static/ tree as the stylesheet so one handler serves both.
 const brandLogoPath = "/assets/logo.svg"
 
-// brandLogoURL returns the cache-busted URL for the Pinner logo SVG. See
-// brandCSSURL for why this is a function rather than a var.
-func brandLogoURL() string {
+// BrandLogoURL returns the cache-busted URL for the Pinner logo SVG. See
+// BrandCSSURL for why this is a function rather than a var.
+func BrandLogoURL() string {
 	return brandLogoPath + "?v=" + AssetVersion
 }
 
@@ -82,7 +82,7 @@ func brandLogoURL() string {
 // package, under /assets/. Both URLs carry the content hash (?v=) and the
 // stylesheet is served immutable — the hash changes on rebuild (see
 // AssetVersion), so browsers re-fetch when the bytes actually change.
-func staticAssetHandler() http.Handler {
+func StaticAssetHandler() http.Handler {
 	assets := http.StripPrefix("/assets/", http.FileServer(http.FS(staticFiles)))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		name := strings.TrimPrefix(r.URL.Path, "/assets/")

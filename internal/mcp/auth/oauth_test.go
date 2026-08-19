@@ -1,4 +1,4 @@
-package mcp
+package auth
 
 import (
 	"crypto/sha256"
@@ -25,11 +25,11 @@ import (
 // flag at runtime).
 const testSecret = "fixture-test-secret"
 
-func newTestOAuth(t *testing.T) *oauthServer {
+func newTestOAuth(t *testing.T) *OAuthServer {
 	t.Helper()
 	store, err := oauthstore.Open(filepath.Join(t.TempDir(), "oauth.db"), 30*24*time.Hour)
 	require.NoError(t, err)
-	o := newOAuthServer(testSecret, "https://mcp.example.com", store)
+	o := NewOAuthServer(testSecret, "https://mcp.example.com", store)
 	o.clients["cli"] = oauthClient{redirectURIs: []string{"http://localhost/cb"}}
 	t.Cleanup(o.Stop) // stop the background reaper goroutine
 	return o
@@ -47,7 +47,7 @@ func TestOAuthRegistration(t *testing.T) {
 	body := strings.NewReader(`{"client_name":"ChatGPT","redirect_uris":["http://localhost:1455/callback"],"application_type":"native","token_endpoint_auth_method":"none"}`)
 	req := httptest.NewRequest(http.MethodPost, "/oauth/register", body)
 	req.Header.Set("Content-Type", "application/json")
-	o.registerHandler(rec, req)
+	o.RegisterHandler(rec, req)
 	assert.Equal(t, http.StatusCreated, rec.Code)
 	var doc map[string]any
 	require.NoError(t, json.NewDecoder(rec.Body).Decode(&doc))
@@ -63,7 +63,7 @@ func TestOAuthASMetadata(t *testing.T) {
 	o := newTestOAuth(t)
 	req := httptest.NewRequest(http.MethodGet, "/.well-known/oauth-authorization-server", nil)
 	rec := httptest.NewRecorder()
-	o.asMetadataHandler(rec, req)
+	o.AsMetadataHandler(rec, req)
 	assert.Equal(t, http.StatusOK, rec.Code)
 
 	var doc map[string]any
@@ -78,7 +78,7 @@ func TestOAuthProtectedResourceMetadata(t *testing.T) {
 	o := newTestOAuth(t)
 	req := httptest.NewRequest(http.MethodGet, "/.well-known/oauth-protected-resource", nil)
 	rec := httptest.NewRecorder()
-	o.protectedResourceHandler("/mcp")(rec, req)
+	o.ProtectedResourceHandler("/mcp")(rec, req)
 	assert.Equal(t, http.StatusOK, rec.Code)
 
 	var doc map[string]any
@@ -92,7 +92,7 @@ func TestOAuthAuthorizeGET(t *testing.T) {
 	_, challenge := testPKCE()
 	req := httptest.NewRequest(http.MethodGet, "/oauth/authorize?response_type=code&client_id=cli&redirect_uri=http://localhost/cb&code_challenge="+challenge+"&code_challenge_method=S256&resource=https%3A%2F%2Fmcp.example.com%2Fmcp", nil)
 	rec := httptest.NewRecorder()
-	o.authorizeGET(rec, req)
+	o.AuthorizeGET(rec, req)
 	assert.Equal(t, http.StatusOK, rec.Code)
 	body := rec.Body.String()
 	assert.Contains(t, body, "auth secret")
@@ -115,7 +115,7 @@ func TestOAuthAuthorizeGET_ReflectedXSSEscaped(t *testing.T) {
 		"&state=" + url.QueryEscape(evil) +
 		"&resource=https%3A%2F%2Fmcp.example.com%2Fmcp"
 	rec := httptest.NewRecorder()
-	o.authorizeGET(rec, httptest.NewRequest(http.MethodGet, u, nil))
+	o.AuthorizeGET(rec, httptest.NewRequest(http.MethodGet, u, nil))
 	require.Equal(t, http.StatusOK, rec.Code)
 	body := rec.Body.String()
 	// The raw markup must not survive into the page: templ's attribute
@@ -145,7 +145,7 @@ func TestOAuthAuthorizeGET_InvalidCodeChallengeRejected(t *testing.T) {
 		"&state=abc" +
 		"&resource=https%3A%2F%2Fmcp.example.com%2Fmcp"
 	rec := httptest.NewRecorder()
-	o.authorizeGET(rec, httptest.NewRequest(http.MethodGet, u, nil))
+	o.AuthorizeGET(rec, httptest.NewRequest(http.MethodGet, u, nil))
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 }
 
@@ -173,7 +173,7 @@ func TestOAuthFullFlow(t *testing.T) {
 	// response is a branded retry form page (not a bare text/JSON body) so a
 	// human who mistyped the shared secret can try again.
 	rec = httptest.NewRecorder()
-	o.authorizePOST(rec, formPost(map[string]string{
+	o.AuthorizePOST(rec, formPost(map[string]string{
 		"client_id": "cli", "redirect_uri": "http://localhost/cb",
 		"state": "st", "password": "wrong",
 	}))
@@ -193,7 +193,7 @@ func TestOAuthFullFlow(t *testing.T) {
 		"code_challenge_method": "S256", "resource": "https://mcp.example.com/mcp",
 	}
 	rec = httptest.NewRecorder()
-	o.authorizePOST(rec, formPost(authValues))
+	o.AuthorizePOST(rec, formPost(authValues))
 	assert.Equal(t, http.StatusFound, rec.Code)
 	loc, err := url.Parse(rec.Header().Get("Location"))
 	require.NoError(t, err)
@@ -204,14 +204,14 @@ func TestOAuthFullFlow(t *testing.T) {
 
 	// A second authorization produces a different one-time code.
 	rec = httptest.NewRecorder()
-	o.authorizePOST(rec, formPost(authValues))
+	o.AuthorizePOST(rec, formPost(authValues))
 	loc2, _ := url.Parse(rec.Header().Get("Location"))
 	code2 := loc2.Query().Get("code")
 	require.NotEqual(t, code, code2)
 
 	// Token endpoint: exchange the (single-use) code for an access token.
 	rec = httptest.NewRecorder()
-	o.tokenHandler(rec, formPost(map[string]string{
+	o.TokenHandler(rec, formPost(map[string]string{
 		"grant_type":    "authorization_code",
 		"code":          code,
 		"client_id":     "cli",
@@ -230,14 +230,14 @@ func TestOAuthFullFlow(t *testing.T) {
 
 	// Refresh token rotates into a new access token.
 	rec = httptest.NewRecorder()
-	o.tokenHandler(rec, formPost(map[string]string{
+	o.TokenHandler(rec, formPost(map[string]string{
 		"grant_type": "refresh_token", "refresh_token": refresh,
 	}))
 	assert.Equal(t, http.StatusOK, rec.Code)
 
 	// The issued token authorizes the MCP endpoint and binds the transport session.
 	var userID string
-	bound := o.officialMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	bound := o.OfficialMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		info := auth.TokenInfoFromContext(r.Context())
 		require.NotNil(t, info)
 		userID = info.UserID
@@ -270,7 +270,7 @@ func TestOAuthFullFlow(t *testing.T) {
 func TestOAuthTokenRejectsBadGrant(t *testing.T) {
 	o := newTestOAuth(t)
 	rec := httptest.NewRecorder()
-	o.tokenHandler(rec, formPost(map[string]string{"grant_type": "authorization_code", "code": "nope"}))
+	o.TokenHandler(rec, formPost(map[string]string{"grant_type": "authorization_code", "code": "nope"}))
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 }
 
@@ -297,7 +297,7 @@ func TestAllowedRedirect(t *testing.T) {
 func TestOAuthRejectsCrossHostRedirect(t *testing.T) {
 	o := newTestOAuth(t)
 	rec := httptest.NewRecorder()
-	o.authorizePOST(rec, formPost(map[string]string{
+	o.AuthorizePOST(rec, formPost(map[string]string{
 		"client_id": "evil", "redirect_uri": "http://attacker.com/cb",
 		"state": "st", "password": testSecret,
 	}))
@@ -329,7 +329,7 @@ func TestOAuthReapExpired(t *testing.T) {
 
 func TestStaticBearerMiddleware(t *testing.T) {
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
-	h := staticBearerMiddleware(testSecret, inner)
+	h := StaticBearerMiddleware(testSecret, inner)
 
 	// Missing token -> 401.
 	rec := httptest.NewRecorder()
@@ -372,7 +372,7 @@ func TestOAuthRefreshReuseTolerated(t *testing.T) {
 	// Complete an authorization-code flow to mint a refresh token.
 	const res = "https://mcp.example.com/mcp"
 	rec := httptest.NewRecorder()
-	o.authorizePOST(rec, formPost(map[string]string{
+	o.AuthorizePOST(rec, formPost(map[string]string{
 		"response_type": "code", "client_id": "cli", "redirect_uri": "http://localhost/cb",
 		"password": testSecret, "code_challenge": challenge, "code_challenge_method": "S256", "resource": res,
 	}))
@@ -381,7 +381,7 @@ func TestOAuthRefreshReuseTolerated(t *testing.T) {
 	code := loc.Query().Get("code")
 
 	rec = httptest.NewRecorder()
-	o.tokenHandler(rec, formPost(map[string]string{
+	o.TokenHandler(rec, formPost(map[string]string{
 		"grant_type": "authorization_code", "code": code, "client_id": "cli",
 		"redirect_uri": "http://localhost/cb", "code_verifier": verifier, "resource": res,
 	}))
@@ -393,13 +393,13 @@ func TestOAuthRefreshReuseTolerated(t *testing.T) {
 
 	// First refresh use rotates.
 	rec = httptest.NewRecorder()
-	o.tokenHandler(rec, formPost(map[string]string{"grant_type": "refresh_token", "refresh_token": refresh}))
+	o.TokenHandler(rec, formPost(map[string]string{"grant_type": "refresh_token", "refresh_token": refresh}))
 	require.Equal(t, http.StatusOK, rec.Code, "first refresh must succeed")
 
 	// Re-presenting the SAME refresh token immediately (within the reuse
 	// window) must also succeed — this is what previously returned invalid_grant
 	// and broke the Claude connection.
 	rec = httptest.NewRecorder()
-	o.tokenHandler(rec, formPost(map[string]string{"grant_type": "refresh_token", "refresh_token": refresh}))
+	o.TokenHandler(rec, formPost(map[string]string{"grant_type": "refresh_token", "refresh_token": refresh}))
 	require.Equal(t, http.StatusOK, rec.Code, "benign refresh-token reuse within the window must not invalid_grant")
 }

@@ -1,4 +1,4 @@
-package mcp
+package auth
 
 import (
 	"context"
@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"net/url"
 	"strings"
 	"sync"
 	"time"
 
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transport"
 	"go.uber.org/zap"
@@ -92,7 +92,7 @@ func (o *OutOfBandLogin) completeReq(r *loginRequest) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	r.complete()
-	o.logf().Info("out-of-band login completed", zap.String("session", r.sessionID), zap.String("email", r.email), zap.String("id", r.id))
+	o.Logf().Info("out-of-band login completed", zap.String("session", r.sessionID), zap.String("email", r.email), zap.String("id", r.id))
 }
 
 // failReq marks a request terminal-failure under o.mu (see completeReq).
@@ -100,7 +100,7 @@ func (o *OutOfBandLogin) failReq(r *loginRequest, err error) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	r.fail(err)
-	o.logf().Warn("out-of-band login failed", zap.String("session", r.sessionID), zap.String("email", r.email), zap.String("id", r.id), zap.Error(err))
+	o.Logf().Warn("out-of-band login failed", zap.String("session", r.sessionID), zap.String("email", r.email), zap.String("id", r.id), zap.Error(err))
 }
 
 // OutOfBandLogin serves branded login pages on a loopback listener (stdio) or
@@ -146,7 +146,7 @@ type OutOfBandLogin struct {
 // and the handoffNotActiveReason to show on a re-open.
 type spentLogin struct {
 	at     time.Time
-	reason handoffNotActiveReason
+	reason handoff.NotActiveReason
 }
 
 // loginThrottle is the credential attempt counter for an email. lastUsed is
@@ -197,7 +197,7 @@ func (o *OutOfBandLogin) WithLogger(l *zap.Logger) *OutOfBandLogin {
 }
 
 // logf returns the coordinator's logger, falling back to the package logger.
-func (o *OutOfBandLogin) logf() *zap.Logger {
+func (o *OutOfBandLogin) Logf() *zap.Logger {
 	if o.logger != nil {
 		return o.logger
 	}
@@ -209,8 +209,8 @@ func (o *OutOfBandLogin) logf() *zap.Logger {
 // loopback listener also serves the static /assets/ (branded login page).
 func (o *OutOfBandLogin) start() error {
 	return o.loopback.EnsureLoopback(func(mux *http.ServeMux) {
-		mux.Handle("/assets/", staticAssetHandler())
-		o.registerHandlers(mux)
+		mux.Handle("/assets/", handoff.StaticAssetHandler())
+		o.RegisterHandlers(mux)
 	})
 }
 
@@ -220,7 +220,7 @@ func (o *OutOfBandLogin) start() error {
 // HTTP/tunnel mux in serveHTTP, so mounting it here too would trigger a duplicate
 // http.ServeMux.Handle panic ("multiple registrations for /assets/") and crash
 // the transport at startup.
-func (o *OutOfBandLogin) registerHandlers(mux *http.ServeMux) {
+func (o *OutOfBandLogin) RegisterHandlers(mux *http.ServeMux) {
 	mux.HandleFunc("/login/", o.loginPage)
 	mux.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
@@ -234,9 +234,16 @@ func (o *OutOfBandLogin) SetBaseURL(url string) {
 	o.loopback.SetBaseURL(url)
 }
 
+// AcceptedOrigins returns the list of origins the OOB login endpoint accepts
+// for browser-only POSTs (the loopback transport's allowed origins). Callers
+// use it to issue an approving cross-origin request in tests or integrations.
+func (o *OutOfBandLogin) AcceptedOrigins() []string {
+	return o.loopback.AcceptedOrigins()
+}
+
 // loginURLLocked returns the localhost URL the human opens for a request id, or
 // the external base URL when a tunnel/public base is configured. Callers must
-// hold o.mu (pendingOutcome calls it inside its critical section).
+// hold o.mu (PendingOutcome calls it inside its critical section).
 func (o *OutOfBandLogin) loginURLLocked(id string) string {
 	return o.loopback.URLFor("login", id)
 }
@@ -313,7 +320,7 @@ func (o *OutOfBandLogin) BeginWithID(requestID, sessionID, email string) (id, ur
 	o.mu.Lock()
 	// A session may only have one active out-of-band login per email. Evict any
 	// prior request for the same session+email (e.g. an earlier failed attempt)
-	// so pendingOutcome can never resolve to a stale request. Requests from
+	// so PendingOutcome can never resolve to a stale request. Requests from
 	// other sessions are left untouched. Exception: if a prior request has
 	// already completed successfully in the browser (an in-flight POST may have
 	// just accepted the credentials), reuse it so the accepted login is not
@@ -334,12 +341,12 @@ func (o *OutOfBandLogin) BeginWithID(requestID, sessionID, email string) (id, ur
 	}
 	if completed != nil {
 		o.mu.Unlock()
-		o.logf().Info("out-of-band login reused prior completed request", zap.String("session", sessionID), zap.String("email", email))
+		o.Logf().Info("out-of-band login reused prior completed request", zap.String("session", sessionID), zap.String("email", email))
 		return completed.id, o.loginURL(completed.id), nil
 	}
 	o.requests[req.id] = req
 	o.mu.Unlock()
-	o.logf().Info("out-of-band login started", zap.String("session", sessionID), zap.String("email", email), zap.String("id", req.id))
+	o.Logf().Info("out-of-band login started", zap.String("session", sessionID), zap.String("email", email), zap.String("id", req.id))
 	return req.id, o.loginURL(req.id), nil
 }
 
@@ -356,13 +363,13 @@ func (o *OutOfBandLogin) startReaper() {
 	go o.reaper(ctx)
 }
 
-// pendingOutcome reports the current state of the out-of-band login for a
+// PendingOutcome reports the current state of the out-of-band login for a
 // wizard session: the URL the human must open while it is still pending, or a
 // done flag once it has completed. A non-nil err is returned when the login
 // attempt failed or expired, so the caller keeps the session on the auth step
 // and lets the user retry. It is bound to the originating session id so a
 // completed login in one session never satisfies authentication in another.
-func (o *OutOfBandLogin) pendingOutcome(sessionID, email string) (url string, done bool, err error) {
+func (o *OutOfBandLogin) PendingOutcome(sessionID, email string) (url string, done bool, err error) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	var req *loginRequest
@@ -392,7 +399,7 @@ func (o *OutOfBandLogin) pendingOutcome(sessionID, email string) (url string, do
 		req = matched
 	}
 	if req == nil {
-		o.logf().Warn("out-of-band login resume: no unambiguous pending request for session",
+		o.Logf().Warn("out-of-band login resume: no unambiguous pending request for session",
 			zap.String("session", sessionID), zap.String("email", email), zap.Int("candidates", candidates))
 		return "", false, nil
 	}
@@ -408,7 +415,7 @@ func (o *OutOfBandLogin) pendingOutcome(sessionID, email string) (url string, do
 		// request so a later session signing in with the same email cannot see
 		// a stale "done" for credentials it never entered, and so completed
 		// requests do not accumulate for the process lifetime (see reaper).
-		o.logf().Info("out-of-band login resolved",
+		o.Logf().Info("out-of-band login resolved",
 			zap.String("session", sessionID), zap.String("email", email),
 			zap.String("id", req.id), zap.Bool("error", req.loginError != nil))
 		delete(o.requests, req.id)
@@ -417,7 +424,7 @@ func (o *OutOfBandLogin) pendingOutcome(sessionID, email string) (url string, do
 		}
 		return "", true, nil
 	default: // expired
-		o.logf().Warn("out-of-band login expired during polling",
+		o.Logf().Warn("out-of-band login expired during polling",
 			zap.String("session", sessionID), zap.String("email", email), zap.String("id", req.id))
 		delete(o.requests, req.id)
 		return "", true, fmt.Errorf("out-of-band login expired, please retry")
@@ -485,8 +492,8 @@ func (o *OutOfBandLogin) loginPage(w http.ResponseWriter, r *http.Request) {
 		// it is derived from the served listener/base, never from the
 		// client-controllable Host header. Requests carrying neither header are
 		// rejected (the endpoint is browser-only).
-		if ok := sameOrigin(r, o.acceptedOrigins()...); !ok {
-			o.logf().Warn("out-of-band login rejected: cross-origin POST", zap.String("session", req.sessionID), zap.String("id", req.id), zap.String("origin", r.Header.Get("Origin")), zap.String("remote", r.RemoteAddr))
+		if ok := handoff.SameOrigin(r, o.acceptedOrigins()...); !ok {
+			o.Logf().Warn("out-of-band login rejected: cross-origin POST", zap.String("session", req.sessionID), zap.String("id", req.id), zap.String("origin", r.Header.Get("Origin")), zap.String("remote", r.RemoteAddr))
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
@@ -545,7 +552,7 @@ func (o *OutOfBandLogin) authLoginSubmit(w http.ResponseWriter, r *http.Request,
 	email := req.email
 	req.mu.Unlock()
 	if expectedCSRF == "" || subtle.ConstantTimeCompare([]byte(r.FormValue("csrf")), []byte(expectedCSRF)) != 1 {
-		o.logf().Warn("out-of-band login rejected: bad CSRF token", zap.String("session", req.sessionID), zap.String("email", email), zap.String("id", req.id), zap.String("remote", r.RemoteAddr))
+		o.Logf().Warn("out-of-band login rejected: bad CSRF token", zap.String("session", req.sessionID), zap.String("email", email), zap.String("id", req.id), zap.String("remote", r.RemoteAddr))
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
@@ -555,7 +562,7 @@ func (o *OutOfBandLogin) authLoginSubmit(w http.ResponseWriter, r *http.Request,
 	// login cannot reset it. A short flat cooldown blunts brute-force without the
 	// complexity of session-scoped or escalating counters.
 	if o.throttleLocked(email) {
-		o.logf().Warn("out-of-band login throttled (lockout in effect)", zap.String("email", email), zap.String("remote", r.RemoteAddr))
+		o.Logf().Warn("out-of-band login throttled (lockout in effect)", zap.String("email", email), zap.String("remote", r.RemoteAddr))
 		o.authLoginPage(w, r, req)
 		return
 	}
@@ -583,7 +590,7 @@ func (o *OutOfBandLogin) authLoginSubmit(w http.ResponseWriter, r *http.Request,
 		if _, err := o.auth.LoginWithOTP(r.Context(), res.IntermediateJWT, otp, o.keyName, false); err != nil {
 			// Keep the request PENDING and record the OTP error so the page
 			// re-renders with the message and the human can retry the code on
-			// the same page. A terminal fail() here would make pendingOutcome
+			// the same page. A terminal fail() here would make PendingOutcome
 			// report done+err and the wizard's Begin would evict this page,
 			// forcing a full restart for a correctable typo.
 			o.noteFailure(req.email)
@@ -720,25 +727,25 @@ func (o *OutOfBandLogin) authSuccessPage(w http.ResponseWriter, r *http.Request)
 // 410 Gone status so programmatic clients still see a spent resource, while
 // rendering a human-readable page body in place of the old bare "410 gone"
 // text.
-func (o *OutOfBandLogin) loginNotActive(w http.ResponseWriter, r *http.Request, reason handoffNotActiveReason) {
+func (o *OutOfBandLogin) loginNotActive(w http.ResponseWriter, r *http.Request, reason handoff.NotActiveReason) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusGone)
-	_ = handoffNotActivePage(reason, "This sign-in link cannot be used again.").Render(r.Context(), w)
+	_ = handoff.NotActivePage(reason, "This sign-in link cannot be used again.").Render(r.Context(), w)
 }
 
 // loginSpentReason reports whether a login request is no longer actionable
-// because its link has been spent: handoffUsed (loginCompleted, no error) means
-// the URL was already used, and handoffExpired means its TTL elapsed. It returns
+// because its link has been spent: handoff.ReasonUsed (loginCompleted, no error) means
+// the URL was already used, and handoff.ReasonExpired means its TTL elapsed. It returns
 // "" for a still-pending request or one that FAILED (completed with an error),
 // which must keep showing the login form so the human can retry.
-func (o *OutOfBandLogin) loginSpentReason(req *loginRequest) handoffNotActiveReason {
+func (o *OutOfBandLogin) loginSpentReason(req *loginRequest) handoff.NotActiveReason {
 	req.mu.Lock()
 	defer req.mu.Unlock()
 	if req.status == loginExpired {
-		return handoffExpired
+		return handoff.ReasonExpired
 	}
 	if req.status == loginCompleted && req.loginError == nil {
-		return handoffUsed
+		return handoff.ReasonUsed
 	}
 	return ""
 }
@@ -761,15 +768,15 @@ func (o *OutOfBandLogin) reaper(ctx context.Context) {
 				}
 				// Remove requests in a terminal state. Expired requests are always
 				// removed; completed requests are removed after a grace period so
-				// an abandoned session (one that never polls pendingOutcome again)
+				// an abandoned session (one that never polls PendingOutcome again)
 				// cannot leak the request in memory for the process lifetime.
 				expired := req.status == loginExpired
 				completedStale := req.status == loginCompleted && !req.completedAt.IsZero() && now.Sub(req.completedAt) > pendingLoginTTL
-				var reason handoffNotActiveReason
+				var reason handoff.NotActiveReason
 				if req.status == loginExpired {
-					reason = handoffExpired
+					reason = handoff.ReasonExpired
 				} else if req.status == loginCompleted && req.loginError == nil {
-					reason = handoffUsed
+					reason = handoff.ReasonUsed
 				}
 				req.mu.Unlock()
 				if expired || completedStale {
@@ -779,18 +786,18 @@ func (o *OutOfBandLogin) reaper(ctx context.Context) {
 					// evicted as completed-stale it is no longer actionable, so
 					// default to the "used" reason.
 					if reason == "" {
-						reason = handoffUsed
+						reason = handoff.ReasonUsed
 					}
-					o.markSpentLocked(id, now, reason)
+					o.MarkSpentLocked(id, now, reason)
 					delete(o.requests, id)
-					o.logf().Debug("out-of-band login evicted by reaper", zap.String("session", req.sessionID), zap.String("id", id), zap.String("reason", string(reason)))
+					o.Logf().Debug("out-of-band login evicted by reaper", zap.String("session", req.sessionID), zap.String("id", id), zap.String("reason", string(reason)))
 				}
 			}
-			// Bound the spent-tombstone map to maxSpentTombstones (FIFO eviction
+			// Bound the spent-tombstone map to handoff.MaxSpentTombstones (FIFO eviction
 			// of the oldest) so a spent login link keeps explaining itself for as
 			// long as it is within retention, while memory stays flat on a
 			// long-running MCP process.
-			o.pruneSpentLocked()
+			o.PruneSpentLocked()
 			// Evict credential throttles idle past their TTL so the map cannot
 			// grow without bound over the process lifetime. A throttle in an
 			// active lockout is never pruned, so the cooldown still holds.
@@ -810,7 +817,7 @@ func (o *OutOfBandLogin) reaper(ctx context.Context) {
 
 // markSpentLocked records a spent login token and appends it to the FIFO
 // eviction order. It must be called with o.mu held.
-func (o *OutOfBandLogin) markSpentLocked(id string, at time.Time, reason handoffNotActiveReason) {
+func (o *OutOfBandLogin) MarkSpentLocked(id string, at time.Time, reason handoff.NotActiveReason) {
 	if _, ok := o.spent[id]; ok {
 		return
 	}
@@ -818,48 +825,16 @@ func (o *OutOfBandLogin) markSpentLocked(id string, at time.Time, reason handoff
 	o.spentOrder = append(o.spentOrder, id)
 }
 
-// pruneSpentLocked bounds the login spent-tombstone map to maxSpentTombstones
+// pruneSpentLocked bounds the login spent-tombstone map to handoff.MaxSpentTombstones
 // by evicting from the FIFO head (O(overflow), never a re-scan) only when the
 // cap is exceeded, so a spent login link keeps explaining itself as long as it
 // is within retention instead of reverting to a bare 404 on a clock.
-func (o *OutOfBandLogin) pruneSpentLocked() {
-	for len(o.spent) > maxSpentTombstones && len(o.spentOrder) > 0 {
+func (o *OutOfBandLogin) PruneSpentLocked() {
+	for len(o.spent) > handoff.MaxSpentTombstones && len(o.spentOrder) > 0 {
 		oldest := o.spentOrder[0]
 		o.spentOrder = o.spentOrder[1:]
 		if _, ok := o.spent[oldest]; ok {
 			delete(o.spent, oldest)
 		}
 	}
-}
-
-// sameOrigin reports whether an inbound request originates from one of the
-// given acceptable origins. The login endpoint is browser-only: a browser form
-// POST always carries an Origin header (and usually a Referer), so a request
-// whose Origin matches none of the accepted origins, or that carries neither
-// header, is rejected. This blocks CSRF from a cross-origin web page and
-// prevents non-browser clients from driving credential attempts against the
-// loopback endpoint.
-func sameOrigin(r *http.Request, accepted ...string) bool {
-	matches := func(candidate string) bool {
-		if candidate == "" {
-			return false
-		}
-		for _, a := range accepted {
-			if strings.EqualFold(candidate, a) {
-				return true
-			}
-		}
-		return false
-	}
-	if origin := r.Header.Get("Origin"); origin != "" {
-		return matches(origin)
-	}
-	if referer := r.Header.Get("Referer"); referer != "" {
-		u, err := url.Parse(referer)
-		if err != nil {
-			return false
-		}
-		return matches(u.Scheme + "://" + u.Host)
-	}
-	return false
 }

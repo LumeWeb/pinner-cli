@@ -16,6 +16,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 
+	"go.lumeweb.com/pinner-cli/internal/mcp/auth"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
 )
 
@@ -781,11 +782,11 @@ type CreateRunner interface {
 // setup wizard session steps and OOB restore path.
 type SetupWizardDeps struct {
 	CfgMgr       config.Manager
-	AuthService  AuthService
+	AuthService  auth.AuthService
 	SetupFactory SetupWizardFactory
 	// OutOfBand completes sign-in in a browser so credentials never transit
 	// the MCP/LLM channel. It may be nil in tests that drive auth directly.
-	OutOfBand *OutOfBandLogin
+	OutOfBand *auth.OutOfBandLogin
 	// Restore completes a vault restore from a human-supplied mnemonic via a
 	// one-time browser form (never through the MCP channel). It may be nil in
 	// tests that don't exercise OOB restore.
@@ -825,7 +826,7 @@ func buildSetupSteps(deps SetupWizardDeps) []session.StepDef {
 				if in.Email == "" {
 					return "", fmt.Errorf("email is required for sign_in")
 				}
-				url, done, loginErr := deps.OutOfBand.pendingOutcome(sess.ID, in.Email)
+				url, done, loginErr := deps.OutOfBand.PendingOutcome(sess.ID, in.Email)
 				if loginErr != nil {
 					// The out-of-band login failed or expired. Restart it so the
 					// user can retry, and keep the session on auth.

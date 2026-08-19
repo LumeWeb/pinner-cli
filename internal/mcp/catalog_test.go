@@ -13,6 +13,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 
+	"go.lumeweb.com/pinner-cli/internal/mcp/auth"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/flag"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
@@ -134,8 +135,8 @@ func TestSSOToolsDiscoverableInCatalog(t *testing.T) {
 	catalog := NewToolCatalog()
 	// The descriptors carry the metadata; the handlers no-op on nil oob/handles
 	// for discovery purposes.
-	catalog.Add(model.ToolEntryFromDescriptor(NewAuthSSODescriptor(nil, nil, nil)))
-	catalog.Add(model.ToolEntryFromDescriptor(NewAuthResumeDescriptor(nil, nil)))
+	catalog.Add(model.ToolEntryFromDescriptor(auth.NewAuthSSODescriptor(nil, nil, nil)))
+	catalog.Add(model.ToolEntryFromDescriptor(auth.NewAuthResumeDescriptor(nil, nil)))
 
 	for _, q := range []string{"sso", "oob", "resume", "sign-in", "out-of-band", "auth"} {
 		summaries := catalog.Search(q, "", 0)

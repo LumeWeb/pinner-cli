@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/a-h/templ"
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.uber.org/zap"
 )
 
@@ -28,7 +29,7 @@ import (
 // behavior. Works over both stdio and HTTP/tunnel.
 type OOBRestore struct {
 	runner RestoreRunner
-	core   handoffEndpoint
+	core   handoff.Endpoint
 
 	// mu guards outcomes. outcomes records the terminal outcome of each
 	// restore attempt so the resume continuation can distinguish a succeeded
@@ -64,7 +65,7 @@ func NewOOBRestore(runner RestoreRunner, ttl time.Duration) *OOBRestore {
 		ttl = DefaultRestoreTTL
 	}
 	o := &OOBRestore{runner: runner, outcomes: map[string]*restoreOutcome{}}
-	o.core = *newHandoff("restore", o, ttl)
+	o.core = *handoff.New("restore", o, ttl)
 	return o
 }
 
@@ -81,15 +82,15 @@ func (o *OOBRestore) WithLogger(l *zap.Logger) *OOBRestore {
 }
 
 // registerHandlers mounts the restore page + POST routes on the shared mux.
-func (o *OOBRestore) registerHandlers(mux *http.ServeMux) {
-	o.core.registerHandlers(mux)
+func (o *OOBRestore) RegisterHandlers(mux *http.ServeMux) {
+	o.core.RegisterHandlers(mux)
 }
 
 // Register mints a one-time, expiring URL that completes a restore for the
 // given profile. Non-blocking: the restore runs only once the human submits
 // the form.
 func (o *OOBRestore) Register(profile string) string {
-	return o.core.mint(&restorePayload{profile: profile})
+	return o.core.Mint(&restorePayload{profile: profile})
 }
 
 // Stop shuts down the loopback listener, if any.
@@ -99,14 +100,14 @@ func (o *OOBRestore) Stop(ctx context.Context) {
 
 // consumeOnGET reports that a GET does NOT consume the restore token (it is
 // collected on POST; the form must be viewable/reloadable before submit).
-func (o *OOBRestore) consumeOnGET() bool { return false }
+func (o *OOBRestore) ConsumeOnGET() bool { return false }
 
 // renderGET implements handoffHandler: show the one-time mnemonic entry form.
-func (o *OOBRestore) renderGET(w http.ResponseWriter, r *http.Request, token string, item *handoffItem) {
-	payload, _ := item.payload.(*restorePayload)
+func (o *OOBRestore) RenderGET(w http.ResponseWriter, r *http.Request, token string, item *handoff.Item) {
+	Payload, _ := item.Payload.(*restorePayload)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	_ = restoreVaultPage(payload.profile, token).Render(r.Context(), w)
+	_ = restoreVaultPage(Payload.profile, token).Render(r.Context(), w)
 }
 
 // consumePOST implements handoffHandler: run the restore with the submitted
@@ -116,8 +117,8 @@ func (o *OOBRestore) renderGET(w http.ResponseWriter, r *http.Request, token str
 // incrementally, and RunRestore's onApproval callback writes + flushes the
 // approval URL to this page *before* WaitAndRegister blocks. The human sees the
 // approval link immediately, approves, and the handler then renders the result.
-func (o *OOBRestore) consumePOST(w http.ResponseWriter, r *http.Request, token string, item *handoffItem) (consumed bool) {
-	payload, _ := item.payload.(*restorePayload)
+func (o *OOBRestore) ConsumePOST(w http.ResponseWriter, r *http.Request, token string, item *handoff.Item) (consumed bool) {
+	Payload, _ := item.Payload.(*restorePayload)
 
 	// Validation failures (missing runner, empty mnemonic) do NOT consume the
 	// token: no restore ran, so the one-time URL stays valid for the human to
@@ -132,7 +133,7 @@ func (o *OOBRestore) consumePOST(w http.ResponseWriter, r *http.Request, token s
 		return
 	}
 
-	profile := payload.profile
+	profile := Payload.profile
 	mnemonic := strings.TrimSpace(r.FormValue("mnemonic"))
 	if mnemonic == "" {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -148,7 +149,7 @@ func (o *OOBRestore) consumePOST(w http.ResponseWriter, r *http.Request, token s
 	// here removes it immediately (under the store mutex) so a concurrent or
 	// repeated POST during the approval window is rejected instead of issuing a
 	// second browser approval or registering a second device for the same seed.
-	if !o.core.claim(token) {
+	if !o.core.Claim(token) {
 		w.Header().Set("Cache-Control", "no-store")
 		http.Error(w, "A restore is already in progress or this link was already used.", http.StatusGone)
 		return
@@ -222,11 +223,11 @@ func (o *OOBRestore) consumePOST(w http.ResponseWriter, r *http.Request, token s
 	return
 }
 
-func (o *OOBRestore) count() int {
-	return o.core.count()
+func (o *OOBRestore) Count() int {
+	return o.core.Count()
 }
 
 // setNow overrides the clock used for expiry (test seam).
-func (o *OOBRestore) setNow(f func() time.Time) {
-	o.core.setNow(f)
+func (o *OOBRestore) SetNow(f func() time.Time) {
+	o.core.SetNow(f)
 }

@@ -1,4 +1,4 @@
-package mcp
+package auth
 
 import (
 	"go.lumeweb.com/pinner-cli/internal/mcpapp"
@@ -21,11 +21,11 @@ import (
 // AuthSSOAppURI is the ui:// resource serving the "Sign In" app.
 const AuthSSOAppURI = "ui://auth/sso.html"
 
-// renderAuthSSOAppHTML renders the complete "Sign In" app document
+// RenderAuthSSOAppHTML renders the complete "Sign In" app document
 // (ui://auth/sso.html). The shared shell (doctype/<head>/inline theme) and the
 // ESM module (shared ext-apps bootstrap + SSO logic) come from
 // mcpapp.RenderMcpAppDoc; only the visible body form is authored in templ.
-func renderAuthSSOAppHTML() string {
+func RenderAuthSSOAppHTML() string {
 	return mcpapp.RenderMcpAppDoc("Sign In", mcpapp.AuthSSOAppForm(), mcpapp.AppModule("auth-sso"))
 }
 
@@ -52,13 +52,13 @@ func authSSOStatusDescriptor(reg *handoff.HandoffRegistry, handles *session.Asyn
 // auth_sso_status polling helper. oob/handles/reg may be nil in a transport
 // without a browser login; the app/tools still register and return a structured
 // not-configured hand-off when invoked.
-func RegisterAuthSSOApp(srv *sdk.Server, catalog *ToolCatalog, reg *handoff.HandoffRegistry, handles *session.AsyncHandleStore) error {
+func RegisterAuthSSOApp(srv *sdk.Server, catalog apps.AppCatalog, reg *handoff.HandoffRegistry, handles *session.AsyncHandleStore) error {
 	return apps.RegisterAppView(srv, catalog, apps.AppView{
 		URI:           AuthSSOAppURI,
 		Name:          "auth-sso",
 		Title:         "Sign In",
 		Description:   "Complete an out-of-band sign-in (SSO approval).",
-		HTML:          renderAuthSSOAppHTML(),
+		HTML:          RenderAuthSSOAppHTML(),
 		PrefersBorder: true,
 		AttachTo:      []string{"auth_sso"},
 		Helpers:       []model.ToolDescriptor{authSSOStatusDescriptor(reg, handles)},

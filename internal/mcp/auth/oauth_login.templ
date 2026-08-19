@@ -1,4 +1,6 @@
-package mcp
+package auth
+
+import "go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 
 // oauthAuthorizeData carries every field needed to render the OAuth
 // authorization page, including hidden form echoes that must round-trip on
@@ -16,7 +18,7 @@ type oauthAuthorizeData struct {
 }
 
 templ oauthLoginPage(data oauthAuthorizeData) {
-	@brandLayout("Authorize pinner MCP access") {
+	@handoff.BrandLayout("Authorize pinner MCP access") {
 		<div class="brand-card">
 			<h1 class="brand-card-title">Authorize pinner MCP access</h1>
 			<p class="brand-card-text">

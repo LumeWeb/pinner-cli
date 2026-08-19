@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"go.lumeweb.com/pinner-cli/internal/mcp/auth"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
@@ -18,7 +19,7 @@ import (
 // the OOB side) rather than a misleading "still pending". It also verifies the
 // continuation's own cleanup drops the registry entry on the done path.
 func TestSSOContinuationNoPendingIsDone(t *testing.T) {
-	oob := newOOBForTest(t)
+	oob := newHubOOBForTest(t)
 	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 	reg := handoff.NewHandoffRegistry()
 
@@ -26,7 +27,7 @@ func TestSSOContinuationNoPendingIsDone(t *testing.T) {
 	// exact state a second concurrent resume observes after the first consumed
 	// the request. It must resolve done, not "still pending".
 	handle := handles.Create("pending", map[string]any{"email": "agent@example.com"})
-	cont := ssoResumeContinuation(oob, handles, reg)
+	cont := auth.SSOResumeContinuation(oob, handles, reg)
 
 	res, err := cont(context.Background(), handle, map[string]any{"email": "agent@example.com"})
 	require.NoError(t, err)
@@ -46,7 +47,7 @@ func TestSSOContinuationNoPendingIsDone(t *testing.T) {
 // tools are distinguishable in a host UI.
 func TestResumeToolsHaveDistinctFlowTitles(t *testing.T) {
 	descs := map[string]string{
-		"auth_resume":          NewAuthResumeDescriptor(nil, nil).Title,
+		"auth_resume":          auth.NewAuthResumeDescriptor(nil, nil).Title,
 		"vault_create_resume":  NewVaultCreateResumeDescriptor(nil, nil).Title,
 		"vault_restore_resume": NewVaultRestoreResumeDescriptor(nil, nil).Title,
 	}

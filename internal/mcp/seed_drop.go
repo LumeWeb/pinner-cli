@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"go.lumeweb.com/pinner-cli/internal/core/vault"
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.uber.org/zap"
 )
 
@@ -21,13 +22,13 @@ import (
 // invariant that the plaintext master mnemonic never crosses the MCP layer.
 //
 // SeedDrop works over BOTH transports: over HTTP/tunnel it mounts /seed/ on the
-// shared transport mux via registerHandlers (baseURL set); over stdio there is
+// shared transport mux via RegisterHandlers (baseURL set); over stdio there is
 // no transport server, so Start() spins up a loopback listener on a random
 // port (the same pattern OutOfBandLogin uses) and Register falls back to the
 // loopback URL. Either way the seed never transits the MCP/LLM channel, which
 // is the whole point.
 type SeedDrop struct {
-	core handoffEndpoint
+	core handoff.Endpoint
 }
 
 // seedPayload is the per-token context for a seed drop: the profile it belongs
@@ -46,7 +47,7 @@ func NewSeedDrop(ttl time.Duration) *SeedDrop {
 		ttl = DefaultSeedDropTTL
 	}
 	s := &SeedDrop{}
-	s.core = *newHandoff("seed", s, ttl)
+	s.core = *handoff.New("seed", s, ttl)
 	return s
 }
 
@@ -69,7 +70,7 @@ func (s *SeedDrop) WithLogger(l *zap.Logger) *SeedDrop {
 // CSRF-guarded confirmation form; only the explicit human confirmation POST
 // consumes the token and destroys the at-rest recovery copy.
 func (s *SeedDrop) Register(profile, mnemonic string) string {
-	return s.core.mint(&seedPayload{profile: profile, mnemonic: mnemonic})
+	return s.core.Mint(&seedPayload{profile: profile, mnemonic: mnemonic})
 }
 
 // Stop shuts down the loopback listener, if any.
@@ -78,8 +79,8 @@ func (s *SeedDrop) Stop(ctx context.Context) {
 }
 
 // registerHandlers mounts the GET-only seed retrieval route on the shared mux.
-func (s *SeedDrop) registerHandlers(mux *http.ServeMux) {
-	s.core.registerHandlers(mux)
+func (s *SeedDrop) RegisterHandlers(mux *http.ServeMux) {
+	s.core.RegisterHandlers(mux)
 }
 
 // consumeOnGET reports that a GET does NOT consume the seed drop. GET only
@@ -87,7 +88,7 @@ func (s *SeedDrop) registerHandlers(mux *http.ServeMux) {
 // link-expander must not consume the token or destroy the at-rest recovery
 // copy, or the human would be stranded with a 410 and a dead vault. Only the
 // explicit confirmation POST consumes it.
-func (s *SeedDrop) consumeOnGET() bool { return false }
+func (s *SeedDrop) ConsumeOnGET() bool { return false }
 
 // renderGET implements handoffHandler: show the seed plus a confirmation form.
 //
@@ -99,13 +100,13 @@ func (s *SeedDrop) consumeOnGET() bool { return false }
 // have stored it" — the confirmation POST is what marks the seed retrieved and
 // deletes the only at-rest recovery copy. If the transport fails or the human
 // just reopens the URL, GET re-renders and they can still see the seed.
-func (s *SeedDrop) renderGET(w http.ResponseWriter, r *http.Request, token string, item *handoffItem) {
-	payload, _ := item.payload.(*seedPayload)
+func (s *SeedDrop) RenderGET(w http.ResponseWriter, r *http.Request, token string, item *handoff.Item) {
+	Payload, _ := item.Payload.(*seedPayload)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 
-	action := "/" + s.core.prefix + "/" + token
-	_ = seedDropPage(payload.profile, payload.mnemonic, action).Render(r.Context(), w)
+	action := "/" + s.core.Prefix() + "/" + token
+	_ = seedDropPage(Payload.profile, Payload.mnemonic, action).Render(r.Context(), w)
 }
 
 // consumePOST implements handoffHandler: the human's explicit confirmation
@@ -113,21 +114,21 @@ func (s *SeedDrop) renderGET(w http.ResponseWriter, r *http.Request, token strin
 // consumed AND the at-rest recovery copy is destroyed — the destructive action
 // is gated behind the CSRF origin check in handle() and a deliberate human
 // click, never a fire-and-forget GET.
-func (s *SeedDrop) consumePOST(w http.ResponseWriter, r *http.Request, token string, item *handoffItem) bool {
-	payload, _ := item.payload.(*seedPayload)
+func (s *SeedDrop) ConsumePOST(w http.ResponseWriter, r *http.Request, token string, item *handoff.Item) bool {
+	Payload, _ := item.Payload.(*seedPayload)
 
 	// Only on explicit human confirmation do we destroy the at-rest recovery
 	// copy. Branch on whether the copy is actually gone — the security-relevant
 	// fact. A marker-clear bookkeeping error (gone==true, err!=nil) must not be
 	// reported as a removal failure.
-	gone, err := vault.NewProvisioner().MarkSeedRetrieved(payload.profile)
+	gone, err := vault.NewProvisioner().MarkSeedRetrieved(Payload.profile)
 	if !gone {
 		// The at-rest copy could not be removed. Report this truthfully: telling
 		// the human it was removed while the plaintext mnemonic lingers on disk
 		// would leave the vault's only recovery credential silently exposed.
 		// Keep the token live so they can retry (and an operator can investigate)
 		// rather than consuming it and stranding them with no way back.
-		s.core.logf().Error("failed to remove at-rest recovery copy", zap.String("profile", payload.profile), zap.Error(err))
+		s.core.Logf().Error("failed to remove at-rest recovery copy", zap.String("profile", Payload.profile), zap.Error(err))
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -136,9 +137,9 @@ func (s *SeedDrop) consumePOST(w http.ResponseWriter, r *http.Request, token str
 	}
 	if err != nil {
 		// The copy is gone; only the KeepSeed marker-clear failed to persist.
-		s.core.logf().Error("seed removed but keep-seed marker-clear failed", zap.String("profile", payload.profile), zap.Error(err))
+		s.core.Logf().Error("seed removed but keep-seed marker-clear failed", zap.String("profile", Payload.profile), zap.Error(err))
 	}
-	s.core.logf().Info("seed drop confirmed; at-rest recovery copy removed", zap.String("profile", payload.profile))
+	s.core.Logf().Info("seed drop confirmed; at-rest recovery copy removed", zap.String("profile", Payload.profile))
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
@@ -147,11 +148,11 @@ func (s *SeedDrop) consumePOST(w http.ResponseWriter, r *http.Request, token str
 }
 
 // count returns the number of currently registered, unexpired drops.
-func (s *SeedDrop) count() int {
-	return s.core.count()
+func (s *SeedDrop) Count() int {
+	return s.core.Count()
 }
 
 // setNow overrides the clock used for expiry (test seam).
-func (s *SeedDrop) setNow(f func() time.Time) {
-	s.core.setNow(f)
+func (s *SeedDrop) SetNow(f func() time.Time) {
+	s.core.SetNow(f)
 }

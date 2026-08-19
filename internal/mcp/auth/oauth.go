@@ -1,4 +1,4 @@
-package mcp
+package auth
 
 import (
 	"context"
@@ -20,7 +20,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// oauthServer is a deliberately minimal, self-contained OAuth 2.1-shaped
+// OAuthServer is a deliberately minimal, self-contained OAuth 2.1-shaped
 // authorization server for the MCP HTTP transport. It exists so MCP clients
 // that REQUIRE an OAuth handshake (ChatGPT, Claude.ai, Microsoft Copilot,
 // Google Vertex) can discover and complete an authorization-code flow without
@@ -34,11 +34,11 @@ import (
 // them). Authorization codes and short-lived access tokens remain in memory.
 // The authorization code flow enforces S256 PKCE and RFC 8707 resource binding;
 // the shared secret remains the only user credential.
-type oauthServer struct {
+type OAuthServer struct {
 	mu      sync.Mutex
 	secret  []byte
-	issuer  string
-	baseURL string
+	Issuer  string
+	BaseURL string
 
 	store *oauthstore.Store
 
@@ -73,11 +73,11 @@ type authorizationCode struct {
 	expiry              time.Time
 }
 
-func newOAuthServer(secret, baseURL string, store *oauthstore.Store) *oauthServer {
-	o := &oauthServer{
+func NewOAuthServer(secret, BaseURL string, store *oauthstore.Store) *OAuthServer {
+	o := &OAuthServer{
 		secret:   []byte(secret),
-		issuer:   baseURL,
-		baseURL:  baseURL,
+		Issuer:   BaseURL,
+		BaseURL:  BaseURL,
 		store:    store,
 		clients:  make(map[string]oauthClient),
 		codes:    make(map[string]authorizationCode),
@@ -105,7 +105,7 @@ func newOAuthServer(secret, baseURL string, store *oauthstore.Store) *oauthServe
 
 // WithLogger sets the zap logger the OAuth server uses for authorization
 // events. It defaults to the shared package logger.
-func (o *oauthServer) WithLogger(l *zap.Logger) *oauthServer {
+func (o *OAuthServer) WithLogger(l *zap.Logger) *OAuthServer {
 	if l != nil {
 		o.logger = l
 	}
@@ -113,7 +113,7 @@ func (o *oauthServer) WithLogger(l *zap.Logger) *oauthServer {
 }
 
 // logf returns the OAuth server's logger, falling back to the package logger.
-func (o *oauthServer) logf() *zap.Logger {
+func (o *OAuthServer) logf() *zap.Logger {
 	if o.logger != nil {
 		return o.logger
 	}
@@ -122,7 +122,7 @@ func (o *oauthServer) logf() *zap.Logger {
 
 // Stop terminates the background reaper and closes the durable store. It is
 // safe to call multiple times.
-func (o *oauthServer) Stop() {
+func (o *OAuthServer) Stop() {
 	o.closeOnce.Do(func() {
 		close(o.done)
 		if o.store != nil {
@@ -132,7 +132,7 @@ func (o *oauthServer) Stop() {
 }
 
 // sweep periodically drops expired tokens and codes.
-func (o *oauthServer) sweep() {
+func (o *OAuthServer) sweep() {
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
 	for {
@@ -147,7 +147,7 @@ func (o *oauthServer) sweep() {
 
 // reapLocked removes expired in-memory access tokens and codes, and expired
 // durable refresh tokens/clients via the store. Caller must hold o.mu.
-func (o *oauthServer) reapLocked() {
+func (o *OAuthServer) reapLocked() {
 	now := time.Now()
 	for tok, exp := range o.tokens {
 		if now.After(exp) {
@@ -166,12 +166,12 @@ func (o *oauthServer) reapLocked() {
 
 // asMetadataHandler serves the OAuth 2.0 Authorization Server Metadata
 // (RFC 8414) so clients can find the authorize and token endpoints.
-func (o *oauthServer) asMetadataHandler(w http.ResponseWriter, r *http.Request) {
+func (o *OAuthServer) AsMetadataHandler(w http.ResponseWriter, r *http.Request) {
 	doc := map[string]any{
-		"issuer":                                o.issuer,
-		"authorization_endpoint":                o.baseURL + "/oauth/authorize",
-		"token_endpoint":                        o.baseURL + "/oauth/token",
-		"registration_endpoint":                 o.baseURL + "/oauth/register",
+		"issuer":                                o.Issuer,
+		"authorization_endpoint":                o.BaseURL + "/oauth/authorize",
+		"token_endpoint":                        o.BaseURL + "/oauth/token",
+		"registration_endpoint":                 o.BaseURL + "/oauth/register",
 		"response_types_supported":              []string{"code"},
 		"grant_types_supported":                 []string{"authorization_code", "refresh_token"},
 		"token_endpoint_auth_methods_supported": []string{"none"},
@@ -184,11 +184,11 @@ func (o *oauthServer) asMetadataHandler(w http.ResponseWriter, r *http.Request) 
 
 // protectedResourceHandler serves the OAuth 2.0 Protected Resource Metadata
 // (RFC 9728), pointing clients at this server's authorization server.
-func (o *oauthServer) protectedResourceHandler(mcpPath string) http.HandlerFunc {
+func (o *OAuthServer) ProtectedResourceHandler(mcpPath string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		doc := map[string]any{
-			"resource":                 o.baseURL + mcpPath,
-			"authorization_servers":    []string{o.issuer},
+			"resource":                 o.BaseURL + mcpPath,
+			"authorization_servers":    []string{o.Issuer},
 			"bearer_methods_supported": []string{"header"},
 			"scopes_supported":         []string{},
 		}
@@ -197,7 +197,7 @@ func (o *oauthServer) protectedResourceHandler(mcpPath string) http.HandlerFunc 
 }
 
 // authorizeGET renders the login page.
-func (o *oauthServer) authorizeGET(w http.ResponseWriter, r *http.Request) {
+func (o *OAuthServer) AuthorizeGET(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	if err := o.validateAuthorizeRequest(q); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -205,7 +205,7 @@ func (o *oauthServer) authorizeGET(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	err := oauthLoginPage(oauthAuthorizeData{
-		Action:              o.baseURL + "/oauth/authorize",
+		Action:              o.BaseURL + "/oauth/authorize",
 		ResponseType:        q.Get("response_type"),
 		ClientID:            q.Get("client_id"),
 		RedirectURI:         q.Get("redirect_uri"),
@@ -221,7 +221,7 @@ func (o *oauthServer) authorizeGET(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (o *oauthServer) validateAuthorizeRequest(q url.Values) error {
+func (o *OAuthServer) validateAuthorizeRequest(q url.Values) error {
 	if q.Get("response_type") != "code" {
 		return fmt.Errorf("response_type must be code")
 	}
@@ -254,7 +254,7 @@ func (o *oauthServer) validateAuthorizeRequest(q url.Values) error {
 	if !base64URLChars(q.Get("code_challenge")) {
 		return fmt.Errorf("code_challenge must be base64url (RFC 7636)")
 	}
-	if q.Get("resource") != o.baseURL+"/mcp" {
+	if q.Get("resource") != o.BaseURL+"/mcp" {
 		return fmt.Errorf("invalid resource")
 	}
 	return nil
@@ -289,7 +289,7 @@ func contains(values []string, value string) bool {
 	return false
 }
 
-func (o *oauthServer) registerHandler(w http.ResponseWriter, r *http.Request) {
+func (o *OAuthServer) RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -337,7 +337,7 @@ func (o *oauthServer) registerHandler(w http.ResponseWriter, r *http.Request) {
 
 // authorizePOST verifies the secret-as-password and issues an authorization
 // code, then redirects the client to its redirect_uri.
-func (o *oauthServer) authorizePOST(w http.ResponseWriter, r *http.Request) {
+func (o *OAuthServer) AuthorizePOST(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "bad form", http.StatusBadRequest)
 		return
@@ -351,7 +351,7 @@ func (o *oauthServer) authorizePOST(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusUnauthorized)
 		_ = oauthLoginPage(oauthAuthorizeData{
-			Action:              o.baseURL + "/oauth/authorize",
+			Action:              o.BaseURL + "/oauth/authorize",
 			ResponseType:        r.PostFormValue("response_type"),
 			ClientID:            r.PostFormValue("client_id"),
 			RedirectURI:         r.PostFormValue("redirect_uri"),
@@ -425,7 +425,7 @@ func allowedClientRedirect(redirectURI string) bool {
 }
 
 // tokenHandler exchanges an authorization code or refresh token for tokens.
-func (o *oauthServer) tokenHandler(w http.ResponseWriter, r *http.Request) {
+func (o *OAuthServer) TokenHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -447,7 +447,7 @@ func (o *oauthServer) tokenHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (o *oauthServer) exchangeCode(w http.ResponseWriter, r *http.Request) error {
+func (o *OAuthServer) exchangeCode(w http.ResponseWriter, r *http.Request) error {
 	code := r.PostFormValue("code")
 	clientID := r.PostFormValue("client_id")
 	redirectURI := r.PostFormValue("redirect_uri")
@@ -478,13 +478,13 @@ func (o *oauthServer) exchangeCode(w http.ResponseWriter, r *http.Request) error
 	return nil
 }
 
-func (o *oauthServer) exchangeRefreshToken(w http.ResponseWriter, r *http.Request) {
+func (o *OAuthServer) exchangeRefreshToken(w http.ResponseWriter, r *http.Request) {
 	refresh := r.PostFormValue("refresh_token")
 	clientID := r.PostFormValue("client_id")
 	resource := r.PostFormValue("resource")
 	// Without a durable store there is no way to rotate or validate a refresh
 	// token, so fall back to a controlled error rather than nil-deref panicking
-	// (newOAuthServer permits a nil store).
+	// (NewOAuthServer permits a nil store).
 	if o.store == nil {
 		writeInvalidGrant(w)
 		return
@@ -516,7 +516,7 @@ func writeInvalidGrant(w http.ResponseWriter) {
 	writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_grant"})
 }
 
-func (o *oauthServer) newTokens() tokenPair {
+func (o *OAuthServer) newTokens() tokenPair {
 	return tokenPair{access: newToken(32), refresh: newToken(32)}
 }
 
@@ -525,7 +525,7 @@ type tokenPair struct {
 	refresh string
 }
 
-func (o *oauthServer) storeTokens(pair tokenPair, clientID, resource string) {
+func (o *OAuthServer) storeTokens(pair tokenPair, clientID, resource string) {
 	now := time.Now()
 	o.mu.Lock()
 	o.tokens[pair.access] = now.Add(o.tokenTTL)
@@ -536,7 +536,7 @@ func (o *oauthServer) storeTokens(pair tokenPair, clientID, resource string) {
 }
 
 func issueTokens(w http.ResponseWriter, pair tokenPair) {
-	// Storage is performed by the caller's oauthServer before this response.
+	// Storage is performed by the caller's OAuthServer before this response.
 	writeJSON(w, http.StatusOK, map[string]any{
 		"access_token":  pair.access,
 		"token_type":    "Bearer",
@@ -550,7 +550,7 @@ func verifyPKCE(verifier, challenge string) bool {
 	return subtle.ConstantTimeCompare([]byte(base64.RawURLEncoding.EncodeToString(sum[:])), []byte(challenge)) == 1
 }
 
-func (o *oauthServer) newCode(entry authorizationCode) string {
+func (o *OAuthServer) newCode(entry authorizationCode) string {
 	code := newToken(24)
 	o.mu.Lock()
 	o.codes[code] = entry
@@ -564,12 +564,12 @@ func (o *oauthServer) newCode(entry authorizationCode) string {
 // expired entries is deferred to the periodic sweep (see sweep/reapLocked),
 // so the per-request cost stays O(1). The mutex is still held for the single
 // lookup (removing it would race with writers in tokenHandler/newCode/sweep).
-func (o *oauthServer) validToken(tok string) bool {
+func (o *OAuthServer) validToken(tok string) bool {
 	_, ok := o.tokenExpiry(tok)
 	return ok
 }
 
-func (o *oauthServer) tokenExpiry(tok string) (time.Time, bool) {
+func (o *OAuthServer) tokenExpiry(tok string) (time.Time, bool) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	exp, ok := o.tokens[tok]
@@ -580,7 +580,7 @@ func (o *oauthServer) tokenExpiry(tok string) (time.Time, bool) {
 	return exp, ok
 }
 
-func (o *oauthServer) officialMiddleware(next http.Handler) http.Handler {
+func (o *OAuthServer) OfficialMiddleware(next http.Handler) http.Handler {
 	verifier := func(_ context.Context, token string, _ *http.Request) (*auth.TokenInfo, error) {
 		exp, ok := o.tokenExpiry(token)
 		if !ok {
@@ -589,11 +589,11 @@ func (o *oauthServer) officialMiddleware(next http.Handler) http.Handler {
 		return &auth.TokenInfo{Expiration: exp, UserID: tokenPrincipal(token)}, nil
 	}
 	return auth.RequireBearerToken(verifier, &auth.RequireBearerTokenOptions{
-		ResourceMetadataURL: strings.TrimRight(o.baseURL, "/") + "/.well-known/oauth-protected-resource",
+		ResourceMetadataURL: strings.TrimRight(o.BaseURL, "/") + "/.well-known/oauth-protected-resource",
 	})(next)
 }
 
-func staticBearerMiddleware(secret string, next http.Handler) http.Handler {
+func StaticBearerMiddleware(secret string, next http.Handler) http.Handler {
 	verifier := func(_ context.Context, token string, _ *http.Request) (*auth.TokenInfo, error) {
 		if token == "" || subtle.ConstantTimeCompare([]byte(token), []byte(secret)) != 1 {
 			return nil, auth.ErrInvalidToken
@@ -615,7 +615,7 @@ func tokenPrincipal(token string) string {
 // validation. Unauthenticated and invalid requests get a 401 with an RFC 9728
 // WWW-Authenticate challenge pointing at the protected-resource metadata, so
 // OAuth-capable MCP clients can discover and complete the flow.
-func (o *oauthServer) protectMCP(mcpPath string, next http.Handler) http.Handler {
+func (o *OAuthServer) protectMCP(mcpPath string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := bearerToken(r)
 		if token != "" && o.validToken(token) {
@@ -626,7 +626,7 @@ func (o *oauthServer) protectMCP(mcpPath string, next http.Handler) http.Handler
 			zap.String("path", r.URL.Path), zap.String("remote", r.RemoteAddr), zap.Bool("presented_token", token != ""))
 		deny(w, fmt.Sprintf(
 			`Bearer resource_metadata="%s/.well-known/oauth-protected-resource", error="invalid_token", error_description="OAuth authorization required"`,
-			o.baseURL))
+			o.BaseURL))
 	})
 }
 

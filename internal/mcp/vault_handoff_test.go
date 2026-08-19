@@ -237,7 +237,7 @@ func TestVaultRestoreResumePendingDuringApproval(t *testing.T) {
 	oob := NewOOBRestore(&fakeRestoreRunner{profile: "default", started: started, release: release}, time.Minute)
 	oob.SetBaseURL("http://127.0.0.1:9999")
 	mux := http.NewServeMux()
-	oob.registerHandlers(mux)
+	oob.RegisterHandlers(mux)
 
 	url := oob.Register("default")
 	token := vaultTokenFromURL(url)
@@ -569,7 +569,7 @@ func TestVaultCreateResumeExpiredTokenSteersRestart(t *testing.T) {
 	requireHandoff(t, r)
 
 	// Advance the clock past the 1m TTL so the token is handoffExpired.
-	oob.setNow(func() time.Time { return time.Now().Add(2 * time.Minute) })
+	oob.SetNow(func() time.Time { return time.Now().Add(2 * time.Minute) })
 
 	// The resume must NOT report done — it must steer to a fresh vault create.
 	r, err = resume.Handler(context.Background(), model.ToolRequest{
@@ -618,7 +618,7 @@ func TestVaultRestoreResumeExpiredTokenSteersRestart(t *testing.T) {
 	requireHandoff(t, r)
 
 	// Advance the clock past the restore TTL so the token is handoffExpired.
-	oob.setNow(func() time.Time { return time.Now().Add(2 * time.Hour) })
+	oob.SetNow(func() time.Time { return time.Now().Add(2 * time.Hour) })
 
 	r, err = resume.Handler(context.Background(), model.ToolRequest{
 		Name: vaultRestoreResumeToolName, Arguments: map[string]any{"handle": handle},
@@ -632,7 +632,7 @@ func TestVaultRestoreResumeExpiredTokenSteersRestart(t *testing.T) {
 
 // TestVaultResumeAbsentTokenSteersRestart covers the Kody edge: a token that
 // no longer resolves — because it never existed, or because its spent
-// tombstone was evicted by pruneSpentLocked at maxSpentTombstones — must NOT
+// tombstone was evicted by pruneSpentLocked at handoff.MaxSpentTombstones — must NOT
 // leave the agent pending forever (done=false, expired=false, not pending).
 // It must terminate the continuation and steer to a fresh start, matching how
 // expired and consumed tokens are handled.

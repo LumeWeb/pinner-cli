@@ -118,3 +118,34 @@ func TestSetupHandlerRendersSteps(t *testing.T) {
 	assert.Equal(t, AccountStatusURI, embedded[0])
 	assert.Equal(t, AccountStatusURI, embedded[len(embedded)-1])
 }
+
+// TestOOBSetupPromptDoesNotRequestCredentials verifies the setup auth prompt no
+// longer instructs the agent to collect a password/OTP: sign_in requests only an
+// email and the handler relays the out-of-band URL for browser completion, so
+// secrets never transit the MCP/LLM channel.
+func TestOOBSetupPromptDoesNotRequestCredentials(t *testing.T) {
+	// The overview rules now live in the embedded setup.tmpl template;
+	// render it the same way setupHandler does.
+	out := renderPromptTemplate("setup_overview", sitePromptData{})
+	require.Contains(t, out, "sign_in")
+	require.Contains(t, out, "out-of-band login URL")
+	require.Contains(t, out, "only the email")
+	// The prompt must no longer instruct collection of a password as a sign_in
+	// input field or ask for one from the user.
+	assert.NotContains(t, out, "ask for email, password")
+
+	// The setup_step_auth template carries the actual per-step collection
+	// instruction (what fields the agent asks for when sign_in is chosen).
+	// Guard it directly so a silent deletion/reintroduction of agent-side
+	// password/OTP collection fails this test rather than leaking a secret
+	// into the MCP/LLM channel.
+	authStep := renderPromptTemplate("setup_step_auth", sitePromptData{})
+	require.Contains(t, authStep, "out-of-band login URL", "sign_in must relay the browser URL")
+	// The credential-collection prohibition must remain present.
+	require.Contains(t, authStep, "NEVER ask for a password", "password collection must stay forbidden")
+	require.Contains(t, authStep, "never sent to you", "secrets must stay out of the MCP/LLM channel")
+	// The auth step's input schema must never carry a password/OTP field
+	// (no JSON key asking the agent to supply one).
+	assert.NotContains(t, authStep, `"password"`, "sign_in schema must not accept an agent-supplied password")
+	assert.NotContains(t, authStep, `"otp_code"`, "sign_in schema must not accept an agent-supplied OTP")
+}

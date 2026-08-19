@@ -1,17 +1,17 @@
-package mcp
+package handoff
 
-templ brandLayout(title string) {
+templ BrandLayout(title string) {
 	<!DOCTYPE html>
 	<html lang="en">
 		<head>
 			<meta charset="utf-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
 			<title>{ title } · Pinner</title>
-			<link rel="stylesheet" href={ brandCSSURL() }/>
+			<link rel="stylesheet" href={ BrandCSSURL() }/>
 		</head>
 		<body class="brand-body">
 			<a class="brand-mark" href="https://pinner.xyz" target="_blank" rel="noopener" aria-label="Pinner — pinner.xyz">
-				<img class="brand-logo" src={ brandLogoURL() } alt="Pinner logo" width={ 36 } height={ 36 }/>
+				<img class="brand-logo" src={ BrandLogoURL() } alt="Pinner logo" width={ 36 } height={ 36 }/>
 			</a>
 			{ children... }
 			<div class="brand-foot">This server runs tools in-process under your PINNER account.</div>

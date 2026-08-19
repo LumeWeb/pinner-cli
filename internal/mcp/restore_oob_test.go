@@ -70,7 +70,7 @@ func buildRestoreServer() (*OOBRestore, *http.ServeMux, *fakeRestoreRunner) {
 	o := NewOOBRestore(runner, time.Minute)
 	o.SetBaseURL("http://127.0.0.1:9999")
 	mux := http.NewServeMux()
-	o.registerHandlers(mux)
+	o.RegisterHandlers(mux)
 	return o, mux, runner
 }
 
@@ -150,7 +150,7 @@ func TestOOBRestoreExpiry(t *testing.T) {
 	url := o.Register("default")
 
 	// Advance past expiry.
-	o.setNow(func() time.Time { return time.Now().Add(2 * time.Minute) })
+	o.SetNow(func() time.Time { return time.Now().Add(2 * time.Minute) })
 
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, url, nil))
@@ -303,7 +303,7 @@ func TestOOBRestoreConcurrentPOSTRejectedDuringApproval(t *testing.T) {
 	o := NewOOBRestore(runner, time.Minute)
 	o.SetBaseURL("http://127.0.0.1:9999")
 	mux := http.NewServeMux()
-	o.registerHandlers(mux)
+	o.RegisterHandlers(mux)
 	url := o.Register("default")
 
 	// First POST: claims the token and blocks inside RunRestore (the approval
@@ -388,27 +388,27 @@ func TestOOBRestoreConsumePOSTReportsConsumed(t *testing.T) {
 	// Successful restore: claim happens, so consumePOST reports consumed.
 	url := o.Register("default")
 	token := vaultTokenFromURL(url)
-	item, _ := o.core.resolve(token)
+	item, _ := o.core.Resolve(token)
 	require.NotNil(t, item)
 
 	req := httptest.NewRequest("POST", url, strings.NewReader("mnemonic=secret+words"))
 	req.Header.Set("Origin", "http://127.0.0.1:9999")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	assert.True(t, o.consumePOST(httptest.NewRecorder(), req, token, item),
+	assert.True(t, o.ConsumePOST(httptest.NewRecorder(), req, token, item),
 		"a genuine restore attempt must report the token consumed")
 
 	// Validation failure (empty mnemonic): no restore, no claim, so the token
 	// is NOT consumed and a retry stays possible.
 	url2 := o.Register("default")
 	token2 := vaultTokenFromURL(url2)
-	item2, _ := o.core.resolve(token2)
+	item2, _ := o.core.Resolve(token2)
 	require.NotNil(t, item2)
 
 	req2 := httptest.NewRequest("POST", url2, strings.NewReader("mnemonic="))
 	req2.Header.Set("Origin", "http://127.0.0.1:9999")
 	req2.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w2 := httptest.NewRecorder()
-	assert.False(t, o.consumePOST(w2, req2, token2, item2),
+	assert.False(t, o.ConsumePOST(w2, req2, token2, item2),
 		"a validation failure must NOT report the token consumed so it can be retried")
 	assert.Equal(t, http.StatusBadRequest, w2.Code)
 }

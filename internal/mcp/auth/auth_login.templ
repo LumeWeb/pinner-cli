@@ -1,4 +1,6 @@
-package mcp
+package auth
+
+import "go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 
 // authLoginPageData carries the fields needed to render the out-of-band login
 // page for a pending request.
@@ -11,7 +13,7 @@ type authLoginPageData struct {
 }
 
 templ authLoginPage(data authLoginPageData) {
-	@brandLayout("Sign in to Pinner") {
+	@handoff.BrandLayout("Sign in to Pinner") {
 		<div class="brand-card">
 			<h1 class="brand-card-title">Sign in to Pinner</h1>
 			<p class="brand-card-text">
@@ -40,7 +42,7 @@ templ authLoginPage(data authLoginPageData) {
 
 // authSuccessPage confirms an out-of-band login completed.
 templ authSuccessPage() {
-	@brandLayout("Signed in") {
+	@handoff.BrandLayout("Signed in") {
 		<div class="brand-card">
 			<h1 class="brand-card-title">Signed in</h1>
 			<p class="brand-card-text">Authentication complete. You can close this tab and return to your client.</p>

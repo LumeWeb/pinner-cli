@@ -36,10 +36,11 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 
+	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
+	"go.lumeweb.com/pinner-cli/internal/mcp/auth"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
-	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 )
 
 // ToolDelimiter separates command path segments in MCP tool names.
@@ -281,10 +282,10 @@ adapter.`,
 			// must exist before the catalog is built so the vault-create /
 			// vault-restore tool handlers can mint seed/restore URLs.
 			var (
-				oob        *OutOfBandLogin
+				oob        *auth.OutOfBandLogin
 				oobRestore *OOBRestore
 				oobCreate  *OOBCreate
-				accountOOB *OOBAccountChange
+				accountOOB *auth.OOBAccountChange
 				catalog    *ToolCatalog
 				err        error
 				// Wizard deps are hoisted so registerCustomTools can hand them
@@ -306,7 +307,7 @@ adapter.`,
 				oob = wizardS.OutOfBand.WithLogger(log)
 				oobRestore = NewOOBRestore(wizardS.Restore, DefaultRestoreTTL).WithLogger(log)
 				oobCreate = NewOOBCreate(wizardS.Create, seedDrop, DefaultCreateTTL).WithLogger(log)
-				accountOOB = NewOOBAccountChange(wizardS.AuthService, DefaultAccountChangeTTL).WithLogger(log)
+				accountOOB = auth.NewOOBAccountChange(wizardS.AuthService, auth.DefaultAccountChangeTTL).WithLogger(log)
 			}
 
 			// Build the server after resolving the command tree and wiring the
@@ -410,7 +411,7 @@ adapter.`,
 				vaultUpload:      vaultUpload,
 				downloadDrop:     dl,
 				accountOOB:       accountOOB,
-				accountWebAppURL: accountWebAppURL(wizardS.CfgMgr),
+				accountWebAppURL: auth.AccountWebAppURL(wizardS.CfgMgr),
 				resourceFactory:  resourceFactory,
 				opts:             mcpOpts,
 				// Local-path upload tools read arbitrary host paths, so they are
@@ -489,7 +490,7 @@ func mcpHostProtectionDisabled(tunnelActive, httpMode bool, publicURL string) bo
 	return tunnelActive || (httpMode && publicURL != "")
 }
 
-func serveHTTP(ctx context.Context, srv *sdk.Server, cmd *cli.Command, oob *OutOfBandLogin, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate, accountOOB *OOBAccountChange, curlUpload *transfer.Upload, vaultUpload *transfer.VaultHTTPUpload, dl *transfer.Download, cfgMgr config.Manager) error {
+func serveHTTP(ctx context.Context, srv *sdk.Server, cmd *cli.Command, oob *auth.OutOfBandLogin, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate, accountOOB *auth.OOBAccountChange, curlUpload *transfer.Upload, vaultUpload *transfer.VaultHTTPUpload, dl *transfer.Download, cfgMgr config.Manager) error {
 	provider := cmd.String("tunnel")
 	domain := cmd.String("domain")
 	token := cmd.String("token")
@@ -585,7 +586,7 @@ func serveHTTP(ctx context.Context, srv *sdk.Server, cmd *cli.Command, oob *OutO
 	if dl != nil {
 		dl.SetBaseURL(baseURL)
 	}
-	var oauth *oauthServer
+	var oauth *auth.OAuthServer
 	if enableOAuth {
 		if authToken == "" {
 			return fmt.Errorf("--oauth requires --auth-token: the login page authenticates with the shared secret")
@@ -594,7 +595,7 @@ func serveHTTP(ctx context.Context, srv *sdk.Server, cmd *cli.Command, oob *OutO
 		if err != nil {
 			return fmt.Errorf("open oauth state store: %w", err)
 		}
-		oauth = newOAuthServer(authToken, baseURL, store).WithLogger(log)
+		oauth = auth.NewOAuthServer(authToken, baseURL, store).WithLogger(log)
 	}
 
 	// Serve the streamable-HTTP handler over our own http.Server bound to
@@ -606,10 +607,10 @@ func serveHTTP(ctx context.Context, srv *sdk.Server, cmd *cli.Command, oob *OutO
 	switch {
 	case oauth != nil:
 		// OAuth handshake: /mcp only accepts tokens issued through the flow.
-		mcpHandler = oauth.officialMiddleware(mcpHandler)
+		mcpHandler = oauth.OfficialMiddleware(mcpHandler)
 	case authToken != "":
 		// Static bearer: accept the shared secret directly as a Bearer token.
-		mcpHandler = staticBearerMiddleware(authToken, mcpHandler)
+		mcpHandler = auth.StaticBearerMiddleware(authToken, mcpHandler)
 	default:
 		// No secret configured: unauthenticated.
 	}
@@ -618,23 +619,23 @@ func serveHTTP(ctx context.Context, srv *sdk.Server, cmd *cli.Command, oob *OutO
 		mux.HandleFunc("/oauth/authorize", func(w http.ResponseWriter, r *http.Request) {
 			switch r.Method {
 			case http.MethodGet:
-				oauth.authorizeGET(w, r)
+				oauth.AuthorizeGET(w, r)
 			case http.MethodPost:
-				oauth.authorizePOST(w, r)
+				oauth.AuthorizePOST(w, r)
 			default:
 				w.Header().Set("Allow", "GET, POST")
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			}
 		})
-		mux.HandleFunc("/oauth/register", oauth.registerHandler)
-		mux.HandleFunc("/oauth/token", oauth.tokenHandler)
-		mux.HandleFunc("/.well-known/oauth-authorization-server", oauth.asMetadataHandler)
-		mux.HandleFunc("/.well-known/oauth-protected-resource", oauth.protectedResourceHandler("/mcp"))
+		mux.HandleFunc("/oauth/register", oauth.RegisterHandler)
+		mux.HandleFunc("/oauth/token", oauth.TokenHandler)
+		mux.HandleFunc("/.well-known/oauth-authorization-server", oauth.AsMetadataHandler)
+		mux.HandleFunc("/.well-known/oauth-protected-resource", oauth.ProtectedResourceHandler("/mcp"))
 	}
 	// Serve the embedded branded static assets (brand.css) referenced by the
-	// OAuth authorization page and the out-of-band login page. staticAssetHandler
+	// OAuth authorization page and the out-of-band login page. handoff.StaticAssetHandler
 	// strips the /assets/ prefix and sets immutable caching on the hashed asset.
-	mux.Handle("/assets/", staticAssetHandler())
+	mux.Handle("/assets/", handoff.StaticAssetHandler())
 	// Mount the out-of-band login page on the shared transport mux when a
 	// coordinator is wired, so remote users can complete sign-in at the
 	// public/tunnel URL instead of an unreachable loopback address. It is
@@ -643,7 +644,7 @@ func serveHTTP(ctx context.Context, srv *sdk.Server, cmd *cli.Command, oob *OutO
 	// authenticate. Each /login/<id> URL is protected by the unguessable request
 	// id in the path plus the per-request CSRF token embedded in the form.
 	if oob != nil {
-		oob.registerHandlers(mux)
+		oob.RegisterHandlers(mux)
 	}
 	// Mount the one-time seed-drop route on the shared mux so a human can
 	// retrieve a vault recovery seed in a browser at the public/tunnel URL.
@@ -651,19 +652,19 @@ func serveHTTP(ctx context.Context, srv *sdk.Server, cmd *cli.Command, oob *OutO
 	// (the human must open it in a browser); the unguessable /seed/<token> path
 	// is the access control and the drop is single-use + expiring.
 	if seedDrop != nil {
-		seedDrop.registerHandlers(mux)
+		seedDrop.RegisterHandlers(mux)
 	}
 	// Mount the one-time restore route on the shared mux so a human can supply
 	// a recovery seed to the host restore in a browser at the public/tunnel
 	// URL, never through the MCP channel.
 	if oobRestore != nil {
-		oobRestore.registerHandlers(mux)
+		oobRestore.RegisterHandlers(mux)
 	}
 	// Mount the one-time create route on the shared mux so a human can create +
 	// activate a new vault (fresh seed generated) in a browser at the
 	// public/tunnel URL, never through the MCP channel.
 	if oobCreate != nil {
-		oobCreate.registerHandlers(mux)
+		oobCreate.RegisterHandlers(mux)
 	}
 	// Mount the one-time account password-change route on the shared mux so a
 	// remote human can change their password in a browser at the public/tunnel
@@ -672,7 +673,7 @@ func serveHTTP(ctx context.Context, srv *sdk.Server, cmd *cli.Command, oob *OutO
 	// browser); the unguessable /account/password/<token> path plus the
 	// per-token CSRF form token are the access control.
 	if accountOOB != nil {
-		accountOOB.registerHandlers(mux)
+		accountOOB.RegisterHandlers(mux)
 	}
 	// Mount the one-time upload PUT route on the shared mux so an agent can
 	// stream a file with curl to the public/tunnel URL. Like the OOB routes it
@@ -812,8 +813,8 @@ func serveHTTP(ctx context.Context, srv *sdk.Server, cmd *cli.Command, oob *OutO
 				return err
 			}
 			// Advertise endpoints against the provider-approved URL.
-			oauth.baseURL = strings.TrimRight(oauthURL, "/")
-			oauth.issuer = oauth.baseURL
+			oauth.BaseURL = strings.TrimRight(oauthURL, "/")
+			oauth.Issuer = oauth.BaseURL
 		}
 		if provider == "openai" {
 			fmt.Printf("OpenAI Secure MCP Tunnel ID: %s\n", tunnelID)
@@ -825,7 +826,7 @@ func serveHTTP(ctx context.Context, srv *sdk.Server, cmd *cli.Command, oob *OutO
 		fmt.Printf("MCP server listening on http://%s (endpoint /mcp)\n", localAddr)
 	}
 	if oauth != nil {
-		fmt.Printf("Authorize MCP clients at %s/oauth/authorize (or via OAuth discovery)\n", oauth.baseURL)
+		fmt.Printf("Authorize MCP clients at %s/oauth/authorize (or via OAuth discovery)\n", oauth.BaseURL)
 		fmt.Println("The shared --auth-token secret is required to authorize access")
 	}
 	fmt.Println("Press Ctrl+C to stop")

@@ -1,4 +1,4 @@
-package mcp
+package auth
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 )
 
@@ -33,7 +34,7 @@ import (
 // credential form.
 type OOBAccountChange struct {
 	svc  AuthService
-	core handoffEndpoint
+	core handoff.Endpoint
 
 	// mu guards the outcome records.
 	mu       sync.Mutex
@@ -76,7 +77,7 @@ func NewOOBAccountChange(svc AuthService, ttl time.Duration) *OOBAccountChange {
 		svc:      svc,
 		outcomes: map[string]*accountChangeOutcome{},
 	}
-	c.core = *newHandoff("account", c, ttl)
+	c.core = *handoff.New("account", c, ttl)
 	return c
 }
 
@@ -92,8 +93,8 @@ func (c *OOBAccountChange) WithLogger(l *zap.Logger) *OOBAccountChange {
 }
 
 // registerHandlers mounts the change pages + POST routes on the shared mux.
-func (c *OOBAccountChange) registerHandlers(mux *http.ServeMux) {
-	c.core.registerHandlers(mux)
+func (c *OOBAccountChange) RegisterHandlers(mux *http.ServeMux) {
+	c.core.RegisterHandlers(mux)
 }
 
 // Register mints a one-time, expiring URL that lets the human change the given
@@ -104,7 +105,7 @@ func (c *OOBAccountChange) Register(op accountChangeOp) string {
 	// item) rather than a separately-keyed lookup. No coordinator state is
 	// written here and nothing is leaked on every invocation.
 	csrf := session.StrongRandomID()
-	return c.core.mint(&accountChangePayload{op: op, csrf: csrf})
+	return c.core.Mint(&accountChangePayload{op: op, csrf: csrf})
 }
 
 // Stop shuts down the loopback listener, if any.
@@ -114,19 +115,19 @@ func (c *OOBAccountChange) Stop(ctx context.Context) {
 
 // consumeOnGET reports that a GET does NOT consume the change token (it is
 // collected on POST; the form must be viewable/reloadable before submit).
-func (c *OOBAccountChange) consumeOnGET() bool { return false }
+func (c *OOBAccountChange) ConsumeOnGET() bool { return false }
 
 // renderGET implements handoffHandler: show the one-time form for the op.
-func (c *OOBAccountChange) renderGET(w http.ResponseWriter, r *http.Request, token string, item *handoffItem) {
-	payload, _ := item.payload.(*accountChangePayload)
+func (c *OOBAccountChange) RenderGET(w http.ResponseWriter, r *http.Request, token string, item *handoff.Item) {
+	Payload, _ := item.Payload.(*accountChangePayload)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	action := c.changePath(token)
-	switch payload.op {
+	switch Payload.op {
 	case opChangePassword:
-		_ = accountPasswordPage(token, payload.csrf, action).Render(r.Context(), w)
+		_ = accountPasswordPage(token, Payload.csrf, action).Render(r.Context(), w)
 	case opChangeEmail:
-		_ = accountEmailPage(token, payload.csrf, action).Render(r.Context(), w)
+		_ = accountEmailPage(token, Payload.csrf, action).Render(r.Context(), w)
 	default:
 		http.NotFound(w, r)
 	}
@@ -148,13 +149,13 @@ func (c *OOBAccountChange) changePath(token string) string {
 // consumePOST implements handoffHandler: run the authenticated change and
 // consume the token (single use). The browser POST is synchronous: success or
 // failure is rendered on the page.
-func (c *OOBAccountChange) consumePOST(w http.ResponseWriter, r *http.Request, token string, item *handoffItem) (consumed bool) {
-	payload, _ := item.payload.(*accountChangePayload)
+func (c *OOBAccountChange) ConsumePOST(w http.ResponseWriter, r *http.Request, token string, item *handoff.Item) (consumed bool) {
+	Payload, _ := item.Payload.(*accountChangePayload)
 
 	// Per-token double-submit CSRF check, mirroring auth_login. The Origin
 	// check in the core is a secondary defense-in-depth layer.
 	c.mu.Lock()
-	expected := payload.csrf
+	expected := Payload.csrf
 	c.mu.Unlock()
 	if expected == "" || subtle.ConstantTimeCompare([]byte(r.FormValue("csrf")), []byte(expected)) != 1 {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -180,7 +181,7 @@ func (c *OOBAccountChange) consumePOST(w http.ResponseWriter, r *http.Request, t
 	}
 
 	var err error
-	switch payload.op {
+	switch Payload.op {
 	case opChangePassword:
 		current := r.FormValue("current_password")
 		next := r.FormValue("new_password")
@@ -209,7 +210,7 @@ func (c *OOBAccountChange) consumePOST(w http.ResponseWriter, r *http.Request, t
 
 	// Claim the token atomically BEFORE the blocking update so a concurrent or
 	// repeated POST cannot run the change twice.
-	if !c.core.claim(token) {
+	if !c.core.Claim(token) {
 		w.Header().Set("Cache-Control", "no-store")
 		http.Error(w, "A change is already in progress or this link was already used.", http.StatusGone)
 		return
@@ -236,13 +237,13 @@ func (c *OOBAccountChange) consumePOST(w http.ResponseWriter, r *http.Request, t
 		return
 	}
 	settle(true, "")
-	_ = accountChangeChangedPage(payload.op).Render(r.Context(), w)
+	_ = accountChangeChangedPage(Payload.op).Render(r.Context(), w)
 	return
 }
 
-func (c *OOBAccountChange) count() int { return c.core.count() }
+func (c *OOBAccountChange) Count() int { return c.core.Count() }
 
-func (c *OOBAccountChange) setNow(f func() time.Time) { c.core.setNow(f) }
+func (c *OOBAccountChange) SetNow(f func() time.Time) { c.core.SetNow(f) }
 
 // tokenDone reports the coordinator token's state to a status helper. The
 // browser POST is synchronous, so a settled success is done, a settled error is
@@ -251,11 +252,11 @@ func (c *OOBAccountChange) tokenDone(token string) (done, failed, expired, pendi
 	if token == "" {
 		return false, false, false, false
 	}
-	item, reason := c.core.resolve(token)
+	item, reason := c.core.Resolve(token)
 	if item != nil {
 		return false, false, false, true // still live: form not yet submitted
 	}
-	if reason == handoffExpired {
+	if reason == handoff.ReasonExpired {
 		return false, false, true, false
 	}
 	c.mu.Lock()
