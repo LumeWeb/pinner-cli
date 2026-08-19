@@ -23,6 +23,7 @@ import (
 	portalsdk "go.lumeweb.com/portal-sdk"
 
 	mcpadapter "go.lumeweb.com/pinner-cli/internal/mcp"
+	mcpauth "go.lumeweb.com/pinner-cli/internal/mcp/auth"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 
@@ -852,7 +853,7 @@ func TestSetupWizard_SignIn_StartsOutOfBand(t *testing.T) {
 	cfgMgr := newConfigMgr(t, true)
 	authSvc := &mockAuthService{}
 	store := session.NewSessionStore()
-	oob := mcpadapter.NewOutOfBandLogin(authSvc, "", "test-key")
+	oob := mcpauth.NewOutOfBandLogin(authSvc, "", "test-key")
 	t.Cleanup(func() { oob.Stop(context.Background()) })
 	deps := mcpadapter.SetupWizardDeps{CfgMgr: cfgMgr, AuthService: authSvc, SetupFactory: testSetupFactory, OutOfBand: oob}
 
@@ -887,7 +888,7 @@ func TestSetupWizard_SignIn_MissingEmail(t *testing.T) {
 	cfgMgr := newConfigMgr(t, true)
 	authSvc := &mockAuthService{}
 	store := session.NewSessionStore()
-	oob := mcpadapter.NewOutOfBandLogin(authSvc, "", "test-key")
+	oob := mcpauth.NewOutOfBandLogin(authSvc, "", "test-key")
 	t.Cleanup(func() { oob.Stop(context.Background()) })
 	deps := mcpadapter.SetupWizardDeps{CfgMgr: cfgMgr, AuthService: authSvc, SetupFactory: testSetupFactory, OutOfBand: oob}
 
@@ -1450,7 +1451,7 @@ func TestSetupWizard_RetryAfterAuthError(t *testing.T) {
 		},
 	}
 	store := session.NewSessionStore()
-	oob := mcpadapter.NewOutOfBandLogin(authSvc, "", "test-key")
+	oob := mcpauth.NewOutOfBandLogin(authSvc, "", "test-key")
 	t.Cleanup(func() { oob.Stop(context.Background()) })
 	deps := mcpadapter.SetupWizardDeps{
 		CfgMgr:       cfgMgr,
@@ -1701,7 +1702,7 @@ func TestSetupWizard_FullFlowSignIn(t *testing.T) {
 	cfgMgr := newConfigMgr(t, true)
 	authSvc := &mockAuthService{}
 	store := session.NewSessionStore()
-	oob := mcpadapter.NewOutOfBandLogin(authSvc, "", "test-key")
+	oob := mcpauth.NewOutOfBandLogin(authSvc, "", "test-key")
 	t.Cleanup(func() { oob.Stop(context.Background()) })
 	deps := mcpadapter.SetupWizardDeps{
 		CfgMgr:       cfgMgr,

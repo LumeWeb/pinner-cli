@@ -1,4 +1,4 @@
-package mcp
+package handoff
 
 import (
 	"context"
@@ -26,11 +26,11 @@ import (
 // Each concrete coordinator embeds a handoffEndpoint, sets the route prefix,
 // and supplies a handoffHandler for the GET page and POST consume that are
 // specific to the secret being handled.
-type handoffEndpoint struct {
+type Endpoint struct {
 	loopback transport.LoopbackServer
 
 	mu    sync.Mutex
-	items map[string]*handoffItem
+	items map[string]*Item
 	// spent records consumed or expired tokens so a re-open of a one-time URL
 	// can be told apart from a token that never existed, and so a spent link
 	// renders a branded "link no longer active" page instead of a bare 404.
@@ -46,7 +46,7 @@ type handoffEndpoint struct {
 	logger *zap.Logger
 
 	prefix  string
-	handler handoffHandler
+	handler Handler
 
 	// Reaper, used by resumable flows (login) so pending items do not
 	// accumulate for the process lifetime. Simple expiring coordinators rely on
@@ -63,40 +63,40 @@ type handoffEndpoint struct {
 // tombstones are evicted only when the map exceeds this cap (FIFO), so the
 // spent explanation persists for any link within retention while the total
 // memory stays flat.
-const maxSpentTombstones = 10000
+const MaxSpentTombstones = 10000
 
 // handoffItem is a single pending hand-off. payload is interpreted by the
 // concrete handler (it may hold a secret to display, an input to collect, or a
 // resumable workflow state).
-type handoffItem struct {
-	payload   any
+type Item struct {
+	Payload   any
 	expiresAt time.Time
 }
 
 // handoffHandler supplies the per-secret GET and POST behavior. The core
 // handles routing, CSRF, expiry, and single-use bookkeeping.
-type handoffHandler interface {
+type Handler interface {
 	// renderGET renders the GET page for a pending token. If consumeOnGET is
 	// true, the token is consumed after render (read-direction flows that show
 	// a secret exactly once, like a seed drop).
-	renderGET(w http.ResponseWriter, r *http.Request, token string, item *handoffItem)
+	RenderGET(w http.ResponseWriter, r *http.Request, token string, item *Item)
 	// consumeOnGET reports whether a GET should consume the token (single-use
 	// display flows). Collect-direction flows (which take input on POST) return
 	// false.
-	consumeOnGET() bool
+	ConsumeOnGET() bool
 	// consumePOST handles a CSRF-validated POST. It returns consumed=true when
 	// the token must be deleted immediately (single-use collect flows); false
 	// keeps it for a later outcome (resumable/polling flows like login).
-	consumePOST(w http.ResponseWriter, r *http.Request, token string, item *handoffItem) (consumed bool)
+	ConsumePOST(w http.ResponseWriter, r *http.Request, token string, item *Item) (consumed bool)
 }
 
 // newHandoff creates a handoff core with the given route prefix and handler.
-func newHandoff(prefix string, handler handoffHandler, ttl time.Duration) *handoffEndpoint {
+func New(prefix string, handler Handler, ttl time.Duration) *Endpoint {
 	if ttl <= 0 {
 		ttl = DefaultHandoffTTL
 	}
-	return &handoffEndpoint{
-		items:   make(map[string]*handoffItem),
+	return &Endpoint{
+		items:   make(map[string]*Item),
 		spent:   make(map[string]time.Time),
 		ttl:     ttl,
 		now:     time.Now,
@@ -106,9 +106,24 @@ func newHandoff(prefix string, handler handoffHandler, ttl time.Duration) *hando
 	}
 }
 
+// Prefix returns the route prefix this endpoint serves under (e.g. "account").
+// It is used by concrete handlers to form the self-referential action URL.
+func (h *Endpoint) Prefix() string { return h.prefix }
+
+// Spent returns a snapshot of the spent-tombstone map (hand-off tokens that
+// have already been consumed/expired and are retained only to reject re-use).
+// Tests use it to assert oldest-first eviction under MaxSpentTombstones.
+func (h *Endpoint) Spent() map[string]time.Time {
+	m := make(map[string]time.Time, len(h.spent))
+	for k, v := range h.spent {
+		m[k] = v
+	}
+	return m
+}
+
 // WithLogger sets the zap logger the hand-off endpoint uses for lifecycle
 // events. It defaults to the shared package logger.
-func (h *handoffEndpoint) WithLogger(l *zap.Logger) *handoffEndpoint {
+func (h *Endpoint) WithLogger(l *zap.Logger) *Endpoint {
 	if l != nil {
 		h.logger = l
 	}
@@ -117,7 +132,7 @@ func (h *handoffEndpoint) WithLogger(l *zap.Logger) *handoffEndpoint {
 
 // logf returns the hand-off endpoint's logger, falling back to the package
 // logger.
-func (h *handoffEndpoint) logf() *zap.Logger {
+func (h *Endpoint) Logf() *zap.Logger {
 	if h.logger != nil {
 		return h.logger
 	}
@@ -129,26 +144,26 @@ const DefaultHandoffTTL = 30 * time.Minute
 
 // SetBaseURL sets the externally reachable base URL (public/tunnel in HTTP
 // mode, or empty for the loopback-derived URL in stdio mode).
-func (h *handoffEndpoint) SetBaseURL(url string) {
+func (h *Endpoint) SetBaseURL(url string) {
 	h.loopback.SetBaseURL(url)
 }
 
 // mint registers a payload and returns its one-time URL. It ensures the
 // loopback listener is running in stdio mode so the URL is always reachable.
-func (h *handoffEndpoint) mint(payload any) string {
-	if err := h.loopback.EnsureLoopback(h.registerHandlers); err != nil {
+func (h *Endpoint) Mint(Payload any) string {
+	if err := h.loopback.EnsureLoopback(h.RegisterHandlers); err != nil {
 		return ""
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	token := session.StrongRandomID()
-	h.items[token] = &handoffItem{payload: payload, expiresAt: h.now().Add(h.ttl)}
-	h.logf().Debug("one-time hand-off minted", zap.String("prefix", h.prefix))
+	h.items[token] = &Item{Payload: Payload, expiresAt: h.now().Add(h.ttl)}
+	h.Logf().Debug("one-time hand-off minted", zap.String("prefix", h.prefix))
 	return h.loopback.URLFor(h.prefix, token)
 }
 
 // registerHandlers mounts the /<prefix>/ route on the shared mux.
-func (h *handoffEndpoint) registerHandlers(mux *http.ServeMux) {
+func (h *Endpoint) RegisterHandlers(mux *http.ServeMux) {
 	mux.HandleFunc("/"+h.prefix+"/", h.handle)
 }
 
@@ -158,9 +173,9 @@ func (h *handoffEndpoint) registerHandlers(mux *http.ServeMux) {
 // longer active" page immediately (no submit required), so a human who reopens
 // a one-time seed/restore URL learns it is spent instead of hitting a bare 404
 // or a fresh form. Only a token that never existed gets a 404.
-func (h *handoffEndpoint) handle(w http.ResponseWriter, r *http.Request) {
+func (h *Endpoint) handle(w http.ResponseWriter, r *http.Request) {
 	token := strings.TrimPrefix(r.URL.Path, "/"+h.prefix+"/")
-	item, reason := h.resolve(token)
+	item, reason := h.Resolve(token)
 	if item == nil {
 		if reason != "" {
 			h.spentPage(w, r, reason)
@@ -171,19 +186,19 @@ func (h *handoffEndpoint) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodGet:
-		h.handler.renderGET(w, r, token, item)
-		if h.handler.consumeOnGET() {
-			h.remove(token)
+		h.handler.RenderGET(w, r, token, item)
+		if h.handler.ConsumeOnGET() {
+			h.Remove(token)
 		}
 	case http.MethodPost:
-		if !sameOrigin(r, h.loopback.AcceptedOrigins()...) {
+		if !SameOrigin(r, h.loopback.AcceptedOrigins()...) {
 			w.Header().Set("X-Content-Type-Options", "nosniff")
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
-		consumed := h.handler.consumePOST(w, r, token, item)
+		consumed := h.handler.ConsumePOST(w, r, token, item)
 		if consumed {
-			h.remove(token)
+			h.Remove(token)
 		}
 	default:
 		w.Header().Set("Allow", "GET, POST")
@@ -197,12 +212,12 @@ func (h *handoffEndpoint) handle(w http.ResponseWriter, r *http.Request) {
 // token that never existed it returns nil and an empty reason, so the caller
 // can keep a 404. Consumed and expired tokens are recorded as tombstones so the
 // spent state is observable on a re-open.
-func (h *handoffEndpoint) resolve(token string) (*handoffItem, handoffNotActiveReason) {
+func (h *Endpoint) Resolve(token string) (*Item, NotActiveReason) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	h.pruneSpentLocked()
+	h.PruneSpentLocked()
 	if _, ok := h.spent[token]; ok {
-		return nil, handoffUsed
+		return nil, ReasonUsed
 	}
 	item, ok := h.items[token]
 	if !ok {
@@ -210,8 +225,8 @@ func (h *handoffEndpoint) resolve(token string) (*handoffItem, handoffNotActiveR
 	}
 	if h.now().After(item.expiresAt) {
 		delete(h.items, token)
-		h.markSpentLocked(token, h.now())
-		return nil, handoffExpired
+		h.MarkSpentLocked(token, h.now())
+		return nil, ReasonExpired
 	}
 	return item, ""
 }
@@ -219,7 +234,7 @@ func (h *handoffEndpoint) resolve(token string) (*handoffItem, handoffNotActiveR
 // markSpentLocked records a consumed/expired token as spent and appends it to
 // the FIFO eviction order. It must be called with h.mu held. The order slice is
 // kept in sync with eviction by pruneSpentLocked (which trims the head).
-func (h *handoffEndpoint) markSpentLocked(token string, at time.Time) {
+func (h *Endpoint) MarkSpentLocked(token string, at time.Time) {
 	if _, ok := h.spent[token]; ok {
 		return
 	}
@@ -234,10 +249,10 @@ func (h *handoffEndpoint) markSpentLocked(token string, at time.Time) {
 // read/write paths (resolve/remove) so tombstones cannot grow without bound
 // even though the periodic reaper (startReaper) is not started by the
 // SeedDrop/OOBRestore coordinators.
-func (h *handoffEndpoint) pruneSpentLocked() {
+func (h *Endpoint) PruneSpentLocked() {
 	// Evict the oldest tombstones from the FIFO head until the map is within
 	// the cap. O(overflow), never a re-scan of the whole map per entry.
-	for len(h.spent) > maxSpentTombstones && len(h.spentOrder) > 0 {
+	for len(h.spent) > MaxSpentTombstones && len(h.spentOrder) > 0 {
 		oldest := h.spentOrder[0]
 		h.spentOrder = h.spentOrder[1:]
 		if _, ok := h.spent[oldest]; ok {
@@ -247,8 +262,8 @@ func (h *handoffEndpoint) pruneSpentLocked() {
 }
 
 // lookup returns a valid (non-expired) item for a token, pruning it if stale.
-func (h *handoffEndpoint) lookup(token string) (*handoffItem, bool) {
-	item, reason := h.resolve(token)
+func (h *Endpoint) lookup(token string) (*Item, bool) {
+	item, reason := h.Resolve(token)
 	if item == nil {
 		return nil, false
 	}
@@ -258,24 +273,24 @@ func (h *handoffEndpoint) lookup(token string) (*handoffItem, bool) {
 
 // spentPage renders the shared branded "link no longer active" page (410 Gone)
 // for a used or expired one-time URL.
-func (h *handoffEndpoint) spentPage(w http.ResponseWriter, r *http.Request, reason handoffNotActiveReason) {
+func (h *Endpoint) spentPage(w http.ResponseWriter, r *http.Request, reason NotActiveReason) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusGone)
 	detail := "This one-time link cannot be used again."
-	if reason == handoffExpired {
+	if reason == ReasonExpired {
 		detail = "This one-time link expired before it was used."
 	}
-	_ = handoffNotActivePage(reason, detail).Render(r.Context(), w)
+	_ = NotActivePage(reason, detail).Render(r.Context(), w)
 }
 
 // remove deletes a token from the pending set and records it as spent so a
 // re-open renders the spent-link page rather than a bare 404.
-func (h *handoffEndpoint) remove(token string) {
+func (h *Endpoint) Remove(token string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	delete(h.items, token)
-	h.markSpentLocked(token, h.now())
-	h.pruneSpentLocked()
+	h.MarkSpentLocked(token, h.now())
+	h.PruneSpentLocked()
 }
 
 // claim atomically takes a token for a single long-running handler, removing it
@@ -284,28 +299,28 @@ func (h *handoffEndpoint) remove(token string) {
 // was present and claimed. Handlers that block for a long time (e.g. an OOB
 // restore waiting on a browser approval) claim first so a re-POST during the
 // window is rejected instead of re-entering the blocking work.
-func (h *handoffEndpoint) claim(token string) bool {
+func (h *Endpoint) Claim(token string) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if _, ok := h.items[token]; !ok {
 		return false
 	}
 	delete(h.items, token)
-	h.markSpentLocked(token, h.now())
-	h.pruneSpentLocked()
+	h.MarkSpentLocked(token, h.now())
+	h.PruneSpentLocked()
 	return true
 }
 
 // get is a lightweight direct fetch used by children that need the item for
 // polling without going through the method-dispatch.
-func (h *handoffEndpoint) get(token string) (*handoffItem, bool) {
+func (h *Endpoint) get(token string) (*Item, bool) {
 	return h.lookup(token)
 }
 
 // visitRange iterates all pending items under the core's lock, letting a child
 // (e.g. login outcome polling keyed by email+sessionID) scan the set. The
 // callback must not call back into the core's locked methods.
-func (h *handoffEndpoint) visitRange(fn func(token string, item *handoffItem)) {
+func (h *Endpoint) visitRange(fn func(token string, item *Item)) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	for token, item := range h.items {
@@ -314,7 +329,7 @@ func (h *handoffEndpoint) visitRange(fn func(token string, item *handoffItem)) {
 }
 
 // startReaper spawns a goroutine that periodically prunes expired items.
-func (h *handoffEndpoint) startReaper(interval time.Duration) {
+func (h *Endpoint) startReaper(interval time.Duration) {
 	h.mu.Lock()
 	if h.reaperCancel != nil {
 		h.mu.Unlock()
@@ -340,21 +355,21 @@ func (h *handoffEndpoint) startReaper(interval time.Duration) {
 
 // pruneExpired removes items whose TTL has elapsed, moving them to spent
 // tombstones, and bounds the spent map to maxSpentTombstones.
-func (h *handoffEndpoint) pruneExpired() {
+func (h *Endpoint) pruneExpired() {
 	now := h.now()
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	for token, item := range h.items {
 		if now.After(item.expiresAt) {
 			delete(h.items, token)
-			h.markSpentLocked(token, now)
+			h.MarkSpentLocked(token, now)
 		}
 	}
-	h.pruneSpentLocked()
+	h.PruneSpentLocked()
 }
 
 // Stop shuts down the loopback listener and reaper, if any.
-func (h *handoffEndpoint) Stop(ctx context.Context) {
+func (h *Endpoint) Stop(ctx context.Context) {
 	h.mu.Lock()
 	cancel := h.reaperCancel
 	h.reaperCancel = nil
@@ -367,7 +382,7 @@ func (h *handoffEndpoint) Stop(ctx context.Context) {
 }
 
 // count returns the number of pending, unexpired items (tests + instrumentation).
-func (h *handoffEndpoint) count() int {
+func (h *Endpoint) Count() int {
 	h.pruneExpired()
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -375,7 +390,7 @@ func (h *handoffEndpoint) count() int {
 }
 
 // setNow overrides the clock used for expiry (test seam).
-func (h *handoffEndpoint) setNow(f func() time.Time) {
+func (h *Endpoint) SetNow(f func() time.Time) {
 	if f == nil {
 		return
 	}

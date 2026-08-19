@@ -76,8 +76,8 @@ func (s *SeedDrop) tokenDone(token string) (done, expired, pending bool) {
 	if token == "" {
 		return false, false, false
 	}
-	item, reason := s.core.resolve(token)
-	return reason == handoffUsed, reason == handoffExpired, item != nil
+	item, reason := s.core.Resolve(token)
+	return reason == handoff.ReasonUsed, reason == handoff.ReasonExpired, item != nil
 }
 
 // tokenDone reports the restore coordinator token's current state. Unlike a
@@ -96,11 +96,11 @@ func (o *OOBRestore) tokenDone(token string) (done, failed, expired, pending boo
 	if token == "" {
 		return false, false, false, false
 	}
-	item, reason := o.core.resolve(token)
+	item, reason := o.core.Resolve(token)
 	if item != nil {
 		return false, false, false, true // still live: nothing submitted
 	}
-	if reason == handoffExpired {
+	if reason == handoff.ReasonExpired {
 		return false, false, true, false
 	}
 	o.mu.Lock()

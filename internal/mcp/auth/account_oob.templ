@@ -1,4 +1,8 @@
-package mcp
+package auth
+
+import (
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
+)
 
 // Out-of-band account credential change pages, rendered with the shared Pinner
 // brand identity (brandLayout + brand.css) so they match the sign-in, vault,
@@ -8,8 +12,9 @@ package mcp
 // enters their current + new password here; the POST runs the authenticated
 // UpdatePassword host-side so the passwords never transit the MCP/LLM channel.
 // csrf is a per-token secret required back on POST (double-submit CSRF).
+
 templ accountPasswordPage(token, csrf, action string) {
-	@brandLayout("Change Pinner account password") {
+	@handoff.BrandLayout("Change Pinner account password") {
 		<div class="brand-card">
 			<h1 class="brand-card-title">Change your password</h1>
 			<p class="brand-card-text">Enter your current password and choose a new one. The change is applied to your Pinner account from your browser, directly on this machine; the MCP/agent channel never sees your password.</p>
@@ -32,7 +37,7 @@ templ accountPasswordPage(token, csrf, action string) {
 // new email + current password here; the POST runs the authenticated UpdateEmail
 // host-side so the password never transits the MCP/LLM channel.
 templ accountEmailPage(token, csrf, action string) {
-	@brandLayout("Change Pinner account email") {
+	@handoff.BrandLayout("Change Pinner account email") {
 		<div class="brand-card">
 			<h1 class="brand-card-title">Change your email</h1>
 			<p class="brand-card-text">Enter your new email address and your current password to confirm. The change is applied to your Pinner account from your browser, directly on this machine; the MCP/agent channel never sees your password.</p>
@@ -51,7 +56,7 @@ templ accountEmailPage(token, csrf, action string) {
 
 // accountChangeChangedPage confirms the credential was updated.
 templ accountChangeChangedPage(op accountChangeOp) {
-	@brandLayout("Change complete") {
+	@handoff.BrandLayout("Change complete") {
 		<div class="brand-card">
 			<h1 class="brand-card-title">{ accountChangeChangedTitle(op) }</h1>
 			<p class="brand-card-text">Your Pinner account has been updated. You can close this window.</p>
@@ -62,7 +67,7 @@ templ accountChangeChangedPage(op accountChangeOp) {
 // accountChangeErrorPage reports a failed change. errMsg is escaped by templ so
 // arbitrary backend text cannot be reflected as markup.
 templ accountChangeErrorPage(errMsg string) {
-	@brandLayout("Change failed") {
+	@handoff.BrandLayout("Change failed") {
 		<div class="brand-card">
 			<h1 class="brand-card-title">Change failed</h1>
 			<p class="status-error" role="alert">{ errMsg }</p>

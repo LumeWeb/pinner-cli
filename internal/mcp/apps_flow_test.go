@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"go.lumeweb.com/pinner-cli/internal/mcp/auth"
 	"strings"
 	"testing"
 )
@@ -25,7 +26,7 @@ func appModuleFor(t *testing.T, uri string) string {
 	case "ui://vault/restore.html":
 		return renderVaultRestoreAppHTML()
 	case "ui://auth/sso.html":
-		return renderAuthSSOAppHTML()
+		return auth.RenderAuthSSOAppHTML()
 	default:
 		t.Fatalf("unknown app URI %q", uri)
 		return ""
@@ -76,7 +77,7 @@ func TestAppFlowDocumentsDistinctToolNames(t *testing.T) {
 	docs := map[string]string{
 		"vault_create":  renderVaultCreateAppHTML(),
 		"vault_restore": renderVaultRestoreAppHTML(),
-		"auth_sso":      renderAuthSSOAppHTML(),
+		"auth_sso":      auth.RenderAuthSSOAppHTML(),
 	}
 	statusTool := map[string]string{
 		"vault_create":  "vault_create_status",

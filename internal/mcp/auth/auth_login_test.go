@@ -1,4 +1,4 @@
-package mcp
+package auth
 
 import (
 	"context"
@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.lumeweb.com/pinner-cli/internal/core/auth"
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	portalsdk "go.lumeweb.com/portal-sdk"
 )
 
@@ -241,18 +242,18 @@ func TestOOBLoginSessionIsolation(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 
 	// The originating session consumes the outcome and reports done once.
-	_, done, err := o.pendingOutcome("session-A", "test@example.com")
+	_, done, err := o.PendingOutcome("session-A", "test@example.com")
 	require.NoError(t, err)
 	assert.True(t, done)
 
 	// A subsequent poll for the same session reports not-done (consumed).
-	_, done, err = o.pendingOutcome("session-A", "test@example.com")
+	_, done, err = o.PendingOutcome("session-A", "test@example.com")
 	require.NoError(t, err)
 	assert.False(t, done)
 
 	// A different session with the same email must never see the completion of
 	// session-A: it reports not-done and must start its own login.
-	_, done, err = o.pendingOutcome("session-B", "test@example.com")
+	_, done, err = o.PendingOutcome("session-B", "test@example.com")
 	require.NoError(t, err)
 	assert.False(t, done)
 }
@@ -430,14 +431,14 @@ func TestOOBLoginBeginReusesAcceptedLogin(t *testing.T) {
 	assert.Equal(t, id1, id2, "Begin must reuse the accepted login id")
 
 	// The reused login is still consumable and reports done.
-	_, done, err := o.pendingOutcome("session-1", "reuse@example.com")
+	_, done, err := o.PendingOutcome("session-1", "reuse@example.com")
 	require.NoError(t, err)
 	assert.True(t, done)
 }
 
 // TestOOBLoginCompleteClearsError verifies a successful completion reports a
 // success even after a prior failure: complete() must clear loginError so a
-// later pendingOutcome does not report a stale failed attempt (e.g. an OTP
+// later PendingOutcome does not report a stale failed attempt (e.g. an OTP
 // failure followed by a correct retry).
 func TestOOBLoginCompleteClearsError(t *testing.T) {
 	r := &loginRequest{status: loginPending}
@@ -481,9 +482,9 @@ func TestOOBLoginCompletedRejectsRePOST(t *testing.T) {
 	assert.Equal(t, http.StatusGone, rec.Code, "a completed login must keep 410 Gone, not re-run auth")
 	assert.Contains(t, rec.Body.String(), "no longer active", "a completed login must render the spent-link page, not re-run auth")
 
-	// The original acceptance is untouched: pendingOutcome still reports the
+	// The original acceptance is untouched: PendingOutcome still reports the
 	// completed success, not a failure introduced by the stale POST.
-	_, done, err := o.pendingOutcome("session-1", "repost@example.com")
+	_, done, err := o.PendingOutcome("session-1", "repost@example.com")
 	require.NoError(t, err)
 	assert.True(t, done, "a successful completion must not be flipped by a re-POST")
 }
@@ -584,7 +585,7 @@ func TestOOBLoginSpentSurvivesReaperEviction(t *testing.T) {
 		code := doLogin(t, o, u, testOrigin(o), "").Code
 		require.NotEqual(t, http.StatusForbidden, code)
 		o.mu.Lock()
-		o.spent[id] = spentLogin{at: time.Now(), reason: handoffUsed}
+		o.spent[id] = spentLogin{at: time.Now(), reason: handoff.ReasonUsed}
 		delete(o.requests, id)
 		o.mu.Unlock()
 
@@ -603,7 +604,7 @@ func TestOOBLoginSpentSurvivesReaperEviction(t *testing.T) {
 
 		// Evict as expired: request removed, expired tombstone kept.
 		o.mu.Lock()
-		o.spent[id] = spentLogin{at: time.Now(), reason: handoffExpired}
+		o.spent[id] = spentLogin{at: time.Now(), reason: handoff.ReasonExpired}
 		delete(o.requests, id)
 		o.mu.Unlock()
 
@@ -640,8 +641,8 @@ func TestOutOfBandLoginMountsOnSharedMux(t *testing.T) {
 	const publicBase = "https://tunnel.example.com"
 	o.SetBaseURL(publicBase)
 	mux := http.NewServeMux()
-	mux.Handle("/assets/", staticAssetHandler())
-	o.registerHandlers(mux)
+	mux.Handle("/assets/", handoff.StaticAssetHandler())
+	o.RegisterHandlers(mux)
 
 	id, u, err := o.Begin("session-1", "remote@example.com")
 	require.NoError(t, err)
@@ -728,37 +729,6 @@ func TestOOBLoginStopDoesNotHoldLockDuringShutdown(t *testing.T) {
 	}
 }
 
-// TestOOBSetupPromptDoesNotRequestCredentials verifies the setup auth prompt no
-// longer instructs the agent to collect a password/OTP: sign_in requests only an
-// email and the handler relays the out-of-band URL for browser completion, so
-// secrets never transit the MCP/LLM channel.
-func TestOOBSetupPromptDoesNotRequestCredentials(t *testing.T) {
-	// The overview rules now live in the embedded setup.tmpl template;
-	// render it the same way setupHandler does.
-	out := renderPromptTemplate("setup_overview", sitePromptData{})
-	require.Contains(t, out, "sign_in")
-	require.Contains(t, out, "out-of-band login URL")
-	require.Contains(t, out, "only the email")
-	// The prompt must no longer instruct collection of a password as a sign_in
-	// input field or ask for one from the user.
-	assert.NotContains(t, out, "ask for email, password")
-
-	// The setup_step_auth template carries the actual per-step collection
-	// instruction (what fields the agent asks for when sign_in is chosen).
-	// Guard it directly so a silent deletion/reintroduction of agent-side
-	// password/OTP collection fails this test rather than leaking a secret
-	// into the MCP/LLM channel.
-	authStep := renderPromptTemplate("setup_step_auth", sitePromptData{})
-	require.Contains(t, authStep, "out-of-band login URL", "sign_in must relay the browser URL")
-	// The credential-collection prohibition must remain present.
-	require.Contains(t, authStep, "NEVER ask for a password", "password collection must stay forbidden")
-	require.Contains(t, authStep, "never sent to you", "secrets must stay out of the MCP/LLM channel")
-	// The auth step's input schema must never carry a password/OTP field
-	// (no JSON key asking the agent to supply one).
-	assert.NotContains(t, authStep, `"password"`, "sign_in schema must not accept an agent-supplied password")
-	assert.NotContains(t, authStep, `"otp_code"`, "sign_in schema must not accept an agent-supplied OTP")
-}
-
 // captureAuthService records the account identifier and password each
 // LoginCheck is called with, so tests can assert the human-entered username
 // overrides the agent-supplied email on the OOB login page.
@@ -824,7 +794,7 @@ func TestOOBLoginHumanEmailOverridesAgentEmail(t *testing.T) {
 // reported "sign-in still pending after the human completed approval" bug.
 // The resume (auth_resume) passes the ORIGINAL prefill email from the
 // handle store, while the stored request now carries the human-edited email.
-// pendingOutcome must key on the session id (the unique resume handle), not
+// PendingOutcome must key on the session id (the unique resume handle), not
 // the email, so a human-edited login still resolves to done instead of
 // reporting pending forever.
 func TestOOBResumeDoneAfterHumanEditsEmail(t *testing.T) {
@@ -852,12 +822,12 @@ func TestOOBResumeDoneAfterHumanEditsEmail(t *testing.T) {
 
 	// Resume passes the ORIGINAL prefill email (as auth_resume does via
 	// the handle store). It must still resolve to done.
-	_, done, err := o.pendingOutcome("session-edit", "agent@example.com")
+	_, done, err := o.PendingOutcome("session-edit", "agent@example.com")
 	require.NoError(t, err)
 	assert.True(t, done, "a login the human completed must not report pending after a resume")
 
 	// The completed outcome is consumed: a repeat resume is not-done.
-	_, done, err = o.pendingOutcome("session-edit", "agent@example.com")
+	_, done, err = o.PendingOutcome("session-edit", "agent@example.com")
 	require.NoError(t, err)
 	assert.False(t, done)
 }
@@ -894,12 +864,12 @@ func TestOOBResumeMultipleInFlightSameSession(t *testing.T) {
 	require.NotEqual(t, http.StatusForbidden, rec.Code, "alice login must complete")
 
 	// Resume for alice resolves done (and consumes her request only).
-	_, done, err := o.pendingOutcome("session-multi", "alice@example.com")
+	_, done, err := o.PendingOutcome("session-multi", "alice@example.com")
 	require.NoError(t, err)
 	assert.True(t, done, "alice resume must resolve to done")
 
 	// Bob's in-flight login must still be present and pending, untouched.
-	urlB2, doneB, err := o.pendingOutcome("session-multi", "bob@example.com")
+	urlB2, doneB, err := o.PendingOutcome("session-multi", "bob@example.com")
 	require.NoError(t, err)
 	assert.False(t, doneB, "bob's login must still be pending")
 	assert.Equal(t, urlB, urlB2, "bob's login URL must be returned for his pending request")

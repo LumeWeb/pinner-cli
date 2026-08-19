@@ -1,4 +1,4 @@
-package mcp
+package auth
 
 import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
@@ -29,7 +29,7 @@ func renderAuthStatusAppHTML() string {
 // the ui://auth/status.html HTML resource. The view calls the existing
 // auth_status catalog tool over callServerTool; it needs no app-only helper
 // because it only reads and never drives a hand-off.
-func RegisterAuthStatusApp(srv *sdk.Server, catalog *ToolCatalog) error {
+func RegisterAuthStatusApp(srv *sdk.Server, catalog apps.AppCatalog) error {
 	return apps.RegisterAppView(srv, catalog, apps.AppView{
 		URI:           AuthStatusAppURI,
 		Name:          "auth-status",

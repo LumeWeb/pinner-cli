@@ -1,4 +1,4 @@
-package mcp
+package auth
 
 import (
 	"context"
@@ -66,7 +66,7 @@ func buildAccountPwServer(svc AuthService) (*OOBAccountChange, *http.ServeMux) {
 	c := NewOOBAccountChange(svc, time.Minute)
 	c.SetBaseURL("http://127.0.0.1:9999")
 	mux := http.NewServeMux()
-	c.registerHandlers(mux)
+	c.RegisterHandlers(mux)
 	return c, mux
 }
 
@@ -141,7 +141,7 @@ func TestAccountPasswordChangeConsumeSuccess(t *testing.T) {
 	assert.Equal(t, 1, svc.updateCalls)
 	assert.Equal(t, "oldpass", svc.updateCurrent)
 	assert.Equal(t, "newpass", svc.updateNew)
-	assert.Equal(t, 0, c.core.count(), "token consumed after success")
+	assert.Equal(t, 0, c.core.Count(), "token consumed after success")
 }
 
 // TestAccountPasswordChangeConsumeMismatch verifies a confirm mismatch does not
@@ -157,7 +157,7 @@ func TestAccountPasswordChangeConsumeMismatch(t *testing.T) {
 
 	assert.Contains(t, w.Body.String(), "do not match")
 	assert.Equal(t, 0, svc.updateCalls, "no UpdatePassword on mismatch")
-	assert.Equal(t, 1, c.core.count(), "token NOT consumed on validation failure")
+	assert.Equal(t, 1, c.core.Count(), "token NOT consumed on validation failure")
 }
 
 // TestAccountPasswordChangeRejectsBadCSRF verifies a POST with a wrong CSRF
@@ -172,7 +172,7 @@ func TestAccountPasswordChangeRejectsBadCSRF(t *testing.T) {
 
 	assert.Equal(t, http.StatusForbidden, w.Code)
 	assert.Equal(t, 0, svc.updateCalls, "no UpdatePassword on bad CSRF")
-	assert.Equal(t, 1, c.core.count(), "token NOT consumed on bad CSRF")
+	assert.Equal(t, 1, c.core.Count(), "token NOT consumed on bad CSRF")
 }
 
 // TestAccountPasswordChangeUpdateError verifies a failing UpdatePassword renders

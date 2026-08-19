@@ -1,5 +1,10 @@
 package mcp
 
+
+import (
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
+)
+
 // Vault out-of-band pages, rendered with the shared Pinner brand identity
 // (brandLayout + brand.css) so they match the OAuth/authorize, sign-in, and
 // spent-link pages instead of hand-rolled inline styles.
@@ -10,7 +15,7 @@ package mcp
 // is disabled so a highlight can't silently include the recovery phrase, and no
 // ordered-list numbers are rendered that could get copied along with the words.
 templ seedDropPage(profile, mnemonic, action string) {
-	@brandLayout("Vault recovery seed") {
+	@handoff.BrandLayout("Vault recovery seed") {
 		<div class="brand-card">
 			<h1 class="brand-card-title">Vault recovery seed</h1>
 			<p class="brand-card-text">Profile: <strong>{ profile }</strong></p>
@@ -39,7 +44,7 @@ templ seedDropPage(profile, mnemonic, action string) {
 
 // seedDropConfirmedPage confirms the drop was consumed and the copy removed.
 templ seedDropConfirmedPage() {
-	@brandLayout("Recovery seed confirmed") {
+	@handoff.BrandLayout("Recovery seed confirmed") {
 		<div class="brand-card">
 			<h1 class="brand-card-title">Recovery seed confirmed</h1>
 			<p class="brand-card-text">Your recovery seed is confirmed. This link is no longer active and the on-disk copy has been removed. You can now close this window.</p>
@@ -50,7 +55,7 @@ templ seedDropConfirmedPage() {
 // seedDropRemovalFailedPage warns truthfully when the at-rest copy could not be
 // removed; the token stays live so the human can retry.
 templ seedDropRemovalFailedPage() {
-	@brandLayout("Recovery seed — removal failed") {
+	@handoff.BrandLayout("Recovery seed — removal failed") {
 		<div class="brand-card">
 			<h1 class="brand-card-title">Recovery seed not fully removed</h1>
 			<p class="seed-warn">You have confirmed your recovery seed, but the on-disk copy could <strong>not</strong> be removed. Do not discard anything.</p>
@@ -62,7 +67,7 @@ templ seedDropRemovalFailedPage() {
 // createVaultPage is the create-vault GET page: a one-time form whose POST
 // starts vault creation. It generates a fresh seed (never the MCP channel).
 templ createVaultPage(profile, token string) {
-	@brandLayout("Create Pinner Vault") {
+	@handoff.BrandLayout("Create Pinner Vault") {
 		<div class="brand-card">
 			<h1 class="brand-card-title">Create Pinner Vault</h1>
 			<p class="brand-card-text">Profile: <strong>{ profile }</strong></p>
@@ -80,7 +85,7 @@ templ createVaultPage(profile, token string) {
 // starts vault restoration. The human enters their recovery phrase here; it
 // goes only to the local vault process, never the MCP/agent channel.
 templ restoreVaultPage(profile, token string) {
-	@brandLayout("Restore Pinner Vault") {
+	@handoff.BrandLayout("Restore Pinner Vault") {
 		<div class="brand-card">
 			<h1 class="brand-card-title">Restore Pinner Vault</h1>
 			<p class="brand-card-text">Profile: <strong>{ profile }</strong></p>

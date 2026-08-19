@@ -9,6 +9,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
+	"go.lumeweb.com/pinner-cli/internal/mcp/auth"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
@@ -32,7 +33,7 @@ type customToolDeps struct {
 	// tools; authHandles stores their pending handles, and handoffReg maps a
 	// handle to its domain-specific resume continuation so the shared resume
 	// template can poll it.
-	oob         *OutOfBandLogin
+	oob         *auth.OutOfBandLogin
 	authHandles *session.AsyncHandleStore
 	handoffReg  *handoff.HandoffRegistry
 	// seedDrop, oobRestore, and oobCreate back the vault create/restore OOB
@@ -63,7 +64,7 @@ type customToolDeps struct {
 	// (hosted browser forms -> authenticated UpdatePassword/UpdateEmail). It
 	// enforces an authenticated session; the secret never transits the MCP/LLM
 	// channel.
-	accountOOB *OOBAccountChange
+	accountOOB *auth.OOBAccountChange
 	// accountWebAppURL is the account web app base URL surfaced by the password
 	// reset tool's hand-off.
 	accountWebAppURL string
@@ -136,9 +137,9 @@ func registerCustomTools(deps customToolDeps) error {
 	// search/describe/invoke. When the wizard transport is absent oob is nil
 	// and both tools return a structured not-configured hand-off instead of
 	// hanging.
-	authSSO := NewAuthSSODescriptor(deps.oob, deps.authHandles, deps.handoffReg)
+	authSSO := auth.NewAuthSSODescriptor(deps.oob, deps.authHandles, deps.handoffReg)
 	authSSO.DirectVisible = true
-	authResume := NewAuthResumeDescriptor(deps.handoffReg, deps.authHandles)
+	authResume := auth.NewAuthResumeDescriptor(deps.handoffReg, deps.authHandles)
 	authResume.DirectVisible = true
 	deps.catalog.Add(model.ToolEntryFromDescriptor(authSSO))
 	deps.catalog.Add(model.ToolEntryFromDescriptor(authResume))
@@ -147,7 +148,7 @@ func registerCustomTools(deps customToolDeps) error {
 	// so a UI-capable host renders the SSO approval in a panel. This must run
 	// after auth_sso is added to the catalog (AttachTo requires it) and before
 	// the curated registration loop reads _meta.ui.
-	if err := RegisterAuthSSOApp(deps.srv, deps.catalog, deps.handoffReg, deps.authHandles); err != nil {
+	if err := auth.RegisterAuthSSOApp(deps.srv, deps.catalog, deps.handoffReg, deps.authHandles); err != nil {
 		return fmt.Errorf("failed to register auth SSO app: %w", err)
 	}
 
@@ -156,11 +157,11 @@ func registerCustomTools(deps customToolDeps) error {
 	// and reset the password via an emailed link to the webapp. Direct-surface
 	// tools like the SSO pair; when the coordinator/service are absent they
 	// return a structured not-configured hand-off instead of hanging.
-	accountUpdate := NewAccountPasswordUpdateDescriptor(deps.accountOOB, deps.wizardS.AuthService, deps.authHandles, deps.handoffReg)
+	accountUpdate := auth.NewAccountPasswordUpdateDescriptor(deps.accountOOB, deps.wizardS.AuthService, deps.authHandles, deps.handoffReg)
 	accountUpdate.DirectVisible = true
-	accountReset := NewAccountPasswordResetDescriptor(deps.wizardS.AuthService, deps.accountWebAppURL)
+	accountReset := auth.NewAccountPasswordResetDescriptor(deps.wizardS.AuthService, deps.accountWebAppURL)
 	accountReset.DirectVisible = true
-	accountEmail := NewAccountEmailChangeDescriptor(deps.accountOOB, deps.wizardS.AuthService)
+	accountEmail := auth.NewAccountEmailChangeDescriptor(deps.accountOOB, deps.wizardS.AuthService)
 	accountEmail.DirectVisible = true
 	deps.catalog.Add(model.ToolEntryFromDescriptor(accountUpdate))
 	deps.catalog.Add(model.ToolEntryFromDescriptor(accountReset))
@@ -172,10 +173,10 @@ func registerCustomTools(deps customToolDeps) error {
 	// link in a panel. These are link apps with no poll loop: the change runs
 	// synchronously in the browser. Must run after the tools are added (AttachTo
 	// requires them) and before the curated registration loop reads _meta.ui.
-	if err := RegisterAccountPasswordApp(deps.srv, deps.catalog); err != nil {
+	if err := auth.RegisterAccountPasswordApp(deps.srv, deps.catalog); err != nil {
 		return fmt.Errorf("failed to register account password app: %w", err)
 	}
-	if err := RegisterAccountEmailApp(deps.srv, deps.catalog); err != nil {
+	if err := auth.RegisterAccountEmailApp(deps.srv, deps.catalog); err != nil {
 		return fmt.Errorf("failed to register account email app: %w", err)
 	}
 
@@ -229,7 +230,7 @@ func registerCustomTools(deps customToolDeps) error {
 	// authentication/account strip. The view only reads via the existing
 	// auth_status catalog tool and registers no helper. Must run before the
 	// curated registration loop reads _meta.ui, like the other apps.
-	if err := RegisterAuthStatusApp(deps.srv, deps.catalog); err != nil {
+	if err := auth.RegisterAuthStatusApp(deps.srv, deps.catalog); err != nil {
 		return fmt.Errorf("failed to register auth status app: %w", err)
 	}
 

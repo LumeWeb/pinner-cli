@@ -1,4 +1,4 @@
-package mcp
+package auth
 
 import (
 	"context"
@@ -71,7 +71,7 @@ func NewAuthSSODescriptor(oob *OutOfBandLogin, handles *session.AsyncHandleStore
 			}
 			// Register the SSO-specific poll logic under the handle so the
 			// shared auth_resume template dispatches to it.
-			reg.Begin(handle, ssoResumeContinuation(oob, handles, reg))
+			reg.Begin(handle, SSOResumeContinuation(oob, handles, reg))
 			return model.NeedsHumanResult(model.NeedsHuman{
 				Reason:     model.ReasonSSOApproval,
 				ActionURL:  url,
@@ -83,7 +83,7 @@ func NewAuthSSODescriptor(oob *OutOfBandLogin, handles *session.AsyncHandleStore
 	}
 }
 
-// ssoResumeContinuation returns the SSO-specific poll logic: it checks whether
+// SSOResumeContinuation returns the SSO-specific poll logic: it checks whether
 // the human has completed the browser approval and returns pending
 // (needs_human) until done, then a terminal done result. It is registered
 // against the handle by auth_sso so the shared resume template can
@@ -92,14 +92,14 @@ func NewAuthSSODescriptor(oob *OutOfBandLogin, handles *session.AsyncHandleStore
 // The continuation performs its own registry cleanup (reg.End) on every
 // terminal outcome — done, login error, or already-consumed/no-pending-request
 // — rather than relying solely on the template's isTerminalResume. The
-// concurrent double-resume path in pendingOutcome returns
+// concurrent double-resume path in PendingOutcome returns
 // ("", false, nil) when another resume already consumed the request; that is a
 // completed outcome from the human's perspective, so it is reported done, not
 // misleadingly "still pending".
-func ssoResumeContinuation(oob *OutOfBandLogin, handles *session.AsyncHandleStore, reg *handoff.HandoffRegistry) handoff.ResumeContinuation {
+func SSOResumeContinuation(oob *OutOfBandLogin, handles *session.AsyncHandleStore, reg *handoff.HandoffRegistry) handoff.ResumeContinuation {
 	return func(ctx context.Context, handle string, data map[string]any) (model.ToolResult, error) {
 		email, _ := data["email"].(string)
-		url, done, loginErr := oob.pendingOutcome(handle, email)
+		url, done, loginErr := oob.PendingOutcome(handle, email)
 		if loginErr != nil {
 			handles.Delete(handle)
 			reg.End(handle)
@@ -110,7 +110,7 @@ func ssoResumeContinuation(oob *OutOfBandLogin, handles *session.AsyncHandleStor
 			}), nil
 		}
 		if !done {
-			// pendingOutcome returns ("", false, nil) when there is no pending
+			// PendingOutcome returns ("", false, nil) when there is no pending
 			// request for this handle — either the login was already consumed
 			// by a concurrent resume or it never registered. Either way the
 			// flow has concluded from the OOB side; report done rather than a

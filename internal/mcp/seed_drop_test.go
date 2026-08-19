@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.lumeweb.com/pinner-cli/internal/core/vault"
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.sia.tech/core/types"
 )
 
@@ -69,7 +70,7 @@ func TestSeedDropSingleUse(t *testing.T) {
 	require.Contains(t, url, "/seed/")
 
 	mux := http.NewServeMux()
-	d.registerHandlers(mux)
+	d.RegisterHandlers(mux)
 
 	// GET renders the seed plus a confirmation form; it does NOT consume the
 	// token, so a failed transport or prefetch never strands the human.
@@ -135,10 +136,10 @@ func TestSeedDropExpiry(t *testing.T) {
 	url := d.Register("default", "secret words")
 
 	mux := http.NewServeMux()
-	d.registerHandlers(mux)
+	d.RegisterHandlers(mux)
 
 	// Advance past expiry.
-	d.setNow(func() time.Time { return time.Now().Add(2 * time.Minute) })
+	d.SetNow(func() time.Time { return time.Now().Add(2 * time.Minute) })
 
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, url, nil))
@@ -151,7 +152,7 @@ func TestSeedDropExpiry(t *testing.T) {
 // TestSeedDropTombstonePrunedOnWrite verifies the spent-tombstone map stays
 // memory-bounded. Because the SeedDrop/OOBRestore coordinators never start the
 // periodic reaper, pruning must happen lazily on the read/write path: when the
-// map exceeds maxSpentTombstones, the oldest tombstones are evicted (FIFO) so
+// map exceeds handoff.MaxSpentTombstones, the oldest tombstones are evicted (FIFO) so
 // the map is capped while any spent URL within retention still explains itself.
 func TestSeedDropTombstonePrunedOnWrite(t *testing.T) {
 	d := NewSeedDrop(time.Minute)
@@ -160,23 +161,23 @@ func TestSeedDropTombstonePrunedOnWrite(t *testing.T) {
 	// Fill the map past the cap with synthetic tombstones inserted oldest-first
 	// (via markSpentLocked so the FIFO eviction index stays in sync).
 	base := time.Now().Add(-10 * time.Hour)
-	for i := 0; i < maxSpentTombstones+5; i++ {
-		d.core.markSpentLocked(fmt.Sprintf("syn-%d", i), base.Add(time.Duration(i)*time.Second))
+	for i := 0; i < handoff.MaxSpentTombstones+5; i++ {
+		d.core.MarkSpentLocked(fmt.Sprintf("syn-%d", i), base.Add(time.Duration(i)*time.Second))
 	}
 
 	// Trigger lazy pruning on the write path.
-	d.core.remove("does-not-matter")
+	d.core.Remove("does-not-matter")
 
-	// The map is capped at maxSpentTombstones, and the OLDEST-inserted keys
+	// The map is capped at handoff.MaxSpentTombstones, and the OLDEST-inserted keys
 	// (the FIFO head) were evicted while the newest remain — an O(1)/O(overflow)
 	// oldest-first eviction, not a per-entry re-scan.
-	require.Equal(t, maxSpentTombstones, len(d.core.spent))
+	require.Equal(t, handoff.MaxSpentTombstones, len(d.core.Spent()))
 	// The first 6 inserted (syn-0..syn-5) are the oldest and must be gone.
-	require.NotContains(t, d.core.spent, "syn-0")
-	require.NotContains(t, d.core.spent, "syn-5")
+	require.NotContains(t, d.core.Spent(), "syn-0")
+	require.NotContains(t, d.core.Spent(), "syn-5")
 	// The newest synthetic tombstones are retained.
-	require.Contains(t, d.core.spent, fmt.Sprintf("syn-%d", maxSpentTombstones+4))
-	require.Contains(t, d.core.spent, fmt.Sprintf("syn-%d", maxSpentTombstones-1))
+	require.Contains(t, d.core.Spent(), fmt.Sprintf("syn-%d", handoff.MaxSpentTombstones+4))
+	require.Contains(t, d.core.Spent(), fmt.Sprintf("syn-%d", handoff.MaxSpentTombstones-1))
 }
 
 // TestSeedDropRetrievalClearsKeptSeed verifies the end-to-end post-confirmation
@@ -206,7 +207,7 @@ func TestSeedDropRetrievalClearsKeptSeed(t *testing.T) {
 	d := NewSeedDrop(time.Minute)
 	d.SetBaseURL("http://127.0.0.1:9999")
 	mux := http.NewServeMux()
-	d.registerHandlers(mux)
+	d.RegisterHandlers(mux)
 	url := d.Register("claimhook", "fresh mnemonic from create")
 
 	// GET renders the seed (delivery may or may not have happened) and must NOT
@@ -277,7 +278,7 @@ func TestSeedDropWriteFailureKeepsSeedRetryable(t *testing.T) {
 	d := NewSeedDrop(time.Minute)
 	d.SetBaseURL("http://127.0.0.1:9999")
 	mux := http.NewServeMux()
-	d.registerHandlers(mux)
+	d.RegisterHandlers(mux)
 	url := d.Register("keeponfail", "mnemonic that must survive a failed write")
 
 	mux.ServeHTTP(&failingWriter{}, httptest.NewRequest(http.MethodGet, url, nil))
@@ -326,7 +327,7 @@ func TestSeedDropConfirmFailureKeepsTokenLive(t *testing.T) {
 	d := NewSeedDrop(time.Minute)
 	d.SetBaseURL("http://127.0.0.1:9999")
 	mux := http.NewServeMux()
-	d.registerHandlers(mux)
+	d.RegisterHandlers(mux)
 	url := d.Register("keepfail", "seed that must survive a failed removal")
 
 	// Force MarkSeedRetrieved's os.Remove to fail by making the seed's own

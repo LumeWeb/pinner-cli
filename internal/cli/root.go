@@ -18,6 +18,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/core/websites"
 	mcpadapter "go.lumeweb.com/pinner-cli/internal/mcp"
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
+	mcpauth "go.lumeweb.com/pinner-cli/internal/mcp/auth"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
@@ -460,7 +461,7 @@ For more help on any command: pinner <command> --help`,
 				// mux (remote). The base URL is empty at construction: the
 				// coordinator derives the loopback address when a login is
 				// requested.
-				OutOfBand: mcpadapter.NewOutOfBandLogin(authSvc, "", mcpadapter.DefaultMCPKeyName),
+				OutOfBand: mcpauth.NewOutOfBandLogin(authSvc, "", mcpauth.DefaultMCPKeyName),
 				// OOB restore completes a vault restore from a mnemonic the
 				// human enters in a browser form (loopback in stdio, shared
 				// mux over HTTP), so the seed never transits the MCP channel.

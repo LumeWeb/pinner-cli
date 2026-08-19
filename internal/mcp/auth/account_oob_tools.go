@@ -1,4 +1,4 @@
-package mcp
+package auth
 
 import (
 	"context"
@@ -181,7 +181,7 @@ func NewAccountPasswordResetDescriptor(svc AuthService, webAppURL string) model.
 // accountWebAppURL returns the account web app base URL (e.g.
 // https://account.<portal>) surfaced by the password-reset hand-off, or "" when
 // the config manager is unavailable.
-func accountWebAppURL(cfgMgr config.Manager) string {
+func AccountWebAppURL(cfgMgr config.Manager) string {
 	if cfgMgr == nil {
 		return ""
 	}
