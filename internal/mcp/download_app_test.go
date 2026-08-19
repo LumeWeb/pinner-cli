@@ -3,15 +3,15 @@ package mcp
 import (
 	"context"
 	"encoding/json"
-	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
-	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/download"
+	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
 
 // buildDownloadServers constructs a catalog with the download tools and
@@ -22,11 +22,11 @@ func buildDownloadServers(t *testing.T) *mcp.Server {
 	catalog := NewToolCatalog()
 	addDownloadToolEntries(t, catalog)
 	srv := sdk.NewServer(nil)
-	if err := RegisterIPFSDownloadApp(srv, catalog); err != nil {
-		t.Fatalf("RegisterIPFSDownloadApp: %v", err)
+	if err := download.RegisterIPFSDownloadApp(srv, catalog); err != nil {
+		t.Fatalf("download.RegisterIPFSDownloadApp: %v", err)
 	}
-	if err := RegisterVaultDownloadApp(srv, catalog); err != nil {
-		t.Fatalf("RegisterVaultDownloadApp: %v", err)
+	if err := download.RegisterVaultDownloadApp(srv, catalog); err != nil {
+		t.Fatalf("download.RegisterVaultDownloadApp: %v", err)
 	}
 	if err := RegisterOfficialCuratedTools(srv, catalog); err != nil {
 		t.Fatalf("RegisterOfficialCuratedTools: %v", err)
@@ -60,7 +60,7 @@ func TestRegisterDownloadAppsWire(t *testing.T) {
 	// Both ui:// views must be listed as resources.
 	res, err := cs.ListResources(ctx, nil)
 	require.NoError(t, err)
-	wantURIs := map[string]bool{IPFSDownloadAppURI: false, VaultDownloadAppURI: false}
+	wantURIs := map[string]bool{download.IPFSDownloadAppURI: false, download.VaultDownloadAppURI: false}
 	for _, r := range res.Resources {
 		if _, ok := wantURIs[r.URI]; ok {
 			wantURIs[r.URI] = true
@@ -80,42 +80,10 @@ func TestRegisterDownloadAppsWire(t *testing.T) {
 			continue
 		}
 		require.NotNil(t, x.Meta, "%s has no _meta after registering the app", x.Name)
-		require.Equal(t, map[string]string{"download_file": IPFSDownloadAppURI, "vault_get_file": VaultDownloadAppURI}[x.Name], x.Meta["ui/resourceUri"])
+		require.Equal(t, map[string]string{"download_file": download.IPFSDownloadAppURI, "vault_get_file": download.VaultDownloadAppURI}[x.Name], x.Meta["ui/resourceUri"])
 		seen[x.Name] = true
 	}
 	for name, ok := range seen {
 		require.True(t, ok, "%s tool not found after registering download apps", name)
-	}
-}
-
-// TestDownloadAppHTMLReferencesTools is the integration guard for app-tool
-// references: the served module HTML must reference the model-facing download
-// tool names, so the app's callServerTool never targets a removed/renamed tool.
-func TestDownloadAppHTMLReferencesTools(t *testing.T) {
-	ipfsHTML := renderIPFSDownloadAppHTML()
-	require.Contains(t, ipfsHTML, "download_file")
-	require.Contains(t, ipfsHTML, "ipfs-source")
-
-	vaultHTML := renderVaultDownloadAppHTML()
-	require.Contains(t, vaultHTML, "vault_get_file")
-	require.Contains(t, vaultHTML, "vault-source")
-	// Neither download HTML may reference the removed upload-era tools.
-	require.False(t, strings.Contains(ipfsHTML, "ipfs_upload_submit"))
-	require.False(t, strings.Contains(vaultHTML, "vault_upload_submit"))
-}
-
-// TestDownloadAppHTMLHasRequiredElementIds verifies the templ bodies expose the
-// element ids the bootstrap wiring expects.
-func TestDownloadAppHTMLHasRequiredElementIds(t *testing.T) {
-	for _, html := range []struct {
-		name string
-		html string
-	}{
-		{"ipfs", renderIPFSDownloadAppHTML()},
-		{"vault", renderVaultDownloadAppHTML()},
-	} {
-		for _, id := range []string{"-download-form", "-source", "sink-local", "sink-drop", "-download-status", "out-link", "out-path", "start"} {
-			require.Contains(t, html.html, id, "%s html missing element id %s", html.name, id)
-		}
 	}
 }

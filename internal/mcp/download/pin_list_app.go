@@ -1,4 +1,4 @@
-package mcp
+package download
 
 import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
@@ -29,7 +29,7 @@ func renderPinListAppHTML() string {
 // the ui://pins/list.html HTML resource. The view calls the existing pins_list
 // catalog tool over callServerTool; it needs no app-only helper because it only
 // reads and never drives a hand-off.
-func RegisterPinListApp(srv *sdk.Server, catalog *ToolCatalog) error {
+func RegisterPinListApp(srv *sdk.Server, catalog apps.AppCatalog) error {
 	return apps.RegisterAppView(srv, catalog, apps.AppView{
 		URI:           PinListAppURI,
 		Name:          "pin-list",
