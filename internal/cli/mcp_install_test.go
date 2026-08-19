@@ -691,18 +691,15 @@ func TestMcpInstallEnvWriteFreshnessGuards(t *testing.T) {
 		t.Error("config step must run (not skip) on a fresh install so it can collect creds")
 	}
 
-	configExtraSkip := func(s *InstallState) bool {
-		if s.NonInteractive {
-			return !isFreshServiceEnvFile(serviceEnvFile(cmd, s))
-		}
-		return false
-	}
+	// Assert the PRODUCTION predicate (configStepSkipIfHeadlessReRun) directly,
+	// not a local re-implementation, so a divergence in the installer's skip
+	// logic fails the test instead of silently unguarding the re-run behavior.
 	existingState := &InstallState{Service: &mcpadapter.ServiceInstallState{EnvFile: envFile}}
-	if configExtraSkip(existingState) {
+	if configStepSkipIfHeadlessReRun(cmd, existingState) {
 		t.Error("config step must RUN (not skip) on an interactive re-run so the operator can reconfigure")
 	}
 	headlessState := &InstallState{Service: &mcpadapter.ServiceInstallState{EnvFile: envFile}, NonInteractive: true}
-	if !configExtraSkip(headlessState) {
+	if !configStepSkipIfHeadlessReRun(cmd, headlessState) {
 		t.Error("config step must SKIP on a headless re-run against a pre-existing env file (cannot prompt)")
 	}
 }

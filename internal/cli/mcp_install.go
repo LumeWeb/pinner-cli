@@ -428,12 +428,7 @@ func buildMcpTunnelSteps(realCmd *cli.Command) []wizard.Step[*InstallState] {
 		// path dead code.) The prompted values are reconciled onto the file
 		// by the collector's success path.
 		wrap("Tunnel-specific configuration", tunnelStepAt(inner, 1), tunnelConfigSeeded,
-			func(s *InstallState) bool {
-				if s.NonInteractive {
-					return !isFreshServiceEnvFile(serviceEnvFile(realCmd, s))
-				}
-				return false
-			},
+			func(s *InstallState) bool { return configStepSkipIfHeadlessReRun(realCmd, s) },
 			nil, nil),
 		// The env-write step NEVER skips for http (only for a non-http install
 		// or a tapped serviceEnvErr). On the FRESH path it writes the env from
@@ -496,6 +491,20 @@ func serviceEnvFile(realCmd *cli.Command, s *InstallState) string {
 // exist before this run (so this run creates it fresh).
 func serviceEnvFileIsFresh(realCmd *cli.Command, s *InstallState) bool {
 	return isFreshServiceEnvFile(serviceEnvFile(realCmd, s))
+}
+
+// configStepSkipIfHeadlessReRun is the tunnel-config step's extraSkip
+// predicate. It reports whether the step should be skipped: only on a HEADLESS
+// re-run against a pre-existing env file, where it cannot prompt and the
+// collector reuses the on-disk config via the flag reconcile. It must return
+// false on a fresh install (collect creds) and on an interactive re-run (the
+// operator reconfigures). Extracted as a named helper so the installer AND the
+// tests assert the same production predicate rather than a re-implementation.
+func configStepSkipIfHeadlessReRun(realCmd *cli.Command, s *InstallState) bool {
+	if s.NonInteractive {
+		return !isFreshServiceEnvFile(serviceEnvFile(realCmd, s))
+	}
+	return false
 }
 
 // wrap builds a host step that (a) seeds switch/env values into the service
