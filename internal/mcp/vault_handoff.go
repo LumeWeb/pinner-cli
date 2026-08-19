@@ -229,7 +229,7 @@ func vaultCreateResumeContinuation(oob *OOBCreate, handles *session.AsyncHandleS
 // the agent to restart (an expired restore is not reported as done). It
 // is registered against the handle by mintVaultHandoff so the shared
 // vault_restore_resume template dispatches to it. It is a pure
-// coordinator-state poll (the token going spent); the RestoreRunner only runs
+// coordinator-state poll (the token going spent); the wizard.RestoreRunner only runs
 // in the browser POST handler, never on this channel, so the seed never
 // reaches the agent.
 func vaultRestoreResumeContinuation(oob *OOBRestore, handles *session.AsyncHandleStore, reg *handoff.HandoffRegistry) handoff.ResumeContinuation {

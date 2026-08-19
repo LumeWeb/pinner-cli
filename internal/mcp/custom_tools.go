@@ -5,6 +5,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
+	"go.lumeweb.com/pinner-cli/internal/mcp/wizard"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 
@@ -91,9 +92,9 @@ type customToolDeps struct {
 	// wizard deps are built from wizardFactory at Action time. All three are
 	// nil when no wizard factory is configured.
 	hasWizard bool
-	wizardW   WebsitesWizardDeps
-	wizardS   SetupWizardDeps
-	wizardD   DomainWizardDeps
+	wizardW   wizard.WebsitesWizardDeps
+	wizardS   wizard.SetupWizardDeps
+	wizardD   wizard.DomainWizardDeps
 }
 
 // registerCustomTools registers every custom/direct tool, resource, and prompt
@@ -101,7 +102,7 @@ type customToolDeps struct {
 // used to live inline in the MCPCommand transport closure, so the wiring is
 // cognitively isolated from the server pump:
 //
-//   - wizard tools (RegisterWizardTools) — sessions + step handlers
+//   - wizard tools (wizard.RegisterWizardTools) — sessions + step handlers
 //   - the "Create a Pin" MCP App (ui:// view + app-only status helper)
 //   - the agent-facing out-of-band sign-in tools, which join the catalog as
 //     DirectVisible tools instead of a separate RegisterOfficialDescriptor path
@@ -111,7 +112,7 @@ type customToolDeps struct {
 //   - the capability-detection tool and (optionally) the prompt templates
 func registerCustomTools(deps customToolDeps) error {
 	if deps.hasWizard {
-		if err := RegisterWizardTools(deps.catalog, deps.store, deps.wizardW, deps.wizardS, deps.wizardD); err != nil {
+		if err := wizard.RegisterWizardTools(deps.catalog, deps.store, deps.wizardW, deps.wizardS, deps.wizardD); err != nil {
 			return err
 		}
 	}

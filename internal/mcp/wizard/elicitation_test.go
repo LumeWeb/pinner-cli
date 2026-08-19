@@ -1,4 +1,4 @@
-package mcp
+package wizard
 
 import (
 	"context"
@@ -76,7 +76,7 @@ func TestOfficialToolHandlerElicitationRoundTrip(t *testing.T) {
 		}}, nil
 	})
 
-	handler := sdk.AdaptToolHandler(sdkHandlerDeps, stepHandler)
+	handler := sdk.AdaptToolHandler(sdk.HandlerDeps{ReservedRequestStateKey: "request_state"}, stepHandler)
 
 	// Round 1: no input yet -> expect an input_required (InputRequests) result.
 	r1, err := handler(context.Background(), &mcp.CallToolRequest{Params: &mcp.CallToolParamsRaw{
@@ -129,7 +129,7 @@ func TestElicitationRequestStateCarriesSession(t *testing.T) {
 			ID: "input", Message: "Enter domain", RequestState: "sess-42",
 		}}, nil
 	})
-	handler := sdk.AdaptToolHandler(sdkHandlerDeps, stepHandler)
+	handler := sdk.AdaptToolHandler(sdk.HandlerDeps{ReservedRequestStateKey: "request_state"}, stepHandler)
 
 	r1, err := handler(context.Background(), &mcp.CallToolRequest{Params: &mcp.CallToolParamsRaw{
 		Name: "websites_wizard_step", Arguments: json.RawMessage(`{"session_id":"sess-42"}`),
@@ -202,7 +202,7 @@ func TestOfficialToolHandlerFlagsFormRetry(t *testing.T) {
 		got <- req.InputResponses
 		return model.ToolResult{Text: "ok"}, nil
 	})
-	handler := sdk.AdaptToolHandler(sdkHandlerDeps, stepHandler)
+	handler := sdk.AdaptToolHandler(sdk.HandlerDeps{ReservedRequestStateKey: "request_state"}, stepHandler)
 
 	// Fresh call with no inputResponses must NOT be flagged as a retry.
 	if _, err := handler(context.Background(), &mcp.CallToolRequest{Params: &mcp.CallToolParamsRaw{

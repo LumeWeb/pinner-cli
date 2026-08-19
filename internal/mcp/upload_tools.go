@@ -6,6 +6,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
+	"go.lumeweb.com/pinner-cli/internal/mcp/wizard"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
 )
@@ -116,7 +117,7 @@ func NewAsyncUploadTools(mgr *transfer.UploadTaskManager) []model.ToolDescriptor
 			Title:       "List async uploads",
 			Description: "List all tracked async upload handles and their current status.",
 			Category:    model.CategoryCore,
-			InputSchema: toolargs.ToolSchemaFor[NoInput](),
+			InputSchema: toolargs.ToolSchemaFor[wizard.NoInput](),
 			Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
 				tasks := mgr.List()
 				return model.ToolResult{StructuredContent: map[string]any{"uploads": tasks}, Text: "Uploads."}, nil

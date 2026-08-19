@@ -4,10 +4,10 @@ import (
 	"context"
 
 	"go.lumeweb.com/pinner-cli/internal/core/vault"
-	mcpadapter "go.lumeweb.com/pinner-cli/internal/mcp"
+	mcpwizard "go.lumeweb.com/pinner-cli/internal/mcp/wizard"
 )
 
-// vaultCreateRunner implements mcpadapter.CreateRunner so the MCP layer can
+// vaultCreateRunner implements mcpwizard.CreateRunner so the MCP layer can
 // provision and activate a new vault from the OOB create page. It drives the
 // shared Provisioner.Create path (the same core the CLI action uses), so the
 // two cannot drift. Create generates a fresh seed, drives the Sia browser
@@ -19,7 +19,7 @@ type vaultCreateRunner struct {
 
 // NewVaultCreateRunner builds a CreateRunner wired to the shared vault
 // provisioning service.
-func NewVaultCreateRunner(indexerURL string) mcpadapter.CreateRunner {
+func NewVaultCreateRunner(indexerURL string) mcpwizard.CreateRunner {
 	return &vaultCreateRunner{indexerURL: indexerURL}
 }
 

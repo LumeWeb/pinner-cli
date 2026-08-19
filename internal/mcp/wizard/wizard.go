@@ -1,4 +1,4 @@
-package mcp
+package wizard
 
 import (
 	"context"
@@ -1100,7 +1100,13 @@ func marshalWizardResponse(resp StepResponse) (model.ToolResult, error) {
 	return model.ToolResult{IsError: resp.Error != "", Text: string(raw)}, nil
 }
 
-func registerWizardStart(catalog *ToolCatalog, name, description string, start func() (*session.Session, error)) {
+// toolAdder is the narrow slice of the hub's tool catalog the wizard needs to
+// register its start/step tools. The hub's *ToolCatalog satisfies it.
+type toolAdder interface {
+	Add(entry *model.ToolEntry)
+}
+
+func registerWizardStart(catalog toolAdder, name, description string, start func() (*session.Session, error)) {
 	catalog.Add(wizardEntry(name, description, json.RawMessage(`{"type":"object","properties":{}}`), func(_ context.Context, _ model.ToolRequest) (model.ToolResult, error) {
 		sess, err := start()
 		if err != nil {
@@ -1110,7 +1116,7 @@ func registerWizardStart(catalog *ToolCatalog, name, description string, start f
 	}))
 }
 
-func registerWizardStep(catalog *ToolCatalog, name, description string, store *session.SessionStore, completionMessage string) {
+func registerWizardStep(catalog toolAdder, name, description string, store *session.SessionStore, completionMessage string) {
 	catalog.Add(wizardEntry(name, description, wizardStepSchema(), func(ctx context.Context, req model.ToolRequest) (model.ToolResult, error) {
 		in, err := toolargs.DecodeToolArgs[WizardStepInput](req)
 		if err != nil {
@@ -1171,7 +1177,7 @@ func registerWizardStep(catalog *ToolCatalog, name, description string, store *s
 	}))
 }
 
-func RegisterWizardTools(catalog *ToolCatalog, store *session.SessionStore, wDeps WebsitesWizardDeps, sDeps SetupWizardDeps, dDeps DomainWizardDeps) error {
+func RegisterWizardTools(catalog toolAdder, store *session.SessionStore, wDeps WebsitesWizardDeps, sDeps SetupWizardDeps, dDeps DomainWizardDeps) error {
 	registerWizardStart(catalog, "domains_wizard_start", "Start a new domain addition wizard session.", func() (*session.Session, error) { return NewDomainSession(store, dDeps) })
 	registerWizardStep(catalog, "domains_wizard_step", "Advance a domain addition wizard session by one step.", store, "Domains wizard completed successfully.")
 	registerWizardStart(catalog, "websites_wizard_start", "Start a new websites creation wizard session.", func() (*session.Session, error) { return NewWebsitesSession(store, wDeps) })

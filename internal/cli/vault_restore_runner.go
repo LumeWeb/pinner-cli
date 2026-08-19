@@ -5,10 +5,10 @@ import (
 	"os"
 
 	"go.lumeweb.com/pinner-cli/internal/core/vault"
-	mcpadapter "go.lumeweb.com/pinner-cli/internal/mcp"
+	mcpwizard "go.lumeweb.com/pinner-cli/internal/mcp/wizard"
 )
 
-// vaultRestoreRunner implements mcpadapter.RestoreRunner so the MCP layer can
+// vaultRestoreRunner implements mcpwizard.RestoreRunner so the MCP layer can
 // complete a vault restore from a mnemonic the human enters in a browser
 // (OOB restore). It drives the shared provisioning service directly (the same
 // vault.Provisioner the CLI action uses), so the two cannot drift. The
@@ -20,7 +20,7 @@ type vaultRestoreRunner struct {
 
 // NewVaultRestoreRunner builds a RestoreRunner wired to the shared vault
 // provisioning/completion service.
-func NewVaultRestoreRunner(output Output, indexerURL string) mcpadapter.RestoreRunner {
+func NewVaultRestoreRunner(output Output, indexerURL string) mcpwizard.RestoreRunner {
 	return &vaultRestoreRunner{indexerURL: indexerURL}
 }
 

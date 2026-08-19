@@ -29,7 +29,7 @@ import (
 // and the freshly generated seed is delivered through the shared SeedDrop's
 // one-time seed_url. The restore seed never crosses the agent channel at all:
 // it is entered by the human on the one-time /restore/<token> page and consumed
-// by the OOBRestore coordinator's RestoreRunner.
+// by the OOBRestore coordinator's wizard.RestoreRunner.
 //
 // DELIBERATE DIVERGENCE from the Catalog.Invoke dispatch seam: these two
 // handlers call catalog.NormalizeOperationInput + op.Handler().Execute directly

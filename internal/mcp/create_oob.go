@@ -9,6 +9,7 @@ import (
 
 	"github.com/a-h/templ"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
+	"go.lumeweb.com/pinner-cli/internal/mcp/wizard"
 	"go.uber.org/zap"
 )
 
@@ -29,7 +30,7 @@ import (
 // which supplies the one-time/expiring URL, loopback-or-shared-mux bootstrap,
 // and CSRF origin guard. Works over both stdio and HTTP/tunnel.
 type OOBCreate struct {
-	runner   CreateRunner
+	runner   wizard.CreateRunner
 	seedDrop *SeedDrop
 	core     handoff.Endpoint
 
@@ -64,9 +65,9 @@ type createPayload struct {
 const DefaultCreateTTL = DefaultRestoreTTL
 
 // NewOOBCreate creates an out-of-band create coordinator backed by a
-// CreateRunner (implemented in internal/cli over the shared Provisioner.Create
+// wizard.CreateRunner (implemented in internal/cli over the shared Provisioner.Create
 // path) and a SeedDrop used to deliver the freshly generated seed.
-func NewOOBCreate(runner CreateRunner, seedDrop *SeedDrop, ttl time.Duration) *OOBCreate {
+func NewOOBCreate(runner wizard.CreateRunner, seedDrop *SeedDrop, ttl time.Duration) *OOBCreate {
 	if ttl <= 0 {
 		ttl = DefaultCreateTTL
 	}

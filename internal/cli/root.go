@@ -22,6 +22,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
+	mcpwizard "go.lumeweb.com/pinner-cli/internal/mcp/wizard"
 )
 
 // Run executes the CLI application with the given context and arguments.
@@ -148,10 +149,10 @@ For more help on any command: pinner <command> --help`,
 	// internal/mcp, so importing internal/cli there would form a cycle). Root
 	// is the join point where both sides exist.
 	mcpCmd := mcpadapter.MCPCommand(root,
-		func() (mcpadapter.WebsitesWizardDeps, mcpadapter.SetupWizardDeps, mcpadapter.DomainWizardDeps, error) {
+		func() (mcpwizard.WebsitesWizardDeps, mcpwizard.SetupWizardDeps, mcpwizard.DomainWizardDeps, error) {
 			cfgMgr, err := configManagerFactory()
 			if err != nil {
-				return mcpadapter.WebsitesWizardDeps{}, mcpadapter.SetupWizardDeps{}, mcpadapter.DomainWizardDeps{}, err
+				return mcpwizard.WebsitesWizardDeps{}, mcpwizard.SetupWizardDeps{}, mcpwizard.DomainWizardDeps{}, err
 			}
 
 			// Build a minimal output formatter for service construction.
@@ -446,14 +447,14 @@ For more help on any command: pinner <command> --help`,
 				}
 			}
 
-			wDeps := mcpadapter.WebsitesWizardDeps{
+			wDeps := mcpwizard.WebsitesWizardDeps{
 				CfgMgr:          cfgMgr,
 				WebsitesService: websitesSvc,
-				WebsitesFactory: func() mcpadapter.WebsitesWizardState {
+				WebsitesFactory: func() mcpwizard.WebsitesWizardState {
 					return NewWebsitesWizard(websitesSvc, cfgMgr, nil, output)
 				},
 			}
-			sDeps := mcpadapter.SetupWizardDeps{
+			sDeps := mcpwizard.SetupWizardDeps{
 				CfgMgr:      cfgMgr,
 				AuthService: authSvc,
 				// Out-of-band sign-in runs in the user's browser on an
@@ -470,14 +471,14 @@ For more help on any command: pinner <command> --help`,
 				// fresh seed) in a browser page, symmetric with restore, so the
 				// seed never transits the MCP channel.
 				Create: NewVaultCreateRunner(cfgMgr.Config().GetSiaIndexerURL()),
-				SetupFactory: func() mcpadapter.SetupWizardState {
+				SetupFactory: func() mcpwizard.SetupWizardState {
 					return NewSetupWizard(cfgMgr, authSvc, nil, SetupOptions{})
 				},
 			}
-			dDeps := mcpadapter.DomainWizardDeps{
+			dDeps := mcpwizard.DomainWizardDeps{
 				CfgMgr:          cfgMgr,
 				WebsitesService: websitesSvc,
-				DomainFactory: func() mcpadapter.DomainWizardState {
+				DomainFactory: func() mcpwizard.DomainWizardState {
 					return NewDomainAddWizard(websitesSvc, cfgMgr, nil, output)
 				},
 			}
