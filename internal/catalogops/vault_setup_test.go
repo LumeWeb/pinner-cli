@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -159,4 +160,33 @@ func setupOpNamed(t *testing.T, deps VaultDeps, name string) catalog.Operation {
 	}
 	t.Fatalf("catalog op %s not found", name)
 	return nil
+}
+
+// TestVaultSearchNormalizesStatusGuard tests that mixed-case status values
+// (e.g. "OK", "Pending") accepted by the now case-insensitive enum gate do not
+// trip the handler's exact-case guard. The handler normalizes status to
+// lowercase before the guard, so an empty/isolated vault must error on profile
+// resolution — never on the status guard.
+func TestVaultSearchNormalizesStatusGuard(t *testing.T) {
+	isolateVaultHome(t)
+
+	var op catalog.Operation
+	for _, o := range VaultOperations(VaultDeps{}) {
+		if o.Name() == "vault_search" {
+			op = o
+			break
+		}
+	}
+	if op == nil {
+		t.Fatal("vault_search operation not found")
+	}
+
+	for _, status := range []string{"OK", "Pending", "Lost"} {
+		_, err := op.Handler().Execute(context.Background(), map[string]any{"status": status})
+		// With no configured vault the handler fails downstream of the guard
+		// (profile resolution), but it must NOT reject the mixed-case status.
+		if err != nil && strings.Contains(err.Error(), "invalid status") {
+			t.Errorf("status %q tripped the exact-case guard after normalization: %v", status, err)
+		}
+	}
 }

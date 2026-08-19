@@ -518,10 +518,14 @@ func resolveArg(a OperationArg, raw any, present bool) (value any, st argState, 
 		}
 		// Enum-constrained args reject out-of-range values with an error: a
 		// model passing "ZZZ" for a DNS-record type arg gets an error, not a
-		// silent invalid value.
+		// silent invalid value. The match is case-insensitive so a value whose
+		// semantic is case-insensitive by definition (e.g. a DNS record type:
+		// "txt" == "TXT") passes the gate and the handler normalizes the casing
+		// before it reaches the wire. The returned value keeps the caller's
+		// original casing; normalization is the handler's job.
 		if len(a.Enum) > 0 {
 			for _, e := range a.Enum {
-				if s == e {
+				if strings.EqualFold(s, e) {
 					return s, stateFilled, nil
 				}
 			}

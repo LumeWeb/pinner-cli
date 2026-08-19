@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 
 	ipfs "go.lumeweb.com/ipfs-sdk"
 
@@ -185,7 +186,7 @@ func dnsZonesGet(d DNSDeps) catalog.Operation {
 		Visibility:  catalog.VisibilityBoth,
 		Positional:  "<domain>",
 		Args: []catalog.OperationArg{
-			{Name: "zone", Type: catalog.ArgTypeString, Required: true, Help: "Domain name or numeric zone ID"},
+			{Name: "zone", Type: catalog.ArgTypeString, Required: true, Help: "Domain name or numeric zone ID", PositionalOnly: true},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			svc, svcErr := d.service(input)
@@ -225,7 +226,7 @@ func dnsZonesDelete(d DNSDeps) catalog.Operation {
 		Visibility:  catalog.VisibilityBoth,
 		Positional:  "<domain>",
 		Args: []catalog.OperationArg{
-			{Name: "zone", Type: catalog.ArgTypeString, Required: true, Help: "Domain name or numeric zone ID"},
+			{Name: "zone", Type: catalog.ArgTypeString, Required: true, Help: "Domain name or numeric zone ID", PositionalOnly: true},
 			{Name: "confirm", Type: catalog.ArgTypeBool, Required: true, Help: "Confirm the destructive delete", AgentHelp: "Must be true to delete the zone; this is destructive and cannot be undone."},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
@@ -269,7 +270,7 @@ func dnsZonesValidate(d DNSDeps) catalog.Operation {
 		Visibility:  catalog.VisibilityBoth,
 		Positional:  "<domain>",
 		Args: []catalog.OperationArg{
-			{Name: "zone", Type: catalog.ArgTypeString, Required: true, Help: "Domain name or numeric zone ID"},
+			{Name: "zone", Type: catalog.ArgTypeString, Required: true, Help: "Domain name or numeric zone ID", PositionalOnly: true},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			svc, svcErr := d.service(input)
@@ -312,7 +313,7 @@ func dnsRecordsList(d DNSDeps) catalog.Operation {
 		Visibility:  catalog.VisibilityBoth,
 		Positional:  "<domain>",
 		Args: []catalog.OperationArg{
-			{Name: "zone", Type: catalog.ArgTypeString, Required: true, Help: "Domain name or numeric zone ID"},
+			{Name: "zone", Type: catalog.ArgTypeString, Required: true, Help: "Domain name or numeric zone ID", PositionalOnly: true},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			svc, svcErr := d.service(input)
@@ -354,7 +355,7 @@ func dnsRecordsCreate(d DNSDeps) catalog.Operation {
 		Visibility:  catalog.VisibilityBoth,
 		Positional:  "<domain>",
 		Args: []catalog.OperationArg{
-			{Name: "zone", Type: catalog.ArgTypeString, Required: true, Help: "Domain name or numeric zone ID"},
+			{Name: "zone", Type: catalog.ArgTypeString, Required: true, Help: "Domain name or numeric zone ID", PositionalOnly: true},
 			{Name: "name", Type: catalog.ArgTypeString, Help: "Record name (omit or use @ for apex)"},
 			{Name: "type", Type: catalog.ArgTypeString, Required: true, Enum: []string{"A", "AAAA", "CNAME", "MX", "NS", "TXT", "SRV", "CAA", "PTR", "SOA"}, Help: "Record type (A, AAAA, CNAME, MX, NS, TXT, SRV, CAA, PTR, SOA)"},
 			{Name: "content", Type: catalog.ArgTypeString, Required: true, Help: "Record content (IP, domain, or text)"},
@@ -374,7 +375,7 @@ func dnsRecordsCreate(d DNSDeps) catalog.Operation {
 				return nil, fmt.Errorf("domain or zone ID is required")
 			}
 			name := catalog.StrArg(input, "name", "")
-			recordType := catalog.StrArg(input, "type", "")
+			recordType := strings.ToUpper(catalog.StrArg(input, "type", ""))
 			content := catalog.StrArg(input, "content", "")
 
 			if err := validateDNSRecord(recordType, content); err != nil {
@@ -425,7 +426,7 @@ func dnsRecordsGet(d DNSDeps) catalog.Operation {
 		Visibility:  catalog.VisibilityBoth,
 		Positional:  "<domain>",
 		Args: []catalog.OperationArg{
-			{Name: "zone", Type: catalog.ArgTypeString, Required: true, Help: "Domain name or numeric zone ID"},
+			{Name: "zone", Type: catalog.ArgTypeString, Required: true, Help: "Domain name or numeric zone ID", PositionalOnly: true},
 			{Name: "name", Type: catalog.ArgTypeString, Required: true, Help: "Record name (or @ for apex)"},
 			{Name: "type", Type: catalog.ArgTypeString, Required: true, Help: "Record type"},
 		},
@@ -442,7 +443,7 @@ func dnsRecordsGet(d DNSDeps) catalog.Operation {
 				return nil, fmt.Errorf("domain or zone ID is required")
 			}
 			name := catalog.StrArg(input, "name", "")
-			recordType := catalog.StrArg(input, "type", "")
+			recordType := strings.ToUpper(catalog.StrArg(input, "type", ""))
 			if name == "" || recordType == "" {
 				return nil, fmt.Errorf("record name (--name) and type (--type) are required")
 			}
@@ -474,7 +475,7 @@ func dnsRecordsUpdate(d DNSDeps) catalog.Operation {
 		Visibility:  catalog.VisibilityBoth,
 		Positional:  "<domain>",
 		Args: []catalog.OperationArg{
-			{Name: "zone", Type: catalog.ArgTypeString, Required: true, Help: "Domain name or numeric zone ID"},
+			{Name: "zone", Type: catalog.ArgTypeString, Required: true, Help: "Domain name or numeric zone ID", PositionalOnly: true},
 			{Name: "name", Type: catalog.ArgTypeString, Required: true, Help: "Record name (or @ for apex)"},
 			{Name: "type", Type: catalog.ArgTypeString, Required: true, Help: "Record type"},
 			{Name: "content", Type: catalog.ArgTypeString, Required: true, Help: "New record content"},
@@ -494,7 +495,7 @@ func dnsRecordsUpdate(d DNSDeps) catalog.Operation {
 				return nil, fmt.Errorf("domain or zone ID is required")
 			}
 			name := catalog.StrArg(input, "name", "")
-			recordType := catalog.StrArg(input, "type", "")
+			recordType := strings.ToUpper(catalog.StrArg(input, "type", ""))
 			content := catalog.StrArg(input, "content", "")
 
 			if err := validateDNSRecord(recordType, content); err != nil {
@@ -553,7 +554,7 @@ func dnsRecordsDelete(d DNSDeps) catalog.Operation {
 		Visibility:  catalog.VisibilityBoth,
 		Positional:  "<domain>",
 		Args: []catalog.OperationArg{
-			{Name: "zone", Type: catalog.ArgTypeString, Required: true, Help: "Domain name or numeric zone ID"},
+			{Name: "zone", Type: catalog.ArgTypeString, Required: true, Help: "Domain name or numeric zone ID", PositionalOnly: true},
 			{Name: "name", Type: catalog.ArgTypeString, Required: true, Help: "Record name (or @ for apex)"},
 			{Name: "type", Type: catalog.ArgTypeString, Required: true, Help: "Record type"},
 			{Name: "confirm", Type: catalog.ArgTypeBool, Required: true, Help: "Confirm the destructive operation", AgentHelp: "Must be true to delete the record; this is destructive and cannot be undone."},
@@ -574,7 +575,7 @@ func dnsRecordsDelete(d DNSDeps) catalog.Operation {
 				return nil, fmt.Errorf("domain or zone ID is required")
 			}
 			name := catalog.StrArg(input, "name", "")
-			recordType := catalog.StrArg(input, "type", "")
+			recordType := strings.ToUpper(catalog.StrArg(input, "type", ""))
 			if name == "" || recordType == "" {
 				return nil, fmt.Errorf("record name (--name) and type (--type) are required")
 			}

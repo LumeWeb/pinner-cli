@@ -60,8 +60,15 @@ func ValidateDNSRecord(recordType, content string) error {
 			return fmt.Errorf("invalid domain for %s record", recordType)
 		}
 	case "TXT":
-		if len(content) > 255 {
-			return fmt.Errorf("TXT record content too long (max 255 characters)")
+		// RFC 1035 limits each TXT *string* to 255 octets, but a TXT record
+		// value is a list of such strings — DKIM1 keys and long SPF records
+		// legitimately exceed 255 bytes, and PowerDNS (the backend) chunks
+		// them automatically. So there is no single-value 255 cap here: the
+		// only guard is an absurd sanity cap against typos (bytes, matching
+		// the wire's octet semantics). A value over this is almost certainly
+		// garbage, not a real record.
+		if len(content) > 65535 {
+			return fmt.Errorf("TXT record content too long (max 65535 bytes)")
 		}
 	case "SRV":
 		if err := validateSRV(content); err != nil {

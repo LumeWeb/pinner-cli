@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"go.lumeweb.com/pinner-cli/internal/catalog"
@@ -568,6 +569,11 @@ func vaultSearch(d VaultDeps) catalog.Operation {
 			{Name: "profile", Type: catalog.ArgTypeString, Help: "Vault profile name (defaults to the active profile)"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
+			// Normalize status to lowercase: the resolveArg enum gate is
+			// case-insensitive, so 'OK'/'Pending' pass it, and the guard below
+			// compares against the canonical lowercase members. Normalizing here
+			// keeps the gate and the guard consistent.
+			status := strings.ToLower(catalog.StrArg(input, "status", ""))
 			f := vault.SearchFilter{
 				Name:      catalog.StrArg(input, "query", ""),
 				Tags:      catalog.StrSliceArg(input, "tag"),
@@ -575,7 +581,7 @@ func vaultSearch(d VaultDeps) catalog.Operation {
 				CreatedBy: catalog.StrArg(input, "created_by", ""),
 				AgentID:   catalog.StrArg(input, "agent", ""),
 				SessionID: catalog.StrArg(input, "session", ""),
-				Status:    catalog.StrArg(input, "status", ""),
+				Status:    status,
 			}
 			if sinceStr := catalog.StrArg(input, "since", ""); sinceStr != "" {
 				since, err := time.Parse(time.RFC3339, sinceStr)

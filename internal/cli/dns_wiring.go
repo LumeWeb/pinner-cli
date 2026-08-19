@@ -183,8 +183,10 @@ func dnsCatalogActionAdapter(c *cli.Command, group, leaf string) cli.ActionFunc 
 			input[catalogops.AuthTokenInputKey] = tok
 		}
 
-		// Map the positional <domain>/<zone-id> into the "zone" input.
-		if cmd.Args().Len() > 0 && catalog.StrArg(input, "zone", "") == "" {
+		// Map the positional <domain>/<zone-id> into the "zone" input. The zone
+		// arg is PositionalOnly on the DNS ops (no --zone flag), so the <domain>
+		// positional is the only way to supply it.
+		if cmd.Args().Len() > 0 {
 			input["zone"] = cmd.Args().First()
 		}
 
