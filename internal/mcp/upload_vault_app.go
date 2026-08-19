@@ -39,7 +39,7 @@ type VaultUploadSubmitInput struct {
 // renderVaultUploadAppHTML renders the complete "Upload to Vault" app document
 // (ui://uploads/vault.html). The shared shell (doctype/<head>/inline theme) and
 // the ESM module (shared ext-apps bootstrap + upload logic) come from
-// renderMcpAppDoc; only the visible body form is authored in templ.
+// mcpapp.RenderMcpAppDoc; only the visible body form is authored in templ.
 func renderVaultUploadAppHTML() string {
 	return mcpapp.RenderMcpAppDoc("Upload to Vault", mcpapp.VaultUploadAppForm(), mcpapp.AppModule("vault-upload"))
 }

@@ -24,7 +24,7 @@ const VaultCreateAppURI = "ui://vault/create.html"
 // renderVaultCreateAppHTML renders the complete "Create Vault" app document
 // (ui://vault/create.html). The shared shell (doctype/<head>/inline theme) and
 // the ESM module (shared ext-apps bootstrap + create logic) come from
-// renderMcpAppDoc; only the visible body form is authored in templ.
+// mcpapp.RenderMcpAppDoc; only the visible body form is authored in templ.
 func renderVaultCreateAppHTML() string {
 	return mcpapp.RenderMcpAppDoc("Create Vault", mcpapp.VaultCreateAppForm(), mcpapp.AppModule("vault-create"))
 }

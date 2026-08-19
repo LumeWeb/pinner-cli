@@ -36,10 +36,6 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
 )
 
-// build.Version is stamped by ldflags. Fall back to a dev constant when it is
-// empty (e.g. during `go test`).
-const officialSDKVersion = "v1.4.1"
-
 // sdkHandlerDeps is the hub's implementation of the behaviors the sdk handler
 // adapter needs: per-request capabilities, request-state echo key, operation
 // logging, and companion-app annotation on needs_human results.
@@ -74,8 +70,8 @@ func OfficialServerFromCatalog(catalog *ToolCatalog, instructions string, stdioM
 // Resources and prompts are registered by the command action after runtime
 // providers and options are resolved. The descriptor adapters below preserve
 // their wire contracts on the official server.
-func OfficialMCPServer(root *cli.Command, hasRootAction bool, prefix []string, stdioMode bool, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate, handoffReg *handoff.HandoffRegistry, authHandles *session.AsyncHandleStore, catalogOpts ...buildCatalogOpt) (*sdk.Server, *ToolCatalog, error) {
-	catalog, err := buildCatalog(root, hasRootAction, prefix, seedDrop, oobRestore, oobCreate, handoffReg, authHandles, catalogOpts...)
+func OfficialMCPServer(root *cli.Command, stdioMode bool, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate, handoffReg *handoff.HandoffRegistry, authHandles *session.AsyncHandleStore, catalogOpts ...buildCatalogOpt) (*sdk.Server, *ToolCatalog, error) {
+	catalog, err := buildCatalog(root, seedDrop, oobRestore, oobCreate, handoffReg, authHandles, catalogOpts...)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -398,17 +394,6 @@ func registerOfficialInvokeTool(srv *sdk.Server, catalog *ToolCatalog, stdioMode
 	})
 
 	return sdk.RegisterTool(srv, sdkHandlerDeps, desc)
-}
-
-// RegisterOfficialToolsFromCatalog registers every catalog entry as an
-// official tool with its Pinner-owned handler. Pinner keeps these hidden from
-// tools/list by design (progressive disclosure); this exists for callers that
-// opt into first-class exposure.
-func RegisterOfficialToolsFromCatalog(srv *sdk.Server, catalog *ToolCatalog) error {
-	if catalog == nil {
-		return fmt.Errorf("nil tool catalog")
-	}
-	return RegisterOfficialMetaTools(srv, catalog, false, nil, nil, nil)
 }
 
 // RegisterOfficialDescriptor adds one Pinner-owned tool directly to tools/list.

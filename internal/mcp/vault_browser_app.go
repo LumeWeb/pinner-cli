@@ -18,7 +18,7 @@ const VaultBrowserAppURI = "ui://vault/browser.html"
 // renderVaultBrowserAppHTML renders the complete "Vault browser" app document
 // (ui://vault/browser.html). The shared shell (doctype/<head>/inline theme) and
 // the ESM module (shared ext-apps bootstrap + browser logic) come from
-// renderMcpAppDoc; only the visible body is authored in templ.
+// mcpapp.RenderMcpAppDoc; only the visible body is authored in templ.
 func renderVaultBrowserAppHTML() string {
 	return mcpapp.RenderMcpAppDoc("Vault browser", mcpapp.VaultBrowserAppForm(), mcpapp.AppModule("vault-browser"))
 }

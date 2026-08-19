@@ -18,7 +18,7 @@ const PinListAppURI = "ui://pins/list.html"
 // renderPinListAppHTML renders the complete "Pin list" app document
 // (ui://pins/list.html). The shared shell (doctype/<head>/inline theme) and the
 // ESM module (shared ext-apps bootstrap + pin-list logic) come from
-// renderMcpAppDoc; only the visible body is authored in templ.
+// mcpapp.RenderMcpAppDoc; only the visible body is authored in templ.
 func renderPinListAppHTML() string {
 	return mcpapp.RenderMcpAppDoc("Pins", mcpapp.PinListAppForm(), mcpapp.AppModule("pin-list"))
 }

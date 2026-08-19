@@ -42,17 +42,6 @@ import (
 // ToolDelimiter separates command path segments in MCP tool names.
 const ToolDelimiter = "_"
 
-// vaultRestoreToolName is the catalog name of the vault restore tool. It has
-// agent-facing behavior (OOB browser restore hand-off plus a stdin-gated
-// --seed-stdin variant). Declared once so the behavior wiring and the invoke
-// gate share one name.
-const vaultRestoreToolName = "pinner_vault_restore"
-
-// vaultCreateToolName is the catalog name of the vault create tool, which
-// carries seed-drop behavior (a one-time browser hand-off for the recovery
-// seed).
-const vaultCreateToolName = "pinner_vault_create"
-
 // compiledVaultCreateToolName / compiledVaultRestoreToolName are the
 // compiler-backed names of the vault setup operations. They are surfaced by
 // the operation catalog (not the CLI tree) and must route through the same
@@ -236,8 +225,6 @@ func mcpServerFlags() []cli.Flag {
 // MCPCommand returns a *cli.Command that serves the command tree as an MCP
 // server over stdio. It should be appended to the root command's Commands.
 func MCPCommand(root *cli.Command, wizardFactory WizardDepsFactory, resourceFactory ResourceProvidersFactory, opts ...MCPServerOption) *cli.Command {
-	hasRootAction := root.Action != nil
-
 	return &cli.Command{
 		Name:     "mcp",
 		Category: "System",
@@ -395,14 +382,15 @@ adapter.`,
 			// the invoke-tool gate that os.Stdin is the MCP transport pipe (so a
 			// stdin-input command must be redirected rather than consume
 			// protocol bytes); it mirrors the transport decision below.
-			srv, catalog, err := OfficialMCPServer(root, hasRootAction, nil, stdioMode, seedDrop, oobRestore, oobCreate, handoffReg, authHandles, catalogOpts...)
+			srv, catalog, err := OfficialMCPServer(root, stdioMode, seedDrop, oobRestore, oobCreate, handoffReg, authHandles, catalogOpts...)
 			if err != nil {
 				return err
 			}
 
-			// Install the hub's tool-handler adapter (officialToolHandler) as the
-			// sdk seam's registration hook so app tools registered via the sdk
-			// bridge reuse the same single handler-adaptation path.
+			// Install the hub's tool-handler adapter (registerTool, which routes
+			// through sdk.AdaptToolHandler with the hub's deps) as the sdk seam's
+			// registration hook so app tools registered via the sdk bridge reuse
+			// the same single handler-adaptation path.
 			sdk.SetToolRegistrar(registerTool)
 
 			if err := registerCustomTools(customToolDeps{
@@ -935,8 +923,9 @@ type mcpServerOptions struct {
 	pinnerPins PinningProviderFactory
 	// catalogDeps, when set, supplies the operation-catalog dependency graph
 	// (config manager + core service factories) so the MCP surface can be
-	// populated from the operation catalog instead of (or alongside) the CLI
-	// command-tree walk. Nil leaves the catalog purely legacy-derived.
+	// populated from the operation catalog. Since the compiler-backed surface
+	// is the only source, a nil bundle fails fast at buildCatalog time rather
+	// than silently serving an empty catalog.
 	catalogDeps func() *CatalogDepsBundle
 }
 
@@ -1117,7 +1106,7 @@ type WizardDepsFactory func() (WebsitesWizardDeps, SetupWizardDeps, DomainWizard
 // one-time seed/restore/create URLs for vault-create/vault-restore agent output
 // so the human can retrieve or supply a recovery seed in a browser without it
 // transiting the MCP channel.
-func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate, handoffReg *handoff.HandoffRegistry, authHandles *session.AsyncHandleStore, opts ...buildCatalogOpt) (*ToolCatalog, error) {
+func buildCatalog(root *cli.Command, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate, handoffReg *handoff.HandoffRegistry, authHandles *session.AsyncHandleStore, opts ...buildCatalogOpt) (*ToolCatalog, error) {
 	catalog := NewToolCatalog()
 
 	// Apply the functional options. Currently the only option is withCatalogDeps,
@@ -1169,30 +1158,26 @@ func buildCatalog(root *cli.Command, hasRootAction bool, prefix []string, seedDr
 	// wizards, upload backends) are layered by registerCustomTools. The legacy
 	// CLI-tree walk is not run at all, so no pinner_* tools are produced.
 
-	// When a catalog-deps bundle was supplied, register the compiler-derived
-	// operation surface (auth, vault-setup, vault, pins, websites, dns, ipns,
-	// api-keys, operations). These entries carry the catalogops
-	// AgentDescription/typed schemas and dispatch through the operation
-	// catalog's Invoke gate at runtime. markCurated promotes the compiled
-	// curated names to tools/list.
-	if opsCat != nil {
-		names, err := populateCatalogSurface(catalog, opsCat)
-		if err != nil {
-			return nil, err
-		}
-		_ = names // populateCatalogSurface registers the compiled entries; the name set is informational only.
-		// Route the compiled vault_create / vault_restore entries through the
-		// out-of-band setup handlers, so a model invoking the compiled
-		// vault-setup tool receives the full create_url / restore_url +
-		// resume-handle + needs_human hand-off its AgentDescription promises,
-		// rather than a bare JSON-serialized
-		// VaultCreateHandoff/VaultRestoreHandoff{Profile} plaintext.
-		routeVaultSetupHandlers(catalog,
-			vaultCreateSetupHandler(oobCreate, handoffReg, authHandles),
-			vaultRestoreSetupHandler(oobRestore, handoffReg, authHandles),
-		)
-		markCurated(catalog)
+	// Register the compiler-derived operation surface (auth, vault-setup,
+	// vault, pins, websites, dns, ipns, api-keys, operations). These entries
+	// carry the catalogops AgentDescription/typed schemas and dispatch through
+	// the operation catalog's Invoke gate at runtime. markCurated promotes the
+	// compiled curated names to tools/list.
+	names, err := populateCatalogSurface(catalog, opsCat)
+	if err != nil {
+		return nil, err
 	}
+	_ = names // populateCatalogSurface registers the compiled entries; the name set is informational only.
+	// Route the compiled vault_create / vault_restore entries through the
+	// out-of-band setup handlers, so a model invoking the compiled vault-setup
+	// tool receives the full create_url / restore_url + resume-handle +
+	// needs_human hand-off its AgentDescription promises, rather than a bare
+	// JSON-serialized VaultCreateHandoff/VaultRestoreHandoff{Profile} plaintext.
+	routeVaultSetupHandlers(catalog,
+		vaultCreateSetupHandler(oobCreate, handoffReg, authHandles),
+		vaultRestoreSetupHandler(oobRestore, handoffReg, authHandles),
+	)
+	markCurated(catalog)
 
 	return catalog, nil
 }

@@ -473,7 +473,7 @@ func TestOfficialInvokeVaultRestoreRoutesAgentSafeHandoff(t *testing.T) {
 	t.Cleanup(func() { oobRestore.Stop(context.Background()) })
 	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 	reg := handoff.NewHandoffRegistry()
-	catalog, err := buildCatalog(compilerRoot(), true, nil, nil, oobRestore, nil, reg, handles,
+	catalog, err := buildCatalog(compilerRoot(), nil, oobRestore, nil, reg, handles,
 		withCatalogDeps(func() *CatalogDepsBundle {
 			return &CatalogDepsBundle{VaultSetup: catalogops.VaultDeps{}}
 		}))

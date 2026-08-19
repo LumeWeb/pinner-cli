@@ -45,7 +45,7 @@ type IPFSUploadSubmitInput struct {
 // renderIPFSUploadAppHTML renders the complete "Upload to IPFS" app document
 // (ui://uploads/ipfs.html). The shared shell (doctype/<head>/inline theme) and
 // the ESM module (shared ext-apps bootstrap + upload logic) come from
-// renderMcpAppDoc; only the visible body form is authored in templ.
+// mcpapp.RenderMcpAppDoc; only the visible body form is authored in templ.
 func renderIPFSUploadAppHTML() string {
 	return mcpapp.RenderMcpAppDoc("Upload to IPFS", mcpapp.IPFSUploadAppForm(), mcpapp.AppModule("ipfs-upload"))
 }

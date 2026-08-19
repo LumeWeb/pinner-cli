@@ -18,7 +18,7 @@ const AuthStatusAppURI = "ui://auth/status.html"
 // renderAuthStatusAppHTML renders the complete "Account" app document
 // (ui://auth/status.html). The shared shell (doctype/<head>/inline theme) and
 // the ESM module (shared ext-apps bootstrap + auth-status logic) come from
-// renderMcpAppDoc; only the visible body is authored in templ.
+// mcpapp.RenderMcpAppDoc; only the visible body is authored in templ.
 func renderAuthStatusAppHTML() string {
 	return mcpapp.RenderMcpAppDoc("Account", mcpapp.AuthStatusAppForm(), mcpapp.AppModule("auth-status"))
 }
