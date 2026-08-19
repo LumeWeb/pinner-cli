@@ -1,4 +1,4 @@
-package mcp_test
+package wizard_test
 
 import (
 	"context"
@@ -22,18 +22,36 @@ import (
 	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
 	portalsdk "go.lumeweb.com/portal-sdk"
 
-	mcpadapter "go.lumeweb.com/pinner-cli/internal/mcp"
 	mcpauth "go.lumeweb.com/pinner-cli/internal/mcp/auth"
-	mcpwizard "go.lumeweb.com/pinner-cli/internal/mcp/wizard"
+	wizard "go.lumeweb.com/pinner-cli/internal/mcp/wizard"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
+// testCatalog is a minimal in-memory tool catalog satisfying both Add and Get
+// so the registration test can drive tools through their handlers without
+// depending on the hub's *ToolCatalog.
+type testCatalog struct {
+	entries map[string]*model.ToolEntry
+}
+
+func (c *testCatalog) Add(entry *model.ToolEntry) {
+	if c.entries == nil {
+		c.entries = make(map[string]*model.ToolEntry)
+	}
+	c.entries[entry.Name] = entry
+}
+
+func (c *testCatalog) Get(name string) (*model.ToolEntry, bool) {
+	e, ok := c.entries[name]
+	return e, ok
+}
+
 // --- Test wizard state ---
 
-// testWebsitesWizard implements mcpwizard.WebsitesWizardState for tests.
+// testWebsitesWizard implements wizard.WebsitesWizardState for tests.
 type testWebsitesWizard struct {
 	cid              string
 	domain           string
@@ -60,16 +78,16 @@ func (w *testWebsitesWizard) SetValidationResult(v *ipfs.WebsiteValidateResponse
 	w.validationResult = v
 }
 
-// testSetupWizard implements mcpwizard.SetupWizardState for tests.
+// testSetupWizard implements wizard.SetupWizardState for tests.
 type testSetupWizard struct{}
 
 // testWebsitesFactory creates a testWebsitesWizard.
-func testWebsitesFactory() mcpwizard.WebsitesWizardState {
+func testWebsitesFactory() wizard.WebsitesWizardState {
 	return &testWebsitesWizard{}
 }
 
 // testSetupFactory creates a testSetupWizard.
-func testSetupFactory() mcpwizard.SetupWizardState {
+func testSetupFactory() wizard.SetupWizardState {
 	return &testSetupWizard{}
 }
 
@@ -142,7 +160,7 @@ func fetchCSRFHTTP(u string) (string, error) {
 // wizardCSRFInputRE matches the hidden csrf input in the rendered login page.
 var wizardCSRFInputRE = regexp.MustCompile(`name="csrf"\s+value="([^"]+)"`)
 
-// testDomainWizard implements mcpwizard.DomainWizardState for tests.
+// testDomainWizard implements wizard.DomainWizardState for tests.
 type testDomainWizard struct {
 	websiteID     string
 	websiteDomain string
@@ -163,12 +181,12 @@ func (w *testDomainWizard) Result() *ipfs.DomainResponse     { return w.result }
 func (w *testDomainWizard) SetResult(v *ipfs.DomainResponse) { w.result = v }
 
 // testDomainFactory creates a testDomainWizard.
-func testDomainFactory() mcpwizard.DomainWizardState {
+func testDomainFactory() wizard.DomainWizardState {
 	return &testDomainWizard{}
 }
 
 // webservFactory returns a WebsitesWizardDeps with the test factory set.
-func webservFactory(deps mcpwizard.WebsitesWizardDeps) mcpwizard.WebsitesWizardDeps {
+func webservFactory(deps wizard.WebsitesWizardDeps) wizard.WebsitesWizardDeps {
 	deps.WebsitesFactory = testWebsitesFactory
 	return deps
 }
@@ -378,13 +396,13 @@ func TestWebsitesWizard_FullSession(t *testing.T) {
 	websitesSvc := &mockWebsitesSvc{}
 	store := session.NewSessionStore()
 
-	deps := mcpwizard.WebsitesWizardDeps{
+	deps := wizard.WebsitesWizardDeps{
 		WebsitesFactory: testWebsitesFactory,
 		CfgMgr:          cfgMgr,
 		WebsitesService: websitesSvc,
 	}
 
-	sess, err := mcpwizard.NewWebsitesSession(store, deps)
+	sess, err := wizard.NewWebsitesSession(store, deps)
 	require.NoError(t, err)
 	require.NotEmpty(t, sess.ID)
 
@@ -392,7 +410,7 @@ func TestWebsitesWizard_FullSession(t *testing.T) {
 	assert.Equal(t, "auth_check", sess.FSM.Current())
 
 	// Step 1: auth_check: empty input is fine.
-	resp := mcpwizard.BuildStepResponseForTest(sess)
+	resp := wizard.BuildStepResponseForTest(sess)
 	require.False(t, resp.Complete)
 	require.Equal(t, "auth_check", resp.CurrentStep)
 	require.NotNil(t, resp.NextStepSchema)
@@ -407,7 +425,7 @@ func TestWebsitesWizard_FullSession(t *testing.T) {
 	assert.Equal(t, "target_type", sess.FSM.Current())
 
 	// Verify CID was set on wizard state.
-	w := sess.State().(mcpwizard.WebsitesWizardState)
+	w := sess.State().(wizard.WebsitesWizardState)
 	assert.Equal(t, "QmTestHash123", w.CID())
 
 	// Step 3: target_type.
@@ -460,7 +478,7 @@ func TestWebsitesWizard_FullSession(t *testing.T) {
 	assert.True(t, w.ValidationResult().Valid)
 
 	// Session should report complete.
-	resp = mcpwizard.BuildStepResponseForTest(sess)
+	resp = wizard.BuildStepResponseForTest(sess)
 	assert.True(t, resp.Complete)
 }
 
@@ -471,13 +489,13 @@ func TestWebsitesWizard_AuthCheckFails(t *testing.T) {
 	websitesSvc := &mockWebsitesSvc{}
 	store := session.NewSessionStore()
 
-	deps := mcpwizard.WebsitesWizardDeps{
+	deps := wizard.WebsitesWizardDeps{
 		WebsitesFactory: testWebsitesFactory,
 		CfgMgr:          cfgMgr,
 		WebsitesService: websitesSvc,
 	}
 
-	sess, err := mcpwizard.NewWebsitesSession(store, deps)
+	sess, err := wizard.NewWebsitesSession(store, deps)
 	require.NoError(t, err)
 	assert.Equal(t, "auth_check", sess.FSM.Current())
 
@@ -495,9 +513,9 @@ func TestWebsitesWizard_ContentSourceInvalidChoice(t *testing.T) {
 	cfgMgr := newConfigMgr(t, true)
 	websitesSvc := &mockWebsitesSvc{}
 	store := session.NewSessionStore()
-	deps := webservFactory(mcpwizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
+	deps := webservFactory(wizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
 
-	sess, _ := mcpwizard.NewWebsitesSession(store, deps)
+	sess, _ := wizard.NewWebsitesSession(store, deps)
 
 	// Pass auth_check.
 	_, err := session.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
@@ -516,9 +534,9 @@ func TestWebsitesWizard_ContentSourceUploadChoice(t *testing.T) {
 	cfgMgr := newConfigMgr(t, true)
 	websitesSvc := &mockWebsitesSvc{}
 	store := session.NewSessionStore()
-	deps := webservFactory(mcpwizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
+	deps := webservFactory(wizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
 
-	sess, _ := mcpwizard.NewWebsitesSession(store, deps)
+	sess, _ := wizard.NewWebsitesSession(store, deps)
 
 	// Pass auth_check.
 	_, err := session.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
@@ -536,9 +554,9 @@ func TestWebsitesWizard_ContentSourceMissingCID(t *testing.T) {
 	cfgMgr := newConfigMgr(t, true)
 	websitesSvc := &mockWebsitesSvc{}
 	store := session.NewSessionStore()
-	deps := webservFactory(mcpwizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
+	deps := webservFactory(wizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
 
-	sess, _ := mcpwizard.NewWebsitesSession(store, deps)
+	sess, _ := wizard.NewWebsitesSession(store, deps)
 
 	// Pass auth_check.
 	_, err := session.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
@@ -556,9 +574,9 @@ func TestWebsitesWizard_TargetTypeInvalid(t *testing.T) {
 	cfgMgr := newConfigMgr(t, true)
 	websitesSvc := &mockWebsitesSvc{}
 	store := session.NewSessionStore()
-	deps := webservFactory(mcpwizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
+	deps := webservFactory(wizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
 
-	sess, _ := mcpwizard.NewWebsitesSession(store, deps)
+	sess, _ := wizard.NewWebsitesSession(store, deps)
 
 	// Pass auth_check + content_source.
 	_, err := session.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
@@ -578,9 +596,9 @@ func TestWebsitesWizard_DNSModeInvalid(t *testing.T) {
 	cfgMgr := newConfigMgr(t, true)
 	websitesSvc := &mockWebsitesSvc{}
 	store := session.NewSessionStore()
-	deps := webservFactory(mcpwizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
+	deps := webservFactory(wizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
 
-	sess, err := mcpwizard.NewWebsitesSession(store, deps)
+	sess, err := wizard.NewWebsitesSession(store, deps)
 	require.NoError(t, err)
 	// Navigate to dns_mode.
 	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
@@ -604,9 +622,9 @@ func TestWebsitesWizard_CreateWithoutConfirm(t *testing.T) {
 	cfgMgr := newConfigMgr(t, true)
 	websitesSvc := &mockWebsitesSvc{}
 	store := session.NewSessionStore()
-	deps := webservFactory(mcpwizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
+	deps := webservFactory(wizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
 
-	sess, err := mcpwizard.NewWebsitesSession(store, deps)
+	sess, err := wizard.NewWebsitesSession(store, deps)
 	require.NoError(t, err)
 	// Navigate to create step.
 	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
@@ -637,9 +655,9 @@ func TestWebsitesWizard_CreateServiceError(t *testing.T) {
 		},
 	}
 	store := session.NewSessionStore()
-	deps := webservFactory(mcpwizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
+	deps := webservFactory(wizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
 
-	sess, err := mcpwizard.NewWebsitesSession(store, deps)
+	sess, err := wizard.NewWebsitesSession(store, deps)
 	require.NoError(t, err)
 	// Navigate to create step.
 	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
@@ -665,9 +683,9 @@ func TestWebsitesWizard_ValidateWithoutWebsite(t *testing.T) {
 	cfgMgr := newConfigMgr(t, true)
 	websitesSvc := &mockWebsitesSvc{}
 	store := session.NewSessionStore()
-	deps := webservFactory(mcpwizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
+	deps := webservFactory(wizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
 
-	sess, err := mcpwizard.NewWebsitesSession(store, deps)
+	sess, err := wizard.NewWebsitesSession(store, deps)
 	require.NoError(t, err)
 	// Navigate to dns_setup (skip create with confirm by going through all steps)
 	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
@@ -704,9 +722,9 @@ func TestWebsitesWizard_DefaultTargetType(t *testing.T) {
 	cfgMgr := newConfigMgr(t, true)
 	websitesSvc := &mockWebsitesSvc{}
 	store := session.NewSessionStore()
-	deps := webservFactory(mcpwizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
+	deps := webservFactory(wizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
 
-	sess, err := mcpwizard.NewWebsitesSession(store, deps)
+	sess, err := wizard.NewWebsitesSession(store, deps)
 	require.NoError(t, err)
 	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
 	require.NoError(t, err)
@@ -724,7 +742,7 @@ func TestWebsitesWizard_DefaultTargetType(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify target type was set.
-	w := sess.State().(mcpwizard.WebsitesWizardState)
+	w := sess.State().(wizard.WebsitesWizardState)
 	assert.Equal(t, "ipns", w.TargetType())
 
 	// Verify CreateWithOptions received ipns.
@@ -738,9 +756,9 @@ func TestWebsitesWizard_InvalidJSON(t *testing.T) {
 	cfgMgr := newConfigMgr(t, true)
 	websitesSvc := &mockWebsitesSvc{}
 	store := session.NewSessionStore()
-	deps := webservFactory(mcpwizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
+	deps := webservFactory(wizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
 
-	sess, _ := mcpwizard.NewWebsitesSession(store, deps)
+	sess, _ := wizard.NewWebsitesSession(store, deps)
 	_, err := session.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
 	require.NoError(t, err)
 
@@ -756,19 +774,19 @@ func TestWebsitesWizard_StepSchemas(t *testing.T) {
 	cfgMgr := newConfigMgr(t, true)
 	websitesSvc := &mockWebsitesSvc{}
 	store := session.NewSessionStore()
-	deps := webservFactory(mcpwizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
+	deps := webservFactory(wizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
 
-	sess, err := mcpwizard.NewWebsitesSession(store, deps)
+	sess, err := wizard.NewWebsitesSession(store, deps)
 	require.NoError(t, err)
 
 	// auth_check schema.
-	resp := mcpwizard.BuildStepResponseForTest(sess)
+	resp := wizard.BuildStepResponseForTest(sess)
 	require.NotNil(t, resp.NextStepSchema)
 
 	// content_source schema after auth_check.
 	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
 	require.NoError(t, err)
-	resp = mcpwizard.BuildStepResponseForTest(sess)
+	resp = wizard.BuildStepResponseForTest(sess)
 	require.NotNil(t, resp.NextStepSchema)
 	require.NotNil(t, resp.NextStepSchema.Properties)
 	choiceSchema, ok := resp.NextStepSchema.Properties.Get("choice")
@@ -785,13 +803,13 @@ func TestSetupWizard_FullSessionSkipAuth(t *testing.T) {
 	authSvc := &mockAuthService{}
 	store := session.NewSessionStore()
 
-	deps := mcpwizard.SetupWizardDeps{
+	deps := wizard.SetupWizardDeps{
 		CfgMgr:       cfgMgr,
 		AuthService:  authSvc,
 		SetupFactory: testSetupFactory,
 	}
 
-	sess, err := mcpwizard.NewSetupSession(store, deps)
+	sess, err := wizard.NewSetupSession(store, deps)
 	require.NoError(t, err)
 	require.NotEmpty(t, sess.ID)
 	assert.Equal(t, "auth", sess.FSM.Current())
@@ -818,7 +836,7 @@ func TestSetupWizard_FullSessionSkipAuth(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "complete", sess.FSM.Current())
 
-	resp := mcpwizard.BuildStepResponseForTest(sess)
+	resp := wizard.BuildStepResponseForTest(sess)
 	assert.True(t, resp.Complete)
 }
 
@@ -831,9 +849,9 @@ func TestSetupWizard_SignIn_RequiresOutOfBand(t *testing.T) {
 	cfgMgr := newConfigMgr(t, true)
 	authSvc := &mockAuthService{}
 	store := session.NewSessionStore()
-	deps := mcpwizard.SetupWizardDeps{CfgMgr: cfgMgr, AuthService: authSvc, SetupFactory: testSetupFactory}
+	deps := wizard.SetupWizardDeps{CfgMgr: cfgMgr, AuthService: authSvc, SetupFactory: testSetupFactory}
 
-	sess, err := mcpwizard.NewSetupSession(store, deps)
+	sess, err := wizard.NewSetupSession(store, deps)
 	require.NoError(t, err)
 	require.Equal(t, "auth", sess.FSM.Current())
 
@@ -856,9 +874,9 @@ func TestSetupWizard_SignIn_StartsOutOfBand(t *testing.T) {
 	store := session.NewSessionStore()
 	oob := mcpauth.NewOutOfBandLogin(authSvc, "", "test-key")
 	t.Cleanup(func() { oob.Stop(context.Background()) })
-	deps := mcpwizard.SetupWizardDeps{CfgMgr: cfgMgr, AuthService: authSvc, SetupFactory: testSetupFactory, OutOfBand: oob}
+	deps := wizard.SetupWizardDeps{CfgMgr: cfgMgr, AuthService: authSvc, SetupFactory: testSetupFactory, OutOfBand: oob}
 
-	sess, err := mcpwizard.NewSetupSession(store, deps)
+	sess, err := wizard.NewSetupSession(store, deps)
 	require.NoError(t, err)
 	require.Equal(t, "auth", sess.FSM.Current())
 
@@ -891,9 +909,9 @@ func TestSetupWizard_SignIn_MissingEmail(t *testing.T) {
 	store := session.NewSessionStore()
 	oob := mcpauth.NewOutOfBandLogin(authSvc, "", "test-key")
 	t.Cleanup(func() { oob.Stop(context.Background()) })
-	deps := mcpwizard.SetupWizardDeps{CfgMgr: cfgMgr, AuthService: authSvc, SetupFactory: testSetupFactory, OutOfBand: oob}
+	deps := wizard.SetupWizardDeps{CfgMgr: cfgMgr, AuthService: authSvc, SetupFactory: testSetupFactory, OutOfBand: oob}
 
-	sess, err := mcpwizard.NewSetupSession(store, deps)
+	sess, err := wizard.NewSetupSession(store, deps)
 	require.NoError(t, err)
 
 	_, err = session.AdvanceSession(context.Background(), sess,
@@ -909,9 +927,9 @@ func TestSetupWizard_CreateAccountChoice(t *testing.T) {
 	cfgMgr := newConfigMgr(t, true)
 	authSvc := &mockAuthService{}
 	store := session.NewSessionStore()
-	deps := mcpwizard.SetupWizardDeps{CfgMgr: cfgMgr, AuthService: authSvc, SetupFactory: testSetupFactory}
+	deps := wizard.SetupWizardDeps{CfgMgr: cfgMgr, AuthService: authSvc, SetupFactory: testSetupFactory}
 
-	sess, err := mcpwizard.NewSetupSession(store, deps)
+	sess, err := wizard.NewSetupSession(store, deps)
 
 	_, err = session.AdvanceSession(context.Background(), sess,
 		json.RawMessage(`{"choice":"create_account"}`))
@@ -925,9 +943,9 @@ func TestSetupWizard_InvalidAuthChoice(t *testing.T) {
 	cfgMgr := newConfigMgr(t, true)
 	authSvc := &mockAuthService{}
 	store := session.NewSessionStore()
-	deps := mcpwizard.SetupWizardDeps{CfgMgr: cfgMgr, AuthService: authSvc, SetupFactory: testSetupFactory}
+	deps := wizard.SetupWizardDeps{CfgMgr: cfgMgr, AuthService: authSvc, SetupFactory: testSetupFactory}
 
-	sess, err := mcpwizard.NewSetupSession(store, deps)
+	sess, err := wizard.NewSetupSession(store, deps)
 
 	_, err = session.AdvanceSession(context.Background(), sess,
 		json.RawMessage(`{"choice":"invalid"}`))
@@ -941,9 +959,9 @@ func TestSetupWizard_CustomEndpoint(t *testing.T) {
 	cfgMgr := newConfigMgr(t, true)
 	authSvc := &mockAuthService{}
 	store := session.NewSessionStore()
-	deps := mcpwizard.SetupWizardDeps{CfgMgr: cfgMgr, AuthService: authSvc, SetupFactory: testSetupFactory}
+	deps := wizard.SetupWizardDeps{CfgMgr: cfgMgr, AuthService: authSvc, SetupFactory: testSetupFactory}
 
-	sess, err := mcpwizard.NewSetupSession(store, deps)
+	sess, err := wizard.NewSetupSession(store, deps)
 
 	// Skip auth.
 	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"choice":"skip"}`))
@@ -965,9 +983,9 @@ func TestSetupWizard_CustomEndpointMissingEndpoint(t *testing.T) {
 	cfgMgr := newConfigMgr(t, true)
 	authSvc := &mockAuthService{}
 	store := session.NewSessionStore()
-	deps := mcpwizard.SetupWizardDeps{CfgMgr: cfgMgr, AuthService: authSvc, SetupFactory: testSetupFactory}
+	deps := wizard.SetupWizardDeps{CfgMgr: cfgMgr, AuthService: authSvc, SetupFactory: testSetupFactory}
 
-	sess, err := mcpwizard.NewSetupSession(store, deps)
+	sess, err := wizard.NewSetupSession(store, deps)
 	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"choice":"skip"}`))
 	require.NoError(t, err)
 
@@ -983,9 +1001,9 @@ func TestSetupWizard_InvalidConfigChoice(t *testing.T) {
 	cfgMgr := newConfigMgr(t, true)
 	authSvc := &mockAuthService{}
 	store := session.NewSessionStore()
-	deps := mcpwizard.SetupWizardDeps{CfgMgr: cfgMgr, AuthService: authSvc, SetupFactory: testSetupFactory}
+	deps := wizard.SetupWizardDeps{CfgMgr: cfgMgr, AuthService: authSvc, SetupFactory: testSetupFactory}
 
-	sess, err := mcpwizard.NewSetupSession(store, deps)
+	sess, err := wizard.NewSetupSession(store, deps)
 	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"choice":"skip"}`))
 	require.NoError(t, err)
 
@@ -999,40 +1017,40 @@ func TestSetupWizard_InvalidConfigChoice(t *testing.T) {
 
 func TestContentSourceChoice_Valid(t *testing.T) {
 	t.Parallel()
-	assert.True(t, mcpwizard.ContentSourceChoice("cid").Valid())
-	assert.True(t, mcpwizard.ContentSourceChoice("upload").Valid())
-	assert.False(t, mcpwizard.ContentSourceChoice("invalid").Valid())
-	assert.False(t, mcpwizard.ContentSourceChoice("").Valid())
+	assert.True(t, wizard.ContentSourceChoice("cid").Valid())
+	assert.True(t, wizard.ContentSourceChoice("upload").Valid())
+	assert.False(t, wizard.ContentSourceChoice("invalid").Valid())
+	assert.False(t, wizard.ContentSourceChoice("").Valid())
 }
 
 func TestTargetTypeValue_Valid(t *testing.T) {
 	t.Parallel()
-	assert.True(t, mcpwizard.TargetTypeValue("ipfs").Valid())
-	assert.True(t, mcpwizard.TargetTypeValue("ipns").Valid())
-	assert.False(t, mcpwizard.TargetTypeValue("invalid").Valid())
+	assert.True(t, wizard.TargetTypeValue("ipfs").Valid())
+	assert.True(t, wizard.TargetTypeValue("ipns").Valid())
+	assert.False(t, wizard.TargetTypeValue("invalid").Valid())
 }
 
 func TestDNSModeValue_Valid(t *testing.T) {
 	t.Parallel()
-	assert.True(t, mcpwizard.DNSModeValue("managed").Valid())
-	assert.True(t, mcpwizard.DNSModeValue("self_managed").Valid())
-	assert.False(t, mcpwizard.DNSModeValue("invalid").Valid())
+	assert.True(t, wizard.DNSModeValue("managed").Valid())
+	assert.True(t, wizard.DNSModeValue("self_managed").Valid())
+	assert.False(t, wizard.DNSModeValue("invalid").Valid())
 }
 
 func TestAuthStepChoiceValue_Valid(t *testing.T) {
 	t.Parallel()
-	assert.True(t, mcpwizard.AuthStepChoiceValue("create_account").Valid())
-	assert.True(t, mcpwizard.AuthStepChoiceValue("sign_in").Valid())
-	assert.True(t, mcpwizard.AuthStepChoiceValue("skip").Valid())
-	assert.False(t, mcpwizard.AuthStepChoiceValue("invalid").Valid())
+	assert.True(t, wizard.AuthStepChoiceValue("create_account").Valid())
+	assert.True(t, wizard.AuthStepChoiceValue("sign_in").Valid())
+	assert.True(t, wizard.AuthStepChoiceValue("skip").Valid())
+	assert.False(t, wizard.AuthStepChoiceValue("invalid").Valid())
 }
 
 func TestConfigStepChoiceValue_Valid(t *testing.T) {
 	t.Parallel()
-	assert.True(t, mcpwizard.ConfigStepChoiceValue("use_defaults").Valid())
-	assert.True(t, mcpwizard.ConfigStepChoiceValue("custom_endpoint").Valid())
-	assert.True(t, mcpwizard.ConfigStepChoiceValue("skip").Valid())
-	assert.False(t, mcpwizard.ConfigStepChoiceValue("invalid").Valid())
+	assert.True(t, wizard.ConfigStepChoiceValue("use_defaults").Valid())
+	assert.True(t, wizard.ConfigStepChoiceValue("custom_endpoint").Valid())
+	assert.True(t, wizard.ConfigStepChoiceValue("skip").Valid())
+	assert.False(t, wizard.ConfigStepChoiceValue("invalid").Valid())
 }
 
 // --- FSM events builder tests ---
@@ -1040,13 +1058,13 @@ func TestConfigStepChoiceValue_Valid(t *testing.T) {
 func TestWebsitesFSMEvents_AllStatesCovered(t *testing.T) {
 	t.Parallel()
 	// Verify the FSM can be created and all transitions are valid.
-	fsm := mcpwizard.NewWebsitesFSMForTest()
+	fsm := wizard.NewWebsitesFSMForTest()
 	assert.Equal(t, "init", fsm.Current())
 }
 
 func TestSetupFSMEvents_AllStatesCovered(t *testing.T) {
 	t.Parallel()
-	fsm := mcpwizard.NewSetupFSMForTest()
+	fsm := wizard.NewSetupFSMForTest()
 	assert.Equal(t, "init", fsm.Current())
 }
 
@@ -1062,9 +1080,9 @@ func TestWebsitesWizard_FSMTransitionEnforcement(t *testing.T) {
 	cfgMgr := newConfigMgr(t, true)
 	websitesSvc := &mockWebsitesSvc{}
 	store := session.NewSessionStore()
-	deps := webservFactory(mcpwizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
+	deps := webservFactory(wizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
 
-	sess, err := mcpwizard.NewWebsitesSession(store, deps)
+	sess, err := wizard.NewWebsitesSession(store, deps)
 	require.NoError(t, err)
 	require.Equal(t, "auth_check", sess.FSM.Current())
 
@@ -1105,9 +1123,9 @@ func TestWebsitesWizard_FSMTransitionEnforcement_OutOfOrderStep(t *testing.T) {
 	cfgMgr := newConfigMgr(t, true)
 	websitesSvc := &mockWebsitesSvc{}
 	store := session.NewSessionStore()
-	deps := webservFactory(mcpwizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
+	deps := webservFactory(wizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
 
-	sess, err := mcpwizard.NewWebsitesSession(store, deps)
+	sess, err := wizard.NewWebsitesSession(store, deps)
 
 	// Try to fire created event from auth_check: should fail.
 	err = sess.FSM.Event(context.Background(), "created")
@@ -1142,9 +1160,9 @@ func TestWebsitesWizard_AuthCheckSkippedWhenAuthed(t *testing.T) {
 	cfgMgr := newConfigMgr(t, true)
 	websitesSvc := &mockWebsitesSvc{}
 	store := session.NewSessionStore()
-	deps := webservFactory(mcpwizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
+	deps := webservFactory(wizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
 
-	sess, err := mcpwizard.NewWebsitesSession(store, deps)
+	sess, err := wizard.NewWebsitesSession(store, deps)
 	require.NoError(t, err)
 	assert.Equal(t, "auth_check", sess.FSM.Current())
 
@@ -1157,7 +1175,7 @@ func TestWebsitesWizard_AuthCheckSkippedWhenAuthed(t *testing.T) {
 	assert.Equal(t, "content_source", sess.FSM.Current())
 
 	// The step response should reflect the current step.
-	resp := mcpwizard.BuildStepResponseForTest(sess)
+	resp := wizard.BuildStepResponseForTest(sess)
 	assert.False(t, resp.Complete)
 	assert.Equal(t, "content_source", resp.CurrentStep)
 }
@@ -1172,9 +1190,9 @@ func TestWebsitesWizard_AuthCheckNotSkippedWhenUnauthed(t *testing.T) {
 	cfgMgr := newConfigMgr(t, false)
 	websitesSvc := &mockWebsitesSvc{}
 	store := session.NewSessionStore()
-	deps := webservFactory(mcpwizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
+	deps := webservFactory(wizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
 
-	sess, err := mcpwizard.NewWebsitesSession(store, deps)
+	sess, err := wizard.NewWebsitesSession(store, deps)
 	require.NoError(t, err)
 	assert.Equal(t, "auth_check", sess.FSM.Current())
 
@@ -1187,7 +1205,7 @@ func TestWebsitesWizard_AuthCheckNotSkippedWhenUnauthed(t *testing.T) {
 	assert.Equal(t, "auth_check", sess.FSM.Current())
 
 	// Step response should still show auth_check as the current step.
-	resp := mcpwizard.BuildStepResponseForTest(sess)
+	resp := wizard.BuildStepResponseForTest(sess)
 	assert.False(t, resp.Complete)
 	assert.Equal(t, "auth_check", resp.CurrentStep)
 }
@@ -1201,9 +1219,9 @@ func TestWebsitesWizard_RetryAfterHandlerError(t *testing.T) {
 	cfgMgr := newConfigMgr(t, true)
 	websitesSvc := &mockWebsitesSvc{}
 	store := session.NewSessionStore()
-	deps := webservFactory(mcpwizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
+	deps := webservFactory(wizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
 
-	sess, err := mcpwizard.NewWebsitesSession(store, deps)
+	sess, err := wizard.NewWebsitesSession(store, deps)
 	require.NoError(t, err)
 	// Pass auth_check.
 	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
@@ -1223,7 +1241,7 @@ func TestWebsitesWizard_RetryAfterHandlerError(t *testing.T) {
 	assert.Equal(t, "target_type", sess.FSM.Current())
 
 	// Verify the retried input was applied.
-	w := sess.State().(mcpwizard.WebsitesWizardState)
+	w := sess.State().(wizard.WebsitesWizardState)
 	assert.Equal(t, "QmRetryHash", w.CID())
 }
 
@@ -1236,9 +1254,9 @@ func TestWebsitesWizard_RetryContentSourceAfterMissingCID(t *testing.T) {
 	cfgMgr := newConfigMgr(t, true)
 	websitesSvc := &mockWebsitesSvc{}
 	store := session.NewSessionStore()
-	deps := webservFactory(mcpwizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
+	deps := webservFactory(wizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
 
-	sess, err := mcpwizard.NewWebsitesSession(store, deps)
+	sess, err := wizard.NewWebsitesSession(store, deps)
 	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
 	require.NoError(t, err)
 
@@ -1255,7 +1273,7 @@ func TestWebsitesWizard_RetryContentSourceAfterMissingCID(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "target_type", sess.FSM.Current())
 
-	w := sess.State().(mcpwizard.WebsitesWizardState)
+	w := sess.State().(wizard.WebsitesWizardState)
 	assert.Equal(t, "QmFixedHash", w.CID())
 }
 
@@ -1272,9 +1290,9 @@ func TestWebsitesWizard_ErrorMidFlow_CreateFails_KeepsFSMState(t *testing.T) {
 		},
 	}
 	store := session.NewSessionStore()
-	deps := webservFactory(mcpwizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
+	deps := webservFactory(wizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
 
-	sess, err := mcpwizard.NewWebsitesSession(store, deps)
+	sess, err := wizard.NewWebsitesSession(store, deps)
 	require.NoError(t, err)
 	// Navigate to the create step.
 	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
@@ -1305,7 +1323,7 @@ func TestWebsitesWizard_ErrorMidFlow_CreateFails_KeepsFSMState(t *testing.T) {
 
 	// The step response should show create is still the current step
 	// (not complete, same state as before the error).
-	resp := mcpwizard.BuildStepResponseForTest(sess)
+	resp := wizard.BuildStepResponseForTest(sess)
 	assert.False(t, resp.Complete)
 	assert.Equal(t, "create", resp.CurrentStep)
 
@@ -1329,9 +1347,9 @@ func TestWebsitesWizard_ErrorMidFlow_CreateFails_RetryWithSuccess(t *testing.T) 
 		},
 	}
 	store := session.NewSessionStore()
-	deps := webservFactory(mcpwizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
+	deps := webservFactory(wizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
 
-	sess, err := mcpwizard.NewWebsitesSession(store, deps)
+	sess, err := wizard.NewWebsitesSession(store, deps)
 	require.NoError(t, err)
 	// Navigate to the create step.
 	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
@@ -1366,7 +1384,7 @@ func TestWebsitesWizard_ErrorMidFlow_CreateFails_RetryWithSuccess(t *testing.T) 
 	require.NoError(t, err)
 	assert.Equal(t, "dns_setup", sess.FSM.Current())
 
-	w := sess.State().(mcpwizard.WebsitesWizardState)
+	w := sess.State().(wizard.WebsitesWizardState)
 	require.NotNil(t, w.Website())
 	assert.Equal(t, 99, w.Website().Id)
 }
@@ -1384,9 +1402,9 @@ func TestWebsitesWizard_ValidateRetry(t *testing.T) {
 		},
 	}
 	store := session.NewSessionStore()
-	deps := webservFactory(mcpwizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
+	deps := webservFactory(wizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
 
-	sess, err := mcpwizard.NewWebsitesSession(store, deps)
+	sess, err := wizard.NewWebsitesSession(store, deps)
 	require.NoError(t, err)
 	// Navigate through all steps to reach validate.
 	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
@@ -1419,7 +1437,7 @@ func TestWebsitesWizard_ValidateRetry(t *testing.T) {
 	assert.Equal(t, "validate", sess.FSM.Current())
 
 	// Step response should show validate is still active (retryable).
-	resp := mcpwizard.BuildStepResponseForTest(sess)
+	resp := wizard.BuildStepResponseForTest(sess)
 	assert.False(t, resp.Complete)
 	assert.Equal(t, "validate", resp.CurrentStep)
 
@@ -1435,7 +1453,7 @@ func TestWebsitesWizard_ValidateRetry(t *testing.T) {
 	assert.Equal(t, "complete", sess.FSM.Current())
 
 	// Session should now report complete.
-	resp = mcpwizard.BuildStepResponseForTest(sess)
+	resp = wizard.BuildStepResponseForTest(sess)
 	assert.True(t, resp.Complete)
 }
 
@@ -1454,14 +1472,14 @@ func TestSetupWizard_RetryAfterAuthError(t *testing.T) {
 	store := session.NewSessionStore()
 	oob := mcpauth.NewOutOfBandLogin(authSvc, "", "test-key")
 	t.Cleanup(func() { oob.Stop(context.Background()) })
-	deps := mcpwizard.SetupWizardDeps{
+	deps := wizard.SetupWizardDeps{
 		CfgMgr:       cfgMgr,
 		AuthService:  authSvc,
 		SetupFactory: testSetupFactory,
 		OutOfBand:    oob,
 	}
 
-	sess, err := mcpwizard.NewSetupSession(store, deps)
+	sess, err := wizard.NewSetupSession(store, deps)
 	require.NoError(t, err)
 	assert.Equal(t, "auth", sess.FSM.Current())
 
@@ -1473,7 +1491,7 @@ func TestSetupWizard_RetryAfterAuthError(t *testing.T) {
 	assert.Equal(t, "auth", sess.FSM.Current())
 
 	// Step response should show auth is still active.
-	resp := mcpwizard.BuildStepResponseForTest(sess)
+	resp := wizard.BuildStepResponseForTest(sess)
 	assert.False(t, resp.Complete)
 	assert.Equal(t, "auth", resp.CurrentStep)
 
@@ -1514,9 +1532,9 @@ func TestSetupWizard_FSMTransitionEnforcement(t *testing.T) {
 	cfgMgr := newConfigMgr(t, true)
 	authSvc := &mockAuthService{}
 	store := session.NewSessionStore()
-	deps := mcpwizard.SetupWizardDeps{CfgMgr: cfgMgr, AuthService: authSvc, SetupFactory: testSetupFactory}
+	deps := wizard.SetupWizardDeps{CfgMgr: cfgMgr, AuthService: authSvc, SetupFactory: testSetupFactory}
 
-	sess, err := mcpwizard.NewSetupSession(store, deps)
+	sess, err := wizard.NewSetupSession(store, deps)
 	require.NoError(t, err)
 	assert.Equal(t, "auth", sess.FSM.Current())
 
@@ -1539,9 +1557,9 @@ func TestWebsitesWizard_AbortTransitions(t *testing.T) {
 	cfgMgr := newConfigMgr(t, true)
 	websitesSvc := &mockWebsitesSvc{}
 	store := session.NewSessionStore()
-	deps := webservFactory(mcpwizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
+	deps := webservFactory(wizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
 
-	sess, err := mcpwizard.NewWebsitesSession(store, deps)
+	sess, err := wizard.NewWebsitesSession(store, deps)
 
 	// Abort from auth_check.
 	err = sess.FSM.Event(context.Background(), "abort")
@@ -1549,7 +1567,7 @@ func TestWebsitesWizard_AbortTransitions(t *testing.T) {
 	assert.Equal(t, "complete", sess.FSM.Current())
 
 	// Session should report complete.
-	resp := mcpwizard.BuildStepResponseForTest(sess)
+	resp := wizard.BuildStepResponseForTest(sess)
 	assert.True(t, resp.Complete)
 }
 
@@ -1561,9 +1579,9 @@ func TestWebsitesWizard_AbortMidFlow(t *testing.T) {
 	cfgMgr := newConfigMgr(t, true)
 	websitesSvc := &mockWebsitesSvc{}
 	store := session.NewSessionStore()
-	deps := webservFactory(mcpwizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
+	deps := webservFactory(wizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
 
-	sess, err := mcpwizard.NewWebsitesSession(store, deps)
+	sess, err := wizard.NewWebsitesSession(store, deps)
 	require.NoError(t, err)
 	// Advance to content_source.
 	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
@@ -1579,7 +1597,7 @@ func TestWebsitesWizard_AbortMidFlow(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "complete", sess.FSM.Current())
 
-	resp := mcpwizard.BuildStepResponseForTest(sess)
+	resp := wizard.BuildStepResponseForTest(sess)
 	assert.True(t, resp.Complete)
 }
 
@@ -1592,13 +1610,13 @@ func TestWebsitesWizard_StepResponseReflectsCurrentStep(t *testing.T) {
 	cfgMgr := newConfigMgr(t, true)
 	websitesSvc := &mockWebsitesSvc{}
 	store := session.NewSessionStore()
-	deps := webservFactory(mcpwizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
+	deps := webservFactory(wizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
 
-	sess, err := mcpwizard.NewWebsitesSession(store, deps)
+	sess, err := wizard.NewWebsitesSession(store, deps)
 	require.NoError(t, err)
 
 	// auth_check response.
-	resp := mcpwizard.BuildStepResponseForTest(sess)
+	resp := wizard.BuildStepResponseForTest(sess)
 	assert.False(t, resp.Complete)
 	assert.Equal(t, "auth_check", resp.CurrentStep)
 	assert.Equal(t, "auth_check", resp.NextStep)
@@ -1607,7 +1625,7 @@ func TestWebsitesWizard_StepResponseReflectsCurrentStep(t *testing.T) {
 	// Advance to content_source.
 	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
 	require.NoError(t, err)
-	resp = mcpwizard.BuildStepResponseForTest(sess)
+	resp = wizard.BuildStepResponseForTest(sess)
 	assert.False(t, resp.Complete)
 	assert.Equal(t, "content_source", resp.CurrentStep)
 	require.NotNil(t, resp.NextStepSchema.Properties)
@@ -1624,9 +1642,9 @@ func TestWebsitesWizard_SelfManagedDNS(t *testing.T) {
 	cfgMgr := newConfigMgr(t, true)
 	websitesSvc := &mockWebsitesSvc{}
 	store := session.NewSessionStore()
-	deps := webservFactory(mcpwizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
+	deps := webservFactory(wizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
 
-	sess, err := mcpwizard.NewWebsitesSession(store, deps)
+	sess, err := wizard.NewWebsitesSession(store, deps)
 	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
 	require.NoError(t, err)
 	_, err = session.AdvanceSession(context.Background(),
@@ -1644,7 +1662,7 @@ func TestWebsitesWizard_SelfManagedDNS(t *testing.T) {
 		sess, json.RawMessage(`{"mode":"self_managed"}`))
 	require.NoError(t, err)
 
-	w := sess.State().(mcpwizard.WebsitesWizardState)
+	w := sess.State().(wizard.WebsitesWizardState)
 	assert.False(t, w.DNSHosting())
 
 	// The create request should have DnsHostingEnabled=false.
@@ -1663,9 +1681,9 @@ func TestWebsitesWizard_ManagedDNS(t *testing.T) {
 	cfgMgr := newConfigMgr(t, true)
 	websitesSvc := &mockWebsitesSvc{}
 	store := session.NewSessionStore()
-	deps := webservFactory(mcpwizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
+	deps := webservFactory(wizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
 
-	sess, err := mcpwizard.NewWebsitesSession(store, deps)
+	sess, err := wizard.NewWebsitesSession(store, deps)
 	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
 	require.NoError(t, err)
 	_, err = session.AdvanceSession(context.Background(),
@@ -1683,7 +1701,7 @@ func TestWebsitesWizard_ManagedDNS(t *testing.T) {
 		sess, json.RawMessage(`{"mode":"managed"}`))
 	require.NoError(t, err)
 
-	w := sess.State().(mcpwizard.WebsitesWizardState)
+	w := sess.State().(wizard.WebsitesWizardState)
 	assert.True(t, w.DNSHosting())
 
 	// The create request should have DnsHostingEnabled=true.
@@ -1705,14 +1723,14 @@ func TestSetupWizard_FullFlowSignIn(t *testing.T) {
 	store := session.NewSessionStore()
 	oob := mcpauth.NewOutOfBandLogin(authSvc, "", "test-key")
 	t.Cleanup(func() { oob.Stop(context.Background()) })
-	deps := mcpwizard.SetupWizardDeps{
+	deps := wizard.SetupWizardDeps{
 		CfgMgr:       cfgMgr,
 		AuthService:  authSvc,
 		SetupFactory: testSetupFactory,
 		OutOfBand:    oob,
 	}
 
-	sess, err := mcpwizard.NewSetupSession(store, deps)
+	sess, err := wizard.NewSetupSession(store, deps)
 	require.NoError(t, err)
 	require.NotEmpty(t, sess.ID)
 	assert.Equal(t, "auth", sess.FSM.Current())
@@ -1760,7 +1778,7 @@ func TestSetupWizard_FullFlowSignIn(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "complete", sess.FSM.Current())
 
-	resp := mcpwizard.BuildStepResponseForTest(sess)
+	resp := wizard.BuildStepResponseForTest(sess)
 	assert.True(t, resp.Complete)
 }
 
@@ -1772,9 +1790,9 @@ func TestSetupWizard_FullFlowSkip(t *testing.T) {
 	cfgMgr := newConfigMgr(t, true)
 	authSvc := &mockAuthService{}
 	store := session.NewSessionStore()
-	deps := mcpwizard.SetupWizardDeps{CfgMgr: cfgMgr, AuthService: authSvc, SetupFactory: testSetupFactory}
+	deps := wizard.SetupWizardDeps{CfgMgr: cfgMgr, AuthService: authSvc, SetupFactory: testSetupFactory}
 
-	sess, err := mcpwizard.NewSetupSession(store, deps)
+	sess, err := wizard.NewSetupSession(store, deps)
 
 	// Step 1: auth: skip.
 	_, err = session.AdvanceSession(context.Background(), sess,
@@ -1800,7 +1818,7 @@ func TestSetupWizard_FullFlowSkip(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "complete", sess.FSM.Current())
 
-	resp := mcpwizard.BuildStepResponseForTest(sess)
+	resp := wizard.BuildStepResponseForTest(sess)
 	assert.True(t, resp.Complete)
 }
 
@@ -1818,14 +1836,14 @@ func TestSetupWizard_FirstStepThroughHandler(t *testing.T) {
 	cfgMgr := newConfigMgr(t, true)
 	authSvc := &mockAuthService{}
 	store := session.NewSessionStore()
-	deps := mcpwizard.SetupWizardDeps{
+	deps := wizard.SetupWizardDeps{
 		CfgMgr:       cfgMgr,
 		AuthService:  authSvc,
 		SetupFactory: testSetupFactory,
 	}
 
-	cat := mcpadapter.NewToolCatalog()
-	require.NoError(t, mcpwizard.RegisterWizardTools(cat, store, mcpwizard.WebsitesWizardDeps{WebsitesFactory: testWebsitesFactory}, deps, mcpwizard.DomainWizardDeps{DomainFactory: testDomainFactory}))
+	cat := &testCatalog{}
+	require.NoError(t, wizard.RegisterWizardTools(cat, store, wizard.WebsitesWizardDeps{WebsitesFactory: testWebsitesFactory}, deps, wizard.DomainWizardDeps{DomainFactory: testDomainFactory}))
 
 	startEntry, ok := cat.Get("setup_wizard_start")
 	require.True(t, ok)
