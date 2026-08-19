@@ -1,4 +1,4 @@
-package mcp
+package transfer
 
 import (
 	"context"
@@ -114,7 +114,7 @@ type SourceResolver struct {
 	// Transport is the transport this server runs under.
 	Transport TransportKind
 	// HTTPUpload mints presigned PUT URLs (SourceMint, HTTP transport).
-	HTTPUpload *httpUpload
+	HTTPUpload *Upload
 	// RelayAllowedHosts and RelayMaxBytes bound the SourceURL SSRF guard and
 	// the SourceData size cap.
 	RelayAllowedHosts []string
@@ -137,7 +137,7 @@ func (r *SourceResolver) MintURL(s UploadSource, name string, ttl time.Duration)
 	if r.HTTPUpload == nil {
 		return "", fmt.Errorf("presigned upload endpoint is not configured for HTTP mode")
 	}
-	url := r.HTTPUpload.mint(name, ttl)
+	url := r.HTTPUpload.Mint(name, ttl)
 	if url == "" {
 		return "", errors.New("failed to mint one-time upload endpoint")
 	}
@@ -166,7 +166,7 @@ func (r *SourceResolver) OpenBytes(ctx context.Context, s UploadSource) (body io
 		if err != nil {
 			return nil, 0, "", err
 		}
-		return body, size, relayURLName(s.URL), nil
+		return body, size, RelayURLName(s.URL), nil
 	case SourceData:
 		reader, opt, derr := ieo.ParseFileDataURI(s.Data, maxBytes)
 		if derr != nil {
@@ -178,10 +178,10 @@ func (r *SourceResolver) OpenBytes(ctx context.Context, s UploadSource) (body io
 	}
 }
 
-// relayURLName derives a best-effort upload name from a fetchable URL path.
+// RelayURLName derives a best-effort upload name from a fetchable URL path.
 // Returns "" when the URL is not absolute or has no path component, so callers
 // fall back to the default upload name.
-func relayURLName(rawURL string) string {
+func RelayURLName(rawURL string) string {
 	u, err := url.Parse(rawURL)
 	if err != nil || u.Host == "" || u.Scheme == "" {
 		return ""

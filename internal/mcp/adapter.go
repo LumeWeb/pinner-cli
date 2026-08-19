@@ -26,6 +26,7 @@ import (
 	"go.lumeweb.com/pinner-cli/build"
 	opcat "go.lumeweb.com/pinner-cli/internal/catalog"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/oauthstore"
 	"go.lumeweb.com/pinner-cli/internal/mcp/services"
 	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
@@ -94,7 +95,7 @@ var serverCardTools = []map[string]any{
 	{"name": "auth_sso", "description": "Sign in via out-of-band SSO"},
 	{"name": "websites_list", "description": "List deployed websites"},
 	{"name": "websites_validate", "description": "Validate a website deployment"},
-	{"name": "upload_file", "description": "Upload a file to IPFS"},
+	{"name": "upload_file", "description": "transfer.Upload a file to IPFS"},
 	{"name": "search_tools", "description": "Search the tool catalog"},
 	{"name": "describe_tool", "description": "Get a tool's input schema"},
 	{"name": "invoke_tool", "description": "Invoke a catalog tool"},
@@ -331,16 +332,16 @@ adapter.`,
 			}
 
 			// The one-time HTTP upload coordinator rides the SAME async
-			// UploadTaskManager that backs upload_status / upload_cancel /
+			// transfer.UploadTaskManager that backs upload_status / upload_cancel /
 			// upload_list (mcpOpts.uploadTasks), so a minted PUT handle plugs
 			// straight into that surface. It is only wired when that manager is
 			// present. It needs the byte cap so an oversized PUT is bounded, and
 			// it must exist here (before registerCustomTools and serveHTTP) so
 			// both the tool descriptor and the transport-mounted PUT route can be
 			// registered against the same instance.
-			var curlUpload *httpUpload
+			var curlUpload *transfer.Upload
 			if mcpOpts.uploadTasks != nil {
-				curlUpload = NewHTTPUpload(mcpOpts.uploadTasks, ieo.EffectiveRelayMaxBytes(mcpOpts.maxRelayBytes))
+				curlUpload = transfer.NewHTTPUpload(mcpOpts.uploadTasks, ieo.EffectiveRelayMaxBytes(mcpOpts.maxRelayBytes))
 				// Allow configured MCP-host origins to PUT across origins (the
 				// ui:// app iframe can be served from a host origin that is not
 				// the Pinner server origin); the endpoint's own origin is
@@ -348,7 +349,7 @@ adapter.`,
 				curlUpload.AddTrustedOrigins(mcpOpts.uploadTrustedOrigins...)
 			}
 
-			// The vaultUpload coordinator mirrors curlUpload for the "Upload to
+			// The vaultUpload coordinator mirrors curlUpload for the "transfer.Upload to
 			// Vault" MCP App: it mints a one-time presigned PUT endpoint bound
 			// to a vault destination path, and the raw PUT body is drained
 			// through the authenticated vault write (vaultPutHandler)
@@ -356,9 +357,9 @@ adapter.`,
 			// present, and must exist here (before registerCustomTools and
 			// serveHTTP) so both the app helper and the transport-mounted PUT
 			// route can be registered against the same instance.
-			var vaultUpload *vaultHTTPUpload
+			var vaultUpload *transfer.VaultHTTPUpload
 			if mcpOpts.vaultPutHandler != nil {
-				vaultUpload = NewVaultHTTPUpload(mcpOpts.vaultPutHandler, ieo.EffectiveRelayMaxBytes(mcpOpts.maxRelayBytes))
+				vaultUpload = transfer.NewVaultHTTPUpload(mcpOpts.vaultPutHandler, ieo.EffectiveRelayMaxBytes(mcpOpts.maxRelayBytes))
 				// Allow configured MCP-host origins to PUT across origins (the
 				// vault app iframe can be served from a host origin that is not
 				// the Pinner server origin); the endpoint's own origin is
@@ -366,15 +367,15 @@ adapter.`,
 				vaultUpload.AddTrustedOrigins(mcpOpts.uploadTrustedOrigins...)
 			}
 
-			// The httpDownload filedrop coordinator serves one-time GET endpoints
+			// The transfer.Download filedrop coordinator serves one-time GET endpoints
 			// that stream a downloaded file's bytes out of band. It is wired when
 			// either download executor (IPFS or vault) is present, and must exist
 			// here (before registerCustomTools and serveHTTP) so both the tool
 			// descriptor's drop branch and the transport-mounted GET route can be
 			// registered against the same instance.
-			var dl *httpDownload
+			var dl *transfer.Download
 			if mcpOpts.ipfsDownload != nil || mcpOpts.vaultGet != nil {
-				dl = NewHTTPDownload()
+				dl = transfer.NewHTTPDownload()
 				dl.AddTrustedOrigins(mcpOpts.downloadTrustedOrigins...)
 			}
 
@@ -472,7 +473,7 @@ func oauthStorePath() string {
 // seedDrop and oobRestore, when provided, mount the one-time seed and restore
 // URLs on the same shared mux. oobCreate mounts the one-time create URL.
 // curlUpload, when provided, mounts the one-time upload PUT route on the
-// shared mux (the httpUpload coordinator in HTTP/tunnel mode).
+// shared mux (the transfer.Upload coordinator in HTTP/tunnel mode).
 //
 // mcpHostProtectionDisabled reports whether the go-sdk's DNS-rebinding guard
 // must be disabled for this serve. When the server is reached over a
@@ -487,7 +488,7 @@ func mcpHostProtectionDisabled(tunnelActive, httpMode bool, publicURL string) bo
 	return tunnelActive || (httpMode && publicURL != "")
 }
 
-func serveHTTP(ctx context.Context, srv *sdk.Server, cmd *cli.Command, oob *OutOfBandLogin, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate, accountOOB *OOBAccountChange, curlUpload *httpUpload, vaultUpload *vaultHTTPUpload, dl *httpDownload, cfgMgr config.Manager) error {
+func serveHTTP(ctx context.Context, srv *sdk.Server, cmd *cli.Command, oob *OutOfBandLogin, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate, accountOOB *OOBAccountChange, curlUpload *transfer.Upload, vaultUpload *transfer.VaultHTTPUpload, dl *transfer.Download, cfgMgr config.Manager) error {
 	provider := cmd.String("tunnel")
 	domain := cmd.String("domain")
 	token := cmd.String("token")
@@ -678,10 +679,10 @@ func serveHTTP(ctx context.Context, srv *sdk.Server, cmd *cli.Command, oob *OutO
 	// auth header per request as a browser would); the unguessable
 	// /upload/<token> path plus single-use expiry is the access control.
 	if curlUpload != nil {
-		curlUpload.registerHandlers(mux)
+		curlUpload.RegisterHandlers(mux)
 	}
 	if vaultUpload != nil {
-		vaultUpload.registerHandlers(mux)
+		vaultUpload.RegisterHandlers(mux)
 	}
 	// Mount the one-time filedrop GET route on the shared mux so a download's
 	// bytes can be pulled over HTTP out of band. Like the upload routes it is
@@ -689,7 +690,7 @@ func serveHTTP(ctx context.Context, srv *sdk.Server, cmd *cli.Command, oob *OutO
 	// present the MCP auth header); the unguessable /download/<token> path
 	// plus single-use expiry is the access control.
 	if dl != nil {
-		dl.registerHandlers(mux)
+		dl.RegisterHandlers(mux)
 	}
 	// Liveness probe for PaaS/container health checks (Railway, Koyeb, Render,
 	// Fly, Cloud Run, DO). It is intentionally unauthenticated and outside the
@@ -881,23 +882,23 @@ func tunnelFor(provider, domain, token, name, tunnelID string, cfgMgr config.Man
 type mcpServerOptions struct {
 	// prompts enables registration of the prompt templates.
 	prompts           bool
-	uploadHandler     UploadHandler
+	uploadHandler     transfer.UploadHandler
 	vaultPutHandler   VaultPutHandler
-	uploadTasks       *UploadTaskManager
-	relayURLUpload    RelayURLUploadHandler
+	uploadTasks       *transfer.UploadTaskManager
+	relayURLUpload    transfer.RelayURLUploadHandler
 	relayAllowedHosts []string
-	dataURIUpload     DataURIUploadHandler
-	localPathUpload   LocalPathUploadHandler
+	dataURIUpload     transfer.DataURIUploadHandler
+	localPathUpload   transfer.LocalPathUploadHandler
 	localPathVaultPut LocalPathVaultPutHandler
 	// ipfsDownload is the authenticated IPFS download executor used by the
 	// download_file tool's local sink (it streams a CID's bytes to a writer).
 	// Homing it in the CLI layer mirrors upload; the tool never decides the
 	// mechanism.
-	ipfsDownload IPFSDownloadHandler
+	ipfsDownload transfer.IPFSDownloadHandler
 	// vaultGet is the authenticated vault-read executor used by the
 	// vault_get_file tool's sinks (it streams a vault file's decrypted bytes
 	// to a writer). Mirror of vaultPutHandler.
-	vaultGet VaultGetHandler
+	vaultGet transfer.VaultGetHandler
 	// downloadTrustedOrigins are additional origins (beyond the server's own
 	// base/loopback origin) that the filedrop GET routes reflect over CORS for
 	// the ui:// app. Configured for deployments where the app iframe is served
@@ -956,7 +957,7 @@ func WithPinningProvider(provider PinningProviderFactory) MCPServerOption {
 // WithUploadHandler registers the authenticated IPFS upload executor used by
 // the upload_file tool's relay/data source modes (OpenAI tunnel) and the async
 // upload manager. Passing nil disables the relay path.
-func WithUploadHandler(handler UploadHandler) MCPServerOption {
+func WithUploadHandler(handler transfer.UploadHandler) MCPServerOption {
 	return func(o *mcpServerOptions) {
 		o.uploadHandler = handler
 	}
@@ -972,7 +973,7 @@ func WithVaultPutHandler(handler VaultPutHandler) MCPServerOption {
 
 // WithIPFSDownload registers the authenticated IPFS download executor used by
 // the download_file tool's local sink. Passing nil disables the download tool.
-func WithIPFSDownload(handler IPFSDownloadHandler) MCPServerOption {
+func WithIPFSDownload(handler transfer.IPFSDownloadHandler) MCPServerOption {
 	return func(o *mcpServerOptions) {
 		o.ipfsDownload = handler
 	}
@@ -981,7 +982,7 @@ func WithIPFSDownload(handler IPFSDownloadHandler) MCPServerOption {
 // WithVaultGet registers the authenticated vault-read executor used by the
 // vault_get_file tool's sinks (it streams a vault file's decrypted bytes to a
 // writer). Mirror of WithVaultPutHandler. Passing nil disables the tool.
-func WithVaultGet(handler VaultGetHandler) MCPServerOption {
+func WithVaultGet(handler transfer.VaultGetHandler) MCPServerOption {
 	return func(o *mcpServerOptions) {
 		o.vaultGet = handler
 	}
@@ -1000,7 +1001,7 @@ func WithDownloadRoot(supplier func() string) MCPServerOption {
 
 // WithUploadTaskManager registers async upload-management tools backed by the
 // given manager. Passing nil disables them.
-func WithUploadTaskManager(mgr *UploadTaskManager) MCPServerOption {
+func WithUploadTaskManager(mgr *transfer.UploadTaskManager) MCPServerOption {
 	return func(o *mcpServerOptions) {
 		o.uploadTasks = mgr
 	}
@@ -1023,7 +1024,7 @@ func WithUploadTrustedOrigins(origins ...string) MCPServerOption {
 // WithRelayURLUpload registers the generic relay URL upload tool
 // (pinner_upload_url). allowedHosts restricts which hosts Pinner will fetch;
 // pass nil/empty to allow any HTTPS host (subject to the SSRF dial guard).
-func WithRelayURLUpload(handler RelayURLUploadHandler, allowedHosts []string) MCPServerOption {
+func WithRelayURLUpload(handler transfer.RelayURLUploadHandler, allowedHosts []string) MCPServerOption {
 	return func(o *mcpServerOptions) {
 		o.relayURLUpload = handler
 		o.relayAllowedHosts = allowedHosts
@@ -1032,7 +1033,7 @@ func WithRelayURLUpload(handler RelayURLUploadHandler, allowedHosts []string) MC
 
 // WithDataURIUpload registers the draft SEP-2356 data: URI upload tool
 // (pinner_upload_data). Passing nil disables it.
-func WithDataURIUpload(handler DataURIUploadHandler) MCPServerOption {
+func WithDataURIUpload(handler transfer.DataURIUploadHandler) MCPServerOption {
 	return func(o *mcpServerOptions) {
 		o.dataURIUpload = handler
 	}
@@ -1042,7 +1043,7 @@ func WithDataURIUpload(handler DataURIUploadHandler) MCPServerOption {
 // backs the consolidated upload_file tool's co-located branch.
 // which uploads a host-side file/directory/archive directly. It is only
 // meaningful when the MCP server is co-located with the caller's files.
-func WithLocalPathUpload(handler LocalPathUploadHandler) MCPServerOption {
+func WithLocalPathUpload(handler transfer.LocalPathUploadHandler) MCPServerOption {
 	return func(o *mcpServerOptions) {
 		o.localPathUpload = handler
 	}
@@ -1228,7 +1229,7 @@ Less common CLI tools remain available through progressive disclosure:
 2. describe_tool({ "name": "..." }): Get the full input schema for one internal tool.
 3. invoke_tool({ "name": "...", "arguments": { ... } }): Execute one internal tool.
 
-The internal catalog has %d tools. Local path arguments refer to the MCP server host, not the remote agent's filesystem. Upload and vault copy therefore require a host-side file handoff. File attachments can use the directly visible upload_file (IPFS) and vault_put_file (vault) tools over the banner-visible source modes; Pinner fetches the temporary file URL locally and uses its existing authenticated TUS path. Large uploads use TUS internally; the SDK result includes an upload location for resume/status management. TUS is never anonymous. Vault cat returns bounded base64 JSON in agent mode and never writes raw bytes to the MCP transport.`
+The internal catalog has %d tools. Local path arguments refer to the MCP server host, not the remote agent's filesystem. transfer.Upload and vault copy therefore require a host-side file handoff. File attachments can use the directly visible upload_file (IPFS) and vault_put_file (vault) tools over the banner-visible source modes; Pinner fetches the temporary file URL locally and uses its existing authenticated TUS path. Large uploads use TUS internally; the SDK result includes an upload location for resume/status management. TUS is never anonymous. Vault cat returns bounded base64 JSON in agent mode and never writes raw bytes to the MCP transport.`
 
 // buildInstructions returns the MCP server instructions with the real catalog
 // tool count substituted, so the guidance given to agents stays accurate as

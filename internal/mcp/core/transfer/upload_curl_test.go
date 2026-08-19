@@ -1,4 +1,4 @@
-package mcp
+package transfer
 
 import (
 	"context"
@@ -22,7 +22,7 @@ func TestCurlUploadMint(t *testing.T) {
 	cu := NewHTTPUpload(nil, 0)
 	defer cu.Stop(context.Background())
 
-	url := cu.mint("myfile.txt", time.Minute)
+	url := cu.Mint("myfile.txt", time.Minute)
 	require.NotEmpty(t, url)
 	require.Contains(t, url, "/upload/")
 
@@ -47,7 +47,7 @@ func TestCurlUploadPutHandler(t *testing.T) {
 	cu := NewHTTPUpload(mgr, 1024)
 	defer cu.Stop(context.Background())
 
-	url := cu.mint("uploaded.txt", time.Minute)
+	url := cu.Mint("uploaded.txt", time.Minute)
 	require.NotEmpty(t, url)
 
 	req, err := http.NewRequest(http.MethodPut, url, strings.NewReader("hello curl body"))
@@ -91,7 +91,7 @@ func TestCurlUploadPutHandler(t *testing.T) {
 func TestCurlUploadPutRejectsWrongMethod(t *testing.T) {
 	cu := NewHTTPUpload(nil, 0)
 	defer cu.Stop(context.Background())
-	url := cu.mint("m.txt", time.Minute)
+	url := cu.Mint("m.txt", time.Minute)
 	require.NotEmpty(t, url)
 
 	resp, err := http.Get(url)
@@ -110,10 +110,10 @@ func TestCurlUploadEndpointExpired(t *testing.T) {
 	cu := NewHTTPUpload(mgr, 1024)
 	defer cu.Stop(context.Background())
 
-	url := cu.mint("e.txt", time.Minute)
+	url := cu.Mint("e.txt", time.Minute)
 	require.NotEmpty(t, url)
 
-	cu.setNow(func() time.Time { return time.Now().Add(2 * time.Minute) })
+	cu.SetNow(func() time.Time { return time.Now().Add(2 * time.Minute) })
 
 	resp, err := http.DefaultClient.Do(mustPut(t, url, "expired"))
 	require.NoError(t, err)
@@ -138,7 +138,7 @@ func TestCurlUploadOversizeBodyRejected(t *testing.T) {
 	cu := NewHTTPUpload(mgr, 32)
 	defer cu.Stop(context.Background())
 
-	url := cu.mint("big.txt", time.Minute)
+	url := cu.Mint("big.txt", time.Minute)
 	require.NotEmpty(t, url)
 
 	body := strings.Repeat("x", 1024) // well over the 32-byte cap
@@ -201,9 +201,9 @@ func TestCurlUploadPrunesExpiredTokens(t *testing.T) {
 
 	// Pin the clock so we can advance it deterministically.
 	base := time.Now()
-	cu.setNow(func() time.Time { return base })
+	cu.SetNow(func() time.Time { return base })
 
-	url1 := cu.mint("first.txt", time.Minute)
+	url1 := cu.Mint("first.txt", time.Minute)
 	require.NotEmpty(t, url1)
 	_ = url1
 
@@ -214,7 +214,7 @@ func TestCurlUploadPrunesExpiredTokens(t *testing.T) {
 	// Advance past the first token's TTL, then mint a second endpoint. The
 	// expired first token must be pruned by the sweep inside mint().
 	base = base.Add(2 * time.Minute)
-	url2 := cu.mint("second.txt", time.Minute)
+	url2 := cu.Mint("second.txt", time.Minute)
 	require.NotEmpty(t, url2)
 
 	cu.mu.Lock()

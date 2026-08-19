@@ -1,4 +1,4 @@
-package mcp
+package transfer
 
 import (
 	"context"
@@ -46,9 +46,9 @@ type DownloadFileInput struct {
 //     consumer pulls with curl -o / a browser <a download> link.
 //
 // On the OpenAI tunnel, only sink=local is honored (no reachable HTTP mux for
-// a drop). The handler validates the sink against downloadSinksAllowed before
+// a drop). The handler validates the sink against DownloadSinksAllowed before
 // any byte is read or written.
-func NewDownloadFileDescriptor(ipfsFn IPFSDownloadHandler, hd *httpDownload, downloadRoot string, maxDownloadBytes int64, tunnelOpenAI bool) model.ToolDescriptor {
+func NewDownloadFileDescriptor(ipfsFn IPFSDownloadHandler, hd *Download, downloadRoot string, maxDownloadBytes int64, tunnelOpenAI bool) model.ToolDescriptor {
 	return model.ToolDescriptor{
 		Name:        "download_file",
 		Title:       "Download IPFS content to a file",
@@ -65,15 +65,15 @@ func NewDownloadFileDescriptor(ipfsFn IPFSDownloadHandler, hd *httpDownload, dow
 			}
 			// Validate the sink against what this transport actually offers
 			// before reading anything.
-			if err := downloadSinksAllowed(in.Sink, hd != nil, tunnelOpenAI); err != nil {
+			if err := DownloadSinksAllowed(in.Sink, hd != nil, tunnelOpenAI); err != nil {
 				return model.ToolResult{}, err
 			}
 			name := in.Name
 			if name == "" {
-				name = sinkDefaultName(in.IPFSPath)
+				name = SinkDefaultName(in.IPFSPath)
 			}
 			if name == "" {
-				name = defaultSourceName
+				name = DefaultSourceName
 			}
 
 			switch in.Sink {
@@ -81,12 +81,12 @@ func NewDownloadFileDescriptor(ipfsFn IPFSDownloadHandler, hd *httpDownload, dow
 				if ipfsFn == nil {
 					return model.ToolResult{}, errors.New("IPFS download handler is not configured")
 				}
-				res, err := executeLocalSink(ctx, in.IPFSPath, name, in.OutputPath, downloadRoot, maxDownloadBytes, func(ctx context.Context, w io.Writer) error {
+				res, err := ExecuteLocalSink(ctx, in.IPFSPath, name, in.OutputPath, downloadRoot, maxDownloadBytes, func(ctx context.Context, w io.Writer) error {
 					return ipfsFn(ctx, in.IPFSPath, w)
 				})
 				return toolargs.WrapResult(res, err, "Downloaded from IPFS.")
 			case SinkDrop:
-				res, err := executeDropSink(ctx, in.IPFSPath, name, hd, in.TTL, maxDownloadBytes, func(ctx context.Context, w io.Writer) error {
+				res, err := ExecuteDropSink(ctx, in.IPFSPath, name, hd, in.TTL, maxDownloadBytes, func(ctx context.Context, w io.Writer) error {
 					return ipfsFn(ctx, in.IPFSPath, w)
 				})
 				return toolargs.WrapResult(res, err, "Filedrop minted; pull the bytes from fetch_url.")

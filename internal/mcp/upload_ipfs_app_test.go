@@ -13,6 +13,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
 
@@ -20,15 +21,15 @@ import (
 // does: the upload_file descriptor is indexed in the catalog, the app view
 // attaches _meta.ui to it, that meta is copied onto the descriptor served
 // directly via RegisterOfficialDescriptor (the production surface), and a real
-// presigned httpUpload coordinator backs the mint/poll helpers.
-func buildIPFSUploadAppServer(t *testing.T) (*mcp.Server, *httpUpload) {
+// presigned transfer.Upload coordinator backs the mint/poll helpers.
+func buildIPFSUploadAppServer(t *testing.T) (*mcp.Server, *transfer.Upload) {
 	t.Helper()
 
-	mgr := NewUploadTaskManager(func(_ context.Context, reader io.Reader, _ int64, name string, _ bool) (any, error) {
+	mgr := transfer.NewUploadTaskManager(func(_ context.Context, reader io.Reader, _ int64, name string, _ bool) (any, error) {
 		_, _ = io.Copy(io.Discard, reader)
 		return map[string]any{"cid": "QmApp", "name": name}, nil
 	}, 0)
-	cu := NewHTTPUpload(mgr, 1<<20)
+	cu := transfer.NewHTTPUpload(mgr, 1<<20)
 	t.Cleanup(func() { cu.Stop(context.Background()) })
 
 	catalog := NewToolCatalog()
@@ -222,7 +223,7 @@ func TestIPFSUploadPollHelper(t *testing.T) {
 		if err != nil {
 			t.Fatalf("poll: %v", err)
 		}
-		if s, ok := taskStateOf(pollRes); ok && s == UploadStateCompleted {
+		if s, ok := taskStateOf(pollRes); ok && s == transfer.UploadStateCompleted {
 			break
 		}
 		if time.Now().After(deadline) {
@@ -349,7 +350,7 @@ func TestIPFSUploadCORS(t *testing.T) {
 }
 
 // taskStateOf extracts the task's json "state" field from an SDK poll result.
-func taskStateOf(res *mcp.CallToolResult) (UploadTaskState, bool) {
+func taskStateOf(res *mcp.CallToolResult) (transfer.UploadTaskState, bool) {
 	b, err := json.Marshal(res.StructuredContent)
 	if err != nil {
 		return "", false
@@ -359,7 +360,7 @@ func taskStateOf(res *mcp.CallToolResult) (UploadTaskState, bool) {
 		return "", false
 	}
 	s, _ := m["state"].(string)
-	return UploadTaskState(s), s != ""
+	return transfer.UploadTaskState(s), s != ""
 }
 
 // TestIPFSUploadCORSConfiguredHost verifies a configured MCP-host origin

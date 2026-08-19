@@ -19,6 +19,7 @@ import (
 	mcpadapter "go.lumeweb.com/pinner-cli/internal/mcp"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 )
 
 // Run executes the CLI application with the given context and arguments.
@@ -118,21 +119,21 @@ For more help on any command: pinner <command> --help`,
 	// async). Only the byte source differs; the authenticated upload contract is
 	// the same. It is also assigned to the type-alias handler (a type alias
 	// of UploadHandler) that the vendored pinner_upload_file tool needs.
-	var uploadHandler mcpadapter.UploadHandler
+	var uploadHandler transfer.UploadHandler
 	var vaultPutHandler mcpadapter.VaultPutHandler
 	// ipfsDownload is the IPFS download executor used by download_file's sinks.
 	// It is built inside the wizard factory (where cfgMgr/secure are available)
 	// and read by the WithIPFSDownload option below — mirror of uploadHandler.
-	var ipfsDownload mcpadapter.IPFSDownloadHandler
+	var ipfsDownload transfer.IPFSDownloadHandler
 	// vaultGet is the vault-read executor used by vault_get_file's sinks. It is
 	// built inside the wizard factory (where the vault service is available)
 	// and read by the WithVaultGet option below — mirror of vaultPutHandler.
-	var vaultGet mcpadapter.VaultGetHandler
+	var vaultGet transfer.VaultGetHandler
 	// localPathUpload is the co-located (stdio/local-mode) handler that backs
 	// the consolidated upload_file tool's co-located branch: it uploads
 	// a host-side file/directory/archive. It is built inside the wizard factory
 	// (where uploadSvc lives) and read by the WithLocalPathUpload option below.
-	var localPathUpload mcpadapter.LocalPathUploadHandler
+	var localPathUpload transfer.LocalPathUploadHandler
 	// localPathVaultPut is the vault_put_file (SDIO/local-mode path branch)
 	// handler: it writes a host-side file/directory/archive into the encrypted
 	// vault. It is built inside the wizard factory (where the vault service is
@@ -192,7 +193,7 @@ For more help on any command: pinner <command> --help`,
 			})
 			uploadHandler = func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
 				if name == "" {
-					name = mcpadapter.DefaultUploadName
+					name = transfer.DefaultUploadName
 				}
 				file, err := os.CreateTemp("", "pinner-mcp-upload-*")
 				if err != nil {
@@ -227,7 +228,7 @@ For more help on any command: pinner <command> --help`,
 				if name == "" {
 					name = filepath.Base(path)
 					if name == "" || name == "." || name == string(filepath.Separator) {
-						name = mcpadapter.DefaultUploadName
+						name = transfer.DefaultUploadName
 					}
 				}
 				return info, name, nil
@@ -529,7 +530,7 @@ For more help on any command: pinner <command> --help`,
 			}
 			return cfgMgr.Config().GetDownloadRoot()
 		}),
-		mcpadapter.WithUploadTaskManager(mcpadapter.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
+		mcpadapter.WithUploadTaskManager(transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
 			if uploadHandler == nil {
 				return nil, notInitErr("file upload")
 			}

@@ -10,6 +10,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
 
@@ -19,7 +20,7 @@ func TestCapabilitiesReportStdio(t *testing.T) {
 	// wired for a filedrop when both download tools are present but dropWired
 	// is false).
 	r := CurrentCapabilities(true, false, true, true, false, false, false, true, 0)
-	require.Equal(t, TransportStdio, r.Transport)
+	require.Equal(t, transfer.TransportStdio, r.Transport)
 	require.Equal(t, []FileInputCapability{CapabilityLocalPath}, r.SourceModes)
 	require.True(t, r.UploadFile)
 	require.True(t, r.VaultPutFile)
@@ -35,7 +36,7 @@ func TestCapabilitiesReportHTTP(t *testing.T) {
 	// Both download tools registered and a filedrop coordinator wired => local
 	// AND drop sinks are advertised (a reachable HTTP mux exists).
 	r := CurrentCapabilities(false, false, true, true, true, true, true, true, 0)
-	require.Equal(t, TransportHTTP, r.Transport)
+	require.Equal(t, transfer.TransportHTTP, r.Transport)
 	require.Equal(t, []FileInputCapability{CapabilityMint}, r.SourceModes)
 	require.True(t, r.UploadFile)
 	require.True(t, r.VaultPutFile)
@@ -48,7 +49,7 @@ func TestCapabilitiesReportOpenAI(t *testing.T) {
 	// Embedded openai tunnel with an upload tool registered: transport=openai,
 	// modes url+data are backed and advertised.
 	r := CurrentCapabilities(false, true, true, false, false, false, false, false, 0)
-	require.Equal(t, TransportOpenAI, r.Transport)
+	require.Equal(t, transfer.TransportOpenAI, r.Transport)
 	require.Equal(t, []FileInputCapability{CapabilityRelayURL, CapabilityDataURI}, r.SourceModes)
 	require.True(t, r.UploadFile)
 	require.False(t, r.VaultPutFile)
@@ -61,7 +62,7 @@ func TestCapabilitiesReportHTTPWithoutCurlCoordinator(t *testing.T) {
 	// with no upload/vault tool registered there is no mint source to back, so
 	// source_modes is empty rather than claiming "mint" a tool can't service.
 	r := CurrentCapabilities(false, false, false, false, false, false, false, false, 0)
-	require.Equal(t, TransportHTTP, r.Transport)
+	require.Equal(t, transfer.TransportHTTP, r.Transport)
 	require.Empty(t, r.SourceModes)
 	require.False(t, r.UploadFile)
 	require.False(t, r.VaultPutFile)
@@ -78,7 +79,7 @@ func TestCapabilitiesReportToolFlags(t *testing.T) {
 	require.Equal(t, []FileInputCapability{CapabilityLocalPath}, stdioBoth.SourceModes)
 
 	openaiOnlyUpload := CurrentCapabilities(false, true, true, false, false, false, false, false, 0)
-	require.Equal(t, TransportOpenAI, openaiOnlyUpload.Transport)
+	require.Equal(t, transfer.TransportOpenAI, openaiOnlyUpload.Transport)
 	require.True(t, openaiOnlyUpload.UploadFile)
 	require.False(t, openaiOnlyUpload.VaultPutFile)
 	// The upload tool backs url/data on the OpenAI tunnel.
@@ -115,7 +116,7 @@ func TestDownloadSinkModeDropHiddenOnOpenAITunnel(t *testing.T) {
 	// Even with a drop coordinator wired, the OpenAI tunnel exposes no
 	// reachable HTTP mux, so the filedrop GET sink must NOT be advertised.
 	r := CurrentCapabilities(false, true, false, false, true, true, true, false, 0)
-	require.Equal(t, TransportOpenAI, r.Transport)
+	require.Equal(t, transfer.TransportOpenAI, r.Transport)
 	require.Equal(t, []FileOutputCapability{CapabilitySinkLocal}, r.DownloadSinkModes)
 	require.True(t, r.DownloadFile)
 	require.True(t, r.VaultGetFile)
@@ -158,8 +159,8 @@ func TestCapabilitiesDescriptorIsDirectVisible(t *testing.T) {
 }
 
 func TestSourceModesForAllTransports(t *testing.T) {
-	require.Equal(t, []FileInputCapability{CapabilityLocalPath}, sourceModesFor(TransportStdio))
-	require.Equal(t, []FileInputCapability{CapabilityMint}, sourceModesFor(TransportHTTP))
-	require.Equal(t, []FileInputCapability{CapabilityRelayURL, CapabilityDataURI}, sourceModesFor(TransportOpenAI))
-	require.Nil(t, sourceModesFor(TransportKind("bogus")))
+	require.Equal(t, []FileInputCapability{CapabilityLocalPath}, sourceModesFor(transfer.TransportStdio))
+	require.Equal(t, []FileInputCapability{CapabilityMint}, sourceModesFor(transfer.TransportHTTP))
+	require.Equal(t, []FileInputCapability{CapabilityRelayURL, CapabilityDataURI}, sourceModesFor(transfer.TransportOpenAI))
+	require.Nil(t, sourceModesFor(transfer.TransportKind("bogus")))
 }

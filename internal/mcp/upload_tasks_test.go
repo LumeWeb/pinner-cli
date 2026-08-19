@@ -12,11 +12,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 )
 
 func TestUploadTaskManagerLifecycle(t *testing.T) {
 	var ran atomic.Int64
-	mgr := NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
+	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
 		ran.Add(1)
 		b, _ := io.ReadAll(reader)
 		return map[string]any{"cid": "QmTest", "bytes": len(b)}, nil
@@ -28,18 +29,18 @@ func TestUploadTaskManagerLifecycle(t *testing.T) {
 
 	require.Eventually(t, func() bool {
 		t, err := mgr.Get(id)
-		return err == nil && t.State == UploadStateCompleted
+		return err == nil && t.State == transfer.UploadStateCompleted
 	}, 2*time.Second, 10*time.Millisecond)
 
 	task, err := mgr.Get(id)
 	require.NoError(t, err)
-	require.Equal(t, UploadStateCompleted, task.State)
+	require.Equal(t, transfer.UploadStateCompleted, task.State)
 	require.Empty(t, task.Err)
 	require.Equal(t, int64(1), ran.Load())
 }
 
 func TestUploadTaskManagerFailure(t *testing.T) {
-	mgr := NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
+	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
 		return nil, errors.New("tus failed")
 	}, 0)
 
@@ -48,18 +49,18 @@ func TestUploadTaskManagerFailure(t *testing.T) {
 
 	require.Eventually(t, func() bool {
 		t, _ := mgr.Get(id)
-		return t.State == UploadStateFailed
+		return t.State == transfer.UploadStateFailed
 	}, 2*time.Second, 10*time.Millisecond)
 
 	task, err := mgr.Get(id)
 	require.NoError(t, err)
-	require.Equal(t, UploadStateFailed, task.State)
+	require.Equal(t, transfer.UploadStateFailed, task.State)
 	require.Equal(t, "tus failed", task.Err)
 }
 
 func TestUploadTaskManagerCancelRunning(t *testing.T) {
 	release := make(chan struct{})
-	mgr := NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
+	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
@@ -74,14 +75,14 @@ func TestUploadTaskManagerCancelRunning(t *testing.T) {
 	// Wait for it to start running
 	require.Eventually(t, func() bool {
 		t, _ := mgr.Get(id)
-		return t.State == UploadStateRunning
+		return t.State == transfer.UploadStateRunning
 	}, 2*time.Second, 10*time.Millisecond)
 
 	require.NoError(t, mgr.Cancel(id))
 
 	require.Eventually(t, func() bool {
 		t, _ := mgr.Get(id)
-		return t.State == UploadStateCancelled
+		return t.State == transfer.UploadStateCancelled
 	}, 2*time.Second, 10*time.Millisecond)
 
 	// A cancelled task must carry a FinishedAt so pruneLocked evicts it rather
@@ -94,19 +95,19 @@ func TestUploadTaskManagerCancelRunning(t *testing.T) {
 }
 
 func TestUploadTaskManagerCancelCompletedFails(t *testing.T) {
-	mgr := NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
+	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
 		return map[string]any{"cid": "QmZ"}, nil
 	}, 0)
 	id, _ := mgr.Start(context.Background(), io.NopCloser(strings.NewReader("z")), 1, "d.txt", false)
 	require.Eventually(t, func() bool {
 		t, _ := mgr.Get(id)
-		return t.State == UploadStateCompleted
+		return t.State == transfer.UploadStateCompleted
 	}, 2*time.Second, 10*time.Millisecond)
 	require.Error(t, mgr.Cancel(id))
 }
 
 func TestUploadTaskManagerListAndUnknown(t *testing.T) {
-	mgr := NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
+	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
 		io.Copy(io.Discard, reader)
 		return map[string]any{"cid": "QmA"}, nil
 	}, 0)
@@ -125,7 +126,7 @@ func TestUploadTaskManagerListAndUnknown(t *testing.T) {
 }
 
 func TestAsyncUploadToolsRegistered(t *testing.T) {
-	mgr := NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
+	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
 		return map[string]any{"cid": "QmB"}, nil
 	}, 0)
 	descs := NewAsyncUploadTools(mgr)
@@ -142,7 +143,7 @@ func TestAsyncUploadToolsRegistered(t *testing.T) {
 }
 
 func TestAsyncUploadStatusToolMissingHandle(t *testing.T) {
-	mgr := NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
+	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
 		return nil, nil
 	}, 0)
 	descs := NewAsyncUploadTools(mgr)
@@ -158,7 +159,7 @@ func TestAsyncUploadStatusToolMissingHandle(t *testing.T) {
 }
 
 func TestUploadTaskManagerTTLEviction(t *testing.T) {
-	mgr := NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
+	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
 		io.Copy(io.Discard, reader)
 		return map[string]any{"cid": "QmE"}, nil
 	}, 50*time.Millisecond)
@@ -169,7 +170,7 @@ func TestUploadTaskManagerTTLEviction(t *testing.T) {
 	// Wait for completion, then confirm present immediately.
 	require.Eventually(t, func() bool {
 		t, _ := mgr.Get(id)
-		return t != nil && t.State == UploadStateCompleted
+		return t != nil && t.State == transfer.UploadStateCompleted
 	}, 2*time.Second, 5*time.Millisecond)
 	require.Len(t, mgr.List(), 1)
 
@@ -181,7 +182,7 @@ func TestUploadTaskManagerTTLEviction(t *testing.T) {
 }
 
 func TestUploadTaskManagerCancelBeforeStartDoesNotRun(t *testing.T) {
-	mgr := NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
+	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
 		// A cancelled upload must never fabricate a completion: if the executor
 		// observes the cancelled context it reports the cancellation instead of
 		// returning a bogus result. The executor blocks on ctx.Done() so the
@@ -200,7 +201,7 @@ func TestUploadTaskManagerCancelBeforeStartDoesNotRun(t *testing.T) {
 
 	require.Eventually(t, func() bool {
 		tk, _ := mgr.Get(id)
-		return tk != nil && tk.State == UploadStateCancelled
+		return tk != nil && tk.State == transfer.UploadStateCancelled
 	}, 2*time.Second, 5*time.Millisecond)
 	// Give the goroutine a moment to settle; the terminal state must remain
 	// Cancelled (the manager's completion path refuses to overwrite a cancel
@@ -209,11 +210,11 @@ func TestUploadTaskManagerCancelBeforeStartDoesNotRun(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 	tk, err := mgr.Get(id)
 	require.NoError(t, err)
-	require.Equal(t, UploadStateCancelled, tk.State)
+	require.Equal(t, transfer.UploadStateCancelled, tk.State)
 }
 
 func TestUploadTaskManagerCancelledTasksArePruned(t *testing.T) {
-	mgr := NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
+	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
 		// Block on ctx.Done() so the cancel deterministically wins the race
 		// against completion — an instant-return executor can finish before
 		// Cancel() runs, making mgr.Cancel fail with 'not cancellable (state
@@ -255,7 +256,7 @@ func (c *countingCloser) Close() error {
 func TestUploadTaskManagerCancelClosesReaderOnce(t *testing.T) {
 	release := make(chan struct{})
 	reader := &countingCloser{Reader: strings.NewReader("x")}
-	mgr := NewUploadTaskManager(func(ctx context.Context, r io.Reader, size int64, name string, wait bool) (any, error) {
+	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, r io.Reader, size int64, name string, wait bool) (any, error) {
 		<-release // hold the executor so Cancel runs while it is reading
 		return nil, nil
 	}, 0)
@@ -271,19 +272,19 @@ func TestUploadTaskManagerCancelClosesReaderOnce(t *testing.T) {
 		return reader.closes.Load() == 1
 	}, 2*time.Second, 5*time.Millisecond)
 	ct, _ := mgr.Get(id)
-	require.Equal(t, UploadStateCancelled, ct.State)
+	require.Equal(t, transfer.UploadStateCancelled, ct.State)
 }
 
 func TestUploadTaskManagerConcurrencyCap(t *testing.T) {
 	release := make(chan struct{})
 	var started atomic.Int64
-	mgr := NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
+	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
 		started.Add(1)
 		<-release // hold tasks in the running state
 		return map[string]any{"cid": "QmF"}, nil
 	}, 0)
 	// Force a tiny cap to test rejection without starting many goroutines.
-	mgr.maxActive = 2
+	mgr.MaxActive = 2
 
 	id1, err := mgr.Start(context.Background(), io.NopCloser(strings.NewReader("1")), 1, "1.txt", false)
 	require.NoError(t, err)
@@ -307,11 +308,11 @@ func TestUploadTaskManagerConcurrencyCap(t *testing.T) {
 func TestUploadTaskManagerExecTimeoutForcesReaderClose(t *testing.T) {
 	// An executor that blocks forever, ignoring runCtx cancellation — the
 	// worst case a non-cancellable network read.
-	mgr := NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
+	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
 		select {}
 	}, 0)
 	// Force a short execTimeout so the watchdog fires quickly.
-	mgr.execTimeout = 50 * time.Millisecond
+	mgr.ExecTimeout = 50 * time.Millisecond
 
 	reader := &countingCloser{Reader: strings.NewReader("x")}
 	_, err := mgr.Start(context.Background(), reader, 1, "c.txt", true)

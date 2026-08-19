@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 
@@ -23,11 +24,11 @@ type RelayURLUploadInput struct {
 // fetch a caller-supplied HTTPS URL, then stream it through the existing
 // authenticated TUS path. This is the generic relay fallback for HTTP-mode
 // clients that are not co-located with Pinner and cannot pass a host path.
-func RelayURLUploadDescriptor(handler RelayURLUploadHandler, allowedHosts []string, maxBytes int64) model.ToolDescriptor {
+func RelayURLUploadDescriptor(handler transfer.RelayURLUploadHandler, allowedHosts []string, maxBytes int64) model.ToolDescriptor {
 	maxBytes = ieo.EffectiveRelayMaxBytes(maxBytes)
 	return model.ToolDescriptor{
 		Name:        "upload_url",
-		Title:       "Upload a file from a URL",
+		Title:       "transfer.Upload a file from a URL",
 		Description: "Fetch a public HTTPS URL locally and upload it to Pinner through the authenticated upload path. Do not put Pinner's credentials in the URL; Pinner fetches it with its own stored auth. Intended for remote HTTP clients that cannot reference a local path.",
 		Category:    model.CategoryCore,
 		InputSchema: toolargs.ToolSchemaFor[RelayURLUploadInput](),
@@ -50,8 +51,8 @@ func RelayURLUploadDescriptor(handler RelayURLUploadHandler, allowedHosts []stri
 			defer body.Close()
 			// Bound the upload itself: the MCP request ctx may carry no
 			// deadline, so a hung TUS/network operation must not run
-			// indefinitely. Budget scales with size; see syncUploadBudget.
-			transferCtx, cancel := context.WithTimeout(ctx, syncUploadBudget(size))
+			// indefinitely. Budget scales with size; see transfer.SyncUploadBudget.
+			transferCtx, cancel := context.WithTimeout(ctx, transfer.SyncUploadBudget(size))
 			defer cancel()
 			result, err := handler(transferCtx, body, size, in.Name, in.Wait)
 			return toolargs.WrapResult(result, err, "URL uploaded.")

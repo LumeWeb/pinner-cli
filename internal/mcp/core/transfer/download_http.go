@@ -1,4 +1,4 @@
-package mcp
+package transfer
 
 import (
 	"context"
@@ -14,9 +14,9 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transport"
 )
 
-// defaultHTTPDownloadTTL is how long a minted one-time filedrop GET endpoint
+// DefaultHTTPDownloadTTL is how long a minted one-time filedrop GET endpoint
 // stays valid before its token is rejected. Aligned with the upload TTL.
-const defaultHTTPDownloadTTL = 5 * time.Minute
+const DefaultHTTPDownloadTTL = 5 * time.Minute
 
 // downloadToken is the per-token state for a minted filedrop GET endpoint:
 // which file it serves, the file's size/name, and when it expires. `used`
@@ -30,25 +30,25 @@ type downloadToken struct {
 	used      bool
 }
 
-// httpDownload is the one-time filedrop GET coordinator. The agent/app calls a
+// Download is the one-time filedrop GET coordinator. The agent/app calls a
 // download tool to mint an endpoint, then pulls the bytes with `curl -o file
 // <url>` (or a browser <a download> link / GET) over HTTP — out of band from
 // the MCP/LLM channel. The GET handler claim the one-time token, streams the
 // resolved source bytes to the response, and marks the token used so a re-GET
 // is rejected.
 //
-// It works over BOTH transports, mirroring httpUpload:
+// It works over BOTH transports, mirroring Upload:
 //   - stdio mode: no transport server, so mint() spins up a loopback listener
 //     on a random port (baseURL == "") and the GET route is mounted on that
 //     loopback mux via ensureLoopback.
 //   - HTTP/tunnel mode: a base URL is set, so serveHTTP mounts the GET route
-//     on the shared transport mux via registerHandlers and the loopback
+//     on the shared transport mux via RegisterHandlers and the loopback
 //     listener is intentionally not started.
 //
 // The one-time token is the only access control: unguessable (128-bit),
 // expiring, single-use, and bound to a serve closure at mint time so a caller
 // can never redirect the GET to arbitrary server-side bytes.
-type httpDownload struct {
+type Download struct {
 	loopback transport.LoopbackServer
 
 	mu     sync.Mutex
@@ -57,8 +57,8 @@ type httpDownload struct {
 }
 
 // NewHTTPDownload creates the one-time filedrop GET coordinator.
-func NewHTTPDownload() *httpDownload {
-	return &httpDownload{
+func NewHTTPDownload() *Download {
+	return &Download{
 		tokens: make(map[string]downloadToken),
 		now:    time.Now,
 	}
@@ -67,7 +67,7 @@ func NewHTTPDownload() *httpDownload {
 // SetBaseURL points the coordinator at the externally reachable base URL (the
 // public/tunnel URL in HTTP mode, or empty for the loopback-derived URL in
 // stdio mode).
-func (hd *httpDownload) SetBaseURL(url string) {
+func (hd *Download) SetBaseURL(url string) {
 	hd.loopback.SetBaseURL(url)
 }
 
@@ -75,43 +75,43 @@ func (hd *httpDownload) SetBaseURL(url string) {
 // beyond the coordinator's own base/loopback origin, allowing a configured MCP
 // host that serves the app iframe from its own origin to download. See
 // LoopbackServer.AddTrustedOrigins.
-func (hd *httpDownload) AddTrustedOrigins(origins ...string) {
+func (hd *Download) AddTrustedOrigins(origins ...string) {
 	hd.loopback.AddTrustedOrigins(origins...)
 }
 
 // Stop shuts down the loopback listener, if any.
-func (hd *httpDownload) Stop(ctx context.Context) {
+func (hd *Download) Stop(ctx context.Context) {
 	hd.loopback.Stop(ctx)
 }
 
-// registerHandlers mounts the one-time filedrop GET route on the shared mux
+// RegisterHandlers mounts the one-time filedrop GET route on the shared mux
 // (HTTP/tunnel mode) or the loopback mux (stdio mode via ensureLoopback).
 // The token is carried in the path, /download/<token>.
-func (hd *httpDownload) registerHandlers(mux *http.ServeMux) {
+func (hd *Download) RegisterHandlers(mux *http.ServeMux) {
 	mux.HandleFunc("/download/", corsDownload(hd.allowedDownloadOrigins, hd.getHandler))
 }
 
 // allowedDownloadOrigins is the callback corsDownload uses to scope the
 // reflected origin to the coordinator's own transport/base origin.
-func (hd *httpDownload) allowedDownloadOrigins() []string { return hd.loopback.AcceptedOrigins() }
+func (hd *Download) allowedDownloadOrigins() []string { return hd.loopback.AcceptedOrigins() }
 
 // mint registers a fresh one-time filedrop GET endpoint bound to the given
 // serve closure and returns its full URL plus the declared name/size. It
 // ensures the loopback listener is running in stdio mode so the URL is always
 // reachable. The token is single-use: the GET that claims it is the only GET
 // that will ever be served for this file.
-func (hd *httpDownload) mint(name string, size int64, serve func(ctx context.Context, w io.Writer) error, ttl time.Duration) (string, error) {
+func (hd *Download) Mint(name string, size int64, serve func(ctx context.Context, w io.Writer) error, ttl time.Duration) (string, error) {
 	if serve == nil {
 		return "", errors.New("no download source configured")
 	}
-	if err := hd.loopback.EnsureLoopback(hd.registerHandlers); err != nil {
+	if err := hd.loopback.EnsureLoopback(hd.RegisterHandlers); err != nil {
 		return "", err
 	}
 	if name == "" {
 		name = DefaultUploadName
 	}
 	if ttl <= 0 {
-		ttl = defaultHTTPDownloadTTL
+		ttl = DefaultHTTPDownloadTTL
 	}
 	token := newDownloadToken()
 	hd.mu.Lock()
@@ -151,7 +151,7 @@ func newDownloadToken() string {
 // the error happens after some bytes are already committed, the connection is
 // left with a short/truncated body — the length-mismatch signal — rather than
 // fabricating completion.
-func (hd *httpDownload) getHandler(w http.ResponseWriter, r *http.Request) {
+func (hd *Download) getHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -174,7 +174,7 @@ func (hd *httpDownload) getHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Serve as an attachment so a browser GET saves the original filename,
 	// and stream declaratively with a known size where we have it.
-	w.Header().Set("Content-Disposition", `attachment; filename="`+sanitizeFilename(tkn.name)+`"`)
+	w.Header().Set("Content-Disposition", `attachment; filename="`+SanitizeFilename(tkn.name)+`"`)
 	w.Header().Set("Content-Type", "application/octet-stream")
 	if tkn.size > 0 {
 		w.Header().Set("Content-Length", itoa(tkn.size))
@@ -192,7 +192,7 @@ func (hd *httpDownload) getHandler(w http.ResponseWriter, r *http.Request) {
 		// Nothing committed yet — send an honest error status the puller can
 		// detect, instead of a truncated 200.
 		code := http.StatusInternalServerError
-		if isDownloadTooLarge(err) {
+		if IsDownloadTooLarge(err) {
 			code = http.StatusRequestEntityTooLarge
 		}
 		http.Error(w, err.Error(), code)
@@ -238,7 +238,7 @@ func (dw *deferredResponseWriter) finish() {
 // claim atomically validates and consumes a one-time filedrop GET token: it
 // reports the token state if it exists, is unexpired, and has not been used. A
 // used or expired token is removed so a re-GET cannot re-enter the stream path.
-func (hd *httpDownload) claim(token string) (downloadToken, bool) {
+func (hd *Download) claim(token string) (downloadToken, bool) {
 	hd.mu.Lock()
 	defer hd.mu.Unlock()
 	t, ok := hd.tokens[token]
@@ -255,7 +255,7 @@ func (hd *httpDownload) claim(token string) (downloadToken, bool) {
 }
 
 // setNow overrides the clock used for expiry (test seam).
-func (hd *httpDownload) setNow(f func() time.Time) {
+func (hd *Download) SetNow(f func() time.Time) {
 	if f == nil {
 		return
 	}
@@ -312,10 +312,10 @@ func itoa(n int64) string {
 	return string(b[i:])
 }
 
-// sanitizeFilename strips path separators and control bytes from a proposed
+// SanitizeFilename strips path separators and control bytes from a proposed
 // filename so a Content-Disposition header cannot be used to smuggle a path or
 // header injection. Falls back to "download" for empty/unsafe results.
-func sanitizeFilename(name string) string {
+func SanitizeFilename(name string) string {
 	if name == "" {
 		return "download"
 	}

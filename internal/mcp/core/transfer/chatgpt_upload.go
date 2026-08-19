@@ -1,4 +1,4 @@
-package mcp
+package transfer
 
 import (
 	"context"
@@ -44,16 +44,16 @@ func (in ChatGPTFileInput) Reference() ieo.ChatGPTFileReference {
 	}
 }
 
-// chatgptOpenTimeout is the per-tool timeout for fetching OpenAI file objects.
-const chatgptOpenTimeout = 2 * time.Minute
+// ChatGPTOpenTimeout is the per-tool timeout for fetching OpenAI file objects.
+const ChatGPTOpenTimeout = 2 * time.Minute
 
-// syncUploadBudget bounds the upload (TUS/handler) phase of the synchronous
+// SyncUploadBudget bounds the upload (TUS/handler) phase of the synchronous
 // file-input tools (relay URL, ChatGPT, data URI). The MCP request ctx carries
 // no deadline of its own, so without this a hung network/TUS operation could
 // run indefinitely. The budget scales with the declared size so a large but
 // legitimate file (up to ieo.EffectiveRelayMaxBytes(0)) is not cut off by a fixed cap,
 // while still being bounded against an actually-hung upload.
-func syncUploadBudget(size int64) time.Duration {
+func SyncUploadBudget(size int64) time.Duration {
 	base := 2 * time.Minute
 	if size <= 0 {
 		return base
@@ -69,10 +69,10 @@ func syncUploadBudget(size int64) time.Duration {
 	return base + scaled
 }
 
-// chatgptFileMeta is the OpenAI file-parameter annotation attached to tools
+// ChatGPTFileMeta is the OpenAI file-parameter annotation attached to tools
 // that accept a file object, signalling the host to pass the value
 // from a user-attached file rather than from model context.
-func chatgptFileMeta() map[string]any {
+func ChatGPTFileMeta() map[string]any {
 	return map[string]any{"openai/fileParams": []string{"file"}}
 }
 
@@ -86,11 +86,11 @@ func chatgptRelayOptions(timeout time.Duration) ieo.FileRelayOptions {
 	}
 }
 
-// openChatGPTInput validates a file input and opens its download
+// OpenChatGPTInput validates a file input and opens its download
 // stream, returning the resolved reference, an owned reader, and byte size.
 // It centralizes the input→reference→validate→open sequence shared by the
 // upload, vault, and async handlers.
-func openChatGPTInput(ctx context.Context, in ChatGPTFileInput, timeout time.Duration) (ieo.ChatGPTFileReference, io.ReadCloser, int64, error) {
+func OpenChatGPTInput(ctx context.Context, in ChatGPTFileInput, timeout time.Duration) (ieo.ChatGPTFileReference, io.ReadCloser, int64, error) {
 	ref := in.Reference()
 	if err := ieo.ValidateChatGPTFileReference(ref, ieo.EffectiveRelayMaxBytes(0)); err != nil {
 		return ieo.ChatGPTFileReference{}, nil, 0, err
@@ -105,5 +105,5 @@ func openChatGPTInput(ctx context.Context, in ChatGPTFileInput, timeout time.Dur
 // The standalone ChatGPTUploadDescriptor and chatGPTUploadTool were superseded
 // by the unified, transport-aware upload_file (NewUploadFileDescriptor), which
 // routes the OpenAI-tunnel url/data sources through the shared UploadHandler
-// executor. The shared helpers above (UploadHandler, chatgptFileMeta,
-// chatgptRelayOptions, openChatGPTInput) remain for the vault and async paths.
+// executor. The shared helpers above (UploadHandler, ChatGPTFileMeta,
+// chatgptRelayOptions, OpenChatGPTInput) remain for the vault and async paths.

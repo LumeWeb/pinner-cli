@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
 
@@ -38,7 +39,7 @@ func (f *fakeVaultPutHandler) Put(ctx context.Context, r io.Reader, _ int64, vau
 // the vault_put_file descriptor is indexed in the catalog, the app view
 // attaches _meta.ui to it, that meta is copied onto the descriptor served
 // directly via RegisterOfficialDescriptor (the production surface), and a real
-// vaultHTTPUpload coordinator backs the mint helper.
+// transfer.VaultHTTPUpload coordinator backs the mint helper.
 func buildVaultUploadAppServer(t *testing.T, fake *fakeVaultPutHandler) *mcp.Server {
 	srv, _ := buildVaultUploadAppServerEx(t, fake)
 	return srv
@@ -46,14 +47,14 @@ func buildVaultUploadAppServer(t *testing.T, fake *fakeVaultPutHandler) *mcp.Ser
 
 // buildVaultUploadAppServerEx is buildVaultUploadAppServer but also returns the
 // coordinator so tests can configure it (e.g. AddTrustedOrigins).
-func buildVaultUploadAppServerEx(t *testing.T, fake *fakeVaultPutHandler) (*mcp.Server, *vaultHTTPUpload) {
+func buildVaultUploadAppServerEx(t *testing.T, fake *fakeVaultPutHandler) (*mcp.Server, *transfer.VaultHTTPUpload) {
 	t.Helper()
 	if fake == nil {
 		fake = &fakeVaultPutHandler{}
 	}
 	catalog := NewToolCatalog()
 	srv := sdk.NewServer(nil)
-	vu := NewVaultHTTPUpload(fake.Put, 1<<20)
+	vu := transfer.NewVaultHTTPUpload(fake.Put, 1<<20)
 
 	vaultPutDesc := NewVaultPutFileDescriptor(false, false, nil, vu, fake.Put, nil, 0)
 	catalog.Add(model.ToolEntryFromDescriptor(vaultPutDesc))

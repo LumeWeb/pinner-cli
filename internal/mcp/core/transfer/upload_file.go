@@ -1,4 +1,4 @@
-package mcp
+package transfer
 
 import (
 	"context"
@@ -38,12 +38,12 @@ type UploadFileInput struct {
 // UploadFileHandler is the co-located local-path upload path for upload_file.
 type UploadFileHandler = LocalPathUploadHandler
 
-// uploadFileTransport picks the TransportKind from the wiring flags. It classifies
+// UploadFileTransport picks the TransportKind from the wiring flags. It classifies
 // by reachability, not by whether a particular coordinator is wired: co-located
 // stdio, the shared HTTP mux (plain HTTP or any non-OpenAI tunnel, with or without
 // a presigned curl coordinator), or the embedded OpenAI tunnel, which exposes no
 // reachable HTTP mux.
-func uploadFileTransport(coLocated, tunnelOpenAI bool) TransportKind {
+func UploadFileTransport(coLocated, tunnelOpenAI bool) TransportKind {
 	if coLocated {
 		return TransportStdio
 	}
@@ -60,8 +60,8 @@ func uploadFileTransport(coLocated, tunnelOpenAI bool) TransportKind {
 //   - stdio (coLocated): source mode path → pathFn reads the host path.
 //   - HTTP/tunnel: source mode mint → hp mints a presigned PUT.
 //   - OpenAI tunnel (tunnelOpenAI): source mode url/data → relayed through MCP.
-func NewUploadFileDescriptor(coLocated, tunnelOpenAI bool, pathFn UploadFileHandler, hp *httpUpload, relayFn UploadHandler, relayHosts []string, maxRelayBytes int64) model.ToolDescriptor {
-	transport := uploadFileTransport(coLocated, tunnelOpenAI)
+func NewUploadFileDescriptor(coLocated, tunnelOpenAI bool, pathFn UploadFileHandler, hp *Upload, relayFn UploadHandler, relayHosts []string, maxRelayBytes int64) model.ToolDescriptor {
+	transport := UploadFileTransport(coLocated, tunnelOpenAI)
 	return model.ToolDescriptor{
 		Name:        "upload_file",
 		Title:       "Upload a file to Pinner",
@@ -87,7 +87,7 @@ func NewUploadFileDescriptor(coLocated, tunnelOpenAI bool, pathFn UploadFileHand
 				}
 				name := in.Name
 				if name == "" {
-					name = fileBaseName(in.Source.Path)
+					name = FileBaseName(in.Source.Path)
 				}
 				result, err := pathFn(ctx, in.Source.Path, name, in.Wait, in.ArchiveMode)
 				return toolargs.WrapResult(result, err, "Uploaded.")
@@ -102,7 +102,7 @@ func NewUploadFileDescriptor(coLocated, tunnelOpenAI bool, pathFn UploadFileHand
 				if name == "" {
 					name = DefaultUploadName
 				}
-				ttl := defaultHTTPUploadTTL
+				ttl := DefaultHTTPUploadTTL
 				if in.TTL != "" {
 					d, derr := time.ParseDuration(in.TTL)
 					if derr != nil {
@@ -148,7 +148,7 @@ func NewUploadFileDescriptor(coLocated, tunnelOpenAI bool, pathFn UploadFileHand
 				if name == "" {
 					name = DefaultUploadName
 				}
-				transferCtx, cancel := context.WithTimeout(ctx, syncUploadBudget(size))
+				transferCtx, cancel := context.WithTimeout(ctx, SyncUploadBudget(size))
 				defer cancel()
 				result, err := relayFn(transferCtx, body, size, name, in.Wait)
 				return toolargs.WrapResult(result, err, "Uploaded.")
@@ -170,8 +170,8 @@ func uploadFileDescription(t TransportKind) string {
 	}
 }
 
-// fileBaseName returns the base name of a path for a default upload label.
-func fileBaseName(p string) string {
+// FileBaseName returns the base name of a path for a default upload label.
+func FileBaseName(p string) string {
 	if p == "" {
 		return DefaultUploadName
 	}

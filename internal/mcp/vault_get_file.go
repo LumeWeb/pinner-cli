@@ -7,6 +7,7 @@ import (
 	"io"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
 )
@@ -21,7 +22,7 @@ type VaultGetFileInput struct {
 	// Sink tells where the bytes land: "local" writes to a host-side path
 	// (available on every transport); "drop" mints a one-time HTTP GET
 	// filedrop (only when a reachable HTTP mux exists).
-	Sink DownloadSink `json:"sink" jsonschema:"enum=local,drop,description=Where the downloaded bytes land: local writes to a host-side output_path on the MCP server's disk (available on every transport); drop mints a one-time HTTP GET filedrop link to pull from out of band."`
+	Sink transfer.DownloadSink `json:"sink" jsonschema:"enum=local,drop,description=Where the downloaded bytes land: local writes to a host-side output_path on the MCP server's disk (available on every transport); drop mints a one-time HTTP GET filedrop link to pull from out of band."`
 	// Name is an optional filename override. Defaults to the vault file's base
 	// name.
 	Name string `json:"name,omitempty" jsonschema:"description=Optional filename for the downloaded file (defaults to the vault file's base name)."`
@@ -36,12 +37,12 @@ type VaultGetFileInput struct {
 // It retrieves a single encrypted vault file and routes the decrypted bytes to
 // the requested sink (local host write confined under downloadRoot on every
 // transport, or a filedrop GET on HTTP / real tunnel). The vault service lives
-// in the CLI layer, exposed to MCP as a VaultGetHandler closure — mirror of
+// in the CLI layer, exposed to MCP as a transfer.VaultGetHandler closure — mirror of
 // VaultPutHandler.
-func NewVaultGetFileDescriptor(getFn VaultGetHandler, hd *httpDownload, downloadRoot string, maxDownloadBytes int64, tunnelOpenAI bool) model.ToolDescriptor {
+func NewVaultGetFileDescriptor(getFn transfer.VaultGetHandler, hd *transfer.Download, downloadRoot string, maxDownloadBytes int64, tunnelOpenAI bool) model.ToolDescriptor {
 	return model.ToolDescriptor{
 		Name:        "vault_get_file",
-		Title:       "Download a file from the Pinner vault",
+		Title:       "transfer.Download a file from the Pinner vault",
 		Description: vaultGetFileDescription(hd != nil, tunnelOpenAI),
 		Category:    model.CategoryCore,
 		InputSchema: toolargs.ToolSchemaFor[VaultGetFileInput](),
@@ -53,28 +54,28 @@ func NewVaultGetFileDescriptor(getFn VaultGetHandler, hd *httpDownload, download
 			if in.VaultPath == "" {
 				return model.ToolResult{}, fmt.Errorf("vault_path is required")
 			}
-			if err := downloadSinksAllowed(in.Sink, hd != nil, tunnelOpenAI); err != nil {
+			if err := transfer.DownloadSinksAllowed(in.Sink, hd != nil, tunnelOpenAI); err != nil {
 				return model.ToolResult{}, err
 			}
 			name := in.Name
 			if name == "" {
-				name = sinkDefaultName(in.VaultPath)
+				name = transfer.SinkDefaultName(in.VaultPath)
 			}
 			if name == "" {
-				name = defaultSourceName
+				name = transfer.DefaultSourceName
 			}
 
 			switch in.Sink {
-			case SinkLocal:
+			case transfer.SinkLocal:
 				if getFn == nil {
 					return model.ToolResult{}, errors.New("vault get handler is not configured")
 				}
-				res, err := executeLocalSink(ctx, in.VaultPath, name, in.OutputPath, downloadRoot, maxDownloadBytes, func(ctx context.Context, w io.Writer) error {
+				res, err := transfer.ExecuteLocalSink(ctx, in.VaultPath, name, in.OutputPath, downloadRoot, maxDownloadBytes, func(ctx context.Context, w io.Writer) error {
 					return getFn(ctx, in.VaultPath, w)
 				})
 				return toolargs.WrapResult(res, err, "Downloaded from the vault.")
-			case SinkDrop:
-				res, err := executeDropSink(ctx, in.VaultPath, name, hd, in.TTL, maxDownloadBytes, func(ctx context.Context, w io.Writer) error {
+			case transfer.SinkDrop:
+				res, err := transfer.ExecuteDropSink(ctx, in.VaultPath, name, hd, in.TTL, maxDownloadBytes, func(ctx context.Context, w io.Writer) error {
 					return getFn(ctx, in.VaultPath, w)
 				})
 				return toolargs.WrapResult(res, err, "Filedrop minted; pull the bytes from fetch_url.")
@@ -89,7 +90,7 @@ func NewVaultGetFileDescriptor(getFn VaultGetHandler, hd *httpDownload, download
 // sinks that can actually work on the running transport.
 func vaultGetFileDescription(dropWired, tunnelOpenAI bool) string {
 	if dropWired && !tunnelOpenAI {
-		return "Download a file from your encrypted Pinner vault by vault_path (e.g. vault:/docs/f.pdf). Set sink=local to write the decrypted bytes to a host-side output_path on the MCP server's own disk (available on every transport), or sink=drop to get a one-time HTTP GET filedrop link to pull from out of band."
+		return "transfer.Download a file from your encrypted Pinner vault by vault_path (e.g. vault:/docs/f.pdf). Set sink=local to write the decrypted bytes to a host-side output_path on the MCP server's own disk (available on every transport), or sink=drop to get a one-time HTTP GET filedrop link to pull from out of band."
 	}
-	return "Download a file from your encrypted Pinner vault by vault_path (e.g. vault:/docs/f.pdf). Set sink=local to write the decrypted bytes to a host-side output_path on the MCP server's own disk. (The filedrop GET sink is unavailable on this tunnel transport.)"
+	return "transfer.Download a file from your encrypted Pinner vault by vault_path (e.g. vault:/docs/f.pdf). Set sink=local to write the decrypted bytes to a host-side output_path on the MCP server's own disk. (The filedrop GET sink is unavailable on this tunnel transport.)"
 }
