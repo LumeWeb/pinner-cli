@@ -21,6 +21,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/oob"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 	"go.lumeweb.com/pinner-cli/internal/mcp/vault"
 )
@@ -470,7 +471,7 @@ func TestOfficialInvokeVaultRestoreRoutesAgentSafeHandoff(t *testing.T) {
 	// and mint a restore_url hand-off; it is not stdin-gated (the seed is
 	// entered by the human on the one-time page, never via --seed-stdin on the
 	// MCP channel).
-	oobRestore := NewOOBRestore(nil, time.Minute)
+	oobRestore := oob.NewOOBRestore(nil, time.Minute)
 	t.Cleanup(func() { oobRestore.Stop(context.Background()) })
 	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 	reg := handoff.NewHandoffRegistry()
@@ -507,7 +508,7 @@ func TestOfficialInvokeVaultRestoreRoutesAgentSafeHandoff(t *testing.T) {
 	restoreURL, _ := sc["restore_url"].(string)
 	require.Contains(t, restoreURL, "/restore/", "restore must mint a one-time restore_url from the OOB coordinator")
 	require.NotEmpty(t, sc["handle"])
-	require.Equal(t, vaultRestoreResumeToolName, sc["resume_tool"])
+	require.Equal(t, oob.VaultRestoreResumeToolName, sc["resume_tool"])
 	// The restore flow carries NO seed on the channel at all: the human enters
 	// it on the browser page. Assert there is no plaintext-mnemonic field and
 	// the structured content is free of recovery-seed material.

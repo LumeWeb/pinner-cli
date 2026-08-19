@@ -35,6 +35,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
+	"go.lumeweb.com/pinner-cli/internal/mcp/oob"
 )
 
 // sdkHandlerDeps is the hub's implementation of the behaviors the sdk handler
@@ -52,7 +53,7 @@ var sdkHandlerDeps = sdk.HandlerDeps{
 
 // OfficialServerFromCatalog builds the official server with Pinner's
 // progressive-disclosure meta-tools. The catalog remains internal.
-func OfficialServerFromCatalog(catalog *ToolCatalog, instructions string, stdioMode bool, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate) (*sdk.Server, error) {
+func OfficialServerFromCatalog(catalog *ToolCatalog, instructions string, stdioMode bool, seedDrop *oob.SeedDrop, oobRestore *oob.OOBRestore, oobCreate *oob.OOBCreate) (*sdk.Server, error) {
 	if catalog == nil {
 		return nil, fmt.Errorf("nil tool catalog")
 	}
@@ -71,7 +72,7 @@ func OfficialServerFromCatalog(catalog *ToolCatalog, instructions string, stdioM
 // Resources and prompts are registered by the command action after runtime
 // providers and options are resolved. The descriptor adapters below preserve
 // their wire contracts on the official server.
-func OfficialMCPServer(root *cli.Command, stdioMode bool, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate, handoffReg *handoff.HandoffRegistry, authHandles *session.AsyncHandleStore, catalogOpts ...buildCatalogOpt) (*sdk.Server, *ToolCatalog, error) {
+func OfficialMCPServer(root *cli.Command, stdioMode bool, seedDrop *oob.SeedDrop, oobRestore *oob.OOBRestore, oobCreate *oob.OOBCreate, handoffReg *handoff.HandoffRegistry, authHandles *session.AsyncHandleStore, catalogOpts ...buildCatalogOpt) (*sdk.Server, *ToolCatalog, error) {
 	catalog, err := buildCatalog(root, seedDrop, oobRestore, oobCreate, handoffReg, authHandles, catalogOpts...)
 	if err != nil {
 		return nil, nil, err
@@ -152,7 +153,7 @@ func registerTool(srv *sdk.Server, desc model.ToolDescriptor, handler model.Pinn
 // meta-tools (search_tools, describe_tool, invoke_tool) on an official-SDK
 // server. The catalog itself stays hidden; the only tools visible via
 // tools/list are these three, preserving progressive disclosure.
-func RegisterOfficialMetaTools(srv *sdk.Server, catalog *ToolCatalog, stdioMode bool, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate) error {
+func RegisterOfficialMetaTools(srv *sdk.Server, catalog *ToolCatalog, stdioMode bool, seedDrop *oob.SeedDrop, oobRestore *oob.OOBRestore, oobCreate *oob.OOBCreate) error {
 	if srv == nil {
 		return fmt.Errorf("nil official server")
 	}
@@ -316,7 +317,7 @@ func registerOfficialDescribeTool(srv *sdk.Server, catalog *ToolCatalog) error {
 	return sdk.RegisterTool(srv, sdkHandlerDeps, desc)
 }
 
-func registerOfficialInvokeTool(srv *sdk.Server, catalog *ToolCatalog, stdioMode bool, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate) error {
+func registerOfficialInvokeTool(srv *sdk.Server, catalog *ToolCatalog, stdioMode bool, seedDrop *oob.SeedDrop, oobRestore *oob.OOBRestore, oobCreate *oob.OOBCreate) error {
 	schema := &metaToolSchema{}
 	schema.property("name", map[string]any{
 		"type":        "string",

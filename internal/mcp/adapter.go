@@ -41,6 +41,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/auth"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	oobpkg "go.lumeweb.com/pinner-cli/internal/mcp/oob"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 	"go.lumeweb.com/pinner-cli/internal/mcp/vault"
 )
@@ -265,10 +266,10 @@ adapter.`,
 			// When the registry capacity-evicts a still-live continuation,
 			// retire its backing handle too so it cannot be resumed.
 			handoffReg.SetCleanup(authHandles.Delete)
-			// SeedDrop hands a vault recovery seed to a human over a one-time
+			// oobpkg.SeedDrop hands a vault recovery seed to a human over a one-time
 			// browser URL (loopback in stdio, shared mux over HTTP), without it
 			// transiting the MCP channel.
-			seedDrop := NewSeedDrop(DefaultSeedDropTTL).WithLogger(log)
+			seedDrop := oobpkg.NewSeedDrop(oobpkg.DefaultSeedDropTTL).WithLogger(log)
 
 			// Resolve wizard dependencies first: the OOB login and OOB restore
 			// coordinators are built from the services the CLI provides and
@@ -276,8 +277,8 @@ adapter.`,
 			// vault-restore tool handlers can mint seed/restore URLs.
 			var (
 				oob        *auth.OutOfBandLogin
-				oobRestore *OOBRestore
-				oobCreate  *OOBCreate
+				oobRestore *oobpkg.OOBRestore
+				oobCreate  *oobpkg.OOBCreate
 				accountOOB *auth.OOBAccountChange
 				catalog    *ToolCatalog
 				err        error
@@ -298,8 +299,8 @@ adapter.`,
 				}
 				hasWizard = true
 				oob = wizardS.OutOfBand.WithLogger(log)
-				oobRestore = NewOOBRestore(wizardS.Restore, DefaultRestoreTTL).WithLogger(log)
-				oobCreate = NewOOBCreate(wizardS.Create, seedDrop, DefaultCreateTTL).WithLogger(log)
+				oobRestore = oobpkg.NewOOBRestore(wizardS.Restore, oobpkg.DefaultRestoreTTL).WithLogger(log)
+				oobCreate = oobpkg.NewOOBCreate(wizardS.Create, seedDrop, oobpkg.DefaultCreateTTL).WithLogger(log)
 				accountOOB = auth.NewOOBAccountChange(wizardS.AuthService, auth.DefaultAccountChangeTTL).WithLogger(log)
 			}
 
@@ -483,7 +484,7 @@ func mcpHostProtectionDisabled(tunnelActive, httpMode bool, publicURL string) bo
 	return tunnelActive || (httpMode && publicURL != "")
 }
 
-func serveHTTP(ctx context.Context, srv *sdk.Server, cmd *cli.Command, oob *auth.OutOfBandLogin, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate, accountOOB *auth.OOBAccountChange, curlUpload *transfer.Upload, vaultUpload *transfer.VaultHTTPUpload, dl *transfer.Download, cfgMgr config.Manager) error {
+func serveHTTP(ctx context.Context, srv *sdk.Server, cmd *cli.Command, oob *auth.OutOfBandLogin, seedDrop *oobpkg.SeedDrop, oobRestore *oobpkg.OOBRestore, oobCreate *oobpkg.OOBCreate, accountOOB *auth.OOBAccountChange, curlUpload *transfer.Upload, vaultUpload *transfer.VaultHTTPUpload, dl *transfer.Download, cfgMgr config.Manager) error {
 	provider := cmd.String("tunnel")
 	domain := cmd.String("domain")
 	token := cmd.String("token")
@@ -1103,7 +1104,7 @@ type WizardDepsFactory func() (wizard.WebsitesWizardDeps, wizard.SetupWizardDeps
 // one-time seed/restore/create URLs for vault-create/vault-restore agent output
 // so the human can retrieve or supply a recovery seed in a browser without it
 // transiting the MCP channel.
-func buildCatalog(root *cli.Command, seedDrop *SeedDrop, oobRestore *OOBRestore, oobCreate *OOBCreate, handoffReg *handoff.HandoffRegistry, authHandles *session.AsyncHandleStore, opts ...buildCatalogOpt) (*ToolCatalog, error) {
+func buildCatalog(root *cli.Command, seedDrop *oobpkg.SeedDrop, oobRestore *oobpkg.OOBRestore, oobCreate *oobpkg.OOBCreate, handoffReg *handoff.HandoffRegistry, authHandles *session.AsyncHandleStore, opts ...buildCatalogOpt) (*ToolCatalog, error) {
 	catalog := NewToolCatalog()
 
 	// Apply the functional options. Currently the only option is withCatalogDeps,
@@ -1171,8 +1172,8 @@ func buildCatalog(root *cli.Command, seedDrop *SeedDrop, oobRestore *OOBRestore,
 	// needs_human hand-off its AgentDescription promises, rather than a bare
 	// JSON-serialized VaultCreateHandoff/VaultRestoreHandoff{Profile} plaintext.
 	routeVaultSetupHandlers(catalog,
-		vaultCreateSetupHandler(oobCreate, handoffReg, authHandles),
-		vaultRestoreSetupHandler(oobRestore, handoffReg, authHandles),
+		oobpkg.VaultCreateSetupHandler(oobCreate, handoffReg, authHandles),
+		oobpkg.VaultRestoreSetupHandler(oobRestore, handoffReg, authHandles),
 	)
 	markCurated(catalog)
 

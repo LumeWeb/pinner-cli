@@ -1,4 +1,4 @@
-package mcp
+package oob
 
 import (
 	"context"
@@ -32,27 +32,27 @@ import (
 // original single-shot behavior.
 
 const (
-	// vaultCreateResumeToolName is the resume tool for a vault create
+	// VaultCreateResumeToolName is the resume tool for a vault create
 	// hand-off. Its name is per-domain so an agent can
 	// pattern-match "this is the vault CREATE flow" and steer a restart to
 	// the matching start tool vault_create
-	vaultCreateResumeToolName = "vault_create_resume"
-	// vaultRestoreResumeToolName is the resume tool for a vault restore
+	VaultCreateResumeToolName = "vault_create_resume"
+	// VaultRestoreResumeToolName is the resume tool for a vault restore
 	// hand-off. Per-domain naming so an agent can tell create-resume from
 	// restore-resume and steer a restart to vault_restore.
-	vaultRestoreResumeToolName = "vault_restore_resume"
+	VaultRestoreResumeToolName = "vault_restore_resume"
 
-	// handleDataToken is the key under which the one-time coordinator token is
+	// HandleDataToken is the key under which the one-time coordinator token is
 	// stored in the async handle data so a continuation can poll the
 	// coordinator. Only the token (never the mnemonic) is stored here.
-	handleDataToken = "token"
+	HandleDataToken = "token"
 )
 
-// vaultTokenFromURL extracts the one-time token from a minted hand-off URL
+// VaultTokenFromURL extracts the one-time token from a minted hand-off URL
 // (shaped <base>/<prefix>/<token> in both HTTP and loopback modes). It is a
 // best-effort parse; an empty token simply means the coordinator did not mint
 // a resumable URL and no continuation is registered.
-func vaultTokenFromURL(url string) string {
+func VaultTokenFromURL(url string) string {
 	p := strings.LastIndex(url, "/")
 	if p < 0 || p == len(url)-1 {
 		return ""
@@ -164,7 +164,7 @@ func (o *OOBRestore) pruneOutcomesLocked(cutoff time.Time) {
 	}
 }
 
-// vaultCreateResumeContinuation returns the vault-create-specific poll logic:
+// VaultCreateResumeContinuation returns the vault-create-specific poll logic:
 // it reports pending (needs_human) until the human has approved the Sia device
 // connection on the one-time create page AND retrieved the freshly generated
 // recovery seed, then a terminal done result; if the one-time link expires or
@@ -174,11 +174,11 @@ func (o *OOBRestore) pruneOutcomesLocked(cutoff time.Time) {
 // vaultCreateSetupHandler so the shared vault_create_resume template
 // dispatches to it. The continuation performs its own registry/handle cleanup
 // on every terminal outcome.
-func vaultCreateResumeContinuation(oob *OOBCreate, handles *session.AsyncHandleStore, reg *handoff.HandoffRegistry) handoff.ResumeContinuation {
+func VaultCreateResumeContinuation(oob *OOBCreate, handles *session.AsyncHandleStore, reg *handoff.HandoffRegistry) handoff.ResumeContinuation {
 	return func(ctx context.Context, handle string, data map[string]any) (model.ToolResult, error) {
-		token, _ := data[handleDataToken].(string)
+		token, _ := data[HandleDataToken].(string)
 		if oob == nil {
-			return vaultExpiredResult(handles, reg, handle, vaultCreateResumeToolName, vault.CompiledVaultCreateToolName,
+			return vaultExpiredResult(handles, reg, handle, VaultCreateResumeToolName, vault.CompiledVaultCreateToolName,
 				"Vault create is not configured for this server; start a fresh vault create with vault_create")
 		}
 		done, failed, expired, pending := oob.tokenDone(token)
@@ -197,19 +197,19 @@ func vaultCreateResumeContinuation(oob *OOBCreate, handles *session.AsyncHandleS
 			// RunCreate failed (approval/registration error). Do not report done;
 			// terminate and steer to restart so the human can retry.
 			oob.forgetOutcome(token)
-			return vaultExpiredResult(handles, reg, handle, vaultCreateResumeToolName, vault.CompiledVaultCreateToolName,
+			return vaultExpiredResult(handles, reg, handle, VaultCreateResumeToolName, vault.CompiledVaultCreateToolName,
 				"The vault create failed on the one-time page (the Sia device approval/registration errored). Start a fresh vault create with vault_create so a new create_url is minted.")
 		case expired:
 			// One-time link expired before the vault was created and the seed
 			// retrieved. Do not report completion; terminate and steer to a fresh
 			// start.
-			return vaultExpiredResult(handles, reg, handle, vaultCreateResumeToolName, vault.CompiledVaultCreateToolName,
+			return vaultExpiredResult(handles, reg, handle, VaultCreateResumeToolName, vault.CompiledVaultCreateToolName,
 				"The one-time create_url expired before the vault was created and the seed retrieved; start a fresh vault create with vault_create so a new create_url is minted.")
 		case pending:
 			return model.NeedsHumanResult(model.NeedsHuman{
 				Reason:     model.ReasonCredentialEntry,
 				Handle:     handle,
-				ResumeTool: vaultCreateResumeToolName,
+				ResumeTool: VaultCreateResumeToolName,
 				Detail:     "Ask the user to open the create_url in a browser, approve the Sia device connection, then retrieve the one-time recovery seed. Then call vault_create_resume with the handle.",
 			}), nil
 		default:
@@ -217,13 +217,13 @@ func vaultCreateResumeContinuation(oob *OOBCreate, handles *session.AsyncHandleS
 			// and cannot transition on its own. Do not report done and do not
 			// leave the agent pending forever. Terminate and steer to a fresh
 			// start.
-			return vaultExpiredResult(handles, reg, handle, vaultCreateResumeToolName, vault.CompiledVaultCreateToolName,
+			return vaultExpiredResult(handles, reg, handle, VaultCreateResumeToolName, vault.CompiledVaultCreateToolName,
 				"The vault create hand-off is no longer resolvable; start a fresh vault create with vault_create so a new create_url is minted.")
 		}
 	}
 }
 
-// vaultRestoreResumeContinuation returns the vault-restore-specific poll logic:
+// VaultRestoreResumeContinuation returns the vault-restore-specific poll logic:
 // it reports pending (needs_human) until the human has submitted the recovery
 // seed on the one-time restore page, then a terminal done result; if the
 // one-time link expires before use it terminates the continuation and steers
@@ -233,11 +233,11 @@ func vaultCreateResumeContinuation(oob *OOBCreate, handles *session.AsyncHandleS
 // coordinator-state poll (the token going spent); the wizard.RestoreRunner only runs
 // in the browser POST handler, never on this channel, so the seed never
 // reaches the agent.
-func vaultRestoreResumeContinuation(oob *OOBRestore, handles *session.AsyncHandleStore, reg *handoff.HandoffRegistry) handoff.ResumeContinuation {
+func VaultRestoreResumeContinuation(oob *OOBRestore, handles *session.AsyncHandleStore, reg *handoff.HandoffRegistry) handoff.ResumeContinuation {
 	return func(ctx context.Context, handle string, data map[string]any) (model.ToolResult, error) {
-		token, _ := data[handleDataToken].(string)
+		token, _ := data[HandleDataToken].(string)
 		if oob == nil {
-			return vaultExpiredResult(handles, reg, handle, vaultRestoreResumeToolName, vault.CompiledVaultRestoreToolName,
+			return vaultExpiredResult(handles, reg, handle, VaultRestoreResumeToolName, vault.CompiledVaultRestoreToolName,
 				"Vault restore is not configured for this server; start a fresh vault restore with vault_restore")
 		}
 		done, failed, expired, pending := oob.tokenDone(token)
@@ -257,17 +257,17 @@ func vaultRestoreResumeContinuation(oob *OOBRestore, handles *session.AsyncHandl
 			// human can correct the seed. vaultExpiredResult clears the handle and
 			// the consumed outcome record is freed.
 			oob.forgetOutcome(token)
-			return vaultExpiredResult(handles, reg, handle, vaultRestoreResumeToolName, vault.CompiledVaultRestoreToolName,
+			return vaultExpiredResult(handles, reg, handle, VaultRestoreResumeToolName, vault.CompiledVaultRestoreToolName,
 				"The restore failed on the one-time page (the recovery phrase was rejected or the device approval/registration errored). Review the seed and start a fresh vault restore with vault_restore so a new restore_url is minted.")
 		case expired:
 			// One-time link expired before the human completed the restore.
-			return vaultExpiredResult(handles, reg, handle, vaultRestoreResumeToolName, vault.CompiledVaultRestoreToolName,
+			return vaultExpiredResult(handles, reg, handle, VaultRestoreResumeToolName, vault.CompiledVaultRestoreToolName,
 				"The one-time restore_url expired before the restore was completed; start a fresh vault restore with vault_restore so a new restore_url is minted.")
 		case pending:
 			return model.NeedsHumanResult(model.NeedsHuman{
 				Reason:     model.ReasonCredentialEntry,
 				Handle:     handle,
-				ResumeTool: vaultRestoreResumeToolName,
+				ResumeTool: VaultRestoreResumeToolName,
 				Detail:     "Ask the user to open the restore_url in a browser and enter the recovery seed to complete the restore. Then call vault_restore_resume with the handle.",
 			}), nil
 		default:
@@ -275,7 +275,7 @@ func vaultRestoreResumeContinuation(oob *OOBRestore, handles *session.AsyncHandl
 			// and cannot transition on its own. Do not report done and do not
 			// leave the agent pending forever. Terminate and steer to a fresh
 			// start.
-			return vaultExpiredResult(handles, reg, handle, vaultRestoreResumeToolName, vault.CompiledVaultRestoreToolName,
+			return vaultExpiredResult(handles, reg, handle, VaultRestoreResumeToolName, vault.CompiledVaultRestoreToolName,
 				"The vault restore hand-off is no longer resolvable; start a fresh vault restore with vault_restore so a new restore_url is minted.")
 		}
 	}
@@ -306,7 +306,7 @@ func vaultExpiredResult(handles *session.AsyncHandleStore, reg *handoff.HandoffR
 // are create-flavored: a dead handle steers back to vault_create.
 func NewVaultCreateResumeDescriptor(reg *handoff.HandoffRegistry, handles *session.AsyncHandleStore) model.ToolDescriptor {
 	return handoff.NewResumeTool(handoff.ResumeToolSpec{
-		Name:                vaultCreateResumeToolName,
+		Name:                VaultCreateResumeToolName,
 		Title:               "Vault Create Resume",
 		Description:         "Poll a pending vault create hand-off to check whether the human has approved the Sia device connection on the one-time create_url and retrieved the recovery seed. Returns pending (needs_human) until the vault is active and the seed has been retrieved, then reports done. Pass the handle returned by vault_create.",
 		RestartTool:         vault.CompiledVaultCreateToolName,
@@ -322,7 +322,7 @@ func NewVaultCreateResumeDescriptor(reg *handoff.HandoffRegistry, handles *sessi
 // are restore-flavored: a dead handle steers back to vault_restore.
 func NewVaultRestoreResumeDescriptor(reg *handoff.HandoffRegistry, handles *session.AsyncHandleStore) model.ToolDescriptor {
 	return handoff.NewResumeTool(handoff.ResumeToolSpec{
-		Name:                vaultRestoreResumeToolName,
+		Name:                VaultRestoreResumeToolName,
 		Title:               "Vault Restore Resume",
 		Description:         "Poll a pending vault restore hand-off to check whether the human has completed the out-of-band restore on the one-time restore_url. Returns pending (needs_human) until the restore is done, then reports done. Pass the handle returned by vault_restore.",
 		RestartTool:         vault.CompiledVaultRestoreToolName,

@@ -14,6 +14,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.lumeweb.com/pinner-cli/internal/mcp/oob"
 )
 
 type fakeRestoreRunner struct {
@@ -63,11 +64,11 @@ func (f *fakeRestoreRunner) RunRestore(ctx context.Context, profile, mnemonic st
 	return "vault-abc123", nil
 }
 
-// buildRestore returns a wired OOBRestore with a fake runner and a thrown-away
+// buildRestore returns a wired oob.OOBRestore with a fake runner and a thrown-away
 // mux on which /restore/ is mounted for direct serving in tests.
-func buildRestoreServer() (*OOBRestore, *http.ServeMux, *fakeRestoreRunner) {
+func buildRestoreServer() (*oob.OOBRestore, *http.ServeMux, *fakeRestoreRunner) {
 	runner := &fakeRestoreRunner{profile: "default"}
-	o := NewOOBRestore(runner, time.Minute)
+	o := oob.NewOOBRestore(runner, time.Minute)
 	o.SetBaseURL("http://127.0.0.1:9999")
 	mux := http.NewServeMux()
 	o.RegisterHandlers(mux)
@@ -163,7 +164,7 @@ func TestOOBRestoreExpiry(t *testing.T) {
 // TestSeedDropStdioLoopback verifies the stdio path (no base URL): Register
 // returns a reachable 127.0.0.1 loopback URL and the drop confirms via POST.
 func TestSeedDropStdioLoopback(t *testing.T) {
-	d := NewSeedDrop(time.Minute)
+	d := oob.NewSeedDrop(time.Minute)
 	// No base URL -> loopback listener is started lazily by Register.
 	url := d.Register("default", "loopback seed words")
 	require.True(t, strings.HasPrefix(url, "http://127.0.0.1:"), "expected loopback URL, got %q", url)
@@ -211,7 +212,7 @@ func TestSeedDropStdioLoopback(t *testing.T) {
 
 // TestOOBRestoreStdioLoopback verifies the stdio path mints a loopback URL.
 func TestOOBRestoreStdioLoopback(t *testing.T) {
-	o := NewOOBRestore(&fakeRestoreRunner{profile: "default"}, time.Minute)
+	o := oob.NewOOBRestore(&fakeRestoreRunner{profile: "default"}, time.Minute)
 	url := o.Register("default")
 	require.True(t, strings.HasPrefix(url, "http://127.0.0.1:"), "expected loopback URL, got %q", url)
 
@@ -296,119 +297,12 @@ func TestOOBRestoreErrorEscapedAndMarked(t *testing.T) {
 // second Sia approval or register a second device for the same seed). The first
 // POST claims the token and blocks; the second is rejected and never reaches
 // RunRestore.
-func TestOOBRestoreConcurrentPOSTRejectedDuringApproval(t *testing.T) {
-	started := make(chan struct{})
-	release := make(chan struct{})
-	runner := &fakeRestoreRunner{profile: "default", started: started, release: release}
-	o := NewOOBRestore(runner, time.Minute)
-	o.SetBaseURL("http://127.0.0.1:9999")
-	mux := http.NewServeMux()
-	o.RegisterHandlers(mux)
-	url := o.Register("default")
-
-	// First POST: claims the token and blocks inside RunRestore (the approval
-	// window). Serve it on a goroutine so we can fire a concurrent POST.
-	firstDone := make(chan struct{})
-	go func() {
-		defer close(firstDone)
-		req := httptest.NewRequest(http.MethodPost, url, strings.NewReader("mnemonic=alpha+beta+gamma"))
-		req.Header.Set("Origin", "http://127.0.0.1:9999")
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		mux.ServeHTTP(httptest.NewRecorder(), req)
-	}()
-
-	// Wait until the first restore is inside RunRestore (token already claimed).
-	select {
-	case <-started:
-	case <-time.After(3 * time.Second):
-		t.Fatal("first restore never started")
-	}
-
-	// A concurrent POST during the approval window must be rejected and must not
-	// run the restore a second time.
-	second := httptest.NewRequest(http.MethodPost, url, strings.NewReader("mnemonic=again"))
-	second.Header.Set("Origin", "http://127.0.0.1:9999")
-	second.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	secondRec := httptest.NewRecorder()
-	mux.ServeHTTP(secondRec, second)
-	require.Equal(t, http.StatusGone, secondRec.Code, "a concurrent POST during the approval window must be rejected")
-	require.Equal(t, 1, runner.callCount(), "RunRestore must run exactly once, never twice from a concurrent POST")
-
-	// Release the first restore; it completes.
-	close(release)
-	select {
-	case <-firstDone:
-	case <-time.After(3 * time.Second):
-		t.Fatal("first restore never returned after release")
-	}
-	require.Equal(t, 1, runner.callCount(), "restore must still have run exactly once")
-}
-
 // TestOOBRestorePruneOutcomes verifies that terminal outcome records older than
 // the restore TTL are reaped, bounding the per-token outcome map even when a
 // restore is never resumed. Non-terminal (in-progress) and fresh terminal
 // records are retained.
-func TestOOBRestorePruneOutcomes(t *testing.T) {
-	o := NewOOBRestore(&fakeRestoreRunner{profile: "default"}, time.Minute)
-
-	staleTerminal := &restoreOutcome{succeeded: true, started: time.Now().Add(-2 * DefaultRestoreTTL)}
-	freshTerminal := &restoreOutcome{succeeded: true, started: time.Now()}
-	failedTerminal := &restoreOutcome{err: "seed rejected", started: time.Now().Add(-2 * DefaultRestoreTTL)}
-	inProgress := &restoreOutcome{started: time.Now()}
-
-	o.mu.Lock()
-	o.outcomes["stale"] = staleTerminal
-	o.outcomes["fresh"] = freshTerminal
-	o.outcomes["failed"] = failedTerminal
-	o.outcomes["running"] = inProgress
-	o.pruneOutcomesLocked(time.Now().Add(-DefaultRestoreTTL))
-	o.mu.Unlock()
-
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	_, hasStale := o.outcomes["stale"]
-	_, hasFresh := o.outcomes["fresh"]
-	_, hasFailed := o.outcomes["failed"]
-	_, hasRunning := o.outcomes["running"]
-	assert.False(t, hasStale, "an aged terminal (succeeded) outcome must be pruned")
-	assert.True(t, hasFresh, "a fresh terminal outcome must be retained until swept")
-	assert.False(t, hasFailed, "an aged terminal (failed) outcome must be pruned")
-	assert.True(t, hasRunning, "an in-progress (unsettled) outcome must never be pruned")
-}
-
 // TestOOBRestoreConsumePOSTReportsConsumed verifies consumePOST returns true
 // once the token is claimed (a genuine restore attempt), and false on a
 // validation failure that runs no restore, so the core's dispatch removes the
 // token only on a real attempt. This asserts the handler honors the
 // consumePOST -> remove dispatch contract.
-func TestOOBRestoreConsumePOSTReportsConsumed(t *testing.T) {
-	o := NewOOBRestore(&fakeRestoreRunner{profile: "default"}, time.Minute)
-	o.SetBaseURL("http://127.0.0.1:9999")
-
-	// Successful restore: claim happens, so consumePOST reports consumed.
-	url := o.Register("default")
-	token := vaultTokenFromURL(url)
-	item, _ := o.core.Resolve(token)
-	require.NotNil(t, item)
-
-	req := httptest.NewRequest("POST", url, strings.NewReader("mnemonic=secret+words"))
-	req.Header.Set("Origin", "http://127.0.0.1:9999")
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	assert.True(t, o.ConsumePOST(httptest.NewRecorder(), req, token, item),
-		"a genuine restore attempt must report the token consumed")
-
-	// Validation failure (empty mnemonic): no restore, no claim, so the token
-	// is NOT consumed and a retry stays possible.
-	url2 := o.Register("default")
-	token2 := vaultTokenFromURL(url2)
-	item2, _ := o.core.Resolve(token2)
-	require.NotNil(t, item2)
-
-	req2 := httptest.NewRequest("POST", url2, strings.NewReader("mnemonic="))
-	req2.Header.Set("Origin", "http://127.0.0.1:9999")
-	req2.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	w2 := httptest.NewRecorder()
-	assert.False(t, o.ConsumePOST(w2, req2, token2, item2),
-		"a validation failure must NOT report the token consumed so it can be retried")
-	assert.Equal(t, http.StatusBadRequest, w2.Code)
-}

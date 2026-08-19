@@ -11,6 +11,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
+	oobpkg "go.lumeweb.com/pinner-cli/internal/mcp/oob"
 )
 
 // TestSSOContinuationNoPendingIsDone guards the concurrent double-resume path
@@ -48,8 +49,8 @@ func TestSSOContinuationNoPendingIsDone(t *testing.T) {
 func TestResumeToolsHaveDistinctFlowTitles(t *testing.T) {
 	descs := map[string]string{
 		"auth_resume":          auth.NewAuthResumeDescriptor(nil, nil).Title,
-		"vault_create_resume":  NewVaultCreateResumeDescriptor(nil, nil).Title,
-		"vault_restore_resume": NewVaultRestoreResumeDescriptor(nil, nil).Title,
+		"vault_create_resume":  oobpkg.NewVaultCreateResumeDescriptor(nil, nil).Title,
+		"vault_restore_resume": oobpkg.NewVaultRestoreResumeDescriptor(nil, nil).Title,
 	}
 	seen := map[string]string{}
 	for name, title := range descs {
