@@ -66,7 +66,7 @@ func TestRegisterOfficialCuratedToolsRegistersOnlyDirectVisible(t *testing.T) {
 
 // TestMarkCuratedPromotesWizardTools guards the Kody finding that the
 // website/domain wizard start/step tools must remain on the direct tools/list
-// surface. RegisterWizardTools does not set DirectVisible itself, so the
+// surface. wizard.RegisterWizardTools does not set DirectVisible itself, so the
 // wizard names must be part of the curated set promoted by markCurated.
 func TestMarkCuratedPromotesWizardTools(t *testing.T) {
 	catalog := NewToolCatalog()

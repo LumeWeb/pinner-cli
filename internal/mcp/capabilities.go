@@ -5,6 +5,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
+	"go.lumeweb.com/pinner-cli/internal/mcp/wizard"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 
@@ -141,7 +142,7 @@ func NewCapabilitiesDescriptor(coLocated, tunnelOpenAI, uploadFile, vaultPutFile
 		Title:       "Pinner file-input/output capabilities",
 		Description: "Report the running MCP transport and which file-input source modes and file-output sink modes this Pinner MCP server accepts. The upload_file / vault_put_file tools take a single transport-scoped source: path in co-located stdio mode, mint in HTTP/tunnel mode (a one-time presigned PUT for out-of-band curl), or url/data on the OpenAI tunnel (relayed through MCP). The download_file / vault_get_file tools take a single sink: local (write to a host-side path on the MCP server's own disk — available on every transport) or drop (a one-time HTTP GET filedrop link — only when a reachable HTTP mux exists). Read source_modes and download_sink_modes to pick the right voice without probing tool descriptions.",
 		Category:    model.CategoryCore,
-		InputSchema: toolargs.ToolSchemaFor[NoInput](),
+		InputSchema: toolargs.ToolSchemaFor[wizard.NoInput](),
 		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
 			report := CurrentCapabilities(coLocated, tunnelOpenAI, uploadFile, vaultPutFile, downloadFile, vaultGetFile, dropWired, draftXFile, maxBytes)
 			return model.ToolResult{StructuredContent: report, Text: "Pinner capabilities."}, nil

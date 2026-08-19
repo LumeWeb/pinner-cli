@@ -30,6 +30,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/oauthstore"
 	"go.lumeweb.com/pinner-cli/internal/mcp/services"
 	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
+	"go.lumeweb.com/pinner-cli/internal/mcp/wizard"
 	"go.uber.org/zap"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
@@ -289,13 +290,13 @@ adapter.`,
 				catalog    *ToolCatalog
 				err        error
 				// Wizard deps are hoisted so registerCustomTools can hand them
-				// to RegisterWizardTools directly (they used to be captured in
+				// to wizard.RegisterWizardTools directly (they used to be captured in
 				// a deferred closure). hasWizard marks whether a factory is
 				// configured.
 				hasWizard bool
-				wizardW   WebsitesWizardDeps
-				wizardS   SetupWizardDeps
-				wizardD   DomainWizardDeps
+				wizardW   wizard.WebsitesWizardDeps
+				wizardS   wizard.SetupWizardDeps
+				wizardD   wizard.DomainWizardDeps
 			)
 			if wizardFactory != nil {
 				var werr error
@@ -1101,7 +1102,7 @@ func WithCatalogOps(factory func() *CatalogDepsBundle) MCPServerOption {
 
 // WizardDepsFactory builds wizard dependencies at Action time, when config
 // and services are available. Called inside the MCP command's Action.
-type WizardDepsFactory func() (WebsitesWizardDeps, SetupWizardDeps, DomainWizardDeps, error)
+type WizardDepsFactory func() (wizard.WebsitesWizardDeps, wizard.SetupWizardDeps, wizard.DomainWizardDeps, error)
 
 // buildCatalog walks a urfave/cli/v3 command tree and populates a ToolCatalog
 // with every invocable non-hidden command. The public command tree is

@@ -141,7 +141,7 @@ func extractSeedURL(t *testing.T, body string) string {
 // TestVaultRestoreResumePendingToDone verifies vault_restore_resume
 // polls a restore hand-off from pending to done as the human submits the OOB
 // restore form. It models the OOB restore coordinator with a fake
-// RestoreRunner (no network).
+// wizard.RestoreRunner (no network).
 func TestVaultRestoreResumePendingToDone(t *testing.T) {
 	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 	reg := handoff.NewHandoffRegistry()

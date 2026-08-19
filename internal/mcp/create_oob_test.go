@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// fakeCreateRunner implements CreateRunner for tests (no network): RunCreate
+// fakeCreateRunner implements wizard.CreateRunner for tests (no network): RunCreate
 // generates a deterministic seed, invokes onApproval, and returns a fixed vault
 // ID. Supports blocking on an approval via started/release channels.
 type fakeCreateRunner struct {

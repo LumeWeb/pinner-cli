@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 	ipfs "go.lumeweb.com/ipfs-sdk"
 
-	mcpadapter "go.lumeweb.com/pinner-cli/internal/mcp"
+	mcpwizard "go.lumeweb.com/pinner-cli/internal/mcp/wizard"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 )
@@ -28,18 +28,18 @@ func TestDomainWizard_FullSession(t *testing.T) {
 	}
 	store := session.NewSessionStore()
 
-	deps := mcpadapter.DomainWizardDeps{
+	deps := mcpwizard.DomainWizardDeps{
 		DomainFactory:   testDomainFactory,
 		CfgMgr:          cfgMgr,
 		WebsitesService: websitesSvc,
 	}
 
-	sess, err := mcpadapter.NewDomainSession(store, deps)
+	sess, err := mcpwizard.NewDomainSession(store, deps)
 	require.NoError(t, err)
 	require.NotEmpty(t, sess.ID)
 	assert.Equal(t, "domain_auth_check", sess.FSM.Current())
 
-	resp := mcpadapter.BuildStepResponseForTest(sess)
+	resp := mcpwizard.BuildStepResponseForTest(sess)
 	require.False(t, resp.Complete)
 	require.Equal(t, "domain_auth_check", resp.CurrentStep)
 	require.NotNil(t, resp.NextStepSchema)
@@ -53,7 +53,7 @@ func TestDomainWizard_FullSession(t *testing.T) {
 	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"website_id":"7"}`))
 	require.NoError(t, err)
 	assert.Equal(t, "domain_name", sess.FSM.Current())
-	w := sess.State().(mcpadapter.DomainWizardState)
+	w := sess.State().(mcpwizard.DomainWizardState)
 	assert.Equal(t, "7", w.WebsiteID())
 	assert.Equal(t, "example.com", w.WebsiteDomain())
 
@@ -87,7 +87,7 @@ func TestDomainWizard_FullSession(t *testing.T) {
 	assert.Equal(t, "domain_complete", sess.FSM.Current())
 
 	// Session should report complete.
-	resp = mcpadapter.BuildStepResponseForTest(sess)
+	resp = mcpwizard.BuildStepResponseForTest(sess)
 	assert.True(t, resp.Complete)
 }
 
@@ -98,13 +98,13 @@ func TestDomainWizard_AuthCheckFails(t *testing.T) {
 	websitesSvc := &mockWebsitesSvc{}
 	store := session.NewSessionStore()
 
-	deps := mcpadapter.DomainWizardDeps{
+	deps := mcpwizard.DomainWizardDeps{
 		DomainFactory:   testDomainFactory,
 		CfgMgr:          cfgMgr,
 		WebsitesService: websitesSvc,
 	}
 
-	sess, err := mcpadapter.NewDomainSession(store, deps)
+	sess, err := mcpwizard.NewDomainSession(store, deps)
 	require.NoError(t, err)
 
 	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
@@ -125,13 +125,13 @@ func TestDomainWizard_WebsiteNotFound(t *testing.T) {
 	}
 	store := session.NewSessionStore()
 
-	deps := mcpadapter.DomainWizardDeps{
+	deps := mcpwizard.DomainWizardDeps{
 		DomainFactory:   testDomainFactory,
 		CfgMgr:          cfgMgr,
 		WebsitesService: websitesSvc,
 	}
 
-	sess, err := mcpadapter.NewDomainSession(store, deps)
+	sess, err := mcpwizard.NewDomainSession(store, deps)
 	require.NoError(t, err)
 	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
 	require.NoError(t, err)
@@ -153,13 +153,13 @@ func TestDomainWizard_InvalidNamespace(t *testing.T) {
 	}
 	store := session.NewSessionStore()
 
-	deps := mcpadapter.DomainWizardDeps{
+	deps := mcpwizard.DomainWizardDeps{
 		DomainFactory:   testDomainFactory,
 		CfgMgr:          cfgMgr,
 		WebsitesService: websitesSvc,
 	}
 
-	sess, err := mcpadapter.NewDomainSession(store, deps)
+	sess, err := mcpwizard.NewDomainSession(store, deps)
 	require.NoError(t, err)
 	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
 	require.NoError(t, err)
@@ -185,13 +185,13 @@ func TestDomainWizard_BindWithoutConfirm(t *testing.T) {
 	}
 	store := session.NewSessionStore()
 
-	deps := mcpadapter.DomainWizardDeps{
+	deps := mcpwizard.DomainWizardDeps{
 		DomainFactory:   testDomainFactory,
 		CfgMgr:          cfgMgr,
 		WebsitesService: websitesSvc,
 	}
 
-	sess, err := mcpadapter.NewDomainSession(store, deps)
+	sess, err := mcpwizard.NewDomainSession(store, deps)
 	require.NoError(t, err)
 	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
 	require.NoError(t, err)

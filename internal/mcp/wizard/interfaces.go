@@ -1,4 +1,4 @@
-package mcp
+package wizard
 
 import (
 	"context"
@@ -64,3 +64,17 @@ type DomainWizardFactory func() DomainWizardState
 // SetupWizardFactory creates a new setup wizard state instance.
 // The factory is a closure that captures its own dependencies.
 type SetupWizardFactory func() SetupWizardState
+
+// WebsitesResourceProvider supplies the website data for the DNS-requirements
+// and validation-status resources, and for the websites wizard. It is a subset
+// of cli.WebsitesService kept narrow for testability.
+type WebsitesResourceProvider interface {
+	// GetByDomain resolves a domain to a website and returns it.
+	GetByDomain(ctx context.Context, domain string) (*ipfs.WebsiteItem, error)
+	// GetByID resolves a website by numeric ID (string-encoded).
+	GetByID(ctx context.Context, id string) (*ipfs.WebsiteItem, error)
+	// Validate triggers a live validation of a website by ID.
+	Validate(ctx context.Context, id string) (*ipfs.WebsiteValidateResponse, error)
+	// GetConfig returns the website hosting config (nameservers, gateway domain).
+	GetConfig(ctx context.Context) (*ipfs.WebsiteConfigResponse, error)
+}

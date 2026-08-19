@@ -10,6 +10,7 @@ import (
 
 	"github.com/a-h/templ"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
+	"go.lumeweb.com/pinner-cli/internal/mcp/wizard"
 	"go.uber.org/zap"
 )
 
@@ -20,7 +21,7 @@ import (
 // re-run with --seed-stdin. In the OOB flow the human instead pastes the seed
 // into a one-time /restore/<token> page; the form POST submits it to a
 // host-side handler that runs the shared restore completion (restoreVault via
-// RestoreRunner). The mnemonic travels human-browser-to-host over loopback or
+// wizard.RestoreRunner). The mnemonic travels human-browser-to-host over loopback or
 // the transport mux, never through the agent channel.
 //
 // It is a collect-direction hand-off built on the shared handoffEndpoint core,
@@ -28,7 +29,7 @@ import (
 // and CSRF origin guard; this type supplies the form (GET) and restore (POST)
 // behavior. Works over both stdio and HTTP/tunnel.
 type OOBRestore struct {
-	runner RestoreRunner
+	runner wizard.RestoreRunner
 	core   handoff.Endpoint
 
 	// mu guards outcomes. outcomes records the terminal outcome of each
@@ -59,8 +60,8 @@ type restorePayload struct {
 const DefaultRestoreTTL = 30 * time.Minute
 
 // NewOOBRestore creates an out-of-band restore coordinator backed by a
-// RestoreRunner (implemented in pkg/cli over the shared restoreVault code).
-func NewOOBRestore(runner RestoreRunner, ttl time.Duration) *OOBRestore {
+// wizard.RestoreRunner (implemented in pkg/cli over the shared restoreVault code).
+func NewOOBRestore(runner wizard.RestoreRunner, ttl time.Duration) *OOBRestore {
 	if ttl <= 0 {
 		ttl = DefaultRestoreTTL
 	}

@@ -10,7 +10,7 @@ package mcp
 // plus the website/domain wizard start/step tools. The legacy CLI-tree walk is
 // not run in the MCP surface. Custom transport tools that set DirectVisible at
 // registration (auth sso/resume, vault create/restore resume, upload backends)
-// are not listed here; the wizard tools are listed because RegisterWizardTools
+// are not listed here; the wizard tools are listed because wizard.RegisterWizardTools
 // does not set DirectVisible itself.
 var compiledCuratedToolNames = []string{
 	"auth_status",

@@ -12,6 +12,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/wizard"
 )
 
 // Resource URI scheme and well-known URIs.
@@ -83,20 +84,6 @@ type AccountStatusProvider interface {
 	ConfigSummary() map[string]any
 }
 
-// WebsitesResourceProvider supplies the website data for the DNS-requirements
-// and validation-status resources. It is a subset of cli.WebsitesService that
-// the resource layer needs, kept narrow for testability.
-type WebsitesResourceProvider interface {
-	// GetByDomain resolves a domain to a website and returns it.
-	GetByDomain(ctx context.Context, domain string) (*ipfs.WebsiteItem, error)
-	// GetByID resolves a website by numeric ID (string-encoded).
-	GetByID(ctx context.Context, id string) (*ipfs.WebsiteItem, error)
-	// Validate triggers a live validation of a website by ID.
-	Validate(ctx context.Context, id string) (*ipfs.WebsiteValidateResponse, error)
-	// GetConfig returns the website hosting config (nameservers, gateway domain).
-	GetConfig(ctx context.Context) (*ipfs.WebsiteConfigResponse, error)
-}
-
 // VaultStatusProvider supplies the data shown in pinner://vault/status.
 // It abstracts vault state so resource handlers can be tested without a
 // live Sia connection.
@@ -119,7 +106,7 @@ type VaultStatusProvider interface {
 // handlers can call live APIs or mocks.
 type ResourceProviders struct {
 	Account  AccountStatusProvider
-	Websites WebsitesResourceProvider
+	Websites wizard.WebsitesResourceProvider
 	Vault    VaultStatusProvider
 	Sessions *session.SessionStore
 }
@@ -261,7 +248,7 @@ func vaultStatusHandler(prov VaultStatusProvider) model.ResourceHandler {
 
 // dnsRequirementsHandler builds the list of DNS records the user must add for
 // a website, mirroring the CLI's showDNSRecordInstructions output.
-func dnsRequirementsHandler(ws WebsitesResourceProvider) model.ResourceHandler {
+func dnsRequirementsHandler(ws wizard.WebsitesResourceProvider) model.ResourceHandler {
 	return func(ctx context.Context, req model.ResourceRequest) (model.ResourceResult, error) {
 		domain := req.Arguments["domain"]
 		if domain == "" {
@@ -309,7 +296,7 @@ func dnsRequirementsHandler(ws WebsitesResourceProvider) model.ResourceHandler {
 }
 
 // validationStatusHandler calls the live validate API for a website.
-func validationStatusHandler(ws WebsitesResourceProvider) model.ResourceHandler {
+func validationStatusHandler(ws wizard.WebsitesResourceProvider) model.ResourceHandler {
 	return func(ctx context.Context, req model.ResourceRequest) (model.ResourceResult, error) {
 		id := req.Arguments["id"]
 		if id == "" {
