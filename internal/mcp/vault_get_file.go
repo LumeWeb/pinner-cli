@@ -37,12 +37,12 @@ type VaultGetFileInput struct {
 // It retrieves a single encrypted vault file and routes the decrypted bytes to
 // the requested sink (local host write confined under downloadRoot on every
 // transport, or a filedrop GET on HTTP / real tunnel). The vault service lives
-// in the CLI layer, exposed to MCP as a transfer.VaultGetHandler closure — mirror of
+// in the CLI layer, exposed to MCP as a VaultGetHandler closure — mirror of
 // VaultPutHandler.
 func NewVaultGetFileDescriptor(getFn transfer.VaultGetHandler, hd *transfer.Download, downloadRoot string, maxDownloadBytes int64, tunnelOpenAI bool) model.ToolDescriptor {
 	return model.ToolDescriptor{
 		Name:        "vault_get_file",
-		Title:       "transfer.Download a file from the Pinner vault",
+		Title:       "Download a file from the Pinner vault",
 		Description: vaultGetFileDescription(hd != nil, tunnelOpenAI),
 		Category:    model.CategoryCore,
 		InputSchema: toolargs.ToolSchemaFor[VaultGetFileInput](),
@@ -90,7 +90,7 @@ func NewVaultGetFileDescriptor(getFn transfer.VaultGetHandler, hd *transfer.Down
 // sinks that can actually work on the running transport.
 func vaultGetFileDescription(dropWired, tunnelOpenAI bool) string {
 	if dropWired && !tunnelOpenAI {
-		return "transfer.Download a file from your encrypted Pinner vault by vault_path (e.g. vault:/docs/f.pdf). Set sink=local to write the decrypted bytes to a host-side output_path on the MCP server's own disk (available on every transport), or sink=drop to get a one-time HTTP GET filedrop link to pull from out of band."
+		return "Download a file from your encrypted Pinner vault by vault_path (e.g. vault:/docs/f.pdf). Set sink=local to write the decrypted bytes to a host-side output_path on the MCP server's own disk (available on every transport), or sink=drop to get a one-time HTTP GET filedrop link to pull from out of band."
 	}
-	return "transfer.Download a file from your encrypted Pinner vault by vault_path (e.g. vault:/docs/f.pdf). Set sink=local to write the decrypted bytes to a host-side output_path on the MCP server's own disk. (The filedrop GET sink is unavailable on this tunnel transport.)"
+	return "Download a file from your encrypted Pinner vault by vault_path (e.g. vault:/docs/f.pdf). Set sink=local to write the decrypted bytes to a host-side output_path on the MCP server's own disk. (The filedrop GET sink is unavailable on this tunnel transport.)"
 }

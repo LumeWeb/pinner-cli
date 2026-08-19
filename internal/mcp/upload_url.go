@@ -28,7 +28,7 @@ func RelayURLUploadDescriptor(handler transfer.RelayURLUploadHandler, allowedHos
 	maxBytes = ieo.EffectiveRelayMaxBytes(maxBytes)
 	return model.ToolDescriptor{
 		Name:        "upload_url",
-		Title:       "transfer.Upload a file from a URL",
+		Title:       "Upload a file from a URL",
 		Description: "Fetch a public HTTPS URL locally and upload it to Pinner through the authenticated upload path. Do not put Pinner's credentials in the URL; Pinner fetches it with its own stored auth. Intended for remote HTTP clients that cannot reference a local path.",
 		Category:    model.CategoryCore,
 		InputSchema: toolargs.ToolSchemaFor[RelayURLUploadInput](),
@@ -51,7 +51,7 @@ func RelayURLUploadDescriptor(handler transfer.RelayURLUploadHandler, allowedHos
 			defer body.Close()
 			// Bound the upload itself: the MCP request ctx may carry no
 			// deadline, so a hung TUS/network operation must not run
-			// indefinitely. Budget scales with size; see transfer.SyncUploadBudget.
+			// indefinitely. Budget scales with size; see SyncUploadBudget.
 			transferCtx, cancel := context.WithTimeout(ctx, transfer.SyncUploadBudget(size))
 			defer cancel()
 			result, err := handler(transferCtx, body, size, in.Name, in.Wait)

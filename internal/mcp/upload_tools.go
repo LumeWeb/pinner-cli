@@ -88,7 +88,7 @@ func NewAsyncUploadTools(mgr *transfer.UploadTaskManager) []model.ToolDescriptor
 				if err != nil {
 					return model.ToolResult{}, err
 				}
-				return model.ToolResult{StructuredContent: task, Text: "transfer.Upload status."}, nil
+				return model.ToolResult{StructuredContent: task, Text: "Upload status."}, nil
 			},
 		},
 		{
@@ -108,7 +108,7 @@ func NewAsyncUploadTools(mgr *transfer.UploadTaskManager) []model.ToolDescriptor
 				if err := mgr.Cancel(in.Handle); err != nil {
 					return model.ToolResult{}, err
 				}
-				return model.ToolResult{StructuredContent: map[string]any{"handle": in.Handle, "cancelled": true}, Text: "transfer.Upload cancelled."}, nil
+				return model.ToolResult{StructuredContent: map[string]any{"handle": in.Handle, "cancelled": true}, Text: "Upload cancelled."}, nil
 			},
 		},
 		{

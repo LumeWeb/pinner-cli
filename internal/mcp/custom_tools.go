@@ -44,17 +44,17 @@ type customToolDeps struct {
 	oobRestore *OOBRestore
 	oobCreate  *OOBCreate
 	// curlUpload, when non-nil, backs the presigned HTTP PUT upload route (the
-	// transfer.Upload coordinator): it mints a one-time endpoint whose PUT body
-	// streams into the async transfer.UploadTaskManager. It feeds the consolidated
+	// Upload coordinator): it mints a one-time endpoint whose PUT body
+	// streams into the async UploadTaskManager. It feeds the consolidated
 	// upload_file tool in remote (HTTP/tunnel) mode.
 	curlUpload *transfer.Upload
 	// vaultUpload, when non-nil, backs the presigned HTTP PUT vault-write route
-	// (the transfer.VaultHTTPUpload coordinator). It mints a one-time endpoint bound to
+	// (the VaultHTTPUpload coordinator). It mints a one-time endpoint bound to
 	// a destination vault path whose PUT body streams into the authenticated
-	// vault write synchronously. It feeds the "transfer.Upload to Vault" MCP App.
+	// vault write synchronously. It feeds the "Upload to Vault" MCP App.
 	vaultUpload *transfer.VaultHTTPUpload
 	// downloadDrop, when non-nil, backs the one-time filedrop GET route (the
-	// transfer.Download coordinator). It serves downloaded bytes out of band to a
+	// Download coordinator). It serves downloaded bytes out of band to a
 	// consumer that shares no disk with the server. It feeds the access
 	// download_file / vault_get_file drop branches.
 	downloadDrop *transfer.Download
@@ -261,7 +261,7 @@ func registerCustomTools(deps customToolDeps) error {
 			pathFn = opts.localPathVaultPut
 		}
 		vaultPutDesc := NewVaultPutFileDescriptor(deps.coLocated, deps.tunnelOpenAI, pathFn, deps.vaultUpload, opts.vaultPutHandler, opts.relayAllowedHosts, opts.maxRelayBytes)
-		// Pair vault_put_file with its "transfer.Upload to Vault" MCP App view
+		// Pair vault_put_file with its "Upload to Vault" MCP App view
 		// (ui://uploads/vault.html) when the presigned vault-upload coordinator
 		// can mint a PUT endpoint for the Uppy XHR uploader. The app must be
 		// indexed in the catalog before its view attaches _meta.ui.
@@ -298,7 +298,7 @@ func registerCustomTools(deps customToolDeps) error {
 	if opts.ipfsDownload != nil {
 		downloadRoot := transfer.ResolveDownloadRoot(opts.downloadRoot)
 		dlDesc := transfer.NewDownloadFileDescriptor(opts.ipfsDownload, deps.downloadDrop, downloadRoot, ieo.EffectiveRelayMaxBytes(opts.maxRelayBytes), deps.tunnelOpenAI)
-		// Pair download_file with its "transfer.Download from IPFS" MCP App view
+		// Pair download_file with its "Download from IPFS" MCP App view
 		// (ui://downloads/ipfs.html) so a UI-capable host renders a download
 		// panel. RegisterAppView attaches _meta.ui to a catalog entry, so the
 		// tool must be indexed first. Like upload_file, the app (sink=local or
@@ -341,7 +341,7 @@ func registerCustomTools(deps customToolDeps) error {
 	// The caller does not pick a mechanism — registration routes by transport.
 	//   - co-located (stdio/local): source mode path via the local-path
 	//     handler (opts.localPathUpload).
-	//   - remote (HTTP/tunnel): source mode mint via the presigned transfer.Upload
+	//   - remote (HTTP/tunnel): source mode mint via the presigned Upload
 	//     coordinator (deps.curlUpload).
 	//   - openai tunnel: source mode url/data via the file-relay executor
 	//     (opts.uploadHandler), since no reachable HTTP mux exists.
@@ -356,11 +356,11 @@ func registerCustomTools(deps customToolDeps) error {
 		// url/data source modes.
 		uploadFileDesc := transfer.NewUploadFileDescriptor(deps.coLocated, deps.tunnelOpenAI, pathFn, deps.curlUpload, opts.uploadHandler, opts.relayAllowedHosts, opts.maxRelayBytes)
 
-		// Pair upload_file with its "transfer.Upload to IPFS" MCP App view
+		// Pair upload_file with its "Upload to IPFS" MCP App view
 		// (ui://uploads/ipfs.html) so a UI-capable host renders a file-picker
 		// panel. RegisterAppView attaches _meta.ui to a catalog entry, so the
 		// tool must be indexed first. The app is only meaningfully available
-		// when a presigned transfer.Upload coordinator can mint a PUT endpoint for
+		// when a presigned Upload coordinator can mint a PUT endpoint for
 		// the Uppy XHR uploader (deps.curlUpload != nil); in co-located stdio
 		// local-path mode there is no presigned endpoint, so the app is not
 		// registered and upload_file simply serves the out-of-band local path
@@ -448,7 +448,7 @@ func uploadFileAvailable(coLocated, localPathWired, curlWired, relayWired, tunne
 //
 //   - co-located (stdio): a local-path vault handler is wired.
 //   - HTTP / real tunnel: a reachable presigned vault-upload coordinator
-//     (transfer.VaultHTTPUpload) is wired AND the transport exposes a reachable HTTP
+//     (VaultHTTPUpload) is wired AND the transport exposes a reachable HTTP
 //     mux. The embedded OpenAI tunnel has no reachable mux, so its minted URL
 //     would fall back to an unreachable loopback — the tool must not be
 //     advertised for a branch no agent could use.

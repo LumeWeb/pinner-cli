@@ -15,8 +15,8 @@ import (
 type FileInputCapability string
 
 const (
-	// Source modes (mirrors transfer.FileSourceMode) advertised against the running
-	// transport; see transfer.UploadSource. Only the modes the transport supports are
+	// Source modes (mirrors FileSourceMode) advertised against the running
+	// transport; see UploadSource. Only the modes the transport supports are
 	// listed in CapabilityReport.SourceModes.
 	CapabilityLocalPath FileInputCapability = "path" // co-located stdio
 	CapabilityMint      FileInputCapability = "mint" // HTTP / real tunnel
@@ -31,7 +31,7 @@ const (
 type FileOutputCapability string
 
 const (
-	// Sink modes (mirror transfer.DownloadSink) advertised against the running
+	// Sink modes (mirror DownloadSink) advertised against the running
 	// transport; see downloadSinksFor.
 	CapabilitySinkLocal FileOutputCapability = "local" // host local write, every transport
 	CapabilitySinkDrop  FileOutputCapability = "drop"  // one-time GET filedrop, reachable HTTP mux
@@ -41,17 +41,17 @@ const (
 // the running server offers.
 //
 // Transport is the transport decision made at registration (stdio/http/openai).
-// SourceModes lists the transfer.UploadSource modes valid for that transport — a host
+// SourceModes lists the UploadSource modes valid for that transport — a host
 // reads this to know the exact source voice each upload tool expects.
-// DownloadSinkModes lists the transfer.DownloadSink modes valid for that transport — a
+// DownloadSinkModes lists the DownloadSink modes valid for that transport — a
 // host reads this to know where a download tool can land its bytes.
 type CapabilityReport struct {
 	// Transport is the active MCP transport: "stdio", "http", or "openai".
 	Transport transfer.TransportKind `json:"transport"`
-	// SourceModes are the valid transfer.UploadSource mode values for Transport, e.g.
+	// SourceModes are the valid UploadSource mode values for Transport, e.g.
 	// ["path"] for stdio, ["mint"] for http, ["url","data"] for openai.
 	SourceModes []FileInputCapability `json:"source_modes"`
-	// DownloadSinkModes are the valid transfer.DownloadSink mode values for Transport.
+	// DownloadSinkModes are the valid DownloadSink mode values for Transport.
 	// Host-local write ("local") is always offered because the server's disk is
 	// always local to it; "drop" (filedrop GET) is added only when a reachable
 	// HTTP mux exists (HTTP / real tunnel, not the embedded OpenAI tunnel).
@@ -70,9 +70,9 @@ type CapabilityReport struct {
 	RelayMaxBytes int64 `json:"relay_max_bytes"`
 }
 
-// sourceModesFor returns the transfer.UploadSource modes valid for the transport, in a
+// sourceModesFor returns the UploadSource modes valid for the transport, in a
 // stable order. It is derived from the same transport decision the resolver
-// enforces (transfer.UploadSource.Available), so the report cannot drift from what the
+// enforces (UploadSource.Available), so the report cannot drift from what the
 // tools accept.
 func sourceModesFor(t transfer.TransportKind) []FileInputCapability {
 	switch t {
@@ -87,7 +87,7 @@ func sourceModesFor(t transfer.TransportKind) []FileInputCapability {
 	}
 }
 
-// sinkModesFor returns the transfer.DownloadSink modes valid for the transport. It is
+// sinkModesFor returns the DownloadSink modes valid for the transport. It is
 // derived from the same reachability decision downloadSinksFor enforces, so the
 // report cannot drift from what the download tools accept: host-local write is
 // always present (the server's disk is local on every transport), and the

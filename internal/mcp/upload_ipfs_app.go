@@ -15,22 +15,22 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
 
-// This file wires the "transfer.Upload to IPFS" MCP App onto the shared AppView lib
+// This file wires the "Upload to IPFS" MCP App onto the shared AppView lib
 // layer. It pairs the model-facing upload_file tool with a ui:// view that a
 // UI-capable host renders as a file-picker panel.
 //
 // The view does NOT push file bytes through the MCP/LLM channel. There is no
 // draft MCP file upload yet, so the app reuses the same out-of-band presigned
 // PUT mechanism the agent uses with `curl -T`: an app-only helper mints a
-// one-time presigned upload endpoint (the same transfer.Upload coordinator that
+// one-time presigned upload endpoint (the same Upload coordinator that
 // backs upload_file), and the iframe's Uppy XHR uploader PUTs the raw file
 // bytes straight to that endpoint. The 202 response carries an opaque
 // upload_handle, which the app then hands to a second app-only helper that
-// polls the shared transfer.UploadTaskManager (the same one backing upload_status) for
+// polls the shared UploadTaskManager (the same one backing upload_status) for
 // the final CID. Credentials and auth never cross the MCP/LLM channel — only
 // a URL and a handle do.
 
-// IPFSUploadAppURI is the ui:// resource serving the "transfer.Upload to IPFS" app.
+// IPFSUploadAppURI is the ui:// resource serving the "Upload to IPFS" app.
 const IPFSUploadAppURI = "ui://uploads/ipfs.html"
 
 // IPFSUploadSubmitInput is the typed argument shape for the app-only
@@ -43,15 +43,15 @@ type IPFSUploadSubmitInput struct {
 	TTL string `json:"ttl,omitempty" jsonschema:"description=Presigned endpoint lifetime (e.g. 5m; default 5 minutes)."`
 }
 
-// renderIPFSUploadAppHTML renders the complete "transfer.Upload to IPFS" app document
+// renderIPFSUploadAppHTML renders the complete "Upload to IPFS" app document
 // (ui://uploads/ipfs.html). The shared shell (doctype/<head>/inline theme) and
 // the ESM module (shared ext-apps bootstrap + upload logic) come from
 // mcpapp.RenderMcpAppDoc; only the visible body form is authored in templ.
 func renderIPFSUploadAppHTML() string {
-	return mcpapp.RenderMcpAppDoc("transfer.Upload to IPFS", mcpapp.IPFSUploadAppForm(), mcpapp.AppModule("ipfs-upload"))
+	return mcpapp.RenderMcpAppDoc("Upload to IPFS", mcpapp.IPFSUploadAppForm(), mcpapp.AppModule("ipfs-upload"))
 }
 
-// ipfsUploadSubmitDescriptor builds the app-only mint helper for the transfer.Upload to
+// ipfsUploadSubmitDescriptor builds the app-only mint helper for the Upload to
 // IPFS view. It is visible to the app only (never the model). It returns a
 // one-time presigned PUT URL that the iframe's Uppy XHR uploader writes the
 // file bytes to out of band — no bytes cross this tool or the LLM channel.
@@ -59,7 +59,7 @@ func ipfsUploadSubmitDescriptor(hp *transfer.Upload) model.ToolDescriptor {
 	return model.ToolDescriptor{
 		Name:        "ipfs_upload_submit",
 		Title:       "Mint a one-time upload endpoint",
-		Description: "Mint a one-time presigned HTTP PUT endpoint the app's Uppy XHR uploader writes file bytes to out of band. App-only helper for the transfer.Upload to IPFS view.",
+		Description: "Mint a one-time presigned HTTP PUT endpoint the app's Uppy XHR uploader writes file bytes to out of band. App-only helper for the Upload to IPFS view.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"name":{"type":"string"},"ttl":{"type":"string"}}}`),
 		Handler: func(_ context.Context, req model.ToolRequest) (model.ToolResult, error) {
 			in, err := toolargs.DecodeToolArgs[IPFSUploadSubmitInput](req)
@@ -98,16 +98,16 @@ func ipfsUploadSubmitDescriptor(hp *transfer.Upload) model.ToolDescriptor {
 	}
 }
 
-// ipfsUploadStatusDescriptor builds the app-only poll helper for the transfer.Upload to
+// ipfsUploadStatusDescriptor builds the app-only poll helper for the Upload to
 // IPFS view. It is visible to the app only (never the model). Given the opaque
 // upload_handle returned by the presigned PUT's 202 body, it reports the async
-// upload task state / CID from the shared transfer.UploadTaskManager (the same one that
+// upload task state / CID from the shared UploadTaskManager (the same one that
 // backs the model-facing upload_status tool).
 func ipfsUploadStatusDescriptor(hp *transfer.Upload) model.ToolDescriptor {
 	return model.ToolDescriptor{
 		Name:        "ipfs_upload_status",
 		Title:       "Get upload status",
-		Description: "Return the status of an async upload by handle: queued, running, completed (with CID), failed, or cancelled. App-only helper for the transfer.Upload to IPFS view.",
+		Description: "Return the status of an async upload by handle: queued, running, completed (with CID), failed, or cancelled. App-only helper for the Upload to IPFS view.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"handle":{"type":"string"}},"required":["handle"]}`),
 		Handler: func(ctx context.Context, req model.ToolRequest) (model.ToolResult, error) {
 			in, err := toolargs.DecodeToolArgs[UploadHandleInput](req)
@@ -121,16 +121,16 @@ func ipfsUploadStatusDescriptor(hp *transfer.Upload) model.ToolDescriptor {
 			if err != nil {
 				return model.ToolResult{}, err
 			}
-			return model.ToolResult{StructuredContent: task, Text: "transfer.Upload status."}, nil
+			return model.ToolResult{StructuredContent: task, Text: "Upload status."}, nil
 		},
 	}
 }
 
-// RegisterIPFSUploadApp wires the complete "transfer.Upload to IPFS" MCP App: attaches
+// RegisterIPFSUploadApp wires the complete "Upload to IPFS" MCP App: attaches
 // the ui:// view to the upload_file tool, registers the ui://uploads/ipfs.html
 // HTML resource, and registers the app-only mint and poll helpers. The
-// transfer.Upload coordinator (`hp`) is the same one that backs upload_file's remote
-// presigned mode, so a URL minted here feeds the same transfer.UploadTaskManager the
+// Upload coordinator (`hp`) is the same one that backs upload_file's remote
+// presigned mode, so a URL minted here feeds the same UploadTaskManager the
 // poll helper reads — and the same one upload_status reads.
 //
 // The app only makes sense when a presigned upload coordinator is wired
@@ -149,7 +149,7 @@ func RegisterIPFSUploadApp(srv *sdk.Server, catalog *ToolCatalog, hp *transfer.U
 	return RegisterAppView(srv, catalog, AppView{
 		URI:           IPFSUploadAppURI,
 		Name:          "ipfs-upload",
-		Title:         "transfer.Upload to IPFS",
+		Title:         "Upload to IPFS",
 		Description:   "Pick a file and upload it to Pinner over IPFS.",
 		HTML:          renderIPFSUploadAppHTML(),
 		PrefersBorder: true,

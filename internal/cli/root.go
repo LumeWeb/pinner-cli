@@ -581,7 +581,7 @@ For more help on any command: pinner <command> --help`,
 		// consolidated upload_file (local + presigned) surfaces, and vault.
 		// Resolved lazily from the config manager at server setup, mirroring
 		// the wizard factory pattern; the local-path handlers also enforce the
-		// same cap on single-file sources before transfer.
+		// same cap on single-file sources before
 		mcpadapter.WithMaxMCPUploadSize(func() uint64 {
 			cfgMgr, err := configManagerFactory()
 			if err != nil {

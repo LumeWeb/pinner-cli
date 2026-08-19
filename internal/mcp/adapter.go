@@ -95,7 +95,7 @@ var serverCardTools = []map[string]any{
 	{"name": "auth_sso", "description": "Sign in via out-of-band SSO"},
 	{"name": "websites_list", "description": "List deployed websites"},
 	{"name": "websites_validate", "description": "Validate a website deployment"},
-	{"name": "upload_file", "description": "transfer.Upload a file to IPFS"},
+	{"name": "upload_file", "description": "Upload a file to IPFS"},
 	{"name": "search_tools", "description": "Search the tool catalog"},
 	{"name": "describe_tool", "description": "Get a tool's input schema"},
 	{"name": "invoke_tool", "description": "Invoke a catalog tool"},
@@ -332,7 +332,7 @@ adapter.`,
 			}
 
 			// The one-time HTTP upload coordinator rides the SAME async
-			// transfer.UploadTaskManager that backs upload_status / upload_cancel /
+			// UploadTaskManager that backs upload_status / upload_cancel /
 			// upload_list (mcpOpts.uploadTasks), so a minted PUT handle plugs
 			// straight into that surface. It is only wired when that manager is
 			// present. It needs the byte cap so an oversized PUT is bounded, and
@@ -349,7 +349,7 @@ adapter.`,
 				curlUpload.AddTrustedOrigins(mcpOpts.uploadTrustedOrigins...)
 			}
 
-			// The vaultUpload coordinator mirrors curlUpload for the "transfer.Upload to
+			// The vaultUpload coordinator mirrors curlUpload for the "Upload to
 			// Vault" MCP App: it mints a one-time presigned PUT endpoint bound
 			// to a vault destination path, and the raw PUT body is drained
 			// through the authenticated vault write (vaultPutHandler)
@@ -367,7 +367,7 @@ adapter.`,
 				vaultUpload.AddTrustedOrigins(mcpOpts.uploadTrustedOrigins...)
 			}
 
-			// The transfer.Download filedrop coordinator serves one-time GET endpoints
+			// The Download filedrop coordinator serves one-time GET endpoints
 			// that stream a downloaded file's bytes out of band. It is wired when
 			// either download executor (IPFS or vault) is present, and must exist
 			// here (before registerCustomTools and serveHTTP) so both the tool
@@ -473,7 +473,7 @@ func oauthStorePath() string {
 // seedDrop and oobRestore, when provided, mount the one-time seed and restore
 // URLs on the same shared mux. oobCreate mounts the one-time create URL.
 // curlUpload, when provided, mounts the one-time upload PUT route on the
-// shared mux (the transfer.Upload coordinator in HTTP/tunnel mode).
+// shared mux (the Upload coordinator in HTTP/tunnel mode).
 //
 // mcpHostProtectionDisabled reports whether the go-sdk's DNS-rebinding guard
 // must be disabled for this serve. When the server is reached over a
@@ -1229,7 +1229,7 @@ Less common CLI tools remain available through progressive disclosure:
 2. describe_tool({ "name": "..." }): Get the full input schema for one internal tool.
 3. invoke_tool({ "name": "...", "arguments": { ... } }): Execute one internal tool.
 
-The internal catalog has %d tools. Local path arguments refer to the MCP server host, not the remote agent's filesystem. transfer.Upload and vault copy therefore require a host-side file handoff. File attachments can use the directly visible upload_file (IPFS) and vault_put_file (vault) tools over the banner-visible source modes; Pinner fetches the temporary file URL locally and uses its existing authenticated TUS path. Large uploads use TUS internally; the SDK result includes an upload location for resume/status management. TUS is never anonymous. Vault cat returns bounded base64 JSON in agent mode and never writes raw bytes to the MCP transport.`
+The internal catalog has %d tools. Local path arguments refer to the MCP server host, not the remote agent's filesystem. Upload and vault copy therefore require a host-side file handoff. File attachments can use the directly visible upload_file (IPFS) and vault_put_file (vault) tools over the banner-visible source modes; Pinner fetches the temporary file URL locally and uses its existing authenticated TUS path. Large uploads use TUS internally; the SDK result includes an upload location for resume/status management. TUS is never anonymous. Vault cat returns bounded base64 JSON in agent mode and never writes raw bytes to the MCP transport.`
 
 // buildInstructions returns the MCP server instructions with the real catalog
 // tool count substituted, so the guidance given to agents stays accurate as

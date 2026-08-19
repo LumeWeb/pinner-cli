@@ -23,7 +23,7 @@ type VaultPutHandler func(context.Context, io.Reader, int64, string) (any, error
 // LocalPathVaultPutHandler writes a host-side file, directory, or archive into
 // the encrypted vault. It homes the file-vs-dir-vs-archive decision in the CLI
 // layer where the vault service lives (the same split as upload_file's
-// path mode / transfer.LocalPathUploadHandler).
+// path mode / LocalPathUploadHandler).
 type LocalPathVaultPutHandler func(ctx context.Context, path, vaultPath, archiveMode string) (any, error)
 
 // VaultPutFileInput is the typed argument shape for the unified vault_put_file
@@ -38,7 +38,7 @@ type VaultPutFileInput struct {
 	// VaultPath is the destination file path inside the encrypted vault. It
 	// must be a file path (not a directory) free of parent-relative traversal.
 	// Any vault file path is allowed (e.g. vault:/docs/f.pdf); there is no
-	// single-folder restriction — see transfer.ValidateVaultFilePath.
+	// single-folder restriction — see ValidateVaultFilePath.
 	VaultPath string `json:"vault_path" jsonschema:"description=Vault destination file path (e.g. vault:/docs/f.pdf or vault:/uploads/report.pdf). Required. Must be a file path, not a directory; traversal (.. or .) segments are rejected. Any vault file path is allowed."`
 	// ArchiveMode controls how an archive path is handled: 'convert' (default)
 	// extracts and stores the contents; 'preserve' keeps the archive intact.
@@ -57,9 +57,9 @@ type VaultPutFileInput struct {
 //   - HTTP/tunnel (remoteSupported): source mode mint → vu mints a presigned
 //     PUT bound to the destination vault path.
 //   - OpenAI tunnel (neither): source mode url/data → relayed through MCP via
-//     transfer.SourceResolver.OpenBytes into the authenticated vault write.
+//     SourceResolver.OpenBytes into the authenticated vault write.
 //
-// The vault destination path is validated (transfer.ValidateVaultFilePath) BEFORE any
+// The vault destination path is validated (ValidateVaultFilePath) BEFORE any
 // byte is read or written on every source branch, so a directory or traversal
 // destination can never be written regardless of transport. Any vault file
 // path is an allowed destination; there is no single-folder restriction.
@@ -135,7 +135,7 @@ func NewVaultPutFileDescriptor(coLocated, tunnelOpenAI bool, pathFn LocalPathVau
 					},
 					Text: "One-time vault upload endpoint minted. Run the curl command with your file; the vault write completes synchronously and the response carries the vault result.",
 				}, nil
-			default: // transfer.TransportOpenAI
+			default: // TransportOpenAI
 				if in.Source.Mode != transfer.SourceURL && in.Source.Mode != transfer.SourceData {
 					return model.ToolResult{}, fmt.Errorf("source mode %q is not available on the OpenAI tunnel transport", in.Source.Mode)
 				}
