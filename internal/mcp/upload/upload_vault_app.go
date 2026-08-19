@@ -1,4 +1,4 @@
-package mcp
+package upload
 
 import (
 	"context"
@@ -89,7 +89,7 @@ func vaultUploadSubmitDescriptor(vu *transfer.VaultHTTPUpload) model.ToolDescrip
 // HTML resource, and registers the app-only vault_upload_submit mint helper. The
 // vault write is provided by the VaultHTTPUpload coordinator (which carries the
 // authenticated VaultPutHandler for the actual write).
-func RegisterVaultUploadApp(srv *sdk.Server, catalog *ToolCatalog, vu *transfer.VaultHTTPUpload) error {
+func RegisterVaultUploadApp(srv *sdk.Server, catalog apps.AppCatalog, vu *transfer.VaultHTTPUpload) error {
 	if srv == nil {
 		return fmt.Errorf("nil official server")
 	}

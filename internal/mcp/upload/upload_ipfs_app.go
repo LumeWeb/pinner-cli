@@ -1,4 +1,4 @@
-package mcp
+package upload
 
 import (
 	"context"
@@ -137,7 +137,7 @@ func ipfsUploadStatusDescriptor(hp *transfer.Upload) model.ToolDescriptor {
 // The app only makes sense when a presigned upload coordinator is wired
 // (remote HTTP/tunnel, or the ssh/stdio loopback), so registration requires a
 // non-nil `hp`.
-func RegisterIPFSUploadApp(srv *sdk.Server, catalog *ToolCatalog, hp *transfer.Upload) error {
+func RegisterIPFSUploadApp(srv *sdk.Server, catalog apps.AppCatalog, hp *transfer.Upload) error {
 	if srv == nil {
 		return fmt.Errorf("nil official server")
 	}
