@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 
@@ -33,11 +34,11 @@ type VaultPutFileInput struct {
 	// Source is the file to store. Mode must be valid for the running
 	// transport: path=co-located stdio; mint=HTTP/tunnel (returns a presigned
 	// curl PUT URL); url/data=OpenAI tunnel (relayed through MCP).
-	Source UploadSource `json:"source"`
+	Source transfer.UploadSource `json:"source"`
 	// VaultPath is the destination file path inside the encrypted vault. It
 	// must be a file path (not a directory) free of parent-relative traversal.
 	// Any vault file path is allowed (e.g. vault:/docs/f.pdf); there is no
-	// single-folder restriction — see validateVaultFilePath.
+	// single-folder restriction — see ValidateVaultFilePath.
 	VaultPath string `json:"vault_path" jsonschema:"description=Vault destination file path (e.g. vault:/docs/f.pdf or vault:/uploads/report.pdf). Required. Must be a file path, not a directory; traversal (.. or .) segments are rejected. Any vault file path is allowed."`
 	// ArchiveMode controls how an archive path is handled: 'convert' (default)
 	// extracts and stores the contents; 'preserve' keeps the archive intact.
@@ -58,12 +59,12 @@ type VaultPutFileInput struct {
 //   - OpenAI tunnel (neither): source mode url/data → relayed through MCP via
 //     SourceResolver.OpenBytes into the authenticated vault write.
 //
-// The vault destination path is validated (validateVaultFilePath) BEFORE any
+// The vault destination path is validated (ValidateVaultFilePath) BEFORE any
 // byte is read or written on every source branch, so a directory or traversal
 // destination can never be written regardless of transport. Any vault file
 // path is an allowed destination; there is no single-folder restriction.
-func NewVaultPutFileDescriptor(coLocated, tunnelOpenAI bool, pathFn LocalPathVaultPutHandler, vu *vaultHTTPUpload, relayFn VaultPutHandler, relayHosts []string, maxRelayBytes int64) model.ToolDescriptor {
-	transport := uploadFileTransport(coLocated, tunnelOpenAI)
+func NewVaultPutFileDescriptor(coLocated, tunnelOpenAI bool, pathFn LocalPathVaultPutHandler, vu *transfer.VaultHTTPUpload, relayFn VaultPutHandler, relayHosts []string, maxRelayBytes int64) model.ToolDescriptor {
+	transport := transfer.UploadFileTransport(coLocated, tunnelOpenAI)
 	return model.ToolDescriptor{
 		Name:        "vault_put_file",
 		Title:       "Store a file in the Pinner vault",
@@ -88,13 +89,13 @@ func NewVaultPutFileDescriptor(coLocated, tunnelOpenAI bool, pathFn LocalPathVau
 			if err := in.Source.Validate(transport); err != nil {
 				return model.ToolResult{}, err
 			}
-			if err := validateVaultFilePath(in.VaultPath); err != nil {
+			if err := transfer.ValidateVaultFilePath(in.VaultPath); err != nil {
 				return model.ToolResult{}, err
 			}
 
 			switch transport {
-			case TransportStdio:
-				if in.Source.Mode != SourcePath {
+			case transfer.TransportStdio:
+				if in.Source.Mode != transfer.SourcePath {
 					return model.ToolResult{}, fmt.Errorf("source mode %q is not available on the %s transport", in.Source.Mode, transport)
 				}
 				if pathFn == nil {
@@ -102,14 +103,14 @@ func NewVaultPutFileDescriptor(coLocated, tunnelOpenAI bool, pathFn LocalPathVau
 				}
 				result, err := pathFn(ctx, in.Source.Path, in.VaultPath, in.ArchiveMode)
 				return toolargs.WrapResult(result, err, "Stored in the vault.")
-			case TransportHTTP:
-				if in.Source.Mode != SourceMint {
+			case transfer.TransportHTTP:
+				if in.Source.Mode != transfer.SourceMint {
 					return model.ToolResult{}, fmt.Errorf("source mode %q is not available on the %s transport", in.Source.Mode, transport)
 				}
 				if vu == nil {
 					return model.ToolResult{}, errors.New("presigned vault-upload endpoint is not configured for remote mode")
 				}
-				ttl := defaultHTTPUploadTTL
+				ttl := transfer.DefaultHTTPUploadTTL
 				if in.TTL != "" {
 					d, derr := time.ParseDuration(in.TTL)
 					if derr != nil {
@@ -119,7 +120,7 @@ func NewVaultPutFileDescriptor(coLocated, tunnelOpenAI bool, pathFn LocalPathVau
 						ttl = d
 					}
 				}
-				url, merr := vu.mint(in.VaultPath, ttl)
+				url, merr := vu.Mint(in.VaultPath, ttl)
 				if merr != nil {
 					return model.ToolResult{}, merr
 				}
@@ -130,24 +131,24 @@ func NewVaultPutFileDescriptor(coLocated, tunnelOpenAI bool, pathFn LocalPathVau
 						"vault_path":   in.VaultPath,
 						"curl_command": curlCmd,
 						"ttl":          ttl.String(),
-						"max_bytes":    vu.maxByte,
+						"max_bytes":    vu.MaxBytes(),
 					},
 					Text: "One-time vault upload endpoint minted. Run the curl command with your file; the vault write completes synchronously and the response carries the vault result.",
 				}, nil
 			default: // TransportOpenAI
-				if in.Source.Mode != SourceURL && in.Source.Mode != SourceData {
+				if in.Source.Mode != transfer.SourceURL && in.Source.Mode != transfer.SourceData {
 					return model.ToolResult{}, fmt.Errorf("source mode %q is not available on the OpenAI tunnel transport", in.Source.Mode)
 				}
 				if relayFn == nil {
 					return model.ToolResult{}, errors.New("vault relay write is not configured")
 				}
-				res := &SourceResolver{Transport: TransportOpenAI, RelayAllowedHosts: relayHosts, RelayMaxBytes: ieo.EffectiveRelayMaxBytes(maxRelayBytes)}
+				res := &transfer.SourceResolver{Transport: transfer.TransportOpenAI, RelayAllowedHosts: relayHosts, RelayMaxBytes: ieo.EffectiveRelayMaxBytes(maxRelayBytes)}
 				body, size, _, oerr := res.OpenBytes(ctx, in.Source)
 				if oerr != nil {
 					return model.ToolResult{}, oerr
 				}
 				defer body.Close()
-				writeCtx, cancel := context.WithTimeout(ctx, syncUploadBudget(size))
+				writeCtx, cancel := context.WithTimeout(ctx, transfer.SyncUploadBudget(size))
 				defer cancel()
 				result, err := relayFn(writeCtx, body, size, in.VaultPath)
 				return toolargs.WrapResult(result, err, "Stored in the vault.")
@@ -158,11 +159,11 @@ func NewVaultPutFileDescriptor(coLocated, tunnelOpenAI bool, pathFn LocalPathVau
 
 // vaultPutFileDescription returns a transport-aware description so a model only
 // sees the source modes that can actually work.
-func vaultPutFileDescription(t TransportKind) string {
+func vaultPutFileDescription(t transfer.TransportKind) string {
 	switch t {
-	case TransportStdio:
+	case transfer.TransportStdio:
 		return "Store a file in the encrypted Pinner vault. In this co-located stdio mode, set source.mode=path and source.path to a host-side file/directory/archive path; the server reads it directly and writes the contents into the vault at vault_path (any vault file path, e.g. vault:/docs/f.pdf)."
-	case TransportHTTP:
+	case transfer.TransportHTTP:
 		return "Store a file in the encrypted Pinner vault. Over this HTTP/tunnel transport, set source.mode=mint to get a one-time presigned HTTP PUT endpoint bound to vault_path; stream your file's bytes to it with curl, and the vault write completes synchronously. vault_path may be any vault file path (e.g. vault:/docs/f.pdf)."
 	default:
 		return "Store a file in the encrypted Pinner vault. Over this OpenAI-tunnel transport, set source.mode=url (a server-fetchable HTTPS download URL) or source.mode=data (an RFC 2397 data: URI); the server fetches/decodes the bytes and writes them into the vault at vault_path. vault_path may be any vault file path (e.g. vault:/docs/f.pdf)."

@@ -14,15 +14,16 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 )
 
 // ---- httpDownload filedrop GET coordinator ----
 
 func TestHTTPDownloadMintAndServe(t *testing.T) {
-	hd := NewHTTPDownload()
+	hd := transfer.NewHTTPDownload()
 	// Use a real loopback listener (stdio-style, baseURL empty) so the minted
 	// URL is reachable.
-	url, err := hd.mint("report.pdf", 0, func(ctx context.Context, w io.Writer) error {
+	url, err := hd.Mint("report.pdf", 0, func(ctx context.Context, w io.Writer) error {
 		_, err := w.Write([]byte("file payload"))
 		return err
 	}, 0)
@@ -48,8 +49,8 @@ func TestHTTPDownloadMintAndServe(t *testing.T) {
 }
 
 func TestHTTPDownloadRejectsBadMethodAndUnknownToken(t *testing.T) {
-	hd := NewHTTPDownload()
-	url, err := hd.mint("f.bin", 0, func(ctx context.Context, w io.Writer) error { return nil }, 0)
+	hd := transfer.NewHTTPDownload()
+	url, err := hd.Mint("f.bin", 0, func(ctx context.Context, w io.Writer) error { return nil }, 0)
 	require.NoError(t, err)
 
 	// Unknown token → 404.
@@ -68,17 +69,17 @@ func TestHTTPDownloadRejectsBadMethodAndUnknownToken(t *testing.T) {
 }
 
 func TestHTTPDownloadExpiry(t *testing.T) {
-	hd := NewHTTPDownload()
+	hd := transfer.NewHTTPDownload()
 	frozen := time.Now()
-	hd.setNow(func() time.Time { return frozen })
-	url, err := hd.mint("f.bin", 0, func(ctx context.Context, w io.Writer) error {
+	hd.SetNow(func() time.Time { return frozen })
+	url, err := hd.Mint("f.bin", 0, func(ctx context.Context, w io.Writer) error {
 		_, _ = w.Write([]byte("x"))
 		return nil
 	}, time.Minute)
 	require.NoError(t, err)
 
 	// Advance past expiry.
-	hd.setNow(func() time.Time { return frozen.Add(2 * time.Minute) })
+	hd.SetNow(func() time.Time { return frozen.Add(2 * time.Minute) })
 	resp, err := http.Get(url)
 	require.NoError(t, err)
 	io.Copy(io.Discard, resp.Body)
@@ -87,8 +88,8 @@ func TestHTTPDownloadExpiry(t *testing.T) {
 }
 
 func TestHTTPDownloadSourceErrorFailures(t *testing.T) {
-	hd := NewHTTPDownload()
-	url, err := hd.mint("bad.bin", 0, func(ctx context.Context, w io.Writer) error {
+	hd := transfer.NewHTTPDownload()
+	url, err := hd.Mint("bad.bin", 0, func(ctx context.Context, w io.Writer) error {
 		return errors.New("source exploded")
 	}, 0)
 	require.NoError(t, err)
@@ -106,35 +107,35 @@ func TestHTTPDownloadSourceErrorFailures(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, resp2.StatusCode)
 }
 
-// ---- sanitizeFilename / sink helpers ----
+// ---- transfer.SanitizeFilename / sink helpers ----
 
 func TestSanitizeFilename(t *testing.T) {
-	require.Equal(t, "download", sanitizeFilename(""))
-	require.Equal(t, "download", sanitizeFilename(".."))
-	require.Equal(t, "a_b.txt", sanitizeFilename("a/b.txt"))
-	require.Equal(t, "a_b", sanitizeFilename(`a\b`))
-	require.Equal(t, "a_b_c", sanitizeFilename(`a"b:c`))
+	require.Equal(t, "download", transfer.SanitizeFilename(""))
+	require.Equal(t, "download", transfer.SanitizeFilename(".."))
+	require.Equal(t, "a_b.txt", transfer.SanitizeFilename("a/b.txt"))
+	require.Equal(t, "a_b", transfer.SanitizeFilename(`a\b`))
+	require.Equal(t, "a_b_c", transfer.SanitizeFilename(`a"b:c`))
 }
 
 func TestSinkDefaultName(t *testing.T) {
-	require.Equal(t, "file.txt", sinkDefaultName("bafyabc/file.txt"))
-	require.Equal(t, "file.txt", sinkDefaultName("/ipfs/bafyabc/sub/file.txt"))
-	require.Equal(t, "file.txt", sinkDefaultName("vault:/docs/file.txt"))
-	require.Equal(t, "bafyabc", sinkDefaultName("bafyabc"))
+	require.Equal(t, "file.txt", transfer.SinkDefaultName("bafyabc/file.txt"))
+	require.Equal(t, "file.txt", transfer.SinkDefaultName("/ipfs/bafyabc/sub/file.txt"))
+	require.Equal(t, "file.txt", transfer.SinkDefaultName("vault:/docs/file.txt"))
+	require.Equal(t, "bafyabc", transfer.SinkDefaultName("bafyabc"))
 }
 
 func TestResolveLocalOutputPath(t *testing.T) {
 	root := t.TempDir()
 	// Omitted output_path → source-derived name at the root.
-	got, err := resolveLocalOutputPath(root, "", "f.pdf")
+	got, err := transfer.ResolveLocalOutputPath(root, "", "f.pdf")
 	require.NoError(t, err)
 	require.Equal(t, filepath.Join(root, "f.pdf"), got)
 	// Relative subdir path is confined to the root (subdirs created later).
-	got, err = resolveLocalOutputPath(root, "sub/f.pdf", "f.pdf")
+	got, err = transfer.ResolveLocalOutputPath(root, "sub/f.pdf", "f.pdf")
 	require.NoError(t, err)
 	require.Equal(t, filepath.Join(root, "sub", "f.pdf"), got)
 	// Exactly the root dir is OK.
-	got, err = resolveLocalOutputPath(root, ".", "f.pdf")
+	got, err = transfer.ResolveLocalOutputPath(root, ".", "f.pdf")
 	require.NoError(t, err)
 	require.Equal(t, filepath.Join(root, "f.pdf"), got)
 }
@@ -148,11 +149,11 @@ func TestResolveLocalOutputPathRejectsEscape(t *testing.T) {
 		"..",                   // exactly parent
 	}
 	for _, a := range attempts {
-		_, err := resolveLocalOutputPath(root, a, "f.pdf")
+		_, err := transfer.ResolveLocalOutputPath(root, a, "f.pdf")
 		require.Error(t, err, "expected escape rejection for %q", a)
 	}
 	// Empty root is not configured.
-	_, err := resolveLocalOutputPath("", "f.pdf", "f.pdf")
+	_, err := transfer.ResolveLocalOutputPath("", "f.pdf", "f.pdf")
 	require.Error(t, err)
 }
 
@@ -161,19 +162,19 @@ func TestExecuteLocalSinkConfinesToRoot(t *testing.T) {
 	src := "vault:/docs/secret.pdf"
 	name := "secret.pdf"
 	// An absolute output_path that would escape the root must be rejected.
-	_, err := executeLocalSink(context.Background(), src, name, "/etc/evil.pdf", root, 0, func(ctx context.Context, w io.Writer) error {
+	_, err := transfer.ExecuteLocalSink(context.Background(), src, name, "/etc/evil.pdf", root, 0, func(ctx context.Context, w io.Writer) error {
 		_, _ = w.Write([]byte("x"))
 		return nil
 	})
 	require.Error(t, err)
 	// A traversal is rejected too.
-	_, err = executeLocalSink(context.Background(), src, name, "../evil.pdf", root, 0, func(ctx context.Context, w io.Writer) error {
+	_, err = transfer.ExecuteLocalSink(context.Background(), src, name, "../evil.pdf", root, 0, func(ctx context.Context, w io.Writer) error {
 		_, _ = w.Write([]byte("x"))
 		return nil
 	})
 	require.Error(t, err)
 	// A legitimate relative path lands inside the root.
-	res, err := executeLocalSink(context.Background(), src, name, "docs/secret.pdf", root, 0, func(ctx context.Context, w io.Writer) error {
+	res, err := transfer.ExecuteLocalSink(context.Background(), src, name, "docs/secret.pdf", root, 0, func(ctx context.Context, w io.Writer) error {
 		_, _ = w.Write([]byte("plaintext"))
 		return nil
 	})
@@ -185,18 +186,18 @@ func TestExecuteLocalSinkConfinesToRoot(t *testing.T) {
 }
 
 func TestDownloadSinksAllowed(t *testing.T) {
-	require.NoError(t, downloadSinksAllowed(SinkLocal, false, false))
-	require.NoError(t, downloadSinksAllowed(SinkLocal, true, true)) // local always
-	require.NoError(t, downloadSinksAllowed(SinkDrop, true, false)) // drop needs reachable mux
-	require.Error(t, downloadSinksAllowed(SinkDrop, false, false))  // no drop coordinator
-	require.Error(t, downloadSinksAllowed(SinkDrop, true, true))    // openai tunnel: no mux
-	require.Error(t, downloadSinksAllowed("bogus", true, false))
+	require.NoError(t, transfer.DownloadSinksAllowed(transfer.SinkLocal, false, false))
+	require.NoError(t, transfer.DownloadSinksAllowed(transfer.SinkLocal, true, true)) // local always
+	require.NoError(t, transfer.DownloadSinksAllowed(transfer.SinkDrop, true, false)) // drop needs reachable mux
+	require.Error(t, transfer.DownloadSinksAllowed(transfer.SinkDrop, false, false))  // no drop coordinator
+	require.Error(t, transfer.DownloadSinksAllowed(transfer.SinkDrop, true, true))    // openai tunnel: no mux
+	require.Error(t, transfer.DownloadSinksAllowed("bogus", true, false))
 }
 
 func TestWriteLocalDownload(t *testing.T) {
 	dir := t.TempDir()
 	out := filepath.Join(dir, "sub", "out.bin")
-	n, err := writeLocalDownload(context.Background(), out, 0, func(ctx context.Context, w io.Writer) error {
+	n, err := transfer.WriteLocalDownload(context.Background(), out, 0, func(ctx context.Context, w io.Writer) error {
 		_, err := w.Write([]byte("hello world"))
 		return err
 	})
@@ -213,7 +214,7 @@ func TestWriteLocalDownloadExceedsCap(t *testing.T) {
 	// Cap smaller than the stream; the write must fail loudly and must NOT
 	// leave a final file (the temp is cleaned up), so no truncated download
 	// is presented as complete.
-	_, err := writeLocalDownload(context.Background(), out, 4, func(ctx context.Context, w io.Writer) error {
+	_, err := transfer.WriteLocalDownload(context.Background(), out, 4, func(ctx context.Context, w io.Writer) error {
 		_, err := w.Write([]byte("hello world"))
 		return err
 	})
@@ -227,12 +228,12 @@ func TestWriteLocalDownloadExceedsCap(t *testing.T) {
 
 func TestDownloadFileLocalSink(t *testing.T) {
 	root := t.TempDir()
-	ipp := IPFSDownloadHandler(func(ctx context.Context, ipfsPath string, w io.Writer) error {
+	ipp := transfer.IPFSDownloadHandler(func(ctx context.Context, ipfsPath string, w io.Writer) error {
 		require.Equal(t, "bafyabc/doc.txt", ipfsPath)
 		_, err := w.Write([]byte("ipfs bytes"))
 		return err
 	})
-	desc := NewDownloadFileDescriptor(ipp, nil, root, 0, false)
+	desc := transfer.NewDownloadFileDescriptor(ipp, nil, root, 0, false)
 	res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
 		"ipfs_path":   "bafyabc/doc.txt",
 		"sink":        "local",
@@ -247,8 +248,8 @@ func TestDownloadFileLocalSink(t *testing.T) {
 
 func TestDownloadFileLocalSinkRejectsEscape(t *testing.T) {
 	root := t.TempDir()
-	ipp := IPFSDownloadHandler(func(ctx context.Context, ipfsPath string, w io.Writer) error { return nil })
-	desc := NewDownloadFileDescriptor(ipp, nil, root, 0, false)
+	ipp := transfer.IPFSDownloadHandler(func(ctx context.Context, ipfsPath string, w io.Writer) error { return nil })
+	desc := transfer.NewDownloadFileDescriptor(ipp, nil, root, 0, false)
 	_, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
 		"ipfs_path":   "bafyabc/doc.txt",
 		"sink":        "local",
@@ -259,10 +260,10 @@ func TestDownloadFileLocalSinkRejectsEscape(t *testing.T) {
 }
 
 func TestDownloadFileDropSink(t *testing.T) {
-	hd := NewHTTPDownload()
+	hd := transfer.NewHTTPDownload()
 	root := t.TempDir()
-	desc := NewDownloadFileDescriptor(
-		IPFSDownloadHandler(func(ctx context.Context, ipfsPath string, w io.Writer) error {
+	desc := transfer.NewDownloadFileDescriptor(
+		transfer.IPFSDownloadHandler(func(ctx context.Context, ipfsPath string, w io.Writer) error {
 			_, err := w.Write([]byte("dropped bytes"))
 			return err
 		}),
@@ -277,9 +278,9 @@ func TestDownloadFileDropSink(t *testing.T) {
 	}})
 	require.NoError(t, err)
 	require.False(t, res.IsError, "unexpected error: %s", res.Text)
-	sc, ok := res.StructuredContent.(downloadResult)
+	sc, ok := res.StructuredContent.(transfer.DownloadResult)
 	require.True(t, ok)
-	require.Equal(t, string(SinkDrop), sc.Sink)
+	require.Equal(t, string(transfer.SinkDrop), sc.Sink)
 	require.Contains(t, sc.FetchURL, "/download/")
 
 	// Pull the filedrop.
@@ -297,8 +298,8 @@ func TestDownloadFileDropSink(t *testing.T) {
 func TestDownloadFileTextSurfacesDestination(t *testing.T) {
 	t.Run("local", func(t *testing.T) {
 		root := t.TempDir()
-		desc := NewDownloadFileDescriptor(
-			IPFSDownloadHandler(func(ctx context.Context, ipfsPath string, w io.Writer) error {
+		desc := transfer.NewDownloadFileDescriptor(
+			transfer.IPFSDownloadHandler(func(ctx context.Context, ipfsPath string, w io.Writer) error {
 				_, err := w.Write([]byte("bytes"))
 				return err
 			}),
@@ -321,10 +322,10 @@ func TestDownloadFileTextSurfacesDestination(t *testing.T) {
 	})
 
 	t.Run("drop", func(t *testing.T) {
-		hd := NewHTTPDownload()
+		hd := transfer.NewHTTPDownload()
 		root := t.TempDir()
-		desc := NewDownloadFileDescriptor(
-			IPFSDownloadHandler(func(ctx context.Context, ipfsPath string, w io.Writer) error {
+		desc := transfer.NewDownloadFileDescriptor(
+			transfer.IPFSDownloadHandler(func(ctx context.Context, ipfsPath string, w io.Writer) error {
 				_, err := w.Write([]byte("bytes"))
 				return err
 			}),
@@ -344,10 +345,10 @@ func TestDownloadFileTextSurfacesDestination(t *testing.T) {
 }
 
 func TestDownloadFileDropHiddenOnOpenAITunnel(t *testing.T) {
-	hd := NewHTTPDownload()
+	hd := transfer.NewHTTPDownload()
 	root := t.TempDir()
-	desc := NewDownloadFileDescriptor(
-		IPFSDownloadHandler(func(ctx context.Context, ipfsPath string, w io.Writer) error { return nil }),
+	desc := transfer.NewDownloadFileDescriptor(
+		transfer.IPFSDownloadHandler(func(ctx context.Context, ipfsPath string, w io.Writer) error { return nil }),
 		hd,
 		root,
 		0,
@@ -362,9 +363,9 @@ func TestDownloadFileDropHiddenOnOpenAITunnel(t *testing.T) {
 }
 
 func TestDownloadFileRequiresPathAndValidSink(t *testing.T) {
-	i := IPFSDownloadHandler(func(ctx context.Context, ipfsPath string, w io.Writer) error { return nil })
+	i := transfer.IPFSDownloadHandler(func(ctx context.Context, ipfsPath string, w io.Writer) error { return nil })
 	root := t.TempDir()
-	desc := NewDownloadFileDescriptor(i, nil, root, 0, false)
+	desc := transfer.NewDownloadFileDescriptor(i, nil, root, 0, false)
 	// Missing ipfs_path.
 	_, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{"sink": "local"}})
 	require.Error(t, err)
@@ -375,7 +376,7 @@ func TestDownloadFileRequiresPathAndValidSink(t *testing.T) {
 
 func TestVaultGetFileLocalSink(t *testing.T) {
 	root := t.TempDir()
-	vg := VaultGetHandler(func(ctx context.Context, vaultPath string, w io.Writer) error {
+	vg := transfer.VaultGetHandler(func(ctx context.Context, vaultPath string, w io.Writer) error {
 		require.Equal(t, "vault:/docs/f.pdf", vaultPath)
 		_, err := w.Write([]byte("vault plaintext"))
 		return err
@@ -395,8 +396,8 @@ func TestVaultGetFileLocalSink(t *testing.T) {
 
 // Ensure the tool survives an httptest round-trip of the coordinator headers.
 func TestHTTPDownloadCORSNotLeakedToUntrustedOrigin(t *testing.T) {
-	hd := NewHTTPDownload()
-	url, err := hd.mint("f.txt", 0, func(ctx context.Context, w io.Writer) error {
+	hd := transfer.NewHTTPDownload()
+	url, err := hd.Mint("f.txt", 0, func(ctx context.Context, w io.Writer) error {
 		_, _ = w.Write([]byte("data"))
 		return nil
 	}, 0)
@@ -413,10 +414,10 @@ func TestHTTPDownloadCORSNotLeakedToUntrustedOrigin(t *testing.T) {
 // An omitted ttl must report the effective default (5m) so a consumer does not
 // mistake a still-live endpoint for an expired one.
 func TestExecuteDropSinkDefaultsReportedTTL(t *testing.T) {
-	hd := NewHTTPDownload()
+	hd := transfer.NewHTTPDownload()
 	root := t.TempDir()
-	desc := NewDownloadFileDescriptor(
-		IPFSDownloadHandler(func(ctx context.Context, ipfsPath string, w io.Writer) error {
+	desc := transfer.NewDownloadFileDescriptor(
+		transfer.IPFSDownloadHandler(func(ctx context.Context, ipfsPath string, w io.Writer) error {
 			_, err := w.Write([]byte("bytes"))
 			return err
 		}),
@@ -432,9 +433,9 @@ func TestExecuteDropSinkDefaultsReportedTTL(t *testing.T) {
 	}})
 	require.NoError(t, err)
 	require.False(t, res.IsError, "unexpected error: %s", res.Text)
-	sc, ok := res.StructuredContent.(downloadResult)
+	sc, ok := res.StructuredContent.(transfer.DownloadResult)
 	require.True(t, ok)
-	require.Equal(t, defaultHTTPDownloadTTL.String(), sc.TTL, "reported TTL must be the effective default, not 0s")
+	require.Equal(t, transfer.DefaultHTTPDownloadTTL.String(), sc.TTL, "reported TTL must be the effective default, not 0s")
 }
 
 // A sink=drop larger than the download cap must fail with a detectable 413 at
@@ -443,10 +444,10 @@ func TestExecuteDropSinkDefaultsReportedTTL(t *testing.T) {
 // over-cap error (returned before any bytes are committed) maps to a 413 the
 // puller can detect.
 func TestDownloadFileDropSinkEnforcesSizeCap(t *testing.T) {
-	hd := NewHTTPDownload()
+	hd := transfer.NewHTTPDownload()
 	root := t.TempDir()
-	desc := NewDownloadFileDescriptor(
-		IPFSDownloadHandler(func(ctx context.Context, ipfsPath string, w io.Writer) error {
+	desc := transfer.NewDownloadFileDescriptor(
+		transfer.IPFSDownloadHandler(func(ctx context.Context, ipfsPath string, w io.Writer) error {
 			_, err := w.Write([]byte("xxxxxxxxxxxxxxxx")) // 16 bytes > cap 8
 			return err
 		}),
@@ -460,7 +461,7 @@ func TestDownloadFileDropSinkEnforcesSizeCap(t *testing.T) {
 		"sink":      "drop",
 	}})
 	require.NoError(t, err)
-	sc, ok := res.StructuredContent.(downloadResult)
+	sc, ok := res.StructuredContent.(transfer.DownloadResult)
 	require.True(t, ok)
 	require.False(t, res.IsError, "mint itself succeeds; the cap is enforced at GET: %s", res.Text)
 

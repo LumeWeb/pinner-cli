@@ -1,4 +1,4 @@
-package mcp
+package transfer
 
 import (
 	"context"
@@ -44,11 +44,11 @@ type DownloadSinkInput struct {
 	TTL string `json:"ttl,omitempty" jsonschema:"description=Filedrop GET endpoint lifetime for sink=drop (e.g. 5m; default 5 minutes)."`
 }
 
-// downloadSinksAllowed reports whether the requested sink is one the running
+// DownloadSinksAllowed reports whether the requested sink is one the running
 // server honors, given whether a filedrop coordinator is wired and whether the
 // transport is the OpenAI tunnel (no reachable mux). It is the per-invocation
 // gate mirroring downloadSinksFor at registration.
-func downloadSinksAllowed(sink DownloadSink, dropWired, tunnelOpenAI bool) error {
+func DownloadSinksAllowed(sink DownloadSink, dropWired, tunnelOpenAI bool) error {
 	if !sink.Valid() {
 		return fmt.Errorf("unknown sink %q (valid: local, drop)", sink)
 	}
@@ -63,10 +63,10 @@ func downloadSinksAllowed(sink DownloadSink, dropWired, tunnelOpenAI bool) error
 	return fmt.Errorf("sink %q is not available on this transport", sink)
 }
 
-// sinkDefaultName derives a filesystem-safe base filename from an IPFS path or
+// SinkDefaultName derives a filesystem-safe base filename from an IPFS path or
 // vault path for the local-sink default output. It returns the last path
 // segment (striping any /ipfs/<cid>/ prefix and vault path) or "download".
-func sinkDefaultName(source string) string {
+func SinkDefaultName(source string) string {
 	// Strip a vault path (vault:/... or vault:<profile>/...) authority stem.
 	base := source
 	if idx := strings.Index(base, ":/"); idx >= 0 {
@@ -77,14 +77,14 @@ func sinkDefaultName(source string) string {
 	if i := strings.LastIndex(base, "/"); i >= 0 && i+1 < len(base) {
 		base = base[i+1:]
 	}
-	base = sanitizeFilename(base)
+	base = SanitizeFilename(base)
 	if base == "download" {
 		return base
 	}
 	return base
 }
 
-// resolveLocalOutputPath confines a caller-supplied (or absent) output path for
+// ResolveLocalOutputPath confines a caller-supplied (or absent) output path for
 // sink=local to a configured download root, resolving it to a concrete host
 // path and rejecting any attempt to escape the root.
 //
@@ -104,10 +104,10 @@ func sinkDefaultName(source string) string {
 //
 // It never writes — it only decides the destination and validates containment;
 // the returned error rejects the request before any byte is read or written.
-func resolveLocalOutputPath(downloadRoot, outputPath, sourceName string) (string, error) {
-	name := sinkDefaultName(sourceName)
+func ResolveLocalOutputPath(downloadRoot, outputPath, sourceName string) (string, error) {
+	name := SinkDefaultName(sourceName)
 	if name == "" {
-		name = defaultSourceName
+		name = DefaultSourceName
 	}
 	root := filepath.Clean(downloadRoot)
 	if root == "" || root == "." {
@@ -143,14 +143,14 @@ func resolveLocalOutputPath(downloadRoot, outputPath, sourceName string) (string
 	return clean, nil
 }
 
-// writeLocalDownload streams the source bytes to a host-side output path
+// WriteLocalDownload streams the source bytes to a host-side output path
 // atomically: it writes to a temp file in the destination directory, then
 // renames onto the final path only after the stream succeeds, so a failed or
 // interrupted download never leaves a truncated file as if it were complete.
 // The destination directory is created if missing. An existing destination is
 // overwritten by the rename (the caller is expected to gate on --force-style
 // semantics at the tool boundary if desired).
-func writeLocalDownload(ctx context.Context, outputPath string, maxBytes int64, resolve func(ctx context.Context, w io.Writer) error) (int64, error) {
+func WriteLocalDownload(ctx context.Context, outputPath string, maxBytes int64, resolve func(ctx context.Context, w io.Writer) error) (int64, error) {
 	dir := filepath.Dir(outputPath)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return 0, fmt.Errorf("create destination directory: %w", err)
@@ -182,31 +182,31 @@ func writeLocalDownload(ctx context.Context, outputPath string, maxBytes int64, 
 	return info.Size(), nil
 }
 
-// downloadResult is the canonical envelope returned by both download tools.
-type downloadResult struct {
+// DownloadResult is the canonical envelope returned by both download tools.
+type DownloadResult struct {
 	Status   string `json:"status"`
 	Source   string `json:"source"`
 	Sink     string `json:"sink"`
-	Output   string `json:"output_path,omitempty"`   // sink=local
-	FetchURL string `json:"fetch_url,omitempty"`     // sink=drop
+	Output   string `json:"output_path,omitempty"` // sink=local
+	FetchURL string `json:"fetch_url,omitempty"`   // sink=drop
 	Name     string `json:"name"`
 	Size     int64  `json:"size"`
 	TTL      string `json:"ttl,omitempty"` // sink=drop
 	Error    string `json:"error,omitempty"`
 }
 
-// executeLocalSink resolves bytes to a root-confined host path and returns a
+// ExecuteLocalSink resolves bytes to a root-confined host path and returns a
 // local result. It rejects any output path that escapes downloadRoot.
-func executeLocalSink(ctx context.Context, source, sourceName, outputPath, downloadRoot string, maxBytes int64, resolve func(ctx context.Context, w io.Writer) error) (downloadResult, error) {
-	final, err := resolveLocalOutputPath(downloadRoot, outputPath, sourceName)
+func ExecuteLocalSink(ctx context.Context, source, sourceName, outputPath, downloadRoot string, maxBytes int64, resolve func(ctx context.Context, w io.Writer) error) (DownloadResult, error) {
+	final, err := ResolveLocalOutputPath(downloadRoot, outputPath, sourceName)
 	if err != nil {
-		return downloadResult{}, err
+		return DownloadResult{}, err
 	}
-	size, err := writeLocalDownload(ctx, final, maxBytes, resolve)
+	size, err := WriteLocalDownload(ctx, final, maxBytes, resolve)
 	if err != nil {
-		return downloadResult{}, err
+		return DownloadResult{}, err
 	}
-	return downloadResult{
+	return DownloadResult{
 		Status: "ok",
 		Source: source,
 		Sink:   string(SinkLocal),
@@ -216,16 +216,16 @@ func executeLocalSink(ctx context.Context, source, sourceName, outputPath, downl
 	}, nil
 }
 
-// executeDropSink mints a one-time filedrop GET and returns a drop result. The
+// ExecuteDropSink mints a one-time filedrop GET and returns a drop result. The
 // ttl string is parsed; when omitted/invalid/<=0 the default is applied so the
 // reported TTL matches what mint actually enforces (mint does the same default
 // internally, but reporting "0s" would mislead a consumer into treating a live
 // endpoint as already expired). The serve closure enforces maxBytes (<=0 =
 // unlimited) so an over-limit GET fails loudly instead of streaming a partial
 // file.
-func executeDropSink(ctx context.Context, source, sourceName string, hd *httpDownload, ttl string, maxBytes int64, resolve func(ctx context.Context, w io.Writer) error) (downloadResult, error) {
+func ExecuteDropSink(ctx context.Context, source, sourceName string, hd *Download, ttl string, maxBytes int64, resolve func(ctx context.Context, w io.Writer) error) (DownloadResult, error) {
 	if hd == nil {
-		return downloadResult{}, errors.New("filedrop GET coordinator is not configured for sink=drop")
+		return DownloadResult{}, errors.New("filedrop GET coordinator is not configured for sink=drop")
 	}
 	var d time.Duration
 	if ttl != "" {
@@ -234,7 +234,7 @@ func executeDropSink(ctx context.Context, source, sourceName string, hd *httpDow
 		}
 	}
 	if d <= 0 {
-		d = defaultHTTPDownloadTTL
+		d = DefaultHTTPDownloadTTL
 	}
 	// The serve closure mirrors the same resolve the local sink uses, wrapped
 	// with the size cap; the size is unknown up front (we do not pre-buffer),
@@ -242,11 +242,11 @@ func executeDropSink(ctx context.Context, source, sourceName string, hd *httpDow
 	capped := func(ctx context.Context, w io.Writer) error {
 		return resolve(ctx, &sizeLimitedWriter{w: w, maxBytes: maxBytes})
 	}
-	fetchURL, err := hd.mint(sourceName, 0, capped, d)
+	fetchURL, err := hd.Mint(sourceName, 0, capped, d)
 	if err != nil {
-		return downloadResult{}, err
+		return DownloadResult{}, err
 	}
-	return downloadResult{
+	return DownloadResult{
 		Status:   "ok",
 		Source:   source,
 		Sink:     string(SinkDrop),
@@ -268,7 +268,7 @@ func (e *downloadTooLargeError) Error() string {
 	return fmt.Sprintf("download exceeds max_mcp_upload_size (%d bytes)", e.capBytes)
 }
 
-func isDownloadTooLarge(err error) bool {
+func IsDownloadTooLarge(err error) bool {
 	var tl *downloadTooLargeError
 	return errors.As(err, &tl)
 }
@@ -293,15 +293,15 @@ func (lw *sizeLimitedWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-// defaultSourceName is a shared fallback for an empty derived name.
-const defaultSourceName = "download"
+// DefaultSourceName is a shared fallback for an empty derived name.
+const DefaultSourceName = "download"
 
-// resolveDownloadRoot returns the host directory confining download_file /
+// ResolveDownloadRoot returns the host directory confining download_file /
 // vault_get_file local-sink writes. It prefers the operator-supplied supplier
 // (from WithDownloadRoot), falling back to the config default
 // (<config-dir>/downloads). The value is returned verbatim — Clean/containment
-// is applied by resolveLocalOutputPath at invocation time.
-func resolveDownloadRoot(supplier func() string) string {
+// is applied by ResolveLocalOutputPath at invocation time.
+func ResolveDownloadRoot(supplier func() string) string {
 	if supplier != nil {
 		if r := supplier(); r != "" {
 			return r

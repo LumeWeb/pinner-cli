@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
 
@@ -22,7 +23,7 @@ func TestRegisterOfficialDescriptorRequiresHandler(t *testing.T) {
 
 func TestUploadFileDescriptorStdio(t *testing.T) {
 	var gotPath, gotName, gotArchive string
-	desc := NewUploadFileDescriptor(true, false, func(ctx context.Context, path, name string, wait bool, archiveMode string) (any, error) {
+	desc := transfer.NewUploadFileDescriptor(true, false, func(ctx context.Context, path, name string, wait bool, archiveMode string) (any, error) {
 		gotPath, gotName, gotArchive = path, name, archiveMode
 		return map[string]string{"cid": "QmStdio"}, nil
 	}, nil, nil, nil, 0)
@@ -41,7 +42,7 @@ func TestUploadFileDescriptorStdio(t *testing.T) {
 }
 
 func TestUploadFileDescriptorStdioRejectsMint(t *testing.T) {
-	desc := NewUploadFileDescriptor(true, false, func(ctx context.Context, path, name string, wait bool, archiveMode string) (any, error) {
+	desc := transfer.NewUploadFileDescriptor(true, false, func(ctx context.Context, path, name string, wait bool, archiveMode string) (any, error) {
 		t.Fatal("path handler must not be called")
 		return nil, nil
 	}, nil, nil, nil, 0)
@@ -52,9 +53,9 @@ func TestUploadFileDescriptorStdioRejectsMint(t *testing.T) {
 }
 
 func TestUploadFileDescriptorHTTPMints(t *testing.T) {
-	cu := NewHTTPUpload(nil, 0)
+	cu := transfer.NewHTTPUpload(nil, 0)
 	defer cu.Stop(context.Background())
-	desc := NewUploadFileDescriptor(false, false, nil, cu, nil, nil, 0)
+	desc := transfer.NewUploadFileDescriptor(false, false, nil, cu, nil, nil, 0)
 
 	res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
 		"source": map[string]any{"mode": "mint"},
@@ -70,9 +71,9 @@ func TestUploadFileDescriptorHTTPMints(t *testing.T) {
 }
 
 func TestUploadFileDescriptorHTTPRejectsPath(t *testing.T) {
-	cu := NewHTTPUpload(nil, 0)
+	cu := transfer.NewHTTPUpload(nil, 0)
 	defer cu.Stop(context.Background())
-	desc := NewUploadFileDescriptor(false, false, nil, cu, nil, nil, 0)
+	desc := transfer.NewUploadFileDescriptor(false, false, nil, cu, nil, nil, 0)
 	_, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
 		"source": map[string]any{"mode": "path", "path": "/etc/passwd"},
 	}})
@@ -81,7 +82,7 @@ func TestUploadFileDescriptorHTTPRejectsPath(t *testing.T) {
 
 func TestUploadFileDescriptorOpenAIRelayData(t *testing.T) {
 	var size int64
-	desc := NewUploadFileDescriptor(false, true, nil, nil, func(ctx context.Context, reader io.Reader, sz int64, name string, wait bool) (any, error) {
+	desc := transfer.NewUploadFileDescriptor(false, true, nil, nil, func(ctx context.Context, reader io.Reader, sz int64, name string, wait bool) (any, error) {
 		size = sz
 		return map[string]string{"cid": "QmRelay"}, nil
 	}, nil, 0)
@@ -98,7 +99,7 @@ func TestUploadFileDescriptorOpenAIRelayHonorsMaxBytes(t *testing.T) {
 	// The relayed url/data source must honor the operator-configured relay cap
 	// threaded through the descriptor, not silently fall back to the 512 MiB
 	// package default. A source advertising more than the cap is rejected.
-	desc := NewUploadFileDescriptor(false, true, nil, nil, func(ctx context.Context, reader io.Reader, sz int64, name string, wait bool) (any, error) {
+	desc := transfer.NewUploadFileDescriptor(false, true, nil, nil, func(ctx context.Context, reader io.Reader, sz int64, name string, wait bool) (any, error) {
 		t.Fatal("relay must not receive an oversized upload")
 		return nil, nil
 	}, nil, 4) // cap at 4 bytes
@@ -108,7 +109,7 @@ func TestUploadFileDescriptorOpenAIRelayHonorsMaxBytes(t *testing.T) {
 	require.Error(t, err)
 }
 func TestUploadFileDescriptorOpenAIRejectsMint(t *testing.T) {
-	desc := NewUploadFileDescriptor(false, true, nil, nil, func(ctx context.Context, reader io.Reader, sz int64, name string, wait bool) (any, error) {
+	desc := transfer.NewUploadFileDescriptor(false, true, nil, nil, func(ctx context.Context, reader io.Reader, sz int64, name string, wait bool) (any, error) {
 		t.Fatal("relay must not run for mint")
 		return nil, nil
 	}, nil, 0)

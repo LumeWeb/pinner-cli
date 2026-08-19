@@ -1,4 +1,4 @@
-package mcp
+package transfer
 
 // DownloadSink enumerates where a downloaded file's bytes can land. It is the
 // mirror of UploadSource but for the OUTPUT side: upload sources describe where

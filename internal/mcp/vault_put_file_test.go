@@ -8,12 +8,13 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 )
 
 // vaultPutDescriptor builds a unified vault_put_file descriptor for a given
 // transport wiring, mirroring the production registration shape so the test
 // exercises the exact same routing logic.
-func vaultPutDescriptor(coLocated, remote bool, pathFn LocalPathVaultPutHandler, vu *vaultHTTPUpload, relayFn VaultPutHandler) model.ToolDescriptor {
+func vaultPutDescriptor(coLocated, remote bool, pathFn LocalPathVaultPutHandler, vu *transfer.VaultHTTPUpload, relayFn VaultPutHandler) model.ToolDescriptor {
 	return NewVaultPutFileDescriptor(coLocated, remote, pathFn, vu, relayFn, nil, 0)
 }
 
@@ -71,7 +72,7 @@ func TestVaultPutFileDescriptorStdioPathNotConfigured(t *testing.T) {
 }
 
 func TestVaultPutFileDescriptorHTTPMints(t *testing.T) {
-	vu := NewVaultHTTPUpload(nil, 0)
+	vu := transfer.NewVaultHTTPUpload(nil, 0)
 	defer vu.Stop(context.Background())
 	desc := vaultPutDescriptor(false, false, nil, vu, nil)
 
@@ -90,7 +91,7 @@ func TestVaultPutFileDescriptorHTTPMints(t *testing.T) {
 }
 
 func TestVaultPutFileDescriptorHTTPRejectsPath(t *testing.T) {
-	vu := NewVaultHTTPUpload(nil, 0)
+	vu := transfer.NewVaultHTTPUpload(nil, 0)
 	defer vu.Stop(context.Background())
 	desc := vaultPutDescriptor(false, false, nil, vu, nil)
 	_, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
@@ -164,7 +165,7 @@ func TestVaultPutFileRejectsUnsafePathOnEverySourceBranch(t *testing.T) {
 	anyFolderFile := "vault:/secret.db"
 
 	stdio := vaultPutDescriptor(true, false, noopPathFn, nil, nil)
-	vu := NewVaultHTTPUpload(nil, 0)
+	vu := transfer.NewVaultHTTPUpload(nil, 0)
 	defer vu.Stop(context.Background())
 	http := vaultPutDescriptor(false, false, nil, vu, func(ctx context.Context, r io.Reader, sz int64, vaultPath string) (any, error) {
 		return map[string]any{"stored": true}, nil
@@ -242,7 +243,7 @@ func TestVaultPutFileAnyFolderAcrossAllBranches(t *testing.T) {
 			args: map[string]any{"source": map[string]any{"mode": "path", "path": "/tmp/host/report.pdf"}},
 		},
 		{
-			desc: vaultPutDescriptor(false, false, nil, NewVaultHTTPUpload(nil, 0), func(ctx context.Context, r io.Reader, sz int64, vaultPath string) (any, error) {
+			desc: vaultPutDescriptor(false, false, nil, transfer.NewVaultHTTPUpload(nil, 0), func(ctx context.Context, r io.Reader, sz int64, vaultPath string) (any, error) {
 				return map[string]any{"stored": true}, nil
 			}),
 			args: map[string]any{"source": map[string]any{"mode": "mint"}},

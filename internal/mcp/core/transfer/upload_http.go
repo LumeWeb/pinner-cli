@@ -1,4 +1,4 @@
-package mcp
+package transfer
 
 import (
 	"context"
@@ -16,9 +16,9 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transport"
 )
 
-// defaultHTTPUploadTTL is how long a minted one-time upload endpoint stays
+// DefaultHTTPUploadTTL is how long a minted one-time upload endpoint stays
 // valid before it expires and its token is rejected.
-const defaultHTTPUploadTTL = 5 * time.Minute
+const DefaultHTTPUploadTTL = 5 * time.Minute
 
 // httpToken is the per-token state for a minted one-time upload endpoint: the
 // upload name to use and when the endpoint expires. `used` marks single-use
@@ -29,7 +29,7 @@ type httpToken struct {
 	used      bool
 }
 
-// httpUpload is the one-time HTTP upload coordinator. The agent calls the
+// Upload is the one-time HTTP upload coordinator. The agent calls the
 // upload_curl MCP tool to mint a URL, then streams the file bytes with
 // `curl -T file <url>` over HTTP — out of band from the MCP/LLM channel. The
 // PUT handler streams the request body into the existing async
@@ -44,9 +44,9 @@ type httpToken struct {
 //     listener on a random port (baseURL == "") and the PUT route is mounted
 //     on that loopback mux via ensureLoopback.
 //   - HTTP/tunnel mode: a base URL is set, so serveHTTP mounts the PUT route
-//     on the shared transport mux via registerHandlers and the loopback
+//     on the shared transport mux via RegisterHandlers and the loopback
 //     listener is intentionally not started.
-type httpUpload struct {
+type Upload struct {
 	loopback transport.LoopbackServer
 
 	mu       sync.Mutex
@@ -61,7 +61,7 @@ type httpUpload struct {
 // a minted handle plugs straight into the existing async tool surface) and a
 // per-endpoint byte cap. A maxBytes of 0 falls back to the package relay
 // default.
-func NewHTTPUpload(tasks *UploadTaskManager, maxBytes int64) *httpUpload {
+func NewHTTPUpload(tasks *UploadTaskManager, maxBytes int64) *Upload {
 	if tasks == nil {
 		// A nil manager means the coordinator can accept PUTs but has nowhere
 		// to send their bytes; keep it constructible for tests/registration
@@ -72,7 +72,7 @@ func NewHTTPUpload(tasks *UploadTaskManager, maxBytes int64) *httpUpload {
 	if maxBytes <= 0 {
 		maxBytes = ieo.EffectiveRelayMaxBytes(0)
 	}
-	return &httpUpload{
+	return &Upload{
 		tokens:   make(map[string]httpToken),
 		maxBytes: maxBytes,
 		tasks:    tasks,
@@ -80,10 +80,17 @@ func NewHTTPUpload(tasks *UploadTaskManager, maxBytes int64) *httpUpload {
 	}
 }
 
+// MaxBytes returns the per-endpoint byte cap the coordinator enforces.
+func (cu *Upload) MaxBytes() int64 { return cu.maxBytes }
+
+// Tasks returns the upload task manager this coordinator feeds. It may be nil
+// only if the coordinator was constructed with a nil manager and never used.
+func (cu *Upload) Tasks() *UploadTaskManager { return cu.tasks }
+
 // SetBaseURL points the coordinator at the externally reachable base URL (the
 // public/tunnel URL in HTTP mode, or empty for the loopback-derived URL in
 // stdio mode).
-func (cu *httpUpload) SetBaseURL(url string) {
+func (cu *Upload) SetBaseURL(url string) {
 	cu.loopback.SetBaseURL(url)
 }
 
@@ -91,12 +98,12 @@ func (cu *httpUpload) SetBaseURL(url string) {
 // PUT beyond the coordinator's own base/loopback origin, allowing a configured
 // MCP host that serves the app iframe from its own origin to upload. See
 // LoopbackServer.AddTrustedOrigins.
-func (cu *httpUpload) AddTrustedOrigins(origins ...string) {
+func (cu *Upload) AddTrustedOrigins(origins ...string) {
 	cu.loopback.AddTrustedOrigins(origins...)
 }
 
 // Stop shuts down the loopback listener, if any.
-func (cu *httpUpload) Stop(ctx context.Context) {
+func (cu *Upload) Stop(ctx context.Context) {
 	cu.loopback.Stop(ctx)
 }
 
@@ -152,28 +159,28 @@ func originsContains(allowed []string, origin string) bool {
 
 // allowedUploadOrigins is the callback corsUpload uses to scope the reflected
 // origin to the coordinator's own transport/base origin.
-func (cu *httpUpload) allowedUploadOrigins() []string { return cu.loopback.AcceptedOrigins() }
+func (cu *Upload) allowedUploadOrigins() []string { return cu.loopback.AcceptedOrigins() }
 
-// registerHandlers mounts the one-time upload PUT route on the shared mux
+// RegisterHandlers mounts the one-time upload PUT route on the shared mux
 // (HTTP/tunnel mode) or the loopback mux (stdio mode via ensureLoopback).
 // The token is carried in the path, /upload/<token>, and is the only access
 // control: it is unguessable, expiring, and single-use.
-func (cu *httpUpload) registerHandlers(mux *http.ServeMux) {
+func (cu *Upload) RegisterHandlers(mux *http.ServeMux) {
 	mux.HandleFunc("/upload/", corsUpload(cu.allowedUploadOrigins, cu.putHandler))
 }
 
 // mint registers a fresh one-time upload endpoint and returns its full URL. It
 // ensures the loopback listener is running in stdio mode so the URL is always
 // reachable.
-func (cu *httpUpload) mint(name string, ttl time.Duration) string {
-	if err := cu.loopback.EnsureLoopback(cu.registerHandlers); err != nil {
+func (cu *Upload) Mint(name string, ttl time.Duration) string {
+	if err := cu.loopback.EnsureLoopback(cu.RegisterHandlers); err != nil {
 		return ""
 	}
 	if name == "" {
 		name = DefaultUploadName
 	}
 	if ttl <= 0 {
-		ttl = defaultHTTPUploadTTL
+		ttl = DefaultHTTPUploadTTL
 	}
 	token := newHTTPToken()
 	cu.mu.Lock()
@@ -218,7 +225,7 @@ func newHTTPToken() string {
 // Start's executor consumes the pipe asynchronously. Blocking until the body
 // is drained is the minimal correct behavior — curating it requires the body
 // to cross the handler boundary before the server tears the request down.
-func (cu *httpUpload) putHandler(w http.ResponseWriter, r *http.Request) {
+func (cu *Upload) putHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPut {
 		w.Header().Set("Allow", http.MethodPut)
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -300,7 +307,7 @@ func (cu *httpUpload) putHandler(w http.ResponseWriter, r *http.Request) {
 // A used or expired token is rejected so a re-PUT cannot re-enter the upload
 // path with the same handle. It is single-use by construction: once accepted,
 // the token is marked used under the lock.
-func (cu *httpUpload) claim(token string) (string, bool) {
+func (cu *Upload) claim(token string) (string, bool) {
 	cu.mu.Lock()
 	defer cu.mu.Unlock()
 	t, ok := cu.tokens[token]
@@ -319,7 +326,7 @@ func (cu *httpUpload) claim(token string) (string, bool) {
 }
 
 // setNow overrides the clock used for expiry (test seam).
-func (cu *httpUpload) setNow(f func() time.Time) {
+func (cu *Upload) SetNow(f func() time.Time) {
 	if f == nil {
 		return
 	}

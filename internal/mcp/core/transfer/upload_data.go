@@ -1,4 +1,4 @@
-package mcp
+package transfer
 
 import (
 	"context"
@@ -56,8 +56,8 @@ func DataURIUploadDescriptor(handler DataURIUploadHandler, maxBytes int64) model
 			if name == "" {
 				name = DefaultUploadName
 			}
-			// Bound the upload phase; see syncUploadBudget.
-			transferCtx, cancel := context.WithTimeout(ctx, syncUploadBudget(opt.Size))
+			// Bound the upload phase; see SyncUploadBudget.
+			transferCtx, cancel := context.WithTimeout(ctx, SyncUploadBudget(opt.Size))
 			defer cancel()
 			result, err := handler(transferCtx, reader, opt.Size, name, in.Wait)
 			return toolargs.WrapResult(result, err, "Data URI uploaded.")

@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 
@@ -46,7 +47,7 @@ const (
 // host reads this to know where a download tool can land its bytes.
 type CapabilityReport struct {
 	// Transport is the active MCP transport: "stdio", "http", or "openai".
-	Transport TransportKind `json:"transport"`
+	Transport transfer.TransportKind `json:"transport"`
 	// SourceModes are the valid UploadSource mode values for Transport, e.g.
 	// ["path"] for stdio, ["mint"] for http, ["url","data"] for openai.
 	SourceModes []FileInputCapability `json:"source_modes"`
@@ -73,13 +74,13 @@ type CapabilityReport struct {
 // stable order. It is derived from the same transport decision the resolver
 // enforces (UploadSource.Available), so the report cannot drift from what the
 // tools accept.
-func sourceModesFor(t TransportKind) []FileInputCapability {
+func sourceModesFor(t transfer.TransportKind) []FileInputCapability {
 	switch t {
-	case TransportStdio:
+	case transfer.TransportStdio:
 		return []FileInputCapability{CapabilityLocalPath}
-	case TransportHTTP:
+	case transfer.TransportHTTP:
 		return []FileInputCapability{CapabilityMint}
-	case TransportOpenAI:
+	case transfer.TransportOpenAI:
 		return []FileInputCapability{CapabilityRelayURL, CapabilityDataURI}
 	default:
 		return nil
@@ -108,7 +109,7 @@ func sinkModesFor(dropWired, tunnelOpenAI bool) []FileOutputCapability {
 // is registered — a consumer must never see a mode whose tool would fail at
 // invocation time.
 func CurrentCapabilities(coLocated, tunnelOpenAI, uploadFile, vaultPutFile, downloadFile, vaultGetFile, dropWired, draftXFile bool, maxBytes int64) CapabilityReport {
-	transport := uploadFileTransport(coLocated, tunnelOpenAI)
+	transport := transfer.UploadFileTransport(coLocated, tunnelOpenAI)
 	var sourceModes []FileInputCapability
 	if uploadFile || vaultPutFile {
 		sourceModes = sourceModesFor(transport)

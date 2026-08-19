@@ -1,4 +1,4 @@
-package mcp
+package transfer
 
 import (
 	"context"
@@ -81,18 +81,18 @@ type UploadTaskManager struct {
 	tasks     map[string]*trackedTask
 	exec      UploadExecutor
 	ttl       time.Duration
-	maxActive int
-	// execTimeout is the hard upper bound on a single async upload's lifetime.
+	MaxActive int
+	// ExecTimeout is the hard upper bound on a single async upload's lifetime.
 	// A hung executor (network/TUS stall that ignores context cancellation)
-	// must not occupy a maxActive slot forever, or a handful of stuck uploads
+	// must not occupy a MaxActive slot forever, or a handful of stuck uploads
 	// could exhaust every slot and block all future async uploads (DoS).
-	execTimeout time.Duration
+	ExecTimeout time.Duration
 }
 
 // defaultExecTimeout bounds a single async upload when no explicit timeout is
 // configured. It is intentionally generous — it only caps a genuinely hung
 // upload (one whose transport ignores context cancellation), which is the
-// scenario that would otherwise leak a maxActive slot indefinitely.
+// scenario that would otherwise leak a MaxActive slot indefinitely.
 const defaultExecTimeout = 30 * time.Minute
 
 // NewUploadTaskManager creates a manager bound to an executor.
@@ -104,8 +104,8 @@ func NewUploadTaskManager(exec UploadExecutor, ttl time.Duration) *UploadTaskMan
 		tasks:       make(map[string]*trackedTask),
 		exec:        exec,
 		ttl:         ttl,
-		maxActive:   defaultMaxActiveUploads,
-		execTimeout: defaultExecTimeout,
+		MaxActive:   defaultMaxActiveUploads,
+		ExecTimeout: defaultExecTimeout,
 	}
 }
 
@@ -140,10 +140,10 @@ func (m *UploadTaskManager) Start(ctx context.Context, reader io.ReadCloser, siz
 	}
 	// Preserve the caller's context values (tracing, auth, logging) while
 	// dropping the deadline and cancellation that would otherwise abort the
-	// async work once the request that started it returns. A hard execTimeout
+	// async work once the request that started it returns. A hard ExecTimeout
 	// still bounds the work so a hung executor is force-cancelled and its
-	// maxActive slot freed instead of leaking.
-	runCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), m.execTimeout)
+	// MaxActive slot freed instead of leaking.
+	runCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), m.ExecTimeout)
 	m.mu.Lock()
 	m.pruneLocked()
 	if err := m.acquireSlotLocked(); err != nil {
@@ -172,13 +172,13 @@ func (m *UploadTaskManager) Start(ctx context.Context, reader io.ReadCloser, siz
 		task.StartedAt = &now
 		task.State = UploadStateRunning
 		m.mu.Unlock()
-		// Watchdog: when execTimeout elapses, force-abandon the owned reader
+		// Watchdog: when ExecTimeout elapses, force-abandon the owned reader
 		// (aborting an in-flight network read that ignores context
 		// cancellation) and cancel runCtx. Without this, an executor blocked
 		// in a non-cancellable read would never return and would leak both the
-		// reader and the maxActive slot forever, defeating the slot guard.
+		// reader and the MaxActive slot forever, defeating the slot guard.
 		// AfterFunc fires exactly once; Stop below disarms it on normal return.
-		watchdog := time.AfterFunc(m.execTimeout, func() {
+		watchdog := time.AfterFunc(m.ExecTimeout, func() {
 			tt.closeReader()
 			cancel()
 		})
@@ -309,7 +309,7 @@ func (m *UploadTaskManager) List() []*UploadTask {
 // acquireSlotLocked returns an error if the manager is at its concurrent-upload
 // cap. Caller must hold m.mu; only queued/running (non-terminal) tasks count.
 func (m *UploadTaskManager) acquireSlotLocked() error {
-	if m.maxActive <= 0 {
+	if m.MaxActive <= 0 {
 		return nil
 	}
 	active := 0
@@ -317,7 +317,7 @@ func (m *UploadTaskManager) acquireSlotLocked() error {
 		switch t.task.State {
 		case UploadStateQueued, UploadStateRunning:
 			active++
-			if active >= m.maxActive {
+			if active >= m.MaxActive {
 				return errors.New("too many concurrent async uploads")
 			}
 		}

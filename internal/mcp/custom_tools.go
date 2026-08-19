@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 
@@ -43,20 +44,20 @@ type customToolDeps struct {
 	oobRestore *OOBRestore
 	oobCreate  *OOBCreate
 	// curlUpload, when non-nil, backs the presigned HTTP PUT upload route (the
-	// httpUpload coordinator): it mints a one-time endpoint whose PUT body
+	// Upload coordinator): it mints a one-time endpoint whose PUT body
 	// streams into the async UploadTaskManager. It feeds the consolidated
 	// upload_file tool in remote (HTTP/tunnel) mode.
-	curlUpload *httpUpload
+	curlUpload *transfer.Upload
 	// vaultUpload, when non-nil, backs the presigned HTTP PUT vault-write route
-	// (the vaultHTTPUpload coordinator). It mints a one-time endpoint bound to
+	// (the VaultHTTPUpload coordinator). It mints a one-time endpoint bound to
 	// a destination vault path whose PUT body streams into the authenticated
 	// vault write synchronously. It feeds the "Upload to Vault" MCP App.
-	vaultUpload *vaultHTTPUpload
+	vaultUpload *transfer.VaultHTTPUpload
 	// downloadDrop, when non-nil, backs the one-time filedrop GET route (the
-	// httpDownload coordinator). It serves downloaded bytes out of band to a
+	// Download coordinator). It serves downloaded bytes out of band to a
 	// consumer that shares no disk with the server. It feeds the access
 	// download_file / vault_get_file drop branches.
-	downloadDrop *httpDownload
+	downloadDrop *transfer.Download
 	// accountOOB backs the out-of-band account credential change coordinator
 	// (hosted browser forms -> authenticated UpdatePassword/UpdateEmail). It
 	// enforces an authenticated session; the secret never transits the MCP/LLM
@@ -295,8 +296,8 @@ func registerCustomTools(deps customToolDeps) error {
 	// exists, but the drop sink is only honored on transports with a reachable
 	// HTTP mux (tunnelOpenAI=false) — see downloadFileDescription.
 	if opts.ipfsDownload != nil {
-		downloadRoot := resolveDownloadRoot(opts.downloadRoot)
-		dlDesc := NewDownloadFileDescriptor(opts.ipfsDownload, deps.downloadDrop, downloadRoot, ieo.EffectiveRelayMaxBytes(opts.maxRelayBytes), deps.tunnelOpenAI)
+		downloadRoot := transfer.ResolveDownloadRoot(opts.downloadRoot)
+		dlDesc := transfer.NewDownloadFileDescriptor(opts.ipfsDownload, deps.downloadDrop, downloadRoot, ieo.EffectiveRelayMaxBytes(opts.maxRelayBytes), deps.tunnelOpenAI)
 		// Pair download_file with its "Download from IPFS" MCP App view
 		// (ui://downloads/ipfs.html) so a UI-capable host renders a download
 		// panel. RegisterAppView attaches _meta.ui to a catalog entry, so the
@@ -320,7 +321,7 @@ func registerCustomTools(deps customToolDeps) error {
 	//     vault file's decrypted bytes to a host-side path.
 	//   - sink=drop (HTTP / real tunnel): deps.downloadDrop mints a filedrop.
 	if opts.vaultGet != nil {
-		downloadRoot := resolveDownloadRoot(opts.downloadRoot)
+		downloadRoot := transfer.ResolveDownloadRoot(opts.downloadRoot)
 		dlDesc := NewVaultGetFileDescriptor(opts.vaultGet, deps.downloadDrop, downloadRoot, ieo.EffectiveRelayMaxBytes(opts.maxRelayBytes), deps.tunnelOpenAI)
 		deps.catalog.Add(model.ToolEntryFromDescriptor(dlDesc))
 		if err := RegisterVaultDownloadApp(deps.srv, deps.catalog); err != nil {
@@ -332,7 +333,7 @@ func registerCustomTools(deps customToolDeps) error {
 		}
 	}
 	if opts.dataURIUpload != nil {
-		if err := RegisterOfficialDescriptor(deps.srv, DataURIUploadDescriptor(opts.dataURIUpload, opts.maxRelayBytes)); err != nil {
+		if err := RegisterOfficialDescriptor(deps.srv, transfer.DataURIUploadDescriptor(opts.dataURIUpload, opts.maxRelayBytes)); err != nil {
 			return err
 		}
 	}
@@ -340,26 +341,26 @@ func registerCustomTools(deps customToolDeps) error {
 	// The caller does not pick a mechanism — registration routes by transport.
 	//   - co-located (stdio/local): source mode path via the local-path
 	//     handler (opts.localPathUpload).
-	//   - remote (HTTP/tunnel): source mode mint via the presigned httpUpload
+	//   - remote (HTTP/tunnel): source mode mint via the presigned Upload
 	//     coordinator (deps.curlUpload).
 	//   - openai tunnel: source mode url/data via the file-relay executor
 	//     (opts.uploadHandler), since no reachable HTTP mux exists.
 	// Register it whenever at least one upload path is available for the
 	// running transport.
 	if uploadFileAvailable(deps.coLocated, opts.localPathUpload != nil, deps.curlUpload != nil, opts.uploadHandler != nil, deps.tunnelOpenAI) {
-		var pathFn UploadFileHandler
+		var pathFn transfer.UploadFileHandler
 		if deps.coLocated {
 			pathFn = opts.localPathUpload
 		}
 		// relayFn is the authenticated file executor for the openai-tunnel
 		// url/data source modes.
-		uploadFileDesc := NewUploadFileDescriptor(deps.coLocated, deps.tunnelOpenAI, pathFn, deps.curlUpload, opts.uploadHandler, opts.relayAllowedHosts, opts.maxRelayBytes)
+		uploadFileDesc := transfer.NewUploadFileDescriptor(deps.coLocated, deps.tunnelOpenAI, pathFn, deps.curlUpload, opts.uploadHandler, opts.relayAllowedHosts, opts.maxRelayBytes)
 
 		// Pair upload_file with its "Upload to IPFS" MCP App view
 		// (ui://uploads/ipfs.html) so a UI-capable host renders a file-picker
 		// panel. RegisterAppView attaches _meta.ui to a catalog entry, so the
 		// tool must be indexed first. The app is only meaningfully available
-		// when a presigned httpUpload coordinator can mint a PUT endpoint for
+		// when a presigned Upload coordinator can mint a PUT endpoint for
 		// the Uppy XHR uploader (deps.curlUpload != nil); in co-located stdio
 		// local-path mode there is no presigned endpoint, so the app is not
 		// registered and upload_file simply serves the out-of-band local path
@@ -447,7 +448,7 @@ func uploadFileAvailable(coLocated, localPathWired, curlWired, relayWired, tunne
 //
 //   - co-located (stdio): a local-path vault handler is wired.
 //   - HTTP / real tunnel: a reachable presigned vault-upload coordinator
-//     (vaultHTTPUpload) is wired AND the transport exposes a reachable HTTP
+//     (VaultHTTPUpload) is wired AND the transport exposes a reachable HTTP
 //     mux. The embedded OpenAI tunnel has no reachable mux, so its minted URL
 //     would fall back to an unreachable loopback — the tool must not be
 //     advertised for a branch no agent could use.

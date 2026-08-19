@@ -5,15 +5,16 @@ import (
 	"fmt"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
 )
 
 // ChatGPTFileAsyncInput is the typed argument shape for upload_file_async.
 type ChatGPTFileAsyncInput struct {
-	File ChatGPTFileInput `json:"file" jsonschema:"description=OpenAI file object with a temporary download URL."`
-	Name string           `json:"name,omitempty" jsonschema:"description=Optional upload name (defaults to the file name)."`
-	Wait bool             `json:"wait,omitempty" jsonschema:"description=Wait for pinning to complete before returning."`
+	File transfer.ChatGPTFileInput `json:"file" jsonschema:"description=OpenAI file object with a temporary download URL."`
+	Name string                    `json:"name,omitempty" jsonschema:"description=Optional upload name (defaults to the file name)."`
+	Wait bool                      `json:"wait,omitempty" jsonschema:"description=Wait for pinning to complete before returning."`
 }
 
 // UploadHandleInput is the typed argument shape for upload status/cancel tools.
@@ -24,7 +25,7 @@ type UploadHandleInput struct {
 // NewAsyncUploadTools returns the async upload-management tool descriptors
 // backed by the given manager. All tools are direct-registered so they are
 // visible in tools/list.
-func NewAsyncUploadTools(mgr *UploadTaskManager) []model.ToolDescriptor {
+func NewAsyncUploadTools(mgr *transfer.UploadTaskManager) []model.ToolDescriptor {
 	if mgr == nil {
 		return nil
 	}
@@ -35,7 +36,7 @@ func NewAsyncUploadTools(mgr *UploadTaskManager) []model.ToolDescriptor {
 			Description: "Start uploading a file reference in the background and return an opaque handle. Poll upload_status, cancel with upload_cancel, and list with upload_list. Pinner fetches the temporary URL locally and uses its authenticated TUS path.",
 			Category:    model.CategoryCore,
 			InputSchema: toolargs.ToolSchemaFor[ChatGPTFileAsyncInput](),
-			Meta:        chatgptFileMeta(),
+			Meta:        transfer.ChatGPTFileMeta(),
 			Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
 				in, err := toolargs.DecodeToolArgs[ChatGPTFileAsyncInput](request)
 				if err != nil {
@@ -47,7 +48,7 @@ func NewAsyncUploadTools(mgr *UploadTaskManager) []model.ToolDescriptor {
 				// cancellation (context.WithoutCancel) while still preserving the
 				// request's values and tree hierarchy.
 				bg := context.WithoutCancel(ctx)
-				ref, body, size, err := openChatGPTInput(bg, in.File, chatgptOpenTimeout)
+				ref, body, size, err := transfer.OpenChatGPTInput(bg, in.File, transfer.ChatGPTOpenTimeout)
 				if err != nil {
 					return model.ToolResult{}, err
 				}

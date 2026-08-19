@@ -9,6 +9,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcpapp"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
@@ -46,10 +47,10 @@ func renderVaultUploadAppHTML() string {
 
 // vaultUploadSubmitDescriptor builds the app-only mint helper for the Upload
 // to Vault view. It is visible to the app only (never the model). It mints a
-// one-time presigned PUT endpoint (via the vaultHTTPUpload coordinator) bound
+// one-time presigned PUT endpoint (via the VaultHTTPUpload coordinator) bound
 // to the requested vault path and returns the URL for the iframe's Uppy XHR
 // upload to PUT the raw bytes into.
-func vaultUploadSubmitDescriptor(vu *vaultHTTPUpload) model.ToolDescriptor {
+func vaultUploadSubmitDescriptor(vu *transfer.VaultHTTPUpload) model.ToolDescriptor {
 	return model.ToolDescriptor{
 		Name:        "vault_upload_submit",
 		Title:       "Prepare a vault upload endpoint",
@@ -73,7 +74,7 @@ func vaultUploadSubmitDescriptor(vu *vaultHTTPUpload) model.ToolDescriptor {
 			// mint validates the destination (file path, inside the uploads
 			// scope, no traversal) before minting, refusing to mint a PUT
 			// endpoint that could write anywhere else in the vault.
-			url, err := vu.mint(in.VaultPath, ttl)
+			url, err := vu.Mint(in.VaultPath, ttl)
 			if err != nil {
 				return model.ToolResult{}, err
 			}
@@ -85,9 +86,9 @@ func vaultUploadSubmitDescriptor(vu *vaultHTTPUpload) model.ToolDescriptor {
 // RegisterVaultUploadApp wires the complete "Upload to Vault" MCP App: attaches
 // the ui:// view to the vault_put_file tool, registers the ui://uploads/vault.html
 // HTML resource, and registers the app-only vault_upload_submit mint helper. The
-// vault write is provided by the vaultHTTPUpload coordinator (which carries the
+// vault write is provided by the VaultHTTPUpload coordinator (which carries the
 // authenticated VaultPutHandler for the actual write).
-func RegisterVaultUploadApp(srv *sdk.Server, catalog *ToolCatalog, vu *vaultHTTPUpload) error {
+func RegisterVaultUploadApp(srv *sdk.Server, catalog *ToolCatalog, vu *transfer.VaultHTTPUpload) error {
 	if srv == nil {
 		return fmt.Errorf("nil official server")
 	}
