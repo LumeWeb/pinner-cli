@@ -42,11 +42,11 @@ func TestOfficialMCPServerForwardsCatalogDeps(t *testing.T) {
 	// Without the option, buildCatalog fails fast: there is no legacy walk and
 	// no compiler surface, so a caller that forgot WithCatalogOps gets an
 	// explicit error instead of a silently-empty model catalog.
-	_, _, err := OfficialMCPServer(root, true, nil, false, nil, nil, nil, handoff.NewHandoffRegistry(), session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions))
+	_, _, err := OfficialMCPServer(root, false, nil, nil, nil, handoff.NewHandoffRegistry(), session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions))
 	require.Error(t, err, "missing catalog-deps bundle must fail fast, not silently serve an empty surface")
 
 	// With the option, the compiler surface is live.
-	srv2, cat2, err := OfficialMCPServer(root, true, nil, false, nil, nil, nil, handoff.NewHandoffRegistry(), session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions),
+	srv2, cat2, err := OfficialMCPServer(root, false, nil, nil, nil, handoff.NewHandoffRegistry(), session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions),
 		withCatalogDeps(func() *CatalogDepsBundle { return &CatalogDepsBundle{Auth: catalogops.AuthDeps{}} }))
 	require.NoError(t, err)
 	require.NotNil(t, srv2)
@@ -74,7 +74,7 @@ func TestCompiledVaultCreateHonorsOOBHandoff(t *testing.T) {
 	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 	reg := handoff.NewHandoffRegistry()
 
-	srv, cat, err := OfficialMCPServer(compilerRoot(), true, nil, false, nil, nil, oob, reg, handles,
+	srv, cat, err := OfficialMCPServer(compilerRoot(), false, nil, nil, oob, reg, handles,
 		withCatalogDeps(func() *CatalogDepsBundle { return &CatalogDepsBundle{Auth: catalogops.AuthDeps{}} }))
 	require.NoError(t, err)
 	require.NotNil(t, srv)
@@ -110,7 +110,7 @@ func TestCompiledVaultCreateHonorsOOBHandoff(t *testing.T) {
 // surface is present and the legacy CLI-tree walk is not run (so no pinner_*
 // tools are produced for any domain).
 func TestCompilerModeProvidesCompiledSurface(t *testing.T) {
-	tc, err := buildCatalog(compilerRoot(), true, nil, nil, nil, nil, nil, nil,
+	tc, err := buildCatalog(compilerRoot(), nil, nil, nil, nil, nil,
 		withCatalogDeps(func() *CatalogDepsBundle {
 			return &CatalogDepsBundle{
 				Auth: catalogops.AuthDeps{}, // nil services fine at registration
@@ -140,7 +140,7 @@ func TestCompilerModeProvidesCompiledSurface(t *testing.T) {
 // fails fast with an explicit error rather than silently serving an empty
 // model surface (there is no fallback).
 func TestNoLegacyWalkFailsFastWithoutDeps(t *testing.T) {
-	_, err := buildCatalog(compilerRoot(), true, nil, nil, nil, nil, nil, nil)
+	_, err := buildCatalog(compilerRoot(), nil, nil, nil, nil, nil)
 	require.Error(t, err, "buildCatalog without a resolving deps bundle must fail fast")
 	require.ErrorContains(t, err, "withCatalogDeps", "error should point at the required option")
 }
@@ -150,7 +150,7 @@ func TestNoLegacyWalkFailsFastWithoutDeps(t *testing.T) {
 // supplied but resolves to nil there is no model surface, so buildCatalog
 // fails fast instead of silently serving an empty catalog.
 func TestCompilerModeConsistentWhenDepsResolveNil(t *testing.T) {
-	_, err := buildCatalog(compilerRoot(), true, nil, nil, nil, nil, nil, nil,
+	_, err := buildCatalog(compilerRoot(), nil, nil, nil, nil, nil,
 		withCatalogDeps(func() *CatalogDepsBundle { return nil }))
 	require.Error(t, err, "resolved-nil bundle must fail fast, not silently serve an empty surface")
 }

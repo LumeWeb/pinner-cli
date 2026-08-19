@@ -24,7 +24,7 @@ const VaultRestoreAppURI = "ui://vault/restore.html"
 // renderVaultRestoreAppHTML renders the complete "Restore Vault" app document
 // (ui://vault/restore.html). The shared shell (doctype/<head>/inline theme) and
 // the ESM module (shared ext-apps bootstrap + restore logic) come from
-// renderMcpAppDoc; only the visible body form is authored in templ.
+// mcpapp.RenderMcpAppDoc; only the visible body form is authored in templ.
 func renderVaultRestoreAppHTML() string {
 	return mcpapp.RenderMcpAppDoc("Restore Vault", mcpapp.VaultRestoreAppForm(), mcpapp.AppModule("vault-restore"))
 }

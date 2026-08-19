@@ -27,7 +27,7 @@ const AccountEmailAppURI = "ui://account/email.html"
 // renderAccountPasswordAppHTML renders the complete "Change Password" app
 // document (ui://account/password.html). The shell (doctype/<head>/theme) and
 // the ESM module (shared ext-apps bootstrap + account-password link logic)
-// come from renderMcpAppDoc; only the visible body is authored in templ.
+// come from mcpapp.RenderMcpAppDoc; only the visible body is authored in templ.
 func renderAccountPasswordAppHTML() string {
 	return mcpapp.RenderMcpAppDoc("Change Password", mcpapp.AccountPasswordAppForm(), mcpapp.AppModule("account-password"))
 }

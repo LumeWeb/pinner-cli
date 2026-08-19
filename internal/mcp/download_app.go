@@ -29,7 +29,7 @@ const VaultDownloadAppURI = "ui://downloads/vault.html"
 // renderIPFSDownloadAppHTML renders the complete "Download from IPFS" app
 // document (ui://downloads/ipfs.html). The shared shell (doctype/<head>/inline
 // theme) and the ESM module (shared ext-apps bootstrap + download logic) come
-// from renderMcpAppDoc; only the visible body form is authored in templ.
+// from mcpapp.RenderMcpAppDoc; only the visible body form is authored in templ.
 func renderIPFSDownloadAppHTML() string {
 	return mcpapp.RenderMcpAppDoc("Download from IPFS", mcpapp.IPFSDownloadAppForm(), mcpapp.AppModule("ipfs-download"))
 }

@@ -30,6 +30,31 @@ import (
 // one-time seed_url. The restore seed never crosses the agent channel at all:
 // it is entered by the human on the one-time /restore/<token> page and consumed
 // by the OOBRestore coordinator's RestoreRunner.
+//
+// DELIBERATE DIVERGENCE from the Catalog.Invoke dispatch seam: these two
+// handlers call catalog.NormalizeOperationInput + op.Handler().Execute directly
+// rather than Catalog.Invoke / DispatchCatalogOp. The reason is structural, not
+// a preference for skipping gates:
+//
+//   - These handlers are OOB-coordinator wiring layered on top of the compiled
+//     catalog, not a catalog-dispatched surface. vaultSetupOps() below builds
+//     the two vault-setup operations with their own core Provisioner deps and
+//     returns bare catalog.Operation values; the handler has no populated
+//     catalog.Catalog in scope to call Invoke on.
+//   - The handler needs the raw typed VaultCreateHandoff / VaultRestoreHandoff
+//     result (for handoff.Profile) to mint the one-time OOB create/restore URL
+//     and resume handle. Catalog.Invoke returns (any, error) carrying the typed
+//     result, but the MCP dispatch layer (DispatchCatalogOp) wraps it in the
+//     {status, value} envelope and applies the Interaction/Visibility gate
+//     semantics; unwrapping would be more machinery than the direct call.
+//
+// They still route through the shared normalization (NormalizeOperationInput)
+// so a model sending camelCase args is not dropped, and they are agent-safe by
+// construction (they never touch os.Stdin). This is a separate wiring from the
+// agent-directed vault-create/vault-restore tools that DO dispatch through the
+// catalog; the two surfaces intentionally share the underlying ops but not the
+// dispatch path. Do not "fix" these to use Catalog.Invoke without also giving
+// this file a populated catalog.Catalog and a way to obtain the typed handoff.
 
 // vaultSetupOps returns the create/restore catalog operations wired to the
 // default core Provisioner. The getter preserves the lazy-deps pattern: a

@@ -407,7 +407,7 @@ func TestVaultRestoreStartHandoffIncludesHandleAndResumeTool(t *testing.T) {
 	oob, _, _ := buildRestoreServer()
 	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 	reg := handoff.NewHandoffRegistry()
-	catalog, err := buildCatalog(compilerRoot(), true, nil, nil, oob, nil, reg, handles,
+	catalog, err := buildCatalog(compilerRoot(), nil, oob, nil, reg, handles,
 		withCatalogDeps(func() *CatalogDepsBundle {
 			return &CatalogDepsBundle{VaultSetup: catalogops.VaultDeps{}}
 		}))
@@ -451,7 +451,7 @@ func TestVaultCreateStartHandoffIncludesHandleAndResumeTool(t *testing.T) {
 	oobCreate, _, _ := buildCreateServer()
 	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 	reg := handoff.NewHandoffRegistry()
-	catalog, err := buildCatalog(compilerRoot(), true, nil, nil, nil, oobCreate, reg, handles,
+	catalog, err := buildCatalog(compilerRoot(), nil, nil, oobCreate, reg, handles,
 		withCatalogDeps(func() *CatalogDepsBundle {
 			return &CatalogDepsBundle{VaultSetup: catalogops.VaultDeps{}}
 		}))

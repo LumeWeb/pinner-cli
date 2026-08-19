@@ -34,7 +34,7 @@ type AppView struct {
 	// Description is the resource description surfaced in resources/list.
 	Description string
 	// HTML is the complete, self-contained mcp-app document served at URI.
-	// Build it with renderMcpAppDoc(title, body, module) so it shares the app
+	// Build it with mcpapp.RenderMcpAppDoc(title, body, module) so it shares the app
 	// shell/theme/bootstrap. Served verbatim; the sandboxed iframe needs no
 	// network request.
 	HTML string

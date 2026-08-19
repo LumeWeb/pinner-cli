@@ -23,7 +23,7 @@ const AuthSSOAppURI = "ui://auth/sso.html"
 // renderAuthSSOAppHTML renders the complete "Sign In" app document
 // (ui://auth/sso.html). The shared shell (doctype/<head>/inline theme) and the
 // ESM module (shared ext-apps bootstrap + SSO logic) come from
-// renderMcpAppDoc; only the visible body form is authored in templ.
+// mcpapp.RenderMcpAppDoc; only the visible body form is authored in templ.
 func renderAuthSSOAppHTML() string {
 	return mcpapp.RenderMcpAppDoc("Sign In", mcpapp.AuthSSOAppForm(), mcpapp.AppModule("auth-sso"))
 }

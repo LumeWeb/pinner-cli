@@ -274,14 +274,7 @@ func registerCustomTools(deps customToolDeps) error {
 			// reading vault_put_file from tools/list still sees the file-picker
 			// panel. The direct surface and the catalog entry are distinct
 			// objects; without this copy the direct tool would miss _meta.ui.
-			if entry, ok := deps.catalog.Get("vault_put_file"); ok {
-				if vaultPutDesc.Meta == nil {
-					vaultPutDesc.Meta = map[string]any{}
-				}
-				for k, v := range entry.Meta {
-					vaultPutDesc.Meta[k] = v
-				}
-			}
+			copyCatalogMetaToDescriptor(&vaultPutDesc, deps.catalog, "vault_put_file")
 		}
 		if err := RegisterOfficialDescriptor(deps.srv, vaultPutDesc); err != nil {
 			return err
@@ -317,14 +310,7 @@ func registerCustomTools(deps customToolDeps) error {
 		// Copy the app-view _meta (registered above onto the catalog entry)
 		// onto the descriptor served directly to hosts, so a UI-capable host
 		// reading download_file from tools/list still sees the panel.
-		if entry, ok := deps.catalog.Get("download_file"); ok {
-			if dlDesc.Meta == nil {
-				dlDesc.Meta = map[string]any{}
-			}
-			for k, v := range entry.Meta {
-				dlDesc.Meta[k] = v
-			}
-		}
+		copyCatalogMetaToDescriptor(&dlDesc, deps.catalog, "download_file")
 		if err := RegisterOfficialDescriptor(deps.srv, dlDesc); err != nil {
 			return err
 		}
@@ -340,14 +326,7 @@ func registerCustomTools(deps customToolDeps) error {
 		if err := RegisterVaultDownloadApp(deps.srv, deps.catalog); err != nil {
 			return err
 		}
-		if entry, ok := deps.catalog.Get("vault_get_file"); ok {
-			if dlDesc.Meta == nil {
-				dlDesc.Meta = map[string]any{}
-			}
-			for k, v := range entry.Meta {
-				dlDesc.Meta[k] = v
-			}
-		}
+		copyCatalogMetaToDescriptor(&dlDesc, deps.catalog, "vault_get_file")
 		if err := RegisterOfficialDescriptor(deps.srv, dlDesc); err != nil {
 			return err
 		}
@@ -398,14 +377,7 @@ func registerCustomTools(deps customToolDeps) error {
 			// surface) still sees the file-picker panel. The direct surface and
 			// the catalog entry are distinct objects; without this copy the
 			// direct tool would miss _meta.ui.
-			if entry, ok := deps.catalog.Get("upload_file"); ok {
-				if uploadFileDesc.Meta == nil {
-					uploadFileDesc.Meta = map[string]any{}
-				}
-				for k, v := range entry.Meta {
-					uploadFileDesc.Meta[k] = v
-				}
-			}
+			copyCatalogMetaToDescriptor(&uploadFileDesc, deps.catalog, "upload_file")
 		}
 		if err := RegisterOfficialDescriptor(deps.srv, uploadFileDesc); err != nil {
 			return err
@@ -492,4 +464,23 @@ func vaultPutFileAvailable(coLocated, localPathWired, mintWired, relayWired, tun
 		return true
 	}
 	return tunnelOpenAI && relayWired
+}
+
+// copyCatalogMetaToDescriptor copies the _meta an app view attached to the
+// catalog entry (via RegisterXxxApp) onto a descriptor served directly to
+// hosts. The direct tools/list surface and the catalog entry are distinct
+// objects, so without this copy a UI-capable host reading the direct tool
+// would miss _meta.ui. If the tool is absent from the catalog, the descriptor
+// is left unchanged.
+func copyCatalogMetaToDescriptor(desc *model.ToolDescriptor, cat *ToolCatalog, toolName string) {
+	entry, ok := cat.Get(toolName)
+	if !ok {
+		return
+	}
+	if desc.Meta == nil {
+		desc.Meta = map[string]any{}
+	}
+	for k, v := range entry.Meta {
+		desc.Meta[k] = v
+	}
 }

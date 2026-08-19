@@ -39,7 +39,7 @@ type PinStatusView struct {
 // renderPinCreateAppHTML renders the full "Create a Pin" app document
 // (ui://pins/create.html). The shared shell (doctype/<head>/inline theme) and
 // the ESM module (shared ext-apps bootstrap + pin logic) come from
-// renderMcpAppDoc; only the visible body form is authored in templ. Served
+// mcpapp.RenderMcpAppDoc; only the visible body form is authored in templ. Served
 // verbatim so the sandboxed iframe needs no network request.
 func renderPinCreateAppHTML() string {
 	return mcpapp.RenderMcpAppDoc("Create a Pin", mcpapp.PinCreateAppForm(), mcpapp.AppModule("pin"))

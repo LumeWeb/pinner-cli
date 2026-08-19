@@ -129,13 +129,6 @@ var catalogOutputUnionSchema = func() json.RawMessage {
 	return b
 }()
 
-// and then the typed result (any) is converted into an SDK-neutral ToolResult.
-//
-// It mirrors the pattern in vault_setup_ops.go (NormalizeOperationInput +
-// op.Handler().Execute) but stays on the Invoke side of the seam, so a caller
-// that only has (name, args, actor) never reaches into an Operation.Handler
-// directly and never bypasses the dispatch gates.
-
 // DispatchCatalogOp routes a typed tool request through the operation
 // catalog's Invoke gate (the single enforcement point for Interaction,
 // Visibility, Safety, and required-arg validation) and converts the result
