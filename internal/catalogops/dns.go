@@ -359,6 +359,11 @@ func dnsRecordsCreate(d DNSDeps) catalog.Operation {
 			{Name: "name", Type: catalog.ArgTypeString, Help: "Record name (omit or use @ for apex)"},
 			{Name: "type", Type: catalog.ArgTypeString, Required: true, Enum: []string{"A", "AAAA", "CNAME", "MX", "NS", "TXT", "SRV", "CAA", "PTR", "SOA"}, Help: "Record type (A, AAAA, CNAME, MX, NS, TXT, SRV, CAA, PTR, SOA)"},
 			{Name: "content", Type: catalog.ArgTypeString, Required: true, Help: "Record content (IP, domain, or text)"},
+			// priority is a nullable int: absent (nil) when --priority is
+			// omitted, so a bare MX host falls through to DefaultMXPriority.
+			// An explicit value (including 0) is honored; out-of-range values
+			// are rejected in the handler.
+			{Name: "priority", Type: catalog.ArgTypeNullableInt, Help: "MX record priority (used only for MX; overrides any priority embedded in content; defaults to 10)"},
 			{Name: "ttl", Type: catalog.ArgTypeInt, Default: "3600", Help: "TTL in seconds (default 3600)"},
 			{Name: "disabled", Type: catalog.ArgTypeBool, Default: "false", Help: "Disable the record"},
 		},
@@ -383,6 +388,22 @@ func dnsRecordsCreate(d DNSDeps) catalog.Operation {
 			}
 			if err := validateDNSRecordName(name); err != nil {
 				return nil, err
+			}
+			// MX content is "priority host"; a bare host is accepted and given a
+			// priority before it is sent because the backend requires one. An
+			// explicit --priority flag wins over any priority embedded in the
+			// content. priority is a nullable int, so a nil (omitted) value
+			// means DefaultMXPriority applies; any present value (including 0)
+			// must be in [0,65535] and is used verbatim.
+			if recordType == "MX" {
+				var priority *int
+				if p := catalog.IntArgPtr(input, "priority"); p != nil {
+					if *p < 0 || *p > 65535 {
+						return nil, fmt.Errorf("MX priority must be an integer between 0 and 65535")
+					}
+					priority = p
+				}
+				content = dnsutil.NormalizeMXContent(content, priority)
 			}
 
 			ttlVal := catalog.IntArg(input, "ttl", 3600)

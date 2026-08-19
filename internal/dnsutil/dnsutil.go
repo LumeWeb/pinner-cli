@@ -55,9 +55,17 @@ func ValidateDNSRecord(recordType, content string) error {
 		if !IsValidIPv6(content) {
 			return fmt.Errorf("invalid IPv6 address for AAAA record")
 		}
-	case "CNAME", "MX", "NS", "PTR":
+	case "CNAME", "NS", "PTR":
 		if !IsValidDomain(content) {
 			return fmt.Errorf("invalid domain for %s record", recordType)
+		}
+	case "MX":
+		// MX content is "priority host" (e.g. "10 mail.example.com"). The
+		// priority is optional in user input: a bare host is accepted and
+		// normalized to the default priority by NormalizeMXContent before it is
+		// sent, because the backend (PowerDNS) rejects an MX record without one.
+		if err := validateMX(content); err != nil {
+			return err
 		}
 	case "TXT":
 		// RFC 1035 limits each TXT *string* to 255 octets, but a TXT record
@@ -167,6 +175,71 @@ func validateSRV(content string) error {
 		return fmt.Errorf("SRV target must be a domain (e.g. sip.example.com)")
 	}
 	return nil
+}
+
+// validateMX validates MX record content. Accepts either a bare exchange host
+// ("mail.example.com") or the full "priority host" form ("10 mail.example.com").
+// The priority must be an integer in [0, 65535]; the host must be a domain.
+func validateMX(content string) error {
+	fields := strings.Fields(content)
+	switch len(fields) {
+	case 1:
+		if !IsValidDomain(fields[0]) {
+			return fmt.Errorf("invalid MX exchange host %q", fields[0])
+		}
+		return nil
+	case 2:
+		priority, err := strconv.ParseUint(fields[0], 10, 16)
+		if err != nil || priority > 65535 {
+			return fmt.Errorf("MX priority must be an integer between 0 and 65535")
+		}
+		if !IsValidDomain(fields[1]) {
+			return fmt.Errorf("invalid MX exchange host %q", fields[1])
+		}
+		return nil
+	default:
+		return fmt.Errorf("MX record content must be \"priority host\" (e.g. \"10 mail.example.com\") or just \"host\"")
+	}
+}
+
+// DefaultMXPriority is the priority applied when MX content carries neither an
+// embedded priority nor an explicit --priority flag.
+const DefaultMXPriority = 10
+
+// NormalizeMXContent returns the canonical "priority host" form of MX content so
+// it is always sent to the backend with a priority (PowerDNS rejects an MX
+// record without one). Precedence: the explicit --priority flag wins when set;
+// otherwise an embedded priority in the content ("10 mail.example.com") is kept;
+// otherwise the content host is given DefaultMXPriority. explicitPriority is
+// nil when no --priority flag was provided.
+func NormalizeMXContent(content string, explicitPriority *int) string {
+	var host string
+	var embedded *int
+
+	fields := strings.Fields(content)
+	switch len(fields) {
+	case 1:
+		host = fields[0]
+	case 2:
+		if p, err := strconv.ParseUint(fields[0], 10, 16); err == nil {
+			v := int(p)
+			embedded = &v
+			host = fields[1]
+		} else {
+			host = content
+		}
+	default:
+		host = content
+	}
+
+	priority := DefaultMXPriority
+	switch {
+	case explicitPriority != nil:
+		priority = *explicitPriority
+	case embedded != nil:
+		priority = *embedded
+	}
+	return strconv.Itoa(priority) + " " + host
 }
 
 // validateCAA validates CAA record content: "<flags> <tag> [value]". Only the

@@ -56,6 +56,8 @@ func TestValidateDNSRecordExtendedAndBase(t *testing.T) {
 		{"AAAA", "::1"},
 		{"CNAME", "example.com"},
 		{"MX", "mail.example.com."},
+		{"MX", "10 mail.example.com."}, // priority + host form
+		{"MX", "0 mail.example.com"},   // priority 0 is valid
 		{"NS", "ns1.example.com."},
 		{"TXT", "some text"},
 		{"PTR", "host.example.com"},
@@ -78,7 +80,11 @@ func TestValidateDNSRecordExtendedAndBase(t *testing.T) {
 		{"A", "not-an-ip"},
 		{"AAAA", "1.2.3.4"},
 		{"CNAME", "single"},
-		{"TXT", string(make([]byte, 65536))}, // beyond the sanity cap
+		{"MX", "abc 10 mail.example.com"}, // too many fields
+		{"MX", "notanumber mail.example.com"}, // non-integer priority
+		{"MX", "70000 mail.example.com"},      // priority out of range
+		{"MX", "10 not-a-domain"},             // invalid host
+		{"TXT", string(make([]byte, 65536))},  // beyond the sanity cap
 		{"SRV", "10 60 5060"},
 		{"CAA", "issue"}, // missing flags
 		{"CAA", "0 bogustag example.com"},
@@ -89,6 +95,32 @@ func TestValidateDNSRecordExtendedAndBase(t *testing.T) {
 		if err := ValidateDNSRecord(tc.typ, tc.content); err == nil {
 			t.Errorf("ValidateDNSRecord(%s, %q) expected error, got nil", tc.typ, tc.content)
 		}
+	}
+}
+
+func TestNormalizeMXContent(t *testing.T) {
+	p := func(v int) *int { return &v }
+	cases := []struct {
+		name    string
+		in      string
+		prio    *int
+		want    string
+	}{
+		{"bare host gets default priority", "mail.example.com", nil, "10 mail.example.com"},
+		{"bare host with trailing dot kept", "mail.example.com.", nil, "10 mail.example.com."},
+		{"existing priority is preserved", "10 mail.example.com", nil, "10 mail.example.com"},
+		{"non-default priority preserved", "20 mail.example.com", nil, "20 mail.example.com"},
+		{"priority zero preserved", "0 mail.example.com", nil, "0 mail.example.com"},
+		{"explicit flag overrides embedded", "10 mail.example.com", p(30), "30 mail.example.com"},
+		{"explicit flag applies to bare host", "mail.example.com", p(25), "25 mail.example.com"},
+		{"explicit priority zero is honored", "mail.example.com", p(0), "0 mail.example.com"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := NormalizeMXContent(tc.in, tc.prio); got != tc.want {
+				t.Errorf("NormalizeMXContent(%q, %v) = %q, want %q", tc.in, tc.prio, got, tc.want)
+			}
+		})
 	}
 }
 

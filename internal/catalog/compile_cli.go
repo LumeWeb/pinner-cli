@@ -143,7 +143,7 @@ func flagFor(a OperationArg) cli.Flag {
 	switch a.Type {
 	case ArgTypeBool, ArgTypeNullableBool:
 		return &cli.BoolFlag{Name: a.Name, Usage: help, Value: a.Default == "true", Required: required, Sources: sources}
-	case ArgTypeInt:
+	case ArgTypeInt, ArgTypeNullableInt:
 		return &cli.IntFlag{Name: a.Name, Usage: help, DefaultText: a.Default, Required: required, Sources: sources}
 	case ArgTypeFloat:
 		return &cli.Float64Flag{Name: a.Name, Usage: help, DefaultText: a.Default, Required: required, Sources: sources}
@@ -255,6 +255,15 @@ func cliArgValue(cmd *cli.Command, a OperationArg) (value any, set bool, empty b
 		// An explicit 0 is a legitimate value (e.g. --ttl 0); presence is
 		// determined by set, not by magnitude.
 		return cmd.Int(a.Name), set, false
+	case ArgTypeNullableInt:
+		// Preserve tri-state: absent flag -> nil, provided -> *int. The int
+		// flag alone cannot distinguish --priority 0 from an absent flag, so
+		// gate on set so the Handler sees the same shape as the MCP surface.
+		if !set {
+			return nil, false, false
+		}
+		v := cmd.Int(a.Name)
+		return &v, true, false
 	case ArgTypeFloat:
 		return cmd.Float(a.Name), set, false
 	case ArgTypeDuration:
