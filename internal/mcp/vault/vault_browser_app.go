@@ -1,4 +1,4 @@
-package mcp
+package vault
 
 import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
@@ -29,7 +29,7 @@ func renderVaultBrowserAppHTML() string {
 // and registers the ui://vault/browser.html HTML resource. The view calls the
 // existing vault_status / vault_ls catalog tools over callServerTool; it needs
 // no app-only helper because it only reads and never drives a hand-off.
-func RegisterVaultBrowserApp(srv *sdk.Server, catalog *ToolCatalog) error {
+func RegisterVaultBrowserApp(srv *sdk.Server, catalog apps.AppCatalog) error {
 	return apps.RegisterAppView(srv, catalog, apps.AppView{
 		URI:           VaultBrowserAppURI,
 		Name:          "vault-browser",

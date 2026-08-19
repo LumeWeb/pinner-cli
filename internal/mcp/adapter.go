@@ -42,19 +42,11 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
+	"go.lumeweb.com/pinner-cli/internal/mcp/vault"
 )
 
 // ToolDelimiter separates command path segments in MCP tool names.
 const ToolDelimiter = "_"
-
-// compiledVaultCreateToolName / compiledVaultRestoreToolName are the
-// compiler-backed names of the vault setup operations. They are surfaced by
-// the operation catalog (not the CLI tree) and must route through the same
-// out-of-band setup handlers as the legacy names so the create_url /
-// restore_url + resume-handle hand-off contract is honored on the compiled
-// surface.
-const compiledVaultCreateToolName = "vault_create"
-const compiledVaultRestoreToolName = "vault_restore"
 
 // ansiEscapeRE matches ANSI/VT escape sequences (SGR color codes, cursor
 // movement, erase, reset) so agent-facing tool output is always clean plain
@@ -886,13 +878,13 @@ type mcpServerOptions struct {
 	// prompts enables registration of the prompt templates.
 	prompts           bool
 	uploadHandler     transfer.UploadHandler
-	vaultPutHandler   VaultPutHandler
+	vaultPutHandler   vault.VaultPutHandler
 	uploadTasks       *transfer.UploadTaskManager
 	relayURLUpload    transfer.RelayURLUploadHandler
 	relayAllowedHosts []string
 	dataURIUpload     transfer.DataURIUploadHandler
 	localPathUpload   transfer.LocalPathUploadHandler
-	localPathVaultPut LocalPathVaultPutHandler
+	localPathVaultPut vault.LocalPathVaultPutHandler
 	// ipfsDownload is the authenticated IPFS download executor used by the
 	// download_file tool's local sink (it streams a CID's bytes to a writer).
 	// Homing it in the CLI layer mirrors upload; the tool never decides the
@@ -968,7 +960,7 @@ func WithUploadHandler(handler transfer.UploadHandler) MCPServerOption {
 
 // WithVaultPutHandler registers the authenticated vault write executor used by
 // the vault_put_file tool's relay (OpenAI tunnel) source modes.
-func WithVaultPutHandler(handler VaultPutHandler) MCPServerOption {
+func WithVaultPutHandler(handler vault.VaultPutHandler) MCPServerOption {
 	return func(o *mcpServerOptions) {
 		o.vaultPutHandler = handler
 	}
@@ -1056,7 +1048,7 @@ func WithLocalPathUpload(handler transfer.LocalPathUploadHandler) MCPServerOptio
 // unified vault_put_file tool's stdio source mode, which writes a host-side
 // file/directory/archive into the encrypted vault directly. It is only
 // meaningful when the MCP server is co-located with the caller's files.
-func WithLocalPathVaultPut(handler LocalPathVaultPutHandler) MCPServerOption {
+func WithLocalPathVaultPut(handler vault.LocalPathVaultPutHandler) MCPServerOption {
 	return func(o *mcpServerOptions) {
 		o.localPathVaultPut = handler
 	}
@@ -1197,13 +1189,13 @@ func buildCatalog(root *cli.Command, seedDrop *SeedDrop, oobRestore *OOBRestore,
 // needs_human schema keeps each tool's declared output matching its emitted
 // StructuredContent.
 func routeVaultSetupHandlers(catalog *ToolCatalog, create, restore model.PinnerToolHandler) {
-	if restoreEntry, ok := catalog.Get(compiledVaultRestoreToolName); ok {
+	if restoreEntry, ok := catalog.Get(vault.CompiledVaultRestoreToolName); ok {
 		restoreEntry.Handler = restore
 		restoreEntry.Interaction = model.InteractionAgentSafe
 		restoreEntry.OutputSchema = catalogNeedsHumanOutputSchema
 		catalog.Add(restoreEntry)
 	}
-	if createEntry, ok := catalog.Get(compiledVaultCreateToolName); ok {
+	if createEntry, ok := catalog.Get(vault.CompiledVaultCreateToolName); ok {
 		createEntry.Handler = create
 		createEntry.Interaction = model.InteractionAgentSafe
 		createEntry.OutputSchema = catalogNeedsHumanOutputSchema

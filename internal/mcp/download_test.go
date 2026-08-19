@@ -15,6 +15,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
+	"go.lumeweb.com/pinner-cli/internal/mcp/vault"
 )
 
 // ---- httpDownload filedrop GET coordinator ----
@@ -381,7 +382,7 @@ func TestVaultGetFileLocalSink(t *testing.T) {
 		_, err := w.Write([]byte("vault plaintext"))
 		return err
 	})
-	desc := NewVaultGetFileDescriptor(vg, nil, root, 0, false)
+	desc := vault.NewVaultGetFileDescriptor(vg, nil, root, 0, false)
 	res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
 		"vault_path":  "vault:/docs/f.pdf",
 		"sink":        "local",

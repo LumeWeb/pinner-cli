@@ -1,4 +1,4 @@
-package mcp
+package vault
 
 import (
 	"go.lumeweb.com/pinner-cli/internal/mcpapp"
@@ -22,25 +22,25 @@ import (
 // VaultRestoreAppURI is the ui:// resource serving the "Restore Vault" app.
 const VaultRestoreAppURI = "ui://vault/restore.html"
 
-// renderVaultRestoreAppHTML renders the complete "Restore Vault" app document
+// RenderVaultRestoreAppHTML renders the complete "Restore Vault" app document
 // (ui://vault/restore.html). The shared shell (doctype/<head>/inline theme) and
 // the ESM module (shared ext-apps bootstrap + restore logic) come from
 // mcpapp.RenderMcpAppDoc; only the visible body form is authored in templ.
-func renderVaultRestoreAppHTML() string {
+func RenderVaultRestoreAppHTML() string {
 	return mcpapp.RenderMcpAppDoc("Restore Vault", mcpapp.VaultRestoreAppForm(), mcpapp.AppModule("vault-restore"))
 }
 
-// vaultRestoreStatusDescriptor builds the app-only vault-restore status helper.
+// VaultRestoreStatusDescriptor builds the app-only vault-restore status helper.
 // It reuses the shared resume machinery (handle -> continuation -> pending/done)
 // exactly like vault_restore_resume, but is registered with model.ToolVisibilityApp so
 // only the Restore Vault view can poll it; the model never sees it. It carries
 // no secrets (the seed is entered on the human-only page, never here).
-func vaultRestoreStatusDescriptor(reg *handoff.HandoffRegistry, handles *session.AsyncHandleStore) model.ToolDescriptor {
+func VaultRestoreStatusDescriptor(reg *handoff.HandoffRegistry, handles *session.AsyncHandleStore) model.ToolDescriptor {
 	return handoff.NewResumeTool(handoff.ResumeToolSpec{
 		Name:                "vault_restore_status",
 		Title:               "Vault Restore Status",
 		Description:         "Poll a pending vault restore hand-off by handle. App-only helper for the Restore Vault view.",
-		RestartTool:         compiledVaultRestoreToolName,
+		RestartTool:         CompiledVaultRestoreToolName,
 		UnknownHandleDetail: "unknown handle; start a fresh vault restore with vault_restore",
 		ExpiredHandleDetail: "the vault restore hand-off expired before the human completed it; start a fresh vault restore with vault_restore",
 		DeadHandleReason:    model.ReasonCredentialEntry,
@@ -52,15 +52,15 @@ func vaultRestoreStatusDescriptor(reg *handoff.HandoffRegistry, handles *session
 // shared AppView lib layer: attaches the ui:// view to the vault_restore tool,
 // registers the ui://vault/restore.html HTML resource, and registers the
 // app-only vault_restore_status polling helper.
-func RegisterVaultRestoreApp(srv *sdk.Server, catalog *ToolCatalog, reg *handoff.HandoffRegistry, handles *session.AsyncHandleStore) error {
+func RegisterVaultRestoreApp(srv *sdk.Server, catalog apps.AppCatalog, reg *handoff.HandoffRegistry, handles *session.AsyncHandleStore) error {
 	return apps.RegisterAppView(srv, catalog, apps.AppView{
 		URI:           VaultRestoreAppURI,
 		Name:          "vault-restore",
 		Title:         "Restore Vault",
 		Description:   "Restore a vault from its recovery seed.",
-		HTML:          renderVaultRestoreAppHTML(),
+		HTML:          RenderVaultRestoreAppHTML(),
 		PrefersBorder: true,
-		AttachTo:      []string{compiledVaultRestoreToolName},
-		Helpers:       []model.ToolDescriptor{vaultRestoreStatusDescriptor(reg, handles)},
+		AttachTo:      []string{CompiledVaultRestoreToolName},
+		Helpers:       []model.ToolDescriptor{VaultRestoreStatusDescriptor(reg, handles)},
 	})
 }

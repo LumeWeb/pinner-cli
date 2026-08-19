@@ -16,9 +16,10 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 	"go.lumeweb.com/pinner-cli/internal/mcp/upload"
+	"go.lumeweb.com/pinner-cli/internal/mcp/vault"
 )
 
-// fakeVaultPutHandler is a controllable VaultPutHandler for app tests.
+// fakeVaultPutHandler is a controllable vault.VaultPutHandler for app tests.
 type fakeVaultPutHandler struct {
 	gotVaultPath string
 	gotBody      string
@@ -57,7 +58,7 @@ func buildVaultUploadAppServerEx(t *testing.T, fake *fakeVaultPutHandler) (*mcp.
 	srv := sdk.NewServer(nil)
 	vu := transfer.NewVaultHTTPUpload(fake.Put, 1<<20)
 
-	vaultPutDesc := NewVaultPutFileDescriptor(false, false, nil, vu, fake.Put, nil, 0)
+	vaultPutDesc := vault.NewVaultPutFileDescriptor(false, false, nil, vu, fake.Put, nil, 0)
 	catalog.Add(model.ToolEntryFromDescriptor(vaultPutDesc))
 	if err := upload.RegisterVaultUploadApp(srv, catalog, vu); err != nil {
 		t.Fatalf("upload.RegisterVaultUploadApp: %v", err)

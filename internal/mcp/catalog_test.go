@@ -17,6 +17,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/flag"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/vault"
 )
 
 func TestHumanTitle(t *testing.T) {
@@ -120,7 +121,7 @@ func TestVaultRestoreInteractionStaysAgentSafeThroughBuildCatalog(t *testing.T) 
 			return &CatalogDepsBundle{VaultSetup: catalogops.VaultDeps{}}
 		}))
 	require.NoError(t, err)
-	restore, ok := catalog.Get(compiledVaultRestoreToolName)
+	restore, ok := catalog.Get(vault.CompiledVaultRestoreToolName)
 	require.True(t, ok, "compiled vault.restore must be present in compiler mode")
 	assert.Equal(t, model.InteractionAgentSafe, restore.Interaction,
 		"buildCatalog must route compiled vault restore through the agent-safe OOB hand-off handler, not stdin-gate it")

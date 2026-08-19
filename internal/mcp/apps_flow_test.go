@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/auth"
+	"go.lumeweb.com/pinner-cli/internal/mcp/vault"
 	"strings"
 	"testing"
 )
@@ -22,9 +23,9 @@ func appModuleFor(t *testing.T, uri string) string {
 	t.Helper()
 	switch uri {
 	case "ui://vault/create.html":
-		return renderVaultCreateAppHTML()
+		return vault.RenderVaultCreateAppHTML()
 	case "ui://vault/restore.html":
-		return renderVaultRestoreAppHTML()
+		return vault.RenderVaultRestoreAppHTML()
 	case "ui://auth/sso.html":
 		return auth.RenderAuthSSOAppHTML()
 	default:
@@ -75,8 +76,8 @@ func TestAppFlowDocumentsWired(t *testing.T) {
 // OWN status tool and not a sibling's (a config mix-up would break two flows).
 func TestAppFlowDocumentsDistinctToolNames(t *testing.T) {
 	docs := map[string]string{
-		"vault_create":  renderVaultCreateAppHTML(),
-		"vault_restore": renderVaultRestoreAppHTML(),
+		"vault_create":  vault.RenderVaultCreateAppHTML(),
+		"vault_restore": vault.RenderVaultRestoreAppHTML(),
 		"auth_sso":      auth.RenderAuthSSOAppHTML(),
 	}
 	statusTool := map[string]string{

@@ -21,6 +21,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	mcpvault "go.lumeweb.com/pinner-cli/internal/mcp/vault"
 )
 
 // ---- resume-tool (template) tests -----------------------------------------
@@ -218,7 +219,7 @@ func TestVaultRestoreResumeFailedSteersRestart(t *testing.T) {
 	})
 	require.NoError(t, err)
 	sc := requireHandoff(t, r)
-	assert.Equal(t, compiledVaultRestoreToolName, sc["resume_tool"], "a failed restore must steer back to pinner_vault_restore")
+	assert.Equal(t, mcpvault.CompiledVaultRestoreToolName, sc["resume_tool"], "a failed restore must steer back to pinner_vault_restore")
 	assert.NotEqual(t, model.StatusDone, sc["status"], "a failed restore must never report StatusDone")
 	assert.NotContains(t, r.Text, "secret words")
 	assert.NotContains(t, r.Text, "has been restored", "must not claim the vault was restored on failure")
@@ -269,7 +270,7 @@ func TestVaultRestoreResumePendingDuringApproval(t *testing.T) {
 	sc := requireHandoff(t, r)
 	assert.Equal(t, vaultRestoreResumeToolName, sc["resume_tool"], "a mid-approval restore must keep reporting needs_human to the resume tool")
 	assert.NotEqual(t, model.StatusDone, sc["status"], "a mid-approval restore must not report done")
-	assert.NotEqual(t, compiledVaultRestoreToolName, sc["resume_tool"], "a mid-approval restore must not steer to restart")
+	assert.NotEqual(t, mcpvault.CompiledVaultRestoreToolName, sc["resume_tool"], "a mid-approval restore must not steer to restart")
 
 	// Let the restore finish. Poll until the continuation observes the settled
 	// outcome rather than racing the blocking restore's completion.
@@ -346,7 +347,7 @@ func TestVaultRestoreResumeDeadHandleSteersRestart(t *testing.T) {
 	})
 	require.NoError(t, err)
 	sc := requireHandoff(t, r)
-	assert.Equal(t, compiledVaultRestoreToolName, sc["resume_tool"], "restore dead handle must steer to pinner_vault_restore")
+	assert.Equal(t, mcpvault.CompiledVaultRestoreToolName, sc["resume_tool"], "restore dead handle must steer to pinner_vault_restore")
 	assert.Contains(t, sc["detail"].(string), "unknown handle")
 
 	// Expired handle.
@@ -358,7 +359,7 @@ func TestVaultRestoreResumeDeadHandleSteersRestart(t *testing.T) {
 	})
 	require.NoError(t, err)
 	sc = requireHandoff(t, r)
-	assert.Equal(t, compiledVaultRestoreToolName, sc["resume_tool"], "restore expired handle must steer to pinner_vault_restore")
+	assert.Equal(t, mcpvault.CompiledVaultRestoreToolName, sc["resume_tool"], "restore expired handle must steer to pinner_vault_restore")
 	assert.Contains(t, sc["detail"].(string), "expired")
 }
 
@@ -375,7 +376,7 @@ func TestVaultCreateResumeDeadHandleSteersRestart(t *testing.T) {
 	})
 	require.NoError(t, err)
 	sc := requireHandoff(t, r)
-	assert.Equal(t, compiledVaultCreateToolName, sc["resume_tool"], "create dead handle must steer to pinner_vault_create")
+	assert.Equal(t, mcpvault.CompiledVaultCreateToolName, sc["resume_tool"], "create dead handle must steer to pinner_vault_create")
 }
 
 // TestVaultResumeNotConfigured verifies the resume templates degrade to a
@@ -414,14 +415,14 @@ func TestVaultRestoreStartHandoffIncludesHandleAndResumeTool(t *testing.T) {
 	require.NoError(t, err)
 
 	// The compiled vault.restore entry is routed through the OOB setup handler.
-	restoreEntry, ok := catalog.Get(compiledVaultRestoreToolName)
+	restoreEntry, ok := catalog.Get(mcpvault.CompiledVaultRestoreToolName)
 	require.True(t, ok, "compiled vault.restore must be present in compiler mode")
 
 	// Invoke the restore tool through the compiled entry: it resolves the
 	// target profile (no profile/env/registry -> "default") and mints a
 	// one-time restore_url + resume handle from the OOB coordinator, without
 	// relying on CLI stdout.
-	res, err := restoreEntry.Handler(context.Background(), model.ToolRequest{Name: compiledVaultRestoreToolName, Arguments: map[string]any{}})
+	res, err := restoreEntry.Handler(context.Background(), model.ToolRequest{Name: mcpvault.CompiledVaultRestoreToolName, Arguments: map[string]any{}})
 	require.NoError(t, err)
 	require.False(t, res.IsError, "compiled vault.restore must produce a hand-off: %s", res.Text)
 	sc, ok := res.StructuredContent.(map[string]any)
@@ -457,7 +458,7 @@ func TestVaultCreateStartHandoffIncludesHandleAndResumeTool(t *testing.T) {
 		}))
 	require.NoError(t, err)
 
-	createEntry, ok := catalog.Get(compiledVaultCreateToolName)
+	createEntry, ok := catalog.Get(mcpvault.CompiledVaultCreateToolName)
 	require.True(t, ok, "compiled vault.create must be present in compiler mode")
 
 	// Invoke the create tool through the compiled entry: it targets the
@@ -465,7 +466,7 @@ func TestVaultCreateStartHandoffIncludesHandleAndResumeTool(t *testing.T) {
 	// browser), then the MCP layer mints a one-time create_url + resume handle.
 	// No seed is minted or written at invoke time. The mnemonic must never
 	// appear in the result.
-	res, err := createEntry.Handler(context.Background(), model.ToolRequest{Name: compiledVaultCreateToolName, Arguments: map[string]any{"profile": "testcreate"}})
+	res, err := createEntry.Handler(context.Background(), model.ToolRequest{Name: mcpvault.CompiledVaultCreateToolName, Arguments: map[string]any{"profile": "testcreate"}})
 	require.NoError(t, err)
 	require.False(t, res.IsError, "compiled vault.create must produce a hand-off: %s", res.Text)
 	sc, ok := res.StructuredContent.(map[string]any)
@@ -518,7 +519,7 @@ func TestVaultCreateSetupHandlerMintsOneTimeCreateURL(t *testing.T) {
 
 	handler := vaultCreateSetupHandler(oob, reg, handles)
 	res, err := handler(context.Background(), model.ToolRequest{
-		Name: compiledVaultCreateToolName,
+		Name: mcpvault.CompiledVaultCreateToolName,
 		Arguments: map[string]any{
 			"profile": "aliasdev",
 		},
@@ -577,7 +578,7 @@ func TestVaultCreateResumeExpiredTokenSteersRestart(t *testing.T) {
 	})
 	require.NoError(t, err)
 	sc := requireHandoff(t, r)
-	assert.Equal(t, compiledVaultCreateToolName, sc["resume_tool"],
+	assert.Equal(t, mcpvault.CompiledVaultCreateToolName, sc["resume_tool"],
 		"expired create token must steer to pinner_vault_create, not report done")
 	assert.NotEqual(t, model.StatusDone, sc["status"], "expired token must never read as a completed vault create")
 	assert.NotContains(t, r.Text, "fresh generated seed phrase")
@@ -590,7 +591,7 @@ func TestVaultCreateResumeExpiredTokenSteersRestart(t *testing.T) {
 	})
 	require.NoError(t, err)
 	sc = requireHandoff(t, r)
-	assert.Equal(t, compiledVaultCreateToolName, sc["resume_tool"], "cleared expiration must read as dead-handle restart")
+	assert.Equal(t, mcpvault.CompiledVaultCreateToolName, sc["resume_tool"], "cleared expiration must read as dead-handle restart")
 }
 
 // TestVaultRestoreResumeExpiredTokenSteersRestart mirrors the create expiry
@@ -625,7 +626,7 @@ func TestVaultRestoreResumeExpiredTokenSteersRestart(t *testing.T) {
 	})
 	require.NoError(t, err)
 	sc := requireHandoff(t, r)
-	assert.Equal(t, compiledVaultRestoreToolName, sc["resume_tool"],
+	assert.Equal(t, mcpvault.CompiledVaultRestoreToolName, sc["resume_tool"],
 		"expired restore token must steer to pinner_vault_restore, not report done")
 	assert.NotEqual(t, model.StatusDone, sc["status"], "expired token must never read as a completed restore")
 }
@@ -651,7 +652,7 @@ func TestVaultResumeAbsentTokenSteersRestart(t *testing.T) {
 	})
 	require.NoError(t, err)
 	sc := requireHandoff(t, r)
-	assert.Equal(t, compiledVaultCreateToolName, sc["resume_tool"],
+	assert.Equal(t, mcpvault.CompiledVaultCreateToolName, sc["resume_tool"],
 		"absent token must steer to pinner_vault_create, not pending forever")
 	assert.NotEqual(t, model.StatusDone, sc["status"], "absent token must never read as a completed create")
 
@@ -664,5 +665,5 @@ func TestVaultResumeAbsentTokenSteersRestart(t *testing.T) {
 	})
 	require.NoError(t, err)
 	sc = requireHandoff(t, r)
-	assert.Equal(t, compiledVaultCreateToolName, sc["resume_tool"], "cleared flow must read as dead-handle restart")
+	assert.Equal(t, mcpvault.CompiledVaultCreateToolName, sc["resume_tool"], "cleared flow must read as dead-handle restart")
 }

@@ -22,6 +22,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
+	mcpvault "go.lumeweb.com/pinner-cli/internal/mcp/vault"
 	mcpwizard "go.lumeweb.com/pinner-cli/internal/mcp/wizard"
 )
 
@@ -123,7 +124,7 @@ For more help on any command: pinner <command> --help`,
 	// the same. It is also assigned to the type-alias handler (a type alias
 	// of UploadHandler) that the vendored pinner_upload_file tool needs.
 	var uploadHandler transfer.UploadHandler
-	var vaultPutHandler mcpadapter.VaultPutHandler
+	var vaultPutHandler mcpvault.VaultPutHandler
 	// ipfsDownload is the IPFS download executor used by download_file's sinks.
 	// It is built inside the wizard factory (where cfgMgr/secure are available)
 	// and read by the WithIPFSDownload option below — mirror of uploadHandler.
@@ -141,7 +142,7 @@ For more help on any command: pinner <command> --help`,
 	// handler: it writes a host-side file/directory/archive into the encrypted
 	// vault. It is built inside the wizard factory (where the vault service is
 	// available) and read by the WithLocalPathVaultPut option below.
-	var localPathVaultPut mcpadapter.LocalPathVaultPutHandler
+	var localPathVaultPut mcpvault.LocalPathVaultPutHandler
 	// Build the `mcp` command. It must be captured (not appended inline) so the
 	// `pinner mcp install` golden-path subcommand can be attached to its
 	// Commands below: NewMcpInstallCommand lives in internal/cli and cannot be
@@ -362,7 +363,7 @@ For more help on any command: pinner <command> --help`,
 			// localPathVaultPut is the vault_put_file path-mode handler (SDIO/local
 			// mode). It writes a host-side file/directory/archive into the
 			// encrypted vault: a directory is walked into one vault object
-			// per file via mcpadapter.DirToVault; a file is written as a
+			// per file via mcpvault.DirToVault; a file is written as a
 			// single vault object, except in archive_mode=convert where an
 			// archive is extracted to a temp dir and then written per-file
 			// the same way. The vault service is built here, where profile
@@ -389,7 +390,7 @@ For more help on any command: pinner <command> --help`,
 					return vaultSvc.Put(ctx, r, size, vp, nil)
 				}
 				if info.IsDir() {
-					return mcpadapter.DirToVault(ctx, path, vaultPath, put, maxBytes)
+					return mcpvault.DirToVault(ctx, path, vaultPath, put, maxBytes)
 				}
 				// Regular file (or unknown). In convert mode, sniff for an
 				// archive and materialize its contents to a temp dir, then
@@ -419,7 +420,7 @@ For more help on any command: pinner <command> --help`,
 						if err := materializeArchive(ctx, path, tmp); err != nil {
 							return nil, err
 						}
-						return mcpadapter.DirToVault(ctx, tmp, vaultPath, put, maxBytes)
+						return mcpvault.DirToVault(ctx, tmp, vaultPath, put, maxBytes)
 					}
 				}
 				// Not an archive (or preserve mode): put the file as a single
