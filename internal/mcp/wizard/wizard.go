@@ -866,26 +866,10 @@ func buildSetupSteps(deps SetupWizardDeps) []session.StepDef {
 				if !in.Choice.Valid() {
 					return "", fmt.Errorf("invalid config choice: %s", in.Choice)
 				}
-				switch in.Choice {
-				case ConfigChoiceDefaults:
-					if err := deps.CfgMgr.SetBaseEndpoint(""); err != nil {
-						return "", fmt.Errorf("failed to reset endpoint: %w", err)
-					}
-					if err := deps.CfgMgr.SetSecure(true); err != nil {
-						return "", fmt.Errorf("failed to set secure: %w", err)
-					}
-				case ConfigChoiceSkip:
-					// Skip: preserve existing configuration.
-				case ConfigChoiceCustom:
-					if in.Endpoint == "" {
-						return "", fmt.Errorf("endpoint is required for custom_endpoint choice")
-					}
-					if err := deps.CfgMgr.SetBaseEndpoint(in.Endpoint); err != nil {
-						return "", fmt.Errorf("failed to set endpoint: %w", err)
-					}
-					if err := deps.CfgMgr.SetSecure(in.Secure); err != nil {
-						return "", fmt.Errorf("failed to set secure: %w", err)
-					}
+				// The choice -> persistent CLI config write is shared (see
+				// config_fields.go): the same keys the CLI config path uses.
+				if err := applySetupConfig(deps.CfgMgr, in); err != nil {
+					return "", err
 				}
 				return "", nil
 			},

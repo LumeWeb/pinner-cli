@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"sync"
 
-	"go.lumeweb.com/pinner-cli/internal/cli/wizard"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner-cli/internal/fieldform"
 	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
 )
 
@@ -30,13 +30,13 @@ type TunnelProviderSpec struct {
 	// runtime-tunnel driven).
 	NewTunnel func(cfg tunnel.TunnelConfig) (tunnel.Tunnel, error)
 	// Fields returns the provider's promptable install fields (IDs, domains,
-	// credentials) as wizard.Field views, so the tunnel-config step resolves
+	// credentials) as fieldform.Field views, so the tunnel-config step resolves
 	// them with the shared field-resolution primitive (switch > existing
 	// decision > headless env fold) instead of the provider hand-rolling
 	// prompts. The step uses Fields+Finalize when set, and falls back to
 	// Configurer (legacy) otherwise, so providers migrate one at a time.
 	// Nil means the provider has no promptable fields.
-	Fields func(s *ServiceInstallState) []wizard.Field[*ServiceInstallState, string]
+	Fields func(s *ServiceInstallState) []fieldform.Field[*ServiceInstallState, string]
 	// Finalize runs after the step gathers the provider's fields: it does the
 	// side-effects that are not field-shaped — provider-derived values (e.g. an
 	// ngrok public URL resolved from the account API), last-resort credential
@@ -44,13 +44,13 @@ type TunnelProviderSpec struct {
 	// auth token, being shared across every public tunnel, is gatherable as a
 	// field by the step itself (not provider-specific). Used only when Fields is
 	// set.
-	Finalize func(ctx context.Context, p wizard.Prompter, s *ServiceInstallState, cfgMgr config.Manager) error
+	Finalize func(ctx context.Context, p fieldform.Prompter, s *ServiceInstallState, cfgMgr config.Manager) error
 	// Configurer (legacy) collects the provider's install-time tunnel config,
-	// prompting through the shared wizard.Prompter channel and persisting to
+	// prompting through the shared fieldform.Prompter channel and persisting to
 	// cfgMgr. Kept for providers not yet migrated to Fields+Finalize; the step
 	// falls back to it when Fields is nil. New/migrated providers use Fields +
 	// Finalize instead.
-	Configurer func(ctx context.Context, p wizard.Prompter, s *ServiceInstallState, cfgMgr config.Manager) error
+	Configurer func(ctx context.Context, p fieldform.Prompter, s *ServiceInstallState, cfgMgr config.Manager) error
 	// ConfigSeeded reports whether the install state already carries every
 	// value this provider's install flow would collect (the Fields + Finalize
 	// requirements, plus the shared auth token the tunnel-config step

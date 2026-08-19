@@ -1,4 +1,4 @@
-package wizard
+package fieldform
 
 import "context"
 

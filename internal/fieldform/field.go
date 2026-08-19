@@ -1,4 +1,4 @@
-package wizard
+package fieldform
 
 import (
 	"context"
@@ -127,6 +127,17 @@ type Field[S any, T any] struct {
 	// that is never stale).
 	ReDerives bool
 
+	// Required marks the field as mandatory in a form: FormSchema lists it in the
+	// object's Required array (which the MCP side keys its elicitation on).
+	// Default false = optional (an all-optional form auto-advances).
+	Required bool
+
+	// DefaultVal is the field-declared fallback default (from Meta.Default). It
+	// is applied at precedence 4 — after flag, decision, and env — so an
+	// operator value or persisted config always wins. It folds into Operational
+	// only (never Decided); nil = no default.
+	DefaultVal *T
+
 	// Derived supplies the field's Operational value from the provider's own
 	// derivation (loaded cloudflare provisioned state, an ngrok URL resolved
 	// from the account API, a "pinner-mcp" TunnelName default, a resolved
@@ -186,6 +197,10 @@ const (
 	srcDecided
 	// srcEnv is a value folded from the persisted env file.
 	srcEnv
+	// srcDefault is a field-declared fallback default (Meta.Default). It folds
+	// into Operational only, never Decided, and runs after env so a persisted
+	// value always wins over the default.
+	srcDefault
 	// srcPrompt is an interactive prompt (or selection) just answered.
 	srcPrompt
 )
@@ -222,11 +237,11 @@ func (f *Field[S, T]) settle(oc *fieldOutcome[T], s S, v T, src srcKind, headles
 		f.SetOperational(s, v)
 		oc.decided = true
 		oc.operative = true
-	case srcDerived, srcEnv:
-		// Derived and env values fold into Operational only, never Decided.
-		// They settle the field only on a headless run (reuse); on interactive
-		// they prefill the prompt and stay un-operative so Gather re-prompts
-		// with the value as the editable default.
+	case srcDerived, srcEnv, srcDefault:
+		// Derived, env, and default values fold into Operational only, never
+		// Decided. They settle the field only on a headless run (reuse); on
+		// interactive they prefill the prompt and stay un-operative so Gather
+		// re-prompts with the value as the editable default.
 		f.SetOperational(s, v)
 		if src == srcEnv {
 			oc.usedSource = "env file"
@@ -340,6 +355,17 @@ func resolveField[S any, T any](src ValueSource, s S, f *Field[S, T], headless b
 			if v, parsed := f.Parse(raw); parsed && f.settle(&oc, s, v, srcEnv, headless) {
 				return oc, nil
 			}
+		}
+	}
+
+	// -- precedence 4: field-declared fallback default ---------------------
+	// Applies only when no flag, decision, or env value resolved the field, so
+	// an operator value or persisted config always beats the default. Folds
+	// into Operational only (never Decided), settling headless and prefilling
+	// the interactive prompt.
+	if f.DefaultVal != nil && f.Decided(s) == nil {
+		if f.settle(&oc, s, *f.DefaultVal, srcDefault, headless) {
+			return oc, nil
 		}
 	}
 

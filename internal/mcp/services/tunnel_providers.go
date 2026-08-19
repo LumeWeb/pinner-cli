@@ -3,7 +3,7 @@ package services
 import (
 	"fmt"
 
-	"go.lumeweb.com/pinner-cli/internal/cli/wizard"
+	"go.lumeweb.com/pinner-cli/internal/fieldform"
 	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
 )
 
@@ -72,7 +72,7 @@ func init() {
 		// + ApiKey) with no provider-derived value, so it gathers declaratively
 		// instead of hand-rolling prompts. cloudflared/ngrok still use the
 		// legacy Configurer until their derived values are migrated.
-		Fields:   func(_ *ServiceInstallState) []wizard.Field[*ServiceInstallState, string] { return openAIFields() },
+		Fields:   func(_ *ServiceInstallState) []fieldform.Field[*ServiceInstallState, string] { return openAIFields() },
 		Finalize: openAIFinalize,
 		ConfigSeeded: func(s *ServiceInstallState) bool {
 			// openAIFields gathers TunnelID + ApiKey and VALIDATES the tunnel ID

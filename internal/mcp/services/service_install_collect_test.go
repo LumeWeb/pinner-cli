@@ -14,13 +14,13 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
 
-	"go.lumeweb.com/pinner-cli/internal/cli/wizard"
+	"go.lumeweb.com/pinner-cli/internal/fieldform"
 	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
 	"go.lumeweb.com/pinner-cli/internal/service"
 )
 
-// testPrompter is a wizard.Prompter stub for configurer tests. The configurers
-// run with wizard.NonInteractive=true, so any prompt they reach must fail with
+// testPrompter is a fieldform.Prompter stub for configurer tests. The configurers
+// run with fieldform.NonInteractive=true, so any prompt they reach must fail with
 // an "interactive" error (mirroring the production pterm prompter under
 // non-interactive mode) rather than blocking on a real TTY. Tests that expect a
 // value to resolve from config/env without prompting therefore get a pass, while
@@ -155,7 +155,7 @@ func TestServiceInstallStepsPromptsThroughChannel(t *testing.T) {
 	steps := ServiceInstallSteps(state, cmd, envFile, nil)
 
 	p := &recordingPrompter{provider: string(tunnel.TunnelProviderNgrok) + " - ngrok (free and easiest)"}
-	ctx := wizard.WithPrompter(context.Background(), p)
+	ctx := fieldform.WithPrompter(context.Background(), p)
 
 	// Execute ONLY the tunnel provider step (steps[0]) so the test is hermetic:
 	// the token/config steps (which resolve the public URL, hitting the ngrok
@@ -193,9 +193,9 @@ func TestTunnelConfigStepSkipsNgrokTokenPromptWhenConfigured(t *testing.T) {
 	state := &ServiceInstallState{EnvFile: envFile, Provider: tunnel.TunnelProviderNgrok, TunnelName: "test", AuthToken: "test-auth", PublicURL: "https://you.ngrok-free.dev"}
 	steps := ServiceInstallSteps(state, cmd, envFile, nil)
 
-	prior := wizard.NonInteractive
-	wizard.NonInteractive = true
-	defer func() { wizard.NonInteractive = prior }()
+	prior := fieldform.NonInteractive
+	fieldform.NonInteractive = true
+	defer func() { fieldform.NonInteractive = prior }()
 
 	require.NoError(t, steps[1].Execute(context.Background(), state),
 		"tunnel-config step must not prompt for a token the ngrok config file already provides")
@@ -216,9 +216,9 @@ func TestTunnelConfigStepStillPromptsNgrokTokenWithoutConfig(t *testing.T) {
 	state := &ServiceInstallState{EnvFile: envFile, Provider: tunnel.TunnelProviderNgrok, TunnelName: "test"}
 	steps := ServiceInstallSteps(state, cmd, envFile, nil)
 
-	prior := wizard.NonInteractive
-	wizard.NonInteractive = true
-	defer func() { wizard.NonInteractive = prior }()
+	prior := fieldform.NonInteractive
+	fieldform.NonInteractive = true
+	defer func() { fieldform.NonInteractive = prior }()
 
 	require.Error(t, steps[1].Execute(context.Background(), state),
 		"without any existing ngrok credential the step must require an interactive prompt")
@@ -416,9 +416,9 @@ func TestCloudflaredConfigurerResolvesNameWithoutHostname(t *testing.T) {
 	defer func() { tunnel.TunnelStatePath = orig }()
 
 	state := &ServiceInstallState{Provider: tunnel.TunnelProviderCloudflared, Domain: "mcp.example.com"}
-	prior := wizard.NonInteractive
-	wizard.NonInteractive = true
-	defer func() { wizard.NonInteractive = prior }()
+	prior := fieldform.NonInteractive
+	fieldform.NonInteractive = true
+	defer func() { fieldform.NonInteractive = prior }()
 
 	require.NoError(t, cloudflaredConfigurer(context.Background(), testPrompter{}, state, nil),
 		"tunnel name must resolve from the provisioned state without prompting")
@@ -444,9 +444,9 @@ func TestNgrokConfigurerResolvesPublicURLFromAPI(t *testing.T) {
 		NgrokAPIKey: "ngrok_key",
 		AuthToken:   "auth",
 	}
-	prior := wizard.NonInteractive
-	wizard.NonInteractive = true
-	defer func() { wizard.NonInteractive = prior }()
+	prior := fieldform.NonInteractive
+	fieldform.NonInteractive = true
+	defer func() { fieldform.NonInteractive = prior }()
 
 	require.NoError(t, ngrokConfigurer(context.Background(), testPrompter{}, state, nil),
 		"ngrok configurer must resolve the URL from the API without prompting")
@@ -477,9 +477,9 @@ func TestNgrokConfigurerHonorsOperatorDomain(t *testing.T) {
 		AuthToken:   "auth",
 		Domain:      "my-app.ngrok.app", // operator's explicit --domain
 	}
-	prior := wizard.NonInteractive
-	wizard.NonInteractive = true
-	defer func() { wizard.NonInteractive = prior }()
+	prior := fieldform.NonInteractive
+	fieldform.NonInteractive = true
+	defer func() { fieldform.NonInteractive = prior }()
 
 	require.NoError(t, ngrokConfigurer(context.Background(), testPrompter{}, state, nil))
 	require.Equal(t, "https://my-app.ngrok.app", state.PublicURL,
@@ -506,9 +506,9 @@ func TestNgrokConfigurerResolvesURLFromAuthtoken(t *testing.T) {
 		AuthToken:   "auth",
 		// No NgrokAPIKey, no NGROK_API_KEY env -> authtoken fallback must fire.
 	}
-	prior := wizard.NonInteractive
-	wizard.NonInteractive = true
-	defer func() { wizard.NonInteractive = prior }()
+	prior := fieldform.NonInteractive
+	fieldform.NonInteractive = true
+	defer func() { fieldform.NonInteractive = prior }()
 
 	require.NoError(t, ngrokConfigurer(context.Background(), testPrompter{}, state, nil))
 	require.Equal(t, "https://you.ngrok-free.dev", state.PublicURL,
@@ -532,9 +532,9 @@ func TestNgrokConfigurerRejectsEphemeralAuthtokenURL(t *testing.T) {
 		TunnelToken: "tun-token",
 		AuthToken:   "auth",
 	}
-	prior := wizard.NonInteractive
-	wizard.NonInteractive = true
-	defer func() { wizard.NonInteractive = prior }()
+	prior := fieldform.NonInteractive
+	fieldform.NonInteractive = true
+	defer func() { fieldform.NonInteractive = prior }()
 
 	err := ngrokConfigurer(context.Background(), testPrompter{}, state, nil)
 	require.Error(t, err,
@@ -586,9 +586,9 @@ func TestNgrokConfigurerPromptsForURLWithoutAPIKey(t *testing.T) {
 		AuthToken:   "auth",
 		// No NgrokAPIKey, no NGROK_API_KEY env -> must prompt for the URL.
 	}
-	prior := wizard.NonInteractive
-	wizard.NonInteractive = true
-	defer func() { wizard.NonInteractive = prior }()
+	prior := fieldform.NonInteractive
+	fieldform.NonInteractive = true
+	defer func() { fieldform.NonInteractive = prior }()
 
 	err := ngrokConfigurer(context.Background(), testPrompter{}, state, nil)
 	require.Error(t, err,
@@ -614,9 +614,9 @@ func TestFlattenedNgrokWritesPublicURL(t *testing.T) {
 
 	// Non-interactive so the URL-resolution API path (which needs no prompt) is
 	// the only path exercised; the API key is supplied via the seeded state.
-	prior := wizard.NonInteractive
-	wizard.NonInteractive = true
-	defer func() { wizard.NonInteractive = prior }()
+	prior := fieldform.NonInteractive
+	fieldform.NonInteractive = true
+	defer func() { fieldform.NonInteractive = prior }()
 
 	state := &ServiceInstallState{
 		EnvFile:     envFile,
@@ -680,9 +680,9 @@ func TestFlattenedNgrokCollectorHandoff(t *testing.T) {
 	envFile, err := ResolveServiceEnvFile(realCmd)
 	require.NoError(t, err)
 
-	prior := wizard.NonInteractive
-	wizard.NonInteractive = true
-	defer func() { wizard.NonInteractive = prior }()
+	prior := fieldform.NonInteractive
+	fieldform.NonInteractive = true
+	defer func() { fieldform.NonInteractive = prior }()
 
 	// Phase 1: the flattened sub-steps (what w.tunnelConfigurer runs).
 	state := &ServiceInstallState{

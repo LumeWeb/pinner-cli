@@ -9,7 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
-	"go.lumeweb.com/pinner-cli/internal/cli/wizard"
+	"go.lumeweb.com/pinner-cli/internal/fieldform"
 	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
 	"go.lumeweb.com/pinner-cli/internal/service"
 )
@@ -300,9 +300,9 @@ func TestValidateHeadlessDoesNotSpawnBrowser(t *testing.T) {
 
 	// Force the interactive global off so the interactive-path assertion below
 	// is deterministic regardless of any other test's global mutation.
-	oldNonInteractive := wizard.NonInteractive
-	defer func() { wizard.NonInteractive = oldNonInteractive }()
-	wizard.NonInteractive = false
+	oldNonInteractive := fieldform.NonInteractive
+	defer func() { fieldform.NonInteractive = oldNonInteractive }()
+	fieldform.NonInteractive = false
 
 	opened := false
 	origOpener := tunnel.TunnelDeepLinkOpener
@@ -465,9 +465,9 @@ func TestServiceInstallStateToEnvWritesPort(t *testing.T) {
 
 func TestServiceInstallWizardNonInteractiveErrors(t *testing.T) {
 	// In non-interactive mode (e.g. --agent), the wizard must not block on stdin.
-	old := wizard.NonInteractive
-	wizard.NonInteractive = true
-	defer func() { wizard.NonInteractive = old }()
+	old := fieldform.NonInteractive
+	fieldform.NonInteractive = true
+	defer func() { fieldform.NonInteractive = old }()
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "mcp.env")

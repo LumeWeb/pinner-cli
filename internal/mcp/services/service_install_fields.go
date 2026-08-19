@@ -3,233 +3,170 @@ package services
 import (
 	"strings"
 
+	"github.com/invopop/jsonschema"
 	"github.com/urfave/cli/v3"
-	"go.lumeweb.com/pinner-cli/internal/cli/wizard"
+	"go.lumeweb.com/pinner-cli/internal/fieldform"
 	"go.lumeweb.com/pinner-cli/internal/service"
 )
 
-// The MCP service-install fields are declared declaratively as wizard.Field so
-// the tunnel-config step resolves each one with the framework's single
-// precedence and provenance model (switch > existing decision > headless env
-// fold) instead of imperative `if s.X == "" || !wizard.NonInteractive`
-// prompts.
+// The MCP service-install fields are declared declaratively through the shared
+// fieldform functional constructors (Str). Each field is one self-contained
+// declaration wiring the two-channel provenance model:
 //
-// Two-channel provenance per field (see wizard/field.go):
-//
-//	Decided     — an operator decision this run (CLI switch or prompt). A
-//	              missing entry means "not decided this run", even when the
-//	              flat Operational field holds a value folded from the env
-//	              file. Survives a provider switch and serializes verbatim.
-//	Operational — the current working value (env-folded or provider-derived).
-//	              Not an operator decision. Cleared on a provider switch for
-//	              ReDerives fields (the new provider re-derives them).
+//	Decided     — an operator decision this run (CLI switch or prompt), kept in
+//	              ServiceInstallState.decisions keyed by the field's Name. A
+//	              missing entry means "not decided this run", distinct from the
+//	              flat Operational field below.
+//	Operational — the current working value (env-folded or provider-derived),
+//	              held in the flat public fields. Cleared on provider switch for
+//	              ReDerives fields.
 //
 // The flat public fields on ServiceInstallState (TunnelID, Domain, ...) carry
-// the Operational channel; the private decisions map carries the Decided
-// channel.
+// the Operational channel; the private decisions map (keyed by Name) carries the
+// Decided channel. The old tunnelFieldKey enum + seven parallel switch/map
+// tables are replaced by one ordered registry (installFieldByNameKey built from
+// fieldform.Str); adding a field is one entry.
+//
+// decisions channel: a single fieldform.Decided binding over the name-keyed map,
+// reused by every Str field so env-fold stays undecided while a switched or
+// prompted value is decided.
 
-// tunnelFieldKey enumerates the tunnel install fields.
-type tunnelFieldKey int
+// ---- Two-channel accessors on the state ----
 
-const (
-	fieldTunnelID tunnelFieldKey = iota
-	fieldApiKey
-	fieldDomain
-	fieldTunnelName
-	fieldAuthToken
-	fieldTunnelToken
-	fieldNgrokAPIKey
-	fieldPublicURL
-	fieldHost
-)
-
-// tunnelFields is the ordered list of all install fields.
-var tunnelFields = []tunnelFieldKey{
-	fieldTunnelID,
-	fieldApiKey,
-	fieldDomain,
-	fieldTunnelName,
-	fieldAuthToken,
-	fieldTunnelToken,
-	fieldNgrokAPIKey,
-	fieldPublicURL,
-	fieldHost,
-}
-
-// operational reads the flat Operational value for a field.
-func (s *ServiceInstallState) operational(k tunnelFieldKey) string {
-	switch k {
-	case fieldTunnelID:
-		return s.TunnelID
-	case fieldApiKey:
-		return s.ApiKey
-	case fieldDomain:
-		return s.Domain
-	case fieldTunnelName:
-		return s.TunnelName
-	case fieldAuthToken:
-		return s.AuthToken
-	case fieldTunnelToken:
-		return s.TunnelToken
-	case fieldNgrokAPIKey:
-		return s.NgrokAPIKey
-	case fieldPublicURL:
-		return s.PublicURL
-	case fieldHost:
-		return s.Host
-	}
-	return ""
-}
-
-// setOperational writes the flat Operational value for a field. It does not
-// affect the Decided channel.
-func (s *ServiceInstallState) setOperational(k tunnelFieldKey, v string) {
-	switch k {
-	case fieldTunnelID:
-		s.TunnelID = v
-	case fieldApiKey:
-		s.ApiKey = v
-	case fieldDomain:
-		s.Domain = v
-	case fieldTunnelName:
-		s.TunnelName = v
-	case fieldAuthToken:
-		s.AuthToken = v
-	case fieldTunnelToken:
-		s.TunnelToken = v
-	case fieldNgrokAPIKey:
-		s.NgrokAPIKey = v
-	case fieldPublicURL:
-		s.PublicURL = v
-	case fieldHost:
-		s.Host = v
-	}
-}
-
-// decided reads the Decided pointer for a field (nil = not decided this run).
-func (s *ServiceInstallState) decided(k tunnelFieldKey) *string {
+// decidedFor reads the Decided pointer for a field by name (nil = not decided).
+func (s *ServiceInstallState) decidedFor(name string) *string {
 	if s == nil || s.decisions == nil {
 		return nil
 	}
-	return s.decisions[k]
+	return s.decisions[name]
 }
 
-// commitDecided records an operator decision value for a field in both
-// channels (the flat Operational value and the Decided map).
-func (s *ServiceInstallState) commitDecided(k tunnelFieldKey, v string) {
+// commitDecided records an operator decision for a named field in both channels:
+// the Decided map, and (via the registry's field Setter) the Operational value.
+func (s *ServiceInstallState) commitDecided(name, v string) {
 	if s == nil {
 		return
 	}
 	if s.decisions == nil {
-		s.decisions = make(map[tunnelFieldKey]*string)
+		s.decisions = make(map[string]*string)
 	}
 	copied := v
-	s.decisions[k] = &copied
-	s.setOperational(k, v)
+	s.decisions[name] = &copied
+	if f := installFieldByNameKey[name]; f != nil {
+		f.SetOperational(s, v)
+	}
 }
 
-// unmarkDecided drops a field's decision (used when a value should no longer
-// be treated as an operator decision, e.g. on a provider switch).
-func (s *ServiceInstallState) unmarkDecided(k tunnelFieldKey) {
+// unmarkDecided drops a field's decision (value stays; used on provider switch).
+func (s *ServiceInstallState) unmarkDecided(name string) {
 	if s == nil || s.decisions == nil {
 		return
 	}
-	delete(s.decisions, k)
+	delete(s.decisions, name)
 }
 
-// reDerives reports whether a field is re-derived by the provider on a switch
-// (its Operational value is stale after switching providers).
-func reDerives(k tunnelFieldKey) bool {
-	switch k {
-	case fieldPublicURL, fieldTunnelToken:
-		return true
+// decisionsBinding is the shared Decided channel for all install fields: a
+// name-keyed map on the state. Write records only the decision map; the field's
+// Str Commit applies the value write via its own Setter.
+var decisionsBinding = fieldform.Decided[*ServiceInstallState, string]{
+	Read:  func(s *ServiceInstallState, name string) *string { return s.decidedFor(name) },
+	Write: func(s *ServiceInstallState, name, v string) { s.decidedFor(name); s.commitDecidedMap(name, v) },
+}
+
+// commitDecidedMap records only the Decided map entry (no value write) — used by
+// the Str Commit path, which applies the value write through the field Setter.
+func (s *ServiceInstallState) commitDecidedMap(name, v string) {
+	if s == nil {
+		return
 	}
-	return false
+	if s.decisions == nil {
+		s.decisions = make(map[string]*string)
+	}
+	copied := v
+	s.decisions[name] = &copied
 }
 
-// envKey returns the persisted env-file key a field folds from ("" = not
-// persisted). NgrokAPIKey is config-time only and is never persisted.
-func envKey(k tunnelFieldKey) string {
-	switch k {
-	case fieldTunnelID:
-		return "MCP_TUNNEL_ID"
-	case fieldApiKey:
-		return "CONTROL_PLANE_API_KEY"
-	case fieldDomain:
-		return "MCP_DOMAIN"
-	case fieldTunnelName:
-		return "MCP_TUNNEL_NAME"
-	case fieldAuthToken:
-		return "MCP_AUTH_TOKEN"
-	case fieldTunnelToken:
-		return "MCP_TUNNEL_TOKEN"
-	case fieldPublicURL:
-		return "MCP_PUBLIC_URL"
-	case fieldHost:
-		return "MCP_HOST"
+// ---- The ordered field registry ----
+
+// installField is the per-field functional factory: the caller declares only the
+// typed Operational accessors (get/set), the Name, and the declarative Meta;
+// fieldform.Str derives Parse, Decide (via decisionsBinding), Commit, Prompt and
+// the JSON-schema entry. It returns the already-erased AnyField.
+func installField(get func(*ServiceInstallState) string, set func(*ServiceInstallState, string), name, flag, envKey string, reDerives bool) fieldform.AnyField[*ServiceInstallState] {
+	return fieldform.Str(decisionsBinding, name, get, set, fieldform.Meta{
+		Flag: flag, EnvFileKey: envKey, ReDerives: reDerives,
+	})
+}
+
+// installFieldEntries is the single source of truth: the ordered, declarative
+// field set. Adding a field is one installField call here.
+func installFieldEntries() []fieldform.AnyField[*ServiceInstallState] {
+	return []fieldform.AnyField[*ServiceInstallState]{
+		installField(func(s *ServiceInstallState) string { return s.TunnelID }, func(s *ServiceInstallState, v string) { s.TunnelID = v }, "TunnelID", serviceTunnelIDFlag, "MCP_TUNNEL_ID", false),
+		installField(func(s *ServiceInstallState) string { return s.ApiKey }, func(s *ServiceInstallState, v string) { s.ApiKey = v }, "ApiKey", serviceApiKeyFlag, "CONTROL_PLANE_API_KEY", false),
+		installField(func(s *ServiceInstallState) string { return s.Domain }, func(s *ServiceInstallState, v string) { s.Domain = v }, "Domain", serviceDomainFlag, "MCP_DOMAIN", false),
+		installField(func(s *ServiceInstallState) string { return s.TunnelName }, func(s *ServiceInstallState, v string) { s.TunnelName = v }, "TunnelName", serviceTunnelNameFlag, "MCP_TUNNEL_NAME", false),
+		installField(func(s *ServiceInstallState) string { return s.AuthToken }, func(s *ServiceInstallState, v string) { s.AuthToken = v }, "AuthToken", serviceAuthTokenFlag, "MCP_AUTH_TOKEN", false),
+		installField(func(s *ServiceInstallState) string { return s.TunnelToken }, func(s *ServiceInstallState, v string) { s.TunnelToken = v }, "TunnelToken", serviceTunnelTokenFlag, "MCP_TUNNEL_TOKEN", true),
+		installField(func(s *ServiceInstallState) string { return s.NgrokAPIKey }, func(s *ServiceInstallState, v string) { s.NgrokAPIKey = v }, "NgrokAPIKey", serviceNgrokAPIKeyFlag, "", false),
+		installField(func(s *ServiceInstallState) string { return s.PublicURL }, func(s *ServiceInstallState, v string) { s.PublicURL = v }, "PublicURL", servicePublicURLFlag, "MCP_PUBLIC_URL", true),
+		installField(func(s *ServiceInstallState) string { return s.Host }, func(s *ServiceInstallState, v string) { s.Host = v }, "Host", serviceHostFlag, "MCP_HOST", false),
+	}
+}
+
+// installFieldByNameKey resolves the typed *Field for a named install field via
+// the exported AnyField.Declared() path. nil for an unknown name.
+var installFieldByNameKey = func() map[string]*fieldform.Field[*ServiceInstallState, string] {
+	m := make(map[string]*fieldform.Field[*ServiceInstallState, string], len(installFieldEntries()))
+	for _, anyf := range installFieldEntries() {
+		if f, ok := anyf.Declared().(*fieldform.Field[*ServiceInstallState, string]); ok {
+			m[anyf.FieldName()] = f
+		}
+	}
+	return m
+}()
+
+// installFieldByName returns the typed *Field for a named install field
+// (used by configurers that attach a provider-specific Prompt/Validate). Returns
+// nil for an unknown name.
+func installFieldByName(name string) *fieldform.Field[*ServiceInstallState, string] {
+	return installFieldByNameKey[name]
+}
+
+// installFieldValue reads a named field's Operational value directly from the
+// state (delegating to the field's Get), for code that must check a value
+// without running a full resolve.
+func installFieldValue(name string, s *ServiceInstallState) string {
+	if f := installFieldByName(name); f != nil && s != nil {
+		return f.Operational(s)
 	}
 	return ""
 }
 
-// tunnelFieldFlag maps a field to its CLI switch ("" = no switch). NgrokAPIKey
-// is only reachable via --ngrok-api-key.
-var tunnelFieldFlag = map[tunnelFieldKey]string{
-	fieldTunnelID:    serviceTunnelIDFlag,
-	fieldApiKey:      serviceApiKeyFlag,
-	fieldDomain:      serviceDomainFlag,
-	fieldTunnelName:  serviceTunnelNameFlag,
-	fieldAuthToken:   serviceAuthTokenFlag,
-	fieldTunnelToken: serviceTunnelTokenFlag,
-	fieldNgrokAPIKey: serviceNgrokAPIKeyFlag,
-	fieldPublicURL:   servicePublicURLFlag,
-	fieldHost:        serviceHostFlag,
+// installFormFields is the full, heterogeneous form field set for the MCP
+// input_required form: the nine string-valued install fields PLUS the tri-state
+// OAuth (*bool) and Port (*int) decisions. The pointer-typed Bool/Int
+// constructors preserve the exact tri-state semantics the serializer relies on:
+// nil = not decided this run, &false / &0 = a legitimate explicit decision that
+// is persisted verbatim (see serviceInstallStateToEnv). FormSchema over this set
+// emits the same keys an interactive CLI gather would prompt for.
+func installFormFields() []fieldform.AnyField[*ServiceInstallState] {
+	oauth := fieldform.Bool[*ServiceInstallState]("OAuth",
+		func(s *ServiceInstallState) *bool { return s.OAuth },
+		func(s *ServiceInstallState, v bool) { s.OAuth = &v },
+		fieldform.Meta{Flag: serviceOAuthFlag, EnvFileKey: "MCP_OAUTH"})
+	port := fieldform.Int[*ServiceInstallState]("Port",
+		func(s *ServiceInstallState) *int { return s.Port },
+		func(s *ServiceInstallState, v int) { s.Port = &v },
+		fieldform.Meta{Flag: servicePortFlag, EnvFileKey: "MCP_PORT"})
+	return append(installFieldEntries(), oauth, port)
 }
 
-// fieldName returns a stable, human-readable name for a field.
-func fieldName(k tunnelFieldKey) string {
-	switch k {
-	case fieldTunnelID:
-		return "TunnelID"
-	case fieldApiKey:
-		return "ApiKey"
-	case fieldDomain:
-		return "Domain"
-	case fieldTunnelName:
-		return "TunnelName"
-	case fieldAuthToken:
-		return "AuthToken"
-	case fieldTunnelToken:
-		return "TunnelToken"
-	case fieldNgrokAPIKey:
-		return "NgrokAPIKey"
-	case fieldPublicURL:
-		return "PublicURL"
-	case fieldHost:
-		return "Host"
-	}
-	return ""
-}
-
-// tunnelInstallField builds the framework Field view for one tunnel install
-// state field, wiring each accessor to the two-channel state so Gather can
-// resolve it declaratively. Prompt/Options/Validate are intentionally omitted
-// here; callers attach a provider-specific Prompt and Validate per field as
-// needed.
-func tunnelInstallField(k tunnelFieldKey) *wizard.Field[*ServiceInstallState, string] {
-	f := &wizard.Field[*ServiceInstallState, string]{
-		Name:           fieldName(k),
-		Flag:           tunnelFieldFlag[k],
-		ReDerives:      reDerives(k),
-		Parse:          func(raw string) (string, bool) { return raw, true },
-		Decided:        func(s *ServiceInstallState) *string { return s.decided(k) },
-		Commit:         func(s *ServiceInstallState, v string) { s.commitDecided(k, v) },
-		Operational:    func(s *ServiceInstallState) string { return s.operational(k) },
-		SetOperational: func(s *ServiceInstallState, v string) { s.setOperational(k, v) },
-	}
-	if ek := envKey(k); ek != "" {
-		f.EnvFileKey = ek
-	}
-	return f
+// installFormSchema returns the JSON schema for the MCP input_required form over
+// installFormFields — the same shared emitter the CLI gather path drives, from
+// one field declaration set.
+func installFormSchema() *jsonschema.Schema {
+	return fieldform.FormSchema(installFormFields())
 }
 
 // ClearReDerivedForProvider clears every ReDerives field's Operational value
@@ -241,22 +178,22 @@ func (s *ServiceInstallState) ClearReDerivedForProvider() bool {
 		return false
 	}
 	cleared := false
-	for _, k := range tunnelFields {
-		if !reDerives(k) {
+	for _, f := range installFieldByNameKey {
+		if !f.ReDerives {
 			continue
 		}
-		if s.operational(k) != "" {
-			s.setOperational(k, "")
+		if f.Operational(s) != "" {
+			f.SetOperational(s, "")
 			cleared = true
 		}
-		s.unmarkDecided(k)
+		s.unmarkDecided(f.Name)
 	}
 	return cleared
 }
 
 // serviceInstallValueSource adapts the host's CLI flags and persisted env file
-// to the wizard.ValueSource interface so wizard.Gather can fold both into the
-// two-channel state. A nil envFile (or empty env) yields no env fold.
+// to the fieldform.ValueSource interface so fieldform.GatherAny can fold both
+// into the two-channel state. A nil envFile (or empty env) yields no env fold.
 type serviceInstallValueSource struct {
 	envFile string
 	flags   func(name string) (string, bool)
@@ -287,7 +224,7 @@ func (v *serviceInstallValueSource) EnvFile(key string) (string, bool) {
 // serviceInstallFlags adapts the host's urfave/cli command into the
 // serviceInstallValueSource Flag accessor: a flag is present when it was
 // explicitly set OR its (possibly process-env-sourced) value is non-empty. A
-// present flag is an operator decision for wizard.Gather precedence 1.
+// present flag is an operator decision for fieldform.GatherAny precedence 1.
 func serviceInstallFlags(cmd *cli.Command) func(name string) (string, bool) {
 	return func(name string) (string, bool) {
 		if cmd == nil {
@@ -301,10 +238,9 @@ func serviceInstallFlags(cmd *cli.Command) func(name string) (string, bool) {
 	}
 }
 
-// newServiceInstallValueSource builds the install flow's wizard.ValueSource
+// newServiceInstallValueSource builds the install flow's fieldform.ValueSource
 // from the host command (its flags, incl. process-env Sources) and the persisted
-// env file. Gather resolves each field's Flag against the command and its
-// EnvFileKey against the env file.
+// env file.
 func newServiceInstallValueSource(cmd *cli.Command, envFile string) *serviceInstallValueSource {
 	return &serviceInstallValueSource{
 		envFile: envFile,

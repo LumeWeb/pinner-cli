@@ -13,7 +13,7 @@ func TestEmbeddedOpenAITunnelValidatesConfiguration(t *testing.T) {
 	// The invalid-config paths call openTunnelDeepLink to open the OpenAI
 	// setup pages in a browser. Stub the opener so test execution never
 	// spawns a real browser (a non-hermetic side effect that can hang CI),
-	// regardless of the global wizard.NonInteractive setting.
+	// regardless of the global fieldform.NonInteractive setting.
 	origOpener := tunnel.TunnelDeepLinkOpener
 	defer func() { tunnel.TunnelDeepLinkOpener = origOpener }()
 	tunnel.TunnelDeepLinkOpener = func(string) error { return nil }
