@@ -13,6 +13,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcp/auth"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/download"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
 
@@ -403,8 +404,8 @@ func buildPinListServer(t *testing.T) *mcp.Server {
 	})
 
 	srv := sdk.NewServer(nil)
-	if err := RegisterPinListApp(srv, catalog); err != nil {
-		t.Fatalf("RegisterPinListApp: %v", err)
+	if err := download.RegisterPinListApp(srv, catalog); err != nil {
+		t.Fatalf("download.RegisterPinListApp: %v", err)
 	}
 	if err := RegisterOfficialCuratedTools(srv, catalog); err != nil {
 		t.Fatalf("RegisterOfficialCuratedTools: %v", err)
@@ -427,7 +428,7 @@ func TestRegisterPinListAppWire(t *testing.T) {
 	}
 	var found bool
 	for _, r := range res.Resources {
-		if r.URI == PinListAppURI {
+		if r.URI == download.PinListAppURI {
 			found = true
 			if r.MIMEType != apps.RESOURCE_MIME_TYPE {
 				t.Fatalf("resource MIME = %q, want %q", r.MIMEType, apps.RESOURCE_MIME_TYPE)
@@ -448,8 +449,8 @@ func TestRegisterPinListAppWire(t *testing.T) {
 			if x.Meta == nil {
 				t.Fatalf("pins_list has no _meta after registering the pin list app")
 			}
-			if x.Meta["ui/resourceUri"] != PinListAppURI {
-				t.Fatalf("pins_list missing _meta.ui/resourceUri=%q; got %#v", PinListAppURI, x.Meta)
+			if x.Meta["ui/resourceUri"] != download.PinListAppURI {
+				t.Fatalf("pins_list missing _meta.ui/resourceUri=%q; got %#v", download.PinListAppURI, x.Meta)
 			}
 			return
 		}

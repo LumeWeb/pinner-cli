@@ -13,6 +13,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/auth"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/download"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 	"go.lumeweb.com/pinner-cli/internal/mcp/upload"
 )
@@ -223,7 +224,7 @@ func registerCustomTools(deps customToolDeps) error {
 	// the account's pins and their status. The view only reads via the
 	// existing pins_list catalog tool and registers no helper. Must run before
 	// the curated registration loop reads _meta.ui, like the other apps.
-	if err := RegisterPinListApp(deps.srv, deps.catalog); err != nil {
+	if err := download.RegisterPinListApp(deps.srv, deps.catalog); err != nil {
 		return fmt.Errorf("failed to register pin list app: %w", err)
 	}
 
@@ -309,7 +310,7 @@ func registerCustomTools(deps customToolDeps) error {
 		// sink=drop) is meaningful on every transport, so it is always paired
 		// when the tool is registered.
 		deps.catalog.Add(model.ToolEntryFromDescriptor(dlDesc))
-		if err := RegisterIPFSDownloadApp(deps.srv, deps.catalog); err != nil {
+		if err := download.RegisterIPFSDownloadApp(deps.srv, deps.catalog); err != nil {
 			return err
 		}
 		// Copy the app-view _meta (registered above onto the catalog entry)
@@ -328,7 +329,7 @@ func registerCustomTools(deps customToolDeps) error {
 		downloadRoot := transfer.ResolveDownloadRoot(opts.downloadRoot)
 		dlDesc := NewVaultGetFileDescriptor(opts.vaultGet, deps.downloadDrop, downloadRoot, ieo.EffectiveRelayMaxBytes(opts.maxRelayBytes), deps.tunnelOpenAI)
 		deps.catalog.Add(model.ToolEntryFromDescriptor(dlDesc))
-		if err := RegisterVaultDownloadApp(deps.srv, deps.catalog); err != nil {
+		if err := download.RegisterVaultDownloadApp(deps.srv, deps.catalog); err != nil {
 			return err
 		}
 		copyCatalogMetaToDescriptor(&dlDesc, deps.catalog, "vault_get_file")
