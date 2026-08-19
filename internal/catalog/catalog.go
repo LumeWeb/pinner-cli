@@ -165,6 +165,11 @@ func validateOperation(op Operation) error {
 	return nil
 }
 
+// intPtr returns a pointer to v. It is the boxed form a nullable-int
+// (ArgTypeNullableInt) arg carries so a Handler can distinguish an omitted
+// arg (nil) from an explicit value including 0.
+func intPtr(v int) *int { return &v }
+
 // validateDefault checks that a non-empty string Default parses for its ArgType.
 func validateDefault(a OperationArg) error {
 	switch a.Type {
@@ -172,7 +177,7 @@ func validateDefault(a OperationArg) error {
 		if a.Default != "true" && a.Default != "false" {
 			return fmt.Errorf("invalid bool default %q", a.Default)
 		}
-	case ArgTypeInt:
+	case ArgTypeInt, ArgTypeNullableInt:
 		if _, err := strconv.Atoi(a.Default); err != nil {
 			return fmt.Errorf("invalid int default %q: %w", a.Default, err)
 		}
@@ -660,6 +665,55 @@ func resolveArg(a OperationArg, raw any, present bool) (value any, st argState, 
 			return nil, stateInvalid, fmt.Errorf("integer %d out of range for this platform", i64)
 		}
 		return int(i64), stateFilled, nil
+	case ArgTypeNullableInt:
+		// Like ArgTypeInt but the Handler receives a *int, so it can
+		// distinguish an omitted arg (nil) from an explicit 0. The CLI
+		// surfaces absent as nil and provided as *int; an MCP/Go caller's
+		// int arrives as float64/int64/etc. and is coerced to *int.
+		switch n := raw.(type) {
+		case *int:
+			return n, stateFilled, nil
+		case *int64:
+			return intPtr(int(*n)), stateFilled, nil
+		case int:
+			return intPtr(n), stateFilled, nil
+		case int64:
+			return intPtr(int(n)), stateFilled, nil
+		case int32:
+			return intPtr(int(n)), stateFilled, nil
+		case uint64:
+			if n > math.MaxInt64 {
+				return nil, stateInvalid, fmt.Errorf("integer %v out of range", n)
+			}
+			i := int64(n)
+			if int64(int(i)) != i {
+				return nil, stateInvalid, fmt.Errorf("integer %d out of range for this platform", i)
+			}
+			return intPtr(int(i)), stateFilled, nil
+		case json.Number:
+			i, err := n.Int64()
+			if err != nil {
+				return nil, stateInvalid, fmt.Errorf("expected integer, got %v", n)
+			}
+			if int64(int(i)) != i {
+				return nil, stateInvalid, fmt.Errorf("integer %d out of range for this platform", i)
+			}
+			return intPtr(int(i)), stateFilled, nil
+		case float64:
+			if n != math.Trunc(n) {
+				return nil, stateInvalid, fmt.Errorf("expected integer, got %v", n)
+			}
+			if n < math.MinInt64 || n >= math.MaxInt64 {
+				return nil, stateInvalid, fmt.Errorf("integer %v out of range", n)
+			}
+			i := int64(n)
+			if int64(int(i)) != i {
+				return nil, stateInvalid, fmt.Errorf("integer %d out of range for this platform", i)
+			}
+			return intPtr(int(i)), stateFilled, nil
+		default:
+			return nil, stateInvalid, fmt.Errorf("expected int, got %T", raw)
+		}
 	case ArgTypeFloat:
 		// CLI gives float64; MCP JSON decode gives float64; a Go caller may
 		// pass any numeric type. Widen every accepted shape to float64.
@@ -770,6 +824,10 @@ func zeroShape(t ArgType) any {
 		// A nil *bool is the "omitted" state: the Handler can distinguish it
 		// from an explicit false, which is the whole point of a nullable bool.
 		return (*bool)(nil)
+	case ArgTypeNullableInt:
+		// A nil *int is the "omitted" state; an explicit value (including 0)
+		// is a non-nil *int. Same tri-state rationale as a nullable bool.
+		return (*int)(nil)
 	case ArgTypeDuration:
 		return time.Duration(0)
 	default:
@@ -1014,6 +1072,11 @@ func selectorMemberSelected(a OperationArg, value any) bool {
 		// selected member. nil / false / omitted are all "not selected".
 		p, _ := value.(*bool)
 		return p != nil && *p
+	case ArgTypeNullableInt:
+		// Any explicit value (including 0) counts as selected; only the nil/absent
+		// state is "not selected". An int of 0 is still an explicit choice.
+		p, _ := value.(*int)
+		return p != nil
 	case ArgTypeStringSlice:
 		s, _ := value.([]string)
 		return len(s) > 0
@@ -1048,6 +1111,9 @@ func defaultValue(a OperationArg) any {
 	case ArgTypeInt:
 		n, _ := strconv.Atoi(a.Default)
 		return n
+	case ArgTypeNullableInt:
+		n, _ := strconv.Atoi(a.Default)
+		return intPtr(n)
 	case ArgTypeFloat:
 		f, _ := strconv.ParseFloat(a.Default, 64)
 		return f
@@ -1266,6 +1332,11 @@ func jsonType(t ArgType) any {
 		return "boolean"
 	case ArgTypeNullableBool:
 		return []string{"boolean", "null"}
+	case ArgTypeNullableInt:
+		// Same tri-state rationale as a nullable bool: the schema admits an
+		// explicit integer or JSON null (the "omitted" state survives as null,
+		// mirroring the *int shape the Handler receives).
+		return []string{"integer", "null"}
 	case ArgTypeInt:
 		return "integer"
 	case ArgTypeFloat:

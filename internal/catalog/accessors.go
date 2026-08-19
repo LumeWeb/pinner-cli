@@ -102,6 +102,22 @@ func BoolArgPtr(input map[string]any, key string) *bool {
 	return nil
 }
 
+// IntArgPtr reads a nullable-int (ArgTypeNullableInt) argument as a *int,
+// preserving the three states: nil when omitted or null, and a non-nil *int for
+// explicit values (including 0). Handlers use it when omission is meaningful
+// (e.g. "use the op default" on create, like an MX priority that defaults to 10
+// when --priority is not supplied). It also tolerates a plain int that skipped
+// the nullable coercion, for callers that build input directly.
+func IntArgPtr(input map[string]any, key string) *int {
+	if v, ok := input[key].(*int); ok {
+		return v
+	}
+	if n, ok := input[key].(int); ok {
+		return &n
+	}
+	return nil
+}
+
 // StrSliceArg reads a []string slice arg from input (values may arrive as []any,
 // e.g. after JSON decoding). Returns nil when absent or of an unexpected type.
 func StrSliceArg(input map[string]any, key string) []string {

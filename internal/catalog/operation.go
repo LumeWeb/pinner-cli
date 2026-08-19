@@ -57,6 +57,14 @@ const (
 	// preserves the absent state, which operations need when omission means
 	// "leave unchanged" or "use the backend default" rather than "false".
 	ArgTypeNullableBool
+	// ArgTypeNullableInt is a tri-state integer argument: its value may be
+	// absent (nil) or an explicit *int, and the Handler receives a *int so it
+	// can distinguish "omitted" from "explicitly 0". Unlike ArgTypeInt — whose
+	// absence is collapsed to 0 by normalizeInputDefaults — a nullable int
+	// preserves the absent state, which operations need when omission means
+	// "use the backend/op default" rather than "set 0" (e.g. an MX priority
+	// that defaults to 10 when omitted).
+	ArgTypeNullableInt
 	// ArgTypeInt is an integer argument.
 	ArgTypeInt
 	// ArgTypeFloat is a floating-point argument.

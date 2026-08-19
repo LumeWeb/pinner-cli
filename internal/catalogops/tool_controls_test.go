@@ -2,6 +2,7 @@ package catalogops
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -468,6 +469,213 @@ func TestDNSRecordsCreateInvokeAcceptsLowercase(t *testing.T) {
 	})
 }
 
+// TestDNSRecordsCreateNormalizesMXContent guards that a bare MX exchange host
+// (no priority) is given the default priority before it reaches the service, so
+// `--type MX --content mail.example.com` does not fail on the backend's
+// required-priority validation. An explicit --priority flag wins over any
+// priority embedded in the content; an explicit priority in the content is
+// preserved when no flag is given.
+func TestDNSRecordsCreateNormalizesMXContent(t *testing.T) {
+	tests := []struct {
+		name     string
+		content  string
+		priority any // nil = flag not provided
+		want     string
+	}{
+		{"bare host gets default priority", "mail.example.com", nil, "10 mail.example.com"},
+		{"explicit priority preserved", "10 mail.example.com", nil, "10 mail.example.com"},
+		{"non-default priority preserved", "20 mail.example.com", nil, "20 mail.example.com"},
+		{"flag overrides embedded priority", "10 mail.example.com", 30, "30 mail.example.com"},
+		{"flag applies to bare host", "mail.example.com", 25, "25 mail.example.com"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got ipfs.RecordRequest
+			mock := &mockDNSServiceForOps{
+				createRecordFunc: func(_ context.Context, _ string, record ipfs.RecordRequest) (*ipfs.RecordResponse, error) {
+					got = record
+					return &ipfs.RecordResponse{ZoneId: 1, Name: record.Name, Type: record.Type, Content: record.Content}, nil
+				},
+			}
+			deps := DNSDeps{
+				CfgMgr: func() config.Manager { return configmocks.NewMockManager(t) },
+				ServiceFactory: func(_ config.Manager, _ bool, _ ...dns.Option) dns.Service {
+					return mock
+				},
+			}
+			var op catalog.Operation
+			for _, o := range DNSOperations(deps) {
+				if o.Name() == "dns_records_create" {
+					op = o
+					break
+				}
+			}
+			if op == nil {
+				t.Fatal("dns_records_create operation not found")
+			}
+			input := map[string]any{"zone": "123", "type": "MX", "content": tt.content}
+			if tt.priority != nil {
+				input["priority"] = tt.priority
+			}
+			if _, err := op.Handler().Execute(context.Background(), input); err != nil {
+				t.Fatalf("create handler: %v", err)
+			}
+			if got.Content != tt.want {
+				t.Errorf("RecordRequest.Content = %q, want %q", got.Content, tt.want)
+			}
+		})
+	}
+}
+
+// TestDNSRecordsCreateInvokeDefaultMXPriority drives create through the full
+// Catalog.Invoke dispatch (which runs normalizeInputDefaults) and guards the
+// actual absence semantics: when --priority is omitted, normalizeInputDefaults
+// fills the optional int arg with its sentinel default (-1) rather than 0, and
+// the handler must treat that as "not provided" and fall through to
+// DefaultMXPriority. A bare MX host must therefore reach the service as
+// "10 host", never "0 host".
+func TestDNSRecordsCreateInvokeDefaultMXPriority(t *testing.T) {
+	mkDeps := func(mock *mockDNSServiceForOps) DNSDeps {
+		return DNSDeps{
+			CfgMgr: func() config.Manager { return configmocks.NewMockManager(t) },
+			ServiceFactory: func(_ config.Manager, _ bool, _ ...dns.Option) dns.Service {
+				return mock
+			},
+		}
+	}
+
+	invoke := func(t *testing.T, input map[string]any) (string, error) {
+		t.Helper()
+		var got string
+		mock := &mockDNSServiceForOps{
+			createRecordFunc: func(_ context.Context, _ string, record ipfs.RecordRequest) (*ipfs.RecordResponse, error) {
+				got = record.Content
+				return &ipfs.RecordResponse{ZoneId: 1, Name: record.Name, Type: record.Type, Content: record.Content}, nil
+			},
+		}
+		cat := catalog.NewCatalog()
+		for _, o := range DNSOperations(mkDeps(mock)) {
+			if err := cat.Add(o); err != nil {
+				t.Fatalf("Add(%q): %v", o.Name(), err)
+			}
+		}
+		_, err := cat.Invoke(context.Background(), "dns_records_create", input, catalog.ActorModel)
+		return got, err
+	}
+
+	t.Run("omitted priority defaults MX host to 10", func(t *testing.T) {
+		got, err := invoke(t, map[string]any{"zone": "123", "type": "MX", "content": "mail.example.com"})
+		if err != nil {
+			t.Fatalf("invoke: %v", err)
+		}
+		if got != "10 mail.example.com" {
+			t.Errorf("omitted --priority -> %q, want %q (DefaultMXPriority must apply, not 0)", got, "10 mail.example.com")
+		}
+	})
+
+	t.Run("explicit priority is honored", func(t *testing.T) {
+		got, err := invoke(t, map[string]any{"zone": "123", "type": "MX", "content": "mail.example.com", "priority": 20})
+		if err != nil {
+			t.Fatalf("invoke: %v", err)
+		}
+		if got != "20 mail.example.com" {
+			t.Errorf("--priority 20 -> %q, want %q", got, "20 mail.example.com")
+		}
+	})
+
+	t.Run("explicit priority 0 is honored", func(t *testing.T) {
+		got, err := invoke(t, map[string]any{"zone": "123", "type": "MX", "content": "mail.example.com", "priority": 0})
+		if err != nil {
+			t.Fatalf("invoke: %v", err)
+		}
+		if got != "0 mail.example.com" {
+			t.Errorf("--priority 0 -> %q, want %q", got, "0 mail.example.com")
+		}
+	})
+}
+
+// TestDNSRecordsCreateRejectsInvalidMXPriority guards that an out-of-range or
+// malformed --priority value is rejected client-side instead of reaching the
+// backend. Integer ranges are enforced in the handler (this direct-handler
+// invocation), including -1, which must be rejected when explicitly supplied
+// rather than silently defaulted; non-exact-integer numerics (fractional
+// floats) are rejected at the catalog resolveArg stage before dispatch sees
+// them, so they are covered by the Catalog.Invoke-level test below.
+func TestDNSRecordsCreateRejectsInvalidMXPriority(t *testing.T) {
+	for _, prio := range []any{-1, 65536, 70000} {
+		t.Run(fmt.Sprintf("priority-%v", prio), func(t *testing.T) {
+			var called bool
+			mock := &mockDNSServiceForOps{
+				createRecordFunc: func(_ context.Context, _ string, _ ipfs.RecordRequest) (*ipfs.RecordResponse, error) {
+					called = true
+					return nil, nil
+				},
+			}
+			deps := DNSDeps{
+				CfgMgr: func() config.Manager { return configmocks.NewMockManager(t) },
+				ServiceFactory: func(_ config.Manager, _ bool, _ ...dns.Option) dns.Service {
+					return mock
+				},
+			}
+			var op catalog.Operation
+			for _, o := range DNSOperations(deps) {
+				if o.Name() == "dns_records_create" {
+					op = o
+					break
+				}
+			}
+			if op == nil {
+				t.Fatal("dns_records_create operation not found")
+			}
+			input := map[string]any{"zone": "123", "type": "MX", "content": "mail.example.com", "priority": prio}
+			_, err := op.Handler().Execute(context.Background(), input)
+			if err == nil {
+				t.Fatalf("expected error for priority %v, got nil", prio)
+			}
+			if called {
+				t.Fatalf("handler reached the DNS service for invalid priority %v", prio)
+			}
+			if !strings.Contains(err.Error(), "65535") {
+				t.Errorf("error %q should mention the valid range", err.Error())
+			}
+		})
+	}
+}
+
+// TestDNSRecordsCreateInvokeRejectsMalformedMXPriority drives create through
+// Catalog.Invoke and guards that non-integer / fractional --priority values are
+// rejected at the nullable-int resolveArg stage before dispatch, so they never
+// reach the handler or the DNS service.
+func TestDNSRecordsCreateInvokeRejectsMalformedMXPriority(t *testing.T) {
+	mkDeps := func() DNSDeps {
+		return DNSDeps{
+			CfgMgr: func() config.Manager { return configmocks.NewMockManager(t) },
+			ServiceFactory: func(_ config.Manager, _ bool, _ ...dns.Option) dns.Service {
+				return &mockDNSServiceForOps{
+					createRecordFunc: func(_ context.Context, _ string, _ ipfs.RecordRequest) (*ipfs.RecordResponse, error) {
+						t.Fatal("DNS service must not be reached for malformed priority")
+						return nil, nil
+					},
+				}
+			},
+		}
+	}
+	c := catalog.NewCatalog()
+	for _, o := range DNSOperations(mkDeps()) {
+		if err := c.Add(o); err != nil {
+			t.Fatalf("Add(%q): %v", o.Name(), err)
+		}
+	}
+	for _, prio := range []any{1.5, -0.5, 65535.9, "20"} {
+		t.Run(fmt.Sprintf("priority-%v", prio), func(t *testing.T) {
+			input := map[string]any{"zone": "123", "type": "MX", "content": "mail.example.com", "priority": prio}
+			if _, err := c.Invoke(context.Background(), "dns_records_create", input, catalog.ActorModel); err == nil {
+				t.Fatalf("Catalog.Invoke must reject malformed priority %v, got nil error", prio)
+			}
+		})
+	}
+}
+
 // TestDNSRecordSelectorsNormalizeType guards that get/update/delete also
 // upper-case the type before hitting the server (same case-sensitivity +
 // unmarshal-bomb path as create).
@@ -568,10 +776,10 @@ func TestDNSRecordsDeleteConfirmRequired(t *testing.T) {
 // see a search that would be silently ignored.
 func TestServerSideListOpsExposeSearch(t *testing.T) {
 	listOps := map[string][]catalog.Operation{
-		"api_keys_list":    APIKeysOperations(APIKeysDeps{}),
-		"operations_list":  OperationsOperations(OperationsDeps{}),
-		"ipns_keys_list":   IPNSOperations(IPNSDeps{}),
-		"pins_list":        PinsOperations(PinsDeps{}),
+		"api_keys_list":   APIKeysOperations(APIKeysDeps{}),
+		"operations_list": OperationsOperations(OperationsDeps{}),
+		"ipns_keys_list":  IPNSOperations(IPNSDeps{}),
+		"pins_list":       PinsOperations(PinsDeps{}),
 	}
 	for name, ops := range listOps {
 		var op catalog.Operation
