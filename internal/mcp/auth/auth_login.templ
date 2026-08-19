@@ -1,8 +1,6 @@
 package auth
 
-import (
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
-)
+import "go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 
 // authLoginPageData carries the fields needed to render the out-of-band login
 // page for a pending request.
@@ -13,7 +11,6 @@ type authLoginPageData struct {
 	OTPStage  bool
 	Error     string
 }
-
 
 templ authLoginPage(data authLoginPageData) {
 	@handoff.BrandLayout("Sign in to Pinner") {

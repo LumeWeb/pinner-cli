@@ -1,8 +1,6 @@
 package auth
 
-import (
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
-)
+import "go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 
 // Out-of-band account credential change pages, rendered with the shared Pinner
 // brand identity (brandLayout + brand.css) so they match the sign-in, vault,
@@ -12,7 +10,6 @@ import (
 // enters their current + new password here; the POST runs the authenticated
 // UpdatePassword host-side so the passwords never transit the MCP/LLM channel.
 // csrf is a per-token secret required back on POST (double-submit CSRF).
-
 templ accountPasswordPage(token, csrf, action string) {
 	@handoff.BrandLayout("Change Pinner account password") {
 		<div class="brand-card">
