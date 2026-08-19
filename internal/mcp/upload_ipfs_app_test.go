@@ -15,6 +15,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
+	"go.lumeweb.com/pinner-cli/internal/mcp/upload"
 )
 
 // buildIPFSUploadAppServer constructs the catalog + server the way the adapter
@@ -46,8 +47,8 @@ func buildIPFSUploadAppServer(t *testing.T) (*mcp.Server, *transfer.Upload) {
 		},
 	}
 	catalog.Add(model.ToolEntryFromDescriptor(uploadFileDesc))
-	if err := RegisterIPFSUploadApp(srv, catalog, cu); err != nil {
-		t.Fatalf("RegisterIPFSUploadApp: %v", err)
+	if err := upload.RegisterIPFSUploadApp(srv, catalog, cu); err != nil {
+		t.Fatalf("upload.RegisterIPFSUploadApp: %v", err)
 	}
 	// Production copies the app-view _meta from the catalog entry onto the
 	// descriptor served directly so the direct tools/list surface sees it.
@@ -79,7 +80,7 @@ func TestRegisterIPFSUploadAppWire(t *testing.T) {
 	}
 	var foundRes bool
 	for _, r := range res.Resources {
-		if r.URI == IPFSUploadAppURI {
+		if r.URI == upload.IPFSUploadAppURI {
 			foundRes = true
 		}
 	}
@@ -109,8 +110,8 @@ func TestRegisterIPFSUploadAppWire(t *testing.T) {
 	if !ok {
 		t.Fatalf("_meta.ui missing on upload_file: %T", upTool.Meta["ui"])
 	}
-	if got := ui["resourceUri"]; got != IPFSUploadAppURI {
-		t.Fatalf("_meta.ui.resourceUri = %#v, want %q", got, IPFSUploadAppURI)
+	if got := ui["resourceUri"]; got != upload.IPFSUploadAppURI {
+		t.Fatalf("_meta.ui.resourceUri = %#v, want %q", got, upload.IPFSUploadAppURI)
 	}
 
 	if mintTool == nil || pollTool == nil {
@@ -249,8 +250,8 @@ func TestIPFSUploadPollHelper(t *testing.T) {
 func TestRegisterIPFSUploadAppNilCoordinator(t *testing.T) {
 	srv := sdk.NewServer(nil)
 	catalog := NewToolCatalog()
-	if err := RegisterIPFSUploadApp(srv, catalog, nil); err == nil {
-		t.Fatalf("RegisterIPFSUploadApp with nil coordinator must fail")
+	if err := upload.RegisterIPFSUploadApp(srv, catalog, nil); err == nil {
+		t.Fatalf("upload.RegisterIPFSUploadApp with nil coordinator must fail")
 	}
 }
 

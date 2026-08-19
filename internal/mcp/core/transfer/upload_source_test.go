@@ -1,4 +1,4 @@
-package mcp
+package transfer_test
 
 import (
 	"context"

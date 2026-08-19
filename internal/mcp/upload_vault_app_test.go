@@ -15,6 +15,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
+	"go.lumeweb.com/pinner-cli/internal/mcp/upload"
 )
 
 // fakeVaultPutHandler is a controllable VaultPutHandler for app tests.
@@ -58,8 +59,8 @@ func buildVaultUploadAppServerEx(t *testing.T, fake *fakeVaultPutHandler) (*mcp.
 
 	vaultPutDesc := NewVaultPutFileDescriptor(false, false, nil, vu, fake.Put, nil, 0)
 	catalog.Add(model.ToolEntryFromDescriptor(vaultPutDesc))
-	if err := RegisterVaultUploadApp(srv, catalog, vu); err != nil {
-		t.Fatalf("RegisterVaultUploadApp: %v", err)
+	if err := upload.RegisterVaultUploadApp(srv, catalog, vu); err != nil {
+		t.Fatalf("upload.RegisterVaultUploadApp: %v", err)
 	}
 	// Production copies the app-view _meta from the catalog entry onto the
 	// descriptor served directly so the direct tools/list surface sees it.
@@ -92,7 +93,7 @@ func TestRegisterVaultUploadAppWire(t *testing.T) {
 	}
 	var foundRes bool
 	for _, r := range res.Resources {
-		if r.URI == VaultUploadAppURI {
+		if r.URI == upload.VaultUploadAppURI {
 			foundRes = true
 		}
 	}
@@ -120,8 +121,8 @@ func TestRegisterVaultUploadAppWire(t *testing.T) {
 	if !ok {
 		t.Fatalf("_meta.ui missing on vault_put_file: %T", putTool.Meta["ui"])
 	}
-	if got := ui["resourceUri"]; got != VaultUploadAppURI {
-		t.Fatalf("_meta.ui.resourceUri = %#v, want %q", got, VaultUploadAppURI)
+	if got := ui["resourceUri"]; got != upload.VaultUploadAppURI {
+		t.Fatalf("_meta.ui.resourceUri = %#v, want %q", got, upload.VaultUploadAppURI)
 	}
 
 	if submitTool == nil {
@@ -340,8 +341,8 @@ func TestRegisterVaultUploadAppNilCoordinator(t *testing.T) {
 	srv := sdk.NewServer(nil)
 	catalog := NewToolCatalog()
 	catalog.Add(&model.ToolEntry{Name: "vault_put_file", DirectVisible: true})
-	if err := RegisterVaultUploadApp(srv, catalog, nil); err == nil {
-		t.Fatalf("RegisterVaultUploadApp with nil coordinator must fail")
+	if err := upload.RegisterVaultUploadApp(srv, catalog, nil); err == nil {
+		t.Fatalf("upload.RegisterVaultUploadApp with nil coordinator must fail")
 	}
 }
 

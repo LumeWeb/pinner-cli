@@ -14,6 +14,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
+	"go.lumeweb.com/pinner-cli/internal/mcp/upload"
 )
 
 // customToolDeps bundles everything the custom/direct-tool registration needs.
@@ -270,7 +271,7 @@ func registerCustomTools(deps customToolDeps) error {
 		// indexed in the catalog before its view attaches _meta.ui.
 		if deps.vaultUpload != nil {
 			deps.catalog.Add(model.ToolEntryFromDescriptor(vaultPutDesc))
-			if err := RegisterVaultUploadApp(deps.srv, deps.catalog, deps.vaultUpload); err != nil {
+			if err := upload.RegisterVaultUploadApp(deps.srv, deps.catalog, deps.vaultUpload); err != nil {
 				return err
 			}
 			// Copy the app-view _meta (registered above onto the catalog entry)
@@ -285,7 +286,7 @@ func registerCustomTools(deps customToolDeps) error {
 		}
 	}
 	if opts.relayURLUpload != nil {
-		if err := RegisterOfficialDescriptor(deps.srv, RelayURLUploadDescriptor(opts.relayURLUpload, opts.relayAllowedHosts, opts.maxRelayBytes)); err != nil {
+		if err := RegisterOfficialDescriptor(deps.srv, upload.RelayURLUploadDescriptor(opts.relayURLUpload, opts.relayAllowedHosts, opts.maxRelayBytes)); err != nil {
 			return err
 		}
 	}
@@ -372,7 +373,7 @@ func registerCustomTools(deps customToolDeps) error {
 		// --tunnel openai) or when no mint URL could be produced.
 		if deps.curlUpload != nil {
 			deps.catalog.Add(model.ToolEntryFromDescriptor(uploadFileDesc))
-			if err := RegisterIPFSUploadApp(deps.srv, deps.catalog, deps.curlUpload); err != nil {
+			if err := upload.RegisterIPFSUploadApp(deps.srv, deps.catalog, deps.curlUpload); err != nil {
 				return err
 			}
 			// Copy the app-view _meta (registered above onto the catalog entry)
@@ -388,7 +389,7 @@ func registerCustomTools(deps customToolDeps) error {
 		}
 	}
 	if opts.uploadTasks != nil {
-		for _, desc := range NewAsyncUploadTools(opts.uploadTasks) {
+		for _, desc := range upload.NewAsyncUploadTools(opts.uploadTasks) {
 			if err := RegisterOfficialDescriptor(deps.srv, desc); err != nil {
 				return err
 			}
