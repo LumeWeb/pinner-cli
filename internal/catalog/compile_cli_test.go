@@ -207,6 +207,54 @@ func TestCLICompilerRejectsForceArgOnDestructive(t *testing.T) {
 	}
 }
 
+// TestCLICompilerPositionalOnlyNoFlag asserts an arg marked PositionalOnly
+// (its value is supplied by the command's positional argument) is NOT emitted
+// as a urfave --flag, while a sibling non-positional arg still is. This is the
+// mechanism that removes the redundant `--zone string` flag from the DNS
+// zone/record ops, which already expose <domain> positionally.
+func TestCLICompilerPositionalOnlyNoFlag(t *testing.T) {
+	c := NewCatalog()
+	if err := c.Add(NewOperation(OperationSpec{
+		Name: "dns.records.create", Title: "Create", Summary: "create a record",
+		Description: "create a dns record", Category: "dns", Safety: SafetyMutate,
+		Interaction: InteractionAgentSafe, Visibility: VisibilityBoth,
+		Positional: "<domain>",
+		Args: []OperationArg{
+			{Name: "zone", Type: ArgTypeString, Required: true, PositionalOnly: true, Help: "Domain name or numeric zone ID"},
+			{Name: "name", Type: ArgTypeString, Help: "Record name (or @ for apex)"},
+			{Name: "type", Type: ArgTypeString, Required: true, Help: "Record type"},
+		},
+		Handler: markerHandler{marker: "ran:dns.records.create"},
+	})); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	cmds, err := NewCLICompiler().Compile(c)
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	if len(cmds) != 1 {
+		t.Fatalf("expected 1 command, got %d", len(cmds))
+	}
+	cmd := cmds[0]
+
+	// The PositionalOnly "zone" arg must appear in no flag; name and type must.
+	got := map[string]bool{}
+	for _, f := range cmd.Flags {
+		if n := f.Names(); len(n) > 0 {
+			got[n[0]] = true
+		}
+	}
+	for _, wantFlag := range []string{"name", "type"} {
+		if !got[wantFlag] {
+			t.Errorf("expected flag --%s to be emitted, got flags %v", wantFlag, got)
+		}
+	}
+	if got["zone"] {
+		t.Errorf("PositionalOnly arg 'zone' must NOT be emitted as a flag, got flags %v", got)
+	}
+}
+
 // buildCompileSample returns a catalog with a Read, Mutate, Destructive, and
 // HumanOnly operation. The mutate op ("vault_create") carries one flag of every
 // ArgType to exercise flag mapping.

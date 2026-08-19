@@ -97,6 +97,15 @@ type OperationArg struct {
 	// Empty means the arg is a plain flag with no env source. MCP and direct
 	// Invoke ignore Sources.
 	Sources []string
+	// PositionalOnly marks an arg whose value is supplied by the command's
+	// positional argument rather than a --flag (e.g. the DNS ops' "zone", which
+	// is also declared as Positional: "<domain>"). The CLI compiler skips
+	// emitting a urfave flag for it, eliminating the redundant `--zone string`
+	// entry next to `<domain>` in help. MCP and direct Invoke are unaffected:
+	// the arg still appears by name in the JSON-Schema and the handler's input
+	// map (the CLI wiring adapter fills it from the positional). No-op on args
+	// that have no Positional — they must never set it.
+	PositionalOnly bool
 }
 
 // Handler.Execute runs the business operation against core. It never touches

@@ -63,7 +63,10 @@ func TestValidateDNSRecordExtendedAndBase(t *testing.T) {
 		{"CAA", "0 issue letsencrypt.org"},
 		{"CAA", "0 issue"}, // RFC 8659 empty-value form: blocks all issuance
 		{"SOA", "ns1.example.com hostmaster.example.com 2024010101 7200 3600 1209600 3600"},
-		{"a", "1.2.3.4"}, // lowercase type is normalized
+		{"a", "1.2.3.4"}, // validator accepts lowercase (dispatch uppercases elsewhere)
+		// TXT values are chunked by the backend, so DKIM1/SPF-length values are valid.
+		{"TXT", string(make([]byte, 256))},
+		{"TXT", string(make([]byte, 1024))},
 	}
 	for _, tc := range valid {
 		if err := ValidateDNSRecord(tc.typ, tc.content); err != nil {
@@ -75,7 +78,7 @@ func TestValidateDNSRecordExtendedAndBase(t *testing.T) {
 		{"A", "not-an-ip"},
 		{"AAAA", "1.2.3.4"},
 		{"CNAME", "single"},
-		{"TXT", string(make([]byte, 256))},
+		{"TXT", string(make([]byte, 65536))}, // beyond the sanity cap
 		{"SRV", "10 60 5060"},
 		{"CAA", "issue"}, // missing flags
 		{"CAA", "0 bogustag example.com"},

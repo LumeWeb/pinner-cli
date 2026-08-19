@@ -945,6 +945,8 @@ func TestResolveArgStateMachine(t *testing.T) {
 		{"string filled", str, "x", true, stateFilled},
 		{"string wrong type", str, 1, true, stateInvalid},
 		{"enum in-range", enum, "MX", true, stateFilled},
+		{"enum in-range lowercase", enum, "mx", true, stateFilled},
+		{"enum in-range mixed case", enum, "TxT", true, stateFilled},
 		{"enum out-of-range", enum, "ZZZ", true, stateInvalid},
 		{"enum empty string", enum, "", true, stateEmpty},
 

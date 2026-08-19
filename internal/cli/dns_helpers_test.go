@@ -107,11 +107,15 @@ func TestValidateDNSRecord(t *testing.T) {
 		{"valid NS record", "NS", "ns1.example.com", false, ""},
 		{"valid NS trailing dot", "NS", "ns1.example.com.", false, ""},
 		{"valid TXT record", "TXT", "some text", false, ""},
-		{"TXT too long", "TXT", string(make([]byte, 256)), true, "too long"},
+		// TXT values are chunked by the backend (PowerDNS auto-splits RFC 1035
+		// 255-octet strings), so a DKIM1/SPF-length value is valid, not an error.
+		{"valid long TXT (DKIM1 length)", "TXT", string(make([]byte, 256)), false, ""},
+		{"valid 1KB TXT (SPF length)", "TXT", string(make([]byte, 1024)), false, ""},
+		{"TXT beyond sanity cap", "TXT", string(make([]byte, 65536)), true, "too long"},
 		{"unsupported type", "BOGUS", "whatever", true, "unsupported record type"},
 		{"valid SRV", "SRV", "10 60 5060 sip.example.com", false, ""},
 		{"malformed SRV", "SRV", "10 60 5060", true, "SRV record content"},
-		{"lowercase type", "a", "1.2.3.4", false, ""},
+		{"lowercase type accepted by validator", "a", "1.2.3.4", false, ""},
 	}
 
 	for _, tt := range tests {

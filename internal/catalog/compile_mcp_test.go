@@ -205,6 +205,61 @@ func TestMCPCompilerInputSchema(t *testing.T) {
 	}
 }
 
+// TestMCPCompilerPositionalOnlyStillInSchema asserts that a PositionalOnly arg
+// — which suppresses the arg's CLI --flag only — still appears in the MCP
+// JSON-Schema properties/required. MCP agents identify the zone by name, so the
+// suppression must never leak from the CLI surface onto the MCP surface.
+func TestMCPCompilerPositionalOnlyStillInSchema(t *testing.T) {
+	c := NewCatalog()
+	if err := c.Add(NewOperation(OperationSpec{
+		Name: "dns.records.create", Title: "Create", Summary: "create a record",
+		Description: "create a dns record", Category: "dns", Safety: SafetyMutate,
+		Interaction: InteractionAgentSafe, Visibility: VisibilityBoth,
+		Positional: "<domain>",
+		Args: []OperationArg{
+			{Name: "zone", Type: ArgTypeString, Required: true, PositionalOnly: true, Help: "Domain name or numeric zone ID"},
+			{Name: "type", Type: ArgTypeString, Required: true, Help: "Record type"},
+		},
+		Handler: &captureHandler{},
+	})); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	raw, err := NewMCPCompiler().Compile(c)
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	if len(raw) != 1 {
+		t.Fatalf("expected 1 tool, got %d", len(raw))
+	}
+	td := raw[0]
+
+	var sch map[string]any
+	if err := json.Unmarshal(td.InputSchema, &sch); err != nil {
+		t.Fatalf("InputSchema not valid JSON: %v", err)
+	}
+	props, ok := sch["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("schema properties missing: %#v", sch["properties"])
+	}
+	if _, ok := props["zone"]; !ok {
+		t.Errorf("PositionalOnly arg 'zone' must still appear in MCP schema properties, got %v", props)
+	}
+	req, ok := sch["required"].([]any)
+	if !ok {
+		t.Fatalf("schema required missing")
+	}
+	found := false
+	for _, r := range req {
+		if r == "zone" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("PositionalOnly arg 'zone' must still be required in MCP schema, got %v", req)
+	}
+}
+
 // TestMCPCompilerMetadataCarriesDeclaredProps asserts the descriptor carries the
 // declared Safety, Interaction, Visibility, and Category metadata — and that it
 // exposes NO executable handler, so dispatch cannot bypass the owning catalog's

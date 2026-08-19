@@ -228,9 +228,14 @@ func TestDNSRecordTypeEnum(t *testing.T) {
 }
 
 // mockDNSServiceForOps is a minimal dns.Service stub sufficient to exercise
-// the catalog DNS record handlers (zone resolution + update).
+// the catalog DNS record handlers (zone resolution + update + create).
 type mockDNSServiceForOps struct {
 	updateRecordFunc func(ctx context.Context, id, name, recordType string, record ipfs.RecordRequest) (*ipfs.RecordResponse, error)
+	createRecordFunc func(ctx context.Context, id string, record ipfs.RecordRequest) (*ipfs.RecordResponse, error)
+	// Optional capture cells for the record-type argument passed to get/delete,
+	// since those have no request payload to inspect.
+	getRecordType    *string
+	deleteRecordType *string
 }
 
 func (m *mockDNSServiceForOps) SetAuthToken(string)         {}
@@ -249,12 +254,18 @@ func (m *mockDNSServiceForOps) ValidateZone(ctx context.Context, id string) (*ip
 	return nil, nil
 }
 func (m *mockDNSServiceForOps) CreateRecord(ctx context.Context, id string, r ipfs.RecordRequest) (*ipfs.RecordResponse, error) {
+	if m.createRecordFunc != nil {
+		return m.createRecordFunc(ctx, id, r)
+	}
 	return nil, nil
 }
 func (m *mockDNSServiceForOps) ListRecords(ctx context.Context, id string) ([]ipfs.RecordResponse, error) {
 	return nil, nil
 }
 func (m *mockDNSServiceForOps) GetRecord(ctx context.Context, id, name, recordType string) (*ipfs.RecordResponse, error) {
+	if m.getRecordType != nil {
+		*m.getRecordType = recordType
+	}
 	return nil, nil
 }
 func (m *mockDNSServiceForOps) UpdateRecord(ctx context.Context, id, name, recordType string, record ipfs.RecordRequest) (*ipfs.RecordResponse, error) {
@@ -264,6 +275,9 @@ func (m *mockDNSServiceForOps) UpdateRecord(ctx context.Context, id, name, recor
 	return &ipfs.RecordResponse{ZoneId: 1, Name: name, Type: recordType, Content: record.Content}, nil
 }
 func (m *mockDNSServiceForOps) DeleteRecord(ctx context.Context, id, name, recordType string) error {
+	if m.deleteRecordType != nil {
+		*m.deleteRecordType = recordType
+	}
 	return nil
 }
 
@@ -347,6 +361,179 @@ func mapsCopy(m map[string]any) map[string]any {
 		out[k] = v
 	}
 	return out
+}
+
+// TestDNSRecordsCreateNormalizesType guards the root fix: the create handler
+// must upper-case --type before sending it to the server, so `--type txt`
+// produces RecordRequest.Type == "TXT" and never hits the server's case-sensitive
+// rejection (which surfaced as the opaque json-unmarshal bomb on the client).
+func TestDNSRecordsCreateNormalizesType(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"lowercase type is normalized before send", "txt", "TXT"},
+		{"already-uppercase is untouched", "TXT", "TXT"},
+		{"mixed case is normalized", "TxT", "TXT"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got ipfs.RecordRequest
+			mock := &mockDNSServiceForOps{
+				createRecordFunc: func(_ context.Context, _ string, record ipfs.RecordRequest) (*ipfs.RecordResponse, error) {
+					got = record
+					return &ipfs.RecordResponse{ZoneId: 1, Name: record.Name, Type: record.Type, Content: record.Content}, nil
+				},
+			}
+			deps := DNSDeps{
+				CfgMgr: func() config.Manager { return configmocks.NewMockManager(t) },
+				ServiceFactory: func(_ config.Manager, _ bool, _ ...dns.Option) dns.Service {
+					return mock
+				},
+			}
+			var op catalog.Operation
+			for _, o := range DNSOperations(deps) {
+				if o.Name() == "dns_records_create" {
+					op = o
+					break
+				}
+			}
+			if op == nil {
+				t.Fatal("dns_records_create operation not found")
+			}
+			input := map[string]any{"zone": "123", "type": tt.in, "content": "v=spf1 include:mxroute.com -all"}
+			if _, err := op.Handler().Execute(context.Background(), input); err != nil {
+				t.Fatalf("create handler: %v", err)
+			}
+			if got.Type != tt.want {
+				t.Errorf("RecordRequest.Type = %q, want %q", got.Type, tt.want)
+			}
+		})
+	}
+}
+
+// TestDNSRecordsCreateInvokeAcceptsLowercase routes a lowercase record type
+// through the full Catalog.Invoke dispatch (the MCP/agent path), not just the
+// handler. The enum gate in resolveArg previously rejected "txt" before the
+// handler could normalize; it is now case-insensitive, so a lowercase type
+// passes dispatch and the handler uppercases it before it reaches the service.
+func TestDNSRecordsCreateInvokeAcceptsLowercase(t *testing.T) {
+	var got ipfs.RecordRequest
+	mock := &mockDNSServiceForOps{
+		createRecordFunc: func(_ context.Context, _ string, record ipfs.RecordRequest) (*ipfs.RecordResponse, error) {
+			got = record
+			return &ipfs.RecordResponse{ZoneId: 1, Name: record.Name, Type: record.Type, Content: record.Content}, nil
+		},
+	}
+	deps := DNSDeps{
+		CfgMgr: func() config.Manager { return configmocks.NewMockManager(t) },
+		ServiceFactory: func(_ config.Manager, _ bool, _ ...dns.Option) dns.Service {
+			return mock
+		},
+	}
+
+	c := catalog.NewCatalog()
+	for _, o := range DNSOperations(deps) {
+		if err := c.Add(o); err != nil {
+			t.Fatalf("Add(%q): %v", o.Name(), err)
+		}
+	}
+
+	for _, tc := range []struct {
+		name string
+		in   string
+	}{
+		{"lowercase txt dispatches", "txt"},
+		{"mixed-case TxT dispatches", "TxT"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			input := map[string]any{"zone": "123", "type": tc.in, "content": "v=spf1 include:mxroute.com -all"}
+			if _, err := c.Invoke(context.Background(), "dns_records_create", input, catalog.ActorModel); err != nil {
+				t.Fatalf("Catalog.Invoke dns_records_create: %v", err)
+			}
+			if got.Type != "TXT" {
+				t.Errorf("after invoke, service received Type = %q, want TXT", got.Type)
+			}
+		})
+	}
+
+	// An out-of-range type is still rejected at the enum gate, even with the
+	// case-insensitive match.
+	t.Run("bogus type still rejected", func(t *testing.T) {
+		input := map[string]any{"zone": "123", "type": "ZZZ", "content": "x"}
+		if _, err := c.Invoke(context.Background(), "dns_records_create", input, catalog.ActorModel); err == nil {
+			t.Fatal("Catalog.Invoke with out-of-range type must be rejected")
+		}
+	})
+}
+
+// TestDNSRecordSelectorsNormalizeType guards that get/update/delete also
+// upper-case the type before hitting the server (same case-sensitivity +
+// unmarshal-bomb path as create).
+func TestDNSRecordSelectorsNormalizeType(t *testing.T) {
+	opFor := func(t *testing.T, deps DNSDeps, name string) catalog.Operation {
+		t.Helper()
+		for _, o := range DNSOperations(deps) {
+			if o.Name() == name {
+				return o
+			}
+		}
+		t.Fatalf("operation %q not found", name)
+		return nil
+	}
+	mkDeps := func(mock *mockDNSServiceForOps) DNSDeps {
+		return DNSDeps{
+			CfgMgr: func() config.Manager { return configmocks.NewMockManager(t) },
+			ServiceFactory: func(_ config.Manager, _ bool, _ ...dns.Option) dns.Service {
+				return mock
+			},
+		}
+	}
+
+	t.Run("get", func(t *testing.T) {
+		var gotType string
+		mock := &mockDNSServiceForOps{getRecordType: &gotType}
+		op := opFor(t, mkDeps(mock), "dns_records_get")
+		input := map[string]any{"zone": "123", "name": "www", "type": "txt"}
+		if _, err := op.Handler().Execute(context.Background(), input); err != nil {
+			t.Fatalf("get handler: %v", err)
+		}
+		if gotType != "TXT" {
+			t.Errorf("get recordType = %q, want TXT", gotType)
+		}
+	})
+
+	t.Run("update", func(t *testing.T) {
+		var gotType string
+		mock := &mockDNSServiceForOps{
+			updateRecordFunc: func(_ context.Context, _, _, recordType string, _ ipfs.RecordRequest) (*ipfs.RecordResponse, error) {
+				gotType = recordType
+				return &ipfs.RecordResponse{ZoneId: 1, Name: "www", Type: recordType}, nil
+			},
+		}
+		op := opFor(t, mkDeps(mock), "dns_records_update")
+		input := map[string]any{"zone": "123", "name": "www", "type": "txt", "content": "1.2.3.4"}
+		if _, err := op.Handler().Execute(context.Background(), input); err != nil {
+			t.Fatalf("update handler: %v", err)
+		}
+		if gotType != "TXT" {
+			t.Errorf("update recordType = %q, want TXT", gotType)
+		}
+	})
+
+	t.Run("delete", func(t *testing.T) {
+		var gotType string
+		mock := &mockDNSServiceForOps{deleteRecordType: &gotType}
+		op := opFor(t, mkDeps(mock), "dns_records_delete")
+		input := map[string]any{"zone": "123", "name": "www", "type": "txt", "confirm": true}
+		if _, err := op.Handler().Execute(context.Background(), input); err != nil {
+			t.Fatalf("delete handler: %v", err)
+		}
+		if gotType != "TXT" {
+			t.Errorf("delete recordType = %q, want TXT", gotType)
+		}
+	})
 }
 
 func forDNSOp(name string) catalog.Operation {
