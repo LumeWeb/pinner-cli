@@ -7,6 +7,7 @@ import (
 	"github.com/pterm/pterm"
 	"github.com/pterm/pterm/putils"
 	"go.lumeweb.com/pinner-cli/internal/cli/wizard"
+	"go.lumeweb.com/pinner-cli/internal/fieldform"
 	"go.lumeweb.com/pinner-cli/internal/mcp/install"
 )
 
@@ -108,7 +109,7 @@ func newAgentMultiselect(options, preChecked []string) *pterm.InteractiveMultise
 // SelectAgents implements the interactive multi-select over candidate agents,
 // pre-checking the ones that were detected on disk.
 func (ui *PTermInstallUI) SelectAgents(candidates []install.AgentKey, detected []install.AgentKey) ([]install.AgentKey, error) {
-	if wizard.NonInteractive {
+	if fieldform.NonInteractive {
 		return nil, fmt.Errorf("agent selection requires an interactive terminal")
 	}
 
@@ -162,7 +163,7 @@ func (ui *PTermInstallUI) NoAgentsDetected() {
 
 // SelectScope prompts for a global or project scope.
 func (ui *PTermInstallUI) SelectScope(agents []install.AgentKey) (string, error) {
-	if wizard.NonInteractive {
+	if fieldform.NonInteractive {
 		return "", fmt.Errorf("scope selection requires an interactive terminal")
 	}
 	options := []string{"global", "project"}
@@ -176,7 +177,7 @@ func (ui *PTermInstallUI) SelectScope(agents []install.AgentKey) (string, error)
 
 // SelectTransport prompts for the MCP transport.
 func (ui *PTermInstallUI) SelectTransport(agents []install.AgentKey) (install.Transport, error) {
-	if wizard.NonInteractive {
+	if fieldform.NonInteractive {
 		return "", fmt.Errorf("transport selection requires an interactive terminal")
 	}
 	options := []string{"stdio", "http"}
@@ -190,7 +191,7 @@ func (ui *PTermInstallUI) SelectTransport(agents []install.AgentKey) (install.Tr
 
 // ConfirmHTTP confirms an http install.
 func (ui *PTermInstallUI) ConfirmHTTP(agents []install.AgentKey) (bool, error) {
-	if wizard.NonInteractive {
+	if fieldform.NonInteractive {
 		return false, fmt.Errorf("http confirm requires an interactive terminal")
 	}
 	ok, err := pterm.DefaultInteractiveConfirm.WithDefaultValue(false).Show()

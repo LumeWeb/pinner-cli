@@ -1,27 +1,29 @@
-package wizard
+package fieldform
 
 import (
 	"context"
 	"fmt"
 	"slices"
+
+	"github.com/invopop/jsonschema"
 )
 
-// This file adds a field-registry primitive (FieldSpec) and a type-erased
+// This file adds a field-registry primitive (fieldSpec) and a type-erased
 // driver (AnyField) so a wizard step can define every field once and resolve a
 // heterogeneous set (string, bool, []Agent, enum...) in a single pass.
 //
 // A host commonly needs a step that mixes types (a string CID next to a bool
 // DNS-hosted, a []Agent next to a string scope). gatherAny resolves such a set
-// through AnyField erasure; FieldSpec is the single-source-of-truth template
+// through AnyField erasure; fieldSpec is the single-source-of-truth template
 // that collapses the parallel per-field switch/map structures a host would
 // otherwise hand-roll (enum key, ordinal slice, operational/setOperational/
 // envKey/reDerives/flag/name switches).
 
-// FieldSpec is the single canonical definition of one field. A host builds a
+// fieldSpec is the single canonical definition of one field. A host builds a
 // registry of these once and derives every wizard.Field view (and the
 // Operational/Decided accessor closures) from the one descriptor, so adding a
 // field is one entry instead of edits to many parallel structures.
-type FieldSpec[S any, T any] struct {
+type fieldSpec[S any, T any] struct {
 	// Name is the stable field identifier (also used as the prompt fallback
 	// label and the seed source).
 	Name string
@@ -33,6 +35,12 @@ type FieldSpec[S any, T any] struct {
 	// ReDerives marks an Operational value that is re-derived on a provider
 	// switch (cleared so a stale cross-provider value never survives).
 	ReDerives bool
+	// Required marks the field as mandatory in the form: FormSchema lists it in
+	// the object's Required array. Default false = optional (form auto-advances).
+	Required bool
+	// DefaultVal is the field-declared fallback default (Meta.Default), applied
+	// at precedence 4 after flag/decision/env. nil = no default.
+	DefaultVal *T
 	// Parse converts a source string (flag, env, prompt option) into T.
 	Parse func(string) (T, bool)
 	// ParseMulti converts the checked option labels of a Multi field into T.
@@ -60,7 +68,7 @@ type FieldSpec[S any, T any] struct {
 
 // Field builds the *Field[S, T] view described by the spec, wiring the
 // accessor closures to the single spec definition.
-func (s FieldSpec[S, T]) Field() *Field[S, T] {
+func (s fieldSpec[S, T]) Field() *Field[S, T] {
 	return &Field[S, T]{
 		Name:           s.Name,
 		Parse:          s.Parse,
@@ -75,9 +83,43 @@ func (s FieldSpec[S, T]) Field() *Field[S, T] {
 		Prompt:         s.Prompt,
 		OptionsFunc:    s.OptionsFunc,
 		ReDerives:      s.ReDerives,
+		Required:       s.Required,
+		DefaultVal:     s.DefaultVal,
 		Derived:        s.Derived,
 		When:           s.When,
 	}
+}
+
+// derefT dereferences a tri-state pointer value, returning T's zero value when
+// the pointer is nil (undecided / not yet set).
+func derefT[T any](p *T) T {
+	if p == nil {
+		var zero T
+		return zero
+	}
+	return *p
+}
+
+// parseT parses a raw source string (CLI flag, env file, prompt option) into T
+// via an explicit type switch over the supported field types. No reflection.
+func parseT[T any](raw string) (T, bool) {
+	var zero T
+	var v any
+	switch any(zero).(type) {
+	case string:
+		v = raw
+	case bool:
+		v = raw == "true" || raw == "1"
+	case int:
+		n := 0
+		if _, err := fmt.Sscanf(raw, "%d", &n); err != nil {
+			return zero, false
+		}
+		v = n
+	default:
+		return zero, false
+	}
+	return v.(T), true
 }
 
 // AnyField erases the T of a Field so a heterogeneous field set resolves in one
@@ -92,6 +134,19 @@ type AnyField[S any] interface {
 	//
 	// The driver calls resolve only after applies(s) is true.
 	resolve(ctx context.Context, src ValueSource, s S, headless bool) (resolvedField, error)
+	// FieldName returns the field's stable name (for FormSchema property keys).
+	FieldName() string
+	// Schema returns the field's JSON-schema entry (shared emitter).
+	Schema() *jsonschema.Schema
+	// Required reports whether the field is mandatory in a form (FormSchema
+	// lists it in the object's Required array, which keys MCP elicitation).
+	Required() bool
+	// Declared unwraps the erased field back to its concrete typed *Field so a
+	// host can read ReDerives / Operational / SetOperational directly (e.g. a
+	// provider-switch clean-up that iterates the registry). The returned value
+	// is the underlying *Field[S, T] as any; non-erased implementations return
+	// the field unchanged.
+	Declared() any
 }
 
 // resolvedField is the type-erased outcome of one field's resolution, carrying
@@ -220,13 +275,33 @@ func (e *erasedField[S, T]) resolve(ctx context.Context, src ValueSource, s S, h
 	return rf, nil
 }
 
+// FieldName returns the erased field's stable name (used by FormSchema).
+func (e *erasedField[S, T]) FieldName() string {
+	return e.f.Name
+}
+
+// Schema returns the erased field's JSON-schema entry (shared emitter).
+func (e *erasedField[S, T]) Schema() *jsonschema.Schema {
+	return e.f.Schema()
+}
+
+// Required reports whether the field is mandatory in a form.
+func (e *erasedField[S, T]) Required() bool {
+	return e.f.Required
+}
+
+// Declared unwraps the erased field to its concrete typed *Field[S, T].
+func (e *erasedField[S, T]) Declared() any {
+	return e.f
+}
+
 // erase wraps a typed Field as AnyField.
 func erase[S any, T any](f *Field[S, T]) AnyField[S] {
 	return &erasedField[S, T]{f: f}
 }
 
 // GatherAny is Gather's type-erased driver: it resolves a heterogeneous field
-// set ([]AnyField[S], built from FieldSpec.Field() / Fields) in one pass, so a
+// set ([]AnyField[S], built from fieldSpec.Field() / Fields) in one pass, so a
 // step mixing string, bool, and enum fields does not need one typed Gather call
 // per type. Seeding and honest-source semantics match Gather exactly.
 func GatherAny[S any](ctx context.Context, src ValueSource, s S, fields []AnyField[S]) ([]string, bool, error) {

@@ -10,6 +10,7 @@ import (
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/internal/cli/wizard"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner-cli/internal/fieldform"
 	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
 	"go.lumeweb.com/pinner-cli/internal/service"
 )
@@ -52,14 +53,12 @@ type ServiceInstallState struct {
 	EnvFileCreated bool
 
 	// decisions is the Decided channel of the two-channel provenance model (see
-	// wizard/field.go). For each install field it records an operator decision
-	// made this run via a CLI switch or an interactive prompt, distinct from
-	// the flat Operational field above (which may also hold a value folded from
-	// the persisted env file or derived by a provider). A missing key means the
-	// field was not decided this run, even when its Operational value is
-	// non-empty. Populated by Commit / flags / prompts, never by the env fold.
-	// See service_install_fields.go.
-	decisions map[tunnelFieldKey]*string
+	// fieldform). For each install field it records an operator decision made
+	// this run via a CLI switch or prompt, distinct from the flat Operational
+	// field (which may also hold a value folded from the env file or derived by
+	// a provider). A missing key means the field was not decided this run. Keyed
+	// by the field's stable Name string. See service_install_fields.go.
+	decisions map[string]*string
 }
 
 // serviceInstallWizardUI renders progress and prompts using pterm, reusing the
@@ -103,7 +102,7 @@ func RunServiceInstallWizard(ctx context.Context, cmd *cli.Command, envFile stri
 	state := &ServiceInstallState{EnvFile: envFile}
 	// Bind the pterm prompter so the wizard's steps ask the user through the
 	// shared prompt channel (like any other wizard), never via private widgets.
-	ctx = wizard.WithPrompter(ctx, wizard.NewPtermPrompter())
+	ctx = fieldform.WithPrompter(ctx, wizard.NewPtermPrompter())
 	// Pre-seed scalar values from flags/env so the wizard never re-prompts for
 	// something already explicit.
 	seedServiceFromFlagsAndEnv(cmd, state, envFile)
@@ -120,14 +119,14 @@ func RunServiceInstallWizard(ctx context.Context, cmd *cli.Command, envFile stri
 // it genuinely needs user input; when no channel is bound (e.g. a direct step
 // drive in a non-interactive test where every value resolves from config/env),
 // the missing channel surfaces as a clear error only if a prompt is attempted.
-func serviceInstallStepsPrompter(ctx context.Context) wizard.Prompter {
-	if p := wizard.PrompterFrom(ctx); p != nil {
+func serviceInstallStepsPrompter(ctx context.Context) fieldform.Prompter {
+	if p := fieldform.PrompterFrom(ctx); p != nil {
 		return p
 	}
 	return nilPrompt{}
 }
 
-// nilPrompt is a wizard.Prompter that errors on any method call: a step reached
+// nilPrompt is a fieldform.Prompter that errors on any method call: a step reached
 // it meaning it needs input, but no prompt channel is bound to the run context.
 type nilPrompt struct{}
 
@@ -182,7 +181,7 @@ func ServiceInstallSteps(state *ServiceInstallState, cmd *cli.Command, envFile s
 
 				// Migrated providers (Fields != nil) resolve their field set —
 				// provider fields PLUS the shared auth token — through the
-				// wizard.Gather primitive, applying one precedence model
+				// fieldform.Gather primitive, applying one precedence model
 				// (switch > existing decision > headless env fold, prompting
 				// with the current value as an editable default) instead of
 				// hand-rolled `if s.X == ""` prompts. cloudflared/ngrok still
@@ -197,16 +196,16 @@ func ServiceInstallSteps(state *ServiceInstallState, cmd *cli.Command, envFile s
 					// configurers provided).
 					fireProviderDeepLinks(s.Provider, s)
 
-					fields := append([]wizard.Field[*ServiceInstallState, string]{}, spec.Fields(s)...)
+					fields := append([]fieldform.Field[*ServiceInstallState, string]{}, spec.Fields(s)...)
 
 					// The shared auth token, preferred from MCP_AUTH_TOKEN (env
 					// fold) over an interactive prompt so the secret is never
 					// typed into or echoed from the terminal session.
-					auth := *tunnelInstallField(fieldAuthToken)
+					auth := *installFieldByName("AuthToken")
 					auth.Prompt = promptText("Shared auth token / secret for the public MCP endpoint", "*")
 					fields = append(fields, auth)
 
-					if _, _, err := wizard.Gather(ctx, src, s, fields); err != nil {
+					if _, _, err := fieldform.Gather(ctx, src, s, fields); err != nil {
 						return err
 					}
 

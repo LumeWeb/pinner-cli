@@ -5,12 +5,8 @@ import (
 	"strings"
 
 	"github.com/pterm/pterm"
+	"go.lumeweb.com/pinner-cli/internal/fieldform"
 )
-
-// NonInteractive disables all interactive prompts in the wizard package.
-// Set it before running a wizard to force a headless/flag-driven run
-// (the parent cli package sets it from the install command's headless mode).
-var NonInteractive bool
 
 type PTermUI struct {
 	WelcomeText    string
@@ -28,7 +24,7 @@ func (p *PTermUI) ShowWelcome() error {
 	// The welcome/continue confirmation is interactive-only. In non-interactive
 	// (headless) mode, skip the continue prompt entirely rather than failing,
 	// so a fully flag-driven install runs through.
-	if NonInteractive {
+	if fieldform.NonInteractive {
 		return nil
 	}
 	if p.WelcomeText != "" {

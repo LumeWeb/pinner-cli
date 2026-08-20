@@ -11,6 +11,7 @@ import (
 	"github.com/urfave/cli/v3"
 
 	"go.lumeweb.com/pinner-cli/internal/cli/wizard"
+	"go.lumeweb.com/pinner-cli/internal/fieldform"
 	"go.lumeweb.com/pinner-cli/internal/mcp/install"
 	mcpadapter "go.lumeweb.com/pinner-cli/internal/mcp/services"
 	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
@@ -99,7 +100,7 @@ func runMcpInstall(ctx context.Context, cmd mcpInstallFlagGetter, ui InstallUI, 
 	// transport in interactive mode, and (b) only an explicitly-passed flag
 	// overrides the prompt. stdio is the semantic default when transport is
 	// omitted entirely.
-	wizard.NonInteractive = nonInteractive
+	fieldform.NonInteractive = nonInteractive
 
 	// Parse agent list.
 	var agents []install.AgentKey
@@ -246,8 +247,8 @@ func runMcpInstall(ctx context.Context, cmd mcpInstallFlagGetter, ui InstallUI, 
 	// as this host wizard, instead of spawning independent pterm widgets
 	// that fight it for the terminal. A caller may pre-bind a test
 	// prompter; we only default to the production one when none is present.
-	if wizard.PrompterFrom(ctx) == nil {
-		ctx = wizard.WithPrompter(ctx, wizard.NewPtermPrompter())
+	if fieldform.PrompterFrom(ctx) == nil {
+		ctx = fieldform.WithPrompter(ctx, wizard.NewPtermPrompter())
 	}
 	_, err := w.Run(ctx)
 	return err

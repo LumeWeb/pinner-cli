@@ -1,4 +1,4 @@
-package wizard
+package fieldform
 
 import (
 	"context"
@@ -45,8 +45,8 @@ type multiState struct {
 	agents []string
 }
 
-func specAgents() FieldSpec[*multiState, []string] {
-	return FieldSpec[*multiState, []string]{
+func specAgents() fieldSpec[*multiState, []string] {
+	return fieldSpec[*multiState, []string]{
 		Name:       "agents",
 		Parse:      func(v string) ([]string, bool) { return []string{v}, v != "" },
 		ParseMulti: func(v []string) ([]string, bool) { return v, len(v) > 0 },
@@ -103,7 +103,7 @@ func TestFieldOptionsFunc(t *testing.T) {
 	mp := &multiPrompter{} // Select returns items[0]
 	ctx := WithPrompter(context.Background(), mp)
 
-	f := FieldSpec[*optionsState, string]{
+	f := fieldSpec[*optionsState, string]{
 		Name:     "choice",
 		Parse:    func(v string) (string, bool) { return v, v != "" },
 		Validate: func(v string) bool { return v != "" },
@@ -160,7 +160,7 @@ func TestFieldOptionsFuncNoOptions(t *testing.T) {
 	mp := &multiPrompter{} // records Select calls (and would answer Text with "")
 	ctx := WithPrompter(context.Background(), mp)
 
-	f := FieldSpec[*optionsState, string]{
+	f := fieldSpec[*optionsState, string]{
 		Name:     "choice",
 		Parse:    func(v string) (string, bool) { return v, v != "" },
 		Validate: func(v string) bool { return v != "" },
@@ -192,7 +192,7 @@ func TestFieldFreeTextStillPrompts(t *testing.T) {
 	mp := &textMockPrompter{text: "typed.example.com"}
 	ctx := WithPrompter(context.Background(), mp)
 
-	f := FieldSpec[*optionsState, string]{
+	f := fieldSpec[*optionsState, string]{
 		Name:     "choice",
 		Parse:    func(v string) (string, bool) { return v, v != "" },
 		Validate: func(v string) bool { return v != "" },

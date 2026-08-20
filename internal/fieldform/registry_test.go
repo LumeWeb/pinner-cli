@@ -1,4 +1,4 @@
-package wizard
+package fieldform
 
 import (
 	"context"
@@ -14,8 +14,8 @@ type boolState struct {
 	managed bool
 }
 
-func specDomain() FieldSpec[*boolState, string] {
-	return FieldSpec[*boolState, string]{
+func specDomain() fieldSpec[*boolState, string] {
+	return fieldSpec[*boolState, string]{
 		Name:     "domain",
 		Flag:     "domain",
 		Parse:    func(v string) (string, bool) { return v, v != "" },
@@ -27,8 +27,8 @@ func specDomain() FieldSpec[*boolState, string] {
 	}
 }
 
-func specManaged() FieldSpec[*boolState, bool] {
-	return FieldSpec[*boolState, bool]{
+func specManaged() fieldSpec[*boolState, bool] {
+	return fieldSpec[*boolState, bool]{
 		Name:   "managed",
 		Flag:   "managed",
 		Parse:  func(v string) (bool, bool) { return v == "true", v == "true" || v == "false" },
@@ -39,7 +39,7 @@ func specManaged() FieldSpec[*boolState, bool] {
 	}
 }
 
-// TestFieldSpecBuild guards that FieldSpec.Field() wires every accessor closure
+// TestFieldSpecBuild guards that fieldSpec.Field() wires every accessor closure
 // from the single spec definition into a usable Field.
 func TestFieldSpecBuild(t *testing.T) {
 	st := &boolState{}

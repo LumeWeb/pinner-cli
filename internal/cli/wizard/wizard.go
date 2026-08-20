@@ -3,6 +3,8 @@ package wizard
 import (
 	"context"
 	"fmt"
+
+	"go.lumeweb.com/pinner-cli/internal/fieldform"
 )
 
 type Step[S any] interface {
@@ -80,8 +82,8 @@ func Run[S any](ctx context.Context, ui UI, steps []Step[S], state S) (Result, e
 	// user through it. A host that pre-binds a custom Prompter is respected; a
 	// host (or embedded sub-wizard) that did not gets the production pterm
 	// channel here, so spliced steps never fall back to their own widgets.
-	if PrompterFrom(ctx) == nil {
-		ctx = WithPrompter(ctx, NewPtermPrompter())
+	if fieldform.PrompterFrom(ctx) == nil {
+		ctx = fieldform.WithPrompter(ctx, NewPtermPrompter())
 	}
 
 	if err := ui.ShowWelcome(); err != nil {

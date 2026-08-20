@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/pterm/pterm"
+	"go.lumeweb.com/pinner-cli/internal/fieldform"
 )
 
 // ptermPrompter implements Prompter with the same pterm interactive widgets the
@@ -14,11 +15,11 @@ import (
 type ptermPrompter struct{}
 
 // NewPtermPrompter returns the production pterm-backed Prompter.
-func NewPtermPrompter() Prompter { return ptermPrompter{} }
+func NewPtermPrompter() fieldform.Prompter { return ptermPrompter{} }
 
 // Select presents a single-choice list via pterm.DefaultInteractiveSelect.
 func (ptermPrompter) Select(label string, options []string, defaultOption string) (int, string, error) {
-	if NonInteractive {
+	if fieldform.NonInteractive {
 		return 0, "", errors.New("interactive prompt requested in non-interactive mode")
 	}
 	sel := pterm.DefaultInteractiveSelect.WithOptions(options).WithDefaultText(label)
@@ -39,7 +40,7 @@ func (ptermPrompter) Select(label string, options []string, defaultOption string
 
 // MultiSelect presents a toggleable multi-select via pterm.DefaultInteractiveMultiselect.
 func (ptermPrompter) MultiSelect(label string, options, preChecked []string) ([]string, error) {
-	if NonInteractive {
+	if fieldform.NonInteractive {
 		return nil, errors.New("interactive prompt requested in non-interactive mode")
 	}
 	return pterm.DefaultInteractiveMultiselect.
@@ -51,7 +52,7 @@ func (ptermPrompter) MultiSelect(label string, options, preChecked []string) ([]
 
 // Confirm presents a yes/no prompt via pterm.DefaultInteractiveConfirm.
 func (ptermPrompter) Confirm(label string, defaultValue bool) (bool, error) {
-	if NonInteractive {
+	if fieldform.NonInteractive {
 		return false, errors.New("interactive prompt requested in non-interactive mode")
 	}
 	return pterm.DefaultInteractiveConfirm.WithDefaultValue(defaultValue).Show()
@@ -61,7 +62,7 @@ func (ptermPrompter) Confirm(label string, defaultValue bool) (bool, error) {
 // the input when mask is non-empty (e.g. "*" for secrets). defaultValue, when
 // non-empty, pre-fills the input (re-runs allow keeping or changing it).
 func (ptermPrompter) Text(label, mask, defaultValue string) (string, error) {
-	if NonInteractive {
+	if fieldform.NonInteractive {
 		return "", errors.New("interactive prompt requested in non-interactive mode")
 	}
 	input := pterm.DefaultInteractiveTextInput.WithDefaultText(label)

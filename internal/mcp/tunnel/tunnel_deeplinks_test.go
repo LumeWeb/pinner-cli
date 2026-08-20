@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.lumeweb.com/pinner-cli/internal/cli/wizard"
+	"go.lumeweb.com/pinner-cli/internal/fieldform"
 )
 
 func TestTunnelDeepLink(t *testing.T) {
@@ -34,9 +34,9 @@ func TestTunnelDeepLink(t *testing.T) {
 }
 
 func TestOpenTunnelDeepLinkOpensInInteractiveMode(t *testing.T) {
-	oldNonInteractive := wizard.NonInteractive
-	defer func() { wizard.NonInteractive = oldNonInteractive }()
-	wizard.NonInteractive = false
+	oldNonInteractive := fieldform.NonInteractive
+	defer func() { fieldform.NonInteractive = oldNonInteractive }()
+	fieldform.NonInteractive = false
 
 	origOpener := TunnelDeepLinkOpener
 	defer func() { TunnelDeepLinkOpener = origOpener }()
@@ -52,9 +52,9 @@ func TestOpenTunnelDeepLinkOpensInInteractiveMode(t *testing.T) {
 }
 
 func TestOpenTunnelDeepLinkDoesNotOpenInNonInteractive(t *testing.T) {
-	oldNonInteractive := wizard.NonInteractive
-	defer func() { wizard.NonInteractive = oldNonInteractive }()
-	wizard.NonInteractive = true
+	oldNonInteractive := fieldform.NonInteractive
+	defer func() { fieldform.NonInteractive = oldNonInteractive }()
+	fieldform.NonInteractive = true
 
 	origOpener := TunnelDeepLinkOpener
 	defer func() { TunnelDeepLinkOpener = origOpener }()
@@ -70,9 +70,9 @@ func TestOpenTunnelDeepLinkDoesNotOpenInNonInteractive(t *testing.T) {
 }
 
 func TestOpenTunnelDeepLinkUnknownPairIsNoop(t *testing.T) {
-	oldNonInteractive := wizard.NonInteractive
-	defer func() { wizard.NonInteractive = oldNonInteractive }()
-	wizard.NonInteractive = false
+	oldNonInteractive := fieldform.NonInteractive
+	defer func() { fieldform.NonInteractive = oldNonInteractive }()
+	fieldform.NonInteractive = false
 
 	origOpener := TunnelDeepLinkOpener
 	defer func() { TunnelDeepLinkOpener = origOpener }()

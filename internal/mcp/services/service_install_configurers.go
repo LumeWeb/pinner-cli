@@ -6,15 +6,15 @@ import (
 	"os"
 	"strings"
 
-	"go.lumeweb.com/pinner-cli/internal/cli/wizard"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner-cli/internal/fieldform"
 	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
 )
 
 // The provider Configurer functions implement the install-time tunnel
 // configuration collection for each provider. They live here (package mcp)
 // rather than in the tunnel sub-package because they are tightly coupled to
-// the wizard-facing types (wizard.Prompter, *ServiceInstallState) that belong in the
+// the wizard-facing types (fieldform.Prompter, *ServiceInstallState) that belong in the
 // parent package. They are registered into the provider registry (see
 // tunnel_providers.go) and dispatched by the install wizard.
 //
@@ -23,11 +23,11 @@ import (
 // gathers declaratively. cloudflared/ngrok still use the legacy Configurer (see
 // below) until their provider-derived values are migrated.
 
-// promptText builds a free-text wizard.Prompt[T=string]. The framework passes
+// promptText builds a free-text fieldform.Prompt[T=string]. The framework passes
 // the field's current Operational value to CurrentString, which renders it as
 // the editable default.
-func promptText(label, mask string) *wizard.Prompt[string] {
-	return &wizard.Prompt[string]{
+func promptText(label, mask string) *fieldform.Prompt[string] {
+	return &fieldform.Prompt[string]{
 		Label:         label,
 		Mask:          mask,
 		CurrentString: func(cur string) string { return cur },
@@ -37,29 +37,30 @@ func promptText(label, mask string) *wizard.Prompt[string] {
 // openAIFields returns the promptable install fields for the OpenAI provider:
 // the Secure MCP Tunnel ID (validated against the OpenAI tunnel-ID shape) and
 // the control-plane API key (masked).
-func openAIFields() []wizard.Field[*ServiceInstallState, string] {
-	tunnelID := *tunnelInstallField(fieldTunnelID)
+func openAIFields() []fieldform.Field[*ServiceInstallState, string] {
+	tunnelID := *installFieldByName("TunnelID")
 	tunnelID.Prompt = promptText("OpenAI Secure MCP Tunnel ID", "")
 	tunnelID.Validate = func(v string) bool { return tunnel.OpenAITunnelID.MatchString(v) }
 
-	apiKey := *tunnelInstallField(fieldApiKey)
+	apiKey := *installFieldByName("ApiKey")
 	apiKey.Prompt = promptText("OpenAI Secure MCP Tunnel control-plane API key", "*")
 
-	return []wizard.Field[*ServiceInstallState, string]{tunnelID, apiKey}
+	return []fieldform.Field[*ServiceInstallState, string]{tunnelID, apiKey}
 }
 
 // openAIFinalize persists the supplied credentials to the last-resort config
 // manager so later runs auto-detect them without re-prompting.
-func openAIFinalize(_ context.Context, _ wizard.Prompter, s *ServiceInstallState, cfgMgr config.Manager) error {
+func openAIFinalize(_ context.Context, _ fieldform.Prompter, s *ServiceInstallState, cfgMgr config.Manager) error {
 	tunnel.PersistTunnelCredential(cfgMgr, "openai", "tunnel_id", s.TunnelID)
 	tunnel.PersistTunnelCredential(cfgMgr, "openai", "api_key", s.ApiKey)
 	return nil
 }
 
-// fieldDeepLink maps an unresolved install field to the setup-page resource the
-// provider opens so an operator can obtain the value (see OpenTunnelDeepLink).
+// fieldDeepLink maps an unresolved install field (by its stable Name) to the
+// setup-page resource the provider opens so an operator can obtain the value
+// (see OpenTunnelDeepLink).
 type fieldDeepLink struct {
-	key     tunnelFieldKey
+	field   string // the install field Name (e.g. "TunnelID")
 	missing string // the resource name for the deep-link (e.g. "tunnel_id")
 }
 
@@ -70,8 +71,8 @@ type fieldDeepLink struct {
 // resolveNgrokURL, since it is part of that imperative resolution.
 var providerDeepLinks = map[tunnel.TunnelProvider][]fieldDeepLink{
 	tunnel.TunnelProviderOpenAI: {
-		{key: fieldTunnelID, missing: "tunnel_id"},
-		{key: fieldApiKey, missing: "api_key"},
+		{field: "TunnelID", missing: "tunnel_id"},
+		{field: "ApiKey", missing: "api_key"},
 	},
 }
 
@@ -79,7 +80,7 @@ var providerDeepLinks = map[tunnel.TunnelProvider][]fieldDeepLink{
 // fields that is still unresolved (empty), right before Gather prompts for it.
 func fireProviderDeepLinks(p tunnel.TunnelProvider, s *ServiceInstallState) {
 	for _, dl := range providerDeepLinks[p] {
-		if s != nil && s.operational(dl.key) == "" {
+		if installFieldValue(dl.field, s) == "" {
 			tunnel.OpenTunnelDeepLink(string(p), dl.missing)
 		}
 	}
@@ -89,7 +90,7 @@ func fireProviderDeepLinks(p tunnel.TunnelProvider, s *ServiceInstallState) {
 // name into s. When a Cloudflare named tunnel is already provisioned it honors
 // that state (hostname, resource name) instead of re-prompting — the provisioned
 // state is the single source of truth for what the runtime serves.
-func cloudflaredConfigurer(_ context.Context, p wizard.Prompter, s *ServiceInstallState, cfgMgr config.Manager) error {
+func cloudflaredConfigurer(_ context.Context, p fieldform.Prompter, s *ServiceInstallState, cfgMgr config.Manager) error {
 	// Each field is gated independently: a provisioned state with a TunnelName
 	// but no hostname yet (e.g. before the DNS route exists) still resolves the
 	// tunnel name instead of re-prompting for a value the state already has.
@@ -141,7 +142,7 @@ func cloudflaredConfigurer(_ context.Context, p wizard.Prompter, s *ServiceInsta
 // writes it as MCP_PUBLIC_URL, "identifying what the user has" instead of
 // guessing. Only when no API key is available (or the query fails) does it fall
 // back to asking the operator to paste the URL.
-func ngrokConfigurer(ctx context.Context, p wizard.Prompter, s *ServiceInstallState, cfgMgr config.Manager) error {
+func ngrokConfigurer(ctx context.Context, p fieldform.Prompter, s *ServiceInstallState, cfgMgr config.Manager) error {
 	// Pre-resolve the authtoken from existing sources before prompting: the
 	// ngrok config file (a user who ran `ngrok config add-authtoken` needs no
 	// further setup — the SDK loads that credential at runtime), then the pinner
@@ -188,7 +189,7 @@ func ngrokConfigurer(ctx context.Context, p wizard.Prompter, s *ServiceInstallSt
 // paid one) — "identify what the user has and go based on that". It falls back
 // to prompting the operator for the URL when no API key is available. It
 // returns the resolved public URL.
-func resolveNgrokURL(ctx context.Context, p wizard.Prompter, s *ServiceInstallState, cfgMgr config.Manager) (string, error) {
+func resolveNgrokURL(ctx context.Context, p fieldform.Prompter, s *ServiceInstallState, cfgMgr config.Manager) (string, error) {
 	if s.PublicURL != "" {
 		return s.PublicURL, nil
 	}
