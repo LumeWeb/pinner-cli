@@ -401,15 +401,18 @@ func TestReconcileFromInstallStatePreservesExplicitPublicURLOnSwitch(t *testing.
 }
 
 // TestReconcileFromInstallStatePurgesAlternateTokenAlias guards that a
-// SAME-provider (ngrok) re-run purges the stale alternate-name key
+// SAME-provider (ngrok) re-run clears the stale alternate-name key
 // (NGROK_AUTHTOKEN) when the new config carries MCP_TUNNEL_TOKEN, so the old
-// value cannot win via ResolveNgrokToken's NGROK_AUTHTOKEN preference.
+// value cannot win via ResolveNgrokToken's NGROK_AUTHTOKEN preference — while
+// still preserving the DISTINCT live NGROK_API_KEY credential, which is not an
+// alternate spelling and is read at collect time for URL resolution.
 func TestReconcileFromInstallStatePurgesAlternateTokenAlias(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "mcp.env")
 	require.NoError(t, service.WriteEnvironment(path, service.Environment{
 		"MCP_TUNNEL_PROVIDER": "ngrok",
 		"NGROK_AUTHTOKEN":     "old-alias-token",
+		"NGROK_API_KEY":       "live-api-key",
 		"MCP_AUTH_TOKEN":      "saved-token",
 		"MCP_PUBLIC_URL":      "https://ngrok-free.dev",
 	}))
@@ -427,7 +430,37 @@ func TestReconcileFromInstallStatePurgesAlternateTokenAlias(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "new-tok", env["MCP_TUNNEL_TOKEN"])
 	_, hasAlias := env["NGROK_AUTHTOKEN"]
-	require.False(t, hasAlias, "the stale NGROK_AUTHTOKEN alias must be purged when the new config carries MCP_TUNNEL_TOKEN")
+	require.False(t, hasAlias, "the stale NGROK_AUTHTOKEN alias must be cleared when the new config carries MCP_TUNNEL_TOKEN")
+	require.Equal(t, "live-api-key", env["NGROK_API_KEY"], "the distinct NGROK_API_KEY credential must survive a same-provider re-run")
+}
+
+// TestReconcileFromInstallStatePreservesLegacyOnlyToken guards that a SAME-
+// provider ngrok reconcile never clears the only token: when the env file's
+// only ngrok credential is the legacy NGROK_AUTHTOKEN spelling and the install
+// state carries no TunnelToken (so the overlay has no MCP_TUNNEL_TOKEN to
+// replace it with), the alias must be left intact.
+func TestReconcileFromInstallStatePreservesLegacyOnlyToken(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "mcp.env")
+	require.NoError(t, service.WriteEnvironment(path, service.Environment{
+		"MCP_TUNNEL_PROVIDER": "ngrok",
+		"NGROK_AUTHTOKEN":     "legacy-token",
+		"MCP_AUTH_TOKEN":      "saved-token",
+	}))
+
+	// Same-provider ngrok reconcile with an EMPTY TunnelToken in state: the
+	// overlay carries no MCP_TUNNEL_TOKEN, so NGROK_AUTHTOKEN must survive.
+	err := ReconcileServiceEnvironmentFromInstallState(path, &ServiceInstallState{
+		Provider:  tunnel.TunnelProviderNgrok,
+		AuthToken: "saved-token",
+	}, tunnel.TunnelProviderNgrok, false)
+	require.NoError(t, err)
+
+	env, err := service.LoadEnvironment(path)
+	require.NoError(t, err)
+	require.Equal(t, "legacy-token", env["NGROK_AUTHTOKEN"], "a legacy-only NGROK_AUTHTOKEN must not be cleared without a canonical MCP_TUNNEL_TOKEN replacement")
+	_, hasCanonical := env["MCP_TUNNEL_TOKEN"]
+	require.False(t, hasCanonical)
 }
 
 func TestInstallBootstrapRequiresProvider(t *testing.T) {

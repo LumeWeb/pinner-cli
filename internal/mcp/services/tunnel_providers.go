@@ -68,6 +68,20 @@ func init() {
 			return s != nil && s.TunnelToken != "" && s.AuthToken != "" && s.PublicURL != ""
 		},
 		EnvKeys: []string{"MCP_TUNNEL_TOKEN", "NGROK_AUTHTOKEN", "NGROK_API_KEY"},
+		// NGROK_AUTHTOKEN is an alternate spelling of the authtoken the state
+		// models as MCP_TUNNEL_TOKEN. On a same-provider re-run it is cleared
+		// only when the overlay carries MCP_TUNNEL_TOKEN (the canonical new
+		// value), so a legacy-only NGROK_AUTHTOKEN file never loses its only
+		// token. NGROK_API_KEY is a DISTINCT live credential (never persisted
+		// via install state; read at collect time to resolve the account's
+		// public URL) — not an alias, maps to "", survives a same-provider
+		// re-run, and is only purged by a switch away from ngrok.
+		EnvKeyAlias: func(key string) string {
+			if key == "NGROK_AUTHTOKEN" {
+				return "MCP_TUNNEL_TOKEN"
+			}
+			return ""
+		},
 		CleanState: func(s *ServiceInstallState) {
 			s.Domain, s.TunnelName, s.TunnelID, s.ApiKey = "", "", "", ""
 		},

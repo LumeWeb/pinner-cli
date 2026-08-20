@@ -500,13 +500,19 @@ func ReconcileServiceEnvironmentFromInstallState(envFile string, s *ServiceInsta
 			delete(env, "MCP_PUBLIC_URL")
 		}
 	}
-	// For the CURRENT provider, purge any EnvKeys the overlay does not carry.
-	// This clears stale alternative-name spellings of the same credential —
-	// e.g. an old NGROK_AUTHTOKEN surviving next to the new MCP_TUNNEL_TOKEN
-	// (ResolveNgrokToken prefers NGROK_AUTHTOKEN, so a lingering old value
-	// would win over the operator's reconfiguration).
+	// For the CURRENT provider, clear stale alternate-name spellings of
+	// credentials the overlay models — e.g. an old NGROK_AUTHTOKEN next to the
+	// new MCP_TUNNEL_TOKEN (ResolveNgrokToken prefers NGROK_AUTHTOKEN, so a
+	// lingering old value would win over the operator's reconfiguration). An
+	// alias is cleared ONLY when its canonical key is present in the overlay:
+	// a legacy-only env file (just NGROK_AUTHTOKEN, no MCP_TUNNEL_TOKEN) never
+	// has its only token removed. A distinct LIVE credential the state does not
+	// persist (e.g. NGROK_API_KEY, read at collect time for URL resolution) is
+	// not an alias and survives a same-provider re-run — it is only purged by a
+	// switch away from the provider.
 	for _, k := range TunnelProviderEnvKeys(s.Provider) {
-		if _, ok := overlay[k]; !ok {
+		canon := TunnelProviderEnvKeyAlias(s.Provider, k)
+		if canon != "" && overlay[canon] != "" {
 			delete(env, k)
 		}
 	}
