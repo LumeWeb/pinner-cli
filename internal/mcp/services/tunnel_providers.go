@@ -14,9 +14,10 @@ import (
 // wizard all read from one registry instead of duplicating switch statements.
 //
 // The registry and this registration live in the parent package (not the tunnel
-// sub-package) because TunnelProviderSpec.Configurer is typed against the
-// wizard-facing types (textUI, *ServiceInstallState) that belong to the parent
-// package, and the tunnel sub-package must not import the parent (import cycle).
+// sub-package) because TunnelProviderSpec's Fields/Finalize/ConfigSeeded are
+// typed against the wizard-facing types (fieldform.Prompter,
+// *ServiceInstallState) that belong to the parent package, and the tunnel
+// sub-package must not import the parent (import cycle).
 func init() {
 	RegisterTunnelProvider(&TunnelProviderSpec{
 		Provider: tunnel.TunnelProviderCloudflared,
