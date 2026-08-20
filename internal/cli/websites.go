@@ -372,8 +372,8 @@ func websitesGet(ctx context.Context, cmd websitesCommandGetter, output Output, 
 		fields = append(fields, Field{"IPNS Key ID", fmt.Sprintf("%d", *website.IpnsKeyId)})
 	}
 
-	if website.DnsZoneId != nil {
-		fields = append(fields, Field{"DNS Zone ID", fmt.Sprintf("%d", *website.DnsZoneId)})
+	if website.ZoneId != nil {
+		fields = append(fields, Field{"DNS Zone ID", fmt.Sprintf("%d", *website.ZoneId)})
 	}
 
 	if website.ValidationRecordHost != nil && *website.ValidationRecordHost != "" {

@@ -22,7 +22,7 @@ type mockDNSServiceForCLI struct {
 	listRecordsFunc         func(ctx context.Context, id string) ([]ipfs.RecordResponse, error)
 	getRecordFunc           func(ctx context.Context, id string, name string, recordType string) (*ipfs.RecordResponse, error)
 	updateRecordFunc        func(ctx context.Context, id string, name string, recordType string, record ipfs.RecordRequest) (*ipfs.RecordResponse, error)
-	deleteRecordFunc        func(ctx context.Context, id string, name string, recordType string) error
+	deleteRecordFunc        func(ctx context.Context, id string, name string, recordType string, content ...string) error
 }
 
 func (m *mockDNSServiceForCLI) RequireAuthenticated() error {
@@ -94,26 +94,26 @@ func (m *mockDNSServiceForCLI) UpdateRecord(ctx context.Context, id string, name
 	return nil, nil
 }
 
-func (m *mockDNSServiceForCLI) DeleteRecord(ctx context.Context, id string, name string, recordType string) error {
+func (m *mockDNSServiceForCLI) DeleteRecord(ctx context.Context, id string, name string, recordType string, content ...string) error {
 	if m.deleteRecordFunc != nil {
-		return m.deleteRecordFunc(ctx, id, name, recordType)
+		return m.deleteRecordFunc(ctx, id, name, recordType, content...)
 	}
 	return nil
 }
 
 func TestDnsRecordsTable(t *testing.T) {
 	headers, rows := dnsRecordsTable([]ipfs.RecordResponse{
-		{ZoneId: 1, Name: "www", Type: "CNAME", Content: "example.com", Ttl: 3600, Disabled: false},
-		{ZoneId: 1, Name: "", Type: "A", Content: "1.2.3.4", Ttl: 300, Disabled: false},
-		{ZoneId: 1, Name: "mail", Type: "MX", Content: "10 mail.example.com", Ttl: 3600, Disabled: true},
+		{Id: "r1", ZoneId: 1, Name: "www", Type: "CNAME", Content: "example.com", Ttl: 3600, Disabled: false},
+		{Id: "r2", ZoneId: 1, Name: "", Type: "A", Content: "1.2.3.4", Ttl: 300, Disabled: false},
+		{Id: "r3", ZoneId: 1, Name: "mail", Type: "MX", Content: "10 mail.example.com", Ttl: 3600, Disabled: true},
 	})
 
-	assert.Equal(t, []string{"NAME", "TYPE", "CONTENT", "TTL", "STATUS"}, headers)
+	assert.Equal(t, []string{"ID", "NAME", "TYPE", "CONTENT", "TTL", "STATUS"}, headers)
 	assert.Equal(t, [][]string{
-		{"www", "CNAME", "example.com", "3600", ""},
+		{"r1", "www", "CNAME", "example.com", "3600", ""},
 		// blank name renders as the zone apex marker
-		{"@", "A", "1.2.3.4", "300", ""},
-		{"mail", "MX", "10 mail.example.com", "3600", "disabled"},
+		{"r2", "@", "A", "1.2.3.4", "300", ""},
+		{"r3", "mail", "MX", "10 mail.example.com", "3600", "disabled"},
 	}, rows)
 }
 
@@ -129,12 +129,12 @@ func TestKeepWholeValue(t *testing.T) {
 		{"TLSA value kept whole", []string{"TLSA", "3 1 1 0a9e..."}, 1, true},
 		{"delegation A value wraps", []string{"A", "1.2.3.4"}, 1, false},
 		{"delegation type col wraps", []string{"DS", "12345"}, 0, false},
-		// Full DNS record table layout [NAME, TYPE, CONTENT, TTL, STATUS]
-		{"dnslink content kept whole", []string{"_dnslink.example.com", "TXT", "dnslink=/ipfs/bafy...", "300", ""}, 2, true},
-		{"tlsa content kept whole", []string{"_443._tcp.example.com", "TLSA", "3 1 1 0a9e...", "300", ""}, 2, true},
-		{"full table A content wraps", []string{"www", "A", "1.2.3.4", "300", ""}, 2, false},
-		{"full table name col wraps", []string{"www", "A", "1.2.3.4", "300", ""}, 0, false},
-		{"full table ttl wraps", []string{"www", "A", "1.2.3.4", "300", ""}, 3, false},
+		// Full DNS record table layout [ID, NAME, TYPE, CONTENT, TTL, STATUS]
+		{"dnslink content kept whole", []string{"r1", "_dnslink.example.com", "TXT", "dnslink=/ipfs/bafy...", "300", ""}, 3, true},
+		{"tlsa content kept whole", []string{"r1", "_443._tcp.example.com", "TLSA", "3 1 1 0a9e...", "300", ""}, 3, true},
+		{"full table A content wraps", []string{"r1", "www", "A", "1.2.3.4", "300", ""}, 3, false},
+		{"full table name col wraps", []string{"r1", "www", "A", "1.2.3.4", "300", ""}, 1, false},
+		{"full table ttl wraps", []string{"r1", "www", "A", "1.2.3.4", "300", ""}, 4, false},
 	}
 
 	for _, tt := range tests {
