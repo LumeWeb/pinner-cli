@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.lumeweb.com/pinner-cli/internal/fieldform"
 )
 
 // TestFieldDecidedChannel exercises the Decided vs Operational split for the
@@ -125,76 +124,4 @@ func TestServiceInstallValueSource(t *testing.T) {
 	require.False(t, ok)
 	_, ok = vs.EnvFile("MCP_TUNNEL_ID")
 	require.False(t, ok, "no envFile set -> no env fold")
-}
-
-// TestInstallFormSchema guards the heterogeneous MCP form schema: it aggregates
-// the string install fields plus the tri-state OAuth (*bool) and Port (*int)
-// decisions into one object schema with correctly-typed properties.
-func TestInstallFormSchema(t *testing.T) {
-	sch := installFormSchema()
-	require.Equal(t, "object", sch.Type)
-
-	// 9 string fields + OAuth (boolean) + Port (integer)
-	require.Equal(t, 11, sch.Properties.Len())
-
-	o, ok := sch.Properties.Get("OAuth")
-	require.True(t, ok, "OAuth property present")
-	require.Equal(t, "boolean", o.Type, "OAuth is an explicit bool decision")
-
-	p, ok := sch.Properties.Get("Port")
-	require.True(t, ok, "Port property present")
-	require.Equal(t, "integer", p.Type, "Port is an integer decision")
-}
-
-// TestTriStateOAuthPort guards that the OAuth / Port fields preserve the exact
-// tri-state semantics the serializer relies on: nil = undecided, &false / &0 = a
-// legitimate decision that persists.
-func TestTriStateOAuthPort(t *testing.T) {
-	s := &ServiceInstallState{}
-	oauth := boolFieldFor(t, "OAuth")
-	port := intFieldFor(t, "Port")
-
-	require.Nil(t, oauth.Decided(s), "undecided OAuth -> nil")
-	require.Nil(t, port.Decided(s), "undecided Port -> nil")
-
-	// explicit false is still a decision, not nil
-	oauth.Commit(s, false)
-	require.NotNil(t, s.OAuth)
-	require.False(t, *s.OAuth)
-	require.NotNil(t, oauth.Decided(s), "a false decision is still decided")
-	require.False(t, *oauth.Decided(s))
-
-	// explicit 0 is a decision ("pick a free port"), not nil
-	port.Commit(s, 0)
-	require.NotNil(t, s.Port)
-	require.Equal(t, 0, *s.Port)
-	require.NotNil(t, port.Decided(s), "a zero decision is still decided")
-}
-
-// boolFieldFor returns the typed bool Field for a named form field (OAuth).
-func boolFieldFor(t *testing.T, name string) *fieldform.Field[*ServiceInstallState, bool] {
-	t.Helper()
-	for _, anyf := range installFormFields() {
-		if anyf.FieldName() == name {
-			if f, ok := anyf.Declared().(*fieldform.Field[*ServiceInstallState, bool]); ok {
-				return f
-			}
-		}
-	}
-	t.Fatalf("bool field %q not found", name)
-	return nil
-}
-
-// intFieldFor returns the typed int Field for a named form field (Port).
-func intFieldFor(t *testing.T, name string) *fieldform.Field[*ServiceInstallState, int] {
-	t.Helper()
-	for _, anyf := range installFormFields() {
-		if anyf.FieldName() == name {
-			if f, ok := anyf.Declared().(*fieldform.Field[*ServiceInstallState, int]); ok {
-				return f
-			}
-		}
-	}
-	t.Fatalf("int field %q not found", name)
-	return nil
 }

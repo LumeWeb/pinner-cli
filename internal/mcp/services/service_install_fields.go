@@ -1,10 +1,8 @@
 package services
 
 import (
-	"strconv"
 	"strings"
 
-	"github.com/invopop/jsonschema"
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/internal/fieldform"
 	"go.lumeweb.com/pinner-cli/internal/service"
@@ -72,42 +70,6 @@ func (s *ServiceInstallState) unmarkDecided(name string) {
 var decisionsBinding = fieldform.Decided[*ServiceInstallState, string]{
 	Read:  func(s *ServiceInstallState, name string) *string { return s.decidedFor(name) },
 	Write: func(s *ServiceInstallState, name, v string) { s.decidedFor(name); s.commitDecidedMap(name, v) },
-}
-
-// oauthBinding and portBinding are the Decided channels for the pointer-typed
-// OAuth/Port fields. They reuse the same name-keyed string map as decisionsBinding,
-// serializing the bool/int decision to/from the string entry. The names "OAuth"
-// and "Port" are unique across the field set, so the serialized form never reads
-// back as a different field's type.
-var oauthBinding = fieldform.Decided[*ServiceInstallState, bool]{
-	Read: func(s *ServiceInstallState, name string) *bool {
-		r := s.decidedFor(name)
-		if r == nil {
-			return nil
-		}
-		v := *r == "true"
-		return &v
-	},
-	Write: func(s *ServiceInstallState, name string, v bool) {
-		s.commitDecidedMap(name, strconv.FormatBool(v))
-	},
-}
-
-var portBinding = fieldform.Decided[*ServiceInstallState, int]{
-	Read: func(s *ServiceInstallState, name string) *int {
-		r := s.decidedFor(name)
-		if r == nil {
-			return nil
-		}
-		v, err := strconv.Atoi(*r)
-		if err != nil {
-			return nil
-		}
-		return &v
-	},
-	Write: func(s *ServiceInstallState, name string, v int) {
-		s.commitDecidedMap(name, strconv.Itoa(v))
-	},
 }
 
 // commitDecidedMap records only the Decided map entry (no value write) — used by
@@ -178,35 +140,6 @@ func installFieldValue(name string, s *ServiceInstallState) string {
 		return f.Operational(s)
 	}
 	return ""
-}
-
-// installFormFields is the full, heterogeneous form field set for the MCP
-// input_required form: the nine string-valued install fields PLUS the tri-state
-// OAuth (*bool) and Port (*int) decisions. The pointer-typed Bool/Int
-// constructors keep the Decided channel in the name-keyed decisions map (via
-// oauthBinding/portBinding) and the pointer as the Operational value only, so an
-// operator decision is persisted verbatim (nil = not decided this run, &false /
-// &0 = a legitimate explicit decision) while a fold never looks like a decision.
-// These two are decision-only (no EnvFileKey), matching how serviceInstallStateToEnv
-// persists them only when the operator supplied a value. FormSchema over this set
-// emits the same keys an interactive CLI gather would prompt for.
-func installFormFields() []fieldform.AnyField[*ServiceInstallState] {
-	oauth := fieldform.Bool[*ServiceInstallState](oauthBinding, "OAuth",
-		func(s *ServiceInstallState) *bool { return s.OAuth },
-		func(s *ServiceInstallState, v bool) { s.OAuth = &v },
-		fieldform.Meta{Flag: serviceOAuthFlag})
-	port := fieldform.Int[*ServiceInstallState](portBinding, "Port",
-		func(s *ServiceInstallState) *int { return s.Port },
-		func(s *ServiceInstallState, v int) { s.Port = &v },
-		fieldform.Meta{Flag: servicePortFlag})
-	return append(installFieldEntries(), oauth, port)
-}
-
-// installFormSchema returns the JSON schema for the MCP input_required form over
-// installFormFields — the same shared emitter the CLI gather path drives, from
-// one field declaration set.
-func installFormSchema() *jsonschema.Schema {
-	return fieldform.FormSchema(installFormFields())
 }
 
 // ClearReDerivedForProvider clears every ReDerives field's Operational value
