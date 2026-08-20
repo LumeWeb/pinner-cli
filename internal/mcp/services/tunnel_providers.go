@@ -1,8 +1,10 @@
 package services
 
 import (
+	"context"
 	"fmt"
 
+	"go.lumeweb.com/pinner-cli/internal/core/config"
 	"go.lumeweb.com/pinner-cli/internal/fieldform"
 	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
 )
@@ -28,11 +30,13 @@ func init() {
 		NewTunnel: func(cfg tunnel.TunnelConfig) (tunnel.Tunnel, error) {
 			return tunnel.NewCloudflaredTunnel(cfg)
 		},
-		Configurer: cloudflaredConfigurer,
+		Fields: func(_ context.Context, _ *ServiceInstallState, _ config.Manager) []fieldform.Field[*ServiceInstallState, string] {
+			return cloudflaredFields()
+		},
+		Finalize: cloudflaredFinalize,
 		ConfigSeeded: func(s *ServiceInstallState) bool {
-			// cloudflaredConfigurer prompts for Domain + TunnelName; the
-			// tunnel-config step additionally always collects the shared
-			// AuthToken.
+			// cloudflaredFields gathers Domain + TunnelName; the tunnel-config
+			// step additionally always collects the shared AuthToken.
 			return s != nil && s.Domain != "" && s.TunnelName != "" && s.AuthToken != ""
 		},
 	})
@@ -46,14 +50,16 @@ func init() {
 		NewTunnel: func(cfg tunnel.TunnelConfig) (tunnel.Tunnel, error) {
 			return newNgrokTunnel(cfg), nil
 		},
-		Configurer: ngrokConfigurer,
+		Fields: func(ctx context.Context, _ *ServiceInstallState, cfgMgr config.Manager) []fieldform.Field[*ServiceInstallState, string] {
+			return ngrokFields(ctx, cfgMgr)
+		},
+		Finalize: ngrokFinalize,
 		ConfigSeeded: func(s *ServiceInstallState) bool {
-			// ngrokConfigurer prompts for the tunnel token AND resolves a
-			// public URL; the tunnel-config step additionally always collects
-			// the shared AuthToken. Requiring PublicURL up front means a
-			// --token bootstrap without a determinable URL stays un-seeded so
-			// resolveNgrokURL still runs (otherwise the env would lack
-			// MCP_PUBLIC_URL entirely).
+			// ngrokFields gathers the tunnel token AND resolves a public URL;
+			// the tunnel-config step additionally always collects the shared
+			// AuthToken. Requiring PublicURL up front means a --token bootstrap
+			// without a determinable URL stays un-seeded so URL resolution
+			// still runs (otherwise the env would lack MCP_PUBLIC_URL entirely).
 			return s != nil && s.TunnelToken != "" && s.AuthToken != "" && s.PublicURL != ""
 		},
 	})
@@ -70,9 +76,11 @@ func init() {
 		// OpenAI is the reference migration to the shared field-resolution
 		// primitive: its install config is two clean promptable fields (TunnelID
 		// + ApiKey) with no provider-derived value, so it gathers declaratively
-		// instead of hand-rolling prompts. cloudflared/ngrok still use the
-		// legacy Configurer until their derived values are migrated.
-		Fields:   func(_ *ServiceInstallState) []fieldform.Field[*ServiceInstallState, string] { return openAIFields() },
+		// instead of hand-rolling prompts. cloudflared and ngrok now gather
+		// through the same Fields+Finalize primitive too.
+		Fields: func(_ context.Context, _ *ServiceInstallState, _ config.Manager) []fieldform.Field[*ServiceInstallState, string] {
+			return openAIFields()
+		},
 		Finalize: openAIFinalize,
 		ConfigSeeded: func(s *ServiceInstallState) bool {
 			// openAIFields gathers TunnelID + ApiKey and VALIDATES the tunnel ID

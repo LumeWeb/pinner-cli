@@ -4,24 +4,24 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strings"
 
 	"go.lumeweb.com/pinner-cli/internal/core/config"
 	"go.lumeweb.com/pinner-cli/internal/fieldform"
 	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
 )
 
-// The provider Configurer functions implement the install-time tunnel
-// configuration collection for each provider. They live here (package mcp)
-// rather than in the tunnel sub-package because they are tightly coupled to
-// the wizard-facing types (fieldform.Prompter, *ServiceInstallState) that belong in the
-// parent package. They are registered into the provider registry (see
-// tunnel_providers.go) and dispatched by the install wizard.
+// The provider install configuration lives here as declarative fieldform field
+// sets (Fields) plus post-Gather side-effect hooks (Finalize). They live in the
+// parent package rather than the tunnel sub-package because they are tightly
+// coupled to the wizard-facing types (fieldform, *ServiceInstallState) that
+// belong in the parent package. They are registered into the provider registry
+// (see tunnel_providers.go) and dispatched by the install wizard.
 //
-// OpenAI is the reference migration to the shared field-resolution primitive
-// (Fields + Finalize): its install config is two clean promptable fields, so it
-// gathers declaratively. cloudflared/ngrok still use the legacy Configurer (see
-// below) until their provider-derived values are migrated.
+// Every provider now gathers through the shared field-resolution primitive
+// (Fields + Finalize): OpenAI (two clean promptable fields), cloudflared (Domain
+// + TunnelName deriving from provisioned named-tunnel state), and ngrok (token +
+// public URL deriving from the config-manager store / account API). The legacy
+// imperative Configurer path was removed once all providers migrated.
 
 // promptText builds a free-text fieldform.Prompt[T=string]. The framework passes
 // the field's current Operational value to CurrentString, which renders it as
@@ -65,10 +65,11 @@ type fieldDeepLink struct {
 }
 
 // providerDeepLinks lists, per provider, which fields open a setup deep-link
-// when they are still unresolved and Gather is about to prompt for them. A
-// provider that still uses the legacy Configurer fires its deep-links inside
-// that function instead. ngrok's public-URL fallback deep-link fires inside
-// resolveNgrokURL, since it is part of that imperative resolution.
+// when they are still unresolved and Gather is about to prompt for them. The
+// cloudflared/ngrok derived-values path fires its deep-links inside each field's
+// Derived hook (ngrok's authtoken and domain deep-links, cloudflared has none at
+// the field level), since the deep-link belongs to the derivation that precedes
+// the prompt.
 var providerDeepLinks = map[tunnel.TunnelProvider][]fieldDeepLink{
 	tunnel.TunnelProviderOpenAI: {
 		{field: "TunnelID", missing: "tunnel_id"},
@@ -86,167 +87,167 @@ func fireProviderDeepLinks(p tunnel.TunnelProvider, s *ServiceInstallState) {
 	}
 }
 
-// cloudflaredConfigurer collects the cloudflared domain and tunnel resource
-// name into s. When a Cloudflare named tunnel is already provisioned it honors
-// that state (hostname, resource name) instead of re-prompting — the provisioned
-// state is the single source of truth for what the runtime serves.
-func cloudflaredConfigurer(_ context.Context, p fieldform.Prompter, s *ServiceInstallState, cfgMgr config.Manager) error {
-	// Each field is gated independently: a provisioned state with a TunnelName
-	// but no hostname yet (e.g. before the DNS route exists) still resolves the
-	// tunnel name instead of re-prompting for a value the state already has.
-	if s.Domain == "" || s.TunnelName == "" {
+// cloudflaredFields returns the promptable install fields for the cloudflared
+// provider: the tunnel Domain and TunnelName. Both derive from a provisioned
+// named-tunnel state (LoadCloudflareTunnelState) so a re-run reuses the
+// provisioned hostname / resource name instead of re-prompting — the provisioned
+// state is the single source of truth for what the runtime serves. Each field
+// is gated independently: provisioned state with a TunnelName but no hostname
+// yet (before the DNS route exists) still resolves the tunnel name.
+//
+// Derived (precedence 0) folds the provisioned value into the Operational
+// channel only (never Decided), so an operator --domain / --tunnel-name switch
+// (precedence 1) always wins and an interactive run prefills the value as the
+// editable default. Direction is faithful to the legacy Configurer it replaces.
+func cloudflaredFields() []fieldform.Field[*ServiceInstallState, string] {
+	domain := *installFieldByName("Domain")
+	domain.Prompt = promptText("Tunnel domain (required)", "")
+	domain.Derived = func(s *ServiceInstallState) (string, bool) {
+		if s.Domain != "" {
+			return s.Domain, true
+		}
 		if st, err := tunnel.LoadCloudflareTunnelState(); err == nil {
-			if s.Domain == "" {
-				s.Domain = st.Hostname
-			}
-			if s.TunnelName == "" && st.TunnelName != "" {
-				s.TunnelName = st.TunnelName
-			}
+			return st.Hostname, st.Hostname != ""
 		}
+		return "", false
 	}
-	if s.Domain == "" {
-		domain, err := p.Text("Tunnel domain (required)", "", "")
-		if err != nil {
-			return err
+
+	name := *installFieldByName("TunnelName")
+	name.Prompt = promptText("Cloudflare tunnel resource name (default: pinner-mcp)", "")
+	name.Derived = func(s *ServiceInstallState) (string, bool) {
+		if s.TunnelName != "" {
+			return s.TunnelName, true
 		}
-		s.Domain = strings.TrimSpace(domain)
-	}
-	if s.TunnelName == "" {
-		name, err := p.Text("Cloudflare tunnel resource name (default: pinner-mcp)", "", "")
-		if err != nil {
-			return err
+		if st, err := tunnel.LoadCloudflareTunnelState(); err == nil && st.TunnelName != "" {
+			return st.TunnelName, true
 		}
-		s.TunnelName = strings.TrimSpace(name)
+		// The default resource name applies when nothing else resolves.
+		return "pinner-mcp", true
 	}
-	if s.TunnelName == "" {
-		s.TunnelName = "pinner-mcp"
+
+	return []fieldform.Field[*ServiceInstallState, string]{domain, name}
+}
+
+// cloudflaredFinalize is the post-Gather hook for cloudflared. The Domain and
+// TunnelName are persisted to the runtime env by the shared installer (they are
+// env-file fields MCP_DOMAIN / MCP_TUNNEL_NAME); there is no last-resort config
+// manager credential to stash, matching the legacy configurer which also wrote
+// nothing to cfgMgr. On a headless run it fails fast if the required Domain is
+// still unresolved (no flag, no provisioned state) rather than writing an env
+// file that would carry an empty MCP_DOMAIN.
+func cloudflaredFinalize(_ context.Context, _ fieldform.Prompter, s *ServiceInstallState, _ config.Manager) error {
+	if s != nil && fieldform.NonInteractive && s.Domain == "" {
+		return fmt.Errorf("cloudflared install requires a tunnel domain; supply --%s or provision a named tunnel", serviceDomainFlag)
 	}
 	return nil
 }
 
-// ngrokConfigurer collects the ngrok authtoken and resolves the account's
-// public URL into s. It pre-resolves the authtoken from existing sources before
-// prompting (the ngrok config file / NGROK_AUTHTOKEN / the pinner config-manager
-// last-resort store), so an already-configured ngrok install never re-asks for
-// the secret.
+// ngrokFields returns the promptable install fields for the ngrok provider:
+// the authtoken / MCP tunnel token and the public base URL (MCP_PUBLIC_URL).
+// Both resolve through a Derived hook so a re-run reuses what is already
+// available (the config-manager store, the ngrok CLI config, the account API)
+// instead of re-prompting, matching the legacy ngrokConfigurer it replaces.
 //
-// There is deliberately NO "tunnel resource name" prompt: ngrok serves the same
-// authtoken-bound account domain regardless of any local name, so a name is
-// meaningless for installation and would only confuse (especially on the free
-// tier's single auto-assigned dev domain).
+// ctx threads the caller's context into the Derived closure (the hook signature
+// itself carries no ctx) so the account-API query and the SDK tunnel lookup
+// honor the install command's deadline/cancellation instead of hanging on their
+// own fixed timeouts.
 //
-// Public URL resolution: when the operator has not already supplied one (via
-// --public-url / MCP_PUBLIC_URL), the configurer queries the ngrok REST API
-// (with the optional NGROK_API_KEY, distinct from the authtoken) to discover
-// the account's public domain — the free dev domain or a named domain — and
-// writes it as MCP_PUBLIC_URL, "identifying what the user has" instead of
-// guessing. Only when no API key is available (or the query fails) does it fall
-// back to asking the operator to paste the URL.
-func ngrokConfigurer(ctx context.Context, p fieldform.Prompter, s *ServiceInstallState, cfgMgr config.Manager) error {
-	// Pre-resolve the authtoken from existing sources before prompting: the
-	// ngrok config file (a user who ran `ngrok config add-authtoken` needs no
-	// further setup — the SDK loads that credential at runtime), then the pinner
-	// config-manager last-resort store. Only prompt when no usable token exists.
-	// NGROK_AUTHTOKEN / --token are already folded into s.TunnelToken by
-	// seedServiceFromFlagsAndEnv.
-	if s.TunnelToken == "" {
-		s.TunnelToken = tunnel.ResolveCredential(
+// The token derives first (field order matters): PublicURL's SDK dev-domain
+// fallback consumes s.TunnelToken, so the token field must settle before the
+// URL field is resolved.
+func ngrokFields(ctx context.Context, cfgMgr config.Manager) []fieldform.Field[*ServiceInstallState, string] {
+	token := *installFieldByName("TunnelToken")
+	token.Prompt = promptText("ngrok authtoken / MCP tunnel token", "*")
+	token.Derived = func(s *ServiceInstallState) (string, bool) {
+		if s.TunnelToken != "" {
+			return s.TunnelToken, true
+		}
+		// Pre-resolve from the ngrok config file (a user who ran `ngrok config
+		// add-authtoken` needs no further setup), then the pinner config-manager
+		// last-resort store written by a prior install. NGROK_AUTHTOKEN /
+		// --token are already folded into s.TunnelToken by the seed step.
+		v := tunnel.ResolveCredential(
 			tunnel.NgrokConfigAuthtoken,
 			tunnel.TunnelCfgCredential(cfgMgr, "ngrok", "token"),
 		)
-	}
-	// ngrok validation requires NGROK_AUTHTOKEN or MCP_TUNNEL_TOKEN; only
-	// prompt when the value is still empty so the written env file actually
-	// passes validation.
-	if s.TunnelToken == "" {
-		tunnel.OpenTunnelDeepLink("ngrok", "authtoken")
-		tok, err := p.Text("ngrok authtoken / MCP tunnel token", "*", "")
-		if err != nil {
-			return err
+		if v == "" {
+			// Nothing pre-resolved: direct the operator to the authtoken page
+			// so the prompt that follows has the browser ready.
+			tunnel.OpenTunnelDeepLink("ngrok", "authtoken")
+			return "", false
 		}
-		s.TunnelToken = strings.TrimSpace(tok)
-	}
-	// Persist the token to the last-resort config manager so later runs
-	// auto-detect it (RequiresToken on the embedded tunnel accepts a
-	// config-manager-sourced token).
-	tunnel.PersistTunnelCredential(cfgMgr, "ngrok", "token", s.TunnelToken)
-
-	if _, err := resolveNgrokURL(ctx, p, s, cfgMgr); err != nil {
-		return err
+		s.TunnelToken = v
+		return v, true
 	}
 
-	// The account type status is surfaced here for the operator: it tells the
-	// user what the ngrok API reported their account as (free dev domain vs a
-	// named/custom domain), which is the "identify what the user has" signal.
-	// It is informational only and is not written to the env file.
-	return nil
-}
+	publicURL := *installFieldByName("PublicURL")
+	publicURL.Prompt = promptText("ngrok public base URL (from dashboard.ngrok.com/domains, e.g. https://you.ngrok-free.dev)", "")
+	publicURL.Derived = func(s *ServiceInstallState) (string, bool) {
+		if s.PublicURL != "" {
+			return s.PublicURL, true
+		}
+		// "Identify what the user has": query the account API with the optional
+		// NGROK_API_KEY (distinct from the authtoken), then fall back to a
+		// short-lived embedded tunnel's stable dev domain, then fall through to
+		// the interactive prompt. Never guess.
+		apiKey := tunnel.ResolveCredential(
+			func() string { return s.NgrokAPIKey },
+			func() string { return os.Getenv("NGROK_API_KEY") },
+			tunnel.TunnelCfgCredential(cfgMgr, "ngrok", "api_key"),
+		)
 
-// resolveNgrokURL fills s.PublicURL / MCP_PUBLIC_URL for an ngrok install. It
-// first honors an operator-supplied URL (already folded into s.PublicURL), then
-// asks the ngrok REST API what the account actually has and derives the public
-// URL from that (a free dev domain on a free account, or a named domain on a
-// paid one) — "identify what the user has and go based on that". It falls back
-// to prompting the operator for the URL when no API key is available. It
-// returns the resolved public URL.
-func resolveNgrokURL(ctx context.Context, p fieldform.Prompter, s *ServiceInstallState, cfgMgr config.Manager) (string, error) {
-	if s.PublicURL != "" {
-		return s.PublicURL, nil
-	}
-	apiKey := tunnel.ResolveCredential(
-		func() string { return s.NgrokAPIKey },
-		func() string { return os.Getenv("NGROK_API_KEY") },
-		tunnel.TunnelCfgCredential(cfgMgr, "ngrok", "api_key"),
-	)
-	publicURL, _, err := tunnel.ResolveNgrokPublicURL(ctx, apiKey, s.Domain)
-	if err != nil {
-		// An API key was provided but the query failed (network / rejected key).
-		// Surface the reason, then fall back to prompting rather than stranding
-		// the install.
-		tunnel.PrintTunnelDeepLink("ngrok", "api_key")
-		fmt.Fprintf(os.Stderr, "ngrok API lookup failed (%v); enter the public URL below instead\n", err)
-		apiKey = ""
-	}
-	if publicURL == "" {
-		// No API key (or the account's reserved-domain set gave nothing). For a
-		// free account the persistent public URL is the single stable dev domain
-		// (host ending in *.ngrok-free.dev). It is resolvable with just the
-		// authtoken (which the configurer already resolved into s.TunnelToken)
-		// via a short-lived embedded ngrok tunnel — but only if the tunnel's
-		// assigned URL is actually that stable dev domain. A bare ngrok tunnel on
-		// the free tier often returns an EPHEMERAL *.ngrok-free.app subdomain that
-		// rotates every session; installing that as MCP_PUBLIC_URL would write a
-		// dead endpoint. So we only accept a stable *.ngrok-free.dev URL here and
-		// reject everything else, falling through to the manual prompt rather
-		// than persisting a rotating URL.
+		publicURL, _, err := tunnel.ResolveNgrokPublicURL(ctx, apiKey, s.Domain)
+		if err != nil {
+			// API key provided but the query failed (network / rejected key).
+			// Surface the reason, then continue to the SDK / prompt fallbacks.
+			tunnel.PrintTunnelDeepLink("ngrok", "api_key")
+			fmt.Fprintf(os.Stderr, "ngrok API lookup failed (%v); falling back\n", err)
+		}
+		if publicURL != "" {
+			return publicURL, true
+		}
+		// No API key (or the reserved-domain set gave nothing): try the stable
+		// *.ngrok-free.dev dev domain via a short-lived embedded tunnel. Only
+		// accept a STABLE URL — an ephemeral *.ngrok-free.app subdomain rotates
+		// every session and installing it writes a dead endpoint.
 		if tok := s.TunnelToken; tok != "" {
 			if u, sdkErr := tunnel.ResolveNgrokSDKURL(ctx, tok); sdkErr == nil {
 				if tunnel.IsStableNgrokDevURL(u) {
-					publicURL = u
-				} else if u != "" {
+					return u, true
+				}
+				if u != "" {
 					fmt.Fprintf(os.Stderr, "ngrok authtoken tunnel returned an unstable URL (%s); not persisting it\n", u)
 				}
 			} else {
 				fmt.Fprintf(os.Stderr, "ngrok authtoken URL lookup failed (%v)\n", sdkErr)
 			}
 		}
-	}
-	if publicURL == "" {
-		// Still nothing: no API key and the authtoken lookup failed or there is
-		// no authtoken. Direct the operator to the domains page and ask for the
-		// URL they see there.
+		// Nothing derivable: open the domains page so the interactive prompt
+		// has the browser ready.
 		tunnel.OpenTunnelDeepLink("ngrok", "domain")
-		u, perr := p.Text("ngrok public base URL (from dashboard.ngrok.com/domains, e.g. https://you.ngrok-free.dev)", "", "")
-		if perr != nil {
-			return "", perr
-		}
-		u = strings.TrimSpace(u)
-		if u == "" {
-			return "", fmt.Errorf("an ngrok public base URL is required for an HTTP install")
-		}
-		publicURL = u
+		return "", false
 	}
-	s.PublicURL = publicURL
-	tunnel.PersistTunnelCredential(cfgMgr, "ngrok", "api_key", apiKey)
-	return publicURL, nil
+
+	return []fieldform.Field[*ServiceInstallState, string]{token, publicURL}
+}
+
+// ngrokFinalize persists the resolved authtoken to the last-resort config
+// manager so later runs auto-detect it (RequiresToken on the embedded tunnel
+// accepts a config-manager-sourced token). The API key is NOT persisted: there
+// is no supported ngrok.api_key config pair, and it is re-resolvable every run
+// from NGROK_API_KEY / --ngrok-api-key, so persisting it would be a dead write.
+// On a headless run it fails fast if the public URL is still unresolved (the
+// account API / SDK / operator could not provide one) rather than writing an
+// env file missing MCP_PUBLIC_URL. The token is NOT independently required: an
+// account-API or operator-resolved URL needs no token, and an SDK-derived URL
+// required the token to resolve at all, so it is non-empty in that path.
+func ngrokFinalize(_ context.Context, _ fieldform.Prompter, s *ServiceInstallState, cfgMgr config.Manager) error {
+	if s != nil {
+		tunnel.PersistTunnelCredential(cfgMgr, "ngrok", "token", s.TunnelToken)
+		if fieldform.NonInteractive && s.PublicURL == "" {
+			return fmt.Errorf("ngrok public base URL is required and could not be resolved non-interactively; supply --%s, NGROK_API_KEY, or run interactively", servicePublicURLFlag)
+		}
+	}
+	return nil
 }

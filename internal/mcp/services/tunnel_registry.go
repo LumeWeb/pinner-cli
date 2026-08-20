@@ -33,10 +33,14 @@ type TunnelProviderSpec struct {
 	// credentials) as fieldform.Field views, so the tunnel-config step resolves
 	// them with the shared field-resolution primitive (switch > existing
 	// decision > headless env fold) instead of the provider hand-rolling
-	// prompts. The step uses Fields+Finalize when set, and falls back to
-	// Configurer (legacy) otherwise, so providers migrate one at a time.
+	// prompts. ctx and cfgMgr thread the step's caller context and last-resort
+	// credential store into a field's Derived hook (which receives neither), so
+	// provider-derived values honor cancellation and can consult stored
+	// credentials (e.g. an ngrok token persisted by a prior Finalize). The step
+	// uses Fields+Finalize when set, and falls back to Configurer (legacy)
+	// otherwise, so providers migrate one at a time.
 	// Nil means the provider has no promptable fields.
-	Fields func(s *ServiceInstallState) []fieldform.Field[*ServiceInstallState, string]
+	Fields func(ctx context.Context, s *ServiceInstallState, cfgMgr config.Manager) []fieldform.Field[*ServiceInstallState, string]
 	// Finalize runs after the step gathers the provider's fields: it does the
 	// side-effects that are not field-shaped — provider-derived values (e.g. an
 	// ngrok public URL resolved from the account API), last-resort credential

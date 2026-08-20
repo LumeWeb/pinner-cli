@@ -196,7 +196,7 @@ func ServiceInstallSteps(state *ServiceInstallState, cmd *cli.Command, envFile s
 					// configurers provided).
 					fireProviderDeepLinks(s.Provider, s)
 
-					fields := append([]fieldform.Field[*ServiceInstallState, string]{}, spec.Fields(s)...)
+					fields := append([]fieldform.Field[*ServiceInstallState, string]{}, spec.Fields(ctx, s, cfgMgr)...)
 
 					// The shared auth token, preferred from MCP_AUTH_TOKEN (env
 					// fold) over an interactive prompt so the secret is never
