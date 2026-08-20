@@ -166,7 +166,7 @@ func TestTunnelConfigStepSkipsNgrokTokenPromptWhenConfigured(t *testing.T) {
 
 	envFile := filepath.Join(dir, "mcp.env")
 	cmd := &cli.Command{Flags: managedServiceFlags()}
-	require.NoError(t, cmd.Set(serviceAuthTokenFlag, "test-auth"))
+	require.NoError(t, cmd.Set(serviceAuthTokenFlag, "test-auth-token-abc"))
 	// PublicURL is pre-set so the step's URL resolution short-circuits and this
 	// test isolates the token-skip behavior (the URL path is covered by its own
 	// tests).
@@ -393,7 +393,7 @@ func TestFlattenedNgrokWritesPublicURL(t *testing.T) {
 	dir := t.TempDir()
 	envFile := filepath.Join(dir, "mcp.env")
 	cmd := &cli.Command{Flags: managedServiceFlags()}
-	require.NoError(t, cmd.Set(serviceAuthTokenFlag, "auth"))
+	require.NoError(t, cmd.Set(serviceAuthTokenFlag, "test-auth-token"))
 
 	// Non-interactive so the URL-resolution API path (which needs no prompt) is
 	// the only path exercised; the API key is supplied via the seeded state.
@@ -457,7 +457,7 @@ func TestFlattenedNgrokCollectorHandoff(t *testing.T) {
 	// A real command shadow carrying the shared service flags, as production
 	// builds for `mcp install` and `mcp service`.
 	realCmd := &cli.Command{Flags: managedServiceFlags()}
-	require.NoError(t, realCmd.Set(serviceAuthTokenFlag, "auth"))
+	require.NoError(t, realCmd.Set(serviceAuthTokenFlag, "test-auth-token"))
 	// Derive the env file from the same resolver the collector uses so the two
 	// phases agree on the path regardless of platform.
 	envFile, err := ResolveServiceEnvFile(realCmd)

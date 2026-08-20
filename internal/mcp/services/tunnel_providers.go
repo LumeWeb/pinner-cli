@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"fmt"
 
 	"go.lumeweb.com/pinner-cli/internal/core/config"
@@ -29,7 +30,7 @@ func init() {
 		NewTunnel: func(cfg tunnel.TunnelConfig) (tunnel.Tunnel, error) {
 			return tunnel.NewCloudflaredTunnel(cfg)
 		},
-		Fields: func(_ *ServiceInstallState, _ config.Manager) []fieldform.Field[*ServiceInstallState, string] {
+		Fields: func(_ context.Context, _ *ServiceInstallState, _ config.Manager) []fieldform.Field[*ServiceInstallState, string] {
 			return cloudflaredFields()
 		},
 		Finalize: cloudflaredFinalize,
@@ -49,8 +50,8 @@ func init() {
 		NewTunnel: func(cfg tunnel.TunnelConfig) (tunnel.Tunnel, error) {
 			return newNgrokTunnel(cfg), nil
 		},
-		Fields: func(_ *ServiceInstallState, cfgMgr config.Manager) []fieldform.Field[*ServiceInstallState, string] {
-			return ngrokFields(cfgMgr)
+		Fields: func(ctx context.Context, _ *ServiceInstallState, cfgMgr config.Manager) []fieldform.Field[*ServiceInstallState, string] {
+			return ngrokFields(ctx, cfgMgr)
 		},
 		Finalize: ngrokFinalize,
 		ConfigSeeded: func(s *ServiceInstallState) bool {
@@ -77,7 +78,7 @@ func init() {
 		// + ApiKey) with no provider-derived value, so it gathers declaratively
 		// instead of hand-rolling prompts. cloudflared and ngrok now gather
 		// through the same Fields+Finalize primitive too.
-		Fields: func(_ *ServiceInstallState, _ config.Manager) []fieldform.Field[*ServiceInstallState, string] {
+		Fields: func(_ context.Context, _ *ServiceInstallState, _ config.Manager) []fieldform.Field[*ServiceInstallState, string] {
 			return openAIFields()
 		},
 		Finalize: openAIFinalize,

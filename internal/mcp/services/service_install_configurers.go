@@ -148,10 +148,15 @@ func cloudflaredFinalize(_ context.Context, _ fieldform.Prompter, s *ServiceInst
 // available (the config-manager store, the ngrok CLI config, the account API)
 // instead of re-prompting, matching the legacy ngrokConfigurer it replaces.
 //
+// ctx threads the caller's context into the Derived closure (the hook signature
+// itself carries no ctx) so the account-API query and the SDK tunnel lookup
+// honor the install command's deadline/cancellation instead of hanging on their
+// own fixed timeouts.
+//
 // The token derives first (field order matters): PublicURL's SDK dev-domain
 // fallback consumes s.TunnelToken, so the token field must settle before the
 // URL field is resolved.
-func ngrokFields(cfgMgr config.Manager) []fieldform.Field[*ServiceInstallState, string] {
+func ngrokFields(ctx context.Context, cfgMgr config.Manager) []fieldform.Field[*ServiceInstallState, string] {
 	token := *installFieldByName("TunnelToken")
 	token.Prompt = promptText("ngrok authtoken / MCP tunnel token", "*")
 	token.Derived = func(s *ServiceInstallState) (string, bool) {
@@ -192,7 +197,7 @@ func ngrokFields(cfgMgr config.Manager) []fieldform.Field[*ServiceInstallState, 
 			tunnel.TunnelCfgCredential(cfgMgr, "ngrok", "api_key"),
 		)
 
-		publicURL, _, err := tunnel.ResolveNgrokPublicURL(context.Background(), apiKey, s.Domain)
+		publicURL, _, err := tunnel.ResolveNgrokPublicURL(ctx, apiKey, s.Domain)
 		if err != nil {
 			// API key provided but the query failed (network / rejected key).
 			// Surface the reason, then continue to the SDK / prompt fallbacks.
@@ -207,7 +212,7 @@ func ngrokFields(cfgMgr config.Manager) []fieldform.Field[*ServiceInstallState, 
 		// accept a STABLE URL — an ephemeral *.ngrok-free.app subdomain rotates
 		// every session and installing it writes a dead endpoint.
 		if tok := s.TunnelToken; tok != "" {
-			if u, sdkErr := tunnel.ResolveNgrokSDKURL(context.Background(), tok); sdkErr == nil {
+			if u, sdkErr := tunnel.ResolveNgrokSDKURL(ctx, tok); sdkErr == nil {
 				if tunnel.IsStableNgrokDevURL(u) {
 					return u, true
 				}

@@ -14,7 +14,7 @@ import (
 // field-resolution primitive: the authtoken (masked) and public URL fields with
 // a Derived hook that resolves them instead of imperative prompting.
 func TestNgrokFieldsShape(t *testing.T) {
-	fields := ngrokFields(nil)
+	fields := ngrokFields(context.Background(), nil)
 	require.Len(t, fields, 2)
 
 	byName := map[string]*fieldform.Field[*ServiceInstallState, string]{}
@@ -40,7 +40,7 @@ func TestNgrokTokenDerivesFromConfigManager(t *testing.T) {
 	cfgMgr := newTestConfigMgr(t)
 	tunnel.PersistTunnelCredential(cfgMgr, "ngrok", "token", "cfg-manager-token")
 
-	fields := ngrokFields(cfgMgr)
+	fields := ngrokFields(context.Background(), cfgMgr)
 	token := fields[0]
 	require.Equal(t, "TunnelToken", token.Name)
 
@@ -54,7 +54,7 @@ func TestNgrokTokenDerivesFromConfigManager(t *testing.T) {
 func TestNgrokTokenDerivesNothingWhenAbsent(t *testing.T) {
 	// cfgMgr is fresh (no persisted ngrok token) and the ngrok config file is
 	// not present in this environment, so ResolveCredential yields nothing.
-	fields := ngrokFields(newTestConfigMgr(t))
+	fields := ngrokFields(context.Background(), newTestConfigMgr(t))
 	v, ok := fields[0].Derived(&ServiceInstallState{})
 	require.False(t, ok, "no token source -> not derived")
 	require.Equal(t, "", v)
@@ -63,7 +63,7 @@ func TestNgrokTokenDerivesNothingWhenAbsent(t *testing.T) {
 // TestNgrokPublicURLDerivesOperatorValue guards the operator-supplied URL
 // short-circuit: PublicURL derives from s.PublicURL without any API call.
 func TestNgrokPublicURLDerivesOperatorValue(t *testing.T) {
-	fields := ngrokFields(newTestConfigMgr(t))
+	fields := ngrokFields(context.Background(), newTestConfigMgr(t))
 	url := fields[1]
 	s := &ServiceInstallState{PublicURL: "https://you.ngrok-free.dev"}
 	v, ok := url.Derived(s)
@@ -81,7 +81,7 @@ func TestNgrokPublicURLDerivesFromAPI(t *testing.T) {
 		w.Write([]byte(`{"reserved_domains":[{"id":"rd_1","domain":"you.ngrok-free.dev","cname_target":null}],"next_page_uri":null}`))
 	})
 
-	fields := ngrokFields(newTestConfigMgr(t))
+	fields := ngrokFields(context.Background(), newTestConfigMgr(t))
 	s := &ServiceInstallState{TunnelToken: "tun-token", NgrokAPIKey: "api-key"}
 	v, ok := fields[1].Derived(s)
 	require.True(t, ok)
@@ -100,7 +100,7 @@ func TestNgrokPublicURLDerivesFromAuthtoken(t *testing.T) {
 	}
 	defer func() { tunnel.ResolveNgrokSDKURL = orig }()
 
-	fields := ngrokFields(newTestConfigMgr(t))
+	fields := ngrokFields(context.Background(), newTestConfigMgr(t))
 	s := &ServiceInstallState{TunnelToken: "tun-token"}
 	v, ok := fields[1].Derived(s)
 	require.True(t, ok)
@@ -117,7 +117,7 @@ func TestNgrokPublicURLRejectsUnstableDerivedURL(t *testing.T) {
 	}
 	defer func() { tunnel.ResolveNgrokSDKURL = orig }()
 
-	fields := ngrokFields(newTestConfigMgr(t))
+	fields := ngrokFields(context.Background(), newTestConfigMgr(t))
 	s := &ServiceInstallState{TunnelToken: "tun-token"}
 	v, ok := fields[1].Derived(s)
 	require.False(t, ok, "unstable URL must not be derived/persisted")
