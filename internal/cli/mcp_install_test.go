@@ -509,11 +509,12 @@ func TestMcpInstallTunnelStepsThenCollector(t *testing.T) {
 }
 
 // TestMcpInstallBuildTunnelStepsProducesVisibleSteps guards the flatten:
-// production's buildMcpTunnelSteps returns the 3 REAL VISIBLE tunnel-config
-// steps (Tunnel provider / Tunnel-specific configuration / Write service
-// environment file) — not one opaque "Configure Tunnel" step — so the operator
-// actually sees the service install wizard. Each must be a non-hidden host
-// step operating on s.Service.
+// production's buildMcpTunnelSteps returns the 3 REAL tunnel-config steps
+// (Tunnel provider / Tunnel-specific configuration / Write service environment
+// file) — not one opaque "Configure Tunnel" step — each operating on s.Service.
+// The provider and config steps are user-facing INPUT steps and must stay
+// visible; the env-write step is mechanical plumbing and is hidden (it persists
+// the collected values with no user decision).
 func TestMcpInstallBuildTunnelStepsProducesVisibleSteps(t *testing.T) {
 	cmd := NewMcpInstallCommand()
 	steps := buildMcpTunnelSteps(cmd)
@@ -530,9 +531,17 @@ func TestMcpInstallBuildTunnelStepsProducesVisibleSteps(t *testing.T) {
 		if names[i] != want[i] {
 			t.Errorf("tunnel step[%d] name = %q, want %q", i, names[i], want[i])
 		}
-		if steps[i].Hidden() {
-			t.Errorf("tunnel step %q must be VISIBLE (not hidden)", names[i])
-		}
+	}
+	// Provider + config are user-facing input steps: visible.
+	if steps[0].Hidden() {
+		t.Errorf("tunnel step %q must be VISIBLE (user input)", names[0])
+	}
+	if steps[1].Hidden() {
+		t.Errorf("tunnel step %q must be VISIBLE (user input)", names[1])
+	}
+	// Env write is internal plumbing (no user decision): hidden.
+	if !steps[2].Hidden() {
+		t.Errorf("tunnel step %q must be HIDDEN (mechanical env write)", names[2])
 	}
 }
 

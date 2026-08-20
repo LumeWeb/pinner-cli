@@ -229,6 +229,11 @@ func (w *InstallWizard) getSteps() []wizard.Step[*InstallState] {
 	// the real collector; tests inject it. Skips itself for non-http installs.
 	steps = append(steps, wizard.StepFunc[*InstallState]{
 		Name_: "Resolve public URL",
+		// Internal plumbing: resolving/finalizing the endpoint from the already
+		// collected config is never a user-facing decision — hide it like
+		// Resolve Binary. Execution is unaffected; only the step list rendering
+		// drops it.
+		Hidden_: true,
 		SkipFunc: func(s *InstallState) bool {
 			return s.Transport != install.TransportHTTP || !anySupportsTransport(s.Agents, install.TransportHTTP)
 		},
