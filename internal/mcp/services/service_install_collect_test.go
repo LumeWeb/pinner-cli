@@ -84,11 +84,16 @@ func TestServiceInstallStepsShape(t *testing.T) {
 	}
 	require.Equal(t, []string{"Tunnel provider", "Tunnel-specific configuration", "Write service environment file"}, names)
 
-	// A provider already seeded (from flags/env) must not prompt again: the
-	// provider step has no SkipFunc but early-returns inside Execute. Executing
-	// with a seeded provider must return immediately without touching the
-	// interactive prompt (which would block/fail in a non-TTY test), proving
-	// the seeded-path is taken.
+	// A provider already seeded (from flags/env) must not prompt again in a
+	// HEADLESS run: the provider step early-returns inside Execute when the
+	// provider is set and the run cannot prompt. Executing with a seeded
+	// provider must return immediately without touching the interactive prompt
+	// (which would block/fail in a non-TTY test), proving the seeded-path is
+	// taken. (Interactive re-runs DO re-prompt with the current provider as an
+	// editable default, so the operator can change it.)
+	prior := fieldform.NonInteractive
+	fieldform.NonInteractive = true
+	defer func() { fieldform.NonInteractive = prior }()
 	state.Provider = tunnel.TunnelProviderCloudflared
 	require.NoError(t, steps[0].Execute(context.Background(), state), "provider step should no-op when provider is already set")
 	require.Equal(t, tunnel.TunnelProviderCloudflared, state.Provider, "provider must not be overwritten")
