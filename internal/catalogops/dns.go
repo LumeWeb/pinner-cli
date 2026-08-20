@@ -568,7 +568,7 @@ func dnsRecordsDelete(d DNSDeps) catalog.Operation {
 		Name:        "dns_records_delete",
 		Title:       "Delete a DNS record",
 		Summary:     "Delete a DNS record",
-		Description: "Delete a DNS record, identified by the zone's domain plus name and type. DESTRUCTIVE and irreversible. Deletes one record only; to remove the whole zone use dns_zones_delete.",
+		Description: "Delete all DNS records matching the zone, name and type. DESTRUCTIVE and irreversible. Note: DNS records are grouped by name+type, so this removes every value for that name (e.g. all TXT records at the same name), not just one. To remove the whole zone instead, use `pinner dns zones delete`.",
 		Category:    "core",
 		Safety:      catalog.SafetyDestructive,
 		Interaction: catalog.InteractionAgentSafe,
