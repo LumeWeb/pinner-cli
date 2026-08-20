@@ -467,7 +467,8 @@ func TestFlattenedNgrokCollectorHandoff(t *testing.T) {
 	fieldform.NonInteractive = true
 	defer func() { fieldform.NonInteractive = prior }()
 
-	// Phase 1: the flattened sub-steps (what w.tunnelConfigurer runs).
+	// The flattened sub-steps (what w.tunnelConfigurer runs) resolve the URL
+	// from the API and write it as MCP_PUBLIC_URL.
 	state := &ServiceInstallState{
 		EnvFile:     envFile,
 		Provider:    tunnel.TunnelProviderNgrok,
@@ -482,8 +483,8 @@ func TestFlattenedNgrokCollectorHandoff(t *testing.T) {
 		require.NoError(t, step.Execute(context.Background(), state))
 	}
 
-	// Phase 2: the production HTTP collector (what w.collectHTTP runs). It must
-	// see the MCP_PUBLIC_URL the sub-steps wrote, not return it empty.
+	// Then the production HTTP collector (what w.collectHTTP runs) must see the
+	// MCP_PUBLIC_URL the sub-steps wrote, not return it empty.
 	env, _, err := collectHTTPInstall(context.Background(), realCmd, "", false, true)
 	require.NoError(t, err)
 	require.Equal(t, "https://you.ngrok-free.dev", env["MCP_PUBLIC_URL"],
