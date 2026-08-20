@@ -456,6 +456,9 @@ func buildMcpTunnelSteps(realCmd *cli.Command) []wizard.Step[*InstallState] {
 		// completes.
 		wizard.StepFunc[*InstallState]{
 			Name_: "Write service environment file",
+			// Internal plumbing: persisting the collected tunnel/service env is
+			// never a user-facing decision — hide it like Resolve Binary.
+			Hidden_: true,
 			SkipFunc: func(s *InstallState) bool {
 				return httpTunnelSkipped(s) || s.serviceEnvErr != nil
 			},
