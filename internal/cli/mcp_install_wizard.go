@@ -64,6 +64,13 @@ type InstallState struct {
 	// not claim "--tunnel" when the operator never passed it.
 	tunnelSeedSource string
 
+	// NonInteractive reports whether this run is headless (no interactive
+	// prompts possible). Set from the --non-interactive flag in runMcpInstall.
+	// It lets the tunnel seeded-predicates decide whether a persisted env file
+	// fully seeds the steps (headless: reuse silently) or only prefills
+	// editable prompts (interactive: let the operator reconfigure on a re-run).
+	NonInteractive bool
+
 	// Codex auto-approve opt-in (--auto-approve): when true the written Codex
 	// entry requests approval for all tools. Other agents ignore it.
 	AutoApprove bool

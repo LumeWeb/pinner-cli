@@ -89,6 +89,22 @@ func tunnelProviderChoiceLabels() []string {
 	}
 }
 
+// providerChoiceLabel returns the full choice label for a provider token (the
+// text the interactive Select highlights as the current default on a re-run),
+// or "" if the provider is unknown/unset. It derives from
+// tunnelProviderChoiceLabels — the single source of the label strings — by
+// matching the leading provider token (the identifier before " - "), so the
+// labels never drift between the option list and the highlighted default.
+func providerChoiceLabel(p tunnel.TunnelProvider) string {
+	prefix := string(p) + " - "
+	for _, label := range tunnelProviderChoiceLabels() {
+		if strings.HasPrefix(label, prefix) {
+			return label
+		}
+	}
+	return ""
+}
+
 // Select runs an interactive single-choice prompt, gated by NonInteractive.
 // RunServiceInstallWizard drives the interactive tunnel configuration wizard and
 // writes the resulting environment file. Flags and environment variables are
@@ -154,13 +170,15 @@ func ServiceInstallSteps(state *ServiceInstallState, cmd *cli.Command, envFile s
 		wizard.StepFunc[*ServiceInstallState]{
 			Name_: "Tunnel provider",
 			ExecuteFunc: func(ctx context.Context, s *ServiceInstallState) error {
-				if s.Provider != "" {
+				// Headless: reuse a resolved provider instead of prompting.
+				if s.Provider != "" && fieldform.NonInteractive {
 					return nil
 				}
 				p := serviceInstallStepsPrompter(ctx)
 				// ngrok is listed first so the interactive select defaults to it (see
-				// tunnelProviderChoiceLabels).
-				_, choice, err := p.Select("MCP tunnel provider (exposes the remote MCP endpoint)", tunnelProviderChoiceLabels(), "")
+				// tunnelProviderChoiceLabels); on an interactive re-run the current
+				// provider is highlighted so the operator can keep or change it.
+				_, choice, err := p.Select("MCP tunnel provider (exposes the remote MCP endpoint)", tunnelProviderChoiceLabels(), providerChoiceLabel(s.Provider))
 				if err != nil {
 					return err
 				}
@@ -315,7 +333,13 @@ func seedServiceFromFlagsAndEnv(cmd *cli.Command, s *ServiceInstallState, _ stri
 }
 
 func serviceInstallStateToEnv(s *ServiceInstallState) ServiceEnvironment {
-	env := ServiceEnvironment{"MCP_TUNNEL_PROVIDER": string(s.Provider)}
+	env := ServiceEnvironment{}
+	// Provider is written only when decided; an undecided (empty) provider must
+	// not write MCP_TUNNEL_PROVIDER= (which would clobber a persisted value on
+	// a re-run reconcile or write a meaningless empty line on a fresh install).
+	if s.Provider != "" {
+		env["MCP_TUNNEL_PROVIDER"] = string(s.Provider)
+	}
 	if v := s.TunnelID; v != "" {
 		env["MCP_TUNNEL_ID"] = v
 	}

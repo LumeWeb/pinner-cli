@@ -61,6 +61,30 @@ type TunnelProviderSpec struct {
 	// missing auth token never takes the skip path). Nil falls back to
 	// "not seeded" (always prompt).
 	ConfigSeeded func(s *ServiceInstallState) bool
+	// EnvKeys lists the MCP service-env keys this provider owns — its
+	// identity/credential keys, EXCLUDING the shared
+	// MCP_TUNNEL_PROVIDER / MCP_AUTH_TOKEN / MCP_PUBLIC_URL / MCP_HOST that
+	// every provider writes. A re-run reconcile removes the PREVIOUS provider's
+	// EnvKeys from the env file when the operator switches providers, so no
+	// orphaned credentials survive for a tunnel that no longer exists.
+	EnvKeys []string
+	// EnvKeyAlias maps one of the CURRENT provider's EnvKeys to the canonical
+	// EnvKey of the same credential when it is an alternate spelling of a
+	// credential the install state models (e.g. ngrok's NGROK_AUTHTOKEN aliases
+	// MCP_TUNNEL_TOKEN). On a same-provider reconcile the alias is cleared ONLY
+	// when its canonical key is present in the overlay, so a legacy-only env
+	// file (e.g. just NGROK_AUTHTOKEN, no MCP_TUNNEL_TOKEN) never has its only
+	// token removed. A distinct LIVE credential the state does not persist
+	// (e.g. NGROK_API_KEY, read at collect time) is NOT an alias and maps to ""
+	// so it survives a same-provider re-run — it is only purged by a switch
+	// away from the provider.
+	EnvKeyAlias func(key string) string
+	// CleanState zeroes every install-state field the CURRENT provider does not
+	// own. After a seed fold loads every persisted value into the state (from
+	// any provider), this scrubs fields of other providers so a reconcile
+	// overlay (built from the state) never resurrects another provider's
+	// credentials. Nil leaves the state untouched (provider owns everything).
+	CleanState func(s *ServiceInstallState)
 }
 
 // tunnelRegistry is the process-wide provider registry.
@@ -125,4 +149,44 @@ func TunnelFor(provider, domain, token, name, tunnelID string, cfgMgr config.Man
 		TunnelID:  tunnelID,
 		ConfigMgr: cfgMgr,
 	})
+}
+
+// TunnelProviderEnvKeys returns the MCP service-env keys owned by a provider,
+// per that provider's registered EnvKeys. Used to purge a previous provider's
+// orphaned keys from the env file on a provider-switch re-run. Unknown/empty
+// providers map to no keys.
+func TunnelProviderEnvKeys(provider tunnel.TunnelProvider) []string {
+	spec, ok := providers.spec(provider)
+	if !ok {
+		return nil
+	}
+	return spec.EnvKeys
+}
+
+// TunnelProviderCleanState zeroes the install-state fields NOT owned by the
+// provider, per that provider's registered CleanState scrubber. After a seed
+// fold loads every persisted value into the state (from any provider), this
+// scrubs other providers' fields so a reconcile overlay never resurrects their
+// credentials. Unknown/empty providers and providers without a scrubber leave
+// the state untouched.
+func TunnelProviderCleanState(provider tunnel.TunnelProvider, s *ServiceInstallState) {
+	if provider == "" || s == nil {
+		return
+	}
+	if spec, ok := providers.spec(provider); ok && spec.CleanState != nil {
+		spec.CleanState(s)
+	}
+}
+
+// TunnelProviderEnvKeyAlias returns the canonical modeled EnvKey that a CURRENT
+// provider's EnvKey is an alternate spelling of, or "" if it is not an alias.
+// An alias is cleared on a same-provider reconcile only when its canonical key
+// is present in the overlay (see ReconcileServiceEnvironmentFromInstallState).
+// Unknown providers and keys that are not aliases return "".
+func TunnelProviderEnvKeyAlias(provider tunnel.TunnelProvider, key string) string {
+	spec, ok := providers.spec(provider)
+	if !ok || spec.EnvKeyAlias == nil {
+		return ""
+	}
+	return spec.EnvKeyAlias(key)
 }
