@@ -12,12 +12,11 @@ import (
 // type-aware Parse, prompt defaults, Field projection, erasure to AnyField for
 // mixed-type sets, JSON-schema emission) is hidden inside these constructors.
 //
-// Two shapes drive which constructor a field uses:
+// Two shapes drive which constructor a field uses.
 //
 //   - Value-typed state fields (Domain string) keep Decided distinct from
 //     Operational via a host-level decisions map, because the value itself
-//     cannot encode nil=undecided. They are declared with Str, passing the
-//     host's single Decided binding:
+//     cannot encode nil=undecided. They are declared with Str:
 //
 //	dec := fieldform.Decided[*Config, string]{
 //	    Read:  func(s *Config, n string) *string { return s.decisions[n] },
@@ -25,11 +24,16 @@ import (
 //	}
 //	fieldform.Str(dec, "Domain", get, set, fieldform.Meta{Flag: "domain"})
 //
-//   - Pointer-typed state fields (OAuth *bool, Port *int) encode the decision
-//     channel in the pointer itself (nil = undecided). They need NO Decided
-//     binding and use Bool/Int/Enum:
+//   - Pointer-typed state fields (OAuth *bool, Port *int) use Bool/Int/Enum so
+//     the pointer encodes the Operational value (nil = unset); they still pass a
+//     Decided binding so the operator-decision channel stays separate and a
+//     fold (env/derived/default) never looks like a decision:
 //
-//	fieldform.Bool("OAuth", getOAuth, setOAuth, fieldform.Meta{Flag: "oauth"})
+//	decb := fieldform.Decided[*Config, bool]{
+//	    Read:  func(s *Config, n string) *bool { /* from decisions map */ },
+//	    Write: func(s *Config, n string, v bool) { /* to decisions map */ },
+//	}
+//	fieldform.Bool(decb, "OAuth", getOAuth, setOAuth, fieldform.Meta{Flag: "oauth"})
 //
 // Either way the returned value is an already-erased AnyField[S] ready for
 // GatherAny and FormSchema.
@@ -81,9 +85,13 @@ func Str[S any](dec Decided[S, string], name string, get func(S) string, set fun
 	return Erase(spec.Field())
 }
 
-// Bool declares a POINTER-typed bool field; the pointer itself is both the
-// Operational value and the Decided channel (nil = undecided).
-func Bool[S any](name string, get func(S) *bool, set func(S, bool), m Meta) AnyField[S] {
+// Bool declares a POINTER-typed bool field. The pointer is the Operational
+// value only (nil = not yet folded/set); the Decided channel is a separate
+// name-keyed store supplied by the host's Decided binding, so an env/derived/
+// default fold writes the Operational pointer but never collides with an
+// operator decision. get/set operate on the Operational pointer; dec carries
+// operator decisions (switch or prompt).
+func Bool[S any](dec Decided[S, bool], name string, get func(S) *bool, set func(S, bool), m Meta) AnyField[S] {
 	spec := fieldSpec[S, bool]{
 		Name:       name,
 		Flag:       m.Flag,
@@ -92,17 +100,19 @@ func Bool[S any](name string, get func(S) *bool, set func(S, bool), m Meta) AnyF
 		Required:   m.Required,
 		Get:        func(s S) bool { return derefT(get(s)) },
 		Set:        set,
-		Decide:     get,
-		Commit:     func(s S, v bool) { set(s, v) },
+		Decide:     func(s S) *bool { return dec.Read(s, name) },
+		Commit:     func(s S, v bool) { dec.Write(s, name, v); set(s, v) },
 		Parse:      func(raw string) (bool, bool) { return parseT[bool](raw) },
 	}
 	applyPromptMeta(&spec, m)
 	return Erase(spec.Field())
 }
 
-// Int declares a POINTER-typed int field; the pointer is both the Operational
-// value and the Decided channel (nil = undecided).
-func Int[S any](name string, get func(S) *int, set func(S, int), m Meta) AnyField[S] {
+// Int declares a POINTER-typed int field. The pointer is the Operational value
+// only; the Decided channel is a separate name-keyed store (the host's Decided
+// binding), so a fold keeps the field undecided. get/set operate on the
+// Operational pointer; dec carries operator decisions.
+func Int[S any](dec Decided[S, int], name string, get func(S) *int, set func(S, int), m Meta) AnyField[S] {
 	spec := fieldSpec[S, int]{
 		Name:       name,
 		Flag:       m.Flag,
@@ -111,8 +121,8 @@ func Int[S any](name string, get func(S) *int, set func(S, int), m Meta) AnyFiel
 		Required:   m.Required,
 		Get:        func(s S) int { return derefT(get(s)) },
 		Set:        set,
-		Decide:     get,
-		Commit:     func(s S, v int) { set(s, v) },
+		Decide:     func(s S) *int { return dec.Read(s, name) },
+		Commit:     func(s S, v int) { dec.Write(s, name, v); set(s, v) },
 		Parse:      func(raw string) (int, bool) { return parseT[int](raw) },
 	}
 	applyPromptMeta(&spec, m)
@@ -121,8 +131,9 @@ func Int[S any](name string, get func(S) *int, set func(S, int), m Meta) AnyFiel
 
 // Enum declares a POINTER-typed selectable field of type T (e.g. `string`) whose
 // choices are the static options. Parse maps a raw source string to T and
-// validates membership against the options.
-func Enum[S any, T comparable](name string, get func(S) *T, set func(S, T), options []T, m Meta) AnyField[S] {
+// validates membership against the options. The pointer is the Operational
+// value only; the Decided channel is the host's Decided binding.
+func Enum[S any, T comparable](dec Decided[S, T], name string, get func(S) *T, set func(S, T), options []T, m Meta) AnyField[S] {
 	spec := fieldSpec[S, T]{
 		Name:       name,
 		Flag:       m.Flag,
@@ -131,8 +142,8 @@ func Enum[S any, T comparable](name string, get func(S) *T, set func(S, T), opti
 		Required:   m.Required,
 		Get:        func(s S) T { return derefT(get(s)) },
 		Set:        set,
-		Decide:     get,
-		Commit:     func(s S, v T) { set(s, v) },
+		Decide:     func(s S) *T { return dec.Read(s, name) },
+		Commit:     func(s S, v T) { dec.Write(s, name, v); set(s, v) },
 		Parse:      mapEnumParse[T](options),
 		Prompt: &Prompt[T]{
 			Label:         name,

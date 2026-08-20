@@ -22,7 +22,7 @@ func TestFieldSchema(t *testing.T) {
 	require.Equal(t, "password", fSec.Schema().Format, "Mask -> format password")
 
 	// Options -> enum
-	fSel := Enum[*st2, string]("mode", func(*st2) *string { return nil }, func(*st2, string) {}, []string{"managed", "self"}, Meta{})
+	fSel := Enum[*st2, string](decNoopT[*st2, string](), "mode", func(*st2) *string { return nil }, func(*st2, string) {}, []string{"managed", "self"}, Meta{})
 	require.Equal(t, []any{"managed", "self"}, fSel.Schema().Enum, "Options -> enum")
 
 	// multi -> array + items.enum (no functional constructor yet; built via the
@@ -32,11 +32,11 @@ func TestFieldSchema(t *testing.T) {
 	require.Equal(t, []any{"a", "b"}, fMul.Schema().Items.Enum, "Multi items.enum")
 
 	// bool -> boolean
-	fBool := Bool[*st2]("oauth", func(*st2) *bool { return nil }, func(*st2, bool) {}, Meta{Flag: "oauth"})
+	fBool := Bool[*st2](decNoopT[*st2, bool](), "oauth", func(*st2) *bool { return nil }, func(*st2, bool) {}, Meta{Flag: "oauth"})
 	require.Equal(t, "boolean", fBool.Schema().Type, "bool field -> type boolean")
 
 	// int -> integer
-	fInt := Int[*st2]("port", func(*st2) *int { return nil }, func(*st2, int) {}, Meta{Flag: "port"})
+	fInt := Int[*st2](decNoopT[*st2, int](), "port", func(*st2) *int { return nil }, func(*st2, int) {}, Meta{Flag: "port"})
 	require.Equal(t, "integer", fInt.Schema().Type, "int field -> type integer")
 }
 
@@ -47,8 +47,8 @@ func TestFormSchema(t *testing.T) {
 
 	fs := []AnyField[*st2]{
 		Str[*st2](decNoop[*st2](), "domain", func(*st2) string { return "" }, func(*st2, string) {}, Meta{Flag: "domain"}),
-		Bool[*st2]("oauth", func(*st2) *bool { return nil }, func(*st2, bool) {}, Meta{Flag: "oauth"}),
-		Int[*st2]("port", func(*st2) *int { return nil }, func(*st2, int) {}, Meta{Flag: "port"}),
+		Bool[*st2](decNoopT[*st2, bool](), "oauth", func(*st2) *bool { return nil }, func(*st2, bool) {}, Meta{Flag: "oauth"}),
+		Int[*st2](decNoopT[*st2, int](), "port", func(*st2) *int { return nil }, func(*st2, int) {}, Meta{Flag: "port"}),
 	}
 
 	obj := FormSchema(fs)
@@ -73,5 +73,13 @@ func decNoop[S any]() Decided[S, string] {
 	return Decided[S, string]{
 		Read:  func(S, string) *string { return nil },
 		Write: func(S, string, string) {},
+	}
+}
+
+// decNoopT is the type-generic no-op Decided binding for any field type.
+func decNoopT[S any, T any]() Decided[S, T] {
+	return Decided[S, T]{
+		Read:  func(S, string) *T { return nil },
+		Write: func(S, string, T) {},
 	}
 }

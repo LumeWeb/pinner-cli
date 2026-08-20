@@ -2,6 +2,7 @@ package fieldform
 
 import (
 	"context"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -22,6 +23,74 @@ func (s *cfgState) decidedFor(name string) *string {
 		return nil
 	}
 	return s.decisions[name]
+}
+
+// boolDecided / intDecided are Decided bindings that serialize the bool/int
+// decision into cfgState's string-keyed decisions map, mirroring how the
+// service-install fields reuse one map across the Str and Bool/Int fields.
+func boolDecided() Decided[*cfgState, bool] {
+	return Decided[*cfgState, bool]{
+		Read: func(s *cfgState, name string) *bool {
+			r := s.decidedFor(name)
+			if r == nil {
+				return nil
+			}
+			v := *r == "true"
+			return &v
+		},
+		Write: func(s *cfgState, name string, v bool) {
+			if s.decisions == nil {
+				s.decisions = map[string]*string{}
+			}
+			c := strconv.FormatBool(v)
+			s.decisions[name] = &c
+		},
+	}
+}
+
+func intDecided() Decided[*cfgState, int] {
+	return Decided[*cfgState, int]{
+		Read: func(s *cfgState, name string) *int {
+			r := s.decidedFor(name)
+			if r == nil {
+				return nil
+			}
+			v, err := strconv.Atoi(*r)
+			if err != nil {
+				return nil
+			}
+			return &v
+		},
+		Write: func(s *cfgState, name string, v int) {
+			if s.decisions == nil {
+				s.decisions = map[string]*string{}
+			}
+			c := strconv.Itoa(v)
+			s.decisions[name] = &c
+		},
+	}
+}
+
+// strEnumDecided binds an Enum field of a string-kind enum type E to cfgState's
+// string decisions map (the value serializes 1:1 as its string form).
+func strEnumDecided[E ~string]() Decided[*cfgState, E] {
+	return Decided[*cfgState, E]{
+		Read: func(s *cfgState, name string) *E {
+			r := s.decidedFor(name)
+			if r == nil {
+				return nil
+			}
+			v := E(*r)
+			return &v
+		},
+		Write: func(s *cfgState, name string, v E) {
+			if s.decisions == nil {
+				s.decisions = map[string]*string{}
+			}
+			c := string(v)
+			s.decisions[name] = &c
+		},
+	}
 }
 
 // TestStrTwoChannelProvenance guards the Str constructor: a value folded from
@@ -100,17 +169,20 @@ func TestStrCommitBothChannels(t *testing.T) {
 	require.Equal(t, "example.com", *field.Decided(s), "SetOperational must not clobber the decision")
 }
 
-// TestBoolIntPointerChannel guards the pointer-typed constructors: the pointer
-// is both Operational and Decided (nil = undecided).
-func TestBoolIntPointerChannel(t *testing.T) {
-	b := Bool[*cfgState]("OAuth",
+// TestBoolIntTwoChannel guards the pointer-typed constructors: the pointer is
+// the Operational value only, and the Decided channel lives in the name-keyed
+// decisions map (the two-channel invariant). A Bool/Int field with an EnvFileKey
+// or Default folds into Operational but must NOT report Decided — the exact
+// regression the constructor restructure eliminates.
+func TestBoolIntTwoChannel(t *testing.T) {
+	b := Bool[*cfgState](boolDecided(), "OAuth",
 		func(s *cfgState) *bool { return s.OAuth },
 		func(s *cfgState, v bool) { s.OAuth = &v },
-		Meta{Flag: "oauth"})
-	i := Int[*cfgState]("Port",
+		Meta{Flag: "oauth", EnvFileKey: "MCP_OAUTH"})
+	i := Int[*cfgState](intDecided(), "Port",
 		func(s *cfgState) *int { return s.Port },
 		func(s *cfgState, v int) { s.Port = &v },
-		Meta{Flag: "port"})
+		Meta{Flag: "port", EnvFileKey: "MCP_PORT", Default: 8080})
 
 	s := &cfgState{}
 	ba := any(b).(*erasedField[*cfgState, bool]).f
@@ -121,14 +193,39 @@ func TestBoolIntPointerChannel(t *testing.T) {
 	require.Nil(t, ia.Decided(s))
 	require.Equal(t, 0, ia.Operational(s), "undecided int -> zero value")
 
+	// An env-file fold must set Operational but NEVER Decided (two-channel).
+	sEnv := &cfgState{}
+	_, _, err := GatherAny(context.Background(),
+		&fakeSrc{env: map[string]string{"MCP_OAUTH": "true", "MCP_PORT": "9000"}},
+		sEnv, []AnyField[*cfgState]{b, i})
+	require.NoError(t, err)
+	require.NotNil(t, sEnv.OAuth)
+	require.True(t, *sEnv.OAuth, "env-fold set the Operational bool")
+	require.NotNil(t, sEnv.Port)
+	require.Equal(t, 9000, *sEnv.Port, "env-fold set the Operational int")
+	require.Nil(t, ba.Decided(sEnv), "env-fold must NOT be an operator decision (bool)")
+	require.Nil(t, ia.Decided(sEnv), "env-fold must NOT be an operator decision (int)")
+
+	// A default fold (precedence 4) likewise sets Operational, never Decided.
+	sDef := &cfgState{}
+	_, _, err = GatherAny(context.Background(),
+		&fakeSrc{env: map[string]string{}},
+		sDef, []AnyField[*cfgState]{b, i})
+	require.NoError(t, err)
+	require.Nil(t, ba.Decided(sDef), "default fold must not decide the bool")
+	require.Nil(t, ia.Decided(sDef), "default fold must not decide the int")
+
+	// An operator commit writes both channels: the value AND the decision.
 	ba.Commit(s, true)
 	require.NotNil(t, s.OAuth)
 	require.True(t, *s.OAuth)
+	require.NotNil(t, ba.Decided(s))
 	require.True(t, *ba.Decided(s))
 
 	ia.Commit(s, 8080)
 	require.NotNil(t, s.Port)
 	require.Equal(t, 8080, *s.Port)
+	require.NotNil(t, ia.Decided(s))
 	require.Equal(t, 8080, *ia.Decided(s))
 }
 
@@ -140,7 +237,7 @@ func TestEnumParsesAndValidates(t *testing.T) {
 		openai     provider = "openai"
 		cloudflare provider = "cloudflare"
 	)
-	e := Enum[*cfgState, provider]("Provider",
+	e := Enum[*cfgState, provider](strEnumDecided[provider](), "Provider",
 		func(s *cfgState) *provider { return nil },
 		func(s *cfgState, v provider) {},
 		[]provider{openai, cloudflare},
@@ -159,7 +256,7 @@ func TestEnumParsesAndValidates(t *testing.T) {
 // (precedence 4) — folded into the Operational value when no flag, decision, or
 // env value resolves the field, and never shadowing a persisted env value.
 func TestMetaDefaultWiresDerived(t *testing.T) {
-	i := Int[*cfgState]("Port",
+	i := Int[*cfgState](intDecided(), "Port",
 		func(s *cfgState) *int { return s.Port },
 		func(s *cfgState, v int) { s.Port = &v },
 		Meta{Flag: "port", EnvFileKey: "MCP_PORT", Default: 8080})
@@ -178,8 +275,10 @@ func TestMetaDefaultWiresDerived(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, s.Port)
 	require.Equal(t, 9000, *s.Port, "env value must beat the declared default")
+	require.Nil(t, ia.Decided(s), "env-fold must not be an operator decision")
 
-	// No env/flag/decision: the default folds into Operational (precedence 4).
+	// No env/flag/decision: the default folds into Operational (precedence 4)
+	// but stays UNDECIDED — the fallback default is not an operator decision.
 	s2 := &cfgState{}
 	_, _, err = GatherAny(context.Background(),
 		&fakeSrc{env: map[string]string{}},
@@ -187,11 +286,12 @@ func TestMetaDefaultWiresDerived(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, s2.Port, "fallback default must apply when nothing else resolves")
 	require.Equal(t, 8080, *s2.Port)
+	require.Nil(t, ia.Decided(s2), "fallback default must not be an operator decision")
 
 	// A non-nil default whose type does not match T is a caller error and must
 	// fail loudly rather than be discarded.
 	require.Panics(t, func() {
-		Int[*cfgState]("Bad",
+		Int[*cfgState](intDecided(), "Bad",
 			func(s *cfgState) *int { return s.Port },
 			func(s *cfgState, v int) { s.Port = &v },
 			Meta{Default: "not-an-int"})

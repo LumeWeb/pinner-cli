@@ -21,17 +21,25 @@ func TestConstructorSchema(t *testing.T) {
 		Read:  func(*st3, string) *string { return nil },
 		Write: func(*st3, string, string) {},
 	}
+	decB := Decided[*st3, bool]{
+		Read:  func(*st3, string) *bool { return nil },
+		Write: func(*st3, string, bool) {},
+	}
+	decI := Decided[*st3, int]{
+		Read:  func(*st3, string) *int { return nil },
+		Write: func(*st3, string, int) {},
+	}
 
 	fields := []AnyField[*st3]{
 		Str(dec, "Domain",
 			func(s *st3) string { return s.Domain },
 			func(s *st3, v string) { s.Domain = v },
 			Meta{Flag: "domain"}),
-		Bool[*st3]("OAuth",
+		Bool[*st3](decB, "OAuth",
 			func(s *st3) *bool { return s.OAuth },
 			func(s *st3, v bool) { s.OAuth = &v },
 			Meta{Flag: "oauth"}),
-		Int[*st3]("Port",
+		Int[*st3](decI, "Port",
 			func(s *st3) *int { return s.Port },
 			func(s *st3, v int) { s.Port = &v },
 			Meta{Flag: "port"}),
@@ -67,6 +75,10 @@ func TestFormSchemaRequired(t *testing.T) {
 		Read:  func(*st4, string) *string { return nil },
 		Write: func(*st4, string, string) {},
 	}
+	decB := Decided[*st4, bool]{
+		Read:  func(*st4, string) *bool { return nil },
+		Write: func(*st4, string, bool) {},
+	}
 
 	optionalOnly := []AnyField[*st4]{
 		Str(dec, "Domain",
@@ -82,7 +94,7 @@ func TestFormSchemaRequired(t *testing.T) {
 			func(s *st4) string { return s.Domain },
 			func(s *st4, v string) { s.Domain = v },
 			Meta{Flag: "domain", Required: true}),
-		Bool[*st4]("OAuth",
+		Bool[*st4](decB, "OAuth",
 			func(s *st4) *bool { return s.OAuth },
 			func(s *st4, v bool) { s.OAuth = &v },
 			Meta{Flag: "oauth"}), // optional
