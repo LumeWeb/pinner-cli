@@ -628,8 +628,8 @@ func websitesGetWithService(ctx context.Context, cmd interface{ Args() cli.Args 
 		fields = append(fields, Field{"Token Expires", website.ValidationExpiresAt.Format("2006-01-02 15:04:05")})
 	}
 
-	if website.DnsZoneId != nil {
-		fields = append(fields, Field{"DNS Zone ID", fmt.Sprintf("%d", *website.DnsZoneId)})
+	if website.ZoneId != nil {
+		fields = append(fields, Field{"DNS Zone ID", fmt.Sprintf("%d", *website.ZoneId)})
 	}
 
 	fields = append(fields, Field{"Created", website.Created.Format("2006-01-02 15:04:05")})

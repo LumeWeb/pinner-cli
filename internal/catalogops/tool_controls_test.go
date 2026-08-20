@@ -233,6 +233,12 @@ func TestDNSRecordTypeEnum(t *testing.T) {
 type mockDNSServiceForOps struct {
 	updateRecordFunc func(ctx context.Context, id, name, recordType string, record ipfs.RecordRequest) (*ipfs.RecordResponse, error)
 	createRecordFunc func(ctx context.Context, id string, record ipfs.RecordRequest) (*ipfs.RecordResponse, error)
+	// listRecordsFunc optionally overrides the records returned by ListRecords,
+	// letting tests exercise the delete-by-id resolution path.
+	listRecordsFunc func(ctx context.Context, id string) ([]ipfs.RecordResponse, error)
+	// deleteRecordFunc optionally captures the content selector forwarded to
+	// DeleteRecord for content-scoped delete tests.
+	deleteRecordFunc func(ctx context.Context, id, name, recordType string, content ...string) error
 	// Optional capture cells for the record-type argument passed to get/delete,
 	// since those have no request payload to inspect.
 	getRecordType    *string
@@ -261,6 +267,9 @@ func (m *mockDNSServiceForOps) CreateRecord(ctx context.Context, id string, r ip
 	return nil, nil
 }
 func (m *mockDNSServiceForOps) ListRecords(ctx context.Context, id string) ([]ipfs.RecordResponse, error) {
+	if m.listRecordsFunc != nil {
+		return m.listRecordsFunc(ctx, id)
+	}
 	return nil, nil
 }
 func (m *mockDNSServiceForOps) GetRecord(ctx context.Context, id, name, recordType string) (*ipfs.RecordResponse, error) {
@@ -275,9 +284,12 @@ func (m *mockDNSServiceForOps) UpdateRecord(ctx context.Context, id, name, recor
 	}
 	return &ipfs.RecordResponse{ZoneId: 1, Name: name, Type: recordType, Content: record.Content}, nil
 }
-func (m *mockDNSServiceForOps) DeleteRecord(ctx context.Context, id, name, recordType string) error {
+func (m *mockDNSServiceForOps) DeleteRecord(ctx context.Context, id, name, recordType string, content ...string) error {
 	if m.deleteRecordType != nil {
 		*m.deleteRecordType = recordType
+	}
+	if m.deleteRecordFunc != nil {
+		return m.deleteRecordFunc(ctx, id, name, recordType, content...)
 	}
 	return nil
 }
@@ -838,4 +850,247 @@ func TestDNSRecordExtendedTypeValidation(t *testing.T) {
 			t.Errorf("validateDNSRecord(%s, %q) expected error, got nil", tc.typ, tc.content)
 		}
 	}
+}
+
+// TestDNSRecordsDeleteSelection verifies the dns_records_delete handler
+// selection: deleting by --content targets one value, omitting content deletes
+// the whole RRSet, and deleting by --id resolves the record by its id (from
+// 'dns records list') and deletes that single value.
+func TestDNSRecordsDeleteSelection(t *testing.T) {
+	run := func(t *testing.T, mock *mockDNSServiceForOps, input map[string]any) (any, error) {
+		t.Helper()
+		deps := DNSDeps{
+			CfgMgr: func() config.Manager { return configmocks.NewMockManager(t) },
+			ServiceFactory: func(_ config.Manager, _ bool, _ ...dns.Option) dns.Service {
+				return mock
+			},
+		}
+		var op catalog.Operation
+		for _, o := range DNSOperations(deps) {
+			if o.Name() == "dns_records_delete" {
+				op = o
+				break
+			}
+		}
+		if op == nil {
+			t.Fatal("dns_records_delete operation not found")
+		}
+		return op.Handler().Execute(context.Background(), input)
+	}
+
+	t.Run("forwards content selector", func(t *testing.T) {
+		var got []string
+		mock := &mockDNSServiceForOps{
+			listRecordsFunc: func(_ context.Context, _ string) ([]ipfs.RecordResponse, error) {
+				return []ipfs.RecordResponse{{Id: "aaa", Name: "www", Type: "TXT", Content: "v=spf1 include:mxroute.com -all"}}, nil
+			},
+			deleteRecordFunc: func(_ context.Context, _, _, _ string, content ...string) error {
+				got = content
+				return nil
+			},
+		}
+		if _, err := run(t, mock, map[string]any{
+			"zone": "123", "name": "www", "type": "TXT", "content": "v=spf1 include:mxroute.com -all", "confirm": true,
+		}); err != nil {
+			t.Fatalf("delete handler: %v", err)
+		}
+		if len(got) != 1 || got[0] != "v=spf1 include:mxroute.com -all" {
+			t.Errorf("expected content forwarded, got %v", got)
+		}
+	})
+
+	t.Run("rejects unknown content selector", func(t *testing.T) {
+		var got []string
+		mock := &mockDNSServiceForOps{
+			listRecordsFunc: func(_ context.Context, _ string) ([]ipfs.RecordResponse, error) {
+				return []ipfs.RecordResponse{{Id: "aaa", Name: "www", Type: "TXT", Content: "v=spf1 include:mxroute.com -all"}}, nil
+			},
+			deleteRecordFunc: func(_ context.Context, _, _, _ string, content ...string) error {
+				got = content
+				return nil
+			},
+		}
+		if _, err := run(t, mock, map[string]any{
+			"zone": "123", "name": "www", "type": "TXT", "content": "stale/mistyped value", "confirm": true,
+		}); err == nil {
+			t.Fatal("expected error for unknown content selector")
+		}
+		if len(got) != 0 {
+			t.Errorf("DeleteRecord must not be called for unknown content, got %v", got)
+		}
+	})
+
+	t.Run("apex '@' content selector resolves the empty-name record", func(t *testing.T) {
+		var gotName string
+		var gotContent []string
+		mock := &mockDNSServiceForOps{
+			listRecordsFunc: func(_ context.Context, _ string) ([]ipfs.RecordResponse, error) {
+				// Apex records are stored with an empty name; '@' is only the
+				// display shorthand (see internal/cli/dns.go).
+				return []ipfs.RecordResponse{{Id: "aaa", Name: "", Type: "TXT", Content: "v=spf1 include:mxroute.com -all"}}, nil
+			},
+			deleteRecordFunc: func(_ context.Context, _ string, name, _ string, content ...string) error {
+				gotName = name
+				gotContent = content
+				return nil
+			},
+		}
+		if _, err := run(t, mock, map[string]any{
+			"zone": "123", "name": "@", "type": "TXT", "content": "v=spf1 include:mxroute.com -all", "confirm": true,
+		}); err != nil {
+			t.Fatalf("apex content delete: %v", err)
+		}
+		if len(gotContent) != 1 || gotContent[0] != "v=spf1 include:mxroute.com -all" {
+			t.Errorf("expected apex content forwarded, got %v", gotContent)
+		}
+		if gotName != "" {
+			t.Errorf("expected apex name normalized to empty string for delete, got %q", gotName)
+		}
+	})
+
+	t.Run("rejects ambiguous content selector", func(t *testing.T) {
+		deleted := false
+		mock := &mockDNSServiceForOps{
+			listRecordsFunc: func(_ context.Context, _ string) ([]ipfs.RecordResponse, error) {
+				// Two TXT records with identical SPF content: a content-scoped
+				// delete would erase both, so it must be rejected.
+				return []ipfs.RecordResponse{
+					{Id: "a1b2c3", Name: "@", Type: "TXT", Content: "v=spf1 include:mxroute.com -all"},
+					{Id: "a1b2c3", Name: "@", Type: "TXT", Content: "v=spf1 include:mxroute.com -all"},
+				}, nil
+			},
+			deleteRecordFunc: func(_ context.Context, _, _, _ string, _ ...string) error {
+				deleted = true
+				return nil
+			},
+		}
+		if _, err := run(t, mock, map[string]any{
+			"zone": "123", "name": "@", "type": "TXT", "content": "v=spf1 include:mxroute.com -all", "confirm": true,
+		}); err == nil {
+			t.Fatal("expected error for ambiguous content selector")
+		}
+		if deleted {
+			t.Fatal("ambiguous content must not be forwarded to DeleteRecord")
+		}
+	})
+
+	t.Run("omitting content deletes whole rrset", func(t *testing.T) {
+		var got []string
+		var listed bool
+		mock := &mockDNSServiceForOps{
+			listRecordsFunc: func(_ context.Context, _ string) ([]ipfs.RecordResponse, error) {
+				listed = true
+				return nil, fmt.Errorf("ListRecords must not be called for a whole-RRSet delete")
+			},
+			deleteRecordFunc: func(_ context.Context, _, _, _ string, content ...string) error {
+				got = content
+				return nil
+			},
+		}
+		if _, err := run(t, mock, map[string]any{
+			"zone": "123", "name": "www", "type": "A", "confirm": true,
+		}); err != nil {
+			t.Fatalf("delete handler: %v", err)
+		}
+		if len(got) != 0 {
+			t.Errorf("expected no content forwarded (whole RRSet), got %v", got)
+		}
+		if listed {
+			t.Error("whole-RRSet delete must not list records; it should go straight to DeleteRecord")
+		}
+	})
+
+	t.Run("deletes single record by id", func(t *testing.T) {
+		var gotName, gotType string
+		var gotContent []string
+		mock := &mockDNSServiceForOps{
+			listRecordsFunc: func(_ context.Context, zoneID string) ([]ipfs.RecordResponse, error) {
+				return []ipfs.RecordResponse{
+					{Id: "aaa", ZoneId: 123, Name: "www", Type: "A", Content: "192.0.2.10"},
+					{Id: "bbb", ZoneId: 123, Name: "www", Type: "A", Content: "192.0.2.11"},
+				}, nil
+			},
+			deleteRecordFunc: func(_ context.Context, _, name, recordType string, content ...string) error {
+				gotName, gotType = name, recordType
+				gotContent = content
+				return nil
+			},
+		}
+		res, err := run(t, mock, map[string]any{
+			"zone": "123", "id": "bbb", "confirm": true,
+		})
+		if err != nil {
+			t.Fatalf("delete by id: %v", err)
+		}
+		if gotName != "www" || gotType != "A" {
+			t.Errorf("expected record name/type www/A, got %s/%s", gotName, gotType)
+		}
+		if len(gotContent) != 1 || gotContent[0] != "192.0.2.11" {
+			t.Errorf("expected content 192.0.2.11 forwarded, got %v", gotContent)
+		}
+		if result, ok := res.(*DNSRecordDeleteResult); !ok || result.ID != "bbb" || result.Content != "192.0.2.11" {
+			t.Errorf("unexpected delete result: %#v", res)
+		}
+	})
+
+	t.Run("rejects unknown record id", func(t *testing.T) {
+		mock := &mockDNSServiceForOps{
+			listRecordsFunc: func(_ context.Context, _ string) ([]ipfs.RecordResponse, error) {
+				return []ipfs.RecordResponse{{Id: "aaa", Name: "www", Type: "A", Content: "192.0.2.10"}}, nil
+			},
+		}
+		if _, err := run(t, mock, map[string]any{
+			"zone": "123", "id": "nope", "confirm": true,
+		}); err == nil {
+			t.Fatal("expected error for unknown record id")
+		}
+	})
+
+	t.Run("rejects empty-content record to avoid rrset wipe", func(t *testing.T) {
+		deleted := false
+		mock := &mockDNSServiceForOps{
+			listRecordsFunc: func(_ context.Context, _ string) ([]ipfs.RecordResponse, error) {
+				return []ipfs.RecordResponse{{Id: "aaa", Name: "www", Type: "TXT", Content: ""}}, nil
+			},
+			deleteRecordFunc: func(_ context.Context, _, _, _ string, _ ...string) error {
+				deleted = true
+				return nil
+			},
+		}
+		if _, err := run(t, mock, map[string]any{
+			"zone": "123", "id": "aaa", "confirm": true,
+		}); err == nil {
+			t.Fatal("expected error for empty-content record")
+		}
+		if deleted {
+			t.Fatal("empty-content record must not be forwarded to DeleteRecord")
+		}
+	})
+
+	t.Run("rejects ambiguous id when records share identical content", func(t *testing.T) {
+		deleted := false
+		mock := &mockDNSServiceForOps{
+			listRecordsFunc: func(_ context.Context, _ string) ([]ipfs.RecordResponse, error) {
+				// Two TXT records with identical SPF content hash to the same id
+				// ("a1b2c3"), so an id-scoped delete would erase both.
+				return []ipfs.RecordResponse{
+					{Id: "a1b2c3", Name: "@", Type: "TXT", Content: "v=spf1 include:mxroute.com -all"},
+					{Id: "a1b2c3", Name: "@", Type: "TXT", Content: "v=spf1 include:mxroute.com -all"},
+					{Id: "d4e5f6", Name: "@", Type: "TXT", Content: "v=spf1 a -all"},
+				}, nil
+			},
+			deleteRecordFunc: func(_ context.Context, _, _, _ string, _ ...string) error {
+				deleted = true
+				return nil
+			},
+		}
+		if _, err := run(t, mock, map[string]any{
+			"zone": "123", "id": "a1b2c3", "confirm": true,
+		}); err == nil {
+			t.Fatal("expected error for ambiguous duplicate-content id")
+		}
+		if deleted {
+			t.Fatal("ambiguous id must not be forwarded to DeleteRecord")
+		}
+	})
 }

@@ -76,9 +76,11 @@ type DNSZoneDeleteResult struct {
 
 // DNSRecordDeleteResult is the data returned by the records delete handler.
 type DNSRecordDeleteResult struct {
-	ZoneID string `json:"zone_id"`
-	Name   string `json:"name"`
-	Type   string `json:"type"`
+	ZoneID  string `json:"zone_id"`
+	ID      string `json:"id,omitempty"` // set when a single record was deleted by id
+	Name    string `json:"name"`
+	Type    string `json:"type"`
+	Content string `json:"content,omitempty"` // set when a single record value was deleted
 }
 
 // DNSOperations returns the catalog operations for the DNS domain (the
@@ -568,7 +570,7 @@ func dnsRecordsDelete(d DNSDeps) catalog.Operation {
 		Name:        "dns_records_delete",
 		Title:       "Delete a DNS record",
 		Summary:     "Delete a DNS record",
-		Description: "Delete all DNS records matching the zone, name and type. DESTRUCTIVE and irreversible. Note: DNS records are grouped by name+type, so this removes every value for that name (e.g. all TXT records at the same name), not just one. To remove the whole zone instead, use `pinner dns zones delete`.",
+		Description: "Delete a DNS record from a zone. DESTRUCTIVE and irreversible. Provide --id (shown by 'pinner dns records list') to remove a single record; provide --name and --type to remove the whole RRSet for that name+type, optionally restricted to one value with --content. Exactly one of (--id) or (--name and --type) must be given.",
 		Category:    "core",
 		Safety:      catalog.SafetyDestructive,
 		Interaction: catalog.InteractionAgentSafe,
@@ -576,8 +578,10 @@ func dnsRecordsDelete(d DNSDeps) catalog.Operation {
 		Positional:  "<domain>",
 		Args: []catalog.OperationArg{
 			{Name: "zone", Type: catalog.ArgTypeString, Required: true, Help: "Domain name or numeric zone ID", PositionalOnly: true},
-			{Name: "name", Type: catalog.ArgTypeString, Required: true, Help: "Record name (or @ for apex)"},
-			{Name: "type", Type: catalog.ArgTypeString, Required: true, Help: "Record type"},
+			{Name: "id", Type: catalog.ArgTypeString, Help: "Record id (from 'pinner dns records list') to delete that single record"},
+			{Name: "name", Type: catalog.ArgTypeString, Help: "Record name (or @ for apex)"},
+			{Name: "type", Type: catalog.ArgTypeString, Help: "Record type"},
+			{Name: "content", Type: catalog.ArgTypeString, Help: "With --name/--type: delete only the record with this exact content value; omit to delete the whole RRSet"},
 			{Name: "confirm", Type: catalog.ArgTypeBool, Required: true, Help: "Confirm the destructive operation", AgentHelp: "Must be true to delete the record; this is destructive and cannot be undone."},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
@@ -595,21 +599,113 @@ func dnsRecordsDelete(d DNSDeps) catalog.Operation {
 			if arg == "" {
 				return nil, fmt.Errorf("domain or zone ID is required")
 			}
-			name := catalog.StrArg(input, "name", "")
-			recordType := strings.ToUpper(catalog.StrArg(input, "type", ""))
-			if name == "" || recordType == "" {
-				return nil, fmt.Errorf("record name (--name) and type (--type) are required")
-			}
 			zoneID, err := resolveZoneID(ctx, svc, arg)
 			if err != nil {
 				return nil, err
 			}
-			if err := svc.DeleteRecord(ctx, zoneID, name, recordType); err != nil {
+
+			// Identify the delete target. A whole-RRSet delete (name+type, no
+			// id, no content) needs no target resolution and goes straight to
+			// the backend; every other mode lists the zone once to resolve and
+			// validate the single record being deleted.
+			var (
+				name, recordType, content string
+				byID                      bool
+			)
+			if id := catalog.StrArg(input, "id", ""); id != "" {
+				byID = true
+			} else {
+				name = catalog.StrArg(input, "name", "")
+				recordType = strings.ToUpper(catalog.StrArg(input, "type", ""))
+				if name == "" || recordType == "" {
+					return nil, fmt.Errorf("provide --id to delete a single record, or --name and --type to delete by record name")
+				}
+				// The apex record is stored and returned with an empty name;
+				// '@' is its display shorthand. Normalize here so the content-
+				// scoped match compares against the stored form. The backend
+				// accepts both '@' and '' as the apex.
+				if name == "@" {
+					name = ""
+				}
+				content = catalog.StrArg(input, "content", "")
+			}
+
+			// Whole-RRSet delete: matches every record for the name+type.
+			if content == "" && !byID {
+				if err := svc.DeleteRecord(ctx, zoneID, name, recordType); err != nil {
+					return nil, fmt.Errorf("failed to delete records: %w", err)
+				}
+				return &DNSRecordDeleteResult{ZoneID: zoneID, Name: name, Type: recordType}, nil
+			}
+
+			// Single-record delete: resolve the target to exactly one record,
+			// or deleting would silently erase nothing or everything sharing
+			// that value.
+			records, err := svc.ListRecords(ctx, zoneID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to list records to resolve target: %w", err)
+			}
+			if byID {
+				id := catalog.StrArg(input, "id", "")
+				rec := findRecordByID(records, id)
+				if rec == nil {
+					return nil, fmt.Errorf("no record with id %q found in zone %s (run 'pinner dns records list' to see ids)", id, zoneID)
+				}
+				name, recordType, content = rec.Name, rec.Type, rec.Content
+			}
+			match, err := uniqueRecordMatching(records, name, recordType, content)
+			if err != nil {
+				return nil, err
+			}
+			if err := svc.DeleteRecord(ctx, zoneID, match.Name, match.Type, match.Content); err != nil {
 				return nil, fmt.Errorf("failed to delete record: %w", err)
 			}
-			return &DNSRecordDeleteResult{ZoneID: zoneID, Name: name, Type: recordType}, nil
+			res := &DNSRecordDeleteResult{ZoneID: zoneID, Name: match.Name, Type: match.Type, Content: match.Content}
+			if byID {
+				res.ID = catalog.StrArg(input, "id", "")
+			}
+			return res, nil
 		}),
 	})
+}
+
+// findRecordByID returns the record in records whose synthesized id matches,
+// or nil if none does. The id (shown by 'dns records list') is a compact hash
+// of the record's zone+name+type+content.
+func findRecordByID(records []ipfs.RecordResponse, id string) *ipfs.RecordResponse {
+	for i := range records {
+		if records[i].Id == id {
+			return &records[i]
+		}
+	}
+	return nil
+}
+
+// uniqueRecordMatching returns the single record in records whose name, type
+// and content all match, or an error describing why the target cannot be
+// addressed individually: empty content cannot be addressed by the backend at
+// all, an absent triple deletes nothing, and several records sharing the triple
+// would all be erased by a content-scoped delete.
+func uniqueRecordMatching(records []ipfs.RecordResponse, name, recordType, content string) (*ipfs.RecordResponse, error) {
+	if content == "" {
+		return nil, fmt.Errorf("record %q %s has empty content and cannot be deleted individually", name, recordType)
+	}
+	var match *ipfs.RecordResponse
+	count := 0
+	for i := range records {
+		r := &records[i]
+		if r.Name == name && r.Type == recordType && r.Content == content {
+			count++
+			match = r
+		}
+	}
+	if count == 0 {
+		return nil, fmt.Errorf("no %s record %q with content %q found", recordType, name, content)
+	}
+	if count > 1 {
+		return nil, fmt.Errorf("%d records share content %q for %s record %q; a delete would erase all of them, so no single record can be targeted", count, content, recordType, name)
+	}
+	return match, nil
 }
 
 // ---- Domain/zone resolution helpers ----

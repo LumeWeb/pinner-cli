@@ -33,7 +33,10 @@ type Service interface {
 	ListRecords(ctx context.Context, id string) ([]ipfs.RecordResponse, error)
 	GetRecord(ctx context.Context, id string, name string, recordType string) (*ipfs.RecordResponse, error)
 	UpdateRecord(ctx context.Context, id string, name string, recordType string, record ipfs.RecordRequest) (*ipfs.RecordResponse, error)
-	DeleteRecord(ctx context.Context, id string, name string, recordType string) error
+	// DeleteRecord deletes a DNS record. When content is provided and non-empty,
+	// only the record with that content is deleted; otherwise the whole RRSet is
+	// deleted. Multiple contents are rejected.
+	DeleteRecord(ctx context.Context, id string, name string, recordType string, content ...string) error
 }
 
 // serviceCLI wraps the SDK DNS service with Pinner-specific functionality.
@@ -226,8 +229,9 @@ func (s *serviceCLI) UpdateRecord(ctx context.Context, id string, name string, r
 	return svc.UpdateRecord(ctx, id, name, recordType, record)
 }
 
-// DeleteRecord deletes a DNS record.
-func (s *serviceCLI) DeleteRecord(ctx context.Context, id string, name string, recordType string) error {
+// DeleteRecord deletes a DNS record. When content is provided and non-empty, only
+// the record with that content is deleted; otherwise the whole RRSet is deleted.
+func (s *serviceCLI) DeleteRecord(ctx context.Context, id string, name string, recordType string, content ...string) error {
 	if err := s.RequireAuthenticated(); err != nil {
 		return err
 	}
@@ -235,5 +239,5 @@ func (s *serviceCLI) DeleteRecord(ctx context.Context, id string, name string, r
 	if err != nil {
 		return err
 	}
-	return svc.DeleteRecord(ctx, id, name, recordType)
+	return svc.DeleteRecord(ctx, id, name, recordType, content...)
 }

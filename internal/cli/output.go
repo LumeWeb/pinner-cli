@@ -344,13 +344,13 @@ func keepWholeValue(row []string, j int) bool {
 	if len(row) == 2 {
 		return (row[0] == "DS" || row[0] == "TLSA") && j == 1
 	}
-	// Full DNS record table: [NAME, TYPE, CONTENT, TTL, STATUS]
-	if len(row) >= 5 && j == 2 {
-		switch row[1] {
+	// Full DNS record table: [ID, NAME, TYPE, CONTENT, TTL, STATUS]
+	if len(row) >= 6 && j == 3 {
+		switch row[2] {
 		case "TLSA", "DS":
 			return true
 		}
-		return strings.Contains(row[0], "_dnslink")
+		return strings.Contains(row[1], "_dnslink")
 	}
 	return false
 }

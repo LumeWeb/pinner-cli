@@ -18,7 +18,7 @@ import (
 // ===== HANDLERS =====
 
 func dnsRecordsTable(records []ipfs.RecordResponse) ([]string, [][]string) {
-	headers := []string{"NAME", "TYPE", "CONTENT", "TTL", "STATUS"}
+	headers := []string{"ID", "NAME", "TYPE", "CONTENT", "TTL", "STATUS"}
 	rows := make([][]string, 0, len(records))
 	for _, record := range records {
 		name := record.Name
@@ -31,6 +31,7 @@ func dnsRecordsTable(records []ipfs.RecordResponse) ([]string, [][]string) {
 			status = "disabled"
 		}
 		rows = append(rows, []string{
+			record.Id,
 			name,
 			record.Type,
 			record.Content,

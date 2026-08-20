@@ -612,8 +612,8 @@ func renderWebsiteItemHuman(output Output, w *ipfs.WebsiteItem) {
 	if w.IpnsKeyId != nil {
 		fields = append(fields, Field{"IPNS Key ID", fmt.Sprintf("%d", *w.IpnsKeyId)})
 	}
-	if w.DnsZoneId != nil {
-		fields = append(fields, Field{"DNS Zone ID", fmt.Sprintf("%d", *w.DnsZoneId)})
+	if w.ZoneId != nil {
+		fields = append(fields, Field{"DNS Zone ID", fmt.Sprintf("%d", *w.ZoneId)})
 	}
 	if w.ValidationRecordHost != nil && *w.ValidationRecordHost != "" {
 		fields = append(fields, Field{"Validation Host", *w.ValidationRecordHost})
