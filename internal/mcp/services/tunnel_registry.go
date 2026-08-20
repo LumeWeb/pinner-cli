@@ -37,8 +37,7 @@ type TunnelProviderSpec struct {
 	// credential store into a field's Derived hook (which receives neither), so
 	// provider-derived values honor cancellation and can consult stored
 	// credentials (e.g. an ngrok token persisted by a prior Finalize). The step
-	// uses Fields+Finalize when set, and falls back to Configurer (legacy)
-	// otherwise, so providers migrate one at a time.
+	// resolves Fields then runs Finalize.
 	// Nil means the provider has no promptable fields.
 	Fields func(ctx context.Context, s *ServiceInstallState, cfgMgr config.Manager) []fieldform.Field[*ServiceInstallState, string]
 	// Finalize runs after the step gathers the provider's fields: it does the
@@ -49,12 +48,6 @@ type TunnelProviderSpec struct {
 	// field by the step itself (not provider-specific). Used only when Fields is
 	// set.
 	Finalize func(ctx context.Context, p fieldform.Prompter, s *ServiceInstallState, cfgMgr config.Manager) error
-	// Configurer (legacy) collects the provider's install-time tunnel config,
-	// prompting through the shared fieldform.Prompter channel and persisting to
-	// cfgMgr. Kept for providers not yet migrated to Fields+Finalize; the step
-	// falls back to it when Fields is nil. New/migrated providers use Fields +
-	// Finalize instead.
-	Configurer func(ctx context.Context, p fieldform.Prompter, s *ServiceInstallState, cfgMgr config.Manager) error
 	// ConfigSeeded reports whether the install state already carries every
 	// value this provider's install flow would collect (the Fields + Finalize
 	// requirements, plus the shared auth token the tunnel-config step

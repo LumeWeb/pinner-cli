@@ -493,10 +493,10 @@ func tunnelProviderSeeded(_ context.Context, s *InstallState) ([]string, bool) {
 // tunnelConfigSeeded reports whether the tunnel-specific configuration step is
 // FULLY decided from switch/env sources, so the framework renders it "Seeded"
 // and skips its Execute. The wrapped config step dispatches to the provider's
-// Configurer and collects the shared auth token — in a non-interactive
+// Fields/Finalize and collects the shared auth token — in a non-interactive
 // `--service --tunnel` bootstrap, leaving either undecided aborts instead of
 // seeding. Completeness is delegated to mcpadapter.IsServiceInstallSeeded, the
-// single per-provider source of truth (next to the Configurers and
+// single per-provider source of truth (next to the providers and
 // validateServiceEnvironment), rather than re-derived here as a parallel switch
 // on the provider type.
 func tunnelConfigSeeded(_ context.Context, s *InstallState) ([]string, bool) {

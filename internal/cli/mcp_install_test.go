@@ -538,8 +538,8 @@ func TestMcpInstallBuildTunnelStepsProducesVisibleSteps(t *testing.T) {
 
 // TestMcpInstallTunnelConfigSeeded guards the fix for non-interactive
 // `--service --tunnel` bootstraps: the "Tunnel-specific configuration" step
-// must render "Seeded" (and thus skip its provider Configurer prompt) whenever
-// every credential that Configurer asks for is already resolved from
+// must render "Seeded" (and thus skip its field gather) whenever
+// every credential that the install flow asks for is already resolved from
 // switches/env, instead of aborting with an "interactive prompt requested"
 // error.
 func TestMcpInstallTunnelConfigSeeded(t *testing.T) {

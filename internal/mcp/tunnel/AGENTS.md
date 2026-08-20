@@ -24,9 +24,10 @@ This package contains the **pure tunnel domain**:
 ## What stays in the parent (`internal/mcp`, package `mcp`)
 
 The provider **registry** (`TunnelProviderSpec`, `TunnelFor`, `RegisterTunnelProvider`,
-`providers`) lives in the parent package, NOT here. Reason: `TunnelProviderSpec.Configurer`
-is typed against the parent package's wizard-facing types (`textUI`, `*ServiceInstallState`,
-defined in `service_install_wizard.go`), and this package must not import the parent (Go
+`providers`) lives in the parent package, NOT here. Reason: `TunnelProviderSpec`'s
+`Fields`/`Finalize`/`ConfigSeeded` are typed against the parent package's wizard-facing
+types (`fieldform.Prompter`, `*ServiceInstallState`, defined in
+`service_install_wizard.go`), and this package must not import the parent (Go
 import cycle — `internal/mcp` imports `internal/mcp/tunnel`). The parent owns the
 registration `init()` (`tunnel_providers.go`), the per-provider install configurers
 (`service_install_configurers.go`), and the service/install commands that consume this
