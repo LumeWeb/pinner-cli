@@ -62,5 +62,8 @@ test('unauthenticated call fails cleanly with a machine-readable error, not a cr
   const result = await mcp.callTool('invoke_tool', { name: 'account_info', args: {} });
   expect(result.isError).toBe(true);
   const text = result.content?.map((c) => c.text ?? '').join('') ?? '';
-  expect(text).toMatch(/authenticat|endpoint|account|token|available|required/i);
+  // The actual error is `authentication failed: not authenticated: no auth
+  // token` — assert on a specific auth-failure marker so the test fails when
+  // the auth gate is broken and returns an unrelated error instead.
+  expect(text).toMatch(/authenticat|401|unauthor/i);
 });
