@@ -42,7 +42,9 @@ func (s *Server) Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p := r.URL.Path
 		switch {
-		case strings.HasPrefix(p, "/api/auth/"), strings.HasPrefix(p, "/api/account/"):
+		case p == "/api/account",
+			strings.HasPrefix(p, "/api/account/"),
+			strings.HasPrefix(p, "/api/auth/"):
 			account.Handler(s.account).ServeHTTP(w, r)
 		default:
 			ipfs.Handler(s.ipfs).ServeHTTP(w, r)

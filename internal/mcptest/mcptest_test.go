@@ -46,4 +46,10 @@ func TestCombinedDispatcher(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("pins status=%d body=%s", resp.StatusCode, b)
 	}
+
+	// bare /api/account (no trailing slash) must route to the account double
+	resp, b = do(t, "GET", ts.URL+"/api/account", tok, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("account status=%d body=%s", resp.StatusCode, b)
+	}
 }
