@@ -18,6 +18,42 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/service"
 )
 
+// installFlags returns the flag surface for `pinner mcp install`: the base
+// wizard flags plus the shared tunnel/environment flags. It is the single
+// source of truth shared by the real `pinner mcp install` command (where the
+// flags also parse CLI input) and the embedded setup-chained install, whose
+// shadow command reuses the same surface so the HTTP/service composite
+// collector resolves ids identically.
+func installFlags() []cli.Flag {
+	return append([]cli.Flag{
+		&cli.StringSliceFlag{
+			Name: "agent",
+			// Derived from the install registry (single source of truth).
+			Usage: "Comma-separated list of agents to install to (" + strings.Join(agentNames(), ", ") + "); defaults to detection when omitted",
+		},
+		&cli.StringFlag{
+			Name:  "scope",
+			Usage: "Install scope: global or project (prompted when omitted)",
+		},
+		&cli.StringFlag{
+			Name:  "transport",
+			Usage: "MCP transport: stdio (default) or http (prompted when omitted, defaults to stdio)",
+		},
+		&cli.BoolFlag{
+			Name:  "non-interactive",
+			Usage: "Run in non-interactive mode (require all inputs via flags)",
+		},
+		&cli.BoolFlag{
+			Name:  "service",
+			Usage: "Install against the managed pinner MCP service (http)",
+		},
+		&cli.BoolFlag{
+			Name:  "auto-approve",
+			Usage: "Request Codex auto-approve all tools for the pinner MCP server (none by default)",
+		},
+	}, mcpadapter.ServiceInstallFlags()...)
+}
+
 // NewMcpInstallCommand creates the `pinner mcp install` command that writes an
 // MCP server entry for pinner into selected coding agents' config files.
 //
@@ -27,7 +63,6 @@ import (
 func NewMcpInstallCommand() *cli.Command {
 	// Supported-agent lists are derived once from the install registry so help text
 	// and error messages cannot drift from the agent table.
-	supportedKeys := strings.Join(agentNames(), ", ")
 	supportedDisplay := strings.Join(agentDisplayNames(), ", ")
 	return &cli.Command{
 		Name:     "install",
@@ -47,33 +82,7 @@ Examples:
 		// Shared tunnel/env flags (--env-file, --tunnel, --auth-token,
 		// --public-url, ...) so the HTTP composite sources MCP_AUTH_TOKEN /
 		// MCP_PUBLIC_URL / MCP_TUNNEL_PROVIDER identically to `pinner mcp service`.
-		Flags: append([]cli.Flag{
-			&cli.StringSliceFlag{
-				Name: "agent",
-				// Derived from the install registry (single source of truth).
-				Usage: "Comma-separated list of agents to install to (" + supportedKeys + "); defaults to detection when omitted",
-			},
-			&cli.StringFlag{
-				Name:  "scope",
-				Usage: "Install scope: global or project (prompted when omitted)",
-			},
-			&cli.StringFlag{
-				Name:  "transport",
-				Usage: "MCP transport: stdio (default) or http (prompted when omitted, defaults to stdio)",
-			},
-			&cli.BoolFlag{
-				Name:  "non-interactive",
-				Usage: "Run in non-interactive mode (require all inputs via flags)",
-			},
-			&cli.BoolFlag{
-				Name:  "service",
-				Usage: "Install against the managed pinner MCP service (http)",
-			},
-			&cli.BoolFlag{
-				Name:  "auto-approve",
-				Usage: "Request Codex auto-approve all tools for the pinner MCP server (none by default)",
-			},
-		}, mcpadapter.ServiceInstallFlags()...),
+		Flags: installFlags(),
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			return RunMcpInstallWizard(ctx, cmd, nil, nil)
 		},

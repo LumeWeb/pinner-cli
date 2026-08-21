@@ -665,17 +665,34 @@ func TestSetupMcpInstallStep_InstallErrorIsNonFatal(t *testing.T) {
 	require.ErrorIs(t, mockUI.McpInstallSkippedErr, dummyErr, "the failure must be surfaced via the UI")
 }
 
-// TestSetupMcpInstallFlagsNotRealCommand guards that the embedded install's flag
-// getter is NOT a *cli.Command, so RunMcpInstallWizard never fires its
-// real-command branch (which would splice the HTTP/service tunnel collector
-// from flags pinner setup does not register).
-func TestSetupMcpInstallFlagsNotRealCommand(t *testing.T) {
-	// setupMcpInstallFlags is a plain struct satisfying mcpInstallFlagGetter
-	// without being a *cli.Command, so RunMcpInstallWizard's real-command
-	// branch (which splices the HTTP/service tunnel collector from registered
-	// flags) never fires against it.
-	var g mcpInstallFlagGetter = &setupMcpInstallFlags{}
-	if _, ok := g.(*cli.Command); ok {
-		t.Fatal("setupMcpInstallFlags must not be a *cli.Command")
+// TestSetupMcpInstallFlagsRealCommandWithFullSurface guards that the embedded
+// install runs on a REAL *cli.Command carrying the full `pinner mcp install`
+// flag surface, so the HTTP/service composite collector (which type-asserts
+// cmd.(*cli.Command) and resolves the tunnel/env flags) wires correctly.
+func TestSetupMcpInstallFlagsRealCommandWithFullSurface(t *testing.T) {
+	// The setup-chained install runs through a real *cli.Command so the
+	// HTTP/service composite collector (which type-asserts cmd.(*cli.Command))
+	// wires correctly. This is what lets the operator choose stdio OR http
+	// from setup, identically to `pinner mcp install`, instead of a
+	// stdio-only or silently-broken http path.
+	cmd := embeddedMcpInstallCommand()
+	// The embedded install must be a REAL *cli.Command (not a bare getter) so
+	// the HTTP/service composite collector, which type-asserts
+	// cmd.(*cli.Command), wires correctly.
+	if _, ok := any(cmd).(*cli.Command); !ok {
+		t.Fatal("embeddedMcpInstallCommand must be a real *cli.Command")
+	}
+
+	// The shadow command must expose the full install flag surface so the
+	// HTTP collector resolves the tunnel/env flags it reads. Verify the
+	// transport switch and the service/tunnel flags the HTTP composite needs.
+	names := make(map[string]bool)
+	for _, f := range cmd.Flags {
+		names[f.Names()[0]] = true
+	}
+	for _, want := range []string{"agent", "scope", "transport", "service", "env-file", "tunnel", "public-url", "auth-token"} {
+		if !names[want] {
+			t.Errorf("embeddedMcpInstallCommand missing flag %q (http wiring needs it)", want)
+		}
 	}
 }
