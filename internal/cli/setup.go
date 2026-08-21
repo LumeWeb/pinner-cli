@@ -97,19 +97,23 @@ func runSetupWizardWithFactories(
 	// offered as an opt-in step and, when accepted, runs as a nested
 	// sub-wizard (RunMcpInstallWizard) over the same terminal channel.
 	//
-	// The embedded install gets a DEDICATED interactive flag surface, not the
-	// setup command itself: pinner setup registers no mcp install flags, and
-	// passing setup's *cli.Command into RunMcpInstallWizard would make its
-	// real-command branch (mcp_install.go) splice the HTTP/service tunnel
-	// collector from a flag set setup never exposes. Through a plain getter
-	// (which is not a *cli.Command) the embedded flow stays an interactive
-	// stdio install — consistent with setup being interactive-only — and never
-	// misreads setup-unregistered flags. The install prompts for agent
-	// detection / scope / transport and defaults to stdio.
+	// The embedded install runs on a dedicated shadow *cli.Command carrying the
+	// full `pinner mcp install` flag surface (base wizard flags + the shared
+	// tunnel/environment flags), NOT the setup command itself: pinner setup
+	// registers no mcp install flags, so passing setup's own *cli.Command into
+	// RunMcpInstallWizard would make its real-command branch read a flag set
+	// setup never exposes. Giving the shadow command the real install flag
+	// surface means the HTTP/service composite collector (which requires a real
+	// *cli.Command) wires correctly, so the operator can pick stdio OR http
+	// exactly as with `pinner mcp install` — an http choice prompts for the
+	// tunnel/service through the interactive service wizard instead of
+	// silently failing. Everything is interactive (setup requires a TTY), so
+	// all flags stay unset and the wizard prompts for agent / scope /
+	// transport just like the standalone command.
 	if _, isReal := cmd.(mcpInstallFlagGetter); isReal {
-		interactive := &setupMcpInstallFlags{}
+		embedded := embeddedMcpInstallCommand()
 		w = w.WithMcpInstaller(func(ctx context.Context, _ *SetupWizard) error {
-			return RunMcpInstallWizard(ctx, interactive, nil, nil)
+			return RunMcpInstallWizard(ctx, embedded, nil, nil)
 		})
 	}
 
@@ -117,20 +121,19 @@ func runSetupWizardWithFactories(
 	return err
 }
 
-// setupMcpInstallFlags is the flag surface the embedded mcp install reads when
-// it is chained from pinner setup. It is deliberately NOT a *cli.Command: it
-// yields interactive defaults (empty agents/scope/transport, non-interactive
-// false) so RunMcpInstallWizard prompts for agent detection / scope /
-// transport and defaults to stdio, and its real-command branch (which splices
-// the HTTP/service tunnel collector from registered flags) never fires — pinner
-// setup registers no mcp install flags, so that branch would otherwise read a
-// flag surface the host command does not expose.
-type setupMcpInstallFlags struct{}
-
-var _ mcpInstallFlagGetter = (*setupMcpInstallFlags)(nil)
-
-func (s *setupMcpInstallFlags) String(string) string        { return "" }
-func (s *setupMcpInstallFlags) Bool(string) bool            { return false }
-func (s *setupMcpInstallFlags) Int(string) int              { return 0 }
-func (s *setupMcpInstallFlags) IsSet(string) bool           { return false }
-func (s *setupMcpInstallFlags) StringSlice(string) []string { return nil }
+// embeddedMcpInstallCommand is the shadow *cli.Command the setup-chained MCP
+// install runs through. It carries the same flag surface as `pinner mcp
+// install` (base wizard flags + the shared tunnel/environment flags) but with
+// every flag at its default and no CLI wiring — RunMcpInstallWizard only
+// reads it as a flag surface. Being a real *cli.Command is what lets the
+// HTTP/service composite collector wire: it type-asserts cmd.(*cli.Command)
+// and needs the tunnel/env flags registered to resolve MCP_AUTH_TOKEN,
+// MCP_TUNNEL_PROVIDER, MCP_PUBLIC_URL, etc. identically to the standalone
+// command. Because setup is interactive and all flags are unset, the wizard
+// prompts for agent / scope / transport just like `pinner mcp install`, and an
+// http choice runs the interactive service wizard to configure the tunnel —
+// so the operator gets the full stdio-or-http choice, not a stdio-only or
+// silently-broken http path.
+func embeddedMcpInstallCommand() *cli.Command {
+	return &cli.Command{Flags: installFlags()}
+}
