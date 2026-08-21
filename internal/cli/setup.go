@@ -93,6 +93,44 @@ func runSetupWizardWithFactories(
 		Reset:      reset,
 	})
 
+	// Chain setup -> mcp install via the composition seam. The install flow is
+	// offered as an opt-in step and, when accepted, runs as a nested
+	// sub-wizard (RunMcpInstallWizard) over the same terminal channel.
+	//
+	// The embedded install gets a DEDICATED interactive flag surface, not the
+	// setup command itself: pinner setup registers no mcp install flags, and
+	// passing setup's *cli.Command into RunMcpInstallWizard would make its
+	// real-command branch (mcp_install.go) splice the HTTP/service tunnel
+	// collector from a flag set setup never exposes. Through a plain getter
+	// (which is not a *cli.Command) the embedded flow stays an interactive
+	// stdio install — consistent with setup being interactive-only — and never
+	// misreads setup-unregistered flags. The install prompts for agent
+	// detection / scope / transport and defaults to stdio.
+	if _, isReal := cmd.(mcpInstallFlagGetter); isReal {
+		interactive := &setupMcpInstallFlags{}
+		w = w.WithMcpInstaller(func(ctx context.Context, _ *SetupWizard) error {
+			return RunMcpInstallWizard(ctx, interactive, nil, nil)
+		})
+	}
+
 	_, err = w.Run(ctx)
 	return err
 }
+
+// setupMcpInstallFlags is the flag surface the embedded mcp install reads when
+// it is chained from pinner setup. It is deliberately NOT a *cli.Command: it
+// yields interactive defaults (empty agents/scope/transport, non-interactive
+// false) so RunMcpInstallWizard prompts for agent detection / scope /
+// transport and defaults to stdio, and its real-command branch (which splices
+// the HTTP/service tunnel collector from registered flags) never fires — pinner
+// setup registers no mcp install flags, so that branch would otherwise read a
+// flag surface the host command does not expose.
+type setupMcpInstallFlags struct{}
+
+var _ mcpInstallFlagGetter = (*setupMcpInstallFlags)(nil)
+
+func (s *setupMcpInstallFlags) String(string) string        { return "" }
+func (s *setupMcpInstallFlags) Bool(string) bool            { return false }
+func (s *setupMcpInstallFlags) Int(string) int              { return 0 }
+func (s *setupMcpInstallFlags) IsSet(string) bool           { return false }
+func (s *setupMcpInstallFlags) StringSlice(string) []string { return nil }

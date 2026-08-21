@@ -73,6 +73,14 @@ func (ui *PTermSetupUI) ShowCompletion() error {
 	return nil
 }
 
+// ReportMcpInstallSkipped prints a non-fatal warning that the opt-in MCP
+// install did not complete. Core setup already succeeded; this only tells the
+// operator the install was skipped so they can run `pinner mcp install` later.
+func (ui *PTermSetupUI) ReportMcpInstallSkipped(err error) {
+	pterm.Warning.Println("MCP server install did not complete. Core setup is finished; run 'pinner mcp install' to add it later.")
+	pterm.Warning.Println("Reason: " + err.Error())
+}
+
 // ExecuteAuthStep handles the authentication step.
 func (ui *PTermSetupUI) ExecuteAuthStep(ctx context.Context, wizard *SetupWizard) error {
 	pterm.Info.Println("Configure authentication with Pinner.xyz")

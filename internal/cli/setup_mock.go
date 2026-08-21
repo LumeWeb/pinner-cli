@@ -32,6 +32,10 @@ type MockSetupUI struct {
 	ConfigExecuted   bool
 	TutorialExecuted bool
 
+	// McpInstallSkippedErr records the error passed to ReportMcpInstallSkipped,
+	// or nil if it was never called.
+	McpInstallSkippedErr error
+
 	EndpointSet string
 	SecureSet   *bool
 }
@@ -186,4 +190,11 @@ func (m *MockSetupUI) Select(label string, items []string) (int, string, error) 
 
 func (m *MockSetupUI) Continue() error {
 	return m.ContinueErr
+}
+
+func (m *MockSetupUI) ReportMcpInstallSkipped(err error) {
+	m.RecordCall("ReportMcpInstallSkipped")
+	m.mu.Lock()
+	m.McpInstallSkippedErr = err
+	m.mu.Unlock()
 }
