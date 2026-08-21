@@ -176,6 +176,67 @@ jobs:
           path: dist/
           retention-days: 90
 
+  # Runs the managed pinner-mcp service install/start against a REAL systemd
+  # user manager inside a systemd-as-PID1 container. This is the regression
+  # protection for the http-install service lifecycle: unit written, systemctl
+  # --user reports active, and the underlying pinner MCP server comes up
+  # OAuth-protected and serves. Every other systemd test in this repo uses
+  # command/fs fakes; this job exercises the real init system.
+  systemd-integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build JS bundles
+        uses: ./.github/actions/js-bundle
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: 'stable'
+
+      - name: Install templ
+        run: go install github.com/a-h/templ/cmd/templ@v0.3.1020
+
+      - name: Generate templ code
+        run: templ generate
+
+      - name: Build pinner binary + integration test binary
+        run: |
+          mkdir -p dist
+          go build -o dist/pinner ./cmd/pinner
+          go test -tags integration -c -o dist/service-integration.test ./internal/service/
+
+      - name: Run systemd user-service integration test
+        run: |
+          docker run --rm --privileged \
+            -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
+            -v "$PWD/dist":/dist \
+            -e PINNER_BIN=/dist/pinner \
+            -e REQUIRE_SYSTEMD=1 \
+            jrei/systemd-ubuntu:22.04 \
+            bash -c '
+              set -euo pipefail
+              systemctl is-system-running >/dev/null 2>&1 || true
+              loginctl enable-linger root >/dev/null 2>&1 || true
+              mkdir -p /run/user/0 && chmod 700 /run/user/0
+              export XDG_RUNTIME_DIR=/run/user/0
+              dbus-daemon --session --address=unix:path=/run/user/0/bus --fork 2>/dev/null || true
+              export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/0/bus
+              if ! pgrep -f "systemd --user" >/dev/null; then systemd --user >/dev/null 2>&1 & fi
+              ready=0
+              for i in $(seq 1 30); do
+                if systemctl --user list-units >/dev/null 2>&1; then ready=1; break; fi
+                sleep 0.5
+              done
+              if [ "$ready" != "1" ]; then
+                echo "ERROR: systemd --user manager did not come up in the container" >&2
+                systemctl --user status 2>&1 | head -20 || true
+                exit 1
+              fi
+              /dist/service-integration.test -test.v -test.run TestSystemdUserServiceInstallServesOAuth
+            '
+
   lint:
     runs-on: ubuntu-latest
     steps:
