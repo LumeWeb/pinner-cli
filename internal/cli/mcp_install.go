@@ -244,21 +244,6 @@ func runMcpInstall(ctx context.Context, cmd mcpInstallFlagGetter, ui InstallUI, 
 			// This collector only runs for HTTP installs, so the http
 			// default is safe; stdio installs never reach here.
 			wantService := effectiveManagedService(realCmd.IsSet("service"), s.UseService)
-			// Make the default-on choice visible so it is not a silent
-			// lifecycle change: if the collector installs/starts a managed
-			// service that the operator did not ask for by naming the flag,
-			// tell them up front (and how to opt out on a re-run).
-			if wantService && w.ui != nil {
-				opt := "opt out with --service=false"
-				if s.NonInteractive {
-					// A non-interactive http install cannot refuse the daemon
-					// (nothing would hold a foreground server), so the flag
-					// form is rejected; don't advertise it.
-					opt = "see --help for http install options"
-				}
-				_ = w.ui.ReportBuild(install.AgentKey("service"),
-					"http install installs and starts the managed systemd user unit 'pinner-mcp' ("+opt+")")
-			}
 
 			env, sideEffect, err := mcpadapter.CollectHTTPInstallWithCreated(ctx, realCmd, "", wantService, created)
 			if err != nil {
@@ -272,6 +257,24 @@ func runMcpInstall(ctx context.Context, cmd mcpInstallFlagGetter, ui InstallUI, 
 					_ = os.WriteFile(ef, snapshot, 0o600)
 				}
 				return err
+			}
+
+			// The collector installed/started the managed background service.
+			// Report what actually happened, how to check it, and how to opt
+			// out — only after the side effect succeeded, so this is not a
+			// premature announcement. OAuth is the http default (MCP_OAUTH
+			// true), so the running endpoint is a public OAuth-protected MCP
+			// server.
+			if wantService && w.ui != nil {
+				opt := "opt out with --service=false"
+				if s.NonInteractive {
+					// A non-interactive http install cannot refuse the daemon
+					// (nothing would hold a foreground server), so the flag
+					// form is rejected; don't advertise it.
+					opt = "see --help for http install options"
+				}
+				_ = w.ui.ReportBuild(install.AgentKey("service"),
+					"started the background 'pinner-mcp' service (public MCP with OAuth). Check: systemctl --user status pinner-mcp  ("+opt+")")
 			}
 
 			if snapshot != nil {

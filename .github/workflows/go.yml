@@ -176,6 +176,57 @@ jobs:
           path: dist/
           retention-days: 90
 
+  # Runs the managed pinner-mcp service install/start against a REAL systemd
+  # user manager. This is the regression protection for the http-install service
+  # lifecycle: unit written, `systemctl --user` reports active, and the
+  # underlying pinner MCP server comes up OAuth-protected and serves. Every
+  # other systemd test in this repo uses command/fs fakes; this job exercises
+  # the real init system.
+  #
+  # Runs directly on the ubuntu-latest runner's own systemd user session (the
+  # `runner` user already has a live `systemd --user` manager), NOT in a
+  # container: cgroup-v2-unified containers cannot delegate a per-user cgroup
+  # subtree, so a user manager cannot come up there. The runner's login session
+  # is a fully deterministic systemd host.
+  systemd-integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build JS bundles
+        uses: ./.github/actions/js-bundle
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: 'stable'
+
+      - name: Install templ
+        run: go install github.com/a-h/templ/cmd/templ@v0.3.1020
+
+      - name: Generate templ code
+        run: templ generate
+
+      - name: Build pinner binary + integration test binary
+        run: |
+          mkdir -p dist
+          go build -o dist/pinner ./cmd/pinner
+          go test -tags integration -c -o dist/service-integration.test ./internal/service/
+
+      - name: Run systemd user-service integration test
+        env:
+          PINNER_BIN: ${{ github.workspace }}/dist/pinner
+          REQUIRE_SYSTEMD: '1'
+        run: |
+          # The runner's own login session already has a live user manager;
+          # linger just guarantees it for this user, and XDG_RUNTIME_DIR points
+          # systemctl --user at that session's socket.
+          sudo loginctl enable-linger "$USER" || true
+          export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+          export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR}/bus"
+          ./dist/service-integration.test \
+            -test.v -test.run TestSystemdUserServiceInstallServesOAuth
+
   lint:
     runs-on: ubuntu-latest
     steps:
