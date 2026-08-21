@@ -99,6 +99,60 @@ jobs:
       - name: Build bundles
         run: pnpm build
 
+  mcp-test:
+    # Host-level integration tests for the MCP server via Sunpeak (see
+    # tests/sunpeak/). Builds the real pinner binary, then runs the stdio
+    # protocol + inspector render suite and the raw-HTTP bearer/OAuth suites.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build JS bundles
+        uses: ./.github/actions/js-bundle
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: 'stable'
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Install templ
+        run: go install github.com/a-h/templ/cmd/templ@v0.3.1020
+
+      - name: Generate templ code
+        run: templ generate
+
+      - name: Build pinner binary
+        run: go build -o bin/pinner ./cmd/pinner
+
+      - name: Install test deps
+        working-directory: tests/sunpeak
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright chromium
+        working-directory: tests/sunpeak
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: sunpeak stdio suite (protocol + app rendering)
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: /home/runner/.cache/ms-playwright
+        working-directory: tests/sunpeak
+        run: pnpm test
+
+      - name: HTTP static-bearer suite
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: /home/runner/.cache/ms-playwright
+        working-directory: tests/sunpeak
+        run: pnpm test:http-bearer
+
+      - name: OAuth suite
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: /home/runner/.cache/ms-playwright
+        working-directory: tests/sunpeak
+        run: pnpm test:oauth
+
   snapshot:
     runs-on: ubuntu-latest
     needs: [build]

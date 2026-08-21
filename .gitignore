@@ -57,3 +57,12 @@ node_modules/
 # Compiled MCP Apps Tailwind theme (produced by `make cssbuild`; Go embeds it)
 internal/mcpapp/css/tailwind.css
 
+# Sunpeak / Playwright MCP test artifacts
+playwright-report/
+test-results/
+blob-report/
+.playwright/
+tests/evals/.env
+.auth/
+bin/
+

@@ -1,0 +1,16 @@
+{
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.33.2",
+  "devDependencies": {
+    "@playwright/test": "latest",
+    "@types/node": "latest",
+    "sunpeak": "latest",
+    "typescript": "latest"
+  },
+  "scripts": {
+    "test": "sunpeak test",
+    "test:http-bearer": "playwright test -c playwright.http.config.ts",
+    "test:oauth": "playwright test -c playwright.oauth.config.ts"
+  }
+}
