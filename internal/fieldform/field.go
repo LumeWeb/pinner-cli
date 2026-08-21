@@ -3,6 +3,7 @@ package fieldform
 import (
 	"context"
 	"fmt"
+	"reflect"
 )
 
 // This file defines a declarative field-resolution primitive for wizard steps.
@@ -277,8 +278,36 @@ func classifyOutcome[S any, T any](oc *fieldOutcome[T], f *Field[S, T], s S, hea
 	}
 	cur := f.Operational(s)
 	oc.value = cur
-	if f.Validate == nil || f.Validate(cur) {
+	// A field only "settles itself" (marking it operative, so Gather skips the
+	// prompt) when its current value is actually PRESENT. An empty/unset value
+	// (zero for the field's type) must NOT be treated as operative: it falls
+	// through, and Gather's interactive prompt (fired for any field with a
+	// Prompt) collects it. Treating an empty unvalidated value as operative was
+	// a bug — a promptable but empty field (e.g. the shared MCP_AUTH_TOKEN on
+	// a fresh ngrok install) was silently marked settled and never asked, so
+	// the written env file lacked the value and downstream validation failed.
+	if !isZeroValue(cur) && (f.Validate == nil || f.Validate(cur)) {
 		oc.operative = true
+	}
+}
+
+// isZeroValue reports whether v is the zero value for its type. The explicit
+// type switch covers the common scalar field types cheaply (no allocation); the
+// reflect fallback handles pointer-typed fields (e.g. *bool), where nil is
+// "no value present". A zero value must not count as an operative value that
+// would suppress an interactive prompt.
+func isZeroValue[T any](v T) bool {
+	switch z := any(v).(type) {
+	case string:
+		return z == ""
+	case bool:
+		return !z
+	case int:
+		return z == 0
+	default:
+		// Pointer-typed fields (e.g. *bool) encode "unset" as nil.
+		rv := reflect.ValueOf(z)
+		return !rv.IsValid() || rv.IsZero()
 	}
 }
 
