@@ -292,25 +292,77 @@ func TestMcpInstallNonInteractiveClaudeCodeStdio(t *testing.T) {
 	}
 }
 
-func TestMcpInstallNonInteractiveHTTPWithoutServiceErrors(t *testing.T) {
-	ctx := context.Background()
-	fake := newMcpInstallFlagFake()
-	fake.set["scope"] = true
-	fake.set["transport"] = true
-	fake.vals["scope"] = scopeGlobal
-	fake.vals["transport"] = string(install.TransportHTTP)
-	fake.bools["non-interactive"] = true
-	fake.stringSlice["agent"] = []string{"claude-code"}
+// TestEffectiveManagedService guards the default-on contract: an http install
+// installs and starts the managed service whenever --service is unset (for BOTH
+// interactive and non-interactive installs — an interactive http install must
+// not produce a config that points at no running server). An explicit
+// --service=false is honored as the opt-out; --service=true is honored too.
+func TestEffectiveManagedService(t *testing.T) {
+	cases := []struct {
+		name           string
+		flagSet        bool
+		useService     bool
+		wantWantService bool
+	}{
+		{"unset defaults on (interactive & non-interactive)", false, false, true},
+		{"explicit --service=true stays on", true, true, true},
+		{"explicit --service=false opts out", true, false, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := effectiveManagedService(tc.flagSet, tc.useService); got != tc.wantWantService {
+				t.Errorf("effectiveManagedService(set=%v, use=%v) = %v, want %v",
+					tc.flagSet, tc.useService, got, tc.wantWantService)
+			}
+		})
+	}
+}
 
+// TestMcpInstallNonInteractiveHTTPDefaultsToService guards the default-on
+// behavior: a bare non-interactive --transport http (no --service) must NOT
+// error at the guard — it proceeds and installs the managed service, the only
+// way an http server stays running. Only an EXPLICIT --service=false on a
+// non-interactive http install is rejected (refusing the daemon while leaving
+// no foreground terminal means nothing would run).
+func TestMcpInstallNonInteractiveHTTPDefaultsToService(t *testing.T) {
+	ctx := context.Background()
 	ui := newMockInstallUI()
 
-	err := runMcpInstall(ctx, fake, ui, nil)
-	if err == nil {
-		t.Fatalf("expected error for http without --service, got nil")
+	// Bare http, no --service: the guard must let it through.
+	bare := newMcpInstallFlagFake()
+	bare.set["scope"] = true
+	bare.set["transport"] = true
+	bare.vals["scope"] = scopeGlobal
+	bare.vals["transport"] = string(install.TransportHTTP)
+	bare.bools["non-interactive"] = true
+	bare.stringSlice["agent"] = []string{"claude-code"}
+
+	// The fake is not a *cli.Command, so the production collector is never
+	// wired and the wizard cannot complete (no public URL is resolved) — but
+	// that is a later, unrelated step. The point of the bare case is the
+	// GUARD: it must NOT reject a bare http install with the explicit-refusal
+	// message. Any error is fine here except that one.
+	if err := runMcpInstall(ctx, bare, ui, nil); err != nil && strings.Contains(err.Error(), "--service=false") {
+		t.Fatalf("bare --transport http non-interactive was wrongly refused by the service guard: %v", err)
 	}
-	wantErr := "http install requires an interactive terminal, --service, or --transport stdio"
-	if err.Error() != wantErr {
-		t.Errorf("error = %q, want %q", err.Error(), wantErr)
+
+	// Explicit --service=false on non-interactive http: still rejected.
+	refused := newMcpInstallFlagFake()
+	refused.set["scope"] = true
+	refused.set["transport"] = true
+	refused.set["service"] = true
+	refused.bools["service"] = false
+	refused.vals["scope"] = scopeGlobal
+	refused.vals["transport"] = string(install.TransportHTTP)
+	refused.bools["non-interactive"] = true
+	refused.stringSlice["agent"] = []string{"claude-code"}
+
+	err := runMcpInstall(ctx, refused, ui, nil)
+	if err == nil {
+		t.Fatalf("expected error for explicit --service=false on http, got nil")
+	}
+	if !strings.Contains(err.Error(), "--service=false") {
+		t.Errorf("error = %q, want a message about --service=false", err.Error())
 	}
 }
 

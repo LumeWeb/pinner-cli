@@ -142,8 +142,13 @@ func runMcpInstall(ctx context.Context, cmd mcpInstallFlagGetter, ui InstallUI, 
 		if len(agents) == 0 {
 			return fmt.Errorf("non-interactive install requires --agent (e.g. --agent claude-code)")
 		}
-		if transport == install.TransportHTTP && !useService {
-			return fmt.Errorf("http install requires an interactive terminal, --service, or --transport stdio")
+		// An HTTP install defaults to installing the managed service (that
+		// is the only way it stays running), so a bare --transport http
+		// succeeds. Only an EXPLICIT --service=false on a non-interactive
+		// http install is rejected: refusing the daemon leaves nothing
+		// running and no interactive terminal to hold a foreground server.
+		if transport == install.TransportHTTP && !useService && cmd.IsSet("service") {
+			return fmt.Errorf("non-interactive http install cannot start a daemon with --service=false; pass --service or drop it to install the managed service")
 		}
 	}
 
@@ -231,7 +236,31 @@ func runMcpInstall(ctx context.Context, cmd mcpInstallFlagGetter, ui InstallUI, 
 				}
 			}
 
-			env, sideEffect, err := mcpadapter.CollectHTTPInstallWithCreated(ctx, realCmd, "", s.UseService, created)
+			// An HTTP install only stays reachable for the agent if a server
+			// is left running, which in this flow means the managed OS
+			// service. Default to installing/starting it unless the operator
+			// explicitly opted out with --service=false (e.g. they run the
+			// foreground `mcp http` themselves under their own supervisor).
+			// This collector only runs for HTTP installs, so the http
+			// default is safe; stdio installs never reach here.
+			wantService := effectiveManagedService(realCmd.IsSet("service"), s.UseService)
+			// Make the default-on choice visible so it is not a silent
+			// lifecycle change: if the collector installs/starts a managed
+			// service that the operator did not ask for by naming the flag,
+			// tell them up front (and how to opt out on a re-run).
+			if wantService && w.ui != nil {
+				opt := "opt out with --service=false"
+				if s.NonInteractive {
+					// A non-interactive http install cannot refuse the daemon
+					// (nothing would hold a foreground server), so the flag
+					// form is rejected; don't advertise it.
+					opt = "see --help for http install options"
+				}
+				_ = w.ui.ReportBuild(install.AgentKey("service"),
+					"http install installs and starts the managed systemd user unit 'pinner-mcp' ("+opt+")")
+			}
+
+			env, sideEffect, err := mcpadapter.CollectHTTPInstallWithCreated(ctx, realCmd, "", wantService, created)
 			if err != nil {
 				// Roll the file back ONLY if the install failed before any
 				// service Install/Start side effect. If the managed service was
@@ -283,6 +312,21 @@ func runMcpInstall(ctx context.Context, cmd mcpInstallFlagGetter, ui InstallUI, 
 	}
 	_, err := w.Run(ctx)
 	return err
+}
+
+// effectiveManagedService resolves whether an http install should install and
+// start the managed OS service. A managed service is the only way an http
+// server stays running for the agent, so it defaults ON for http installs
+// (interactive and non-interactive alike) unless the operator explicitly opted
+// out with --service=false. Gating it to non-interactive only would produce an
+// interactive http install whose config points at no running server.
+func effectiveManagedService(serviceFlagExplicitlySet, useService bool) bool {
+	if serviceFlagExplicitlySet {
+		return useService
+	}
+	// --service unset: default to the managed service so the agent host is
+	// actually left running.
+	return true
 }
 
 // buildMcpTunnelSteps builds the wrapped, VISIBLE tunnel-config host steps for
