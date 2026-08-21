@@ -272,7 +272,7 @@ func TestMcpInstallNonInteractiveClaudeCodeStdio(t *testing.T) {
 
 	ui := newMockInstallUI()
 
-	if err := runMcpInstall(ctx, fake, ui, tempPathResolver(root, projectDir)); err != nil {
+	if err := RunMcpInstallWizard(ctx, fake, ui, tempPathResolver(root, projectDir)); err != nil {
 		t.Fatalf("runMcpInstall failed: %v", err)
 	}
 
@@ -342,7 +342,7 @@ func TestMcpInstallNonInteractiveHTTPDefaultsToService(t *testing.T) {
 	// that is a later, unrelated step. The point of the bare case is the
 	// GUARD: it must NOT reject a bare http install with the explicit-refusal
 	// message. Any error is fine here except that one.
-	if err := runMcpInstall(ctx, bare, ui, nil); err != nil && strings.Contains(err.Error(), "--service=false") {
+	if err := RunMcpInstallWizard(ctx, bare, ui, nil); err != nil && strings.Contains(err.Error(), "--service=false") {
 		t.Fatalf("bare --transport http non-interactive was wrongly refused by the service guard: %v", err)
 	}
 
@@ -357,7 +357,7 @@ func TestMcpInstallNonInteractiveHTTPDefaultsToService(t *testing.T) {
 	refused.bools["non-interactive"] = true
 	refused.stringSlice["agent"] = []string{"claude-code"}
 
-	err := runMcpInstall(ctx, refused, ui, nil)
+	err := RunMcpInstallWizard(ctx, refused, ui, nil)
 	if err == nil {
 		t.Fatalf("expected error for explicit --service=false on http, got nil")
 	}
@@ -847,7 +847,7 @@ func TestMcpInstallInteractivePromptsForScopeAndTransport(t *testing.T) {
 	fake := newMcpInstallFlagFake()
 	fake.stringSlice["agent"] = []string{"claude-code"}
 
-	if err := runMcpInstall(ctx, fake, ui, tempPathResolver(root, projectDir)); err != nil {
+	if err := RunMcpInstallWizard(ctx, fake, ui, tempPathResolver(root, projectDir)); err != nil {
 		t.Fatalf("runMcpInstall failed: %v", err)
 	}
 	if !ui.WasCalled("SelectScope") || !ui.WasCalled("SelectTransport") {
@@ -1430,5 +1430,59 @@ func TestSeedServiceFromEnvFile_FoldsPort(t *testing.T) {
 	seedServiceFromEnvFile(bad, s3)
 	if s3.Port != nil {
 		t.Errorf("malformed MCP_PORT must be ignored, got %v", s3.Port)
+	}
+}
+
+// TestMcpInstallRunsAsDelegateSubWizard guards that RunMcpInstallWizard is
+// truly embeddable: a HOST wizard can compose the whole install flow into one
+// of its steps via wizard.Delegate, running the install as a nested sub-flow
+// over the shared channel. This is the consumer pattern `pinner setup` uses to
+// offer "install the MCP server now?".
+func TestMcpInstallRunsAsDelegateSubWizard(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	projectDir := t.TempDir()
+
+	// A completed, non-interactive install config so the embedded run writes
+	// without any interactive prompt.
+	fake := newMcpInstallFlagFake()
+	fake.set["scope"] = true
+	fake.set["transport"] = true
+	fake.vals["scope"] = scopeGlobal
+	fake.vals["transport"] = string(install.TransportStdio)
+	fake.bools["non-interactive"] = true
+	fake.stringSlice["agent"] = []string{"claude-code"}
+
+	hostUI := wizard.NewMockUI()
+	var installed bool
+	hostSteps := []wizard.Step[*string]{
+		wizard.Delegate[*string]("Install MCP", func(ctx context.Context, _ *string) error {
+			// Compose the full install wizard into this host step, sharing
+			// the host's terminal channel via the bound prompter.
+			ui := newMockInstallUI()
+			if err := RunMcpInstallWizard(ctx, fake, ui, tempPathResolver(root, projectDir)); err != nil {
+				return err
+			}
+			installed = true
+			return nil
+		}),
+	}
+
+	host := "host"
+	result, err := wizard.Run[*string](ctx, hostUI, hostSteps, &host)
+	if err != nil {
+		t.Fatalf("host wizard run failed: %v", err)
+	}
+	if !result.Completed {
+		t.Errorf("host wizard did not complete")
+	}
+	if !installed {
+		t.Errorf("embedded install wizard must have run from the Delegate step")
+	}
+
+	// The embedded install actually wrote the agent config.
+	entry := readGlobalJSON(t, root, install.AgentClaudeCode)
+	if entry["command"] == "" {
+		t.Errorf("expected a command path written by the embedded install")
 	}
 }

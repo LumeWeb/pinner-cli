@@ -18,6 +18,12 @@ type SetupUI interface {
 	ExecuteConfigStep(ctx context.Context, wizard *SetupWizard) error
 	ExecuteCompletionStep(wizard *SetupWizard) error
 	ExecuteTutorialStep(wizard *SetupWizard) error
+
+	// ReportMcpInstallSkipped surfaces a non-fatal note that the opt-in MCP
+	// install did not complete, after core setup already succeeded. The wizard
+	// returns nil from the MCP step on install failure, so the note is the
+	// only way the operator learns the install was skipped.
+	ReportMcpInstallSkipped(err error)
 }
 
 // AuthStepChoice represents user's choice for authentication step.

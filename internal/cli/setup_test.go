@@ -6,8 +6,11 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/urfave/cli/v3"
+	"go.lumeweb.com/pinner-cli/internal/cli/wizard"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
 	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
+	"go.lumeweb.com/pinner-cli/internal/fieldform"
 )
 
 func TestSetupWizard_Run(t *testing.T) {
@@ -563,4 +566,116 @@ func TestMockSetupUI(t *testing.T) {
 		require.Equal(t, "ShowWelcome", calls[0])
 		require.Equal(t, "ExecuteAuthStep", calls[1])
 	})
+}
+
+// setupMcpPrompter is a fieldform.Prompter whose Confirm returns a fixed
+// result, so tests can drive the opt-in MCP confirm without a real terminal.
+type setupMcpPrompter struct {
+	confirmResult bool
+}
+
+func (s *setupMcpPrompter) Select(string, []string, string) (int, string, error) { return 0, "", nil }
+func (s *setupMcpPrompter) MultiSelect(string, []string, []string) ([]string, error) {
+	return nil, nil
+}
+func (s *setupMcpPrompter) Confirm(string, bool) (bool, error)          { return s.confirmResult, nil }
+func (s *setupMcpPrompter) Text(string, string, string) (string, error) { return "", nil }
+
+// newSetupWizardWithMcp builds a SetupWizard with auth/config skipped (so only
+// the MCP-relevant steps run), an attached installer that records whether it
+// ran, and a bound prompter.
+func newSetupWizardWithMcp(t *testing.T, confirm bool) (*SetupWizard, *bool, *MockSetupUI) {
+	t.Helper()
+	cfgMgr := configmocks.NewMockManager(t)
+	cfg := &config.Config{AuthToken: "token", BaseEndpoint: "endpoint"}
+	cfgMgr.EXPECT().Config().Return(cfg).Maybe()
+
+	mockUI := NewMockSetupUI()
+	var installed bool
+	w := NewSetupWizard(cfgMgr, nil, mockUI, SetupOptions{SkipAuth: true, SkipConfig: true}).
+		WithMcpInstaller(func(_ context.Context, _ *SetupWizard) error {
+			installed = true
+			return nil
+		})
+	ctx := context.Background()
+	ctx = fieldform.WithPrompter(ctx, &setupMcpPrompter{confirmResult: confirm})
+	steps := w.getSteps()
+	_, err := wizard.Run[*SetupWizard](ctx, mockUI, steps, w)
+	require.NoError(t, err)
+	return w, &installed, mockUI
+}
+
+// TestSetupMcpInstallStep_Declined guards the opt-in default: when the operator
+// says no, the installer must NOT run and the step must render.
+func TestSetupMcpInstallStep_Declined(t *testing.T) {
+	_, installed, ui := newSetupWizardWithMcp(t, false)
+	require.False(t, *installed, "declining must not run the mcp installer")
+
+	// The step is present as a visible 5th step in the offered flow.
+	calls := ui.GetCalls()
+	require.Contains(t, calls, "ShowStepProgress(5,5,Install MCP Server)")
+}
+
+// TestSetupMcpInstallStep_Accepted guards that accepting the offer runs the
+// installer, composing the mcp install flow into setup.
+func TestSetupMcpInstallStep_Accepted(t *testing.T) {
+	_, installed, _ := newSetupWizardWithMcp(t, true)
+	require.True(t, *installed, "accepting must run the mcp installer")
+}
+
+// TestSetupMcpInstallStep_NoInstaller guards that without an attached installer
+// the step is entirely absent (the setup flow stays 4 steps) and never prompts.
+func TestSetupMcpInstallStep_NoInstaller(t *testing.T) {
+	cfgMgr := configmocks.NewMockManager(t)
+	cfg := &config.Config{AuthToken: "token", BaseEndpoint: "endpoint"}
+	cfgMgr.EXPECT().Config().Return(cfg).Maybe()
+
+	mockUI := NewMockSetupUI()
+	w := NewSetupWizard(cfgMgr, nil, mockUI, SetupOptions{SkipAuth: true, SkipConfig: true})
+
+	steps := w.getSteps()
+	names := make([]string, 0, len(steps))
+	for _, s := range steps {
+		names = append(names, s.Name())
+	}
+	require.NotContains(t, names, "Install MCP Server")
+	require.Len(t, names, 4, "no-installer setup stays 4 steps")
+}
+
+// TestSetupMcpInstallStep_InstallErrorIsNonFatal guards that an error from the
+// opt-in install must NOT fail the whole setup: auth/config/completion already
+// succeeded, so a failed or aborted install surfaces a warning and the wizard
+// still completes successfully.
+func TestSetupMcpInstallStep_InstallErrorIsNonFatal(t *testing.T) {
+	cfgMgr := configmocks.NewMockManager(t)
+	cfg := &config.Config{AuthToken: "token", BaseEndpoint: "endpoint"}
+	cfgMgr.EXPECT().Config().Return(cfg).Maybe()
+
+	mockUI := NewMockSetupUI()
+	dummyErr := errors.New("install aborted")
+	w := NewSetupWizard(cfgMgr, nil, mockUI, SetupOptions{SkipAuth: true, SkipConfig: true}).
+		WithMcpInstaller(func(_ context.Context, _ *SetupWizard) error {
+			return dummyErr
+		})
+	ctx := context.Background()
+	ctx = fieldform.WithPrompter(ctx, &setupMcpPrompter{confirmResult: true})
+	steps := w.getSteps()
+	_, err := wizard.Run[*SetupWizard](ctx, mockUI, steps, w)
+	require.NoError(t, err, "an opt-in install failure must not fail setup")
+	require.ErrorIs(t, mockUI.McpInstallSkippedErr, dummyErr, "the failure must be surfaced via the UI")
+}
+
+// TestSetupMcpInstallFlagsNotRealCommand guards that the embedded install's flag
+// getter is NOT a *cli.Command, so RunMcpInstallWizard never fires its
+// real-command branch (which would splice the HTTP/service tunnel collector
+// from flags pinner setup does not register).
+func TestSetupMcpInstallFlagsNotRealCommand(t *testing.T) {
+	// setupMcpInstallFlags is a plain struct satisfying mcpInstallFlagGetter
+	// without being a *cli.Command, so RunMcpInstallWizard's real-command
+	// branch (which splices the HTTP/service tunnel collector from registered
+	// flags) never fires against it.
+	var g mcpInstallFlagGetter = &setupMcpInstallFlags{}
+	if _, ok := g.(*cli.Command); ok {
+		t.Fatal("setupMcpInstallFlags must not be a *cli.Command")
+	}
 }
