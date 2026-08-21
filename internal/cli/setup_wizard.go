@@ -150,18 +150,22 @@ func (w *SetupWizard) executeMcpInstallStep(ctx context.Context, _ *SetupWizard)
 	}
 	p := fieldform.PrompterFrom(ctx)
 	if p == nil {
-		return fmt.Errorf("no interactive prompter available to ask about MCP installation")
+		w.ui.ReportMcpInstallSkipped(fmt.Errorf("no interactive prompter available to ask about MCP installation"))
+		return nil
 	}
 	install, err := p.Confirm("Install the Pinner MCP server into your AI coding agents?", false)
 	if err != nil {
-		return err
+		// The opt-in is non-fatal: an interrupted/aborted confirm (e.g. EOF)
+		// must not fail a setup that already completed auth/config. Surface a
+		// note and let setup complete.
+		w.ui.ReportMcpInstallSkipped(err)
+		return nil
 	}
 	if !install {
 		return nil
 	}
-	// The opt-in install is non-fatal: auth/config/completion already
-	// succeeded, so a failed or aborted install must not report the whole
-	// setup as failed. Surface a note via the UI and let setup complete.
+	// The install itself is non-fatal: a failed or aborted install must not
+	// report the whole setup as failed. Surface a note and let setup complete.
 	if err := w.mcpInstaller(ctx, w); err != nil {
 		w.ui.ReportMcpInstallSkipped(err)
 	}

@@ -11,6 +11,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/core/config"
 	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
 	"go.lumeweb.com/pinner-cli/internal/fieldform"
+	"go.lumeweb.com/pinner-cli/internal/mcp/install"
 )
 
 func TestSetupWizard_Run(t *testing.T) {
@@ -572,13 +573,14 @@ func TestMockSetupUI(t *testing.T) {
 // result, so tests can drive the opt-in MCP confirm without a real terminal.
 type setupMcpPrompter struct {
 	confirmResult bool
+	confirmErr    error
 }
 
 func (s *setupMcpPrompter) Select(string, []string, string) (int, string, error) { return 0, "", nil }
 func (s *setupMcpPrompter) MultiSelect(string, []string, []string) ([]string, error) {
 	return nil, nil
 }
-func (s *setupMcpPrompter) Confirm(string, bool) (bool, error)          { return s.confirmResult, nil }
+func (s *setupMcpPrompter) Confirm(string, bool) (bool, error)          { return s.confirmResult, s.confirmErr }
 func (s *setupMcpPrompter) Text(string, string, string) (string, error) { return "", nil }
 
 // newSetupWizardWithMcp builds a SetupWizard with auth/config skipped (so only
@@ -678,4 +680,38 @@ func TestSetupMcpInstallFlagsNotRealCommand(t *testing.T) {
 	if _, ok := g.(*cli.Command); ok {
 		t.Fatal("setupMcpInstallFlags must not be a *cli.Command")
 	}
+
+	// It also fixes the transport to stdio as explicitly set: the embedded
+	// setup install has no HTTP/service collector, so http must never be
+	// offered and the Choose Transport step is skipped.
+	if !g.IsSet("transport") {
+		t.Fatal("setupMcpInstallFlags must mark transport as set")
+	}
+	if got := g.String("transport"); got != string(install.TransportStdio) {
+		t.Fatalf("setupMcpInstallFlags transport = %q, want %q", got, string(install.TransportStdio))
+	}
+}
+
+// TestSetupMcpInstallStep_ConfirmErrorIsNonFatal guards that an interrupted or
+// failed confirm prompt (e.g. EOF) must NOT fail the whole setup: core setup
+// already succeeded, so the MCP opt-in is surfaced as a warning and the wizard
+// still completes.
+func TestSetupMcpInstallStep_ConfirmErrorIsNonFatal(t *testing.T) {
+	cfgMgr := configmocks.NewMockManager(t)
+	cfg := &config.Config{AuthToken: "token", BaseEndpoint: "endpoint"}
+	cfgMgr.EXPECT().Config().Return(cfg).Maybe()
+
+	mockUI := NewMockSetupUI()
+	confirmErr := errors.New("prompt interrupted")
+	w := NewSetupWizard(cfgMgr, nil, mockUI, SetupOptions{SkipAuth: true, SkipConfig: true}).
+		WithMcpInstaller(func(_ context.Context, _ *SetupWizard) error {
+			t.Fatal("installer must not run when the confirm prompt itself fails")
+			return nil
+		})
+	ctx := context.Background()
+	ctx = fieldform.WithPrompter(ctx, &setupMcpPrompter{confirmErr: confirmErr})
+	steps := w.getSteps()
+	_, err := wizard.Run[*SetupWizard](ctx, mockUI, steps, w)
+	require.NoError(t, err, "a confirm-prompt failure must not fail setup")
+	require.ErrorIs(t, mockUI.McpInstallSkippedErr, confirmErr, "the prompt failure must surface via the UI")
 }

@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	"github.com/urfave/cli/v3"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/install"
 )
 
 // newSetupCommand creates and returns the setup command.
@@ -119,18 +121,23 @@ func runSetupWizardWithFactories(
 
 // setupMcpInstallFlags is the flag surface the embedded mcp install reads when
 // it is chained from pinner setup. It is deliberately NOT a *cli.Command: it
-// yields interactive defaults (empty agents/scope/transport, non-interactive
-// false) so RunMcpInstallWizard prompts for agent detection / scope /
-// transport and defaults to stdio, and its real-command branch (which splices
-// the HTTP/service tunnel collector from registered flags) never fires — pinner
-// setup registers no mcp install flags, so that branch would otherwise read a
-// flag surface the host command does not expose.
+// forces a complete stdio install. pinner setup registers no mcp install flags
+// and wires no HTTP composite collector, so an http choice would silently
+// "succeed" with no running server; by reporting transport=stdio as explicitly
+// set, RunMcpInstallWizard skips the Choose Transport step, http is never
+// offered, and the getter's real-command branch (which splices the HTTP/service
+// tunnel collector) never fires.
 type setupMcpInstallFlags struct{}
 
 var _ mcpInstallFlagGetter = (*setupMcpInstallFlags)(nil)
 
-func (s *setupMcpInstallFlags) String(string) string        { return "" }
+func (s *setupMcpInstallFlags) String(name string) string {
+	if name == "transport" {
+		return string(install.TransportStdio)
+	}
+	return ""
+}
 func (s *setupMcpInstallFlags) Bool(string) bool            { return false }
 func (s *setupMcpInstallFlags) Int(string) int              { return 0 }
-func (s *setupMcpInstallFlags) IsSet(string) bool           { return false }
+func (s *setupMcpInstallFlags) IsSet(name string) bool      { return name == "transport" }
 func (s *setupMcpInstallFlags) StringSlice(string) []string { return nil }
