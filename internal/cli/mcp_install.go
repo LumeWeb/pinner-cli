@@ -75,7 +75,7 @@ Examples:
 			},
 		}, mcpadapter.ServiceInstallFlags()...),
 		Action: func(ctx context.Context, cmd *cli.Command) error {
-			return runMcpInstall(ctx, cmd, nil, nil)
+			return RunMcpInstallWizard(ctx, cmd, nil, nil)
 		},
 	}
 }
@@ -88,10 +88,15 @@ type mcpInstallFlagGetter interface {
 	StringSlice(name string) []string
 }
 
-// runMcpInstall is the DI-testable action runner. ui and resolvePath may be nil
-// (production pterm UI / real path resolution); tests inject mocks and a
-// temp-dir resolver.
-func runMcpInstall(ctx context.Context, cmd mcpInstallFlagGetter, ui InstallUI, resolvePath pathResolver) error {
+// RunMcpInstallWizard runs the full `mcp install` wizard and is the embeddable
+// entry a host wizard uses to compose the install flow into its own steps. It is
+// a `Delegate` consumer: a host step calls it through wizard.Delegate, and it
+// shares the host's terminal channel (the prompter the host's wizard.Run bound
+// into ctx flows through here — see the WithPrompter check near the end).
+//
+// ui and resolvePath may be nil (production pterm UI / real path resolution);
+// tests inject mocks and a temp-dir resolver.
+func RunMcpInstallWizard(ctx context.Context, cmd mcpInstallFlagGetter, ui InstallUI, resolvePath pathResolver) error {
 	nonInteractive := cmd.Bool("non-interactive")
 	useService := cmd.Bool("service")
 	agentStrs := cmd.StringSlice("agent")
