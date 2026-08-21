@@ -5,13 +5,16 @@
   "scripts": {
     "build": "pnpm --filter @pinner/apps build",
     "build:css": "tailwindcss -i internal/mcpapp/css/input.css -o internal/mcpapp/css/tailwind.css --minify",
-    "test": "pnpm --filter @pinner/apps test"
+    "test": "pnpm --filter @pinner/apps test",
+    "test:mcp": "go build -o bin/pinner ./cmd/pinner && cd tests/sunpeak && pnpm test",
+    "test:mcp:http-bearer": "go build -o bin/pinner ./cmd/pinner && cd tests/sunpeak && pnpm test:http-bearer",
+    "test:mcp:oauth": "go build -o bin/pinner ./cmd/pinner && cd tests/sunpeak && pnpm test:oauth"
   },
   "devDependencies": {
     "@tailwindcss/cli": "^4.3.3",
     "tailwindcss": "^4.3.3",
     "tsdown": "catalog:",
-    "typescript": "catalog:",
-    "vitest": "catalog:"
-  }
+    "typescript": "catalog:"
+  },
+  "type": "module"
 }
