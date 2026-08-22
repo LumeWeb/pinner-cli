@@ -118,6 +118,21 @@ func (s *Server) GetApiAccount(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, acc)
 }
 
+// PostApiAuthPing checks that the request is authenticated and returns a pong
+// response. pinner's auth_status op pings this endpoint to confirm the stored
+// token is valid, so it must be implemented for the status contract to hold.
+func (s *Server) PostApiAuthPing(w http.ResponseWriter, r *http.Request) {
+	acc := s.authorize(r)
+	if acc == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "not authenticated"})
+		return
+	}
+	auth := r.Header.Get("Authorization")
+	const prefix = "Bearer "
+	token := strings.TrimPrefix(auth, prefix)
+	writeJSON(w, http.StatusOK, PongResponse{Ping: "pong", Token: token})
+}
+
 // GetApiAccountKeys lists the authenticated account's API keys.
 func (s *Server) GetApiAccountKeys(w http.ResponseWriter, r *http.Request, params GetApiAccountKeysParams) {
 	if s.authorize(r) == nil {
