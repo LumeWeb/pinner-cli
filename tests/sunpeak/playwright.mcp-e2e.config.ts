@@ -13,7 +13,7 @@ const __dirname = fileURLToPath(new URL('.', import.meta.url));
 //
 // Two processes:
 //   1. The fake API (cmd/mcp-test-server) is started by globalSetup on
-//      127.0.0.1:8125 and seeds a deterministic account/token.
+//      127.0.0.1:8126 and seeds a deterministic account/token.
 //   2. `pinner mcp` is booted by sunpeak with HOME isolated to
 //      fixtures/pinner-home, whose config.yaml points base_endpoint and
 //      auth_token at that fake.
@@ -24,7 +24,7 @@ const __dirname = fileURLToPath(new URL('.', import.meta.url));
 //
 // Run: npx sunpeak test -c playwright.mcp-e2e.config.ts
 
-const FAKE_PORT = 8125;
+const FAKE_PORT = 8126;
 const FIXTURE_HOME = join(__dirname, 'fixtures', 'pinner-home');
 
 export default defineConfig({
@@ -36,6 +36,6 @@ export default defineConfig({
     },
   },
   globalSetup: './mcp-e2e-setup.mjs',
-  testDir: 'tests/mcp-e2e',
+  testDir: 'mcp-e2e',
   timeout: 120_000,
 });

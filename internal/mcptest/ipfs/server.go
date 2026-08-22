@@ -48,6 +48,8 @@ func (s *Server) authorized(r *http.Request) bool {
 	if !strings.HasPrefix(auth, prefix) {
 		return false
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	_, ok := s.tokens[strings.TrimPrefix(auth, prefix)]
 	return ok
 }

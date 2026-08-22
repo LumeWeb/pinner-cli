@@ -45,15 +45,19 @@ func (s *Server) Seed(email, firstName, lastName string) string {
 }
 
 // Handler returns a dispatcher that routes the account API's prefixes
-// (/api/auth/, /api/account/) to the account double and everything else
-// (content /api/* and the /pins pinning service) to the content double.
+// (/api/auth/, /api/account/, and the account-only /api/billing/,
+// /api/operations, /api/upload-limit) to the account double and everything
+// else (content /api/* and the /pins pinning service) to the content double.
 func (s *Server) Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p := r.URL.Path
 		switch {
 		case p == "/api/account",
 			strings.HasPrefix(p, "/api/account/"),
-			strings.HasPrefix(p, "/api/auth/"):
+			strings.HasPrefix(p, "/api/auth/"),
+			strings.HasPrefix(p, "/api/billing/"),
+			strings.HasPrefix(p, "/api/operations"),
+			strings.HasPrefix(p, "/api/upload-limit"):
 			account.Handler(s.account).ServeHTTP(w, r)
 		default:
 			ipfs.Handler(s.ipfs).ServeHTTP(w, r)

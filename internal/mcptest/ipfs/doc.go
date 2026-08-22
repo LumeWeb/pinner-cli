@@ -4,5 +4,5 @@
 // API test double for pinner-cli's end-to-end MCP tests.
 //
 //go:generate go tool oapi-codegen -config oai-codegen.yaml ../specs/ipfs.yaml
-//go:generate python3 ../../../scripts/gen_server_stub.py server.gen.go ipfs serverStub.gen.go
+//go:generate go run ../../../cmd/gen-server-stub server.gen.go ipfs serverStub.gen.go
 package ipfs

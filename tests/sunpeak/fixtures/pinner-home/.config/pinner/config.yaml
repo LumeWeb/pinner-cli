@@ -4,6 +4,6 @@
 # targets the swagger-generated fake API (cmd/mcp-test-server) on 127.0.0.1.
 # base_endpoint uses the bare-IP form so the SDKs' subdomain derivation
 # (account./ipfs.<host>) collapses to 127.0.0.1 and hits the single fake server.
-base_endpoint: "http://127.0.0.1:8125"
+base_endpoint: "http://127.0.0.1:8126"
 auth_token: "token-e2e@example.com"
 secure: false

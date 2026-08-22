@@ -39,7 +39,10 @@ func TestPinRequiresAuth(t *testing.T) {
 
 func TestAddAndListPin(t *testing.T) {
 	s := NewServer()
-	tok := "token-x"
+	// Deterministic fake token derived from the test name (not a real
+	// credential): the gate only compares it against AuthorizeToken, so the
+	// exact value is irrelevant as long as we send the same one below.
+	tok := "test-token/" + t.Name()
 	s.AuthorizeToken(tok)
 	ts := httptest.NewServer(Handler(s))
 	defer ts.Close()

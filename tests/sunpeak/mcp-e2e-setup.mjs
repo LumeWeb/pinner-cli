@@ -1,7 +1,7 @@
 // Playwright globalSetup for the Sunpeak MCP e2e suite.
 //
 // Boots the swagger-generated fake Pinner API (cmd/mcp-test-server) on
-// 127.0.0.1:8125 BEFORE the pinner MCP server starts, so that when a tool
+// 127.0.0.1:8126 BEFORE the pinner MCP server starts, so that when a tool
 // call reaches the API it talks to the fake instead of the live service.
 // The fake seeds a deterministic account/token that the fixture config in
 // fixtures/pinner-home references.
@@ -14,7 +14,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const PORT = 8125;
+const PORT = 8126;
 const HEALTH_URL = `http://127.0.0.1:${PORT}/pins`; // content route, no auth required
 const BIN = join(__dirname, '..', '..', 'bin', 'mcp-test-server');
 

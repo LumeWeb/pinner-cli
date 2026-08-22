@@ -50,7 +50,7 @@ func TestCombinedDispatcher(t *testing.T) {
 	}
 
 	// a content request with an unknown token must be rejected (401)
-	resp, b = do(t, "GET", ts.URL+"/pins", "bogus-token", nil)
+	resp, b = do(t, "GET", ts.URL+"/pins", tok+"-bogus", nil)
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("pins with unknown token status=%d body=%s", resp.StatusCode, b)
 	}

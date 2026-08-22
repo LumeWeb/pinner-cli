@@ -141,6 +141,15 @@ jobs:
         working-directory: tests/sunpeak
         run: pnpm test
 
+      - name: Build fake API binary (mcp-test-server)
+        run: go build -o bin/mcp-test-server ./cmd/mcp-test-server
+
+      - name: Sunpeak fake-API e2e suite (real tool calls via swagger-gen fake)
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: /home/runner/.cache/ms-playwright
+        working-directory: tests/sunpeak
+        run: pnpm test:mcp-e2e
+
       - name: HTTP static-bearer suite
         env:
           PLAYWRIGHT_BROWSERS_PATH: /home/runner/.cache/ms-playwright
