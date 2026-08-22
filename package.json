@@ -8,7 +8,8 @@
     "test": "pnpm --filter @pinner/apps test",
     "test:mcp": "go build -o bin/pinner ./cmd/pinner && cd tests/sunpeak && pnpm test",
     "test:mcp:http-bearer": "go build -o bin/pinner ./cmd/pinner && cd tests/sunpeak && pnpm test:http-bearer",
-    "test:mcp:oauth": "go build -o bin/pinner ./cmd/pinner && cd tests/sunpeak && pnpm test:oauth"
+    "test:mcp:oauth": "go build -o bin/pinner ./cmd/pinner && cd tests/sunpeak && pnpm test:oauth",
+    "test:mcp-e2e": "go build -o bin/pinner ./cmd/pinner && go build -o bin/mcp-test-server ./cmd/mcp-test-server && cd tests/sunpeak && pnpm test:mcp-e2e"
   },
   "devDependencies": {
     "@tailwindcss/cli": "^4.3.3",

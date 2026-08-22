@@ -1,0 +1,9 @@
+# oapi-codegen config for the ipfs-sdk spec -> a stdlib HTTP server.
+# Generates models + ServerInterface + Handler(), which the fake impl in
+# server.go implements with in-memory data. Regenerate:
+#   go generate ./internal/mcptest/ipfs
+package: "ipfs"
+output: "server.gen.go"
+generate:
+    models: true
+    std-http-server: true
