@@ -30,6 +30,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/oauthstore"
 	"go.lumeweb.com/pinner-cli/internal/mcp/services"
 	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
+	"go.lumeweb.com/pinner-cli/internal/mcp/upload"
 	"go.lumeweb.com/pinner-cli/internal/mcp/wizard"
 	"go.uber.org/zap"
 
@@ -577,6 +578,21 @@ func serveHTTP(ctx context.Context, srv *sdk.Server, cmd *cli.Command, oob *auth
 	if vaultUpload != nil {
 		vaultUpload.SetBaseURL(baseURL)
 	}
+	// Bake the resolved origin into the apps' resources/list connectDomains so a
+	// host that reads the list at connection time (e.g. Claude deriving its
+	// sandbox connect-src) permits the upload PUT. The read-level value is
+	// already live; this covers the listing-level static default that most hosts
+	// actually use to build the iframe CSP.
+	if curlUpload != nil {
+		if err := sdk.SetAppResourceConnectDomains(srv, upload.IPFSUploadAppURI, curlUpload.ConnectOrigins()); err != nil {
+			return err
+		}
+	}
+	if vaultUpload != nil {
+		if err := sdk.SetAppResourceConnectDomains(srv, upload.VaultUploadAppURI, vaultUpload.ConnectOrigins()); err != nil {
+			return err
+		}
+	}
 	if dl != nil {
 		dl.SetBaseURL(baseURL)
 	}
@@ -796,6 +812,21 @@ func serveHTTP(ctx context.Context, srv *sdk.Server, cmd *cli.Command, oob *auth
 		}
 		if vaultUpload != nil {
 			vaultUpload.SetBaseURL(url)
+		}
+		// Tunnel mode: the upload PUT is reached through the provider-approved
+		// public origin, so re-bake the list-level connectDomains (last write
+		// wins over the base block above) to that tunnel origin.
+		if curlUpload != nil {
+			if err := sdk.SetAppResourceConnectDomains(srv, upload.IPFSUploadAppURI, curlUpload.ConnectOrigins()); err != nil {
+				shutdown(context.Background())
+				return err
+			}
+		}
+		if vaultUpload != nil {
+			if err := sdk.SetAppResourceConnectDomains(srv, upload.VaultUploadAppURI, vaultUpload.ConnectOrigins()); err != nil {
+				shutdown(context.Background())
+				return err
+			}
 		}
 		if dl != nil {
 			dl.SetBaseURL(url)
