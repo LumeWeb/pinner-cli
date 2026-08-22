@@ -4,7 +4,8 @@
 //
 // Element contract:
 //   #ipfs-upload-form   the <form> that starts the upload.
-//   #file               the file <input type="file">.
+//   #file               the file <input type="file"> (styled composite picker).
+//   #file-name          the picked-file label span ("No file chosen").
 //   #name               the upload-name <input>.
 //   #ipfs-upload-status the status element (class "status <state>").
 //   #out-cid            the result CID <code>.
@@ -38,6 +39,7 @@ import { byId, setStatus, StatusClass } from "@/dom";
 export type IPFSUploadElementIds = {
   form: string;
   file: string;
+  fileName: string;
   name: string;
   status: string;
   outCid: string;
@@ -49,7 +51,8 @@ export type IPFSUploadAppEntry = AppDefinition<IPFSUploadConfig, IPFSUploadEleme
 
 export interface IPFSUploadElements {
   form: { addEventListener(type: "submit", listener: (ev: SubmitEvent) => void): void };
-  fileInput: { files: FileList | null };
+  fileInput: HTMLInputElement;
+  fileNameEl: HTMLElement;
   nameInput: { value: string };
   statusEl: HTMLElement;
   outCid: HTMLElement;
@@ -135,6 +138,14 @@ export function runIPFSUploadEntry(opts: IPFSUploadEntryOptions) {
     if (r.setCid) opts.elements.outCid.textContent = ctx.outCid || opts.elements.outCid.textContent;
   });
 
+  // Reflect the picked file's name in the styled picker chrome. The native
+  // input is invisible (see file-field/file-input in the theme), so without
+  // this the user has no way to see what was selected.
+  opts.elements.fileInput.addEventListener("change", () => {
+    const picked = opts.elements.fileInput.files?.[0];
+    opts.elements.fileNameEl.textContent = picked ? picked.name : "No file chosen";
+  });
+
   const submit = (file: File | null, name: string) => {
     if (!file) {
       setStatus(opts.elements.statusEl, StatusClass.Error, opts.config.noFileMsg);
@@ -176,6 +187,7 @@ export function mountIPFSUploadApp(def: IPFSUploadAppEntry, root: Document, call
       elements: {
         form: byId<HTMLFormElement>(root, def.ids.form)!,
         fileInput: byId<HTMLInputElement>(root, def.ids.file)!,
+        fileNameEl: byId<HTMLElement>(root, def.ids.fileName)!,
         nameInput: byId<HTMLInputElement>(root, def.ids.name)!,
         statusEl: statusEl!,
         outCid: byId<HTMLElement>(root, def.ids.outCid)!,

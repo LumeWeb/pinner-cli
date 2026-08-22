@@ -10,7 +10,13 @@ templ VaultUploadAppForm() {
 		<h1 class="app-title">Upload to Vault</h1>
 		<form id="vault-upload-form" class="mt-2">
 			<label for="vfile" class="form-label">File</label>
-			<input id="vfile" name="vfile" class="form-input" type="file"/>
+			<div class="file-field">
+				<input id="vfile" name="vfile" type="file" class="file-input"/>
+				<div class="file-picker">
+					<span class="file-btn">Choose file</span>
+					<span id="vfile-name" class="file-name">No file chosen</span>
+				</div>
+			</div>
 			<label for="vault-path" class="form-label">Vault path</label>
 			<input id="vault-path" name="vault-path" class="form-input" placeholder="vault:/uploads/document.pdf" autocomplete="off" spellcheck="false"/>
 			<button type="submit" class="btn-primary" id="vstart">Upload</button>

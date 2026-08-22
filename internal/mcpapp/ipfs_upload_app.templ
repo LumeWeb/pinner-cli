@@ -10,7 +10,13 @@ templ IPFSUploadAppForm() {
 		<h1 class="app-title">Upload to IPFS</h1>
 		<form id="ipfs-upload-form" class="mt-2">
 			<label for="file" class="form-label">File</label>
-			<input id="file" name="file" class="form-input" type="file"/>
+			<div class="file-field">
+				<input id="file" name="file" type="file" class="file-input"/>
+				<div class="file-picker">
+					<span class="file-btn">Choose file</span>
+					<span id="file-name" class="file-name">No file chosen</span>
+				</div>
+			</div>
 			<label for="name" class="form-label">Name (optional)</label>
 			<input id="name" name="name" class="form-input" placeholder="my-file" autocomplete="off"/>
 			<button type="submit" class="btn-primary" id="start">Upload</button>

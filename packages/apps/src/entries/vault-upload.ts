@@ -22,6 +22,7 @@ export const def: VaultUploadAppEntry = {
   ids: {
     form: "vault-upload-form",
     file: "vfile",
+    fileName: "vfile-name",
     vaultPath: "vault-path",
     status: "vault-upload-status",
     outPath: "out-path",
