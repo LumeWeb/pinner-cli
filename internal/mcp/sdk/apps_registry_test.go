@@ -156,7 +156,7 @@ func TestSetAppResourceConnectDomainsBakesListEntry(t *testing.T) {
 // _meta.ui.csp must be on the content item (ResourceContents.Meta), NOT on the
 // top-level ReadResourceResult.Meta. The ext-apps spec says hosts read CSP from
 // "the resources/read content item" — a result-level _meta.ui is invisible to
-// Claude's CSP enforcement and produces the connect-src 'self' block.
+// the host's CSP enforcement and produces the connect-src 'self' block.
 func TestReadMetaOnContentItemNotResultRoot(t *testing.T) {
 	srv := NewServer(nil)
 	const uri = "ui://uploads/ipfs.html"

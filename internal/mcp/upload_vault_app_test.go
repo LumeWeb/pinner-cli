@@ -225,16 +225,16 @@ func TestVaultUploadCORS(t *testing.T) {
 	require.Contains(t, preResp.Header.Get("Access-Control-Allow-Methods"), "PUT")
 	require.NotEqual(t, "true", preResp.Header.Get("Access-Control-Allow-Credentials"), "must not send credentials")
 
-	// Untrusted origin: the response must NOT grant CORS, so the browser
-	// refuses the cross-origin write.
+	// A dynamic, non-loopback sandbox origin is also reflected (token-gated
+	// route), which is what unblocks a host-rendered app iframe.
 	evil, err := http.NewRequest(http.MethodOptions, minted.URL, nil)
 	require.NoError(t, err)
-	evil.Header.Set("Origin", "https://evil.example.com")
+	evil.Header.Set("Origin", "https://a1b2c3d4e5f6g7h8.host-sandbox.example")
 	evil.Header.Set("Access-Control-Request-Method", "PUT")
 	evilResp, err := http.DefaultClient.Do(evil)
 	require.NoError(t, err)
 	evilResp.Body.Close()
-	require.Empty(t, evilResp.Header.Get("Access-Control-Allow-Origin"), "untrusted origin must not be reflected")
+	require.Equal(t, "https://a1b2c3d4e5f6g7h8.host-sandbox.example", evilResp.Header.Get("Access-Control-Allow-Origin"), "dynamic sandbox origin must be reflected")
 
 	// Trusted-origin PUT: cross-origin write succeeds and lands in the vault.
 	put, err := http.NewRequest(http.MethodPut, minted.URL, strings.NewReader("cors body"))
@@ -249,9 +249,9 @@ func TestVaultUploadCORS(t *testing.T) {
 	require.Equal(t, "cors body", fake.gotBody)
 }
 
-// TestVaultUploadCORSConfiguredHost verifies a configured MCP-host origin
-// (added via AddTrustedOrigins) is reflected for the cross-origin Uppy PUT,
-// while an arbitrary unlisted origin is still refused.
+// TestVaultUploadCORSConfiguredHost verifies a configured MCP-host origin and a
+// dynamic, non-loopback sandbox origin are both reflected for the cross-origin
+// Uppy PUT (the route is token-gated, so it reflects any origin).
 func TestVaultUploadCORSConfiguredHost(t *testing.T) {
 	fake := &fakeVaultPutHandler{}
 	srv, vu := buildVaultUploadAppServerEx(t, fake)
@@ -280,15 +280,15 @@ func TestVaultUploadCORSConfiguredHost(t *testing.T) {
 	preResp.Body.Close()
 	require.Equal(t, "https://apps.example.com", preResp.Header.Get("Access-Control-Allow-Origin"))
 
-	// Arbitrary unlisted origin: still refused.
+	// A dynamic, unlisted sandbox origin is also reflected (token-gated route).
 	evil, err := http.NewRequest(http.MethodOptions, minted.URL, nil)
 	require.NoError(t, err)
-	evil.Header.Set("Origin", "https://evil.example.com")
+	evil.Header.Set("Origin", "https://a1b2c3d4e5f6g7h8.host-sandbox.example")
 	evil.Header.Set("Access-Control-Request-Method", "PUT")
 	evilResp, err := http.DefaultClient.Do(evil)
 	require.NoError(t, err)
 	evilResp.Body.Close()
-	require.Empty(t, evilResp.Header.Get("Access-Control-Allow-Origin"), "unlisted origin must not be reflected")
+	require.Equal(t, "https://a1b2c3d4e5f6g7h8.host-sandbox.example", evilResp.Header.Get("Access-Control-Allow-Origin"), "dynamic sandbox origin must be reflected")
 }
 
 func TestVaultUploadMintRejectsBadTTL(t *testing.T) {

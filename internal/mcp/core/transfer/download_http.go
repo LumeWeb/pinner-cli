@@ -71,10 +71,11 @@ func (hd *Download) SetBaseURL(url string) {
 	hd.loopback.SetBaseURL(url)
 }
 
-// AddTrustedOrigins extends the origin corsDownload reflects for a browser GET
-// beyond the coordinator's own base/loopback origin, allowing a configured MCP
-// host that serves the app iframe from its own origin to download. See
-// LoopbackServer.AddTrustedOrigins.
+// AddTrustedOrigins adds origins to the loopback server's accepted-origin set
+// (see LoopbackServer.AddTrustedOrigins). It is retained for backward
+// compatibility: the token-gated filedrop GET route now reflects any Origin
+// over CORS (see corsDownload/transferCORS), so this no longer gates
+// cross-origin downloads.
 func (hd *Download) AddTrustedOrigins(origins ...string) {
 	hd.loopback.AddTrustedOrigins(origins...)
 }
@@ -88,12 +89,8 @@ func (hd *Download) Stop(ctx context.Context) {
 // (HTTP/tunnel mode) or the loopback mux (stdio mode via ensureLoopback).
 // The token is carried in the path, /download/<token>.
 func (hd *Download) RegisterHandlers(mux *http.ServeMux) {
-	mux.HandleFunc("/download/", corsDownload(hd.allowedDownloadOrigins, hd.getHandler))
+	mux.HandleFunc("/download/", corsDownload(hd.getHandler))
 }
-
-// allowedDownloadOrigins is the callback corsDownload uses to scope the
-// reflected origin to the coordinator's own transport/base origin.
-func (hd *Download) allowedDownloadOrigins() []string { return hd.loopback.AcceptedOrigins() }
 
 // mint registers a fresh one-time filedrop GET endpoint bound to the given
 // serve closure and returns its full URL plus the declared name/size. It
@@ -266,27 +263,15 @@ func (hd *Download) SetNow(f func() time.Time) {
 
 // corsDownload wraps a filedrop GET route handler so a browser XHR / <a
 // download> link can GET from the minted endpoint across origins. Same
-// restricted-origin semantics as corsUpload: only trusted first-party origins
-// get the allow-origin header; access control is the unguessable single-use
-// token, never cookies.
-func corsDownload(allowed func() []string, next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		origin := r.Header.Get("Origin")
-		if origin != "" && shouldReflectOrigin(allowed(), origin) {
-			h := w.Header()
-			h.Set("Access-Control-Allow-Origin", origin)
-			h.Set("Vary", "Origin")
-			h.Set("Access-Control-Allow-Methods", "GET, OPTIONS")
-			h.Set("Access-Control-Allow-Headers", "Content-Type")
-			h.Add("Vary", "Access-Control-Request-Method")
-			h.Add("Vary", "Access-Control-Request-Headers")
-		}
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		next(w, r)
-	}
+// reflect-any-origin semantics as corsUpload: rs/cors answers the preflight and
+// reflects any request Origin; see transferCORS for why that is safe over the
+// token-gated route.
+func corsDownload(next http.HandlerFunc) http.HandlerFunc {
+	return transferCORS(
+		[]string{http.MethodGet, http.MethodOptions},
+		[]string{"Content-Type"},
+		next,
+	).ServeHTTP
 }
 
 // itoa is a tiny int64->decimal helper avoiding strconv for the size header.

@@ -146,7 +146,7 @@ func buildAppServer(t *testing.T) *mcp.Server {
 		Description: "Interactive vault listing",
 		HTML:        "<!doctype html><html><body>vault</body></html>",
 		Meta: model.AppResourceMeta{
-			Domain: "abcd1234.claudemcpcontent.com",
+			Domain: "abcd1234.host-sandbox.example",
 		},
 	})
 	if err != nil {
@@ -210,7 +210,7 @@ func TestAppResourceWire(t *testing.T) {
 	if !ok {
 		t.Fatalf("resource _meta.ui missing: %#v", r.Meta)
 	}
-	if got := ui["domain"]; got != "abcd1234.claudemcpcontent.com" {
+	if got := ui["domain"]; got != "abcd1234.host-sandbox.example" {
 		t.Fatalf("resource _meta.ui.domain = %#v", got)
 	}
 }
@@ -277,7 +277,7 @@ func TestAppResourceReadMetaNotShared(t *testing.T) {
 	if !ok {
 		t.Fatalf("list _meta.ui missing: %#v", r.Meta)
 	}
-	if listUI["domain"] != "abcd1234.claudemcpcontent.com" {
+	if listUI["domain"] != "abcd1234.host-sandbox.example" {
 		t.Fatalf("list _meta.ui.domain corrupted by read mutation: %#v", listUI["domain"])
 	}
 	if _, corrupted := r.Meta["extra"]; corrupted {

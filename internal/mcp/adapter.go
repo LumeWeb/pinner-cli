@@ -579,7 +579,7 @@ func serveHTTP(ctx context.Context, srv *sdk.Server, cmd *cli.Command, oob *auth
 		vaultUpload.SetBaseURL(baseURL)
 	}
 	// Bake the resolved origin into the apps' resources/list connectDomains so a
-	// host that reads the list at connection time (e.g. Claude deriving its
+	// host that reads the list at connection time (e.g. an MCP host deriving its
 	// sandbox connect-src) permits the upload PUT. The read-level value is
 	// already live; this covers the listing-level static default that most hosts
 	// actually use to build the iframe CSP.

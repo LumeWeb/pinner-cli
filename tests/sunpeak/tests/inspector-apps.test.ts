@@ -7,7 +7,7 @@ import type { FrameLocator } from '@playwright/test';
  * serves each bundle as one inline <script type="module"> with no importer, so
  * NO bare module specifier may survive the build — a leaked `import ... from
  * "@uppy/core"` throws "Failed to resolve module specifier" and kills the app
- * before it boots (a real regression that hit Claude's host). These tests
+ * before it boots (a real regression that hit a host's sandbox runtime). These tests
  * render the upload apps in the real browser and assert the module actually
  * EXECUTED: the shell injects `window.__PINNER_CLI_VERSION__` as the first
  * statement of the same module script, and ES module instantiation resolves
@@ -35,7 +35,7 @@ async function appVersion(app: FrameLocator): Promise<unknown> {
 /**
  * Host-iframe rendering of the pinner ui:// MCP Apps via the sunpeak
  * `inspector` fixture. THIS is where the real browser (chromium) runs: each
- * app is loaded into a simulated ChatGPT / Claude host and rendered inside the
+ * app is loaded into a simulated MCP host and rendered inside the
  * double-iframe sandbox, exactly as an end user's host would render it.
  *
  * The `mcp` fixture (see protocol-surface.test.ts) talks raw protocol and never
@@ -164,10 +164,11 @@ test('upload_file app renders the upload progress bar nodes (hidden until in-fli
  *      `allow-same-origin` — so it genuinely has an opaque `"null"` origin,
  *      mirroring the host-rendered app frame.
  *   3. Assert the fetch resolves (CORS granted) with 202.
- *      Arbitrary-origin refusal is asserted at the HTTP layer in Go
- *      (TestCORSOriginOpaqueNull / TestIPFSUploadCORSOpaqueNull), because the
- *      sunpeak inspector serves the whole page from an opaque "null" origin —
- *      there is no way to originate a non-null attacker request here.
+ *      The token-gated route reflects ANY origin, including a dynamic
+ *      non-null host-sandbox origin — asserted at the HTTP layer in Go
+ *      (TestCORSOriginReflectsAnyOrigin / TestIPFSUploadCORSOpaqueNull),
+ *      because the sunpeak inspector serves the whole page from an opaque
+ *      "null" origin, so there is no way to originate a non-null request here.
  */
 
 type McpFixture = { callTool: (name: string, input?: Record<string, unknown>) => Promise<any> };
@@ -236,9 +237,10 @@ test('cross-origin presigned upload PUT is allowed from the opaque "null" sandbo
   expect(positive.ok, `opaque-origin PUT failed: ${positive.error ?? `status ${positive.status}`}`).toBe(true);
   expect(positive.status).toBe(202);
 
-  // Arbitrary-origin refusal is asserted precisely at the HTTP layer in the Go
-  // tests (TestCORSOriginOpaqueNull / TestIPFSUploadCORSOpaqueNull refuse an
-  // `https://evil.example.com` origin), not here: the sunpeak inspector serves
-  // the whole page from an opaque "null" origin, so there is no way to originate
-  // a genuinely non-null, non-trusted request from this environment.
+  // Reflection of a dynamic non-null host-sandbox origin is asserted at the
+  // HTTP layer in the Go tests (TestCORSOriginReflectsAnyOrigin etc.), not
+  // here: the sunpeak inspector serves the whole page from an opaque "null"
+  // origin, so there is no way to originate a genuinely non-null request from
+  // this environment. See transferCORS for why reflecting any origin is safe on
+  // the token-gated route.
 });

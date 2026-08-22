@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rs/cors"
+
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transport"
 )
@@ -94,10 +96,10 @@ func (cu *Upload) SetBaseURL(url string) {
 	cu.loopback.SetBaseURL(url)
 }
 
-// AddTrustedOrigins extends the origin corsUpload reflects for the Uppy XHR
-// PUT beyond the coordinator's own base/loopback origin, allowing a configured
-// MCP host that serves the app iframe from its own origin to upload. See
-// LoopbackServer.AddTrustedOrigins.
+// AddTrustedOrigins adds origins to the loopback server's accepted-origin set
+// (see LoopbackServer.AddTrustedOrigins). It is retained for backward
+// compatibility: the token-gated PUT route now reflects any Origin over CORS
+// (see corsUpload/transferCORS), so this no longer gates cross-origin uploads.
 func (cu *Upload) AddTrustedOrigins(origins ...string) {
 	cu.loopback.AddTrustedOrigins(origins...)
 }
@@ -119,88 +121,57 @@ func (cu *Upload) Stop(ctx context.Context) {
 	cu.loopback.Stop(ctx)
 }
 
+// transferCORS wraps next with CORS middleware (github.com/rs/cors) that
+// reflects ANY request Origin back on the token-gated transfer routes (upload,
+// vault-upload, download). It mirrors the main MCP transport's corsHandler in
+// the adapter: Access-Control-Allow-Origin echoes whatever Origin header the
+// client sent, rather than a static allow-list.
+//
+// Reflecting any origin is safe here because these routes are gated by an
+// unguessable, expiring, single-use token in the URL path and never send
+// credentials — the reflected Origin is NOT the access-control boundary, the
+// token is. Restricting to a static allow-list cannot include the MCP host's
+// dynamically generated per-session sandbox origin (a fresh <hash> per
+// connection on the host's content CDN), which is exactly why a host-rendered
+// upload app's cross-origin Uppy XHR PUT used to fail. An arbitrary page still
+// cannot read or trigger the route without a valid token.
+func transferCORS(methods, headers []string, next http.Handler) http.Handler {
+	return cors.New(cors.Options{
+		AllowOriginFunc: func(_ string) bool {
+			return true
+		},
+		AllowedMethods: methods,
+		AllowedHeaders: headers,
+	}).Handler(next)
+}
+
 // corsUpload wraps an upload route handler so a browser XHR (the app's Uppy
 // uploader) can PUT to the minted endpoint across origins. The app iframe and
 // the transport/loopback mux live on different origins, so without CORS the
 // browser sends an OPTIONS preflight that the handler would reject with 405
-// and the upload never fires.
-//
-// The reflected origin is RESTRICTED to the coordinator's own trusted origins
-// (the configured base URL in HTTP/tunnel mode, or the loopback origin in
-// stdio mode) — never echoed from an arbitrary page. A page that is not a
-// trusted first-party origin gets no Access-Control-Allow-Origin, so the
-// browser refuses to read or trigger the cross-origin PUT even if the page
-// somehow knows a token. We never send credentials: access control is the
-// unguessable, expiring, single-use token in the path, not a cookie or session
-// the browser could attach.
-func corsUpload(allowed func() []string, next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		origin := r.Header.Get("Origin")
-		if origin != "" && shouldReflectOrigin(allowed(), origin) {
-			h := w.Header()
-			h.Set("Access-Control-Allow-Origin", origin)
-			h.Set("Vary", "Origin")
-			h.Set("Access-Control-Allow-Methods", "PUT, OPTIONS")
-			h.Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Upload-Length, Upload-Offset, Upload-Name, Upload-Defer-Length")
-			h.Add("Vary", "Access-Control-Request-Method")
-			h.Add("Vary", "Access-Control-Request-Headers")
-		}
-		if r.Method == http.MethodOptions {
-			// Answer the preflight regardless of origin so the mux never
-			// 405s an OPTIONS; the browser only proceeds when the response
-			// actually carries the allow-origin header, which untrusted
-			// origins never get.
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		next(w, r)
-	}
+// and the upload never fires. rs/cors answers the preflight and reflects any
+// request origin; see transferCORS for why that is safe (token-gated route).
+func corsUpload(next http.HandlerFunc) http.HandlerFunc {
+	return transferCORS(
+		[]string{http.MethodPut, http.MethodOptions},
+		[]string{
+			"Content-Type",
+			"Content-Length",
+			"Upload-Length",
+			"Upload-Offset",
+			"Upload-Name",
+			"Upload-Defer-Length",
+		},
+		next,
+	).ServeHTTP
 }
-
-// opaqueOrigin is the serialized Origin a browser sends for an opaque origin.
-// An MCP host renders a ui:// app inside a sandboxed double-iframe whose Origin
-// (without allow-same-origin) serializes to the literal string "null", so the
-// host-rendered upload app performs its presigned PUT from that opaque origin.
-// These transfer routes are token-gated (unguessable single-use expiring token,
-// credentials never sent), so reflecting the *literal* opaque origin is safe:
-// an arbitrary attacker origin is still refused. See corsUpload/corsDownload.
-const opaqueOrigin = "null"
-
-// shouldReflectOrigin reports whether corsUpload/corsDownload may echo the
-// inbound Origin header back as Access-Control-Allow-Origin. It allows (a) the
-// coordinator's own server/loopback origin plus configured trusted origins, and
-// (b) the literal serialized opaque origin "null" so a sandboxed host-rendered
-// app iframe (whose Origin is always the opaque "null") can issue the
-// cross-origin PUT/GET. Every other origin is refused.
-func shouldReflectOrigin(allowed []string, origin string) bool {
-	if origin == opaqueOrigin {
-		return true
-	}
-	return originsContains(allowed, origin)
-}
-
-// originsContains reports whether origin appears in the allowlist. It compares
-// scheme+host+port case-insensitively (origins are normalized by the browser,
-// but guard against hand-constructed headers).
-func originsContains(allowed []string, origin string) bool {
-	for _, a := range allowed {
-		if strings.EqualFold(strings.TrimRight(a, "/"), strings.TrimRight(origin, "/")) {
-			return true
-		}
-	}
-	return false
-}
-
-// allowedUploadOrigins is the callback corsUpload uses to scope the reflected
-// origin to the coordinator's own transport/base origin.
-func (cu *Upload) allowedUploadOrigins() []string { return cu.loopback.AcceptedOrigins() }
 
 // RegisterHandlers mounts the one-time upload PUT route on the shared mux
 // (HTTP/tunnel mode) or the loopback mux (stdio mode via ensureLoopback).
 // The token is carried in the path, /upload/<token>, and is the only access
 // control: it is unguessable, expiring, and single-use.
 func (cu *Upload) RegisterHandlers(mux *http.ServeMux) {
-	mux.HandleFunc("/upload/", corsUpload(cu.allowedUploadOrigins, cu.putHandler))
+	mux.HandleFunc("/upload/", corsUpload(cu.putHandler))
 }
 
 // mint registers a fresh one-time upload endpoint and returns its full URL. It

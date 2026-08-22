@@ -73,10 +73,11 @@ func (vu *VaultHTTPUpload) SetBaseURL(url string) {
 	vu.loopback.SetBaseURL(url)
 }
 
-// AddTrustedOrigins extends the origin corsUpload reflects for the Uppy XHR
-// PUT beyond the coordinator's own base/loopback origin, allowing a configured
-// MCP host that serves the vault app iframe from its own origin to upload. See
-// LoopbackServer.AddTrustedOrigins.
+// AddTrustedOrigins adds origins to the loopback server's accepted-origin set
+// (see LoopbackServer.AddTrustedOrigins). It is retained for backward
+// compatibility: the token-gated vault-upload PUT route now reflects any Origin
+// over CORS (see corsUpload/transferCORS), so this no longer gates
+// cross-origin uploads.
 func (vu *VaultHTTPUpload) AddTrustedOrigins(origins ...string) {
 	vu.loopback.AddTrustedOrigins(origins...)
 }
@@ -102,15 +103,13 @@ func (vu *VaultHTTPUpload) Stop(ctx context.Context) {
 // RegisterHandlers mounts the one-time vault-upload PUT route on the shared
 // mux (HTTP/tunnel mode) or the loopback mux (stdio mode via ensureLoopback).
 func (vu *VaultHTTPUpload) RegisterHandlers(mux *http.ServeMux) {
-	mux.HandleFunc("/vault-upload/", corsUpload(vu.allowedUploadOrigins, vu.putHandler))
+	mux.HandleFunc("/vault-upload/", corsUpload(vu.putHandler))
 }
 
 // MaxBytes returns the per-endpoint byte cap the coordinator enforces.
 func (vu *VaultHTTPUpload) MaxBytes() int64 { return vu.maxByte }
 
-// allowedUploadOrigins is the callback corsUpload uses to scope the reflected
-// origin to the vault coordinator's own transport/base origin.
-func (vu *VaultHTTPUpload) allowedUploadOrigins() []string { return vu.loopback.AcceptedOrigins() }
+
 
 // mint validates the destination vault path, registers a fresh one-time
 // vault-upload endpoint bound to it, and returns its full URL. It refuses to
