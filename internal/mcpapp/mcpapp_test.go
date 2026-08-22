@@ -45,10 +45,10 @@ func TestMcpAppThemeCSSEmbedded(t *testing.T) {
 }
 
 // fromSpecifierRe matches the module-specifier string in `import ... from
-// "spec"` and side-effect `import "spec"` statements. Minified bundles drop the
-// space around the keyword/specifier, so both `from "x"` and `from"x"` (and
-// `import"x"`) must match.
-var fromSpecifierRe = regexp.MustCompile(`from\s*["']([^"']+)["']|(?:^|[;)\]}])import\s*["']([^"']+)["']`)
+// "spec"`, side-effect `import "spec"`, and dynamic `import("spec")` forms.
+// Minified bundles drop the space around the keyword/specifier, so both
+// `from "x"` and `from"x"` (and `import"x"` / `import("x")`) must match.
+var fromSpecifierRe = regexp.MustCompile(`from\s*["']([^"']+)["']|(?:^|[;)\]}])import\s*["']([^"']+)["']|(?:^|[;)\]}])import\s*\(\s*["']([^"']+)["']`)
 
 // bareModuleSpecifiers returns any module specifiers in an inline-ready bundle
 // that the browser cannot resolve on its own: bare package specifiers (e.g.
@@ -63,6 +63,9 @@ func bareModuleSpecifiers(src string) []string {
 		spec := m[1]
 		if spec == "" {
 			spec = m[2]
+		}
+		if spec == "" {
+			spec = m[3]
 		}
 		if spec == "" {
 			continue
@@ -109,6 +112,8 @@ func TestBareModuleSpecifiers(t *testing.T) {
 		`import t from "@uppy/xhr-upload";`,
 		`import "zod";`,
 		`import { x } from "@modelcontextprotocol/sdk/client.js";`,
+		`import("@uppy/core");`,
+		`import ("@uppy/xhr-upload");`,
 	}
 	for _, s := range good {
 		if got := bareModuleSpecifiers(s); len(got) != 0 {
