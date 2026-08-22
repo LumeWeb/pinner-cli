@@ -100,8 +100,10 @@ test('capabilities tool returns declared capabilities', async ({ mcp }) => {
   const result = await mcp.callTool('capabilities', {});
   expect(result).not.toBeError();
 
-  // text content is the human label; the capability report is structured.
-  expect(result).toHaveTextContent('Pinner capabilities');
+  // text content carries the report JSON (same data as the structured payload)
+  // so a text-only client sees the transport + source modes, not a stub label.
+  expect(result).toHaveTextContent('transport');
+  expect(result).toHaveTextContent('source_modes');
 
   // Locked from a live probe: stdio transport advertises only `path` sourcing.
   expect(result).toHaveStructuredContent({ transport: 'stdio' });
