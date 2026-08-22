@@ -141,21 +141,6 @@ func (s *Server) pin(reqID string) *PinStatusResponse {
 	return s.pins[reqID]
 }
 
-// GetPins lists pins (IPFS Pinning Service API).
-func (s *Server) GetPins(w http.ResponseWriter, r *http.Request, params GetPinsParams) {
-	if !s.authorized(r) {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "not authenticated"})
-		return
-	}
-	s.mu.Lock()
-	results := make([]PinStatusResponse, 0, len(s.pins))
-	for _, p := range s.pins {
-		results = append(results, *p)
-	}
-	s.mu.Unlock()
-	writeJSON(w, http.StatusOK, PinResultsResponse{Count: len(results), Results: results})
-}
-
 // GetPinsRequestid returns a single pin (IPFS Pinning Service API).
 func (s *Server) GetPinsRequestid(w http.ResponseWriter, r *http.Request, requestid string) {
 	if !s.authorized(r) {
