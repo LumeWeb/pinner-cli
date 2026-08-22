@@ -1,6 +1,8 @@
 package mcpapp
 
 import (
+	"regexp"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -42,18 +44,118 @@ func TestMcpAppThemeCSSEmbedded(t *testing.T) {
 	}
 }
 
-// TestAppModuleJSEmbedded pins that each app's self-contained bundle is
-// embedded and inlines into the served document. A missing/empty bundle (JS
-// not built before Go) panics, so a passing test also proves `pnpm build` ran.
+// fromSpecifierRe matches the module-specifier string in `import ... from
+// "spec"`, side-effect `import "spec"`, and dynamic `import("spec")` forms.
+// Minified bundles drop the space around the keyword/specifier, so both
+// `from "x"` and `from"x"` (and `import"x"` / `import("x")`) must match.
+var fromSpecifierRe = regexp.MustCompile(`from\s*["']([^"']+)["']|(?:^|[;)\]}])import\s*["']([^"']+)["']|(?:^|[;)\]}])import\s*\(\s*["']([^"']+)["']`)
+
+// bareModuleSpecifiers returns any module specifiers in an inline-ready bundle
+// that the browser cannot resolve on its own: bare package specifiers (e.g.
+// "@uppy/core") that do NOT start with ".", "/", or a URL scheme. The sandboxed
+// ui:// iframe serves each app as a single inline <script type="module"> with
+// no importer and no node_modules, so any such specifier throws
+// "Failed to resolve module specifier ..." and kills the app at load time —
+// exactly the @uppy/core regression this guards against.
+func bareModuleSpecifiers(src string) []string {
+	seen := map[string]bool{}
+	for _, m := range fromSpecifierRe.FindAllStringSubmatch(src, -1) {
+		spec := m[1]
+		if spec == "" {
+			spec = m[2]
+		}
+		if spec == "" {
+			spec = m[3]
+		}
+		if spec == "" {
+			continue
+		}
+		if strings.HasPrefix(spec, ".") || strings.HasPrefix(spec, "/") {
+			continue
+		}
+		if isResolvableURL(spec) {
+			continue
+		}
+		seen[spec] = true
+	}
+	out := make([]string, 0, len(seen))
+	for s := range seen {
+		out = append(out, s)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// isResolvableURL reports whether a specifier is an absolute URL the browser
+// can fetch directly (e.g. https://... or //cdn...), which is fine inline.
+func isResolvableURL(spec string) bool {
+	for _, p := range []string{"https://", "http://", "//", "data:", "blob:"} {
+		if strings.HasPrefix(spec, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// TestBareModuleSpecifiers pins the self-containment guard itself: it must flag
+// bare package specifiers (including the minified no-space forms and the exact
+// @uppy/* regression), while ignoring relative/absolute URLs it can resolve.
+func TestBareModuleSpecifiers(t *testing.T) {
+	good := []string{
+		`const a = 1;`,
+		`import "./local.js";`,
+		`import x from "/abs/mod.js";`,
+		`import x from "https://cdn.example/lib.js";`,
+	}
+	bad := []string{
+		`import e from"@uppy/core";`,
+		`import t from "@uppy/xhr-upload";`,
+		`import "zod";`,
+		`import { x } from "@modelcontextprotocol/sdk/client.js";`,
+		`import("@uppy/core");`,
+		`import ("@uppy/xhr-upload");`,
+	}
+	for _, s := range good {
+		if got := bareModuleSpecifiers(s); len(got) != 0 {
+			t.Errorf("bareModuleSpecifiers(%q) = %v, want []", s, got)
+		}
+	}
+	for _, s := range bad {
+		got := bareModuleSpecifiers(s)
+		if len(got) == 0 {
+			t.Errorf("bareModuleSpecifiers(%q) = [] , want a flagged specifier", s)
+		}
+	}
+}
+
+// TestAppModuleJSEmbedded pins that EVERY app's self-contained bundle is
+// embedded and inlines into the served document with zero bare module imports.
+// A missing/empty bundle (JS not built before Go) panics, so a passing test
+// also proves `pnpm build` ran; a residual bare import (e.g. "@uppy/core" or
+// "@uppy/xhr-upload" leaking out of the tsdown build) fails self-containment
+// and would crash every app that ships it in a browser host.
 func TestAppModuleJSEmbedded(t *testing.T) {
-	for _, app := range []string{"pin", "vault-create", "vault-restore", "auth-sso", "vault-browser", "pin-list", "auth-status"} {
+	for app, file := range bundleNames {
+		_ = app // key used only for diagnostic clarity below
+		_ = file
+	}
+	// Cover every app the Go layer embeds, not just a subset. Historically two
+	// upload bundles shipped `import ... from "@uppy/*"` bare imports while the
+	// subset of apps tested here passed, so the upload apps were the last thing
+	// you'd expect to catch this.
+	apps := make([]string, 0, len(bundleNames))
+	for app := range bundleNames {
+		apps = append(apps, app)
+	}
+	sort.Strings(apps)
+	for _, app := range apps {
 		src := AppModuleJS(app)
 		if strings.TrimSpace(src) == "" {
 			t.Fatalf("app bundle %q is empty", app)
 		}
-		// The bundle must be inline-module-ready: no unresolved file imports.
-		if strings.Contains(src, "import ") {
-			t.Errorf("app bundle %q is not self-contained (contains import)", app)
+		if bare := bareModuleSpecifiers(src); len(bare) > 0 {
+			t.Errorf("app bundle %q is not inline-module-ready (bare imports the browser cannot resolve: %v). "+
+				"Run `pnpm build` (packages/apps) — a dependency missing from alwaysBundle stays external.", app, bare)
 		}
 	}
 }

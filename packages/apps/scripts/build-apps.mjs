@@ -24,7 +24,22 @@ for (const app of APPS) {
     clean: false, // don't wipe other apps' outputs
     outDir: "dist",
     deps: {
-      alwaysBundle: ["@modelcontextprotocol/ext-apps", "@modelcontextprotocol/sdk", "zod", "robot3"],
+      // Force-bundle EVERY runtime dependency. The bundle is served as a single
+      // inline <script type="module"> in a sandboxed iframe that cannot resolve
+      // bare file imports, so nothing may be left external. @uppy/core and
+      // @uppy/xhr-upload power the upload apps' out-of-band XHR uploader; if
+      // they are not inlined they'd ship as `import ... from "@uppy/core"`,
+      // which the browser cannot resolve and kills the app ("Failed to resolve
+      // module specifier"). Always keep this list in sync with the runtime
+      // dependencies in package.json.
+      alwaysBundle: [
+        "@modelcontextprotocol/ext-apps",
+        "@modelcontextprotocol/sdk",
+        "zod",
+        "robot3",
+        "@uppy/core",
+        "@uppy/xhr-upload",
+      ],
       onlyBundle: false,
     },
   });
