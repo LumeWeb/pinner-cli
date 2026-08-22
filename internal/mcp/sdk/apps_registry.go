@@ -111,13 +111,28 @@ type appResourceReg struct {
 	resource *mcp.Resource
 }
 
-// appResourceRegs tracks registered app resources keyed by URI so
-// SetAppResourceConnectDomains can re-register one with an updated listing-level
-// CSP. Guarded by appResourceRegsMu.
+// appResourceRegs tracks registered app resources keyed by server and then by
+// resource URI so SetAppResourceConnectDomains can re-register one with an
+// updated listing-level CSP without colliding across distinct server instances:
+// RegisterAppResource/SetAppResourceConnectDomains are per-server APIs, so two
+// servers in one process (e.g. tests, or multiple streamable listeners) may
+// register the same app URI without the second overwriting the first's retained
+// meta/handler. Guarded by appResourceRegsMu.
 var (
 	appResourceRegsMu sync.Mutex
-	appResourceRegs   = map[string]appResourceReg{}
+	appResourceRegs   = map[*mcp.Server]map[string]appResourceReg{}
 )
+
+// serverAppResources returns the per-server registry map for srv, creating it if
+// absent. The caller must hold appResourceRegsMu.
+func serverAppResources(srv *mcp.Server) map[string]appResourceReg {
+	m := appResourceRegs[srv]
+	if m == nil {
+		m = map[string]appResourceReg{}
+		appResourceRegs[srv] = m
+	}
+	return m
+}
 
 // RegisterAppResource registers a ui:// app resource that serves the given
 // HTML document. The MIME type defaults to MCPAppsMIMEType. The resource's
@@ -174,7 +189,7 @@ func RegisterAppResource(srv *Server, res AppResource) error {
 		Meta:        appResourceUIMeta(res.Meta),
 	}
 	appResourceRegsMu.Lock()
-	appResourceRegs[res.URI] = appResourceReg{meta: res.Meta, handler: handler, resource: resource}
+	serverAppResources(srv)[res.URI] = appResourceReg{meta: res.Meta, handler: handler, resource: resource}
 	appResourceRegsMu.Unlock()
 	srv.AddResource(resource, handler)
 	return nil
@@ -194,7 +209,7 @@ func SetAppResourceConnectDomains(srv *Server, uri string, origins []string) err
 		return fmt.Errorf("nil official server")
 	}
 	appResourceRegsMu.Lock()
-	reg, ok := appResourceRegs[uri]
+	reg, ok := serverAppResources(srv)[uri]
 	if !ok {
 		appResourceRegsMu.Unlock()
 		return fmt.Errorf("sdk: no registered app resource %q", uri)
@@ -214,7 +229,7 @@ func SetAppResourceConnectDomains(srv *Server, uri string, origins []string) err
 		MIMEType:    reg.resource.MIMEType,
 		Meta:        appResourceUIMeta(meta),
 	}
-	appResourceRegs[uri] = appResourceReg{meta: meta, handler: reg.handler, resource: resource}
+	serverAppResources(srv)[uri] = appResourceReg{meta: meta, handler: reg.handler, resource: resource}
 	appResourceRegsMu.Unlock()
 	srv.AddResource(resource, reg.handler)
 	return nil

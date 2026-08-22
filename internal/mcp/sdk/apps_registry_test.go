@@ -154,3 +154,59 @@ func TestSetAppResourceConnectDomainsUnknownURI(t *testing.T) {
 		t.Fatal("expected error for unregistered uri")
 	}
 }
+
+// registerSameURITwoServers asserts that per-server state is keyed by server:
+// two servers in one process registering the SAME app URI must not collide, so
+// SetAppResourceConnectDomains on one never mutates the other's list entry.
+func TestSetAppResourceConnectDomainsIsolationPerServer(t *testing.T) {
+	const uri = "ui://uploads/ipfs.html"
+	register := func(t *testing.T, id string) *Server {
+		srv := NewServer(nil)
+		if err := RegisterAppResource(srv, AppResource{
+			URI: uri, Name: id, Title: id, Description: id, HTML: "<html></html>",
+			ConnectDomainsFunc: func() []string { return []string{"https://" + id + ".dev"} },
+		}); err != nil {
+			t.Fatalf("register on %s: %v", id, err)
+		}
+		return srv
+	}
+
+	srvA := register(t, "a")
+	srvB := register(t, "b")
+
+	// Baking connectDomains onto srvA must NOT leak into srvB's registry entry,
+	// and both registrations must coexist in the per-server map.
+	if err := SetAppResourceConnectDomains(srvA, uri, []string{"https://tunnel-a.ngrok-free.dev"}); err != nil {
+		t.Fatalf("set connect domains on srvA: %v", err)
+	}
+
+	// srvB can still be updated independently (its retained meta/handler survived
+	// the srvA update), proving no cross-server overwrite.
+	if err := SetAppResourceConnectDomains(srvB, uri, []string{"https://tunnel-b.ngrok-free.dev"}); err != nil {
+		t.Fatalf("set connect domains on srvB: %v", err)
+	}
+
+	findList := func(t *testing.T, cs *mcp.ClientSession) map[string]any {
+		t.Helper()
+		res, err := cs.ListResources(context.Background(), nil)
+		if err != nil {
+			t.Fatalf("list: %v", err)
+		}
+		for _, r := range res.Resources {
+			if r.URI == uri {
+				return uiMetaOf(t, r.Meta)
+			}
+		}
+		t.Fatal("resource missing from list")
+		return nil
+	}
+
+	gotA := connectDomainsOf(t, findList(t, sdkTestClient(t, srvA)))
+	gotB := connectDomainsOf(t, findList(t, sdkTestClient(t, srvB)))
+	if len(gotA) != 1 || gotA[0] != "https://tunnel-a.ngrok-free.dev" {
+		t.Fatalf("srvA connectDomains = %v, want tunnel-a", gotA)
+	}
+	if len(gotB) != 1 || gotB[0] != "https://tunnel-b.ngrok-free.dev" {
+		t.Fatalf("srvB connectDomains = %v, want tunnel-b", gotB)
+	}
+}
