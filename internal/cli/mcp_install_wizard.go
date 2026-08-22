@@ -10,6 +10,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/cli/wizard"
 	"go.lumeweb.com/pinner-cli/internal/mcp/install"
 	mcpadapter "go.lumeweb.com/pinner-cli/internal/mcp/services"
+	"go.lumeweb.com/pinner-cli/internal/service"
 )
 
 // defaultServerName is the server entry name written for pinner.
@@ -275,7 +276,17 @@ func (w *InstallWizard) getSteps() []wizard.Step[*InstallState] {
 			if err != nil {
 				return err
 			}
-			s.AuthToken = pw
+			// The agent config's Authorization header is built from s.AuthToken,
+			// but the running HTTP endpoint enforces MCP_AUTH_TOKEN from the
+			// service env file. When the operator replaces the password, persist
+			// it to that file too so the endpoint and the agent config agree —
+			// otherwise the endpoint keeps the old credential and the connection
+			// breaks. Keeping the existing token needs no propagation.
+			if pw != s.AuthToken {
+				if err := w.persistAuthToken(s, pw); err != nil {
+					return err
+				}
+			}
 			return nil
 		},
 	})
@@ -406,6 +417,33 @@ func (w *InstallWizard) writeConfig(s *InstallState) error {
 				return err
 			}
 		}
+	}
+	return nil
+}
+
+// persistAuthToken records the operator-chosen MCP password as the new shared
+// auth token. It always updates s.AuthToken (the value the agent config's
+// Authorization header is built from). When the install has a backing service
+// (http + managed service), it also persists MCP_AUTH_TOKEN to the service env
+// file and mirrors it on the service state so the running endpoint and the
+// agent config validate against the SAME credential — without this the endpoint
+// keeps enforcing the inherited token and the agent connection breaks.
+func (w *InstallWizard) persistAuthToken(s *InstallState, pw string) error {
+	s.AuthToken = pw
+	if s.Service == nil {
+		return nil
+	}
+	s.Service.AuthToken = pw
+	if s.Service.EnvFile == "" {
+		return nil
+	}
+	env, err := service.LoadEnvironment(s.Service.EnvFile)
+	if err != nil {
+		return fmt.Errorf("load MCP service environment %q to persist the MCP password: %w", s.Service.EnvFile, err)
+	}
+	env["MCP_AUTH_TOKEN"] = pw
+	if err := service.WriteEnvironment(s.Service.EnvFile, env); err != nil {
+		return fmt.Errorf("persist MCP password to %q: %w", s.Service.EnvFile, err)
 	}
 	return nil
 }

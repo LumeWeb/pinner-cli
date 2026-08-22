@@ -1561,6 +1561,71 @@ func TestMcpInstallHTTPAlwaysPromptsForPassword(t *testing.T) {
 	}
 }
 
+// TestMcpInstallHTTPPasswordPersistsToServiceEnv guards the follow-on: when an
+// http install has a backing managed service and the operator replaces the MCP
+// password, the new token must ALSO be persisted to the service env file
+// (MCP_AUTH_TOKEN) so the running endpoint validates against it. If it is not
+// persisted, the endpoint keeps enforcing the inherited token and the agent
+// config points at a credential the server rejects.
+func TestMcpInstallHTTPPasswordPersistsToServiceEnv(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	projectDir := t.TempDir()
+
+	// A real service env file on disk, as the managed service would leave it.
+	envFile := filepath.Join(t.TempDir(), "mcp.env")
+	if err := os.WriteFile(envFile, []byte("MCP_AUTH_TOKEN=inherited-token\nMCP_PUBLIC_URL=https://mcp.example.com\n"), 0o600); err != nil {
+		t.Fatalf("write env file: %v", err)
+	}
+
+	ui := newMockInstallUI()
+	state := &InstallState{
+		Agents:     []install.AgentKey{install.AgentClaudeCode},
+		Scope:      scopeGlobal,
+		Transport:  install.TransportHTTP,
+		UseService: true,
+		// A backing service whose env file already carries the inherited token.
+		Service: &mcpadapter.ServiceInstallState{
+			EnvFile:    envFile,
+			AuthToken:  "inherited-token",
+			PublicURL:  "https://mcp.example.com",
+			Provider:   tunnel.TunnelProviderNgrok,
+			TunnelName: "pinner-mcp",
+		},
+	}
+
+	w := NewInstallWizard(ui, state, tempPathResolver(root, projectDir))
+	// The collector folds the persisted env into the install state for the
+	// agent entry; the operator then replaces the password.
+	w.collectHTTP = fakeHTTPCollector("https://mcp.example.com", "inherited-token")
+	ui.SetMCPPasswordResult = "operator-chosen-password"
+
+	if _, err := w.Run(ctx); err != nil {
+		t.Fatalf("wizard run failed: %v", err)
+	}
+
+	// The service env file on disk must now carry the operator's password so
+	// the running endpoint validates against the same token the agent uses.
+	envData, err := os.ReadFile(envFile)
+	if err != nil {
+		t.Fatalf("read env file: %v", err)
+	}
+	if !strings.Contains(string(envData), "MCP_AUTH_TOKEN=operator-chosen-password") {
+		t.Errorf("service env file must persist the operator's password, got:\n%s", envData)
+	}
+
+	// The agent config header uses the same token.
+	entry := readGlobalJSON(t, root, install.AgentClaudeCode)
+	headers, _ := entry["headers"].(map[string]any)
+	auth, _ := headers["Authorization"]
+	if auth != "Bearer operator-chosen-password" {
+		t.Errorf("entry headers[Authorization] = %v, want 'Bearer operator-chosen-password'", auth)
+	}
+	if state.Service.AuthToken != "operator-chosen-password" {
+		t.Errorf("service state AuthToken = %q, want operator-chosen-password", state.Service.AuthToken)
+	}
+}
+
 // TestMcpInstallHTTPNonInteractiveSkipsPassword guards that a non-interactive
 // http install does NOT prompt for the password (it is sourced from flags/env)
 // and does not error at the prompt. The sourced token is used as-is.
