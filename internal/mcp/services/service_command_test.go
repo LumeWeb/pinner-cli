@@ -828,3 +828,18 @@ func TestServiceConfigForInstallPassesEnvFileUntouched(t *testing.T) {
 	require.Nil(t, cfg.EnvVars)
 	require.FileExists(t, path)
 }
+
+// TestRestartManagedServiceNoOp guards that RestartManagedService is a safe
+// no-op when the install state carries no backing service to restart (nil
+// state, or no env file / provider). This keeps the MCP install password path
+// from touching a live service when there is none to reload.
+func TestRestartManagedServiceNoOp(t *testing.T) {
+	cmd := &cli.Command{Flags: []cli.Flag{&cli.StringFlag{Name: serviceEnvFileFlag}}}
+	ctx := context.Background()
+	require.NoError(t, RestartManagedService(ctx, cmd, nil))
+	require.NoError(t, RestartManagedService(ctx, cmd, &ServiceInstallState{}))
+	// An env file without a provider, or a provider without an env file, is
+	// still a no-op — neither can identify a managed service to restart.
+	require.NoError(t, RestartManagedService(ctx, cmd, &ServiceInstallState{EnvFile: "mcp.env"}))
+	require.NoError(t, RestartManagedService(ctx, cmd, &ServiceInstallState{Provider: tunnel.TunnelProviderNgrok}))
+}

@@ -3,9 +3,11 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -58,9 +60,12 @@ type MockInstallUI struct {
 	SelectTransportErr    error
 	ConfirmHTTPResult     bool
 	ConfirmHTTPErr        error
+	SetMCPPasswordResult  string
+	SetMCPPasswordErr     error
 
-	ReportWrittenCalls []writtenReport
-	ReportBuildCalls   []buildReport
+	ReportWrittenCalls  []writtenReport
+	ReportBuildCalls    []buildReport
+	SetMCPPasswordCalls []string // current values passed to each call
 }
 
 type writtenReport struct {
@@ -108,6 +113,14 @@ func (m *MockInstallUI) ConfirmHTTP(_ []install.AgentKey) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.ConfirmHTTPResult, m.ConfirmHTTPErr
+}
+
+func (m *MockInstallUI) SetMCPPassword(current string) (string, error) {
+	m.RecordCall("SetMCPPassword")
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.SetMCPPasswordCalls = append(m.SetMCPPasswordCalls, current)
+	return m.SetMCPPasswordResult, m.SetMCPPasswordErr
 }
 
 func (m *MockInstallUI) ReportWritten(agent install.AgentKey, path string, local bool) error {
@@ -299,9 +312,9 @@ func TestMcpInstallNonInteractiveClaudeCodeStdio(t *testing.T) {
 // --service=false is honored as the opt-out; --service=true is honored too.
 func TestEffectiveManagedService(t *testing.T) {
 	cases := []struct {
-		name           string
-		flagSet        bool
-		useService     bool
+		name            string
+		flagSet         bool
+		useService      bool
 		wantWantService bool
 	}{
 		{"unset defaults on (interactive & non-interactive)", false, false, true},
@@ -430,9 +443,21 @@ func TestMcpInstallHTTPCompositeWritesRemoteEntry(t *testing.T) {
 	w := NewInstallWizard(ui, state, tempPathResolver(root, projectDir))
 	// Inject the fake collector: the real tunnel is not exercised in this test.
 	w.collectHTTP = fakeHTTPCollector("https://mcp.example.com", "test-auth-token")
+	// The MCP Password step (always run for interactive http installs) is
+	// prompted with the collected token and the operator keeps it.
+	ui.SetMCPPasswordResult = "test-auth-token"
 
 	if _, err := w.Run(ctx); err != nil {
 		t.Fatalf("wizard run failed: %v", err)
+	}
+
+	// The operator must have been given the chance to confirm the password,
+	// even though the collector already sourced an auth token.
+	ui.mu.Lock()
+	pwCalls := append([]string(nil), ui.SetMCPPasswordCalls...)
+	ui.mu.Unlock()
+	if len(pwCalls) != 1 || pwCalls[0] != "test-auth-token" {
+		t.Errorf("SetMCPPassword calls = %v, want single call with current=%q", pwCalls, "test-auth-token")
 	}
 
 	// The remote (http) entry must carry type=http, url, and the Bearer auth
@@ -472,6 +497,9 @@ func TestMcpInstallHTTPCompositeSkipsStdioOnlyAgent(t *testing.T) {
 
 	w := NewInstallWizard(ui, state, tempPathResolver(root, projectDir))
 	w.collectHTTP = fakeHTTPCollector("https://mcp.example.com", "test-auth-token")
+	// The MCP Password step runs because claude-code supports http; keep the
+	// collected token.
+	ui.SetMCPPasswordResult = "test-auth-token"
 
 	if _, err := w.Run(ctx); err != nil {
 		t.Fatalf("wizard run failed: %v", err)
@@ -1484,5 +1512,317 @@ func TestMcpInstallRunsAsDelegateSubWizard(t *testing.T) {
 	entry := readGlobalJSON(t, root, install.AgentClaudeCode)
 	if entry["command"] == "" {
 		t.Errorf("expected a command path written by the embedded install")
+	}
+}
+
+// TestMcpInstallHTTPAlwaysPromptsForPassword guards the core edge case: an
+// interactive http install must ALWAYS ask the operator for the MCP password,
+// even when an auth token was already inherited from the tunnel/env collector.
+// The operator's chosen password (if they replace it) must be what ends up in
+// the written Authorization header — never a silently-sourced token the user
+// did not see.
+func TestMcpInstallHTTPAlwaysPromptsForPassword(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	projectDir := t.TempDir()
+	ui := newMockInstallUI()
+
+	state := &InstallState{
+		Agents:     []install.AgentKey{install.AgentClaudeCode},
+		Scope:      scopeGlobal,
+		Transport:  install.TransportHTTP,
+		UseService: true,
+	}
+
+	w := NewInstallWizard(ui, state, tempPathResolver(root, projectDir))
+	// The collector sources an inherited token (e.g. from MCP_AUTH_TOKEN env).
+	w.collectHTTP = fakeHTTPCollector("https://mcp.example.com", "inherited-token")
+	// The operator is prompted and chooses a fresh password.
+	ui.SetMCPPasswordResult = "operator-chosen-password"
+
+	if _, err := w.Run(ctx); err != nil {
+		t.Fatalf("wizard run failed: %v", err)
+	}
+
+	// The prompt must have fired exactly once, showing the inherited token as
+	// the current value the operator is keeping-or-replacing.
+	ui.mu.Lock()
+	pwCalls := append([]string(nil), ui.SetMCPPasswordCalls...)
+	ui.mu.Unlock()
+	if len(pwCalls) != 1 || pwCalls[0] != "inherited-token" {
+		t.Errorf("SetMCPPassword calls = %v, want single call with current=%q", pwCalls, "inherited-token")
+	}
+
+	// The operator's choice, not the inherited token, must be written.
+	entry := readGlobalJSON(t, root, install.AgentClaudeCode)
+	headers, _ := entry["headers"].(map[string]any)
+	auth, _ := headers["Authorization"]
+	if auth != "Bearer operator-chosen-password" {
+		t.Errorf("entry headers[Authorization] = %v, want 'Bearer operator-chosen-password'", auth)
+	}
+}
+
+// TestMcpInstallHTTPPasswordPersistsToServiceEnv guards the follow-on: when an
+// http install has a backing managed service and the operator replaces the MCP
+// password, the new token must ALSO be persisted to the service env file
+// (MCP_AUTH_TOKEN) so the running endpoint validates against it. If it is not
+// persisted, the endpoint keeps enforcing the inherited token and the agent
+// config points at a credential the server rejects.
+func TestMcpInstallHTTPPasswordPersistsToServiceEnv(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	projectDir := t.TempDir()
+
+	// A real service env file on disk, as the managed service would leave it.
+	envFile := filepath.Join(t.TempDir(), "mcp.env")
+	if err := os.WriteFile(envFile, []byte("MCP_AUTH_TOKEN=inherited-token\nMCP_PUBLIC_URL=https://mcp.example.com\n"), 0o600); err != nil {
+		t.Fatalf("write env file: %v", err)
+	}
+
+	ui := newMockInstallUI()
+	state := &InstallState{
+		Agents:     []install.AgentKey{install.AgentClaudeCode},
+		Scope:      scopeGlobal,
+		Transport:  install.TransportHTTP,
+		UseService: true,
+		// A backing service whose env file already carries the inherited token.
+		Service: &mcpadapter.ServiceInstallState{
+			EnvFile:    envFile,
+			AuthToken:  "inherited-token",
+			PublicURL:  "https://mcp.example.com",
+			Provider:   tunnel.TunnelProviderNgrok,
+			TunnelName: "pinner-mcp",
+		},
+	}
+
+	w := NewInstallWizard(ui, state, tempPathResolver(root, projectDir))
+	// The collector folds the persisted env into the install state for the
+	// agent entry; the operator then replaces the password.
+	w.collectHTTP = fakeHTTPCollector("https://mcp.example.com", "inherited-token")
+	ui.SetMCPPasswordResult = "operator-chosen-password"
+	// Record the restart seam (the production wiring calls the real managed
+	// service restart; here we only assert it fires after a password change).
+	var restarts int
+	w.restartHTTPService = func(_ context.Context, _ *InstallState) error {
+		restarts++
+		return nil
+	}
+
+	if _, err := w.Run(ctx); err != nil {
+		t.Fatalf("wizard run failed: %v", err)
+	}
+
+	// Replacing the password must trigger a service restart so the running
+	// endpoint reloads the new token; otherwise it keeps the old one.
+	if restarts != 1 {
+		t.Errorf("restartHTTPService called %d times, want 1 (after password change)", restarts)
+	}
+
+	// The service env file on disk must now carry the operator's password so
+	// the running endpoint validates against the same token the agent uses.
+	envData, err := os.ReadFile(envFile)
+	if err != nil {
+		t.Fatalf("read env file: %v", err)
+	}
+	if !strings.Contains(string(envData), "MCP_AUTH_TOKEN=operator-chosen-password") {
+		t.Errorf("service env file must persist the operator's password, got:\n%s", envData)
+	}
+
+	// The agent config header uses the same token.
+	entry := readGlobalJSON(t, root, install.AgentClaudeCode)
+	headers, _ := entry["headers"].(map[string]any)
+	auth, _ := headers["Authorization"]
+	if auth != "Bearer operator-chosen-password" {
+		t.Errorf("entry headers[Authorization] = %v, want 'Bearer operator-chosen-password'", auth)
+	}
+	if state.Service.AuthToken != "operator-chosen-password" {
+		t.Errorf("service state AuthToken = %q, want operator-chosen-password", state.Service.AuthToken)
+	}
+}
+
+// TestMcpInstallHTTPPasswordRestartFailureRollsBack guards that a failed
+// service restart does not leave the env file or in-memory state holding the
+// new password while the (un-restarted) endpoint still enforces the old one.
+// On restart failure the wizard must roll the env file and state back to the
+// previous token so disk, memory, and the live endpoint agree.
+func TestMcpInstallHTTPPasswordRestartFailureRollsBack(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	projectDir := t.TempDir()
+
+	envFile := filepath.Join(t.TempDir(), "mcp.env")
+	if err := os.WriteFile(envFile, []byte("MCP_AUTH_TOKEN=inherited-token\n"), 0o600); err != nil {
+		t.Fatalf("write env file: %v", err)
+	}
+
+	ui := newMockInstallUI()
+	state := &InstallState{
+		Agents:     []install.AgentKey{install.AgentClaudeCode},
+		Scope:      scopeGlobal,
+		Transport:  install.TransportHTTP,
+		UseService: true,
+		Service: &mcpadapter.ServiceInstallState{
+			EnvFile:    envFile,
+			AuthToken:  "inherited-token",
+			PublicURL:  "https://mcp.example.com",
+			Provider:   tunnel.TunnelProviderNgrok,
+			TunnelName: "pinner-mcp",
+		},
+	}
+
+	w := NewInstallWizard(ui, state, tempPathResolver(root, projectDir))
+	w.collectHTTP = fakeHTTPCollector("https://mcp.example.com", "inherited-token")
+	ui.SetMCPPasswordResult = "operator-chosen-password"
+	w.restartHTTPService = func(_ context.Context, _ *InstallState) error {
+		return fmt.Errorf("systemctl restart failed")
+	}
+
+	if _, err := w.Run(ctx); err == nil {
+		t.Fatalf("expected the wizard to fail when the service restart fails, got nil")
+	}
+
+	// The env file must be rolled back to the token the endpoint still enforces.
+	envData, err := os.ReadFile(envFile)
+	if err != nil {
+		t.Fatalf("read env file: %v", err)
+	}
+	if !strings.Contains(string(envData), "MCP_AUTH_TOKEN=inherited-token") {
+		t.Errorf("env file must be rolled back to the previous token on restart failure, got:\n%s", envData)
+	}
+	if strings.Contains(string(envData), "operator-chosen-password") {
+		t.Errorf("env file must not retain the uncommitted new password, got:\n%s", envData)
+	}
+
+	// In-memory state must also point at the old (live) token.
+	if state.AuthToken != "inherited-token" {
+		t.Errorf("state.AuthToken = %q, want inherited-token (rolled back)", state.AuthToken)
+	}
+	if state.Service.AuthToken != "inherited-token" {
+		t.Errorf("service.AuthToken = %q, want inherited-token (rolled back)", state.Service.AuthToken)
+	}
+}
+
+// TestMcpInstallHTTPPasswordRestoreFailureSurfaced guards that a failed
+// restore-write during rollback is surfaced (not swallowed): if the service
+// restart fails AND the env-file rollback write also fails, the wizard must
+// report the restore failure so the on-disk/state disagreement is not masked.
+func TestMcpInstallHTTPPasswordRestoreFailureSurfaced(t *testing.T) {
+	// This test forces a failed restore-write by making the env file's
+	// directory unwritable (os.Chmod on a dir). Windows does not honor POSIX
+	// directory write bits, so the trigger is POSIX-only; the production
+	// surfacing behavior itself is OS-independent and covered by the
+	// restart-failure rollback test on all platforms.
+	if runtime.GOOS == "windows" {
+		t.Skip("dir-permission write-failure trigger is POSIX-only")
+	}
+	ctx := context.Background()
+	root := t.TempDir()
+	projectDir := t.TempDir()
+
+	envFile := filepath.Join(t.TempDir(), "mcp.env")
+	if err := os.WriteFile(envFile, []byte("MCP_AUTH_TOKEN=inherited-token\n"), 0o600); err != nil {
+		t.Fatalf("write env file: %v", err)
+	}
+
+	ui := newMockInstallUI()
+	state := &InstallState{
+		Agents:     []install.AgentKey{install.AgentClaudeCode},
+		Scope:      scopeGlobal,
+		Transport:  install.TransportHTTP,
+		UseService: true,
+		Service: &mcpadapter.ServiceInstallState{
+			EnvFile:    envFile,
+			AuthToken:  "inherited-token",
+			PublicURL:  "https://mcp.example.com",
+			Provider:   tunnel.TunnelProviderNgrok,
+			TunnelName: "pinner-mcp",
+		},
+	}
+
+	w := NewInstallWizard(ui, state, tempPathResolver(root, projectDir))
+	w.collectHTTP = fakeHTTPCollector("https://mcp.example.com", "inherited-token")
+	ui.SetMCPPasswordResult = "operator-chosen-password"
+	// The restart fails AND renders the env file's directory read-only so the
+	// follow-up restore write fails too — both errors must be reported, not
+	// masked. (WriteEnvironment writes atomically via temp+rename, so chmodding
+	// the file itself would not block it; the directory must be unwritable.)
+	envDir := filepath.Dir(envFile)
+	t.Cleanup(func() { _ = os.Chmod(envDir, 0o700) }) // let TempDir cleanup remove it
+	w.restartHTTPService = func(_ context.Context, _ *InstallState) error {
+		if err := os.Chmod(envDir, 0o500); err != nil {
+			t.Fatalf("chmod env dir: %v", err)
+		}
+		return fmt.Errorf("systemctl restart failed")
+	}
+
+	_, err := w.Run(ctx)
+	if err == nil {
+		t.Fatalf("expected an error when the service restart fails, got nil")
+	}
+	if !strings.Contains(err.Error(), "restore MCP password") {
+		t.Errorf("error must surface the restore-write failure, got: %v", err)
+	}
+}
+
+// TestMcpInstallHTTPNonInteractiveSkipsPassword guards that a non-interactive
+// http install does NOT prompt for the password (it is sourced from flags/env)
+// and does not error at the prompt. The sourced token is used as-is.
+func TestMcpInstallHTTPNonInteractiveSkipsPassword(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	projectDir := t.TempDir()
+	ui := newMockInstallUI()
+
+	state := &InstallState{
+		Agents:         []install.AgentKey{install.AgentClaudeCode},
+		Scope:          scopeGlobal,
+		Transport:      install.TransportHTTP,
+		UseService:     true,
+		NonInteractive: true,
+	}
+
+	w := NewInstallWizard(ui, state, tempPathResolver(root, projectDir))
+	w.collectHTTP = fakeHTTPCollector("https://mcp.example.com", "env-token")
+
+	if _, err := w.Run(ctx); err != nil {
+		t.Fatalf("wizard run failed: %v", err)
+	}
+
+	// No interactive prompt may fire in non-interactive mode.
+	if ui.WasCalled("SetMCPPassword") {
+		t.Errorf("SetMCPPassword must not be called in non-interactive mode")
+	}
+
+	// The env-sourced token is written unchanged.
+	entry := readGlobalJSON(t, root, install.AgentClaudeCode)
+	headers, _ := entry["headers"].(map[string]any)
+	auth, _ := headers["Authorization"]
+	if auth != "Bearer env-token" {
+		t.Errorf("entry headers[Authorization] = %v, want 'Bearer env-token'", auth)
+	}
+}
+
+// TestMcpInstallHTTPPasswordRequired guards that an interactive http install
+// fails if the operator supplies no password and none was inherited.
+func TestMcpInstallHTTPPasswordRequired(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	projectDir := t.TempDir()
+	ui := newMockInstallUI()
+
+	state := &InstallState{
+		Agents:     []install.AgentKey{install.AgentClaudeCode},
+		Scope:      scopeGlobal,
+		Transport:  install.TransportHTTP,
+		UseService: true,
+	}
+
+	w := NewInstallWizard(ui, state, tempPathResolver(root, projectDir))
+	// No token is collected; the mock returns empty (operator typed nothing).
+	w.collectHTTP = fakeHTTPCollector("https://mcp.example.com", "")
+	ui.SetMCPPasswordErr = fmt.Errorf("an MCP password is required for a public HTTP endpoint")
+
+	if _, err := w.Run(ctx); err == nil {
+		t.Fatalf("expected an error when no MCP password is provided, got nil")
 	}
 }
