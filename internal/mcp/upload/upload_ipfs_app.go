@@ -157,7 +157,13 @@ func RegisterIPFSUploadApp(srv *sdk.Server, catalog apps.AppCatalog, hp *transfe
 		Description:   "Pick a file and upload it to Pinner over IPFS.",
 		HTML:          renderIPFSUploadAppHTML(),
 		PrefersBorder: true,
-		AttachTo:      []string{"upload_file"},
+		// Advertise the presigned upload origin in the app's CSP
+		// connectDomains so a host (e.g. Claude) permits the sandbox iframe to
+		// PUT file bytes to it. Resolved dynamically because the origin (the
+		// tunnel/base URL or loopback address) is only known after the server
+		// and transport are up — after app registration.
+		ConnectDomainsFunc: hp.ConnectOrigins,
+		AttachTo:           []string{"upload_file"},
 		Helpers: []model.ToolDescriptor{
 			ipfsUploadSubmitDescriptor(hp),
 			ipfsUploadStatusDescriptor(hp),

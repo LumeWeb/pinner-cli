@@ -111,6 +111,21 @@ func (l *LoopbackServer) URLFor(prefix, token string) string {
 	return "http://" + l.loopbackAddrLocked() + "/" + prefix + "/" + token
 }
 
+// Origin returns the single origin the mounted routes are currently served
+// from: the configured base URL in HTTP mode, or the loopback origin in stdio
+// mode. This is the origin an out-of-band browser request (an Uppy XHR PUT to a
+// minted upload endpoint) targets, so it is what an MCP host must permit in the
+// app's sandbox connect-src. It does NOT include trustedOrigins — those are
+// where cross-origin requests come FROM, not where they go TO.
+func (l *LoopbackServer) Origin() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.baseURL != "" {
+		return l.baseURL
+	}
+	return "http://" + l.loopbackAddrLocked()
+}
+
 // AcceptedOrigins returns the origins allowed to POST to a browser form (and,
 // via the upload coordinators, the origins corsUpload reflects for the Uppy
 // XHR PUT): the configured base URL in HTTP mode, or the loopback origin in
