@@ -132,22 +132,17 @@ test('pins_status resolves the added pin (round-trip)', async ({ mcp }) => {
   // through the full invoke_tool -> SDK -> HTTP -> fake chain. pins_status
   // resolves by `cid` (its catalog contract), NOT by `request_id`.
   //
-  // KNOWN FAKE GAP (feeds Task 18): the fake's GET /pins (internal/mcptest/
-  // ipfs/server.go GetPins) ignores the `cid` filter param and returns the
-  // ENTIRE store; pinner's Status() (internal/cli/pinning_client.go) takes
-  // results[0]. With a single pin in the store the round-trip echoes the
-  // requested cid correctly, but because this run shares one fake across host
-  // projects and pins_rm is destructive-gated (never deletes), a second
-  // project's pin can be returned for our cid. So we assert the deterministic
-  // round-trip property that holds regardless: the chain resolves to a
-  // created pin in `pinned` status. The strict cid echo is only reliable in a
-  // single-pin store and is not asserted here pending the fake fix.
+  // The fake's GET /pins (internal/mcptest/ipfs/pins.go GetPins) honors the
+  // `cid` filter, so the request returns ONLY the pin matching this suite's
+  // high-entropy cid — the strict cid echo below is deterministic even though
+  // the suite shares one fake across host projects.
   const result = await invoke(mcp, 'pins_status', { cid: Cid });
 
   expect(isCleanSuccess(result)).toBe(true);
   expect(result).not.toBeError();
-  // A pin was created and is resolvable in `pinned` status — the round-trip
-  // chain carried the request through to the content fake.
+  // The requested pin is resolvable back with the SAME cid — the round-trip
+  // chain carried the request through to the content fake and echoed it.
+  expect(result).toHaveTextContent(Cid);
   expect(result).toHaveTextContent('pinned');
 });
 
