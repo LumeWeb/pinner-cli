@@ -77,8 +77,9 @@ function base32(bytes: number[]): string {
 // the fake pin store is SHARED across host projects and test files, so a
 // low-entropy CID (single byte) could collide across workers and make one
 // project's pin appear in another's list, breaking the stateful assertions.
+// The multihash length byte (0x08) MUST match the byte count for a valid CID.
 const rnd = Array.from({ length: 8 }, () => Math.floor(Math.random() * 256));
-const Cid = 'b' + base32([0x01, 0x70, 0x00, 0x01, ...rnd]);
+const Cid = 'b' + base32([0x01, 0x70, 0x00, 0x08, ...rnd]);
 const Name = 'e2e-pin';
 
 // Captured from pins_add and carried into the later tests.
