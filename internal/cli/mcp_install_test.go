@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -1706,6 +1707,14 @@ func TestMcpInstallHTTPPasswordRestartFailureRollsBack(t *testing.T) {
 // restart fails AND the env-file rollback write also fails, the wizard must
 // report the restore failure so the on-disk/state disagreement is not masked.
 func TestMcpInstallHTTPPasswordRestoreFailureSurfaced(t *testing.T) {
+	// This test forces a failed restore-write by making the env file's
+	// directory unwritable (os.Chmod on a dir). Windows does not honor POSIX
+	// directory write bits, so the trigger is POSIX-only; the production
+	// surfacing behavior itself is OS-independent and covered by the
+	// restart-failure rollback test on all platforms.
+	if runtime.GOOS == "windows" {
+		t.Skip("dir-permission write-failure trigger is POSIX-only")
+	}
 	ctx := context.Background()
 	root := t.TempDir()
 	projectDir := t.TempDir()
