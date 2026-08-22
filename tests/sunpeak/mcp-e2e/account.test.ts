@@ -29,6 +29,31 @@ test.describe.configure({ mode: 'serial' });
 const SEED_EMAIL = 'e2e@example.com';
 const SEED_PASSWORD = 'password';
 
+// Ensure the shared account starts in its seeded state before ANY mutation in
+// this file. A sibling file / host project may have left the account email or
+// password re-keyed (e.g. auth_login persisting a synthetic token, or a prior
+// aborted mutation), so re-establish the seed email+password deterministically.
+// This makes the mutation tests self-healing instead of depending on prior
+// tests having cleaned up perfectly.
+test.beforeAll(async ({ mcp }) => {
+  try {
+    await invoke(mcp, 'account_update_email', {
+      email: SEED_EMAIL,
+      password: SEED_PASSWORD,
+    });
+  } catch {
+    // best-effort; if the email is already seed this is a no-op
+  }
+  try {
+    await invoke(mcp, 'account_update_password', {
+      current_password: SEED_PASSWORD,
+      new_password: SEED_PASSWORD,
+    });
+  } catch {
+    // best-effort; already-seed password is a no-op
+  }
+});
+
 // After all three tests, unconditionally restore the shared account to its
 // seeded email+password. The per-test bounces already restore it, but this
 // final net (like auth.test.ts's afterAll) guarantees a mid-test abort can
