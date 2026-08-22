@@ -764,6 +764,15 @@ func serveHTTP(ctx context.Context, srv *sdk.Server, cmd *cli.Command, oob *auth
 		if tun != nil {
 			_ = tun.Stop(shCtx)
 		}
+		// Release the app resources' retained SDK state so their handler closures
+		// and captured HTML can be collected when this server is discarded,
+		// rather than accumulating for the process lifetime.
+		if curlUpload != nil {
+			_ = sdk.UnregisterAppResource(srv, upload.IPFSUploadAppURI)
+		}
+		if vaultUpload != nil {
+			_ = sdk.UnregisterAppResource(srv, upload.VaultUploadAppURI)
+		}
 		_ = httpSrv.Shutdown(shCtx)
 	}
 

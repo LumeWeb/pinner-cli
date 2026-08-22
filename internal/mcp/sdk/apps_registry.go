@@ -235,6 +235,34 @@ func SetAppResourceConnectDomains(srv *Server, uri string, origins []string) err
 	return nil
 }
 
+// UnregisterAppResource releases a registered app resource for srv: it removes
+// the live resource from the server (go-sdk RemoveResources drops it from
+// resources/list and read) and discards the SDK's retained registration state so
+// the handler closure and captured app HTML can be garbage-collected. Call this
+// when a server is being discarded to keep the per-server registry from growing
+// without bound in long-running or multi-server processes. Removing a URI that
+// was never registered is a no-op.
+func UnregisterAppResource(srv *Server, uri string) error {
+	if srv == nil {
+		return fmt.Errorf("nil official server")
+	}
+	appResourceRegsMu.Lock()
+	m, ok := appResourceRegs[srv]
+	if !ok {
+		appResourceRegsMu.Unlock()
+		return nil
+	}
+	if _, ok := m[uri]; ok {
+		delete(m, uri)
+		if len(m) == 0 {
+			delete(appResourceRegs, srv)
+		}
+	}
+	appResourceRegsMu.Unlock()
+	srv.RemoveResources(uri)
+	return nil
+}
+
 // appResourceUIMeta marshals an AppResourceMeta into the `_meta.ui` map, or an
 // empty meta map when the meta carries no fields (mirroring the previous
 // "always an empty _meta.ui" wire shape for a bare app resource).

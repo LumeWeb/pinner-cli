@@ -210,3 +210,80 @@ func TestSetAppResourceConnectDomainsIsolationPerServer(t *testing.T) {
 		t.Fatalf("srvB connectDomains = %v, want tunnel-b", gotB)
 	}
 }
+
+// TestUnregisterAppResourceReleasesState asserts that unregistering an app
+// resource drops the retained registration state (so SetAppResourceConnectDomains
+// no longer resolves it) AND removes the live resource from the server, keeping
+// the per-server registry from growing without bound when a server is discarded.
+func TestUnregisterAppResourceReleasesState(t *testing.T) {
+	const uri = "ui://uploads/ipfs.html"
+
+	srv := NewServer(nil)
+	if err := RegisterAppResource(srv, AppResource{
+		URI: uri, Name: "Upload to IPFS", Title: "Upload to IPFS", Description: "app", HTML: "<html></html>",
+	}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	// The resource is live and appears in the list before unregistering.
+	cs := sdkTestClient(t, srv)
+	foundList := false
+	listBefore, err := cs.ListResources(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("list (before): %v", err)
+	}
+	for _, r := range listBefore.Resources {
+		if r.URI == uri {
+			foundList = true
+			break
+		}
+	}
+	if !foundList {
+		t.Fatal("resource missing from list before unregister")
+	}
+
+	// Unregister drops the retained state and the live resource.
+	if err := UnregisterAppResource(srv, uri); err != nil {
+		t.Fatalf("unregister: %v", err)
+	}
+
+	// The retained state is gone: SetAppResourceConnectDomains must fail with the
+	// "no registered app resource" error rather than silently re-registering.
+	if err := SetAppResourceConnectDomains(srv, uri, []string{"https://tunnel.dev"}); err == nil {
+		t.Fatal("expected error from SetAppResourceConnectDomains after unregister")
+	}
+
+	// The live resource is gone from resources/list and resources/read.
+	listAfter, err := cs.ListResources(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("list (after): %v", err)
+	}
+	for _, r := range listAfter.Resources {
+		if r.URI == uri {
+			t.Fatalf("resource still present in list after unregister")
+		}
+	}
+	if _, err := cs.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: uri}); err == nil {
+		t.Fatal("expected error reading unregistered resource")
+	}
+
+	// The per-server entry is dropped entirely: unregistering again is a no-op
+	// (no panic) and re-registering a fresh resource for the same URI works.
+	if err := UnregisterAppResource(srv, uri); err != nil {
+		t.Fatalf("second unregister should be a no-op, got: %v", err)
+	}
+	if err := RegisterAppResource(srv, AppResource{
+		URI: uri, Name: "Upload to IPFS", Title: "Upload to IPFS", Description: "app", HTML: "<html></html>",
+	}); err != nil {
+		t.Fatalf("re-register after unregister: %v", err)
+	}
+	appResourceRegsMu.Lock()
+	defer appResourceRegsMu.Unlock()
+	if _, ok := appResourceRegs[srv]; ok {
+		// The map may legitimately still contain the srv key from the re-register;
+		// only assert that the surviving URI entry is present (not retained stale).
+		if _, ok := appResourceRegs[srv][uri]; !ok {
+			t.Fatal("re-registered uri missing from registry")
+		}
+	}
+}
