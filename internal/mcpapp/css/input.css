@@ -107,6 +107,27 @@ body {
   @apply w-full px-2.5 py-2 border border-border rounded-md bg-background-deep text-foreground font-sans placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent;
 }
 
+/* ---- File picker (MCP upload apps) --------------------------------------- */
+/* The native <input type="file"> cannot be styled, so pin it invisible atop a
+   styled chrome (a "Choose file" button + the picked name). Clicking anywhere
+   on the field opens the native picker; the name is refreshed from JS on
+   change. */
+@utility file-field {
+  @apply relative cursor-pointer;
+}
+@utility file-input {
+  @apply absolute inset-0 w-full h-full opacity-0 cursor-pointer;
+}
+@utility file-picker {
+  @apply flex items-center gap-2 px-2.5 py-2 border border-border rounded-md bg-background-deep;
+}
+@utility file-btn {
+  @apply shrink-0 inline-flex items-center px-3 py-1 rounded border border-border bg-card text-foreground text-sm font-medium cursor-pointer select-none transition-colors hover:bg-card/80;
+}
+@utility file-name {
+  @apply truncate min-w-0 text-sm text-muted-foreground;
+}
+
 /* ---- Tables (MCP pin-list + vault) --------------------------------------- */
 @utility table {
   @apply w-full text-sm text-foreground;

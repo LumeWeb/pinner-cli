@@ -82,3 +82,43 @@ test('upload_file app boots (ipfs-upload bundle has no unmet imports)', async ({
 test('vault_put_file app boots (vault-upload bundle has no unmet imports)', async ({ inspector }) => {
   await assertUploadAppBoots('vault_put_file', 'Upload to Vault', inspector);
 });
+
+/**
+ * The upload forms use a styled composite file picker: the native
+ * <input type="file"> is pinned invisible under a "Choose file" button + a
+ * picked-file label, because the browser's native "Choose file/No file chosen"
+ * chrome cannot be themed. Verify the chrome renders and that picking a file
+ * updates the label (the bootstraps wire a change listener for that).
+ */
+async function assertStyledFilePicker(
+  tool: string,
+  fileId: string,
+  labelId: string,
+  inspector: { renderTool: (n: string, i: unknown) => Promise<{ app(): FrameLocator }> },
+) {
+  const result = await inspector.renderTool(tool, {});
+  const app = result.app();
+  const body = await app.locator('body').innerText();
+  expect(body).toContain('Choose file');
+  expect(body).toContain('No file chosen');
+  expect(body).toContain('Upload');
+
+  // Actually select a file through the hidden native input and assert the
+  // picker label adopts the filename (proves the change listener fired and
+  // the machine is wired, not just the static HTML shell).
+  const fileInput = app.locator(`#${fileId}`);
+  await fileInput.setInputFiles({
+    name: 'report.pdf',
+    mimeType: 'application/pdf',
+    buffer: Buffer.from('pdf-bytes'),
+  });
+  await expect(app.locator(`#${labelId}`)).toHaveText('report.pdf');
+}
+
+test('upload_file app renders the styled file picker and reflects the picked name', async ({ inspector }) => {
+  await assertStyledFilePicker('upload_file', 'file', 'file-name', inspector);
+});
+
+test('vault_put_file app renders the styled file picker and reflects the picked name', async ({ inspector }) => {
+  await assertStyledFilePicker('vault_put_file', 'vfile', 'vfile-name', inspector);
+});

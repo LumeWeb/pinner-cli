@@ -5,7 +5,8 @@
 //
 // Element contract:
 //   #vault-upload-form   the <form> that submits the upload.
-//   #vfile               the file <input type="file">.
+//   #vfile               the file <input type="file"> (styled composite picker).
+//   #vfile-name          the picked-file label span ("No file chosen").
 //   #vault-path          the vault destination path <input>.
 //   #vault-upload-status the status element (class "status <state>").
 //   #out-path            the result stored-path <code>.
@@ -31,6 +32,7 @@ import { byId, setStatus, StatusClass } from "@/dom";
 export type VaultUploadElementIds = {
   form: string;
   file: string;
+  fileName: string;
   vaultPath: string;
   status: string;
   outPath: string;
@@ -42,7 +44,8 @@ export type VaultUploadAppEntry = AppDefinition<VaultUploadConfig, VaultUploadEl
 
 export interface VaultUploadElements {
   form: { addEventListener(type: "submit", listener: (ev: SubmitEvent) => void): void };
-  fileInput: { files: FileList | null };
+  fileInput: HTMLInputElement;
+  fileNameEl: HTMLElement;
   vaultPathInput: { value: string };
   statusEl: HTMLElement;
   outPath: HTMLElement;
@@ -133,6 +136,14 @@ export function runVaultUploadEntry(opts: VaultUploadEntryOptions) {
     if (r.setOutPath && ctx.outPath) opts.elements.outPath.textContent = ctx.outPath;
   });
 
+  // Reflect the picked file's name in the styled picker chrome. The native
+  // input is invisible (see file-field/file-input in the theme), so without
+  // this the user has no way to see what was selected.
+  opts.elements.fileInput.addEventListener("change", () => {
+    const picked = opts.elements.fileInput.files?.[0];
+    opts.elements.fileNameEl.textContent = picked ? picked.name : "No file chosen";
+  });
+
   const submit = async (file: File | null, vaultPath: string) => {
     if (!file) {
       setStatus(opts.elements.statusEl, StatusClass.Error, opts.config.noFileMsg);
@@ -179,6 +190,7 @@ export function mountVaultUploadApp(def: VaultUploadAppEntry, root: Document, ca
       elements: {
         form: byId<HTMLFormElement>(root, def.ids.form)!,
         fileInput: byId<HTMLInputElement>(root, def.ids.file)!,
+        fileNameEl: byId<HTMLElement>(root, def.ids.fileName)!,
         vaultPathInput: byId<HTMLInputElement>(root, def.ids.vaultPath)!,
         statusEl: statusEl!,
         outPath: byId<HTMLElement>(root, def.ids.outPath)!,

@@ -26,6 +26,7 @@ export const def: IPFSUploadAppEntry = {
   ids: {
     form: "ipfs-upload-form",
     file: "file",
+    fileName: "file-name",
     name: "name",
     status: "ipfs-upload-status",
     outCid: "out-cid",
