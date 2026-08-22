@@ -35,17 +35,26 @@ type Server struct {
 	records map[int]map[string]*dnsRecord
 	// recordSeq is the monotonic record id allocator.
 	recordSeq int
+	// websites is the in-memory website store keyed by numeric website id.
+	websites map[int]*websiteSite
+	// websiteSeq is the monotonic website id allocator.
+	websiteSeq int
+	// domainSeq is the monotonic bound-domain id allocator.
+	domainSeq int
 }
 
 // NewServer returns a fake content API double with empty state.
 func NewServer() *Server {
 	return &Server{
-		pins:      map[string]*PinStatusResponse{},
-		tokens:    map[string]struct{}{},
-		zones:     map[int]*ZoneResponse{},
-		records:   map[int]map[string]*dnsRecord{},
-		zoneSeq:   0,
-		recordSeq: 0,
+		pins:       map[string]*PinStatusResponse{},
+		tokens:     map[string]struct{}{},
+		zones:      map[int]*ZoneResponse{},
+		records:    map[int]map[string]*dnsRecord{},
+		zoneSeq:    0,
+		recordSeq:  0,
+		websites:   map[int]*websiteSite{},
+		websiteSeq: 0,
+		domainSeq:  0,
 	}
 }
 
