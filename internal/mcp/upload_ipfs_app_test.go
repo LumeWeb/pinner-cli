@@ -312,21 +312,23 @@ func TestIPFSUploadCORS(t *testing.T) {
 		t.Fatalf("cross-origin upload must not send credentials")
 	}
 
-	// Untrusted-origin preflight: the response must NOT grant CORS, so the
-	// browser refuses the cross-origin write despite knowing the token.
+	// A non-loopback, non-trusted dynamic origin (a stand-in for the MCP host's
+	// per-session sandbox origin) is ALSO reflected: these routes are
+	// token-gated, so reflecting any origin is safe and is what unblocks a
+	// host-rendered app iframe.
 	evil, err := http.NewRequest(http.MethodOptions, urlVal, nil)
 	if err != nil {
-		t.Fatalf("evil preflight req: %v", err)
+		t.Fatalf("dynamic-origin preflight req: %v", err)
 	}
-	evil.Header.Set("Origin", "https://evil.example.com")
+	evil.Header.Set("Origin", "https://a1b2c3d4e5f6g7h8.host-sandbox.example")
 	evil.Header.Set("Access-Control-Request-Method", "PUT")
 	evilResp, err := http.DefaultClient.Do(evil)
 	if err != nil {
-		t.Fatalf("evil preflight: %v", err)
+		t.Fatalf("dynamic-origin preflight: %v", err)
 	}
 	evilResp.Body.Close()
-	if aoc := evilResp.Header.Get("Access-Control-Allow-Origin"); aoc != "" {
-		t.Fatalf("untrusted origin allowed: Allow-Origin = %q, want empty", aoc)
+	if aoc := evilResp.Header.Get("Access-Control-Allow-Origin"); aoc != "https://a1b2c3d4e5f6g7h8.host-sandbox.example" {
+		t.Fatalf("dynamic origin not reflected: Allow-Origin = %q", aoc)
 	}
 
 	// The trusted-origin PUT must carry the reflecting origin header and
@@ -415,21 +417,23 @@ func TestIPFSUploadCORSOpaqueNull(t *testing.T) {
 		t.Fatalf("PUT Allow-Origin = %q, want %q", aoc, opaque)
 	}
 
-	// An arbitrary attacker origin is STILL refused despite the opaque-origin
-	// grant (the token-gated route must not become open to any page).
+	// A dynamic, non-loopback sandbox origin is also reflected — the token-gated
+	// route reflects any origin (see TestIPFSUploadCORS), which is what unblocks
+	// a host-rendered app iframe whose sandbox origin the server cannot
+	// pre-enumerate.
 	evil, err := http.NewRequest(http.MethodOptions, url, nil)
 	if err != nil {
-		t.Fatalf("evil preflight req: %v", err)
+		t.Fatalf("dynamic-origin preflight req: %v", err)
 	}
-	evil.Header.Set("Origin", "https://evil.example.com")
+	evil.Header.Set("Origin", "https://a1b2c3d4e5f6g7h8.host-sandbox.example")
 	evil.Header.Set("Access-Control-Request-Method", "PUT")
 	evilResp, err := http.DefaultClient.Do(evil)
 	if err != nil {
-		t.Fatalf("evil preflight: %v", err)
+		t.Fatalf("dynamic-origin preflight: %v", err)
 	}
 	evilResp.Body.Close()
-	if aoc := evilResp.Header.Get("Access-Control-Allow-Origin"); aoc != "" {
-		t.Fatalf("arbitrary origin allowed: Allow-Origin = %q, want empty", aoc)
+	if aoc := evilResp.Header.Get("Access-Control-Allow-Origin"); aoc != "https://a1b2c3d4e5f6g7h8.host-sandbox.example" {
+		t.Fatalf("dynamic origin not reflected: Allow-Origin = %q", aoc)
 	}
 }
 
@@ -447,10 +451,11 @@ func taskStateOf(res *mcp.CallToolResult) (transfer.UploadTaskState, bool) {
 	return transfer.UploadTaskState(s), s != ""
 }
 
-// TestIPFSUploadCORSConfiguredHost verifies a configured MCP-host origin
-// (added via AddTrustedOrigins) is reflected for the cross-origin Uppy PUT,
-// while an arbitrary unlisted origin is still refused — the configurable
-// allowlist keeps a far host working without opening the endpoint to any page.
+// TestIPFSUploadCORSConfiguredHost verifies a configured MCP-host origin and a
+// dynamic, non-loopback sandbox origin are both reflected for the cross-origin
+// Uppy PUT. The route is token-gated, so it reflects any origin; a configured
+// origin keeps working (and remains valid as part of the LoopbackServer's
+// accepted-origin set for other browser consumers).
 func TestIPFSUploadCORSConfiguredHost(t *testing.T) {
 	srv, cu := buildIPFSUploadAppServer(t)
 	// The host serving the ui:// app iframe on its own origin.
@@ -486,26 +491,26 @@ func TestIPFSUploadCORSConfiguredHost(t *testing.T) {
 		t.Fatalf("configured host Allow-Origin = %q, want https://apps.example.com", aoc)
 	}
 
-	// Arbitrary unlisted origin: still refused.
+	// A dynamic, unlisted sandbox origin is also reflected (token-gated route).
 	evil, err := http.NewRequest(http.MethodOptions, url, nil)
 	if err != nil {
-		t.Fatalf("evil preflight req: %v", err)
+		t.Fatalf("dynamic-origin preflight req: %v", err)
 	}
-	evil.Header.Set("Origin", "https://evil.example.com")
+	evil.Header.Set("Origin", "https://a1b2c3d4e5f6g7h8.host-sandbox.example")
 	evil.Header.Set("Access-Control-Request-Method", "PUT")
 	evilResp, err := http.DefaultClient.Do(evil)
 	if err != nil {
-		t.Fatalf("evil preflight: %v", err)
+		t.Fatalf("dynamic-origin preflight: %v", err)
 	}
 	evilResp.Body.Close()
-	if aoc := evilResp.Header.Get("Access-Control-Allow-Origin"); aoc != "" {
-		t.Fatalf("unlisted origin allowed: Allow-Origin = %q, want empty", aoc)
+	if aoc := evilResp.Header.Get("Access-Control-Allow-Origin"); aoc != "https://a1b2c3d4e5f6g7h8.host-sandbox.example" {
+		t.Fatalf("dynamic origin not reflected: Allow-Origin = %q", aoc)
 	}
 }
 
 // TestIPFSUploadResourceAdvertisesConnectDomains is the regression test for the
 // CSP issue: the upload app does a cross-origin Uppy XHR PUT from the host
-// sandbox (e.g. assets.claude.ai) to the presigned /upload/<token> endpoint,
+// sandbox (e.g. the MCP host's content CDN) to the presigned /upload/<token> endpoint,
 // so the app resource MUST advertise that upload origin in its read-level
 // _meta.ui.csp.connectDomains or the host sandbox CSP blocks the PUT. The
 // origin is resolved dynamically at read time (the tunnel/base URL or loopback

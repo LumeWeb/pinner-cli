@@ -395,8 +395,10 @@ func TestVaultGetFileLocalSink(t *testing.T) {
 	require.Equal(t, "vault plaintext", string(data))
 }
 
-// Ensure the tool survives an httptest round-trip of the coordinator headers.
-func TestHTTPDownloadCORSNotLeakedToUntrustedOrigin(t *testing.T) {
+// Ensure the tool survives an httptest round-trip of the coordinator headers,
+// and that a dynamic host-sandbox origin is reflected over CORS on the
+// token-gated filedrop GET route.
+func TestHTTPDownloadCORSReflectsDynamicSandboxOrigin(t *testing.T) {
 	hd := transfer.NewHTTPDownload()
 	url, err := hd.Mint("f.txt", 0, func(ctx context.Context, w io.Writer) error {
 		_, _ = w.Write([]byte("data"))
@@ -404,12 +406,15 @@ func TestHTTPDownloadCORSNotLeakedToUntrustedOrigin(t *testing.T) {
 	}, 0)
 	require.NoError(t, err)
 	req, _ := http.NewRequest(http.MethodGet, url, nil)
-	req.Header.Set("Origin", "https://evil.example")
+	dyn := "https://a1b2c3d4e5f6g7h8.host-sandbox.example"
+	req.Header.Set("Origin", dyn)
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
 	io.Copy(io.Discard, resp.Body)
 	resp.Body.Close()
-	require.NotContains(t, resp.Header.Get("Access-Control-Allow-Origin"), "evil.example")
+	// The token-gated filedrop GET reflects any origin (see transferCORS), so a
+	// dynamic host-sandbox origin is admitted.
+	require.Equal(t, dyn, resp.Header.Get("Access-Control-Allow-Origin"))
 }
 
 // An omitted ttl must report the effective default (5m) so a consumer does not

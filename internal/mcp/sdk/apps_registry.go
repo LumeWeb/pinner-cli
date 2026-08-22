@@ -170,7 +170,7 @@ func RegisterAppResource(srv *Server, res AppResource) error {
 		// _meta.ui MUST go on the content item (ResourceContents.Meta), NOT on
 		// the top-level ReadResourceResult.Meta. The ext-apps spec says hosts
 		// read CSP from "the resources/read content item (with resources/list
-		// entry as fallback)". Claude reads ResourceContents._meta.ui.csp to
+		// entry as fallback)". An MCP host reads ResourceContents._meta.ui.csp to
 		// derive the sandbox connect-src; a result-level _meta.ui is invisible
 		// to the CSP enforcement path.
 		uiMeta := cloneMeta(appResourceUIMeta(readMeta))
@@ -201,9 +201,9 @@ func RegisterAppResource(srv *Server, res AppResource) error {
 // SetAppResourceConnectDomains bakes a live CSP connectDomains into the
 // resources/list entry of a registered app resource. It must be called once the
 // transport has resolved its base/tunnel (or loopback) origin — always after
-// registration — so a host that reads the list at connection time (e.g. Claude
-// deriving its sandbox connect-src) sees the origin the app's Uppy XHR uploader
-// PUTs to. The resource is re-registered under its URI (go-sdk replaces by
+// registration — so a host that reads the list at connection time (e.g. an MCP
+// host deriving its sandbox connect-src) sees the origin the app's Uppy XHR
+// uploader PUTs to. The resource is re-registered under its URI (go-sdk replaces by
 // URI) with the same read handler, so read-level behavior is unchanged. It is
 // safe to call more than once (e.g. first with the loopback/base origin, then
 // again with the provider-approved tunnel origin); the last write wins.

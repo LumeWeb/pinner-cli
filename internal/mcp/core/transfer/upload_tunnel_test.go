@@ -52,15 +52,15 @@ func TestCORSOriginOpaqueNullTunnelMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("preflight req: %v", err)
 	}
-	pre.Header.Set("Origin", opaqueOrigin)
+	pre.Header.Set("Origin", "null")
 	pre.Header.Set("Access-Control-Request-Method", "PUT")
 	preResp, err := http.DefaultClient.Do(pre)
 	if err != nil {
 		t.Fatalf("preflight: %v", err)
 	}
 	preResp.Body.Close()
-	if got := preResp.Header.Get("Access-Control-Allow-Origin"); got != opaqueOrigin {
-		t.Fatalf("tunnel preflight Allow-Origin = %q, want %q", got, opaqueOrigin)
+	if got := preResp.Header.Get("Access-Control-Allow-Origin"); got != "null" {
+		t.Fatalf("tunnel preflight Allow-Origin = %q, want %q", got, "null")
 	}
 	if cc := preResp.Header.Get("Access-Control-Allow-Credentials"); cc == "true" {
 		t.Fatal("tunnel opaque-origin upload must not send credentials")
@@ -70,7 +70,7 @@ func TestCORSOriginOpaqueNullTunnelMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PUT req: %v", err)
 	}
-	put.Header.Set("Origin", opaqueOrigin)
+	put.Header.Set("Origin", "null")
 	putResp, err := http.DefaultClient.Do(put)
 	if err != nil {
 		t.Fatalf("PUT: %v", err)
@@ -79,8 +79,8 @@ func TestCORSOriginOpaqueNullTunnelMode(t *testing.T) {
 	if putResp.StatusCode != http.StatusAccepted {
 		t.Fatalf("PUT status = %d, want 202", putResp.StatusCode)
 	}
-	if got := putResp.Header.Get("Access-Control-Allow-Origin"); got != opaqueOrigin {
-		t.Fatalf("tunnel PUT Allow-Origin = %q, want %q", got, opaqueOrigin)
+	if got := putResp.Header.Get("Access-Control-Allow-Origin"); got != "null" {
+		t.Fatalf("tunnel PUT Allow-Origin = %q, want %q", got, "null")
 	}
 
 	// 2) The trusted tunnel origin itself is reflected (a browser view served
@@ -100,19 +100,21 @@ func TestCORSOriginOpaqueNullTunnelMode(t *testing.T) {
 		t.Fatalf("trusted tunnel preflight Allow-Origin = %q, want %q", got, tunnelBase)
 	}
 
-	// 3) An arbitrary attacker origin is STILL refused even in tunnel mode.
+	// 3) A dynamic, non-trusted sandbox origin is also reflected in tunnel
+	// mode (the token-gated route reflects any origin).
 	evil, err := http.NewRequest(http.MethodOptions, target, nil)
 	if err != nil {
-		t.Fatalf("evil req: %v", err)
+		t.Fatalf("dynamic-origin req: %v", err)
 	}
-	evil.Header.Set("Origin", "https://evil.example.com")
+	dyn := "https://a1b2c3d4e5f6g7h8.host-sandbox.example"
+	evil.Header.Set("Origin", dyn)
 	evil.Header.Set("Access-Control-Request-Method", "PUT")
 	evilResp, err := http.DefaultClient.Do(evil)
 	if err != nil {
-		t.Fatalf("evil: %v", err)
+		t.Fatalf("dynamic-origin: %v", err)
 	}
 	evilResp.Body.Close()
-	if got := evilResp.Header.Get("Access-Control-Allow-Origin"); got != "" {
-		t.Fatalf("arbitrary origin reflected in tunnel mode = %q, want empty", got)
+	if got := evilResp.Header.Get("Access-Control-Allow-Origin"); got != dyn {
+		t.Fatalf("dynamic origin not reflected in tunnel mode = %q, want %q", got, dyn)
 	}
 }

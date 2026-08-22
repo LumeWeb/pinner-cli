@@ -107,7 +107,7 @@ func RegisterVaultUploadApp(srv *sdk.Server, catalog apps.AppCatalog, vu *transf
 		HTML:          renderVaultUploadAppHTML(),
 		PrefersBorder: true,
 		// Advertise the presigned vault-upload origin in the app's CSP
-		// connectDomains so a host (e.g. Claude) permits the sandbox iframe to
+		// connectDomains so an MCP host permits the sandbox iframe to
 		// PUT file bytes to it. Resolved dynamically because the origin (the
 		// tunnel/base URL or loopback address) is only known after the server
 		// and transport are up — after app registration.
