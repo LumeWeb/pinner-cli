@@ -150,6 +150,10 @@ func TestCapabilitiesDescriptorSerializes(t *testing.T) {
 	require.Equal(t, []any{"local", "drop"}, m["download_sink_modes"])
 	require.Equal(t, true, m["download_file"])
 	require.Equal(t, true, m["vault_get_file"])
+	// The text-only channel must carry the report JSON (not a bare stub) so a
+	// plain-text MCP client still learns the transport and source modes.
+	require.Contains(t, res.Text, `"transport":`)
+	require.Contains(t, res.Text, `"source_modes":`)
 }
 
 func TestCapabilitiesDescriptorIsDirectVisible(t *testing.T) {

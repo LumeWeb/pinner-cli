@@ -125,15 +125,18 @@ func NewVaultPutFileDescriptor(coLocated, tunnelOpenAI bool, pathFn LocalPathVau
 					return model.ToolResult{}, merr
 				}
 				curlCmd := fmt.Sprintf("curl -sS -T <your-file> %q", url)
+				sc := map[string]any{
+					"url":          url,
+					"vault_path":   in.VaultPath,
+					"curl_command": curlCmd,
+					"ttl":          ttl.String(),
+					"max_bytes":    vu.MaxBytes(),
+				}
 				return model.ToolResult{
-					StructuredContent: map[string]any{
-						"url":          url,
-						"vault_path":   in.VaultPath,
-						"curl_command": curlCmd,
-						"ttl":          ttl.String(),
-						"max_bytes":    vu.MaxBytes(),
-					},
-					Text: "One-time vault upload endpoint minted. Run the curl command with your file; the vault write completes synchronously and the response carries the vault result.",
+					StructuredContent: sc,
+					// Text carries the same JSON so a text-only client sees the
+					// actual presigned URL and curl command, not just prose.
+					Text: toolargs.ResultJSONText(sc) + " Run the curl command with your file; the vault write completes synchronously and the response carries the vault result.",
 				}, nil
 			default: // TransportOpenAI
 				if in.Source.Mode != transfer.SourceURL && in.Source.Mode != transfer.SourceData {

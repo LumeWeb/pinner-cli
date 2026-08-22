@@ -158,6 +158,52 @@ func TestAsyncUploadStatusToolMissingHandle(t *testing.T) {
 	require.ErrorContains(t, err, "handle is required")
 }
 
+func TestAsyncUploadToolsTextCarriesData(t *testing.T) {
+	// Text-only MCP clients read only the Text channel. upload_file_async,
+	// upload_status, upload_cancel, and upload_list must put their actionable
+	// data there (not a bare stub) so such clients can use the handle.
+	release := make(chan struct{})
+	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-release:
+			return map[string]any{"cid": "QmText"}, nil
+		}
+	}, 0)
+	descs := NewAsyncUploadTools(mgr)
+	byName := map[string]model.ToolDescriptor{}
+	for _, d := range descs {
+		byName[d.Name] = d
+	}
+
+	// Seed a task directly so no network fetch is involved, then drive the
+	// status/list/cancel tools over that handle.
+	handle, err := mgr.Start(context.Background(), io.NopCloser(strings.NewReader("x")), 1, "x.txt", false)
+	require.NoError(t, err)
+
+	// upload_status: Text carries the task data, not "Upload status."
+	status, err := byName["upload_status"].Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{"handle": handle}})
+	require.NoError(t, err)
+	require.NotEqual(t, "Upload status.", status.Text)
+	require.Contains(t, status.Text, handle)
+
+	// upload_list: Text carries the tracked uploads, not "Uploads."
+	list, err := byName["upload_list"].Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{}})
+	require.NoError(t, err)
+	require.NotEqual(t, "Uploads.", list.Text)
+	require.Contains(t, list.Text, handle)
+
+	// upload_cancel: Text carries the cancelled handle (task is still running,
+	// so it is cancellable).
+	cancel, err := byName["upload_cancel"].Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{"handle": handle}})
+	require.NoError(t, err)
+	require.NotEqual(t, "Upload cancelled.", cancel.Text)
+	require.Contains(t, cancel.Text, handle)
+
+	close(release)
+}
+
 func TestUploadTaskManagerTTLEviction(t *testing.T) {
 	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
 		io.Copy(io.Discard, reader)

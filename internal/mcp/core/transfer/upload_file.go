@@ -118,15 +118,22 @@ func NewUploadFileDescriptor(coLocated, tunnelOpenAI bool, pathFn UploadFileHand
 					return model.ToolResult{}, merr
 				}
 				curlCmd := fmt.Sprintf("curl -sS -T <your-file> %q", url)
+				sc := map[string]any{
+					"url":                url,
+					"curl_command":       curlCmd,
+					"upload_handle_poll": "upload_status",
+					"ttl":                ttl.String(),
+					"max_bytes":          hp.maxBytes,
+				}
+				// Text carries the same JSON as StructuredContent so a text-only
+				// MCP client (which renders no widget) still sees the actual
+				// presigned URL and curl command, not just the prose instruction.
+				// The upload_handle itself is only produced by the presigned PUT's
+				// 202 response body, so it cannot appear here — the tool describes
+				// where to get it (curl's response) and which tool to poll with.
 				return model.ToolResult{
-					StructuredContent: map[string]any{
-						"url":                url,
-						"curl_command":       curlCmd,
-						"upload_handle_poll": "upload_status",
-						"ttl":                ttl.String(),
-						"max_bytes":          hp.maxBytes,
-					},
-					Text: "One-time upload endpoint minted. Run the curl command with your file, then poll upload_status with the returned upload_handle.",
+					StructuredContent: sc,
+					Text:              toolargs.ResultJSONText(sc) + " Run the curl command with your file; the upload_handle comes back in that curl response, then poll upload_status with it.",
 				}, nil
 			default: // TransportOpenAI
 				if in.Source.Mode != SourceURL && in.Source.Mode != SourceData {
