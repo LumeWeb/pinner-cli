@@ -58,6 +58,10 @@ export interface IPFSUploadContext {
   handle: string;
   /** final CID readout. */
   outCid: string;
+  /** raw lifecycle state of the async upload task as reported by the last
+   *  status poll (e.g. "queued", "running", "completed"). Surfaced as the
+   *  operational status from the account area while polling. */
+  opState: string;
   polled: number;
 }
 
@@ -80,7 +84,15 @@ export function createIPFSUploadMachine(cfg: IPFSUploadConfig, callTool: CallToo
     ...ctx,
     file: ev?.file ?? null,
     name: ev?.name ?? "",
+    opState: "",
   }));
+
+  // Capture the raw async task lifecycle state returned by a status poll so
+  // the UI can render the operational status (queued/running/…) as its label.
+  const setOpState = reduce((ctx: IPFSUploadContext, ev: any) => {
+    const st = ev?.data?.opState;
+    return { ...ctx, opState: typeof st === "string" ? st : "" };
+  });
 
   // Capture the minted presigned URL.
   const setUrl = reduce((ctx: IPFSUploadContext, ev: any) => {
@@ -133,10 +145,12 @@ export function createIPFSUploadMachine(cfg: IPFSUploadConfig, callTool: CallToo
   // One status poll. Returns an outcome understood by the `done` transitions.
   // A completed/failed/cancelled state is terminal and wins; a running state
   // and a transport error both loop (bounded by maxPoll in the budget reducer).
+  // The raw `state` (queued/running/completed/…) rides along as `opState` so
+  // the UI can surface the operational status from the account area.
   const pollOnce = async (ctx: IPFSUploadContext): Promise<any> => {
     // Budget exhausted: stop polling and report a terminal failure.
     if (ctx.polled >= cfg.maxPoll) {
-      return { isError: false, terminalOk: false, terminalFail: true };
+      return { isError: false, terminalOk: false, terminalFail: true, opState: "" };
     }
     // Space polls so the iteration budget tracks elapsed wall-clock time
     // rather than raw round-trips (see pollIntervalMs on the config). A zero
@@ -148,17 +162,17 @@ export function createIPFSUploadMachine(cfg: IPFSUploadConfig, callTool: CallToo
     try {
       res = await callTool({ name: cfg.statusTool, arguments: { handle: ctx.handle } });
     } catch (e) {
-      return { isError: false, terminalOk: false, terminalFail: false };
+      return { isError: false, terminalOk: false, terminalFail: false, opState: "" };
     }
     const sc: any = res.structuredContent || {};
     const state: string = sc.state;
     if (state === "completed") {
-      return { isError: false, terminalOk: true, cid: sc.result?.cid ?? sc.result ?? "" };
+      return { isError: false, terminalOk: true, cid: sc.result?.cid ?? sc.result ?? "", opState: state };
     }
     if (state === "failed" || state === "cancelled") {
-      return { isError: false, terminalFail: true };
+      return { isError: false, terminalFail: true, opState: state };
     }
-    return { isError: false, terminalOk: false, terminalFail: false };
+    return { isError: false, terminalOk: false, terminalFail: false, opState: state || "" };
   };
 
   // --- machine ------------------------------------------------------------
@@ -179,15 +193,15 @@ export function createIPFSUploadMachine(cfg: IPFSUploadConfig, callTool: CallToo
       ),
       polling: invoke(
         pollOnce,
-        transition("done", "ok", guard(doneOk), setResult),
-        transition("done", "error", guard(doneFail)),
-        transition("done", "polling", stepPoll),
+        transition("done", "ok", guard(doneOk), setResult, setOpState),
+        transition("done", "error", guard(doneFail), setOpState),
+        transition("done", "polling", stepPoll, setOpState),
         transition("error", "polling", stepPoll),
       ),
       ok: state(transition("reset", "idle")),
       error: state(transition("reset", "idle")),
     },
-    () => ({ file: null, name: "", url: "", handle: "", outCid: "", polled: 0 }),
+    () => ({ file: null, name: "", url: "", handle: "", outCid: "", opState: "", polled: 0 }),
   );
 }
 
@@ -209,3 +223,40 @@ export function currentIPFSUploadState(service: {
 
 export const isIPFSUploadTerminal = (s: IPFSUploadState): boolean =>
   s === IPFSUploadState.Ok || s === IPFSUploadState.Error;
+
+/** Progress-bar display mode. `uploading` is determinate (Uppy byte-transfer
+ *  %), `processing` is indeterminate (async operational phase), `done` fills
+ *  to 100%, and `error`/`hidden` drop or hide the bar. */
+export type ProgressMode = "hidden" | "uploading" | "processing" | "done" | "error";
+
+/** What a progress bar should present for a given upload state + context. */
+export interface IPFSUploadProgress {
+  mode: ProgressMode;
+  /** Determinate percent (0-100) for `uploading`/`done`. */
+  percent?: number;
+  /** Human label under the bar: phase, or the operational state while polling. */
+  label?: string;
+}
+
+/** Map an upload state + context onto a progress-bar presentation. This is pure
+ *  (no DOM/Uppy) so it is unit-testable against the machine in node. */
+export function progressFor(state: IPFSUploadState, ctx: IPFSUploadContext): IPFSUploadProgress {
+  switch (state) {
+    case IPFSUploadState.Minting:
+      return { mode: "processing", label: "Preparing upload…" };
+    case IPFSUploadState.Uploading:
+      return { mode: "uploading", percent: 0, label: "Uploading…" };
+    case IPFSUploadState.Polling: {
+      // Surface the async operational status reported by the account area:
+      // "queued"/"running" become "Upload queued…"/"Upload running…".
+      const op = ctx.opState === "queued" || ctx.opState === "running" ? ctx.opState : "";
+      return { mode: "processing", label: op ? `Upload ${op}…` : "Processing…" };
+    }
+    case IPFSUploadState.Ok:
+      return { mode: "done", percent: 100, label: "Upload complete" };
+    case IPFSUploadState.Error:
+      return { mode: "error", label: "Upload failed" };
+    default:
+      return { mode: "hidden" };
+  }
+}

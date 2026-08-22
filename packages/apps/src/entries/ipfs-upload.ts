@@ -31,6 +31,9 @@ export const def: IPFSUploadAppEntry = {
     status: "ipfs-upload-status",
     outCid: "out-cid",
     start: "start",
+    progress: "ipfs-upload-progress",
+    progressFill: "ipfs-upload-progress-fill",
+    progressLabel: "ipfs-upload-progress-label",
   },
 };
 
