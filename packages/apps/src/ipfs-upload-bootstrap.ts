@@ -274,6 +274,16 @@ export function runIPFSUploadEntry(opts: IPFSUploadEntryOptions) {
     get state(): IPFSUploadState {
       return currentIPFSUploadState(service);
     },
+    /**
+     * Drive the determinate upload bar from live byte counts. The default real
+     * uploader already wires this in (makeUppyUploadXhr onProgress), but a
+     * caller-supplied uploadXhr takes over entirely and owns its own
+     * byte-progress source, so exposing setUpload lets that caller (and tests)
+     * drive the same bar without reaching into the ProgressController directly.
+     * No-ops when the shell did not render a progress bar.
+     */
+    setUpload: (bytesUploaded: number, bytesTotal: number) =>
+      progress?.setUpload(bytesUploaded, bytesTotal),
     service,
   };
 }
