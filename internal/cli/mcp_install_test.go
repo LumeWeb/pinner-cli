@@ -1701,6 +1701,60 @@ func TestMcpInstallHTTPPasswordRestartFailureRollsBack(t *testing.T) {
 	}
 }
 
+// TestMcpInstallHTTPPasswordRestoreFailureSurfaced guards that a failed
+// restore-write during rollback is surfaced (not swallowed): if the service
+// restart fails AND the env-file rollback write also fails, the wizard must
+// report the restore failure so the on-disk/state disagreement is not masked.
+func TestMcpInstallHTTPPasswordRestoreFailureSurfaced(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	projectDir := t.TempDir()
+
+	envFile := filepath.Join(t.TempDir(), "mcp.env")
+	if err := os.WriteFile(envFile, []byte("MCP_AUTH_TOKEN=inherited-token\n"), 0o600); err != nil {
+		t.Fatalf("write env file: %v", err)
+	}
+
+	ui := newMockInstallUI()
+	state := &InstallState{
+		Agents:     []install.AgentKey{install.AgentClaudeCode},
+		Scope:      scopeGlobal,
+		Transport:  install.TransportHTTP,
+		UseService: true,
+		Service: &mcpadapter.ServiceInstallState{
+			EnvFile:    envFile,
+			AuthToken:  "inherited-token",
+			PublicURL:  "https://mcp.example.com",
+			Provider:   tunnel.TunnelProviderNgrok,
+			TunnelName: "pinner-mcp",
+		},
+	}
+
+	w := NewInstallWizard(ui, state, tempPathResolver(root, projectDir))
+	w.collectHTTP = fakeHTTPCollector("https://mcp.example.com", "inherited-token")
+	ui.SetMCPPasswordResult = "operator-chosen-password"
+	// The restart fails AND renders the env file's directory read-only so the
+	// follow-up restore write fails too — both errors must be reported, not
+	// masked. (WriteEnvironment writes atomically via temp+rename, so chmodding
+	// the file itself would not block it; the directory must be unwritable.)
+	envDir := filepath.Dir(envFile)
+	t.Cleanup(func() { _ = os.Chmod(envDir, 0o700) }) // let TempDir cleanup remove it
+	w.restartHTTPService = func(_ context.Context, _ *InstallState) error {
+		if err := os.Chmod(envDir, 0o500); err != nil {
+			t.Fatalf("chmod env dir: %v", err)
+		}
+		return fmt.Errorf("systemctl restart failed")
+	}
+
+	_, err := w.Run(ctx)
+	if err == nil {
+		t.Fatalf("expected an error when the service restart fails, got nil")
+	}
+	if !strings.Contains(err.Error(), "restore MCP password") {
+		t.Errorf("error must surface the restore-write failure, got: %v", err)
+	}
+}
+
 // TestMcpInstallHTTPNonInteractiveSkipsPassword guards that a non-interactive
 // http install does NOT prompt for the password (it is sourced from flags/env)
 // and does not error at the prompt. The sourced token is used as-is.

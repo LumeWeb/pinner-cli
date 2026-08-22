@@ -467,9 +467,15 @@ func (w *InstallWizard) persistAuthToken(ctx context.Context, s *InstallState, p
 			} else {
 				delete(env, "MCP_AUTH_TOKEN")
 			}
-			_ = service.WriteEnvironment(s.Service.EnvFile, env)
 			s.AuthToken = prev
 			s.Service.AuthToken = prev
+			// Surface a failed restore write too: if the rollback cannot be
+			// persisted, disk still holds the uncommitted new password while
+			// state/endpoint use the old one — that disagreement must not be
+			// silently masked.
+			if werr := service.WriteEnvironment(s.Service.EnvFile, env); werr != nil {
+				return fmt.Errorf("restore MCP password after failed restart: %v (restart: %w)", werr, rerr)
+			}
 			return fmt.Errorf("restart MCP service to load the new MCP password: %w", rerr)
 		}
 	}
