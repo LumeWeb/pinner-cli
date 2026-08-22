@@ -350,6 +350,89 @@ func TestIPFSUploadCORS(t *testing.T) {
 	_ = cu
 }
 
+// TestIPFSUploadCORSOpaqueNull is the regression test for the CORS issue: an
+// MCP host renders the upload app inside a sandboxed double-iframe whose
+// Origin (the opaque origin, serialized as the literal string "null") is
+// neither the server's own origin nor a configured trusted origin, yet the
+// app's Uppy XHR uploader MUST be able to PUT the presigned /upload/<token>
+// endpoint or the browser blocks it with "No 'Access-Control-Allow-Origin'
+// header". The token-gated route must reflect the opaque origin while still
+// refusing an arbitrary attacker origin.
+func TestIPFSUploadCORSOpaqueNull(t *testing.T) {
+	srv, cu := buildIPFSUploadAppServer(t)
+	t.Cleanup(func() { cu.Stop(context.Background()) })
+	cs := connectOfficialClient(t, srv)
+
+	mintRes, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "ipfs_upload_submit",
+		Arguments: map[string]any{"name": "pic.png"},
+	})
+	if err != nil {
+		t.Fatalf("mint: %v", err)
+	}
+	b, _ := json.Marshal(mintRes.StructuredContent)
+	var mintSC map[string]any
+	_ = json.Unmarshal(b, &mintSC)
+	url, _ := mintSC["url"].(string)
+
+	const opaque = "null"
+
+	// Preflight from the opaque sandbox origin: reflected + allowed PUT.
+	pre, err := http.NewRequest(http.MethodOptions, url, nil)
+	if err != nil {
+		t.Fatalf("preflight req: %v", err)
+	}
+	pre.Header.Set("Origin", opaque)
+	pre.Header.Set("Access-Control-Request-Method", "PUT")
+	preResp, err := http.DefaultClient.Do(pre)
+	if err != nil {
+		t.Fatalf("preflight: %v", err)
+	}
+	preResp.Body.Close()
+	if aoc := preResp.Header.Get("Access-Control-Allow-Origin"); aoc != opaque {
+		t.Fatalf("opaque-origin preflight Allow-Origin = %q, want %q", aoc, opaque)
+	}
+	if cc := preResp.Header.Get("Access-Control-Allow-Credentials"); cc == "true" {
+		t.Fatalf("opaque-origin upload must not send credentials")
+	}
+
+	// The actual PUT from the opaque origin must succeed (202) and land in the
+	// async upload manager.
+	put, err := http.NewRequest(http.MethodPut, url, strings.NewReader("opaque body"))
+	if err != nil {
+		t.Fatalf("PUT req: %v", err)
+	}
+	put.Header.Set("Origin", opaque)
+	putResp, err := http.DefaultClient.Do(put)
+	if err != nil {
+		t.Fatalf("PUT: %v", err)
+	}
+	defer putResp.Body.Close()
+	if putResp.StatusCode != http.StatusAccepted {
+		t.Fatalf("PUT status = %d, want 202", putResp.StatusCode)
+	}
+	if aoc := putResp.Header.Get("Access-Control-Allow-Origin"); aoc != opaque {
+		t.Fatalf("PUT Allow-Origin = %q, want %q", aoc, opaque)
+	}
+
+	// An arbitrary attacker origin is STILL refused despite the opaque-origin
+	// grant (the token-gated route must not become open to any page).
+	evil, err := http.NewRequest(http.MethodOptions, url, nil)
+	if err != nil {
+		t.Fatalf("evil preflight req: %v", err)
+	}
+	evil.Header.Set("Origin", "https://evil.example.com")
+	evil.Header.Set("Access-Control-Request-Method", "PUT")
+	evilResp, err := http.DefaultClient.Do(evil)
+	if err != nil {
+		t.Fatalf("evil preflight: %v", err)
+	}
+	evilResp.Body.Close()
+	if aoc := evilResp.Header.Get("Access-Control-Allow-Origin"); aoc != "" {
+		t.Fatalf("arbitrary origin allowed: Allow-Origin = %q, want empty", aoc)
+	}
+}
+
 // taskStateOf extracts the task's json "state" field from an SDK poll result.
 func taskStateOf(res *mcp.CallToolResult) (transfer.UploadTaskState, bool) {
 	b, err := json.Marshal(res.StructuredContent)

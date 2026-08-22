@@ -136,7 +136,7 @@ func (cu *Upload) Stop(ctx context.Context) {
 func corsUpload(allowed func() []string, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
-		if origin != "" && originsContains(allowed(), origin) {
+		if origin != "" && shouldReflectOrigin(allowed(), origin) {
 			h := w.Header()
 			h.Set("Access-Control-Allow-Origin", origin)
 			h.Set("Vary", "Origin")
@@ -155,6 +155,28 @@ func corsUpload(allowed func() []string, next http.HandlerFunc) http.HandlerFunc
 		}
 		next(w, r)
 	}
+}
+
+// opaqueOrigin is the serialized Origin a browser sends for an opaque origin.
+// An MCP host renders a ui:// app inside a sandboxed double-iframe whose Origin
+// (without allow-same-origin) serializes to the literal string "null", so the
+// host-rendered upload app performs its presigned PUT from that opaque origin.
+// These transfer routes are token-gated (unguessable single-use expiring token,
+// credentials never sent), so reflecting the *literal* opaque origin is safe:
+// an arbitrary attacker origin is still refused. See corsUpload/corsDownload.
+const opaqueOrigin = "null"
+
+// shouldReflectOrigin reports whether corsUpload/corsDownload may echo the
+// inbound Origin header back as Access-Control-Allow-Origin. It allows (a) the
+// coordinator's own server/loopback origin plus configured trusted origins, and
+// (b) the literal serialized opaque origin "null" so a sandboxed host-rendered
+// app iframe (whose Origin is always the opaque "null") can issue the
+// cross-origin PUT/GET. Every other origin is refused.
+func shouldReflectOrigin(allowed []string, origin string) bool {
+	if origin == opaqueOrigin {
+		return true
+	}
+	return originsContains(allowed, origin)
 }
 
 // originsContains reports whether origin appears in the allowlist. It compares
