@@ -242,3 +242,38 @@ test('cross-origin presigned upload PUT is allowed from the opaque "null" sandbo
   // the whole page from an opaque "null" origin, so there is no way to originate
   // a genuinely non-null, non-trusted request from this environment.
 });
+
+/**
+ * The CSP diagnostic probe (injected by RenderMcpAppDoc as a classic script
+ * before the app module) installs a `securitypolicyviolation` listener that
+ * surfaces `window.__CSP_PROBE__` with the host's `originalPolicy` and every
+ * blocked request. This test verifies the probe is present inside the sandbox
+ * iframe — the only way to inspect the effective CSP the host applied and
+ * confirm whether `_meta.ui.csp.connectDomains` reached the sandbox
+ * `connect-src`.
+ */
+test('CSP probe is installed inside the sandbox iframe', async ({ inspector }) => {
+  const result = await inspector.renderTool('upload_file', {});
+  const app = result.app();
+
+  // The probe installs window.__CSP_PROBE__ as a wrapper object with
+  // violations array and originalPolicy string (null until a violation fires).
+  // Its mere presence proves the probe script executed before the module.
+  const probe = await app
+    .locator('body')
+    .evaluate((el) => {
+      const win = el.ownerDocument?.defaultView as (Window & Record<string, unknown>) | null;
+      const p = win?.['__CSP_PROBE__'] as { violations?: unknown[]; originalPolicy?: string } | undefined;
+      return {
+        exists: !!p,
+        hasViolations: Array.isArray(p?.violations),
+        originalPolicy: p?.originalPolicy ?? null,
+      };
+    });
+
+  expect(probe.exists).toBe(true);
+  expect(probe.hasViolations).toBe(true);
+  // originalPolicy may be null if no violation has fired yet — that's fine.
+  // The log line proves it is installed:
+  //   "[CSP PROBE] installed on <location>"
+});

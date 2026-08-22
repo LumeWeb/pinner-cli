@@ -173,6 +173,29 @@ func TestAppModuleJSRendersIntoDoc(t *testing.T) {
 	}
 }
 
+// TestCSPProbeInjected verifies the CSP diagnostic probe is present in the
+// rendered document: it installs the securitypolicyviolation listener that
+// surfaces window.__CSP_PROBE__ with the host's originalPolicy and every
+// blocked request — the only way to verify connectDomains reached the sandbox
+// iframe's connect-src from inside the sandbox.
+func TestCSPProbeInjected(t *testing.T) {
+	body := PinCreateAppForm()
+	doc := RenderMcpAppDoc("Create a Pin", body, AppModuleJS("pin"))
+	if !strings.Contains(doc, "__CSP_PROBE__") {
+		t.Fatal("rendered doc missing CSP probe (window.__CSP_PROBE__)")
+	}
+	if !strings.Contains(doc, "securitypolicyviolation") {
+		t.Fatal("rendered doc missing securitypolicyviolation event listener")
+	}
+	// The probe must run as a classic script BEFORE the module (instantiation
+	// interferes with early-violation capture).
+	probeIdx := strings.Index(doc, "__CSP_PROBE__")
+	moduleIdx := strings.Index(doc, "<script type=\"module\">")
+	if probeIdx < 0 || moduleIdx < 0 || probeIdx > moduleIdx {
+		t.Fatalf("CSP probe must appear before the module script (probe@%d, module@%d)", probeIdx, moduleIdx)
+	}
+}
+
 // TestAppModuleInjectsVersionGlobal proves AppModule (the wrapper the render
 // functions actually use) prefixes the embedded bundle with the CLI version
 // global, so apps inherit the binary version instead of a hardcoded per-app
