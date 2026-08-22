@@ -145,7 +145,10 @@ func NewCapabilitiesDescriptor(coLocated, tunnelOpenAI, uploadFile, vaultPutFile
 		InputSchema: toolargs.ToolSchemaFor[wizard.NoInput](),
 		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
 			report := CurrentCapabilities(coLocated, tunnelOpenAI, uploadFile, vaultPutFile, downloadFile, vaultGetFile, dropWired, draftXFile, maxBytes)
-			return model.ToolResult{StructuredContent: report, Text: "Pinner capabilities."}, nil
+			// Text carries the same canonical JSON as StructuredContent so a
+			// text-only MCP client still sees the source/sink mode data instead
+			// of an unhelpful stub ("Pinner capabilities.").
+			return model.ToolResult{StructuredContent: report, Text: toolargs.ResultJSONText(report)}, nil
 		},
 	}
 }

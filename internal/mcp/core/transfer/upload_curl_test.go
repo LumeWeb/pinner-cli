@@ -186,6 +186,13 @@ func TestCurlUploadToolDescriptor(t *testing.T) {
 	require.Contains(t, curlCmd, "curl")
 	require.Contains(t, curlCmd, url)
 
+	// The text-only channel must carry the same actionable data (url + curl
+	// command) as StructuredContent, so a plain-text MCP client that renders no
+	// widget still receives what it needs to complete the upload.
+	require.Contains(t, res.Text, url)
+	require.Contains(t, res.Text, "curl")
+	require.Contains(t, res.Text, "upload_status")
+
 	// Invalid TTL is rejected.
 	_, err = desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{"source": map[string]any{"mode": "mint"}, "ttl": "not-a-duration"}})
 	require.Error(t, err)

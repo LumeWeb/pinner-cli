@@ -85,15 +85,18 @@ func ipfsUploadSubmitDescriptor(hp *transfer.Upload) model.ToolDescriptor {
 			if url == "" {
 				return model.ToolResult{}, fmt.Errorf("failed to mint one-time upload endpoint")
 			}
+			sc := map[string]any{
+				"url":           url,
+				"ttl":           ttl.String(),
+				"max_bytes":     hp.MaxBytes(),
+				"poll_tool":     "ipfs_upload_status",
+				"response_body": "the 202 body carries an upload_handle the app passes to poll_tool",
+			}
 			return model.ToolResult{
-				StructuredContent: map[string]any{
-					"url":           url,
-					"ttl":           ttl.String(),
-					"max_bytes":     hp.MaxBytes(),
-					"poll_tool":     "ipfs_upload_status",
-					"response_body": "the 202 body carries an upload_handle the app passes to poll_tool",
-				},
-				Text: "One-time upload endpoint minted. PUT the file bytes and poll for the CID.",
+				StructuredContent: sc,
+				// Text carries the same JSON so a text-only client sees the
+				// actual presigned URL plus poll instructions, not a stub.
+				Text: toolargs.ResultJSONText(sc) + " PUT the file bytes and poll for the CID.",
 			}, nil
 		},
 	}
@@ -122,7 +125,7 @@ func ipfsUploadStatusDescriptor(hp *transfer.Upload) model.ToolDescriptor {
 			if err != nil {
 				return model.ToolResult{}, err
 			}
-			return model.ToolResult{StructuredContent: task, Text: "Upload status."}, nil
+			return model.ToolResult{StructuredContent: task, Text: toolargs.ResultJSONText(task)}, nil
 		},
 	}
 }

@@ -68,7 +68,7 @@ func NewAsyncUploadTools(mgr *transfer.UploadTaskManager) []model.ToolDescriptor
 					// unsafe.
 					return model.ToolResult{}, err
 				}
-				return model.ToolResult{StructuredContent: map[string]any{"handle": id}, Text: "Async upload started."}, nil
+				return model.ToolResult{StructuredContent: map[string]any{"handle": id}, Text: toolargs.ResultJSONText(map[string]any{"handle": id})}, nil
 			},
 		},
 		{
@@ -89,7 +89,7 @@ func NewAsyncUploadTools(mgr *transfer.UploadTaskManager) []model.ToolDescriptor
 				if err != nil {
 					return model.ToolResult{}, err
 				}
-				return model.ToolResult{StructuredContent: task, Text: "Upload status."}, nil
+				return model.ToolResult{StructuredContent: task, Text: toolargs.ResultJSONText(task)}, nil
 			},
 		},
 		{
@@ -109,7 +109,7 @@ func NewAsyncUploadTools(mgr *transfer.UploadTaskManager) []model.ToolDescriptor
 				if err := mgr.Cancel(in.Handle); err != nil {
 					return model.ToolResult{}, err
 				}
-				return model.ToolResult{StructuredContent: map[string]any{"handle": in.Handle, "cancelled": true}, Text: "Upload cancelled."}, nil
+				return model.ToolResult{StructuredContent: map[string]any{"handle": in.Handle, "cancelled": true}, Text: toolargs.ResultJSONText(map[string]any{"handle": in.Handle, "cancelled": true})}, nil
 			},
 		},
 		{
@@ -120,7 +120,10 @@ func NewAsyncUploadTools(mgr *transfer.UploadTaskManager) []model.ToolDescriptor
 			InputSchema: toolargs.ToolSchemaFor[wizard.NoInput](),
 			Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
 				tasks := mgr.List()
-				return model.ToolResult{StructuredContent: map[string]any{"uploads": tasks}, Text: "Uploads."}, nil
+				// Text carries the same JSON as StructuredContent so a text-only
+				// client sees the tracked handles/status instead of a stub.
+				sc := map[string]any{"uploads": tasks}
+				return model.ToolResult{StructuredContent: sc, Text: toolargs.ResultJSONText(sc)}, nil
 			},
 		},
 	}
