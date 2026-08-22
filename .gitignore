@@ -42,6 +42,13 @@ pkg/account/client/
 pinner
 completions/
 .sisyphus/
+# The Sunpeak MCP e2e fixture HOME contains a pinner config.yaml; re-include
+# that config dir so the suite's sealed config (pointing at cmd/mcp-test-server)
+# ships with the repo. The bare `pinner` rule above would otherwise swallow
+# this path as an ignored directory.
+!tests/sunpeak/fixtures/pinner-home/.config/pinner/
+# fake API boot log emitted by the globalSetup harness
+tests/sunpeak/.mcp-e2e-fake.log
 
 # Git worktrees
 .worktrees/

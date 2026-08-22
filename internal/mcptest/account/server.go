@@ -147,4 +147,29 @@ func (s *Server) PostApiAccountKeys(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// Seed registers a deterministic account (if not already present) and returns
+// its bearer token. It lets an e2e harness pre-provision a valid session so
+// pinner boots with a ready-made auth_token against the fake API.
+func (s *Server) Seed(email, firstName, lastName string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	acc, exists := s.accounts[email]
+	if !exists {
+		acc = &AccountInfoResponse{
+			Id:        s.nextID,
+			Email:     email,
+			FirstName: firstName,
+			LastName:  lastName,
+			Otp:       false,
+			Verified:  true,
+			CreatedAt: timePtr(time.Now()),
+		}
+		s.nextID++
+		s.accounts[acc.Email] = acc
+	}
+	tok := "token-" + acc.Email
+	s.Tokens[tok] = acc
+	return tok
+}
+
 func timePtr(t time.Time) *time.Time { return &t }

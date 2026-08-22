@@ -11,6 +11,7 @@
   "scripts": {
     "test": "sunpeak test",
     "test:http-bearer": "playwright test -c playwright.http.config.ts",
-    "test:oauth": "playwright test -c playwright.oauth.config.ts"
+    "test:oauth": "playwright test -c playwright.oauth.config.ts",
+    "test:mcp-e2e": "playwright test -c playwright.mcp-e2e.config.ts"
   }
 }
