@@ -166,7 +166,7 @@ test('pins_update renames a pin by cid (round-trip)', async ({ mcp }) => {
 });
 
 test('pins_update with an unknown cid returns a not-found error', async ({ mcp }) => {
-  const unknownCid = 'b' + base32([0x01, 0x70, 0x00, 0x01, randByte()]);
+  const unknownCid = 'b' + base32([0x01, 0x70, 0x00, 0x08, ...randBytes()]);
   const result = await invoke(mcp, 'pins_update', { cid: unknownCid, name: 'nope' });
 
   // The unknown pin must not silently update a wrong pin: the cid filter
