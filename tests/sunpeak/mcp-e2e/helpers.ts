@@ -25,14 +25,25 @@ export function textOf(result: CallToolResult): string {
 }
 
 /**
- * Return true when result is not an error AND contains none of the
- * auth/network failure markers.
+ * Return true when result is a clean success: not flagged as an error and
+ * carrying none of the auth/network failure markers.
+ *
+ * The marker scan is CONTEXT-AWARE rather than naive substring matching: a
+ * bare `401` or `authenticat` legitimately appears INSIDE successful payloads
+ * (a nanosecond timestamp like `.024015512Z`, or the word `authenticated:
+ * true`), so naive substring tests false-positive and flake (this is what
+ * broke websites/ipns/pins lists in CI when returned data happened to contain
+ * a `401` digit run). Only unambiguous failure shapes count: a word-bounded
+ * `401` status code, `unauthor(ized)`, `connection refused`,
+ * `authentication failed/required/...`, or `not authenticated`.
  */
 export function isCleanSuccess(result: CallToolResult): boolean {
   if (result.isError === true) {
     return false;
   }
-  return !/authenticat|401|unauthor|connection refused/i.test(textOf(result));
+  return !/\b401\b|unauthor(?:ized|ised|ization)?|connection\s+refused|authentication\s+(?:failed|required|error|invalid|missing|problem)|not\s+authenticated/i.test(
+    textOf(result),
+  );
 }
 
 /** Call describe_tool for a domain tool, returning its CallToolResult. */
