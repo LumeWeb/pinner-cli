@@ -88,6 +88,11 @@ test('auth_login returns a logged_in contract', async ({ mcp }) => {
   expect(result).not.toBeError();
   expect(result).toHaveStructuredContent({ status: 'ok' });
   expect(result).toHaveStructuredContent({ value: { status: 'logged_in' } });
+
+  // auth_login PERSISTS the synthetic JWT to the SHARED config.yaml. Restore
+  // the pristine config immediately (not just in afterAll) so no sibling file
+  // or host project ever reads the bogus JWT and fails to authenticate.
+  writeFileSync(CONFIG_PATH, ORIGINAL_CONFIG);
 });
 
 test('auth_logout clears the local credential (logged_out state)', async ({ mcp }) => {
