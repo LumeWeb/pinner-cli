@@ -95,6 +95,45 @@ func RegisterAppTool(srv *Server, desc model.ToolDescriptor, meta model.AppToolM
 	return getToolRegistrar()(srv, desc, desc.Handler)
 }
 
+// appResourceReg is the retained state of a registered ui:// app resource so
+// the SDK can re-register it later (e.g. to bake a live connectDomains into the
+// resources/list entry once the transport has resolved its origin).
+type appResourceReg struct {
+	// meta is the original AppResourceMeta captured at registration (before any
+	// runtime connectDomains overwrite). Re-registration rebuilds from it so the
+	// static fields (domain/prefersBorder) are never lost.
+	meta model.AppResourceMeta
+	// handler serves resources/read for this resource and is kept verbatim across
+	// re-registration so the read-level semantics stay identical.
+	handler mcp.ResourceHandler
+	// resource preserves the registration-time fields (URI/name/title/etc.) so a
+	// re-registration can rebuild the resource without carrying stale meta.
+	resource *mcp.Resource
+}
+
+// appResourceRegs tracks registered app resources keyed by server and then by
+// resource URI so SetAppResourceConnectDomains can re-register one with an
+// updated listing-level CSP without colliding across distinct server instances:
+// RegisterAppResource/SetAppResourceConnectDomains are per-server APIs, so two
+// servers in one process (e.g. tests, or multiple streamable listeners) may
+// register the same app URI without the second overwriting the first's retained
+// meta/handler. Guarded by appResourceRegsMu.
+var (
+	appResourceRegsMu sync.Mutex
+	appResourceRegs   = map[*mcp.Server]map[string]appResourceReg{}
+)
+
+// serverAppResources returns the per-server registry map for srv, creating it if
+// absent. The caller must hold appResourceRegsMu.
+func serverAppResources(srv *mcp.Server) map[string]appResourceReg {
+	m := appResourceRegs[srv]
+	if m == nil {
+		m = map[string]appResourceReg{}
+		appResourceRegs[srv] = m
+	}
+	return m
+}
+
 // RegisterAppResource registers a ui:// app resource that serves the given
 // HTML document. The MIME type defaults to MCPAppsMIMEType. The resource's
 // AppResourceMeta (CSP/domain/prefersBorder) is attached to the resource list
@@ -112,17 +151,12 @@ func RegisterAppResource(srv *Server, res AppResource) error {
 	// what a host uses to render the app — resolves the dynamic
 	// ConnectDomainsFunc so the advertised connect-src reflects the current
 	// base/tunnel or loopback origin even though it was resolved after
-	// registration.
-	listMeta := appResourceUIMeta(res.Meta)
-
-	srv.AddResource(&mcp.Resource{
-		URI:         res.URI,
-		Name:        res.Name,
-		Title:       res.Title,
-		Description: res.Description,
-		MIMEType:    MCPAppsMIMEType,
-		Meta:        listMeta,
-	}, func(ctx context.Context, _ *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+	// registration. A dynamic connectDomains is baked into the LIST entry later,
+	// once the origin is known, via SetAppResourceConnectDomains — hosts read
+	// the list at connection time (see ext-apps: the list entry is the static
+	// default hosts review at connection time), so an empty list CSP means the
+	// host derives connect-src 'self' and blocks the upload.
+	handler := func(ctx context.Context, _ *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
 		// Resolve the read-level meta on every read so a dynamic
 		// ConnectDomainsFunc reflects the LIVE origin (the tunnel/base URL or
 		// loopback address can change after registration as the transport
@@ -145,7 +179,87 @@ func RegisterAppResource(srv *Server, res AppResource) error {
 			// resources/list entry.
 			Meta: cloneMeta(appResourceUIMeta(readMeta)),
 		}, nil
-	})
+	}
+	resource := &mcp.Resource{
+		URI:         res.URI,
+		Name:        res.Name,
+		Title:       res.Title,
+		Description: res.Description,
+		MIMEType:    MCPAppsMIMEType,
+		Meta:        appResourceUIMeta(res.Meta),
+	}
+	appResourceRegsMu.Lock()
+	serverAppResources(srv)[res.URI] = appResourceReg{meta: res.Meta, handler: handler, resource: resource}
+	appResourceRegsMu.Unlock()
+	srv.AddResource(resource, handler)
+	return nil
+}
+
+// SetAppResourceConnectDomains bakes a live CSP connectDomains into the
+// resources/list entry of a registered app resource. It must be called once the
+// transport has resolved its base/tunnel (or loopback) origin — always after
+// registration — so a host that reads the list at connection time (e.g. Claude
+// deriving its sandbox connect-src) sees the origin the app's Uppy XHR uploader
+// PUTs to. The resource is re-registered under its URI (go-sdk replaces by
+// URI) with the same read handler, so read-level behavior is unchanged. It is
+// safe to call more than once (e.g. first with the loopback/base origin, then
+// again with the provider-approved tunnel origin); the last write wins.
+func SetAppResourceConnectDomains(srv *Server, uri string, origins []string) error {
+	if srv == nil {
+		return fmt.Errorf("nil official server")
+	}
+	appResourceRegsMu.Lock()
+	reg, ok := serverAppResources(srv)[uri]
+	if !ok {
+		appResourceRegsMu.Unlock()
+		return fmt.Errorf("sdk: no registered app resource %q", uri)
+	}
+	// Rebuild the listing-level meta with the resolved connectDomains while
+	// preserving the registration-time CSP siblings (resourceDomains etc.) and
+	// the non-CSP meta (domain, prefersBorder).
+	meta := reg.meta
+	csp := cloneAppResourceCSP(meta.CSP)
+	csp.ConnectDomains = append([]string(nil), origins...)
+	meta.CSP = csp
+	resource := &mcp.Resource{
+		URI:         reg.resource.URI,
+		Name:        reg.resource.Name,
+		Title:       reg.resource.Title,
+		Description: reg.resource.Description,
+		MIMEType:    reg.resource.MIMEType,
+		Meta:        appResourceUIMeta(meta),
+	}
+	serverAppResources(srv)[uri] = appResourceReg{meta: meta, handler: reg.handler, resource: resource}
+	appResourceRegsMu.Unlock()
+	srv.AddResource(resource, reg.handler)
+	return nil
+}
+
+// UnregisterAppResource releases a registered app resource for srv: it removes
+// the live resource from the server (go-sdk RemoveResources drops it from
+// resources/list and read) and discards the SDK's retained registration state so
+// the handler closure and captured app HTML can be garbage-collected. Call this
+// when a server is being discarded to keep the per-server registry from growing
+// without bound in long-running or multi-server processes. Removing a URI that
+// was never registered is a no-op.
+func UnregisterAppResource(srv *Server, uri string) error {
+	if srv == nil {
+		return fmt.Errorf("nil official server")
+	}
+	appResourceRegsMu.Lock()
+	m, ok := appResourceRegs[srv]
+	if !ok {
+		appResourceRegsMu.Unlock()
+		return nil
+	}
+	if _, ok := m[uri]; ok {
+		delete(m, uri)
+		if len(m) == 0 {
+			delete(appResourceRegs, srv)
+		}
+	}
+	appResourceRegsMu.Unlock()
+	srv.RemoveResources(uri)
 	return nil
 }
 
