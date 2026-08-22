@@ -122,3 +122,100 @@ test('upload_file app renders the styled file picker and reflects the picked nam
 test('vault_put_file app renders the styled file picker and reflects the picked name', async ({ inspector }) => {
   await assertStyledFilePicker('vault_put_file', 'vfile', 'vfile-name', inspector);
 });
+
+/**
+ * BROWSER regression test for the presigned-upload CORS bug.
+ *
+ * An MCP host renders the "Upload to IPFS" app inside a sandboxed iframe whose
+ * origin — without `allow-same-origin` — is the OPAQUE origin, which a browser
+ * serializes to the literal string `"null"` in the Origin header. The app's
+ * Uppy XHR uploader PUTs the raw file bytes to the minted presigned
+ * `/upload/<token>` endpoint from that `"null"` origin, so the server MUST
+ * reflect `Access-Control-Allow-Origin` for it or the browser blocks the upload
+ * with "No 'Access-Control-Allow-Origin' header" (the exact error we hit).
+ *
+ * This test reproduces that real-browser condition exactly:
+ *   1. Mint a real one-time presigned endpoint through the `ipfs_upload_submit`
+ *      helper (the same one the app calls).
+ *   2. Issue a cross-origin PUT to it from a browser iframe sandboxed WITHOUT
+ *      `allow-same-origin` — so it genuinely has an opaque `"null"` origin,
+ *      mirroring the host-rendered app frame.
+ *   3. Assert the fetch resolves (CORS granted) with 202.
+ *      Arbitrary-origin refusal is asserted at the HTTP layer in Go
+ *      (TestCORSOriginOpaqueNull / TestIPFSUploadCORSOpaqueNull), because the
+ *      sunpeak inspector serves the whole page from an opaque "null" origin —
+ *      there is no way to originate a non-null attacker request here.
+ */
+
+type McpFixture = { callTool: (name: string, input?: Record<string, unknown>) => Promise<any> };
+
+// presignedUrlOf extracts the minted presigned PUT url from an
+// ipfs_upload_submit result (present in structuredContent or a JSON text block).
+function presignedUrlOf(result: any): string {
+  const url =
+    result?.structuredContent?.url ??
+    result?.content
+      ?.flatMap((c: any) => (c?.text ? [c.text] : []))
+      .join('')
+      .match(/"url"\s*:\s*"([^"]+)"/)?.[1];
+  if (!url) throw new Error('mint result had no presigned url: ' + JSON.stringify(result));
+  return url;
+}
+
+test('cross-origin presigned upload PUT is allowed from the opaque "null" sandbox origin', async ({
+  mcp,
+  page,
+}: {
+  mcp: McpFixture;
+  page: import('@playwright/test').Page;
+}) => {
+  const mint = await mcp.callTool('ipfs_upload_submit', { name: 'cors-opaque.bin' });
+  const url = presignedUrlOf(mint);
+
+  // Positive: an opaque-origin iframe (sandbox without allow-same-origin) can
+  // cross-origin PUT the minted endpoint. If the CORS fix regresses, this
+  // fetch rejects with a TypeError and the test fails.
+  const positive = await page.evaluate(async (presignedUrl) => {
+    return await new Promise<{ __t: string; ok: boolean; status?: number; error?: string }>((resolve) => {
+      const iframe = document.createElement('iframe');
+      iframe.style.display = 'none';
+      // No allow-same-origin => the frame's origin is opaque (serialized "null").
+      iframe.setAttribute('sandbox', 'allow-scripts');
+      const html =
+        '<!DOCTYPE html><script>(async () => {' +
+        '  try {' +
+        `    const res = await fetch(${JSON.stringify(presignedUrl)}, {` +
+        "      method: 'PUT', mode: 'cors'," +
+        "      headers: { 'Content-Type': 'application/octet-stream' }," +
+        "      body: new Blob(['opaque-origin-bytes'])," +
+        '    });' +
+        "    parent.postMessage({ __t: 'cors', ok: res.ok, status: res.status }, '*');" +
+        '  } catch (e) {' +
+        "    parent.postMessage({ __t: 'cors', ok: false, error: String((e && e.message) || e) }, '*');" +
+        '  }' +
+        '})();</scr' + 'ipt>';
+      iframe.srcdoc = html;
+      const onMsg = (e: MessageEvent) => {
+        if (e.data && e.data.__t === 'cors') done(e.data);
+      };
+      let timer: ReturnType<typeof setTimeout>;
+      const done = (msg: { __t: string; ok: boolean; status?: number; error?: string }) => {
+        window.removeEventListener('message', onMsg);
+        clearTimeout(timer);
+        resolve(msg);
+      };
+      window.addEventListener('message', onMsg);
+      timer = setTimeout(() => done({ __t: 'cors', ok: false, error: 'timeout' }), 15000);
+      document.body.appendChild(iframe);
+    });
+  }, url);
+
+  expect(positive.ok, `opaque-origin PUT failed: ${positive.error ?? `status ${positive.status}`}`).toBe(true);
+  expect(positive.status).toBe(202);
+
+  // Arbitrary-origin refusal is asserted precisely at the HTTP layer in the Go
+  // tests (TestCORSOriginOpaqueNull / TestIPFSUploadCORSOpaqueNull refuse an
+  // `https://evil.example.com` origin), not here: the sunpeak inspector serves
+  // the whole page from an opaque "null" origin, so there is no way to originate
+  // a genuinely non-null, non-trusted request from this environment.
+});

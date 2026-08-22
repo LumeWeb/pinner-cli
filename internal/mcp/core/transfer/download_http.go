@@ -272,7 +272,7 @@ func (hd *Download) SetNow(f func() time.Time) {
 func corsDownload(allowed func() []string, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
-		if origin != "" && originsContains(allowed(), origin) {
+		if origin != "" && shouldReflectOrigin(allowed(), origin) {
 			h := w.Header()
 			h.Set("Access-Control-Allow-Origin", origin)
 			h.Set("Vary", "Origin")
