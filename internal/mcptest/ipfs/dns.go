@@ -124,7 +124,13 @@ func (s *Server) GetApiDnsZonesId(w http.ResponseWriter, r *http.Request, id str
 		writeNotFound(w)
 		return
 	}
-	writeJSON(w, http.StatusOK, z)
+	// zoneByID releases the lock on return, but it hands back a pointer aliased
+	// by concurrent handlers (a PUT can mutate it). Serialize a copy taken under
+	// the lock so the handler never reads the zone mid-write.
+	s.mu.Lock()
+	cp := *z
+	s.mu.Unlock()
+	writeJSON(w, http.StatusOK, &cp)
 }
 
 // DeleteApiDnsZonesId deletes a DNS zone and its records
@@ -169,14 +175,17 @@ func (s *Server) PutApiDnsZonesId(w http.ResponseWriter, r *http.Request, id str
 	}
 	// Re-acquire the lock around the mutation: zoneByID returns a pointer that
 	// is aliased by every handler (GET/DELETE/PUT), so mutating it here without
-	// the lock would race concurrent readers/writers on the same zone.
+	// the lock would race concurrent readers/writers on the same zone. Copy the
+	// zone under the lock and serialize the copy AFTER unlocking, so serialization
+	// never reads a zone a concurrent handler could mutate mid-write.
 	s.mu.Lock()
 	if body.Domain != "" {
 		z.Domain = body.Domain
 	}
 	z.UpdatedAt = time.Now().UTC()
+	cp := *z
 	s.mu.Unlock()
-	writeJSON(w, http.StatusOK, z)
+	writeJSON(w, http.StatusOK, &cp)
 }
 
 // PostApiDnsZonesIdValidate validates a DNS zone's nameserver delegation
