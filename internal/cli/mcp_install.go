@@ -317,6 +317,18 @@ func RunMcpInstallWizard(ctx context.Context, cmd mcpInstallFlagGetter, ui Insta
 		// installs. The collector still resolves the public URL afterwards via
 		// the Resolve public URL step.
 		w.tunnelSteps = buildMcpTunnelSteps(realCmd)
+
+		// Restart the managed service after the operator replaces the MCP
+		// password so the running endpoint reloads the new MCP_AUTH_TOKEN from
+		// its env file. Only fires when this install is actually backed by a
+		// managed service (effectiveManagedService); an explicit --service=false
+		// (operator runs their own foreground server) skips it.
+		w.restartHTTPService = func(ctx context.Context, s *InstallState) error {
+			if s == nil || s.Service == nil || !effectiveManagedService(realCmd.IsSet("service"), s.UseService) {
+				return nil
+			}
+			return mcpadapter.RestartManagedService(realCmd, s.Service)
+		}
 	}
 
 	// Bind the shared prompt channel so the spliced tunnel-config steps

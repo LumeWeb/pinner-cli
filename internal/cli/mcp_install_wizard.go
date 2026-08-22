@@ -106,6 +106,12 @@ type InstallWizard struct {
 	resolvePath pathResolver
 	collectHTTP httpCollector
 
+	// restartHTTPService, when non-nil (production), restarts the managed MCP
+	// service after the operator replaces the MCP password so the running
+	// endpoint reloads the new MCP_AUTH_TOKEN from its env file. Tests leave
+	// it nil so no live service is ever touched.
+	restartHTTPService func(ctx context.Context, s *InstallState) error
+
 	// tunnelSteps, when non-empty (production), is the wrapped, VISIBLE
 	// tunnel-config host steps (provider, credentials, env write) that getSteps
 	// splices in between "Choose Transport" and "Write Config". Each wraps a
@@ -283,7 +289,7 @@ func (w *InstallWizard) getSteps() []wizard.Step[*InstallState] {
 			// otherwise the endpoint keeps the old credential and the connection
 			// breaks. Keeping the existing token needs no propagation.
 			if pw != s.AuthToken {
-				if err := w.persistAuthToken(s, pw); err != nil {
+				if err := w.persistAuthToken(ctx, s, pw); err != nil {
 					return err
 				}
 			}
@@ -428,7 +434,7 @@ func (w *InstallWizard) writeConfig(s *InstallState) error {
 // file and mirrors it on the service state so the running endpoint and the
 // agent config validate against the SAME credential — without this the endpoint
 // keeps enforcing the inherited token and the agent connection breaks.
-func (w *InstallWizard) persistAuthToken(s *InstallState, pw string) error {
+func (w *InstallWizard) persistAuthToken(ctx context.Context, s *InstallState, pw string) error {
 	s.AuthToken = pw
 	if s.Service == nil {
 		return nil
@@ -444,6 +450,14 @@ func (w *InstallWizard) persistAuthToken(s *InstallState, pw string) error {
 	env["MCP_AUTH_TOKEN"] = pw
 	if err := service.WriteEnvironment(s.Service.EnvFile, env); err != nil {
 		return fmt.Errorf("persist MCP password to %q: %w", s.Service.EnvFile, err)
+	}
+	// The running endpoint enforces MCP_AUTH_TOKEN from this env file but only
+	// at process start, so a changed password must restart the managed service
+	// to take effect. The seam is nil in tests and for non-service installs.
+	if w.restartHTTPService != nil {
+		if err := w.restartHTTPService(ctx, s); err != nil {
+			return fmt.Errorf("restart MCP service to load the new MCP password: %w", err)
+		}
 	}
 	return nil
 }

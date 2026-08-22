@@ -1599,9 +1599,22 @@ func TestMcpInstallHTTPPasswordPersistsToServiceEnv(t *testing.T) {
 	// agent entry; the operator then replaces the password.
 	w.collectHTTP = fakeHTTPCollector("https://mcp.example.com", "inherited-token")
 	ui.SetMCPPasswordResult = "operator-chosen-password"
+	// Record the restart seam (the production wiring calls the real managed
+	// service restart; here we only assert it fires after a password change).
+	var restarts int
+	w.restartHTTPService = func(_ context.Context, _ *InstallState) error {
+		restarts++
+		return nil
+	}
 
 	if _, err := w.Run(ctx); err != nil {
 		t.Fatalf("wizard run failed: %v", err)
+	}
+
+	// Replacing the password must trigger a service restart so the running
+	// endpoint reloads the new token; otherwise it keeps the old one.
+	if restarts != 1 {
+		t.Errorf("restartHTTPService called %d times, want 1 (after password change)", restarts)
 	}
 
 	// The service env file on disk must now carry the operator's password so
