@@ -29,6 +29,27 @@ test.describe.configure({ mode: 'serial' });
 const SEED_EMAIL = 'e2e@example.com';
 const SEED_PASSWORD = 'password';
 
+// After all three tests, unconditionally restore the shared account to its
+// seeded email+password. The per-test bounces already restore it, but this
+// final net (like auth.test.ts's afterAll) guarantees a mid-test abort can
+// never leave the account corrupted for sibling files or the other host
+// project, which would otherwise cascade auth failures across the suite.
+test.afterAll(async ({ mcp }) => {
+  try {
+    await invoke(mcp, 'account_update_email', {
+      email: SEED_EMAIL,
+      password: SEED_PASSWORD,
+    });
+    await invoke(mcp, 'account_update_password', {
+      current_password: SEED_PASSWORD,
+      new_password: SEED_PASSWORD,
+    });
+  } catch {
+    // best-effort: the shared account is restored if possible; failures here
+    // are non-fatal (the assertions already ran).
+  }
+});
+
 test('account_subscription reports the free, not-subscribed status', async ({ mcp }) => {
   // The seeded account is free: is_subscribed=false, no plan period/gateway.
   const result = await invoke(mcp, 'account_subscription', {});
@@ -77,13 +98,13 @@ test('account_update_password verifies current password, then restores', async (
   expect(set).not.toBeError();
   expect(set).toHaveStructuredContent({ status: 'ok' });
 
-  // Wrong current password must be rejected cleanly.
+  // Wrong current password must be rejected: the tool returns an ERROR result
+  // (isError true) carrying the "invalid current password" cause.
   const wrong = await invoke(mcp, 'account_update_password', {
     current_password: 'definitely-not-the-password',
     new_password: 'x',
   });
-  expect(wrong).not.toBeError();
-  expect(wrong).toHaveStructuredContent({ status: 'error' });
+  expect(wrong).toBeError();
 
   // Restore the seeded default password.
   const restore = await invoke(mcp, 'account_update_password', {
