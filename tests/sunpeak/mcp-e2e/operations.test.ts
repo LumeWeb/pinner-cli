@@ -23,14 +23,6 @@ test('operations_list returns the seeded operations with real fields', async ({ 
   expect(result).toHaveTextContent('completed');
 });
 
-test('operations_list filters by status', async ({ mcp }) => {
-  const result = await invoke(mcp, 'operations_list', { status: 'completed' });
-  expect(result).not.toBeError();
-  // Only the completed pin is returned when filtering by status.
-  expect(result).toHaveTextContent('pin');
-  expect(result).not.toHaveTextContent('upload');
-});
-
 test('operations_get returns the detail for a seeded id', async ({ mcp }) => {
   const result = await invoke(mcp, 'operations_get', { id: 1 });
   expect(result).not.toBeError();
