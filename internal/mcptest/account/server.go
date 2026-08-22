@@ -25,16 +25,28 @@ type Server struct {
 	Tokens map[string]*AccountInfoResponse
 	// accounts stores registered accounts keyed by email.
 	accounts map[string]*AccountInfoResponse
+	// passwords stores each account's current password keyed by email, so the
+	// update-email and update-password endpoints can verify the current
+	// password before mutating the account (mirrors the real API contract).
+	passwords map[string]string
 	// nextID is the next account id.
 	nextID int
 }
 
+// DefaultPassword is the password assigned to accounts created via Seed (which
+// takes no password argument). The e2e harness references it when driving the
+// account_update_email / account_update_password tools against the seeded
+// account. Accounts registered via the register endpoint store the password
+// supplied in the request body instead.
+const DefaultPassword = "password"
+
 // NewServer returns a fake account API double with empty state.
 func NewServer() *Server {
 	return &Server{
-		Tokens:   map[string]*AccountInfoResponse{},
-		accounts: map[string]*AccountInfoResponse{},
-		nextID:   1,
+		Tokens:    map[string]*AccountInfoResponse{},
+		accounts:  map[string]*AccountInfoResponse{},
+		passwords: map[string]string{},
+		nextID:    1,
 	}
 }
 
@@ -81,6 +93,7 @@ func (s *Server) PostApiAuthRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	s.nextID++
 	s.accounts[acc.Email] = acc
+	s.passwords[acc.Email] = body.Password
 	// give the new account a token
 	tok := "token-" + acc.Email
 	s.Tokens[tok] = acc
@@ -162,6 +175,95 @@ func (s *Server) PostApiAccountKeys(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// GetApiAccountBillingSubscription returns the authenticated account's
+// subscription status. The fake models a deterministic "not subscribed"
+// account (no active plan period, no gateway) so account_subscription reports
+// the free tier.
+func (s *Server) GetApiAccountBillingSubscription(w http.ResponseWriter, r *http.Request) {
+	if s.authorize(r) == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "not authenticated"})
+		return
+	}
+	writeJSON(w, http.StatusOK, SubscriptionStatusResponse{
+		IsSubscribed: false,
+	})
+}
+
+// PostApiAccountUpdateEmail changes the authenticated account's email,
+// verifying the current password first (mirroring the real API, which sends a
+// verification email to the new address). On success the stored email is
+// updated and the updated account is returned.
+func (s *Server) PostApiAccountUpdateEmail(w http.ResponseWriter, r *http.Request) {
+	acc := s.authorize(r)
+	if acc == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "not authenticated"})
+		return
+	}
+	var body UpdateEmailRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	if body.Email == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "email is required"})
+		return
+	}
+	if !s.verifyPassword(acc.Email, body.Password) {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid password"})
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	oldEmail := acc.Email
+	if s.accounts[body.Email] != nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "account already exists"})
+		return
+	}
+	// Move the account under its new email key, carry over the password, and
+	// mark the address changed (preserve the account id/pointer so existing
+	// bearer tokens keep authenticating).
+	delete(s.accounts, acc.Email)
+	acc.Email = body.Email
+	s.accounts[acc.Email] = acc
+	s.passwords[acc.Email] = s.passwords[oldEmail]
+	delete(s.passwords, oldEmail)
+	writeJSON(w, http.StatusOK, acc)
+}
+
+// PostApiAccountUpdatePassword changes the authenticated account's password,
+// verifying the current password first.
+func (s *Server) PostApiAccountUpdatePassword(w http.ResponseWriter, r *http.Request) {
+	acc := s.authorize(r)
+	if acc == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "not authenticated"})
+		return
+	}
+	var body UpdatePasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	if body.NewPassword == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "new password is required"})
+		return
+	}
+	if !s.verifyPassword(acc.Email, body.CurrentPassword) {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid current password"})
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.passwords[acc.Email] = body.NewPassword
+	writeJSON(w, http.StatusOK, map[string]string{"message": "password updated"})
+}
+
+// verifyPassword reports whether pw matches the account's stored password.
+func (s *Server) verifyPassword(email, pw string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.passwords[email] == pw
+}
+
 // Seed registers a deterministic account (if not already present) and returns
 // its bearer token. It lets an e2e harness pre-provision a valid session so
 // pinner boots with a ready-made auth_token against the fake API.
@@ -181,6 +283,7 @@ func (s *Server) Seed(email, firstName, lastName string) string {
 		}
 		s.nextID++
 		s.accounts[acc.Email] = acc
+		s.passwords[acc.Email] = DefaultPassword
 	}
 	tok := "token-" + acc.Email
 	s.Tokens[tok] = acc
