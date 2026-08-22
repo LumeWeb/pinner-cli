@@ -16,7 +16,7 @@ export async function invoke(
   name: string,
   args?: Record<string, unknown>,
 ): Promise<CallToolResult> {
-  return mcp.callTool('invoke_tool', { name, args: args ?? {} });
+  return mcp.callTool('invoke_tool', { name, arguments: args ?? {} });
 }
 
 /** Concatenate all text blocks of a CallToolResult. */
