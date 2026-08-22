@@ -419,3 +419,52 @@ func TestIPFSUploadCORSConfiguredHost(t *testing.T) {
 		t.Fatalf("unlisted origin allowed: Allow-Origin = %q, want empty", aoc)
 	}
 }
+
+// TestIPFSUploadResourceAdvertisesConnectDomains is the regression test for the
+// CSP issue: the upload app does a cross-origin Uppy XHR PUT from the host
+// sandbox (e.g. assets.claude.ai) to the presigned /upload/<token> endpoint,
+// so the app resource MUST advertise that upload origin in its read-level
+// _meta.ui.csp.connectDomains or the host sandbox CSP blocks the PUT. The
+// origin is resolved dynamically at read time (the tunnel/base URL or loopback
+// address is only known after the server is up).
+func TestIPFSUploadResourceAdvertisesConnectDomains(t *testing.T) {
+	srv, cu := buildIPFSUploadAppServer(t)
+	cs := connectOfficialClient(t, srv)
+
+	readConnectDomains := func(t *testing.T) []any {
+		t.Helper()
+		res, err := cs.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: upload.IPFSUploadAppURI})
+		if err != nil {
+			t.Fatalf("ReadResource: %v", err)
+		}
+		ui, ok := res.Meta["ui"].(map[string]any)
+		if !ok {
+			t.Fatalf("read result _meta.ui missing: %#v", res.Meta)
+		}
+		csp, ok := ui["csp"].(map[string]any)
+		if !ok {
+			t.Fatalf("read result _meta.ui.csp missing: %#v", ui)
+		}
+		cd, ok := csp["connectDomains"].([]any)
+		if !ok {
+			t.Fatalf("read result _meta.ui.csp.connectDomains missing: %#v", csp)
+		}
+		if len(cd) == 0 {
+			t.Fatalf("connectDomains empty")
+		}
+		return cd
+	}
+
+	// Loopback mode (no base URL): the advertised connect domain is the live
+	// loopback origin the Uppy uploader PUTs to.
+	if got := readConnectDomains(t)[0]; got != cu.ConnectOrigins()[0] {
+		t.Fatalf("loopback connectDomains[0] = %#v, want %q", got, cu.ConnectOrigins()[0])
+	}
+
+	// HTTP/tunnel mode: once the coordinator's base URL is resolved (mirroring
+	// serveHTTP's SetBaseURL), a subsequent read advertises that origin.
+	cu.SetBaseURL("https://tunnel.example.com")
+	if got := readConnectDomains(t)[0]; got != "https://tunnel.example.com" {
+		t.Fatalf("tunnel connectDomains[0] = %#v, want https://tunnel.example.com", got)
+	}
+}

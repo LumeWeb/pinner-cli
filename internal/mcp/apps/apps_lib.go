@@ -40,6 +40,13 @@ type AppView struct {
 	HTML string
 	// PrefersBorder hints hosts to render the iframe with a border.
 	PrefersBorder bool
+	// ConnectDomainsFunc, when set, resolves the CSP connectDomains the
+	// sandboxed app may reach over the network (e.g. the presigned upload
+	// origin an Uppy XHR PUTs to). It is invoked at resource read time — after
+	// the transport has resolved its public base/tunnel or loopback origin,
+	// which may happen after registration — so the value reflects the live
+	// origin rather than a stale registration-time default.
+	ConnectDomainsFunc func() []string
 
 	// AttachTo lists existing catalog tool names whose _meta.ui should point at
 	// URI. These are the model-visible tools the view renders for. Each must
@@ -157,7 +164,8 @@ func RegisterAppView(srv *sdk.Server, catalog AppCatalog, v AppView) error {
 		Meta: model.AppResourceMeta{
 			PrefersBorder: boolPtr(v.PrefersBorder),
 		},
-		HTML: v.HTML,
+		ConnectDomainsFunc: v.ConnectDomainsFunc,
+		HTML:               v.HTML,
 	}); err != nil {
 		return err
 	}

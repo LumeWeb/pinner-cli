@@ -59,6 +59,15 @@ type AppResource struct {
 	Title       string
 	Description string
 	Meta        model.AppResourceMeta
+	// ConnectDomainsFunc, when set, is called at read time to resolve the CSP
+	// connectDomains the sandboxed app may reach over the network (e.g. the
+	// origin the app's Uppy XHR uploader PUTs to). It is needed because that
+	// origin is only known once the server/tunnel base URL is resolved — which
+	// happens AFTER app registration — so the value cannot be baked into Meta
+	// at registration time. The resolved list overrides Meta.CSP.ConnectDomains
+	// in the read result (the value a host uses to render the app), while the
+	// resources/list entry keeps the static Meta fallback.
+	ConnectDomainsFunc func() []string
 	// HTML is the rendered mcp-app document served by resources/read.
 	HTML string
 }
@@ -98,18 +107,14 @@ func RegisterAppResource(srv *Server, res AppResource) error {
 	if res.URI == "" {
 		return fmt.Errorf("app resource requires a uri")
 	}
-	listMeta := mcp.Meta{}
-	if res.Meta != (model.AppResourceMeta{}) {
-		uiJSON, err := json.Marshal(res.Meta)
-		if err != nil {
-			return err
-		}
-		var uiAny map[string]any
-		if err := json.Unmarshal(uiJSON, &uiAny); err != nil {
-			return err
-		}
-		listMeta["ui"] = uiAny
-	}
+	// The resources/list entry carries the static Meta fallback (baked because
+	// go-sdk's list serializes the retained Resource.Meta). The read result —
+	// what a host uses to render the app — resolves the dynamic
+	// ConnectDomainsFunc so the advertised connect-src reflects the current
+	// base/tunnel or loopback origin even though it was resolved after
+	// registration.
+	listMeta := appResourceUIMeta(res.Meta)
+
 	srv.AddResource(&mcp.Resource{
 		URI:         res.URI,
 		Name:        res.Name,
@@ -118,21 +123,65 @@ func RegisterAppResource(srv *Server, res AppResource) error {
 		MIMEType:    MCPAppsMIMEType,
 		Meta:        listMeta,
 	}, func(ctx context.Context, _ *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+		// Resolve the read-level meta on every read so a dynamic
+		// ConnectDomainsFunc reflects the LIVE origin (the tunnel/base URL or
+		// loopback address can change after registration as the transport
+		// resolves its public origin). The read result is the value a host uses
+		// to render the app.
+		readMeta := res.Meta
+		if res.ConnectDomainsFunc != nil {
+			readMeta.CSP = cloneAppResourceCSP(readMeta.CSP)
+			readMeta.CSP.ConnectDomains = res.ConnectDomainsFunc()
+		}
 		return &mcp.ReadResourceResult{
 			Contents: []*mcp.ResourceContents{{
 				URI:      res.URI,
 				MIMEType: MCPAppsMIMEType,
 				Text:     res.HTML,
 			}},
-			// Return a defensive copy, never the shared listMeta reference: the
-			// server retains listMeta on the Resource entry for resources/list,
-			// and a read-time mutation of the shared map would corrupt every
-			// subsequent listing. The read-level value deliberately mirrors the
-			// listing-level fallback value from res.Meta.
-			Meta: cloneMeta(listMeta),
+			// Return a defensive copy, never a shared reference: the read
+			// handler runs per-request, and a downstream mutation of the
+			// returned map must never corrupt a concurrent read or the server's
+			// resources/list entry.
+			Meta: cloneMeta(appResourceUIMeta(readMeta)),
 		}, nil
 	})
 	return nil
+}
+
+// appResourceUIMeta marshals an AppResourceMeta into the `_meta.ui` map, or an
+// empty meta map when the meta carries no fields (mirroring the previous
+// "always an empty _meta.ui" wire shape for a bare app resource).
+func appResourceUIMeta(meta model.AppResourceMeta) mcp.Meta {
+	out := mcp.Meta{}
+	if meta == (model.AppResourceMeta{}) {
+		return out
+	}
+	uiJSON, err := json.Marshal(meta)
+	if err != nil {
+		return out
+	}
+	var uiAny map[string]any
+	if err := json.Unmarshal(uiJSON, &uiAny); err != nil {
+		return out
+	}
+	out["ui"] = uiAny
+	return out
+}
+
+// cloneAppResourceCSP returns a deep copy of csp, or a fresh empty CSP when csp
+// is nil, so a dynamic ConnectDomains overwrite never mutates the caller's
+// (or a sibling resource's) shared CSP pointer.
+func cloneAppResourceCSP(csp *model.AppResourceCSP) *model.AppResourceCSP {
+	cp := &model.AppResourceCSP{}
+	if csp == nil {
+		return cp
+	}
+	*cp = *csp
+	cp.ConnectDomains = append([]string(nil), csp.ConnectDomains...)
+	cp.ResourceDomains = append([]string(nil), csp.ResourceDomains...)
+	cp.FrameDomains = append([]string(nil), csp.FrameDomains...)
+	return cp
 }
 
 // appToolMetaJSON is the nested `_meta.ui` wire shape for a tool. Encoded with

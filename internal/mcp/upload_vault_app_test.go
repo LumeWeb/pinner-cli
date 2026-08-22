@@ -381,3 +381,38 @@ func TestVaultUploadMintRejectsUnsafePath(t *testing.T) {
 	// The handler must never have been offered any rejected path.
 	require.Equal(t, "", fake.gotVaultPath)
 }
+
+// TestVaultUploadResourceAdvertisesConnectDomains is the vault twin of
+// TestIPFSUploadResourceAdvertisesConnectDomains: the vault app resource must
+// advertise its presigned /vault-upload/<token> origin in read-level
+// _meta.ui.csp.connectDomains so a host sandbox CSP permits the app's
+// cross-origin Uppy XHR PUT. The origin is resolved dynamically at read time
+// because the tunnel/base URL or loopback address is only known after the
+// server is up.
+func TestVaultUploadResourceAdvertisesConnectDomains(t *testing.T) {
+	srv, vu := buildVaultUploadAppServerEx(t, nil)
+	cs := connectOfficialClient(t, srv)
+
+	res, err := cs.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: upload.VaultUploadAppURI})
+	require.NoError(t, err)
+	ui, ok := res.Meta["ui"].(map[string]any)
+	require.True(t, ok, "read result _meta.ui missing: %#v", res.Meta)
+	csp, ok := ui["csp"].(map[string]any)
+	require.True(t, ok, "read result _meta.ui.csp missing: %#v", ui)
+	cd, ok := csp["connectDomains"].([]any)
+	require.True(t, ok, "read result _meta.ui.csp.connectDomains missing: %#v", csp)
+	require.NotEmpty(t, cd, "connectDomains must not be empty")
+
+	// Loopback mode: the advertised connect domain is the live loopback origin.
+	want := vu.ConnectOrigins()[0]
+	require.Equal(t, want, cd[0], "loopback connectDomains[0]")
+
+	// HTTP/tunnel mode: once the coordinator's base URL is resolved (mirroring
+	// serveHTTP's SetBaseURL), a subsequent read advertises that origin.
+	vu.SetBaseURL("https://tunnel.example.com")
+	res2, err := cs.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: upload.VaultUploadAppURI})
+	require.NoError(t, err)
+	ui2 := res2.Meta["ui"].(map[string]any)
+	cd2 := ui2["csp"].(map[string]any)["connectDomains"].([]any)
+	require.Equal(t, "https://tunnel.example.com", cd2[0], "tunnel connectDomains[0]")
+}

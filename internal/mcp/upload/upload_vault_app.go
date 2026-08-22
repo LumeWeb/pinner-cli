@@ -106,7 +106,13 @@ func RegisterVaultUploadApp(srv *sdk.Server, catalog apps.AppCatalog, vu *transf
 		Description:   "Pick a file and store it in your encrypted Pinner vault.",
 		HTML:          renderVaultUploadAppHTML(),
 		PrefersBorder: true,
-		AttachTo:      []string{"vault_put_file"},
-		Helpers:       []model.ToolDescriptor{vaultUploadSubmitDescriptor(vu)},
+		// Advertise the presigned vault-upload origin in the app's CSP
+		// connectDomains so a host (e.g. Claude) permits the sandbox iframe to
+		// PUT file bytes to it. Resolved dynamically because the origin (the
+		// tunnel/base URL or loopback address) is only known after the server
+		// and transport are up — after app registration.
+		ConnectDomainsFunc: vu.ConnectOrigins,
+		AttachTo:           []string{"vault_put_file"},
+		Helpers:            []model.ToolDescriptor{vaultUploadSubmitDescriptor(vu)},
 	})
 }

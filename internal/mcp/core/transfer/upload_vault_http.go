@@ -82,6 +82,19 @@ func (vu *VaultHTTPUpload) AddTrustedOrigins(origins ...string) {
 }
 
 // Stop shuts down the loopback listener, if any.
+// ConnectOrigins returns the origin(s) the vault app's Uppy XHR uploader PUTs
+// file bytes to — the server's own origin (base/tunnel URL in HTTP mode, or
+// the loopback origin in stdio mode). It ensures the loopback listener is
+// running so the returned origin is reachable and correct (the loopback port is
+// bound lazily on first use). An MCP host needs these in the app resource's
+// csp.connectDomains so its sandbox CSP permits the cross-origin PUT; see
+// LoopbackServer.Origin.
+func (vu *VaultHTTPUpload) ConnectOrigins() []string {
+	_ = vu.loopback.EnsureLoopback(vu.RegisterHandlers)
+	return []string{vu.loopback.Origin()}
+}
+
+// Stop shuts down the loopback listener, if any.
 func (vu *VaultHTTPUpload) Stop(ctx context.Context) {
 	vu.loopback.Stop(ctx)
 }

@@ -102,6 +102,18 @@ func (cu *Upload) AddTrustedOrigins(origins ...string) {
 	cu.loopback.AddTrustedOrigins(origins...)
 }
 
+// ConnectOrigins returns the origin(s) the app's Uppy XHR uploader PUTs file
+// bytes to — the server's own origin (base/tunnel URL in HTTP mode, or the
+// loopback origin in stdio mode). It ensures the loopback listener is running
+// so the returned origin is reachable and correct (the loopback port is bound
+// lazily on first use, so the app may render before any mint). An MCP host
+// needs these in the app resource's csp.connectDomains so its sandbox CSP
+// permits the cross-origin PUT; see LoopbackServer.Origin.
+func (cu *Upload) ConnectOrigins() []string {
+	_ = cu.loopback.EnsureLoopback(cu.RegisterHandlers)
+	return []string{cu.loopback.Origin()}
+}
+
 // Stop shuts down the loopback listener, if any.
 func (cu *Upload) Stop(ctx context.Context) {
 	cu.loopback.Stop(ctx)
