@@ -80,8 +80,9 @@ func TestUnimplementedReturns501(t *testing.T) {
 	s := NewServer()
 	ts := httptest.NewServer(Handler(s))
 	defer ts.Close()
-	// /api/dns/zones is not overridden -> 501, no panic
-	resp, b := do(t, "GET", ts.URL+"/api/dns/zones", "", nil)
+	// /api/dns/zones/{id}/status is still intentionally unimplemented -> 501,
+	// no panic (dns zones/records endpoints are now overridden).
+	resp, b := do(t, "GET", ts.URL+"/api/dns/zones/1/status", "", nil)
 	if resp.StatusCode != http.StatusNotImplemented {
 		t.Fatalf("expected 501, got %d body=%s", resp.StatusCode, b)
 	}

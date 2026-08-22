@@ -1,4 +1,5 @@
 import { test, expect } from 'sunpeak/test';
+import { invoke, isCleanSuccess } from './helpers';
 
 /**
  * End-to-end tests proving pinner's MCP server drives REAL tool calls through
@@ -13,37 +14,33 @@ import { test, expect } from 'sunpeak/test';
  */
 
 test('account_info returns the seeded account, not an auth error', async ({ mcp }) => {
-  const result = await mcp.callTool('invoke_tool', {
-    name: 'account_info',
-    args: {},
-  });
+  const result = await invoke(mcp, 'account_info', {});
 
-  // A successful tool call is not flagged as an error (the sunpeak fixture
-  // only sets isError:true on failure; success leaves it unset).
-  expect(result.isError).not.toBe(true);
-  const text = result.content?.map((c) => c.text ?? '').join('') ?? '';
+  // A successful tool call is not flagged as an error and must not carry the
+  // auth/network failure markers that would mean the fake wasn't reached.
+  expect(isCleanSuccess(result)).toBe(true);
+
   // The fake seeds e2e@example.com (see cmd/mcp-test-server), so the tool
   // must surface that account rather than an authentication failure.
-  expect(text).not.toMatch(/authenticat|401|unauthor/i);
-  expect(text).toContain('e2e@example.com');
-  expect(JSON.parse(text).status).toBe('ok');
-  expect(JSON.parse(text).value).toMatchObject({
-    email: 'e2e@example.com',
-    first_name: 'E2E',
-    last_name: 'Test',
-    verified: true,
+  expect(result).toHaveTextContent('e2e@example.com');
+
+  // invoke_tool returns the JSON both as text content and as structuredContent,
+  // so assert the structured shape directly (email-bearing value confirmed).
+  expect(result).toHaveStructuredContent({ status: 'ok' });
+  expect(result).toHaveStructuredContent({
+    value: {
+      email: 'e2e@example.com',
+      first_name: 'E2E',
+      last_name: 'Test',
+      verified: true,
+    },
   });
 });
 
 test('pins list returns the empty fake store, reaching the content contract', async ({ mcp }) => {
-  const result = await mcp.callTool('invoke_tool', {
-    name: 'pins_list',
-    args: {},
-  });
+  const result = await invoke(mcp, 'pins_list', {});
 
-  expect(result.isError).not.toBe(true);
-  const text = result.content?.map((c) => c.text ?? '').join('') ?? '';
-  // The fake content store starts empty; a successful 200 response (no auth
-  // error, no network failure) proves the content API path is live.
-  expect(text).not.toMatch(/authenticat|401|unauthor|connection refused/i);
+  // No auth error, no connection refused: proves the content API path is live.
+  expect(isCleanSuccess(result)).toBe(true);
+  expect(result).not.toBeError();
 });

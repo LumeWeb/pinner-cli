@@ -26,11 +26,46 @@ type Server struct {
 	pins map[string]*PinStatusResponse
 	// tokens is the set of bearer tokens accepted by the auth gate.
 	tokens map[string]struct{}
+	// zones is the in-memory DNS zone store keyed by numeric zone id.
+	zones map[int]*ZoneResponse
+	// zoneSeq is the monotonic zone id allocator.
+	zoneSeq int
+	// records holds per-zone DNS records keyed by a composite
+	// name|type|content key so an RRSet can carry multiple rdata values.
+	records map[int]map[string]*dnsRecord
+	// recordSeq is the monotonic record id allocator.
+	recordSeq int
+	// websites is the in-memory website store keyed by numeric website id.
+	websites map[int]*websiteSite
+	// websiteSeq is the monotonic website id allocator.
+	websiteSeq int
+	// domainSeq is the monotonic bound-domain id allocator.
+	domainSeq int
+	// ipnsKeys is the in-memory IPNS key store keyed by numeric key id.
+	ipnsKeys map[int]*IPNSKeyResponse
+	// keySeq is the monotonic IPNS key id allocator.
+	keySeq int
+	// ipnsRecords maps an IPNS name (ipns_name) to the CID it was last
+	// published to, so resolve and republish have data to answer with.
+	ipnsRecords map[string]string
 }
 
 // NewServer returns a fake content API double with empty state.
 func NewServer() *Server {
-	return &Server{pins: map[string]*PinStatusResponse{}, tokens: map[string]struct{}{}}
+	return &Server{
+		pins:        map[string]*PinStatusResponse{},
+		tokens:      map[string]struct{}{},
+		zones:       map[int]*ZoneResponse{},
+		records:     map[int]map[string]*dnsRecord{},
+		zoneSeq:     0,
+		recordSeq:   0,
+		websites:    map[int]*websiteSite{},
+		websiteSeq:  0,
+		domainSeq:   0,
+		ipnsKeys:    map[int]*IPNSKeyResponse{},
+		keySeq:      0,
+		ipnsRecords: map[string]string{},
+	}
 }
 
 // AuthorizeToken adds a bearer token to the accepted set. The harness calls
@@ -104,21 +139,6 @@ func (s *Server) pin(reqID string) *PinStatusResponse {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.pins[reqID]
-}
-
-// GetPins lists pins (IPFS Pinning Service API).
-func (s *Server) GetPins(w http.ResponseWriter, r *http.Request, params GetPinsParams) {
-	if !s.authorized(r) {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "not authenticated"})
-		return
-	}
-	s.mu.Lock()
-	results := make([]PinStatusResponse, 0, len(s.pins))
-	for _, p := range s.pins {
-		results = append(results, *p)
-	}
-	s.mu.Unlock()
-	writeJSON(w, http.StatusOK, PinResultsResponse{Count: len(results), Results: results})
 }
 
 // GetPinsRequestid returns a single pin (IPFS Pinning Service API).

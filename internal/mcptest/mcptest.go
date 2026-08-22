@@ -37,10 +37,13 @@ func (s *Server) IPFS() *ipfs.Server { return s.ipfs }
 
 // Seed registers a deterministic account on the account double and authorizes
 // the same token on the content double, so both contracts accept the returned
-// bearer token. It returns the token.
+// bearer token. It seeds one IPNS key so the ipns_keys_list/get tools have
+// data for the default token. It returns the token.
 func (s *Server) Seed(email, firstName, lastName string) string {
 	tok := s.account.Seed(email, firstName, lastName)
 	s.ipfs.AuthorizeToken(tok)
+	s.ipfs.SeedIPNSKey("seed-key")
+	s.account.SeedOperations()
 	return tok
 }
 
