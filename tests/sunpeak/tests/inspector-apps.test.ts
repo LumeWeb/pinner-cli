@@ -124,6 +124,29 @@ test('vault_put_file app renders the styled file picker and reflects the picked 
 });
 
 /**
+ * The Upload to IPFS shell renders a progress bar that the bootstrap drives:
+ * a determinate fill for the Uppy byte-transfer % and an indeterminate phase
+ * for the async operational status (queued/running) polled from the account
+ * area. It starts server-rendered hidden; the app's machine reveals it on its
+ * first in-flight transition. All three nodes (container, fill, label) must be
+ * present in the real browser-rendered shell so the wiring has something to
+ * drive.
+ */
+test('upload_file app renders the upload progress bar nodes (hidden until in-flight)', async ({ inspector }) => {
+  const result = await inspector.renderTool('upload_file', {});
+  const app = result.app();
+
+  const container = app.locator('#ipfs-upload-progress');
+  await expect(container).toHaveCount(1);
+  await expect(app.locator('#ipfs-upload-progress-fill')).toHaveCount(1);
+  await expect(app.locator('#ipfs-upload-progress-label')).toHaveCount(1);
+
+  // The bar is present but collapsed (server-rendered `hidden`) until a run
+  // starts — the user sees only the file picker + Upload button initially.
+  await expect(container).toHaveClass(/hidden/);
+});
+
+/**
  * BROWSER regression test for the presigned-upload CORS bug.
  *
  * An MCP host renders the "Upload to IPFS" app inside a sandboxed iframe whose

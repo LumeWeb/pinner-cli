@@ -128,6 +128,37 @@ body {
   @apply truncate min-w-0 text-sm text-muted-foreground;
 }
 
+/* ---- Upload progress bar (MCP upload apps) -------------------------------- */
+/* A determinate track + fill driven by Uppy's byte-transfer % while uploading,
+   then an indeterminate "running" phase reflecting the async operational status
+   (queued/running) polled from the account area, then a full bar on done. */
+@utility progress {
+  @apply mt-3.5;
+}
+@utility progress-track {
+  @apply relative w-full h-2 overflow-hidden rounded-full border border-border bg-background-deep;
+}
+@utility progress-fill {
+  @apply relative h-full rounded-full bg-accent transition-[width] duration-200 ease-out;
+}
+@utility progress-label {
+  @apply block mt-1.5 text-xs text-muted-foreground;
+}
+/* Indeterminate "processing" bar: a short accent segment slides across the
+   track while the async upload is queued/running in the account area. */
+.progress-fill.progress-running {
+  width: 35% !important;
+  animation: progress-slide 1.1s ease-in-out infinite;
+}
+@keyframes progress-slide {
+  0% {
+    margin-left: -35%;
+  }
+  100% {
+    margin-left: 100%;
+  }
+}
+
 /* ---- Tables (MCP pin-list + vault) --------------------------------------- */
 @utility table {
   @apply w-full text-sm text-foreground;
