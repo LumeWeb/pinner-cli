@@ -1,5 +1,5 @@
 import { test, expect } from 'sunpeak/test';
-import { invoke, isCleanSuccess, describeTool, searchTool } from './helpers';
+import { invoke, describeTool, searchTool } from './helpers';
 
 /**
  * Progressive-disclosure meta-tools: search_tools / describe_tool / invoke_tool
@@ -25,8 +25,10 @@ import { invoke, isCleanSuccess, describeTool, searchTool } from './helpers';
 
 test('search_tools finds domain tools by keyword', async ({ mcp }) => {
   const pins = await searchTool(mcp, 'pin');
+  // NOTE: discovery tools return catalog descriptions that legitimately contain
+  // the word "authenticated"/"401", so isCleanSuccess (which regex-scans for
+  // those) false-negatives here — signal success with not.toBeError() instead.
   expect(pins).not.toBeError();
-  expect(isCleanSuccess(pins)).toBe(true);
   // ranked keyword search surfaces the whole pins_* family
   expect(pins).toHaveTextContent('pins_add');
   expect(pins).toHaveTextContent('pins_list');
@@ -60,8 +62,10 @@ test('search_tools with empty/help query returns the start-here set', async ({ m
 
 test('describe_tool returns the input schema', async ({ mcp }) => {
   const pinsAdd = await describeTool(mcp, 'pins_add');
+  // describe_tool returns catalog schema/descriptions that may legitimately
+  // contain "authenticated"/"401", so signal with not.toBeError() (per the
+  // file's NOTE at the top), not isCleanSuccess.
   expect(pinsAdd).not.toBeError();
-  expect(isCleanSuccess(pinsAdd)).toBe(true);
   // The schema is returned inline as JSON text; cids is the required field.
   expect(pinsAdd).toHaveTextContent('inputSchema');
   expect(pinsAdd).toHaveTextContent('cids');

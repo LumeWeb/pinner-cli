@@ -109,6 +109,9 @@ test('auth_logout clears the local credential (logged_out state)', async ({ mcp 
   expect(status).toHaveStructuredContent({ status: 'ok' });
   expect(status).toHaveStructuredContent({ value: { authenticated: false } });
 
-  // afterAll restores the pristine config, so the shared fixture (and the
-  // other host project) is never left de-authenticated.
+  // Restore the pristine config NOW, not just in afterAll: the config is SHARED
+  // across host projects and files, and leaving it cleared between this test and
+  // afterAll would let a parallel worker observe the logged-out token and fail
+  // with "not authenticated"/401. afterAll remains as a final safety net.
+  writeFileSync(CONFIG_PATH, ORIGINAL_CONFIG);
 });

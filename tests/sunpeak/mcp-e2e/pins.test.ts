@@ -73,7 +73,12 @@ function base32(bytes: number[]): string {
   if (bits > 0) out += B32[(val << (5 - bits)) & 31];
   return out;
 }
-const Cid = 'b' + base32([0x01, 0x70, 0x00, 0x01, Math.floor(Math.random() * 256)]);
+// mint 8 random bytes so the CID has high entropy (1/256^8 collision odds) —
+// the fake pin store is SHARED across host projects and test files, so a
+// low-entropy CID (single byte) could collide across workers and make one
+// project's pin appear in another's list, breaking the stateful assertions.
+const rnd = Array.from({ length: 8 }, () => Math.floor(Math.random() * 256));
+const Cid = 'b' + base32([0x01, 0x70, 0x00, 0x01, ...rnd]);
 const Name = 'e2e-pin';
 
 // Captured from pins_add and carried into the later tests.

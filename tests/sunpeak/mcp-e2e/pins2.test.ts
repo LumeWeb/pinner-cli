@@ -68,9 +68,11 @@ function base32(bytes: number[]): string {
   if (bits > 0) out += B32[(val << (5 - bits)) & 31];
   return out;
 }
-const randByte = () => Math.floor(Math.random() * 256);
-const CidA = 'b' + base32([0x01, 0x70, 0x00, 0x01, randByte()]);
-const CidB = 'b' + base32([0x01, 0x70, 0x00, 0x01, randByte()]);
+const randBytes = () => Array.from({ length: 8 }, () => Math.floor(Math.random() * 256));
+// High-entropy CIDs (8 random bytes) so they never collide across the shared
+// fake pin store / host projects (a single random byte is only 1/256 odds).
+const CidA = 'b' + base32([0x01, 0x70, 0x00, 0x01, ...randBytes()]);
+const CidB = 'b' + base32([0x01, 0x70, 0x00, 0x01, ...randBytes()]);
 const NameA = 'pins2-alpha';
 const NameB = 'pins2-beta';
 

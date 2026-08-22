@@ -136,7 +136,12 @@ test('websites_config returns gateway domain and nameservers', async ({ mcp }) =
 
 test('websites_domains_add binds a secondary domain', async ({ mcp }) => {
   const sub = `www.${Domain}`;
+  // Pass the explicit website so the op disambiguates: the shared fake store
+  // accumulates websites across files and across the chatgpt/claude host
+  // projects, so auto-select (empty `website`) fails with "multiple websites
+  // found" once more than one site exists.
   const result = await invoke(mcp, 'websites_domains_add', {
+    website: Domain,
     domain: sub,
     namespace: 'icann',
   });
