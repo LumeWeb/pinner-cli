@@ -256,6 +256,30 @@ func (w *InstallWizard) getSteps() []wizard.Step[*InstallState] {
 		},
 	})
 
+	// The MCP password (the shared auth token that protects the public HTTP
+	// endpoint) is a first-class, always-asked credential in interactive
+	// installs. Even when one was inherited from MCP_AUTH_TOKEN env/flags or
+	// the tunnel collection above, the operator is given the chance to keep
+	// or replace it, so it is never silently written past the user. Skipped in
+	// non-interactive mode (--non-interactive; token sourced from flags/env)
+	// and for non-http transports (stdio needs no credential).
+	steps = append(steps, wizard.StepFunc[*InstallState]{
+		Name_: "MCP Password",
+		SkipFunc: func(s *InstallState) bool {
+			return s.NonInteractive ||
+				s.Transport != install.TransportHTTP ||
+				!anySupportsTransport(s.Agents, install.TransportHTTP)
+		},
+		ExecuteFunc: func(ctx context.Context, s *InstallState) error {
+			pw, err := w.ui.SetMCPPassword(s.AuthToken)
+			if err != nil {
+				return err
+			}
+			s.AuthToken = pw
+			return nil
+		},
+	})
+
 	steps = append(steps,
 		wizard.StepFunc[*InstallState]{
 			Name_:   "Resolve Binary",

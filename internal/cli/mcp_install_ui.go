@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 
 	"atomicgo.dev/keyboard/keys"
 	"github.com/pterm/pterm"
@@ -32,6 +33,13 @@ type InstallUI interface {
 	SelectTransport(agents []install.AgentKey) (install.Transport, error)
 	// ConfirmHTTP confirms an http install before it is written.
 	ConfirmHTTP(agents []install.AgentKey) (bool, error)
+	// SetMCPPassword prompts for the shared auth token ("MCP password") that
+	// protects the public HTTP endpoint. current is the password already
+	// resolved from flags/env/tunnel collection (may be empty); it is shown
+	// masked so the operator can keep it or replace it. Returns the password
+	// to use. Always called for http/remote installs in interactive mode so
+	// the operator is never silently skipped past setting the credential.
+	SetMCPPassword(current string) (string, error)
 
 	// ReportWritten reports a written config entry for an agent.
 	ReportWritten(agent install.AgentKey, path string, local bool) error
@@ -200,6 +208,36 @@ func (ui *PTermInstallUI) ConfirmHTTP(agents []install.AgentKey) (bool, error) {
 	}
 	_ = agents
 	return ok, nil
+}
+
+// SetMCPPassword prompts for the shared auth token ("MCP password") that
+// protects the public HTTP endpoint. current is the auth token already
+// resolved from flags/env/tunnel collection (may be empty). The operator is
+// always given the chance to set or replace the credential in interactive
+// mode: an existing value is kept unless a new one is typed. The secret
+// itself is never displayed or echoed (masked input, no pre-filled default).
+func (ui *PTermInstallUI) SetMCPPassword(current string) (string, error) {
+	if fieldform.NonInteractive {
+		return "", fmt.Errorf("MCP password prompt requires an interactive terminal")
+	}
+	if current != "" {
+		pterm.Info.Println("A shared auth token (MCP password) already protects this endpoint. Press Enter to keep it, or type a new password to replace it.")
+	} else {
+		pterm.Warning.Println("A public HTTP MCP endpoint needs an MCP password (shared auth token) so it is not left open.")
+	}
+	val, err := pterm.DefaultInteractiveTextInput.WithDefaultText("MCP password (shared auth token for the public endpoint)").WithMask("*").Show()
+	if err != nil {
+		return "", handleInterrupt(err)
+	}
+	val = strings.TrimSpace(val)
+	if val == "" {
+		// Empty input keeps the existing token; only error when there is none.
+		if current == "" {
+			return "", fmt.Errorf("an MCP password is required for a public HTTP endpoint")
+		}
+		return current, nil
+	}
+	return val, nil
 }
 
 // ReportWritten reports a written config entry for an agent.
