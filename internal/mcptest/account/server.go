@@ -29,6 +29,8 @@ type Server struct {
 	// update-email and update-password endpoints can verify the current
 	// password before mutating the account (mirrors the real API contract).
 	passwords map[string]string
+	// operations holds seeded account operations (GET /api/operations).
+	operations []OperationDetailResponse
 	// nextID is the next account id.
 	nextID int
 }
@@ -128,7 +130,13 @@ func (s *Server) GetApiAccount(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "not authenticated"})
 		return
 	}
-	writeJSON(w, http.StatusOK, acc)
+	// authorize() hands back the aliased pointer that concurrent
+	// PostApiAccountUpdateEmail mutates under the lock. Serialize a copy taken
+	// under the lock so this handler never reads the account mid-mutation.
+	s.mu.Lock()
+	cp := *acc
+	s.mu.Unlock()
+	writeJSON(w, http.StatusOK, &cp)
 }
 
 // PostApiAuthPing checks that the request is authenticated and returns a pong
@@ -227,7 +235,10 @@ func (s *Server) PostApiAccountUpdateEmail(w http.ResponseWriter, r *http.Reques
 	s.accounts[acc.Email] = acc
 	s.passwords[acc.Email] = s.passwords[oldEmail]
 	delete(s.passwords, oldEmail)
-	writeJSON(w, http.StatusOK, acc)
+	// acc is aliased (its pointer lives in s.accounts and s.Tokens); serialize a
+	// copy so a concurrent GetApiAccount reading it never races with this write.
+	cp := *acc
+	writeJSON(w, http.StatusOK, &cp)
 }
 
 // PostApiAccountUpdatePassword changes the authenticated account's password,
@@ -289,5 +300,138 @@ func (s *Server) Seed(email, firstName, lastName string) string {
 	s.Tokens[tok] = acc
 	return tok
 }
+
+// SeedOperations seeds a small deterministic set of account operations so the
+// operations_* tools have real data to read (GET /api/operations).
+func (s *Server) SeedOperations() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now().UTC()
+	s.operations = []OperationDetailResponse{
+		{
+			Id:                    1,
+			Operation:             "pin",
+			OperationDisplayName:  "Pin",
+			Protocol:              "ipfs",
+			ProtocolDisplayName:   "IPFS",
+			Status:                "completed",
+			StatusDisplayName:     "Completed",
+			StatusMessage:         "Pinned successfully",
+			ProgressPercent:       100,
+			StartedAt:             now.Add(-2 * time.Hour),
+			UpdatedAt:             now.Add(-90 * time.Minute),
+			CurrentStep:           intPtr(4),
+			TotalSteps:            intPtr(4),
+		},
+		{
+			Id:                    2,
+			Operation:             "upload",
+			OperationDisplayName:  "Upload",
+			Protocol:              "ipfs",
+			ProtocolDisplayName:   "IPFS",
+			Status:                "running",
+			StatusDisplayName:     "Running",
+			StatusMessage:         "Uploading file",
+			ProgressPercent:       45,
+			StartedAt:             now.Add(-10 * time.Minute),
+			UpdatedAt:             now,
+			CurrentStep:           intPtr(2),
+			TotalSteps:            intPtr(5),
+		},
+	}
+}
+
+// GetApiOperations lists account operations (GET /api/operations).
+func (s *Server) GetApiOperations(w http.ResponseWriter, r *http.Request, params GetApiOperationsParams) {
+	if s.authorize(r) == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "not authenticated"})
+		return
+	}
+	s.mu.Lock()
+	data := make([]OperationListItem, 0, len(s.operations))
+	for _, op := range s.operations {
+		item := OperationListItem{
+			Cid:                  op.Cid,
+			CurrentStep:          op.CurrentStep,
+			Error:                op.Error,
+			EstimatedCompletionAt: op.EstimatedCompletionAt,
+			Id:                   op.Id,
+			Operation:            op.Operation,
+			OperationDisplayName: op.OperationDisplayName,
+			ProgressPercent:      op.ProgressPercent,
+			Protocol:             op.Protocol,
+			ProtocolDisplayName:  op.ProtocolDisplayName,
+			StartedAt:            op.StartedAt,
+			Status:               OperationListItemStatus(op.Status),
+			StatusDisplayName:    op.StatusDisplayName,
+			StatusMessage:        op.StatusMessage,
+			TotalSteps:           op.TotalSteps,
+			UpdatedAt:            op.UpdatedAt,
+		}
+		data = append(data, item)
+	}
+	total := len(data)
+	s.mu.Unlock()
+	writeJSON(w, http.StatusOK, OperationListItemResponse{Data: data, Total: total})
+}
+
+// GetApiOperationsId returns a single operation's detail
+// (GET /api/operations/{id}).
+func (s *Server) GetApiOperationsId(w http.ResponseWriter, r *http.Request, id int) {
+	if s.authorize(r) == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "not authenticated"})
+		return
+	}
+	s.mu.Lock()
+	var found *OperationDetailResponse
+	for i := range s.operations {
+		if s.operations[i].Id == id {
+			cp := s.operations[i]
+			found = &cp
+			break
+		}
+	}
+	s.mu.Unlock()
+	if found == nil {
+		writeNotFound(w)
+		return
+	}
+	writeJSON(w, http.StatusOK, *found)
+}
+
+// GetApiOperationsFilters returns the filter dims for operations
+// (GET /api/operations/filters).
+func (s *Server) GetApiOperationsFilters(w http.ResponseWriter, r *http.Request) {
+	if s.authorize(r) == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "not authenticated"})
+		return
+	}
+	resp := OperationFiltersResponseResponse{
+		Data: OperationFiltersResponse{
+			Data: OperationFiltersResponseData{
+				Operations: []OperationFilterItem{
+					{Name: "pin", Value: "pin", Description: strPtr("Pin operation")},
+					{Name: "upload", Value: "upload", Description: strPtr("Upload operation")},
+				},
+				Protocols: []OperationFilterItem{
+					{Name: "ipfs", Value: "ipfs", Description: strPtr("IPFS protocol")},
+				},
+				Statuses: []OperationFilterItem{
+					{Name: "completed", Value: "completed", Description: strPtr("Completed")},
+					{Name: "running", Value: "running", Description: strPtr("Running")},
+				},
+			},
+		},
+		Total: 2,
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func writeNotFound(w http.ResponseWriter) {
+	writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+}
+
+func intPtr(v int) *int       { return &v }
+func strPtr(v string) *string { return &v }
 
 func timePtr(t time.Time) *time.Time { return &t }

@@ -299,6 +299,12 @@ func (s *Server) PostApiDnsZonesIdRecords(w http.ResponseWriter, r *http.Request
 		ZoneId:   zid,
 	}
 	s.mu.Lock()
+	// A concurrent DeleteApiDnsZonesId may have removed this zone (and its
+	// record map) between the zoneByID check above and the lock here; guard
+	// against the nil-map panic by (re)creating the map under the lock.
+	if s.records[zid] == nil {
+		s.records[zid] = map[string]*dnsRecord{}
+	}
 	s.records[zid][recordKey(name, recordType, body.Content)] = rec
 	s.mu.Unlock()
 	writeJSON(w, http.StatusCreated, rec)

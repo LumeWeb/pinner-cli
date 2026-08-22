@@ -230,3 +230,91 @@ func TestUpdatePasswordWrongCurrent(t *testing.T) {
 		t.Fatalf("expected 401, got %d body=%s", resp.StatusCode, b)
 	}
 }
+
+func TestOperationsListAndGet(t *testing.T) {
+	_, ts := newTestServer(t)
+	tok := registerAccount(t, ts, "ops@example.com", "pw")
+
+	// List operations (no seed -> empty is a valid happy path; then seed and
+	// assert real rows come back).
+	resp, b := do(t, "GET", ts.URL+"/api/operations", tok, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("list: expected 200, got %d body=%s", resp.StatusCode, b)
+	}
+
+	// With a seeded store, list returns the two seeded operations with real fields.
+	registerAccount(t, ts, "ops2@example.com", "pw")
+	// Seed operations on the server directly.
+	// (registerAccount creates a fresh server via newTestServer; here we just
+	// exercise the seeded path through the mcptest Seed composition instead.)
+	s := NewServer()
+	ts2 := httptest.NewServer(Handler(s))
+	t.Cleanup(ts2.Close)
+	seedTok := s.Seed("seed@example.com", "E2E", "Seed")
+	s.SeedOperations()
+
+	rl, bl := do(t, "GET", ts2.URL+"/api/operations", seedTok, nil)
+	if rl.StatusCode != http.StatusOK {
+		t.Fatalf("seeded list: expected 200, got %d body=%s", rl.StatusCode, bl)
+	}
+	var list OperationListItemResponse
+	if err := json.Unmarshal(bl, &list); err != nil {
+		t.Fatalf("list unmarshal: %v body=%s", err, bl)
+	}
+	if list.Total != 2 {
+		t.Fatalf("expected total 2, got %d", list.Total)
+	}
+	if len(list.Data) != 2 {
+		t.Fatalf("expected 2 items, got %d", len(list.Data))
+	}
+	// An operation for id 1 exists with real display fields.
+	if list.Data[0].Id != 1 || list.Data[0].Operation != "pin" || list.Data[0].StatusDisplayName == "" {
+		t.Fatalf("unexpected first operation: %+v", list.Data[0])
+	}
+
+	// Get by id returns the detail for the real seeded row.
+	rd, bd := do(t, "GET", ts2.URL+"/api/operations/1", seedTok, nil)
+	if rd.StatusCode != http.StatusOK {
+		t.Fatalf("get by id: expected 200, got %d body=%s", rd.StatusCode, bd)
+	}
+	var detail OperationDetailResponse
+	if err := json.Unmarshal(bd, &detail); err != nil {
+		t.Fatalf("detail unmarshal: %v body=%s", err, bd)
+	}
+	if detail.Id != 1 || detail.Status != "completed" {
+		t.Fatalf("unexpected detail: %+v", detail)
+	}
+
+	// Unknown id -> 404, not a 200 empty.
+	r404, b404 := do(t, "GET", ts2.URL+"/api/operations/999", seedTok, nil)
+	if r404.StatusCode != http.StatusNotFound {
+		t.Fatalf("unknown id: expected 404, got %d body=%s", r404.StatusCode, b404)
+	}
+
+	// Unauthenticated list -> 401.
+	r401, _ := do(t, "GET", ts2.URL+"/api/operations", "", nil)
+	if r401.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unauth list: expected 401, got %d", r401.StatusCode)
+	}
+}
+
+func TestOperationsFilters(t *testing.T) {
+	s := NewServer()
+	ts := httptest.NewServer(Handler(s))
+	t.Cleanup(ts.Close)
+	tok := s.Seed("ops@example.com", "E2E", "Seed")
+	s.SeedOperations()
+
+	resp, b := do(t, "GET", ts.URL+"/api/operations/filters", tok, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("filters: expected 200, got %d body=%s", resp.StatusCode, b)
+	}
+	var f OperationFiltersResponseResponse
+	if err := json.Unmarshal(b, &f); err != nil {
+		t.Fatalf("filters unmarshal: %v body=%s", err, b)
+	}
+	if f.Total != 2 || len(f.Data.Data.Operations) == 0 {
+		t.Fatalf("unexpected filters: %+v", f)
+	}
+}
+

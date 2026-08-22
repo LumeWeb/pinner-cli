@@ -43,6 +43,7 @@ func (s *Server) Seed(email, firstName, lastName string) string {
 	tok := s.account.Seed(email, firstName, lastName)
 	s.ipfs.AuthorizeToken(tok)
 	s.ipfs.SeedIPNSKey("seed-key")
+	s.account.SeedOperations()
 	return tok
 }
 

@@ -284,7 +284,13 @@ func (s *Server) GetApiWebsitesId(w http.ResponseWriter, r *http.Request, id str
 		writeNotFound(w)
 		return
 	}
-	writeJSON(w, http.StatusOK, ws.toResponse())
+	// websiteByID returns an aliased pointer that PutApiWebsitesId mutates under
+	// the lock; build the response snapshot under the lock so this getter never
+	// reads the site mid-update.
+	s.mu.Lock()
+	resp := ws.toResponse()
+	s.mu.Unlock()
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // PutApiWebsitesId updates an existing website (PUT /api/websites/{id}). This
@@ -384,7 +390,12 @@ func (s *Server) GetApiWebsitesDomainSslStatus(w http.ResponseWriter, r *http.Re
 		writeNotFound(w)
 		return
 	}
-	writeJSON(w, http.StatusOK, ws.toResponse())
+	// Same aliasing guard as GetApiWebsitesId: websiteByDomain returns the
+	// shared pointer, resolved to a response snapshot under the lock.
+	s.mu.Lock()
+	resp := ws.toResponse()
+	s.mu.Unlock()
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // websiteByDomain looks up a website whose apex domain or a bound domain
