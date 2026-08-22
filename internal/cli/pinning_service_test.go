@@ -1073,3 +1073,56 @@ func TestPinsListSendsPartialMatch(t *testing.T) {
 	require.Len(t, pins, 1)
 	assert.Equal(t, "do", pins[0].Name)
 }
+
+// TestPinsListSendsExactNameMatch is the server-side guard for pins_list's
+// exact-name filter: when List receives a non-empty nameFilter (and no search)
+// it must reach the ipfs-sdk pinning service with an explicit match=exact name
+// filter. A bare name with no declared match strategy is ignored by pinning
+// backends that require one, which made the filter a silent no-op (full list
+// returned) even though status/limit still filtered.
+func TestPinsListSendsExactNameMatch(t *testing.T) {
+	cfgMgr := configmocks.NewMockManager(t)
+	cfgMgr.EXPECT().Config().Maybe().Return(&config.Config{AuthToken: testAuthToken})
+
+	boxoClient := climocks.NewMockPinningClient(t)
+	boxoClient.EXPECT().LsSync(mock.Anything, mock.Anything, mock.Anything).Maybe()
+
+	sdkSvc := servicemocks.NewMockPinningService(t)
+	sdkSvc.EXPECT().ListPins(mock.Anything, mock.Anything, mock.Anything).
+		Return([]ipfs.PinStatus{
+			{Pin: ipfs.Pin{Cid: "QmYyy", Name: ptrStr("audit-round4-url")}, PinStatusEnum: ipfs.StatusPinned, Created: time.Now()},
+		}, nil).
+		Run(func(_ctx context.Context, opts ...ipfs.ListOption) {
+			var (
+				name  *string
+				match *ipfs.TextMatchingStrategy
+			)
+			for _, o := range opts {
+				if o.Name != nil {
+					n := string(*o.Name)
+					name = &n
+				}
+				if o.Match != nil {
+					m := ipfs.TextMatchingStrategy(*o.Match)
+					match = &m
+				}
+			}
+			if name == nil || *name != "audit-round4-url" {
+				t.Errorf("ListPins must receive WithFilterName(%q), got name=%v", "audit-round4-url", name)
+			}
+			if match == nil || *match != ipfs.MatchExact {
+				t.Errorf("ListPins must receive match=exact for exact name filter, got match=%v", match)
+			}
+		})
+
+	output := newTestOutput()
+	service := NewPinningService(cfgMgr, output, "https://api.test.com",
+		WithPinningClient(boxoClient),
+		WithSDKPinningService(sdkSvc),
+	)
+
+	pins, err := service.List(context.Background(), "audit-round4-url", 0, "", "")
+	require.NoError(t, err)
+	require.Len(t, pins, 1)
+	assert.Equal(t, "audit-round4-url", pins[0].Name)
+}

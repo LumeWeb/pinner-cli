@@ -242,8 +242,12 @@ func (s *PinningServiceDefault) listViaSDK(ctx context.Context, nameFilter strin
 		// strategy type stays encapsulated.
 		opts = append(opts, ipfs.WithFilterNamePartial(search))
 	} else if nameFilter != "" {
-		// Exact name match (default match strategy per spec).
-		opts = append(opts, ipfs.WithFilterName(nameFilter))
+		// Exact name match, sent with an explicit match=exact strategy. The
+		// suffix-search path above pins match=partial; without a declared match
+		// the name would ride bare and pinning-service backends that require an
+		// explicit strategy would ignore it (returning the full list) even
+		// though status/limit still filter.
+		opts = append(opts, ipfs.WithFilterName(nameFilter), ipfs.WithFilterMatch(ipfs.MatchExact))
 	}
 	if statusFilter != "" {
 		opts = append(opts, ipfs.WithFilterStatus(ipfs.PinStatusEnum(statusFilter)))
