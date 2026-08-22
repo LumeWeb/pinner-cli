@@ -167,10 +167,15 @@ func (s *Server) PutApiDnsZonesId(w http.ResponseWriter, r *http.Request, id str
 		writeNotFound(w)
 		return
 	}
+	// Re-acquire the lock around the mutation: zoneByID returns a pointer that
+	// is aliased by every handler (GET/DELETE/PUT), so mutating it here without
+	// the lock would race concurrent readers/writers on the same zone.
+	s.mu.Lock()
 	if body.Domain != "" {
 		z.Domain = body.Domain
 	}
 	z.UpdatedAt = time.Now().UTC()
+	s.mu.Unlock()
 	writeJSON(w, http.StatusOK, z)
 }
 
@@ -291,6 +296,8 @@ func (s *Server) PostApiDnsZonesIdRecords(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) nextRecordID() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.recordSeq++
 	return "rec-" + strconv.Itoa(s.recordSeq)
 }

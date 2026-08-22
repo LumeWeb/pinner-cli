@@ -91,10 +91,10 @@ func TestGetPinsFiltersByCidMulti(t *testing.T) {
 		t.Fatalf("multi-cid filter: expected 2 pins, got count=%d body=%s", list.Count, b)
 	}
 	// Nonexistent cid -> empty result set.
-	_, b = do(t, "GET", ts.URL+"/pins?cid=QmZZZ", tok, nil)
+	respZZZ, b := do(t, "GET", ts.URL+"/pins?cid=QmZZZ", tok, nil)
 	list = decodePins(t, b)
-	if resp.StatusCode != http.StatusOK || list.Count != 0 {
-		t.Fatalf("unknown cid: expected empty, got count=%d status=%d body=%s", list.Count, resp.StatusCode, b)
+	if respZZZ.StatusCode != http.StatusOK || list.Count != 0 {
+		t.Fatalf("unknown cid: expected empty, got count=%d status=%d body=%s", list.Count, respZZZ.StatusCode, b)
 	}
 }
 
