@@ -26,11 +26,27 @@ type Server struct {
 	pins map[string]*PinStatusResponse
 	// tokens is the set of bearer tokens accepted by the auth gate.
 	tokens map[string]struct{}
+	// zones is the in-memory DNS zone store keyed by numeric zone id.
+	zones map[int]*ZoneResponse
+	// zoneSeq is the monotonic zone id allocator.
+	zoneSeq int
+	// records holds per-zone DNS records keyed by a composite
+	// name|type|content key so an RRSet can carry multiple rdata values.
+	records map[int]map[string]*dnsRecord
+	// recordSeq is the monotonic record id allocator.
+	recordSeq int
 }
 
 // NewServer returns a fake content API double with empty state.
 func NewServer() *Server {
-	return &Server{pins: map[string]*PinStatusResponse{}, tokens: map[string]struct{}{}}
+	return &Server{
+		pins:      map[string]*PinStatusResponse{},
+		tokens:    map[string]struct{}{},
+		zones:     map[int]*ZoneResponse{},
+		records:   map[int]map[string]*dnsRecord{},
+		zoneSeq:   0,
+		recordSeq: 0,
+	}
 }
 
 // AuthorizeToken adds a bearer token to the accepted set. The harness calls
