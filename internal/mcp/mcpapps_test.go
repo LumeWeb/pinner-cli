@@ -245,14 +245,18 @@ func TestAppResourceReadMetaNotShared(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadResource: %v", err)
 	}
-	readUI, ok := read.Meta["ui"].(map[string]any)
+	if len(read.Contents) == 0 {
+		t.Fatal("read returned no content items")
+	}
+	// _meta.ui is on the content item, not the result root (ext-apps spec).
+	readUI, ok := read.Contents[0].Meta["ui"].(map[string]any)
 	if !ok {
-		t.Fatalf("read result _meta.ui missing: %#v", read.Meta)
+		t.Fatalf("read content-item _meta.ui missing: %#v", read.Contents[0].Meta)
 	}
 
-	// Mutate the read result's meta map (simulating a downstream write).
+	// Mutate the read result's content-item meta map (simulating a downstream write).
 	readUI["domain"] = "corrupted.example"
-	read.Meta["extra"] = "boom"
+	read.Contents[0].Meta["extra"] = "boom"
 
 	// The server's resources/list entry must be unaffected.
 	list, err := cs.ListResources(context.Background(), nil)

@@ -395,8 +395,10 @@ func TestVaultUploadResourceAdvertisesConnectDomains(t *testing.T) {
 
 	res, err := cs.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: upload.VaultUploadAppURI})
 	require.NoError(t, err)
-	ui, ok := res.Meta["ui"].(map[string]any)
-	require.True(t, ok, "read result _meta.ui missing: %#v", res.Meta)
+	require.NotEmpty(t, res.Contents, "read returned no content items")
+	// _meta.ui is on the content item, not the result root (ext-apps spec).
+	ui, ok := res.Contents[0].Meta["ui"].(map[string]any)
+	require.True(t, ok, "read content-item _meta.ui missing: %#v", res.Contents[0].Meta)
 	csp, ok := ui["csp"].(map[string]any)
 	require.True(t, ok, "read result _meta.ui.csp missing: %#v", ui)
 	cd, ok := csp["connectDomains"].([]any)
@@ -412,7 +414,8 @@ func TestVaultUploadResourceAdvertisesConnectDomains(t *testing.T) {
 	vu.SetBaseURL("https://tunnel.example.com")
 	res2, err := cs.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: upload.VaultUploadAppURI})
 	require.NoError(t, err)
-	ui2 := res2.Meta["ui"].(map[string]any)
+	require.NotEmpty(t, res2.Contents, "read returned no content items")
+	ui2 := res2.Contents[0].Meta["ui"].(map[string]any)
 	cd2 := ui2["csp"].(map[string]any)["connectDomains"].([]any)
 	require.Equal(t, "https://tunnel.example.com", cd2[0], "tunnel connectDomains[0]")
 }

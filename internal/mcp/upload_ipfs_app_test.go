@@ -520,9 +520,13 @@ func TestIPFSUploadResourceAdvertisesConnectDomains(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ReadResource: %v", err)
 		}
-		ui, ok := res.Meta["ui"].(map[string]any)
+		if len(res.Contents) == 0 {
+			t.Fatalf("read returned no content items")
+		}
+		// _meta.ui is on the content item, not the result root (ext-apps spec).
+		ui, ok := res.Contents[0].Meta["ui"].(map[string]any)
 		if !ok {
-			t.Fatalf("read result _meta.ui missing: %#v", res.Meta)
+			t.Fatalf("read content-item _meta.ui missing: %#v", res.Contents[0].Meta)
 		}
 		csp, ok := ui["csp"].(map[string]any)
 		if !ok {

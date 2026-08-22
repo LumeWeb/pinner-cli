@@ -167,17 +167,20 @@ func RegisterAppResource(srv *Server, res AppResource) error {
 			readMeta.CSP = cloneAppResourceCSP(readMeta.CSP)
 			readMeta.CSP.ConnectDomains = res.ConnectDomainsFunc()
 		}
+		// _meta.ui MUST go on the content item (ResourceContents.Meta), NOT on
+		// the top-level ReadResourceResult.Meta. The ext-apps spec says hosts
+		// read CSP from "the resources/read content item (with resources/list
+		// entry as fallback)". Claude reads ResourceContents._meta.ui.csp to
+		// derive the sandbox connect-src; a result-level _meta.ui is invisible
+		// to the CSP enforcement path.
+		uiMeta := cloneMeta(appResourceUIMeta(readMeta))
 		return &mcp.ReadResourceResult{
 			Contents: []*mcp.ResourceContents{{
 				URI:      res.URI,
 				MIMEType: MCPAppsMIMEType,
 				Text:     res.HTML,
+				Meta:     uiMeta,
 			}},
-			// Return a defensive copy, never a shared reference: the read
-			// handler runs per-request, and a downstream mutation of the
-			// returned map must never corrupt a concurrent read or the server's
-			// resources/list entry.
-			Meta: cloneMeta(appResourceUIMeta(readMeta)),
 		}, nil
 	}
 	resource := &mcp.Resource{

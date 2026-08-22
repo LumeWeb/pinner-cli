@@ -143,8 +143,45 @@ func TestSetAppResourceConnectDomainsBakesListEntry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
-	if got := connectDomainsOf(t, uiMetaOf(t, rr.Meta)); len(got) != 1 || got[0] != "https://tunnel.ngrok-free.dev" {
-		t.Fatalf("read connectDomains = %v, want tunnel origin", got)
+	if len(rr.Contents) == 0 {
+		t.Fatal("read returned no content items")
+	}
+	// _meta.ui must be on the content item, not the result root (ext-apps spec).
+	if got := connectDomainsOf(t, uiMetaOf(t, rr.Contents[0].Meta)); len(got) != 1 || got[0] != "https://tunnel.ngrok-free.dev" {
+		t.Fatalf("read content-item connectDomains = %v, want tunnel origin", got)
+	}
+}
+
+// TestReadMetaOnContentItemNotResultRoot asserts the fix for the CSP root cause:
+// _meta.ui.csp must be on the content item (ResourceContents.Meta), NOT on the
+// top-level ReadResourceResult.Meta. The ext-apps spec says hosts read CSP from
+// "the resources/read content item" — a result-level _meta.ui is invisible to
+// Claude's CSP enforcement and produces the connect-src 'self' block.
+func TestReadMetaOnContentItemNotResultRoot(t *testing.T) {
+	srv := NewServer(nil)
+	const uri = "ui://uploads/ipfs.html"
+	if err := RegisterAppResource(srv, AppResource{
+		URI: uri, Name: "test", Title: "test", Description: "test", HTML: "<p>hello</p>",
+		ConnectDomainsFunc: func() []string { return []string{"https://tunnel.ngrok-free.dev"} },
+	}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	cs := sdkTestClient(t, srv)
+	rr, err := cs.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: uri})
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	// _meta.ui MUST be on the content item.
+	if len(rr.Contents) == 0 {
+		t.Fatal("no content items in read result")
+	}
+	itemMeta := uiMetaOf(t, rr.Contents[0].Meta)
+	if got := connectDomainsOf(t, itemMeta); len(got) == 0 || got[0] != "https://tunnel.ngrok-free.dev" {
+		t.Fatalf("content-item _meta.ui.csp.connectDomains = %v, want tunnel origin", got)
+	}
+	// _meta.ui MUST NOT be at the result root (that was the bug).
+	if _, ok := rr.Meta["ui"]; ok {
+		t.Fatal("result-level _meta.ui should be empty (it must be on the content item, not the result root)")
 	}
 }
 
