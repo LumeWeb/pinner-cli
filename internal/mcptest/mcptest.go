@@ -35,6 +35,15 @@ func (s *Server) Account() *account.Server { return s.account }
 // IPFS returns the content double.
 func (s *Server) IPFS() *ipfs.Server { return s.ipfs }
 
+// Seed registers a deterministic account on the account double and authorizes
+// the same token on the content double, so both contracts accept the returned
+// bearer token. It returns the token.
+func (s *Server) Seed(email, firstName, lastName string) string {
+	tok := s.account.Seed(email, firstName, lastName)
+	s.ipfs.AuthorizeToken(tok)
+	return tok
+}
+
 // Handler returns a dispatcher that routes the account API's prefixes
 // (/api/auth/, /api/account/) to the account double and everything else
 // (content /api/* and the /pins pinning service) to the content double.

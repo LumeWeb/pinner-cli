@@ -13,7 +13,10 @@ import (
 // (every endpoint returns 501 by default) and overrides the endpoints
 // pinner-cli's MCP/CLI actually exercises with in-memory fake data.
 //
-// It enforces a bearer-token auth gate on the API endpoints that require it.
+// It enforces a bearer-token auth gate: endpoints that require auth return
+// 401 when the Authorization header is absent or the token is unknown. Seed a
+// valid token with AuthorizeToken (the account double is seeded first, and the
+// harness propagates the same token here).
 type Server struct {
 	serverStub
 
@@ -21,15 +24,32 @@ type Server struct {
 
 	// pins is an in-memory pin store keyed by request id.
 	pins map[string]*PinStatusResponse
+	// tokens is the set of bearer tokens accepted by the auth gate.
+	tokens map[string]struct{}
 }
 
 // NewServer returns a fake content API double with empty state.
 func NewServer() *Server {
-	return &Server{pins: map[string]*PinStatusResponse{}}
+	return &Server{pins: map[string]*PinStatusResponse{}, tokens: map[string]struct{}{}}
+}
+
+// AuthorizeToken adds a bearer token to the accepted set. The harness calls
+// this with the same seeded account token so content calls authenticate
+// through the same bearer token as account calls.
+func (s *Server) AuthorizeToken(token string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.tokens[token] = struct{}{}
 }
 
 func (s *Server) authorized(r *http.Request) bool {
-	return strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ")
+	auth := r.Header.Get("Authorization")
+	const prefix = "Bearer "
+	if !strings.HasPrefix(auth, prefix) {
+		return false
+	}
+	_, ok := s.tokens[strings.TrimPrefix(auth, prefix)]
+	return ok
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

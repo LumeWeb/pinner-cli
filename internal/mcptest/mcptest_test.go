@@ -30,7 +30,10 @@ func TestCombinedDispatcher(t *testing.T) {
 	ts := s.Start()
 	defer ts.Close()
 
-	// account route: register -> token (POST /api/auth/register)
+	// Seed an account that both account and content doubles accept.
+	tok := s.Seed("seed@x.c", "S", "D")
+
+	// account route: register -> a distinct deterministic token (POST /api/auth/register)
 	resp, b := do(t, "POST", ts.URL+"/api/auth/register", "",
 		strings.NewReader(`{"email":"a@b.c","password":"pw","first_name":"A","last_name":"B"}`))
 	if resp.StatusCode != http.StatusCreated {
@@ -40,11 +43,16 @@ func TestCombinedDispatcher(t *testing.T) {
 		t.Fatalf("expected token in register response: %s", b)
 	}
 
-	// content route: pin listing (GET /pins) with the token from register
-	tok := "token-a@b.c" // deterministic in the account fake
+	// content route: pin listing (GET /pins) with the seeded, authorized token
 	resp, b = do(t, "GET", ts.URL+"/pins", tok, nil)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("pins status=%d body=%s", resp.StatusCode, b)
+	}
+
+	// a content request with an unknown token must be rejected (401)
+	resp, b = do(t, "GET", ts.URL+"/pins", "bogus-token", nil)
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("pins with unknown token status=%d body=%s", resp.StatusCode, b)
 	}
 
 	// bare /api/account (no trailing slash) must route to the account double

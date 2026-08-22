@@ -39,9 +39,10 @@ func TestPinRequiresAuth(t *testing.T) {
 
 func TestAddAndListPin(t *testing.T) {
 	s := NewServer()
+	tok := "token-x"
+	s.AuthorizeToken(tok)
 	ts := httptest.NewServer(Handler(s))
 	defer ts.Close()
-	tok := "token-x"
 
 	// add a pin
 	resp, b := do(t, "POST", ts.URL+"/pins", tok,

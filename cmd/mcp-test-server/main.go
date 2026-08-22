@@ -28,9 +28,11 @@ func main() {
 	flag.Parse()
 
 	api := mcptest.New()
-	token := api.Account().Seed(*seedEmail, *firstName, *lastName)
+	api.Seed(*seedEmail, *firstName, *lastName)
 	fmt.Printf("mcptest: fake Pinner API on http://127.0.0.1:%s\n", *port)
-	fmt.Printf("mcptest: seeded account %s -> auth_token %s\n", *seedEmail, token)
+	// Do not print the token itself (it is a secret-shaped value, even in a
+	// deterministic test double); the harness knows it from the fixture config.
+	fmt.Printf("mcptest: seeded account %s (authenticated)\n", *seedEmail)
 
 	srv := &http.Server{
 		Addr:    "127.0.0.1:" + *port,

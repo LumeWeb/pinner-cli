@@ -34,10 +34,12 @@ func TestPortalSDKAccountClientAgainstFake(t *testing.T) {
 }
 
 func TestIPFSSDKClientAgainstFake(t *testing.T) {
-	ts := New().Start()
+	srv := New()
+	tok := srv.Seed("e2e@example.com", "E2E", "Test")
+	ts := srv.Start()
 	defer ts.Close()
 
-	client, err := ipfs.NewClient(ts.URL, "token-e2e@example.com")
+	client, err := ipfs.NewClient(ts.URL, tok)
 	require.NoError(t, err, "construct ipfs-sdk client")
 
 	pins, err := client.Pinning().ListPins(context.Background())
