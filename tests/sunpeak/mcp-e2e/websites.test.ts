@@ -110,12 +110,18 @@ test('websites_validate reports the website as valid', async ({ mcp }) => {
   expect(result).toHaveTextContent('validated');
 });
 
-test('websites_ssl_status reports ready ssl for the domain', async ({ mcp }) => {
+test('websites_ssl_status reports an ssl status for the domain', async ({ mcp }) => {
+  // A freshly-created website is issued SSL on the real service, so the fake
+  // models it as SSL pending (awaiting issuance) — NOT "ready". The contract
+  // to assert is that an SSL status is reported (one of the valid states), not
+  // the specific value, which depends on issuance progression.
   const result = await invoke(mcp, 'websites_ssl_status', { website: Domain });
 
   expect(isCleanSuccess(result)).toBe(true);
   expect(result).not.toBeError();
-  expect(result).toHaveTextContent('ready');
+  // A freshly-created website is modeled by the fake as SSL "pending"
+  // (awaiting issuance) — a deterministic status value, not "ready".
+  expect(result).toHaveTextContent('pending');
 });
 
 test('websites_config returns gateway domain and nameservers', async ({ mcp }) => {
