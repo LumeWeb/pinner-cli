@@ -197,8 +197,14 @@ export function makeUppyUploadXhr(onProgress?: UppyProgressFn): UploadXhr {
       fieldName: "file",
     });
     if (onProgress) {
-      uppy.on("progress", (p: { bytesUploaded: number; bytesTotal: number }) => {
-        if (p && p.bytesTotal > 0) onProgress(p.bytesUploaded, p.bytesTotal);
+      uppy.on("upload-progress", (_file, progress) => {
+        // `upload-progress` carries the live byte counts (bytesUploaded,
+        // bytesTotal) for a determinate bar; Uppy's bare `progress` event only
+        // emits a percentage number, so it cannot drive a byte-based bar.
+        const { bytesUploaded, bytesTotal } = progress;
+        if (typeof bytesTotal === "number" && bytesTotal > 0) {
+          onProgress(bytesUploaded, bytesTotal);
+        }
       });
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Uppy 5 bins carry opaque metadata.
