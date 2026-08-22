@@ -143,7 +143,7 @@ func cloudflaredFinalize(_ context.Context, _ fieldform.Prompter, s *ServiceInst
 }
 
 // ngrokFields returns the promptable install fields for the ngrok provider:
-// the authtoken / MCP tunnel token and the public base URL (MCP_PUBLIC_URL).
+// the authtoken and the public base URL (MCP_PUBLIC_URL).
 // Both resolve through a Derived hook so a re-run reuses what is already
 // available (the config-manager store, the ngrok CLI config, the account API)
 // instead of re-prompting, matching the legacy ngrokConfigurer it replaces.
@@ -158,7 +158,7 @@ func cloudflaredFinalize(_ context.Context, _ fieldform.Prompter, s *ServiceInst
 // URL field is resolved.
 func ngrokFields(ctx context.Context, cfgMgr config.Manager) []fieldform.Field[*ServiceInstallState, string] {
 	token := *installFieldByName("TunnelToken")
-	token.Prompt = promptText("ngrok authtoken / MCP tunnel token", "*")
+	token.Prompt = promptText("ngrok authtoken (account token from your ngrok dashboard)", "*")
 	token.Derived = func(s *ServiceInstallState) (string, bool) {
 		if s.TunnelToken != "" {
 			return s.TunnelToken, true
