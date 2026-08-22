@@ -586,8 +586,9 @@ func newManagedService(cmd *cli.Command, envFile string, provider tunnel.TunnelP
 // MCP_AUTH_TOKEN in its env file takes effect on the running endpoint. It is a
 // no-op when the install state carries no backing service to restart (no env
 // file or provider). Callers gate on whether a managed service was actually
-// started (e.g. effectiveManagedService) before invoking it.
-func RestartManagedService(cmd *cli.Command, s *ServiceInstallState) error {
+// started (e.g. effectiveManagedService) before invoking it. The caller's ctx
+// is honored so an interrupted install (Ctrl-C) can cancel the restart.
+func RestartManagedService(ctx context.Context, cmd *cli.Command, s *ServiceInstallState) error {
 	if s == nil || s.EnvFile == "" || s.Provider == "" {
 		return nil
 	}
@@ -595,7 +596,7 @@ func RestartManagedService(cmd *cli.Command, s *ServiceInstallState) error {
 	if err != nil {
 		return err
 	}
-	return svc.Restart(context.Background())
+	return svc.Restart(ctx)
 }
 
 // serviceConfigForInstall builds the service.Config for the managed MCP

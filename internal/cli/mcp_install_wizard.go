@@ -435,30 +435,47 @@ func (w *InstallWizard) writeConfig(s *InstallState) error {
 // agent config validate against the SAME credential — without this the endpoint
 // keeps enforcing the inherited token and the agent connection breaks.
 func (w *InstallWizard) persistAuthToken(ctx context.Context, s *InstallState, pw string) error {
-	s.AuthToken = pw
+	// No backing service (e.g. --service=false, operator-run foreground
+	// server, or tests with a fake collector): only the agent config consumes
+	// the token, so just record it in memory.
 	if s.Service == nil {
+		s.AuthToken = pw
 		return nil
 	}
-	s.Service.AuthToken = pw
-	if s.Service.EnvFile == "" {
-		return nil
-	}
+
 	env, err := service.LoadEnvironment(s.Service.EnvFile)
 	if err != nil {
 		return fmt.Errorf("load MCP service environment %q to persist the MCP password: %w", s.Service.EnvFile, err)
 	}
+	prev, hadPrev := env["MCP_AUTH_TOKEN"]
+
+	// The running service reads MCP_AUTH_TOKEN from this file at process
+	// start, so the new token must be written to disk BEFORE the restart that
+	// reloads it. If the restart then fails, roll the file (and state) back to
+	// the token the still-running endpoint enforces so disk and memory agree
+	// with what is actually live.
 	env["MCP_AUTH_TOKEN"] = pw
 	if err := service.WriteEnvironment(s.Service.EnvFile, env); err != nil {
 		return fmt.Errorf("persist MCP password to %q: %w", s.Service.EnvFile, err)
 	}
-	// The running endpoint enforces MCP_AUTH_TOKEN from this env file but only
-	// at process start, so a changed password must restart the managed service
-	// to take effect. The seam is nil in tests and for non-service installs.
+
 	if w.restartHTTPService != nil {
-		if err := w.restartHTTPService(ctx, s); err != nil {
-			return fmt.Errorf("restart MCP service to load the new MCP password: %w", err)
+		if rerr := w.restartHTTPService(ctx, s); rerr != nil {
+			// Restore the previous token the live endpoint still enforces.
+			if hadPrev {
+				env["MCP_AUTH_TOKEN"] = prev
+			} else {
+				delete(env, "MCP_AUTH_TOKEN")
+			}
+			_ = service.WriteEnvironment(s.Service.EnvFile, env)
+			s.AuthToken = prev
+			s.Service.AuthToken = prev
+			return fmt.Errorf("restart MCP service to load the new MCP password: %w", rerr)
 		}
 	}
+
+	s.AuthToken = pw
+	s.Service.AuthToken = pw
 	return nil
 }
 

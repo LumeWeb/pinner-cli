@@ -1639,6 +1639,68 @@ func TestMcpInstallHTTPPasswordPersistsToServiceEnv(t *testing.T) {
 	}
 }
 
+// TestMcpInstallHTTPPasswordRestartFailureRollsBack guards that a failed
+// service restart does not leave the env file or in-memory state holding the
+// new password while the (un-restarted) endpoint still enforces the old one.
+// On restart failure the wizard must roll the env file and state back to the
+// previous token so disk, memory, and the live endpoint agree.
+func TestMcpInstallHTTPPasswordRestartFailureRollsBack(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	projectDir := t.TempDir()
+
+	envFile := filepath.Join(t.TempDir(), "mcp.env")
+	if err := os.WriteFile(envFile, []byte("MCP_AUTH_TOKEN=inherited-token\n"), 0o600); err != nil {
+		t.Fatalf("write env file: %v", err)
+	}
+
+	ui := newMockInstallUI()
+	state := &InstallState{
+		Agents:     []install.AgentKey{install.AgentClaudeCode},
+		Scope:      scopeGlobal,
+		Transport:  install.TransportHTTP,
+		UseService: true,
+		Service: &mcpadapter.ServiceInstallState{
+			EnvFile:    envFile,
+			AuthToken:  "inherited-token",
+			PublicURL:  "https://mcp.example.com",
+			Provider:   tunnel.TunnelProviderNgrok,
+			TunnelName: "pinner-mcp",
+		},
+	}
+
+	w := NewInstallWizard(ui, state, tempPathResolver(root, projectDir))
+	w.collectHTTP = fakeHTTPCollector("https://mcp.example.com", "inherited-token")
+	ui.SetMCPPasswordResult = "operator-chosen-password"
+	w.restartHTTPService = func(_ context.Context, _ *InstallState) error {
+		return fmt.Errorf("systemctl restart failed")
+	}
+
+	if _, err := w.Run(ctx); err == nil {
+		t.Fatalf("expected the wizard to fail when the service restart fails, got nil")
+	}
+
+	// The env file must be rolled back to the token the endpoint still enforces.
+	envData, err := os.ReadFile(envFile)
+	if err != nil {
+		t.Fatalf("read env file: %v", err)
+	}
+	if !strings.Contains(string(envData), "MCP_AUTH_TOKEN=inherited-token") {
+		t.Errorf("env file must be rolled back to the previous token on restart failure, got:\n%s", envData)
+	}
+	if strings.Contains(string(envData), "operator-chosen-password") {
+		t.Errorf("env file must not retain the uncommitted new password, got:\n%s", envData)
+	}
+
+	// In-memory state must also point at the old (live) token.
+	if state.AuthToken != "inherited-token" {
+		t.Errorf("state.AuthToken = %q, want inherited-token (rolled back)", state.AuthToken)
+	}
+	if state.Service.AuthToken != "inherited-token" {
+		t.Errorf("service.AuthToken = %q, want inherited-token (rolled back)", state.Service.AuthToken)
+	}
+}
+
 // TestMcpInstallHTTPNonInteractiveSkipsPassword guards that a non-interactive
 // http install does NOT prompt for the password (it is sourced from flags/env)
 // and does not error at the prompt. The sourced token is used as-is.

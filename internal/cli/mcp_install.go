@@ -327,7 +327,7 @@ func RunMcpInstallWizard(ctx context.Context, cmd mcpInstallFlagGetter, ui Insta
 			if s == nil || s.Service == nil || !effectiveManagedService(realCmd.IsSet("service"), s.UseService) {
 				return nil
 			}
-			return mcpadapter.RestartManagedService(realCmd, s.Service)
+			return mcpadapter.RestartManagedService(ctx, realCmd, s.Service)
 		}
 	}
 

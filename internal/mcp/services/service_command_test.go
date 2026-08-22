@@ -835,10 +835,11 @@ func TestServiceConfigForInstallPassesEnvFileUntouched(t *testing.T) {
 // from touching a live service when there is none to reload.
 func TestRestartManagedServiceNoOp(t *testing.T) {
 	cmd := &cli.Command{Flags: []cli.Flag{&cli.StringFlag{Name: serviceEnvFileFlag}}}
-	require.NoError(t, RestartManagedService(cmd, nil))
-	require.NoError(t, RestartManagedService(cmd, &ServiceInstallState{}))
+	ctx := context.Background()
+	require.NoError(t, RestartManagedService(ctx, cmd, nil))
+	require.NoError(t, RestartManagedService(ctx, cmd, &ServiceInstallState{}))
 	// An env file without a provider, or a provider without an env file, is
 	// still a no-op — neither can identify a managed service to restart.
-	require.NoError(t, RestartManagedService(cmd, &ServiceInstallState{EnvFile: "mcp.env"}))
-	require.NoError(t, RestartManagedService(cmd, &ServiceInstallState{Provider: tunnel.TunnelProviderNgrok}))
+	require.NoError(t, RestartManagedService(ctx, cmd, &ServiceInstallState{EnvFile: "mcp.env"}))
+	require.NoError(t, RestartManagedService(ctx, cmd, &ServiceInstallState{Provider: tunnel.TunnelProviderNgrok}))
 }
