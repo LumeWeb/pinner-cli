@@ -34,6 +34,10 @@ func TestTranslateError(t *testing.T) {
 		msg := err.Error()
 		assert.Contains(t, msg, "not pinned on the gateway")
 		assert.Contains(t, msg, "pin it first")
+		// Guidance distinguishes the post-upload eventual-consistency case from
+		// a CID that was never uploaded through Pinner.
+		assert.Contains(t, msg, "propagating")
+		assert.Contains(t, msg, "retry")
 		// The original chain is preserved for errors.Is.
 		assert.ErrorIs(t, err, base)
 	})
@@ -100,6 +104,9 @@ func TestTranslateErrorWithCID(t *testing.T) {
 		// match on these substrings.
 		assert.Contains(t, msg, "not pinned on the gateway")
 		assert.Contains(t, msg, "pin it first")
+		// Post-upload propagation-lag guidance is present: retry rather than re-pin.
+		assert.Contains(t, msg, "propagating")
+		assert.Contains(t, msg, "retry the website operation instead of re-pinning")
 		// The critical addition: the exact CID so the caller pins the right blob.
 		assert.Contains(t, msg, cid)
 		assert.Contains(t, msg, `pins_add(cids=[`+`"`+cid+`"`+`]`)

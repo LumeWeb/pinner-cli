@@ -39,7 +39,7 @@ func TranslateError(err error) error {
 
 	switch normalizeReason(ipfs.ErrorReasonOf(err)) {
 	case normalizeReason(ipfs.ErrorCodeCIDNotPinned):
-		return fmt.Errorf("target CID is not pinned on the gateway: pin it first (pins add / pins_add), then retry: %w", err)
+		return fmt.Errorf("target CID is not pinned on the gateway. If you just uploaded this CID (upload_data/upload_file/upload_url), the gateway may still be propagating the pin after the pinning API confirmed it — wait a few seconds and retry instead of re-pinning. If it was never uploaded through Pinner, pin it first (pins add / pins_add), then retry: %w", err)
 	case normalizeReason(ipfs.ErrorCodeIPNSKeyNotFound):
 		return fmt.Errorf("target IPNS key does not exist: create an IPNS key or target a pinned CID instead, then retry: %w", err)
 	case normalizeReason(ipfs.ErrorCodeDNSValidationFailed):
@@ -62,7 +62,7 @@ func TranslateErrorWithCID(err error, cid string) error {
 		return nil
 	}
 	if cid != "" && normalizeReason(ipfs.ErrorReasonOf(err)) == normalizeReason(ipfs.ErrorCodeCIDNotPinned) {
-		return fmt.Errorf("target CID %s is not pinned on the gateway: pin it first with pins_add(cids=[%q], wait=true), then retry the website operation: %w", cid, cid, err)
+		return fmt.Errorf("target CID %s is not pinned on the gateway. If you just uploaded this CID (upload_data/upload_file/upload_url with wait=true), the gateway may still be propagating the pin after the pinning API confirmed it — wait a few seconds and retry the website operation instead of re-pinning. If the CID was never uploaded through Pinner, pin it first with pins_add(cids=[%q], wait=true), then retry the website operation: %w", cid, cid, err)
 	}
 	return TranslateError(err)
 }

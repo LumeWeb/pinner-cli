@@ -135,9 +135,13 @@ create flow instead).
 
 {{define "website_update_step_pin"}}Step: ensure_pinned
 Before updating, verify CID {{.CID}} is pinned on the gateway.
-Check `pins_status` for the CID; if it is not pinned, call `pins_add` with
-cids=["{{.CID}}"] and wait=true. Do not proceed to the update step until pinning
-succeeds. An unpinned CID makes the update fail with CID_NOT_PINNED.
+Check `pins_status` for the CID. If this CID was just uploaded (upload_data /
+upload_file / upload_url with wait=true), it is typically already pinned, and a
+CID_NOT_PINNED failure right after upload is usually gateway propagation lag:
+retry the update after a few seconds instead of re-pinning. Only if the CID was
+never uploaded through Pinner and pins_status shows it is not pinned should you
+call `pins_add` with cids=["{{.CID}}"] and wait=true. Do not proceed to the
+update step until the CID is definitely pinned.
 {{end}}
 
 {{define "website_update_step_update"}}Step: update
@@ -165,7 +169,11 @@ CID. Validation can only pass after that record is live.
 If valid, proceed to complete.
 If invalid because the _dnslink still references the old CID and DNS is managed,
 wait ~30-60 seconds, then re-check once (reconciliation lag) before treating it as a failure.
-If the error mentions an unpinned CID (CID_NOT_PINNED), go back to the ensure_pinned step.
+If the error mentions an unpinned CID (CID_NOT_PINNED) and this CID was just
+uploaded with wait=true, the gateway is still propagating the pin: wait a few
+seconds and retry the update (go back to the update step). Only if the CID was
+never uploaded through Pinner should you go back to ensure_pinned and call
+pins_add.
 {{end}}
 
 {{define "website_update_step_complete"}}Update workflow finished.
