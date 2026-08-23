@@ -276,6 +276,18 @@ body {
 @utility seed-backup {
   @apply mt-4 border border-border rounded-lg py-2.5 px-3.5 bg-background-deep;
 }
+/* OOB code/URL block shared by the one-time seed-drop mnemonic and the
+   device-approval URL. Both get the code-block look; break-all keeps a long
+   unbroken approval URL inside the card instead of overflowing/expanding the
+   layout. The descendent anchor inherits the block styling (no default link
+   color/underline) so the full link reads as a styled, selectable code block. */
+@utility seed-code {
+  @apply block my-3 px-3 py-2 rounded-lg bg-background-deep border border-border font-mono text-[0.82rem] leading-relaxed text-foreground break-all select-all;
+
+  & a {
+    @apply text-inherit no-underline;
+  }
+}
 
 /* OOB button-as-link CTA (seed retrieval). */
 @utility brand-btn-link {
