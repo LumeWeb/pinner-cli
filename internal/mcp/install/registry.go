@@ -3,6 +3,8 @@ package install
 import (
 	"os"
 	"path/filepath"
+
+	"github.com/samber/lo"
 )
 
 // Agent is the behavior contract every supported MCP client target satisfies.
@@ -79,11 +81,9 @@ func (r *Registry) Get(key AgentKey) Agent {
 
 // All returns every agent in declaration order.
 func (r *Registry) All() []Agent {
-	out := make([]Agent, 0, len(r.order))
-	for _, key := range r.order {
-		out = append(out, r.byKey[key])
-	}
-	return out
+	return lo.Map(r.order, func(key AgentKey, _ int) Agent {
+		return r.byKey[key]
+	})
 }
 
 // Keys returns the ordered agent keys.

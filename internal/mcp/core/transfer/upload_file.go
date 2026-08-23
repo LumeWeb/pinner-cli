@@ -88,7 +88,11 @@ func newUploadFileDescriptor(coLocated, tunnelOpenAI bool, pathFn UploadFileHand
 		Title:       "Upload a file to Pinner",
 		Description: uploadFileDescription(transport),
 		Category:    model.CategoryCore,
-		InputSchema: toolargs.ToolSchemaFor[UploadFileInput](),
+		// The input schema advertises only the source.mode values valid for this
+		// transport (path for stdio, mint for HTTP/tunnel, url+data for the
+		// OpenAI tunnel), matching capabilities().source_modes so the published
+		// schema never contradicts the advertised modes.
+		InputSchema: RewriteSourceModeEnum(toolargs.ToolSchemaFor[UploadFileInput](), transport),
 		// Advertise the OpenAI file-parameter handoff so a ChatGPT/OpenAI host
 		// knows the top-level `file` argument carries a generated-file
 		// reference (temporary download_url + file_id) it can populate from a
@@ -250,11 +254,11 @@ func newUploadFileDescriptor(coLocated, tunnelOpenAI bool, pathFn UploadFileHand
 func uploadFileDescription(t TransportKind) string {
 	switch t {
 	case TransportStdio:
-		return "Upload a file to Pinner. If your host provides the file to you directly, pass it in the file input (a temporary download_url + file_id) and Pinner fetches and pins its bytes — no manual upload needed. In this co-located stdio mode you may instead set source.mode=path and source.path to a host-side file/directory/archive path; the server reads it directly. Poll upload_status (or cancel/list) with the returned handle."
+		return "Upload a file to Pinner and pin it. Preferred: if your host hands you the file directly, pass it in the `file` input (a temporary download_url + file_id) and Pinner fetches and pins its bytes — no base64, curl, or transport choice needed. Fallback, co-located stdio only: source.mode=path with a host-side file/directory/archive path; the server reads it directly. Poll upload_status with the returned handle. The `file` object is always the preferred input; source is a fallback."
 	case TransportHTTP:
-		return "Upload a file to Pinner. If your host provides a generated file directly, pass it in the file input (a temporary download_url + file_id) and Pinner fetches and pins its bytes — do not use curl for a file the host already owns. Otherwise over this HTTP/tunnel transport, set source.mode=mint to get a one-time presigned HTTP PUT endpoint and stream your file's bytes to it with curl, then poll upload_status with the returned upload_handle."
+		return "Upload a file to Pinner and pin it. Preferred: if your host provides a generated file directly, pass it in the `file` input (a temporary download_url + file_id) and Pinner fetches and pins its bytes — no base64, no curl, no presigned endpoint needed. Fallback, HTTP/tunnel only: source.mode=mint returns a one-time presigned HTTP PUT endpoint; stream the file's bytes to it with curl, then poll upload_status with the returned upload_handle. `file` is always preferred; mint is only for bytes your host cannot hand Pinner directly."
 	default:
-		return "Upload a file to Pinner. If your host provides a generated file directly, pass it in the file input (a temporary download_url + file_id) and Pinner fetches and pins its bytes. Over this OpenAI-tunnel transport you may instead set source.mode=url (a server-fetchable HTTPS download URL) or source.mode=data (an RFC 2397 data: URI); the server fetches/decodes the bytes and uploads them. Poll upload_status with the returned handle."
+		return "Upload a file to Pinner and pin it. Preferred: if your host hands you the file directly, pass it in the `file` input (a temporary download_url + file_id) and Pinner fetches and pins its bytes. Fallback, OpenAI tunnel only: source.mode=url (a server-fetchable HTTPS download URL) or source.mode=data (an RFC 2397 data: URI); the server fetches/decodes and uploads them. `file` is always preferred; url/data are fallbacks. Poll upload_status with the returned handle."
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
@@ -142,10 +143,9 @@ func TestSSOToolsDiscoverableInCatalog(t *testing.T) {
 
 	for _, q := range []string{"sso", "oob", "resume", "sign-in", "out-of-band", "auth"} {
 		summaries := catalog.Search(q, "", 0)
-		names := make([]string, 0, len(summaries))
-		for _, s := range summaries {
-			names = append(names, s.Name)
-		}
+		names := lo.Map(summaries, func(s ToolSummary, _ int) string {
+			return s.Name
+		})
 		assert.Contains(t, names, "auth_sso", "search %q must find auth_sso", q)
 		assert.Contains(t, names, "auth_resume", "search %q must find auth_resume", q)
 	}
@@ -211,10 +211,9 @@ func TestSearchDescriptionMatchIsWholeToken(t *testing.T) {
 	c := seedDiscoveryCatalog()
 
 	summaries := c.Search("auth", "", 0)
-	names := make([]string, 0, len(summaries))
-	for _, s := range summaries {
-		names = append(names, s.Name)
-	}
+	names := lo.Map(summaries, func(s ToolSummary, _ int) string {
+		return s.Name
+	})
 
 	// Name-prefix hits for auth_sso / auth_resume must be present.
 	assert.Contains(t, names, "auth_sso", "auth_sso must match 'auth' by name prefix")
@@ -261,10 +260,9 @@ func TestOnboardingPrimaryOnly(t *testing.T) {
 
 	// The seed catalog's primary tools (auth_sso, auth_resume, pins_add) must
 	// all be present; the non-primary account_status must not be.
-	names := make([]string, 0, len(res.Tools))
-	for _, s := range res.Tools {
-		names = append(names, s.Name)
-	}
+	names := lo.Map(res.Tools, func(s ToolSummary, _ int) string {
+		return s.Name
+	})
 	assert.Contains(t, names, "auth_sso")
 	assert.Contains(t, names, "auth_resume")
 	assert.Contains(t, names, "pins_add")

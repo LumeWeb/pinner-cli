@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 )
 
@@ -75,12 +76,9 @@ func parseGjsonResult(r gjson.Result) any {
 		return m
 	}
 	if r.IsArray() {
-		arr := r.Array()
-		out := make([]any, 0, len(arr))
-		for _, v := range arr {
-			out = append(out, parseGjsonResult(v))
-		}
-		return out
+		return lo.Map(r.Array(), func(v gjson.Result, _ int) any {
+			return parseGjsonResult(v)
+		})
 	}
 	return r.Value()
 }

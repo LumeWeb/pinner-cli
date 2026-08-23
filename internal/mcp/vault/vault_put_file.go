@@ -86,7 +86,11 @@ func newVaultPutFileDescriptor(coLocated, tunnelOpenAI bool, pathFn LocalPathVau
 		Title:       "Store a file in the Pinner vault",
 		Description: vaultPutFileDescription(transport),
 		Category:    model.CategoryCore,
-		InputSchema: toolargs.ToolSchemaFor[VaultPutFileInput](),
+		// The input schema advertises only the source.mode values valid for this
+		// transport (path/mint/url+data per transport), matching
+		// capabilities().source_modes so the published schema and the
+		// advertised modes cannot drift.
+		InputSchema: transfer.RewriteSourceModeEnum(toolargs.ToolSchemaFor[VaultPutFileInput](), transport),
 		// Advertise the OpenAI file-parameter handoff so a ChatGPT/OpenAI host
 		// knows the top-level `file` argument carries a generated-file
 		// reference (temporary download_url + file_id) it can populate from a

@@ -31,7 +31,7 @@ func DataURIUploadDescriptor(handler DataURIUploadHandler, maxBytes int64) model
 	return model.ToolDescriptor{
 		Name:        "upload_data",
 		Title:       "Upload a file from a data URI",
-		Description: "Upload a file supplied as a SEP-2356 data: file URI (x-mcp-file wire form). Pinner decodes the base64 payload locally and uploads it through the authenticated path. Use this when the host can attach file bytes as a data URI but cannot supply a fetchable URL.",
+		Description: "Upload a file supplied as a SEP-2356 data: file URI (x-mcp-file wire form). Pinner decodes the base64 payload locally and uploads it through the authenticated path. Last resort: prefer upload_file with a direct host file reference (or source.mode=url/mint) whenever your host can hand Pinner the file without encoding it as base64. Use this tool only when the host can attach file bytes as a data URI and cannot supply a fetchable URL or presigned endpoint.",
 		Category:    model.CategoryCore,
 		InputSchema: toolargs.ToolSchemaFor[DataURIUploadInput](),
 		// x-mcp-file marks the "file" property as a file-valued input per the
