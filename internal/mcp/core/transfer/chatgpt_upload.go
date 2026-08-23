@@ -18,7 +18,12 @@ import (
 // the underlying SDK/TUS. It is shared by every file-input mode (file object,
 // URL relay, draft data: URIs, and async uploads); only the source of
 // the bytes differs, never this contract.
-type UploadHandler func(context.Context, io.Reader, int64, string, bool) (any, error)
+//
+// The final wrap bool, when true, forces a directory root on a single-file
+// upload (wraps the file in a root directory) — required for content that will
+// be served as a website. It is ignored by paths that cannot express it (mint/
+// async presigned PUTs pass false).
+type UploadHandler func(context.Context, io.Reader, int64, string, bool, bool) (any, error)
 
 // Vendor-specific handler type aliases keep call sites readable while making
 // clear they are all the same agnostic stream-upload signature.

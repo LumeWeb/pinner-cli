@@ -25,6 +25,15 @@ type UploadResult struct {
 // Service defines the interface for uploading content to IPFS.
 type Service interface {
 	// Upload file/directory to IPFS.
+	//
+	// wrap forces a directory root when true (only meaningful for a single
+	// file/directory upload): the SDK wraps the single file in a root
+	// directory so the resulting CID root is a directory rather than the flat
+	// file CID. Websites require a directory root, so callers uploading a lone
+	// file destined for a website should pass wrap=true. For an
+	// already-directory filesystem wrap has no effect (it is already a
+	// directory root).
+	//
 	// Returns the upload result with CID, size, and duration.
-	Upload(ctx context.Context, filesystem fs.FS, name string, wait bool) (*UploadResult, error)
+	Upload(ctx context.Context, filesystem fs.FS, name string, wait bool, wrap bool) (*UploadResult, error)
 }

@@ -18,6 +18,7 @@ type RelayURLUploadInput struct {
 	URL  string `json:"url" jsonschema:"format=uri,description=Public HTTPS URL to fetch and upload."`
 	Name string `json:"name,omitempty" jsonschema:"description=Optional upload name."`
 	Wait bool   `json:"wait,omitempty" jsonschema:"description=Wait for pinning to complete before returning."`
+	Wrap bool   `json:"wrap,omitempty" jsonschema:"description=Wrap the single fetched file in a directory root so the CID is a directory (required when the upload is a website)."`
 }
 
 // RelayURLUploadDescriptor uploads a file by having the local MCP process
@@ -54,7 +55,7 @@ func RelayURLUploadDescriptor(handler transfer.RelayURLUploadHandler, allowedHos
 			// indefinitely. Budget scales with size; see SyncUploadBudget.
 			transferCtx, cancel := context.WithTimeout(ctx, transfer.SyncUploadBudget(size))
 			defer cancel()
-			result, err := handler(transferCtx, body, size, in.Name, in.Wait)
+			result, err := handler(transferCtx, body, size, in.Name, in.Wait, in.Wrap)
 			return toolargs.WrapResult(result, err, "URL uploaded.")
 		},
 	}

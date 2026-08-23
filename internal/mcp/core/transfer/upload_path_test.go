@@ -11,7 +11,7 @@ import (
 )
 
 func TestLocalPathUploadDescriptorRequiresPath(t *testing.T) {
-	desc := transfer.NewUploadFileDescriptor(true, false, func(ctx context.Context, path, name string, wait bool, archiveMode string) (any, error) {
+	desc := transfer.NewUploadFileDescriptor(true, false, func(ctx context.Context, path, name string, wait bool, archiveMode string, wrap bool) (any, error) {
 		return nil, nil
 	}, nil, nil, nil, 0)
 	// An empty source (no mode) must be rejected by validation.
@@ -33,7 +33,7 @@ func TestLocalPathUploadDescriptorCallsHandler(t *testing.T) {
 	var gotPath, gotName, gotMode string
 	var gotWait bool
 	result := map[string]any{"cid": "QmTest"}
-	desc := transfer.NewUploadFileDescriptor(true, false, func(ctx context.Context, path, name string, wait bool, archiveMode string) (any, error) {
+	desc := transfer.NewUploadFileDescriptor(true, false, func(ctx context.Context, path, name string, wait bool, archiveMode string, wrap bool) (any, error) {
 		gotPath = path
 		gotName = name
 		gotWait = wait
@@ -59,7 +59,7 @@ func TestLocalPathUploadDescriptorCallsHandler(t *testing.T) {
 }
 
 func TestLocalPathUploadDescriptorRejectsMintInStdio(t *testing.T) {
-	desc := transfer.NewUploadFileDescriptor(true, false, func(ctx context.Context, path, name string, wait bool, archiveMode string) (any, error) {
+	desc := transfer.NewUploadFileDescriptor(true, false, func(ctx context.Context, path, name string, wait bool, archiveMode string, wrap bool) (any, error) {
 		t.Fatal("path handler must not be invoked")
 		return nil, nil
 	}, nil, nil, nil, 0)

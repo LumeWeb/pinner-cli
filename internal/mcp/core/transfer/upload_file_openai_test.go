@@ -37,7 +37,7 @@ func buildOpenAIFileDesc(t *testing.T, srv *httptest.Server, maxBytes int64) (mo
 	t.Helper()
 	var gotBytes []byte
 	var gotName string
-	desc := newUploadFileDescriptor(false, false, nil, nil, func(ctx context.Context, reader io.Reader, sz int64, name string, wait bool) (any, error) {
+	desc := newUploadFileDescriptor(false, false, nil, nil, func(ctx context.Context, reader io.Reader, sz int64, name string, wait bool, _ bool) (any, error) {
 		b, err := io.ReadAll(reader)
 		require.NoError(t, err)
 		gotBytes = b
@@ -104,7 +104,7 @@ func TestUploadFileDescriptorOpenAIFileMissingFileNameFallsBack(t *testing.T) {
 func TestUploadFileDescriptorOpenAIFileOversized(t *testing.T) {
 	srv := openaiFetchServer(t, []byte("0123456789")) // 10 bytes
 	var called bool
-	desc := newUploadFileDescriptor(false, false, nil, nil, func(ctx context.Context, reader io.Reader, sz int64, name string, wait bool) (any, error) {
+	desc := newUploadFileDescriptor(false, false, nil, nil, func(ctx context.Context, reader io.Reader, sz int64, name string, wait bool, _ bool) (any, error) {
 		called = true
 		return nil, nil
 	}, []string{"127.0.0.1"}, 3, srv.Client()) // cap 3 bytes
@@ -122,7 +122,7 @@ func TestUploadFileDescriptorOpenAIFileRunOnEveryTransport(t *testing.T) {
 	// transport-independent.
 	srv := openaiFetchServer(t, []byte(openaiTestPayload))
 	var gotBytes []byte
-	desc := newUploadFileDescriptor(true, false, nil, nil, func(ctx context.Context, reader io.Reader, sz int64, name string, wait bool) (any, error) {
+	desc := newUploadFileDescriptor(true, false, nil, nil, func(ctx context.Context, reader io.Reader, sz int64, name string, wait bool, _ bool) (any, error) {
 		b, _ := io.ReadAll(reader)
 		gotBytes = b
 		return map[string]any{"cid": "QmStdioFile"}, nil

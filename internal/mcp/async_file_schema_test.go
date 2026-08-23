@@ -27,7 +27,7 @@ func listToolsFor(t *testing.T, descs ...model.ToolDescriptor) map[string]*mcp.T
 // + file_id), NOT a bare string that a host/model cannot turn into a real file
 // handoff. It must also carry the openai/fileParams annotation.
 func TestAsyncUploadFileIsObjectNotString(t *testing.T) {
-	mgr := transfer.NewUploadTaskManager(func(_ context.Context, r io.Reader, _ int64, _ string, _ bool) (any, error) {
+	mgr := transfer.NewUploadTaskManager(func(_ context.Context, r io.Reader, _ int64, _ string, _ bool, _ bool) (any, error) {
 		return map[string]any{"handle": "h"}, nil
 	}, 0)
 	tools := listToolsFor(t, upload.NewAsyncUploadTools(mgr)...)

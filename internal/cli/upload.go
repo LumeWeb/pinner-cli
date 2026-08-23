@@ -231,7 +231,7 @@ func handleUpload(ctx context.Context, cmd interface {
 		return nil
 	}
 
-	result, err := uploadService.Upload(ctx, input.Filesystem, input.Name, wait)
+	result, err := uploadService.Upload(ctx, input.Filesystem, input.Name, wait, false)
 	if err != nil {
 		return err
 	}
