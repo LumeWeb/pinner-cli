@@ -142,12 +142,14 @@ succeeds. An unpinned CID makes the update fail with CID_NOT_PINNED.
 
 {{define "website_update_step_update"}}Step: update
 Call the `websites_update` tool:
-  website:     "{{.WebsiteArg}}"
-  cid:         "{{.CID}}"
+  website: "{{.WebsiteArg}}"
+  cid:     "{{.CID}}"
+{{- if .CurrentType}}
   target-type: "{{.CurrentType}}"
-Do not change dns-hosting unless explicitly requested. If the update returns the
-"required when --cid" error, you omitted target-type; re-run using the current
-type resolved in the resolve_state step.
+{{- end}}
+Do not change dns-hosting unless explicitly requested; if target-type was not
+resolved in the resolve_state step, omit it so the site's current type is
+preserved automatically.
 {{end}}
 
 {{define "website_update_step_dns"}}Step: dns_check
@@ -167,6 +169,6 @@ If the error mentions an unpinned CID (CID_NOT_PINNED), go back to the ensure_pi
 {{end}}
 
 {{define "website_update_step_complete"}}Update workflow finished.
-Summarize: new CID ({{.CID}}), target type preserved ({{.CurrentType}}), and the current
+Summarize the new CID ({{.CID}}){{if .CurrentType}}, target type preserved ({{.CurrentType}}){{end}}, and the current
 validation status. If DNS is still reconciling, advise checking again in a few minutes.
 {{end}}
