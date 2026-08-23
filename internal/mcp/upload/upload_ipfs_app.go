@@ -235,7 +235,12 @@ func RegisterIPFSUploadApp(srv *sdk.Server, catalog apps.AppCatalog, hp *transfe
 		// tunnel/base URL or loopback address) is only known after the server
 		// and transport are up — after app registration.
 		ConnectDomainsFunc: hp.ConnectOrigins,
-		AttachTo:           []string{"upload_file"},
+		// Attach the UI view to the open_upload_manager LAUNCHER — not the
+		// headless upload_file primitive (upload_file already stays headless
+		// by not copying catalog meta in custom_tools.go; pointing AttachTo at
+		// the launcher makes the separation explicit and keeps the catalog
+		// entry free of resourceUri).
+		AttachTo: []string{OpenUploadManagerToolName},
 		Helpers: []model.ToolDescriptor{
 			ipfsUploadSubmitDescriptor(hp),
 			ipfsUploadStatusDescriptor(hp),

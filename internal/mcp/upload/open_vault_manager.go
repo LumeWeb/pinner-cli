@@ -15,6 +15,11 @@ import (
 // app. The launcher's tool _meta.ui references it.
 const OpenVaultManagerURI = VaultUploadAppURI
 
+// OpenVaultManagerToolName is the model-facing open_* launcher for the Upload
+// to Vault app. It is the ONLY tool carrying ui.resourceUri for this view; the
+// headless vault_put_file primitive never advertises a card.
+const OpenVaultManagerToolName = "open_vault_manager"
+
 // OpenVaultManagerInput is the typed argument shape for the model-facing
 // Vault upload launcher. Vault uploads are synchronous: bytes land in the
 // vault when the iframe's Uppy XHR PUT completes (no async poll loop).

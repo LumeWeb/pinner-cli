@@ -21,6 +21,11 @@ import (
 // AuthSSOAppURI is the ui:// resource serving the "Sign In" app.
 const AuthSSOAppURI = "ui://auth/sso.html"
 
+// OpenSSOSigninToolName is the model-facing open_* launcher for the Sign In
+// app. It is the ONLY tool carrying ui.resourceUri for this view; the headless
+// auth_sso primitive never advertises a card.
+const OpenSSOSigninToolName = "open_sso_signin"
+
 // RenderAuthSSOAppHTML renders the complete "Sign In" app document
 // (ui://auth/sso.html). The shared shell (doctype/<head>/inline theme) and the
 // ESM module (shared ext-apps bootstrap + SSO logic) come from
@@ -60,7 +65,10 @@ func RegisterAuthSSOApp(srv *sdk.Server, catalog apps.AppCatalog, reg *handoff.H
 		Description:   "Complete an out-of-band sign-in (SSO approval).",
 		HTML:          RenderAuthSSOAppHTML(),
 		PrefersBorder: true,
-		AttachTo:      []string{"auth_sso"},
-		Helpers:       []model.ToolDescriptor{authSSOStatusDescriptor(reg, handles)},
+		// Attach the UI view to the open_sso_signin LAUNCHER — not the headless
+		// auth_sso primitive (which keeps its needs_human URL+handle handoff
+		// for the agent's own use).
+		AttachTo: []string{OpenSSOSigninToolName},
+		Helpers:  []model.ToolDescriptor{authSSOStatusDescriptor(reg, handles)},
 	})
 }

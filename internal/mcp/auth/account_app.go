@@ -25,6 +25,16 @@ const AccountPasswordAppURI = "ui://account/password.html"
 // AccountEmailAppURI is the ui:// resource serving the "Change Email" app.
 const AccountEmailAppURI = "ui://account/email.html"
 
+// OpenAccountPasswordToolName / OpenAccountEmailToolName are the model-facing
+// open_* launchers for the Change Password / Change Email apps. They are the
+// ONLY tools carrying ui.resourceUri for these views; the headless
+// account_password_update / account_email_change primitives never advertise a
+// card.
+const (
+	OpenAccountPasswordToolName = "open_account_password"
+	OpenAccountEmailToolName    = "open_account_email"
+)
+
 // renderAccountPasswordAppHTML renders the complete "Change Password" app
 // document (ui://account/password.html). The shell (doctype/<head>/theme) and
 // the ESM module (shared ext-apps bootstrap + account-password link logic)
@@ -52,7 +62,9 @@ func RegisterAccountPasswordApp(srv *sdk.Server, catalog apps.AppCatalog) error 
 		Description:   "Change your Pinner password via a one-time page opened in your browser.",
 		HTML:          renderAccountPasswordAppHTML(),
 		PrefersBorder: true,
-		AttachTo:      []string{"account_password_update"},
+		// Attach the UI view to the open_account_password LAUNCHER — not the
+		// headless account_password_update primitive.
+		AttachTo: []string{OpenAccountPasswordToolName},
 	})
 }
 
@@ -67,6 +79,8 @@ func RegisterAccountEmailApp(srv *sdk.Server, catalog apps.AppCatalog) error {
 		Description:   "Change your Pinner email via a one-time page opened in your browser.",
 		HTML:          renderAccountEmailAppHTML(),
 		PrefersBorder: true,
-		AttachTo:      []string{"account_email_change"},
+		// Attach the UI view to the open_account_email LAUNCHER — not the
+		// headless account_email_change primitive.
+		AttachTo: []string{OpenAccountEmailToolName},
 	})
 }

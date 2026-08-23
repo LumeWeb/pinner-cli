@@ -22,6 +22,9 @@ func buildDownloadServers(t *testing.T) *mcp.Server {
 	catalog := NewToolCatalog()
 	addDownloadToolEntries(t, catalog)
 	srv := sdk.NewServer(nil)
+	// Seed launchers; the apps' AttachTo now point at open_* launchers.
+	seedLauncherForTest(t, srv, catalog, download.OpenDownloadManagerToolName, download.IPFSDownloadAppURI, model.CategoryCore)
+	seedLauncherForTest(t, srv, catalog, download.OpenVaultDownloadManagerToolName, download.VaultDownloadAppURI, model.CategoryVault)
 	if err := download.RegisterIPFSDownloadApp(srv, catalog); err != nil {
 		t.Fatalf("download.RegisterIPFSDownloadApp: %v", err)
 	}
@@ -71,19 +74,16 @@ func TestRegisterDownloadAppsWire(t *testing.T) {
 		require.True(t, seen, "download resource %s not listed", uri)
 	}
 
-	// The tools must carry _meta.ui pointing at the views.
+	// Primitives are headless (no resourceUri); launchers carry the view.
 	tres, err := cs.ListTools(ctx, nil)
 	require.NoError(t, err)
-	seen := map[string]bool{"download_file": false, "vault_get_file": false}
+	byName := map[string]*mcp.Tool{}
 	for _, x := range tres.Tools {
-		if _, ok := seen[x.Name]; !ok {
-			continue
-		}
-		require.NotNil(t, x.Meta, "%s has no _meta after registering the app", x.Name)
-		require.Equal(t, map[string]string{"download_file": download.IPFSDownloadAppURI, "vault_get_file": download.VaultDownloadAppURI}[x.Name], x.Meta["ui/resourceUri"])
-		seen[x.Name] = true
+		byName[x.Name] = x
 	}
-	for name, ok := range seen {
-		require.True(t, ok, "%s tool not found after registering download apps", name)
+	for _, prim := range []string{"download_file", "vault_get_file"} {
+		requireHeadlessNoUI(t, byName[prim])
 	}
+	requireLauncherUI(t, byName[download.OpenDownloadManagerToolName], download.IPFSDownloadAppURI)
+	requireLauncherUI(t, byName[download.OpenVaultDownloadManagerToolName], download.VaultDownloadAppURI)
 }

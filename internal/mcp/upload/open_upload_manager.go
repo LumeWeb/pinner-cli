@@ -15,6 +15,11 @@ import (
 // app. The launcher's tool _meta.ui references it.
 const OpenUploadManagerURI = IPFSUploadAppURI
 
+// OpenUploadManagerToolName is the model-facing open_* launcher for the Upload
+// to IPFS app. It is the ONLY tool carrying ui.resourceUri for this view; the
+// headless upload_file primitive never advertises a card.
+const OpenUploadManagerToolName = "open_upload_manager"
+
 // OpenUploadManagerInput is the typed argument shape for the model-facing
 // Upload to IPFS launcher. handle is optional: when provided, the launcher
 // opens the Upload to IPFS app pre-bound to that already-prepared upload

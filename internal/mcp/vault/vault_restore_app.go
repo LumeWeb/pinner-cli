@@ -22,6 +22,11 @@ import (
 // VaultRestoreAppURI is the ui:// resource serving the "Restore Vault" app.
 const VaultRestoreAppURI = "ui://vault/restore.html"
 
+// OpenVaultRestoreToolName is the model-facing open_* launcher for the Restore
+// Vault app. It is the ONLY tool carrying ui.resourceUri for this view; the
+// headless vault_restore primitive never advertises a card.
+const OpenVaultRestoreToolName = "open_vault_restore"
+
 // RenderVaultRestoreAppHTML renders the complete "Restore Vault" app document
 // (ui://vault/restore.html). The shared shell (doctype/<head>/inline theme) and
 // the ESM module (shared ext-apps bootstrap + restore logic) come from
@@ -60,7 +65,10 @@ func RegisterVaultRestoreApp(srv *sdk.Server, catalog apps.AppCatalog, reg *hand
 		Description:   "Restore a vault from its recovery seed.",
 		HTML:          RenderVaultRestoreAppHTML(),
 		PrefersBorder: true,
-		AttachTo:      []string{CompiledVaultRestoreToolName},
-		Helpers:       []model.ToolDescriptor{VaultRestoreStatusDescriptor(reg, handles)},
+		// Attach the UI view to the open_vault_restore LAUNCHER — not the
+		// headless vault_restore primitive (which keeps its needs_human
+		// URL+handle handoff for the agent's own use).
+		AttachTo: []string{OpenVaultRestoreToolName},
+		Helpers:  []model.ToolDescriptor{VaultRestoreStatusDescriptor(reg, handles)},
 	})
 }

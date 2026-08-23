@@ -60,6 +60,9 @@ func buildVaultUploadAppServerEx(t *testing.T, fake *fakeVaultPutHandler) (*mcp.
 
 	vaultPutDesc := vault.NewVaultPutFileDescriptor(false, false, nil, vu, fake.Put, nil, 0)
 	catalog.Add(model.ToolEntryFromDescriptor(vaultPutDesc))
+	// Seed the launcher exactly as registerOpenLauncher does in production;
+	// the app's AttachTo now points at open_vault_manager, not vault_put_file.
+	seedLauncherForTest(t, srv, catalog, upload.OpenVaultManagerToolName, upload.VaultUploadAppURI, model.CategoryVault)
 	if err := upload.RegisterVaultUploadApp(srv, catalog, vu); err != nil {
 		t.Fatalf("upload.RegisterVaultUploadApp: %v", err)
 	}
@@ -106,24 +109,36 @@ func TestRegisterVaultUploadAppWire(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTools: %v", err)
 	}
-	var putTool, submitTool *mcp.Tool
+	var putTool, submitTool, launcherTool *mcp.Tool
 	for _, x := range tres.Tools {
 		switch x.Name {
 		case "vault_put_file":
 			putTool = x
 		case "vault_upload_submit":
 			submitTool = x
+		case upload.OpenVaultManagerToolName:
+			launcherTool = x
 		}
 	}
 	if putTool == nil {
 		t.Fatalf("vault_put_file not listed")
 	}
-	ui, ok := putTool.Meta["ui"].(map[string]any)
-	if !ok {
-		t.Fatalf("_meta.ui missing on vault_put_file: %T", putTool.Meta["ui"])
+	// vault_put_file is a headless primitive: no ui.resourceUri.
+	if ui, ok := putTool.Meta["ui"].(map[string]any); ok {
+		if _, has := ui["resourceUri"]; has {
+			t.Fatalf("vault_put_file must NOT carry ui.resourceUri (headless); got %v", ui["resourceUri"])
+		}
 	}
-	if got := ui["resourceUri"]; got != upload.VaultUploadAppURI {
-		t.Fatalf("_meta.ui.resourceUri = %#v, want %q", got, upload.VaultUploadAppURI)
+	// open_vault_manager is the ONLY tool carrying resourceUri.
+	if launcherTool == nil {
+		t.Fatalf("open_vault_manager not listed")
+	}
+	lui, ok := launcherTool.Meta["ui"].(map[string]any)
+	if !ok {
+		t.Fatalf("_meta.ui missing on open_vault_manager: %T", launcherTool.Meta["ui"])
+	}
+	if got := lui["resourceUri"]; got != upload.VaultUploadAppURI {
+		t.Fatalf("open_vault_manager _meta.ui.resourceUri = %#v, want %q", got, upload.VaultUploadAppURI)
 	}
 
 	if submitTool == nil {

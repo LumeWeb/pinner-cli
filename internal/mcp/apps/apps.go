@@ -18,6 +18,11 @@ import (
 // PinCreateAppURI is the ui:// resource serving the "Create a Pin" app.
 const PinCreateAppURI = "ui://pins/create.html"
 
+// OpenPinCreatorToolName is the model-facing open_* launcher for the Create a
+// Pin app. It is the ONLY tool that carries ui.resourceUri for this view; the
+// headless pins_add primitive never advertises a card.
+const OpenPinCreatorToolName = "open_pin_creator"
+
 // PinningProvider is the narrow, SDK-neutral view the pin app needs from a
 // pinning backend: it reads a pin's status so the app can poll until terminal.
 // It is a subset of the CLI's PinningService, kept small for testability.
@@ -96,8 +101,12 @@ func RegisterPinApp(srv *sdk.Server, catalog AppCatalog, pins PinningProvider) e
 		Description:   "Create a pin for an existing CID via the Pinner.xyz API.",
 		HTML:          RenderPinCreateAppHTML(),
 		PrefersBorder: true,
-		AttachTo:      []string{"pins_add"},
-		Helpers:       []model.ToolDescriptor{pinStatusDescriptor(pins)},
+		// Attach the UI view to the open_pin_creator LAUNCHER — not the
+		// headless pins_add primitive. pins_add is a mid-workflow operation
+		// and must never render a card; only the explicit launcher carries
+		// ui.resourceUri.
+		AttachTo: []string{OpenPinCreatorToolName},
+		Helpers:  []model.ToolDescriptor{pinStatusDescriptor(pins)},
 	})
 }
 

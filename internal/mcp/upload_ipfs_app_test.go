@@ -48,18 +48,11 @@ func buildIPFSUploadAppServer(t *testing.T) (*mcp.Server, *transfer.Upload) {
 		},
 	}
 	catalog.Add(model.ToolEntryFromDescriptor(uploadFileDesc))
+	// Seed the launcher exactly as registerOpenLauncher does in production;
+	// the app's AttachTo now points at open_upload_manager, not upload_file.
+	seedLauncherForTest(t, srv, catalog, upload.OpenUploadManagerToolName, upload.OpenUploadManagerURI, model.CategoryCore)
 	if err := upload.RegisterIPFSUploadApp(srv, catalog, cu); err != nil {
 		t.Fatalf("upload.RegisterIPFSUploadApp: %v", err)
-	}
-	// Production copies the app-view _meta from the catalog entry onto the
-	// descriptor served directly so the direct tools/list surface sees it.
-	if entry, ok := catalog.Get("upload_file"); ok {
-		if uploadFileDesc.Meta == nil {
-			uploadFileDesc.Meta = map[string]any{}
-		}
-		for k, v := range entry.Meta {
-			uploadFileDesc.Meta[k] = v
-		}
 	}
 	if err := RegisterOfficialDescriptor(srv, uploadFileDesc); err != nil {
 		t.Fatalf("RegisterOfficialDescriptor: %v", err)
@@ -93,11 +86,13 @@ func TestRegisterIPFSUploadAppWire(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTools: %v", err)
 	}
-	var upTool, mintTool, pollTool *mcp.Tool
+	var upTool, launcherTool, mintTool, pollTool *mcp.Tool
 	for _, x := range tres.Tools {
 		switch x.Name {
 		case "upload_file":
 			upTool = x
+		case "open_upload_manager":
+			launcherTool = x
 		case "ipfs_upload_submit":
 			mintTool = x
 		case "ipfs_upload_status":
@@ -107,12 +102,27 @@ func TestRegisterIPFSUploadAppWire(t *testing.T) {
 	if upTool == nil {
 		t.Fatalf("upload_file not listed")
 	}
-	ui, ok := upTool.Meta["ui"].(map[string]any)
-	if !ok {
-		t.Fatalf("_meta.ui missing on upload_file: %T", upTool.Meta["ui"])
+	// upload_file is a HEADLESS primitive: it must NOT carry ui.resourceUri so
+	// mid-workflow agent calls never render a card.
+	if ui, ok := upTool.Meta["ui"].(map[string]any); ok {
+		if _, has := ui["resourceUri"]; has {
+			t.Fatalf("upload_file must NOT carry ui.resourceUri (got %v); it is a headless primitive", ui["resourceUri"])
+		}
 	}
-	if got := ui["resourceUri"]; got != upload.IPFSUploadAppURI {
-		t.Fatalf("_meta.ui.resourceUri = %#v, want %q", got, upload.IPFSUploadAppURI)
+	// open_upload_manager is the ONLY tool carrying the resourceUri.
+	if launcherTool == nil {
+		t.Fatalf("open_upload_manager not listed")
+	}
+	lui, ok := launcherTool.Meta["ui"].(map[string]any)
+	if !ok {
+		t.Fatalf("_meta.ui missing on open_upload_manager: %T", launcherTool.Meta["ui"])
+	}
+	if got := lui["resourceUri"]; got != upload.IPFSUploadAppURI {
+		t.Fatalf("open_upload_manager _meta.ui.resourceUri = %#v, want %q", got, upload.IPFSUploadAppURI)
+	}
+	vis, _ := lui["visibility"].([]any)
+	if len(vis) != 2 {
+		t.Fatalf("open_upload_manager visibility = %#v, want [model app]", vis)
 	}
 
 	if mintTool == nil || pollTool == nil {
@@ -464,10 +474,11 @@ func buildIPFSUploadSharedServer(t *testing.T) (*mcp.Server, *transfer.Upload, *
 	// The real HTTP/tunnel upload_file descriptor (mirrors custom_tools.go).
 	uploadFileDesc := transfer.NewUploadFileDescriptor(false, false, nil, cu, nil, nil, 0)
 	catalog.Add(model.ToolEntryFromDescriptor(uploadFileDesc))
+	// Seed the launcher; the app's AttachTo now points at open_upload_manager.
+	seedLauncherForTest(t, srv, catalog, upload.OpenUploadManagerToolName, upload.OpenUploadManagerURI, model.CategoryCore)
 	if err := upload.RegisterIPFSUploadApp(srv, catalog, cu); err != nil {
 		t.Fatalf("upload.RegisterIPFSUploadApp: %v", err)
 	}
-	copyCatalogMetaToDescriptor(&uploadFileDesc, catalog, "upload_file")
 	if err := RegisterOfficialDescriptor(srv, uploadFileDesc); err != nil {
 		t.Fatalf("RegisterOfficialDescriptor(upload_file): %v", err)
 	}

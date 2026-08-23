@@ -112,7 +112,9 @@ func RegisterVaultUploadApp(srv *sdk.Server, catalog apps.AppCatalog, vu *transf
 		// tunnel/base URL or loopback address) is only known after the server
 		// and transport are up — after app registration.
 		ConnectDomainsFunc: vu.ConnectOrigins,
-		AttachTo:           []string{"vault_put_file"},
+		// Attach the UI view to the open_vault_manager LAUNCHER — not the
+		// headless vault_put_file primitive.
+		AttachTo: []string{OpenVaultManagerToolName},
 		Helpers:            []model.ToolDescriptor{vaultUploadSubmitDescriptor(vu)},
 	})
 }
