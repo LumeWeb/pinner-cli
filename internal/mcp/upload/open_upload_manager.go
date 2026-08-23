@@ -49,10 +49,11 @@ func NewOpenUploadManagerDescriptor(hp *transfer.Upload) model.ToolDescriptor {
 		Name:  "open_upload_manager",
 		Title: "Open Upload to IPFS App",
 		Description: "Open the interactive Upload to IPFS file picker. This is a UI launcher: it renders an HTML iframe so the user can pick a file. It is not a headless primitive. " +
-			"Pass an optional 'handle' from a prior upload_file mint call to continue that exact operation; otherwise a fresh one is prepared. " +
+			"Pass an optional 'handle' from a prior upload_file mint call to continue that exact operation; if the handle is stale/expired a fresh one is prepared. " +
 			"Returns an upload_handle; poll upload_status to retrieve the final CID. " +
 			"Prefer upload_file (headless) for autonomous workflows; call this only when a human file picker is actually desired.",
-		Meta: appMeta,
+		InputSchema: toolargs.ToolSchemaFor[OpenUploadManagerInput](),
+		Meta:        appMeta,
 		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
 			in, err := toolargs.DecodeToolArgs[OpenUploadManagerInput](request)
 			if err != nil {
@@ -68,32 +69,39 @@ func NewOpenUploadManagerDescriptor(hp *transfer.Upload) model.ToolDescriptor {
 					ttl = d
 				}
 			}
+			// continued indicates we fulfilled the caller's EXISTING operation.
+			// It is true only when the supplied handle resolved to a live
+			// endpoint; a stale/expired/used handle falls back to a fresh mint
+			// and is therefore a brand-new operation (continued=false).
 			var handle, url string
+			continued := false
 			if in.Handle != "" {
-				// Continue an already-prepared operation. Do NOT mint a new
-				// presigned URL — the canonical Prepare/Fulfill pattern says
-				// the app picker must fulfill the caller's task, not a new
-				// sibling. hp.FindUpload resolves the existing endpoint.
+				// Try to continue the caller's already-prepared operation
+				// (canonical Prepare/Fulfill — the picker fulfills the same
+				// task, not a sibling). If the handle is stale/expired/used,
+				// FindUpload misses; falling back to a fresh mint guarantees
+				// the picker always has a presigned URL to PUT to rather than
+				// opening a dead editor with no endpoint.
 				if resolved, ok := hp.FindUpload(in.Handle); ok {
 					url = resolved
+					handle = in.Handle
+					continued = true
+				} else {
+					url, handle = hp.Prepare("upload", ttl)
 				}
-				handle = in.Handle
 			} else {
 				// Fresh operation: mint a presigned endpoint AND its canonical
 				// upload_handle so the app picker continues this exact task.
-				name := "upload"
-				url, handle = hp.Prepare(name, ttl)
-				if url == "" || handle == "" {
-					return model.ToolResult{}, fmt.Errorf("failed to prepare one-time upload endpoint")
-				}
+				url, handle = hp.Prepare("upload", ttl)
+			}
+			if url == "" || handle == "" {
+				return model.ToolResult{}, fmt.Errorf("failed to prepare one-time upload endpoint")
 			}
 			sc := map[string]any{
 				"upload_handle":      handle,
 				"upload_handle_poll": "upload_status",
-				"continued":          in.Handle != "",
-			}
-			if url != "" {
-				sc["presigned_url"] = url
+				"presigned_url":      url,
+				"continued":          continued,
 			}
 			return model.ToolResult{
 				StructuredContent: sc,

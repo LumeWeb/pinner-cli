@@ -347,16 +347,18 @@ func registerCustomTools(deps customToolDeps) error {
 		// mid-workflow agent calls. The App is reachable only through the
 		// explicit open_vault_manager launcher (below).
 		if deps.vaultUpload != nil {
+			// open_vault_manager must be catalog-indexed BEFORE
+			// RegisterVaultUploadApp runs: the app's AttachTo resolves the
+			// launcher from the catalog to stamp _meta.ui on it. registerOpenLauncher
+			// publishes it both to the catalog (for AttachTo + curated discovery)
+			// and to the direct descriptor surface. vault_put_file itself stays
+			// headless — this launcher is the ONLY tool carrying the App's
+			// resourceUri.
+			if err := registerOpenLauncher(deps, upload.NewOpenVaultManagerDescriptor(deps.vaultUpload)); err != nil {
+				return fmt.Errorf("failed to register vault manager launcher: %w", err)
+			}
 			deps.catalog.Add(model.ToolEntryFromDescriptor(vaultPutDesc))
 			if err := upload.RegisterVaultUploadApp(deps.srv, deps.catalog, deps.vaultUpload); err != nil {
-				return err
-			}
-			// Register the explicit UI launcher so the model can intentionally
-			// open the Upload to Vault picker mid-workflow. This is the ONLY
-			// tool that carries _meta.ui.resourceUri for this App; vault_put_file
-			// itself stays headless.
-			openVaultMgrDesc := upload.NewOpenVaultManagerDescriptor(deps.vaultUpload)
-			if err := RegisterOfficialDescriptor(deps.srv, openVaultMgrDesc); err != nil {
 				return err
 			}
 		}
@@ -477,16 +479,18 @@ func registerCustomTools(deps customToolDeps) error {
 		// mid-workflow agent calls. The App is reachable only through the
 		// explicit open_upload_manager launcher (below).
 		if deps.curlUpload != nil {
+			// open_upload_manager must be catalog-indexed BEFORE
+			// RegisterIPFSUploadApp runs: the app's AttachTo resolves the
+			// launcher from the catalog to stamp _meta.ui on it. registerOpenLauncher
+			// publishes it both to the catalog (for AttachTo + curated discovery)
+			// and to the direct descriptor surface. upload_file itself stays
+			// headless — this launcher is the ONLY tool carrying the App's
+			// resourceUri.
+			if err := registerOpenLauncher(deps, upload.NewOpenUploadManagerDescriptor(deps.curlUpload)); err != nil {
+				return fmt.Errorf("failed to register upload manager launcher: %w", err)
+			}
 			deps.catalog.Add(model.ToolEntryFromDescriptor(uploadFileDesc))
 			if err := upload.RegisterIPFSUploadApp(deps.srv, deps.catalog, deps.curlUpload); err != nil {
-				return err
-			}
-			// Register the explicit UI launcher so the model can intentionally
-			// open the Upload to IPFS picker mid-workflow. This is the ONLY
-			// tool that carries _meta.ui.resourceUri for this App; upload_file
-			// itself stays headless.
-			openUploadMgrDesc := upload.NewOpenUploadManagerDescriptor(deps.curlUpload)
-			if err := RegisterOfficialDescriptor(deps.srv, openUploadMgrDesc); err != nil {
 				return err
 			}
 		}

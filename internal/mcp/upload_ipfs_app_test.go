@@ -850,3 +850,79 @@ func TestIPFSUploadResourceAdvertisesConnectDomains(t *testing.T) {
 		t.Fatalf("tunnel connectDomains[0] = %#v, want https://tunnel.example.com", got)
 	}
 }
+
+// TestOpenUploadManagerStaleHandleFallsBack is a regression test for the
+// kody-flagged high-severity bug: passing a non-empty but stale/expired/used
+// handle to open_upload_manager must NOT return success with an empty
+// presigned_url (which would leave the picker's iframe with no endpoint to PUT
+// to). It must fall back to minting a fresh endpoint, report continued=false
+// (a brand-new operation, not a continuation), and ALWAYS expose a non-empty
+// presigned_url.
+func TestOpenUploadManagerStaleHandleFallsBack(t *testing.T) {
+	mgr := transfer.NewUploadTaskManager(func(_ context.Context, reader io.Reader, _ int64, name string, _ bool) (any, error) {
+		_, _ = io.Copy(io.Discard, reader)
+		return map[string]any{"cid": "QmFallback", "name": name}, nil
+	}, 0)
+	cu := transfer.NewHTTPUpload(mgr, 1<<20)
+	t.Cleanup(func() { cu.Stop(context.Background()) })
+
+	desc := upload.NewOpenUploadManagerDescriptor(cu)
+	srv := sdk.NewServer(nil)
+	if err := RegisterOfficialDescriptor(srv, desc); err != nil {
+		t.Fatalf("RegisterOfficialDescriptor(open_upload_manager): %v", err)
+	}
+	cs := connectOfficialClient(t, srv)
+	ctx := context.Background()
+
+	// Valid live handle: continuing succeeds with the SAME endpoint and
+	// continued=true.
+	validURL, validHandle := cu.Prepare("stale.bin", transfer.DefaultHTTPUploadTTL)
+	if validURL == "" || validHandle == "" {
+		t.Fatalf("Prepare failed: url=%q handle=%q", validURL, validHandle)
+	}
+	okRes, err := cs.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "open_upload_manager",
+		Arguments: map[string]any{"handle": validHandle},
+	})
+	if err != nil {
+		t.Fatalf("open_upload_manager(valid handle): %v", err)
+	}
+	if okRes.IsError {
+		t.Fatalf("open_upload_manager(valid handle) error: %s", requireText(t, okRes))
+	}
+	b, _ := json.Marshal(okRes.StructuredContent)
+	var okSC map[string]any
+	_ = json.Unmarshal(b, &okSC)
+	if okSC["presigned_url"] != validURL {
+		t.Fatalf("valid handle: presigned_url = %v, want %q (sc=%s)", okSC["presigned_url"], validURL, b)
+	}
+	if continued, _ := okSC["continued"].(bool); !continued {
+		t.Fatalf("valid handle: expected continued=true, sc=%s", b)
+	}
+
+	// Stale/unknown (non-empty) handle: MUST fall back to a fresh mint —
+	// non-empty presigned_url, continued=false, and a DIFFERENT endpoint.
+	staleRes, err := cs.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "open_upload_manager",
+		Arguments: map[string]any{"handle": "definitely-stale-handle"},
+	})
+	if err != nil {
+		t.Fatalf("open_upload_manager(stale handle): %v", err)
+	}
+	if staleRes.IsError {
+		t.Fatalf("open_upload_manager(stale handle) error: %s", requireText(t, staleRes))
+	}
+	b2, _ := json.Marshal(staleRes.StructuredContent)
+	var staleSC map[string]any
+	_ = json.Unmarshal(b2, &staleSC)
+	freshURL, _ := staleSC["presigned_url"].(string)
+	if freshURL == "" {
+		t.Fatalf("stale handle: presigned_url must never be empty (regression), sc=%s", b2)
+	}
+	if continued, _ := staleSC["continued"].(bool); continued {
+		t.Fatalf("stale handle: expected continued=false (fresh op), sc=%s", b2)
+	}
+	if freshURL == validURL {
+		t.Fatalf("stale handle: expected a FRESH endpoint, got the original %q", freshURL)
+	}
+}

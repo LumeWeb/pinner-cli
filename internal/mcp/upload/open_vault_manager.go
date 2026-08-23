@@ -47,7 +47,8 @@ func NewOpenVaultManagerDescriptor(vu *transfer.VaultHTTPUpload) model.ToolDescr
 		Description: "Open the interactive Upload to Vault file picker. This is a UI launcher: it renders an HTML iframe so the user can pick a file. It is not a headless primitive. " +
 			"It returns a presigned PUT URL plus the vault_path; the iframe's Uppy uploader POSTs file bytes to that URL directly, and the vault write is synchronous (the PUT response is the result). " +
 			"Prefer vault_put_file (headless) for autonomous workflows; call this only when a human file picker is actually desired.",
-		Meta: appMeta,
+		InputSchema: toolargs.ToolSchemaFor[OpenVaultManagerInput](),
+		Meta:        appMeta,
 		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
 			in, err := toolargs.DecodeToolArgs[OpenVaultManagerInput](request)
 			if err != nil {
