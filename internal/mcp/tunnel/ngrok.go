@@ -37,6 +37,11 @@ type ngrokTunnel struct {
 	// store, mirroring ResolveNgrokToken/TunnelCfgCredential semantics.
 	cfgMgr config.Manager
 
+	// dialer, when non-nil, overrides the connection the agent makes to the
+	// ngrok control plane. Production tunnels leave this nil; tests inject a
+	// failing dialer to exercise the bounded-connect path without any network.
+	dialer ngrok.Dialer
+
 	// agent and fwd are the embedded pieces created in Start.
 	agent ngrok.Agent
 	fwd   ngrok.EndpointForwarder
@@ -133,6 +138,13 @@ func (n *ngrokTunnel) Stop(ctx context.Context) error {
 	return nil
 }
 
+// ngrokConnectTimeout bounds how long we wait for the ngrok control-plane
+// session to establish. ngrok's reconnecting session retries with no deadline
+// (and ignores context cancellation internally), so without this bound a
+// blocked or unreachable connect would hang the server indefinitely. It is a
+// package-level var (not const) so tests can shrink the window.
+var ngrokConnectTimeout = 30 * time.Second
+
 // Start implements Tunnel. It builds an embedded ngrok agent, forwards the
 // given local address through it, and records the assigned public URL once the
 // tunnel is live.
@@ -153,10 +165,27 @@ func (n *ngrokTunnel) Start(ctx context.Context, localAddr string) error {
 	if tok := ResolveNgrokToken(n.token, n.cfgMgr); tok != "" {
 		agentOpts = append(agentOpts, ngrok.WithAuthtoken(tok))
 	}
+	if n.dialer != nil {
+		agentOpts = append(agentOpts, ngrok.WithDialer(n.dialer))
+	}
 
 	agent, err := ngrok.NewAgent(agentOpts...)
 	if err != nil {
 		return fmt.Errorf("construct ngrok agent: %w", err)
+	}
+
+	// Establish the control-plane session with a bounded connect BEFORE calling
+	// Forward. agent.Forward would otherwise lazily connect for us, but it does
+	// so through ngrok's reconnecting session which retries forever with no
+	// deadline (and ignores cancellation), so an unreachable control plane
+	// would hang the server silently. Connecting here with a deadline turns a
+	// stuck connect into a fast, actionable error, while Forward afterwards
+	// skips its internal reconnect (the session is already set) on success.
+	connectCtx, cancelConnect := context.WithTimeout(ctx, ngrokConnectTimeout)
+	err = agent.Connect(connectCtx)
+	cancelConnect()
+	if err != nil {
+		return fmt.Errorf("connect to ngrok: %w", err)
 	}
 
 	upstream := ngrok.WithUpstream(LocalURL(host, port))
