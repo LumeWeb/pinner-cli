@@ -349,6 +349,14 @@ func (f *fakeNgrokAgent) Connect(ctx context.Context) error {
 }
 
 func (f *fakeNgrokAgent) Forward(_ context.Context, _ *ngrok.Upstream, _ ...ngrok.EndpointOption) (ngrok.EndpointForwarder, error) {
+	// Model the real SDK: an agent binds its session to the context passed to
+	// Connect, so once that context is cancelled the session is closed. Forward
+	// then fails with "session closed" even though the agent still believes it
+	// is connected. This is what let the regression tests below catch premature
+	// cancellation of the connect context.
+	if f.connectCtx != nil && f.connectCtx.Err() != nil {
+		return nil, errors.New("session closed")
+	}
 	if f.forwardErr != nil {
 		return nil, f.forwardErr
 	}
@@ -404,4 +412,38 @@ func TestNgrokCheckAccountDoesNotPoisonStartSession(t *testing.T) {
 	require.NotNil(t, probe.connectCtx, "probe agent must have received a connect context")
 	require.NotNil(t, startAgent.connectCtx, "start agent must have received a connect context")
 	require.NotEqual(t, probe.connectCtx, startAgent.connectCtx, "probe and start sessions must use independent contexts")
+}
+
+// TestNgrokStartKeepsSessionAliveAfterConnect is the regression test for the
+// "start ngrok tunnel: failed to start tunnel: session closed" failure. The
+// previous bounded-connect code used context.WithTimeout and cancelled the
+// connect context immediately after a successful agent.Connect. Because the
+// ngrok SDK binds the session to the Connect context, that cancel closed the
+// session; a subsequent Forward then failed with "session closed" despite the
+// agent still reporting itself connected.
+//
+// This test drives Start directly with a fake agent that models the SDK's
+// session-close-on-connect-cancel behavior (see fakeNgrokAgent.Forward). With
+// the fix, the connect deadline is released on success and never cancels the
+// live session, so Forward succeeds and Start returns nil. A custom domain is
+// used so Start takes the pre-assigned-URL branch and does not probe public
+// reachability.
+func TestNgrokStartKeepsSessionAliveAfterConnect(t *testing.T) {
+	ng := &ngrokTunnel{
+		domain: "mcp.example.com",
+		token:  "test-token",
+		agentFactory: func(...ngrok.AgentOption) (ngrok.Agent, error) {
+			return &fakeNgrokAgent{
+				fwd: &fakeNgrokForwarder{u: &url.URL{Scheme: "https", Host: "mcp.example.com"}},
+			}, nil
+		},
+	}
+
+	err := ng.Start(context.Background(), "127.0.0.1:8893")
+	require.NoError(t, err, "Start must not tear down the session after a successful connect")
+
+	// Sanity: the session context was never cancelled, so the forwarder is usable.
+	var a *fakeNgrokAgent
+	a = ng.agent.(*fakeNgrokAgent)
+	require.NoError(t, a.connectCtx.Err(), "the live session context must stay uncancelled")
 }
