@@ -138,7 +138,18 @@ export function createIPFSUploadMachine(cfg: IPFSUploadConfig, callTool: CallToo
 
   // --- guards -------------------------------------------------------------
 
-  const mintOk = (_ctx: IPFSUploadContext, ev: any) => !dIsError(ev);
+  // A successful mint yields a presigned PUT URL to XHR the bytes to. If the
+  // mint response carried NO url (an already-claimed/continued canonical
+  // operation whose bytes were supplied by the other participant), we must NOT
+  // XHR an empty URL — see mintAlreadyClaimed instead.
+  const mintOk = (_ctx: IPFSUploadContext, ev: any) => !dIsError(ev) && !!dSc(ev)?.url;
+  // The handle was already claimed/completed by the other participant (agent or
+  // a prior App fulfillment): the response carries an upload_handle but no url,
+  // so skip the byte transfer entirely and just poll the shared task for the
+  // CID. This is how the App converges on the SAME operation without a second
+  // upload attempt.
+  const mintAlreadyClaimed = (_ctx: IPFSUploadContext, ev: any) =>
+    !dIsError(ev) && !dSc(ev)?.url && !!dSc(ev)?.upload_handle;
   const mintErr = (_ctx: IPFSUploadContext, ev: any) => dIsError(ev);
   const doneOk = (_ctx: IPFSUploadContext, ev: any) => ev?.data?.terminalOk;
   const doneFail = (_ctx: IPFSUploadContext, ev: any) => ev?.data?.terminalFail;
@@ -205,7 +216,10 @@ export function createIPFSUploadMachine(cfg: IPFSUploadConfig, callTool: CallToo
       idle: state(transition("start", "minting", setMeta)),
       minting: invoke(
         mintUrl,
+        // Fresh mint → XHR the bytes to the presigned URL.
         transition("done", "uploading", guard(mintOk), setUrl),
+        // Already-claimed handle → skip the byte transfer, poll the shared task.
+        transition("done", "polling", guard(mintAlreadyClaimed), setUrl, setOpState),
         transition("done", "error", guard(mintErr)),
         transition("error", "error"),
       ),

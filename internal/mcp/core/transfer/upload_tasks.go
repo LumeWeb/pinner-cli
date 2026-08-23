@@ -30,6 +30,26 @@ type UploadTaskState string
 // server with in-flight uploads (each holds an open reader plus goroutine).
 const defaultMaxActiveUploads = 8
 
+// defaultPreparedTTL bounds how long an unfulfilled Prepared task (a canonical
+// upload operation minted but never supplied bytes) is retained before prune.
+// It is deliberately SHORT — as short as the presigned endpoint's own default
+// TTL (DefaultHTTPUploadTTL) — so a prepared handle that is never fulfilled is
+// evicted about when its corresponding PUT token expires, instead of lingering
+// for the full terminal-task TTL (15m) that exists so callers can still fetch
+// the RESULT of a finished upload. Prepared tasks hold no bytes and no slot, so
+// there is nothing worth keeping beyond the endpoint window.
+const defaultPreparedTTL = DefaultHTTPUploadTTL
+
+// defaultMaxPrepared caps how many outstanding (Prepared, unfulfilled) canonical
+// upload operations the manager will hold at once. This guards against a caller
+// flooding mint/prepare requests: each Prepare allocates a task + a token with
+// no bytes, so without a bound an attacker could accumulate unbounded Prepared
+// handles within the retention window even though they bypass the MaxActive
+// (reader/goroutine) cap. It is independent of MaxActive because prepared
+// handles are intentionally light (no slot), and is tuned well above the
+// realistic concurrency of in-flight uploads.
+const defaultMaxPrepared = 64
+
 const (
 	// UploadStatePrepared marks an upload operation whose handle/task exists
 	// but whose bytes have not been supplied yet. It is created up front by
@@ -90,6 +110,17 @@ type UploadTaskManager struct {
 	exec      UploadExecutor
 	ttl       time.Duration
 	MaxActive int
+	// PreparedTTL is how long an unfulfilled Prepared (minted-but-never-supplied)
+	// canonical operation is retained before prune. It is intentionally short
+	// (default: DefaultHTTPUploadTTL) so unfulfilled handles expire about when
+	// their presigned endpoint does, instead of living the full terminal TTL.
+	PreparedTTL time.Duration
+	// MaxPrepared caps how many outstanding Prepared (unfulfilled) canonical
+	// operations the manager holds at once, guarding against a mint/prepare
+	// flood that would otherwise accumulate unbounded handles within the
+	// prepared retention window (they bypass MaxActive, which counts live
+	// reader/goroutine uploads).
+	MaxPrepared int
 	// ExecTimeout is the hard upper bound on a single async upload's lifetime.
 	// A hung executor (network/TUS stall that ignores context cancellation)
 	// must not occupy a MaxActive slot forever, or a handful of stuck uploads
@@ -109,11 +140,13 @@ func NewUploadTaskManager(exec UploadExecutor, ttl time.Duration) *UploadTaskMan
 		ttl = 15 * time.Minute
 	}
 	return &UploadTaskManager{
-		tasks:       make(map[string]*trackedTask),
-		exec:        exec,
-		ttl:         ttl,
-		MaxActive:   defaultMaxActiveUploads,
-		ExecTimeout: defaultExecTimeout,
+		tasks:        make(map[string]*trackedTask),
+		exec:         exec,
+		ttl:          ttl,
+		MaxActive:    defaultMaxActiveUploads,
+		PreparedTTL:  defaultPreparedTTL,
+		MaxPrepared:  defaultMaxPrepared,
+		ExecTimeout:  defaultExecTimeout,
 	}
 }
 
@@ -187,6 +220,10 @@ func (m *UploadTaskManager) Prepare(name string) (string, error) {
 	}
 	m.mu.Lock()
 	m.pruneLocked()
+	if err := m.acquirePreparedSlotLocked(); err != nil {
+		m.mu.Unlock()
+		return "", err
+	}
 	m.tasks[id] = &trackedTask{task: task}
 	m.mu.Unlock()
 	return id, nil
@@ -459,16 +496,46 @@ func (m *UploadTaskManager) acquireSlotLocked() error {
 	return nil
 }
 
+// acquirePreparedSlotLocked returns an error if the number of outstanding
+// (Prepared, unfulfilled) tasks has reached MaxPrepared. Caller must hold m.mu.
+// Prepared handles hold no reader and no executor slot, so they are bounded
+// independently of MaxActive to stop a mint/prepare flood from accumulating
+// unbounded handles within the prepared retention window. If MaxPrepared <= 0,
+// prepared tasks are unbounded.
+func (m *UploadTaskManager) acquirePreparedSlotLocked() error {
+	if m.MaxPrepared <= 0 {
+		return nil
+	}
+	prepared := 0
+	for _, t := range m.tasks {
+		if t.task.State == UploadStatePrepared {
+			prepared++
+			if prepared >= m.MaxPrepared {
+				return errors.New("too many unresolved upload preparations")
+			}
+		}
+	}
+	return nil
+}
+
 // pruneLocked removes terminal (completed/failed/cancelled) tasks older than
-// the TTL, plus prepared tasks that were never fulfilled within the TTL (they
-// hold no bytes and no slot, so they would otherwise accumulate if nobody
-// fulfills them). Caller must hold m.mu. Terminal tasks are kept at least TTL
-// after they finish so callers can still fetch status/result within the window.
+// the TTL, plus prepared tasks that were never fulfilled within PreparedTTL
+// (they hold no bytes and no slot, so they would otherwise accumulate if
+// nobody fulfills them). Caller must hold m.mu. Terminal tasks are kept at
+// least TTL after they finish so callers can still fetch status/result within
+// the window. Prepared tasks are evicted on the (shorter, endpoint-aligned)
+// PreparedTTL instead of the terminal TTL because an unfulfilled handle is
+// only valid for the window its presigned endpoint lives.
 func (m *UploadTaskManager) pruneLocked() {
 	if m.ttl <= 0 {
 		return
 	}
 	cutoff := time.Now().Add(-m.ttl)
+	preparedTTL := m.PreparedTTL
+	if preparedTTL <= 0 {
+		preparedTTL = m.ttl
+	}
+	preparedCutoff := time.Now().Add(-preparedTTL)
 	for id, t := range m.tasks {
 		switch t.task.State {
 		case UploadStateCompleted, UploadStateFailed, UploadStateCancelled:
@@ -476,9 +543,9 @@ func (m *UploadTaskManager) pruneLocked() {
 				delete(m.tasks, id)
 			}
 		case UploadStatePrepared:
-			// Never fulfilled before expiring: evict by creation time so an
-			// abandoned prepare cannot pin a handle forever.
-			if t.task.CreatedAt.Before(cutoff) {
+			// Never fulfilled before its window lapsed: evict by creation time
+			// so an abandoned prepare cannot pin a handle forever.
+			if t.task.CreatedAt.Before(preparedCutoff) {
 				delete(m.tasks, id)
 			}
 		}

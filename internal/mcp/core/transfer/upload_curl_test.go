@@ -263,6 +263,42 @@ func TestPrepareCancel(t *testing.T) {
 	require.Equal(t, int32(0), atomic.LoadInt32(&ran))
 }
 
+// TestPrepareMaxPreparedCap verifies the prepared-handle flood guard: when the
+// number of outstanding (Prepared, unfulfilled) canonical operations reaches
+// MaxPrepared, further Prepare calls are rejected instead of accumulating
+// unbounded handles. Prepared handles hold no bytes and no executor slot, so
+// they are bounded independently of MaxActive (a Kody finding).
+func TestPrepareMaxPreparedCap(t *testing.T) {
+	mgr := NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
+		return map[string]any{"cid": "QmX"}, nil
+	}, 0)
+	mgr.MaxPrepared = 2
+
+	// Two prepared handles fit within the cap.
+	h1, err := mgr.Prepare("a.txt")
+	require.NoError(t, err)
+	h2, err := mgr.Prepare("b.txt")
+	require.NoError(t, err)
+	require.NotEmpty(t, h1)
+	require.NotEmpty(t, h2)
+
+	// A third is rejected once the cap is reached.
+	_, err = mgr.Prepare("c.txt")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "too many unresolved upload preparations")
+
+	// Fulfilling one frees a prepared slot: prepare again now succeeds.
+	require.NoError(t, mgr.Fulfill(context.Background(), h1, io.NopCloser(strings.NewReader("x")), 1, "", false))
+	require.Eventually(t, func() bool {
+		t, err := mgr.Get(h1)
+		return err == nil && t.State == UploadStateCompleted
+	}, 2*time.Second, 10*time.Millisecond)
+
+	h3, err := mgr.Prepare("d.txt")
+	require.NoError(t, err)
+	require.NotEmpty(t, h3)
+}
+
 // TestCurlUploadPrunesExpiredTokens verifies that minting a fresh endpoint
 // sweeps expired, never-used tokens out of the map so a long-lived server does
 // not accumulate permanent entries (a Kody finding).

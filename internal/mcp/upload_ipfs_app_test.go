@@ -665,6 +665,57 @@ func TestIPFSUploadSharedOperation(t *testing.T) {
 	}
 }
 
+// TestIPFSUploadSubmitStalePreparedHandle verifies the review fix: a handle
+// that was prepared (canonical op minted) but never fulfilled — whose presigned
+// endpoint has since lapsed — is reported as STALE (error guiding the app to
+// prepare a fresh upload), NOT as already_claimed. A Prepared (byte-less) task
+// cannot be polled for a CID, so claiming it would leave the app stuck; and it
+// must not be mistaken for a completed/claimed op that the app should just
+// poll.
+func TestIPFSUploadSubmitStalePreparedHandle(t *testing.T) {
+	srv, cu, _ := buildIPFSUploadSharedServer(t)
+	cs := connectOfficialClient(t, srv)
+	ctx := context.Background()
+
+	// Model prepares a canonical operation (never fulfills it).
+	modelRes, err := cs.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "upload_file",
+		Arguments: map[string]any{"source": map[string]any{"mode": "mint"}, "name": "stale.bin"},
+	})
+	if err != nil {
+		t.Fatalf("upload_file: %v", err)
+	}
+	b, _ := json.Marshal(modelRes.StructuredContent)
+	var modelSC map[string]any
+	_ = json.Unmarshal(b, &modelSC)
+	handle, _ := modelSC["upload_handle"].(string)
+	if handle == "" {
+		t.Fatalf("upload_file did not return a handle: %s", b)
+	}
+
+	// Advance the coordinator's clock past the presigned endpoint's TTL so the
+	// handle's endpoint lapses while its task is still Prepared (never
+	// fulfilled). The UploadTaskManager keeps real time, so the (recently
+	// created) Prepared task is still tracked.
+	cu.SetNow(func() time.Time { return time.Now().Add(10 * time.Minute) })
+
+	// The App asks to continue that handle: it must get a STALE error, not an
+	// already_claimed result (there are no bytes and no CID to poll).
+	staleRes, err := cs.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "ipfs_upload_submit",
+		Arguments: map[string]any{"handle": handle},
+	})
+	if err != nil {
+		t.Fatalf("ipfs_upload_submit: %v", err)
+	}
+	if !staleRes.IsError {
+		t.Fatalf("stale prepared handle must error, got: %s", requireText(t, staleRes))
+	}
+	if !strings.Contains(requireText(t, staleRes), "prepared but never fulfilled") {
+		t.Fatalf("stale error should explain the prepared-but-never-fulfilled state: %s", requireText(t, staleRes))
+	}
+}
+
 // taskStateOf extracts the task's json "state" field from an SDK poll result.
 func taskStateOf(res *mcp.CallToolResult) (transfer.UploadTaskState, bool) {
 	b, err := json.Marshal(res.StructuredContent)

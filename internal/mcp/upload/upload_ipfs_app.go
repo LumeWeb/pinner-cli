@@ -114,10 +114,23 @@ func ipfsUploadSubmitDescriptor(hp *transfer.Upload) model.ToolDescriptor {
 						Text:              toolargs.ResultJSONText(sc) + " PUT the file bytes and poll for the CID.",
 					}, nil
 				}
-				// The handle is either unknown or already claimed/completed.
-				// If the manager still tracks it, report the already-claimed
-				// state so the app just polls and never re-uploads.
+				// The task is still tracked, but its presigned endpoint is gone:
+				// either it was never fulfilled and its endpoint window lapsed,
+				// or it has already been claimed/completed. Distinguish the two
+				// so the app reacts correctly.
 				if task, terr := hp.Tasks().Get(in.Handle); terr == nil {
+					if task.State == transfer.UploadStatePrepared {
+						// Prepared but never fulfilled (endpoint pruned/timed
+						// out): this is NOT already-claimed — nobody supplied
+						// bytes. The app should prepare a fresh operation
+						// rather than trying to poll a byte-less handle or
+						// duplicating an in-flight upload.
+						return model.ToolResult{}, fmt.Errorf(
+							"upload %q was prepared but never fulfilled (endpoint expired); start a fresh upload",
+							in.Handle)
+					}
+					// Claimed or finished: report the already-claimed state so
+					// the app just polls and never re-uploads.
 					sc := map[string]any{
 						"upload_handle":   in.Handle,
 						"already_claimed": true,
