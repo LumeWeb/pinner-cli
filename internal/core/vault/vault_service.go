@@ -134,13 +134,18 @@ func NewVaultServiceForProfile(profileName string, indexerURL string) (VaultServ
 		ServiceURL:  indexerURL,
 	}
 
-	// Open the cache WITHOUT running goose migrations or constructing the Sia
-	// SDK. Migrations are applied at schema-maintenance boundaries
-	// (create/restore/cache rebuild). The SDK is built lazily on first use
+	// Open the cache WITHOUT running full goose migrations on every command or
+	// constructing the Sia SDK. A profile cache that predates a later schema
+	// migration (e.g. a pre-versioning vault lacking files.seq) is a real-world
+	// permanent-upgrade gap: OpenDBNoMigrate would open it stale and every write
+	// would fail with "no such column: seq". OpenDBUpgradeIfStale runs the
+	// pending migrations only when the on-disk schema is actually behind, so an
+	// up-to-date cache stays untouched (no migration output, no extra work) and
+	// a stale one is upgraded in place. The SDK is built lazily on first use
 	// because building it hits the network (CheckAppAuth + refreshHosts); a
 	// local-cache-only `ls`/`stat`/`cat` should not pay a multi-second network
 	// round-trip.
-	db, err := OpenDBNoMigrate(ProfileDBPath(profileName))
+	db, err := OpenDBUpgradeIfStale(ProfileDBPath(profileName))
 	if err != nil {
 		return nil, err
 	}
