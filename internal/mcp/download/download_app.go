@@ -27,6 +27,15 @@ const IPFSDownloadAppURI = "ui://downloads/ipfs.html"
 // VaultDownloadAppURI is the ui:// resource serving the "Download from Vault" app.
 const VaultDownloadAppURI = "ui://downloads/vault.html"
 
+// OpenDownloadManagerToolName / OpenVaultDownloadManagerToolName are the
+// model-facing open_* launchers for the IPFS and Vault download apps. They are
+// the ONLY tools that carry _meta.ui.resourceUri for these views; the headless
+// download_file / vault_get_file primitives never advertise a card.
+const (
+	OpenDownloadManagerToolName       = "open_download_manager"
+	OpenVaultDownloadManagerToolName = "open_vault_download_manager"
+)
+
 // renderIPFSDownloadAppHTML renders the complete "Download from IPFS" app
 // document (ui://downloads/ipfs.html). The shared shell (doctype/<head>/inline
 // theme) and the ESM module (shared ext-apps bootstrap + download logic) come
@@ -60,7 +69,11 @@ func RegisterIPFSDownloadApp(srv *sdk.Server, catalog apps.AppCatalog) error {
 		Description:   "Download IPFS content (CID or CID/path) to a file.",
 		HTML:          renderIPFSDownloadAppHTML(),
 		PrefersBorder: true,
-		AttachTo:      []string{"download_file"},
+		// Attach the UI view to the open_download_manager LAUNCHER — not the
+		// headless download_file primitive. download_file is a workflow
+		// operation that must never render a card mid-stream; only the
+		// explicit launcher carries ui.resourceUri.
+		AttachTo: []string{OpenDownloadManagerToolName},
 	})
 }
 
@@ -82,6 +95,8 @@ func RegisterVaultDownloadApp(srv *sdk.Server, catalog apps.AppCatalog) error {
 		Description:   "Download a file from your encrypted Pinner vault.",
 		HTML:          renderVaultDownloadAppHTML(),
 		PrefersBorder: true,
-		AttachTo:      []string{"vault_get_file"},
+		// Attach the UI view to the open_download_manager LAUNCHER — not the
+		// headless vault_get_file primitive.
+		AttachTo: []string{OpenVaultDownloadManagerToolName},
 	})
 }

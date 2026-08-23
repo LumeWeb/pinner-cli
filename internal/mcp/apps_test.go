@@ -48,6 +48,8 @@ func buildPinAppServer(t *testing.T, pins apps.PinningProvider) *mcp.Server {
 	})
 
 	srv := sdk.NewServer(nil)
+	// Seed the launcher; the app's AttachTo now points at open_pin_creator.
+	seedLauncherForTest(t, srv, catalog, apps.OpenPinCreatorToolName, apps.PinCreateAppURI, model.CategoryCore)
 	if err := apps.RegisterPinApp(srv, catalog, pins); err != nil {
 		t.Fatalf("RegisterPinApp: %v", err)
 	}
@@ -99,15 +101,14 @@ func TestRegisterPinAppWire(t *testing.T) {
 	if pinTool == nil {
 		t.Fatalf("pins.add not listed")
 	}
-	ui, ok := pinTool.Meta["ui"].(map[string]any)
-	if !ok {
-		t.Fatalf("_meta.ui missing on pins.add: %T", pinTool.Meta["ui"])
+	// pins_add is a headless primitive: no ui.resourceUri.
+	if ui, ok := pinTool.Meta["ui"].(map[string]any); ok {
+		if _, has := ui["resourceUri"]; has {
+			t.Fatalf("pins_add must NOT carry ui.resourceUri (headless); got %v", ui["resourceUri"])
+		}
 	}
-	if got := ui["resourceUri"]; got != apps.PinCreateAppURI {
-		t.Fatalf("_meta.ui.resourceUri = %#v, want %q", got, apps.PinCreateAppURI)
-	}
-	if got := pinTool.Meta[apps.RESOURCE_URI_META_KEY]; got != apps.PinCreateAppURI {
-		t.Fatalf("legacy flat _meta key = %#v", got)
+	if _, has := pinTool.Meta[apps.RESOURCE_URI_META_KEY]; has {
+		t.Fatalf("pins_add must NOT carry legacy _meta.ui/resourceUri")
 	}
 
 	// The app-only helper is model-shadowed: it must not expose the "model"
@@ -255,8 +256,11 @@ func TestRegisterPinAppOnCompilerSurface(t *testing.T) {
 		t.Fatalf("pins.add must be present on the compiler surface (legacy pinner_pin is gone)")
 	}
 
-	// The pin app must wire without error against the compiler surface.
+	// The pin app must wire without error against the compiler surface. Seed
+	// the launcher first (production does this via registerOpenLauncher before
+	// RegisterXxxApp).
 	srv := sdk.NewServer(nil)
+	seedLauncherForTest(t, srv, tc, apps.OpenPinCreatorToolName, apps.PinCreateAppURI, model.CategoryCore)
 	if err := apps.RegisterPinApp(srv, tc, &fakePins{status: "pinned"}); err != nil {
 		t.Fatalf("RegisterPinApp on compiler surface must succeed, got: %v", err)
 	}
@@ -330,6 +334,8 @@ func buildVaultBrowserServer(t *testing.T) *mcp.Server {
 	})
 
 	srv := sdk.NewServer(nil)
+	// Seed the launcher; the app's AttachTo now points at open_vault_browser.
+	seedLauncherForTest(t, srv, catalog, vault.OpenVaultBrowserToolName, vault.VaultBrowserAppURI, model.CategoryVault)
 	if err := vault.RegisterVaultBrowserApp(srv, catalog); err != nil {
 		t.Fatalf("vault.RegisterVaultBrowserApp: %v", err)
 	}
@@ -367,25 +373,33 @@ func TestRegisterVaultBrowserAppWire(t *testing.T) {
 		t.Fatalf("vault browser resource not listed")
 	}
 
-	// vault_status must carry the attached _meta.ui pointing at the view; the
-	// browser app registers no app-only helper, so there is no extra tool.
+	// vault_status is a HEADLESS primitive (no ui.resourceUri); the browser
+	// app registers no app-only helper. open_vault_browser is the only tool
+	// carrying the _meta.ui pointer to the view.
 	tres, err := cs.ListTools(ctx, nil)
 	if err != nil {
 		t.Fatalf("ListTools: %v", err)
 	}
+	var sawStatus bool
 	for _, x := range tres.Tools {
-		if x.Name == "vault_status" {
-			if x.Meta == nil {
-				t.Fatalf("vault_status has no _meta after registering the browser app")
+		switch x.Name {
+		case "vault_status":
+			sawStatus = true
+			if ui, ok := x.Meta["ui"].(map[string]any); ok {
+				if _, has := ui["resourceUri"]; has {
+					t.Fatalf("vault_status must NOT carry ui.resourceUri (headless)")
+				}
 			}
-			// The flat legacy key and the nested resourceUri both point at the view.
-			if x.Meta["ui/resourceUri"] != vault.VaultBrowserAppURI {
-				t.Fatalf("vault_status missing _meta.ui/resourceUri=%q; got %#v", vault.VaultBrowserAppURI, x.Meta)
+		case vault.OpenVaultBrowserToolName:
+			ui, ok := x.Meta["ui"].(map[string]any)
+			if !ok || ui["resourceUri"] != vault.VaultBrowserAppURI {
+				t.Fatalf("open_vault_browser missing _meta.ui.resourceUri=%q; got %#v", vault.VaultBrowserAppURI, x.Meta)
 			}
-			return
 		}
 	}
-	t.Fatalf("vault_status tool not found after registering the browser app")
+	if !sawStatus {
+		t.Fatalf("vault_status tool not found after registering the browser app")
+	}
 }
 
 // buildPinListServer constructs a catalog with the read-only pins_list tool and
@@ -405,6 +419,8 @@ func buildPinListServer(t *testing.T) *mcp.Server {
 	})
 
 	srv := sdk.NewServer(nil)
+	// Seed the launcher; the app's AttachTo now points at open_pin_list.
+	seedLauncherForTest(t, srv, catalog, download.OpenPinListToolName, download.PinListAppURI, model.CategoryCore)
 	if err := download.RegisterPinListApp(srv, catalog); err != nil {
 		t.Fatalf("download.RegisterPinListApp: %v", err)
 	}
@@ -445,18 +461,26 @@ func TestRegisterPinListAppWire(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTools: %v", err)
 	}
+	var sawList bool
 	for _, x := range tres.Tools {
-		if x.Name == "pins_list" {
-			if x.Meta == nil {
-				t.Fatalf("pins_list has no _meta after registering the pin list app")
+		switch x.Name {
+		case "pins_list":
+			sawList = true
+			if ui, ok := x.Meta["ui"].(map[string]any); ok {
+				if _, has := ui["resourceUri"]; has {
+					t.Fatalf("pins_list must NOT carry ui.resourceUri (headless)")
+				}
 			}
-			if x.Meta["ui/resourceUri"] != download.PinListAppURI {
-				t.Fatalf("pins_list missing _meta.ui/resourceUri=%q; got %#v", download.PinListAppURI, x.Meta)
+		case download.OpenPinListToolName:
+			ui, ok := x.Meta["ui"].(map[string]any)
+			if !ok || ui["resourceUri"] != download.PinListAppURI {
+				t.Fatalf("open_pin_list missing _meta.ui.resourceUri=%q; got %#v", download.PinListAppURI, x.Meta)
 			}
-			return
 		}
 	}
-	t.Fatalf("pins_list tool not found after registering the pin list app")
+	if !sawList {
+		t.Fatalf("pins_list tool not found after registering the pin list app")
+	}
 }
 
 // buildAuthStatusServer constructs a catalog with the read-only auth_status
@@ -476,6 +500,8 @@ func buildAuthStatusServer(t *testing.T) *mcp.Server {
 	})
 
 	srv := sdk.NewServer(nil)
+	// Seed the launcher; the app's AttachTo now points at open_account.
+	seedLauncherForTest(t, srv, catalog, auth.OpenAccountToolName, auth.AuthStatusAppURI, model.CategoryAccount)
 	if err := auth.RegisterAuthStatusApp(srv, catalog); err != nil {
 		t.Fatalf("auth.RegisterAuthStatusApp: %v", err)
 	}
@@ -516,16 +542,24 @@ func TestRegisterAuthStatusAppWire(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTools: %v", err)
 	}
+	var sawStatus bool
 	for _, x := range tres.Tools {
-		if x.Name == "auth_status" {
-			if x.Meta == nil {
-				t.Fatalf("auth_status has no _meta after registering the auth status app")
+		switch x.Name {
+		case "auth_status":
+			sawStatus = true
+			if ui, ok := x.Meta["ui"].(map[string]any); ok {
+				if _, has := ui["resourceUri"]; has {
+					t.Fatalf("auth_status must NOT carry ui.resourceUri (headless)")
+				}
 			}
-			if x.Meta["ui/resourceUri"] != auth.AuthStatusAppURI {
-				t.Fatalf("auth_status missing _meta.ui/resourceUri=%q; got %#v", auth.AuthStatusAppURI, x.Meta)
+		case auth.OpenAccountToolName:
+			ui, ok := x.Meta["ui"].(map[string]any)
+			if !ok || ui["resourceUri"] != auth.AuthStatusAppURI {
+				t.Fatalf("open_account missing _meta.ui.resourceUri=%q; got %#v", auth.AuthStatusAppURI, x.Meta)
 			}
-			return
 		}
 	}
-	t.Fatalf("auth_status tool not found after registering the auth status app")
+	if !sawStatus {
+		t.Fatalf("auth_status tool not found after registering the auth status app")
+	}
 }

@@ -27,6 +27,8 @@ func TestRegisterVaultCreateAppWire(t *testing.T) {
 	catalog.Add(modelTool(vault.CompiledVaultCreateToolName))
 	srv := sdk.NewServer(nil)
 
+	// Seed the launcher; the app's AttachTo now points at open_vault_create.
+	seedLauncherForTest(t, srv, catalog, vault.OpenVaultCreateToolName, vault.VaultCreateAppURI, model.CategoryVault)
 	if err := vault.RegisterVaultCreateApp(srv, catalog, handoff.NewHandoffRegistry(), session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)); err != nil {
 		t.Fatalf("vault.RegisterVaultCreateApp: %v", err)
 	}
@@ -58,11 +60,8 @@ func TestRegisterVaultCreateAppWire(t *testing.T) {
 	for _, x := range tres.Tools {
 		toolMeta[x.Name] = x
 	}
-	create := toolMeta[vault.CompiledVaultCreateToolName]
-	require.NotNil(t, create, "vault_create not listed")
-	ui, ok := create.Meta["ui"].(map[string]any)
-	require.True(t, ok, "no _meta.ui on vault_create")
-	require.Equal(t, vault.VaultCreateAppURI, ui["resourceUri"])
+	requireHeadlessNoUI(t, toolMeta[vault.CompiledVaultCreateToolName])
+	requireLauncherUI(t, toolMeta[vault.OpenVaultCreateToolName], vault.VaultCreateAppURI)
 
 	status := toolMeta["vault_create_status"]
 	require.NotNil(t, status, "vault_create_status helper not listed")

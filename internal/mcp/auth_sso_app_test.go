@@ -31,6 +31,8 @@ func newAuthSSOAppServer(t *testing.T) *mcp.Server {
 	catalog.Add(model.ToolEntryFromDescriptor(authSSO))
 	catalog.Add(model.ToolEntryFromDescriptor(authResume))
 
+	// Seed the launcher; the app's AttachTo now points at open_sso_signin.
+	seedLauncherForTest(t, srv, catalog, mcpauth.OpenSSOSigninToolName, mcpauth.AuthSSOAppURI, model.CategoryAccount)
 	if err := mcpauth.RegisterAuthSSOApp(srv, catalog, reg, handles); err != nil {
 		t.Fatalf("mcpauth.RegisterAuthSSOApp: %v", err)
 	}
@@ -67,18 +69,16 @@ func TestRegisterAuthSSOAppWire(t *testing.T) {
 	require.Contains(t, rr.Contents[0].Text, "Sign In")
 	require.Contains(t, rr.Contents[0].Text, "sso-start")
 
-	// auth_sso carries _meta.ui.resourceUri; auth_sso_status is app-only.
+	// auth_sso is a headless primitive (no ui.resourceUri); open_sso_signin is
+	// the ONLY tool carrying resourceUri; auth_sso_status is app-only.
 	tres, err := cs.ListTools(ctx, nil)
 	require.NoError(t, err)
 	toolMeta := map[string]*mcp.Tool{}
 	for _, x := range tres.Tools {
 		toolMeta[x.Name] = x
 	}
-	sso := toolMeta["auth_sso"]
-	require.NotNil(t, sso, "auth_sso not listed")
-	ui, ok := sso.Meta["ui"].(map[string]any)
-	require.True(t, ok, "no _meta.ui on auth_sso")
-	require.Equal(t, mcpauth.AuthSSOAppURI, ui["resourceUri"])
+	requireHeadlessNoUI(t, toolMeta["auth_sso"])
+	requireLauncherUI(t, toolMeta["open_sso_signin"], mcpauth.AuthSSOAppURI)
 
 	status := toolMeta["auth_sso_status"]
 	require.NotNil(t, status, "auth_sso_status helper not listed")

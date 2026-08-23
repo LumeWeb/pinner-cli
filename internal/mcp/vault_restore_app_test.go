@@ -27,6 +27,8 @@ func TestRegisterVaultRestoreAppWire(t *testing.T) {
 	catalog.Add(modelTool(vault.CompiledVaultRestoreToolName))
 	srv := sdk.NewServer(nil)
 
+	// Seed the launcher; the app's AttachTo now points at open_vault_restore.
+	seedLauncherForTest(t, srv, catalog, vault.OpenVaultRestoreToolName, vault.VaultRestoreAppURI, model.CategoryVault)
 	if err := vault.RegisterVaultRestoreApp(srv, catalog, handoff.NewHandoffRegistry(), session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)); err != nil {
 		t.Fatalf("vault.RegisterVaultRestoreApp: %v", err)
 	}
@@ -58,11 +60,8 @@ func TestRegisterVaultRestoreAppWire(t *testing.T) {
 	for _, x := range tres.Tools {
 		toolMeta[x.Name] = x
 	}
-	restore := toolMeta[vault.CompiledVaultRestoreToolName]
-	require.NotNil(t, restore, "vault_restore not listed")
-	ui, ok := restore.Meta["ui"].(map[string]any)
-	require.True(t, ok, "no _meta.ui on vault_restore")
-	require.Equal(t, vault.VaultRestoreAppURI, ui["resourceUri"])
+	requireHeadlessNoUI(t, toolMeta[vault.CompiledVaultRestoreToolName])
+	requireLauncherUI(t, toolMeta[vault.OpenVaultRestoreToolName], vault.VaultRestoreAppURI)
 
 	status := toolMeta["vault_restore_status"]
 	require.NotNil(t, status, "vault_restore_status helper not listed")

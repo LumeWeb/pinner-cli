@@ -106,9 +106,9 @@ func TestUploadFileOpenAIMetaCoexistsWithAppUI(t *testing.T) {
 	// Real descriptor (carries openai/fileParams in its Meta).
 	desc := transfer.NewUploadFileDescriptor(false, false, nil, cu, nil, nil, 0)
 	catalog.Add(model.ToolEntryFromDescriptor(desc))
+	// Seed the launcher; the app's AttachTo now points at open_upload_manager.
+	seedLauncherForTest(t, srv, catalog, upload.OpenUploadManagerToolName, upload.OpenUploadManagerURI, model.CategoryCore)
 	require.NoError(t, upload.RegisterIPFSUploadApp(srv, catalog, cu))
-	// Production copies the app-view _meta onto the descriptor before serving.
-	copyCatalogMetaToDescriptor(&desc, catalog, "upload_file")
 	require.NoError(t, RegisterOfficialDescriptor(srv, desc))
 	require.NoError(t, RegisterOfficialCuratedTools(srv, catalog))
 
@@ -116,22 +116,31 @@ func TestUploadFileOpenAIMetaCoexistsWithAppUI(t *testing.T) {
 	res, err := cs.ListTools(context.Background(), nil)
 	require.NoError(t, err)
 
-	var upTool *mcp.Tool
+	var upTool, launchTool *mcp.Tool
 	for _, x := range res.Tools {
-		if x.Name == "upload_file" {
+		switch x.Name {
+		case "upload_file":
 			upTool = x
+		case "open_upload_manager":
+			launchTool = x
 		}
 	}
 	require.NotNil(t, upTool, "upload_file must be in tools/list")
 
-	// OpenAI annotation survived.
+	// OpenAI annotation survived on the headless primitive.
 	b, _ := json.Marshal(upTool.Meta["openai/fileParams"])
 	require.JSONEq(t, `["file"]`, string(b), "openai/fileParams must survive registration")
 
-	// MCP App _meta.ui survived alongside it.
-	ui, ok := upTool.Meta["ui"].(map[string]any)
-	require.True(t, ok, "_meta.ui must survive registration")
-	require.Equal(t, upload.IPFSUploadAppURI, ui["resourceUri"])
+	// upload_file is headless: it must NOT carry _meta.ui.resourceUri.
+	if ui, ok := upTool.Meta["ui"].(map[string]any); ok {
+		require.NotContains(t, ui, "resourceUri", "upload_file must not carry ui.resourceUri (headless)")
+	}
+
+	// The MCP App _meta.ui lives on the launcher.
+	require.NotNil(t, launchTool, "open_upload_manager must be in tools/list")
+	lui, ok := launchTool.Meta["ui"].(map[string]any)
+	require.True(t, ok, "_meta.ui must survive registration on the launcher")
+	require.Equal(t, upload.IPFSUploadAppURI, lui["resourceUri"])
 }
 
 // TestUploadFileOpenAIValidation is a table covering the deterministic

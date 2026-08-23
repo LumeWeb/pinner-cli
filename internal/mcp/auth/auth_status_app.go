@@ -16,6 +16,11 @@ import (
 // AuthStatusAppURI is the ui:// resource serving the "Account" app.
 const AuthStatusAppURI = "ui://auth/status.html"
 
+// OpenAccountToolName is the model-facing open_* launcher for the Account app.
+// It is the ONLY tool carrying ui.resourceUri for this view; the headless
+// auth_status primitive never advertises a card.
+const OpenAccountToolName = "open_account"
+
 // renderAuthStatusAppHTML renders the complete "Account" app document
 // (ui://auth/status.html). The shared shell (doctype/<head>/inline theme) and
 // the ESM module (shared ext-apps bootstrap + auth-status logic) come from
@@ -37,6 +42,8 @@ func RegisterAuthStatusApp(srv *sdk.Server, catalog apps.AppCatalog) error {
 		Description:   "Read-only authentication/account status strip.",
 		HTML:          renderAuthStatusAppHTML(),
 		PrefersBorder: true,
-		AttachTo:      []string{"auth_status"},
+		// Attach the UI view to the open_account LAUNCHER — not the headless
+		// auth_status primitive.
+		AttachTo: []string{OpenAccountToolName},
 	})
 }

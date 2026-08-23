@@ -22,6 +22,11 @@ import (
 // VaultCreateAppURI is the ui:// resource serving the "Create Vault" app.
 const VaultCreateAppURI = "ui://vault/create.html"
 
+// OpenVaultCreateToolName is the model-facing open_* launcher for the Create
+// Vault app. It is the ONLY tool carrying ui.resourceUri for this view; the
+// headless vault_create primitive never advertises a card.
+const OpenVaultCreateToolName = "open_vault_create"
+
 // RenderVaultCreateAppHTML renders the complete "Create Vault" app document
 // (ui://vault/create.html). The shared shell (doctype/<head>/inline theme) and
 // the ESM module (shared ext-apps bootstrap + create logic) come from
@@ -60,7 +65,10 @@ func RegisterVaultCreateApp(srv *sdk.Server, catalog apps.AppCatalog, reg *hando
 		Description:   "Create a vault: approve the Sia device and save the recovery seed.",
 		HTML:          RenderVaultCreateAppHTML(),
 		PrefersBorder: true,
-		AttachTo:      []string{CompiledVaultCreateToolName},
-		Helpers:       []model.ToolDescriptor{VaultCreateStatusDescriptor(reg, handles)},
+		// Attach the UI view to the open_vault_create LAUNCHER — not the
+		// headless vault_create primitive (which keeps its needs_human
+		// URL+handle handoff for the agent's own use).
+		AttachTo: []string{OpenVaultCreateToolName},
+		Helpers:  []model.ToolDescriptor{VaultCreateStatusDescriptor(reg, handles)},
 	})
 }

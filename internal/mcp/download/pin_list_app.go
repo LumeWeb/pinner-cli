@@ -16,6 +16,11 @@ import (
 // PinListAppURI is the ui:// resource serving the "Pin list" app.
 const PinListAppURI = "ui://pins/list.html"
 
+// OpenPinListToolName is the model-facing open_* launcher for the Pin list
+// app. It is the ONLY tool carrying ui.resourceUri for this view; the headless
+// pins_list primitive never advertises a card.
+const OpenPinListToolName = "open_pin_list"
+
 // renderPinListAppHTML renders the complete "Pin list" app document
 // (ui://pins/list.html). The shared shell (doctype/<head>/inline theme) and the
 // ESM module (shared ext-apps bootstrap + pin-list logic) come from
@@ -37,6 +42,8 @@ func RegisterPinListApp(srv *sdk.Server, catalog apps.AppCatalog) error {
 		Description:   "Read-only list of your pins and their status.",
 		HTML:          renderPinListAppHTML(),
 		PrefersBorder: true,
-		AttachTo:      []string{"pins_list"},
+		// Attach the UI view to the open_pin_list LAUNCHER — not the headless
+		// pins_list primitive.
+		AttachTo: []string{OpenPinListToolName},
 	})
 }

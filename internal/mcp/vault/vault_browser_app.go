@@ -16,6 +16,11 @@ import (
 // VaultBrowserAppURI is the ui:// resource serving the "Vault browser" app.
 const VaultBrowserAppURI = "ui://vault/browser.html"
 
+// OpenVaultBrowserToolName is the model-facing open_* launcher for the Vault
+// browser app. It is the ONLY tool carrying ui.resourceUri for this view; the
+// headless vault_status primitive never advertises a card.
+const OpenVaultBrowserToolName = "open_vault_browser"
+
 // renderVaultBrowserAppHTML renders the complete "Vault browser" app document
 // (ui://vault/browser.html). The shared shell (doctype/<head>/inline theme) and
 // the ESM module (shared ext-apps bootstrap + browser logic) come from
@@ -37,6 +42,8 @@ func RegisterVaultBrowserApp(srv *sdk.Server, catalog apps.AppCatalog) error {
 		Description:   "Read-only vault status and file browser.",
 		HTML:          renderVaultBrowserAppHTML(),
 		PrefersBorder: true,
-		AttachTo:      []string{"vault_status"},
+		// Attach the UI view to the open_vault_browser LAUNCHER — not the
+		// headless vault_status primitive.
+		AttachTo: []string{OpenVaultBrowserToolName},
 	})
 }

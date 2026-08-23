@@ -35,6 +35,9 @@ func newAccountAppsServer(t *testing.T) *mcp.Server {
 	catalog.Add(model.ToolEntryFromDescriptor(email))
 	catalog.Add(model.ToolEntryFromDescriptor(reset))
 
+	// Seed launchers; the apps' AttachTo now point at open_* launchers.
+	seedLauncherForTest(t, srv, catalog, mcpauth.OpenAccountPasswordToolName, mcpauth.AccountPasswordAppURI, model.CategoryAccount)
+	seedLauncherForTest(t, srv, catalog, mcpauth.OpenAccountEmailToolName, mcpauth.AccountEmailAppURI, model.CategoryAccount)
 	require.NoError(t, mcpauth.RegisterAccountPasswordApp(srv, catalog), "mcpauth.RegisterAccountPasswordApp")
 	require.NoError(t, mcpauth.RegisterAccountEmailApp(srv, catalog), "mcpauth.RegisterAccountEmailApp")
 	require.NoError(t, RegisterOfficialCuratedTools(srv, catalog), "RegisterOfficialCuratedTools")
@@ -72,22 +75,23 @@ func TestRegisterAccountAppsWire(t *testing.T) {
 	require.Contains(t, em.Contents[0].Text, "Change Email")
 	require.Contains(t, em.Contents[0].Text, "em-start")
 
-	// Both start tools carry _meta.ui.resourceUri to their respective views.
+	// The headless primitives carry NO _meta.ui.resourceUri; only the open_*
+	// launchers do.
 	tres, err := cs.ListTools(ctx, nil)
 	require.NoError(t, err)
 	meta := map[string]*mcp.Tool{}
 	for _, x := range tres.Tools {
 		meta[x.Name] = x
 	}
-	pwt, ok := meta["account_password_update"]
-	require.True(t, ok, "account_password_update not listed")
-	pwUI, ok := pwt.Meta["ui"].(map[string]any)
-	require.True(t, ok, "no _meta.ui on account_password_update")
-	require.Equal(t, mcpauth.AccountPasswordAppURI, pwUI["resourceUri"])
+	for _, prim := range []string{"account_password_update", "account_email_change"} {
+		pt, ok := meta[prim]
+		require.True(t, ok, "%s not listed", prim)
+		if ui, isUI := pt.Meta["ui"].(map[string]any); isUI {
+			require.NotContains(t, ui, "resourceUri", "%s must not carry ui.resourceUri (headless)", prim)
+		}
+	}
 
-	emt, ok := meta["account_email_change"]
-	require.True(t, ok, "account_email_change not listed")
-	emUI, ok := emt.Meta["ui"].(map[string]any)
-	require.True(t, ok, "no _meta.ui on account_email_change")
-	require.Equal(t, mcpauth.AccountEmailAppURI, emUI["resourceUri"])
+	// The launchers carry the resourceUri to their respective views.
+	requireLauncherUI(t, meta["open_account_password"], mcpauth.AccountPasswordAppURI)
+	requireLauncherUI(t, meta["open_account_email"], mcpauth.AccountEmailAppURI)
 }
