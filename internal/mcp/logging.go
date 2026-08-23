@@ -124,7 +124,7 @@ func openaiFileParamField(args map[string]any) (zap.Field, bool) {
 	if err != nil {
 		raw = []byte(`"<unserializable>"`)
 	}
-	return zap.String("openai_file_param", string(raw)), true
+	return zap.String("openai_file_param", redactForLog(string(raw))), true
 }
 
 // logToolCallEnd reports the outcome of a tool invocation: duration and, on

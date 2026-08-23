@@ -170,4 +170,18 @@ func TestOpenAIFileParamField(t *testing.T) {
 	if !strings.Contains(failField.String, `/mnt/data/example.zip`) {
 		t.Errorf("local path string not captured verbatim: %s", failField.String)
 	}
+
+	// A secret embedded in the raw value (e.g. a token in a local path, a
+	// query string, or a long hash segment) must be redacted before it reaches
+	// the log, mirroring the maskArgs/redactForLog posture.
+	secret := "abc" + "0123456789abcdef0123456789abcdef0123456789abcdef"
+	secretField, ok := openaiFileParamField(map[string]any{
+		"file": "/data/" + secret + "/example.zip",
+	})
+	if !ok {
+		t.Fatal("expected a field for a path string carrying a secret")
+	}
+	if strings.Contains(secretField.String, secret) {
+		t.Errorf("secret leaked into openai_file_param field: %s", secretField.String)
+	}
 }
