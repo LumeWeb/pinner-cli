@@ -102,7 +102,7 @@ func resolveRequiredArg(ctx context.Context, websitesService WebsitesService, cm
 }
 
 func printWebsiteUpdateResult(output Output, website *ipfs.WebsiteItem, message string) {
-	output.Printf("%s\n", message)
+	output.Print(message + "\n")
 
 	fields := []Field{
 		{"ID", fmt.Sprintf("%d", website.Id)},
@@ -293,9 +293,11 @@ func websitesUpdate(ctx context.Context, cmd websitesCommandGetter, output Outpu
 	}
 
 	if updatedWebsite.Expired {
-		output.Printfln("")
-		output.Printfln("⚠ This website's validation has expired.")
-		output.Printfln("  Re-validate: pinner websites validate %d", updatedWebsite.Id)
+		output.PrintListGroup(ListGroup{
+			Title:  "⚠ This website's validation has expired.",
+			Footer: fmt.Sprintf("Re-validate: pinner websites validate %d", updatedWebsite.Id),
+			PadTop: 1,
+		})
 	}
 
 	return nil
@@ -413,9 +415,11 @@ func websitesGet(ctx context.Context, cmd websitesCommandGetter, output Output, 
 	showDNSRecordInstructions(output, website, nameservers)
 
 	if website.Expired && website.Status != "active" {
-		output.Printfln("")
-		output.Printfln("⚠ Validation token has expired. Re-validate to generate a new token:")
-		output.Printfln("  pinner websites validate %d", website.Id)
+		output.PrintListGroup(ListGroup{
+			Title:  "⚠ Validation token has expired. Re-validate to generate a new token:",
+			Footer: fmt.Sprintf("pinner websites validate %d", website.Id),
+			PadTop: 1,
+		})
 	}
 
 	return nil
@@ -492,20 +496,23 @@ func websitesCreate(ctx context.Context, cmd websitesCommandGetter, output Outpu
 		})
 	}
 
-	output.Printfln("")
-	output.Printfln("Validation token: %s", stripValidationPrefix(createdWebsite.ValidationToken))
-	output.Printfln("")
+	output.PrintFields(FieldGroup{
+		PadTop: 1,
+		Fields: []Field{{Label: "Validation Token", Value: stripValidationPrefix(createdWebsite.ValidationToken)}},
+	})
 
 	nameservers := getNameservers(ctx, websitesService)
 	showDNSRecordInstructions(output, createdWebsite, nameservers)
 
-	output.Printfln("")
-	output.Printfln("Validate: pinner websites validate %s", createdWebsite.Domain)
-
+	footer := ""
 	if !createdWebsite.DnsHostingEnabled {
-		output.Printfln("")
-		output.Printfln("  Tip: Use --dns-hosting to have Pinner manage DNS for you")
+		footer = "Tip: Use --dns-hosting to have Pinner manage DNS for you"
 	}
+	output.PrintListGroup(ListGroup{
+		Title:  fmt.Sprintf("Validate: pinner websites validate %s", createdWebsite.Domain),
+		Footer: footer,
+		PadTop: 1,
+	})
 
 	return nil
 }
@@ -527,7 +534,10 @@ func showDNSRecordInstructions(output Output, website *ipfs.WebsiteItem, nameser
 
 	if website.DnsHostingEnabled {
 		showDNSHostingInstructions(output, website, nameservers)
-		output.Printfln("Then validate: pinner dns zones validate %s", website.Domain)
+		output.PrintListGroup(ListGroup{
+			Title:  fmt.Sprintf("Then validate: pinner dns zones validate %s", website.Domain),
+			PadTop: 1,
+		})
 		return
 	}
 
@@ -536,8 +546,9 @@ func showDNSRecordInstructions(output Output, website *ipfs.WebsiteItem, nameser
 
 // showDNSHostingInstructions displays NS delegation instructions when DNS hosting is enabled.
 func showDNSHostingInstructions(output Output, website *ipfs.WebsiteItem, nameservers []string) {
-	output.Printfln("DNS hosting is enabled: Pinner manages your DNS records.")
-	output.Printfln("Update your domain's nameservers at your registrar:")
+	output.PrintListGroup(ListGroup{
+		Title: "DNS hosting is enabled: Pinner manages your DNS records. Update your domain's nameservers at your registrar:",
+	})
 
 	if len(nameservers) > 0 {
 		rows := make([][]string, len(nameservers))
@@ -546,11 +557,12 @@ func showDNSHostingInstructions(output Output, website *ipfs.WebsiteItem, namese
 		}
 		output.PrintTable([]string{"NAME", "TYPE", "VALUE"}, rows)
 	} else {
-		output.Printfln("  Use: pinner websites config")
-		output.Printfln("  To find the required nameservers.")
+		output.PrintListGroup(ListGroup{
+			Title:  "Use: pinner websites config",
+			Footer: "To find the required nameservers.",
+			PadTop: 1,
+		})
 	}
-
-	output.Printfln("")
 }
 
 // showSelfManagedDNSInstructions displays required DNS records for self-managed DNS.
@@ -719,16 +731,20 @@ func printValidationResult(output Output, result *ipfs.WebsiteValidateResponse) 
 }
 
 func showValidationInstructions(ctx context.Context, output Output, website *ipfs.WebsiteItem, websitesService WebsitesService, arg string) {
-	output.Printfln("")
 	if website != nil {
 		nameservers := getNameservers(ctx, websitesService)
 		showDNSRecordInstructions(output, website, nameservers)
 	} else {
-		output.Printfln("Make sure you have added the required DNS records to your domain")
-		output.Printfln("View website details: pinner websites get %s", arg)
+		output.PrintListGroup(ListGroup{
+			Title:  "Make sure you have added the required DNS records to your domain",
+			Items:  []string{fmt.Sprintf("View website details: pinner websites get %s", arg)},
+			PadTop: 1,
+		})
 	}
-	output.Printfln("")
-	output.Printfln("Re-validate: pinner websites validate %s", arg)
+	output.PrintListGroup(ListGroup{
+		Title:  fmt.Sprintf("Re-validate: pinner websites validate %s", arg),
+		PadTop: 1,
+	})
 }
 
 // buildRequiredRecords returns the DNS records a user needs to add for their website.
