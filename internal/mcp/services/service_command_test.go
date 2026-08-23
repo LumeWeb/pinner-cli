@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -842,4 +844,99 @@ func TestRestartManagedServiceNoOp(t *testing.T) {
 	// still a no-op — neither can identify a managed service to restart.
 	require.NoError(t, RestartManagedService(ctx, cmd, &ServiceInstallState{EnvFile: "mcp.env"}))
 	require.NoError(t, RestartManagedService(ctx, cmd, &ServiceInstallState{Provider: tunnel.TunnelProviderNgrok}))
+}
+
+// tunnelConfigScriptedPrompter is a fieldform.Prompter for tests that drive the
+// spliced tunnel-config install step, returning queued Text answers in order so
+// fieldform.Gather resolves without a real terminal.
+type tunnelConfigScriptedPrompter struct{ texts []string }
+
+func (p *tunnelConfigScriptedPrompter) Select(string, []string, string) (int, string, error) {
+	return 0, "", nil
+}
+func (p *tunnelConfigScriptedPrompter) MultiSelect(string, []string, []string) ([]string, error) {
+	return nil, nil
+}
+func (p *tunnelConfigScriptedPrompter) Confirm(string, bool) (bool, error) { return false, nil }
+func (p *tunnelConfigScriptedPrompter) Text(_, _, _ string) (string, error) {
+	if len(p.texts) == 0 {
+		return "", nil
+	}
+	v := p.texts[0]
+	p.texts = p.texts[1:]
+	return v, nil
+}
+
+// TestMcpInstallConfigStepDeepLinksMissingCredentials guards the user-guidance
+// behavior of `pinner mcp install`: the exact step it splices in as its visible
+// "Tunnel-specific configuration" step (mcpadapter.ServiceInstallSteps step 1,
+// wrapped by buildMcpTunnelSteps) must deep-link the operator to the provider
+// setup page for any credential still unresolved, so the browser is ready
+// before the prompt. Without this guard, the guidance could silently regress
+// (as the tunnel installers did historically) while the wizard still "works".
+//
+// The step is driven directly with a nil config manager (the last-resort
+// credential store) so the run is hermetic: no config file is read or written,
+// and ngrok's SDK/API fallbacks are short-circuited (no api key, no token), so
+// the deep-links fire deterministically with no network or real terminal.
+func TestMcpInstallConfigStepDeepLinksMissingCredentials(t *testing.T) {
+	origOpener := tunnel.TunnelDeepLinkOpener
+	defer func() { tunnel.TunnelDeepLinkOpener = origOpener }()
+
+	oldNI := fieldform.NonInteractive
+	defer func() { fieldform.NonInteractive = oldNI }()
+	fieldform.NonInteractive = false
+
+	// Isolate ngrok config-file reads so the token derive step cannot pick up
+	// an operator's real ~/.config/ngrok authtoken on a dev machine.
+	t.Setenv("NGROK_CONFIG", filepath.Join(t.TempDir(), "ngrok.yml"))
+	t.Setenv("NGROK_API_KEY", "")
+
+	cases := []struct {
+		name          string
+		provider      tunnel.TunnelProvider
+		texts         []string
+		wantDeepLinks []string
+	}{
+		{
+			name:     "openai fires tunnel_id + api_key deep-links",
+			provider: tunnel.TunnelProviderOpenAI,
+			// TunnelID must match the OpenAITunnelID shape to pass validation.
+			texts: []string{"tunnel_" + strings.Repeat("a", 32), "sk-placeholder", "shared-secret"},
+			wantDeepLinks: []string{
+				"https://platform.openai.com/settings/organization/tunnels",
+				"https://platform.openai.com/settings/organization/api-keys",
+			},
+		},
+		{
+			name:     "ngrok fires authtoken + domain deep-links",
+			provider: tunnel.TunnelProviderNgrok,
+			texts:    []string{"", "", ""},
+			wantDeepLinks: []string{
+				"https://dashboard.ngrok.com/get-started/your-authtoken",
+				"https://dashboard.ngrok.com/domains",
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var opened []string
+			tunnel.TunnelDeepLinkOpener = func(u string) error { opened = append(opened, u); return nil }
+
+			state := &ServiceInstallState{Provider: tc.provider}
+			cmd := &cli.Command{Flags: managedServiceFlags()}
+			inner := ServiceInstallSteps(state, cmd, filepath.Join(t.TempDir(), "mcp.env"), nil)
+			configStep := inner[1] // "Tunnel-specific configuration"
+			ctx := fieldform.WithPrompter(context.Background(), &tunnelConfigScriptedPrompter{texts: tc.texts})
+
+			if err := configStep.Execute(ctx, state); err != nil {
+				t.Fatalf("config step execute: %v", err)
+			}
+			for _, want := range tc.wantDeepLinks {
+				if !slices.Contains(opened, want) {
+					t.Errorf("missing deep-link %s; opened=%v", want, opened)
+				}
+			}
+		})
+	}
 }
