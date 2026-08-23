@@ -46,26 +46,31 @@ func TunnelCfgCredential(cfgMgr config.Manager, provider, key string) func() str
 	}
 }
 
-// ResolveNgrokToken resolves the ngrok authtoken for the runtime path from the
-// explicit --token flag and NGROK_AUTHTOKEN env, falling back to the pinner
-// config-manager last-resort store ONLY when no explicit credential is present
-// AND the ngrok SDK has no usable authtoken of its own to load from its config
-// file. A stale/revoked token persisted by an earlier `service install` or
-// wizard run must not override a valid authtoken that the embedded agent loads
-// from ngrok's own config file, which would break the tunnel with an auth
-// error. Conversely, an empty/broken ngrok config file must NOT suppress the
-// config-manager fallback and silently start the agent unauthenticated.
+// ResolveNgrokToken resolves the ngrok authtoken for the runtime path with the
+// precedence: explicit --token flag and NGROK_AUTHTOKEN env, then the ngrok
+// config file (~/.config/ngrok/ngrok.yml, as written by `ngrok config
+// add-authtoken`), then the pinner config-manager last-resort store.
+//
+// The embedded ngrok SDK does NOT read its own config file on startup, so a
+// config-file authtoken must be surfaced here and passed to the agent via
+// WithAuthtoken; relying on the SDK to load it leaves the session
+// unauthenticated (ngrok ERR_NGROK_4018). Putting the config file before the
+// config-manager store means a stale/revoked token persisted by an earlier
+// `service install` or wizard run never overrides a valid config-file
+// authtoken, while an empty/broken config file still falls back to the store
+// instead of silently starting the agent unauthenticated.
 func ResolveNgrokToken(token string, cfgMgr config.Manager) string {
 	explicit := ResolveCredential(
 		func() string { return token },
 		func() string { return os.Getenv("NGROK_AUTHTOKEN") },
 	)
-	if explicit == "" && !NgrokConfigHasAuthtoken() {
-		// Only the config-manager last-resort store can satisfy the credential;
-		// prefer it over leaving the agent unauthenticated.
-		explicit = TunnelCfgCredential(cfgMgr, "ngrok", "token")()
+	if explicit != "" {
+		return explicit
 	}
-	return explicit
+	if cfg := NgrokConfigAuthtoken(); cfg != "" {
+		return cfg
+	}
+	return TunnelCfgCredential(cfgMgr, "ngrok", "token")()
 }
 
 // PersistTunnelCredential writes a tunnel credential to the config manager as

@@ -44,6 +44,19 @@ type Tunnel interface {
 	OAuthBaseURL(explicitURL, tunnelURL string) (string, error)
 }
 
+// AccountChecker is implemented by tunnels whose provider account login can be
+// verified before the tunnel is started. It lets the runtime fail fast with an
+// actionable "not logged in" error instead of hanging inside Start when the
+// credential is invalid (ngrok's session retries a bad authtoken until its
+// connect deadline). Providers without a distinct pre-flight check simply do
+// not implement it.
+type AccountChecker interface {
+	// CheckAccount verifies the provider account is usable (the credential
+	// authenticates) without starting the tunnel. It returns a clear error when
+	// the operator is not logged in or the credential is rejected.
+	CheckAccount(ctx context.Context) error
+}
+
 // tunnelBase holds the shared bookkeeping for all tunnel providers.
 type tunnelBase struct {
 	mu        sync.Mutex

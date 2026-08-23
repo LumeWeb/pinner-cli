@@ -786,6 +786,16 @@ func serveHTTP(ctx context.Context, srv *sdk.Server, cmd *cli.Command, oob *auth
 	}()
 
 	if tun != nil {
+		// Verify the provider account is logged in before starting the tunnel, so
+		// an invalid credential fails fast with an actionable error instead of
+		// hanging inside Start (ngrok's session retries a bad authtoken until its
+		// connect deadline). Providers without a pre-flight check skip this.
+		if ac, ok := tun.(tunnel.AccountChecker); ok {
+			if err := ac.CheckAccount(ctx); err != nil {
+				shutdown(context.Background())
+				return err
+			}
+		}
 		if err := tun.Start(ctx, localAddr); err != nil {
 			shutdown(context.Background())
 			return err
