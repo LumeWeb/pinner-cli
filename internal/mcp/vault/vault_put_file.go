@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"time"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
@@ -33,8 +34,14 @@ type LocalPathVaultPutHandler func(ctx context.Context, path, vaultPath, archive
 type VaultPutFileInput struct {
 	// Source is the file to store. Mode must be valid for the running
 	// transport: path=co-located stdio; mint=HTTP/tunnel (returns a presigned
-	// curl PUT URL); url/data=OpenAI tunnel (relayed through MCP).
-	Source transfer.UploadSource `json:"source"`
+	// curl PUT URL); url/data=OpenAI tunnel (relayed through MCP). Mutually
+	// exclusive with File.
+	Source *transfer.UploadSource `json:"source,omitempty"`
+	// File is an OpenAI/host-provided generated-file reference (temporary
+	// download_url + file_id). It lets a ChatGPT user hand a file it created
+	// in its own environment directly to the vault, without a human file-picker
+	// or manual transport. Mutually exclusive with Source.
+	File *transfer.ChatGPTFileInput `json:"file,omitempty"`
 	// VaultPath is the destination file path inside the encrypted vault. It
 	// must be a file path (not a directory) free of parent-relative traversal.
 	// Any vault file path is allowed (e.g. vault:/docs/f.pdf); there is no
@@ -64,6 +71,15 @@ type VaultPutFileInput struct {
 // destination can never be written regardless of transport. Any vault file
 // path is an allowed destination; there is no single-folder restriction.
 func NewVaultPutFileDescriptor(coLocated, tunnelOpenAI bool, pathFn LocalPathVaultPutHandler, vu *transfer.VaultHTTPUpload, relayFn VaultPutHandler, relayHosts []string, maxRelayBytes int64) model.ToolDescriptor {
+	return newVaultPutFileDescriptor(coLocated, tunnelOpenAI, pathFn, vu, relayFn, relayHosts, maxRelayBytes, nil)
+}
+
+// newVaultPutFileDescriptor is the implementation behind
+// NewVaultPutFileDescriptor. httpClient, when non-nil, overrides the client
+// used to fetch an OpenAI `file` download_url. It is a deliberate trust
+// decision by embedding Go code (tests); production passes nil and uses Pinner's
+// SSRF-guarded client.
+func newVaultPutFileDescriptor(coLocated, tunnelOpenAI bool, pathFn LocalPathVaultPutHandler, vu *transfer.VaultHTTPUpload, relayFn VaultPutHandler, relayHosts []string, maxRelayBytes int64, httpClient *http.Client) model.ToolDescriptor {
 	transport := transfer.UploadFileTransport(coLocated, tunnelOpenAI)
 	return model.ToolDescriptor{
 		Name:        "vault_put_file",
@@ -71,6 +87,12 @@ func NewVaultPutFileDescriptor(coLocated, tunnelOpenAI bool, pathFn LocalPathVau
 		Description: vaultPutFileDescription(transport),
 		Category:    model.CategoryCore,
 		InputSchema: toolargs.ToolSchemaFor[VaultPutFileInput](),
+		// Advertise the OpenAI file-parameter handoff so a ChatGPT/OpenAI host
+		// knows the top-level `file` argument carries a generated-file
+		// reference (temporary download_url + file_id) it can populate from a
+		// file it owns, without a human file-picker. This metadata is additive
+		// to any other Pinner metadata.
+		Meta: transfer.ChatGPTFileMeta(),
 		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
 			in, err := toolargs.DecodeToolArgs[VaultPutFileInput](request)
 			if err != nil {
@@ -86,26 +108,59 @@ func NewVaultPutFileDescriptor(coLocated, tunnelOpenAI bool, pathFn LocalPathVau
 			// folder: a caller may write to any vault file path (e.g. the
 			// historical vault_put_path target vault:/docs/f.pdf). The mint
 			// flow additionally re-validates defensively inside its own mint().
-			if err := in.Source.Validate(transport); err != nil {
+			if err := transfer.ValidateVaultFilePath(in.VaultPath); err != nil {
 				return model.ToolResult{}, err
 			}
-			if err := transfer.ValidateVaultFilePath(in.VaultPath); err != nil {
+
+			// Deterministic source selection: exactly one byte source must be
+			// provided. Do not let a silent precedence rule decide between
+			// `file` and `source` for the caller.
+			hasSource := in.Source != nil
+			hasFile := in.File != nil
+			switch {
+			case !hasSource && !hasFile:
+				return model.ToolResult{}, errors.New("an upload source is required")
+			case hasSource && hasFile:
+				return model.ToolResult{}, errors.New("provide exactly one upload source")
+			}
+
+			// OpenAI/host-provided generated-file handoff. The host passes a
+			// temporary download_url + file_id; Pinner fetches/streams the bytes
+			// through the same authenticated vault write executor the relay
+			// url/data sources use — there is no separate vault path.
+			if hasFile {
+				if relayFn == nil {
+					return model.ToolResult{}, errors.New("vault relay write is not configured")
+				}
+				_, body, size, oerr := transfer.OpenChatGPTFileInput(ctx, *in.File, transfer.ChatGPTOpenTimeout, maxRelayBytes, relayHosts, httpClient)
+				if oerr != nil {
+					return model.ToolResult{}, oerr
+				}
+				defer body.Close()
+				writeCtx, cancel := context.WithTimeout(ctx, transfer.SyncUploadBudget(size))
+				defer cancel()
+				result, err := relayFn(writeCtx, body, size, in.VaultPath)
+				return toolargs.WrapResult(result, err, "Stored in the vault.")
+			}
+
+			src := *in.Source
+			if err := src.Validate(transport); err != nil {
 				return model.ToolResult{}, err
 			}
 
 			switch transport {
 			case transfer.TransportStdio:
-				if in.Source.Mode != transfer.SourcePath {
-					return model.ToolResult{}, fmt.Errorf("source mode %q is not available on the %s transport", in.Source.Mode, transport)
+				if src.Mode != transfer.SourcePath {
+					return model.ToolResult{}, fmt.Errorf("source mode %q is not available on the %s transport", src.Mode, transport)
 				}
 				if pathFn == nil {
 					return model.ToolResult{}, errors.New("local path vault handler is not configured")
 				}
-				result, err := pathFn(ctx, in.Source.Path, in.VaultPath, in.ArchiveMode)
+				result, err := pathFn(ctx, src.Path, in.VaultPath, in.ArchiveMode)
 				return toolargs.WrapResult(result, err, "Stored in the vault.")
 			case transfer.TransportHTTP:
-				if in.Source.Mode != transfer.SourceMint {
-					return model.ToolResult{}, fmt.Errorf("source mode %q is not available on the %s transport", in.Source.Mode, transport)
+				if src.Mode != transfer.SourceMint {
+					return model.ToolResult{}, fmt.Errorf("source mode %q is not available on the %s transport", src.Mode, transport)
 				}
 				if vu == nil {
 					return model.ToolResult{}, errors.New("presigned vault-upload endpoint is not configured for remote mode")
@@ -139,14 +194,14 @@ func NewVaultPutFileDescriptor(coLocated, tunnelOpenAI bool, pathFn LocalPathVau
 					Text: toolargs.ResultJSONText(sc) + " Run the curl command with your file; the vault write completes synchronously and the response carries the vault result.",
 				}, nil
 			default: // TransportOpenAI
-				if in.Source.Mode != transfer.SourceURL && in.Source.Mode != transfer.SourceData {
-					return model.ToolResult{}, fmt.Errorf("source mode %q is not available on the OpenAI tunnel transport", in.Source.Mode)
+				if src.Mode != transfer.SourceURL && src.Mode != transfer.SourceData {
+					return model.ToolResult{}, fmt.Errorf("source mode %q is not available on the OpenAI tunnel transport", src.Mode)
 				}
 				if relayFn == nil {
 					return model.ToolResult{}, errors.New("vault relay write is not configured")
 				}
 				res := &transfer.SourceResolver{Transport: transfer.TransportOpenAI, RelayAllowedHosts: relayHosts, RelayMaxBytes: ieo.EffectiveRelayMaxBytes(maxRelayBytes)}
-				body, size, _, oerr := res.OpenBytes(ctx, in.Source)
+				body, size, _, oerr := res.OpenBytes(ctx, src)
 				if oerr != nil {
 					return model.ToolResult{}, oerr
 				}
@@ -165,10 +220,10 @@ func NewVaultPutFileDescriptor(coLocated, tunnelOpenAI bool, pathFn LocalPathVau
 func vaultPutFileDescription(t transfer.TransportKind) string {
 	switch t {
 	case transfer.TransportStdio:
-		return "Store a file in the encrypted Pinner vault. In this co-located stdio mode, set source.mode=path and source.path to a host-side file/directory/archive path; the server reads it directly and writes the contents into the vault at vault_path (any vault file path, e.g. vault:/docs/f.pdf)."
+		return "Store a file in the encrypted Pinner vault. If your host provides the file to you directly, pass it in the file input (a temporary download_url + file_id) and Pinner fetches and stores its bytes at vault_path. In this co-located stdio mode you may instead set source.mode=path and source.path to a host-side file/directory/archive path; the server reads it directly. vault_path may be any vault file path (e.g. vault:/docs/f.pdf)."
 	case transfer.TransportHTTP:
-		return "Store a file in the encrypted Pinner vault. Over this HTTP/tunnel transport, set source.mode=mint to get a one-time presigned HTTP PUT endpoint bound to vault_path; stream your file's bytes to it with curl, and the vault write completes synchronously. vault_path may be any vault file path (e.g. vault:/docs/f.pdf)."
+		return "Store a file in the encrypted Pinner vault. If your host provides a generated file directly, pass it in the file input (a temporary download_url + file_id) and Pinner fetches and stores its bytes at vault_path — no curl needed for a file the host already owns. Otherwise over this HTTP/tunnel transport, set source.mode=mint to get a one-time presigned HTTP PUT endpoint bound to vault_path and stream your file's bytes to it with curl. vault_path may be any vault file path (e.g. vault:/docs/f.pdf)."
 	default:
-		return "Store a file in the encrypted Pinner vault. Over this OpenAI-tunnel transport, set source.mode=url (a server-fetchable HTTPS download URL) or source.mode=data (an RFC 2397 data: URI); the server fetches/decodes the bytes and writes them into the vault at vault_path. vault_path may be any vault file path (e.g. vault:/docs/f.pdf)."
+		return "Store a file in the encrypted Pinner vault. If your host provides a generated file directly, pass it in the file input (a temporary download_url + file_id) and Pinner fetches and stores its bytes at vault_path. Over this OpenAI-tunnel transport you may instead set source.mode=url (a server-fetchable HTTPS download URL) or source.mode=data (an RFC 2397 data: URI). vault_path may be any vault file path (e.g. vault:/docs/f.pdf)."
 	}
 }
