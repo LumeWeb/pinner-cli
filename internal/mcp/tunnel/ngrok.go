@@ -366,6 +366,15 @@ func (n *ngrokTunnel) Start(ctx context.Context, localAddr string) error {
 	fwd, err := agent.Forward(runCtx, upstream, forwardOpts...)
 	if err != nil {
 		stop()
+		// Forward failed, so the established control-plane session is never
+		// reused and Stop() would early-return on fwd==nil without releasing
+		// it. Tear the session down here to avoid leaking it.
+		n.mu.Lock()
+		ss := n.stopSession
+		n.mu.Unlock()
+		if ss != nil {
+			ss()
+		}
 		log.Debug("ngrok: forward failed", zap.Error(err))
 		return fmt.Errorf("start ngrok tunnel: %w", err)
 	}
