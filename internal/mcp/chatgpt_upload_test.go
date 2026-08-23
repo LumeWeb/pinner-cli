@@ -78,6 +78,24 @@ func TestUploadFileDescriptorHTTPMints(t *testing.T) {
 	require.NotEmpty(t, sc["upload_handle"])
 }
 
+func TestUploadFileDescriptorHTTPMintRejectsWrap(t *testing.T) {
+	// The mint source streams raw bytes to a presigned PUT URL; the
+	// directory-root (wrap) decision is only applied during Pinner's SDK
+	// upload, which the mint path never reaches. Requesting wrap on mint must
+	// fail loudly rather than silently produce a non-directory root.
+	cu := transfer.NewHTTPUpload(transfer.NewUploadTaskManager(nil, 0), 0)
+	defer cu.Stop(context.Background())
+	desc := transfer.NewUploadFileDescriptor(false, false, nil, cu, nil, nil, 0)
+	res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
+		"source": map[string]any{"mode": "mint"},
+		"wrap":   true,
+	}})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "wrap is not supported by the mint source")
+	// No presigned URL may be minted for a rejected wrap request.
+	require.Nil(t, res.StructuredContent)
+}
+
 func TestUploadFileDescriptorHTTPRejectsPath(t *testing.T) {
 	cu := transfer.NewHTTPUpload(nil, 0)
 	defer cu.Stop(context.Background())

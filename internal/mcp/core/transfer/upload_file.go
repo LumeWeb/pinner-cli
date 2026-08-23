@@ -178,6 +178,14 @@ func newUploadFileDescriptor(coLocated, tunnelOpenAI bool, pathFn UploadFileHand
 				if hp == nil {
 					return model.ToolResult{}, errors.New("presigned upload endpoint is not configured for remote mode")
 				}
+				// The mint source streams raw file bytes to a presigned PUT URL —
+				// the wrap (directory-root) decision is applied during Pinner's
+				// SDK upload, which this path never reaches, so it would be
+				// silently dropped. Reject it explicitly rather than returning a
+				// non-directory root the caller cannot detect.
+				if in.Wrap {
+					return model.ToolResult{}, errors.New("wrap is not supported by the mint source; use a co-located path/data/url source for a wrapped (directory-root) single-file upload")
+				}
 				name := in.Name
 				if name == "" {
 					name = DefaultUploadName
