@@ -182,6 +182,41 @@ Two implementations: `humanFormatter` and `jsonFormatter`, selected based on glo
 - `--meta key=value` flag on pins add and upload for metadata at pin creation time
 - `--force` consolidates `--confirm`/`--yes` as the primary skip-confirmation flag
 
+### Website Update Flow
+
+When updating an existing website (its domain already exists, so `websites create`
+conflicts), follow this order. `websites_update` / `websites_update` (MCP tool)
+is the correct tool; the MCP `website-update` prompt encodes this same protocol.
+
+1. **Resolve current state** — call `websites get <domain>` first. Capture the
+   current `target_type` (`ipfs` or `ipns`) and `dns_hosting_enabled`. Never guess
+   these; passing a wrong `target-type` can silently flip IPFS↔IPNS and break DNS.
+2. **Pin the new content** — ensure the new CID is pinned before updating
+   (`pins_add`/`pins add` with `wait`). Updating an unpinned CID returns a 422
+   `CidNotPinned`; pin first, then retry.
+3. **Update** — `websites_update <domain> --cid <new> --target-type <current>`.
+   If `--target-type` is omitted together with `--cid`, the site's current
+   `target_type` is preserved automatically (it is resolved internally), so a
+   bare `--cid` update is safe. Change `target-type` only when intentionally
+   switching IPFS↔IPNS.
+4. **DNS by mode**:
+   - **Managed** (`dns_hosting_enabled=true`): do not touch DNS. Pinner
+     reconciles the `_dnslink` record asynchronously, so `websites validate` /
+     `validation-status` right after the update may report the OLD CID. That is
+     reconciliation lag, not failure — wait ~30–60s and re-check.
+   - **Self-managed**: publish the new `_dnslink` TXT before validation will
+     pass; read `pinner://websites/<domain>/dns-requirements` for the expected
+     value.
+5. **Verify** — re-check `websites get` (confirm `target_hash` updated) and then
+   `websites validate`.
+
+Common failure modes:
+- `--target-type is required when --cid is provided` → re-run including the
+  current `target-type` (or omit it and let it be inherited).
+- `CID_NOT_PINNED` → the CID is not pinned on the gateway; run `pins_add` first.
+- Validation showing a stale `_dnslink` after a managed-DNS update → reconciliation
+  is still running; wait and re-check, do not treat as an update failure.
+
 ### Global Flags
 All commands support these global flags:
 - `--json` - Output JSON instead of human-readable text

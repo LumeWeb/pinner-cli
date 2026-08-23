@@ -15,13 +15,18 @@ import (
 var promptTemplatesFS embed.FS
 
 // sitePromptData carries the optional values templated into the
-// website-onboarding prompt. Empty fields select the "ask the user" variant of
-// a step instead of the pre-filled step.
+// website-onboarding and website-update prompts. Empty fields select the
+// "ask the user" variant of a step instead of the pre-filled step.
 type sitePromptData struct {
 	Domain        string
 	ContentSource string
 	TargetType    string
 	DNSMode       string
+
+	// website-update fields.
+	WebsiteArg  string
+	CID         string
+	CurrentType string
 }
 
 // renderPromptTemplate renders the named prompt template (a

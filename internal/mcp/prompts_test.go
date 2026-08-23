@@ -94,6 +94,47 @@ func TestWebsiteOnboardingPrefillVariant(t *testing.T) {
 	assert.NotContains(t, joined, `{"domain": "<domain>"}`)
 }
 
+func TestWebsiteUpdateHandlerRendersSteps(t *testing.T) {
+	res, err := websiteUpdateHandler(context.Background(), model.PromptRequest{
+		Arguments: map[string]string{
+			ArgWebsite:     "example.com",
+			ArgCID:         "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+			ArgCurrentType: "ipfs",
+		},
+	})
+	require.NoError(t, err)
+
+	var text []string
+	var embedded []string
+	for _, m := range res.Messages {
+		if m.EmbeddedResource != nil {
+			embedded = append(embedded, m.EmbeddedResource.URI)
+		} else {
+			text = append(text, m.Text)
+		}
+	}
+	joined := strings.Join(text, "\n")
+
+	for _, step := range []string{"resolve_state", "ensure_pinned", "update", "dns_check"} {
+		assert.Contains(t, joined, "Step: "+step, "expected step %q", step)
+	}
+	// Target-type preservation and pin-first are core to the update protocol.
+	assert.Contains(t, joined, "preserve")
+	assert.Contains(t, joined, "pins_add")
+	assert.Contains(t, joined, "CID_NOT_PINNED")
+	assert.Contains(t, joined, "reconciliation lag")
+	assert.Contains(t, joined, "dns_hosting_enabled")
+
+	// Embedded validation-status resource is present once.
+	require.Equal(t, 1, len(embedded))
+	assert.Contains(t, embedded[0], "validation-status")
+}
+
+func TestWebsiteUpdateHandlerRequiresFields(t *testing.T) {
+	_, err := websiteUpdateHandler(context.Background(), model.PromptRequest{Arguments: map[string]string{}})
+	require.Error(t, err)
+}
+
 // TestSetupHandlerRendersSteps verifies the setup prompt handler renders all
 // its steps from the embedded templates.
 func TestSetupHandlerRendersSteps(t *testing.T) {

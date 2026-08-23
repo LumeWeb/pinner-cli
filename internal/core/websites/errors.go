@@ -3,9 +3,25 @@ package websites
 
 import (
 	"fmt"
+	"strings"
+	"unicode"
 
 	ipfs "go.lumeweb.com/ipfs-sdk"
 )
+
+// normalizeReason canonicalizes a backend reason code for comparison. The
+// gateway emits Go/JSON-style enum values (e.g. "CidNotPinned") while the
+// ipfs-sdk constants are SCREAMING_SNAKE ("CID_NOT_PINNED"); collapsing both to
+// lowercase alphanumerics makes the translation robust to either wire format.
+func normalizeReason(reason string) string {
+	var b strings.Builder
+	for _, r := range reason {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			b.WriteRune(unicode.ToLower(r))
+		}
+	}
+	return b.String()
+}
 
 // TranslateError maps the ipfs-sdk backend reason codes that surface around
 // website creation/update to clear, actionable messages. It is the single
@@ -21,12 +37,12 @@ func TranslateError(err error) error {
 		return nil
 	}
 
-	switch ipfs.ErrorReasonOf(err) {
-	case ipfs.ErrorCodeCIDNotPinned:
+	switch normalizeReason(ipfs.ErrorReasonOf(err)) {
+	case normalizeReason(ipfs.ErrorCodeCIDNotPinned):
 		return fmt.Errorf("target CID is not pinned on the gateway: pin it first (pins add / pins_add), then retry: %w", err)
-	case ipfs.ErrorCodeIPNSKeyNotFound:
+	case normalizeReason(ipfs.ErrorCodeIPNSKeyNotFound):
 		return fmt.Errorf("target IPNS key does not exist: create an IPNS key or target a pinned CID instead, then retry: %w", err)
-	case ipfs.ErrorCodeDNSValidationFailed:
+	case normalizeReason(ipfs.ErrorCodeDNSValidationFailed):
 		return fmt.Errorf("DNS validation failed for the website domain: the validation TXT and _dnslink records are not resolving on the domain; publish them, then validate again: %w", err)
 	default:
 		return err

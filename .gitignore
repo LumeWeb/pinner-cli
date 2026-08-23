@@ -73,3 +73,7 @@ tests/evals/.env
 .auth/
 bin/
 
+
+# MCP Apps JS build / local tooling artifacts
+node_modules/
+.venv/

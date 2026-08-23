@@ -242,7 +242,18 @@ func websitesUpdate(ctx context.Context, cmd websitesCommandGetter, output Outpu
 	}
 
 	if req.TargetHash != nil && req.TargetType == nil {
-		return fmt.Errorf("--target-type is required when --cid is provided")
+		// A bare cid is ambiguous (IPFS CID vs IPNS name). Preserve the site's
+		// current target type so callers don't guess and can't accidentally
+		// flip IPFS<->IPNS targeting.
+		current, curErr := websitesService.Get(ctx, id)
+		if curErr != nil {
+			return fmt.Errorf("resolve current target type for %s: %w", id, curErr)
+		}
+		tt := current.TargetType
+		if tt == "" {
+			tt = "ipfs"
+		}
+		req.TargetType = &tt
 	}
 
 	if cmd.IsSet(FlagDNSHosting) {
@@ -267,6 +278,19 @@ func websitesUpdate(ctx context.Context, cmd websitesCommandGetter, output Outpu
 	nameservers := getNameservers(ctx, websitesService)
 	output.Printfln("")
 	showDNSRecordInstructions(output, updatedWebsite, nameservers)
+
+	// Managed-DNS reconciliation is asynchronous: the new _dnslink TXT may not
+	// be live yet, so don't let a premature validation read as a failure.
+	if updatedWebsite.DnsHostingEnabled {
+		output.Printfln("")
+		output.PrintListGroup(ListGroup{
+			Title: "Managed DNS is reconciling the new CID asynchronously.",
+			Items: []string{
+				fmt.Sprintf("Re-check later: pinner websites validate %s", updatedWebsite.Domain),
+				"The _dnslink record may briefly still reference the previous CID.",
+			},
+		})
+	}
 
 	if updatedWebsite.Expired {
 		output.Printfln("")

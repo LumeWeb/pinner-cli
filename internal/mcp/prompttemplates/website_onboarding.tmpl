@@ -92,3 +92,83 @@ Read the pinner://websites/{domain}/dns-requirements resource (substitute the do
 
 {{define "website_step_complete"}}When the wizard returns "complete": true, the website onboarding is done. Summarize the result for the user: domain, CID, target type, DNS mode, and validation status. If validation failed, provide the reason and suggest next steps.
 {{end}}
+
+{{/* website-update prompt templates. Rendered when updating an existing website's
+     content. These drive the agent through websites_get / websites_update /
+     websites_validate directly (no wizard session) while preserving the current
+     target type and handling DNS per hosting mode. */}}
+
+{{define "website_update_overview"}}You are updating an existing website's content.
+
+Workflow overview (5 steps):
+  1. resolve_state : Get the website config; capture target_type and dns_hosting_enabled
+  2. ensure_pinned : Confirm the new CID is pinned on the gateway
+  3. update        : Run websites_update preserving the current target type
+  4. dns_check     : Branch on managed vs self-managed DNS
+  5. verify        : Re-check the website and validation status
+
+Rules:
+  - Never guess target_type. If not supplied, run websites_get first and preserve the
+    site's current type. Flipping IPFS<->IPNS without request breaks DNS resolution.
+  - Do not call websites_update until the new CID is confirmed pinned.
+  - For managed DNS, an invalid validation right after the update is usually DNS
+    reconciliation lag, not a failure: wait briefly and re-check.{{if .WebsiteArg}}
+
+Target website: {{.WebsiteArg}}{{end}}{{if .CID}}
+
+New CID: {{.CID}}{{end}}
+{{end}}
+
+{{define "website_update_step_resolve"}}Step: resolve_state
+{{- if .CurrentType}}
+Current target type is {{.CurrentType}} (supplied). Preserve it on update unless you
+have an explicit instruction to change IPFS<->IPNS.
+{{- else}}
+Call the `websites_get` tool with website="{{.WebsiteArg}}" (or read
+pinner://websites/{{.WebsiteArg}}/dns-requirements) and extract:
+  - target_type (ipfs or ipns) — this must be preserved
+  - dns_hosting_enabled (true = managed DNS, false = self-managed)
+If the site is not found, stop and report that the website does not exist (use the
+create flow instead).
+{{- end}}
+{{end}}
+
+{{define "website_update_step_pin"}}Step: ensure_pinned
+Before updating, verify CID {{.CID}} is pinned on the gateway.
+Check `pins_status` for the CID; if it is not pinned, call `pins_add` with
+cids=["{{.CID}}"] and wait=true. Do not proceed to the update step until pinning
+succeeds. An unpinned CID makes the update fail with CID_NOT_PINNED.
+{{end}}
+
+{{define "website_update_step_update"}}Step: update
+Call the `websites_update` tool:
+  website: "{{.WebsiteArg}}"
+  cid:     "{{.CID}}"
+{{- if .CurrentType}}
+  target-type: "{{.CurrentType}}"
+{{- end}}
+Do not change dns-hosting unless explicitly requested; if target-type was not
+resolved in the resolve_state step, omit it so the site's current type is
+preserved automatically.
+{{end}}
+
+{{define "website_update_step_dns"}}Step: dns_check
+If managed DNS (dns_hosting_enabled is true): do not touch DNS records. Pinner
+reconciles the _dnslink record asynchronously, so validation may report the old
+CID for a short time. Proceed to verify and wait before re-checking.
+If self-managed DNS: read pinner://websites/{{.WebsiteArg}}/dns-requirements for
+the expected _dnslink TXT value, and instruct the user to publish it for the new
+CID. Validation can only pass after that record is live.
+{{end}}
+
+{{define "website_update_step_validate"}}Call the `websites_validate` tool (or read the pinner://websites/{id}/validation-status resource above) to confirm DNS resolves for the new CID.
+If valid, proceed to complete.
+If invalid because the _dnslink still references the old CID and DNS is managed,
+wait ~30-60 seconds, then re-check once (reconciliation lag) before treating it as a failure.
+If the error mentions an unpinned CID (CID_NOT_PINNED), go back to the ensure_pinned step.
+{{end}}
+
+{{define "website_update_step_complete"}}Update workflow finished.
+Summarize the new CID ({{.CID}}){{if .CurrentType}}, target type preserved ({{.CurrentType}}){{end}}, and the current
+validation status. If DNS is still reconciling, advise checking again in a few minutes.
+{{end}}

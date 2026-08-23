@@ -238,10 +238,13 @@ func websitesCreate(d WebsitesDeps) catalog.Operation {
 
 // websitesUpdate is the `websites update` operation. Returns *ipfs.WebsiteItem.
 //
-// At least one optional field is required; this handler also enforces the
-// --target-type-required-with--cid business rule. Flag mapping: rename-to ->
+// At least one optional field is required. Flag mapping: rename-to ->
 // req.Domain, cid -> req.TargetHash, target-type -> req.TargetType, nullable
 // dns-hosting -> req.DnsHostingEnabled (nil = leave unchanged).
+//
+// When cid is set without target-type, the site's current target type is
+// preserved (fetched via Get) so a bare cid update is unambiguous and cannot
+// accidentally flip IPFS<->IPNS targeting.
 func websitesUpdate(d WebsitesDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
 		Name:        "websites_update",
@@ -257,7 +260,7 @@ func websitesUpdate(d WebsitesDeps) catalog.Operation {
 			{Name: "website", Type: catalog.ArgTypeString, Help: "Website ID or domain to update"},
 			{Name: "rename-to", Type: catalog.ArgTypeString, Help: "New domain for the website"},
 			{Name: "cid", Type: catalog.ArgTypeString, Help: "New target CID"},
-			{Name: "target-type", Type: catalog.ArgTypeString, Help: "New target type (ipfs|ipns)"},
+			{Name: "target-type", Type: catalog.ArgTypeString, Help: "New target type (ipfs|ipns); when omitted with cid, the site's current target type is preserved"},
 			{Name: "dns-hosting", Type: catalog.ArgTypeNullableBool, Help: "Set Pinner-managed DNS (true = managed, false = self-managed, omit = leave unchanged)", AgentHelp: "true enables Pinner-managed DNS; false disables it (self-managed). Omit to leave the current DNS hosting state unchanged."},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
@@ -285,7 +288,18 @@ func websitesUpdate(d WebsitesDeps) catalog.Operation {
 				req.TargetType = &targetType
 			}
 			if req.TargetHash != nil && req.TargetType == nil {
-				return nil, fmt.Errorf("--target-type is required when --cid is provided")
+				// A bare cid is ambiguous (an IPFS CID vs an IPNS name). Preserve
+				// the site's current target type so agents can update the CID
+				// without guessing and without accidentally flipping IPFS<->IPNS.
+				current, curErr := svc.Get(ctx, id)
+				if curErr != nil {
+					return nil, fmt.Errorf("resolve current target type for %s: %w", id, curErr)
+				}
+				tt := current.TargetType
+				if tt == "" {
+					tt = "ipfs"
+				}
+				req.TargetType = &tt
 			}
 			// nil (omitted) means "leave DNS hosting unchanged"; true/false
 			// toggle it on/off explicitly.

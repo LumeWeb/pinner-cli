@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	ipfs "go.lumeweb.com/ipfs-sdk"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	ipfs "go.lumeweb.com/ipfs-sdk"
 )
 
 // apiErr builds a minimal *ipfs.APIError wrapping base with the given reason,
@@ -53,6 +53,18 @@ func TestTranslateError(t *testing.T) {
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "DNS validation failed")
+		assert.ErrorIs(t, err, base)
+	})
+
+	t.Run("PascalCase wire format (CidNotPinned)", func(t *testing.T) {
+		// The gateway emits Go/JSON-style enum values; the translation must not
+		// depend on the SDK's SCREAMING_SNAKE constants matching byte-for-byte.
+		base := errors.New("invalid website data")
+		err := TranslateError(apiErr("CidNotPinned", base))
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not pinned on the gateway")
+		assert.Contains(t, err.Error(), "pin it first")
 		assert.ErrorIs(t, err, base)
 	})
 
