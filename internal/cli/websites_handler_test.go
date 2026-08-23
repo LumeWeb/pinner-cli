@@ -422,15 +422,34 @@ func TestWebsitesUpdateHandler_NoUpdateFields(t *testing.T) {
 	assert.Contains(t, err.Error(), "at least one field must be provided for update")
 }
 
-func TestWebsitesUpdateHandler_CIDWithoutTargetType(t *testing.T) {
-	_, cfgMgr := setupWebsitesHandlerTest(t)
+func TestWebsitesUpdateHandler_CIDWithoutTargetType_InheritsCurrentType(t *testing.T) {
+	mockSvc, cfgMgr := setupWebsitesHandlerTest(t)
+	now := time.Now()
+	mockSvc.getFunc = func(ctx context.Context, id string) (*ipfs.WebsiteItem, error) {
+		assert.Equal(t, "1", id)
+		return &ipfs.WebsiteItem{
+			Id: 1, Domain: "example.com", TargetHash: "QmOldHash", TargetType: "ipfs",
+			Status: "active", Created: now,
+		}, nil
+	}
+	mockSvc.updateWithOptionsFunc = func(ctx context.Context, id string, req ipfs.WebsiteUpdateRequest) (*ipfs.WebsiteItem, error) {
+		assert.Equal(t, "1", id)
+		assert.NotNil(t, req.TargetHash)
+		assert.Equal(t, "QmNewHash", *req.TargetHash)
+		// target-type must be inherited from the current website, not guessed.
+		assert.NotNil(t, req.TargetType)
+		assert.Equal(t, "ipfs", *req.TargetType)
+		return &ipfs.WebsiteItem{
+			Id: 1, Domain: "example.com", TargetHash: "QmNewHash", TargetType: "ipfs",
+			Status: "active", Created: now,
+		}, nil
+	}
 
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("1").
 		withString(FlagCID, "QmNewHash").withIsSet(FlagCID, true)
 	err := websitesUpdate(context.Background(), cmd, output, cfgMgr, "test-token", true)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "--target-type is required when --cid is provided")
+	require.NoError(t, err)
 }
 
 func TestWebsitesUpdateHandler_DNSHostingEnabled(t *testing.T) {

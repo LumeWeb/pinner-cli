@@ -10,6 +10,7 @@ import (
 // Prompt name constants.
 const (
 	PromptWebsiteOnboarding = "website-onboarding"
+	PromptWebsiteUpdate     = "website-update"
 	PromptSetup             = "setup"
 )
 
@@ -19,6 +20,11 @@ const (
 	ArgContentSource = "content_source"
 	ArgTargetType    = "target_type"
 	ArgDNSMode       = "dns_mode"
+
+	// website-update prompt arguments.
+	ArgWebsite     = "website"
+	ArgCID         = "cid"
+	ArgCurrentType = "current_type"
 )
 
 // PromptDescriptors builds the SDK-neutral prompt descriptors for the
@@ -39,6 +45,17 @@ func PromptDescriptors() []model.PromptDescriptor {
 				{Name: ArgDNSMode, Description: `DNS mode: "managed" (Pinner handles DNS) or "self_managed". Default: managed.`},
 			},
 			Handler: websiteOnboardingHandler,
+		},
+		{
+			Name:        PromptWebsiteUpdate,
+			Title:       "Website Update Workflow",
+			Description: "Guides the agent through updating an existing website's content: resolve current state first, ensure the new CID is pinned, perform the update while preserving the current target type, handle DNS per mode (managed vs self-managed), then verify.",
+			Arguments: []model.PromptArgumentDescriptor{
+				{Name: ArgWebsite, Description: "Website domain or ID to update."},
+				{Name: ArgCID, Description: "New IPFS CID to serve."},
+				{Name: ArgCurrentType, Description: `Current target type ("ipfs" or "ipns"). If omitted, the agent must fetch the website first so the type is preserved, never guessed.`},
+			},
+			Handler: websiteUpdateHandler,
 		},
 		{
 			Name:        PromptSetup,
@@ -152,6 +169,47 @@ func websiteOnboardingHandler(ctx context.Context, req model.PromptRequest) (mod
 
 	return model.PromptResult{
 		Description: "Website onboarding wizard workflow with embedded resource references",
+		Messages:    messages,
+	}, nil
+}
+
+// websiteUpdateHandler is the prompts/get handler for the website-update
+// prompt. It renders a sequence of messages that instruct the agent through
+// the update flow: resolve current state, pin the new CID, update while
+// preserving the target type, handle DNS per mode, then verify. The update
+// path is tool-driven (websites_get / websites_update / websites_validate) and
+// uses the pinner:// resources for live DNS/validation data.
+func websiteUpdateHandler(ctx context.Context, req model.PromptRequest) (model.PromptResult, error) {
+	args := req.Arguments
+	website := args[ArgWebsite]
+	cid := args[ArgCID]
+	currentType := args[ArgCurrentType]
+
+	if website == "" {
+		return model.PromptResult{}, fmt.Errorf("website-update: website is required")
+	}
+	if cid == "" {
+		return model.PromptResult{}, fmt.Errorf("website-update: cid is required")
+	}
+
+	data := sitePromptData{
+		WebsiteArg:  website,
+		CID:         cid,
+		CurrentType: currentType,
+	}
+	var messages []model.PromptMessage
+
+	messages = append(messages, textMsg(renderPromptTemplate("website_update_overview", data)))
+	messages = append(messages, textMsg(renderPromptTemplate("website_update_step_resolve", data)))
+	messages = append(messages, textMsg(renderPromptTemplate("website_update_step_pin", data)))
+	messages = append(messages, textMsg(renderPromptTemplate("website_update_step_update", data)))
+	messages = append(messages, textMsg(renderPromptTemplate("website_update_step_dns", data)))
+	messages = append(messages, embeddedMsg(ValidationStatusTmpl))
+	messages = append(messages, textMsg(renderPromptTemplate("website_update_step_validate", data)))
+	messages = append(messages, textMsg(renderPromptTemplate("website_update_step_complete", data)))
+
+	return model.PromptResult{
+		Description: "Website update workflow with target-type preservation and DNS-mode handling",
 		Messages:    messages,
 	}, nil
 }

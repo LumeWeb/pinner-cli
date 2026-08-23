@@ -83,7 +83,8 @@ func (ui *PTermWebsitesUI) ShowCompletion() error {
 	}
 	msg += "Next steps:\n" +
 		fmt.Sprintf("  • View details: pinner websites get %s\n", domain) +
-		fmt.Sprintf("  • Update: pinner websites update %s --cid <new-cid>\n\n", domain) +
+		fmt.Sprintf("  • Update: pin your new CID first, then pinner websites update %s --cid <new-cid> --target-type <ipfs|ipns>\n", domain) +
+		"    (preserve the current target type; pinning: pinner pins add <new-cid>)\n\n" +
 		"Need help? Visit " + DocumentationURL
 
 	pterm.Println()
