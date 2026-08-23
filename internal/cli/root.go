@@ -196,16 +196,6 @@ For more help on any command: pinner <command> --help`,
 				}
 			})
 			uploadHandler = func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, wrap bool) (any, error) {
-				// A wrapped (website) single-file upload with no explicit name
-				// sniffs the content: HTML becomes index.html so the site
-				// resolves at its root instead of exposing a temp/upload label.
-				if wrap && (name == "" || name == transfer.DefaultUploadName) {
-					var head [512]byte
-					n, _ := io.ReadFull(reader, head[:])
-					if resolved := transfer.ResolveWrappedFileName(name, true, head[:n]); resolved != "" {
-						name = resolved
-					}
-				}
 				if name == "" {
 					name = transfer.DefaultUploadName
 				}
@@ -216,6 +206,24 @@ For more help on any command: pinner <command> --help`,
 				path := file.Name()
 				defer os.Remove(path)
 				defer file.Close()
+				// A wrapped (website) single-file upload with no explicit name
+				// sniffs the content: HTML becomes index.html so the site
+				// resolves at its root instead of exposing a temp/upload label.
+				// The sniffed head bytes are written to the temp file first so
+				// the subsequent io.Copy appends the remainder without dropping
+				// the content consumed during sniffing.
+				if wrap && (name == "" || name == transfer.DefaultUploadName) {
+					var head [512]byte
+					n, _ := io.ReadFull(reader, head[:])
+					if resolved := transfer.ResolveWrappedFileName(name, true, head[:n]); resolved != "" {
+						name = resolved
+					}
+					if n > 0 {
+						if _, err := file.Write(head[:n]); err != nil {
+							return nil, err
+						}
+					}
+				}
 				if _, err := io.Copy(file, reader); err != nil {
 					return nil, err
 				}
