@@ -133,3 +133,55 @@ func TestRedactForLogMasksEmbeddedSecrets(t *testing.T) {
 		t.Errorf("redactForLog altered plain text: %q", got)
 	}
 }
+
+func TestOpenAIFileParamField(t *testing.T) {
+	// No `file` arg -> no field.
+	if _, ok := openaiFileParamField(map[string]any{"name": "x"}); ok {
+		t.Error("expected no field without a file argument")
+	}
+	if _, ok := openaiFileParamField(nil); ok {
+		t.Error("expected no field for nil args")
+	}
+
+	// DECISIVE SUCCESS: host rewrote the path into a provided-file object.
+	// This is what a working OpenAI handoff must deliver.
+	okField, ok := openaiFileParamField(map[string]any{
+		"file": map[string]any{
+			"download_url": "https://files.oaiusercontent.com/file_123",
+			"file_id":      "file_123",
+			"file_name":    "example.zip",
+			"mime_type":    "application/zip",
+		},
+	})
+	if !ok {
+		t.Fatal("expected a field for a provided-file object")
+	}
+	if got := okField.String; !strings.Contains(got, `"download_url"`) || !strings.Contains(got, `"file_id"`) {
+		t.Errorf("provided-file object not captured verbatim: %s", got)
+	}
+
+	// DECISIVE FAILURE: local path string -> rewrite did NOT happen.
+	failField, ok := openaiFileParamField(map[string]any{
+		"file": "/mnt/data/example.zip",
+	})
+	if !ok {
+		t.Fatal("expected a field for a local path string")
+	}
+	if !strings.Contains(failField.String, `/mnt/data/example.zip`) {
+		t.Errorf("local path string not captured verbatim: %s", failField.String)
+	}
+
+	// A secret embedded in the raw value (e.g. a token in a local path, a
+	// query string, or a long hash segment) must be redacted before it reaches
+	// the log, mirroring the maskArgs/redactForLog posture.
+	secret := "abc" + "0123456789abcdef0123456789abcdef0123456789abcdef"
+	secretField, ok := openaiFileParamField(map[string]any{
+		"file": "/data/" + secret + "/example.zip",
+	})
+	if !ok {
+		t.Fatal("expected a field for a path string carrying a secret")
+	}
+	if strings.Contains(secretField.String, secret) {
+		t.Errorf("secret leaked into openai_file_param field: %s", secretField.String)
+	}
+}

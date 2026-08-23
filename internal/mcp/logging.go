@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"regexp"
@@ -97,7 +98,33 @@ func logToolCallStart(logger *zap.Logger, name string, args map[string]any) {
 	if len(masked) > 0 {
 		fields = append(fields, zap.Any("args", masked))
 	}
+	if field, ok := openaiFileParamField(args); ok {
+		fields = append(fields, field)
+	}
 	logger.Info("tool call", fields...)
+}
+
+// openaiFileParamField captures the exact value a host sent for a top-level
+// `file` argument (the OpenAI openai/fileParams handoff target) so a diagnostic
+// can decide, from the actual tools/call, whether the host rewrote the value
+// into a provided-file object. A decisive handoff arrives as an OBJECT with
+// download_url + file_id; a failed/missing rewrite arrives as a local PATH
+// STRING. Seeing `file: string` in the model-facing schema is normal and is NOT
+// proof of failure — only the raw argument above is decisive. It returns no
+// field when there is no top-level `file` argument.
+func openaiFileParamField(args map[string]any) (zap.Field, bool) {
+	if len(args) == 0 {
+		return zap.Skip(), false
+	}
+	v, ok := args["file"]
+	if !ok {
+		return zap.Skip(), false
+	}
+	raw, err := json.Marshal(v)
+	if err != nil {
+		raw = []byte(`"<unserializable>"`)
+	}
+	return zap.String("openai_file_param", redactForLog(string(raw))), true
 }
 
 // logToolCallEnd reports the outcome of a tool invocation: duration and, on

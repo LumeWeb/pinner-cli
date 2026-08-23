@@ -226,8 +226,12 @@ func websitesCreate(d WebsitesDeps) catalog.Operation {
 			// nil (omitted) lets the backend apply its default (managed DNS);
 			// true/false map onto Pinner-managed / self-managed explicitly.
 			req.DnsHostingEnabled = catalog.BoolArgPtr(input, "dns-hosting")
-			// *ipfs.WebsiteItem
-			return svc.CreateWithOptions(ctx, req)
+			// Translate backend reason codes (e.g. CID_NOT_PINNED,
+			// IPNS_KEY_NOT_FOUND, DNS_VALIDATION_FAILED) into clear, actionable
+			// messages; this same handler drives both the CLI and the MCP
+			// tool-call surface. *ipfs.WebsiteItem
+			result, err := svc.CreateWithOptions(ctx, req)
+			return result, websites.TranslateError(err)
 		}),
 	})
 }
@@ -287,7 +291,8 @@ func websitesUpdate(d WebsitesDeps) catalog.Operation {
 			// toggle it on/off explicitly.
 			req.DnsHostingEnabled = catalog.BoolArgPtr(input, "dns-hosting")
 			// *ipfs.WebsiteItem
-			return svc.UpdateWithOptions(ctx, id, req)
+			result, err := svc.UpdateWithOptions(ctx, id, req)
+			return result, websites.TranslateError(err)
 		}),
 	})
 }
@@ -330,7 +335,8 @@ func websitesEnableIPNS(d WebsitesDeps) catalog.Operation {
 				req.TargetHash = &cid
 			}
 			// *ipfs.WebsiteItem
-			return svc.UpdateWithOptions(ctx, id, req)
+			result, err := svc.UpdateWithOptions(ctx, id, req)
+			return result, websites.TranslateError(err)
 		}),
 	})
 }
@@ -415,7 +421,8 @@ func websitesValidate(d WebsitesDeps) catalog.Operation {
 				return nil, err
 			}
 			// *ipfs.WebsiteValidateResponse
-			return svc.Validate(ctx, id)
+			result, err := svc.Validate(ctx, id)
+			return result, websites.TranslateError(err)
 		}),
 	})
 }
