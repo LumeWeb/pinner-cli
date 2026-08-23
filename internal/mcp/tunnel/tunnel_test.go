@@ -226,6 +226,48 @@ func TestNgrokStartBoundedConnect(t *testing.T) {
 	}
 }
 
+// TestNgrokCheckAccountFailsFast guards the pre-flight login check added for
+// the tunnel runtime. Before starting the tunnel, serveHTTP calls
+// CheckAccount so an invalid/unreachable ngrok account fails fast with a clear
+// error instead of hanging inside Start (ngrok's session retries a bad
+// authtoken until its connect deadline). A blocking dialer stands in for a
+// control plane that never answers, and a shortened ngrokLoginProbeTimeout
+// keeps the test quick; the probe (not the larger connect window) must be the
+// bound that aborts.
+func TestNgrokCheckAccountFailsFast(t *testing.T) {
+	oldProbe := ngrokLoginProbeTimeout
+	oldConnect := ngrokConnectTimeout
+	ngrokLoginProbeTimeout = 300 * time.Millisecond
+	ngrokConnectTimeout = 30 * time.Second // probe, not connect, must be the bound
+	t.Cleanup(func() {
+		ngrokLoginProbeTimeout = oldProbe
+		ngrokConnectTimeout = oldConnect
+	})
+
+	ng := &ngrokTunnel{
+		token:  "test-token",
+		dialer: blockingDialer{},
+	}
+
+	start := time.Now()
+	done := make(chan error, 1)
+	go func() { done <- ng.CheckAccount(context.Background()) }()
+
+	select {
+	case err := <-done:
+		require.Error(t, err, "CheckAccount must fail when the ngrok control plane never answers")
+		require.Contains(t, err.Error(), "ngrok login check", "error should identify the login-check step")
+		// It must have waited out the probe window rather than failing
+		// immediately, and must not reach the much larger connect window.
+		require.GreaterOrEqual(t, time.Since(start), ngrokLoginProbeTimeout*2/3,
+			"CheckAccount returned too quickly: the login probe window was not honored")
+		require.Less(t, time.Since(start), 5*time.Second,
+			"CheckAccount took too long: the login probe must fail fast, not wait the connect window")
+	case <-time.After(5 * time.Second):
+		t.Fatal("CheckAccount hung: login probe did not abort on a stuck control plane")
+	}
+}
+
 // TestCloudflaredStopAfterExit guards the exit-detection path of the embedded
 // tunnel: once the in-process daemon has shut down (done closed), waitReady
 // must observe the exit rather than spinning to its deadline, and a subsequent

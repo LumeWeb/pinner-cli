@@ -120,16 +120,28 @@ func TestResolveNgrokToken(t *testing.T) {
 		assert.Equal(t, "cfgmgrtok", ResolveNgrokToken("", mgr))
 	})
 
-	t.Run("existing config file with authtoken inhibits stale config manager token", func(t *testing.T) {
-		// A valid ngrok config file declares an agent authtoken: the embedded
-		// agent will load it, so a stale/revoked last-resort config-manager
-		// token must NOT be forced onto the agent via WithAuthtoken.
+	t.Run("config file authtoken wins over stale config manager token", func(t *testing.T) {
+		// The embedded ngrok SDK does NOT load its own config file on startup,
+		// so ResolveNgrokToken must return the config-file authtoken so the
+		// caller can pass it to the agent via WithAuthtoken. It also takes
+		// precedence over the config-manager store: a stale/revoked last-resort
+		// token must never override a valid config-file authtoken.
 		dir := t.TempDir()
 		cfg := filepath.Join(dir, "ngrok.yml")
 		require.NoError(t, os.WriteFile(cfg, []byte("version: 2\nagent:\n  authtoken: 2abcDEF\n"), 0o600))
 		t.Setenv("NGROK_CONFIG", cfg)
 		mgr := newTestConfigManager(t, "staletok")
-		assert.Equal(t, "", ResolveNgrokToken("", mgr))
+		assert.Equal(t, "2abcDEF", ResolveNgrokToken("", mgr))
+	})
+
+	t.Run("config file authtoken used without config manager", func(t *testing.T) {
+		// Even with no config manager wired, a config file authtoken must be
+		// surfaced so the runtime authenticates instead of erroring with 4018.
+		dir := t.TempDir()
+		cfg := filepath.Join(dir, "ngrok.yml")
+		require.NoError(t, os.WriteFile(cfg, []byte("version: 2\nagent:\n  authtoken: cfgtok\n"), 0o600))
+		t.Setenv("NGROK_CONFIG", cfg)
+		assert.Equal(t, "cfgtok", ResolveNgrokToken("", nil))
 	})
 
 	t.Run("empty/broken config file does not suppress config manager token", func(t *testing.T) {

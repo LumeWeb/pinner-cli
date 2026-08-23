@@ -2,14 +2,15 @@ package tunnel
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"os"
 	"time"
 
-	"golang.ngrok.com/ngrok/v2"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"golang.ngrok.com/ngrok/v2"
 )
 
 // ngrokTunnel serves a local MCP HTTP server through a tunnel powered by the
@@ -145,33 +146,51 @@ func (n *ngrokTunnel) Stop(ctx context.Context) error {
 // package-level var (not const) so tests can shrink the window.
 var ngrokConnectTimeout = 30 * time.Second
 
-// Start implements Tunnel. It builds an embedded ngrok agent, forwards the
-// given local address through it, and records the assigned public URL once the
-// tunnel is live.
-func (n *ngrokTunnel) Start(ctx context.Context, localAddr string) error {
-	host, port, err := SplitHostPort(localAddr)
-	if err != nil {
-		return fmt.Errorf("invalid local address %q: %w", localAddr, err)
+// ngrokLoginProbeTimeout bounds how long CheckAccount waits for the login
+// probe (a control-plane connect). Distinct from ngrokConnectTimeout because a
+// login check must fail fast: ngrok treats a bad authtoken (ERR_NGROK_4018) as
+// retryable, so without a short probe an unauthenticated user would still wait
+// out the full connect window before being told they are not logged in. Valid
+// credentials authenticate in roughly a second, so this window only penalizes
+// the failure path. It is a package-level var (not const) so tests can shrink
+// the window.
+var ngrokLoginProbeTimeout = 5 * time.Second
+
+// connectedAgent returns an already-connected ngrok agent for this tunnel, or
+// builds one and establishes the control-plane session (bounded by
+// ngrokConnectTimeout), caching it for reuse. A previously-connected agent
+// (e.g. from a successful CheckAccount) is returned as-is so Start does not
+// re-dial the control plane after a successful login probe.
+//
+// The returned error is the raw agent.Connect failure so callers can inspect it
+// (e.g. CheckAccount reads the ngrok error code); Start wraps it with the
+// "connect to ngrok" step label.
+func (n *ngrokTunnel) connectedAgent(ctx context.Context) (ngrok.Agent, error) {
+	n.mu.Lock()
+	if n.agent != nil {
+		n.mu.Unlock()
+		return n.agent, nil
 	}
+	n.mu.Unlock()
 
 	agentOpts := []ngrok.AgentOption{}
-	// Pass an explicit authtoken only when one is resolvable from a source we
-	// own (--token or NGROK_AUTHTOKEN). When absent, leave the agent to load
-	// the ngrok config file itself (HasProviderConfig/RequiresToken already
-	// account for it). Never pass an empty token (that would clobber the
-	// config-file credential). ResolveNgrokToken applies the same stale-store
-	// guard as serveHTTP: a stale/revoked config-manager token must not be
-	// forced via WithAuthtoken when the config file carries a valid authtoken.
-	if tok := ResolveNgrokToken(n.token, n.cfgMgr); tok != "" {
-		agentOpts = append(agentOpts, ngrok.WithAuthtoken(tok))
-	}
+	// ResolveNgrokToken folds in the ngrok config-file authtoken (--token/
+	// NGROK_AUTHTOKEN > config file > config-manager store). The embedded SDK
+	// does not read its own config file on startup, so we must surface that
+	// token here and hand it to the agent via WithAuthtoken, or the session
+	// starts unauthenticated (ngrok ERR_NGROK_4018). Never pass an empty token
+	// — that would clobber a credential that ResolveNgrokToken should have
+	// surfaced anyway.
 	if n.dialer != nil {
 		agentOpts = append(agentOpts, ngrok.WithDialer(n.dialer))
+	}
+	if tok := ResolveNgrokToken(n.token, n.cfgMgr); tok != "" {
+		agentOpts = append(agentOpts, ngrok.WithAuthtoken(tok))
 	}
 
 	agent, err := ngrok.NewAgent(agentOpts...)
 	if err != nil {
-		return fmt.Errorf("construct ngrok agent: %w", err)
+		return nil, fmt.Errorf("construct ngrok agent: %w", err)
 	}
 
 	// Establish the control-plane session with a bounded connect BEFORE calling
@@ -184,6 +203,55 @@ func (n *ngrokTunnel) Start(ctx context.Context, localAddr string) error {
 	connectCtx, cancelConnect := context.WithTimeout(ctx, ngrokConnectTimeout)
 	err = agent.Connect(connectCtx)
 	cancelConnect()
+	if err != nil {
+		return nil, err
+	}
+
+	n.mu.Lock()
+	n.agent = agent
+	n.mu.Unlock()
+	return agent, nil
+}
+
+// CheckAccount implements tunnel.AccountChecker. It verifies the ngrok account
+// is logged in by probing the control-plane session, so the runtime fails fast
+// with an actionable "not logged in" error before Start instead of hanging.
+// ngrok rejects a bad authtoken with a server error code (ERR_NGROK_4018); we
+// surface that as a clear login error, and any other connect failure as a
+// generic "can't reach ngrok" error. On success the connected agent is cached
+// and reused by Start.
+func (n *ngrokTunnel) CheckAccount(ctx context.Context) error {
+	// Probe the control-plane session within a short bound so an unauthenticated
+	// user is told promptly rather than waiting out the reconnect window. ngrok
+	// treats a bad authtoken as retryable, so without this bound the probe would
+	// only return when the context deadline fires.
+	connectCtx, cancel := context.WithTimeout(ctx, ngrokLoginProbeTimeout)
+	defer cancel()
+	_, err := n.connectedAgent(connectCtx)
+	if err == nil {
+		return nil
+	}
+	// A ngrok cloud error carries an error code; an invalid/expired authtoken
+	// is ERR_NGROK_4018 (authentication failed). Anything else is treated as a
+	// connectivity problem rather than a login problem.
+	var ne ngrok.Error
+	if errors.As(err, &ne) {
+		return fmt.Errorf("ngrok is not logged in (ngrok error %s): pass --token, set NGROK_AUTHTOKEN, or run `ngrok config add-authtoken`", ne.Code())
+	}
+	return fmt.Errorf("ngrok login check failed: %w", err)
+}
+
+// Start implements Tunnel. It builds an embedded ngrok agent, forwards the
+// given local address through it, and records the assigned public URL once the
+// tunnel is live. If CheckAccount already connected the agent, that session is
+// reused.
+func (n *ngrokTunnel) Start(ctx context.Context, localAddr string) error {
+	host, port, err := SplitHostPort(localAddr)
+	if err != nil {
+		return fmt.Errorf("invalid local address %q: %w", localAddr, err)
+	}
+
+	agent, err := n.connectedAgent(ctx)
 	if err != nil {
 		return fmt.Errorf("connect to ngrok: %w", err)
 	}
@@ -208,7 +276,6 @@ func (n *ngrokTunnel) Start(ctx context.Context, localAddr string) error {
 	}
 
 	n.mu.Lock()
-	n.agent = agent
 	n.fwd = fwd
 	n.stop = stop
 	n.mu.Unlock()
