@@ -272,17 +272,26 @@ func registerCustomTools(deps customToolDeps) error {
 		// (ui://uploads/vault.html) when the presigned vault-upload coordinator
 		// can mint a PUT endpoint for the Uppy XHR uploader. The app must be
 		// indexed in the catalog before its view attaches _meta.ui.
+		// Index vault_put_file in the catalog and register the vault upload app,
+		// but do NOT copy the app's _meta.ui onto the served descriptor.
+		// vault_put_file is a headless operational primitive: attaching a
+		// ui:// resourceUri would cause a UI-capable host to render the
+		// file-picker iframe on every invocation, which is the wrong UX for
+		// mid-workflow agent calls. The App is reachable only through the
+		// explicit open_vault_manager launcher (below).
 		if deps.vaultUpload != nil {
 			deps.catalog.Add(model.ToolEntryFromDescriptor(vaultPutDesc))
 			if err := upload.RegisterVaultUploadApp(deps.srv, deps.catalog, deps.vaultUpload); err != nil {
 				return err
 			}
-			// Copy the app-view _meta (registered above onto the catalog entry)
-			// onto the descriptor served directly to hosts, so a UI-capable host
-			// reading vault_put_file from tools/list still sees the file-picker
-			// panel. The direct surface and the catalog entry are distinct
-			// objects; without this copy the direct tool would miss _meta.ui.
-			copyCatalogMetaToDescriptor(&vaultPutDesc, deps.catalog, "vault_put_file")
+			// Register the explicit UI launcher so the model can intentionally
+			// open the Upload to Vault picker mid-workflow. This is the ONLY
+			// tool that carries _meta.ui.resourceUri for this App; vault_put_file
+			// itself stays headless.
+			openVaultMgrDesc := upload.NewOpenVaultManagerDescriptor(deps.vaultUpload)
+			if err := RegisterOfficialDescriptor(deps.srv, openVaultMgrDesc); err != nil {
+				return err
+			}
 		}
 		if err := RegisterOfficialDescriptor(deps.srv, vaultPutDesc); err != nil {
 			return err
@@ -374,18 +383,26 @@ func registerCustomTools(deps customToolDeps) error {
 		// surface. Gating on both uploadFileAvailable and curlUpload != nil
 		// keeps attachAppMeta from ever running when the tool is absent (e.g.
 		// --tunnel openai) or when no mint URL could be produced.
+		// Index upload_file in the catalog and register the companion upload app,
+		// but do NOT copy the app's _meta.ui onto the served descriptor.
+		// upload_file is a headless operational primitive: attaching a
+		// ui:// resourceUri would cause a UI-capable host to render the
+		// file-picker iframe on every invocation, which is the wrong UX for
+		// mid-workflow agent calls. The App is reachable only through the
+		// explicit open_upload_manager launcher (below).
 		if deps.curlUpload != nil {
 			deps.catalog.Add(model.ToolEntryFromDescriptor(uploadFileDesc))
 			if err := upload.RegisterIPFSUploadApp(deps.srv, deps.catalog, deps.curlUpload); err != nil {
 				return err
 			}
-			// Copy the app-view _meta (registered above onto the catalog entry)
-			// onto the descriptor served directly to hosts, so a UI-capable host
-			// reading upload_file from tools/list (the RegisterOfficialDescriptor
-			// surface) still sees the file-picker panel. The direct surface and
-			// the catalog entry are distinct objects; without this copy the
-			// direct tool would miss _meta.ui.
-			copyCatalogMetaToDescriptor(&uploadFileDesc, deps.catalog, "upload_file")
+			// Register the explicit UI launcher so the model can intentionally
+			// open the Upload to IPFS picker mid-workflow. This is the ONLY
+			// tool that carries _meta.ui.resourceUri for this App; upload_file
+			// itself stays headless.
+			openUploadMgrDesc := upload.NewOpenUploadManagerDescriptor(deps.curlUpload)
+			if err := RegisterOfficialDescriptor(deps.srv, openUploadMgrDesc); err != nil {
+				return err
+			}
 		}
 		if err := RegisterOfficialDescriptor(deps.srv, uploadFileDesc); err != nil {
 			return err
