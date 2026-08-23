@@ -165,16 +165,22 @@ func TestNgrokCustomDomainNormalization(t *testing.T) {
 	}
 }
 
-// failingDialer is a ngrok.Dialer that always fails, standing in for an
-// unreachable ngrok control plane without requiring any network.
-type failingDialer struct{}
+// blockingDialer is a ngrok.Dialer that blocks until its context is done,
+// standing in for a ngrok control plane that is reachable at the TCP/TLS
+// level but never answers (a genuinely stuck connect). It returns only when
+// the bounded connect context aborts, so it exercises the timeout path the
+// fix is guarding rather than an immediate dial error.
+type blockingDialer struct{}
 
-func (failingDialer) Dial(string, string) (net.Conn, error) {
+func (blockingDialer) Dial(string, string) (net.Conn, error) {
 	return nil, errors.New("control plane unreachable")
 }
 
-func (failingDialer) DialContext(context.Context, string, string) (net.Conn, error) {
-	return nil, errors.New("control plane unreachable")
+func (blockingDialer) DialContext(ctx context.Context, _, _ string) (net.Conn, error) {
+	// Block until the bounded connect context aborts: the only way out is the
+	// ctx.Done() branch, which is precisely what must hold for the fix.
+	<-ctx.Done()
+	return nil, ctx.Err()
 }
 
 // TestNgrokStartBoundedConnect guards the bounded-connect fix in Start.
@@ -184,10 +190,12 @@ func (failingDialer) DialContext(context.Context, string, string) (net.Conn, err
 // establishes the session with a bounded context, so an unreachable control
 // plane must fail fast with an error rather than hang.
 //
-// A failing dialer makes the connect fail immediately and deterministically,
-// regardless of the build/test environment, and a shortened ngrokConnectTimeout
-// keeps the test quick. Without the fix, Forward's unbounded reconnect would
-// never return and the test would time out.
+// A blocking dialer simulates a connect that never completes until the bound's
+// context aborts, and a shortened ngrokConnectTimeout keeps the test quick. The
+// elapsed-time assertion proves the connect actually waited out the bound
+// (300ms window) instead of failing immediately, which is the behavior the fix
+// adds. Without the fix, Forward's unbounded reconnect would never abort and
+// the test would time out.
 func TestNgrokStartBoundedConnect(t *testing.T) {
 	oldTimeout := ngrokConnectTimeout
 	ngrokConnectTimeout = 300 * time.Millisecond
@@ -195,20 +203,26 @@ func TestNgrokStartBoundedConnect(t *testing.T) {
 
 	ng := &ngrokTunnel{
 		token:  "test-token",
-		dialer: failingDialer{},
+		dialer: blockingDialer{},
 	}
 
+	start := time.Now()
 	done := make(chan error, 1)
 	go func() { done <- ng.Start(context.Background(), "127.0.0.1:8893") }()
 
 	select {
 	case err := <-done:
-		require.Error(t, err, "Start must fail when the ngrok control plane is unreachable")
+		require.Error(t, err, "Start must fail when the ngrok control plane never answers")
 		require.Contains(t, err.Error(), "connect to ngrok", "error should identify the connect step")
+		// It must have waited out the bounded connect window rather than
+		// failing immediately. Use ~2/3 of the window as a lower bound so the
+		// assertion is robust to scheduling jitter.
+		require.GreaterOrEqual(t, time.Since(start), ngrokConnectTimeout*2/3,
+			"Start returned too quickly: the bounded connect window was not honored")
 	case <-time.After(10 * time.Second):
 		// A failure to return here means Start blocked forever in the ngrok
 		// reconnecting session instead of honoring the bounded connect.
-		t.Fatal("Start hung: bounded ngrok connect did not abort on an unreachable control plane")
+		t.Fatal("Start hung: bounded ngrok connect did not abort on a stuck control plane")
 	}
 }
 
