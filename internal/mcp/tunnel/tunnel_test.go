@@ -2,6 +2,8 @@ package tunnel
 
 import (
 	"context"
+	"errors"
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -160,6 +162,53 @@ func TestNgrokCustomDomainNormalization(t *testing.T) {
 	for _, tc := range tests {
 		got := BareHostname(tc.in)
 		assert.Equal(t, tc.want, got, "BareHostname(%q)", tc.in)
+	}
+}
+
+// failingDialer is a ngrok.Dialer that always fails, standing in for an
+// unreachable ngrok control plane without requiring any network.
+type failingDialer struct{}
+
+func (failingDialer) Dial(string, string) (net.Conn, error) {
+	return nil, errors.New("control plane unreachable")
+}
+
+func (failingDialer) DialContext(context.Context, string, string) (net.Conn, error) {
+	return nil, errors.New("control plane unreachable")
+}
+
+// TestNgrokStartBoundedConnect guards the bounded-connect fix in Start.
+// ngrok's reconnecting session retries the control-plane connection forever
+// with no deadline (and ignores cancellation internally), which used to hang
+// the server silently when the control plane was unreachable. Start now
+// establishes the session with a bounded context, so an unreachable control
+// plane must fail fast with an error rather than hang.
+//
+// A failing dialer makes the connect fail immediately and deterministically,
+// regardless of the build/test environment, and a shortened ngrokConnectTimeout
+// keeps the test quick. Without the fix, Forward's unbounded reconnect would
+// never return and the test would time out.
+func TestNgrokStartBoundedConnect(t *testing.T) {
+	oldTimeout := ngrokConnectTimeout
+	ngrokConnectTimeout = 300 * time.Millisecond
+	t.Cleanup(func() { ngrokConnectTimeout = oldTimeout })
+
+	ng := &ngrokTunnel{
+		token:  "test-token",
+		dialer: failingDialer{},
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- ng.Start(context.Background(), "127.0.0.1:8893") }()
+
+	select {
+	case err := <-done:
+		require.Error(t, err, "Start must fail when the ngrok control plane is unreachable")
+		require.Contains(t, err.Error(), "connect to ngrok", "error should identify the connect step")
+	case <-time.After(10 * time.Second):
+		// A failure to return here means Start blocked forever in the ngrok
+		// reconnecting session instead of honoring the bounded connect.
+		t.Fatal("Start hung: bounded ngrok connect did not abort on an unreachable control plane")
 	}
 }
 
