@@ -18,7 +18,7 @@ import (
 // stdioFileDesc builds a co-located upload_file descriptor with a path handler
 // so the `source` branch is exercised without any network.
 func stdioFileDesc() model.ToolDescriptor {
-	return transfer.NewUploadFileDescriptor(true, false, func(ctx context.Context, path, name string, wait bool, archiveMode string) (any, error) {
+	return transfer.NewUploadFileDescriptor(true, false, func(ctx context.Context, path, name string, wait bool, archiveMode string, wrap bool) (any, error) {
 		return map[string]string{"cid": "QmStdio"}, nil
 	}, nil, nil, nil, 0)
 }
@@ -31,7 +31,7 @@ func stdioFileDesc() model.ToolDescriptor {
 // fetch.
 func openAIFileDesc(t *testing.T) model.ToolDescriptor {
 	t.Helper()
-	return transfer.NewUploadFileDescriptor(true, false, nil, nil, func(ctx context.Context, r io.Reader, sz int64, name string, wait bool) (any, error) {
+	return transfer.NewUploadFileDescriptor(true, false, nil, nil, func(ctx context.Context, r io.Reader, sz int64, name string, wait bool, _ bool) (any, error) {
 		t.Fatal("relay executor must not be invoked for a rejected input")
 		return nil, nil
 	}, nil, 0)
@@ -94,7 +94,7 @@ func TestUploadFileMetaOpenAIFileParams(t *testing.T) {
 // are both attached through the real registration flow, BOTH survive on the
 // direct tools/list surface. This catches accidental metadata replacement.
 func TestUploadFileOpenAIMetaCoexistsWithAppUI(t *testing.T) {
-	mgr := transfer.NewUploadTaskManager(func(_ context.Context, _ io.Reader, _ int64, _ string, _ bool) (any, error) {
+	mgr := transfer.NewUploadTaskManager(func(_ context.Context, _ io.Reader, _ int64, _ string, _ bool, _ bool) (any, error) {
 		return map[string]any{"cid": "QmApp"}, nil
 	}, 0)
 	cu := transfer.NewHTTPUpload(mgr, 1<<20)

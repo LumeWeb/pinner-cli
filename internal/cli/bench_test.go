@@ -695,7 +695,7 @@ func TestBenchServiceDefault_RunIteration(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
 		output := newTestOutput()
 
-		uploadSvc.EXPECT().Upload(mock.Anything, mock.Anything, mock.Anything, false).
+		uploadSvc.EXPECT().Upload(mock.Anything, mock.Anything, mock.Anything, false, false).
 			Return(&UploadResult{CID: "QmTestCID", Size: 1024}, nil)
 
 		accountAPI.EXPECT().ListOperations(mock.Anything, mock.Anything).
@@ -740,7 +740,7 @@ func TestBenchServiceDefault_RunIteration(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
 		output := newTestOutput()
 
-		uploadSvc.EXPECT().Upload(mock.Anything, mock.Anything, mock.Anything, false).
+		uploadSvc.EXPECT().Upload(mock.Anything, mock.Anything, mock.Anything, false, false).
 			Return(nil, errors.New("network error"))
 
 		svc := &BenchServiceDefault{
@@ -781,7 +781,7 @@ func TestBenchServiceDefault_RunIteration(t *testing.T) {
 		output := newTestOutput()
 
 		httpErr := NewHTTPError(429, "rate limit exceeded")
-		uploadSvc.EXPECT().Upload(mock.Anything, mock.Anything, mock.Anything, false).
+		uploadSvc.EXPECT().Upload(mock.Anything, mock.Anything, mock.Anything, false, false).
 			Return(nil, httpErr)
 
 		svc := &BenchServiceDefault{
@@ -812,7 +812,7 @@ func TestBenchServiceDefault_RunIteration(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
 		output := newTestOutput()
 
-		uploadSvc.EXPECT().Upload(mock.Anything, mock.Anything, mock.Anything, false).
+		uploadSvc.EXPECT().Upload(mock.Anything, mock.Anything, mock.Anything, false, false).
 			Return(nil, portalsdk.ErrUnauthorized)
 
 		svc := &BenchServiceDefault{
@@ -842,7 +842,7 @@ func TestBenchServiceDefault_RunIteration(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
 		output := newTestOutput()
 
-		uploadSvc.EXPECT().Upload(mock.Anything, mock.Anything, mock.Anything, false).
+		uploadSvc.EXPECT().Upload(mock.Anything, mock.Anything, mock.Anything, false, false).
 			Return(&UploadResult{CID: "QmTestCID", Size: 1024}, nil)
 
 		accountAPI.EXPECT().ListOperations(mock.Anything, mock.Anything).

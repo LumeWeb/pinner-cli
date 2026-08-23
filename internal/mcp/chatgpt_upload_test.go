@@ -23,7 +23,7 @@ func TestRegisterOfficialDescriptorRequiresHandler(t *testing.T) {
 
 func TestUploadFileDescriptorStdio(t *testing.T) {
 	var gotPath, gotName, gotArchive string
-	desc := transfer.NewUploadFileDescriptor(true, false, func(ctx context.Context, path, name string, wait bool, archiveMode string) (any, error) {
+	desc := transfer.NewUploadFileDescriptor(true, false, func(ctx context.Context, path, name string, wait bool, archiveMode string, wrap bool) (any, error) {
 		gotPath, gotName, gotArchive = path, name, archiveMode
 		return map[string]string{"cid": "QmStdio"}, nil
 	}, nil, nil, nil, 0)
@@ -42,7 +42,7 @@ func TestUploadFileDescriptorStdio(t *testing.T) {
 }
 
 func TestUploadFileDescriptorStdioRejectsMint(t *testing.T) {
-	desc := transfer.NewUploadFileDescriptor(true, false, func(ctx context.Context, path, name string, wait bool, archiveMode string) (any, error) {
+	desc := transfer.NewUploadFileDescriptor(true, false, func(ctx context.Context, path, name string, wait bool, archiveMode string, wrap bool) (any, error) {
 		t.Fatal("path handler must not be called")
 		return nil, nil
 	}, nil, nil, nil, 0)
@@ -53,7 +53,7 @@ func TestUploadFileDescriptorStdioRejectsMint(t *testing.T) {
 }
 
 func TestUploadFileDescriptorHTTPMints(t *testing.T) {
-	mgr := transfer.NewUploadTaskManager(func(_ context.Context, reader io.Reader, _ int64, _ string, _ bool) (any, error) {
+	mgr := transfer.NewUploadTaskManager(func(_ context.Context, reader io.Reader, _ int64, _ string, _ bool, _ bool) (any, error) {
 		_, _ = io.Copy(io.Discard, reader)
 		return map[string]any{"cid": "QmMint"}, nil
 	}, 0)
@@ -78,6 +78,24 @@ func TestUploadFileDescriptorHTTPMints(t *testing.T) {
 	require.NotEmpty(t, sc["upload_handle"])
 }
 
+func TestUploadFileDescriptorHTTPMintRejectsWrap(t *testing.T) {
+	// The mint source streams raw bytes to a presigned PUT URL; the
+	// directory-root (wrap) decision is only applied during Pinner's SDK
+	// upload, which the mint path never reaches. Requesting wrap on mint must
+	// fail loudly rather than silently produce a non-directory root.
+	cu := transfer.NewHTTPUpload(transfer.NewUploadTaskManager(nil, 0), 0)
+	defer cu.Stop(context.Background())
+	desc := transfer.NewUploadFileDescriptor(false, false, nil, cu, nil, nil, 0)
+	res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
+		"source": map[string]any{"mode": "mint"},
+		"wrap":   true,
+	}})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "wrap is not supported by the mint source")
+	// No presigned URL may be minted for a rejected wrap request.
+	require.Nil(t, res.StructuredContent)
+}
+
 func TestUploadFileDescriptorHTTPRejectsPath(t *testing.T) {
 	cu := transfer.NewHTTPUpload(nil, 0)
 	defer cu.Stop(context.Background())
@@ -90,7 +108,7 @@ func TestUploadFileDescriptorHTTPRejectsPath(t *testing.T) {
 
 func TestUploadFileDescriptorOpenAIRelayData(t *testing.T) {
 	var size int64
-	desc := transfer.NewUploadFileDescriptor(false, true, nil, nil, func(ctx context.Context, reader io.Reader, sz int64, name string, wait bool) (any, error) {
+	desc := transfer.NewUploadFileDescriptor(false, true, nil, nil, func(ctx context.Context, reader io.Reader, sz int64, name string, wait bool, _ bool) (any, error) {
 		size = sz
 		return map[string]string{"cid": "QmRelay"}, nil
 	}, nil, 0)
@@ -107,7 +125,7 @@ func TestUploadFileDescriptorOpenAIRelayHonorsMaxBytes(t *testing.T) {
 	// The relayed url/data source must honor the operator-configured relay cap
 	// threaded through the descriptor, not silently fall back to the 512 MiB
 	// package default. A source advertising more than the cap is rejected.
-	desc := transfer.NewUploadFileDescriptor(false, true, nil, nil, func(ctx context.Context, reader io.Reader, sz int64, name string, wait bool) (any, error) {
+	desc := transfer.NewUploadFileDescriptor(false, true, nil, nil, func(ctx context.Context, reader io.Reader, sz int64, name string, wait bool, _ bool) (any, error) {
 		t.Fatal("relay must not receive an oversized upload")
 		return nil, nil
 	}, nil, 4) // cap at 4 bytes
@@ -117,7 +135,7 @@ func TestUploadFileDescriptorOpenAIRelayHonorsMaxBytes(t *testing.T) {
 	require.Error(t, err)
 }
 func TestUploadFileDescriptorOpenAIRejectsMint(t *testing.T) {
-	desc := transfer.NewUploadFileDescriptor(false, true, nil, nil, func(ctx context.Context, reader io.Reader, sz int64, name string, wait bool) (any, error) {
+	desc := transfer.NewUploadFileDescriptor(false, true, nil, nil, func(ctx context.Context, reader io.Reader, sz int64, name string, wait bool, _ bool) (any, error) {
 		t.Fatal("relay must not run for mint")
 		return nil, nil
 	}, nil, 0)

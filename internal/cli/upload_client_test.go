@@ -158,7 +158,7 @@ func TestUploadServiceDefault_Upload(t *testing.T) {
 		require.NoError(t, err)
 		defer func() { _ = f.Close() }()
 		filesystem := contentfs.NewSingleFileFS(f, "test.txt")
-		_, err = h.service.Upload(context.Background(), filesystem, "test.txt", false)
+		_, err = h.service.Upload(context.Background(), filesystem, "test.txt", false, false)
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "not authenticated")
@@ -172,7 +172,7 @@ func TestUploadServiceDefault_Upload(t *testing.T) {
 
 		// Create a fake filesystem that returns errors
 		errFS := &errorFS{err: os.ErrNotExist}
-		_, err := h.service.Upload(context.Background(), errFS, "test.txt", false)
+		_, err := h.service.Upload(context.Background(), errFS, "test.txt", false, false)
 
 		require.Error(t, err)
 	})
@@ -212,7 +212,7 @@ func TestUploadServiceDefault_Upload(t *testing.T) {
 		h.setupUploadExpectations(testAuthToken, baseEndpoint, uint64(ipfs.DefaultUploadLimit), int64(100*1024*1024))
 
 		filesystem := os.DirFS(tmpDir)
-		result, err := h.service.Upload(context.Background(), filesystem, "test-dir", false)
+		result, err := h.service.Upload(context.Background(), filesystem, "test-dir", false, false)
 
 		require.NoError(t, err)
 		assert.NotEmpty(t, result.CID)
@@ -248,7 +248,7 @@ func TestUploadServiceDefault_Upload(t *testing.T) {
 		require.NoError(t, err)
 		defer func() { _ = f.Close() }()
 		filesystem := contentfs.NewSingleFileFS(f, "test.txt")
-		result, err := h.service.Upload(context.Background(), filesystem, "test.txt", false)
+		result, err := h.service.Upload(context.Background(), filesystem, "test.txt", false, false)
 
 		require.NoError(t, err)
 		assert.NotEmpty(t, result.CID)
@@ -270,7 +270,7 @@ func TestUploadServiceDefault_Upload(t *testing.T) {
 		require.NoError(t, err)
 		defer func() { _ = f.Close() }()
 		filesystem := contentfs.NewSingleFileFS(f, "test.txt")
-		result, err := h.service.Upload(context.Background(), filesystem, "test.txt", false)
+		result, err := h.service.Upload(context.Background(), filesystem, "test.txt", false, false)
 
 		require.NoError(t, err)
 		assert.NotEmpty(t, result.CID)
@@ -292,7 +292,7 @@ func TestUploadServiceDefault_Upload(t *testing.T) {
 		require.NoError(t, err)
 		defer func() { _ = f.Close() }()
 		filesystem := contentfs.NewSingleFileFS(f, "test.txt")
-		_, err = h.service.Upload(context.Background(), filesystem, "test.txt", false)
+		_, err = h.service.Upload(context.Background(), filesystem, "test.txt", false, false)
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "upload failed")
@@ -316,7 +316,7 @@ func TestUploadServiceDefault_Upload(t *testing.T) {
 		require.NoError(t, err)
 		defer func() { _ = f.Close() }()
 		filesystem := contentfs.NewSingleFileFS(f, "test.txt")
-		result, err := h.service.Upload(context.Background(), filesystem, "test.txt", false)
+		result, err := h.service.Upload(context.Background(), filesystem, "test.txt", false, false)
 
 		require.NoError(t, err)
 		assert.NotEmpty(t, result.CID)
@@ -352,7 +352,7 @@ func TestUploadServiceDefault_Upload_WaitForPin(t *testing.T) {
 		require.NoError(t, err)
 		defer func() { _ = f.Close() }()
 		filesystem := contentfs.NewSingleFileFS(f, "test.txt")
-		result, err := h.service.Upload(context.Background(), filesystem, "test.txt", false)
+		result, err := h.service.Upload(context.Background(), filesystem, "test.txt", false, false)
 
 		require.NoError(t, err)
 		assert.NotEmpty(t, result.CID)
@@ -647,7 +647,7 @@ func TestUploadServiceDefaultIntegration(t *testing.T) {
 		h.setupUploadExpectations(testAuthToken, baseEndpoint, ipfs.DefaultUploadLimit, int64(ipfs.DefaultUploadLimit))
 
 		filesystem := os.DirFS(tmpDir)
-		result, err := h.service.Upload(context.Background(), filesystem, "test-dir", false)
+		result, err := h.service.Upload(context.Background(), filesystem, "test-dir", false, false)
 
 		require.NoError(t, err)
 		assert.NotEmpty(t, result.CID)
@@ -675,7 +675,7 @@ func TestUploadServiceDefaultIntegration(t *testing.T) {
 		h.setupUploadExpectations(testAuthToken, baseEndpoint, ipfs.DefaultUploadLimit, int64(ipfs.DefaultUploadLimit))
 
 		filesystem := os.DirFS(tmpDir)
-		result, err := h.service.Upload(context.Background(), filesystem, "empty-dir", false)
+		result, err := h.service.Upload(context.Background(), filesystem, "empty-dir", false, false)
 
 		require.NoError(t, err)
 		assert.NotEmpty(t, result.CID)

@@ -40,8 +40,8 @@ func (_m *MockUploadService) EXPECT() *MockUploadService_Expecter {
 }
 
 // Upload provides a mock function for the type MockUploadService
-func (_mock *MockUploadService) Upload(ctx context.Context, filesystem fs.FS, name string, wait bool) (*uploads.UploadResult, error) {
-	ret := _mock.Called(ctx, filesystem, name, wait)
+func (_mock *MockUploadService) Upload(ctx context.Context, filesystem fs.FS, name string, wait bool, wrap bool) (*uploads.UploadResult, error) {
+	ret := _mock.Called(ctx, filesystem, name, wait, wrap)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Upload")
@@ -49,18 +49,18 @@ func (_mock *MockUploadService) Upload(ctx context.Context, filesystem fs.FS, na
 
 	var r0 *uploads.UploadResult
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, fs.FS, string, bool) (*uploads.UploadResult, error)); ok {
-		return returnFunc(ctx, filesystem, name, wait)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, fs.FS, string, bool, bool) (*uploads.UploadResult, error)); ok {
+		return returnFunc(ctx, filesystem, name, wait, wrap)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, fs.FS, string, bool) *uploads.UploadResult); ok {
-		r0 = returnFunc(ctx, filesystem, name, wait)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, fs.FS, string, bool, bool) *uploads.UploadResult); ok {
+		r0 = returnFunc(ctx, filesystem, name, wait, wrap)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(*uploads.UploadResult)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, fs.FS, string, bool) error); ok {
-		r1 = returnFunc(ctx, filesystem, name, wait)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, fs.FS, string, bool, bool) error); ok {
+		r1 = returnFunc(ctx, filesystem, name, wait, wrap)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -77,11 +77,12 @@ type MockUploadService_Upload_Call struct {
 //   - filesystem fs.FS
 //   - name string
 //   - wait bool
-func (_e *MockUploadService_Expecter) Upload(ctx interface{}, filesystem interface{}, name interface{}, wait interface{}) *MockUploadService_Upload_Call {
-	return &MockUploadService_Upload_Call{Call: _e.mock.On("Upload", ctx, filesystem, name, wait)}
+//   - wrap bool
+func (_e *MockUploadService_Expecter) Upload(ctx interface{}, filesystem interface{}, name interface{}, wait interface{}, wrap interface{}) *MockUploadService_Upload_Call {
+	return &MockUploadService_Upload_Call{Call: _e.mock.On("Upload", ctx, filesystem, name, wait, wrap)}
 }
 
-func (_c *MockUploadService_Upload_Call) Run(run func(ctx context.Context, filesystem fs.FS, name string, wait bool)) *MockUploadService_Upload_Call {
+func (_c *MockUploadService_Upload_Call) Run(run func(ctx context.Context, filesystem fs.FS, name string, wait bool, wrap bool)) *MockUploadService_Upload_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -99,11 +100,16 @@ func (_c *MockUploadService_Upload_Call) Run(run func(ctx context.Context, files
 		if args[3] != nil {
 			arg3 = args[3].(bool)
 		}
+		var arg4 bool
+		if args[4] != nil {
+			arg4 = args[4].(bool)
+		}
 		run(
 			arg0,
 			arg1,
 			arg2,
 			arg3,
+			arg4,
 		)
 	})
 	return _c
@@ -114,7 +120,7 @@ func (_c *MockUploadService_Upload_Call) Return(uploadResult *uploads.UploadResu
 	return _c
 }
 
-func (_c *MockUploadService_Upload_Call) RunAndReturn(run func(ctx context.Context, filesystem fs.FS, name string, wait bool) (*uploads.UploadResult, error)) *MockUploadService_Upload_Call {
+func (_c *MockUploadService_Upload_Call) RunAndReturn(run func(ctx context.Context, filesystem fs.FS, name string, wait bool, wrap bool) (*uploads.UploadResult, error)) *MockUploadService_Upload_Call {
 	_c.Call.Return(run)
 	return _c
 }

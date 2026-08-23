@@ -74,7 +74,7 @@ func TestUploadAppliesPinNameWhenWaiting(t *testing.T) {
 	defer func() { _ = f.Close() }()
 	filesystem := contentfs.NewSingleFileFS(f, "test.txt")
 
-	result, err := h.service.Upload(context.Background(), filesystem, "my document", true)
+	result, err := h.service.Upload(context.Background(), filesystem, "my document", true, false)
 	require.NoError(t, err)
 	assert.NotEmpty(t, result.CID)
 }
@@ -106,7 +106,7 @@ func TestUploadAppliesPinNameWhenNotWaiting(t *testing.T) {
 	defer func() { _ = f.Close() }()
 	filesystem := contentfs.NewSingleFileFS(f, "test.txt")
 
-	result, err := h.service.Upload(context.Background(), filesystem, "my document", false)
+	result, err := h.service.Upload(context.Background(), filesystem, "my document", false, false)
 	require.NoError(t, err)
 	assert.NotEmpty(t, result.CID)
 }
@@ -145,7 +145,7 @@ func TestUploadRetriesPinNameWhenPinNotYetRegistered(t *testing.T) {
 	defer func() { _ = f.Close() }()
 	filesystem := contentfs.NewSingleFileFS(f, "test.txt")
 
-	result, err := h.service.Upload(context.Background(), filesystem, "my document", false)
+	result, err := h.service.Upload(context.Background(), filesystem, "my document", false, false)
 	require.NoError(t, err)
 	assert.NotEmpty(t, result.CID)
 
@@ -180,7 +180,7 @@ func TestUploadNameFailureIsNotFatalWhenNotWaiting(t *testing.T) {
 	defer func() { _ = f.Close() }()
 	filesystem := contentfs.NewSingleFileFS(f, "test.txt")
 
-	result, err := h.service.Upload(context.Background(), filesystem, "my document", false)
+	result, err := h.service.Upload(context.Background(), filesystem, "my document", false, false)
 	require.NoError(t, err)
 	assert.NotEmpty(t, result.CID)
 }
@@ -205,7 +205,7 @@ func TestUploadSkipsPinNameWithoutService(t *testing.T) {
 	defer func() { _ = f.Close() }()
 	filesystem := contentfs.NewSingleFileFS(f, "test.txt")
 
-	result, err := h.service.Upload(context.Background(), filesystem, "my document", true)
+	result, err := h.service.Upload(context.Background(), filesystem, "my document", true, false)
 	require.NoError(t, err)
 	assert.NotEmpty(t, result.CID)
 }
@@ -236,7 +236,7 @@ func TestUploadSkipsPinNameWhenEmpty(t *testing.T) {
 	defer func() { _ = f.Close() }()
 	filesystem := contentfs.NewSingleFileFS(f, "test.txt")
 
-	result, err := h.service.Upload(context.Background(), filesystem, "", true)
+	result, err := h.service.Upload(context.Background(), filesystem, "", true, false)
 	require.NoError(t, err)
 	assert.NotEmpty(t, result.CID)
 }
@@ -270,7 +270,7 @@ func TestUploadNameFailureIsNotFatalWhenWaiting(t *testing.T) {
 	defer func() { _ = f.Close() }()
 	filesystem := contentfs.NewSingleFileFS(f, "test.txt")
 
-	result, err := h.service.Upload(context.Background(), filesystem, "my document", true)
+	result, err := h.service.Upload(context.Background(), filesystem, "my document", true, false)
 	require.NoError(t, err)
 	assert.NotEmpty(t, result.CID)
 }

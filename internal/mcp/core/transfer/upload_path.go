@@ -10,4 +10,6 @@ import (
 // routes a host path to this handler when the server is co-located with the
 // caller's files (stdio/local mode); over a remote transport the tool mints a
 // presigned HTTP PUT endpoint instead.
-type LocalPathUploadHandler func(ctx context.Context, path, name string, wait bool, archiveMode string) (any, error)
+// The final wrap bool, when true, forces a directory root on a single-file
+// upload (see UploadHandler).
+type LocalPathUploadHandler func(ctx context.Context, path, name string, wait bool, archiveMode string, wrap bool) (any, error)

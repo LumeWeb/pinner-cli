@@ -166,7 +166,11 @@ func (s *UploadServiceDefault) getAuthToken() string {
 }
 
 // Upload uploads a file or directory to IPFS and optionally pins it.
-func (s *UploadServiceDefault) Upload(ctx context.Context, filesystem fs.FS, name string, wait bool) (*UploadResult, error) {
+//
+// When wrap is true and the filesystem is a single file, the SDK wraps the
+// file in a root directory so the resulting CID root is a directory (required
+// for website content). Directory filesystems are already a directory root.
+func (s *UploadServiceDefault) Upload(ctx context.Context, filesystem fs.FS, name string, wait bool, wrap bool) (*UploadResult, error) {
 	startTime := time.Now()
 
 	if err := s.RequireAuthenticated(); err != nil {
@@ -199,6 +203,7 @@ func (s *UploadServiceDefault) Upload(ctx context.Context, filesystem fs.FS, nam
 		ChunkSize:       s.chunkSize,
 		ChunkerStrategy: s.chunkerStrategy,
 		MaxLinks:        s.maxLinks,
+		WrapInDir:       wrap,
 	}
 
 	// Create SDK upload service using the configured IPFS endpoint

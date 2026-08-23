@@ -18,6 +18,7 @@ type DataURIUploadInput struct {
 	File string `json:"file" jsonschema:"format=uri,description=RFC 2397 data: URI in the SEP-2356 x-mcp-file wire form: data:;name=<name>;size=<n>;base64,<base64 payload>. The bytes do not enter the model context; the host supplies this value from a user-attached file."`
 	Name string `json:"name,omitempty" jsonschema:"description=Optional upload name (defaults to the data URI name, else 'upload')."`
 	Wait bool   `json:"wait,omitempty" jsonschema:"description=Wait for pinning before returning."`
+	Wrap bool   `json:"wrap,omitempty" jsonschema:"description=Wrap the single file in a directory root so the resulting CID is a directory. Required when the upload is a website (a website must be a directory, not a bare file). True only affects single-file uploads; directory uploads are already a directory root."`
 }
 
 // DataURIUploadDescriptor uploads a file passed as a SEP-2356 data: URI. This
@@ -59,7 +60,7 @@ func DataURIUploadDescriptor(handler DataURIUploadHandler, maxBytes int64) model
 			// Bound the upload phase; see SyncUploadBudget.
 			transferCtx, cancel := context.WithTimeout(ctx, SyncUploadBudget(opt.Size))
 			defer cancel()
-			result, err := handler(transferCtx, reader, opt.Size, name, in.Wait)
+			result, err := handler(transferCtx, reader, opt.Size, name, in.Wait, in.Wrap)
 			return toolargs.WrapResult(result, err, "Data URI uploaded.")
 		},
 	}

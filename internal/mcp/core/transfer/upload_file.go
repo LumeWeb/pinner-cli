@@ -41,6 +41,12 @@ type UploadFileInput struct {
 	// TTL is the presigned endpoint lifetime for source mode mint (e.g. 5m).
 	// Only used in HTTP/tunnel mode.
 	TTL string `json:"ttl,omitempty" jsonschema:"description=Presigned endpoint lifetime (e.g. 5m; default 5 minutes). Only used with source mode mint."`
+	// Wrap forces a directory root when uploading a single file, required for
+	// content that will be a website (a website must resolve to a directory,
+	// not a bare file). Only affects single-file uploads (file / url / data /
+	// path to a file); directory and archive-converted uploads are already a
+	// directory root, and the mint (presigned PUT) source has no wrap concept.
+	Wrap bool `json:"wrap,omitempty" jsonschema:"description=Wrap a single file in a directory root so the CID is a directory (required when the upload is a website). Only affects single-file uploads; directories are already a directory root."`
 }
 
 // UploadFileHandler is the co-located local-path upload path for upload_file.
@@ -142,7 +148,7 @@ func newUploadFileDescriptor(coLocated, tunnelOpenAI bool, pathFn UploadFileHand
 				}
 				transferCtx, cancel := context.WithTimeout(ctx, SyncUploadBudget(size))
 				defer cancel()
-				result, err := relayFn(transferCtx, body, size, name, in.Wait)
+				result, err := relayFn(transferCtx, body, size, name, in.Wait, in.Wrap)
 				return toolargs.WrapResult(result, err, "Uploaded.")
 			}
 
@@ -163,7 +169,7 @@ func newUploadFileDescriptor(coLocated, tunnelOpenAI bool, pathFn UploadFileHand
 				if name == "" {
 					name = FileBaseName(src.Path)
 				}
-				result, err := pathFn(ctx, src.Path, name, in.Wait, in.ArchiveMode)
+				result, err := pathFn(ctx, src.Path, name, in.Wait, in.ArchiveMode, in.Wrap)
 				return toolargs.WrapResult(result, err, "Uploaded.")
 			case TransportHTTP:
 				if src.Mode != SourceMint {
@@ -171,6 +177,14 @@ func newUploadFileDescriptor(coLocated, tunnelOpenAI bool, pathFn UploadFileHand
 				}
 				if hp == nil {
 					return model.ToolResult{}, errors.New("presigned upload endpoint is not configured for remote mode")
+				}
+				// The mint source streams raw file bytes to a presigned PUT URL —
+				// the wrap (directory-root) decision is applied during Pinner's
+				// SDK upload, which this path never reaches, so it would be
+				// silently dropped. Reject it explicitly rather than returning a
+				// non-directory root the caller cannot detect.
+				if in.Wrap {
+					return model.ToolResult{}, errors.New("wrap is not supported by the mint source; use a co-located path/data/url source for a wrapped (directory-root) single-file upload")
 				}
 				name := in.Name
 				if name == "" {
@@ -238,7 +252,7 @@ func newUploadFileDescriptor(coLocated, tunnelOpenAI bool, pathFn UploadFileHand
 				}
 				transferCtx, cancel := context.WithTimeout(ctx, SyncUploadBudget(size))
 				defer cancel()
-				result, err := relayFn(transferCtx, body, size, name, in.Wait)
+				result, err := relayFn(transferCtx, body, size, name, in.Wait, in.Wrap)
 				return toolargs.WrapResult(result, err, "Uploaded.")
 			}
 		},

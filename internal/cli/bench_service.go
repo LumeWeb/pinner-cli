@@ -225,7 +225,7 @@ func (s *BenchServiceDefault) runIteration(ctx context.Context, opts BenchOption
 
 	// Stage: upload (SDK handles CAR generation + HTTP transfer)
 	uploadStart := time.Now()
-	uploadResult, err := s.uploadService.Upload(ctx, filesystem, name, false)
+	uploadResult, err := s.uploadService.Upload(ctx, filesystem, name, false, false)
 	uploadDuration := time.Since(uploadStart)
 
 	if err != nil {

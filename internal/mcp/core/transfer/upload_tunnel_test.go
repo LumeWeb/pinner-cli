@@ -17,7 +17,7 @@ import (
 // sandbox origin must still be reflected here, the trusted tunnel origin must
 // be reflected, and an arbitrary attacker origin must remain refused.
 func TestCORSOriginOpaqueNullTunnelMode(t *testing.T) {
-	mgr := NewUploadTaskManager(func(_ context.Context, reader io.Reader, _ int64, _ string, _ bool) (any, error) {
+	mgr := NewUploadTaskManager(func(_ context.Context, reader io.Reader, _ int64, _ string, _ bool, _ bool) (any, error) {
 		// Drain the piped request body so the putHandler's io.Copy into the
 		// pipe completes (mirrors the production executor and the other tests).
 		_, _ = io.Copy(io.Discard, reader)

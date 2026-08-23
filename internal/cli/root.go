@@ -195,7 +195,7 @@ For more help on any command: pinner <command> --help`,
 					websitesSvc.SetAuthToken(tok)
 				}
 			})
-			uploadHandler = func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
+			uploadHandler = func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, wrap bool) (any, error) {
 				if name == "" {
 					name = transfer.DefaultUploadName
 				}
@@ -212,7 +212,7 @@ For more help on any command: pinner <command> --help`,
 				if _, err := file.Seek(0, io.SeekStart); err != nil {
 					return nil, err
 				}
-				result, err := uploadSvc.Upload(ctx, contentfs.NewSingleFileFS(file, name), name, wait)
+				result, err := uploadSvc.Upload(ctx, contentfs.NewSingleFileFS(file, name), name, wait, wrap)
 				if err != nil {
 					return nil, err
 				}
@@ -242,7 +242,7 @@ For more help on any command: pinner <command> --help`,
 			// backs the consolidated upload_file tool's co-located branch. It
 			// homes the file-vs-directory-vs-archive decision here, in the CLI
 			// layer where uploadSvc lives, so MCP only owns the tool surface.
-			localPathUpload = func(ctx context.Context, path, name string, wait bool, archiveMode string) (any, error) {
+			localPathUpload = func(ctx context.Context, path, name string, wait bool, archiveMode string, wrap bool) (any, error) {
 				// Operator-set per-tool cap, applied to every local-path surface
 				// (single file, directory tree, or archive) so none can bypass
 				// the same total-transfer limit enforced on relay/DataURI/curl.
@@ -262,7 +262,7 @@ For more help on any command: pinner <command> --help`,
 					if err := ieo.CheckDirectorySize(path, maxBytes, ieo.TreeSizeAggregate); err != nil {
 						return nil, err
 					}
-					result, err := uploadSvc.Upload(ctx, os.DirFS(path), name, wait)
+					result, err := uploadSvc.Upload(ctx, os.DirFS(path), name, wait, false)
 					if err != nil {
 						return nil, err
 					}
@@ -285,7 +285,7 @@ For more help on any command: pinner <command> --help`,
 							if err := ieo.CheckTreeSize(vfs, maxBytes, ieo.TreeSizeAggregate); err != nil {
 								return nil, err
 							}
-							result, uerr := uploadSvc.Upload(ctx, vfs, name, wait)
+							result, uerr := uploadSvc.Upload(ctx, vfs, name, wait, false)
 							if uerr != nil {
 								return nil, uerr
 							}
@@ -300,7 +300,7 @@ For more help on any command: pinner <command> --help`,
 				if info.Size() > maxBytes {
 					return nil, fmt.Errorf("file %s (%d bytes) exceeds max_mcp_upload_size (%d)", path, info.Size(), maxBytes)
 				}
-				result, err := uploadSvc.Upload(ctx, contentfs.NewSingleFileFS(file, name), name, wait)
+				result, err := uploadSvc.Upload(ctx, contentfs.NewSingleFileFS(file, name), name, wait, wrap)
 				if err != nil {
 					return nil, err
 				}
@@ -500,11 +500,11 @@ For more help on any command: pinner <command> --help`,
 			}
 			return pinProvider()
 		}),
-		mcpadapter.WithUploadHandler(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
+		mcpadapter.WithUploadHandler(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, wrap bool) (any, error) {
 			if uploadHandler == nil {
 				return nil, notInitErr("file upload")
 			}
-			return uploadHandler(ctx, reader, size, name, wait)
+			return uploadHandler(ctx, reader, size, name, wait, wrap)
 		}),
 		mcpadapter.WithVaultPutHandler(func(ctx context.Context, reader io.Reader, size int64, path string) (any, error) {
 			if vaultPutHandler == nil {
@@ -534,11 +534,11 @@ For more help on any command: pinner <command> --help`,
 			}
 			return cfgMgr.Config().GetDownloadRoot()
 		}),
-		mcpadapter.WithUploadTaskManager(transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
+		mcpadapter.WithUploadTaskManager(transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, wrap bool) (any, error) {
 			if uploadHandler == nil {
 				return nil, notInitErr("file upload")
 			}
-			return uploadHandler(ctx, reader, size, name, wait)
+			return uploadHandler(ctx, reader, size, name, wait, wrap)
 		}, 0)),
 		// pinner_upload_url: vendor-agnostic relay fetch of a caller-supplied
 		// public HTTPS URL. The no-allowlist default permits any public HTTPS
@@ -546,28 +546,28 @@ For more help on any command: pinner <command> --help`,
 		// SSRF guard in the relay's default transport is the hard boundary and
 		// always blocks private/link-local IPs. Operators can restrict further
 		// by passing an explicit allowlist here.
-		mcpadapter.WithRelayURLUpload(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
+		mcpadapter.WithRelayURLUpload(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, wrap bool) (any, error) {
 			if uploadHandler == nil {
 				return nil, notInitErr("upload")
 			}
-			return uploadHandler(ctx, reader, size, name, wait)
+			return uploadHandler(ctx, reader, size, name, wait, wrap)
 		}, nil),
-		mcpadapter.WithDataURIUpload(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
+		mcpadapter.WithDataURIUpload(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, wrap bool) (any, error) {
 			if uploadHandler == nil {
 				return nil, notInitErr("upload")
 			}
-			return uploadHandler(ctx, reader, size, name, wait)
+			return uploadHandler(ctx, reader, size, name, wait, wrap)
 		}),
 		// Local-path handler for the consolidated upload_file tool's co-located
 		// branch: upload of a host-side file, directory, or archive. Only
 		// meaningful when the MCP server is co-located with the caller's files
 		// (stdio/local); the handler homes the file-vs-directory-vs-archive
 		// decision via uploadSvc + ipfs-content.
-		mcpadapter.WithLocalPathUpload(func(ctx context.Context, path, name string, wait bool, archiveMode string) (any, error) {
+		mcpadapter.WithLocalPathUpload(func(ctx context.Context, path, name string, wait bool, archiveMode string, wrap bool) (any, error) {
 			if localPathUpload == nil {
 				return nil, notInitErr("local path upload")
 			}
-			return localPathUpload(ctx, path, name, wait, archiveMode)
+			return localPathUpload(ctx, path, name, wait, archiveMode, wrap)
 		}),
 		// vault_put_file: path mode put of a host-side file, directory,
 		// or archive into the encrypted vault. Only meaningful when the MCP

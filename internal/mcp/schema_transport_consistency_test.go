@@ -47,11 +47,11 @@ func sourceModeEnumOf(t *testing.T, tool *mcp.Tool) []string {
 // wiring with a do-nothing handler (only the schema is inspected here).
 func uploadDescriptorFor(coLocated, tunnelOpenAI bool) model.ToolDescriptor {
 	return transfer.NewUploadFileDescriptor(coLocated, tunnelOpenAI,
-		func(ctx context.Context, path, name string, wait bool, archiveMode string) (any, error) {
+		func(ctx context.Context, path, name string, wait bool, archiveMode string, wrap bool) (any, error) {
 			return map[string]any{"cid": "QmTest"}, nil
 		},
 		transfer.NewHTTPUpload(nil, 0),
-		func(ctx context.Context, r io.Reader, sz int64, name string, wait bool) (any, error) {
+		func(ctx context.Context, r io.Reader, sz int64, name string, wait bool, _ bool) (any, error) {
 			return map[string]any{"cid": "QmTest"}, nil
 		},
 		nil, 0,
