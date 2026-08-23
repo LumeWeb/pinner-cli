@@ -231,7 +231,7 @@ func websitesCreate(d WebsitesDeps) catalog.Operation {
 			// messages; this same handler drives both the CLI and the MCP
 			// tool-call surface. *ipfs.WebsiteItem
 			result, err := svc.CreateWithOptions(ctx, req)
-			return result, websites.TranslateError(err)
+			return result, websites.TranslateErrorWithCID(err, cid)
 		}),
 	})
 }
@@ -250,7 +250,7 @@ func websitesUpdate(d WebsitesDeps) catalog.Operation {
 		Name:        "websites_update",
 		Title:       "Update a website",
 		Summary:     "Update a website",
-		Description: "Update an existing website: change its cid, target-type (ipfs|ipns), rename its domain via rename-to, or set dns-hosting (true = Pinner-managed, false = self-managed, omit = unchanged). Selects the site by the website field, then applies whichever optional fields are set (at least one is required). Returns the updated website object.",
+		Description: "Update an existing website: change its cid, target-type (ipfs|ipns), rename its domain via rename-to, or set dns-hosting (true = Pinner-managed, false = self-managed, omit = unchanged). Selects the site by the website field, then applies whichever optional fields are set (at least one is required). Returns the updated website object. The target CID must already be pinned on the gateway (call pins_add with wait=true first); a bare update with an unpinned CID fails with CID_NOT_PINNED. When only cid is given (no target-type), the site's current target type is preserved automatically, so you do not need to look it up first. For the full guided flow, fetch the website-update prompt (prompts/get website-update).",
 		Category:    "core",
 		Safety:      catalog.SafetyMutate,
 		Interaction: catalog.InteractionAgentSafe,
@@ -259,7 +259,7 @@ func websitesUpdate(d WebsitesDeps) catalog.Operation {
 		Args: []catalog.OperationArg{
 			{Name: "website", Type: catalog.ArgTypeString, Help: "Website ID or domain to update"},
 			{Name: "rename-to", Type: catalog.ArgTypeString, Help: "New domain for the website"},
-			{Name: "cid", Type: catalog.ArgTypeString, Help: "New target CID"},
+			{Name: "cid", Type: catalog.ArgTypeString, Help: "New target CID", AgentHelp: "The IPFS CID to serve. It must already be pinned on the gateway: run pins_add(cids=[\"<cid>\"], wait=true) and confirm it succeeds BEFORE calling this update; an unpinned CID fails with CID_NOT_PINNED. When a bare cid is set without target-type, the site's current IPFS/IPNS targeting is preserved automatically."},
 			{Name: "target-type", Type: catalog.ArgTypeString, Help: "New target type (ipfs|ipns); when omitted with cid, the site's current target type is preserved"},
 			{Name: "dns-hosting", Type: catalog.ArgTypeNullableBool, Help: "Set Pinner-managed DNS (true = managed, false = self-managed, omit = leave unchanged)", AgentHelp: "true enables Pinner-managed DNS; false disables it (self-managed). Omit to leave the current DNS hosting state unchanged."},
 		},
@@ -306,7 +306,7 @@ func websitesUpdate(d WebsitesDeps) catalog.Operation {
 			req.DnsHostingEnabled = catalog.BoolArgPtr(input, "dns-hosting")
 			// *ipfs.WebsiteItem
 			result, err := svc.UpdateWithOptions(ctx, id, req)
-			return result, websites.TranslateError(err)
+			return result, websites.TranslateErrorWithCID(err, cid)
 		}),
 	})
 }
@@ -345,12 +345,13 @@ func websitesEnableIPNS(d WebsitesDeps) catalog.Operation {
 			}
 			ipnsType := "ipns"
 			req := ipfs.WebsiteUpdateRequest{TargetType: &ipnsType}
-			if cid := catalog.StrArg(input, "cid", ""); cid != "" {
+			cid := catalog.StrArg(input, "cid", "")
+			if cid != "" {
 				req.TargetHash = &cid
 			}
 			// *ipfs.WebsiteItem
 			result, err := svc.UpdateWithOptions(ctx, id, req)
-			return result, websites.TranslateError(err)
+			return result, websites.TranslateErrorWithCID(err, cid)
 		}),
 	})
 }
