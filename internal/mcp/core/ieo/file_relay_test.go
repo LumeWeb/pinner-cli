@@ -115,6 +115,35 @@ func TestHostAllowed(t *testing.T) {
 	require.False(t, hostAllowed("openai.com.attacker.test", []string{"openai.com"}))
 }
 
+func TestChatgptBlobHostAllowed(t *testing.T) {
+	// OpenAI-provisioned per-region blob accounts (prod + staging) must be
+	// allowed by the dedicated prefix check.
+	for _, host := range []string{
+		"oaisdmntprsouthcentralus.blob.core.windows.net",
+		"oaisdmntprsouthcentralus.blob.core.windows.net.",
+		"OAISDMNTPRSOUTHCENTRALUS.blob.core.windows.net",
+		"oaisdmntpraustraliaeast.blob.core.windows.net",
+		"oaisdmntstwesteurope.blob.core.windows.net",
+	} {
+		require.Truef(t, chatgptBlobHostAllowed(host), "expected %q to be allowed", host)
+	}
+
+	// Arbitrary Azure customers, non-verified OpenAI-shaped accounts, other
+	// OpenAI hosts, and tricks must be denied.
+	for _, host := range []string{
+		"randomaccount.blob.core.windows.net",
+		"someotheraccount.blob.core.windows.net",
+		"openaifile.blob.core.windows.net",
+		"openaifiles.blob.core.windows.net",
+		"chatgptfiles.blob.core.windows.net",
+		"files.openai.com",
+		"oaisd.attacker.test",
+		"attacker.com/blob.core.windows.net",
+	} {
+		require.Falsef(t, chatgptBlobHostAllowed(host), "expected %q to be denied", host)
+	}
+}
+
 func TestIsPrivateIP(t *testing.T) {
 	// Standard private / special ranges netip already flags.
 	for _, cidr := range []string{"127.0.0.1", "10.0.0.1", "192.168.1.1", "172.16.5.5", "169.254.10.1", "::1"} {

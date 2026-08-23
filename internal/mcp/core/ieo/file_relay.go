@@ -173,6 +173,20 @@ func OpenChatGPTFile(ctx context.Context, ref ChatGPTFileReference, opts FileRel
 	if err := ValidateChatGPTFileReference(ref, maxBytes); err != nil {
 		return nil, 0, err
 	}
+	// Dedicated OpenAI Azure Blob allowance: ChatGPT signed-file download URLs
+	// resolve to per-region OpenAI storage accounts (oaisd*) that the
+	// exact/suffix allowlist never matches. Admit those by prefix here and add
+	// the exact host to the allowlist so the generic relay's main and redirect
+	// host checks both pass. The SSRF dial guard still applies.
+	if h := func() string {
+		u, err := url.Parse(ref.DownloadURL)
+		if err != nil {
+			return ""
+		}
+		return u.Hostname()
+	}(); h != "" && chatgptBlobHostAllowed(h) {
+		opts.AllowedHosts = append(append([]string{}, opts.AllowedHosts...), h)
+	}
 	return OpenFileURL(ctx, ref.DownloadURL, opts)
 }
 
@@ -292,6 +306,41 @@ func resolvePublicIP(ctx context.Context, host string) (netip.Addr, error) {
 		return netip.Addr{}, fmt.Errorf("refusing to dial non-public address %s", ip)
 	}
 	return ip, nil
+}
+
+// chatgptBlobAccountPrefixes are the storage-account name prefixes OpenAI uses
+// to provision the per-region Azure Blob Storage buckets that ChatGPT
+// signed-file download_urls resolve to. Observed accounts take the form
+// <prefix><azure-region>.blob.core.windows.net (e.g.
+// oaisdmntprsouthcentralus, oaisdmntpraustraliaeast) with staging under
+// oaisdmntst.... Matching on the account prefix (rather than the generic
+// blob.core.windows.net suffix, which would admit any Azure customer's
+// storage) keeps the relay scoped to OpenAI-provisioned buckets only.
+var chatgptBlobAccountPrefixes = []string{"oaisd"}
+
+// chatgptBlobHostAllowed reports whether host is an OpenAI-provisioned Azure
+// Blob Storage account. It is the dedicated check for the ChatGPT file
+// handoff: OpenAI serves attachment downloads from per-region storage
+// accounts named under reserved prefixes, which the exact/suffix allowlist
+// entries (openai.com, oaiusercontent.com) never match. The SSRF dial guard
+// still applies downstream, so only public OpenAI bucket IPs are reachable.
+func chatgptBlobHostAllowed(host string) bool {
+	h := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(host), "."))
+	const suffix = ".blob.core.windows.net"
+	if !strings.HasSuffix(h, suffix) {
+		return false
+	}
+	account := strings.TrimSuffix(h, suffix)
+	if account == "" || strings.Contains(account, ".") {
+		// A nested/odd hostname isn't a plain <account>.<domain>; don't guess.
+		return false
+	}
+	for _, p := range chatgptBlobAccountPrefixes {
+		if strings.HasPrefix(account, p) {
+			return true
+		}
+	}
+	return false
 }
 
 func hostAllowed(host string, allowed []string) bool {
