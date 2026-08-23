@@ -677,6 +677,44 @@ func TestWebsitesWizard_CreateServiceError(t *testing.T) {
 	assert.Contains(t, err.Error(), "create service error")
 }
 
+func TestWebsitesWizard_CreateTranslatesSDKReasonCode(t *testing.T) {
+	t.Parallel()
+
+	cfgMgr := newConfigMgr(t, true)
+	baseErr := errors.New("invalid website data")
+	websitesSvc := &mockWebsitesSvc{
+		createFunc: func(_ context.Context, _ ipfs.WebsiteRequest) (*ipfs.WebsiteItem, error) {
+			return nil, &ipfs.APIError{Reason: ipfs.ErrorCodeCIDNotPinned, Err: baseErr}
+		},
+	}
+	store := session.NewSessionStore()
+	deps := webservFactory(wizard.WebsitesWizardDeps{CfgMgr: cfgMgr, WebsitesService: websitesSvc})
+
+	sess, err := wizard.NewWebsitesSession(store, deps)
+	require.NoError(t, err)
+	// Navigate to create step.
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	require.NoError(t, err)
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"choice":"cid","cid":"QmTest"}`))
+	require.NoError(t, err)
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"type":"ipfs"}`))
+	require.NoError(t, err)
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"domain":"example.com"}`))
+	require.NoError(t, err)
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"mode":"self_managed"}`))
+	require.NoError(t, err)
+
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"confirm":true}`))
+	require.Error(t, err)
+	// The SDK reason code must be translated into the actionable message.
+	assert.Contains(t, err.Error(), "not pinned on the gateway")
+	assert.Contains(t, err.Error(), "pin it first")
+	// The original error chain is preserved for errors.Is/errors.As.
+	assert.ErrorIs(t, err, baseErr)
+	// The session remains on create for retry.
+	assert.Equal(t, "create", sess.FSM.Current())
+}
+
 func TestWebsitesWizard_ValidateWithoutWebsite(t *testing.T) {
 	t.Parallel()
 

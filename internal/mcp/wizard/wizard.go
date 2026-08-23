@@ -11,6 +11,7 @@ import (
 	"github.com/looplab/fsm"
 	ipfs "go.lumeweb.com/ipfs-sdk"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner-cli/internal/core/websites"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 
@@ -501,7 +502,7 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []session.StepDef {
 				}
 				website, err := deps.WebsitesService.CreateWithOptions(ctx, req)
 				if err != nil {
-					return "", fmt.Errorf("website creation failed: %w", err)
+					return "", fmt.Errorf("website creation failed: %w", websites.TranslateError(err))
 				}
 				w.SetWebsite(website)
 				return "", nil
@@ -543,7 +544,7 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []session.StepDef {
 				id := fmt.Sprintf("%d", website.Id)
 				result, err := deps.WebsitesService.Validate(ctx, id)
 				if err != nil {
-					return "", fmt.Errorf("validation failed: %w", err)
+					return "", fmt.Errorf("validation failed: %w", websites.TranslateError(err))
 				}
 				w.SetValidationResult(result)
 				return "", nil
