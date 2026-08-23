@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.uber.org/zap"
 	"golang.ngrok.com/ngrok/v2"
 )
 
@@ -53,6 +54,9 @@ type ngrokTunnel struct {
 	agent ngrok.Agent
 	fwd   ngrok.EndpointForwarder
 	stop  context.CancelFunc
+	// stopSession cancels the control-plane session context that Start's
+	// connectedAgent established, releasing the connection on teardown.
+	stopSession context.CancelFunc
 }
 
 // NewNgrokTunnel returns a tunnel powered by the embedded ngrok SDK. token is
@@ -130,14 +134,19 @@ func (n *ngrokTunnel) Stop(ctx context.Context) error {
 	n.mu.Lock()
 	fwd := n.fwd
 	stop := n.stop
+	stopSession := n.stopSession
 	n.mu.Unlock()
 	if fwd == nil {
 		return nil
 	}
-	// Cancel the Forward context first so the agent begins a graceful
-	// session teardown, then close the forwarder with the same deadline.
+	// Cancel the Forward context so the agent begins a graceful session
+	// teardown, release the long-lived control-plane session context, then
+	// close the forwarder with the same deadline.
 	if stop != nil {
 		stop()
+	}
+	if stopSession != nil {
+		stopSession()
 	}
 	if err := fwd.CloseWithContext(ctx); err != nil && ctx.Err() == nil {
 		return fmt.Errorf("stop ngrok tunnel: %w", err)
@@ -161,6 +170,40 @@ var ngrokConnectTimeout = 30 * time.Second
 // the failure path. It is a package-level var (not const) so tests can shrink
 // the window.
 var ngrokLoginProbeTimeout = 5 * time.Second
+
+// connectBounded establishes the agent's control-plane session with a deadline
+// that applies ONLY while connecting. ngrok's reconnecting session retries a
+// failed connect (e.g. a bad authtoken) forever with no deadline and ignores
+// context cancellation internally, so without this bound a stuck connect would
+// hang the caller indefinitely. On success the deadline is released.
+//
+// The bound must not outlive the connect: an ngrok agent binds its session to
+// the context passed to Connect, so cancelling that context (whether via a
+// WithTimeout auto-cancel or an explicit cancel) closes the session. Closing
+// it after a successful connect is what made a subsequent Forward fail with
+// "session closed" — the agent still believes it is connected (a.sess non-nil)
+// but the underlying session has already been torn down. Using a base
+// context.WithCancel plus a one-shot timer, stopped on success, bounds only the
+// connection attempt and leaves the live session intact.
+//
+// The returned cancel func tears down the established session and must be
+// called when the tunnel is stopped (or, for a throwaway probe, immediately).
+func connectBounded(agent ngrok.Agent, ctx context.Context, timeout time.Duration) (context.CancelFunc, error) {
+	connectCtx, cancel := context.WithCancel(ctx)
+	timer := time.AfterFunc(timeout, cancel)
+	err := agent.Connect(connectCtx)
+	if err != nil {
+		// The timer either already fired (fail-fast timeout) or we are
+		// returning a definitive error; stop it so it cannot fire later.
+		timer.Stop()
+		return cancel, err
+	}
+	// Connected: release the deadline now so it cannot tear down the live
+	// session later. If Stop already returned false (fired concurrently),
+	// Connect took ~timeout and that is the fail path, not a stable success.
+	timer.Stop()
+	return cancel, nil
+}
 
 // connectedAgent returns an already-connected ngrok agent for this tunnel, or
 // builds one and establishes the control-plane session (bounded by
@@ -186,18 +229,20 @@ func (n *ngrokTunnel) connectedAgent(ctx context.Context) (ngrok.Agent, error) {
 	// Forward. agent.Forward would otherwise lazily connect for us, but it does
 	// so through ngrok's reconnecting session which retries forever with no
 	// deadline (and ignores cancellation), so an unreachable control plane
-	// would hang the server silently. Connecting here with a deadline turns a
-	// stuck connect into a fast, actionable error, while Forward afterwards
-	// skips its internal reconnect (the session is already set) on success.
-	connectCtx, cancelConnect := context.WithTimeout(ctx, ngrokConnectTimeout)
-	err = agent.Connect(connectCtx)
-	cancelConnect()
+	// would hang the server silently. connectBounded turns a stuck connect into
+	// a fast, actionable error while leaving a successful session alive; Forward
+	// afterwards skips its internal reconnect (the session is already set).
+	log.Debug("ngrok: connecting control-plane session", zap.Duration("timeout", ngrokConnectTimeout))
+	stopSession, err := connectBounded(agent, ctx, ngrokConnectTimeout)
 	if err != nil {
+		log.Debug("ngrok: control-plane connect failed", zap.Error(err))
 		return nil, err
 	}
+	log.Debug("ngrok: control-plane session established")
 
 	n.mu.Lock()
 	n.agent = agent
+	n.stopSession = stopSession
 	n.mu.Unlock()
 	return agent, nil
 }
@@ -225,7 +270,11 @@ func (n *ngrokTunnel) buildAgent() (ngrok.Agent, error) {
 		agentOpts = append(agentOpts, ngrok.WithDialer(n.dialer))
 	}
 	if tok := ResolveNgrokToken(n.token, n.cfgMgr); tok != "" {
+		log.Debug("ngrok: resolved authtoken (source other than --token/NGROK_AUTHTOKEN)")
 		agentOpts = append(agentOpts, ngrok.WithAuthtoken(tok))
+	} else {
+		log.Debug("ngrok: no authtoken resolved (--token/NGROK_AUTHTOKEN/config file/config store all empty)",
+			zap.Bool("token_set", n.token != ""))
 	}
 
 	newAgent := n.agentFactory
@@ -261,12 +310,18 @@ func (n *ngrokTunnel) CheckAccount(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	connectCtx, cancel := context.WithTimeout(ctx, ngrokLoginProbeTimeout)
-	defer cancel()
-	err = agent.Connect(connectCtx)
+	log.Debug("ngrok: probing account login", zap.Duration("timeout", ngrokLoginProbeTimeout))
+	stopSession, err := connectBounded(agent, ctx, ngrokLoginProbeTimeout)
+	// The probe session is throwaway; release it regardless of outcome so the
+	// probe's context can never outlive (or tear down) Start's cached agent.
+	if stopSession != nil {
+		defer stopSession()
+	}
 	if err == nil {
+		log.Debug("ngrok: account login probe succeeded")
 		return nil
 	}
+	log.Debug("ngrok: account login probe failed", zap.Error(err))
 	// A ngrok cloud error carries an error code; an invalid/expired authtoken
 	// is ERR_NGROK_4018 (authentication failed). Anything else is treated as a
 	// connectivity problem rather than a login problem.
@@ -307,11 +362,14 @@ func (n *ngrokTunnel) Start(ctx context.Context, localAddr string) error {
 	// A child context lets Stop cancel cleanly without tearing down the parent
 	// (which may be the service's long-lived context).
 	runCtx, stop := context.WithCancel(ctx)
+	log.Debug("ngrok: forwarding", zap.String("local", localAddr), zap.String("domain", n.domain))
 	fwd, err := agent.Forward(runCtx, upstream, forwardOpts...)
 	if err != nil {
 		stop()
+		log.Debug("ngrok: forward failed", zap.Error(err))
 		return fmt.Errorf("start ngrok tunnel: %w", err)
 	}
+	log.Debug("ngrok: forward established", zap.String("url", fwd.URL().String()))
 
 	n.mu.Lock()
 	n.fwd = fwd

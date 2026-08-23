@@ -7,7 +7,22 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"go.uber.org/zap"
 )
+
+// log is the package-level zap logger for the tunnel package. It is a settable
+// variable so the mcp command's user-configured logger (built from its
+// --log-level/--log-format flags) replaces the default, keeping tunnel debug
+// output consistent with the rest of the server. Logs go to stderr so they
+// never corrupt the stdio JSON-RPC transport.
+var log = zap.Must(zap.NewProduction())
+
+// SetLogger installs a user-configured logger as the shared tunnel package
+// logger.
+func SetLogger(l *zap.Logger) {
+	log = l
+}
 
 // Tunnel exposes a locally bound MCP HTTP server to the public internet via a
 // third-party tunnel provider (currently ngrok and Cloudflare). The CLI runs

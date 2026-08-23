@@ -252,6 +252,9 @@ adapter.`,
 				return gerr
 			} else {
 				setPackageLogger(lgr)
+				// Share the same configured sink with the tunnel package so its
+				// ngrok/cloudflared debug output honors --log-level/--log-format.
+				tunnel.SetLogger(lgr)
 			}
 			log.Debug("building MCP server with progressive disclosure", zap.String("app", root.Name))
 
