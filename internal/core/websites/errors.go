@@ -48,3 +48,21 @@ func TranslateError(err error) error {
 		return err
 	}
 }
+
+// TranslateErrorWithCID translates backend website errors like TranslateError
+// but, for the CID_NOT_PINNED case, names the exact target CID and the precise
+// recovery tool call so a caller (agent or user) pins the right content before
+// retrying. Without the CID, an agent that already uploaded a few blobs can
+// mistakenly pin the wrong one. Handlers that know the requested cid should
+// pass it here instead of calling TranslateError directly. A non-empty cid
+// only changes the CID_NOT_PINNED message; all other reason codes (and an
+// empty cid) fall back to TranslateError so the shared mapping is preserved.
+func TranslateErrorWithCID(err error, cid string) error {
+	if err == nil {
+		return nil
+	}
+	if cid != "" && normalizeReason(ipfs.ErrorReasonOf(err)) == normalizeReason(ipfs.ErrorCodeCIDNotPinned) {
+		return fmt.Errorf("target CID %s is not pinned on the gateway: pin it first with pins_add(cids=[%q], wait=true), then retry the website operation: %w", cid, cid, err)
+	}
+	return TranslateError(err)
+}
