@@ -53,7 +53,11 @@ func TestUploadFileDescriptorStdioRejectsMint(t *testing.T) {
 }
 
 func TestUploadFileDescriptorHTTPMints(t *testing.T) {
-	cu := transfer.NewHTTPUpload(nil, 0)
+	mgr := transfer.NewUploadTaskManager(func(_ context.Context, reader io.Reader, _ int64, _ string, _ bool) (any, error) {
+		_, _ = io.Copy(io.Discard, reader)
+		return map[string]any{"cid": "QmMint"}, nil
+	}, 0)
+	cu := transfer.NewHTTPUpload(mgr, 0)
 	defer cu.Stop(context.Background())
 	desc := transfer.NewUploadFileDescriptor(false, false, nil, cu, nil, nil, 0)
 
@@ -68,6 +72,10 @@ func TestUploadFileDescriptorHTTPMints(t *testing.T) {
 	url, _ := sc["url"].(string)
 	require.NotEmpty(t, url)
 	require.NotEmpty(t, sc["curl_command"])
+	// The HTTP branch now pre-creates a canonical operation and returns its
+	// handle up front (so the App can continue the same op), not only in the
+	// PUT's 202 body.
+	require.NotEmpty(t, sc["upload_handle"])
 }
 
 func TestUploadFileDescriptorHTTPRejectsPath(t *testing.T) {

@@ -31,11 +31,19 @@ type UploadTaskState string
 const defaultMaxActiveUploads = 8
 
 const (
-	UploadStateQueued    UploadTaskState = "queued"
-	UploadStateRunning   UploadTaskState = "running"
-	UploadStateCompleted UploadTaskState = "completed"
-	UploadStateFailed    UploadTaskState = "failed"
-	UploadStateCancelled UploadTaskState = "cancelled"
+	// UploadStatePrepared marks an upload operation whose handle/task exists
+	// but whose bytes have not been supplied yet. It is created up front by
+	// Prepare so the model-facing upload_file and the App's file picker can
+	// converge on the SAME logical operation; whoever fulfills it first (the
+	// agent's presigned PUT, or the App's Uppy XHR PUT) supplies the bytes and
+	// transitions it to queued/running. A prepared task holds no reader and
+	// occupies no executor slot.
+	UploadStatePrepared   UploadTaskState = "prepared"
+	UploadStateQueued     UploadTaskState = "queued"
+	UploadStateRunning    UploadTaskState = "running"
+	UploadStateCompleted  UploadTaskState = "completed"
+	UploadStateFailed     UploadTaskState = "failed"
+	UploadStateCancelled  UploadTaskState = "cancelled"
 )
 
 // UploadTask describes a tracked async upload.
@@ -121,6 +129,10 @@ func newTaskID() string {
 // upload runs on a context detached from the caller's deadline/cancellation
 // (context.WithoutCancel) so it outlives the MCP request that started it, while
 // retaining the caller's context values; only an explicit Cancel() aborts it.
+//
+// Start creates a brand-new task; to fulfill a handle pre-created by Prepare
+// (the shared canonical operation used by upload_file and the upload App), use
+// Fulfill instead.
 func (m *UploadTaskManager) Start(ctx context.Context, reader io.ReadCloser, size int64, name string, wait bool) (string, error) {
 	if m.exec == nil {
 		// No executor wired: never began ownership, but release the reader so
@@ -138,37 +150,150 @@ func (m *UploadTaskManager) Start(ctx context.Context, reader io.ReadCloser, siz
 		State:     UploadStateQueued,
 		CreatedAt: time.Now(),
 	}
+	m.mu.Lock()
+	runCtx, cancel, tt, err := m.beginLocked(ctx, task, reader)
+	if err != nil {
+		m.mu.Unlock()
+		// Start owns the reader on every return path; release it on the
+		// no-slot error so a network-backed body is not leaked.
+		cancel()
+		_ = reader.Close()
+		return "", err
+	}
+	m.mu.Unlock()
+	m.spawn(tt, runCtx, reader, size, name, wait)
+	return id, nil
+}
+
+// Prepare pre-registers a canonical upload operation and returns its opaque
+// handle WITHOUT supplying any bytes. The resulting task is visible to
+// status/list in the Prepared state but holds no reader and occupies no
+// executor slot. Either the agent transport path (a presigned PUT) or the App
+// file picker fulfills it via Fulfill; duplicate fulfillment is rejected, so
+// whoever completes it first becomes the authoritative single result.
+func (m *UploadTaskManager) Prepare(name string) (string, error) {
+	if m.exec == nil {
+		return "", errors.New("upload executor is not configured")
+	}
+	if name == "" {
+		name = DefaultUploadName
+	}
+	id := newTaskID()
+	task := &UploadTask{
+		ID:        id,
+		Name:      name,
+		State:     UploadStatePrepared,
+		CreatedAt: time.Now(),
+	}
+	m.mu.Lock()
+	m.pruneLocked()
+	m.tasks[id] = &trackedTask{task: task}
+	m.mu.Unlock()
+	return id, nil
+}
+
+// Fulfill supplies bytes to a handle pre-created by Prepare, transitioning it
+// from Prepared to queued/running and starting the same async upload path as
+// Start (the two share spawn). It is idempotent against duplicate fulfillment:
+// an already-claimed (queued/running) or finished (completed/failed/cancelled)
+// task returns an explicit error rather than starting a second upload, so
+// whichever participant PUTs the bytes first is the authoritative result for
+// the handle. On error it closes the supplied reader (ownership is handed
+// over). If the id does not correspond to a known prepared task, callers
+// should fall back to Start for a brand-new task.
+func (m *UploadTaskManager) Fulfill(ctx context.Context, id string, reader io.ReadCloser, size int64, name string, wait bool) error {
+	if m.exec == nil {
+		_ = reader.Close()
+		return errors.New("upload executor is not configured")
+	}
+	m.mu.Lock()
+	tt, ok := m.tasks[id]
+	if !ok {
+		m.mu.Unlock()
+		_ = reader.Close()
+		return fmt.Errorf("unknown upload handle %q", id)
+	}
+	switch tt.task.State {
+	case UploadStatePrepared:
+		// Proceed to claim below.
+	case UploadStateQueued, UploadStateRunning:
+		m.mu.Unlock()
+		_ = reader.Close()
+		return fmt.Errorf("upload %q is already in progress; refusing a second fulfillment", id)
+	case UploadStateCompleted, UploadStateFailed, UploadStateCancelled:
+		m.mu.Unlock()
+		_ = reader.Close()
+		return fmt.Errorf("upload %q already finished (state %s); refusing a second fulfillment", id, tt.task.State)
+	default:
+		m.mu.Unlock()
+		_ = reader.Close()
+		return fmt.Errorf("upload %q cannot be fulfilled from state %s", id, tt.task.State)
+	}
+	if name == "" {
+		name = tt.task.Name
+	}
+	runCtx, cancel, claimed, err := m.beginLocked(ctx, tt.task, reader)
+	if err != nil {
+		m.mu.Unlock()
+		cancel()
+		_ = reader.Close()
+		return err
+	}
+	m.mu.Unlock()
+	m.spawn(claimed, runCtx, reader, size, name, wait)
+	return nil
+}
+
+// beginLocked claims an executor slot, attaches a detached run context (with
+// the hard ExecTimeout), registers the task under m.mu (for a brand-new task)
+// or reuses the existing entry, and transitions it to the claimable queued
+// state. Caller must hold m.mu on entry; the lock is still held on return so
+// the caller must unlock before spawning. It returns the detached runCtx and
+// cancel for the spawn goroutine plus the registered trackedTask, or an error
+// after constructing a no-op cancel (callers must close reader themselves on
+// the error path).
+func (m *UploadTaskManager) beginLocked(ctx context.Context, task *UploadTask, reader io.ReadCloser) (context.Context, context.CancelFunc, *trackedTask, error) {
+	m.pruneLocked()
+	if err := m.acquireSlotLocked(); err != nil {
+		return nil, func() {}, nil, err
+	}
 	// Preserve the caller's context values (tracing, auth, logging) while
 	// dropping the deadline and cancellation that would otherwise abort the
 	// async work once the request that started it returns. A hard ExecTimeout
 	// still bounds the work so a hung executor is force-cancelled and its
 	// MaxActive slot freed instead of leaking.
 	runCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), m.ExecTimeout)
-	m.mu.Lock()
-	m.pruneLocked()
-	if err := m.acquireSlotLocked(); err != nil {
-		m.mu.Unlock()
-		cancel()
-		// Start owns the reader; release it on the no-slot path so a
-		// network-backed body is not leaked when the concurrency cap is hit.
-		_ = reader.Close()
-		return "", err
-	}
 	tt := &trackedTask{task: task, cancel: cancel, reader: reader}
-	m.tasks[id] = tt
-	m.mu.Unlock()
+	m.tasks[task.ID] = tt
+	// Bring the task to the claimable (queued) state so spawn's bail check and
+	// cancel handling see a coherent lifecycle; the goroutine flips it to
+	// running immediately after. Start's task is already queued; Fulfill's is
+	// prepared.
+	task.State = UploadStateQueued
+	now := time.Now()
+	task.StartedAt = &now
+	return runCtx, cancel, tt, nil
+}
 
+// spawn launches the async upload work for a claimed task on a background
+// goroutine. Both Start and Fulfill converge here after the task has been
+// transitioned to queued and registered under m.mu, so the two entry points
+// share exactly one upload/execution path. It owns the reader (passed in via
+// the trackedTask) and closes it exactly once on completion/cancel via
+// closeOnce.
+func (m *UploadTaskManager) spawn(tt *trackedTask, runCtx context.Context, reader io.ReadCloser, size int64, name string, wait bool) {
+	task := tt.task
 	go func() {
-		now := time.Now()
 		m.mu.Lock()
-		// Bail if the task was cancelled between Start() returning the handle
-		// and this goroutine acquiring the lock; never begin an upload that
-		// was already aborted. Cancel() already closed the reader, and this
-		// early path never closes it.
+		// Bail if the task was cancelled between the claim returning and this
+		// goroutine acquiring the lock; never begin an upload that was already
+		// aborted. Cancel() already closed the reader, and this early path
+		// never closes it.
 		if task.State != UploadStateQueued {
 			m.mu.Unlock()
 			return
 		}
+		now := time.Now()
 		task.StartedAt = &now
 		task.State = UploadStateRunning
 		m.mu.Unlock()
@@ -180,7 +305,10 @@ func (m *UploadTaskManager) Start(ctx context.Context, reader io.ReadCloser, siz
 		// AfterFunc fires exactly once; Stop below disarms it on normal return.
 		watchdog := time.AfterFunc(m.ExecTimeout, func() {
 			tt.closeReader()
-			cancel()
+			cancel := tt.cancel
+			if cancel != nil {
+				cancel()
+			}
 		})
 		result, err := m.exec(runCtx, reader, size, name, wait)
 		// The work finished before the timeout; disarm the watchdog so it
@@ -215,10 +343,11 @@ func (m *UploadTaskManager) Start(ctx context.Context, reader io.ReadCloser, siz
 		// completion the goroutine is the owner; if Cancel raced us it already
 		// closed it via the same guard and this is a no-op.
 		tt.closeReader()
-		cancel()
+		cancel := tt.cancel
+		if cancel != nil {
+			cancel()
+		}
 	}()
-
-	return id, nil
 }
 
 // cloneTask deep-copies the time pointers so a returned UploadTask does not
@@ -252,8 +381,10 @@ func (m *UploadTaskManager) Get(id string) (*UploadTask, error) {
 	return cloneTask(t.task), nil
 }
 
-// Cancel cancels a running/queued task. Cancelling a completed task is a no-op
-// that returns an error so callers can surface it.
+// Cancel cancels a prepared/queued/running task. Cancelling a completed task
+// is a no-op that returns an error so callers can surface it. A prepared task
+// (bytes not yet supplied) has no goroutine or reader, so cancelling it just
+// retires the handle.
 func (m *UploadTaskManager) Cancel(id string) error {
 	m.mu.Lock()
 	t, ok := m.tasks[id]
@@ -262,7 +393,7 @@ func (m *UploadTaskManager) Cancel(id string) error {
 		return fmt.Errorf("unknown upload handle %q", id)
 	}
 	switch t.task.State {
-	case UploadStateQueued, UploadStateRunning:
+	case UploadStatePrepared, UploadStateQueued, UploadStateRunning:
 		now := time.Now()
 		t.task.State = UploadStateCancelled
 		// Mark the task finished so pruneLocked eventually evicts it; without
@@ -271,12 +402,15 @@ func (m *UploadTaskManager) Cancel(id string) error {
 		t.task.FinishedAt = &now
 		cancel := t.cancel
 		m.mu.Unlock()
-		cancel()
+		if cancel != nil {
+			cancel()
+		}
 		// Close the owned reader so an in-flight network read is aborted
 		// immediately rather than letting the upload drain to completion in
 		// the background after the task reports cancelled. closeReader is
 		// idempotent, so if the goroutine is already finishing it wins and this
-		// is a no-op, never a concurrent double-close.
+		// is a no-op, never a concurrent double-close. A prepared task has no
+		// reader, so this is a no-op there too.
 		t.closeReader()
 		return nil
 	default:
@@ -326,8 +460,10 @@ func (m *UploadTaskManager) acquireSlotLocked() error {
 }
 
 // pruneLocked removes terminal (completed/failed/cancelled) tasks older than
-// the TTL. Caller must hold m.mu. Terminal tasks are kept at least TTL after
-// they finish so callers can still fetch status/result within the window.
+// the TTL, plus prepared tasks that were never fulfilled within the TTL (they
+// hold no bytes and no slot, so they would otherwise accumulate if nobody
+// fulfills them). Caller must hold m.mu. Terminal tasks are kept at least TTL
+// after they finish so callers can still fetch status/result within the window.
 func (m *UploadTaskManager) pruneLocked() {
 	if m.ttl <= 0 {
 		return
@@ -337,6 +473,12 @@ func (m *UploadTaskManager) pruneLocked() {
 		switch t.task.State {
 		case UploadStateCompleted, UploadStateFailed, UploadStateCancelled:
 			if t.task.FinishedAt != nil && t.task.FinishedAt.Before(cutoff) {
+				delete(m.tasks, id)
+			}
+		case UploadStatePrepared:
+			// Never fulfilled before expiring: evict by creation time so an
+			// abandoned prepare cannot pin a handle forever.
+			if t.task.CreatedAt.Before(cutoff) {
 				delete(m.tasks, id)
 			}
 		}

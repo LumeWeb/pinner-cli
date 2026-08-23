@@ -23,12 +23,15 @@ import (
 const DefaultHTTPUploadTTL = 5 * time.Minute
 
 // httpToken is the per-token state for a minted one-time upload endpoint: the
-// upload name to use and when the endpoint expires. `used` marks single-use
-// consumption so a re-PUT with the same token is rejected, not re-accepted.
+// upload name to use, when the endpoint expires, and — when the endpoint was
+// minted via Prepare — the canonical upload handle pre-created in the shared
+// UploadTaskManager. `used` marks single-use consumption so a re-PUT with the
+// same token is rejected, not re-accepted.
 type httpToken struct {
 	name      string
 	expiresAt time.Time
 	used      bool
+	handle    string
 }
 
 // Upload is the one-time HTTP upload coordinator. The agent calls the
@@ -53,6 +56,10 @@ type Upload struct {
 
 	mu       sync.Mutex
 	tokens   map[string]httpToken
+	// byHandle maps a prepared upload handle back to its minted token so the
+	// App or model can continue (find the URL for) the same canonical operation
+	// instead of minting a sibling. Removed when the endpoint is consumed.
+	byHandle map[string]string
 	maxBytes int64
 	tasks    *UploadTaskManager
 	now      func() time.Time
@@ -76,6 +83,7 @@ func NewHTTPUpload(tasks *UploadTaskManager, maxBytes int64) *Upload {
 	}
 	return &Upload{
 		tokens:   make(map[string]httpToken),
+		byHandle: make(map[string]string),
 		maxBytes: maxBytes,
 		tasks:    tasks,
 		now:      time.Now,
@@ -189,18 +197,76 @@ func (cu *Upload) Mint(name string, ttl time.Duration) string {
 	}
 	token := newHTTPToken()
 	cu.mu.Lock()
-	// Prune expired minted-but-never-used tokens so a long-lived server does not
-	// accumulate permanent map entries (tokens are otherwise only removed when a
-	// matching PUT is claimed).
+	cu.pruneLocked()
+	cu.tokens[token] = httpToken{name: name, expiresAt: cu.now().Add(ttl)}
+	cu.mu.Unlock()
+	return cu.loopback.URLFor("upload", token)
+}
+
+// Prepare mints a one-time presigned PUT URL AND pre-registers a canonical
+// async upload handle for the same operation in the shared UploadTaskManager,
+// returning both. This is the canonical entry point shared by the model-facing
+// upload_file tool and the upload App's ipfs_upload_submit: both produce the
+// SAME handle for the operation, so whichever participant fulfills it (the
+// agent's curl PUT or the App's Uppy XHR PUT) resolves through that one handle
+// — no sibling upload is ever created for the same logical operation.
+func (cu *Upload) Prepare(name string, ttl time.Duration) (url, handle string) {
+	if err := cu.loopback.EnsureLoopback(cu.RegisterHandlers); err != nil {
+		return "", ""
+	}
+	if name == "" {
+		name = DefaultUploadName
+	}
+	if ttl <= 0 {
+		ttl = DefaultHTTPUploadTTL
+	}
+	h, err := cu.tasks.Prepare(name)
+	if err != nil {
+		return "", ""
+	}
+	token := newHTTPToken()
+	cu.mu.Lock()
+	cu.pruneLocked()
+	cu.tokens[token] = httpToken{name: name, expiresAt: cu.now().Add(ttl), handle: h}
+	cu.byHandle[h] = token
+	cu.mu.Unlock()
+	return cu.loopback.URLFor("upload", token), h
+}
+
+// FindUpload returns the presigned URL for a prepared-but-unfulfilled handle,
+// so a caller (the App file picker) can CONTINUE the same canonical operation
+// instead of minting a sibling. It reports ok=false when the handle is not a
+// live prepared upload (unknown, already consumed/claimed, or expired) — in
+// which case the caller should treat the operation as already started/completed
+// and just poll its status, or prepare a fresh one.
+func (cu *Upload) FindUpload(handle string) (url string, ok bool) {
+	cu.mu.Lock()
+	defer cu.mu.Unlock()
+	token, exists := cu.byHandle[handle]
+	if !exists {
+		return "", false
+	}
+	t, exists := cu.tokens[token]
+	if !exists || t.used || cu.now().After(t.expiresAt) {
+		return "", false
+	}
+	return cu.loopback.URLFor("upload", token), true
+}
+
+// pruneLocked removes expired minted-but-never-used tokens (and their handle
+// back-references) so a long-lived server does not accumulate permanent map
+// entries (tokens are otherwise only removed when a matching PUT is claimed).
+// Caller must hold cu.mu.
+func (cu *Upload) pruneLocked() {
 	now := cu.now()
 	for t, tkn := range cu.tokens {
 		if now.After(tkn.expiresAt) {
 			delete(cu.tokens, t)
+			if tkn.handle != "" {
+				delete(cu.byHandle, tkn.handle)
+			}
 		}
 	}
-	cu.tokens[token] = httpToken{name: name, expiresAt: now.Add(ttl)}
-	cu.mu.Unlock()
-	return cu.loopback.URLFor("upload", token)
 }
 
 // newHTTPToken returns a fresh 128-bit hex token guarding the unauthenticated
@@ -241,7 +307,7 @@ func (cu *Upload) putHandler(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	name, ok := cu.claim(token)
+	name, handle, ok := cu.claim(token)
 	if !ok {
 		// Distinguish a spent/expired endpoint from one that never existed:
 		// both are unreachable, but the former already delivered its body and
@@ -260,15 +326,29 @@ func (cu *Upload) putHandler(w http.ResponseWriter, r *http.Request) {
 	// that started it; the manager's own execTimeout still bounds it.
 	ctx := context.WithoutCancel(r.Context())
 
-	// Hand Start a pipe reader (an io.ReadCloser) rather than r.Body, so the
-	// net/http server's post-return body cleanup never races the upload read.
-	// The manager owns and closes this pipe reader on completion.
+	// Hand the upload a pipe reader (an io.ReadCloser) rather than r.Body, so
+	// the net/http server's post-return body cleanup never races the upload
+	// read. The manager owns and closes this pipe reader on completion.
 	pr, pw := io.Pipe()
-	id, err := cu.tasks.Start(ctx, pr, r.ContentLength, name, false)
+
+	// A prepared endpoint (minted by Prepare) is bound to a single canonical
+	// handle: fulfill THAT pre-created operation rather than starting a sibling,
+	// so whoever PUTs first (the agent or the App file picker) resolves the same
+	// handle and no second upload is created. Fulfill is idempotent — a second
+	// PUT is rejected at the token level by claim (404) before it reaches here.
+	// A legacy bare-minted endpoint (Mint) has no handle and falls back to
+	// Start, creating its own brand-new task as before.
+	id := handle
+	err := error(nil)
+	if handle != "" {
+		err = cu.tasks.Fulfill(ctx, handle, pr, r.ContentLength, name, false)
+	} else {
+		id, err = cu.tasks.Start(ctx, pr, r.ContentLength, name, false)
+	}
 	if err != nil {
-		// Start already released pr on the error path (no-slot or
-		// no-executor); close the pipe writer so no goroutine leaks and
-		// r.Body is not held.
+		// The manager already released pr on the error path (no-slot,
+		// no-executor, or already-claimed); close the pipe writer so no
+		// goroutine leaks and r.Body is not held.
 		_ = pw.Close()
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -308,26 +388,34 @@ func (cu *Upload) putHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // claim atomically validates and consumes a one-time upload token: it reports
-// the upload name if the token exists, is unexpired, and has not been used.
-// A used or expired token is rejected so a re-PUT cannot re-enter the upload
-// path with the same handle. It is single-use by construction: once accepted,
-// the token is marked used under the lock.
-func (cu *Upload) claim(token string) (string, bool) {
+// the upload name and, when the endpoint was prepared, the canonical handle the
+// PUT must fulfill. A used or expired token is rejected so a re-PUT cannot
+// re-enter the upload path with the same handle. It is single-use by
+// construction: once accepted, the token is marked used under the lock.
+func (cu *Upload) claim(token string) (name, handle string, ok bool) {
 	cu.mu.Lock()
 	defer cu.mu.Unlock()
-	t, ok := cu.tokens[token]
-	if !ok {
-		return "", false
+	t, exists := cu.tokens[token]
+	if !exists {
+		return "", "", false
 	}
 	if t.used || cu.now().After(t.expiresAt) {
 		// Spent/expired endpoint: remove it so memory stays bounded and it can
 		// never be re-accepted.
 		delete(cu.tokens, token)
-		return "", false
+		if t.handle != "" {
+			delete(cu.byHandle, t.handle)
+		}
+		return "", "", false
 	}
 	t.used = true
 	cu.tokens[token] = t
-	return t.name, true
+	// The endpoint is consumed; drop the handle back-reference so a later
+	// FindUpload treats it as already-start/completed, never re-mintable.
+	if t.handle != "" {
+		delete(cu.byHandle, t.handle)
+	}
+	return t.name, t.handle, true
 }
 
 // setNow overrides the clock used for expiry (test seam).

@@ -199,6 +199,70 @@ func TestCurlUploadToolDescriptor(t *testing.T) {
 	require.Contains(t, err.Error(), "invalid ttl")
 }
 
+// TestPrepareFulfillSharedOperation covers the shared canonical upload
+// operation at the manager level: Prepare pre-registers a visible-but-idle
+// handle, Fulfill supplies bytes and runs it, and a second fulfillment attempt
+// is idempotently rejected (no second upload ever runs for the same handle).
+func TestPrepareFulfillSharedOperation(t *testing.T) {
+	var ran atomic.Int64
+	var bytesRead atomic.Value
+	mgr := NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
+		ran.Add(1)
+		b, _ := io.ReadAll(reader)
+		bytesRead.Store(string(b))
+		return map[string]any{"cid": "QmPrepared"}, nil
+	}, 0)
+
+	// Prepare the canonical operation: visible to status/list but not run.
+	handle, err := mgr.Prepare("share.txt")
+	require.NoError(t, err)
+	pre, err := mgr.Get(handle)
+	require.NoError(t, err)
+	require.Equal(t, UploadStatePrepared, pre.State)
+	require.Zero(t, ran.Load())
+
+	// First fulfillment supplies bytes -> runs and completes once.
+	require.NoError(t, mgr.Fulfill(context.Background(), handle, io.NopCloser(strings.NewReader("bytes")), 5, "", false))
+	require.Eventually(t, func() bool {
+		t, err := mgr.Get(handle)
+		return err == nil && t.State == UploadStateCompleted
+	}, 2*time.Second, 10*time.Millisecond)
+	require.Equal(t, int64(1), ran.Load())
+	require.Equal(t, "bytes", bytesRead.Load().(string))
+	task, err := mgr.Get(handle)
+	require.NoError(t, err)
+	require.Equal(t, "share.txt", task.Name)
+	require.Equal(t, "QmPrepared", task.Result.(map[string]any)["cid"])
+
+	// Second fulfillment attempt is idempotently rejected: no second run, and
+	// the handle still resolves to the SAME (first) completed result.
+	err = mgr.Fulfill(context.Background(), handle, io.NopCloser(strings.NewReader("other")), 6, "", false)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "already finished")
+	require.Equal(t, int64(1), ran.Load())
+	require.Equal(t, "bytes", bytesRead.Load().(string))
+
+	// Exactly one task exists for the operation (no sibling was created).
+	require.Len(t, mgr.List(), 1)
+}
+
+// TestPrepareCancel verifies a prepared-but-unfulfilled handle can be
+// cancelled without ever running an upload.
+func TestPrepareCancel(t *testing.T) {
+	var ran int32
+	mgr := NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
+		atomic.AddInt32(&ran, 1)
+		return map[string]any{"cid": "QmX"}, nil
+	}, 0)
+	handle, err := mgr.Prepare("idle.txt")
+	require.NoError(t, err)
+	require.NoError(t, mgr.Cancel(handle))
+	c, err := mgr.Get(handle)
+	require.NoError(t, err)
+	require.Equal(t, UploadStateCancelled, c.State)
+	require.Equal(t, int32(0), atomic.LoadInt32(&ran))
+}
+
 // TestCurlUploadPrunesExpiredTokens verifies that minting a fresh endpoint
 // sweeps expired, never-used tokens out of the map so a long-lived server does
 // not accumulate permanent entries (a Kody finding).

@@ -112,28 +112,35 @@ func NewUploadFileDescriptor(coLocated, tunnelOpenAI bool, pathFn UploadFileHand
 						ttl = d
 					}
 				}
-				res := &SourceResolver{Transport: TransportHTTP, HTTPUpload: hp}
-				url, merr := res.MintURL(in.Source, name, ttl)
-				if merr != nil {
-					return model.ToolResult{}, merr
+				// Prepare mints the presigned URL AND pre-creates a single
+				// canonical upload handle in the shared UploadTaskManager. The
+				// handle is returned up front so either the agent (curl the URL)
+				// or the upload App file picker (which continues the same handle)
+				// can fulfill the SAME operation — there is exactly one upload
+				// task per operation, resolved by this one handle.
+				url, handle := hp.Prepare(name, ttl)
+				if url == "" || handle == "" {
+					return model.ToolResult{}, errors.New("failed to prepare one-time upload endpoint")
 				}
 				curlCmd := fmt.Sprintf("curl -sS -T <your-file> %q", url)
 				sc := map[string]any{
 					"url":                url,
 					"curl_command":       curlCmd,
+					"upload_handle":      handle,
 					"upload_handle_poll": "upload_status",
 					"ttl":                ttl.String(),
 					"max_bytes":          hp.maxBytes,
 				}
 				// Text carries the same JSON as StructuredContent so a text-only
 				// MCP client (which renders no widget) still sees the actual
-				// presigned URL and curl command, not just the prose instruction.
-				// The upload_handle itself is only produced by the presigned PUT's
-				// 202 response body, so it cannot appear here — the tool describes
-				// where to get it (curl's response) and which tool to poll with.
+				// presigned URL, curl command, and the pre-created handle — not
+				// just prose. The handle is now produced up front (rather than
+				// only in the PUT's 202 body) and can be handed to the App's
+				// ipfs_upload_submit to fulfill the same operation, or polled
+				// with upload_status.
 				return model.ToolResult{
 					StructuredContent: sc,
-					Text:              toolargs.ResultJSONText(sc) + " Run the curl command with your file; the upload_handle comes back in that curl response, then poll upload_status with it.",
+					Text:              toolargs.ResultJSONText(sc) + " Stream your file bytes to the URL with the curl command, or pass upload_handle to the upload App's file picker; then poll upload_status with the handle.",
 				}, nil
 			default: // TransportOpenAI
 				if in.Source.Mode != SourceURL && in.Source.Mode != SourceData {

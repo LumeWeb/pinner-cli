@@ -35,9 +35,19 @@ import (
 const IPFSUploadAppURI = "ui://uploads/ipfs.html"
 
 // IPFSUploadSubmitInput is the typed argument shape for the app-only
-// ipfs_upload_submit helper. It mints a one-time presigned PUT endpoint; the
-// retrieved URL is returned to the app so Uppy can XHR the file bytes to it.
+// ipfs_upload_submit helper. It continues or prepares a single canonical
+// upload operation and returns the one-time presigned PUT endpoint bound to it;
+// the retrieved URL is returned to the app so Uppy can XHR the file bytes to
+// it. When the model-facing upload_file has already prepared an operation, the
+// app passes its handle here so the file picker fulfills the SAME operation
+// (no sibling upload is created).
 type IPFSUploadSubmitInput struct {
+	// Handle is an optional canonical upload handle prepared by the
+	// model-facing upload_file tool. When given and still unfulfilled, submit
+	// returns the same endpoint+handle for that operation instead of minting a
+	// new one. When given but already claimed/completed, it reports the
+	// already-claimed state so the app just polls instead of re-uploading.
+	Handle string `json:"handle,omitempty" jsonschema:"description=Optional canonical upload handle prepared by upload_file to continue the same operation."`
 	// Name is the upload label (defaults to the source base name or 'upload').
 	Name string `json:"name,omitempty" jsonschema:"description=Optional upload name (defaults to the file name)."`
 	// TTL is the presigned endpoint lifetime (e.g. 5m; default 5 minutes).
@@ -52,24 +62,27 @@ func renderIPFSUploadAppHTML() string {
 	return mcpapp.RenderMcpAppDoc("Upload to IPFS", mcpapp.IPFSUploadAppForm(), mcpapp.AppModule("ipfs-upload"))
 }
 
-// ipfsUploadSubmitDescriptor builds the app-only mint helper for the Upload to
-// IPFS view. It is visible to the app only (never the model). It returns a
-// one-time presigned PUT URL that the iframe's Uppy XHR uploader writes the
-// file bytes to out of band — no bytes cross this tool or the LLM channel.
+// ipfsUploadSubmitDescriptor builds the app-only prepare/continue helper for
+// the Upload to IPFS view. It is visible to the app only (never the model). It
+// returns a one-time presigned PUT URL bound to a canonical upload handle that
+// the iframe's Uppy XHR uploader writes the file bytes to out of band — no
+// bytes cross this tool or the LLM channel.
+//
+// When given a handle prepared by the model-facing upload_file, it CONTINUES
+// that exact operation (returns the same URL + handle), so the App file picker
+// fulfills the model's canonical upload instead of starting a sibling. When the
+// handle is already claimed/completed it reports that explicitly so the app
+// just polls. Without a handle it prepares a fresh canonical operation.
 func ipfsUploadSubmitDescriptor(hp *transfer.Upload) model.ToolDescriptor {
 	return model.ToolDescriptor{
 		Name:        "ipfs_upload_submit",
-		Title:       "Mint a one-time upload endpoint",
-		Description: "Mint a one-time presigned HTTP PUT endpoint the app's Uppy XHR uploader writes file bytes to out of band. App-only helper for the Upload to IPFS view.",
-		InputSchema: json.RawMessage(`{"type":"object","properties":{"name":{"type":"string"},"ttl":{"type":"string"}}}`),
+		Title:       "Prepare a one-time upload endpoint",
+		Description: "Prepare (or continue) a one-time presigned HTTP PUT endpoint bound to a canonical upload handle; the app's Uppy XHR uploader writes file bytes to it out of band. Passing a handle prepared by upload_file fulfills that same operation. App-only helper for the Upload to IPFS view.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"handle":{"type":"string"},"name":{"type":"string"},"ttl":{"type":"string"}}}`),
 		Handler: func(_ context.Context, req model.ToolRequest) (model.ToolResult, error) {
 			in, err := toolargs.DecodeToolArgs[IPFSUploadSubmitInput](req)
 			if err != nil {
 				return model.ToolResult{}, err
-			}
-			name := in.Name
-			if name == "" {
-				name = transfer.DefaultUploadName
 			}
 			ttl := transfer.DefaultHTTPUploadTTL
 			if in.TTL != "" {
@@ -81,16 +94,62 @@ func ipfsUploadSubmitDescriptor(hp *transfer.Upload) model.ToolDescriptor {
 					ttl = d
 				}
 			}
-			url := hp.Mint(name, ttl)
-			if url == "" {
-				return model.ToolResult{}, fmt.Errorf("failed to mint one-time upload endpoint")
+
+			// Continue an operation the model-facing upload_file already
+			// prepared: return the SAME endpoint + handle so the app fulfills
+			// the canonical operation rather than minting a sibling.
+			if in.Handle != "" {
+				if url, ok := hp.FindUpload(in.Handle); ok {
+					sc := map[string]any{
+						"url":            url,
+						"upload_handle":  in.Handle,
+						"ttl":            ttl.String(),
+						"max_bytes":      hp.MaxBytes(),
+						"poll_tool":      "ipfs_upload_status",
+						"continued":      true,
+						"response_body":  "the 202 body carries the SAME upload_handle; pass it to poll_tool",
+					}
+					return model.ToolResult{
+						StructuredContent: sc,
+						Text:              toolargs.ResultJSONText(sc) + " PUT the file bytes and poll for the CID.",
+					}, nil
+				}
+				// The handle is either unknown or already claimed/completed.
+				// If the manager still tracks it, report the already-claimed
+				// state so the app just polls and never re-uploads.
+				if task, terr := hp.Tasks().Get(in.Handle); terr == nil {
+					sc := map[string]any{
+						"upload_handle":   in.Handle,
+						"already_claimed": true,
+						"state":           task.State,
+						"poll_tool":       "ipfs_upload_status",
+					}
+					return model.ToolResult{
+						StructuredContent: sc,
+						Text:              toolargs.ResultJSONText(sc) + " This operation is already fulfilled/claimed; poll ipfs_upload_status for the CID.",
+					}, nil
+				}
+				return model.ToolResult{}, fmt.Errorf("unknown upload handle %q; start a fresh upload", in.Handle)
+			}
+
+			// No handle: prepare a fresh canonical operation and return its
+			// handle up front (not only after the PUT) so the same handle can
+			// be polled via ipfs_upload_status.
+			name := in.Name
+			if name == "" {
+				name = transfer.DefaultUploadName
+			}
+			url, handle := hp.Prepare(name, ttl)
+			if url == "" || handle == "" {
+				return model.ToolResult{}, fmt.Errorf("failed to prepare one-time upload endpoint")
 			}
 			sc := map[string]any{
 				"url":           url,
+				"upload_handle": handle,
 				"ttl":           ttl.String(),
 				"max_bytes":     hp.MaxBytes(),
 				"poll_tool":     "ipfs_upload_status",
-				"response_body": "the 202 body carries an upload_handle the app passes to poll_tool",
+				"response_body": "the 202 body carries the SAME upload_handle; pass it to poll_tool",
 			}
 			return model.ToolResult{
 				StructuredContent: sc,
