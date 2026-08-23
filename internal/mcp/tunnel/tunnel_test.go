@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.ngrok.com/ngrok/v2"
 )
 
 func TestSplitHostPort(t *testing.T) {
@@ -307,4 +309,99 @@ func TestCloudflaredStartMissingState(t *testing.T) {
 	err := c.Start(context.Background(), "127.0.0.1:8893")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "no provisioned cloudflare tunnel found")
+}
+
+// fakeNgrokForwarder is a minimal ngrok.EndpointForwarder for tests. It embeds
+// the interface so every method is satisfied with zero boilerplate, overriding
+// only URL (used by Start/setReady) and Done (used by waitReady). Calling any
+// other method would panic, but the production code path exercised by these
+// tests only touches URL and Done.
+type fakeNgrokForwarder struct {
+	ngrok.EndpointForwarder
+	u    *url.URL
+	done chan struct{}
+}
+
+func (f *fakeNgrokForwarder) URL() *url.URL { return f.u }
+
+func (f *fakeNgrokForwarder) Done() <-chan struct{} {
+	if f.done == nil {
+		f.done = make(chan struct{})
+	}
+	return f.done
+}
+
+// fakeNgrokAgent is a minimal ngrok.Agent for tests, embedding the interface to
+// avoid implementing the full surface. It records the connect context handed to
+// it and returns configurable errors/forwarders from Connect and Forward —
+// the only Agent methods the tunnel code calls.
+type fakeNgrokAgent struct {
+	ngrok.Agent
+	connectErr error
+	forwardErr error
+	fwd        ngrok.EndpointForwarder
+	connectCtx context.Context
+}
+
+func (f *fakeNgrokAgent) Connect(ctx context.Context) error {
+	f.connectCtx = ctx
+	return f.connectErr
+}
+
+func (f *fakeNgrokAgent) Forward(_ context.Context, _ *ngrok.Upstream, _ ...ngrok.EndpointOption) (ngrok.EndpointForwarder, error) {
+	if f.forwardErr != nil {
+		return nil, f.forwardErr
+	}
+	return f.fwd, nil
+}
+
+// TestNgrokCheckAccountDoesNotPoisonStartSession is the regression test for
+// the "session closed" failure. An ngrok agent's session is bound to the
+// context passed to Connect: cancelling that context closes the session. The
+// login probe previously ran through connectedAgent, which cached the probe's
+// agent; when the short-lived probe context was then cancelled the cached
+// session was torn down, so Start reused a dead agent and agent.Forward failed
+// with "start ngrok tunnel: failed to start tunnel: session closed".
+//
+// The fix makes CheckAccount probe with its own throwaway agent (never cached)
+// while Start always establishes a fresh, durable session. A factory-injected
+// fake agent lets this test assert the exact contract that prevents the bug:
+// CheckAccount builds exactly one probe agent, Start builds a second, distinct
+// agent to forward through, and never reuses the probe's.
+func TestNgrokCheckAccountDoesNotPoisonStartSession(t *testing.T) {
+	var agents []*fakeNgrokAgent
+	ng := &ngrokTunnel{
+		domain: "mcp.example.com",
+		token:  "test-token",
+		agentFactory: func(...ngrok.AgentOption) (ngrok.Agent, error) {
+			a := &fakeNgrokAgent{
+				fwd: &fakeNgrokForwarder{u: &url.URL{Scheme: "https", Host: "mcp.example.com"}},
+			}
+			agents = append(agents, a)
+			return a, nil
+		},
+	}
+
+	// A successful login probe must fail fast with no error and, crucially,
+	// must not cache the probed agent for later reuse.
+	require.NoError(t, ng.CheckAccount(context.Background()))
+	require.Len(t, agents, 1, "CheckAccount must build exactly one throwaway probe agent")
+	probe := agents[0]
+
+	// Start must establish its own fresh session and still succeed after the
+	// probe. A custom domain is used so Start takes the pre-assigned-URL
+	// branch and does not probe public reachability.
+	err := ng.Start(context.Background(), "127.0.0.1:8893")
+	require.NoError(t, err, "Start must succeed with its own session after a login probe")
+
+	require.Len(t, agents, 2, "Start must build a fresh agent rather than reuse the probe's")
+	startAgent := agents[1]
+	require.NotSame(t, probe, startAgent, "Start must not reuse the CheckAccount probe agent")
+
+	// The probe's connect ran under a short probe-bound context (its own
+	// throwaway session), while Start's connect ran under the caller context —
+	// confirming the two sessions are independent.
+	require.NotNil(t, probe.connectCtx, "probe agent must have received a connect context")
+	require.NotNil(t, startAgent.connectCtx, "start agent must have received a connect context")
+	require.NotEqual(t, probe.connectCtx, startAgent.connectCtx, "probe and start sessions must use independent contexts")
 }
