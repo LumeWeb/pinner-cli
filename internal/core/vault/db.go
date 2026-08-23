@@ -2,6 +2,7 @@ package vault
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"sync"
@@ -36,6 +37,35 @@ func OpenDB(dbPath string) (*gorm.DB, error) {
 // created by create/restore/cache rebuild (all of which migrate).
 func OpenDBNoMigrate(dbPath string) (*gorm.DB, error) {
 	return openDB(dbPath, false)
+}
+
+// OpenDBUpgradeIfStale opens the vault SQLite cache and, only when the on-disk
+// schema lags the embedded migrations, applies the pending ones.
+//
+// This is the per-command service-open path. Using plain OpenDBNoMigrate here
+// was a latent upgrade bug: a profile cache created before a later migration
+// (e.g. the versioning migration 0002 that added files.seq / files.version_id)
+// would open with an old schema and every subsequent write would fail with
+// "no such column: seq". We must not run the full goose.Up on every read-only
+// `ls`/`stat`/`cat` (the regression TestOpenDBNoMigrateDoesNotMigrate guards
+// against), so we pay only a single cheap goose version lookup and run goose.Up
+// solely when the DB is actually behind — once, after which the version check
+// short-circuits. Up-to-date databases are left untouched.
+func OpenDBUpgradeIfStale(dbPath string) (*gorm.DB, error) {
+	db, err := openDB(dbPath, false)
+	if err != nil {
+		return nil, err
+	}
+	stale, err := migrateIfStale(db)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check vault database schema version: %w", err)
+	}
+	if stale {
+		if err := migrate(db); err != nil {
+			return nil, err
+		}
+	}
+	return db, nil
 }
 
 func openDB(dbPath string, applyMigrations bool) (*gorm.DB, error) {
@@ -129,4 +159,50 @@ func migrate(db *gorm.DB) error {
 	}
 
 	return nil
+}
+
+// migrateIfStale reports whether the on-disk schema lags the newest embedded
+// migration. Like migrate it mutates goose's package-global state, so it takes
+// the same lock to remain safe under concurrent opens. It never writes to the
+// database beyond goose's version lookup (which, for a pre-existing DB, is a
+// single SELECT on goose_vault_version); a genuinely empty DB has its version
+// table created and reads at version 0, which is correctly reported as stale.
+func migrateIfStale(db *gorm.DB) (bool, error) {
+	migrateMu.Lock()
+	defer migrateMu.Unlock()
+
+	sqlDb, err := db.DB()
+	if err != nil {
+		return false, fmt.Errorf("failed to get sql.DB handle: %w", err)
+	}
+
+	fsys, err := vaultMigrationsFS()
+	if err != nil {
+		return false, fmt.Errorf("failed to load embedded migrations: %w", err)
+	}
+
+	goose.SetBaseFS(fsys)
+	goose.SetTableName(gooseVersionTable)
+	defer goose.SetBaseFS(nil) // hygiene: clear the global between opens
+
+	if err := goose.SetDialect("sqlite3"); err != nil {
+		return false, fmt.Errorf("failed to select goose dialect: %w", err)
+	}
+
+	// Newest migration version that ships with this binary.
+	migrations, err := goose.CollectMigrations(".", 0, math.MaxInt64)
+	if err != nil {
+		return false, err
+	}
+	latest, err := migrations.Last()
+	if err != nil {
+		return false, err
+	}
+
+	current, err := goose.GetDBVersion(sqlDb)
+	if err != nil {
+		return false, err
+	}
+
+	return current < latest.Version, nil
 }
