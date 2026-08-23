@@ -3,6 +3,8 @@ package mcp
 import (
 	"context"
 
+	"github.com/samber/lo"
+
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/wizard"
@@ -72,20 +74,19 @@ type CapabilityReport struct {
 }
 
 // sourceModesFor returns the UploadSource modes valid for the transport, in a
-// stable order. It is derived from the same transport decision the resolver
-// enforces (UploadSource.Available), so the report cannot drift from what the
-// tools accept.
+// stable order. It derives from transfer.SourceModeEnumValues — the same source
+// of truth used to rewrite the published upload/vault tool schemas — so the
+// advertised capabilities report can never drift from the enum a client is
+// allowed to pass. The FileInputCapability names intentionally equal the
+// FileSourceMode strings they mirror.
 func sourceModesFor(t transfer.TransportKind) []FileInputCapability {
-	switch t {
-	case transfer.TransportStdio:
-		return []FileInputCapability{CapabilityLocalPath}
-	case transfer.TransportHTTP:
-		return []FileInputCapability{CapabilityMint}
-	case transfer.TransportOpenAI:
-		return []FileInputCapability{CapabilityRelayURL, CapabilityDataURI}
-	default:
+	values := transfer.SourceModeEnumValues(t)
+	if len(values) == 0 {
 		return nil
 	}
+	return lo.Map(values, func(v string, _ int) FileInputCapability {
+		return FileInputCapability(v)
+	})
 }
 
 // sinkModesFor returns the DownloadSink modes valid for the transport. It is

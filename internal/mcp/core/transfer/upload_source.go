@@ -2,6 +2,7 @@ package transfer
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -64,6 +65,62 @@ type UploadSource struct {
 	Path string         `json:"path,omitempty" jsonschema:"description=Host-side path. Only for mode=path (co-located stdio)."`
 	URL  string         `json:"url,omitempty" jsonschema:"description=Server-fetchable HTTPS URL. Only for mode=url (OpenAI tunnel)."`
 	Data string         `json:"data,omitempty" jsonschema:"description=RFC 2397 data: URI. Only for mode=data (OpenAI tunnel)."`
+}
+
+// SourceModeEnumValues returns the UploadSource.mode string values that are
+// valid for the given transport, in stable order. It is the single source of
+// truth for both the published tool schema (via RewriteSourceModeEnum) and the
+// advertised capabilities, so a supported mode is never absent from the schema
+// and an unsupported mode is never surfaced to a model.
+func SourceModeEnumValues(t TransportKind) []string {
+	switch t {
+	case TransportStdio:
+		return []string{string(SourcePath)}
+	case TransportHTTP:
+		return []string{string(SourceMint)}
+	case TransportOpenAI:
+		return []string{string(SourceURL), string(SourceData)}
+	default:
+		// Unknown transport: advertise nothing. Production always passes one of
+		// the three known kinds, so this only guards callers that misuse the
+		// function (and matches capabilities' historic nil-for-unknown).
+		return nil
+	}
+}
+
+// RewriteSourceModeEnum rewrites the nested source.mode enum inside a tool
+// schema that embeds an UploadSource so it advertises only the modes valid for
+// transport t. The toolargs schema reflector (DoNotReference) inlines the
+// UploadSource object as properties.source.properties.mode, which is exactly
+// the shape this walks.
+//
+// Previously the schema was built statically and its enum carried only "path"
+// on every transport (invopop/jsonschema parses jsonschema:"enum=path,mint,..."
+// as just enum=path), so on an HTTP connection capabilities() reported
+// ["mint"] while the published inputSchema still said enum ["path"] — a client
+// could not legally pass mint. Rewriting the enum from the same source of
+// truth as capabilities removes that drift. If the expected shape is not found
+// the schema is returned unchanged so a structural change degrades to
+// "static", never a panic.
+func RewriteSourceModeEnum(schema json.RawMessage, t TransportKind) json.RawMessage {
+	var root map[string]any
+	if err := json.Unmarshal(schema, &root); err != nil {
+		return schema
+	}
+	source, ok := root["properties"].(map[string]any)["source"].(map[string]any)
+	if !ok {
+		return schema
+	}
+	mode, ok := source["properties"].(map[string]any)["mode"].(map[string]any)
+	if !ok {
+		return schema
+	}
+	mode["enum"] = SourceModeEnumValues(t)
+	out, err := json.Marshal(root)
+	if err != nil {
+		return schema
+	}
+	return out
 }
 
 // Available reports whether the source mode is usable on the given transport.

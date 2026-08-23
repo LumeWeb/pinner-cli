@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/invopop/jsonschema"
+	"github.com/samber/lo"
 	ipfs "go.lumeweb.com/ipfs-sdk"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
@@ -277,11 +278,9 @@ func dnsRequirementsHandler(ws wizard.WebsitesResourceProvider) model.ResourceHa
 			}
 			if cfg != nil && cfg.Nameservers != nil && len(*cfg.Nameservers) > 0 {
 				reqs.Nameservers = *cfg.Nameservers
-				nsRecords := make([]DNSRecord, 0, len(reqs.Nameservers))
-				for _, ns := range reqs.Nameservers {
-					nsRecords = append(nsRecords, DNSRecord{Name: website.Domain, Type: "NS", Value: ns})
-				}
-				reqs.Records = nsRecords
+				reqs.Records = lo.Map(reqs.Nameservers, func(ns string, _ int) DNSRecord {
+					return DNSRecord{Name: website.Domain, Type: "NS", Value: ns}
+				})
 			}
 			// If no nameservers were returned, keep the placeholder NS record
 			// from buildDNSRequirements so the user knows NS delegation is required.
