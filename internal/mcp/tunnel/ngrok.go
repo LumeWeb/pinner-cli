@@ -43,6 +43,12 @@ type ngrokTunnel struct {
 	// failing dialer to exercise the bounded-connect path without any network.
 	dialer ngrok.Dialer
 
+	// agentFactory, when non-nil, builds the ngrok agent used by this tunnel.
+	// Production tunnels leave it nil (defaulting to ngrok.NewAgent); tests
+	// inject it to observe agent construction and inject fake agents without
+	// any network.
+	agentFactory func(...ngrok.AgentOption) (ngrok.Agent, error)
+
 	// agent and fwd are the embedded pieces created in Start.
 	agent ngrok.Agent
 	fwd   ngrok.EndpointForwarder
@@ -222,7 +228,11 @@ func (n *ngrokTunnel) buildAgent() (ngrok.Agent, error) {
 		agentOpts = append(agentOpts, ngrok.WithAuthtoken(tok))
 	}
 
-	agent, err := ngrok.NewAgent(agentOpts...)
+	newAgent := n.agentFactory
+	if newAgent == nil {
+		newAgent = ngrok.NewAgent
+	}
+	agent, err := newAgent(agentOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("construct ngrok agent: %w", err)
 	}
