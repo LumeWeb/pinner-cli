@@ -27,6 +27,12 @@ export interface IPFSUploadConfig {
   submitTool: string;
   /** app-only tool that polls async upload status. */
   statusTool: string;
+  /** Optional canonical upload handle already prepared by the model-facing
+   *  upload_file tool. When set, submitTool (ipfs_upload_submit) CONTINUES
+   *  that same operation (same URL + handle) so this App fulfills the model's
+   *  canonical upload instead of starting a sibling. Omit for a standalone
+   *  prepare-a-fresh-upload flow. */
+  seedHandle?: string;
   /** maximum polling iterations before giving up. */
   maxPoll: number;
   /** delay between status polls (ms). Spacing polls so the iteration budget
@@ -94,11 +100,20 @@ export function createIPFSUploadMachine(cfg: IPFSUploadConfig, callTool: CallToo
     return { ...ctx, opState: typeof st === "string" ? st : "" };
   });
 
-  // Capture the minted presigned URL.
+  // Capture the minted presigned URL and, when the submit continued an
+  // already-prepared canonical operation, the upload_handle it carries — so the
+  // machine polls the SAME handle the model's upload_file prepared (the XHR 202
+  // returns the same handle again, but capturing it here keeps the continue path
+  // correct even before the byte transfer).
   const setUrl = reduce((ctx: IPFSUploadContext, ev: any) => {
     const sc = dSc(ev);
     const url = sc && typeof sc === "object" ? sc.url : undefined;
-    return { ...ctx, url: url != null ? String(url) : "" };
+    const preHandle = sc && typeof sc === "object" ? sc.upload_handle : undefined;
+    return {
+      ...ctx,
+      url: url != null ? String(url) : "",
+      handle: preHandle != null && preHandle !== "" ? String(preHandle) : ctx.handle,
+    };
   });
 
   // Capture the upload_handle returned by the XHR's 202 response. The invoke
@@ -123,7 +138,18 @@ export function createIPFSUploadMachine(cfg: IPFSUploadConfig, callTool: CallToo
 
   // --- guards -------------------------------------------------------------
 
-  const mintOk = (_ctx: IPFSUploadContext, ev: any) => !dIsError(ev);
+  // A successful mint yields a presigned PUT URL to XHR the bytes to. If the
+  // mint response carried NO url (an already-claimed/continued canonical
+  // operation whose bytes were supplied by the other participant), we must NOT
+  // XHR an empty URL — see mintAlreadyClaimed instead.
+  const mintOk = (_ctx: IPFSUploadContext, ev: any) => !dIsError(ev) && !!dSc(ev)?.url;
+  // The handle was already claimed/completed by the other participant (agent or
+  // a prior App fulfillment): the response carries an upload_handle but no url,
+  // so skip the byte transfer entirely and just poll the shared task for the
+  // CID. This is how the App converges on the SAME operation without a second
+  // upload attempt.
+  const mintAlreadyClaimed = (_ctx: IPFSUploadContext, ev: any) =>
+    !dIsError(ev) && !dSc(ev)?.url && !!dSc(ev)?.upload_handle;
   const mintErr = (_ctx: IPFSUploadContext, ev: any) => dIsError(ev);
   const doneOk = (_ctx: IPFSUploadContext, ev: any) => ev?.data?.terminalOk;
   const doneFail = (_ctx: IPFSUploadContext, ev: any) => ev?.data?.terminalFail;
@@ -131,7 +157,15 @@ export function createIPFSUploadMachine(cfg: IPFSUploadConfig, callTool: CallToo
   // --- invokes ------------------------------------------------------------
 
   const mintUrl = (ctx: IPFSUploadContext): Promise<ToolResult> =>
-    callTool({ name: cfg.submitTool, arguments: { name: ctx.name || undefined } });
+    callTool({
+      name: cfg.submitTool,
+      arguments: {
+        name: ctx.name || undefined,
+        // Continue the model-prepared operation so this App fulfills the SAME
+        // canonical handle (no sibling upload) instead of minting a fresh one.
+        ...(cfg.seedHandle ? { handle: cfg.seedHandle } : {}),
+      },
+    });
 
   // Run the out-of-band byte transfer (Uppy XHR) against the minted presigned
   // URL and resolve the upload_handle from the 202 response. Throws on any
@@ -182,7 +216,10 @@ export function createIPFSUploadMachine(cfg: IPFSUploadConfig, callTool: CallToo
       idle: state(transition("start", "minting", setMeta)),
       minting: invoke(
         mintUrl,
+        // Fresh mint → XHR the bytes to the presigned URL.
         transition("done", "uploading", guard(mintOk), setUrl),
+        // Already-claimed handle → skip the byte transfer, poll the shared task.
+        transition("done", "polling", guard(mintAlreadyClaimed), setUrl, setOpState),
         transition("done", "error", guard(mintErr)),
         transition("error", "error"),
       ),

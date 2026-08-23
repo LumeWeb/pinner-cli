@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -434,6 +435,284 @@ func TestIPFSUploadCORSOpaqueNull(t *testing.T) {
 	evilResp.Body.Close()
 	if aoc := evilResp.Header.Get("Access-Control-Allow-Origin"); aoc != "https://a1b2c3d4e5f6g7h8.host-sandbox.example" {
 		t.Fatalf("dynamic origin not reflected: Allow-Origin = %q", aoc)
+	}
+}
+
+// buildIPFSUploadSharedServer constructs a server that mirrors the PRODUCTION
+// wiring for the shared upload operation: the REAL transport-aware upload_file
+// descriptor (HTTP/tunnel mint mode) plus the "Upload to IPFS" App (its
+// helpers) plus the model-facing async upload tools (upload_status/list) — all
+// backed by the SAME Upload coordinator and SAME UploadTaskManager. This is the
+// surface a single process serves, which is exactly what lets the model path
+// (upload_file → upload_status) and the App path (ipfs_upload_submit →
+// ipfs_upload_status) converge on one canonical handle.
+func buildIPFSUploadSharedServer(t *testing.T) (*mcp.Server, *transfer.Upload, *transfer.UploadTaskManager) {
+	t.Helper()
+
+	var gotBytes atomic.Value
+	mgr := transfer.NewUploadTaskManager(func(_ context.Context, reader io.Reader, _ int64, name string, _ bool) (any, error) {
+		b, _ := io.ReadAll(reader)
+		gotBytes.Store(string(b))
+		return map[string]any{"cid": "QmShared", "name": name}, nil
+	}, 0)
+	cu := transfer.NewHTTPUpload(mgr, 1<<20)
+	t.Cleanup(func() { cu.Stop(context.Background()) })
+
+	catalog := NewToolCatalog()
+	srv := sdk.NewServer(nil)
+
+	// The real HTTP/tunnel upload_file descriptor (mirrors custom_tools.go).
+	uploadFileDesc := transfer.NewUploadFileDescriptor(false, false, nil, cu, nil, nil, 0)
+	catalog.Add(model.ToolEntryFromDescriptor(uploadFileDesc))
+	if err := upload.RegisterIPFSUploadApp(srv, catalog, cu); err != nil {
+		t.Fatalf("upload.RegisterIPFSUploadApp: %v", err)
+	}
+	copyCatalogMetaToDescriptor(&uploadFileDesc, catalog, "upload_file")
+	if err := RegisterOfficialDescriptor(srv, uploadFileDesc); err != nil {
+		t.Fatalf("RegisterOfficialDescriptor(upload_file): %v", err)
+	}
+	// The model-facing upload_status/list tools (mirrors custom_tools.go's
+	// NewAsyncUploadTools registration) share the same manager.
+	for _, desc := range upload.NewAsyncUploadTools(mgr) {
+		if err := RegisterOfficialDescriptor(srv, desc); err != nil {
+			t.Fatalf("RegisterOfficialDescriptor(%s): %v", desc.Name, err)
+		}
+	}
+	if err := RegisterOfficialCuratedTools(srv, catalog); err != nil {
+		t.Fatalf("RegisterOfficialCuratedTools: %v", err)
+	}
+	return srv, cu, mgr
+}
+
+// TestIPFSUploadSharedOperation covers the heart of the refactor: the
+// model-facing upload_file and the MCP App's ipfs_upload_submit operate on the
+// SAME canonical upload handle, so whoever supplies the bytes first becomes the
+// authoritative result and no sibling upload is ever created. Concretely it
+// proves all five required properties end-to-end over the real MCP surface:
+//
+//  1. model path can create/use the operation normally (upload_file returns a
+//     pre-created canonical handle);
+//  2. MCP App path can fulfill that SAME operation (ipfs_upload_submit with
+//     the model's handle returns the SAME url+handle — continued, not a mint);
+//  3. both paths observe the same final task/CID (upload_status and
+//     ipfs_upload_status agree on one completed task/CID);
+//  4. a second fulfillment attempt does not create a second upload (re-PUT →
+//     404; re-submit → already_claimed; upload_list stays at one task);
+//  5. existing non-App/text-only behavior still works (upload_file's Text
+//     channel still carries the url + handle for a text-only client).
+func TestIPFSUploadSharedOperation(t *testing.T) {
+	srv, _, mgr := buildIPFSUploadSharedServer(t)
+	cs := connectOfficialClient(t, srv)
+	ctx := context.Background()
+
+	// (1) + (5) Model creates/uses the operation; text-only channel carries it.
+	modelRes, err := cs.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "upload_file",
+		Arguments: map[string]any{"source": map[string]any{"mode": "mint"}, "name": "shared.bin"},
+	})
+	if err != nil {
+		t.Fatalf("upload_file: %v", err)
+	}
+	if modelRes.IsError {
+		t.Fatalf("upload_file error: %s", requireText(t, modelRes))
+	}
+	b, _ := json.Marshal(modelRes.StructuredContent)
+	var modelSC map[string]any
+	_ = json.Unmarshal(b, &modelSC)
+	modelURL, _ := modelSC["url"].(string)
+	handle, _ := modelSC["upload_handle"].(string)
+	if !strings.Contains(modelURL, "/upload/") || handle == "" {
+		t.Fatalf("upload_file did not prepare a canonical op: url=%q handle=%q sc=%s", modelURL, handle, b)
+	}
+	// (5) A text-only MCP client (no widget) still sees the url + handle.
+	modelText := requireText(t, modelRes)
+	if !strings.Contains(modelText, modelURL) || !strings.Contains(modelText, handle) {
+		t.Fatalf("text-only channel missing url/handle: %s", modelText)
+	}
+
+	// (2) App continues the SAME operation, not a sibling mint.
+	appRes, err := cs.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "ipfs_upload_submit",
+		Arguments: map[string]any{"handle": handle},
+	})
+	if err != nil {
+		t.Fatalf("ipfs_upload_submit: %v", err)
+	}
+	if appRes.IsError {
+		t.Fatalf("ipfs_upload_submit error: %s", requireText(t, appRes))
+	}
+	b2, _ := json.Marshal(appRes.StructuredContent)
+	var appSC map[string]any
+	_ = json.Unmarshal(b2, &appSC)
+	appURL, _ := appSC["url"].(string)
+	if appURL != modelURL {
+		t.Fatalf("app continued op returned a DIFFERENT endpoint (sibling):\n  model=%q\n  app  =%q", modelURL, appURL)
+	}
+	if continued, _ := appSC["continued"].(bool); !continued {
+		t.Fatalf("app submit did not report continued=true: %s", b2)
+	}
+	// The same handle, exactly one pre-created task.
+	if appHandle, _ := appSC["upload_handle"].(string); appHandle != handle {
+		t.Fatalf("app submit changed handle: want %q got %q", handle, appHandle)
+	}
+	if req2, _ := mgr.Get(handle); req2 == nil || req2.State != transfer.UploadStatePrepared {
+		t.Fatalf("expected exactly one prepared task for the op")
+	}
+	if n := len(mgr.List()); n != 1 {
+		t.Fatalf("expected a single shared operation, got %d tasks", n)
+	}
+
+	// App file picker supplies the bytes (the Uppy XHR PUT path).
+	req, err := http.NewRequest(http.MethodPut, appURL, strings.NewReader("shared bytes"))
+	if err != nil {
+		t.Fatalf("PUT req: %v", err)
+	}
+	putResp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PUT: %v", err)
+	}
+	defer putResp.Body.Close()
+	if putResp.StatusCode != http.StatusAccepted {
+		t.Fatalf("PUT status = %d, want 202", putResp.StatusCode)
+	}
+	var putOut map[string]any
+	if err := json.NewDecoder(putResp.Body).Decode(&putOut); err != nil {
+		t.Fatalf("decode 202: %v", err)
+	}
+	if putHandle, _ := putOut["upload_handle"].(string); putHandle != handle {
+		t.Fatalf("202 upload_handle = %q, want the same canonical handle %q", putHandle, handle)
+	}
+
+	// (3) Both paths observe the same completed task/CID.
+	waitCompleted := func(tool, h string) *mcp.CallToolResult {
+		t.Helper()
+		deadline := time.Now().Add(2 * time.Second)
+		for {
+			pr, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: tool, Arguments: map[string]any{"handle": h}})
+			if err != nil {
+				t.Fatalf("%s: %v", tool, err)
+			}
+			if s, ok := taskStateOf(pr); ok && s == transfer.UploadStateCompleted {
+				return pr
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("%s did not complete in time", tool)
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	modelPoll := waitCompleted("upload_status", handle)
+	appPoll := waitCompleted("ipfs_upload_status", handle)
+
+	cidOf := func(r *mcp.CallToolResult) string {
+		pb, _ := json.Marshal(r.StructuredContent)
+		var m map[string]any
+		_ = json.Unmarshal(pb, &m)
+		res, _ := m["result"].(map[string]any)
+		c, _ := res["cid"].(string)
+		return c
+	}
+	modelCID := cidOf(modelPoll)
+	appCID := cidOf(appPoll)
+	if modelCID == "" || modelCID != appCID {
+		t.Fatalf("model and app observe different CIDs: model=%q app=%q", modelCID, appCID)
+	}
+	if modelCID != "QmShared" {
+		t.Fatalf("unexpected CID %q for shared op", modelCID)
+	}
+
+	// (4) A second fulfillment attempt does NOT create a second upload.
+	// 4a. Re-PUT to the spent endpoint is rejected (404), never re-accepted.
+	reput, err := http.NewRequest(http.MethodPut, appURL, strings.NewReader("second attempt"))
+	if err != nil {
+		t.Fatalf("re-PUT req: %v", err)
+	}
+	reputResp, err := http.DefaultClient.Do(reput)
+	if err != nil {
+		t.Fatalf("re-PUT: %v", err)
+	}
+	defer reputResp.Body.Close()
+	if reputResp.StatusCode != http.StatusNotFound {
+		t.Fatalf("re-PUT status = %d, want 404", reputResp.StatusCode)
+	}
+	// 4b. Re-submit reports already_claimed, not a fresh mint.
+	againRes, err := cs.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "ipfs_upload_submit",
+		Arguments: map[string]any{"handle": handle},
+	})
+	if err != nil {
+		t.Fatalf("re-submit: %v", err)
+	}
+	if againRes.IsError {
+		t.Fatalf("re-submit returned error: %s", requireText(t, againRes))
+	}
+	agb, _ := json.Marshal(againRes.StructuredContent)
+	var againSC map[string]any
+	_ = json.Unmarshal(agb, &againSC)
+	if claimed, _ := againSC["already_claimed"].(bool); !claimed {
+		t.Fatalf("re-submit did not report already_claimed: %s", agb)
+	}
+	// 4c. Still exactly ONE tracked task with the SAME CID — no sibling.
+	if n := len(mgr.List()); n != 1 {
+		t.Fatalf("second fulfillment created a sibling upload: %d tasks", n)
+	}
+	finalTask, err := mgr.Get(handle)
+	if err != nil {
+		t.Fatalf("handle lost after second fulfillment: %v", err)
+	}
+	if finalTask.Result == nil || finalTask.Result.(map[string]any)["cid"] != modelCID {
+		t.Fatalf("final task CID changed after second fulfillment")
+	}
+}
+
+// TestIPFSUploadSubmitStalePreparedHandle verifies the review fix: a handle
+// that was prepared (canonical op minted) but never fulfilled — whose presigned
+// endpoint has since lapsed — is reported as STALE (error guiding the app to
+// prepare a fresh upload), NOT as already_claimed. A Prepared (byte-less) task
+// cannot be polled for a CID, so claiming it would leave the app stuck; and it
+// must not be mistaken for a completed/claimed op that the app should just
+// poll.
+func TestIPFSUploadSubmitStalePreparedHandle(t *testing.T) {
+	srv, cu, _ := buildIPFSUploadSharedServer(t)
+	cs := connectOfficialClient(t, srv)
+	ctx := context.Background()
+
+	// Model prepares a canonical operation (never fulfills it).
+	modelRes, err := cs.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "upload_file",
+		Arguments: map[string]any{"source": map[string]any{"mode": "mint"}, "name": "stale.bin"},
+	})
+	if err != nil {
+		t.Fatalf("upload_file: %v", err)
+	}
+	b, _ := json.Marshal(modelRes.StructuredContent)
+	var modelSC map[string]any
+	_ = json.Unmarshal(b, &modelSC)
+	handle, _ := modelSC["upload_handle"].(string)
+	if handle == "" {
+		t.Fatalf("upload_file did not return a handle: %s", b)
+	}
+
+	// Advance the coordinator's clock past the presigned endpoint's TTL so the
+	// handle's endpoint lapses while its task is still Prepared (never
+	// fulfilled). The UploadTaskManager keeps real time, so the (recently
+	// created) Prepared task is still tracked.
+	cu.SetNow(func() time.Time { return time.Now().Add(10 * time.Minute) })
+
+	// The App asks to continue that handle: it must get a STALE error, not an
+	// already_claimed result (there are no bytes and no CID to poll).
+	staleRes, err := cs.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "ipfs_upload_submit",
+		Arguments: map[string]any{"handle": handle},
+	})
+	if err != nil {
+		t.Fatalf("ipfs_upload_submit: %v", err)
+	}
+	if !staleRes.IsError {
+		t.Fatalf("stale prepared handle must error, got: %s", requireText(t, staleRes))
+	}
+	if !strings.Contains(requireText(t, staleRes), "prepared but never fulfilled") {
+		t.Fatalf("stale error should explain the prepared-but-never-fulfilled state: %s", requireText(t, staleRes))
 	}
 }
 

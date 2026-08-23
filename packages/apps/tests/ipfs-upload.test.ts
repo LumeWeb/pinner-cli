@@ -166,6 +166,51 @@ describe("ipfs-upload machine", () => {
     await untilState(service, IPFSUploadState.Error);
   });
 
+  it("already-claimed mint (no url) skips XHR and polls the shared handle", async () => {
+    start();
+    await untilState(service, IPFSUploadState.Minting);
+
+    // The canonical operation was already fulfilled/claimed by the other
+    // participant (the agent's presigned PUT, or a prior App fulfillment):
+    // ipfs_upload_submit returns the SAME upload_handle but no presigned url.
+    // The machine must NOT XHR an empty URL — it should skip the byte transfer
+    // entirely and just poll the shared task for the CID.
+    mintGate().resolve({
+      structuredContent: { upload_handle: "h-claimed", already_claimed: true, state: "running" },
+    });
+    await untilState(service, IPFSUploadState.Polling);
+
+    // No XHR attempt against an empty URL; the shared handle is captured.
+    expect(xhrCalls.length).toBe(0);
+    expect(ctx().handle).toBe("h-claimed");
+
+    // Poll the shared task (first poll is gate[1] because the XHR slot was
+    // skipped) and observe the same final CID.
+    gate[1].resolve(statusOk("completed", "QmClaimed"));
+    await untilState(service, IPFSUploadState.Ok);
+    expect(ctx().outCid).toBe("QmClaimed");
+  });
+
+  it("already-claimed mint that is still running polls until it completes", async () => {
+    start();
+    await untilState(service, IPFSUploadState.Minting);
+
+    mintGate().resolve({
+      structuredContent: { upload_handle: "h-running", already_claimed: true, state: "queued" },
+    });
+    await untilState(service, IPFSUploadState.Polling);
+    expect(xhrCalls.length).toBe(0);
+
+    // Poll 1: still queued → non-terminal → poll again.
+    gate[1].resolve(statusOk("queued"));
+    await until(service, () => gate.length > 2);
+    expect(state()).toBe(IPFSUploadState.Polling);
+    // Poll 2: completed → ok.
+    gate[2].resolve(statusOk("completed", "QmTwoClaimed"));
+    await untilState(service, IPFSUploadState.Ok);
+    expect(ctx().outCid).toBe("QmTwoClaimed");
+  });
+
   it("mint isError → error terminal without XHR", async () => {
     start();
     await untilState(service, IPFSUploadState.Minting);

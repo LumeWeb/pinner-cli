@@ -199,6 +199,152 @@ func TestCurlUploadToolDescriptor(t *testing.T) {
 	require.Contains(t, err.Error(), "invalid ttl")
 }
 
+// TestPrepareFulfillSharedOperation covers the shared canonical upload
+// operation at the manager level: Prepare pre-registers a visible-but-idle
+// handle, Fulfill supplies bytes and runs it, and a second fulfillment attempt
+// is idempotently rejected (no second upload ever runs for the same handle).
+func TestPrepareFulfillSharedOperation(t *testing.T) {
+	var ran atomic.Int64
+	var bytesRead atomic.Value
+	mgr := NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
+		ran.Add(1)
+		b, _ := io.ReadAll(reader)
+		bytesRead.Store(string(b))
+		return map[string]any{"cid": "QmPrepared"}, nil
+	}, 0)
+
+	// Prepare the canonical operation: visible to status/list but not run.
+	handle, err := mgr.Prepare("share.txt", time.Minute)
+	require.NoError(t, err)
+	pre, err := mgr.Get(handle)
+	require.NoError(t, err)
+	require.Equal(t, UploadStatePrepared, pre.State)
+	require.Zero(t, ran.Load())
+
+	// First fulfillment supplies bytes -> runs and completes once.
+	require.NoError(t, mgr.Fulfill(context.Background(), handle, io.NopCloser(strings.NewReader("bytes")), 5, "", false))
+	require.Eventually(t, func() bool {
+		t, err := mgr.Get(handle)
+		return err == nil && t.State == UploadStateCompleted
+	}, 2*time.Second, 10*time.Millisecond)
+	require.Equal(t, int64(1), ran.Load())
+	require.Equal(t, "bytes", bytesRead.Load().(string))
+	task, err := mgr.Get(handle)
+	require.NoError(t, err)
+	require.Equal(t, "share.txt", task.Name)
+	require.Equal(t, "QmPrepared", task.Result.(map[string]any)["cid"])
+
+	// Second fulfillment attempt is idempotently rejected: no second run, and
+	// the handle still resolves to the SAME (first) completed result.
+	err = mgr.Fulfill(context.Background(), handle, io.NopCloser(strings.NewReader("other")), 6, "", false)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "already finished")
+	require.Equal(t, int64(1), ran.Load())
+	require.Equal(t, "bytes", bytesRead.Load().(string))
+
+	// Exactly one task exists for the operation (no sibling was created).
+	require.Len(t, mgr.List(), 1)
+}
+
+// TestPrepareCancel verifies a prepared-but-unfulfilled handle can be
+// cancelled without ever running an upload.
+func TestPrepareCancel(t *testing.T) {
+	var ran int32
+	mgr := NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
+		atomic.AddInt32(&ran, 1)
+		return map[string]any{"cid": "QmX"}, nil
+	}, 0)
+	handle, err := mgr.Prepare("idle.txt", time.Minute)
+	require.NoError(t, err)
+	require.NoError(t, mgr.Cancel(handle))
+	c, err := mgr.Get(handle)
+	require.NoError(t, err)
+	require.Equal(t, UploadStateCancelled, c.State)
+	require.Equal(t, int32(0), atomic.LoadInt32(&ran))
+}
+
+// TestPrepareMaxPreparedCap verifies the prepared-handle flood guard: when the
+// number of outstanding (Prepared, unfulfilled) canonical operations reaches
+// MaxPrepared, further Prepare calls are rejected instead of accumulating
+// unbounded handles. Prepared handles hold no bytes and no executor slot, so
+// they are bounded independently of MaxActive (a Kody finding).
+func TestPrepareMaxPreparedCap(t *testing.T) {
+	mgr := NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool) (any, error) {
+		return map[string]any{"cid": "QmX"}, nil
+	}, 0)
+	mgr.MaxPrepared = 2
+
+	// Two prepared handles fit within the cap.
+	h1, err := mgr.Prepare("a.txt", time.Minute)
+	require.NoError(t, err)
+	h2, err := mgr.Prepare("b.txt", time.Minute)
+	require.NoError(t, err)
+	require.NotEmpty(t, h1)
+	require.NotEmpty(t, h2)
+
+	// A third is rejected once the cap is reached.
+	_, err = mgr.Prepare("c.txt", time.Minute)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "too many unresolved upload preparations")
+
+	// Fulfilling one frees a prepared slot: prepare again now succeeds.
+	require.NoError(t, mgr.Fulfill(context.Background(), h1, io.NopCloser(strings.NewReader("x")), 1, "", false))
+	require.Eventually(t, func() bool {
+		t, err := mgr.Get(h1)
+		return err == nil && t.State == UploadStateCompleted
+	}, 2*time.Second, 10*time.Millisecond)
+
+	h3, err := mgr.Prepare("d.txt", time.Minute)
+	require.NoError(t, err)
+	require.NotEmpty(t, h3)
+}
+
+// TestPrepareRetainsForEndpointTTL verifies the review fix: a prepared task is
+// retained for the endpoint TTL recorded at Prepare time, NOT the hardcoded
+// manager default. This guarantees a task is never pruned while its presigned
+// endpoint is still live — a late PUT can always still fulfill it. (A task
+// pruned early while its endpoint stayed valid would make Fulfill fail with
+// "unknown upload handle" and break canonical-operation convergence.)
+func TestPrepareRetainsForEndpointTTL(t *testing.T) {
+	mgr := NewUploadTaskManager(func(_ context.Context, reader io.Reader, _ int64, name string, _ bool) (any, error) {
+		_, _ = io.Copy(io.Discard, reader)
+		return map[string]any{"cid": "QmX"}, nil
+	}, 0)
+	// Manager-wide default prepared retention (short, endpoint-aligned default).
+	mgr.PreparedTTL = 5 * time.Minute
+
+	// A handle minted with a LONGER custom endpoint TTL must live for that full
+	// window, not just the 5m default.
+	longHandle, err := mgr.Prepare("long.bin", 30*time.Minute)
+	require.NoError(t, err)
+	// Control: a handle whose endpoint TTL equals the short default.
+	shortHandle, err := mgr.Prepare("short.bin", mgr.PreparedTTL)
+	require.NoError(t, err)
+
+	now := time.Now()
+	mgr.mu.Lock()
+	// Backdate both to 10 minutes old: beyond the 5m default, within the 30m
+	// long endpoint TTL. (In-package so we can reach the live tracked task.)
+	mgr.tasks[longHandle].task.CreatedAt = now.Add(-10 * time.Minute)
+	mgr.tasks[shortHandle].task.CreatedAt = now.Add(-10 * time.Minute)
+	mgr.mu.Unlock()
+
+	// Listing/Getting triggers pruneLocked.
+	mgr.List()
+
+	// The long-TTL task SURVIVES (its endpoint is still live, so a PUT can
+	// still fulfill it).
+	lt, err := mgr.Get(longHandle)
+	require.NoError(t, err)
+	require.Equal(t, UploadStatePrepared, lt.State)
+
+	// The default-TTL task is pruned (its endpoint lapsed, handle abandoned and
+	// no longer fulfillable).
+	_, err = mgr.Get(shortHandle)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unknown upload handle")
+}
+
 // TestCurlUploadPrunesExpiredTokens verifies that minting a fresh endpoint
 // sweeps expired, never-used tokens out of the map so a long-lived server does
 // not accumulate permanent entries (a Kody finding).
