@@ -220,7 +220,11 @@ func (cu *Upload) Prepare(name string, ttl time.Duration) (url, handle string) {
 	if ttl <= 0 {
 		ttl = DefaultHTTPUploadTTL
 	}
-	h, err := cu.tasks.Prepare(name)
+	// Record the endpoint TTL on the prepared task so pruneLocked retains it
+	// for the full lifetime of the presigned endpoint (not a hardcoded default),
+	// guaranteeing a PUT can always still fulfill the handle while its endpoint
+	// is live.
+	h, err := cu.tasks.Prepare(name, ttl)
 	if err != nil {
 		return "", ""
 	}

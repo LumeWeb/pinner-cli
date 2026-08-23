@@ -214,7 +214,7 @@ func TestPrepareFulfillSharedOperation(t *testing.T) {
 	}, 0)
 
 	// Prepare the canonical operation: visible to status/list but not run.
-	handle, err := mgr.Prepare("share.txt")
+	handle, err := mgr.Prepare("share.txt", time.Minute)
 	require.NoError(t, err)
 	pre, err := mgr.Get(handle)
 	require.NoError(t, err)
@@ -254,7 +254,7 @@ func TestPrepareCancel(t *testing.T) {
 		atomic.AddInt32(&ran, 1)
 		return map[string]any{"cid": "QmX"}, nil
 	}, 0)
-	handle, err := mgr.Prepare("idle.txt")
+	handle, err := mgr.Prepare("idle.txt", time.Minute)
 	require.NoError(t, err)
 	require.NoError(t, mgr.Cancel(handle))
 	c, err := mgr.Get(handle)
@@ -275,15 +275,15 @@ func TestPrepareMaxPreparedCap(t *testing.T) {
 	mgr.MaxPrepared = 2
 
 	// Two prepared handles fit within the cap.
-	h1, err := mgr.Prepare("a.txt")
+	h1, err := mgr.Prepare("a.txt", time.Minute)
 	require.NoError(t, err)
-	h2, err := mgr.Prepare("b.txt")
+	h2, err := mgr.Prepare("b.txt", time.Minute)
 	require.NoError(t, err)
 	require.NotEmpty(t, h1)
 	require.NotEmpty(t, h2)
 
 	// A third is rejected once the cap is reached.
-	_, err = mgr.Prepare("c.txt")
+	_, err = mgr.Prepare("c.txt", time.Minute)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "too many unresolved upload preparations")
 
@@ -294,9 +294,55 @@ func TestPrepareMaxPreparedCap(t *testing.T) {
 		return err == nil && t.State == UploadStateCompleted
 	}, 2*time.Second, 10*time.Millisecond)
 
-	h3, err := mgr.Prepare("d.txt")
+	h3, err := mgr.Prepare("d.txt", time.Minute)
 	require.NoError(t, err)
 	require.NotEmpty(t, h3)
+}
+
+// TestPrepareRetainsForEndpointTTL verifies the review fix: a prepared task is
+// retained for the endpoint TTL recorded at Prepare time, NOT the hardcoded
+// manager default. This guarantees a task is never pruned while its presigned
+// endpoint is still live — a late PUT can always still fulfill it. (A task
+// pruned early while its endpoint stayed valid would make Fulfill fail with
+// "unknown upload handle" and break canonical-operation convergence.)
+func TestPrepareRetainsForEndpointTTL(t *testing.T) {
+	mgr := NewUploadTaskManager(func(_ context.Context, reader io.Reader, _ int64, name string, _ bool) (any, error) {
+		_, _ = io.Copy(io.Discard, reader)
+		return map[string]any{"cid": "QmX"}, nil
+	}, 0)
+	// Manager-wide default prepared retention (short, endpoint-aligned default).
+	mgr.PreparedTTL = 5 * time.Minute
+
+	// A handle minted with a LONGER custom endpoint TTL must live for that full
+	// window, not just the 5m default.
+	longHandle, err := mgr.Prepare("long.bin", 30*time.Minute)
+	require.NoError(t, err)
+	// Control: a handle whose endpoint TTL equals the short default.
+	shortHandle, err := mgr.Prepare("short.bin", mgr.PreparedTTL)
+	require.NoError(t, err)
+
+	now := time.Now()
+	mgr.mu.Lock()
+	// Backdate both to 10 minutes old: beyond the 5m default, within the 30m
+	// long endpoint TTL. (In-package so we can reach the live tracked task.)
+	mgr.tasks[longHandle].task.CreatedAt = now.Add(-10 * time.Minute)
+	mgr.tasks[shortHandle].task.CreatedAt = now.Add(-10 * time.Minute)
+	mgr.mu.Unlock()
+
+	// Listing/Getting triggers pruneLocked.
+	mgr.List()
+
+	// The long-TTL task SURVIVES (its endpoint is still live, so a PUT can
+	// still fulfill it).
+	lt, err := mgr.Get(longHandle)
+	require.NoError(t, err)
+	require.Equal(t, UploadStatePrepared, lt.State)
+
+	// The default-TTL task is pruned (its endpoint lapsed, handle abandoned and
+	// no longer fulfillable).
+	_, err = mgr.Get(shortHandle)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unknown upload handle")
 }
 
 // TestCurlUploadPrunesExpiredTokens verifies that minting a fresh endpoint

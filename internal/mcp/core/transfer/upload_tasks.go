@@ -88,6 +88,12 @@ type trackedTask struct {
 	// Cancel and the completion goroutine race (http bodies are not guaranteed
 	// to be idempotent on Close).
 	closeOnce sync.Once
+	// preparedTTL is the presigned endpoint lifetime recorded at Prepare time.
+	// pruneLocked evicts an unfulfilled Prepared task against THIS value (the
+	// actual endpoint TTL) so a task is never pruned while its endpoint is
+	// still live. It is set on the trackedTask, not the UploadTask, because it
+	// is purely a retention policy detail for the async manager.
+	preparedTTL time.Duration
 }
 
 // closeReader closes the owned reader exactly once from either the Cancel path
@@ -110,10 +116,14 @@ type UploadTaskManager struct {
 	exec      UploadExecutor
 	ttl       time.Duration
 	MaxActive int
-	// PreparedTTL is how long an unfulfilled Prepared (minted-but-never-supplied)
-	// canonical operation is retained before prune. It is intentionally short
-	// (default: DefaultHTTPUploadTTL) so unfulfilled handles expire about when
-	// their presigned endpoint does, instead of living the full terminal TTL.
+	// PreparedTTL is the fallback how-long an unfulfilled Prepared
+	// (minted-but-never-supplied) canonical operation is retained before prune
+	// when a task is created without its own endpoint TTL. It is intentionally
+	// short (default: DefaultHTTPUploadTTL) so unfulfilled handles expire about
+	// when their presigned endpoint does, instead of living the full terminal
+	// TTL. Prepare() normally records the actual endpoint TTL on each task, and
+	// pruneLocked uses that per-task value so a task is never evicted while its
+	// endpoint is still live; this field only falls back when ttl is unset.
 	PreparedTTL time.Duration
 	// MaxPrepared caps how many outstanding Prepared (unfulfilled) canonical
 	// operations the manager holds at once, guarding against a mint/prepare
@@ -204,7 +214,14 @@ func (m *UploadTaskManager) Start(ctx context.Context, reader io.ReadCloser, siz
 // executor slot. Either the agent transport path (a presigned PUT) or the App
 // file picker fulfills it via Fulfill; duplicate fulfillment is rejected, so
 // whoever completes it first becomes the authoritative single result.
-func (m *UploadTaskManager) Prepare(name string) (string, error) {
+//
+// ttl is the presigned endpoint lifetime that will back this handle (e.g. the
+// TTL used when minting the HTTP PUT endpoint). It is stored on the task so
+// pruneLocked evicts an unfulfilled Prepared task against the TRUE endpoint
+// lifetime rather than a hardcoded default — a task is never pruned while its
+// endpoint is still live, so a late PUT can never hit a pruned handle. A
+// non-positive ttl falls back to the manager-wide PreparedTTL default.
+func (m *UploadTaskManager) Prepare(name string, ttl time.Duration) (string, error) {
 	if m.exec == nil {
 		return "", errors.New("upload executor is not configured")
 	}
@@ -224,7 +241,7 @@ func (m *UploadTaskManager) Prepare(name string) (string, error) {
 		m.mu.Unlock()
 		return "", err
 	}
-	m.tasks[id] = &trackedTask{task: task}
+	m.tasks[id] = &trackedTask{task: task, preparedTTL: ttl}
 	m.mu.Unlock()
 	return id, nil
 }
@@ -530,22 +547,26 @@ func (m *UploadTaskManager) pruneLocked() {
 	if m.ttl <= 0 {
 		return
 	}
-	cutoff := time.Now().Add(-m.ttl)
-	preparedTTL := m.PreparedTTL
-	if preparedTTL <= 0 {
-		preparedTTL = m.ttl
-	}
-	preparedCutoff := time.Now().Add(-preparedTTL)
+	now := time.Now()
 	for id, t := range m.tasks {
 		switch t.task.State {
 		case UploadStateCompleted, UploadStateFailed, UploadStateCancelled:
+			cutoff := now.Add(-m.ttl)
 			if t.task.FinishedAt != nil && t.task.FinishedAt.Before(cutoff) {
 				delete(m.tasks, id)
 			}
 		case UploadStatePrepared:
 			// Never fulfilled before its window lapsed: evict by creation time
-			// so an abandoned prepare cannot pin a handle forever.
-			if t.task.CreatedAt.Before(preparedCutoff) {
+			// so an abandoned prepare cannot pin a handle forever. The window
+			// is the task's OWN endpoint TTL recorded at Prepare time (falling
+			// back to the manager-wide PreparedTTL when unset), so a prepared
+			// task is never pruned while its presigned endpoint is still live —
+			// a late PUT can always still fulfill it.
+			preparedTTL := t.preparedTTL
+			if preparedTTL <= 0 {
+				preparedTTL = m.PreparedTTL
+			}
+			if preparedTTL > 0 && t.task.CreatedAt.Before(now.Add(-preparedTTL)) {
 				delete(m.tasks, id)
 			}
 		}
