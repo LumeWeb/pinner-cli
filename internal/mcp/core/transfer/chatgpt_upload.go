@@ -2,7 +2,12 @@ package transfer
 
 import (
 	"context"
+	"errors"
 	"io"
+	"net/http"
+	"net/url"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
@@ -76,30 +81,86 @@ func ChatGPTFileMeta() map[string]any {
 	return map[string]any{"openai/fileParams": []string{"file"}}
 }
 
+// chatgptDefaultRelayHosts is the established allowlist for OpenAI-signed
+// download hosts. It is the fallback when no operator allowlist is configured.
+var chatgptDefaultRelayHosts = []string{"openai.com", "oaiusercontent.com"}
+
 // chatgptRelayOptions returns the relay constraints shared by every
-// ChatGPT-sourced file open (upload, vault, async).
-func chatgptRelayOptions(timeout time.Duration) ieo.FileRelayOptions {
+// ChatGPT-sourced file open (upload, vault, async). maxBytes threads the
+// operator-configured relay cap through when positive; otherwise the package
+// default (512 MiB) applies. relayHosts, when non-empty, overrides the
+// established OpenAI default allowlist so an operator can scope the hosts a
+// generated-file download_url may point at (and so tests can target a local
+// test server).
+func chatgptRelayOptions(timeout time.Duration, maxBytes int64, relayHosts []string) ieo.FileRelayOptions {
+	allowed := relayHosts
+	if len(allowed) == 0 {
+		allowed = chatgptDefaultRelayHosts
+	}
 	return ieo.FileRelayOptions{
-		AllowedHosts:   []string{"openai.com", "oaiusercontent.com"},
-		MaxBytes:       ieo.EffectiveRelayMaxBytes(0),
+		AllowedHosts:   allowed,
+		MaxBytes:       ieo.EffectiveRelayMaxBytes(maxBytes),
 		RequestTimeout: timeout,
 	}
+}
+
+// validateChatGPTFileInput performs field-level validation of the OpenAI file
+// argument with model-actionable error messages. It intentionally mirrors
+// ieo.ValidateChatGPTFileReference's constraints (file_id required,
+// download_url required, a valid HTTPS-without-userinfo URL, path-safe
+// file_name) but reports field-qualified messages the agent can act on,
+// since a remote caller does not see ieo's wrapped sentinel errors.
+func validateChatGPTFileInput(in ChatGPTFileInput) error {
+	if strings.TrimSpace(in.FileID) == "" {
+		return errors.New("file.file_id is required")
+	}
+	if strings.TrimSpace(in.DownloadURL) == "" {
+		return errors.New("file.download_url is required")
+	}
+	u, err := url.Parse(in.DownloadURL)
+	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil {
+		return errors.New("file.download_url is invalid")
+	}
+	if in.FileName != "" {
+		name := filepath.Base(in.FileName)
+		if name != in.FileName || name == "." || name == ".." {
+			return errors.New("invalid file_name")
+		}
+	}
+	return nil
+}
+
+// OpenChatGPTFileInput validates a file input (with field-qualified errors)
+// and opens its download stream, returning the resolved reference, an owned
+// reader, and byte size. The relay cap is threaded from the caller (e.g. the
+// operator-configured maxRelayBytes) so the OpenAI file branch honors Pinner's
+// configured server-side limit rather than silently falling back to the
+// package default for the synchronous upload_file path. relayHosts, when
+// non-empty, scopes which hosts the download_url may point at (falling back to
+// the established OpenAI default allowlist). httpClient, when non-nil, is used
+// for the fetch (a deliberate trust decision by the embedding Go code; the
+// production path passes nil to use Pinner's SSRF-guarded client).
+func OpenChatGPTFileInput(ctx context.Context, in ChatGPTFileInput, timeout time.Duration, maxBytes int64, relayHosts []string, httpClient *http.Client) (ieo.ChatGPTFileReference, io.ReadCloser, int64, error) {
+	ref := in.Reference()
+	if err := validateChatGPTFileInput(in); err != nil {
+		return ieo.ChatGPTFileReference{}, nil, 0, err
+	}
+	opts := chatgptRelayOptions(timeout, maxBytes, relayHosts)
+	opts.HTTPClient = httpClient
+	body, size, err := ieo.OpenChatGPTFile(ctx, ref, opts)
+	if err != nil {
+		return ieo.ChatGPTFileReference{}, nil, 0, err
+	}
+	return ref, body, size, nil
 }
 
 // OpenChatGPTInput validates a file input and opens its download
 // stream, returning the resolved reference, an owned reader, and byte size.
 // It centralizes the input→reference→validate→open sequence shared by the
-// upload, vault, and async handlers.
+// upload, vault, and async handlers. maxBytes, relayHosts, and the HTTP client
+// are left to the package defaults to preserve the established async behavior.
 func OpenChatGPTInput(ctx context.Context, in ChatGPTFileInput, timeout time.Duration) (ieo.ChatGPTFileReference, io.ReadCloser, int64, error) {
-	ref := in.Reference()
-	if err := ieo.ValidateChatGPTFileReference(ref, ieo.EffectiveRelayMaxBytes(0)); err != nil {
-		return ieo.ChatGPTFileReference{}, nil, 0, err
-	}
-	body, size, err := ieo.OpenChatGPTFile(ctx, ref, chatgptRelayOptions(timeout))
-	if err != nil {
-		return ieo.ChatGPTFileReference{}, nil, 0, err
-	}
-	return ref, body, size, nil
+	return OpenChatGPTFileInput(ctx, in, timeout, 0, nil, nil)
 }
 
 // The standalone ChatGPTUploadDescriptor and chatGPTUploadTool were superseded

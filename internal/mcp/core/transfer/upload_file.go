@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
@@ -14,14 +15,21 @@ import (
 )
 
 // UploadFileInput is the typed argument shape for the unified upload_file tool.
-// The caller provides a single transport-scoped `source`; the tool routes to the
-// real file-input mechanism based on the server's transport — the caller never
-// picks a mechanism.
+// Exactly one byte source must be provided per invocation: either the
+// OpenAI/host-provided `file` reference (a generated artifact the host hands
+// over as a temporary download_url) or the transport-scoped `source`. When
+// `source` is used, the tool routes to the real file-input mechanism based on
+// the server's transport — the caller never picks a mechanism.
 type UploadFileInput struct {
 	// Source is the file to upload. Mode must be valid for the running
 	// transport: path=co-located stdio; mint=HTTP/tunnel (returns a presigned
 	// curl PUT URL); url/data=OpenAI tunnel (relayed through MCP).
-	Source UploadSource `json:"source"`
+	Source *UploadSource `json:"source,omitempty"`
+	// File is an OpenAI/host-provided generated-file reference (temporary
+	// download_url + file_id). It enables a ChatGPT user to hand a file it
+	// created in its own environment directly to Pinner, without a human
+	// file-picker or manual transport. Mutually exclusive with Source.
+	File *ChatGPTFileInput `json:"file,omitempty"`
 	// Name is the upload label (defaults to the source name or 'upload').
 	Name string `json:"name,omitempty" jsonschema:"description=Optional upload name (defaults to the file name)."`
 	// Wait waits for pinning to complete before returning.
@@ -54,13 +62,26 @@ func UploadFileTransport(coLocated, tunnelOpenAI bool) TransportKind {
 }
 
 // NewUploadFileDescriptor builds the unified, transport-aware upload_file tool.
-// The transport is selected at registration time from the wiring flags, and the
-// handler routes the caller's source mode to the real mechanism:
+// It accepts exactly one byte source per invocation: an OpenAI/host-provided
+// `file` reference (fetched/streamed through relayFn on any transport, no
+// human file-picker needed) OR a transport-scoped `source`. When `source` is
+// used, the handler routes its mode to the real mechanism:
 //
 //   - stdio (coLocated): source mode path → pathFn reads the host path.
 //   - HTTP/tunnel: source mode mint → hp mints a presigned PUT.
 //   - OpenAI tunnel (tunnelOpenAI): source mode url/data → relayed through MCP.
+//
+// It delegates to newUploadFileDescriptor with no HTTP client override, so the
+// OpenAI `file` branch uses Pinner's SSRF-guarded client.
 func NewUploadFileDescriptor(coLocated, tunnelOpenAI bool, pathFn UploadFileHandler, hp *Upload, relayFn UploadHandler, relayHosts []string, maxRelayBytes int64) model.ToolDescriptor {
+	return newUploadFileDescriptor(coLocated, tunnelOpenAI, pathFn, hp, relayFn, relayHosts, maxRelayBytes, nil)
+}
+
+// newUploadFileDescriptor is the implementation behind NewUploadFileDescriptor.
+// httpClient, when non-nil, overrides the client used to fetch an OpenAI `file`
+// download_url. It is a deliberate trust decision by embedding Go code (tests,
+// internal fetches); production passes nil and uses the SSRF-guarded client.
+func newUploadFileDescriptor(coLocated, tunnelOpenAI bool, pathFn UploadFileHandler, hp *Upload, relayFn UploadHandler, relayHosts []string, maxRelayBytes int64, httpClient *http.Client) model.ToolDescriptor {
 	transport := UploadFileTransport(coLocated, tunnelOpenAI)
 	return model.ToolDescriptor{
 		Name:        "upload_file",
@@ -68,32 +89,81 @@ func NewUploadFileDescriptor(coLocated, tunnelOpenAI bool, pathFn UploadFileHand
 		Description: uploadFileDescription(transport),
 		Category:    model.CategoryCore,
 		InputSchema: toolargs.ToolSchemaFor[UploadFileInput](),
+		// Advertise the OpenAI file-parameter handoff so a ChatGPT/OpenAI host
+		// knows the top-level `file` argument carries a generated-file
+		// reference (temporary download_url + file_id) it can populate from a
+		// file it owns, without a human file-picker. This metadata is additive:
+		// _meta.ui (MCP Apps), securitySchemes, and any other Pinner metadata
+		// remain intact alongside it.
+		Meta: ChatGPTFileMeta(),
 		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
 			in, err := toolargs.DecodeToolArgs[UploadFileInput](request)
 			if err != nil {
 				return model.ToolResult{}, err
 			}
-			if err := in.Source.Validate(transport); err != nil {
+
+			// Deterministic source selection: exactly one byte source must be
+			// provided. Do not let a silent precedence rule decide between
+			// `file` and `source` for the caller.
+			hasSource := in.Source != nil
+			hasFile := in.File != nil
+			switch {
+			case !hasSource && !hasFile:
+				return model.ToolResult{}, errors.New("an upload source is required")
+			case hasSource && hasFile:
+				return model.ToolResult{}, errors.New("provide exactly one upload source")
+			}
+
+			// OpenAI/host-provided generated-file handoff. Works on every
+			// transport: the host passes a temporary download_url + file_id,
+			// and Pinner fetches/streams the bytes through the same
+			// authenticated UploadHandler executor the relay url/data sources
+			// use — there is no separate pinning or transport path.
+			if hasFile {
+				if relayFn == nil {
+					return model.ToolResult{}, errors.New("file upload executor is not configured")
+				}
+				ref, body, size, oerr := OpenChatGPTFileInput(ctx, *in.File, ChatGPTOpenTimeout, maxRelayBytes, relayHosts, httpClient)
+				if oerr != nil {
+					return model.ToolResult{}, oerr
+				}
+				defer body.Close()
+				// Name precedence: explicit name > file.file_name > default.
+				name := in.Name
+				if name == "" {
+					name = ref.FileName
+				}
+				if name == "" {
+					name = DefaultUploadName
+				}
+				transferCtx, cancel := context.WithTimeout(ctx, SyncUploadBudget(size))
+				defer cancel()
+				result, err := relayFn(transferCtx, body, size, name, in.Wait)
+				return toolargs.WrapResult(result, err, "Uploaded.")
+			}
+
+			src := *in.Source
+			if err := src.Validate(transport); err != nil {
 				return model.ToolResult{}, err
 			}
 
 			switch transport {
 			case TransportStdio:
-				if in.Source.Mode != SourcePath {
-					return model.ToolResult{}, fmt.Errorf("source mode %q is not available on the %s transport", in.Source.Mode, transport)
+				if src.Mode != SourcePath {
+					return model.ToolResult{}, fmt.Errorf("source mode %q is not available on the %s transport", src.Mode, transport)
 				}
 				if pathFn == nil {
 					return model.ToolResult{}, errors.New("local path upload is not configured")
 				}
 				name := in.Name
 				if name == "" {
-					name = FileBaseName(in.Source.Path)
+					name = FileBaseName(src.Path)
 				}
-				result, err := pathFn(ctx, in.Source.Path, name, in.Wait, in.ArchiveMode)
+				result, err := pathFn(ctx, src.Path, name, in.Wait, in.ArchiveMode)
 				return toolargs.WrapResult(result, err, "Uploaded.")
 			case TransportHTTP:
-				if in.Source.Mode != SourceMint {
-					return model.ToolResult{}, fmt.Errorf("source mode %q is not available on the %s transport", in.Source.Mode, transport)
+				if src.Mode != SourceMint {
+					return model.ToolResult{}, fmt.Errorf("source mode %q is not available on the %s transport", src.Mode, transport)
 				}
 				if hp == nil {
 					return model.ToolResult{}, errors.New("presigned upload endpoint is not configured for remote mode")
@@ -143,14 +213,14 @@ func NewUploadFileDescriptor(coLocated, tunnelOpenAI bool, pathFn UploadFileHand
 					Text:              toolargs.ResultJSONText(sc) + " Stream your file bytes to the URL with the curl command, or pass upload_handle to the upload App's file picker; then poll upload_status with the handle.",
 				}, nil
 			default: // TransportOpenAI
-				if in.Source.Mode != SourceURL && in.Source.Mode != SourceData {
-					return model.ToolResult{}, fmt.Errorf("source mode %q is not available on the OpenAI tunnel transport", in.Source.Mode)
+				if src.Mode != SourceURL && src.Mode != SourceData {
+					return model.ToolResult{}, fmt.Errorf("source mode %q is not available on the OpenAI tunnel transport", src.Mode)
 				}
 				if relayFn == nil {
 					return model.ToolResult{}, errors.New("file relay upload is not configured")
 				}
 				res := &SourceResolver{Transport: TransportOpenAI, RelayAllowedHosts: relayHosts, RelayMaxBytes: ieo.EffectiveRelayMaxBytes(maxRelayBytes)}
-				body, size, srcName, oerr := res.OpenBytes(ctx, in.Source)
+				body, size, srcName, oerr := res.OpenBytes(ctx, src)
 				if oerr != nil {
 					return model.ToolResult{}, oerr
 				}
@@ -172,15 +242,19 @@ func NewUploadFileDescriptor(coLocated, tunnelOpenAI bool, pathFn UploadFileHand
 }
 
 // uploadFileDescription returns a transport-aware description so a model only
-// sees the source modes that can actually work.
+// sees the source modes that can actually work. Every transport advertises the
+// OpenAI/host-provided `file` input up front, since a generated-file handoff
+// (temporary download_url + file_id) is independent of the transport; the
+// transport-specific `source` guidance remains for hosts that do not hand the
+// file over directly.
 func uploadFileDescription(t TransportKind) string {
 	switch t {
 	case TransportStdio:
-		return "Upload a file to Pinner. In this co-located stdio mode, set source.mode=path and source.path to a host-side file/directory/archive path; the server reads it directly. Poll upload_status (or cancel/list) with the returned handle."
+		return "Upload a file to Pinner. If your host provides the file to you directly, pass it in the file input (a temporary download_url + file_id) and Pinner fetches and pins its bytes — no manual upload needed. In this co-located stdio mode you may instead set source.mode=path and source.path to a host-side file/directory/archive path; the server reads it directly. Poll upload_status (or cancel/list) with the returned handle."
 	case TransportHTTP:
-		return "Upload a file to Pinner. Over this HTTP/tunnel transport, set source.mode=mint to get a one-time presigned HTTP PUT endpoint; stream your file's bytes to it with curl, then poll upload_status with the returned upload_handle."
+		return "Upload a file to Pinner. If your host provides a generated file directly, pass it in the file input (a temporary download_url + file_id) and Pinner fetches and pins its bytes — do not use curl for a file the host already owns. Otherwise over this HTTP/tunnel transport, set source.mode=mint to get a one-time presigned HTTP PUT endpoint and stream your file's bytes to it with curl, then poll upload_status with the returned upload_handle."
 	default:
-		return "Upload a file to Pinner. Over this OpenAI-tunnel transport, set source.mode=url (a server-fetchable HTTPS download URL) or source.mode=data (an RFC 2397 data: URI); the server fetches/decodes the bytes and uploads them. Poll upload_status with the returned handle."
+		return "Upload a file to Pinner. If your host provides a generated file directly, pass it in the file input (a temporary download_url + file_id) and Pinner fetches and pins its bytes. Over this OpenAI-tunnel transport you may instead set source.mode=url (a server-fetchable HTTPS download URL) or source.mode=data (an RFC 2397 data: URI); the server fetches/decodes the bytes and uploads them. Poll upload_status with the returned handle."
 	}
 }
 
