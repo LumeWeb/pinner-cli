@@ -54,6 +54,12 @@ func catalogAdminDeps() catalogops.AdminDeps {
 			}
 			return coreadmin.DefaultQuotaAdminServiceFactory(cfgMgr), nil
 		},
+		BillingAdminService: func(cfgMgr config.Manager) (coreadmin.BillingAdminService, error) {
+			if cfgMgr == nil {
+				return nil, fmt.Errorf("no config manager available")
+			}
+			return coreadmin.DefaultBillingAdminServiceFactory(cfgMgr), nil
+		},
 	}
 }
 
@@ -74,36 +80,43 @@ func newAdminWebsitesCatalogCommand() *cli.Command {
 	return newAdminSectionCommand("admin_websites_", CmdWebsites, "Manage IPFS websites (admin)")
 }
 
-// newAdminQuotaCatalogCommand compiles the admin quota catalog operations into
-// a `quota` command for the `admin` parent. Ops under a subgroup (plans,
-// allowances, user-configs) mount under that subgroup; the rest (stats,
-// reconcile, cleanup) mount directly on quota.
-func newAdminQuotaCatalogCommand() *cli.Command {
-	const prefix = "admin_quota_"
+// adminSectionGroup maps an admin sub-op prefix (after the section prefix) to
+// its CLI subgroup command name. Group and leaf segments can both span multiple
+// underscore tokens (user_configs_list, plans_set_default), so the group is
+// matched by prefix rather than by splitting on the first underscore.
+type adminSectionGroup struct {
+	prefix string
+	name   string
+}
 
+// newAdminGroupedSection compiles the admin catalog operations whose names start
+// with sectionPrefix into a single parent command under `admin`. Ops matching a
+// group prefix mount under that subgroup; the rest mount directly on the parent.
+// Each leaf is stripped of the section prefix and hyphenated.
+func newAdminGroupedSection(parentName, usage, sectionPrefix string, groups []adminSectionGroup) *cli.Command {
 	cat := catalog.NewCatalog()
 	for _, op := range catalogops.AdminOperations(adminCatalogDepsVar) {
-		if strings.HasPrefix(op.Name(), prefix) {
+		if strings.HasPrefix(op.Name(), sectionPrefix) {
 			_ = cat.Add(op)
 		}
 	}
 	compiler := catalog.NewCLICompiler()
 	compiled, err := compiler.Compile(cat)
 	if err != nil {
-		panic(fmt.Sprintf("catalog compile admin quota: %v", err))
+		panic(fmt.Sprintf("catalog compile admin section %q: %v", parentName, err))
 	}
 
 	parent := &cli.Command{
-		Name:     CmdQuota,
+		Name:     parentName,
 		Category: "Admin",
-		Usage:    "Quota management operations",
+		Usage:    usage,
 		Commands: []*cli.Command{},
 	}
 	subgroups := map[string]*cli.Command{}
 	for _, c := range compiled {
-		remainder := strings.TrimPrefix(c.Name, prefix)
-		group, leaf := splitQuotaGroup(remainder)
-		mounted := mountAdminSectionCommand(c, prefix)
+		remainder := strings.TrimPrefix(c.Name, sectionPrefix)
+		group, leaf := splitAdminGroup(remainder, groups)
+		mounted := mountAdminSectionCommand(c, sectionPrefix)
 		mounted.Name = leaf
 		if group == "" {
 			parent.Commands = append(parent.Commands, mounted)
@@ -120,27 +133,44 @@ func newAdminQuotaCatalogCommand() *cli.Command {
 	return parent
 }
 
-// quotaGroups maps a quota subgroup op prefix (after "admin_quota_") to its CLI
-// command name. Both the group and the leaf can span multiple underscore tokens
-// (user_configs_list, plans_set_default), so the group is matched by prefix
-// rather than by splitting on the first underscore.
-var quotaGroups = []struct{ prefix, name string }{
-	{"plans_", CmdPlans},
-	{"allowances_", CmdAllowances},
-	{"user_configs_", CmdUserConfigs},
-}
-
-// splitQuotaGroup splits a quota op remainder after "admin_quota_" into
-// (group, leaf). A subgroup op like "plans_list" yields ("plans", "list"); a
-// single op like "stats" yields ("", "stats"). Segment names get underscores
-// turned into hyphens for CLI names.
-func splitQuotaGroup(remainder string) (group, leaf string) {
-	for _, g := range quotaGroups {
+// splitAdminGroup splits an admin op remainder (after the section prefix) into
+// (group, leaf) using the group prefix list. An op matching a group prefix
+// lands in that group; otherwise it is a single leaf.
+func splitAdminGroup(remainder string, groups []adminSectionGroup) (group, leaf string) {
+	for _, g := range groups {
 		if strings.HasPrefix(remainder, g.prefix) {
 			return g.name, hyphenate(strings.TrimPrefix(remainder, g.prefix))
 		}
 	}
 	return "", hyphenate(remainder)
+}
+
+// quotaGroups maps the admin quota subgroup prefixes to their CLI names.
+var quotaGroups = []adminSectionGroup{
+	{"plans_", CmdPlans},
+	{"allowances_", CmdAllowances},
+	{"user_configs_", CmdUserConfigs},
+}
+
+// newAdminQuotaCatalogCommand compiles the admin quota operations into a
+// `quota` command.
+func newAdminQuotaCatalogCommand() *cli.Command {
+	return newAdminGroupedSection(CmdQuota, "Quota management operations", "admin_quota_", quotaGroups)
+}
+
+// billingGroups maps the admin billing subgroup prefixes to their CLI names.
+var billingGroups = []adminSectionGroup{
+	{"credits_", CmdCredits},
+	{"price_lines_", CmdPriceLines},
+	{"pricing_plan_periods_", CmdPricingPlanPeriods},
+	{"pricing_plans_", CmdPricingPlans},
+	{"subscribers_", CmdSubscribers},
+}
+
+// newAdminBillingCatalogCommand compiles the admin billing operations into a
+// `billing` command. The overview op mounts as a single leaf on billing.
+func newAdminBillingCatalogCommand() *cli.Command {
+	return newAdminGroupedSection(CmdBilling, "Billing management operations", "admin_billing_", billingGroups)
 }
 
 // hyphenate replaces underscores with hyphens for a CLI command name.
@@ -433,6 +463,67 @@ func renderAdminResult(_ context.Context, c *cli.Command, op catalog.Operation, 
 		output.Printfln("Cleaned up %d expired record(s)", r.Deleted)
 		return nil
 
+	case *catalogops.BillingCreditsListResult:
+		return renderJSONOrCount(c, output, map[string]any{"count": r.Count, "credits": r.Credits}, "billing credit(s)", r.Count)
+	case *catalogops.BillingUserDeletedCredits:
+		return renderJSONOrCount(c, output, map[string]any{"user_id": r.UserID, "count": r.Count, "credits": r.Credits}, "deleted credit(s)", r.Count)
+	case *catalogops.BillingPriceLinesListResult:
+		return renderJSONOrCount(c, output, map[string]any{"count": r.Count, "price_lines": r.PriceLines}, "price line(s)", r.Count)
+	case *catalogops.BillingPricingPlansListResult:
+		return renderJSONOrCount(c, output, map[string]any{"count": r.Count, "plans": r.Plans}, "pricing plan(s)", r.Count)
+	case *catalogops.BillingPricingPlanPeriodsListResult:
+		return renderJSONOrCount(c, output, map[string]any{"count": r.Count, "periods": r.Periods}, "pricing plan period(s)", r.Count)
+	case *catalogops.BillingSubscribersListResult:
+		return renderJSONOrCount(c, output, map[string]any{"count": r.Count, "subscribers": r.Subscribers}, "subscriber(s)", r.Count)
+
+	case *catalogops.BillingPurgeResult:
+		if output.IsJSON() {
+			return output.PrintJSON(map[string]any{"purged": r.Purged})
+		}
+		output.Printfln("Purged %d credit(s)", r.Purged)
+		return nil
+	case *catalogops.BillingSyncResult:
+		if output.IsJSON() {
+			return output.PrintJSON(map[string]any{"synced": r.Synced, "plan_id": r.PlanID})
+		}
+		output.Printfln("Pricing plan synced")
+		return nil
+	case *catalogops.BillingGenericActionResult:
+		if output.IsJSON() {
+			return output.PrintJSON(map[string]any{"success": r.Success, "message": r.Message})
+		}
+		output.Printfln("%s", r.Message)
+		return nil
+	case *catalogops.BillingUserBalanceResult:
+		if output.IsJSON() {
+			return output.PrintJSON(map[string]any{"balance": r.Balance})
+		}
+		output.Printfln("User balance")
+		return nil
+	case *catalogops.BillingOverviewResult:
+		if output.IsJSON() {
+			return output.PrintJSON(map[string]any{"quota_plans": r.QuotaPlans, "price_lines": r.PriceLines, "pricing_plans": r.PricingPlans, "periods": r.Periods})
+		}
+		output.Printfln("Quota plans: %d, price lines: %d, pricing plans: %d, periods: %d", r.QuotaPlans, r.PriceLines, r.PricingPlans, r.Periods)
+		return nil
+
+	case *admin.Credit:
+		return renderBillingSingle(c, output, r)
+	case *admin.PriceLine:
+		return renderBillingSingle(c, output, r)
+	case *admin.PriceLineDetailResponse:
+		return renderBillingSingle(c, output, r)
+	case *admin.PricingPlan:
+		return renderBillingSingle(c, output, r)
+	case *admin.PricingPlanPeriod:
+		return renderBillingSingle(c, output, r)
+	case *admin.Subscriber:
+		return renderBillingSingle(c, output, r)
+	case *admin.ManagementResult:
+		return renderBillingSingle(c, output, r)
+	case *admin.PlanChangeResult:
+		return renderBillingSingle(c, output, r)
+
 	default:
 		if result == nil {
 			return nil
@@ -447,6 +538,26 @@ func yesNo(b bool) string {
 		return "yes"
 	}
 	return "no"
+}
+
+// renderJSONOrCount renders a JSON payload in JSON mode or a count line in
+// human mode.
+func renderJSONOrCount(c *cli.Command, output Output, payload map[string]any, noun string, count int) error {
+	if output.IsJSON() {
+		return output.PrintJSON(payload)
+	}
+	output.Printfln("Found %d %s", count, noun)
+	return nil
+}
+
+// renderBillingSingle renders a single billing object as JSON in JSON mode, or
+// as a compact human line otherwise.
+func renderBillingSingle(c *cli.Command, output Output, r any) error {
+	if output.IsJSON() {
+		return output.PrintJSON(r)
+	}
+	output.Printfln("OK")
+	return nil
 }
 
 // formatQuotaBytes renders a byte count in human-readable form.

@@ -99,6 +99,16 @@ func (d AdminDeps) quota() (admin.QuotaAdminService, error) {
 	return resolveService(cfgMgr, d.QuotaAdminService, "quota")
 }
 
+// billing resolves the BillingAdminService for this invocation.
+func (d AdminDeps) billing(input map[string]any) (admin.BillingAdminService, error) {
+	_ = input // reserved for a future per-invocation --auth-token override
+	cfgMgr, err := d.requireConfig()
+	if err != nil {
+		return nil, err
+	}
+	return resolveService(cfgMgr, d.BillingAdminService, "billing")
+}
+
 // AdminOperations returns the catalog operations for the admin domain. Each
 // admin section registers its operations here.
 func AdminOperations(d AdminDeps) []catalog.Operation {
@@ -129,5 +139,49 @@ func AdminOperations(d AdminDeps) []catalog.Operation {
 		adminQuotaStats(d),
 		adminQuotaReconcile(d),
 		adminQuotaCleanup(d),
+		// admin billing credits
+		adminBillingCreditsList(d),
+		adminBillingCreditsGet(d),
+		adminBillingCreditsCreate(d),
+		adminBillingCreditsDelete(d),
+		adminBillingCreditsRestore(d),
+		adminBillingCreditsPurge(d),
+		adminBillingCreditsUserBalance(d),
+		adminBillingCreditsUserDeletedCredits(d),
+		// admin billing price-lines
+		adminBillingPriceLinesList(d),
+		adminBillingPriceLinesGet(d),
+		adminBillingPriceLinesCreate(d),
+		adminBillingPriceLinesUpdate(d),
+		adminBillingPriceLinesDelete(d),
+		adminBillingPriceLinesAddPlan(d),
+		adminBillingPriceLinesDeletePlan(d),
+		adminBillingPriceLinesUpdatePlanPosition(d),
+		// admin billing pricing-plans
+		adminBillingPricingPlansList(d),
+		adminBillingPricingPlansGet(d),
+		adminBillingPricingPlansCreate(d),
+		adminBillingPricingPlansUpdate(d),
+		adminBillingPricingPlansDelete(d),
+		adminBillingPricingPlansSync(d),
+		adminBillingPricingPlansSyncAll(d),
+		// admin billing pricing-plan-periods
+		adminBillingPricingPlanPeriodsList(d),
+		adminBillingPricingPlanPeriodsGet(d),
+		adminBillingPricingPlanPeriodsCreate(d),
+		adminBillingPricingPlanPeriodsUpdate(d),
+		adminBillingPricingPlanPeriodsDelete(d),
+		// admin billing subscribers
+		adminBillingSubscribersList(d),
+		adminBillingSubscribersGet(d),
+		adminBillingSubscribersListGateway(d),
+		adminBillingSubscribersListUser(d),
+		adminBillingSubscribersCancel(d),
+		adminBillingSubscribersAbortCancel(d),
+		adminBillingSubscribersChangePlan(d),
+		adminBillingSubscribersPause(d),
+		adminBillingSubscribersResume(d),
+		// admin billing overview
+		adminBillingOverview(d),
 	}
 }

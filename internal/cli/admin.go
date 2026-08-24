@@ -57,33 +57,11 @@ func newQuotaCommand() *cli.Command {
 	return newAdminQuotaCatalogCommand()
 }
 
+// newBillingCommand returns the admin billing command. It is compiled from the
+// operation catalog in catalog_admin_wiring.go, so the CLI command tree and the
+// MCP tool surface share one source of truth.
 func newBillingCommand() *cli.Command {
-	return &cli.Command{
-		Name:  "billing",
-		Usage: "Billing management operations",
-		Description: `Manage billing credits, price lines, pricing plans, and subscriptions.
-
-Billing operations include:
-  - Credit management (list, create, delete, restore, purge)
-  - User balance viewing
-  - Price line management
-  - Pricing plan and period management
-  - Subscriber and subscription management
-
-Examples:
-  pinner admin billing credits list
-  pinner admin billing price-lines list
-  pinner admin billing pricing-plans list
-  pinner admin billing subscribers list`,
-		Commands: []*cli.Command{
-			newBillingOverviewCommand(),
-			newBillingCreditsCommand(),
-			newBillingPriceLinesCommand(),
-			newBillingPricingPlansCommand(),
-			newBillingPricingPlanPeriodsCommand(),
-			newBillingSubscribersCommand(),
-		},
-	}
+	return newAdminBillingCatalogCommand()
 }
 
 func newQuotaPlansCommand() *cli.Command {

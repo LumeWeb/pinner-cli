@@ -414,3 +414,36 @@ func TestAdminQuotaPlansDeleteRequiresConfirm(t *testing.T) {
 		t.Fatal("expected confirm-required error")
 	}
 }
+
+// TestAdminBillingOpsRegistered asserts the provider registers the billing
+// operations across credits, price-lines, pricing-plans, periods, subscribers
+// and overview.
+func TestAdminBillingOpsRegistered(t *testing.T) {
+	ops := AdminOperations(AdminDeps{})
+	names := map[string]bool{}
+	for _, op := range ops {
+		names[op.Name()] = true
+	}
+	for _, want := range []string{
+		"admin_billing_credits_list", "admin_billing_credits_create", "admin_billing_credits_purge",
+		"admin_billing_price_lines_list", "admin_billing_price_lines_add_plan",
+		"admin_billing_pricing_plans_list", "admin_billing_pricing_plans_sync_all",
+		"admin_billing_pricing_plan_periods_list", "admin_billing_pricing_plan_periods_create",
+		"admin_billing_subscribers_list", "admin_billing_subscribers_change_plan",
+		"admin_billing_overview",
+	} {
+		if !names[want] {
+			t.Fatalf("AdminOperations missing expected billing op %q", want)
+		}
+	}
+}
+
+// TestAdminBillingCreditsPurgeRequiresConfirm asserts the destructive purge
+// rejects without confirm=true.
+func TestAdminBillingCreditsPurgeRequiresConfirm(t *testing.T) {
+	op := adminBillingCreditsPurge(AdminDeps{})
+	_, err := op.Handler().Execute(context.Background(), map[string]any{"older-than": "720h"})
+	if err == nil {
+		t.Fatal("expected confirm-required error")
+	}
+}

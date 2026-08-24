@@ -73,13 +73,11 @@ func TestNewQuotaCommand(t *testing.T) {
 }
 
 func TestNewBillingCommand(t *testing.T) {
-	t.Run("creates billing command with correct configuration", func(t *testing.T) {
+	t.Run("is catalog-compiled with correct configuration", func(t *testing.T) {
 		cmd := newBillingCommand()
 
 		assert.Equal(t, "billing", cmd.Name)
 		assert.Equal(t, "Billing management operations", cmd.Usage)
-		assert.NotEmpty(t, cmd.Description)
-		assert.Contains(t, cmd.Description, "Manage billing credits")
 	})
 
 	t.Run("has correct subcommands", func(t *testing.T) {
