@@ -21,14 +21,16 @@ func newAdminPlatformDomainsCommand() *cli.Command {
 
 Examples:
   pinner admin platform-domains list
-  pinner admin platform-domains register --domain ipfs.pin.xyz --namespace icann --zone-id 1
+  pinner admin platform-domains register --domain ipfs.pin.xyz --namespace icann
   pinner admin platform-domains update <id> --enabled false
-  pinner admin platform-domains delete <id>`,
+  pinner admin platform-domains delete <id>
+  pinner admin platform-domains bind <id> --website-id 42`,
 		Commands: []*cli.Command{
 			newAdminPlatformDomainsListCommand(),
 			newAdminPlatformDomainsRegisterCommand(),
 			newAdminPlatformDomainsUpdateCommand(),
 			newAdminPlatformDomainsDeleteCommand(),
+			newAdminPlatformDomainsBindCommand(),
 		},
 	}
 }
@@ -59,13 +61,12 @@ func newAdminPlatformDomainsRegisterCommand() *cli.Command {
 		Description: `Register a platform-owned root domain that users can claim free subdomains under.
 
 Examples:
-  pinner admin platform-domains register --domain ipfs.pin.xyz --namespace icann --zone-id 1
-  pinner admin platform-domains register --domain hns.pin.xyz --namespace hns --zone-id 2 --enabled
-  pinner admin platform-domains register --domain ipfs.pin.xyz --namespace icann --zone-id 1 --json`,
+  pinner admin platform-domains register --domain ipfs.pin.xyz --namespace icann
+  pinner admin platform-domains register --domain hns.pin.xyz --namespace hns --enabled
+  pinner admin platform-domains register --domain ipfs.pin.xyz --namespace icann --json`,
 		Flags: []cli.Flag{
 			&cli.StringFlag{Name: FlagDomain, Usage: "Platform root domain, e.g. ipfs.pin.xyz"},
 			&cli.StringFlag{Name: FlagNamespace, Usage: "Domain namespace: icann, hns, etc."},
-			&cli.IntFlag{Name: FlagZoneID, Usage: "ID of the DNS zone backing this root domain"},
 			&cli.BoolFlag{Name: FlagEnabled, Usage: "Enable the platform domain so users can claim subdomains under it"},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
@@ -118,6 +119,63 @@ Examples:
 			return adminPlatformDomainsDeleteAction(ctx, cmd, output, cfgMgr, defaultPlatformDomainAdminServiceFactory)
 		},
 	}
+}
+
+func newAdminPlatformDomainsBindCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "bind",
+		Usage: "Bind a website to a platform domain",
+		Description: `Bind an operator-owned website directly to the root apex of a platform domain (e.g. "pinner.site"). The platform root's DNS zone is auto-created on first use.
+
+Examples:
+  pinner admin platform-domains bind <id> --website-id 42
+  pinner admin platform-domains bind <id> --website-id 42 --json`,
+		ArgsUsage: "<id>",
+		Flags: []cli.Flag{
+			&cli.IntFlag{Name: FlagWebsiteID, Usage: "ID of the operator-owned website to bind"},
+		},
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			cfgMgr, output, err := setupCommandContext(cmd)
+			if err != nil {
+				return err
+			}
+			return adminPlatformDomainsBindAction(ctx, cmd, output, cfgMgr, defaultPlatformDomainAdminServiceFactory)
+		},
+	}
+}
+
+func adminPlatformDomainsBindAction(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr config.Manager, serviceFactory PlatformDomainAdminServiceFactory) error {
+	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
+	defer cancel()
+
+	if cmd.Args().Len() < 1 {
+		return fmt.Errorf("platform domain ID is required")
+	}
+
+	websiteID := cmd.Int(FlagWebsiteID)
+	if websiteID == 0 {
+		return fmt.Errorf("--website-id is required")
+	}
+
+	service := serviceFactory(cfgMgr, output)
+	if err := service.RequireAuthenticated(); err != nil {
+		return err
+	}
+
+	id := cmd.Args().First()
+	req := &admin.PlatformDomainBindRequest{WebsiteId: websiteID}
+
+	result, err := service.BindWebsiteToPlatformDomain(ctx, id, req)
+	if err != nil {
+		output.PrintError(err)
+		return err
+	}
+
+	if output.IsJSON() {
+		return output.PrintJSON(result)
+	}
+	output.Printfln("Website %d bound to platform domain %s (domain ID %d)", websiteID, result.Domain, result.Id)
+	return nil
 }
 
 func adminPlatformDomainsListAction(ctx context.Context, output Output, cfgMgr config.Manager, serviceFactory PlatformDomainAdminServiceFactory) error {
@@ -180,7 +238,6 @@ func adminPlatformDomainsRegisterAction(ctx context.Context, cmd flagGetterWithI
 	req := &admin.PlatformDomainRequest{
 		Domain:    domain,
 		Namespace: namespace,
-		ZoneId:    cmd.Int(FlagZoneID),
 	}
 	if cmd.IsSet(FlagEnabled) {
 		enabled := cmd.Bool(FlagEnabled)

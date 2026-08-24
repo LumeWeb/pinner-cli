@@ -94,8 +94,8 @@ const (
 const (
 	FlagPlatformDomain = "platform-domain"
 	FlagNamespace      = "namespace"
-	FlagZoneID         = "zone-id"
 	FlagEnabled        = "enabled"
+	FlagWebsiteID      = "website-id"
 )
 
 // Metadata flags

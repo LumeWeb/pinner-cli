@@ -348,3 +348,77 @@ func (_c *MockPlatformDomainAdminService_UpdatePlatformDomain_Call) RunAndReturn
 	_c.Call.Return(run)
 	return _c
 }
+
+// BindWebsiteToPlatformDomain provides a mock function for the type MockPlatformDomainAdminService
+func (_mock *MockPlatformDomainAdminService) BindWebsiteToPlatformDomain(ctx context.Context, id string, req *admin.PlatformDomainBindRequest) (*admin.RootDomain, error) {
+	ret := _mock.Called(ctx, id, req)
+
+	if len(ret) == 0 {
+		panic("no return value specified for BindWebsiteToPlatformDomain")
+	}
+
+	var r0 *admin.RootDomain
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, *admin.PlatformDomainBindRequest) (*admin.RootDomain, error)); ok {
+		return returnFunc(ctx, id, req)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, *admin.PlatformDomainBindRequest) *admin.RootDomain); ok {
+		r0 = returnFunc(ctx, id, req)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*admin.RootDomain)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, *admin.PlatformDomainBindRequest) error); ok {
+		r1 = returnFunc(ctx, id, req)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockPlatformDomainAdminService_BindWebsiteToPlatformDomain_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'BindWebsiteToPlatformDomain'
+type MockPlatformDomainAdminService_BindWebsiteToPlatformDomain_Call struct {
+	*mock.Call
+}
+
+// BindWebsiteToPlatformDomain is a helper method to define mock.On call
+//   - ctx context.Context
+//   - id string
+//   - req *admin.PlatformDomainBindRequest
+func (_e *MockPlatformDomainAdminService_Expecter) BindWebsiteToPlatformDomain(ctx any, id any, req any) *MockPlatformDomainAdminService_BindWebsiteToPlatformDomain_Call {
+	return &MockPlatformDomainAdminService_BindWebsiteToPlatformDomain_Call{Call: _e.mock.On("BindWebsiteToPlatformDomain", ctx, id, req)}
+}
+
+func (_c *MockPlatformDomainAdminService_BindWebsiteToPlatformDomain_Call) Run(run func(ctx context.Context, id string, req *admin.PlatformDomainBindRequest)) *MockPlatformDomainAdminService_BindWebsiteToPlatformDomain_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 *admin.PlatformDomainBindRequest
+		if args[2] != nil {
+			arg2 = args[2].(*admin.PlatformDomainBindRequest)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockPlatformDomainAdminService_BindWebsiteToPlatformDomain_Call) Return(rootDomain *admin.RootDomain, err error) *MockPlatformDomainAdminService_BindWebsiteToPlatformDomain_Call {
+	_c.Call.Return(rootDomain, err)
+	return _c
+}
+
+func (_c *MockPlatformDomainAdminService_BindWebsiteToPlatformDomain_Call) RunAndReturn(run func(ctx context.Context, id string, req *admin.PlatformDomainBindRequest) (*admin.RootDomain, error)) *MockPlatformDomainAdminService_BindWebsiteToPlatformDomain_Call {
+	_c.Call.Return(run)
+	return _c
+}

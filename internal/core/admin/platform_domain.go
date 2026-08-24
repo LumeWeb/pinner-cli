@@ -50,6 +50,11 @@ type PlatformDomainAdminService interface {
 	// UpdatePlatformDomain enables or disables a registered platform root.
 	// Disabling prevents new claims but does not delete existing bindings.
 	UpdatePlatformDomain(ctx context.Context, id string, req *admin.PlatformDomainUpdateRequest) (*admin.PlatformDomain, error)
+
+	// BindWebsiteToPlatformDomain binds an operator-owned website directly to
+	// the root apex of a platform domain (e.g. "pinner.site"). The platform
+	// root's DNS zone is auto-created on first use.
+	BindWebsiteToPlatformDomain(ctx context.Context, id string, req *admin.PlatformDomainBindRequest) (*admin.RootDomain, error)
 }
 
 // RequireAuthenticated checks if the admin service is authenticated.
@@ -110,5 +115,13 @@ func (s *platformDomainAdminService) DeletePlatformDomain(ctx context.Context, i
 func (s *platformDomainAdminService) UpdatePlatformDomain(ctx context.Context, id string, req *admin.PlatformDomainUpdateRequest) (*admin.PlatformDomain, error) {
 	return with2(s, ctx, func(svc *admin.PlatformDomainService) (*admin.PlatformDomain, error) {
 		return svc.UpdatePlatformDomain(ctx, id, req)
+	})
+}
+
+// BindWebsiteToPlatformDomain binds an operator-owned website to the root apex
+// of a platform domain.
+func (s *platformDomainAdminService) BindWebsiteToPlatformDomain(ctx context.Context, id string, req *admin.PlatformDomainBindRequest) (*admin.RootDomain, error) {
+	return with2(s, ctx, func(svc *admin.PlatformDomainService) (*admin.RootDomain, error) {
+		return svc.BindWebsiteToPlatformDomain(ctx, id, req)
 	})
 }
