@@ -73,6 +73,43 @@ func testAdminDeps(t *testing.T, svc *fakePlatformDomainService) AdminDeps {
 	}
 }
 
+// fakeWebsiteService is a hand-rolled admin.WebsiteAdminService driven by
+// function fields.
+type fakeWebsiteService struct {
+	requireAuth func() error
+	blockFn     func(ctx context.Context, id string) (*admin.Website, error)
+	unblockFn   func(ctx context.Context, id string) (*admin.Website, error)
+}
+
+func (f *fakeWebsiteService) RequireAuthenticated() error {
+	if f.requireAuth != nil {
+		return f.requireAuth()
+	}
+	return nil
+}
+func (f *fakeWebsiteService) BlockWebsite(ctx context.Context, id string) (*admin.Website, error) {
+	if f.blockFn != nil {
+		return f.blockFn(ctx, id)
+	}
+	return nil, nil
+}
+func (f *fakeWebsiteService) UnblockWebsite(ctx context.Context, id string) (*admin.Website, error) {
+	if f.unblockFn != nil {
+		return f.unblockFn(ctx, id)
+	}
+	return nil, nil
+}
+
+// testAdminWebsitesDeps wires a fake website service into an AdminDeps.
+func testAdminWebsitesDeps(t *testing.T, svc *fakeWebsiteService) AdminDeps {
+	return AdminDeps{
+		CfgMgr: func() config.Manager { return configmocks.NewMockManager(t) },
+		WebsiteAdminService: func(cfgMgr config.Manager) (coreadmin.WebsiteAdminService, error) {
+			return svc, nil
+		},
+	}
+}
+
 // TestAdminOperationsReturnsPlatformDomains asserts the provider registers the
 // platform-domain operations.
 func TestAdminOperationsReturnsPlatformDomains(t *testing.T) {
@@ -264,5 +301,63 @@ func TestAdminPlatformDomainsRegisterForwardsEnabled(t *testing.T) {
 				t.Fatalf("expected Enabled=%v, got %v", tc.wantEnabled, gotReq.Enabled)
 			}
 		})
+	}
+}
+
+// TestAdminWebsitesBlockForwardsID verifies the website admin block op forwards
+// the positional id and honors authentication.
+func TestAdminWebsitesBlockForwardsID(t *testing.T) {
+	var gotID string
+	svc := &fakeWebsiteService{
+		requireAuth: func() error { return nil },
+		blockFn: func(ctx context.Context, id string) (*admin.Website, error) {
+			gotID = id
+			w := &admin.Website{}
+			w.Domain = "blocked.example"
+			w.Id = 7
+			return w, nil
+		},
+	}
+	op := adminWebsitesBlock(testAdminWebsitesDeps(t, svc))
+	res, err := op.Handler().Execute(context.Background(), map[string]any{"id": "3"})
+	if err != nil {
+		t.Fatalf("block: %v", err)
+	}
+	if gotID != "3" {
+		t.Fatalf("block forwarded wrong id %q", gotID)
+	}
+	if w, ok := res.(*admin.Website); !ok || w.Domain != "blocked.example" {
+		t.Fatalf("unexpected block result %T", res)
+	}
+}
+
+// TestAdminWebsitesUnblockForwardsID verifies the unblock op forwards the id.
+func TestAdminWebsitesUnblockForwardsID(t *testing.T) {
+	var gotID string
+	svc := &fakeWebsiteService{
+		requireAuth: func() error { return nil },
+		unblockFn: func(ctx context.Context, id string) (*admin.Website, error) {
+			gotID = id
+			w := &admin.Website{}
+			w.Domain = "ok.example"
+			return w, nil
+		},
+	}
+	op := adminWebsitesUnblock(testAdminWebsitesDeps(t, svc))
+	if _, err := op.Handler().Execute(context.Background(), map[string]any{"id": "9"}); err != nil {
+		t.Fatalf("unblock: %v", err)
+	}
+	if gotID != "9" {
+		t.Fatalf("unblock forwarded wrong id %q", gotID)
+	}
+}
+
+// TestAdminWebsitesAuthGate asserts RequireAuthenticated is honored.
+func TestAdminWebsitesAuthGate(t *testing.T) {
+	svc := &fakeWebsiteService{requireAuth: func() error { return errors.New("not authenticated") }}
+	op := adminWebsitesBlock(testAdminWebsitesDeps(t, svc))
+	_, err := op.Handler().Execute(context.Background(), map[string]any{"id": "1"})
+	if err == nil || err.Error() != "not authenticated" {
+		t.Fatalf("expected not-authenticated error, got %v", err)
 	}
 }

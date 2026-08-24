@@ -81,6 +81,16 @@ func (d AdminDeps) platformDomains() (admin.PlatformDomainAdminService, error) {
 	return resolveService(cfgMgr, d.PlatformDomainAdminService, "platform-domain")
 }
 
+// websites resolves the WebsiteAdminService for this invocation.
+func (d AdminDeps) websites(input map[string]any) (admin.WebsiteAdminService, error) {
+	_ = input // reserved for a future per-invocation --auth-token override
+	cfgMgr, err := d.requireConfig()
+	if err != nil {
+		return nil, err
+	}
+	return resolveService(cfgMgr, d.WebsiteAdminService, "website")
+}
+
 // AdminOperations returns the catalog operations for the admin domain. Each
 // admin section registers its operations here.
 func AdminOperations(d AdminDeps) []catalog.Operation {
@@ -91,5 +101,8 @@ func AdminOperations(d AdminDeps) []catalog.Operation {
 		adminPlatformDomainsUpdate(d),
 		adminPlatformDomainsDelete(d),
 		adminPlatformDomainsBind(d),
+		// admin websites
+		adminWebsitesBlock(d),
+		adminWebsitesUnblock(d),
 	}
 }

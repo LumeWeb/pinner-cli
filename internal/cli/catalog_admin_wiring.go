@@ -42,6 +42,12 @@ func catalogAdminDeps() catalogops.AdminDeps {
 			}
 			return coreadmin.DefaultPlatformDomainAdminServiceFactory(cfgMgr), nil
 		},
+		WebsiteAdminService: func(cfgMgr config.Manager) (coreadmin.WebsiteAdminService, error) {
+			if cfgMgr == nil {
+				return nil, fmt.Errorf("no config manager available")
+			}
+			return coreadmin.DefaultWebsiteAdminServiceFactory(cfgMgr), nil
+		},
 	}
 }
 
@@ -53,9 +59,23 @@ var adminCatalogDepsVar = catalogops.AdminDeps(catalogAdminDeps())
 // catalog operations and returns the `platform-domains` command to mount under
 // the `admin` parent: list, register, update, delete, bind.
 func newAdminPlatformDomainsCatalogCommand() *cli.Command {
+	return newAdminSectionCommand("admin_platform_domains_", CmdPlatformDomains, "Manage platform (free-subdomain) root domains")
+}
+
+// newAdminWebsitesCatalogCommand compiles the admin websites catalog operations
+// into a `websites` command for the `admin` parent: block, unblock.
+func newAdminWebsitesCatalogCommand() *cli.Command {
+	return newAdminSectionCommand("admin_websites_", CmdWebsites, "Manage IPFS websites (admin)")
+}
+
+// newAdminSectionCommand compiles the admin catalog operations whose names start
+// with prefix into a single parent command under `admin`, stripping prefix from
+// each leaf name. Leaves have their flag-required markers relaxed so positionals
+// can supply required args, and their Action wrapped with the CLI adapter.
+func newAdminSectionCommand(prefix, parentName, usage string) *cli.Command {
 	cat := catalog.NewCatalog()
 	for _, op := range catalogops.AdminOperations(adminCatalogDepsVar) {
-		if !strings.HasPrefix(op.Name(), "admin_platform_domains_") {
+		if !strings.HasPrefix(op.Name(), prefix) {
 			continue
 		}
 		_ = cat.Add(op)
@@ -64,28 +84,27 @@ func newAdminPlatformDomainsCatalogCommand() *cli.Command {
 	compiler := catalog.NewCLICompiler()
 	compiled, err := compiler.Compile(cat)
 	if err != nil {
-		panic(fmt.Sprintf("catalog compile admin platform-domains: %v", err))
+		panic(fmt.Sprintf("catalog compile admin section %q: %v", parentName, err))
 	}
 
 	parent := &cli.Command{
-		Name:     CmdPlatformDomains,
+		Name:     parentName,
 		Category: "Admin",
-		Usage:    "Manage platform (free-subdomain) root domains",
+		Usage:    usage,
 		Commands: []*cli.Command{},
 	}
 	for _, c := range compiled {
-		parent.Commands = append(parent.Commands, mountAdminCatalogCommand(c))
+		parent.Commands = append(parent.Commands, mountAdminSectionCommand(c, prefix))
 	}
 	return parent
 }
 
-// mountAdminCatalogCommand adapts a single catalog-compiled command into a live
-// admin subcommand: strips the admin_platform_domains_ prefix, relaxes
-// flag-required markers so positionals supply required args, and wraps the
-// Action with the CLI-input adapter and renderer.
-func mountAdminCatalogCommand(cmd *cli.Command) *cli.Command {
+// mountAdminSectionCommand adapts a single catalog-compiled command into a live
+// admin subcommand: strips the section prefix, relaxes flag-required markers so
+// positionals supply required args, and wraps the Action with the CLI adapter.
+func mountAdminSectionCommand(cmd *cli.Command, prefix string) *cli.Command {
 	canonical := cmd.Name
-	display := strings.TrimPrefix(canonical, "admin_platform_domains_")
+	display := strings.TrimPrefix(canonical, prefix)
 	cmd.Name = display
 	cmd.Category = "Admin"
 
@@ -172,6 +191,14 @@ func renderAdminResult(_ context.Context, c *cli.Command, op catalog.Operation, 
 			return output.PrintJSON(r)
 		}
 		output.Printfln("Platform domain %s (ID %d)", r.Domain, r.Id)
+		return nil
+
+	case *admin.Website:
+		// admin websites block/unblock return a Website (embedded response).
+		if output.IsJSON() {
+			return output.PrintJSON(r)
+		}
+		output.Printfln("Website %s (ID %d): %s", r.Domain, r.Id, r.Status)
 		return nil
 
 	case *admin.RootDomain:
