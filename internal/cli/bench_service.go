@@ -310,7 +310,7 @@ func (s *BenchServiceDefault) pollOperationStages(ctx context.Context, cid strin
 		switch portalsdk.OperationStatus(status) {
 		case portalsdk.OperationStatusPending:
 			return "queued"
-		case portalsdk.OperationStatusRunning:
+		case portalsdk.OperationStatusProcessing:
 			return "processing"
 		default:
 			return status
@@ -349,7 +349,7 @@ func (s *BenchServiceDefault) pollOperationStages(ctx context.Context, cid strin
 		if isTerminal(currentStatus) {
 			// Capture error details if the operation failed
 			if portalsdk.OperationStatus(currentStatus) == portalsdk.OperationStatusFailed ||
-				portalsdk.OperationStatus(currentStatus) == portalsdk.OperationStatusError {
+				portalsdk.OperationStatus(currentStatus) == portalsdk.OperationStatusDuplicate {
 				op, _ := s.accountClient.GetOperation(ctx, operationID)
 				if op != nil {
 					detail := op.StatusMessage

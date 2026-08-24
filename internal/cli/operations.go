@@ -291,9 +291,9 @@ func formatOperationStatusWithColor(status string) string {
 	switch portalsdk.OperationStatus(status) {
 	case portalsdk.OperationStatusCompleted:
 		return pterm.FgGreen.Sprint(status)
-	case portalsdk.OperationStatusPending, portalsdk.OperationStatusRunning:
+	case portalsdk.OperationStatusPending, portalsdk.OperationStatusProcessing:
 		return pterm.FgYellow.Sprint(status)
-	case portalsdk.OperationStatusFailed, portalsdk.OperationStatusError:
+	case portalsdk.OperationStatusFailed, portalsdk.OperationStatusDuplicate:
 		return pterm.FgRed.Sprint(status)
 	default:
 		return status

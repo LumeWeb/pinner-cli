@@ -42,7 +42,7 @@ require (
 	go.lumeweb.com/ipfs-content v0.1.18
 	go.lumeweb.com/ipfs-sdk v0.1.83
 	go.lumeweb.com/ipfs-sdk/dnsname v0.1.64
-	go.lumeweb.com/portal-sdk v0.1.66
+	go.lumeweb.com/portal-sdk v0.1.67
 	go.lumeweb.com/queryutil v0.3.18
 	go.sia.tech/core v0.21.7
 	go.sia.tech/indexd v0.2.3-0.20260519120331-4eab507a9847

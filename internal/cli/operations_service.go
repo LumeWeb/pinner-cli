@@ -219,11 +219,11 @@ func (s *OperationsServiceDefault) Get(ctx context.Context, id int64) (*Operatio
 }
 
 var validOperationStatuses = map[portalsdk.OperationStatus]bool{
-	portalsdk.OperationStatusPending:   true,
-	portalsdk.OperationStatusRunning:   true,
-	portalsdk.OperationStatusCompleted: true,
-	portalsdk.OperationStatusFailed:    true,
-	portalsdk.OperationStatusError:     true,
+	portalsdk.OperationStatusPending:    true,
+	portalsdk.OperationStatusProcessing: true,
+	portalsdk.OperationStatusCompleted:  true,
+	portalsdk.OperationStatusFailed:     true,
+	portalsdk.OperationStatusDuplicate:  true,
 }
 
 func validateOperationStatus(status string) error {
@@ -231,7 +231,7 @@ func validateOperationStatus(status string) error {
 		return nil
 	}
 	if !validOperationStatuses[portalsdk.OperationStatus(status)] {
-		return fmt.Errorf("invalid status %q: must be one of pending, running, completed, failed, error", status)
+		return fmt.Errorf("invalid status %q: must be one of pending, processing, completed, failed, duplicate", status)
 	}
 	return nil
 }
