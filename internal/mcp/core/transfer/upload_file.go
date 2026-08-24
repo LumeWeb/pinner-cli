@@ -32,8 +32,8 @@ type UploadFileInput struct {
 	File *ChatGPTFileInput `json:"file,omitempty"`
 	// Name is the upload label (defaults to the source name or 'upload').
 	Name string `json:"name,omitempty" jsonschema:"description=Optional upload name (defaults to the file name)."`
-	// Wait waits for pinning to complete before returning.
-	Wait bool `json:"wait,omitempty" jsonschema:"description=Wait for pinning to complete before returning."`
+	// Wait waits for this upload's own pin operation to complete.
+	Wait bool `json:"wait,omitempty" jsonschema:"description=Wait until this upload's own pin operation completes before returning (the upload already pins; this only controls whether the call blocks for it)."`
 	// ArchiveMode controls how an archive path is handled: 'convert' (default)
 	// extracts and uploads the contents; 'preserve' keeps the archive intact.
 	// Only used for source mode path.
@@ -268,11 +268,11 @@ func newUploadFileDescriptor(coLocated, tunnelOpenAI bool, pathFn UploadFileHand
 func uploadFileDescription(t TransportKind) string {
 	switch t {
 	case TransportStdio:
-		return "Upload a file to Pinner and pin it. Preferred: if your host hands you the file directly, pass it in the `file` input (a temporary download_url + file_id) and Pinner fetches and pins its bytes — no base64, curl, or transport choice needed. Fallback, co-located stdio only: source.mode=path with a host-side file/directory/archive path; the server reads it directly. Poll upload_status with the returned handle. The `file` object is always the preferred input; source is a fallback."
+		return "Upload a file and pin it. The returned CID is already pinned: do NOT call pins_add afterward; the wait flag waits for this upload's own pin operation. Preferred input: `file` (a temporary download_url + file_id your host provides) — Pinner fetches and pins its bytes, no base64 or curl. Fallback (co-located stdio only): source.mode=path with a host-side file/directory/archive path. Poll upload_status with the returned handle."
 	case TransportHTTP:
-		return "Upload a file to Pinner and pin it. Preferred: if your host provides a generated file directly, pass it in the `file` input (a temporary download_url + file_id) and Pinner fetches and pins its bytes — no base64, no curl, no presigned endpoint needed. Fallback, HTTP/tunnel only: source.mode=mint returns a one-time presigned HTTP PUT endpoint; stream the file's bytes to it with curl, then poll upload_status with the returned upload_handle. `file` is always preferred; mint is only for bytes your host cannot hand Pinner directly."
+		return "Upload a file and pin it. The returned CID is already pinned: do NOT call pins_add afterward; the wait flag waits for this upload's own pin operation. Preferred input: `file` (a temporary download_url + file_id) — Pinner fetches and pins its bytes. Fallback (HTTP/tunnel only): source.mode=mint returns a one-time presigned HTTP PUT endpoint; stream the bytes with curl, then poll upload_status with the returned upload_handle."
 	default:
-		return "Upload a file to Pinner and pin it. Preferred: if your host hands you the file directly, pass it in the `file` input (a temporary download_url + file_id) and Pinner fetches and pins its bytes. Fallback, OpenAI tunnel only: source.mode=url (a server-fetchable HTTPS download URL) or source.mode=data (an RFC 2397 data: URI); the server fetches/decodes and uploads them. `file` is always preferred; url/data are fallbacks. Poll upload_status with the returned handle."
+		return "Upload a file and pin it. The returned CID is already pinned: do NOT call pins_add afterward; the wait flag waits for this upload's own pin operation. Preferred input: `file` (a temporary download_url + file_id) — Pinner fetches and pins its bytes. Fallback (OpenAI tunnel only): source.mode=url (server-fetchable HTTPS URL) or source.mode=data (RFC 2397 data: URI) — the server fetches/decodes and uploads them. Poll upload_status with the returned handle."
 	}
 }
 

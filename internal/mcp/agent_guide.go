@@ -51,9 +51,9 @@ func NewAgentGuideDescriptor() model.ToolDescriptor {
 			},
 			{
 				Name:   "upload",
-				Title:  "Upload a file to IPFS",
+				Title:  "Upload new content (creates + pins)",
 				Steps:  []string{"capabilities", "upload_file", "upload_status"},
-				Detail: "Check capabilities; if upload_file is available, call it with a transport-scoped source (host path in co-located stdio mode, a minted one-time presigned HTTP PUT endpoint in remote mode, or url/data on the OpenAI tunnel), then monitor with upload_status for the CID.",
+				Detail: "Check capabilities; call upload_file with a transport-scoped source (host path in co-located stdio, a minted presigned HTTP PUT in remote mode, or url/data on the OpenAI tunnel), then poll upload_status for the CID. The returned CID is already pinned — use it directly in websites_create/update; do NOT call pins_add after an upload.",
 			},
 			{
 				Name:   "vault_upload",
@@ -77,14 +77,21 @@ func NewAgentGuideDescriptor() model.ToolDescriptor {
 				Name:   "pins",
 				Title:  "Manage pins",
 				Steps:  []string{"pins_add", "pins_list", "pins_status", "pins_rm"},
-				Detail: "pins_add takes required cids; pins_status takes one cid; pins_rm requires confirm and exactly one of cids or all.",
+				Detail: "pins_add imports content already on IPFS by external CID; it is NOT for use after an upload tool (which already pins). pins_status takes one cid; pins_rm requires confirm and exactly one of cids or all.",
 			},
+			{
+				Name:   "publish_website_upload",
+				Title:  "Publish a website (new content)",
+				Steps:  []string{"upload_file", "websites_create"},
+				Detail: "Upload new bytes, e.g. upload_file returning a CID, then websites_create/update. CID from upload is already pinned; no pins_add.",
+			},
+
 		},
 	}
 	return model.ToolDescriptor{
 		Name:        "agent_guide",
 		Title:       "Pinner agent guide",
-		Description: "Orientation for autonomous agents: the primary Pinner flows (auth, vault_create, vault_restore, upload, vault_upload, download, vault_download, pins) as ordered tool chains. Call this first to learn how to drive Pinner before probing individual tools.",
+		Description: "Orientation for autonomous agents: the primary Pinner flows (auth, vault_create, vault_restore, upload, vault_upload, download, vault_download, pins, publish_website_upload) as ordered tool chains. Call this first to learn how to drive Pinner before probing individual tools.",
 		Category:    model.CategoryCore,
 		InputSchema: toolargs.ToolSchemaFor[wizard.NoInput](),
 		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
