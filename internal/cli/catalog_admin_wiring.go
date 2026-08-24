@@ -48,6 +48,12 @@ func catalogAdminDeps() catalogops.AdminDeps {
 			}
 			return coreadmin.DefaultWebsiteAdminServiceFactory(cfgMgr), nil
 		},
+		QuotaAdminService: func(cfgMgr config.Manager) (coreadmin.QuotaAdminService, error) {
+			if cfgMgr == nil {
+				return nil, fmt.Errorf("no config manager available")
+			}
+			return coreadmin.DefaultQuotaAdminServiceFactory(cfgMgr), nil
+		},
 	}
 }
 
@@ -66,6 +72,80 @@ func newAdminPlatformDomainsCatalogCommand() *cli.Command {
 // into a `websites` command for the `admin` parent: block, unblock.
 func newAdminWebsitesCatalogCommand() *cli.Command {
 	return newAdminSectionCommand("admin_websites_", CmdWebsites, "Manage IPFS websites (admin)")
+}
+
+// newAdminQuotaCatalogCommand compiles the admin quota catalog operations into
+// a `quota` command for the `admin` parent. Ops under a subgroup (plans,
+// allowances, user-configs) mount under that subgroup; the rest (stats,
+// reconcile, cleanup) mount directly on quota.
+func newAdminQuotaCatalogCommand() *cli.Command {
+	const prefix = "admin_quota_"
+
+	cat := catalog.NewCatalog()
+	for _, op := range catalogops.AdminOperations(adminCatalogDepsVar) {
+		if strings.HasPrefix(op.Name(), prefix) {
+			_ = cat.Add(op)
+		}
+	}
+	compiler := catalog.NewCLICompiler()
+	compiled, err := compiler.Compile(cat)
+	if err != nil {
+		panic(fmt.Sprintf("catalog compile admin quota: %v", err))
+	}
+
+	parent := &cli.Command{
+		Name:     CmdQuota,
+		Category: "Admin",
+		Usage:    "Quota management operations",
+		Commands: []*cli.Command{},
+	}
+	subgroups := map[string]*cli.Command{}
+	for _, c := range compiled {
+		remainder := strings.TrimPrefix(c.Name, prefix)
+		group, leaf := splitQuotaGroup(remainder)
+		mounted := mountAdminSectionCommand(c, prefix)
+		mounted.Name = leaf
+		if group == "" {
+			parent.Commands = append(parent.Commands, mounted)
+			continue
+		}
+		sub, ok := subgroups[group]
+		if !ok {
+			sub = &cli.Command{Name: group, Category: "Admin", Usage: "Manage " + group + " (admin)", Commands: []*cli.Command{}}
+			subgroups[group] = sub
+			parent.Commands = append(parent.Commands, sub)
+		}
+		sub.Commands = append(sub.Commands, mounted)
+	}
+	return parent
+}
+
+// quotaGroups maps a quota subgroup op prefix (after "admin_quota_") to its CLI
+// command name. Both the group and the leaf can span multiple underscore tokens
+// (user_configs_list, plans_set_default), so the group is matched by prefix
+// rather than by splitting on the first underscore.
+var quotaGroups = []struct{ prefix, name string }{
+	{"plans_", CmdPlans},
+	{"allowances_", CmdAllowances},
+	{"user_configs_", CmdUserConfigs},
+}
+
+// splitQuotaGroup splits a quota op remainder after "admin_quota_" into
+// (group, leaf). A subgroup op like "plans_list" yields ("plans", "list"); a
+// single op like "stats" yields ("", "stats"). Segment names get underscores
+// turned into hyphens for CLI names.
+func splitQuotaGroup(remainder string) (group, leaf string) {
+	for _, g := range quotaGroups {
+		if strings.HasPrefix(remainder, g.prefix) {
+			return g.name, hyphenate(strings.TrimPrefix(remainder, g.prefix))
+		}
+	}
+	return "", hyphenate(remainder)
+}
+
+// hyphenate replaces underscores with hyphens for a CLI command name.
+func hyphenate(s string) string {
+	return strings.ReplaceAll(s, "_", "-")
 }
 
 // newAdminSectionCommand compiles the admin catalog operations whose names start
@@ -216,6 +296,143 @@ func renderAdminResult(_ context.Context, c *cli.Command, op catalog.Operation, 
 		output.Printfln("Platform domain %s deleted", r.ID)
 		return nil
 
+	case *catalogops.QuotaPlansListResult:
+		if output.IsJSON() {
+			return output.PrintJSON(map[string]any{"count": r.Count, "plans": r.Plans})
+		}
+		output.Printfln("Found %d quota plan(s)", r.Count)
+		if len(r.Plans) == 0 {
+			return nil
+		}
+		headers := []string{"ID", "NAME", "UPLOAD", "DOWNLOAD", "STORAGE", "ACTIVE", "DEFAULT"}
+		rows := make([][]string, len(r.Plans))
+		for i, p := range r.Plans {
+			rows[i] = []string{
+				fmt.Sprintf("%d", p.Id), p.Name,
+				formatQuotaBytes(p.UploadLimitBytes), formatQuotaBytes(p.DownloadLimitBytes),
+				formatQuotaBytes(p.StorageLimitBytes),
+				fmt.Sprintf("%t", p.IsActive), yesNo(p.IsDefault),
+			}
+		}
+		output.PrintTable(headers, rows)
+		return nil
+
+	case *admin.QuotaPlan:
+		if output.IsJSON() {
+			return output.PrintJSON(r)
+		}
+		output.Printfln("Quota plan %s (ID %d)", r.Name, r.Id)
+		return nil
+
+	case *catalogops.QuotaPlansDeleteResult:
+		if output.IsJSON() {
+			return output.PrintJSON(map[string]any{"deleted": r.Deleted, "id": r.ID})
+		}
+		output.Printfln("Quota plan %s deleted", r.ID)
+		return nil
+
+	case *catalogops.QuotaPlansSetDefaultResult:
+		if output.IsJSON() {
+			return output.PrintJSON(map[string]any{"id": r.ID, "is_default": r.IsDefault})
+		}
+		output.Printfln("Quota plan %s is now the default", r.ID)
+		return nil
+
+	case *catalogops.QuotaAllowancesListResult:
+		if output.IsJSON() {
+			return output.PrintJSON(map[string]any{"count": r.Count, "allowances": r.Allowances})
+		}
+		output.Printfln("Found %d quota allowance(s)", r.Count)
+		if len(r.Allowances) == 0 {
+			return nil
+		}
+		headers := []string{"ID", "USER", "SOURCE", "TYPE", "BYTES", "ACTIVE"}
+		rows := make([][]string, len(r.Allowances))
+		for i, a := range r.Allowances {
+			rows[i] = []string{
+				fmt.Sprintf("%d", a.Id), fmt.Sprintf("%d", a.UserId), string(a.Source),
+				string(a.Type), formatQuotaBytes(a.Bytes), yesNo(a.IsActive),
+			}
+		}
+		output.PrintTable(headers, rows)
+		return nil
+
+	case *admin.QuotaAllowance:
+		if output.IsJSON() {
+			return output.PrintJSON(r)
+		}
+		output.Printfln("Quota allowance ID %d for user %d", r.Id, r.UserId)
+		return nil
+
+	case *catalogops.QuotaAllowancesDeleteResult:
+		if output.IsJSON() {
+			return output.PrintJSON(map[string]any{"deleted": r.Deleted, "grant_id": r.GrantID})
+		}
+		output.Printfln("Quota allowance %s deleted", r.GrantID)
+		return nil
+
+	case *catalogops.QuotaUserConfigsListResult:
+		if output.IsJSON() {
+			return output.PrintJSON(map[string]any{"count": r.Count, "configs": r.Configs})
+		}
+		output.Printfln("Found %d user quota config(s)", r.Count)
+		if len(r.Configs) == 0 {
+			return nil
+		}
+		headers := []string{"USER", "PLAN"}
+		rows := make([][]string, len(r.Configs))
+		for i, c := range r.Configs {
+			plan := "-"
+			if c.QuotaPlanId != nil {
+				plan = fmt.Sprintf("%d", *c.QuotaPlanId)
+			}
+			rows[i] = []string{fmt.Sprintf("%d", c.UserId), plan}
+		}
+		output.PrintTable(headers, rows)
+		return nil
+
+	case *admin.UserQuotaConfig:
+		if output.IsJSON() {
+			return output.PrintJSON(r)
+		}
+		output.Printfln("User %d quota config", r.UserId)
+		return nil
+
+	case *catalogops.QuotaUserConfigsResetResult:
+		if output.IsJSON() {
+			return output.PrintJSON(map[string]any{"user_id": r.UserID, "reset": r.Reset})
+		}
+		output.Printfln("User %d quota plan reset", r.UserID)
+		return nil
+
+	case *admin.SystemStats:
+		if output.IsJSON() {
+			return output.PrintJSON(r)
+		}
+		output.PrintFields(FieldGroup{Fields: []Field{
+			{"Total Users", fmt.Sprintf("%d", r.TotalUsers)},
+			{"Active Users", fmt.Sprintf("%d", r.ActiveUsers)},
+			{"Total Plans", fmt.Sprintf("%d", r.TotalPlans)},
+			{"Active Plans", fmt.Sprintf("%d", r.TotalActivePlans)},
+			{"Total Grants", fmt.Sprintf("%d", r.TotalGrants)},
+			{"Active Grants", fmt.Sprintf("%d", r.TotalActiveGrants)},
+		}})
+		return nil
+
+	case *catalogops.QuotaReconcileResult:
+		if output.IsJSON() {
+			return output.PrintJSON(map[string]any{"message": r.Message, "users_processed": r.UsersProcessed})
+		}
+		output.Printfln("Reconcile complete: %s (%d users processed)", r.Message, r.UsersProcessed)
+		return nil
+
+	case *catalogops.QuotaCleanupResult:
+		if output.IsJSON() {
+			return output.PrintJSON(map[string]any{"deleted": r.Deleted})
+		}
+		output.Printfln("Cleaned up %d expired record(s)", r.Deleted)
+		return nil
+
 	default:
 		if result == nil {
 			return nil
@@ -230,4 +447,9 @@ func yesNo(b bool) string {
 		return "yes"
 	}
 	return "no"
+}
+
+// formatQuotaBytes renders a byte count in human-readable form.
+func formatQuotaBytes(b int) string {
+	return humanReadableSize(int64(b))
 }

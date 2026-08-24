@@ -382,3 +382,35 @@ func TestAdminWebsitesAuthGate(t *testing.T) {
 		t.Fatalf("expected not-authenticated error, got %v", err)
 	}
 }
+
+// TestAdminQuotaOpsRegistered asserts the provider registers the quota
+// operations across its subgroups and single ops.
+func TestAdminQuotaOpsRegistered(t *testing.T) {
+	ops := AdminOperations(AdminDeps{})
+	names := map[string]bool{}
+	for _, op := range ops {
+		names[op.Name()] = true
+	}
+	for _, want := range []string{
+		"admin_quota_plans_list", "admin_quota_plans_get", "admin_quota_plans_create",
+		"admin_quota_plans_update", "admin_quota_plans_delete", "admin_quota_plans_set_default",
+		"admin_quota_allowances_list", "admin_quota_allowances_create", "admin_quota_allowances_update",
+		"admin_quota_allowances_delete",
+		"admin_quota_user_configs_list", "admin_quota_user_configs_update", "admin_quota_user_configs_reset",
+		"admin_quota_stats", "admin_quota_reconcile", "admin_quota_cleanup",
+	} {
+		if !names[want] {
+			t.Fatalf("AdminOperations missing expected quota op %q", want)
+		}
+	}
+}
+
+// TestAdminQuotaPlansDeleteRequiresConfirm asserts the destructive plan delete
+// rejects without confirm=true.
+func TestAdminQuotaPlansDeleteRequiresConfirm(t *testing.T) {
+	op := adminQuotaPlansDelete(AdminDeps{})
+	_, err := op.Handler().Execute(context.Background(), map[string]any{"id": "3"})
+	if err == nil {
+		t.Fatal("expected confirm-required error")
+	}
+}

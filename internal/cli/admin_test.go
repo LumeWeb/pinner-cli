@@ -34,13 +34,11 @@ func TestNewAdminCommand(t *testing.T) {
 }
 
 func TestNewQuotaCommand(t *testing.T) {
-	t.Run("creates quota command with correct configuration", func(t *testing.T) {
+	t.Run("is catalog-compiled with correct configuration", func(t *testing.T) {
 		cmd := newQuotaCommand()
 
 		assert.Equal(t, "quota", cmd.Name)
 		assert.Equal(t, "Quota management operations", cmd.Usage)
-		assert.NotEmpty(t, cmd.Description)
-		assert.Contains(t, cmd.Description, "Manage quota plans")
 	})
 
 	t.Run("has correct subcommands", func(t *testing.T) {
@@ -56,6 +54,21 @@ func TestNewQuotaCommand(t *testing.T) {
 		assert.Contains(t, subcommandNames, "stats")
 		assert.Contains(t, subcommandNames, "reconcile")
 		assert.Contains(t, subcommandNames, "cleanup")
+	})
+
+	t.Run("plans group exposes its operations", func(t *testing.T) {
+		quota := newQuotaCommand()
+		var plans *cli.Command
+		for _, c := range quota.Commands {
+			if c.Name == CmdPlans {
+				plans = c
+				break
+			}
+		}
+		require.NotNil(t, plans)
+		for _, want := range []string{CmdList, CmdGet, CmdCreate, CmdUpdate, CmdDelete, CmdSetDefault} {
+			assert.Contains(t, getSubcommandNames(plans), want)
+		}
 	})
 }
 

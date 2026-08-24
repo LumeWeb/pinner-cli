@@ -50,32 +50,11 @@ Examples:
 	}
 }
 
+// newQuotaCommand returns the admin quota command. It is compiled from the
+// operation catalog in catalog_admin_wiring.go, so the CLI command tree and the
+// MCP tool surface share one source of truth.
 func newQuotaCommand() *cli.Command {
-	return &cli.Command{
-		Name:  "quota",
-		Usage: "Quota management operations",
-		Description: `Manage quota plans, allowances, and user configurations.
-
-Quota operations include:
-  - Plan management (list, create, update, delete)
-  - Allowance management (list, create, update, delete)
-  - User config management
-  - System statistics and reconciliation
-
-Examples:
-  pinner admin quota plans list
-  pinner admin quota plans get <plan-id>
-  pinner admin quota allowances list
-  pinner admin quota stats`,
-		Commands: []*cli.Command{
-			newQuotaPlansCommand(),
-			newQuotaAllowancesCommand(),
-			newQuotaUserConfigsCommand(),
-			newQuotaStatsCommand(),
-			newQuotaReconcileCommand(),
-			newQuotaCleanupCommand(),
-		},
-	}
+	return newAdminQuotaCatalogCommand()
 }
 
 func newBillingCommand() *cli.Command {

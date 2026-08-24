@@ -90,6 +90,16 @@ func (d AdminDeps) websites() (admin.WebsiteAdminService, error) {
 	return resolveService(cfgMgr, d.WebsiteAdminService, "website")
 }
 
+// quota resolves the QuotaAdminService for this invocation.
+func (d AdminDeps) quota(input map[string]any) (admin.QuotaAdminService, error) {
+	_ = input // reserved for a future per-invocation --auth-token override
+	cfgMgr, err := d.requireConfig()
+	if err != nil {
+		return nil, err
+	}
+	return resolveService(cfgMgr, d.QuotaAdminService, "quota")
+}
+
 // AdminOperations returns the catalog operations for the admin domain. Each
 // admin section registers its operations here.
 func AdminOperations(d AdminDeps) []catalog.Operation {
@@ -103,5 +113,22 @@ func AdminOperations(d AdminDeps) []catalog.Operation {
 		// admin websites
 		adminWebsitesBlock(d),
 		adminWebsitesUnblock(d),
+		// admin quota
+		adminQuotaPlansList(d),
+		adminQuotaPlansGet(d),
+		adminQuotaPlansCreate(d),
+		adminQuotaPlansUpdate(d),
+		adminQuotaPlansDelete(d),
+		adminQuotaPlansSetDefault(d),
+		adminQuotaAllowancesList(d),
+		adminQuotaAllowancesCreate(d),
+		adminQuotaAllowancesUpdate(d),
+		adminQuotaAllowancesDelete(d),
+		adminQuotaUserConfigsList(d),
+		adminQuotaUserConfigsUpdate(d),
+		adminQuotaUserConfigsReset(d),
+		adminQuotaStats(d),
+		adminQuotaReconcile(d),
+		adminQuotaCleanup(d),
 	}
 }
