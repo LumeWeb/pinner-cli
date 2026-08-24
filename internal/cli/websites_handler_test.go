@@ -136,6 +136,10 @@ func (m *mockWebsitesHandlerService) UpdateDomain(ctx context.Context, websiteID
 	return nil, nil
 }
 
+func (m *mockWebsitesHandlerService) CheckPlatformDomainAvailability(ctx context.Context, label string) (*ipfs.PlatformAvailabilityResponse, error) {
+	return nil, nil
+}
+
 func setupWebsitesHandlerTest(t *testing.T) (*mockWebsitesHandlerService, *configmocks.MockManager) {
 	t.Helper()
 	mockSvc := &mockWebsitesHandlerService{}

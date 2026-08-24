@@ -14,6 +14,7 @@ type QuotaAdminService = admin.QuotaAdminService
 type BillingAdminService = admin.BillingAdminService
 type WebsiteAdminService = admin.WebsiteAdminService
 type ProfilingAdminService = admin.ProfilingAdminService
+type PlatformDomainAdminService = admin.PlatformDomainAdminService
 
 // QuotaAdminServiceFactory builds a QuotaAdminService with dependencies.
 type QuotaAdminServiceFactory func(cfgMgr config.Manager, output Output) QuotaAdminService
@@ -26,6 +27,9 @@ type WebsiteAdminServiceFactory func(cfgMgr config.Manager, output Output) Websi
 
 // ProfilingAdminServiceFactory builds a ProfilingAdminService with dependencies.
 type ProfilingAdminServiceFactory func(cfgMgr config.Manager, output Output) ProfilingAdminService
+
+// PlatformDomainAdminServiceFactory builds a PlatformDomainAdminService with dependencies.
+type PlatformDomainAdminServiceFactory func(cfgMgr config.Manager, output Output) PlatformDomainAdminService
 
 // default*AdminServiceFactory delegate to the Output-free core factories.
 func defaultQuotaAdminServiceFactory(cfgMgr config.Manager, output Output) QuotaAdminService {
@@ -44,6 +48,10 @@ func defaultProfilingAdminServiceFactory(cfgMgr config.Manager, output Output) P
 	return admin.DefaultProfilingAdminServiceFactory(cfgMgr)
 }
 
+func defaultPlatformDomainAdminServiceFactory(cfgMgr config.Manager, output Output) PlatformDomainAdminService {
+	return admin.DefaultPlatformDomainAdminServiceFactory(cfgMgr)
+}
+
 // New*AdminService constructors delegate to the Output-free core constructors.
 func NewQuotaAdminService(cfgMgr config.Manager, output Output, apiEndpoint string) QuotaAdminService {
 	return admin.NewQuotaAdminService(cfgMgr, apiEndpoint)
@@ -59,4 +67,8 @@ func NewWebsiteAdminService(cfgMgr config.Manager, output Output, apiEndpoint st
 
 func NewProfilingAdminService(cfgMgr config.Manager, output Output, apiEndpoint string) ProfilingAdminService {
 	return admin.NewProfilingAdminService(cfgMgr, apiEndpoint)
+}
+
+func NewPlatformDomainAdminService(cfgMgr config.Manager, output Output, apiEndpoint string) PlatformDomainAdminService {
+	return admin.NewPlatformDomainAdminService(cfgMgr, apiEndpoint)
 }

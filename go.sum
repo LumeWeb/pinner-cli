@@ -1016,6 +1016,8 @@ go.lumeweb.com/ipfs-content v0.1.18 h1:Lq3/A+2kZcS4RK+bpdk+m4iJ95ZgpEa4DKhiH6bQW
 go.lumeweb.com/ipfs-content v0.1.18/go.mod h1:idWCsfndMDCsE5LtU0ZBNaFTBAaiuIe50dce0SDJLxw=
 go.lumeweb.com/ipfs-sdk v0.1.83 h1:QCx8IO+83zUr3zMe854glMTL1mFn917T2BreJtQSh4E=
 go.lumeweb.com/ipfs-sdk v0.1.83/go.mod h1:+mB0L4qvorrAgafNY7R2nSZVdeEPHSz1+yR57RPHpxE=
+go.lumeweb.com/ipfs-sdk v0.1.84 h1:Do04CKyYwRux35Imp7SprUrf9Rw1jyiZWlCXpXlRMKg=
+go.lumeweb.com/ipfs-sdk v0.1.84/go.mod h1:DlWxci6bDjccldp8H9UdiN7tQqhx+OtRk7AvLMwNx0E=
 go.lumeweb.com/ipfs-sdk/dnsname v0.1.64 h1:RTBD+zoXHOYYKreNRoQhyLLKKWp/VgYfr7qojCzKjww=
 go.lumeweb.com/ipfs-sdk/dnsname v0.1.64/go.mod h1:1++6EWMiG/BC5UQjlIobId2YcWDVHjHEhdsEzeISKpQ=
 go.lumeweb.com/portal v0.4.2-0.20251225165008-2bdb358c492d h1:8CS/LtrLQYsPhQGqmmKSXH7wNtpg/VfKA2gdnFh2gf8=
@@ -1026,6 +1028,8 @@ go.lumeweb.com/portal-router v0.7.2 h1:x6P7hkYqGx20aZ8IU0eC2sXpVHsorfHvO4js82JUN
 go.lumeweb.com/portal-router v0.7.2/go.mod h1:hl51sHDKcgw8yxJ6RraYBOI1Vnufq33FhKwfKiqCkVg=
 go.lumeweb.com/portal-sdk v0.1.67 h1:N+aa8twO90QVidFCmBmCx9CtqTYEFcuM0smTZM6GU4E=
 go.lumeweb.com/portal-sdk v0.1.67/go.mod h1:/8cMSDpEiAERPLJ+5kbkAJ5rPQ7jD7EURR2I1yBnso8=
+go.lumeweb.com/portal-sdk v0.1.68 h1:AonnQRJxvO8TSg3b2EhyeUs7EUxxC7w/UzjNMOJ3fqo=
+go.lumeweb.com/portal-sdk v0.1.68/go.mod h1:9iwX0AGxUpphkVhpkeK7M9oyiMg0cZicf1VSIJPJl1Y=
 go.lumeweb.com/queryutil v0.3.18 h1:LrVbnSJ7Z1LCsT5vKjKKd643kJPLH1RZAkot50zw6qY=
 go.lumeweb.com/queryutil v0.3.18/go.mod h1:ilKyQEBgS1SiLahUKSOw6qadIQa4hW1/1MstdHNeUnM=
 go.opencensus.io v0.21.0/go.mod h1:mSImk1erAIZhrmZN+AvHh14ztQfjbGwt4TtuofqLduU=

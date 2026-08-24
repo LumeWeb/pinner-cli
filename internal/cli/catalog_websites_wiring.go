@@ -116,6 +116,13 @@ func newWebsitesCatalogCommands() []*cli.Command {
 				if parentName == "domains" {
 					parent.Usage = "Manage domain bindings for a website"
 					parent.Aliases = []string{"domain"}
+					// The platform-domain concept is a single feature, so the
+					// "platform" segment from websites_platform_domain_* renders
+					// as the hyphenated "platform-domain" parent, matching the
+					// CLI expectation (websites platform-domain availability).
+				} else if parentName == "platform" {
+					parent.Name = "platform-domain"
+					parent.Usage = "Manage platform (free-subdomain) domain availability"
 				}
 				parents[parentName] = parent
 				out = append(out, parent)
