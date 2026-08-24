@@ -41,7 +41,8 @@ func operationsList(ctx context.Context, cmd argsFlagGetter, output Output, cfgM
 	}
 
 	opts := OperationsListOptions{
-		StatusFilter:    cmd.String(FlagStatus),
+		StatusFilters:   cmd.StringSlice(FlagStatus),
+		IncludeAll:       cmd.Bool(FlagAll),
 		OperationFilter: cmd.String(FlagOperation),
 		ProtocolFilter:  cmd.String(FlagProtocol),
 		CIDFilter:       cmd.String(FlagCID),
@@ -50,15 +51,21 @@ func operationsList(ctx context.Context, cmd argsFlagGetter, output Output, cfgM
 		PageSize:        pageSize,
 	}
 
-	if err := validateOperationStatus(opts.StatusFilter); err != nil {
+	if err := validateOperationStatuses(opts.StatusFilters); err != nil {
 		return err
 	}
 
 	watch := cmd.Bool(FlagWatch)
 
 	if watch {
+		opts.IsWatch = true
 		return watchOperationsList(ctx, service, output, opts)
 	}
+
+	// Determine whether the default active-status filter was applied (no
+	// explicit statuses and no --all). The service layer handles the
+	// actual filtering; this is purely for the user-facing hint.
+	usingDefault := len(opts.StatusFilters) == 0 && !opts.IncludeAll
 
 	result, err := service.List(setupCtx, opts)
 	if err != nil {
@@ -66,13 +73,20 @@ func operationsList(ctx context.Context, cmd argsFlagGetter, output Output, cfgM
 	}
 
 	if len(result.Operations) == 0 {
-		output.Printfln("No operations found")
+		if usingDefault {
+			output.Printfln("No active operations found (pending, processing). Use --all to include completed, failed, and duplicate operations.")
+		} else {
+			output.Printfln("No operations found")
+		}
 		return nil
 	}
 
 	start := (opts.Page-1)*opts.PageSize + 1
 	end := start + len(result.Operations) - 1
 	output.Printfln("Showing %d-%d of %d operation(s)", start, end, result.Total)
+	if usingDefault {
+		output.Printfln("Showing active operations only (pending, processing). Use --all to see all operations.")
+	}
 
 	headers := []string{"ID", "OPERATION", "PROTOCOL", "STATUS", "CID", "PROGRESS", "STARTED"}
 	rows := make([][]string, len(result.Operations))

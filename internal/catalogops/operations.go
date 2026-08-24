@@ -32,16 +32,17 @@ func OperationsOperations(d OperationsDeps) []catalog.Operation {
 func operationsList(d OperationsDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
 		Name: "operations_list", Title: "List account operations", Summary: "List account operations",
-		Description: "List account operations (uploads, pins, and other processing tasks) with optional filters and pagination.",
+		Description: "List account operations (uploads, pins, and other processing tasks) with optional filters and pagination. By default only active operations (pending, processing) are shown; pass --all to include completed, failed, and duplicate operations.",
 		Category:    "operations", Safety: catalog.SafetyRead, Interaction: catalog.InteractionAgentSafe, Visibility: catalog.VisibilityBoth,
 		Positional: "",
 		Args: []catalog.OperationArg{
-			{Name: "search", Type: catalog.ArgTypeString, Help: "Full-text search evaluated server-side against operation type, status, protocol, or CID; composes with the filters below"},
-			{Name: "status", Type: catalog.ArgTypeString, Help: "Filter by status (pending, processing, completed, failed, duplicate)"},
+			{Name: "search", Type: catalog.ArgTypeString, Help: "Full-text search evaluated server-side against operation type, status, protocol, or CID; composes with the filters below", AgentHelp: "Full-text search term evaluated server-side against operation type, status, protocol, or CID. Composes (AND) with the structured filters."},
+			{Name: "status", Type: catalog.ArgTypeStringSlice, Help: "Filter by status (repeatable; pending, processing, completed, failed, duplicate)", AgentHelp: "One or more statuses to filter by. Valid values: pending, processing, completed, failed, duplicate. When omitted, only active operations (pending, processing) are returned unless all=true."},
+			{Name: "all", Type: catalog.ArgTypeBool, Default: "false", Help: "Show operations in all statuses (overrides the default active-only filter)", AgentHelp: "When true, return operations in any status, overriding the default that shows only pending and processing. Ignored when status is explicitly provided."},
 			{Name: "operation", Type: catalog.ArgTypeString, Help: "Filter by operation type (e.g. upload, pin)"},
 			{Name: "protocol", Type: catalog.ArgTypeString, Help: "Filter by protocol (e.g. ipfs)"},
 			{Name: "cid", Type: catalog.ArgTypeString, Help: "Filter by CID"},
-			{Name: "sort", Type: catalog.ArgTypeString, Help: "Sort results (e.g. id:desc,started:asc)"},
+			{Name: "sort", Type: catalog.ArgTypeString, Help: "Sort results (e.g. id:desc, started:asc). Defaults to id:desc.", AgentHelp: "Sort field and direction, e.g. \"id:desc\" or \"started:asc\". Defaults to id:desc."},
 			{Name: "page", Type: catalog.ArgTypeInt, Default: "0", Help: "Page number"},
 			{Name: "page-size", Type: catalog.ArgTypeInt, Default: "0", Help: "Results per page"},
 			{Name: "watch", Type: catalog.ArgTypeBool, Default: "false", Help: "Poll until the list settles"},
@@ -64,7 +65,8 @@ func operationsList(d OperationsDeps) catalog.Operation {
 			}
 			return svc.List(ctx, operations.ListOptions{
 				Search:          catalog.SearchArg(input),
-				StatusFilter:    catalog.StrArg(input, "status", ""),
+				StatusFilters:   catalog.StrSliceArg(input, "status"),
+				IncludeAll:      catalog.BoolArg(input, "all", false),
 				OperationFilter: catalog.StrArg(input, "operation", ""),
 				ProtocolFilter:  catalog.StrArg(input, "protocol", ""),
 				CIDFilter:       catalog.StrArg(input, "cid", ""),

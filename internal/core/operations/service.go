@@ -58,13 +58,25 @@ type ListOptions struct {
 	// Search is a full-text search term evaluated server-side against the
 	// operation's searchable fields. Empty disables it.
 	Search          string
-	StatusFilter    string
+	// StatusFilters limits results to the given statuses (e.g. "pending",
+	// "processing"). When nil and IncludeAll is false, the service defaults
+	// to showing only active operations (pending, processing).
+	StatusFilters   []string
 	OperationFilter string
 	ProtocolFilter  string
 	CIDFilter       string
 	Sort            string
 	Page            int
 	PageSize        int
+	// IncludeAll disables the default active-status filter so the listing
+	// returns operations in any status. Has no effect when StatusFilters
+	// is explicitly provided.
+	IncludeAll bool
+	// IsWatch is set by the watch code path to skip the default active-status
+	// filter. Without this, --watch only sees pending/processing operations,
+	// so allOperationsSettled() can never observe the terminal transition and
+	// the loop hangs until the active list drains.
+	IsWatch bool
 }
 
 // Service is the contract for inspecting account operations.
