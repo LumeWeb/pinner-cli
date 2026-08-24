@@ -26,6 +26,27 @@ func testPlatformDomain(id int, domain, namespace string, zoneID int, enabled bo
 	return d
 }
 
+// testRootDomain builds an *admin.RootDomain via its embedded DomainResponse.
+func testRootDomain(id int, domain string) *admin.RootDomain {
+	d := &admin.RootDomain{}
+	d.Id = id
+	d.Domain = domain
+	return d
+}
+
+func TestAdminPlatformDomainsTree(t *testing.T) {
+	cmd := newAdminPlatformDomainsCommand()
+	require.NotNil(t, cmd.Commands)
+	assert.Len(t, cmd.Commands, 5)
+
+	subcommandNames := getSubcommandNames(cmd)
+	assert.Contains(t, subcommandNames, "list")
+	assert.Contains(t, subcommandNames, "register")
+	assert.Contains(t, subcommandNames, "update")
+	assert.Contains(t, subcommandNames, "delete")
+	assert.Contains(t, subcommandNames, "bind")
+}
+
 func TestAdminPlatformDomainsList(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -102,8 +123,7 @@ func TestAdminPlatformDomainsRegister(t *testing.T) {
 			name: "successful register",
 			cmd: newMockCommand().
 				withString(FlagDomain, "ipfs.pin.xyz").
-				withString(FlagNamespace, "icann").
-				withInt(FlagZoneID, 10),
+				withString(FlagNamespace, "icann"),
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPlatformDomainAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
 				service.EXPECT().RegisterPlatformDomain(mock.Anything, mock.Anything).Return(
@@ -114,8 +134,7 @@ func TestAdminPlatformDomainsRegister(t *testing.T) {
 		{
 			name: "requires domain flag",
 			cmd: newMockCommand().
-				withString(FlagNamespace, "icann").
-				withInt(FlagZoneID, 10),
+				withString(FlagNamespace, "icann"),
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPlatformDomainAdminService) {
 				service.EXPECT().RequireAuthenticated().Return(nil)
 			},
@@ -258,6 +277,77 @@ func TestAdminPlatformDomainsDelete(t *testing.T) {
 			}
 
 			err := adminPlatformDomainsDeleteAction(context.Background(), tt.cmd, output, cfgMgr, func(cm config.Manager, out Output) PlatformDomainAdminService {
+				return service
+			})
+
+			if tt.wantErr {
+				require.Error(t, err)
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
+				}
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+func TestAdminPlatformDomainsBind(t *testing.T) {
+	tests := []struct {
+		name        string
+		cmd         *mockCommand
+		setupMocks  func(*configmocks.MockManager, *MockPlatformDomainAdminService)
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name: "successful bind",
+			cmd:  newMockCommand().withArgs("1").withInt(FlagWebsiteID, 42),
+			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPlatformDomainAdminService) {
+				service.EXPECT().RequireAuthenticated().Return(nil)
+				service.EXPECT().BindWebsiteToPlatformDomain(mock.Anything, "1", mock.Anything).
+					Return(testRootDomain(3, "pinner.site"), nil)
+			},
+			wantErr: false,
+		},
+		{
+			name:        "requires id",
+			cmd:         newMockCommand().withInt(FlagWebsiteID, 42),
+			setupMocks:  func(cfgMgr *configmocks.MockManager, service *MockPlatformDomainAdminService) {},
+			wantErr:     true,
+			errContains: "platform domain ID is required",
+		},
+		{
+			name:        "requires website id",
+			cmd:         newMockCommand().withArgs("1"),
+			setupMocks:  func(cfgMgr *configmocks.MockManager, service *MockPlatformDomainAdminService) {},
+			wantErr:     true,
+			errContains: "--website-id is required",
+		},
+		{
+			name: "returns error when service fails",
+			cmd:  newMockCommand().withArgs("1").withInt(FlagWebsiteID, 42),
+			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPlatformDomainAdminService) {
+				service.EXPECT().RequireAuthenticated().Return(nil)
+				service.EXPECT().BindWebsiteToPlatformDomain(mock.Anything, "1", mock.Anything).
+					Return(nil, errors.New("bind failed"))
+			},
+			wantErr:     true,
+			errContains: "bind failed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfgMgr := configmocks.NewMockManager(t)
+			cfgMgr.EXPECT().Config().Return(&config.Config{}).Maybe()
+			service := NewMockPlatformDomainAdminService(t)
+			output := newTestOutput()
+
+			if tt.setupMocks != nil {
+				tt.setupMocks(cfgMgr, service)
+			}
+
+			err := adminPlatformDomainsBindAction(context.Background(), tt.cmd, output, cfgMgr, func(cm config.Manager, out Output) PlatformDomainAdminService {
 				return service
 			})
 
