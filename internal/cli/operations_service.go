@@ -105,7 +105,7 @@ func (s *OperationsServiceDefault) List(ctx context.Context, opts OperationsList
 	// "common sense default view" so the list isn't flooded with historical
 	// completed operations.
 	statuses := opts.StatusFilters
-	if len(statuses) == 0 && !opts.IncludeAll {
+	if len(statuses) == 0 && !opts.IncludeAll && !opts.IsWatch {
 		statuses = []string{
 			string(portalsdk.OperationStatusPending),
 			string(portalsdk.OperationStatusProcessing),

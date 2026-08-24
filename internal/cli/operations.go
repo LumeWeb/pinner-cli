@@ -58,6 +58,7 @@ func operationsList(ctx context.Context, cmd argsFlagGetter, output Output, cfgM
 	watch := cmd.Bool(FlagWatch)
 
 	if watch {
+		opts.IsWatch = true
 		return watchOperationsList(ctx, service, output, opts)
 	}
 

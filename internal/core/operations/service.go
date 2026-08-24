@@ -72,6 +72,11 @@ type ListOptions struct {
 	// returns operations in any status. Has no effect when StatusFilters
 	// is explicitly provided.
 	IncludeAll bool
+	// IsWatch is set by the watch code path to skip the default active-status
+	// filter. Without this, --watch only sees pending/processing operations,
+	// so allOperationsSettled() can never observe the terminal transition and
+	// the loop hangs until the active list drains.
+	IsWatch bool
 }
 
 // Service is the contract for inspecting account operations.

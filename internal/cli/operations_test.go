@@ -1412,7 +1412,7 @@ func TestOperationsList_Pagination(t *testing.T) {
 func TestWatchCatalogOperationsList_PaginationAndAuth(t *testing.T) {
 	opsSvc := NewMockOperationsService(t)
 	opsSvc.EXPECT().RequireAuthenticated().Return(nil)
-	opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{Page: 1, PageSize: 10}).Return(&OperationsListResult{
+	opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{Page: 1, PageSize: 10, IsWatch: true}).Return(&OperationsListResult{
 		Operations: []OperationListItem{
 			{ID: 1, CID: "QmTest", Status: "completed", Operation: "pin", OperationDisplayName: "Pin", Protocol: "ipfs", ProtocolDisplayName: "IPFS", ProgressPercent: 100, StartedAt: "2024-01-01"},
 		},
@@ -1464,6 +1464,7 @@ func TestWatchCatalogOperationsList_ForwardsSearch(t *testing.T) {
 		Search:   "foo",
 		Page:     1,
 		PageSize: 10,
+			IsWatch:  true,
 	}).Return(&OperationsListResult{
 		Operations: []OperationListItem{
 			{ID: 1, CID: "QmTest", Status: "completed", Operation: "pin", OperationDisplayName: "Pin", Protocol: "ipfs", ProtocolDisplayName: "IPFS", ProgressPercent: 100, StartedAt: "2024-01-01"},

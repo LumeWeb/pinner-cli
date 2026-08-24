@@ -164,6 +164,7 @@ func watchCatalogOperationsList(ctx context.Context, c *cli.Command, op catalog.
 		Page:            page,
 		PageSize:        pageSize,
 	}
+	opts.IsWatch = true
 	return watchOperationsList(ctx, svc, output, opts)
 }
 
