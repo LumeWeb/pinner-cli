@@ -155,7 +155,8 @@ func watchCatalogOperationsList(ctx context.Context, c *cli.Command, op catalog.
 	}
 	opts := operations.ListOptions{
 		Search:          catalog.SearchArg(input),
-		StatusFilter:    catalog.StrArg(input, "status", ""),
+		StatusFilters:   catalog.StrSliceArg(input, "status"),
+		IncludeAll:      catalog.BoolArg(input, "all", false),
 		OperationFilter: catalog.StrArg(input, "operation", ""),
 		ProtocolFilter:  catalog.StrArg(input, "protocol", ""),
 		CIDFilter:       catalog.StrArg(input, "cid", ""),

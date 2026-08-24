@@ -32,6 +32,7 @@ func TestOperationsServiceDefault_List(t *testing.T) {
 		accountClient.EXPECT().ListOperations(
 			mock.Anything,
 			mock.Anything,
+			mock.Anything,
 		).Return(
 			[]*portalsdk.Operation{
 				makeOperation(1, cid, "completed", "Pin", "IPFS", 100, now, nil, ""),
@@ -63,6 +64,7 @@ func TestOperationsServiceDefault_List(t *testing.T) {
 		cid1 := "QmTest1"
 		cid2 := "QmTest2"
 		accountClient.EXPECT().ListOperations(
+			mock.Anything,
 			mock.Anything,
 			mock.Anything,
 		).Return(
@@ -102,6 +104,7 @@ func TestOperationsServiceDefault_List(t *testing.T) {
 		accountClient.EXPECT().ListOperations(
 			mock.Anything,
 			mock.Anything,
+			mock.Anything,
 		).Return(nil, 0, errors.New("server error"))
 
 		svc := NewOperationsService(cfgMgr, output, nil, WithOperationsAccountClient(accountClient))
@@ -119,6 +122,7 @@ func TestOperationsServiceDefault_List(t *testing.T) {
 		now := time.Now()
 		errMsg := "insufficient quota"
 		accountClient.EXPECT().ListOperations(
+			mock.Anything,
 			mock.Anything,
 			mock.Anything,
 		).Return(
@@ -150,6 +154,7 @@ func TestOperationsServiceDefault_List(t *testing.T) {
 		accountClient.EXPECT().ListOperations(
 			mock.Anything,
 			mock.Anything,
+			mock.Anything,
 		).Return(
 			[]*portalsdk.Operation{
 				makeOperation(1, "QmAuth", "completed", "Pin", "IPFS", 100, now, nil, ""),
@@ -177,6 +182,7 @@ func TestOperationsServiceDefault_List(t *testing.T) {
 		accountClient.EXPECT().ListOperations(
 			mock.Anything,
 			mock.Anything,
+			mock.Anything,
 		).Return(
 			[]*portalsdk.Operation{
 				makeOperation(1, "QmA", "completed", "Pin", "IPFS", 100, now, nil, ""),
@@ -185,6 +191,7 @@ func TestOperationsServiceDefault_List(t *testing.T) {
 			nil,
 		).Once()
 		accountClient.EXPECT().ListOperations(
+			mock.Anything,
 			mock.Anything,
 			mock.Anything,
 		).Return(
@@ -394,6 +401,7 @@ func TestOperationsListOptions_Filters(t *testing.T) {
 		accountClient.EXPECT().ListOperations(
 			mock.Anything,
 			mock.Anything,
+			mock.Anything,
 		).Return(
 			[]*portalsdk.Operation{
 				makeOperation(1, "QmRunning", "processing", "Upload", "IPFS", 50, now, nil, ""),
@@ -404,7 +412,7 @@ func TestOperationsListOptions_Filters(t *testing.T) {
 
 		svc := NewOperationsService(cfgMgr, output, nil, WithOperationsAccountClient(accountClient))
 
-		result, err := svc.List(context.Background(), OperationsListOptions{StatusFilter: "processing"})
+		result, err := svc.List(context.Background(), OperationsListOptions{StatusFilters: []string{"processing"}})
 		require.NoError(t, err)
 		require.Len(t, result.Operations, 1)
 		assert.Equal(t, "processing", result.Operations[0].Status)
@@ -530,6 +538,8 @@ func TestNewOperationsListCommand(t *testing.T) {
 			switch v := f.(type) {
 			case *cli.StringFlag:
 				flagNames[v.Name] = true
+			case *cli.StringSliceFlag:
+				flagNames[v.Name] = true
 			case *cli.IntFlag:
 				flagNames[v.Name] = true
 			case *cli.BoolFlag:
@@ -538,6 +548,7 @@ func TestNewOperationsListCommand(t *testing.T) {
 		}
 
 		assert.True(t, flagNames[FlagStatus])
+		assert.True(t, flagNames[FlagAll])
 		assert.True(t, flagNames[FlagOperation])
 		assert.True(t, flagNames[FlagProtocol])
 		assert.True(t, flagNames[FlagCID])
@@ -573,7 +584,6 @@ func TestOperationsList(t *testing.T) {
 
 		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
 		opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{
-			StatusFilter:    "",
 			OperationFilter: "",
 			ProtocolFilter:  "",
 			CIDFilter:       "",
@@ -661,7 +671,7 @@ func TestOperationsList(t *testing.T) {
 
 		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
 		opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{
-			StatusFilter:    "processing",
+			StatusFilters:   []string{"processing"},
 			OperationFilter: "upload",
 			ProtocolFilter:  "ipfs",
 			CIDFilter:       "QmTest",
@@ -673,7 +683,7 @@ func TestOperationsList(t *testing.T) {
 		}, nil)
 
 		cmd := newMockCommand().
-			withString(FlagStatus, "processing").
+			withStringSlice(FlagStatus, []string{"processing"}).
 			withString(FlagOperation, "upload").
 			withString(FlagProtocol, "ipfs").
 			withString(FlagCID, "QmTest").
@@ -1295,7 +1305,7 @@ func TestOperationsList_StatusValidation(t *testing.T) {
 		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
 
 		cmd := newMockCommand().
-			withString(FlagStatus, "invalid")
+			withStringSlice(FlagStatus, []string{"invalid"})
 
 		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
 		authSvcFactory := func(cm config.Manager, endpoint string) AuthService { return nil }
@@ -1313,16 +1323,16 @@ func TestOperationsList_StatusValidation(t *testing.T) {
 
 		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
 		opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{
-			StatusFilter: "processing",
-			Page:         1,
-			PageSize:     10,
+			StatusFilters: []string{"processing"},
+			Page:           1,
+			PageSize:       10,
 		}).Return(&OperationsListResult{
 			Operations: []OperationListItem{},
 			Total:      0,
 		}, nil)
 
 		cmd := newMockCommand().
-			withString(FlagStatus, "processing")
+			withStringSlice(FlagStatus, []string{"processing"})
 
 		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
 		authSvcFactory := func(cm config.Manager, endpoint string) AuthService { return nil }

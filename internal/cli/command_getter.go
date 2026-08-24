@@ -37,6 +37,7 @@ type commandGetter interface {
 	flagGetterWithIsSet
 	argsGetter
 	cidGetter
+	stringSliceGetter
 	Uint(name string) uint
 	Duration(name string) time.Duration
 }
@@ -49,9 +50,14 @@ type cidGetter interface {
 	GetCID() string
 }
 
+type stringSliceGetter interface {
+	StringSlice(name string) []string
+}
+
 type argsFlagGetter interface {
 	argsGetter
 	flagGetterWithInt
+	stringSliceGetter
 }
 
 type cidFlagGetter interface {

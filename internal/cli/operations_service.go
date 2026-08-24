@@ -98,8 +98,25 @@ func (s *OperationsServiceDefault) List(ctx context.Context, opts OperationsList
 	var listOpts []portalsdk.ListOption
 
 	var filters []queryutil.CrudFilter
-	if opts.StatusFilter != "" {
-		filters = append(filters, filter.FieldEqual("status", opts.StatusFilter))
+
+	// Status filtering: when the caller provides explicit statuses, use an
+	// IN filter. When none are provided and IncludeAll is false, default to
+	// showing only active operations (pending, processing) — this is the
+	// "common sense default view" so the list isn't flooded with historical
+	// completed operations.
+	statuses := opts.StatusFilters
+	if len(statuses) == 0 && !opts.IncludeAll {
+		statuses = []string{
+			string(portalsdk.OperationStatusPending),
+			string(portalsdk.OperationStatusProcessing),
+		}
+	}
+	if len(statuses) > 0 {
+		vals := make([]any, len(statuses))
+		for i, s := range statuses {
+			vals[i] = s
+		}
+		filters = append(filters, filter.FieldIn("status", vals...))
 	}
 	if opts.OperationFilter != "" {
 		filters = append(filters, filter.FieldEqual("operation", opts.OperationFilter))
@@ -121,11 +138,13 @@ func (s *OperationsServiceDefault) List(ctx context.Context, opts OperationsList
 		listOpts = append(listOpts, portalsdk.WithSearch(opts.Search))
 	}
 
-	if opts.Sort != "" {
-		sorts := parseSortOptions(opts.Sort)
-		if len(sorts) > 0 {
-			listOpts = append(listOpts, portalsdk.WithSorts(sorts...))
-		}
+	sortStr := opts.Sort
+	if sortStr == "" {
+		sortStr = "id:desc"
+	}
+	sorts := parseSortOptions(sortStr)
+	if len(sorts) > 0 {
+		listOpts = append(listOpts, portalsdk.WithSorts(sorts...))
 	}
 
 	if opts.PageSize > 0 {
@@ -232,6 +251,18 @@ func validateOperationStatus(status string) error {
 	}
 	if !validOperationStatuses[portalsdk.OperationStatus(status)] {
 		return fmt.Errorf("invalid status %q: must be one of pending, processing, completed, failed, duplicate", status)
+	}
+	return nil
+}
+
+// validateOperationStatuses validates a slice of status values. Returns nil
+// for an empty slice (no filter is applied in that case — the default
+// active-status filter kicks in at the service layer).
+func validateOperationStatuses(statuses []string) error {
+	for _, s := range statuses {
+		if err := validateOperationStatus(s); err != nil {
+			return err
+		}
 	}
 	return nil
 }
