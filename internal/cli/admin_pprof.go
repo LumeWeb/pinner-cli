@@ -17,10 +17,10 @@ func newAdminPprofCommand() *cli.Command {
 		Description: `Access Go runtime profiling data via pprof endpoints.
 
 Profiles are binary data meant for consumption by 'go tool pprof'.
-Redirect output to a file, then analyze:
+Redirect output to stdout, or save directly to a file with --output:
 
   pinner admin pprof heap > heap.prof && go tool pprof heap.prof
-  pinner admin pprof cpu > cpu.prof && go tool pprof cpu.prof
+  pinner admin pprof cpu --output cpu.prof && go tool pprof cpu.prof
   pinner admin pprof trace > trace.out && go tool trace trace.out
 
 Examples:
@@ -46,46 +46,92 @@ Examples:
 	}
 }
 
-func newAdminPprofIndexCommand() *cli.Command {
-	return &cli.Command{
-		Name:  CmdIndex,
-		Usage: "Show pprof index page",
-		Description: `Show the pprof index page listing available profiles.
+// pprofOutputFlag routes profile bytes to a file instead of stdout.
+func pprofOutputFlag() cli.Flag {
+	return &cli.StringFlag{
+		Name:    FlagOutput,
+		Aliases: []string{"o"},
+		Usage:   "Write the profile bytes to this file instead of stdout",
+	}
+}
 
-Examples:
-  pinner admin pprof index`,
+// newAdminPprofProfileCommand builds a profile command that fetches binary
+// profile data and writes it to --output or streams it to stdout. The profile
+// commands share this shape; only the name, help text and fetch function vary.
+func newAdminPprofProfileCommand(name, usage, desc string, fn func(ProfilingAdminService, context.Context) ([]byte, error)) *cli.Command {
+	return &cli.Command{
+		Name:        name,
+		Usage:       usage,
+		Description: desc,
+		Flags:       []cli.Flag{pprofOutputFlag()},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			cfgMgr, output, err := setupCommandContext(cmd)
 			if err != nil {
 				return err
 			}
-			return adminPprofByteAction(ctx, cmd, output, cfgMgr, defaultProfilingAdminServiceFactory,
-				func(svc ProfilingAdminService, ctx context.Context) ([]byte, error) {
-					return svc.GetProfileIndex(ctx)
-				})
+			return adminPprofByteAction(ctx, cmd, output, cfgMgr, defaultProfilingAdminServiceFactory, fn)
 		},
 	}
 }
 
-func newAdminPprofBlockCommand() *cli.Command {
-	return &cli.Command{
-		Name:  CmdBlock,
-		Usage: "Get block profile data",
-		Description: `Get block profile data for analyzing goroutine blocking events.
+func newAdminPprofIndexCommand() *cli.Command {
+	return newAdminPprofProfileCommand(CmdIndex, "Show pprof index page",
+		"Show the pprof index page listing available profiles.",
+		func(svc ProfilingAdminService, ctx context.Context) ([]byte, error) { return svc.GetProfileIndex(ctx) })
+}
 
-Examples:
-  pinner admin pprof block > block.prof && go tool pprof block.prof`,
-		Action: func(ctx context.Context, cmd *cli.Command) error {
-			cfgMgr, output, err := setupCommandContext(cmd)
-			if err != nil {
-				return err
-			}
-			return adminPprofByteAction(ctx, cmd, output, cfgMgr, defaultProfilingAdminServiceFactory,
-				func(svc ProfilingAdminService, ctx context.Context) ([]byte, error) {
-					return svc.GetBlockProfile(ctx)
-				})
-		},
-	}
+func newAdminPprofBlockCommand() *cli.Command {
+	return newAdminPprofProfileCommand(CmdBlock, "Get block profile data",
+		"Get block profile data for analyzing goroutine blocking events.",
+		func(svc ProfilingAdminService, ctx context.Context) ([]byte, error) { return svc.GetBlockProfile(ctx) })
+}
+
+func newAdminPprofCmdlineCommand() *cli.Command {
+	return newAdminPprofProfileCommand(CmdCmdline, "Get command line of the running program",
+		"Get the command line of the running program.",
+		func(svc ProfilingAdminService, ctx context.Context) ([]byte, error) { return svc.GetCmdline(ctx) })
+}
+
+func newAdminPprofGoroutineCommand() *cli.Command {
+	return newAdminPprofProfileCommand(CmdGoroutine, "Get goroutine profile data",
+		"Get stack traces of all current goroutines.",
+		func(svc ProfilingAdminService, ctx context.Context) ([]byte, error) { return svc.GetGoroutineProfile(ctx) })
+}
+
+func newAdminPprofHeapCommand() *cli.Command {
+	return newAdminPprofProfileCommand(CmdHeap, "Get heap profile data",
+		"Get a sampling of memory allocations of live objects.",
+		func(svc ProfilingAdminService, ctx context.Context) ([]byte, error) { return svc.GetHeapProfile(ctx) })
+}
+
+func newAdminPprofMutexCommand() *cli.Command {
+	return newAdminPprofProfileCommand(CmdMutex, "Get mutex profile data",
+		"Get stack traces of holders of contended mutexes.",
+		func(svc ProfilingAdminService, ctx context.Context) ([]byte, error) { return svc.GetMutexProfile(ctx) })
+}
+
+func newAdminPprofCPUCommand() *cli.Command {
+	return newAdminPprofProfileCommand(CmdCPU, "Get CPU profile data",
+		"Get a CPU profile for the default duration.",
+		func(svc ProfilingAdminService, ctx context.Context) ([]byte, error) { return svc.GetCPUProfile(ctx) })
+}
+
+func newAdminPprofSymbolCommand() *cli.Command {
+	return newAdminPprofProfileCommand(CmdSymbol, "Get symbol lookup data",
+		"Look up program counters and return function names.",
+		func(svc ProfilingAdminService, ctx context.Context) ([]byte, error) { return svc.GetSymbol(ctx) })
+}
+
+func newAdminPprofThreadcreateCommand() *cli.Command {
+	return newAdminPprofProfileCommand(CmdThreadcreate, "Get thread creation profile data",
+		"Get stack traces that led to the creation of new OS threads.",
+		func(svc ProfilingAdminService, ctx context.Context) ([]byte, error) { return svc.GetThreadcreate(ctx) })
+}
+
+func newAdminPprofTraceCommand() *cli.Command {
+	return newAdminPprofProfileCommand(CmdTrace, "Get execution trace data",
+		"Get an execution trace of the running program.",
+		func(svc ProfilingAdminService, ctx context.Context) ([]byte, error) { return svc.GetTrace(ctx) })
 }
 
 func newAdminPprofSetBlockRateCommand() *cli.Command {
@@ -106,90 +152,6 @@ Examples:
 			return adminPprofSetRateAction(ctx, cmd, output, cfgMgr, defaultProfilingAdminServiceFactory, "block profile rate",
 				func(svc ProfilingAdminService, ctx context.Context, rate int) error {
 					return svc.SetBlockProfileRate(ctx, rate)
-				})
-		},
-	}
-}
-
-func newAdminPprofCmdlineCommand() *cli.Command {
-	return &cli.Command{
-		Name:  CmdCmdline,
-		Usage: "Get command line of the running program",
-		Description: `Get the command line of the running program.
-
-Examples:
-  pinner admin pprof cmdline`,
-		Action: func(ctx context.Context, cmd *cli.Command) error {
-			cfgMgr, output, err := setupCommandContext(cmd)
-			if err != nil {
-				return err
-			}
-			return adminPprofByteAction(ctx, cmd, output, cfgMgr, defaultProfilingAdminServiceFactory,
-				func(svc ProfilingAdminService, ctx context.Context) ([]byte, error) {
-					return svc.GetCmdline(ctx)
-				})
-		},
-	}
-}
-
-func newAdminPprofGoroutineCommand() *cli.Command {
-	return &cli.Command{
-		Name:  CmdGoroutine,
-		Usage: "Get goroutine profile data",
-		Description: `Get stack traces of all current goroutines.
-
-Examples:
-  pinner admin pprof goroutine > goroutine.prof && go tool pprof goroutine.prof`,
-		Action: func(ctx context.Context, cmd *cli.Command) error {
-			cfgMgr, output, err := setupCommandContext(cmd)
-			if err != nil {
-				return err
-			}
-			return adminPprofByteAction(ctx, cmd, output, cfgMgr, defaultProfilingAdminServiceFactory,
-				func(svc ProfilingAdminService, ctx context.Context) ([]byte, error) {
-					return svc.GetGoroutineProfile(ctx)
-				})
-		},
-	}
-}
-
-func newAdminPprofHeapCommand() *cli.Command {
-	return &cli.Command{
-		Name:  CmdHeap,
-		Usage: "Get heap profile data",
-		Description: `Get a sampling of memory allocations of live objects.
-
-Examples:
-  pinner admin pprof heap > heap.prof && go tool pprof heap.prof`,
-		Action: func(ctx context.Context, cmd *cli.Command) error {
-			cfgMgr, output, err := setupCommandContext(cmd)
-			if err != nil {
-				return err
-			}
-			return adminPprofByteAction(ctx, cmd, output, cfgMgr, defaultProfilingAdminServiceFactory,
-				func(svc ProfilingAdminService, ctx context.Context) ([]byte, error) {
-					return svc.GetHeapProfile(ctx)
-				})
-		},
-	}
-}
-
-func newAdminPprofMutexCommand() *cli.Command {
-	return &cli.Command{
-		Name:  CmdMutex,
-		Usage: "Get mutex profile data",
-		Description: `Get stack traces of holders of contended mutexes.
-
-Examples:
-  pinner admin pprof mutex > mutex.prof && go tool pprof mutex.prof`,
-		Action: func(ctx context.Context, cmd *cli.Command) error {
-			cfgMgr, output, err := setupCommandContext(cmd)
-			if err != nil {
-				return err
-			}
-			return adminPprofByteAction(ctx, cmd, output, cfgMgr, defaultProfilingAdminServiceFactory,
-				func(svc ProfilingAdminService, ctx context.Context) ([]byte, error) {
-					return svc.GetMutexProfile(ctx)
 				})
 		},
 	}
@@ -218,27 +180,6 @@ Examples:
 	}
 }
 
-func newAdminPprofCPUCommand() *cli.Command {
-	return &cli.Command{
-		Name:  CmdCPU,
-		Usage: "Get CPU profile data",
-		Description: `Get a CPU profile for the default duration.
-
-Examples:
-  pinner admin pprof cpu > cpu.prof && go tool pprof cpu.prof`,
-		Action: func(ctx context.Context, cmd *cli.Command) error {
-			cfgMgr, output, err := setupCommandContext(cmd)
-			if err != nil {
-				return err
-			}
-			return adminPprofByteAction(ctx, cmd, output, cfgMgr, defaultProfilingAdminServiceFactory,
-				func(svc ProfilingAdminService, ctx context.Context) ([]byte, error) {
-					return svc.GetCPUProfile(ctx)
-				})
-		},
-	}
-}
-
 func newAdminPprofStatusCommand() *cli.Command {
 	return &cli.Command{
 		Name:  CmdStatus,
@@ -258,70 +199,7 @@ Examples:
 	}
 }
 
-func newAdminPprofSymbolCommand() *cli.Command {
-	return &cli.Command{
-		Name:  CmdSymbol,
-		Usage: "Get symbol lookup data",
-		Description: `Look up program counters and return function names.
-
-Examples:
-  pinner admin pprof symbol`,
-		Action: func(ctx context.Context, cmd *cli.Command) error {
-			cfgMgr, output, err := setupCommandContext(cmd)
-			if err != nil {
-				return err
-			}
-			return adminPprofByteAction(ctx, cmd, output, cfgMgr, defaultProfilingAdminServiceFactory,
-				func(svc ProfilingAdminService, ctx context.Context) ([]byte, error) {
-					return svc.GetSymbol(ctx)
-				})
-		},
-	}
-}
-
-func newAdminPprofThreadcreateCommand() *cli.Command {
-	return &cli.Command{
-		Name:  CmdThreadcreate,
-		Usage: "Get thread creation profile data",
-		Description: `Get stack traces that led to the creation of new OS threads.
-
-Examples:
-  pinner admin pprof threadcreate > threadcreate.prof && go tool pprof threadcreate.prof`,
-		Action: func(ctx context.Context, cmd *cli.Command) error {
-			cfgMgr, output, err := setupCommandContext(cmd)
-			if err != nil {
-				return err
-			}
-			return adminPprofByteAction(ctx, cmd, output, cfgMgr, defaultProfilingAdminServiceFactory,
-				func(svc ProfilingAdminService, ctx context.Context) ([]byte, error) {
-					return svc.GetThreadcreate(ctx)
-				})
-		},
-	}
-}
-
-func newAdminPprofTraceCommand() *cli.Command {
-	return &cli.Command{
-		Name:  CmdTrace,
-		Usage: "Get execution trace data",
-		Description: `Get an execution trace of the running program.
-
-Examples:
-  pinner admin pprof trace > trace.out && go tool trace trace.out`,
-		Action: func(ctx context.Context, cmd *cli.Command) error {
-			cfgMgr, output, err := setupCommandContext(cmd)
-			if err != nil {
-				return err
-			}
-			return adminPprofByteAction(ctx, cmd, output, cfgMgr, defaultProfilingAdminServiceFactory,
-				func(svc ProfilingAdminService, ctx context.Context) ([]byte, error) {
-					return svc.GetTrace(ctx)
-				})
-		},
-	}
-}
-
-func adminPprofByteAction(ctx context.Context, cmd argsGetter, output Output, cfgMgr config.Manager, serviceFactory ProfilingAdminServiceFactory, fn func(ProfilingAdminService, context.Context) ([]byte, error)) error {
+func adminPprofByteAction(ctx context.Context, cmd flagGetter, output Output, cfgMgr config.Manager, serviceFactory ProfilingAdminServiceFactory, fn func(ProfilingAdminService, context.Context) ([]byte, error)) error {
 	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetSyncTimeout())
 	defer cancel()
 
@@ -336,12 +214,19 @@ func adminPprofByteAction(ctx context.Context, cmd argsGetter, output Output, cf
 		return err
 	}
 
-	if output.IsJSON() {
-		_, err = os.Stdout.Write(data)
+	if err := writePprofBytes(cmd.String(FlagOutput), data); err != nil {
 		return err
 	}
+	return nil
+}
 
-	_, err = os.Stdout.Write(data)
+// writePprofBytes writes profile data to the given path, or streams it to
+// stdout when path is empty.
+func writePprofBytes(path string, data []byte) error {
+	if path != "" {
+		return os.WriteFile(path, data, 0o644)
+	}
+	_, err := os.Stdout.Write(data)
 	return err
 }
 

@@ -3,6 +3,8 @@ package cli
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -12,6 +14,17 @@ import (
 	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
 	"go.lumeweb.com/portal-sdk/admin"
 )
+
+// TestWritePprofBytesToFile verifies the --output path saves profile bytes to
+// disk.
+func TestWritePprofBytesToFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "heap.prof")
+	require.NoError(t, writePprofBytes(path, []byte("heap-data")))
+	got, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, "heap-data", string(got))
+}
 
 func TestAdminPprofByteAction(t *testing.T) {
 	tests := []struct {
