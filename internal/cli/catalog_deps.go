@@ -1,9 +1,11 @@
 package cli
 
 import (
+	"fmt"
 	"strings"
 
 	"go.lumeweb.com/pinner-cli/internal/catalogops"
+	"go.lumeweb.com/pinner-cli/internal/core/admin"
 	"go.lumeweb.com/pinner-cli/internal/core/auth"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
 	"go.lumeweb.com/pinner-cli/internal/core/vault"
@@ -92,6 +94,44 @@ func buildCatalogOpsDeps() *mcpadapter.CatalogDepsBundle {
 			// Web-app subscription page URL: https://account.<portal>/account/subscription.
 			PortalURL: func(cfgMgr config.Manager) string {
 				return strings.TrimSuffix(cfgMgr.Config().GetAccountEndpointSecure(), "/") + "/account/subscription"
+			},
+		},
+		Admin: catalogops.AdminDeps{
+			// Live config manager shared with the rest of the bundle.
+			CfgMgr: func() config.Manager {
+				cfgMgr, err := configManagerFactory()
+				if err != nil {
+					return nil
+				}
+				return cfgMgr
+			},
+			// Admin services resolve lazily per invocation via the core
+			// factories (which perform token exchange on first use). They take
+			// the live config manager so an on-disk config/auth-token edit is
+			// picked up at request time.
+			PlatformDomainAdminService: func(cfgMgr config.Manager) (admin.PlatformDomainAdminService, error) {
+				if cfgMgr == nil {
+					return nil, fmt.Errorf("no config manager available")
+				}
+				return admin.DefaultPlatformDomainAdminServiceFactory(cfgMgr), nil
+			},
+			QuotaAdminService: func(cfgMgr config.Manager) (admin.QuotaAdminService, error) {
+				if cfgMgr == nil {
+					return nil, fmt.Errorf("no config manager available")
+				}
+				return admin.DefaultQuotaAdminServiceFactory(cfgMgr), nil
+			},
+			BillingAdminService: func(cfgMgr config.Manager) (admin.BillingAdminService, error) {
+				if cfgMgr == nil {
+					return nil, fmt.Errorf("no config manager available")
+				}
+				return admin.DefaultBillingAdminServiceFactory(cfgMgr), nil
+			},
+			WebsiteAdminService: func(cfgMgr config.Manager) (admin.WebsiteAdminService, error) {
+				if cfgMgr == nil {
+					return nil, fmt.Errorf("no config manager available")
+				}
+				return admin.DefaultWebsiteAdminServiceFactory(cfgMgr), nil
 			},
 		},
 	}

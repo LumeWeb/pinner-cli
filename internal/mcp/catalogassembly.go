@@ -57,6 +57,7 @@ func AssembleCatalogOps(deps *CatalogDepsBundle) (catalog.Catalog, error) {
 		{"ipns", catalogops.IPNSOperations(deps.IPNS)},
 		{"api-keys", catalogops.APIKeysOperations(deps.APIKeys)},
 		{"operations", catalogops.OperationsOperations(deps.Operations)},
+		{"admin", catalogops.AdminOperations(deps.Admin)},
 	}
 
 	for _, d := range domains {

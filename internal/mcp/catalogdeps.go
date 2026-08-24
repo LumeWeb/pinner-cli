@@ -32,6 +32,7 @@ type CatalogDepsBundle struct {
 	IPNS      catalogops.IPNSDeps
 	APIKeys   catalogops.APIKeysDeps
 	Operations catalogops.OperationsDeps
+	Admin     catalogops.AdminDeps
 }
 
 // buildCatalogOpt configures buildCatalog. It is a functional option so the
