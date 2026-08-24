@@ -68,7 +68,7 @@ func TestOperationsServiceDefault_List(t *testing.T) {
 		).Return(
 			[]*portalsdk.Operation{
 				makeOperation(1, cid1, "completed", "Pin", "IPFS", 100, now, nil, ""),
-				makeOperation(2, cid2, "running", "Upload", "IPFS", 50, now, nil, "processing"),
+				makeOperation(2, cid2, "processing", "Upload", "IPFS", 50, now, nil, "processing"),
 			},
 			0,
 			nil,
@@ -79,7 +79,7 @@ func TestOperationsServiceDefault_List(t *testing.T) {
 		result, err := svc.List(context.Background(), OperationsListOptions{})
 		require.NoError(t, err)
 		require.Len(t, result.Operations, 2)
-		assert.Equal(t, "running", result.Operations[1].Status)
+		assert.Equal(t, "processing", result.Operations[1].Status)
 		assert.Equal(t, "processing", result.Operations[1].StatusMessage)
 	})
 
@@ -189,7 +189,7 @@ func TestOperationsServiceDefault_List(t *testing.T) {
 			mock.Anything,
 		).Return(
 			[]*portalsdk.Operation{
-				makeOperation(2, "QmB", "running", "Upload", "IPFS", 50, now, nil, ""),
+				makeOperation(2, "QmB", "processing", "Upload", "IPFS", 50, now, nil, ""),
 			},
 			0,
 			nil,
@@ -216,7 +216,7 @@ func TestOperationsServiceDefault_Get(t *testing.T) {
 		now := time.Now()
 		cid := "QmDetail"
 		accountClient.EXPECT().GetOperation(mock.Anything, int64(42)).Return(
-			makeOperation(42, cid, "running", "Upload", "IPFS", 75, now, nil, "processing"),
+			makeOperation(42, cid, "processing", "Upload", "IPFS", 75, now, nil, "processing"),
 			nil,
 		)
 
@@ -226,7 +226,7 @@ func TestOperationsServiceDefault_Get(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, 42, detail.ID)
 		assert.Equal(t, cid, detail.CID)
-		assert.Equal(t, "running", detail.Status)
+		assert.Equal(t, "processing", detail.Status)
 		assert.Equal(t, float32(75), detail.ProgressPercent)
 		assert.Equal(t, "processing", detail.StatusMessage)
 	})
@@ -370,9 +370,9 @@ func TestFormatOperationStatusWithColor(t *testing.T) {
 	}{
 		{"completed is green", "completed"},
 		{"pending is yellow", "pending"},
-		{"running is yellow", "running"},
+		{"processing is yellow", "processing"},
 		{"failed is red", "failed"},
-		{"error is red", "error"},
+		{"duplicate is red", "duplicate"},
 		{"unknown passes through", "unknown"},
 	}
 
@@ -396,7 +396,7 @@ func TestOperationsListOptions_Filters(t *testing.T) {
 			mock.Anything,
 		).Return(
 			[]*portalsdk.Operation{
-				makeOperation(1, "QmRunning", "running", "Upload", "IPFS", 50, now, nil, ""),
+				makeOperation(1, "QmRunning", "processing", "Upload", "IPFS", 50, now, nil, ""),
 			},
 			0,
 			nil,
@@ -404,10 +404,10 @@ func TestOperationsListOptions_Filters(t *testing.T) {
 
 		svc := NewOperationsService(cfgMgr, output, nil, WithOperationsAccountClient(accountClient))
 
-		result, err := svc.List(context.Background(), OperationsListOptions{StatusFilter: "running"})
+		result, err := svc.List(context.Background(), OperationsListOptions{StatusFilter: "processing"})
 		require.NoError(t, err)
 		require.Len(t, result.Operations, 1)
-		assert.Equal(t, "running", result.Operations[0].Status)
+		assert.Equal(t, "processing", result.Operations[0].Status)
 	})
 }
 
@@ -419,8 +419,8 @@ func TestRenderOperationDetail(t *testing.T) {
 		op := &OperationDetail{
 			ID:                   1,
 			CID:                  "QmTest",
-			Status:               "running",
-			StatusDisplayName:    "Running",
+			Status:               "processing",
+			StatusDisplayName:    "Processing",
 			Operation:            "upload",
 			OperationDisplayName: "Upload",
 			Protocol:             "ipfs",
@@ -661,7 +661,7 @@ func TestOperationsList(t *testing.T) {
 
 		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
 		opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{
-			StatusFilter:    "running",
+			StatusFilter:    "processing",
 			OperationFilter: "upload",
 			ProtocolFilter:  "ipfs",
 			CIDFilter:       "QmTest",
@@ -673,7 +673,7 @@ func TestOperationsList(t *testing.T) {
 		}, nil)
 
 		cmd := newMockCommand().
-			withString(FlagStatus, "running").
+			withString(FlagStatus, "processing").
 			withString(FlagOperation, "upload").
 			withString(FlagProtocol, "ipfs").
 			withString(FlagCID, "QmTest").
@@ -834,7 +834,7 @@ func TestAllOperationsSettled(t *testing.T) {
 		result := &OperationsListResult{
 			Operations: []OperationListItem{
 				{Status: "completed"},
-				{Status: "running"},
+				{Status: "processing"},
 			},
 		}
 		assert.False(t, allOperationsSettled(result))
@@ -880,7 +880,7 @@ func TestWatchOperationsList(t *testing.T) {
 
 		opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{}).Return(&OperationsListResult{
 			Operations: []OperationListItem{
-				{ID: 1, CID: "QmTest", Status: "running", Operation: "upload", OperationDisplayName: "Upload", Protocol: "ipfs", ProtocolDisplayName: "IPFS", ProgressPercent: 50, StartedAt: "2024-01-01"},
+				{ID: 1, CID: "QmTest", Status: "processing", Operation: "upload", OperationDisplayName: "Upload", Protocol: "ipfs", ProtocolDisplayName: "IPFS", ProgressPercent: 50, StartedAt: "2024-01-01"},
 			},
 			Total: 1,
 		}, nil)
@@ -934,7 +934,7 @@ func TestWatchOperationsList(t *testing.T) {
 				if callCount == 1 {
 					return &OperationsListResult{
 						Operations: []OperationListItem{
-							{ID: 1, CID: "QmTest", Status: "running", Operation: "upload", OperationDisplayName: "Upload", Protocol: "ipfs", ProtocolDisplayName: "IPFS", ProgressPercent: 50, StartedAt: "2024-01-01"},
+							{ID: 1, CID: "QmTest", Status: "processing", Operation: "upload", OperationDisplayName: "Upload", Protocol: "ipfs", ProtocolDisplayName: "IPFS", ProgressPercent: 50, StartedAt: "2024-01-01"},
 						},
 						Total: 1,
 					}, nil
@@ -962,7 +962,7 @@ func TestWatchOperationsList(t *testing.T) {
 				if callCount == 1 {
 					return &OperationsListResult{
 						Operations: []OperationListItem{
-							{ID: 1, CID: "QmTest", Status: "running", Operation: "upload", OperationDisplayName: "Upload", Protocol: "ipfs", ProtocolDisplayName: "IPFS", ProgressPercent: 50, StartedAt: "2024-01-01"},
+							{ID: 1, CID: "QmTest", Status: "processing", Operation: "upload", OperationDisplayName: "Upload", Protocol: "ipfs", ProtocolDisplayName: "IPFS", ProgressPercent: 50, StartedAt: "2024-01-01"},
 						},
 						Total: 1,
 					}, nil
@@ -992,7 +992,7 @@ func TestWatchOperationsList(t *testing.T) {
 				if callCount == 1 {
 					return &OperationsListResult{
 						Operations: []OperationListItem{
-							{ID: 1, CID: "QmTest", Status: "running", Operation: "upload", OperationDisplayName: "Upload", Protocol: "ipfs", ProtocolDisplayName: "IPFS", ProgressPercent: 50, StartedAt: "2024-01-01"},
+							{ID: 1, CID: "QmTest", Status: "processing", Operation: "upload", OperationDisplayName: "Upload", Protocol: "ipfs", ProtocolDisplayName: "IPFS", ProgressPercent: 50, StartedAt: "2024-01-01"},
 						},
 						Total: 1,
 					}, nil
@@ -1107,8 +1107,8 @@ func TestWatchOperation(t *testing.T) {
 					return &OperationDetail{
 						ID:                   10,
 						CID:                  "QmProgress",
-						Status:               "running",
-						StatusDisplayName:    "Running",
+						Status:               "processing",
+						StatusDisplayName:    "Processing",
 						Operation:            "upload",
 						OperationDisplayName: "Upload",
 						Protocol:             "ipfs",
@@ -1202,8 +1202,8 @@ func TestValidateOperationStatus(t *testing.T) {
 		assert.NoError(t, validateOperationStatus("pending"))
 	})
 
-	t.Run("running is valid", func(t *testing.T) {
-		assert.NoError(t, validateOperationStatus("running"))
+	t.Run("processing is valid", func(t *testing.T) {
+		assert.NoError(t, validateOperationStatus("processing"))
 	})
 
 	t.Run("completed is valid", func(t *testing.T) {
@@ -1214,19 +1214,20 @@ func TestValidateOperationStatus(t *testing.T) {
 		assert.NoError(t, validateOperationStatus("failed"))
 	})
 
-	t.Run("error is valid", func(t *testing.T) {
-		assert.NoError(t, validateOperationStatus("error"))
+	t.Run("duplicate is valid", func(t *testing.T) {
+		assert.NoError(t, validateOperationStatus("duplicate"))
 	})
 
 	t.Run("invalid status returns error", func(t *testing.T) {
 		err := validateOperationStatus("invalid")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "invalid status")
-		assert.Contains(t, err.Error(), "pending, running, completed, failed, error")
+		assert.Contains(t, err.Error(), "pending, processing, completed, failed, duplicate")
 	})
 
 	t.Run("case sensitive", func(t *testing.T) {
-		err := validateOperationStatus("Running")
+		err := validateOperationStatus("Processing")
+
 		require.Error(t, err)
 	})
 }
@@ -1312,7 +1313,7 @@ func TestOperationsList_StatusValidation(t *testing.T) {
 
 		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
 		opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{
-			StatusFilter: "running",
+			StatusFilter: "processing",
 			Page:         1,
 			PageSize:     10,
 		}).Return(&OperationsListResult{
@@ -1321,7 +1322,7 @@ func TestOperationsList_StatusValidation(t *testing.T) {
 		}, nil)
 
 		cmd := newMockCommand().
-			withString(FlagStatus, "running")
+			withString(FlagStatus, "processing")
 
 		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
 		authSvcFactory := func(cm config.Manager, endpoint string) AuthService { return nil }

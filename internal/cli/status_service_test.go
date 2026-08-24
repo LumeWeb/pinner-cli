@@ -252,7 +252,7 @@ func TestStatusServiceDefault_Status(t *testing.T) {
 			mock.Anything,
 		).Return(
 			[]*portalsdk.Operation{
-				makeOperation(2, cidB, "running", "Pin", "IPFS", 50, now, nil, ""),
+				makeOperation(2, cidB, "processing", "Pin", "IPFS", 50, now, nil, ""),
 			},
 			0,
 			nil,

@@ -37,7 +37,7 @@ func operationsList(d OperationsDeps) catalog.Operation {
 		Positional: "",
 		Args: []catalog.OperationArg{
 			{Name: "search", Type: catalog.ArgTypeString, Help: "Full-text search evaluated server-side against operation type, status, protocol, or CID; composes with the filters below"},
-			{Name: "status", Type: catalog.ArgTypeString, Help: "Filter by status (pending, running, completed, failed, error)"},
+			{Name: "status", Type: catalog.ArgTypeString, Help: "Filter by status (pending, processing, completed, failed, duplicate)"},
 			{Name: "operation", Type: catalog.ArgTypeString, Help: "Filter by operation type (e.g. upload, pin)"},
 			{Name: "protocol", Type: catalog.ArgTypeString, Help: "Filter by protocol (e.g. ipfs)"},
 			{Name: "cid", Type: catalog.ArgTypeString, Help: "Filter by CID"},
