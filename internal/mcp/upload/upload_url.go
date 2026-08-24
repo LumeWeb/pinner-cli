@@ -17,7 +17,7 @@ import (
 type RelayURLUploadInput struct {
 	URL  string `json:"url" jsonschema:"format=uri,description=Public HTTPS URL to fetch and upload."`
 	Name string `json:"name,omitempty" jsonschema:"description=Optional upload name."`
-	Wait bool   `json:"wait,omitempty" jsonschema:"description=Wait for pinning to complete before returning."`
+	Wait bool   `json:"wait,omitempty" jsonschema:"description=Wait until this upload's own pin operation completes before returning (the upload already pins; this only controls whether the call blocks for it)."`
 	Wrap bool   `json:"wrap,omitempty" jsonschema:"description=Wrap the single fetched file in a directory root so the CID is a directory (required when the upload is a website)."`
 }
 
@@ -30,7 +30,7 @@ func RelayURLUploadDescriptor(handler transfer.RelayURLUploadHandler, allowedHos
 	return model.ToolDescriptor{
 		Name:        "upload_url",
 		Title:       "Upload a file from a URL",
-		Description: "Fetch a public HTTPS URL locally and upload it to Pinner through the authenticated upload path. Do not put Pinner's credentials in the URL; Pinner fetches it with its own stored auth. Intended for remote HTTP clients that cannot reference a local path.",
+		Description: "Fetch a public HTTPS URL and upload it to Pinner, pinning the resulting CID. The returned CID is already pinned: do NOT call pins_add afterward; the wait flag waits for this upload's own pin operation. Do not put Pinner's credentials in the URL; Pinner fetches with its own stored auth. For remote HTTP clients that cannot reference a local path.",
 		Category:    model.CategoryCore,
 		InputSchema: toolargs.ToolSchemaFor[RelayURLUploadInput](),
 		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {

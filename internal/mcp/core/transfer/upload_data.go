@@ -17,7 +17,7 @@ import (
 type DataURIUploadInput struct {
 	File string `json:"file" jsonschema:"format=uri,description=RFC 2397 data: URI in the SEP-2356 x-mcp-file wire form: data:;name=<name>;size=<n>;base64,<base64 payload>. The bytes do not enter the model context; the host supplies this value from a user-attached file."`
 	Name string `json:"name,omitempty" jsonschema:"description=Optional upload name (defaults to the data URI name, else 'upload')."`
-	Wait bool   `json:"wait,omitempty" jsonschema:"description=Wait for pinning before returning."`
+	Wait bool   `json:"wait,omitempty" jsonschema:"description=Wait until this upload's own pin operation completes before returning (the upload already pins; this only controls whether the call blocks for it)."`
 	Wrap bool   `json:"wrap,omitempty" jsonschema:"description=Wrap the single file in a directory root so the resulting CID is a directory. Required when the upload is a website (a website must be a directory, not a bare file). True only affects single-file uploads; directory uploads are already a directory root."`
 }
 
@@ -32,7 +32,7 @@ func DataURIUploadDescriptor(handler DataURIUploadHandler, maxBytes int64) model
 	return model.ToolDescriptor{
 		Name:        "upload_data",
 		Title:       "Upload a file from a data URI",
-		Description: "Upload a file supplied as a SEP-2356 data: file URI (x-mcp-file wire form). Pinner decodes the base64 payload locally and uploads it through the authenticated path. Last resort: prefer upload_file with a direct host file reference (or source.mode=url/mint) whenever your host can hand Pinner the file without encoding it as base64. Use this tool only when the host can attach file bytes as a data URI and cannot supply a fetchable URL or presigned endpoint.",
+		Description: "Upload bytes from an RFC 2397 data: URI and pin the resulting CID. The returned CID is already pinned: do NOT call pins_add afterward. The wait flag waits for this upload's own pin operation. Last resort: prefer upload_file when the host can hand Pinner the file directly (host file reference, or source.mode=url/mint) instead of base64.",
 		Category:    model.CategoryCore,
 		InputSchema: toolargs.ToolSchemaFor[DataURIUploadInput](),
 		// x-mcp-file marks the "file" property as a file-valued input per the
