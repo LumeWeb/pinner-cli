@@ -43,6 +43,11 @@ type Service interface {
 	// portal manages DNS hosting for this binding (dns_hosting_enabled) and/or
 	// promotes the binding to primary. Omitted fields are left unchanged.
 	UpdateDomain(ctx context.Context, websiteID string, domainID string, req ipfs.DomainUpdateRequest) (*ipfs.DomainResponse, error)
+
+	// CheckPlatformDomainAvailability checks, for a candidate subdomain label,
+	// whether it is claimable on each enabled platform (free-subdomain) root.
+	// label may be empty to probe all roots.
+	CheckPlatformDomainAvailability(ctx context.Context, label string) (*ipfs.PlatformAvailabilityResponse, error)
 }
 
 // service implements the Service interface using the ipfs.WebsitesService.
@@ -363,4 +368,17 @@ func (s *service) UpdateDomain(ctx context.Context, websiteID string, domainID s
 		return nil, err
 	}
 	return svc.UpdateDomain(ctx, websiteID, domainID, req)
+}
+
+// CheckPlatformDomainAvailability checks, for a candidate subdomain label,
+// whether it is claimable on each enabled platform (free-subdomain) root.
+func (s *service) CheckPlatformDomainAvailability(ctx context.Context, label string) (*ipfs.PlatformAvailabilityResponse, error) {
+	if err := s.RequireAuthenticated(); err != nil {
+		return nil, err
+	}
+	svc, err := s.requireService()
+	if err != nil {
+		return nil, err
+	}
+	return svc.CheckPlatformDomainAvailability(ctx, label)
 }

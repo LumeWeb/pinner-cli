@@ -32,6 +32,7 @@ type mockWebsitesServiceForCLI struct {
 	GetDomainDNSRequirementsFn func(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainResponse, error)
 	RepublishDANEFn            func(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainDANERepublishResponse, error)
 	UpdateDomainFn             func(ctx context.Context, websiteID string, domainID string, req ipfs.DomainUpdateRequest) (*ipfs.DomainResponse, error)
+	CheckPlatformAvailabilityFn func(ctx context.Context, label string) (*ipfs.PlatformAvailabilityResponse, error)
 }
 
 func (m *mockWebsitesServiceForCLI) RequireAuthenticated() error {
@@ -191,6 +192,13 @@ func (m *mockWebsitesServiceForCLI) RepublishDANE(ctx context.Context, websiteID
 func (m *mockWebsitesServiceForCLI) UpdateDomain(ctx context.Context, websiteID string, domainID string, req ipfs.DomainUpdateRequest) (*ipfs.DomainResponse, error) {
 	if m.UpdateDomainFn != nil {
 		return m.UpdateDomainFn(ctx, websiteID, domainID, req)
+	}
+	return nil, nil
+}
+
+func (m *mockWebsitesServiceForCLI) CheckPlatformDomainAvailability(ctx context.Context, label string) (*ipfs.PlatformAvailabilityResponse, error) {
+	if m.CheckPlatformAvailabilityFn != nil {
+		return m.CheckPlatformAvailabilityFn(ctx, label)
 	}
 	return nil, nil
 }

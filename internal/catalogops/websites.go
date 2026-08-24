@@ -90,6 +90,7 @@ func WebsitesOperations(d WebsitesDeps) []catalog.Operation {
 		websitesDomainsDNSRequirements(d),
 		websitesDomainsDANERepublish(d),
 		websitesDomainsUpdate(d),
+		websitesPlatformDomainAvailability(d),
 	}
 }
 
@@ -504,6 +505,41 @@ func websitesConfig(d WebsitesDeps) catalog.Operation {
 			}
 			// *ipfs.WebsiteConfigResponse
 			return svc.GetConfig(ctx)
+		}),
+	})
+}
+
+// websitesPlatformDomainAvailability is the `websites platform-domain
+// availability` operation / `websites_platform_domain_availability` MCP tool.
+// Checks whether a candidate subdomain label is claimable on each enabled
+// platform (free-subdomain) root. label may be empty to probe all roots.
+// Returns *ipfs.PlatformAvailabilityResponse (label plus one
+// PlatformAvailabilityResult per root).
+func websitesPlatformDomainAvailability(d WebsitesDeps) catalog.Operation {
+	return catalog.NewOperation(catalog.OperationSpec{
+		Name:        "websites_platform_domain_availability",
+		Title:       "Check platform domain availability",
+		Summary:     "Check if a label is available as a platform subdomain",
+		Description: "Check whether a candidate subdomain label is claimable on each enabled platform (free-subdomain) root. Pass a label to check one candidate, or omit it to probe all roots. Returns one availability result per platform-owned root.",
+		Category:    "core",
+		Safety:      catalog.SafetyRead,
+		Interaction: catalog.InteractionAgentSafe,
+		Visibility:  catalog.VisibilityBoth,
+		Positional:  "[<label>]",
+		Args: []catalog.OperationArg{
+			{Name: "label", Type: catalog.ArgTypeString, Required: false, Help: "Candidate subdomain label to check availability for. Omit to probe all platform roots."},
+		},
+		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
+			svc, svcErr := d.service(input)
+			if svcErr != nil {
+				return nil, svcErr
+			}
+			if err := svc.RequireAuthenticated(); err != nil {
+				return nil, err
+			}
+			label := catalog.StrArg(input, "label", "")
+			// *ipfs.PlatformAvailabilityResponse
+			return svc.CheckPlatformDomainAvailability(ctx, label)
 		}),
 	})
 }

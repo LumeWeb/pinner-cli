@@ -45,6 +45,7 @@ Examples:
 			newBillingCommand(),
 			newAdminWebsitesCommand(),
 			newAdminPprofCommand(),
+			newAdminPlatformDomainsCommand(),
 		},
 	}
 }

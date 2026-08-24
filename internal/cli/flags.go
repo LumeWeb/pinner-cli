@@ -90,6 +90,14 @@ const (
 	FlagDisabled    = "disabled"
 )
 
+// Platform domain flags
+const (
+	FlagPlatformDomain = "platform-domain"
+	FlagNamespace      = "namespace"
+	FlagZoneID         = "zone-id"
+	FlagEnabled        = "enabled"
+)
+
 // Metadata flags
 const (
 	FlagMeta      = "meta"
@@ -185,6 +193,7 @@ const (
 	CmdWebsites           = "websites"
 	CmdAdmin              = "admin"
 	CmdPprof              = "pprof"
+	CmdPlatformDomains    = "platform-domains"
 	CmdSetBlockRate       = "set-block-rate"
 	CmdSetMutexFraction   = "set-mutex-fraction"
 	CmdIndex              = "index"

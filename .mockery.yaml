@@ -81,6 +81,9 @@ packages:
       ProfilingAdminService:
         config:
           filename: "mock_ProfilingAdminService.go"
+      PlatformDomainAdminService:
+        config:
+          filename: "mock_PlatformDomainAdminService.go"
   go.lumeweb.com/pinner-cli/internal/cli:
     config:
       dir: ./internal/cli
