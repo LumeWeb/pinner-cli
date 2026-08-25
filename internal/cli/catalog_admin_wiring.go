@@ -3,8 +3,12 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
+	"strconv"
 	"strings"
 
+	"github.com/mattn/go-isatty"
+	"github.com/pterm/pterm"
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/internal/catalog"
 	"go.lumeweb.com/pinner-cli/internal/catalogops"
@@ -247,14 +251,51 @@ func adminActionAdapter(op catalog.Operation) cli.ActionFunc {
 			return err
 		}
 
-		// Destructive gate: the delete op requires confirm=true. Map --force (or
-		// --confirm) onto the op's confirm input before execution.
+		// The platform-domain ops key records by a numeric ID, but an operator may
+		// supply the registered domain name (e.g. pinned.site) instead. Resolve a
+		// non-numeric id to the numeric ID the API expects before execution.
+		var deleteID string
+		switch op.Name() {
+		case catalogops.OpAdminPlatformDomainsDelete,
+			catalogops.OpAdminPlatformDomainsUpdate,
+			catalogops.OpAdminPlatformDomainsBind:
+			if id := catalog.StrArg(input, "id", ""); id != "" {
+				if op.Name() == catalogops.OpAdminPlatformDomainsDelete {
+					deleteID = id
+				}
+				resolved, err := resolvePlatformDomainID(ctx, adminCatalogDepsVar, id)
+				if err != nil {
+					return err
+				}
+				input["id"] = resolved
+			}
+		}
+
+		// Destructive gate: destructive admin ops require confirm=true. Other
+		// destructive admin ops keep the --force gate. Admin platform-domains
+		// delete is an explicit CLI action, so a human at a terminal confirms
+		// interactively instead of passing --force; non-interactive contexts
+		// (scripts, --json/agent) still require --force so nothing is ever deleted
+		// without an explicit override.
 		if op.Safety() == catalog.SafetyDestructive {
 			confirm := c.Bool(FlagForce) || c.Bool(FlagConfirm)
-			input["confirm"] = confirm
 			if !confirm {
-				return fmt.Errorf("admin platform-domains delete: pass --force to confirm this destructive operation")
+				switch op.Name() {
+				case catalogops.OpAdminPlatformDomainsDelete:
+					interactive := !setupOutput(c).IsJSON() && isatty.IsTerminal(os.Stdin.Fd())
+					ok, err := confirmPlatformDomainDelete(deleteID, interactive)
+					if err != nil {
+						return err
+					}
+					if !ok {
+						return fmt.Errorf("deletion aborted")
+					}
+					confirm = true
+				default:
+					return fmt.Errorf("%s: pass --force to confirm this destructive operation", op.Name())
+				}
 			}
+			input["confirm"] = confirm
 		}
 
 		dctx, cancel := applyDefaultTimeout(ctx)
@@ -266,6 +307,61 @@ func adminActionAdapter(op catalog.Operation) cli.ActionFunc {
 		}
 		return renderAdminResult(ctx, c, op, result)
 	}
+}
+
+// confirmPlatformDomainDelete confirms an irreversible platform-domain deletion
+// with a human operator. As a package-level var it can be swapped in tests to
+// drive the interactive path deterministically.
+var confirmPlatformDomainDelete = promptPlatformDomainDelete
+
+// promptPlatformDomainDelete prompts a human operator to confirm an irreversible
+// platform-domain deletion. When no interactive terminal is available (scripts,
+// --json/agent runs) it returns an error directing the caller to --force, so
+// nothing is deleted without an explicit override; otherwise it returns whether
+// the operator accepted the prompt.
+func promptPlatformDomainDelete(deleteID string, interactive bool) (bool, error) {
+	if !interactive {
+		return false, fmt.Errorf("%s: pass --force to confirm this destructive operation", catalogops.OpAdminPlatformDomainsDelete)
+	}
+	ok, err := pterm.DefaultInteractiveConfirm.
+		WithDefaultValue(false).
+		Show(fmt.Sprintf("Permanently delete platform domain %q?", deleteID))
+	if err != nil {
+		return false, err
+	}
+	return ok, nil
+}
+
+// resolvePlatformDomainID resolves a platform-domain identifier an operator may
+// supply either as the numeric ID or as the registered domain name (e.g.
+// pinned.site). Numeric identifiers pass through unchanged; a domain name is
+// resolved by listing the registered platform domains and matching on Domain,
+// so callers need not look up the numeric ID first. Mirrors resolveZoneID.
+func resolvePlatformDomainID(ctx context.Context, deps catalogops.AdminDeps, idOrDomain string) (string, error) {
+	if _, err := strconv.Atoi(idOrDomain); err == nil {
+		return idOrDomain, nil
+	}
+	cfgMgr := deps.CfgMgr()
+	if cfgMgr == nil {
+		return "", fmt.Errorf("no config manager available")
+	}
+	svc, err := deps.PlatformDomainAdminService(cfgMgr)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve platform domain service: %w", err)
+	}
+	if err := svc.RequireAuthenticated(); err != nil {
+		return "", err
+	}
+	domains, _, err := svc.ListPlatformDomains(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to look up platform domain by name: %w", err)
+	}
+	for _, d := range domains {
+		if d.Domain == idOrDomain {
+			return fmt.Sprintf("%d", d.Id), nil
+		}
+	}
+	return "", fmt.Errorf("platform domain not found for %q", idOrDomain)
 }
 
 // renderAdminResult renders an admin handler's typed result through the CLI
