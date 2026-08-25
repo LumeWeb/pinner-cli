@@ -21,6 +21,9 @@ type errWebsitesService struct {
 }
 
 func (f *errWebsitesService) RequireAuthenticated() error { return nil }
+func (f *errWebsitesService) ListPlatformDomains(_ context.Context) (*ipfs.PlatformDomainListResponse, error) {
+	return &ipfs.PlatformDomainListResponse{}, nil
+}
 func (f *errWebsitesService) CreateWithOptions(_ context.Context, _ ipfs.WebsiteRequest) (*ipfs.WebsiteItem, error) {
 	return nil, f.err
 }

@@ -121,8 +121,9 @@ func (w *WebsitesWizard) getSteps() []wizard.Step[*WebsitesWizard] {
 }
 
 // executeCreateWebsite creates the website using the accumulated state. For a
-// platform (free) subdomain it also mints the subdomain by binding it to the
-// created website, mirroring the websites_domains_add catalogop.
+// platform (free) subdomain, the claim fields (platform domain + label/generate)
+// are sent directly on the create request so the backend mints/claims the
+// subdomain atomically — no separate BindDomain step.
 func (w *WebsitesWizard) executeCreateWebsite(ctx context.Context) error {
 	dnsHosting := w.DNSHosting()
 	targetType := w.TargetType()
@@ -130,16 +131,32 @@ func (w *WebsitesWizard) executeCreateWebsite(ctx context.Context) error {
 		targetType = "ipfs"
 	}
 	isPlatform := w.DomainSource() == "platform_subdomain"
-	if isPlatform {
-		// Platform (free) subdomains are DNS-managed by the platform.
-		dnsHosting = true
-		w.SetDNSHosting(true)
-	}
 	req := ipfs.WebsiteRequest{
-		Domain:            w.Domain(),
-		TargetHash:        w.CID(),
-		TargetType:        targetType,
-		DnsHostingEnabled: &dnsHosting,
+		TargetHash: w.CID(),
+		TargetType: targetType,
+	}
+	if isPlatform {
+		// Platform (free) subdomains are DNS-managed by the platform and are
+		// claimed atomically at create; no domain is supplied.
+		managed := true
+		req.DnsHostingEnabled = &managed
+		w.SetDNSHosting(true)
+		if pd := w.PlatformDomain(); pd != "" {
+			req.PlatformDomain = &pd
+		}
+		if pns := w.PlatformNamespace(); pns != "" {
+			req.PlatformNamespace = &pns
+		}
+		if w.Generate() {
+			g := true
+			req.Generate = &g
+		} else if label := w.Label(); label != "" {
+			req.Label = &label
+		}
+	} else {
+		domain := w.Domain()
+		req.Domain = &domain
+		req.DnsHostingEnabled = &dnsHosting
 	}
 
 	website, err := w.websitesService.CreateWithOptions(ctx, req)
@@ -148,34 +165,6 @@ func (w *WebsitesWizard) executeCreateWebsite(ctx context.Context) error {
 	}
 
 	w.SetWebsite(website)
-
-	if isPlatform {
-		ns := w.PlatformNamespace()
-		if ns == "" {
-			ns = "icann"
-		}
-		bindReq := ipfs.DomainRequest{
-			Domain:    w.Domain(),
-			Namespace: ns,
-		}
-		if pd := w.PlatformDomain(); pd != "" {
-			bindReq.PlatformDomain = &pd
-		}
-		if pns := w.PlatformNamespace(); pns != "" {
-			bindReq.PlatformNamespace = &pns
-		}
-		if w.Generate() {
-			g := true
-			bindReq.Generate = &g
-		}
-		if label := w.Label(); label != "" {
-			bindReq.Label = &label
-		}
-		websiteID := fmt.Sprintf("%d", website.Id)
-		if _, err := w.websitesService.BindDomain(ctx, websiteID, bindReq); err != nil {
-			return fmt.Errorf("platform subdomain claim failed: %w (the website exists but its subdomain was not claimed; retry the claim or delete the website)", err)
-		}
-	}
 
 	return nil
 }

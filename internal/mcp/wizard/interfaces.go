@@ -41,9 +41,9 @@ type WebsitesWizardState interface {
 	SetDomainSource(string)
 
 	// Platform (free-subdomain) claim fields. When DomainSource is
-	// "platform_subdomain", the create step passes these through to
-	// ipfs.DomainRequest{BindDomain} so the platform can mint the subdomain,
-	// mirroring the websites_domains_add catalogop and the domain wizard.
+	// "platform_subdomain", the create step passes these through on the
+	// ipfs.WebsiteRequest so the platform mints/claims the subdomain atomically
+	// at create (no separate BindDomain step).
 	Generate() bool
 	SetGenerate(bool)
 	Label() string
