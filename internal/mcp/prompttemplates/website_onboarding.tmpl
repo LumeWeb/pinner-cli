@@ -20,11 +20,12 @@ Free platform subdomains:
   - The user does NOT need to own a domain. Free platform (free-subdomain) roots are
     available (e.g. ipfs.pin.xyz) and the user can claim a `label` subdomain under one.
   - To see the enabled platform roots, read the pinner://websites/platform-domains
-    resource or call `websites_platform_domain_availability`. Claim the subdomain in
-    the wizard domain step itself: supply `label` (or `generate: true`) with the
-    platform root as `domain` via `websites_wizard_step`, so the bind step mints it in
-    the same session. Do not use `websites_domains_add` from inside the wizard — that
-    would abandon the session and risk a conflicting double bind.
+    resource or call `websites_platform_domain_availability`. Claim the subdomain through
+    the dedicated domain wizard (domains_wizard_start / domains_wizard_step): at the
+    domain name step supply `{"domain": "<root>", "label": "<label>"}` (or
+    `{"domain": "<root>", "generate": true}`), which its bind step mints via BindDomain.
+    The websites wizard's own domain step only accepts a plain owned domain — it does
+    NOT claim subdomains, so do not pass label/generate to websites_wizard_step.
 
 Rules:
   - Always pass the session_id from websites_wizard_start to websites_wizard_step.
@@ -78,11 +79,12 @@ Determine how the user wants to address the website:
   - Own domain: ask for their domain name (e.g. example.com) and pass {"domain": "<domain>"}.
   - Free platform subdomain: first read pinner://websites/platform-domains (or call
     `websites_platform_domain_availability`) to see the enabled platform roots. Ask the
-    user for a label they'd like (or offer to auto-generate one), then send it through
-    the wizard domain step: call `websites_wizard_step` with input like
-    {"domain": "<root>", "label": "<label>"} (or {"domain": "<root>", "generate": true})
-    so the bind step mints the subdomain in the same session. Do not require the user to
-    own a domain.
+    user for a label they'd like (or offer to auto-generate one), then claim it through
+    the dedicated domain wizard: call `domains_wizard_start`, then `domains_wizard_step`
+    with input like {"domain": "<root>", "label": "<label>"} (or
+    {"domain": "<root>", "generate": true}) so its bind step mints the subdomain in the
+    same session. Do not pass label/generate to `websites_wizard_step` (its domain step
+    accepts only a plain owned domain). Do not require the user to own a domain.
 {{end}}
 
 {{define "website_step_dns_mode_filled"}}Step: dns_mode
