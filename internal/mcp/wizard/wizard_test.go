@@ -597,6 +597,14 @@ func TestWebsitesWizard_FullSession(t *testing.T) {
 	assert.True(t, resp.Complete)
 }
 
+// TestPlatformNamespaceOrDefault guards the platform namespace defaulting
+// helper shared by the CLI and MCP website create paths.
+func TestPlatformNamespaceOrDefault(t *testing.T) {
+	assert.Equal(t, "icann", wizard.PlatformNamespaceOrDefault(""))
+	assert.Equal(t, "hns", wizard.PlatformNamespaceOrDefault("hns"))
+	assert.Equal(t, "icann", wizard.PlatformNamespaceOrDefault("icann"))
+}
+
 func TestWebsitesWizard_PlatformSubdomainFlow(t *testing.T) {
 	t.Parallel()
 
@@ -663,6 +671,9 @@ func TestWebsitesWizard_PlatformSubdomainFlow(t *testing.T) {
 	assert.Equal(t, "myapp", *websitesSvc.createCallReq.Label)
 	require.NotNil(t, websitesSvc.createCallReq.PlatformDomain)
 	assert.Equal(t, "ipfs.pin.xyz", *websitesSvc.createCallReq.PlatformDomain)
+	// An empty wizard platform namespace defaults to the documented "icann".
+	require.NotNil(t, websitesSvc.createCallReq.PlatformNamespace)
+	assert.Equal(t, "icann", *websitesSvc.createCallReq.PlatformNamespace)
 	// No separate bind step (the subdomain is minted at create).
 	assert.Empty(t, websitesSvc.bindCallWebsiteID)
 }

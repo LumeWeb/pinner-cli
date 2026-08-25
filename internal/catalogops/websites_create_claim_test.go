@@ -93,6 +93,38 @@ func TestWebsitesCreatePlatformDomainsByParse(t *testing.T) {
 	if req.Label == nil || *req.Label != "myapp" {
 		t.Fatalf("Label = %v, want myapp (derived by parsing)", req.Label)
 	}
+}
+
+// TestWebsitesCreatePlatformDomainsByParseCaseInsensitive verifies that
+// platform-root detection is case-insensitive: DNS labels are case-insensitive,
+// so a mixed-case hostname must still be claimed as a platform subdomain rather
+// than falling through to the custom-domain branch.
+func TestWebsitesCreatePlatformDomainsByParseCaseInsensitive(t *testing.T) {
+	fake := &dnsCapturingService{
+		platformDomains: []ipfs.PlatformDomainResponse{
+			{Domain: "pinned.site", Enabled: true, Namespace: "icann"},
+		},
+	}
+	op := websitesCreate(dnsCaptureDeps(t, fake))
+	if _, err := op.Handler().Execute(context.Background(), map[string]any{
+		"website": "MyApp.Pinned.Site",
+		"cid":     "QmX",
+	}); err != nil {
+		t.Fatalf("create handler: %v", err)
+	}
+	req := fake.createReq
+	if req == nil {
+		t.Fatal("CreateWithOptions not invoked")
+	}
+	if req.Domain != nil {
+		t.Fatalf("Domain = %q, want nil (mixed-case hostname must parse as a platform subdomain)", *req.Domain)
+	}
+	if req.PlatformDomain == nil || *req.PlatformDomain != "pinned.site" {
+		t.Fatalf("PlatformDomain = %v, want pinned.site", req.PlatformDomain)
+	}
+	if req.Label == nil || *req.Label != "myapp" {
+		t.Fatalf("Label = %v, want myapp (lowercased)", req.Label)
+	}
 	if req.Generate != nil {
 		t.Fatalf("Generate = %v, want nil for a parsed label claim", req.Generate)
 	}
@@ -127,6 +159,25 @@ func TestWebsitesCreateExplicitPlatformLabel(t *testing.T) {
 	}
 	if req.Label == nil || *req.Label != "myapp" {
 		t.Fatalf("Label = %v, want myapp", req.Label)
+	}
+}
+
+// TestSubdomainLabel guards the case-insensitive platform-root label matcher
+// that backs website-create's domain parsing.
+func TestSubdomainLabel(t *testing.T) {
+	cases := []struct {
+		domain, root, want string
+	}{
+		{"myapp.pinned.site", "pinned.site", "myapp"},
+		{"MyApp.Pinned.Site", "Pinned.Site", "myapp"}, // case-insensitive
+		{"example.com", "pinned.site", ""},             // not a subdomain
+		{"pinned.site", "pinned.site", ""},             // the bare root itself
+		{"a.b.pinned.site", "b.pinned.site", "a"},      // deeper root
+	}
+	for _, tc := range cases {
+		if got := subdomainLabel(tc.domain, tc.root); got != tc.want {
+			t.Errorf("subdomainLabel(%q, %q) = %q, want %q", tc.domain, tc.root, got, tc.want)
+		}
 	}
 }
 

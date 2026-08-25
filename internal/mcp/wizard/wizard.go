@@ -242,6 +242,16 @@ func (n NamespaceValue) Valid() bool {
 	return n == NamespaceICANN || n == NamespaceHNS
 }
 
+// PlatformNamespaceOrDefault returns ns, or the platform default namespace
+// (icann) when ns is empty. Both the CLI and MCP website create paths use this
+// so a claim always carries the documented default rather than omitting it.
+func PlatformNamespaceOrDefault(ns string) string {
+	if ns == "" {
+		return string(NamespaceICANN)
+	}
+	return ns
+}
+
 // WebsiteInput is the input for the website selection step.
 type WebsiteInput struct {
 	WebsiteID string `json:"website_id" jsonschema:"description=The numeric ID of the website to bind the domain to"`
@@ -712,9 +722,8 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []session.StepDef {
 					if pd := w.PlatformDomain(); pd != "" {
 						req.PlatformDomain = &pd
 					}
-					if pns := w.PlatformNamespace(); pns != "" {
-						req.PlatformNamespace = &pns
-					}
+					pns := PlatformNamespaceOrDefault(w.PlatformNamespace())
+					req.PlatformNamespace = &pns
 					if w.Generate() {
 						g := true
 						req.Generate = &g

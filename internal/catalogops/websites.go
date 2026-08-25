@@ -379,8 +379,8 @@ func platformClaimForDomain(domain string, roots *ipfs.PlatformDomainListRespons
 		if !r.Enabled {
 			continue
 		}
-		lbl := strings.TrimSuffix(domain, "."+r.Domain)
-		if lbl == "" || lbl == domain {
+		lbl := subdomainLabel(domain, r.Domain)
+		if lbl == "" {
 			continue // not a subdomain of this root (or the bare root itself)
 		}
 		if len(r.Domain) > bestLen {
@@ -392,6 +392,20 @@ func platformClaimForDomain(domain string, roots *ipfs.PlatformDomainListRespons
 		return "", "", "", false
 	}
 	return bestPD, bestNS, bestLabel, true
+}
+
+// subdomainLabel returns the case-normalized (lowercased) label when domain is
+// a subdomain of root, or "" when it is not (or when domain is the bare root
+// itself). DNS labels are case-insensitive, so the comparison is lowercased:
+// "MyApp.pinned.site" against root "pinned.site" yields label "myapp" instead
+// of falling through to the custom-domain branch.
+func subdomainLabel(domain, root string) string {
+	dl := strings.ToLower(domain)
+	lbl := strings.TrimSuffix(dl, "."+strings.ToLower(root))
+	if lbl == "" || lbl == dl {
+		return ""
+	}
+	return lbl
 }
 
 // websitesUpdate is the `websites update` operation. Returns *ipfs.WebsiteItem.

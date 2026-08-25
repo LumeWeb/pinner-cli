@@ -144,9 +144,8 @@ func (w *WebsitesWizard) executeCreateWebsite(ctx context.Context) error {
 		if pd := w.PlatformDomain(); pd != "" {
 			req.PlatformDomain = &pd
 		}
-		if pns := w.PlatformNamespace(); pns != "" {
-			req.PlatformNamespace = &pns
-		}
+		pns := mcpwizard.PlatformNamespaceOrDefault(w.PlatformNamespace())
+		req.PlatformNamespace = &pns
 		if w.Generate() {
 			g := true
 			req.Generate = &g
