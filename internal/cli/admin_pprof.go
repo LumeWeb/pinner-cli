@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
@@ -220,14 +222,40 @@ func adminPprofByteAction(ctx context.Context, cmd flagGetter, output Output, cf
 	return nil
 }
 
-// writePprofBytes writes profile data to the given path, or streams it to
-// stdout when path is empty.
+// writePprofBytes writes profile data to the given path (validated to stay
+// within the working directory, with 0600 perms), or streams it to stdout when
+// path is empty.
 func writePprofBytes(path string, data []byte) error {
 	if path != "" {
-		return os.WriteFile(path, data, 0o644)
+		clean, err := safeOutputPath(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(clean, data, 0o600)
 	}
 	_, err := os.Stdout.Write(data)
 	return err
+}
+
+// safeOutputPath validates a user-supplied --output path before writing: it
+// must be a relative path that never escapes the working directory. Absolute
+// paths, drive/volume paths, and ".." segments are rejected, preventing an
+// arbitrary file write on a shared or MCP-server host.
+func safeOutputPath(path string) (string, error) {
+	if strings.TrimSpace(path) == "" {
+		return "", fmt.Errorf("output path is empty")
+	}
+	if filepath.IsAbs(path) || filepath.VolumeName(path) != "" {
+		return "", fmt.Errorf("output path must be relative and stay within the working directory, got %q", path)
+	}
+	clean := filepath.Clean(filepath.FromSlash(path))
+	// Reject ".." traversal plus Windows drive-letter and UNC forms for
+	// portability, even on POSIX where filepath.IsAbs would not flag them.
+	if clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) ||
+		(len(clean) >= 2 && clean[1] == ':') || strings.HasPrefix(clean, "\\") {
+		return "", fmt.Errorf("output path must stay within the working directory, got %q", path)
+	}
+	return clean, nil
 }
 
 func adminPprofSetRateAction(ctx context.Context, cmd argsGetter, output Output, cfgMgr config.Manager, serviceFactory ProfilingAdminServiceFactory, label string, fn func(ProfilingAdminService, context.Context, int) error) error {
