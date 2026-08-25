@@ -146,7 +146,7 @@ func pinsList(d PinsDeps) catalog.Operation {
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
-			page := catalog.ParseList(input)
+			page := catalog.ParseListPage(input, 10)
 			pins, err := svc.List(ctx, pinning.ListOptions{
 				Start:  page.Start,
 				Limit:  page.Limit,

@@ -53,7 +53,7 @@ func operationsList(d OperationsDeps) catalog.Operation {
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
-			page := catalog.ParseList(input)
+			page := catalog.ParseListPage(input, 10)
 			res, err := svc.List(ctx, operations.ListOptions{
 				Search:          catalog.SearchArg(input),
 				StatusFilters:   catalog.StrSliceArg(input, "status"),

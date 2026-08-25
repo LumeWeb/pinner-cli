@@ -142,7 +142,7 @@ func websitesList(d WebsitesDeps) catalog.Operation {
 				return nil, err
 			}
 
-			page := catalog.ParseList(input)
+			page := catalog.ParseListPage(input, 10)
 			opts := websites.ListOptions{
 				Start:      page.Start,
 				Limit:      page.Limit,

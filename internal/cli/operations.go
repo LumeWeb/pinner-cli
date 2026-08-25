@@ -37,10 +37,10 @@ func operationsList(ctx context.Context, cmd argsFlagGetter, output Output, cfgM
 	// operations command and the catalog operations_list op share the same
 	// page/page-size → start/limit mapping (page is 1-based; an absent or
 	// zero page-size falls back to the shared default).
-	list := catalog.ParseList(map[string]any{
+	list := catalog.ParseListPage(map[string]any{
 		"page":      cmd.Int(FlagPage),
 		"page-size": cmd.Int(FlagPageSize),
-	})
+	}, 10)
 
 	opts := OperationsListOptions{
 		StatusFilters:   cmd.StringSlice(FlagStatus),
