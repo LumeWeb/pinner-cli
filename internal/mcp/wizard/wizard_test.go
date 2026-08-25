@@ -65,6 +65,10 @@ type testWebsitesWizard struct {
 	label             string
 	platformDomain    string
 	platformNamespace string
+
+	lifecycleState wizard.WebsiteLifecycleState
+	contentState   wizard.WebsiteContentState
+	opState        wizard.WebsiteOpState
 }
 
 func (w *testWebsitesWizard) CID() string                { return w.cid }
@@ -94,6 +98,19 @@ func (w *testWebsitesWizard) PlatformDomain() string        { return w.platformD
 func (w *testWebsitesWizard) SetPlatformDomain(v string)    { w.platformDomain = v }
 func (w *testWebsitesWizard) PlatformNamespace() string     { return w.platformNamespace }
 func (w *testWebsitesWizard) SetPlatformNamespace(v string) { w.platformNamespace = v }
+
+func (w *testWebsitesWizard) LifecycleState() wizard.WebsiteLifecycleState {
+	return w.lifecycleState
+}
+func (w *testWebsitesWizard) SetLifecycleState(v wizard.WebsiteLifecycleState) {
+	w.lifecycleState = v
+}
+func (w *testWebsitesWizard) ContentState() wizard.WebsiteContentState { return w.contentState }
+func (w *testWebsitesWizard) SetContentState(v wizard.WebsiteContentState) {
+	w.contentState = v
+}
+func (w *testWebsitesWizard) OpState() wizard.WebsiteOpState     { return w.opState }
+func (w *testWebsitesWizard) SetOpState(v wizard.WebsiteOpState) { w.opState = v }
 
 // testSetupWizard implements wizard.SetupWizardState for tests.
 type testSetupWizard struct{}

@@ -491,7 +491,9 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []session.StepDef {
 				if in.CID == "" {
 					return "", fmt.Errorf("cid cannot be empty when choice is \"cid\"")
 				}
-				w.SetCID(in.CID)
+				if err := NewWebsiteStateMachine(w).PrepareContent(in.CID); err != nil {
+					return "", err
+				}
 				return "", nil
 			},
 			Schema: func(_ *session.Session) *jsonschema.Schema {
@@ -547,13 +549,18 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []session.StepDef {
 				default:
 					return "", fmt.Errorf("invalid domain source: %s (expected \"platform_subdomain\" or \"custom_domain\")", in.Source)
 				}
-				w.SetDomainSource(string(source))
+				machine := NewWebsiteStateMachine(w)
+				if err := machine.ChooseDomainSource(string(source)); err != nil {
+					return "", err
+				}
 
 				if custom {
 					if in.Domain == "" {
 						return "", fmt.Errorf("domain cannot be empty when source=custom_domain")
 					}
-					w.SetDomain(in.Domain)
+					if err := machine.MarkClaimed(in.Domain); err != nil {
+						return "", err
+					}
 					return "", nil
 				}
 
@@ -579,7 +586,9 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []session.StepDef {
 						}
 					}
 					w.SetPlatformDomain(root)
-					w.SetDomain(in.Label + "." + root)
+					if err := machine.MarkClaimed(in.Label + "." + root); err != nil {
+						return "", err
+					}
 					return "", nil
 				}
 
@@ -605,7 +614,9 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []session.StepDef {
 						}
 					}
 					w.SetPlatformDomain(root)
-					w.SetDomain(root)
+					if err := machine.MarkClaimed(root); err != nil {
+						return "", err
+					}
 					return "", nil
 				}
 
@@ -668,11 +679,17 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []session.StepDef {
 					TargetType:        targetType,
 					DnsHostingEnabled: &dnsHosting,
 				}
+				machine := NewWebsiteStateMachine(w)
 				website, err := deps.WebsitesService.CreateWithOptions(ctx, req)
 				if err != nil {
 					return "", fmt.Errorf("website creation failed: %w", websites.TranslateError(err))
 				}
-				w.SetWebsite(website)
+				if err := machine.MarkDeployed(); err != nil {
+					return "", err
+				}
+				if err := machine.BeginBind(website); err != nil {
+					return "", err
+				}
 
 				// Mint a platform (free) subdomain by binding it to the newly
 				// created website, mirroring websites_domains_add: the platform
@@ -703,17 +720,24 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []session.StepDef {
 					websiteID := strconv.Itoa(int(website.Id))
 					bindResp, err := deps.WebsitesService.BindDomain(ctx, websiteID, bindReq)
 					if err != nil {
+						if ferr := machine.BindFailed(); ferr != nil {
+							return "", ferr
+						}
 						return "", fmt.Errorf("platform subdomain claim failed: %w. The website exists but its subdomain was not claimed; find it with websites_list and retry the claim, or delete the website.", err)
 					}
 					// The platform mints the subdomain at bind time, so the bind response
 					// is authoritative for the serving FQDN. Reflect it in the website
 					// state so later steps report the minted subdomain rather than the
 					// create-time placeholder root.
-					if bindResp != nil && bindResp.Domain != "" && w.Generate() && bindResp.Domain != w.Domain() {
-						website.Domain = bindResp.Domain
-						w.SetWebsite(website)
-						w.SetDomain(bindResp.Domain)
+					minted := ""
+					if bindResp != nil && bindResp.Domain != "" && w.Generate() {
+						minted = bindResp.Domain
 					}
+					if err := machine.BindSucceeded(minted); err != nil {
+						return "", err
+					}
+				} else if err := machine.BindSucceeded(""); err != nil {
+					return "", err
 				}
 				return "", nil
 			},
@@ -752,11 +776,14 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []session.StepDef {
 
 				// Call WebsitesService directly; the CLI wizard's validate method is unexported.
 				id := fmt.Sprintf("%d", website.Id)
+				machine := NewWebsiteStateMachine(w)
+				machine.StartValidation()
 				result, err := deps.WebsitesService.Validate(ctx, id)
 				if err != nil {
 					return "", fmt.Errorf("validation failed: %w", websites.TranslateError(err))
 				}
 				w.SetValidationResult(result)
+				machine.ValidateSucceeded()
 				return "", nil
 			},
 			Schema: func(_ *session.Session) *jsonschema.Schema {
