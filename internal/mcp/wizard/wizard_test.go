@@ -246,7 +246,9 @@ type mockWebsitesSvc struct {
 	validateFunc      func(ctx context.Context, id string) (*ipfs.WebsiteValidateResponse, error)
 	getConfigFunc     func(ctx context.Context) (*ipfs.WebsiteConfigResponse, error)
 	listFunc          func(ctx context.Context) ([]ipfs.WebsiteItem, error)
+	updateErr         error
 	createCallReq     *ipfs.WebsiteRequest
+	createCalls       int
 	validateCallID    string
 	bindCallWebsiteID string
 	bindCallReq       *ipfs.DomainRequest
@@ -266,6 +268,7 @@ func (m *mockWebsitesSvc) Create(_ context.Context, domain, cid, targetType stri
 }
 
 func (m *mockWebsitesSvc) CreateWithOptions(ctx context.Context, req ipfs.WebsiteRequest) (*ipfs.WebsiteItem, error) {
+	m.createCalls++
 	m.createCallReq = &req
 	if m.createFunc != nil {
 		return m.createFunc(ctx, req)
@@ -282,6 +285,9 @@ func (m *mockWebsitesSvc) Update(_ context.Context, _, _, _, _ string) (*ipfs.We
 }
 
 func (m *mockWebsitesSvc) UpdateWithOptions(_ context.Context, _ string, _ ipfs.WebsiteUpdateRequest) (*ipfs.WebsiteItem, error) {
+	if m.updateErr != nil {
+		return nil, m.updateErr
+	}
 	return nil, nil
 }
 
@@ -718,6 +724,131 @@ func TestWebsitesWizard_PlatformSubdomainGenerate(t *testing.T) {
 	// root placeholder.
 	assert.Equal(t, "zebra.ipfs.pin.xyz", w.Website().Domain)
 	assert.Equal(t, "zebra.ipfs.pin.xyz", w.Domain())
+}
+
+func TestWebsitesWizard_PlatformSubdomainGenerate_PersistFailureKeepsRetryable(t *testing.T) {
+	t.Parallel()
+
+	cfgMgr := newConfigMgr(t, true)
+	websitesSvc := &mockWebsitesSvc{}
+	res := &mockWebsitesResource{}
+	store := session.NewSessionStore()
+
+	// Bind mints a subdomain distinct from the create-time placeholder root.
+	websitesSvc.bindFunc = func(_ context.Context, _ string, req ipfs.DomainRequest) (*ipfs.DomainResponse, error) {
+		return &ipfs.DomainResponse{
+			Id:        1,
+			Domain:    "zebra.ipfs.pin.xyz",
+			Namespace: req.Namespace,
+			Status:    lo.ToPtr("pending"),
+		}, nil
+	}
+	// Persisting the minted subdomain as the website's domain fails AFTER the
+	// subdomain is already minted and bound. The wizard must keep the lifecycle
+	// failed/retryable (not Live) so a retained-session retry does not wedge,
+	// and surface the minted FQDN in the error for reconciliation.
+	websitesSvc.updateErr = errors.New("domain-record update failed")
+
+	deps := wizard.WebsitesWizardDeps{
+		WebsitesFactory:  testWebsitesFactory,
+		CfgMgr:           cfgMgr,
+		WebsitesService:  websitesSvc,
+		WebsitesResource: res,
+	}
+
+	sess, err := wizard.NewWebsitesSession(store, deps)
+	require.NoError(t, err)
+
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	require.NoError(t, err) // auth_check -> content_source
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"choice":"cid","cid":"QmTestHash123"}`))
+	require.NoError(t, err) // content_source -> target_type
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"type":"ipfs"}`))
+	require.NoError(t, err) // target_type -> domain
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"source":"platform_subdomain","generate":true}`))
+	require.NoError(t, err) // domain -> dns_mode
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"mode":"managed"}`))
+	require.NoError(t, err) // dns_mode -> create
+
+	// Create: the subdomain is minted and live, but persisting it as the
+	// website's domain fails. The step keeps the lifecycle retryable (failed)
+	// so a retained-session retry does not wedge: bind_start is valid from
+	// claimed/binding/failed, not from the terminal live state, and a retry
+	// must not mark an already-created website as live.
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"confirm":true}`))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "zebra.ipfs.pin.xyz")
+	assert.Contains(t, err.Error(), "minted and is live")
+
+	w := sess.State().(wizard.WebsitesWizardState)
+	assert.NotEqual(t, wizard.LifecycleLive, w.LifecycleState())
+	assert.Equal(t, wizard.LifecycleFailed, w.LifecycleState())
+}
+
+func TestWebsitesWizard_PlatformSubdomain_RetryResumesWithoutRecreate(t *testing.T) {
+	t.Parallel()
+
+	cfgMgr := newConfigMgr(t, true)
+	websitesSvc := &mockWebsitesSvc{}
+	res := &mockWebsitesResource{}
+	store := session.NewSessionStore()
+
+	// Bind always mints a subdomain distinct from the create-time placeholder root.
+	websitesSvc.bindFunc = func(_ context.Context, _ string, req ipfs.DomainRequest) (*ipfs.DomainResponse, error) {
+		return &ipfs.DomainResponse{
+			Id:        1,
+			Domain:    "zebra.ipfs.pin.xyz",
+			Namespace: req.Namespace,
+			Status:    lo.ToPtr("pending"),
+		}, nil
+	}
+	// First attempt fails to persist the minted subdomain (retryable lifecycle);
+	// the retry must resume the existing website rather than re-create a duplicate.
+	websitesSvc.updateErr = errors.New("domain-record update failed")
+
+	deps := wizard.WebsitesWizardDeps{
+		WebsitesFactory:  testWebsitesFactory,
+		CfgMgr:           cfgMgr,
+		WebsitesService:  websitesSvc,
+		WebsitesResource: res,
+	}
+
+	sess, err := wizard.NewWebsitesSession(store, deps)
+	require.NoError(t, err)
+
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	require.NoError(t, err)
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"choice":"cid","cid":"QmTestHash123"}`))
+	require.NoError(t, err)
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"type":"ipfs"}`))
+	require.NoError(t, err)
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"source":"platform_subdomain","generate":true}`))
+	require.NoError(t, err)
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"mode":"managed"}`))
+	require.NoError(t, err)
+
+	// First create attempt: the subdomain is minted and live, but persisting it
+	// as the website's domain fails. The lifecycle stays retryable (failed) and
+	// the created website is retained in session state.
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"confirm":true}`))
+	require.Error(t, err)
+
+	w := sess.State().(wizard.WebsitesWizardState)
+	require.NotNil(t, w.Website())
+	assert.Equal(t, wizard.LifecycleFailed, w.LifecycleState())
+	assert.Equal(t, 1, websitesSvc.createCalls)
+
+	// Retry on the retained session: the persistence error is resolved. The
+	// handler must resume the already-created website instead of calling
+	// CreateWithOptions again (which would orphan the prior site and mint a
+	// second subdomain), then complete the bind/persist and reach live.
+	websitesSvc.updateErr = nil
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"confirm":true}`))
+	require.NoError(t, err)
+
+	assert.Equal(t, 1, websitesSvc.createCalls, "retry must not re-create the website")
+	assert.Equal(t, wizard.LifecycleLive, w.LifecycleState())
+	assert.Equal(t, "zebra.ipfs.pin.xyz", w.Website().Domain)
 }
 
 func TestWebsitesWizard_PlatformSubdomainNoLabelGuidesAgent(t *testing.T) {

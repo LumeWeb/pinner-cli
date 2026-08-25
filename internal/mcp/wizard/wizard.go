@@ -713,12 +713,23 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []session.StepDef {
 					DnsHostingEnabled: &dnsHosting,
 				}
 				machine := NewWebsiteStateMachine(w)
-				website, err := deps.WebsitesService.CreateWithOptions(ctx, req)
-				if err != nil {
-					return "", fmt.Errorf("website creation failed: %w", websites.TranslateError(err))
-				}
-				if err := machine.MarkDeployed(); err != nil {
-					return "", err
+
+				// CreateWithOptions is not idempotent; once Website is set, resume
+				// the bind phase instead of re-creating (which would orphan the
+				// prior site and mint a duplicate subdomain).
+				existing := w.Website()
+				resume := existing != nil &&
+					(w.LifecycleState() == LifecycleFailed || w.LifecycleState() == LifecycleBinding)
+				website := existing
+				if !resume {
+					created, err := deps.WebsitesService.CreateWithOptions(ctx, req)
+					if err != nil {
+						return "", fmt.Errorf("website creation failed: %w", websites.TranslateError(err))
+					}
+					website = created
+					if err := machine.MarkDeployed(); err != nil {
+						return "", err
+					}
 				}
 				if err := machine.BeginBind(website); err != nil {
 					return "", err
@@ -765,6 +776,29 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []session.StepDef {
 					minted := ""
 					if bindResp != nil && bindResp.Domain != "" && w.Generate() {
 						minted = bindResp.Domain
+					}
+					// The website was created with the platform root as a placeholder
+					// (the SDK requires a non-empty domain and cannot auto-generate one
+					// at create time). Persist the minted subdomain as the website's
+					// registered domain so it is listed/displayed under the unique
+					// subdomain (e.g. swift-river-42.pinner.site) rather than the root.
+					if minted != "" && minted != website.Domain {
+						updated, uerr := deps.WebsitesService.UpdateWithOptions(ctx, websiteID, ipfs.WebsiteUpdateRequest{Domain: &minted})
+						if uerr != nil {
+							// Keep the lifecycle failed/retryable: the create step stays
+							// active on error, and a retry fires bind_start, which is valid
+							// only from claimed/binding/failed, not live. Marking the machine
+							// Live here would wedge the retry and a re-run would re-create the
+							// website. The subdomain is minted and bound, so surface its FQDN
+							// and leave reconciliation to the caller via websites_list.
+							if ferr := machine.BindFailed(); ferr != nil {
+								return "", ferr
+							}
+							return "", fmt.Errorf("subdomain %q was minted and is live, but failed to persist it as the website's registered domain: %w. Find it with websites_list to reconcile the domain.", minted, uerr)
+						}
+						if updated != nil {
+							website = updated
+						}
 					}
 					if err := machine.BindSucceeded(minted); err != nil {
 						return "", err
