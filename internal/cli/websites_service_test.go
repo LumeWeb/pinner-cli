@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	ipfs "go.lumeweb.com/ipfs-sdk"
+	"go.lumeweb.com/pinner-cli/internal/core/websites"
 )
 
 func TestWebsitesService_List(t *testing.T) {
@@ -74,11 +75,11 @@ func (u *unauthenticatedWebsitesService) RequireAuthenticated() error {
 	return ErrNotAuthenticated
 }
 
-func (u *unauthenticatedWebsitesService) List(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+func (u *unauthenticatedWebsitesService) List(ctx context.Context, opts websites.ListOptions) ([]ipfs.WebsiteItem, error) {
 	if err := u.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
-	return u.mockWebsitesServiceForCLI.List(ctx)
+	return u.mockWebsitesServiceForCLI.List(ctx, opts)
 }
 
 func TestWebsitesService_RequireAuthenticated(t *testing.T) {

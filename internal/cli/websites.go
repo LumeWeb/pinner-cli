@@ -12,17 +12,6 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/core/websites"
 )
 
-// stripValidationPrefix strips the "key=" prefix from a validation token value.
-// Some server builds return the full DNS TXT record value (e.g.
-// "pinner-verify=abc123"); for English display of the token alone we only want
-// the portion after the "=".
-func stripValidationPrefix(token string) string {
-	if idx := strings.Index(token, "="); idx >= 0 {
-		return token[idx+1:]
-	}
-	return token
-}
-
 // validationRecordValue returns the full DNS TXT record value the server
 // validates a website against: "<key>=<token>". The verification key is
 // server-provided — the server embeds it as the first DNS label of the
@@ -31,7 +20,7 @@ func stripValidationPrefix(token string) string {
 // "<key>=<token>". It is never hardcoded here.
 //
 // Some server builds return ValidationToken already carrying the "key="
-// prefix (see stripValidationPrefix); strip any such prefix before
+// prefix (see websites.StripValidationPrefix); strip any such prefix before
 // prepending the derived key so the result is always "<key>=<token>", never a
 // doubled "<key>=<key>=<token>". When no validation record host is available
 // to derive a key from, the token is returned as-is.
@@ -142,7 +131,7 @@ func websitesList(ctx context.Context, cmd websitesCommandGetter, output Output,
 		return err
 	}
 
-	websites, err := websitesService.List(ctx)
+	websites, err := websitesService.List(ctx, websites.ListOptions{})
 	if err != nil {
 		return err
 	}
@@ -171,7 +160,7 @@ func websitesList(ctx context.Context, cmd websitesCommandGetter, output Output,
 		} else if website.Expired {
 			validation = "expired"
 		} else if website.ValidationToken != "" {
-			validation = stripValidationPrefix(website.ValidationToken)
+			validation = websites.StripValidationPrefix(website.ValidationToken)
 		}
 		gateway := ""
 		if website.GatewayDomain != nil {
@@ -383,7 +372,7 @@ func websitesGet(ctx context.Context, cmd websitesCommandGetter, output Output, 
 	if website.Status != "active" {
 		fields = append(fields,
 			Field{"Token Expired", fmt.Sprintf("%t", website.Expired)},
-			Field{"Validation Token", stripValidationPrefix(website.ValidationToken)},
+			Field{"Validation Token", websites.StripValidationPrefix(website.ValidationToken)},
 		)
 		if website.ValidationExpiresAt != nil {
 			fields = append(fields, Field{"Token Expires", website.ValidationExpiresAt.Format("2006-01-02 15:04:05")})
@@ -498,7 +487,7 @@ func websitesCreate(ctx context.Context, cmd websitesCommandGetter, output Outpu
 
 	output.PrintFields(FieldGroup{
 		PadTop: 1,
-		Fields: []Field{{Label: "Validation Token", Value: stripValidationPrefix(createdWebsite.ValidationToken)}},
+		Fields: []Field{{Label: "Validation Token", Value: websites.StripValidationPrefix(createdWebsite.ValidationToken)}},
 	})
 
 	nameservers := getNameservers(ctx, websitesService)

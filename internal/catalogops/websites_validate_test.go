@@ -21,7 +21,7 @@ type fakeWebsitesService struct {
 }
 
 func (f *fakeWebsitesService) RequireAuthenticated() error { return nil }
-func (f *fakeWebsitesService) List(_ context.Context) ([]ipfs.WebsiteItem, error) {
+func (f *fakeWebsitesService) List(_ context.Context, _ websites.ListOptions) ([]ipfs.WebsiteItem, error) {
 	return f.items, nil
 }
 func (f *fakeWebsitesService) Validate(_ context.Context, id string) (*ipfs.WebsiteValidateResponse, error) {

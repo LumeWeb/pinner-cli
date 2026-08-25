@@ -13,9 +13,9 @@ import (
 	ipfs "go.lumeweb.com/ipfs-sdk"
 	sdkwebsitesmocks "go.lumeweb.com/ipfs-sdk/mocks/services"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
+	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
 	coreerrors "go.lumeweb.com/pinner-cli/internal/core/errors"
 	"go.lumeweb.com/pinner-cli/internal/core/ipfsbase"
-	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
 )
 
 func newUnauthWebsitesService(t *testing.T) *service {
@@ -31,20 +31,20 @@ func newAuthedNilWebsitesService(t *testing.T) *service {
 	cfgMgr.EXPECT().Config().Return(&config.Config{AuthToken: "token"}).Maybe()
 	return &service{
 		Base: ipfsbase.New(cfgMgr, ipfsbase.WithAuthToken("token")),
-		ws:             nil,
+		ws:   nil,
 	}
 }
 
 func TestWebsitesService_List_Unauthenticated(t *testing.T) {
 	svc := newUnauthWebsitesService(t)
-	_, err := svc.List(context.Background())
+	_, err := svc.List(context.Background(), ListOptions{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not authenticated")
 }
 
 func TestWebsitesService_List_ServiceUnavailable(t *testing.T) {
 	svc := newAuthedNilWebsitesService(t)
-	_, err := svc.List(context.Background())
+	_, err := svc.List(context.Background(), ListOptions{})
 	require.Error(t, err)
 	assert.Equal(t, coreerrors.ErrServiceUnavailable, err)
 }
@@ -192,7 +192,7 @@ func TestWebsitesService_SetAuthTokenConcurrent(t *testing.T) {
 
 	// Inject a mock SDK service so List does real work off a fake.
 	mockSvc := sdkwebsitesmocks.NewMockWebsitesService(t)
-	mockSvc.EXPECT().List(mock.Anything).Return([]ipfs.WebsiteItem{}, nil).Maybe()
+	mockSvc.EXPECT().List(mock.Anything, mock.Anything).Return([]ipfs.WebsiteItem{}, nil).Maybe()
 
 	client, err := ipfs.NewClient("http://127.0.0.1:9", "tok-a")
 	require.NoError(t, err)
@@ -215,7 +215,7 @@ func TestWebsitesService_SetAuthTokenConcurrent(t *testing.T) {
 				case <-stop:
 					return
 				default:
-					if _, err := svc.List(ctx); err != nil {
+					if _, err := svc.List(ctx, ListOptions{}); err != nil {
 						// coreerrors.ErrServiceUnavailable is transient during a swap; ignore it.
 					}
 				}

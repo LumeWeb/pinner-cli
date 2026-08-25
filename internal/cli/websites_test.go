@@ -16,24 +16,24 @@ import (
 
 // mockWebsitesServiceForCLI is a mock implementation of the CLI WebsitesService interface for testing
 type mockWebsitesServiceForCLI struct {
-	listFunc                   func(ctx context.Context) ([]ipfs.WebsiteItem, error)
-	createFunc                 func(ctx context.Context, domain, cid, targetType string) (*ipfs.WebsiteItem, error)
-	getFunc                    func(ctx context.Context, id string) (*ipfs.WebsiteItem, error)
-	updateFunc                 func(ctx context.Context, id, domain, cid, targetType string) (*ipfs.WebsiteItem, error)
-	updateWithOptionsFunc      func(ctx context.Context, id string, req ipfs.WebsiteUpdateRequest) (*ipfs.WebsiteItem, error)
-	deleteFunc                 func(ctx context.Context, id string) error
-	validateFunc               func(ctx context.Context, id string) (*ipfs.WebsiteValidateResponse, error)
-	getSSLStatusFunc           func(ctx context.Context, domain string) (*ipfs.WebsiteResponse, error)
-	getConfigFunc              func(ctx context.Context) (*ipfs.WebsiteConfigResponse, error)
-	ListDomainsFn              func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error)
-	BindDomainFn               func(ctx context.Context, websiteID string, req ipfs.DomainRequest) (*ipfs.DomainResponse, error)
-	UnbindDomainFn             func(ctx context.Context, websiteID string, domainID string) error
-	VerifyDomainFn             func(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainResponse, error)
-	GetDomainDNSRequirementsFn func(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainResponse, error)
-	RepublishDANEFn            func(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainDANERepublishResponse, error)
-	UpdateDomainFn             func(ctx context.Context, websiteID string, domainID string, req ipfs.DomainUpdateRequest) (*ipfs.DomainResponse, error)
+	listFunc                    func(ctx context.Context) ([]ipfs.WebsiteItem, error)
+	createFunc                  func(ctx context.Context, domain, cid, targetType string) (*ipfs.WebsiteItem, error)
+	getFunc                     func(ctx context.Context, id string) (*ipfs.WebsiteItem, error)
+	updateFunc                  func(ctx context.Context, id, domain, cid, targetType string) (*ipfs.WebsiteItem, error)
+	updateWithOptionsFunc       func(ctx context.Context, id string, req ipfs.WebsiteUpdateRequest) (*ipfs.WebsiteItem, error)
+	deleteFunc                  func(ctx context.Context, id string) error
+	validateFunc                func(ctx context.Context, id string) (*ipfs.WebsiteValidateResponse, error)
+	getSSLStatusFunc            func(ctx context.Context, domain string) (*ipfs.WebsiteResponse, error)
+	getConfigFunc               func(ctx context.Context) (*ipfs.WebsiteConfigResponse, error)
+	ListDomainsFn               func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error)
+	BindDomainFn                func(ctx context.Context, websiteID string, req ipfs.DomainRequest) (*ipfs.DomainResponse, error)
+	UnbindDomainFn              func(ctx context.Context, websiteID string, domainID string) error
+	VerifyDomainFn              func(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainResponse, error)
+	GetDomainDNSRequirementsFn  func(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainResponse, error)
+	RepublishDANEFn             func(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainDANERepublishResponse, error)
+	UpdateDomainFn              func(ctx context.Context, websiteID string, domainID string, req ipfs.DomainUpdateRequest) (*ipfs.DomainResponse, error)
 	CheckPlatformAvailabilityFn func(ctx context.Context, label string) (*ipfs.PlatformAvailabilityResponse, error)
-	ListPlatformDomainsFn      func(ctx context.Context) (*ipfs.PlatformDomainListResponse, error)
+	ListPlatformDomainsFn       func(ctx context.Context) (*ipfs.PlatformDomainListResponse, error)
 }
 
 func (m *mockWebsitesServiceForCLI) RequireAuthenticated() error {
@@ -42,7 +42,7 @@ func (m *mockWebsitesServiceForCLI) RequireAuthenticated() error {
 
 func (m *mockWebsitesServiceForCLI) SetAuthToken(token string) {}
 
-func (m *mockWebsitesServiceForCLI) List(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+func (m *mockWebsitesServiceForCLI) List(ctx context.Context, opts websites.ListOptions) ([]ipfs.WebsiteItem, error) {
 	if m.listFunc != nil {
 		return m.listFunc(ctx)
 	}
@@ -345,7 +345,7 @@ func websitesListWithService(ctx context.Context, cmd *cli.Command, output Outpu
 		return err
 	}
 
-	websites, err := websitesService.List(ctx)
+	websites, err := websitesService.List(ctx, websites.ListOptions{})
 	if err != nil {
 		return err
 	}

@@ -31,7 +31,6 @@ require (
 	github.com/pterm/pterm v0.12.84-0.20260430213317-32e5000d4c27
 	github.com/rs/cors v1.11.1
 	github.com/samber/lo v1.53.0
-	github.com/shopspring/decimal v1.4.0
 	github.com/stretchr/testify v1.11.1
 	github.com/tidwall/gjson v1.19.0
 	github.com/tidwall/sjson v1.2.5
@@ -40,7 +39,7 @@ require (
 	github.com/yosida95/uritemplate/v3 v3.0.2
 	go.lumeweb.com/configmanager v0.3.26
 	go.lumeweb.com/ipfs-content v0.1.18
-	go.lumeweb.com/ipfs-sdk v0.1.85
+	go.lumeweb.com/ipfs-sdk v0.1.86
 	go.lumeweb.com/ipfs-sdk/dnsname v0.1.64
 	go.lumeweb.com/portal-sdk v0.1.69
 	go.lumeweb.com/queryutil v0.3.18
@@ -227,6 +226,7 @@ require (
 	github.com/segmentio/encoding v0.5.4 // indirect
 	github.com/sethvargo/go-retry v0.4.0 // indirect
 	github.com/shirou/gopsutil/v4 v4.26.3 // indirect
+	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/sorairolake/lzip-go v0.3.8 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/speakeasy-api/jsonpath v0.6.3 // indirect

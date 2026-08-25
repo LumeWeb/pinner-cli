@@ -21,7 +21,7 @@ type fakeService struct {
 	domainsFn func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error)
 }
 
-func (f *fakeService) List(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+func (f *fakeService) List(ctx context.Context, opts ListOptions) ([]ipfs.WebsiteItem, error) {
 	return f.listFn(ctx)
 }
 

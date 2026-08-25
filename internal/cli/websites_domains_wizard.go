@@ -124,7 +124,7 @@ func (w *DomainAddWizard) getSteps() []wizard.Step[*DomainAddWizard] {
 
 // executeWebsite fetches the user's websites and stores them for selection.
 func (w *DomainAddWizard) executeWebsite(ctx context.Context) error {
-	websites, err := w.websitesService.List(ctx)
+	websites, err := w.websitesService.List(ctx, websites.ListOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to load websites: %w", err)
 	}

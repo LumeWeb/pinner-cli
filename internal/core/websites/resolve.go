@@ -18,7 +18,7 @@ func ResolveWebsiteID(ctx context.Context, svc Service, arg string) (string, err
 	if _, err := strconv.Atoi(arg); err == nil {
 		return arg, nil
 	}
-	list, err := svc.List(ctx)
+	list, err := svc.List(ctx, ListOptions{})
 	if err != nil {
 		return "", fmt.Errorf("failed to look up website by domain: %w", err)
 	}
@@ -61,7 +61,7 @@ func ResolveDomainID(ctx context.Context, svc Service, websiteID string, domainA
 // sequentially, avoiding an N+1 round-trip pattern: one List call plus
 // parallel ListDomains calls instead of one List plus N serial ListDomains.
 func ResolveDomainBinding(ctx context.Context, svc Service, domainArg string) (websiteID string, domainID string, err error) {
-	websites, err := svc.List(ctx)
+	websites, err := svc.List(ctx, ListOptions{})
 	if err != nil {
 		return "", "", fmt.Errorf("failed to list websites: %w", err)
 	}

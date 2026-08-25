@@ -118,6 +118,20 @@ func websitesList(d WebsitesDeps) catalog.Operation {
 		Interaction: catalog.InteractionAgentSafe,
 		Visibility:  catalog.VisibilityBoth,
 		Positional:  "",
+		Args: append(catalog.ListArgs(),
+			catalog.OperationArg{
+				Name: "domain", Type: catalog.ArgTypeString,
+				Help: "Filter websites whose domain contains this value",
+			},
+			catalog.OperationArg{
+				Name: "status", Type: catalog.ArgTypeString,
+				Help: "Filter websites by status",
+			},
+			catalog.OperationArg{
+				Name: "target-type", Type: catalog.ArgTypeString,
+				Help: "Filter websites by target type (ipfs or ipns)",
+			},
+		),
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			svc, svcErr := d.service(input)
 			if svcErr != nil {
@@ -126,8 +140,50 @@ func websitesList(d WebsitesDeps) catalog.Operation {
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
-			// Rendered as an ID/NAME/CID/... table by the CLI.
-			return svc.List(ctx)
+
+			page := catalog.ParseList(input)
+			opts := websites.ListOptions{
+				Start:      page.Start,
+				Limit:      page.Limit,
+				Domain:     catalog.StrArg(input, "domain", ""),
+				Status:     catalog.StrArg(input, "status", ""),
+				TargetType: catalog.StrArg(input, "target-type", ""),
+			}
+			sites, err := svc.List(ctx, opts)
+			if err != nil {
+				return nil, err
+			}
+
+			headers := []string{"ID", "NAME", "CID", "RESOLVED CID", "STATUS", "DNS", "SUBDOMAIN", "GATEWAY", "VALIDATION", "CREATED"}
+			rows := make([][]string, 0, len(sites))
+			for _, w := range sites {
+				validation := ""
+				if w.Status == "active" {
+					validation = "validated"
+				} else if w.Expired {
+					validation = "expired"
+				} else if w.ValidationToken != "" {
+					validation = websites.StripValidationPrefix(w.ValidationToken)
+				}
+				gateway := ""
+				if w.GatewayDomain != nil {
+					gateway = *w.GatewayDomain
+				}
+				resolvedCID := "-"
+				if w.ActiveCid != nil {
+					resolvedCID = *w.ActiveCid
+				}
+				rows = append(rows, []string{
+					fmt.Sprintf("%d", w.Id), w.Domain, w.TargetHash, resolvedCID, w.Status,
+					fmt.Sprintf("%t", w.DnsHostingEnabled), fmt.Sprintf("%t", w.IsSubdomain),
+					gateway, validation, w.Created.Format("2006-01-02 15:04:05"),
+				})
+			}
+			return NewListResult(sites, ListResultMeta{
+				Noun:    "website(s)",
+				Headers: headers,
+				Rows:    rows,
+			}), nil
 		}),
 	})
 }

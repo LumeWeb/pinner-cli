@@ -8,8 +8,8 @@ import (
 	"errors"
 
 	ipfs "go.lumeweb.com/ipfs-sdk"
-	coreerrors "go.lumeweb.com/pinner-cli/internal/core/errors"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
+	coreerrors "go.lumeweb.com/pinner-cli/internal/core/errors"
 	"go.lumeweb.com/pinner-cli/internal/core/ipfsbase"
 	"go.uber.org/zap"
 )
@@ -20,7 +20,7 @@ type Service interface {
 	// SetAuthToken hot-updates the auth token on a running service without
 	// reconstructing it (used by long-lived consumers on config live-reload).
 	SetAuthToken(token string)
-	List(ctx context.Context) ([]ipfs.WebsiteItem, error)
+	List(ctx context.Context, opts ListOptions) ([]ipfs.WebsiteItem, error)
 	Create(ctx context.Context, domain, targetHash, targetType string) (*ipfs.WebsiteItem, error)
 	CreateWithOptions(ctx context.Context, req ipfs.WebsiteRequest) (*ipfs.WebsiteItem, error)
 	Get(ctx context.Context, id string) (*ipfs.WebsiteItem, error)
@@ -54,12 +54,46 @@ type Service interface {
 	CheckPlatformDomainAvailability(ctx context.Context, label string) (*ipfs.PlatformAvailabilityResponse, error)
 }
 
+// ListOptions filters and paginates a websites listing using the shared
+// server-side list protocol. Start is a 0-based offset and Limit is the page
+// size; Domain/Status/TargetType map to the backend's contains/eq filters.
+type ListOptions struct {
+	Start      int
+	Limit      int
+	Domain     string
+	Status     string
+	TargetType string
+}
+
+// sdkOpts translates ListOptions into the ipfs-sdk list-filter options. Only
+// non-zero fields are emitted, so an empty ListOptions produces no query
+// mutation at all.
+func (o ListOptions) sdkOpts() []ipfs.ListWebsitesOption {
+	var opts []ipfs.ListWebsitesOption
+	if o.Domain != "" {
+		opts = append(opts, ipfs.WithDomainFilter(o.Domain))
+	}
+	if o.Status != "" {
+		opts = append(opts, ipfs.WithStatusFilter(o.Status))
+	}
+	if o.TargetType != "" {
+		opts = append(opts, ipfs.WithTargetTypeFilter(o.TargetType))
+	}
+	if o.Start > 0 {
+		opts = append(opts, ipfs.WithStart(o.Start))
+	}
+	if o.Limit > 0 {
+		opts = append(opts, ipfs.WithWebsitesLimit(o.Limit))
+	}
+	return opts
+}
+
 // service implements the Service interface using the ipfs.WebsitesService.
 type service struct {
 	*ipfsbase.Base
-	ws      ipfs.WebsitesService
-	client  *ipfs.Client
-	log     *zap.Logger
+	ws     ipfs.WebsitesService
+	client *ipfs.Client
+	log    *zap.Logger
 }
 
 // Option is a function that configures a service.
@@ -138,8 +172,9 @@ func (s *service) requireService() (ipfs.WebsitesService, error) {
 	return s.ws, nil
 }
 
-// List retrieves all websites for the authenticated user.
-func (s *service) List(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+// List retrieves the websites for the authenticated user, applying the
+// shared list filter options.
+func (s *service) List(ctx context.Context, opts ListOptions) ([]ipfs.WebsiteItem, error) {
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
@@ -147,7 +182,7 @@ func (s *service) List(ctx context.Context) ([]ipfs.WebsiteItem, error) {
 	if err != nil {
 		return nil, err
 	}
-	return svc.List(ctx)
+	return svc.List(ctx, opts.sdkOpts()...)
 }
 
 // Create creates a new website.

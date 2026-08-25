@@ -17,17 +17,17 @@ import (
 type platformDomainService struct {
 	websites.Service
 
-	authErr                    error
-	availabilityFn             func(ctx context.Context, label string) (*ipfs.PlatformAvailabilityResponse, error)
-	listPlatformDomainsFn      func(ctx context.Context) (*ipfs.PlatformDomainListResponse, error)
-	bindDomainFn               func(ctx context.Context, websiteID string, req ipfs.DomainRequest) (*ipfs.DomainResponse, error)
-	bindReqCapture             *ipfs.DomainRequest
+	authErr                        error
+	availabilityFn                 func(ctx context.Context, label string) (*ipfs.PlatformAvailabilityResponse, error)
+	listPlatformDomainsFn          func(ctx context.Context) (*ipfs.PlatformDomainListResponse, error)
+	bindDomainFn                   func(ctx context.Context, websiteID string, req ipfs.DomainRequest) (*ipfs.DomainResponse, error)
+	bindReqCapture                 *ipfs.DomainRequest
 	checkPlatformAvailabilityLabel string
 }
 
 func (f *platformDomainService) RequireAuthenticated() error { return f.authErr }
 
-func (f *platformDomainService) List(_ context.Context) ([]ipfs.WebsiteItem, error) {
+func (f *platformDomainService) List(_ context.Context, _ websites.ListOptions) ([]ipfs.WebsiteItem, error) {
 	return []ipfs.WebsiteItem{{Id: 11, Domain: "example.test"}}, nil
 }
 

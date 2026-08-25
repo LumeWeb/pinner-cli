@@ -32,7 +32,7 @@ type domainsService struct {
 
 func (f *domainsService) RequireAuthenticated() error { return f.authErr }
 
-func (f *domainsService) List(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+func (f *domainsService) List(ctx context.Context, opts websites.ListOptions) ([]ipfs.WebsiteItem, error) {
 	if f.listFn != nil {
 		return f.listFn(ctx)
 	}
