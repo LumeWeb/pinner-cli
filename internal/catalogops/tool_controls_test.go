@@ -31,9 +31,10 @@ func websitesOps() []catalog.Operation {
 	return WebsitesOperations(WebsitesDeps{})
 }
 
-// TestWebsitesCreateRequiredFields verifies P0: websites_create requires both
-// the website (domain) and cid identity fields, so an agent cannot create a
-// site with no target.
+// TestWebsitesCreateRequiredFields verifies P0: websites_create requires --cid
+// unconditionally, while the domain positional is optional because a platform
+// (free) subdomain is claimed via --platform-domain (label/generate) instead of
+// a custom domain. It also verifies the platform-claim args are exposed.
 func TestWebsitesCreateRequiredFields(t *testing.T) {
 	var op catalog.Operation
 	for _, o := range websitesOps() {
@@ -45,13 +46,26 @@ func TestWebsitesCreateRequiredFields(t *testing.T) {
 	if op == nil {
 		t.Fatal("websites_create operation not found")
 	}
-	for _, name := range []string{"website", "cid"} {
-		a := argByName(t, op, name)
-		if a == nil {
+	// cid is unconditionally required.
+	a := argByName(t, op, "cid")
+	if a == nil {
+		t.Fatal("websites_create missing arg \"cid\"")
+	}
+	if !a.Required {
+		t.Errorf("websites_create arg \"cid\" must be Required=true")
+	}
+	// domain positional is optional (platform claims omit it).
+	domain := argByName(t, op, "website")
+	if domain == nil {
+		t.Fatal("websites_create missing arg \"website\"")
+	}
+	if domain.Required {
+		t.Errorf("websites_create arg \"website\" must NOT be Required (platform claims omit it)")
+	}
+	// Platform-claim args are present.
+	for _, name := range []string{"platform-domain", "platform-namespace", "generate", "label"} {
+		if argByName(t, op, name) == nil {
 			t.Fatalf("websites_create missing arg %q", name)
-		}
-		if !a.Required {
-			t.Errorf("websites_create arg %q must be Required=true", name)
 		}
 	}
 }

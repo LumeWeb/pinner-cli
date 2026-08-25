@@ -698,25 +698,43 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []session.StepDef {
 					targetType = string(TargetTypeIPFS)
 				}
 				dnsHosting := w.DNSHosting()
-				if w.DomainSource() == string(WebsitesDomainSourcePlatform) {
-					// Platform (free) subdomains are DNS-managed by the platform.
-					dnsHosting = true
-					w.SetDNSHosting(true)
-				}
-				if w.Domain() == "" {
-					return "", fmt.Errorf("website domain is not set")
-				}
+				isPlatform := w.DomainSource() == string(WebsitesDomainSourcePlatform)
 				req := ipfs.WebsiteRequest{
-					Domain:            w.Domain(),
-					TargetHash:        w.CID(),
-					TargetType:        targetType,
-					DnsHostingEnabled: &dnsHosting,
+					TargetHash: w.CID(),
+					TargetType: targetType,
+				}
+				if isPlatform {
+					// Platform (free) subdomains are DNS-managed by the platform and
+					// are claimed atomically at create; no domain is supplied.
+					managed := true
+					req.DnsHostingEnabled = &managed
+					w.SetDNSHosting(true)
+					if pd := w.PlatformDomain(); pd != "" {
+						req.PlatformDomain = &pd
+					}
+					if pns := w.PlatformNamespace(); pns != "" {
+						req.PlatformNamespace = &pns
+					}
+					if w.Generate() {
+						g := true
+						req.Generate = &g
+					} else if label := w.Label(); label != "" {
+						req.Label = &label
+					}
+				} else {
+					if w.Domain() == "" {
+						return "", fmt.Errorf("website domain is not set")
+					}
+					domain := w.Domain()
+					req.Domain = &domain
+					req.DnsHostingEnabled = &dnsHosting
 				}
 				machine := NewWebsiteStateMachine(w)
 
-				// CreateWithOptions is not idempotent; once Website is set, resume
-				// the bind phase instead of re-creating (which would orphan the
-				// prior site and mint a duplicate subdomain).
+				// CreateWithOptions is not idempotent; once Website is set (a prior
+				// create succeeded), resume the lifecycle transition instead of
+				// re-creating (which would orphan the prior site and mint a duplicate
+				// subdomain).
 				existing := w.Website()
 				resume := existing != nil &&
 					(w.LifecycleState() == LifecycleFailed || w.LifecycleState() == LifecycleBinding)
@@ -735,75 +753,14 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []session.StepDef {
 					return "", err
 				}
 
-				// Mint a platform (free) subdomain by binding it to the newly
-				// created website, mirroring websites_domains_add: the platform
-				// claims the subdomain at bind time (label explicit, or
-				// auto-generated via generate).
-				if w.DomainSource() == string(WebsitesDomainSourcePlatform) {
-					ns := w.PlatformNamespace()
-					if ns == "" {
-						ns = "icann"
-					}
-					bindReq := ipfs.DomainRequest{
-						Domain:    w.Domain(),
-						Namespace: ns,
-					}
-					if pd := w.PlatformDomain(); pd != "" {
-						bindReq.PlatformDomain = &pd
-					}
-					if pns := w.PlatformNamespace(); pns != "" {
-						bindReq.PlatformNamespace = &pns
-					}
-					if w.Generate() {
-						g := true
-						bindReq.Generate = &g
-					}
-					if label := w.Label(); label != "" {
-						bindReq.Label = &label
-					}
-					websiteID := strconv.Itoa(int(website.Id))
-					bindResp, err := deps.WebsitesService.BindDomain(ctx, websiteID, bindReq)
-					if err != nil {
-						if ferr := machine.BindFailed(); ferr != nil {
-							return "", ferr
-						}
-						return "", fmt.Errorf("platform subdomain claim failed: %w. The website exists but its subdomain was not claimed; find it with websites_list and retry the claim, or delete the website.", err)
-					}
-					// The platform mints the subdomain at bind time, so the bind response
-					// is authoritative for the serving FQDN. Reflect it in the website
-					// state so later steps report the minted subdomain rather than the
-					// create-time placeholder root.
-					minted := ""
-					if bindResp != nil && bindResp.Domain != "" && w.Generate() {
-						minted = bindResp.Domain
-					}
-					// The website was created with the platform root as a placeholder
-					// (the SDK requires a non-empty domain and cannot auto-generate one
-					// at create time). Persist the minted subdomain as the website's
-					// registered domain so it is listed/displayed under the unique
-					// subdomain (e.g. swift-river-42.pinner.site) rather than the root.
-					if minted != "" && minted != website.Domain {
-						updated, uerr := deps.WebsitesService.UpdateWithOptions(ctx, websiteID, ipfs.WebsiteUpdateRequest{Domain: &minted})
-						if uerr != nil {
-							// Keep the lifecycle failed/retryable: the create step stays
-							// active on error, and a retry fires bind_start, which is valid
-							// only from claimed/binding/failed, not live. Marking the machine
-							// Live here would wedge the retry and a re-run would re-create the
-							// website. The subdomain is minted and bound, so surface its FQDN
-							// and leave reconciliation to the caller via websites_list.
-							if ferr := machine.BindFailed(); ferr != nil {
-								return "", ferr
-							}
-							return "", fmt.Errorf("subdomain %q was minted and is live, but failed to persist it as the website's registered domain: %w. Find it with websites_list to reconcile the domain.", minted, uerr)
-						}
-						if updated != nil {
-							website = updated
-						}
-					}
-					if err := machine.BindSucceeded(minted); err != nil {
-						return "", err
-					}
-				} else if err := machine.BindSucceeded(""); err != nil {
+				// The subdomain (when claimed) is minted atomically at create time,
+				// so the created website's domain IS the authoritative serving FQDN.
+				// Reflect it in state so later steps report the claimed subdomain.
+				minted := ""
+				if website != nil {
+					minted = website.Domain
+				}
+				if err := machine.BindSucceeded(minted); err != nil {
 					return "", err
 				}
 				return "", nil

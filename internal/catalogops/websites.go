@@ -237,27 +237,35 @@ func websitesGet(d WebsitesDeps) catalog.Operation {
 
 // websitesCreate is the `websites create` operation. Returns *ipfs.WebsiteItem.
 //
-// The <domain> positional and --cid are required (this handler errors if
-// either is missing). --target-type defaults to "ipfs". The nullable
-// --dns-hosting maps onto DnsHostingEnabled (true = managed, false =
-// self-managed); omitted leaves it nil so the backend applies its default
-// (managed DNS).
+// A website needs a destination: either a user-owned custom domain (the
+// positional) or a platform-provided (free) subdomain claimed at create time.
+// --cid is always required. For a custom domain supply the positional (and,
+// optionally, --dns-hosting: true = managed, false = self-managed, omit =
+// managed default). For a platform subdomain supply --platform-domain plus
+// exactly one of --label or --generate; Domain is omitted (the backend mints
+// or claims the subdomain atomically at create). --target-type defaults to
+// "ipfs".
 func websitesCreate(d WebsitesDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
 		Name:        "websites_create",
 		Title:       "Create a website",
 		Summary:     "Create a new website",
-		Description: "Create a website that serves an IPFS CID. Supports both a custom domain the user owns AND a platform-provided (free) subdomain. Provide domain (website) and cid (required), plus optional target-type (ipfs|ipns) and dns-hosting. If the user has NO domain, do not invent one: use the interactive websites_wizard (websites_wizard_start/websites_wizard_step), which can claim a platform subdomain by default (label -> availability via websites_platform_domain_availability -> exact FQDN), or mint one via websites_domains_add with label/generate. For newly uploaded content, use the CID returned directly by an upload tool — do NOT call pins_add after upload. pins_add is only needed when the CID originated outside Pinner and must be imported from IPFS. Returns the created website (numeric ID, validation TXT token, DNS records to publish).",
+		Description: "Create a website that serves an IPFS CID. Provide --cid plus either a custom domain (positional) or a platform subdomain claim (--platform-domain with --label or --generate). DNS is always managed for platform subdomains. Returns the created website with validation token and DNS records.",
+		AgentDescription: "Create a website that serves an IPFS CID. Provide cid plus EITHER a custom domain (positional) OR a platform-provided (free) subdomain claim (--platform-domain with --label or --generate). For a custom domain: `websites create <domain> --cid <cid> [--target-type ipfs|ipns] [--dns-hosting true|false]`. For a platform subdomain: `websites create --cid <cid> --platform-domain <root> --label <label>` (or --generate instead of --label); the platform claims/mints the subdomain at create and DNS is always managed. If the user has NO domain, claim or mint a platform subdomain directly here (label/generate) rather than inventing a custom domain. For newly uploaded content, use the CID returned directly by an upload tool — do NOT call pins_add after upload. pins_add is only needed when the CID originated outside Pinner and must be imported from IPFS. Returns the created website (numeric ID, validation TXT token, DNS records to publish).",
 		Category:    "core",
 		Safety:      catalog.SafetyMutate,
 		Interaction: catalog.InteractionAgentSafe,
 		Visibility:  catalog.VisibilityBoth,
 		Positional:  "<domain>",
 		Args: []catalog.OperationArg{
-			{Name: "website", Type: catalog.ArgTypeString, Required: true, Help: "Domain for the new website", AgentHelp: "The domain the website should serve under. For a platform subdomain use the exact FQDN (label.root, e.g. myapp.pinned.site) from the wizard or websites_platform_domain_availability; for a custom domain use the user's domain."},
+			{Name: "website", Type: catalog.ArgTypeString, Required: false, Help: "Custom domain for the new website (required when not claiming a platform subdomain)", AgentHelp: "For a custom domain: the exact domain, e.g. example.com. OMIT this when claiming a platform (free) subdomain; pass --platform-domain plus --label or --generate instead."},
 			{Name: "cid", Type: catalog.ArgTypeString, Required: true, Help: "IPFS CID to serve", AgentHelp: "The IPFS CID to serve. If from a Pinner upload tool, use its returned CID directly (already pinned, no pins_add). Only call pins_add first when the CID is external to Pinner."},
 			{Name: "target-type", Type: catalog.ArgTypeString, Default: "ipfs", Help: "Target type (ipfs|ipns)"},
-			{Name: "dns-hosting", Type: catalog.ArgTypeNullableBool, Help: "Let Pinner manage DNS for this website (true = managed, false = self-managed, omit = managed default)", AgentHelp: "true lets Pinner manage DNS; false leaves DNS self-managed. Omit to use the default (Pinner-managed DNS)."},
+			{Name: "dns-hosting", Type: catalog.ArgTypeNullableBool, Help: "Let Pinner manage DNS for this website (true = managed, false = self-managed, omit = managed default; ignored for platform subdomains, which are always managed)", AgentHelp: "true lets Pinner manage DNS; false leaves DNS self-managed. Omit to use the default. Ignored for platform subdomains (always managed)."},
+			{Name: "platform-domain", Type: catalog.ArgTypeString, Required: false, Help: "Platform (free-subdomain) root domain to claim a subdomain under, e.g. pinned.site", AgentHelp: "The platform root to claim a free subdomain under (e.g. pinned.site). Setting this triggers a platform-subdomain claim at create; pair with --label or --generate and omit the domain positional."},
+			{Name: "platform-namespace", Type: catalog.ArgTypeString, Required: false, Help: "Namespace within the platform domain to claim under (default icann)"},
+			{Name: "generate", Type: catalog.ArgTypeBool, Default: "false", Required: false, Help: "Ask the platform to auto-generate a subdomain label instead of supplying one (mutually exclusive with --label)"},
+			{Name: "label", Type: catalog.ArgTypeString, Required: false, Help: "Explicit subdomain label to claim under a platform domain (mutually exclusive with --generate)"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			svc, svcErr := d.service(input)
@@ -268,26 +276,59 @@ func websitesCreate(d WebsitesDeps) catalog.Operation {
 				return nil, err
 			}
 			domain := catalog.StrArg(input, "website", "")
-			if domain == "" {
-				return nil, fmt.Errorf("websites_create: domain is required")
-			}
 			cid := catalog.StrArg(input, "cid", "")
 			if cid == "" {
 				return nil, fmt.Errorf("websites_create: --cid is required")
 			}
 			targetType := catalog.StrArg(input, "target-type", "ipfs")
+
+			pd := catalog.StrArg(input, "platform-domain", "")
+			pns := catalog.StrArg(input, "platform-namespace", "")
+			generate := catalog.BoolArg(input, "generate", false)
+			label := catalog.StrArg(input, "label", "")
+			isPlatform := pd != ""
+
+			if isPlatform {
+				if generate && label != "" {
+					return nil, fmt.Errorf("websites_create: --generate and --label are mutually exclusive; provide one to claim a platform subdomain")
+				}
+				if !generate && label == "" {
+					return nil, fmt.Errorf("websites_create: a platform subdomain claim requires --generate or --label along with --platform-domain")
+				}
+			} else if domain == "" {
+				return nil, fmt.Errorf("websites_create: a domain (positional) is required unless claiming a platform subdomain via --platform-domain")
+			}
+
 			req := ipfs.WebsiteRequest{
-				Domain:     domain,
 				TargetHash: cid,
 				TargetType: targetType,
 			}
-			// nil (omitted) lets the backend apply its default (managed DNS);
-			// true/false map onto Pinner-managed / self-managed explicitly.
-			req.DnsHostingEnabled = catalog.BoolArgPtr(input, "dns-hosting")
+			if domain != "" {
+				req.Domain = &domain
+			}
+			if isPlatform {
+				// Platform subdomains are always DNS-managed by the platform.
+				managed := true
+				req.DnsHostingEnabled = &managed
+				req.PlatformDomain = &pd
+				if pns != "" {
+					req.PlatformNamespace = &pns
+				}
+				if generate {
+					req.Generate = &generate
+				}
+				if label != "" {
+					req.Label = &label
+				}
+			} else {
+				// nil (omitted) lets the backend apply its default (managed DNS);
+				// true/false map onto Pinner-managed / self-managed explicitly.
+				req.DnsHostingEnabled = catalog.BoolArgPtr(input, "dns-hosting")
+			}
 			// Translate backend reason codes (e.g. CID_NOT_PINNED,
-			// IPNS_KEY_NOT_FOUND, DNS_VALIDATION_FAILED) into clear, actionable
-			// messages; this same handler drives both the CLI and the MCP
-			// tool-call surface. *ipfs.WebsiteItem
+			// IPNS_KEY_NOT_FOUND, DNS_VALIDATION_FAILED, subdomain-claim errors)
+			// into clear, actionable messages; this same handler drives both the
+			// CLI and the MCP tool-call surface. *ipfs.WebsiteItem
 			result, err := svc.CreateWithOptions(ctx, req)
 			return result, websites.TranslateErrorWithCID(err, cid)
 		}),
@@ -308,7 +349,8 @@ func websitesUpdate(d WebsitesDeps) catalog.Operation {
 		Name:        "websites_update",
 		Title:       "Update a website",
 		Summary:     "Update a website",
-		Description: "Update an existing website: change its cid, target-type (ipfs|ipns), rename its domain (rename-to), or set dns-hosting (true = Pinner-managed, false = self-managed, omit = unchanged). Select the site by website; set at least one optional field. A CID produced by an upload tool is already pinned and usable directly. Only when the CID is an EXTERNAL IPFS CID must you call pins_add first; a bare update with an unpinned CID fails with CID_NOT_PINNED. With only cid set (no target-type), the site's current target type is preserved automatically. For the full guided flow, fetch the website-update prompt (prompts/get website-update).",
+		Description: "Update an existing website: change its cid, target-type (ipfs|ipns), rename its domain (rename-to), or set dns-hosting (true = Pinner-managed, false = self-managed, omit = unchanged). Select the site by website; set at least one optional field. With only cid set (no target-type), the site's current target type is preserved automatically.",
+		AgentDescription: "Update an existing website: change its cid, target-type (ipfs|ipns), rename its domain (rename-to), or set dns-hosting (true = Pinner-managed, false = self-managed, omit = unchanged). Select the site by website; set at least one optional field. A CID produced by an upload tool is already pinned and usable directly. Only when the CID is an EXTERNAL IPFS CID must you call pins_add first; a bare update with an unpinned CID fails with CID_NOT_PINNED. With only cid set (no target-type), the site's current target type is preserved automatically. For the full guided flow, fetch the website-update prompt (prompts/get website-update).",
 		Category:    "core",
 		Safety:      catalog.SafetyMutate,
 		Interaction: catalog.InteractionAgentSafe,
@@ -605,7 +647,8 @@ func websitesPlatformDomainAvailability(d WebsitesDeps) catalog.Operation {
 		Name:        "websites_platform_domain_availability",
 		Title:       "Check platform domain availability",
 		Summary:     "Check if a label is available as a platform subdomain",
-		Description: "Check whether a candidate subdomain label is claimable on each enabled platform (free-subdomain) root. label is required. Returns one availability result per platform-owned root. Used by the websites wizard (websites_wizard_start/websites_wizard_step) to derive a platform subdomain and its exact FQDN when the user supplies no domain; discover the roots first with websites_platform_domains_list.",
+		Description: "Check whether a candidate subdomain label is claimable on each enabled platform (free-subdomain) root. Returns one availability result per platform-owned root.",
+		AgentDescription: "Check whether a candidate subdomain label is claimable on each enabled platform (free-subdomain) root. label is required. Returns one availability result per platform-owned root. Used by the websites wizard (websites_wizard_start/websites_wizard_step) to derive a platform subdomain and its exact FQDN when the user supplies no domain; discover the roots first with websites_platform_domains_list.",
 		Category:    "core",
 		Safety:      catalog.SafetyRead,
 		Interaction: catalog.InteractionAgentSafe,

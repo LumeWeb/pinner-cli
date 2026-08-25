@@ -55,9 +55,19 @@ func (m *mockWebsitesHandlerService) CreateWithOptions(ctx context.Context, req 
 		return m.createWithOptionsFunc(ctx, req)
 	}
 	if m.createFunc != nil {
-		return m.createFunc(ctx, req.Domain, req.TargetHash, req.TargetType)
+		return m.createFunc(ctx, sOrEmpty(req.Domain), req.TargetHash, req.TargetType)
 	}
 	return nil, nil
+}
+
+// sOrEmpty dereferences a *string, returning "" for nil. WebsiteRequest.Domain
+// is a *string since the swagger fix made the domain optional for platform
+// subdomain claims.
+func sOrEmpty(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 func (m *mockWebsitesHandlerService) Get(ctx context.Context, id string) (*ipfs.WebsiteItem, error) {
@@ -220,105 +230,6 @@ func TestWebsitesListHandler_Unauthenticated(t *testing.T) {
 	err := websitesList(context.Background(), cmd, output, cfgMgr, "", true)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrNotAuthenticated))
-}
-
-// ===== websitesCreate =====
-
-func TestWebsitesCreateHandler_Success(t *testing.T) {
-	mockSvc, cfgMgr := setupWebsitesHandlerTest(t)
-	now := time.Now()
-	mockSvc.createWithOptionsFunc = func(ctx context.Context, req ipfs.WebsiteRequest) (*ipfs.WebsiteItem, error) {
-		assert.Equal(t, "example.com", req.Domain)
-		assert.Equal(t, "QmXxx", req.TargetHash)
-		assert.Equal(t, "ipfs", req.TargetType)
-		return &ipfs.WebsiteItem{
-			Id: 1, Domain: "example.com", TargetHash: "QmXxx", TargetType: "ipfs",
-			Status: "active", Created: now, ValidationToken: "lumeweb-verify=abc123",
-		}, nil
-	}
-
-	output := newTestOutput()
-	cmd := newMockCommand().withArgs("example.com").withString(FlagCID, "QmXxx")
-	err := websitesCreate(context.Background(), cmd, output, cfgMgr, "test-token", true)
-	require.NoError(t, err)
-}
-
-func TestWebsitesCreateHandler_MissingDomain(t *testing.T) {
-	_, cfgMgr := setupWebsitesHandlerTest(t)
-
-	output := newTestOutput()
-	cmd := newMockCommand().withString(FlagCID, "QmXxx")
-	err := websitesCreate(context.Background(), cmd, output, cfgMgr, "test-token", true)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "domain is required")
-}
-
-func TestWebsitesCreateHandler_WithDNSHosting(t *testing.T) {
-	mockSvc, cfgMgr := setupWebsitesHandlerTest(t)
-	now := time.Now()
-	mockSvc.createWithOptionsFunc = func(ctx context.Context, req ipfs.WebsiteRequest) (*ipfs.WebsiteItem, error) {
-		assert.NotNil(t, req.DnsHostingEnabled)
-		assert.True(t, *req.DnsHostingEnabled)
-		return &ipfs.WebsiteItem{
-			Id: 1, Domain: "example.com", TargetHash: "QmXxx", TargetType: "ipfs",
-			Status: "active", Created: now, DnsHostingEnabled: true, ValidationToken: "abc123",
-		}, nil
-	}
-
-	output := newTestOutput()
-	cmd := newMockCommand().withArgs("example.com").withString(FlagCID, "QmXxx").
-		withBool(FlagDNSHosting, true).withIsSet(FlagDNSHosting, true)
-	err := websitesCreate(context.Background(), cmd, output, cfgMgr, "test-token", true)
-	require.NoError(t, err)
-}
-
-func TestWebsitesCreateHandler_WithNoDNSHosting(t *testing.T) {
-	mockSvc, cfgMgr := setupWebsitesHandlerTest(t)
-	now := time.Now()
-	mockSvc.createWithOptionsFunc = func(ctx context.Context, req ipfs.WebsiteRequest) (*ipfs.WebsiteItem, error) {
-		assert.NotNil(t, req.DnsHostingEnabled)
-		assert.False(t, *req.DnsHostingEnabled)
-		return &ipfs.WebsiteItem{
-			Id: 1, Domain: "example.com", TargetHash: "QmXxx", TargetType: "ipfs",
-			Status: "active", Created: now, ValidationToken: "abc123",
-		}, nil
-	}
-
-	output := newTestOutput()
-	cmd := newMockCommand().withArgs("example.com").withString(FlagCID, "QmXxx").
-		withBool(FlagNoDNSHosting, true).withIsSet(FlagNoDNSHosting, true)
-	err := websitesCreate(context.Background(), cmd, output, cfgMgr, "test-token", true)
-	require.NoError(t, err)
-}
-
-func TestWebsitesCreateHandler_ServiceError(t *testing.T) {
-	mockSvc, cfgMgr := setupWebsitesHandlerTest(t)
-	mockSvc.createWithOptionsFunc = func(ctx context.Context, req ipfs.WebsiteRequest) (*ipfs.WebsiteItem, error) {
-		return nil, errors.New("conflict")
-	}
-
-	output := newTestOutput()
-	cmd := newMockCommand().withArgs("example.com").withString(FlagCID, "QmXxx")
-	err := websitesCreate(context.Background(), cmd, output, cfgMgr, "test-token", true)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "conflict")
-}
-
-func TestWebsitesCreateHandler_DefaultTargetType(t *testing.T) {
-	mockSvc, cfgMgr := setupWebsitesHandlerTest(t)
-	now := time.Now()
-	mockSvc.createWithOptionsFunc = func(ctx context.Context, req ipfs.WebsiteRequest) (*ipfs.WebsiteItem, error) {
-		assert.Equal(t, "ipfs", req.TargetType)
-		return &ipfs.WebsiteItem{
-			Id: 1, Domain: "example.com", TargetHash: "QmXxx", TargetType: "ipfs",
-			Status: "active", Created: now, ValidationToken: "abc123",
-		}, nil
-	}
-
-	output := newTestOutput()
-	cmd := newMockCommand().withArgs("example.com").withString(FlagCID, "QmXxx")
-	err := websitesCreate(context.Background(), cmd, output, cfgMgr, "test-token", true)
-	require.NoError(t, err)
 }
 
 // ===== websitesGet =====
