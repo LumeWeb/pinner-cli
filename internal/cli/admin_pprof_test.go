@@ -3,6 +3,9 @@ package cli
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -12,6 +15,52 @@ import (
 	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
 	"go.lumeweb.com/portal-sdk/admin"
 )
+
+// TestWritePprofBytesToFile verifies writePprofBytes saves profile bytes to a
+// validated relative path with 0600 perms.
+func TestWritePprofBytesToFile(t *testing.T) {
+	dir := t.TempDir()
+	prev, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(dir))
+	t.Cleanup(func() { _ = os.Chdir(prev) })
+
+	require.NoError(t, writePprofBytes("heap.prof", []byte("heap-data")))
+	got, err := os.ReadFile(filepath.Join(dir, "heap.prof"))
+	require.NoError(t, err)
+	assert.Equal(t, "heap-data", string(got))
+	info, err := os.Stat(filepath.Join(dir, "heap.prof"))
+	require.NoError(t, err)
+	if runtime.GOOS != "windows" {
+		assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+	}
+}
+
+// TestSafeOutputPath verifies safeOutputPath rejects traversal, absolute paths,
+// and volume paths while accepting safe relative paths.
+func TestSafeOutputPath(t *testing.T) {
+	for _, tt := range []struct {
+		path string
+		want bool
+	}{
+		{"heap.prof", true},
+		{"sub/heap.prof", true},
+		{"../escape.prof", false},
+		{"sub/../../escape.prof", false},
+		{"/etc/escape.prof", false},
+		{"C:\\escape.prof", false},
+		{"", false},
+		{"   ", false},
+	} {
+		_, err := safeOutputPath(tt.path)
+		if tt.want && err != nil {
+			t.Fatalf("safeOutputPath(%q) unexpected error: %v", tt.path, err)
+		}
+		if !tt.want && err == nil {
+			t.Fatalf("safeOutputPath(%q) expected error, got nil", tt.path)
+		}
+	}
+}
 
 func TestAdminPprofByteAction(t *testing.T) {
 	tests := []struct {

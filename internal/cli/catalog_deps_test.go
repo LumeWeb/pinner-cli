@@ -56,6 +56,40 @@ func TestProductionCatalogOpsBundleAssemblesLiveSurface(t *testing.T) {
 	require.True(t, len(prefixes) >= 5, "expected >=5 catalogops domains in the compiled surface, got %d: %v", len(prefixes), prefixes)
 }
 
+// TestProductionCatalogOpsBundleExposesAdminDomain pins that the admin domain
+// shows up in the production MCP surface assembled from buildCatalogOpsDeps.
+// The platform-domain tools must be discoverable so other admin sections can
+// register operations in the same provider.
+func TestProductionCatalogOpsBundleExposesAdminDomain(t *testing.T) {
+	cfgMgr := configmocks.NewMockManager(t)
+	prev := configManagerFactory
+	configManagerFactory = func() (config.Manager, error) { return cfgMgr, nil }
+	defer func() { configManagerFactory = prev }()
+
+	bundle := buildCatalogOpsDeps()
+	oc, err := mcpadapter.AssembleCatalogOps(bundle)
+	require.NoError(t, err, "production deps must assemble a catalog")
+
+	descs, err := catalog.NewMCPCompiler().Compile(oc)
+	require.NoError(t, err)
+
+	names := map[string]bool{}
+	for _, d := range descs {
+		names[d.Name] = true
+	}
+	for _, want := range []string{
+		"admin_platform_domains_list",
+		"admin_platform_domains_register",
+		"admin_platform_domains_update",
+		"admin_platform_domains_delete",
+		"admin_platform_domains_bind",
+	} {
+		if !names[want] {
+			t.Fatalf("production surface missing admin tool %q", want)
+		}
+	}
+}
+
 // domainPrefix returns the leading domain token of a dotted operation name.
 func domainPrefix(name string) string {
 	for i := 0; i < len(name); i++ {

@@ -2,363 +2,94 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"go.lumeweb.com/pinner-cli/internal/core/config"
-	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
-	"go.lumeweb.com/portal-sdk/admin"
+	"github.com/urfave/cli/v3"
+	"go.lumeweb.com/pinner-cli/internal/catalog"
+	"go.lumeweb.com/pinner-cli/internal/catalogops"
 )
 
-// testPlatformDomain builds an *admin.PlatformDomain. The embedded response
-// type is not exported by the SDK wrapper, so its promoted fields are set via
-// a helper.
-func testPlatformDomain(id int, domain, namespace string, zoneID int, enabled bool) *admin.PlatformDomain {
-	d := &admin.PlatformDomain{}
-	d.Id = id
-	d.Domain = domain
-	d.Namespace = namespace
-	d.ZoneId = zoneID
-	d.Enabled = enabled
-	return d
-}
-
-// testRootDomain builds an *admin.RootDomain via its embedded DomainResponse.
-func testRootDomain(id int, domain string) *admin.RootDomain {
-	d := &admin.RootDomain{}
-	d.Id = id
-	d.Domain = domain
-	return d
-}
-
+// TestAdminPlatformDomainsTree asserts the platform-domains command compiled
+// from the operation catalog exposes the five subcommands (list, register,
+// update, delete, bind), matching the MCP admin_platform_domains_* tools.
 func TestAdminPlatformDomainsTree(t *testing.T) {
 	cmd := newAdminPlatformDomainsCommand()
-	require.NotNil(t, cmd.Commands)
-	assert.Len(t, cmd.Commands, 5)
+	require.NotNil(t, cmd)
+	assert.Equal(t, "platform-domains", cmd.Name)
 
-	subcommandNames := getSubcommandNames(cmd)
-	assert.Contains(t, subcommandNames, "list")
-	assert.Contains(t, subcommandNames, "register")
-	assert.Contains(t, subcommandNames, "update")
-	assert.Contains(t, subcommandNames, "delete")
-	assert.Contains(t, subcommandNames, "bind")
-}
-
-func TestAdminPlatformDomainsList(t *testing.T) {
-	tests := []struct {
-		name        string
-		setupMocks  func(*configmocks.MockManager, *MockPlatformDomainAdminService)
-		wantErr     bool
-		errContains string
-	}{
-		{
-			name: "successful list",
-			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPlatformDomainAdminService) {
-				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().ListPlatformDomains(mock.Anything).Return(
-					[]*admin.PlatformDomain{
-						testPlatformDomain(1, "ipfs.pin.xyz", "icann", 10, true),
-					}, 1, nil)
-			},
-			wantErr: false,
-		},
-		{
-			name: "returns error when not authenticated",
-			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPlatformDomainAdminService) {
-				service.EXPECT().RequireAuthenticated().Return(ErrNotAuthenticated)
-			},
-			wantErr:     true,
-			errContains: "not authenticated",
-		},
-		{
-			name: "returns error when service fails",
-			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPlatformDomainAdminService) {
-				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().ListPlatformDomains(mock.Anything).Return(nil, 0, errors.New("list failed"))
-			},
-			wantErr:     true,
-			errContains: "list failed",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cfgMgr := configmocks.NewMockManager(t)
-			cfgMgr.EXPECT().Config().Return(&config.Config{}).Maybe()
-			service := NewMockPlatformDomainAdminService(t)
-			output := newTestOutput()
-
-			if tt.setupMocks != nil {
-				tt.setupMocks(cfgMgr, service)
-			}
-
-			err := adminPlatformDomainsListAction(context.Background(), output, cfgMgr, func(cm config.Manager, out Output) PlatformDomainAdminService {
-				return service
-			})
-
-			if tt.wantErr {
-				require.Error(t, err)
-				if tt.errContains != "" {
-					assert.Contains(t, err.Error(), tt.errContains)
-				}
-			} else {
-				require.NoError(t, err)
-			}
-		})
+	names := getSubcommandNames(cmd)
+	for _, want := range []string{"list", "register", "update", "delete", "bind"} {
+		assert.Contains(t, names, want)
 	}
 }
 
-func TestAdminPlatformDomainsRegister(t *testing.T) {
-	tests := []struct {
-		name        string
-		cmd         *mockCommand
-		setupMocks  func(*configmocks.MockManager, *MockPlatformDomainAdminService)
-		wantErr     bool
-		errContains string
-	}{
-		{
-			name: "successful register",
-			cmd: newMockCommand().
-				withString(FlagDomain, "ipfs.pin.xyz").
-				withString(FlagNamespace, "icann"),
-			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPlatformDomainAdminService) {
-				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().RegisterPlatformDomain(mock.Anything, mock.Anything).Return(
-					testPlatformDomain(1, "ipfs.pin.xyz", "icann", 10, true), nil)
-			},
-			wantErr: false,
-		},
-		{
-			name: "requires domain flag",
-			cmd: newMockCommand().
-				withString(FlagNamespace, "icann"),
-			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPlatformDomainAdminService) {
-				service.EXPECT().RequireAuthenticated().Return(nil)
-			},
-			wantErr:     true,
-			errContains: "--domain is required",
-		},
-		{
-			name: "returns error when service fails",
-			cmd: newMockCommand().
-				withString(FlagDomain, "ipfs.pin.xyz").
-				withString(FlagNamespace, "icann"),
-			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPlatformDomainAdminService) {
-				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().RegisterPlatformDomain(mock.Anything, mock.Anything).Return(nil, errors.New("register failed"))
-			},
-			wantErr:     true,
-			errContains: "register failed",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cfgMgr := configmocks.NewMockManager(t)
-			cfgMgr.EXPECT().Config().Return(&config.Config{}).Maybe()
-			service := NewMockPlatformDomainAdminService(t)
-			output := newTestOutput()
-
-			if tt.setupMocks != nil {
-				tt.setupMocks(cfgMgr, service)
-			}
-
-			err := adminPlatformDomainsRegisterAction(context.Background(), tt.cmd, output, cfgMgr, func(cm config.Manager, out Output) PlatformDomainAdminService {
-				return service
-			})
-
-			if tt.wantErr {
-				require.Error(t, err)
-				if tt.errContains != "" {
-					assert.Contains(t, err.Error(), tt.errContains)
-				}
-			} else {
-				require.NoError(t, err)
-			}
-		})
-	}
+// captureHandler is a catalog.Handler stub that records invocation and returns
+// a routable admin result, letting the tests exercise adminActionAdapter's
+// input mapping and destructive gate without a real admin service.
+type captureHandler struct {
+	called *bool
+	input  map[string]any
 }
 
-func TestAdminPlatformDomainsUpdate(t *testing.T) {
-	tests := []struct {
-		name        string
-		cmd         *mockCommand
-		setupMocks  func(*configmocks.MockManager, *MockPlatformDomainAdminService)
-		wantErr     bool
-		errContains string
-	}{
-		{
-			name: "successful update",
-			cmd: newMockCommand().
-				withArgs("1").
-				withBool(FlagEnabled, true),
-			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPlatformDomainAdminService) {
-				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().UpdatePlatformDomain(mock.Anything, "1", mock.Anything).Return(
-					testPlatformDomain(1, "ipfs.pin.xyz", "icann", 0, true), nil)
-			},
-			wantErr: false,
-		},
-		{
-			name: "requires id",
-			cmd: newMockCommand().
-				withBool(FlagEnabled, false),
-			setupMocks:  func(cfgMgr *configmocks.MockManager, service *MockPlatformDomainAdminService) {},
-			wantErr:     true,
-			errContains: "platform domain ID is required",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cfgMgr := configmocks.NewMockManager(t)
-			cfgMgr.EXPECT().Config().Return(&config.Config{}).Maybe()
-			service := NewMockPlatformDomainAdminService(t)
-			output := newTestOutput()
-
-			if tt.setupMocks != nil {
-				tt.setupMocks(cfgMgr, service)
-			}
-
-			err := adminPlatformDomainsUpdateAction(context.Background(), tt.cmd, output, cfgMgr, func(cm config.Manager, out Output) PlatformDomainAdminService {
-				return service
-			})
-
-			if tt.wantErr {
-				require.Error(t, err)
-				if tt.errContains != "" {
-					assert.Contains(t, err.Error(), tt.errContains)
-				}
-			} else {
-				require.NoError(t, err)
-			}
-		})
-	}
+func (h *captureHandler) Execute(_ context.Context, input map[string]any) (any, error) {
+	*h.called = true
+	h.input = input
+	return &catalogops.AdminPlatformDomainsDeleteResult{Deleted: true, ID: "7"}, nil
 }
 
-func TestAdminPlatformDomainsDelete(t *testing.T) {
-	tests := []struct {
-		name        string
-		cmd         *mockCommand
-		setupMocks  func(*configmocks.MockManager, *MockPlatformDomainAdminService)
-		wantErr     bool
-		errContains string
-	}{
-		{
-			name: "successful delete",
-			cmd:  newMockCommand().withArgs("1"),
-			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPlatformDomainAdminService) {
-				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().DeletePlatformDomain(mock.Anything, "1").Return(nil)
-			},
-			wantErr: false,
+// deleteOp builds a minimal catalog delete-style operation for testing the
+// CLI adapter's destructive confirm gate.
+func deleteOp(called *bool) catalog.Operation {
+	return catalog.NewOperation(catalog.OperationSpec{
+		Name:       "admin_platform_domains_delete",
+		Safety:     catalog.SafetyDestructive,
+		Positional: "<id>",
+		Args: []catalog.OperationArg{
+			{Name: "id", Type: catalog.ArgTypeString, Required: true, PositionalOnly: true},
+			{Name: "confirm", Type: catalog.ArgTypeBool, AgentRequired: true, Default: "true"},
 		},
-		{
-			name:        "requires id",
-			cmd:         newMockCommand(),
-			setupMocks:  func(cfgMgr *configmocks.MockManager, service *MockPlatformDomainAdminService) {},
-			wantErr:     true,
-			errContains: "platform domain ID is required",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cfgMgr := configmocks.NewMockManager(t)
-			cfgMgr.EXPECT().Config().Return(&config.Config{}).Maybe()
-			service := NewMockPlatformDomainAdminService(t)
-			output := newTestOutput()
-
-			if tt.setupMocks != nil {
-				tt.setupMocks(cfgMgr, service)
-			}
-
-			err := adminPlatformDomainsDeleteAction(context.Background(), tt.cmd, output, cfgMgr, func(cm config.Manager, out Output) PlatformDomainAdminService {
-				return service
-			})
-
-			if tt.wantErr {
-				require.Error(t, err)
-				if tt.errContains != "" {
-					assert.Contains(t, err.Error(), tt.errContains)
-				}
-			} else {
-				require.NoError(t, err)
-			}
-		})
-	}
+		Handler: &captureHandler{called: called},
+	})
 }
-func TestAdminPlatformDomainsBind(t *testing.T) {
-	tests := []struct {
-		name        string
-		cmd         *mockCommand
-		setupMocks  func(*configmocks.MockManager, *MockPlatformDomainAdminService)
-		wantErr     bool
-		errContains string
-	}{
-		{
-			name: "successful bind",
-			cmd:  newMockCommand().withArgs("1").withInt(FlagWebsiteID, 42),
-			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPlatformDomainAdminService) {
-				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().BindWebsiteToPlatformDomain(mock.Anything, "1", mock.Anything).
-					Return(testRootDomain(3, "pinner.site"), nil)
-			},
-			wantErr: false,
-		},
-		{
-			name:        "requires id",
-			cmd:         newMockCommand().withInt(FlagWebsiteID, 42),
-			setupMocks:  func(cfgMgr *configmocks.MockManager, service *MockPlatformDomainAdminService) {},
-			wantErr:     true,
-			errContains: "platform domain ID is required",
-		},
-		{
-			name:        "requires website id",
-			cmd:         newMockCommand().withArgs("1"),
-			setupMocks:  func(cfgMgr *configmocks.MockManager, service *MockPlatformDomainAdminService) {},
-			wantErr:     true,
-			errContains: "--website-id is required",
-		},
-		{
-			name: "returns error when service fails",
-			cmd:  newMockCommand().withArgs("1").withInt(FlagWebsiteID, 42),
-			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPlatformDomainAdminService) {
-				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().BindWebsiteToPlatformDomain(mock.Anything, "1", mock.Anything).
-					Return(nil, errors.New("bind failed"))
-			},
-			wantErr:     true,
-			errContains: "bind failed",
-		},
+
+// TestAdminActionAdapterDeleteRequiresForce verifies the destructive --force
+// gate: delete without --force/--confirm is rejected before the handler runs;
+// with --force the handler is invoked.
+func TestAdminActionAdapterDeleteRequiresForce(t *testing.T) {
+	deleted := false
+	op := deleteOp(&deleted)
+	cmd := &cli.Command{
+		Name:    "delete",
+		Flags:   []cli.Flag{&cli.BoolFlag{Name: FlagForce}, &cli.BoolFlag{Name: FlagConfirm}},
+		Action:  adminActionAdapter(op),
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cfgMgr := configmocks.NewMockManager(t)
-			cfgMgr.EXPECT().Config().Return(&config.Config{}).Maybe()
-			service := NewMockPlatformDomainAdminService(t)
-			output := newTestOutput()
+	// No --force: rejected, handler never invoked. (Run drops os.Args[0], so a
+	// placeholder program name is supplied.)
+	err := cmd.Run(context.Background(), []string{"pinner", "7"})
+	require.Error(t, err)
+	require.False(t, deleted, "delete handler must not be invoked without --force")
 
-			if tt.setupMocks != nil {
-				tt.setupMocks(cfgMgr, service)
-			}
+	// With --force: proceeds and invokes the handler.
+	require.NoError(t, cmd.Run(context.Background(), []string{"pinner", "--force", "7"}))
+	require.True(t, deleted, "delete handler must be invoked with --force")
+}
 
-			err := adminPlatformDomainsBindAction(context.Background(), tt.cmd, output, cfgMgr, func(cm config.Manager, out Output) PlatformDomainAdminService {
-				return service
-			})
-
-			if tt.wantErr {
-				require.Error(t, err)
-				if tt.errContains != "" {
-					assert.Contains(t, err.Error(), tt.errContains)
-				}
-			} else {
-				require.NoError(t, err)
-			}
-		})
+// TestAdminActionAdapterForwardsPositionalAndFlags verifies the adapter maps a
+// positional id and flag values into the handler input on the way through.
+func TestAdminActionAdapterForwardsPositionalAndFlags(t *testing.T) {
+	deleted := false
+	op := deleteOp(&deleted)
+	cmd := &cli.Command{
+		Name:    "delete",
+		Flags:   []cli.Flag{&cli.BoolFlag{Name: FlagForce}, &cli.BoolFlag{Name: FlagConfirm}},
+		Action:  adminActionAdapter(op),
 	}
+	require.NoError(t, cmd.Run(context.Background(), []string{"pinner", "--force", "42"}))
+	require.True(t, deleted)
+	h := op.Handler().(*captureHandler)
+	assert.Equal(t, "42", h.input["id"])
+	assert.Equal(t, true, h.input["confirm"])
 }
