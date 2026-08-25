@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/urfave/cli/v3"
@@ -247,13 +248,35 @@ func adminActionAdapter(op catalog.Operation) cli.ActionFunc {
 			return err
 		}
 
-		// Destructive gate: the delete op requires confirm=true. Map --force (or
-		// --confirm) onto the op's confirm input before execution.
+		// The platform-domain ops key records by a numeric ID, but an operator may
+		// supply the registered domain name (e.g. pinned.site) instead. Resolve a
+		// non-numeric id to the numeric ID the API expects before execution.
+		switch op.Name() {
+		case catalogops.OpAdminPlatformDomainsDelete,
+			catalogops.OpAdminPlatformDomainsUpdate,
+			catalogops.OpAdminPlatformDomainsBind:
+			if id := catalog.StrArg(input, "id", ""); id != "" {
+				resolved, err := resolvePlatformDomainID(ctx, adminCatalogDepsVar, id)
+				if err != nil {
+					return err
+				}
+				input["id"] = resolved
+			}
+		}
+
+		// Destructive gate: destructive admin ops require confirm=true. Admin
+		// platform-domains delete is an explicit, direct human action at the CLI,
+		// so it confirms itself and needs no --force toggle; other destructive
+		// admin ops keep the --force gate.
 		if op.Safety() == catalog.SafetyDestructive {
-			confirm := c.Bool(FlagForce) || c.Bool(FlagConfirm)
-			input["confirm"] = confirm
-			if !confirm {
-				return fmt.Errorf("admin platform-domains delete: pass --force to confirm this destructive operation")
+			if op.Name() == catalogops.OpAdminPlatformDomainsDelete {
+				input["confirm"] = true
+			} else {
+				confirm := c.Bool(FlagForce) || c.Bool(FlagConfirm)
+				input["confirm"] = confirm
+				if !confirm {
+					return fmt.Errorf("%s: pass --force to confirm this destructive operation", op.Name())
+				}
 			}
 		}
 
@@ -266,6 +289,38 @@ func adminActionAdapter(op catalog.Operation) cli.ActionFunc {
 		}
 		return renderAdminResult(ctx, c, op, result)
 	}
+}
+
+// resolvePlatformDomainID resolves a platform-domain identifier an operator may
+// supply either as the numeric ID or as the registered domain name (e.g.
+// pinned.site). Numeric identifiers pass through unchanged; a domain name is
+// resolved by listing the registered platform domains and matching on Domain,
+// so callers need not look up the numeric ID first. Mirrors resolveZoneID.
+func resolvePlatformDomainID(ctx context.Context, deps catalogops.AdminDeps, idOrDomain string) (string, error) {
+	if _, err := strconv.Atoi(idOrDomain); err == nil {
+		return idOrDomain, nil
+	}
+	cfgMgr := deps.CfgMgr()
+	if cfgMgr == nil {
+		return "", fmt.Errorf("no config manager available")
+	}
+	svc, err := deps.PlatformDomainAdminService(cfgMgr)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve platform domain service: %w", err)
+	}
+	if err := svc.RequireAuthenticated(); err != nil {
+		return "", err
+	}
+	domains, _, err := svc.ListPlatformDomains(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to look up platform domain by name: %w", err)
+	}
+	for _, d := range domains {
+		if d.Domain == idOrDomain {
+			return fmt.Sprintf("%d", d.Id), nil
+		}
+	}
+	return "", fmt.Errorf("platform domain not found for %q", idOrDomain)
 }
 
 // renderAdminResult renders an admin handler's typed result through the CLI

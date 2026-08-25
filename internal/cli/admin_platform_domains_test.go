@@ -9,6 +9,10 @@ import (
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/internal/catalog"
 	"go.lumeweb.com/pinner-cli/internal/catalogops"
+	coreadmin "go.lumeweb.com/pinner-cli/internal/core/admin"
+	"go.lumeweb.com/pinner-cli/internal/core/config"
+	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
+	"go.lumeweb.com/portal-sdk/admin"
 )
 
 // TestAdminPlatformDomainsTree asserts the platform-domains command compiled
@@ -54,27 +58,23 @@ func deleteOp(called *bool) catalog.Operation {
 	})
 }
 
-// TestAdminActionAdapterDeleteRequiresForce verifies the destructive --force
-// gate: delete without --force/--confirm is rejected before the handler runs;
-// with --force the handler is invoked.
-func TestAdminActionAdapterDeleteRequiresForce(t *testing.T) {
+// TestAdminActionAdapterDeleteRunsWithoutForce asserts the admin platform-domains
+// delete command no longer requires a --force toggle: an explicit CLI delete is
+// an authoritative human action, so the handler runs and confirm is set true.
+func TestAdminActionAdapterDeleteRunsWithoutForce(t *testing.T) {
 	deleted := false
 	op := deleteOp(&deleted)
 	cmd := &cli.Command{
-		Name:    "delete",
-		Flags:   []cli.Flag{&cli.BoolFlag{Name: FlagForce}, &cli.BoolFlag{Name: FlagConfirm}},
-		Action:  adminActionAdapter(op),
+		Name:   "delete",
+		Flags:  []cli.Flag{&cli.BoolFlag{Name: FlagForce}, &cli.BoolFlag{Name: FlagConfirm}},
+		Action: adminActionAdapter(op),
 	}
 
-	// No --force: rejected, handler never invoked. (Run drops os.Args[0], so a
-	// placeholder program name is supplied.)
-	err := cmd.Run(context.Background(), []string{"pinner", "7"})
-	require.Error(t, err)
-	require.False(t, deleted, "delete handler must not be invoked without --force")
-
-	// With --force: proceeds and invokes the handler.
-	require.NoError(t, cmd.Run(context.Background(), []string{"pinner", "--force", "7"}))
-	require.True(t, deleted, "delete handler must be invoked with --force")
+	// Delete without --force proceeds and invokes the handler with confirm=true.
+	require.NoError(t, cmd.Run(context.Background(), []string{"pinner", "7"}))
+	require.True(t, deleted, "delete handler must be invoked without --force")
+	h := op.Handler().(*captureHandler)
+	assert.Equal(t, true, h.input["confirm"], "delete must set confirm=true for a human CLI action")
 }
 
 // TestAdminActionAdapterForwardsPositionalAndFlags verifies the adapter maps a
@@ -83,13 +83,72 @@ func TestAdminActionAdapterForwardsPositionalAndFlags(t *testing.T) {
 	deleted := false
 	op := deleteOp(&deleted)
 	cmd := &cli.Command{
-		Name:    "delete",
-		Flags:   []cli.Flag{&cli.BoolFlag{Name: FlagForce}, &cli.BoolFlag{Name: FlagConfirm}},
-		Action:  adminActionAdapter(op),
+		Name:   "delete",
+		Flags:  []cli.Flag{&cli.BoolFlag{Name: FlagForce}, &cli.BoolFlag{Name: FlagConfirm}},
+		Action: adminActionAdapter(op),
 	}
 	require.NoError(t, cmd.Run(context.Background(), []string{"pinner", "--force", "42"}))
 	require.True(t, deleted)
 	h := op.Handler().(*captureHandler)
 	assert.Equal(t, "42", h.input["id"])
 	assert.Equal(t, true, h.input["confirm"])
+}
+
+// fakePlatformDomainService is a hand-rolled admin.PlatformDomainAdminService
+// driven by function fields, used to exercise resolvePlatformDomainID without a
+// real service or network.
+type fakePlatformDomainService struct {
+	listFn func(ctx context.Context) ([]*admin.PlatformDomain, int, error)
+}
+
+func (f *fakePlatformDomainService) RequireAuthenticated() error { return nil }
+func (f *fakePlatformDomainService) ListPlatformDomains(ctx context.Context) ([]*admin.PlatformDomain, int, error) {
+	if f.listFn != nil {
+		return f.listFn(ctx)
+	}
+	return nil, 0, nil
+}
+func (f *fakePlatformDomainService) RegisterPlatformDomain(ctx context.Context, _ *admin.PlatformDomainRequest) (*admin.PlatformDomain, error) {
+	return nil, nil
+}
+func (f *fakePlatformDomainService) DeletePlatformDomain(ctx context.Context, _ string) error {
+	return nil
+}
+func (f *fakePlatformDomainService) UpdatePlatformDomain(ctx context.Context, _ string, _ *admin.PlatformDomainUpdateRequest) (*admin.PlatformDomain, error) {
+	return nil, nil
+}
+func (f *fakePlatformDomainService) BindWebsiteToPlatformDomain(ctx context.Context, _ string, _ *admin.PlatformDomainBindRequest) (*admin.RootDomain, error) {
+	return nil, nil
+}
+
+// TestResolvePlatformDomainID asserts resolvePlatformDomainID passes numeric ids
+// through unchanged and resolves a registered domain name to its numeric id via
+// ListPlatformDomains.
+func TestResolvePlatformDomainID(t *testing.T) {
+	svc := &fakePlatformDomainService{
+		listFn: func(ctx context.Context) ([]*admin.PlatformDomain, int, error) {
+			d1 := &admin.PlatformDomain{}
+			d1.Id, d1.Domain = 7, "pinned.site"
+			d2 := &admin.PlatformDomain{}
+			d2.Id, d2.Domain = 9, "example.com"
+			return []*admin.PlatformDomain{d1, d2}, 2, nil
+		},
+	}
+	deps := catalogops.AdminDeps{
+		CfgMgr: func() config.Manager { return configmocks.NewMockManager(t) },
+		PlatformDomainAdminService: func(cfgMgr config.Manager) (coreadmin.PlatformDomainAdminService, error) {
+			return svc, nil
+		},
+	}
+
+	got, err := resolvePlatformDomainID(context.Background(), deps, "42")
+	require.NoError(t, err)
+	assert.Equal(t, "42", got)
+
+	got, err = resolvePlatformDomainID(context.Background(), deps, "pinned.site")
+	require.NoError(t, err)
+	assert.Equal(t, "7", got)
+
+	_, err = resolvePlatformDomainID(context.Background(), deps, "nope.test")
+	require.Error(t, err)
 }
