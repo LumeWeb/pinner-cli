@@ -35,6 +35,11 @@ const (
 	// its UI resource. Kept so older hosts that do not read the nested
 	// _meta.ui shape still find the UI.
 	MCPAppsResourceURIMetaKey = "ui/resourceUri"
+	// OpenAIMetaOutputTemplateKey is the OpenAI-compatible _meta key pointing a
+	// tool at the UI resource it renders. Some inspector/host implementations
+	// (e.g. sunpeak) discover a tool's renderable app from this key rather than
+	// the MCP Apps `_meta.ui` shape, so we emit it alongside both UI forms.
+	OpenAIMetaOutputTemplateKey = "openai.outputTemplate"
 	// UICapabilityID is the capability extension identifier under which clients
 	// advertise MCP Apps support (in client capabilities `extensions`) and
 	// servers advertise it back (in server capabilities `extensions`).

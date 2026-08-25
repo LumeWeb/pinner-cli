@@ -24,6 +24,11 @@ func TestMarshalToolMetaTyped(t *testing.T) {
 	if got := meta[MCPAppsResourceURIMetaKey]; got != "ui://vault/view.html" {
 		t.Fatalf("legacy flat key = %#v", got)
 	}
+	// OpenAI-compatible output template populated too (sunpeak/hosts read it
+	// to discover the renderable app).
+	if got := meta[OpenAIMetaOutputTemplateKey]; got != "ui://vault/view.html" {
+		t.Fatalf("openai outputTemplate = %#v", got)
+	}
 }
 
 func TestMarshalToolMetaVisibility(t *testing.T) {
