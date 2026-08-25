@@ -329,8 +329,9 @@ func MarshalToolMeta(meta model.AppToolMeta) (mcp.Meta, error) {
 		return nil, err
 	}
 	return mcp.Meta{
-		"ui":                      uiAny,
-		MCPAppsResourceURIMetaKey: meta.ResourceURI,
+		"ui":                        uiAny,
+		MCPAppsResourceURIMetaKey:   meta.ResourceURI,
+		OpenAIMetaOutputTemplateKey: meta.ResourceURI,
 	}, nil
 }
 
