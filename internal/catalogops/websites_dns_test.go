@@ -15,11 +15,16 @@ import (
 // tri-state mapping onto DnsHostingEnabled.
 type dnsCapturingService struct {
 	websites.Service
-	createReq *ipfs.WebsiteRequest
-	updateReq *ipfs.WebsiteUpdateRequest
+	createReq      *ipfs.WebsiteRequest
+	updateReq      *ipfs.WebsiteUpdateRequest
+	platformDomains []ipfs.PlatformDomainResponse
 }
 
 func (f *dnsCapturingService) RequireAuthenticated() error { return nil }
+
+func (f *dnsCapturingService) ListPlatformDomains(_ context.Context) (*ipfs.PlatformDomainListResponse, error) {
+	return &ipfs.PlatformDomainListResponse{Data: f.platformDomains}, nil
+}
 
 func (f *dnsCapturingService) Get(_ context.Context, id string) (*ipfs.WebsiteItem, error) {
 	return &ipfs.WebsiteItem{Id: 11, Domain: "example.test"}, nil

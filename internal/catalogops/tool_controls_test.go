@@ -33,8 +33,9 @@ func websitesOps() []catalog.Operation {
 
 // TestWebsitesCreateRequiredFields verifies P0: websites_create requires --cid
 // unconditionally, while the domain positional is optional because a platform
-// (free) subdomain is claimed via --platform-domain (label/generate) instead of
-// a custom domain. It also verifies the platform-claim args are exposed.
+// (free) subdomain is minted when no domain is supplied. The platform-claim
+// args are exposed on the agent/MCP surface, and marked AgentOnly so they are
+// omitted from the CLI flags.
 func TestWebsitesCreateRequiredFields(t *testing.T) {
 	var op catalog.Operation
 	for _, o := range websitesOps() {
@@ -54,18 +55,24 @@ func TestWebsitesCreateRequiredFields(t *testing.T) {
 	if !a.Required {
 		t.Errorf("websites_create arg \"cid\" must be Required=true")
 	}
-	// domain positional is optional (platform claims omit it).
+	// domain positional is optional (no-domain defaults to a minted platform).
 	domain := argByName(t, op, "website")
 	if domain == nil {
 		t.Fatal("websites_create missing arg \"website\"")
 	}
 	if domain.Required {
-		t.Errorf("websites_create arg \"website\" must NOT be Required (platform claims omit it)")
+		t.Errorf("websites_create arg \"website\" must NOT be Required (no-domain defaults to platform)")
 	}
-	// Platform-claim args are present.
-	for _, name := range []string{"platform-domain", "platform-namespace", "generate", "label"} {
-		if argByName(t, op, name) == nil {
+	// The platform-claim args exist and are AgentOnly (CLI omits their flags;
+	// the CLI derives the platform claim by parsing/deriving instead).
+	agentOnly := []string{"platform", "platform-domain", "platform-namespace", "generate", "label"}
+	for _, name := range agentOnly {
+		a := argByName(t, op, name)
+		if a == nil {
 			t.Fatalf("websites_create missing arg %q", name)
+		}
+		if !a.AgentOnly {
+			t.Errorf("websites_create arg %q must be AgentOnly (omitted from the CLI surface)", name)
 		}
 	}
 }

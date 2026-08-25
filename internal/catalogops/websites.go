@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	ipfs "go.lumeweb.com/ipfs-sdk"
 
@@ -239,33 +240,36 @@ func websitesGet(d WebsitesDeps) catalog.Operation {
 //
 // A website needs a destination: either a user-owned custom domain (the
 // positional) or a platform-provided (free) subdomain claimed at create time.
-// --cid is always required. For a custom domain supply the positional (and,
-// optionally, --dns-hosting: true = managed, false = self-managed, omit =
-// managed default). For a platform subdomain supply --platform-domain plus
-// exactly one of --label or --generate; Domain is omitted (the backend mints
-// or claims the subdomain atomically at create). --target-type defaults to
-// "ipfs".
+// --cid is always required. The destination type is resolved, not switched:
+// --platform (or any claim field) forces a platform claim; otherwise a supplied
+// domain is parsed — if it is a subdomain of an enabled platform root it is a
+// platform claim (label/root derived by parsing), otherwise it is a custom
+// domain. With no domain at all the call defaults to a minted platform
+// subdomain (generate). --target-type defaults to "ipfs". The agent-only args
+// (platform, platform-domain, platform-namespace, generate, label) are omitted
+// from the CLI surface, which derives platform claims by parsing instead.
 func websitesCreate(d WebsitesDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
 		Name:        "websites_create",
 		Title:       "Create a website",
 		Summary:     "Create a new website",
-		Description: "Create a website that serves an IPFS CID. Provide --cid plus either a custom domain (positional) or a platform subdomain claim (--platform-domain with --label or --generate). DNS is always managed for platform subdomains. Returns the created website with validation token and DNS records.",
-		AgentDescription: "Create a website that serves an IPFS CID. Provide cid plus EITHER a custom domain (positional) OR a platform-provided (free) subdomain claim (--platform-domain with --label or --generate). For a custom domain: `websites create <domain> --cid <cid> [--target-type ipfs|ipns] [--dns-hosting true|false]`. For a platform subdomain: `websites create --cid <cid> --platform-domain <root> --label <label>` (or --generate instead of --label); the platform claims/mints the subdomain at create and DNS is always managed. If the user has NO domain, claim or mint a platform subdomain directly here (label/generate) rather than inventing a custom domain. For newly uploaded content, use the CID returned directly by an upload tool — do NOT call pins_add after upload. pins_add is only needed when the CID originated outside Pinner and must be imported from IPFS. Returns the created website (numeric ID, validation TXT token, DNS records to publish).",
+		Description: "Create a website that serves an IPFS CID. With only --cid, a platform (free) subdomain is minted automatically. Provide a custom domain as the positional for a user-owned domain; a subdomain of a platform root (e.g. myapp.pinned.site) is auto-detected and claimed as a platform subdomain. Returns the created website with validation token and DNS records.",
+		AgentDescription: "Create a website that serves an IPFS CID. Provide cid plus a destination: EITHER a custom domain (positional) OR a platform-provided (free) subdomain claim. The type is derived automatically — with no domain and no claim fields it defaults to a minted platform subdomain; with a domain that is a subdomain of an enabled platform root (e.g. myapp.pinned.site) it claims that subdomain by parsing; with any other domain it is a custom domain. Set platform=true to force a platform claim, pairing label or generate (and optionally platform-domain / platform-namespace). For a custom domain: `websites create <domain> --cid <cid> [--target-type ipfs|ipns] [--dns-hosting true|false]`. If the user has NO domain, do not invent a custom domain — create with no domain (mint) or pass platform=true with label or generate. For newly uploaded content, use the CID returned directly by an upload tool — do NOT call pins_add after upload. pins_add is only needed when the CID originated outside Pinner and must be imported from IPFS. Returns the created website (numeric ID, validation TXT token, DNS records to publish).",
 		Category:    "core",
 		Safety:      catalog.SafetyMutate,
 		Interaction: catalog.InteractionAgentSafe,
 		Visibility:  catalog.VisibilityBoth,
 		Positional:  "<domain>",
 		Args: []catalog.OperationArg{
-			{Name: "website", Type: catalog.ArgTypeString, Required: false, Help: "Custom domain for the new website (required when not claiming a platform subdomain)", AgentHelp: "For a custom domain: the exact domain, e.g. example.com. OMIT this when claiming a platform (free) subdomain; pass --platform-domain plus --label or --generate instead."},
+			{Name: "website", Type: catalog.ArgTypeString, Required: false, Help: "Custom domain for the new website (optional: a platform subdomain is minted when omitted)", AgentHelp: "The destination domain. A subdomain of a platform root (e.g. myapp.pinned.site) is treated as a platform claim (label/root parsed); any other domain is a custom domain. Omit to default to a minted platform subdomain."},
 			{Name: "cid", Type: catalog.ArgTypeString, Required: true, Help: "IPFS CID to serve", AgentHelp: "The IPFS CID to serve. If from a Pinner upload tool, use its returned CID directly (already pinned, no pins_add). Only call pins_add first when the CID is external to Pinner."},
 			{Name: "target-type", Type: catalog.ArgTypeString, Default: "ipfs", Help: "Target type (ipfs|ipns)"},
 			{Name: "dns-hosting", Type: catalog.ArgTypeNullableBool, Help: "Let Pinner manage DNS for this website (true = managed, false = self-managed, omit = managed default; ignored for platform subdomains, which are always managed)", AgentHelp: "true lets Pinner manage DNS; false leaves DNS self-managed. Omit to use the default. Ignored for platform subdomains (always managed)."},
-			{Name: "platform-domain", Type: catalog.ArgTypeString, Required: false, Help: "Platform (free-subdomain) root domain to claim a subdomain under, e.g. pinned.site", AgentHelp: "The platform root to claim a free subdomain under (e.g. pinned.site). Setting this triggers a platform-subdomain claim at create; pair with --label or --generate and omit the domain positional."},
-			{Name: "platform-namespace", Type: catalog.ArgTypeString, Required: false, Help: "Namespace within the platform domain to claim under (default icann)"},
-			{Name: "generate", Type: catalog.ArgTypeBool, Default: "false", Required: false, Help: "Ask the platform to auto-generate a subdomain label instead of supplying one (mutually exclusive with --label)"},
-			{Name: "label", Type: catalog.ArgTypeString, Required: false, Help: "Explicit subdomain label to claim under a platform domain (mutually exclusive with --generate)"},
+			{Name: "platform", Type: catalog.ArgTypeBool, Required: false, AgentOnly: true, Help: "Claim a platform (free) subdomain", AgentHelp: "Set true to force a platform (free) subdomain claim. Pair with label or generate; omit the domain positional. The type is otherwise derived automatically."},
+			{Name: "platform-domain", Type: catalog.ArgTypeString, Required: false, AgentOnly: true, Help: "Platform root to claim under (default: platform default)", AgentHelp: "The platform root to claim a free subdomain under (e.g. pinned.site). Optional; when set, restricts the claim to this root. Use with platform plus label or generate."},
+			{Name: "platform-namespace", Type: catalog.ArgTypeString, Required: false, AgentOnly: true, Help: "Namespace within the platform domain to claim under (default icann)"},
+			{Name: "generate", Type: catalog.ArgTypeBool, Required: false, AgentOnly: true, Help: "Auto-generate a subdomain label (mutually exclusive with label)", AgentHelp: "Set true to let the platform auto-generate the subdomain label. Mutually exclusive with label."},
+			{Name: "label", Type: catalog.ArgTypeString, Required: false, AgentOnly: true, Help: "Explicit subdomain label to claim (mutually exclusive with generate)", AgentHelp: "Explicit subdomain label to claim under a platform domain. Mutually exclusive with generate."},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			svc, svcErr := d.service(input)
@@ -282,35 +286,61 @@ func websitesCreate(d WebsitesDeps) catalog.Operation {
 			}
 			targetType := catalog.StrArg(input, "target-type", "ipfs")
 
+			platformFlag := catalog.BoolArg(input, "platform", false)
 			pd := catalog.StrArg(input, "platform-domain", "")
 			pns := catalog.StrArg(input, "platform-namespace", "")
 			generate := catalog.BoolArg(input, "generate", false)
 			label := catalog.StrArg(input, "label", "")
-			isPlatform := pd != ""
 
-			if isPlatform {
-				if generate && label != "" {
-					return nil, fmt.Errorf("websites_create: --generate and --label are mutually exclusive; provide one to claim a platform subdomain")
+			// Resolve the destination type. A supplied domain may parse as a
+			// platform subdomain (label.root); detect it against the enabled
+			// platform roots. If roots can't be fetched, degrade to treating the
+			// domain as a custom domain rather than failing the create.
+			domainIsPlatform := false
+			if domain != "" {
+				if roots, rerr := svc.ListPlatformDomains(ctx); rerr == nil && roots != nil {
+					if rpd, rns, rlbl, ok := platformClaimForDomain(domain, roots); ok {
+						domainIsPlatform = true
+						if pd == "" {
+							pd = rpd
+						}
+						if pns == "" {
+							pns = rns
+						}
+						if label == "" && !generate {
+							label = rlbl
+						}
+					}
 				}
-				if !generate && label == "" {
-					return nil, fmt.Errorf("websites_create: a platform subdomain claim requires --generate or --label along with --platform-domain")
-				}
-			} else if domain == "" {
-				return nil, fmt.Errorf("websites_create: a domain (positional) is required unless claiming a platform subdomain via --platform-domain")
 			}
+
+			explicitPlatform := platformFlag || pd != "" || generate || label != ""
+			isPlatform := domainIsPlatform || explicitPlatform
 
 			req := ipfs.WebsiteRequest{
 				TargetHash: cid,
 				TargetType: targetType,
 			}
-			if domain != "" {
-				req.Domain = &domain
-			}
-			if isPlatform {
+			if isPlatform || (domain == "" && !explicitPlatform) {
+				// Platform path, including the default mint (no domain, no
+				// explicit intent). Sending a custom-looking domain together
+				// with platform intent is ambiguous — reject it so the user's
+				// --dns-hosting choice isn't silently dropped.
+				if domain != "" && !domainIsPlatform {
+					return nil, fmt.Errorf("websites_create: supply a custom domain (positional) OR claim a platform subdomain, not both")
+				}
+				if label == "" && domain == "" {
+					generate = true // default: mint a platform subdomain
+				}
+				if generate && label != "" {
+					return nil, fmt.Errorf("websites_create: --generate and --label are mutually exclusive; provide one to claim a platform subdomain")
+				}
 				// Platform subdomains are always DNS-managed by the platform.
 				managed := true
 				req.DnsHostingEnabled = &managed
-				req.PlatformDomain = &pd
+				if pd != "" {
+					req.PlatformDomain = &pd
+				}
 				if pns != "" {
 					req.PlatformNamespace = &pns
 				}
@@ -321,6 +351,7 @@ func websitesCreate(d WebsitesDeps) catalog.Operation {
 					req.Label = &label
 				}
 			} else {
+				req.Domain = &domain
 				// nil (omitted) lets the backend apply its default (managed DNS);
 				// true/false map onto Pinner-managed / self-managed explicitly.
 				req.DnsHostingEnabled = catalog.BoolArgPtr(input, "dns-hosting")
@@ -333,6 +364,34 @@ func websitesCreate(d WebsitesDeps) catalog.Operation {
 			return result, websites.TranslateErrorWithCID(err, cid)
 		}),
 	})
+}
+
+// platformClaimForDomain resolves a supplied domain to a platform (free)
+// subdomain claim when the domain is a subdomain of an enabled platform root
+// (e.g. "myapp.pinned.site" under root "pinned.site"). It returns the matched
+// platform domain, its namespace, and the claim label; ok is false when the
+// domain is not a recognized platform subdomain. The longest matching root
+// wins so a deeper root (e.g. "app.sub.root") beats its parent.
+func platformClaimForDomain(domain string, roots *ipfs.PlatformDomainListResponse) (platformDomain, namespace, label string, ok bool) {
+	bestPD, bestNS, bestLabel := "", "", ""
+	bestLen := 0
+	for _, r := range roots.Data {
+		if !r.Enabled {
+			continue
+		}
+		lbl := strings.TrimSuffix(domain, "."+r.Domain)
+		if lbl == "" || lbl == domain {
+			continue // not a subdomain of this root (or the bare root itself)
+		}
+		if len(r.Domain) > bestLen {
+			bestLen = len(r.Domain)
+			bestPD, bestNS, bestLabel = r.Domain, r.Namespace, lbl
+		}
+	}
+	if bestPD == "" {
+		return "", "", "", false
+	}
+	return bestPD, bestNS, bestLabel, true
 }
 
 // websitesUpdate is the `websites update` operation. Returns *ipfs.WebsiteItem.
