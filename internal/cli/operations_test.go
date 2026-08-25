@@ -553,8 +553,8 @@ func TestNewOperationsListCommand(t *testing.T) {
 		assert.True(t, flagNames[FlagProtocol])
 		assert.True(t, flagNames[FlagCID])
 		assert.True(t, flagNames[FlagSort])
-		assert.True(t, flagNames["start"])
-		assert.True(t, flagNames["limit"])
+		assert.True(t, flagNames[FlagPage])
+		assert.True(t, flagNames[FlagPageSize])
 		// NOTE: the legacy list command exposed --watch, but the core
 		// operations.Service.List has no watch capability; list-watch was
 		// dropped in the catalog migration (get --watch is preserved).
