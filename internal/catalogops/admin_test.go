@@ -352,6 +352,27 @@ func TestAdminWebsitesUnblockForwardsID(t *testing.T) {
 	}
 }
 
+// TestAdminWebsitesUnblockAuthGate asserts the unblock op honors the auth gate
+// and does not invoke the service when unauthenticated.
+func TestAdminWebsitesUnblockAuthGate(t *testing.T) {
+	called := false
+	svc := &fakeWebsiteService{
+		requireAuth: func() error { return errors.New("not authenticated") },
+		unblockFn: func(ctx context.Context, id string) (*admin.Website, error) {
+			called = true
+			return nil, nil
+		},
+	}
+	op := adminWebsitesUnblock(testAdminWebsitesDeps(t, svc))
+	_, err := op.Handler().Execute(context.Background(), map[string]any{"id": "1"})
+	if err == nil || err.Error() != "not authenticated" {
+		t.Fatalf("expected not-authenticated error, got %v", err)
+	}
+	if called {
+		t.Fatal("unblock service was invoked despite failed auth gate")
+	}
+}
+
 // TestAdminWebsitesAuthGate asserts RequireAuthenticated is honored.
 func TestAdminWebsitesAuthGate(t *testing.T) {
 	svc := &fakeWebsiteService{requireAuth: func() error { return errors.New("not authenticated") }}

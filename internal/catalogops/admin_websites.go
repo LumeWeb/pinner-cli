@@ -24,7 +24,7 @@ func adminWebsitesBlock(d AdminDeps) catalog.Operation {
 			{Name: "id", Type: catalog.ArgTypeString, Required: true, Help: "Website ID to block", PositionalOnly: true},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.websites(input)
+			svc, err := d.websites()
 			if err != nil {
 				return nil, err
 			}
@@ -57,7 +57,7 @@ func adminWebsitesUnblock(d AdminDeps) catalog.Operation {
 			{Name: "id", Type: catalog.ArgTypeString, Required: true, Help: "Website ID to unblock", PositionalOnly: true},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.websites(input)
+			svc, err := d.websites()
 			if err != nil {
 				return nil, err
 			}

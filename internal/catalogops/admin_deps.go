@@ -82,8 +82,7 @@ func (d AdminDeps) platformDomains() (admin.PlatformDomainAdminService, error) {
 }
 
 // websites resolves the WebsiteAdminService for this invocation.
-func (d AdminDeps) websites(input map[string]any) (admin.WebsiteAdminService, error) {
-	_ = input // reserved for a future per-invocation --auth-token override
+func (d AdminDeps) websites() (admin.WebsiteAdminService, error) {
 	cfgMgr, err := d.requireConfig()
 	if err != nil {
 		return nil, err
