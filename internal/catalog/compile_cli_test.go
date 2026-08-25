@@ -255,6 +255,58 @@ func TestCLICompilerPositionalOnlyNoFlag(t *testing.T) {
 	}
 }
 
+// TestCLICompilerAgentOnlyNoFlag asserts an arg marked AgentOnly (exposed on
+// the agent/MCP surface only) is NOT emitted as a urfave --flag, while a
+// sibling non-agent arg still is. This lets an operation carry an agent-only
+// control (e.g. a type discriminator the CLI derives automatically) without
+// surfacing a CLI flag for it.
+func TestCLICompilerAgentOnlyNoFlag(t *testing.T) {
+	c := NewCatalog()
+	if err := c.Add(NewOperation(OperationSpec{
+		Name: "websites.create", Title: "Create", Summary: "create a site",
+		Description: "create a website", Category: "websites", Safety: SafetyMutate,
+		Interaction: InteractionAgentSafe, Visibility: VisibilityBoth,
+		Positional: "<domain>",
+		Args: []OperationArg{
+			{Name: "website", Type: ArgTypeString, Help: "Custom domain"},
+			{Name: "cid", Type: ArgTypeString, Required: true, Help: "IPFS CID"},
+			{Name: "platform", Type: ArgTypeBool, AgentOnly: true, Help: "Claim a platform subdomain", AgentHelp: "Set to claim a platform subdomain at create"},
+			{Name: "label", Type: ArgTypeString, AgentOnly: true, Help: "Subdomain label", AgentHelp: "Subdomain label to claim"},
+		},
+		Handler: markerHandler{marker: "ran:websites.create"},
+	})); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	cmds, err := NewCLICompiler().Compile(c)
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	if len(cmds) != 1 {
+		t.Fatalf("expected 1 command, got %d", len(cmds))
+	}
+	cmd := cmds[0]
+
+	// Only the non-agent args (website, cid) are emitted as flags; the
+	// AgentOnly platform/label args must not appear.
+	got := map[string]bool{}
+	for _, f := range cmd.Flags {
+		if n := f.Names(); len(n) > 0 {
+			got[n[0]] = true
+		}
+	}
+	for _, wantFlag := range []string{"website", "cid"} {
+		if !got[wantFlag] {
+			t.Errorf("expected flag --%s to be emitted, got flags %v", wantFlag, got)
+		}
+	}
+	for _, none := range []string{"platform", "label"} {
+		if got[none] {
+			t.Errorf("AgentOnly arg '%s' must NOT be emitted as a flag, got flags %v", none, got)
+		}
+	}
+}
+
 // buildCompileSample returns a catalog with a Read, Mutate, Destructive, and
 // HumanOnly operation. The mutate op ("vault_create") carries one flag of every
 // ArgType to exercise flag mapping.
