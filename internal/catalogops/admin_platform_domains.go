@@ -67,8 +67,9 @@ func adminPlatformDomainsRegister(d AdminDeps) catalog.Operation {
 		Safety:      catalog.SafetyMutate,
 		Interaction: catalog.InteractionAgentSafe,
 		Visibility:  catalog.VisibilityBoth,
+		Positional:  "<domain>",
 		Args: []catalog.OperationArg{
-			{Name: "domain", Type: catalog.ArgTypeString, Required: true, Help: "Platform root domain, e.g. pinned.site"},
+			{Name: "domain", Type: catalog.ArgTypeString, Required: true, Help: "Platform root domain, e.g. pinned.site", PositionalOnly: true},
 			{Name: "namespace", Type: catalog.ArgTypeString, Required: true, Help: "Domain namespace: icann, hns, etc."},
 			// Nullable so an omitted flag leaves Enabled nil (backend default)
 			// rather than forcing false; an explicit --enabled=false disables.
