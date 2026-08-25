@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/samber/lo"
 	"github.com/urfave/cli/v3"
 	ipfs "go.lumeweb.com/ipfs-sdk"
 
@@ -367,8 +368,7 @@ func renderWebsitesResult(_ context.Context, c *cli.Command, op catalog.Operatio
 		}
 		output.Printfln("Found %d website(s)", len(r))
 		headers := []string{"ID", "NAME", "CID", "RESOLVED CID", "STATUS", "DNS", "SUBDOMAIN", "GATEWAY", "VALIDATION", "CREATED"}
-		rows := make([][]string, len(r))
-		for i, w := range r {
+		rows := lo.Map(r, func(w ipfs.WebsiteItem, _ int) []string {
 			validation := ""
 			if w.Status == "active" {
 				validation = "validated"
@@ -385,12 +385,12 @@ func renderWebsitesResult(_ context.Context, c *cli.Command, op catalog.Operatio
 			if w.ActiveCid != nil {
 				resolvedCID = *w.ActiveCid
 			}
-			rows[i] = []string{
+			return []string{
 				fmt.Sprintf("%d", w.Id), w.Domain, w.TargetHash, resolvedCID, w.Status,
 				fmt.Sprintf("%t", w.DnsHostingEnabled), fmt.Sprintf("%t", w.IsSubdomain),
 				gateway, validation, w.Created.Format("2006-01-02 15:04:05"),
 			}
-		}
+		})
 		output.PrintTable(headers, rows)
 		return nil
 
@@ -470,8 +470,7 @@ func renderWebsitesResult(_ context.Context, c *cli.Command, op catalog.Operatio
 		}
 		output.Printfln("Found %d domain(s)", len(r))
 		headers := []string{"ID", "DOMAIN", "NAMESPACE", "STATUS", "ZONE NAME"}
-		rows := make([][]string, len(r))
-		for i, d := range r {
+		rows := lo.Map(r, func(d ipfs.DomainResponse, _ int) []string {
 			zoneName := ""
 			if d.ZoneName != nil {
 				zoneName = *d.ZoneName
@@ -480,10 +479,10 @@ func renderWebsitesResult(_ context.Context, c *cli.Command, op catalog.Operatio
 			if d.Status != nil {
 				status = *d.Status
 			}
-			rows[i] = []string{
+			return []string{
 				fmt.Sprintf("%d", d.Id), d.Domain, d.Namespace, status, zoneName,
 			}
-		}
+		})
 		output.PrintTable(headers, rows)
 		return nil
 
@@ -519,6 +518,27 @@ func renderWebsitesResult(_ context.Context, c *cli.Command, op catalog.Operatio
 			return output.PrintJSON(map[string]any{"deleted": r.Deleted, "domain_id": r.DomainID})
 		}
 		output.Printfln("Domain removed successfully")
+		return nil
+
+	case *ipfs.PlatformAvailabilityResponse:
+		// websites platform-domain availability: a label plus one availability
+		// result per enabled platform (free-subdomain) root.
+		if output.IsJSON() {
+			return output.PrintJSON(r)
+		}
+		output.Printfln("Platform Domain Availability")
+		if r.Label != "" {
+			output.Printfln("Label: %s", r.Label)
+		}
+		if len(r.Results) == 0 {
+			output.Printfln("  No platform domains found")
+			return nil
+		}
+		headers := []string{"PLATFORM DOMAIN", "NAMESPACE", "AVAILABLE"}
+		rows := lo.Map(r.Results, func(res ipfs.PlatformAvailabilityResult, _ int) []string {
+			return []string{res.PlatformDomain, res.Namespace, fmt.Sprintf("%t", res.Available)}
+		})
+		output.PrintTable(headers, rows)
 		return nil
 
 	default:
