@@ -373,24 +373,8 @@ func renderAdminResult(_ context.Context, c *cli.Command, op catalog.Operation, 
 	}
 
 	switch r := result.(type) {
-	case *catalogops.AdminPlatformDomainsListResult:
-		if output.IsJSON() {
-			return output.PrintJSON(map[string]any{"count": r.Count, "platform_domains": r.PlatformDomains})
-		}
-		output.Printfln("Found %d platform domain(s)", r.Count)
-		if len(r.PlatformDomains) == 0 {
-			return nil
-		}
-		headers := []string{"ID", "DOMAIN", "NAMESPACE", "ZONE", "ENABLED"}
-		rows := make([][]string, len(r.PlatformDomains))
-		for i, d := range r.PlatformDomains {
-			rows[i] = []string{
-				fmt.Sprintf("%d", d.Id), d.Domain, d.Namespace,
-				fmt.Sprintf("%d", d.ZoneId), yesNo(d.Enabled),
-			}
-		}
-		output.PrintTable(headers, rows)
-		return nil
+	case catalogops.ListResult:
+		return renderListResult(output, r)
 
 	case *admin.PlatformDomain:
 		if output.IsJSON() {
@@ -426,27 +410,6 @@ func renderAdminResult(_ context.Context, c *cli.Command, op catalog.Operation, 
 		output.Printfln("Platform domain %s deleted", r.ID)
 		return nil
 
-	case *catalogops.QuotaPlansListResult:
-		if output.IsJSON() {
-			return output.PrintJSON(map[string]any{"count": r.Count, "plans": r.Plans})
-		}
-		output.Printfln("Found %d quota plan(s)", r.Count)
-		if len(r.Plans) == 0 {
-			return nil
-		}
-		headers := []string{"ID", "NAME", "UPLOAD", "DOWNLOAD", "STORAGE", "ACTIVE", "DEFAULT"}
-		rows := make([][]string, len(r.Plans))
-		for i, p := range r.Plans {
-			rows[i] = []string{
-				fmt.Sprintf("%d", p.Id), p.Name,
-				formatQuotaBytes(p.UploadLimitBytes), formatQuotaBytes(p.DownloadLimitBytes),
-				formatQuotaBytes(p.StorageLimitBytes),
-				fmt.Sprintf("%t", p.IsActive), yesNo(p.IsDefault),
-			}
-		}
-		output.PrintTable(headers, rows)
-		return nil
-
 	case *admin.QuotaPlan:
 		if output.IsJSON() {
 			return output.PrintJSON(r)
@@ -468,25 +431,6 @@ func renderAdminResult(_ context.Context, c *cli.Command, op catalog.Operation, 
 		output.Printfln("Quota plan %s is now the default", r.ID)
 		return nil
 
-	case *catalogops.QuotaAllowancesListResult:
-		if output.IsJSON() {
-			return output.PrintJSON(map[string]any{"count": r.Count, "allowances": r.Allowances})
-		}
-		output.Printfln("Found %d quota allowance(s)", r.Count)
-		if len(r.Allowances) == 0 {
-			return nil
-		}
-		headers := []string{"ID", "USER", "SOURCE", "TYPE", "BYTES", "ACTIVE"}
-		rows := make([][]string, len(r.Allowances))
-		for i, a := range r.Allowances {
-			rows[i] = []string{
-				fmt.Sprintf("%d", a.Id), fmt.Sprintf("%d", a.UserId), string(a.Source),
-				string(a.Type), formatQuotaBytes(a.Bytes), yesNo(a.IsActive),
-			}
-		}
-		output.PrintTable(headers, rows)
-		return nil
-
 	case *admin.QuotaAllowance:
 		if output.IsJSON() {
 			return output.PrintJSON(r)
@@ -499,26 +443,6 @@ func renderAdminResult(_ context.Context, c *cli.Command, op catalog.Operation, 
 			return output.PrintJSON(map[string]any{"deleted": r.Deleted, "grant_id": r.GrantID})
 		}
 		output.Printfln("Quota allowance %s deleted", r.GrantID)
-		return nil
-
-	case *catalogops.QuotaUserConfigsListResult:
-		if output.IsJSON() {
-			return output.PrintJSON(map[string]any{"count": r.Count, "configs": r.Configs})
-		}
-		output.Printfln("Found %d user quota config(s)", r.Count)
-		if len(r.Configs) == 0 {
-			return nil
-		}
-		headers := []string{"USER", "PLAN"}
-		rows := make([][]string, len(r.Configs))
-		for i, c := range r.Configs {
-			plan := "-"
-			if c.QuotaPlanId != nil {
-				plan = fmt.Sprintf("%d", *c.QuotaPlanId)
-			}
-			rows[i] = []string{fmt.Sprintf("%d", c.UserId), plan}
-		}
-		output.PrintTable(headers, rows)
 		return nil
 
 	case *admin.UserQuotaConfig:
@@ -563,36 +487,11 @@ func renderAdminResult(_ context.Context, c *cli.Command, op catalog.Operation, 
 		output.Printfln("Cleaned up %d expired record(s)", r.Deleted)
 		return nil
 
-	case *catalogops.BillingCreditsListResult:
-		if output.IsJSON() {
-			return output.PrintJSON(map[string]any{"count": r.Count, "credits": r.Credits})
-		}
-		return renderCreditsTable(output, r.Credits, r.Count)
 	case *catalogops.BillingUserDeletedCredits:
 		if output.IsJSON() {
 			return output.PrintJSON(map[string]any{"user_id": r.UserID, "count": r.Count, "credits": r.Credits})
 		}
 		return renderCreditsTable(output, r.Credits, r.Count)
-	case *catalogops.BillingPriceLinesListResult:
-		if output.IsJSON() {
-			return output.PrintJSON(map[string]any{"count": r.Count, "price_lines": r.PriceLines})
-		}
-		return renderPriceLinesTable(output, r.PriceLines, r.Count)
-	case *catalogops.BillingPricingPlansListResult:
-		if output.IsJSON() {
-			return output.PrintJSON(map[string]any{"count": r.Count, "plans": r.Plans})
-		}
-		return renderPricingPlansTable(output, r.Plans, r.Count)
-	case *catalogops.BillingPricingPlanPeriodsListResult:
-		if output.IsJSON() {
-			return output.PrintJSON(map[string]any{"count": r.Count, "periods": r.Periods})
-		}
-		return renderPricingPlanPeriodsTable(output, r.Periods, r.Count)
-	case *catalogops.BillingSubscribersListResult:
-		if output.IsJSON() {
-			return output.PrintJSON(map[string]any{"count": r.Count, "subscribers": r.Subscribers})
-		}
-		return renderSubscribersTable(output, r.Subscribers, r.Count)
 
 	case *catalogops.BillingPurgeResult:
 		if output.IsJSON() {

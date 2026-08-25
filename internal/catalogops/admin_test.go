@@ -16,12 +16,12 @@ import (
 // plumbing (RequireAuthenticated gating, argument forwarding) and the op
 // result wrapping without mocks.
 type fakePlatformDomainService struct {
-	requireAuth   func() error
-	listFn        func(ctx context.Context) ([]*admin.PlatformDomain, int, error)
-	registerFn    func(ctx context.Context, req *admin.PlatformDomainRequest) (*admin.PlatformDomain, error)
-	deleteFn      func(ctx context.Context, id string) error
-	updateFn      func(ctx context.Context, id string, req *admin.PlatformDomainUpdateRequest) (*admin.PlatformDomain, error)
-	bindFn        func(ctx context.Context, id string, req *admin.PlatformDomainBindRequest) (*admin.RootDomain, error)
+	requireAuth func() error
+	listFn      func(ctx context.Context) ([]*admin.PlatformDomain, int, error)
+	registerFn  func(ctx context.Context, req *admin.PlatformDomainRequest) (*admin.PlatformDomain, error)
+	deleteFn    func(ctx context.Context, id string) error
+	updateFn    func(ctx context.Context, id string, req *admin.PlatformDomainUpdateRequest) (*admin.PlatformDomain, error)
+	bindFn      func(ctx context.Context, id string, req *admin.PlatformDomainBindRequest) (*admin.RootDomain, error)
 }
 
 func (f *fakePlatformDomainService) RequireAuthenticated() error {
@@ -158,12 +158,16 @@ func TestAdminPlatformDomainsList(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
-	got, ok := res.(*AdminPlatformDomainsListResult)
+	got, ok := res.(ListResult)
 	if !ok {
 		t.Fatalf("unexpected result type %T", res)
 	}
-	if got.Count != 1 || len(got.PlatformDomains) != 1 {
-		t.Fatalf("unexpected result: %+v", got)
+	if got.ListCount() != 1 {
+		t.Fatalf("unexpected count: %d", got.ListCount())
+	}
+	items, ok := got.ListItems().([]*admin.PlatformDomain)
+	if !ok || len(items) != 1 {
+		t.Fatalf("unexpected result: %+v", got.ListItems())
 	}
 }
 
