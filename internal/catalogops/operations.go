@@ -54,6 +54,12 @@ func operationsList(d OperationsDeps) catalog.Operation {
 				return nil, err
 			}
 			page := catalog.ParseList(input)
+			// Clamp a zero/absent limit to the default page size so an unset
+			// --limit does not disable pagination and fetch the entire
+			// operations table (mirrors watchCatalogOperationsList).
+			if page.Limit < 1 {
+				page.Limit = 10
+			}
 			res, err := svc.List(ctx, operations.ListOptions{
 				Search:          catalog.SearchArg(input),
 				StatusFilters:   catalog.StrSliceArg(input, "status"),

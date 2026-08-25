@@ -255,8 +255,11 @@ func (s *PinningServiceDefault) listViaSDK(ctx context.Context, opts pinning.Lis
 		o = append(o, ipfs.WithFilterStatus(ipfs.PinStatusEnum(opts.Status)))
 	}
 	// The pinning-service spec has no offset, so when paging we fetch
-	// Start+Limit rows and slice off the first Start client-side.
-	if opts.Limit > 0 || opts.Start > 0 {
+	// Start+Limit rows and slice off the first Start client-side. Only set a
+	// server limit when paging with a positive Limit; a Start with no Limit
+	// must fetch the full list and rely on the client-side slice in pagePins
+	// (otherwise we would fetch only Start rows and then truncate to empty).
+	if opts.Limit > 0 {
 		o = append(o, ipfs.WithPinningLimit(int32(opts.Start+opts.Limit)))
 	}
 
@@ -322,7 +325,10 @@ func (s *PinningServiceDefault) listViaBoxo(ctx context.Context, opts pinning.Li
 		results []go_pinning_service_http_client.PinStatusGetter
 		err     error
 	)
-	if opts.Start > 0 || opts.Limit > 0 {
+	// Only cap the boxo fetch with a positive Limit; a Start with no Limit must
+	// fetch the full list so pagePins can offset without truncating to empty
+	// (see listViaSDK for the same reasoning).
+	if opts.Limit > 0 {
 		results, err = s.pinningClient.LsWithLimit(ctx, opts.Start+opts.Limit, o...)
 	} else {
 		results, err = s.pinningClient.LsSync(ctx, o...)
