@@ -52,7 +52,7 @@ func TestWebsitesService_List(t *testing.T) {
 				svc = mockSvc
 			}
 
-			websites, err := svc.List(context.Background())
+			websites, err := svc.List(context.Background(), websites.ListOptions{})
 
 			if tt.wantErr {
 				require.Error(t, err)

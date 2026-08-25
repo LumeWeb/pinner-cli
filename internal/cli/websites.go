@@ -9,7 +9,7 @@ import (
 	"github.com/urfave/cli/v3"
 	ipfs "go.lumeweb.com/ipfs-sdk"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
-	"go.lumeweb.com/pinner-cli/internal/core/websites"
+	websitecore "go.lumeweb.com/pinner-cli/internal/core/websites"
 )
 
 // validationRecordValue returns the full DNS TXT record value the server
@@ -20,7 +20,7 @@ import (
 // "<key>=<token>". It is never hardcoded here.
 //
 // Some server builds return ValidationToken already carrying the "key="
-// prefix (see websites.StripValidationPrefix); strip any such prefix before
+// prefix (see websitecore.StripValidationPrefix); strip any such prefix before
 // prepending the derived key so the result is always "<key>=<token>", never a
 // doubled "<key>=<key>=<token>". When no validation record host is available
 // to derive a key from, the token is returned as-is.
@@ -87,7 +87,7 @@ func resolveRequiredArg(ctx context.Context, websitesService WebsitesService, cm
 		return "", fmt.Errorf("website ID or domain is required")
 	}
 
-	return websites.ResolveWebsiteID(ctx, websitesService, args.First())
+	return websitecore.ResolveWebsiteID(ctx, websitesService, args.First())
 }
 
 func printWebsiteUpdateResult(output Output, website *ipfs.WebsiteItem, message string) {
@@ -131,7 +131,7 @@ func websitesList(ctx context.Context, cmd websitesCommandGetter, output Output,
 		return err
 	}
 
-	websites, err := websitesService.List(ctx, websites.ListOptions{})
+	websites, err := websitesService.List(ctx, websitecore.ListOptions{})
 	if err != nil {
 		return err
 	}
@@ -160,7 +160,7 @@ func websitesList(ctx context.Context, cmd websitesCommandGetter, output Output,
 		} else if website.Expired {
 			validation = "expired"
 		} else if website.ValidationToken != "" {
-			validation = websites.StripValidationPrefix(website.ValidationToken)
+			validation = websitecore.StripValidationPrefix(website.ValidationToken)
 		}
 		gateway := ""
 		if website.GatewayDomain != nil {
@@ -191,7 +191,7 @@ func websitesList(ctx context.Context, cmd websitesCommandGetter, output Output,
 // resolveAndGetWebsite resolves a website by ID or domain name.
 // If arg is a numeric ID, it fetches directly. Otherwise, it searches by domain.
 func resolveAndGetWebsite(ctx context.Context, websitesService WebsitesService, arg string) (*ipfs.WebsiteItem, error) {
-	id, err := websites.ResolveWebsiteID(ctx, websitesService, arg)
+	id, err := websitecore.ResolveWebsiteID(ctx, websitesService, arg)
 	if err != nil {
 		return nil, err
 	}
@@ -372,7 +372,7 @@ func websitesGet(ctx context.Context, cmd websitesCommandGetter, output Output, 
 	if website.Status != "active" {
 		fields = append(fields,
 			Field{"Token Expired", fmt.Sprintf("%t", website.Expired)},
-			Field{"Validation Token", websites.StripValidationPrefix(website.ValidationToken)},
+			Field{"Validation Token", websitecore.StripValidationPrefix(website.ValidationToken)},
 		)
 		if website.ValidationExpiresAt != nil {
 			fields = append(fields, Field{"Token Expires", website.ValidationExpiresAt.Format("2006-01-02 15:04:05")})
@@ -487,7 +487,7 @@ func websitesCreate(ctx context.Context, cmd websitesCommandGetter, output Outpu
 
 	output.PrintFields(FieldGroup{
 		PadTop: 1,
-		Fields: []Field{{Label: "Validation Token", Value: websites.StripValidationPrefix(createdWebsite.ValidationToken)}},
+		Fields: []Field{{Label: "Validation Token", Value: websitecore.StripValidationPrefix(createdWebsite.ValidationToken)}},
 	})
 
 	nameservers := getNameservers(ctx, websitesService)
@@ -645,7 +645,7 @@ func doWebsitesValidate(ctx context.Context, cmd websitesCommandGetter, output O
 
 	arg := args.First()
 
-	id, err := websites.ResolveWebsiteID(ctx, websitesService, arg)
+	id, err := websitecore.ResolveWebsiteID(ctx, websitesService, arg)
 	if err != nil {
 		return err
 	}
