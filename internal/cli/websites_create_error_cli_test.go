@@ -23,6 +23,9 @@ type cliErrWebsitesService struct {
 }
 
 func (f *cliErrWebsitesService) RequireAuthenticated() error { return nil }
+func (f *cliErrWebsitesService) ListPlatformDomains(_ context.Context) (*ipfs.PlatformDomainListResponse, error) {
+	return &ipfs.PlatformDomainListResponse{}, nil
+}
 func (f *cliErrWebsitesService) CreateWithOptions(_ context.Context, _ ipfs.WebsiteRequest) (*ipfs.WebsiteItem, error) {
 	return nil, f.err
 }

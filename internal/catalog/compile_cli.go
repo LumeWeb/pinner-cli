@@ -101,9 +101,11 @@ func commandFor(op Operation) (*cli.Command, error) {
 
 // flagsFor maps each OperationArg to a urfave flag of the matching type. An
 // arg marked PositionalOnly (its value is supplied by the command's positional
-// argument, e.g. the DNS ops' "zone") is skipped: it has no --flag, preventing
-// a redundant `--zone` flag from appearing next to the `<domain>` positional in
-// help. MCP and direct Invoke are unaffected — they read op.Args() directly.
+// argument, e.g. the DNS ops' "zone") or AgentOnly (exposed only on the
+// agent/MCP surface, e.g. a type discriminator the CLI derives automatically)
+// is skipped: it has no --flag, so no redundant flag appears in help and the
+// CLI caller is never asked for it. MCP and direct Invoke are unaffected —
+// they read op.Args() directly.
 func flagsFor(op Operation) []cli.Flag {
 	args := op.Args()
 	if len(args) == 0 {
@@ -111,7 +113,7 @@ func flagsFor(op Operation) []cli.Flag {
 	}
 	flags := make([]cli.Flag, 0, len(args))
 	for _, a := range args {
-		if a.PositionalOnly {
+		if a.PositionalOnly || a.AgentOnly {
 			continue
 		}
 		flags = append(flags, flagFor(a))

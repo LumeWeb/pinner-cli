@@ -72,11 +72,11 @@ func (m *mockWebsitesServiceForCLI) Create(ctx context.Context, domain, cid, tar
 
 func (m *mockWebsitesServiceForCLI) CreateWithOptions(ctx context.Context, req ipfs.WebsiteRequest) (*ipfs.WebsiteItem, error) {
 	if m.createFunc != nil {
-		return m.createFunc(ctx, req.Domain, req.TargetHash, req.TargetType)
+		return m.createFunc(ctx, sOrEmpty(req.Domain), req.TargetHash, req.TargetType)
 	}
 	return &ipfs.WebsiteItem{
 		Id:         1,
-		Domain:     req.Domain,
+		Domain:     sOrEmpty(req.Domain),
 		TargetHash: req.TargetHash,
 		TargetType: req.TargetType,
 		Status:     "active",

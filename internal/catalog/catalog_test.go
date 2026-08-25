@@ -100,6 +100,29 @@ func TestAddRejectsDuplicate(t *testing.T) {
 	}
 }
 
+// TestAddRejectsAgentOnlyRequiredNoDefault guards that an AgentOnly arg marked
+// Required without a Default is rejected at registration. AgentOnly args are
+// never emitted as a CLI --flag, so such an arg could never be supplied and
+// would make the CLI command permanently fail "missing required argument".
+func TestAddRejectsAgentOnlyRequiredNoDefault(t *testing.T) {
+	c := NewCatalog()
+	err := c.Add(stub("w created", "Create", "create", "desc", "", "websites",
+		SafetyMutate, InteractionAgentSafe, VisibilityBoth,
+		OperationArg{Name: "platform", Type: ArgTypeBool, AgentOnly: true, Required: true}))
+	if err == nil {
+		t.Fatal("Add(AgentOnly && Required && no Default) should error")
+	}
+	if !strings.Contains(err.Error(), "AgentOnly") {
+		t.Fatalf("error should explain the AgentOnly constraint, got: %v", err)
+	}
+	// AgentRequired (MCP-only requiredness) is a valid combo for an AgentOnly arg.
+	if err := c.Add(stub("w created", "Create", "create", "desc", "", "websites",
+		SafetyMutate, InteractionAgentSafe, VisibilityBoth,
+		OperationArg{Name: "platform", Type: ArgTypeBool, AgentOnly: true, AgentRequired: true})); err != nil {
+		t.Fatalf("AgentOnly + AgentRequired must be valid, got: %v", err)
+	}
+}
+
 func TestAddRejectsNilAndEmptyName(t *testing.T) {
 	c := NewCatalog()
 	if err := c.Add(nil); err == nil {

@@ -95,6 +95,15 @@ type OperationArg struct {
 	Help          string // human help (CLI)
 	AgentHelp     string // agent-oriented help (MCP); audience separation
 	AgentRequired bool   // required on the MCP surface only; never the CLI
+	// AgentOnly marks an arg exposed on the agent/MCP surface only: the CLI
+	// compiler omits its --flag entirely (like PositionalOnly), so the value is
+	// never requested from a CLI caller. The arg still appears by name in the
+	// MCP JSON-Schema and the handler's input map; a CLI invocation simply
+	// never supplies it, so the handler must tolerate its absence (a default,
+	// or derivation from other inputs). Used for agent-oriented controls that
+	// have no meaningful CLI flag (e.g. a type discriminator the CLI derives
+	// automatically).
+	AgentOnly bool
 	// SelectionGroup groups mutually-exclusive selector members: exactly one
 	// arg in a group may be selected per invocation (e.g. pins_rm's "cids" and
 	// "all"). Empty selects membership in no group. Enforcement is centralized

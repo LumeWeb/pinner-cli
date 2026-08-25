@@ -607,6 +607,50 @@ func TestInputSchemaSelectionGroupOneOfAccumulates(t *testing.T) {
 	}
 }
 
+// TestMCPCompilerAgentOnlyStillInSchema asserts that an AgentOnly arg — which
+// suppresses the arg's CLI --flag only — still appears in the MCP JSON-Schema.
+// The agent/MCP surface is exactly where an agent-only control must be exposed;
+// the CLI suppression must never leak onto the MCP surface.
+func TestMCPCompilerAgentOnlyStillInSchema(t *testing.T) {
+	c := NewCatalog()
+	if err := c.Add(NewOperation(OperationSpec{
+		Name: "websites.create", Title: "Create", Summary: "create a site",
+		Description: "create a website", Category: "websites", Safety: SafetyMutate,
+		Interaction: InteractionAgentSafe, Visibility: VisibilityBoth,
+		Positional: "<domain>",
+		Args: []OperationArg{
+			{Name: "website", Type: ArgTypeString, Help: "Custom domain"},
+			{Name: "cid", Type: ArgTypeString, Required: true, Help: "IPFS CID"},
+			{Name: "platform", Type: ArgTypeBool, AgentOnly: true, Help: "Claim a platform subdomain", AgentHelp: "Set to claim a platform subdomain at create"},
+			{Name: "label", Type: ArgTypeString, AgentOnly: true, Help: "Subdomain label", AgentHelp: "Subdomain label to claim"},
+		},
+		Handler: &captureHandler{},
+	})); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	raw, err := NewMCPCompiler().Compile(c)
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	if len(raw) != 1 {
+		t.Fatalf("expected 1 tool, got %d", len(raw))
+	}
+	var sch map[string]any
+	if err := json.Unmarshal(raw[0].InputSchema, &sch); err != nil {
+		t.Fatalf("InputSchema not valid JSON: %v", err)
+	}
+	props, ok := sch["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("schema properties missing: %#v", sch["properties"])
+	}
+	for _, name := range []string{"platform", "label"} {
+		if _, ok := props[name]; !ok {
+			t.Errorf("AgentOnly arg %q must still appear in MCP schema properties, got %#v", name, props)
+		}
+	}
+}
+
 func contains(hay []string, needle string) bool {
 	for _, h := range hay {
 		if h == needle {
