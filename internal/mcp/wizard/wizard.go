@@ -591,6 +591,12 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []session.StepDef {
 					return "", nil
 				}
 
+				// Neither label nor generate: default to generate=true as documented
+				// in the schema, agent_guide, and prompt templates.
+				if !in.Generate && in.Label == "" {
+					in.Generate = true
+				}
+
 				// Platform (free) subdomain path: label -> availability/root ->
 				// exact FQDN. Mirrors the DomainWizard claim semantics.
 				w.SetLabel(in.Label)
@@ -653,8 +659,6 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []session.StepDef {
 					return "", nil
 				}
 
-				// Neither label nor generate: default to generate=true.
-				return "", fmt.Errorf("platform_subdomain requires either generate=true (default - auto-generates a label) or an explicit label (only when the user has specifically requested one). When in doubt, use generate=true.")
 			},
 			Schema: func(_ *session.Session) *jsonschema.Schema {
 				return toolargs.SchemaFor[WebsitesDomainInput]()
