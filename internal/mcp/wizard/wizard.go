@@ -619,12 +619,15 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []session.StepDef {
 					return "", nil
 				}
 
-				// No label: auto-generate. The tool derives the platform root from
-				// an explicit platform_domain (or domain), else probes availability
-				// and picks the first available root, so the agent never has to
-				// supply an FQDN. The same root is used as the create FQDN and as
-				// the platform_domain that the later BindDomain mints under, keeping
-				// the created website and the claimed subdomain consistent.
+				// No label: auto-generate. The tool derives the platform root from an
+				// explicit platform_domain (or domain), else lists the enabled
+				// platform roots and picks the first one, so the agent never has to
+				// supply an FQDN. Enabled roots are those the platform advertises as
+				// accepting subdomain claims; availability cannot be enumerated here
+				// because CheckPlatformDomainAvailability requires a specific label.
+				// The same root is used as the create FQDN and as the platform_domain
+				// that the later BindDomain mints under, keeping the created website
+				// and the claimed subdomain consistent.
 				if in.Generate {
 					root := in.PlatformDomain
 					if root == "" {
