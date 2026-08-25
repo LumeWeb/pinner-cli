@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -465,17 +464,35 @@ func renderAdminResult(_ context.Context, c *cli.Command, op catalog.Operation, 
 		return nil
 
 	case *catalogops.BillingCreditsListResult:
-		return renderJSONOrCount(c, output, map[string]any{"count": r.Count, "credits": r.Credits}, "billing credit(s)", r.Count)
+		if output.IsJSON() {
+			return output.PrintJSON(map[string]any{"count": r.Count, "credits": r.Credits})
+		}
+		return renderCreditsTable(output, r.Credits, r.Count)
 	case *catalogops.BillingUserDeletedCredits:
-		return renderJSONOrCount(c, output, map[string]any{"user_id": r.UserID, "count": r.Count, "credits": r.Credits}, "deleted credit(s)", r.Count)
+		if output.IsJSON() {
+			return output.PrintJSON(map[string]any{"user_id": r.UserID, "count": r.Count, "credits": r.Credits})
+		}
+		return renderCreditsTable(output, r.Credits, r.Count)
 	case *catalogops.BillingPriceLinesListResult:
-		return renderJSONOrCount(c, output, map[string]any{"count": r.Count, "price_lines": r.PriceLines}, "price line(s)", r.Count)
+		if output.IsJSON() {
+			return output.PrintJSON(map[string]any{"count": r.Count, "price_lines": r.PriceLines})
+		}
+		return renderPriceLinesTable(output, r.PriceLines, r.Count)
 	case *catalogops.BillingPricingPlansListResult:
-		return renderJSONOrCount(c, output, map[string]any{"count": r.Count, "plans": r.Plans}, "pricing plan(s)", r.Count)
+		if output.IsJSON() {
+			return output.PrintJSON(map[string]any{"count": r.Count, "plans": r.Plans})
+		}
+		return renderPricingPlansTable(output, r.Plans, r.Count)
 	case *catalogops.BillingPricingPlanPeriodsListResult:
-		return renderJSONOrCount(c, output, map[string]any{"count": r.Count, "periods": r.Periods}, "pricing plan period(s)", r.Count)
+		if output.IsJSON() {
+			return output.PrintJSON(map[string]any{"count": r.Count, "periods": r.Periods})
+		}
+		return renderPricingPlanPeriodsTable(output, r.Periods, r.Count)
 	case *catalogops.BillingSubscribersListResult:
-		return renderJSONOrCount(c, output, map[string]any{"count": r.Count, "subscribers": r.Subscribers}, "subscriber(s)", r.Count)
+		if output.IsJSON() {
+			return output.PrintJSON(map[string]any{"count": r.Count, "subscribers": r.Subscribers})
+		}
+		return renderSubscribersTable(output, r.Subscribers, r.Count)
 
 	case *catalogops.BillingPurgeResult:
 		if output.IsJSON() {
@@ -509,21 +526,21 @@ func renderAdminResult(_ context.Context, c *cli.Command, op catalog.Operation, 
 		return nil
 
 	case *admin.Credit:
-		return renderBillingSingle(c, output, r)
+		return renderBillingFields(c, output, r)
 	case *admin.PriceLine:
-		return renderBillingSingle(c, output, r)
+		return renderBillingFields(c, output, r)
 	case *admin.PriceLineDetailResponse:
-		return renderBillingSingle(c, output, r)
+		return renderBillingFields(c, output, r)
 	case *admin.PricingPlan:
-		return renderBillingSingle(c, output, r)
+		return renderBillingFields(c, output, r)
 	case *admin.PricingPlanPeriod:
-		return renderBillingSingle(c, output, r)
+		return renderBillingFields(c, output, r)
 	case *admin.Subscriber:
-		return renderBillingSingle(c, output, r)
+		return renderBillingFields(c, output, r)
 	case *admin.ManagementResult:
-		return renderBillingSingle(c, output, r)
+		return renderBillingFields(c, output, r)
 	case *admin.PlanChangeResult:
-		return renderBillingSingle(c, output, r)
+		return renderBillingFields(c, output, r)
 
 	default:
 		if result == nil {
@@ -541,34 +558,174 @@ func yesNo(b bool) string {
 	return "no"
 }
 
-// renderJSONOrCount renders a JSON payload in JSON mode, or a count line plus
-// the fetched entities in human mode (the legacy billing CLI rendered the full
-// entity fields, not just a count).
-func renderJSONOrCount(c *cli.Command, output Output, payload map[string]any, noun string, count int) error {
-	if output.IsJSON() {
-		return output.PrintJSON(payload)
+// renderCountTable prints a labeled count line plus a typed table in human mode.
+func renderCountTable(output Output, noun string, count int, headers []string, rows [][]string) error {
+	if count == 0 {
+		output.Printfln("No %s found", noun)
+		return nil
 	}
 	output.Printfln("Found %d %s", count, noun)
-	b, err := json.MarshalIndent(payload, "", "  ")
-	if err != nil {
-		return err
-	}
-	output.Printfln("%s", string(b))
+	output.PrintTable(headers, rows)
 	return nil
 }
 
-// renderBillingSingle renders a single billing object as JSON in JSON mode, or
-// pretty-printed JSON in human mode so the requested fields are always shown.
-func renderBillingSingle(c *cli.Command, output Output, r any) error {
+// renderCreditsTable renders a list of billing credits.
+func renderCreditsTable(output Output, credits []*admin.CreditItem, count int) error {
+	headers := []string{"ID", "USER", "AMOUNT", "TYPE", "DIRECTION"}
+	rows := make([][]string, 0, len(credits))
+	for _, c := range credits {
+		rows = append(rows, []string{
+			fmt.Sprintf("%s", c.Id), fmt.Sprintf("%d", c.UserId),
+			fmt.Sprintf("%v", c.Amount), c.Type, c.Direction,
+		})
+	}
+	return renderCountTable(output, "credit(s)", count, headers, rows)
+}
+
+// renderPriceLinesTable renders a list of price lines.
+func renderPriceLinesTable(output Output, lines []*admin.PriceLine, count int) error {
+	headers := []string{"ID", "NAME", "ACTIVE", "DEFAULT"}
+	rows := make([][]string, 0, len(lines))
+	for _, l := range lines {
+		rows = append(rows, []string{
+			fmt.Sprintf("%d", l.Id), l.Name,
+			yesNo(l.IsActive), yesNo(l.IsDefault),
+		})
+	}
+	return renderCountTable(output, "price line(s)", count, headers, rows)
+}
+
+// renderPricingPlansTable renders a list of pricing plans.
+func renderPricingPlansTable(output Output, plans []*admin.PricingPlanItem, count int) error {
+	headers := []string{"ID", "NAME", "CURRENCY", "ACTIVE", "POSITION"}
+	rows := make([][]string, 0, len(plans))
+	for _, p := range plans {
+		rows = append(rows, []string{
+			fmt.Sprintf("%d", p.Id), p.Name, p.Currency,
+			yesNo(p.IsActive), fmt.Sprintf("%d", p.Position),
+		})
+	}
+	return renderCountTable(output, "pricing plan(s)", count, headers, rows)
+}
+
+// renderPricingPlanPeriodsTable renders a list of pricing plan periods.
+func renderPricingPlanPeriodsTable(output Output, periods []*admin.PricingPlanPeriod, count int) error {
+	headers := []string{"ID", "PLAN", "CADENCE", "PRICE USD", "ROLLING DAYS", "ACTIVE"}
+	rows := make([][]string, 0, len(periods))
+	for _, p := range periods {
+		rolling := "-"
+		if p.RollingDays != nil {
+			rolling = fmt.Sprintf("%d", *p.RollingDays)
+		}
+		rows = append(rows, []string{
+			fmt.Sprintf("%d", p.Id), fmt.Sprintf("%d", p.PricingPlanId),
+			p.Cadence, fmt.Sprintf("%.2f", p.PriceUsd), rolling, yesNo(p.IsActive),
+		})
+	}
+	return renderCountTable(output, "pricing plan period(s)", count, headers, rows)
+}
+
+// renderSubscribersTable renders a list of subscribers.
+func renderSubscribersTable(output Output, subs []*admin.Subscriber, count int) error {
+	headers := []string{"ID", "USER", "GATEWAY", "STATUS", "ACTIVE"}
+	rows := make([][]string, 0, len(subs))
+	for _, s := range subs {
+		status := "active"
+		if s.PausedAt != nil {
+			status = "paused"
+		}
+		if s.CancelledAt != nil {
+			status = "cancelled"
+		}
+		rows = append(rows, []string{
+			fmt.Sprintf("%d", s.Id), fmt.Sprintf("%d", s.UserId),
+			s.GatewayType, status, yesNo(s.IsActive),
+		})
+	}
+	return renderCountTable(output, "subscriber(s)", count, headers, rows)
+}
+
+// renderBillingFields renders a single billing object as a labeled field group
+// in human mode, or as JSON in JSON mode.
+func renderBillingFields(c *cli.Command, output Output, r any) error {
 	if output.IsJSON() {
 		return output.PrintJSON(r)
 	}
-	b, err := json.MarshalIndent(r, "", "  ")
-	if err != nil {
-		return err
+	switch v := r.(type) {
+	case *admin.Credit:
+		output.PrintFields(FieldGroup{Title: "Credit", Fields: []Field{
+			{"ID", fmt.Sprintf("%s", v.Id)},
+			{"User", fmt.Sprintf("%d", v.UserId)},
+			{"Amount", fmt.Sprintf("%v", v.Amount)},
+			{"Type", v.Type},
+			{"Direction", v.Direction},
+		}})
+		return nil
+	case *admin.PriceLine:
+		output.PrintFields(FieldGroup{Title: "Price line", Fields: []Field{
+			{"ID", fmt.Sprintf("%d", v.Id)},
+			{"Name", v.Name},
+			{"Description", v.Description},
+			{"Active", yesNo(v.IsActive)},
+			{"Default", yesNo(v.IsDefault)},
+		}})
+		return nil
+	case *admin.PricingPlan:
+		output.PrintFields(FieldGroup{Title: "Pricing plan", Fields: []Field{
+			{"ID", fmt.Sprintf("%d", v.Id)},
+			{"Name", v.Name},
+			{"Currency", v.Currency},
+			{"Active", yesNo(v.IsActive)},
+			{"Public", yesNo(v.IsPublic)},
+		}})
+		return nil
+	case *admin.PricingPlanPeriod:
+		output.PrintFields(FieldGroup{Title: "Pricing plan period", Fields: []Field{
+			{"ID", fmt.Sprintf("%d", v.Id)},
+			{"Plan", fmt.Sprintf("%d", v.PricingPlanId)},
+			{"Cadence", v.Cadence},
+			{"Price USD", fmt.Sprintf("%.2f", v.PriceUsd)},
+			{"Active", yesNo(v.IsActive)},
+		}})
+		return nil
+	case *admin.Subscriber:
+		output.PrintFields(FieldGroup{Title: "Subscriber", Fields: []Field{
+			{"ID", fmt.Sprintf("%d", v.Id)},
+			{"User", fmt.Sprintf("%d", v.UserId)},
+			{"Gateway", v.GatewayType},
+			{"Active", yesNo(v.IsActive)},
+		}})
+		return nil
+	case *admin.ManagementResult:
+		output.Printfln("%s", managementResultText(v))
+		return nil
+	case *admin.PlanChangeResult:
+		output.Printfln("%s", planChangeResultText(v))
+		return nil
+	default:
+		return fmt.Errorf("catalog command rendered an unhandled billing result type %T", r)
 	}
-	output.Printfln("%s", string(b))
-	return nil
+}
+
+// managementResultText renders a management action result as a human line.
+func managementResultText(v *admin.ManagementResult) string {
+	msg := v.Status
+	if v.Action != "" {
+		msg = v.Action + ": " + v.Status
+	}
+	if v.ErrorMessage != nil && *v.ErrorMessage != "" {
+		msg += " (" + *v.ErrorMessage + ")"
+	}
+	return msg
+}
+
+// planChangeResultText renders a plan-change result as a human line.
+func planChangeResultText(v *admin.PlanChangeResult) string {
+	msg := v.Action
+	if v.ChargeDue.IsZero() {
+		return msg
+	}
+	return fmt.Sprintf("%s (charge due %v)", msg, v.ChargeDue)
 }
 
 // formatQuotaBytes renders a byte count in human-readable form.
