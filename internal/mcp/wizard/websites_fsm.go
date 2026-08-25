@@ -151,7 +151,13 @@ func (m *WebsiteStateMachine) fire(f *fsm.FSM, event string) error {
 }
 
 // ChooseDomainSource marks the domain source (custom or platform) as chosen.
+// It is idempotent: once the lifecycle has left draft, re-entering the domain
+// step (e.g. after a validation error in a later branch of the same handler)
+// must not fail, so an already-claimed lifecycle is a successful no-op.
 func (m *WebsiteStateMachine) ChooseDomainSource(source string) error {
+	if m.lifecycleCurrent() != LifecycleDraft {
+		return nil
+	}
 	f := fsm.NewFSM(string(m.lifecycleCurrent()), lifecycleEvents(), nil)
 	if err := m.fire(f, lifecycleEvChooseSource); err != nil {
 		return fmt.Errorf("cannot choose domain source in %s: %w", f.Current(), err)
@@ -206,7 +212,12 @@ func (m *WebsiteStateMachine) BeginBind(website *ipfs.WebsiteItem) error {
 }
 
 // MarkDeployed moves content from ready to deployed after the website exists.
+// It is idempotent: retrying the create step after a failed bind (content
+// already deployed) must not wedge, so an already-deployed state is a no-op.
 func (m *WebsiteStateMachine) MarkDeployed() error {
+	if m.contentCurrent() == ContentDeployed {
+		return nil
+	}
 	f := fsm.NewFSM(string(m.contentCurrent()), contentEvents(), nil)
 	if err := m.fire(f, contentEvDeployed); err != nil {
 		return fmt.Errorf("cannot mark deployed in %s: %w", f.Current(), err)

@@ -163,3 +163,68 @@ func TestWebsitesFSM_IllegalTransitions(t *testing.T) {
 		t.Fatalf("ValidateSucceeded should not error: %v", err)
 	}
 }
+
+// TestWebsitesFSM_ChooseDomainSourceIdempotent verifies that re-entering the
+// domain step (which happens on any error path inside the handler after the
+// source is chosen) does not wedge the wizard with a failed transition.
+func TestWebsitesFSM_ChooseDomainSourceIdempotent(t *testing.T) {
+	w := &testWebsitesWizard{}
+	m := wizard.NewWebsiteStateMachine(w)
+
+	if err := m.ChooseDomainSource(string(wizard.WebsitesDomainSourceCustom)); err != nil {
+		t.Fatalf("first ChooseDomainSource: %v", err)
+	}
+	// Simulate a retry after a later branch of the domain handler errored
+	// (lifecycle already claimed): must be a successful no-op.
+	if err := m.ChooseDomainSource(string(wizard.WebsitesDomainSourceCustom)); err != nil {
+		t.Fatalf("ChooseDomainSource retry must be idempotent: %v", err)
+	}
+	if w.DomainSource() != string(wizard.WebsitesDomainSourceCustom) {
+		t.Fatalf("domain source = %q", w.DomainSource())
+	}
+	// Claiming after choosing still works.
+	if err := m.MarkClaimed("example.com"); err != nil {
+		t.Fatalf("MarkClaimed after idempotent choose: %v", err)
+	}
+}
+
+// TestWebsitesFSM_MarkDeployedIdempotent verifies that retrying the create step
+// after a failed bind (content already deployed) does not wedge, allowing the
+// documented bind retry to proceed.
+func TestWebsitesFSM_MarkDeployedIdempotent(t *testing.T) {
+	w := &testWebsitesWizard{}
+	m := wizard.NewWebsiteStateMachine(w)
+
+	if err := m.ChooseDomainSource(string(wizard.WebsitesDomainSourcePlatform)); err != nil {
+		t.Fatalf("ChooseDomainSource: %v", err)
+	}
+	if err := m.MarkClaimed("pinned.site"); err != nil {
+		t.Fatalf("MarkClaimed: %v", err)
+	}
+	if err := m.PrepareContent("QmTestHash123"); err != nil {
+		t.Fatalf("PrepareContent: %v", err)
+	}
+	if err := m.MarkDeployed(); err != nil {
+		t.Fatalf("MarkDeployed: %v", err)
+	}
+	// Retry after a failed bind: MarkDeployed and BeginBind must be no-ops, and
+	// a re-bind must be able to proceed to success.
+	if err := m.MarkDeployed(); err != nil {
+		t.Fatalf("MarkDeployed retry must be idempotent: %v", err)
+	}
+	if err := m.BeginBind(&ipfs.WebsiteItem{}); err != nil {
+		t.Fatalf("BeginBind retry: %v", err)
+	}
+	if err := m.BindFailed(); err != nil {
+		t.Fatalf("BindFailed: %v", err)
+	}
+	if err := m.BeginBind(w.Website()); err != nil {
+		t.Fatalf("recovery BeginBind: %v", err)
+	}
+	if err := m.BindSucceeded("zebra.pinned.site"); err != nil {
+		t.Fatalf("recovery BindSucceeded: %v", err)
+	}
+	if w.Domain() != "zebra.pinned.site" {
+		t.Fatalf("domain after recovery = %q", w.Domain())
+	}
+}
