@@ -477,8 +477,9 @@ For more help on any command: pinner <command> --help`,
 			}
 
 			wDeps := mcpwizard.WebsitesWizardDeps{
-				CfgMgr:          cfgMgr,
-				WebsitesService: websitesSvc,
+				CfgMgr:           cfgMgr,
+				WebsitesService:  websitesSvc,
+				WebsitesResource: &websitesResourceAdapter{ws: websitesSvc},
 				WebsitesFactory: func() mcpwizard.WebsitesWizardState {
 					return NewWebsitesWizard(websitesSvc, cfgMgr, nil, output)
 				},

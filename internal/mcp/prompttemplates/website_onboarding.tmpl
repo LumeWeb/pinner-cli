@@ -9,23 +9,21 @@ Workflow overview (9 steps):
   1. auth_check     : verifies the user is authenticated
   2. content_source : choose CID or upload
   3. target_type    : IPFS or IPNS
-  4. domain         : domain name for the website
+  4. domain         : domain source + domain (custom or platform subdomain)
   5. dns_mode       : managed or self-managed DNS
-  6. create         : create the website (irreversible, confirm first)
+  6. create         : create the website (confirm first)
   7. dns_setup      : read DNS requirements resource
   8. validate       : run live validation
   9. complete       : summarize results
 
-Free platform subdomains:
-  - The user does NOT need to own a domain. Free platform (free-subdomain) roots are
-    available (e.g. ipfs.pin.xyz) and the user can claim a `label` subdomain under one.
-  - To see the enabled platform roots, read the pinner://websites/platform-domains
-    resource or call `websites_platform_domain_availability`. Claim the subdomain through
-    the dedicated domain wizard (domains_wizard_start / domains_wizard_step): at the
-    domain name step supply `{"domain": "<root>", "label": "<label>"}` (or
-    `{"domain": "<root>", "generate": true}`), which its bind step mints via BindDomain.
-    The websites wizard's own domain step only accepts a plain owned domain — it does
-    NOT claim subdomains, so do not pass label/generate to websites_wizard_step.
+Domain source (step 4):
+  - If the user has NO domain, default to a platform (free) subdomain: pass
+    `{"source": "platform_subdomain", "label": "<label>"}` to websites_wizard_step. The
+    wizard checks availability (websites_platform_domain_availability), picks an available
+    platform root, and builds the exact FQDN (label.root). Never invent a domain.
+  - Platform (free) subdomains are minted and DNS-managed by the platform automatically:
+    the wizard creates the website with the FQDN + managed DNS, then claims the subdomain.
+  - Only use a custom domain ({"domain": "<user's domain>"}) when the user explicitly owns one.
 
 Rules:
   - Always pass the session_id from websites_wizard_start to websites_wizard_step.
@@ -76,15 +74,15 @@ Call `websites_wizard_step` with input: {"domain": "{{.Domain}}"}
 
 {{define "website_step_domain_ask"}}Step: domain
 Determine how the user wants to address the website:
-  - Own domain: ask for their domain name (e.g. example.com) and pass {"domain": "<domain>"}.
-  - Free platform subdomain: first read pinner://websites/platform-domains (or call
-    `websites_platform_domain_availability`) to see the enabled platform roots. Ask the
-    user for a label they'd like (or offer to auto-generate one), then claim it through
-    the dedicated domain wizard: call `domains_wizard_start`, then `domains_wizard_step`
-    with input like {"domain": "<root>", "label": "<label>"} (or
-    {"domain": "<root>", "generate": true}) so its bind step mints the subdomain in the
-    same session. Do not pass label/generate to `websites_wizard_step` (its domain step
-    accepts only a plain owned domain). Do not require the user to own a domain.
+  - No domain / free platform subdomain (DEFAULT when the user has no domain): read
+    pinner://websites/platform-domains (or call `websites_platform_domain_availability`)
+    to see the enabled platform roots, ask the user for a label they'd like (or offer to
+    auto-generate one), then call `websites_wizard_step` with input like
+    {"source": "platform_subdomain", "label": "<label>"}. The wizard checks availability,
+    builds the exact FQDN (label.root), creates the website, and claims the subdomain —
+    DNS is managed by the platform. Do not require the user to own a domain.
+  - Own domain: ask for their domain name (e.g. example.com) and pass
+    {"domain": "<domain>"} (custom is inferred when a domain is given).
 {{end}}
 
 {{define "website_step_dns_mode_filled"}}Step: dns_mode
@@ -97,7 +95,7 @@ Ask the user whether they want managed DNS (Pinner handles it) or self-managed D
 {{end}}
 
 {{define "website_step_create"}}Step: create
-This is an irreversible operation. Confirm with the user before proceeding. Call `websites_wizard_step` with input: {"confirm": true} to create the website. If the user is not ready, call with {"confirm": false} to see the error and retry.
+Confirm with the user before proceeding. Call `websites_wizard_step` with input: {"confirm": true} to create the website. If the user is not ready, call with {"confirm": false} to see the error and retry.
 {{end}}
 
 {{define "website_step_dns_setup_filled"}}Read the pinner://websites/{domain}/dns-requirements resource above. Present the DNS records to the user. If DNS is managed, instruct them to update their registrar's nameservers. If self-managed, instruct them to add the TXT, dnslink, and optional CNAME records. Call `websites_wizard_step` with input: {} to proceed.

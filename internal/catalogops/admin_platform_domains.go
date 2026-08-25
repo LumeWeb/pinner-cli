@@ -62,13 +62,13 @@ func adminPlatformDomainsRegister(d AdminDeps) catalog.Operation {
 		Name:        OpAdminPlatformDomainsRegister,
 		Title:       "Register a platform domain",
 		Summary:     "Register a platform-owned root domain",
-		Description: "Register a platform-owned root domain that users can claim free subdomains under, e.g. ipfs.pin.xyz. Requires admin privileges.",
+		Description: "Register a platform-owned root domain that users can claim free subdomains under, e.g. pinned.site. Requires admin privileges.",
 		Category:    "admin",
 		Safety:      catalog.SafetyMutate,
 		Interaction: catalog.InteractionAgentSafe,
 		Visibility:  catalog.VisibilityBoth,
 		Args: []catalog.OperationArg{
-			{Name: "domain", Type: catalog.ArgTypeString, Required: true, Help: "Platform root domain, e.g. ipfs.pin.xyz"},
+			{Name: "domain", Type: catalog.ArgTypeString, Required: true, Help: "Platform root domain, e.g. pinned.site"},
 			{Name: "namespace", Type: catalog.ArgTypeString, Required: true, Help: "Domain namespace: icann, hns, etc."},
 			// Nullable so an omitted flag leaves Enabled nil (backend default)
 			// rather than forcing false; an explicit --enabled=false disables.
