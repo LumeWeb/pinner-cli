@@ -23,7 +23,14 @@ func renderListResult(output Output, r catalogops.ListResult) error {
 		return output.PrintJSON(out)
 	}
 	if r.ListCount() == 0 {
-		output.Printfln("No %s found", r.ListNoun())
+		// An empty page of a truncated result set (e.g. Start past the last
+		// row) still has items behind it — report the total rather than a stale
+		// "no results". Only fall back to "No X found" when no total is known.
+		if r.ListTotal() > 0 {
+			output.Printfln("Showing 0 of %d %s", r.ListTotal(), r.ListNoun())
+		} else {
+			output.Printfln("No %s found", r.ListNoun())
+		}
 		return nil
 	}
 	if r.ListTruncated() {
