@@ -91,8 +91,7 @@ func (d AdminDeps) websites() (admin.WebsiteAdminService, error) {
 }
 
 // quota resolves the QuotaAdminService for this invocation.
-func (d AdminDeps) quota(input map[string]any) (admin.QuotaAdminService, error) {
-	_ = input // reserved for a future per-invocation --auth-token override
+func (d AdminDeps) quota() (admin.QuotaAdminService, error) {
 	cfgMgr, err := d.requireConfig()
 	if err != nil {
 		return nil, err

@@ -84,7 +84,7 @@ func adminQuotaPlansList(d AdminDeps) catalog.Operation {
 		Interaction: catalog.InteractionAgentSafe,
 		Visibility:  catalog.VisibilityBoth,
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.quota(input)
+			svc, err := d.quota()
 			if err != nil {
 				return nil, err
 			}
@@ -116,7 +116,7 @@ func adminQuotaPlansGet(d AdminDeps) catalog.Operation {
 			{Name: "id", Type: catalog.ArgTypeString, Required: true, Help: "Quota plan ID", PositionalOnly: true},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.quota(input)
+			svc, err := d.quota()
 			if err != nil {
 				return nil, err
 			}
@@ -154,7 +154,7 @@ func adminQuotaPlansCreate(d AdminDeps) catalog.Operation {
 			{Name: "is-default", Type: catalog.ArgTypeBool, Help: "Set as default plan for new users"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.quota(input)
+			svc, err := d.quota()
 			if err != nil {
 				return nil, err
 			}
@@ -214,7 +214,7 @@ func adminQuotaPlansUpdate(d AdminDeps) catalog.Operation {
 			{Name: "is-default", Type: catalog.ArgTypeNullableBool, Help: "Set as default plan for new users"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.quota(input)
+			svc, err := d.quota()
 			if err != nil {
 				return nil, err
 			}
@@ -296,7 +296,7 @@ func adminQuotaPlansDelete(d AdminDeps) catalog.Operation {
 			if !catalog.BoolArg(input, "confirm", false) {
 				return nil, fmt.Errorf("admin_quota_plans_delete: confirmation is required")
 			}
-			svc, err := d.quota(input)
+			svc, err := d.quota()
 			if err != nil {
 				return nil, err
 			}
@@ -331,7 +331,7 @@ func adminQuotaPlansSetDefault(d AdminDeps) catalog.Operation {
 			{Name: "id", Type: catalog.ArgTypeString, Required: true, Help: "Quota plan ID", PositionalOnly: true},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.quota(input)
+			svc, err := d.quota()
 			if err != nil {
 				return nil, err
 			}
@@ -367,7 +367,7 @@ func adminQuotaAllowancesList(d AdminDeps) catalog.Operation {
 		Interaction: catalog.InteractionAgentSafe,
 		Visibility:  catalog.VisibilityBoth,
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.quota(input)
+			svc, err := d.quota()
 			if err != nil {
 				return nil, err
 			}
@@ -404,7 +404,7 @@ func adminQuotaAllowancesCreate(d AdminDeps) catalog.Operation {
 			{Name: "expiry", Type: catalog.ArgTypeInt, Help: "Expiry in days from now"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.quota(input)
+			svc, err := d.quota()
 			if err != nil {
 				return nil, err
 			}
@@ -433,7 +433,13 @@ func adminQuotaAllowancesUpdate(d AdminDeps) catalog.Operation {
 		Name:        "admin_quota_allowances_update",
 		Title:       "Update a quota allowance",
 		Summary:     "Update a quota allowance",
-		Description: "Update an existing quota allowance by grant ID. Requires admin privileges.",
+		// The backend allowance update is a full-replace PUT: it serializes every
+		// field (no partial-update/omitempty support) and does not echo the
+		// per-limit bytes back on read, so there is no way to merge "keep the
+		// current value". Every editable field is therefore required to make the
+		// full-replace contract explicit and prevent a partial update from
+		// silently zeroing user id / byte limits.
+		Description: "Replace a quota allowance by grant ID. This is a full replace: every field below must be supplied (the backend has no partial-update semantics and an omitted field is reset). Requires admin privileges.",
 		Category:    "admin",
 		Safety:      catalog.SafetyMutate,
 		Interaction: catalog.InteractionAgentSafe,
@@ -441,16 +447,16 @@ func adminQuotaAllowancesUpdate(d AdminDeps) catalog.Operation {
 		Positional:  "<grant-id>",
 		Args: []catalog.OperationArg{
 			{Name: "id", Type: catalog.ArgTypeString, Required: true, Help: "Allowance grant ID", PositionalOnly: true},
-			{Name: "user-id", Type: catalog.ArgTypeInt, Help: "User ID"},
-			{Name: "source", Type: catalog.ArgTypeString, Help: "Allowance source reference"},
-			{Name: "quota-type", Type: catalog.ArgTypeString, Help: "Allowance type"},
-			{Name: "upload-limit", Type: catalog.ArgTypeInt, Help: "Upload allowance (bytes)"},
-			{Name: "download-limit", Type: catalog.ArgTypeInt, Help: "Download allowance (bytes)"},
-			{Name: "storage-limit", Type: catalog.ArgTypeInt, Help: "Storage allowance (bytes)"},
-			{Name: "expiry", Type: catalog.ArgTypeInt, Help: "Expiry in days from now"},
+			{Name: "user-id", Type: catalog.ArgTypeInt, Required: true, Help: "User ID"},
+			{Name: "source", Type: catalog.ArgTypeString, Required: true, Help: "Allowance source reference"},
+			{Name: "quota-type", Type: catalog.ArgTypeString, Required: true, Help: "Allowance type"},
+			{Name: "upload-limit", Type: catalog.ArgTypeInt, Required: true, Help: "Upload allowance (bytes)"},
+			{Name: "download-limit", Type: catalog.ArgTypeInt, Required: true, Help: "Download allowance (bytes)"},
+			{Name: "storage-limit", Type: catalog.ArgTypeInt, Required: true, Help: "Storage allowance (bytes)"},
+			{Name: "expiry", Type: catalog.ArgTypeInt, Help: "Expiry in days from now (optional; zero means no expiry)"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.quota(input)
+			svc, err := d.quota()
 			if err != nil {
 				return nil, err
 			}
@@ -490,7 +496,7 @@ func adminQuotaAllowancesDelete(d AdminDeps) catalog.Operation {
 			{Name: "id", Type: catalog.ArgTypeString, Required: true, Help: "Allowance grant ID", PositionalOnly: true},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.quota(input)
+			svc, err := d.quota()
 			if err != nil {
 				return nil, err
 			}
@@ -521,7 +527,7 @@ func adminQuotaUserConfigsList(d AdminDeps) catalog.Operation {
 		Interaction: catalog.InteractionAgentSafe,
 		Visibility:  catalog.VisibilityBoth,
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.quota(input)
+			svc, err := d.quota()
 			if err != nil {
 				return nil, err
 			}
@@ -549,23 +555,27 @@ func adminQuotaUserConfigsUpdate(d AdminDeps) catalog.Operation {
 		Safety:      catalog.SafetyMutate,
 		Interaction: catalog.InteractionAgentSafe,
 		Visibility:  catalog.VisibilityBoth,
+		// The value fields are nullable so an omitted flag yields a nil *int and is
+		// left unchanged; plain int args collapse to 0 on the CLI and would be
+		// forwarded as a non-nil 0 pointer, silently resetting fields an admin
+		// never intended to touch on a partial update.
 		Args: []catalog.OperationArg{
 			{Name: "user-id", Type: catalog.ArgTypeInt, Required: true, Help: "User ID"},
-			{Name: "plan-id", Type: catalog.ArgTypeInt, Help: "Quota plan ID to assign"},
+			{Name: "plan-id", Type: catalog.ArgTypeNullableInt, Help: "Quota plan ID to assign (omit to keep current)"},
 			{Name: "enforcement-policy", Type: catalog.ArgTypeString, Help: "Enforcement policy (HARD_LIMITS, UNLIMITED, ALLOWANCE, THRESHOLD)"},
-			{Name: "upload-limit", Type: catalog.ArgTypeInt, Help: "Upload limit override (bytes)"},
-			{Name: "download-limit", Type: catalog.ArgTypeInt, Help: "Download limit override (bytes)"},
-			{Name: "storage-limit", Type: catalog.ArgTypeInt, Help: "Storage limit override (bytes)"},
-			{Name: "upload-threshold", Type: catalog.ArgTypeInt, Help: "Upload threshold override (bytes)"},
-			{Name: "download-threshold", Type: catalog.ArgTypeInt, Help: "Download threshold override (bytes)"},
-			{Name: "storage-threshold", Type: catalog.ArgTypeInt, Help: "Storage threshold override (bytes)"},
-			{Name: "window-duration", Type: catalog.ArgTypeInt, Help: "Window duration override"},
-			{Name: "window-start-hour", Type: catalog.ArgTypeInt, Help: "Window start hour override"},
+			{Name: "upload-limit", Type: catalog.ArgTypeNullableInt, Help: "Upload limit override (bytes)"},
+			{Name: "download-limit", Type: catalog.ArgTypeNullableInt, Help: "Download limit override (bytes)"},
+			{Name: "storage-limit", Type: catalog.ArgTypeNullableInt, Help: "Storage limit override (bytes)"},
+			{Name: "upload-threshold", Type: catalog.ArgTypeNullableInt, Help: "Upload threshold override (bytes)"},
+			{Name: "download-threshold", Type: catalog.ArgTypeNullableInt, Help: "Download threshold override (bytes)"},
+			{Name: "storage-threshold", Type: catalog.ArgTypeNullableInt, Help: "Storage threshold override (bytes)"},
+			{Name: "window-duration", Type: catalog.ArgTypeNullableInt, Help: "Window duration override"},
+			{Name: "window-start-hour", Type: catalog.ArgTypeNullableInt, Help: "Window start hour override"},
 			{Name: "window-timezone", Type: catalog.ArgTypeString, Help: "Window timezone override"},
 			{Name: "window-type", Type: catalog.ArgTypeString, Help: "Window type override"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.quota(input)
+			svc, err := d.quota()
 			if err != nil {
 				return nil, err
 			}
@@ -606,7 +616,7 @@ func adminQuotaUserConfigsReset(d AdminDeps) catalog.Operation {
 			{Name: "user-id", Type: catalog.ArgTypeInt, Required: true, Help: "User ID", PositionalOnly: true},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.quota(input)
+			svc, err := d.quota()
 			if err != nil {
 				return nil, err
 			}
@@ -637,7 +647,7 @@ func adminQuotaStats(d AdminDeps) catalog.Operation {
 		Interaction: catalog.InteractionAgentSafe,
 		Visibility:  catalog.VisibilityBoth,
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.quota(input)
+			svc, err := d.quota()
 			if err != nil {
 				return nil, err
 			}
@@ -664,7 +674,7 @@ func adminQuotaReconcile(d AdminDeps) catalog.Operation {
 			{Name: "user-id", Type: catalog.ArgTypeNullableInt, Help: "Specific user ID to reconcile (optional)"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.quota(input)
+			svc, err := d.quota()
 			if err != nil {
 				return nil, err
 			}
@@ -695,7 +705,7 @@ func adminQuotaCleanup(d AdminDeps) catalog.Operation {
 			{Name: "retention-days", Type: catalog.ArgTypeInt, Default: "90", Help: "Retention period in days"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.quota(input)
+			svc, err := d.quota()
 			if err != nil {
 				return nil, err
 			}
