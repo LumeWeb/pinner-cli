@@ -57,7 +57,7 @@ type OperationsListResult struct {
 type ListOptions struct {
 	// Search is a full-text search term evaluated server-side against the
 	// operation's searchable fields. Empty disables it.
-	Search          string
+	Search string
 	// StatusFilters limits results to the given statuses (e.g. "pending",
 	// "processing"). When nil and IncludeAll is false, the service defaults
 	// to showing only active operations (pending, processing).
@@ -66,8 +66,8 @@ type ListOptions struct {
 	ProtocolFilter  string
 	CIDFilter       string
 	Sort            string
-	Page            int
-	PageSize        int
+	Start           int
+	Limit           int
 	// IncludeAll disables the default active-status filter so the listing
 	// returns operations in any status. Has no effect when StatusFilters
 	// is explicitly provided.

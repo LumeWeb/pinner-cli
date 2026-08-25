@@ -553,8 +553,8 @@ func TestNewOperationsListCommand(t *testing.T) {
 		assert.True(t, flagNames[FlagProtocol])
 		assert.True(t, flagNames[FlagCID])
 		assert.True(t, flagNames[FlagSort])
-		assert.True(t, flagNames[FlagPage])
-		assert.True(t, flagNames[FlagPageSize])
+		assert.True(t, flagNames["start"])
+		assert.True(t, flagNames["limit"])
 		// NOTE: the legacy list command exposed --watch, but the core
 		// operations.Service.List has no watch capability; list-watch was
 		// dropped in the catalog migration (get --watch is preserved).
@@ -587,8 +587,8 @@ func TestOperationsList(t *testing.T) {
 			OperationFilter: "",
 			ProtocolFilter:  "",
 			CIDFilter:       "",
-			Page:            1,
-			PageSize:        10,
+			Start:           0,
+			Limit:           10,
 		}).Return(&OperationsListResult{
 			Operations: []OperationListItem{
 				{ID: 1, CID: "QmTest", Status: "completed", Operation: "pin", OperationDisplayName: "Pin", Protocol: "ipfs", ProtocolDisplayName: "IPFS", ProgressPercent: 100, StartedAt: "2024-01-01"},
@@ -612,7 +612,7 @@ func TestOperationsList(t *testing.T) {
 		opsSvc := NewMockOperationsService(t)
 
 		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
-		opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{Page: 1, PageSize: 10}).Return(&OperationsListResult{
+		opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{Start: 0, Limit: 10}).Return(&OperationsListResult{
 			Operations: []OperationListItem{},
 			Total:      0,
 		}, nil)
@@ -651,7 +651,7 @@ func TestOperationsList(t *testing.T) {
 		opsSvc := NewMockOperationsService(t)
 
 		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
-		opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{Page: 1, PageSize: 10}).Return(nil, errors.New("server error"))
+		opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{Start: 0, Limit: 10}).Return(nil, errors.New("server error"))
 
 		cmd := newMockCommand()
 
@@ -675,8 +675,8 @@ func TestOperationsList(t *testing.T) {
 			OperationFilter: "upload",
 			ProtocolFilter:  "ipfs",
 			CIDFilter:       "QmTest",
-			Page:            1,
-			PageSize:        5,
+			Start:           0,
+			Limit:           5,
 		}).Return(&OperationsListResult{
 			Operations: []OperationListItem{},
 			Total:      0,
@@ -1250,9 +1250,9 @@ func TestOperationsList_SortFlag(t *testing.T) {
 
 		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
 		opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{
-			Sort:     "id:desc",
-			Page:     1,
-			PageSize: 10,
+			Sort:  "id:desc",
+			Start: 0,
+			Limit: 10,
 		}).Return(&OperationsListResult{
 			Operations: []OperationListItem{},
 			Total:      0,
@@ -1276,9 +1276,9 @@ func TestOperationsList_SortFlag(t *testing.T) {
 
 		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
 		opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{
-			Sort:     "started:asc",
-			Page:     1,
-			PageSize: 10,
+			Sort:  "started:asc",
+			Start: 0,
+			Limit: 10,
 		}).Return(&OperationsListResult{
 			Operations: []OperationListItem{},
 			Total:      0,
@@ -1324,8 +1324,8 @@ func TestOperationsList_StatusValidation(t *testing.T) {
 		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
 		opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{
 			StatusFilters: []string{"processing"},
-			Page:           1,
-			PageSize:       10,
+			Start:         0,
+			Limit:         10,
 		}).Return(&OperationsListResult{
 			Operations: []OperationListItem{},
 			Total:      0,
@@ -1351,8 +1351,8 @@ func TestOperationsList_Pagination(t *testing.T) {
 
 		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
 		opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{
-			Page:     3,
-			PageSize: 20,
+			Start: 40,
+			Limit: 20,
 		}).Return(&OperationsListResult{
 			Operations: []OperationListItem{
 				{ID: 21, CID: "Qm21", Status: "completed", Operation: "pin", OperationDisplayName: "Pin", Protocol: "ipfs", ProtocolDisplayName: "IPFS", ProgressPercent: 100, StartedAt: "2024-01-01"},
@@ -1381,8 +1381,8 @@ func TestOperationsList_Pagination(t *testing.T) {
 
 		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
 		opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{
-			Page:     2,
-			PageSize: 10,
+			Start: 10,
+			Limit: 10,
 		}).Return(&OperationsListResult{
 			Operations: []OperationListItem{
 				{ID: 11, CID: "Qm11", Status: "completed", Operation: "pin", OperationDisplayName: "Pin", Protocol: "ipfs", ProtocolDisplayName: "IPFS", ProgressPercent: 100, StartedAt: "2024-01-01"},
@@ -1412,7 +1412,7 @@ func TestOperationsList_Pagination(t *testing.T) {
 func TestWatchCatalogOperationsList_PaginationAndAuth(t *testing.T) {
 	opsSvc := NewMockOperationsService(t)
 	opsSvc.EXPECT().RequireAuthenticated().Return(nil)
-	opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{Page: 1, PageSize: 10, IsWatch: true}).Return(&OperationsListResult{
+	opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{Start: 0, Limit: 10, IsWatch: true}).Return(&OperationsListResult{
 		Operations: []OperationListItem{
 			{ID: 1, CID: "QmTest", Status: "completed", Operation: "pin", OperationDisplayName: "Pin", Protocol: "ipfs", ProtocolDisplayName: "IPFS", ProgressPercent: 100, StartedAt: "2024-01-01"},
 		},
@@ -1461,10 +1461,10 @@ func TestWatchCatalogOperationsList_ForwardsSearch(t *testing.T) {
 	opsSvc := NewMockOperationsService(t)
 	opsSvc.EXPECT().RequireAuthenticated().Return(nil)
 	opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{
-		Search:   "foo",
-		Page:     1,
-		PageSize: 10,
-			IsWatch:  true,
+		Search:  "foo",
+		Start:   0,
+		Limit:   10,
+		IsWatch: true,
 	}).Return(&OperationsListResult{
 		Operations: []OperationListItem{
 			{ID: 1, CID: "QmTest", Status: "completed", Operation: "pin", OperationDisplayName: "Pin", Protocol: "ipfs", ProtocolDisplayName: "IPFS", ProgressPercent: 100, StartedAt: "2024-01-01"},
@@ -1483,4 +1483,3 @@ func TestWatchCatalogOperationsList_ForwardsSearch(t *testing.T) {
 	err := watchCatalogOperationsList(context.Background(), cmd, nil, map[string]any{"search": "foo"})
 	require.NoError(t, err)
 }
-

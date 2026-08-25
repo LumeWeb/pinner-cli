@@ -35,18 +35,16 @@ func operationsList(d OperationsDeps) catalog.Operation {
 		Description: "List account operations (uploads, pins, and other processing tasks) with optional filters and pagination. By default only active operations (pending, processing) are shown; pass --all to include completed, failed, and duplicate operations.",
 		Category:    "operations", Safety: catalog.SafetyRead, Interaction: catalog.InteractionAgentSafe, Visibility: catalog.VisibilityBoth,
 		Positional: "",
-		Args: []catalog.OperationArg{
-			{Name: "search", Type: catalog.ArgTypeString, Help: "Full-text search evaluated server-side against operation type, status, protocol, or CID; composes with the filters below", AgentHelp: "Full-text search term evaluated server-side against operation type, status, protocol, or CID. Composes (AND) with the structured filters."},
-			{Name: "status", Type: catalog.ArgTypeStringSlice, Help: "Filter by status (repeatable; pending, processing, completed, failed, duplicate)", AgentHelp: "One or more statuses to filter by. Valid values: pending, processing, completed, failed, duplicate. When omitted, only active operations (pending, processing) are returned unless all=true."},
-			{Name: "all", Type: catalog.ArgTypeBool, Default: "false", Help: "Show operations in all statuses (overrides the default active-only filter)", AgentHelp: "When true, return operations in any status, overriding the default that shows only pending and processing. Ignored when status is explicitly provided."},
-			{Name: "operation", Type: catalog.ArgTypeString, Help: "Filter by operation type (e.g. upload, pin)"},
-			{Name: "protocol", Type: catalog.ArgTypeString, Help: "Filter by protocol (e.g. ipfs)"},
-			{Name: "cid", Type: catalog.ArgTypeString, Help: "Filter by CID"},
-			{Name: "sort", Type: catalog.ArgTypeString, Help: "Sort results (e.g. id:desc, started:asc). Defaults to id:desc.", AgentHelp: "Sort field and direction, e.g. \"id:desc\" or \"started:asc\". Defaults to id:desc."},
-			{Name: "page", Type: catalog.ArgTypeInt, Default: "0", Help: "Page number"},
-			{Name: "page-size", Type: catalog.ArgTypeInt, Default: "0", Help: "Results per page"},
-			{Name: "watch", Type: catalog.ArgTypeBool, Default: "false", Help: "Poll until the list settles"},
-		},
+		Args: append(catalog.ListArgs(),
+			catalog.OperationArg{Name: "search", Type: catalog.ArgTypeString, Help: "Full-text search evaluated server-side against operation type, status, protocol, or CID; composes with the filters below", AgentHelp: "Full-text search term evaluated server-side against operation type, status, protocol, or CID. Composes (AND) with the structured filters."},
+			catalog.OperationArg{Name: "status", Type: catalog.ArgTypeStringSlice, Help: "Filter by status (repeatable; pending, processing, completed, failed, duplicate)", AgentHelp: "One or more statuses to filter by. Valid values: pending, processing, completed, failed, duplicate. When omitted, only active operations (pending, processing) are returned unless all=true."},
+			catalog.OperationArg{Name: "all", Type: catalog.ArgTypeBool, Default: "false", Help: "Show operations in all statuses (overrides the default active-only filter)", AgentHelp: "When true, return operations in any status, overriding the default that shows only pending and processing. Ignored when status is explicitly provided."},
+			catalog.OperationArg{Name: "operation", Type: catalog.ArgTypeString, Help: "Filter by operation type (e.g. upload, pin)"},
+			catalog.OperationArg{Name: "protocol", Type: catalog.ArgTypeString, Help: "Filter by protocol (e.g. ipfs)"},
+			catalog.OperationArg{Name: "cid", Type: catalog.ArgTypeString, Help: "Filter by CID"},
+			catalog.OperationArg{Name: "sort", Type: catalog.ArgTypeString, Help: "Sort results (e.g. id:desc, started:asc). Defaults to id:desc.", AgentHelp: "Sort field and direction, e.g. \"id:desc\" or \"started:asc\". Defaults to id:desc."},
+			catalog.OperationArg{Name: "watch", Type: catalog.ArgTypeBool, Default: "false", Help: "Poll until the list settles"},
+		),
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			svc := d.Service(input)
 			if svc == nil {
@@ -55,15 +53,8 @@ func operationsList(d OperationsDeps) catalog.Operation {
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
-			page := catalog.IntArg(input, "page", 0)
-			if page < 1 {
-				page = 1
-			}
-			pageSize := catalog.IntArg(input, "page-size", 0)
-			if pageSize < 1 {
-				pageSize = 10
-			}
-			return svc.List(ctx, operations.ListOptions{
+			page := catalog.ParseList(input)
+			res, err := svc.List(ctx, operations.ListOptions{
 				Search:          catalog.SearchArg(input),
 				StatusFilters:   catalog.StrSliceArg(input, "status"),
 				IncludeAll:      catalog.BoolArg(input, "all", false),
@@ -71,10 +62,43 @@ func operationsList(d OperationsDeps) catalog.Operation {
 				ProtocolFilter:  catalog.StrArg(input, "protocol", ""),
 				CIDFilter:       catalog.StrArg(input, "cid", ""),
 				Sort:            catalog.StrArg(input, "sort", ""),
-				Page:            page,
-				PageSize:        pageSize,
+				Start:           page.Start,
+				Limit:           page.Limit,
 			})
+			if err != nil {
+				return nil, err
+			}
+			return newOperationsListResult(res), nil
 		}),
+	})
+}
+
+// newOperationsListResult wraps the core operations list result into the
+// shared ListResult contract so the CLI and MCP surfaces render it uniformly.
+func newOperationsListResult(res *operations.OperationsListResult) ListResult {
+	headers := []string{"ID", "OPERATION", "PROTOCOL", "STATUS", "CID", "STARTED"}
+	if res == nil {
+		return NewListResult([]operations.OperationListItem{}, ListResultMeta{
+			Noun: "operation(s)", Headers: headers,
+		})
+	}
+	rows := make([][]string, 0, len(res.Operations))
+	for _, o := range res.Operations {
+		cid := o.CID
+		if cid == "" {
+			cid = "-"
+		}
+		rows = append(rows, []string{
+			fmt.Sprintf("%d", o.ID),
+			o.OperationDisplayName,
+			o.ProtocolDisplayName,
+			o.StatusDisplayName,
+			cid,
+			o.StartedAt,
+		})
+	}
+	return NewListResult(res.Operations, ListResultMeta{
+		Noun: "operation(s)", Headers: headers, Rows: rows,
 	})
 }
 

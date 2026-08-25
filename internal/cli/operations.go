@@ -42,13 +42,13 @@ func operationsList(ctx context.Context, cmd argsFlagGetter, output Output, cfgM
 
 	opts := OperationsListOptions{
 		StatusFilters:   cmd.StringSlice(FlagStatus),
-		IncludeAll:       cmd.Bool(FlagAll),
+		IncludeAll:      cmd.Bool(FlagAll),
 		OperationFilter: cmd.String(FlagOperation),
 		ProtocolFilter:  cmd.String(FlagProtocol),
 		CIDFilter:       cmd.String(FlagCID),
 		Sort:            cmd.String(FlagSort),
-		Page:            page,
-		PageSize:        pageSize,
+		Start:           (page - 1) * pageSize,
+		Limit:           pageSize,
 	}
 
 	if err := validateOperationStatuses(opts.StatusFilters); err != nil {
@@ -81,7 +81,7 @@ func operationsList(ctx context.Context, cmd argsFlagGetter, output Output, cfgM
 		return nil
 	}
 
-	start := (opts.Page-1)*opts.PageSize + 1
+	start := opts.Start + 1
 	end := start + len(result.Operations) - 1
 	output.Printfln("Showing %d-%d of %d operation(s)", start, end, result.Total)
 	if usingDefault {

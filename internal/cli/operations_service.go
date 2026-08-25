@@ -147,16 +147,11 @@ func (s *OperationsServiceDefault) List(ctx context.Context, opts OperationsList
 		listOpts = append(listOpts, portalsdk.WithSorts(sorts...))
 	}
 
-	if opts.PageSize > 0 {
-		page := opts.Page
-		if page < 1 {
-			page = 1
-		}
-		start := (page - 1) * opts.PageSize
+	if opts.Limit > 0 {
 		listOpts = append(listOpts, portalsdk.WithPagination(&queryutil.Pagination{
-			Start:    start,
-			End:      start + opts.PageSize,
-			PageSize: opts.PageSize,
+			Start:    opts.Start,
+			End:      opts.Start + opts.Limit,
+			PageSize: opts.Limit,
 		}))
 	}
 
