@@ -1076,9 +1076,23 @@ func adminBillingPricingPlanPeriodsUpdate(d AdminDeps) catalog.Operation {
 			if id == "" {
 				return nil, fmt.Errorf("admin_billing_pricing_plan_periods_update: period ID is required")
 			}
+			// The SDK period-update request uses value fields for cadence/price,
+			// so a partial update silently resets them. Merge from the existing
+			// period instead, only overriding fields the caller actually sets.
+			existing, err := svc.GetPricingPlanPeriod(ctx, id)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get existing pricing plan period: %w", err)
+			}
 			req := &admin.PricingPlanPeriodUpdateRequest{
-				Cadence:  catalog.StrArg(input, "cadence", ""),
-				PriceUsd: float32(catalogFloatArg(input, "price-usd", 0)),
+				Cadence:     existing.Cadence,
+				PriceUsd:    existing.PriceUsd,
+				QuotaPlanId: existing.QuotaPlanId,
+			}
+			if c := catalog.StrArg(input, "cadence", ""); c != "" {
+				req.Cadence = c
+			}
+			if f := catalogFloatArg(input, "price-usd", 0); f != 0 {
+				req.PriceUsd = float32(f)
 			}
 			if v := catalog.BoolArgPtr(input, "allow-free"); v != nil {
 				req.AllowFree = v

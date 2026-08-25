@@ -670,6 +670,19 @@ func renderBillingFields(c *cli.Command, output Output, r any) error {
 			{"Default", yesNo(v.IsDefault)},
 		}})
 		return nil
+	case *admin.PriceLineDetailResponse:
+		fields := []Field{
+			{"ID", fmt.Sprintf("%d", v.Id)},
+			{"Name", v.Name},
+			{"Description", v.Description},
+			{"Active", yesNo(v.IsActive)},
+			{"Default", yesNo(v.IsDefault)},
+		}
+		if len(v.Plans) > 0 {
+			fields = append(fields, Field{"Plans", fmt.Sprintf("%d", len(v.Plans))})
+		}
+		output.PrintFields(FieldGroup{Title: "Price line", Fields: fields})
+		return nil
 	case *admin.PricingPlan:
 		output.PrintFields(FieldGroup{Title: "Pricing plan", Fields: []Field{
 			{"ID", fmt.Sprintf("%d", v.Id)},
