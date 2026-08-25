@@ -179,12 +179,12 @@ func adminQuotaPlansCreate(d AdminDeps) catalog.Operation {
 				return nil, err
 			}
 			if catalog.BoolArg(input, "is-default", false) {
-				// The plan is already committed; treat a default-set failure as
-				// non-fatal so a retry doesn't create a duplicate plan. The
-				// caller can set the default in a follow-up update if needed.
-				if err := svc.SetDefaultPlan(ctx, fmt.Sprintf("%d", created.Id)); err == nil {
-					created.IsDefault = true
+				// Return the committed plan alongside the error so the caller
+				// knows the plan exists but the default was not applied.
+				if err := svc.SetDefaultPlan(ctx, fmt.Sprintf("%d", created.Id)); err != nil {
+					return created, fmt.Errorf("plan created but failed to set as default: %w", err)
 				}
+				created.IsDefault = true
 			}
 			return created, nil
 		}),

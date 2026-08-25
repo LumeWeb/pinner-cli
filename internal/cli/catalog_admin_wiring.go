@@ -300,7 +300,11 @@ func renderAdminResult(_ context.Context, c *cli.Command, op catalog.Operation, 
 		if output.IsJSON() {
 			return output.PrintJSON(r)
 		}
-		output.Printfln("Platform domain %s (ID %d)", r.Domain, r.Id)
+		if op.Name() == catalogops.OpAdminPlatformDomainsUpdate {
+			output.Printfln("Platform domain %s updated: enabled=%t", r.Domain, r.Enabled)
+		} else {
+			output.Printfln("Platform domain %s (ID %d)", r.Domain, r.Id)
+		}
 		return nil
 
 	case *admin.Website:

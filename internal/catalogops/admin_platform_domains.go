@@ -8,6 +8,17 @@ import (
 	"go.lumeweb.com/portal-sdk/admin"
 )
 
+// Operation names for the admin platform-domains domain. Referenced by the
+// catalog operation specs here and by the CLI/MCP frontends to key behavior off
+// a specific op without a magic string.
+const (
+	OpAdminPlatformDomainsList    = "admin_platform_domains_list"
+	OpAdminPlatformDomainsRegister = "admin_platform_domains_register"
+	OpAdminPlatformDomainsUpdate   = "admin_platform_domains_update"
+	OpAdminPlatformDomainsDelete   = "admin_platform_domains_delete"
+	OpAdminPlatformDomainsBind     = "admin_platform_domains_bind"
+)
+
 // AdminPlatformDomainsListResult is the typed data returned by the platform
 // domains list operation; the core service returns ([]*admin.PlatformDomain,
 // total, error) which a catalog Handler cannot express, so they are bundled.
@@ -19,7 +30,7 @@ type AdminPlatformDomainsListResult struct {
 // adminPlatformDomainsList is the `admin platform-domains list` operation.
 func adminPlatformDomainsList(d AdminDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:        "admin_platform_domains_list",
+		Name:        OpAdminPlatformDomainsList,
 		Title:       "List platform domains",
 		Summary:     "List registered platform domains",
 		Description: "List all registered platform-owned root domains that users can claim free subdomains under, including disabled ones. Requires admin privileges.",
@@ -48,7 +59,7 @@ func adminPlatformDomainsList(d AdminDeps) catalog.Operation {
 // operation.
 func adminPlatformDomainsRegister(d AdminDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:        "admin_platform_domains_register",
+		Name:        OpAdminPlatformDomainsRegister,
 		Title:       "Register a platform domain",
 		Summary:     "Register a platform-owned root domain",
 		Description: "Register a platform-owned root domain that users can claim free subdomains under, e.g. ipfs.pin.xyz. Requires admin privileges.",
@@ -91,7 +102,7 @@ func adminPlatformDomainsRegister(d AdminDeps) catalog.Operation {
 // adminPlatformDomainsUpdate is the `admin platform-domains update` operation.
 func adminPlatformDomainsUpdate(d AdminDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:        "admin_platform_domains_update",
+		Name:        OpAdminPlatformDomainsUpdate,
 		Title:       "Update a platform domain",
 		Summary:     "Enable or disable a platform domain",
 		Description: "Enable or disable a registered platform root. Disabling prevents new claims but does not delete existing bindings. Requires admin privileges.",
@@ -133,7 +144,7 @@ type AdminPlatformDomainsDeleteResult struct {
 // DESTRUCTIVE: requires confirm=true.
 func adminPlatformDomainsDelete(d AdminDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:        "admin_platform_domains_delete",
+		Name:        OpAdminPlatformDomainsDelete,
 		Title:       "Delete a platform domain",
 		Summary:     "Delete a registered platform domain",
 		Description: "Remove a registered platform root. Existing subdomain bindings remain but can no longer be reconciled as platform subdomains. DESTRUCTIVE and irreversible: requires confirm=true. Requires admin privileges.",
@@ -172,7 +183,7 @@ func adminPlatformDomainsDelete(d AdminDeps) catalog.Operation {
 // adminPlatformDomainsBind is the `admin platform-domains bind` operation.
 func adminPlatformDomainsBind(d AdminDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:        "admin_platform_domains_bind",
+		Name:        OpAdminPlatformDomainsBind,
 		Title:       "Bind a website to a platform domain",
 		Summary:     "Bind an operator-owned website to a platform domain",
 		Description: "Bind an operator-owned website directly to the root apex of a platform domain (e.g. pinner.site). The platform root's DNS zone is auto-created on first use. Requires admin privileges.",
