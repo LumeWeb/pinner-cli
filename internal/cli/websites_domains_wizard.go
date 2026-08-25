@@ -29,8 +29,10 @@ type DomainAddWizard struct {
 	websiteDomain string
 	domain        string
 	namespace     string
-	// Platform (free-subdomain) claim fields. When set, executeBindDomain passes
-	// them through to ipfs.DomainRequest so the portal can mint a subdomain.
+	// Platform (free-subdomain) claim fields. The interactive CLI flow does not
+	// collect these; they exist so DomainAddWizard satisfies wizard.DomainWizardState
+	// (root.go wires NewDomainAddWizard as that interface). The MCP domains wizard
+	// is the path that populates and binds the claim.
 	generate          bool
 	label             string
 	platformDomain    string
@@ -147,22 +149,6 @@ func (w *DomainAddWizard) executeBindDomain(ctx context.Context) error {
 		Domain:    w.Domain(),
 		Namespace: w.Namespace(),
 		Config:    nil,
-	}
-	// Pass platform (free-subdomain) claim fields through so the portal can
-	// mint a subdomain at bind time (label supplied explicitly, or
-	// auto-generated via generate). Consistent with websites_domains_add.
-	if pd := w.PlatformDomain(); pd != "" {
-		req.PlatformDomain = &pd
-	}
-	if pns := w.PlatformNamespace(); pns != "" {
-		req.PlatformNamespace = &pns
-	}
-	if w.Generate() {
-		g := true
-		req.Generate = &g
-	}
-	if label := w.Label(); label != "" {
-		req.Label = &label
 	}
 
 	result, err := w.websitesService.BindDomain(ctx, w.WebsiteID(), req)
