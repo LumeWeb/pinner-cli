@@ -86,9 +86,33 @@ func TestAdminActionAdapterPlatformDomainDeleteConfirmation(t *testing.T) {
 // refuses (returning an error) when no interactive terminal is available, so
 // scripts/agent runs must pass --force instead of deleting silently.
 func TestConfirmPlatformDomainDeleteNonInteractive(t *testing.T) {
-	_, err := confirmPlatformDomainDelete("7", false)
+	_, err := promptPlatformDomainDelete("7", false)
 	require.Error(t, err)
 	require.ErrorContains(t, err, "pass --force")
+}
+
+// TestAdminActionAdapterPlatformDomainDeleteInteractiveConfirmed asserts a
+// confirmed interactive delete (no --force) still sets confirm=true so the
+// handler is invoked. Guards the regression where the confirmed path left
+// confirm=false and the handler rejected the deletion.
+func TestAdminActionAdapterPlatformDomainDeleteInteractiveConfirmed(t *testing.T) {
+	defer func(orig func(string, bool) (bool, error)) { confirmPlatformDomainDelete = orig }(confirmPlatformDomainDelete)
+	confirmPlatformDomainDelete = func(deleteID string, interactive bool) (bool, error) {
+		return true, nil
+	}
+
+	deleted := false
+	op := deleteOp(&deleted)
+	cmd := &cli.Command{
+		Name:   "delete",
+		Flags:  []cli.Flag{&cli.BoolFlag{Name: FlagForce}, &cli.BoolFlag{Name: FlagConfirm}, &cli.BoolFlag{Name: FlagJSON}},
+		Action: adminActionAdapter(op),
+	}
+
+	require.NoError(t, cmd.Run(context.Background(), []string{"pinner", "7"}))
+	require.True(t, deleted, "delete handler must be invoked after interactive confirmation")
+	h := op.Handler().(*captureHandler)
+	assert.Equal(t, true, h.input["confirm"], "confirmed interactive delete must set confirm=true")
 }
 
 // TestAdminActionAdapterForwardsPositionalAndFlags verifies the adapter maps a

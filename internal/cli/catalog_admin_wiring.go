@@ -290,6 +290,7 @@ func adminActionAdapter(op catalog.Operation) cli.ActionFunc {
 					if !ok {
 						return fmt.Errorf("deletion aborted")
 					}
+					confirm = true
 				default:
 					return fmt.Errorf("%s: pass --force to confirm this destructive operation", op.Name())
 				}
@@ -309,11 +310,16 @@ func adminActionAdapter(op catalog.Operation) cli.ActionFunc {
 }
 
 // confirmPlatformDomainDelete confirms an irreversible platform-domain deletion
-// with a human operator. When no interactive terminal is available (scripts,
+// with a human operator. As a package-level var it can be swapped in tests to
+// drive the interactive path deterministically.
+var confirmPlatformDomainDelete = promptPlatformDomainDelete
+
+// promptPlatformDomainDelete prompts a human operator to confirm an irreversible
+// platform-domain deletion. When no interactive terminal is available (scripts,
 // --json/agent runs) it returns an error directing the caller to --force, so
 // nothing is deleted without an explicit override; otherwise it returns whether
 // the operator accepted the prompt.
-func confirmPlatformDomainDelete(deleteID string, interactive bool) (bool, error) {
+func promptPlatformDomainDelete(deleteID string, interactive bool) (bool, error) {
 	if !interactive {
 		return false, fmt.Errorf("%s: pass --force to confirm this destructive operation", catalogops.OpAdminPlatformDomainsDelete)
 	}
