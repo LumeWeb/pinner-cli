@@ -284,18 +284,18 @@ type VaultVersionListResult struct {
 // VaultVersionGetResult is the data returned by vault_version_get: the
 // requested version's record.
 type VaultVersionGetResult struct {
-	Path          string `json:"path"`
-	VaultVersion  `json:",inline"`
+	Path         string `json:"path"`
+	VaultVersion `json:",inline"`
 }
 
 // VaultVersionRestoreResult is the data returned by vault_version_restore:
 // the new (restored) version that became the live current winner.
 type VaultVersionRestoreResult struct {
-	Path        string `json:"path"`
-	RestoredTo  string `json:"restored_to"` // new version_id
-	ObjectKey   string `json:"object_key"`
+	Path          string `json:"path"`
+	RestoredTo    string `json:"restored_to"` // new version_id
+	ObjectKey     string `json:"object_key"`
 	ContentDigest string `json:"content_digest,omitempty"`
-	Size        int64  `json:"size"`
+	Size          int64  `json:"size"`
 }
 
 func vaultVersionLs(d VaultDeps) catalog.Operation {
@@ -309,10 +309,10 @@ func vaultVersionLs(d VaultDeps) catalog.Operation {
 		Interaction: catalog.InteractionAgentSafe,
 		Visibility:  catalog.VisibilityBoth,
 		Positional:  "<path>",
-		Args: []catalog.OperationArg{
-			{Name: "path", Type: catalog.ArgTypeString, Required: true, Help: "Vault path whose versions to list", AgentHelp: "The vault:/ path whose version history to list."},
-			{Name: "profile", Type: catalog.ArgTypeString, Help: "Vault profile name (defaults to active profile)"},
-		},
+		Args: append(catalog.ListArgs(),
+			catalog.OperationArg{Name: "path", Type: catalog.ArgTypeString, Required: true, Help: "Vault path whose versions to list", AgentHelp: "The vault:/ path whose version history to list."},
+			catalog.OperationArg{Name: "profile", Type: catalog.ArgTypeString, Help: "Vault profile name (defaults to active profile)"},
+		),
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			vaultPath := catalog.StrArg(input, "path", "")
 			if vaultPath == "" {
@@ -331,9 +331,9 @@ func vaultVersionLs(d VaultDeps) catalog.Operation {
 			if err != nil {
 				return nil, err
 			}
-			res := &VaultVersionListResult{Path: vaultPath, Versions: make([]VaultVersion, 0, len(versions))}
+			items := make([]VaultVersion, 0, len(versions))
 			for _, f := range versions {
-				res.Versions = append(res.Versions, VaultVersion{
+				items = append(items, VaultVersion{
 					VersionID:     f.VersionID,
 					Seq:           f.Seq,
 					ObjectKey:     f.ObjectKey,
@@ -345,7 +345,20 @@ func vaultVersionLs(d VaultDeps) catalog.Operation {
 					UpdatedAt:     f.UpdatedAt.UTC().Format(time.RFC3339),
 				})
 			}
-			return res, nil
+			page := catalog.ParseList(input)
+			items = slicePage(items, page.Start, page.Limit)
+			headers := []string{"Version ID", "Seq", "Current", "Size", "Updated"}
+			rows := make([][]string, 0, len(items))
+			for _, v := range items {
+				cur := ""
+				if v.IsCurrent {
+					cur = "*"
+				}
+				rows = append(rows, []string{v.VersionID, fmt.Sprintf("%d", v.Seq), cur, fmt.Sprintf("%d", v.Size), v.UpdatedAt})
+			}
+			return NewListResult(items, ListResultMeta{
+				Noun: "vault version(s)", Headers: headers, Rows: rows,
+			}), nil
 		}),
 	})
 }
@@ -542,9 +555,9 @@ type VaultSearchResult struct {
 }
 
 type vaultItem struct {
-	Path  string   `json:"path"`
-	Size  int64    `json:"size,omitempty"`
-	Tags  []string `json:"tags,omitempty"`
+	Path string   `json:"path"`
+	Size int64    `json:"size,omitempty"`
+	Tags []string `json:"tags,omitempty"`
 }
 
 func vaultSearch(d VaultDeps) catalog.Operation {
@@ -726,16 +739,25 @@ func vaultTagLs(d VaultDeps) catalog.Operation {
 		Safety:      catalog.SafetyRead,
 		Interaction: catalog.InteractionAgentSafe,
 		Visibility:  catalog.VisibilityBoth,
-		Args: []catalog.OperationArg{
-			{Name: "profile", Type: catalog.ArgTypeString, Help: "Vault profile name (defaults to active profile)"},
-		},
+		Args: append(catalog.ListArgs(),
+			catalog.OperationArg{Name: "profile", Type: catalog.ArgTypeString, Help: "Vault profile name (defaults to active profile)"},
+		),
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			return withService(ctx, d, input, func(ctx context.Context, svc vault.VaultService) (any, error) {
 				tags, err := svc.TagList(ctx)
 				if err != nil {
 					return nil, err
 				}
-				return &VaultTagListResult{Tags: tags}, nil
+				page := catalog.ParseList(input)
+				items := slicePage(tags, page.Start, page.Limit)
+				headers := []string{"Tag"}
+				rows := make([][]string, 0, len(items))
+				for _, t := range items {
+					rows = append(rows, []string{t})
+				}
+				return NewListResult(items, ListResultMeta{
+					Noun: "vault tag(s)", Headers: headers, Rows: rows,
+				}), nil
 			})
 		}),
 	})
