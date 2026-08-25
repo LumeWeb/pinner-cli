@@ -179,10 +179,12 @@ func adminQuotaPlansCreate(d AdminDeps) catalog.Operation {
 				return nil, err
 			}
 			if catalog.BoolArg(input, "is-default", false) {
-				if err := svc.SetDefaultPlan(ctx, fmt.Sprintf("%d", created.Id)); err != nil {
-					return nil, fmt.Errorf("plan created but failed to set as default: %w", err)
+				// The plan is already committed; treat a default-set failure as
+				// non-fatal so a retry doesn't create a duplicate plan. The
+				// caller can set the default in a follow-up update if needed.
+				if err := svc.SetDefaultPlan(ctx, fmt.Sprintf("%d", created.Id)); err == nil {
+					created.IsDefault = true
 				}
-				created.IsDefault = true
 			}
 			return created, nil
 		}),
@@ -225,7 +227,16 @@ func adminQuotaPlansUpdate(d AdminDeps) catalog.Operation {
 			if planID == "" {
 				return nil, fmt.Errorf("admin_quota_plans_update: plan ID is required")
 			}
-			if !hasAny(input, "name", "description", "upload-limit", "download-limit", "storage-limit", "window-type", "is-active", "is-default") {
+			// Flag presence is not enough (the CLI fills every arg), so check the
+			// effective (non-default) values actually being changed.
+			if catalog.StrArg(input, "name", "") == "" &&
+				catalog.StrArg(input, "description", "") == "" &&
+				catalog.StrArg(input, "window-type", "") == "" &&
+				catalog.IntArgPtr(input, "upload-limit") == nil &&
+				catalog.IntArgPtr(input, "download-limit") == nil &&
+				catalog.IntArgPtr(input, "storage-limit") == nil &&
+				catalog.BoolArgPtr(input, "is-active") == nil &&
+				catalog.BoolArgPtr(input, "is-default") == nil {
 				return nil, fmt.Errorf("admin_quota_plans_update: at least one field is required")
 			}
 			existing, err := svc.GetPlan(ctx, planID)
@@ -467,10 +478,21 @@ func adminQuotaAllowancesUpdate(d AdminDeps) catalog.Operation {
 			if grantID == "" {
 				return nil, fmt.Errorf("admin_quota_allowances_update: grant ID is required")
 			}
-			return svc.UpdateAllowance(ctx, grantID,
-				catalog.IntArg(input, "user-id", 0),
-				catalog.StrArg(input, "source", ""),
-				catalog.StrArg(input, "quota-type", ""),
+			// Full-replace PUT: the CLI relaxes the Required markers, so validate
+			// the identity/type fields at runtime to avoid forwarding zeros.
+			userID := catalog.IntArg(input, "user-id", 0)
+			source := catalog.StrArg(input, "source", "")
+			quotaType := catalog.StrArg(input, "quota-type", "")
+			if userID <= 0 {
+				return nil, fmt.Errorf("admin_quota_allowances_update: user-id is required")
+			}
+			if source == "" {
+				return nil, fmt.Errorf("admin_quota_allowances_update: source is required")
+			}
+			if quotaType == "" {
+				return nil, fmt.Errorf("admin_quota_allowances_update: quota-type is required")
+			}
+			return svc.UpdateAllowance(ctx, grantID, userID, source, quotaType,
 				catalog.IntArg(input, "upload-limit", 0),
 				catalog.IntArg(input, "download-limit", 0),
 				catalog.IntArg(input, "storage-limit", 0),
@@ -732,16 +754,6 @@ func expiryTime(input map[string]any) time.Time {
 		return time.Time{}
 	}
 	return time.Now().AddDate(0, 0, days)
-}
-
-// hasAny reports whether any of the named keys is present in input.
-func hasAny(input map[string]any, keys ...string) bool {
-	for _, k := range keys {
-		if _, ok := input[k]; ok {
-			return true
-		}
-	}
-	return false
 }
 
 // setLimitFields populates the limit/threshold/window override fields on a user
