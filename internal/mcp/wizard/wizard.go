@@ -202,14 +202,14 @@ func (v WebsitesDomainSourceValue) Valid() bool {
 // defaults to platform_subdomain so agents never have to invent a domain.
 //
 // For a custom domain: set source=custom_domain and domain.
-// For a platform subdomain: set source=platform_subdomain with a label (the
-// wizard checks availability and builds the exact FQDN) — or generate=true
-// plus an explicit FQDN domain to let the platform auto-generate the label.
+// For a platform subdomain: set source=platform_subdomain with generate=true
+// (default — platform auto-generates the label) or provide an explicit label
+// only when the user has specifically requested one.
 type WebsitesDomainInput struct {
 	Source            WebsitesDomainSourceValue `json:"source,omitempty" jsonschema:"enum=platform_subdomain,enum=custom_domain,description=How the website domain is obtained. Defaults to platform_subdomain when no domain is given; defaults to custom_domain when a domain is supplied. If the user has no domain, use platform_subdomain."`
 	Domain            string                    `json:"domain,omitempty" jsonschema:"description=The custom domain (e.g. example.com) when source=custom_domain. Not needed for platform_subdomain: the wizard derives the platform root automatically (or use platform_domain to pin a specific root)."`
-	Label             string                    `json:"label,omitempty" jsonschema:"description=Desired subdomain label under a platform root when source=platform_subdomain (e.g. myapp for myapp.<root>). Check availability first if needed."`
-	Generate          bool                      `json:"generate,omitempty" jsonschema:"description=Ask the platform to auto-generate a subdomain label. The wizard derives the platform root automatically; no label or FQDN is needed."`
+	Label             string                    `json:"label,omitempty" jsonschema:"description=Explicit subdomain label under a platform root when source=platform_subdomain (e.g. myapp for myapp.<root>). Only use when the user has explicitly supplied or requested a specific label; otherwise prefer generate=true."`
+	Generate          bool                      `json:"generate,omitempty" jsonschema:"description=Ask the platform to auto-generate a subdomain label. This is the default when no label preference exists. The wizard derives the platform root automatically; no label or FQDN is needed."`
 	PlatformDomain    string                    `json:"platform_domain,omitempty" jsonschema:"description=Platform (free-subdomain) root domain to claim under (e.g. pinned.site). Defaults to domain when claiming."`
 	PlatformNamespace string                    `json:"platform_namespace,omitempty" jsonschema:"description=Namespace within the platform domain to claim under (default icann)."`
 }
@@ -653,8 +653,8 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []session.StepDef {
 					return "", nil
 				}
 
-				// Neither label nor generate: guide the agent to derive one.
-				return "", fmt.Errorf("platform_subdomain requires a label (e.g. label=\"myapp\") or generate=true. If the user has no domain preference, call websites_platform_domain_availability to find an available label and root.")
+				// Neither label nor generate: default to generate=true.
+				return "", fmt.Errorf("platform_subdomain requires either generate=true (default - auto-generates a label) or an explicit label (only when the user has specifically requested one). When in doubt, use generate=true.")
 			},
 			Schema: func(_ *session.Session) *jsonschema.Schema {
 				return toolargs.SchemaFor[WebsitesDomainInput]()
