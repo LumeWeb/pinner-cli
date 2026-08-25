@@ -16,6 +16,7 @@ import (
 	ipfs "go.lumeweb.com/ipfs-sdk"
 	"go.lumeweb.com/pinner-cli/internal/cli/internal"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner-cli/internal/core/pinning"
 	portalsdk "go.lumeweb.com/portal-sdk"
 )
 
@@ -200,12 +201,13 @@ func (s *PinningServiceDefault) Pin(ctx context.Context, cidStr, name string, wa
 	return NewPinResult(cidStr, result.GetRequestId(), result.GetStatus().String()), nil
 }
 
-// List returns a list of pinned content with optional filters. nameFilter is
-// an exact name match; search is a server-side substring name match
+// List returns a list of pinned content with the shared list options. Name is
+// an exact name match; Search is a server-side substring name match
 // (match=partial) composed with the other filters. Both filters, plus status,
 // are evaluated server-side via the ipfs-sdk pinning service so results are
-// never post-filtered client-side.
-func (s *PinningServiceDefault) List(ctx context.Context, nameFilter string, limit int, statusFilter string, search string) ([]Pin, error) {
+// never post-filtered client-side. The ipfs pinning-service spec has no
+// server-side offset, so Start paging is applied client-side.
+func (s *PinningServiceDefault) List(ctx context.Context, opts pinning.ListOptions) ([]Pin, error) {
 	if err := s.RequireAuthenticated(); err != nil {
 		return nil, err
 	}
@@ -213,7 +215,7 @@ func (s *PinningServiceDefault) List(ctx context.Context, nameFilter string, lim
 	s.output.PrintVerbosef("Using API endpoint: %s", s.apiEndpoint)
 
 	if s.sdkPinningSvc != nil {
-		pins, err := s.listViaSDK(ctx, nameFilter, limit, statusFilter, search)
+		pins, err := s.listViaSDK(ctx, opts)
 		if err != nil {
 			return nil, wrapPinningError("List pins", err, ErrPinningFailed)
 		}
@@ -224,7 +226,7 @@ func (s *PinningServiceDefault) List(ctx context.Context, nameFilter string, lim
 	// cannot send match=partial, so search is unavailable on this path. Keep the
 	// exact name/status filters server-side.
 	s.output.PrintVerbosef("ipfs-sdk pinning service unavailable; listing via boxo without substring search")
-	pins, err := s.listViaBoxo(ctx, nameFilter, limit, statusFilter)
+	pins, err := s.listViaBoxo(ctx, opts)
 	if err != nil {
 		return nil, wrapPinningError("List pins", err, ErrPinningFailed)
 	}
@@ -234,34 +236,36 @@ func (s *PinningServiceDefault) List(ctx context.Context, nameFilter string, lim
 // listViaSDK lists pins through the ipfs-sdk pinning service, sending the
 // name/status/search filters as server-side query params (name, status,
 // match=partial for search).
-func (s *PinningServiceDefault) listViaSDK(ctx context.Context, nameFilter string, limit int, statusFilter string, search string) ([]Pin, error) {
-	opts := []ipfs.ListOption{}
-	if search != "" {
+func (s *PinningServiceDefault) listViaSDK(ctx context.Context, opts pinning.ListOptions) ([]Pin, error) {
+	o := []ipfs.ListOption{}
+	if opts.Search != "" {
 		// Server-side substring name search (IPFS Pinning Services spec's
 		// match=partial), via the SDK's name-partial helper so the match
 		// strategy type stays encapsulated.
-		opts = append(opts, ipfs.WithFilterNamePartial(search))
-	} else if nameFilter != "" {
+		o = append(o, ipfs.WithFilterNamePartial(opts.Search))
+	} else if opts.Name != "" {
 		// Exact name match, sent with an explicit match=exact strategy. The
 		// suffix-search path above pins match=partial; without a declared match
 		// the name would ride bare and pinning-service backends that require an
 		// explicit strategy would ignore it (returning the full list) even
 		// though status/limit still filter.
-		opts = append(opts, ipfs.WithFilterName(nameFilter), ipfs.WithFilterMatch(ipfs.MatchExact))
+		o = append(o, ipfs.WithFilterName(opts.Name), ipfs.WithFilterMatch(ipfs.MatchExact))
 	}
-	if statusFilter != "" {
-		opts = append(opts, ipfs.WithFilterStatus(ipfs.PinStatusEnum(statusFilter)))
+	if opts.Status != "" {
+		o = append(o, ipfs.WithFilterStatus(ipfs.PinStatusEnum(opts.Status)))
 	}
-	if limit > 0 {
-		opts = append(opts, ipfs.WithLimit(int32(limit)))
+	// The pinning-service spec has no offset, so when paging we fetch
+	// Start+Limit rows and slice off the first Start client-side.
+	if opts.Limit > 0 || opts.Start > 0 {
+		o = append(o, ipfs.WithPinningLimit(int32(opts.Start+opts.Limit)))
 	}
 
-	statuses, err := s.sdkPinningSvc.ListPins(ctx, opts...)
+	statuses, err := s.sdkPinningSvc.ListPins(ctx, o...)
 	if err != nil {
 		return nil, err
 	}
 
-	return lo.Map(statuses, func(ps ipfs.PinStatus, _ int) Pin {
+	pins := lo.Map(statuses, func(ps ipfs.PinStatus, _ int) Pin {
 		name := ""
 		if ps.Pin.Name != nil {
 			name = *ps.Pin.Name
@@ -274,7 +278,24 @@ func (s *PinningServiceDefault) listViaSDK(ctx context.Context, nameFilter strin
 			RequestID: ps.Requestid,
 			Metadata:  mapMeta(ps.Pin.Meta),
 		}
-	}), nil
+	})
+	return pagePins(pins, opts.Start, opts.Limit), nil
+}
+
+// pagePins applies the client-side Start/Limit slice when the backend has no
+// server-side offset (ipfs pinning service). A zero Limit means "keep all
+// rows from Start onward".
+func pagePins(pins []Pin, start, limit int) []Pin {
+	if start > 0 {
+		if start >= len(pins) {
+			return []Pin{}
+		}
+		pins = pins[start:]
+	}
+	if limit > 0 && len(pins) > limit {
+		pins = pins[:limit]
+	}
+	return pins
 }
 
 // mapMeta converts the SDK's *PinMeta metadata to a plain map.
@@ -288,29 +309,29 @@ func mapMeta(meta *ipfs.PinMeta) map[string]string {
 // listViaBoxo lists pins through the boxo client. It preserves the historical
 // behavior (server-side name/status filters; no match=partial substring search)
 // as a fallback when the SDK pinning service could not be constructed.
-func (s *PinningServiceDefault) listViaBoxo(ctx context.Context, nameFilter string, limit int, statusFilter string) ([]Pin, error) {
-	opts := []go_pinning_service_http_client.LsOption{}
-	if nameFilter != "" {
-		opts = append(opts, go_pinning_service_http_client.PinOpts.FilterName(nameFilter))
+func (s *PinningServiceDefault) listViaBoxo(ctx context.Context, opts pinning.ListOptions) ([]Pin, error) {
+	o := []go_pinning_service_http_client.LsOption{}
+	if opts.Name != "" {
+		o = append(o, go_pinning_service_http_client.PinOpts.FilterName(opts.Name))
 	}
-	if statusFilter != "" {
-		opts = append(opts, go_pinning_service_http_client.PinOpts.FilterStatus(go_pinning_service_http_client.Status(statusFilter)))
+	if opts.Status != "" {
+		o = append(o, go_pinning_service_http_client.PinOpts.FilterStatus(go_pinning_service_http_client.Status(opts.Status)))
 	}
 
 	var (
 		results []go_pinning_service_http_client.PinStatusGetter
 		err     error
 	)
-	if limit > 0 {
-		results, err = s.pinningClient.LsWithLimit(ctx, limit, opts...)
+	if opts.Start > 0 || opts.Limit > 0 {
+		results, err = s.pinningClient.LsWithLimit(ctx, opts.Start+opts.Limit, o...)
 	} else {
-		results, err = s.pinningClient.LsSync(ctx, opts...)
+		results, err = s.pinningClient.LsSync(ctx, o...)
 	}
 	if err != nil {
 		return nil, err
 	}
 
-	return lo.Map(results, func(r go_pinning_service_http_client.PinStatusGetter, _ int) Pin {
+	pins := lo.Map(results, func(r go_pinning_service_http_client.PinStatusGetter, _ int) Pin {
 		pin := r.GetPin()
 		return Pin{
 			CID:       pin.GetCid().String(),
@@ -320,7 +341,8 @@ func (s *PinningServiceDefault) listViaBoxo(ctx context.Context, nameFilter stri
 			RequestID: r.GetRequestId(),
 			Metadata:  pin.GetMeta(),
 		}
-	}), nil
+	})
+	return pagePins(pins, opts.Start, opts.Limit), nil
 }
 
 // Status returns the status of a pin.
@@ -748,7 +770,7 @@ func (s *PinningServiceDefault) UnpinAll(ctx context.Context, statusFilter strin
 
 	s.output.PrintVerbosef("Using API endpoint: %s", s.apiEndpoint)
 
-	pins, err := s.List(ctx, "", 0, statusFilter, "")
+	pins, err := s.List(ctx, pinning.ListOptions{Status: statusFilter})
 	if err != nil {
 		return nil, err
 	}

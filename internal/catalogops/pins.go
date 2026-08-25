@@ -133,12 +133,11 @@ func pinsList(d PinsDeps) catalog.Operation {
 		Interaction: catalog.InteractionAgentSafe,
 		Visibility:  catalog.VisibilityBoth,
 		Positional:  "",
-		Args: []catalog.OperationArg{
-			{Name: "name", Type: catalog.ArgTypeString, Help: "Filter pins by exact name"},
-			{Name: "limit", Type: catalog.ArgTypeInt, Default: "0", Help: "Maximum number of pins to return (0 = no limit)"},
-			{Name: "status", Type: catalog.ArgTypeString, Help: "Filter pins by status (e.g. pinned, unpinned, failed)"},
-			{Name: "search", Type: catalog.ArgTypeString, Help: "Full-text search evaluated server-side against pin name (substring)"},
-		},
+		Args: append(catalog.ListArgs(),
+			catalog.OperationArg{Name: "name", Type: catalog.ArgTypeString, Help: "Filter pins by exact name"},
+			catalog.OperationArg{Name: "status", Type: catalog.ArgTypeString, Help: "Filter pins by status (e.g. pinned, unpinned, failed)"},
+			catalog.OperationArg{Name: "search", Type: catalog.ArgTypeString, Help: "Full-text search evaluated server-side against pin name (substring)"},
+		),
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			svc, svcErr := d.service(input)
 			if svcErr != nil {
@@ -147,11 +146,27 @@ func pinsList(d PinsDeps) catalog.Operation {
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
-			pins, err := svc.List(ctx, catalog.StrArg(input, "name", ""), catalog.IntArg(input, "limit", 0), catalog.StrArg(input, "status", ""), catalog.SearchArg(input))
+			page := catalog.ParseList(input)
+			pins, err := svc.List(ctx, pinning.ListOptions{
+				Start:  page.Start,
+				Limit:  page.Limit,
+				Name:   catalog.StrArg(input, "name", ""),
+				Status: catalog.StrArg(input, "status", ""),
+				Search: catalog.SearchArg(input),
+			})
 			if err != nil {
 				return nil, err
 			}
-			return pins, nil
+			headers := []string{"CID", "NAME", "STATUS", "CREATED"}
+			rows := make([][]string, 0, len(pins))
+			for _, p := range pins {
+				rows = append(rows, []string{p.CID, p.Name, p.Status, p.Created})
+			}
+			return NewListResult(pins, ListResultMeta{
+				Noun:    "pin(s)",
+				Headers: headers,
+				Rows:    rows,
+			}), nil
 		}),
 	})
 }
@@ -330,7 +345,7 @@ func pinsRemove(d PinsDeps) catalog.Operation {
 				if catalog.BoolArg(input, "dry-run", false) {
 					// Report the request IDs that would be unpinned without
 					// mutating state. Naming them requires a read-only List.
-					pins, err := svc.List(ctx, "", 0, statusFilter, "")
+					pins, err := svc.List(ctx, pinning.ListOptions{Status: statusFilter})
 					if err != nil {
 						return nil, err
 					}

@@ -100,10 +100,10 @@ type PinningService interface {
 	// Pin multiple CIDs in batch
 	PinBatch(ctx context.Context, cids []string, name string, opts BatchOptions) (*BatchResult, error)
 
-	// List pinned content with optional filters. search (when non-empty) is a
-	// server-side name substring match (match=partial) composed with the other
-	// filters; nameFilter is an exact name match.
-	List(ctx context.Context, nameFilter string, limit int, statusFilter string, search string) ([]Pin, error)
+	// List pinned content with the shared list options. search (when non-empty)
+	// is a server-side name substring match (match=partial) composed with the
+	// other filters; Name is an exact name match.
+	List(ctx context.Context, opts ListOptions) ([]Pin, error)
 
 	// Get status of a pin
 	Status(ctx context.Context, cid string, watch bool) (*PinStatus, error)
@@ -128,6 +128,18 @@ type PinningService interface {
 
 	// RequireAuthenticated checks if the service is authenticated.
 	RequireAuthenticated() error
+}
+
+// ListOptions filters and paginates a pin listing. Start/Limit follow the
+// shared list protocol; the ipfs pinning-service spec has no server-side
+// offset, so Start is applied client-side to the fetched page when Limit is
+// set (see the CLI implementation).
+type ListOptions struct {
+	Start  int
+	Limit  int
+	Name   string // exact name match
+	Status string // status filter (e.g. pinned, unpinned, failed)
+	Search string // server-side substring name match
 }
 
 // StatusService defines the interface for checking CID status with pin and operation fallback.

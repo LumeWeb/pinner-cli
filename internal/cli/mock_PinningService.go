@@ -39,8 +39,8 @@ func (_m *MockPinningService) EXPECT() *MockPinningService_Expecter {
 }
 
 // List provides a mock function for the type MockPinningService
-func (_mock *MockPinningService) List(ctx context.Context, nameFilter string, limit int, statusFilter string, search string) ([]pinning.Pin, error) {
-	ret := _mock.Called(ctx, nameFilter, limit, statusFilter, search)
+func (_mock *MockPinningService) List(ctx context.Context, opts pinning.ListOptions) ([]pinning.Pin, error) {
+	ret := _mock.Called(ctx, opts)
 
 	if len(ret) == 0 {
 		panic("no return value specified for List")
@@ -48,18 +48,18 @@ func (_mock *MockPinningService) List(ctx context.Context, nameFilter string, li
 
 	var r0 []pinning.Pin
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int, string, string) ([]pinning.Pin, error)); ok {
-		return returnFunc(ctx, nameFilter, limit, statusFilter, search)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, pinning.ListOptions) ([]pinning.Pin, error)); ok {
+		return returnFunc(ctx, opts)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int, string, string) []pinning.Pin); ok {
-		r0 = returnFunc(ctx, nameFilter, limit, statusFilter, search)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, pinning.ListOptions) []pinning.Pin); ok {
+		r0 = returnFunc(ctx, opts)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]pinning.Pin)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, string, int, string, string) error); ok {
-		r1 = returnFunc(ctx, nameFilter, limit, statusFilter, search)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, pinning.ListOptions) error); ok {
+		r1 = returnFunc(ctx, opts)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -73,43 +73,22 @@ type MockPinningService_List_Call struct {
 
 // List is a helper method to define mock.On call
 //   - ctx context.Context
-//   - nameFilter string
-//   - limit int
-//   - statusFilter string
-//   - search string
-func (_e *MockPinningService_Expecter) List(ctx interface{}, nameFilter interface{}, limit interface{}, statusFilter interface{}, search interface{}) *MockPinningService_List_Call {
-	return &MockPinningService_List_Call{Call: _e.mock.On("List", ctx, nameFilter, limit, statusFilter, search)}
+//   - opts pinning.ListOptions
+func (_e *MockPinningService_Expecter) List(ctx interface{}, opts interface{}) *MockPinningService_List_Call {
+	return &MockPinningService_List_Call{Call: _e.mock.On("List", ctx, opts)}
 }
 
-func (_c *MockPinningService_List_Call) Run(run func(ctx context.Context, nameFilter string, limit int, statusFilter string, search string)) *MockPinningService_List_Call {
+func (_c *MockPinningService_List_Call) Run(run func(ctx context.Context, opts pinning.ListOptions)) *MockPinningService_List_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 string
+		var arg1 pinning.ListOptions
 		if args[1] != nil {
-			arg1 = args[1].(string)
+			arg1 = args[1].(pinning.ListOptions)
 		}
-		var arg2 int
-		if args[2] != nil {
-			arg2 = args[2].(int)
-		}
-		var arg3 string
-		if args[3] != nil {
-			arg3 = args[3].(string)
-		}
-		var arg4 string
-		if args[4] != nil {
-			arg4 = args[4].(string)
-		}
-		run(
-			arg0,
-			arg1,
-			arg2,
-			arg3,
-			arg4,
-		)
+		run(arg0, arg1)
 	})
 	return _c
 }
@@ -119,7 +98,7 @@ func (_c *MockPinningService_List_Call) Return(pins []pinning.Pin, err error) *M
 	return _c
 }
 
-func (_c *MockPinningService_List_Call) RunAndReturn(run func(ctx context.Context, nameFilter string, limit int, statusFilter string, search string) ([]pinning.Pin, error)) *MockPinningService_List_Call {
+func (_c *MockPinningService_List_Call) RunAndReturn(run func(ctx context.Context, opts pinning.ListOptions) ([]pinning.Pin, error)) *MockPinningService_List_Call {
 	_c.Call.Return(run)
 	return _c
 }

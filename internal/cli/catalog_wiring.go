@@ -249,7 +249,7 @@ func catalogActionAdapter(op catalog.Operation, group string) cli.ActionFunc {
 				return svcErr
 			}
 			statusFilter, _ := input["status"].(string)
-			pins, err := svc.List(ctx, "", 0, statusFilter, "")
+			pins, err := svc.List(ctx, pinning.ListOptions{Status: statusFilter})
 			if err != nil {
 				return err
 			}
@@ -309,18 +309,8 @@ func renderCatalogResult(_ context.Context, c *cli.Command, op catalog.Operation
 		renderCatalogDryRun(output, c, r)
 		return nil
 
-	case []pinning.Pin:
-		if len(r) == 0 {
-			output.Printfln("No pins found")
-			return nil
-		}
-		output.Printfln("Found %d pin(s)", len(r))
-		rows := make([][]string, len(r))
-		for i, p := range r {
-			rows[i] = []string{p.CID, p.Name, p.Status, p.Created}
-		}
-		output.PrintTable([]string{"CID", "NAME", "STATUS", "CREATED"}, rows)
-		return nil
+	case catalogops.ListResult:
+		return renderListResult(output, r)
 
 	case *pinning.PinResult:
 		output.PrintFields(FieldGroup{Fields: []Field{
