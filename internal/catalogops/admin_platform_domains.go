@@ -28,7 +28,7 @@ func adminPlatformDomainsList(d AdminDeps) catalog.Operation {
 		Interaction: catalog.InteractionAgentSafe,
 		Visibility:  catalog.VisibilityBoth,
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.platformDomains(input)
+			svc, err := d.platformDomains()
 			if err != nil {
 				return nil, err
 			}
@@ -64,7 +64,7 @@ func adminPlatformDomainsRegister(d AdminDeps) catalog.Operation {
 			{Name: "enabled", Type: catalog.ArgTypeNullableBool, Required: false, Help: "Enable the platform domain so users can claim subdomains under it"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.platformDomains(input)
+			svc, err := d.platformDomains()
 			if err != nil {
 				return nil, err
 			}
@@ -105,7 +105,7 @@ func adminPlatformDomainsUpdate(d AdminDeps) catalog.Operation {
 			{Name: "enabled", Type: catalog.ArgTypeBool, Required: true, Help: "Enable (true) or disable (false) the platform domain"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.platformDomains(input)
+			svc, err := d.platformDomains()
 			if err != nil {
 				return nil, err
 			}
@@ -144,13 +144,13 @@ func adminPlatformDomainsDelete(d AdminDeps) catalog.Operation {
 		Positional:  "<id>",
 		Args: []catalog.OperationArg{
 			{Name: "id", Type: catalog.ArgTypeString, Required: true, Help: "Platform domain ID", PositionalOnly: true},
-			{Name: "confirm", Type: catalog.ArgTypeBool, Required: true, Help: "Confirm the destructive delete", AgentHelp: "Must be true to delete the platform domain; this is destructive and cannot be undone."},
+			{Name: "confirm", Type: catalog.ArgTypeBool, AgentRequired: true, Help: "Confirm the destructive delete", AgentHelp: "Must be true to delete the platform domain; this is destructive and cannot be undone. Only a human sets this on confirmation; a model alone cannot confirm a destructive delete."},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			if !catalog.BoolArg(input, "confirm", false) {
 				return nil, fmt.Errorf("admin_platform_domains_delete: confirmation is required to delete the platform domain")
 			}
-			svc, err := d.platformDomains(input)
+			svc, err := d.platformDomains()
 			if err != nil {
 				return nil, err
 			}
@@ -186,7 +186,7 @@ func adminPlatformDomainsBind(d AdminDeps) catalog.Operation {
 			{Name: "website-id", Type: catalog.ArgTypeInt, Required: true, Help: "ID of the operator-owned website to bind"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.platformDomains(input)
+			svc, err := d.platformDomains()
 			if err != nil {
 				return nil, err
 			}

@@ -73,8 +73,7 @@ func resolveService[T any](cfgMgr config.Manager, getter func(cfgMgr config.Mana
 }
 
 // platformDomains resolves the PlatformDomainAdminService for this invocation.
-func (d AdminDeps) platformDomains(input map[string]any) (admin.PlatformDomainAdminService, error) {
-	_ = input // reserved for a future per-invocation --auth-token override
+func (d AdminDeps) platformDomains() (admin.PlatformDomainAdminService, error) {
 	cfgMgr, err := d.requireConfig()
 	if err != nil {
 		return nil, err

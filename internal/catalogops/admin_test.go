@@ -140,6 +140,50 @@ func TestAdminPlatformDomainsListAuthGate(t *testing.T) {
 	}
 }
 
+// TestAdminPlatformDomainsRegisterAuthGate asserts the mutating register op
+// honors the auth gate before invoking the service.
+func TestAdminPlatformDomainsRegisterAuthGate(t *testing.T) {
+	svc := &fakePlatformDomainService{requireAuth: func() error { return errors.New("not authenticated") }}
+	op := adminPlatformDomainsRegister(testAdminDeps(t, svc))
+	_, err := op.Handler().Execute(context.Background(), map[string]any{"domain": "x.pin.xyz", "namespace": "icann"})
+	if err == nil || err.Error() != "not authenticated" {
+		t.Fatalf("expected not-authenticated error, got %v", err)
+	}
+}
+
+// TestAdminPlatformDomainsUpdateAuthGate asserts the mutating update op honors
+// the auth gate.
+func TestAdminPlatformDomainsUpdateAuthGate(t *testing.T) {
+	svc := &fakePlatformDomainService{requireAuth: func() error { return errors.New("not authenticated") }}
+	op := adminPlatformDomainsUpdate(testAdminDeps(t, svc))
+	_, err := op.Handler().Execute(context.Background(), map[string]any{"id": "7", "enabled": true})
+	if err == nil || err.Error() != "not authenticated" {
+		t.Fatalf("expected not-authenticated error, got %v", err)
+	}
+}
+
+// TestAdminPlatformDomainsDeleteAuthGate asserts the destructive delete op
+// honors the auth gate.
+func TestAdminPlatformDomainsDeleteAuthGate(t *testing.T) {
+	svc := &fakePlatformDomainService{requireAuth: func() error { return errors.New("not authenticated") }}
+	op := adminPlatformDomainsDelete(testAdminDeps(t, svc))
+	_, err := op.Handler().Execute(context.Background(), map[string]any{"id": "7", "confirm": true})
+	if err == nil || err.Error() != "not authenticated" {
+		t.Fatalf("expected not-authenticated error, got %v", err)
+	}
+}
+
+// TestAdminPlatformDomainsBindAuthGate asserts the mutating bind op honors the
+// auth gate.
+func TestAdminPlatformDomainsBindAuthGate(t *testing.T) {
+	svc := &fakePlatformDomainService{requireAuth: func() error { return errors.New("not authenticated") }}
+	op := adminPlatformDomainsBind(testAdminDeps(t, svc))
+	_, err := op.Handler().Execute(context.Background(), map[string]any{"id": "7", "website-id": 3})
+	if err == nil || err.Error() != "not authenticated" {
+		t.Fatalf("expected not-authenticated error, got %v", err)
+	}
+}
+
 // TestAdminPlatformDomainsDeleteRequiresConfirm asserts the destructive op
 // rejects without confirm=true.
 func TestAdminPlatformDomainsDeleteRequiresConfirm(t *testing.T) {
