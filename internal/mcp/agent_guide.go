@@ -85,13 +85,18 @@ func NewAgentGuideDescriptor() model.ToolDescriptor {
 				Steps:  []string{"upload_file", "websites_create"},
 				Detail: "Upload new bytes, e.g. upload_file returning a CID, then websites_create/update. CID from upload is already pinned; no pins_add.",
 			},
-
+			{
+				Name:   "publish_website_platform_subdomain",
+				Title:  "Publish a website with a free platform subdomain (no domain needed)",
+				Steps:  []string{"upload_file", "websites_platform_domain_availability", "websites_wizard_start", "websites_wizard_step"},
+				Detail: "Upload new bytes (upload_file → CID). If the user has no domain, do NOT invent one: use the websites wizard to claim a platform subdomain — websites_wizard_start, then drive websites_wizard_step, passing {source: platform_subdomain, label: <label>} at the domain step (check websites_platform_domain_availability first to find an available label/root). The wizard creates the website with the exact FQDN and mints the subdomain with platform-managed DNS.",
+			},
 		},
 	}
 	return model.ToolDescriptor{
 		Name:        "agent_guide",
 		Title:       "Pinner agent guide",
-		Description: "Orientation for autonomous agents: the primary Pinner flows (auth, vault_create, vault_restore, upload, vault_upload, download, vault_download, pins, publish_website_upload) as ordered tool chains. Call this first to learn how to drive Pinner before probing individual tools.",
+		Description: "Orientation for autonomous agents: the primary Pinner flows (auth, vault_create, vault_restore, upload, vault_upload, download, vault_download, pins, publish_website_upload, publish_website_platform_subdomain) as ordered tool chains. Call this first to learn how to drive Pinner before probing individual tools.",
 		Category:    model.CategoryCore,
 		InputSchema: toolargs.ToolSchemaFor[wizard.NoInput](),
 		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {

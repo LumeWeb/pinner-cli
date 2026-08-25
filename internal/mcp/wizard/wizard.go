@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/invopop/jsonschema"
@@ -179,9 +180,38 @@ type TargetTypeInput struct {
 	Type TargetTypeValue `json:"type" jsonschema:"enum=ipfs,enum=ipns,description=Content addressing type: ipfs (immutable, content-addressed) or ipns (mutable name)"`
 }
 
-// DomainInput is the input for the domain step.
-type DomainInput struct {
-	Domain string `json:"domain" jsonschema:"description=The domain name for the website (e.g. example.com)"`
+// WebsitesDomainSourceValue is the source of a website's domain.
+type WebsitesDomainSourceValue string
+
+const (
+	// WebsitesDomainSourcePlatform uses a platform-provided (free) subdomain,
+	// e.g. myapp.<platform-root>. This is the default when no domain is given.
+	WebsitesDomainSourcePlatform WebsitesDomainSourceValue = "platform_subdomain"
+	// WebsitesDomainSourceCustom uses a domain the user owns.
+	WebsitesDomainSourceCustom WebsitesDomainSourceValue = "custom_domain"
+)
+
+// Valid reports whether the source value is one of the supported values.
+func (v WebsitesDomainSourceValue) Valid() bool {
+	return v == WebsitesDomainSourcePlatform || v == WebsitesDomainSourceCustom
+}
+
+// WebsitesDomainInput is the input for the domain step. It supports either a
+// custom domain the user owns, or a platform-provided (free) subdomain. If no
+// source is given, custom is inferred when a domain is supplied, otherwise it
+// defaults to platform_subdomain so agents never have to invent a domain.
+//
+// For a custom domain: set source=custom_domain and domain.
+// For a platform subdomain: set source=platform_subdomain with a label (the
+// wizard checks availability and builds the exact FQDN) — or generate=true
+// plus an explicit FQDN domain to let the platform auto-generate the label.
+type WebsitesDomainInput struct {
+	Source            WebsitesDomainSourceValue `json:"source,omitempty" jsonschema:"enum=platform_subdomain,enum=custom_domain,description=How the website domain is obtained. Defaults to platform_subdomain when no domain is given; defaults to custom_domain when a domain is supplied. If the user has no domain, use platform_subdomain."`
+	Domain            string                    `json:"domain,omitempty" jsonschema:"description=The custom domain name for the website (e.g. example.com) when source=custom_domain, or the platform root domain / FQDN when claiming a platform subdomain."`
+	Label             string                    `json:"label,omitempty" jsonschema:"description=Desired subdomain label under a platform root when source=platform_subdomain (e.g. myapp for myapp.<root>). Check availability first if needed."`
+	Generate          bool                      `json:"generate,omitempty" jsonschema:"description=Ask the platform to auto-generate a subdomain label instead of supplying one (requires an FQDN domain to create the website)."`
+	PlatformDomain    string                    `json:"platform_domain,omitempty" jsonschema:"description=Platform (free-subdomain) root domain to claim under (e.g. ipfs.pin.xyz). Defaults to domain when claiming."`
+	PlatformNamespace string                    `json:"platform_namespace,omitempty" jsonschema:"description=Namespace within the platform domain to claim under (default icann)."`
 }
 
 // DNSModeInput is the input for the dns_mode step.
@@ -384,6 +414,47 @@ type WebsitesWizardDeps struct {
 	WebsitesFactory  WebsitesWizardFactory
 }
 
+// platformAvailability probes which platform (free-subdomain) roots can
+// host the candidate label. It uses the websites resource provider (which
+// carries CheckPlatformDomainAvailability through to the portal).
+func platformAvailability(ctx context.Context, deps WebsitesWizardDeps, label string) (*ipfs.PlatformAvailabilityResponse, error) {
+	if deps.WebsitesResource == nil {
+		return nil, fmt.Errorf("platform domain availability is unavailable in this context")
+	}
+	resp, err := deps.WebsitesResource.CheckPlatformDomainAvailability(ctx, label)
+	if err != nil {
+		return nil, fmt.Errorf("platform subdomain availability check failed: %w", err)
+	}
+	return resp, nil
+}
+
+// firstAvailableRoot returns the first available platform root from the
+// availability response, or "" if none is available.
+func firstAvailableRoot(resp *ipfs.PlatformAvailabilityResponse) string {
+	if resp == nil {
+		return ""
+	}
+	for _, r := range resp.Results {
+		if r.Available {
+			return r.PlatformDomain
+		}
+	}
+	return ""
+}
+
+// listRoots returns the comma-separated list of platform roots for error
+// messages.
+func listRoots(resp *ipfs.PlatformAvailabilityResponse) string {
+	if resp == nil {
+		return ""
+	}
+	var roots []string
+	for _, r := range resp.Results {
+		roots = append(roots, r.PlatformDomain)
+	}
+	return strings.Join(roots, ", ")
+}
+
 // buildWebsitesSteps returns the StepDef slice for the websites wizard.
 // Each step's handler decodes JSON input, validates it, and mutates the
 // WebsitesWizardState state stored in the session.
@@ -451,18 +522,83 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []session.StepDef {
 			Event: EventWebsitesDomainSet,
 			Handler: func(ctx context.Context, sess *session.Session, input json.RawMessage) (string, error) {
 				w := sess.State().(WebsitesWizardState)
-				var in DomainInput
+				var in WebsitesDomainInput
 				if err := json.Unmarshal(input, &in); err != nil {
 					return "", fmt.Errorf("invalid input: %w", err)
 				}
-				if in.Domain == "" {
-					return "", fmt.Errorf("domain cannot be empty")
+
+				// Resolve the domain source. An explicit source wins; otherwise
+				// a supplied domain implies custom (backward compatible), and a
+				// missing domain defaults to a platform subdomain so agents
+				// never have to invent a domain.
+				custom := false
+				source := in.Source
+				switch source {
+				case "":
+					if in.Domain != "" {
+						source = WebsitesDomainSourceCustom
+						custom = true
+					} else {
+						source = WebsitesDomainSourcePlatform
+					}
+				case WebsitesDomainSourceCustom:
+					custom = true
+				case WebsitesDomainSourcePlatform:
+				default:
+					return "", fmt.Errorf("invalid domain source: %s (expected \"platform_subdomain\" or \"custom_domain\")", in.Source)
 				}
-				w.SetDomain(in.Domain)
-				return "", nil
+				w.SetDomainSource(string(source))
+
+				if custom {
+					if in.Domain == "" {
+						return "", fmt.Errorf("domain cannot be empty when source=custom_domain")
+					}
+					w.SetDomain(in.Domain)
+					return "", nil
+				}
+
+				// Platform (free) subdomain path: label -> availability/root ->
+				// exact FQDN. Mirrors the DomainWizard claim semantics.
+				w.SetLabel(in.Label)
+				w.SetGenerate(in.Generate)
+				w.SetPlatformNamespace(in.PlatformNamespace)
+
+				if in.Label != "" {
+					root := in.PlatformDomain
+					if root == "" {
+						root = in.Domain
+					}
+					if root == "" {
+						resp, err := platformAvailability(ctx, deps, in.Label)
+						if err != nil {
+							return "", err
+						}
+						root = firstAvailableRoot(resp)
+						if root == "" {
+							return "", fmt.Errorf("no available platform root for label %q (available roots: %s)", in.Label, listRoots(resp))
+						}
+					}
+					w.SetPlatformDomain(root)
+					w.SetDomain(in.Label + "." + root)
+					return "", nil
+				}
+
+				// No label: fall back to auto-generation, which needs an FQDN to
+				// create the website with before binding.
+				if in.Generate {
+					if in.Domain == "" {
+						return "", fmt.Errorf("platform subdomain with generate=true requires an FQDN domain to create the website, or supply a label")
+					}
+					w.SetPlatformDomain(in.Domain)
+					w.SetDomain(in.Domain)
+					return "", nil
+				}
+
+				// Neither label nor generate: guide the agent to derive one.
+				return "", fmt.Errorf("platform_subdomain requires a label (e.g. label=\"myapp\") or generate=true. If the user has no domain preference, call websites_platform_domain_availability to find an available label and root.")
 			},
 			Schema: func(_ *session.Session) *jsonschema.Schema {
-				return toolargs.SchemaFor[DomainInput]()
+				return toolargs.SchemaFor[WebsitesDomainInput]()
 			},
 		},
 		{
@@ -503,6 +639,14 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []session.StepDef {
 					targetType = string(TargetTypeIPFS)
 				}
 				dnsHosting := w.DNSHosting()
+				if w.DomainSource() == string(WebsitesDomainSourcePlatform) {
+					// Platform (free) subdomains are DNS-managed by the platform.
+					dnsHosting = true
+					w.SetDNSHosting(true)
+				}
+				if w.Domain() == "" {
+					return "", fmt.Errorf("website domain is not set")
+				}
 				req := ipfs.WebsiteRequest{
 					Domain:            w.Domain(),
 					TargetHash:        w.CID(),
@@ -514,6 +658,38 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []session.StepDef {
 					return "", fmt.Errorf("website creation failed: %w", websites.TranslateError(err))
 				}
 				w.SetWebsite(website)
+
+				// Mint a platform (free) subdomain by binding it to the newly
+				// created website, mirroring websites_domains_add: the platform
+				// claims the subdomain at bind time (label explicit, or
+				// auto-generated via generate).
+				if w.DomainSource() == string(WebsitesDomainSourcePlatform) {
+					ns := w.PlatformNamespace()
+					if ns == "" {
+						ns = "icann"
+					}
+					bindReq := ipfs.DomainRequest{
+						Domain:    w.Domain(),
+						Namespace: ns,
+					}
+					if pd := w.PlatformDomain(); pd != "" {
+						bindReq.PlatformDomain = &pd
+					}
+					if pns := w.PlatformNamespace(); pns != "" {
+						bindReq.PlatformNamespace = &pns
+					}
+					if w.Generate() {
+						g := true
+						bindReq.Generate = &g
+					}
+					if label := w.Label(); label != "" {
+						bindReq.Label = &label
+					}
+					websiteID := strconv.Itoa(int(website.Id))
+					if _, err := deps.WebsitesService.BindDomain(ctx, websiteID, bindReq); err != nil {
+						return "", fmt.Errorf("platform subdomain claim failed: %w", err)
+					}
+				}
 				return "", nil
 			},
 			Schema: func(_ *session.Session) *jsonschema.Schema {

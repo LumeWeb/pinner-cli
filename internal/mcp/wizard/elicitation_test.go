@@ -188,7 +188,7 @@ func TestSchemaRequiresInput(t *testing.T) {
 	require.False(t, schemaRequiresInput(&jsonschema.Schema{}), "empty schema must be treated as no-input")
 	require.False(t, schemaRequiresInput(toolargs.SchemaFor[ValidateInput]()), "ValidateInput (optional retry only) must not elicit")
 	require.False(t, schemaRequiresInput(toolargs.SchemaFor[SetupCompletionInput]()), "all-optional fields must auto-advance, not elicit")
-	require.True(t, schemaRequiresInput(toolargs.SchemaFor[DomainInput]()), "a step with a required field must elicit")
+	require.True(t, schemaRequiresInput(toolargs.SchemaFor[TargetTypeInput]()), "a step with a required field must elicit")
 	require.True(t, schemaRequiresInput(&jsonschema.Schema{Required: []string{"x"}}))
 }
 
@@ -229,7 +229,7 @@ func TestOfficialToolHandlerFlagsFormRetry(t *testing.T) {
 // NoInput steps yield nil so they stay on the StepResponse path.
 func TestElicitForStep(t *testing.T) {
 	now := time.Now()
-	spec := elicitForStep("sess-9", StepResponse{CurrentStep: "domain", NextStepSchema: toolargs.SchemaFor[DomainInput]()}, now)
+	spec := elicitForStep("sess-9", StepResponse{CurrentStep: "domain", NextStepSchema: toolargs.SchemaFor[TargetTypeInput]()}, now)
 	require.NotNil(t, spec, "a step that needs input must elicit")
 	require.Equal(t, "input", spec.ID)
 	require.NotEmpty(t, spec.RequestState, "requestState must be set")
@@ -269,7 +269,7 @@ func TestElicitForStep(t *testing.T) {
 // feedback, not a blank form) and fails over to nil for NoInput steps.
 func TestRePresentFormOnFailure(t *testing.T) {
 	now := time.Now()
-	resp := StepResponse{CurrentStep: "domain", NextStepSchema: toolargs.SchemaFor[DomainInput]()}
+	resp := StepResponse{CurrentStep: "domain", NextStepSchema: toolargs.SchemaFor[TargetTypeInput]()}
 
 	spec := rePresentFormOnFailure("sess-9", resp, errors.New("domain is required"), now)
 	require.NotNil(t, spec, "a step that still needs input must re-present the form")

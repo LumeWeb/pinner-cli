@@ -20,11 +20,18 @@ type WebsitesWizard struct {
 
 	cid              string
 	domain           string
+	domainSource     string
 	targetType       string
 	dnsHosting       bool
 	website          *ipfs.WebsiteItem
 	validationResult *ipfs.WebsiteValidateResponse
 	validateRetry    bool
+
+	// Platform (free-subdomain) claim fields.
+	generate          bool
+	label             string
+	platformDomain    string
+	platformNamespace string
 }
 
 // NewWebsitesWizard creates a new websites wizard.
@@ -107,12 +114,20 @@ func (w *WebsitesWizard) getSteps() []wizard.Step[*WebsitesWizard] {
 	}
 }
 
-// executeCreateWebsite creates the website using the accumulated state.
+// executeCreateWebsite creates the website using the accumulated state. For a
+// platform (free) subdomain it also mints the subdomain by binding it to the
+// created website, mirroring the websites_domains_add catalogop.
 func (w *WebsitesWizard) executeCreateWebsite(ctx context.Context) error {
 	dnsHosting := w.DNSHosting()
 	targetType := w.TargetType()
 	if targetType == "" {
 		targetType = "ipfs"
+	}
+	isPlatform := w.DomainSource() == "platform_subdomain"
+	if isPlatform {
+		// Platform (free) subdomains are DNS-managed by the platform.
+		dnsHosting = true
+		w.SetDNSHosting(true)
 	}
 	req := ipfs.WebsiteRequest{
 		Domain:            w.Domain(),
@@ -127,6 +142,35 @@ func (w *WebsitesWizard) executeCreateWebsite(ctx context.Context) error {
 	}
 
 	w.SetWebsite(website)
+
+	if isPlatform {
+		ns := w.PlatformNamespace()
+		if ns == "" {
+			ns = "icann"
+		}
+		bindReq := ipfs.DomainRequest{
+			Domain:    w.Domain(),
+			Namespace: ns,
+		}
+		if pd := w.PlatformDomain(); pd != "" {
+			bindReq.PlatformDomain = &pd
+		}
+		if pns := w.PlatformNamespace(); pns != "" {
+			bindReq.PlatformNamespace = &pns
+		}
+		if w.Generate() {
+			g := true
+			bindReq.Generate = &g
+		}
+		if label := w.Label(); label != "" {
+			bindReq.Label = &label
+		}
+		websiteID := fmt.Sprintf("%d", website.Id)
+		if _, err := w.websitesService.BindDomain(ctx, websiteID, bindReq); err != nil {
+			return fmt.Errorf("platform subdomain claim failed: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -174,6 +218,22 @@ func (w *WebsitesWizard) CID() string { return w.cid }
 // Domain returns the domain name.
 func (w *WebsitesWizard) Domain() string { return w.domain }
 
+// DomainSource returns how the domain is obtained: "platform_subdomain" or
+// "custom_domain".
+func (w *WebsitesWizard) DomainSource() string { return w.domainSource }
+
+// Generate returns whether the platform should auto-generate a subdomain label.
+func (w *WebsitesWizard) Generate() bool { return w.generate }
+
+// Label returns the requested subdomain label.
+func (w *WebsitesWizard) Label() string { return w.label }
+
+// PlatformDomain returns the platform (free-subdomain) root domain.
+func (w *WebsitesWizard) PlatformDomain() string { return w.platformDomain }
+
+// PlatformNamespace returns the namespace within the platform domain.
+func (w *WebsitesWizard) PlatformNamespace() string { return w.platformNamespace }
+
 // DNSHosting returns whether DNS hosting is enabled.
 func (w *WebsitesWizard) DNSHosting() bool { return w.dnsHosting }
 
@@ -205,6 +265,21 @@ func (w *WebsitesWizard) SetCID(cid string) { w.cid = cid }
 
 // SetDomain sets the domain name.
 func (w *WebsitesWizard) SetDomain(domain string) { w.domain = domain }
+
+// SetDomainSource sets how the domain is obtained.
+func (w *WebsitesWizard) SetDomainSource(source string) { w.domainSource = source }
+
+// SetGenerate sets whether the platform should auto-generate a subdomain label.
+func (w *WebsitesWizard) SetGenerate(g bool) { w.generate = g }
+
+// SetLabel sets the requested subdomain label.
+func (w *WebsitesWizard) SetLabel(label string) { w.label = label }
+
+// SetPlatformDomain sets the platform (free-subdomain) root domain.
+func (w *WebsitesWizard) SetPlatformDomain(root string) { w.platformDomain = root }
+
+// SetPlatformNamespace sets the namespace within the platform domain.
+func (w *WebsitesWizard) SetPlatformNamespace(ns string) { w.platformNamespace = ns }
 
 // SetDNSHosting sets whether DNS hosting is enabled.
 func (w *WebsitesWizard) SetDNSHosting(enabled bool) { w.dnsHosting = enabled }

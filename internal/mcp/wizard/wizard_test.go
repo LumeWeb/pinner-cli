@@ -55,10 +55,16 @@ func (c *testCatalog) Get(name string) (*model.ToolEntry, bool) {
 type testWebsitesWizard struct {
 	cid              string
 	domain           string
+	domainSource     string
 	targetType       string
 	dnsHosting       bool
 	website          *ipfs.WebsiteItem
 	validationResult *ipfs.WebsiteValidateResponse
+
+	generate          bool
+	label             string
+	platformDomain    string
+	platformNamespace string
 }
 
 func (w *testWebsitesWizard) CID() string                { return w.cid }
@@ -77,6 +83,17 @@ func (w *testWebsitesWizard) SetWebsite(v *ipfs.WebsiteItem) { w.website = v }
 func (w *testWebsitesWizard) SetValidationResult(v *ipfs.WebsiteValidateResponse) {
 	w.validationResult = v
 }
+
+func (w *testWebsitesWizard) DomainSource() string          { return w.domainSource }
+func (w *testWebsitesWizard) SetDomainSource(v string)      { w.domainSource = v }
+func (w *testWebsitesWizard) Generate() bool                { return w.generate }
+func (w *testWebsitesWizard) SetGenerate(v bool)            { w.generate = v }
+func (w *testWebsitesWizard) Label() string                 { return w.label }
+func (w *testWebsitesWizard) SetLabel(v string)             { w.label = v }
+func (w *testWebsitesWizard) PlatformDomain() string        { return w.platformDomain }
+func (w *testWebsitesWizard) SetPlatformDomain(v string)    { w.platformDomain = v }
+func (w *testWebsitesWizard) PlatformNamespace() string     { return w.platformNamespace }
+func (w *testWebsitesWizard) SetPlatformNamespace(v string) { w.platformNamespace = v }
 
 // testSetupWizard implements wizard.SetupWizardState for tests.
 type testSetupWizard struct{}
@@ -291,6 +308,43 @@ func (m *mockWebsitesSvc) GetDomainDNSRequirements(_ context.Context, _, _ strin
 	}, nil
 }
 
+// mockWebsitesResource implements wizard.WebsitesResourceProvider for tests.
+type mockWebsitesResource struct {
+	availResp *ipfs.PlatformAvailabilityResponse
+	availErr  error
+}
+
+func (m *mockWebsitesResource) GetByDomain(_ context.Context, domain string) (*ipfs.WebsiteItem, error) {
+	return &ipfs.WebsiteItem{Id: 1, Domain: domain}, nil
+}
+
+func (m *mockWebsitesResource) GetByID(_ context.Context, id string) (*ipfs.WebsiteItem, error) {
+	return &ipfs.WebsiteItem{Id: 1}, nil
+}
+
+func (m *mockWebsitesResource) Validate(_ context.Context, _ string) (*ipfs.WebsiteValidateResponse, error) {
+	return &ipfs.WebsiteValidateResponse{Id: 1, Valid: true}, nil
+}
+
+func (m *mockWebsitesResource) GetConfig(_ context.Context) (*ipfs.WebsiteConfigResponse, error) {
+	return nil, nil
+}
+
+func (m *mockWebsitesResource) CheckPlatformDomainAvailability(_ context.Context, _ string) (*ipfs.PlatformAvailabilityResponse, error) {
+	if m.availErr != nil {
+		return nil, m.availErr
+	}
+	if m.availResp != nil {
+		return m.availResp, nil
+	}
+	return &ipfs.PlatformAvailabilityResponse{
+		Label: "myapp",
+		Results: []ipfs.PlatformAvailabilityResult{
+			{PlatformDomain: "ipfs.pin.xyz", Namespace: "icann", Available: true},
+		},
+	}, nil
+}
+
 func (m *mockWebsitesSvc) VerifyDomain(_ context.Context, _, _ string) (*ipfs.DomainResponse, error) {
 	return &ipfs.DomainResponse{
 		Id:        1,
@@ -496,6 +550,138 @@ func TestWebsitesWizard_FullSession(t *testing.T) {
 	// Session should report complete.
 	resp = wizard.BuildStepResponseForTest(sess)
 	assert.True(t, resp.Complete)
+}
+
+func TestWebsitesWizard_PlatformSubdomainFlow(t *testing.T) {
+	t.Parallel()
+
+	cfgMgr := newConfigMgr(t, true)
+	websitesSvc := &mockWebsitesSvc{}
+	res := &mockWebsitesResource{}
+	store := session.NewSessionStore()
+
+	deps := wizard.WebsitesWizardDeps{
+		WebsitesFactory:  testWebsitesFactory,
+		CfgMgr:           cfgMgr,
+		WebsitesService:  websitesSvc,
+		WebsitesResource: res,
+	}
+
+	sess, err := wizard.NewWebsitesSession(store, deps)
+	require.NoError(t, err)
+
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	require.NoError(t, err) // auth_check -> content_source
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"choice":"cid","cid":"QmTestHash123"}`))
+	require.NoError(t, err) // content_source -> target_type
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"type":"ipfs"}`))
+	require.NoError(t, err) // target_type -> domain
+
+	// Domain step: platform subdomain with a label; root derived from the
+	// availability resource probe.
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"source":"platform_subdomain","label":"myapp"}`))
+	require.NoError(t, err)
+	assert.Equal(t, "dns_mode", sess.FSM.Current())
+
+	w := sess.State().(wizard.WebsitesWizardState)
+	assert.Equal(t, "platform_subdomain", w.DomainSource())
+	assert.Equal(t, "myapp.ipfs.pin.xyz", w.Domain())
+	assert.Equal(t, "myapp", w.Label())
+	assert.Equal(t, "ipfs.pin.xyz", w.PlatformDomain())
+
+	// Platform subdomains are DNS-managed by the platform.
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"mode":"self_managed"}`))
+	require.NoError(t, err)
+	assert.Equal(t, "create", sess.FSM.Current())
+
+	// Create: website created with FQDN + managed DNS, then subdomain minted
+	// via BindDomain with the claim fields.
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"confirm":true}`))
+	require.NoError(t, err)
+	assert.Equal(t, "dns_setup", sess.FSM.Current())
+	assert.NotNil(t, w.Website())
+	assert.Equal(t, "myapp.ipfs.pin.xyz", w.Website().Domain)
+
+	require.NotNil(t, websitesSvc.createCallReq)
+	assert.Equal(t, "myapp.ipfs.pin.xyz", websitesSvc.createCallReq.Domain)
+	assert.True(t, *websitesSvc.createCallReq.DnsHostingEnabled)
+
+	require.NotNil(t, websitesSvc.bindCallReq)
+	assert.Equal(t, "myapp.ipfs.pin.xyz", websitesSvc.bindCallReq.Domain)
+	assert.Equal(t, "icann", websitesSvc.bindCallReq.Namespace)
+	require.NotNil(t, websitesSvc.bindCallReq.Label)
+	assert.Equal(t, "myapp", *websitesSvc.bindCallReq.Label)
+	require.NotNil(t, websitesSvc.bindCallReq.PlatformDomain)
+	assert.Equal(t, "ipfs.pin.xyz", *websitesSvc.bindCallReq.PlatformDomain)
+	require.Equal(t, "42", websitesSvc.bindCallWebsiteID)
+}
+
+func TestWebsitesWizard_PlatformSubdomainNoLabelGuidesAgent(t *testing.T) {
+	t.Parallel()
+
+	cfgMgr := newConfigMgr(t, true)
+	websitesSvc := &mockWebsitesSvc{}
+	store := session.NewSessionStore()
+
+	deps := wizard.WebsitesWizardDeps{
+		WebsitesFactory:  testWebsitesFactory,
+		CfgMgr:           cfgMgr,
+		WebsitesService:  websitesSvc,
+		WebsitesResource: &mockWebsitesResource{},
+	}
+
+	sess, err := wizard.NewWebsitesSession(store, deps)
+	require.NoError(t, err)
+
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	require.NoError(t, err)
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"choice":"cid","cid":"QmTestHash123"}`))
+	require.NoError(t, err)
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"type":"ipfs"}`))
+	require.NoError(t, err)
+
+	// No domain, no label, no generate: the handler must guide the agent to
+	// derive a domain instead of inventing one.
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"source":"platform_subdomain"}`))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "websites_platform_domain_availability")
+	assert.Equal(t, "domain", sess.FSM.Current())
+}
+
+func TestWebsitesWizard_DefaultToPlatformSubdomain(t *testing.T) {
+	t.Parallel()
+
+	cfgMgr := newConfigMgr(t, true)
+	websitesSvc := &mockWebsitesSvc{}
+	store := session.NewSessionStore()
+
+	deps := wizard.WebsitesWizardDeps{
+		WebsitesFactory:  testWebsitesFactory,
+		CfgMgr:           cfgMgr,
+		WebsitesService:  websitesSvc,
+		WebsitesResource: &mockWebsitesResource{},
+	}
+
+	sess, err := wizard.NewWebsitesSession(store, deps)
+	require.NoError(t, err)
+
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	require.NoError(t, err)
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"choice":"cid","cid":"QmTestHash123"}`))
+	require.NoError(t, err)
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"type":"ipfs"}`))
+	require.NoError(t, err)
+
+	// Empty input (no domain, no source): defaults to platform_subdomain and,
+	// lacking a label, guides the agent instead of inventing a domain.
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "platform_subdomain")
+	assert.Contains(t, err.Error(), "websites_platform_domain_availability")
+	assert.Equal(t, "domain", sess.FSM.Current())
+
+	w := sess.State().(wizard.WebsitesWizardState)
+	assert.Equal(t, "platform_subdomain", w.DomainSource())
 }
 
 func TestWebsitesWizard_AuthCheckFails(t *testing.T) {

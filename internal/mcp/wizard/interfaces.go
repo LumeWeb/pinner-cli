@@ -31,6 +31,25 @@ type WebsitesWizardState interface {
 	SetTargetType(string)
 	SetWebsite(*ipfs.WebsiteItem)
 	SetValidationResult(*ipfs.WebsiteValidateResponse)
+
+	// DomainSource reflects how the website domain is obtained:
+	// "platform_subdomain" (platform-generated free subdomain, default when
+	// no domain is supplied) or "custom_domain" (a domain the user owns).
+	DomainSource() string
+	SetDomainSource(string)
+
+	// Platform (free-subdomain) claim fields. When DomainSource is
+	// "platform_subdomain", the create step passes these through to
+	// ipfs.DomainRequest{BindDomain} so the platform can mint the subdomain,
+	// mirroring the websites_domains_add catalogop and the domain wizard.
+	Generate() bool
+	SetGenerate(bool)
+	Label() string
+	SetLabel(string)
+	PlatformDomain() string
+	SetPlatformDomain(string)
+	PlatformNamespace() string
+	SetPlatformNamespace(string)
 }
 
 // SetupWizardState is the interface for the setup wizard state object.
