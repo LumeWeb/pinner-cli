@@ -23,9 +23,10 @@ import { test, expect } from 'sunpeak/test';
 
 const META_TOOLS = ['search_tools', 'describe_tool', 'invoke_tool'];
 
-// Exact advertised surface, captured 2026-08-22 from `pinner mcp` over stdio
-// (identical on both chatgpt and claude host projects). Sorted for the
-// assertion below.
+// Exact advertised surface, captured from `pinner mcp` over stdio (identical
+// on both chatgpt and claude host projects). Includes the `open_*` app
+// launchers (ui:// surface from the mcp-apps feature) alongside the curated
+// direct tools. Sorted for the assertion below.
 const EXPECTED_TOOLS = [
   'account_email_change',
   'account_password_reset',
@@ -44,6 +45,19 @@ const EXPECTED_TOOLS = [
   'invoke_tool',
   'ipfs_upload_status',
   'ipfs_upload_submit',
+  'open_account',
+  'open_account_email',
+  'open_account_password',
+  'open_download_manager',
+  'open_pin_creator',
+  'open_pin_list',
+  'open_sso_signin',
+  'open_upload_manager',
+  'open_vault_browser',
+  'open_vault_create',
+  'open_vault_download_manager',
+  'open_vault_manager',
+  'open_vault_restore',
   'pin_status',
   'pins_add',
   'pins_list',
@@ -76,6 +90,7 @@ const EXPECTED_TOOLS = [
   'vault_version_ls',
   'websites_get',
   'websites_list',
+  'websites_platform_domain_availability',
   'websites_validate',
   'websites_wizard_start',
   'websites_wizard_step',
