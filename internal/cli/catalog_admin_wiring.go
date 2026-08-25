@@ -3,9 +3,12 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
+	"github.com/mattn/go-isatty"
+	"github.com/pterm/pterm"
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/internal/catalog"
 	"go.lumeweb.com/pinner-cli/internal/catalogops"
@@ -251,11 +254,15 @@ func adminActionAdapter(op catalog.Operation) cli.ActionFunc {
 		// The platform-domain ops key records by a numeric ID, but an operator may
 		// supply the registered domain name (e.g. pinned.site) instead. Resolve a
 		// non-numeric id to the numeric ID the API expects before execution.
+		var deleteID string
 		switch op.Name() {
 		case catalogops.OpAdminPlatformDomainsDelete,
 			catalogops.OpAdminPlatformDomainsUpdate,
 			catalogops.OpAdminPlatformDomainsBind:
 			if id := catalog.StrArg(input, "id", ""); id != "" {
+				if op.Name() == catalogops.OpAdminPlatformDomainsDelete {
+					deleteID = id
+				}
 				resolved, err := resolvePlatformDomainID(ctx, adminCatalogDepsVar, id)
 				if err != nil {
 					return err
@@ -264,20 +271,30 @@ func adminActionAdapter(op catalog.Operation) cli.ActionFunc {
 			}
 		}
 
-		// Destructive gate: destructive admin ops require confirm=true. Admin
-		// platform-domains delete is an explicit, direct human action at the CLI,
-		// so it confirms itself and needs no --force toggle; other destructive
-		// admin ops keep the --force gate.
+		// Destructive gate: destructive admin ops require confirm=true. Other
+		// destructive admin ops keep the --force gate. Admin platform-domains
+		// delete is an explicit CLI action, so a human at a terminal confirms
+		// interactively instead of passing --force; non-interactive contexts
+		// (scripts, --json/agent) still require --force so nothing is ever deleted
+		// without an explicit override.
 		if op.Safety() == catalog.SafetyDestructive {
-			if op.Name() == catalogops.OpAdminPlatformDomainsDelete {
-				input["confirm"] = true
-			} else {
-				confirm := c.Bool(FlagForce) || c.Bool(FlagConfirm)
-				input["confirm"] = confirm
-				if !confirm {
+			confirm := c.Bool(FlagForce) || c.Bool(FlagConfirm)
+			if !confirm {
+				switch op.Name() {
+				case catalogops.OpAdminPlatformDomainsDelete:
+					interactive := !setupOutput(c).IsJSON() && isatty.IsTerminal(os.Stdin.Fd())
+					ok, err := confirmPlatformDomainDelete(deleteID, interactive)
+					if err != nil {
+						return err
+					}
+					if !ok {
+						return fmt.Errorf("deletion aborted")
+					}
+				default:
 					return fmt.Errorf("%s: pass --force to confirm this destructive operation", op.Name())
 				}
 			}
+			input["confirm"] = confirm
 		}
 
 		dctx, cancel := applyDefaultTimeout(ctx)
@@ -289,6 +306,24 @@ func adminActionAdapter(op catalog.Operation) cli.ActionFunc {
 		}
 		return renderAdminResult(ctx, c, op, result)
 	}
+}
+
+// confirmPlatformDomainDelete confirms an irreversible platform-domain deletion
+// with a human operator. When no interactive terminal is available (scripts,
+// --json/agent runs) it returns an error directing the caller to --force, so
+// nothing is deleted without an explicit override; otherwise it returns whether
+// the operator accepted the prompt.
+func confirmPlatformDomainDelete(deleteID string, interactive bool) (bool, error) {
+	if !interactive {
+		return false, fmt.Errorf("%s: pass --force to confirm this destructive operation", catalogops.OpAdminPlatformDomainsDelete)
+	}
+	ok, err := pterm.DefaultInteractiveConfirm.
+		WithDefaultValue(false).
+		Show(fmt.Sprintf("Permanently delete platform domain %q?", deleteID))
+	if err != nil {
+		return false, err
+	}
+	return ok, nil
 }
 
 // resolvePlatformDomainID resolves a platform-domain identifier an operator may

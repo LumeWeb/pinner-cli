@@ -58,23 +58,37 @@ func deleteOp(called *bool) catalog.Operation {
 	})
 }
 
-// TestAdminActionAdapterDeleteRunsWithoutForce asserts the admin platform-domains
-// delete command no longer requires a --force toggle: an explicit CLI delete is
-// an authoritative human action, so the handler runs and confirm is set true.
-func TestAdminActionAdapterDeleteRunsWithoutForce(t *testing.T) {
+// TestAdminActionAdapterPlatformDomainDeleteConfirmation asserts the admin
+// platform-domains delete confirmation flow: a non-interactive delete without
+// --force is refused before the handler runs, while --force proceeds.
+func TestAdminActionAdapterPlatformDomainDeleteConfirmation(t *testing.T) {
 	deleted := false
 	op := deleteOp(&deleted)
 	cmd := &cli.Command{
 		Name:   "delete",
-		Flags:  []cli.Flag{&cli.BoolFlag{Name: FlagForce}, &cli.BoolFlag{Name: FlagConfirm}},
+		Flags:  []cli.Flag{&cli.BoolFlag{Name: FlagForce}, &cli.BoolFlag{Name: FlagConfirm}, &cli.BoolFlag{Name: FlagJSON}},
 		Action: adminActionAdapter(op),
 	}
 
-	// Delete without --force proceeds and invokes the handler with confirm=true.
-	require.NoError(t, cmd.Run(context.Background(), []string{"pinner", "7"}))
-	require.True(t, deleted, "delete handler must be invoked without --force")
+	// No --force in a non-interactive context: refused, handler never invoked.
+	err := cmd.Run(context.Background(), []string{"pinner", "7"})
+	require.Error(t, err)
+	require.False(t, deleted, "delete handler must not be invoked without confirmation")
+
+	// With --force: proceeds and invokes the handler.
+	require.NoError(t, cmd.Run(context.Background(), []string{"pinner", "--force", "7"}))
+	require.True(t, deleted, "delete handler must be invoked with --force")
 	h := op.Handler().(*captureHandler)
-	assert.Equal(t, true, h.input["confirm"], "delete must set confirm=true for a human CLI action")
+	assert.Equal(t, true, h.input["confirm"], "delete with --force must set confirm=true")
+}
+
+// TestConfirmPlatformDomainDeleteNonInteractive asserts the confirmation helper
+// refuses (returning an error) when no interactive terminal is available, so
+// scripts/agent runs must pass --force instead of deleting silently.
+func TestConfirmPlatformDomainDeleteNonInteractive(t *testing.T) {
+	_, err := confirmPlatformDomainDelete("7", false)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "pass --force")
 }
 
 // TestAdminActionAdapterForwardsPositionalAndFlags verifies the adapter maps a
