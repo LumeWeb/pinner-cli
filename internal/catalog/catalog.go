@@ -145,6 +145,14 @@ func (c *catalogImpl) Add(op Operation) error {
 // bug, so reject it at registration rather than deliver a wrong value later.
 func validateOperation(op Operation) error {
 	for _, a := range op.Args() {
+		// An AgentOnly arg is never emitted as a CLI --flag (the CLI caller
+		// can never supply it), so marking it Required without a Default would
+		// make the CLI command permanently fail "missing required argument".
+		// Fail fast at registration: direct authors to AgentRequired for
+		// MCP-only requiredness, or to a Default.
+		if a.AgentOnly && a.Required && a.Default == "" {
+			return fmt.Errorf("catalog: operation %q arg %q: AgentOnly arg cannot be Required without a Default (the CLI can never supply it); use AgentRequired for MCP-only requiredness or declare a Default", op.Name(), a.Name)
+		}
 		// Enum-constrained args must be string-typed and (when a default is
 		// also declared) must have their default within the enum. Otherwise
 		// resolveArg's enum check would never apply, or would reject a default
