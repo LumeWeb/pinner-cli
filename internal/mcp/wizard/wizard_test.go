@@ -225,6 +225,7 @@ func webservFactory(deps wizard.WebsitesWizardDeps) wizard.WebsitesWizardDeps {
 // mockWebsitesSvc implements cli.WebsitesService for wizard tests.
 type mockWebsitesSvc struct {
 	createFunc        func(ctx context.Context, req ipfs.WebsiteRequest) (*ipfs.WebsiteItem, error)
+	bindFunc          func(ctx context.Context, websiteID string, req ipfs.DomainRequest) (*ipfs.DomainResponse, error)
 	validateFunc      func(ctx context.Context, id string) (*ipfs.WebsiteValidateResponse, error)
 	getConfigFunc     func(ctx context.Context) (*ipfs.WebsiteConfigResponse, error)
 	listFunc          func(ctx context.Context) ([]ipfs.WebsiteItem, error)
@@ -288,9 +289,12 @@ func (m *mockWebsitesSvc) GetConfig(ctx context.Context) (*ipfs.WebsiteConfigRes
 	return nil, nil
 }
 
-func (m *mockWebsitesSvc) BindDomain(_ context.Context, websiteID string, req ipfs.DomainRequest) (*ipfs.DomainResponse, error) {
+func (m *mockWebsitesSvc) BindDomain(ctx context.Context, websiteID string, req ipfs.DomainRequest) (*ipfs.DomainResponse, error) {
 	m.bindCallWebsiteID = websiteID
 	m.bindCallReq = &req
+	if m.bindFunc != nil {
+		return m.bindFunc(ctx, websiteID, req)
+	}
 	return &ipfs.DomainResponse{
 		Id:        1,
 		Domain:    req.Domain,
@@ -614,6 +618,82 @@ func TestWebsitesWizard_PlatformSubdomainFlow(t *testing.T) {
 	require.NotNil(t, websitesSvc.bindCallReq.PlatformDomain)
 	assert.Equal(t, "ipfs.pin.xyz", *websitesSvc.bindCallReq.PlatformDomain)
 	require.Equal(t, "42", websitesSvc.bindCallWebsiteID)
+}
+
+func TestWebsitesWizard_PlatformSubdomainGenerate(t *testing.T) {
+	t.Parallel()
+
+	cfgMgr := newConfigMgr(t, true)
+	websitesSvc := &mockWebsitesSvc{}
+	res := &mockWebsitesResource{}
+	store := session.NewSessionStore()
+
+	// Bind mints a subdomain distinct from the create-time placeholder root.
+	websitesSvc.bindFunc = func(_ context.Context, _ string, req ipfs.DomainRequest) (*ipfs.DomainResponse, error) {
+		return &ipfs.DomainResponse{
+			Id:        1,
+			Domain:    "zebra.ipfs.pin.xyz",
+			Namespace: req.Namespace,
+			Status:    lo.ToPtr("pending"),
+		}, nil
+	}
+
+	deps := wizard.WebsitesWizardDeps{
+		WebsitesFactory:  testWebsitesFactory,
+		CfgMgr:           cfgMgr,
+		WebsitesService:  websitesSvc,
+		WebsitesResource: res,
+	}
+
+	sess, err := wizard.NewWebsitesSession(store, deps)
+	require.NoError(t, err)
+
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	require.NoError(t, err) // auth_check -> content_source
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"choice":"cid","cid":"QmTestHash123"}`))
+	require.NoError(t, err) // content_source -> target_type
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"type":"ipfs"}`))
+	require.NoError(t, err) // target_type -> domain
+
+	// Domain step: generate=true with no label and no domain. The tool must
+	// derive the platform root from the availability probe (no FQDN needed).
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"source":"platform_subdomain","generate":true}`))
+	require.NoError(t, err)
+	assert.Equal(t, "dns_mode", sess.FSM.Current())
+
+	w := sess.State().(wizard.WebsitesWizardState)
+	assert.Equal(t, "platform_subdomain", w.DomainSource())
+	assert.Equal(t, "", w.Label())
+	assert.True(t, w.Generate())
+	// Root derived from availability, used as the create FQDN placeholder.
+	assert.Equal(t, "ipfs.pin.xyz", w.PlatformDomain())
+	assert.Equal(t, "ipfs.pin.xyz", w.Domain())
+
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"mode":"managed"}`))
+	require.NoError(t, err)
+	assert.Equal(t, "create", sess.FSM.Current())
+
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"confirm":true}`))
+	require.NoError(t, err)
+	assert.Equal(t, "dns_setup", sess.FSM.Current())
+
+	// Created under the probed root, then minted subdomain is authoritative.
+	assert.NotNil(t, websitesSvc.createCallReq)
+	assert.Equal(t, "ipfs.pin.xyz", websitesSvc.createCallReq.Domain)
+	assert.True(t, *websitesSvc.createCallReq.DnsHostingEnabled)
+
+	require.NotNil(t, websitesSvc.bindCallReq)
+	assert.Equal(t, "ipfs.pin.xyz", websitesSvc.bindCallReq.Domain)
+	require.NotNil(t, websitesSvc.bindCallReq.Generate)
+	assert.True(t, *websitesSvc.bindCallReq.Generate)
+	require.Nil(t, websitesSvc.bindCallReq.Label)
+	require.NotNil(t, websitesSvc.bindCallReq.PlatformDomain)
+	assert.Equal(t, "ipfs.pin.xyz", *websitesSvc.bindCallReq.PlatformDomain)
+
+	// The minted subdomain (from the bind response) reflects in state, not the
+	// root placeholder.
+	assert.Equal(t, "zebra.ipfs.pin.xyz", w.Website().Domain)
+	assert.Equal(t, "zebra.ipfs.pin.xyz", w.Domain())
 }
 
 func TestWebsitesWizard_PlatformSubdomainNoLabelGuidesAgent(t *testing.T) {

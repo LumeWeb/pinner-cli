@@ -197,7 +197,7 @@ func websitesCreate(d WebsitesDeps) catalog.Operation {
 		Visibility:  catalog.VisibilityBoth,
 		Positional:  "<domain>",
 		Args: []catalog.OperationArg{
-			{Name: "website", Type: catalog.ArgTypeString, Required: true, Help: "Domain for the new website", AgentHelp: "The domain the website should serve under. For a platform subdomain use the exact FQDN (label.root, e.g. myapp.ipfs.pin.xyz) from the wizard or websites_platform_domain_availability; for a custom domain use the user's domain."},
+			{Name: "website", Type: catalog.ArgTypeString, Required: true, Help: "Domain for the new website", AgentHelp: "The domain the website should serve under. For a platform subdomain use the exact FQDN (label.root, e.g. myapp.pinned.site) from the wizard or websites_platform_domain_availability; for a custom domain use the user's domain."},
 			{Name: "cid", Type: catalog.ArgTypeString, Required: true, Help: "IPFS CID to serve", AgentHelp: "The IPFS CID to serve. If from a Pinner upload tool, use its returned CID directly (already pinned, no pins_add). Only call pins_add first when the CID is external to Pinner."},
 			{Name: "target-type", Type: catalog.ArgTypeString, Default: "ipfs", Help: "Target type (ipfs|ipns)"},
 			{Name: "dns-hosting", Type: catalog.ArgTypeNullableBool, Help: "Let Pinner manage DNS for this website (true = managed, false = self-managed, omit = managed default)", AgentHelp: "true lets Pinner manage DNS; false leaves DNS self-managed. Omit to use the default (Pinner-managed DNS)."},

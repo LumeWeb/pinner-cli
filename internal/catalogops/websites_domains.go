@@ -80,7 +80,7 @@ func websitesDomainsAdd(d WebsitesDeps) catalog.Operation {
 			{Name: "website", Type: catalog.ArgTypeString, Required: false, Help: "Website ID or domain to bind the domain to; auto-selected if exactly one website", AgentHelp: "The website (ID or domain) to bind the domain to. Omit to auto-select when the account has exactly one website."},
 			{Name: "domain", Type: catalog.ArgTypeString, Required: true, Help: "Domain to bind"},
 			{Name: "namespace", Type: catalog.ArgTypeString, Default: "icann", Sources: []string{"PINNER_DOMAIN_NAMESPACE"}, Help: "Domain namespace: icann or hns"},
-			{Name: "platform-domain", Type: catalog.ArgTypeString, Required: false, Help: "Platform (free-subdomain) root domain to claim a subdomain under, e.g. ipfs.pin.xyz"},
+			{Name: "platform-domain", Type: catalog.ArgTypeString, Required: false, Help: "Platform (free-subdomain) root domain to claim a subdomain under, e.g. pinned.site"},
 			{Name: "platform-namespace", Type: catalog.ArgTypeString, Required: false, Help: "Namespace within the platform domain to claim under"},
 			{Name: "generate", Type: catalog.ArgTypeBool, Default: "false", Required: false, Help: "Ask the platform to auto-generate a subdomain label instead of supplying one"},
 			{Name: "label", Type: catalog.ArgTypeString, Required: false, Help: "Explicit subdomain label to claim under a platform domain"},

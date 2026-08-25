@@ -167,7 +167,7 @@ func (w *WebsitesWizard) executeCreateWebsite(ctx context.Context) error {
 		}
 		websiteID := fmt.Sprintf("%d", website.Id)
 		if _, err := w.websitesService.BindDomain(ctx, websiteID, bindReq); err != nil {
-			return fmt.Errorf("platform subdomain claim failed: %w", err)
+			return fmt.Errorf("platform subdomain claim failed: %w (the website exists but its subdomain was not claimed; retry the claim or delete the website)", err)
 		}
 	}
 

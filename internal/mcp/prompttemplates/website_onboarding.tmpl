@@ -11,7 +11,7 @@ Workflow overview (9 steps):
   3. target_type    : IPFS or IPNS
   4. domain         : domain source + domain (custom or platform subdomain)
   5. dns_mode       : managed or self-managed DNS
-  6. create         : create the website (irreversible, confirm first)
+  6. create         : create the website (confirm first)
   7. dns_setup      : read DNS requirements resource
   8. validate       : run live validation
   9. complete       : summarize results
@@ -95,7 +95,7 @@ Ask the user whether they want managed DNS (Pinner handles it) or self-managed D
 {{end}}
 
 {{define "website_step_create"}}Step: create
-This is an irreversible operation. Confirm with the user before proceeding. Call `websites_wizard_step` with input: {"confirm": true} to create the website. If the user is not ready, call with {"confirm": false} to see the error and retry.
+Confirm with the user before proceeding. Call `websites_wizard_step` with input: {"confirm": true} to create the website. If the user is not ready, call with {"confirm": false} to see the error and retry.
 {{end}}
 
 {{define "website_step_dns_setup_filled"}}Read the pinner://websites/{domain}/dns-requirements resource above. Present the DNS records to the user. If DNS is managed, instruct them to update their registrar's nameservers. If self-managed, instruct them to add the TXT, dnslink, and optional CNAME records. Call `websites_wizard_step` with input: {} to proceed.
