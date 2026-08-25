@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -540,23 +541,33 @@ func yesNo(b bool) string {
 	return "no"
 }
 
-// renderJSONOrCount renders a JSON payload in JSON mode or a count line in
-// human mode.
+// renderJSONOrCount renders a JSON payload in JSON mode, or a count line plus
+// the fetched entities in human mode (the legacy billing CLI rendered the full
+// entity fields, not just a count).
 func renderJSONOrCount(c *cli.Command, output Output, payload map[string]any, noun string, count int) error {
 	if output.IsJSON() {
 		return output.PrintJSON(payload)
 	}
 	output.Printfln("Found %d %s", count, noun)
+	b, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return err
+	}
+	output.Printfln("%s", string(b))
 	return nil
 }
 
 // renderBillingSingle renders a single billing object as JSON in JSON mode, or
-// as a compact human line otherwise.
+// pretty-printed JSON in human mode so the requested fields are always shown.
 func renderBillingSingle(c *cli.Command, output Output, r any) error {
 	if output.IsJSON() {
 		return output.PrintJSON(r)
 	}
-	output.Printfln("OK")
+	b, err := json.MarshalIndent(r, "", "  ")
+	if err != nil {
+		return err
+	}
+	output.Printfln("%s", string(b))
 	return nil
 }
 

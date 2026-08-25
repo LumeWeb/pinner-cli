@@ -113,7 +113,7 @@ func adminBillingCreditsList(d AdminDeps) catalog.Operation {
 			{Name: "type", Type: catalog.ArgTypeString, Help: "Filter by type"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.billing(input)
+			svc, err := d.billing()
 			if err != nil {
 				return nil, err
 			}
@@ -155,7 +155,7 @@ func adminBillingCreditsGet(d AdminDeps) catalog.Operation {
 			{Name: "id", Type: catalog.ArgTypeString, Required: true, Help: "Credit ID", PositionalOnly: true},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.billing(input)
+			svc, err := d.billing()
 			if err != nil {
 				return nil, err
 			}
@@ -192,7 +192,7 @@ func adminBillingCreditsCreate(d AdminDeps) catalog.Operation {
 			{Name: "reference-type", Type: catalog.ArgTypeString, Help: "Reference type"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.billing(input)
+			svc, err := d.billing()
 			if err != nil {
 				return nil, err
 			}
@@ -239,7 +239,7 @@ func adminBillingCreditsDelete(d AdminDeps) catalog.Operation {
 			{Name: "id", Type: catalog.ArgTypeString, Required: true, Help: "Credit ID", PositionalOnly: true},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.billing(input)
+			svc, err := d.billing()
 			if err != nil {
 				return nil, err
 			}
@@ -274,7 +274,7 @@ func adminBillingCreditsRestore(d AdminDeps) catalog.Operation {
 			{Name: "id", Type: catalog.ArgTypeString, Required: true, Help: "Credit ID", PositionalOnly: true},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.billing(input)
+			svc, err := d.billing()
 			if err != nil {
 				return nil, err
 			}
@@ -309,7 +309,7 @@ func adminBillingCreditsPurge(d AdminDeps) catalog.Operation {
 			if !catalog.BoolArg(input, "confirm", false) {
 				return nil, fmt.Errorf("admin_billing_credits_purge: confirmation is required")
 			}
-			svc, err := d.billing(input)
+			svc, err := d.billing()
 			if err != nil {
 				return nil, err
 			}
@@ -347,7 +347,7 @@ func adminBillingCreditsUserBalance(d AdminDeps) catalog.Operation {
 			{Name: "user-id", Type: catalog.ArgTypeString, Required: true, Help: "User ID", PositionalOnly: true},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.billing(input)
+			svc, err := d.billing()
 			if err != nil {
 				return nil, err
 			}
@@ -384,7 +384,7 @@ func adminBillingCreditsUserDeletedCredits(d AdminDeps) catalog.Operation {
 			{Name: "user-id", Type: catalog.ArgTypeString, Required: true, Help: "User ID", PositionalOnly: true},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.billing(input)
+			svc, err := d.billing()
 			if err != nil {
 				return nil, err
 			}
@@ -416,7 +416,7 @@ func adminBillingPriceLinesList(d AdminDeps) catalog.Operation {
 		Interaction: catalog.InteractionAgentSafe,
 		Visibility:  catalog.VisibilityBoth,
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.billing(input)
+			svc, err := d.billing()
 			if err != nil {
 				return nil, err
 			}
@@ -448,7 +448,7 @@ func adminBillingPriceLinesGet(d AdminDeps) catalog.Operation {
 			{Name: "id", Type: catalog.ArgTypeString, Required: true, Help: "Price line ID", PositionalOnly: true},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.billing(input)
+			svc, err := d.billing()
 			if err != nil {
 				return nil, err
 			}
@@ -483,7 +483,7 @@ func adminBillingPriceLinesCreate(d AdminDeps) catalog.Operation {
 			{Name: "is-default", Type: catalog.ArgTypeBool, Help: "Mark default"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.billing(input)
+			svc, err := d.billing()
 			if err != nil {
 				return nil, err
 			}
@@ -522,7 +522,7 @@ func adminBillingPriceLinesUpdate(d AdminDeps) catalog.Operation {
 			{Name: "is-default", Type: catalog.ArgTypeBool, Help: "Mark default"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.billing(input)
+			svc, err := d.billing()
 			if err != nil {
 				return nil, err
 			}
@@ -561,7 +561,7 @@ func adminBillingPriceLinesDelete(d AdminDeps) catalog.Operation {
 			{Name: "id", Type: catalog.ArgTypeString, Required: true, Help: "Price line ID", PositionalOnly: true},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.billing(input)
+			svc, err := d.billing()
 			if err != nil {
 				return nil, err
 			}
@@ -599,7 +599,7 @@ func adminBillingPriceLinesAddPlan(d AdminDeps) catalog.Operation {
 			{Name: "position", Type: catalog.ArgTypeInt, Help: "Position"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.billing(input)
+			svc, err := d.billing()
 			if err != nil {
 				return nil, err
 			}
@@ -634,7 +634,7 @@ func adminBillingPriceLinesDeletePlan(d AdminDeps) catalog.Operation {
 			{Name: "plan-id", Type: catalog.ArgTypeString, Required: true, Help: "Pricing plan ID", PositionalOnly: true},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.billing(input)
+			svc, err := d.billing()
 			if err != nil {
 				return nil, err
 			}
@@ -673,7 +673,7 @@ func adminBillingPriceLinesUpdatePlanPosition(d AdminDeps) catalog.Operation {
 			{Name: "position", Type: catalog.ArgTypeInt, Required: true, Help: "New position"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.billing(input)
+			svc, err := d.billing()
 			if err != nil {
 				return nil, err
 			}
@@ -704,7 +704,7 @@ func adminBillingPricingPlansList(d AdminDeps) catalog.Operation {
 		Interaction: catalog.InteractionAgentSafe,
 		Visibility:  catalog.VisibilityBoth,
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.billing(input)
+			svc, err := d.billing()
 			if err != nil {
 				return nil, err
 			}
@@ -737,7 +737,7 @@ func adminBillingPricingPlansGet(d AdminDeps) catalog.Operation {
 			{Name: "id", Type: catalog.ArgTypeString, Required: true, Help: "Pricing plan ID", PositionalOnly: true},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.billing(input)
+			svc, err := d.billing()
 			if err != nil {
 				return nil, err
 			}
@@ -773,7 +773,7 @@ func adminBillingPricingPlansCreate(d AdminDeps) catalog.Operation {
 			{Name: "is-public", Type: catalog.ArgTypeBool, Help: "Mark public"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.billing(input)
+			svc, err := d.billing()
 			if err != nil {
 				return nil, err
 			}
@@ -814,7 +814,7 @@ func adminBillingPricingPlansUpdate(d AdminDeps) catalog.Operation {
 			{Name: "is-public", Type: catalog.ArgTypeBool, Help: "Mark public"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.billing(input)
+			svc, err := d.billing()
 			if err != nil {
 				return nil, err
 			}
@@ -854,7 +854,7 @@ func adminBillingPricingPlansDelete(d AdminDeps) catalog.Operation {
 			{Name: "id", Type: catalog.ArgTypeString, Required: true, Help: "Pricing plan ID", PositionalOnly: true},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.billing(input)
+			svc, err := d.billing()
 			if err != nil {
 				return nil, err
 			}
@@ -890,7 +890,7 @@ func adminBillingPricingPlansSync(d AdminDeps) catalog.Operation {
 			{Name: "id", Type: catalog.ArgTypeString, Required: true, Help: "Pricing plan ID", PositionalOnly: true},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.billing(input)
+			svc, err := d.billing()
 			if err != nil {
 				return nil, err
 			}
@@ -922,7 +922,7 @@ func adminBillingPricingPlansSyncAll(d AdminDeps) catalog.Operation {
 		Interaction: catalog.InteractionAgentSafe,
 		Visibility:  catalog.VisibilityBoth,
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.billing(input)
+			svc, err := d.billing()
 			if err != nil {
 				return nil, err
 			}
@@ -950,7 +950,7 @@ func adminBillingPricingPlanPeriodsList(d AdminDeps) catalog.Operation {
 		Interaction: catalog.InteractionAgentSafe,
 		Visibility:  catalog.VisibilityBoth,
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.billing(input)
+			svc, err := d.billing()
 			if err != nil {
 				return nil, err
 			}
@@ -983,7 +983,7 @@ func adminBillingPricingPlanPeriodsGet(d AdminDeps) catalog.Operation {
 			{Name: "id", Type: catalog.ArgTypeString, Required: true, Help: "Period ID", PositionalOnly: true},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.billing(input)
+			svc, err := d.billing()
 			if err != nil {
 				return nil, err
 			}
@@ -1020,7 +1020,7 @@ func adminBillingPricingPlanPeriodsCreate(d AdminDeps) catalog.Operation {
 			{Name: "rolling-days", Type: catalog.ArgTypeInt, Help: "Rolling days"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.billing(input)
+			svc, err := d.billing()
 			if err != nil {
 				return nil, err
 			}
@@ -1065,7 +1065,7 @@ func adminBillingPricingPlanPeriodsUpdate(d AdminDeps) catalog.Operation {
 			{Name: "rolling-days", Type: catalog.ArgTypeInt, Help: "Rolling days"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.billing(input)
+			svc, err := d.billing()
 			if err != nil {
 				return nil, err
 			}
@@ -1108,7 +1108,7 @@ func adminBillingPricingPlanPeriodsDelete(d AdminDeps) catalog.Operation {
 			{Name: "id", Type: catalog.ArgTypeString, Required: true, Help: "Period ID", PositionalOnly: true},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.billing(input)
+			svc, err := d.billing()
 			if err != nil {
 				return nil, err
 			}
@@ -1140,7 +1140,7 @@ func adminBillingSubscribersList(d AdminDeps) catalog.Operation {
 		Interaction: catalog.InteractionAgentSafe,
 		Visibility:  catalog.VisibilityBoth,
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.billing(input)
+			svc, err := d.billing()
 			if err != nil {
 				return nil, err
 			}
@@ -1172,7 +1172,7 @@ func adminBillingSubscribersGet(d AdminDeps) catalog.Operation {
 			{Name: "id", Type: catalog.ArgTypeString, Required: true, Help: "Subscriber ID", PositionalOnly: true},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.billing(input)
+			svc, err := d.billing()
 			if err != nil {
 				return nil, err
 			}
@@ -1205,7 +1205,7 @@ func adminBillingSubscribersListGateway(d AdminDeps) catalog.Operation {
 			{Name: "gateway-id", Type: catalog.ArgTypeString, Required: true, Help: "Gateway ID", PositionalOnly: true},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.billing(input)
+			svc, err := d.billing()
 			if err != nil {
 				return nil, err
 			}
@@ -1242,7 +1242,7 @@ func adminBillingSubscribersListUser(d AdminDeps) catalog.Operation {
 			{Name: "user-id", Type: catalog.ArgTypeString, Required: true, Help: "User ID", PositionalOnly: true},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.billing(input)
+			svc, err := d.billing()
 			if err != nil {
 				return nil, err
 			}
@@ -1281,7 +1281,7 @@ func adminBillingSubscribersCancel(d AdminDeps) catalog.Operation {
 			{Name: "immediate", Type: catalog.ArgTypeBool, Help: "Cancel immediately"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.billing(input)
+			svc, err := d.billing()
 			if err != nil {
 				return nil, err
 			}
@@ -1321,7 +1321,7 @@ func adminBillingSubscribersAbortCancel(d AdminDeps) catalog.Operation {
 			{Name: "user-id", Type: catalog.ArgTypeString, Required: true, Help: "User ID", PositionalOnly: true},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.billing(input)
+			svc, err := d.billing()
 			if err != nil {
 				return nil, err
 			}
@@ -1355,7 +1355,7 @@ func adminBillingSubscribersChangePlan(d AdminDeps) catalog.Operation {
 			{Name: "period-id", Type: catalog.ArgTypeInt, Required: true, Help: "Pricing plan period ID"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.billing(input)
+			svc, err := d.billing()
 			if err != nil {
 				return nil, err
 			}
@@ -1389,7 +1389,7 @@ func adminBillingSubscribersPause(d AdminDeps) catalog.Operation {
 			{Name: "user-id", Type: catalog.ArgTypeString, Required: true, Help: "User ID", PositionalOnly: true},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.billing(input)
+			svc, err := d.billing()
 			if err != nil {
 				return nil, err
 			}
@@ -1422,7 +1422,7 @@ func adminBillingSubscribersResume(d AdminDeps) catalog.Operation {
 			{Name: "user-id", Type: catalog.ArgTypeString, Required: true, Help: "User ID", PositionalOnly: true},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			svc, err := d.billing(input)
+			svc, err := d.billing()
 			if err != nil {
 				return nil, err
 			}
@@ -1459,14 +1459,14 @@ func adminBillingOverview(d AdminDeps) catalog.Operation {
 		Interaction: catalog.InteractionAgentSafe,
 		Visibility:  catalog.VisibilityBoth,
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			billingSvc, err := d.billing(input)
+			billingSvc, err := d.billing()
 			if err != nil {
 				return nil, err
 			}
 			if err := billingSvc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
-			quotaSvc, err := d.quota(input)
+			quotaSvc, err := d.quota()
 			if err != nil {
 				return nil, err
 			}

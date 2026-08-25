@@ -100,8 +100,7 @@ func (d AdminDeps) quota() (admin.QuotaAdminService, error) {
 }
 
 // billing resolves the BillingAdminService for this invocation.
-func (d AdminDeps) billing(input map[string]any) (admin.BillingAdminService, error) {
-	_ = input // reserved for a future per-invocation --auth-token override
+func (d AdminDeps) billing() (admin.BillingAdminService, error) {
 	cfgMgr, err := d.requireConfig()
 	if err != nil {
 		return nil, err
