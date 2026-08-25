@@ -187,24 +187,8 @@ func renderIPNSResult(_ context.Context, c *cli.Command, op catalog.Operation, r
 	output := setupOutput(c)
 
 	switch r := result.(type) {
-	case []ipfs.IPNSKeyResponse:
-		if output.IsJSON() {
-			return output.PrintJSON(r)
-		}
-		if len(r) == 0 {
-			output.Printfln("No IPNS keys found.")
-			return nil
-		}
-		headers := []string{"ID", "NAME", "IPNS NAME", "PEER ID", "CREATED"}
-		rows := make([][]string, len(r))
-		for i, k := range r {
-			rows[i] = []string{
-				fmt.Sprintf("%d", k.Id), k.Name, k.IpnsName, k.PeerId,
-				k.Created.Format("2006-01-02 15:04:05"),
-			}
-		}
-		output.PrintTable(headers, rows)
-		return nil
+	case catalogops.ListResult:
+		return renderListResult(output, r)
 
 	case *ipfs.IPNSKeyResponse:
 		if output.IsJSON() {
