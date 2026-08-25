@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -30,7 +31,9 @@ func TestWritePprofBytesToFile(t *testing.T) {
 	assert.Equal(t, "heap-data", string(got))
 	info, err := os.Stat(filepath.Join(dir, "heap.prof"))
 	require.NoError(t, err)
-	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+	if runtime.GOOS != "windows" {
+		assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+	}
 }
 
 // TestSafeOutputPath verifies safeOutputPath rejects traversal, absolute paths,
