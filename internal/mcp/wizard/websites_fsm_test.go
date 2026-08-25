@@ -188,6 +188,44 @@ func TestWebsitesFSM_ChooseDomainSourceIdempotent(t *testing.T) {
 	}
 }
 
+// TestWebsitesFSM_ChooseDomainSourceRetrySwitch verifies a retry that switches
+// the source (custom -> platform) while the lifecycle is only claimed persists
+// the new source instead of silently dropping it, and that once the website
+// exists a source change is rejected.
+func TestWebsitesFSM_ChooseDomainSourceRetrySwitch(t *testing.T) {
+	w := &testWebsitesWizard{}
+	m := wizard.NewWebsiteStateMachine(w)
+
+	if err := m.ChooseDomainSource(string(wizard.WebsitesDomainSourceCustom)); err != nil {
+		t.Fatalf("first choose custom: %v", err)
+	}
+	if err := m.MarkClaimed("example.com"); err != nil {
+		t.Fatalf("MarkClaimed: %v", err)
+	}
+
+	// Retry switching to platform while still claimed: must persist, not no-op.
+	if err := m.ChooseDomainSource(string(wizard.WebsitesDomainSourcePlatform)); err != nil {
+		t.Fatalf("switch source while claimed: %v", err)
+	}
+	if w.DomainSource() != string(wizard.WebsitesDomainSourcePlatform) {
+		t.Fatalf("domain source after switch = %q, want platform_subdomain", w.DomainSource())
+	}
+
+	// Once the website exists (binding), a source change must be rejected.
+	if err := m.PrepareContent("QmTestHash123"); err != nil {
+		t.Fatalf("PrepareContent: %v", err)
+	}
+	if err := m.MarkDeployed(); err != nil {
+		t.Fatalf("MarkDeployed: %v", err)
+	}
+	if err := m.BeginBind(&ipfs.WebsiteItem{}); err != nil {
+		t.Fatalf("BeginBind: %v", err)
+	}
+	if err := m.ChooseDomainSource(string(wizard.WebsitesDomainSourceCustom)); err == nil {
+		t.Fatalf("source change after website creation should fail")
+	}
+}
+
 // TestWebsitesFSM_MarkDeployedIdempotent verifies that retrying the create step
 // after a failed bind (content already deployed) does not wedge, allowing the
 // documented bind retry to proceed.

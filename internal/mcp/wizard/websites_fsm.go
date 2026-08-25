@@ -153,17 +153,34 @@ func (m *WebsiteStateMachine) fire(f *fsm.FSM, event string) error {
 // ChooseDomainSource marks the domain source (custom or platform) as chosen.
 // It is idempotent: once the lifecycle has left draft, re-entering the domain
 // step (e.g. after a validation error in a later branch of the same handler)
-// must not fail, so an already-claimed lifecycle is a successful no-op.
+// must not fail. A retry that switches the source is still persisted while the
+// lifecycle is only claimed (pre-create); once the website exists the source
+// is fixed and a change is rejected so the caller reconciles state instead of
+// silently routing through a stale source.
 func (m *WebsiteStateMachine) ChooseDomainSource(source string) error {
-	if m.lifecycleCurrent() != LifecycleDraft {
+	// Still drafting: choose it and persist.
+	if m.lifecycleCurrent() == LifecycleDraft {
+		f := fsm.NewFSM(string(m.lifecycleCurrent()), lifecycleEvents(), nil)
+		if err := m.fire(f, lifecycleEvChooseSource); err != nil {
+			return fmt.Errorf("cannot choose domain source in %s: %w", f.Current(), err)
+		}
+		m.w.SetLifecycleState(WebsiteLifecycleState(f.Current()))
+		m.w.SetDomainSource(source)
 		return nil
 	}
-	f := fsm.NewFSM(string(m.lifecycleCurrent()), lifecycleEvents(), nil)
-	if err := m.fire(f, lifecycleEvChooseSource); err != nil {
-		return fmt.Errorf("cannot choose domain source in %s: %w", f.Current(), err)
+	// Already past draft. A retry that switches custom<->platform is legal while
+	// the source is only claimed (website not created yet).
+	if m.lifecycleCurrent() == LifecycleClaimed {
+		if cur := m.w.DomainSource(); cur != "" && cur != source {
+			m.w.SetDomainSource(source)
+		}
+		return nil
 	}
-	m.w.SetLifecycleState(WebsiteLifecycleState(f.Current()))
-	m.w.SetDomainSource(source)
+	// Website exists (binding/live/failed): the source is fixed; reject a change
+	// rather than silently persisting a stale or divergent source.
+	if cur := m.w.DomainSource(); cur != "" && cur != source {
+		return fmt.Errorf("cannot change domain source from %q to %q after the website was created", cur, source)
+	}
 	return nil
 }
 
