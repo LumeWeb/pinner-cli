@@ -31,8 +31,8 @@ func ListArgs() []OperationArg {
 		{
 			Name:    "page-size",
 			Type:    ArgTypeInt,
-			Default: "10",
-			Help:    "Maximum number of results per page (max 100)",
+			Default: "0",
+			Help:    "Maximum number of results per page; when omitted, lists that page client-side return all rows and server-side lists use their default page size",
 		},
 	}
 }
