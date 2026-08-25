@@ -455,6 +455,33 @@ func listRoots(resp *ipfs.PlatformAvailabilityResponse) string {
 	return strings.Join(roots, ", ")
 }
 
+// firstPlatformDomain returns the first enabled platform root from the
+// platform-domain list, or "" if none is available.
+func firstPlatformDomain(resp *ipfs.PlatformDomainListResponse) string {
+	if resp == nil {
+		return ""
+	}
+	for _, r := range resp.Data {
+		if r.Enabled {
+			return r.Domain
+		}
+	}
+	return ""
+}
+
+// listPlatformDomainNames returns the comma-separated list of platform roots
+// for error messages.
+func listPlatformDomainNames(resp *ipfs.PlatformDomainListResponse) string {
+	if resp == nil {
+		return ""
+	}
+	var roots []string
+	for _, r := range resp.Data {
+		roots = append(roots, r.Domain)
+	}
+	return strings.Join(roots, ", ")
+}
+
 // buildWebsitesSteps returns the StepDef slice for the websites wizard.
 // Each step's handler decodes JSON input, validates it, and mutates the
 // WebsitesWizardState state stored in the session.
@@ -604,13 +631,16 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []session.StepDef {
 						root = in.Domain
 					}
 					if root == "" {
-						resp, err := platformAvailability(ctx, deps, "")
-						if err != nil {
-							return "", err
+						if deps.WebsitesResource == nil {
+							return "", fmt.Errorf("platform domain listing is unavailable in this context")
 						}
-						root = firstAvailableRoot(resp)
+						resp, err := deps.WebsitesResource.ListPlatformDomains(ctx)
+						if err != nil {
+							return "", fmt.Errorf("list platform domains: %w", err)
+						}
+						root = firstPlatformDomain(resp)
 						if root == "" {
-							return "", fmt.Errorf("no available platform root to auto-generate a subdomain under (available roots: %s)", listRoots(resp))
+							return "", fmt.Errorf("no available platform root to auto-generate a subdomain under (available roots: %s)", listPlatformDomainNames(resp))
 						}
 					}
 					w.SetPlatformDomain(root)

@@ -100,6 +100,10 @@ func (w *websitesResourceAdapter) GetConfig(ctx context.Context) (*ipfs.WebsiteC
 	return w.ws.GetConfig(ctx)
 }
 
+func (w *websitesResourceAdapter) ListPlatformDomains(ctx context.Context) (*ipfs.PlatformDomainListResponse, error) {
+	return w.ws.ListPlatformDomains(ctx)
+}
+
 func (w *websitesResourceAdapter) CheckPlatformDomainAvailability(ctx context.Context, label string) (*ipfs.PlatformAvailabilityResponse, error) {
 	return w.ws.CheckPlatformDomainAvailability(ctx, label)
 }

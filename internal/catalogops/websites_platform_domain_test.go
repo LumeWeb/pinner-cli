@@ -2,6 +2,7 @@ package catalogops
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	ipfs "go.lumeweb.com/ipfs-sdk"
@@ -18,6 +19,7 @@ type platformDomainService struct {
 
 	authErr                    error
 	availabilityFn             func(ctx context.Context, label string) (*ipfs.PlatformAvailabilityResponse, error)
+	listPlatformDomainsFn      func(ctx context.Context) (*ipfs.PlatformDomainListResponse, error)
 	bindDomainFn               func(ctx context.Context, websiteID string, req ipfs.DomainRequest) (*ipfs.DomainResponse, error)
 	bindReqCapture             *ipfs.DomainRequest
 	checkPlatformAvailabilityLabel string
@@ -33,6 +35,13 @@ func (f *platformDomainService) CheckPlatformDomainAvailability(ctx context.Cont
 	f.checkPlatformAvailabilityLabel = label
 	if f.availabilityFn != nil {
 		return f.availabilityFn(ctx, label)
+	}
+	return nil, nil
+}
+
+func (f *platformDomainService) ListPlatformDomains(ctx context.Context) (*ipfs.PlatformDomainListResponse, error) {
+	if f.listPlatformDomainsFn != nil {
+		return f.listPlatformDomainsFn(ctx)
 	}
 	return nil, nil
 }
@@ -86,14 +95,42 @@ func TestWebsitesPlatformDomainAvailability(t *testing.T) {
 	}
 }
 
-func TestWebsitesPlatformDomainAvailabilityEmptyLabel(t *testing.T) {
+func TestWebsitesPlatformDomainAvailabilityRequiresLabel(t *testing.T) {
 	fake := &platformDomainService{}
 	op := websitesPlatformDomainAvailability(platformDomainDeps(t, fake))
-	if _, err := op.Handler().Execute(context.Background(), map[string]any{}); err != nil {
-		t.Fatalf("handler with empty label: %v", err)
+	if _, err := op.Handler().Execute(context.Background(), map[string]any{}); err == nil {
+		t.Fatal("handler with missing label: expected error")
+	} else if !strings.Contains(err.Error(), "label is required") {
+		t.Fatalf("handler with missing label error = %v, want containing %q", err, "label is required")
 	}
 	if fake.checkPlatformAvailabilityLabel != "" {
-		t.Fatalf("label = %q, want empty (probe all roots)", fake.checkPlatformAvailabilityLabel)
+		t.Fatalf("label = %q, want empty (no backend call on missing label)", fake.checkPlatformAvailabilityLabel)
+	}
+}
+
+func TestWebsitesPlatformDomainsList(t *testing.T) {
+	fake := &platformDomainService{
+		listPlatformDomainsFn: func(_ context.Context) (*ipfs.PlatformDomainListResponse, error) {
+			return &ipfs.PlatformDomainListResponse{
+				Total: 1,
+				Data: []ipfs.PlatformDomainResponse{
+					{Id: 1, Domain: "ipfs.pin.xyz", Namespace: "icann", ZoneId: 5, Enabled: true},
+				},
+			}, nil
+		},
+	}
+	op := websitesPlatformDomainsList(platformDomainDeps(t, fake))
+
+	res, err := op.Handler().Execute(context.Background(), map[string]any{})
+	if err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	got, ok := res.(*ipfs.PlatformDomainListResponse)
+	if !ok {
+		t.Fatalf("result type = %T, want *ipfs.PlatformDomainListResponse", res)
+	}
+	if len(got.Data) != 1 || got.Data[0].Domain != "ipfs.pin.xyz" || !got.Data[0].Enabled {
+		t.Fatalf("unexpected result: %+v", got)
 	}
 }
 

@@ -255,18 +255,17 @@ func vaultStatusHandler(prov VaultStatusProvider) model.ResourceHandler {
 	}
 }
 
-// platformDomainsHandler probes availability across the enabled platform
-// (free-subdomain) roots and returns the raw PlatformAvailabilityResponse. An
-// empty label probes all roots, which is what a guided agent needs to see the
-// free-subdomain options before guiding a claim.
+// platformDomainsHandler lists the enabled platform (free-subdomain) roots and
+// returns the raw PlatformDomainListResponse, which is what a guided agent
+// needs to see the free-subdomain options before guiding a claim.
 func platformDomainsHandler(ws wizard.WebsitesResourceProvider) model.ResourceHandler {
 	return func(ctx context.Context, req model.ResourceRequest) (model.ResourceResult, error) {
 		if ws == nil {
 			return model.ResourceResult{}, fmt.Errorf("websites provider not configured")
 		}
-		resp, err := ws.CheckPlatformDomainAvailability(ctx, "")
+		resp, err := ws.ListPlatformDomains(ctx)
 		if err != nil {
-			return model.ResourceResult{}, fmt.Errorf("probe platform domain availability: %w", err)
+			return model.ResourceResult{}, fmt.Errorf("list platform domains: %w", err)
 		}
 		var raw []byte
 		if resp == nil {
@@ -274,7 +273,7 @@ func platformDomainsHandler(ws wizard.WebsitesResourceProvider) model.ResourceHa
 		} else {
 			raw, err = json.MarshalIndent(resp, "", "  ")
 			if err != nil {
-				return model.ResourceResult{}, fmt.Errorf("marshal platform domain availability: %w", err)
+				return model.ResourceResult{}, fmt.Errorf("marshal platform domain list: %w", err)
 			}
 		}
 		return model.ResourceResult{URI: PlatformDomainsURI, MIMEType: "application/json", Text: string(raw)}, nil

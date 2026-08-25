@@ -78,3 +78,68 @@ func TestRenderWebsitesPlatformDomainAvailabilityResult(t *testing.T) {
 		}
 	})
 }
+
+// TestRenderWebsitesPlatformDomainsListResult verifies renderWebsitesResult
+// handles the *ipfs.PlatformDomainListResponse type returned by the
+// websites_platform_domains_list handler.
+func TestRenderWebsitesPlatformDomainsListResult(t *testing.T) {
+	t.Run("renders results as a table", func(t *testing.T) {
+		var buf bytes.Buffer
+		op := catalog.NewOperation(catalog.OperationSpec{Name: "websites_platform_domains_list"})
+		resp := &ipfs.PlatformDomainListResponse{
+			Total: 2,
+			Data: []ipfs.PlatformDomainResponse{
+				{Id: 1, Domain: "ipfs.pin.xyz", Namespace: "icann", ZoneId: 5, Enabled: true},
+				{Id: 2, Domain: "other.pin.xyz", Namespace: "pin", ZoneId: 6, Enabled: false},
+			},
+		}
+
+		cmd := &cli.Command{
+			Name:   "platform-domains",
+			Writer: &buf,
+			Action: func(ctx context.Context, c *cli.Command) error {
+				return renderWebsitesResult(ctx, c, op, resp)
+			},
+		}
+
+		if err := cmd.Run(t.Context(), []string{"platform-domains"}); err != nil {
+			t.Fatalf("run: unexpected error: %v", err)
+		}
+		got := buf.String()
+		for _, want := range []string{
+			"Platform Domains",
+			"ipfs.pin.xyz",
+			"icann",
+			"5",
+			"true",
+			"other.pin.xyz",
+			"false",
+		} {
+			if !strings.Contains(got, want) {
+				t.Fatalf("output %q does not contain %q", got, want)
+			}
+		}
+	})
+
+	t.Run("empty results renders empty state", func(t *testing.T) {
+		var buf bytes.Buffer
+		op := catalog.NewOperation(catalog.OperationSpec{Name: "websites_platform_domains_list"})
+		resp := &ipfs.PlatformDomainListResponse{Total: 0, Data: nil}
+
+		cmd := &cli.Command{
+			Name:   "platform-domains",
+			Writer: &buf,
+			Action: func(ctx context.Context, c *cli.Command) error {
+				return renderWebsitesResult(ctx, c, op, resp)
+			},
+		}
+
+		if err := cmd.Run(t.Context(), []string{"platform-domains"}); err != nil {
+			t.Fatalf("run: unexpected error: %v", err)
+		}
+		got := buf.String()
+		if !strings.Contains(got, "No platform domains found") {
+			t.Fatalf("output %q does not contain empty-state message", got)
+		}
+	})
+}

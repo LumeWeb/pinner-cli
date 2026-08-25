@@ -74,13 +74,15 @@ Call `websites_wizard_step` with input: {"domain": "{{.Domain}}"}
 
 {{define "website_step_domain_ask"}}Step: domain
 Determine how the user wants to address the website:
-  - No domain / free platform subdomain (DEFAULT when the user has no domain): read
-    pinner://websites/platform-domains (or call `websites_platform_domain_availability`)
-    to see the enabled platform roots, ask the user for a label they'd like (or offer to
-    auto-generate one), then call `websites_wizard_step` with input like
-    {"source": "platform_subdomain", "label": "<label>"}. The wizard checks availability,
-    builds the exact FQDN (label.root), creates the website, and claims the subdomain —
-    DNS is managed by the platform. Do not require the user to own a domain.
+  - No domain / free platform subdomain (DEFAULT when the user has no domain): list the
+    enabled platform roots by reading pinner://websites/platform-domains (or calling
+    `websites_platform_domains_list`), then ask the user for a label they'd like (or offer
+    to auto-generate one), and confirm the label is claimable with
+    `websites_platform_domain_availability <label>` (label is required). Then call
+    `websites_wizard_step` with input like {"source": "platform_subdomain", "label": "<label>"}.
+    The wizard checks availability, builds the exact FQDN (label.root), creates the website,
+    and claims the subdomain — DNS is managed by the platform. Do not require the user to own
+    a domain.
   - Own domain: ask for their domain name (e.g. example.com) and pass
     {"domain": "<domain>"} (custom is inferred when a domain is given).
 {{end}}

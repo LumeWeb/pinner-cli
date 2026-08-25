@@ -79,6 +79,20 @@ func TestPlatformDomainAvailabilityCurated(t *testing.T) {
 	require.True(t, found, "websites_platform_domain_availability must be in compiledCuratedToolNames")
 }
 
+// TestPlatformDomainsListCurated ensures the read-only, agent-safe
+// websites_platform_domains_list op is on the direct tools/list surface so a
+// guided agent can discover which platform subdomain roots exist.
+func TestPlatformDomainsListCurated(t *testing.T) {
+	found := false
+	for _, name := range compiledCuratedToolNames {
+		if name == "websites_platform_domains_list" {
+			found = true
+			break
+		}
+	}
+	require.True(t, found, "websites_platform_domains_list must be in compiledCuratedToolNames")
+}
+
 // TestMarkCuratedPromotesWizardTools guards the Kody finding that the
 // website/domain wizard start/step tools must remain on the direct tools/list
 // surface. wizard.RegisterWizardTools does not set DirectVisible itself, so the

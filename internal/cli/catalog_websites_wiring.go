@@ -520,6 +520,30 @@ func renderWebsitesResult(_ context.Context, c *cli.Command, op catalog.Operatio
 		output.Printfln("Domain removed successfully")
 		return nil
 
+	case *ipfs.PlatformDomainListResponse:
+		// websites platform-domains list: enabled platform (free-subdomain)
+		// roots available for users to claim subdomains under.
+		if output.IsJSON() {
+			return output.PrintJSON(r)
+		}
+		output.Printfln("Platform Domains")
+		if len(r.Data) == 0 {
+			output.Printfln("  No platform domains found")
+			return nil
+		}
+		headers := []string{"ID", "DOMAIN", "NAMESPACE", "ZONE ID", "ENABLED"}
+		rows := lo.Map(r.Data, func(res ipfs.PlatformDomainResponse, _ int) []string {
+			return []string{
+				fmt.Sprintf("%d", res.Id),
+				res.Domain,
+				res.Namespace,
+				fmt.Sprintf("%d", res.ZoneId),
+				fmt.Sprintf("%t", res.Enabled),
+			}
+		})
+		output.PrintTable(headers, rows)
+		return nil
+
 	case *ipfs.PlatformAvailabilityResponse:
 		// websites platform-domain availability: a label plus one availability
 		// result per enabled platform (free-subdomain) root.
