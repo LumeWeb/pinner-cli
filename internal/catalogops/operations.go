@@ -107,7 +107,7 @@ func newOperationsListResult(res *operations.OperationsListResult) ListResult {
 		})
 	}
 	return NewListResult(res.Operations, ListResultMeta{
-		Noun: "operation(s)", Headers: headers, Rows: rows,
+		Noun: "operation(s)", Headers: headers, Rows: rows, Total: res.Total,
 	})
 }
 
