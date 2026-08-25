@@ -23,17 +23,17 @@ test.describe.configure({ mode: 'serial' });
  *   static (resources/list)                          templates (resources/templates/list)
  *   - pinner://account/status                        - pinner://websites/{domain}/dns-requirements
  *   - pinner://vault/status                          - pinner://websites/{id}/validation-status
- *                                                    - pinner://wizard/{session_id}/state
+ *   - pinner://websites/platform-domains             - pinner://wizard/{session_id}/state
  *
  * NOTE on fixture behavior (verified by probing the real `pinner mcp`
  * binary): the official MCP Go SDK (sdk/resource.go) registers the static
  * resources via srv.AddResource and the three templates via
  * srv.AddResourceTemplate. The MCP client's listResources() (=> resources/list)
- * therefore surfaces ONLY the two static pinner resources (plus the ui:// MCP
+ * therefore surfaces ONLY the three static pinner resources (plus the ui:// MCP
  * App HTML resources); the three templates are advertised under
  * resources/templates/list, which the sunpeak mcp fixture does not expose
  * (its Resource shape has uri but no uriTemplate). So this test asserts the
- * two static pinner URIs from listResources() and exercises the template
+ * three static pinner URIs from listResources() and exercises the template
  * engine through readResource() on an INSTANTIATED template URI for the
  * website domain (the meaningful live behaviour).
  *
@@ -56,9 +56,13 @@ test.describe.configure({ mode: 'serial' });
 const Domain = `res-${Math.random().toString(36).slice(2, 8)}.test`;
 const Cid = `Qm${Math.random().toString(36).slice(2, 12)}`;
 
-// The two STATIC pinner:// resources that resources/list (and therefore
+// The STATIC pinner:// resources that resources/list (and therefore
 // mcp.listResources()) advertises, per internal/mcp/resources.go.
-const STATIC_RESOURCE_URIS = ['pinner://account/status', 'pinner://vault/status'];
+const STATIC_RESOURCE_URIS = [
+  'pinner://account/status',
+  'pinner://vault/status',
+  'pinner://websites/platform-domains',
+];
 
 test('listResources exposes the static pinner:// resources', async ({ mcp }) => {
   const resources = await mcp.listResources();
@@ -67,13 +71,13 @@ test('listResources exposes the static pinner:// resources', async ({ mcp }) => 
   // ui:// MCP App HTML resources; we only care about our scheme here).
   const pinnerUris = resources.map((r) => r.uri).filter((u) => String(u).startsWith('pinner://'));
 
-  // Both static pinner resources must be listed.
+  // All static pinner resources must be listed.
   for (const uri of STATIC_RESOURCE_URIS) {
     expect(pinnerUris).toContain(uri);
   }
 
   // Every advertised pinner:// resource belongs to the verified resource set
-  // (the two static URIs above). Template URIs are intentionally not listed by
+  // (the static URIs above). Template URIs are intentionally not listed by
   // resources/list, so none of the brace-form template URIs may appear here.
   for (const uri of pinnerUris) {
     expect(STATIC_RESOURCE_URIS).toContain(uri);

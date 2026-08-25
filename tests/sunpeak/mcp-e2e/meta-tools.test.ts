@@ -111,14 +111,15 @@ test('capabilities tool returns declared capabilities', async ({ mcp }) => {
 });
 
 const GUIDE_FLOWS = [
-  { name: 'auth', title: 'Authenticate', steps: ['auth_status', 'auth_sso', 'auth_resume', 'auth_status'] },
-  { name: 'vault_create', title: 'Create a vault', steps: ['vault_create', 'vault_create_resume', 'vault_status'] },
-  { name: 'vault_restore', title: 'Restore a vault', steps: ['vault_restore', 'vault_restore_resume', 'vault_status'] },
-  { name: 'upload', title: 'Upload a file to IPFS', steps: ['capabilities', 'upload_file', 'upload_status'] },
-  { name: 'vault_upload', title: 'Store a file in a vault', steps: ['capabilities', 'vault_put_file', 'upload_status'] },
-  { name: 'download', title: 'Download IPFS content to a file', steps: ['capabilities', 'download_file'] },
-  { name: 'vault_download', title: 'Download a file from a vault', steps: ['capabilities', 'vault_get_file'] },
-  { name: 'pins', title: 'Manage pins', steps: ['pins_add', 'pins_list', 'pins_status', 'pins_rm'] },
+  { name: 'auth', title: 'Authenticate', steps: ['auth_status', 'auth_sso', 'auth_resume', 'auth_status'], detail: 'Run auth_status; if unauthenticated, call auth_sso and poll auth_resume with the returned handle until the human completes the browser sign-in.' },
+  { name: 'vault_create', title: 'Create a vault', steps: ['vault_create', 'vault_create_resume', 'vault_status'], detail: 'Call vault_create with a profile name; poll vault_create_resume with the returned handle; confirm with vault_status until unlocked.' },
+  { name: 'vault_restore', title: 'Restore a vault', steps: ['vault_restore', 'vault_restore_resume', 'vault_status'], detail: 'Call vault_restore; poll vault_restore_resume with the returned handle; confirm with vault_status until unlocked.' },
+  { name: 'upload', title: 'Upload new content (creates + pins)', steps: ['capabilities', 'upload_file', 'upload_status'], detail: 'Check capabilities; call upload_file with a transport-scoped source (host path in co-located stdio, a minted presigned HTTP PUT in remote mode, or url/data on the OpenAI tunnel), then poll upload_status for the CID. The returned CID is already pinned — use it directly in websites_create/update; do NOT call pins_add after an upload.' },
+  { name: 'vault_upload', title: 'Store a file in a vault', steps: ['capabilities', 'vault_put_file', 'upload_status'], detail: 'Check capabilities; if vault_put_file is available and the target vault is unlocked, call it with a transport-scoped source (host path in co-located stdio mode, a minted presigned PUT in remote mode, or url/data on the OpenAI tunnel) plus the destination vault_path, then monitor with upload_status for the CID.' },
+  { name: 'download', title: 'Download IPFS content to a file', steps: ['capabilities', 'download_file'], detail: 'Check capabilities\' download_sink_modes; call download_file with ipfs_path (CID or CID/path) and a supported sink. sink=local writes the bytes to a host-side output_path on the MCP server\'s own disk (available on every transport); sink=drop (when advertised) returns a one-time HTTP GET filedrop link to pull from out of band with curl -o or a browser.' },
+  { name: 'vault_download', title: 'Download a file from a vault', steps: ['capabilities', 'vault_get_file'], detail: 'Check capabilities\' download_sink_modes and that the vault is unlocked; call vault_get_file with vault_path and a supported sink. sink=local writes the decrypted bytes to a host-side output_path on the MCP server\'s own disk; sink=drop (when advertised) returns a one-time HTTP GET filedrop link.' },
+  { name: 'pins', title: 'Manage pins', steps: ['pins_add', 'pins_list', 'pins_status', 'pins_rm'], detail: 'pins_add imports content already on IPFS by external CID; it is NOT for use after an upload tool (which already pins). pins_status takes one cid; pins_rm requires confirm and exactly one of cids or all.' },
+  { name: 'publish_website_upload', title: 'Publish a website (new content)', steps: ['upload_file', 'websites_create'], detail: 'Upload new bytes, e.g. upload_file returning a CID, then websites_create/update. CID from upload is already pinned; no pins_add.' },
 ];
 
 test('agent_guide tool returns guided onboarding text', async ({ mcp }) => {
