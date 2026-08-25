@@ -351,6 +351,13 @@ func (m *mockWebsitesResource) GetConfig(_ context.Context) (*ipfs.WebsiteConfig
 	return nil, nil
 }
 
+func (m *mockWebsitesResource) ListPlatformDomains(_ context.Context) (*ipfs.PlatformDomainListResponse, error) {
+	return &ipfs.PlatformDomainListResponse{
+		Total: 1,
+		Data:  []ipfs.PlatformDomainResponse{{Id: 1, Domain: "ipfs.pin.xyz", Namespace: "icann", ZoneId: 5, Enabled: true}},
+	}, nil
+}
+
 func (m *mockWebsitesResource) CheckPlatformDomainAvailability(_ context.Context, _ string) (*ipfs.PlatformAvailabilityResponse, error) {
 	if m.availErr != nil {
 		return nil, m.availErr

@@ -455,6 +455,33 @@ func listRoots(resp *ipfs.PlatformAvailabilityResponse) string {
 	return strings.Join(roots, ", ")
 }
 
+// firstPlatformDomain returns the first enabled platform root from the
+// platform-domain list, or "" if none is available.
+func firstPlatformDomain(resp *ipfs.PlatformDomainListResponse) string {
+	if resp == nil {
+		return ""
+	}
+	for _, r := range resp.Data {
+		if r.Enabled {
+			return r.Domain
+		}
+	}
+	return ""
+}
+
+// listPlatformDomainNames returns the comma-separated list of platform roots
+// for error messages.
+func listPlatformDomainNames(resp *ipfs.PlatformDomainListResponse) string {
+	if resp == nil {
+		return ""
+	}
+	var roots []string
+	for _, r := range resp.Data {
+		roots = append(roots, r.Domain)
+	}
+	return strings.Join(roots, ", ")
+}
+
 // buildWebsitesSteps returns the StepDef slice for the websites wizard.
 // Each step's handler decodes JSON input, validates it, and mutates the
 // WebsitesWizardState state stored in the session.
@@ -592,25 +619,31 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []session.StepDef {
 					return "", nil
 				}
 
-				// No label: auto-generate. The tool derives the platform root from
-				// an explicit platform_domain (or domain), else probes availability
-				// and picks the first available root, so the agent never has to
-				// supply an FQDN. The same root is used as the create FQDN and as
-				// the platform_domain that the later BindDomain mints under, keeping
-				// the created website and the claimed subdomain consistent.
+				// No label: auto-generate. The tool derives the platform root from an
+				// explicit platform_domain (or domain), else lists the enabled
+				// platform roots and picks the first one, so the agent never has to
+				// supply an FQDN. Enabled roots are those the platform advertises as
+				// accepting subdomain claims; availability cannot be enumerated here
+				// because CheckPlatformDomainAvailability requires a specific label.
+				// The same root is used as the create FQDN and as the platform_domain
+				// that the later BindDomain mints under, keeping the created website
+				// and the claimed subdomain consistent.
 				if in.Generate {
 					root := in.PlatformDomain
 					if root == "" {
 						root = in.Domain
 					}
 					if root == "" {
-						resp, err := platformAvailability(ctx, deps, "")
-						if err != nil {
-							return "", err
+						if deps.WebsitesResource == nil {
+							return "", fmt.Errorf("platform domain listing is unavailable in this context")
 						}
-						root = firstAvailableRoot(resp)
+						resp, err := deps.WebsitesResource.ListPlatformDomains(ctx)
+						if err != nil {
+							return "", fmt.Errorf("list platform domains: %w", err)
+						}
+						root = firstPlatformDomain(resp)
 						if root == "" {
-							return "", fmt.Errorf("no available platform root to auto-generate a subdomain under (available roots: %s)", listRoots(resp))
+							return "", fmt.Errorf("no available platform root to auto-generate a subdomain under (available roots: %s)", listPlatformDomainNames(resp))
 						}
 					}
 					w.SetPlatformDomain(root)

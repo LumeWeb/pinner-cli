@@ -14,7 +14,7 @@ import (
 // the platform-domains resource test, returning a canned availability probe.
 type mockPlatformDomainsProvider struct {
 	probeLabel string
-	resp       *ipfs.PlatformAvailabilityResponse
+	resp       *ipfs.PlatformDomainListResponse
 	err        error
 }
 
@@ -30,18 +30,21 @@ func (m *mockPlatformDomainsProvider) Validate(_ context.Context, _ string) (*ip
 func (m *mockPlatformDomainsProvider) GetConfig(_ context.Context) (*ipfs.WebsiteConfigResponse, error) {
 	return nil, nil
 }
+func (m *mockPlatformDomainsProvider) ListPlatformDomains(_ context.Context) (*ipfs.PlatformDomainListResponse, error) {
+	return m.resp, m.err
+}
 func (m *mockPlatformDomainsProvider) CheckPlatformDomainAvailability(_ context.Context, label string) (*ipfs.PlatformAvailabilityResponse, error) {
 	m.probeLabel = label
-	return m.resp, m.err
+	return nil, nil
 }
 
 func TestPlatformDomainsResource(t *testing.T) {
 	prov := &mockPlatformDomainsProvider{
-		resp: &ipfs.PlatformAvailabilityResponse{
-			Label: "",
-			Results: []ipfs.PlatformAvailabilityResult{
-				{Available: true, Namespace: "icann", PlatformDomain: "ipfs.pin.xyz"},
-				{Available: false, Namespace: "icann", PlatformDomain: "pin.xyz"},
+		resp: &ipfs.PlatformDomainListResponse{
+			Total: 2,
+			Data: []ipfs.PlatformDomainResponse{
+				{Id: 1, Domain: "ipfs.pin.xyz", Namespace: "icann", ZoneId: 5, Enabled: true},
+				{Id: 2, Domain: "pin.xyz", Namespace: "icann", ZoneId: 6, Enabled: false},
 			},
 		},
 	}
@@ -52,14 +55,11 @@ func TestPlatformDomainsResource(t *testing.T) {
 	require.Equal(t, PlatformDomainsURI, res.URI)
 	require.Equal(t, "application/json", res.MIMEType)
 
-	// The handler probes with an empty label to list all roots.
-	require.Equal(t, "", prov.probeLabel)
-
-	var parsed ipfs.PlatformAvailabilityResponse
+	var parsed ipfs.PlatformDomainListResponse
 	require.NoError(t, json.Unmarshal([]byte(res.Text), &parsed))
-	require.Len(t, parsed.Results, 2)
-	require.Equal(t, "ipfs.pin.xyz", parsed.Results[0].PlatformDomain)
-	require.True(t, parsed.Results[0].Available)
+	require.Len(t, parsed.Data, 2)
+	require.Equal(t, "ipfs.pin.xyz", parsed.Data[0].Domain)
+	require.True(t, parsed.Data[0].Enabled)
 }
 
 func TestPlatformDomainsResourceUnwired(t *testing.T) {

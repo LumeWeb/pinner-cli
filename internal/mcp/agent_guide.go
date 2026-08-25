@@ -88,8 +88,8 @@ func NewAgentGuideDescriptor() model.ToolDescriptor {
 			{
 				Name:   "publish_website_platform_subdomain",
 				Title:  "Publish a website with a free platform subdomain (no domain needed)",
-				Steps:  []string{"upload_file", "websites_platform_domain_availability", "websites_wizard_start", "websites_wizard_step"},
-				Detail: "Upload new bytes (upload_file → CID). If the user has no domain, do NOT invent one: use the websites wizard to claim a platform subdomain — websites_wizard_start, then drive websites_wizard_step, passing {source: platform_subdomain, label: <label>} at the domain step (check websites_platform_domain_availability first to find an available label/root). The wizard creates the website with the exact FQDN and mints the subdomain with platform-managed DNS.",
+				Steps:  []string{"upload_file", "websites_platform_domains_list", "websites_platform_domain_availability", "websites_wizard_start", "websites_wizard_step"},
+				Detail: "Upload new bytes (upload_file → CID). If the user has no domain, do NOT invent one: use the websites wizard to claim a platform subdomain — list the available roots with websites_platform_domains_list, then websites_platform_domain_availability <label> to confirm the candidate label is claimable, then websites_wizard_start and drive websites_wizard_step passing {source: platform_subdomain, label: <label>} at the domain step. The wizard creates the website with the exact FQDN and mints the subdomain with platform-managed DNS.",
 			},
 		},
 	}

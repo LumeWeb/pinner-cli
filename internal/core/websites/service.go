@@ -44,9 +44,13 @@ type Service interface {
 	// promotes the binding to primary. Omitted fields are left unchanged.
 	UpdateDomain(ctx context.Context, websiteID string, domainID string, req ipfs.DomainUpdateRequest) (*ipfs.DomainResponse, error)
 
+	// ListPlatformDomains lists the platform (free-subdomain) roots available
+	// for websites.
+	ListPlatformDomains(ctx context.Context) (*ipfs.PlatformDomainListResponse, error)
+
 	// CheckPlatformDomainAvailability checks, for a candidate subdomain label,
 	// whether it is claimable on each enabled platform (free-subdomain) root.
-	// label may be empty to probe all roots.
+	// label is required.
 	CheckPlatformDomainAvailability(ctx context.Context, label string) (*ipfs.PlatformAvailabilityResponse, error)
 }
 
@@ -368,6 +372,19 @@ func (s *service) UpdateDomain(ctx context.Context, websiteID string, domainID s
 		return nil, err
 	}
 	return svc.UpdateDomain(ctx, websiteID, domainID, req)
+}
+
+// ListPlatformDomains lists the platform (free-subdomain) roots available
+// for websites.
+func (s *service) ListPlatformDomains(ctx context.Context) (*ipfs.PlatformDomainListResponse, error) {
+	if err := s.RequireAuthenticated(); err != nil {
+		return nil, err
+	}
+	svc, err := s.requireService()
+	if err != nil {
+		return nil, err
+	}
+	return svc.ListPlatformDomains(ctx)
 }
 
 // CheckPlatformDomainAvailability checks, for a candidate subdomain label,

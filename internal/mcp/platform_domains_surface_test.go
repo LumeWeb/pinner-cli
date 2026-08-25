@@ -18,6 +18,7 @@ func TestPlatformDomainAvailabilityRegisteredInMCPSurface(t *testing.T) {
 		names[op.Name()] = true
 	}
 	require.True(t, names["websites_platform_domain_availability"], "MCP surface should expose websites_platform_domain_availability")
+	require.True(t, names["websites_platform_domains_list"], "MCP surface should expose websites_platform_domains_list")
 }
 
 // TestAdminPlatformDomainsOpsRegisteredInMCPSurface verifies the 5 privileged

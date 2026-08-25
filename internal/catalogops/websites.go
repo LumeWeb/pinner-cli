@@ -90,6 +90,7 @@ func WebsitesOperations(d WebsitesDeps) []catalog.Operation {
 		websitesDomainsDNSRequirements(d),
 		websitesDomainsDANERepublish(d),
 		websitesDomainsUpdate(d),
+		websitesPlatformDomainsList(d),
 		websitesPlatformDomainAvailability(d),
 	}
 }
@@ -509,10 +510,38 @@ func websitesConfig(d WebsitesDeps) catalog.Operation {
 	})
 }
 
+// websitesPlatformDomainsList is the `websites platform-domains` operation /
+// `websites_platform_domains_list` MCP tool. Lists the platform (free-subdomain)
+// root domains that are enabled and available for users to claim subdomains
+// under. Returns *ipfs.PlatformDomainListResponse (data plus total).
+func websitesPlatformDomainsList(d WebsitesDeps) catalog.Operation {
+	return catalog.NewOperation(catalog.OperationSpec{
+		Name:        "websites_platform_domains_list",
+		Title:       "List platform domains",
+		Summary:     "List available platform subdomain roots",
+		Description: "List the platform-owned root domains that are enabled and available for users to claim free subdomains under. Each entry carries the root domain, its DNS namespace, zone id, and whether it is enabled. Use this to discover which roots exist before checking a label's availability with websites_platform_domain_availability or claiming a platform subdomain.",
+		Category:    "core",
+		Safety:      catalog.SafetyRead,
+		Interaction: catalog.InteractionAgentSafe,
+		Visibility:  catalog.VisibilityBoth,
+		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
+			svc, svcErr := d.service(input)
+			if svcErr != nil {
+				return nil, svcErr
+			}
+			if err := svc.RequireAuthenticated(); err != nil {
+				return nil, err
+			}
+			// *ipfs.PlatformDomainListResponse
+			return svc.ListPlatformDomains(ctx)
+		}),
+	})
+}
+
 // websitesPlatformDomainAvailability is the `websites platform-domain
 // availability` operation / `websites_platform_domain_availability` MCP tool.
 // Checks whether a candidate subdomain label is claimable on each enabled
-// platform (free-subdomain) root. label may be empty to probe all roots.
+// platform (free-subdomain) root. label is required.
 // Returns *ipfs.PlatformAvailabilityResponse (label plus one
 // PlatformAvailabilityResult per root).
 func websitesPlatformDomainAvailability(d WebsitesDeps) catalog.Operation {
@@ -520,14 +549,14 @@ func websitesPlatformDomainAvailability(d WebsitesDeps) catalog.Operation {
 		Name:        "websites_platform_domain_availability",
 		Title:       "Check platform domain availability",
 		Summary:     "Check if a label is available as a platform subdomain",
-		Description: "Check whether a candidate subdomain label is claimable on each enabled platform (free-subdomain) root. Pass a label to check one candidate, or omit it to probe all roots. Returns one availability result per platform-owned root. Used by the websites wizard (websites_wizard_start/websites_wizard_step) to derive a platform subdomain and its exact FQDN when the user supplies no domain.",
+		Description: "Check whether a candidate subdomain label is claimable on each enabled platform (free-subdomain) root. label is required. Returns one availability result per platform-owned root. Used by the websites wizard (websites_wizard_start/websites_wizard_step) to derive a platform subdomain and its exact FQDN when the user supplies no domain; discover the roots first with websites_platform_domains_list.",
 		Category:    "core",
 		Safety:      catalog.SafetyRead,
 		Interaction: catalog.InteractionAgentSafe,
 		Visibility:  catalog.VisibilityBoth,
-		Positional:  "[<label>]",
+		Positional:  "<label>",
 		Args: []catalog.OperationArg{
-			{Name: "label", Type: catalog.ArgTypeString, Required: false, Help: "Candidate subdomain label to check availability for. Omit to probe all platform roots."},
+			{Name: "label", Type: catalog.ArgTypeString, Required: true, Help: "Candidate subdomain label to check availability for. Required."},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			svc, svcErr := d.service(input)
@@ -538,6 +567,9 @@ func websitesPlatformDomainAvailability(d WebsitesDeps) catalog.Operation {
 				return nil, err
 			}
 			label := catalog.StrArg(input, "label", "")
+			if label == "" {
+				return nil, errors.New("label is required: pass a candidate subdomain label to check availability")
+			}
 			// *ipfs.PlatformAvailabilityResponse
 			return svc.CheckPlatformDomainAvailability(ctx, label)
 		}),

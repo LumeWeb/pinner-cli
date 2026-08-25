@@ -32,6 +32,7 @@ var compiledCuratedToolNames = []string{
 	"websites_list",
 	"websites_get",
 	"websites_validate",
+	"websites_platform_domains_list",
 	"websites_platform_domain_availability",
 	"domains_wizard_start",
 	"domains_wizard_step",

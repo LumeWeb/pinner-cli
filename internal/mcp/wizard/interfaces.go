@@ -121,8 +121,11 @@ type WebsitesResourceProvider interface {
 	Validate(ctx context.Context, id string) (*ipfs.WebsiteValidateResponse, error)
 	// GetConfig returns the website hosting config (nameservers, gateway domain).
 	GetConfig(ctx context.Context) (*ipfs.WebsiteConfigResponse, error)
+	// ListPlatformDomains lists the platform (free-subdomain) roots available
+	// for websites.
+	ListPlatformDomains(ctx context.Context) (*ipfs.PlatformDomainListResponse, error)
 	// CheckPlatformDomainAvailability probes whether a candidate subdomain
 	// label is claimable on each enabled platform (free-subdomain) root.
-	// label may be empty to probe all roots.
+	// label is required.
 	CheckPlatformDomainAvailability(ctx context.Context, label string) (*ipfs.PlatformAvailabilityResponse, error)
 }
