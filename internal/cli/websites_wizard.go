@@ -9,6 +9,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/cli/wizard"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
 	"go.lumeweb.com/pinner-cli/internal/core/websites"
+	mcpwizard "go.lumeweb.com/pinner-cli/internal/mcp/wizard"
 )
 
 // WebsitesWizard manages the website creation wizard.
@@ -32,6 +33,11 @@ type WebsitesWizard struct {
 	label             string
 	platformDomain    string
 	platformNamespace string
+
+	// Multi-FSM sub-machine states (lifecycle / content / ops).
+	lifecycleState mcpwizard.WebsiteLifecycleState
+	contentState   mcpwizard.WebsiteContentState
+	opState        mcpwizard.WebsiteOpState
 }
 
 // NewWebsitesWizard creates a new websites wizard.
@@ -298,6 +304,36 @@ func (w *WebsitesWizard) SetValidationResult(result *ipfs.WebsiteValidateRespons
 // SetValidateRetry sets whether the validation step should be retried.
 func (w *WebsitesWizard) SetValidateRetry(retry bool) {
 	w.validateRetry = retry
+}
+
+// LifecycleState returns the website lifecycle sub-machine state.
+func (w *WebsitesWizard) LifecycleState() mcpwizard.WebsiteLifecycleState {
+	return w.lifecycleState
+}
+
+// SetLifecycleState sets the website lifecycle sub-machine state.
+func (w *WebsitesWizard) SetLifecycleState(s mcpwizard.WebsiteLifecycleState) {
+	w.lifecycleState = s
+}
+
+// ContentState returns the content deployment sub-machine state.
+func (w *WebsitesWizard) ContentState() mcpwizard.WebsiteContentState {
+	return w.contentState
+}
+
+// SetContentState sets the content deployment sub-machine state.
+func (w *WebsitesWizard) SetContentState(s mcpwizard.WebsiteContentState) {
+	w.contentState = s
+}
+
+// OpState returns the async operation sub-machine state.
+func (w *WebsitesWizard) OpState() mcpwizard.WebsiteOpState {
+	return w.opState
+}
+
+// SetOpState sets the async operation sub-machine state.
+func (w *WebsitesWizard) SetOpState(s mcpwizard.WebsiteOpState) {
+	w.opState = s
 }
 
 // newWebsitesWizardCommand creates the wizard subcommand for websites.

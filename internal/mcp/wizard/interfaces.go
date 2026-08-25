@@ -50,6 +50,21 @@ type WebsitesWizardState interface {
 	SetPlatformDomain(string)
 	PlatformNamespace() string
 	SetPlatformNamespace(string)
+
+	// LifecycleState reports the website lifecycle sub-machine state
+	// (draft|claimed|binding|live|failed).
+	LifecycleState() WebsiteLifecycleState
+	SetLifecycleState(WebsiteLifecycleState)
+
+	// ContentState reports the content deployment sub-machine state
+	// (new|ready|deployed).
+	ContentState() WebsiteContentState
+	SetContentState(WebsiteContentState)
+
+	// OpState reports the async operation sub-machine state
+	// (pending|running|succeeded|failed).
+	OpState() WebsiteOpState
+	SetOpState(WebsiteOpState)
 }
 
 // SetupWizardState is the interface for the setup wizard state object.
