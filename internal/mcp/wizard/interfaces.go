@@ -123,6 +123,6 @@ type WebsitesResourceProvider interface {
 	GetConfig(ctx context.Context) (*ipfs.WebsiteConfigResponse, error)
 	// CheckPlatformDomainAvailability probes whether a candidate subdomain
 	// label is claimable on each enabled platform (free-subdomain) root.
-	// label may be empty to probe all roots.
+	// label is required; the portal backend rejects an empty label (422).
 	CheckPlatformDomainAvailability(ctx context.Context, label string) (*ipfs.PlatformAvailabilityResponse, error)
 }

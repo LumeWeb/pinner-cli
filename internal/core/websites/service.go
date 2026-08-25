@@ -44,9 +44,9 @@ type Service interface {
 	// promotes the binding to primary. Omitted fields are left unchanged.
 	UpdateDomain(ctx context.Context, websiteID string, domainID string, req ipfs.DomainUpdateRequest) (*ipfs.DomainResponse, error)
 
-	// CheckPlatformDomainAvailability checks, for a candidate subdomain label,
-	// whether it is claimable on each enabled platform (free-subdomain) root.
-	// label may be empty to probe all roots.
+	// CheckPlatformDomainAvailability checks whether a candidate subdomain label
+	// is claimable on each enabled platform (free-subdomain) root. label is
+	// required; the portal backend rejects an empty label (422).
 	CheckPlatformDomainAvailability(ctx context.Context, label string) (*ipfs.PlatformAvailabilityResponse, error)
 }
 

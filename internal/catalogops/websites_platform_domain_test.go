@@ -2,9 +2,11 @@ package catalogops
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	ipfs "go.lumeweb.com/ipfs-sdk"
+	"go.lumeweb.com/pinner-cli/internal/catalog"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
 	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
 	"go.lumeweb.com/pinner-cli/internal/core/websites"
@@ -86,14 +88,18 @@ func TestWebsitesPlatformDomainAvailability(t *testing.T) {
 	}
 }
 
-func TestWebsitesPlatformDomainAvailabilityEmptyLabel(t *testing.T) {
-	fake := &platformDomainService{}
-	op := websitesPlatformDomainAvailability(platformDomainDeps(t, fake))
-	if _, err := op.Handler().Execute(context.Background(), map[string]any{}); err != nil {
-		t.Fatalf("handler with empty label: %v", err)
+func TestWebsitesPlatformDomainAvailabilityRequiresLabel(t *testing.T) {
+	op := websitesPlatformDomainAvailability(platformDomainDeps(t, &platformDomainService{}))
+
+	// The backend rejects an empty/missing label (422 "Label: is required"),
+	// so the schema must require it for both the MCP tool and the CLI.
+	labelArg := op.Args()[0]
+	if !labelArg.Required {
+		t.Fatalf("label arg Required = false, want true")
 	}
-	if fake.checkPlatformAvailabilityLabel != "" {
-		t.Fatalf("label = %q, want empty (probe all roots)", fake.checkPlatformAvailabilityLabel)
+
+	if _, err := catalog.NormalizeOperationInput(op, map[string]any{}); err == nil || !strings.Contains(err.Error(), `missing required argument "label"`) {
+		t.Fatalf("catalog.NormalizeOperationInput({}) error = %v, want missing required argument \"label\"", err)
 	}
 }
 

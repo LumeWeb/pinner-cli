@@ -512,22 +512,22 @@ func websitesConfig(d WebsitesDeps) catalog.Operation {
 // websitesPlatformDomainAvailability is the `websites platform-domain
 // availability` operation / `websites_platform_domain_availability` MCP tool.
 // Checks whether a candidate subdomain label is claimable on each enabled
-// platform (free-subdomain) root. label may be empty to probe all roots.
-// Returns *ipfs.PlatformAvailabilityResponse (label plus one
+// platform (free-subdomain) root. label is required. Returns
+// *ipfs.PlatformAvailabilityResponse (label plus one
 // PlatformAvailabilityResult per root).
 func websitesPlatformDomainAvailability(d WebsitesDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
 		Name:        "websites_platform_domain_availability",
 		Title:       "Check platform domain availability",
 		Summary:     "Check if a label is available as a platform subdomain",
-		Description: "Check whether a candidate subdomain label is claimable on each enabled platform (free-subdomain) root. Pass a label to check one candidate, or omit it to probe all roots. Returns one availability result per platform-owned root. Used by the websites wizard (websites_wizard_start/websites_wizard_step) to derive a platform subdomain and its exact FQDN when the user supplies no domain.",
+		Description: "Check whether a candidate subdomain label is claimable on each enabled platform (free-subdomain) root. A label is required; the API has no probe-all-roots mode. Returns one availability result per platform-owned root. Used by the websites wizard (websites_wizard_start/websites_wizard_step) to derive a platform subdomain and its exact FQDN when the user supplies no domain.",
 		Category:    "core",
 		Safety:      catalog.SafetyRead,
 		Interaction: catalog.InteractionAgentSafe,
 		Visibility:  catalog.VisibilityBoth,
-		Positional:  "[<label>]",
+		Positional:  "<label>",
 		Args: []catalog.OperationArg{
-			{Name: "label", Type: catalog.ArgTypeString, Required: false, Help: "Candidate subdomain label to check availability for. Omit to probe all platform roots."},
+			{Name: "label", Type: catalog.ArgTypeString, Required: true, Help: "Candidate subdomain label to check availability for. Required; the API rejects an empty label."},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			svc, svcErr := d.service(input)
