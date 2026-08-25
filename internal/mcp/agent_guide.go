@@ -49,7 +49,7 @@ type AgentGuide struct {
 // does not have to discover the flows by probing tool descriptions.
 func NewAgentGuideDescriptor() model.ToolDescriptor {
 	guide := AgentGuide{
-		Summary: "Start here. Drive Pinner through these primary flows; each step is a tool. Check the current state first, then follow the matching flow.",
+		Summary: "Start here. Drive Pinner through these primary flows; each step is a tool. Check the current state first, then follow the matching flow. For guided, interactive website onboarding (human-in-the-loop, step-by-step DNS setup), use the website-onboarding prompt and the websites_wizard tools instead of the publish_website flow.",
 		Flows: []GuideFlow{
 			{
 				Name:   "auth",
@@ -107,18 +107,18 @@ func NewAgentGuideDescriptor() model.ToolDescriptor {
 					Branches: []GuideBranch{
 						{
 							When:  "No — generic request (e.g. \"create me a website\", \"publish this\", \"host this\")",
-							Steps: []string{"upload_file", "websites_create"},
-							Detail: "Call websites_create with only --cid (no domain, no label). The platform auto-generates a subdomain (generate=true) and manages DNS. Do NOT invent a label or call websites_platform_domain_availability. Do not infer a desire for custom naming from a generic request to create or publish a website.",
+							Steps: []string{"upload_file", "websites_create", "websites_validate"},
+							Detail: "Call websites_create with only {\"cid\": \"<cid>\"} — no domain, no label, no platform. The platform auto-generates a subdomain and manages DNS. Do NOT invent a label or call websites_platform_domain_availability. Do not infer a desire for custom naming from a generic request to create or publish a website. After creation, call websites_validate to confirm DNS propagation. If validation fails, wait ~30-60s and retry.",
 						},
 						{
 							When:  "Yes — user explicitly supplied or requested a specific label (e.g. \"call it acme\", \"use myapp\")",
-							Steps: []string{"upload_file", "websites_platform_domains_list", "websites_platform_domain_availability", "websites_create"},
-							Detail: "List platform roots with websites_platform_domains_list, then check the label is claimable with websites_platform_domain_availability <label>, then call websites_create with --platform --label <label>. Only use this branch when the user explicitly named a label — never invent one to perform the availability step.",
+							Steps: []string{"upload_file", "websites_platform_domains_list", "websites_platform_domain_availability", "websites_create", "websites_validate"},
+							Detail: "List platform roots with websites_platform_domains_list, then check the label is claimable with websites_platform_domain_availability <label>, then call websites_create with {\"cid\": \"<cid>\", \"platform\": true, \"label\": \"<label>\"}. Only use this branch when the user explicitly named a label — never invent one to perform the availability step. After creation, call websites_validate to confirm DNS propagation. If validation fails, wait ~30-60s and retry.",
 						},
 						{
 							When:  "Yes — user owns a custom domain (e.g. example.com)",
-							Steps: []string{"upload_file", "websites_create"},
-							Detail: "Call websites_create with <domain> --cid <cid>. The domain is used directly as a custom domain (not a platform subdomain).",
+							Steps: []string{"upload_file", "websites_create", "websites_validate"},
+							Detail: "Call websites_create with {\"cid\": \"<cid>\", \"website\": \"<domain>\"}. The domain is used directly as a custom domain (not a platform subdomain). Read pinner://websites/<domain>/dns-requirements for DNS records to publish. If dns_hosting=true (managed), DNS is reconciled asynchronously — wait ~30-60s and retry websites_validate. If self-managed, publish the _dnslink TXT and validation TXT before calling websites_validate.",
 						},
 					},
 				},

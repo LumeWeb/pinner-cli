@@ -1265,9 +1265,11 @@ The tool surface is intentionally two-tier. The tools listed directly in tools/l
 For authentication, prefer the out-of-band flow: call auth_sso, give the returned approval URL to the human, then poll auth_resume with the returned handle until it reports done. This avoids an invalid or missing API key blocking work.
 
 Common flows start here:
+- guide:    call agent_guide first for the full ordered flow chains and decision trees
 - auth:     auth_status -> auth_sso -> auth_resume (then auth_status to verify)
 - vault:    vault_create -> vault_create_resume -> vault_status; restore via vault_restore -> vault_restore_resume
 - pins:     pins_add / pins_list / pins_status
+- publish:  upload_file -> websites_create (see agent_guide for domain/label/custom-domain branching)
 - search:   search_tools({ "query": "<one keyword>" })
 - filter:   search_tools({ "category": "vault", "query": "<one keyword>" })
 

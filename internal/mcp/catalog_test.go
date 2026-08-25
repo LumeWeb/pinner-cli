@@ -46,6 +46,10 @@ func TestBuildInstructionsEmbedsCount(t *testing.T) {
 	// an absent tool is reachable via discovery, not missing/broken.
 	require.Contains(t, got, "intentionally two-tier")
 	require.Contains(t, got, "reachable via search_tools -> describe_tool -> invoke_tool")
+	// The system prompt must direct agents to agent_guide and include the
+	// publish/website flow so agents know how to create websites.
+	require.Contains(t, got, "call agent_guide first")
+	require.Contains(t, got, "upload_file -> websites_create")
 }
 
 // TestEnumStringFlagEmitsEnum verifies that a flag built with EnumStringFlag
