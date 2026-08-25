@@ -169,10 +169,13 @@ func (m *WebsiteStateMachine) ChooseDomainSource(source string) error {
 		return nil
 	}
 	// Already past draft. A retry that switches custom<->platform is legal while
-	// the source is only claimed (website not created yet).
+	// the source is only claimed (website not created yet). The previously
+	// claimed domain no longer matches the new source, so it is dropped to keep
+	// source and domain consistent for the create step.
 	if m.lifecycleCurrent() == LifecycleClaimed {
 		if cur := m.w.DomainSource(); cur != "" && cur != source {
 			m.w.SetDomainSource(source)
+			m.w.SetDomain("")
 		}
 		return nil
 	}

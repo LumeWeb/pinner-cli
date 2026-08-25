@@ -203,12 +203,16 @@ func TestWebsitesFSM_ChooseDomainSourceRetrySwitch(t *testing.T) {
 		t.Fatalf("MarkClaimed: %v", err)
 	}
 
-	// Retry switching to platform while still claimed: must persist, not no-op.
+	// Retry switching to platform while still claimed: must persist, not no-op,
+	// and must drop the old source's domain so source and domain stay aligned.
 	if err := m.ChooseDomainSource(string(wizard.WebsitesDomainSourcePlatform)); err != nil {
 		t.Fatalf("switch source while claimed: %v", err)
 	}
 	if w.DomainSource() != string(wizard.WebsitesDomainSourcePlatform) {
 		t.Fatalf("domain source after switch = %q, want platform_subdomain", w.DomainSource())
+	}
+	if w.Domain() != "" {
+		t.Fatalf("domain after source switch should be cleared, got %q", w.Domain())
 	}
 
 	// Once the website exists (binding), a source change must be rejected.
