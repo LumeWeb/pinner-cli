@@ -10,11 +10,31 @@ import (
 )
 
 // GuideFlow describes one chained flow an agent can drive end-to-end.
+// Simple flows use Steps directly. Branching flows use Decision so the agent
+// picks the correct path deterministically instead of guessing.
 type GuideFlow struct {
-	Name   string   `json:"name"`   // flow identifier, e.g. auth
-	Title  string   `json:"title"`  // short human label
-	Steps  []string `json:"steps"`  // ordered tools / milestones in the flow
-	Detail string   `json:"detail"` // one-line guidance
+	Name     string          `json:"name"`               // flow identifier, e.g. auth
+	Title    string          `json:"title"`              // short human label
+	Steps    []string        `json:"steps,omitempty"`    // ordered tools (simple flows)
+	Detail   string          `json:"detail,omitempty"`   // one-line guidance
+	Decision *GuideDecision `json:"decision,omitempty"` // branching flows
+}
+
+// GuideDecision models a branching point in a flow. The agent evaluates each
+// Branch's When clause and follows the first match.
+type GuideDecision struct {
+	Question string        `json:"question"`           // what to decide
+	Branches []GuideBranch `json:"branches"`          // ordered branches
+}
+
+// GuideBranch is one path through a decision. When is a natural-language
+// condition; Steps is the ordered tool chain for that path; Detail is
+// guidance; Next allows nested decisions.
+type GuideBranch struct {
+	When   string          `json:"when"`            // condition for this branch
+	Steps  []string        `json:"steps"`           // ordered tools for this branch
+	Detail string          `json:"detail,omitempty"`
+	Next   *GuideDecision  `json:"next,omitempty"`  // nested decision if needed
 }
 
 // AgentGuide is the structured payload returned by the agent_guide tool.
@@ -29,7 +49,7 @@ type AgentGuide struct {
 // does not have to discover the flows by probing tool descriptions.
 func NewAgentGuideDescriptor() model.ToolDescriptor {
 	guide := AgentGuide{
-		Summary: "Start here. Drive Pinner through these primary flows; each step is a tool. Check the current state first, then follow the matching flow.",
+		Summary: "Start here. Drive Pinner through these primary flows; each step is a tool. Check the current state first, then follow the matching flow. For guided, interactive website onboarding (human-in-the-loop, step-by-step DNS setup), use the website-onboarding prompt and the websites_wizard tools instead of the publish_website flow.",
 		Flows: []GuideFlow{
 			{
 				Name:   "auth",
@@ -80,23 +100,35 @@ func NewAgentGuideDescriptor() model.ToolDescriptor {
 				Detail: "pins_add imports content already on IPFS by external CID; it is NOT for use after an upload tool (which already pins). pins_status takes one cid; pins_rm requires confirm and exactly one of cids or all.",
 			},
 			{
-				Name:   "publish_website_upload",
-				Title:  "Publish a website (new content)",
-				Steps:  []string{"upload_file", "websites_create"},
-				Detail: "Upload new bytes, e.g. upload_file returning a CID, then websites_create/update. CID from upload is already pinned; no pins_add.",
-			},
-			{
-				Name:   "publish_website_platform_subdomain",
-				Title:  "Publish a website with a free platform subdomain (no domain needed)",
-				Steps:  []string{"upload_file", "websites_platform_domains_list", "websites_platform_domain_availability", "websites_wizard_start", "websites_wizard_step"},
-				Detail: "Upload new bytes (upload_file → CID). If the user has no domain, do NOT invent one: use the websites wizard to claim a platform subdomain — list the available roots with websites_platform_domains_list, then websites_platform_domain_availability <label> to confirm the candidate label is claimable, then websites_wizard_start and drive websites_wizard_step passing {source: platform_subdomain, label: <label>} at the domain step. The wizard creates the website with the exact FQDN and mints the subdomain with platform-managed DNS.",
+				Name:  "publish_website",
+				Title: "Publish a website",
+				Decision: &GuideDecision{
+					Question: "Does the user have a domain or subdomain label preference?",
+					Branches: []GuideBranch{
+						{
+							When:  "No — generic request (e.g. \"create me a website\", \"publish this\", \"host this\")",
+							Steps: []string{"upload_file", "websites_create", "websites_validate"},
+							Detail: "Call websites_create with only {\"cid\": \"<cid>\"} — no domain, no label, no platform. The platform auto-generates a subdomain and manages DNS. Do NOT invent a label or call websites_platform_domain_availability. Do not infer a desire for custom naming from a generic request to create or publish a website. After creation, call websites_validate to confirm DNS propagation. If validation fails, wait ~30-60s and retry.",
+						},
+						{
+							When:  "Yes — user explicitly supplied or requested a specific label (e.g. \"call it acme\", \"use myapp\")",
+							Steps: []string{"upload_file", "websites_platform_domains_list", "websites_platform_domain_availability", "websites_create", "websites_validate"},
+							Detail: "List platform roots with websites_platform_domains_list, then check the label is claimable with websites_platform_domain_availability <label>, then call websites_create with {\"cid\": \"<cid>\", \"platform\": true, \"label\": \"<label>\"}. Only use this branch when the user explicitly named a label — never invent one to perform the availability step. After creation, call websites_validate to confirm DNS propagation. If validation fails, wait ~30-60s and retry.",
+						},
+						{
+							When:  "Yes — user owns a custom domain (e.g. example.com)",
+							Steps: []string{"upload_file", "websites_create", "websites_validate"},
+							Detail: "Call websites_create with {\"cid\": \"<cid>\", \"website\": \"<domain>\"}. The domain is used directly as a custom domain (not a platform subdomain). Read pinner://websites/<domain>/dns-requirements for DNS records to publish. If dns_hosting=true (managed), DNS is reconciled asynchronously — wait ~30-60s and retry websites_validate. If self-managed, publish the _dnslink TXT and validation TXT before calling websites_validate.",
+						},
+					},
+				},
 			},
 		},
 	}
 	return model.ToolDescriptor{
 		Name:        "agent_guide",
 		Title:       "Pinner agent guide",
-		Description: "Orientation for autonomous agents: the primary Pinner flows (auth, vault_create, vault_restore, upload, vault_upload, download, vault_download, pins, publish_website_upload, publish_website_platform_subdomain) as ordered tool chains. Call this first to learn how to drive Pinner before probing individual tools.",
+		Description: "Orientation for autonomous agents: the primary Pinner flows (auth, vault_create, vault_restore, upload, vault_upload, download, vault_download, pins, publish_website) as ordered tool chains or decision trees. Call this first to learn how to drive Pinner before probing individual tools.",
 		Category:    model.CategoryCore,
 		InputSchema: toolargs.ToolSchemaFor[wizard.NoInput](),
 		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {

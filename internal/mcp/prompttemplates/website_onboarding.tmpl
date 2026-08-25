@@ -17,13 +17,17 @@ Workflow overview (9 steps):
   9. complete       : summarize results
 
 Domain source (step 4):
-  - If the user has NO domain, default to a platform (free) subdomain: pass
-    `{"source": "platform_subdomain", "label": "<label>"}` to websites_wizard_step. The
-    wizard checks availability (websites_platform_domain_availability), picks an available
-    platform root, and builds the exact FQDN (label.root). Never invent a domain.
-  - Platform (free) subdomains are minted and DNS-managed by the platform automatically:
-    the wizard creates the website with the FQDN + managed DNS, then claims the subdomain.
-  - Only use a custom domain ({"domain": "<user's domain>"}) when the user explicitly owns one.
+  - DEFAULT — no domain preference: pass {"source": "platform_subdomain", "generate": true}
+    to websites_wizard_step. The platform auto-generates a label, picks an available root,
+    and builds the FQDN. DNS is managed by the platform. This is the correct choice for a
+    generic website creation or publish request.
+  - User explicitly supplied or requested a specific label (e.g. "call it acme"):
+    pass {"source": "platform_subdomain", "label": "<label>"}. The wizard checks availability
+    and builds the exact FQDN (label.root). Only use this when the user named a label.
+  - User owns a custom domain: pass {"domain": "<user's domain>"}.
+    Only use when the user explicitly provided a domain they own.
+  - Do not infer a desire for custom naming from a generic request to create or publish
+    a website.
 
 Rules:
   - Always pass the session_id from websites_wizard_start to websites_wizard_step.
@@ -74,15 +78,16 @@ Call `websites_wizard_step` with input: {"domain": "{{.Domain}}"}
 
 {{define "website_step_domain_ask"}}Step: domain
 Determine how the user wants to address the website:
-  - No domain / free platform subdomain (DEFAULT when the user has no domain): list the
-    enabled platform roots by reading pinner://websites/platform-domains (or calling
-    `websites_platform_domains_list`), then ask the user for a label they'd like (or offer
-    to auto-generate one), and confirm the label is claimable with
-    `websites_platform_domain_availability <label>` (label is required). Then call
-    `websites_wizard_step` with input like {"source": "platform_subdomain", "label": "<label>"}.
-    The wizard checks availability, builds the exact FQDN (label.root), creates the website,
-    and claims the subdomain — DNS is managed by the platform. Do not require the user to own
-    a domain.
+  - DEFAULT — no domain preference (e.g. "create me a website", "publish this"): call
+    `websites_wizard_step` with input: {"source": "platform_subdomain", "generate": true}.
+    The platform auto-generates a subdomain label, picks an available root, builds the FQDN,
+    creates the website, and claims the subdomain with platform-managed DNS. Do not invent
+    a label or call websites_platform_domain_availability.
+  - User explicitly supplied or requested a specific label (e.g. "call it acme"): list the
+    enabled platform roots via pinner://websites/platform-domains (or websites_platform_domains_list),
+    then confirm the label is claimable with `websites_platform_domain_availability <label>`,
+    then call `websites_wizard_step` with input: {"source": "platform_subdomain", "label": "<label>"}.
+    Only use this path when the user explicitly named a label.
   - Own domain: ask for their domain name (e.g. example.com) and pass
     {"domain": "<domain>"} (custom is inferred when a domain is given).
 {{end}}
