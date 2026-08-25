@@ -35,19 +35,31 @@ func apiKeysList(d APIKeysDeps) catalog.Operation {
 		Description: "List all API keys for your account, optionally filtered by name.",
 		Category:    "account", Safety: catalog.SafetyRead, Interaction: catalog.InteractionAgentSafe, Visibility: catalog.VisibilityBoth,
 		Positional: "",
-		Args: []catalog.OperationArg{
-			{Name: "search", Type: catalog.ArgTypeString, Help: "Full-text search evaluated server-side against key name"},
-		},
+		Args: append(catalog.ListArgs(),
+			catalog.OperationArg{Name: "search", Type: catalog.ArgTypeString, Help: "Full-text search evaluated server-side against key name"},
+		),
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			svc := d.Service(input)
 			if svc == nil {
 				return nil, fmt.Errorf("api-keys service unavailable")
 			}
-			keys, total, err := svc.ListAPIKeys(ctx, catalog.SearchArg(input))
+			keys, _, err := svc.ListAPIKeys(ctx, catalog.SearchArg(input))
 			if err != nil {
 				return nil, err
 			}
-			return &APIKeysListResult{Keys: keys, Total: total}, nil
+			page := catalog.ParseList(input)
+			items := slicePage(keys, page.Start, page.Limit)
+			headers := []string{"UUID", "NAME"}
+			rows := make([][]string, 0, len(items))
+			for _, k := range items {
+				if k == nil {
+					continue
+				}
+				rows = append(rows, []string{k.Uuid.String(), k.Name})
+			}
+			return NewListResult(items, ListResultMeta{
+				Noun: "API key(s)", Headers: headers, Rows: rows,
+			}), nil
 		}),
 	})
 }

@@ -42,3 +42,18 @@ func (r *listResult[T]) ListItems() any        { return r.items }
 func (r *listResult[T]) ListNoun() string      { return r.meta.Noun }
 func (r *listResult[T]) ListHeaders() []string { return r.meta.Headers }
 func (r *listResult[T]) ListRows() [][]string  { return r.meta.Rows }
+
+// slicePage applies a Start/Limit window to a slice when the backend has no
+// server-side offset. A zero Limit keeps all rows from Start onward.
+func slicePage[T any](items []T, start, limit int) []T {
+	if start > 0 {
+		if start >= len(items) {
+			return []T{}
+		}
+		items = items[start:]
+	}
+	if limit > 0 && len(items) > limit {
+		items = items[:limit]
+	}
+	return items
+}

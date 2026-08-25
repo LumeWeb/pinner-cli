@@ -145,27 +145,8 @@ func renderAPIKeysResult(_ context.Context, c *cli.Command, op catalog.Operation
 	output := setupOutput(c)
 
 	switch r := result.(type) {
-	case *catalogops.APIKeysListResult:
-		if output.IsJSON() {
-			return output.PrintJSON(map[string]any{
-				"total": r.Total,
-				"keys":  r.Keys,
-			})
-		}
-		if r == nil || len(r.Keys) == 0 {
-			output.Printfln("No API keys found.")
-			return nil
-		}
-		headers := []string{"UUID", "NAME"}
-		rows := make([][]string, len(r.Keys))
-		for i, k := range r.Keys {
-			if k == nil {
-				continue
-			}
-			rows[i] = []string{k.Uuid.String(), k.Name}
-		}
-		output.PrintTable(headers, rows)
-		return nil
+	case catalogops.ListResult:
+		return renderListResult(output, r)
 
 	case *portalsdk.APIKey:
 		if output.IsJSON() {
