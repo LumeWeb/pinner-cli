@@ -111,9 +111,9 @@ func mountAdminCatalogCommand(cmd *cli.Command) *cli.Command {
 func adminActionAdapter(op catalog.Operation) cli.ActionFunc {
 	return func(ctx context.Context, c *cli.Command) error {
 		input := catalog.FlagsToInput(c, op)
-		if tok := c.String(FlagAuthToken); tok != "" {
-			input[catalogops.AuthTokenInputKey] = tok
-		}
+		// Note: no --auth-token override is threaded here. Admin services read
+		// auth from the live config manager's token, so a per-invocation flag
+		// override is not currently supported for the admin domain.
 		if err := applyPositionalArgs(op, input, c.Args()); err != nil {
 			return err
 		}
