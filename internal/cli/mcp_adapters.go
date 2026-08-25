@@ -100,6 +100,10 @@ func (w *websitesResourceAdapter) GetConfig(ctx context.Context) (*ipfs.WebsiteC
 	return w.ws.GetConfig(ctx)
 }
 
+func (w *websitesResourceAdapter) CheckPlatformDomainAvailability(ctx context.Context, label string) (*ipfs.PlatformAvailabilityResponse, error) {
+	return w.ws.CheckPlatformDomainAvailability(ctx, label)
+}
+
 // pinStatusAdapter wraps cli.PinningService to satisfy the MCP
 // PinningProvider interface for the "Create a Pin" app's app-only status
 // helper. It adapts the CLI's Status(cid, watch=false) into the SDK-neutral

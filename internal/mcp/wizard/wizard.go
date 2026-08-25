@@ -217,9 +217,18 @@ type WebsiteInput struct {
 	WebsiteID string `json:"website_id" jsonschema:"description=The numeric ID of the website to bind the domain to"`
 }
 
-// DomainNameInput is the input for the domain name step.
+// DomainNameInput is the input for the domain name step. It supports either
+// binding a plain domain or claiming a platform (free-subdomain) subdomain:
+// set label (or generate=true) plus an optional platform_domain root to claim
+// a subdomain, instead of providing a plain owned domain.
 type DomainNameInput struct {
-	Domain string `json:"domain" jsonschema:"description=The domain name to bind (e.g. mydomain or staging.example.com)"`
+	Domain string `json:"domain" jsonschema:"description=The domain name to bind (e.g. mydomain, staging.example.com) or the platform root domain when claiming a free subdomain (e.g. ipfs.pin.xyz)"`
+	// Platform (free-subdomain) claiming: supply label or generate=true to
+	// claim a subdomain instead of binding a plain owned domain.
+	Label             string `json:"label,omitempty" jsonschema:"description=Explicit subdomain label to claim under a platform domain (e.g. myblog for myblog.ipfs.pin.xyz)"`
+	Generate          bool   `json:"generate,omitempty" jsonschema:"description=Ask the platform to auto-generate a subdomain label instead of supplying one"`
+	PlatformDomain    string `json:"platform_domain,omitempty" jsonschema:"description=Platform (free-subdomain) root domain to claim under. Defaults to domain when claiming."`
+	PlatformNamespace string `json:"platform_namespace,omitempty" jsonschema:"description=Namespace within the platform domain to claim under"`
 }
 
 // NamespaceInput is the input for the namespace step.
@@ -632,6 +641,19 @@ func buildDomainSteps(deps DomainWizardDeps) []session.StepDef {
 					return "", fmt.Errorf("domain cannot be empty")
 				}
 				w.SetDomain(in.Domain)
+				w.SetLabel(in.Label)
+				w.SetGenerate(in.Generate)
+				w.SetPlatformNamespace(in.PlatformNamespace)
+				// A label or generate request marks a platform subdomain claim.
+				// Default the platform root to the supplied domain when not
+				// given explicitly (the domain is then the platform root).
+				if in.PlatformDomain != "" {
+					w.SetPlatformDomain(in.PlatformDomain)
+				} else if in.Generate || in.Label != "" {
+					w.SetPlatformDomain(in.Domain)
+				} else {
+					w.SetPlatformDomain("")
+				}
 				return "", nil
 			},
 			Schema: func(_ *session.Session) *jsonschema.Schema {
@@ -679,6 +701,23 @@ func buildDomainSteps(deps DomainWizardDeps) []session.StepDef {
 				req := ipfs.DomainRequest{
 					Domain:    w.Domain(),
 					Namespace: w.Namespace(),
+				}
+				// Pass platform (free-subdomain) claim fields through so the
+				// portal can mint a subdomain at bind time (label supplied
+				// explicitly, or auto-generated via generate). Consistent with
+				// the websites_domains_add catalogop.
+				if pd := w.PlatformDomain(); pd != "" {
+					req.PlatformDomain = &pd
+				}
+				if pns := w.PlatformNamespace(); pns != "" {
+					req.PlatformNamespace = &pns
+				}
+				if w.Generate() {
+					g := true
+					req.Generate = &g
+				}
+				if label := w.Label(); label != "" {
+					req.Label = &label
 				}
 				domainResp, err := deps.WebsitesService.BindDomain(ctx, w.WebsiteID(), req)
 				if err != nil {

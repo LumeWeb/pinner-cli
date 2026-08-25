@@ -162,11 +162,15 @@ var wizardCSRFInputRE = regexp.MustCompile(`name="csrf"\s+value="([^"]+)"`)
 
 // testDomainWizard implements wizard.DomainWizardState for tests.
 type testDomainWizard struct {
-	websiteID     string
-	websiteDomain string
-	domain        string
-	namespace     string
-	result        *ipfs.DomainResponse
+	websiteID         string
+	websiteDomain     string
+	domain            string
+	namespace         string
+	generate          bool
+	label             string
+	platformDomain    string
+	platformNamespace string
+	result            *ipfs.DomainResponse
 }
 
 func (w *testDomainWizard) WebsiteID() string                { return w.websiteID }
@@ -177,6 +181,14 @@ func (w *testDomainWizard) Domain() string                   { return w.domain }
 func (w *testDomainWizard) SetDomain(v string)               { w.domain = v }
 func (w *testDomainWizard) Namespace() string                { return w.namespace }
 func (w *testDomainWizard) SetNamespace(v string)            { w.namespace = v }
+func (w *testDomainWizard) Generate() bool                   { return w.generate }
+func (w *testDomainWizard) SetGenerate(v bool)               { w.generate = v }
+func (w *testDomainWizard) Label() string                    { return w.label }
+func (w *testDomainWizard) SetLabel(v string)                { w.label = v }
+func (w *testDomainWizard) PlatformDomain() string           { return w.platformDomain }
+func (w *testDomainWizard) SetPlatformDomain(v string)       { w.platformDomain = v }
+func (w *testDomainWizard) PlatformNamespace() string        { return w.platformNamespace }
+func (w *testDomainWizard) SetPlatformNamespace(v string)    { w.platformNamespace = v }
 func (w *testDomainWizard) Result() *ipfs.DomainResponse     { return w.result }
 func (w *testDomainWizard) SetResult(v *ipfs.DomainResponse) { w.result = v }
 
@@ -195,12 +207,14 @@ func webservFactory(deps wizard.WebsitesWizardDeps) wizard.WebsitesWizardDeps {
 
 // mockWebsitesSvc implements cli.WebsitesService for wizard tests.
 type mockWebsitesSvc struct {
-	createFunc     func(ctx context.Context, req ipfs.WebsiteRequest) (*ipfs.WebsiteItem, error)
-	validateFunc   func(ctx context.Context, id string) (*ipfs.WebsiteValidateResponse, error)
-	getConfigFunc  func(ctx context.Context) (*ipfs.WebsiteConfigResponse, error)
-	listFunc       func(ctx context.Context) ([]ipfs.WebsiteItem, error)
-	createCallReq  *ipfs.WebsiteRequest
-	validateCallID string
+	createFunc        func(ctx context.Context, req ipfs.WebsiteRequest) (*ipfs.WebsiteItem, error)
+	validateFunc      func(ctx context.Context, id string) (*ipfs.WebsiteValidateResponse, error)
+	getConfigFunc     func(ctx context.Context) (*ipfs.WebsiteConfigResponse, error)
+	listFunc          func(ctx context.Context) ([]ipfs.WebsiteItem, error)
+	createCallReq     *ipfs.WebsiteRequest
+	validateCallID    string
+	bindCallWebsiteID string
+	bindCallReq       *ipfs.DomainRequest
 }
 
 func (m *mockWebsitesSvc) RequireAuthenticated() error { return nil }
@@ -258,6 +272,8 @@ func (m *mockWebsitesSvc) GetConfig(ctx context.Context) (*ipfs.WebsiteConfigRes
 }
 
 func (m *mockWebsitesSvc) BindDomain(_ context.Context, websiteID string, req ipfs.DomainRequest) (*ipfs.DomainResponse, error) {
+	m.bindCallWebsiteID = websiteID
+	m.bindCallReq = &req
 	return &ipfs.DomainResponse{
 		Id:        1,
 		Domain:    req.Domain,

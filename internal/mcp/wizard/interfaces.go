@@ -53,6 +53,16 @@ type DomainWizardState interface {
 	SetDomain(string)
 	Namespace() string
 	SetNamespace(string)
+	// Platform (free-subdomain) claim fields. When a platform claim is in
+	// progress, the bind step passes these through to ipfs.DomainRequest.
+	Generate() bool
+	SetGenerate(bool)
+	Label() string
+	SetLabel(string)
+	PlatformDomain() string
+	SetPlatformDomain(string)
+	PlatformNamespace() string
+	SetPlatformNamespace(string)
 	Result() *ipfs.DomainResponse
 	SetResult(*ipfs.DomainResponse)
 }
@@ -77,4 +87,8 @@ type WebsitesResourceProvider interface {
 	Validate(ctx context.Context, id string) (*ipfs.WebsiteValidateResponse, error)
 	// GetConfig returns the website hosting config (nameservers, gateway domain).
 	GetConfig(ctx context.Context) (*ipfs.WebsiteConfigResponse, error)
+	// CheckPlatformDomainAvailability probes whether a candidate subdomain
+	// label is claimable on each enabled platform (free-subdomain) root.
+	// label may be empty to probe all roots.
+	CheckPlatformDomainAvailability(ctx context.Context, label string) (*ipfs.PlatformAvailabilityResponse, error)
 }

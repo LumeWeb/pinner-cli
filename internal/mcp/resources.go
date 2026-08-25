@@ -21,6 +21,7 @@ const (
 	ResourceScheme       = "pinner://"
 	AccountStatusURI     = "pinner://account/status"
 	VaultStatusURI       = "pinner://vault/status"
+	PlatformDomainsURI   = "pinner://websites/platform-domains"
 	DNSRequirementsTmpl  = "pinner://websites/{domain}/dns-requirements"
 	ValidationStatusTmpl = "pinner://websites/{id}/validation-status"
 	WizardStateTmpl      = "pinner://wizard/{session_id}/state"
@@ -137,6 +138,13 @@ func ResourceDescriptors(provs ResourceProviders) ([]model.ResourceDescriptor, [
 			MIMEType:    "application/json",
 			Handler:     vaultStatusHandler(provs.Vault),
 		},
+		{
+			URI:         PlatformDomainsURI,
+			Name:        "platform-domains",
+			Description: "Enabled platform (free-subdomain) roots and whether a candidate label is claimable under each",
+			MIMEType:    "application/json",
+			Handler:     platformDomainsHandler(provs.Websites),
+		},
 	}
 
 	templates := []model.ResourceTemplateDescriptor{
@@ -244,6 +252,32 @@ func vaultStatusHandler(prov VaultStatusProvider) model.ResourceHandler {
 			return model.ResourceResult{}, fmt.Errorf("marshal vault status: %w", err)
 		}
 		return model.ResourceResult{URI: VaultStatusURI, MIMEType: "application/json", Text: string(raw)}, nil
+	}
+}
+
+// platformDomainsHandler probes availability across the enabled platform
+// (free-subdomain) roots and returns the raw PlatformAvailabilityResponse. An
+// empty label probes all roots, which is what a guided agent needs to see the
+// free-subdomain options before guiding a claim.
+func platformDomainsHandler(ws wizard.WebsitesResourceProvider) model.ResourceHandler {
+	return func(ctx context.Context, req model.ResourceRequest) (model.ResourceResult, error) {
+		if ws == nil {
+			return model.ResourceResult{}, fmt.Errorf("websites provider not configured")
+		}
+		resp, err := ws.CheckPlatformDomainAvailability(ctx, "")
+		if err != nil {
+			return model.ResourceResult{}, fmt.Errorf("probe platform domain availability: %w", err)
+		}
+		var raw []byte
+		if resp == nil {
+			raw = []byte("null")
+		} else {
+			raw, err = json.MarshalIndent(resp, "", "  ")
+			if err != nil {
+				return model.ResourceResult{}, fmt.Errorf("marshal platform domain availability: %w", err)
+			}
+		}
+		return model.ResourceResult{URI: PlatformDomainsURI, MIMEType: "application/json", Text: string(raw)}, nil
 	}
 }
 

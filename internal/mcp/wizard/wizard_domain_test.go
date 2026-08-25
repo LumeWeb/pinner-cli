@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	ipfs "go.lumeweb.com/ipfs-sdk"
@@ -172,6 +173,112 @@ func TestDomainWizard_InvalidNamespace(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid namespace")
 	assert.Equal(t, "domain_namespace", sess.FSM.Current())
+}
+
+func TestDomainWizard_ClaimPlatformSubdomain(t *testing.T) {
+	t.Parallel()
+
+	cfgMgr := newConfigMgr(t, true)
+	websitesSvc := &mockWebsitesSvc{
+		listFunc: func(_ context.Context) ([]ipfs.WebsiteItem, error) {
+			return []ipfs.WebsiteItem{{Id: 7, Domain: "example.com", Status: "active", Created: time.Now()}}, nil
+		},
+	}
+	store := session.NewSessionStore()
+
+	deps := wizard.DomainWizardDeps{
+		DomainFactory:   testDomainFactory,
+		CfgMgr:          cfgMgr,
+		WebsitesService: websitesSvc,
+	}
+
+	sess, err := wizard.NewDomainSession(store, deps)
+	require.NoError(t, err)
+
+	// auth -> website
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	require.NoError(t, err)
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"website_id":"7"}`))
+	require.NoError(t, err)
+
+	// domain_name: claim a platform subdomain with an explicit label. The
+	// platform root is supplied as the domain; when platform_domain is omitted
+	// it defaults to the supplied domain.
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"domain":"ipfs.pin.xyz","label":"myblog"}`))
+	require.NoError(t, err)
+	assert.Equal(t, "domain_namespace", sess.FSM.Current())
+	w := sess.State().(wizard.DomainWizardState)
+	assert.Equal(t, "ipfs.pin.xyz", w.Domain())
+	assert.Equal(t, "myblog", w.Label())
+	assert.True(t, w.PlatformDomain() != "", "platform domain should default to the supplied root")
+	assert.Equal(t, "ipfs.pin.xyz", w.PlatformDomain())
+
+	// namespace
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"namespace":"icann"}`))
+	require.NoError(t, err)
+
+	// bind
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"confirm":true}`))
+	require.NoError(t, err)
+	assert.Equal(t, "domain_delegation_setup", sess.FSM.Current())
+
+	// The claim fields must be passed through on the DomainRequest.
+	require.NotNil(t, websitesSvc.bindCallReq)
+	req := websitesSvc.bindCallReq
+	assert.Equal(t, "myblog", lo.FromPtr(req.Label))
+	assert.Nil(t, req.Generate, "generate should be nil for an explicit label claim")
+	require.NotNil(t, req.PlatformDomain)
+	assert.Equal(t, "ipfs.pin.xyz", *req.PlatformDomain)
+	assert.Equal(t, "ipfs.pin.xyz", req.Domain)
+}
+
+func TestDomainWizard_ClaimPlatformSubdomainGenerate(t *testing.T) {
+	t.Parallel()
+
+	cfgMgr := newConfigMgr(t, true)
+	websitesSvc := &mockWebsitesSvc{
+		listFunc: func(_ context.Context) ([]ipfs.WebsiteItem, error) {
+			return []ipfs.WebsiteItem{{Id: 7, Domain: "example.com", Status: "active", Created: time.Now()}}, nil
+		},
+	}
+	store := session.NewSessionStore()
+
+	deps := wizard.DomainWizardDeps{
+		DomainFactory:   testDomainFactory,
+		CfgMgr:          cfgMgr,
+		WebsitesService: websitesSvc,
+	}
+
+	sess, err := wizard.NewDomainSession(store, deps)
+	require.NoError(t, err)
+
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	require.NoError(t, err)
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"website_id":"7"}`))
+	require.NoError(t, err)
+
+	// Auto-generate a subdomain label under the platform root.
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"domain":"ipfs.pin.xyz","generate":true,"platform_namespace":"default"}`))
+	require.NoError(t, err)
+	assert.Equal(t, "domain_namespace", sess.FSM.Current())
+	w := sess.State().(wizard.DomainWizardState)
+	assert.True(t, w.Generate())
+	assert.Equal(t, "default", w.PlatformNamespace())
+
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"namespace":"icann"}`))
+	require.NoError(t, err)
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"confirm":true}`))
+	require.NoError(t, err)
+
+	require.NotNil(t, websitesSvc.bindCallReq)
+	req := websitesSvc.bindCallReq
+	require.NotNil(t, req.Generate)
+	assert.True(t, *req.Generate)
+	require.NotNil(t, req.PlatformDomain)
+	assert.Equal(t, "ipfs.pin.xyz", *req.PlatformDomain)
+	require.NotNil(t, req.PlatformNamespace)
+	assert.Equal(t, "default", *req.PlatformNamespace)
+	assert.Nil(t, req.Label, "no explicit label for a generate claim")
 }
 
 func TestDomainWizard_BindWithoutConfirm(t *testing.T) {
