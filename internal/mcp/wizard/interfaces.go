@@ -9,6 +9,7 @@ import (
 // WebsitesService is the subset of cli.WebsitesService used by the MCP wizard.
 type WebsitesService interface {
 	CreateWithOptions(ctx context.Context, req ipfs.WebsiteRequest) (*ipfs.WebsiteItem, error)
+	UpdateWithOptions(ctx context.Context, id string, req ipfs.WebsiteUpdateRequest) (*ipfs.WebsiteItem, error)
 	Validate(ctx context.Context, id string) (*ipfs.WebsiteValidateResponse, error)
 	List(ctx context.Context) ([]ipfs.WebsiteItem, error)
 	BindDomain(ctx context.Context, websiteID string, req ipfs.DomainRequest) (*ipfs.DomainResponse, error)
