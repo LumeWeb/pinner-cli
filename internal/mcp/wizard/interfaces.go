@@ -4,6 +4,7 @@ import (
 	"context"
 
 	ipfs "go.lumeweb.com/ipfs-sdk"
+	"go.lumeweb.com/pinner-cli/internal/core/websites"
 )
 
 // WebsitesService is the subset of cli.WebsitesService used by the MCP wizard.
@@ -11,7 +12,7 @@ type WebsitesService interface {
 	CreateWithOptions(ctx context.Context, req ipfs.WebsiteRequest) (*ipfs.WebsiteItem, error)
 	UpdateWithOptions(ctx context.Context, id string, req ipfs.WebsiteUpdateRequest) (*ipfs.WebsiteItem, error)
 	Validate(ctx context.Context, id string) (*ipfs.WebsiteValidateResponse, error)
-	List(ctx context.Context) ([]ipfs.WebsiteItem, error)
+	List(ctx context.Context, opts websites.ListOptions) ([]ipfs.WebsiteItem, error)
 	BindDomain(ctx context.Context, websiteID string, req ipfs.DomainRequest) (*ipfs.DomainResponse, error)
 	GetDomainDNSRequirements(ctx context.Context, websiteID, domainID string) (*ipfs.DomainResponse, error)
 	VerifyDomain(ctx context.Context, websiteID, domainID string) (*ipfs.DomainResponse, error)

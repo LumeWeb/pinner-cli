@@ -115,6 +115,7 @@ func dnsZonesList(d DNSDeps) catalog.Operation {
 		Interaction: catalog.InteractionAgentSafe,
 		Visibility:  catalog.VisibilityBoth,
 		Positional:  "",
+		Args:        catalog.ListArgs(),
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			svc, svcErr := d.service(input)
 			if svcErr != nil {
@@ -127,7 +128,23 @@ func dnsZonesList(d DNSDeps) catalog.Operation {
 			if err != nil {
 				return nil, fmt.Errorf("failed to list zones: %w", err)
 			}
-			return zones, nil
+			page := catalog.ParseList(input)
+			items := slicePage(zones, page.Start, page.Limit)
+			headers := []string{"ID", "DOMAIN", "STATUS", "POWERDNS ZONE ID", "CREATED"}
+			rows := make([][]string, 0, len(items))
+			for _, z := range items {
+				pdns := ""
+				if z.PowerdnsZoneId != nil {
+					pdns = *z.PowerdnsZoneId
+				}
+				rows = append(rows, []string{
+					fmt.Sprintf("%d", z.Id), z.Domain, z.Status, pdns,
+					z.CreatedAt.Format("2006-01-02 15:04:05"),
+				})
+			}
+			return NewListResult(items, ListResultMeta{
+				Noun: "DNS zone(s)", Headers: headers, Rows: rows,
+			}), nil
 		}),
 	})
 }
@@ -314,9 +331,9 @@ func dnsRecordsList(d DNSDeps) catalog.Operation {
 		Interaction: catalog.InteractionAgentSafe,
 		Visibility:  catalog.VisibilityBoth,
 		Positional:  "<domain>",
-		Args: []catalog.OperationArg{
-			{Name: "zone", Type: catalog.ArgTypeString, Required: true, Help: "Domain name or numeric zone ID", PositionalOnly: true},
-		},
+		Args: append(catalog.ListArgs(),
+			catalog.OperationArg{Name: "zone", Type: catalog.ArgTypeString, Required: true, Help: "Domain name or numeric zone ID", PositionalOnly: true},
+		),
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			svc, svcErr := d.service(input)
 			if svcErr != nil {
@@ -337,7 +354,26 @@ func dnsRecordsList(d DNSDeps) catalog.Operation {
 			if err != nil {
 				return nil, fmt.Errorf("failed to list records: %w", err)
 			}
-			return records, nil
+			page := catalog.ParseList(input)
+			items := slicePage(records, page.Start, page.Limit)
+			headers := []string{"ID", "NAME", "TYPE", "CONTENT", "TTL", "STATUS"}
+			rows := make([][]string, 0, len(items))
+			for _, r := range items {
+				name := r.Name
+				if name == "" {
+					name = "@" // blank name denotes the zone apex record
+				}
+				status := ""
+				if r.Disabled {
+					status = "disabled"
+				}
+				rows = append(rows, []string{
+					r.Id, name, r.Type, r.Content, fmt.Sprintf("%d", r.Ttl), status,
+				})
+			}
+			return NewListResult(items, ListResultMeta{
+				Noun: "DNS record(s)", Headers: headers, Rows: rows,
+			}), nil
 		}),
 	})
 }

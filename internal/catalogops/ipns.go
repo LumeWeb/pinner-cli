@@ -7,10 +7,10 @@ import (
 	"context"
 	"fmt"
 
+	ipfs "go.lumeweb.com/ipfs-sdk"
 	"go.lumeweb.com/pinner-cli/internal/catalog"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
 	"go.lumeweb.com/pinner-cli/internal/core/ipns"
-	ipfs "go.lumeweb.com/ipfs-sdk"
 )
 
 // IPNSDeps are the dependencies the IPNS operations need at construction time.
@@ -80,9 +80,9 @@ func ipnsKeysList(d IPNSDeps) catalog.Operation {
 		Description: "List all IPNS keys for the authenticated account, optionally narrowing by a server-side name substring search.",
 		Category:    "ipns", Safety: catalog.SafetyRead, Interaction: catalog.InteractionAgentSafe, Visibility: catalog.VisibilityBoth,
 		Positional: "",
-		Args: []catalog.OperationArg{
-			{Name: "search", Type: catalog.ArgTypeString, Help: "Full-text search evaluated server-side against key name"},
-		},
+		Args: append(catalog.ListArgs(),
+			catalog.OperationArg{Name: "search", Type: catalog.ArgTypeString, Help: "Full-text search evaluated server-side against key name"},
+		),
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			svc, err := d.service(input)
 			if err != nil {
@@ -91,10 +91,28 @@ func ipnsKeysList(d IPNSDeps) catalog.Operation {
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
+			var keys []ipfs.IPNSKeyResponse
 			if search := catalog.SearchArg(input); search != "" {
-				return svc.ListKeys(ctx, ipfs.ListKeyOption{}.WithFilterName(search))
+				keys, err = svc.ListKeys(ctx, ipfs.ListKeyOption{}.WithFilterName(search))
+			} else {
+				keys, err = svc.ListKeys(ctx)
 			}
-			return svc.ListKeys(ctx)
+			if err != nil {
+				return nil, err
+			}
+			page := catalog.ParseList(input)
+			items := slicePage(keys, page.Start, page.Limit)
+			headers := []string{"ID", "NAME", "IPNS NAME", "PEER ID", "CREATED"}
+			rows := make([][]string, 0, len(items))
+			for _, k := range items {
+				rows = append(rows, []string{
+					fmt.Sprintf("%d", k.Id), k.Name, k.IpnsName, k.PeerId,
+					k.Created.Format("2006-01-02 15:04:05"),
+				})
+			}
+			return NewListResult(items, ListResultMeta{
+				Noun: "IPNS key(s)", Headers: headers, Rows: rows,
+			}), nil
 		}),
 	})
 }

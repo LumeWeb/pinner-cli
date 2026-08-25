@@ -234,25 +234,8 @@ func renderDNSResult(_ context.Context, c *cli.Command, op catalog.Operation, re
 	output := setupOutput(c)
 
 	switch r := result.(type) {
-	case []ipfs.ZoneListResponse:
-		if len(r) == 0 {
-			output.Printfln("No DNS zones found")
-			return nil
-		}
-		output.Printfln("DNS Zones:")
-		for i, zone := range r {
-			fields := []Field{
-				{"ID", fmt.Sprintf("%d", zone.Id)},
-				{"Domain", zone.Domain},
-				{"Status", zone.Status},
-			}
-			if zone.PowerdnsZoneId != nil {
-				fields = append(fields, Field{"PowerDNS Zone ID", *zone.PowerdnsZoneId})
-			}
-			fields = append(fields, Field{"Created", zone.CreatedAt.Format("2006-01-02 15:04:05")})
-			output.PrintFields(FieldGroup{Fields: fields, PadTop: i})
-		}
-		return nil
+	case catalogops.ListResult:
+		return renderListResult(output, r)
 
 	case *ipfs.ZoneResponse:
 		fields := []Field{
@@ -294,16 +277,6 @@ func renderDNSResult(_ context.Context, c *cli.Command, op catalog.Operation, re
 				output.Printfln("  Check that your domain's nameservers are properly delegated to Pinner.xyz")
 			}
 		}
-		return nil
-
-	case []ipfs.RecordResponse:
-		if len(r) == 0 {
-			output.Printfln("No DNS records found")
-			return nil
-		}
-		output.Printfln("DNS Records:")
-		headers, rows := dnsRecordsTable(r)
-		output.PrintTable(headers, rows)
 		return nil
 
 	case *ipfs.RecordResponse:

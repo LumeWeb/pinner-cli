@@ -14,11 +14,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	ipfs "go.lumeweb.com/ipfs-sdk"
+	servicemocks "go.lumeweb.com/ipfs-sdk/mocks/services"
 	climocks "go.lumeweb.com/pinner-cli/internal/cli/internal/mocks"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
 	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
-	ipfs "go.lumeweb.com/ipfs-sdk"
-	servicemocks "go.lumeweb.com/ipfs-sdk/mocks/services"
+	"go.lumeweb.com/pinner-cli/internal/core/pinning"
 )
 
 const testAuthToken = "test-token"
@@ -188,7 +189,7 @@ func TestPinningService_List(t *testing.T) {
 		output := newTestOutput()
 		service := NewPinningService(cfgMgr, output, "https://api.test.com", WithPinningClient(client))
 
-		pins, err := service.List(context.Background(), "", 0, "", "")
+		pins, err := service.List(context.Background(), pinning.ListOptions{})
 		require.NoError(t, err)
 		assert.Len(t, pins, 1)
 		assert.Equal(t, "QmUNLLsPACCz1vLxQVkXqqLX5R1X345qqfHbsf67hvA3Nn", pins[0].CID)
@@ -216,7 +217,7 @@ func TestPinningService_List(t *testing.T) {
 		output := newTestOutput()
 		service := NewPinningService(cfgMgr, output, "https://api.test.com", WithPinningClient(client))
 
-		pins, err := service.List(context.Background(), "", 5, "", "")
+		pins, err := service.List(context.Background(), pinning.ListOptions{Limit: 5})
 		require.NoError(t, err)
 		assert.Len(t, pins, 1)
 		assert.Equal(t, "test-name", pins[0].Name)
@@ -240,7 +241,7 @@ func TestPinningService_List(t *testing.T) {
 		output := newTestOutput()
 		service := NewPinningService(cfgMgr, output, "https://api.test.com", WithPinningClient(client))
 
-		pins, err := service.List(context.Background(), "filtered", 10, "pinned", "")
+		pins, err := service.List(context.Background(), pinning.ListOptions{Name: "filtered", Limit: 10, Status: "pinned"})
 		require.NoError(t, err)
 		assert.Len(t, pins, 1)
 		assert.Equal(t, "filtered", pins[0].Name)
@@ -257,7 +258,7 @@ func TestPinningService_List(t *testing.T) {
 			apiEndpoint:   "https://api.test.com",
 		}
 
-		_, err := service.List(context.Background(), "", 0, "", "")
+		_, err := service.List(context.Background(), pinning.ListOptions{})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "not authenticated")
 	})
@@ -278,7 +279,7 @@ func TestPinningService_List(t *testing.T) {
 		output := newTestOutput()
 		service := NewPinningService(cfgMgr, output, "https://api.test.com", WithPinningClient(client))
 
-		_, err := service.List(context.Background(), "", 0, "", "")
+		_, err := service.List(context.Background(), pinning.ListOptions{})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "List pins failed")
 	})
@@ -299,7 +300,7 @@ func TestPinningService_List(t *testing.T) {
 		output := newTestOutput()
 		service := NewPinningService(cfgMgr, output, "https://api.test.com", WithPinningClient(client))
 
-		_, err := service.List(context.Background(), "", 0, "", "")
+		_, err := service.List(context.Background(), pinning.ListOptions{})
 		require.Error(t, err)
 		assert.True(t, errors.Is(err, ErrNotAuthenticated))
 	})
@@ -1068,7 +1069,7 @@ func TestPinsListSendsPartialMatch(t *testing.T) {
 		WithSDKPinningService(sdkSvc),
 	)
 
-	pins, err := service.List(context.Background(), "", 0, "", "do")
+	pins, err := service.List(context.Background(), pinning.ListOptions{Search: "do"})
 	require.NoError(t, err)
 	require.Len(t, pins, 1)
 	assert.Equal(t, "do", pins[0].Name)
@@ -1121,7 +1122,7 @@ func TestPinsListSendsExactNameMatch(t *testing.T) {
 		WithSDKPinningService(sdkSvc),
 	)
 
-	pins, err := service.List(context.Background(), "audit-round4-url", 0, "", "")
+	pins, err := service.List(context.Background(), pinning.ListOptions{Name: "audit-round4-url"})
 	require.NoError(t, err)
 	require.Len(t, pins, 1)
 	assert.Equal(t, "audit-round4-url", pins[0].Name)

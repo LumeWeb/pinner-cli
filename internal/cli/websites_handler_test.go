@@ -13,6 +13,7 @@ import (
 	ipfs "go.lumeweb.com/ipfs-sdk"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
 	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
+	"go.lumeweb.com/pinner-cli/internal/core/websites"
 )
 
 type mockWebsitesHandlerService struct {
@@ -35,7 +36,7 @@ func (m *mockWebsitesHandlerService) RequireAuthenticated() error {
 
 func (m *mockWebsitesHandlerService) SetAuthToken(token string) {}
 
-func (m *mockWebsitesHandlerService) List(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+func (m *mockWebsitesHandlerService) List(ctx context.Context, opts websites.ListOptions) ([]ipfs.WebsiteItem, error) {
 	if m.listFunc != nil {
 		return m.listFunc(ctx)
 	}

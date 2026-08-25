@@ -6,6 +6,7 @@ import (
 
 	ipfs "go.lumeweb.com/ipfs-sdk"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner-cli/internal/core/websites"
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 )
 
@@ -76,7 +77,7 @@ type websitesResourceAdapter struct {
 }
 
 func (w *websitesResourceAdapter) GetByDomain(ctx context.Context, domain string) (*ipfs.WebsiteItem, error) {
-	websites, err := w.ws.List(ctx)
+	websites, err := w.ws.List(ctx, websites.ListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("list websites: %w", err)
 	}

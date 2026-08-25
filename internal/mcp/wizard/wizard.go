@@ -901,7 +901,7 @@ func buildDomainSteps(deps DomainWizardDeps) []session.StepDef {
 					return "", fmt.Errorf("website_id cannot be empty")
 				}
 
-				websites, err := deps.WebsitesService.List(ctx)
+				websites, err := deps.WebsitesService.List(ctx, websites.ListOptions{})
 				if err != nil {
 					return "", fmt.Errorf("failed to load websites: %w", err)
 				}

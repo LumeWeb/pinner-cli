@@ -7,6 +7,7 @@ import (
 
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner-cli/internal/core/pinning"
 )
 
 func newListCommand() *cli.Command {
@@ -80,7 +81,7 @@ func list(ctx context.Context, cmd flagGetterWithInt, output Output, cfgMgr conf
 	if watch {
 		return output.Watch(ctx,
 			func(ctx context.Context) (any, error) {
-				return pinningService.List(ctx, nameFilter, limit, statusFilter, "")
+				return pinningService.List(ctx, pinning.ListOptions{Name: nameFilter, Limit: limit, Status: statusFilter})
 			},
 			func(data any) (string, []string, [][]string) {
 				pins := data.([]Pin)
@@ -97,7 +98,7 @@ func list(ctx context.Context, cmd flagGetterWithInt, output Output, cfgMgr conf
 		)
 	}
 
-	pins, err := pinningService.List(setupCtx, nameFilter, limit, statusFilter, "")
+	pins, err := pinningService.List(setupCtx, pinning.ListOptions{Name: nameFilter, Limit: limit, Status: statusFilter})
 	if err != nil {
 		return err
 	}

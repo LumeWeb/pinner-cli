@@ -11,20 +11,20 @@ import (
 
 // QuotaPlansListResult wraps the ([]*admin.QuotaPlan, total, error) result.
 type QuotaPlansListResult struct {
-	Count int                 `json:"count"`
-	Plans []*admin.QuotaPlan  `json:"plans"`
+	Count int                `json:"count"`
+	Plans []*admin.QuotaPlan `json:"plans"`
 }
 
 // QuotaAllowancesListResult wraps the allowances list result.
 type QuotaAllowancesListResult struct {
-	Count          int                     `json:"count"`
-	Allowances     []*admin.QuotaAllowance `json:"allowances"`
+	Count      int                     `json:"count"`
+	Allowances []*admin.QuotaAllowance `json:"allowances"`
 }
 
 // QuotaUserConfigsListResult wraps the user configs list result.
 type QuotaUserConfigsListResult struct {
-	Count   int                        `json:"count"`
-	Configs []*admin.UserQuotaConfig   `json:"configs"`
+	Count   int                      `json:"count"`
+	Configs []*admin.UserQuotaConfig `json:"configs"`
 }
 
 // QuotaPlansDeleteResult reports a deleted plan.
@@ -83,6 +83,7 @@ func adminQuotaPlansList(d AdminDeps) catalog.Operation {
 		Safety:      catalog.SafetyRead,
 		Interaction: catalog.InteractionAgentSafe,
 		Visibility:  catalog.VisibilityBoth,
+		Args:        catalog.ListArgs(),
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			svc, err := d.quota()
 			if err != nil {
@@ -91,11 +92,12 @@ func adminQuotaPlansList(d AdminDeps) catalog.Operation {
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
-			plans, total, err := svc.ListPlans(ctx)
+			plans, _, err := svc.ListPlans(ctx)
 			if err != nil {
 				return nil, err
 			}
-			return &QuotaPlansListResult{Count: total, Plans: plans}, nil
+			page := catalog.ParseList(input)
+			return quotaPlansListResult(slicePage(plans, page.Start, page.Limit)), nil
 		}),
 	})
 }
@@ -377,6 +379,7 @@ func adminQuotaAllowancesList(d AdminDeps) catalog.Operation {
 		Safety:      catalog.SafetyRead,
 		Interaction: catalog.InteractionAgentSafe,
 		Visibility:  catalog.VisibilityBoth,
+		Args:        catalog.ListArgs(),
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			svc, err := d.quota()
 			if err != nil {
@@ -385,11 +388,12 @@ func adminQuotaAllowancesList(d AdminDeps) catalog.Operation {
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
-			allowances, total, err := svc.ListAllowances(ctx)
+			allowances, _, err := svc.ListAllowances(ctx)
 			if err != nil {
 				return nil, err
 			}
-			return &QuotaAllowancesListResult{Count: total, Allowances: allowances}, nil
+			page := catalog.ParseList(input)
+			return quotaAllowancesListResult(slicePage(allowances, page.Start, page.Limit)), nil
 		}),
 	})
 }
@@ -441,9 +445,9 @@ func adminQuotaAllowancesCreate(d AdminDeps) catalog.Operation {
 // adminQuotaAllowancesUpdate is the `admin quota allowances update` operation.
 func adminQuotaAllowancesUpdate(d AdminDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:        "admin_quota_allowances_update",
-		Title:       "Update a quota allowance",
-		Summary:     "Update a quota allowance",
+		Name:    "admin_quota_allowances_update",
+		Title:   "Update a quota allowance",
+		Summary: "Update a quota allowance",
 		// The backend allowance update is a full-replace PUT: it serializes every
 		// field (no partial-update/omitempty support) and does not echo the
 		// per-limit bytes back on read, so there is no way to merge "keep the
@@ -548,6 +552,7 @@ func adminQuotaUserConfigsList(d AdminDeps) catalog.Operation {
 		Safety:      catalog.SafetyRead,
 		Interaction: catalog.InteractionAgentSafe,
 		Visibility:  catalog.VisibilityBoth,
+		Args:        catalog.ListArgs(),
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			svc, err := d.quota()
 			if err != nil {
@@ -556,11 +561,12 @@ func adminQuotaUserConfigsList(d AdminDeps) catalog.Operation {
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
-			configs, total, err := svc.ListUserConfigs(ctx)
+			configs, _, err := svc.ListUserConfigs(ctx)
 			if err != nil {
 				return nil, err
 			}
-			return &QuotaUserConfigsListResult{Count: total, Configs: configs}, nil
+			page := catalog.ParseList(input)
+			return quotaUserConfigsListResult(slicePage(configs, page.Start, page.Limit)), nil
 		}),
 	})
 }

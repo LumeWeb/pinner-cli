@@ -33,31 +33,31 @@ func catalogFloatArg(input map[string]any, key string, def float64) float64 {
 
 // BillingCreditsListResult wraps the credits list result.
 type BillingCreditsListResult struct {
-	Count   int                  `json:"count"`
-	Credits []*admin.CreditItem  `json:"credits"`
+	Count   int                 `json:"count"`
+	Credits []*admin.CreditItem `json:"credits"`
 }
 
 // BillingPriceLinesListResult wraps the price lines list result.
 type BillingPriceLinesListResult struct {
-	Count      int                 `json:"count"`
-	PriceLines []*admin.PriceLine  `json:"price_lines"`
+	Count      int                `json:"count"`
+	PriceLines []*admin.PriceLine `json:"price_lines"`
 }
 
 // BillingPricingPlansListResult wraps the pricing plans list result.
 type BillingPricingPlansListResult struct {
-	Count int                     `json:"count"`
+	Count int                      `json:"count"`
 	Plans []*admin.PricingPlanItem `json:"plans"`
 }
 
 // BillingPricingPlanPeriodsListResult wraps the pricing plan periods list.
 type BillingPricingPlanPeriodsListResult struct {
-	Count   int                         `json:"count"`
-	Periods []*admin.PricingPlanPeriod  `json:"periods"`
+	Count   int                        `json:"count"`
+	Periods []*admin.PricingPlanPeriod `json:"periods"`
 }
 
 // BillingSubscribersListResult wraps the subscribers list result.
 type BillingSubscribersListResult struct {
-	Count       int                `json:"count"`
+	Count       int                 `json:"count"`
 	Subscribers []*admin.Subscriber `json:"subscribers"`
 }
 
@@ -107,11 +107,11 @@ func adminBillingCreditsList(d AdminDeps) catalog.Operation {
 		Safety:      catalog.SafetyRead,
 		Interaction: catalog.InteractionAgentSafe,
 		Visibility:  catalog.VisibilityBoth,
-		Args: []catalog.OperationArg{
-			{Name: "user-id", Type: catalog.ArgTypeString, Help: "Filter by user ID"},
-			{Name: "direction", Type: catalog.ArgTypeString, Help: "Filter by direction (credit, debit)"},
-			{Name: "type", Type: catalog.ArgTypeString, Help: "Filter by type"},
-		},
+		Args: append(catalog.ListArgs(),
+			catalog.OperationArg{Name: "user-id", Type: catalog.ArgTypeString, Help: "Filter by user ID"},
+			catalog.OperationArg{Name: "direction", Type: catalog.ArgTypeString, Help: "Filter by direction (credit, debit)"},
+			catalog.OperationArg{Name: "type", Type: catalog.ArgTypeString, Help: "Filter by type"},
+		),
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			svc, err := d.billing()
 			if err != nil {
@@ -130,11 +130,12 @@ func adminBillingCreditsList(d AdminDeps) catalog.Operation {
 			if v := catalog.StrArg(input, "type", ""); v != "" {
 				params.TypeEq = &v
 			}
-			credits, total, err := svc.ListCredits(ctx, params)
+			credits, _, err := svc.ListCredits(ctx, params)
 			if err != nil {
 				return nil, err
 			}
-			return &BillingCreditsListResult{Count: total, Credits: credits}, nil
+			page := catalog.ParseList(input)
+			return billingCreditsListResult(slicePage(credits, page.Start, page.Limit)), nil
 		}),
 	})
 }
@@ -415,6 +416,7 @@ func adminBillingPriceLinesList(d AdminDeps) catalog.Operation {
 		Safety:      catalog.SafetyRead,
 		Interaction: catalog.InteractionAgentSafe,
 		Visibility:  catalog.VisibilityBoth,
+		Args:        catalog.ListArgs(),
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			svc, err := d.billing()
 			if err != nil {
@@ -423,11 +425,12 @@ func adminBillingPriceLinesList(d AdminDeps) catalog.Operation {
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
-			lines, total, err := svc.ListPriceLines(ctx)
+			lines, _, err := svc.ListPriceLines(ctx)
 			if err != nil {
 				return nil, err
 			}
-			return &BillingPriceLinesListResult{Count: total, PriceLines: lines}, nil
+			page := catalog.ParseList(input)
+			return billingPriceLinesListResult(slicePage(lines, page.Start, page.Limit)), nil
 		}),
 	})
 }
@@ -703,6 +706,7 @@ func adminBillingPricingPlansList(d AdminDeps) catalog.Operation {
 		Safety:      catalog.SafetyRead,
 		Interaction: catalog.InteractionAgentSafe,
 		Visibility:  catalog.VisibilityBoth,
+		Args:        catalog.ListArgs(),
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			svc, err := d.billing()
 			if err != nil {
@@ -711,11 +715,12 @@ func adminBillingPricingPlansList(d AdminDeps) catalog.Operation {
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
-			plans, total, err := svc.ListPricingPlans(ctx)
+			plans, _, err := svc.ListPricingPlans(ctx)
 			if err != nil {
 				return nil, err
 			}
-			return &BillingPricingPlansListResult{Count: total, Plans: plans}, nil
+			page := catalog.ParseList(input)
+			return billingPricingPlansListResult(slicePage(plans, page.Start, page.Limit)), nil
 		}),
 	})
 }
@@ -949,6 +954,7 @@ func adminBillingPricingPlanPeriodsList(d AdminDeps) catalog.Operation {
 		Safety:      catalog.SafetyRead,
 		Interaction: catalog.InteractionAgentSafe,
 		Visibility:  catalog.VisibilityBoth,
+		Args:        catalog.ListArgs(),
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			svc, err := d.billing()
 			if err != nil {
@@ -957,11 +963,12 @@ func adminBillingPricingPlanPeriodsList(d AdminDeps) catalog.Operation {
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
-			periods, total, err := svc.ListPricingPlanPeriods(ctx)
+			periods, _, err := svc.ListPricingPlanPeriods(ctx)
 			if err != nil {
 				return nil, err
 			}
-			return &BillingPricingPlanPeriodsListResult{Count: total, Periods: periods}, nil
+			page := catalog.ParseList(input)
+			return billingPricingPlanPeriodsListResult(slicePage(periods, page.Start, page.Limit)), nil
 		}),
 	})
 }
@@ -1153,6 +1160,7 @@ func adminBillingSubscribersList(d AdminDeps) catalog.Operation {
 		Safety:      catalog.SafetyRead,
 		Interaction: catalog.InteractionAgentSafe,
 		Visibility:  catalog.VisibilityBoth,
+		Args:        catalog.ListArgs(),
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			svc, err := d.billing()
 			if err != nil {
@@ -1161,11 +1169,12 @@ func adminBillingSubscribersList(d AdminDeps) catalog.Operation {
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
-			subs, total, err := svc.ListSubscribers(ctx)
+			subs, _, err := svc.ListSubscribers(ctx)
 			if err != nil {
 				return nil, err
 			}
-			return &BillingSubscribersListResult{Count: total, Subscribers: subs}, nil
+			page := catalog.ParseList(input)
+			return billingSubscribersListResult(slicePage(subs, page.Start, page.Limit)), nil
 		}),
 	})
 }
@@ -1454,10 +1463,10 @@ func adminBillingSubscribersResume(d AdminDeps) catalog.Operation {
 
 // BillingOverviewResult reports billing entity counts for the overview.
 type BillingOverviewResult struct {
-	QuotaPlans  int `json:"quota_plans"`
-	PriceLines  int `json:"price_lines"`
+	QuotaPlans   int `json:"quota_plans"`
+	PriceLines   int `json:"price_lines"`
 	PricingPlans int `json:"pricing_plans"`
-	Periods     int `json:"periods"`
+	Periods      int `json:"periods"`
 }
 
 // adminBillingOverview is the `admin billing overview` operation. It aggregates

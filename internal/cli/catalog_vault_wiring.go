@@ -357,25 +357,8 @@ func renderVaultResult(_ context.Context, c *cli.Command, op catalog.Operation, 
 		output.Printfln("Cache cleared.")
 		return nil
 
-	case *catalogops.VaultVersionListResult:
-		if output.IsJSON() {
-			return output.PrintJSON(r)
-		}
-		if len(r.Versions) == 0 {
-			output.Printfln("No versions found for %s.", r.Path)
-			return nil
-		}
-		rows := make([][]string, len(r.Versions))
-		for i, v := range r.Versions {
-			cur := ""
-			if v.IsCurrent {
-				cur = "*"
-			}
-			rows[i] = []string{v.VersionID, fmt.Sprintf("%d", v.Seq), cur, fmt.Sprintf("%d", v.Size), v.UpdatedAt}
-		}
-		output.PrintTable([]string{"Version ID", "Seq", "Current", "Size", "Updated"}, rows)
-		output.Printfln("* = current live version")
-		return nil
+	case catalogops.ListResult:
+		return renderListResult(output, r)
 
 	case *catalogops.VaultVersionGetResult:
 		if output.IsJSON() {
@@ -423,21 +406,6 @@ func renderVaultResult(_ context.Context, c *cli.Command, op catalog.Operation, 
 			return output.PrintJSON(r)
 		}
 		output.Printfln("Tagged %s: %v", r.Path, r.Tags)
-		return nil
-
-	case *catalogops.VaultTagListResult:
-		if output.IsJSON() {
-			return output.PrintJSON(r)
-		}
-		if len(r.Tags) == 0 {
-			output.Printfln("No tags.")
-			return nil
-		}
-		rows := make([][]string, len(r.Tags))
-		for i, t := range r.Tags {
-			rows[i] = []string{t}
-		}
-		output.PrintTable([]string{"Tag"}, rows)
 		return nil
 
 	case *catalogops.VaultSearchResult:

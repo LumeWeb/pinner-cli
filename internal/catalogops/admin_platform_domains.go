@@ -12,7 +12,7 @@ import (
 // catalog operation specs here and by the CLI/MCP frontends to key behavior off
 // a specific op without a magic string.
 const (
-	OpAdminPlatformDomainsList    = "admin_platform_domains_list"
+	OpAdminPlatformDomainsList     = "admin_platform_domains_list"
 	OpAdminPlatformDomainsRegister = "admin_platform_domains_register"
 	OpAdminPlatformDomainsUpdate   = "admin_platform_domains_update"
 	OpAdminPlatformDomainsDelete   = "admin_platform_domains_delete"
@@ -23,7 +23,7 @@ const (
 // domains list operation; the core service returns ([]*admin.PlatformDomain,
 // total, error) which a catalog Handler cannot express, so they are bundled.
 type AdminPlatformDomainsListResult struct {
-	Count           int                    `json:"count"`
+	Count           int                     `json:"count"`
 	PlatformDomains []*admin.PlatformDomain `json:"platform_domains"`
 }
 
@@ -38,6 +38,7 @@ func adminPlatformDomainsList(d AdminDeps) catalog.Operation {
 		Safety:      catalog.SafetyRead,
 		Interaction: catalog.InteractionAgentSafe,
 		Visibility:  catalog.VisibilityBoth,
+		Args:        catalog.ListArgs(),
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			svc, err := d.platformDomains()
 			if err != nil {
@@ -46,11 +47,12 @@ func adminPlatformDomainsList(d AdminDeps) catalog.Operation {
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
-			domains, total, err := svc.ListPlatformDomains(ctx)
+			domains, _, err := svc.ListPlatformDomains(ctx)
 			if err != nil {
 				return nil, err
 			}
-			return &AdminPlatformDomainsListResult{Count: total, PlatformDomains: domains}, nil
+			page := catalog.ParseList(input)
+			return platformDomainsListResult(slicePage(domains, page.Start, page.Limit)), nil
 		}),
 	})
 }

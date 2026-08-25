@@ -11,29 +11,29 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
 	ipfs "go.lumeweb.com/ipfs-sdk"
-	"go.lumeweb.com/pinner-cli/internal/core/websites"
+	websitecore "go.lumeweb.com/pinner-cli/internal/core/websites"
 )
 
 // mockWebsitesServiceForCLI is a mock implementation of the CLI WebsitesService interface for testing
 type mockWebsitesServiceForCLI struct {
-	listFunc                   func(ctx context.Context) ([]ipfs.WebsiteItem, error)
-	createFunc                 func(ctx context.Context, domain, cid, targetType string) (*ipfs.WebsiteItem, error)
-	getFunc                    func(ctx context.Context, id string) (*ipfs.WebsiteItem, error)
-	updateFunc                 func(ctx context.Context, id, domain, cid, targetType string) (*ipfs.WebsiteItem, error)
-	updateWithOptionsFunc      func(ctx context.Context, id string, req ipfs.WebsiteUpdateRequest) (*ipfs.WebsiteItem, error)
-	deleteFunc                 func(ctx context.Context, id string) error
-	validateFunc               func(ctx context.Context, id string) (*ipfs.WebsiteValidateResponse, error)
-	getSSLStatusFunc           func(ctx context.Context, domain string) (*ipfs.WebsiteResponse, error)
-	getConfigFunc              func(ctx context.Context) (*ipfs.WebsiteConfigResponse, error)
-	ListDomainsFn              func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error)
-	BindDomainFn               func(ctx context.Context, websiteID string, req ipfs.DomainRequest) (*ipfs.DomainResponse, error)
-	UnbindDomainFn             func(ctx context.Context, websiteID string, domainID string) error
-	VerifyDomainFn             func(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainResponse, error)
-	GetDomainDNSRequirementsFn func(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainResponse, error)
-	RepublishDANEFn            func(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainDANERepublishResponse, error)
-	UpdateDomainFn             func(ctx context.Context, websiteID string, domainID string, req ipfs.DomainUpdateRequest) (*ipfs.DomainResponse, error)
+	listFunc                    func(ctx context.Context) ([]ipfs.WebsiteItem, error)
+	createFunc                  func(ctx context.Context, domain, cid, targetType string) (*ipfs.WebsiteItem, error)
+	getFunc                     func(ctx context.Context, id string) (*ipfs.WebsiteItem, error)
+	updateFunc                  func(ctx context.Context, id, domain, cid, targetType string) (*ipfs.WebsiteItem, error)
+	updateWithOptionsFunc       func(ctx context.Context, id string, req ipfs.WebsiteUpdateRequest) (*ipfs.WebsiteItem, error)
+	deleteFunc                  func(ctx context.Context, id string) error
+	validateFunc                func(ctx context.Context, id string) (*ipfs.WebsiteValidateResponse, error)
+	getSSLStatusFunc            func(ctx context.Context, domain string) (*ipfs.WebsiteResponse, error)
+	getConfigFunc               func(ctx context.Context) (*ipfs.WebsiteConfigResponse, error)
+	ListDomainsFn               func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error)
+	BindDomainFn                func(ctx context.Context, websiteID string, req ipfs.DomainRequest) (*ipfs.DomainResponse, error)
+	UnbindDomainFn              func(ctx context.Context, websiteID string, domainID string) error
+	VerifyDomainFn              func(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainResponse, error)
+	GetDomainDNSRequirementsFn  func(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainResponse, error)
+	RepublishDANEFn             func(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainDANERepublishResponse, error)
+	UpdateDomainFn              func(ctx context.Context, websiteID string, domainID string, req ipfs.DomainUpdateRequest) (*ipfs.DomainResponse, error)
 	CheckPlatformAvailabilityFn func(ctx context.Context, label string) (*ipfs.PlatformAvailabilityResponse, error)
-	ListPlatformDomainsFn      func(ctx context.Context) (*ipfs.PlatformDomainListResponse, error)
+	ListPlatformDomainsFn       func(ctx context.Context) (*ipfs.PlatformDomainListResponse, error)
 }
 
 func (m *mockWebsitesServiceForCLI) RequireAuthenticated() error {
@@ -42,7 +42,7 @@ func (m *mockWebsitesServiceForCLI) RequireAuthenticated() error {
 
 func (m *mockWebsitesServiceForCLI) SetAuthToken(token string) {}
 
-func (m *mockWebsitesServiceForCLI) List(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+func (m *mockWebsitesServiceForCLI) List(ctx context.Context, opts websitecore.ListOptions) ([]ipfs.WebsiteItem, error) {
 	if m.listFunc != nil {
 		return m.listFunc(ctx)
 	}
@@ -345,7 +345,7 @@ func websitesListWithService(ctx context.Context, cmd *cli.Command, output Outpu
 		return err
 	}
 
-	websites, err := websitesService.List(ctx)
+	websites, err := websitesService.List(ctx, websitecore.ListOptions{})
 	if err != nil {
 		return err
 	}
@@ -372,7 +372,7 @@ func websitesListWithService(ctx context.Context, cmd *cli.Command, output Outpu
 		if website.Expired {
 			validation = "expired"
 		} else if website.ValidationToken != "" {
-			validation = stripValidationPrefix(website.ValidationToken)
+			validation = websitecore.StripValidationPrefix(website.ValidationToken)
 		}
 		gateway := ""
 		if website.GatewayDomain != nil {
@@ -637,7 +637,7 @@ func websitesGetWithService(ctx context.Context, cmd interface{ Args() cli.Args 
 		{"Status", website.Status},
 		{"DNS Hosting", fmt.Sprintf("%t", website.DnsHostingEnabled)},
 		{"Expired", fmt.Sprintf("%t", website.Expired)},
-		{"Validation Token", stripValidationPrefix(website.ValidationToken)},
+		{"Validation Token", websitecore.StripValidationPrefix(website.ValidationToken)},
 	}
 
 	if website.ValidationExpiresAt != nil {
@@ -1726,7 +1726,7 @@ func websitesEnableIPNSWithService(ctx context.Context, cmd interface {
 		return fmt.Errorf("website ID or domain is required")
 	}
 
-	id, err := websites.ResolveWebsiteID(ctx, websitesService, idArg)
+	id, err := websitecore.ResolveWebsiteID(ctx, websitesService, idArg)
 	if err != nil {
 		return err
 	}
@@ -1769,7 +1769,7 @@ func TestStripValidationPrefix(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			result := stripValidationPrefix(tt.input)
+			result := websitecore.StripValidationPrefix(tt.input)
 			require.Equal(t, tt.expected, result)
 		})
 	}
@@ -1867,7 +1867,7 @@ func TestValidationRecordValue(t *testing.T) {
 func TestResolveWebsiteID(t *testing.T) {
 	t.Run("numeric ID returned as-is", func(t *testing.T) {
 		mockSvc := &mockWebsitesServiceForCLI{}
-		id, err := websites.ResolveWebsiteID(context.Background(), mockSvc, "42")
+		id, err := websitecore.ResolveWebsiteID(context.Background(), mockSvc, "42")
 		require.NoError(t, err)
 		require.Equal(t, "42", id)
 	})
@@ -1880,7 +1880,7 @@ func TestResolveWebsiteID(t *testing.T) {
 				{Id: 8, Domain: "other.com"},
 			}, nil
 		}
-		id, err := websites.ResolveWebsiteID(context.Background(), mockSvc, "example.com")
+		id, err := websitecore.ResolveWebsiteID(context.Background(), mockSvc, "example.com")
 		require.NoError(t, err)
 		require.Equal(t, "7", id)
 	})
@@ -1890,7 +1890,7 @@ func TestResolveWebsiteID(t *testing.T) {
 		mockSvc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
 			return []ipfs.WebsiteItem{}, nil
 		}
-		_, err := websites.ResolveWebsiteID(context.Background(), mockSvc, "missing.com")
+		_, err := websitecore.ResolveWebsiteID(context.Background(), mockSvc, "missing.com")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "website not found for domain")
 	})
@@ -1900,7 +1900,7 @@ func TestResolveWebsiteID(t *testing.T) {
 		mockSvc.listFunc = func(ctx context.Context) ([]ipfs.WebsiteItem, error) {
 			return nil, errors.New("service down")
 		}
-		_, err := websites.ResolveWebsiteID(context.Background(), mockSvc, "example.com")
+		_, err := websitecore.ResolveWebsiteID(context.Background(), mockSvc, "example.com")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to look up website by domain")
 	})

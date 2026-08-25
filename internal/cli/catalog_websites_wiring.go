@@ -358,41 +358,8 @@ func renderWebsitesResult(_ context.Context, c *cli.Command, op catalog.Operatio
 	}
 
 	switch r := result.(type) {
-	case []ipfs.WebsiteItem:
-		if output.IsJSON() {
-			return output.PrintJSON(map[string]any{"count": len(r), "websites": r})
-		}
-		if len(r) == 0 {
-			output.Printfln("No websites found")
-			return nil
-		}
-		output.Printfln("Found %d website(s)", len(r))
-		headers := []string{"ID", "NAME", "CID", "RESOLVED CID", "STATUS", "DNS", "SUBDOMAIN", "GATEWAY", "VALIDATION", "CREATED"}
-		rows := lo.Map(r, func(w ipfs.WebsiteItem, _ int) []string {
-			validation := ""
-			if w.Status == "active" {
-				validation = "validated"
-			} else if w.Expired {
-				validation = "expired"
-			} else if w.ValidationToken != "" {
-				validation = stripValidationPrefix(w.ValidationToken)
-			}
-			gateway := ""
-			if w.GatewayDomain != nil {
-				gateway = *w.GatewayDomain
-			}
-			resolvedCID := "-"
-			if w.ActiveCid != nil {
-				resolvedCID = *w.ActiveCid
-			}
-			return []string{
-				fmt.Sprintf("%d", w.Id), w.Domain, w.TargetHash, resolvedCID, w.Status,
-				fmt.Sprintf("%t", w.DnsHostingEnabled), fmt.Sprintf("%t", w.IsSubdomain),
-				gateway, validation, w.Created.Format("2006-01-02 15:04:05"),
-			}
-		})
-		output.PrintTable(headers, rows)
-		return nil
+	case catalogops.ListResult:
+		return renderListResult(output, r)
 
 	case *ipfs.WebsiteItem:
 		if output.IsJSON() {
@@ -651,7 +618,7 @@ func renderWebsiteItemHuman(output Output, w *ipfs.WebsiteItem) {
 	if w.Status != "active" {
 		fields = append(fields,
 			Field{"Token Expired", fmt.Sprintf("%t", w.Expired)},
-			Field{"Validation Token", stripValidationPrefix(w.ValidationToken)},
+			Field{"Validation Token", websites.StripValidationPrefix(w.ValidationToken)},
 		)
 		if w.ValidationExpiresAt != nil {
 			fields = append(fields, Field{"Token Expires", w.ValidationExpiresAt.Format("2006-01-02 15:04:05")})

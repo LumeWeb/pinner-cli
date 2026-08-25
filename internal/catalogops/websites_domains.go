@@ -102,7 +102,7 @@ func websitesDomainsAdd(d WebsitesDeps) catalog.Operation {
 			var websiteID string
 			if websiteArg == "" {
 				// Auto-select when there is exactly one website.
-				list, err := svc.List(ctx)
+				list, err := svc.List(ctx, websites.ListOptions{})
 				if err != nil {
 					return nil, fmt.Errorf("websites_domains_add: failed to list websites: %w", err)
 				}

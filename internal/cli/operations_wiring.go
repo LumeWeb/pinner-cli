@@ -145,13 +145,13 @@ func watchCatalogOperationsList(ctx context.Context, c *cli.Command, op catalog.
 	if err := svc.RequireAuthenticated(); err != nil {
 		return err
 	}
-	page := catalog.IntArg(input, "page", 0)
-	if page < 1 {
-		page = 1
-	}
-	pageSize := catalog.IntArg(input, "page-size", 0)
-	if pageSize < 1 {
-		pageSize = 10
+	l := catalog.ParseList(input)
+	// The watcher clamps to a sane default (Limit 10) so an unset or zero limit
+	// does not disable pagination and fetch the entire operations table on
+	// every poll tick.
+	limit := l.Limit
+	if limit < 1 {
+		limit = 10
 	}
 	opts := operations.ListOptions{
 		Search:          catalog.SearchArg(input),
@@ -161,8 +161,8 @@ func watchCatalogOperationsList(ctx context.Context, c *cli.Command, op catalog.
 		ProtocolFilter:  catalog.StrArg(input, "protocol", ""),
 		CIDFilter:       catalog.StrArg(input, "cid", ""),
 		Sort:            catalog.StrArg(input, "sort", ""),
-		Page:            page,
-		PageSize:        pageSize,
+		Start:           l.Start,
+		Limit:           limit,
 	}
 	opts.IsWatch = true
 	return watchOperationsList(ctx, svc, output, opts)
@@ -174,32 +174,8 @@ func renderOperationsResult(_ context.Context, c *cli.Command, op catalog.Operat
 	output := setupOutput(c)
 
 	switch r := result.(type) {
-	case *operations.OperationsListResult:
-		if output.IsJSON() {
-			return output.PrintJSON(r)
-		}
-		if r == nil || len(r.Operations) == 0 {
-			output.Printfln("No operations found.")
-			return nil
-		}
-		headers := []string{"ID", "OPERATION", "PROTOCOL", "STATUS", "CID", "STARTED"}
-		rows := make([][]string, len(r.Operations))
-		for i, o := range r.Operations {
-			cid := o.CID
-			if cid == "" {
-				cid = "-"
-			}
-			rows[i] = []string{
-				fmt.Sprintf("%d", o.ID),
-				o.OperationDisplayName,
-				o.ProtocolDisplayName,
-				o.StatusDisplayName,
-				cid,
-				o.StartedAt,
-			}
-		}
-		output.PrintTable(headers, rows)
-		return nil
+	case catalogops.ListResult:
+		return renderListResult(output, r)
 
 	case *operations.OperationDetail:
 		// Reuse the existing CLI human renderer (it accepts the alias type).

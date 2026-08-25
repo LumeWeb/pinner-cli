@@ -20,6 +20,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/core/auth"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
 	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
+	"go.lumeweb.com/pinner-cli/internal/core/websites"
 	portalsdk "go.lumeweb.com/portal-sdk"
 
 	mcpauth "go.lumeweb.com/pinner-cli/internal/mcp/auth"
@@ -256,7 +257,7 @@ type mockWebsitesSvc struct {
 
 func (m *mockWebsitesSvc) RequireAuthenticated() error { return nil }
 
-func (m *mockWebsitesSvc) List(ctx context.Context) ([]ipfs.WebsiteItem, error) {
+func (m *mockWebsitesSvc) List(ctx context.Context, opts websites.ListOptions) ([]ipfs.WebsiteItem, error) {
 	if m.listFunc != nil {
 		return m.listFunc(ctx)
 	}

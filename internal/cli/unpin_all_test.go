@@ -52,7 +52,7 @@ func TestUnpinAll(t *testing.T) {
 					MaxRetries:   3,
 				}).Maybe()
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().List(mock.Anything, "", 0, "", "").Return(
+				service.EXPECT().List(mock.Anything, mock.Anything).Return(
 					[]Pin{
 						{CID: "QmXxx1", Name: "test1", Status: "pinned", RequestID: "req-1"},
 						{CID: "QmXxx2", Name: "test2", Status: "pinned", RequestID: "req-2"},
@@ -85,7 +85,7 @@ func TestUnpinAll(t *testing.T) {
 					MaxRetries:   3,
 				}).Maybe()
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().List(mock.Anything, "", 0, "failed", "").Return(
+				service.EXPECT().List(mock.Anything, mock.Anything).Return(
 					[]Pin{
 						{CID: "QmFailed1", Name: "failed1", Status: "failed", RequestID: "req-f1"},
 					},
@@ -116,7 +116,7 @@ func TestUnpinAll(t *testing.T) {
 					MaxRetries:   3,
 				}).Maybe()
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().List(mock.Anything, "", 0, "", "").Return(
+				service.EXPECT().List(mock.Anything, mock.Anything).Return(
 					[]Pin{},
 					nil,
 				)
@@ -130,7 +130,7 @@ func TestUnpinAll(t *testing.T) {
 			setupMocks: func(cfgMgr *configmocks.MockManager, service *MockPinningService) {
 				cfgMgr.EXPECT().Config().Return(&config.Config{BaseEndpoint: "https://pinner.xyz", Secure: true}).Maybe()
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().List(mock.Anything, "", 0, "", "").Return(
+				service.EXPECT().List(mock.Anything, mock.Anything).Return(
 					[]Pin{
 						{CID: "QmXxx1", Name: "test1", Status: "pinned", RequestID: "req-1"},
 					},
@@ -151,7 +151,7 @@ func TestUnpinAll(t *testing.T) {
 					MaxRetries:   3,
 				}).Maybe()
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().List(mock.Anything, "", 0, "", "").Return(
+				service.EXPECT().List(mock.Anything, mock.Anything).Return(
 					nil,
 					errors.New("list failed"),
 				)
@@ -171,7 +171,7 @@ func TestUnpinAll(t *testing.T) {
 					MaxRetries:   3,
 				}).Maybe()
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().List(mock.Anything, "", 0, "", "").Return(
+				service.EXPECT().List(mock.Anything, mock.Anything).Return(
 					[]Pin{
 						{CID: "QmXxx1", Name: "test1", Status: "pinned", RequestID: "req-1"},
 					},
@@ -216,7 +216,7 @@ func TestUnpinAll(t *testing.T) {
 					MaxRetries:   3,
 				}).Maybe()
 				service.EXPECT().RequireAuthenticated().Return(nil)
-				service.EXPECT().List(mock.Anything, "", 0, "", "").Return(
+				service.EXPECT().List(mock.Anything, mock.Anything).Return(
 					[]Pin{
 						{CID: "QmXxx1", Name: "test1", Status: "pinned", RequestID: "req-1"},
 						{CID: "QmXxx2", Name: "test2", Status: "pinned", RequestID: "req-2"},
@@ -290,7 +290,7 @@ func TestUnpinAllConfirmPrompt(t *testing.T) {
 		output := newTestOutput()
 
 		service.EXPECT().RequireAuthenticated().Return(nil)
-		service.EXPECT().List(mock.Anything, "", 0, "", "").Return(
+		service.EXPECT().List(mock.Anything, mock.Anything).Return(
 			[]Pin{
 				{CID: "QmXxx1", Name: "test1", Status: "pinned", RequestID: "req-1"},
 				{CID: "QmXxx2", Name: "test2", Status: "pinned", RequestID: "req-2"},
@@ -329,7 +329,7 @@ func TestUnpinAllConfirmPrompt(t *testing.T) {
 		output := newTestOutput()
 
 		service.EXPECT().RequireAuthenticated().Return(nil)
-		service.EXPECT().List(mock.Anything, "", 0, "", "").Return(
+		service.EXPECT().List(mock.Anything, mock.Anything).Return(
 			[]Pin{
 				{CID: "QmXxx1", Name: "test1", Status: "pinned", RequestID: "req-1"},
 				{CID: "QmXxx2", Name: "test2", Status: "pinned", RequestID: "req-2"},
@@ -378,7 +378,7 @@ func TestUnpinAllConfirmPrompt(t *testing.T) {
 		output := newTestOutput()
 
 		service.EXPECT().RequireAuthenticated().Return(nil)
-		service.EXPECT().List(mock.Anything, "", 0, "", "").Return(
+		service.EXPECT().List(mock.Anything, mock.Anything).Return(
 			[]Pin{
 				{CID: "QmXxx1", Name: "test1", Status: "pinned", RequestID: "req-1"},
 				{CID: "QmXxx2", Name: "test2", Status: "pinned", RequestID: "req-2"},

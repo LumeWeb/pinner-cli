@@ -7,6 +7,7 @@ import (
 
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner-cli/internal/core/pinning"
 )
 
 func newUnpinAllCommand() *cli.Command {
@@ -82,7 +83,7 @@ func unpinAll(ctx context.Context, cmd flagGetterWithInt, output Output, cfgMgr 
 	dryRun := cmd.Bool(FlagDryRun)
 	yes := cmd.Bool(FlagForce) || cmd.Bool(FlagYes)
 
-	pins, err := pinningService.List(ctx, "", 0, statusFilter, "")
+	pins, err := pinningService.List(ctx, pinning.ListOptions{Status: statusFilter})
 	if err != nil {
 		return err
 	}
