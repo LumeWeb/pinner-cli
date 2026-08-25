@@ -29,7 +29,13 @@ type DomainAddWizard struct {
 	websiteDomain string
 	domain        string
 	namespace     string
-	result        *ipfs.DomainResponse
+	// Platform (free-subdomain) claim fields. When set, executeBindDomain passes
+	// them through to ipfs.DomainRequest so the portal can mint a subdomain.
+	generate          bool
+	label             string
+	platformDomain    string
+	platformNamespace string
+	result            *ipfs.DomainResponse
 
 	// verifyResult is the raw response from the most recent VerifyDomain call.
 	// It is nil when verification has not yet returned a non-nil response,
@@ -142,6 +148,22 @@ func (w *DomainAddWizard) executeBindDomain(ctx context.Context) error {
 		Namespace: w.Namespace(),
 		Config:    nil,
 	}
+	// Pass platform (free-subdomain) claim fields through so the portal can
+	// mint a subdomain at bind time (label supplied explicitly, or
+	// auto-generated via generate). Consistent with websites_domains_add.
+	if pd := w.PlatformDomain(); pd != "" {
+		req.PlatformDomain = &pd
+	}
+	if pns := w.PlatformNamespace(); pns != "" {
+		req.PlatformNamespace = &pns
+	}
+	if w.Generate() {
+		g := true
+		req.Generate = &g
+	}
+	if label := w.Label(); label != "" {
+		req.Label = &label
+	}
 
 	result, err := w.websitesService.BindDomain(ctx, w.WebsiteID(), req)
 	if err != nil {
@@ -227,6 +249,18 @@ func (w *DomainAddWizard) Domain() string { return w.domain }
 // Namespace returns the selected namespace (icann or hns).
 func (w *DomainAddWizard) Namespace() string { return w.namespace }
 
+// Generate reports whether the platform should auto-generate a subdomain label.
+func (w *DomainAddWizard) Generate() bool { return w.generate }
+
+// Label returns the explicit subdomain label to claim under a platform domain.
+func (w *DomainAddWizard) Label() string { return w.label }
+
+// PlatformDomain returns the platform (free-subdomain) root domain to claim under.
+func (w *DomainAddWizard) PlatformDomain() string { return w.platformDomain }
+
+// PlatformNamespace returns the namespace within the platform domain to claim under.
+func (w *DomainAddWizard) PlatformNamespace() string { return w.platformNamespace }
+
 // Result returns the bound domain response.
 func (w *DomainAddWizard) Result() *ipfs.DomainResponse { return w.result }
 
@@ -266,6 +300,20 @@ func (w *DomainAddWizard) SetDomain(domain string) { w.domain = domain }
 
 // SetNamespace sets the selected namespace.
 func (w *DomainAddWizard) SetNamespace(namespace string) { w.namespace = namespace }
+
+// SetGenerate sets whether the platform should auto-generate a subdomain label.
+func (w *DomainAddWizard) SetGenerate(generate bool) { w.generate = generate }
+
+// SetLabel sets the explicit subdomain label to claim under a platform domain.
+func (w *DomainAddWizard) SetLabel(label string) { w.label = label }
+
+// SetPlatformDomain sets the platform (free-subdomain) root domain to claim under.
+func (w *DomainAddWizard) SetPlatformDomain(platformDomain string) { w.platformDomain = platformDomain }
+
+// SetPlatformNamespace sets the namespace within the platform domain to claim under.
+func (w *DomainAddWizard) SetPlatformNamespace(platformNamespace string) {
+	w.platformNamespace = platformNamespace
+}
 
 // SetResult sets the bound domain response.
 func (w *DomainAddWizard) SetResult(result *ipfs.DomainResponse) { w.result = result }

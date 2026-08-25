@@ -37,7 +37,7 @@ func PromptDescriptors() []model.PromptDescriptor {
 		{
 			Name:        PromptWebsiteOnboarding,
 			Title:       "Website Onboarding Wizard",
-			Description: "Guides the agent through the website creation wizard workflow step by step using the websites_wizard_start and websites_wizard_step tools. Embeds references to pinner:// resources for DNS requirements and validation status. Optional arguments pre-fill wizard choices.",
+			Description: "Guides the agent through the website creation wizard workflow step by step using the websites_wizard_start and websites_wizard_step tools. Covers binding a plain domain OR claiming a free platform subdomain (label or auto-generated) under a platform root. Embeds references to pinner:// resources for platform domains, DNS requirements and validation status. Optional arguments pre-fill wizard choices.",
 			Arguments: []model.PromptArgumentDescriptor{
 				{Name: ArgDomain, Description: "Domain name for the website (e.g. example.com). If omitted, the wizard will ask."},
 				{Name: ArgContentSource, Description: `Content source: "cid" (already have a CID) or "upload" (need to upload first). Default: cid.`},
@@ -129,7 +129,9 @@ func websiteOnboardingHandler(ctx context.Context, req model.PromptRequest) (mod
 		messages = append(messages, textMsg(renderPromptTemplate("website_step_target_type_ask", data)))
 	}
 
-	// Step 6: Domain step.
+	// Step 6: Domain step. Embed the platform-domains resource so the agent can
+	// see the enabled free-subdomain roots before choosing a domain path.
+	messages = append(messages, embeddedMsg(PlatformDomainsURI))
 	if domain != "" {
 		messages = append(messages, textMsg(renderPromptTemplate("website_step_domain_filled", data)))
 	} else {

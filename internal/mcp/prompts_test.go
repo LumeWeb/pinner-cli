@@ -51,10 +51,13 @@ func TestWebsiteOnboardingHandlerRendersSteps(t *testing.T) {
 	// With no domain pre-filled, the "ask" step variants are used.
 	assert.Contains(t, joined, `{"domain": "<domain>"}`)
 
-	// Embedded resources at expected positions.
+	// Embedded resources at expected positions: account/status, then the
+	// platform-domains resource (so the agent sees free-subdomain options
+	// before the domain step), then validation-status.
 	assert.Equal(t, AccountStatusURI, embedded[0], "account/status is the first embedded resource")
-	require.Len(t, embedded, 2, "empty-domain case embeds account/status + validation-status")
-	assert.Contains(t, embedded[1], "validation-status")
+	require.Len(t, embedded, 3, "empty-domain case embeds account/status + platform-domains + validation-status")
+	assert.Contains(t, embedded[1], "platform-domains")
+	assert.Contains(t, embedded[2], "validation-status")
 }
 
 // TestWebsiteOnboardingPrefillVariant verifies that pre-filling domain,
