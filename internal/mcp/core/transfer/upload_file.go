@@ -44,19 +44,20 @@ type UploadFileInput struct {
 	// 'convert' for complete static website ZIPs containing index.html, CSS,
 	// JS, images, and nested directories; the resulting CID is a directory CID
 	// that can be passed directly to websites_create/update. 'preserve' keeps
-	// the archive intact as a single file. Honored when the executor can buffer
-	// to a seekable temp file (host file, url/data relay, and co-located path);
-	// the mint/presigned-PUT source cannot express it.
-	ArchiveMode string `json:"archive_mode,omitempty" jsonschema:"enum=convert,preserve,description=How to treat an archive. convert (default) extracts an archive and uploads its contents as a directory DAG while preserving relative paths; use for complete static website ZIPs (index.html, CSS, JS, images, nested directories) — the resulting CID is a directory CID ready for websites_create/update. The archive's directory structure is preserved exactly, so index.html MUST be at the archive root (not inside a wrapper directory). preserve keeps the archive intact as a single file. Honored for host file, url/data relay, and co-located path sources; the mint (presigned PUT) source cannot express it."`
+	// the archive intact as a single file. Honored on every source: host file
+	// and url/data relays route through a buffering executor directly, while
+	// the mint (presigned PUT) source records the mode on the handle at mint
+	// time and applies it when the PUT bytes arrive.
+	ArchiveMode string `json:"archive_mode,omitempty" jsonschema:"enum=convert,preserve,description=How to treat an archive. convert (default) extracts an archive and uploads its contents as a directory DAG while preserving relative paths; use for complete static website ZIPs (index.html, CSS, JS, images, nested directories) — the resulting CID is a directory CID ready for websites_create/update. The archive's directory structure is preserved exactly, so index.html MUST be at the archive root (not inside a wrapper directory). preserve keeps the archive intact as a single file. Honored on every source: host file and url/data relays convert directly; the mint (presigned PUT) source records the mode at mint time and honors it when the PUT bytes arrive."`
 	// TTL is the presigned endpoint lifetime for source mode mint (e.g. 5m).
 	// Only used in HTTP/tunnel mode.
 	TTL string `json:"ttl,omitempty" jsonschema:"description=Presigned endpoint lifetime (e.g. 5m; default 5 minutes). Only used with source mode mint."`
 	// Wrap forces a directory root when uploading a single file, required for
 	// content that will be a website (a website must resolve to a directory,
 	// not a bare file). Only affects single-file uploads (file / url / data /
-	// path to a file); directory and archive-converted uploads are already a
-	// directory root, and the mint (presigned PUT) source has no wrap concept.
-	Wrap bool `json:"wrap,omitempty" jsonschema:"description=Wrap a single file in a directory root so the CID is a directory (required when the upload is a website). When wrap=true and no name is given, HTML content is auto-named index.html so the site resolves at its root. Do NOT set an explicit name like 'starter-site' — it is honored as-is and the page will only be reachable at /starter-site, not /. Only affects single-file uploads; directories are already a directory root."`
+	// path to a file, or a mint PUT whose bytes are not an archive); directory
+	// and archive-converted uploads are already a directory root.
+	Wrap bool `json:"wrap,omitempty" jsonschema:"description=Wrap a single file in a directory root so the CID is a directory (required when the upload is a website). When wrap=true and no name is given, HTML content is auto-named index.html so the site resolves at its root. Do NOT set an explicit name like 'starter-site' — it is honored as-is and the page will only be reachable at /starter-site, not /. Only affects single-file uploads; directories and archive-converted uploads are already a directory root."`
 }
 
 // UploadFileHandler is the co-located local-path upload path for upload_file.
@@ -204,23 +205,6 @@ func newUploadFileDescriptor(coLocated, tunnelOpenAI bool, pathFn UploadFileHand
 				if hp == nil {
 					return model.ToolResult{}, errors.New("presigned upload endpoint is not configured for remote mode")
 				}
-				// The mint source streams raw file bytes to a presigned PUT URL —
-				// the wrap (directory-root) decision is applied during Pinner's
-				// SDK upload, which this path never reaches, so it would be
-				// silently dropped. Reject it explicitly rather than returning a
-				// non-directory root the caller cannot detect.
-				if in.Wrap {
-					return model.ToolResult{}, errors.New("wrap is not supported by the mint source; use the `file` parameter (for host files) or a co-located path/data/url source for a wrapped (directory-root) single-file upload")
-				}
-				// Archive conversion has the same constraint: the mint source
-				// exposes no archive_mode to the agent and always remains a
-				// single file (the async PUT executor passes explicit
-				// "preserve"). Reject an explicit "convert" request rather than
-				// silently returning a single-file CID the caller cannot opt
-				// back into extracting.
-				if in.ArchiveMode != "" && ieo.ParseArchiveMode(in.ArchiveMode) == ieo.ArchiveConvert {
-					return model.ToolResult{}, errors.New("archive_mode=convert is not supported by the mint source; use the `file` parameter with archive_mode=convert (for host files) or a co-located path/url/data source for archive (directory) extraction")
-				}
 				name := in.Name
 				if name == "" {
 					name = DefaultUploadName
@@ -241,7 +225,19 @@ func newUploadFileDescriptor(coLocated, tunnelOpenAI bool, pathFn UploadFileHand
 				// or the upload App file picker (which continues the same handle)
 				// can fulfill the SAME operation — there is exactly one upload
 				// task per operation, resolved by this one handle.
-				url, handle := hp.Prepare(name, ttl)
+				//
+				// The mint source records archive_mode/wrap on the handle at
+				// mint time. The presigned PUT carries only raw bytes, so these
+				// are captured here and applied by the executor when the bytes
+				// arrive at Fulfill — the same directory-DAG conversion, single
+				// -file wrap, or preserve that host-file/path/url/data sources
+				// express directly. WithArchiveMode("") defaults to "convert",
+				// matching the tool's documented default across every source.
+				opts := []PrepareOption{WithArchiveMode(in.ArchiveMode)}
+				if in.Wrap {
+					opts = append(opts, WithWrap(true))
+				}
+				url, handle := hp.Prepare(name, ttl, opts...)
 				if url == "" || handle == "" {
 					return model.ToolResult{}, errors.New("failed to prepare one-time upload endpoint")
 				}
@@ -321,7 +317,7 @@ func uploadFileDescription(t TransportKind) string {
 	case TransportStdio:
 		return "Upload a file and pin it. The returned CID is already pinned: do NOT call pins_add afterward; the wait flag waits for this upload's own pin operation. MUST use `file` when the host already has the file (user-uploaded attachments AND assistant-generated files in the assistant's sandbox); the OpenAI runtime converts it to a temporary download_url + file_id this tool receives — do NOT base64-encode, create a data URI, or manually construct the download_url object. Fallback: source.mode=path with a host-side file/directory/archive path. Website ZIPs: if you already have a site ZIP on the host (index.html + CSS/JS/images), call upload_file with file=<host file> and archive_mode=convert — the entire directory tree becomes one directory DAG whose CID you can publish directly to websites_create/update. Do NOT upload individual images/assets, and do NOT mint a presigned curl URL for a file your host already holds. Before uploading a site ZIP, verify that index.html is at the archive root (not inside a wrapper directory) — websites_create/update will reject a CID whose root lacks index.html. If the upload fails with 'context canceled', retry with the same parameters — this is a transient host-side cancellation, not a file rejection. Poll upload_status with the returned handle."
 	case TransportHTTP:
-		return "Upload a file and pin it. The returned CID is already pinned: do NOT call pins_add afterward; the wait flag waits for this upload's own pin operation. MUST use `file` when the host already has the file (user-uploaded attachments AND assistant-generated files in the assistant's sandbox); the OpenAI runtime converts it to a temporary download_url + file_id this tool receives — do NOT base64-encode, create a data URI, or manually construct the download_url object. Website ZIPs: if you already have a site ZIP on the host (index.html + CSS/JS/images), call upload_file with file=<host file> and archive_mode=convert — the entire directory tree becomes one directory DAG whose CID you can publish directly to websites_create/update. Do NOT upload individual images/assets, and do NOT mint a presigned curl URL for a file your host already holds. Before uploading a site ZIP, verify that index.html is at the archive root (not inside a wrapper directory) — websites_create/update will reject a CID whose root lacks index.html. Fallback: source.mode=mint returns a one-time presigned HTTP PUT endpoint; stream the bytes with curl, then poll upload_status with the returned upload_handle. If the upload fails with 'context canceled', retry with the same parameters — this is a transient host-side cancellation, not a file rejection."
+		return "Upload a file and pin it. The returned CID is already pinned: do NOT call pins_add afterward; the wait flag waits for this upload's own pin operation. MUST use `file` when the host already has the file (user-uploaded attachments AND assistant-generated files in the assistant's sandbox); the OpenAI runtime converts it to a temporary download_url + file_id this tool receives — do NOT base64-encode, create a data URI, or manually construct the download_url object. Website ZIPs: if you already have a site ZIP on the host (index.html + CSS/JS/images), call upload_file with file=<host file> and archive_mode=convert — the entire directory tree becomes one directory DAG whose CID you can publish directly to websites_create/update. Do NOT upload individual images/assets, and do NOT mint a presigned curl URL for a file your host already holds. Before uploading a site ZIP, verify that index.html is at the archive root (not inside a wrapper directory) — websites_create/update will reject a CID whose root lacks index.html. Fallback: source.mode=mint returns a one-time presigned HTTP PUT endpoint; stream the bytes with curl, then poll upload_status with the returned upload_handle. archive_mode and wrap are honored on mint too: request archive_mode=convert to have the PUT bytes extracted into a directory DAG when they are an archive (or wrap=true to wrap a single file), exactly as on host-file/path/url/data sources."
 	default:
 		return "Upload a file and pin it. The returned CID is already pinned: do NOT call pins_add afterward; the wait flag waits for this upload's own pin operation. MUST use `file` when the host already has the file (user-uploaded attachments AND assistant-generated files in the assistant's sandbox); the OpenAI runtime converts it to a temporary download_url + file_id this tool receives — do NOT base64-encode, create a data URI, or manually construct the download_url object. Website ZIPs: if you already have a site ZIP on the host (index.html + CSS/JS/images), call upload_file with file=<host file> and archive_mode=convert — the entire directory tree becomes one directory DAG whose CID you can publish directly to websites_create/update. Do NOT upload individual images/assets, and do NOT mint a presigned curl URL for a file your host already holds. Before uploading a site ZIP, verify that index.html is at the archive root (not inside a wrapper directory) — websites_create/update will reject a CID whose root lacks index.html. Fallback: source.mode=url (server-fetchable HTTPS URL) or source.mode=data (RFC 2397 data: URI) — the server fetches/decodes and uploads them. If the upload fails with 'context canceled', retry with the same parameters — this is a transient host-side cancellation, not a file rejection. Poll upload_status with the returned handle."
 	}

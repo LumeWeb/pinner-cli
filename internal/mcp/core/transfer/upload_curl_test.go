@@ -374,3 +374,95 @@ func TestCurlUploadPrunesExpiredTokens(t *testing.T) {
 	defer cu.mu.Unlock()
 	require.Len(t, cu.tokens, 1, "expired first token must be pruned on the next mint")
 }
+
+// TestPrepareThreadsArchiveModeAndWrap verifies the mint-path contract: an
+// archive_mode/wrap recorded at Prepare time on a prepared handle is honored
+// by the executor when the handle is later fulfilled. The presigned PUT source
+// carries only raw bytes, so the archive conversion / wrap must be decided when
+// the handle is minted (upload_file) and applied when the bytes arrive — this
+// is what lets source.mode=mint express the same directory-DAG conversion as
+// host-file/path/url/data sources.
+func TestPrepareThreadsArchiveModeAndWrap(t *testing.T) {
+	var gotMode string
+	var gotWrap bool
+	mgr := NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, archiveMode string, wrap bool) (any, error) {
+		gotMode = archiveMode
+		gotWrap = wrap
+		_, _ = io.Copy(io.Discard, reader)
+		return map[string]any{"cid": "QmConverted"}, nil
+	}, 0)
+
+	handle, err := mgr.Prepare("site.zip", time.Minute, WithArchiveMode("convert"), WithWrap(true))
+	require.NoError(t, err)
+
+	require.NoError(t, mgr.Fulfill(context.Background(), handle, io.NopCloser(strings.NewReader("zip bytes")), 9, "", false))
+	require.Eventually(t, func() bool {
+		t, err := mgr.Get(handle)
+		return err == nil && t.State == UploadStateCompleted
+	}, 2*time.Second, 10*time.Millisecond)
+	require.Equal(t, "convert", gotMode, "executor must receive the archive_mode recorded at Prepare time")
+	require.True(t, gotWrap, "executor must receive the wrap flag recorded at Prepare time")
+}
+
+// TestPrepareDefaultsToPreserve verifies an undecorated prepared handle keeps
+// the legacy single-file behavior (archiveMode "preserve", no wrap). A raw PUT
+// fulfilled through a plain (non-mint) handle is never silently extracted,
+// preserving the original anti-surprise contract.
+func TestPrepareDefaultsToPreserve(t *testing.T) {
+	var gotMode string
+	var gotWrap bool
+	mgr := NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, archiveMode string, wrap bool) (any, error) {
+		gotMode = archiveMode
+		gotWrap = wrap
+		_, _ = io.Copy(io.Discard, reader)
+		return map[string]any{"cid": "QmRaw"}, nil
+	}, 0)
+
+	handle, err := mgr.Prepare("raw.bin", time.Minute)
+	require.NoError(t, err)
+
+	require.NoError(t, mgr.Fulfill(context.Background(), handle, io.NopCloser(strings.NewReader("x")), 1, "", false))
+	require.Eventually(t, func() bool {
+		t, err := mgr.Get(handle)
+		return err == nil && t.State == UploadStateCompleted
+	}, 2*time.Second, 10*time.Millisecond)
+	require.Equal(t, "preserve", gotMode, "plain prepared handle must default to preserve")
+	require.False(t, gotWrap, "plain prepared handle must default to wrap=false")
+}
+
+// TestMintConvertThreadsArchiveMode is the end-to-end mint-path contract: an
+// upload_file mint request with archive_mode=convert mints a presigned PUT URL
+// whose handle records the mode; the subsequent curl PUT fulfills that handle
+// and the executor receives "convert" — proving a site ZIP streamed via
+// source.mode=mint is extracted into a directory DAG, exactly as on
+// host-file/path/url/data sources.
+func TestMintConvertThreadsArchiveMode(t *testing.T) {
+	var gotMode string
+	var gotWrap bool
+	mgr := NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, archiveMode string, wrap bool) (any, error) {
+		gotMode = archiveMode
+		gotWrap = wrap
+		_, _ = io.Copy(io.Discard, reader)
+		return map[string]any{"cid": "QmSiteDir"}, nil
+	}, 0)
+	cu := NewHTTPUpload(mgr, 4096)
+	defer cu.Stop(context.Background())
+
+	url, handle := cu.Prepare("site.zip", time.Minute, WithArchiveMode("convert"), WithWrap(true))
+	require.NotEmpty(t, url)
+	require.NotEmpty(t, handle)
+
+	req, err := http.NewRequest(http.MethodPut, url, strings.NewReader("PK\x03\x04 fake zip bytes"))
+	require.NoError(t, err)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusAccepted, resp.StatusCode)
+	_ = resp.Body.Close()
+
+	require.Eventually(t, func() bool {
+		t, err := mgr.Get(handle)
+		return err == nil && t.State == UploadStateCompleted
+	}, 2*time.Second, 10*time.Millisecond)
+	require.Equal(t, "convert", gotMode, "executor must receive the archive_mode recorded at mint time")
+	require.True(t, gotWrap, "executor must receive the wrap flag recorded at mint time")
+}

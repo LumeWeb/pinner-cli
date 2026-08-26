@@ -210,7 +210,12 @@ func (cu *Upload) Mint(name string, ttl time.Duration) string {
 // SAME handle for the operation, so whichever participant fulfills it (the
 // agent's curl PUT or the App's Uppy XHR PUT) resolves through that one handle
 // — no sibling upload is ever created for the same logical operation.
-func (cu *Upload) Prepare(name string, ttl time.Duration) (url, handle string) {
+//
+// opts are forwarded to the task manager's Prepare (archive/wrap handling) so
+// the mint source records at mint time how the later PUT bytes are treated;
+// since the PUT itself carries raw bytes, the transformation is applied at
+// fulfillment from the value captured here.
+func (cu *Upload) Prepare(name string, ttl time.Duration, opts ...PrepareOption) (url, handle string) {
 	if err := cu.loopback.EnsureLoopback(cu.RegisterHandlers); err != nil {
 		return "", ""
 	}
@@ -224,7 +229,7 @@ func (cu *Upload) Prepare(name string, ttl time.Duration) (url, handle string) {
 	// for the full lifetime of the presigned endpoint (not a hardcoded default),
 	// guaranteeing a PUT can always still fulfill the handle while its endpoint
 	// is live.
-	h, err := cu.tasks.Prepare(name, ttl)
+	h, err := cu.tasks.Prepare(name, ttl, opts...)
 	if err != nil {
 		return "", ""
 	}
