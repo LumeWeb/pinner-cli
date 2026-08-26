@@ -13,18 +13,6 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/core/websites"
 )
 
-// boolTrue returns a pointer to true.
-func boolTrue() *bool {
-	b := true
-	return &b
-}
-
-// boolFalse returns a pointer to false.
-func boolFalse() *bool {
-	b := false
-	return &b
-}
-
 // websitesDomainsList is the `websites domains list` operation. Returns
 // []ipfs.DomainResponse.
 func websitesDomainsList(d WebsitesDeps) catalog.Operation {
@@ -401,14 +389,14 @@ func websitesDomainsUpdate(d WebsitesDeps) catalog.Operation {
 
 			req := ipfs.DomainUpdateRequest{}
 			if enableDNS {
-				req.DnsHostingEnabled = boolTrue()
+				req.DnsHostingEnabled = new(true)
 			} else if disableDNS {
-				req.DnsHostingEnabled = boolFalse()
+				req.DnsHostingEnabled = new(false)
 			}
 			if setPrimary {
-				req.Primary = boolTrue()
+				req.Primary = new(true)
 			} else if unsetPrimary {
-				req.Primary = boolFalse()
+				req.Primary = new(false)
 			}
 
 			websiteID, domainID, err := websites.ResolveDomainBinding(ctx, svc, domainArg)

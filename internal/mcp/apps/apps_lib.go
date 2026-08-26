@@ -162,7 +162,7 @@ func RegisterAppView(srv *sdk.Server, catalog AppCatalog, v AppView) error {
 		Title:       v.Title,
 		Description: v.Description,
 		Meta: model.AppResourceMeta{
-			PrefersBorder: boolPtr(v.PrefersBorder),
+			PrefersBorder: new(v.PrefersBorder),
 		},
 		ConnectDomainsFunc: v.ConnectDomainsFunc,
 		HTML:               v.HTML,

@@ -110,5 +110,4 @@ func RegisterPinApp(srv *sdk.Server, catalog AppCatalog, pins PinningProvider) e
 	})
 }
 
-// boolPtr returns a pointer to b (nil-safe convenience for optional flags).
-func boolPtr(b bool) *bool { return &b }
+

@@ -1226,8 +1226,8 @@ func TestNullableBoolTriState(t *testing.T) {
 	}{
 		{"absent stays nil", map[string]any{}, nil},
 		{"json null stays nil", map[string]any{"flag": nil}, nil},
-		{"explicit true", map[string]any{"flag": true}, ptr(true)},
-		{"explicit false", map[string]any{"flag": false}, ptr(false)},
+		{"explicit true", map[string]any{"flag": true}, new(true)},
+		{"explicit false", map[string]any{"flag": false}, new(false)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := &captureHandler{}
@@ -1314,4 +1314,4 @@ func TestNullableBoolSchema(t *testing.T) {
 	}
 }
 
-func ptr(b bool) *bool { return &b }
+

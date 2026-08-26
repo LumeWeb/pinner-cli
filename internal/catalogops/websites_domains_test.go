@@ -268,7 +268,7 @@ func TestWebsitesDomainsUpdateNullability(t *testing.T) {
 
 	// Explicit false on the enable form => disable (maps to no-dns-hosting).
 	if _, err := op.Handler().Execute(context.Background(), map[string]any{
-		"domain": "example.test", "dns-hosting": ptr(false),
+		"domain": "example.test", "dns-hosting": new(false),
 	}); err != nil {
 		t.Fatalf("dns-hosting=false should not error, got: %v", err)
 	}
@@ -283,7 +283,7 @@ func TestWebsitesDomainsUpdateNullability(t *testing.T) {
 	fake2 := singleWebsiteFixture()
 	op2 := websitesDomainsUpdate(domainsDeps(t, fake2))
 	if _, err := op2.Handler().Execute(context.Background(), map[string]any{
-		"domain": "example.test", "primary": ptr(false),
+		"domain": "example.test", "primary": new(false),
 	}); err != nil {
 		t.Fatalf("primary=false should not error, got: %v", err)
 	}
@@ -298,7 +298,7 @@ func TestWebsitesDomainsUpdateNullability(t *testing.T) {
 	fake3 := singleWebsiteFixture()
 	op3 := websitesDomainsUpdate(domainsDeps(t, fake3))
 	if _, err := op3.Handler().Execute(context.Background(), map[string]any{
-		"domain": "example.test", "dns-hosting": ptr(true), "primary": ptr(true),
+		"domain": "example.test", "dns-hosting": new(true), "primary": new(true),
 	}); err != nil {
 		t.Fatalf("dns-hosting=true primary=true should not error, got: %v", err)
 	}
@@ -311,4 +311,4 @@ func TestWebsitesDomainsUpdateNullability(t *testing.T) {
 	}
 }
 
-func ptr(b bool) *bool { return &b }
+
