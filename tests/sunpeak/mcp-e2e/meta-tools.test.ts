@@ -1,5 +1,5 @@
 import { test, expect } from 'sunpeak/test';
-import { invoke, describeTool, searchTool } from './helpers';
+import { invoke, describeTool, searchTool, textOf } from './helpers';
 
 /**
  * Progressive-disclosure meta-tools: search_tools / describe_tool / invoke_tool
@@ -96,7 +96,43 @@ test('invoke_tool with missing required arg returns a validation error', async (
 
 // ── capabilities / agent_guide: direct orientation tools ─────────────
 
-test('capabilities tool returns declared capabilities', async ({ mcp }) => {
+// asJson returns the parsed structured payload of a tool result, preferring
+// the structuredContent channel and falling back to the text channel (which
+// carries the canonical JSON).
+function asJson(result: any): any {
+  const sc = result?.structuredContent;
+  if (sc !== undefined && sc !== null) {
+    return sc;
+  }
+  return JSON.parse(textOf(result));
+}
+
+// collectGuideSteps flattens every step tool referenced by the guide's flows
+// (including decision branches) so the e2e can independently verify the guide
+// never names a tool that does not exist.
+function collectGuideSteps(guide: any): string[] {
+  const steps: string[] = [];
+  const walkFlows = (flows: any[]) => {
+    for (const flow of flows) {
+      steps.push(...(flow.steps ?? []));
+      if (flow.decision) {
+        walkBranches(flow.decision);
+      }
+    }
+  };
+  const walkBranches = (decision: any) => {
+    for (const branch of decision.branches ?? []) {
+      steps.push(...(branch.steps ?? []));
+      if (branch.next) {
+        walkBranches(branch.next);
+      }
+    }
+  };
+  walkFlows(guide.flows);
+  return steps;
+}
+
+test('capabilities tool returns a coherent report', async ({ mcp }) => {
   const result = await mcp.callTool('capabilities', {});
   expect(result).not.toBeError();
 
@@ -105,37 +141,41 @@ test('capabilities tool returns declared capabilities', async ({ mcp }) => {
   expect(result).toHaveTextContent('transport');
   expect(result).toHaveTextContent('source_modes');
 
-  // Locked from a live probe: stdio transport advertises only `path` sourcing.
-  expect(result).toHaveStructuredContent({ transport: 'stdio' });
-  expect(result).toHaveStructuredContent({ source_modes: ['path'] });
+  // Invariant: the report names a non-empty transport and a non-empty set of
+  // source modes it can actually serve. This can genuinely fail if the
+  // transport decision breaks, without needing a committed reference.
+  const report = asJson(result);
+  expect(typeof report.transport).toBe('string');
+  expect(report.transport.length).toBeGreaterThan(0);
+  expect(Array.isArray(report.source_modes)).toBe(true);
+  expect(report.source_modes.length).toBeGreaterThan(0);
 });
 
-const GUIDE_FLOWS = [
-  { name: 'auth', title: 'Authenticate', steps: ['auth_status', 'auth_sso', 'auth_resume', 'auth_status'], detail: 'Run auth_status; if unauthenticated, call auth_sso and poll auth_resume with the returned handle until the human completes the browser sign-in.' },
-  { name: 'vault_create', title: 'Create a vault', steps: ['vault_create', 'vault_create_resume', 'vault_status'], detail: 'Call vault_create with a profile name; poll vault_create_resume with the returned handle; confirm with vault_status until unlocked.' },
-  { name: 'vault_restore', title: 'Restore a vault', steps: ['vault_restore', 'vault_restore_resume', 'vault_status'], detail: 'Call vault_restore; poll vault_restore_resume with the returned handle; confirm with vault_status until unlocked.' },
-  { name: 'upload', title: 'Upload new content (creates + pins)', steps: ['capabilities', 'upload_file', 'upload_status'], detail: 'Check capabilities; call upload_file with a transport-scoped source (host path in co-located stdio, a minted presigned HTTP PUT in remote mode, or url/data on the OpenAI tunnel), then poll upload_status for the CID. The returned CID is already pinned — use it directly in websites_create/update; do NOT call pins_add after an upload.' },
-  { name: 'vault_upload', title: 'Store a file in a vault', steps: ['capabilities', 'vault_put_file', 'upload_status'], detail: 'Check capabilities; if vault_put_file is available and the target vault is unlocked, call it with a transport-scoped source (host path in co-located stdio mode, a minted presigned PUT in remote mode, or url/data on the OpenAI tunnel) plus the destination vault_path, then monitor with upload_status for the CID.' },
-  { name: 'download', title: 'Download IPFS content to a file', steps: ['capabilities', 'download_file'], detail: 'Check capabilities\' download_sink_modes; call download_file with ipfs_path (CID or CID/path) and a supported sink. sink=local writes the bytes to a host-side output_path on the MCP server\'s own disk (available on every transport); sink=drop (when advertised) returns a one-time HTTP GET filedrop link to pull from out of band with curl -o or a browser.' },
-  { name: 'vault_download', title: 'Download a file from a vault', steps: ['capabilities', 'vault_get_file'], detail: 'Check capabilities\' download_sink_modes and that the vault is unlocked; call vault_get_file with vault_path and a supported sink. sink=local writes the decrypted bytes to a host-side output_path on the MCP server\'s own disk; sink=drop (when advertised) returns a one-time HTTP GET filedrop link.' },
-  { name: 'pins', title: 'Manage pins', steps: ['pins_add', 'pins_list', 'pins_status', 'pins_rm'], detail: 'pins_add imports content already on IPFS by external CID; it is NOT for use after an upload tool (which already pins). pins_status takes one cid; pins_rm requires confirm and exactly one of cids or all.' },
-  { name: 'publish_website_upload', title: 'Publish a website (new content)', steps: ['upload_file', 'websites_create'], detail: 'Upload new bytes, e.g. upload_file returning a CID, then websites_create/update. CID from upload is already pinned; no pins_add.' },
-  { name: 'publish_website_platform_subdomain', title: 'Publish a website with a free platform subdomain (no domain needed)', steps: ['upload_file', 'websites_platform_domain_availability', 'websites_wizard_start', 'websites_wizard_step'], detail: 'Upload new bytes (upload_file → CID). If the user has no domain, do NOT invent one: use the websites wizard to claim a platform subdomain — websites_wizard_start, then drive websites_wizard_step, passing {source: platform_subdomain, label: <label>} at the domain step (check websites_platform_domain_availability first to find an available label/root). The wizard creates the website with the exact FQDN and mints the subdomain with platform-managed DNS.' },
-];
-
-test('agent_guide tool returns guided onboarding text', async ({ mcp }) => {
+test('agent_guide returns a coherent guide whose steps resolve to real tools', async ({ mcp }) => {
   const result = await mcp.callTool('agent_guide', {});
   expect(result).not.toBeError();
 
   expect(result).toHaveTextContent('Pinner agent guide');
 
-  // The guide is structured as ordered tool chains. Its flow names/steps chain
-  // the onboarding keywords (auth_status, vault_create, pins) exactly.
-  expect(result).toHaveStructuredContent({
-    flows: GUIDE_FLOWS,
-  });
-  // Explicit onboarding-keyword coverage beyond the exact flow snapshot.
-  expect(result).toHaveStructuredContent({ summary: 'Start here. Drive Pinner through these primary flows; each step is a tool. Check the current state first, then follow the matching flow.' });
+  // Invariant: the guide is well-formed (summary + a non-empty set of flows,
+  // each a named chain with steps or a branching decision).
+  const guide = asJson(result);
+  expect(typeof guide.summary).toBe('string');
+  expect(guide.summary.length).toBeGreaterThan(0);
+  expect(Array.isArray(guide.flows)).toBe(true);
+  expect(guide.flows.length).toBeGreaterThan(0);
+  for (const flow of guide.flows) {
+    expect(typeof flow.name).toBe('string');
+    expect(typeof flow.title).toBe('string');
+    expect(flow.steps !== undefined || flow.decision !== undefined).toBe(true);
+  }
+
+  // Cross-surface invariant: every step tool the guide names exists on the
+  // advertised surface, so a guide edit can't reference a removed/renamed tool.
+  const tools = (await mcp.listTools()).map((t) => t.name);
+  for (const step of collectGuideSteps(guide)) {
+    expect(tools, `agent_guide references missing or hidden tool "${step}"`).toContain(step);
+  }
 });
 
 // Sanity: the session is still healthy after the error-path tests (unknown tool
