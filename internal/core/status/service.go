@@ -124,16 +124,35 @@ func (s *service) lookupOperation(ctx context.Context, cid string) (*pinning.Ope
 
 	s.log.Debug("pin not found, checking account operations for CID", zap.String("cid", cid))
 
+	op, err := FindOperation(ctx, client, cid)
+	if err != nil {
+		if errors.Is(err, coreerrors.ErrPinNotFound) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("failed to lookup operations: %w", err)
+	}
+
+	return operationStatusResult(op), nil
+}
+
+// FindOperation returns the most recent account operation for the given CID, or
+// coreerrors.ErrPinNotFound when no operation exists. It is the shared
+// existence check used by the status fallback and by upload's pin wait.
+func FindOperation(ctx context.Context, client portalsdk.AccountAPI, cid string) (*portalsdk.Operation, error) {
 	operations, _, err := client.ListOperations(ctx, portalsdk.WithFilters(filter.FieldEqual("cid", cid)))
 	if err != nil {
-		return nil, fmt.Errorf("failed to lookup operations: %w", err)
+		return nil, err
 	}
 
 	if len(operations) == 0 {
 		return nil, coreerrors.ErrPinNotFound
 	}
 
-	op := operations[0]
+	return operations[0], nil
+}
+
+// operationStatusResult maps an account operation to the pinning status model.
+func operationStatusResult(op *portalsdk.Operation) *pinning.OperationStatusResult {
 	result := &pinning.OperationStatusResult{
 		ID:                   op.Id,
 		Operation:            op.Operation,
@@ -157,5 +176,5 @@ func (s *service) lookupOperation(ctx context.Context, cid string) (*pinning.Ope
 		result.Error = *op.Error
 	}
 
-	return result, nil
+	return result
 }

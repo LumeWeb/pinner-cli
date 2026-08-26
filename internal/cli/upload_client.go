@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"net/http"
@@ -10,8 +11,9 @@ import (
 	"github.com/avast/retry-go/v5"
 	ipfs "go.lumeweb.com/ipfs-sdk"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
+	coreerrors "go.lumeweb.com/pinner-cli/internal/core/errors"
+	statuspkg "go.lumeweb.com/pinner-cli/internal/core/status"
 	portalsdk "go.lumeweb.com/portal-sdk"
-	"go.lumeweb.com/queryutil/filter"
 )
 
 // UploadServiceConfig holds configuration options for UploadService.
@@ -344,8 +346,12 @@ func (s *UploadServiceDefault) freshTimeoutCtx(ctx context.Context) (context.Con
 	}
 }
 
-// waitForPin waits for a file to be pinned by first waiting for the account
-// operation to complete, then verifying the pin exists in the pinning API.
+// waitForPin waits for a file to be pinned by waiting on both the account
+// operation (which validates the pin exists) and the pin status (which marks
+// the pin done). Verification confirms the pin is actually "pinned"; if the
+// pinning API briefly reports the pin as not-found (404) while the operation is
+// still being processed, waitForPin falls back to the account operation to
+// confirm the pin exists and keeps waiting rather than failing.
 //
 // The pin wait uses a fresh context with the upload timeout, decoupled from
 // the upload's context deadline. This is necessary because pin processing on
@@ -360,16 +366,15 @@ func (s *UploadServiceDefault) waitForPin(ctx context.Context, rootCID string, a
 	pinCtx, cancel := s.freshTimeoutCtx(ctx)
 	defer cancel()
 
-	operations, _, err := accountClient.ListOperations(pinCtx, portalsdk.WithFilters(filter.FieldEqual("cid", rootCID)))
+	op, err := statuspkg.FindOperation(pinCtx, accountClient, rootCID)
 	if err != nil {
+		if errors.Is(err, coreerrors.ErrPinNotFound) {
+			return fmt.Errorf("%w for CID %s. Check 'pinner status %s'", ErrOperationNotFound, rootCID, rootCID)
+		}
 		return fmt.Errorf("%w: %v", ErrOperationFailed, err)
 	}
 
-	if len(operations) == 0 {
-		return fmt.Errorf("%w for CID %s. Check 'pinner status %s'", ErrOperationNotFound, rootCID, rootCID)
-	}
-
-	_, err = accountClient.WaitForOperation(pinCtx, int64(operations[0].Id),
+	_, err = accountClient.WaitForOperation(pinCtx, int64(op.Id),
 		portalsdk.WithPollInterval(2*time.Second),
 		portalsdk.WithPollTimeout(s.configMgr.Config().GetUploadTimeout()),
 	)
@@ -389,6 +394,17 @@ func (s *UploadServiceDefault) waitForPin(ctx context.Context, rootCID string, a
 		).Do(func() error {
 			status, err := s.pinningService.Status(pinCtx, rootCID, false)
 			if err != nil {
+				// Edge case: the pinning API can report the pin as not-found
+				// (404) while the upload's account operation is still being
+				// processed. The account operation only validates that the pin
+				// exists, so confirm it here and, when present, keep waiting on
+				// the pin status until it is actually marked pinned. Only a
+				// missing operation is a genuine not-found.
+				if errors.Is(err, ErrPinNotFound) {
+					if _, opErr := statuspkg.FindOperation(pinCtx, accountClient, rootCID); opErr == nil {
+						return fmt.Errorf("pin not yet registered for CID %s, waiting", rootCID)
+					}
+				}
 				return err
 			}
 			if status.Status != "pinned" {
