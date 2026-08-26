@@ -162,6 +162,8 @@ func TestUploadFileOpenAIValidation(t *testing.T) {
 		args    map[string]any
 		wantErr string
 	}{
+		{name: "file as bare path string", desc: openAIFileDesc, args: map[string]any{"file": "/home/workdir/artifacts/site.zip"}, wantErr: "must be a host-provided file object"},
+		{name: "file as bare path string with whitespace", desc: openAIFileDesc, args: map[string]any{"file": "  /home/workdir/artifacts/site.zip  "}, wantErr: "must be a host-provided file object"},
 		{name: "missing download_url", desc: openAIFileDesc, args: map[string]any{"file": map[string]any{"file_id": "file_3"}}, wantErr: "file.download_url is required"},
 		{name: "missing file_id", desc: openAIFileDesc, args: map[string]any{"file": map[string]any{"download_url": "https://files.example.com/f"}}, wantErr: "file.file_id is required"},
 		{name: "invalid url", desc: openAIFileDesc, args: map[string]any{"file": map[string]any{"download_url": "ftp://files.example.com/f", "file_id": "file_4"}}, wantErr: "file.download_url is invalid"},
