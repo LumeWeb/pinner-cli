@@ -94,17 +94,17 @@ var uploadDetailDesc = toolforge.Static(
 		"Use a transport-scoped source: {{SOURCES}}.",
 	).
 	Static("The returned CID is already pinned — use it directly in websites_create/update; do NOT call pins_add after an upload").
-	WhenSep("", hostenv.FeatSourceMint,
-		". When using source.mode=mint, poll upload_status with the returned upload_handle for the CID",
+	WhenSentence(hostenv.FeatSourceMint,
+		"When using source.mode=mint, poll upload_status with the returned upload_handle for the CID",
 	).
-	StaticSep("", ". Static site bundle rule: a ZIP containing index.html, CSS, JS, images, or nested pages is a single directory DAG — call upload_file").
-	WhenSep("", hostenv.FeatFileHostInput,
-		" with the host file argument (or a convert source) and archive_mode=convert",
+	StaticSentence("Static site bundle rule: a ZIP containing index.html, CSS, JS, images, or nested pages is a single directory DAG — call upload_file").
+	When(hostenv.FeatFileHostInput,
+		"with the host file argument (or a convert source) and archive_mode=convert",
 	).
-	WhenAnySep("", []hostenv.Feature{hostenv.FeatSourceMint, hostenv.FeatSourcePath, hostenv.FeatSourceURL},
-		" with a convert source ({{SOURCES}}) and archive_mode=convert",
+	WhenAny([]hostenv.Feature{hostenv.FeatSourceMint, hostenv.FeatSourcePath, hostenv.FeatSourceURL},
+		"with a convert source ({{SOURCES}}) and archive_mode=convert",
 	).
-	StaticSep("", ", not individual assets.")
+	StaticList("not individual assets.")
 
 // vaultUploadDetailDesc composes the vault upload flow detail string.
 var vaultUploadDetailDesc = toolforge.Static(
@@ -124,10 +124,10 @@ var vaultUploadDetailDesc = toolforge.Static(
 var downloadDetailDesc = toolforge.Static(
 	"Check capabilities' download_sink_modes; call download_file with ipfs_path (CID or CID/path) and a supported sink. sink=local writes the bytes to a host-side output_path on the MCP server's own disk (available on every transport)",
 ).
-	WhenSep("", hostenv.FeatSinkDrop,
-		"; sink=drop (when advertised) returns a one-time HTTP GET filedrop link to pull from out of band with curl -o or a browser.",
+	WhenClause(hostenv.FeatSinkDrop,
+		"sink=drop (when advertised) returns a one-time HTTP GET filedrop link to pull from out of band with curl -o or a browser.",
 	).
-	UnlessSep("", hostenv.FeatSinkDrop,
+	UnlessRun(hostenv.FeatSinkDrop,
 		".",
 	)
 
@@ -135,10 +135,10 @@ var downloadDetailDesc = toolforge.Static(
 var vaultDownloadDetailDesc = toolforge.Static(
 	"Check capabilities' download_sink_modes and that the vault is unlocked; call vault_get_file with vault_path and a supported sink. sink=local writes the decrypted bytes to a host-side output_path on the MCP server's own disk",
 ).
-	WhenSep("", hostenv.FeatSinkDrop,
-		"; sink=drop (when advertised) returns a one-time HTTP GET filedrop link.",
+	WhenClause(hostenv.FeatSinkDrop,
+		"sink=drop (when advertised) returns a one-time HTTP GET filedrop link.",
 	).
-	UnlessSep("", hostenv.FeatSinkDrop,
+	UnlessRun(hostenv.FeatSinkDrop,
 		".",
 	)
 
@@ -168,19 +168,19 @@ func buildAgentGuide(profile *hostenv.PlatformProfile) AgentGuide {
 	summaryDesc := toolforge.Static(
 		"Start here. Drive Pinner through these primary flows; each step is a tool. Check the current state first, then follow the matching flow. Once a wizard session is active, stay in it: always call the returned next_step_schema via the wizard step tool — do not abandon the wizard to rediscover low-level tools. A static website ZIP (index.html, CSS, JS, images, nested pages) is always a single directory DAG: call upload_file",
 	).
-		WhenSep("", hostenv.FeatFileHostInput,
-			" with a host file argument IF capabilities' file_input_policy is host_file_first (your client can hand Pinner a {download_url, file_id} object), otherwise a convert-capable transport source",
+		When(hostenv.FeatFileHostInput,
+			"with a host file argument IF capabilities' file_input_policy is host_file_first (your client can hand Pinner a {download_url, file_id} object), otherwise a convert-capable transport source",
 		).
-		WhenAnySep("", []hostenv.Feature{hostenv.FeatSourceMint, hostenv.FeatSourcePath, hostenv.FeatSourceURL},
-			" with a convert-capable transport source ({{SOURCES}})",
+		WhenAny([]hostenv.Feature{hostenv.FeatSourceMint, hostenv.FeatSourcePath, hostenv.FeatSourceURL},
+			"with a convert-capable transport source ({{SOURCES}})",
 		).
-		StaticSep("", ", then publish the resulting directory CID. Do NOT mint a presigned curl URL for a file your host already holds unless capabilities directs you to a transport-scoped source. For guided, interactive website onboarding (human-in-the-loop, step-by-step DNS setup), use the website-onboarding prompt and the websites_wizard tools instead of the publish_website flow.")
+		StaticList("then publish the resulting directory CID. Do NOT mint a presigned curl URL for a file your host already holds unless capabilities directs you to a transport-scoped source. For guided, interactive website onboarding (human-in-the-loop, step-by-step DNS setup), use the website-onboarding prompt and the websites_wizard tools instead of the publish_website flow.")
 
 	siteUploadClause := resolveDetail(
 		toolforge.Static("call upload_file").
 			Unless(hostenv.FeatFileHostInput,
 				"with a convert source ({{SOURCES}}) and archive_mode=convert").
-			WhenSep("", hostenv.FeatFileHostInput,
+			When(hostenv.FeatFileHostInput,
 				"with the host file argument and archive_mode=convert"),
 		profile,
 	)

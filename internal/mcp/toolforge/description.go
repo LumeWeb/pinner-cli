@@ -32,8 +32,27 @@ type DescBuilder struct {
 	segments []segment
 }
 
+// Named separators used as segment joins. They keep joining punctuation out
+// of segment text — a segment never begins with whitespace or punctuation;
+// the separator declares how it attaches to the preceding segment.
+const (
+	// SepNone concatenates directly with no separator (a run-on suffix such
+	// as a bare terminating period).
+	SepNone = ""
+	// SepSpace is the default join between two segments (a single space).
+	SepSpace = " "
+	// SepSentence starts a new sentence after the previous segment.
+	SepSentence = ". "
+	// SepClause joins a mid-sentence semicolon clause.
+	SepClause = "; "
+	// SepList joins a serial list item.
+	SepList = ", "
+	// SepDash joins an em-dash aside.
+	SepDash = " — "
+)
+
 // defaultSep is the standard separator between segments.
-const defaultSep = " "
+const defaultSep = SepSpace
 
 // Static starts a DescBuilder with text that is always included.
 // As the first segment, it has no separator.
@@ -96,6 +115,58 @@ func (d DescBuilder) Unless(feat hostenv.Feature, text string) DescBuilder {
 // non-empty.
 func (d DescBuilder) UnlessSep(sep string, feat hostenv.Feature, text string) DescBuilder {
 	return DescBuilder{segments: append(d.segments, segment{require: []hostenv.Feature{feat}, text: text, negate: true, sep: sep})}
+}
+
+// ---------------------------------------------------------------------------
+// Semantic helpers
+//
+// These pair each named separator with a word describing the join, so call
+// sites read as prose ("when the sink is drop, append a clause") instead of
+// spelling out raw separators. The low-level *Sep methods remain for ad-hoc
+// joins.
+// ---------------------------------------------------------------------------
+
+// WhenSentence appends text that starts a new sentence (". ") when feat is
+// present.
+func (d DescBuilder) WhenSentence(feat hostenv.Feature, text string) DescBuilder {
+	return d.WhenSep(SepSentence, feat, text)
+}
+
+// StaticSentence appends always-included text that starts a new sentence.
+func (d DescBuilder) StaticSentence(text string) DescBuilder {
+	return d.StaticSep(SepSentence, text)
+}
+
+// WhenClause appends a semicolon clause ("; ") when feat is present.
+func (d DescBuilder) WhenClause(feat hostenv.Feature, text string) DescBuilder {
+	return d.WhenSep(SepClause, feat, text)
+}
+
+// WhenList appends a serial item (", ") when feat is present.
+func (d DescBuilder) WhenList(feat hostenv.Feature, text string) DescBuilder {
+	return d.WhenSep(SepList, feat, text)
+}
+
+// StaticList appends an always-included serial item (", ").
+func (d DescBuilder) StaticList(text string) DescBuilder {
+	return d.StaticSep(SepList, text)
+}
+
+// WhenDash appends an em-dash aside (" — ") when feat is present.
+func (d DescBuilder) WhenDash(feat hostenv.Feature, text string) DescBuilder {
+	return d.WhenSep(SepDash, feat, text)
+}
+
+// WhenRun appends text directly with no separator when feat is present. Use
+// for run-on suffixes (e.g. a bare terminating period) that must attach the
+// end of the previous segment.
+func (d DescBuilder) WhenRun(feat hostenv.Feature, text string) DescBuilder {
+	return d.WhenSep(SepNone, feat, text)
+}
+
+// UnlessRun appends text directly with no separator when feat is absent.
+func (d DescBuilder) UnlessRun(feat hostenv.Feature, text string) DescBuilder {
+	return d.UnlessSep(SepNone, feat, text)
 }
 
 // Resolve concatenates all matching segments in declaration order against the

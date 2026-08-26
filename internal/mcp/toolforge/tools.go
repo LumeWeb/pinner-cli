@@ -64,11 +64,11 @@ var vaultPutFileDesc = Static(
 	WhenAny(sourceURLData(),
 		"Over this transport you may instead set source.mode=url (a server-fetchable HTTPS download URL) or source.mode=data (an RFC 2397 data: URI).",
 	).
-	WhenSep("", hostenv.FeatSourceMint,
-		" — no curl needed for a file the host already owns.",
+	WhenDash(hostenv.FeatSourceMint,
+		"no curl needed for a file the host already owns.",
 	).
-	WhenSep("", hostenv.FeatSourcePath,
-		" — no curl needed for a file the host already owns.",
+	WhenDash(hostenv.FeatSourcePath,
+		"no curl needed for a file the host already owns.",
 	).
 	Static("vault_path may be any vault file path (e.g. vault:/docs/f.pdf).")
 

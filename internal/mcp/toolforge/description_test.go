@@ -1,0 +1,160 @@
+package toolforge
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
+)
+
+// profileWith returns a PlatformProfile carrying exactly the given features.
+func profileWith(features ...hostenv.Feature) hostenv.PlatformProfile {
+	fs := make(hostenv.FeatureSet, len(features))
+	for _, f := range features {
+		fs[f] = true
+	}
+	return hostenv.PlatformProfile{Features: fs}
+}
+
+func TestDescBuilderStaticOnly(t *testing.T) {
+	d := Static("Upload a file and pin it.")
+	require.Equal(t, "Upload a file and pin it.", d.Resolve(hostenv.PlatformProfile{}))
+}
+
+func TestDescBuilderWhenMatches(t *testing.T) {
+	d := Static("Preamble.").When(hostenv.FeatFileHostInput, "must use `file`.")
+	require.Equal(t, "Preamble. must use `file`.", d.Resolve(profileWith(hostenv.FeatFileHostInput)))
+}
+
+func TestDescBuilderWhenSkipsAbsentFeature(t *testing.T) {
+	d := Static("Preamble.").When(hostenv.FeatFileHostInput, "must use `file`.")
+	require.Equal(t, "Preamble.", d.Resolve(profileWith()))
+	require.Equal(t, "Preamble.", d.Resolve(profileWith(hostenv.FeatSourceMint)))
+}
+
+func TestDescBuilderWhenAllRequiresEveryFeature(t *testing.T) {
+	d := Static("P").WhenAll([]hostenv.Feature{hostenv.FeatSourceURL, hostenv.FeatSourceData}, "both.")
+	require.Equal(t, "P both.", d.Resolve(profileWith(hostenv.FeatSourceURL, hostenv.FeatSourceData)))
+	// Missing one of the required features → segment skipped.
+	require.Equal(t, "P", d.Resolve(profileWith(hostenv.FeatSourceURL)))
+	require.Equal(t, "P", d.Resolve(profileWith()))
+}
+
+func TestDescBuilderWhenAnyMatchesOnOne(t *testing.T) {
+	d := Static("P").WhenAny([]hostenv.Feature{hostenv.FeatSourceURL, hostenv.FeatSourceData}, "relay.")
+	for _, f := range []hostenv.Feature{hostenv.FeatSourceURL, hostenv.FeatSourceData} {
+		require.Equal(t, "P relay.", d.Resolve(profileWith(f)))
+	}
+	require.Equal(t, "P", d.Resolve(profileWith()))
+}
+
+func TestDescBuilderUnlessSkipsMatchingFeature(t *testing.T) {
+	d := Static("P").Unless(hostenv.FeatSinkDrop, "no drop.")
+	require.Equal(t, "P no drop.", d.Resolve(profileWith()))
+	require.Equal(t, "P no drop.", d.Resolve(profileWith(hostenv.FeatSinkLocal)))
+	require.Equal(t, "P", d.Resolve(profileWith(hostenv.FeatSinkDrop)))
+}
+
+func TestDescBuilderIfElsePattern(t *testing.T) {
+	// The if/else idiom: a When for present + Unless for absent.
+	d := Static("byte source").
+		When(hostenv.FeatSinkDrop, "with drop.").
+		Unless(hostenv.FeatSinkDrop, "with local only.")
+	require.Equal(t, "byte source with drop.", d.Resolve(profileWith(hostenv.FeatSinkDrop)))
+	require.Equal(t, "byte source with local only.", d.Resolve(profileWith()))
+}
+
+func TestDescBuilderCharsMidSentence(t *testing.T) {
+	// Use the *Sep variants to continue a sentence with no space separator:
+	// the default separator is a space, so WhenSep("", ...) appends without one.
+	d := Static("call upload_file").
+		UnlessSep("", hostenv.FeatFileHostInput, "with the host file argument and archive_mode=convert").
+		WhenSep("", hostenv.FeatFileHostInput, "with a convert source").
+		Static(".")
+	require.Equal(t, "call upload_filewith the host file argument and archive_mode=convert .",
+		d.Resolve(profileWith()))
+	require.Equal(t, "call upload_filewith a convert source .", d.Resolve(profileWith(hostenv.FeatFileHostInput)))
+}
+
+func TestDescBuilderDefaultSeparatorIsSpace(t *testing.T) {
+	// The first segment carries no separator; subsequent segments are joined
+	// with a single space by default.
+	d := Static("one").Static("two").When(hostenv.FeatSourceMint, "three")
+	require.Equal(t, "one two three", d.Resolve(profileWith(hostenv.FeatSourceMint)))
+}
+
+func TestDescBuilderEmptySepJoinsDirectly(t *testing.T) {
+	d := Static("").StaticSep("", "a").StaticSep("", "b")
+	require.Equal(t, "ab", d.Resolve(hostenv.PlatformProfile{}))
+}
+
+func TestDescBuilderFirstSegmentNeverGetsSeparator(t *testing.T) {
+	// The leading Static is the first segment: any separator it declares is
+	// ignored because there's no prior content.
+	d := Static("").StaticSep("X", "only")
+	require.Equal(t, "only", d.Resolve(hostenv.PlatformProfile{}))
+}
+
+func TestDescBuilderOrderPreserved(t *testing.T) {
+	d := Static("1").
+		When(hostenv.FeatSourcePath, "2a").
+		When(hostenv.FeatSourceMint, "2b").
+		Static("3")
+	out := d.Resolve(profileWith(hostenv.FeatSourceMint))
+	require.Equal(t, "1 2b 3", out)
+}
+
+func TestDescBuilderReusesBuilderAcrossProfiles(t *testing.T) {
+	// A DescBuilder is immutable (methods return a new value), so the same
+	// builder must resolve differently per profile.
+	d := Static("P").When(hostenv.FeatSourcePath, "path").When(hostenv.FeatSourceMint, "mint")
+	require.Equal(t, "P path", d.Resolve(profileWith(hostenv.FeatSourcePath)))
+	require.Equal(t, "P mint", d.Resolve(profileWith(hostenv.FeatSourceMint)))
+	require.Equal(t, "P", d.Resolve(profileWith()))
+	// Re-resolving with the same profile yields the same result (no state).
+	require.Equal(t, "P path", d.Resolve(profileWith(hostenv.FeatSourcePath)))
+}
+
+func TestSeparatorConstants(t *testing.T) {
+	require.Equal(t, "", SepNone)
+	require.Equal(t, " ", SepSpace)
+	require.Equal(t, ". ", SepSentence)
+	require.Equal(t, "; ", SepClause)
+	require.Equal(t, ", ", SepList)
+	require.Equal(t, " — ", SepDash)
+}
+
+func TestWhenSentence(t *testing.T) {
+	d := Static("pinned").WhenSentence(hostenv.FeatSourceMint, "poll the upload handle.")
+	require.Equal(t, "pinned. poll the upload handle.", d.Resolve(profileWith(hostenv.FeatSourceMint)))
+	require.Equal(t, "pinned", d.Resolve(profileWith()))
+}
+
+func TestStaticSentence(t *testing.T) {
+	d := Static("pinned").StaticSentence("site bundles become directory DAGs.")
+	require.Equal(t, "pinned. site bundles become directory DAGs.", d.Resolve(hostenv.PlatformProfile{}))
+}
+
+func TestWhenClause(t *testing.T) {
+	d := Static("writes to a host path").WhenClause(hostenv.FeatSinkDrop, "drop returns a GET link.")
+	require.Equal(t, "writes to a host path; drop returns a GET link.", d.Resolve(profileWith(hostenv.FeatSinkDrop)))
+	require.Equal(t, "writes to a host path", d.Resolve(profileWith()))
+}
+
+func TestWhenListAndStaticList(t *testing.T) {
+	d := Static("use the host file").WhenList(hostenv.FeatSourcePath, "or a path source").StaticList("not individual assets.")
+	require.Equal(t, "use the host file, or a path source, not individual assets.", d.Resolve(profileWith(hostenv.FeatSourcePath)))
+	require.Equal(t, "use the host file, not individual assets.", d.Resolve(profileWith()))
+}
+
+func TestWhenDash(t *testing.T) {
+	d := Static("no curl needed").WhenDash(hostenv.FeatSourceMint, "the host already owns it.")
+	require.Equal(t, "no curl needed — the host already owns it.", d.Resolve(profileWith(hostenv.FeatSourceMint)))
+}
+
+func TestWhenRunAndUnlessRun(t *testing.T) {
+	// Run joins with no separator — e.g. a trailing period appended directly.
+	d := Static("disk").WhenRun(hostenv.FeatSinkDrop, " ; via drop").UnlessRun(hostenv.FeatSinkDrop, ".")
+	require.Equal(t, "disk ; via drop", d.Resolve(profileWith(hostenv.FeatSinkDrop)))
+	require.Equal(t, "disk.", d.Resolve(profileWith()))
+}
