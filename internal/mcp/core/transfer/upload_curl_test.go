@@ -38,7 +38,7 @@ func TestCurlUploadMint(t *testing.T) {
 // were streamed into the async task and the reads all landed.
 func TestCurlUploadPutHandler(t *testing.T) {
 	var got atomic.Value
-	mgr := NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ bool) (any, error) {
+	mgr := NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ string, _ bool) (any, error) {
 		b, _ := io.ReadAll(reader)
 		got.Store(string(b))
 		return map[string]any{"cid": "QmCurl", "bytes": len(b)}, nil
@@ -103,7 +103,7 @@ func TestCurlUploadPutRejectsWrongMethod(t *testing.T) {
 // TestCurlUploadEndpointExpired verifies a minted endpoint is rejected once its
 // TTL elapses (spent/expired → 404), even though the token still parses.
 func TestCurlUploadEndpointExpired(t *testing.T) {
-	mgr := NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ bool) (any, error) {
+	mgr := NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ string, _ bool) (any, error) {
 		io.Copy(io.Discard, reader)
 		return map[string]any{"cid": "QmX"}, nil
 	}, 0)
@@ -126,7 +126,7 @@ func TestCurlUploadEndpointExpired(t *testing.T) {
 // with a handle pinned to a truncated stream), so the agent never gets a
 // "completed" handle for a file that was cut off mid-transfer.
 func TestCurlUploadOversizeBodyRejected(t *testing.T) {
-	mgr := NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ bool) (any, error) {
+	mgr := NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ string, _ bool) (any, error) {
 		// The executor drains whatever the pipe hands it; whether it sees the
 		// full body or an aborted (cancelled) read, the handler must never have
 		// returned a handle for it.
@@ -162,7 +162,7 @@ func mustPut(t *testing.T, url, body string) *http.Request {
 // endpoint (remote branch) and returns a curl command + handle-poll hints in
 // the structured content, and that a bad TTL is rejected.
 func TestCurlUploadToolDescriptor(t *testing.T) {
-	mgr := NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ bool) (any, error) {
+	mgr := NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ string, _ bool) (any, error) {
 		io.Copy(io.Discard, reader)
 		return map[string]any{"cid": "QmD"}, nil
 	}, 0)
@@ -206,7 +206,7 @@ func TestCurlUploadToolDescriptor(t *testing.T) {
 func TestPrepareFulfillSharedOperation(t *testing.T) {
 	var ran atomic.Int64
 	var bytesRead atomic.Value
-	mgr := NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ bool) (any, error) {
+	mgr := NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ string, _ bool) (any, error) {
 		ran.Add(1)
 		b, _ := io.ReadAll(reader)
 		bytesRead.Store(string(b))
@@ -250,7 +250,7 @@ func TestPrepareFulfillSharedOperation(t *testing.T) {
 // cancelled without ever running an upload.
 func TestPrepareCancel(t *testing.T) {
 	var ran int32
-	mgr := NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ bool) (any, error) {
+	mgr := NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ string, _ bool) (any, error) {
 		atomic.AddInt32(&ran, 1)
 		return map[string]any{"cid": "QmX"}, nil
 	}, 0)
@@ -269,7 +269,7 @@ func TestPrepareCancel(t *testing.T) {
 // unbounded handles. Prepared handles hold no bytes and no executor slot, so
 // they are bounded independently of MaxActive (a Kody finding).
 func TestPrepareMaxPreparedCap(t *testing.T) {
-	mgr := NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ bool) (any, error) {
+	mgr := NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ string, _ bool) (any, error) {
 		return map[string]any{"cid": "QmX"}, nil
 	}, 0)
 	mgr.MaxPrepared = 2
@@ -306,7 +306,7 @@ func TestPrepareMaxPreparedCap(t *testing.T) {
 // pruned early while its endpoint stayed valid would make Fulfill fail with
 // "unknown upload handle" and break canonical-operation convergence.)
 func TestPrepareRetainsForEndpointTTL(t *testing.T) {
-	mgr := NewUploadTaskManager(func(_ context.Context, reader io.Reader, _ int64, name string, _ bool, _ bool) (any, error) {
+	mgr := NewUploadTaskManager(func(_ context.Context, reader io.Reader, _ int64, name string, _ bool, _ string, _ bool) (any, error) {
 		_, _ = io.Copy(io.Discard, reader)
 		return map[string]any{"cid": "QmX"}, nil
 	}, 0)

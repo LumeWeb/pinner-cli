@@ -53,6 +53,9 @@ type CapabilityReport struct {
 	Transport transfer.TransportKind `json:"transport"`
 	// SourceModes are the valid UploadSource mode values for Transport, e.g.
 	// ["path"] for stdio, ["mint"] for http, ["url","data"] for openai.
+	// NOTE: these modes apply ONLY to the `source` argument of upload tools;
+	// they do NOT describe the top-level `file` host-input. A host file path
+	// is preferred whenever an upload tool exposes a `file` argument.
 	SourceModes []FileInputCapability `json:"source_modes"`
 	// DownloadSinkModes are the valid DownloadSink mode values for Transport.
 	// Host-local write ("local") is always offered because the server's disk is
@@ -71,6 +74,14 @@ type CapabilityReport struct {
 	DraftXFile bool `json:"draft_x_mcp_file"`
 	// RelayMaxBytes is the server cap for relayed (url/data/file-object) bytes.
 	RelayMaxBytes int64 `json:"relay_max_bytes"`
+
+	// HostFileInput is true when an upload tool exposes a top-level `file`
+	// argument (OpenAI/ChatGPT file reference) — file bytes are fetched by the
+	// server, never by the agent. This is independent of SourceModes.
+	HostFileInput bool `json:"host_file_input"`
+	// HostFileInputPreferred is true when the host file input is the preferred
+	// upload route over raw source modes (i.e. when a file argument exists).
+	HostFileInputPreferred bool `json:"host_file_input_preferred"`
 }
 
 // sourceModesFor returns the UploadSource modes valid for the transport, in a
@@ -130,6 +141,8 @@ func CurrentCapabilities(coLocated, tunnelOpenAI, uploadFile, vaultPutFile, down
 		VaultPutFile:      vaultPutFile,
 		DraftXFile:        draftXFile,
 		RelayMaxBytes:     ieo.EffectiveRelayMaxBytes(maxBytes),
+		HostFileInput:        uploadFile || vaultPutFile,
+		HostFileInputPreferred: uploadFile || vaultPutFile,
 	}
 }
 
@@ -141,7 +154,7 @@ func NewCapabilitiesDescriptor(coLocated, tunnelOpenAI, uploadFile, vaultPutFile
 	return model.ToolDescriptor{
 		Name:        "capabilities",
 		Title:       "Pinner file-input/output capabilities",
-		Description: "Report the running MCP transport and which file-input source modes and file-output sink modes this Pinner MCP server accepts. The upload_file / vault_put_file tools take a single transport-scoped source: path in co-located stdio mode, mint in HTTP/tunnel mode (a one-time presigned PUT for out-of-band curl), or url/data on the OpenAI tunnel (relayed through MCP). The download_file / vault_get_file tools take a single sink: local (write to a host-side path on the MCP server's own disk — available on every transport) or drop (a one-time HTTP GET filedrop link — only when a reachable HTTP mux exists). Read source_modes and download_sink_modes to pick the right voice without probing tool descriptions.",
+		Description: "Report the running MCP transport and which file-input source modes and file-output sink modes this Pinner MCP server accepts. The upload_file / vault_put_file tools take a single transport-scoped source: path in co-located stdio mode, mint in HTTP/tunnel mode (a one-time presigned PUT for out-of-band curl), or url/data on the OpenAI tunnel (relayed through MCP). These source_modes apply ONLY to the `source` argument — they do NOT describe the host-provided `file` argument. A host-provided file (a temporary download_url + file_id) is always preferred when available, regardless of source_modes. The download_file / vault_get_file tools take a single sink: local (write to a host-side path on the MCP server's own disk — available on every transport) or drop (a one-time HTTP GET filedrop link — only when a reachable HTTP mux exists). Read source_modes and download_sink_modes to pick the right voice without probing tool descriptions. host_file_input and host_file_input_preferred indicate the file argument is available and preferred over source modes.",
 		Category:    model.CategoryCore,
 		InputSchema: toolargs.ToolSchemaFor[wizard.NoInput](),
 		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {

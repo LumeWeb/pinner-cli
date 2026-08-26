@@ -34,10 +34,16 @@ type UploadFileInput struct {
 	Name string `json:"name,omitempty" jsonschema:"description=Optional upload name (defaults to the file name)."`
 	// Wait waits for this upload's own pin operation to complete.
 	Wait bool `json:"wait,omitempty" jsonschema:"description=Wait until this upload's own pin operation completes before returning (the upload already pins; this only controls whether the call blocks for it)."`
-	// ArchiveMode controls how an archive path is handled: 'convert' (default)
-	// extracts and uploads the contents; 'preserve' keeps the archive intact.
-	// Only used for source mode path.
-	ArchiveMode string `json:"archive_mode,omitempty" jsonschema:"enum=convert,preserve,description=How to treat an archive path ('convert' extracts, 'preserve' keeps intact). Only used for source mode path."`
+	// ArchiveMode controls how an archive (host `file`, url/data relay, or
+	// path) is handled. 'convert' (default) extracts an archive and uploads its
+	// contents as a directory DAG while preserving relative paths. Use
+	// 'convert' for complete static website ZIPs containing index.html, CSS,
+	// JS, images, and nested directories; the resulting CID is a directory CID
+	// that can be passed directly to websites_create/update. 'preserve' keeps
+	// the archive intact as a single file. Honored when the executor can buffer
+	// to a seekable temp file (host file, url/data relay, and co-located path);
+	// the mint/presigned-PUT source cannot express it.
+	ArchiveMode string `json:"archive_mode,omitempty" jsonschema:"enum=convert,preserve,description=How to treat an archive. convert (default) extracts an archive and uploads its contents as a directory DAG while preserving relative paths; use for complete static website ZIPs (index.html, CSS, JS, images, nested directories) — the resulting CID is a directory CID ready for websites_create/update. preserve keeps the archive intact as a single file. Honored for host file, url/data relay, and co-located path sources; the mint (presigned PUT) source cannot express it."`
 	// TTL is the presigned endpoint lifetime for source mode mint (e.g. 5m).
 	// Only used in HTTP/tunnel mode.
 	TTL string `json:"ttl,omitempty" jsonschema:"description=Presigned endpoint lifetime (e.g. 5m; default 5 minutes). Only used with source mode mint."`
@@ -148,7 +154,13 @@ func newUploadFileDescriptor(coLocated, tunnelOpenAI bool, pathFn UploadFileHand
 				}
 				transferCtx, cancel := context.WithTimeout(ctx, SyncUploadBudget(size))
 				defer cancel()
-				result, err := relayFn(transferCtx, body, size, name, in.Wait, in.Wrap)
+				// Thread archiveMode so a host-provided `file` (and url/data relay)
+				// with archive_mode=convert extracts the archive into a directory
+				// DAG — the same directory shape path-mode convert produces —
+				// instead of uploading the raw archive as a single file that breaks
+				// websites_create/update root resolution. The executor only honors
+				// it when it can buffer to a seekable temp file.
+				result, err := relayFn(transferCtx, body, size, name, in.Wait, in.ArchiveMode, in.Wrap)
 				return toolargs.WrapResult(result, err, "Uploaded.")
 			}
 
@@ -185,6 +197,15 @@ func newUploadFileDescriptor(coLocated, tunnelOpenAI bool, pathFn UploadFileHand
 				// non-directory root the caller cannot detect.
 				if in.Wrap {
 					return model.ToolResult{}, errors.New("wrap is not supported by the mint source; use a co-located path/data/url source for a wrapped (directory-root) single-file upload")
+				}
+				// Archive conversion has the same constraint: the mint source
+				// exposes no archive_mode to the agent and always remains a
+				// single file (the async PUT executor passes explicit
+				// "preserve"). Reject an explicit "convert" request rather than
+				// silently returning a single-file CID the caller cannot opt
+				// back into extracting.
+				if in.ArchiveMode != "" && ieo.ParseArchiveMode(in.ArchiveMode) == ieo.ArchiveConvert {
+					return model.ToolResult{}, errors.New("archive_mode=convert is not supported by the mint source; use a host file/url/data/path source for archive (directory) extraction")
 				}
 				name := in.Name
 				if name == "" {
@@ -252,7 +273,13 @@ func newUploadFileDescriptor(coLocated, tunnelOpenAI bool, pathFn UploadFileHand
 				}
 				transferCtx, cancel := context.WithTimeout(ctx, SyncUploadBudget(size))
 				defer cancel()
-				result, err := relayFn(transferCtx, body, size, name, in.Wait, in.Wrap)
+				// Thread archiveMode so a host-provided `file` (and url/data relay)
+				// with archive_mode=convert extracts the archive into a directory
+				// DAG — the same directory shape path-mode convert produces —
+				// instead of uploading the raw archive as a single file that breaks
+				// websites_create/update root resolution. The executor only honors
+				// it when it can buffer to a seekable temp file.
+				result, err := relayFn(transferCtx, body, size, name, in.Wait, in.ArchiveMode, in.Wrap)
 				return toolargs.WrapResult(result, err, "Uploaded.")
 			}
 		},
@@ -261,18 +288,23 @@ func newUploadFileDescriptor(coLocated, tunnelOpenAI bool, pathFn UploadFileHand
 
 // uploadFileDescription returns a transport-aware description so a model only
 // sees the source modes that can actually work. Every transport advertises the
-// OpenAI/host-provided `file` input up front, since a generated-file handoff
-// (temporary download_url + file_id) is independent of the transport; the
-// transport-specific `source` guidance remains for hosts that do not hand the
-// file over directly.
+// OpenAI/host-provided `file` input up front (a generated-file handoff —
+// temporary download_url + file_id — is independent of the transport), then
+// surfaces the transport-specific `source` guidance. A website ZIP (a static
+// site bundle containing index.html, CSS/JS, images, or nested pages) is always
+// uploaded as a converted directory: pass archive_mode=convert and the tool
+// extracts the entire directory tree into a directory DAG, returning a
+// publishable directory CID. Never upload ZIP member files individually, and
+// never mint a presigned URL to curl a site ZIP when the host already holds
+// the file.
 func uploadFileDescription(t TransportKind) string {
 	switch t {
 	case TransportStdio:
-		return "Upload a file and pin it. The returned CID is already pinned: do NOT call pins_add afterward; the wait flag waits for this upload's own pin operation. Preferred input: `file` (a temporary download_url + file_id your host provides) — Pinner fetches and pins its bytes, no base64 or curl. Fallback (co-located stdio only): source.mode=path with a host-side file/directory/archive path. Poll upload_status with the returned handle."
+		return "Upload a file and pin it. The returned CID is already pinned: do NOT call pins_add afterward; the wait flag waits for this upload's own pin operation. Preferred input: `file` (a temporary download_url + file_id your host provides) — Pinner fetches and pins its bytes, no base64 or curl. Fallback (co-located stdio only): source.mode=path with a host-side file/directory/archive path. Website ZIPs: if you already have a site ZIP on the host (index.html + CSS/JS/images), call upload_file with file=<host file> and archive_mode=convert — the entire directory tree becomes one directory DAG whose CID you can publish directly to websites_create/update. Do NOT upload individual images/assets, and do NOT mint a presigned curl URL for a file your host already holds. Poll upload_status with the returned handle."
 	case TransportHTTP:
-		return "Upload a file and pin it. The returned CID is already pinned: do NOT call pins_add afterward; the wait flag waits for this upload's own pin operation. Preferred input: `file` (a temporary download_url + file_id) — Pinner fetches and pins its bytes. Fallback (HTTP/tunnel only): source.mode=mint returns a one-time presigned HTTP PUT endpoint; stream the bytes with curl, then poll upload_status with the returned upload_handle."
+		return "Upload a file and pin it. The returned CID is already pinned: do NOT call pins_add afterward; the wait flag waits for this upload's own pin operation. Preferred input: `file` (a temporary download_url + file_id) — Pinner fetches and pins its bytes. Website ZIPs: if you already have a site ZIP on the host (index.html + CSS/JS/images), call upload_file with file=<host file> and archive_mode=convert — the entire directory tree becomes one directory DAG whose CID you can publish directly to websites_create/update. Do NOT upload individual images/assets, and do NOT mint a presigned curl URL for a file your host already holds. Fallback (HTTP/tunnel only): source.mode=mint returns a one-time presigned HTTP PUT endpoint; stream the bytes with curl, then poll upload_status with the returned upload_handle."
 	default:
-		return "Upload a file and pin it. The returned CID is already pinned: do NOT call pins_add afterward; the wait flag waits for this upload's own pin operation. Preferred input: `file` (a temporary download_url + file_id) — Pinner fetches and pins its bytes. Fallback (OpenAI tunnel only): source.mode=url (server-fetchable HTTPS URL) or source.mode=data (RFC 2397 data: URI) — the server fetches/decodes and uploads them. Poll upload_status with the returned handle."
+		return "Upload a file and pin it. The returned CID is already pinned: do NOT call pins_add afterward; the wait flag waits for this upload's own pin operation. Preferred input: `file` (a temporary download_url + file_id) — Pinner fetches and pins its bytes. Website ZIPs: if you already have a site ZIP on the host (index.html + CSS/JS/images), call upload_file with file=<host file> and archive_mode=convert — the entire directory tree becomes one directory DAG whose CID you can publish directly to websites_create/update. Do NOT upload individual images/assets, and do NOT mint a presigned curl URL for a file your host already holds. Fallback (OpenAI tunnel only): source.mode=url (server-fetchable HTTPS URL) or source.mode=data (RFC 2397 data: URI) — the server fetches/decodes and uploads them. Poll upload_status with the returned handle."
 	}
 }
 

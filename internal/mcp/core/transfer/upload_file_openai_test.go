@@ -37,7 +37,7 @@ func buildOpenAIFileDesc(t *testing.T, srv *httptest.Server, maxBytes int64) (mo
 	t.Helper()
 	var gotBytes []byte
 	var gotName string
-	desc := newUploadFileDescriptor(false, false, nil, nil, func(ctx context.Context, reader io.Reader, sz int64, name string, wait bool, _ bool) (any, error) {
+	desc := newUploadFileDescriptor(false, false, nil, nil, func(ctx context.Context, reader io.Reader, sz int64, name string, wait bool, _ string, _ bool) (any, error) {
 		b, err := io.ReadAll(reader)
 		require.NoError(t, err)
 		gotBytes = b
@@ -104,7 +104,7 @@ func TestUploadFileDescriptorOpenAIFileMissingFileNameFallsBack(t *testing.T) {
 func TestUploadFileDescriptorOpenAIFileOversized(t *testing.T) {
 	srv := openaiFetchServer(t, []byte("0123456789")) // 10 bytes
 	var called bool
-	desc := newUploadFileDescriptor(false, false, nil, nil, func(ctx context.Context, reader io.Reader, sz int64, name string, wait bool, _ bool) (any, error) {
+	desc := newUploadFileDescriptor(false, false, nil, nil, func(ctx context.Context, reader io.Reader, sz int64, name string, wait bool, _ string, _ bool) (any, error) {
 		called = true
 		return nil, nil
 	}, []string{"127.0.0.1"}, 3, srv.Client()) // cap 3 bytes
@@ -122,7 +122,7 @@ func TestUploadFileDescriptorOpenAIFileRunOnEveryTransport(t *testing.T) {
 	// transport-independent.
 	srv := openaiFetchServer(t, []byte(openaiTestPayload))
 	var gotBytes []byte
-	desc := newUploadFileDescriptor(true, false, nil, nil, func(ctx context.Context, reader io.Reader, sz int64, name string, wait bool, _ bool) (any, error) {
+	desc := newUploadFileDescriptor(true, false, nil, nil, func(ctx context.Context, reader io.Reader, sz int64, name string, wait bool, _ string, _ bool) (any, error) {
 		b, _ := io.ReadAll(reader)
 		gotBytes = b
 		return map[string]any{"cid": "QmStdioFile"}, nil
@@ -134,4 +134,29 @@ func TestUploadFileDescriptorOpenAIFileRunOnEveryTransport(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, res.IsError)
 	require.Equal(t, openaiTestPayload, string(gotBytes))
+}
+
+func TestUploadFileDescriptorOpenAIFileThreadsArchiveMode(t *testing.T) {
+	// The fix for website-ZIP recognition: a host-provided `file` paired with
+	// archive_mode=convert must relay that archiveMode to the executor so it can
+	// sniff/extract the ZIp into a directory DAG (mirroring path-mode convert)
+	// instead of uploading the raw archive as a single file.
+	var gotArchiveMode string
+	srv := openaiFetchServer(t, []byte(openaiTestPayload))
+	desc := newUploadFileDescriptor(false, false, nil, nil, func(ctx context.Context, reader io.Reader, sz int64, name string, wait bool, archiveMode string, _ bool) (any, error) {
+		gotArchiveMode = archiveMode
+		return map[string]any{"cid": "QmFile"}, nil
+	}, []string{"127.0.0.1"}, 0, srv.Client())
+
+	res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
+		"file": map[string]any{
+			"download_url": srv.URL,
+			"file_id":      "file_123",
+			"file_name":    "site.zip",
+		},
+		"archive_mode": "convert",
+	}})
+	require.NoError(t, err)
+	require.False(t, res.IsError)
+	require.Equal(t, "convert", gotArchiveMode, "file branch must thread archive_mode=convert to the executor")
 }

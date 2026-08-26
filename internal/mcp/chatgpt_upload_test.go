@@ -53,7 +53,7 @@ func TestUploadFileDescriptorStdioRejectsMint(t *testing.T) {
 }
 
 func TestUploadFileDescriptorHTTPMints(t *testing.T) {
-	mgr := transfer.NewUploadTaskManager(func(_ context.Context, reader io.Reader, _ int64, _ string, _ bool, _ bool) (any, error) {
+	mgr := transfer.NewUploadTaskManager(func(_ context.Context, reader io.Reader, _ int64, _ string, _ bool, _ string, _ bool) (any, error) {
 		_, _ = io.Copy(io.Discard, reader)
 		return map[string]any{"cid": "QmMint"}, nil
 	}, 0)
@@ -96,6 +96,25 @@ func TestUploadFileDescriptorHTTPMintRejectsWrap(t *testing.T) {
 	require.Nil(t, res.StructuredContent)
 }
 
+func TestUploadFileDescriptorHTTPMintRejectsArchiveConvert(t *testing.T) {
+	// The mint source streams raw bytes to a presigned PUT URL and exposes no
+	// archive_mode to the agent (the async PUT executor always stays single-file
+	// via explicit "preserve"). An explicit archive_mode=convert on mint cannot
+	// be expressed and must fail loudly rather than silently return the raw
+	// archive as a single-file CID the caller cannot opt back into extracting.
+	cu := transfer.NewHTTPUpload(transfer.NewUploadTaskManager(nil, 0), 0)
+	defer cu.Stop(context.Background())
+	desc := transfer.NewUploadFileDescriptor(false, false, nil, cu, nil, nil, 0)
+	res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
+		"source":       map[string]any{"mode": "mint"},
+		"archive_mode": "convert",
+	}})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "archive_mode=convert is not supported by the mint source")
+	// No presigned URL may be minted for a rejected convert request.
+	require.Nil(t, res.StructuredContent)
+}
+
 func TestUploadFileDescriptorHTTPRejectsPath(t *testing.T) {
 	cu := transfer.NewHTTPUpload(nil, 0)
 	defer cu.Stop(context.Background())
@@ -108,7 +127,7 @@ func TestUploadFileDescriptorHTTPRejectsPath(t *testing.T) {
 
 func TestUploadFileDescriptorOpenAIRelayData(t *testing.T) {
 	var size int64
-	desc := transfer.NewUploadFileDescriptor(false, true, nil, nil, func(ctx context.Context, reader io.Reader, sz int64, name string, wait bool, _ bool) (any, error) {
+	desc := transfer.NewUploadFileDescriptor(false, true, nil, nil, func(ctx context.Context, reader io.Reader, sz int64, name string, wait bool, _ string, _ bool) (any, error) {
 		size = sz
 		return map[string]string{"cid": "QmRelay"}, nil
 	}, nil, 0)
@@ -125,7 +144,7 @@ func TestUploadFileDescriptorOpenAIRelayHonorsMaxBytes(t *testing.T) {
 	// The relayed url/data source must honor the operator-configured relay cap
 	// threaded through the descriptor, not silently fall back to the 512 MiB
 	// package default. A source advertising more than the cap is rejected.
-	desc := transfer.NewUploadFileDescriptor(false, true, nil, nil, func(ctx context.Context, reader io.Reader, sz int64, name string, wait bool, _ bool) (any, error) {
+	desc := transfer.NewUploadFileDescriptor(false, true, nil, nil, func(ctx context.Context, reader io.Reader, sz int64, name string, wait bool, _ string, _ bool) (any, error) {
 		t.Fatal("relay must not receive an oversized upload")
 		return nil, nil
 	}, nil, 4) // cap at 4 bytes
@@ -135,7 +154,7 @@ func TestUploadFileDescriptorOpenAIRelayHonorsMaxBytes(t *testing.T) {
 	require.Error(t, err)
 }
 func TestUploadFileDescriptorOpenAIRejectsMint(t *testing.T) {
-	desc := transfer.NewUploadFileDescriptor(false, true, nil, nil, func(ctx context.Context, reader io.Reader, sz int64, name string, wait bool, _ bool) (any, error) {
+	desc := transfer.NewUploadFileDescriptor(false, true, nil, nil, func(ctx context.Context, reader io.Reader, sz int64, name string, wait bool, _ string, _ bool) (any, error) {
 		t.Fatal("relay must not run for mint")
 		return nil, nil
 	}, nil, 0)

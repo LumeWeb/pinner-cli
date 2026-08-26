@@ -19,11 +19,17 @@ import (
 // URL relay, draft data: URIs, and async uploads); only the source of
 // the bytes differs, never this contract.
 //
-// The final wrap bool, when true, forces a directory root on a single-file
-// upload (wraps the file in a root directory) — required for content that will
-// be served as a website. It is ignored by paths that cannot express it (mint/
+// The wrap bool, when true, forces a directory root on a single-file upload
+// (wraps the file in a root directory) — required for content that will be
+// served as a website. It is ignored by paths that cannot express it (mint/
 // async presigned PUTs pass false).
-type UploadHandler func(context.Context, io.Reader, int64, string, bool, bool) (any, error)
+//
+// archiveMode mirrors LocalPathUploadHandler's archiveMode: "convert" (default)
+// extracts an archive stream into a directory DAG while preserving relative
+// paths, "preserve" keeps the single file intact. A stream executor that can
+// buffer to a seekable temp file may honor it (sniff + extract); executors with
+// no archive capability (mint/presigned PUT, raw-byte data chunks) pass "".
+type UploadHandler func(context.Context, io.Reader, int64, string, bool, string, bool) (any, error)
 
 // Vendor-specific handler type aliases keep call sites readable while making
 // clear they are all the same agnostic stream-upload signature.

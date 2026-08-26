@@ -51,7 +51,7 @@ func uploadDescriptorFor(coLocated, tunnelOpenAI bool) model.ToolDescriptor {
 			return map[string]any{"cid": "QmTest"}, nil
 		},
 		transfer.NewHTTPUpload(nil, 0),
-		func(ctx context.Context, r io.Reader, sz int64, name string, wait bool, _ bool) (any, error) {
+		func(ctx context.Context, r io.Reader, sz int64, name string, wait bool, _ string, _ bool) (any, error) {
 			return map[string]any{"cid": "QmTest"}, nil
 		},
 		nil, 0,

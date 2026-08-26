@@ -16,7 +16,7 @@ import (
 )
 
 func TestDataURIUploadDescriptorRequiresFile(t *testing.T) {
-	desc := transfer.DataURIUploadDescriptor(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ bool) (any, error) {
+	desc := transfer.DataURIUploadDescriptor(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ string, _ bool) (any, error) {
 		return nil, nil
 	}, 0)
 	_, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{}})
@@ -30,7 +30,7 @@ func TestDataURIUploadDescriptorUploads(t *testing.T) {
 	var gotName string
 	var gotSize int64
 	var gotData string
-	desc := transfer.DataURIUploadDescriptor(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ bool) (any, error) {
+	desc := transfer.DataURIUploadDescriptor(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ string, _ bool) (any, error) {
 		gotName = name
 		gotSize = size
 		b, _ := io.ReadAll(reader)
@@ -56,7 +56,7 @@ func TestDataURIUploadDescriptorUploads(t *testing.T) {
 func TestDataURIUploadDescriptorTextSurfacesCID(t *testing.T) {
 	payload := []byte("payload")
 	uri := "data:;name=audit-test-data.txt;size=" + strconv.Itoa(len(payload)) + ";base64," + base64.StdEncoding.EncodeToString(payload)
-	desc := transfer.DataURIUploadDescriptor(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ bool) (any, error) {
+	desc := transfer.DataURIUploadDescriptor(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ string, _ bool) (any, error) {
 		return &uploads.UploadResult{CID: "bafyabci", Size: int64(len(payload))}, nil
 	}, 0)
 	res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{"file": uri}})
@@ -65,7 +65,7 @@ func TestDataURIUploadDescriptorTextSurfacesCID(t *testing.T) {
 }
 
 func TestDataURIUploadDescriptorExposesXFileMeta(t *testing.T) {
-	desc := transfer.DataURIUploadDescriptor(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ bool) (any, error) {
+	desc := transfer.DataURIUploadDescriptor(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ string, _ bool) (any, error) {
 		return nil, nil
 	}, 0)
 	meta, ok := desc.Meta["x-mcp-file"].(map[string]any)
