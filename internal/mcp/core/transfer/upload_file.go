@@ -14,6 +14,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
 	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
+	"go.uber.org/zap"
 )
 
 // UploadFileInput is the typed argument shape for the unified upload_file tool.
@@ -317,7 +318,7 @@ func uploadFileDescription(t TransportKind) string {
 	profile := hostenv.ProfileForTransport(t).CloneFeatures()
 	desc, ok := toolforge.ResolveDescription(toolforge.UploadFileTargets, profile)
 	if !ok {
-		return "Upload a file and pin it. The returned CID is already pinned: do NOT call pins_add afterward. Use source with the mode appropriate for this transport. Website ZIPs: use archive_mode=convert."
+		zap.L().Fatal("uploadFileDescription: no matching target for transport", zap.String("transport", string(t)))
 	}
 	return desc
 }

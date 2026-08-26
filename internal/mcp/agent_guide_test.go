@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -120,6 +121,50 @@ func TestAgentGuideModesMatchProfile(t *testing.T) {
 			pub := guideFlowByName(t, guide, "publish_website")
 			require.NotNil(t, pub.Decision, "publish_website must be a decision flow")
 		})
+	}
+}
+
+// segHasToken reports whether any active segment text contains tok.
+func segHasToken(segs []string, tok string) bool {
+	for _, s := range segs {
+		if strings.Contains(s, tok) {
+			return true
+		}
+	}
+	return false
+}
+
+// TestAgentGuideFileHandoffMutuallyExclusive guards against doubled,
+// contradictory guidance for host-file-input platforms (Kody follow-up). The
+// upload flow's host-file branch and convert-source branch are mutually
+// exclusive — exactly one must be active for any profile.
+//
+// It asserts at the DescBuilder segment level (via ResolveSegments) using
+// minimal stable markers, not rendered guide prose, so edits to guide wording
+// or the {{SOURCES}} interpolation do not break the test.
+func TestAgentGuideFileHandoffMutuallyExclusive(t *testing.T) {
+	// Load-bearing concept tokens, not exact prose: the "host file" branch is
+	// gated on FeatFileHostInput; the "with a convert source" clause is the
+	// non-host-file alternative. These identify the branch, not its phrasing.
+	handoff := "host file argument"
+	convert := "with a convert source"
+
+	for _, p := range []hostenv.PlatformProfile{
+		hostenv.ProfileOpenAITunnel,
+		hostenv.ProfileOpenAIHTTP,
+	} {
+		segs := uploadDetailDesc.ResolveSegments(p)
+		require.True(t, segHasToken(segs, handoff), "FileHostInput profile must activate the host-file clause")
+		require.False(t, segHasToken(segs, convert), "FileHostInput profile must not also activate the convert-source clause")
+	}
+
+	for _, p := range []hostenv.PlatformProfile{
+		hostenv.ProfileStdioGeneric,
+		hostenv.ProfileGrokHTTP,
+	} {
+		segs := uploadDetailDesc.ResolveSegments(p)
+		require.True(t, segHasToken(segs, convert), "non-FileHostInput profile must activate the convert-source clause")
+		require.False(t, segHasToken(segs, handoff), "non-FileHostInput profile must not activate the host-file clause")
 	}
 }
 

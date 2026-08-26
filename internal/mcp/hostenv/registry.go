@@ -30,8 +30,6 @@ func NewRegistry() *DetectorRegistry {
 //  4. Overlays runtime wire signals (headers, tokenInfo, etc.).
 func (r *DetectorRegistry) Detect(req DetectRequest) PlatformProfile {
 	transport := detectTransport(req)
-	authReq := req.TokenInfo != nil
-	_ = authReq
 
 	hostType := HostUnknown
 	authMethod := AuthNone
@@ -78,24 +76,6 @@ func (r *DetectorRegistry) Detect(req DetectRequest) PlatformProfile {
 	profile.UserAgent = req.UserAgent
 	profile.Headers = req.Headers
 	profile.TokenInfo = req.TokenInfo
-
-	// If the client advertised MCP Apps capability via clientCapabilities
-	// extensions, the SDK seam sets ClientInfo accordingly. If MCP Apps
-	// support was detected but the static profile doesn't have it, add it
-	// so tools can branch at call time.
-	// (This is a safety net; profile declarations should already carry it.)
-	if req.ClientInfo != nil && profile.Features != nil {
-		// The wire seam (requestCaps) sets ClientInfo only when
-		// clientCapabilities extensions include the MCP Apps extension.
-		// That path is responsible for populating this; here we just
-		// ensure consistency.
-		if !profile.Features[FeatMCPApps] {
-			// Check if the ClientInfo came from a client that advertised UI
-			// extensions — the SDK seam handles this by setting a flag on
-			// DetectRequest or via the ClientCapabilities path. For now,
-			// profiles are authoritative.
-		}
-	}
 
 	return profile
 }
