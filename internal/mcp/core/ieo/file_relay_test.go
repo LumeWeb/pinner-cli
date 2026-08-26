@@ -7,8 +7,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -51,6 +53,33 @@ func TestOpenChatGPTFile(t *testing.T) {
 		data, err := io.ReadAll(body)
 		require.NoError(t, err)
 		require.Equal(t, "hello", string(data))
+	})
+
+	t.Run("body readable when RequestTimeout is set", func(t *testing.T) {
+		// Regression: a RequestTimeout context must not be canceled on function
+		// return, or the returned body reads as context.Canceled before the
+		// caller can consume it (the upload handler's io.Copy failed in ~300ms).
+		const payload = "payload-that-is-longer-than-a-single-read"
+		server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Length", strconv.Itoa(len(payload)))
+			_, _ = w.Write([]byte(payload))
+		}))
+		defer server.Close()
+
+		client := server.Client()
+		ref := ChatGPTFileReference{DownloadURL: server.URL + "/file", FileID: "file_123"}
+		body, size, err := OpenChatGPTFile(context.Background(), ref, FileRelayOptions{
+			HTTPClient:     client,
+			AllowedHosts:   []string{"127.0.0.1"},
+			MaxBytes:       int64(len(payload)),
+			RequestTimeout: 2 * time.Minute,
+		})
+		require.NoError(t, err)
+		require.Equal(t, int64(len(payload)), size)
+		data, err := io.ReadAll(body)
+		require.NoError(t, err)
+		require.Equal(t, payload, string(data))
+		require.NoError(t, body.Close())
 	})
 
 	t.Run("rejects disallowed host", func(t *testing.T) {

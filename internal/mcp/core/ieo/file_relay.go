@@ -135,11 +135,21 @@ func OpenFileURL(ctx context.Context, rawURL string, opts FileRelayOptions) (io.
 	client = cloneRelayClient(client, opts.AllowedHosts)
 
 	reqCtx := ctx
+	var cancel context.CancelFunc
 	if opts.RequestTimeout > 0 {
-		var cancel context.CancelFunc
 		reqCtx, cancel = context.WithTimeout(ctx, opts.RequestTimeout)
-		defer cancel()
 	}
+	// Cancel the request-timeout context on every return path except the success
+	// path that hands the body to the caller — there the cancelOnClose wrapper
+	// owns the cancel and fires it on Close. Consolidating the cancel here avoids
+	// repeating it on each error path while still preventing a context leak when
+	// the fetch fails before returning a body.
+	handedOff := false
+	defer func() {
+		if cancel != nil && !handedOff {
+			cancel()
+		}
+	}()
 	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, 0, fmt.Errorf("create file download request: %w", err)
@@ -160,7 +170,17 @@ func OpenFileURL(ctx context.Context, rawURL string, opts FileRelayOptions) (io.
 		resp.Body.Close()
 		return nil, 0, fmt.Errorf("%w: declared size %d exceeds %d", ErrFileTooLarge, resp.ContentLength, maxBytes)
 	}
-	return &limitedReadCloser{ReadCloser: resp.Body, remaining: maxBytes}, resp.ContentLength, nil
+	// Wrap the returned body so the request-timeout context is canceled only
+	// when the caller closes it — NOT when this function returns. A deferred
+	// cancel here would invalidate the response body before the caller could
+	// read it, surfacing any read (e.g. the upload handler's io.Copy) as
+	// context.Canceled.
+	handedOff = true
+	var body io.ReadCloser = resp.Body
+	if cancel != nil {
+		body = &cancelOnClose{ReadCloser: body, cancel: cancel}
+	}
+	return &limitedReadCloser{ReadCloser: body, remaining: maxBytes}, resp.ContentLength, nil
 }
 
 // OpenChatGPTFile is a thin vendor adapter: validate the OpenAI download_url
@@ -188,6 +208,23 @@ func OpenChatGPTFile(ctx context.Context, ref ChatGPTFileReference, opts FileRel
 		opts.AllowedHosts = append(append([]string{}, opts.AllowedHosts...), h)
 	}
 	return OpenFileURL(ctx, ref.DownloadURL, opts)
+}
+
+// cancelOnClose wraps a ReadCloser so the caller's cancel func (a request-timeout
+// context) is invoked only when the body is closed. Deferring the cancel to
+// Close — instead of firing it on the opening function's return — keeps the
+// response body readable by the caller for the full lifetime of the operation,
+// while the underlying context.WithTimeout still bounds a hung read at the
+// deadline.
+type cancelOnClose struct {
+	io.ReadCloser
+	cancel context.CancelFunc
+}
+
+func (c *cancelOnClose) Close() error {
+	err := c.ReadCloser.Close()
+	c.cancel()
+	return err
 }
 
 type limitedReadCloser struct {
