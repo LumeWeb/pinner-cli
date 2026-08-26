@@ -169,6 +169,20 @@ func (d DescBuilder) UnlessRun(feat hostenv.Feature, text string) DescBuilder {
 	return d.UnlessSep(SepNone, feat, text)
 }
 
+// ResolveSegments returns the texts of the segments that match profile, in
+// declaration order, without joining separators or text substitutions (e.g.
+// {{SOURCES}}). Prefer it over Resolve for structural assertions that must
+// hold independent of join punctuation and wording interpolation.
+func (d DescBuilder) ResolveSegments(profile hostenv.PlatformProfile) []string {
+	var out []string
+	for _, s := range d.segments {
+		if matches(profile, s) {
+			out = append(out, s.text)
+		}
+	}
+	return out
+}
+
 // Resolve concatenates all matching segments in declaration order against the
 // given profile, inserting each segment's separator when the buffer is
 // already non-empty.

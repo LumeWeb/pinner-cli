@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -123,39 +124,47 @@ func TestAgentGuideModesMatchProfile(t *testing.T) {
 	}
 }
 
+// segHasToken reports whether any active segment text contains tok.
+func segHasToken(segs []string, tok string) bool {
+	for _, s := range segs {
+		if strings.Contains(s, tok) {
+			return true
+		}
+	}
+	return false
+}
+
 // TestAgentGuideFileHandoffMutuallyExclusive guards against doubled,
-// contradictory guidance for host-file-input platforms (Regression from Kody
-// review on the DescBuilder refactor): the host-file clause and the
-// convert-source clause were both feature-gated and both fired for
-// FileHostInput hosts, producing e.g. "with the host file argument ... with a
-// convert source ...". They are mutually exclusive — exactly one must appear.
+// contradictory guidance for host-file-input platforms (Kody follow-up). The
+// upload flow's host-file branch and convert-source branch are mutually
+// exclusive — exactly one must be active for any profile.
+//
+// It asserts at the DescBuilder segment level (via ResolveSegments) using
+// minimal stable markers, not rendered guide prose, so edits to guide wording
+// or the {{SOURCES}} interpolation do not break the test.
 func TestAgentGuideFileHandoffMutuallyExclusive(t *testing.T) {
-	handoff := "with the host file argument"
-	convert := "with a convert source (source.mode="
+	// Load-bearing concept tokens, not exact prose: the "host file" branch is
+	// gated on FeatFileHostInput; the "with a convert source" clause is the
+	// non-host-file alternative. These identify the branch, not its phrasing.
+	handoff := "host file argument"
+	convert := "with a convert source"
 
 	for _, p := range []hostenv.PlatformProfile{
 		hostenv.ProfileOpenAITunnel,
 		hostenv.ProfileOpenAIHTTP,
 	} {
-		// FileHostInput hosts show the host-file branch and must NOT also emit
-		// the convert-source alternative. Note the host-file clause itself
-		// mentions "(or a convert source)", so assert on the full branch marker.
-		guide := buildAgentGuide(&p)
-		upload := guideFlowByName(t, guide, "upload").Detail
-		require.Contains(t, upload, handoff, "FileHostInput profile must lead with the host-file clause")
-		require.NotContains(t, upload, convert, "FileHostInput profile must not also emit the convert-source clause")
+		segs := uploadDetailDesc.ResolveSegments(p)
+		require.True(t, segHasToken(segs, handoff), "FileHostInput profile must activate the host-file clause")
+		require.False(t, segHasToken(segs, convert), "FileHostInput profile must not also activate the convert-source clause")
 	}
 
 	for _, p := range []hostenv.PlatformProfile{
 		hostenv.ProfileStdioGeneric,
 		hostenv.ProfileGrokHTTP,
 	} {
-		// Non-FileHostInput hosts show the convert-source branch and must not
-		// mention a host file argument.
-		guide := buildAgentGuide(&p)
-		upload := guideFlowByName(t, guide, "upload").Detail
-		require.Contains(t, upload, convert, "non-FileHostInput profile must emit the convert-source clause")
-		require.NotContains(t, upload, handoff, "non-FileHostInput profile must not mention a host file argument")
+		segs := uploadDetailDesc.ResolveSegments(p)
+		require.True(t, segHasToken(segs, convert), "non-FileHostInput profile must activate the convert-source clause")
+		require.False(t, segHasToken(segs, handoff), "non-FileHostInput profile must not activate the host-file clause")
 	}
 }
 

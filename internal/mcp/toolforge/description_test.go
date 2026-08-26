@@ -152,6 +152,18 @@ func TestWhenDash(t *testing.T) {
 	require.Equal(t, "no curl needed — the host already owns it.", d.Resolve(profileWith(hostenv.FeatSourceMint)))
 }
 
+func TestResolveSegments(t *testing.T) {
+	d := Static("preamble").
+		When(hostenv.FeatSourcePath, "path clause").
+		When(hostenv.FeatSourceMint, "mint clause").
+		Static("suffix")
+	segs := d.ResolveSegments(profileWith(hostenv.FeatSourcePath))
+	require.Equal(t, []string{"preamble", "path clause", "suffix"}, segs)
+	// Segments are returned unjoined and unsubstituted (structural view).
+	segs = d.ResolveSegments(profileWith(hostenv.FeatSourceMint))
+	require.Equal(t, []string{"preamble", "mint clause", "suffix"}, segs)
+}
+
 func TestWhenRunAndUnlessRun(t *testing.T) {
 	// Run joins with no separator — e.g. a trailing period appended directly.
 	d := Static("disk").WhenRun(hostenv.FeatSinkDrop, " ; via drop").UnlessRun(hostenv.FeatSinkDrop, ".")
