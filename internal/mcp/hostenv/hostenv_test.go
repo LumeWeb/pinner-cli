@@ -303,6 +303,29 @@ func TestRegistry_Detect_OpenAITunnel(t *testing.T) {
 	require.True(t, prof.Has(FeatMCPApps))
 }
 
+// TestRegistry_Detect_OpenAITunnelKeepsAuthNoneWithToken guards the secure
+// tunnel's AuthNone design: even a detector-matched tunnel request carrying a
+// token (which the detector would report as OAuth) must not flip the tunnel
+// profile's AuthMethod away from AuthNone. The wire-auth overlay only applies
+// to the response-auth TransportHTTP profiles.
+func TestRegistry_Detect_OpenAITunnelKeepsAuthNoneWithToken(t *testing.T) {
+	r := NewRegistry()
+
+	req := DetectRequest{
+		UserAgent:    "openai-mcp/1.0.0", // matches the openai detector
+		TokenInfo:    newTokenInfo(),
+		CoLocated:    false,
+		TunnelOpenAI: true,
+	}
+	prof := r.Detect(req)
+
+	require.Equal(t, ProfileOpenAITunnel.HostType, prof.HostType)
+	require.Equal(t, TransportOpenAI, prof.Transport)
+	require.Equal(t, AuthNone, prof.AuthMethod, "secure tunnel must keep AuthNone regardless of a wire token")
+	// The token itself is still surfaced on the profile.
+	require.NotNil(t, prof.TokenInfo)
+}
+
 func TestRegistry_Detect_OverlaysRuntimeSignals(t *testing.T) {
 	r := NewRegistry()
 

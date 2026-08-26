@@ -57,12 +57,18 @@ func (r *DetectorRegistry) Detect(req DetectRequest) PlatformProfile {
 
 	// A matched detector also reports the per-request wire auth (AuthOAuth when
 	// TokenInfo is present, else AuthBearer). resolveProfile only selects a
-	// static variant and does not consume it, so copy the detected auth onto
-	// the returned profile when a host was matched — consumers of
-	// profile.AuthMethod should see the actual wire auth, not the declared
-	// default (e.g. ProfileOpenAIHTTP/ProfileGrokHTTP always declare AuthOAuth
-	// even for token-less bearer requests).
-	if hostType != HostUnknown {
+	// static variant and does not consume it, so on response-auth transports
+	// (HTTP) copy the detected auth onto the returned profile when a host was
+	// matched — consumers of profile.AuthMethod should see the actual wire
+	// auth, not the declared default (e.g. ProfileOpenAIHTTP/ProfileGrokHTTP
+	// always declare AuthOAuth even for token-less bearer requests).
+	//
+	// The overlay is intentionally limited to TransportHTTP. The OpenAI secure
+	// tunnel is an AuthNone transport by design: even a detector-matched tunnel
+	// request with a token must keep its static AuthNone (see
+	// ProfileOpenAITunnel), so a token cannot flip a tunnel profile to
+	// OAuth/bearer.
+	if hostType != HostUnknown && profile.Transport == TransportHTTP {
 		profile.AuthMethod = authMethod
 	}
 
