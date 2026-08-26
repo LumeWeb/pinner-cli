@@ -52,7 +52,7 @@ Call `websites_wizard_step` with the session_id and an empty input object {}. Th
 {{end}}
 
 {{define "website_step_content_source_upload"}}Step: content_source
-Content source is "upload". The wizard requires an existing CID: instruct the user to run `pinner upload <file>` first, then restart the wizard with content_source set to "cid". Call `websites_wizard_step` with input: {"choice": "upload"} (this will return an error with instructions).
+Content source is "upload". The wizard requires an existing CID. Instruct the user to upload first: if using the MCP tools, call upload_file with wrap=true and do NOT set an explicit name — the tool auto-names wrapped HTML to index.html so the site resolves at its root. An explicit name like "starter-site" is honored as-is and the page will only be reachable at /starter-site, not /. If using the CLI, run `pinner upload --wrap <file>`. Then restart the wizard with content_source set to "cid". Call `websites_wizard_step` with input: {"choice": "upload"} (this will return an error with instructions).
 {{end}}
 
 {{define "website_step_content_source_cid"}}Step: content_source
@@ -60,7 +60,7 @@ Content source is "cid". Ask the user for their IPFS CID, then call `websites_wi
 {{end}}
 
 {{define "website_step_content_source_ask"}}Step: content_source
-Ask the user whether they have an IPFS CID ready ("cid") or need to upload content first ("upload"). If they choose "upload", they must run `pinner upload <file>` first and restart. Call `websites_wizard_step` with input: {"choice": "<cid|upload>", "cid": "<CID if cid>"}
+Ask the user whether they have an IPFS CID ready ("cid") or need to upload content first ("upload"). If they choose "upload", they must upload first and restart. When uploading a single HTML file for a website, use wrap=true and do NOT set an explicit name — the tool auto-names wrapped HTML to index.html so the site resolves at its root. An explicit name like "starter-site" is honored as-is and the page will only be reachable at /starter-site, not /. The CID must be a directory containing index.html at its root. Call `websites_wizard_step` with input: {"choice": "<cid|upload>", "cid": "<CID if cid>"}
 {{end}}
 
 {{define "website_step_target_type_filled"}}Step: target_type
@@ -115,7 +115,7 @@ Read the pinner://websites/{domain}/dns-requirements resource (substitute the do
 {{define "website_step_validate"}}Read the pinner://websites/{id}/validation-status resource (use the website ID from the create step's response). If validation fails, instruct the user to wait for DNS propagation (may take minutes to hours) and retry. Call `websites_wizard_step` with input: {"retry": true} to re-run validation. Call with input: {} to accept the current status and finish.
 {{end}}
 
-{{define "website_step_complete"}}When the wizard returns "complete": true, the website onboarding is done. Summarize the result for the user: domain, CID, target type, DNS mode, and validation status. If validation failed, provide the reason and suggest next steps.
+{{define "website_step_complete"}}When the wizard returns "complete": true, the website onboarding is done. Summarize the result for the user: domain, CID, target type, DNS mode, and validation status. If validation failed, provide the reason and suggest next steps. DNS validation confirms reachability, not content correctness — if the root URL serves a directory listing or 404 instead of the expected page, the CID's directory layout is likely wrong (e.g. missing index.html at the root).
 {{end}}
 
 {{/* website-update prompt templates. Rendered when updating an existing website's

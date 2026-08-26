@@ -46,7 +46,7 @@ type UploadFileInput struct {
 	// not a bare file). Only affects single-file uploads (file / url / data /
 	// path to a file); directory and archive-converted uploads are already a
 	// directory root, and the mint (presigned PUT) source has no wrap concept.
-	Wrap bool `json:"wrap,omitempty" jsonschema:"description=Wrap a single file in a directory root so the CID is a directory (required when the upload is a website). Only affects single-file uploads; directories are already a directory root."`
+	Wrap bool `json:"wrap,omitempty" jsonschema:"description=Wrap a single file in a directory root so the CID is a directory (required when the upload is a website). When wrap=true and no name is given, HTML content is auto-named index.html so the site resolves at its root. Do NOT set an explicit name like 'starter-site' — it is honored as-is and the page will only be reachable at /starter-site, not /. Only affects single-file uploads; directories are already a directory root."`
 }
 
 // UploadFileHandler is the co-located local-path upload path for upload_file.
