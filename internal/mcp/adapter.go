@@ -249,6 +249,11 @@ func mcpServerFlags() []cli.Flag {
 			Value: "json",
 			Usage: "Log encoding for the MCP server: json (default) or console",
 		},
+		&cli.BoolFlag{
+			Name:    "dev-tools",
+			Usage:   "Enable developer introspection tools (dev_host_env, dev_profile, dev_request) and capture the raw wire snapshot of the connected host. Intended for debugging the MCP server and host-env detection; these tools are read-only and absent from the surface unless this flag is set",
+			Sources: cli.EnvVars("MCP_DEV_TOOLS"),
+		},
 	}
 }
 
@@ -415,8 +420,10 @@ adapter.`,
 			// stdin-input command must be redirected rather than consume
 			// protocol bytes); it mirrors the transport decision below.
 			// Set transport flags so requestCaps can resolve the correct
-			// platform profile for each incoming request.
+			// platform profile for each incoming request. Dev tools opt into the
+			// per-request raw wire snapshot that backs the dev_* tools.
 			SetTransportFlags(stdioMode, cmd.String("tunnel") == "openai")
+			SetDevTools(cmd.Bool("dev-tools"))
 
 			// Install the hub's tool-handler adapter (registerTool, which routes
 			// through sdk.AdaptToolHandler with the hub's deps) as the sdk seam's
@@ -466,6 +473,9 @@ adapter.`,
 					// protocol — so the remote upload_file branch must not be
 					// advertised there.
 					tunnelOpenAI: cmd.String("tunnel") == "openai",
+					// Register the dev_* introspection tools only when the server
+					// was launched with --dev-tools.
+					devTools: cmd.Bool("dev-tools"),
 					hasWizard:    hasWizard,
 					wizardW:      wizardW,
 					wizardS:      wizardS,

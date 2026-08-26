@@ -44,6 +44,15 @@ type RequestCaps struct {
 	// need to adapt their output per host read this at call time. Nil on
 	// code paths that do not carry a client (e.g. tests).
 	Profile *hostenv.PlatformProfile
+	// Capabilities is the raw client capabilities advertised by the calling
+	// client (initialize params or per-request _meta), as SDK-neutral data.
+	// It is populated only when the MCP server is launched with --dev-tools;
+	// production tools must use Profile / UI instead of the raw wire blob.
+	Capabilities map[string]any
+	// InitializeParams is the raw initialize handshake params the client sent,
+	// as SDK-neutral data. Populated only when --dev-tools is enabled; kept for
+	// dev/ops introspection of the connected host.
+	InitializeParams map[string]any
 }
 
 // SupportsApps reports whether the calling client can render MCP Apps

@@ -59,6 +59,20 @@ func SetTransportFlags(coLocated, tunnelOpenAI bool) {
 	transportFlagsVar = transportFlags{coLocated: coLocated, tunnelOpenAI: tunnelOpenAI}
 }
 
+// devToolsEnabled records whether the MCP server was launched with --dev-tools.
+// When enabled, requestCaps additionally captures the raw wire snapshot
+// (client capabilities + initialize params) on every request so the dev_* tools
+// can introspect the connected host. When disabled the raw snapshot is omitted,
+// keeping the hot path lean.
+var devToolsEnabled bool
+
+// SetDevTools enables or disables the per-request raw wire snapshot that back
+// the dev_* introspection tools. It must be called once at server startup, from
+// the same place SetTransportFlags is called.
+func SetDevTools(enabled bool) {
+	devToolsEnabled = enabled
+}
+
 // defaultDetectorRegistry is the registry used by requestCaps to resolve
 // the connected platform from wire signals. It is package-scoped so it can
 // be overridden in tests.
@@ -193,9 +207,41 @@ func requestCaps(req *sdk.CallToolRequest, transportFlags transportFlags) *model
 		profile.Features[hostenv.FeatMCPApps] = true
 	}
 
+	// When dev tools are enabled, capture the raw wire snapshot the dev_*
+	// tools introspect. The go-sdk types are converted to SDK-neutral JSON
+	// data so the model layer stays free of the protocol SDK. This is the
+	// only signal that reliably describes a remote host across HTTP/OAuth
+	// transports (the server's own process environment is unrelated).
+	if devToolsEnabled {
+		if cc := req.ClientCapabilities(); cc != nil {
+			rc.Capabilities = toJSONMap(cc)
+		}
+		if s := req.Session; s != nil {
+			if ip := s.InitializeParams(); ip != nil {
+				rc.InitializeParams = toJSONMap(ip)
+			}
+		}
+	}
+
 	rc.Profile = &profile
 
 	return rc
+}
+
+// toJSONMap converts a go-sdk-typed value into a plain JSON map so the
+// SDK-neutral model layer can carry it without importing the protocol SDK. It
+// returns nil when the value cannot be marshaled (defensive; the SDK structs
+// used here always serialize).
+func toJSONMap(v any) map[string]any {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return nil
+	}
+	out := map[string]any{}
+	if err := json.Unmarshal(b, &out); err != nil {
+		return nil
+	}
+	return out
 }
 
 // annotateAppOnHandoff appends companion-app context to a needs_human tool
@@ -478,7 +524,10 @@ func registerOfficialInvokeTool(srv *sdk.Server, catalog *ToolCatalog, stdioMode
 			}), nil
 		}
 
-		result, err := entry.Handler(ctx, model.ToolRequest{Name: in.Name, Arguments: toolArgs})
+		// Thread the calling client's Caps through to the inner tool so it can
+		// adapt per host (e.g. profile-aware dev_* tools). Caps was previously
+		// dropped here; every handler already nil-guards it.
+		result, err := entry.Handler(ctx, model.ToolRequest{Name: in.Name, Arguments: toolArgs, Caps: request.Caps})
 		if err != nil {
 			return model.ToolResult{IsError: true, Text: err.Error()}, nil
 		}
