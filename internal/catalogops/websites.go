@@ -13,8 +13,19 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/catalog"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner-cli/internal/core/download"
 	"go.lumeweb.com/pinner-cli/internal/core/websites"
 )
+
+// Target type constants for website operations. These mirror the gateway's
+// accepted values and avoid string literals scattered across handlers.
+const (
+	TargetTypeIPFS = "ipfs"
+	TargetTypeIPNS = "ipns"
+)
+
+// indexHTMLFile is the root document every website directory must serve.
+const indexHTMLFile = "index.html"
 
 // WebsitesDeps are the dependencies the websites operations need at
 // construction time. All getters are resolved per invocation (never a
@@ -37,7 +48,21 @@ type WebsitesDeps struct {
 	// GetAuthToken returns an auth token override for the current command
 	// context (empty = none).
 	GetAuthToken func() string
+	// DownloadServiceFactory builds a download.Service for listing directory
+	// contents of an uploaded CID, used by the website structure guardrail
+	// (validateWebsiteStructure). When nil, the guardrail is skipped (the
+	// create/update proceeds without the index.html root check).
+	DownloadServiceFactory downloadServiceFactory
+	// IPNSResolveFunc resolves an IPNS name to the CID it currently points to.
+	// Used by validateWebsiteStructure to check the directory structure of an
+	// IPNS-targeted website. When nil, IPNS targets skip the structure check.
+	IPNSResolveFunc func(ctx context.Context, name, authToken string) (string, error)
 }
+
+// downloadServiceFactory builds a download.Service with the same auth context
+// as the websites service. The secure flag and token mirror WebsitesDeps
+// so the download service sees the same IPFS gateway and credentials.
+type downloadServiceFactory func(cfgMgr config.Manager, secure bool, authToken string) (download.Service, error)
 
 // config returns the live config manager for this invocation, or nil.
 func (d WebsitesDeps) config() config.Manager {
@@ -238,6 +263,111 @@ func websitesGet(d WebsitesDeps) catalog.Operation {
 	})
 }
 
+// validateWebsiteStructure checks that a CID intended for a website has
+// index.html at its root. If the root has no index.html but exactly one
+// subdirectory that does contain index.html, the CID was likely produced
+// from a ZIP that wrapped the site in a single parent directory (e.g.
+// `site.zip/mysite/index.html` instead of `site.zip/index.html`).
+//
+// For IPNS targets, the IPNS name is resolved to its current CID before the
+// check is performed. If the resolver is unavailable or resolution fails, the
+// guardrail degrades to permissive (returns nil).
+//
+// It returns an error when a wrapper directory or missing index.html is
+// detected, and nil otherwise (including when the check cannot be performed —
+// the guardrail degrades to permissive when no download service is available
+// or the CID is not a directory).
+func validateWebsiteStructure(ctx context.Context, d WebsitesDeps, input map[string]any, cid, targetType string) error {
+	if d.DownloadServiceFactory == nil {
+		return nil
+	}
+	cfgMgr := d.config()
+	if cfgMgr == nil {
+		return nil
+	}
+	secure := false
+	if d.Secure != nil {
+		secure = d.Secure()
+	}
+	token := ""
+	if d.GetAuthToken != nil {
+		token = d.GetAuthToken()
+	}
+	if t := authTokenFromInput(input); t != "" {
+		token = t
+	}
+
+	resolvedCID := cid
+	if targetType == TargetTypeIPNS {
+		if d.IPNSResolveFunc == nil {
+			return nil
+		}
+		resolved, err := d.IPNSResolveFunc(ctx, cid, token)
+		if err != nil {
+			return nil
+		}
+		if resolved == "" {
+			return nil
+		}
+		resolvedCID = resolved
+	} else if targetType != TargetTypeIPFS {
+		return nil
+	}
+
+	svc, err := d.DownloadServiceFactory(cfgMgr, secure, token)
+	if err != nil {
+		return nil
+	}
+	entries, err := svc.ListDirectory(ctx, resolvedCID)
+	if err != nil {
+		return nil
+	}
+	hasIndexHTML := false
+	var dirEntries []download.DirEntry
+	for _, e := range entries {
+		if strings.EqualFold(e.Name, indexHTMLFile) {
+			hasIndexHTML = true
+		}
+		if e.Type == "directory" || e.Type == "dir" {
+			dirEntries = append(dirEntries, e)
+		}
+	}
+	if hasIndexHTML {
+		return nil
+	}
+	// A single directory with no root index.html is only a ZIP wrapper if that
+	// directory itself contains index.html; otherwise fall through to the
+	// generic missing-index.html error (e.g. a root holding only assets/).
+	if len(dirEntries) == 1 {
+		wrapper := dirEntries[0].Name
+		if sub, err := svc.ListDirectory(ctx, resolvedCID+"/"+wrapper); err == nil {
+			for _, se := range sub {
+				if strings.EqualFold(se.Name, indexHTMLFile) {
+					return fmt.Errorf(
+						"website CID %s has no root index.html but its single directory %q does. "+
+							"The site appears to be wrapped in an extra parent directory. "+
+							"Rebuild the archive so index.html is at the root (not inside %s/), then upload and publish again.",
+						resolvedCID, wrapper, wrapper,
+					)
+				}
+			}
+		}
+	}
+	return fmt.Errorf(
+		"website CID %s has no root index.html. A website CID must be a directory whose root contains index.html. "+
+			"If you uploaded an archive, ensure index.html is at the archive root, not wrapped in a subdirectory.",
+		resolvedCID,
+	)
+}
+
+// WebsiteStructureWarning returns a non-nil error when the guardrail detects a
+// website structure problem (missing root index.html or wrapper directory).
+// It is exported so wiring layers can decide to surface it as a warning rather
+// than blocking the operation (e.g. in interactive CLI contexts).
+func WebsiteStructureWarning(ctx context.Context, d WebsitesDeps, input map[string]any, cid, targetType string) error {
+	return validateWebsiteStructure(ctx, d, input, cid, targetType)
+}
+
 // websitesCreate is the `websites create` operation. Returns *ipfs.WebsiteItem.
 //
 // A website needs a destination: either a user-owned custom domain (the
@@ -256,7 +386,7 @@ func websitesCreate(d WebsitesDeps) catalog.Operation {
 		Title:       "Create a website",
 		Summary:     "Create a new website",
 		Description: "Create a website that serves an IPFS CID. With only --cid, a platform (free) subdomain is minted automatically. Provide a custom domain as the positional for a user-owned domain; a subdomain of a platform root (e.g. myapp.pinned.site) is auto-detected and claimed as a platform subdomain. Returns the created website with validation token and DNS records.",
-		AgentDescription: "Create a website that serves an IPFS CID. A website CID normally represents a directory containing multiple files (index.html, CSS, JS, images, nested pages); do NOT combine a multi-file website into a single HTML file before publishing. The CID must be a directory whose root contains index.html — gateways serve /index.html at the directory path. Keep the website as separate files, ZIP the directory, and upload with archive_mode=convert. When uploading a single HTML file for a website, use upload_file with wrap=true and do NOT set an explicit name (the tool auto-names HTML to index.html); an explicit name like 'starter-site' is honored as-is and the page will only be reachable at /starter-site, not /. Provide cid plus a destination: EITHER a custom domain (positional) OR a platform-provided (free) subdomain claim. The type is derived automatically — with no domain and no claim fields it defaults to a minted platform subdomain; with a domain that is a subdomain of an enabled platform root (e.g. myapp.pinned.site) it claims that subdomain by parsing; with any other domain it is a custom domain. Set platform=true to force a platform claim, pairing label or generate (and optionally platform-domain / platform-namespace). For a custom domain: call websites_create with {\"cid\": \"<cid>\", \"website\": \"<domain>\", \"target-type\": \"ipfs\"} (target-type and dns-hosting are optional). If the user has NO domain, do not invent a custom domain — create with only {\"cid\": \"<cid>\"} (auto-mint) or pass {\"cid\": \"<cid>\", \"platform\": true, \"generate\": true}. Do not infer a desire for custom naming from a generic request to create or publish a website; default to no domain (auto-generated subdomain) unless the user explicitly supplies or requests a specific label or domain. For newly uploaded content, use the CID returned directly by an upload tool — do NOT call pins_add after upload. pins_add is only needed when the CID originated outside Pinner and must be imported from IPFS. Returns the created website (numeric ID, validation TXT token, DNS records to publish).",
+		AgentDescription: "Create a website that serves an IPFS CID. A website CID normally represents a directory containing multiple files (index.html, CSS, JS, images, nested pages); do NOT combine a multi-file website into a single HTML file before publishing. The CID must be a directory whose root contains index.html — gateways serve /index.html at the directory path. This tool validates the CID's structure and will reject a CID whose root has no index.html or is wrapped in a single parent directory. Before uploading a site ZIP, verify that index.html is at the archive root, not inside a wrapper directory (e.g. site.zip/mysite/index.html). Correct: site.zip/index.html. Keep the website as separate files, ZIP the directory contents (not the directory itself), and upload with archive_mode=convert. When uploading a single HTML file for a website, use upload_file with wrap=true and do NOT set an explicit name (the tool auto-names HTML to index.html); an explicit name like 'starter-site' is honored as-is and the page will only be reachable at /starter-site, not /. Provide cid plus a destination: EITHER a custom domain (positional) OR a platform-provided (free) subdomain claim. The type is derived automatically — with no domain and no claim fields it defaults to a minted platform subdomain; with a domain that is a subdomain of an enabled platform root (e.g. myapp.pinned.site) it claims that subdomain by parsing; with any other domain it is a custom domain. Set platform=true to force a platform claim, pairing label or generate (and optionally platform-domain / platform-namespace). For a custom domain: call websites_create with {\"cid\": \"<cid>\", \"website\": \"<domain>\", \"target-type\": \"ipfs\"} (target-type and dns-hosting are optional). If the user has NO domain, do not invent a custom domain — create with only {\"cid\": \"<cid>\"} (auto-mint) or pass {\"cid\": \"<cid>\", \"platform\": true, \"generate\": true}. Do not infer a desire for custom naming from a generic request to create or publish a website; default to no domain (auto-generated subdomain) unless the user explicitly supplies or requests a specific label or domain. For newly uploaded content, use the CID returned directly by an upload tool — do NOT call pins_add after upload. pins_add is only needed when the CID originated outside Pinner and must be imported from IPFS. Returns the created website (numeric ID, validation TXT token, DNS records to publish).",
 		Category:    "core",
 		Safety:      catalog.SafetyMutate,
 		Interaction: catalog.InteractionAgentSafe,
@@ -286,7 +416,7 @@ func websitesCreate(d WebsitesDeps) catalog.Operation {
 			if cid == "" {
 				return nil, fmt.Errorf("websites_create: --cid is required")
 			}
-			targetType := catalog.StrArg(input, "target-type", "ipfs")
+			targetType := catalog.StrArg(input, "target-type", TargetTypeIPFS)
 
 			platformFlag := catalog.BoolArg(input, "platform", false)
 			pd := catalog.StrArg(input, "platform-domain", "")
@@ -357,6 +487,9 @@ func websitesCreate(d WebsitesDeps) catalog.Operation {
 				// nil (omitted) lets the backend apply its default (managed DNS);
 				// true/false map onto Pinner-managed / self-managed explicitly.
 				req.DnsHostingEnabled = catalog.BoolArgPtr(input, "dns-hosting")
+			}
+			if err := validateWebsiteStructure(ctx, d, input, cid, targetType); err != nil {
+				return nil, err
 			}
 			// Translate backend reason codes (e.g. CID_NOT_PINNED,
 			// IPNS_KEY_NOT_FOUND, DNS_VALIDATION_FAILED, subdomain-claim errors)
@@ -479,6 +612,11 @@ func websitesUpdate(d WebsitesDeps) catalog.Operation {
 			// nil (omitted) means "leave DNS hosting unchanged"; true/false
 			// toggle it on/off explicitly.
 			req.DnsHostingEnabled = catalog.BoolArgPtr(input, "dns-hosting")
+			if req.TargetHash != nil && req.TargetType != nil {
+				if err := validateWebsiteStructure(ctx, d, input, *req.TargetHash, *req.TargetType); err != nil {
+					return nil, err
+				}
+			}
 			// *ipfs.WebsiteItem
 			result, err := svc.UpdateWithOptions(ctx, id, req)
 			return result, websites.TranslateErrorWithCID(err, cid)
