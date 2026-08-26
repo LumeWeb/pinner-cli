@@ -32,7 +32,7 @@ func DataURIUploadDescriptor(handler DataURIUploadHandler, maxBytes int64) model
 	return model.ToolDescriptor{
 		Name:        "upload_data",
 		Title:       "Upload a file from a data URI",
-		Description: "Upload bytes from an RFC 2397 data: URI and pin the resulting CID. The returned CID is already pinned: do NOT call pins_add afterward. The wait flag waits for this upload's own pin operation. Do not call this tool when capabilities.host_file_input == true and the requested content exists as a host file (user-uploaded or assistant-generated at /mnt/data/...); use upload_file(file=...) instead. Last resort only — never use for a host-provided or assistant-generated file that can be passed to upload_file.",
+		Description: "Upload bytes from an RFC 2397 data: URI and pin the resulting CID. The returned CID is already pinned: do NOT call pins_add afterward. The wait flag waits for this upload's own pin operation. Do not call this tool when capabilities.host_file_input == true and the requested content exists as a host file (user-uploaded or assistant-generated files in the assistant's sandbox); use upload_file(file=...) instead. Last resort only — never use for a host-provided or assistant-generated file that can be passed to upload_file.",
 		Category:    model.CategoryCore,
 		InputSchema: toolargs.ToolSchemaFor[DataURIUploadInput](),
 		// x-mcp-file marks the "file" property as a file-valued input per the
