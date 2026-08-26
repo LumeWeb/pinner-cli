@@ -1,5 +1,11 @@
 package catalogops
 
+import (
+	"encoding/json"
+
+	"go.lumeweb.com/queryutil"
+)
+
 // ListResult is the uniform contract every *-list operation result fulfills so
 // that the CLI and MCP surfaces can render any list identically. Handlers build
 // it with NewListResult, which carries the structured data for JSON output and
@@ -62,6 +68,18 @@ func (r *listResult[T]) ListTotal() int        { return r.total }
 func (r *listResult[T]) ListTruncated() bool   { return r.total > 0 && r.total > r.count }
 func (r *listResult[T]) ListHeaders() []string { return r.meta.Headers }
 func (r *listResult[T]) ListRows() [][]string  { return r.meta.Rows }
+
+// MarshalJSON serializes the paginated list in the repo's standard list shape
+// (queryutil.Response: {"data":[...],"total":N}) so JSON consumers — the MCP
+// envelope's "value" field — receive the actual page items instead of an empty
+// object. The struct fields are unexported to enforce the ListResult accessor
+// contract, which is why they are rendered here rather than via struct tags.
+func (r *listResult[T]) MarshalJSON() ([]byte, error) {
+	return json.Marshal(queryutil.Response[[]T]{
+		Data:  r.items,
+		Total: int64(r.total),
+	})
+}
 
 // slicePage applies a Start/Limit window to a slice when the backend has no
 // server-side offset. A zero Limit keeps all rows from Start onward.
