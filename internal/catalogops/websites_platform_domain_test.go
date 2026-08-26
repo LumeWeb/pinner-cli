@@ -166,7 +166,7 @@ func TestWebsitesDomainsAddPlatformDomainPassThrough(t *testing.T) {
 		platformNamespace string
 	}{
 		{"explicit label claim", map[string]any{"website": "example.test", "domain": "my-app", "label": "my-app", "platform-domain": "ipfs.pin.xyz", "platform-namespace": "pin"}, nil, "my-app", "ipfs.pin.xyz", "pin"},
-		{"generate flag", map[string]any{"website": "example.test", "domain": "my-app", "generate": true, "platform-domain": "ipfs.pin.xyz", "platform-namespace": "pin"}, boolPtr(true), "", "ipfs.pin.xyz", "pin"},
+		{"generate flag", map[string]any{"website": "example.test", "domain": "my-app", "generate": true, "platform-domain": "ipfs.pin.xyz", "platform-namespace": "pin"}, new(true), "", "ipfs.pin.xyz", "pin"},
 		{"no platform fields", map[string]any{"website": "example.test", "domain": "example.com"}, nil, "", "", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -195,4 +195,4 @@ func strPtrEqual(p *string, s string) bool {
 	return *p == s
 }
 
-func boolPtr(b bool) *bool { return &b }
+
