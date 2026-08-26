@@ -854,7 +854,7 @@ func TestWebsitesWizard_PlatformSubdomain_RetryResumesWithoutRecreate(t *testing
 	assert.Equal(t, 9, w.Website().Id)
 }
 
-func TestWebsitesWizard_PlatformSubdomainNoLabelGuidesAgent(t *testing.T) {
+func TestWebsitesWizard_PlatformSubdomainNoLabelDefaultsToGenerate(t *testing.T) {
 	t.Parallel()
 
 	cfgMgr := newConfigMgr(t, true)
@@ -878,12 +878,17 @@ func TestWebsitesWizard_PlatformSubdomainNoLabelGuidesAgent(t *testing.T) {
 	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"type":"ipfs"}`))
 	require.NoError(t, err)
 
-	// No domain, no label, no generate: the handler must guide the agent to
-	// derive a domain instead of inventing one.
+	// No domain, no label, no generate: defaults to generate=true so the
+	// platform auto-generates a subdomain under the resolved platform root.
 	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"source":"platform_subdomain"}`))
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "websites_platform_domain_availability")
-	assert.Equal(t, "domain", sess.FSM.Current())
+	require.NoError(t, err)
+	assert.Equal(t, "dns_mode", sess.FSM.Current())
+
+	w := sess.State().(wizard.WebsitesWizardState)
+	assert.Equal(t, "platform_subdomain", w.DomainSource())
+	assert.Equal(t, "", w.Label())
+	assert.True(t, w.Generate())
+	assert.Equal(t, "ipfs.pin.xyz", w.PlatformDomain())
 }
 
 func TestWebsitesWizard_DefaultToPlatformSubdomain(t *testing.T) {
@@ -911,15 +916,15 @@ func TestWebsitesWizard_DefaultToPlatformSubdomain(t *testing.T) {
 	require.NoError(t, err)
 
 	// Empty input (no domain, no source): defaults to platform_subdomain and,
-	// lacking a label, guides the agent instead of inventing a domain.
+	// lacking a label, auto-generates a subdomain instead of erroring.
 	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "platform_subdomain")
-	assert.Contains(t, err.Error(), "websites_platform_domain_availability")
-	assert.Equal(t, "domain", sess.FSM.Current())
+	require.NoError(t, err)
+	assert.Equal(t, "dns_mode", sess.FSM.Current())
 
 	w := sess.State().(wizard.WebsitesWizardState)
 	assert.Equal(t, "platform_subdomain", w.DomainSource())
+	assert.True(t, w.Generate())
+	assert.Equal(t, "ipfs.pin.xyz", w.PlatformDomain())
 }
 
 func TestWebsitesWizard_AuthCheckFails(t *testing.T) {

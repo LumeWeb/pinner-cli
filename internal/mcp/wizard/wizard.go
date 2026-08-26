@@ -659,6 +659,9 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []session.StepDef {
 					return "", nil
 				}
 
+				// Unreachable: generate defaults to true when no label is supplied,
+				// but the compiler still requires a terminating return here.
+				return "", nil
 			},
 			Schema: func(_ *session.Session) *jsonschema.Schema {
 				return toolargs.SchemaFor[WebsitesDomainInput]()
