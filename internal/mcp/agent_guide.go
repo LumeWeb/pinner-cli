@@ -74,14 +74,14 @@ func NewAgentGuideDescriptor() model.ToolDescriptor {
 			{
 				Name:   "upload",
 				Title:  "Upload new content (creates + pins)",
-				Steps:  []string{"capabilities", "upload_file", "upload_status"},
-				Detail: "Check capabilities; call upload_file with a host-provided file reference (preferred) or a transport-scoped source (host path in co-located stdio, a minted presigned HTTP PUT in remote mode, or url/data on the OpenAI tunnel), then poll upload_status for the CID. The returned CID is already pinned — use it directly in websites_create/update; do NOT call pins_add after an upload. Host files take precedence over source modes: when a local file path already exists and an upload tool accepts a file argument, pass that reference directly — do not mint a presigned URL and do NOT curl it. Static site bundle rule: a ZIP containing index.html, CSS, JS, images, or nested pages is a single directory DAG — call upload_file with the host file argument and archive_mode=convert, not individual assets.",
+				Steps:  []string{"capabilities", "upload_file"},
+				Detail: "Check capabilities; call upload_file with a host-provided file reference (preferred) or a transport-scoped source (host path in co-located stdio, a minted presigned HTTP PUT in remote mode, or url/data on the OpenAI tunnel). The returned CID is already pinned — use it directly in websites_create/update; do NOT call pins_add after an upload. Host files take precedence over source modes: when a local file path already exists and an upload tool accepts a file argument, pass that reference directly — do not mint a presigned URL and do NOT curl it. When using source.mode=mint, poll upload_status with the returned upload_handle for the CID. Static site bundle rule: a ZIP containing index.html, CSS, JS, images, or nested pages is a single directory DAG — call upload_file with the host file argument and archive_mode=convert, not individual assets.",
 			},
 			{
 				Name:   "vault_upload",
 				Title:  "Store a file in a vault",
-				Steps:  []string{"capabilities", "vault_put_file", "upload_status"},
-				Detail: "Check capabilities; if vault_put_file is available and the target vault is unlocked, call it with a host-provided file reference (preferred) or a transport-scoped source (host path in co-located stdio mode, a minted presigned PUT in remote mode, or url/data on the OpenAI tunnel) plus the destination vault_path, then monitor with upload_status for the CID. Host files take precedence over source modes: pass a local host file path directly without minting a presigned URL.",
+				Steps:  []string{"capabilities", "vault_put_file"},
+				Detail: "Check capabilities; if vault_put_file is available and the target vault is unlocked, call it with a host-provided file reference (preferred) or a transport-scoped source (host path in co-located stdio mode, a minted presigned PUT in remote mode, or url/data on the OpenAI tunnel) plus the destination vault_path. Host files take precedence over source modes: pass a local host file path directly without minting a presigned URL. When using source.mode=mint, poll upload_status with the returned upload_handle for the CID.",
 			},
 			{
 				Name:   "download",
