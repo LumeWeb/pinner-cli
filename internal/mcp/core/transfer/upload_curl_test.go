@@ -338,11 +338,13 @@ func TestPrepareRetainsForEndpointTTL(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, UploadStatePrepared, lt.State)
 
-	// The default-TTL task is pruned (its endpoint lapsed, handle abandoned and
-	// no longer fulfillable).
-	_, err = mgr.Get(shortHandle)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "unknown upload handle")
+	// The default-TTL task is pruned once its endpoint lapses (handle abandoned
+	// and no longer fulfillable). A late status poll must report it as EXPIRED
+	// via its tombstone, not the misleading "unknown upload handle".
+	st, err := mgr.Get(shortHandle)
+	require.NoError(t, err, "a known-but-pruned handle is reported from its tombstone")
+	require.Equal(t, UploadStateExpired, st.State)
+	require.Contains(t, st.Err, "expired")
 }
 
 // TestCurlUploadPrunesExpiredTokens verifies that minting a fresh endpoint

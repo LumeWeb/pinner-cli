@@ -220,9 +220,15 @@ func ExecuteLocalSink(ctx context.Context, source, sourceName, outputPath, downl
 // ttl string is parsed; when omitted/invalid/<=0 the default is applied so the
 // reported TTL matches what mint actually enforces (mint does the same default
 // internally, but reporting "0s" would mislead a consumer into treating a live
-// endpoint as already expired). The serve closure enforces maxBytes (<=0 =
-// unlimited) so an over-limit GET fails loudly instead of streaming a partial
-// file.
+// endpoint as already expired).
+//
+// The source bytes are resolved once into a temp file at mint time so the
+// result can report the size the consumer is about to pull AND the GET can
+// stream with an accurate Content-Length (a size:0 drop result is a silent
+// lie, and a byte-stale size is worse). The cap is enforced during that
+// write, so an over-limit download fails here, up front, rather than serving
+// a truncated file. The temp file lives for the endpoint TTL and is removed
+// by the GET handler after it is streamed once (or expired).
 func ExecuteDropSink(ctx context.Context, source, sourceName string, hd *Download, ttl string, maxBytes int64, resolve func(ctx context.Context, w io.Writer) error) (DownloadResult, error) {
 	if hd == nil {
 		return DownloadResult{}, errors.New("filedrop GET coordinator is not configured for sink=drop")
@@ -236,22 +242,60 @@ func ExecuteDropSink(ctx context.Context, source, sourceName string, hd *Downloa
 	if d <= 0 {
 		d = DefaultHTTPDownloadTTL
 	}
-	// The serve closure mirrors the same resolve the local sink uses, wrapped
-	// with the size cap; the size is unknown up front (we do not pre-buffer),
-	// so report 0 unless the tool supplies it later.
-	capped := func(ctx context.Context, w io.Writer) error {
-		return resolve(ctx, &sizeLimitedWriter{w: w, maxBytes: maxBytes})
+
+	tmp, err := os.CreateTemp("", ".pinner-drop-*")
+	if err != nil {
+		return DownloadResult{}, fmt.Errorf("create filedrop temp file: %w", err)
 	}
-	fetchURL, err := hd.Mint(sourceName, 0, capped, d)
+	tmpPath := tmp.Name()
+	// Cleanup on any error path (including an over-cap resolve, which aborts
+	// before the endpoint is minted). Once minted, the GET handler owns the
+	// file and removes it after it is served / on expiry.
+	removeOnErr := true
+	defer func() {
+		if removeOnErr {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+	if err := resolve(ctx, &sizeLimitedWriter{w: tmp, maxBytes: maxBytes}); err != nil {
+		tmp.Close()
+		return DownloadResult{}, err
+	}
+	info, err := tmp.Stat()
+	if err != nil {
+		tmp.Close()
+		return DownloadResult{}, err
+	}
+	if err := tmp.Close(); err != nil {
+		return DownloadResult{}, err
+	}
+
+	// Serve the already-resolved file. The temp file is removed by the cleanup
+	// closure the GET handler / expiry path invokes exactly once the token is
+	// consumed or expires.
+	serve := func(ctx context.Context, w io.Writer) error {
+		f, err := os.Open(tmpPath)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		_, err = io.Copy(w, f)
+		return err
+	}
+	fetchURL, err := hd.Mint(sourceName, info.Size(), serve, d, func() {
+		_ = os.Remove(tmpPath)
+	})
 	if err != nil {
 		return DownloadResult{}, err
 	}
+	removeOnErr = false
 	return DownloadResult{
 		Status:   "ok",
 		Source:   source,
 		Sink:     string(SinkDrop),
 		FetchURL: fetchURL,
 		Name:     sourceName,
+		Size:     info.Size(),
 		TTL:      d.String(),
 	}, nil
 }

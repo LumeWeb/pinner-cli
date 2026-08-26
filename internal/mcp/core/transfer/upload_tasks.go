@@ -58,12 +58,18 @@ const (
 	// agent's presigned PUT, or the App's Uppy XHR PUT) supplies the bytes and
 	// transitions it to queued/running. A prepared task holds no reader and
 	// occupies no executor slot.
-	UploadStatePrepared   UploadTaskState = "prepared"
-	UploadStateQueued     UploadTaskState = "queued"
-	UploadStateRunning    UploadTaskState = "running"
-	UploadStateCompleted  UploadTaskState = "completed"
-	UploadStateFailed     UploadTaskState = "failed"
-	UploadStateCancelled  UploadTaskState = "cancelled"
+	UploadStatePrepared  UploadTaskState = "prepared"
+	UploadStateQueued    UploadTaskState = "queued"
+	UploadStateRunning   UploadTaskState = "running"
+	UploadStateCompleted UploadTaskState = "completed"
+	UploadStateFailed    UploadTaskState = "failed"
+	UploadStateCancelled UploadTaskState = "cancelled"
+	// UploadStateExpired marks a handle that was evicted before completion —
+	// most commonly a Prepared (minted but never fulfilled) handle whose
+	// presigned endpoint window lapsed. It is only ever produced by tombstone
+	// retention so a late status poll on an old handle reports "expired"
+	// instead of the misleading "unknown upload handle".
+	UploadStateExpired UploadTaskState = "expired"
 )
 
 // UploadTask describes a tracked async upload.
@@ -119,11 +125,12 @@ func (t *trackedTask) closeReader() {
 // safe for concurrent use. Uploads run the existing synchronous authenticated
 // upload path in a background goroutine; cancellation cancels that context.
 type UploadTaskManager struct {
-	mu        sync.Mutex
-	tasks     map[string]*trackedTask
-	exec      UploadExecutor
-	ttl       time.Duration
-	MaxActive int
+	mu         sync.Mutex
+	tasks      map[string]*trackedTask
+	tombstones map[string]*UploadTask
+	exec       UploadExecutor
+	ttl        time.Duration
+	MaxActive  int
 	// PreparedTTL is the fallback how-long an unfulfilled Prepared
 	// (minted-but-never-supplied) canonical operation is retained before prune
 	// when a task is created without its own endpoint TTL. It is intentionally
@@ -158,13 +165,14 @@ func NewUploadTaskManager(exec UploadExecutor, ttl time.Duration) *UploadTaskMan
 		ttl = 15 * time.Minute
 	}
 	return &UploadTaskManager{
-		tasks:        make(map[string]*trackedTask),
-		exec:         exec,
-		ttl:          ttl,
-		MaxActive:    defaultMaxActiveUploads,
-		PreparedTTL:  defaultPreparedTTL,
-		MaxPrepared:  defaultMaxPrepared,
-		ExecTimeout:  defaultExecTimeout,
+		tasks:       make(map[string]*trackedTask),
+		tombstones:  make(map[string]*UploadTask),
+		exec:        exec,
+		ttl:         ttl,
+		MaxActive:   defaultMaxActiveUploads,
+		PreparedTTL: defaultPreparedTTL,
+		MaxPrepared: defaultMaxPrepared,
+		ExecTimeout: defaultExecTimeout,
 	}
 }
 
@@ -313,6 +321,11 @@ func (m *UploadTaskManager) Fulfill(ctx context.Context, id string, reader io.Re
 		return errors.New("upload executor is not configured")
 	}
 	m.mu.Lock()
+	if _, tomb := m.tombstones[id]; tomb {
+		m.mu.Unlock()
+		_ = reader.Close()
+		return fmt.Errorf("upload handle %q has expired; start a fresh upload", id)
+	}
 	tt, ok := m.tasks[id]
 	if !ok {
 		m.mu.Unlock()
@@ -485,6 +498,9 @@ func cloneTask(src *UploadTask) *UploadTask {
 }
 
 // Get returns a copy of the task for the given handle, or an error if unknown.
+// A handle that was legitimately known but was pruned before completion is
+// reported from its tombstone as UploadStateExpired (rather than the misleading
+// "unknown upload handle"), so a late status poll on an old handle is honest.
 func (m *UploadTaskManager) Get(id string) (*UploadTask, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -492,10 +508,13 @@ func (m *UploadTaskManager) Get(id string) (*UploadTask, error) {
 	// status/cancel (not List) does not let completed tasks accumulate forever.
 	m.pruneLocked()
 	t, ok := m.tasks[id]
-	if !ok {
-		return nil, fmt.Errorf("unknown upload handle %q", id)
+	if ok {
+		return cloneTask(t.task), nil
 	}
-	return cloneTask(t.task), nil
+	if tomb, ok := m.tombstones[id]; ok {
+		return cloneTask(tomb), nil
+	}
+	return nil, fmt.Errorf("unknown upload handle %q", id)
 }
 
 // Cancel cancels a prepared/queued/running task. Cancelling a completed task
@@ -504,6 +523,10 @@ func (m *UploadTaskManager) Get(id string) (*UploadTask, error) {
 // retires the handle.
 func (m *UploadTaskManager) Cancel(id string) error {
 	m.mu.Lock()
+	if tomb, ok := m.tombstones[id]; ok {
+		m.mu.Unlock()
+		return fmt.Errorf("upload %q already finished (state %s)", id, tomb.State)
+	}
 	t, ok := m.tasks[id]
 	if !ok {
 		m.mu.Unlock()
@@ -616,6 +639,7 @@ func (m *UploadTaskManager) pruneLocked() {
 		case UploadStateCompleted, UploadStateFailed, UploadStateCancelled:
 			cutoff := now.Add(-m.ttl)
 			if t.task.FinishedAt != nil && t.task.FinishedAt.Before(cutoff) {
+				m.tombstoneLocked(id, t.task)
 				delete(m.tasks, id)
 			}
 		case UploadStatePrepared:
@@ -630,8 +654,29 @@ func (m *UploadTaskManager) pruneLocked() {
 				preparedTTL = m.PreparedTTL
 			}
 			if preparedTTL > 0 && t.task.CreatedAt.Before(now.Add(-preparedTTL)) {
+				exp := cloneTask(t.task)
+				now := time.Now()
+				exp.State = UploadStateExpired
+				exp.Err = "upload handle expired before any bytes were supplied (presigned endpoint window lapsed)"
+				exp.FinishedAt = &now
+				m.tombstoneLocked(id, exp)
 				delete(m.tasks, id)
 			}
 		}
 	}
+	// Retire tombstones that are themselves past the retention window so the
+	// tombstone map cannot grow without bound; after this point a handle is
+	// genuinely unknown (never existed within retention).
+	for id, tomb := range m.tombstones {
+		if tomb.FinishedAt != nil && tomb.FinishedAt.Before(now.Add(-m.ttl)) {
+			delete(m.tombstones, id)
+		}
+	}
+}
+
+// tombstoneLocked records a pruned handle's final task snapshot so a later
+// status/cancel/fulfill poll on the old handle reports "expired"/"finished"
+// instead of the misleading "unknown upload handle". Caller must hold m.mu.
+func (m *UploadTaskManager) tombstoneLocked(id string, task *UploadTask) {
+	m.tombstones[id] = cloneTask(task)
 }

@@ -18,7 +18,7 @@ func TestMarkCuratedStampsDirectVisible(t *testing.T) {
 		}})
 	}
 	// Non-curated entries stay hidden.
-	for _, name := range []string{"pinner_setup", "pinner_pins", "pinner_auth", "dns_zones_list", "vault_sync", "operations_list", "websites_create"} {
+	for _, name := range []string{"pinner_setup", "pinner_pins", "pinner_auth", "dns_zones_list", "vault_sync", "operations_list", "websites_delete"} {
 		catalog.Add(&model.ToolEntry{Name: name, Handler: func(_ context.Context, _ model.ToolRequest) (model.ToolResult, error) {
 			return model.ToolResult{Text: "ok"}, nil
 		}})
@@ -31,7 +31,7 @@ func TestMarkCuratedStampsDirectVisible(t *testing.T) {
 		require.True(t, ok, name)
 		require.True(t, entry.DirectVisible, name)
 	}
-	for _, name := range []string{"pinner_setup", "pinner_pins", "pinner_auth", "dns_zones_list", "vault_sync", "operations_list", "websites_create"} {
+	for _, name := range []string{"pinner_setup", "pinner_pins", "pinner_auth", "dns_zones_list", "vault_sync", "operations_list", "websites_delete"} {
 		entry, ok := catalog.Get(name)
 		require.True(t, ok, name)
 		require.False(t, entry.DirectVisible, name)

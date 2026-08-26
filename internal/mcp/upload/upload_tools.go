@@ -28,7 +28,7 @@ func NewAsyncUploadTools(mgr *transfer.UploadTaskManager) []model.ToolDescriptor
 		{
 			Name:        "upload_status",
 			Title:       "Get async upload status",
-			Description: "Return the current status of an async upload handle: queued, running, completed, failed, or cancelled. Handles are created by upload_file when using source.mode=mint (presigned HTTP PUT).",
+			Description: "Return the current status of an async upload handle: queued, running, completed, failed, cancelled, or expired (the handle's presigned endpoint window lapsed before any bytes were supplied). Handles are created by upload_file when using source.mode=mint (presigned HTTP PUT).",
 			Category:    model.CategoryCore,
 			InputSchema: toolargs.ToolSchemaFor[UploadHandleInput](),
 			Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
