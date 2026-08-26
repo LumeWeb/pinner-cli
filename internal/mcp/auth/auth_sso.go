@@ -10,6 +10,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
+	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
 )
 
 // This file exposes the out-of-band (browser) login coordinator as first-class
@@ -34,12 +35,17 @@ type authSSOArgs struct {
 // a structured "not configured" hand-off instead of hanging. It registers a
 // resume continuation so the shared auth_resume template can poll the
 // login to completion.
+// authSSODescription is shared between the static Description and the Fallback
+// MCPTarget so the descriptor carries a target list.
+const authSSODescription = "Start an out-of-band (OOB) browser sign-in for SSO authentication. Returns immediately with an approval URL the human opens, and a resume handle for the auth_resume tool. Non-blocking, and never asks the human for a password or OTP on this channel. Start here to authenticate."
+
 func NewAuthSSODescriptor(oob *OutOfBandLogin, handles *session.AsyncHandleStore, reg *handoff.HandoffRegistry) model.ToolDescriptor {
 	return model.ToolDescriptor{
 		Name:        "auth_sso",
 		Title:       "Sign In (Out-of-Band)",
-		Description: "Start an out-of-band (OOB) browser sign-in for SSO authentication. Returns immediately with an approval URL the human opens, and a resume handle for the auth_resume tool. Non-blocking, and never asks the human for a password or OTP on this channel. Start here to authenticate.",
+		Description: authSSODescription,
 		Category:    model.CategoryAccount,
+		MCPTargets:  toolforge.MCPTargets(toolforge.Fallback(authSSODescription)),
 		InputSchema: toolargs.ToolSchemaFor[authSSOArgs](),
 		Handler: func(ctx context.Context, req model.ToolRequest) (model.ToolResult, error) {
 			if oob == nil || handles == nil || reg == nil {

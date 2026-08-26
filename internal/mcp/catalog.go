@@ -76,9 +76,19 @@ func NewToolCatalog() *ToolCatalog {
 
 // Add registers a tool entry. If a tool with the same name already exists it
 // is replaced.
+//
+// Every catalog entry is guaranteed to carry MCPTargets: when a descriptor
+// declares none, its static Description is wrapped in a universal Fallback
+// target so describe_tool/search_tools resolve it through the same
+// profile-aware seam as every other tool. A Fallback always matches, so
+// resolution is unchanged — the wrap only establishes the invariant that no
+// catalog tool lacks a target list (enforced by TestCatalogEntriesCarryMCPTargets).
 func (c *ToolCatalog) Add(entry *model.ToolEntry) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if len(entry.MCPTargets) == 0 {
+		entry.MCPTargets = toolforge.MCPTargets(toolforge.Fallback(entry.Description))
+	}
 	c.tools[entry.Name] = entry
 }
 

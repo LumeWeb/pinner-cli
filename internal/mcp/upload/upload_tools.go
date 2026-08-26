@@ -9,6 +9,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/wizard"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
+	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
 )
 
 // UploadHandleInput is the typed argument shape for upload status/cancel tools.
@@ -30,6 +31,7 @@ func NewAsyncUploadTools(mgr *transfer.UploadTaskManager) []model.ToolDescriptor
 			Title:       "Get async upload status",
 			Description: "Return the current status of an async upload handle: queued, running, completed, failed, cancelled, or expired (the handle's presigned endpoint window lapsed before any bytes were supplied). Handles are created by upload_file when using source.mode=mint (presigned HTTP PUT).",
 			Category:    model.CategoryCore,
+			MCPTargets:  toolforge.MCPTargets(toolforge.Fallback("Return the current status of an async upload handle: queued, running, completed, failed, cancelled, or expired (the handle's presigned endpoint window lapsed before any bytes were supplied). Handles are created by upload_file when using source.mode=mint (presigned HTTP PUT).")),
 			InputSchema: toolargs.ToolSchemaFor[UploadHandleInput](),
 			Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
 				in, err := toolargs.DecodeToolArgs[UploadHandleInput](request)
@@ -51,6 +53,7 @@ func NewAsyncUploadTools(mgr *transfer.UploadTaskManager) []model.ToolDescriptor
 			Title:       "Cancel an async upload",
 			Description: "Cancel a queued or running async upload by handle. Handles are created by upload_file when using source.mode=mint (presigned HTTP PUT).",
 			Category:    model.CategoryCore,
+			MCPTargets:  toolforge.MCPTargets(toolforge.Fallback("Cancel a queued or running async upload by handle. Handles are created by upload_file when using source.mode=mint (presigned HTTP PUT).")),
 			InputSchema: toolargs.ToolSchemaFor[UploadHandleInput](),
 			Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
 				in, err := toolargs.DecodeToolArgs[UploadHandleInput](request)
@@ -71,6 +74,7 @@ func NewAsyncUploadTools(mgr *transfer.UploadTaskManager) []model.ToolDescriptor
 			Title:       "List async uploads",
 			Description: "List all tracked async upload handles and their current status. Handles are created by upload_file when using source.mode=mint (presigned HTTP PUT).",
 			Category:    model.CategoryCore,
+			MCPTargets:  toolforge.MCPTargets(toolforge.Fallback("List all tracked async upload handles and their current status. Handles are created by upload_file when using source.mode=mint (presigned HTTP PUT).")),
 			InputSchema: toolargs.ToolSchemaFor[wizard.NoInput](),
 			Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
 				tasks := mgr.List()

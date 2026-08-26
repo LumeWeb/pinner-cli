@@ -9,6 +9,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
+	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
 )
 
 // OpenUploadManagerURI is the ui:// resource URI served by the Upload to IPFS
@@ -19,6 +20,13 @@ const OpenUploadManagerURI = IPFSUploadAppURI
 // to IPFS app. It is the ONLY tool carrying ui.resourceUri for this view; the
 // headless upload_file primitive never advertises a card.
 const OpenUploadManagerToolName = "open_upload_manager"
+
+// openUploadManagerDescription is shared between the static Description and
+// the Fallback MCPTarget so the launcher descriptor carries a target list.
+const openUploadManagerDescription = "Open the interactive Upload to IPFS file picker. This is a UI launcher: it renders an HTML iframe so the user can pick a file. It is not a headless primitive. " +
+	"Pass an optional 'handle' from a prior upload_file mint call to continue that exact operation; if the handle is stale/expired a fresh one is prepared. " +
+	"Returns an upload_handle; poll upload_status to retrieve the final CID. " +
+	"Prefer upload_file (headless) for autonomous workflows; call this only when a human file picker is actually desired."
 
 // OpenUploadManagerInput is the typed argument shape for the model-facing
 // Upload to IPFS launcher. handle is optional: when provided, the launcher
@@ -46,12 +54,10 @@ func NewOpenUploadManagerDescriptor(hp *transfer.Upload) model.ToolDescriptor {
 		Visibility:  []model.ToolVisibility{model.ToolVisibilityModel, model.ToolVisibilityApp},
 	})
 	return model.ToolDescriptor{
-		Name:  "open_upload_manager",
-		Title: "Open Upload to IPFS App",
-		Description: "Open the interactive Upload to IPFS file picker. This is a UI launcher: it renders an HTML iframe so the user can pick a file. It is not a headless primitive. " +
-			"Pass an optional 'handle' from a prior upload_file mint call to continue that exact operation; if the handle is stale/expired a fresh one is prepared. " +
-			"Returns an upload_handle; poll upload_status to retrieve the final CID. " +
-			"Prefer upload_file (headless) for autonomous workflows; call this only when a human file picker is actually desired.",
+		Name:        "open_upload_manager",
+		Title:       "Open Upload to IPFS App",
+		Description: openUploadManagerDescription,
+		MCPTargets:  toolforge.MCPTargets(toolforge.Fallback(openUploadManagerDescription)),
 		InputSchema: toolargs.ToolSchemaFor[OpenUploadManagerInput](),
 		Meta:        appMeta,
 		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {

@@ -7,8 +7,10 @@ import (
 	"io"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
-
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
+	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
+	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
+	"go.uber.org/zap"
 )
 
 // DownloadFileInput is the typed argument shape for the unified download_file
@@ -59,6 +61,11 @@ func NewDownloadFileDescriptor(ipfsFn IPFSDownloadHandler, hd *Download, downloa
 		// tunnel), matching capabilities().download_sink_modes so the published
 		// schema never contradicts the advertised sinks.
 		InputSchema: RewriteSinkEnum(toolargs.ToolSchemaFor[DownloadFileInput](), hd != nil, tunnelOpenAI),
+		// MCPTargets lets describe_tool/search_tools re-resolve the description
+		// per requesting host profile (sink=drop only when the host has a
+		// reachable HTTP mux). The startup Description above stays as the
+		// transport-baked tools/list value.
+		MCPTargets: toolforge.DownloadFileTargets,
 		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
 			in, err := toolargs.DecodeToolArgs[DownloadFileInput](request)
 			if err != nil {
@@ -101,17 +108,26 @@ func NewDownloadFileDescriptor(ipfsFn IPFSDownloadHandler, hd *Download, downloa
 	}
 }
 
-// downloadFileDescription builds the tool description from the actual
-// transport wiring. The drop sink requires a reachable HTTP mux, so it is
-// advertised only when a filedrop coordinator is wired AND the transport is
-// not the embedded OpenAI tunnel. The description is a server-startup
-// property (it never varies by requesting host), so it is resolved once and
-// shared by tools/list, capabilities, and describe_tool — no per-request
-// MCPTargets resolution, preventing the static and discovery surfaces from
-// contradicting each other.
+// downloadProfile maps the transport wiring to the feature set the description
+// DSL resolves against. sink=local is always available; sink=drop needs a
+// reachable HTTP mux, so it is advertised only when a filedrop coordinator is
+// wired AND the transport is not the embedded OpenAI tunnel.
+func downloadProfile(dropWired, tunnelOpenAI bool) hostenv.PlatformProfile {
+	p := hostenv.ProfileHTTPGeneric.CloneFeatures()
+	p.Features[hostenv.FeatSinkLocal] = true
+	p.Features[hostenv.FeatSinkDrop] = dropWired && !tunnelOpenAI
+	return p
+}
+
+// downloadFileDescription resolves the download_file description from the
+// feature-keyed MCPTargets against the transport-built profile. It bakes the
+// startup tools/list value; describe_tool/search_tools re-resolve the same
+// targets per requesting host profile, so the two surfaces cannot drift.
 func downloadFileDescription(dropWired, tunnelOpenAI bool) string {
-	if dropWired && !tunnelOpenAI {
-		return "Download IPFS content (CID or CID/path) as a file. Set sink=local to write the bytes to a host-side output_path on the MCP server's own disk (available on every transport), or sink=drop to get a one-time HTTP GET filedrop link to pull from out of band (curl -o <url> or a browser link)."
+	profile := downloadProfile(dropWired, tunnelOpenAI)
+	desc, ok := toolforge.ResolveDescription(toolforge.DownloadFileTargets, profile)
+	if !ok {
+		zap.L().Fatal("downloadFileDescription: no matching target for transport", zap.Bool("dropWired", dropWired), zap.Bool("tunnelOpenAI", tunnelOpenAI))
 	}
-	return "Download IPFS content (CID or CID/path) as a file. Set sink=local to write the bytes to a host-side output_path on the MCP server's own disk. (The filedrop GET sink is unavailable on this transport.)"
+	return desc
 }

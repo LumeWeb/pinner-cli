@@ -11,6 +11,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
+	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
 )
 
 // This file provides the generic, internally-shared machinery behind the
@@ -268,6 +269,7 @@ func NewResumeTool(spec ResumeToolSpec, reg *HandoffRegistry, handles *session.A
 		Title:       spec.title(),
 		Description: spec.Description,
 		Category:    spec.CategoryOrDefault(),
+		MCPTargets:  toolforge.MCPTargets(toolforge.Fallback(spec.Description)),
 		InputSchema: toolargs.ToolSchemaFor[resumeArgs](),
 		Handler: func(ctx context.Context, req model.ToolRequest) (model.ToolResult, error) {
 			if reg == nil || handles == nil {

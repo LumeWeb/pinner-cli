@@ -7,6 +7,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
+	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
 )
 
 // OpenLauncherSpec declares a model-facing UI launcher tool. Launching an app
@@ -55,6 +56,7 @@ func NewOpenLauncherDescriptor(spec OpenLauncherSpec) model.ToolDescriptor {
 		Description: spec.Description,
 		Category:    spec.Category,
 		Meta:        appMeta,
+		MCPTargets:  toolforge.MCPTargets(toolforge.Fallback(spec.Description)),
 		InputSchema: spec.InputSchema,
 		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
 			// Launching the app is the action. Return a result carrying the

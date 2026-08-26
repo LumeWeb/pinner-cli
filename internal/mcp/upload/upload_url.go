@@ -11,6 +11,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
+	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
 )
 
 // RelayURLUploadInput is the typed argument shape for upload_url.
@@ -21,6 +22,12 @@ type RelayURLUploadInput struct {
 	Wrap bool   `json:"wrap,omitempty" jsonschema:"description=Wrap the single fetched file in a directory root so the CID is a directory (required when the upload is a website)."`
 }
 
+// relayURLUploadDescription is the agent-facing description for upload_url. It
+// is shared between the static Description (tools/list) and the Fallback
+// MCPTarget so describe_tool/search_tools resolve it per request without the
+// two surfaces drifting.
+const relayURLUploadDescription = "Fetch a public HTTPS URL and upload it to Pinner, pinning the resulting CID. The returned CID is already pinned: do NOT call pins_add afterward; the wait flag waits for this upload's own pin operation. Do not put Pinner's credentials in the URL; Pinner fetches with its own stored auth. For remote HTTP clients that cannot reference a local path."
+
 // RelayURLUploadDescriptor uploads a file by having the local MCP process
 // fetch a caller-supplied HTTPS URL, then stream it through the existing
 // authenticated TUS path. This is the generic relay fallback for HTTP-mode
@@ -30,8 +37,11 @@ func RelayURLUploadDescriptor(handler transfer.RelayURLUploadHandler, allowedHos
 	return model.ToolDescriptor{
 		Name:        "upload_url",
 		Title:       "Upload a file from a URL",
-		Description: "Fetch a public HTTPS URL and upload it to Pinner, pinning the resulting CID. The returned CID is already pinned: do NOT call pins_add afterward; the wait flag waits for this upload's own pin operation. Do not put Pinner's credentials in the URL; Pinner fetches with its own stored auth. For remote HTTP clients that cannot reference a local path.",
+		Description: relayURLUploadDescription,
 		Category:    model.CategoryCore,
+		// Fallback target so the description resolves through the profile-aware
+		// catalog seam (describe_tool/search_tools) like every other custom tool.
+		MCPTargets:  toolforge.MCPTargets(toolforge.Fallback(relayURLUploadDescription)),
 		InputSchema: toolargs.ToolSchemaFor[RelayURLUploadInput](),
 		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
 			in, err := toolargs.DecodeArgsFor[RelayURLUploadInput]("relay URL upload", handler != nil, request)

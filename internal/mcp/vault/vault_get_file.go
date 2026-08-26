@@ -10,6 +10,9 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
+	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
+	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
+	"go.uber.org/zap"
 )
 
 // VaultGetFileInput is the typed argument shape for the unified vault_get_file
@@ -49,6 +52,11 @@ func NewVaultGetFileDescriptor(getFn transfer.VaultGetHandler, hd *transfer.Down
 		// server (drop only when a reachable HTTP mux exists on a non-OpenAI
 		// tunnel), matching capabilities().download_sink_modes.
 		InputSchema: transfer.RewriteSinkEnum(toolargs.ToolSchemaFor[VaultGetFileInput](), hd != nil, tunnelOpenAI),
+		// MCPTargets lets describe_tool/search_tools re-resolve the description
+		// per requesting host profile (sink=drop only when the host has a
+		// reachable HTTP mux). The startup Description stays as the
+		// transport-baked tools/list value.
+		MCPTargets: toolforge.VaultGetFileTargets,
 		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
 			in, err := toolargs.DecodeToolArgs[VaultGetFileInput](request)
 			if err != nil {
@@ -89,11 +97,26 @@ func NewVaultGetFileDescriptor(getFn transfer.VaultGetHandler, hd *transfer.Down
 	}
 }
 
-// vaultGetFileDescription returns a sink-aware description so a model only sees
-// sinks that can actually work on the running transport.
+// vaultGetProfile maps the transport wiring to the feature set the description
+// DSL resolves against. sink=local is always available; sink=drop needs a
+// reachable HTTP mux on a non-OpenAI tunnel.
+func vaultGetProfile(dropWired, tunnelOpenAI bool) hostenv.PlatformProfile {
+	p := hostenv.ProfileHTTPGeneric.CloneFeatures()
+	p.Features[hostenv.FeatSinkLocal] = true
+	p.Features[hostenv.FeatSinkDrop] = dropWired && !tunnelOpenAI
+	return p
+}
+
+// vaultGetFileDescription resolves the vault_get_file description from the
+// feature-keyed MCPTargets against the transport-built profile, so a model only
+// sees sinks that can actually work on the running transport. It bakes the
+// startup tools/list value; describe_tool/search_tools re-resolve the same
+// targets per requesting host profile.
 func vaultGetFileDescription(dropWired, tunnelOpenAI bool) string {
-	if dropWired && !tunnelOpenAI {
-		return "Download a file from your encrypted Pinner vault by vault_path (e.g. vault:/docs/f.pdf). Set sink=local to write the decrypted bytes to a host-side output_path on the MCP server's own disk (available on every transport), or sink=drop to get a one-time HTTP GET filedrop link to pull from out of band."
+	profile := vaultGetProfile(dropWired, tunnelOpenAI)
+	desc, ok := toolforge.ResolveDescription(toolforge.VaultGetFileTargets, profile)
+	if !ok {
+		zap.L().Fatal("vaultGetFileDescription: no matching target for transport", zap.Bool("dropWired", dropWired), zap.Bool("tunnelOpenAI", tunnelOpenAI))
 	}
-	return "Download a file from your encrypted Pinner vault by vault_path (e.g. vault:/docs/f.pdf). Set sink=local to write the decrypted bytes to a host-side output_path on the MCP server's own disk. (The filedrop GET sink is unavailable on this tunnel transport.)"
+	return desc
 }
