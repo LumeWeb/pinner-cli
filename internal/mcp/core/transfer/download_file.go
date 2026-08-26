@@ -101,11 +101,17 @@ func NewDownloadFileDescriptor(ipfsFn IPFSDownloadHandler, hd *Download, downloa
 	}
 }
 
-// downloadFileDescription returns a sink-aware description so a model only sees
-// sinks that can actually work on the running transport.
+// downloadFileDescription builds the tool description from the actual
+// transport wiring. The drop sink requires a reachable HTTP mux, so it is
+// advertised only when a filedrop coordinator is wired AND the transport is
+// not the embedded OpenAI tunnel. The description is a server-startup
+// property (it never varies by requesting host), so it is resolved once and
+// shared by tools/list, capabilities, and describe_tool — no per-request
+// MCPTargets resolution, preventing the static and discovery surfaces from
+// contradicting each other.
 func downloadFileDescription(dropWired, tunnelOpenAI bool) string {
 	if dropWired && !tunnelOpenAI {
 		return "Download IPFS content (CID or CID/path) as a file. Set sink=local to write the bytes to a host-side output_path on the MCP server's own disk (available on every transport), or sink=drop to get a one-time HTTP GET filedrop link to pull from out of band (curl -o <url> or a browser link)."
 	}
-	return "Download IPFS content (CID or CID/path) as a file. Set sink=local to write the bytes to a host-side output_path on the MCP server's own disk. (The filedrop GET sink is unavailable on this tunnel transport.)"
+	return "Download IPFS content (CID or CID/path) as a file. Set sink=local to write the bytes to a host-side output_path on the MCP server's own disk. (The filedrop GET sink is unavailable on this transport.)"
 }

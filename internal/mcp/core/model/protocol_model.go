@@ -3,6 +3,8 @@ package model
 import (
 	"context"
 	"encoding/json"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
 )
 
 // ToolRequest is the SDK-neutral input to a catalog tool.
@@ -37,6 +39,11 @@ type RequestCaps struct {
 	// UI is the typed MCP Apps capability when the client advertises
 	// io.modelcontextprotocol/ui, else nil.
 	UI *ClientUICapabilities
+	// Profile is the resolved platform profile for this request, carrying
+	// host type, transport, features, and raw wire signals. Tools that
+	// need to adapt their output per host read this at call time. Nil on
+	// code paths that do not carry a client (e.g. tests).
+	Profile *hostenv.PlatformProfile
 }
 
 // SupportsApps reports whether the calling client can render MCP Apps
@@ -104,7 +111,12 @@ type ToolDescriptor struct {
 	// tools that carry credential-bearing flags surface them to the redaction
 	// path through the shared converters.
 	SensitiveFlags []string
-	Handler        PinnerToolHandler
+	// MCPTargets carries profile-keyed presentation variants for the MCP
+	// surface. When non-nil, the catalog resolves the best-matching target
+	// per request using the detected platform profile, overriding the static
+	// Description. When nil, the static Description is used.
+	MCPTargets []ToolTarget
+	Handler    PinnerToolHandler
 }
 
 // DescriptorFromTool builds the SDK-neutral descriptor for a catalog entry.
@@ -122,6 +134,7 @@ func DescriptorFromTool(entry *ToolEntry) ToolDescriptor {
 		Meta:            entry.Meta,
 		SecuritySchemes: entry.SecuritySchemes,
 		SensitiveFlags:  entry.SensitiveFlags,
+		MCPTargets:      entry.MCPTargets,
 	}
 }
 
@@ -144,6 +157,7 @@ func ToolEntryFromDescriptor(desc ToolDescriptor) *ToolEntry {
 		Meta:            desc.Meta,
 		SecuritySchemes: desc.SecuritySchemes,
 		SensitiveFlags:  desc.SensitiveFlags,
+		MCPTargets:      desc.MCPTargets,
 		Handler:         desc.Handler,
 		// Direct auth tools are non-blocking and safe for agent invocation:
 		// auth_sso returns a needs_human hand-off, auth_resume

@@ -8,7 +8,7 @@ import (
 
 // buildMCPSample returns a catalog spanning the visibility and safety spectrum:
 // an agent-safe Read, a Destructive op, an AppOnly helper, and a HumanOnly op.
-// The Read op carries an AgentDescription to exercise audience selection.
+// The Read op carries MCPTargets to exercise audience selection.
 func buildMCPSample(t *testing.T) Catalog {
 	t.Helper()
 	c := NewCatalog()
@@ -20,12 +20,12 @@ func buildMCPSample(t *testing.T) Catalog {
 	}
 
 	ok(NewOperation(OperationSpec{
-		Name:             "vault.get",
-		Title:            "Get Vault",
-		Summary:          "get a vault",
-		Description:      "long get description",
-		AgentDescription: "agent-aware get description",
-		Category:         "vault",
+		Name:        "vault.get",
+		Title:       "Get Vault",
+		Summary:     "get a vault",
+		Description: "long get description",
+		MCPTargets:  MCPTargets(Fallback("agent-aware get description")),
+		Category:    "vault",
 		Safety:           SafetyRead,
 		Interaction:      InteractionAgentSafe,
 		Visibility:       VisibilityModel,
@@ -149,13 +149,14 @@ func TestMCPCompilerAppSurface(t *testing.T) {
 }
 
 // TestMCPCompilerDescriptionAudience asserts the description selection: the model
-// surface uses AgentDescription (where set), the app surface uses Description.
+// surface resolves the description from the MCPTargets fallback, the app surface
+// uses Description.
 func TestMCPCompilerDescriptionAudience(t *testing.T) {
 	model := compileSurface(t, NewMCPCompiler())
 	if got := toolNamed(t, model, "vault.get").Description; got != "agent-aware get description" {
-		t.Errorf("model surface vault.get Description = %q, want AgentDescription", got)
+		t.Errorf("model surface vault.get Description = %q, want MCPTargets fallback description", got)
 	}
-	// An op without AgentDescription falls back to Description on the model surface.
+	// An op without MCPTargets falls back to Description on the model surface.
 	if got := toolNamed(t, model, "vault.delete").Description; got != "long delete description" {
 		t.Errorf("model surface vault.delete Description = %q, want Description fallback", got)
 	}

@@ -88,7 +88,9 @@ func authStatus(d AuthDeps) catalog.Operation {
 		Title:            "Check authentication status",
 		Summary:          "Verify you are authenticated",
 		Description:      "Check whether the stored Pinner.xyz auth token is present and valid, returning the authenticated state, the token subject (user id) and, when available, the account email. Call this before authenticated operations to confirm a valid session.",
-		AgentDescription: "Call auth_status to verify the stored Pinner.xyz credential is present and valid before running authenticated operations. Returns {authenticated: bool, email?, user_id?, message?}. When authenticated is false, steer the human to the out-of-band sign-in flow (auth_sso -> auth_resume) rather than asking for a password or OTP on this channel.",
+		MCPTargets: catalog.MCPTargets(
+			catalog.Fallback("Call auth_status to verify the stored Pinner.xyz credential is present and valid before running authenticated operations. Returns {authenticated: bool, email?, user_id?, message?}. When authenticated is false, steer the human to the out-of-band sign-in flow (auth_sso -> auth_resume) rather than asking for a password or OTP on this channel."),
+		),
 		Category:         "account",
 		Safety:           catalog.SafetyRead,
 		Interaction:      catalog.InteractionAgentSafe,
@@ -142,7 +144,9 @@ func authLogin(d AuthDeps) catalog.Operation {
 		Title:            "Save an auth token",
 		Summary:          "Authenticate by saving a provided auth token",
 		Description:      "Save a provided Pinner.xyz auth token (JWT) as the stored credential and confirm it is valid. This is the agent-safe login variant; it does not and must not collect a password or OTP. For interactive or out-of-band sign-in, use the SSO flow (auth_sso) so the human authenticates in a browser.",
-		AgentDescription: "Call auth_login with a pre-issued auth token (JWT) to store it as the active Pinner.xyz credential. The token argument is sensitive and must be redacted from logs. Returns {status, user_id?, message}. Do NOT ask the human for a password or OTP on this channel; use auth_sso for interactive sign-in.",
+		MCPTargets: catalog.MCPTargets(
+			catalog.Fallback("Call auth_login with a pre-issued auth token (JWT) to store it as the active Pinner.xyz credential. The token argument is sensitive and must be redacted from logs. Returns {status, user_id?, message}. Do NOT ask the human for a password or OTP on this channel; use auth_sso for interactive sign-in."),
+		),
 		Category:         "account",
 		Safety:           catalog.SafetyMutate,
 		Interaction:      catalog.InteractionAgentSafe,
@@ -181,7 +185,9 @@ func authLogout(d AuthDeps) catalog.Operation {
 		Title:            "Log out",
 		Summary:          "Clear the stored auth token",
 		Description:      "Remove the stored Pinner.xyz auth token from local config so the CLI / MCP server no longer authenticates. Does not revoke API keys on the server.",
-		AgentDescription: "Call auth_logout to clear the locally stored Pinner.xyz credential. Returns {status: logged_out | not_authenticated, config_path?, message}. Note this only clears the local token; it does not revoke server-side API keys.",
+		MCPTargets: catalog.MCPTargets(
+			catalog.Fallback("Call auth_logout to clear the locally stored Pinner.xyz credential. Returns {status: logged_out | not_authenticated, config_path?, message}. Note this only clears the local token; it does not revoke server-side API keys."),
+		),
 		Category:         "account",
 		Safety:           catalog.SafetyMutate,
 		Interaction:      catalog.InteractionAgentSafe,

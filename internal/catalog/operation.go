@@ -83,6 +83,46 @@ const (
 	ArgTypeFlexibleID
 )
 
+// Target is a per-profile presentation variant for the MCP surface only.
+// It is catalog-native: Require holds opaque feature-name strings the MCP
+// bridge maps to hostenv.FeatureSet. The CLI compiler never reads Targets.
+type Target struct {
+	// Require lists feature names that must all be present for this target
+	// to be eligible. Empty = matches any MCP profile (universal fallback).
+	Require []string
+	// Visible controls whether the tool appears at all for matching
+	// profiles. false = suppress the tool entirely for this profile.
+	Visible bool
+	// Description is the MCP description for this target. The MCP compiler
+	// uses the fallback target's Description as the static descriptor
+	// description; per-request resolution may override it with a more
+	// specific target's Description.
+	Description string
+}
+
+// MCPTargets wraps a variadic list of Targets into a slice. Use it in
+// OperationSpec declarations for readability.
+func MCPTargets(targets ...Target) []Target { return targets }
+
+// TargetFor creates a visible Target that requires all given feature names.
+// Among all matching targets, the one with the most required features wins.
+func TargetFor(desc string, features ...string) Target {
+	return Target{Require: features, Visible: true, Description: desc}
+}
+
+// Fallback creates a visible Target with no feature requirements. It always
+// matches (score 0), so it only wins when no specific target does. Every
+// operation's MCPTargets should include a Fallback to guarantee resolution.
+func Fallback(desc string) Target {
+	return Target{Visible: true, Description: desc}
+}
+
+// Hidden creates an invisible Target that suppresses the tool entirely for
+// MCP profiles matching the given features.
+func Hidden(features ...string) Target {
+	return Target{Require: features, Visible: false}
+}
+
 // OperationArg describes one input. It drives both the JSON Schema (MCP) and
 // the urfave flag (CLI).
 type OperationArg struct {
@@ -138,8 +178,8 @@ type Operation interface {
 	Name() string
 	Title() string
 	Summary() string
-	Description() string
-	AgentDescription() string // MCP describe_tool override (audience split)
+	Description() string         // CLI description; the CLI compiler reads this
+	MCPTargets() []Target         // MCP per-profile targets; MCP-only
 	Args() []OperationArg
 	Positional() string // ArgsUsage, drives MCP _args
 	Safety() Safety
@@ -151,18 +191,18 @@ type Operation interface {
 
 // OperationSpec is the plain struct NewOperation turns into an Operation.
 type OperationSpec struct {
-	Name             string
-	Title            string
-	Summary          string
-	Description      string
-	AgentDescription string
-	Args             []OperationArg
-	Positional       string
-	Safety           Safety
-	Interaction      Interaction
-	Visibility       Visibility
-	Category         string
-	Handler          Handler
+	Name        string
+	Title       string
+	Summary     string
+	Description string   // CLI description; the CLI compiler reads this
+	MCPTargets  []Target // MCP per-profile targets; MCP-only
+	Args        []OperationArg
+	Positional  string
+	Safety      Safety
+	Interaction Interaction
+	Visibility  Visibility
+	Category    string
+	Handler     Handler
 }
 
 // NewOperation builds a concrete Operation from a spec. Most operations use
@@ -178,7 +218,7 @@ func (o simpleOperation) Name() string             { return o.spec.Name }
 func (o simpleOperation) Title() string            { return o.spec.Title }
 func (o simpleOperation) Summary() string          { return o.spec.Summary }
 func (o simpleOperation) Description() string      { return o.spec.Description }
-func (o simpleOperation) AgentDescription() string { return o.spec.AgentDescription }
+func (o simpleOperation) MCPTargets() []Target     { return o.spec.MCPTargets }
 func (o simpleOperation) Args() []OperationArg     { return o.spec.Args }
 func (o simpleOperation) Positional() string       { return o.spec.Positional }
 func (o simpleOperation) Safety() Safety           { return o.spec.Safety }

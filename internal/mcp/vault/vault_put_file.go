@@ -10,6 +10,8 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
+	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
+	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 
@@ -97,6 +99,7 @@ func newVaultPutFileDescriptor(coLocated, tunnelOpenAI bool, pathFn LocalPathVau
 		// file it owns, without a human file-picker. This metadata is additive
 		// to any other Pinner metadata.
 		Meta: transfer.ChatGPTFileMeta(),
+		MCPTargets: toolforge.VaultPutFileTargets,
 		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
 			in, err := toolargs.DecodeToolArgs[VaultPutFileInput](request)
 			if err != nil {
@@ -219,15 +222,14 @@ func newVaultPutFileDescriptor(coLocated, tunnelOpenAI bool, pathFn LocalPathVau
 	}
 }
 
-// vaultPutFileDescription returns a transport-aware description so a model only
-// sees the source modes that can actually work.
+// vaultPutFileDescription resolves the tool description from the forge's
+// feature-keyed targets. The transport determines which features the
+// platform has, and the forge picks the most specific matching target.
 func vaultPutFileDescription(t transfer.TransportKind) string {
-	switch t {
-	case transfer.TransportStdio:
-		return "Store a file in the encrypted Pinner vault. If your host provides the file to you directly, pass it in the file input (a temporary download_url + file_id) and Pinner fetches and stores its bytes at vault_path. In this co-located stdio mode you may instead set source.mode=path and source.path to a host-side file/directory/archive path; the server reads it directly. vault_path may be any vault file path (e.g. vault:/docs/f.pdf)."
-	case transfer.TransportHTTP:
-		return "Store a file in the encrypted Pinner vault. If your host provides a generated file directly, pass it in the file input (a temporary download_url + file_id) and Pinner fetches and stores its bytes at vault_path — no curl needed for a file the host already owns. Do NOT mint a presigned URL to curl a file when the host already holds it; pass the file reference instead. Otherwise over this HTTP/tunnel transport, set source.mode=mint to get a one-time presigned HTTP PUT endpoint bound to vault_path and stream your file's bytes to it with curl. vault_path may be any vault file path (e.g. vault:/docs/f.pdf)."
-	default:
-		return "Store a file in the encrypted Pinner vault. If your host provides a generated file directly, pass it in the file input (a temporary download_url + file_id) and Pinner fetches and stores its bytes at vault_path. Over this OpenAI-tunnel transport you may instead set source.mode=url (a server-fetchable HTTPS download URL) or source.mode=data (an RFC 2397 data: URI). vault_path may be any vault file path (e.g. vault:/docs/f.pdf)."
+	profile := hostenv.ProfileForTransport(t).CloneFeatures()
+	desc, ok := toolforge.ResolveDescription(toolforge.VaultPutFileTargets, profile)
+	if !ok {
+		return "Store a file in the encrypted Pinner vault. Use source with the mode appropriate for this transport. vault_path may be any vault file path (e.g. vault:/docs/f.pdf)."
 	}
+	return desc
 }

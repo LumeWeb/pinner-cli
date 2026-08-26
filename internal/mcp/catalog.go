@@ -8,9 +8,12 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/samber/lo"
 	"go.uber.org/zap"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
+	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
 )
 
 // ToolSummary is the lightweight representation returned by search_tools.
@@ -251,10 +254,7 @@ func (c *ToolCatalog) Search(query, category string, limit int) []ToolSummary {
 		return results[i].summary.Name < results[j].summary.Name
 	})
 
-	summaries := make([]ToolSummary, len(results))
-	for i, r := range results {
-		summaries[i] = r.summary
-	}
+	summaries := lo.Map(results, func(r ranked, _ int) ToolSummary { return r.summary })
 	if limit > 0 && len(summaries) > limit {
 		summaries = summaries[:limit]
 	}
@@ -381,6 +381,102 @@ func (c *ToolCatalog) Describe(name string) (*ToolDetail, error) {
 		Interaction: entry.Interaction,
 		InputSchema: entry.InputSchema,
 	}, nil
+}
+
+// DescribeFor returns the full detail for a single tool, resolving
+// description variants against the per-request profile when the tool
+// carries MCPTargets. A nil profile falls back to the static Description.
+func (c *ToolCatalog) DescribeFor(name string, profile *hostenv.PlatformProfile) (*ToolDetail, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	entry, ok := c.tools[name]
+	if !ok {
+		return nil, fmt.Errorf("unknown tool: %s", name)
+	}
+
+	return &ToolDetail{
+		Name:        entry.Name,
+		Title:       entry.Title,
+		Description: resolveDescription(entry, profile),
+		Category:    entry.Category,
+		ReadOnly:    entry.ReadOnly,
+		Destructive: entry.Destructive,
+		Interaction: entry.Interaction,
+		InputSchema: entry.InputSchema,
+	}, nil
+}
+
+// resolveDescription returns the profile-resolved description for an entry,
+// falling back to the static Description when MCPTargets is empty or profile
+// is nil.
+func resolveDescription(entry *model.ToolEntry, profile *hostenv.PlatformProfile) string {
+	if len(entry.MCPTargets) > 0 && profile != nil {
+		if resolved, ok := toolforge.ResolveDescription(entry.MCPTargets, *profile); ok {
+			return resolved
+		}
+	}
+	return entry.Description
+}
+
+// SearchFor is the profile-aware variant of Search. It returns matching tools
+// with descriptions resolved against the per-request profile when MCPTargets
+// are present. Callers without a profile should use Search instead.
+func (c *ToolCatalog) SearchFor(query, category string, limit int, profile *hostenv.PlatformProfile) []ToolSummary {
+	query = strings.ToLower(strings.TrimSpace(query))
+
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	type ranked struct {
+		summary ToolSummary
+		rank    int
+	}
+
+	var results []ranked
+	for _, t := range c.tools {
+		if t.Interaction == model.InteractionInteractive {
+			continue
+		}
+		if t.Category == model.CategoryWizard && category != string(model.CategoryWizard) {
+			continue
+		}
+		if category != "" && string(t.Category) != category {
+			continue
+		}
+
+		summary := ToolSummary{
+			Name:        t.Name,
+			Description: resolveDescription(t, profile),
+			Category:    t.Category,
+			ReadOnly:    t.ReadOnly,
+			Destructive: t.Destructive,
+			Interaction: t.Interaction,
+		}
+
+		nameLower := strings.ToLower(t.Name)
+		descLower := strings.ToLower(summary.Description)
+		rank := matchRank(query, nameLower, descLower)
+		if rank >= 0 {
+			results = append(results, ranked{summary: summary, rank: rank})
+		}
+	}
+
+	sort.Slice(results, func(i, j int) bool {
+		if results[i].rank != results[j].rank {
+			return results[i].rank < results[j].rank
+		}
+		if results[i].summary.Category != results[j].summary.Category {
+			return results[i].summary.Category < results[j].summary.Category
+		}
+		return results[i].summary.Name < results[j].summary.Name
+	})
+
+	summaries := lo.Map(results, func(r ranked, _ int) ToolSummary { return r.summary })
+	if limit > 0 && len(summaries) > limit {
+		summaries = summaries[:limit]
+	}
+	return summaries
 }
 
 // Invoke dispatches to the named tool's handler and returns the Pinner-neutral

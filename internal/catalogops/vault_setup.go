@@ -64,7 +64,9 @@ func vaultCreate(d VaultDeps) catalog.Operation {
 		Title:            "Create a new vault",
 		Summary:          "Provision and activate a new vault with a fresh recovery seed",
 		Description:      "Provision a new vault identity under the given profile name. The create is completed out-of-band: the human approves the Sia device connection in a browser and retrieves the freshly generated recovery seed once. Returns the profile targeted by the create.",
-		AgentDescription: "Provision a new vault under a profile and hand the host off to a human. The create is completed out-of-band: the human opens the returned create_url, approves the Sia device connection in a browser, and retrieves the one-time recovery seed. Poll the returned vault_create_resume handle until the vault is active and the seed has been retrieved. The plaintext mnemonic never appears on this channel.",
+		MCPTargets: catalog.MCPTargets(
+			catalog.Fallback("Provision a new vault under a profile and hand the host off to a human. The create is completed out-of-band: the human opens the returned create_url, approves the Sia device connection in a browser, and retrieves the one-time recovery seed. Poll the returned vault_create_resume handle until the vault is active and the seed has been retrieved. The plaintext mnemonic never appears on this channel."),
+		),
 		Category:         "vault",
 		Safety:           catalog.SafetyMutate,
 		Interaction:      catalog.InteractionAgentSafe,
@@ -145,7 +147,9 @@ func vaultRestore(d VaultDeps) catalog.Operation {
 		Title:            "Restore a vault",
 		Summary:          "Start an out-of-band restore for a vault profile",
 		Description:      "Start restoring an existing vault on this device from a recovery seed supplied out-of-band by a human in a browser. Resolves the target profile and returns it so an out-of-band restore_url can be minted; the restore itself completes when the human enters the seed on that page. The seed never crosses the agent channel.",
-		AgentDescription: "Start an out-of-band vault restore for a profile. An out-of-band restore_url is returned for the human to open in a browser and enter the recovery seed to complete the restore; poll the returned vault_restore_resume handle until done. The seed never appears on this channel.",
+		MCPTargets: catalog.MCPTargets(
+			catalog.Fallback("Start an out-of-band vault restore for a profile. An out-of-band restore_url is returned for the human to open in a browser and enter the recovery seed to complete the restore; poll the returned vault_restore_resume handle until done. The seed never appears on this channel."),
+		),
 		Category:         "vault",
 		Safety:           catalog.SafetyMutate,
 		Interaction:      catalog.InteractionAgentSafe,

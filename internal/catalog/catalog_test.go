@@ -32,7 +32,7 @@ func stub(name, title, summary, desc, agentDesc, category string, safety Safety,
 		Title:            title,
 		Summary:          summary,
 		Description:      desc,
-		AgentDescription: agentDesc,
+		MCPTargets:       MCPTargets(Fallback(agentDesc)),
 		Args:             args,
 		Safety:           safety,
 		Interaction:      inter,
@@ -226,7 +226,7 @@ func TestDescribe(t *testing.T) {
 	if sch.Safety != SafetyRead || sch.Interaction != InteractionAgentSafe || sch.Visibility != VisibilityModel {
 		t.Fatalf("Describe classification wrong: %+v", sch)
 	}
-	// Audience swap: public Describe uses AgentDescription.
+	// MCP description resolves from the MCPTargets fallback.
 	if sch.Description != "Agent: add a pin" {
 		t.Fatalf("Describe Description = %q, want agent description", sch.Description)
 	}
@@ -267,8 +267,10 @@ func TestDescribeScopesToActor(t *testing.T) {
 	if _, ok := c.Describe("websites list", ActorModel); !ok {
 		t.Fatal("model Describe(both) should be found")
 	}
-	if sch, ok := c.Describe("websites list", ActorApp); !ok || sch.Description != "Long websites desc" {
-		t.Fatalf("app Describe(both) = %+v ok=%v, want plain description", sch, ok)
+	// The static description resolves from the MCPTargets fallback for both
+	// actors — the description is a single value, not audience-swapped.
+	if sch, ok := c.Describe("websites list", ActorApp); !ok || sch.Description != "Agent: list sites" {
+		t.Fatalf("app Describe(both) = %+v ok=%v, want fallback description", sch, ok)
 	}
 }
 

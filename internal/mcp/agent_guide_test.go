@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
 
@@ -53,4 +54,82 @@ func TestAgentGuideDescriptorIsDirectVisible(t *testing.T) {
 	desc := NewAgentGuideDescriptor()
 	tool := sdk.Tool(desc)
 	require.Equal(t, "agent_guide", tool.Name)
+}
+
+// TestAgentGuideModesMatchProfile guards against advertising source modes the
+// resolved profile's transport cannot serve. Each host resolves to a profile
+// that supports only a subset of path/mint/url-data; the guide must advertise
+// only that subset so an agent is never directed to a failing mode (e.g.
+// source.mode=path from a remote HTTP host, which Kody flagged).
+func TestAgentGuideModesMatchProfile(t *testing.T) {
+	strPtr := func(p hostenv.PlatformProfile) *hostenv.PlatformProfile { return &p }
+
+	cases := []struct {
+		name      string
+		profile   *hostenv.PlatformProfile
+		mustHave  []string
+		mustNot   []string
+		flowNames []string // flows whose Detail carries the mode enumeration
+	}{
+		{
+			name:     "stdio generic advertises only path",
+			profile:  strPtr(hostenv.ProfileStdioGeneric),
+			mustHave: []string{"source.mode=path"},
+			mustNot:  []string{"source.mode=mint", "source.mode=url/data"},
+		},
+		{
+			name:     "http generic advertises only mint",
+			profile:  strPtr(hostenv.ProfileHTTPGeneric),
+			mustHave: []string{"source.mode=mint"},
+			mustNot:  []string{"source.mode=path", "source.mode=url/data"},
+		},
+		{
+			name:     "grok http advertises only mint",
+			profile:  strPtr(hostenv.ProfileGrokHTTP),
+			mustHave: []string{"source.mode=mint"},
+			mustNot:  []string{"source.mode=path", "source.mode=url/data"},
+		},
+		{
+			name:     "openai tunnel advertises url/data fallback",
+			profile:  strPtr(hostenv.ProfileOpenAITunnel),
+			mustHave: []string{"source.mode=url/data"},
+			mustNot:  []string{"source.mode=path", "source.mode=mint"},
+		},
+		{
+			name:     "openai http advertises mint fallback",
+			profile:  strPtr(hostenv.ProfileOpenAIHTTP),
+			mustHave: []string{"source.mode=mint"},
+			mustNot:  []string{"source.mode=path", "source.mode=url/data"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			guide := buildAgentGuide(tc.profile)
+			for _, name := range []string{"upload", "vault_upload"} {
+				flow := guideFlowByName(t, guide, name)
+				for _, want := range tc.mustHave {
+					require.Contains(t, flow.Detail, want, "%s detail must advertise %s", name, want)
+					require.NotContains(t, guide.Summary, "source.mode=path/mint/url/data", "summary must not enumerate unsupported modes")
+				}
+				for _, not := range tc.mustNot {
+					require.NotContains(t, flow.Detail, not, "%s detail must NOT advertise %s", name, not)
+				}
+			}
+			// The generic publish_website branch (upload via a convert source)
+			// must also restrict its source modes to the profile's set.
+			pub := guideFlowByName(t, guide, "publish_website")
+			require.NotNil(t, pub.Decision, "publish_website must be a decision flow")
+		})
+	}
+}
+
+func guideFlowByName(t *testing.T, guide AgentGuide, name string) GuideFlow {
+	t.Helper()
+	for _, f := range guide.Flows {
+		if f.Name == name {
+			return f
+		}
+	}
+	t.Fatalf("guide has no flow named %q", name)
+	return GuideFlow{}
 }

@@ -319,7 +319,7 @@ func textClientMeta() mcp.Meta {
 
 func TestRequestCapsFromUIClient(t *testing.T) {
 	req := &mcp.CallToolRequest{Params: &mcp.CallToolParamsRaw{Name: "x", Meta: uiClientMeta()}}
-	rc := requestCaps(req)
+	rc := requestCaps(req, transportFlags{})
 	if rc == nil {
 		t.Fatal("expected non-nil RequestCaps")
 	}
@@ -343,7 +343,7 @@ func TestRequestCapsFromUIClient(t *testing.T) {
 
 func TestRequestCapsFromTextClient(t *testing.T) {
 	req := &mcp.CallToolRequest{Params: &mcp.CallToolParamsRaw{Name: "x", Meta: textClientMeta()}}
-	rc := requestCaps(req)
+	rc := requestCaps(req, transportFlags{})
 	if rc == nil {
 		t.Fatal("expected non-nil RequestCaps")
 	}
@@ -368,7 +368,7 @@ func TestRequestCapsNilSafe(t *testing.T) {
 	}
 	// A request with no _meta and no session yields empty-but-non-nil caps.
 	req := &mcp.CallToolRequest{Params: &mcp.CallToolParamsRaw{Name: "x"}}
-	got := requestCaps(req)
+	got := requestCaps(req, transportFlags{})
 	if got == nil {
 		t.Fatal("expected non-nil RequestCaps even with no meta")
 	}

@@ -14,8 +14,10 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/download"
+	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
 	"go.lumeweb.com/pinner-cli/internal/mcp/oob"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
+	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
 	"go.lumeweb.com/pinner-cli/internal/mcp/upload"
 	"go.lumeweb.com/pinner-cli/internal/mcp/vault"
 )
@@ -93,6 +95,15 @@ type customToolDeps struct {
 	// and the upload tools is derived from reachability rather than from
 	// whether a coordinator happens to be registered.
 	tunnelOpenAI bool
+	// hostProfile, when non-nil, is the detected host profile for a dedicated
+	// per-host HTTP server. It overrides the upload_file/vault_put_file tool
+	// DESCRIPTION so tools/list advertises the host's file-handoff / source
+	// presentation (e.g. an OpenAI-over-HTTP host sees the `file` handoff even
+	// though the startup HTTP transport bakes the mint-only description). The
+	// schema (source.mode enum) and handler remain transport-bound; only the
+	// presented description varies. Nil means the startup server (descriptions
+	// resolved for the startup transport only).
+	hostProfile *hostenv.PlatformProfile
 	// wizard deps are built from wizardFactory at Action time. All three are
 	// nil when no wizard factory is configured.
 	hasWizard bool
@@ -335,6 +346,15 @@ func registerCustomTools(deps customToolDeps) error {
 			pathFn = opts.localPathVaultPut
 		}
 		vaultPutDesc := vault.NewVaultPutFileDescriptor(deps.coLocated, deps.tunnelOpenAI, pathFn, deps.vaultUpload, opts.vaultPutHandler, opts.relayAllowedHosts, opts.maxRelayBytes)
+		// A dedicated per-host server re-resolves the tool description against
+		// the detected host profile (e.g. an OpenAI-over-HTTP host sees the
+		// `file` handoff even though the startup HTTP transport bakes the
+		// mint-only description). The schema and handler stay transport-bound.
+		if deps.hostProfile != nil {
+			if d, ok := toolforge.ResolveDescription(toolforge.VaultPutFileTargets, *deps.hostProfile); ok {
+				vaultPutDesc.Description = d
+			}
+		}
 		// Pair vault_put_file with its "Upload to Vault" MCP App view
 		// (ui://uploads/vault.html) when the presigned vault-upload coordinator
 		// can mint a PUT endpoint for the Uppy XHR uploader. The app must be
@@ -459,6 +479,16 @@ func registerCustomTools(deps customToolDeps) error {
 		// relayFn is the authenticated file executor for the openai-tunnel
 		// url/data source modes.
 		uploadFileDesc := transfer.NewUploadFileDescriptor(deps.coLocated, deps.tunnelOpenAI, pathFn, deps.curlUpload, opts.uploadHandler, opts.relayAllowedHosts, opts.maxRelayBytes)
+		// A dedicated per-host server re-resolves the tool description against
+		// the detected host profile (e.g. an OpenAI-over-HTTP host sees the
+		// `file` handoff even though the startup HTTP transport bakes the
+		// mint-only description). The schema (source.mode enum) and handler
+		// stay transport-bound.
+		if deps.hostProfile != nil {
+			if d, ok := toolforge.ResolveDescription(toolforge.UploadFileTargets, *deps.hostProfile); ok {
+				uploadFileDesc.Description = d
+			}
+		}
 
 		// Pair upload_file with its "Upload to IPFS" MCP App view
 		// (ui://uploads/ipfs.html) so a UI-capable host renders a file-picker
