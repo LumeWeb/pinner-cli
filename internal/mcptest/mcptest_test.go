@@ -25,6 +25,39 @@ func do(t *testing.T, method, url, token string, body io.Reader) (*http.Response
 	return resp, b
 }
 
+func TestRouteTargetOf(t *testing.T) {
+	cases := []struct {
+		path string
+		want routeTarget
+	}{
+		{"/api/account", targetAccount},
+		{"/api/account/", targetAccount},
+		{"/api/account/123", targetAccount},
+		{"/api/auth/register", targetAccount},
+		{"/api/auth/login", targetAccount},
+		{"/api/billing/plan", targetAccount},
+		{"/api/operations", targetAccount},
+		{"/api/operations/42", targetAccount},
+		{"/api/upload-limit", targetAccount},
+		{"/api/upload-limit/", targetAccount},
+		// content routes stay content even if they share a prefix with account.
+		{"/pins", targetContent},
+		{"/pins/123", targetContent},
+		{"/api/ipfs", targetContent},
+		{"/api/dns/zones", targetContent},
+		{"/api/websites", targetContent},
+		{"/api/operations-export", targetContent}, // not the account ops route
+		{"/api/account-settings", targetContent},  // not the account area
+		{"/", targetContent},
+		{"", targetContent},
+	}
+	for _, c := range cases {
+		if got := routeTargetOf(c.path); got != c.want {
+			t.Errorf("routeTargetOf(%q) = %v, want %v", c.path, got, c.want)
+		}
+	}
+}
+
 func TestCombinedDispatcher(t *testing.T) {
 	s := New()
 	ts := s.Start()
